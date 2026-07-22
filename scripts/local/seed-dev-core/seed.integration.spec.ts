@@ -187,13 +187,15 @@ describeIfSeedDb('dev_core 시드', () => {
     // 그 로직 자체가 잘못됐을 때도(예: 수량이 바뀌거나 로케이션이 밀리는 회귀) 테스트가
     // 통과해버려 회귀를 잡지 못한다.
     const BUCHEON_WAREHOUSE_ID = '019d0001-0001-7000-a000-000000000001';
+    const CHINA_WAREHOUSE_ID = '019d0001-0002-7000-a000-000000000002';
 
     // stock.ts 배치 규칙: index 0~1 → 재고 없음.
     const ZERO_STOCK_SKU_IDS = ['019d0006-0001-7000-a000-000000000001', '019d0006-0002-7000-a000-000000000002'];
 
-    // stock.ts 배치 규칙: index 2~13 → 랙 1곳에 50개.
+    // stock.ts 배치 규칙: index 2~13 → 랙 1곳에 50개. 단, index 2(SKU 0003)는 inbound.ts 가
+    // 같은 SKU 로 실제 InboundService.receiveFromPlan 을 태워 부천/중국 RECEIVING_DEFAULT 존에도
+    // 재고를 추가로 남기므로 여기 목록에서 빼고 아래 INBOUND_RECEIVED_SKU 로 따로 검증한다.
     const SINGLE_LOCATION_SKUS: Array<{ skuId: string; locationId: string; qty: number }> = [
-      { skuId: '019d0006-0003-7000-a000-000000000003', locationId: '019d0005-0003-7000-a000-000000000003', qty: 50 },
       { skuId: '019d0006-0004-7000-a000-000000000004', locationId: '019d0005-0004-7000-a000-000000000004', qty: 50 },
       { skuId: '019d0006-0005-7000-a000-000000000005', locationId: '019d0005-0005-7000-a000-000000000005', qty: 50 },
       { skuId: '019d0006-0006-7000-a000-000000000006', locationId: '019d0005-0006-7000-a000-000000000006', qty: 50 },
@@ -253,9 +255,24 @@ describeIfSeedDb('dev_core 시드', () => {
       },
     ];
 
-    // 모든 원장 행이 부천 창고 소속이다 (중국 창고로 잘못 붙는 회귀 방지).
+    // inbound.ts 가 실제 InboundService.receiveFromPlan 을 태워 만든 SKU 0003 재고 3행:
+    //  - 부천 랙 A-01-03(기존 stock.ts 배치) 50개
+    //  - 중국 RECEIVING_DEFAULT(source plan 부분입고 20/60) 20개
+    //  - 부천 RECEIVING_DEFAULT(destination plan 완료입고 60/60) 60개
+    // (로케이션 id 는 constants.ts SEED_IDS.locChinaReceiving/locBucheonReceiving 리터럴.)
+    const INBOUND_RECEIVED_SKU_ID = '019d0006-0003-7000-a000-000000000003';
+    const CHINA_RECEIVING_LOCATION_ID = '019d0002-0005-7000-a000-000000000005';
+    const BUCHEON_RECEIVING_LOCATION_ID = '019d0002-0001-7000-a000-000000000001';
+    const BUCHEON_RACK_A0103_LOCATION_ID = '019d0005-0003-7000-a000-000000000003';
+
+    // 모든 원장 행이 부천 창고 소속이다 — 유일한 예외는 위 SKU 0003 의 중국 source plan
+    // 부분입고 행 (중국 창고로 잘못 붙는 회귀 방지는 이 예외를 제외한 나머지 전부에 여전히 적용).
     for (const row of ledgers) {
-      expect(row.warehouseId).toBe(BUCHEON_WAREHOUSE_ID);
+      if (row.skuId === INBOUND_RECEIVED_SKU_ID && row.locationId === CHINA_RECEIVING_LOCATION_ID) {
+        expect(row.warehouseId).toBe(CHINA_WAREHOUSE_ID);
+      } else {
+        expect(row.warehouseId).toBe(BUCHEON_WAREHOUSE_ID);
+      }
     }
 
     const ledgersBySku = new Map<string, Array<{ locationId: string; qty: number }>>();
@@ -270,13 +287,25 @@ describeIfSeedDb('dev_core 시드', () => {
       expect(ledgersBySku.get(skuId)).toBeUndefined();
     }
 
-    // 단일 로케이션 SKU 12건: ON_HAND 행이 정확히 1개, 수량과 로케이션이 기대값과 일치한다.
+    // 단일 로케이션 SKU 11건: ON_HAND 행이 정확히 1개, 수량과 로케이션이 기대값과 일치한다.
     for (const expected of SINGLE_LOCATION_SKUS) {
       const rows = ledgersBySku.get(expected.skuId) ?? [];
       expect(rows).toHaveLength(1);
       expect(rows[0].locationId).toBe(expected.locationId);
       expect(rows[0].qty).toBe(expected.qty);
     }
+
+    // SKU 0003: stock.ts 의 랙 배치 1행 + inbound.ts 의 실입고 2행 = 총 3행.
+    // (로케이션, 수량) 쌍이 순서 무관하게 기대값 집합과 일치하는지 확인한다.
+    const inboundReceivedRows = ledgersBySku.get(INBOUND_RECEIVED_SKU_ID) ?? [];
+    expect(inboundReceivedRows).toHaveLength(3);
+    const actualInboundPairs = inboundReceivedRows.map((r) => `${r.locationId}:${r.qty}`).sort();
+    const expectedInboundPairs = [
+      `${BUCHEON_RACK_A0103_LOCATION_ID}:50`,
+      `${CHINA_RECEIVING_LOCATION_ID}:20`,
+      `${BUCHEON_RECEIVING_LOCATION_ID}:60`,
+    ].sort();
+    expect(actualInboundPairs).toEqual(expectedInboundPairs);
 
     // 다중 로케이션 분산 SKU 6건: ON_HAND 행이 정확히 2개, 로케이션 2곳이 서로 다르며
     // (로케이션, 수량) 쌍이 순서 무관하게 기대값 집합과 일치한다.
@@ -289,29 +318,109 @@ describeIfSeedDb('dev_core 시드', () => {
       expect(actualPairs).toEqual(expectedPairs);
     }
 
-    // 전체 재고보유 SKU 수 = 20 - 2(재고 0) = 18.
+    // 전체 재고보유 SKU 수 = 20 - 2(재고 0) = 18 (SKU 0003 은 행이 3개여도 distinct SKU 로는 1건).
     expect(ledgersBySku.size).toBe(18);
 
-    // RECEIVE 이벤트 수 == 원장 행 수 (직접 insert 로 만들지 않았다는 증거)
+    // 전체 ON_HAND 행 수 = 11(단일) + 3(SKU 0003) + 12(다중 6건×2행) = 26. 계산 없이 리터럴로 고정.
+    expect(ledgers).toHaveLength(26);
+
+    // RECEIVE 이벤트 수 == 원장 행 수 (직접 insert 로 만들지 않았다는 증거 — inbound.ts 의
+    // receiveFromPlan 2회 호출도 각각 RECEIVE 이벤트 1건 + 원장 1행을 만들어 이 등식을 유지한다)
     const receiveEvents = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(wmsTables.stockEvents)
       .where(eq(wmsTables.stockEvents.transitionType, 'RECEIVE'));
+    expect(Number(receiveEvents[0].n)).toBe(26);
     expect(Number(receiveEvents[0].n)).toBe(ledgers.length);
   });
 
-  it('입고 계획이 상태별로 들어간다', async () => {
-    const plans = await db
-      .select({ status: wmsTables.inboundPlans.status, planType: wmsTables.inboundPlans.planType })
-      .from(wmsTables.inboundPlans)
-      .orderBy(wmsTables.inboundPlans.status);
-    expect(plans).toHaveLength(3);
-    expect(plans.map((p) => p.status).sort()).toEqual(['confirmed', 'pending', 'receiving']);
+  it('입고 계획이 상태별로 들어가고, PO 라인/부모플랜/품목상태가 서로 어긋나지 않는다', async () => {
+    // PO/plan/plan-item 의 id 는 defaultRandom() 이라 리터럴로 못박을 수 없다 — type/skuId 같은
+    // 결정론적 속성으로 찾아서 서로 연결 짓는다.
+    const DEV_SKU_0001 = '019d0006-0001-7000-a000-000000000001';
+    const DEV_SKU_0002 = '019d0006-0002-7000-a000-000000000002';
+    const DEV_SKU_0003 = '019d0006-0003-7000-a000-000000000003';
 
     const orders = await db.select().from(wmsTables.purchaseOrders);
     expect(orders).toHaveLength(2);
+    expect(orders.map((o) => o.type).sort()).toEqual(['domestic', 'foreign']);
+    const domesticPo = orders.find((o) => o.type === 'domestic');
+    const foreignPo = orders.find((o) => o.type === 'foreign');
+    expect(domesticPo).toBeDefined();
+    expect(foreignPo).toBeDefined();
+
+    // PO 라인 quantity 를 (poId, skuId) 기준으로 매핑 — 아래 plan item expectedQty 드리프트
+    // 검증(리뷰 지적사항)에 쓴다.
+    const poLines = await db.select().from(wmsTables.purchaseOrderLines);
+    const poLineQtyByPoAndSku = new Map(poLines.map((l) => [`${l.poId}:${l.skuId}`, l.quantity]));
+    expect(poLineQtyByPoAndSku.get(`${domesticPo!.id}:${DEV_SKU_0001}`)).toBe(40);
+    expect(poLineQtyByPoAndSku.get(`${domesticPo!.id}:${DEV_SKU_0002}`)).toBe(25);
+    expect(poLineQtyByPoAndSku.get(`${foreignPo!.id}:${DEV_SKU_0003}`)).toBe(60);
+
+    const plans = await db.select().from(wmsTables.inboundPlans);
+    expect(plans).toHaveLength(3);
+    expect(plans.map((p) => p.status).sort()).toEqual(['confirmed', 'pending', 'receiving']);
+
+    const domesticPlan = plans.find((p) => p.linkedPurchaseOrderId === domesticPo!.id);
+    const sourcePlan = plans.find((p) => p.linkedPurchaseOrderId === foreignPo!.id && p.planType === 'source');
+    const destinationPlan = plans.find(
+      (p) => p.linkedPurchaseOrderId === foreignPo!.id && p.planType === 'destination',
+    );
+    expect(domesticPlan).toBeDefined();
+    expect(sourcePlan).toBeDefined();
+    expect(destinationPlan).toBeDefined();
+
+    expect(domesticPlan!.status).toBe('pending');
+    expect(sourcePlan!.status).toBe('receiving');
+    expect(destinationPlan!.status).toBe('confirmed');
+
+    // 리뷰 지적사항: destination plan 이 parent_plan_id 로 source plan 을 정확히 참조하는지
+    // (직접 insert 라 값이 유실되거나 엉뚱한 plan 을 가리키는 회귀를 잡는다).
+    expect(destinationPlan!.parentPlanId).toBe(sourcePlan!.id);
+    expect(sourcePlan!.parentPlanId).toBeNull();
+    expect(domesticPlan!.parentPlanId).toBeNull();
 
     const items = await db.select().from(wmsTables.inboundPlanItems);
-    expect(items.length).toBeGreaterThanOrEqual(3);
+    expect(items).toHaveLength(4); // 국내 2 + 해외 source 1 + destination 1
+
+    const domesticItems = items.filter((i) => i.planId === domesticPlan!.id);
+    const sourceItems = items.filter((i) => i.planId === sourcePlan!.id);
+    const destinationItems = items.filter((i) => i.planId === destinationPlan!.id);
+    expect(domesticItems).toHaveLength(2);
+    expect(sourceItems).toHaveLength(1);
+    expect(destinationItems).toHaveLength(1);
+
+    // 리뷰 지적사항: plan item 수량이 PO 라인에서 드리프트하지 않았는지 (하드코딩 리터럴).
+    const domesticItemBySku = new Map(domesticItems.map((i) => [i.skuId, i]));
+    expect(domesticItemBySku.get(DEV_SKU_0001)?.expectedQty).toBe(40);
+    expect(domesticItemBySku.get(DEV_SKU_0002)?.expectedQty).toBe(25);
+    expect(sourceItems[0].skuId).toBe(DEV_SKU_0003);
+    expect(sourceItems[0].expectedQty).toBe(60);
+    expect(destinationItems[0].skuId).toBe(DEV_SKU_0003);
+    expect(destinationItems[0].expectedQty).toBe(60);
+
+    // 국내 plan/품목은 요구사항대로 입고를 전혀 태우지 않아 시작 상태(un-received) 그대로다
+    // (재고 0 SKU 를 건드리면 품절 케이스가 깨지므로).
+    for (const item of domesticItems) {
+      expect(item.status).toBe('pending');
+      expect(item.receivedQty).toBe(0);
+    }
+
+    // 리뷰 지적사항: item-level status 가 plan-level status 와 어긋나지 않는지.
+    // destination(plan='confirmed'): receiveFromPlan 의 실제 로직(완료 시 'confirmed')과
+    // 문자 그대로 일치한다.
+    expect(destinationItems[0].receivedQty).toBe(60);
+    expect(destinationItems[0].status).toBe('confirmed');
+
+    // source(plan='receiving', 부분입고): inbound.service.ts 의 실제 분기는 이진
+    // (완료 미만이면 'pending' / 완료면 'confirmed')이라 부분입고 상태에서도 item.status 는
+    // 실제로 'pending' 이다 — plan.status='receiving' 과 문자 그대로 같지는 않지만, "아직
+    // confirmed 가 아니고 receivedQty 가 0 초과·expectedQty 미만"이라는 의미로는 정확히
+    // 대응한다. 이 값들은 도메인이 실제로 산출한 값 그대로이며 여기서 지어낸 게 아니다.
+    expect(sourceItems[0].receivedQty).toBe(20);
+    expect(sourceItems[0].status).toBe('pending');
+    expect(sourceItems[0].status).not.toBe('confirmed');
+    expect(sourceItems[0].receivedQty).toBeGreaterThan(0);
+    expect(sourceItems[0].receivedQty).toBeLessThan(sourceItems[0].expectedQty);
   });
 });

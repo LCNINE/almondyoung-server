@@ -5,6 +5,11 @@ import {
   makeDbService,
   wireLogistics,
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
+import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
+import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
+import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
+import { SkuCatalogManager } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
+import { InventoryIdempotencyService } from '../../../apps/core/src/modules/inventory/core/services/inventory-idempotency.service';
 import { recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database';
 import { bootstrapScopes } from './scopes';
 import { seedMasterData } from './master-data';
@@ -29,7 +34,24 @@ async function main(): Promise<void> {
     await bootstrapScopes(db);
 
     console.log(`── 4/4 시드${bulk ? ' (--bulk)' : ''}`);
-    const wired = wireLogistics(makeDbService(db), 'v2');
+    const dbService = makeDbService(db);
+    const wired = wireLogistics(dbService, 'v2');
+
+    // InboundService 는 Nest DI 없이도 손으로 조립 가능한 정도(협력자 5개, 전부 dbService 하나만
+    // 필요)라 여기서 직접 생성한다 — wireLogistics 가 이미 command/location/eventStore 를 만들어
+    // 두었으니 SkuCatalogService·InventoryIdempotencyService 만 추가로 조립하면 된다.
+    const skuCatalogReader = new SkuCatalogReader(dbService);
+    const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
+    const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
+    const idempotency = new InventoryIdempotencyService(dbService);
+    const inboundService = new InboundService(
+      dbService,
+      skuCatalogService,
+      wired.command,
+      wired.location,
+      wired.eventStore,
+      idempotency,
+    );
 
     await db.transaction(async (trx) => {
       // db 가 typed schema(PostgresJsDatabase<typeof wmsSchema>)로 열려 있어 trx 도 구조적으로
@@ -38,7 +60,7 @@ async function main(): Promise<void> {
       const tx = trx as unknown as DbTx;
       await seedMasterData(tx);
       await seedStock(wired.command, tx);
-      await seedInbound(tx);
+      await seedInbound(inboundService, tx);
     });
   } finally {
     await client.end();
