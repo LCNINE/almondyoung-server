@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
-import { wmsSchema } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
+import { wmsSchema, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
 const describeIfSeedDb = SEED_URL ? describe : describe.skip;
@@ -57,5 +57,20 @@ describeIfSeedDb('dev_core 시드', () => {
       'fulfillment.shipment.reopen',
       'fulfillment.warehouse.operate',
     ]);
+  });
+
+  it('마스터 데이터가 결정론적으로 들어간다', async () => {
+    const warehouses = await db.select().from(wmsTables.warehouses).orderBy(wmsTables.warehouses.name);
+    expect(warehouses.map((w) => w.name)).toEqual(['부천 물류창고', '중국 물류창고']);
+
+    const locations = await db.select().from(wmsTables.locations);
+    expect(locations).toHaveLength(14); // 시스템 존 8 + 부천 랙 6
+
+    const skus = await db.select().from(wmsTables.skus).orderBy(wmsTables.skus.code);
+    expect(skus).toHaveLength(20);
+    expect(skus[0].code).toBe('DEV-SKU-0001');
+
+    const barcodes = await db.select().from(wmsTables.skuBarcodes).orderBy(wmsTables.skuBarcodes.barcode);
+    expect(barcodes[0].barcode).toBe('88000000001');
   });
 });
