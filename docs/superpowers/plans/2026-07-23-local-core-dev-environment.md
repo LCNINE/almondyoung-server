@@ -1127,11 +1127,27 @@ export async function seedOrders(wired: Wired, tx: DbTx): Promise<string[]> {
 
     await wired.fulfillments.create({ salesOrderId: salesOrder.id, warehouseId: SEED_IDS.warehouseBucheon }, tx);
 
-    const shipments = await tx
-      .select({ id: wmsTables.shipments.id })
+    // 방금 만든 SO 의 shipment 를 그래프로 되짚는다. shipments 테이블에는 salesOrderId 가 없고
+    // shipment_lines → fulfillment_order_items → fulfillment_orders 로만 이어진다.
+    // "마지막 행" 같은 순서 의존은 쓰지 않는다 — ORDER BY 없는 select 의 행 순서는 보장되지 않는다.
+    const [shipment] = await tx
+      .selectDistinct({ id: wmsTables.shipments.id })
       .from(wmsTables.shipments)
-      .where(eq(wmsTables.shipments.warehouseId, SEED_IDS.warehouseBucheon));
-    shipmentIds.push(shipments[shipments.length - 1].id);
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrder.id));
+
+    if (!shipment) {
+      throw new Error(`[seed-dev-core] ${salesOrder.channelOrderId} 의 shipment 를 찾지 못했습니다`);
+    }
+    shipmentIds.push(shipment.id);
   }
 
   return shipmentIds;
