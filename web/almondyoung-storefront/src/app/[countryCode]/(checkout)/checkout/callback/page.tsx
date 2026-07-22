@@ -10,6 +10,7 @@ import {
   removePendingPaymentMode,
 } from "@/lib/utils/checkout-intent-map"
 import { processPaymentCallback, revalidateMembershipSuccess } from "./actions"
+import { shouldRejectCallbackStatus } from "./callback-status"
 
 const getErrorMessage = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback
@@ -56,7 +57,7 @@ export default function CallbackPage() {
         cartIdFromQuery ||
         (paymentIntentId ? getCheckoutCartByIntent(paymentIntentId) : null)
 
-      if (status !== "succeeded") {
+      if (shouldRejectCallbackStatus(status, mode)) {
         clearPendingPayment(paymentIntentId)
         replace(failUrl("PAYMENT_FAILED", t("paymentFailed"), mode))
         return
