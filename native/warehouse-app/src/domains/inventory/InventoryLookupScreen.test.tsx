@@ -33,6 +33,7 @@ function renderWith(client: ApiClient) {
 describe('InventoryLookupScreen', () => {
   it('searches and lists results', async () => {
     const client: ApiClient = {
+      // A vi.fn's inferred return type can't satisfy ApiClient.request's generic <T> signature; cast the mock (same pattern as `doFetch as never` in httpClient.test.ts).
       request: vi.fn(async () => [
         { id: '1', code: 'SKU-8891', name: '코튼 티', optionKey: '흰색 / M' },
       ]) as ApiClient['request'],
@@ -47,6 +48,7 @@ describe('InventoryLookupScreen', () => {
 
   it('shows a friendly message on error', async () => {
     const client: ApiClient = {
+      // A vi.fn's inferred return type can't satisfy ApiClient.request's generic <T> signature; cast the mock (same pattern as `doFetch as never` in httpClient.test.ts).
       request: vi.fn(async () => {
         throw new Error('GET /inventory/skus → 500');
       }) as ApiClient['request'],
