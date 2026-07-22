@@ -323,6 +323,13 @@
       "when": 1784290811317,
       "tag": "20260717122011_drop-invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784702981671,
+      "tag": "20260722064941_add-order-list-perf-indexes",
+      "breakpoints": true
     }
   ]
 }
