@@ -132,14 +132,21 @@ export class OrderEventsConsumer {
 
     try {
       await this.dbService.run(async (tx) => {
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
+        const salesOrderById = await this.salesOrdersService.getOne(payload.orderId, tx);
+        const salesOrder =
+          salesOrderById ??
+          (payload.salesChannel && payload.externalOrderId
+            ? await this.salesOrdersService.findByChannelOrderId(payload.salesChannel, payload.externalOrderId, tx)
+            : null);
         if (!salesOrder) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
         }
 
+        const salesOrderId = salesOrder.id;
+
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
-          payload.orderId,
+          salesOrderId,
           'ORDER_CANCELLED',
           payload,
           tx,
@@ -147,7 +154,7 @@ export class OrderEventsConsumer {
         if (alreadyProcessed) return;
 
         await this.salesOrdersService.cancel(
-          payload.orderId,
+          salesOrderId,
           {
             reasonCode: payload.reason,
             reasonDetail: payload.reasonDetail,
@@ -163,7 +170,7 @@ export class OrderEventsConsumer {
           tx,
         );
 
-        this.logger.log(`[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`);
+        this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
       });
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);

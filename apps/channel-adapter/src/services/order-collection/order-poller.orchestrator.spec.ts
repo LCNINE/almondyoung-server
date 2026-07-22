@@ -84,6 +84,8 @@ describe('OrderPollerOrchestrator', () => {
         aggregateId: '11111111-1111-4111-8111-111111111111',
         payload: expect.objectContaining({
           orderId: '11111111-1111-4111-8111-111111111111',
+          externalOrderId: 'medusa_order_1',
+          salesChannel: 'medusa',
         }),
       }),
     ]);
@@ -178,6 +180,8 @@ describe('OrderPollerOrchestrator', () => {
         aggregateId: '11111111-1111-4111-8111-111111111111',
         payload: expect.objectContaining({
           orderId: '11111111-1111-4111-8111-111111111111',
+          externalOrderId: 'medusa_order_1',
+          salesChannel: 'medusa',
           reason: 'ADMIN_CANCEL',
         }),
       }),

@@ -1,4 +1,4 @@
-import { ORDER_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams';
+import { ORDER_STREAM, type OrderCancelledPayload, type OrderCreatedPayload } from '@packages/event-contracts/streams';
 import type { InternalOrderEvent } from '../types';
 import type { InboxService } from './inbox.service';
 import type { ChannelListingClient } from './clients/channel-listing.client';
@@ -114,5 +114,25 @@ describe('OrderEventPublisher external line identity', () => {
     });
     expect(channelListingClient.lookupByChannelCode).not.toHaveBeenCalled();
     expect(inboxService.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('publishes cancellation with the channel identity needed to resolve the Core order', async () => {
+    const { publisher, inboxService } = makePublisher();
+
+    await publisher.publishOrderCancelled(
+      'naver_smartstore',
+      orderEvent({
+        internalOrderId: 'channel-adapter-generated-id',
+        externalOrderId: 'naver-order-1',
+      }),
+    );
+
+    const payload = inboxService.enqueue.mock.calls[0][0].payload as unknown as OrderCancelledPayload;
+    expect(ORDER_STREAM.events.OrderCancelled.schema!.parse(payload)).toEqual(payload);
+    expect(payload).toMatchObject({
+      orderId: 'channel-adapter-generated-id',
+      externalOrderId: 'naver-order-1',
+      salesChannel: 'naver',
+    });
   });
 });

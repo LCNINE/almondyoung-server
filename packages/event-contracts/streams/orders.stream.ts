@@ -106,6 +106,10 @@ export interface OrderModifiedPayload {
  */
 export interface OrderCancelledPayload {
   orderId: string;
+  /** 외부 채널의 주문 식별자. orderId가 Core PK와 다를 때 주문을 해석하는 데 사용한다. */
+  externalOrderId?: string;
+  /** externalOrderId의 네임스페이스. 채널 간 주문번호 충돌을 막기 위해 함께 전달한다. */
+  salesChannel?: SalesChannel;
   reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
@@ -254,6 +258,8 @@ const OrderModifiedSchema = z.object({
 
 const OrderCancelledSchema = z.object({
   orderId: z.string().min(1),
+  externalOrderId: z.string().min(1).optional(),
+  salesChannel: z.enum(['medusa', 'naver', 'coupang', '3pl']).optional(),
   reason: z.enum(['CUSTOMER_REQUEST', 'OUT_OF_STOCK', 'PAYMENT_FAILED', 'ADMIN_CANCEL', 'TIMEOUT']),
   reasonDetail: z.string().optional(),
   cancelledBy: z.string().min(1),

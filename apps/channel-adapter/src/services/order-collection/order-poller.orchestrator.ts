@@ -429,8 +429,14 @@ export class OrderPollerOrchestrator {
     }
 
     const payload = {
-      orderId: mapping[0].wmsOrderId,
       ...item.payload,
+      orderId: mapping[0].wmsOrderId,
+      ...(item.eventType === 'OrderCancelled'
+        ? {
+            externalOrderId: item.externalOrderId,
+            salesChannel: provider.channel,
+          }
+        : {}),
     };
     const lifecycleResourceId = `${item.externalOrderId}:${item.eventKey}`;
     const newHash = this.pollingHashService.computeHash({

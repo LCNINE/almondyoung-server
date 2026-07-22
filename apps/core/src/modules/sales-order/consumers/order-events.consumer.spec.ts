@@ -247,6 +247,7 @@ describe('OrderEventsConsumer', () => {
 
     await consumer.handleOrderCancelled(payload, cancelledEnvelope);
 
+    expect(mocks.salesOrders.findByChannelOrderId).not.toHaveBeenCalled();
     expect(mocks.salesOrders.cancel).toHaveBeenCalledWith(
       payload.orderId,
       expect.objectContaining({
@@ -263,6 +264,47 @@ describe('OrderEventsConsumer', () => {
     );
     expect(mocks.backlog.closeOpenForSalesOrder).not.toHaveBeenCalled();
     expect(mocks.library.revokeOwnershipsForOrder).not.toHaveBeenCalled();
+  });
+
+  it('resolves OrderCancelled by channel identity when the producer ID is not the Core order ID', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'channel-adapter-generated-id',
+      externalOrderId: 'order_01KWK34YTFTE12ZW5AK91EDPNX',
+      salesChannel: 'medusa',
+      reason: 'ADMIN_CANCEL',
+      cancelledBy: 'medusa',
+      cancelledAt: '2026-07-03T05:41:00.000Z',
+      refundRequired: false,
+    } as OrderCancelledPayload;
+    const cancelledEnvelope = {
+      messageId: 'cancel-msg-external-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderCancelledPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue(undefined as any);
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'core-sales-order-id' } as any);
+
+    await consumer.handleOrderCancelled(payload, cancelledEnvelope);
+
+    expect(mocks.salesOrders.findByChannelOrderId).toHaveBeenCalledWith(
+      'medusa',
+      'order_01KWK34YTFTE12ZW5AK91EDPNX',
+      mocks.fakeTx,
+    );
+    expect(mocks.salesOrders.cancel).toHaveBeenCalledWith(
+      'core-sales-order-id',
+      expect.objectContaining({
+        reasonCode: 'ADMIN_CANCEL',
+        metadata: expect.objectContaining({ sourceEventId: 'cancel-msg-external-1' }),
+      }),
+      mocks.fakeTx,
+    );
+    expect(mocks.txInserts[0].values).toMatchObject({
+      eventId: 'cancel-msg-external-1',
+      orderId: 'core-sales-order-id',
+      eventType: 'ORDER_CANCELLED',
+    });
   });
 
   it('OrderCancelled 대상 SalesOrder 가 없으면 throw 로 실패를 표면화한다 (필터가 non-retryable 로 분류 → 즉시 DLQ)', async () => {

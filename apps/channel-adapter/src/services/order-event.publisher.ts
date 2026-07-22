@@ -227,6 +227,8 @@ export class OrderEventPublisher {
 
     const payload: OrderCancelledPayload = {
       orderId: orderEvent.internalOrderId ?? orderEvent.externalOrderId,
+      externalOrderId: orderEvent.externalOrderId,
+      salesChannel,
       reason: this.mapCancelReason(reason),
       reasonDetail: orderEvent.reason,
       cancelledBy: cancelledBy === 'customer' ? 'CUSTOMER' : 'ADMIN',
