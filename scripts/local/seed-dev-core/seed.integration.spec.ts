@@ -3,7 +3,6 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
-import { SEED_SKUS } from './constants';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
 const describeIfSeedDb = SEED_URL ? describe : describe.skip;
@@ -176,21 +175,122 @@ describeIfSeedDb('dev_core 시드', () => {
     const ledgers = await db
       .select({
         skuId: wmsTables.stockLedgers.skuId,
-        qty: wmsTables.stockLedgers.qty,
+        warehouseId: wmsTables.stockLedgers.warehouseId,
         locationId: wmsTables.stockLedgers.locationId,
+        qty: wmsTables.stockLedgers.qty,
       })
       .from(wmsTables.stockLedgers)
       .where(eq(wmsTables.stockLedgers.stockState, 'ON_HAND'));
 
-    // 재고 0 SKU 2건은 원장 행이 아예 없다.
-    const skuIdsWithStock = new Set(ledgers.map((row) => row.skuId));
-    expect(skuIdsWithStock.has(SEED_SKUS[0].id)).toBe(false);
-    expect(skuIdsWithStock.has(SEED_SKUS[1].id)).toBe(false);
-    expect(skuIdsWithStock.size).toBe(18);
+    // 기대값은 constants.ts/stock.ts 의 SEED_SKUS/SEED_RACK_LOCATIONS/SEED_IDS 와 배치 규칙을
+    // import 하거나 재계산하지 않고 리터럴로 옮겨 적는다 — 계산 로직을 그대로 가져와 비교하면
+    // 그 로직 자체가 잘못됐을 때도(예: 수량이 바뀌거나 로케이션이 밀리는 회귀) 테스트가
+    // 통과해버려 회귀를 잡지 못한다.
+    const BUCHEON_WAREHOUSE_ID = '019d0001-0001-7000-a000-000000000001';
 
-    // 다중 로케이션 분산 SKU 는 원장 행이 2개 이상이다.
-    const rowsForSpread = ledgers.filter((row) => row.skuId === SEED_SKUS[19].id);
-    expect(rowsForSpread.length).toBeGreaterThan(1);
+    // stock.ts 배치 규칙: index 0~1 → 재고 없음.
+    const ZERO_STOCK_SKU_IDS = ['019d0006-0001-7000-a000-000000000001', '019d0006-0002-7000-a000-000000000002'];
+
+    // stock.ts 배치 규칙: index 2~13 → 랙 1곳에 50개.
+    const SINGLE_LOCATION_SKUS: Array<{ skuId: string; locationId: string; qty: number }> = [
+      { skuId: '019d0006-0003-7000-a000-000000000003', locationId: '019d0005-0003-7000-a000-000000000003', qty: 50 },
+      { skuId: '019d0006-0004-7000-a000-000000000004', locationId: '019d0005-0004-7000-a000-000000000004', qty: 50 },
+      { skuId: '019d0006-0005-7000-a000-000000000005', locationId: '019d0005-0005-7000-a000-000000000005', qty: 50 },
+      { skuId: '019d0006-0006-7000-a000-000000000006', locationId: '019d0005-0006-7000-a000-000000000006', qty: 50 },
+      { skuId: '019d0006-0007-7000-a000-000000000007', locationId: '019d0005-0001-7000-a000-000000000001', qty: 50 },
+      { skuId: '019d0006-0008-7000-a000-000000000008', locationId: '019d0005-0002-7000-a000-000000000002', qty: 50 },
+      { skuId: '019d0006-0009-7000-a000-000000000009', locationId: '019d0005-0003-7000-a000-000000000003', qty: 50 },
+      { skuId: '019d0006-0010-7000-a000-000000000010', locationId: '019d0005-0004-7000-a000-000000000004', qty: 50 },
+      { skuId: '019d0006-0011-7000-a000-000000000011', locationId: '019d0005-0005-7000-a000-000000000005', qty: 50 },
+      { skuId: '019d0006-0012-7000-a000-000000000012', locationId: '019d0005-0006-7000-a000-000000000006', qty: 50 },
+      { skuId: '019d0006-0013-7000-a000-000000000013', locationId: '019d0005-0001-7000-a000-000000000001', qty: 50 },
+      { skuId: '019d0006-0014-7000-a000-000000000014', locationId: '019d0005-0002-7000-a000-000000000002', qty: 50 },
+    ];
+
+    // stock.ts 배치 규칙: index 14~19 → 랙 2곳에 30 + 20개.
+    const MULTI_LOCATION_SKUS: Array<{ skuId: string; placements: Array<{ locationId: string; qty: number }> }> = [
+      {
+        skuId: '019d0006-0015-7000-a000-000000000015',
+        placements: [
+          { locationId: '019d0005-0003-7000-a000-000000000003', qty: 30 },
+          { locationId: '019d0005-0004-7000-a000-000000000004', qty: 20 },
+        ],
+      },
+      {
+        skuId: '019d0006-0016-7000-a000-000000000016',
+        placements: [
+          { locationId: '019d0005-0004-7000-a000-000000000004', qty: 30 },
+          { locationId: '019d0005-0005-7000-a000-000000000005', qty: 20 },
+        ],
+      },
+      {
+        skuId: '019d0006-0017-7000-a000-000000000017',
+        placements: [
+          { locationId: '019d0005-0005-7000-a000-000000000005', qty: 30 },
+          { locationId: '019d0005-0006-7000-a000-000000000006', qty: 20 },
+        ],
+      },
+      {
+        skuId: '019d0006-0018-7000-a000-000000000018',
+        placements: [
+          { locationId: '019d0005-0006-7000-a000-000000000006', qty: 30 },
+          { locationId: '019d0005-0001-7000-a000-000000000001', qty: 20 },
+        ],
+      },
+      {
+        skuId: '019d0006-0019-7000-a000-000000000019',
+        placements: [
+          { locationId: '019d0005-0001-7000-a000-000000000001', qty: 30 },
+          { locationId: '019d0005-0002-7000-a000-000000000002', qty: 20 },
+        ],
+      },
+      {
+        skuId: '019d0006-0020-7000-a000-000000000020',
+        placements: [
+          { locationId: '019d0005-0002-7000-a000-000000000002', qty: 30 },
+          { locationId: '019d0005-0003-7000-a000-000000000003', qty: 20 },
+        ],
+      },
+    ];
+
+    // 모든 원장 행이 부천 창고 소속이다 (중국 창고로 잘못 붙는 회귀 방지).
+    for (const row of ledgers) {
+      expect(row.warehouseId).toBe(BUCHEON_WAREHOUSE_ID);
+    }
+
+    const ledgersBySku = new Map<string, Array<{ locationId: string; qty: number }>>();
+    for (const row of ledgers) {
+      const rows = ledgersBySku.get(row.skuId) ?? [];
+      rows.push({ locationId: row.locationId, qty: row.qty });
+      ledgersBySku.set(row.skuId, rows);
+    }
+
+    // 재고 0 SKU 2건은 원장 행이 아예 없다.
+    for (const skuId of ZERO_STOCK_SKU_IDS) {
+      expect(ledgersBySku.get(skuId)).toBeUndefined();
+    }
+
+    // 단일 로케이션 SKU 12건: ON_HAND 행이 정확히 1개, 수량과 로케이션이 기대값과 일치한다.
+    for (const expected of SINGLE_LOCATION_SKUS) {
+      const rows = ledgersBySku.get(expected.skuId) ?? [];
+      expect(rows).toHaveLength(1);
+      expect(rows[0].locationId).toBe(expected.locationId);
+      expect(rows[0].qty).toBe(expected.qty);
+    }
+
+    // 다중 로케이션 분산 SKU 6건: ON_HAND 행이 정확히 2개, 로케이션 2곳이 서로 다르며
+    // (로케이션, 수량) 쌍이 순서 무관하게 기대값 집합과 일치한다.
+    for (const expected of MULTI_LOCATION_SKUS) {
+      const rows = ledgersBySku.get(expected.skuId) ?? [];
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((r) => r.locationId)).size).toBe(2);
+      const actualPairs = rows.map((r) => `${r.locationId}:${r.qty}`).sort();
+      const expectedPairs = expected.placements.map((p) => `${p.locationId}:${p.qty}`).sort();
+      expect(actualPairs).toEqual(expectedPairs);
+    }
+
+    // 전체 재고보유 SKU 수 = 20 - 2(재고 0) = 18.
+    expect(ledgersBySku.size).toBe(18);
 
     // RECEIVE 이벤트 수 == 원장 행 수 (직접 insert 로 만들지 않았다는 증거)
     const receiveEvents = await db
