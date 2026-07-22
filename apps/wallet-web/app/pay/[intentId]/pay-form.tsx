@@ -12,6 +12,7 @@ import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-e
 import { buildReturnUrl } from '@/lib/return-url';
 import type {
   AvailablePaymentMethod,
+  BankTransferDepositAccount,
   BusinessLicenseInfo,
   PaymentIntent,
   PaymentMethod,
@@ -51,6 +52,11 @@ interface Props {
   tossFailed?: boolean;
   /** 로그인 사용자의 사업자 정보 — 세금계산서/지출증빙 prefill 용. 없으면 null. */
   businessInfo?: BusinessLicenseInfo | null;
+  /**
+   * AWAITING_DEPOSIT 인텐트로 재진입했을 때 서버가 넘겨주는 발급 완료된 가상계좌.
+   * 있으면 결제 폼 대신 입금 안내 화면을 바로 띄운다(취소 버튼 없는 화면).
+   */
+  depositAccount?: BankTransferDepositAccount | null;
 }
 
 interface BankTransferPendingAction {
@@ -144,6 +150,7 @@ export function PayForm({
   region,
   tossFailed,
   businessInfo,
+  depositAccount,
 }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
@@ -174,7 +181,19 @@ export function PayForm({
   const [tossSubMethod, setTossSubMethod] = useState<TossSubMethod>('CARD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
+  // 재진입(AWAITING_DEPOSIT)이면 서버가 넘긴 계좌로 초기화 → 안내 화면이 그대로 복원된다.
+  const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(
+    depositAccount
+      ? {
+          type: 'BANK_TRANSFER_PENDING',
+          bankName: depositAccount.bankName ?? undefined,
+          accountNumber: depositAccount.accountNumber ?? undefined,
+          accountHolder: depositAccount.accountHolder ?? undefined,
+          amount: depositAccount.amount,
+          currency: depositAccount.currency,
+        }
+      : null,
+  );
   // 증빙 신청 (무통장입금 시) — 현금영수증만. 입금확인 완료 시 자동 발급.
   const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE'>('NONE');
   // 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용)

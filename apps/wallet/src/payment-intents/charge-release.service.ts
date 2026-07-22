@@ -3,6 +3,14 @@ import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 
+/**
+ * active(미확정) AUTHORIZE charge 인데도 외부에 살아있는 상태를 남기는 결제수단.
+ * 이들은 DB 만 CANCELED 로 바꾸면 외부가 그대로 살아 사고가 난다 —
+ * CMS_BATCH 는 효성 출금신청이 남아 돈이 빠져나가고,
+ * BANK_TRANSFER 는 토스 가상계좌가 열려 있어 고객이 취소된 계좌로 입금한다(실제 발생).
+ */
+const EXTERNALLY_HELD_METHOD_TYPES = ['CMS_BATCH', 'BANK_TRANSFER'];
+
 /** Minimal intent shape required to release its charges. */
 export interface ReleasableIntent {
   id: string;
@@ -34,10 +42,10 @@ export class ChargeReleaseService {
     const activeCharge = await this.chargesService.findActiveByIntentAndOperation(intent.id, 'AUTHORIZE');
     if (activeCharge) {
       const activeMethod = await this.paymentMethodsService.findById(activeCharge.paymentMethodId);
-      if (activeMethod && activeMethod.type === 'CMS_BATCH') {
+      if (activeMethod && EXTERNALLY_HELD_METHOD_TYPES.includes(activeMethod.type)) {
         await this.cancelChargeOrThrow(activeMethod.type, activeCharge, intent, correlationId);
       } else {
-        // 비-CMS active charge(POINTS hold/TOSS 결제창 대기)는 외부에 확정된 상태가 없어 DB CANCELED만으로 충분하다.
+        // 나머지 active charge(POINTS hold/TOSS 결제창 대기)는 외부에 확정된 상태가 없어 DB CANCELED만으로 충분하다.
         await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
       }
     }
