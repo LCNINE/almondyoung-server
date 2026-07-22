@@ -439,5 +439,57 @@ describeIfSeedDb('dev_core 시드', () => {
 
     const shipments = await db.select().from(wmsTables.shipments);
     expect(shipments).toHaveLength(10);
+
+    // 리뷰 지적사항: 위 assertion 들은 FulfillmentsService.create 가 실제로 계산하는 핵심 값 —
+    // FO item 의 qty(= sales_order_line.quantity × product_variant_sku_link.quantity)와 그
+    // qty 가 가리키는 SKU — 를 전혀 검증하지 않는다. quantity 가 항상 1로 나오거나 링크
+    // 배수를 무시하는 회귀, 엉뚱한 SKU 를 이행하는 회귀가 있어도 위 assertion 들은 그대로
+    // 통과한다. 아래에서 주문별 기대 (skuId, qty) 를 orders.ts/constants.ts 로부터 계산해
+    // 오지 않고 리터럴로 직접 적어 그 계산 회귀 자체를 잡는다.
+    //
+    // orders.ts 의 시딩 규칙(리터럴로 옮겨 적음, import/재계산 없음):
+    //   - order index i(0-based) 는 채널주문 DEV-ORDER-000(i+1) 에 대응.
+    //   - sales_order_line.quantity = (i % 3) + 1 → 1, 2, 3 이 순환하며 전부 같은 값이 아니다.
+    //   - 매칭 SKU = SEED_SKUS[i + 2] (재고가 있는 SKU 0003~0012), product_variant_sku_link.quantity
+    //     는 이 시드의 모든 주문에서 1 이다.
+    //   - 따라서 기대 FO item qty = sales_order_line.quantity × 1 = sales_order_line.quantity.
+    //   - 이 시드는 재고가 넉넉해(SKU 당 최소 50개) 10건 전부 전량 예약되므로 reservedQty == qty.
+    const expectedItemsByOrder: Array<{ channelOrderId: string; skuId: string; qty: number }> = [
+      { channelOrderId: 'DEV-ORDER-0001', skuId: '019d0006-0003-7000-a000-000000000003', qty: 1 },
+      { channelOrderId: 'DEV-ORDER-0002', skuId: '019d0006-0004-7000-a000-000000000004', qty: 2 },
+      { channelOrderId: 'DEV-ORDER-0003', skuId: '019d0006-0005-7000-a000-000000000005', qty: 3 },
+      { channelOrderId: 'DEV-ORDER-0004', skuId: '019d0006-0006-7000-a000-000000000006', qty: 1 },
+      { channelOrderId: 'DEV-ORDER-0005', skuId: '019d0006-0007-7000-a000-000000000007', qty: 2 },
+      { channelOrderId: 'DEV-ORDER-0006', skuId: '019d0006-0008-7000-a000-000000000008', qty: 3 },
+      { channelOrderId: 'DEV-ORDER-0007', skuId: '019d0006-0009-7000-a000-000000000009', qty: 1 },
+      { channelOrderId: 'DEV-ORDER-0008', skuId: '019d0006-0010-7000-a000-000000000010', qty: 2 },
+      { channelOrderId: 'DEV-ORDER-0009', skuId: '019d0006-0011-7000-a000-000000000011', qty: 3 },
+      { channelOrderId: 'DEV-ORDER-0010', skuId: '019d0006-0012-7000-a000-000000000012', qty: 1 },
+    ];
+
+    const itemsByOrder = await db
+      .select({
+        channelOrderId: wmsTables.salesOrders.channelOrderId,
+        skuId: wmsTables.fulfillmentOrderItems.skuId,
+        qty: wmsTables.fulfillmentOrderItems.qty,
+        reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+      })
+      .from(wmsTables.salesOrders)
+      .innerJoin(wmsTables.fulfillmentOrders, eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, wmsTables.fulfillmentOrders.id),
+      )
+      .orderBy(wmsTables.salesOrders.channelOrderId);
+    expect(itemsByOrder).toHaveLength(10);
+
+    for (let i = 0; i < expectedItemsByOrder.length; i += 1) {
+      const expected = expectedItemsByOrder[i];
+      const actual = itemsByOrder[i];
+      expect(actual.channelOrderId).toBe(expected.channelOrderId);
+      expect(actual.skuId).toBe(expected.skuId);
+      expect(actual.qty).toBe(expected.qty);
+      expect(actual.reservedQty).toBe(expected.qty); // 전량 예약
+    }
   });
 });
