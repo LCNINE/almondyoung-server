@@ -17,14 +17,14 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: (...args: unknown[]) => fetchMock(...args),
 }));
 
-const session: Session = {
+const session = {
   bootstrap: async () => {},
   isAuthenticated: () => true,
   getAccessToken: async () => 'tok',
   login: async () => {},
   logout: async () => {},
   subscribe: () => () => {},
-};
+} satisfies Session;
 
 function Probe() {
   const api = useApiClient();
