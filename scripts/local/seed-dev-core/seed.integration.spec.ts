@@ -502,3 +502,38 @@ describeIfSeedDb('dev_core 시드', () => {
     expect(byStatus).toEqual({ draft: 5, planned: 5 });
   });
 });
+
+describeIfSeedDb('dev_core 시드 --bulk', () => {
+  jest.setTimeout(600_000);
+  let client: postgres.Sql;
+  let db: PostgresJsDatabase<typeof wmsSchema>;
+
+  beforeAll(() => {
+    execFileSync(
+      'npx',
+      [
+        'ts-node',
+        '-r',
+        'tsconfig-paths/register',
+        '--transpile-only',
+        'scripts/local/seed-dev-core/index.ts',
+        '--bulk',
+      ],
+      { stdio: 'inherit', env: { ...process.env, SEED_DEV_CORE_URL: SEED_URL } },
+    );
+    client = postgres(SEED_URL as string, { max: 1 });
+    db = drizzle(client, { schema: wmsSchema });
+  });
+
+  afterAll(async () => {
+    await client?.end();
+  });
+
+  it('SKU 320건 · 로케이션 64건이 된다', async () => {
+    const skus = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.skus);
+    expect(Number(skus[0].n)).toBe(320);
+
+    const locations = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.locations);
+    expect(Number(locations[0].n)).toBe(64);
+  });
+});

@@ -24,6 +24,7 @@ import { seedStock } from './stock';
 import { seedInbound } from './inbound';
 import { seedOrders } from './orders';
 import { planShipments } from './shipments';
+import { seedBulk } from './bulk';
 
 async function main(): Promise<void> {
   const bulk = process.argv.includes('--bulk');
@@ -91,6 +92,10 @@ async function main(): Promise<void> {
       await seedInbound(inboundService, tx);
       const shipmentIds = await seedOrders(wired, tx);
       await planShipments(planning, shipmentIds, tx);
+
+      if (bulk) {
+        await seedBulk(tx);
+      }
     });
   } finally {
     await client.end();
