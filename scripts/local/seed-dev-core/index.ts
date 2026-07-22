@@ -15,6 +15,7 @@ import { bootstrapScopes } from './scopes';
 import { seedMasterData } from './master-data';
 import { seedStock } from './stock';
 import { seedInbound } from './inbound';
+import { seedOrders } from './orders';
 
 async function main(): Promise<void> {
   const bulk = process.argv.includes('--bulk');
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
       await seedMasterData(tx);
       await seedStock(wired.command, tx);
       await seedInbound(inboundService, tx);
+      await seedOrders(wired, tx);
     });
   } finally {
     await client.end();

@@ -423,4 +423,21 @@ describeIfSeedDb('dev_core 시드', () => {
     expect(sourceItems[0].receivedQty).toBeGreaterThan(0);
     expect(sourceItems[0].receivedQty).toBeLessThan(sourceItems[0].expectedQty);
   });
+
+  it('판매주문 10건이 FO 와 draft shipment 로 변환된다', async () => {
+    const orders = await db.select().from(wmsTables.salesOrders).orderBy(wmsTables.salesOrders.channelOrderId);
+    expect(orders).toHaveLength(10);
+    expect(orders[0].channelOrderId).toBe('DEV-ORDER-0001');
+
+    const fulfillmentOrders = await db.select().from(wmsTables.fulfillmentOrders);
+    expect(fulfillmentOrders).toHaveLength(10);
+
+    const items = await db.select().from(wmsTables.fulfillmentOrderItems);
+    expect(items).toHaveLength(10);
+    // 예약이 함께 섰는지 — 직접 insert 로는 만들 수 없는 상태다.
+    expect(items.every((item) => item.reservedQty > 0)).toBe(true);
+
+    const shipments = await db.select().from(wmsTables.shipments);
+    expect(shipments).toHaveLength(10);
+  });
 });
