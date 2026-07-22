@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider, useApiClient } from './ApiClientProvider';
-import type { Session } from '../../core/auth/session';
+import type { Session } from '../auth/session';
 import { apiBaseUrl } from '../../app/config';
 
 const fetchMock = vi.fn(
@@ -45,6 +45,7 @@ describe('ApiClientProvider', () => {
     );
     expect(screen.getByText('probe')).toBeInTheDocument();
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // mock.calls[0] is typed unknown[]; assert the [url, init] tuple shape we passed.
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     // apiBaseUrl varies per box (this box has a gitignored .env.local for
     // live Phase 1a testing); assert relative to it rather than hardcoding.

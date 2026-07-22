@@ -46,7 +46,7 @@ const diagnosticsRoute = createRoute({
   component: DiagnosticsRoute,
 });
 
-// --- 조회 (공통) ---
+// --- 조회 ---
 const inventoryRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory',

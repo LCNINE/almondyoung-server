@@ -20,7 +20,7 @@ export function InventoryLookupScreen() {
       >
         <input
           className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="상품명 검색 또는 바코드 스캔"
+          placeholder="상품명 검색"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
         />
@@ -36,17 +36,19 @@ export function InventoryLookupScreen() {
       {data && data.length === 0 && (
         <p className="text-sm text-gray-500">결과가 없어요.</p>
       )}
-      <ul className="space-y-2">
-        {data?.map((s) => (
-          <li key={s.id} className="rounded-lg border border-gray-200 bg-white p-3">
-            <div className="font-medium text-gray-800">{s.name}</div>
-            <div className="text-xs text-gray-500">
-              {s.code}
-              {s.optionKey ? ` · ${s.optionKey}` : ''}
-            </div>
-          </li>
-        ))}
-      </ul>
+      {data && data.length > 0 && (
+        <ul className="space-y-2">
+          {data?.map((s) => (
+            <li key={s.id} className="rounded-lg border border-gray-200 bg-white p-3">
+              <div className="font-medium text-gray-800">{s.name}</div>
+              <div className="text-xs text-gray-500">
+                {s.code}
+                {s.optionKey ? ` · ${s.optionKey}` : ''}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
