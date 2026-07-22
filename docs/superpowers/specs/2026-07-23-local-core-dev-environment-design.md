@@ -34,7 +34,7 @@
 
 | 이미 있음 | 위치 |
 |---|---|
-| postgres / redis / kafka 컨테이너 | 루트 `docker-compose.yml` (현재 running) |
+| postgres / redis / kafka / zookeeper 컨테이너 | 루트 `docker-compose.yml` (현재 postgres 만 기동 중 — §3.1 참고) |
 | 논리 DB 10개 자동 생성 | `scripts/local/init-db.sql` (postgres 최초 기동 시) |
 | 전 서비스 drizzle 마이그레이션 | `npm run db:migrate:local` → `scripts/local/migrate-all.sh` |
 | 서비스 일괄 기동 | `npm run start:all:local` → `scripts/local/start-all.sh` |
@@ -67,6 +67,22 @@ core 는 outbox dispatcher 가 5초마다 publish 하고(`libs/events/src/outbox
 1. `KAFKA_BROKERS=localhost:9092` — 로컬 compose 브로커.
 2. `KAFKA_API_KEY` / `KAFKA_API_SECRET` 를 **아예 넣지 않는다** → Confluent 접속 자체가 불가능.
 3. `KAFKA_GROUP_ID` 를 `core-local-<사용자>` 로 둬서 실수로 브로커가 바뀌어도 그룹이 겹치지 않게 한다.
+
+#### Kafka 를 끄는 선택지는 없다 — 로컬 브로커로 **격리**한다
+
+core 단독 테스트에는 Kafka 가 논리적으로 불필요하다. 판매주문을 시드가 직접 만들어 consume 할 이벤트가 없고, 모든 도메인 쓰기는 트랜잭션 안에서 outbox 테이블에 기록되므로 발행 실패는 outbox 행이 pending 으로 남을 뿐 도메인 상태를 해치지 않는다. 통합테스트가 outbox 를 mock 해 Kafka 없이 도는 것도 같은 이유다.
+
+**그러나 core 의 부팅이 브로커를 요구한다.** `apps/core/src/main.ts` 는 조건 없이 `app.connectMicroservice(EventsModule.forConsumer({ streams: [ORDER_STREAM], … }))` + `await app.startAllMicroservices()` 를 수행하고, 브로커 연결 실패 시 `ServerKafka.listen` → `NestMicroservice.listen()` 이 reject 하며 `bootstrap().catch(…)` 가 `process.exit(1)` 한다. 즉 **브로커가 없으면 core 가 뜨지 않는다.**
+
+검토한 대안과 기각 사유:
+
+| 안 | 판단 |
+|---|---|
+| **로컬 compose 브로커 기동 (채택)** | `docker-compose.yml` 에 kafka + zookeeper 가 이미 정의돼 있어 코드 변경이 0 이다. 비용은 컨테이너 2개(대략 0.7~1GB RAM). outbox 가 실제로 드레인되는 것을 관찰할 수 있어 **피킹·출고의 이벤트 발행 회귀를 로컬에서 잡는다** — 브로커가 없으면 outbox 만 쌓이는 상태를 "발행됐다" 고 착각한 채 개발하게 된다 |
+| Redpanda 단일 컨테이너로 교체 | zookeeper 가 빠져 200~300MB 로 줄지만, `docker-compose.yml` 은 팀 공용이라 타인의 로컬과 통합테스트에 영향이 간다. 얻는 것이 RAM 몇백 MB 뿐이라 정당화되지 않는다 |
+| Kafka 없이 부팅하도록 코드 변경 | `createKafkaConfigFromEnv()` 는 `KAFKA_BROKERS` 미설정 시 이미 `null` 을 반환해 lib 에 no-Kafka 경로가 있다. 그러나 core 의 `env.validation.ts` 가 `KAFKA_BROKERS` 를 필수로 강제하고 `main.ts` 가 무조건 `connectMicroservice` 를 부르므로 둘 다 손봐야 한다. **프로덕션 부팅 경로에 로컬 전용 분기를 넣는 변경**이고, 라이브에서 Kafka 설정 누락이 즉시 부팅 실패로 드러나던 안전망이 약해진다. "이벤트 없는 로컬 모드" 를 정식 기능으로 만들 때의 출발점으로만 남겨둔다 |
+
+**주의**: 이 머신은 현재 compose 에서 postgres 만 떠 있고 kafka·zookeeper 는 컨테이너가 생성조차 되지 않았다(`docker compose ps -a`). core 를 띄우기 전에 `docker compose up -d` 로 전체를 올려야 한다.
 
 ### 3.2 외부 부작용 env
 
@@ -129,9 +145,13 @@ PORT=3100
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/dev_core
 
 # 로컬 compose 브로커. API 키를 넣지 않아 라이브 Confluent 접속 자체가 불가능하다.
+# 브로커가 없으면 core 는 부팅하지 않는다 (§3.1) — 끄는 게 아니라 격리하는 것이다.
 KAFKA_BROKERS=localhost:9092
 KAFKA_CLIENT_ID_PREFIX=core-local
 KAFKA_GROUP_ID=core-local-<사용자>
+# KAFKA_BOOTSTRAP_TOPICS 는 설정하지 않는다(기본 활성). compose kafka 가
+# KAFKA_AUTO_CREATE_TOPICS_ENABLE=true 라 어느 쪽이든 토픽은 생기지만, 활성으로 두면
+# 파티션 수가 stream 선언과 일치하고 DLQ 토픽도 함께 만들어진다.
 
 FULFILLMENT_WORKFLOW_MODE=v2
 FULFILLMENT_V2_CUTOVER_AT=1970-01-01T00:00:00.000Z
@@ -257,11 +277,13 @@ VITE_API_BASE_URL=http://<tailscale-ip>:3100 npm run tauri:dev      # 안드로�
 
 리셋 직후 다음을 순서대로 확인한다.
 
-1. `npm run dev:core:reset` 이 가드 통과 → 마이그레이션 → 시드까지 에러 없이 완료.
-2. `npm run start:main:dev` 로 core 부팅. 로그에 `Scope initialization complete` 가 뜨고 Kafka 가 `localhost:9092` 에 붙는지 확인.
-3. warehouse-app 로그인(라이브 OIDC) → `/inventory` 표에 시드 SKU 20건.
-4. 로그인 토큰의 `roles` claim 확인 → Phase 3 착수 전 `logistics_worker` 보유 여부 판정 (§4.3).
-5. 리셋을 core 를 띄운 채로 한 번 더 돌려 403 이 나지 않는지 확인 (§4.2 의 스코프 부트스트랩 검증).
+1. `docker compose up -d` 후 `docker compose ps` 에 **postgres · kafka · zookeeper 가 모두 running**. 브로커가 없으면 core 가 부팅하지 않으므로 이게 선행 조건이다 (§3.1).
+2. `npm run dev:core:reset` 이 가드 통과 → 마이그레이션 → 시드까지 에러 없이 완료.
+3. `npm run start:main:dev` 로 core 부팅. 로그에 `Scope initialization complete` 가 뜨고, Kafka 가 `localhost:9092` 에 붙으며, 토픽 부트스트랩이 성공(실패해도 크래시는 없지만 재시도로 부팅이 ~10초 지연된다).
+4. warehouse-app 로그인(라이브 OIDC) → `/inventory` 표에 시드 SKU 20건.
+5. 로그인 토큰의 `roles` claim 확인 → Phase 3 착수 전 `logistics_worker` 보유 여부 판정 (§4.3).
+6. 리셋을 core 를 띄운 채로 한 번 더 돌려 403 이 나지 않는지 확인 (§4.2 의 스코프 부트스트랩 검증).
+7. 쓰기 워크플로우를 한 번 태운 뒤 `outbox` 테이블이 **pending 으로 쌓이지 않고 드레인되는지** 확인. 쌓인다면 브로커 연결이 실패한 것이다 (§3.1 의 관찰 이득이 이 확인에서 나온다).
 
 ## 10. 문서화
 
@@ -292,4 +314,5 @@ VITE_API_BASE_URL=http://<tailscale-ip>:3100 npm run tauri:dev      # 안드로�
 - [ ] `native/warehouse-app/.env.local` + `.env.local.example` 기본값 변경 — §8
 - [ ] `native/warehouse-app/package.json` 에 `tauri:dev` / `tauri:dev:live` 추가 — §8
 - [ ] `docs/local-dev.md` 섹션 추가 및 시드 관련 서술 갱신 — §10
-- [ ] §9 스모크 5단계 수행
+  - [ ] core 로컬 기동에 kafka·zookeeper 기동이 선행 조건임을 명시 — §3.1
+- [ ] §9 스모크 7단계 수행
