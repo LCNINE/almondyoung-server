@@ -65,8 +65,9 @@ core 는 outbox dispatcher 가 5초마다 publish 하고(`libs/events/src/outbox
 
 **대응(이중 안전장치)**:
 1. `KAFKA_BROKERS=localhost:9092` — 로컬 compose 브로커.
-2. `KAFKA_API_KEY` / `KAFKA_API_SECRET` 를 **아예 넣지 않는다** → Confluent 접속 자체가 불가능.
-3. `KAFKA_GROUP_ID` 를 `core-local-<사용자>` 로 둬서 실수로 브로커가 바뀌어도 그룹이 겹치지 않게 한다.
+2. `KAFKA_API_KEY` / `KAFKA_API_SECRET` 를 **아예 넣지 않는다** → SASL 분기 자체를 타지 않아 Confluent 인증이 불가능. `KAFKA_BROKERS` 를 잘못 적어도 붙지 못한다. **실질 방어선은 이것 하나다.**
+
+> ⚠️ **`KAFKA_GROUP_ID` 는 안전장치가 아니다** (Task 11 구현 중 확인). `apps/core/src/main.ts` 가 컨슈머 `groupId` 를 리터럴 `'almondyoung-order-consumer'` 로 하드코딩하고 `process.env.KAFKA_GROUP_ID` 를 읽지 않는다 (`sales-order.module.ts` 도 같은 리터럴을 중복 보유). 라이브 배포도 `kafkaEnv('core','core-group')` 로 이 변수를 세팅하지만 **모든 환경에서 무시된다**. 따라서 그룹 이름으로 로컬/라이브를 격리한다는 발상은 성립하지 않으며, 초안에 있던 "세 번째 안전장치" 서술은 사실이 아니었다. 다른 서비스(notification·membership·wallet·analytics·channel-adapter·search)는 모두 이 env 를 읽으므로, core 만 예외인 것은 별건 후속 대상이다.
 
 #### Kafka 를 끄는 선택지는 없다 — 로컬 브로커로 **격리**한다
 
@@ -286,6 +287,8 @@ VITE_API_BASE_URL=http://<tailscale-ip>:3100 npm run tauri:dev      # 안드로�
 5. 로그인 토큰의 `roles` claim 확인 → Phase 3 착수 전 `logistics_worker` 보유 여부 판정 (§4.3).
 6. 리셋을 core 를 띄운 채로 한 번 더 돌려 403 이 나지 않는지 확인 (§4.2 의 스코프 부트스트랩 검증).
 7. 쓰기 워크플로우를 한 번 태운 뒤 `outbox` 테이블이 **pending 으로 쌓이지 않고 드레인되는지** 확인. 쌓인다면 브로커 연결이 실패한 것이다 (§3.1 의 관찰 이득이 이 확인에서 나온다).
+
+> ⚠️ **알려진 예외 — `StockReceived` 26건은 드레인되지 않는다.** 이 브랜치와 무관한 **기존 프로덕션 결함**이다. `InventoryCommandService.receive()` 가 만드는 페이로드(`afterQuantity`/`occurredAt` 포함, `stockEventId`/`inboundType`/`receivedAt` 누락)가 `packages/event-contracts/streams/inventory.stream.ts` 의 `StockReceivedSchema` 를 만족하지 않아 `StreamPublisher` 가 발행 시 throw 한다. 스키마는 2025-10-09, 문제의 페이로드는 2026-04-17 작성으로 **처음부터 불일치**했고 `develop` 에도 그대로 있다. 시드가 이 경로를 처음으로 충분히 두드려 드러났을 뿐이다. `StockReceived` 소비자가 현재 0개라 기능 파손은 없고, 5회 재시도 후 `failed` 로 종료된다(무한 루프 아님). **드레인 확인 시 이 26건은 제외하고 본다.** 수정은 별건 — `receive()` 의 입력 타입과 페이로드 빌더 + `InboundService` 호출부 3곳이 대상이다.
 
 ## 10. 문서화
 
