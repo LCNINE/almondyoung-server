@@ -492,4 +492,13 @@ describeIfSeedDb('dev_core 시드', () => {
       expect(actual.reservedQty).toBe(expected.qty); // 전량 예약
     }
   });
+
+  it('shipment 절반은 draft, 절반은 planned 로 남는다', async () => {
+    const shipments = await db.select({ status: wmsTables.shipments.status }).from(wmsTables.shipments);
+    const byStatus = shipments.reduce<Record<string, number>>((acc, row) => {
+      acc[row.status] = (acc[row.status] ?? 0) + 1;
+      return acc;
+    }, {});
+    expect(byStatus).toEqual({ draft: 5, planned: 5 });
+  });
 });
