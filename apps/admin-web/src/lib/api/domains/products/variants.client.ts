@@ -23,6 +23,8 @@ export type BatchVariantInfo = {
   masterId: string;
   masterName: string;
   optionLabel?: string;
+  /** 마스터 대표 썸네일 (파일 ID 또는 절대 URL) */
+  thumbnail?: string | null;
 };
 
 export const variantsClient = {

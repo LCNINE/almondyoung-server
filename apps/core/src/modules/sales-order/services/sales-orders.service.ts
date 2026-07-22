@@ -11,8 +11,11 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
   eq,
+  ne,
+  gt,
   asc,
   inArray,
+  notInArray,
   desc,
   and,
   or,
@@ -20,10 +23,15 @@ import {
   lte,
   count,
   sql,
+  ilike,
+  isNull,
   isNotNull,
+  exists,
+  notExists,
   type InferInsertModel,
   type SQL,
 } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { PoliciesService } from './policies.service';
 import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -38,6 +46,7 @@ import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
+import { kstDayStart, kstDayEndInclusive, kstTodayRange } from '../utils/kst-date.util';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
@@ -780,46 +789,235 @@ export class SalesOrdersService {
 
   async list(params: SalesOrderFilterDto, tx?: DbTx) {
     return this.db.run(async (trx) => {
+      const S = wmsTables;
+
+      // ── 상관 서브쿼리 헬퍼: 현재 주문의 라인 존재/부재 조건 ──
+      const lineExists = (cond?: SQL) =>
+        exists(
+          trx
+            .select({ x: sql`1` })
+            .from(S.salesOrderLines)
+            .where(
+              cond
+                ? and(eq(S.salesOrderLines.salesOrderId, S.salesOrders.id), cond)
+                : eq(S.salesOrderLines.salesOrderId, S.salesOrders.id),
+            ),
+        );
+      const lineNotExists = (cond: SQL) =>
+        notExists(
+          trx
+            .select({ x: sql`1` })
+            .from(S.salesOrderLines)
+            .where(and(eq(S.salesOrderLines.salesOrderId, S.salesOrders.id), cond)),
+        );
+
       const conditions: SQL[] = [];
 
       if (params.startDate) {
-        conditions.push(gte(wmsTables.salesOrders.orderDate, new Date(params.startDate)));
+        // KST 달력일 00:00 부터 (order_date 는 UTC 저장)
+        conditions.push(gte(S.salesOrders.orderDate, kstDayStart(params.startDate)));
       }
       if (params.endDate) {
-        const end = new Date(params.endDate);
-        end.setHours(23, 59, 59, 999);
-        conditions.push(lte(wmsTables.salesOrders.orderDate, end));
+        // KST 달력일 23:59:59.999 까지 (inclusive)
+        conditions.push(lte(S.salesOrders.orderDate, kstDayEndInclusive(params.endDate)));
       }
       if (params.channel) {
-        conditions.push(eq(wmsTables.salesOrders.salesChannel, params.channel));
+        conditions.push(eq(S.salesOrders.salesChannel, params.channel));
       }
       if (params.status) {
-        conditions.push(eq(wmsTables.salesOrders.status, params.status));
+        conditions.push(eq(S.salesOrders.status, params.status));
+      }
+
+      // ── 구분(typeGroup): 재고/매칭 상태 파생 (주문 단위) ──
+      switch (params.typeGroup) {
+        case 'pending':
+          conditions.push(eq(S.salesOrders.status, 'pending'));
+          break;
+        case 'ready': // 완전출고: 라인 존재 + 모든 라인 stock_deducted
+          conditions.push(lineExists());
+          conditions.push(lineNotExists(ne(S.salesOrderLines.status, 'stock_deducted')));
+          break;
+        case 'partial': // 부분출고: 일부만 stock_deducted
+          conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_deducted')));
+          conditions.push(lineExists(ne(S.salesOrderLines.status, 'stock_deducted')));
+          break;
+        case 'hold': // 출고불가: 재고부족 라인 존재
+          conditions.push(lineExists(eq(S.salesOrderLines.status, 'stock_unavailable')));
+          break;
+        case 'unmatched': // 매칭안됨: 미매칭 라인 존재
+          conditions.push(lineExists(isNull(S.salesOrderLines.productMatchingId)));
+          break;
+        case 'direct': // 직배송: drop_ship FO 존재
+          conditions.push(
+            exists(
+              trx
+                .select({ x: sql`1` })
+                .from(S.fulfillmentOrders)
+                .where(
+                  and(
+                    eq(S.fulfillmentOrders.salesOrderId, S.salesOrders.id),
+                    eq(S.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
+                  ),
+                ),
+            ),
+          );
+          break;
+        case 'all':
+        default:
+          if (params.excludeTerminal) {
+            conditions.push(notInArray(S.salesOrders.status, ['cancelled', 'timeout']));
+          }
+          break;
+      }
+
+      // ── 환불 실패/수동처리만 ──
+      // 어드민 주문내역 화면(use-order-rows)의 refundStatus 도출과 동일 규칙:
+      //   effectiveLink = (미완료 manual_pending 링크) ?? (최신 링크)
+      //   이 링크가 failed/manual_pending 이면 이슈. → 아래 두 조건의 OR 로 정확히 재현.
+      //   ① 미완료 manual_pending 링크 존재 (뒤에 무관한 succeeded 가 생겨도 여전히 미처리로 노출)
+      //   ② 최신 링크가 failed
+      // 링크 앵커: sourceType='sales_order', sourceId=SO (store-sales-orders 와 동일).
+      if (params.refundIssueOnly) {
+        conditions.push(eq(S.salesOrders.status, 'cancelled'));
+        const REFUND_RELATION = 'cancellation_linked_wallet_refund';
+        const mp = alias(S.businessLinks, 'refund_mp'); // manual_pending 후보
+        const completion = alias(S.businessLinks, 'refund_completion'); // mp 를 종결한 succeeded
+        const failedLink = alias(S.businessLinks, 'refund_failed'); // failed 후보
+        const laterLink = alias(S.businessLinks, 'refund_later'); // failedLink 이후 링크
+
+        // ① 아직 종결되지 않은 manual_pending 링크
+        const uncompletedManualPending = exists(
+          trx
+            .select({ x: sql`1` })
+            .from(mp)
+            .where(
+              and(
+                eq(mp.sourceType, SALES_ORDER_REF_TYPE),
+                eq(mp.sourceId, S.salesOrders.id),
+                eq(mp.relationName, REFUND_RELATION),
+                sql`${mp.metadata}->>'refundStatus' = 'manual_pending'`,
+                notExists(
+                  trx
+                    .select({ x: sql`1` })
+                    .from(completion)
+                    .where(
+                      and(
+                        eq(completion.relationName, REFUND_RELATION),
+                        sql`${completion.metadata}->>'refundStatus' = 'succeeded'`,
+                        sql`${completion.metadata}->>'completedRefundLinkId' = ${mp.id}::text`,
+                      ),
+                    ),
+                ),
+              ),
+            ),
+        );
+
+        // ② 최신 링크가 failed
+        const latestIsFailed = exists(
+          trx
+            .select({ x: sql`1` })
+            .from(failedLink)
+            .where(
+              and(
+                eq(failedLink.sourceType, SALES_ORDER_REF_TYPE),
+                eq(failedLink.sourceId, S.salesOrders.id),
+                eq(failedLink.relationName, REFUND_RELATION),
+                sql`${failedLink.metadata}->>'refundStatus' = 'failed'`,
+                notExists(
+                  trx
+                    .select({ x: sql`1` })
+                    .from(laterLink)
+                    .where(
+                      and(
+                        eq(laterLink.sourceType, SALES_ORDER_REF_TYPE),
+                        eq(laterLink.sourceId, S.salesOrders.id),
+                        eq(laterLink.relationName, REFUND_RELATION),
+                        gt(laterLink.createdAt, failedLink.createdAt),
+                      ),
+                    ),
+                ),
+              ),
+            ),
+        );
+
+        conditions.push(or(uncompletedManualPending, latestIsFailed)!);
+      }
+
+      // ── 키워드 검색 ──
+      if (params.keyword && params.keyword.trim()) {
+        const kw = `%${params.keyword.trim()}%`;
+        const orderNoCond = or(
+          ilike(S.salesOrders.channelOrderId, kw),
+          sql`${S.salesOrders.id}::text ILIKE ${kw}`,
+        )!;
+        const receiverCond = or(
+          sql`${S.salesOrders.shippingAddress}->>'recipientName' ILIKE ${kw}`,
+          ilike(S.salesOrders.customerName, kw),
+        )!;
+        const phoneCond = or(
+          ilike(S.salesOrders.customerPhone, kw),
+          sql`${S.salesOrders.shippingAddress}->>'phone' ILIKE ${kw}`,
+        )!;
+        const productCond = lineExists(ilike(S.salesOrderLines.productName, kw));
+        switch (params.keywordType) {
+          case 'orderNo':
+            conditions.push(orderNoCond);
+            break;
+          case 'receiver':
+            conditions.push(receiverCond);
+            break;
+          case 'phone':
+            conditions.push(phoneCond);
+            break;
+          case 'product':
+            conditions.push(productCond);
+            break;
+          case 'all':
+          default:
+            conditions.push(or(orderNoCond, receiverCond, phoneCond, productCond)!);
+            break;
+        }
       }
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
       const limit = params.limit ?? 20;
       const offset = params.offset ?? 0;
 
-      const [{ total }] = await trx.select({ total: count() }).from(wmsTables.salesOrders).where(where);
+      // 주문 수 + 라인 수(집계) 병렬
+      const [[{ total }], [{ lineTotal }]] = await Promise.all([
+        trx.select({ total: count() }).from(S.salesOrders).where(where),
+        trx
+          .select({ lineTotal: count() })
+          .from(S.salesOrderLines)
+          .innerJoin(S.salesOrders, eq(S.salesOrders.id, S.salesOrderLines.salesOrderId))
+          .where(where),
+      ]);
 
       const orders = await trx
         .select()
-        .from(wmsTables.salesOrders)
+        .from(S.salesOrders)
         .where(where)
         .limit(limit)
         .offset(offset)
-        .orderBy(desc(wmsTables.salesOrders.createdAt));
+        // createdAt 동률(대량수입) 시 offset 페이지 경계에서 행이 밀리는 것 방지 — id 2차정렬
+        .orderBy(desc(S.salesOrders.createdAt), desc(S.salesOrders.id));
 
       if (orders.length === 0) {
-        return { data: [], total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
+        return {
+          data: [],
+          total,
+          lineTotal,
+          page: Math.floor(offset / limit) + 1,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        };
       }
 
       const orderIds = orders.map((o) => o.id);
       const lines = await trx
         .select()
-        .from(wmsTables.salesOrderLines)
-        .where(inArray(wmsTables.salesOrderLines.salesOrderId, orderIds));
+        .from(S.salesOrderLines)
+        .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
 
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {
@@ -834,21 +1032,22 @@ export class SalesOrdersService {
         lines: linesByOrderId.get(order.id) || [],
       }));
 
-      return { data, total, page: Math.floor(offset / limit) + 1, limit, totalPages: Math.ceil(total / limit) };
+      return {
+        data,
+        total,
+        lineTotal,
+        page: Math.floor(offset / limit) + 1,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
     }, tx);
   }
 
   async getStats() {
     const db = this.db.db;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const fourteenDaysAgo = new Date();
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 13);
-    fourteenDaysAgo.setHours(0, 0, 0, 0);
+    // KST 달력일 기준 오늘/최근 14일 경계 (서버 TZ 무관)
+    const { start: today, end: todayEnd, backStart: fourteenDaysAgo } = kstTodayRange(13);
 
     const [todayResult] = await db
       .select({ cnt: count() })

@@ -607,6 +607,7 @@ export class ProductVariantsService {
       masterId: string;
       masterName: string;
       optionLabel?: string;
+      thumbnail?: string | null;
     }[]
   > {
     if (!ids.length) return [];
@@ -620,6 +621,7 @@ export class ProductVariantsService {
         masterId: productMasterVariants.masterId,
         versionId: productMasterVariants.versionId,
         masterName: productMasterVersions.name,
+        thumbnail: productMasterVersions.thumbnail, // 마스터 버전 대표 썸네일(파일 ID)
       })
       .from(productVariants)
       .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
@@ -683,6 +685,7 @@ export class ProductVariantsService {
       masterId: row.masterId,
       masterName: row.masterName,
       optionLabel: optionMap.get(row.variantId)?.join(', '),
+      thumbnail: row.thumbnail ?? null,
     }));
   }
 
