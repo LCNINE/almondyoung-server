@@ -9,6 +9,7 @@ import { recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database'
 import { bootstrapScopes } from './scopes';
 import { seedMasterData } from './master-data';
 import { seedStock } from './stock';
+import { seedInbound } from './inbound';
 
 async function main(): Promise<void> {
   const bulk = process.argv.includes('--bulk');
@@ -37,6 +38,7 @@ async function main(): Promise<void> {
       const tx = trx as unknown as DbTx;
       await seedMasterData(tx);
       await seedStock(wired.command, tx);
+      await seedInbound(tx);
     });
   } finally {
     await client.end();

@@ -299,4 +299,19 @@ describeIfSeedDb('dev_core 시드', () => {
       .where(eq(wmsTables.stockEvents.transitionType, 'RECEIVE'));
     expect(Number(receiveEvents[0].n)).toBe(ledgers.length);
   });
+
+  it('입고 계획이 상태별로 들어간다', async () => {
+    const plans = await db
+      .select({ status: wmsTables.inboundPlans.status, planType: wmsTables.inboundPlans.planType })
+      .from(wmsTables.inboundPlans)
+      .orderBy(wmsTables.inboundPlans.status);
+    expect(plans).toHaveLength(3);
+    expect(plans.map((p) => p.status).sort()).toEqual(['confirmed', 'pending', 'receiving']);
+
+    const orders = await db.select().from(wmsTables.purchaseOrders);
+    expect(orders).toHaveLength(2);
+
+    const items = await db.select().from(wmsTables.inboundPlanItems);
+    expect(items.length).toBeGreaterThanOrEqual(3);
+  });
 });
