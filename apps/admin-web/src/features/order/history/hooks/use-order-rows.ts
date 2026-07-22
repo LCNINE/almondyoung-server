@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 테이블에서 1행 = 주문 라인 1개 */
@@ -82,20 +82,25 @@ export type OrderLineRow = {
 };
 
 export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
-  // 1) 목록
+  // 1) 목록 (서버 페이지네이션 — 필터·페이지 모두 백엔드가 처리, 한 페이지 = 주문 ≤ limit)
   const listQuery = useQuery({
     queryKey: ['sales-orders', 'list-view', query],
     queryFn: () => orders.salesOrders.getSalesOrders(query),
     staleTime: 30 * 1000,
+    // 재조회 중에도 이전 결과를 유지 → 빈 화면/스켈레톤 깜빡임 방지
+    placeholderData: keepPreviousData,
   });
 
-  // 2) 상세 병렬 (최대 50건)
-  const orderIds =
-    listQuery.data?.data.map((i: any) => i.id).slice(0, 50) ?? [];
+  // 2) 상세 병렬 — 현재 페이지의 모든 주문 (페이지가 이미 ≤ limit 이므로 캡 불필요)
+  const listOrderIds: string[] =
+    listQuery.data?.data.map((i: any) => i.id) ?? [];
+  const orderIds = listOrderIds;
   const detailQueries = useQuery({
     queryKey: ['sales-orders', 'details', orderIds],
     enabled: orderIds.length > 0,
     staleTime: 30 * 1000,
+    // 페이지 이동으로 대상 주문이 바뀌어도 이전 enrichment 를 유지 (테이블 깜빡임 방지)
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       if (!orderIds.length) return [];
       const details = await Promise.all(
@@ -112,6 +117,12 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
   const allVariantIds = new Set<string>();
   detailQueries.data?.forEach((detail) => {
     detail?.lines?.forEach((item: any) => {
+      if (item?.variantId) allVariantIds.add(item.variantId);
+    });
+  });
+  // 개별 상세조회 실패(reject) 시 목록 응답의 lines 로 폴백하므로 그 variantId 도 포함
+  listQuery.data?.data?.forEach((li: any) => {
+    li?.lines?.forEach((item: any) => {
       if (item?.variantId) allVariantIds.add(item.variantId);
     });
   });
@@ -204,7 +215,10 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
             undefined)
           : undefined;
 
-      const lines: any[] = detail?.lines ?? [];
+      // 상세조회 실패/미도착 시 목록 응답의 lines 로 폴백한다.
+      // (목록 엔드포인트가 이미 lines[productName/quantity/금액]을 반환함 → "상품 정보 없음" 방지)
+      const lines: any[] =
+        detail?.lines?.length ? detail.lines : (listItem.lines ?? []);
 
       // 주문의 모든 라인이 stock_deducted인지 확인
       const isOrderFullyAllocated =
@@ -294,7 +308,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           address,
           personalCustomsCode,
           totalAmount: detail?.totalAmount ?? listItem.totalAmount,
-          shippingFee: detail?.shippingFee ?? 0,
+          shippingFee: detail?.shippingFee ?? listItem.shippingFee ?? 0,
           orderStatus: listItem.status,
           memo: detail?.memo,
           workLogs: detail?.workLogs ?? [],
@@ -305,7 +319,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           quantity: Number(line.quantity ?? 1),
           unitPrice: line.unitPrice ?? undefined,
           totalPrice: line.totalPrice ?? undefined,
-          imageUrl: line.imageUrl,
+          // 주문 라인에는 이미지가 없어 PIM Variant(마스터 썸네일)에서 가져온다. (products-list 와 동일 소스)
+          imageUrl: line.imageUrl ?? variant?.thumbnail ?? undefined,
           skuId: line.skuId,
 
           isMatched,
@@ -387,6 +402,12 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
 
   return {
     data: transformedData,
+    // 필터 결과 전체 주문 수 / 상품 라인 수 / 페이지 수 (전 페이지 기준, 서버 집계)
+    total: (listQuery.data as any)?.total ?? 0,
+    lineTotal: (listQuery.data as any)?.lineTotal ?? 0,
+    pageCount: (listQuery.data as any)?.totalPages ?? 0,
+    // 최초 목록 로딩만 스켈레톤 대상 (페이지 재조회는 이전 데이터 유지하므로 제외)
+    isInitialLoading: listQuery.isLoading,
     isLoading:
       listQuery.isLoading ||
       detailQueries.isLoading ||
