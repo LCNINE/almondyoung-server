@@ -30,4 +30,22 @@ describe('assertLocalDevCoreUrl', () => {
   it('URL 이 아니면 거부한다', () => {
     expect(() => assertLocalDevCoreUrl('not-a-url')).toThrow();
   });
+
+  it('?host= 로 실제 접속 호스트를 덮어쓰려는 URL 을 거부한다', () => {
+    expect(() =>
+      assertLocalDevCoreUrl('postgresql://postgres:postgres@localhost:5432/dev_core?host=some-remote.rds.amazonaws.com'),
+    ).toThrow(/쿼리 문자열/);
+  });
+
+  it('host= 가 아니어도 쿼리 문자열이 있으면 거부한다', () => {
+    expect(() =>
+      assertLocalDevCoreUrl('postgresql://postgres:postgres@localhost:5432/dev_core?sslmode=disable'),
+    ).toThrow(/쿼리 문자열/);
+  });
+
+  it('대문자 호스트도 소문자로 정규화하여 통과시킨다', () => {
+    const result = assertLocalDevCoreUrl('postgresql://postgres:postgres@LOCALHOST:5432/dev_core');
+    expect(result.dbName).toBe('dev_core');
+    expect(result.url.hostname).toBe('LOCALHOST');
+  });
 });
