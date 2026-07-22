@@ -685,6 +685,7 @@
     },
     "depositAccount": {
       "title": "入金口座のご案内",
+      "confirmDelay": "入金確認は自動で行われ、最大10分ほどかかる場合があります。",
       "bank": "銀行",
       "accountNumber": "口座番号",
       "copy": "コピー",
@@ -1008,6 +1009,7 @@
     "welcomeStrong": "アモンドヤン メンバーシップ",
     "welcomeLineSuffix": " が",
     "welcomeLine3": "開始されました。",
+    "depositConfirmNotice": "入金確認は自動で行われ、最大10分ほどかかる場合があります。確認され次第、メンバーシップ特典が始まります。",
     "recommendLinksTitle": "メンバーシップ おすすめリンク",
     "welcomeDeal": "100ウォン ウェルカムディール",
     "exclusiveProducts": "メンバーシップ特典商品を見る",
@@ -1024,6 +1026,7 @@
   },
   "membershipPaymentMethod": {
     "pageTitle": "決済方法管理",
+    "bankTransferDelay": "銀行振込でお支払いの場合、入金確認まで最大10分ほどかかる場合があります。確認され次第、メンバーシップが開始します。",
     "backAria": "戻る",
     "currentCardTitle": "現在の定期決済方法",
     "registeredCard": "登録済み決済方法",

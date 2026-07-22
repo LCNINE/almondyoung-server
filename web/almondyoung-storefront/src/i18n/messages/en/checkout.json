@@ -5,6 +5,7 @@
   "paymentNotice": {
     "title": "Please check before paying",
     "bankTransfer": "To pay by bank transfer, press the [Pay] button at the bottom of the screen. On the next screen you can choose a payment method — select “Bank Transfer” there.",
+    "bankTransferDelay": "For bank transfers, automatic confirmation can take up to about 10 minutes after you deposit. Your order ships once confirmed.",
     "points": "Any points you've earned can be used right on that next screen too."
   },
   "header": {
@@ -266,6 +267,7 @@
     "noticeTitle": "Payment notice",
     "oneTimeHeader": "📌 One-time payment (no auto-billing)",
     "oneTimeNoAutoPay": "This is a one-time payment with no auto-billing.",
+    "bankTransferDelay": "If you choose bank transfer, deposit confirmation can take up to about 10 minutes.",
     "immediateNoRefundPrefix": "Service starts immediately upon payment, and ",
     "immediateNoRefundEmphasis": "refunds are not allowed after use begins",
     "immediateNoRefundSuffix": ".",

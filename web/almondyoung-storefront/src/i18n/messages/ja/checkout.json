@@ -5,6 +5,7 @@
   "paymentNotice": {
     "title": "お支払い前にご確認ください",
     "bankTransfer": "銀行振込でお支払いの場合は、画面下の[決済する]ボタンを押してください。次の画面で支払い方法を選べるので、そこで「銀行振込」をお選びください。",
+    "bankTransferDelay": "銀行振込は、ご入金後の自動確認まで最大10分ほどかかる場合があります。確認され次第、配送を開始します。",
     "points": "貯まったポイントも、[決済する]を押した次の画面ですぐにご利用いただけます。"
   },
   "header": {
@@ -266,6 +267,7 @@
     "noticeTitle": "決済のご案内",
     "oneTimeHeader": "📌 1回決済(自動決済なし)",
     "oneTimeNoAutoPay": "1回決済で、自動決済は行われません。",
+    "bankTransferDelay": "銀行振込を選択された場合、入金確認まで最大10分ほどかかる場合があります。",
     "immediateNoRefundPrefix": "決済直後に利用が開始され、",
     "immediateNoRefundEmphasis": "利用開始後の返金は不可",
     "immediateNoRefundSuffix": "です。",

@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { PartyPopper } from "lucide-react"
+import { Clock, PartyPopper } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CartRefresher } from "./cart-refresher"
@@ -45,6 +45,12 @@ export default async function MembershipSuccessScreen() {
                 {t("welcomeLine3")}
               </h2>
             </section>
+
+            {/* 무통장입금 입금 확인 지연 안내 — 멤버십은 무통장입금만 지원 */}
+            <div className="mx-auto flex max-w-md items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-800">
+              <Clock className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
+              <p>{t("depositConfirmNotice")}</p>
+            </div>
           </div>
         </div>
 
