@@ -76,5 +76,6 @@ describe('InventoryLookupScreen', () => {
     await user.click(screen.getByRole('button', { name: '검색' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/서버/);
+    expect(screen.queryByText('결과가 없어요.')).toBeNull();
   });
 });

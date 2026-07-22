@@ -101,7 +101,7 @@ export function InventoryLookupScreen() {
         </p>
       )}
 
-      {query.trim().length > 0 && (
+      {!isError && query.trim().length > 0 && (
         <DataTable<SkuSearchItem>
           columns={columns}
           data={data?.items ?? []}
