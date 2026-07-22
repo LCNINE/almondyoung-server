@@ -158,6 +158,7 @@ export default function MembershipCheckoutTemplate({
                 <p className="font-medium text-gray-800">{t("oneTimeHeader")}</p>
                 <ul className="ml-4 list-disc space-y-1 text-gray-600">
                   <li>{t("oneTimeNoAutoPay")}</li>
+                  <li>{t("bankTransferDelay")}</li>
                   <li>
                     {t("immediateNoRefundPrefix")}
                     <span className="font-medium text-gray-800">
