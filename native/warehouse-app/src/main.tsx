@@ -4,6 +4,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import './index.css';
 import { queryClient } from './core/data/queryClient';
+import { ApiClientProvider } from './core/data/ApiClientProvider';
 import { ScanProvider } from './core/hardware/scan/ScanProvider';
 import { SessionProvider } from './app/session-context';
 import { Bootstrap } from './app/Bootstrap';
@@ -35,11 +36,13 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <SessionProvider session={session}>
-        <ScanProvider>
-          <Bootstrap session={session}>
-            <RouterProvider router={router} />
-          </Bootstrap>
-        </ScanProvider>
+        <ApiClientProvider>
+          <ScanProvider>
+            <Bootstrap session={session}>
+              <RouterProvider router={router} />
+            </Bootstrap>
+          </ScanProvider>
+        </ApiClientProvider>
       </SessionProvider>
     </QueryClientProvider>
   </StrictMode>

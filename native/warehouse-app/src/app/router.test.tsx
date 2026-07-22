@@ -61,14 +61,18 @@ describe('router guard integration', () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
     renderApp(session);
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
   });
 
   it('redirects to login when the session logs out', async () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
     renderApp(session);
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
     await act(async () => {
       setAuthed(false);
     });
@@ -92,9 +96,11 @@ describe('router guard integration', () => {
       </SessionProvider>
     );
 
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: /diagnostics/i }));
+    await user.click(screen.getByRole('link', { name: /진단/ }));
 
     expect(
       await screen.findByRole('heading', { name: /diagnostics/i })
@@ -105,6 +111,8 @@ describe('router guard integration', () => {
 
     await user.click(screen.getByRole('link', { name: /home/i }));
 
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
   });
 });
