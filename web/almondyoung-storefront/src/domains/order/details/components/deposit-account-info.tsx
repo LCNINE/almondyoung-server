@@ -24,6 +24,9 @@ export function DepositAccountInfo({
   return (
     <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm">
       <p className="font-semibold">{t("title")}</p>
+      <p className="rounded-md bg-amber-100 px-3 py-2 text-xs font-medium text-amber-800">
+        {t("confirmDelay")}
+      </p>
       <dl className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <dt className="text-muted-foreground">{t("bank")}</dt>

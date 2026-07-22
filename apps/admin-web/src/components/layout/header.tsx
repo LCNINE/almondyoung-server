@@ -112,8 +112,10 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
   const handleLogout = async () => {
     try {
       await signout(undefined, {
-        onSuccess: () => {
-          window.location.href = '/login';
+        onSuccess: (data: { redirectUrl?: string } | undefined) => {
+          // IdP(auth-web) 세션까지 종료하려면 서버가 돌려준 end_session URL 로 이동해야 한다.
+          // 여기서 /login 으로 바로 가면 auth-web 세션이 남아 자동 재로그인된다.
+          window.location.href = data?.redirectUrl ?? '/login';
         },
         onError: (error) => {
           console.error('Logout failed:', error);

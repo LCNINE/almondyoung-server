@@ -5,6 +5,7 @@
   "paymentNotice": {
     "title": "결제 전 꼭 확인해주세요",
     "bankTransfer": "무통장입금(계좌이체)으로 결제하시려면, 화면 맨 아래 [결제하기] 버튼을 누르세요. 그다음 화면에서 결제 수단을 고를 수 있고, 거기서 ‘무통장입금’을 선택하시면 됩니다.",
+    "bankTransferDelay": "무통장입금은 입금 후 자동 확인까지 최대 10분 정도 소요될 수 있어요. 확인되면 배송이 진행됩니다.",
     "points": "그동안 쌓인 적립금도 [결제하기] 다음 화면에서 바로 사용할 수 있어요."
   },
   "header": {
@@ -266,6 +267,7 @@
     "noticeTitle": "결제 안내",
     "oneTimeHeader": "📌 1회 결제 (자동결제 없음)",
     "oneTimeNoAutoPay": "1회 결제로, 자동결제는 진행되지 않습니다.",
+    "bankTransferDelay": "무통장입금 선택 시 입금 확인까지 최대 10분 정도 소요될 수 있습니다.",
     "immediateNoRefundPrefix": "결제 즉시 이용이 시작되며, ",
     "immediateNoRefundEmphasis": "이용 시작 후 환불은 불가",
     "immediateNoRefundSuffix": "합니다.",

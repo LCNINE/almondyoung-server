@@ -190,9 +190,15 @@ export async function verifyIdToken(
 /**
  * RP-Initiated Logout URL 생성. id_token_hint 가 있어야 IdP 가 어떤 세션을 종료할지 식별.
  * post_logout_redirect_uri 는 client 등록 시의 화이트리스트와 정확히 일치해야 한다.
+ *
+ * end_session 은 반드시 auth-web origin 으로 보낸다 (authorize 와 동일 origin). auth-web 이
+ * 자기 host-only 세션 쿠키를 지우고, 그 access token 을 Bearer 로 실어 user-service 로 revoke 를
+ * 위임하기 때문. user-service origin(issuerUrl) 으로 직접 navigate 하면 cross-domain 이라 auth-web
+ * 세션 쿠키가 안 지워져 자동 재로그인된다.
  */
 export function buildEndSessionUrl(idToken: string | null): string {
-  const url = new URL(`${oidcEnv.issuerUrl}/oauth/end_session`);
+  const authWebOrigin = new URL(oidcEnv.authorizationUrl).origin;
+  const url = new URL(`${authWebOrigin}/oauth/end_session`);
   url.searchParams.set("client_id", oidcEnv.clientId);
   url.searchParams.set("post_logout_redirect_uri", oidcEnv.postLogoutRedirectUri);
   if (idToken) url.searchParams.set("id_token_hint", idToken);

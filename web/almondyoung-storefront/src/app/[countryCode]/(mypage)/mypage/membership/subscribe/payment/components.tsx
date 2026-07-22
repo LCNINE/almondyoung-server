@@ -37,7 +37,7 @@ import type {
   BillingMethodDto,
   CmsBillingMethodStatusDto,
 } from "@lib/types/dto/wallet"
-import { Calendar, Check, CreditCard, Gift } from "lucide-react"
+import { Calendar, Check, Clock, CreditCard, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import React, { useEffect, useMemo, useState, useTransition } from "react"
 import { useTranslations } from "next-intl"
@@ -697,6 +697,14 @@ export function MembershipForm({
               <p className="-mt-2 text-right text-xs text-gray-400">
                 할인 종료 후 {firstPrice.toLocaleString()}원
               </p>
+            )}
+
+            {/* 무통장입금(1회 결제) 입금 확인 지연 안내 — 접이식 밖에 항상 노출 */}
+            {billingMode === "one_time" && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <Clock className="mt-0.5 size-4 shrink-0" />
+                <p>{tPm("bankTransferDelay")}</p>
+              </div>
             )}
 
             {/* 결제/환불 안내 (접이식) */}
