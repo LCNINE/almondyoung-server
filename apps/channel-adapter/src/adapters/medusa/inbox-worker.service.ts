@@ -501,13 +501,19 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           // salesChannel='medusa' 매핑을 함께 확인한 경우에만 Medusa를 호출한다.
           const cancelPayload: { orderId: string; channelOrderId?: string } = event.payload;
 
+          // wmsOrderId 는 채널어댑터가 주문 수집 때 만든 id 라 Core 가 저장한 salesOrder.id 와 다르다.
+          // Core 는 취소 이벤트에 channelOrderId 를 실어 보내므로 그걸 우선 키로 쓴다.
           const [mapping] = await this.dbService.db
             .select({
               salesChannel: wmsOrderMappings.salesChannel,
               channelOrderId: wmsOrderMappings.channelOrderId,
             })
             .from(wmsOrderMappings)
-            .where(eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId))
+            .where(
+              cancelPayload.channelOrderId
+                ? eq(wmsOrderMappings.channelOrderId, cancelPayload.channelOrderId)
+                : eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
+            )
             .limit(1);
 
           if (!mapping) {
