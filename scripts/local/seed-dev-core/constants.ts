@@ -25,11 +25,16 @@ export const SEED_IDS = {
 } as const;
 
 /** 부천 일반 랙/빈 6개 — 이동·실사 대상. code 가 곧 라벨이다. */
-export const SEED_RACK_LOCATIONS = Array.from({ length: 6 }, (_, index) => ({
-  id: `019d0005-000${index + 1}-7000-a000-00000000000${index + 1}`,
-  code: `A-01-${String(index + 1).padStart(2, '0')}`,
-  displayName: `A열 1단 ${index + 1}번`,
-}));
+export const SEED_RACK_LOCATIONS = Array.from({ length: 6 }, (_, index) => {
+  // SEED_SKUS 와 동일한 이유로 padStart 를 쓴다 — 리터럴 템플릿(`000${n}` / `00000000000${n}`)은
+  // 배열이 6개일 때만 우연히 유효한 UUID(8-4-4-4-12)가 되고, 9개를 넘기면 자릿수가 밀려 깨진다.
+  const seq = String(index + 1).padStart(4, '0');
+  return {
+    id: `019d0005-${seq}-7000-a000-00000000${seq}`,
+    code: `A-01-${String(index + 1).padStart(2, '0')}`,
+    displayName: `A열 1단 ${index + 1}번`,
+  };
+});
 
 /**
  * SKU 20건. 재고 배치는 stock.ts 가 index 로 결정한다:
