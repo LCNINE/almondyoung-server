@@ -9,6 +9,7 @@ import { LoginRoute } from './routes/LoginRoute';
 import { AuthedLayout } from './routes/AuthedLayout';
 import { ProfileHome } from './routes/ProfileHome';
 import { DiagnosticsRoute } from './routes/DiagnosticsRoute';
+import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 
 export interface RouterContext {
@@ -46,11 +47,10 @@ const diagnosticsRoute = createRoute({
 });
 
 // --- 조회 (공통) ---
-// /inventory 는 Task 3 에서 실제 화면(InventoryLookupRoute)으로 교체된다.
 const inventoryRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory',
-  component: () => <PlaceholderScreen title="재고조회" note="곧 연결됩니다." />,
+  component: InventoryLookupRoute,
 });
 const inventoryDetailRoute = createRoute({
   getParentRoute: () => authedRoute,
