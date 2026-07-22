@@ -500,6 +500,13 @@ export class PimMedusaSyncService {
 
   async handleProductSellableQuantityChanged(payload: ProductSellableQuantityChangedPayload): Promise<void> {
     if (!payload.masterId) {
+      if (payload.reason === 'NOT_ACTIVE_VERSION') {
+        this.logger.debug(
+          `Skipping ProductSellableQuantityChanged for inactive variant ${payload.variantId}; no active master exists`,
+        );
+        return;
+      }
+
       throw new Error(
         `ProductSellableQuantityChanged missing masterId for variant ${payload.variantId}; cannot resolve Medusa product`,
       );

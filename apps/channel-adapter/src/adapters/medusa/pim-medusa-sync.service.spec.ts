@@ -30,11 +30,7 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new PimMedusaSyncService(
-      medusaClient as any,
-      mappingRepo as any,
-      storefrontRevalidate as any,
-    );
+    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any, storefrontRevalidate as any);
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
   }
@@ -81,7 +77,24 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     expect(medusaClient.applyProductSellableQuantityProjection).not.toHaveBeenCalled();
   });
 
-  it('throws when the event lacks masterId because channel-adapter must not guess product identity', async () => {
+  it('skips an inactive-version event without masterId because no Medusa product can exist for it', async () => {
+    const { service, medusaClient, mappingRepo } = createService();
+
+    await expect(
+      service.handleProductSellableQuantityChanged({
+        ...payload,
+        masterId: null,
+        versionId: null,
+        reason: 'NOT_ACTIVE_VERSION',
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(mappingRepo.findByPimMasterId).not.toHaveBeenCalled();
+    expect(medusaClient.findProductByHandle).not.toHaveBeenCalled();
+    expect(medusaClient.applyProductSellableQuantityProjection).not.toHaveBeenCalled();
+  });
+
+  it('throws when another event lacks masterId because channel-adapter must not guess product identity', async () => {
     const { service, medusaClient } = createService();
 
     await expect(
@@ -106,11 +119,7 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new PimMedusaSyncService(
-      medusaClient as any,
-      mappingRepo as any,
-      storefrontRevalidate as any,
-    );
+    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any, storefrontRevalidate as any);
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
   }
@@ -174,11 +183,7 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     };
     const mappingRepo = { findByPimMasterId: jest.fn(), update: jest.fn() };
     const storefrontRevalidate = { revalidateProduct: jest.fn() };
-    const service = new PimMedusaSyncService(
-      medusaClient as any,
-      mappingRepo as any,
-      storefrontRevalidate as any,
-    );
+    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any, storefrontRevalidate as any);
     return { service, medusaClient, calls };
   }
 
