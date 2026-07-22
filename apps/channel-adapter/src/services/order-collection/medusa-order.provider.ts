@@ -149,6 +149,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),
       externalOrderId: order.id,
+      ...(order.display_id != null ? { displayOrderNo: String(order.display_id) } : {}),
       salesChannel: 'medusa',
       customerId,
       ...(order.email ? { email: order.email } : {}),

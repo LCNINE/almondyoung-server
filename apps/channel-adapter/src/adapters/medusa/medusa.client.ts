@@ -72,7 +72,9 @@ function mergeCoreShippingStatus(
 
 export interface MedusaOrder {
   id: string;
-  status?: 'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
+  /** 고객에게 노출되는 순번형 주문번호 (#2332) */
+  display_id?: number;
+  status?:'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
   payment_status?:
     | 'not_paid'
     | 'awaiting'
@@ -179,6 +181,7 @@ function isCollectableOrder(order: MedusaOrder): boolean {
 
 const ORDER_FIELDS = [
   'id',
+  'display_id',
   'status',
   'payment_status',
   'email',

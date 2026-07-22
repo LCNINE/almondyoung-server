@@ -714,4 +714,43 @@ describe('MedusaOrderProvider', () => {
       email: 'buyer@example.com',
     });
   });
+
+  it('carries the Medusa display_id as displayOrderNo (알림에 #2332 로 표기)', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_display_1',
+          display_id: 2332,
+          payment_status: 'authorized',
+          currency_code: 'KRW',
+          total: 1000,
+          subtotal: 1000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-05-26T01:00:00.000Z',
+          updated_at: '2026-05-26T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_1',
+              title: 'Product',
+              quantity: 1,
+              unit_price: 1000,
+              variant_id: 'variant_1',
+              variant: {
+                metadata: { pimVariantId: 'pim_variant_1' },
+                product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+              },
+            },
+          ],
+          shipping_address: { first_name: 'Jane', last_name: 'Kim' },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(ORDER_STREAM.events.OrderCreated.schema!.parse(result.orders[0].createPayload)).toMatchObject({
+      displayOrderNo: '2332',
+    });
+  });
 });

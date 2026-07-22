@@ -139,8 +139,17 @@ export function OrderStatusBadges({
     return badge ? <StatusBadge {...badge} /> : null
   }
 
+  const awaitingDepositBadge: BadgeProps | null =
+    actions.orderStatus === "pending" &&
+    actions.paymentStatus === "awaiting_payment"
+      ? { label: "입금 대기", color: "bg-amber-100 text-amber-700" }
+      : null
+
   // 환불 신청 대기중이면 '결제 완료' 대신 '환불 신청' 뱃지
-  const orderBadge = refundRequestBadge ?? ORDER_STATUS_MAP[actions.orderStatus]
+  const orderBadge =
+    refundRequestBadge ??
+    awaitingDepositBadge ??
+    ORDER_STATUS_MAP[actions.orderStatus]
   const fulfillBadge = FULFILLMENT_STATUS_MAP[actions.fulfillmentStatus]
   const refundBadge = REFUND_STATUS_MAP[actions.refundStatus]
 

@@ -58,6 +58,8 @@ export type OrderStatus = 'pending' | 'confirmed' | 'processing' | 'shipped' | '
 export interface OrderCreatedPayload {
   orderId: string;
   externalOrderId?: string;
+  /** 고객에게 보여주는 주문번호. Medusa display_id ("2332") 등. 알림/CS 표기용. */
+  displayOrderNo?: string;
   salesChannel: SalesChannel;
   /**
    * 내부 user-service 사용자 UUID. 로그인 채널(medusa)은 Medusa customer.metadata.almond_user_id 에서 해석.
@@ -222,6 +224,7 @@ const ShippingAddressSchema = z.object({
 const OrderCreatedSchema = z.object({
   orderId: z.string().min(1),
   externalOrderId: z.string().optional(),
+  displayOrderNo: z.string().optional(),
   salesChannel: SalesChannelSchema,
   customerId: z.string().min(1).nullable(),
   email: z.string().email().optional(),
