@@ -13,9 +13,12 @@
  *
  * ENV: CORE_DB_URL, MEDUSA_API_URL, MEDUSA_API_KEY
  *
- * 한계(ponytail): 현재 입고예정이 살아있는 variant 만 set 한다. 입고완료/취소로 예정이
- *   사라진 variant 의 stale inboundDate 는 지우지 않는다 — 필요해지면 --clear-stale 로 확장.
- *   storefront 캐시는 즉시 무효화하지 않으므로(TTL 후 반영), 급하면 해당 handle 을 revalidate.
+ * 입고완료/취소로 예정이 사라진 variant 의 stale inboundDate 는 **지운다**(기본 동작).
+ * 안 지우면 그 상품이 다시 품절되는 순간 지난 날짜가 "재입고 예정"으로 노출된다
+ * (2026-07-22 LED UV 블랙 아이패치에 7/14 날짜가 이렇게 떴다).
+ *
+ * 한계(ponytail): storefront 캐시는 즉시 무효화하지 않으므로(TTL 후 반영),
+ *   급하면 해당 handle 을 revalidate.
  */
 import * as postgresNs from 'postgres';
 import Medusa from '@medusajs/js-sdk';
@@ -62,65 +65,72 @@ async function main() {
     console.log(`📦 입고예정 variant ${rows.length}건 (master ${masterCount}개)`);
     if (rows.length === 0) return;
 
-    // masterId(=Medusa handle) 별 그룹핑
-    const byMaster = new Map<string, RestockRow[]>();
-    for (const row of rows) {
-      const arr = byMaster.get(row.master_id) ?? [];
-      arr.push(row);
-      byMaster.set(row.master_id, arr);
-    }
+    // pimVariantId → 입고예정. 전 상품을 한 번 훑으며 이 맵과 대조한다.
+    // handle 별 조회(=입고예정 있는 상품만 방문)로는 **예정이 사라진 상품을 영영 못 만난다** —
+    // 그 stale inboundDate 가 다음 품절 때 지난 날짜로 다시 노출된다. 그래서 전수 순회다.
+    const wantByPim = new Map(rows.map((r) => [r.variant_id, r]));
 
     let updatedVariants = 0;
-    let productsHit = 0;
-    let missingProducts = 0;
-    let missingVariants = 0;
+    let clearedVariants = 0;
+    let scannedProducts = 0;
+    const matchedPimIds = new Set<string>();
 
-    for (const [masterId, group] of byMaster) {
+    const PAGE = 100;
+    for (let offset = 0; ; offset += PAGE) {
       const { products } = await sdk.admin.product.list({
-        handle: masterId,
-        fields: 'id,variants.id,variants.metadata',
-        limit: 1,
+        fields: 'id,handle,variants.id,variants.metadata',
+        limit: PAGE,
+        offset,
       });
-      const product = products?.[0];
-      if (!product) {
-        missingProducts++;
-        console.log(`  ⚠️ Medusa product 없음: handle=${masterId}`);
-        continue;
-      }
-      productsHit++;
+      if (!products?.length) break;
+      scannedProducts += products.length;
 
-      const wantByVariant = new Map(group.map((r) => [r.variant_id, r]));
-      const updates: Array<{ id: string; metadata: Record<string, unknown> }> = [];
-      const matchedPimIds = new Set<string>();
+      for (const product of products) {
+        const updates: Array<{ id: string; metadata: Record<string, unknown> }> = [];
 
-      for (const variant of product.variants ?? []) {
-        const prev = ((variant.metadata ?? {}) as Record<string, unknown>) || {};
-        const pimVariantId = typeof prev.pimVariantId === 'string' ? prev.pimVariantId : null;
-        const want = pimVariantId ? wantByVariant.get(pimVariantId) : undefined;
-        if (!want || !pimVariantId) continue;
-        matchedPimIds.add(pimVariantId);
+        for (const variant of product.variants ?? []) {
+          const prev = ((variant.metadata ?? {}) as Record<string, unknown>) || {};
+          const pimVariantId = typeof prev.pimVariantId === 'string' ? prev.pimVariantId : null;
+          const want = pimVariantId ? wantByPim.get(pimVariantId) : undefined;
+          const hadInbound = prev.inboundDate != null || prev.inboundApproximate != null;
 
-        const inboundDate = new Date(want.expected_date).toISOString();
-        const inboundApproximate = Boolean(want.approximate);
-        if ((prev.inboundDate ?? null) === inboundDate && Boolean(prev.inboundApproximate) === inboundApproximate) {
-          continue; // 이미 동일
+          if (!want) {
+            // 입고예정이 없어졌는데 값이 남아있으면 지운다. 안 지우면 다음 품절 때
+            // 지난 날짜가 "재입고 예정"으로 다시 뜬다 (storefront restock-notice).
+            if (!hadInbound) continue;
+            const next = { ...prev };
+            delete next.inboundDate;
+            delete next.inboundApproximate;
+            updates.push({ id: variant.id, metadata: next });
+            clearedVariants++;
+            continue;
+          }
+
+          matchedPimIds.add(pimVariantId!);
+          const inboundDate = new Date(want.expected_date).toISOString();
+          const inboundApproximate = Boolean(want.approximate);
+          if ((prev.inboundDate ?? null) === inboundDate && Boolean(prev.inboundApproximate) === inboundApproximate) {
+            continue; // 이미 동일
+          }
+          updates.push({ id: variant.id, metadata: { ...prev, inboundDate, inboundApproximate } });
+          updatedVariants++;
         }
-        updates.push({ id: variant.id, metadata: { ...prev, inboundDate, inboundApproximate } });
+
+        if (updates.length === 0) continue;
+        if (apply) {
+          await sdk.admin.product.batchVariants(product.id, { update: updates });
+        }
       }
 
-      // core 엔 입고예정이 있는데 Medusa variant 를 못 찾은 경우 카운트
-      missingVariants += group.length - matchedPimIds.size;
-
-      if (updates.length === 0) continue;
-      if (apply) {
-        await sdk.admin.product.batchVariants(product.id, { update: updates });
-      }
-      updatedVariants += updates.length;
+      if (products.length < PAGE) break;
     }
 
+    // core 엔 입고예정이 있는데 Medusa variant 를 못 찾은 경우
+    const missingVariants = rows.length - matchedPimIds.size;
+
     console.log(
-      `${apply ? '✅ APPLIED' : '🔍 DRY-RUN'} — variant ${updatedVariants}건 metadata 갱신 예정, ` +
-        `product ${productsHit}개 적중, product 미발견 ${missingProducts}개, variant 미매칭 ${missingVariants}건`,
+      `${apply ? '✅ APPLIED' : '🔍 DRY-RUN'} — variant ${updatedVariants}건 입고예정 갱신, ` +
+        `${clearedVariants}건 stale 제거, product ${scannedProducts}개 스캔, variant 미매칭 ${missingVariants}건`,
     );
     if (!apply) console.log('   --apply 로 실제 반영.');
   } finally {
