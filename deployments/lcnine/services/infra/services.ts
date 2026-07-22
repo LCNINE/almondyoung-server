@@ -224,14 +224,6 @@ export function setup(infra: SharedInfra) {
     COUPANG_SECRET_KEY: '1',
     COUPANG_VENDOR_ID: '1',
     SKIP_VARIANTS_WITHOUT_PRICE: 'true',
-    // ⚠️ 이 값을 올리면 느려진다. 직관과 반대라 실측을 남긴다 (2026-07-22, live).
-    //   동시성 1 / 10초 → 분당  6건, Medusa CPU 47~72%
-    //   동시성 3 /  3초 → 분당 20건, Medusa CPU 90~93%  ← 포화
-    //   동시성 2 /  3초 → 분당 40건, Medusa CPU 32%     ← 가장 빠르고 가장 안전
-    // 처리량 상한을 정하는 건 이 설정이 아니라 Medusa 의 1 vCPU 다. 동시 3 이면 요청들이
-    // 서로 CPU 를 뺏어 요청당 시간이 늘고 총량이 오히려 줄었다(혼잡 붕괴). Medusa 는
-    // valkey 사이드카 탓에 scaling max 1 이라 스케일아웃으로 못 푼다.
-    // 더 빠르게 하려면 여기가 아니라 Medusa 를 키우거나(valkey 분리 선행) 호출 수를 줄여야 한다.
     INBOX_MAX_CONCURRENT_HANDLERS: '2',
     INBOX_HANDLER_START_INTERVAL_MS: '3000',
     INBOX_PROCESSING_LEASE_MS: '900000',

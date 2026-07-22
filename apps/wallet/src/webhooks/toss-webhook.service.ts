@@ -118,6 +118,18 @@ export class TossWebhookService {
     const correlationId = `webhook:toss:${charge.intentId}:${Date.now()}`;
 
     if (tossStatus === 'DONE') {
+      if (charge.status === 'CANCELED') {
+        // 취소된 계좌에 입금이 들어왔다 = 돈은 받았는데 주문이 없는 상태. IGNORED_DUPLICATE 로
+        // 흘리면 아무도 모르게 묻히므로(실제 사고 발생) FAILED 로 남겨 추적 가능하게 한다.
+        this.logger.error(
+          `Deposit on canceled charge: chargeId=${chargeId} intentId=${charge.intentId} paymentKey=${paymentKey} amount=${totalAmount}`,
+        );
+        await this.repository.updateStatus(receiptId, 'FAILED', {
+          errorCode: 'DEPOSIT_ON_CANCELED_CHARGE',
+          errorMessage: `취소된 charge 에 입금 발생: paymentKey=${paymentKey} amount=${totalAmount}`,
+        });
+        return;
+      }
       if (charge.status !== 'REQUIRES_ACTION') {
         this.logger.log(`Charge already processed: chargeId=${chargeId} status=${charge.status}`);
         await this.repository.updateStatus(receiptId, 'IGNORED_DUPLICATE');

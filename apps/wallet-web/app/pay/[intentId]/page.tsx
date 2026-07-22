@@ -9,6 +9,7 @@ import {
   getBillingMethods,
   getAvailablePaymentMethods,
   getMyBusinessLicense,
+  getBankTransferDepositAccount,
 } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
@@ -127,6 +128,13 @@ export default async function PayPage({ params, searchParams }: Props) {
     );
   }
 
+  // 무통장 입금대기 상태로 재진입(새로고침/뒤로가기/링크 재방문)한 경우.
+  // 계좌 안내는 confirm 응답으로만 채워지는 클라이언트 state 라 재진입하면 사라지고,
+  // 결제 폼이 다시 떠서 고객이 "결제가 안 됐나" 하고 취소/재주문하는 사고가 났다.
+  // 발급된 계좌를 서버에서 다시 읽어 넘겨 같은 안내 화면을 그대로 복원한다.
+  const depositAccount =
+    intent.status === 'AWAITING_DEPOSIT' ? await getBankTransferDepositAccount(intentId, cookieHeader) : null;
+
   return (
     <PayForm
       intent={intent}
@@ -137,6 +145,7 @@ export default async function PayPage({ params, searchParams }: Props) {
       region={region ?? null}
       tossFailed={toss_fail === '1'}
       businessInfo={businessInfo}
+      depositAccount={depositAccount}
     />
   );
 }
