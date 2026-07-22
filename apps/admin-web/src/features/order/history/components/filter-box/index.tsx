@@ -47,7 +47,11 @@ export default function FilterBox() {
         }
         const to = dayjs().subtract(opt.toDays, 'day').format('YYYY-MM-DD');
         const from = dayjs().subtract(opt.fromDays, 'day').format('YYYY-MM-DD');
-        setLocal((prev) => ({ ...prev, quickDate: opt.key, dateFrom: from, dateTo: to }));
+        const next = { ...local, quickDate: opt.key, dateFrom: from, dateTo: to };
+        setLocal(next);
+        // 빠른 일자 선택은 즉시 조회 (검색 버튼 재클릭 불필요)
+        setFilter(next);
+        triggerSearch();
     };
 
     const onSearch = () => {
@@ -173,7 +177,7 @@ export default function FilterBox() {
                     <input
                         type="checkbox"
                         checked={local.refundIssueOnly}
-                        onChange={(e) => setLocal({ ...local, refundIssueOnly: e.target.checked, excludeTerminal: e.target.checked ? false : local.excludeTerminal })}
+                        onChange={(e) => setLocal({ ...local, refundIssueOnly: e.target.checked, excludeTerminal: e.target.checked ? false : local.excludeTerminal, type: e.target.checked ? 'all' : local.type })}
                         className="accent-orange-600"
                     />
                     환불 실패/수동처리만

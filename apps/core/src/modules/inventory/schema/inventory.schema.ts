@@ -1142,6 +1142,7 @@ export const salesOrders = pgTable(
   },
   (t) => ({
     uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
+    idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
   }),
 );
 
@@ -1183,6 +1184,7 @@ export const salesOrderLines = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    idxSalesOrderId: index('idx_sales_order_lines_sales_order_id').on(t.salesOrderId), // EXISTS/조인 주문별 라인 조회
     idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
     idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
     idxChannelOrderItem: index('idx_sales_order_lines_channel_order_item').on(t.channelOrderItemId),
