@@ -2,6 +2,9 @@
 /dist
 /node_modules
 /build
+
+# superpowers brainstorm scratch (visual companion mockups)
+.superpowers/
 !packages/hms-api-wrapper/dist/
 !packages/hms-api-wrapper/dist/**
 
