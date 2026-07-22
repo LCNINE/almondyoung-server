@@ -112,6 +112,41 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
 - macOS 는 첫 실행 시 방화벽 허용 프롬프트만 수락하면 됨. 리눅스는 `ufw allow <포트>`.
 - DB 도 직접 붙어야 하면 `postgresql://postgres:postgres@<노트북 IP>:5432/<논리DB>` (compose 가 5432 를 노출).
 
+## core 단독 개발 + `dev_core` 시드
+
+warehouse-app 등 클라이언트 개발용으로 core 만 로컬에 띄우고, 전용 논리 DB `dev_core` 를
+한 명령으로 밀고 다시 시딩한다. 통합테스트·`refresh-from-live.sh` 가 쓰는 `core` 와 분리돼 있어
+서로를 오염시키지 않는다. 설계 근거: `docs/superpowers/specs/2026-07-23-local-core-dev-environment-design.md`
+
+```bash
+docker compose up -d                 # postgres + kafka + zookeeper (kafka 없으면 core 가 안 뜬다)
+cp env-templates/.env.core.local.example apps/core/.env   # <사용자>/<임의값> 채우기
+npm run dev:core:reset               # drop → create → migrate → 스코프 → 시드
+npm run dev:core:reset -- --bulk     # SKU +300 · 로케이션 +50 (페이지네이션 체감용)
+npm run start:main:dev               # core :3100
+```
+
+- **Kafka 는 끌 수 없다.** `main.ts` 가 조건 없이 `startAllMicroservices()` 를 부르므로 브로커에
+  못 붙으면 부팅이 실패한다. compose 브로커로 **격리**하는 것이지 비활성화하는 게 아니다.
+  `KAFKA_API_KEY/SECRET` 를 넣지 않아 라이브 Confluent 접속은 애초에 불가능하다.
+- **`KAFKA_GROUP_ID` 는 안전장치가 아니다.** `apps/core/src/main.ts` 와 `sales-order.module.ts` 가
+  컨슈머 `groupId` 를 리터럴 `'almondyoung-order-consumer'` 로 하드코딩하고 있어 이 변수를 아예 읽지 않는다
+  (라이브 배포도 같은 변수를 세팅하지만 마찬가지로 무시된다). 로컬/라이브를 그룹 이름으로 격리한다는
+  발상은 성립하지 않는다 — 실질 방어선은 바로 위 `KAFKA_API_KEY/SECRET` 미설정 하나뿐이다.
+- **user-service 는 라이브를 쓴다.** core 가 `OIDC_ISSUER_URL` 로 JWKS 검증만 하므로 그대로 통과한다.
+  단 피킹·출고(fulfillment) 엔드포인트는 `logistics_worker`/`logistics_manager`/`master` 역할이 필요하다.
+  재고조회·실사·이동·입고(inventory 모듈)는 scope 게이트가 없어 로그인만 되면 동작한다.
+- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`
+  이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+- warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
+  `cd native/warehouse-app && npm run tauri:dev:live`.
+- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** `InventoryCommandService.receive()`
+  가 만드는 페이로드가 `packages/event-contracts/streams/inventory.stream.ts` 의 `StockReceivedSchema` 와
+  안 맞아(`stockEventId`/`inboundType`/`receivedAt` 누락, `afterQuantity`/`occurredAt` 존재) 발행이 매번 throw 한다.
+  이 브랜치와 무관한 **기존 결함**(`develop` 에도 있음)이고, `StockReceived` 소비자가 현재 0개라 기능은
+  안 깨지며 5회 재시도 후 `failed` 로 종료된다(무한 pending 아님). 로컬 셋업이 고장난 게 아니다 — 드레인
+  확인 시 이 26건은 제외하고 나머지가 쌓이지 않는지만 본다.
+
 ## 물류 통합 테스트 (jest, 로컬 DB)
 
 inventory/fulfillment 도메인의 통합 테스트(`*.integration.spec.ts`)는 서비스를 직접 와이어링해 실제 postgres 에 대고 도메인 불변식을 검증한다. HTTP·auth·Kafka 를 경유하지 않으므로 `.env` 도 불필요하다.
@@ -165,7 +200,8 @@ DB suite는 아래를 포함한다.
 - **알림톡 실발송**: dev 시크릿부터 `NhnSecretKey` 가 빈 값이라 로컬 `.env` 엔 더미(`local-dummy-no-send`)를 넣어 부팅만 되게 함. 실발송 테스트는 라이브에서만.
 
 - **reference/demo 시드** (`db:seed:ref`, `db:seed:demo`): `sst shell` 의 `Resource.Db` 에 의존해서 로컬 postgres 에 못 쓴다.
-  당장 필요하면 기존 DB 에서 `pg_dump --data-only` 로 가져올 것. 자주 필요해지면 `scripts/seeding/lib/db-connection.ts` 에 `DATABASE_URL` fallback 추가.
+  core 개발용 시드는 위 "core 단독 개발 + `dev_core` 시드" 로 대체됐다. 다른 서비스(wallet/membership 등)의
+  로컬 시드가 필요해지면 `scripts/seeding/lib/db-connection.ts` 에 `DATABASE_URL` fallback 을 추가한다.
 - **OpenSearch** (search / ugc 리뷰 정렬): compose 에 없음. search 앱을 로컬에서 돌려야 할 때 추가.
 - **S3, Twilio, 소셜 로그인 등 외부 서비스**: `.env` 의 기존 키를 그대로 쓰면 됨 (로컬화 대상 아님).
 
