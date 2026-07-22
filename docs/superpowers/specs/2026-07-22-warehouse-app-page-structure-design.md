@@ -90,6 +90,7 @@ RootLayout (앱 셸 · 세션 부트스트랩)
 ```
 
 - **신규 `core/data/ApiClientProvider`**: `createApiClient({ baseUrl: apiBaseUrl, getToken: <session 토큰 게터>, authMode })`를 생성해 컨텍스트로 노출(`useApiClient()`). `main.tsx`의 `QueryClientProvider` ⊃ `SessionProvider` 안쪽에 배치(토큰·baseUrl 접근). — `createApiClient` 팩토리·409 재시도·`authHeader`는 이미 구현됨. 배선만 신설.
+- **토큰 수용(§13.1) — 라이브 실측으로 확정(2026-07-22)**: `apiAuthMode` 기본은 **`bearer`**. 최초엔 'cookie'로 뒀으나 라이브에서 401 — 원인은 네이티브 `plugin-http`(Fetch 모방)가 `Cookie`를 **Fetch 금지 요청 헤더**로 스킵("Skipping cookie header … forbidden header per fetch spec")해 자격증명이 core에 도달하지 못한 것. core JWT strategy(`libs/authorization/.../jwt-access.strategy.ts`)는 `Authorization: Bearer`(첫 extractor)와 cookie 둘 다 받으므로 Bearer로 전환하면 통과. 즉 **네이티브 클라이언트는 cookie 모드 구조적 불가 → Bearer 고정**(커밋 d87a5e594).
 - **도메인 계층(신규 `domains/inventory/`)**: `useSkuSearch.ts`, `useSkuStockSummary.ts`, `types.ts`. 도메인은 프로필 무지·비즈니스 담당.
 - **에러 매핑**: `core/data/errorMessage(e)` 헬퍼 — 404/400/409(`ConflictError`)/500을 현장 친화 한글 메시지로. 화면은 이 메시지만 표시.
 - **타입**: 백엔드 OpenAPI 있으면 코드젠, 없으면 `types.ts` 손 선언(마스터 §6·§13-3). 이번은 손 선언으로 시작.
