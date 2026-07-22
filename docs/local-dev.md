@@ -24,8 +24,9 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    ```bash
    docker compose up -d
    ```
-   postgres 최초 기동 시 `scripts/local/init-db.sql` 이 논리 DB 10개
-   (core, medusa, wallet, analytics, channel_adapter, membership, notification, ugc, file_service, user_service)를 만든다.
+   postgres 최초 기동 시 `scripts/local/init-db.sql` 이 논리 DB 11개
+   (core, dev_core, medusa, wallet, analytics, channel_adapter, membership, notification, ugc, file_service, user_service)를 만든다.
+   `dev_core` 는 core 단독 로컬 개발용 DB — 아래 "core 단독 개발 + `dev_core` 시드" 절 참고.
 5. **로컬 포트 배치** — `.env` 들의 PORT 와 서비스 간 URL(`OIDC_ISSUER_URL`, `WALLET_BASE_URL` 등)은 아래 표 기준으로 맞춘다. (배포판 `.env` 묶음을 그대로 받았다면 이미 반영돼 있음.)
 
    | 앱 | 포트 | | 앱 | 포트 |
@@ -140,7 +141,15 @@ npm run start:main:dev               # core :3100
   이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
-- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** `InventoryCommandService.receive()`
+- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** 확인 대상은 `public.outbox_events`
+  (`apps/core/src/modules/inventory/schema/inventory.schema.ts` 의 inventory 전용 outbox)다 — 같은 이름의
+  `event.outbox_events`(`libs/events` 범용 outbox, `pgSchema('event')`)도 `dev_core` 안에 따로 존재하지만
+  core 의 쓰기는 거기 쌓이지 않는다. 잘못 짚으면 조용히 0건이 나와 "outbox 가 깨끗하다"는 착각을 준다.
+  ```sql
+  SELECT count(*) FROM public.outbox_events WHERE event_type = 'StockReceived';
+  -- → 26
+  ```
+  `InventoryCommandService.receive()`
   가 만드는 페이로드가 `packages/event-contracts/streams/inventory.stream.ts` 의 `StockReceivedSchema` 와
   안 맞아(`stockEventId`/`inboundType`/`receivedAt` 누락, `afterQuantity`/`occurredAt` 존재) 발행이 매번 throw 한다.
   이 브랜치와 무관한 **기존 결함**(`develop` 에도 있음)이고, `StockReceived` 소비자가 현재 0개라 기능은
