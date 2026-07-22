@@ -11,3 +11,9 @@ export const oidcConfig: OidcConfig = {
 };
 
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? '';
+
+// 백엔드 토큰 수용 방식(검증 §13.1). 오늘 백엔드는 쿠키를 읽으므로 기본 'cookie',
+// Bearer 수용이 확인되면 VITE_API_AUTH_MODE=bearer 로 전환.
+const rawAuthMode = import.meta.env.VITE_API_AUTH_MODE;
+export const apiAuthMode: 'bearer' | 'cookie' =
+  rawAuthMode === 'bearer' ? 'bearer' : 'cookie';
