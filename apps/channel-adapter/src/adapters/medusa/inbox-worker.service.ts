@@ -46,6 +46,12 @@ const INBOX_WORKER_EVENT_TYPES = [
   'CoreOrderCancelled',
 ] as const;
 
+/**
+ * 한 번의 배치 작업이 수만 건을 만들어내는 이벤트. 클레임 순서에서 뒤로 밀린다.
+ * 여기 넣을 기준: 지연돼도 "반영이 늦을 뿐" 인가? 고객이 즉시 체감하면 넣지 않는다.
+ */
+const BULK_EVENT_TYPES = ['ProductSellableQuantityChanged'] as const;
+
 type InboxWorkerEventType = (typeof INBOX_WORKER_EVENT_TYPES)[number];
 type InboxEventRecord = Omit<typeof inboxEvents.$inferSelect, 'payload' | 'metadata'> & {
   payload: any;
@@ -190,6 +196,14 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
       [...INBOX_WORKER_EVENT_TYPES].map((eventType) => sql`${eventType}`),
       sql`, `,
     );
+    // 대량 백필성 이벤트는 뒤로 보낸다. 재고 재계산 한 번이 수만 건을 쏟아내는데,
+    // 순수 FIFO 면 그 뒤에 들어온 멤버십·배송·주문취소가 큐 길이만큼 지연된다
+    // (2026-07-21: 17,604건 적체 → 분당 6건 처리라 멤버십 1건이 이틀 대기).
+    // 재고 이벤트는 늦어도 "반영이 늦을 뿐"이지만, 멤버십·배송은 고객이 즉시 체감한다.
+    const bulkEventTypesSql = sql.join(
+      BULK_EVENT_TYPES.map((eventType) => sql`event_type = ${eventType}`),
+      sql` OR `,
+    );
     const excludeInFlightSql =
       inFlightIds.length > 0
         ? sql`AND id NOT IN (${sql.join(
@@ -214,7 +228,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             OR (status = 'processing' AND next_attempt_at <= NOW())
           )
           ${excludeInFlightSql}
-        ORDER BY created_at ASC
+        ORDER BY ${bulkEventTypesSql}, created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
