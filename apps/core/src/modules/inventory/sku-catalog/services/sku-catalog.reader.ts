@@ -296,8 +296,13 @@ export class SkuCatalogReader {
           )
         : eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId);
 
+      // NOTE: selectDistinct 를 쓰지 않는다. groupBy(skus.id) 가 이미 stock_summary
+      // 조인으로 늘어난 행을 SKU 당 1행으로 접으므로 DISTINCT 는 불필요하고, DISTINCT 를
+      // 붙이면 뒤의 orderBy(skus.<정렬컬럼>) 가 select 목록(skuId)에 없어
+      // "for SELECT DISTINCT, ORDER BY expressions must appear in select list" 로 실패한다.
+      // groupBy(PK) 하에서는 함수 종속성으로 정렬 컬럼 참조가 유효하다.
       const skuIdQuery = trx
-        .selectDistinct({ skuId: wmsTables.skus.id })
+        .select({ skuId: wmsTables.skus.id })
         .from(wmsTables.skus)
         .leftJoin(wmsSchema.stockSummary, stockSummaryJoinCondition)
         .groupBy(wmsTables.skus.id);
