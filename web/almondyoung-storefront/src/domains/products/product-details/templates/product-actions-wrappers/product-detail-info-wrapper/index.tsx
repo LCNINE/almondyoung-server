@@ -42,6 +42,7 @@ export async function ProductDetailInfoWrapper({ pricedProduct }: Props) {
     <>
       <ProductDetailInfo
         productInfo={pricedProduct.metadata as ProductInfo}
+        description={pimDetail.description ?? undefined}
         descriptionHtml={pimDetail.descriptionHtml ?? undefined}
         detailImages={detailImageUrls}
         productName={pricedProduct.title}
