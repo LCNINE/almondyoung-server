@@ -35,7 +35,7 @@ export async function InterestProductsList({
       if (!cat) return null
 
       const products = await getBestProductsByCategory({
-        categoryId: cat.id,
+        handle: cat.handle,
         regionId: region?.id,
         limit: 10,
       })
