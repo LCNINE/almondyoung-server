@@ -242,8 +242,10 @@ npm run dev:core:reset -- --bulk  # 위 + 대량 데이터 추가
 | 재고 | SKU 별로 **재고 0 / 단일 로케이션 / 다중 로케이션 분산** 세 케이스를 모두 포함 | 실사 차이·이동 대상·품절 경로 |
 | 입고 | PO 2 + `inbound_plans` 3 (미도착 / 부분입고 / 완료) | Phase 2 |
 | 판매주문 | 10건 + product matching + variant→SKU link + FO | Phase 3 |
-| shipment | 예약완료(피킹 대기) / 피킹 중 / 피킹 완료(패킹 대기) / 출고완료 / 재고부족(short pick) 상태를 각각 최소 1건 | Phase 3, 4 |
+| shipment | `draft` 와 `planned`(예약완료 = 피킹 대기) 각각 최소 1건 | Phase 3 |
 | 운송장 | 미발행 (§3.2 로 한진 미설정) | Phase 4 |
+
+**shipment 는 `planned` 까지만 만든다.** 피킹 중 · 피킹 완료 · 출고완료 · short-pick 상태는 batch custody 세션 + 운송장 등록 + dispatch 와이어링이 있어야 도달할 수 있고(`outbound-v2-scenarios.integration.spec.ts` 의 `preparePackingAndDispatch` 가 그 무게를 보여준다), 그건 Phase 4 에서 붙일 표면이다. 더 근본적으로 **그 전이를 만드는 것이 앱 개발의 목적**이므로 시드가 미리 만들어 둘 이유가 약하다. 출고 이력 조회용 완료 건이 필요해지면 Phase 4 착수 시 별도로 추가한다.
 
 ### 7.6 `--bulk`
 
