@@ -48,6 +48,12 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 - **DB 접속**: host/secret 은 메모리 `lcnine-services live` 참조. 비번은 Secrets Manager `lcnine-services-live-DbProxySecret-bazfzmnx` 에서 런타임 조회 (파일에 박지 말 것).
 - **Medusa Admin**: `MEDUSA_API_URL=https://medusa.almondyoung-next.com`, `MEDUSA_API_KEY` = `cd deployments/lcnine/services && npx sst secret list --stage live | grep MedusaApiKey`
 - **CSV**: 셀메이트에서 컬럼 **상품코드(카페) / 바코드번호(서식) / 상품명 / 옵션명 / 입고예정일 / 입고예정수량** 포함해 다운로드.
+  - CSV 로 받으면 셀메이트가 코드·바코드를 `="P0000EXQ"` 로 감싸서 내보낸다(엑셀이 숫자로 바꾸는 걸 막는 장치).
+    `scripts/sellmate/parse.ts` 의 `unarmor()` 가 벗겨내므로 그대로 넣으면 된다. 2026-07-22 이전에는 이걸
+    안 벗겨서 `sku_barcodes` 절반과 `sku_groups` 2,319건에 `="..."` 가 그대로 저장됐고, 상품코드가 빈 행은
+    전부 `=""` 라는 **한 그룹**으로 뭉쳤다(서로 다른 상품 70개 SKU). 그 잔재는 아직 DB 에 남아 있다.
+  - 셀메이트가 **마이너스 재고**(`-1`)를 내보내는 행이 있다. `sync-stock` 은 0 으로 추정하지 않고 중단한다 —
+    셀메이트에서 실재고를 정정하는 게 원칙이고, 급하면 그 셀만 0 으로 고친 사본으로 돌린다.
 - **러너 사용 권장**: 아래 ①②③ 은 `CORE_DB_URL` 을 손으로 만드는 예시지만, 실제로는 러너가 RDS 엔드포인트·시크릿을 런타임 조회해 주입한다. 비번이 transcript 에 안 남는다.
   - `scripts/sellmate/run.sh <stage> <import-products|sync-stock|recalc-sellable|check> <경로>`
   - `scripts/sellmate/inbound-run.sh <stage> <import-inbound|match-sku|sync-restock> [args]`
@@ -239,7 +245,60 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 - 기본 dry-run. `--apply` 로 Medusa 반영.
 - variant 구성 sku 의 source plan 중 **가장 이른 expected_date** + 해외 발주면 `inboundApproximate=true`.
 - 멱등: 이미 같은 inboundDate 면 skip. Medusa 502(일시) 나면 재실행하면 이어서 채워짐.
-- ⚠️ 한계: 입고완료/취소로 예정이 사라진 variant 의 stale inboundDate 는 안 지움. storefront 캐시는 TTL 후 반영.
+- **stale 제거가 기본 동작이다** — 입고완료/취소로 예정이 사라진 variant 의 `inboundDate` 를 지운다.
+  그래서 handle 별 조회가 아니라 **전 상품을 페이지네이션으로 훑는다**(예정이 사라진 상품은 handle 로는 영영 안 만나므로).
+  안 지우면 그 상품이 **다시 품절되는 순간 지난 날짜가 "재입고 예정"으로 노출된다** — 2026-07-22 에
+  LED UV 블랙 아이패치가 7/14(과거) 날짜를 띄운 사고가 이것이었다. 스토어프론트도 `pickEarliestRestock` 에서
+  지난 날짜를 후보에서 빼도록 방어를 넣었지만, 데이터를 지우는 게 근본이다.
+- ⚠️ 한계: storefront 캐시는 즉시 무효화하지 않는다(TTL 후 반영). 급하면 해당 handle 을 revalidate.
+
+## 반영이 늦을 때 — inbox 처리량과 동시성 (2026-07-22 실측)
+
+A-3 이 이벤트를 발행해도 Medusa 에 실제로 반영하는 건 channel-adapter 의 `InboxWorkerService` 다.
+여기에 큐가 밀리면 "스크립트는 다 돌았는데 스토어프론트는 그대로"인 상태가 며칠 간다.
+
+**대기열 확인** (channel_adapter DB):
+
+```sql
+SELECT status, count(*), min(created_at) AS oldest
+FROM inbox_events WHERE event_type='ProductSellableQuantityChanged' GROUP BY status;
+
+-- 실제 처리 속도 (추정 말고 실측)
+SELECT count(*) FROM inbox_events WHERE published_at >= now() - interval '5 minutes';
+```
+
+### ⚠️ 동시성을 올리면 느려진다
+
+`INBOX_MAX_CONCURRENT_HANDLERS`(deployments/lcnine/services/infra/services.ts)를 올리고 싶어지는데,
+**직관과 반대다.** live 실측:
+
+| 설정 | 처리량 | Medusa CPU 평균 |
+|------|--------|-----------------|
+| 동시성 1 / 10초 | 분당 6건 | 47~72% |
+| 동시성 3 / 3초 | 분당 20건 | **90~93%** (포화) |
+| **동시성 2 / 3초** | **분당 40건** | **32%** |
+
+처리량 상한을 정하는 건 워커 설정이 아니라 **Medusa 의 1 vCPU** 다. 동시 3 이면 요청들이 서로 CPU 를
+뺏어 요청당 시간이 늘고 총량이 오히려 줄었다(혼잡 붕괴). Medusa 는 valkey 사이드카 탓에
+`scaling max 1` 이라 스케일아웃으로 못 푼다. 게다가 Medusa CPU 포화는 **결제 콜백 타임아웃** 전력이
+있는 구간이다 — 재고 반영이 늦는 건 참을 수 있어도 결제 실패는 고객이 즉시 체감한다.
+
+더 빠르게 하려면 동시성이 아니라 Medusa 를 키우거나(valkey 분리 선행) 호출 수를 줄여야 한다.
+
+### 이벤트가 수만 건 나오는 건 재고 동기화가 아니라 ② 매칭이다
+
+같은 날 실측 (전체 기간 CSV 5,921행으로 Ⓐ 실행):
+
+| 작업 | 결과 |
+|------|------|
+| **Ⓐ 일일 재고 동기화** (전체 기간 CSV) | 재고 조정 390건 → **이벤트 339건** (몇 분이면 소화) |
+| **② 대량 SKU 매칭** | 20,689건 matched → **이벤트 18,176건** (시간 단위) |
+
+A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 발행**한다(변동없음 20,410건).
+그래서 15년치 전체 CSV 를 받아도 일일 이벤트는 수백 건이다 — 전체 기간으로 받는 편이 오히려 안전하다.
+
+**그러므로 ②(대량 매칭)·정책 일괄 변경은 새벽에 돌린다.** 주문이 없는 시간대면 Medusa CPU 를
+끝까지 써도 결제에 영향이 없다. 낮에 돌리면 큐가 하루 이상 밀린 채로 영업시간을 지난다.
 
 ## 실행 순서 (전체 반영)
 
