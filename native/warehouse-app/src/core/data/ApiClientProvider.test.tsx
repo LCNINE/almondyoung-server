@@ -50,7 +50,9 @@ describe('ApiClientProvider', () => {
     // apiBaseUrl varies per box (this box has a gitignored .env.local for
     // live Phase 1a testing); assert relative to it rather than hardcoding.
     expect(url).toBe(`${apiBaseUrl}/ping`);
-    expect(init.headers).toMatchObject({ Cookie: 'accessToken=tok' });
+    // Default authMode is 'bearer': native plugin-http drops a manual Cookie
+    // header (Fetch forbidden header), so cookie mode can't deliver the token.
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
   });
 
   it('throws when useApiClient is used outside the provider', () => {
