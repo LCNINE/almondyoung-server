@@ -664,6 +664,8 @@ export class PimMedusaSyncService {
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
 
+      await this.storefrontRevalidate.revalidateCategory(medusaCategoryId);
+
       return {
         success: true,
         masterId: categoryId,
@@ -695,6 +697,7 @@ export class PimMedusaSyncService {
         this.medusaClient.invalidateCategoryCacheByHandle(existing.handle);
       }
       this.logger.log(`Marked Medusa category as inactive: ${existing.id} (handle=${existing.handle})`);
+      await this.storefrontRevalidate.revalidateCategory(existing.id);
     } catch (error) {
       this.logger.error(`Failed to delete category ${pimCategoryId} from Medusa`, error.stack);
       throw error;

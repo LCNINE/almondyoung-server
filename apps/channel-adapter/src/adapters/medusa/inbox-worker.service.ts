@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { channelDispatchOperations, inboxEvents, wmsOrderMappings } from '../../schema';
-import { eq, and, gt, inArray, sql } from 'drizzle-orm';
+import { eq, ne, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -298,25 +298,26 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
-      const eventOccurredAt = this.resolveInboxEventOccurredAt(event);
 
       // aggregateId 기준 더 최신 lifecycle 이벤트가 있으면 현재 이벤트 스킵.
       // Product master delete는 늦게 도착한 이전 active-version retry보다 우선해야 한다.
+      //
+      // 비교는 전부 DB 안에서 한다. 예전엔 현재 이벤트의 시각을 JS Date 로 뽑아 바인딩했는데,
+      // 컬럼이 `timestamp without time zone` 이라 postgres.js 가 naive 값을 **로컬 타임존**으로
+      // 파싱한다. UTC 가 아닌 머신(KST 등)에선 그 Date 가 실제보다 9시간 과거가 되어,
+      // 좌변(naive 를 UTC 로 해석)과 어긋나 **이벤트가 자기 자신보다 최신**으로 판정됐다.
+      // 그 결과 모든 이벤트가 즉시 superseded 로 스킵됐다. 같은 이유로 `ne(id, eventId)` 도 필수.
       const [newerEvent] = await this.dbService.db
         .select({ id: inboxEvents.id })
         .from(inboxEvents)
         .where(
           and(
             eq(inboxEvents.aggregateId, aggregateId),
+            ne(inboxEvents.id, eventId),
             inArray(inboxEvents.eventType, supersedingEventTypes),
-            // drizzle 의 gt(raw sql, value) 는 좌변이 raw `sql` fragment 일 때 컬럼 타입 코덱을
-            // 적용하지 못해, Date 객체를 직렬화하지 못한 채 드라이버로 넘겨 ERR_INVALID_ARG_TYPE
-            // ("The string argument ... Received an instance of Date") 로 쿼리가 실패한다.
-            // 우변을 ISO 문자열 + ::timestamptz 로 바인딩하고, 좌변(timestamp without tz)은
-            // UTC instant 로 맞춰 정확히 비교한다.
             gt(
-              sql`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt}) at time zone 'UTC'`,
-              sql`${eventOccurredAt.toISOString()}::timestamptz`,
+              sql`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt})`,
+              sql`(select coalesce(e.event_occurred_at, e.created_at) from inbox_events e where e.id = ${eventId})`,
             ),
             inArray(inboxEvents.status, supersedingStatuses),
           ),
@@ -583,24 +584,6 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     return ['pending', 'processing'];
-  }
-
-  private resolveInboxEventOccurredAt(event: any): Date {
-    const value =
-      event.eventOccurredAt ??
-      event.metadata?.eventOccurredAt ??
-      event.metadata?.occurredAt ??
-      event.metadata?.timestamp ??
-      event.payload?.changedAt ??
-      event.payload?.deletedAt ??
-      event.createdAt;
-    const date = value instanceof Date ? value : new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      throw new Error(`Invalid inbox event occurrence time: eventId=${event.id}, value=${value}`);
-    }
-
-    return date;
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
