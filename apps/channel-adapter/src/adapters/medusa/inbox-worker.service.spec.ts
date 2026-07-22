@@ -499,6 +499,56 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
   });
 
+  // 회귀: wmsOrderId 로 조회하면 Core 의 salesOrder.id 와 안 맞아 매핑이 항상 빈손이었고,
+  // Medusa 주문이 조용히 pending 으로 남았다. channelOrderId 를 키로 쓰는지 확인한다.
+  it('looks up the mapping by channelOrderId, not wmsOrderId', async () => {
+    const whereArgs: unknown[] = [];
+    const queryResults = [[], [{ salesChannel: 'medusa', channelOrderId: 'order_01ABC' }]];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn((condition: unknown) => {
+          whereArgs.push(condition);
+          return { limit: jest.fn(async () => queryResults.shift() ?? []) };
+        }),
+      })),
+    }));
+    const update = jest.fn(() => ({
+      set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+    }));
+    const medusaClient = { cancelOrder: jest.fn(async () => undefined) };
+    const service = new (InboxWorkerService as any)(
+      { db: { select, update } },
+      {},
+      {},
+      {},
+      medusaClient,
+      {},
+      {},
+      { get: jest.fn() },
+      { runWithChain: jest.fn() },
+    );
+
+    await service.doProcessInboxEvent({
+      id: 'inbox-cancel-by-channel-order-id',
+      eventType: 'CoreOrderCancelled',
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: {
+        orderId: '11111111-1111-4111-8111-111111111111',
+        channelOrderId: 'order_01ABC',
+      },
+      attempts: 1,
+      createdAt: new Date('2026-07-22T00:00:00.000Z'),
+      metadata: {},
+    });
+
+    expect(medusaClient.cancelOrder).toHaveBeenCalledWith('order_01ABC');
+    // mock 은 어떤 조건이든 매핑을 돌려주므로, eq() 가 실제로 어느 컬럼을 짚었는지까지 본다.
+    const mappingWhere = whereArgs[1] as { queryChunks?: Array<{ name?: string }> };
+    const columns = (mappingWhere.queryChunks ?? []).map((chunk) => chunk?.name).filter(Boolean);
+    expect(columns).toContain('channel_order_id');
+    expect(columns).not.toContain('wms_order_id');
+  });
+
   it('persists non-Medusa cancellation as a durable manual channel operation', async () => {
     const queryResults = [[], [{ salesChannel: 'naver', channelOrderId: '1000000001' }]];
     const select = jest.fn(() => ({
