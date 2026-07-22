@@ -29,6 +29,7 @@
     "db:bootstrap": "npx tsx scripts/seeding/bootstrap.ts",
     "db:migrate": "npx tsx scripts/seeding/migrate.ts",
     "db:migrate:local": "./scripts/local/migrate-all.sh",
+    "dev:core:reset": "ts-node -r tsconfig-paths/register --transpile-only scripts/local/seed-dev-core/index.ts",
     "test:core:integration:local": "./scripts/local/test-core-integration-local.sh",
     "start:all:local": "./scripts/local/start-all.sh",
     "db:seed:ref": "npx tsx scripts/seeding/seed-ref.ts",
