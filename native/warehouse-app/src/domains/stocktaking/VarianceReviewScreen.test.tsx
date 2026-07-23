@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -92,7 +92,17 @@ function renderScreen(
       return {};
     }) as unknown as ApiClient['request'],
   };
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return renderWithClient(client);
+}
+
+/**
+ * staleTime 을 프로덕션 queryClient(src/core/data/queryClient.ts, 10_000ms)와
+ * 맞춘다 — 캐시 신선도 게이트(FIX 1)를 검증하려면 테스트의 staleTime 이 0(기본값)
+ * 이면 안 된다. 0 이면 데이터가 도착하자마자 isStale 이 true 가 되어버려서
+ * "신선한 성공" 과 "무효화된 stale" 을 구별할 수 없다.
+ */
+function renderWithClient(client: ApiClient) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } });
   const rootRoute = createRootRoute({ component: Outlet });
   const index = createRoute({
     getParentRoute: () => rootRoute,
@@ -120,7 +130,7 @@ function renderScreen(
       </QueryClientProvider>
     </SessionProvider>
   );
-  return render(<RouterProvider router={router as never} />, { wrapper: wrap });
+  return { ...render(<RouterProvider router={router as never} />, { wrapper: wrap }), qc };
 }
 
 describe('VarianceReviewScreen', () => {
@@ -180,5 +190,46 @@ describe('VarianceReviewScreen', () => {
     expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '조정 미리보기' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /실사 완료/ })).not.toBeInTheDocument();
+  });
+
+  it('무효화된(stale) 차이 캐시는 재조회가 끝나기 전까지 완료를 열지 않는다', async () => {
+    // 카운팅 화면에서 뭔가를 새로 세면 mutations.ts 가 stocktaking-variances 를
+    // invalidate 한다(FIX 1의 절반). 이 테스트는 그 무효화 *이후* 화면의 반응만
+    // 검증한다 — invalidate 는 여기서 직접 흉내 낸다. 재조회 응답을 일부러 계속
+    // "차이 없음"으로 둬서, 응답의 rows.length 가 아니라 신선도(isStale/isFetching)
+    // 자체가 게이트를 여닫는지를 rows.length 와 분리해서 확인한다.
+    let varianceCalls = 0;
+    let resolveRefetch: ((v: unknown[]) => void) | undefined;
+    const client: ApiClient = {
+      request: (async (o: Call) => {
+        if (o.path === '/stocktaking/sessions/s-1') return detailWith('in_progress');
+        if (o.path === '/stocktaking/sessions/s-1/variances') {
+          varianceCalls += 1;
+          if (varianceCalls === 1) return [];
+          return new Promise<unknown[]>((resolve) => {
+            resolveRefetch = resolve;
+          });
+        }
+        return {};
+      }) as unknown as ApiClient['request'],
+    };
+    const { qc } = renderWithClient(client);
+
+    expect(await screen.findByText(/차이가 없어요/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+
+    // 다른 화면(SessionCountScreen)에서의 카운팅 뮤테이션이 캐시를 무효화했다고
+    // 가정한다 — 쿼리가 여전히 마운트돼 있으므로 즉시 재조회가 걸린다.
+    void qc.invalidateQueries({ queryKey: ['stocktaking-variances', 's-1'] });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeDisabled();
+    });
+
+    resolveRefetch?.([]);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    });
   });
 });

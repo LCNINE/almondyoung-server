@@ -93,10 +93,13 @@ describe('stocktaking mutations', () => {
       body: { sessionId: 's-1', locationBarcode: 'A-01-02' },
     });
     expect(invalidatedKeys(invalidate)).toContain('stocktaking-session');
+    // 로케이션 스캔도 그 위치의 라인을 upsert 하므로 차이 목록이 스테일해진다 —
+    // VarianceReviewScreen 의 미리보기 게이트가 이 무효화에 기대고 있다(FIX 1).
+    expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
   });
 
   it('상품을 스캔한다 (수량 동반)', async () => {
-    const { calls, wrapper } = setup();
+    const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useScanProduct(), { wrapper });
 
     await result.current.mutateAsync({
@@ -111,10 +114,13 @@ describe('stocktaking mutations', () => {
       method: 'POST',
       body: { sessionId: 's-1', locationId: 'l-1', productBarcode: '880', quantity: 3 },
     });
+    // 카운트가 바뀌었으니 캐시된 차이 목록은 더 이상 신뢰할 수 없다 — 무효화해야
+    // VarianceReviewScreen 이 재조회 전까지 완료 게이트를 열지 않는다(FIX 1).
+    expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
   });
 
   it('수량을 절대값으로 세팅한다', async () => {
-    const { calls, wrapper } = setup();
+    const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useUpdateCount(), { wrapper });
 
     await result.current.mutateAsync({ sessionId: 's-1', lineId: 'line-1', countedQuantity: 12 });
@@ -124,6 +130,7 @@ describe('stocktaking mutations', () => {
       method: 'PUT',
       body: { countedQuantity: 12 },
     });
+    expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
   });
 
   it('조정 미리보기는 dry-run 이라 무효화하지 않는다', async () => {
