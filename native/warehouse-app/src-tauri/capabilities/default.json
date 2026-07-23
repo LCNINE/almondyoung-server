@@ -15,7 +15,9 @@
       "identifier": "http:default",
       "allow": [
         { "url": "https://user.almondyoung.com/*" },
-        { "url": "https://core.almondyoung.com/*" }
+        { "url": "https://core.almondyoung.com/*" },
+        { "url": "http://localhost:3100/*" },
+        { "url": "http://127.0.0.1:3100/*" }
       ]
     }
   ]

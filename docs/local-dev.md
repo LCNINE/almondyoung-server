@@ -149,6 +149,11 @@ npm run start:main:dev               # core :3100
   돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
+  **core 의 포트나 호스트를 바꾸면 `native/warehouse-app/src-tauri/capabilities/default.json` 의
+  `http:default` → `allow` 목록도 같이 고쳐야 한다.** Tauri 의 `plugin-http` 는 deny-by-default 라
+  scope 에 없는 URL 은 요청이 앱 밖으로 나가기 전에 거부된다 — `.env` 만 고치면 화면엔 평범한
+  에러만 뜨고 콘솔에서야 `url not allowed on the configured scope` 를 보게 된다. capability 는
+  `build.rs` 가 컴파일 타임에 읽으므로 고친 뒤 `tauri dev` 재빌드가 필요하다(HMR 로는 반영 안 됨).
 - **`SEED_DEV_CORE_URL` 을 기본값(`localhost:5432/dev_core`)과 다르게 주면 확인 프롬프트가 뜬다.**
   `sst tunnel` 이 떠 있으면 guard 를 통과하는 `localhost` 가 실제로는 라이브 클러스터일 수 있어서다
   (guard.ts 는 호스트/DB이름만 보고, tunnel 여부는 못 본다). `yes` 를 입력해야 진행하며, 비대화식
