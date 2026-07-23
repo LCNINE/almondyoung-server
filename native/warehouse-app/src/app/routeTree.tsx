@@ -96,7 +96,7 @@ const stocktakingVariancesRoute = createRoute({
 const movementRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/movement',
-  component: () => <PlaceholderScreen title="이동" note="Phase 1에서 구현됩니다." />,
+  component: () => <PlaceholderScreen title="이동" note="후속 Phase에서 구현됩니다." />,
 });
 const inboundRoute = createRoute({
   getParentRoute: () => authedRoute,
