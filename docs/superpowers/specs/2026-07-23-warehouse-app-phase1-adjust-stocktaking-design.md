@@ -45,6 +45,7 @@ Phase 0(토대 + 하드웨어 스파이크) · Phase 1a(loopback OIDC 로그인)
 | 조정 | `POST /inventory/stocks/adjust` | `{skuId, warehouseId, locationId?, delta, reason}`. delta>0 → `adjustUp`, <0 → `adjustDown`, 0 → 400 |
 | SKU 상세 | `GET /inventory/skus/:id` | `SkuResponseDto` |
 | SKU 창고별 재고 | `GET /inventory/skus/:id/stock-summary` | `SkuStockSummaryDto` — **창고 단위**(위치 없음) |
+| SKU × 창고 재고 상세 | `GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId` | `{summary, details: [{locationId, stockState, quantity}]}` — **이미 위치 그레인**. 반환 DTO가 없는 무타입 응답이라 놓치기 쉽다. 현재 소비자 0개 |
 | 바코드 → SKU | `GET /inventory/skus?barcode=…` | `search/advanced`는 **name·code만** 검색하고 바코드를 안 본다 → 스캔 경로는 이쪽 |
 | 창고 목록 | `GET /inventory/warehouses` | `findAll`, 페이지네이션 없음 |
 | 로케이션 검색 | `GET /locations/warehouses/:warehouseId?search=…` | `LocationQueryDto.search` = "코드나 이름". 스캔한 로케이션 코드 → locationId 해석에 사용 |
@@ -64,7 +65,7 @@ Phase 0(토대 + 하드웨어 스파이크) · Phase 1a(loopback OIDC 로그인)
 
 1. **`GET /stocktaking/sessions/:id` 부재** — 세션 상세도, 라인 전체 목록도 없다. `variances`는 `variance != 0`만 반환. → 앱 재시작·교대 후 **실사 이어하기가 불가능**하고, `scan-product`가 증가 연산이라 **이중 카운트 위험**이 실재한다
 2. **`scan-location` 응답에 `lineId`가 없다** — `expectedItems[]`는 `{skuId, skuName, skuCode, barcode, expectedQuantity}`뿐. `PUT /lines/:id/count`(수동 수량 입력)를 쓰려면 먼저 `scan-product`로 1개 스캔해 lineId를 받아야 하는 우회가 필요
-3. **로케이션별 재고 조회 API가 없다** — `stock-summary`는 창고 단위, `/locations/*`는 메타데이터 전용, `GET /inventory/stocks`는 `{skuId?, warehouseId}` 필터에 `CurrentStockDto`(창고 단위) 반환. `stock_ledgers`는 locationId 그레인인데 읽을 길이 없다
+3. **로케이션별 재고에 로케이션 코드가 없다** — `GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId`의 `details[]`가 이미 `stock_ledgers`를 locationId 그레인으로 반환하지만 **`locationCode`가 없어** 현장에서 쓸 수 없다(작업자는 UUID가 아니라 `A-01-02`를 본다). `stock-summary`는 창고 단위, `/locations/*`는 메타데이터 전용, `GET /inventory/stocks`는 `CurrentStockDto`(창고 단위) 반환
 
 ### 3.3 조정의 멱등성 결손
 
@@ -103,21 +104,25 @@ Phase 0(토대 + 하드웨어 스파이크) · Phase 1a(loopback OIDC 로그인)
 - 정렬: `locationCode ASC, skuCode ASC` (현장 동선 = 위치 순회)
 - 라인 수가 매우 커질 수 있으나 **v1은 페이지네이션 없이 전량 반환**한다. 실사 세션은 보통 한 창고의 일부 로케이션 범위이고, 프론트가 진행률·위치별 그룹핑을 로컬에서 하려면 전량이 필요하다. 계측 후 필요하면 후속에서 페이지네이션 추가
 
-### 4.2 `GET /inventory/stocks/by-location?skuId&warehouseId` (신규)
+### 4.2 `GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId` — `details[]`에 `locationCode` 추가
 
-`StockProjectionController`(`@Controller('inventory')`) + 대응 서비스. 두 쿼리 파라미터 모두 **필수 UUID**.
+신규 엔드포인트를 만들지 않는다. `StockProjectionReader.getBySkuAndWarehouse`가 **이미 위치 그레인 `details[]`를 반환**하므로(§3.1) `stock_ledgers ⟕ locations` leftJoin을 걸어 `locationCode`만 얹는다.
 
 ```jsonc
-[
-  { "locationId": "…", "locationCode": "A-01-02", "stockState": "ON_HAND",    "qty": 12 },
-  { "locationId": "…", "locationCode": "A-01-02", "stockState": "DEFECTIVE",  "qty": 1  },
-  { "locationId": null, "locationCode": null,     "stockState": "ON_HAND",    "qty": 3  }
-]
+{
+  "summary": { "currentQuantity": 15, "availableQuantity": 12, /* …기존 그대로… */ },
+  "details": [
+    { "locationId": "…",  "locationCode": "A-01-02", "stockState": "ON_HAND",   "quantity": 12 },
+    { "locationId": "…",  "locationCode": "A-01-02", "stockState": "DEFECTIVE", "quantity": 1  },
+    { "locationId": null, "locationCode": null,      "stockState": "ON_HAND",   "quantity": 3  }
+  ]
+}
 ```
 
-- `stock_ledgers ⟕ locations` where `skuId & warehouseId & qty != 0`, 정렬 `locationCode ASC NULLS LAST, stockState ASC`
+- 정렬 `locationCode ASC NULLS LAST, stockState ASC` 추가 — 현장은 위치 순으로 읽는다
+- **필터는 바꾸지 않는다.** `qty = 0` 행 제외는 프론트가 한다 — 기존 응답의 행 집합을 줄이는 건 additive가 아니다
 - `locationId`가 null인 원장 행이 존재할 수 있다 → UI는 "위치 미지정"으로 표기
-- 라우트 충돌 없음: 기존 `/stocks`, `/stocks/summary`, `/stocks/sku/:skuId/...`, `/stocks/history`와 리터럴이 겹치지 않는다
+- 이 엔드포인트는 현재 **소비자 0개**(admin-web 포함)라 확장 위험이 없다. 한 번의 호출로 창고 요약 + 위치별 분포를 함께 주므로 상세 화면과 조정 화면 양쪽이 이걸 쓴다
 
 ### 4.3 `POST /stocktaking/scan-location` 응답 확장
 
@@ -170,7 +175,7 @@ CLAUDE.md의 inventory 규칙을 따른다: `trx.select().from().innerJoin().whe
 3개 쿼리를 조합:
 - `GET /inventory/skus/:id` — 코드·이름·옵션
 - `GET /inventory/skus/:id/stock-summary` — 창고별 실재고/예약/가용 + 합계
-- `GET /inventory/stocks/by-location?skuId&warehouseId=<현재 창고>` — 위치별 분포 (§4.2)
+- `GET /inventory/stocks/sku/:id/warehouse/<현재 창고>` — 위치별 분포 `details[]` + 창고 요약 (§4.2). `quantity = 0` 행은 프론트에서 제외
 
 레이아웃: 헤더(코드·이름) → 합계 카드(총 실재고 / 예약 / 가용) → **위치별 표**(로케이션코드 · 상태 · 수량 · 행마다 `[조정]`) → 하단 `[조정]`(위치 미선택 진입).
 
@@ -181,12 +186,12 @@ CLAUDE.md의 inventory 규칙을 따른다: `trx.select().from().innerJoin().whe
 **delta 전용 · 로케이션 필수.** 절대 카운트는 실사의 몫이라는 도메인 분담을 지킨다.
 
 - **로케이션**: 스캔(`useScanner`) 또는 검색(`GET /locations/warehouses/:wid?search=`). 쿼리스트링 `?locationId=`로 상세에서 프리필 가능. **필수** — 생략하면 백엔드가 시스템 '입고기본존'으로 밀어넣어 실물과 원장이 어긋난다
-- 선택된 로케이션의 **현재 ON_HAND**를 by-location 결과에서 찾아 표시
+- 선택된 로케이션의 **현재 ON_HAND**를 `details[]`에서 `locationId` + `stockState === 'ON_HAND'`로 찾아 표시
 - **delta**: `[−] [숫자] [+]` + 숫자패드. **0 금지**(백엔드 400과 별개로 프론트에서 먼저 막는다)
 - **사유**: 프리셋 칩(파손 · 분실 · 발견 · 오출고 정정 · 기타) — 기타 선택 시 자유 입력. **필수**(백엔드 `@IsNotEmpty`)
 - 확인 다이얼로그("A-01-02 의 <상품> 을 −2 조정합니다") → `POST /inventory/stocks/adjust`
 - **멱등키**: 화면 진입 시 UUID 1회 생성해 상태로 보관, 재시도 시 동일 값 재사용. 성공 후 화면을 떠날 때 폐기(§4.4)
-- 성공 → 상세로 복귀 + `by-location`/`stock-summary` 쿼리 무효화
+- 성공 → 상세로 복귀 + `sku-warehouse-stock`/`sku-stock-summary` 쿼리 무효화
 
 ### 6.4 `/stocktaking` — SessionListScreen (신규)
 
@@ -275,7 +280,7 @@ src/domains/warehouse/
 
 **백엔드 (통합 스펙)** — `apps/core/src/modules/inventory/stocktaking/services/stocktaking-*.integration.spec.ts` 패턴을 따른다.
 - `getSession` — 라인 조인·정렬·progress 계산, 없는 세션 404
-- `by-location` — 위치별 그룹, null location 행, qty=0 제외
+- `getBySkuAndWarehouse` — `details[]`에 `locationCode` 동반, null location 행, 정렬 순서
 - `scan-location` 확장 — 재스캔 시 lineId·countedQuantity 반환, 미기대 라인 포함
 - `adjust` 멱등 — 같은 `idempotencyKey`로 2회 호출 시 원장이 1회만 변한다
 
@@ -296,7 +301,7 @@ src/domains/warehouse/
 | 결정 | 선택 | 근거 |
 |---|---|---|
 | Phase 1 범위 | 상세+조정 & 실사 (이동 제외) | 마스터 설계 §11 정의 그대로. 이동은 별도 세션 |
-| 백엔드 손대기 | 읽기 2개 + `scan-location` 응답 확장 (+ 멱등키) | 전부 additive·마이그레이션 0. 실사 이중 카운트가 프론트 우회로 못 막히는 진짜 공백 |
+| 백엔드 손대기 | 세션 상세 신규 1개 + 응답 확장 2개 (+ 멱등키) | 전부 additive·마이그레이션 0. 실사 이중 카운트가 프론트 우회로 못 막히는 진짜 공백 |
 | 창고 컨텍스트 | 기기별 고정 + 허브 상단 칩 | 백엔드에 사용자↔창고 바인딩 없음. 현장 PDA는 한 창고 고정이 자연스러움 |
 | 실사 라이프사이클 | 핸드헬드가 전 구간 + 완료 전 미리보기 강제 | 마스터 설계의 "물류팀 전용 standalone" 정신. 안전은 dry-run 게이트로 |
 | 조정 입력 | delta 전용 + 로케이션 필수 | 절대 카운트는 실사의 몫(역할 분담 선명). 로케이션 생략 시 시스템 기본존 오적재 방지 |
