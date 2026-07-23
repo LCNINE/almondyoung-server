@@ -15,6 +15,7 @@ import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 import { SkuDetailRoute } from './routes/SkuDetailRoute';
 import { AdjustStockRoute } from './routes/AdjustStockRoute';
 import { StocktakingRoute } from './routes/StocktakingRoute';
+import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 
 export interface RouterContext {
   session: Session;
@@ -84,7 +85,12 @@ const stocktakingRoute = createRoute({
 const stocktakingSessionRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/stocktaking/$sessionId',
-  component: () => <PlaceholderScreen title="실사 카운트" note="다음 태스크에서 구현됩니다." />,
+  component: StocktakingSessionRoute,
+});
+const stocktakingVariancesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/stocktaking/$sessionId/variances',
+  component: () => <PlaceholderScreen title="차이 확인" note="다음 태스크에서 구현됩니다." />,
 });
 const movementRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -127,6 +133,7 @@ export const routeTree = rootRoute.addChildren([
     shipmentsRoute,
     stocktakingRoute,
     stocktakingSessionRoute,
+    stocktakingVariancesRoute,
     movementRoute,
     inboundRoute,
     pickingRoute,
