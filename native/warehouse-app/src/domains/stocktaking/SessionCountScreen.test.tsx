@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -270,5 +270,56 @@ describe('SessionCountScreen', () => {
     const locationCalls = calls.filter((c) => c.path === '/stocktaking/scan-location');
     expect(locationCalls).toHaveLength(2);
     expect(locationCalls[1]?.body).toMatchObject({ sessionId: 's-1', locationBarcode: 'A-01-02' });
+  });
+
+  it('연속으로 들어온 같은 바코드 스캔 두 건이 직렬로 처리되어 둘 다 반영된다', async () => {
+    // HID 스캐너는 wifi 왕복시간을 쉽게 앞지른다 — await 없이 두 번 스캔해서
+    // 재현한다. 직렬화가 없으면 두 scan-product 요청이 거의 동시에 나가고,
+    // 서버가 unlocked read-modify-write 라면 한쪽 증가분이 사라진다(서버 스펙은
+    // stocktaking-scan-product-concurrency.integration.spec.ts 가 따로 검증한다).
+    // 여기서는 클라이언트가 "요청을 겹치게 보내지 않는다"는 절반만 검증한다.
+    const calls: Call[] = [];
+    let scanProductSends = 0;
+    let resolveFirst: ((v: unknown) => void) | undefined;
+    mountScreen(
+      (async (opts: Call) => {
+        calls.push(opts);
+        if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+        if (opts.path === '/stocktaking/scan-location') return SCAN_LOCATION;
+        if (opts.path === '/stocktaking/scan-product') {
+          scanProductSends += 1;
+          if (scanProductSends === 1) {
+            return new Promise((resolve) => {
+              resolveFirst = resolve;
+            });
+          }
+          // 두 번째 요청이 나갈 시점엔 첫 요청이 이미 반영된 뒤라고 가정한다
+          // (서버가 올바르게 직렬화한다면 실제로 그렇다).
+          return { lineId: 'line-1', skuId: 'sku-1', countedQuantity: 2, expectedQuantity: 6, variance: -4 };
+        }
+        return {};
+      }) as unknown as ApiClient['request']
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: '스캔:A-01-02' }));
+
+    const scanBtn = await screen.findByRole('button', { name: '스캔:8801' });
+    // fireEvent 로 동기 발사한다 — userEvent.click 은 내부적으로 await 지점을
+    // 끼워 넣어서 두 스캔 사이에 자연히 직렬화가 생겨버려 재현이 안 된다.
+    fireEvent.click(scanBtn);
+    fireEvent.click(scanBtn);
+
+    // 직렬화돼 있다면, 첫 요청의 응답을 아직 안 줬을 때 두 번째 scan-product
+    // 요청은 아직 서버로 나가지 않아야 한다(큐에서 대기 중).
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/stocktaking/scan-product')).toHaveLength(1);
+    });
+
+    resolveFirst?.({ lineId: 'line-1', skuId: 'sku-1', countedQuantity: 1, expectedQuantity: 6, variance: -5 });
+
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/stocktaking/scan-product')).toHaveLength(2);
+    });
+    expect(await screen.findByTestId('count-line-1')).toHaveTextContent('2');
   });
 });

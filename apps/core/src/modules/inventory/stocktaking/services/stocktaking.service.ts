@@ -218,6 +218,9 @@ export class StocktakingService {
       }
 
       // Find or create stocktaking line
+      // .for('update') — 동시 스캔이 같은 라인을 read-modify-write 할 때 두
+      // 트랜잭션이 같은 countedQuantity 를 읽고 둘 다 +1 을 써서 한 증가분이
+      // 사라지는 것(lost update)을 막는다.
       const existingLine = await tx
         .select()
         .from(stocktakingLines)
@@ -228,7 +231,8 @@ export class StocktakingService {
             eq(stocktakingLines.locationId, dto.locationId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (existingLine[0]) {
         // Update existing line
