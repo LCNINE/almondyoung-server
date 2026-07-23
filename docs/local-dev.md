@@ -149,7 +149,7 @@ npm run start:main:dev               # core :3100
   돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
-  **core 포트를 3100 에서 바꾸면 `native/warehouse-app/src-tauri/capabilities/default.json` 의
+  **core 의 포트나 호스트를 바꾸면 `native/warehouse-app/src-tauri/capabilities/default.json` 의
   `http:default` → `allow` 목록도 같이 고쳐야 한다.** Tauri 의 `plugin-http` 는 deny-by-default 라
   scope 에 없는 URL 은 요청이 앱 밖으로 나가기 전에 거부된다 — `.env` 만 고치면 화면엔 평범한
   에러만 뜨고 콘솔에서야 `url not allowed on the configured scope` 를 보게 된다. capability 는

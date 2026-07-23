@@ -1,5 +1,8 @@
 /**
  * @vitest-environment node
+ *
+ * 기본 jsdom 환경에서는 `import.meta.url` 이 `file://` URL 이 아니라서 아래 `fileURLToPath()` 가
+ * `TypeError: The URL must be of scheme file` 로 실패한다 — 그래서 이 파일만 node 환경을 쓴다.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -42,5 +45,13 @@ describe('tauri http scope', () => {
     const urls = httpAllowList();
     expect(urls).toContain('https://user.almondyoung.com/*');
     expect(urls).toContain('https://core.almondyoung.com/*');
+  });
+
+  it('호스트 와일드카드를 쓰지 않는다 — 설계에서 `http://*:3100/*` 형태를 명시적으로 기각했다 (§3.1)', () => {
+    const urls = httpAllowList();
+    for (const url of urls) {
+      const host = url.replace(/^[a-z]+:\/\//, '').split('/')[0];
+      expect(host).not.toContain('*');
+    }
   });
 });

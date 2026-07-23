@@ -63,7 +63,7 @@ scope 에 없는 URL 은 Rust 쪽에서 거부되므로 **요청이 앱 밖으�
   앱이 localhost 를 부르는 코드 경로가 없다. `tauri.conf.json` 의 `app.security.capabilities` 목록 +
   `tauri dev --config` 병합 플럼빙 + 스크립트 분기 비용이 실익보다 크다.
 - **호스트 와일드카드(`http://*:3100/*`)도 기각.** Android/타기기 전환을 선반영하는 값이지만
-  `src-tauri/gen` 이 아직 없어 그 작업 자체가 존재하지 않는다 (§6).
+  `src-tauri/gen/android` 이 아직 없어 그 작업 자체가 존재하지 않는다 (§4).
 
 > ⚠️ **capability 변경은 Rust 재빌드를 요구한다.** `build.rs` 가 컴파일 타임에 capability →
 > 권한 코드를 생성하므로 Vite HMR 로는 반영되지 않는다. 변경 후 첫 `tauri dev` 는 재빌드가 돈다.
@@ -91,7 +91,7 @@ vitest 는 jsdom 환경이지만 Node 위에서 돌아 `node:fs` 를 그대로 �
 
 ## 4. 비목표
 
-- **Android / 타 기기 접속** — `src-tauri/gen` 이 없어 Android 프로젝트가 미초기화다. LAN/Tailscale
+- **Android / 타 기기 접속** — `src-tauri/gen/android` 이 없어 Android 프로젝트가 미초기화다. LAN/Tailscale
   IP scope 추가와 cleartext HTTP 허용은 그 작업에 딸린 별건이다.
 - **Diagnostics 에 현재 API 대상 표시** — 로컬/라이브 오조준 방지 가치는 있으나 이번 범위 밖.
 - **`.env.local` 의 `VITE_HTTP_DEBUG`** — 읽는 코드가 없는 죽은 값이다(주석은 "끝나면 제거"라고
@@ -107,8 +107,9 @@ vitest 는 jsdom 환경이지만 Node 위에서 돌아 `node:fs` 를 그대로 �
 4. HS256 토큰으로 `GET /inventory/skus/search/advanced?search=DEV-SKU&limit=20&offset=0`
    → `total` 20, `items` 20건.
    - `npm run generate:token` 은 readline 대화형이라 비대화식 셸에서 못 쓴다. 같은 페이로드
-     (`sub`/`userId`/`email`/`roles`, `iss: 'almondyoung-auth'`, HS256 + `AUTH_SECRET`)를 인라인으로
-     서명해 쓴다.
+     (`sub`/`userId`/`email`/`roles`, HS256 + `AUTH_SECRET`)를 인라인으로 서명해 쓰되, **`iss` 는
+     넣지 않는다** — `jwt-access.strategy.ts:107-111` 이 `payload.iss` 를 `oidcIssuer` 와 대조해
+     `iss: 'almondyoung-auth'` 를 넣으면 401 이 난다.
 5. core 는 **띄워둔 채로** 사용자에게 넘긴다 (이어서 앱을 붙일 것이므로).
 
 여기까지 통과하면 core · DB · 시드 · 엔드포인트가 정상임이 확정돼, 앱에서 실패할 경우 원인이
