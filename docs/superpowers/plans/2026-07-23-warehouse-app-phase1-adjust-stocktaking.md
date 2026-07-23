@@ -2507,10 +2507,13 @@ export interface SkuStockSummary {
   }>;
 }
 
-/** GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId 의 details[] 한 행. */
+/**
+ * GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId 의 details[] 한 행.
+ * stock_ledgers 는 location_id 가 NOT NULL 이고 복합 PK 의 일부라 위치 없는 재고 행은 존재할 수 없다.
+ */
 export interface StockDetailRow {
-  locationId: string | null;
-  locationCode: string | null;
+  locationId: string;
+  locationCode: string;
   stockState: string;
   quantity: number;
 }
@@ -2727,8 +2730,8 @@ const WAREHOUSE_STOCK = {
   summary: { currentQuantity: 15, availableQuantity: 12, reservedQuantity: 3 },
   details: [
     { locationId: 'l-1', locationCode: 'A-01-02', stockState: 'ON_HAND', quantity: 12 },
+    { locationId: 'l-1', locationCode: 'A-01-02', stockState: 'DEFECTIVE', quantity: 3 },
     { locationId: 'l-2', locationCode: 'A-02-01', stockState: 'ON_HAND', quantity: 0 },
-    { locationId: null, locationCode: null, stockState: 'ON_HAND', quantity: 3 },
   ],
 };
 
@@ -2803,9 +2806,10 @@ describe('SkuDetailScreen', () => {
     expect(screen.queryByText('A-02-01')).not.toBeInTheDocument();
   });
 
-  it('로케이션이 없는 재고는 위치 미지정으로 표기한다', async () => {
+  it('같은 로케이션의 상태별 행을 각각 보여준다', async () => {
     renderScreen(clientFor(), { id: 'w-1', name: '본창고' });
-    expect(await screen.findByText('위치 미지정')).toBeInTheDocument();
+    expect(await screen.findByText('ON_HAND')).toBeInTheDocument();
+    expect(screen.getByText('DEFECTIVE')).toBeInTheDocument();
   });
 
   it('창고 미설정이면 위치별 대신 창고 선택을 보여준다', async () => {
@@ -2918,20 +2922,18 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
           <ul className="space-y-2">
             {rows.map((row) => (
               <li
-                key={`${row.locationId ?? 'none'}-${row.stockState}`}
+                key={`${row.locationId}-${row.stockState}`}
                 className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
               >
                 <span className="flex-1">
-                  <span className="block font-medium text-gray-800">
-                    {row.locationCode ?? '위치 미지정'}
-                  </span>
+                  <span className="block font-medium text-gray-800">{row.locationCode}</span>
                   <span className="block text-xs text-gray-500">{row.stockState}</span>
                 </span>
                 <span className="text-lg font-semibold text-gray-900">{row.quantity}</span>
                 <Link
                   to="/inventory/$sku/adjust"
                   params={{ sku: skuId }}
-                  search={row.locationId ? { locationId: row.locationId } : undefined}
+                  search={{ locationId: row.locationId }}
                 >
                   <Button className="px-3 py-1.5 text-xs">조정</Button>
                 </Link>
