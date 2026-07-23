@@ -86,7 +86,10 @@ export function useScanLocation() {
         path: '/stocktaking/scan-location',
         body: input,
       }),
-    onSuccess: (_data, input) => {
+    // onSuccess 가 아니라 onSettled — 서버에서 커밋은 됐는데 응답만 유실되면
+    // onSuccess 는 영영 안 불린다. 그 상태로 차이 확인 화면에 stale 윈도우 안에
+    // 돌아오면 무효화가 안 된 캐시가 다시 원래 fail-open 을 재현한다.
+    onSettled: (_data, _error, input) => {
       invalidateSession(qc, input.sessionId);
       invalidateVariances(qc, input.sessionId);
     },
@@ -112,7 +115,8 @@ export function useScanProduct() {
         path: '/stocktaking/scan-product',
         body: input,
       }),
-    onSuccess: (_data, input) => {
+    // onSettled — 이유는 useScanLocation 과 같다(scanProduct 도 카운트에 영향).
+    onSettled: (_data, _error, input) => {
       invalidateSession(qc, input.sessionId);
       invalidateVariances(qc, input.sessionId);
     },
@@ -138,7 +142,8 @@ export function useUpdateCount() {
         path: `/stocktaking/lines/${input.lineId}/count`,
         body: { countedQuantity: input.countedQuantity, notes: input.notes },
       }),
-    onSuccess: (_data, input) => {
+    // onSettled — 이유는 useScanLocation 과 같다(절대값 세팅도 카운트에 영향).
+    onSettled: (_data, _error, input) => {
       invalidateSession(qc, input.sessionId);
       invalidateVariances(qc, input.sessionId);
     },

@@ -119,6 +119,34 @@ describe('stocktaking mutations', () => {
     expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
   });
 
+  it('scan-product 가 서버에서 커밋되고 응답만 유실돼도(요청 실패) 여전히 무효화한다', async () => {
+    // onSuccess 였다면 응답 유실 시 무효화가 아예 안 불려서, 그 stale 윈도우 안에
+    // 차이 확인 화면으로 돌아오면 FIX 1 이 막으려던 fail-open 이 그대로
+    // 재현된다. onSettled 라면 실패해도 무효화는 반드시 일어난다.
+    const client: ApiClient = {
+      request: (async () => {
+        throw new Error('응답 유실 → 500');
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <SessionProvider session={session}>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>{children}</ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+    const { result } = renderHook(() => useScanProduct(), { wrapper });
+
+    await expect(
+      result.current.mutateAsync({ sessionId: 's-1', locationId: 'l-1', productBarcode: '880', quantity: 1 })
+    ).rejects.toThrow();
+
+    expect(invalidatedKeys(invalidate)).toContain('stocktaking-variances');
+    expect(invalidatedKeys(invalidate)).toContain('stocktaking-session');
+  });
+
   it('수량을 절대값으로 세팅한다', async () => {
     const { calls, invalidate, wrapper } = setup();
     const { result } = renderHook(() => useUpdateCount(), { wrapper });
