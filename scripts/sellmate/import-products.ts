@@ -39,6 +39,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns } from './parse';
+import { excludedReason } from './excluded';
 
 // 셀메이트 헤더 후보. 실제 양식 헤더(2026-06 개발팀 데이터 내보내기용) 기준으로 확정.
 const COLUMN_CANDIDATES = {
@@ -112,10 +113,17 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
   const get = (row: string[], idx: number) => (idx >= 0 ? (row[idx] ?? '').toString().trim() : '');
 
   const items: ParsedItem[] = [];
+  const skipped = new Map<string, number>();
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const itemCode = get(row, cols.itemCode);
     if (!itemCode) continue;
+    // 동기화 금지 상품(excluded.ts)은 SKU 등록부터 막는다 — SKU 가 없으면 sync-stock 도 손댈 게 없다.
+    const excluded = excludedReason(get(row, cols.productSerial), get(row, cols.productName));
+    if (excluded) {
+      skipped.set(excluded, (skipped.get(excluded) ?? 0) + 1);
+      continue;
+    }
     let optionName = get(row, cols.optionName);
     if (SINGLE_OPTION_SENTINELS.has(optionName)) optionName = '';
     items.push({
@@ -129,6 +137,7 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
       file: path.basename(file),
     });
   }
+  for (const [reason, count] of skipped) console.log(`   ⛔ 등록 제외 ${count}행 — ${reason}`);
   return items;
 }
 
