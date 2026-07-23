@@ -5032,6 +5032,11 @@ git commit -m "feat(warehouse-app): 실사 세션 목록 화면
 - `scan-location` 응답이 그 위치 화면의 **유일한 원천**이다. 로컬 낙관적 갱신을 하지 않는다.
 - `scan-product` 응답의 `countedQuantity`는 **갱신 후 절대값**이므로 그 값으로 해당 라인을 덮어쓴다.
 - 수량 직접 입력은 `updateCount`(절대값 세팅)를 쓴다. `scan-product`(증가)와 섞지 않는다.
+- ⚠️ **수량 입력 다이얼로그가 열려 있는 동안 스캔 핸들러를 죽인다.** HID 리더기는 전역 `window` keydown 으로
+  잡히므로(`ScanProvider`), 다이얼로그가 떠 있을 때 작업자가 무심코 스캔하면 `countProduct` 가 실행돼
+  **이중 카운트**가 난다. `useScanner` 핸들러 첫 줄에서 `if (editing) return;` 으로 막고, 이를 검증하는
+  테스트를 넣는다(다이얼로그 열림 상태에서 스캔 발사 → `scan-product` 호출 0회).
+  숫자패드 다이얼로그는 Task 6 의 `ConfirmDialog` 와 달리 자체 마크업이므로 Escape/포커스 처리도 직접 넣는다.
 
 - [ ] **Step 1: 실패 테스트**
 
@@ -5234,6 +5239,17 @@ describe('SessionCountScreen', () => {
     expect(await screen.findByTestId('count-line-1')).toHaveTextContent('12');
   });
 
+  it('수량 입력 다이얼로그가 열려 있으면 스캔을 무시한다', async () => {
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await userEvent.click(await screen.findByRole('button', { name: '스캔:A-01-02' }));
+    await userEvent.click(await screen.findByRole('button', { name: '코튼셔츠 수량 입력' }));
+
+    await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+
+    expect(calls.filter((c) => c.path === '/stocktaking/scan-product')).toHaveLength(0);
+  });
+
   it('다른 로케이션 버튼이 대기 모드로 되돌린다', async () => {
     renderScreen([]);
     await userEvent.click(await screen.findByRole('button', { name: '스캔:A-01-02' }));
@@ -5337,7 +5353,10 @@ export function SessionCountScreen({ sessionId }: { sessionId: string }) {
   }
 
   // 위치가 정해지기 전엔 로케이션 바코드를, 정해진 뒤엔 상품 바코드를 기대한다.
+  // 수량 입력 다이얼로그가 떠 있으면 스캔을 통째로 무시한다 — HID 리더기는 전역 keydown 이라
+  // 다이얼로그 뒤에서 countProduct 가 돌면 이중 카운트가 난다.
   useScanner((e) => {
+    if (editing) return;
     if (place) void countProduct(e.code);
     else void enterLocation(e.code);
   });
