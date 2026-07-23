@@ -699,7 +699,7 @@ describeIfDb('stocktaking scan-location response (DB integration, rollback-only)
 
   it('그 위치에서 만들어진 미기대 항목도 함께 반환한다 (상위집합)', async () => {
     await inRollbackTx(async (tx) => {
-      const { warehouse, loc, session } = await seed(tx);
+      const { loc, session } = await seed(tx);
 
       // 원장에 없는 별도 SKU + 바코드 → scanProduct 가 expectedQuantity 0 라인을 만든다
       const [holder] = await tx
@@ -712,7 +712,6 @@ describeIfDb('stocktaking scan-location response (DB integration, rollback-only)
         .returning();
       const extraBarcode = `BC-X-${randomUUID().slice(0, 10)}`;
       await tx.insert(wmsTables.skuBarcodes).values({ skuId: extra.id, barcode: extraBarcode });
-      expect(warehouse.id).toEqual(expect.any(String));
 
       const first = await svc.scanLocation({ sessionId: session.id, locationBarcode: loc.code }, tx);
       await svc.scanProduct(
@@ -2971,7 +2970,7 @@ export function SkuDetailRoute() {
 }
 ```
 
-`src/app/routeTree.tsx`에서 `inventoryDetailRoute`를 교체한다:
+`src/app/routeTree.tsx`에서 `inventoryDetailRoute`를 교체하고, **조정 라우트를 지금 스텁으로 등록한다.** 화면이 `<Link to="/inventory/$sku/adjust">`를 쓰는데 라우트가 없으면 TanStack Router 의 타입 검사에서 `tsc -b`가 깨진다 — 이 태스크의 빌드가 스스로 초록이어야 하므로 여기서 자리를 만든다(Task 12 가 component 만 갈아끼운다):
 
 ```tsx
 const inventoryDetailRoute = createRoute({
@@ -2979,9 +2978,17 @@ const inventoryDetailRoute = createRoute({
   path: '/inventory/$sku',
   component: SkuDetailRoute,
 });
+const inventoryAdjustRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/$sku/adjust',
+  component: () => <PlaceholderScreen title="재고 조정" note="다음 태스크에서 구현됩니다." />,
+  validateSearch: (search: Record<string, unknown>): { locationId?: string } => ({
+    locationId: typeof search.locationId === 'string' ? search.locationId : undefined,
+  }),
+});
 ```
 
-상단에 `import { SkuDetailRoute } from './routes/SkuDetailRoute';`를 추가한다.
+상단에 `import { SkuDetailRoute } from './routes/SkuDetailRoute';`를 추가하고, `authedRoute.addChildren([...])` 목록에 `inventoryAdjustRoute`를 넣는다.
 
 - [ ] **Step 6: 빌드 + 커밋**
 
@@ -2990,7 +2997,7 @@ Run:
 npx vitest run src/app/
 npm run build
 ```
-Expected: 둘 다 통과. 빌드가 `/inventory/$sku/adjust` 라우트를 모른다고 실패하면 **Task 12에서 라우트를 추가할 때까지** 임시로 `SkuDetailScreen`의 두 `<Link to="/inventory/$sku/adjust">`를 주석 처리하지 말고, **Task 12를 먼저 끝낸 뒤 이 Step을 다시 실행**한다(라우트 타입이 생기면 통과한다).
+Expected: 둘 다 통과
 
 ```bash
 git add src/domains/inventory/SkuDetailScreen.tsx src/domains/inventory/SkuDetailScreen.test.tsx \
@@ -3561,7 +3568,7 @@ export function AdjustStockRoute() {
 }
 ```
 
-`src/app/routeTree.tsx`에서 `inventoryDetailRoute` **뒤**에 라우트를 추가하고 `addChildren` 목록에도 넣는다:
+`src/app/routeTree.tsx`의 `inventoryAdjustRoute`는 Task 11 에서 스텁으로 이미 등록돼 있다. **component 만 갈아끼운다** (path·validateSearch·addChildren 등록은 그대로):
 
 ```tsx
 const inventoryAdjustRoute = createRoute({
@@ -3574,7 +3581,7 @@ const inventoryAdjustRoute = createRoute({
 });
 ```
 
-상단에 `import { AdjustStockRoute } from './routes/AdjustStockRoute';`를, `authedRoute.addChildren([...])`에 `inventoryAdjustRoute`를 추가한다.
+상단에 `import { AdjustStockRoute } from './routes/AdjustStockRoute';`를 추가한다. `PlaceholderScreen` import 가 다른 스텁 라우트에서 계속 쓰이는지 확인하고, 안 쓰이면 지운다.
 
 - [ ] **Step 10: 전체 검증 + 커밋**
 
@@ -3583,7 +3590,7 @@ Run:
 npm test
 npm run build
 ```
-Expected: 둘 다 통과 (Task 11 Step 6에서 미뤘던 빌드도 여기서 통과한다)
+Expected: 둘 다 통과
 
 ```bash
 git add src/domains/inventory/useAdjustStock.ts src/domains/inventory/useAdjustStock.test.tsx \
@@ -3955,7 +3962,7 @@ git commit -m "feat(warehouse-app): 재고조회 바코드 스캔 진입
   - `useStocktakingVariances(sessionId: string | null)` → `Variance[]` — key `['stocktaking-variances', sessionId]`, path `/stocktaking/sessions/:id/variances`
 - 타입(`types.ts`): `StocktakingStatus`, `StocktakingSession`, `StocktakingLine`, `StocktakingSessionDetail`, `Variance`, `ScanLocationResult`, `ScanLocationItem`, `ScanProductResult`, `AdjustmentPreview`, `GenerateAdjustmentsResult`. Task 15·16·17·18이 쓴다.
 
-> 백엔드 `listSessions`가 반환하는 래퍼 키 이름(`data` vs `items`)을 **먼저 확인**한다: `apps/core/src/modules/inventory/stocktaking/services/stocktaking.service.ts`의 `listSessions` 반환문을 읽고, 다르면 `SessionListResult`와 테스트를 실제 키에 맞춘다.
+> 실측 확인됨: `listSessions`는 `{ total, page, limit, data: items }`를 반환한다 (`stocktaking.service.ts:53`). 목록은 `createdAt DESC` 정렬이다. 래퍼 키는 `data`이지 `items`가 아니다.
 
 - [ ] **Step 1: 타입을 작성한다**
 
@@ -4968,7 +4975,7 @@ export function StocktakingRoute() {
 }
 ```
 
-`src/app/routeTree.tsx`에서 `stocktakingRoute`를 교체한다:
+`src/app/routeTree.tsx`에서 `stocktakingRoute`를 교체하고, 화면이 이동하는 `/stocktaking/$sessionId`를 **지금 스텁으로 등록한다**(Task 17 이 component 만 갈아끼운다). 이유는 Task 11 과 같다 — 라우트가 없으면 `tsc -b`가 깨져 이 태스크가 스스로 초록일 수 없다:
 
 ```tsx
 const stocktakingRoute = createRoute({
@@ -4976,14 +4983,23 @@ const stocktakingRoute = createRoute({
   path: '/stocktaking',
   component: StocktakingRoute,
 });
+const stocktakingSessionRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/stocktaking/$sessionId',
+  component: () => <PlaceholderScreen title="실사 카운트" note="다음 태스크에서 구현됩니다." />,
+});
 ```
 
-상단에 `import { StocktakingRoute } from './routes/StocktakingRoute';`를 추가한다.
+상단에 `import { StocktakingRoute } from './routes/StocktakingRoute';`를 추가하고, `addChildren` 목록에 `stocktakingSessionRoute`를 넣는다.
 
 - [ ] **Step 6: 커밋**
 
-Run: `npx vitest run src/app/`
-Expected: PASS
+Run:
+```bash
+npx vitest run src/app/
+npm run build
+```
+Expected: 둘 다 통과
 
 ```bash
 git add src/domains/stocktaking/SessionListScreen.tsx src/domains/stocktaking/SessionListScreen.test.tsx \
@@ -4993,8 +5009,6 @@ git commit -m "feat(warehouse-app): 실사 세션 목록 화면
 새 실사(생성→시작→진입)와 기존 세션 재진입(대기면 start 후). 진행중
 세션은 확인 다이얼로그를 거쳐 취소할 수 있다."
 ```
-
-> 이 시점의 `npm run build`는 `/stocktaking/$sessionId` 라우트가 아직 없어 실패할 수 있다. Task 17에서 라우트를 추가한 뒤 통과한다.
 
 ---
 
@@ -5535,7 +5549,7 @@ export function StocktakingSessionRoute() {
 }
 ```
 
-`src/app/routeTree.tsx`에서 `stocktakingRoute` 뒤에 추가하고 `addChildren`에도 넣는다:
+`stocktakingSessionRoute`는 Task 16 에서 스텁으로 등록돼 있다. **component 만 갈아끼우고**, 화면이 이동하는 `/stocktaking/$sessionId/variances`를 지금 스텁으로 등록한다(Task 18 이 갈아끼운다):
 
 ```tsx
 const stocktakingSessionRoute = createRoute({
@@ -5543,14 +5557,23 @@ const stocktakingSessionRoute = createRoute({
   path: '/stocktaking/$sessionId',
   component: StocktakingSessionRoute,
 });
+const stocktakingVariancesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/stocktaking/$sessionId/variances',
+  component: () => <PlaceholderScreen title="차이 확인" note="다음 태스크에서 구현됩니다." />,
+});
 ```
 
-상단에 `import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';`를 추가한다.
+상단에 `import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';`를 추가하고, `addChildren` 목록에 `stocktakingVariancesRoute`를 넣는다.
 
 - [ ] **Step 6: 커밋**
 
-Run: `npx vitest run src/app/ src/domains/stocktaking/`
-Expected: PASS
+Run:
+```bash
+npx vitest run src/app/ src/domains/stocktaking/
+npm run build
+```
+Expected: 둘 다 통과
 
 ```bash
 git add src/domains/stocktaking/SessionCountScreen.tsx src/domains/stocktaking/SessionCountScreen.test.tsx \
@@ -5561,8 +5584,6 @@ scan-location 응답이 위치 화면의 유일한 원천이라 재진입 시 �
 항상 보인다(이중 카운트 방지). 상품 스캔은 서버가 준 절대 카운트로
 덮어쓰고, 수량 직접 입력은 updateCount(절대 세팅)를 쓴다."
 ```
-
-> 이 시점의 `npm run build`는 `/stocktaking/$sessionId/variances` 라우트가 없어 실패할 수 있다. Task 18 후 통과한다.
 
 ---
 
@@ -5953,7 +5974,7 @@ export function StocktakingVariancesRoute() {
 }
 ```
 
-`src/app/routeTree.tsx`에 추가하고 `addChildren`에도 넣는다:
+`stocktakingVariancesRoute`는 Task 17 에서 스텁으로 등록돼 있다. **component 만 갈아끼운다**:
 
 ```tsx
 const stocktakingVariancesRoute = createRoute({
@@ -5972,7 +5993,7 @@ Run:
 npm test
 npm run build
 ```
-Expected: 둘 다 통과 (Task 16·17에서 미뤘던 빌드가 여기서 통과한다)
+Expected: 둘 다 통과
 
 ```bash
 git add src/domains/stocktaking/VarianceReviewScreen.tsx \
