@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -11,6 +12,7 @@ import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
+import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
 
@@ -298,6 +300,60 @@ export class StocktakingService {
         countedQuantity: dto.countedQuantity,
         expectedQuantity: line[0].expectedQuantity,
         variance,
+      };
+    }, tx);
+  }
+
+  /**
+   * 세션 상세 — 메타 + 전체 라인 + 진행률.
+   * getVariances 는 variance != 0 만 주므로 "실사 이어하기"에는 쓸 수 없다.
+   */
+  async getSession(sessionId: string, tx?: DbTx): Promise<StocktakingSessionDetailDto> {
+    return this.dbService.run(async (tx) => {
+      const { stocktakingSessions, stocktakingLines, skus, locations } = wmsTables;
+
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .limit(1);
+      if (!session) throw new NotFoundError(`Stocktaking session not found: ${sessionId}`);
+
+      const rows = await tx
+        .select({
+          lineId: stocktakingLines.id,
+          skuId: stocktakingLines.skuId,
+          skuCode: skus.code,
+          skuName: skus.name,
+          locationId: stocktakingLines.locationId,
+          locationCode: locations.code,
+          expectedQuantity: stocktakingLines.expectedQuantity,
+          countedQuantity: stocktakingLines.countedQuantity,
+          variance: stocktakingLines.variance,
+          scannedBarcode: stocktakingLines.scannedBarcode,
+          status: stocktakingLines.status,
+          notes: stocktakingLines.notes,
+        })
+        .from(stocktakingLines)
+        .innerJoin(skus, eq(stocktakingLines.skuId, skus.id))
+        .leftJoin(locations, eq(stocktakingLines.locationId, locations.id))
+        .where(eq(stocktakingLines.sessionId, sessionId))
+        .orderBy(sql`${locations.code} ASC NULLS LAST`, skus.code);
+
+      return {
+        id: session.id,
+        warehouseId: session.warehouseId,
+        sessionName: session.sessionName,
+        status: session.status,
+        notes: session.notes,
+        createdAt: session.createdAt,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        progress: {
+          total: rows.length,
+          counted: rows.filter((r) => r.countedQuantity !== null).length,
+        },
+        lines: rows,
       };
     }, tx);
   }
