@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -20,6 +20,30 @@ import { ScanProvider } from '../../core/hardware/scan/ScanProvider';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { AdjustStockScreen } from './AdjustStockScreen';
+
+// 실제 이동을 검증하는 테스트가 하나 있고(브리프의 나머지 테스트는 전부 실이동
+// 없이 통과해야 한다), 그와 별개로 "같은 마운트에서 두 번째 제출"을 타이밍에
+// 기대지 않고 확정적으로 재현해야 하는 테스트가 하나 있다. useNavigate 를
+// 실제 구현으로 위임하는 래퍼로 감싸고, navigateOverride 가 세팅된 동안만
+// 가로챈다 — 이동을 막아 언마운트를 피하려는 그 테스트에서만 쓴다.
+const { navigateOverride } = vi.hoisted(() => ({
+  navigateOverride: { current: null as null | ((...args: never[]) => unknown) },
+}));
+
+vi.mock('@tanstack/react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@tanstack/react-router')>();
+  return {
+    ...actual,
+    useNavigate: (opts?: Parameters<typeof actual.useNavigate>[0]) => {
+      const real = actual.useNavigate(opts);
+      return navigateOverride.current ?? real;
+    },
+  };
+});
+
+afterEach(() => {
+  navigateOverride.current = null;
+});
 
 const session = {
   bootstrap: async () => {},
@@ -279,5 +303,70 @@ describe('AdjustStockScreen', () => {
       delta: -2,
       reason: '파손',
     });
+  });
+
+  it('기타 사유가 공백뿐이면 조정 버튼이 비활성 상태를 유지한다', async () => {
+    renderScreen(makeClient([]), 'l-1');
+    await userEvent.click(await screen.findByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '기타' }));
+
+    expect(screen.getByRole('button', { name: '조정하기' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('사유 직접 입력'), '   ');
+    expect(screen.getByRole('button', { name: '조정하기' })).toBeDisabled();
+  });
+
+  it('조정을 확인하면 실제로 상세 화면으로 이동한다', async () => {
+    renderScreen(makeClient([]), 'l-1');
+
+    await userEvent.click(await screen.findByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(screen.getByRole('button', { name: '파손' }));
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    // 멱등키 회전이 "다음 화면에서 새로 마운트되면 새 키를 받는다"는 이 실제
+    // 이동에 기대고 있다 — 그 이동 자체를 검증한다(가짜가 아닌 실제 useNavigate).
+    expect(await screen.findByText('상세화면')).toBeInTheDocument();
+  });
+
+  it('같은 마운트에서 두 번 연속 성공하면 서로 다른 멱등키를 쓴다', async () => {
+    // idempotencyKey 가 useRef 로 마운트당 한 번만 생성되면, 성공 후 이동이
+    // 어떤 이유로든 스킵/실패할 때 같은 마운트에서의 다음(다른 선반·다른 delta)
+    // 제출이 같은 키를 재사용해 백엔드가 조용히 no-op 한다 — 재고는 안 움직이는데
+    // 화면은 성공을 보여준다. useNavigate 를 가로채 이동으로 인한 언마운트를
+    // 막아, 이 위험을 타이밍에 기대지 않고 확정적으로 재현한다.
+    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    navigateOverride.current = vi.fn();
+
+    renderScreen(makeClient(calls), 'l-1');
+
+    await userEvent.click(await screen.findByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(screen.getByRole('button', { name: '파손' }));
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/inventory/stocks/adjust')).toHaveLength(1);
+    });
+
+    // 화면은 이동하지 않았다(가짜 navigate) — 같은 마운트에서 두 번째 조정을 보낸다.
+    // 폼 상태(수량·사유·로케이션)는 그대로 남아 있다.
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/inventory/stocks/adjust')).toHaveLength(2);
+    });
+
+    const [first, second] = calls.filter((c) => c.path === '/inventory/stocks/adjust');
+    expect(first.idempotencyKey).toEqual(expect.any(String));
+    expect(second.idempotencyKey).toEqual(expect.any(String));
+    expect(second.idempotencyKey).not.toEqual(first.idempotencyKey);
   });
 });
