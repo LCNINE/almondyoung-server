@@ -322,4 +322,43 @@ describe('SessionCountScreen', () => {
     });
     expect(await screen.findByTestId('count-line-1')).toHaveTextContent('2');
   });
+
+  it('수량 저장이 진행 중일 때는 다이얼로그가 닫혀도 스캔을 무시한다', async () => {
+    // onSave 는 낙관적으로 setEditing(null) 부터 부른다(다이얼로그가 즉시 닫힘) —
+    // 그래서 "다이얼로그가 열려 있는가" 만으로는 PUT 이 아직 진행 중인 창을
+    // 못 막는다. updateCount.isPending 도 같이 봐야 한다.
+    const calls: Call[] = [];
+    let resolveUpdate: ((v: unknown) => void) | undefined;
+    mountScreen(
+      (async (opts: Call) => {
+        calls.push(opts);
+        if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+        if (opts.path === '/stocktaking/scan-location') return SCAN_LOCATION;
+        if (opts.path === '/stocktaking/lines/line-1/count') {
+          return new Promise((resolve) => {
+            resolveUpdate = resolve;
+          });
+        }
+        if (opts.path === '/stocktaking/scan-product') {
+          return { lineId: 'line-1', skuId: 'sku-1', countedQuantity: 9, expectedQuantity: 6, variance: 3 };
+        }
+        return {};
+      }) as unknown as ApiClient['request']
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: '스캔:A-01-02' }));
+    await userEvent.click(await screen.findByRole('button', { name: '코튼셔츠 수량 입력' }));
+    await userEvent.click(screen.getByRole('button', { name: '1' }));
+    await userEvent.click(screen.getByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    // 다이얼로그는 낙관적으로 이미 닫혀 있다 — PUT 은 아직 응답을 안 줬다.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(calls.filter((c) => c.path === '/stocktaking/scan-product')).toHaveLength(0);
+
+    resolveUpdate?.({ lineId: 'line-1', skuId: 'sku-1', countedQuantity: 12, expectedQuantity: 6, variance: 6 });
+    await waitFor(() => expect(screen.getByTestId('count-line-1')).toHaveTextContent('12'));
+  });
 });
