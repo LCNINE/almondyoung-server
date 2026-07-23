@@ -20,6 +20,7 @@ export const useProductsListTableQuery = ({
     'createdAt',
     'sort',
     'order',
+    'stock',
   ]);
 
   const {
@@ -33,6 +34,7 @@ export const useProductsListTableQuery = ({
     createdAt,
     sort,
     order,
+    stock,
   } = queryObject;
 
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
@@ -62,6 +64,10 @@ export const useProductsListTableQuery = ({
         ? sort
         : undefined,
     order: order === 'asc' || order === 'desc' ? order : undefined,
+    stock:
+      stock === 'in_stock' || stock === 'partial' || stock === 'sold_out'
+        ? stock
+        : undefined,
   };
 
   return { searchParams, raw: queryObject };

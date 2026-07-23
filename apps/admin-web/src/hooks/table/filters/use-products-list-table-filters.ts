@@ -28,6 +28,17 @@ export function useProductsListTableFilters(): Filter[] {
       ],
     },
     {
+      // 재고(품절) 상태 필터. 목록의 품절 배지와 동일한 집계 기준으로 필터한다.
+      key: 'stock',
+      label: '재고 상태',
+      type: 'select',
+      options: [
+        { label: '판매가능', value: 'in_stock' },
+        { label: '부분품절', value: 'partial' },
+        { label: '품절', value: 'sold_out' },
+      ],
+    },
+    {
       key: 'categoryId',
       label: '카테고리',
       type: 'select',
