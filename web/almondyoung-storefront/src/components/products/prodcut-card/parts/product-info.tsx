@@ -4,6 +4,7 @@ import { ProductCardProps, StockStatus } from "@/lib/types/ui/product"
 import { ProductPrice } from "./product-price"
 import { ProductRating } from "./product-rating"
 import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
+import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
 import { SoldOutTag } from "./sold-out-tag"
 
 const LOW_STOCK_THRESHOLD = 10
@@ -20,6 +21,7 @@ export function ProductInfo({
   membershipSavings,
   isMembershipOnly,
   isMembership,
+  isOverseas,
   showMembershipHint: _showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
   // 멤버십 회원: 멤버십 가격(price) 표시 + 뱃지
@@ -76,6 +78,7 @@ export function ProductInfo({
   return (
     <div className="flex flex-col gap-0.5 px-1">
       <h3 className="line-clamp-1 text-[14px] leading-tight text-gray-600">
+        {isOverseas && <OverseasBadge />}
         {title}
       </h3>
 
