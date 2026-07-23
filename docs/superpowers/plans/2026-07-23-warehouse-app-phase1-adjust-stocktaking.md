@@ -3029,6 +3029,9 @@ git commit -m "feat(warehouse-app): SKU 재고 상세 화면
   - `ADJUST_REASONS: readonly string[]` — `['파손', '분실', '발견', '오출고 정정', '기타']`
   - `AdjustStockScreen({ skuId, initialLocationId }: { skuId: string; initialLocationId?: string })`
 
+**⚠️ 추가 요구사항 (Task 9 리뷰에서 파생 — 브리프 본문 코드보다 우선한다):**
+`useLocationSearch` 는 `keepPreviousData` 를 쓴다. 창고를 바꾸면 새 요청이 도는 동안 **이전 창고의 로케이션 목록**이 placeholder 로 남고, 그 행을 골라 조정하면 **다른 창고의 locationId 로 원장을 쓴다.** 검색 결과 목록을 렌더하기 전에 `search.isPlaceholderData` 를 확인해 참이면 목록을 렌더하지 않는다(대신 "불러오는 중…"). 이를 검증하는 테스트를 추가한다.
+
 - [ ] **Step 1: mutation 실패 테스트**
 
 Create `src/domains/inventory/useAdjustStock.test.tsx`:
@@ -5032,6 +5035,7 @@ git commit -m "feat(warehouse-app): 실사 세션 목록 화면
 - `scan-location` 응답이 그 위치 화면의 **유일한 원천**이다. 로컬 낙관적 갱신을 하지 않는다.
 - `scan-product` 응답의 `countedQuantity`는 **갱신 후 절대값**이므로 그 값으로 해당 라인을 덮어쓴다.
 - 수량 직접 입력은 `updateCount`(절대값 세팅)를 쓴다. `scan-product`(증가)와 섞지 않는다.
+- ⚠️ 로케이션 해석에 `useLocationSearch` 를 쓴다면, `keepPreviousData` 때문에 창고 전환 중 **이전 창고의 로케이션**이 placeholder 로 남는다. `isPlaceholderData` 가 참인 동안에는 그 후보를 쓰지 않는다.
 - ⚠️ **수량 입력 다이얼로그가 열려 있는 동안 스캔 핸들러를 죽인다.** HID 리더기는 전역 `window` keydown 으로
   잡히므로(`ScanProvider`), 다이얼로그가 떠 있을 때 작업자가 무심코 스캔하면 `countProduct` 가 실행돼
   **이중 카운트**가 난다. `useScanner` 핸들러 첫 줄에서 `if (editing) return;` 으로 막고, 이를 검증하는
