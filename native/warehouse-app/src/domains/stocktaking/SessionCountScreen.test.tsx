@@ -74,28 +74,9 @@ function Emitter({ code }: { code: string }) {
   return <button onClick={() => bus.emit({ code, source: 'hid', at: 1 })}>스캔:{code}</button>;
 }
 
-function renderScreen(calls: Call[]) {
-  const client: ApiClient = {
-    request: (async (opts: Call) => {
-      calls.push(opts);
-      if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
-      if (opts.path === '/stocktaking/scan-location') return SCAN_LOCATION;
-      if (opts.path === '/stocktaking/scan-product') {
-        return { lineId: 'line-1', skuId: 'sku-1', countedQuantity: 5, expectedQuantity: 6, variance: -1 };
-      }
-      if (opts.path === '/stocktaking/lines/line-1/count') {
-        const body = opts.body as { countedQuantity: number };
-        return {
-          lineId: 'line-1',
-          skuId: 'sku-1',
-          countedQuantity: body.countedQuantity,
-          expectedQuantity: 6,
-          variance: body.countedQuantity - 6,
-        };
-      }
-      return {};
-    }) as unknown as ApiClient['request'],
-  };
+/** 실제 요청 로직만 테스트마다 다르게 넣을 수 있도록 라우터/프로바이더 배선을 분리한다. */
+function mountScreen(request: ApiClient['request']) {
+  const client: ApiClient = { request };
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rootRoute = createRootRoute({ component: Outlet });
   const index = createRoute({
@@ -133,6 +114,30 @@ function renderScreen(calls: Call[]) {
     </SessionProvider>
   );
   return render(<RouterProvider router={router as never} />, { wrapper: wrap });
+}
+
+function renderScreen(calls: Call[]) {
+  return mountScreen(
+    (async (opts: Call) => {
+      calls.push(opts);
+      if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+      if (opts.path === '/stocktaking/scan-location') return SCAN_LOCATION;
+      if (opts.path === '/stocktaking/scan-product') {
+        return { lineId: 'line-1', skuId: 'sku-1', countedQuantity: 5, expectedQuantity: 6, variance: -1 };
+      }
+      if (opts.path === '/stocktaking/lines/line-1/count') {
+        const body = opts.body as { countedQuantity: number };
+        return {
+          lineId: 'line-1',
+          skuId: 'sku-1',
+          countedQuantity: body.countedQuantity,
+          expectedQuantity: 6,
+          variance: body.countedQuantity - 6,
+        };
+      }
+      return {};
+    }) as unknown as ApiClient['request']
+  );
 }
 
 describe('SessionCountScreen', () => {
@@ -216,5 +221,54 @@ describe('SessionCountScreen', () => {
     renderScreen([]);
     await userEvent.click(await screen.findByRole('button', { name: /차이 확인/ }));
     expect(await screen.findByText('차이화면')).toBeInTheDocument();
+  });
+
+  it('scan-product 응답에 없던 라인은 로케이션을 재조회해서 반영한다 (스캔 응답값을 직접 쓰지 않는다)', async () => {
+    const calls: Call[] = [];
+    let scanLocationCalls = 0;
+    // 재조회 응답의 line-3 카운트(3)와 scan-product 응답의 line-3 카운트(9)를
+    // 일부러 다르게 둔다 — 화면이 후자를 그대로 썼다면 3이 아니라 9가 보인다.
+    const RESCANNED = {
+      locationId: 'l-1',
+      locationCode: 'A-01-02',
+      expectedItems: [
+        ...SCAN_LOCATION.expectedItems,
+        {
+          lineId: 'line-3',
+          skuId: 'sku-3',
+          skuName: '데님팬츠',
+          skuCode: 'DM-003',
+          barcode: '8803',
+          expectedQuantity: 0,
+          countedQuantity: 3,
+          status: 'counted',
+        },
+      ],
+    };
+
+    mountScreen(
+      (async (opts: Call) => {
+        calls.push(opts);
+        if (opts.path === '/stocktaking/sessions/s-1') return DETAIL;
+        if (opts.path === '/stocktaking/scan-location') {
+          scanLocationCalls += 1;
+          return scanLocationCalls === 1 ? SCAN_LOCATION : RESCANNED;
+        }
+        if (opts.path === '/stocktaking/scan-product') {
+          return { lineId: 'line-3', skuId: 'sku-3', countedQuantity: 9, expectedQuantity: 0, variance: 9 };
+        }
+        return {};
+      }) as unknown as ApiClient['request']
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: '스캔:A-01-02' }));
+    await userEvent.click(await screen.findByRole('button', { name: '스캔:8801' }));
+
+    expect(await screen.findByText('데님팬츠')).toBeInTheDocument();
+    expect(await screen.findByTestId('count-line-3')).toHaveTextContent('3');
+
+    const locationCalls = calls.filter((c) => c.path === '/stocktaking/scan-location');
+    expect(locationCalls).toHaveLength(2);
+    expect(locationCalls[1]?.body).toMatchObject({ sessionId: 's-1', locationBarcode: 'A-01-02' });
   });
 });
