@@ -505,6 +505,9 @@ export class ProductMastersService {
       createdTo?: string;
       sort?: 'createdAt' | 'name' | 'updatedAt';
       order?: 'asc' | 'desc';
+      // 품절 상태 필터. soldOutState 는 후처리 계산이라 SQL 페이징과 함께 걸 수 없어
+      // 별도 경로로 처리한다(아래 stockFilter 블록). all=필터 없음.
+      stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -680,8 +683,6 @@ export class ProductMastersService {
             )
           : countBaseQuery;
 
-      const [{ c: total }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
-
       // ===== DATA 쿼리 (정렬 및 페이지네이션) =====
       const dataBaseQuery =
         mode === 'active'
@@ -712,7 +713,32 @@ export class ProductMastersService {
       // 안정 페이지네이션을 위해 master id 를 2차 정렬키로 고정
       const orderedQuery = filteredDataQuery.orderBy(sortDirection(sortColumn), desc(productMasters.id));
 
-      const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
+      // 품절 필터 여부. soldOutState 는 SQL 이 아니라 후처리로 계산되므로,
+      // 이 필터가 걸리면 전체 매칭 행을 받아 계산·필터한 뒤 앱에서 페이징한다.
+      const stockFilter = filters?.stock && filters.stock !== 'all' ? filters.stock : undefined;
+
+      let rawData: Awaited<typeof orderedQuery>;
+      let total: number;
+      // 품절 필터 경로에서 전체 집합에 대해 계산한 soldOutState 맵. 아래 결과 조합에서 재사용한다.
+      let precomputedSoldOutMap: Map<string, SoldOutState> | undefined;
+
+      if (stockFilter) {
+        const allRows = await orderedQuery;
+        const allVersionIds = allRows.map((item) => item.product_master_versions.id);
+        const fullSoldOutMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(allVersionIds, trx);
+        const targetState: SoldOutState =
+          stockFilter === 'sold_out' ? 'all' : stockFilter === 'partial' ? 'partial' : 'none';
+        const filteredRows = allRows.filter(
+          (item) => (fullSoldOutMap.get(item.product_master_versions.id) ?? 'none') === targetState,
+        );
+        total = filteredRows.length;
+        rawData = returnAll ? filteredRows : filteredRows.slice(offset, offset + limit);
+        precomputedSoldOutMap = fullSoldOutMap;
+      } else {
+        const [{ c }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
+        total = c;
+        rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
+      }
 
       // ===== 결과 가공: ProductMasterWithVersion + aggregate 데이터 =====
 
@@ -758,8 +784,10 @@ export class ProductMastersService {
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
 
-      // 한 번에 모든 품절 상태 집계 (materialized projection 기준, 상수 쿼리 1회)
-      const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
+      // 한 번에 모든 품절 상태 집계 (상수 쿼리 1회). 품절 필터 경로에서 이미 전체 집합에 대해
+      // 계산했다면 그 맵을 재사용해 중복 계산을 피한다.
+      const soldOutStateMap =
+        precomputedSoldOutMap ?? (await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx));
 
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));

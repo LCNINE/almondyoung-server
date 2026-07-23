@@ -34,6 +34,11 @@ export class ListProductMastersQueryDto {
 
   @IsOptional() @IsIn(['asc', 'desc']) order?: 'asc' | 'desc';
 
+  /** 품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음. */
+  @IsOptional()
+  @IsIn(['all', 'in_stock', 'partial', 'sold_out'])
+  stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
+
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()

@@ -167,6 +167,12 @@ export class ProductMastersController {
     description: '정렬 기준 (기본 createdAt)',
   })
   @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'], description: '정렬 방향 (기본 desc)' })
+  @ApiQuery({
+    name: 'stock',
+    required: false,
+    enum: ['all', 'in_stock', 'partial', 'sold_out'],
+    description: '품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음.',
+  })
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
@@ -187,6 +193,7 @@ export class ProductMastersController {
       createdTo: query.createdTo,
       sort: query.sort,
       order: query.order,
+      stock: query.stock,
       deleted: query.deleted ?? false,
       ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
     };
