@@ -159,16 +159,32 @@ export class StocktakingService {
         await tx.insert(stocktakingLines).values(linesToCreate).onConflictDoNothing();
       }
 
+      // insert 결과가 아니라 재조회로 응답을 만든다 — onConflictDoNothing 은 기존 라인을
+      // 돌려주지 않고, scanProduct 로 만들어진 미기대 라인도 화면에 보여야 하기 때문이다.
+      const lines = await tx
+        .select({
+          lineId: stocktakingLines.id,
+          skuId: stocktakingLines.skuId,
+          skuName: skus.name,
+          skuCode: skus.code,
+          barcode: sql<string | null>`(
+            SELECT barcode FROM sku_barcodes
+            WHERE sku_id = ${skus.id} AND is_primary = true
+            LIMIT 1
+          )`,
+          expectedQuantity: stocktakingLines.expectedQuantity,
+          countedQuantity: stocktakingLines.countedQuantity,
+          status: stocktakingLines.status,
+        })
+        .from(stocktakingLines)
+        .innerJoin(skus, eq(stocktakingLines.skuId, skus.id))
+        .where(and(eq(stocktakingLines.sessionId, dto.sessionId), eq(stocktakingLines.locationId, location[0].id)))
+        .orderBy(skus.code);
+
       return {
         locationId: location[0].id,
         locationCode: location[0].code,
-        expectedItems: stockAtLocation.map((item) => ({
-          skuId: item.skuId,
-          skuName: item.skuName,
-          skuCode: item.skuCode,
-          barcode: item.primaryBarcode,
-          expectedQuantity: item.expectedQty,
-        })),
+        expectedItems: lines,
       };
     }, tx);
   }
