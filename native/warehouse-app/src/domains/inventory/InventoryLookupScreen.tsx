@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   ColumnDef,
   OnChangeFn,
@@ -32,38 +32,31 @@ export function InventoryLookupScreen() {
   });
 
   const navigate = useNavigate();
-  const [scanned, setScanned] = useState<string | null>(null);
   const [scanNotice, setScanNotice] = useState<string | null>(null);
-  const byBarcode = useSkuByBarcode(scanned);
+  const [scanHits, setScanHits] = useState<SkuSearchItem[]>([]);
+  const byBarcode = useSkuByBarcode();
 
-  // 각 화면은 자신이 기대하는 바코드 종류를 안다 — 여기선 상품 바코드다.
+  // 각 화면은 자신이 기대하는 바코드 종류를 안다 — 여기선 상품 바코드다. 스캔은
+  // "상태"가 아니라 "이벤트"다 — mutate 호출마다 독립적으로 요청하고, 그 결과는
+  // 이 호출의 onSuccess 에서만 정확히 한 번 소비한다. 캐시 신선도(staleTime)나
+  // effect 의 재진입에 기대지 않는다 — 그 설계는 두 방향의 버그(응답 누락, 중복
+  // 처리)를 모두 냈다.
   useScanner((e) => {
+    if (byBarcode.isPending) return; // 응답을 기다리는 동안 겹치는 스캔은 무시한다
     setScanNotice(null);
-    setScanned(e.code);
+    setScanHits([]);
+    byBarcode.mutate(e.code, {
+      onSuccess: (hits) => {
+        if (hits.length === 1) {
+          void navigate({ to: '/inventory/$sku', params: { sku: hits[0].id } });
+        } else if (hits.length === 0) {
+          setScanNotice(`등록되지 않은 바코드예요: ${e.code}`);
+        } else {
+          setScanHits(hits);
+        }
+      },
+    });
   });
-
-  // scanned 를 null 로 되돌리는 시점과 실제 라우트 전환(언마운트) 사이에는 틈이
-  // 있다 — 그 틈에 같은 바코드가 한 번 더 들어오면(하드웨어 중복 전송 등)
-  // 캐시에 남은 동일 응답으로 scanned 가 되살아나 이 effect가 다시 걸릴 수
-  // 있다. dataUpdatedAt(이 응답을 처음 받은 시각)으로 "이미 처리한 응답"인지
-  // 표시해 두면, scanned 재설정 타이밍에 기대지 않고도 같은 응답을 두 번
-  // 처리(=두 번 navigate)하지 않는다.
-  const handledAtRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    if (!scanned || !byBarcode.isSuccess) return;
-    if (handledAtRef.current === byBarcode.dataUpdatedAt) return;
-    handledAtRef.current = byBarcode.dataUpdatedAt;
-
-    const hits = byBarcode.data ?? [];
-    if (hits.length === 1) {
-      setScanned(null);
-      void navigate({ to: '/inventory/$sku', params: { sku: hits[0].id } });
-    } else if (hits.length === 0) {
-      setScanNotice(`등록되지 않은 바코드예요: ${scanned}`);
-      setScanned(null);
-    }
-  }, [scanned, byBarcode.isSuccess, byBarcode.data, byBarcode.dataUpdatedAt, navigate]);
 
   const sort = sorting[0];
   const { data, isLoading, isError, error } = useSkuSearch({
@@ -144,17 +137,17 @@ export function InventoryLookupScreen() {
         </p>
       ) : null}
 
-      {byBarcode.isSuccess && (byBarcode.data?.length ?? 0) > 1 ? (
+      {scanHits.length > 1 ? (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold text-gray-700">스캔한 바코드의 상품</h2>
           <ul className="space-y-1">
-            {(byBarcode.data ?? []).map((hit) => (
+            {scanHits.map((hit) => (
               <li key={hit.id}>
                 <button
                   type="button"
                   className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
                   onClick={() => {
-                    setScanned(null);
+                    setScanHits([]);
                     void navigate({ to: '/inventory/$sku', params: { sku: hit.id } });
                   }}
                 >
