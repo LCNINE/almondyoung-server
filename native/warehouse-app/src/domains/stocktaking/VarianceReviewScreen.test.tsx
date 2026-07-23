@@ -101,8 +101,8 @@ function renderScreen(
  * 이면 안 된다. 0 이면 데이터가 도착하자마자 isStale 이 true 가 되어버려서
  * "신선한 성공" 과 "무효화된 stale" 을 구별할 수 없다.
  */
-function renderWithClient(client: ApiClient) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } });
+function renderWithClient(client: ApiClient, existingQc?: QueryClient) {
+  const qc = existingQc ?? new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 10_000 } } });
   const rootRoute = createRootRoute({ component: Outlet });
   const index = createRoute({
     getParentRoute: () => rootRoute,
@@ -228,6 +228,69 @@ describe('VarianceReviewScreen', () => {
 
     resolveRefetch?.([]);
 
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+    });
+  });
+
+  it('언마운트 중 무효화되고 stale 윈도우 안에 재마운트해도, 재조회가 끝날 때까지 완료를 막는다', async () => {
+    // isFetching 만으로는 못 잡는 경로다. 재마운트가 refetchOnMount 로 즉시 새
+    // 요청을 걸면(기본값), 그 요청이 도는 동안엔 isFetching 만으로도 이미
+    // 막혀서 isStale 절이 하는 일이 안 보인다 — 그래서 이 테스트는 refetchOnMount
+    // 를 꺼서 "재조회가 아직 시작조차 안 한, 무효화만 된" 상태를 붙잡아 둔다.
+    // 그 상태에서도(isFetching=false, isStale=true) 게이트가 닫혀 있어야
+    // isStale 절이 실제로 뭔가를 막고 있다는 뜻이다. 재조회는 그 다음에 직접
+    // 걸어서(화면이 다시 활성 옵저버를 갖게 됐을 때의 invalidate) "재조회가
+    // 끝날 때까지" 도 같이 검증한다.
+    let varianceCalls = 0;
+    let resolveRefetch: ((v: unknown[]) => void) | undefined;
+    const client: ApiClient = {
+      request: (async (o: Call) => {
+        if (o.path === '/stocktaking/sessions/s-1') return detailWith('in_progress');
+        if (o.path === '/stocktaking/sessions/s-1/variances') {
+          varianceCalls += 1;
+          if (varianceCalls === 1) return [];
+          return new Promise<unknown[]>((resolve) => {
+            resolveRefetch = resolve;
+          });
+        }
+        return {};
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 10_000, refetchOnMount: false } },
+    });
+
+    const first = renderWithClient(client, qc);
+    expect(await screen.findByText(/차이가 없어요/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+
+    // 화면을 떠난다 — 이 시점엔 옵저버가 없다.
+    first.unmount();
+
+    // 다른 화면(SessionCountScreen)에서의 카운팅 뮤테이션이 캐시를 무효화한다.
+    // 옵저버가 없으므로 즉시 재조회는 걸리지 않는다 — invalidated 표시만 남는다.
+    void qc.invalidateQueries({ queryKey: ['stocktaking-variances', 's-1'] });
+
+    // stale 윈도우 안에 같은 캐시로 다시 들어온다. refetchOnMount 를 꺼 뒀으니
+    // 재조회는 아직 안 걸렸다 — rows 는 여전히 빈 배열(무효화 전 캐시)이다.
+    renderWithClient(client, qc);
+    await screen.findByRole('heading', { name: '차이 확인' });
+
+    // rows 가 비어 있어도(무효화된 캐시라) "차이가 없어요" 배너 대신 빈 목록이
+    // 보이고, 완료도 막혀 있어야 한다 — 재조회가 아직 시작도 안 했다(isFetching
+    // 은 false). 이 단정을 막는 건 오직 isStale 뿐이다.
+    expect(varianceCalls).toBe(1); // 재조회가 걸리지 않았음을 직접 확인한다.
+    expect(screen.queryByText(/차이가 없어요/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeDisabled();
+
+    // 이제 실제로 재조회를 건다(예: 화면이 다시 활성 옵저버를 가진 채 무효화되는
+    // 경우) — 재조회가 끝나기 전까진 여전히 막혀 있어야 하고, 끝나면 열려야 한다.
+    void qc.invalidateQueries({ queryKey: ['stocktaking-variances', 's-1'] });
+    await waitFor(() => expect(varianceCalls).toBe(2));
+    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeDisabled();
+
+    resolveRefetch?.([]);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
     });
