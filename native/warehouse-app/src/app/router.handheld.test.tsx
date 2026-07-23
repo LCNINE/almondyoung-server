@@ -3,6 +3,8 @@ import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouterProvider } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
+import { WarehouseProvider } from './warehouse-context';
+import { createMemoryPrefs } from '../core/data/devicePrefs';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { createAppRouter } from './router';
 import type { Session } from '../core/auth/session';
@@ -26,9 +28,11 @@ describe('handheld hub navigation', () => {
     const user = userEvent.setup();
     render(
       <SessionProvider session={session}>
-        <ScanProvider>
-          <RouterProvider router={createAppRouter(session)} />
-        </ScanProvider>
+        <WarehouseProvider prefs={createMemoryPrefs()}>
+          <ScanProvider>
+            <RouterProvider router={createAppRouter(session)} />
+          </ScanProvider>
+        </WarehouseProvider>
       </SessionProvider>
     );
 
