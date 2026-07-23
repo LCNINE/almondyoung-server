@@ -24,8 +24,9 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    ```bash
    docker compose up -d
    ```
-   postgres 최초 기동 시 `scripts/local/init-db.sql` 이 논리 DB 10개
-   (core, medusa, wallet, analytics, channel_adapter, membership, notification, ugc, file_service, user_service)를 만든다.
+   postgres 최초 기동 시 `scripts/local/init-db.sql` 이 논리 DB 11개
+   (core, dev_core, medusa, wallet, analytics, channel_adapter, membership, notification, ugc, file_service, user_service)를 만든다.
+   `dev_core` 는 core 단독 로컬 개발용 DB — 아래 "core 단독 개발 + `dev_core` 시드" 절 참고.
 5. **로컬 포트 배치** — `.env` 들의 PORT 와 서비스 간 URL(`OIDC_ISSUER_URL`, `WALLET_BASE_URL` 등)은 아래 표 기준으로 맞춘다. (배포판 `.env` 묶음을 그대로 받았다면 이미 반영돼 있음.)
 
    | 앱 | 포트 | | 앱 | 포트 |
@@ -46,6 +47,9 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    KAFKA_BROKERS=localhost:9092    # KAFKA_API_KEY/SECRET 는 삭제 또는 주석
    REDIS_URL=redis://localhost:6379
    ```
+   core 를 warehouse-app 등 클라이언트 개발용으로 **단독** 띄울 거라면 `.../core` 가 아니라
+   `.../dev_core` 를 써야 한다 — 아래 "core 단독 개발 + `dev_core` 시드" 절 참고. `core` 로 잘못
+   맞추면 시드가 없는 빈 DB 라 재고조회가 원인 신호 없이 텅 비어 보인다.
    전체 필수 키 목록의 SoT 는 `deployments/lcnine/{services,auth}/infra/services.ts` 의 각 서비스 `environment` 블록 — `.env` 가 안 맞으면 여기와 대조할 것. 시크릿 값은 `sst secret list --stage dev` 로 조회.
 6. **스키마 마이그레이션**
    ```bash
@@ -112,6 +116,62 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
 - macOS 는 첫 실행 시 방화벽 허용 프롬프트만 수락하면 됨. 리눅스는 `ufw allow <포트>`.
 - DB 도 직접 붙어야 하면 `postgresql://postgres:postgres@<노트북 IP>:5432/<논리DB>` (compose 가 5432 를 노출).
 
+## core 단독 개발 + `dev_core` 시드
+
+warehouse-app 등 클라이언트 개발용으로 core 만 로컬에 띄우고, 전용 논리 DB `dev_core` 를
+한 명령으로 밀고 다시 시딩한다. 통합테스트·`refresh-from-live.sh` 가 쓰는 `core` 와 분리돼 있어
+서로를 오염시키지 않는다. 설계 근거: `docs/superpowers/specs/2026-07-23-local-core-dev-environment-design.md`
+
+```bash
+docker compose up -d                 # postgres + kafka + zookeeper (kafka 없으면 core 가 안 뜬다)
+cp env-templates/.env.core.local.example apps/core/.env   # <사용자>/<임의값> 채우기
+npm run dev:core:reset               # drop → create → migrate → 스코프 → 시드
+npm run dev:core:reset -- --bulk     # SKU +300 · 로케이션 +50 (페이지네이션 체감용)
+npm run start:main:dev               # core :3100
+```
+
+- **Kafka 는 끌 수 없다.** `main.ts` 가 조건 없이 `startAllMicroservices()` 를 부르므로 브로커에
+  못 붙으면 부팅이 실패한다. compose 브로커로 **격리**하는 것이지 비활성화하는 게 아니다.
+  `KAFKA_API_KEY/SECRET` 를 넣지 않아 라이브 Confluent 접속은 애초에 불가능하다.
+- **`KAFKA_GROUP_ID` 는 안전장치가 아니다.** `apps/core/src/main.ts` 와 `sales-order.module.ts` 가
+  컨슈머 `groupId` 를 리터럴 `'almondyoung-order-consumer'` 로 하드코딩하고 있어 이 변수를 아예 읽지 않는다
+  (라이브 배포도 같은 변수를 세팅하지만 마찬가지로 무시된다). 로컬/라이브를 그룹 이름으로 격리한다는
+  발상은 성립하지 않는다 — 실질 방어선은 바로 위 `KAFKA_API_KEY/SECRET` 미설정 하나뿐이다.
+- **user-service 는 라이브를 쓴다.** core 가 `OIDC_ISSUER_URL` 로 JWKS 검증만 하므로 그대로 통과한다.
+  단 피킹·출고(fulfillment) 엔드포인트는 `logistics_worker`/`logistics_manager`/`master` 역할이 필요하다.
+  재고조회·실사·이동·입고(inventory 모듈)는 scope 게이트가 없어 로그인만 되면 동작한다.
+- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`
+  이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+- **시드 로직을 바꾼 뒤 검증**: `npm run test:seed-dev-core:integration` 이 `scripts/local/seed-dev-core/`
+  전체(스코프·마스터데이터·재고·입고·주문·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
+  두 번(기본 + `--bulk`) 부르므로 `--runInBand` 로 직렬 실행되고, 로컬 `dev_core` 를 실제로 drop/create 한다.
+  테스트 완료 후 DB 는 `--bulk` 상태(SKU 320개, 로케이션 64개)로 남으므로, 기본 시드(SKU 20개, 로케이션 14개)로
+  돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.
+- warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
+  `cd native/warehouse-app && npm run tauri:dev:live`.
+- **`SEED_DEV_CORE_URL` 을 기본값(`localhost:5432/dev_core`)과 다르게 주면 확인 프롬프트가 뜬다.**
+  `sst tunnel` 이 떠 있으면 guard 를 통과하는 `localhost` 가 실제로는 라이브 클러스터일 수 있어서다
+  (guard.ts 는 호스트/DB이름만 보고, tunnel 여부는 못 본다). `yes` 를 입력해야 진행하며, 비대화식
+  stdin(파이프/CI)에서는 안전 측으로 즉시 거부하고 hang 하지 않는다 — `npm run test:seed-dev-core:integration`
+  은 이 변수를 기본값과 동일한 문자열로 설정해서 부르므로 프롬프트 자체를 타지 않는다.
+- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** inventory/fulfillment 쓰기의
+  확인 대상은 `public.outbox_events`(`apps/core/src/modules/inventory/schema/inventory.schema.ts` 의
+  inventory 전용 outbox)다 — 같은 이름의 `event.outbox_events`(`libs/events` 범용 outbox, `pgSchema('event')`)도
+  `dev_core` 안에 따로 존재하지만 inventory/fulfillment 의 쓰기는 거기 쌓이지 않는다. (catalog 모듈은
+  다르다 — `product-masters.service.ts`/`product-versions.service.ts`/`categories.service.ts` 는
+  `OutboxPublisher.saveEvent` 로 실제로 `event.outbox_events` 에 쓴다. PIM 쪽 outbox 를 볼 땐 이 절이
+  아니라 그 테이블을 봐야 한다.) 잘못 짚으면 조용히 0건이 나와 "outbox 가 깨끗하다"는 착각을 준다.
+  ```sql
+  SELECT count(*) FROM public.outbox_events WHERE event_type = 'StockReceived';
+  -- → 26
+  ```
+  `InventoryCommandService.receive()`
+  가 만드는 페이로드가 `packages/event-contracts/streams/inventory.stream.ts` 의 `StockReceivedSchema` 와
+  안 맞아(`stockEventId`/`inboundType`/`receivedAt` 누락, `afterQuantity`/`occurredAt` 존재) 발행이 매번 throw 한다.
+  이 브랜치와 무관한 **기존 결함**(`develop` 에도 있음)이고, `StockReceived` 소비자가 현재 0개라 기능은
+  안 깨지며 5회 재시도 후 `failed` 로 종료된다(무한 pending 아님). 로컬 셋업이 고장난 게 아니다 — 드레인
+  확인 시 이 26건은 제외하고 나머지가 쌓이지 않는지만 본다.
+
 ## 물류 통합 테스트 (jest, 로컬 DB)
 
 inventory/fulfillment 도메인의 통합 테스트(`*.integration.spec.ts`)는 서비스를 직접 와이어링해 실제 postgres 에 대고 도메인 불변식을 검증한다. HTTP·auth·Kafka 를 경유하지 않으므로 `.env` 도 불필요하다.
@@ -165,7 +225,8 @@ DB suite는 아래를 포함한다.
 - **알림톡 실발송**: dev 시크릿부터 `NhnSecretKey` 가 빈 값이라 로컬 `.env` 엔 더미(`local-dummy-no-send`)를 넣어 부팅만 되게 함. 실발송 테스트는 라이브에서만.
 
 - **reference/demo 시드** (`db:seed:ref`, `db:seed:demo`): `sst shell` 의 `Resource.Db` 에 의존해서 로컬 postgres 에 못 쓴다.
-  당장 필요하면 기존 DB 에서 `pg_dump --data-only` 로 가져올 것. 자주 필요해지면 `scripts/seeding/lib/db-connection.ts` 에 `DATABASE_URL` fallback 추가.
+  core 개발용 시드는 위 "core 단독 개발 + `dev_core` 시드" 로 대체됐다. 다른 서비스(wallet/membership 등)의
+  로컬 시드가 필요해지면 `scripts/seeding/lib/db-connection.ts` 에 `DATABASE_URL` fallback 을 추가한다.
 - **OpenSearch** (search / ugc 리뷰 정렬): compose 에 없음. search 앱을 로컬에서 돌려야 할 때 추가.
 - **S3, Twilio, 소셜 로그인 등 외부 서비스**: `.env` 의 기존 키를 그대로 쓰면 됨 (로컬화 대상 아님).
 
