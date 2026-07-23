@@ -175,11 +175,14 @@ export class StockProjectionReader {
         trx
           .select({
             locationId: wmsTables.stockLedgers.locationId,
+            locationCode: wmsTables.locations.code,
             stockState: wmsTables.stockLedgers.stockState,
             quantity: wmsTables.stockLedgers.qty,
           })
           .from(wmsTables.stockLedgers)
-          .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId))),
+          .leftJoin(wmsTables.locations, eq(wmsTables.stockLedgers.locationId, wmsTables.locations.id))
+          .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId)))
+          .orderBy(sql`${wmsTables.locations.code} ASC NULLS LAST`, wmsTables.stockLedgers.stockState),
       tx,
     );
 
