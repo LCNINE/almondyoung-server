@@ -243,7 +243,7 @@ Expected: `401`. 200 이면 인증이 빠진 것이고, 연결 거부면 아직 
 
 - [ ] **Step 6: HS256 토큰을 만들어 실제 데이터를 확인한다**
 
-`npm run generate:token` 은 readline 대화형이라 비대화식 셸에서 못 쓴다. 같은 페이로드를 인라인으로 서명한다:
+`npm run generate:token` 은 readline 대화형이라 비대화식 셸에서 못 쓴다. 그리고 **그 스크립트의 페이로드를 그대로 베끼면 401 이 난다** — `iss: 'almondyoung-auth'` 를 넣는데, `JwtAccessStrategy.validate()` 가 `payload?.iss` 가 있으면 `config.oidcIssuer` 와 대조하고(`libs/authorization/src/strategies/jwt-access.strategy.ts:107-112`), core 의 `oidcIssuer` 는 `apps/core/.env` 의 `OIDC_ISSUER_URL=https://user.almondyoung.com` 이라 불일치로 `invalid token issuer` 를 던진다. 같은 파일 주석이 밝히듯 HS256 legacy 토큰은 **`iss` claim 자체가 없어야** 한다. 따라서 `iss` 를 빼고 서명한다:
 
 ```bash
 cd /home/pauseb/workspace/almondyoung-server
@@ -256,8 +256,9 @@ const env = Object.fromEntries(
     .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()])
 );
 const id = "019d0008-0001-7000-a000-000000000001";
+// iss 를 넣지 않는다 — 넣으면 oidcIssuer 대조에 걸려 401 이다.
 console.log(jwt.sign(
-  { sub: id, userId: id, email: "dev@lcnine.kr", roles: ["master"], iss: "almondyoung-auth" },
+  { sub: id, userId: id, email: "dev@lcnine.kr", roles: ["master"] },
   env.AUTH_SECRET,
   { expiresIn: "2h" }
 ));
@@ -268,7 +269,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 ```
 
 Expected: `total: 20 items: 20 first: DEV-SKU-0001`.
-- 401 이 계속 나오면 `apps/core/.env` 의 `AUTH_SECRET` 을 못 읽은 것이다.
+- 401 이 계속 나오면 `apps/core/.env` 의 `AUTH_SECRET` 을 못 읽었거나, 페이로드에 `iss` 가 들어간 것이다.
 - `total: 0` 이면 core 가 `dev_core` 가 아닌 DB 를 보고 있다 — `apps/core/.env` 의 `DATABASE_URL` 을 확인한다.
 - `roles: ["master"]` 는 `ScopeGuard` 를 전면 우회한다. inventory 모듈은 원래 scope 게이트가 없지만, 이 스모크가 auth 문제로 막히지 않게 하려는 선택이다.
 
