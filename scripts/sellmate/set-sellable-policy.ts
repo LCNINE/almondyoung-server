@@ -13,6 +13,10 @@
  *   bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> \
  *     --flag always_sellable_zero_stock --on --apply
  *
+ *   # 강제 품절 고정 (런북 §Ⓐ-0)
+ *   NAME_FILTER='akf\s*쌍커풀\s*테이프' bash scripts/sellmate/run.sh live set-sellable-policy <csv> \
+ *     --flag pre_stock_sellable --off --set-manual-oos --apply
+ *
  * ⚠️ 이 스크립트는 이벤트를 발행하지 않는다 (sync-stock 과 같은 이유 — raw UPDATE 라 outbox 를
  *    안 탄다). 끝나면 반드시 recalc-sellable 을 돌려야 Medusa 에 반영된다. 대상 variant 목록을
  *    stdout 과 --out 파일에 찍으므로 그대로 VARIANT_IDS 로 넘기면 된다.
@@ -143,7 +147,6 @@ async function main() {
           (opt.clearManualOos ? ' → --clear-manual-oos 로 함께 해제' : ' → 해제하려면 --clear-manual-oos'),
       );
     }
-    // 매칭된 것부터 보여준다 — 실제로 이 실행이 건드리는 게 그쪽이다.
     // Core 가 계산해 Medusa 로 내보낸 결론(projection)을 같이 찍는다 — "적용했는데 왜 아직 품절?" 의 1차 분기.
     // 여기가 판매가능인데 스토어프론트가 품절이면 원인은 Core 가 아니라 하류(inbox 지연/Medusa/캐시)다.
     const matched = targets.filter((t) => byCode.has(t.itemCode));

@@ -11,11 +11,13 @@
 /** 상품일련번호(셀메이트 `상품일련번호`) 기준 제외. 옵션이 늘어도 따라오므로 이쪽을 우선 쓴다. */
 export const EXCLUDED_PRODUCT_SERIALS: ReadonlyMap<string, string> = new Map([
   ['13248', 'akf쌍커풀테이프 — 재고동기화 금지, 품절 유지 (2026-07-23)'],
+  ['13333', '미스티 래쉬 — 중국 소싱, 재고동기화 금지 + 품절 유지 (2026-07-23)'],
 ]);
 
 /** 상품명 정규식 기준 제외. 상품일련번호가 바뀌거나 CSV 에 그 열이 없을 때의 안전망. */
 export const EXCLUDED_NAME_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /akf\s*쌍커풀\s*테이프/i, reason: 'akf쌍커풀테이프 — 재고동기화 금지, 품절 유지 (2026-07-23)' },
+  { pattern: /미스티\s*래쉬/, reason: '미스티 래쉬 — 중국 소싱, 재고동기화 금지 + 품절 유지 (2026-07-23)' },
 ];
 
 /**
@@ -35,6 +37,8 @@ export function excludedReason(productSerial: string, productName: string): stri
 if (
   !excludedReason('13248', '') ||
   !excludedReason('', 'akf쌍커풀테이프') ||
+  !excludedReason('13333', '') ||
+  !excludedReason('', '미스티 래쉬') ||
   excludedReason('99999', '루가 래쉬 밍크모')
 ) {
   throw new Error('excludedReason 판정이 깨졌습니다');

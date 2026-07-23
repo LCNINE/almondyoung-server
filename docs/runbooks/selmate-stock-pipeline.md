@@ -72,6 +72,7 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 | 상품 | 상품일련번호 | 조치 | 등록일 |
 |------|-------------|------|--------|
 | `akf쌍커풀테이프` | 13248 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`) | 13333 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
 
 제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
 추가할 땐 `EXCLUDED_PRODUCT_SERIALS` / `EXCLUDED_NAME_PATTERNS` 양쪽에 사유와 날짜를 남기고 이 표도 갱신한다.
@@ -83,6 +84,30 @@ NAME_FILTER='akf\s*쌍커풀\s*테이프' bash scripts/sellmate/run.sh live set-
   --flag pre_stock_sellable --off --set-manual-oos --apply --out akf.txt
 VARIANT_IDS="$(paste -sd, akf.txt)" bash scripts/sellmate/run.sh live recalc-sellable .
 ```
+
+미스티 래쉬도 같은 절차지만 **2026-07-23 기준 품절 고정을 걸 대상이 없다.** 상태를 남겨둔다:
+
+- Medusa 에 `미스티 래쉬`(handle `894de710-32f7-4092-b952-b7a7dc4a325b`) 가 **`draft` 로 존재**한다. variant 6개
+  (`P0000FJA000A`~`000F`) 전부 `manage_inventory=false` / `allow_backorder=false`. draft 라 스토어프론트 노출은 없다.
+- Core 매칭은 6옵션 중 3개(LC/8·9·10)에만 있는데, **그 매칭이 가리키는 Medusa variant UUID 3개가 Medusa 에 존재하지 않는다**
+  (admin `product-variants?id[]=…` → `count 0`). Core 판정이 `NOT_ACTIVE_VERSION` 인 것도 같은 이야기다. 즉 **유령 매칭**이고,
+  실제 draft 상품의 variant 6개는 Core 매칭이 하나도 없다.
+- 그래서 `set-sellable-policy --set-manual-oos` 는 유령 variant 에만 걸려 실효가 없다. 걸지 않았다.
+- **대신 Medusa 에 직접 `manage_inventory=true` 를 걸었다** (6 variant 전부, `allow_backorder=false` 유지).
+  inventory level 이 아예 없어(`location-levels` 0건) available=0 → 품절 확정이다. published 로 바뀌어도 안 팔린다.
+
+```bash
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+# ⚠️ URL 의 <prod_id> 는 handle 이 아니라 `prod_…` id 다. handle 을 넣으면 본문 없는 500 이 난다.
+curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>/variants/<variant_id> \
+  -H 'Content-Type: application/json' -d '{"manage_inventory":true,"allow_backorder":false}'
+```
+
+⚠️ **published 로 돌리기 전에** 매칭을 정상 variant 로 다시 붙일 것 — 지금은 유령 매칭이라 Core 가
+이 상품의 재고를 관리하지 못한다.
+
+일반화하면: **`excluded.ts` 등록은 "셀메이트 재고가 안 들어옴" 까지만 보장한다.** 판매 차단은 Medusa 쪽
+`manage_inventory` / `availability_override` 가 하는 일이고, 매칭이 유령이거나 없으면 Core 로는 손댈 수 없다.
 
 `--set-manual-oos` 는 `availability_override='manual_out_of_stock'` 을 건다. 계산기가 **가장 먼저** 보는 값이라
 재고·플래그와 무관하게 품절이 된다 (`calculator.ts:98`).
@@ -254,7 +279,7 @@ VARIANT_IDS="$(paste -sd, kr-variants.txt)" bash scripts/sellmate/run.sh live re
 - dry-run 이 기본. `--apply` 로 커밋, `--out <file>` 로 variant 목록을 받아 그대로 `VARIANT_IDS` 에 넘긴다.
 - `product_matchings` 와 `sales_variant_policies` **양쪽**을 함께 쓴다. 하나만 바꾸면 어드민 표시와 실제 판매동작이 갈라진다.
 - 수동품절(`availability_override='manual_out_of_stock'`)이 걸린 건은 플래그를 켜도 계산기가 품절로 판정한다.
-  스크립트가 몇 건인지 경고하며, 함께 풀려면 `--clear-manual-oos`.
+  스크립트가 몇 건인지 경고하며, 함께 풀려면 `--clear-manual-oos` / 반대로 걸려면 `--set-manual-oos`.
 - **매칭 안 된 품목은 건드리지 않는다** — `MATCHING_PENDING` 이라 애초에 게이팅이 없어 이미 무제한 판매 중이다.
   dry-run 이 `[미매칭]` 으로 표시하는 게 정상이며, 이 숫자가 크면 정책 문제가 아니라 ② 매칭이 안 붙은 것이다.
 
