@@ -3,7 +3,7 @@
 - 날짜: 2026-07-23
 - 대상: `native/warehouse-app` (프론트) + `apps/core` (읽기 엔드포인트 추가)
 - 브랜치: `feat/warehouse-app-phase1-adjust-stocktaking`
-- 상태: 설계 승인됨 (구현 전) — 브레인스토밍 산출물, 구현 플랜은 후속
+- 상태: 구현 완료 (플랜 `docs/superpowers/plans/2026-07-23-warehouse-app-phase1-adjust-stocktaking.md`)
 - 상위 문서:
   - `docs/superpowers/specs/2026-07-20-warehouse-native-app-design.md` (마스터 설계) — §11 **Phase 1 = 재고 검색·조정·실사(핸드헬드), read + 낙관적 락 mutation**
   - `docs/superpowers/specs/2026-07-22-warehouse-app-page-structure-design.md` (IA/페이지 골격) — 본 문서는 그 스텁 중 Phase 1 해당분을 채운다
