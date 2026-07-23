@@ -10,6 +10,7 @@ import { AuthedLayout } from './routes/AuthedLayout';
 import { ProfileHome } from './routes/ProfileHome';
 import { DiagnosticsRoute } from './routes/DiagnosticsRoute';
 import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
+import { SettingsRoute } from './routes/SettingsRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 
 export interface RouterContext {
@@ -96,7 +97,7 @@ const packingRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/settings',
-  component: () => <PlaceholderScreen title="설정" note="런타임 설정은 후속 Phase에서 구현됩니다." />,
+  component: SettingsRoute,
 });
 
 export const routeTree = rootRoute.addChildren([
