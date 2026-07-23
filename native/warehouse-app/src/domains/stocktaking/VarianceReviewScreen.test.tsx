@@ -75,16 +75,20 @@ function detailWith(status: string) {
 
 function renderScreen(
   calls: Call[],
-  opts: { status?: string; variances?: unknown[] } = {}
+  opts: { status?: string; variances?: unknown[]; failGenerate?: boolean } = {}
 ) {
   const status = opts.status ?? 'in_progress';
   const variances = opts.variances ?? VARIANCES;
+  const failGenerate = opts.failGenerate ?? false;
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
       if (o.path === '/stocktaking/sessions/s-1') return detailWith(status);
       if (o.path === '/stocktaking/sessions/s-1/variances') return variances;
-      if (o.path === '/stocktaking/sessions/s-1/generate-adjustments') return PREVIEW;
+      if (o.path === '/stocktaking/sessions/s-1/generate-adjustments') {
+        if (failGenerate) throw new Error('요청 실패 → 500');
+        return PREVIEW;
+      }
       return {};
     }) as unknown as ApiClient['request'],
   };
@@ -139,6 +143,16 @@ describe('VarianceReviewScreen', () => {
     expect(await screen.findByTestId('preview-line-1')).toHaveTextContent('-1');
     expect(screen.getByText(/현재 6/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /실사 완료/ })).toBeEnabled();
+  });
+
+  it('미리보기가 실패하면 완료 버튼은 계속 비활성이고 오류가 보인다', async () => {
+    renderScreen([], { failGenerate: true });
+    await userEvent.click(await screen.findByRole('button', { name: '조정 미리보기' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.'
+    );
+    expect(screen.getByRole('button', { name: /실사 완료/ })).toBeDisabled();
   });
 
   it('완료는 확인 다이얼로그를 거쳐 complete 를 부른다', async () => {

@@ -91,8 +91,13 @@ export function VarianceReviewScreen({ sessionId }: { sessionId: string }) {
           className="w-full py-3 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
           disabled={generate.isPending}
           onClick={async () => {
-            const result = await generate.mutateAsync(sessionId);
-            setPreview(result.preview);
+            try {
+              const result = await generate.mutateAsync(sessionId);
+              setPreview(result.preview);
+            } catch {
+              // generate.isError 배너가 이미 메시지를 보여준다 — 여기서는
+              // unhandled rejection 만 막는다. 에러 상태 자체는 그대로 둔다.
+            }
           }}
         >
           조정 미리보기
