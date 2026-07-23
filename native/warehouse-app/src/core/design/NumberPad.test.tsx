@@ -53,4 +53,15 @@ describe('NumberPad', () => {
 
     expect(onChange).toHaveBeenCalledWith(-12);
   });
+
+  it('0 에서 부호 키는 0 을 생성한다', async () => {
+    const onChange = vi.fn();
+    render(<NumberPad value={0} onChange={onChange} allowNegative />);
+
+    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+
+    expect(onChange).toHaveBeenCalled();
+    const received = onChange.mock.calls[0][0];
+    expect(Object.is(received, 0)).toBe(true);
+  });
 });
