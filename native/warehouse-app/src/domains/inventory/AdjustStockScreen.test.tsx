@@ -369,4 +369,91 @@ describe('AdjustStockScreen', () => {
     expect(second.idempotencyKey).toEqual(expect.any(String));
     expect(second.idempotencyKey).not.toEqual(first.idempotencyKey);
   });
+
+  it('실패 후 delta 를 바꾸고 재제출하면 다른 멱등키를 쓴다', async () => {
+    // 키가 성공 후에만 회전하면, "요청은 커밋됐는데 응답만 유실"된 경우 작업자가
+    // delta 를 고쳐서 재제출해도 같은 키가 재사용된다 — 백엔드는 이걸 replay 로
+    // 보고 성공을 보여주지만 실제로는 예전(틀린) 금액이 적용된다.
+    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    let shouldFail = true;
+    const client: ApiClient = {
+      request: (async (opts: { path: string; method?: string; body?: unknown; idempotencyKey?: string }) => {
+        if (opts.path === '/inventory/stocks/adjust') {
+          calls.push({ path: opts.path, body: opts.body, idempotencyKey: opts.idempotencyKey });
+          if (shouldFail) throw new Error('요청 실패 → 500');
+          return {};
+        }
+        if (opts.path.startsWith('/locations/warehouses/')) {
+          return { items: [{ id: 'l-9', code: 'B-03-01', displayName: 'B-03-01' }], total: 1 };
+        }
+        if (opts.path in TABLE) return TABLE[opts.path];
+        throw new Error(`GET ${opts.path} → 404`);
+      }) as unknown as ApiClient['request'],
+    };
+    renderScreen(client, 'l-1');
+
+    await userEvent.click(await screen.findByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(screen.getByRole('button', { name: '파손' }));
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    const firstKey = calls[0].idempotencyKey;
+    expect(firstKey).toEqual(expect.any(String));
+
+    // 실패 후 폼은 여전히 편집 가능하다 — delta 를 -2 에서 -23 으로 바꾼다.
+    await userEvent.click(screen.getByRole('button', { name: '3' }));
+    shouldFail = false;
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1].body).toMatchObject({ delta: -23 });
+    expect(calls[1].idempotencyKey).toEqual(expect.any(String));
+    expect(calls[1].idempotencyKey).not.toEqual(firstKey);
+  });
+
+  it('실패 후 같은 값으로 재시도하면 같은 멱등키를 재사용한다', async () => {
+    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    let shouldFail = true;
+    const client: ApiClient = {
+      request: (async (opts: { path: string; method?: string; body?: unknown; idempotencyKey?: string }) => {
+        if (opts.path === '/inventory/stocks/adjust') {
+          calls.push({ path: opts.path, body: opts.body, idempotencyKey: opts.idempotencyKey });
+          if (shouldFail) throw new Error('요청 실패 → 500');
+          return {};
+        }
+        if (opts.path.startsWith('/locations/warehouses/')) {
+          return { items: [{ id: 'l-9', code: 'B-03-01', displayName: 'B-03-01' }], total: 1 };
+        }
+        if (opts.path in TABLE) return TABLE[opts.path];
+        throw new Error(`GET ${opts.path} → 404`);
+      }) as unknown as ApiClient['request'],
+    };
+    renderScreen(client, 'l-1');
+
+    await userEvent.click(await screen.findByRole('button', { name: '2' }));
+    await userEvent.click(screen.getByRole('button', { name: '부호' }));
+    await userEvent.click(screen.getByRole('button', { name: '파손' }));
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => expect(calls).toHaveLength(1));
+    const firstKey = calls[0].idempotencyKey;
+
+    // 아무것도 바꾸지 않고 그대로 재시도한다 — 이건 진짜 "재시도"이므로 같은
+    // 키를 재사용해야 한다(백엔드가 중복 적용을 막아 준다).
+    shouldFail = false;
+    await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '조정' }));
+
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[1].body).toMatchObject({ delta: -2 });
+    expect(calls[1].idempotencyKey).toEqual(firstKey);
+  });
 });

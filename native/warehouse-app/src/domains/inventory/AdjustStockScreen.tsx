@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -67,6 +67,25 @@ export function AdjustStockScreen({
   const effectiveReason = reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
     isSet && Boolean(warehouseId) && Boolean(locationId) && delta !== 0 && effectiveReason.length > 0;
+
+  // 키가 어떤 payload 에 묶여 있는지 추적한다. "요청은 커밋됐는데 응답만
+  // 유실"된 뒤 작업자가 delta·로케이션을 고쳐 재제출하면, 키가 그대로면
+  // 백엔드가 이걸 이전 요청의 replay 로 보고 성공을 돌려주면서 실제로는
+  // 옛(틀린) 금액을 적용한다 — payload 가 바뀌면 키를 회전시켜 막는다. 바뀌지
+  // 않은 채 재시도하는 것(진짜 재시도)은 여전히 같은 키를 재사용해야 한다.
+  const keyPayloadRef = useRef({ skuId, locationId, delta, reason: effectiveReason });
+  useEffect(() => {
+    const prev = keyPayloadRef.current;
+    const next = { skuId, locationId, delta, reason: effectiveReason };
+    const changed =
+      prev.skuId !== next.skuId ||
+      prev.locationId !== next.locationId ||
+      prev.delta !== next.delta ||
+      prev.reason !== next.reason;
+    if (!changed) return;
+    keyPayloadRef.current = next;
+    setIdempotencyKey(crypto.randomUUID());
+  }, [skuId, locationId, delta, effectiveReason]);
 
   if (!isSet) {
     return (
