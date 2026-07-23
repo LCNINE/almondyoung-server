@@ -123,4 +123,71 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
 
     expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(4);
   });
+
+  // adjustDown 은 재고 부족 검증·위치 선택이 createEvent 의 dedupe 보다 먼저 실행돼,
+  // 재시도가 (이미 감소한) ledger 를 다시 읽고 400 을 던지는 문제가 있었다 (리뷰 지적).
+  // adjustUp/adjustDown 진입부에 조기 멱등 가드를 추가해 흡수한다.
+  it('adjustDown 멱등 재시도 — 완전히 소진해도 두 번째 호출은 에러 없이 흡수된다 (원장 1회만 감소)', async () => {
+    const { warehouse, sku, loc } = await seed();
+    await controller.adjustStockQuantity({
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: 5,
+      reason: '입고',
+    });
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(5);
+
+    const key = `it-adjustdown-${randomUUID()}`;
+    const body = {
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: -5,
+      reason: '파손',
+      idempotencyKey: key,
+    };
+
+    await controller.adjustStockQuantity(body);
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(0);
+
+    // 재시도: 첫 호출로 이미 0 까지 소진된 상태에서 같은 키로 다시 -5 를 보내도
+    // (수정 전에는 "재고가 부족합니다" 400 이 났다) 에러 없이 흡수돼야 한다.
+    await expect(controller.adjustStockQuantity(body)).resolves.toBeDefined();
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(0);
+  });
+
+  it('adjustDown 키가 다르면 각각 적용된다', async () => {
+    const { warehouse, sku, loc } = await seed();
+    await controller.adjustStockQuantity({
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: 10,
+      reason: '입고',
+    });
+
+    const base = { skuId: sku.id, warehouseId: warehouse.id, locationId: loc.id, delta: -3, reason: '파손' };
+    await controller.adjustStockQuantity({ ...base, idempotencyKey: `it-adjustdown-${randomUUID()}` });
+    await controller.adjustStockQuantity({ ...base, idempotencyKey: `it-adjustdown-${randomUUID()}` });
+
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(4); // 10-3-3
+  });
+
+  it('adjustDown 키가 없으면 매번 적용된다 (기존 동작 불변)', async () => {
+    const { warehouse, sku, loc } = await seed();
+    await controller.adjustStockQuantity({
+      skuId: sku.id,
+      warehouseId: warehouse.id,
+      locationId: loc.id,
+      delta: 10,
+      reason: '입고',
+    });
+
+    const body = { skuId: sku.id, warehouseId: warehouse.id, locationId: loc.id, delta: -2, reason: '파손' };
+    await controller.adjustStockQuantity(body);
+    await controller.adjustStockQuantity(body);
+
+    expect(await onHand(sku.id, warehouse.id, loc.id)).toBe(6); // 10-2-2
+  });
 });
