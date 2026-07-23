@@ -45,6 +45,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns, chunk } from './parse';
+import { excludedReason } from './excluded';
 
 // seeding 의 FIXED_UUIDS 와 동일 (scripts/seeding/constants/uuids.ts)
 const BUCHEON_WAREHOUSE_ID = process.env.WAREHOUSE_ID || '019d0001-0001-7000-a000-000000000001';
@@ -58,6 +59,9 @@ const CLAMP_NEGATIVE = process.env.CLAMP_NEGATIVE === '1' || process.env.CLAMP_N
 const COLUMN_CANDIDATES = {
   itemCode: ['옵션정보일련번호', '옵션코드', '품목코드', '판매처옵션코드'],
   stock: ['현재재고', '가용재고', '재고', '재고수량'],
+  // 제외 목록(excluded.ts) 판정용. 없어도 동작하지만 있으면 상품 단위로 정확히 거른다.
+  productSerial: ['상품일련번호'],
+  productName: ['상품명', '인쇄용상품명', '상품명(서식)'],
 } as const;
 type LogicalField = keyof typeof COLUMN_CANDIDATES;
 
@@ -103,9 +107,19 @@ export function parseStockRows(
   }
   const targets: Target[] = [];
   const errors: StockParseError[] = [];
+  const skipped = new Map<string, number>();
   for (let i = 1; i < rows.length; i++) {
     const itemCode = (rows[i][cols.itemCode] ?? '').toString().trim();
     if (!itemCode) continue;
+    // 동기화 금지 상품(excluded.ts)은 재고를 맞추면 품절이 풀려 팔린다 — 여기서 잘라낸다.
+    const reason = excludedReason(
+      (rows[i][cols.productSerial] ?? '').toString(),
+      (rows[i][cols.productName] ?? '').toString(),
+    );
+    if (reason) {
+      skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+      continue;
+    }
     const raw = (rows[i][cols.stock] ?? '').toString();
     const target = parseStock(raw, CLAMP_NEGATIVE);
     if (target === null) {
@@ -114,6 +128,7 @@ export function parseStockRows(
     }
     targets.push({ itemCode, target });
   }
+  for (const [reason, count] of skipped) console.log(`   ⛔ 동기화 제외 ${count}행 — ${reason}`);
   return { targets, errors };
 }
 
