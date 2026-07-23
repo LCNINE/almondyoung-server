@@ -46,7 +46,15 @@ export function NumberPad({
         </button>
       ))}
       {allowNegative ? (
-        <button type="button" className={keyClass} aria-label="부호" onClick={() => onChange(-value)}>
+        <button
+          type="button"
+          className={keyClass}
+          aria-label="부호"
+          onClick={() => {
+            const toggled = -value;
+            onChange(toggled === 0 ? 0 : toggled);
+          }}
+        >
           ±
         </button>
       ) : (

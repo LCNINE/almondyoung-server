@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { Button } from './Button';
 import { cn } from './cn';
 
@@ -19,9 +20,41 @@ export function ConfirmDialog({
   onCancel: () => void;
   danger?: boolean;
 }) {
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      confirmButtonRef.current?.focus();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [open, onCancel]);
+
   if (!open) return null;
+
+  const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      onCancel();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      onClick={handleBackdropClick}
+    >
       <div
         role="dialog"
         aria-modal="true"
@@ -39,6 +72,7 @@ export function ConfirmDialog({
             취소
           </Button>
           <Button
+            ref={confirmButtonRef}
             type="button"
             className={cn('flex-1', danger && 'bg-red-600 hover:bg-red-700')}
             onClick={onConfirm}
