@@ -72,6 +72,7 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 | 상품 | 상품일련번호 | 조치 | 등록일 |
 |------|-------------|------|--------|
 | `akf쌍커풀테이프` | 13248 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`) | 13333 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
 
 제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
 추가할 땐 `EXCLUDED_PRODUCT_SERIALS` / `EXCLUDED_NAME_PATTERNS` 양쪽에 사유와 날짜를 남기고 이 표도 갱신한다.
@@ -83,6 +84,9 @@ NAME_FILTER='akf\s*쌍커풀\s*테이프' bash scripts/sellmate/run.sh live set-
   --flag pre_stock_sellable --off --set-manual-oos --apply --out akf.txt
 VARIANT_IDS="$(paste -sd, akf.txt)" bash scripts/sellmate/run.sh live recalc-sellable .
 ```
+
+미스티 래쉬도 같은 절차다 (`NAME_FILTER='미스티\s*래쉬'`). 단 **Medusa 에 등록조차 안 된 상품이면 이 단계는 건너뛴다** —
+매칭할 variant 가 없으니 걸 대상이 없고, `excluded.ts` 등록만으로 충분하다. 나중에 등록되면 그때 `--set-manual-oos` 를 건다.
 
 `--set-manual-oos` 는 `availability_override='manual_out_of_stock'` 을 건다. 계산기가 **가장 먼저** 보는 값이라
 재고·플래그와 무관하게 품절이 된다 (`calculator.ts:98`).
