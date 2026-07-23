@@ -20,11 +20,18 @@ export function ConfirmDialog({
   onCancel: () => void;
   danger?: boolean;
 }) {
-  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedRef = useRef<HTMLElement | null>(null);
+  const mouseDownOnBackdropRef = useRef(false);
 
   useEffect(() => {
     if (open) {
-      confirmButtonRef.current?.focus();
+      previouslyFocusedRef.current =
+        document.activeElement as HTMLElement | null;
+      panelRef.current?.focus();
+    } else {
+      previouslyFocusedRef.current?.focus();
+      previouslyFocusedRef.current = null;
     }
   }, [open]);
 
@@ -44,8 +51,22 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
+  // 스캐너의 종단 Enter 는 focus 가 어디에 있든(패널·탭으로 이동한 버튼) 여기서 흡수된다.
+  // 실제 확인은 pointer/touch tap 으로만 가능해야 한다.
+  const handlePanelKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.code === 'NumpadEnter') {
+      e.preventDefault();
+    }
+  };
+
+  const handleBackdropMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    mouseDownOnBackdropRef.current = e.target === e.currentTarget;
+  };
+
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (e.target === e.currentTarget) {
+    const startedOnBackdrop = mouseDownOnBackdropRef.current;
+    mouseDownOnBackdropRef.current = false;
+    if (startedOnBackdrop && e.target === e.currentTarget) {
       onCancel();
     }
   };
@@ -53,13 +74,17 @@ export function ConfirmDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+      onMouseDown={handleBackdropMouseDown}
       onClick={handleBackdropClick}
     >
       <div
+        ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="w-full max-w-sm rounded-xl bg-white p-5 shadow-lg"
+        tabIndex={-1}
+        onKeyDown={handlePanelKeyDown}
+        className="w-full max-w-sm rounded-xl bg-white p-5 shadow-lg outline-none"
       >
         <h2 className="text-base font-semibold text-gray-900">{title}</h2>
         <p className="mt-2 text-sm text-gray-600">{message}</p>
@@ -72,7 +97,6 @@ export function ConfirmDialog({
             취소
           </Button>
           <Button
-            ref={confirmButtonRef}
             type="button"
             className={cn('flex-1', danger && 'bg-red-600 hover:bg-red-700')}
             onClick={onConfirm}
