@@ -27,9 +27,9 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
-    // 정확히 8개를 어서션한다 — apps/core/src/platform/auth/fulfillment-scopes.ts 의
-    // FULFILLMENT_SCOPES 를 리터럴로 옮겨 적은 개수다(import 하지 않음: ALL_SCOPES 에서
-    // 스코프 하나가 빠지는 회귀는 `> 0` 로는 못 잡는다).
+    // 정확히 8개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
+    // 부팅 시 시딩되는 개수다(import 하지 않음: ALL_SCOPES 에서 스코프 하나가 빠지는 회귀는
+    // `> 0` 로는 못 잡는다). 현재 ALL_SCOPES 는 FULFILLMENT_SCOPES 와 동일하다.
     const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
     expect(scopeCountRows[0].n).toBe(8);
 

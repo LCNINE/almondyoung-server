@@ -145,6 +145,8 @@ npm run start:main:dev               # core :3100
 - **시드 로직을 바꾼 뒤 검증**: `npm run test:seed-dev-core:integration` 이 `scripts/local/seed-dev-core/`
   전체(스코프·마스터데이터·재고·입고·주문·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
   두 번(기본 + `--bulk`) 부르므로 `--runInBand` 로 직렬 실행되고, 로컬 `dev_core` 를 실제로 drop/create 한다.
+  테스트 완료 후 DB 는 `--bulk` 상태(SKU 320개, 로케이션 64개)로 남으므로, 기본 시드(SKU 20개, 로케이션 14개)로
+  돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
 - **`SEED_DEV_CORE_URL` 을 기본값(`localhost:5432/dev_core`)과 다르게 주면 확인 프롬프트가 뜬다.**
