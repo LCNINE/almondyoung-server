@@ -5,6 +5,7 @@ import { OrderDetailsMobile } from "domains/order/details/components/order-detai
 import { getOrder } from "@/lib/api/medusa/orders"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
+import { getOwnerships } from "@/lib/api/library/library-api"
 
 interface OrderDetailsPageProps {
   params: Promise<{ countryCode: string }>
@@ -31,11 +32,20 @@ export default async function OrderDetailsPage({
       | Record<string, unknown>
       | undefined
   )?.intentId as string | undefined
-  const [cashReceipts, depositAccount, refundRequest] = await Promise.all([
-    intentId ? getCashReceipts(intentId) : Promise.resolve([]),
-    intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
-    intentId ? getActiveRefundRequest(intentId) : Promise.resolve(null),
-  ])
+  // coreActions.orderId = Core sales order id. 디지털 ownership 은 이 id 로 발급된다.
+  const coreOrderId = coreActions?.orderId
+  const [cashReceipts, depositAccount, refundRequest, ownerships] =
+    await Promise.all([
+      intentId ? getCashReceipts(intentId) : Promise.resolve([]),
+      intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
+      intentId ? getActiveRefundRequest(intentId) : Promise.resolve(null),
+      coreOrderId
+        ? getOwnerships({ skip: 0, take: 100, salesOrderId: coreOrderId }).catch(
+            () => null
+          )
+        : Promise.resolve(null),
+    ])
+  const digitalOwnerships = ownerships?.data ?? []
 
   return (
     <WithHeaderLayout
@@ -56,6 +66,7 @@ export default async function OrderDetailsPage({
             intentId={intentId}
             depositAccount={depositAccount}
             refundRequestStatus={refundRequest?.status}
+            digitalOwnerships={digitalOwnerships}
           />
         </MypageLayout>
       </div>
@@ -70,6 +81,7 @@ export default async function OrderDetailsPage({
           intentId={intentId}
           depositAccount={depositAccount}
           refundRequestStatus={refundRequest?.status}
+          digitalOwnerships={digitalOwnerships}
         />
       </div>
     </WithHeaderLayout>
