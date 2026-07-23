@@ -231,6 +231,20 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
     expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
     expect(sql).toMatch(/"exercised_at"\s+is\s+not\s+null/i);
   });
+
+  it('salesOrderId 를 주면 sales_order_id predicate 가 count/list 양쪽에 붙는다 (주문상세 다운로드)', async () => {
+    const service = makeService();
+    const { tx, captured } = makeFakeTxCapturingWhere();
+
+    await service.listForCustomer('c-1', { salesOrderId: 'so-1' }, tx);
+
+    const dialect = new PgDialect();
+    for (const w of [captured.count, captured.list]) {
+      const sql = dialect.sqlToQuery(w).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"sales_order_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"customer_id"\s*=\s*\$\d+/);
+    }
+  });
 });
 
 /**

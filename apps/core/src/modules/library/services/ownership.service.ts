@@ -38,7 +38,13 @@ export class OwnershipService {
 
   async listForCustomer(
     customerId: string,
-    opts: { skip?: number; take?: number; filter?: OwnershipFilter } = {},
+    opts: {
+      skip?: number;
+      take?: number;
+      filter?: OwnershipFilter;
+      /** 주문상세에서 그 주문의 ownership 만 뽑을 때 사용. */
+      salesOrderId?: string;
+    } = {},
     tx?: LibraryTx,
   ): Promise<OwnershipListResponseDto> {
     return this.dbService.run(async (trx) => {
@@ -52,6 +58,9 @@ export class OwnershipService {
       ];
       if (filter === 'new') conditions.push(isNull(digitalAssetOwnerships.exercisedAt));
       if (filter === 'used') conditions.push(isNotNull(digitalAssetOwnerships.exercisedAt));
+      if (opts.salesOrderId) {
+        conditions.push(eq(digitalAssetOwnerships.salesOrderId, opts.salesOrderId));
+      }
 
       const whereExpr = and(...conditions);
 
