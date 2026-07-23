@@ -139,7 +139,7 @@ export async function ProductTemplate({
               }
             >
               <ProductActionsWrapper
-                id={product.id}
+                handle={product.handle!}
                 region={region}
                 customer={customer}
               />
