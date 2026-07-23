@@ -1,5 +1,6 @@
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { sql as dsql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -96,11 +97,24 @@ describeIfDb('stock projection by-location (DB integration, rollback-only)', () 
   it('locationCode 가 같으면 stockState 오름차순으로 2차 정렬한다', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku, locA, locB } = await seedEntities(tx);
+      // 삽입 순서를 기대 출력 순서와 반대로 둔다(DEFECTIVE 먼저, ON_HAND 나중).
       await tx.insert(wmsTables.stockLedgers).values([
         { skuId: sku.id, warehouseId: warehouse.id, locationId: locB.id, stockState: 'ON_HAND', qty: 7 },
-        { skuId: sku.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 5 },
         { skuId: sku.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'DEFECTIVE', qty: 2 },
+        { skuId: sku.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 5 },
       ]);
+
+      // 위 삽입 순서 역전만으로는 이 정렬 키 누락을 못 잡는다: 기본 플래너는
+      // (sku_id, warehouse_id, location_id, stock_state) 복합 인덱스(ix_ledgers_lookup)의
+      // Index Scan 이나, Hash Join 의 LIFO 버킷 순서를 타서 stockState ORDER BY 항을
+      // 지워도 "우연히" location_id, stock_state 순으로 나온다 — EXPLAIN ANALYZE 로 직접
+      // 확인함. 인덱스/해시/머지 경로를 꺼서 Nested Loop + Seq Scan 을 강제해야
+      // 정렬 키가 실제로 하는 일(삽입 순서를 뒤엎는 것)이 드러난다.
+      await tx.execute(dsql`SET LOCAL enable_indexscan = off`);
+      await tx.execute(dsql`SET LOCAL enable_bitmapscan = off`);
+      await tx.execute(dsql`SET LOCAL enable_indexonlyscan = off`);
+      await tx.execute(dsql`SET LOCAL enable_hashjoin = off`);
+      await tx.execute(dsql`SET LOCAL enable_mergejoin = off`);
 
       const result = await reader.getBySkuAndWarehouse(sku.id, warehouse.id, tx);
 
