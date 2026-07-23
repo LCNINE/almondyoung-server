@@ -11,6 +11,9 @@ export class AdminOwnershipResponseDto {
   @ApiProperty() customerId: string;
   @ApiProperty() assetId: string;
   @ApiProperty() salesOrderId: string;
+  /** Medusa 주문 ID. 어드민 주문내역(Medusa 기준)과 매칭하려면 이 값이 필요하다. 목록 조회에서만 채워진다. */
+  @ApiPropertyOptional({ nullable: true })
+  channelOrderId?: string | null;
   @ApiProperty() grantedAt: Date;
   @ApiPropertyOptional({ type: Date, nullable: true })
   exercisedAt?: Date | null;

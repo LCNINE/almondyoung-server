@@ -200,9 +200,14 @@ export class OwnershipService {
         .where(whereExpr);
 
       const rows = await trx
-        .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
+        .select({
+          ownership: digitalAssetOwnerships,
+          asset: digitalAssets,
+          channelOrderId: wmsTables.salesOrders.channelOrderId,
+        })
         .from(digitalAssetOwnerships)
         .innerJoin(digitalAssets, eq(digitalAssetOwnerships.assetId, digitalAssets.id))
+        .leftJoin(wmsTables.salesOrders, eq(digitalAssetOwnerships.salesOrderId, wmsTables.salesOrders.id))
         .where(whereExpr)
         .orderBy(desc(digitalAssetOwnerships.grantedAt))
         .limit(take)
@@ -383,12 +388,14 @@ export class OwnershipService {
   private _toAdminDto(row: {
     ownership: typeof digitalAssetOwnerships.$inferSelect;
     asset: typeof digitalAssets.$inferSelect;
+    channelOrderId?: string | null;
   }): AdminOwnershipResponseDto {
     return {
       id: row.ownership.id,
       customerId: row.ownership.customerId,
       assetId: row.ownership.assetId,
       salesOrderId: row.ownership.salesOrderId,
+      channelOrderId: row.channelOrderId ?? null,
       grantedAt: row.ownership.grantedAt,
       exercisedAt: row.ownership.exercisedAt,
       revokedAt: row.ownership.revokedAt,

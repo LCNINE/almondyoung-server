@@ -66,10 +66,11 @@ export function OrderDigitalDownloads({
         toast.success(t("started"), { description: result.filename })
       } catch (err: unknown) {
         const e = err as Error & { digest?: string }
-        // UNAUTHORIZED 는 error.tsx 의 토큰 복구로 전파
+
         if (e.digest === "UNAUTHORIZED" || e.message === "UNAUTHORIZED") {
           throw err
         }
+
         toast.error(t("failed"))
       } finally {
         setBusyId(null)

@@ -267,12 +267,15 @@ describe('OwnershipService — 어드민 (#457)', () => {
               return [{ value: 0 }];
             },
             innerJoin: () => ({
-              where: (whereExpr: any) => {
-                captured.list = whereExpr;
-                return {
-                  orderBy: () => ({ limit: () => ({ offset: () => [] }) }),
-                };
-              },
+              // sales_orders leftJoin — channelOrderId(=Medusa 주문 ID) 를 붙이는 단계
+              leftJoin: () => ({
+                where: (whereExpr: any) => {
+                  captured.list = whereExpr;
+                  return {
+                    orderBy: () => ({ limit: () => ({ offset: () => [] }) }),
+                  };
+                },
+              }),
             }),
           }),
         }),
