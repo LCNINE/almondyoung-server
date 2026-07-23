@@ -54,7 +54,7 @@ function readRefreshMarker(): number {
 // in-tab dedupe — Web Locks 미지원 환경에서만 의미가 있음. 지원 환경에선 navigator.locks 가 같은 탭의 두 번째 요청도 직렬화한다.
 let inflight: Promise<void> | null = null;
 
-async function refreshAccessToken(): Promise<void> {
+export async function refreshAccessToken(): Promise<void> {
   if (inflight) return inflight;
 
   const supportsLocks =
