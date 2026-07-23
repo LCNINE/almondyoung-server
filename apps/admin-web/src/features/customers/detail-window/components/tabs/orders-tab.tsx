@@ -33,6 +33,8 @@ import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils/ui';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { useCustomerById } from '@/lib/services/customers';
+import { useAdminOwnerships } from '@/lib/services/library';
+import type { AdminOwnershipDto } from '@/lib/types/dto/library';
 import {
   useMedusaCustomerByEmail,
   useMedusaOrdersByCustomerId,
@@ -65,6 +67,8 @@ import {
 const PAGE_SIZE = 10;
 // 한 회원 기준이라 보통 충분. 이 한도를 넘으면 기간을 좁히도록 안내한다.
 const FETCH_LIMIT = 100;
+// Core 어드민 ownership API 의 take 상한이 100 이라 그 이상은 받아올 수 없다.
+const OWNERSHIP_FETCH_LIMIT = 100;
 const ALL = 'all';
 
 // 기간 프리셋은 공용 유틸을 사용하되 'custom'(임의기간)은 직접 입력으로 대체
@@ -104,6 +108,37 @@ function fulfillmentBadgeVariant(status: string): BadgeVariant {
   }
   if (status === 'canceled') return 'destructive';
   return 'secondary';
+}
+
+/** 주문(=Medusa order id) → 디지털 사용권 목록 */
+type OwnershipsByOrder = Map<string, AdminOwnershipDto[]>;
+
+function ownershipState(o: AdminOwnershipDto): '회수됨' | '사용됨' | '미사용' {
+  if (o.revokedAt) return '회수됨';
+  return o.exercisedAt ? '사용됨' : '미사용';
+}
+
+/**
+ * 주문 행에 붙는 디지털 사용 요약. 다운로드(exercised)된 게 하나라도 있으면
+ * 환불/취소가 막히므로 CS 가 목록에서 바로 알아볼 수 있게 강조한다.
+ */
+function DigitalUsageCell({ ownerships }: { ownerships: AdminOwnershipDto[] }) {
+  if (ownerships.length === 0) return <span className="text-gray-300">-</span>;
+
+  const used = ownerships.filter((o) => !o.revokedAt && o.exercisedAt).length;
+  const revoked = ownerships.filter((o) => o.revokedAt).length;
+
+  return (
+    <div className="space-y-0.5 text-[11px] leading-tight">
+      <Badge
+        variant={used > 0 ? 'destructive' : 'secondary'}
+        className="px-1.5 py-0 text-[11px]"
+      >
+        {used > 0 ? `사용 ${used}/${ownerships.length}` : `미사용 ${ownerships.length}`}
+      </Badge>
+      {revoked > 0 && <div className="text-gray-400">회수 {revoked}</div>}
+    </div>
+  );
 }
 
 function PaymentMethods({ order }: { order: AdminOrder }) {
@@ -175,9 +210,12 @@ function AmountRow({
 export function OrderDetailDialog({
   orderId,
   onClose,
+  ownerships = [],
 }: {
   orderId: string | null;
   onClose: () => void;
+  /** 이 주문의 디지털 사용권. 주문내역 탭에서만 전달된다. */
+  ownerships?: AdminOwnershipDto[];
 }) {
   const { data, isLoading, isError } = useMedusaOrderById(orderId ?? undefined);
   const order = data?.order;
@@ -346,6 +384,50 @@ export function OrderDetailDialog({
               </section>
             )}
 
+            {/* 디지털 사용권 — 사용됨(다운로드)이면 셀프 취소·환불이 차단된다 */}
+            {ownerships.length > 0 && (
+              <section>
+                <h3 className="mb-1.5 text-sm font-semibold text-gray-800">
+                  디지털 사용권 ({ownerships.length}개)
+                </h3>
+                <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
+                  {ownerships.map((o) => {
+                    const state = ownershipState(o);
+                    return (
+                      <li
+                        key={o.id}
+                        className="flex items-center gap-3 px-2.5 py-2 text-sm"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-gray-900">
+                            {o.asset.name}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {state === '사용됨'
+                              ? `다운로드 ${formatDateTime(o.exercisedAt!)}`
+                              : state === '회수됨'
+                                ? `회수 ${formatDateTime(o.revokedAt!)}${o.revokedReason ? ` · ${o.revokedReason}` : ''}`
+                                : `부여 ${formatDateTime(o.grantedAt)}`}
+                          </div>
+                        </div>
+                        <Badge
+                          variant={
+                            state === '사용됨'
+                              ? 'destructive'
+                              : state === '회수됨'
+                                ? 'outline'
+                                : 'secondary'
+                          }
+                        >
+                          {state}
+                        </Badge>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            )}
+
             <AdminCashReceiptSection intentId={intentId} />
           </div>
         )}
@@ -359,16 +441,18 @@ function ByOrderTable({
   orders,
   customer,
   totalCount,
+  ownershipsByOrder,
   onSelect,
 }: {
   orders: AdminOrder[];
   customer: OrdererInfo | undefined;
   totalCount: number;
+  ownershipsByOrder: OwnershipsByOrder;
   onSelect: (orderId: string) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <Table className="min-w-[1040px]">
+      <Table className="min-w-[1140px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-36">주문일(결제일)</TableHead>
@@ -379,6 +463,7 @@ function ByOrderTable({
             <TableHead className="text-right">총 실결제금액</TableHead>
             <TableHead className="w-24">결제수단</TableHead>
             <TableHead className="w-24">결제상태</TableHead>
+            <TableHead className="w-24">디지털</TableHead>
             <TableHead className="w-14 text-center">미배송</TableHead>
             <TableHead className="w-14 text-center">배송중</TableHead>
             <TableHead className="w-16 text-center">배송완료</TableHead>
@@ -428,6 +513,11 @@ function ByOrderTable({
                     {paymentStatusLabel(order.payment_status)}
                   </Badge>
                 </TableCell>
+                <TableCell>
+                  <DigitalUsageCell
+                    ownerships={ownershipsByOrder.get(order.id) ?? []}
+                  />
+                </TableCell>
                 <TableCell className="text-center text-gray-700">
                   {buckets.pending}
                 </TableCell>
@@ -450,15 +540,17 @@ function ByOrderTable({
 function ByItemTable({
   orders,
   customer,
+  ownershipsByOrder,
   onSelect,
 }: {
   orders: AdminOrder[];
   customer: OrdererInfo | undefined;
+  ownershipsByOrder: OwnershipsByOrder;
   onSelect: (orderId: string) => void;
 }) {
   return (
     <div className="overflow-x-auto">
-      <Table className="min-w-[1100px]">
+      <Table className="min-w-[1200px]">
         <TableHeader>
           <TableRow>
             <TableHead className="w-36">주문일(결제일)</TableHead>
@@ -470,6 +562,7 @@ function ByItemTable({
             <TableHead className="text-right">총 실결제금액</TableHead>
             <TableHead className="w-24">결제수단</TableHead>
             <TableHead className="w-24">결제상태</TableHead>
+            <TableHead className="w-24">디지털</TableHead>
             <TableHead className="w-24">주문상태</TableHead>
             <TableHead className="w-24">운송장정보</TableHead>
           </TableRow>
@@ -556,6 +649,13 @@ function ByItemTable({
                     </Badge>
                   </TableCell>
                 )}
+                {index === 0 && (
+                  <TableCell rowSpan={span}>
+                    <DigitalUsageCell
+                      ownerships={ownershipsByOrder.get(order.id) ?? []}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="text-xs text-gray-600">
                   {itemStatusLabel(item)}
                 </TableCell>
@@ -613,6 +713,28 @@ export function OrdersTab({ customerId }: { customerId: string }) {
     createdAtGte: toIsoStart(appliedFrom),
     createdAtLte: toIsoEnd(appliedTo),
   });
+
+  // 디지털 사용권은 Core 기준(customerId = user-service user id = 이 창의 id).
+  // 주문 단위 매칭은 응답의 channelOrderId(= Medusa order id)로 한다.
+  const { data: ownershipsRes } = useAdminOwnerships({
+    customerId,
+    status: 'all',
+    take: OWNERSHIP_FETCH_LIMIT,
+  });
+
+  const ownershipsByOrder: OwnershipsByOrder = useMemo(() => {
+    const map: OwnershipsByOrder = new Map();
+    for (const o of ownershipsRes?.data ?? []) {
+      if (!o.channelOrderId) continue;
+      const list = map.get(o.channelOrderId);
+      if (list) list.push(o);
+      else map.set(o.channelOrderId, [o]);
+    }
+    return map;
+  }, [ownershipsRes]);
+
+  const ownershipTruncated =
+    (ownershipsRes?.total ?? 0) > (ownershipsRes?.data.length ?? 0);
 
   const fetchedOrders: AdminOrder[] = useMemo(
     () => ordersRes?.orders ?? [],
@@ -808,6 +930,15 @@ export function OrdersTab({ customerId }: { customerId: string }) {
         </TabsList>
       </Tabs>
 
+      {/* 사용권이 상한을 넘으면 '디지털' 열이 일부 주문에서 비어 보인다 — 침묵하지 않는다 */}
+      {ownershipTruncated && (
+        <p className="mb-2 text-xs text-amber-600">
+          이 고객의 디지털 사용권이 {ownershipsRes?.total.toLocaleString()}건이라
+          최신 {OWNERSHIP_FETCH_LIMIT}건만 대조했습니다. 오래된 주문의 &lsquo;디지털&rsquo;
+          열은 비어 보일 수 있으니 [몰 &gt; 디지털 사용권]에서 확인하세요.
+        </p>
+      )}
+
       {/* 너무 많은 주문이 기간에 걸린 경우 안내 */}
       {hasMoreThanFetched && !isLoading && !isError && (
         <p className="mb-2 text-xs text-amber-600">
@@ -838,12 +969,14 @@ export function OrdersTab({ customerId }: { customerId: string }) {
               orders={pagedOrders}
               customer={customer}
               totalCount={matchedCount}
+              ownershipsByOrder={ownershipsByOrder}
               onSelect={setSelectedOrderId}
             />
           ) : (
             <ByItemTable
               orders={pagedOrders}
               customer={customer}
+              ownershipsByOrder={ownershipsByOrder}
               onSelect={setSelectedOrderId}
             />
           )}
@@ -893,6 +1026,9 @@ export function OrdersTab({ customerId }: { customerId: string }) {
       <OrderDetailDialog
         orderId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
+        ownerships={
+          selectedOrderId ? (ownershipsByOrder.get(selectedOrderId) ?? []) : []
+        }
       />
     </section>
   );

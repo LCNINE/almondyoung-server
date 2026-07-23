@@ -34,12 +34,14 @@ export class OwnershipController {
   @ApiQuery({ name: 'skip', required: false, type: Number })
   @ApiQuery({ name: 'take', required: false, type: Number })
   @ApiQuery({ name: 'filter', required: false, enum: ALLOWED_FILTERS })
+  @ApiQuery({ name: 'salesOrderId', required: false, description: '주문상세용 — 해당 주문의 ownership 만' })
   @ApiResponse({ status: 200, type: OwnershipListResponseDto })
   async list(
     @Req() req: any,
     @Query('skip') skip?: string,
     @Query('take') take?: string,
     @Query('filter') filter?: string,
+    @Query('salesOrderId', new ParseUUIDPipe({ optional: true })) salesOrderId?: string,
   ): Promise<OwnershipListResponseDto> {
     const customerId = this._requireUserId(req);
 
@@ -55,6 +57,7 @@ export class OwnershipController {
       skip: skip !== undefined ? Number(skip) : undefined,
       take: take !== undefined ? Number(take) : undefined,
       filter: filterValue,
+      salesOrderId,
     });
   }
 

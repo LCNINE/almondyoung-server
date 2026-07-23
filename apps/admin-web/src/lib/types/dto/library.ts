@@ -76,6 +76,8 @@ export interface AdminOwnershipDto {
   customerId: string;
   assetId: string;
   salesOrderId: string;
+  /** Medusa 주문 ID (목록 조회에서만 채워짐) — 주문내역 매칭용 */
+  channelOrderId?: string | null;
   grantedAt: string;
   exercisedAt?: string | null;
   revokedAt?: string | null;
