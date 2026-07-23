@@ -87,10 +87,14 @@ export function SessionCountScreen({ sessionId }: { sessionId: string }) {
   }
 
   // 위치가 정해지기 전엔 로케이션 바코드를, 정해진 뒤엔 상품 바코드를 기대한다.
-  // 수량 입력 다이얼로그가 떠 있으면 스캔을 통째로 무시한다 — HID 리더기는 전역 keydown 이라
-  // 다이얼로그 뒤에서 countProduct 가 돌면 이중 카운트가 난다.
+  // 수량 입력 다이얼로그가 떠 있거나(editing) 절대값 저장이 아직 진행 중이면
+  // (updateCount.isPending) 스캔을 통째로 무시한다 — HID 리더기는 전역 keydown 이라
+  // 다이얼로그 뒤에서 countProduct 가 돌면 이중 카운트가 난다. onSave 가
+  // setEditing(null) 을 낙관적으로 먼저 불러 다이얼로그를 닫으므로, editing 만
+  // 보면 PUT 이 아직 날아가는 중에도 이 가드가 풀려버린다 — isPending 을
+  // 같이 봐야 한다.
   useScanner((e) => {
-    if (editing) return;
+    if (editing || updateCount.isPending) return;
     scanQueueRef.current = scanQueueRef.current
       .then(() => (place ? countProduct(e.code) : enterLocation(e.code)))
       .catch(() => {
