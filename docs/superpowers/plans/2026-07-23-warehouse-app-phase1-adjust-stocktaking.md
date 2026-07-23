@@ -6046,13 +6046,19 @@ Expected: 테스트 전부 통과 · 빌드 exit 0 · lint에 **이번에 추가
 
 - [ ] **Step 3: 백엔드 전체 검증**
 
-Run (레포 루트):
+Run (워크트리 루트):
 ```bash
 npx nest build core
-npm run test:core:integration:local -- inventory
-npm run test:core:integration:local -- stocktaking
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "inventory.*integration"
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- stocktaking
 ```
-Expected: 빌드 exit 0. 통합 스펙 통과 — 특히 Task 1~4에서 추가한 4개 스펙과 기존 `stocktaking-complete`·`stocktaking-state-machine`·`stocktaking-uniques`가 모두 green.
+Expected: 빌드 exit 0.
+
+⚠️ **완료조건은 "전부 green" 이 아니다.** `develop` 자체에서 inventory 통합 스위트 **18개 중 6개 / 78개 테스트 중 15개가 이미 실패**한다(컨트롤러가 develop 체크아웃에서 독립 측정). 원인은 테스트 시드가 `ck_locations_type` 체크 제약을 위반하는 것 — `locationType` 누락 또는 rack/bin 없이 `'standard'` 지정. 우리 브랜치와 무관하며 별도 이슈로 분리하기로 결정됐다.
+
+따라서 판정 기준은:
+1. **이 브랜치가 추가하거나 변경한 스펙은 전부 green** — `stock-projection-by-location` · `stocktaking-session-detail` · `stocktaking-scan-location` · `adjust-idempotency` · `stocktaking-complete` · `stocktaking-state-machine`
+2. **develop 기존 실패 목록이 늘지 않았다** — 실패 스위트 수와 이름이 develop 측정치와 동일해야 한다. 늘었다면 그건 우리 회귀다.
 
 - [ ] **Step 4: 수동 검증 체크리스트를 기록한다**
 
@@ -6090,7 +6096,7 @@ git commit -m "chore(warehouse-app): Phase 1 마무리 — 이동 스텁 문구 
 ## 완료 조건
 
 - [ ] 백엔드 4건이 전부 additive로 들어갔고 마이그레이션 파일이 **하나도 생기지 않았다**
-- [ ] `npm test`(프론트) · `npx nest build core` · 실사/재고 통합 스펙이 전부 green
+- [ ] `npm test`(프론트) · `npx nest build core` green. 백엔드 통합은 **이 브랜치가 추가·변경한 스펙 전부 green + develop 기존 실패 목록 불변**(develop 자체가 6 스위트 실패 중 — Task 19 §Step 3)
 - [ ] `/inventory/$sku` · `/inventory/$sku/adjust` · `/stocktaking` · `/stocktaking/$sessionId` · `/stocktaking/$sessionId/variances` · `/settings` 여섯 라우트가 실제 화면이다
 - [ ] 조정은 로케이션 없이 보낼 수 없고, delta 0을 보낼 수 없고, 사유 없이 보낼 수 없다
 - [ ] 실사 완료는 차이가 있을 때 미리보기 없이 눌릴 수 없다
