@@ -75,7 +75,17 @@ scope 에 없는 URL 은 Rust 쪽에서 거부되므로 **요청이 앱 밖으�
 담고 있는지 확인한다 — 라이브 2개(`user`/`core`)와 로컬 2개(`localhost:3100`/`127.0.0.1:3100`).
 
 `src/core/data/` 에 두는 이유: 이 scope 가 지키는 대상이 같은 디렉터리의 `httpClient.ts` 다.
-vitest 는 jsdom 환경이지만 Node 위에서 돌아 `node:fs` 를 그대로 쓸 수 있다.
+
+**이 테스트만 `@vitest-environment node` 를 쓴다.** 패키지 기본값인 jsdom 에서는
+`import.meta.url` 이 `file://` URL 이 아니라서 `fileURLToPath()` 가
+`TypeError: The URL must be of scheme file` 로 죽는다(실측). 그 결과 setupFiles 가 node 환경에서도
+돌게 되므로 `src/test-setup.ts` 의 `window.scrollTo` 는 `typeof window !== 'undefined'` 로 감싼다 —
+이 파일은 30개 테스트 파일이 공유한다.
+
+또 `node:fs`/`node:url` import 때문에 `tsconfig.app.json` 의 `types` 에 `"node"` 가 필요하다.
+빠지면 `npm run build`(`tsc -b`)가 TS2591 로 실패하고, `tauri.conf.json` 의 `beforeBuildCommand` 가
+그걸 부르므로 **`tauri build` 릴리스 패키징이 깨진다** — vitest 는 타입체크를 안 하고 `tauri dev` 는
+`tsc` 를 안 부르므로 테스트와 dev 스모크만으로는 안 잡힌다.
 
 근거: 누군가 scope 를 정리하다 지우면 증상이 "로컬 개발이 통째로 안 됨"인데 에러 문구가 원인을
 가리키지 않아 이번과 똑같이 헤매게 된다. 비용은 10줄 남짓이고, 검증 대상이 순수 JSON 이라
