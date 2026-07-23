@@ -278,6 +278,8 @@ VITE_API_BASE_URL=http://<tailscale-ip>:3100 npm run tauri:dev      # 안드로�
 
 **안드로이드 주의**: 평문 HTTP 로 LAN/Tailscale IP 에 붙으려면 cleartext 허용이 별도로 필요하다. 데스크톱은 `tauri.conf.json` 의 `csp: null` 이고 core CORS 가 `origin: true` 라 추가 설정이 없다.
 
+> **사후 정정 (2026-07-23)**: 위 세 항목만으로는 앱이 로컬 core 에 붙지 못한다. `src-tauri/capabilities/default.json` 의 `http:default` scope 에 `http://localhost:3100/*` · `http://127.0.0.1:3100/*` 를 추가해야 한다 — `@tauri-apps/plugin-http` 는 deny-by-default 라 scope 에 없는 URL 은 요청이 앱 밖으로 나가기 전에 거부된다. 이 절이 scope 를 통째로 빠뜨린 채 머지됐고, §9 스모크 4번(앱 로그인 → 재고조회 표)을 돌리지 않아 드러나지 않았다. 상세: `docs/superpowers/specs/2026-07-23-warehouse-app-local-core-http-scope-design.md`
+
 ## 9. 검증 (스모크)
 
 리셋 직후 다음을 순서대로 확인한다.
