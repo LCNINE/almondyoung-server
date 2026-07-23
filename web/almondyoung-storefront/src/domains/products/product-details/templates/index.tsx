@@ -8,6 +8,7 @@ import {
 import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
+import { getIsOverseas } from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
@@ -43,6 +44,7 @@ export async function ProductTemplate({
 
   const t = await getTranslations("productDetail.section")
   const isDigital = isDigitalProduct(product)
+  const isOverseas = getIsOverseas(product)
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -62,6 +64,7 @@ export async function ProductTemplate({
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
+                isOverseas={isOverseas}
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}
@@ -125,6 +128,7 @@ export async function ProductTemplate({
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
+                isOverseas={isOverseas}
               />
             </div>
 

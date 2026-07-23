@@ -89,6 +89,8 @@ export interface ProductCardProps {
   }
   isWelcomeMembership?: boolean
   isMembership?: boolean
+  /** 해외 배송(해외직구) 상품 — 카드 제목 앞에 "해외" 뱃지 표시 */
+  isOverseas?: boolean
 }
 
 /**
