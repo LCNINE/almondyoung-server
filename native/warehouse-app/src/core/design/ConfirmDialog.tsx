@@ -27,7 +27,7 @@ export function ConfirmDialog({
   useEffect(() => {
     if (open) {
       previouslyFocusedRef.current =
-        document.activeElement as HTMLElement | null;
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
       panelRef.current?.focus();
     } else {
       previouslyFocusedRef.current?.focus();
