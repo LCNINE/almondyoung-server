@@ -21,7 +21,11 @@ export function VarianceReviewScreen({ sessionId }: { sessionId: string }) {
 
   const editable = detail.data?.status === 'in_progress';
   const rows = variances.data ?? [];
-  const noVariance = variances.isSuccess && rows.length === 0;
+  // 캐시가 무효화됐거나(다른 화면에서 카운트가 바뀜) 재조회 중이면, rows 가
+  // 비어 있어도 그건 "차이 없음"이 아니라 "아직 확인 못함"이다 — 완료를 열면
+  // 안 된다(FIX 1: 미리보기 게이트가 스테일 캐시에 fail-open 하던 버그).
+  const noVariance =
+    variances.isSuccess && !variances.isStale && !variances.isFetching && rows.length === 0;
   // 미리보기를 봤거나, 애초에 적용할 차이가 없을 때만 완료를 연다.
   const canComplete = editable && (preview !== null || noVariance);
 

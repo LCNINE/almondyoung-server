@@ -12,6 +12,15 @@ function invalidateSession(qc: QueryClient, sessionId: string) {
   void qc.invalidateQueries({ queryKey: ['stocktaking-session', sessionId] });
 }
 
+/**
+ * 카운트에 영향을 주는 모든 뮤테이션(위치 스캔의 라인 upsert 포함) 뒤에 부른다.
+ * VarianceReviewScreen 의 완료 게이트가 신선한 차이 목록에 기대므로, 이 무효화를
+ * 빠뜨리면 스테일 캐시가 실제로는 존재하는 차이를 "없음"으로 보여줄 수 있다.
+ */
+function invalidateVariances(qc: QueryClient, sessionId: string) {
+  void qc.invalidateQueries({ queryKey: ['stocktaking-variances', sessionId] });
+}
+
 function invalidateList(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['stocktaking-sessions'] });
 }
@@ -77,7 +86,10 @@ export function useScanLocation() {
         path: '/stocktaking/scan-location',
         body: input,
       }),
-    onSuccess: (_data, input) => invalidateSession(qc, input.sessionId),
+    onSuccess: (_data, input) => {
+      invalidateSession(qc, input.sessionId);
+      invalidateVariances(qc, input.sessionId);
+    },
   });
 }
 
@@ -100,7 +112,10 @@ export function useScanProduct() {
         path: '/stocktaking/scan-product',
         body: input,
       }),
-    onSuccess: (_data, input) => invalidateSession(qc, input.sessionId),
+    onSuccess: (_data, input) => {
+      invalidateSession(qc, input.sessionId);
+      invalidateVariances(qc, input.sessionId);
+    },
   });
 }
 
@@ -123,7 +138,10 @@ export function useUpdateCount() {
         path: `/stocktaking/lines/${input.lineId}/count`,
         body: { countedQuantity: input.countedQuantity, notes: input.notes },
       }),
-    onSuccess: (_data, input) => invalidateSession(qc, input.sessionId),
+    onSuccess: (_data, input) => {
+      invalidateSession(qc, input.sessionId);
+      invalidateVariances(qc, input.sessionId);
+    },
   });
 }
 
