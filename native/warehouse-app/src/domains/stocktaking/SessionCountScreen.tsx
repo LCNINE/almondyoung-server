@@ -42,6 +42,17 @@ export function SessionCountScreen({ sessionId }: { sessionId: string }) {
     );
   }
 
+  /**
+   * 스캔 이벤트를 순서대로 하나씩 처리하는 큐. HID 스캐너는 wifi 왕복시간을
+   * 쉽게 앞지르므로, 큐 없이 그냥 mutateAsync 를 여러 번 fire-and-forget 하면
+   * 두 요청이 겹쳐 나간다 — 서버가 unlocked read-modify-write 라면 증가분이
+   * 하나 사라지고, 서버가 정직해도 응답이 스캔 순서와 다르게 돌아오면 화면이
+   * 더 작은(오래된) 절대값으로 되돌아갈 수 있다. isPending 조기 반환은 쓰지
+   * 않는다 — 그건 두 번째 스캔을 "중복"으로 조용히 버리는 것과 같고, 여기서는
+   * 버려진 스캔이 곧 사라진 카운트다(바코드-조회 화면의 중복 조회 드롭과 다름).
+   */
+  const scanQueueRef = useRef<Promise<unknown>>(Promise.resolve());
+
   async function enterLocation(code: string) {
     setNotice(null);
     try {
@@ -80,8 +91,12 @@ export function SessionCountScreen({ sessionId }: { sessionId: string }) {
   // 다이얼로그 뒤에서 countProduct 가 돌면 이중 카운트가 난다.
   useScanner((e) => {
     if (editing) return;
-    if (place) void countProduct(e.code);
-    else void enterLocation(e.code);
+    scanQueueRef.current = scanQueueRef.current
+      .then(() => (place ? countProduct(e.code) : enterLocation(e.code)))
+      .catch(() => {
+        // countProduct/enterLocation 은 이미 자기 에러를 notice 로 흡수한다 —
+        // 여기서는 체인이 끊겨 다음 스캔이 영영 대기하는 것만 막는다.
+      });
   });
 
   const progress = detail.data?.progress;
