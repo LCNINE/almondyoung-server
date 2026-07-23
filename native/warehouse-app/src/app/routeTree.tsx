@@ -13,6 +13,7 @@ import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 import { SkuDetailRoute } from './routes/SkuDetailRoute';
+import { AdjustStockRoute } from './routes/AdjustStockRoute';
 
 export interface RouterContext {
   session: Session;
@@ -62,7 +63,7 @@ const inventoryDetailRoute = createRoute({
 const inventoryAdjustRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory/$sku/adjust',
-  component: () => <PlaceholderScreen title="재고 조정" note="다음 태스크에서 구현됩니다." />,
+  component: AdjustStockRoute,
   validateSearch: (search: Record<string, unknown>): { locationId?: string } => ({
     locationId: typeof search.locationId === 'string' ? search.locationId : undefined,
   }),
