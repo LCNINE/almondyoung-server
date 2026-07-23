@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -35,8 +35,12 @@ export function AdjustStockScreen({
   const [otherReason, setOtherReason] = useState('');
   const [confirming, setConfirming] = useState(false);
 
-  // 화면 생애 동안 고정 — 네트워크 재시도가 이중 적용되지 않게 한다.
-  const idempotencyKey = useRef(crypto.randomUUID()).current;
+  // 실패 시엔 재시도를 위해 같은 키를 유지하고, 성공 후에만 새로 발급한다.
+  // findEventIdByIdempotencyKey 가 sku·location·delta 와 무관하게 키만으로
+  // 전역 중복제거를 하므로, 같은 마운트에서의 다음 제출이 이전 성공 키를
+  // 재사용하면 백엔드가 조용히 no-op 한다 — 화면은 성공을 보여주는데 재고는
+  // 안 움직인다. 이동(navigate)에 기대지 않고 여기서 구조적으로 막는다.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
 
   const search = useLocationSearch(warehouseId, term);
 
@@ -220,7 +224,13 @@ export function AdjustStockScreen({
           if (!warehouseId || !locationId) return;
           adjust.mutate(
             { skuId, warehouseId, locationId, delta, reason: effectiveReason, idempotencyKey },
-            { onSuccess: () => navigate({ to: '/inventory/$sku', params: { sku: skuId } }) }
+            {
+              onSuccess: () => {
+                // 성공했을 때만 회전한다 — 실패 후 재시도는 같은 키를 재사용해야 한다.
+                setIdempotencyKey(crypto.randomUUID());
+                navigate({ to: '/inventory/$sku', params: { sku: skuId } });
+              },
+            }
           );
         }}
       />
