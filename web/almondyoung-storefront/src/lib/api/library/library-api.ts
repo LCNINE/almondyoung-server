@@ -15,21 +15,25 @@ import type {
  *
  * @param skip / take — pagination
  * @param filter — "all" | "new" | "used"
+ * @param salesOrderId — 주문상세용. 그 주문으로 발급된 ownership 만 받는다.
  */
 export const getOwnerships = async ({
   skip,
   take,
   filter,
+  salesOrderId,
 }: {
   skip: number
   take: number
   filter?: OwnershipFilter
+  salesOrderId?: string
 }): Promise<OwnershipListResponseDto> => {
   const params: Record<string, string> = {
     skip: String(skip),
     take: String(take),
   }
   if (filter) params.filter = filter
+  if (salesOrderId) params.salesOrderId = salesOrderId
 
   return api<OwnershipListResponseDto>("library", `/library/ownerships`, {
     method: "GET",
@@ -44,7 +48,10 @@ export const getOwnerships = async ({
  */
 export const exerciseOwnership = async (
   ownershipId: string
-): Promise<{ success: true; data: OwnershipResponseDto } | { success: false; message: string }> => {
+): Promise<
+  | { success: true; data: OwnershipResponseDto }
+  | { success: false; message: string }
+> => {
   try {
     const data = await api<OwnershipResponseDto>(
       "library",
@@ -86,7 +93,8 @@ export const downloadOwnership = async (
     const data = await api<{ url: string; filename: string }>(
       "library",
       `/library/ownerships/${ownershipId}/download`,
-      { method: "GET", withAuth: true }
+      // Core 가 file-service 를 두 번 왕복(메타 + signed URL)하므로 기본 5초로는 모자란다.
+      { method: "GET", withAuth: true, timeout: 15000 }
     )
     return { success: true, url: data.url, filename: data.filename }
   } catch (err) {
