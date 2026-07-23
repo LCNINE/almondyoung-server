@@ -5,6 +5,10 @@
 
 # superpowers brainstorm scratch (visual companion mockups)
 .superpowers/
+
+# Local git worktrees
+.worktrees/
+
 !packages/hms-api-wrapper/dist/
 !packages/hms-api-wrapper/dist/**
 
