@@ -85,8 +85,29 @@ NAME_FILTER='akf\s*쌍커풀\s*테이프' bash scripts/sellmate/run.sh live set-
 VARIANT_IDS="$(paste -sd, akf.txt)" bash scripts/sellmate/run.sh live recalc-sellable .
 ```
 
-미스티 래쉬도 같은 절차다 (`NAME_FILTER='미스티\s*래쉬'`). 단 **Medusa 에 등록조차 안 된 상품이면 이 단계는 건너뛴다** —
-매칭할 variant 가 없으니 걸 대상이 없고, `excluded.ts` 등록만으로 충분하다. 나중에 등록되면 그때 `--set-manual-oos` 를 건다.
+미스티 래쉬도 같은 절차지만 **2026-07-23 기준 품절 고정을 걸 대상이 없다.** 상태를 남겨둔다:
+
+- Medusa 에 `미스티 래쉬`(handle `894de710-32f7-4092-b952-b7a7dc4a325b`) 가 **`draft` 로 존재**한다. variant 6개
+  (`P0000FJA000A`~`000F`) 전부 `manage_inventory=false` / `allow_backorder=false`. draft 라 스토어프론트 노출은 없다.
+- Core 매칭은 6옵션 중 3개(LC/8·9·10)에만 있는데, **그 매칭이 가리키는 Medusa variant UUID 3개가 Medusa 에 존재하지 않는다**
+  (admin `product-variants?id[]=…` → `count 0`). Core 판정이 `NOT_ACTIVE_VERSION` 인 것도 같은 이야기다. 즉 **유령 매칭**이고,
+  실제 draft 상품의 variant 6개는 Core 매칭이 하나도 없다.
+- 그래서 `set-sellable-policy --set-manual-oos` 는 유령 variant 에만 걸려 실효가 없다. 걸지 않았다.
+- **대신 Medusa 에 직접 `manage_inventory=true` 를 걸었다** (6 variant 전부, `allow_backorder=false` 유지).
+  inventory level 이 아예 없어(`location-levels` 0건) available=0 → 품절 확정이다. published 로 바뀌어도 안 팔린다.
+
+```bash
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+# ⚠️ URL 의 <prod_id> 는 handle 이 아니라 `prod_…` id 다. handle 을 넣으면 본문 없는 500 이 난다.
+curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>/variants/<variant_id> \
+  -H 'Content-Type: application/json' -d '{"manage_inventory":true,"allow_backorder":false}'
+```
+
+⚠️ **published 로 돌리기 전에** 매칭을 정상 variant 로 다시 붙일 것 — 지금은 유령 매칭이라 Core 가
+이 상품의 재고를 관리하지 못한다.
+
+일반화하면: **`excluded.ts` 등록은 "셀메이트 재고가 안 들어옴" 까지만 보장한다.** 판매 차단은 Medusa 쪽
+`manage_inventory` / `availability_override` 가 하는 일이고, 매칭이 유령이거나 없으면 Core 로는 손댈 수 없다.
 
 `--set-manual-oos` 는 `availability_override='manual_out_of_stock'` 을 건다. 계산기가 **가장 먼저** 보는 값이라
 재고·플래그와 무관하게 품절이 된다 (`calculator.ts:98`).
