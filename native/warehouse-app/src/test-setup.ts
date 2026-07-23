@@ -1,3 +1,5 @@
 import '@testing-library/jest-dom';
 
-window.scrollTo = () => {};
+if (typeof window !== 'undefined') {
+  window.scrollTo = () => {};
+}
