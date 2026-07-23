@@ -121,7 +121,7 @@ Phase 0(토대 + 하드웨어 스파이크) · Phase 1a(loopback OIDC 로그인)
 
 - 정렬 `locationCode ASC NULLS LAST, stockState ASC` 추가 — 현장은 위치 순으로 읽는다
 - **필터는 바꾸지 않는다.** `qty = 0` 행 제외는 프론트가 한다 — 기존 응답의 행 집합을 줄이는 건 additive가 아니다
-- `locationId`가 null인 원장 행이 존재할 수 있다 → UI는 "위치 미지정"으로 표기
+- `stock_ledgers.location_id` 는 **NOT NULL 이고 복합 PK 의 일부**다 (`skuId, warehouseId, locationId, stockState`). 위치 없는 재고 행은 존재할 수 없으므로 "위치 미지정" 표기는 불필요하다. leftJoin 은 FK 위반 시에도 행이 사라지지 않게 하는 방어일 뿐이다
 - 이 엔드포인트는 현재 **소비자 0개**(admin-web 포함)라 확장 위험이 없다. 한 번의 호출로 창고 요약 + 위치별 분포를 함께 주므로 상세 화면과 조정 화면 양쪽이 이걸 쓴다
 
 ### 4.3 `POST /stocktaking/scan-location` 응답 확장
