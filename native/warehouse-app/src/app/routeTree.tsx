@@ -16,6 +16,7 @@ import { SkuDetailRoute } from './routes/SkuDetailRoute';
 import { AdjustStockRoute } from './routes/AdjustStockRoute';
 import { StocktakingRoute } from './routes/StocktakingRoute';
 import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
+import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
 
 export interface RouterContext {
   session: Session;
@@ -90,7 +91,7 @@ const stocktakingSessionRoute = createRoute({
 const stocktakingVariancesRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/stocktaking/$sessionId/variances',
-  component: () => <PlaceholderScreen title="차이 확인" note="다음 태스크에서 구현됩니다." />,
+  component: StocktakingVariancesRoute,
 });
 const movementRoute = createRoute({
   getParentRoute: () => authedRoute,
