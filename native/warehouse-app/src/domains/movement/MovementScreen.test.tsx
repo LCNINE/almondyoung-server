@@ -161,4 +161,67 @@ describe('MovementScreen', () => {
       expect(within(sheet).queryByRole('button', { name: /A-01-02/ })).not.toBeInTheDocument();
     });
   });
+
+  it('quantity 0 인 ON_HAND 행은 이동 목록에서 제외된다', async () => {
+    const contents = {
+      locationId: 'l-src',
+      locationCode: 'A-01-02',
+      warehouseId: 'w-1',
+      items: [
+        { skuId: 's1', skuCode: 'CT-001', skuName: '코튼셔츠', stockState: 'ON_HAND', quantity: 12 },
+        { skuId: 's3', skuCode: 'ZR-000', skuName: '영수량품', stockState: 'ON_HAND', quantity: 0 },
+      ],
+    };
+    const client: ApiClient = {
+      request: (async (opts: { path: string; method?: string; body?: unknown }) => {
+        if (opts.path.startsWith('/locations/warehouses/')) {
+          if (opts.path.includes('A-01')) {
+            return { items: [{ id: 'l-src', code: 'A-01-02', displayName: 'A-01-02' }], total: 1 };
+          }
+          return { items: [], total: 0 };
+        }
+        if (opts.path === '/inventory/stocks/location/l-src') return contents;
+        throw new Error(`GET ${opts.path} → 404`);
+      }) as unknown as ApiClient['request'],
+    };
+    renderScreen(client);
+    await pickSource();
+    expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
+    expect(screen.queryByText('영수량품')).not.toBeInTheDocument();
+  });
+
+  it('수량을 0 으로 지우면 이동하기가 비활성이다', async () => {
+    renderScreen(makeClient([]));
+    await pickSource();
+
+    await userEvent.click(await screen.findByRole('button', { name: '이동' }));
+    await userEvent.type(await screen.findByLabelText('대상 로케이션 검색'), 'B-05');
+    await userEvent.click(await screen.findByRole('button', { name: /B-05-03/ }));
+
+    const sheet = screen.getByRole('dialog', { name: '품목 이동' });
+    const backspace = within(sheet).getByRole('button', { name: '지우기' });
+    // 12 → 1 → 0
+    await userEvent.click(backspace);
+    await userEvent.click(backspace);
+
+    await waitFor(() => {
+      expect(within(sheet).getByRole('button', { name: '이동하기' })).toBeDisabled();
+    });
+  });
+
+  it('현재 수량을 초과하면 이동하기가 비활성이고 경고를 보여준다', async () => {
+    renderScreen(makeClient([]));
+    await pickSource();
+
+    await userEvent.click(await screen.findByRole('button', { name: '이동' }));
+    await userEvent.type(await screen.findByLabelText('대상 로케이션 검색'), 'B-05');
+    await userEvent.click(await screen.findByRole('button', { name: /B-05-03/ }));
+
+    const sheet = screen.getByRole('dialog', { name: '품목 이동' });
+    // 12 → 123 (초과)
+    await userEvent.click(within(sheet).getByRole('button', { name: '3' }));
+
+    expect(await within(sheet).findByText('현재 수량(12)을 초과할 수 없어요.')).toBeInTheDocument();
+    expect(within(sheet).getByRole('button', { name: '이동하기' })).toBeDisabled();
+  });
 });
