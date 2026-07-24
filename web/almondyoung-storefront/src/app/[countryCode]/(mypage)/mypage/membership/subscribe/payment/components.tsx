@@ -373,14 +373,14 @@ export function MembershipForm({
                       <PlanOption
                         selected={field.value === "monthly"}
                         onSelect={() => field.onChange("monthly")}
-                        title="월간 구독"
+                        title="월간 결제"
                         price={`${monthlyPlan.plan.price.toLocaleString()}원`}
                         unit="/ 월"
                       />
                       <PlanOption
                         selected={field.value === "yearly"}
                         onSelect={() => field.onChange("yearly")}
-                        title="연간 구독"
+                        title="연간 결제"
                         price={`${yearlyPlan.plan.price.toLocaleString()}원`}
                         unit="/ 연"
                         badge="2달 무료"
@@ -673,7 +673,7 @@ export function MembershipForm({
               <span className="text-sm text-gray-600">
                 {hasPrice
                   ? `${
-                      subscriptionType === "monthly" ? "월간 구독" : "연간 구독"
+                      subscriptionType === "monthly" ? "월간 결제" : "연간 결제"
                     } · ${
                       billingMode === "recurring"
                         ? "정기결제 (매월 자동결제)"
@@ -1000,8 +1000,8 @@ function TermsAndConditions({
                 이용하려면 재결제가 필요합니다.
               </li>
               <li>
-                결제 금액: 월간 구독 {monthlyPrice.toLocaleString()}원 / 연간
-                구독 {yearlyPrice.toLocaleString()}원
+                결제 금액: 월간 결제 {monthlyPrice.toLocaleString()}원 / 연간
+                결제 {yearlyPrice.toLocaleString()}원
               </li>
             </>
           )}
