@@ -35,7 +35,7 @@ export function CategoryDropdown({
       skipDelayDuration={0}
       onPointerLeave={() => setValue("")}
       className={cn(
-        "z-[100] [&_.origin-top-center]:z-[100] [&_.origin-top-center]:animate-none! [&_.origin-top-center]:rounded-none [&_.origin-top-center]:border-0 [&_.origin-top-center]:bg-transparent [&_.origin-top-center]:shadow-none [&_.origin-top-center]:duration-0 [&>div]:z-[100]",
+        "z-[100] [&_.origin-top-center]:z-[100] [&_.origin-top-center]:animate-none! [&_.origin-top-center]:overflow-visible! [&_.origin-top-center]:rounded-none [&_.origin-top-center]:border-0 [&_.origin-top-center]:bg-transparent [&_.origin-top-center]:shadow-none [&_.origin-top-center]:duration-0 [&>div]:z-[100]",
         isHeaderTile
           ? "flex h-full w-full max-w-none items-stretch justify-stretch [&_.origin-top-center]:mt-0 [&>div:first-child]:h-full [&>div:first-child]:w-full"
           : isQuickLink
@@ -72,10 +72,9 @@ export function CategoryDropdown({
           <NavigationMenuContent className="left-0 animate-none!">
             <div
               className={cn(
-                "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150 motion-safe:ease-out",
-                "overflow-hidden rounded-tr-lg rounded-b-lg border border-gray-200 bg-white shadow-[2px_4px_5px_rgba(0,0,0,0.3)]",
+                "rounded-none border border-gray-200 bg-white shadow-[-1px_4px_5px_rgba(0,0,0,0.3)]",
                 isHeaderTile
-                  ? "w-[1040px] max-w-[calc(100vw-28px)]"
+                  ? "w-max max-w-[calc(100vw-28px)]"
                   : isQuickLink
                     ? "w-max max-w-[calc(100vw-28px)]"
                     : "w-max max-w-[calc(100vw-80px)]"
