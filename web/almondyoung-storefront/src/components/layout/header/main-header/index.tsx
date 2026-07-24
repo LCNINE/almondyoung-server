@@ -65,24 +65,28 @@ export async function MainHeader() {
             <LanguageSwitcher />
           </div>
 
-          <div className="flex items-center gap-5">
-            <div className="w-[76px] shrink-0 self-stretch">
+          <div className="flex items-stretch gap-5 pt-2.5">
+            <div className="flex w-[116px] shrink-0">
               <CategoryDropdown categories={categories} variant="headerTile" />
             </div>
 
-            <Logo />
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-2">
+              <div className="flex items-center gap-5">
+                <Logo />
 
-            <div className="w-full max-w-3xl min-w-[300px]">
-              <SearchCombobox inputClassName="border-primary rounded-none border-2 bg-white focus-visible:ring-0" />
-            </div>
+                <div className="w-full max-w-3xl min-w-[300px]">
+                  <SearchCombobox inputClassName="border-primary rounded-none border-2 bg-white focus-visible:ring-0" />
+                </div>
 
-            <div className="shrink-0">
-              <AccountMenu />
+                <div className="shrink-0">
+                  <AccountMenu />
+                </div>
+              </div>
+
+              <HomeQuickLinks variant="desktopHeader" />
             </div>
           </div>
         </div>
-
-        <HomeQuickLinks variant="desktopHeader" />
       </div>
 
       <SearchSheet />

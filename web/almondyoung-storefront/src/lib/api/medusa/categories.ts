@@ -25,8 +25,10 @@ export const listCategories = async (query?: Record<string, any>) => {
       {
         query: {
           fields:
-            // "*category_children, *products, *parent_category, *parent_category.parent_category",
             "*category_children, *parent_category, *parent_category.parent_category",
+          // 메가메뉴 3단(대분류→중분류→소분류)용으로 전체 하위 트리 로드.
+          // (중첩 fields `*category_children.category_children` 는 손자를 안 채움 — 이 옵션이 필요)
+          include_descendants_tree: true,
           limit,
           ...query,
         },

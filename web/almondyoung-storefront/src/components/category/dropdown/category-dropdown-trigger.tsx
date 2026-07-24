@@ -13,8 +13,8 @@ export function CategoryDropdownTrigger({
   if (variant === "headerTile") {
     return (
       <>
-        <Menu className="h-7 w-7" />
-        <span className="text-[12px] leading-none font-medium">
+        <Menu className="h-8 w-8 text-white" strokeWidth={2.75} />
+        <span className="text-[13px] leading-none font-bold text-white">
           {t("trigger")}
         </span>
       </>
