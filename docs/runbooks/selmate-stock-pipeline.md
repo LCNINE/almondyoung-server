@@ -46,7 +46,9 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 
 - **live RDS 터널**: `cd deployments/lcnine/services && npx sst tunnel --stage live` (sudo, 유지)
 - **DB 접속**: host/secret 은 메모리 `lcnine-services live` 참조. 비번은 Secrets Manager `lcnine-services-live-DbProxySecret-bazfzmnx` 에서 런타임 조회 (파일에 박지 말 것).
-- **Medusa Admin**: `MEDUSA_API_URL=https://medusa.almondyoung-next.com`, `MEDUSA_API_KEY` = `cd deployments/lcnine/services && npx sst secret list --stage live | grep MedusaApiKey`
+- **Medusa Admin**: `MEDUSA_API_URL=https://medusa.almondyoung.com`, `MEDUSA_API_KEY` = `cd deployments/lcnine/services && npx sst secret list --stage live | grep MedusaApiKey`
+  - 옛 `medusa.almondyoung-next.com` 은 NXDOMAIN 이다 (도메인 이관). curl 이 `HTTP 000` 이면 여기부터 확인.
+  - 인증은 **HTTP Basic** — `curl -u "$MEDUSA_API_KEY:"`. `x-medusa-access-token` 헤더는 `{"message":"Unauthorized"}` 가 난다.
 - **CSV**: 셀메이트에서 컬럼 **상품코드(카페) / 바코드번호(서식) / 상품명 / 옵션명 / 입고예정일 / 입고예정수량** 포함해 다운로드.
   - CSV 로 받으면 셀메이트가 코드·바코드를 `="P0000EXQ"` 로 감싸서 내보낸다(엑셀이 숫자로 바꾸는 걸 막는 장치).
     `scripts/sellmate/parse.ts` 의 `unarmor()` 가 벗겨내므로 그대로 넣으면 된다. 2026-07-22 이전에는 이걸
@@ -57,6 +59,63 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 - **러너 사용 권장**: 아래 ①②③ 은 `CORE_DB_URL` 을 손으로 만드는 예시지만, 실제로는 러너가 RDS 엔드포인트·시크릿을 런타임 조회해 주입한다. 비번이 transcript 에 안 남는다.
   - `scripts/sellmate/run.sh <stage> <import-products|sync-stock|recalc-sellable|check> <경로>`
   - `scripts/sellmate/inbound-run.sh <stage> <import-inbound|match-sku|sync-restock> [args]`
+
+## Ⓐ-0 동기화 금지 목록 — `scripts/sellmate/excluded.ts`
+
+**셀메이트 재고를 반영하면 안 되는 상품**이 있다. 셀메이트에 재고가 잡혀 있어도 그게 "팔아도 되는 재고" 를
+뜻하지 않는 경우다. 동기화하면 재고가 채워지면서 **품절이 풀려 팔린다.**
+
+목록은 `scripts/sellmate/excluded.ts` 에 코드로 박혀 있고, `import-products` 와 `sync-stock` 이 파싱 단계에서
+해당 행을 잘라낸다 (실행 시 `⛔ 동기화 제외 N행 — <사유>` 로 찍힘). **런북 문구만으론 사람이 빠뜨리므로
+스크립트가 강제한다.**
+
+| 상품 | 상품일련번호 | 조치 | 등록일 |
+|------|-------------|------|--------|
+| `akf쌍커풀테이프` | 13248 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`) | 13333 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| `씨엠 쌍커풀 테이프` (카페코드 `P0000EAZ`, Medusa `prod_01KT8JM7CESNJAB3C66NV3ERGP` draft) | — (셀메이트에 없음) | **재고동기화 금지 + 품절 유지** — 셀메이트 미등록이라 name pattern 만, 품절은 Medusa `manage_inventory=true` 로 강제 (3 variant 전부 재고0) | 2026-07-24 |
+
+제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
+추가할 땐 `EXCLUDED_PRODUCT_SERIALS` / `EXCLUDED_NAME_PATTERNS` 양쪽에 사유와 날짜를 남기고 이 표도 갱신한다.
+
+**제외는 "안 건드림" 이지 "품절" 이 아니다.** 품절까지 걸어두려면 별도로:
+
+```bash
+NAME_FILTER='akf\s*쌍커풀\s*테이프' bash scripts/sellmate/run.sh live set-sellable-policy <csv> \
+  --flag pre_stock_sellable --off --set-manual-oos --apply --out akf.txt
+VARIANT_IDS="$(paste -sd, akf.txt)" bash scripts/sellmate/run.sh live recalc-sellable .
+```
+
+미스티 래쉬도 같은 절차지만 **2026-07-23 기준 품절 고정을 걸 대상이 없다.** 상태를 남겨둔다:
+
+- Medusa 에 `미스티 래쉬`(handle `894de710-32f7-4092-b952-b7a7dc4a325b`) 가 **`draft` 로 존재**한다. variant 6개
+  (`P0000FJA000A`~`000F`) 전부 `manage_inventory=false` / `allow_backorder=false`. draft 라 스토어프론트 노출은 없다.
+- Core 매칭은 6옵션 중 3개(LC/8·9·10)에만 있는데, **그 매칭이 가리키는 Medusa variant UUID 3개가 Medusa 에 존재하지 않는다**
+  (admin `product-variants?id[]=…` → `count 0`). Core 판정이 `NOT_ACTIVE_VERSION` 인 것도 같은 이야기다. 즉 **유령 매칭**이고,
+  실제 draft 상품의 variant 6개는 Core 매칭이 하나도 없다.
+- 그래서 `set-sellable-policy --set-manual-oos` 는 유령 variant 에만 걸려 실효가 없다. 걸지 않았다.
+- **대신 Medusa 에 직접 `manage_inventory=true` 를 걸었다** (6 variant 전부, `allow_backorder=false` 유지).
+  inventory level 이 아예 없어(`location-levels` 0건) available=0 → 품절 확정이다. published 로 바뀌어도 안 팔린다.
+
+```bash
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+# ⚠️ URL 의 <prod_id> 는 handle 이 아니라 `prod_…` id 다. handle 을 넣으면 본문 없는 500 이 난다.
+curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>/variants/<variant_id> \
+  -H 'Content-Type: application/json' -d '{"manage_inventory":true,"allow_backorder":false}'
+```
+
+⚠️ **published 로 돌리기 전에** 매칭을 정상 variant 로 다시 붙일 것 — 지금은 유령 매칭이라 Core 가
+이 상품의 재고를 관리하지 못한다.
+
+일반화하면: **`excluded.ts` 등록은 "셀메이트 재고가 안 들어옴" 까지만 보장한다.** 판매 차단은 Medusa 쪽
+`manage_inventory` / `availability_override` 가 하는 일이고, 매칭이 유령이거나 없으면 Core 로는 손댈 수 없다.
+
+`--set-manual-oos` 는 `availability_override='manual_out_of_stock'` 을 건다. 계산기가 **가장 먼저** 보는 값이라
+재고·플래그와 무관하게 품절이 된다 (`calculator.ts:98`).
+
+⚠️ **미매칭 품목은 이 방법으로 못 막는다** — variant 를 모르니 정책을 걸 대상이 없다. 2026-07-23 기준
+akf쌍커풀테이프 7옵션 중 6개는 매칭돼 품절 처리했고, `혼합(체험)` 1개는 미매칭이다. 이 상품은 Medusa 에서
+`draft` 라 스토어프론트에 노출 자체가 안 돼 문제가 없지만, **published 로 바뀌면 그 옵션이 팔릴 수 있다.**
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 
@@ -204,23 +263,141 @@ CORE_DB_URL=...core MEDUSA_DB_URL=...medusa \
 # 1) 셀메이트에서 CSV 를 두 벌 받는다 — 한국 / 한국·한국직배 제외(=해외)
 #    (둘의 옵션정보일련번호는 겹치지 않고 합치면 전체가 된다)
 
-# 2) 매칭된 variant 중 한국 CSV 에 있는 것만 골라 플래그 ON
-#    kr-variant-ids.txt = 한국 CSV 의 옵션정보일련번호 → skus.code 조인으로 얻은 variant_id 목록
-psql "$CORE_DB_URL" <<'SQL'
-CREATE TEMP TABLE kr(variant_id uuid);
-\copy kr FROM 'kr-variant-ids.txt'
-BEGIN;
-UPDATE product_matchings SET always_sellable_zero_stock=true, updated_at=now()
- WHERE variant_id IN (SELECT variant_id FROM kr) AND status='matched' AND NOT always_sellable_zero_stock;
-UPDATE sales_variant_policies SET always_sellable_zero_stock=true, updated_at=now()
- WHERE variant_id IN (SELECT variant_id FROM kr) AND NOT always_sellable_zero_stock;
-COMMIT;
-SQL
+# 2) 한국 CSV 로 플래그 ON (dry-run → apply). 옵션정보일련번호 → skus.code 조인은 스크립트가 한다.
+bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag always_sellable_zero_stock --on
+bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag always_sellable_zero_stock --on --apply \
+  --out kr-variants.txt
+
+# 3) ★ Medusa 반영 — 스크립트는 이벤트를 발행하지 않는다
+VARIANT_IDS="$(paste -sd, kr-variants.txt)" bash scripts/sellmate/run.sh live recalc-sellable .
 ```
+
+`set-sellable-policy.ts` 는 이 절차 전용이 아니라 **"CSV 로 고른 variant 의 판매정책 플래그를 바꾸는"** 범용
+스크립트다 (`--flag pre_stock_sellable | always_sellable_zero_stock`, `--on|--off`). 예전엔 여기 임시 SQL
+(temp table + `\copy`)이 적혀 있었는데, variant_id 목록을 손으로 뽑아야 해서 매번 틀렸다. 지금은 CSV 를 그대로 넣는다.
+
+- `NAME_FILTER` / `KIND_FILTER` / `EXCLUDE_FILTER` (정규식) 로 CSV 안에서 대상을 좁힌다. CSV 를 미리 자를 필요 없다.
+- dry-run 이 기본. `--apply` 로 커밋, `--out <file>` 로 variant 목록을 받아 그대로 `VARIANT_IDS` 에 넘긴다.
+- `product_matchings` 와 `sales_variant_policies` **양쪽**을 함께 쓴다. 하나만 바꾸면 어드민 표시와 실제 판매동작이 갈라진다.
+- 수동품절(`availability_override='manual_out_of_stock'`)이 걸린 건은 플래그를 켜도 계산기가 품절로 판정한다.
+  스크립트가 몇 건인지 경고하며, 함께 풀려면 `--clear-manual-oos` / 반대로 걸려면 `--set-manual-oos`.
+- **매칭 안 된 품목은 건드리지 않는다** — `MATCHING_PENDING` 이라 애초에 게이팅이 없어 이미 무제한 판매 중이다.
+  dry-run 이 `[미매칭]` 으로 표시하는 게 정상이며, 이 숫자가 크면 정책 문제가 아니라 ② 매칭이 안 붙은 것이다.
 
 계산기 순서상 `always_sellable_zero_stock` 이 `pre_stock_sellable` 보다 **먼저** 평가된다. 둘 다 무한판매로 가지만 의미가 다르다 — **"항상 판매"는 `always_sellable_zero_stock`, "입고 전 선판매"는 `pre_stock_sellable`.** 한국상품 정책은 전자다. 매칭이 켜는 값(`pre_stock_sellable=false`)과 충돌하지 않는다.
 
 미매칭(`pending`) 상품은 `MATCHING_PENDING` 이라 어차피 비-게이팅이므로 플래그가 없어도 팔린다. **문제는 새로 매칭되는 순간**이다 — 그래서 매칭할 때마다 이 절차를 같이 돌린다.
+
+### ②-C 해외상품 중 품절시키면 안 되는 예외 — `pre_stock_sellable`
+
+②-B 의 "해외는 품절" 은 기본값이지 전부가 아니다. **주문받고 들여오는 해외 브랜드**가 있고, 이건 재고 0 이
+정상 영업상태다. 이때 쓰는 건 `always_sellable_zero_stock`(항상판매) 이 아니라 **`pre_stock_sellable`(선판매)** 이다 —
+둘 다 무한판매로 가지만 "입고 전 선판매" 라는 의미가 맞고, 어드민 표시도 그렇게 나온다.
+
+```bash
+# 예: 마스트(MAST) 머신·파워서플라이·배터리. 부속류(RCA선/어댑터/부분품)는 제외.
+NAME_FILTER='마스트|MAST' KIND_FILTER='머신|서플라이|배터리' EXCLUDE_FILTER='RCA|어댑터|앞 ?부분' \
+  bash scripts/sellmate/run.sh live set-sellable-policy <csv> --flag pre_stock_sellable --on
+# … 확인 후 --apply --out mast-variants.txt, 이어서 recalc-sellable
+```
+
+**이 예외 목록도 셀메이트에만 있는 정보라 Core 에 없다** — ②-B 와 같은 이유로 코드가 아니라 이 런북이 기억한다.
+지금까지 적용한 예외:
+
+| 브랜드/범위 | 플래그 | 적용일 | 비고 |
+|-------------|--------|--------|------|
+| 마스트(MAST) 머신·서플라이·배터리 | `pre_stock_sellable` | 2026-07-23 | 대상 77품목 중 **매칭된 7개만** 실제 적용 (나머지 70개는 미매칭이라 이미 판매중) |
+
+⚠️ 그때 77품목 중 70개가 미매칭이었다. **"품절로 보인다" 는 신고를 받으면 플래그부터 의심하지 말 것** —
+미매칭이면 Core 는 게이팅을 안 하므로 원인이 Medusa 쪽(`manage_inventory` 잔존 등)이다. dry-run 의
+`[미매칭]` 카운트로 먼저 갈라본다.
+
+### ②-C-1 해외 상품이면 "해외직구" 도 같이 켠다
+
+**배송 상태가 해외직구인 상품은 어드민에서 `isOverseas`(해외직구 상품) 를 반드시 켠다.** 이걸 켜야
+체크아웃에서 **개인통관고유부호 입력이 필수**가 된다 — 안 켜면 통관부호 없이 주문이 들어오고, 그 주문은
+통관에서 막혀 출고가 안 된다. 판매정책 플래그(선판매/항상판매)와는 별개 설정이라 같이 챙기지 않으면 빠진다.
+
+- 어드민 위치: 상품 상세 → **일반** 탭 (`apps/admin-web/src/features/mall/products-detail/components/general/index.tsx`)
+- 여러 건은 상품 목록 → **일괄 정책 설정** (`features/mall/bulk/components/bulk-policy-modal`)
+- 주문에 실린 값은 `shippingAddress.personalCustomsCode` 로 들어가고, 어드민 주문 목록·CS 조회·지역별 송장에 "통관부호" 로 노출된다
+- 형식 검증: 영문 1자 + 숫자 12자 (`P123456789012`) — `web/almondyoung-storefront/src/domains/checkout/utils/customs.ts`
+
+②-C 표의 예외 브랜드(해외 소싱)는 사실상 전부 이 대상이다. **선판매를 켰으면 `isOverseas` 도 켜져 있는지 확인할 것.**
+
+### ⚠️ 재고가 있으면 두 플래그 다 안 먹는다
+
+계산기(`product-sellable-quantity.calculator.ts:136`)는 `stockBoundQuantity > 0 → SELLABLE` 을
+`alwaysSellableZeroStock`(`:147`)·`preStockSellable`(`:158`) **보다 먼저** 평가한다. 이름 그대로 두 플래그는
+**재고 0 일 때만** 발동하는 장치다. 그러니 "이 브랜드는 무조건 안 품절되게" 를 플래그로 보장할 수 없다 —
+재고가 1이라도 있으면 Medusa 재고 게이팅으로 넘어가고, 거기서 **예약(reserved)이 재고를 다 물고 있으면
+`available=0` 이라 품절로 보인다.**
+
+2026-07-23 "MAST 마스트 머신 무선 배터리"(`P0000EZZ000C`)가 정확히 이 케이스였다:
+`stocked=1 / reserved=1 / available=0` + `allow_backorder=false`. Core 는 `SELLABLE 수량1` 로 정상 판정 중이었다.
+
+게다가 이 상태는 **스스로 풀리지 않는다** — 선판매를 켜도 Medusa 로 발행되지 않는다 (이슈 #532).
+`hasProductSellableQuantityProjectionChanged` 의 비교 항목에 `preStockSellable` 이 없어서, 재고 > 0 이면
+`reason` 이 안 바뀌고 publish 가 스킵된다. 고쳐지기 전까지 우회는 Medusa Admin API 직접 쓰기다:
+
+```bash
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+# 인증은 Basic (curl -u "$K:"), x-medusa-access-token 헤더가 아니다
+curl -s -u "$K:" -G https://medusa.almondyoung.com/admin/products \
+  --data-urlencode "q=<상품명>" --data-urlencode "fields=id,title,*variants"     # id 확인
+curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>/variants/<variant_id> \
+  -H 'Content-Type: application/json' -d '{"allow_backorder":true}'
+```
+
+**진단 순서** — dry-run 이 찍는 `Core판정` 이 1차 분기다.
+
+| Core판정 | 뜻 | 다음 |
+|----------|-----|------|
+| `프로젝션없음` | 아직 계산된 적 없음 | `recalc-sellable` |
+| `품절/MANUAL_OUT_OF_STOCK` | 수동품절 | `--clear-manual-oos` |
+| `품절/…` 그 외 | Core 가 품절로 판단 | 플래그·재고 확인 |
+| **`판매가능/…`** | **Core 는 정상** | **원인은 하류** — inbox 지연 → Medusa `allow_backorder`/`available` → 스토어프론트 캐시 순으로 본다 |
+
+**하류 확인 3단**. Medusa 를 고쳐도 스토어프론트는 안 바뀐다 — 캐시를 따로 깨야 한다.
+
+```bash
+PK=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaPublishableKey=//p')
+# ① Medusa store API 가 실제로 뭘 주는지 (캐시 무관 — 여기가 틀리면 스토어프론트 볼 필요 없음)
+curl -s -H "x-publishable-api-key: $PK" -G https://medusa.almondyoung.com/store/products \
+  --data-urlencode "handle=<handle>" --data-urlencode "fields=*variants,+variants.inventory_quantity"
+
+# ② 재고가 예약에 물려 있는지 (available=0 이면 allow_backorder=false 일 때 품절)
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+curl -s -u "$K:" https://medusa.almondyoung.com/admin/inventory-items/<iitem_id>/location-levels
+
+# ③ 스토어프론트 캐시 무효화
+S=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^StorefrontRevalidateSecret=//p')
+curl -s -X POST https://almondyoung.com/api/revalidate -H 'content-type: application/json' \
+  -H "x-revalidate-secret: $S" -d '{"handle":"<handle>"}'
+```
+
+`handle` 은 스토어프론트 URL 의 UUID 다 (`/kr/products/<handle>`).
+
+⚠️ **무효화했는데도 품절이 안 풀리면 `id` 로 조회하는 fetch 를 의심한다.**
+
+`listProducts` 는 `queryParams.handle` 이 있을 때만 `product-{handle}` 태그를 붙인다(`toProductHandleTags`).
+**`id` 로 조회하면 방문자별 태그(`products-{cache_id}`)만 남아 `/api/revalidate` 가 영영 못 깬다** — TTL(1시간)
+만료까지 stale 이다. 2026-07-23 "MAST 마스트 머신 무선 배터리" 가 이 사고였다: `ProductActionsWrapper` 가
+CTA 용 상품을 `id` 로 가져와서, Medusa 를 고치고 revalidate 를 5회 넘게 때려도 품절 버튼이 안 풀렸다.
+(고침: handle 조회로 전환)
+
+진단 신호 — 한 HTML 안에 같은 variant 의 `allow_backorder` 가 **true 와 false 로 동시에** 보인다:
+
+```bash
+curl -s "https://almondyoung.com/kr/products/<handle>" | grep -oE 'allow_backorder\\":(true|false)' | sort | uniq -c
+```
+
+태그 붙은 fetch 만 갱신되고 태그 없는 fetch 는 옛 값으로 남은 상태다. **CTA 를 그리는 쪽이 후자**면 화면은 품절이다.
+
+⚠️ **`품절` 문자열 개수로 판단하지 말 것.** 렌더된 UI 가 아니라 next-intl 메시지 사전(`soldOut`, `soldOutToast` …)이
+같이 실려 있어, 정상 판매중인 상품도 똑같이 8개가 잡힌다. 또 SSR HTML 의 CTA 는 항상 "옵션을 선택해주세요"
+(disabled) 다 — 품절 판정은 hydration 후 클라이언트에서 일어나므로 **curl 로는 최종 화면을 알 수 없다.**
+확인은 브라우저(시크릿 창)로 한다.
 
 ### 미매칭이 남는 이유
 
@@ -308,11 +485,13 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 ## 실행 순서 (전체 반영)
 
+0. **Ⓐ-0 동기화 금지 목록 확인** (`scripts/sellmate/excluded.ts`) — 스크립트가 자동으로 거르지만, 새로 금지할 상품이 생겼으면 먼저 등록
 1. 터널 + CSV 준비 — **한국 / 해외 두 벌**, `옵션코드` 컬럼 포함해서 받을 것
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
 3. `① import-inbound-plans --apply`  → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
 5. **`②-B` 한국상품 `always_sellable_zero_stock` 적용** ← 빼먹으면 한국상품이 품절된다
+   (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
 6. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
 7. `③ sync-restock-to-medusa --apply` → Medusa metadata
 8. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
@@ -325,12 +504,14 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 다음처럼 요청하면 이 런북대로 진행한다:
 
-- "셀메이트 재고 동기화 돌려줘 `<csv>`" → Ⓐ (A-1→A-2→A-3, A-3 까지 반드시 같이)
+- "셀메이트 재고 동기화 돌려줘 `<csv>`" → Ⓐ (A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "○○ 는 재고동기화 하지 마 / 품절로 둬" → **Ⓐ-0** — `excluded.ts` 에 등록(코드로 강제) + `--set-manual-oos` 로 품절 고정 + 런북 표 갱신
 - "셀메이트 입고예정 CSV `<경로>` core 에 반영해줘" → ①
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
 - "셀메이트 매칭 리포트 뽑아줘 `<csv>`" → ② dry-run + `--report`, 쓰기 없음
 - "품절 처리 안 되는 상품 매칭 붙여줘 `<csv>`" → ② `--rule A --apply` → `--rule B` 리포트 검토 → apply → **Ⓐ A-3 recalc-sellable 까지**
 - "입고예정 Medusa 에 동기화해줘" → ③
+- "○○ 브랜드는 해외라 품절되면 안 돼, 선판매로 바꿔줘" → **②-C** (`set-sellable-policy --flag pre_stock_sellable --on`) → **Ⓐ A-3 recalc-sellable 까지**. 적용한 예외는 ②-C 표에 한 줄 추가할 것
 - "셀메이트 재고 파이프라인 전체 돌려줘 `<csv>`" → Ⓐ①②③ 순서대로 (각 단계 dry-run→검증→apply)
 
 요청 시 CSV 경로만 주면 된다. live 운영 쓰기는 매번 dry-run 으로 먼저 검증하고 확인받은 뒤 `--apply` 한다.

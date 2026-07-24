@@ -13,6 +13,8 @@ import Thumbnail from "../thumbnail"
 import { Quantity } from "./quantity"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
+import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
+import { getIsOverseas } from "@/lib/utils/product-card"
 
 type RatingSummary = {
   averageRating: number
@@ -197,6 +199,7 @@ export default function ProductCard({
 
         <div className="mt-4 min-h-20">
           <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
+            {getIsOverseas(product) && <OverseasBadge />}
             {product.title}
           </h3>
           <ProductCardRating

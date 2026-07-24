@@ -33,6 +33,7 @@ export class InventoryController {
         locationId: adjustDto.locationId,
         quantity: Math.abs(adjustDto.delta),
         reason: adjustDto.reason,
+        idempotencyKey: adjustDto.idempotencyKey,
       });
     } else if (adjustDto.delta < 0) {
       return this.commandService.adjustDown({
@@ -41,6 +42,7 @@ export class InventoryController {
         locationId: adjustDto.locationId,
         quantity: Math.abs(adjustDto.delta),
         reason: adjustDto.reason,
+        idempotencyKey: adjustDto.idempotencyKey,
       });
     } else {
       throw new BadRequestException('delta cannot be zero');

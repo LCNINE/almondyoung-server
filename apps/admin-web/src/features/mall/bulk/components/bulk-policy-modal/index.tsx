@@ -50,7 +50,7 @@ const ROWS: { flag: PolicyFlag; label: string; desc: string }[] = [
   {
     flag: 'isOverseas',
     label: '해외직구',
-    desc: '체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.',
+    desc: '해외 배송 상품일 시 체크해주세요. 체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.',
   },
 ];
 

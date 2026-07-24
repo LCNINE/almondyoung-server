@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import {
   inventorySchema,
   inventoryTables,
@@ -9,6 +9,7 @@ import {
   DbTx,
   wmsTables,
 } from '../../inventory/schema/inventory.schema';
+import { digitalAssetOwnerships } from '../../library/schema/library.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
@@ -80,6 +81,26 @@ export class StoreSalesOrdersService {
   async getActions(orderId: string, customerId: string): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ id: orderId }, customerId);
     return this.buildActionsView(so);
+  }
+
+  /**
+   * Wallet 무통장 환불신청 가드용 — 이 wallet intent 로 결제한 본인 주문에
+   * 다운로드(exercise)된 디지털 상품이 있는지. 주문을 못 찾으면 false(가드 미적용).
+   */
+  async hasExercisedDigitalByWalletIntent(walletIntentId: string, customerId: string): Promise<boolean> {
+    const so = await this.db.db
+      .select({ id: inventoryTables.salesOrders.id })
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          eq(inventoryTables.salesOrders.walletIntentId, walletIntentId),
+          eq(inventoryTables.salesOrders.customerId, customerId),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+    if (!so) return false;
+    return this.hasExercisedDigitalAsset(so.id);
   }
 
   async cancelRequest(
@@ -469,6 +490,34 @@ export class StoreSalesOrdersService {
     return so;
   }
 
+  /**
+   * 이 주문으로 발급된 디지털 상품 중 한 번이라도 다운로드(exercise)된 것이 있는지.
+   * 다운로드된 파일은 회수가 불가하므로 고객 셀프 취소/환불을 막는다 (revoke 된 건 제외).
+   *
+   * TODO: 라인 단위 부분취소/부분환불이 가능해지면 이 가드는 삭제한다.
+   * 지금은 주문 단위로만 취소가 되기 때문에, 혼합 주문(실물+디지털)에서 디지털 하나를
+   * 받았다는 이유로 실물까지 취소를 막는 과잉 차단이다. 부분취소가 생기면 "다운로드한
+   * 디지털 라인만 취소 대상에서 제외" 로 바뀌어야 한다.
+   * 같이 지울 것: cancelUnavailableReason='digital_downloaded' (dto + storefront i18n
+   * `mypage.order.actions.cancelUnavailable.digital_downloaded`), wallet 의
+   * CoreDigitalGuardClient 및 그 호출부.
+   */
+  private async hasExercisedDigitalAsset(salesOrderId: string): Promise<boolean> {
+    const row = await this.db.db
+      .select({ id: digitalAssetOwnerships.id })
+      .from(digitalAssetOwnerships)
+      .where(
+        and(
+          eq(digitalAssetOwnerships.salesOrderId, salesOrderId),
+          isNotNull(digitalAssetOwnerships.exercisedAt),
+          isNull(digitalAssetOwnerships.revokedAt),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+    return !!row;
+  }
+
   private async buildActionsView(
     so: SalesOrderRow,
     overrideRefundStatus?: StoreRefundStatus,
@@ -615,6 +664,10 @@ export class StoreSalesOrdersService {
       // 피킹 시작 이후 고객 셀프 취소 불가 — 고객센터 문의 안내
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_processing';
+    } else if (await this.hasExercisedDigitalAsset(so.id)) {
+      // 이미 다운로드한 디지털 상품은 회수가 불가 — 셀프 취소 대신 고객센터 문의
+      availableActions.push('receipt');
+      cancelUnavailableReason = 'digital_downloaded';
     } else {
       availableActions.push('cancel');
       availableActions.push('receipt');
@@ -667,6 +720,11 @@ export class StoreSalesOrdersService {
     }
     if (isPickingStarted(foRows)) {
       throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    }
+    if (await this.hasExercisedDigitalAsset(so.id)) {
+      throw new BadRequestException(
+        '이미 다운로드한 디지털 상품이 포함된 주문입니다. 직접 취소가 불가하니 고객센터로 문의해 주세요.',
+      );
     }
 
     await this.salesOrdersService.cancel(so.id, {

@@ -1,4 +1,4 @@
-import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsNumber, IsString, IsOptional, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class AdjustStockDto {
@@ -26,4 +26,13 @@ export class AdjustStockDto {
   @IsString()
   @IsNotEmpty()
   reason: string;
+
+  @ApiProperty({
+    description: '요청 멱등 키 — 클라이언트 생성 UUID. 같은 조정의 재시도는 같은 값을 재사용한다.',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  @MaxLength(90)
+  idempotencyKey?: string;
 }

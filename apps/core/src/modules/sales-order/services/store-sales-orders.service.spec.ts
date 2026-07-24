@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { getTableName } from 'drizzle-orm';
 import { StoreSalesOrdersService } from './store-sales-orders.service';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
 
@@ -46,6 +47,8 @@ function makeContext(
     businessLinkError?: Error;
     cancellationReplay?: boolean;
     replayError?: Error;
+    /** 이 주문에 다운로드(exercise)된 디지털 상품 ownership 이 있는지 */
+    exercisedDigital?: boolean;
   } = {},
 ) {
   const so = options.so ?? makeSo();
@@ -86,12 +89,15 @@ function makeContext(
         .fn()
         .mockResolvedValue((options.activeShipmentStatuses ?? []).map((status) => ({ id: `sh-${status}`, status }))),
       select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockImplementation((table: unknown) => ({
           where: jest.fn().mockImplementation(() => {
             const idx = whereCallIndex++;
+            const isOwnership = getTableName(table as Parameters<typeof getTableName>[0]) === 'digital_asset_ownerships';
             return {
               limit: jest.fn().mockReturnValue({
-                then: jest.fn((fn: (r: unknown[]) => unknown) => fn(idx === 0 ? [so] : [])),
+                then: jest.fn((fn: (r: unknown[]) => unknown) =>
+                  fn(isOwnership ? (options.exercisedDigital ? [{ id: 'own-1' }] : []) : idx === 0 ? [so] : []),
+                ),
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
               orderBy: jest.fn().mockReturnValue({
@@ -317,6 +323,20 @@ describe('StoreSalesOrdersService', () => {
         '이미 출고',
       );
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('다운로드한 디지털 상품이 포함된 주문은 셀프 취소 시 400', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ exercisedDigital: true });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '이미 다운로드한 디지털 상품',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('디지털 상품이 있어도 미다운로드면 셀프 취소 성공', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ exercisedDigital: false });
+      await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
     });
 
     it('준비중(FO ready, 미피킹) 주문은 셀프 취소 성공', async () => {
