@@ -1,8 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
+import { WarehouseProvider } from './warehouse-context';
+import { createMemoryPrefs } from '../core/data/devicePrefs';
+import { ApiClientProvider } from '../core/data/ApiClientProvider';
+import type { ApiClient } from '../core/data/httpClient';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { createAppRouter } from './router';
 import type { Session } from '../core/auth/session';
@@ -24,11 +29,26 @@ describe('handheld hub navigation', () => {
   it('shows handheld tiles and drills into a placeholder workflow', async () => {
     const session = stub();
     const user = userEvent.setup();
+    // 실사 화면(SessionListScreen)이 useApiClient()/useQuery()를 부르므로
+    // (창고 미설정이면 WarehousePicker 가 useWarehouses()도 부른다) 두 프로바이더가 필요하다.
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path === '/inventory/warehouses') return [];
+        return { data: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <SessionProvider session={session}>
-        <ScanProvider>
-          <RouterProvider router={createAppRouter(session)} />
-        </ScanProvider>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={createMemoryPrefs()}>
+              <ScanProvider>
+                <RouterProvider router={createAppRouter(session)} />
+              </ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        </QueryClientProvider>
       </SessionProvider>
     );
 
@@ -37,8 +57,10 @@ describe('handheld hub navigation', () => {
       await user.click(screen.getByRole('link', { name: /실사/ }));
     });
     expect(await screen.findByRole('heading', { name: '실사' })).toBeInTheDocument();
+    // SessionListScreen 은 ScreenHeader 를 쓴다 — "← 홈" 텍스트 링크가 아니라
+    // aria-label="뒤로" 아이콘 링크로 허브(/)에 돌아간다.
     await act(async () => {
-      await user.click(screen.getByRole('link', { name: /홈/ }));
+      await user.click(screen.getByRole('link', { name: '뒤로' }));
     });
     expect(await screen.findByRole('link', { name: /재고조회/ })).toBeInTheDocument();
   });

@@ -7,6 +7,7 @@ import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
+import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 
 @ApiTags('Stocktaking')
 @Controller('stocktaking')
@@ -18,6 +19,15 @@ export class StocktakingController {
   @ApiResponse({ status: 200, description: 'Paginated list of sessions' })
   async listSessions(@Query() query: ListStocktakingSessionsQueryDto) {
     return this.stocktakingService.listSessions(query);
+  }
+
+  @Get('sessions/:id')
+  @ApiOperation({ summary: '재고 실사 세션 상세 조회 (세션 + 전체 라인 + 진행률)' })
+  @ApiParam({ name: 'id', description: '세션 ID' })
+  @ApiResponse({ status: 200, type: StocktakingSessionDetailDto })
+  @ApiResponse({ status: 404, description: '세션을 찾을 수 없음' })
+  async getSession(@Param('id') id: string): Promise<StocktakingSessionDetailDto> {
+    return this.stocktakingService.getSession(id);
   }
 
   @Post('sessions')

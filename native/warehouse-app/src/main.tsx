@@ -7,6 +7,7 @@ import { queryClient } from './core/data/queryClient';
 import { ApiClientProvider } from './core/data/ApiClientProvider';
 import { ScanProvider } from './core/hardware/scan/ScanProvider';
 import { SessionProvider } from './app/session-context';
+import { WarehouseProvider } from './app/warehouse-context';
 import { Bootstrap } from './app/Bootstrap';
 import { createSession } from './core/auth/session';
 import { createTokenManager } from './core/auth/tokenManager';
@@ -38,9 +39,11 @@ createRoot(document.getElementById('root')!).render(
       <SessionProvider session={session}>
         <ApiClientProvider>
           <ScanProvider>
-            <Bootstrap session={session}>
-              <RouterProvider router={router} />
-            </Bootstrap>
+            <WarehouseProvider>
+              <Bootstrap session={session}>
+                <RouterProvider router={router} />
+              </Bootstrap>
+            </WarehouseProvider>
           </ScanProvider>
         </ApiClientProvider>
       </SessionProvider>
