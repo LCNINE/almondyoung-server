@@ -43,6 +43,12 @@ describe('errorMessage with context', () => {
     );
   });
 
+  it('이동 문맥의 400 은 출발지 부족을 짚어준다', () => {
+    expect(errorMessage(new Error('POST /movement/move → 400'), 'movement')).toBe(
+      '출발지 재고가 부족해요. 다시 확인해 주세요.'
+    );
+  });
+
   it('문맥이 없으면 기존 문구를 유지한다', () => {
     expect(errorMessage(new Error('GET /x → 404'))).toBe('찾을 수 없어요.');
     expect(errorMessage(new Error('GET /x → 400'))).toBe('요청이 올바르지 않아요.');
