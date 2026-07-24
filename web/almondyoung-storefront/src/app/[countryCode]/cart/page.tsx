@@ -21,13 +21,16 @@ export default async function Cart({
   // 무통장입금 주문 선생성 시 원본 장바구니 아이템은 Medusa 서버사이드에서 제거됨.
   // 그 정리는 storefront 의 carts 캐시 태그를 무효화하지 못하므로, 이미 force-dynamic 인 카트
   // 페이지에서는 no-store 로 항상 최신 카트를 읽어 '구매한 상품이 장바구니에 남아있는' 오표시를 막음.
-  let cart = await retrieveCart(undefined, undefined, "no-store").catch((error) => {
-    console.error(error)
-    return notFound()
-  })
+  let cart = await retrieveCart(undefined, undefined, "no-store").catch(
+    (error) => {
+      console.error(error)
+      return notFound()
+    }
+  )
 
-  // 쿠키가 죽었거나(완료/404/삭제된 카트) 없어도, 로그인 상태면 서버에 있는 고객 카트를
-  // 되살려 표시한다. 이게 없으면 쿠키만 어긋나도 '빈 장바구니'로 고착된다(카트는 서버에 멀쩡히 존재).
+  // 쿠키가 가리키는 카트가 못 쓰게 됐거나(완료/404/삭제) 아예 없어서 위에서 빈 화면이 될 상황이어도,
+  // 로그인 상태면 서버에서 고객의 '미완료' 카트를 customer_id 기준으로 찾아 표시한다.
+  // 이게 없으면 쿠키만 어긋나도 '빈 장바구니'로 고착된다(카트는 서버에 멀쩡히 존재).
   if (!cart || cart.items?.length === 0) {
     const recovered = await recoverCustomerCart().catch(() => null)
     if (recovered?.id) {
