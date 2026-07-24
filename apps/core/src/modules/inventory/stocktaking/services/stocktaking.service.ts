@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -11,6 +12,7 @@ import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
+import { StocktakingSessionDetailDto } from '../dto/session-detail.dto';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
 
@@ -157,16 +159,32 @@ export class StocktakingService {
         await tx.insert(stocktakingLines).values(linesToCreate).onConflictDoNothing();
       }
 
+      // insert 결과가 아니라 재조회로 응답을 만든다 — onConflictDoNothing 은 기존 라인을
+      // 돌려주지 않고, scanProduct 로 만들어진 미기대 라인도 화면에 보여야 하기 때문이다.
+      const lines = await tx
+        .select({
+          lineId: stocktakingLines.id,
+          skuId: stocktakingLines.skuId,
+          skuName: skus.name,
+          skuCode: skus.code,
+          barcode: sql<string | null>`(
+            SELECT barcode FROM sku_barcodes
+            WHERE sku_id = ${skus.id} AND is_primary = true
+            LIMIT 1
+          )`,
+          expectedQuantity: stocktakingLines.expectedQuantity,
+          countedQuantity: stocktakingLines.countedQuantity,
+          status: stocktakingLines.status,
+        })
+        .from(stocktakingLines)
+        .innerJoin(skus, eq(stocktakingLines.skuId, skus.id))
+        .where(and(eq(stocktakingLines.sessionId, dto.sessionId), eq(stocktakingLines.locationId, location[0].id)))
+        .orderBy(skus.code);
+
       return {
         locationId: location[0].id,
         locationCode: location[0].code,
-        expectedItems: stockAtLocation.map((item) => ({
-          skuId: item.skuId,
-          skuName: item.skuName,
-          skuCode: item.skuCode,
-          barcode: item.primaryBarcode,
-          expectedQuantity: item.expectedQty,
-        })),
+        expectedItems: lines,
       };
     }, tx);
   }
@@ -200,6 +218,9 @@ export class StocktakingService {
       }
 
       // Find or create stocktaking line
+      // .for('update') — 동시 스캔이 같은 라인을 read-modify-write 할 때 두
+      // 트랜잭션이 같은 countedQuantity 를 읽고 둘 다 +1 을 써서 한 증가분이
+      // 사라지는 것(lost update)을 막는다.
       const existingLine = await tx
         .select()
         .from(stocktakingLines)
@@ -210,7 +231,8 @@ export class StocktakingService {
             eq(stocktakingLines.locationId, dto.locationId),
           ),
         )
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (existingLine[0]) {
         // Update existing line
@@ -298,6 +320,60 @@ export class StocktakingService {
         countedQuantity: dto.countedQuantity,
         expectedQuantity: line[0].expectedQuantity,
         variance,
+      };
+    }, tx);
+  }
+
+  /**
+   * 세션 상세 — 메타 + 전체 라인 + 진행률.
+   * getVariances 는 variance != 0 만 주므로 "실사 이어하기"에는 쓸 수 없다.
+   */
+  async getSession(sessionId: string, tx?: DbTx): Promise<StocktakingSessionDetailDto> {
+    return this.dbService.run(async (tx) => {
+      const { stocktakingSessions, stocktakingLines, skus, locations } = wmsTables;
+
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .limit(1);
+      if (!session) throw new NotFoundError(`Stocktaking session not found: ${sessionId}`);
+
+      const rows = await tx
+        .select({
+          lineId: stocktakingLines.id,
+          skuId: stocktakingLines.skuId,
+          skuCode: skus.code,
+          skuName: skus.name,
+          locationId: stocktakingLines.locationId,
+          locationCode: locations.code,
+          expectedQuantity: stocktakingLines.expectedQuantity,
+          countedQuantity: stocktakingLines.countedQuantity,
+          variance: stocktakingLines.variance,
+          scannedBarcode: stocktakingLines.scannedBarcode,
+          status: stocktakingLines.status,
+          notes: stocktakingLines.notes,
+        })
+        .from(stocktakingLines)
+        .innerJoin(skus, eq(stocktakingLines.skuId, skus.id))
+        .leftJoin(locations, eq(stocktakingLines.locationId, locations.id))
+        .where(eq(stocktakingLines.sessionId, sessionId))
+        .orderBy(sql`${locations.code} ASC NULLS LAST`, skus.code);
+
+      return {
+        id: session.id,
+        warehouseId: session.warehouseId,
+        sessionName: session.sessionName,
+        status: session.status,
+        notes: session.notes,
+        createdAt: session.createdAt,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        progress: {
+          total: rows.length,
+          counted: rows.filter((r) => r.countedQuantity !== null).length,
+        },
+        lines: rows,
       };
     }, tx);
   }

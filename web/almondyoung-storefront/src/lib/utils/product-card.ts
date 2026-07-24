@@ -32,6 +32,16 @@ export function getIsVisibleToMembersOnly(
   )
 }
 
+/** 해외 배송(해외직구) 상품 여부 */
+export function getIsOverseas(
+  product: Pick<StoreProduct, "metadata">
+): boolean {
+  return (
+    product.metadata?.isOverseas === true ||
+    product.metadata?.isOverseas === "true"
+  )
+}
+
 export function filterProductsByMembershipVisibility<
   T extends Pick<StoreProduct, "metadata">,
 >(products: T[], isMembership: boolean): T[] {
@@ -167,6 +177,7 @@ export function mapStoreProductToCardProps(
     },
     isWelcomeMembership,
     isMembership,
+    isOverseas: getIsOverseas(product),
   }
 }
 

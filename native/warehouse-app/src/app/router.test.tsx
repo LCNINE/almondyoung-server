@@ -3,6 +3,8 @@ import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RouterProvider } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
+import { WarehouseProvider } from './warehouse-context';
+import { createMemoryPrefs } from '../core/data/devicePrefs';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { createAppRouter } from './router';
 import type { Session } from '../core/auth/session';
@@ -43,7 +45,9 @@ function makeStub() {
 function renderApp(session: Session) {
   return render(
     <SessionProvider session={session}>
-      <RouterProvider router={createAppRouter(session)} />
+      <WarehouseProvider prefs={createMemoryPrefs()}>
+        <RouterProvider router={createAppRouter(session)} />
+      </WarehouseProvider>
     </SessionProvider>
   );
 }
@@ -90,9 +94,11 @@ describe('router guard integration', () => {
     // locally instead of reusing that helper.
     render(
       <SessionProvider session={session}>
-        <ScanProvider>
-          <RouterProvider router={createAppRouter(session)} />
-        </ScanProvider>
+        <WarehouseProvider prefs={createMemoryPrefs()}>
+          <ScanProvider>
+            <RouterProvider router={createAppRouter(session)} />
+          </ScanProvider>
+        </WarehouseProvider>
       </SessionProvider>
     );
 

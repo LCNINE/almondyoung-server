@@ -23,7 +23,6 @@ import {
 import {
   OrderStatusBadges,
   getCoreDisplayStatus,
-  CANCEL_UNAVAILABLE_MESSAGES,
   getPaymentStatusI18nKey,
 } from "@/components/orders/order-status-badges"
 import {
@@ -42,6 +41,8 @@ import { toast } from "sonner"
 import { RefundRequestDialog } from "./refund-request-dialog"
 import { DepositAccountInfo } from "./deposit-account-info"
 import type { BankTransferDepositAccount } from "@/lib/api/wallet"
+import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
+import { OrderDigitalDownloads } from "./order-digital-downloads"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
@@ -53,6 +54,7 @@ export const OrderDetailsMobile = ({
   intentId,
   depositAccount,
   refundRequestStatus,
+  digitalOwnerships = [],
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -61,6 +63,7 @@ export const OrderDetailsMobile = ({
   intentId?: string
   depositAccount?: BankTransferDepositAccount | null
   refundRequestStatus?: string
+  digitalOwnerships?: DigitalAssetOwnership[]
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -109,9 +112,6 @@ export const OrderDetailsMobile = ({
   const canReturn = availableActions.includes("return")
   const canExchange = availableActions.includes("exchange")
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason
-  const cancelTooltip = cancelUnavailableReason
-    ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
-    : undefined
 
   // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
   // 셀프 취소를 막고 고객센터(카카오채널) 문의로 안내한다.
@@ -120,6 +120,17 @@ export const OrderDetailsMobile = ({
     "confirmed"
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
+  // 이미 다운로드한 디지털 상품은 회수 불가 — 무통장 환불신청도 막고 고객센터 문의로 안내.
+  // (셀프 취소는 Core 가 cancelUnavailableReason='digital_downloaded' 로 이미 막음)
+  const hasExercisedDigital = digitalOwnerships.some((o) => !!o.exercisedAt)
+  // 취소/환불이 막힌 사유는 비활성 버튼이 아니라 버튼 줄 위 빨간 텍스트 한 줄로 안내한다.
+  // TODO: 부분취소/부분환불이 가능해지면 digital_downloaded 분기는 삭제 (Core 가드와 세트).
+  const blockedNotice =
+    showBankTransferCancelGuide && !refundRequestStatus && hasExercisedDigital
+      ? tRefundRequest("digitalDownloadedBlocked")
+      : cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled"
+        ? tActions(`cancelUnavailable.${cancelUnavailableReason}`)
+        : undefined
 
   // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김).
   const showTrack =
@@ -313,11 +324,6 @@ export const OrderDetailsMobile = ({
                 <OrderStatusBadges actions={coreActions} refundRequestStatus={refundRequestStatus} />
               </div>
             )}
-            {cancelUnavailableReason &&
-              !canCancel &&
-              cancelUnavailableReason !== "already_cancelled" && (
-                <p className="mt-1 text-[11px] text-amber-600">{cancelTooltip}</p>
-              )}
             <OrderInfoCardDivider />
             <dl className="space-y-1.5 text-sm">
               <div className="flex">
@@ -429,12 +435,15 @@ export const OrderDetailsMobile = ({
                       </p>
                     )}
                   </div>
+                  {/* 디지털 라인: 이 주문의 ownership 이 잡히면 아래 다운로드 블록이 대신 처리한다. */}
                   {isDigitalItem(item) ? (
-                    <LocalizedClientLink href="/mypage/download">
-                      <CustomButton variant="outline" size="sm">
-                        {tActions("download")}
-                      </CustomButton>
-                    </LocalizedClientLink>
+                    digitalOwnerships.length > 0 ? null : (
+                      <LocalizedClientLink href="/mypage/download">
+                        <CustomButton variant="outline" size="sm">
+                          {tActions("download")}
+                        </CustomButton>
+                      </LocalizedClientLink>
+                    )
                   ) : (
                     <CustomButton variant="outline" size="sm">
                       {tActions("addToCart")}
@@ -443,9 +452,13 @@ export const OrderDetailsMobile = ({
                 </article>
               )
             })}
+            <OrderDigitalDownloads ownerships={digitalOwnerships} />
           </div>
 
           <div className="border-border-muted mt-2 flex flex-wrap gap-2 border-t p-4">
+            {blockedNotice && (
+              <p className="w-full text-sm text-red-600">{blockedNotice}</p>
+            )}
             {showTrack && (
               <LocalizedClientLink
                 href={`/mypage/order/track?orderId=${order.id}`}
@@ -483,21 +496,15 @@ export const OrderDetailsMobile = ({
                 {tActions("cancelOrder")}
               </CustomButton>
             )}
-            {showBankTransferCancelGuide && intentId && !refundRequestStatus && (
-              <RefundRequestDialog intentId={intentId} />
-            )}
+            {showBankTransferCancelGuide &&
+              intentId &&
+              !refundRequestStatus &&
+              !hasExercisedDigital && <RefundRequestDialog intentId={intentId} />}
             {showBankTransferCancelGuide && refundRequestStatus && (
               <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
                 {tRefundRequest(refundRequestStatus === "APPROVED" ? "refunded" : "requested")}
               </span>
             )}
-            {!canCancel &&
-              cancelUnavailableReason &&
-              cancelUnavailableReason !== "already_cancelled" && (
-                <CustomButton variant="outline" size="sm" disabled>
-                  {tActions("cancelOrder")}
-                </CustomButton>
-              )}
             {showBankTransferCancelGuide && (
               <div className="w-full space-y-1">
                 <p className="text-[11px] text-muted-foreground">

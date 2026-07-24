@@ -1,4 +1,5 @@
 import { ProductTemplate } from "@/domains/products/product-details/templates"
+import { redirectToLogin } from "@/lib/api/medusa/auth-utils"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getProductDetailByMasterId } from "@/lib/api/pim/products"
 import { getQnaSummary } from "@/lib/api/ugc"
@@ -69,8 +70,13 @@ export default async function Page(props: Props) {
   }
 
   if (getIsVisibleToMembersOnly(pricedProduct)) {
-    const groups = customer?.groups ?? []
-    if (!isMembershipGroup(groups)) {
+    // customer=null 은 '미인증' 또는 '회원인데 세션이 꼬여 조회 실패'를 모두 포함한다.
+    // 이 경우 하드 404 대신 로그인/재인증으로 유도해 (회원이면) 그대로 상품에 복귀시킨다.
+    // redirect_to 에 현재 상품 경로가 담긴다.
+    if (!customer) {
+      await redirectToLogin()
+    } else if (!isMembershipGroup(customer.groups ?? [])) {
+      // 로그인했지만 진짜 비회원 → 기존대로 숨김
       notFound()
     }
   }
