@@ -12,12 +12,15 @@
 export const EXCLUDED_PRODUCT_SERIALS: ReadonlyMap<string, string> = new Map([
   ['13248', 'akf쌍커풀테이프 — 재고동기화 금지, 품절 유지 (2026-07-23)'],
   ['13333', '미스티 래쉬 — 중국 소싱, 재고동기화 금지 + 품절 유지 (2026-07-23)'],
+  // 씨엠 쌍커풀 테이프(카페코드 P0000EAZ)는 현재 셀메이트 export에 없어 상품일련번호를 모른다.
+  // 셀메이트에 다시 잡히면 여기에 일련번호를 추가할 것. 지금은 아래 NAME_PATTERN이 안전망.
 ]);
 
 /** 상품명 정규식 기준 제외. 상품일련번호가 바뀌거나 CSV 에 그 열이 없을 때의 안전망. */
 export const EXCLUDED_NAME_PATTERNS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /akf\s*쌍커풀\s*테이프/i, reason: 'akf쌍커풀테이프 — 재고동기화 금지, 품절 유지 (2026-07-23)' },
   { pattern: /미스티\s*래쉬/, reason: '미스티 래쉬 — 중국 소싱, 재고동기화 금지 + 품절 유지 (2026-07-23)' },
+  { pattern: /씨엠[\s\S]*쌍커풀[\s\S]*테이프/, reason: '씨엠 쌍커풀 테이프(P0000EAZ) — 재고동기화 금지 + 품절 유지, Medusa manage_inventory로 강제 (2026-07-24)' },
 ];
 
 /**
@@ -39,6 +42,7 @@ if (
   !excludedReason('', 'akf쌍커풀테이프') ||
   !excludedReason('13333', '') ||
   !excludedReason('', '미스티 래쉬') ||
+  !excludedReason('', '초특가 씨엠 쌍커풀 테이프 티안나는 셀프 실쌍테 천사 쌍테') ||
   excludedReason('99999', '루가 래쉬 밍크모')
 ) {
   throw new Error('excludedReason 판정이 깨졌습니다');

@@ -73,6 +73,7 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 |------|-------------|------|--------|
 | `akf쌍커풀테이프` | 13248 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
 | `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`) | 13333 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| `씨엠 쌍커풀 테이프` (카페코드 `P0000EAZ`, Medusa `prod_01KT8JM7CESNJAB3C66NV3ERGP` draft) | — (셀메이트에 없음) | **재고동기화 금지 + 품절 유지** — 셀메이트 미등록이라 name pattern 만, 품절은 Medusa `manage_inventory=true` 로 강제 (3 variant 전부 재고0) | 2026-07-24 |
 
 제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
 추가할 땐 `EXCLUDED_PRODUCT_SERIALS` / `EXCLUDED_NAME_PATTERNS` 양쪽에 사유와 날짜를 남기고 이 표도 갱신한다.
