@@ -5,6 +5,7 @@ import {
   findUnavailableLineItems,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
+import { recoverCustomerCart } from "@/lib/api/medusa/customer"
 import { isUnavailableVariantError } from "@/lib/utils/cart-availability"
 import { notFound } from "next/navigation"
 
@@ -24,6 +25,17 @@ export default async function Cart({
     console.error(error)
     return notFound()
   })
+
+  // 쿠키가 죽었거나(완료/404/삭제된 카트) 없어도, 로그인 상태면 서버에 있는 고객 카트를
+  // 되살려 표시한다. 이게 없으면 쿠키만 어긋나도 '빈 장바구니'로 고착된다(카트는 서버에 멀쩡히 존재).
+  if (!cart || cart.items?.length === 0) {
+    const recovered = await recoverCustomerCart().catch(() => null)
+    if (recovered?.id) {
+      cart = await retrieveCart(recovered.id, undefined, "no-store").catch(
+        () => cart
+      )
+    }
+  }
 
   if (!cart || cart.items?.length === 0) {
     return <EmptyCartView showHeader={false} bgColor="bg-muted" />
