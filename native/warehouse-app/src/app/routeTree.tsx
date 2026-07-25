@@ -18,6 +18,7 @@ import { StocktakingRoute } from './routes/StocktakingRoute';
 import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
 import { MovementRoute } from './routes/MovementRoute';
+import { InboundRoute } from './routes/InboundRoute';
 
 export interface RouterContext {
   session: Session;
@@ -102,7 +103,20 @@ const movementRoute = createRoute({
 const inboundRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound',
-  component: () => <PlaceholderScreen title="입고/검수" note="Phase 2에서 구현됩니다." />,
+  component: InboundRoute,
+});
+// Task 8/9 이 실제 화면으로 대체할 자리표시자 — PendingPlanListScreen 이 이 두
+// 경로로 typed <Link to=...> 를 걸기 때문에, 라우트 등록 없이는 빌드 타입체크가
+// 깨진다. 화면 구현 없이 경로만 먼저 연다.
+const inboundQuickRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/quick',
+  component: () => <PlaceholderScreen title="간편입고" note="Task 9에서 구현됩니다." />,
+});
+const inboundPlanDetailRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/plans/$planId',
+  component: () => <PlaceholderScreen title="입고 예정 상세" note="Task 8에서 구현됩니다." />,
 });
 const pickingRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -138,6 +152,8 @@ export const routeTree = rootRoute.addChildren([
     stocktakingVariancesRoute,
     movementRoute,
     inboundRoute,
+    inboundQuickRoute,
+    inboundPlanDetailRoute,
     pickingRoute,
     packingRoute,
     settingsRoute,
