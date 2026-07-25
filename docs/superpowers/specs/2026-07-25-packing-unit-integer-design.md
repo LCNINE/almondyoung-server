@@ -22,7 +22,7 @@ PR #540에서 API 계약은 이미 `number`로 통일했다. `sku-catalog/packin
 
 CLAUDE.md/ADR-0005 §5는 type narrow를 3-PR expand-contract(새 컬럼 + dual write → backfill + read 전환 → 옛 컬럼 drop)로 규정한다. 이번에는 **단일 PR + 인플레이스 ALTER**로 간다.
 
-근거: 그 규율이 방어하는 대상은 (1) 데이터 손실과 (2) 롤링 중 구/신 코드가 서로의 스키마를 만나는 사고다. (1)은 버리기로 한 데이터라 정의상 발생하지 않고, (2)는 마이그레이션 직후 컬럼이 전량 NULL이라 구 코드가 읽어도 `null`, 신 코드가 읽어도 `null`이다. 버릴 데이터를 위해 dual write 코드를 쓰고 지우는 것은 순수 낭비이며 중간 상태에서 컬럼이 둘이라 오히려 혼란스럽다.
+근거: 그 규율이 방어하는 대상은 (1) 데이터 손실과 (2) 롤링 중 구/신 코드가 서로의 스키마를 만나는 사고다. (1)은 버리기로 한 데이터라 정의상 발생하지 않는다. (2)는 읽기와 쓰기가 다르다. **읽기**는 마이그레이션 직후 컬럼이 전량 NULL이라 구 코드가 읽어도 `null`, 신 코드가 읽어도 `null`이므로 무조건 안전하다. **쓰기**는 조건부다 — `db:migrate` 완료 후 `sst deploy`가 끝나기 전 배포 창에 구 태스크(예: admin-web 바코드 폼)가 여전히 packing_unit을 쓸 수 있고, postgres.js가 타입 없는 JS 문자열을 보내면 서버가 그대로 integer로 캐스팅해버린다. 그 값을 구 코드가 다시 읽으면 문자열이 아닌 JS number를 받아 `parsePackingUnit(20)`이 `raw.trim is not a function`으로 죽는다(SKU 상세/목록 500). 이 경합은 운영자가 배포 창 몇 분 사이에, 실무에서 한 번도 쓰인 적 없는 필드에 값을 넣어야만 발생하고, 발생해도 구 태스크가 빠지면 자연 해소되며 데이터 손실은 없다 — 확률·영향이 모두 낮아 **이 컬럼에 한해** 그 잔여 위험을 감수하고 예외를 적용한다. 버릴 데이터를 위해 dual write 코드를 쓰고 지우는 것은 순수 낭비이며 중간 상태에서 컬럼이 둘이라 오히려 혼란스럽다.
 
 이 예외 적용 근거는 마이그레이션 SQL 파일 상단 주석에도 남긴다.
 
@@ -57,7 +57,7 @@ export const skuBarcodes = pgTable('sku_barcodes', {
 npm run db:generate:core -- --name narrow-packing-unit-to-integer
 ```
 
-생성된 SQL은 `SET DATA TYPE integer` + `ADD CONSTRAINT`다. **생성 직후 파일 맨 위에 데이터 정리 구문을 손으로 추가**한다:
+Postgres는 varchar→integer에 등록된 묵시적/대입 캐스트가 없어, 테이블이 텅 비어(전량 NULL) 있어도 `USING` 절 없이는 `ALTER ... SET DATA TYPE`이 거부된다(`column ... cannot be cast automatically to type integer`). drizzle-kit도 이를 알아서, 생성된 SQL은 처음부터 `SET DATA TYPE integer USING "packing_unit"::integer` + `ADD CONSTRAINT`다. **생성 직후 파일 맨 위에 데이터 정리 구문을 손으로 추가**한다:
 
 ```sql
 -- packing_unit 은 "몇 개입"이라는 숫자인데 컬럼이 varchar(64) 였다.
@@ -68,7 +68,7 @@ npm run db:generate:core -- --name narrow-packing-unit-to-integer
 UPDATE "sku_barcodes" SET "packing_unit" = NULL WHERE "packing_unit" IS NOT NULL;
 ```
 
-컬럼이 전량 NULL이면 `SET DATA TYPE`은 `USING` 절 없이도 통과하므로 그 이상 손댈 것이 없다. CLAUDE.md가 금지하는 것은 *이미 적용된* 마이그레이션 수정이며, 갓 생성한 파일에 데이터 정리 구문을 얹는 것은 정상 절차다.
+이 UPDATE로 전량 NULL을 만들어 둔 뒤라, 뒤따르는 `USING "packing_unit"::integer` 캐스트가 숫자 아닌 문자열을 만날 일이 없어 안전하다. CLAUDE.md가 금지하는 것은 *이미 적용된* 마이그레이션 수정이며, 갓 생성한 파일에 데이터 정리 구문을 얹는 것은 정상 절차다.
 
 `schema.ts` + `drizzle/<timestamp>_*.sql` + `drizzle/meta/`는 **한 커밋**에 묶는다.
 

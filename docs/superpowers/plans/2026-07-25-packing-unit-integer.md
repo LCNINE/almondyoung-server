@@ -4,7 +4,7 @@
 
 **Goal:** `sku_barcodes.packing_unit`을 `varchar(64)`에서 `integer`(+ `>= 1` CHECK)로 좁히고, 그 때문에 존재하던 varchar↔number 경계 함수를 제거한다.
 
-**Architecture:** 기존 값은 실무 미사용이므로 마이그레이션 첫 줄에서 전량 NULL로 폐기한다. 전량 NULL이면 `SET DATA TYPE`이 `USING` 없이 통과하고, 롤링 배포 중 구/신 코드가 무엇을 읽든 `null`이라 ADR-0005의 3-PR expand-contract를 생략하고 단일 PR로 간다. API 계약(`number | null`)은 PR #540에서 이미 확정돼 있어 이번 변경으로 바뀌지 않는다.
+**Architecture:** 기존 값은 실무 미사용이므로 마이그레이션 첫 줄에서 전량 NULL로 폐기한다. Postgres는 varchar→integer에 등록된 캐스트가 없어 `SET DATA TYPE`은 `USING` 절이 있어야 통과하는데, 앞선 UPDATE로 전량 NULL을 만들어 둔 뒤라 그 캐스트가 숫자 아닌 문자열을 만날 일이 없어 안전하다. 그렇게 컬럼이 전량 NULL이면 롤링 배포 중 구/신 코드가 무엇을 읽든 `null`이라 ADR-0005의 3-PR expand-contract를 생략하고 단일 PR로 간다. API 계약(`number | null`)은 PR #540에서 이미 확정돼 있어 이번 변경으로 바뀌지 않는다.
 
 **Tech Stack:** NestJS, Drizzle ORM (postgres.js), PostgreSQL, Jest(백엔드) / Vitest(현장 앱), class-validator
 
@@ -323,10 +323,14 @@ Expected: `apps/core/drizzle/<timestamp>_narrow-packing-unit-to-integer.sql` 과
 -- 버릴 데이터라 손실이 없고, ALTER 직후 컬럼이 전량 NULL 이라
 -- 롤링 배포 중 구/신 코드가 무엇을 읽든 null 이다.
 -- 배포 순서는 migrate → deploy (expand 순서).
+-- Postgres 는 varchar→integer 에 등록된 묵시적/대입 캐스트가 없어
+-- 테이블이 텅 비어(전량 NULL) 있어도 USING 절 없이는 ALTER 가 거부된다
+-- ("column ... cannot be cast automatically to type integer").
+-- 위 UPDATE 로 전량 NULL 을 만들어 둔 뒤라 USING 캐스트는 안전하다.
 UPDATE "sku_barcodes" SET "packing_unit" = NULL WHERE "packing_unit" IS NOT NULL;
 ```
 
-그 아래 drizzle이 생성한 `SET DATA TYPE integer`와 `ADD CONSTRAINT`는 손대지 않는다. 컬럼이 전량 NULL이면 `USING` 절 없이 통과한다.
+그 아래 drizzle이 생성한 `SET DATA TYPE integer USING "packing_unit"::integer`와 `ADD CONSTRAINT`는 손대지 않는다. `USING` 캐스트는 drizzle-kit이 이미 만들어 둔 것이다 — Postgres에 varchar→integer 묵시적 캐스트가 없어 이 절 없이는 ALTER가 거부되기 때문이며, 위 UPDATE로 전량 NULL을 만들어 둔 뒤라 그 캐스트가 숫자 아닌 문자열을 만날 일이 없어 안전하다.
 
 - [ ] **Step 6: 읽기 5곳에서 `parsePackingUnit`을 걷어낸다**
 
