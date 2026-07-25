@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
@@ -32,6 +32,19 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
   const plan = (plans.data?.pendingPlans ?? []).find((p) => p.planId === planId);
   const items = plan?.items ?? [];
 
+  // 시트는 열릴 때 스냅샷(active)을 잡지만, 표시는 매 렌더 items 에서 같은
+  // planItemId 를 다시 찾아 쓴다 — onSettled 무효화로 잔여/입고 수량이 바뀌어도
+  // 시트가 옛 숫자를 계속 보여주면 "응답만 유실됐지 실제로는 커밋된" 제출 뒤
+  // 작업자가 고쳐서 다시 누르는 이중입고로 이어진다. items 에서 사라졌다면(전량
+  // 도달로 서버가 confirmed 로 굳힌 경우) 스냅샷으로 폴백만 하고, 아래 effect 가
+  // 시트를 닫는다.
+  const activeItem = active ? (items.find((i) => i.planItemId === active.planItemId) ?? active) : null;
+  const activeStillPending = active ? items.some((i) => i.planItemId === active.planItemId) : true;
+
+  useEffect(() => {
+    if (active && !activeStillPending) closeSheet();
+  }, [active, activeStillPending]);
+
   // 멱등키 회전 — 같은 (planItemId, 수량) 재시도는 같은 키를 유지하고, 값이
   // 바뀌면 새 키를 발급한다. "커밋됐는데 응답만 유실" 뒤 값을 고쳐 재제출할 때
   // 옛 payload 를 같은 키로 replay 하는 사고를 막는다.
@@ -41,6 +54,19 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
     if (prev.planItemId === targetPlanItemId && prev.qty === quantity) return prev.key;
     const key = crypto.randomUUID();
     keyPayloadRef.current = { planItemId: targetPlanItemId, qty: quantity, key };
+    return key;
+  }
+
+  // 취소도 같은 회전 규칙을 따라야 한다. lineId 가 있는 한 payload({lineId,
+  // quantity})는 배너가 떠 있는 동안 고정이므로, 재시도는 새 키가 아니라 같은
+  // 키로 replay 해야 한다 — 안 그러면 "응답만 유실, 취소는 이미 성공" 뒤 다시
+  // 누른 두 번째 시도가 새 키로 서버에 다시 들어가 "이미 취소됨" 400 을 받고,
+  // 성공한 취소를 실패로 오인해 배너가 안 내려간다.
+  const cancelKeyRef = useRef<{ lineId: string; key: string } | null>(null);
+  function cancelKeyFor(lineId: string): string {
+    if (cancelKeyRef.current?.lineId === lineId) return cancelKeyRef.current.key;
+    const key = crypto.randomUUID();
+    cancelKeyRef.current = { lineId, key };
     return key;
   }
 
@@ -91,8 +117,11 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
           setScanBump((n) => n + step);
           return;
         }
+        // 시트를 여는 이 스캔도 물리적으로 1 회다 — 0 을 넘기면 이 스캔이 안
+        // 세져 N 번 스캔에 N-1 개만 입고되는 조용한 과소입고가 생긴다
+        // (ReceiveSheet 가 기준선으로 프리필은 그대로 지켜준다).
         setActive(matched);
-        setScanBump(0);
+        setScanBump(step);
       },
       onError: (err) => setNotice(errorMessage(err, 'barcode')),
     });
@@ -206,22 +235,23 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
         )}
       </section>
 
-      {active ? (
+      {activeItem ? (
         <ReceiveSheet
-          item={active}
+          item={activeItem}
           scanBump={scanBump}
           pending={receive.isPending}
+          error={receive.isError ? errorMessage(receive.error, 'inbound') : null}
           onCancel={closeSheet}
           actionsHidden={confirming !== null}
           onSubmit={(quantity) => {
             // 예정 잔여를 넘지 않으면 바로 보낸다 — 예정대로 다 온 흔한 경우를
             // 확인창으로 막지 않는다. 초과일 때만 몇 개 많은지 짚어 확인받는다
             // (서버는 초과를 막지 않으므로 여기서 막으면 실물이 안 들어간다).
-            if (quantity > active.pendingQty) {
+            if (quantity > activeItem.pendingQty) {
               setConfirming({ quantity });
               return;
             }
-            submitReceive(active, quantity);
+            submitReceive(activeItem, quantity);
           }}
         />
       ) : null}
@@ -230,14 +260,14 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
         open={confirming !== null}
         title="입고 확인"
         message={
-          active && confirming
-            ? `예정 잔여(${active.pendingQty})보다 ${confirming.quantity - active.pendingQty}개 많습니다. ${active.skuName} ${confirming.quantity}개를 입고할까요?`
+          activeItem && confirming
+            ? `예정 잔여(${activeItem.pendingQty})보다 ${confirming.quantity - activeItem.pendingQty}개 많습니다. ${activeItem.skuName} ${confirming.quantity}개를 입고할까요?`
             : ''
         }
         confirmLabel="입고"
         onCancel={() => setConfirming(null)}
         onConfirm={() => {
-          const target = active;
+          const target = activeItem;
           const quantity = confirming?.quantity ?? 0;
           setConfirming(null);
           if (!target || quantity < 1) return;
@@ -256,8 +286,13 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
           setCancelConfirm(false);
           if (!fresh) return;
           cancel.mutate(
-            { lineId: fresh.lineId, quantity: fresh.quantity, idempotencyKey: crypto.randomUUID() },
-            { onSuccess: () => setFresh(null) }
+            { lineId: fresh.lineId, quantity: fresh.quantity, idempotencyKey: cancelKeyFor(fresh.lineId) },
+            {
+              onSuccess: () => {
+                cancelKeyRef.current = null;
+                setFresh(null);
+              },
+            }
           );
         }}
       />

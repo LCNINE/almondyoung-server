@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '../../core/design/Button';
 import { NumberPad } from '../../core/design/NumberPad';
 import { cn } from '../../core/design/cn';
@@ -15,14 +15,22 @@ export function ReceiveSheet({
   item,
   scanBump,
   pending,
+  error,
   onSubmit,
   onCancel,
   actionsHidden = false,
 }: {
   item: PendingPlanItem;
-  /** 부모가 스캔마다 더해 주는 누적 증가분. 0 이면 프리필만 쓴다. */
+  /**
+   * 부모가 스캔마다 더해 주는 누적치. 시트를 스캔으로 열었다면 그 스캔 자체가
+   * 이미 1 회로 반영된 값(예: packingUnit)으로 도착하고, 목록의 [입고] 버튼으로
+   * 열었다면 0 으로 도착한다.
+   */
   scanBump: number;
   pending: boolean;
+  /** 직전 제출 실패 메시지. 시트가 화면 전체를 덮으므로 실패는 여기서 보여줘야
+   *  보인다 — 뒤에 깔린 알림은 시트에 가려 작업자가 못 본다. */
+  error?: string | null;
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
   /** 위에 확인 다이얼로그가 떠 있는 동안 true. 다이얼로그도 [취소]/[입고] 를
@@ -31,11 +39,16 @@ export function ReceiveSheet({
 }) {
   const [qty, setQty] = useState(item.pendingQty);
 
-  // 스캔 누적: 부모가 올린 증가분을 그대로 더한다. 첫 스캔에서 프리필을 밀어내지
-  // 않도록, bump 가 0 에서 처음 올라갈 때는 프리필을 버리고 스캔값만 센다.
+  // 마운트 시점의 scanBump 를 기준선으로 잡는다. 시트를 스캔으로 열었으면 이
+  // 값이 이미 0 보다 크지만(그 스캔이 첫 개수), 프리필을 밀어내면 안 되므로
+  // "기준선과 같다" 는 무시한다. 기준선을 넘어서는 변화(재스캔)만 실카운트로
+  // 반영한다 — 안 그러면 시트를 연 스캔 자체가 안 세져 N 번 스캔에 N-1 개만
+  // 입고되는 조용한 과소입고가 생긴다.
+  const baselineRef = useRef(scanBump);
   useEffect(() => {
-    if (scanBump <= 0) return;
-    setQty(scanBump);
+    if (scanBump > baselineRef.current) {
+      setQty(scanBump);
+    }
   }, [scanBump]);
 
   const over = qty > item.pendingQty;
@@ -77,6 +90,12 @@ export function ReceiveSheet({
             </p>
           ) : null}
         </section>
+
+        {error ? (
+          <p role="alert" className="text-xs text-red-700">
+            {error}
+          </p>
+        ) : null}
 
         {actionsHidden ? null : (
           <div className="flex gap-2">
