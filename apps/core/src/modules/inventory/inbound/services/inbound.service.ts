@@ -1021,6 +1021,26 @@ export class InboundService {
         .set({ canceledQty: line.quantity })
         .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
+      // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
+      // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
+      if (line.planItemId) {
+        const planItem = await tx.query.inboundPlanItems.findFirst({
+          where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
+        });
+        if (planItem) {
+          const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
+          await tx
+            .update(wmsTables.inboundPlanItems)
+            .set({
+              receivedQty: restored,
+              // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
+              // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
+              status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
+            })
+            .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+        }
+      }
+
       // 작업 로그 기록
       await tx.insert(wmsTables.inboundWorkLogs).values({
         type: 'CANCEL',
