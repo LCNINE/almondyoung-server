@@ -22,6 +22,7 @@ import {
 } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { parsePackingUnit } from '../../sku-catalog/packing-unit';
 
 @Injectable()
 export class InboundService {
@@ -1111,7 +1112,7 @@ export class InboundService {
       skuName: sku?.name,
       barcode: skuBarcode.barcode,
       isPrimary: skuBarcode.isPrimary,
-      packingUnit: skuBarcode.packingUnit,
+      packingUnit: parsePackingUnit(skuBarcode.packingUnit),
     };
   }
 }
