@@ -1,6 +1,5 @@
 import { SkuBarcode } from '../../schema/inventory.schema';
 import { BarcodeDto } from '../dto/sku-response.dto';
-import { parsePackingUnit } from '../packing-unit';
 
 export class SkuBarcodeMapper {
   static toDto(barcode: SkuBarcode): BarcodeDto {
@@ -8,7 +7,7 @@ export class SkuBarcodeMapper {
       id: barcode.id,
       barcode: barcode.barcode,
       isPrimary: barcode.isPrimary,
-      packingUnit: parsePackingUnit(barcode.packingUnit),
+      packingUnit: barcode.packingUnit,
     };
   }
 }
