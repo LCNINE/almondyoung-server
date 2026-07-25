@@ -82,16 +82,39 @@ function ScanButton({ code }: { code: string }) {
   );
 }
 
-function renderScreen(calls: Call[]) {
+interface RenderOpts {
+  /** true 면 /inbound/plans/receive 가 항상 400 으로 실패한다(응답 유실 흉내). */
+  failReceive?: boolean;
+  /**
+   * true 면 실패하는 receive 호출이라도 "서버는 실제로 커밋했다" 상태를
+   * 흉내 낸다 — 이후 /inbound/pending 재조회는 해당 항목이 이미 다 받아져
+   * 목록에서 빠진 것으로 응답한다(이중입고 시나리오 재현용).
+   */
+  silentCommit?: boolean;
+  /** true 면 /inbound/cancel 이 항상 400 으로 실패한다(응답 유실 흉내). */
+  failCancel?: boolean;
+}
+
+function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  let served = PENDING;
   const client: ApiClient = {
     request: (async (o: Call) => {
       calls.push(o);
-      if (o.path.startsWith('/inbound/pending')) return PENDING;
+      if (o.path.startsWith('/inbound/pending')) return served;
       if (o.path.startsWith('/inventory/skus?barcode=8801')) return SKU_BY_BARCODE;
       if (o.path.startsWith('/inventory/skus?barcode=')) return [];
-      if (o.path === '/inbound/plans/receive') return { success: true, receiptId: 'r-1', lineId: 'ln-1' };
-      if (o.path === '/inbound/cancel') return { success: true };
+      if (o.path === '/inbound/plans/receive') {
+        if (opts.silentCommit) {
+          served = { ...served, pendingPlans: [{ ...served.pendingPlans[0], items: [] }] };
+        }
+        if (opts.failReceive) throw new Error('POST /inbound/plans/receive → 400');
+        return { success: true, receiptId: 'r-1', lineId: 'ln-1' };
+      }
+      if (o.path === '/inbound/cancel') {
+        if (opts.failCancel) throw new Error('POST /inbound/cancel → 400');
+        return { success: true };
+      }
       if (o.path.startsWith('/locations/warehouses/')) return { items: [], total: 0 };
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
@@ -203,17 +226,25 @@ describe('PlanReceiveScreen', () => {
     renderScreen(calls);
     await screen.findByText('코튼셔츠');
 
-    // 첫 스캔: 잔여수량 20 프리필
+    // 여는 스캔도 물리적 스캔 1 회다 — 화면에는 프리필(잔여 20)이 그대로
+    // 보이지만 내부적으로는 이미 1 회로 세어져 있어야 한다.
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
-    await screen.findByRole('dialog', { name: '입고 수량' });
-    // 둘째 스캔부터는 "세는 중"이다 — 프리필을 버리고 스캔한 개수만 센다
+    const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    // 수량 표시 div 로 좁힌다 — NumberPad 의 숫자 키(0~9)와 텍스트가 겹친다.
+    expect(within(sheet).getByText('20', { selector: 'div' })).toBeInTheDocument();
+
+    // 둘째 스캔(총 2 회)부터 "세는 중"이 화면에 보인다.
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(within(sheet).getByText('2', { selector: 'div' })).toBeInTheDocument();
+    // 셋째 스캔(총 3 회) — 3 번 찍었으면 3 개가 세여야 한다(N 회 스캔 = N 개,
+    // N-1 개가 되는 과소입고를 여기서 고정한다).
     await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(within(sheet).getByText('3', { selector: 'div' })).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '입고' }));
     await waitFor(() => {
       const receive = calls.find((c) => c.path === '/inbound/plans/receive');
-      expect(receive?.body).toMatchObject({ quantity: 2 });
+      expect(receive?.body).toMatchObject({ quantity: 3 });
     });
   });
 
@@ -348,5 +379,79 @@ describe('PlanReceiveScreen', () => {
       const cancel = calls.find((c) => c.path === '/inbound/cancel');
       expect(cancel?.body).toMatchObject({ lineId: 'ln-1', quantity: 20 });
     });
+  });
+
+  it('입고가 실패하면 시트 안에 에러가 보이고, 시트가 열린 채로 남아 재시도할 수 있다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls, { failReceive: true });
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(within(sheet).getByRole('button', { name: '입고' }));
+
+    // 시트가 화면 전체를 덮으므로, 에러도 시트 안에서 보여야 작업자가 알아챈다.
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent('입고기본존 재고가 부족해요');
+    // 응답이 실패로 보이는 동안은 배너로 넘어가지 않고 시트가 남아, 성공/실패를
+    // 모른 채로 값을 고쳐 다시 누르는 이중입고 경로를 차단한다.
+    expect(screen.getByRole('dialog', { name: '입고 수량' })).toBeInTheDocument();
+    expect(screen.queryByText(/입고됨/)).not.toBeInTheDocument();
+  });
+
+  it('실패로 보인 요청이 실제로는 커밋됐으면(응답만 유실) 재조회 후 시트를 닫아 이중입고를 막는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls, { failReceive: true, silentCommit: true });
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(within(sheet).getByRole('button', { name: '입고' }));
+
+    // 실패로 보이는 응답이라도 에러는 먼저 보인다.
+    await within(sheet).findByRole('alert');
+    // onSettled 무효화로 재조회하면 서버는 이미 이 항목을 다 받은 것으로 응답한다
+    // (예정 목록에서 사라짐) — 시트가 옛 잔여를 계속 보여주며 재제출을 유도하면
+    // 안 되므로 스스로 닫혀야 한다.
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: '입고 수량' })).not.toBeInTheDocument();
+    });
+  });
+
+  it('취소가 실패로 보여도 같은 라인으로 재시도하면 같은 멱등키를 재사용한다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls, { failCancel: true });
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(screen.getByRole('button', { name: '입고' }));
+    await screen.findByRole('button', { name: '적치하기' });
+
+    await user.click(screen.getByRole('button', { name: '취소' }));
+    const dialog = await screen.findByRole('dialog', { name: '입고 취소' });
+    await user.click(within(dialog).getByRole('button', { name: '취소하기' }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/inbound/cancel')).toHaveLength(1);
+    });
+
+    // 취소가 실패로 보였으니 배너는 그대로 남고, 같은 라인을 다시 취소한다 —
+    // "서버는 이미 취소했는데 응답만 유실" 이었다면 이 재시도는 같은 키로
+    // replay 돼야 한다. 매번 새 키를 발급하면 서버가 재실행돼 "이미 취소됨"
+    // 400 을 내고, 실제로는 성공한 취소를 실패로 잘못 보여주게 된다.
+    await user.click(screen.getByRole('button', { name: '취소' }));
+    const dialog2 = await screen.findByRole('dialog', { name: '입고 취소' });
+    await user.click(within(dialog2).getByRole('button', { name: '취소하기' }));
+    await waitFor(() => {
+      expect(calls.filter((c) => c.path === '/inbound/cancel')).toHaveLength(2);
+    });
+
+    // 테스트 픽스처의 취소 요청 바디 형태는 CancelInboundInput 으로 고정돼 있다.
+    const cancelCalls = calls.filter(
+      (c) => c.path === '/inbound/cancel'
+    ) as Array<Call & { body: { lineId: string; quantity: number; idempotencyKey: string } }>;
+    expect(cancelCalls[0].body.idempotencyKey).toBe(cancelCalls[1].body.idempotencyKey);
   });
 });
