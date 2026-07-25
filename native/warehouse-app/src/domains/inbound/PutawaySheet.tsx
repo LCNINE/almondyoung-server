@@ -51,6 +51,14 @@ export function PutawaySheet({
     }
   }, [search.data, term, dest]);
 
+  // line 이 바뀌면(부모가 언마운트 없이 다음 라인으로 넘기는 경우) 이전 라인에서
+  // 고른 대상지가 그대로 남아있으면 안 된다 — 새 라인을 작업자가 아직 아무것도
+  // 결정하지 않았는데 적치 버튼이 활성화되는 사고로 이어진다.
+  useEffect(() => {
+    setDest(null);
+    setTerm('');
+  }, [line.lineId]);
+
   // 멱등키 회전: 대상지가 바뀌면 새 키. "커밋됐는데 응답만 유실" 뒤 대상지를
   // 고쳐 재제출할 때 옛 payload 를 같은 키로 replay 하는 사고를 막는다.
   const keyPayloadRef = useRef({ lineId: line.lineId, to: '' });
