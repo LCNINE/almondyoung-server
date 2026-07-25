@@ -8,6 +8,7 @@ import { SkuCreationSource } from '../../sku-catalog/dto/create-sku.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
+import { serializePackingUnit } from '../../sku-catalog/packing-unit';
 
 @Injectable()
 export class StockEventService {
@@ -65,7 +66,7 @@ export class StockEventService {
             skuId: sku.id,
             barcode: subBarcode,
             isPrimary: false,
-            packingUnit: packingUnit || null,
+            packingUnit: serializePackingUnit(packingUnit),
           })
           .onConflictDoNothing();
       }

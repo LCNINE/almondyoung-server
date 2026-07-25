@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsString, IsEnum } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsNumber, IsOptional, IsString, IsEnum, IsInt, Min } from 'class-validator';
 
 export class CreateStockEntryBySkuIdDto {
   @ApiProperty({ description: 'SKU ID' })
@@ -46,8 +46,9 @@ export class CreateStockEntryBySkuIdDto {
   @IsOptional()
   subBarcode?: string;
 
-  @ApiProperty({ description: '포장 단위 (선택사항)', required: false })
-  @IsString()
+  @ApiProperty({ description: '포장 단위 — 이 바코드 1회 스캔이 뜻하는 낱개 수량', required: false, minimum: 1 })
+  @IsInt()
+  @Min(1)
   @IsOptional()
-  packingUnit?: string;
+  packingUnit?: number;
 }
