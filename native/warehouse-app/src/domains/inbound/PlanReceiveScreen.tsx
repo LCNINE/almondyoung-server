@@ -67,7 +67,10 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
   // 스캔 라우팅: 적치 시트가 열려 있으면 그쪽이 먹고, 수량 시트가 열려 있으면
   // 같은 SKU 만 누적, 목록 상태면 예정 항목을 찾는다.
   useScanner((e) => {
-    if (putawayOpen) return;
+    // 확인 다이얼로그는 결정 대기 상태다 — 뜬 동안 스캔이 뒤에서 수량을 바꾸거나
+    // (초과 확인) 새 시트를 여는(취소 확인) 건 작업자가 답하는 도중 화면이
+    // 움직이는 것이라 막는다.
+    if (putawayOpen || confirming !== null || cancelConfirm) return;
     lookup.mutate(e.code, {
       onSuccess: (skus) => {
         const sku = skus[0];

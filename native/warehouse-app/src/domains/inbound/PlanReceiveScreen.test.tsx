@@ -263,6 +263,67 @@ describe('PlanReceiveScreen', () => {
     });
   });
 
+  it('초과 확인 다이얼로그가 뜬 동안 스캔해도 제출 수량이 바뀌지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+
+    // 프리필 20(잔여)을 지우고 25 를 입력해 잔여를 5 초과시킨다.
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '2' }));
+    await user.click(within(sheet).getByRole('button', { name: '5' }));
+    await user.click(within(sheet).getByRole('button', { name: '입고' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '입고 확인' });
+    expect(dialog).toHaveTextContent('코튼셔츠 25개를 입고할까요?');
+
+    // 다이얼로그가 뜬 동안 같은 SKU 를 다시 스캔한다 — 뒤에 숨은 시트의 수량이
+    // (scanBump 누적으로) 조용히 바뀌면 안 된다. 시트 자체는 actionsHidden 이라
+    // 버튼만 감춰졌을 뿐 여전히 마운트돼 있어 표시값으로 직접 확인할 수 있다.
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(within(sheet).getByText('25')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '입고' }));
+
+    await waitFor(() => {
+      const receive = calls.find((c) => c.path === '/inbound/plans/receive');
+      expect(receive?.body).toMatchObject({ planItemId: 'pi-1', quantity: 25 });
+    });
+  });
+
+  it('취소 확인 다이얼로그가 뜬 동안 스캔해도 수량 시트가 열리지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(screen.getByRole('button', { name: '입고' }));
+    await screen.findByRole('button', { name: '적치하기' });
+
+    await user.click(screen.getByRole('button', { name: '취소' }));
+    const dialog = await screen.findByRole('dialog', { name: '입고 취소' });
+
+    // 취소 확인이 뜬 동안은 목록 상태(active===null)라 스캔이 그냥 통과하면
+    // 다이얼로그 뒤에 새 수량 시트가 몰래 열린다 — 그러면 안 된다.
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(screen.queryByRole('dialog', { name: '입고 수량' })).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '취소하기' }));
+
+    await waitFor(() => {
+      const cancel = calls.find((c) => c.path === '/inbound/cancel');
+      expect(cancel?.body).toMatchObject({ lineId: 'ln-1', quantity: 20 });
+    });
+  });
+
   it('결과 배너의 취소를 누르면 확인 후 전량 취소를 보낸다', async () => {
     const user = userEvent.setup();
     const calls: Call[] = [];
