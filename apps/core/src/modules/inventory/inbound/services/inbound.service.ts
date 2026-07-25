@@ -776,14 +776,17 @@ export class InboundService {
         },
         tx,
       );
-      await tx.insert(wmsTables.inboundReceiptLines).values({
-        receiptId: receipt.id,
-        skuId: item.skuId,
-        quantity: dto.quantity,
-        originLocationId: effectiveLocationId,
-        eventId: eventId ?? null,
-        planItemId: item.id,
-      });
+      const [line] = await tx
+        .insert(wmsTables.inboundReceiptLines)
+        .values({
+          receiptId: receipt.id,
+          skuId: item.skuId,
+          quantity: dto.quantity,
+          originLocationId: effectiveLocationId,
+          eventId: eventId ?? null,
+          planItemId: item.id,
+        })
+        .returning();
 
       // 예정 누계/상태 갱신
       const newReceived = (item.receivedQty ?? 0) + dto.quantity;
@@ -810,7 +813,9 @@ export class InboundService {
         reason: 'planned_inbound',
       });
 
-      return { success: true, receiptId: receipt.id };
+      // lineId 는 후속 적치(putaway)의 유일한 입력이다 — 현장 앱이 입고 직후
+      // 바로 적치를 걸 수 있도록 여기서 돌려준다.
+      return { success: true, receiptId: receipt.id, lineId: line.id };
     }, tx);
   }
 
