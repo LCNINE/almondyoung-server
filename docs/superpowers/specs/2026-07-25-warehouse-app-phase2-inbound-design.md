@@ -144,7 +144,9 @@ src/app/routes/           InboundRoute · PlanReceiveRoute · QuickInboundRoute
 | 카트 (시트 닫힘) | 상품 바코드 → 이미 있는 SKU 면 +packingUnit, 새 SKU 면 행 추가 |
 | 적치 시트 열림 | 로케이션 코드 |
 
-**packingUnit 해석** — `packingUnit` 은 SKU 가 아니라 **바코드 행마다** 달린 값이다. `GET /inventory/skus?barcode=` 가 그 SKU 의 바코드 전체를 돌려주므로, 앱은 **스캔한 바코드와 일치하는 행**의 `packingUnit` 을 쓴다. 박스 바코드는 +20, 낱개 바코드는 +1 이 된다. 값이 없거나 숫자로 파싱되지 않으면 **+1 로 폴백**한다 (§8.3 의 레거시 데이터 방어).
+**packingUnit 해석** — `packingUnit` 은 SKU 가 아니라 **바코드 행마다** 달린 값이다. `GET /inventory/skus?barcode=` 가 그 SKU 의 바코드 전체를 돌려주므로, 앱은 **스캔한 바코드와 일치하는 행**의 `packingUnit` 을 쓴다. 박스 바코드는 +20, 낱개 바코드는 +1 이 된다. 값이 없거나 숫자로 파싱되지 않으면 **+1 로 폴백**한다.
+
+`sku_barcodes.packing_unit` 은 현재 **전량 NULL 이다** (§8.3 의 400 버그 때문에 값이 저장된 적이 없다). 따라서 Phase 2 출시 직후의 실효 동작은 모든 스캔이 +1 이고, §8.3 이 배포된 뒤 운영에서 포장단위를 채우기 시작하면 박스 스캔이 배수로 잡히기 시작한다. 이 전환은 앱 배포 없이 데이터만으로 일어난다.
 
 ## 7. 데이터 계층
 
@@ -200,7 +202,7 @@ mutations.ts  useReceiveFromPlan   POST /inbound/plans/receive
 
 1. `AddBarcodeDto.packingUnit` / `CreateStockEntryBySkuIdDto.packingUnit` → `@IsInt() @Min(1) @IsOptional() packingUnit?: number`
 2. 저장 시 `String(n)` — `sku-catalog.manager.ts:229`, `stock-event.service.ts:68`
-3. 읽기 시 숫자 파싱 — `sku-catalog.reader.ts`(113·252·428), `sku.mapper.ts:10`, `inbound.service.ts:1114`. 공용 헬퍼를 두고 **비숫자·빈 문자열은 `null`** 로 떨군다 (레거시 방어)
+3. 읽기 시 숫자 파싱 — `sku-catalog.reader.ts`(113·252·428), `sku.mapper.ts:10`, `inbound.service.ts:1114`. 공용 헬퍼를 두고 **비숫자·빈 문자열은 `null`** 로 떨군다. 컬럼이 전량 NULL 임이 확인됐으므로 backfill 은 필요 없고, 이 방어는 앞으로 varchar 컬럼에 손으로 이상한 값이 들어가는 경우만 대비한다
 4. 응답 DTO `sku-response.dto.ts:24` → `number | null`
 5. admin-web `BarcodeDto.packingUnit` → `number | null`. 렌더(`{n}개입`)는 그대로
 
@@ -248,6 +250,7 @@ mutations.ts  useReceiveFromPlan   POST /inbound/plans/receive
 
 **구현 전 확인**
 
-1. `sku_barcodes.packing_unit` 의 실제 데이터 분포 — 전부 NULL 이라는 추론이 맞는지, 비숫자 값이 있는지 DB 조회로 확인
-2. `packingUnit` 읽기 응답을 소비하는 곳이 admin-web 말고 또 있는지 (storefront·channel-adapter·medusa)
-3. dev 환경에 실제 입고예정 데이터가 있는지 — 없으면 스모크용 시드가 필요
+1. `packingUnit` 읽기 응답을 소비하는 곳이 admin-web 말고 또 있는지 (storefront·channel-adapter·medusa)
+2. dev 환경에 실제 입고예정 데이터가 있는지 — 없으면 스모크용 시드가 필요
+
+`sku_barcodes.packing_unit` 의 데이터 분포는 확인됐다 — 전량 NULL 이다.
