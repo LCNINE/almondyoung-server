@@ -63,3 +63,17 @@ describe('errorMessage with context', () => {
     );
   });
 });
+
+describe('inbound 문맥', () => {
+  it('적치 실패(400)는 입고기본존 재고를 짚어준다', () => {
+    expect(errorMessage(new Error('POST /inbound/putaway → 400'), 'inbound')).toBe(
+      '입고기본존 재고가 부족해요. 새로고침 후 확인해 주세요.'
+    );
+  });
+
+  it('취소 실패(400)는 적치/당일 제약을 함께 안내한다', () => {
+    expect(errorMessage(new Error('POST /inbound/cancel → 400'), 'inbound-cancel')).toBe(
+      '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.'
+    );
+  });
+});
