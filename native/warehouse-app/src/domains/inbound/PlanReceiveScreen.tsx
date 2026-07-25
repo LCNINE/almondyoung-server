@@ -131,8 +131,10 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
                 적치하기
               </Button>
             ) : null}
-            {/* 취소는 적치 전에만 가능하다 — 서버가 putawayFromOriginQty > 0 이면 거부한다. */}
-            {!fresh.putawayDone ? (
+            {/* 취소는 적치 전에만 가능하다 — 서버가 putawayFromOriginQty > 0 이면 거부한다.
+                확인 다이얼로그가 뜬 동안은 감춘다 — 다이얼로그도 [취소] 버튼을 쓰므로
+                접근성 이름이 겹치고, 배너 쪽은 어차피 조작할 대상이 아니다. */}
+            {!fresh.putawayDone && !cancelConfirm ? (
               <Button
                 type="button"
                 className="flex-1 border border-red-300 bg-white py-1.5 text-xs text-red-700 hover:bg-red-50"
@@ -207,6 +209,7 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
           scanBump={scanBump}
           pending={receive.isPending}
           onCancel={closeSheet}
+          actionsHidden={confirming !== null}
           onSubmit={(quantity) => {
             // 예정 잔여를 넘지 않으면 바로 보낸다 — 예정대로 다 온 흔한 경우를
             // 확인창으로 막지 않는다. 초과일 때만 몇 개 많은지 짚어 확인받는다

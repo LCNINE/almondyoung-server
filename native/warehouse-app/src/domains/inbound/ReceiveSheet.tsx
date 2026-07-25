@@ -17,6 +17,7 @@ export function ReceiveSheet({
   pending,
   onSubmit,
   onCancel,
+  actionsHidden = false,
 }: {
   item: PendingPlanItem;
   /** 부모가 스캔마다 더해 주는 누적 증가분. 0 이면 프리필만 쓴다. */
@@ -24,6 +25,9 @@ export function ReceiveSheet({
   pending: boolean;
   onSubmit: (quantity: number) => void;
   onCancel: () => void;
+  /** 위에 확인 다이얼로그가 떠 있는 동안 true. 다이얼로그도 [취소]/[입고] 를
+   *  쓰므로, 이 시트의 버튼을 감춰 접근성 이름 충돌과 배경 조작을 동시에 막는다. */
+  actionsHidden?: boolean;
 }) {
   const [qty, setQty] = useState(item.pendingQty);
 
@@ -74,18 +78,20 @@ export function ReceiveSheet({
           ) : null}
         </section>
 
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
-            onClick={onCancel}
-          >
-            취소
-          </Button>
-          <Button type="button" className="flex-1" disabled={qty < 1 || pending} onClick={() => onSubmit(qty)}>
-            입고
-          </Button>
-        </div>
+        {actionsHidden ? null : (
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              className="flex-1 border border-gray-300 bg-white text-gray-800 hover:bg-gray-50"
+              onClick={onCancel}
+            >
+              취소
+            </Button>
+            <Button type="button" className="flex-1" disabled={qty < 1 || pending} onClick={() => onSubmit(qty)}>
+              입고
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
