@@ -557,17 +557,27 @@ export const skuSuppliers = pgTable(
   }),
 );
 
-export const skuBarcodes = pgTable('sku_barcodes', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'cascade' })
-    .notNull(),
-  barcode: varchar('barcode', { length: 64 }).notNull().unique(),
-  isPrimary: boolean('is_primary').notNull().default(false),
-  packingUnit: varchar('packing_unit', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const skuBarcodes = pgTable(
+  'sku_barcodes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'cascade' })
+      .notNull(),
+    barcode: varchar('barcode', { length: 64 }).notNull().unique(),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    // 이 바코드 1회 스캔이 뜻하는 낱개 수량. 상자 바코드면 n, 낱개 바코드면 NULL.
+    packingUnit: integer('packing_unit'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ckPackingUnitPositive: check(
+      'ck_sku_barcodes_packing_unit_positive',
+      sql`${t.packingUnit} IS NULL OR ${t.packingUnit} >= 1`,
+    ),
+  }),
+);
 
 export const skuImages = pgTable(
   'sku_images',
