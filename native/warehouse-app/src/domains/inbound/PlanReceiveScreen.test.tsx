@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -229,5 +229,63 @@ describe('PlanReceiveScreen', () => {
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     // 시트는 그대로 열려 있고 수량도 프리필 그대로다
     expect(screen.getByRole('dialog', { name: '입고 수량' })).toBeInTheDocument();
+  });
+
+  it('잔여보다 많은 수량을 입력하면 초과분을 명시한 확인 후 그 수량으로 입고한다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    const sheet = await screen.findByRole('dialog', { name: '입고 수량' });
+
+    // 프리필 20(잔여)을 지우고 25 를 입력해 잔여를 5 초과시킨다.
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '2' }));
+    await user.click(within(sheet).getByRole('button', { name: '5' }));
+    await user.click(within(sheet).getByRole('button', { name: '입고' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '입고 확인' });
+    expect(dialog).toHaveTextContent('잔여(20)보다 5개 많습니다');
+    expect(dialog).toHaveTextContent('코튼셔츠 25개를 입고할까요?');
+    // 다이얼로그가 뜬 동안은 시트 자체의 [입고] 버튼이 사라져 이름이 겹치지 않는다.
+    expect(
+      within(sheet).queryByRole('button', { name: '입고' })
+    ).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '입고' }));
+
+    await waitFor(() => {
+      const receive = calls.find((c) => c.path === '/inbound/plans/receive');
+      expect(receive?.body).toMatchObject({ planItemId: 'pi-1', quantity: 25 });
+    });
+  });
+
+  it('결과 배너의 취소를 누르면 확인 후 전량 취소를 보낸다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(screen.getByRole('button', { name: '입고' }));
+    await screen.findByRole('button', { name: '적치하기' });
+
+    await user.click(screen.getByRole('button', { name: '취소' }));
+    const dialog = await screen.findByRole('dialog', { name: '입고 취소' });
+    expect(dialog).toHaveTextContent('코튼셔츠 20개 입고를 전량 취소합니다.');
+    // 배너 자체의 [취소] 버튼은 다이얼로그가 뜬 동안 사라져, 다이얼로그의 [취소]
+    // 버튼과 접근성 이름이 겹치지 않는다(딱 하나만 남는다).
+    expect(screen.getAllByRole('button', { name: '취소' })).toHaveLength(1);
+
+    await user.click(within(dialog).getByRole('button', { name: '취소하기' }));
+
+    await waitFor(() => {
+      const cancel = calls.find((c) => c.path === '/inbound/cancel');
+      expect(cancel?.body).toMatchObject({ lineId: 'ln-1', quantity: 20 });
+    });
   });
 });
