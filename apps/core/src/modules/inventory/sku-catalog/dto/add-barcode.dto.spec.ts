@@ -32,4 +32,13 @@ describe('AddBarcodeDto', () => {
     await expect(validate(dtoWith(0))).resolves.toHaveLength(1);
     await expect(validate(dtoWith(-1))).resolves.toHaveLength(1);
   });
+
+  // int4 상한을 넘으면 DB 가 22003 을 던져 500 이 된다. 경계에서 400 으로 막는다.
+  it('int4 상한을 받고 그 위를 거부한다', async () => {
+    await expect(validate(dtoWith(2147483647))).resolves.toHaveLength(0);
+
+    const errors = await validate(dtoWith(2147483648));
+    expect(errors).toHaveLength(1);
+    expect(errors[0].property).toBe('packingUnit');
+  });
 });
