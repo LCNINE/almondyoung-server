@@ -5,7 +5,6 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-filters.dto';
-import { parsePackingUnit } from '../packing-unit';
 
 @Injectable()
 export class SkuCatalogReader {
@@ -111,7 +110,7 @@ export class SkuCatalogReader {
         id: b.id,
         barcode: b.barcode,
         isPrimary: b.isPrimary,
-        packingUnit: parsePackingUnit(b.packingUnit),
+        packingUnit: b.packingUnit,
       })),
       suppliers,
       categoryNames: categories.map((c) => c.name),
@@ -250,7 +249,7 @@ export class SkuCatalogReader {
           id: bc.id,
           barcode: bc.barcode,
           isPrimary: bc.isPrimary,
-          packingUnit: parsePackingUnit(bc.packingUnit),
+          packingUnit: bc.packingUnit,
         })),
         suppliers: suppliersBySkuId.get(sku.id) || [],
         categoryNames: categoriesBySkuId.get(sku.id) || [],
@@ -426,7 +425,7 @@ export class SkuCatalogReader {
               id: b.id,
               barcode: b.barcode,
               isPrimary: b.isPrimary,
-              packingUnit: parsePackingUnit(b.packingUnit),
+              packingUnit: b.packingUnit,
             })),
             suppliers,
             categoryNames: categories.map((c) => c.name),

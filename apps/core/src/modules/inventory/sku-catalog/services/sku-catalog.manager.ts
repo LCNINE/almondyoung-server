@@ -8,7 +8,6 @@ import { UpdateSkuDto } from '../dto/update-sku.dto';
 import { AddBarcodeDto } from '../dto/add-barcode.dto';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { SkuCatalogReader } from './sku-catalog.reader';
-import { serializePackingUnit } from '../packing-unit';
 
 @Injectable()
 export class SkuCatalogManager {
@@ -227,7 +226,7 @@ export class SkuCatalogManager {
           skuId,
           barcode: dto.barcode,
           isPrimary: false,
-          packingUnit: serializePackingUnit(dto.packingUnit),
+          packingUnit: dto.packingUnit ?? null,
         })
         .returning();
 
