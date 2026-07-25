@@ -1,12 +1,13 @@
 import { ConflictError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
-export type ErrorContext = 'barcode' | 'location' | 'stocktaking';
+export type ErrorContext = 'barcode' | 'location' | 'stocktaking' | 'movement';
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   barcode: { 404: '등록되지 않은 바코드예요.' },
   location: { 404: '로케이션을 찾을 수 없어요.' },
   stocktaking: { 400: '실사가 진행 중이 아니에요. 세션 상태를 확인해 주세요.' },
+  movement: { 400: '출발지 재고가 부족해요. 다시 확인해 주세요.' },
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {
