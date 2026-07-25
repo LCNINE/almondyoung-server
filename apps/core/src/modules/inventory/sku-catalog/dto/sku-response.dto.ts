@@ -20,8 +20,8 @@ export class BarcodeDto {
   @ApiProperty({ description: 'Whether this is the primary barcode (synced with SKU code)' })
   isPrimary: boolean;
 
-  @ApiProperty({ required: false, nullable: true })
-  packingUnit?: string | null;
+  @ApiProperty({ description: '포장 단위 — 이 바코드 1회 스캔이 뜻하는 낱개 수량', required: false, nullable: true })
+  packingUnit?: number | null;
 }
 
 export class SkuResponseDto {

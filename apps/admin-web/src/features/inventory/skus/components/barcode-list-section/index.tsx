@@ -13,6 +13,14 @@ type Props = {
   barcodes: BarcodeDto[];
 };
 
+/** 빈 값·비숫자·0 이하는 "미입력"으로 본다. 서버가 @IsInt() @Min(1) 로 받는다. */
+function parsePositiveInt(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : undefined;
+}
+
 export function BarcodeListSection({ skuId, barcodes }: Props) {
   const [newBarcode, setNewBarcode] = useState('');
   const [newPackingUnit, setNewPackingUnit] = useState('');
@@ -29,7 +37,7 @@ export function BarcodeListSection({ skuId, barcodes }: Props) {
         skuId,
         data: {
           barcode: trimmed,
-          packingUnit: newPackingUnit ? Number(newPackingUnit) : undefined,
+          packingUnit: parsePositiveInt(newPackingUnit),
         },
       });
       setNewBarcode('');

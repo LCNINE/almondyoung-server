@@ -18,6 +18,9 @@ import { StocktakingRoute } from './routes/StocktakingRoute';
 import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
 import { MovementRoute } from './routes/MovementRoute';
+import { InboundRoute } from './routes/InboundRoute';
+import { PlanReceiveRoute } from './routes/PlanReceiveRoute';
+import { QuickInboundRoute } from './routes/QuickInboundRoute';
 
 export interface RouterContext {
   session: Session;
@@ -102,12 +105,27 @@ const movementRoute = createRoute({
 const inboundRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound',
-  component: () => <PlaceholderScreen title="입고/검수" note="Phase 2에서 구현됩니다." />,
+  component: InboundRoute,
+});
+const inboundPlanRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/plans/$planId',
+  component: PlanReceiveRoute,
+});
+const inboundQuickRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/quick',
+  component: QuickInboundRoute,
 });
 const pickingRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/picking',
   component: () => <PlaceholderScreen title="피킹" note="Phase 3에서 구현됩니다." />,
+});
+const putawayRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/putaway',
+  component: () => <PlaceholderScreen title="적치 대기" note="후속 Phase에서 구현됩니다." />,
 });
 
 // --- 작업 · 스테이션 ---
@@ -138,7 +156,10 @@ export const routeTree = rootRoute.addChildren([
     stocktakingVariancesRoute,
     movementRoute,
     inboundRoute,
+    inboundPlanRoute,
+    inboundQuickRoute,
     pickingRoute,
+    putawayRoute,
     packingRoute,
     settingsRoute,
   ]),

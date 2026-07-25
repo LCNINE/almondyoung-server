@@ -22,6 +22,7 @@ import {
 } from '../dto/simple-inbound.dto';
 import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { parsePackingUnit } from '../../sku-catalog/packing-unit';
 
 @Injectable()
 export class InboundService {
@@ -775,14 +776,17 @@ export class InboundService {
         },
         tx,
       );
-      await tx.insert(wmsTables.inboundReceiptLines).values({
-        receiptId: receipt.id,
-        skuId: item.skuId,
-        quantity: dto.quantity,
-        originLocationId: effectiveLocationId,
-        eventId: eventId ?? null,
-        planItemId: item.id,
-      });
+      const [line] = await tx
+        .insert(wmsTables.inboundReceiptLines)
+        .values({
+          receiptId: receipt.id,
+          skuId: item.skuId,
+          quantity: dto.quantity,
+          originLocationId: effectiveLocationId,
+          eventId: eventId ?? null,
+          planItemId: item.id,
+        })
+        .returning();
 
       // 예정 누계/상태 갱신
       const newReceived = (item.receivedQty ?? 0) + dto.quantity;
@@ -809,7 +813,9 @@ export class InboundService {
         reason: 'planned_inbound',
       });
 
-      return { success: true, receiptId: receipt.id };
+      // lineId 는 후속 적치(putaway)의 유일한 입력이다 — 현장 앱이 입고 직후
+      // 바로 적치를 걸 수 있도록 여기서 돌려준다.
+      return { success: true, receiptId: receipt.id, lineId: line.id };
     }, tx);
   }
 
@@ -1015,6 +1021,26 @@ export class InboundService {
         .set({ canceledQty: line.quantity })
         .where(eq(wmsTables.inboundReceiptLines.id, line.id));
 
+      // 예정 연계 라인이면 예정 누계를 되돌린다. 이게 없으면 취소 후 재입고가
+      // receivedQty 를 이중 계상하고, 항목이 confirmed 로 굳어 예정 목록에서 사라진다.
+      if (line.planItemId) {
+        const planItem = await tx.query.inboundPlanItems.findFirst({
+          where: eq(wmsTables.inboundPlanItems.id, line.planItemId),
+        });
+        if (planItem) {
+          const restored = Math.max(0, (planItem.receivedQty ?? 0) - line.quantity);
+          await tx
+            .update(wmsTables.inboundPlanItems)
+            .set({
+              receivedQty: restored,
+              // 여러 회차가 걸린 예정에서 한 건만 취소한 경우가 있으므로 상태는
+              // 'pending' 으로 고정하지 않고 남은 누계로 다시 판정한다.
+              status: restored >= planItem.expectedQty ? 'confirmed' : 'pending',
+            })
+            .where(eq(wmsTables.inboundPlanItems.id, planItem.id));
+        }
+      }
+
       // 작업 로그 기록
       await tx.insert(wmsTables.inboundWorkLogs).values({
         type: 'CANCEL',
@@ -1111,7 +1137,7 @@ export class InboundService {
       skuName: sku?.name,
       barcode: skuBarcode.barcode,
       isPrimary: skuBarcode.isPrimary,
-      packingUnit: skuBarcode.packingUnit,
+      packingUnit: parsePackingUnit(skuBarcode.packingUnit),
     };
   }
 }
