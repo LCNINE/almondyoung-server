@@ -35,6 +35,9 @@
 | `inbound/dto/create-stock-entry-by-skuid.dto.ts` | `packingUnit` number |
 | `core/services/stock-event.service.ts` | 저장 시 직렬화 |
 | `inbound/services/inbound.service.ts` | `receiveFromPlan` lineId 반환 · `cancelInbound` 예정 복원 |
+| `inbound/services/__fixtures__/inbound-harness.ts` (신규) | 통합 스펙용 `InboundService` 조립 + 롤백 트랜잭션 러너 |
+
+**테스트 하네스에 관한 결정** — 저장소의 통합 스펙 48개는 각자 서비스를 손으로 배선한다(core 전체에서 `Test.createTestingModule` 을 쓰는 건 4개뿐). 이 계획은 그 관례를 갈아엎지 않되, **DI 배선만** 두 스펙이 공유하는 파일로 뽑는다. 배선은 분기 없는 조립 5줄이고 실제로 드리프트한 이력이 있다 — `StockEventStore`·`InventoryCommandService` 에 `batchControlledStock` 이 기본값과 함께 추가되면서 어떤 스펙은 넘기고 어떤 스펙은 안 넘기게 갈렸다(`stock-event.store.ts:74`, `inventory-command.service.ts:22`). 반면 **시드 픽스처는 각 스펙에 인라인으로 둔다** — 시나리오마다 필요한 행이 달라(창고 1개 vs 2개, 원장 유무) 공유하면 과매개변수 함수가 되고 인라인보다 읽기 어려워진다. `__fixtures__/` 에 확장자 `.ts` 로 두면 jest 의 `testRegex: .*\.spec\.ts$` 에 걸리지 않는다.
 
 **앱 (`native/warehouse-app/src/`)**
 
@@ -401,13 +404,82 @@ varchar 인 한 'BOX' 같은 값이 손으로 들어갈 수 있고 소비자가 
 
 **Files:**
 - Modify: `apps/core/src/modules/inventory/inbound/services/inbound.service.ts` (`receiveFromPlan`, 라인 insert 부근)
+- Create: `apps/core/src/modules/inventory/inbound/services/__fixtures__/inbound-harness.ts`
 - Create: `apps/core/src/modules/inventory/inbound/services/inbound.service.plan-receive.integration.spec.ts`
 
 **Interfaces:**
 - Consumes: 없음
-- Produces: `receiveFromPlan` 응답 `{ success: true; receiptId: string; lineId: string }`. Task 5 의 `useReceiveFromPlan` 이 이 `lineId` 로 적치를 건다.
+- Produces: `receiveFromPlan` 응답 `{ success: true; receiptId: string; lineId: string }` (Task 5 의 `useReceiveFromPlan` 이 이 `lineId` 로 적치를 건다) / 하네스의 `makeInboundService(database: PostgresJsDatabase<typeof wmsSchema>): InboundService` 와 `inRollbackTx(database, fn: (tx: DbTx) => Promise<void>): Promise<void>` (Task 3 이 재사용)
 
-- [ ] **Step 1: 실패하는 통합 테스트를 쓴다**
+- [ ] **Step 1: 통합 스펙용 공용 하네스를 만든다**
+
+Create `apps/core/src/modules/inventory/inbound/services/__fixtures__/inbound-harness.ts`:
+
+```typescript
+import { eq } from 'drizzle-orm';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { DbService } from '@app/db';
+import { DbTx, wmsSchema, wmsTables } from '../../../schema/inventory.schema';
+import { StockEventStore } from '../../../core/repositories/stock-event.store';
+import { LocationService } from '../../../core/services/location.service';
+import { InventoryCommandService } from '../../../core/services/inventory-command.service';
+import { InventoryIdempotencyService } from '../../../core/services/inventory-idempotency.service';
+import { BatchControlledStockGuard } from '../../../core/services/batch-controlled-stock.guard';
+import { ProductSellableQuantityService } from '../../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { OutboxService as InventoryOutboxService } from '../../../shared/outbox/outbox.service';
+import { InboundService } from '../inbound.service';
+
+export type Database = PostgresJsDatabase<typeof wmsSchema>;
+
+/**
+ * 통합 스펙은 Nest DI 컨테이너를 거치지 않고 서비스를 손으로 세운다(저장소 관례).
+ * 조립 자체는 분기 없는 5줄인데도 실제로 드리프트한 이력이 있다 — StockEventStore
+ * 와 InventoryCommandService 에 batchControlledStock 이 기본값과 함께 추가되면서
+ * 어떤 스펙은 넘기고 어떤 스펙은 안 넘기게 갈렸다. 배선만 여기 모아 둔다.
+ *
+ * 시드 픽스처는 일부러 여기 두지 않는다 — 스펙마다 필요한 행이 달라서
+ * 공유하면 과매개변수 함수가 되고 인라인보다 읽기 어려워진다.
+ */
+function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
+  return {
+    db: database,
+    run: (<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) =>
+      tx ? fn(tx) : database.transaction((trx) => fn(trx as unknown as DbTx))) as never,
+  } as unknown as DbService<typeof wmsSchema>;
+}
+
+export function makeInboundService(database: Database): InboundService {
+  const dbService = dbServiceFor(database);
+  const guard = new BatchControlledStockGuard();
+  const outbox = new InventoryOutboxService(dbService);
+  const sellable = new ProductSellableQuantityService(dbService as never, outbox);
+  const eventStore = new StockEventStore(dbService, sellable, guard);
+  const location = new LocationService(dbService);
+  const command = new InventoryCommandService(dbService, eventStore, outbox, location, guard);
+  const idempotency = new InventoryIdempotencyService(dbService);
+  // individualInbound 경로만 skuCatalogService.findById 를 부른다. 전체 카탈로그
+  // 서비스를 조립할 필요는 없어서 그 한 메서드만 스텁으로 세운다.
+  const skuCatalog = {
+    findById: (skuId: string, tx?: DbTx) =>
+      (tx ?? database).query.skus.findFirst({ where: eq(wmsTables.skus.id, skuId) }),
+  };
+  return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency);
+}
+
+class Rollback extends Error {}
+
+/** 커밋 없이 검증한다 — 통합 스펙이 dev DB 를 더럽히지 않게. */
+export async function inRollbackTx(database: Database, fn: (tx: DbTx) => Promise<void>): Promise<void> {
+  await expect(
+    database.transaction(async (trx) => {
+      await fn(trx as unknown as DbTx);
+      throw new Rollback('intentional rollback');
+    }),
+  ).rejects.toThrow(Rollback);
+}
+```
+
+- [ ] **Step 2: 실패하는 통합 테스트를 쓴다**
 
 Create `apps/core/src/modules/inventory/inbound/services/inbound.service.plan-receive.integration.spec.ts`:
 
@@ -415,23 +487,13 @@ Create `apps/core/src/modules/inventory/inbound/services/inbound.service.plan-re
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
-import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { DbService } from '@app/db';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { StockEventStore } from '../../core/repositories/stock-event.store';
-import { LocationService } from '../../core/services/location.service';
-import { InventoryCommandService } from '../../core/services/inventory-command.service';
-import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
-import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
-import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../shared/outbox/outbox.service';
 import { InboundService } from './inbound.service';
+import { Database, inRollbackTx, makeInboundService } from './__fixtures__/inbound-harness';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-type Database = PostgresJsDatabase<typeof wmsSchema>;
-
-class Rollback extends Error {}
 
 describeIfDb('InboundService.receiveFromPlan (PostgreSQL integration)', () => {
   jest.setTimeout(120_000);
@@ -450,36 +512,8 @@ describeIfDb('InboundService.receiveFromPlan (PostgreSQL integration)', () => {
     await client.end();
   });
 
-  function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
-    return {
-      db: database,
-      run: (<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) =>
-        tx ? fn(tx) : database.transaction((trx) => fn(trx as unknown as DbTx))) as never,
-    } as unknown as DbService<typeof wmsSchema>;
-  }
-
-  function makeInboundService(database: Database): InboundService {
-    const dbService = dbServiceFor(database);
-    const guard = new BatchControlledStockGuard();
-    const outbox = new InventoryOutboxService(dbService);
-    const sellable = new ProductSellableQuantityService(dbService as never, outbox);
-    const eventStore = new StockEventStore(dbService, sellable, guard);
-    const location = new LocationService(dbService);
-    const command = new InventoryCommandService(dbService, eventStore, outbox, location, guard);
-    const idempotency = new InventoryIdempotencyService(dbService);
-    // skuCatalogService 는 receiveFromPlan 경로에서 호출되지 않는다 (simpleInbound 전용)
-    return new InboundService(dbService, {} as never, command, location, eventStore, idempotency);
-  }
-
-  async function inRollbackTx(fn: (tx: DbTx) => Promise<void>) {
-    await expect(
-      db.transaction(async (trx) => {
-        await fn(trx as unknown as DbTx);
-        throw new Rollback('intentional rollback');
-      }),
-    ).rejects.toThrow(Rollback);
-  }
-
+  // 시드는 이 스펙 전용이다 — 예정 아이템 1건만 있으면 되고, 하네스로 올리면
+  // 다른 스펙의 필요와 뒤섞여 과매개변수 함수가 된다.
   async function seedPlanItem(tx: DbTx, expectedQty: number) {
     const suffix = randomUUID();
     const [warehouse] = await tx
@@ -514,7 +548,7 @@ describeIfDb('InboundService.receiveFromPlan (PostgreSQL integration)', () => {
   }
 
   it('실입고 라인의 lineId 를 반환한다', async () => {
-    await inRollbackTx(async (tx) => {
+    await inRollbackTx(db, async (tx) => {
       const { item } = await seedPlanItem(tx, 20);
 
       const result = await svc.receiveFromPlan(
@@ -536,14 +570,14 @@ describeIfDb('InboundService.receiveFromPlan (PostgreSQL integration)', () => {
 });
 ```
 
-- [ ] **Step 2: 실패를 확인한다**
+- [ ] **Step 3: 실패를 확인한다**
 
 Run: `DATABASE_URL="$DATABASE_URL" npx jest --testPathPattern=inbound.service.plan-receive.integration`
 Expected: FAIL — `result.lineId` 가 `undefined` 라 `expect.any(String)` 에서 떨어진다
 
 `DATABASE_URL` 이 없으면 스펙이 통째로 skip 되어 초록으로 보인다. 반드시 값을 주고 돌린다. 로컬 dev DB 문자열은 `apps/core/.env` 에 있다.
 
-- [ ] **Step 3: 라인 insert 를 returning 으로 바꾸고 응답에 담는다**
+- [ ] **Step 4: 라인 insert 를 returning 으로 바꾸고 응답에 담는다**
 
 In `apps/core/src/modules/inventory/inbound/services/inbound.service.ts`, inside `receiveFromPlan`, replace the line insert:
 
@@ -569,20 +603,21 @@ and replace the return statement at the end of the same callback:
       return { success: true, receiptId: receipt.id, lineId: line.id };
 ```
 
-- [ ] **Step 4: 통과를 확인한다**
+- [ ] **Step 5: 통과를 확인한다**
 
 Run: `DATABASE_URL="$DATABASE_URL" npx jest --testPathPattern=inbound.service.plan-receive.integration`
 Expected: PASS — 1 test
 
-- [ ] **Step 5: 기존 멱등 배선 스펙이 깨지지 않았는지 확인한다**
+- [ ] **Step 6: 기존 멱등 배선 스펙이 깨지지 않았는지 확인한다**
 
 Run: `npx jest --testPathPattern=inbound.service.idempotency`
 Expected: PASS — 7 tests
 
-- [ ] **Step 6: 커밋**
+- [ ] **Step 7: 커밋**
 
 ```bash
 git add apps/core/src/modules/inventory/inbound/services/inbound.service.ts \
+        apps/core/src/modules/inventory/inbound/services/__fixtures__/inbound-harness.ts \
         apps/core/src/modules/inventory/inbound/services/inbound.service.plan-receive.integration.spec.ts
 git commit -m "feat(core): receiveFromPlan 이 lineId 를 반환
 
@@ -613,23 +648,13 @@ Create `apps/core/src/modules/inventory/inbound/services/inbound.service.cancel-
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
-import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { DbService } from '@app/db';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { StockEventStore } from '../../core/repositories/stock-event.store';
-import { LocationService } from '../../core/services/location.service';
-import { InventoryCommandService } from '../../core/services/inventory-command.service';
-import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
-import { BatchControlledStockGuard } from '../../core/services/batch-controlled-stock.guard';
-import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../shared/outbox/outbox.service';
 import { InboundService } from './inbound.service';
+import { Database, inRollbackTx, makeInboundService } from './__fixtures__/inbound-harness';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
-type Database = PostgresJsDatabase<typeof wmsSchema>;
-
-class Rollback extends Error {}
 
 describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL integration)', () => {
   jest.setTimeout(120_000);
@@ -648,41 +673,8 @@ describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL inte
     await client.end();
   });
 
-  function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
-    return {
-      db: database,
-      run: (<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) =>
-        tx ? fn(tx) : database.transaction((trx) => fn(trx as unknown as DbTx))) as never,
-    } as unknown as DbService<typeof wmsSchema>;
-  }
-
-  function makeInboundService(database: Database): InboundService {
-    const dbService = dbServiceFor(database);
-    const guard = new BatchControlledStockGuard();
-    const outbox = new InventoryOutboxService(dbService);
-    const sellable = new ProductSellableQuantityService(dbService as never, outbox);
-    const eventStore = new StockEventStore(dbService, sellable, guard);
-    const location = new LocationService(dbService);
-    const command = new InventoryCommandService(dbService, eventStore, outbox, location, guard);
-    const idempotency = new InventoryIdempotencyService(dbService);
-    // individualInbound 경로가 skuCatalogService.findById 를 부른다. 전체 카탈로그
-    // 서비스를 조립할 필요는 없어서 그 한 메서드만 스텁으로 세운다.
-    const skuCatalog = {
-      findById: (skuId: string, tx?: DbTx) =>
-        (tx ?? database).query.skus.findFirst({ where: eq(wmsTables.skus.id, skuId) }),
-    };
-    return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency);
-  }
-
-  async function inRollbackTx(fn: (tx: DbTx) => Promise<void>) {
-    await expect(
-      db.transaction(async (trx) => {
-        await fn(trx as unknown as DbTx);
-        throw new Rollback('intentional rollback');
-      }),
-    ).rejects.toThrow(Rollback);
-  }
-
+  // 이 스펙은 예정 아이템 + 같은 SKU 의 개별입고까지 쓴다. Task 2 의 시드와
+  // 필요한 행이 겹쳐 보이지만 반환 모양이 달라 각자 인라인으로 둔다.
   async function seedPlanItem(tx: DbTx, expectedQty: number) {
     const suffix = randomUUID();
     const [warehouse] = await tx
@@ -717,7 +709,7 @@ describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL inte
   }
 
   it('전량 입고 후 취소하면 예정 누계와 상태가 되돌아온다', async () => {
-    await inRollbackTx(async (tx) => {
+    await inRollbackTx(db, async (tx) => {
       const { item } = await seedPlanItem(tx, 20);
 
       const received = await svc.receiveFromPlan(
@@ -745,7 +737,7 @@ describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL inte
   });
 
   it('부분 입고 두 건 중 하나만 취소하면 나머지 누계는 남는다', async () => {
-    await inRollbackTx(async (tx) => {
+    await inRollbackTx(db, async (tx) => {
       const { item } = await seedPlanItem(tx, 20);
 
       await svc.receiveFromPlan({ planItemId: item.id, quantity: 8, idempotencyKey: randomUUID() }, tx);
@@ -765,7 +757,7 @@ describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL inte
   });
 
   it('예정과 무관한 간편입고 라인 취소는 예정을 건드리지 않는다', async () => {
-    await inRollbackTx(async (tx) => {
+    await inRollbackTx(db, async (tx) => {
       const { warehouse, sku, item } = await seedPlanItem(tx, 20);
 
       // 같은 SKU 를 예정과 무관하게 개별입고한 뒤 그 라인을 취소한다
