@@ -116,6 +116,30 @@ describeIfDb('InboundService.cancelInbound 예정 연계 복원 (PostgreSQL inte
     });
   });
 
+  it('부분 취소 후에도 남은 누계가 예정 수량을 채우면 confirmed 를 유지한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { item } = await seedPlanItem(tx, 20);
+
+      const first = await svc.receiveFromPlan({ planItemId: item.id, quantity: 12, idempotencyKey: randomUUID() }, tx);
+      await svc.receiveFromPlan({ planItemId: item.id, quantity: 20, idempotencyKey: randomUUID() }, tx);
+
+      const afterReceive = await tx.query.inboundPlanItems.findFirst({
+        where: eq(wmsTables.inboundPlanItems.id, item.id),
+      });
+      expect(afterReceive?.receivedQty).toBe(32);
+      expect(afterReceive?.status).toBe('confirmed');
+
+      // 32 중 12 를 취소해도 남은 20 이 expectedQty(20) 을 채우므로 confirmed 유지
+      await svc.cancelInbound({ lineId: first.lineId, quantity: 12, idempotencyKey: randomUUID() }, tx);
+
+      const afterCancel = await tx.query.inboundPlanItems.findFirst({
+        where: eq(wmsTables.inboundPlanItems.id, item.id),
+      });
+      expect(afterCancel?.receivedQty).toBe(20);
+      expect(afterCancel?.status).toBe('confirmed');
+    });
+  });
+
   it('예정과 무관한 간편입고 라인 취소는 예정을 건드리지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { warehouse, sku, item } = await seedPlanItem(tx, 20);
