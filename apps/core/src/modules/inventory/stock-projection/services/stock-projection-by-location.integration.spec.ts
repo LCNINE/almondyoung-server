@@ -2,6 +2,7 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql as dsql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { NotFoundError } from '@app/shared';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockProjectionReader } from './stock-projection.reader';
@@ -13,63 +14,67 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 class Rollback extends Error {}
 
+// 이 파일의 두 describeIfDb 블록(by-location / getLocationContents)이 공유하는 셋업.
+// 모듈 스코프에 둬야 두 블록에서 동일한 reader/inRollbackTx/seedEntities 를 재사용할 수 있다.
+jest.setTimeout(120_000);
+let sql: postgres.Sql;
+let db: PostgresJsDatabase<typeof wmsSchema>;
+let reader: StockProjectionReader;
+
+beforeAll(() => {
+  if (!DATABASE_URL) return;
+  sql = postgres(DATABASE_URL, { max: 1 });
+  db = drizzle(sql, { schema: wmsSchema });
+  const dbService = {
+    db,
+    run: async (fn: (t: DbTx) => Promise<unknown>, t?: DbTx) => (t ? fn(t) : db.transaction(fn)),
+  } as unknown as DbService<typeof wmsSchema>;
+  const outbox = new OutboxService(dbService);
+  const sellable = new ProductSellableQuantityService(dbService as never, outbox);
+  const eventStore = new StockEventStore(dbService, sellable);
+  reader = new StockProjectionReader(dbService, eventStore);
+});
+afterAll(async () => {
+  if (!DATABASE_URL) return;
+  await sql.end();
+});
+
+async function inRollbackTx(fn: (tx: DbTx) => Promise<void>) {
+  await expect(
+    db.transaction(async (tx) => {
+      await fn(tx);
+      throw new Rollback();
+    }),
+  ).rejects.toThrow(Rollback);
+}
+
+// 엔티티(창고/보유자/SKU/로케이션)만 시딩한다. 원장 행은 각 테스트가 필요한 모양대로 얹는다.
+async function seedEntities(tx: DbTx) {
+  const [warehouse] = await tx
+    .insert(wmsTables.warehouses)
+    .values({ name: `it-wh-${randomUUID().slice(0, 8)}` })
+    .returning();
+  const [holder] = await tx
+    .insert(wmsTables.holders)
+    .values({ name: `it-h-${randomUUID().slice(0, 8)}` })
+    .returning();
+  const [sku] = await tx
+    .insert(wmsTables.skus)
+    .values({ name: 'it-sku', code: `IT-${randomUUID()}`, holderId: holder.id })
+    .returning();
+  // 코드 역순으로 삽입해 정렬이 실제로 적용되는지 본다.
+  const [locB] = await tx
+    .insert(wmsTables.locations)
+    .values({ warehouseId: warehouse.id, code: `IT-LOC-B-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
+    .returning();
+  const [locA] = await tx
+    .insert(wmsTables.locations)
+    .values({ warehouseId: warehouse.id, code: `IT-LOC-A-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
+    .returning();
+  return { warehouse, sku, locA, locB };
+}
+
 describeIfDb('stock projection by-location (DB integration, rollback-only)', () => {
-  jest.setTimeout(120_000);
-  let sql: postgres.Sql;
-  let db: PostgresJsDatabase<typeof wmsSchema>;
-  let reader: StockProjectionReader;
-
-  beforeAll(() => {
-    sql = postgres(DATABASE_URL as string, { max: 1 });
-    db = drizzle(sql, { schema: wmsSchema });
-    const dbService = {
-      db,
-      run: async (fn: (t: DbTx) => Promise<unknown>, t?: DbTx) => (t ? fn(t) : db.transaction(fn)),
-    } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
-    const sellable = new ProductSellableQuantityService(dbService as never, outbox);
-    const eventStore = new StockEventStore(dbService, sellable);
-    reader = new StockProjectionReader(dbService, eventStore);
-  });
-  afterAll(async () => {
-    await sql.end();
-  });
-
-  async function inRollbackTx(fn: (tx: DbTx) => Promise<void>) {
-    await expect(
-      db.transaction(async (tx) => {
-        await fn(tx);
-        throw new Rollback();
-      }),
-    ).rejects.toThrow(Rollback);
-  }
-
-  // 엔티티(창고/보유자/SKU/로케이션)만 시딩한다. 원장 행은 각 테스트가 필요한 모양대로 얹는다.
-  async function seedEntities(tx: DbTx) {
-    const [warehouse] = await tx
-      .insert(wmsTables.warehouses)
-      .values({ name: `it-wh-${randomUUID().slice(0, 8)}` })
-      .returning();
-    const [holder] = await tx
-      .insert(wmsTables.holders)
-      .values({ name: `it-h-${randomUUID().slice(0, 8)}` })
-      .returning();
-    const [sku] = await tx
-      .insert(wmsTables.skus)
-      .values({ name: 'it-sku', code: `IT-${randomUUID()}`, holderId: holder.id })
-      .returning();
-    // 코드 역순으로 삽입해 정렬이 실제로 적용되는지 본다.
-    const [locB] = await tx
-      .insert(wmsTables.locations)
-      .values({ warehouseId: warehouse.id, code: `IT-LOC-B-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
-      .returning();
-    const [locA] = await tx
-      .insert(wmsTables.locations)
-      .values({ warehouseId: warehouse.id, code: `IT-LOC-A-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
-      .returning();
-    return { warehouse, sku, locA, locB };
-  }
-
   it('details 각 행에 locationCode 를 동반하고 위치 코드 오름차순으로 정렬한다', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku, locA, locB } = await seedEntities(tx);
@@ -131,6 +136,71 @@ describeIfDb('stock projection by-location (DB integration, rollback-only)', () 
       expect(result.details[2].locationId).toBe(locB.id);
       expect(result.details[2].stockState).toBe('ON_HAND');
       expect(result.details[2].quantity).toBe(7);
+    });
+  });
+});
+
+describeIfDb('getLocationContents (DB integration, rollback-only)', () => {
+  it('로케이션 내용물을 skuCode 오름차순으로, 조인된 코드·이름과 함께 반환한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, locA } = await seedEntities(tx);
+      const [holderX] = await tx
+        .insert(wmsTables.holders)
+        .values({ name: `it-hx-${randomUUID().slice(0, 8)}` })
+        .returning();
+      // 4번째 문자 'A' < 'Z' 라 접미 uuid 와 무관하게 skuLo.code < skuHi.code 가 확정된다.
+      const [skuLo] = await tx
+        .insert(wmsTables.skus)
+        .values({ name: 'lo', code: `IT-A-${randomUUID()}`, holderId: holderX.id })
+        .returning();
+      const [skuHi] = await tx
+        .insert(wmsTables.skus)
+        .values({ name: 'hi', code: `IT-Z-${randomUUID()}`, holderId: holderX.id })
+        .returning();
+      // 기대 출력과 반대 순서로 삽입해 정렬이 실제로 적용되는지 본다.
+      await tx.insert(wmsTables.stockLedgers).values([
+        { skuId: skuHi.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 4 },
+        { skuId: skuLo.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 9 },
+      ]);
+
+      const result = await reader.getLocationContents(locA.id, tx);
+
+      expect(result.locationId).toBe(locA.id);
+      expect(result.locationCode).toBe(locA.code);
+      expect(result.warehouseId).toBe(warehouse.id);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0].skuId).toBe(skuLo.id);
+      expect(result.items[0].skuCode).toBe(skuLo.code);
+      expect(result.items[0].skuName).toBe('lo');
+      expect(result.items[0].quantity).toBe(9);
+      expect(result.items[1].skuId).toBe(skuHi.id);
+    });
+  });
+
+  it('없는 로케이션은 NotFoundError 를 던진다', async () => {
+    await inRollbackTx(async (tx) => {
+      await expect(reader.getLocationContents(randomUUID(), tx)).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  it('재고가 없는 로케이션은 빈 items 를 준다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { locB } = await seedEntities(tx);
+      const result = await reader.getLocationContents(locB.id, tx);
+      expect(result.items).toEqual([]);
+    });
+  });
+
+  it('ON_HAND 가 아닌 상태(DEFECTIVE)도 필터 없이 함께 반환한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku, locA } = await seedEntities(tx);
+      await tx.insert(wmsTables.stockLedgers).values([
+        { skuId: sku.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'ON_HAND', qty: 5 },
+        { skuId: sku.id, warehouseId: warehouse.id, locationId: locA.id, stockState: 'DEFECTIVE', qty: 1 },
+      ]);
+      const result = await reader.getLocationContents(locA.id, tx);
+      expect(result.items).toHaveLength(2);
+      expect(result.items.map((i) => i.stockState).sort()).toEqual(['DEFECTIVE', 'ON_HAND']);
     });
   });
 });

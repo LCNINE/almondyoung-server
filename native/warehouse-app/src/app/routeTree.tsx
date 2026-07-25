@@ -17,6 +17,7 @@ import { AdjustStockRoute } from './routes/AdjustStockRoute';
 import { StocktakingRoute } from './routes/StocktakingRoute';
 import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
 import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
+import { MovementRoute } from './routes/MovementRoute';
 
 export interface RouterContext {
   session: Session;
@@ -96,7 +97,7 @@ const stocktakingVariancesRoute = createRoute({
 const movementRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/movement',
-  component: () => <PlaceholderScreen title="이동" note="후속 Phase에서 구현됩니다." />,
+  component: MovementRoute,
 });
 const inboundRoute = createRoute({
   getParentRoute: () => authedRoute,
