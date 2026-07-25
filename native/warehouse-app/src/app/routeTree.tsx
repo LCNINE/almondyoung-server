@@ -122,6 +122,11 @@ const pickingRoute = createRoute({
   path: '/picking',
   component: () => <PlaceholderScreen title="피킹" note="Phase 3에서 구현됩니다." />,
 });
+const putawayRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/putaway',
+  component: () => <PlaceholderScreen title="적치 대기" note="후속 Phase에서 구현됩니다." />,
+});
 
 // --- 작업 · 스테이션 ---
 const packingRoute = createRoute({
@@ -154,6 +159,7 @@ export const routeTree = rootRoute.addChildren([
     inboundPlanRoute,
     inboundQuickRoute,
     pickingRoute,
+    putawayRoute,
     packingRoute,
     settingsRoute,
   ]),

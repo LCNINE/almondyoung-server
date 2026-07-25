@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   PackagePlus,
   ListChecks,
+  ClipboardList,
   Wrench,
   Settings,
 } from 'lucide-react';
@@ -17,6 +18,7 @@ export function HandheldHome() {
         <Link to="/inventory"><HubTile icon={Search} label="재고조회" /></Link>
         <Link to="/stocktaking"><HubTile icon={ClipboardCheck} label="실사" /></Link>
         <Link to="/movement"><HubTile icon={ArrowLeftRight} label="이동" /></Link>
+        <Link to="/putaway"><HubTile icon={ClipboardList} label="적치" /></Link>
         <Link to="/inbound"><HubTile icon={PackagePlus} label="입고/검수" /></Link>
         <Link to="/picking"><HubTile icon={ListChecks} label="피킹" /></Link>
         <Link to="/diagnostics"><HubTile icon={Wrench} label="진단" /></Link>
