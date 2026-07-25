@@ -85,6 +85,8 @@ function renderScreen(calls: Call[]) {
       <>
         <ScanButton code="8801" />
         <ScanButton code="8802" />
+        {/* 미등록 바코드 — 등록 후 재스캔이 가드를 뚫는지 확인하는 테스트 전용 */}
+        <ScanButton code="9999" />
         <QuickInboundScreen />
       </>
     ),
@@ -152,6 +154,54 @@ describe('QuickInboundScreen', () => {
     });
     expect(await screen.findByText('적치 대기')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '적치' })).toBeInTheDocument();
+  });
+
+  it('등록한 뒤에는 스캔해도 적치 대기 목록이 바뀌지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+
+    await waitFor(() => {
+      const simple = calls.find((c) => c.path === '/inbound/simple');
+      expect(simple?.body).toMatchObject({
+        warehouseId: 'w-1',
+        items: [{ skuId: 's1', quantity: 20 }],
+      });
+    });
+    expect(await screen.findByText('적치 대기')).toBeInTheDocument();
+
+    // 등록 직후 스냅샷 — 이 다음의 스캔이 이 상태를 조금이라도 바꾸면 가드가 뚫린 것이다.
+    const lookupCallsBefore = calls.filter((c) => c.path.startsWith('/inventory/skus?barcode=')).length;
+    const putawayButtonsBefore = screen.getAllByRole('button', { name: '적치' }).length;
+
+    // 등록 후 재스캔(미등록 바코드). 가드가 없으면 lookup 이 다시 실행되고 응답이 빈 배열이라
+    // "등록되지 않은 바코드예요" 알림까지 뜬다 — 가드가 있으면 useScanner 콜백 첫 줄에서
+    // 즉시 return 하므로 lookup 자체가 호출되지 않는다.
+    await user.click(screen.getByRole('button', { name: '스캔:9999' }));
+
+    // "아무 일도 안 일어난다"는 그 순간의 스냅샷만으로는 증명할 수 없다(비동기 응답이 아직
+    // 안 왔을 수도 있음) — waitFor 가 타임아웃까지 계속 폴링하다 실패로 끝나야
+    // "결국에도 안 바뀐다"를 확인한 것이다. rejects.toThrow 로 그 타임아웃을 기대한다.
+    await expect(
+      waitFor(
+        () => {
+          expect(
+            calls.filter((c) => c.path.startsWith('/inventory/skus?barcode=')).length
+          ).toBeGreaterThan(lookupCallsBefore);
+        },
+        { timeout: 300 }
+      )
+    ).rejects.toThrow();
+
+    // 적치 대기 목록도 그대로다 — 새 행 없음, 기존 행 수량 불변, 미등록 바코드 알림도 없음.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '적치' })).toHaveLength(putawayButtonsBefore);
+    expect(screen.getByText('20')).toBeInTheDocument();
   });
 
   it('빈 카트로는 등록할 수 없다', async () => {
