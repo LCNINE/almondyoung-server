@@ -124,7 +124,13 @@ describe('나머지 뮤테이션 경로', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(calls[0].path).toBe('/inbound/simple');
+    // 멱등키는 본문과 헤더 옵션 양쪽에 실려야 한다 — 서버는 본문을, 클라이언트 컨벤션은 헤더를 본다.
     expect(calls[0].idempotencyKey).toBe('k');
+    expect(calls[0].body).toMatchObject({
+      warehouseId: 'w-1',
+      items: [{ skuId: 's1', quantity: 3 }],
+      idempotencyKey: 'k',
+    });
   });
 
   it('usePutaway 는 /inbound/putaway 로 간다', async () => {
@@ -136,7 +142,9 @@ describe('나머지 뮤테이션 경로', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(calls[0].path).toBe('/inbound/putaway');
-    expect(calls[0].body).toMatchObject({ lineId: 'ln-1', toLocationId: 'l-9', quantity: 3 });
+    // 멱등키는 본문과 헤더 옵션 양쪽에 실려야 한다 — 서버는 본문을, 클라이언트 컨벤션은 헤더를 본다.
+    expect(calls[0].idempotencyKey).toBe('k');
+    expect(calls[0].body).toMatchObject({ lineId: 'ln-1', toLocationId: 'l-9', quantity: 3, idempotencyKey: 'k' });
   });
 
   it('useCancelInbound 는 /inbound/cancel 로 간다', async () => {
@@ -148,5 +156,8 @@ describe('나머지 뮤테이션 경로', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(calls[0].path).toBe('/inbound/cancel');
+    // 멱등키는 본문과 헤더 옵션 양쪽에 실려야 한다 — 서버는 본문을, 클라이언트 컨벤션은 헤더를 본다.
+    expect(calls[0].idempotencyKey).toBe('k');
+    expect(calls[0].body).toMatchObject({ lineId: 'ln-1', quantity: 3, idempotencyKey: 'k' });
   });
 });
