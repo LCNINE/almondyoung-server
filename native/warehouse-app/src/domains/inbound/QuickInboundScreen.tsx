@@ -105,9 +105,16 @@ export function QuickInboundScreen() {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-medium text-gray-800">{line.skuName}</span>
                   <span className="block font-mono text-xs text-gray-500">{line.skuCode}</span>
+                  {/* 예정 입고 화면 배너와 같은 문구 — 부분 적치가 손대지 않은 라인과
+                      시각적으로 구분되지 않는 문제를 막는다. */}
+                  {line.putawayDoneQty > 0 && line.putawayDoneQty < line.quantity ? (
+                    <span className="block text-xs text-gray-500">
+                      잔여 {line.quantity - line.putawayDoneQty}개 · {line.putawayDoneQty}개 적치됨
+                    </span>
+                  ) : null}
                 </span>
                 <span className="text-lg font-semibold text-gray-900">{line.quantity}</span>
-                {line.putawayDone ? (
+                {line.putawayDoneQty >= line.quantity ? (
                   <span className="shrink-0 text-xs font-semibold text-green-700">완료</span>
                 ) : (
                   <Button className="shrink-0 px-3 py-1.5 text-xs" onClick={() => setPutawayFor(line)}>
@@ -204,7 +211,7 @@ export function QuickInboundScreen() {
                           skuCode: row?.skuCode ?? '',
                           skuName: row?.skuName ?? '',
                           quantity: line.quantity,
-                          putawayDone: false,
+                          putawayDoneQty: 0,
                         };
                       })
                     );
@@ -221,14 +228,24 @@ export function QuickInboundScreen() {
 
       {putawayFor ? (
         <PutawaySheet
-          line={putawayFor}
+          target={{
+            lineId: putawayFor.lineId,
+            skuName: putawayFor.skuName,
+            skuCode: putawayFor.skuCode,
+            pendingQty: putawayFor.quantity - putawayFor.putawayDoneQty,
+            originLocationCode: '입고기본존',
+          }}
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayFor(null)}
-          onDone={(dest) => {
+          onDone={(dest, quantity) => {
             setLastDest(dest);
             setStaged((prev) =>
-              prev.map((l) => (l.lineId === putawayFor.lineId ? { ...l, putawayDone: true } : l))
+              prev.map((l) =>
+                l.lineId === putawayFor.lineId
+                  ? { ...l, putawayDoneQty: l.putawayDoneQty + quantity }
+                  : l
+              )
             );
             setPutawayFor(null);
           }}

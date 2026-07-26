@@ -83,5 +83,44 @@ export interface FreshLine {
   skuName: string;
   skuCode: string;
   quantity: number;
-  putawayDone: boolean;
+  /**
+   * 지금까지 적치한 누계. boolean 이 아닌 이유는 부분 적치가 가능해졌기 때문이다 —
+   * 50개 중 30개만 적치한 라인에 다시 50개를 제안하면 서버가 400 을 낸다.
+   */
+  putawayDoneQty: number;
+}
+
+/** GET /inbound/putaway/pending 의 items[] 한 행. */
+export interface PutawayPendingItem {
+  lineId: string;
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  pendingQty: number;
+  originLocationId: string;
+  originLocationCode: string;
+  /** ISO 문자열. */
+  receivedAt: string;
+}
+
+export interface PutawayPendingResult {
+  total: number;
+  /** LIMIT(200)에 걸려 잘렸는지 여부. true 면 백로그가 더 있다. */
+  truncated: boolean;
+  items: PutawayPendingItem[];
+}
+
+/**
+ * PutawaySheet 의 입력. 입고 직후 화면과 적치 큐가 공유한다.
+ * originLocationId 가 선택인 이유: 입고 직후 경로는 그 값을 모른다
+ * (ReceiveFromPlanResult·SimpleInboundLine 어느 쪽도 로케이션을 안 돌려준다).
+ * 없으면 "출발지를 대상지 후보에서 제외" 가드를 걸지 않는다.
+ */
+export interface PutawayTarget {
+  lineId: string;
+  skuName: string;
+  skuCode: string;
+  pendingQty: number;
+  originLocationCode: string;
+  originLocationId?: string;
 }

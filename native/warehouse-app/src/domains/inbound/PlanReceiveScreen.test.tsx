@@ -115,7 +115,17 @@ function renderScreen(calls: Call[], opts: RenderOpts = {}) {
         if (opts.failCancel) throw new Error('POST /inbound/cancel → 400');
         return { success: true };
       }
-      if (o.path.startsWith('/locations/warehouses/')) return { items: [], total: 0 };
+      if (o.path === '/inbound/putaway') {
+        return { success: true };
+      }
+      if (o.path.startsWith('/locations/warehouses/')) {
+        // 검색어가 한글이면 URLSearchParams 가 percent-encode 한다 — 디코드해서 비교한다.
+        const path = decodeURIComponent(o.path);
+        if (path.includes('B-05')) {
+          return { items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }], total: 1 };
+        }
+        return { items: [], total: 0 };
+      }
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
   };
@@ -218,6 +228,66 @@ describe('PlanReceiveScreen', () => {
     await user.click(screen.getByRole('button', { name: '나중에' }));
     await waitFor(() => expect(sheet).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: '취소' })).toBeInTheDocument();
+  });
+
+  it('부분 적치를 실제로 완료하면 배너 누계·취소 게이트·재오픈 시 잔여가 반영된다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('코튼셔츠');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByRole('dialog', { name: '입고 수량' });
+    await user.click(screen.getByRole('button', { name: '입고' }));
+    await screen.findByRole('button', { name: '적치하기' });
+
+    // 1차 부분 적치: 20개 중 12개.
+    await user.click(screen.getByRole('button', { name: '적치하기' }));
+    let sheet = await screen.findByRole('dialog', { name: '적치' });
+    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    // 프리필 20 → 지우기·지우기 → 0 → '1' '2' = 12.
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '1' }));
+    await user.click(within(sheet).getByRole('button', { name: '2' }));
+    await user.click(within(sheet).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(sheet).not.toBeInTheDocument());
+
+    expect(screen.getByText(/12개 적치됨/)).toBeInTheDocument();
+    // 간편입고 적치 대기 행과 같은 어휘("잔여 N개 · M개 적치됨")를 쓰는지 — 두 화면의
+    // 표시가 실제로 맞는지(주석만 그렇다고 말하는 게 아니라)를 잠근다.
+    expect(screen.getByText(/잔여 8개 · 12개 적치됨/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '취소' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '적치하기' })).toBeInTheDocument();
+
+    // 재오픈하면 잔여(8)로 다시 프리필된다 — 대입 버그라면 여전히 20이 제안된다.
+    await user.click(screen.getByRole('button', { name: '적치하기' }));
+    sheet = await screen.findByRole('dialog', { name: '적치' });
+    expect(within(sheet).getByText(/잔여 8개/)).toBeInTheDocument();
+
+    // 2차 부분 적치: 남은 8개 중 5개. 여기가 누적(17) vs 대입(5)을 가른다.
+    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '5' }));
+    await user.click(within(sheet).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(sheet).not.toBeInTheDocument());
+
+    expect(screen.getByText(/17개 적치됨/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '취소' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '적치하기' })).toBeInTheDocument();
+
+    // 재오픈하면 잔여(3)로 프리필된다 — 대입 버그라면 15가 제안돼 서버가 거부할 값이 된다.
+    await user.click(screen.getByRole('button', { name: '적치하기' }));
+    sheet = await screen.findByRole('dialog', { name: '적치' });
+    expect(within(sheet).getByText(/잔여 3개/)).toBeInTheDocument();
+
+    const putawayCalls = calls.filter((c) => c.path === '/inbound/putaway');
+    expect(putawayCalls).toHaveLength(2);
+    expect(putawayCalls[0].body).toMatchObject({ quantity: 12 });
+    expect(putawayCalls[1].body).toMatchObject({ quantity: 5 });
   });
 
   it('시트가 열린 뒤 같은 바코드를 다시 찍으면 스캔 누적으로 넘어간다', async () => {

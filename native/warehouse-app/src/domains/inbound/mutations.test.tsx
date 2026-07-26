@@ -147,6 +147,21 @@ describe('나머지 뮤테이션 경로', () => {
     expect(calls[0].body).toMatchObject({ lineId: 'ln-1', toLocationId: 'l-9', quantity: 3, idempotencyKey: 'k' });
   });
 
+  it('적치 성공 후 putaway-pending 을 무효화한다', async () => {
+    const calls: Call[] = [];
+    const { wrapper, invalidated } = setup(calls);
+    const { result } = renderHook(() => usePutaway(), { wrapper });
+
+    result.current.mutate({
+      lineId: 'ln-1',
+      toLocationId: 'loc-1',
+      quantity: 3,
+      idempotencyKey: 'k-1',
+    });
+
+    await waitFor(() => expect(invalidated).toContainEqual(['putaway-pending']));
+  });
+
   it('useCancelInbound 는 /inbound/cancel 로 간다', async () => {
     const calls: Call[] = [];
     const { wrapper } = setup(calls);

@@ -21,6 +21,7 @@ import { MovementRoute } from './routes/MovementRoute';
 import { InboundRoute } from './routes/InboundRoute';
 import { PlanReceiveRoute } from './routes/PlanReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
+import { PutawayRoute } from './routes/PutawayRoute';
 
 export interface RouterContext {
   session: Session;
@@ -125,7 +126,7 @@ const pickingRoute = createRoute({
 const putawayRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/putaway',
-  component: () => <PlaceholderScreen title="적치 대기" note="후속 Phase에서 구현됩니다." />,
+  component: PutawayRoute,
 });
 
 // --- 작업 · 스테이션 ---

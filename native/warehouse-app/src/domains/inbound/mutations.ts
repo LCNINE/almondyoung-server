@@ -19,6 +19,9 @@ function invalidateAfterLedgerWrite(qc: QueryClient) {
   void qc.invalidateQueries({ queryKey: ['location-contents'] });
   void qc.invalidateQueries({ queryKey: ['sku-warehouse-stock'] });
   void qc.invalidateQueries({ queryKey: ['sku-stock-summary'] });
+  // 적치를 건너뛴 라인은 큐에 나타나야 하고, 큐에서 적치한 라인은 사라져야 한다.
+  // 한쪽만 갱신하면 두 화면이 서로 다른 사실을 말한다.
+  void qc.invalidateQueries({ queryKey: ['putaway-pending'] });
 }
 
 /**

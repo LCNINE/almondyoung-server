@@ -65,7 +65,7 @@ describe('handheld hub navigation', () => {
     expect(await screen.findByRole('link', { name: /재고조회/ })).toBeInTheDocument();
   });
 
-  it('허브의 적치 타일이 후속 Phase 플레이스홀더로 간다', async () => {
+  it('허브의 적치 타일이 적치 대기 큐 화면으로 간다', async () => {
     const session = stub();
     const user = userEvent.setup();
     const client: ApiClient = {
@@ -93,7 +93,10 @@ describe('handheld hub navigation', () => {
     await act(async () => {
       await user.click(tile);
     });
-    expect(await screen.findByRole('heading', { name: '적치 대기' })).toBeInTheDocument();
+    // 이 테스트는 창고 미설정 상태로 렌더한다 — 큐 화면은 실제 화면이지만
+    // 창고 선택을 먼저 요구하는 카드를 보여준다(플레이스홀더가 아니다).
+    expect(await screen.findByRole('heading', { name: '적치' })).toBeInTheDocument();
+    expect(screen.getByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
   });
 
   it('입고 타일이 예정 목록으로 간다 (플레이스홀더가 아니다)', async () => {

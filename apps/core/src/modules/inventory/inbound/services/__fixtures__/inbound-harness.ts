@@ -10,6 +10,7 @@ import { BatchControlledStockGuard } from '../../../core/services/batch-controll
 import { ProductSellableQuantityService } from '../../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { OutboxService as InventoryOutboxService } from '../../../shared/outbox/outbox.service';
 import { InboundService } from '../inbound.service';
+import { InboundPutawayReader } from '../inbound-putaway.reader';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
 
@@ -30,7 +31,13 @@ function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
   } as unknown as DbService<typeof wmsSchema>;
 }
 
-export function makeInboundService(database: Database): InboundService {
+/**
+ * InboundService 조립에 필요한 하위 서비스 일체 — command(InventoryCommandService)
+ * 를 스펙에서 직접 써야 할 때(예: moveInternal 로 원장을 서비스 우회 이동시켜
+ * putawayFromOriginQty 와 원장을 일부러 어긋나게 하는 시나리오) 매번 손으로
+ * 다시 조립하면 여기 배선이 갈라질 위험이 있다 — 한 곳에서만 만든다.
+ */
+function buildWiring(database: Database) {
   const dbService = dbServiceFor(database);
   const guard = new BatchControlledStockGuard();
   const outbox = new InventoryOutboxService(dbService);
@@ -45,7 +52,26 @@ export function makeInboundService(database: Database): InboundService {
     findById: (skuId: string, tx?: DbTx) =>
       (tx ?? database).query.skus.findFirst({ where: eq(wmsTables.skus.id, skuId) }),
   };
+  return { dbService, guard, outbox, sellable, eventStore, location, command, idempotency, skuCatalog };
+}
+
+export function makeInboundService(database: Database): InboundService {
+  const { dbService, skuCatalog, command, location, eventStore, idempotency } = buildWiring(database);
   return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency);
+}
+
+export function makeInboundPutawayReader(database: Database): InboundPutawayReader {
+  return new InboundPutawayReader(dbServiceFor(database));
+}
+
+/**
+ * `InboundService.putawayFromOrigin` 을 거치지 않고 원장만 이동시키고 싶을 때
+ * 쓴다 — "적치 대신 이동 화면으로 옮겼다" 시나리오 재현용. `InboundService` 가
+ * 내부에서 쓰는 것과 같은 배선(buildWiring)에서 뽑으므로 두 서비스가 서로 다른
+ * dbService/이벤트스토어를 보는 일이 없다.
+ */
+export function makeInventoryCommandService(database: Database): InventoryCommandService {
+  return buildWiring(database).command;
 }
 
 class Rollback extends Error {}

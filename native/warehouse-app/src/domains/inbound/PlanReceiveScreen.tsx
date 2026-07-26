@@ -81,7 +81,7 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
             skuName: target.skuName,
             skuCode: target.skuCode,
             quantity,
-            putawayDone: false,
+            putawayDoneQty: 0,
           });
           keyPayloadRef.current = { planItemId: '', qty: 0, key: crypto.randomUUID() };
           closeSheet();
@@ -155,18 +155,25 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
         <div className="space-y-2 rounded-lg border border-green-300 bg-green-50 p-3">
           <p className="text-sm text-green-900">
             {fresh.skuName} {fresh.quantity}개 입고됨
-            {fresh.putawayDone ? ' · 적치 완료' : ''}
+            {/* 간편입고 적치 대기 행과 같은 어휘("잔여 N개 · M개 적치됨")를 쓴다 —
+                두 화면의 부분 적치 진행 표시를 맞추기로 한 결정. */}
+            {fresh.putawayDoneQty >= fresh.quantity
+              ? ' · 적치 완료'
+              : fresh.putawayDoneQty > 0
+                ? ` · 잔여 ${fresh.quantity - fresh.putawayDoneQty}개 · ${fresh.putawayDoneQty}개 적치됨`
+                : ''}
           </p>
           <div className="flex gap-2">
-            {!fresh.putawayDone ? (
+            {fresh.putawayDoneQty < fresh.quantity ? (
               <Button type="button" className="flex-1 py-1.5 text-xs" onClick={() => setPutawayOpen(true)}>
                 적치하기
               </Button>
             ) : null}
             {/* 취소는 적치 전에만 가능하다 — 서버가 putawayFromOriginQty > 0 이면 거부한다.
+                부분 적치도 그 조건에 걸리므로 누계가 0 일 때만 노출한다.
                 확인 다이얼로그가 뜬 동안은 감춘다 — 다이얼로그도 [취소] 버튼을 쓰므로
                 접근성 이름이 겹치고, 배너 쪽은 어차피 조작할 대상이 아니다. */}
-            {!fresh.putawayDone && !cancelConfirm ? (
+            {fresh.putawayDoneQty === 0 && !cancelConfirm ? (
               <Button
                 type="button"
                 className="flex-1 border border-red-300 bg-white py-1.5 text-xs text-red-700 hover:bg-red-50"
@@ -299,14 +306,22 @@ export function PlanReceiveScreen({ planId }: { planId: string }) {
 
       {putawayOpen && fresh ? (
         <PutawaySheet
-          line={fresh}
+          target={{
+            lineId: fresh.lineId,
+            skuName: fresh.skuName,
+            skuCode: fresh.skuCode,
+            pendingQty: fresh.quantity - fresh.putawayDoneQty,
+            originLocationCode: '입고기본존',
+          }}
           warehouseId={warehouseId}
           lastDest={lastDest}
           onCancel={() => setPutawayOpen(false)}
-          onDone={(dest) => {
+          onDone={(dest, quantity) => {
             setLastDest(dest);
             setPutawayOpen(false);
-            setFresh((prev) => (prev ? { ...prev, putawayDone: true } : prev));
+            setFresh((prev) =>
+              prev ? { ...prev, putawayDoneQty: prev.putawayDoneQty + quantity } : prev
+            );
           }}
         />
       ) : null}
