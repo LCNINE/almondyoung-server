@@ -7,7 +7,8 @@ export type ErrorContext =
   | 'stocktaking'
   | 'movement'
   | 'inbound'
-  | 'inbound-cancel';
+  | 'inbound-cancel'
+  | 'putaway';
 
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   barcode: { 404: '등록되지 않은 바코드예요.' },
@@ -18,6 +19,12 @@ const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
   // 취소는 서버가 "적치 존재"·"당일 아님"·"전량 아님"을 모두 400 으로 낸다.
   // 현장에서 실제로 부딪히는 건 앞의 둘이고, 앱은 전량만 보내므로 셋째는 안 난다.
   'inbound-cancel': { 400: '이미 적치했거나 오늘 입고분이 아니라 취소할 수 없어요.' },
+  // 적치는 출발지가 입고기본존이 아닐 수 있다(반품기본존·재작업존도 시스템 존이다).
+  // inbound 문맥의 "입고기본존 재고가 부족해요" 를 그대로 쓰면 거짓말이 된다.
+  putaway: {
+    400: '출발지 재고가 부족하거나 이미 적치됐어요. 새로고침 후 확인해 주세요.',
+    404: '입고 라인을 찾을 수 없어요. 새로고침 해주세요.',
+  },
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {

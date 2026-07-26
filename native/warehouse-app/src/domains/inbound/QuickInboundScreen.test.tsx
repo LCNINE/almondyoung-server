@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -69,7 +69,15 @@ function renderScreen(calls: Call[]) {
       if (o.path === '/inbound/simple') {
         return { id: 'r-1', lines: [{ id: 'ln-1', skuId: 's1', quantity: 20 }] };
       }
-      if (o.path.startsWith('/locations/warehouses/')) return { items: [], total: 0 };
+      if (o.path === '/inbound/putaway') return { success: true };
+      if (o.path.startsWith('/locations/warehouses/')) {
+        // 검색어가 한글이면 URLSearchParams 가 percent-encode 한다 — 디코드해서 비교한다.
+        const path = decodeURIComponent(o.path);
+        if (path.includes('B-05')) {
+          return { items: [{ id: 'l-dst', code: 'B-05-03', displayName: 'B-05-03' }], total: 1 };
+        }
+        return { items: [], total: 0 };
+      }
       if (o.path.startsWith('/inbound/pending')) return { totalPendingPlans: 0, totalPendingQuantity: 0, pendingPlans: [] };
       throw new Error(`GET ${o.path} → 404`);
     }) as unknown as ApiClient['request'],
@@ -202,6 +210,59 @@ describe('QuickInboundScreen', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '적치' })).toHaveLength(putawayButtonsBefore);
     expect(screen.getByText('20')).toBeInTheDocument();
+  });
+
+  it('적치 대기 행에서 부분 적치를 완료하면 잔여·누계 표시와 완료 배지가 반영된다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    renderScreen(calls);
+    await screen.findByText('간편입고');
+
+    await user.click(screen.getByRole('button', { name: '스캔:8802' }));
+    await screen.findByText('코튼셔츠');
+    await user.click(screen.getByRole('button', { name: '등록' }));
+    await screen.findByText('적치 대기');
+
+    // 1차 부분 적치: 20개 중 12개.
+    await user.click(screen.getByRole('button', { name: '적치' }));
+    let sheet = await screen.findByRole('dialog', { name: '적치' });
+    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    // 프리필 20 → 지우기·지우기 → 0 → '1' '2' = 12.
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '1' }));
+    await user.click(within(sheet).getByRole('button', { name: '2' }));
+    await user.click(within(sheet).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(sheet).not.toBeInTheDocument());
+
+    expect(screen.getByText(/잔여 8개 · 12개 적치됨/)).toBeInTheDocument();
+    expect(screen.queryByText('완료')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '적치' })).toBeInTheDocument();
+
+    // 재오픈하면 잔여(8)로 다시 프리필된다.
+    await user.click(screen.getByRole('button', { name: '적치' }));
+    sheet = await screen.findByRole('dialog', { name: '적치' });
+    expect(within(sheet).getByText(/잔여 8개/)).toBeInTheDocument();
+
+    // 2차 부분 적치: 남은 8개 중 5개. 누적(17) vs 대입(5)을 가른다 — 완료(20)는
+    // 아직 아니므로 완료 배지가 뜨면 안 된다.
+    await user.type(within(sheet).getByLabelText('대상 로케이션 검색'), 'B-05-03');
+    await waitFor(() => expect(within(sheet).getByRole('button', { name: '적치' })).toBeEnabled());
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '지우기' }));
+    await user.click(within(sheet).getByRole('button', { name: '5' }));
+    await user.click(within(sheet).getByRole('button', { name: '적치' }));
+    await waitFor(() => expect(sheet).not.toBeInTheDocument());
+
+    expect(screen.getByText(/잔여 3개 · 17개 적치됨/)).toBeInTheDocument();
+    expect(screen.queryByText('완료')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '적치' })).toBeInTheDocument();
+
+    const putawayCalls = calls.filter((c) => c.path === '/inbound/putaway');
+    expect(putawayCalls).toHaveLength(2);
+    expect(putawayCalls[0].body).toMatchObject({ quantity: 12 });
+    expect(putawayCalls[1].body).toMatchObject({ quantity: 5 });
   });
 
   it('빈 카트로는 등록할 수 없다', async () => {
