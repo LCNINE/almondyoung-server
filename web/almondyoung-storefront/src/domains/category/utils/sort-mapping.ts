@@ -3,6 +3,17 @@ import type { SortOptions } from "@/domains/category/components/refinement-list/
 
 export const DEFAULT_CATEGORY_SORT: SortOptions = "review_count_desc"
 
+/** 한 번에 불러올 상품 수 */
+export const PAGE_SIZE_OPTIONS = [12, 24, 60] as const
+export const DEFAULT_PAGE_SIZE = 12
+
+export function normalizePageSize(value?: string | number): number {
+  const parsed = Number(value)
+  return (PAGE_SIZE_OPTIONS as readonly number[]).includes(parsed)
+    ? parsed
+    : DEFAULT_PAGE_SIZE
+}
+
 const CATEGORY_SORT_OPTIONS = new Set<SortOptions>([
   "sales_desc",
   "review_count_desc",

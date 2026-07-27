@@ -19,11 +19,16 @@
     "retry": "Retry"
   },
   "sort": {
+    "label": "Sort by",
     "createdAt": "Newest",
-    "salesDesc": "Most popular",
+    "salesDesc": "Best selling",
     "reviewCountDesc": "Most reviewed",
     "priceAsc": "Price: low to high",
     "priceDesc": "Price: high to low"
+  },
+  "pageSize": {
+    "label": "Items per load",
+    "option": "Show {count}"
   },
   "pillDropdown": {
     "eyelash": "Eyelash",
