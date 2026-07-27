@@ -1,6 +1,6 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Patch, Query } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -129,19 +129,8 @@ export class UsersController {
     return;
   }
 
-  @ApiOperation({ summary: '사용자 기본 정보 조회' })
-  @ApiResponse({
-    status: 200,
-    description: '사용자 기본 정보 조회 성공',
-    type: UserResponseDto,
-  })
-  @ApiParam({ name: 'id', description: '사용자 ID' })
-  @Get(':id')
-  // 호출자(storefront OIDC 가입 콜백)가 이미 Bearer 토큰을 싣고 있어 @Public() 이 불필요했다.
-  // 어드민 고객검색은 이 라우트가 아니라 스코프가 걸린 /admin/users/:id 를 쓴다.
-  @RequireScopes('user:read', 'master', 'admin:users:read')
-  @HttpCode(HttpStatus.OK)
-  async getUserInfo(@Param('id') id: string) {
-    return this.usersService.findUserById(id);
-  }
+  // `GET /users/:id` 는 제거됐다. 유일한 호출자였던 storefront 가입 콜백이 사라졌고,
+  // Tempo 트레이스상 7일간 호출 0건이었다. 사용자 단건 조회가 다시 필요하면
+  // 본인은 /users/me, 어드민은 /admin/users/:id 를 쓴다.
+  // (UsersService.findUserById 는 OIDC·인증 등 13곳에서 쓰이므로 그대로 남아있다.)
 }
