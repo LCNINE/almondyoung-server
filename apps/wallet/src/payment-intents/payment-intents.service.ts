@@ -227,7 +227,9 @@ export class PaymentIntentsService {
       accountNumber: (nextAction.accountNumber as string) || null,
       accountHolder: (nextAction.accountHolder as string) || null,
       dueDate: (nextAction.dueDate as string) || null,
-      amount: intent.payableAmount,
+      // 발급 시 스냅샷된 입금액(포인트 차감 후). intent.payableAmount 는 포인트 포함 총액이라
+      // 포인트를 쓴 주문에서 실제 입금할 금액과 다르다. 스냅샷 없는 구건만 총액으로 폴백.
+      amount: typeof nextAction.amount === 'number' ? nextAction.amount : intent.payableAmount,
       currency: intent.currency,
     };
   }

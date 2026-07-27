@@ -545,6 +545,9 @@ export class ConfirmService {
                         accountNumber: result.nextAction.accountNumber,
                         accountHolder: result.nextAction.accountHolder,
                         dueDate: result.nextAction.dueDate,
+                        // 포인트 병용 시 실제 입금할 금액은 payableAmount 가 아니라 외부결제분이다.
+                        // 안내 메일이 총액을 적으면 고객이 초과입금해 자동확인이 어긋난다.
+                        depositAmount: result.nextAction.amount,
                       }
                     : {}),
                   ...(this.resolveNotifyEmail(phase1.metadata)
