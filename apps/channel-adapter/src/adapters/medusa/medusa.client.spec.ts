@@ -942,3 +942,62 @@ describe('MedusaClient.addCustomerToGroup', () => {
     expect(batchCustomerGroups).toHaveBeenCalledWith('cus_1', { add: [GROUP] });
   });
 });
+
+describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
+  function makeCategoryClient(parentLookup: { id: string } | null) {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+      categoryCache: { value: new Map(), writable: true },
+    });
+
+    // ensureCategoryFromSnapshot 이 쓰는 조회/캐시 헬퍼만 대체한다.
+    const existing = { id: 'pcat_child', handle: 'cafe24-cat-531', metadata: {} };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(parentLookup);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue(existing);
+    (client as any).setCategoryCache = jest.fn();
+
+    return { client, update };
+  }
+
+  const snapshot = (parentId: string | null) => ({
+    id: 'pim-child',
+    name: '주얼리',
+    slug: 'cafe24-cat-531',
+    path: '530/531',
+    parentId,
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  });
+
+  it('PIM 부모가 없으면 parent_category_id 를 null 로 명시해 루트로 올린다', async () => {
+    const { client, update } = makeCategoryClient(null);
+
+    await client.ensureCategoryFromSnapshot(snapshot(null));
+
+    expect(update).toHaveBeenCalledWith('pcat_child', expect.objectContaining({ parent_category_id: null }));
+  });
+
+  it('PIM 부모를 찾으면 그 Medusa id 로 갱신한다', async () => {
+    const { client, update } = makeCategoryClient({ id: 'pcat_parent' });
+
+    await client.ensureCategoryFromSnapshot(snapshot('pim-parent'));
+
+    expect(update).toHaveBeenCalledWith('pcat_child', expect.objectContaining({ parent_category_id: 'pcat_parent' }));
+  });
+
+  it('PIM 부모가 있는데 Medusa 에서 못 찾으면 부모 필드를 건드리지 않는다', async () => {
+    const { client, update } = makeCategoryClient(null);
+
+    await client.ensureCategoryFromSnapshot(snapshot('pim-parent-missing'));
+
+    const payload = update.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('parent_category_id');
+  });
+});

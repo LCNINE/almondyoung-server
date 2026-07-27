@@ -44,6 +44,8 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductVersionsService,
     ProductPurchaseConstraintsService,
     ProductReadAssembler,
+    // 카테고리 서비스가 상품-카테고리 변경 시 프로젝션 스냅샷을 재발행하는 데 사용한다.
+    ProjectionSnapshotAssembler,
   ],
 })
 export class ProductsModule {}

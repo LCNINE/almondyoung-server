@@ -646,6 +646,12 @@ export class MedusaClient {
     };
 
     let parentMedusaId: string | undefined;
+    // 부모를 "건드리지 않음"과 "루트로 올림"은 다르다. undefined 를 그대로 payload 에 넣으면
+    // JSON 직렬화에서 키가 빠져 Medusa 가 기존 부모를 유지한다(= 루트 이동 미반영).
+    // - PIM 부모 없음        → null 을 명시해 부모 해제
+    // - PIM 부모 있고 찾음    → 그 id 로 변경
+    // - PIM 부모 있는데 못 찾음 → 필드 자체를 생략해 기존 부모 유지(잘못된 루트 이동 방지)
+    let parentUpdate: { parent_category_id?: string | null } = { parent_category_id: null };
 
     if (categorySnapshot.parentId) {
       // 부모는 자식과 같은 식별자 규약(handle=slug||id, metadata.pimCategoryId)을 따라 저장된다.
@@ -656,8 +662,12 @@ export class MedusaClient {
       });
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
+        parentUpdate = { parent_category_id: existingParent.id };
       } else {
-        this.logger.warn(`Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`);
+        this.logger.warn(
+          `Parent category ${categorySnapshot.parentId} not found in Medusa — 부모 필드는 건드리지 않는다 (category ${categorySnapshot.id})`,
+        );
+        parentUpdate = {};
       }
     }
 
@@ -681,7 +691,7 @@ export class MedusaClient {
         handle: preferredHandle,
         is_internal: false,
         is_active: isActive,
-        parent_category_id: parentMedusaId,
+        ...parentUpdate,
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
         metadata: {
           ...(existing.metadata || {}),

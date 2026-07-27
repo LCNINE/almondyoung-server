@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import {
@@ -34,17 +34,25 @@ import {
   CategoryTemplateConfig,
 } from '../../schema/catalog.schema';
 import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
+import { ProjectionSnapshotAssembler } from '../products/assemblers/projection-snapshot.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
 import { OutboxPublisher } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
-import type { CategoryChangedPayload, CategorySnapshot } from '@packages/event-contracts/streams/product.stream';
+import type {
+  CategoryChangedPayload,
+  CategorySnapshot,
+  ProductMasterActiveVersionChangedPayload,
+} from '@packages/event-contracts/streams/product.stream';
 
 @Injectable()
 export class ProductCategoriesService {
+  private readonly logger = new Logger(ProductCategoriesService.name);
+
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productReadAssembler: ProductReadAssembler,
+    private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,
     private readonly outboxPublisher: OutboxPublisher,
   ) {}
 
@@ -181,6 +189,9 @@ export class ProductCategoriesService {
         .from(pimSchema.productMasterCategories)
         .where(eq(pimSchema.productMasterCategories.categoryId, categoryId));
 
+      // 연결이 끊기거나 다른 카테고리로 옮겨지는 상품들. 삭제 전에 미리 잡아둔다.
+      const affectedActiveVersions = await this.getActiveVersionsInCategory(categoryId, txn);
+
       if (productRelations.length > 0) {
         if (moveProductsTo) {
           const [targetCategory] = await txn
@@ -208,6 +219,10 @@ export class ProductCategoriesService {
 
       // Enqueue CategoryChanged event
       await this.publishCategoryEvent(categoryId, 'deleted', null, txn);
+
+      // 삭제된 카테고리에 걸려 있던 상품들도 프로젝션을 재발행한다.
+      // (moveProductsTo 면 새 카테고리로, 아니면 연결 해제 상태로 반영)
+      await this.publishProductProjectionRefresh(affectedActiveVersions, 'deleteCategory', txn);
     };
 
     await this.db.run(executeDelete, tx);
@@ -731,6 +746,9 @@ export class ProductCategoriesService {
       }));
 
       await txn.insert(pimSchema.productMasterCategories).values(newRelations);
+
+      // 상품-카테고리 연결이 바뀌었으니 상품 프로젝션을 재발행해 Medusa/검색에 반영한다.
+      await this.publishProductProjectionRefresh(productVersions, 'moveProductsToCategory', txn);
     };
 
     // 트랜잭션 처리
@@ -816,6 +834,9 @@ export class ProductCategoriesService {
         }));
 
         await txn.insert(pimSchema.productMasterCategories).values(newRelations);
+
+        // 실제로 새로 연결된 상품만 재발행한다 (이미 연결돼 있던 건 변화 없음).
+        await this.publishProductProjectionRefresh(newProductVersions, 'addProductsToCategory', txn);
       }
     };
 
@@ -1147,6 +1168,100 @@ export class ProductCategoriesService {
       },
       tx,
     );
+  }
+
+  /**
+   * 상품↔카테고리 연결이 바뀐 활성 버전들의 프로젝션을 재발행한다.
+   *
+   * CategoryChanged 는 카테고리 자체(이름/부모/노출)만 전달한다. 어떤 상품이 어떤
+   * 카테고리에 속하는지는 ProductMasterActiveVersionChanged 의 snapshot 이 SSOT 라서,
+   * 이 이벤트를 다시 내보내야 Medusa 상품-카테고리 연결·검색 색인·분석 차원이 갱신된다.
+   * 소비자들은 snapshot 으로 카테고리 집합을 통째로 덮어쓰므로 추가·이동·해제가 모두 반영된다.
+   *
+   * - 대상은 **활성 버전만**이다. draft 버전의 연결 변경은 그 버전이 published 될 때 반영된다.
+   * - changeReason 은 소비자가 "snapshot 으로 upsert" 하는 유일한 값인 'published' 를 쓴다.
+   *   (버전 전환이 아니므로 previousActiveVersionId 는 null)
+   * - 한 상품의 스냅샷 조립이 실패해도 카테고리 작업 자체는 되돌리지 않는다. 이벤트를 아예
+   *   내보내지 않던 기존 동작보다 나빠지지 않게 하되, 누락은 error 로그로 남긴다.
+   */
+  private async publishProductProjectionRefresh(
+    targets: Array<{ masterId: string; versionId: string }>,
+    reason: string,
+    txn: DbTransaction,
+  ): Promise<void> {
+    const unique = new Map<string, { masterId: string; versionId: string }>();
+    for (const target of targets) {
+      unique.set(`${target.masterId}:${target.versionId}`, target);
+    }
+    if (unique.size === 0) return;
+
+    const changedAt = new Date().toISOString();
+    const skipped: string[] = [];
+
+    for (const { masterId, versionId } of unique.values()) {
+      let assembly: Awaited<ReturnType<ProjectionSnapshotAssembler['assembleActiveVersionSnapshot']>>;
+      try {
+        assembly = await this.projectionSnapshotAssembler.assembleActiveVersionSnapshot(masterId, versionId, txn);
+      } catch (error) {
+        // 조립은 순수 read 라 실패해도 트랜잭션 상태를 더럽히지 않는다.
+        skipped.push(masterId);
+        this.logger.error(
+          `[${reason}] 프로젝션 스냅샷 조립 실패 — Medusa/검색 반영 누락 (masterId=${masterId}, versionId=${versionId}): ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        continue;
+      }
+
+      await this.outboxPublisher.saveEvent(
+        {
+          topic: PRODUCT_STREAM.topic.topic,
+          eventType: 'ProductMasterActiveVersionChanged',
+          aggregateType: PRODUCT_STREAM.aggregateType,
+          aggregateId: masterId,
+          payload: {
+            masterId,
+            versionId,
+            name: assembly.snapshot?.name ?? null,
+            previousActiveVersionId: null,
+            categoryIds: assembly.categoryIds,
+            primaryCategoryId: assembly.primaryCategoryId,
+            changeReason: 'published',
+            changedAt,
+            snapshot: assembly.snapshot,
+          } satisfies ProductMasterActiveVersionChangedPayload,
+        },
+        txn,
+      );
+    }
+
+    this.logger.log(
+      `[${reason}] 상품 프로젝션 재발행 ${unique.size - skipped.length}/${unique.size}건` +
+        (skipped.length > 0 ? ` (실패: ${skipped.join(', ')})` : ''),
+    );
+  }
+
+  /** 카테고리에 연결된 상품 중 **활성 버전**만 (masterId, versionId) 로 추린다. */
+  private async getActiveVersionsInCategory(
+    categoryId: string,
+    txn: DbTransaction,
+  ): Promise<Array<{ masterId: string; versionId: string }>> {
+    return txn
+      .select({
+        masterId: pimSchema.productMasterCategories.masterId,
+        versionId: pimSchema.productMasterCategories.versionId,
+      })
+      .from(pimSchema.productMasterCategories)
+      .innerJoin(
+        pimSchema.productMasterVersions,
+        eq(pimSchema.productMasterVersions.id, pimSchema.productMasterCategories.versionId),
+      )
+      .where(
+        and(
+          eq(pimSchema.productMasterCategories.categoryId, categoryId),
+          eq(pimSchema.productMasterVersions.status, 'active'),
+        ),
+      );
   }
 
   // ===== Phase 2: Category Configuration Methods =====
