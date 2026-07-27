@@ -27,7 +27,8 @@ const Thumbnail: React.FC<ThumbnailProps> = ({
   return (
     <div
       className={cn(
-        "bg-ui-bg-subtle shadow-elevation-card-rest rounded-large group-hover:shadow-elevation-card-hover relative aspect-square w-full overflow-hidden p-4 transition-shadow duration-150 ease-in-out",
+        // 패딩은 이미지 자체(object-contain)에 주고, 박스는 고정 정사각 영역만 담당한다.
+        "shadow-elevation-card-rest rounded-large group-hover:shadow-elevation-card-hover relative aspect-square w-full overflow-hidden bg-white transition-shadow duration-150 ease-in-out",
         className,
         {
           "w-[180px]": size === "small",

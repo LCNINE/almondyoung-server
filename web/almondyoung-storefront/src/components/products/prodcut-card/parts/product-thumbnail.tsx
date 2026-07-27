@@ -21,7 +21,7 @@ export function ProductThumbnail({
   return (
     <div
       className={cn(
-        "relative aspect-square overflow-hidden bg-[#f4f4f4]",
+        "relative aspect-square overflow-hidden bg-white",
         className
       )}
     >
@@ -30,7 +30,7 @@ export function ProductThumbnail({
         fill
         alt={alt}
         sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-        className="pointer-events-none h-full object-cover transition-transform duration-300 will-change-transform select-none group-hover:scale-105"
+        className="pointer-events-none h-full w-full object-contain p-3 transition-transform duration-300 will-change-transform select-none group-hover:scale-105 sm:p-4"
       />
       {rank}
       {isSoldOut && <SoldOutOverlay />}
