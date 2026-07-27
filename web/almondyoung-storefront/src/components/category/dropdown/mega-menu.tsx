@@ -2,10 +2,14 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { NavigationMenuLink } from "@/components/ui/navigation-menu"
+import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { cn } from "@/lib/utils"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
+import Image from "next/image"
+import { usePathname } from "next/navigation"
 import { useRef, useState } from "react"
 
 // 별도 디자인 항목으로 좌측 하단에 분리 노출할 대분류 handle.
@@ -33,6 +37,12 @@ interface MegaMenuProps {
 
 export function MegaMenu({ categories }: MegaMenuProps) {
   const t = useTranslations("header.categoryDropdown")
+  // 현재 보고 있는 카테고리 경로(/{cc}/category/a/b/c)의 handle 집합.
+  // hover 활성과 별개로 "지금 어느 카테고리에 있는지"를 메뉴에서 바로 보여준다.
+  const pathname = usePathname() ?? ""
+  const currentHandles = new Set(
+    pathname.split("/category/")[1]?.split("/").filter(Boolean) ?? []
+  )
 
   // "브랜드"는 하단 특별 항목(브랜드관)으로, 숨김 대상은 목록에서 제외
   const mainCategories = categories.filter(
@@ -73,10 +83,11 @@ export function MegaMenu({ categories }: MegaMenuProps) {
   return (
     <div className="flex max-h-[calc(100vh-140px)] min-h-[500px]">
       {/* ─── col1: 대분류 세로 리스트 ─── */}
-      <aside className="scrollbar-hide flex w-[210px] shrink-0 flex-col overflow-y-auto py-2">
+      <aside className="scrollbar-hide flex w-[168px] shrink-0 flex-col overflow-y-auto py-2">
         <ul>
           {mainCategories.map((cat) => {
             const id = cat.handle || cat.id
+            const icon = getCategoryThumbnail(cat)
             return (
               <li key={cat.id}>
                 <NavigationMenuLink asChild>
@@ -85,19 +96,35 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                     href={`/category/${cat.handle || cat.id}`}
                     onMouseEnter={() => enterL1(id)}
                     onMouseLeave={clearTimers}
+                    onFocus={() => enterL1(id)}
+                    aria-current={
+                      currentHandles.has(cat.handle) ? "page" : undefined
+                    }
                     className={cn(
-                      // 쿠팡 1뎁스 스펙: font 12px, padding-top 9px, 항목 높이 ~29px
-                      "flex items-center justify-between gap-2 px-5 py-[9px] text-[12px] leading-none transition-colors",
+                      "flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none transition-colors",
                       activeL1 === id
                         ? "text-primary font-semibold"
-                        : "hover:text-primary text-[#333]"
+                        : currentHandles.has(cat.handle)
+                          ? "text-foreground font-semibold"
+                          : "hover:text-primary text-[#333]"
                     )}
                   >
-                    <span className="truncate">{cat.name}</span>
+                    <span className="relative h-4 w-4 shrink-0">
+                      {icon && (
+                        <Image
+                          src={getThumbnailUrl(icon)}
+                          alt=""
+                          fill
+                          sizes="16px"
+                          className="object-contain"
+                        />
+                      )}
+                    </span>
+                    <span className="flex-1 truncate">{cat.name}</span>
                     {(cat.category_children?.length ?? 0) > 0 && (
                       <ChevronRight
                         className={cn(
-                          "h-4 w-4 shrink-0",
+                          "h-3.5 w-3.5 shrink-0",
                           activeL1 === id ? "text-primary" : "text-gray-300"
                         )}
                       />
@@ -114,8 +141,9 @@ export function MegaMenu({ categories }: MegaMenuProps) {
         <ul>
           <li>
             {/* 샵매매: 기능 준비 중 → 이동 없음 */}
-            <span className="flex cursor-default items-center justify-between gap-2 px-5 py-[7px] text-sm text-gray-400">
-              <span>{t("shopTrade")}</span>
+            <span className="flex h-[28px] cursor-default items-center gap-2 pr-3 pl-4 text-[12px] leading-none text-gray-400">
+              <span className="h-4 w-4 shrink-0" />
+              <span className="flex-1 truncate">{t("shopTrade")}</span>
               <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-400">
                 {t("comingSoon")}
               </span>
@@ -126,10 +154,11 @@ export function MegaMenu({ categories }: MegaMenuProps) {
               <LocalizedClientLink
                 prefetch={false}
                 href={`/category/${BRAND_CATEGORY_HANDLE}`}
-                className="hover:text-primary flex items-center justify-between gap-2 px-5 py-[7px] text-sm font-medium text-gray-700 transition-colors"
+                className="hover:text-primary flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
               >
-                <span>{t("brandHall")}</span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+                <span className="h-4 w-4 shrink-0" />
+                <span className="flex-1 truncate">{t("brandHall")}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-300" />
               </LocalizedClientLink>
             </NavigationMenuLink>
           </li>
@@ -139,10 +168,10 @@ export function MegaMenu({ categories }: MegaMenuProps) {
       {/* ─── 우측 영역: 대분류 hover 시에만 나오는 고정폭 wrapper.
           hover 전(l1 없음)엔 col1 폭만 뜨고, hover 하면 여기가 펼쳐진다. ─── */}
       {l1 && (
-        <div className="flex w-[520px] shrink-0">
+        <div className="flex w-[592px] shrink-0">
           {/* ─── col2: 중분류 세로 리스트 (대분류에 하위 있을 때만) ─── */}
           {l1Children.length > 0 && (
-            <aside className="w-[210px] shrink-0 overflow-y-auto border-l border-gray-100 py-2">
+            <aside className="w-[160px] shrink-0 overflow-y-auto border-l border-gray-100 py-2">
               <ul>
                 {l1Children.slice(0, MAX_LIST_ITEMS).map((sub) => {
                   const id = sub.handle || sub.id
@@ -154,18 +183,24 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                           prefetch={false}
                           href={`/category/${l1.handle || l1.id}/${sub.handle || sub.id}`}
                           onMouseEnter={() => enterL2(id)}
+                          onFocus={() => enterL2(id)}
+                          aria-current={
+                            currentHandles.has(sub.handle) ? "page" : undefined
+                          }
                           className={cn(
-                            "flex items-center justify-between gap-2 px-5 py-[7px] text-sm transition-colors",
+                            "flex h-[28px] items-center justify-between gap-2 px-5 text-[12px] leading-none transition-colors",
                             activeL2 === id
                               ? "text-primary font-semibold"
-                              : "hover:text-primary text-gray-600"
+                              : currentHandles.has(sub.handle)
+                                ? "text-foreground font-semibold"
+                                : "hover:text-primary text-gray-600"
                           )}
                         >
                           <span className="truncate">{sub.name}</span>
                           {hasChildren && (
                             <ChevronRight
                               className={cn(
-                                "h-4 w-4 shrink-0",
+                                "h-3.5 w-3.5 shrink-0",
                                 activeL2 === id
                                   ? "text-primary"
                                   : "text-gray-300"
@@ -183,7 +218,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                   <LocalizedClientLink
                     prefetch={false}
                     href={`/category/${l1.handle || l1.id}`}
-                    className="hover:text-primary text-primary decoration-primary block px-5 py-[7px] text-sm font-medium underline underline-offset-4 hover:opacity-80"
+                    className="hover:text-primary text-primary decoration-primary block px-5 py-[7px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
                   >
                     {t("viewMore")}
                   </LocalizedClientLink>
@@ -194,12 +229,12 @@ export function MegaMenu({ categories }: MegaMenuProps) {
 
           {/* ─── col3: 소분류 세로 리스트 (중분류 hover + 하위 있을 때만) ─── */}
           {l2 && l2Children.length > 0 && (
-            <aside className="w-[220px] shrink-0 overflow-y-auto border-l border-gray-100 py-2">
+            <aside className="w-[160px] shrink-0 overflow-y-auto border-l border-gray-100 py-2">
               <NavigationMenuLink asChild>
                 <LocalizedClientLink
                   prefetch={false}
                   href={`/category/${l1!.handle || l1!.id}/${l2.handle || l2.id}`}
-                  className="group flex items-center gap-1 px-5 py-[7px] text-sm font-bold text-gray-900"
+                  className="group flex items-center gap-1 px-5 py-[7px] text-[12px] font-bold text-gray-900 underline underline-offset-4"
                 >
                   <span className="truncate">{l2.name}</span>
                   <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5" />
@@ -212,7 +247,15 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                       <LocalizedClientLink
                         prefetch={false}
                         href={`/category/${l1!.handle || l1!.id}/${l2.handle || l2.id}/${leaf.handle || leaf.id}`}
-                        className="hover:text-primary block truncate px-5 py-[6px] text-sm text-gray-600 transition-colors"
+                        aria-current={
+                          currentHandles.has(leaf.handle) ? "page" : undefined
+                        }
+                        className={cn(
+                          "hover:text-primary flex h-[28px] items-center truncate px-5 text-[12px] leading-none transition-colors",
+                          currentHandles.has(leaf.handle)
+                            ? "text-foreground font-semibold"
+                            : "text-gray-600"
+                        )}
                       >
                         {leaf.name}
                       </LocalizedClientLink>
@@ -225,7 +268,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                   <LocalizedClientLink
                     prefetch={false}
                     href={`/category/${l1!.handle || l1!.id}/${l2.handle || l2.id}`}
-                    className="hover:text-primary text-primary decoration-primary block px-5 py-[6px] text-sm font-medium underline underline-offset-4 hover:opacity-80"
+                    className="hover:text-primary text-primary decoration-primary block px-5 py-[6px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
                   >
                     {t("viewMore")}
                   </LocalizedClientLink>

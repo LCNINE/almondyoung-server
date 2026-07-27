@@ -153,7 +153,7 @@ function MobileQuickLink({ item }: { item: MobileQuickLinkItem }) {
         href={item.href}
         target="_blank"
         rel="noreferrer"
-        className="flex min-w-0 flex-col items-center gap-2 rounded-lg px-0.5 py-1"
+        className="flex h-full w-full min-w-0 flex-col items-center gap-2 rounded-lg px-0.5 py-1"
       >
         {content}
       </a>
@@ -163,7 +163,7 @@ function MobileQuickLink({ item }: { item: MobileQuickLinkItem }) {
   return (
     <LocalizedClientLink
       href={item.href}
-      className="flex min-w-0 flex-col items-center gap-2 rounded-lg px-0.5 py-1"
+      className="flex h-full w-full min-w-0 flex-col items-center gap-2 rounded-lg px-0.5 py-1"
     >
       {content}
     </LocalizedClientLink>

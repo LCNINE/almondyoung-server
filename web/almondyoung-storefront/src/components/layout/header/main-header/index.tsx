@@ -1,4 +1,5 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
+import { AutoHideHeader } from "@/components/layout/header/auto-hide-header"
 import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
@@ -23,10 +24,7 @@ export async function MainHeader() {
   }
 
   return (
-    <header
-      id="site-header"
-      className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b"
-    >
+    <AutoHideHeader className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b">
       <div className="xl:hidden">
         <div className="flex h-8 items-center justify-end gap-3 border-b border-white/10 px-3 text-[12px] text-white/85">
           <MobileAuthLinks />
@@ -90,6 +88,6 @@ export async function MainHeader() {
       </div>
 
       <SearchSheet />
-    </header>
+    </AutoHideHeader>
   )
 }

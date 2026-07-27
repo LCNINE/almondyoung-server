@@ -34,7 +34,7 @@ export function CategoryThumbnail({
     <LocalizedClientLink
       href={href}
       onClick={onNavigate}
-      className={cn("flex flex-col items-center gap-2", className)}
+      className={cn("flex h-full w-full flex-col items-center gap-2", className)}
     >
       <div
         className={cn(
