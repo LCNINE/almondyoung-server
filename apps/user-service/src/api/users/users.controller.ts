@@ -24,7 +24,10 @@ export class UsersController {
   })
   @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
   @Get('find-by-email')
-  @Public()
+  // 이메일 하나로 loginId·실명이 나오므로 공개하면 익명 열거가 된다.
+  // 유일한 호출자는 어드민 "주문 수동입력 > 고객 검색"이고, 같은 화면의 /admin/users/:id 와 동일 스코프.
+  // 사전 중복확인이 필요한 가입 폼은 boolean 만 주는 email-available 을 쓴다.
+  @RequireScopes('master', 'admin:users:read')
   @HttpCode(HttpStatus.OK)
   async findUserByEmail(@Query('email') email: string) {
     return this.usersService.findUserByEmail(email);
@@ -134,7 +137,9 @@ export class UsersController {
   })
   @ApiParam({ name: 'id', description: '사용자 ID' })
   @Get(':id')
-  @Public()
+  // 호출자(storefront OIDC 가입 콜백)가 이미 Bearer 토큰을 싣고 있어 @Public() 이 불필요했다.
+  // 어드민 고객검색은 이 라우트가 아니라 스코프가 걸린 /admin/users/:id 를 쓴다.
+  @RequireScopes('user:read', 'master', 'admin:users:read')
   @HttpCode(HttpStatus.OK)
   async getUserInfo(@Param('id') id: string) {
     return this.usersService.findUserById(id);
