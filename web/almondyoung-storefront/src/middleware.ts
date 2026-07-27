@@ -161,43 +161,64 @@ async function getCountryCode(
   }
 }
 
-// 카테고리 존재 확인 캐시 — 존재하는 handle 만 담고, 없는 handle 은 매번 확인한다
-// (관리자가 새로 만든 카테고리가 캐시 때문에 404 로 남는 상황을 피하려고).
-const knownCategoryHandles = new Map<string, number>()
-const CATEGORY_HANDLE_TTL_MS = 5 * 60 * 1000
+// 존재가 확인된 handle 만 담는다. 없는 handle 을 캐시하면 관리자가 새로 만든
+// 카테고리/상품이 TTL 동안 404 로 남는다.
+const knownHandles = new Map<string, number>()
+const KNOWN_HANDLE_TTL_MS = 5 * 60 * 1000
 
-const isKnownCategoryHandle = (handle: string) => {
-  const seenAt = knownCategoryHandles.get(handle)
+const isKnownHandle = (key: string) => {
+  const seenAt = knownHandles.get(key)
   if (!seenAt) return false
-  if (Date.now() - seenAt > CATEGORY_HANDLE_TTL_MS) {
-    knownCategoryHandles.delete(handle)
+  if (Date.now() - seenAt > KNOWN_HANDLE_TTL_MS) {
+    knownHandles.delete(key)
     return false
   }
   return true
 }
 
+// countryCode 다음 세그먼트 → store API 경로/응답 키
+const STORE_LOOKUPS = {
+  category: {
+    path: "/store/product-categories",
+    key: "product_categories",
+  },
+  products: {
+    path: "/store/products",
+    key: "products",
+  },
+} as const
+
+type StoreLookupKind = keyof typeof STORE_LOOKUPS
+
 /**
- * 존재하지 않거나 비활성인 카테고리 URL 을 진짜 404 로 응답한다.
+ * 존재하지 않거나 노출 대상이 아닌 카테고리/상품 URL 을 진짜 404 로 응답한다.
  *
  * 페이지 안에서 notFound() 를 불러도 상태가 200 으로 굳는다 — `(main)` 레이아웃이
  * 헤더 데이터를 서버에서 받아오며 셸을 먼저 흘려보내기 때문이다(soft 404).
  * 미들웨어는 렌더 전에 돌기 때문에 상태를 확실히 정할 수 있다.
  *
- * 조회 실패(네트워크/키 문제)는 통과시킨다 — 정상 카테고리를 404 로 막는 쪽이 더 위험하다.
+ * store API 는 비활성 카테고리와 미게시 상품을 애초에 돌려주지 않으므로,
+ * 삭제/숨김 처리된 URL 도 여기서 걸러진다.
+ * 조회 실패(네트워크/키 문제)는 통과시킨다 — 정상 페이지를 404 로 막는 쪽이 더 위험하다.
  */
-async function resolveCategoryNotFound(
+async function resolveStorefrontNotFound(
   request: NextRequest
 ): Promise<NextResponse | undefined> {
   const segments = request.nextUrl.pathname.split("/").filter(Boolean)
-  const categoryIndex = segments.indexOf("category")
-  if (categoryIndex === -1) return
+  const kind = segments[1] as StoreLookupKind | undefined
+  if (!kind || !(kind in STORE_LOOKUPS)) return
 
-  const handle = segments[segments.length - 1]
-  if (!handle || categoryIndex === segments.length - 1) return
-  if (isKnownCategoryHandle(handle)) return
+  // /category/대분류/중분류 는 마지막 세그먼트가 실제 카테고리, /products/{handle} 는 하나뿐
+  const handle = kind === "category" ? segments[segments.length - 1] : segments[2]
+  if (!handle || segments.length < 3) return
+
+  const cacheKey = `${kind}:${handle}`
+  if (isKnownHandle(cacheKey)) return
+
+  const lookup = STORE_LOOKUPS[kind]
 
   try {
-    const url = new URL("/store/product-categories", MEDUSA_BASE_URL)
+    const url = new URL(lookup.path, MEDUSA_BASE_URL)
     url.searchParams.set("handle", handle)
     url.searchParams.set("fields", "id")
     url.searchParams.set("limit", "1")
@@ -209,11 +230,9 @@ async function resolveCategoryNotFound(
     })
     if (!res.ok) return
 
-    const { product_categories: categories } = (await res.json()) as {
-      product_categories?: unknown[]
-    }
-    if (categories && categories.length > 0) {
-      knownCategoryHandles.set(handle, Date.now())
+    const body = (await res.json()) as Record<string, unknown[] | undefined>
+    if ((body[lookup.key]?.length ?? 0) > 0) {
+      knownHandles.set(cacheKey, Date.now())
       return
     }
 
@@ -242,8 +261,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (!isServerAction) {
-    const categoryNotFound = await resolveCategoryNotFound(request)
-    if (categoryNotFound) return categoryNotFound
+    const notFoundResponse = await resolveStorefrontNotFound(request)
+    if (notFoundResponse) return notFoundResponse
   }
 
   // 인증 게이트: 보호 경로에 비인증 접근 시 storefront /login 으로 redirect.
