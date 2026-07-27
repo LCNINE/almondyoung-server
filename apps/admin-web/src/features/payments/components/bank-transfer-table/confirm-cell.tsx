@@ -19,6 +19,7 @@ import {
 type Props = {
   id: string;
   payableAmount: number;
+  depositAmount: number | null;
   currency: string;
 };
 
@@ -28,11 +29,18 @@ type Props = {
  * - 캡처(확정)는 되돌릴 수 없으므로 확인 다이얼로그를 한 번 거친다.
  * - 행 클릭(상세 이동)과 충돌하지 않도록 클릭 이벤트 전파를 막는다.
  */
-export function BankTransferConfirmCell({ id, payableAmount, currency }: Props) {
+export function BankTransferConfirmCell({
+  id,
+  payableAmount,
+  depositAmount,
+  currency,
+}: Props) {
   const [open, setOpen] = useState(false);
   const confirm = useConfirmBankTransfer();
 
-  const amountLabel = `${payableAmount.toLocaleString('ko-KR')} ${currency}`;
+  // 관리자가 통장과 대조할 숫자는 총액이 아니라 실제 입금액(포인트 차감 후)이다.
+  const deposit = depositAmount ?? payableAmount;
+  const amountLabel = `${deposit.toLocaleString('ko-KR')} ${currency}`;
 
   const handleConfirm = async () => {
     try {
@@ -60,10 +68,19 @@ export function BankTransferConfirmCell({ id, payableAmount, currency }: Props) 
         <AlertDialogHeader>
           <AlertDialogTitle>입금 확인 처리</AlertDialogTitle>
           <AlertDialogDescription>
-            결제 <span className="font-mono">{id.slice(0, 8)}…</span> (
+            결제 <span className="font-mono">{id.slice(0, 8)}…</span> (입금액{' '}
             <span className="font-semibold text-foreground">{amountLabel}</span>
-            ) 건을 입금 확인 처리합니다. 통장에 실제 입금된 내역을 반드시 확인한 뒤
-            진행하세요. 이 작업은 결제를 캡처(확정)하며 되돌릴 수 없습니다.
+            ) 건을 입금 확인 처리합니다.
+            {deposit !== payableAmount && (
+              <>
+                {' '}
+                주문 총액 {payableAmount.toLocaleString('ko-KR')} {currency} 중{' '}
+                {(payableAmount - deposit).toLocaleString('ko-KR')} {currency} 는
+                포인트로 결제되어 입금액이 더 적습니다.
+              </>
+            )}{' '}
+            통장에 실제 입금된 내역을 반드시 확인한 뒤 진행하세요. 이 작업은 결제를
+            캡처(확정)하며 되돌릴 수 없습니다.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

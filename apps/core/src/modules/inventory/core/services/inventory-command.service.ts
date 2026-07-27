@@ -22,6 +22,21 @@ export class InventoryCommandService {
     private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
+  /**
+   * adjustUp/adjustDown 조기 멱등 흡수용. `StockEventStore.createEvent` 의 unique
+   * dedupe 는 그대로 최종 백스탑으로 남기되, 여기서 먼저 걸러 재시도가 (이미
+   * 변한) ledger 를 다시 읽고 가드/부족검증을 통과하려다 실패하는 일을 막는다.
+   * ledger·outbox·가드는 전혀 건드리지 않는다.
+   */
+  private async findEventIdByIdempotencyKey(trx: DbTx, idempotencyKey: string): Promise<string | null> {
+    const [existing] = await trx
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.idempotencyKey, idempotencyKey))
+      .limit(1);
+    return existing?.id ?? null;
+  }
+
   async receive(
     input: {
       skuId: string;
@@ -415,6 +430,13 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      // 0. 조기 멱등 흡수 — SKU/위치 조회보다 먼저. adjustUp 에는 락이 없으므로
+      //    exec 진입 직후에 검사한다.
+      if (input.idempotencyKey) {
+        const existingId = await this.findEventIdByIdempotencyKey(trx, input.idempotencyKey);
+        if (existingId) return { eventId: existingId };
+      }
+
       // 1. SKU 정보 조회 (이름 가져오기)
       const sku = await trx.query.skus.findFirst({
         where: (s, { eq }) => eq(s.id, input.skuId),
@@ -516,6 +538,16 @@ export class InventoryCommandService {
     const exec = async (trx: DbTx) => {
       // 0. (sku,warehouse) 직렬화 — bypass 여도 락은 획득
       await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+
+      // 0.5 조기 멱등 흡수 — 락 획득 *이후*에 검사한다. 락은 동시 재시도를
+      //     완전히 직렬화하므로, 두 번째 호출이 락을 얻었을 때는 첫 번째 호출이
+      //     이미 커밋(또는 롤백)한 뒤다. 락 이전에 검사했다면 두 트랜잭션 모두
+      //     "아직 없음"을 보고 통과해버려 동시 재시도가 부족검증(§3)에서
+      //     경합할 수 있었다 — 이 순서가 그 경합을 막는다.
+      if (input.idempotencyKey) {
+        const existingId = await this.findEventIdByIdempotencyKey(trx, input.idempotencyKey);
+        if (existingId) return { eventId: existingId };
+      }
 
       // 1. SKU 정보 조회
       const sku = await trx.query.skus.findFirst({

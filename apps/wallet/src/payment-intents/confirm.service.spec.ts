@@ -263,6 +263,29 @@ describe('ConfirmService', () => {
     expect(setArgs).not.toContainEqual(expect.objectContaining({ actionExpiresAt: expect.any(Date) }));
   });
 
+  it('carries the point-deducted deposit amount (not payableAmount) into the AWAITING_DEPOSIT event', async () => {
+    // 포인트 병용 무통장: 총액 51,170 중 10,000 을 포인트로 → 실제 입금액은 41,170.
+    // 이벤트가 총액을 실어 보내면 안내 메일이 초과입금을 유도해 자동확인이 어긋난다.
+    const { service, stateTransitionService } = makeContext({
+      providerActionMode: 'offline-wait',
+      authorizeResult: {
+        status: 'REQUIRES_ACTION',
+        nextAction: { type: 'BANK_TRANSFER_PENDING', amount: 41170 },
+      },
+      methodType: 'BANK_TRANSFER',
+      stalePointsCharge: null,
+    });
+
+    await service.confirm('intent-1', { paymentMethodId: 'pm-ext', pointsToApply: 10000 }, 'corr-1');
+
+    const awaiting = stateTransitionService.transitionIntent.mock.calls.find(
+      (c: unknown[]) => c[1] === 'AWAITING_DEPOSIT',
+    );
+    const payload = (awaiting![2] as { outboxEvent: { payload: Record<string, unknown> } }).outboxEvent.payload;
+    expect(payload.depositAmount).toBe(41170);
+    expect(payload.payableAmount).toBe(51170);
+  });
+
   it('rejects a non-bank-transfer method for a MEMBERSHIP_FEE intent (API-level bypass guard)', async () => {
     const { service } = makeContext({
       methodType: 'TOSS',

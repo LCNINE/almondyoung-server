@@ -19,11 +19,16 @@
     "retry": "다시 시도"
   },
   "sort": {
+    "label": "정렬 기준",
     "createdAt": "최신순",
-    "salesDesc": "인기순",
+    "salesDesc": "판매량순",
     "reviewCountDesc": "리뷰많은순",
-    "priceAsc": "낮은 가격순",
-    "priceDesc": "높은 가격순"
+    "priceAsc": "낮은가격순",
+    "priceDesc": "높은가격순"
+  },
+  "pageSize": {
+    "label": "한 번에 보는 개수",
+    "option": "{count}개씩 보기"
   },
   "pillDropdown": {
     "eyelash": "속눈썹",

@@ -146,6 +146,10 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       .map((p) => p.data?.intentId)
       .find((id): id is string => typeof id === 'string' && id.length > 0);
 
+    const rawPoints = (order.metadata as Record<string, unknown> | null | undefined)?.points_amount;
+    const parsedPoints = typeof rawPoints === 'number' ? rawPoints : Number(rawPoints);
+    const pointsAmount = Number.isFinite(parsedPoints) && parsedPoints > 0 ? parsedPoints : 0;
+
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),
       externalOrderId: order.id,
@@ -159,6 +163,9 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       subtotalAmount: order.subtotal ?? 0,
       shippingAmount: order.shipping_total ?? 0,
       discountAmount: order.discount_total ?? 0,
+      // 포인트 결제분은 결제 시점에 payment-events 훅이 order.metadata 로 새겨둔다.
+      // Medusa 는 포인트를 할인이 아닌 결제수단으로 보기 때문에 discount_total 로는 알 수 없다.
+      ...(pointsAmount > 0 ? { pointsAmount } : {}),
       currency: order.currency_code ?? 'KRW',
       shippingAddress,
       status: 'confirmed',

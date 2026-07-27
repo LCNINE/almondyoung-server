@@ -75,12 +75,16 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
   const amount = typeof payload?.amount === 'number' ? (payload.amount as number) : undefined;
   const channelOrderId = payload?.channelOrderId as string | undefined;
+  // 포인트 병용 결제분 (wallet capture/awaiting_deposit 이벤트가 실어 보냄). 없으면 0 = 포인트 미사용.
+  const pointsAmount = typeof payload?.pointsAmount === 'number' ? (payload.pointsAmount as number) : 0;
 
   try {
     if (CAPTURE_EVENT_TYPES.has(effectiveEventType)) {
       await handleCaptureProjection(req.scope, intentId, messageId, logger);
+      await stampPointsUsage(req.scope, intentId, pointsAmount, logger);
     } else if (AWAITING_DEPOSIT_EVENT_TYPES.has(effectiveEventType)) {
       await handleAwaitingDepositProjection(req.scope, intentId, messageId, logger);
+      await stampPointsUsage(req.scope, intentId, pointsAmount, logger);
     } else if (CANCEL_EVENT_TYPES.has(effectiveEventType)) {
       await handleCancelProjection(req.scope, intentId, messageId, logger);
     } else if (REFUND_EVENT_TYPES.has(effectiveEventType)) {
@@ -685,6 +689,42 @@ async function updateBankTransferOrderStatus(
   logger.info(
     `[payment-events] updateBankTransferOrderStatus: order ${orderId} bank_transfer_status=${status} (intentId=${intentId})`,
   );
+}
+
+/**
+ * 포인트 병용 결제의 사용액을 주문에 새긴다.
+ *
+ * Medusa 는 포인트를 할인이 아니라 결제수단으로 보므로 order.total 은 총액 그대로이고
+ * discount_total 은 0 이다. 즉 주문 데이터만 봐서는 고객이 실제로 낸 현금을 알 수 없다.
+ * wallet 이 진실 원천이지만 주문상세/주문목록/주문접수 메일이 매번 wallet 을 조회할 수는 없어,
+ * 결제 시점에 한 번 주문 metadata 로 투영해 모든 소비처가 같은 값을 읽게 한다.
+ */
+async function stampPointsUsage(
+  scope: any,
+  intentId: string,
+  pointsAmount: number,
+  logger: { info: Function; warn: Function; debug: Function; error: Function },
+): Promise<void> {
+  if (!(pointsAmount > 0)) return;
+
+  const orderId = await resolveOrderIdForIntent(scope, intentId);
+  if (!orderId) {
+    // 주문이 아직(또는 영영) 없는 결제 — 멤버십 등 주문 없는 intent 가 여기 해당한다.
+    // 표시용 투영이라 흐름을 막을 이유가 없으므로 경고만 남기고 넘어간다.
+    logger.warn(`[payment-events] stampPointsUsage: no order for intentId=${intentId}, skipping`);
+    return;
+  }
+
+  const orderModule = scope.resolve(Modules.ORDER);
+  const order = (await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] })) as {
+    id: string;
+    metadata?: Record<string, unknown> | null;
+  } | null;
+  const meta = (order?.metadata as Record<string, unknown>) ?? {};
+  if (meta.points_amount === pointsAmount) return;
+
+  await orderModule.updateOrders([{ id: orderId, metadata: { ...meta, points_amount: pointsAmount } }]);
+  logger.info(`[payment-events] stampPointsUsage: order ${orderId} points_amount=${pointsAmount} (intentId=${intentId})`);
 }
 
 export async function handleCaptureProjection(

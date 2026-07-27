@@ -53,6 +53,17 @@ export const calculateMembershipDiscount = (
   }, 0)
 }
 
+/**
+ * 주문에 사용된 포인트 금액.
+ */
+export const getOrderPointsUsed = (
+  metadata?: Record<string, unknown> | null
+): number => {
+  const raw = metadata?.points_amount
+  const value = typeof raw === "number" ? raw : Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : 0
+}
+
 /** 숫자를 천단위 콤마 문자열로 변환 (9000 → "9,000") - 단순 포맷용 */
 export const formatPrice = (value: number | null | undefined): string =>
   (value ?? 0).toLocaleString("ko-KR")

@@ -6,6 +6,7 @@ import { CurrentStockDto } from '../dto/current-stock.dto';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
 import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/stock-summary-list.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
+import { LocationContentsDto } from '../dto/location-contents.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
 
 @ApiTags('Inventory')
@@ -66,6 +67,14 @@ export class StockProjectionController {
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   async getStockBySkuAndWarehouse(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     return this.stockProjection.getBySkuAndWarehouse(skuId, warehouseId);
+  }
+
+  @Get('/stocks/location/:locationId')
+  @ApiOperation({ summary: '로케이션 내용물 조회 (SKU·상태·수량)' })
+  @ApiParam({ name: 'locationId', description: '로케이션 ID' })
+  @ApiResponse({ status: 200, type: LocationContentsDto })
+  async getLocationContents(@Param('locationId') locationId: string): Promise<LocationContentsDto> {
+    return this.stockProjection.getLocationContents(locationId);
   }
 
   @Get('/stocks/history')

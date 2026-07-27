@@ -8,7 +8,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
-import { formatAmount } from '../../shared/utils/template-helpers';
+import { formatAmount, formatOrderTotal } from '../../shared/utils/template-helpers';
 
 /**
  * Order Service 이벤트 컨슈머
@@ -61,7 +61,7 @@ export class OrderEventConsumer {
           orderNumber: payload.displayOrderNo
             ? `#${payload.displayOrderNo}`
             : (payload.externalOrderId ?? payload.orderId),
-          total: formatAmount(payload.totalAmount),
+          total: formatOrderTotal(payload.totalAmount, payload.pointsAmount),
         },
       };
       await this.notificationDispatcherService.send(sendDto);

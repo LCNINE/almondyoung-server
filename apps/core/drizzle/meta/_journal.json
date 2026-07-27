@@ -330,6 +330,13 @@
       "when": 1784702981671,
       "tag": "20260722064941_add-order-list-perf-indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784992753508,
+      "tag": "20260725151913_narrow-packing-unit-to-integer",
+      "breakpoints": true
     }
   ]
 }

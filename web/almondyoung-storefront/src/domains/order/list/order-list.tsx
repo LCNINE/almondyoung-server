@@ -17,9 +17,59 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getOrderPointsUsed } from "@/lib/utils/price-utils"
 import { useTranslations } from "next-intl"
-import { usePathname, useRouter } from "next/navigation"
-import { useMemo, useTransition } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useEffect, useMemo, useState, useTransition } from "react"
+
+/** 방금 결제한 주문이 이미 목록에 잡혔다고 보는 기준 (무통장 전파 지연 13~20초보다 넉넉하게) */
+const JUST_ORDERED_WINDOW_MS = 2 * 60 * 1000
+const REFRESH_INTERVAL_MS = 3000
+const MAX_REFRESH_TRIES = 5
+
+/**
+ * 결제 직후 진입했는데 주문이 아직 안 보일 때 잠깐 자동 재조회한다.
+ *
+ * 무통장은 outbox 디스패처(10초 크론) → Kafka → Medusa 훅을 거쳐 주문이 만들어져서
+ * 결제 완료 후 13~20초쯤 지나야 목록에 나타난다. 그동안 고객이 빈 목록을 보고
+ * 직접 새로고침해야 했다. 카드/포인트는 cart.complete 로 즉시 생성돼 해당 없음.
+ *
+ * "목록이 비었는지" 가 아니라 "맨 위 주문이 방금 것인지" 로 판단해야 재구매 고객도 커버된다.
+ */
+function useJustOrderedRefresh(
+  enabled: boolean,
+  latestOrderCreatedAt?: string
+): boolean {
+  const router = useRouter()
+  const [waiting, setWaiting] = useState(false)
+
+  useEffect(() => {
+    if (!enabled) return
+    if (
+      latestOrderCreatedAt &&
+      Date.now() - new Date(latestOrderCreatedAt).getTime() < JUST_ORDERED_WINDOW_MS
+    ) {
+      setWaiting(false)
+      return // 이미 도착했다
+    }
+
+    setWaiting(true)
+    let tries = 0
+    const timer = setInterval(() => {
+      tries += 1
+      if (tries > MAX_REFRESH_TRIES) {
+        clearInterval(timer)
+        setWaiting(false) // 여기까지 안 오면 평소 빈 목록 화면으로 되돌린다
+        return
+      }
+      router.refresh()
+    }, REFRESH_INTERVAL_MS)
+
+    return () => clearInterval(timer)
+  }, [enabled, latestOrderCreatedAt, router])
+
+  return waiting
+}
 
 interface OrderItem {
   orderId: string
@@ -32,6 +82,8 @@ interface OrderItem {
   productName: string
   productImage: string
   price: string
+  /** 포인트를 써서 실결제액이 주문금액보다 적을 때만 채워진다 */
+  originalPrice?: string
   quantity: string
   options: string[]
   showInquiry: boolean
@@ -106,7 +158,11 @@ const mapStoreOrderToOrderItem = (
     lineItemCount > 1
       ? `${representativeName} ${ctx.tList("productSuffix", { count: lineItemCount - 1 })}`
       : representativeName
-  const displayPrice = typeof order.total === "number" ? order.total : 0
+  // 포인트는 Medusa 상 결제수단이라 order.total 에 남아 있다. 목록에는 실제로 낸 현금을 보여주되,
+  // 포인트를 썼다면 원래 주문금액을 취소선으로 함께 남겨 "왜 이 금액인지" 를 알 수 있게 한다.
+  const orderTotal = typeof order.total === "number" ? order.total : 0
+  const pointsUsed = getOrderPointsUsed(order.metadata)
+  const displayPrice = orderTotal - pointsUsed
 
   const options: string[] = []
   if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
@@ -129,6 +185,9 @@ const mapStoreOrderToOrderItem = (
       firstItem?.variant?.product?.thumbnail ||
       "https://placehold.co/80x80",
     price: `${displayPrice.toLocaleString()}원`,
+    ...(pointsUsed > 0
+      ? { originalPrice: `${orderTotal.toLocaleString()}원` }
+      : {}),
     quantity: `${ctx.tList("items", { count: lineItemCount })} · ${ctx.tList("totalQuantity", { count: totalQuantity })}`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
@@ -169,6 +228,13 @@ export function OrderList({
   const orders = useMemo(
     () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
     [rawOrders, tStatus, tList]
+  )
+
+  // 결제 완료 화면에서 넘어온 직후에만(무통장 전파 지연) 짧게 자동 재조회한다.
+  const searchParams = useSearchParams()
+  const isWaitingForNewOrder = useJustOrderedRefresh(
+    searchParams.get("justOrdered") === "1",
+    rawOrders[0]?.created_at as string | undefined
   )
 
   const navigate = (next: { page?: number; period?: string; q?: string }) => {
@@ -221,15 +287,26 @@ export function OrderList({
             embedded ? "min-h-[240px]" : "min-h-[400px]"
           )}
         >
-          <Package className="w-12 h-12 text-gray-300" />
-          <div className="text-center">
-            <p className="text-lg font-medium text-gray-600">
-              {tEmpty("orderTitle")}
-            </p>
-            <p className="mt-1 text-sm text-gray-400">
-              {tEmpty("orderDescription")}
-            </p>
-          </div>
+          {/* 결제 직후엔 주문이 아직 전파 중일 수 있다. "주문 없음" 으로 단정하면 방금 결제한
+              고객이 결제가 실패한 줄 안다. 재조회가 끝날 때까지 준비 중으로 보여준다. */}
+          {isWaitingForNewOrder ? (
+            <>
+              <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+              <p className="text-sm text-gray-500">{tList("preparingOrder")}</p>
+            </>
+          ) : (
+            <>
+              <Package className="w-12 h-12 text-gray-300" />
+              <div className="text-center">
+                <p className="text-lg font-medium text-gray-600">
+                  {tEmpty("orderTitle")}
+                </p>
+                <p className="mt-1 text-sm text-gray-400">
+                  {tEmpty("orderDescription")}
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </div>
     )
@@ -368,6 +445,7 @@ export function OrderList({
                   productName={order.productName}
                   productImage={order.productImage}
                   price={order.price}
+                  originalPrice={order.originalPrice}
                   quantity={order.quantity}
                   options={order.options}
                 >
