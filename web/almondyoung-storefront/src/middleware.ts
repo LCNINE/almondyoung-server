@@ -161,6 +161,71 @@ async function getCountryCode(
   }
 }
 
+// 카테고리 존재 확인 캐시 — 존재하는 handle 만 담고, 없는 handle 은 매번 확인한다
+// (관리자가 새로 만든 카테고리가 캐시 때문에 404 로 남는 상황을 피하려고).
+const knownCategoryHandles = new Map<string, number>()
+const CATEGORY_HANDLE_TTL_MS = 5 * 60 * 1000
+
+const isKnownCategoryHandle = (handle: string) => {
+  const seenAt = knownCategoryHandles.get(handle)
+  if (!seenAt) return false
+  if (Date.now() - seenAt > CATEGORY_HANDLE_TTL_MS) {
+    knownCategoryHandles.delete(handle)
+    return false
+  }
+  return true
+}
+
+/**
+ * 존재하지 않거나 비활성인 카테고리 URL 을 진짜 404 로 응답한다.
+ *
+ * 페이지 안에서 notFound() 를 불러도 상태가 200 으로 굳는다 — `(main)` 레이아웃이
+ * 헤더 데이터를 서버에서 받아오며 셸을 먼저 흘려보내기 때문이다(soft 404).
+ * 미들웨어는 렌더 전에 돌기 때문에 상태를 확실히 정할 수 있다.
+ *
+ * 조회 실패(네트워크/키 문제)는 통과시킨다 — 정상 카테고리를 404 로 막는 쪽이 더 위험하다.
+ */
+async function resolveCategoryNotFound(
+  request: NextRequest
+): Promise<NextResponse | undefined> {
+  const segments = request.nextUrl.pathname.split("/").filter(Boolean)
+  const categoryIndex = segments.indexOf("category")
+  if (categoryIndex === -1) return
+
+  const handle = segments[segments.length - 1]
+  if (!handle || categoryIndex === segments.length - 1) return
+  if (isKnownCategoryHandle(handle)) return
+
+  try {
+    const url = new URL("/store/product-categories", MEDUSA_BASE_URL)
+    url.searchParams.set("handle", handle)
+    url.searchParams.set("fields", "id")
+    url.searchParams.set("limit", "1")
+
+    const res = await fetch(url, {
+      headers: PUBLISHABLE_API_KEY
+        ? { "x-publishable-api-key": PUBLISHABLE_API_KEY }
+        : {},
+    })
+    if (!res.ok) return
+
+    const { product_categories: categories } = (await res.json()) as {
+      product_categories?: unknown[]
+    }
+    if (categories && categories.length > 0) {
+      knownCategoryHandles.set(handle, Date.now())
+      return
+    }
+
+    return NextResponse.rewrite(
+      new URL(`/${segments[0]}/__not-found`, request.url),
+      { status: 404 }
+    )
+  } catch {
+    return
+  }
+}
+
 /**
  * Middleware to handle region selection and onboarding status.
  */
@@ -174,6 +239,11 @@ export async function middleware(request: NextRequest) {
   const isServerAction = request.headers.has("Next-Action")
   if (!isServerAction && refreshToken && isJwtExpired(accessToken)) {
     return buildRestoreTokenRedirect(request)
+  }
+
+  if (!isServerAction) {
+    const categoryNotFound = await resolveCategoryNotFound(request)
+    if (categoryNotFound) return categoryNotFound
   }
 
   // 인증 게이트: 보호 경로에 비인증 접근 시 storefront /login 으로 redirect.
