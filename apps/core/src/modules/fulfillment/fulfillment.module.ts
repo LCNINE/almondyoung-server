@@ -47,10 +47,13 @@ import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tr
 import { ShipmentShortPickService } from './services/shipment-short-pick.service';
 import { ToteLifecycleService } from './services/tote-lifecycle.service';
 import { ShipmentRecallService } from './services/shipment-recall.service';
+import { SimpleOutboundService } from './services/simple-outbound.service';
+import { ShipmentWaybillReader } from './reader/shipment-waybill.reader';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
 import { ShipmentController } from './controllers/shipment.controller';
+import { SimpleOutboundController } from './controllers/simple-outbound.controller';
 import { ConsolidationController } from './controllers/consolidation.controller';
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
@@ -95,6 +98,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     WaybillModule,
   ],
   controllers: [
+    SimpleOutboundController,
     FulfillmentsController,
     OutboundBatchV2Controller,
     PickingV2Controller,
@@ -143,6 +147,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     DiscretePickingStrategy,
     AggregateThenSortPickingStrategy,
     PickToTotePickingStrategy,
+    SimpleOutboundService,
+    ShipmentWaybillReader,
     {
       provide: PICKING_STRATEGIES,
       useFactory: (
