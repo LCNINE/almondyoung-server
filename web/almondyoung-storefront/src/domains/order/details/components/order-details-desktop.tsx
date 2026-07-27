@@ -12,7 +12,10 @@ import {
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import {
+  calculateMembershipDiscount,
+  getOrderPointsUsed,
+} from "@/lib/utils/price-utils"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import {
   OrderStatusBadges,
@@ -97,6 +100,7 @@ export const OrderDetailsDesktop = ({
   const personalCustomsCode =
     (address?.metadata?.personalCustomsCode as string) || ""
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  const pointsUsed = getOrderPointsUsed(order.metadata)
   // 디지털 단독 주문이면 배송 정보를 숨긴다(배송이 필요한 라인이 하나도 없음).
   const requiresShipping = cartRequiresShipping(order.items)
 
@@ -388,19 +392,22 @@ export const OrderDetailsDesktop = ({
                   {formatAmount(order.item_total)}
                 </dd>
               </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-base text-black">{tLabels("discount")}</dt>
-                <dd className="text-base text-black">
-                  {formatAmount(order.discount_total)}
-                </dd>
-              </div>
+              {/* 0원 줄은 정보가 아니라 노이즈다. 실제로 깎인 항목만 남겨 차감 흐름을 또렷하게 둔다. */}
+              {order.discount_total > 0 && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">{tLabels("discount")}</dt>
+                  <dd className="text-base text-black">
+                    -{formatAmount(order.discount_total)}
+                  </dd>
+                </div>
+              )}
               {membershipDiscount > 0 && (
                 <div className="flex items-center justify-between">
                   <dt className="text-base text-black">
                     {tLabels("membershipDiscount")}
                   </dt>
                   <dd className="text-base text-black">
-                    {formatAmount(membershipDiscount)}
+                    -{formatAmount(membershipDiscount)}
                   </dd>
                 </div>
               )}
@@ -412,6 +419,14 @@ export const OrderDetailsDesktop = ({
                   </dd>
                 </div>
               )}
+              {pointsUsed > 0 && (
+                <div className="flex items-center justify-between font-semibold">
+                  <dt className="text-base text-black">{tLabels("pointsUsed")}</dt>
+                  <dd className="text-base text-black">
+                    -{formatAmount(pointsUsed)}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
           <dl className="border-t-[0.5px] border-b-[0.5px] border-zinc-300 bg-gray-background p-3.5">
@@ -419,10 +434,17 @@ export const OrderDetailsDesktop = ({
               <dt className="text-base font-bold text-black">
                 {tLabels("totalPayment")}
               </dt>
-              <dd className="text-base font-bold text-black">
-                {formatAmount(order.total)}
+              {/* 포인트는 Medusa 상 결제수단이라 order.total 에 남아 있다. 고객이 실제로 낸 현금을 보여준다.
+                  브랜드 오렌지는 CTA 전용이라(DESIGN.md) 색이 아니라 크기·굵기로 위계를 준다. */}
+              <dd className="text-xl font-bold text-black">
+                {formatAmount(order.total - pointsUsed)}
               </dd>
             </div>
+            {order.total - pointsUsed === 0 && pointsUsed > 0 && (
+              <p className="mt-1 text-right text-sm text-muted-foreground">
+                {tLabels("paidWithPointsOnly")}
+              </p>
+            )}
           </dl>
         </div>
       </section>

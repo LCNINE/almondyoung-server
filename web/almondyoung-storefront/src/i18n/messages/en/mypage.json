@@ -478,6 +478,8 @@
       "discount": "Discount",
       "membershipDiscount": "Membership Discount",
       "shippingFee": "Shipping",
+      "pointsUsed": "Points Used",
+      "paidWithPointsOnly": "Fully paid with points — nothing more to pay.",
       "totalPayment": "Total",
       "totalPaymentMobile": "Total Payment",
       "orderDate": "Order Date",

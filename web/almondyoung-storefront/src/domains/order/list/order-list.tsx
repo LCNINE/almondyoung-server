@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { getOrderPointsUsed } from "@/lib/utils/price-utils"
 import { useTranslations } from "next-intl"
 import { usePathname, useRouter } from "next/navigation"
 import { useMemo, useTransition } from "react"
@@ -32,6 +33,8 @@ interface OrderItem {
   productName: string
   productImage: string
   price: string
+  /** 포인트를 써서 실결제액이 주문금액보다 적을 때만 채워진다 */
+  originalPrice?: string
   quantity: string
   options: string[]
   showInquiry: boolean
@@ -106,7 +109,11 @@ const mapStoreOrderToOrderItem = (
     lineItemCount > 1
       ? `${representativeName} ${ctx.tList("productSuffix", { count: lineItemCount - 1 })}`
       : representativeName
-  const displayPrice = typeof order.total === "number" ? order.total : 0
+  // 포인트는 Medusa 상 결제수단이라 order.total 에 남아 있다. 목록에는 실제로 낸 현금을 보여주되,
+  // 포인트를 썼다면 원래 주문금액을 취소선으로 함께 남겨 "왜 이 금액인지" 를 알 수 있게 한다.
+  const orderTotal = typeof order.total === "number" ? order.total : 0
+  const pointsUsed = getOrderPointsUsed(order.metadata)
+  const displayPrice = orderTotal - pointsUsed
 
   const options: string[] = []
   if (firstItem?.variant?.title && firstItem.variant.title !== "Default") {
@@ -129,6 +136,9 @@ const mapStoreOrderToOrderItem = (
       firstItem?.variant?.product?.thumbnail ||
       "https://placehold.co/80x80",
     price: `${displayPrice.toLocaleString()}원`,
+    ...(pointsUsed > 0
+      ? { originalPrice: `${orderTotal.toLocaleString()}원` }
+      : {}),
     quantity: `${ctx.tList("items", { count: lineItemCount })} · ${ctx.tList("totalQuantity", { count: totalQuantity })}`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
@@ -368,6 +378,7 @@ export function OrderList({
                   productName={order.productName}
                   productImage={order.productImage}
                   price={order.price}
+                  originalPrice={order.originalPrice}
                   quantity={order.quantity}
                   options={order.options}
                 >

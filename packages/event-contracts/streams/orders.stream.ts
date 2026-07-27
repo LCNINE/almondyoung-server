@@ -76,6 +76,11 @@ export interface OrderCreatedPayload {
   subtotalAmount: number;
   shippingAmount: number;
   discountAmount: number;
+  /**
+   * 포인트로 결제한 금액. 포인트는 할인이 아니라 결제수단이라 totalAmount 에 그대로 포함돼 있으므로,
+   * 고객이 실제로 낸 현금은 totalAmount - pointsAmount 다. 미사용 주문/구 이벤트에는 없다.
+   */
+  pointsAmount?: number;
   currency: string;
 
   shippingAddress: ShippingAddress;
@@ -234,6 +239,7 @@ const OrderCreatedSchema = z.object({
   subtotalAmount: z.number().nonnegative(),
   shippingAmount: z.number().nonnegative(),
   discountAmount: z.number().nonnegative(),
+  pointsAmount: z.number().nonnegative().optional(),
   currency: z.string().min(1),
   shippingAddress: ShippingAddressSchema,
   status: OrderStatusSchema,
