@@ -133,17 +133,9 @@ export function calculateProductSellableQuantity(
   const components = componentResults(input.components);
   const stockBoundQuantity = Math.min(...components.map((component) => component.componentSellableQuantity));
 
-  if (stockBoundQuantity > 0) {
-    return {
-      ...base,
-      sellableQuantity: stockBoundQuantity,
-      stockBoundQuantity,
-      isSellable: true,
-      reason: 'SELLABLE',
-      components,
-    };
-  }
-
+  // 항상 판매는 재고량과 무관하다 — 재고가 남아 있다고 stock-gated(SELLABLE) 로 내보내면
+  // Medusa 가 manage_inventory=true 로 잡고 예약분을 차감해, "재고는 있는데 전량 예약" 구간에서
+  // 품절로 노출된다. 재고 유무보다 먼저 판정해야 플래그가 의도대로 동작한다.
   if (input.matching.alwaysSellableZeroStock) {
     return {
       ...base,
@@ -151,6 +143,17 @@ export function calculateProductSellableQuantity(
       stockBoundQuantity,
       isSellable: true,
       reason: 'ALWAYS_SELLABLE_ZERO_STOCK',
+      components,
+    };
+  }
+
+  if (stockBoundQuantity > 0) {
+    return {
+      ...base,
+      sellableQuantity: stockBoundQuantity,
+      stockBoundQuantity,
+      isSellable: true,
+      reason: 'SELLABLE',
       components,
     };
   }

@@ -125,7 +125,8 @@ function buildStorefrontOrderListUrl(returnUrl?: string | null, region?: string 
     const url = new URL(returnUrl);
     const firstSegment = url.pathname.split('/').filter(Boolean)[0];
     const countryCode = (region?.trim() || firstSegment || 'kr').toLowerCase();
-    return `${url.origin}/${countryCode}/mypage/order/list`;
+    // 스토어프론트가 이 표시를 보고 주문이 아직 안 보이면 잠깐 자동 재조회한다(고객이 직접 새로고침하지 않도록).
+    return `${url.origin}/${countryCode}/mypage/order/list?justOrdered=1`;
   } catch {
     return null;
   }
@@ -523,7 +524,14 @@ export function PayForm({
                 <Separator />
                 <div>
                   <p className="mb-1 text-xs text-muted-foreground">결제 금액</p>
-                  <p className="text-3xl font-bold">{formatAmount(intent.payableAmount, intent.currency)}</p>
+                  {/* 포인트를 쓰면 실제 낼 돈은 총액이 아니다. 큰 숫자를 실결제액으로 두고
+                      총액은 취소선으로 남긴다(무통장은 이 금액 그대로 입금해야 함). */}
+                  {remainingAmount !== intent.payableAmount && (
+                    <p className="text-sm line-through text-muted-foreground">
+                      {formatAmount(intent.payableAmount, intent.currency)}
+                    </p>
+                  )}
+                  <p className="text-3xl font-bold">{formatAmount(remainingAmount, intent.currency)}</p>
                 </div>
                 {intent.expiresAt && (
                   <p className="text-xs text-muted-foreground" suppressHydrationWarning>

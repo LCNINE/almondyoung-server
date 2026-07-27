@@ -756,7 +756,8 @@ export class WalletEventConsumer {
           bankName: payload.bankName ?? '-',
           accountNumber: payload.accountNumber ?? '-',
           accountHolder: payload.accountHolder ?? '-',
-          amount: formatAmount(payload.payableAmount),
+          // depositAmount = 실제 입금할 금액(포인트 차감 후). 구 이벤트엔 없어 총액으로 폴백.
+          amount: formatAmount(payload.depositAmount ?? payload.payableAmount),
           dueDate: formatDueDate(payload.dueDate),
         },
       };

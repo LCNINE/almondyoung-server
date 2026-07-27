@@ -58,6 +58,11 @@ export class CaptureService {
     const now = new Date().toISOString();
     const totalCaptured = authorizeCharges.reduce((s, c) => s + c.amount, 0);
 
+    // 포인트 병용 결제에서 고객이 실제로 낸 현금은 총액이 아니라 외부결제분이다.
+    // 주문 화면/메일이 "총액 = 결제금액" 으로 안내하면 오해를 부르므로 분해값을 이벤트로 전파한다.
+    const pointsCharge = await this.chargesService.findSucceededPointsAuthorizeByIntent(intentId);
+    const pointsAmount = pointsCharge?.amount ?? 0;
+
     if (succeededCount === totalCount) {
       // All succeeded → CAPTURED
       await this.stateTransitionService.transitionIntent(intentId, 'CAPTURED', {
@@ -76,7 +81,11 @@ export class CaptureService {
             occurredAt: now,
             // 무통장(가상계좌) 웹훅 자동확인 등 비동기 캡처에서도 후속 도메인이 결제 종류를
             // 식별할 수 있도록 intent.metadata 를 전파한다 (membership 컨슈머가 type=MEMBERSHIP_FEE 로 필터).
-            extra: { metadata: intentInfo.metadata ?? null },
+            extra: {
+              metadata: intentInfo.metadata ?? null,
+              pointsAmount,
+              paidAmount: totalCaptured - pointsAmount,
+            },
           }),
         },
       });

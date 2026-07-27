@@ -5,6 +5,10 @@
 
 # superpowers brainstorm scratch (visual companion mockups)
 .superpowers/
+
+# Local git worktrees
+.worktrees/
+
 !packages/hms-api-wrapper/dist/
 !packages/hms-api-wrapper/dist/**
 
@@ -457,3 +461,6 @@ scripts/reports/
 
 # 효성에프엠에스 계약 문서 (저작권상 저장소에 올리지 않음, 로컬 보관)
 apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
+
+# git worktrees (superpowers isolated workspaces)
+.worktrees/

@@ -19,6 +19,8 @@ interface OrderSummaryCardProps {
   productName: string
   productImage: string
   price: string
+  /** 포인트 사용 등으로 실결제액이 주문금액보다 적을 때의 주문금액. 취소선으로 앞에 붙는다. */
+  originalPrice?: string
   quantity?: string
   options?: string[]
   children?: ReactNode
@@ -36,6 +38,7 @@ export default function OrderSummaryCard({
   productName,
   productImage,
   price,
+  originalPrice,
   quantity,
   options = [],
   children,
@@ -72,6 +75,9 @@ export default function OrderSummaryCard({
             </p>
             <div className="text-xs text-gray-500 md:text-sm">
               <p>
+                {originalPrice && (
+                  <span className="mr-1 line-through">{originalPrice}</span>
+                )}
                 {price}
                 {quantity ? ` · ${quantity}` : ""}
               </p>

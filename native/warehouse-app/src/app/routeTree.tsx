@@ -10,7 +10,18 @@ import { AuthedLayout } from './routes/AuthedLayout';
 import { ProfileHome } from './routes/ProfileHome';
 import { DiagnosticsRoute } from './routes/DiagnosticsRoute';
 import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
+import { SettingsRoute } from './routes/SettingsRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
+import { SkuDetailRoute } from './routes/SkuDetailRoute';
+import { AdjustStockRoute } from './routes/AdjustStockRoute';
+import { StocktakingRoute } from './routes/StocktakingRoute';
+import { StocktakingSessionRoute } from './routes/StocktakingSessionRoute';
+import { StocktakingVariancesRoute } from './routes/StocktakingVariancesRoute';
+import { MovementRoute } from './routes/MovementRoute';
+import { InboundRoute } from './routes/InboundRoute';
+import { PlanReceiveRoute } from './routes/PlanReceiveRoute';
+import { QuickInboundRoute } from './routes/QuickInboundRoute';
+import { PutawayRoute } from './routes/PutawayRoute';
 
 export interface RouterContext {
   session: Session;
@@ -55,7 +66,15 @@ const inventoryRoute = createRoute({
 const inventoryDetailRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory/$sku',
-  component: () => <PlaceholderScreen title="상품 재고 상세" note="후속 Phase에서 구현됩니다." />,
+  component: SkuDetailRoute,
+});
+const inventoryAdjustRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/$sku/adjust',
+  component: AdjustStockRoute,
+  validateSearch: (search: Record<string, unknown>): { locationId?: string } => ({
+    locationId: typeof search.locationId === 'string' ? search.locationId : undefined,
+  }),
 });
 const shipmentsRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -67,22 +86,47 @@ const shipmentsRoute = createRoute({
 const stocktakingRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/stocktaking',
-  component: () => <PlaceholderScreen title="실사" note="Phase 1에서 구현됩니다." />,
+  component: StocktakingRoute,
+});
+const stocktakingSessionRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/stocktaking/$sessionId',
+  component: StocktakingSessionRoute,
+});
+const stocktakingVariancesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/stocktaking/$sessionId/variances',
+  component: StocktakingVariancesRoute,
 });
 const movementRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/movement',
-  component: () => <PlaceholderScreen title="이동" note="Phase 1에서 구현됩니다." />,
+  component: MovementRoute,
 });
 const inboundRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound',
-  component: () => <PlaceholderScreen title="입고/검수" note="Phase 2에서 구현됩니다." />,
+  component: InboundRoute,
+});
+const inboundPlanRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/plans/$planId',
+  component: PlanReceiveRoute,
+});
+const inboundQuickRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/quick',
+  component: QuickInboundRoute,
 });
 const pickingRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/picking',
   component: () => <PlaceholderScreen title="피킹" note="Phase 3에서 구현됩니다." />,
+});
+const putawayRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/putaway',
+  component: PutawayRoute,
 });
 
 // --- 작업 · 스테이션 ---
@@ -96,7 +140,7 @@ const packingRoute = createRoute({
 const settingsRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/settings',
-  component: () => <PlaceholderScreen title="설정" note="런타임 설정은 후속 Phase에서 구현됩니다." />,
+  component: SettingsRoute,
 });
 
 export const routeTree = rootRoute.addChildren([
@@ -106,11 +150,17 @@ export const routeTree = rootRoute.addChildren([
     diagnosticsRoute,
     inventoryRoute,
     inventoryDetailRoute,
+    inventoryAdjustRoute,
     shipmentsRoute,
     stocktakingRoute,
+    stocktakingSessionRoute,
+    stocktakingVariancesRoute,
     movementRoute,
     inboundRoute,
+    inboundPlanRoute,
+    inboundQuickRoute,
     pickingRoute,
+    putawayRoute,
     packingRoute,
     settingsRoute,
   ]),

@@ -13,6 +13,7 @@ function makeService(opts: {
   captureResult?: { status: string; errorCode?: string };
   existingCharge?: { id: string; status: string } | null;
   createThrows23505?: boolean;
+  pointsCharge?: { amount: number } | null;
 } = {}) {
   const provider = {
     capture: jest.fn().mockResolvedValue(opts.captureResult ?? { status: 'SUCCEEDED', providerTransactionId: 'cap-ptx' }),
@@ -31,6 +32,7 @@ function makeService(opts: {
   }
   const chargesService = {
     findAllSucceededAuthorizeByIntent: jest.fn().mockResolvedValue([authorizeCharge]),
+    findSucceededPointsAuthorizeByIntent: jest.fn().mockResolvedValue(opts.pointsCharge ?? null),
     findByProviderIdempotencyKey: findByKey,
     generateIdempotencyKey: jest.fn().mockReturnValue('wallet:capture:c1'),
     create: opts.createThrows23505
@@ -66,6 +68,26 @@ describe('CaptureService', () => {
     expect(chargesService.create).not.toHaveBeenCalled();
     expect(provider.capture).not.toHaveBeenCalled();
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith('intent-1', 'CAPTURED', expect.anything());
+  });
+
+  it('포인트 병용이면 CAPTURED 이벤트에 포인트/실결제 분해값을 싣는다', async () => {
+    // 총 1,000 중 400 을 포인트로 → 고객이 낸 현금은 600.
+    // 이 값이 없으면 Medusa 가 주문에 새길 수 없어 주문상세/목록/메일이 총액을 결제액으로 안내한다.
+    const { service, stateTransitionService } = makeService({ pointsCharge: { amount: 400 } });
+
+    await service.capture('intent-1', 'corr-1');
+
+    const [, , opts] = stateTransitionService.transitionIntent.mock.calls[0];
+    expect(opts.outboxEvent.payload).toMatchObject({ pointsAmount: 400, paidAmount: 600 });
+  });
+
+  it('포인트 미사용이면 분해값은 0 / 전액 현금이다', async () => {
+    const { service, stateTransitionService } = makeService();
+
+    await service.capture('intent-1', 'corr-1');
+
+    const [, , opts] = stateTransitionService.transitionIntent.mock.calls[0];
+    expect(opts.outboxEvent.payload).toMatchObject({ pointsAmount: 0, paidAmount: 1000 });
   });
 
   it('동시 INSERT 23505 → 기존 charge 재조회 후 재시도 성공', async () => {

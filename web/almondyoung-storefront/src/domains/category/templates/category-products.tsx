@@ -11,19 +11,20 @@ import {
   isSortedOption,
   mapSortParams,
   normalizeCategorySort,
+  normalizePageSize,
 } from "../utils/sort-mapping"
 import InfiniteProducts from "./infinite-products"
 
-const PRODUCT_LIMIT = 12
-
 export default async function CategoryProducts({
   sortBy,
+  limit,
   collectionId,
   categoryIds,
   productsIds,
   countryCode,
 }: {
   sortBy?: SortOptions
+  limit?: number
   collectionId?: string
   categoryIds?: string[]
   productsIds?: string[]
@@ -36,6 +37,7 @@ export default async function CategoryProducts({
   }
 
   const effectiveSortBy = normalizeCategorySort(sortBy)
+  const pageSize = normalizePageSize(limit)
 
   // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
   const {
@@ -48,13 +50,13 @@ export default async function CategoryProducts({
         countryCode,
         categoryId: categoryIds,
         collectionId,
-        limit: PRODUCT_LIMIT,
+        limit: pageSize,
       })
     : await listProducts({
         pageParam: 1,
         countryCode,
         queryParams: {
-          limit: PRODUCT_LIMIT,
+          limit: pageSize,
           order: "-created_at",
           category_id: categoryIds,
           collection_id: collectionId ? [collectionId] : undefined,
@@ -92,11 +94,12 @@ export default async function CategoryProducts({
 
   return (
     <InfiniteProducts
-      key={effectiveSortBy}
+      key={`${effectiveSortBy}-${pageSize}`}
       initialProducts={filteredProducts}
       initialNextPage={initialNextPage}
       totalCount={totalCount}
       sortBy={effectiveSortBy}
+      limit={pageSize}
       categoryIds={categoryIds}
       collectionId={collectionId}
       productsIds={productsIds}

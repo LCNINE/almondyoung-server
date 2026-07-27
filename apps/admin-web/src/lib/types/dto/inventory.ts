@@ -66,7 +66,7 @@ export interface BarcodeDto {
   id: string;
   barcode: string;
   isPrimary: boolean;
-  packingUnit?: string | null;
+  packingUnit?: number | null;
 }
 
 export interface SupplierInfoDto {

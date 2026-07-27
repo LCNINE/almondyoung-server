@@ -119,10 +119,14 @@ export async function recoverCustomerCart(): Promise<HttpTypes.StoreCart | null>
     return null
   }
 
-  await setCartId(cart.id)
-
-  const cartCacheTag = await getCacheTag("carts")
-  revalidateTag(cartCacheTag)
+  //  카트 페이지가 명시 id 로 다시 조회해 표시할 수 있게 한다.
+  try {
+    await setCartId(cart.id)
+    const cartCacheTag = await getCacheTag("carts")
+    revalidateTag(cartCacheTag)
+  } catch {
+    // Server Action/Route Handler 밖(페이지 렌더)에서 호출되면 쿠키 쓰기 불가 — 무시하고 카트만 반환
+  }
 
   return cart
 }

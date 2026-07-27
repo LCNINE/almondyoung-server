@@ -545,6 +545,17 @@ export class ConfirmService {
                         accountNumber: result.nextAction.accountNumber,
                         accountHolder: result.nextAction.accountHolder,
                         dueDate: result.nextAction.dueDate,
+                        // 포인트 병용 시 실제 입금할 금액은 payableAmount 가 아니라 외부결제분이다.
+                        // 안내 메일이 총액을 적으면 고객이 초과입금해 자동확인이 어긋난다.
+                        depositAmount: result.nextAction.amount,
+                      }
+                    : {}),
+                  // 주문 선생성 시점부터 Medusa 가 포인트 사용액을 알아야 주문상세/리스트가
+                  // 총액이 아닌 실결제액을 보여줄 수 있다. captured 이벤트와 같은 필드명을 쓴다.
+                  ...(phase1.plan.discount
+                    ? {
+                        pointsAmount: phase1.plan.discount.amount,
+                        paidAmount: phase1.plan.primary.amount,
                       }
                     : {}),
                   ...(this.resolveNotifyEmail(phase1.metadata)

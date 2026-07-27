@@ -46,6 +46,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 type Params = {
   searchParams: Promise<{
     sortBy?: SortOptions
+    limit?: string
   }>
   params: Promise<{
     countryCode: string
@@ -56,7 +57,7 @@ type Params = {
 export default async function CategoryPage(props: Params) {
   const params = await props.params
   const searchParams = await props.searchParams
-  const { sortBy } = searchParams
+  const { sortBy, limit } = searchParams
 
   const category = await getCategoryByHandleCached(params.segments)
 
@@ -68,6 +69,7 @@ export default async function CategoryPage(props: Params) {
   return (
     <CategoryTemplate
       sortBy={sortBy}
+      limit={limit}
       countryCode={params.countryCode}
       category={category}
       segments={params.segments}
