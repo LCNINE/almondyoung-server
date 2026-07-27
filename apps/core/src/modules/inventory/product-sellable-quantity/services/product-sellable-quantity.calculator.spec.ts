@@ -39,6 +39,25 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.reason).toBe('SELLABLE');
   });
 
+  it('항상 판매는 재고가 남아 있어도 stock-gated 로 내려가지 않는다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        matching: {
+          id: 'matching-1',
+          status: 'matched',
+          strategy: 'variant',
+          preStockSellable: false,
+          alwaysSellableZeroStock: true,
+        },
+      }),
+      { now },
+    );
+
+    expect(result.reason).toBe('ALWAYS_SELLABLE_ZERO_STOCK');
+    expect(result.sellableQuantity).toBe(UNBOUNDED_SELLABLE_QUANTITY);
+    expect(result.stockBoundQuantity).toBe(10);
+  });
+
   it('matched + void 전략은 SKU 링크 없이 재고 비제한 판매가능수량으로 계산한다', () => {
     const result = calculateProductSellableQuantity(
       makeInput({
