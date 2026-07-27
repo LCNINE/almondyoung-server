@@ -77,3 +77,56 @@ describe('inbound 문맥', () => {
     );
   });
 });
+
+describe('outbound 문맥', () => {
+  it('출고 문맥의 403 은 강제출고 권한 안내를 준다', () => {
+    expect(errorMessage(new Error('POST /x → 403'), 'outbound')).toBe(
+      '강제출고 권한이 없어요. 관리자에게 요청해 주세요.'
+    );
+  });
+
+  it('출고 문맥의 404 는 운송장 안내를 준다', () => {
+    expect(errorMessage(new Error('GET /x → 404'), 'outbound')).toBe(
+      '이 운송장을 찾을 수 없어요. 번호를 확인해 주세요.'
+    );
+  });
+
+  // 리뷰 지적 1: GlobalExceptionFilter 가 도메인 409 코드를 그대로 내보내도록 고친 뒤,
+  // 여기서 그 코드를 현장 문구로 바꿔줘야 "다른 작업자가 먼저 변경했어요" 하나로
+  // 뭉개지지 않는다 — 스펙 §6.3 문구를 그대로 쓴다.
+  it('이 송장에 없는 상품 스캔은 전용 문구를 준다', () => {
+    expect(
+      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_SKU_NOT_IN_SHIPMENT'), 'outbound')
+    ).toBe('이 송장에 없는 상품이에요');
+  });
+
+  it('과다 스캔은 전용 문구를 준다', () => {
+    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'), 'outbound')).toBe(
+      '이 상품은 이미 필요한 수량을 다 채웠어요'
+    );
+  });
+
+  it('오늘 배치에 없는 송장은 전용 문구를 준다', () => {
+    expect(
+      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_WORK_ITEM_MISSING'), 'outbound')
+    ).toBe('이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요');
+  });
+
+  it('다른 작업자가 이미 잡은 박스는 전용 문구를 준다', () => {
+    expect(
+      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_CLAIMED_BY_OTHER'), 'outbound')
+    ).toBe('다른 작업자가 이 박스를 작업 중이에요');
+  });
+
+  it('모르는 코드는 기존 공용 충돌 문구를 유지한다', () => {
+    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'), 'outbound')).toBe(
+      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
+    );
+  });
+
+  it('outbound 문맥이 아니면 코드가 있어도 공용 충돌 문구를 유지한다', () => {
+    expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_OVERSCAN'))).toBe(
+      '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
+    );
+  });
+});

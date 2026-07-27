@@ -1,6 +1,7 @@
 import {
   createRootRouteWithContext,
   createRoute,
+  redirect,
 } from '@tanstack/react-router';
 import type { Session } from '../core/auth/session';
 import { requireAuth, requireAnon } from './guards';
@@ -22,9 +23,22 @@ import { InboundRoute } from './routes/InboundRoute';
 import { PlanReceiveRoute } from './routes/PlanReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
+import { OutboundRoute } from './routes/OutboundRoute';
+import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
+import type { ShipmentByWaybill } from '../domains/outbound/types';
 
 export interface RouterContext {
   session: Session;
+}
+
+// 큐 화면(`OutboundQueueScreen`)이 by-waybill 조회 결과를 `navigate({ state })`
+// 로 단순출고 화면에 실어 보낸다 — 화면이 shipmentId 만으로 다시 조회할 별도
+// API 가 없으므로, 이 라운드트립이 유일한 라인 소스다(딥링크/새로고침이면
+// state 가 비어 화면이 재스캔을 안내한다).
+declare module '@tanstack/history' {
+  interface HistoryState {
+    shipment?: ShipmentByWaybill;
+  }
 }
 
 export const rootRoute = createRootRouteWithContext<RouterContext>()({
@@ -121,7 +135,9 @@ const inboundQuickRoute = createRoute({
 const pickingRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/picking',
-  component: () => <PlaceholderScreen title="피킹" note="Phase 3에서 구현됩니다." />,
+  beforeLoad: () => {
+    throw redirect({ to: '/outbound' });
+  },
 });
 const putawayRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -133,7 +149,21 @@ const putawayRoute = createRoute({
 const packingRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/packing',
-  component: () => <PlaceholderScreen title="패킹 + 운송장" note="Phase 4에서 구현됩니다." />,
+  beforeLoad: () => {
+    throw redirect({ to: '/outbound' });
+  },
+});
+
+// --- 작업 · 출고(피킹+패킹 통합) ---
+const outboundRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/outbound',
+  component: OutboundRoute,
+});
+const outboundSimpleRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/outbound/simple/$shipmentId',
+  component: SimpleOutboundRoute,
 });
 
 // --- 공통 유틸 ---
@@ -162,6 +192,8 @@ export const routeTree = rootRoute.addChildren([
     pickingRoute,
     putawayRoute,
     packingRoute,
+    outboundRoute,
+    outboundSimpleRoute,
     settingsRoute,
   ]),
 ]);
