@@ -125,7 +125,8 @@ function buildStorefrontOrderListUrl(returnUrl?: string | null, region?: string 
     const url = new URL(returnUrl);
     const firstSegment = url.pathname.split('/').filter(Boolean)[0];
     const countryCode = (region?.trim() || firstSegment || 'kr').toLowerCase();
-    return `${url.origin}/${countryCode}/mypage/order/list`;
+    // 스토어프론트가 이 표시를 보고 주문이 아직 안 보이면 잠깐 자동 재조회한다(고객이 직접 새로고침하지 않도록).
+    return `${url.origin}/${countryCode}/mypage/order/list?justOrdered=1`;
   } catch {
     return null;
   }
