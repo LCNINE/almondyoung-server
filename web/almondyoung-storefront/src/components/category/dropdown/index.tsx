@@ -1,6 +1,9 @@
 "use client"
 
+import { useTranslations } from "next-intl"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
+import { Button } from "@/components/ui/button"
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -26,6 +29,8 @@ export function CategoryDropdown({
   const isHeaderTile = variant === "headerTile"
   // 메뉴 영역을 벗어나면 즉시 닫히도록 값을 직접 제어.
   const [value, setValue] = useState("")
+  const t = useTranslations("category.sidebar")
+  const router = useRouter()
 
   return (
     <NavigationMenu
@@ -83,8 +88,17 @@ export function CategoryDropdown({
               {categories.length > 0 ? (
                 <MegaMenu categories={categories} />
               ) : (
-                <div className="py-10 text-center text-sm text-gray-500">
-                  카테고리를 불러오지 못했어요.
+                <div className="flex min-w-[280px] flex-col items-center gap-3 px-8 py-12 text-center">
+                  <p className="text-foreground text-sm font-medium">
+                    {t("errorTitle")}
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.refresh()}
+                  >
+                    {t("retry")}
+                  </Button>
                 </div>
               )}
             </div>
