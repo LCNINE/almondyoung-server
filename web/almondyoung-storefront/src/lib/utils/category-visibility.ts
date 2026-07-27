@@ -13,6 +13,7 @@ const LEGACY_MEMBERS_ONLY_HANDLES = new Set(["cafe24-cat-339"])
 type CategoryVisibilityFields = {
   handle?: string | null
   metadata?: Record<string, unknown> | null
+  parent_category?: CategoryVisibilityFields | null
 }
 
 export function isMembersOnlyCategory(
@@ -24,6 +25,22 @@ export function isMembersOnlyCategory(
   if (flag === true || flag === "true") return true
 
   return !!category.handle && LEGACY_MEMBERS_ONLY_HANDLES.has(category.handle)
+}
+
+/**
+ * 조상 중 하나라도 회원전용이면 자손도 회원전용으로 본다.
+ * 메뉴 트리는 부모를 지우면 자식도 함께 빠지지만, 자식 URL 로 바로 들어오는 경우
+ * 조상을 따라 올라가 확인해야 막힌다.
+ */
+export function isMembersOnlyBranch(
+  category: CategoryVisibilityFields | null | undefined
+): boolean {
+  let node = category
+  while (node) {
+    if (isMembersOnlyCategory(node)) return true
+    node = node.parent_category
+  }
+  return false
 }
 
 type CategoryTreeLike<T> = {

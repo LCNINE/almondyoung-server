@@ -178,6 +178,10 @@ export class ProductCategoriesService {
       const snapshot = this.buildCategorySnapshot(updatedCategory);
       await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
+      if (isVisibleToMembersOnly !== undefined) {
+        await this.publishDescendantsChanged(updatedCategory.path, client);
+      }
+
       return CategoryMapper.toDto(updatedCategory);
     }, tx);
   }
@@ -1163,6 +1167,57 @@ export class ProductCategoriesService {
   }
 
   /**
+   * 멤버십 전용 플래그는 자손까지 상속된다. 부모에서 값이 바뀌면 자손들의
+   * 프로젝션도 다시 계산돼야 하므로 자손 카테고리 이벤트를 함께 발행한다.
+   */
+  private async publishDescendantsChanged(categoryPath: string, txn: DbTransaction): Promise<void> {
+    const descendants = await txn
+      .select()
+      .from(pimSchema.productCategories)
+      .where(like(pimSchema.productCategories.path, `${categoryPath}/%`));
+
+    for (const descendant of descendants) {
+      await this.publishCategoryEvent(
+        descendant.id,
+        'updated',
+        this.buildCategorySnapshot(descendant),
+        txn,
+      );
+    }
+
+    if (descendants.length > 0) {
+      this.logger.log(`멤버십 전용 상속 반영 — 자손 ${descendants.length}건 재발행 (path=${categoryPath})`);
+    }
+  }
+
+  /**
+   * 루트 → 직계 부모 순서의 조상 스냅샷.
+   *
+   * 소비자(Medusa 동기화)가 부모를 먼저 보장하지 않으면, 부모보다 자식 이벤트가 먼저
+   * 처리될 때 자식이 최상위 카테고리로 붙는다. 이벤트 순서에 기대지 않도록 함께 싣는다.
+   */
+  private async buildAncestorSnapshots(
+    snapshot: CategorySnapshot,
+    tx: DbTransaction,
+  ): Promise<CategorySnapshot[]> {
+    // path 는 '조상id/.../자기id' 형태
+    const ancestorIds = snapshot.path.split('/').filter((id) => id && id !== snapshot.id);
+    if (ancestorIds.length === 0) return [];
+
+    const rows = await tx
+      .select()
+      .from(pimSchema.productCategories)
+      .where(inArray(pimSchema.productCategories.id, ancestorIds));
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return ancestorIds
+      .map((id) => byId.get(id))
+      .filter((row): row is ProductCategory => !!row)
+      .map((row) => this.buildCategorySnapshot(row));
+  }
+
+  /**
    * Enqueue CategoryChanged event
    */
   private async publishCategoryEvent(
@@ -1176,6 +1231,7 @@ export class ProductCategoriesService {
       changeType,
       timestamp: new Date().toISOString(),
       category: snapshot,
+      ancestors: snapshot ? await this.buildAncestorSnapshots(snapshot, tx) : undefined,
     };
 
     await this.outboxPublisher.saveEvent(
@@ -1321,6 +1377,10 @@ export class ProductCategoriesService {
       // Enqueue CategoryChanged event
       const snapshot = this.buildCategorySnapshot(updated);
       await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
+
+      if (dto.isVisibleToMembersOnly !== undefined) {
+        await this.publishDescendantsChanged(updated.path, client);
+      }
 
       const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
       return responseDto;

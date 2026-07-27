@@ -256,9 +256,11 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
       updatedAt: new Date('2026-06-07T00:00:00.000Z'),
     };
     const setSpy = jest.fn(() => ({ where: () => ({ returning: () => [updated] }) }));
+    // select 순서: 현재 display_settings → 자손 목록 → 조상 목록
+    const selectQueue: unknown[][] = [current ? [{ displaySettings: current }] : [], [], []];
     const tx = {
       select: jest.fn(() => ({
-        from: () => ({ where: () => Promise.resolve(current ? [{ displaySettings: current }] : []) }),
+        from: () => ({ where: () => Promise.resolve(selectQueue.shift() ?? []) }),
       })),
       update: jest.fn(() => ({ set: setSpy })),
       delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
@@ -308,5 +310,84 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
     await service.updateCategory('cat-1', { name: 'Updated' } as any);
 
     expect(setSpy).toHaveBeenCalledWith(expect.not.objectContaining({ displaySettings: expect.anything() }));
+  });
+});
+
+describe('ProductCategoriesService 조상/자손 이벤트', () => {
+  function makeService(rows: { descendants?: unknown[]; ancestors?: unknown[] } = {}) {
+    const updated = {
+      id: 'cat-2',
+      name: '자식',
+      slug: 'child',
+      description: null,
+      parentId: 'cat-1',
+      level: 1,
+      path: 'cat-1/cat-2',
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: { isVisibleToMembersOnly: true },
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-07-27T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+    };
+    // select 순서: 현재 display_settings → 대상의 조상 → 자손 목록 → 자손의 조상
+    const queue: unknown[][] = [[{ displaySettings: {} }], rows.ancestors ?? []];
+    const tx = {
+      select: jest.fn(() => ({
+        from: () => ({
+          where: (cond: unknown) => {
+            const text = String(cond ?? '');
+            void text;
+            return Promise.resolve(queue.shift() ?? []);
+          },
+        }),
+      })),
+      update: jest.fn(() => ({ set: () => ({ where: () => ({ returning: () => [updated] }) }) })),
+      delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+      insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
+    };
+    queue.push(rows.descendants ?? [], rows.ancestors ?? []);
+    const db = { run: jest.fn(async (cb: (t: unknown) => Promise<unknown>, t?: unknown) => cb(t ?? tx)) };
+    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const service = new (ProductCategoriesService as any)(
+      db,
+      {} as any,
+      { assembleActiveVersionSnapshot: jest.fn() },
+      outboxPublisher,
+    ) as ProductCategoriesService;
+    return { service, outboxPublisher };
+  }
+
+  it('멤버십 전용 변경 시 자손 카테고리 이벤트도 발행한다', async () => {
+    const descendant = {
+      id: 'cat-3',
+      name: '손자',
+      slug: 'grand',
+      description: null,
+      parentId: 'cat-2',
+      level: 2,
+      path: 'cat-1/cat-2/cat-3',
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: null,
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-07-27T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+    };
+    const { service, outboxPublisher } = makeService({ descendants: [descendant] });
+
+    await service.updateCategory('cat-2', { isVisibleToMembersOnly: true } as any);
+
+    const ids = outboxPublisher.saveEvent.mock.calls
+      .filter(([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged')
+      .map(([p]: [{ aggregateId: string }]) => p.aggregateId);
+    expect(ids).toContain('cat-2');
+    expect(ids).toContain('cat-3');
   });
 });
