@@ -135,12 +135,32 @@ export class ProductCategoriesService {
 
   async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
-      const { tagGroupLinks, ...categoryData } = data;
+      const { tagGroupLinks, isVisibleToMembersOnly, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
+
+      // 멤버십 전용 노출은 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
+      let displaySettings: CategoryDisplaySettings | undefined;
+      if (isVisibleToMembersOnly !== undefined) {
+        const [current] = await client
+          .select({ displaySettings: pimSchema.productCategories.displaySettings })
+          .from(pimSchema.productCategories)
+          .where(eq(pimSchema.productCategories.id, categoryId));
+
+        if (!current) {
+          throw new NotFoundError(`Category not found: ${categoryId}`);
+        }
+
+        displaySettings = {
+          ...(current.displaySettings as CategoryDisplaySettings),
+          isVisibleToMembersOnly,
+        };
+      }
+
       const [updatedCategory] = await client
         .update(pimSchema.productCategories)
         .set({
           ...updatingCategoryData,
+          ...(displaySettings && { displaySettings }),
           updatedAt: new Date(),
         })
         .where(eq(pimSchema.productCategories.id, categoryId))

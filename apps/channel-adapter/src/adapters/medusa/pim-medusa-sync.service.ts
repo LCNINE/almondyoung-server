@@ -662,6 +662,7 @@ export class PimMedusaSyncService {
         isActive: category.isActive,
         visibility: category.visibility,
         showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
+        isVisibleToMembersOnly: category.displaySettings?.isVisibleToMembersOnly ?? false,
         thumbnail: category.thumbnail ?? undefined,
         sortOrder: category.sortOrder,
       });

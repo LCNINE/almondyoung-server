@@ -28,6 +28,7 @@ export interface UpdateCategoryDto {
   imageUrl?: string;
   sortOrder?: number;
   isActive?: boolean;
+  isVisibleToMembersOnly?: boolean;
 }
 
 export interface CategoryDto {
@@ -41,6 +42,8 @@ export interface CategoryDto {
   isActive: boolean;
   /** 대표 이미지의 fileId (URL 아님). 없으면 null. */
   thumbnail?: string | null;
+  /** 멤버십 회원에게만 노출하는 카테고리 여부 */
+  isVisibleToMembersOnly?: boolean;
   createdAt: string;
   updatedAt: string;
   children?: CategoryDto[];

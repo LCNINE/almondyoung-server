@@ -616,6 +616,7 @@ export class MedusaClient {
     isActive: boolean;
     visibility: boolean;
     showOnMainCategory: boolean;
+    isVisibleToMembersOnly?: boolean;
     thumbnail?: string;
     sortOrder?: number;
   }): Promise<string> {
@@ -641,8 +642,9 @@ export class MedusaClient {
       pimSlug: categorySnapshot.slug,
       pimVisibility: categorySnapshot.visibility,
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
-      // storefront가 category.metadata.thumbnail 을 읽는다
+      // storefront가 이 두 값을 읽는다 (썸네일 / 멤버십 전용 노출 여부)
       thumbnail: categorySnapshot.thumbnail ?? null,
+      isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly ?? false,
     };
 
     let parentMedusaId: string | undefined;

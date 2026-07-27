@@ -43,6 +43,9 @@ export class CategoryResponseDto {
   @ApiProperty({ description: '썸네일 이미지 URL', required: false, nullable: true })
   thumbnail?: string | null;
 
+  @ApiProperty({ description: '멤버십 회원에게만 노출', required: false })
+  isVisibleToMembersOnly?: boolean;
+
   @ApiProperty({ description: '기본 가격', required: false, nullable: true })
   basePrice?: string | null;
 }

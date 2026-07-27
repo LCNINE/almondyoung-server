@@ -24,6 +24,8 @@ import { v7 as uuidv7 } from 'uuid';
 // ===== CATEGORY JSONB TYPE DEFINITIONS =====
 export type CategoryDisplaySettings = {
   showOnMainCategory?: boolean;
+  /** 멤버십 회원에게만 노출하는 카테고리 (비가입자에겐 네비게이션·카테고리 페이지 모두 비노출) */
+  isVisibleToMembersOnly?: boolean;
   pcAndMobile?: boolean;
   mobileOnly?: boolean;
   productDisplayOrder?: 'asc' | 'desc';
