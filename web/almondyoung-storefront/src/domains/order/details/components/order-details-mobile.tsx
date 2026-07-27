@@ -12,7 +12,10 @@ import {
 } from "@/components/ui/dialog"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import {
+  calculateMembershipDiscount,
+  getOrderPointsUsed,
+} from "@/lib/utils/price-utils"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import {
   OrderInfoCardDivider,
@@ -103,6 +106,7 @@ export const OrderDetailsMobile = ({
   const personalCustomsCode =
     (address?.metadata?.personalCustomsCode as string) || ""
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  const pointsUsed = getOrderPointsUsed(order.metadata)
   // 디지털 단독 주문이면 배송 정보를 숨긴다.
   const requiresShipping = cartRequiresShipping(order.items)
 
@@ -245,21 +249,34 @@ export const OrderDetailsMobile = ({
                 </OrderInfoCardRowItem>
               </OrderInfoCardRow>
             )}
-            <OrderInfoCardRow className="mb-2">
-              <OrderInfoCardRowItem className="text-gray-500">
-                {tLabels("discount")}
-              </OrderInfoCardRowItem>
-              <OrderInfoCardRowItem className="text-right text-gray-800">
-                {formatAmount(order.discount_total)}
-              </OrderInfoCardRowItem>
-            </OrderInfoCardRow>
+            {/* 0원 줄은 정보가 아니라 노이즈다. 실제로 깎인 항목만 남겨 차감 흐름을 또렷하게 둔다. */}
+            {order.discount_total > 0 && (
+              <OrderInfoCardRow className="mb-2">
+                <OrderInfoCardRowItem className="text-gray-500">
+                  {tLabels("discount")}
+                </OrderInfoCardRowItem>
+                <OrderInfoCardRowItem className="text-right text-gray-800">
+                  -{formatAmount(order.discount_total)}
+                </OrderInfoCardRowItem>
+              </OrderInfoCardRow>
+            )}
             {membershipDiscount > 0 && (
               <OrderInfoCardRow className="mb-2">
                 <OrderInfoCardRowItem className="text-gray-500">
                   {tLabels("membershipDiscount")}
                 </OrderInfoCardRowItem>
                 <OrderInfoCardRowItem className="text-right text-gray-800">
-                  {formatAmount(membershipDiscount)}
+                  -{formatAmount(membershipDiscount)}
+                </OrderInfoCardRowItem>
+              </OrderInfoCardRow>
+            )}
+            {pointsUsed > 0 && (
+              <OrderInfoCardRow className="mb-2 font-semibold">
+                <OrderInfoCardRowItem className="text-gray-500">
+                  {tLabels("pointsUsed")}
+                </OrderInfoCardRowItem>
+                <OrderInfoCardRowItem className="text-right text-gray-800">
+                  -{formatAmount(pointsUsed)}
                 </OrderInfoCardRowItem>
               </OrderInfoCardRow>
             )}
@@ -267,10 +284,17 @@ export const OrderDetailsMobile = ({
               <OrderInfoCardRowItem className="font-bold text-gray-800">
                 {tLabels("totalPaymentMobile")}
               </OrderInfoCardRowItem>
-              <OrderInfoCardRowItem className="text-right font-bold text-gray-800">
-                {formatAmount(order.total)}
+              {/* 포인트는 Medusa 상 결제수단이라 order.total 에 남아 있다. 실제로 낸 현금을 보여준다.
+                  브랜드 오렌지는 CTA 전용이라(DESIGN.md) 색이 아니라 크기·굵기로 위계를 준다. */}
+              <OrderInfoCardRowItem className="text-right text-lg font-bold text-gray-800">
+                {formatAmount(order.total - pointsUsed)}
               </OrderInfoCardRowItem>
             </OrderInfoCardRow>
+            {order.total - pointsUsed === 0 && pointsUsed > 0 && (
+              <p className="mt-1 text-right text-xs text-gray-500">
+                {tLabels("paidWithPointsOnly")}
+              </p>
+            )}
           </OrderInfoCardRoot>
         </section>
 

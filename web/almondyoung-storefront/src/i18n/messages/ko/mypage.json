@@ -478,6 +478,8 @@
       "discount": "할인금액",
       "membershipDiscount": "멤버십 할인",
       "shippingFee": "배송비",
+      "pointsUsed": "포인트 사용",
+      "paidWithPointsOnly": "포인트로 전액 결제되어 추가 결제 금액이 없어요.",
       "totalPayment": "총 결제금액",
       "totalPaymentMobile": "총 결제 금액",
       "orderDate": "주문일",

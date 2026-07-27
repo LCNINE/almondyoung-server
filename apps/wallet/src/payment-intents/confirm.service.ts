@@ -550,6 +550,14 @@ export class ConfirmService {
                         depositAmount: result.nextAction.amount,
                       }
                     : {}),
+                  // 주문 선생성 시점부터 Medusa 가 포인트 사용액을 알아야 주문상세/리스트가
+                  // 총액이 아닌 실결제액을 보여줄 수 있다. captured 이벤트와 같은 필드명을 쓴다.
+                  ...(phase1.plan.discount
+                    ? {
+                        pointsAmount: phase1.plan.discount.amount,
+                        paidAmount: phase1.plan.primary.amount,
+                      }
+                    : {}),
                   ...(this.resolveNotifyEmail(phase1.metadata)
                     ? { email: this.resolveNotifyEmail(phase1.metadata) }
                     : {}),

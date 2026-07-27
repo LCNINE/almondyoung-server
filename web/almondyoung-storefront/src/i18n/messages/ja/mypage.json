@@ -478,6 +478,8 @@
       "discount": "割引",
       "membershipDiscount": "メンバーシップ割引",
       "shippingFee": "配送料",
+      "pointsUsed": "ポイント利用",
+      "paidWithPointsOnly": "ポイントで全額お支払いのため、追加のお支払いはありません。",
       "totalPayment": "お支払い合計",
       "totalPaymentMobile": "お支払い合計金額",
       "orderDate": "注文日",
