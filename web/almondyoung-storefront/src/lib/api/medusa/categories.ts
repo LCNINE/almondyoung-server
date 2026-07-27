@@ -5,7 +5,7 @@ import { sdk } from "@/lib/config/medusa"
 import {
   filterInactiveCategories,
   filterMembersOnlyCategories,
-  isMembersOnlyCategoryHandle,
+  isMembersOnlyCategory,
 } from "@/lib/utils/category-visibility"
 import { HttpTypes } from "@medusajs/types"
 
@@ -75,10 +75,7 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
     .then(async ({ product_categories }) => {
       const category = product_categories[0]
       // 회원전용 카테고리는 URL 직접 접근도 막는다(호출부에서 notFound 처리).
-      if (
-        isMembersOnlyCategoryHandle(category?.handle) &&
-        !(await getIsMembershipCustomer())
-      ) {
+      if (isMembersOnlyCategory(category) && !(await getIsMembershipCustomer())) {
         return undefined
       }
       return category

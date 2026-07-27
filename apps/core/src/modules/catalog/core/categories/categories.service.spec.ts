@@ -234,3 +234,79 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
     expect(events[0][0].aggregateId).toBe('m2');
   });
 });
+
+describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => {
+  function makeService(current: Record<string, unknown> | null) {
+    const updated = {
+      id: 'cat-1',
+      name: 'Lip',
+      slug: 'lip',
+      description: null,
+      parentId: null,
+      level: 0,
+      path: 'cat-1',
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: { showOnMainCategory: true, isVisibleToMembersOnly: true },
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-06-07T00:00:00.000Z'),
+      updatedAt: new Date('2026-06-07T00:00:00.000Z'),
+    };
+    const setSpy = jest.fn(() => ({ where: () => ({ returning: () => [updated] }) }));
+    const tx = {
+      select: jest.fn(() => ({
+        from: () => ({ where: () => Promise.resolve(current ? [{ displaySettings: current }] : []) }),
+      })),
+      update: jest.fn(() => ({ set: setSpy })),
+      delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+      insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
+    };
+    const db = {
+      run: jest.fn(async (callback: (trx: unknown) => Promise<unknown>, t?: unknown) => callback(t ?? tx)),
+    };
+    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const service = new (ProductCategoriesService as any)(
+      db,
+      {} as any,
+      { assembleActiveVersionSnapshot: jest.fn() },
+      outboxPublisher,
+    ) as ProductCategoriesService;
+    return { service, outboxPublisher, setSpy };
+  }
+
+  it('기존 display_settings 를 보존한 채 멤버십 전용 플래그만 병합한다', async () => {
+    const { service, setSpy } = makeService({ showOnMainCategory: true });
+
+    await service.updateCategory('cat-1', { isVisibleToMembersOnly: true } as any);
+
+    expect(setSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        displaySettings: { showOnMainCategory: true, isVisibleToMembersOnly: true },
+      }),
+    );
+  });
+
+  it('플래그가 CategoryChanged 스냅샷으로 전달된다', async () => {
+    const { service, outboxPublisher } = makeService({ showOnMainCategory: true });
+
+    await service.updateCategory('cat-1', { isVisibleToMembersOnly: true } as any);
+
+    const [params] = outboxPublisher.saveEvent.mock.calls.find(
+      ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
+    );
+    expect(params.payload.category.displaySettings).toEqual(
+      expect.objectContaining({ isVisibleToMembersOnly: true }),
+    );
+  });
+
+  it('플래그를 안 보내면 display_settings 를 건드리지 않는다', async () => {
+    const { service, setSpy } = makeService({ showOnMainCategory: true });
+
+    await service.updateCategory('cat-1', { name: 'Updated' } as any);
+
+    expect(setSpy).toHaveBeenCalledWith(expect.not.objectContaining({ displaySettings: expect.anything() }));
+  });
+});

@@ -1,24 +1,54 @@
 /*───────────────────────────
  * 멤버십 회원에게만 노출하는 카테고리.
  *
- * 소속 상품이 전부 회원전용(`metadata.isVisibleToMembersOnly`)이라 비회원에게는
- * 빈 페이지가 되는 카테고리를, 네비게이션 목록과 카테고리 페이지 양쪽에서 감춘다.
- * 상품/DB 는 건드리지 않는다 — 노출 레이어에서만 거른다.
+ * 판정 기준은 Medusa 카테고리 `metadata.isVisibleToMembersOnly` 로, 관리자 페이지의
+ * 카테고리 표시 설정에서 켜면 core → channel-adapter 를 거쳐 채워진다.
+ * LEGACY_HANDLES 는 관리자에서 아직 지정하지 않은 카테고리를 위한 폴백이며,
+ * 지정이 끝나면 비울 수 있다.
  *──────────────────────────*/
 
-/** 퍼마블렌드(cafe24-cat-339): live 기준 published 94건 전부 회원전용 */
-export const MEMBERS_ONLY_CATEGORY_HANDLES = new Set(["cafe24-cat-339"])
+/** 퍼마블렌드(cafe24-cat-339): 소속 상품이 전부 회원전용 */
+const LEGACY_MEMBERS_ONLY_HANDLES = new Set(["cafe24-cat-339"])
 
-export function isMembersOnlyCategoryHandle(
+type CategoryVisibilityFields = {
   handle?: string | null
+  metadata?: Record<string, unknown> | null
+}
+
+export function isMembersOnlyCategory(
+  category: CategoryVisibilityFields | null | undefined
 ): boolean {
-  return !!handle && MEMBERS_ONLY_CATEGORY_HANDLES.has(handle)
+  if (!category) return false
+
+  const flag = category.metadata?.isVisibleToMembersOnly
+  if (flag === true || flag === "true") return true
+
+  return !!category.handle && LEGACY_MEMBERS_ONLY_HANDLES.has(category.handle)
 }
 
 type CategoryTreeLike<T> = {
   handle?: string | null
   is_active?: boolean | null
+  metadata?: Record<string, unknown> | null
   category_children?: T[] | null
+}
+
+/** 회원전용 카테고리를 트리 전체(자식 포함)에서 제거한 새 배열을 돌려준다. */
+export function filterMembersOnlyCategories<T extends CategoryTreeLike<T>>(
+  categories: T[]
+): T[] {
+  return categories
+    .filter((category) => !isMembersOnlyCategory(category))
+    .map((category) =>
+      category.category_children?.length
+        ? {
+            ...category,
+            category_children: filterMembersOnlyCategories(
+              category.category_children
+            ),
+          }
+        : category
+    )
 }
 
 /**
@@ -39,24 +69,6 @@ export function filterInactiveCategories<T extends CategoryTreeLike<T>>(
         ? {
             ...category,
             category_children: filterInactiveCategories(
-              category.category_children
-            ),
-          }
-        : category
-    )
-}
-
-/** 회원전용 카테고리를 트리 전체(자식 포함)에서 제거한 새 배열을 돌려준다. */
-export function filterMembersOnlyCategories<T extends CategoryTreeLike<T>>(
-  categories: T[]
-): T[] {
-  return categories
-    .filter((category) => !isMembersOnlyCategoryHandle(category.handle))
-    .map((category) =>
-      category.category_children?.length
-        ? {
-            ...category,
-            category_children: filterMembersOnlyCategories(
               category.category_children
             ),
           }
