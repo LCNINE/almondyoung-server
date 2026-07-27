@@ -65,7 +65,7 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
         </p>
       )}
 
-      <Button asChild className="h-13">
+      <Button asChild className="h-13" variant={"link"}>
         <Link
           href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
         >
