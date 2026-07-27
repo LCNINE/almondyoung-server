@@ -71,17 +71,29 @@ export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions 
         },
       }),
       columnHelper.accessor('payableAmount', {
-        header: '결제 금액',
-        cell: ({ getValue, row }) => (
-          <div className="text-right">
-            <span className="text-base font-bold tabular-nums">
-              {getValue().toLocaleString('ko-KR')}
-            </span>
-            <span className="ml-1 text-xs text-muted-foreground">
-              {row.original.currency}
-            </span>
-          </div>
-        ),
+        header: '입금 금액',
+        cell: ({ getValue, row }) => {
+          const payable = getValue();
+          // 포인트 병용 건은 실제 입금액이 총액보다 적다. 대사 기준은 입금액이므로 그쪽을 크게 보여주고,
+          // 총액은 참고용으로 아래에 남긴다.
+          const deposit = row.original.depositAmount ?? payable;
+          return (
+            <div className="text-right">
+              <span className="text-base font-bold tabular-nums">
+                {deposit.toLocaleString('ko-KR')}
+              </span>
+              <span className="ml-1 text-xs text-muted-foreground">
+                {row.original.currency}
+              </span>
+              {deposit !== payable && (
+                <div className="text-xs text-muted-foreground">
+                  주문 {payable.toLocaleString('ko-KR')} · 포인트{' '}
+                  {(payable - deposit).toLocaleString('ko-KR')}
+                </div>
+              )}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('createdAt', {
         header: '생성일시',
@@ -99,6 +111,7 @@ export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions 
             <BankTransferConfirmCell
               id={row.original.id}
               payableAmount={row.original.payableAmount}
+              depositAmount={row.original.depositAmount}
               currency={row.original.currency}
             />
           </div>

@@ -523,7 +523,14 @@ export function PayForm({
                 <Separator />
                 <div>
                   <p className="mb-1 text-xs text-muted-foreground">결제 금액</p>
-                  <p className="text-3xl font-bold">{formatAmount(intent.payableAmount, intent.currency)}</p>
+                  {/* 포인트를 쓰면 실제 낼 돈은 총액이 아니다. 큰 숫자를 실결제액으로 두고
+                      총액은 취소선으로 남긴다(무통장은 이 금액 그대로 입금해야 함). */}
+                  {remainingAmount !== intent.payableAmount && (
+                    <p className="text-sm line-through text-muted-foreground">
+                      {formatAmount(intent.payableAmount, intent.currency)}
+                    </p>
+                  )}
+                  <p className="text-3xl font-bold">{formatAmount(remainingAmount, intent.currency)}</p>
                 </div>
                 {intent.expiresAt && (
                   <p className="text-xs text-muted-foreground" suppressHydrationWarning>
