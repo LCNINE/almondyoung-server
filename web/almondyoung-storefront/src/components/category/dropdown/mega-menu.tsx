@@ -139,7 +139,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
       {/* ─── 우측 영역: 대분류 hover 시에만 나오는 고정폭 wrapper.
           hover 전(l1 없음)엔 col1 폭만 뜨고, hover 하면 여기가 펼쳐진다. ─── */}
       {l1 && (
-        <div className="flex w-[830px] shrink-0">
+        <div className="flex w-[520px] shrink-0">
           {/* ─── col2: 중분류 세로 리스트 (대분류에 하위 있을 때만) ─── */}
           {l1Children.length > 0 && (
             <aside className="w-[210px] shrink-0 overflow-y-auto border-l border-gray-100 py-2">
@@ -235,7 +235,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
           )}
 
           {/* ─── 우측 영역: leaf CTA / 배너 슬롯. flex-1 로 남은 폭을 채워 전체 패널 폭을 고정(쿠팡식) ─── */}
-          <div className="min-w-[280px] flex-1 p-4">
+          <div className="min-w-0 flex-1 p-4">
             {l1 && l1Children.length === 0 ? (
               // 대분류만 있고 중분류 없음(leaf): 중앙 CTA
               <div className="flex h-full min-h-[380px] flex-col items-center justify-center gap-4 text-center">
