@@ -23,6 +23,7 @@ import {
   OutboundBatchWorkItemResponseDto,
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -77,10 +78,14 @@ export class OutboundBatchOrchestrator {
     tx?: DbTx,
   ): Promise<{ operationId: string; batchId: string }> {
     this.workflowGate.assertV2MutationAllowed('outbound_batch.create');
-    if (dto.pickingMethod !== 'individual') {
-      throw this.conflict(
-        'OUTBOUND_BATCH_STRATEGY_NOT_AVAILABLE',
-        'Only individual picking is available until a durable picking strategy is configured',
+    const requiredStrategy = STRATEGY_BY_PICKING_METHOD[dto.pickingMethod];
+    if (dto.pickingMethod === 'multi_order') {
+      if (dto.cartCapacity === undefined || dto.cartCapacity === null) {
+        throw new BadRequestException('cartCapacity is required for multi_order batches');
+      }
+    } else if (dto.cartCapacity !== undefined && dto.cartCapacity !== null) {
+      throw new BadRequestException(
+        `cartCapacity is only allowed for multi_order batches (got ${dto.pickingMethod})`,
       );
     }
     return this.commands.execute(
@@ -91,11 +96,20 @@ export class OutboundBatchOrchestrator {
       },
       async (trx, commandRequestId) => {
         const [warehouse] = await trx
-          .select({ id: wmsTables.warehouses.id })
+          .select({
+            id: wmsTables.warehouses.id,
+            supportedPickingStrategies: wmsTables.warehouses.supportedPickingStrategies,
+          })
           .from(wmsTables.warehouses)
           .where(eq(wmsTables.warehouses.id, dto.warehouseId))
           .limit(1);
         if (!warehouse) throw new NotFoundException(`Warehouse ${dto.warehouseId} not found`);
+        if (!warehouse.supportedPickingStrategies?.includes(requiredStrategy)) {
+          throw this.conflict(
+            'OUTBOUND_BATCH_METHOD_NOT_SUPPORTED',
+            `Warehouse ${dto.warehouseId} does not support ${requiredStrategy}, required by picking method ${dto.pickingMethod}`,
+          );
+        }
 
         const suffix = randomUUID().replace(/-/g, '').slice(0, 12).toUpperCase();
         const [batch] = await trx
@@ -104,6 +118,7 @@ export class OutboundBatchOrchestrator {
             batchNumber: `OB-${suffix}`,
             warehouseId: dto.warehouseId,
             pickingMethod: dto.pickingMethod,
+            cartCapacity: dto.cartCapacity ?? null,
             name: dto.name?.trim() || `Batch ${suffix}`,
             scheduledPickingAt: dto.scheduledPickingAt,
             status: 'created',
@@ -113,6 +128,7 @@ export class OutboundBatchOrchestrator {
           commandRequestId,
           warehouseId: batch.warehouseId,
           pickingMethod: batch.pickingMethod,
+          cartCapacity: batch.cartCapacity,
         });
         const response = { operationId: commandRequestId, batchId: batch.id };
         return { response, resourceType: 'outbound_batch', resourceId: batch.id };
@@ -143,6 +159,7 @@ export class OutboundBatchOrchestrator {
         await this.assertNoActiveWorkItem(shipmentId, trx);
         // Canonical component locks precede batch/work-item locks in every membership command.
         const batch = await this.lockOpenBatch(batchId, trx);
+        await this.assertCartCapacity(batch, trx);
         const eligible = await this.assertEligible(batch, aggregate, trx);
 
         let workItem: WorkItemRow;
@@ -550,6 +567,7 @@ export class OutboundBatchOrchestrator {
         name: batch.name ?? '',
         warehouseId: batch.warehouseId,
         pickingMethod: batch.pickingMethod,
+        cartCapacity: batch.cartCapacity,
         status: this.derivedBatchStatus(batch, workItems),
         totalItems,
         totalQty,
@@ -632,6 +650,7 @@ export class OutboundBatchOrchestrator {
             warehouseId: batch.warehouseId,
             status: this.derivedBatchStatus(batch, workItems),
             pickingMethod: batch.pickingMethod,
+            cartCapacity: batch.cartCapacity,
             totalItems: workload?.totalItems ?? 0,
             totalQty: workload?.totalQty ?? 0,
             scheduledPickingAt: batch.scheduledPickingAt,
@@ -765,6 +784,29 @@ export class OutboundBatchOrchestrator {
       throw this.conflict('OUTBOUND_BATCH_CLOSED', `Batch ${batchId} is ${status}`);
     }
     return batch;
+  }
+
+  /**
+   * multi_order(pick_to_tote) 배치는 카트에 달린 바구니 하나가 송장 하나다.
+   * 정원을 넘겨 짠 배치는 현장에 나간 뒤에는 고칠 수 없으므로 여기서 막는다.
+   */
+  private async assertCartCapacity(batch: BatchRow, tx: DbTx): Promise<void> {
+    if (batch.pickingMethod !== 'multi_order' || batch.cartCapacity === null) return;
+    const [row] = await tx
+      .select({ count: sql<number>`count(*)::int` })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(
+        and(
+          eq(wmsTables.outboundBatchWorkItems.batchId, batch.id),
+          inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+        ),
+      );
+    if ((row?.count ?? 0) >= batch.cartCapacity) {
+      throw this.conflict(
+        'OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED',
+        `Batch ${batch.id} already holds ${row?.count ?? 0} shipments for ${batch.cartCapacity} cart baskets`,
+      );
+    }
   }
 
   private async assertNoActiveWorkItem(shipmentId: string, tx: DbTx): Promise<void> {
@@ -1328,6 +1370,8 @@ export class OutboundBatchOrchestrator {
   }
 
   private conflict(code: string, message: string): ConflictException {
-    return new ConflictException({ code, message });
+    // GlobalExceptionFilter 는 `error` 필드만 코드로 통과시킨다. 빠뜨리면 클라이언트가
+    // 전부 'CONFLICT' 로 받는다 (simple-outbound.service.ts:655 와 동일 형태).
+    return new ConflictException({ code, error: code, message });
   }
 }

@@ -562,6 +562,11 @@ export type PickingStrategyName =
   | 'aggregate_then_sort'
   | 'pick_to_tote';
 
+// core 의 picking-method.contract.ts 와 1:1 대응(배치의 pickingMethod). admin-web 은
+// core 모듈을 import 할 수 없어 값을 복제하는 것은 승인된 설계 결정이나, admin-web
+// 내부에서는 이 타입 하나로만 참조한다 — 값이 바뀌면 여기 한 곳만 고친다.
+export type PickingMethod = 'individual' | 'total_picking' | 'multi_order';
+
 export interface FulfillmentV2ProgressItem {
   id: string;
   qty: number;
@@ -898,7 +903,8 @@ export interface OutboundBatchV2ListQuery {
 
 export interface CreateOutboundBatchV2Request {
   warehouseId: string;
-  pickingMethod: 'individual';
+  pickingMethod: PickingMethod;
+  cartCapacity?: number;
   name?: string;
   scheduledPickingAt?: string;
 }
@@ -1018,7 +1024,8 @@ export interface OutboundBatchV2 {
   batchNumber: string;
   name: string;
   warehouseId: string;
-  pickingMethod: string;
+  pickingMethod: PickingMethod;
+  cartCapacity: number | null;
   status: OutboundBatchStatus;
   totalItems: number;
   totalQty: number;
@@ -1042,7 +1049,8 @@ export interface OutboundBatchV2ListItem {
   name: string;
   warehouseId: string;
   status: OutboundBatchStatus;
-  pickingMethod: string;
+  pickingMethod: PickingMethod;
+  cartCapacity: number | null;
   totalItems: number;
   totalQty: number;
   scheduledPickingAt: string | null;
@@ -1065,7 +1073,6 @@ export interface OutboundBatchCommandResponse {
 }
 
 export interface CreatePickingPlanRequest {
-  strategy: PickingStrategyName;
   batchId: string;
   shipmentIds: string[];
 }

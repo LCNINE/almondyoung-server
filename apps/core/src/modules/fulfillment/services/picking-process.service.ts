@@ -4,6 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
+import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
@@ -16,7 +17,6 @@ import {
   HandoffPickingInput,
   PickToToteStrategy,
   PickingStrategy,
-  PickingStrategyName,
   PlanPickingInput,
   ScanPickingInput,
   StartPickingInput,
@@ -70,15 +70,26 @@ export class PickingProcessService {
     @Optional() private readonly strategyRegistry?: PickingStrategyRegistry,
   ) {}
 
-  async plan(strategyName: PickingStrategyName, input: PlanPickingInput, tx?: DbTx) {
+  async plan(input: PlanPickingInput, tx?: DbTx) {
     return this.dbService.run(async (trx) => {
       const [batch] = await trx
-        .select({ warehouseId: wmsTables.outboundBatches.warehouseId })
+        .select({
+          warehouseId: wmsTables.outboundBatches.warehouseId,
+          pickingMethod: wmsTables.outboundBatches.pickingMethod,
+        })
         .from(wmsTables.outboundBatches)
         .where(eq(wmsTables.outboundBatches.id, input.batchId))
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${input.batchId} not found`);
-      const strategy = await this.requiredRegistry().resolveForWarehouse(strategyName, batch.warehouseId, trx);
+      const derived = STRATEGY_BY_PICKING_METHOD[batch.pickingMethod];
+      if (input.requestedStrategy && input.requestedStrategy !== derived) {
+        throw new ConflictException({
+          code: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH',
+          error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH',
+          message: `Batch ${input.batchId} is ${batch.pickingMethod}; strategy ${input.requestedStrategy} is not allowed`,
+        });
+      }
+      const strategy = await this.requiredRegistry().resolveForWarehouse(derived, batch.warehouseId, trx);
       return strategy.plan(input, trx);
     }, tx);
   }
