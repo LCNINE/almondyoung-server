@@ -41,7 +41,13 @@ export function WelcomeDealSection({
         <Title className="md:flex-1">
           웰컴딜 전체 제품 <span className="text-yellow-30">100원</span>
         </Title>
-        {moreHref && <MoreButton href={moreHref} showOnDesktop={true} />}
+        {moreHref && (
+          <MoreButton
+            href={moreHref}
+            showOnDesktop
+            className="md:absolute md:right-0"
+          />
+        )}
       </Header>
 
       {products.length === 0 ? (

@@ -51,7 +51,7 @@ export function MoreButton({
       className={cn(
         "text-gray-40 hover:text-gray-90 hover:bg-transparent",
         !showOnDesktop && "md:hidden", // showOnDesktop이 false면 데스크탑(md)에서 숨김.
-        showOnDesktop && "md:absolute md:right-0",
+        // ponytail: 데스크탑 위치(absolute 우측 정렬)는 호출부가 결정한다 — 더보기 옆에 다른 버튼이 붙는 섹션이 있어서.
         className
       )}
     >
