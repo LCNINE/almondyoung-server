@@ -1001,3 +1001,49 @@ describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
     expect(payload).not.toHaveProperty('parent_category_id');
   });
 });
+
+describe('MedusaClient.ensureCategoryFromSnapshot 부모 필수 모드', () => {
+  function makeClient() {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } })
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).getCategoryById = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  const snapshot = {
+    id: 'pim-child',
+    name: '자식',
+    slug: 'child',
+    path: 'p/child',
+    parentId: 'pim-parent',
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  };
+
+  it('부모를 못 찾으면 던져서 inbox 재시도에 맡긴다', async () => {
+    const { client } = makeClient();
+
+    await expect(
+      client.ensureCategoryFromSnapshot(snapshot, { requireParent: true })
+    ).rejects.toThrow('재시도 대상');
+  });
+
+  it('requireParent 없이는 기존처럼 부모 필드를 건너뛰고 진행한다', async () => {
+    const { client, update } = makeClient();
+
+    await client.ensureCategoryFromSnapshot(snapshot);
+
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0][1]).not.toHaveProperty('parent_category_id');
+  });
+});

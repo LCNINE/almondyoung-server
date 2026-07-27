@@ -619,7 +619,8 @@ export class MedusaClient {
     isVisibleToMembersOnly?: boolean;
     thumbnail?: string;
     sortOrder?: number;
-  }): Promise<string> {
+  },
+  options?: { requireParent?: boolean }): Promise<string> {
     // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
     // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
     // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
@@ -665,6 +666,12 @@ export class MedusaClient {
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
         parentUpdate = { parent_category_id: existingParent.id };
+      } else if (options?.requireParent) {
+        // 부모 없이 만들면 자식이 최상위 카테고리로 붙어 스토어프론트 메뉴에 그대로 노출된다.
+        // 부모 이벤트가 아직 처리되지 않은 순서 문제일 수 있으니 inbox 재시도에 맡긴다.
+        throw new Error(
+          `Parent category ${categorySnapshot.parentId} not yet in Medusa for category ${categorySnapshot.id} — 재시도 대상`,
+        );
       } else {
         this.logger.warn(
           `Parent category ${categorySnapshot.parentId} not found in Medusa — 부모 필드는 건드리지 않는다 (category ${categorySnapshot.id})`,
