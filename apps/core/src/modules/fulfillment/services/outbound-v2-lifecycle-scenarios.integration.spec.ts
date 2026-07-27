@@ -201,7 +201,9 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     const suffix = randomUUID();
     const [warehouse] = await tx
       .insert(wmsTables.warehouses)
-      .values({ name: `lifecycle-wh-${suffix}` })
+      // 배치 생성이 창고 능력을 검사하므로 이 world 의 창고도 discrete 를 지원해야 한다
+      // (Task 2, seedWarehouseWithZone 과 동일한 이유 — 이 스펙은 창고를 직접 심어서 별도 처리 필요).
+      .values({ name: `lifecycle-wh-${suffix}`, supportedPickingStrategies: ['discrete'] })
       .returning();
     const [sourceLocation] = await tx
       .insert(wmsTables.locations)

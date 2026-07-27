@@ -30,6 +30,7 @@ import { BatchStatusBadge } from '../batch-status-badge';
 import { CreateBatchDialog } from '../create-batch-dialog';
 import { BatchDetailDrawer } from '../batch-detail-drawer';
 import { PermissionAction } from '../../../operation-access-feedback';
+import { PICKING_METHOD_LABELS } from '../../picking-method';
 
 export function OutboundBatchesTable() {
   const searchParams = useSearchParams();
@@ -95,6 +96,7 @@ export function OutboundBatchesTable() {
             <TableHeader>
               <TableRow>
                 <TableHead>배치</TableHead>
+                <TableHead>피킹 방식</TableHead>
                 <TableHead>상태</TableHead>
                 <TableHead>창고</TableHead>
                 <TableHead className="text-right">라인</TableHead>
@@ -116,6 +118,9 @@ export function OutboundBatchesTable() {
                     <p className="font-mono text-[10px] text-muted-foreground">
                       {batch.id}
                     </p>
+                  </TableCell>
+                  <TableCell>
+                    {PICKING_METHOD_LABELS[batch.pickingMethod]}
                   </TableCell>
                   <TableCell>
                     <BatchStatusBadge status={batch.status} />

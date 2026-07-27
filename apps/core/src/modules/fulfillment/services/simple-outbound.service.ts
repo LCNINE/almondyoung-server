@@ -571,7 +571,6 @@ export class SimpleOutboundService {
       )
       .orderBy(asc(wmsTables.outboundBatchWorkItems.shipmentId));
     const planned = await this.picking.plan(
-      'discrete',
       {
         batchId,
         shipmentIds: members.map((member) => member.shipmentId),

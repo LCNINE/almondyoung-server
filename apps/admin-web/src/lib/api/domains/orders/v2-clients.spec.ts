@@ -73,7 +73,7 @@ describe('fulfillment V2 typed clients', () => {
       KEY
     );
     await pickingClient.createPlan(
-      { strategy: 'discrete', batchId: 'batch-1', shipmentIds: ['shipment-1'] },
+      { batchId: 'batch-1', shipmentIds: ['shipment-1'] },
       KEY
     );
 

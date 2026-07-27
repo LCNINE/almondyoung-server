@@ -20,6 +20,12 @@ export interface PlanPickingInput {
   shipmentIds: string[];
   actorId: string;
   idempotencyKey: string;
+  /**
+   * 호출자가 보낸 전략(선택). 실제 전략은 배치의 pickingMethod 에서 파생되며,
+   * 이 값이 있으면 파생값과 일치하는지만 검증한다. 외부 호출자 완충용이고
+   * 후속 정리에서 제거 대상이다.
+   */
+  requestedStrategy?: PickingStrategyName;
 }
 
 export interface StartPickingInput {

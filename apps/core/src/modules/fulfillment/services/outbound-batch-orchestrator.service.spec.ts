@@ -226,15 +226,16 @@ describe('OutboundBatchOrchestrator policy', () => {
     expect(commands.execute).not.toHaveBeenCalled();
   });
 
-  it('keeps unimplemented total picking unavailable in V2', async () => {
+  it('lets a total_picking batch reach the command layer now that warehouse capability gates it instead', async () => {
     const { service, commands } = makeService();
+    commands.execute.mockResolvedValue({ operationId: 'op-1', batchId: UUIDS.batch });
     await expect(
       service.createBatch({ warehouseId: UUIDS.batch, pickingMethod: 'total_picking' } as never, 'create-key', {
         id: UUIDS.actor,
         roles: ['logistics_manager'],
       }),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'OUTBOUND_BATCH_STRATEGY_NOT_AVAILABLE' }) });
-    expect(commands.execute).not.toHaveBeenCalled();
+    ).resolves.toEqual({ operationId: 'op-1', batchId: UUIDS.batch });
+    expect(commands.execute).toHaveBeenCalled();
   });
 });
 
@@ -287,5 +288,43 @@ describe('OutboundBatchV2Controller contract', () => {
       id: UUIDS.actor,
       roles: ['logistics_manager'],
     });
+  });
+});
+
+describe('createBatch picking method contract', () => {
+  const actor = { id: UUIDS.actor, roles: ['master'] };
+  const makeOrchestrator = () => {
+    const commands = { execute: jest.fn() };
+    const workflowGate = { assertV2MutationAllowed: jest.fn() };
+    const orchestrator = new OutboundBatchOrchestrator(
+      {} as never,
+      commands as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      workflowGate as never,
+      {} as never,
+    );
+    return { orchestrator, commands };
+  };
+
+  it('rejects a multi_order batch without cartCapacity before touching the database', async () => {
+    const { orchestrator, commands } = makeOrchestrator();
+    await expect(
+      orchestrator.createBatch({ warehouseId: UUIDS.batch, pickingMethod: 'multi_order' } as never, 'key-1', actor),
+    ).rejects.toThrow(/cartCapacity is required/);
+    expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects cartCapacity on a method that has no baskets', async () => {
+    const { orchestrator, commands } = makeOrchestrator();
+    await expect(
+      orchestrator.createBatch(
+        { warehouseId: UUIDS.batch, pickingMethod: 'individual', cartCapacity: 24 } as never,
+        'key-2',
+        actor,
+      ),
+    ).rejects.toThrow(/cartCapacity is only allowed/);
+    expect(commands.execute).not.toHaveBeenCalled();
   });
 });

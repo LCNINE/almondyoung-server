@@ -206,11 +206,12 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
       actor,
     );
 
-    expect(picking.plan).toHaveBeenCalledWith('discrete', {
+    expect(picking.plan).toHaveBeenCalledWith({
       batchId: ids.batchId,
       shipmentIds: [ids.shipmentId],
       actorId: 'worker-1',
       idempotencyKey: 'plan-key',
+      requestedStrategy: 'discrete',
     });
     expect(picking.scan).toHaveBeenCalledWith(
       expect.objectContaining({

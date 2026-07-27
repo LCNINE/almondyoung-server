@@ -9,7 +9,9 @@ import { canonicalFulfillmentRequestHash } from '../fulfillment-command.service'
 export async function seedWarehouseWithZone(tx: DbTx): Promise<{ warehouseId: string; locationId: string }> {
   const [wh] = await tx
     .insert(wmsTables.warehouses)
-    .values({ name: `it-wh-${randomUUID().slice(0, 8)}` })
+    // 배치 생성이 창고 능력을 검사하므로 기본 창고는 discrete 를 지원해야 한다.
+    // 다른 전략이 필요한 스펙은 이 값을 자기가 덮어쓴다(outbound-v2-warehouse-scenarios 등).
+    .values({ name: `it-wh-${randomUUID().slice(0, 8)}`, supportedPickingStrategies: ['discrete'] })
     .returning();
   const [loc] = await tx
     .insert(wmsTables.locations)
