@@ -19,11 +19,16 @@
     "retry": "再試行"
   },
   "sort": {
+    "label": "並び替え",
     "createdAt": "新着順",
-    "salesDesc": "人気順",
+    "salesDesc": "販売数順",
     "reviewCountDesc": "レビューが多い順",
     "priceAsc": "価格が安い順",
     "priceDesc": "価格が高い順"
+  },
+  "pageSize": {
+    "label": "表示件数",
+    "option": "{count}件ずつ表示"
   },
   "pillDropdown": {
     "eyelash": "まつ毛",

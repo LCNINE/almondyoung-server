@@ -10,8 +10,6 @@ import type { HttpTypes } from "@medusajs/types"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 
-export const PRODUCT_LIMIT = 12
-
 type ProductPage = {
   response: { products: HttpTypes.StoreProduct[]; count: number }
   nextPage: number | null
@@ -19,6 +17,7 @@ type ProductPage = {
 
 type UseCategoryProductsParams = {
   sortBy: SortOptions
+  limit: number
   countryCode: string
   categoryIds?: string[]
   collectionId?: string
@@ -34,6 +33,7 @@ type UseCategoryProductsParams = {
  */
 export function useCategoryProducts({
   sortBy,
+  limit,
   countryCode,
   categoryIds,
   collectionId,
@@ -52,6 +52,7 @@ export function useCategoryProducts({
     queryKey: [
       "category-products",
       sortBy,
+      limit,
       countryCode,
       categoryIds ?? null,
       collectionId ?? null,
@@ -71,7 +72,7 @@ export function useCategoryProducts({
           countryCode,
           categoryId: categoryIds,
           collectionId,
-          limit: PRODUCT_LIMIT,
+          limit,
         })
         return { response: result.response, nextPage: result.nextPage }
       }
@@ -80,7 +81,7 @@ export function useCategoryProducts({
         pageParam: page,
         countryCode,
         queryParams: {
-          limit: PRODUCT_LIMIT,
+          limit,
           order: "-created_at",
           category_id: categoryIds,
           collection_id: collectionId ? [collectionId] : undefined,
