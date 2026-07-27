@@ -11,11 +11,11 @@ export default async function SignUpPage({
   const params = await searchParams;
   const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? "";
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-svh w-full max-w-[640px] flex-col gap-6 px-4 py-8 sm:px-6 sm:py-12">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">회원가입</h1>
+        <h1 className="text-2xl font-bold">회원가입</h1>
         <p className="text-sm text-muted-foreground">
-          필수 정보를 입력하면 가입이 즉시 완료됩니다.
+          세 단계면 끝나요.
         </p>
       </header>
       <SignUpForm redirectTo={redirectTo} />

@@ -23,6 +23,7 @@ import { sanitizeRedirectTo } from "@/lib/redirect"
 import {
   callbackSignup,
   checkEmailAvailable,
+  checkLoginIdAvailable,
   findUserId,
   forgotPassword,
   getMe,
@@ -328,11 +329,37 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   return redirectAfterAuth(userId, redirectToRaw)
 }
 
+/** 이메일/아이디 사전 중복확인이 공유하는 결과 형태. */
 export type CheckEmailResult =
   | { status: "available" }
   | { status: "taken" }
   | { status: "invalid"; message: string }
   | { status: "error"; message: string }
+
+export async function checkLoginIdAvailableAction(
+  loginId: string
+): Promise<CheckEmailResult> {
+  const normalized = loginId.trim()
+  if (!normalized) {
+    return { status: "invalid", message: "아이디를 입력해주세요." }
+  }
+
+  try {
+    const available = await checkLoginIdAvailable(normalized)
+    return available ? { status: "available" } : { status: "taken" }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 400) {
+      return {
+        status: "invalid",
+        message: "아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요.",
+      }
+    }
+    return {
+      status: "error",
+      message: "아이디 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+    }
+  }
+}
 
 export async function checkEmailAvailableAction(
   email: string
@@ -397,6 +424,13 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   // callbackSignup 으로 교환해 세션을 시작한다. 이전처럼 body 의 userId 를 직접 신뢰하지 않으므로
   // 외부 호출자가 임의 userId 로 callbackSignup 을 호출하는 우회는 차단된다.
   try {
+    // 휴대폰 인증은 여기서만 검증한다. 클라이언트가 "인증됐다"고 보내는 플래그를 믿으면
+    // 폼을 직접 조작해 남의 번호로 가입할 수 있다. Twilio Verify 는 approve 된 코드를
+    // 재검증할 수 없으므로 스텝 UI 에서는 부르지 않고 이 지점 한 번만 부른다.
+    await verifyPhoneCode({
+      phoneNumber: normalizedPhoneNumber,
+      code: getVerificationCode(formData),
+    })
     const result = await signUp(input)
     const tokens = await callbackSignup(result.signupToken)
     userId = await promoteTokens(tokens, false)

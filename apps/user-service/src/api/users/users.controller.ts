@@ -14,7 +14,7 @@ import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
@@ -51,6 +51,31 @@ export class UsersController {
       throw new BadRequestException('올바른 이메일 형식이 아닙니다.');
     }
     const available = await this.usersService.isEmailAvailable(normalized);
+    return { available };
+  }
+
+  @ApiOperation({
+    summary: '로그인 ID 가입 가능 여부 확인',
+    description: '회원가입 폼의 사전 중복 체크용. 사용자 정보(PII)를 노출하지 않고 가입 가능 여부만 반환한다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'available=true 면 가입 가능(미사용), false 면 이미 사용 중',
+  })
+  @ApiQuery({ name: 'loginId', description: '확인할 로그인 ID' })
+  @Get('login-id-available')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async checkLoginIdAvailable(@Query('loginId') loginId: string): Promise<{ available: boolean }> {
+    const normalized = (loginId ?? '').trim();
+    if (!normalized) {
+      throw new BadRequestException('아이디를 입력해주세요.');
+    }
+    // 가입 폼과 같은 규칙. 형식이 틀린 값으로 존재 여부를 캐는 조회를 막는 역할도 겸한다.
+    if (!/^[a-z0-9]{4,20}$/.test(normalized)) {
+      throw new BadRequestException('아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요.');
+    }
+    const available = await this.usersService.isLoginIdAvailable(normalized);
     return { available };
   }
 

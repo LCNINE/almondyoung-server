@@ -331,6 +331,20 @@ export async function checkEmailAvailable(email: string): Promise<boolean> {
   return body.available
 }
 
+export async function checkLoginIdAvailable(loginId: string): Promise<boolean> {
+  const res = await fetch(
+    `${env.userServiceUrl}/users/login-id-available?loginId=${encodeURIComponent(loginId)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  await throwIfBad(res, "login-id-available")
+  const body = await readApiData<{ available: boolean }>(res)
+  return body.available
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",
