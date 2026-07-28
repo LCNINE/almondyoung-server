@@ -77,6 +77,15 @@ export class UpdateCategoryDto {
   isActive?: boolean;
 
   @ApiProperty({
+    description: '멤버십 회원에게만 노출 (비가입자에겐 메뉴·카테고리 페이지 모두 비노출)',
+    required: false,
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isVisibleToMembersOnly?: boolean;
+
+  @ApiProperty({
     description: '태그 그룹 연결 목록',
     type: [CategoryTagGroupLinkDto],
     required: false,

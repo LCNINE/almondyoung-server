@@ -1,5 +1,6 @@
 {
   "title": "Category",
   "errorLine1": "An error occurred",
-  "errorLine2": "while loading categories."
+  "errorLine2": "while loading categories.",
+  "viewProducts": "View products"
 }

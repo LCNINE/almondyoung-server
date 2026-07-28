@@ -616,9 +616,11 @@ export class MedusaClient {
     isActive: boolean;
     visibility: boolean;
     showOnMainCategory: boolean;
+    isVisibleToMembersOnly?: boolean;
     thumbnail?: string;
     sortOrder?: number;
-  }): Promise<string> {
+  },
+  options?: { requireParent?: boolean }): Promise<string> {
     // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
     // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
     // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
@@ -641,11 +643,18 @@ export class MedusaClient {
       pimSlug: categorySnapshot.slug,
       pimVisibility: categorySnapshot.visibility,
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
-      // storefront가 category.metadata.thumbnail 을 읽는다
+      // storefront가 이 두 값을 읽는다 (썸네일 / 멤버십 전용 노출 여부)
       thumbnail: categorySnapshot.thumbnail ?? null,
+      isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly ?? false,
     };
 
     let parentMedusaId: string | undefined;
+    // 부모를 "건드리지 않음"과 "루트로 올림"은 다르다. undefined 를 그대로 payload 에 넣으면
+    // JSON 직렬화에서 키가 빠져 Medusa 가 기존 부모를 유지한다(= 루트 이동 미반영).
+    // - PIM 부모 없음        → null 을 명시해 부모 해제
+    // - PIM 부모 있고 찾음    → 그 id 로 변경
+    // - PIM 부모 있는데 못 찾음 → 필드 자체를 생략해 기존 부모 유지(잘못된 루트 이동 방지)
+    let parentUpdate: { parent_category_id?: string | null } = { parent_category_id: null };
 
     if (categorySnapshot.parentId) {
       // 부모는 자식과 같은 식별자 규약(handle=slug||id, metadata.pimCategoryId)을 따라 저장된다.
@@ -656,8 +665,18 @@ export class MedusaClient {
       });
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
+        parentUpdate = { parent_category_id: existingParent.id };
+      } else if (options?.requireParent) {
+        // 부모 없이 만들면 자식이 최상위 카테고리로 붙어 스토어프론트 메뉴에 그대로 노출된다.
+        // 부모 이벤트가 아직 처리되지 않은 순서 문제일 수 있으니 inbox 재시도에 맡긴다.
+        throw new Error(
+          `Parent category ${categorySnapshot.parentId} not yet in Medusa for category ${categorySnapshot.id} — 재시도 대상`,
+        );
       } else {
-        this.logger.warn(`Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`);
+        this.logger.warn(
+          `Parent category ${categorySnapshot.parentId} not found in Medusa — 부모 필드는 건드리지 않는다 (category ${categorySnapshot.id})`,
+        );
+        parentUpdate = {};
       }
     }
 
@@ -681,7 +700,7 @@ export class MedusaClient {
         handle: preferredHandle,
         is_internal: false,
         is_active: isActive,
-        parent_category_id: parentMedusaId,
+        ...parentUpdate,
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
         metadata: {
           ...(existing.metadata || {}),

@@ -41,6 +41,7 @@ interface FormState {
   description: string;
   sortOrder: number;
   isActive: boolean;
+  isVisibleToMembersOnly: boolean;
   imageUrl: string; // file-service fileId (없으면 '')
 }
 
@@ -50,6 +51,7 @@ const EMPTY: FormState = {
   description: '',
   sortOrder: 0,
   isActive: true,
+  isVisibleToMembersOnly: false,
   imageUrl: '',
 };
 
@@ -166,6 +168,7 @@ function EditForm({
             description: detail.data.description ?? '',
             sortOrder: detail.data.sortOrder ?? 0,
             isActive: detail.data.isActive,
+            isVisibleToMembersOnly: detail.data.isVisibleToMembersOnly ?? false,
             imageUrl: detail.data.thumbnail ?? '',
           }
         : EMPTY,
@@ -182,6 +185,7 @@ function EditForm({
       form.description !== initial.description ||
       form.sortOrder !== initial.sortOrder ||
       form.isActive !== initial.isActive ||
+      form.isVisibleToMembersOnly !== initial.isVisibleToMembersOnly ||
       form.imageUrl !== initial.imageUrl,
     [form, initial]
   );
@@ -202,6 +206,7 @@ function EditForm({
           description: form.description.trim() || undefined,
           sortOrder: form.sortOrder,
           isActive: form.isActive,
+          isVisibleToMembersOnly: form.isVisibleToMembersOnly,
           imageUrl: form.imageUrl, // 빈 문자열이면 이미지 제거
         },
       });
@@ -385,6 +390,25 @@ function FormFields({
             id="cat-active"
             checked={value.isActive}
             onCheckedChange={(v) => set('isActive', v)}
+          />
+        </div>
+      )}
+
+      {!disableActiveToggle && (
+        <div className="flex items-center justify-between p-3 border rounded-md">
+          <div>
+            <Label htmlFor="cat-members-only" className="text-sm">
+              멤버십 전용
+            </Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              켜면 멤버십 회원에게만 보입니다. 미가입 고객에게는 메뉴에서 숨겨지고
+              카테고리 페이지도 열리지 않습니다.
+            </p>
+          </div>
+          <Switch
+            id="cat-members-only"
+            checked={value.isVisibleToMembersOnly}
+            onCheckedChange={(v) => set('isVisibleToMembersOnly', v)}
           />
         </div>
       )}

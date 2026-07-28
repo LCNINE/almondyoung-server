@@ -181,6 +181,11 @@ export interface CategoryChangedPayload {
   changeType: 'created' | 'updated' | 'deleted' | 'moved';
   timestamp: string; // ISO 8601
   category: CategorySnapshot | null; // null only if deleted
+  /**
+   * 루트부터 직계 부모까지의 조상 스냅샷. 소비자가 부모를 먼저 보장해야
+   * 자식이 최상위로 잘못 붙지 않는다(이벤트 순서와 무관하게 트리 유지).
+   */
+  ancestors?: CategorySnapshot[];
 }
 
 export interface CategorySnapshot {
