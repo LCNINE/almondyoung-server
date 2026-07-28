@@ -11,7 +11,9 @@ const config: ExpoConfig = {
   scheme: "almondyoung",
   android: {
     package: "com.almondyoung.storefront",
-    versionCode: 1,
+    // versionCode 는 여기 두지 않는다 — eas.json 의 cli.appVersionSource 가 "remote" 라
+    // EAS 서버가 source of truth 이고, 로컬 값은 무시되면서 혼란만 만든다.
+    // production 프로파일의 autoIncrement 가 스토어 빌드마다 올려준다.
     // `google-services.json` 은 .gitignore 대상이고, EAS Build 는 git 아카이브를
     // 업로드하므로 로컬 파일은 빌드 워커에 올라가지 않는다 — 그대로 두면 Android
     // 빌드가 "file not found" 로 죽는다. EAS 쪽에는 file 타입 환경변수로 올리고
