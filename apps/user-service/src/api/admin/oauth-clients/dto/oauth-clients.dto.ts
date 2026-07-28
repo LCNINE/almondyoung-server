@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, IsUrl, Matches, MaxLength } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsRedirectUri } from '../../../oauth/redirect-uri';
 
 export type OAuthClientType = 'confidential' | 'public';
 
@@ -23,7 +24,7 @@ export class CreateOAuthClientDto {
   @ApiProperty({ description: '허용 redirect_uri 목록', example: ['https://daview.com/auth/callback'] })
   @IsArray()
   @ArrayMinSize(1)
-  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  @IsRedirectUri({ each: true })
   redirectUris: string[];
 
   @ApiProperty({
@@ -33,7 +34,7 @@ export class CreateOAuthClientDto {
   })
   @IsArray()
   @IsOptional()
-  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  @IsRedirectUri({ each: true })
   postLogoutRedirectUris?: string[];
 
   @ApiProperty({ description: '허용 스코프 목록(선택)', required: false, example: ['profile', 'email'] })
@@ -48,13 +49,13 @@ export class UpdateOAuthClientDto {
   @IsArray()
   @IsOptional()
   @ArrayMinSize(1)
-  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  @IsRedirectUri({ each: true })
   redirectUris?: string[];
 
   @ApiProperty({ description: 'logout 후 redirect 허용 URI 목록(빈 배열 = null)', required: false })
   @IsArray()
   @IsOptional()
-  @IsUrl({ require_protocol: true, require_tld: false }, { each: true })
+  @IsRedirectUri({ each: true })
   postLogoutRedirectUris?: string[];
 
   @ApiProperty({ description: '허용 스코프 목록(선택, null 로 비우려면 빈 배열 전송)', required: false })
