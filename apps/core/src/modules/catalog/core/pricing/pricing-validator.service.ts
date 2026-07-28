@@ -36,12 +36,8 @@ export class PricingValidatorService {
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
     return this.dbService.run(async (trx) => {
-      console.error('RAW rulesDto:', JSON.stringify(rulesDto, null, 2));
-
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
       if (!parseResult.success) {
-        console.error('pricingRulesSetSchema issues:', JSON.stringify(parseResult.error.issues, null, 2));
-
         throw new BadRequestException({
           message: 'Invalid pricing rules structure',
           errors: parseResult.error.issues,

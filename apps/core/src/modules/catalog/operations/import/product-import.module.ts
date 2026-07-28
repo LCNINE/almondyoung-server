@@ -6,10 +6,12 @@ import { ProductImportNormalizer } from './services/product-import.normalizer';
 import { ProductImportValidator } from './services/product-import.validator';
 import { ProductImportSessionReader } from './services/product-import-session.reader';
 import { ProductImportManager } from './services/product-import.manager';
+import { ProductImportPricingBuilder } from './services/product-import-pricing.builder';
 import { ProductsModule } from '../../core/products/products.module';
+import { PricingModule } from '../../core/pricing/pricing.module';
 
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, PricingModule],
   controllers: [ProductImportController],
   providers: [
     ProductImportService,
@@ -18,6 +20,7 @@ import { ProductsModule } from '../../core/products/products.module';
     ProductImportValidator,
     ProductImportSessionReader,
     ProductImportManager,
+    ProductImportPricingBuilder,
   ],
   exports: [ProductImportService],
 })

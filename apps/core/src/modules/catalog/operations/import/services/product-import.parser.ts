@@ -4,6 +4,11 @@ import { BadRequestError } from '@app/shared';
 import { ParsedWorkbook, RawRow } from '../dto/import.types';
 
 export const MAX_PRODUCT_ROWS = 1000;
+/**
+ * 상품 1000행 × 조합 상한 100 을 다 채우면 10만 행이지만, 그건 파일 크기 상한(10MB)에
+ * 먼저 걸린다. 2만 행은 파싱 메모리를 보호하는 실용 상한이다.
+ */
+export const MAX_VARIANT_ROWS = 20_000;
 
 const REQUIRED_PRODUCT_HEADERS = ['productKey', 'name'];
 
@@ -50,7 +55,13 @@ export class ProductImportParser {
     const optionsSheet = wb.getWorksheet('Options');
     const options = optionsSheet ? this.readSheet(optionsSheet) : [];
 
-    return { products, options };
+    const variantsSheet = wb.getWorksheet('Variants');
+    const variants = variantsSheet ? this.readSheet(variantsSheet) : [];
+    if (variants.length > MAX_VARIANT_ROWS) {
+      throw new BadRequestError(`Variants 행이 상한(${MAX_VARIANT_ROWS})을 초과했습니다. 파일을 나눠 올려주세요.`);
+    }
+
+    return { products, options, variants };
   }
 
   /** 1행=헤더, 이후=데이터. 빈 행은 건너뛰고 rowNumber 는 데이터 기준 1-based. */
