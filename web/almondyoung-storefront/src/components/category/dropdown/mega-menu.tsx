@@ -80,6 +80,11 @@ export function MegaMenu({ categories }: MegaMenuProps) {
   const l2 = l1Children.find((c) => (c.handle || c.id) === activeL2)
   const l2Children = l2?.category_children ?? []
 
+  // 우측 큰 이미지는 대분류로 고정한다. 중분류를 훑을 때마다 이미지가 바뀌면 산만하다.
+  const spotlight = l1
+  const spotlightImage = l1 ? getCategoryThumbnail(l1) : null
+  const spotlightHref = `/category/${l1?.handle || l1?.id}`
+
   return (
     <div className="flex max-h-[calc(100vh-140px)] min-h-[500px]">
       {/* ─── col1: 대분류 세로 리스트 ─── */}
@@ -277,10 +282,35 @@ export function MegaMenu({ categories }: MegaMenuProps) {
             </aside>
           )}
 
-          {/* ─── 우측 영역: leaf CTA / 배너 슬롯. flex-1 로 남은 폭을 채워 전체 패널 폭을 고정(쿠팡식) ─── */}
+          {/* ─── 우측 영역: hover 중인 카테고리의 큰 썸네일 ─── */}
           <div className="min-w-0 flex-1 p-4">
-            {l1 && l1Children.length === 0 ? (
-              // 대분류만 있고 중분류 없음(leaf): 중앙 CTA
+            {spotlightImage ? (
+              <NavigationMenuLink asChild>
+                <LocalizedClientLink
+                  prefetch={false}
+                  href={spotlightHref}
+                  className="group flex h-full min-h-[380px] flex-col items-center justify-center gap-4"
+                >
+                  <div className="relative aspect-square w-full max-w-[320px] overflow-hidden rounded-2xl bg-white">
+                    <Image
+                      src={getThumbnailUrl(spotlightImage)}
+                      alt={spotlight!.name}
+                      fill
+                      sizes="320px"
+                      className="object-contain transition-transform duration-300 group-hover:scale-105"
+                    />
+                  </div>
+                  <p className="text-foreground text-lg font-bold">
+                    {spotlight!.name}
+                  </p>
+                  <span className="bg-primary group-hover:bg-primary/90 inline-flex items-center gap-1 rounded-full px-5 py-2 text-sm font-semibold text-white transition-colors">
+                    {t("viewProducts")}
+                    <ChevronRight className="h-4 w-4" />
+                  </span>
+                </LocalizedClientLink>
+              </NavigationMenuLink>
+            ) : l1 && l1Children.length === 0 ? (
+              // 이미지도 하위도 없는 대분류: 중앙 CTA
               <div className="flex h-full min-h-[380px] flex-col items-center justify-center gap-4 text-center">
                 <p className="text-xl font-bold text-gray-900">{l1.name}</p>
                 <p className="text-sm text-gray-500">{t("leafHint")}</p>
@@ -296,8 +326,6 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                 </NavigationMenuLink>
               </div>
             ) : (
-              // 배너 슬롯 (프로모/이벤트 이미지용 예약 공간).
-              // ponytail: 콘텐츠 정해지면 이 박스 안에 이미지/링크 넣으면 됨.
               <div className="h-full min-h-[380px]" />
             )}
           </div>

@@ -10,8 +10,11 @@ import { SendMessageService } from '../services/send-verify-code.service';
 export class SendMessageController {
   constructor(private readonly sendMessageService: SendMessageService) {}
 
+  // 실제 "1인당 3회" 제한은 SendMessageService 가 전화번호 기준으로 건다.
+  // 여기 IP 기준 제한은 호출자가 서버(auth-web/storefront Lambda)라 사용자 단위로 동작하지 않으므로,
+  // 사용자별 방어가 아니라 SMS 총량 상한(비용 방어)으로만 남긴다. 실측 피크를 보고 조정할 것.
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { ttl: 60000, limit: 3 } }) // 1분에 3번만 발송 가능
+  @Throttle({ default: { ttl: 60000, limit: 100 } })
   @Post()
   @Public()
   @ApiOperation({

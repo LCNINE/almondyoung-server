@@ -103,8 +103,9 @@ export interface BusinessInfoDto {
 export interface BusinessInfoRequestDto {
   businessNumber?: string
   representativeName?: string
+  /** 개업일자 YYYYMMDD. 국세청 진위확인 필수 입력이라 직접 입력 경로에서는 반드시 보낸다. */
+  startDate?: string
   fileUrl?: string
-  metadata?: BusinessMetadata
 }
 
 /*───────────────────────────

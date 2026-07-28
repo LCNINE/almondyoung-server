@@ -14,16 +14,12 @@ import { Input } from "@components/common/ui/input"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
 import { uploadFile } from "@lib/api/file/upload"
-import {
-  createBusiness,
-  fetchExternalBusinessInfo,
-  updateBusiness,
-} from "@lib/api/users/business"
+import { createBusiness, updateBusiness } from "@lib/api/users/business"
 import type { FilesDto } from "@lib/types/dto/files"
-import type { BusinessInfoDto, NtsLookupResult } from "@lib/types/dto/users"
+import type { BusinessInfoDto } from "@lib/types/dto/users"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import type { ViewMode } from "domains/business/template/business-info-template"
-import { CheckCircle2, ChevronLeft, ChevronRight, Info } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useMemo, useState, useTransition } from "react"
@@ -54,6 +50,8 @@ export default function BusinessForm({
       buildBusinessDtoSchema({
         businessNumberRequired: t("businessNumberRequiredError"),
         representativeNameRequired: t("representativeNameRequiredError"),
+        startDateRequired: t("startDateRequiredError"),
+        startDateInvalid: t("startDateInvalidError"),
       }),
     [t]
   )
@@ -64,21 +62,15 @@ export default function BusinessForm({
     defaultValues: {
       businessNumber: formatBusinessNumber(initialData?.businessNumber ?? ""),
       representativeName: initialData?.representativeName ?? "",
+      // 개업일자는 저장하지 않으므로(진위확인 입력값일 뿐) 수정 시에도 다시 입력받는다.
+      startDate: "",
       fileUrl: initialData?.fileUrl || undefined,
       file: undefined,
-      metadata: initialData?.metadata ?? undefined,
-      nts: null,
-      isSubmitting: false,
     },
   })
-  const [isSearchPending, startSearchTransition] = useTransition()
   const [isSubmitPending, startSubmitTransition] = useTransition()
 
   const router = useRouter()
-
-  // 파일 첨부 경로를 쓰는 동안에는 직접 입력(번호/대표자명)을 잠근다.
-  // dirtyFields 대신 실제 값 기준이라 X 로 파일을 지우면 자동으로 다시 열린다.
-  const isFileMode = Boolean(form.watch("file") || form.watch("fileUrl"))
 
   // 스텝 전환: false=번호/대표자 입력 화면, true=파일 첨부 화면
   // 기존 파일이 있으면 파일 스텝으로 시작.
@@ -90,19 +82,18 @@ export default function BusinessForm({
   const handleBackToInfo = () => {
     form.setValue("file", undefined, { shouldValidate: true })
     form.setValue("fileUrl", undefined)
-    form.setValue("isSubmitting", Boolean(form.getValues("nts")))
     setShowFileUpload(false)
   }
 
-  // 조회를 했거나 파일이 있어야 등록/취소 버튼이 등장
-  const showActions = Boolean(form.watch("nts")) || isFileMode
 
   const handleSubmit = (data: BusinessDtoSchema) => {
-    const { businessNumber, representativeName, file, metadata } = data
+    const { businessNumber, representativeName, startDate, file } = data
+    const normalizedStartDate = startDate?.replace(/\D/g, "") ?? ""
 
-    // 상태조회 결과를 metadata.nts 에 보관
-    const nts = form.watch("nts")
-    const mergedMetadata = nts != null ? { ...(metadata ?? {}), nts } : metadata
+    if (showFileUpload && !file && !data.fileUrl) {
+      toast.info(t("fileRequiredError"))
+      return
+    }
 
     if (initialData?.status === "approved") {
       const confirmed = window.confirm(
@@ -110,11 +101,6 @@ export default function BusinessForm({
       )
 
       if (!confirmed) return
-    }
-
-    if (!form.watch("isSubmitting")) {
-      toast.info(t("fileRequiredError"))
-      return
     }
 
     startSubmitTransition(async () => {
@@ -143,12 +129,15 @@ export default function BusinessForm({
       try {
         // 새로 등록
         if (viewMode === "register") {
-          await createBusiness({
-            businessNumber,
-            representativeName,
-            fileUrl: fileRes?.url,
-            metadata: mergedMetadata,
-          })
+          await createBusiness(
+            showFileUpload
+              ? { fileUrl: fileRes?.url }
+              : {
+                  businessNumber,
+                  representativeName,
+                  startDate: normalizedStartDate,
+                }
+          )
 
           router.refresh()
         } else if (viewMode === "edit") {
@@ -157,19 +146,18 @@ export default function BusinessForm({
             toast.error(t("notFoundError"))
             return
           }
-          // fileRes.data.url이 있으면 기존 사업자번호랑 대표자는 ''로 설정
+          // 어떤 경로로 제출하는지는 "지금 보고 있는 스텝"이 정한다.
+          // 예전엔 initialData.fileUrl 을 직접 읽어서, 파일로 등록했던 사용자가 "이전"으로
+          // 돌아와 번호를 입력해도 옛 fileUrl 이 같이 실려 계속 서류 심사로만 처리됐다.
           await updateBusiness({
-            business: {
-              businessNumber: fileRes?.url ? "" : businessNumber,
-              representativeName: fileRes?.url ? "" : representativeName,
-              fileUrl: fileRes?.url
-                ? fileRes.url
-                : initialData?.fileUrl
-                  ? initialData.fileUrl
-                  : "",
-              metadata: mergedMetadata,
-            },
-            businessId: initialData?.id!,
+            business: showFileUpload
+              ? { fileUrl: fileRes?.url ?? initialData.fileUrl ?? "" }
+              : {
+                  businessNumber,
+                  representativeName,
+                  startDate: normalizedStartDate,
+                },
+            businessId: initialData.id,
           })
         }
 
@@ -199,103 +187,17 @@ export default function BusinessForm({
     })
   }
 
-  // 조회 결과 안내
-  const showLookupToast = (nts: NtsLookupResult) => {
-    const verified =
-      nts.result === "active" ||
-      nts.result === "suspended" ||
-      nts.result === "closed"
+  // 서류 경로로 제출하면 서버가 business_number/representative_name 을 null 로 덮어쓴다.
+  // 승인된 번호가 있는 사용자에겐 그 사실을 미리 알리고 전환 여부를 묻는다.
+  const handleGoToDocument = () => {
+    const willDiscardApproved =
+      initialData?.status === "approved" && Boolean(initialData?.businessNumber)
 
-    // 국세청 응답의 실제 메시지(상태·미등록 사유)를 그대로 읽어 보여준다.
-    const raw = nts.raw ?? {}
-    const detail = [raw.b_stt, raw.tax_type]
-      .filter((v): v is string => typeof v === "string" && v.length > 0)
-      .join(" · ")
-    // not_found 면 미등록 메시지, lookup_failed 면 raw 가 없어 일반 안내.
-    const reason = detail || "국세청 조회에 실패했어요."
-    const ctaLabel = isEditing ? "수정하기" : "등록하기"
-
-    toast.custom(
-      (id) => (
-        <button
-          type="button"
-          onClick={() => toast.dismiss(id)}
-          style={{
-            fontFamily:
-              '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
-          }}
-          className="flex w-full items-start gap-3 rounded-2xl bg-white/70 px-4 py-3 text-left shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-2xl backdrop-saturate-150"
-        >
-          {verified ? (
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-          ) : (
-            <Info className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
-          )}
-          <div className="space-y-0.5">
-            <p className="text-[15px] leading-snug font-medium text-gray-900">
-              {verified ? "사업자 확인 완료" : "확인이 필요한 사업자번호예요"}
-            </p>
-            <p className="text-[13px] leading-snug font-normal text-gray-500">
-              {verified ? detail : reason}
-            </p>
-            <p className="text-[13px] leading-snug font-normal text-gray-500">
-              {verified
-                ? `자동으로 승인돼요. 아래 ‘${ctaLabel}’를 눌러주세요.`
-                : `관리자가 확인 후 승인해드릴게요. 그대로 ‘${ctaLabel}’를 눌러주세요.`}
-            </p>
-          </div>
-        </button>
-      ),
-
-      {
-        id: "business-lookup",
-        duration: 7000,
-        position: "bottom-center",
-        // 기본 sonner 폭(356px)보다 넓게.
-        style: { width: "min(480px, 92vw)" },
-      }
-    )
-  }
-
-  // 사업자 정보 외부 조회 (국세청 상태조회). 사업자번호만 필요하며 결과와 무관하게 등록 가능.
-  const handleExternalBusinessInfo = () => {
-    const digits = form.getValues("businessNumber").replace(/\D/g, "")
-
-    if (digits.length !== 10) {
-      form.setError("businessNumber", {
-        message:
-          digits.length === 0
-            ? t("businessNumberRequiredError")
-            : t("businessNumberLengthError"),
-      })
-      form.setFocus("businessNumber")
+    if (willDiscardApproved && !window.confirm(t("switchToDocumentConfirm"))) {
       return
     }
 
-    startSearchTransition(async () => {
-      try {
-        const nts = await fetchExternalBusinessInfo(digits)
-        form.setValue("nts", nts)
-        form.setValue("isSubmitting", true) // 조회 결과와 무관하게 등록 허용
-
-        // 번호 실존(계속/휴업/폐업) = 자동 승인, 미등록/조회실패 = 국세청 메시지 그대로 안내
-        showLookupToast(nts)
-      } catch (error: any) {
-        if (
-          error?.digest === "UNAUTHORIZED" ||
-          error?.message === "UNAUTHORIZED"
-        ) {
-          throw error
-        }
-        const failed: NtsLookupResult = {
-          result: "lookup_failed",
-          checkedAt: new Date().toISOString(),
-        }
-        form.setValue("nts", failed)
-        form.setValue("isSubmitting", true)
-        showLookupToast(failed)
-      }
-    })
+    setShowFileUpload(true)
   }
 
   return (
@@ -324,12 +226,6 @@ export default function BusinessForm({
                           field.onChange(formatted.replace(/\s/g, "")) // 공백 제거
                           form.clearErrors("businessNumber")
                           form.trigger("businessNumber")
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault() // form submit 방지
-                            handleExternalBusinessInfo()
-                          }
                         }}
                         maxLength={12}
                       />
@@ -360,11 +256,33 @@ export default function BusinessForm({
                           )
                           form.clearErrors("representativeName")
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault()
-                            handleExternalBusinessInfo()
-                          }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* 개업일자 — 국세청 진위확인에 사업자번호·대표자명과 함께 필요하다. */}
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t("startDateLabel")}{" "}
+                      <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-background"
+                        placeholder={t("startDatePlaceholder")}
+                        inputMode="numeric"
+                        maxLength={8}
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e.target.value.replace(/\D/g, ""))
+                          form.clearErrors("startDate")
                         }}
                       />
                     </FormControl>
@@ -374,27 +292,15 @@ export default function BusinessForm({
               />
             </div>
 
-            <div className="space-y-3">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-muted-foreground text-xs leading-relaxed">
-                  {t("lookupHint")}
-                </p>
-                <Button
-                  type="button"
-                  className="w-full shrink-0 sm:w-28"
-                  onClick={handleExternalBusinessInfo}
-                  disabled={isSearchPending}
-                >
-                  {isSearchPending ? t("lookupPending") : t("lookupButton")}
-                </Button>
-              </div>
-            </div>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {t("lookupHint")}
+            </p>
 
-            {/* 사업자등록번호가 없으면 파일 첨부 스텝으로 전환 */}
+            {/* 사업자등록번호로 인증이 어려우면 서류 첨부 스텝으로 전환 */}
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => setShowFileUpload(true)}
+                onClick={handleGoToDocument}
                 className="group text-foreground hover:bg-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-dashed px-4 py-3 text-sm font-medium transition-colors"
               >
                 <span className="underline-offset-4 group-hover:underline">
@@ -409,17 +315,18 @@ export default function BusinessForm({
             <button
               type="button"
               onClick={handleBackToInfo}
-              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm font-medium transition-colors"
+              className="group text-foreground hover:bg-muted flex w-full cursor-pointer items-center gap-2 rounded-md px-4 py-3 text-sm font-medium transition-colors"
             >
-              <ChevronLeft className="h-4 w-4" />
-              {t("backButton")}
+              <ChevronLeft className="text-muted-foreground h-4 w-4 shrink-0 transition-transform group-hover:-translate-x-0.5" />
+              <span className="underline-offset-4 group-hover:underline">
+                {t("backButton")}
+              </span>
             </button>
             <BusinessFileUploader />
           </div>
         )}
 
-        {/* 조회했거나 파일을 첨부해야 등록/취소 버튼이 나타난다. */}
-        {showActions && (
+        {(
           <div className="animate-in fade-in-50 slide-in-from-bottom-2 flex justify-end gap-3 pt-4 duration-300">
             {onCancel && (
               <Button
