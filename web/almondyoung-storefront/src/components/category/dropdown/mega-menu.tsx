@@ -80,15 +80,10 @@ export function MegaMenu({ categories }: MegaMenuProps) {
   const l2 = l1Children.find((c) => (c.handle || c.id) === activeL2)
   const l2Children = l2?.category_children ?? []
 
-  // 우측 큰 이미지: 중분류를 hover 중이면 그쪽, 아니면 대분류.
-  // 중분류에 이미지가 없으면 대분류 것으로 채워 패널이 비지 않게 한다.
-  const spotlight = l2 ?? l1
-  const spotlightImage =
-    (l2 ? getCategoryThumbnail(l2) : null) ??
-    (l1 ? getCategoryThumbnail(l1) : null)
-  const spotlightHref = l2
-    ? `/category/${l1!.handle || l1!.id}/${l2.handle || l2.id}`
-    : `/category/${l1?.handle || l1?.id}`
+  // 우측 큰 이미지는 대분류로 고정한다. 중분류를 훑을 때마다 이미지가 바뀌면 산만하다.
+  const spotlight = l1
+  const spotlightImage = l1 ? getCategoryThumbnail(l1) : null
+  const spotlightHref = `/category/${l1?.handle || l1?.id}`
 
   return (
     <div className="flex max-h-[calc(100vh-140px)] min-h-[500px]">
