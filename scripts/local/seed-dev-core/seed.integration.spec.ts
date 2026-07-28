@@ -27,11 +27,11 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
-    // 정확히 8개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
+    // 정확히 9개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
     // 부팅 시 시딩되는 개수다(import 하지 않음: ALL_SCOPES 에서 스코프 하나가 빠지는 회귀는
-    // `> 0` 로는 못 잡는다). 현재 ALL_SCOPES 는 FULFILLMENT_SCOPES 와 동일하다.
+    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(1) + FULFILLMENT_SCOPES(8).
     const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(scopeCountRows[0].n).toBe(8);
+    expect(scopeCountRows[0].n).toBe(9);
 
     const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
       SELECT rsm.role_name, s.key AS scope_key
@@ -47,9 +47,10 @@ describeIfSeedDb('dev_core 시드', () => {
       scopeKeysByRole.set(row.role_name, scopeKeys);
     }
 
-    // 기대값은 apps/core/src/platform/auth/fulfillment-scopes.ts 의 FULFILLMENT_ROLE_MAPPINGS 를
+    // 기대값은 apps/core/src/platform/auth/merged-scopes.ts 의 ALL_ROLE_MAPPINGS 를
     // import 하지 않고 여기 직접 적는다 — 검증 대상 상수를 그대로 가져와 비교하면 그 상수 자체가
     // 잘못됐을 때도 테스트가 통과해버려 회귀를 잡지 못한다.
+    expect(scopeKeysByRole.get('admin')).toEqual(['inventory.warehouse.manage']);
     expect(scopeKeysByRole.get('logistics_worker')).toEqual(['fulfillment.warehouse.operate']);
     expect(scopeKeysByRole.get('logistics_manager')).toEqual([
       'fulfillment.dispatch.force',
@@ -59,6 +60,7 @@ describeIfSeedDb('dev_core 시드', () => {
       'fulfillment.shipment.override_recipient',
       'fulfillment.shipment.reopen',
       'fulfillment.warehouse.operate',
+      'inventory.warehouse.manage',
     ]);
   });
 
