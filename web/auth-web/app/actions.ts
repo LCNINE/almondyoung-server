@@ -15,6 +15,7 @@ import { env } from "@/lib/env"
 import {
   clearIdpSessionCookies,
   getIdpAccessToken,
+  hasIdpRefreshToken,
   setIdpSessionCookies,
 } from "@/lib/idp-session"
 import { normalizePhoneNumber } from "@/lib/phone-number"
@@ -24,6 +25,7 @@ import {
   callbackSignup,
   checkEmailAvailable,
   checkLoginIdAvailable,
+  createBusinessLicense,
   findUserId,
   forgotPassword,
   getMe,
@@ -32,6 +34,7 @@ import {
   restoreAccessToken,
   sendPhoneVerificationCode,
   signIn,
+  uploadBusinessFile,
   signUp,
   type LocalSignUpInput,
   type TokenPair,
@@ -58,6 +61,11 @@ export type ResetForgottenPasswordResult =
 
 const PASSWORD_RESET_TOKEN_COOKIE = "passwordResetToken"
 const PASSWORD_RESET_TOKEN_MAX_AGE = 60 * 5
+
+// user-service 의 FILE_SIZE_LIMIT / ALLOWED_MIME_TYPES 와 동일하게 유지할 것.
+// (서버가 최종 판정하고, 여기서는 왕복 전에 걸러 안내 문구만 개선한다.)
+const BUSINESS_FILE_MAX_BYTES = 5 * 1024 * 1024
+const BUSINESS_FILE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif"]
 
 /**
  * @param expectUserId 재인증 흐름에서 호출자가 "이 userId 의 자격증명만 허용" 을 강제하고 싶을 때 전달.
@@ -441,7 +449,112 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     }
   }
 
-  return redirectAfterAuth(userId, redirectToRaw)
+  // 여기서 바로 리다이렉트하지 않는다 — 계정은 이미 만들어졌고 세션도 붙었으므로,
+  // 이어지는 사업자 인증 스텝을 보여준 뒤 finishSignupAction 이 마무리한다.
+  // (사업자 인증은 건너뛸 수 있으므로 가입 성공 자체를 막지 않는다.)
+  void userId
+  void redirectToRaw
+  return { ok: true }
+}
+
+/**
+ * 가입 스텝을 모두 마친 뒤(사업자 인증 완료 또는 건너뛰기) 원래 가려던 곳으로 보낸다.
+ *
+ * userId 를 인자로 받지 않는다 — 받으면 임의 userId 로 OAuth code 를 발급받아 남의 계정으로
+ * 로그인할 수 있다. 방금 심은 세션 쿠키에서 access token 을 꺼내 /users/me 로 확인한다.
+ */
+export async function finishSignupAction(redirectToRaw: string): Promise<ActionResult> {
+  // accessToken 쿠키는 15분짜리라(ACCESS_MAX_AGE) 사업자 인증 스텝에 조금만 머물러도 사라진다.
+  // 2주짜리 refreshToken 으로 복원해서, 가입은 끝났는데 마지막 이동만 막히는 상황을 없앤다.
+  const accessToken = (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: "가입은 완료됐어요. 세션이 만료되어 다시 로그인이 필요합니다.",
+    }
+  }
+
+  const me = await getMe(accessToken)
+  if (!me.id) {
+    return { ok: false, error: "세션을 확인하지 못했습니다. 다시 로그인해주세요." }
+  }
+
+  return redirectAfterAuth(me.id, redirectToRaw)
+}
+
+/** refreshToken 으로 access 를 재발급하고 세션 쿠키를 갱신한다. 실패하면 null. */
+async function restoreSessionFromRefreshToken(): Promise<string | null> {
+  const refreshToken = await hasIdpRefreshToken()
+  if (!refreshToken) return null
+
+  const restored = await restoreAccessToken(refreshToken)
+  if (!restored.ok) return null
+
+  // restore-token 은 access 만 새로 준다. refresh 는 기존 쿠키 값을 그대로 유지한다.
+  await setIdpSessionCookies({ accessToken: restored.accessToken, refreshToken })
+  return restored.accessToken
+}
+
+/**
+ * 가입 직후 사업자 인증. 국세청 진위확인은 user-service 가 직접 수행하므로
+ * 여기서는 입력값만 전달한다. 법인 번호는 user-service 가 400 으로 거절한다.
+ */
+export async function registerBusinessAction(formData: FormData): Promise<ActionResult> {
+  const accessToken = (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
+  if (!accessToken) {
+    return {
+      ok: false,
+      error: "가입은 완료됐어요. 세션이 만료되어 다시 로그인이 필요합니다.",
+    }
+  }
+
+  // 증빙 첨부 경로가 우선. 법인처럼 자동 검증이 안 되는 경우 여기로 들어와 관리자 심사로 간다.
+  const file = formData.get("file")
+  const hasFile = file instanceof File && file.size > 0
+
+  // user-service FileValidatorPipe 와 같은 규칙. 여기서 먼저 걸러 업로드 왕복을 아끼고
+  // 사용자에게도 서버 원문 대신 읽기 쉬운 문구를 준다.
+  if (hasFile) {
+    if (file.size > BUSINESS_FILE_MAX_BYTES) {
+      return { ok: false, error: "파일 크기는 5MB 이하만 첨부할 수 있습니다." }
+    }
+    if (!BUSINESS_FILE_MIME_TYPES.includes(file.type)) {
+      return { ok: false, error: "JPG, PNG, GIF 이미지 파일만 첨부할 수 있습니다." }
+    }
+  }
+
+  const businessNumber = String(formData.get("businessNumber") ?? "").replace(/\D/g, "")
+  const representativeName = String(formData.get("representativeName") ?? "").trim()
+  const startDate = String(formData.get("startDate") ?? "").replace(/\D/g, "")
+
+  if (!hasFile) {
+    if (businessNumber.length !== 10) {
+      return { ok: false, error: "사업자등록번호 10자리를 입력해주세요." }
+    }
+    if (!representativeName) {
+      return { ok: false, error: "대표자명을 입력해주세요." }
+    }
+    if (!/^\d{8}$/.test(startDate)) {
+      return { ok: false, error: "개업일자를 YYYYMMDD 8자리로 입력해주세요." }
+    }
+  }
+
+  try {
+    if (hasFile) {
+      const fileUrl = await uploadBusinessFile(accessToken, file)
+      await createBusinessLicense(accessToken, { fileUrl })
+    } else {
+      await createBusinessLicense(accessToken, { businessNumber, representativeName, startDate })
+    }
+    return { ok: true }
+  } catch (e) {
+    // ApiError.message 는 `[ctx] 400: ...` 형태의 디버깅용이라 그대로 노출하면 안 된다.
+    if (e instanceof ApiError) return { ok: false, error: e.serverMessage }
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "사업자 인증에 실패했습니다.",
+    }
+  }
 }
 
 export async function selectAccountAction(

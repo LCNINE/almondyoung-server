@@ -331,6 +331,55 @@ export async function checkEmailAvailable(email: string): Promise<boolean> {
   return body.available
 }
 
+/**
+ * 증빙 서류 업로드. 반환값은 S3 public URL 문자열.
+ * 법인처럼 자동 검증이 안 되는 경우 이 URL 로 등록하면 관리자 심사(under_review)로 간다.
+ */
+export async function uploadBusinessFile(
+  accessToken: string,
+  file: File
+): Promise<string> {
+  const form = new FormData()
+  form.append("folderName", "business")
+  form.append("file", file, file.name)
+
+  const res = await fetch(`${env.userServiceUrl}/files/upload`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}` },
+    body: form,
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "upload-business-file")
+  return readApiData<string>(res)
+}
+
+export type CreateBusinessLicenseInput = {
+  businessNumber?: string
+  representativeName?: string
+  /** 개업일자 YYYYMMDD. 국세청 진위확인에 사업자번호·대표자명과 함께 필요하다. */
+  startDate?: string
+  /** 증빙 첨부 경로. 이 값이 있으면 서버가 번호/대표자명 없이 관리자 심사로 넘긴다. */
+  fileUrl?: string
+}
+
+export async function createBusinessLicense(
+  accessToken: string,
+  body: CreateBusinessLicenseInput
+): Promise<void> {
+  const res = await fetch(`${env.userServiceUrl}/business-licenses`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "create-business-license")
+}
+
 export async function checkLoginIdAvailable(loginId: string): Promise<boolean> {
   const res = await fetch(
     `${env.userServiceUrl}/users/login-id-available?loginId=${encodeURIComponent(loginId)}`,
