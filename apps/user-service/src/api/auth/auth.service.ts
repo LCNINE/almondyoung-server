@@ -50,6 +50,7 @@ import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
 import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies';
 import { generateSocialNickname } from './utils/generate-social-nickname';
+import { isSamePhoneNumber } from '../../commons/utils/phone-number';
 
 @Injectable()
 export class AuthService {
@@ -867,7 +868,8 @@ export class AuthService {
       .where(eq(userServiceSchema.profiles.userId, user.id))
       .limit(1);
 
-    if (!profile || profile.phoneNumber !== phoneNumber) {
+    // 저장된 표기가 E.164/하이픈/숫자로 섞여 있어 정확 비교하면 옛 계정이 항상 실패한다
+    if (!profile || !isSamePhoneNumber(profile.phoneNumber ?? '', phoneNumber)) {
       throw new NotFoundException('휴대폰 번호가 일치하지 않습니다');
     }
 
