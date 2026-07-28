@@ -1,8 +1,9 @@
 import { randomUUID } from 'crypto';
+import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -313,6 +314,104 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       warehouse,
       workItem,
     };
+  }
+
+  /**
+   * seedReadyShipment 이 만든 라인 1개짜리 shipment 에, 같은 shipment/batch/plan/session 위에
+   * "이미 픽·핸드인은 끝났지만 아직 검수 전"인 두 번째 라인을 덧붙인다. inspectShipmentLines 의
+   * 다중 라인 경로(루프·라인별 키 파생·전량 검수 후 자동 dispatch)를 검증하기 위한 전용 헬퍼 —
+   * seedReadyShipment 자체는 다른 다수 테스트가 의존하므로 건드리지 않는다.
+   */
+  async function addParallelShipmentLine(
+    tx: DbTx,
+    fixture: Awaited<ReturnType<typeof seedReadyShipment>>,
+    qty: number,
+  ) {
+    // dispatchLocked 는 라인별 exact-custody source 를 별도 SHIP 이벤트로 나눠 부르므로, 두 번째 라인 몫만큼
+    // 물리 재고(stock_ledgers ON_HAND)도 함께 늘려야 한다 — 안 늘리면 첫 라인 SHIP 이 원장을 0으로 만든 뒤
+    // 두 번째 라인 SHIP 이 "재고 부족" 으로 거부된다(batchControlledStock.getAvailability 검사).
+    await tx
+      .update(wmsTables.stockLedgers)
+      .set({ qty: fixture.ledger.qty + qty })
+      .where(
+        and(
+          eq(wmsTables.stockLedgers.skuId, fixture.ledger.skuId),
+          eq(wmsTables.stockLedgers.warehouseId, fixture.ledger.warehouseId),
+          eq(wmsTables.stockLedgers.locationId, fixture.ledger.locationId),
+          eq(wmsTables.stockLedgers.stockState, fixture.ledger.stockState),
+        ),
+      );
+    const suffix = randomUUID();
+    // loadEventLineIdentities 는 dispatch 시 "신뢰 채널(medusa 등)" 라인에는 salesOrderLine 연결이 유효한
+    // UUID + channelOrderItemId/channelProductId 를 갖출 것을 요구한다 — 픽스처의 salesOrder 는 medusa 라
+    // 두 번째 라인도 자기 salesOrderLine 이 있어야 dispatchLocked 가 SHIPMENT_EVENT_IDENTITY_MISSING 로 막지 않는다.
+    const [salesOrderLine] = await tx
+      .insert(wmsTables.salesOrderLines)
+      .values({
+        salesOrderId: fixture.salesOrder.id,
+        variantId: randomUUID(),
+        productName: 'Dispatch product (parallel line)',
+        quantity: qty,
+        channelOrderItemId: `channel-item-${suffix}`,
+        channelProductId: `channel-product-${suffix}`,
+      })
+      .returning();
+    const [item] = await tx
+      .insert(wmsTables.fulfillmentOrderItems)
+      .values({
+        fulfillmentOrderId: fixture.fulfillmentOrder.id,
+        salesOrderId: fixture.salesOrder.id,
+        salesOrderLineId: salesOrderLine.id,
+        skuId: fixture.sku.id,
+        qty,
+        reservedQty: qty,
+        status: 'processing',
+      })
+      .returning();
+    const [line] = await tx
+      .insert(wmsTables.shipmentLines)
+      .values({
+        shipmentId: fixture.shipment.id,
+        fulfillmentOrderItemId: item.id,
+        skuId: fixture.sku.id,
+        qty,
+        reservedQty: qty,
+        inspectedQty: 0,
+      })
+      .returning();
+    await tx.insert(wmsTables.stockReservations).values({
+      targetType: 'SHIPMENT_LINE',
+      targetId: line.id,
+      shipmentLineId: line.id,
+      skuId: fixture.sku.id,
+      warehouseId: fixture.warehouse.id,
+      quantity: qty,
+      status: 'confirmed',
+      requestedAt: new Date(),
+    });
+    await tx.insert(wmsTables.pickingSourceAllocations).values({
+      planId: fixture.plan.id,
+      shipmentLineId: line.id,
+      sourceLocationId: fixture.location.id,
+      qty,
+      sourceStockVersion: fixture.ledger.version,
+    });
+    await tx.insert(wmsTables.batchInventorySessionBalances).values({
+      sessionId: fixture.session.id,
+      skuId: fixture.sku.id,
+      sourceLocationId: fixture.location.id,
+      custodyType: 'PACKING',
+      custodyRef: `work-item:${fixture.shipment.id}`,
+      shipmentLineId: line.id,
+      qty,
+    });
+    // 세션 총량 보존 불변식(assertConservation) 은 handedInQty === Σremaining balances(+settled+returned+shortage) 를
+    // 요구한다 — 추가한 PACKING 잔량만큼 handedInQty 도 함께 올려야 다음 moveCustody 호출에서 위반되지 않는다.
+    await tx
+      .update(wmsTables.batchInventorySessions)
+      .set({ handedInQty: fixture.session.handedInQty + qty })
+      .where(eq(wmsTables.batchInventorySessions.id, fixture.session.id));
+    return { item, line };
   }
 
   async function cleanupCommittedFixture(
@@ -1168,6 +1267,118 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         note: 'approved by warehouse lead',
         forcedQuantities: [{ shipmentLineId: fixture.line.id, quantity: 1 }],
       });
+    });
+  });
+
+  it('inspectShipmentLines 는 라인을 직접 받아 전량 검수 시 자동 출고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+      // 픽스처는 inspectedQty=1 (qty=2) 로 시작한다 — 남은 1개를 라인 지정으로 검수한다.
+      const response = await services(tx).inspectShipmentLines(
+        fixture.shipment.id,
+        {
+          entries: [{ shipmentLineId: fixture.line.id, quantity: 1 }],
+          actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+          idempotencyKey: `direct-inspect-${randomUUID()}`,
+        },
+        tx,
+      );
+
+      expect(response.status).toBe('shipped');
+      expect(response.dispatchAttemptId).not.toBeNull();
+
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fixture.line.id))
+        .limit(1);
+      expect(line.inspectedQty).toBe(2);
+    });
+  });
+
+  it('inspectShipmentLines 는 같은 shipmentLineId 가 두 번 오면 상태 변경 없이 거부한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+
+      await expect(
+        services(tx).inspectShipmentLines(
+          fixture.shipment.id,
+          {
+            entries: [
+              { shipmentLineId: fixture.line.id, quantity: 1 },
+              { shipmentLineId: fixture.line.id, quantity: 1 },
+            ],
+            actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+            idempotencyKey: `duplicate-line-${randomUUID()}`,
+          },
+          tx,
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      const [line] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fixture.line.id))
+        .limit(1);
+      expect(line.inspectedQty).toBe(1);
+      expect(line.lineVersion).toBe(1);
+    });
+  });
+
+  it('inspectShipmentLines 는 한 호출에 담긴 두 라인을 모두 검수하고 전량 검수 시 자동 출고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+      const second = await addParallelShipmentLine(tx, fixture, 1);
+
+      const response = await services(tx).inspectShipmentLines(
+        fixture.shipment.id,
+        {
+          entries: [
+            { shipmentLineId: fixture.line.id, quantity: 1 },
+            { shipmentLineId: second.line.id, quantity: 1 },
+          ],
+          actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+          idempotencyKey: `multi-line-inspect-${randomUUID()}`,
+        },
+        tx,
+      );
+
+      expect(response.status).toBe('shipped');
+      expect(response.dispatchAttemptId).not.toBeNull();
+
+      const lines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(inArray(wmsTables.shipmentLines.id, [fixture.line.id, second.line.id]))
+        .orderBy(asc(wmsTables.shipmentLines.id));
+      for (const line of lines) {
+        expect(line.inspectedQty).toBe(line.qty);
+      }
+
+      const [shipment] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id))
+        .limit(1);
+      expect(shipment.status).toBe('shipped');
+    });
+  });
+
+  it('inspectionScan 은 바코드 경로를 유지한다 (회귀)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+      const response = await services(tx).inspectionScan(
+        fixture.shipment.id,
+        {
+          barcode: fixture.barcode,
+          quantity: 1,
+          actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+          idempotencyKey: `barcode-inspect-${randomUUID()}`,
+        },
+        tx,
+      );
+      expect(response.status).toBe('shipped');
+      expect(response.shipmentLineId).toBe(fixture.line.id);
     });
   });
 });

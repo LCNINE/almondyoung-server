@@ -405,10 +405,11 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     services: ReturnType<typeof makeServices>,
     world: WarehouseWorld,
     actor: Actor,
-    pickingMethod: 'individual' | 'total_picking' = 'individual',
+    pickingMethod: 'individual' | 'total_picking' | 'multi_order' = 'individual',
+    cartCapacity?: number,
   ) {
     const batch = await services.batches.createBatch(
-      { warehouseId: world.warehouseId, pickingMethod, name: `Release batch ${randomUUID()}` },
+      { warehouseId: world.warehouseId, pickingMethod, cartCapacity, name: `Release batch ${randomUUID()}` },
       `release-batch-${randomUUID()}`,
       actor,
     );
@@ -657,10 +658,11 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     expectedLeaseVersion: number,
   ) {
     const member = world.shipments[0];
-    const plan = await services.picking.plan('discrete', {
+    const plan = await services.picking.plan({
       batchId,
       shipmentIds: [member.shipment.id],
       actorId: worker.id,
+      requestedStrategy: 'discrete',
       idempotencyKey: `discrete-plan-${randomUUID()}`,
     });
     expect(plan.state).toBe('planned');
@@ -717,7 +719,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       `aggregate-claim-${randomUUID()}`,
       worker,
     );
-    const plan = await services.picking.plan('aggregate_then_sort', {
+    const plan = await services.picking.plan({
       batchId,
       shipmentIds: [member.shipment.id],
       actorId: worker.id,
@@ -792,7 +794,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       `tote-claim-${randomUUID()}`,
       worker,
     );
-    const plan = await services.picking.plan('pick_to_tote', {
+    const plan = await services.picking.plan({
       batchId,
       shipmentIds: [member.shipment.id],
       actorId: worker.id,
@@ -872,7 +874,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const manager = { id: randomUUID(), roles: ['master'] };
 
       const successWorld = { ...world, shipments: [world.shipments[1]] };
-      const { batch, added } = await createBatchWithShipments(services, successWorld, manager);
+      const { batch, added } = await createBatchWithShipments(services, successWorld, manager, 'multi_order', 4);
 
       // A 는 dispatchable waybill 이 없어 batch add 자체가 막힌다. WaybillService.assertDispatchable 은 @app/shared
       // ConflictError 를 던진다(Nest .response.code 아님) — message 접두사로 WAYBILL_NOT_DISPATCHABLE 를 싣는다.
@@ -1053,7 +1055,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch, added } = await createBatchWithShipments(services, world, manager);
+      const { batch, added } = await createBatchWithShipments(services, world, manager, 'total_picking');
       const picked = await aggregatePick(services, world, batch.batchId, added[0].workItem.id, worker);
       expect(picked.completed).toMatchObject({ custodyType: 'PACKING', totalQty: 4 });
 
@@ -1101,7 +1103,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch, added } = await createBatchWithShipments(services, world, manager);
+      const { batch, added } = await createBatchWithShipments(services, world, manager, 'multi_order', 4);
       const picked = await totePick(services, world, batch.batchId, added[0].workItem.id, worker, [1, 3]);
       expect(picked.completed).toMatchObject({ custodyType: 'PACKING', totalQty: 4 });
       const assignments = await tx
@@ -1144,14 +1146,14 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['master', 'warehouse_worker'] };
-      const { batch, added } = await createBatchWithShipments(services, world, manager);
+      const { batch, added } = await createBatchWithShipments(services, world, manager, 'total_picking');
       const claimed = await services.batches.claimPicker(
         added[0].workItem.id,
         { expectedLeaseVersion: 0 },
         `short-pick-claim-${randomUUID()}`,
         worker,
       );
-      const plan = await services.picking.plan('aggregate_then_sort', {
+      const plan = await services.picking.plan({
         batchId: batch.batchId,
         shipmentIds: world.shipments.map((member) => member.shipment.id),
         actorId: worker.id,
@@ -1275,6 +1277,88 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expect(operation).toMatchObject({ status: 'completed', lastError: null });
       await expectCoreCheckpoint(tx, world, { onHandQty: 10, reservedQty: 9, availableQty: 1 });
       await expectArtifactCardinality(tx, world);
+    });
+  });
+
+  it('refuses a strategy that contradicts the batch picking method', async () => {
+    await inRollbackTx(db, async (tx) => {
+      // 창고는 두 전략을 모두 지원하지만 배치는 individual 이다.
+      const world = await seedWorld(tx, [2], ['discrete', 'aggregate_then_sort']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+
+      await expect(
+        services.picking.plan({
+          batchId: batch.batchId,
+          shipmentIds: [world.shipments[0].shipment.id],
+          actorId: worker.id,
+          idempotencyKey: `mismatch-plan-${randomUUID()}`,
+          requestedStrategy: 'aggregate_then_sort',
+        }),
+      ).rejects.toMatchObject({
+        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
+      });
+    });
+  });
+
+  it('derives the strategy from the batch when the request omits it', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, [2], ['discrete']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+
+      const planned = await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds: [world.shipments[0].shipment.id],
+        actorId: worker.id,
+        idempotencyKey: `derived-plan-${randomUUID()}`,
+      });
+
+      expect(planned.state).toBe('planned');
+      const [row] = await tx
+        .select({ strategy: wmsTables.pickingPlans.strategy })
+        .from(wmsTables.pickingPlans)
+        .where(eq(wmsTables.pickingPlans.batchId, batch.batchId))
+        .limit(1);
+      expect(row.strategy).toBe('discrete');
+    });
+  });
+
+  it('applies the same derivation to a replanned batch', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, [2], ['discrete', 'aggregate_then_sort']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+      const shipmentIds = [world.shipments[0].shipment.id];
+
+      await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds,
+        actorId: worker.id,
+        idempotencyKey: `replan-first-${randomUUID()}`,
+      });
+
+      // 재plan 도 같은 경로를 타므로 배치 방식과 어긋나는 전략은 여전히 막힌다.
+      await expect(
+        services.picking.plan({
+          batchId: batch.batchId,
+          shipmentIds,
+          actorId: worker.id,
+          idempotencyKey: `replan-second-${randomUUID()}`,
+          requestedStrategy: 'aggregate_then_sort',
+        }),
+      ).rejects.toMatchObject({
+        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
+      });
     });
   });
 });

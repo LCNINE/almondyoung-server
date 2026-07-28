@@ -100,11 +100,12 @@ export class PickingCommandV2Controller {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
-    return this.picking.plan(dto.strategy, {
+    return this.picking.plan({
       batchId: dto.batchId,
       shipmentIds: dto.shipmentIds,
       actorId: this.actor(user).id,
       idempotencyKey: this.idempotencyKey(idempotencyKey),
+      requestedStrategy: dto.strategy,
     });
   }
 

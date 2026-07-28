@@ -1,0 +1,2 @@
+ALTER TYPE "public"."picking_method" ADD VALUE 'multi_order';--> statement-breakpoint
+ALTER TABLE "outbound_batches" ADD CONSTRAINT "ck_outbound_batches_cart_capacity" CHECK ("outbound_batches"."picking_method"::text <> 'multi_order' OR ("outbound_batches"."cart_capacity" IS NOT NULL AND "outbound_batches"."cart_capacity" >= 1));
