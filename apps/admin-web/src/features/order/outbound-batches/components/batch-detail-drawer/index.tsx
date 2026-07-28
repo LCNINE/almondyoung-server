@@ -38,7 +38,7 @@ import {
 import type { PickingStrategyName } from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
-import { PICKING_METHOD_LABELS } from '../../picking-method';
+import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 
 interface Props {
   batchId: string;

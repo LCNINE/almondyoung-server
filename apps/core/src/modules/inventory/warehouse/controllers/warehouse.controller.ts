@@ -44,10 +44,14 @@ export class WarehouseController {
 
   @Patch(':id')
   @ApiOperation({ summary: '창고 정보 수정' })
-  @ApiResponse({ status: 200, description: '창고 정보가 수정되었습니다.' })
+  @ApiResponse({ status: 200, description: '창고 정보가 수정되었습니다.', type: WarehouseDto })
   @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
-  async update(@Param('id') id: string, @Body() dto: UpdateWarehouseDto) {
-    return this.warehouseService.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateWarehouseDto): Promise<WarehouseDto> {
+    // 매퍼를 태우는 이유: 이 메서드만 raw 엔티티를 반환해 create/findAll 과 응답 형태가
+    // 달랐다. 매퍼가 supportedPickingStrategies 의 null 을 [] 로 정규화하므로
+    // (warehouse.mapper.ts:11), 이제 세 메서드 모두 같은 형태의 응답을 반환한다.
+    const warehouse = await this.warehouseService.update(id, dto);
+    return WarehouseMapper.toDto(warehouse);
   }
 
   @Delete(':id')
