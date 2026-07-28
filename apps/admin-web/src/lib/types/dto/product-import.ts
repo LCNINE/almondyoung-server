@@ -23,19 +23,37 @@ export interface ValidatePreviewDto {
   rows: ValidatePreviewRow[];
 }
 
+/** 커밋/게시 잡의 상태. idle 은 아직 아무 잡도 접수되지 않은 상태. */
+export type ImportJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed';
+
+/** 세션 아이템(행 단위)의 게시 상태. */
+export type ItemPublishStatus = 'pending' | 'published' | 'failed' | 'skipped';
+
 export interface CommitItem {
   rowNumber: number;
   productKey: string;
-  status: 'created' | 'failed';
+  // 'pending' 은 접수 후 워커가 아직 처리하지 않은 행 — 세션 상세 폴링 중 나타난다.
+  status: 'pending' | 'created' | 'failed';
   masterId?: string;
   errorMessage?: string;
+  publishStatus: ItemPublishStatus;
+  publishError?: string;
 }
 
-export interface CommitResultDto {
+/** POST /product-imports/commit 의 202 응답 — 접수만 되었을 뿐 생성은 워커가 비동기로 진행한다. */
+export interface CommitAcceptedDto {
   sessionId: string;
-  createdCount: number;
-  failedCount: number;
-  items: CommitItem[];
+  status: 'queued';
+  totalRows: number;
+  queuedCount: number;
+  invalidCount: number;
+}
+
+/** POST /product-imports/:id/publish 의 202 응답 — 게시도 워커가 비동기로 진행한다. */
+export interface PublishAcceptedDto {
+  sessionId: string;
+  status: 'queued';
+  targetCount: number;
 }
 
 export interface SessionSummaryDto {
@@ -46,6 +64,12 @@ export interface SessionSummaryDto {
   failedCount: number;
   status: string;
   createdAt: string; // JSON 직렬화 결과(백엔드 Date → string)
+  commitStatus: ImportJobStatus;
+  publishStatus: ImportJobStatus;
+  publishedCount: number;
+  publishFailedCount: number;
+  commitError: string | null;
+  publishError: string | null;
 }
 
 export interface SessionDetailDto extends SessionSummaryDto {
@@ -57,14 +81,4 @@ export interface SessionListResponse {
   total: number;
   page: number;
   limit: number;
-}
-
-export interface PublishFailure {
-  masterId: string;
-  reason: string;
-}
-
-export interface PublishResultDto {
-  published: number;
-  failed: PublishFailure[];
 }

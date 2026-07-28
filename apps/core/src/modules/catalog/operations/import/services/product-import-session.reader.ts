@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
-import { and, count, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   type PimSchema,
   productCategories,
@@ -9,13 +9,22 @@ import {
   productImportItems,
   productMasterVersions,
   productMasterVariants,
+  productVariants,
 } from '../../../schema/catalog.schema';
 import { CategoryNode, comboKey } from '../dto/import.types';
 import { DbTransaction } from '../../../catalog.types';
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 
 export type SessionRow = typeof productImportSessions.$inferSelect;
-export type ItemRow = typeof productImportItems.$inferSelect;
+/**
+ * getSession() 이 실제로 매핑에 쓰는 열만 담은 축소 타입이다. admin-web 이 이 응답을
+ * 2초마다 폴링하므로(queries.ts useImportSession) `payload`(jsonb, 행당 2-3KB) 같은
+ * 안 쓰는 열을 실어 보내면 안 된다 — getSession() 아래 select 프로젝션과 항상 같이 좁힌다.
+ */
+export type ItemRow = Pick<
+  typeof productImportItems.$inferSelect,
+  'rowNumber' | 'productKey' | 'status' | 'masterId' | 'errorMessage' | 'publishStatus' | 'publishError'
+>;
 
 @Injectable()
 export class ProductImportSessionReader {
@@ -63,7 +72,15 @@ export class ProductImportSessionReader {
         .limit(1);
       if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
       const items = await trx
-        .select()
+        .select({
+          rowNumber: productImportItems.rowNumber,
+          productKey: productImportItems.productKey,
+          status: productImportItems.status,
+          masterId: productImportItems.masterId,
+          errorMessage: productImportItems.errorMessage,
+          publishStatus: productImportItems.publishStatus,
+          publishError: productImportItems.publishError,
+        })
         .from(productImportItems)
         .where(eq(productImportItems.sessionId, sessionId))
         .orderBy(productImportItems.rowNumber);
@@ -107,6 +124,35 @@ export class ProductImportSessionReader {
         map.set(key, row.variantId);
       }
       return map;
+    }, tx);
+  }
+
+  /**
+   * 주어진 코드 중 **현재 active 버전에 매달린** variant 가 이미 쓰고 있는 것들.
+   *
+   * 스코프가 active 인 이유: 같은 master 의 active variant 와 draft variant 는
+   * 같은 물리 상품을 가리키므로 의도적으로 코드를 공유한다(catalog.schema.ts:477-482,
+   * ADR-0004). 모든 product_variants 를 보면 남의 미게시 draft 에 오탐이 난다.
+   * publishVersion._validateVariantCodeUniqueness 가 강제하는 규칙과 같은 스코프다.
+   */
+  async findActiveVariantCodes(codes: string[], tx?: DbTransaction): Promise<Set<string>> {
+    if (codes.length === 0) return new Set();
+    return this.db.run(async (trx) => {
+      const found = new Set<string>();
+      // postgres 파라미터 상한(65534)에 걸리지 않도록 나눠 조회한다.
+      for (let i = 0; i < codes.length; i += 1000) {
+        const chunk = codes.slice(i, i + 1000);
+        const rows = await trx
+          .selectDistinct({ variantCode: productVariants.variantCode })
+          .from(productVariants)
+          .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
+          .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+          .where(and(inArray(productVariants.variantCode, chunk), eq(productMasterVersions.status, 'active')));
+        for (const row of rows) {
+          if (row.variantCode !== null) found.add(row.variantCode);
+        }
+      }
+      return found;
     }, tx);
   }
 }

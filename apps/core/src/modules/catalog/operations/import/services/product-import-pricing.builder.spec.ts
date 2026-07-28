@@ -34,7 +34,7 @@ describe('ProductImportPricingBuilder', () => {
     const dto = builder.build(
       rec({
         variantOverrides: [
-          { rowNumber: 1, comboKey: key, combination: [{ name: '색상', value: '빨강' }], basePriceRaw: '31000', membershipPriceRaw: '', basePrice: 31000 },
+          { rowNumber: 1, comboKey: key, basePriceRaw: '31000', membershipPriceRaw: '', basePrice: 31000 },
         ],
       }),
       new Map([[key, 'var-1']]),
@@ -50,7 +50,7 @@ describe('ProductImportPricingBuilder', () => {
     const key = comboKey([{ name: '색상', value: '검정' }]);
     expect(() =>
       builder.build(
-        rec({ variantOverrides: [{ rowNumber: 3, comboKey: key, combination: [{ name: '색상', value: '검정' }], basePriceRaw: '1', membershipPriceRaw: '', basePrice: 1 }] }),
+        rec({ variantOverrides: [{ rowNumber: 3, comboKey: key, basePriceRaw: '1', membershipPriceRaw: '', basePrice: 1 }] }),
         new Map(),
       ),
     ).toThrow(/조합/);
@@ -59,7 +59,7 @@ describe('ProductImportPricingBuilder', () => {
   it('가격을 안 적은 override 는 규칙을 만들지 않는다 (variantCode 만 지정한 행)', () => {
     const key = comboKey([{ name: '색상', value: '빨강' }]);
     const dto = builder.build(
-      rec({ variantOverrides: [{ rowNumber: 1, comboKey: key, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'X' }] }),
+      rec({ variantOverrides: [{ rowNumber: 1, comboKey: key, basePriceRaw: '', membershipPriceRaw: '', variantCode: 'X' }] }),
       new Map([[key, 'var-1']]),
     );
     expect(dto.basePriceRules).toHaveLength(1);

@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": false
+  },
+  "include": ["apps/core/src/modules/catalog/operations/import/**/*.ts"]
+}

@@ -62,7 +62,7 @@ describe('ProductImportValidator', () => {
   it('옵션값 중복은 에러', () => {
     const [rec] = validator.validate([
       record({ productKey: 'P1', name: 'x' }, [
-        { displayName: '색상', values: [{ displayName: '빨강' }, { displayName: '빨강' }] },
+        { displayName: '색상', values: [{ displayName: '빨강' }, { displayName: '빨강' }], sortOrder: 1 },
       ]),
     ]);
     expect(rec.errors.some((e) => e.sheet === 'Options' && /중복/.test(e.message))).toBe(true);
@@ -100,8 +100,16 @@ describe('ProductImportValidator', () => {
   });
 
   it('variant 조합이 상한(100)을 넘으면 에러', () => {
-    const many = { displayName: '색상', values: Array.from({ length: 11 }, (_, i) => ({ displayName: `c${i}` })) };
-    const many2 = { displayName: '사이즈', values: Array.from({ length: 11 }, (_, i) => ({ displayName: `s${i}` })) };
+    const many = {
+      displayName: '색상',
+      values: Array.from({ length: 11 }, (_, i) => ({ displayName: `c${i}` })),
+      sortOrder: 1,
+    };
+    const many2 = {
+      displayName: '사이즈',
+      values: Array.from({ length: 11 }, (_, i) => ({ displayName: `s${i}` })),
+      sortOrder: 2,
+    };
     const [rec] = validator.validate([record({ productKey: 'P1', name: 'x' }, [many, many2])]);
     expect(rec.errors.some((e) => /조합/.test(e.message))).toBe(true);
   });
@@ -148,14 +156,12 @@ describe('ProductImportValidator', () => {
       {
         rowNumber: 1,
         comboKey: '색상=빨강',
-        combination: [{ name: '색상', value: '빨강' }],
         basePriceRaw: '31000',
         membershipPriceRaw: '',
       },
       {
         rowNumber: 2,
         comboKey: '색상=파랑',
-        combination: [{ name: '색상', value: '파랑' }],
         basePriceRaw: '-1',
         membershipPriceRaw: '',
       },
@@ -171,7 +177,6 @@ describe('ProductImportValidator', () => {
       {
         rowNumber: 1,
         comboKey: '색상=빨강',
-        combination: [{ name: '색상', value: '빨강' }],
         basePriceRaw: '',
         membershipPriceRaw: '31000',
       },
@@ -192,7 +197,6 @@ describe('ProductImportValidator', () => {
       {
         rowNumber: 1,
         comboKey: '사이즈=S',
-        combination: [{ name: '사이즈', value: 'S' }],
         basePriceRaw: '25000',
         membershipPriceRaw: '',
       },
@@ -231,7 +235,6 @@ describe('ProductImportValidator', () => {
       {
         rowNumber: 1,
         comboKey: '색상=빨강',
-        combination: [{ name: '색상', value: '빨강' }],
         basePriceRaw: '31000.5',
         membershipPriceRaw: '',
       },

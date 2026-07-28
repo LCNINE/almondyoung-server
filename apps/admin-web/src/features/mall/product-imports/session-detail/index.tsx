@@ -1,13 +1,12 @@
 'use client';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { useImportSession, usePublishSession } from '@/lib/services/products';
-import type { PublishResultDto } from '@/lib/types/dto/product-import';
+import { getServerDenyMessage } from '@/lib/api/server-error';
 
 interface Props {
   sessionId: string;
@@ -16,23 +15,15 @@ interface Props {
 export function SessionDetail({ sessionId }: Props) {
   const { data: session, isLoading } = useImportSession(sessionId);
   const publish = usePublishSession();
-  const [publishResult, setPublishResult] = useState<PublishResultDto | null>(
-    null
-  );
 
   function handlePublish() {
     publish.mutate(sessionId, {
       onSuccess: (res) => {
-        setPublishResult(res);
-        if (res.failed.length === 0) {
-          toast.success(`${res.published}건이 게시되었습니다.`);
-        } else {
-          toast.warning(
-            `${res.published}건 게시, ${res.failed.length}건 실패했습니다.`
-          );
-        }
+        toast.info(`${res.targetCount}건 게시를 접수했습니다.`);
       },
-      onError: () => toast.error('게시 중 오류가 발생했습니다.'),
+      onError: (error) => {
+        toast.error(getServerDenyMessage(error, '게시 접수 중 오류가 발생했습니다.'));
+      },
     });
   }
 
@@ -44,47 +35,26 @@ export function SessionDetail({ sessionId }: Props) {
     );
   }
 
+  const commitRunning = session.commitStatus === 'queued' || session.commitStatus === 'running';
+  const publishRunning = session.publishStatus === 'queued' || session.publishStatus === 'running';
+
   return (
     <div className="flex flex-col gap-y-4">
       <Container className="divide-y-0">
         <Header
           title="대량등록 세션 상세"
-          subtitle={`${session.fileName ?? '(파일명 없음)'} · 시도 ${session.totalRows} · 성공 ${session.createdCount} · 실패 ${session.failedCount}`}
+          subtitle={`${session.fileName ?? '(파일명 없음)'} · 생성 ${session.createdCount}/${session.totalRows} (실패 ${session.failedCount}) · 게시 ${session.publishedCount} (실패 ${session.publishFailedCount})`}
           right={
-            <Button
-              onClick={handlePublish}
-              disabled={publish.isPending}
-            >
-              {publish.isPending
-                ? '게시 중...'
-                : publishResult
-                  ? '다시 게시'
-                  : '세션 일괄 게시'}
+            <Button onClick={handlePublish} disabled={publish.isPending || commitRunning || publishRunning}>
+              {commitRunning ? '생성 중...' : publishRunning ? '게시 중...' : '세션 일괄 게시'}
             </Button>
           }
         />
 
-        {publishResult && (
-          <div className="mx-6 mb-2 rounded-md border p-3 text-sm">
-            <p>
-              게시 성공{' '}
-              <strong className="text-green-600">
-                {publishResult.published}
-              </strong>{' '}
-              · 실패{' '}
-              <strong className="text-destructive">
-                {publishResult.failed.length}
-              </strong>
-            </p>
-            {publishResult.failed.length > 0 && (
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {publishResult.failed.map((f) => (
-                  <li key={f.masterId}>
-                    {f.masterId} — {f.reason}
-                  </li>
-                ))}
-              </ul>
-            )}
+        {(session.commitError || session.publishError) && (
+          <div className="mx-6 mb-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {session.commitError && <p>생성 잡 오류: {session.commitError}</p>}
+            {session.publishError && <p>게시 잡 오류: {session.publishError}</p>}
           </div>
         )}
 
@@ -95,7 +65,8 @@ export function SessionDetail({ sessionId }: Props) {
                 <tr className="text-left">
                   <th className="p-2">행</th>
                   <th className="p-2">productKey</th>
-                  <th className="p-2">상태</th>
+                  <th className="p-2">생성</th>
+                  <th className="p-2">게시</th>
                   <th className="p-2">상품 / 오류</th>
                 </tr>
               </thead>
@@ -107,22 +78,42 @@ export function SessionDetail({ sessionId }: Props) {
                     <td className="p-2">
                       {i.status === 'created' ? (
                         <span className="text-green-600">생성</span>
+                      ) : i.status === 'pending' ? (
+                        <span className="text-muted-foreground">대기</span>
                       ) : (
                         <span className="text-destructive">실패</span>
                       )}
                     </td>
                     <td className="p-2">
-                      {i.status === 'created' && i.masterId ? (
-                        <Link
-                          href={`/mall/products-list/${i.masterId}`}
-                          className="text-primary underline"
-                        >
-                          상품 상세
-                        </Link>
-                      ) : (
-                        <span className="text-destructive">
-                          {i.errorMessage}
+                      {i.publishStatus === 'published' ? (
+                        <span className="text-green-600">게시</span>
+                      ) : i.publishStatus === 'failed' ? (
+                        <span className="text-destructive" title={i.publishError}>
+                          실패
                         </span>
+                      ) : i.publishStatus === 'skipped' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className="text-muted-foreground">대기</span>
+                      )}
+                    </td>
+                    <td className="p-2">
+                      {i.status === 'created' && i.masterId ? (
+                        <div className="flex flex-col gap-y-1">
+                          <Link
+                            href={`/mall/products-list/${i.masterId}`}
+                            className="text-primary underline"
+                          >
+                            상품 상세
+                          </Link>
+                          {i.publishError && (
+                            <span className="text-xs text-destructive">{i.publishError}</span>
+                          )}
+                        </div>
+                      ) : i.status === 'pending' ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        <span className="text-destructive">{i.errorMessage}</span>
                       )}
                     </td>
                   </tr>
