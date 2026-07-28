@@ -30,6 +30,7 @@ import type {
   NoticeListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
+import type { ImportJobStatus } from '@/lib/types/dto/product-import';
 import type {
   MasterVersionDetailDto,
   ProductMasterDetail,
@@ -645,11 +646,18 @@ export const useImportSessions = (page: number) => {
   });
 };
 
-/** 임포트 세션 상세(성공/실패 아이템 전체) */
+/** 임포트 세션 상세(성공/실패 아이템 전체). 잡이 도는 동안만 폴링한다. */
 export const useImportSession = (sessionId: string) => {
   return useQuery({
     queryKey: productQueryKeys.productImport(sessionId),
     queryFn: () => products.productImport.getSession(sessionId),
     enabled: !!sessionId,
+    // 끝나면 false 가 되어 폴링이 멈춘다 — 완료된 세션 화면을 열어두어도 요청이 계속 나가지 않는다.
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return 2000;
+      const running = (s: ImportJobStatus) => s === 'queued' || s === 'running';
+      return running(data.commitStatus) || running(data.publishStatus) ? 2000 : false;
+    },
   });
 };

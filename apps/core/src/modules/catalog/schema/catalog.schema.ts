@@ -976,7 +976,27 @@ export const notices = pgTable(
 
 // ===== PRODUCT IMPORT (엑셀 대량등록 세션) =====
 export const productImportSessionStatusEnum = pgEnum('product_import_session_status', ['completed', 'archived']);
-export const productImportItemStatusEnum = pgEnum('product_import_item_status', ['created', 'failed']);
+// 'pending' 은 **맨 뒤**에 붙인다. drizzle-kit 이 중간 삽입을 만나면
+// `ALTER TYPE ... ADD VALUE 'x' BEFORE 'y'` 를 만드는데, 뒤에 붙이면 단순 ADD VALUE 로
+// 끝난다. enum 순서는 이 컬럼으로 ORDER BY 를 하지 않는 한 의미가 없다.
+export const productImportItemStatusEnum = pgEnum('product_import_item_status', ['created', 'failed', 'pending']);
+
+/** 세션 단위 잡(commit·publish)의 라이프사이클. 세션의 `status` 는 아카이브 플래그로 별개다. */
+export const productImportJobStatusEnum = pgEnum('product_import_job_status', [
+  'idle',
+  'queued',
+  'running',
+  'completed',
+  'failed',
+]);
+
+/** 행 단위 게시 상태. 'skipped' 는 생성 자체가 실패해 게시 대상이 아닌 행. */
+export const productImportItemPublishStatusEnum = pgEnum('product_import_item_publish_status', [
+  'pending',
+  'published',
+  'failed',
+  'skipped',
+]);
 
 export const productImportSessions = pgTable(
   'product_import_sessions',
@@ -992,10 +1012,45 @@ export const productImportSessions = pgTable(
     status: productImportSessionStatusEnum('status').notNull().default('completed'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     committedAt: timestamp('committed_at'),
+
+    // ─── 비동기 잡 (3단계) ───
+    // status 는 아카이브 플래그다. 잡 라이프사이클은 아래 두 컬럼이 들고 있다.
+    //
+    // ⚠️ commit_status 의 DEFAULT 가 'completed' 인 것은 의도적이다. ADD COLUMN 은 기존
+    // 행에 DEFAULT 를 채우는데, 'queued' 로 두면 **v1 시절의 완료된 세션이 전부 큐에
+    // 들어간다** — 워커가 그것들을 하나씩 클레임해 "pending 행 0" 을 확인하고 완료
+    // 처리하면서 committed_at 을 오늘로 덮어써 이력을 망가뜨린다. 기존 세션은 동기
+    // 경로로 이미 끝났으므로 'completed' 가 사실에 맞다. 새 세션은 acceptCommit 이
+    // 'queued' 를 명시로 넣으므로 DEFAULT 에 의존하지 않는다.
+    commitStatus: productImportJobStatusEnum('commit_status').notNull().default('completed'),
+    publishStatus: productImportJobStatusEnum('publish_status').notNull().default('idle'),
+    /** 워커 클레임 lease 만료시각. NULL 이거나 과거면 다른 틱이 집어갈 수 있다. */
+    leaseUntil: timestamp('lease_until'),
+    /**
+     * lease 소유권 토큰(fencing token). 클레임한 워커가 발급하고, 갱신·해제는 이 값으로
+     * CAS 한다.
+     *
+     * 소유권을 lease_until 타임스탬프로 확인하려던 앞선 설계는 세 번 연속 실패했다:
+     * (1) `lease_until > NOW()` 는 후임 워커가 방금 민 lease 도 통과시켜 아무 것도 막지 못했고
+     * (2) 타임스탬프 등호 CAS 는 DB 가 만든 마이크로초를 JS Date 밀리초로 되읽어 영구 불일치했고
+     * (3) 그 값을 raw sql 에 Date 로 바인딩하니 드라이버가 직렬화하지 못해 매 호출 throw 했다.
+     * 토큰은 정밀도·타임존·드라이버 직렬화·앱 클럭 스큐 어디에도 의존하지 않는다.
+     */
+    leaseToken: uuid('lease_token'),
+    commitError: text('commit_error'),
+    publishError: text('publish_error'),
+    publishedCount: integer('published_count').notNull().default(0),
+    publishFailedCount: integer('publish_failed_count').notNull().default(0),
   },
   (table) => [
     index('idx_import_sessions_uploaded_by').on(table.uploadedBy),
     index('idx_import_sessions_created_at').on(table.createdAt),
+    // 클레임 쿼리는 커밋 워커·게시 워커가 각각 자기 status 컬럼 하나만 필터링한다
+    // (다른 쪽 status 는 조건에 없다). 3컬럼 복합 인덱스 하나로 묶으면 leading
+    // column 이 아닌 쪽 워커는 leftmost-prefix 규칙에 걸려 인덱스를 못 타므로,
+    // 워커별로 2컬럼 인덱스를 따로 둔다.
+    index('idx_import_sessions_commit_claim').on(table.commitStatus, table.leaseUntil),
+    index('idx_import_sessions_publish_claim').on(table.publishStatus, table.leaseUntil),
   ],
 );
 
@@ -1013,9 +1068,23 @@ export const productImportItems = pgTable(
     status: productImportItemStatusEnum('status').notNull(),
     masterId: uuid('master_id'),
     errorMessage: text('error_message'),
+
+    /**
+     * 접수 시점에 확정된 ProductRecord. 워커가 이걸 읽어 상품을 만든다.
+     * 파일을 저장하지 않는 이유는 스펙 §4.3.1 — 재개가 "행 오프셋 커서"가 되지 않게 한다.
+     * 검증 실패로 접수 즉시 failed 가 된 행은 NULL 이다.
+     */
+    payload: jsonb('payload'),
+    publishStatus: productImportItemPublishStatusEnum('publish_status').notNull().default('pending'),
+    publishError: text('publish_error'),
+    publishedAt: timestamp('published_at'),
+
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
-  (table) => [index('idx_import_items_session').on(table.sessionId)],
+  (table) => [
+    index('idx_import_items_session').on(table.sessionId),
+    index('idx_import_items_session_status').on(table.sessionId, table.status),
+  ],
 );
 
 // Catalog BC 스키마 (ex-PIM)

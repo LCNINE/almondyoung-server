@@ -3,7 +3,7 @@
 - 날짜: 2026-07-28
 - 대상: `apps/core` (catalog/operations/import, catalog/core/products) + `apps/channel-adapter` (medusa inbox worker) + `apps/admin-web`
 - 브랜치: `feat/product-bulk-import-v2` (base `46bf66ebe`)
-- 상태: 설계 승인 대기 — 브레인스토밍 산출물
+- 상태: 0~2 단계 develop 머지 완료 (`eb126fa38`). 3 단계 설계 확정 (§4.3.1~4.3.5), 4·5 단계는 계획 미착수
 - 선행 이슈: #550 (`InboxWorkerService` supersede 단위테스트가 red — 배치 claim 착수 전 정리 필요)
 - 관련: `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1), `docs/adr/0019-core-catalog-medusa-product-projection-events.md` (bulk edit 을 부채로 남긴 ADR), `docs/runbooks/selmate-stock-pipeline.md` §"반영이 늦을 때" (inbox 처리량 실측)
 
@@ -163,6 +163,53 @@ P1         | 색상=파랑;사이즈=S  |           |                 | KNIT-BL-
 
 실행 주체는 Core 안의 폴링 워커로 둔다. 새 인프라를 들이지 않고 `OutboxDispatcher` 와 같은 `@Cron` + 원자적 claim 패턴을 따른다.
 
+#### 4.3.1 접수 시점에 영속화하는 것은 파일이 아니라 정규화된 행이다
+
+`commit` 은 `parse → normalize → validate` 까지를 **동기로** 끝낸다 (전부 인메모리 + 카테고리 트리 1쿼리로, 지금 `/validate` 가 이미 감당하는 비용이다). 검증된 `ProductRecord` 를 행마다 `product_import_items.payload`(jsonb) 로 적고 즉시 반환한다. 워커로 넘어가는 것은 **상품 생성이라는 느린 부분뿐**이다.
+
+파일 자체(S3/bytea)를 저장하고 워커가 재파싱하는 대안은 버린다: 저장소가 새로 필요하고, 재개가 "행 오프셋 커서"가 되어 약해지며, 무엇보다 **오류가 업로드 시점이 아니라 워커 시점에 뒤늦게 드러난다**. 행을 저장하면 검증 실패 행은 접수 즉시 `failed` 로 확정되어 사용자가 그 자리에서 본다.
+
+대가: 배포가 세션 처리 중간에 끼면 워커가 옛 형태의 payload 를 읽을 수 있다. 좁은 타입 가드를 두고, 어긋나면 그 행만 "파일을 다시 올려주세요" 로 실패시킨다.
+
+#### 4.3.2 잡 모델 — 세션 컬럼 + `FOR UPDATE SKIP LOCKED`
+
+잡 종류가 세션당 commit·publish 둘뿐이고 순차적이므로 별도 `jobs` 테이블을 만들지 않는다.
+
+| 테이블 | 추가 컬럼 |
+|---|---|
+| `product_import_sessions` | `commit_status`(queued\|running\|completed\|failed), `publish_status`(idle\|queued\|running\|completed\|failed), `lease_until`, `commit_error`, `publish_error`, `published_count`, `publish_failed_count` |
+| `product_import_items` | `payload`(jsonb), `status` 에 `pending` 추가, `publish_status`(pending\|published\|failed\|skipped), `publish_error`, `published_at` |
+
+기존 `product_import_sessions.status`(`completed`\|`archived`)는 **건드리지 않는다** — 의미 전용은 파괴적 변경이라 ADR-0005 §5 상 PR 3개짜리가 된다.
+
+#### 4.3.3 워커는 세션 하나를 클레임해 슬라이스 단위로 처리한다
+
+`@Cron` 5초. 한 틱이 세션 하나를 클레임하고(commit 우선, 없으면 publish) **행 N개만 처리한 뒤 lease 를 놓는다** (commit 20 / publish 10, env 조절). 세션을 통째로 돌리지 않는 이유가 셋이다:
+
+- 틱 길이가 유계라 배포 롤링에 끌려가지 않는다
+- 세션은 `created_at` 오름차순으로 하나만 클레임한다. 슬라이스가 끝나도 lease 만
+  놓고 `commit_status`/`publish_status` 는 `running` 그대로 두므로, 가장 오래된
+  세션이 끝날 때까지 그 세션이 워커를 독점한다 — **FIFO 다, 교대 진행이 아니다**.
+  한 틱은 commit 클레임을 publish 보다 항상 먼저 시도하므로, commit 적체가 길면
+  publish 레인이 굶주릴 수 있다
+- 재개가 공짜다 — **진행 원장은 행의 status 자체**다. 크래시 후 lease 가 만료되면 남은 `pending` 행부터 이어간다
+
+publish 슬라이스가 더 작은 것은 건당 outbox 이벤트 + 스냅샷 조립이 붙기 때문이다. §4.4(레인 강등) 이전까지의 임시 완충이기도 하다.
+
+#### 4.3.4 API
+
+| 엔드포인트 | 변경 |
+|---|---|
+| `POST /product-imports/commit` | 202. `{sessionId, status:'queued', totalRows, queuedCount, invalidCount}` — 검증 실패 수는 접수 시점의 확정값이다 |
+| `POST /product-imports/:id/publish` | 202. 이미 `queued`/`running` 이면 409 |
+| `GET /product-imports/:id` | `commitStatus`/`publishStatus`/진행 카운트 + 행별 `publishStatus`. 폴링 대상 |
+
+`CommitResultDto` 는 형태가 바뀐다 (`createdCount` 를 접수 시점에 알 수 없다). admin-web 은 `sst.aws.Nextjs('AdminWeb')` 로 core 와 같은 스택이라 `sst deploy` 한 번에 함께 나간다.
+
+#### 4.3.5 마이그레이션 함정
+
+`ALTER TYPE ... ADD VALUE` 로 추가한 값을 **같은 트랜잭션에서 DEFAULT 로 쓰면 실패한다**(`unsafe use of new value`). `items.status` 는 지금도 default 가 없으므로 그대로 두고 앱이 명시 지정한다. 같은 마이그레이션에서 **새로 만든** 타입은 이 제약을 받지 않는다. 레포 선례(`20260727141456`)는 `::text` 캐스트로 우회했다 — 생성된 SQL 을 눈으로 확인한다.
+
 ### 4.4 이벤트 마커 + 레인 강등
 
 - `ProductMasterActiveVersionChanged` payload 에 `origin?: 'bulk_import'` 와 `importSessionId?: string` 를 추가한다 (additive — 기존 소비자 무영향).
@@ -233,3 +280,28 @@ P1         | 색상=파랑;사이즈=S  |           |                 | KNIT-BL-
 - 타입 게이트: `nest build core`, `nest build channel-adapter`. 레포 eslint 는 전역 미게이트 debt 이므로 권위가 아니다.
 - 처리량 회귀: `apps/channel-adapter/scripts/bench-medusa-batch.ts` 를 배치 게이팅 구현 후 다시 돌려 §3 수치와 대조한다.
 - 배치 크기 확정: live 에서 `inbox_events.published_at` 분당 건수와 Medusa CPU 를 함께 보며 단계적으로 올린다. 런북의 측정 주의 두 가지(롤아웃 직후 5분의 lease 버스트, 최소 15분 관찰)를 따른다.
+
+## 9. 2 단계 리뷰 지적 13건의 처리 순서
+
+2 단계(`eb126fa38`) 머지 후 제기된 지적 13건은 성격이 갈린다. "3·4·5 단계를 먼저 끝내고 일괄 수정" 은 ① 무리에 대해서만 옳다.
+
+**① 3~5 단계가 그 코드를 다시 쓰는 것 — 해당 단계에 흡수한다 (별도 패스 없음)**
+
+| # | 내용 | 흡수 단계 |
+|---|---|---|
+| 4 | `getVariantComboMap` 이 Variants 시트 없어도 실행 | 3 (commit 루프를 워커로 재작성하며 가드) |
+| 6 | admin-web 업로드 안내가 2시트 기준 (`upload-step.tsx:51`) | 3 (위저드를 폴링 UI 로 재배선하며) |
+| 7 | `as Promise<T>` 캐스팅 (`inbox-worker.service.ts:336`) | 5 (배치 claim 으로 재작성) |
+| 11 | inbox 성공 경로에 CAS 가드 없음 — 주석이라도 | 5 (같은 함수를 건드림) |
+
+**② 3 단계의 *입력*이지 결과가 아닌 것 — 3 단계 착수 전에 닫는다**
+
+- **#12 (spec 필수필드 타입 게이트)** — 결함이 아니라 *도구*다. "spec 4개의 누락이 테스트 실행으로만 드러났다" 가 지적 내용인데, 그 상태로 3 단계를 더 진행한 뒤 게이트를 다는 건 순서가 거꾸로다.
+- **#8 (죽은 `NormalizedVariantOverride.combination`)** — 3 단계는 정규화된 행을 jsonb 로 영속화한다 (§4.3.1). 죽은 필드를 두면 **DB 에 박힌다**.
+- **#2 (`variantCode` DB 전역 유일성 미검사)** — 검사가 들어갈 자리가 `applyVariantCodes`, 즉 3 단계가 워커로 옮기는 바로 그 함수다. 나중에 하면 같은 함수를 두 번 고치고 두 번 리뷰한다. 품질이 아니라 **정합성 구멍**이고, 이 이니셔티브가 대량 도달을 쉽게 만드는 중이다.
+
+**③ 3~5 단계와 무관 — 5 단계 뒤 정리 커밋 하나로 묶는다**
+
+#1(Products 시트 `variantCode`), #3(`values[].sortOrder`), #5(comboKey NFC), #9(`basePrice` 헤더 검사), #10(오류 행번호 불일치). 전부 1~5 줄이다.
+
+**#13**(`PUT /masters/:id/versions/:id` 의 `optionDiff` 가 임포트 검증을 우회)는 단건 API 경로의 기존 문제로 이 이니셔티브와 무관하다 — 범위 밖.

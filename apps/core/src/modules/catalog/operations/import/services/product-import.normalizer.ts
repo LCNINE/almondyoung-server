@@ -218,7 +218,6 @@ export class ProductImportNormalizer {
       target.variantOverrides.push({
         rowNumber: row.rowNumber,
         comboKey: key,
-        combination: pairs,
         basePriceRaw: (row.cells.basePrice ?? '').trim(),
         membershipPriceRaw: (row.cells.membershipPrice ?? '').trim(),
         variantCode: (row.cells.variantCode ?? '').trim() || undefined,

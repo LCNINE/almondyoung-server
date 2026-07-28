@@ -2,17 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { ProductImportParser } from './product-import.parser';
 import { ProductImportNormalizer } from './product-import.normalizer';
 import { ProductImportValidator } from './product-import.validator';
-import { ProductImportSessionReader } from './product-import-session.reader';
+import { ProductImportSessionReader, SessionRow } from './product-import-session.reader';
 import { ProductImportManager } from './product-import.manager';
+import { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
 import { generateTemplateWorkbook } from './product-import.template';
 import { ProductRecord } from '../dto/import.types';
 import {
   ValidatePreviewDto,
   ValidatePreviewRowDto,
-  CommitResultDto,
+  CommitAcceptedDto,
   SessionSummaryDto,
   SessionDetailDto,
-  PublishResultDto,
+  PublishAcceptedDto,
 } from '../dto/import-response.dto';
 
 @Injectable()
@@ -23,12 +24,17 @@ export class ProductImportService {
     private readonly validator: ProductImportValidator,
     private readonly reader: ProductImportSessionReader,
     private readonly manager: ProductImportManager,
+    private readonly variantCodeChecker: ProductImportVariantCodeChecker,
   ) {}
 
   private async pipeline(buffer: Buffer): Promise<ProductRecord[]> {
     const parsed = await this.parser.parse(buffer);
     const categories = await this.reader.loadCategoryTree();
-    return this.validator.validate(this.normalizer.normalize(parsed, categories));
+    const records = this.validator.validate(this.normalizer.normalize(parsed, categories));
+    // variantCode 충돌은 레코드 하나만 봐서는 알 수 없다(파일 전체 + DB 전역).
+    // validate 뒤에 두어 프리뷰와 커밋이 같은 판정을 보게 한다.
+    await this.variantCodeChecker.check(records);
+    return records;
   }
 
   async validate(buffer: Buffer): Promise<ValidatePreviewDto> {
@@ -48,9 +54,9 @@ export class ProductImportService {
     return { totalRows: records.length, validCount, invalidCount: records.length - validCount, rows };
   }
 
-  async commit(buffer: Buffer, fileName: string, userId: string): Promise<CommitResultDto> {
+  async commit(buffer: Buffer, fileName: string, userId: string): Promise<CommitAcceptedDto> {
     const records = await this.pipeline(buffer);
-    return this.manager.commit({ fileName, userId, records });
+    return this.manager.acceptCommit({ fileName, userId, records });
   }
 
   async getSessions(
@@ -71,12 +77,14 @@ export class ProductImportService {
         status: i.status,
         masterId: i.masterId ?? undefined,
         errorMessage: i.errorMessage ?? undefined,
+        publishStatus: i.publishStatus,
+        publishError: i.publishError ?? undefined,
       })),
     };
   }
 
-  publishSession(sessionId: string): Promise<PublishResultDto> {
-    return this.manager.publishSession(sessionId);
+  publishSession(sessionId: string): Promise<PublishAcceptedDto> {
+    return this.manager.queuePublish(sessionId);
   }
 
   getTemplate(): Promise<Buffer> {
@@ -88,15 +96,7 @@ export class ProductImportService {
     return record.options.reduce((acc, o) => acc * Math.max(o.values.length, 1), 1);
   }
 
-  private toSummary(session: {
-    id: string;
-    fileName: string | null;
-    totalRows: number;
-    createdCount: number;
-    failedCount: number;
-    status: string;
-    createdAt: Date;
-  }): SessionSummaryDto {
+  private toSummary(session: SessionRow): SessionSummaryDto {
     return {
       id: session.id,
       fileName: session.fileName,
@@ -105,6 +105,12 @@ export class ProductImportService {
       failedCount: session.failedCount,
       status: session.status,
       createdAt: session.createdAt,
+      commitStatus: session.commitStatus,
+      publishStatus: session.publishStatus,
+      publishedCount: session.publishedCount,
+      publishFailedCount: session.publishFailedCount,
+      commitError: session.commitError,
+      publishError: session.publishError,
     };
   }
 }

@@ -8,13 +8,14 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { User } from '@app/authorization';
 import { ProductImportService } from './services/product-import.service';
-import { ValidatePreviewDto, CommitResultDto, SessionDetailDto, PublishResultDto } from './dto';
+import { ValidatePreviewDto, CommitAcceptedDto, SessionDetailDto, PublishAcceptedDto } from './dto';
 
 @ApiTags('Product Import')
 @Controller('product-imports')
@@ -44,14 +45,18 @@ export class ProductImportController {
   }
 
   @Post('commit')
+  @HttpCode(202)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
-  @ApiOperation({ summary: '워크북 커밋(세션 생성 + draft 상품 일괄 생성)' })
+  @ApiOperation({ summary: '워크북 커밋 접수(세션 생성 + 행 적재). 상품 생성은 워커가 이어받는다.' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
   })
-  @ApiResponse({ status: 201, type: CommitResultDto })
-  async commit(@UploadedFile() file: Express.Multer.File, @User() user: { userId: string }): Promise<CommitResultDto> {
+  @ApiResponse({ status: 202, type: CommitAcceptedDto })
+  async commit(
+    @UploadedFile() file: Express.Multer.File,
+    @User() user: { userId: string },
+  ): Promise<CommitAcceptedDto> {
     if (!file) throw new BadRequestException('file is required');
     return this.service.commit(file.buffer, file.originalname, user.userId);
   }
@@ -72,9 +77,10 @@ export class ProductImportController {
   }
 
   @Post(':sessionId/publish')
-  @ApiOperation({ summary: '세션 내 draft 일괄 publish' })
-  @ApiResponse({ status: 201, type: PublishResultDto })
-  async publish(@Param('sessionId') sessionId: string): Promise<PublishResultDto> {
+  @HttpCode(202)
+  @ApiOperation({ summary: '세션 내 draft 일괄 게시 접수' })
+  @ApiResponse({ status: 202, type: PublishAcceptedDto })
+  async publish(@Param('sessionId') sessionId: string): Promise<PublishAcceptedDto> {
     return this.service.publishSession(sessionId);
   }
 }

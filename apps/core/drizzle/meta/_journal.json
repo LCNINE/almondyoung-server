@@ -344,6 +344,13 @@
       "when": 1785161696384,
       "tag": "20260727141456_add-multi-order-picking-method-and-cart-capacity-check",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785264313850,
+      "tag": "20260728184513_product-import-async-jobs",
+      "breakpoints": true
     }
   ]
 }

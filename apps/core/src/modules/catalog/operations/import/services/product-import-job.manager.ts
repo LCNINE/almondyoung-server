@@ -1,0 +1,379 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { InjectDb, DbService } from '@app/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
+import { type PimSchema, productImportSessions, productImportItems } from '../../../schema/catalog.schema';
+import { DbTransaction } from '../../../catalog.types';
+import { ProductRecord } from '../dto/import.types';
+import { ProductImportManager } from './product-import.manager';
+import { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
+import { ProductImportSessionReader } from './product-import-session.reader';
+import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+
+export const DEFAULT_COMMIT_SLICE = 20;
+export const DEFAULT_PUBLISH_SLICE = 10;
+export const DEFAULT_LEASE_MS = 60_000;
+
+/** 클레임 결과. leaseToken 이 이후 갱신·해제의 CAS 비교값이다. */
+export interface ClaimedSession {
+  sessionId: string;
+  leaseToken: string;
+}
+
+/**
+ * payload 는 접수 시점의 ProductRecord 다. 접수와 처리 사이에 배포가 끼면 워커가
+ * 옛 형태를 읽을 수 있으므로, 창조 경로에 넘기기 전에 최소 형태를 확인한다.
+ * 어긋나면 그 행만 실패시킨다 — 세션 전체를 막지 않는다.
+ */
+function isProductRecord(value: unknown): value is ProductRecord {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.rowNumber === 'number' &&
+    typeof v.productKey === 'string' &&
+    typeof v.version === 'object' &&
+    v.version !== null &&
+    Array.isArray(v.categoryIds) &&
+    Array.isArray(v.options) &&
+    Array.isArray(v.variantOverrides) &&
+    typeof v.basePrice === 'number' &&
+    // errors 는 가드 통과 직후 .length 로 읽으므로 반드시 여기서 확인해야 한다.
+    // 빠뜨리면 이 필드가 없는 payload 가 가드를 통과한 뒤 TypeError 를 던지고,
+    // 그 예외가 runCommitSlice 를 탈출해 세션이 영원히 같은 행에서 재시도한다.
+    Array.isArray(v.errors)
+  );
+}
+
+@Injectable()
+export class ProductImportJobManager {
+  private readonly logger = new Logger(ProductImportJobManager.name);
+
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly importManager: ProductImportManager,
+    private readonly variantCodeChecker: ProductImportVariantCodeChecker,
+    private readonly config: ConfigService,
+    private readonly reader: ProductImportSessionReader,
+    private readonly versionsService: ProductVersionsService,
+  ) {}
+
+  private positiveInt(key: string, fallback: number): number {
+    const raw = this.config.get<string>(key);
+    const parsed = Number(raw);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  get commitSlice(): number {
+    return this.positiveInt('PRODUCT_IMPORT_COMMIT_SLICE', DEFAULT_COMMIT_SLICE);
+  }
+
+  get publishSlice(): number {
+    return this.positiveInt('PRODUCT_IMPORT_PUBLISH_SLICE', DEFAULT_PUBLISH_SLICE);
+  }
+
+  get leaseMs(): number {
+    return this.positiveInt('PRODUCT_IMPORT_LEASE_MS', DEFAULT_LEASE_MS);
+  }
+
+  /**
+   * commit 대기 세션 하나를 원자적으로 잡는다. lease 를 미래로 밀어 두므로
+   * 롤링 배포로 태스크가 잠시 둘이어도 같은 세션을 겹쳐 처리하지 않는다.
+   * running 을 다시 잡는 것은 재개 경로다 — lease 가 만료됐다는 건 처리하던
+   * 프로세스가 죽었다는 뜻이고, 남은 pending 행부터 이어가면 된다.
+   */
+  async claimCommit(tx?: DbTransaction): Promise<ClaimedSession | null> {
+    return this.claim('commit_status', tx);
+  }
+
+  /** claimCommit 과 같은 원자적 claim, publish_status 컬럼을 잡는다. */
+  async claimPublish(tx?: DbTransaction): Promise<ClaimedSession | null> {
+    return this.claim('publish_status', tx);
+  }
+
+  private async claim(column: 'commit_status' | 'publish_status', tx?: DbTransaction): Promise<ClaimedSession | null> {
+    // sql.raw 는 SQL 인젝션 경로지만 인자가 이 유니온 두 값뿐이라 외부 입력이 닿지 않는다.
+    // 컬럼명은 바인딩할 수 없으므로 raw 외의 선택지가 없다.
+    const statusColumn = sql.raw(column);
+    // lease 소유권은 **토큰**으로 확인한다. 만료시각은 DB 시계가 만들게 두고(비교하지 않고
+    // `lease_until < NOW()` 자격 판정에만 쓰므로 정밀도가 무관하다), 소유권은 uuid 등호로 본다.
+    // 타임스탬프로 소유권을 보려던 앞선 세 번의 시도가 모두 정밀도·타임존·드라이버 직렬화에서
+    // 깨졌다. 토큰은 문자열이라 raw sql 바인딩도 안전하다.
+    const leaseToken = uuidv7();
+    return this.db.run(async (trx) => {
+      const rows = await trx.execute<{ id: string }>(sql`
+        UPDATE product_import_sessions
+           SET ${statusColumn} = 'running',
+               lease_until = NOW() + ${this.leaseMs} * interval '1 millisecond',
+               lease_token = ${leaseToken}::uuid
+         WHERE id = (
+           SELECT id
+             FROM product_import_sessions
+            WHERE ${statusColumn} IN ('queued', 'running')
+              AND (lease_until IS NULL OR lease_until < NOW())
+            ORDER BY created_at
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED
+         )
+        RETURNING id
+      `);
+      // drizzle 의 execute 는 postgres-js RowList 를 돌려주며 제네릭이 배열 원소 타입까지
+      // 좁혀주지 않는다. fulfillment-order-reservation-retry.worker.ts:111 과 같은 선례.
+      const [row] = rows as unknown as Array<{ id: string }>;
+      return row ? { sessionId: row.id, leaseToken } : null;
+    }, tx);
+  }
+
+  /**
+   * 클레임한 세션의 pending 행을 슬라이스만큼 처리한다.
+   * 세션을 통째로 돌지 않는 이유는 스펙 §4.3.3 — 틱 길이를 유계로 두고, 재개를 공짜로
+   * 만든다. 클레임은 `ORDER BY created_at LIMIT 1` 이고, 슬라이스가 끝나도 lease 만
+   * 놓을 뿐 commit_status 는 running 그대로 두므로, 가장 오래된 세션이 끝날 때까지
+   * 그 세션이 워커를 독점한다 — FIFO 지 교대 진행이 아니다. 한 틱 안에서도 claimCommit
+   * 이 claimPublish 보다 항상 먼저 시도되므로(product-import-job.worker.ts), commit
+   * 적체가 길면 publish 레인이 굶주릴 수 있다.
+   */
+  async runCommitSlice(claimed: ClaimedSession): Promise<void> {
+    const { sessionId, leaseToken } = claimed;
+
+    const items = await this.db.run((trx) =>
+      trx
+        .select()
+        .from(productImportItems)
+        .where(and(eq(productImportItems.sessionId, sessionId), eq(productImportItems.status, 'pending')))
+        .orderBy(productImportItems.rowNumber)
+        .limit(this.commitSlice),
+    );
+
+    if (items.length === 0) {
+      await this.db.run((trx) =>
+        trx
+          .update(productImportSessions)
+          .set({
+            commitStatus: 'completed',
+            leaseUntil: null,
+            leaseToken: null,
+            committedAt: new Date(),
+            // 이전 슬라이스의 일시적 오류(recordJobError)가 남아있으면 세션이 정상 완료돼도
+            // 지워지지 않는다 — publish 레인의 queuePublish 가 publishError 를 리셋하는 것과
+            // 같은 이유로 commit 레인도 마감 시점에 지워야 한다.
+            commitError: null,
+          })
+          // 마감도 renew·release 와 같은 토큰 CAS 를 건다. 무조건 쓰면, lease 가 만료된 뒤
+          // 뒤늦게 깨어난 좀비가 pending 0 을 보고 **후임이 처리 중인 세션을** completed 로
+          // 도장 찍고 committed_at 을 오늘로 덮어쓰며 후임의 lease_until 까지 지운다.
+          .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, leaseToken))),
+      );
+      return;
+    }
+
+    const [session] = await this.db.run((trx) =>
+      trx
+        .select({ uploadedBy: productImportSessions.uploadedBy })
+        .from(productImportSessions)
+        .where(eq(productImportSessions.id, sessionId))
+        .limit(1),
+    );
+    const userId = session?.uploadedBy ?? '';
+
+    // 접수 시점 검사와 실제 write 사이에 다른 파일이 코드를 선점했을 수 있다.
+    // 슬라이스마다 한 번 더 봐서 창을 좁힌다 (슬라이스당 쿼리 1회).
+    const records = items.map((item) => item.payload).filter(isProductRecord);
+    await this.variantCodeChecker.check(records);
+
+    for (const item of items) {
+      // 행마다 lease 를 갱신한다. 클레임 때 한 번만 밀어두면 슬라이스가 lease 보다
+      // 오래 걸릴 때 다른 워커가 같은 세션을 잡아 **아직 pending 인 같은 행을 함께
+      // 처리한다** — 상품이 둘 생기고 createdCount 가 두 번 오른다.
+      //
+      // 갱신은 토큰 CAS 다. 실패했다는 건 이미 lease 를 빼앗겼다는 뜻이므로 **즉시 멈춘다** —
+      // 계속 진행하면 후임 워커와 같은 행을 나란히 처리하게 된다. 가드는 반드시 두
+      // continue 경로보다 위에 있어야 한다(어느 경로든 시간을 쓴다).
+      if (!(await this.renewLease(sessionId, leaseToken))) {
+        this.logger.warn(`임포트 세션 lease 를 잃어 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+
+      const record = item.payload;
+      if (!isProductRecord(record)) {
+        await this.failItem(item.id, sessionId, '행 데이터 형식이 달라 처리할 수 없습니다. 파일을 다시 올려주세요.');
+        continue;
+      }
+      if (record.errors.length > 0) {
+        await this.failItem(
+          item.id,
+          sessionId,
+          record.errors.map((e) => `[${e.sheet} ${e.rowNumber}행] ${e.message}`).join('; '),
+        );
+        continue;
+      }
+
+      try {
+        await this.db.run(async (trx) => {
+          const masterId = await this.importManager.createFromRecord(record, userId, trx);
+          await trx
+            .update(productImportItems)
+            .set({ status: 'created', masterId })
+            .where(eq(productImportItems.id, item.id));
+          await trx
+            .update(productImportSessions)
+            .set({ createdCount: sql`${productImportSessions.createdCount} + 1` })
+            .where(eq(productImportSessions.id, sessionId));
+        });
+      } catch (error) {
+        this.logger.warn(`임포트 행 생성 실패 (session=${sessionId}, row=${item.rowNumber}): ${String(error)}`);
+        await this.failItem(item.id, sessionId, error instanceof Error ? error.message : '알 수 없는 오류');
+      }
+    }
+
+    // lease 만 놓는다. commit_status 는 running 그대로 두어 다음 틱이 이어받는다.
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  /**
+   * 게시 슬라이스. commit 보다 작은 이유는 건당 outbox 이벤트 + 스냅샷 조립이 붙기
+   * 때문이다 — 4단계(레인 강등) 이전까지 이 슬라이스가 유일한 완충이다.
+   */
+  async runPublishSlice(claimed: ClaimedSession): Promise<void> {
+    const { sessionId, leaseToken } = claimed;
+    const items = await this.db.run((trx) =>
+      trx
+        .select()
+        .from(productImportItems)
+        .where(
+          and(
+            eq(productImportItems.sessionId, sessionId),
+            eq(productImportItems.status, 'created'),
+            eq(productImportItems.publishStatus, 'pending'),
+          ),
+        )
+        .orderBy(productImportItems.rowNumber)
+        .limit(this.publishSlice),
+    );
+
+    if (items.length === 0) {
+      await this.db.run((trx) =>
+        trx
+          .update(productImportSessions)
+          // commit 마감과 같은 이유로 토큰 CAS 를 건다 — lease 를 잃은 좀비가
+          // 후임의 세션에 completed 를 도장 찍고 lease 를 지우는 것을 막는다.
+          .set({ publishStatus: 'completed', leaseUntil: null, leaseToken: null })
+          .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, leaseToken))),
+      );
+      return;
+    }
+
+    for (const item of items) {
+      // commit 슬라이스와 같은 이유로 행마다 lease 를 갱신한다 — publishVersion 은
+      // 가격검증 + 캐시 + 매칭 인계 + 스냅샷 조립이 붙어 행당 비용이 commit 보다 크다.
+      if (!(await this.renewLease(sessionId, leaseToken))) {
+        this.logger.warn(`임포트 세션 lease 를 잃어 게시 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+
+      const { masterId } = item;
+      if (!masterId) {
+        await this.failPublish(item.id, sessionId, 'masterId 가 없어 게시할 수 없습니다.');
+        continue;
+      }
+
+      try {
+        const draftVersionId = await this.reader.getDraftVersionId(masterId);
+        if (draftVersionId) {
+          await this.db.run((trx) => this.versionsService.publishVersion(draftVersionId, trx));
+        }
+        // draft 가 없으면 이미 active 다 — 재실행에서 여기 오므로 published 로 마감한다(멱등).
+        await this.db.run(async (trx) => {
+          await trx
+            .update(productImportItems)
+            .set({ publishStatus: 'published', publishedAt: new Date(), publishError: null })
+            .where(eq(productImportItems.id, item.id));
+          await trx
+            .update(productImportSessions)
+            .set({ publishedCount: sql`${productImportSessions.publishedCount} + 1` })
+            .where(eq(productImportSessions.id, sessionId));
+        });
+      } catch (error) {
+        this.logger.warn(`임포트 행 게시 실패 (session=${sessionId}, master=${masterId}): ${String(error)}`);
+        await this.failPublish(item.id, sessionId, error instanceof Error ? error.message : '알 수 없는 오류');
+      }
+    }
+
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  private async failPublish(itemId: string, sessionId: string, publishError: string): Promise<void> {
+    await this.db.run(async (trx) => {
+      await trx
+        .update(productImportItems)
+        .set({ publishStatus: 'failed', publishError })
+        .where(eq(productImportItems.id, itemId));
+      await trx
+        .update(productImportSessions)
+        .set({ publishFailedCount: sql`${productImportSessions.publishFailedCount} + 1` })
+        .where(eq(productImportSessions.id, sessionId));
+    });
+  }
+
+  /**
+   * lease 를 다시 민다 — **내 토큰을 그대로 들고 있을 때만**(CAS).
+   * false 면 그 사이 lease 가 만료돼 다른 워커가 세션을 가져갔다는 뜻이고,
+   * 호출자는 슬라이스를 즉시 중단해야 한다.
+   *
+   * `lease_until > NOW()` 같은 *생존* 검사로는 부족하다. 후임 워커가 방금 민 lease 도
+   * 미래이므로 그 조건을 통과한다 — 즉 정말 막아야 할 경우(후임이 넘겨받은 상태)에
+   * 그대로 통과해 버려 아무 것도 막지 못한다. 소유권은 "내가 발급한 토큰"으로만 확인할 수 있다.
+   */
+  private async renewLease(sessionId: string, token: string): Promise<boolean> {
+    const rows = await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        // 만료시각은 DB 시계로 다시 민다 — 이 값은 비교 대상이 아니므로 정밀도가 무관하다.
+        .set({ leaseUntil: sql`NOW() + ${this.leaseMs} * interval '1 millisecond'` })
+        .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, token)))
+        .returning({ id: productImportSessions.id }),
+    );
+    return rows.length > 0;
+  }
+
+  /** lease 를 놓는다 — 내 토큰을 그대로 들고 있을 때만(CAS). */
+  private async releaseLease(sessionId: string, token: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        .set({ leaseUntil: null, leaseToken: null })
+        .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, token))),
+    );
+  }
+
+  private async failItem(itemId: string, sessionId: string, errorMessage: string): Promise<void> {
+    await this.db.run(async (trx) => {
+      await trx
+        .update(productImportItems)
+        // 생성이 실패했으면 게시 대상이 아니다 — pending 으로 두면 영영 안 끝난 것처럼 보인다.
+        .set({ status: 'failed', publishStatus: 'skipped', errorMessage })
+        .where(eq(productImportItems.id, itemId));
+      await trx
+        .update(productImportSessions)
+        .set({ failedCount: sql`${productImportSessions.failedCount} + 1` })
+        .where(eq(productImportSessions.id, sessionId));
+    });
+  }
+
+  /**
+   * 슬라이스를 탈출한 예외를 세션에 기록한다. 상태를 failed 로 바꾸지는 않는다 —
+   * 일시적 DB 오류로 임포트를 영구 실패시키는 편이 더 나쁘고, 재시도 횟수를 셀 컬럼이
+   * 없다. 대신 마지막 오류를 남겨 운영자가 API 로 볼 수 있게 한다.
+   */
+  async recordJobError(sessionId: string, kind: 'commit' | 'publish', message: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        // lease 는 여기서 지우지 않는다 — 예외가 났다는 건 우리가 지금 어떤 상태인지
+        // 모른다는 뜻이고, 그 상태에서 lease 를 지우면 후임 워커의 lease 를 지울 수도 있다.
+        // 만료를 기다리면 그만이다(최대 leaseMs).
+        .set(kind === 'commit' ? { commitError: message } : { publishError: message })
+        .where(eq(productImportSessions.id, sessionId)),
+    );
+  }
+}

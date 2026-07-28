@@ -49,28 +49,39 @@ export class CommitItemDto {
   @ApiProperty()
   productKey: string;
 
-  @ApiProperty({ enum: ['created', 'failed'] })
-  status: 'created' | 'failed';
+  // 'pending' 은 접수 후 워커가 아직 처리하지 않은 행(비동기 커밋). 동기 커밋 응답에는
+  // 나타나지 않지만 getSession() 은 이 DTO 를 재사용해 세션 상세를 돌려주므로 포함한다.
+  @ApiProperty({ enum: ['created', 'failed', 'pending'] })
+  status: 'created' | 'failed' | 'pending';
 
   @ApiProperty({ required: false })
   masterId?: string;
 
   @ApiProperty({ required: false })
   errorMessage?: string;
+
+  @ApiProperty({ enum: ['pending', 'published', 'failed', 'skipped'] })
+  publishStatus: 'pending' | 'published' | 'failed' | 'skipped';
+
+  @ApiProperty({ required: false })
+  publishError?: string;
 }
 
-export class CommitResultDto {
-  @ApiProperty()
+export class CommitAcceptedDto {
+  @ApiProperty({ description: '생성된 임포트 세션 id. 진행 상황은 GET /product-imports/:id 로 폴링한다.' })
   sessionId: string;
 
-  @ApiProperty()
-  createdCount: number;
+  @ApiProperty({ enum: ['queued'] })
+  status: 'queued';
 
   @ApiProperty()
-  failedCount: number;
+  totalRows: number;
 
-  @ApiProperty({ type: [CommitItemDto] })
-  items: CommitItemDto[];
+  @ApiProperty({ description: '워커가 처리할 유효 행 수' })
+  queuedCount: number;
+
+  @ApiProperty({ description: '검증에서 이미 떨어진 행 수 — 접수 시점의 확정값' })
+  invalidCount: number;
 }
 
 export class SessionSummaryDto {
@@ -94,6 +105,24 @@ export class SessionSummaryDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ enum: ['idle', 'queued', 'running', 'completed', 'failed'], description: '상품 생성 잡 상태' })
+  commitStatus: string;
+
+  @ApiProperty({ enum: ['idle', 'queued', 'running', 'completed', 'failed'], description: '게시 잡 상태' })
+  publishStatus: string;
+
+  @ApiProperty()
+  publishedCount: number;
+
+  @ApiProperty()
+  publishFailedCount: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  commitError: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  publishError: string | null;
 }
 
 export class SessionDetailDto extends SessionSummaryDto {
@@ -101,18 +130,13 @@ export class SessionDetailDto extends SessionSummaryDto {
   items: CommitItemDto[];
 }
 
-export class PublishFailureDto {
+export class PublishAcceptedDto {
   @ApiProperty()
-  masterId: string;
+  sessionId: string;
 
-  @ApiProperty()
-  reason: string;
-}
+  @ApiProperty({ enum: ['queued'] })
+  status: 'queued';
 
-export class PublishResultDto {
-  @ApiProperty()
-  published: number;
-
-  @ApiProperty({ type: [PublishFailureDto] })
-  failed: PublishFailureDto[];
+  @ApiProperty({ description: '게시 대상 행 수. 진행은 GET /product-imports/:id 로 폴링한다.' })
+  targetCount: number;
 }

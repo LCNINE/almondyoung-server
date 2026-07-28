@@ -35,7 +35,6 @@ export interface RowError {
 export interface NormalizedVariantOverride {
   rowNumber: number;
   comboKey: string;
-  combination: Array<{ name: string; value: string }>;
   /** 숫자 파싱은 validator 가 한다 (오류 메시지를 한 곳에 모으기 위해) */
   basePriceRaw: string;
   membershipPriceRaw: string;

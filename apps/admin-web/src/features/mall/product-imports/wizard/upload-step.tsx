@@ -48,8 +48,9 @@ export function UploadStep({ onFileSelected }: Props) {
       <div>
         <h3 className="mb-1 text-sm font-semibold">1. 엑셀 파일 업로드</h3>
         <p className="text-xs text-muted-foreground">
-          템플릿(Products/Options 시트)을 받아 작성한 뒤 업로드하세요. 업로드하면
-          자동으로 검증됩니다.
+          템플릿(Products/Options/Variants 시트)을 받아 작성한 뒤 업로드하세요.
+          Variants 시트는 선택입니다 — 조합별로 가격을 다르게 주거나 variantCode 를
+          심을 때만 채웁니다. 업로드하면 자동으로 검증됩니다.
         </p>
       </div>
 
