@@ -45,6 +45,9 @@ import type {
   ProductMasterActiveVersionChangedPayload,
 } from '@packages/event-contracts/streams/product.stream';
 
+/** 카테고리 트리 최대 깊이 — 조상/자손 순회 무한루프 방지 */
+const MAX_CATEGORY_DEPTH = 10;
+
 @Injectable()
 export class ProductCategoriesService {
   private readonly logger = new Logger(ProductCategoriesService.name);
@@ -179,7 +182,7 @@ export class ProductCategoriesService {
       await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
       if (isVisibleToMembersOnly !== undefined) {
-        await this.publishDescendantsChanged(updatedCategory.path, client);
+        await this.publishDescendantsChanged(categoryId, client);
       }
 
       return CategoryMapper.toDto(updatedCategory);
@@ -1170,11 +1173,22 @@ export class ProductCategoriesService {
    * 멤버십 전용 플래그는 자손까지 상속된다. 부모에서 값이 바뀌면 자손들의
    * 프로젝션도 다시 계산돼야 하므로 자손 카테고리 이벤트를 함께 발행한다.
    */
-  private async publishDescendantsChanged(categoryPath: string, txn: DbTransaction): Promise<void> {
-    const descendants = await txn
-      .select()
-      .from(pimSchema.productCategories)
-      .where(like(pimSchema.productCategories.path, `${categoryPath}/%`));
+  private async publishDescendantsChanged(categoryId: string, txn: DbTransaction): Promise<void> {
+    // path LIKE 는 레거시 path 포맷에서 신뢰할 수 없어 parentId 로 내려간다.
+    const descendants: ProductCategory[] = [];
+    let frontier = [categoryId];
+
+    for (let depth = 0; frontier.length > 0 && depth < MAX_CATEGORY_DEPTH; depth += 1) {
+      const children = await txn
+        .select()
+        .from(pimSchema.productCategories)
+        .where(inArray(pimSchema.productCategories.parentId, frontier));
+
+      if (children.length === 0) break;
+
+      descendants.push(...children);
+      frontier = children.map((child) => child.id);
+    }
 
     for (const descendant of descendants) {
       await this.publishCategoryEvent(
@@ -1186,7 +1200,7 @@ export class ProductCategoriesService {
     }
 
     if (descendants.length > 0) {
-      this.logger.log(`멤버십 전용 상속 반영 — 자손 ${descendants.length}건 재발행 (path=${categoryPath})`);
+      this.logger.log(`멤버십 전용 상속 반영 — 자손 ${descendants.length}건 재발행 (categoryId=${categoryId})`);
     }
   }
 
@@ -1200,21 +1214,24 @@ export class ProductCategoriesService {
     snapshot: CategorySnapshot,
     tx: DbTransaction,
   ): Promise<CategorySnapshot[]> {
-    // path 는 '조상id/.../자기id' 형태
-    const ancestorIds = snapshot.path.split('/').filter((id) => id && id !== snapshot.id);
-    if (ancestorIds.length === 0) return [];
+    // path 는 신뢰하지 않는다 — 레거시(cafe24 마이그레이션) 행은 path 가 '728' 처럼
+    // 코드 문자열이라 UUID 로 조회하면 터진다. parentId 를 따라 직접 올라간다.
+    const ancestors: CategorySnapshot[] = [];
+    let parentId = snapshot.parentId;
 
-    const rows = await tx
-      .select()
-      .from(pimSchema.productCategories)
-      .where(inArray(pimSchema.productCategories.id, ancestorIds));
+    for (let depth = 0; parentId && depth < MAX_CATEGORY_DEPTH; depth += 1) {
+      const [parent] = await tx
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, parentId));
 
-    const byId = new Map(rows.map((row) => [row.id, row]));
+      if (!parent) break;
 
-    return ancestorIds
-      .map((id) => byId.get(id))
-      .filter((row): row is ProductCategory => !!row)
-      .map((row) => this.buildCategorySnapshot(row));
+      ancestors.unshift(this.buildCategorySnapshot(parent));
+      parentId = parent.parentId;
+    }
+
+    return ancestors;
   }
 
   /**
@@ -1379,7 +1396,7 @@ export class ProductCategoriesService {
       await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
       if (dto.isVisibleToMembersOnly !== undefined) {
-        await this.publishDescendantsChanged(updated.path, client);
+        await this.publishDescendantsChanged(categoryId, client);
       }
 
       const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);

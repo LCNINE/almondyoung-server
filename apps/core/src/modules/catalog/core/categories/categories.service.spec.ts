@@ -333,7 +333,7 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       createdAt: new Date('2026-07-27T00:00:00.000Z'),
       updatedAt: new Date('2026-07-27T00:00:00.000Z'),
     };
-    // select 순서: 현재 display_settings → 대상의 조상 → 자손 목록 → 자손의 조상
+    // select 순서: 현재 display_settings → 대상의 조상(parentId 체인) → 자손(BFS) → 자손의 조상
     const queue: unknown[][] = [[{ displaySettings: {} }], rows.ancestors ?? []];
     const tx = {
       select: jest.fn(() => ({
@@ -389,5 +389,52 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       .map(([p]: [{ aggregateId: string }]) => p.aggregateId);
     expect(ids).toContain('cat-2');
     expect(ids).toContain('cat-3');
+  });
+});
+
+describe('ProductCategoriesService 레거시 path 대응', () => {
+  it('path 가 UUID 체인이 아니어도(cafe24 코드) 조상 조회가 터지지 않는다', async () => {
+    // live 마이그레이션 데이터는 path 가 '728' 처럼 코드 문자열이다.
+    // 예전 구현은 이 값을 UUID 로 조회해 500 을 냈다 — parentId 체인으로 올라가야 한다.
+    const legacy = {
+      id: '019fa2dc-670f-7018-ab1e-f46df45ff8aa',
+      name: '브랜드',
+      slug: 'cafe24-cat-728',
+      description: null,
+      parentId: null,
+      level: 0,
+      path: '728',
+      sortOrder: 305,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: null,
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-07-27T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+    };
+    const whereSpy = jest.fn(() => Promise.resolve([]));
+    const tx = {
+      select: jest.fn(() => ({ from: () => ({ where: whereSpy }) })),
+      update: jest.fn(() => ({ set: () => ({ where: () => ({ returning: () => [legacy] }) }) })),
+      delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+      insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
+    };
+    const db = { run: jest.fn(async (cb: (t: unknown) => Promise<unknown>, t?: unknown) => cb(t ?? tx)) };
+    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const service = new (ProductCategoriesService as any)(
+      db,
+      {} as any,
+      { assembleActiveVersionSnapshot: jest.fn() },
+      outboxPublisher,
+    ) as ProductCategoriesService;
+
+    await expect(service.updateCategory(legacy.id, { name: '브랜드' } as any)).resolves.toBeDefined();
+
+    const event = outboxPublisher.saveEvent.mock.calls.find(
+      ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
+    );
+    expect(event[0].payload.ancestors).toEqual([]);
   });
 });
