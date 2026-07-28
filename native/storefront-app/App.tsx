@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { SafeAreaView, StatusBar, StyleSheet } from "react-native"
+import { StatusBar, StyleSheet } from "react-native"
+// `react-native` 내장 SafeAreaView 를 쓰면 안 된다 — 그건 iOS 전용 구현이고 Android 에서는
+// 사실상 no-op 이다. Android 15 부터는 edge-to-edge 가 강제되어 앱이 상태바/내비게이션 바
+// **뒤까지** 그리는 것이 기본이므로, 인셋을 실제로 적용하지 않으면 웹 콘텐츠가 시스템 바에
+// 깔린다. 실제로 Galaxy S25(Android 16)에서 상단 헤더의 뒤로가기 버튼이 상태바 시계에,
+// 장바구니의 구매 버튼이 내비게이션 바에 가려 둘 다 누를 수 없었다.
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import * as Notifications from "expo-notifications"
 import * as SecureStore from "expo-secure-store"
 import { MainWebView } from "./src/webview/MainWebView"
@@ -104,22 +110,26 @@ export default function App() {
   }, [])
 
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="dark-content" />
-      {initialUrl === null ? (
-        <SplashGate onReady={onReady} pendingPath={pendingPath} />
-      ) : (
-        <>
-          <MainWebView
-            initialUrl={initialUrl}
-            onExternalUrl={setExternalUrl}
-            onBridgeMessage={onBridgeMessage}
-          />
-          <ModalWebView url={externalUrl} onClose={() => setExternalUrl(null)} />
-        </>
-      )}
-    </SafeAreaView>
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.root}>
+        <StatusBar barStyle="dark-content" />
+        {initialUrl === null ? (
+          <SplashGate onReady={onReady} pendingPath={pendingPath} />
+        ) : (
+          <>
+            <MainWebView
+              initialUrl={initialUrl}
+              onExternalUrl={setExternalUrl}
+              onBridgeMessage={onBridgeMessage}
+            />
+            <ModalWebView url={externalUrl} onClose={() => setExternalUrl(null)} />
+          </>
+        )}
+      </SafeAreaView>
+    </SafeAreaProvider>
   )
 }
 
-const styles = StyleSheet.create({ root: { flex: 1 } })
+// 인셋 영역에는 이 배경색이 보인다. storefront 의 헤더/하단바가 흰색이라 흰색으로 맞춰야
+// 시스템 바 옆에 이질적인 띠가 생기지 않는다. 투명하게 두면 검은 띠가 된다.
+const styles = StyleSheet.create({ root: { flex: 1, backgroundColor: "#fff" } })
