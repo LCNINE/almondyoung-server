@@ -3,239 +3,114 @@
 import Link from "next/link"
 import { useState, useTransition } from "react"
 
-import { signUpAction } from "@/app/actions"
-import { BirthdayInput } from "@/components/birthday-input"
-import { PasswordInput } from "@/components/password-input"
-import { PhoneNumberInput } from "@/components/phone-number-input"
+import { finishSignupAction, signUpAction } from "@/app/actions"
+import { AccountStep } from "@/components/signup/account-step"
+import { AgreementsStep } from "@/components/signup/agreements-step"
+import { BusinessStep } from "@/components/signup/business-step"
+import { ProfileStep } from "@/components/signup/profile-step"
+import type { StepValues } from "@/components/signup/types"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import { useEmailAvailability } from "@/hooks/use-email-availability"
+
+const STEPS = ["약관 동의", "계정 정보", "회원 정보"] as const
+const BUSINESS_STEP = STEPS.length
 
 export function SignUpForm({ redirectTo }: { redirectTo: string }) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
-  const [email, setEmail] = useState("")
-  const emailAvailability = useEmailAvailability(email)
-  const emailTaken = emailAvailability.status === "taken"
+  const [step, setStep] = useState(0)
+  const [values, setValues] = useState<StepValues>({})
 
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    if (emailTaken) {
-      setError("이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.")
-      return
-    }
+  const advance = (stepValues: StepValues) => {
+    setValues((prev) => ({ ...prev, ...stepValues }))
+    setError(null)
+    setStep((s) => s + 1)
+  }
+
+  const back = () => {
+    setError(null)
+    setStep((s) => s - 1)
+  }
+
+  const submit = (stepValues: StepValues) => {
+    const merged = { ...values, ...stepValues, redirectTo }
+    setValues(merged)
     setError(null)
     startTransition(async () => {
-      const res = await signUpAction(new FormData(e.currentTarget))
+      const fd = new FormData()
+      // 체크박스는 각 스텝에서 이미 "on" | "" 로 정규화돼 들어온다.
+      for (const [key, value] of Object.entries(merged)) fd.set(key, value)
+      const res = await signUpAction(fd)
+      if (res && !res.ok) {
+        setError(res.error)
+        return
+      }
+      // 계정 생성 완료. 세션이 붙었으니 사업자 인증 스텝으로 넘어간다.
+      setStep(BUSINESS_STEP)
+    })
+  }
+
+  // 사업자 인증을 마쳤거나 건너뛴 경우 — 어느 쪽이든 원래 가려던 곳으로.
+  const finish = () => {
+    setError(null)
+    startTransition(async () => {
+      const res = await finishSignupAction(redirectTo)
       if (res && !res.ok) setError(res.error)
     })
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <input type="hidden" name="redirectTo" value={redirectTo} />
-      <Field>
-        <FieldLabel htmlFor="loginId">아이디</FieldLabel>
-        <Input
-          id="loginId"
-          name="loginId"
-          required
-          minLength={4}
-          maxLength={20}
-          pattern="[a-z0-9]+"
-          autoCapitalize="off"
-          autoComplete="username"
-          title="영문 소문자와 숫자만 사용해 4~20자로 입력해주세요."
-          aria-describedby="loginIdHelp"
-          onInvalid={(e) =>
-            e.currentTarget.setCustomValidity(
-              "아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요."
-            )
-          }
-          onInput={(e) => e.currentTarget.setCustomValidity("")}
+    <div className="flex flex-1 flex-col gap-6">
+      {step < BUSINESS_STEP && <Stepper current={step} />}
+
+      {step === 0 && <AgreementsStep defaultValues={values} onNext={advance} />}
+      {step === 1 && (
+        <AccountStep defaultValues={values} onNext={advance} onBack={back} />
+      )}
+      {step === 2 && (
+        <ProfileStep
+          defaultValues={values}
+          onSubmit={submit}
+          onBack={back}
+          pending={pending}
         />
-        <FieldDescription id="loginIdHelp">
-          영문 소문자와 숫자만, 4~20자
-        </FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="password">비밀번호</FieldLabel>
-        <PasswordInput
-          id="password"
-          name="password"
-          required
-          minLength={8}
-          maxLength={20}
-          autoComplete="new-password"
-          pattern={`(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':"\\\\|,.<>\\/?]).+`}
-          title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자로 입력해주세요."
-          aria-describedby="passwordHelp"
-          onInvalid={(e) =>
-            e.currentTarget.setCustomValidity(
-              "비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자로 입력해주세요."
-            )
-          }
-          onInput={(e) => e.currentTarget.setCustomValidity("")}
-        />
-        <FieldDescription id="passwordHelp">
-          영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자
-        </FieldDescription>
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="passwordConfirm">비밀번호 확인</FieldLabel>
-        <PasswordInput
-          id="passwordConfirm"
-          name="passwordConfirm"
-          required
-          minLength={8}
-          maxLength={20}
-          autoComplete="new-password"
-        />
-      </Field>
-      <Field data-invalid={emailTaken || undefined}>
-        <FieldLabel htmlFor="email">이메일</FieldLabel>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={emailTaken || undefined}
-          aria-describedby="emailStatus"
-        />
-        <EmailStatus state={emailAvailability} />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="username">이름</FieldLabel>
-        <Input
-          id="username"
-          name="username"
-          required
-          minLength={2}
-          maxLength={8}
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="nickname">닉네임</FieldLabel>
-        <Input
-          id="nickname"
-          name="nickname"
-          required
-          minLength={2}
-          maxLength={8}
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="birthday">생년월일</FieldLabel>
-        <BirthdayInput id="birthday" name="birthday" required />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor="phoneNumber">휴대폰 번호</FieldLabel>
-        <PhoneNumberInput
-          id="phoneNumber"
-          name="phoneNumber"
-          required
-          inputMode="numeric"
-          autoComplete="tel-national"
-          placeholder="010-1234-5678"
-          aria-describedby="phoneNumberHelp"
-        />
-        <p id="phoneNumberHelp" className="text-xs text-muted-foreground">
-          숫자만 입력하면 자동으로 형식이 적용되고, 가입 요청 시 기본 국가코드
-          +82가 사용됩니다.
+      )}
+      {step === BUSINESS_STEP && (
+        <BusinessStep onDone={finish} pending={pending} />
+      )}
+
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
         </p>
-      </Field>
+      )}
 
-      <fieldset className="flex flex-col gap-2 rounded-lg border p-3 text-sm">
-        <legend className="px-1 text-xs font-medium text-muted-foreground">
-          동의 항목
-        </legend>
-        <Consent name="isOver14" label="만 14세 이상입니다 (필수)" required />
-        <Consent name="termsOfService" label="이용약관 동의 (필수)" required />
-        <Consent
-          name="electronicTransaction"
-          label="전자금융거래 이용약관 동의 (필수)"
-          required
-        />
-        <Consent
-          name="privacyPolicy"
-          label="개인정보 처리방침 동의 (필수)"
-          required
-        />
-        <Consent
-          name="thirdPartySharing"
-          label="제3자 정보제공 동의 (필수)"
-          required
-        />
-        <Consent name="marketingConsent" label="마케팅 정보 수신 동의 (선택)" />
-      </fieldset>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending || emailTaken}>
-        {pending ? "가입 중..." : "가입하기"}
-      </Button>
-      <Button asChild variant="ghost" size="sm">
+      <Button asChild className="h-13" variant={"link"}>
         <Link
           href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
         >
           계정 리스트로 돌아가기
         </Link>
       </Button>
-    </form>
+    </div>
   )
 }
 
-function EmailStatus({
-  state,
-}: {
-  state: ReturnType<typeof useEmailAvailability>
-}) {
-  switch (state.status) {
-    case "checking":
-      return (
-        <FieldDescription id="emailStatus">
-          이메일 사용 가능 여부 확인 중...
-        </FieldDescription>
-      )
-    case "available":
-      return (
-        <FieldDescription id="emailStatus" className="text-emerald-600">
-          사용 가능한 이메일입니다.
-        </FieldDescription>
-      )
-    case "taken":
-      return (
-        <FieldError id="emailStatus">이미 사용 중인 이메일입니다.</FieldError>
-      )
-    case "invalid":
-    case "error":
-      return <FieldError id="emailStatus">{state.message}</FieldError>
-    default:
-      return null
-  }
-}
-
-function Consent({
-  name,
-  label,
-  required,
-}: {
-  name: string
-  label: string
-  required?: boolean
-}) {
+function Stepper({ current }: { current: number }) {
   return (
-    <label className="flex items-center gap-2">
-      <Checkbox id={name} name={name} required={required} />
-      {label}
-    </label>
+    <div className="flex flex-col gap-2">
+      <div className="flex gap-1.5" aria-hidden>
+        {STEPS.map((label, i) => (
+          <span
+            key={label}
+            className={`h-1 flex-1 rounded-full transition-colors ${
+              i <= current ? "bg-primary" : "bg-secondary"
+            }`}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {current + 1}/{STEPS.length} · {STEPS[current]}
+      </p>
+    </div>
   )
 }

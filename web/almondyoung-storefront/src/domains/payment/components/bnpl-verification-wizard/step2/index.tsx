@@ -75,6 +75,9 @@ export default function BusinessVerificationStep({
 const schema = z.object({
   businessNumber: z.string(),
   ceoName: z.string(),
+  // 개업일자(YYYYMMDD) — 국세청 진위확인에 사업자번호·대표자명과 함께 필요하다.
+  // 파일 첨부 경로는 관리자 심사로 가므로 요구하지 않는다.
+  startDate: z.string(),
   file: z.instanceof(File).optional(),
 })
 
@@ -99,13 +102,15 @@ function BusinessForm({
     defaultValues: {
       businessNumber: businessInfo?.businessNumber ?? "",
       ceoName: businessInfo?.representativeName ?? "",
+      startDate: "",
       file: undefined,
     },
   })
 
+  // ntsResult 는 더 이상 쓰지 않는다 — 조회 결과를 서버로 보내 승인에 반영하던 경로가 사라졌다.
+  // 여기 조회는 사용자에게 즉시 피드백을 주는 용도로만 남는다.
   const {
     businessCheckStatus,
-    ntsResult,
     isPending: isExternalBusinessPending,
     handleVerifyBusiness,
   } = useBusinessVerification({ form })
@@ -139,15 +144,16 @@ function BusinessForm({
         }
       }
 
-      const metadata = ntsResult ? { nts: ntsResult } : undefined
+      // 국세청 조회 결과(metadata)는 더 이상 보내지 않는다 — 승인 판정은 서버가 진위확인으로 직접 한다.
+      const startDate = (form.watch("startDate") ?? "").replace(/\D/g, "")
 
       if (businessInfo) {
         await updateBusiness({
           business: {
             businessNumber: form.watch("businessNumber") ?? "",
             representativeName: form.watch("ceoName") ?? "",
+            startDate,
             fileUrl: fileRes?.url ?? undefined,
-            metadata,
           },
           businessId: businessInfo.id,
         })
@@ -155,8 +161,8 @@ function BusinessForm({
         await createBusiness({
           businessNumber: form.watch("businessNumber") ?? "",
           representativeName: form.watch("ceoName") ?? "",
+          startDate,
           fileUrl: fileRes?.url ?? undefined,
-          metadata,
         })
       }
       router.refresh()
@@ -244,6 +250,25 @@ function BusinessForm({
                     handleVerifyBusiness()
                   }
                 }}
+              />
+            </div>
+          )}
+        />
+
+        <Controller
+          name="startDate"
+          control={form.control}
+          render={({ field }) => (
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="start-date-input">개업일자</Label>
+              <Input
+                {...field}
+                id="start-date-input"
+                placeholder="YYYYMMDD (예: 20200315)"
+                inputMode="numeric"
+                maxLength={8}
+                autoComplete="off"
+                onChange={(e) => field.onChange(e.target.value.replace(/\D/g, ""))}
               />
             </div>
           )}

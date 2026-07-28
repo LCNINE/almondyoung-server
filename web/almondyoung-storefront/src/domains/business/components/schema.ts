@@ -1,23 +1,22 @@
-import type { BusinessMetadata, NtsLookupResult } from "@lib/types/dto/users"
 import z from "zod"
 
 export const buildBusinessDtoSchema = (messages: {
   businessNumberRequired: string
   representativeNameRequired: string
+  startDateRequired: string
+  startDateInvalid: string
 }) =>
   z
     .object({
       businessNumber: z.string(),
       representativeName: z.string(),
+      // 개업일자(YYYYMMDD). 국세청 진위확인에 사업자번호·대표자명과 함께 반드시 필요하다.
+      startDate: z.string(),
       fileUrl: z.string().url().optional(),
       file: z.instanceof(File).optional(),
-      metadata: z.custom<BusinessMetadata>().optional(),
-      isSubmitting: z.boolean(),
-      // 국세청 상태조회 결과. 제출 시 metadata.nts 로 저장된다.
-      nts: z.custom<NtsLookupResult>().nullable(),
     })
     .superRefine((data, ctx) => {
-      // 파일 첨부 모드면 번호/대표자명은 필요 없다.
+      // 파일 첨부 모드면 번호/대표자명/개업일자는 필요 없다.
       if (data.file || data.fileUrl) return
 
       if (!data.businessNumber || data.businessNumber.length === 0) {
@@ -32,6 +31,21 @@ export const buildBusinessDtoSchema = (messages: {
           code: z.ZodIssueCode.custom,
           message: messages.representativeNameRequired,
           path: ["representativeName"],
+        })
+      }
+
+      const startDate = data.startDate?.replace(/\D/g, "") ?? ""
+      if (startDate.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: messages.startDateRequired,
+          path: ["startDate"],
+        })
+      } else if (!/^\d{8}$/.test(startDate)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: messages.startDateInvalid,
+          path: ["startDate"],
         })
       }
     })
