@@ -20,6 +20,17 @@ const config: ExpoConfig = {
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
   },
   plugins: ["expo-secure-store", "expo-notifications", "expo-web-browser"],
+  // EAS Update. 이게 있어야 eas.json 의 channel 이 의미를 갖고, JS 만 바뀐 수정을
+  // 스토어 심사 없이 내보낼 수 있다(설계 문서 §13 의 전제). `eas update:configure` 가
+  // 동적 config 에 자동으로 못 써서 수동으로 둔다.
+  // runtimeVersion 이 `appVersion` 정책이므로 OTA 는 같은 version("1.0.0")으로 만든
+  // 빌드에만 적용된다 — 네이티브가 바뀌면 version 을 올려 새 스토어 빌드를 낸다.
+  updates: {
+    url: "https://u.expo.dev/625c8981-ed94-4b62-a733-38c6b33e8c4d",
+  },
+  runtimeVersion: {
+    policy: "appVersion",
+  },
   // `eas init` 은 동적 config(app.config.ts)에 자동으로 써넣지 못하므로 수동으로 둔다.
   // 이 값이 없으면 EAS 명령이 매번 프로젝트를 새로 만들려 든다.
   extra: {
