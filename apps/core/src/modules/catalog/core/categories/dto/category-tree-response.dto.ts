@@ -28,6 +28,9 @@ export class CategoryTreeNodeDto {
   @ApiProperty({ description: '해당 카테고리의 제품 수', required: false, minimum: 0 })
   productCount?: number;
 
+  @ApiProperty({ description: '멤버십 회원에게만 노출', required: false })
+  isVisibleToMembersOnly?: boolean;
+
   @ApiProperty({
     description: '하위 카테고리 목록',
     type: [CategoryTreeNodeDto],

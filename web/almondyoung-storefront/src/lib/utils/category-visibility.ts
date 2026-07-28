@@ -1,14 +1,9 @@
 /*───────────────────────────
  * 멤버십 회원에게만 노출하는 카테고리.
  *
- * 판정 기준은 Medusa 카테고리 `metadata.isVisibleToMembersOnly` 로, 관리자 페이지의
- * 카테고리 표시 설정에서 켜면 core → channel-adapter 를 거쳐 채워진다.
- * LEGACY_HANDLES 는 관리자에서 아직 지정하지 않은 카테고리를 위한 폴백이며,
- * 지정이 끝나면 비울 수 있다.
+ * 판정 기준은 Medusa 카테고리 `metadata.isVisibleToMembersOnly`.
+ * 관리자 카테고리 화면의 "멤버십 전용" 토글을 켜면 core → channel-adapter 를 거쳐 채워진다.
  *──────────────────────────*/
-
-/** 퍼마블렌드(cafe24-cat-339): 소속 상품이 전부 회원전용 */
-const LEGACY_MEMBERS_ONLY_HANDLES = new Set(["cafe24-cat-339"])
 
 type CategoryVisibilityFields = {
   handle?: string | null
@@ -22,9 +17,7 @@ export function isMembersOnlyCategory(
   if (!category) return false
 
   const flag = category.metadata?.isVisibleToMembersOnly
-  if (flag === true || flag === "true") return true
-
-  return !!category.handle && LEGACY_MEMBERS_ONLY_HANDLES.has(category.handle)
+  return flag === true || flag === "true"
 }
 
 /**
