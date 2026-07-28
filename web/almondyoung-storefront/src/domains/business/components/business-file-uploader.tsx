@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
-import { Upload, X } from "lucide-react"
+import { FileText, Upload, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React from "react"
 import { useFormContext } from "react-hook-form"
@@ -39,7 +39,6 @@ function BusinessFileForm() {
         shouldTouch: true,
         shouldValidate: true,
       })
-      form.setValue("isSubmitting", true)
 
       e.target.value = ""
     }
@@ -49,36 +48,48 @@ function BusinessFileForm() {
     e.stopPropagation()
     form.setValue("file", undefined, { shouldValidate: true })
     form.setValue("fileUrl", undefined)
-    form.setValue("isSubmitting", Boolean(form.getValues("nts")))
     if (inputRef.current) inputRef.current.value = ""
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      <label
-        htmlFor="businessFileInput"
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-center transition-colors hover:bg-muted"
-      >
-        <Upload className="h-6 w-6 text-muted-foreground" />
-        <span className="text-sm font-medium">{t("uploadPrompt")}</span>
-        <span className="text-xs text-muted-foreground">{t("uploadHint")}</span>
-        <input
-          id="businessFileInput"
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          accept=".pdf,.jpg,.jpeg,.png"
-          onChange={handleFileChange}
-        />
-      </label>
+  const attached = Boolean(file || fileUrl)
 
-      <FilePreview
-        file={file ?? null}
-        fileUrl={fileUrl ?? null}
-        onRemove={handleRemoveFile}
+  return (
+    <div>
+      <input
+        id="businessFileInput"
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        accept=".pdf,.jpg,.jpeg,.png"
+        onChange={handleFileChange}
       />
+
+      {attached ? (
+        <FilePreview
+          file={file ?? null}
+          fileUrl={fileUrl ?? null}
+          onRemove={handleRemoveFile}
+        />
+      ) : (
+        <label
+          htmlFor="businessFileInput"
+          className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center transition-colors hover:bg-muted"
+        >
+          <Upload className="text-muted-foreground size-5" />
+          <span className="text-sm font-medium">{t("uploadPrompt")}</span>
+          <span className="text-muted-foreground text-xs">
+            {t("uploadHint")}
+          </span>
+        </label>
+      )}
     </div>
   )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
 function FilePreview({
@@ -107,31 +118,58 @@ function FilePreview({
   const previewUrl = filePreview ?? fileUrl
   const isLocalFile = Boolean(file) // blob URL 은 next/image 최적화 불가 → unoptimized
   const filename = file ? file.name : fileUrl ? getDisplayFilename(fileUrl) : ""
+  const isPdf = /\.pdf$/i.test(filename)
 
   if (!previewUrl) return null
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <div className="group relative h-40 w-40 cursor-pointer overflow-hidden rounded-sm border">
+  const card = (
+    <div className="flex items-center gap-3 rounded-xl border p-3">
+      {isPdf ? (
+        <div className="bg-muted flex size-11 shrink-0 items-center justify-center rounded-lg">
+          <FileText className="text-muted-foreground size-5" />
+        </div>
+      ) : (
+        <div className="bg-muted relative size-11 shrink-0 overflow-hidden rounded-lg">
           <Image
             src={previewUrl}
             alt={t("fileAlt")}
             fill
-            sizes="160px"
+            sizes="44px"
             unoptimized={isLocalFile}
-            className="object-contain transition-transform duration-200 group-hover:scale-110"
+            className="object-cover"
           />
-
-          <Button
-            type="button"
-            size="icon"
-            className="absolute top-1 right-1 h-6 w-6 cursor-pointer"
-            onClick={onRemove}
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col text-left">
+        <span className="truncate text-sm font-medium">{filename}</span>
+        <span className="text-muted-foreground text-xs">
+          {[file ? formatFileSize(file.size) : null, isPdf ? null : t("tapToZoom")]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0"
+        onClick={onRemove}
+        aria-label={t("removeFile")}
+      >
+        <X className="size-4" />
+      </Button>
+    </div>
+  )
+
+  // PDF 는 next/image 로 못 그리므로 확대 다이얼로그 없이 카드만 보여준다.
+  if (isPdf) return card
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className="w-full cursor-pointer">
+          {card}
+        </button>
       </DialogTrigger>
       <DialogContent
         className="w-auto max-w-[90vw]"

@@ -338,7 +338,15 @@ export class OAuthManager {
   // ─────────────────────────────────────────
   // 4. userinfo
   // ─────────────────────────────────────────
-  async getUserInfo(accessToken: string): Promise<{ sub: string; email: string; nickname: string; username: string }> {
+  async getUserInfo(accessToken: string): Promise<{
+    sub: string;
+    email: string;
+    email_verified: boolean;
+    name: string;
+    preferred_username: string;
+    nickname: string;
+    username: string;
+  }> {
     type OAuthAccessPayload = { sub?: string; aud?: string | string[] };
     let payload: OAuthAccessPayload;
     try {
@@ -360,6 +368,9 @@ export class OAuthManager {
     return {
       sub: user.id,
       email: user.email,
+      email_verified: user.isEmailVerified ?? false,
+      name: user.username,
+      preferred_username: user.loginId,
       nickname: user.nickname,
       username: user.username,
     };

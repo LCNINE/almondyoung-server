@@ -66,7 +66,17 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.
 
 ### Throttling
-ThrottlerModule — 60초당 10회 글로벌 제한.
+`ThrottlerModule.forRoot({ ttl: 60000, limit: 10 })` 이 등록돼 있지만 **`ThrottlerGuard` 가 `APP_GUARD` 로 등록돼 있지 않아 이 기본값은 어디에도 적용되지 않는다.** 실제로 제한이 걸린 곳은 `@UseGuards(ThrottlerGuard)` 를 직접 단 3곳뿐:
+
+| 엔드포인트 | 제한 |
+|---|---|
+| `POST /twilio/send-message` | 3회/분 |
+| 이메일 인증코드 발송 | 3회/분 |
+| 이메일 인증코드 검증 | 10회/분 |
+
+전역 등록을 검토했으나 보류했다. user-service 는 공개 ALB(`user.<base>`) 뒤에 있고 `main.ts` 가 `trustProxy: true` 라 ThrottlerGuard 가 `req.ip` 로 카운트하는데, auth-web 등 호출자가 **서버사이드에서** 이 ALB 를 호출하므로 모든 최종 사용자의 요청이 호출 서비스의 IP 하나로 뭉친다. 전역 10회/분을 걸면 동시 가입 2건 수준에서 정상 사용자가 429 를 맞는다. 즉 IP 기준 스로틀은 여기서 정상 트래픽만 막고 공격자는 거의 못 막는다.
+
+**대안은 자원 기준 카운터다** — `phone_verifications.attempts` 처럼 IP 가 아니라 대상 레코드에 시도 횟수를 누적하면 프록시 뒤에서도 정확히 동작한다.
 
 ### 스케줄 작업
 `@nestjs/schedule`로 만료된 휴대폰 인증 코드를 자동 처리한다(ExpireExistingCodesService).
