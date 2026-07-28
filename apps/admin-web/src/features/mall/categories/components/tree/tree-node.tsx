@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronRight, EyeOff, Plus } from 'lucide-react';
+import { ChevronRight, EyeOff, Lock, Plus } from 'lucide-react';
 import type { CategoryNode } from '../../tree-state';
 import type { DragState } from '../../hooks/use-category-drag';
 import { cn } from '@/lib/utils/ui';
@@ -90,6 +90,16 @@ export function TreeNode({
 
         {!node.isActive && (
           <EyeOff className="h-3 w-3 text-muted-foreground" aria-label="비활성" />
+        )}
+
+        {node.isVisibleToMembersOnly && (
+          <span
+            title="멤버십 회원에게만 노출됩니다"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded bg-amber-100 px-1 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+          >
+            <Lock className="h-2.5 w-2.5" />
+            멤버십
+          </span>
         )}
 
         <span className="ml-auto" />

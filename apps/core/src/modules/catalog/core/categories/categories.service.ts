@@ -319,6 +319,8 @@ export class ProductCategoriesService {
       if (maxDepth === undefined || category.level <= maxDepth) {
         categoryMap.set(category.id, {
           ...category,
+          isVisibleToMembersOnly:
+            (category.displaySettings as CategoryDisplaySettings | null)?.isVisibleToMembersOnly ?? false,
           children: [],
         });
       }
