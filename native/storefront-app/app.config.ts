@@ -2,7 +2,10 @@ import type { ExpoConfig } from "expo/config"
 
 const config: ExpoConfig = {
   name: "아몬드영",
-  slug: "almondyoung-storefront-app",
+  // EAS 프로젝트(extra.eas.projectId)의 slug 와 일치해야 한다 — 다르면 모든 eas 명령이 거부된다.
+  slug: "almondyoung",
+  // 계정이 여럿(lcnine / lcnine-co)이라 소유 조직을 명시한다. 프로젝트는 @lcnine-co/almondyoung.
+  owner: "lcnine-co",
   version: "1.0.0",
   orientation: "portrait",
   scheme: "almondyoung",
@@ -17,6 +20,13 @@ const config: ExpoConfig = {
     googleServicesFile: process.env.GOOGLE_SERVICES_JSON ?? "./google-services.json",
   },
   plugins: ["expo-secure-store", "expo-notifications", "expo-web-browser"],
+  // `eas init` 은 동적 config(app.config.ts)에 자동으로 써넣지 못하므로 수동으로 둔다.
+  // 이 값이 없으면 EAS 명령이 매번 프로젝트를 새로 만들려 든다.
+  extra: {
+    eas: {
+      projectId: "625c8981-ed94-4b62-a733-38c6b33e8c4d",
+    },
+  },
 }
 
 export default config
