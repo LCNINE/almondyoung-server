@@ -32,7 +32,7 @@ import {
   methodsForStrategies,
   PICKING_METHOD_LABELS,
   type PickingMethod,
-} from '../../picking-method';
+} from '@/lib/utils/picking-method';
 
 interface Props {
   open: boolean;

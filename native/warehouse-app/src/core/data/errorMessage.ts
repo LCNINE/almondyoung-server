@@ -44,6 +44,8 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_OVERSCAN: '이 상품은 이미 필요한 수량을 다 채웠어요',
   SIMPLE_OUTBOUND_WORK_ITEM_MISSING: '이 송장은 오늘 배치에 없어요 — 관리자에게 문의해 주세요',
   SIMPLE_OUTBOUND_CLAIMED_BY_OTHER: '다른 작업자가 이 박스를 작업 중이에요',
+  SIMPLE_OUTBOUND_METHOD_UNSUPPORTED:
+    '이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요',
 };
 
 export function errorMessage(error: unknown, context?: ErrorContext): string {

@@ -836,6 +836,9 @@ export interface UpdateWarehouseDto {
   name?: string;
   type?: 'domestic' | 'overseas' | 'bonded' | 'return';
   location?: string;
+  supportedPickingStrategies?: Array<
+    'discrete' | 'aggregate_then_sort' | 'pick_to_tote'
+  >;
 }
 
 export interface WarehouseStockSummaryDto {

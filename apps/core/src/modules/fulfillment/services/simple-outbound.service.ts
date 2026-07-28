@@ -10,6 +10,7 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
+import { isSimpleOutboundSupportedMethod } from '../picking/picking-method.contract';
 
 export interface SimpleOutboundActor {
   id: string;
@@ -74,6 +75,7 @@ export class SimpleOutboundService {
   ): Promise<SimpleOutboundContext> {
     this.workflowGate.assertV2MutationAllowed('shipment.simple_outbound.prepare');
     const workItem = await this.loadWorkItem(shipmentId, tx);
+    await this.assertBatchMethodSupported(workItem.batchId, tx);
     const planId = await this.ensurePlan(workItem.batchId, actor, idempotencyKey, tx);
     const sessionId = await this.ensureSession(workItem.batchId, planId, actor, idempotencyKey, tx);
     const leaseVersion = await this.ensurePickerClaim(workItem, actor, idempotencyKey, tx);
@@ -539,6 +541,33 @@ export class SimpleOutboundService {
       );
     }
     return workItem;
+  }
+
+  /**
+   * 단순출고가 다룰 수 없는 방식의 배치를 plan 생성 전에 거른다. ensurePlan 안이 아니라
+   * 여기인 이유: ensurePlan 은 이미 draft/active plan 이 있으면 조기 반환하므로(:561),
+   * 관리자가 admin-web 에서 계획을 만들어 둔 배치는 그 안의 가드를 영원히 지나친다.
+   *
+   * 락을 걸지 않는다 — picking_method 는 outbound-batch-orchestrator.service.ts:116 의
+   * INSERT 이후 갱신 경로가 없다(UPDATE 문 0건). 조인 대신 별도 쿼리인 이유는 loadWorkItem 이
+   * `.for('update')` 라서, 조인하면 배치 행까지 잠겨 같은 배치의 작업자들이 직렬화되기 때문이다.
+   */
+  private async assertBatchMethodSupported(batchId: string, tx: DbTx): Promise<void> {
+    const [batch] = await tx
+      .select({ pickingMethod: wmsTables.outboundBatches.pickingMethod })
+      .from(wmsTables.outboundBatches)
+      .where(eq(wmsTables.outboundBatches.id, batchId))
+      .limit(1);
+    // 열린 work item 의 FK 가 배치 존재를 보장한다 — 비어 있으면 데이터 손상이지 도메인 충돌이 아니다.
+    if (!batch) {
+      throw new Error(`Outbound batch ${batchId} referenced by an open work item is missing`);
+    }
+    if (!isSimpleOutboundSupportedMethod(batch.pickingMethod)) {
+      throw this.conflict(
+        'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED',
+        `Simple outbound handles discrete picking only — this batch uses ${batch.pickingMethod}`,
+      );
+    }
   }
 
   private async ensurePlan(

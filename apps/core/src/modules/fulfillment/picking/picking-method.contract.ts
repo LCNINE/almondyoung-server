@@ -17,3 +17,13 @@ export const STRATEGY_BY_PICKING_METHOD = {
 export function strategyForPickingMethod(method: PickingMethodEnum): PickingStrategyName {
   return STRATEGY_BY_PICKING_METHOD[method];
 }
+
+/**
+ * 단순출고(SimpleOutboundService)가 재현하는 절차는 DiscretePickingStrategy 하나뿐이다 —
+ * 토트 등록(pick_to_tote)과 벌크 후 분류(aggregate_then_sort)는 앱이 스캔 1회 뒤로 숨길 수
+ * 없는 단계를 요구한다. 방식 이름(`individual`)이 아니라 파생 전략을 보는 이유는, 단순출고가
+ * 실제로 결합돼 있는 대상이 전략의 절차이기 때문이다 (simple-outbound.service.ts:46 주석).
+ */
+export function isSimpleOutboundSupportedMethod(method: PickingMethodEnum): boolean {
+  return strategyForPickingMethod(method) === 'discrete';
+}

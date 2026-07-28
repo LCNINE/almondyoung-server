@@ -30,7 +30,7 @@ import { BatchStatusBadge } from '../batch-status-badge';
 import { CreateBatchDialog } from '../create-batch-dialog';
 import { BatchDetailDrawer } from '../batch-detail-drawer';
 import { PermissionAction } from '../../../operation-access-feedback';
-import { PICKING_METHOD_LABELS } from '../../picking-method';
+import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 
 export function OutboundBatchesTable() {
   const searchParams = useSearchParams();

@@ -186,6 +186,30 @@ describeIfDb('SimpleOutboundService.prepare', () => {
     });
   });
 
+  // 창고에 aggregate_then_sort/pick_to_tote 가 켜지면 관리자가 그 방식의 배치를 만들 수 있다.
+  // 단순출고는 DiscretePickingStrategy 절차만 재현하므로 plan 을 만들기 전에 거절해야 한다.
+  it('개별피킹이 아닌 배치는 409 SIMPLE_OUTBOUND_METHOD_UNSUPPORTED 로 거부한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx);
+      // total_picking 을 쓰는 이유: ck_outbound_batches_cart_capacity 가 multi_order 에만
+      // cart_capacity NOT NULL 을 요구하므로 한 컬럼만 바꾸면 되는 쪽을 고른다.
+      await tx
+        .update(wmsTables.outboundBatches)
+        .set({ pickingMethod: 'total_picking' })
+        .where(eq(wmsTables.outboundBatches.id, fixture.batchId));
+      const service = assembleSimpleOutbound(tx);
+
+      await expect(
+        service.prepare(
+          fixture.shipmentId,
+          { id: fixture.actorId, roles: ['logistics_worker'] },
+          `prep-${randomUUID()}`,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED' } });
+    });
+  });
+
   it('다른 작업자가 피킹 중이면 409 로 거부한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx);

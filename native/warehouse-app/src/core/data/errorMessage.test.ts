@@ -118,6 +118,12 @@ describe('outbound 문맥', () => {
     ).toBe('다른 작업자가 이 박스를 작업 중이에요');
   });
 
+  it('개별피킹이 아닌 배치는 전용 문구를 준다', () => {
+    expect(
+      errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_METHOD_UNSUPPORTED'), 'outbound')
+    ).toBe('이 배치는 개별 피킹이 아니라 앱에서 처리할 수 없어요 — 관리자에게 문의해 주세요');
+  });
+
   it('모르는 코드는 기존 공용 충돌 문구를 유지한다', () => {
     expect(errorMessage(new ConflictError('x', 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'), 'outbound')).toBe(
       '다른 작업자가 먼저 변경했어요. 새로고침 후 다시 시도해 주세요.'
