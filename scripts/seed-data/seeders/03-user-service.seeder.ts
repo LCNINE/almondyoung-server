@@ -224,10 +224,13 @@ export async function seedUserService(
       );
 
       for (const { seed, isPublic, plaintextSecret, secretHash } of clientsWithHashes) {
-        // 멱등 upsert. 이미 존재하면 redirectUris/postLogoutRedirectUris/allowedScopes/isActive 만 갱신.
-        // client_secret_hash 는 새 row 일 때만 채우고, 기존 row 의 secret 은 절대 덮어쓰지 않는다
-        // (한 번 발급된 secret 을 운영 중에 유실시키지 않기 위함). secret 회전이 필요하면
-        // /admin/oauth-clients/:clientId/rotate-secret API 를 사용한다.
+        // 멱등 upsert. client_secret_hash 는 새 row 일 때만 채우고, 기존 row 의 secret 은 절대
+        // 덮어쓰지 않는다 (한 번 발급된 secret 을 운영 중에 유실시키지 않기 위함). secret 회전이
+        // 필요하면 /admin/oauth-clients/:clientId/rotate-secret API 를 사용한다.
+        //
+        // ON CONFLICT 절은 scripts/seeding 쪽 OAUTH_CLIENT_UPSERT_ON_CONFLICT 와 동일해야 한다
+        // — redirect_uris/post_logout_redirect_uris 는 합집합이고 시드로는 제거할 수 없다.
+        // 근거는 그쪽 주석 참고.
         await db.execute(sql`
           INSERT INTO oauth_clients (
             client_id, client_type, client_secret_hash,
@@ -243,8 +246,20 @@ export async function seedUserService(
             true
           )
           ON CONFLICT (client_id) DO UPDATE SET
-            redirect_uris = EXCLUDED.redirect_uris,
-            post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
+            redirect_uris = COALESCE(
+              (
+                SELECT jsonb_agg(DISTINCT u)
+                  FROM jsonb_array_elements(oauth_clients.redirect_uris || EXCLUDED.redirect_uris) AS u
+              ),
+              '[]'::jsonb
+            ),
+            post_logout_redirect_uris = (
+              SELECT jsonb_agg(DISTINCT u)
+                FROM jsonb_array_elements(
+                       COALESCE(oauth_clients.post_logout_redirect_uris, '[]'::jsonb)
+                       || COALESCE(EXCLUDED.post_logout_redirect_uris, '[]'::jsonb)
+                     ) AS u
+            ),
             allowed_scopes = EXCLUDED.allowed_scopes,
             is_active = true,
             updated_at = now()

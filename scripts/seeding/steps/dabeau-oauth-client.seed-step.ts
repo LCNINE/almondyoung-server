@@ -17,6 +17,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
+import { OAUTH_CLIENT_UPSERT_ON_CONFLICT } from './user-service.seed-step';
 
 const CLIENT_ID = 'dabeau';
 const DEFAULT_API_BASE = 'https://api.dev.dabeau.kr';
@@ -132,12 +133,7 @@ export class DabeauOAuthClientSeedStep extends SeedStep {
           ${JSON.stringify(config.allowedScopes)}::jsonb,
           true
         )
-        ON CONFLICT (client_id) DO UPDATE SET
-          redirect_uris = EXCLUDED.redirect_uris,
-          post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
-          allowed_scopes = EXCLUDED.allowed_scopes,
-          is_active = true,
-          updated_at = now()
+        ${OAUTH_CLIENT_UPSERT_ON_CONFLICT}
       `);
 
       if (!config.clientSecret) {
