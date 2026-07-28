@@ -1,14 +1,15 @@
 {
-  "cli": { "version": ">= 12.0.0" },
+  "cli": { "version": ">= 12.0.0", "appVersionSource": "remote" },
   "build": {
     "preview": {
       "channel": "preview",
+      "environment": "preview",
       "android": { "buildType": "apk" },
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_STOREFRONT_ORIGIN": "https://almondyoung.com",
         "EXPO_PUBLIC_MEDUSA_URL": "https://medusa.almondyoung.com",
-        "EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY": "pk_...",
+        "EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY": "pk_f383db466374d5ac3b04d897292f1ca2da0bdd9ddd63715e5cc7fa51f0b2533c",
         "EXPO_PUBLIC_AUTH_WEB_ORIGIN": "https://auth.almondyoung.com",
         "EXPO_PUBLIC_APP_OAUTH_CLIENT_ID": "almondyoung-android-app",
         "EXPO_PUBLIC_USER_SERVICE_URL": "https://user.almondyoung.com",
@@ -17,11 +18,13 @@
     },
     "production": {
       "channel": "production",
+      "environment": "production",
+      "autoIncrement": true,
       "android": { "buildType": "app-bundle" },
       "env": {
         "EXPO_PUBLIC_STOREFRONT_ORIGIN": "https://almondyoung.com",
         "EXPO_PUBLIC_MEDUSA_URL": "https://medusa.almondyoung.com",
-        "EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY": "pk_...",
+        "EXPO_PUBLIC_MEDUSA_PUBLISHABLE_KEY": "pk_f383db466374d5ac3b04d897292f1ca2da0bdd9ddd63715e5cc7fa51f0b2533c",
         "EXPO_PUBLIC_AUTH_WEB_ORIGIN": "https://auth.almondyoung.com",
         "EXPO_PUBLIC_APP_OAUTH_CLIENT_ID": "almondyoung-android-app",
         "EXPO_PUBLIC_USER_SERVICE_URL": "https://user.almondyoung.com",

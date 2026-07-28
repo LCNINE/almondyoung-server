@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUrl, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsRedirectUri } from '../redirect-uri';
 
 export class IssueCodeRequestDto {
   @ApiProperty()
@@ -11,8 +12,8 @@ export class IssueCodeRequestDto {
   @IsUUID()
   userId: string;
 
-  @ApiProperty()
-  @IsUrl({ require_tld: false })
+  @ApiProperty({ description: 'http(s) URL 또는 네이티브 앱의 private-use 스킴 URI (RFC 8252)' })
+  @IsRedirectUri()
   redirectUri: string;
 
   @ApiProperty()

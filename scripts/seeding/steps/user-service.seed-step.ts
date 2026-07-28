@@ -28,6 +28,69 @@ export type UserServiceSeedConfig = {
   oauthClients?: OAuthClientSeed[];
 };
 
+/**
+ * OAuth client upsert 의 ON CONFLICT 절. 신규 client 를 추가하는 모든 시드가 이걸 쓴다.
+ *
+ * **redirect_uris / post_logout_redirect_uris 는 합집합이다.** 시드는 "이 URI 들이 등록돼
+ * 있음을 보장"할 뿐, 전체집합을 선언하지 않는다. 라이브에는 시드가 모르는 URI 가 흔히 있고
+ * (www 변형, 로컬 개발용 localhost, RP 쪽에서 나중에 추가한 것), 배열을 통째로 교체하면
+ * 그것들이 조용히 사라져 해당 경로의 로그인이 즉시 깨진다. 실제로 라이브 medusa-storefront
+ * 에는 시드 정의에 없는 www·localhost 콜백이 들어 있었다.
+ *
+ * 대가: **시드로는 URI 를 제거할 수 없다.** 오래된 URI 를 지우려면 사람이 직접 지워야 한다
+ * (`/admin/oauth-clients/:clientId` PATCH 또는 SQL). 등록 누락보다 잔존이 훨씬 덜 위험하다는
+ * 판단이다.
+ *
+ * allowed_scopes 는 의도적으로 교체(EXCLUDED)다 — 스코프는 권한 부여라 합집합으로 두면
+ * 축소가 영영 불가능해진다. client_secret_hash 는 건드리지 않는다(회전은 rotate-secret API).
+ */
+export const OAUTH_CLIENT_UPSERT_ON_CONFLICT = sql`
+  ON CONFLICT (client_id) DO UPDATE SET
+    redirect_uris = COALESCE(
+      (
+        SELECT jsonb_agg(DISTINCT u)
+          FROM jsonb_array_elements(oauth_clients.redirect_uris || EXCLUDED.redirect_uris) AS u
+      ),
+      '[]'::jsonb
+    ),
+    post_logout_redirect_uris = (
+      SELECT jsonb_agg(DISTINCT u)
+        FROM jsonb_array_elements(
+               COALESCE(oauth_clients.post_logout_redirect_uris, '[]'::jsonb)
+               || COALESCE(EXCLUDED.post_logout_redirect_uris, '[]'::jsonb)
+             ) AS u
+    ),
+    allowed_scopes = EXCLUDED.allowed_scopes,
+    is_active = true,
+    updated_at = now()
+`;
+
+/**
+ * 쇼핑몰 Android 앱(native/storefront-app)의 redirect URI 2종.
+ *
+ * 앱 소스의 상수와 **문자 단위로 일치해야 한다** — user-service 의 redirect_uri 매칭은
+ * 커스텀 스킴에 대해 exact match 만 허용한다(apps/user-service/src/api/oauth/redirect-uri.ts).
+ *   APP_LOGIN     ↔ native/storefront-app/src/auth/pkce-login.ts  APP_LOGIN_REDIRECT
+ *   APP_WEBVIEW   ↔ native/storefront-app/src/login/callback.ts   WEBVIEW_LOGIN_REDIRECT
+ *
+ * 이 값들은 admin API(`POST/PATCH /admin/oauth-clients`)로는 등록할 수 없다 — DTO 의
+ * `@IsUrl` 이 http/https/ftp 만 통과시켜 커스텀 스킴을 거부한다. 그래서 시드가 유일한
+ * 등록 경로다.
+ */
+export const STOREFRONT_APP_LOGIN_REDIRECT = 'almondyoung://oauth/callback';
+export const STOREFRONT_APP_WEBVIEW_REDIRECT = 'almondyoung://callback/oidc';
+
+/**
+ * 앱 자체 public client (PKCE). public 이므로 secret 은 발급되지 않는다.
+ * scope 는 앱의 loginWithPkce 요청값과 일치시킨다.
+ */
+export const STOREFRONT_APP_CLIENT_SEED: OAuthClientSeed = {
+  clientId: 'almondyoung-android-app',
+  clientType: 'public',
+  redirectUris: [STOREFRONT_APP_LOGIN_REDIRECT],
+  allowedScopes: ['openid', 'profile', 'email'],
+};
+
 export const USER_SERVICE_REFERENCE_ROLES = [
   { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터' },
   { roleId: FIXED_UUIDS.ROLE_ADMIN, name: 'admin', description: '관리자' },
@@ -315,12 +378,7 @@ export class UserServiceSeedStep extends SeedStep {
               ${seed.allowedScopes ? JSON.stringify(seed.allowedScopes) : null}::jsonb,
               true
             )
-            ON CONFLICT (client_id) DO UPDATE SET
-              redirect_uris = EXCLUDED.redirect_uris,
-              post_logout_redirect_uris = EXCLUDED.post_logout_redirect_uris,
-              allowed_scopes = EXCLUDED.allowed_scopes,
-              is_active = true,
-              updated_at = now()
+            ${OAUTH_CLIENT_UPSERT_ON_CONFLICT}
           `);
 
           if (!isPublic && plaintextSecret && !seed.clientSecret) {
