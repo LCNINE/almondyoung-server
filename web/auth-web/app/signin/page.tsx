@@ -25,13 +25,13 @@ export default async function SignInPage({
     : "보안을 위해 비밀번호를 다시 입력해주세요.";
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-svh w-full max-w-[480px] flex-col gap-6 px-4 py-10">
       <ReloginNotice />
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">
+        <h1 className="text-2xl leading-8 font-bold text-foreground">
           {isReauth ? "비밀번호 재입력" : "로그인"}
         </h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-sm leading-5 text-muted-foreground">
           {isReauth ? reauthSubtitle : "아이디와 비밀번호를 입력해주세요."}
         </p>
       </header>

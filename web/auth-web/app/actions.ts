@@ -145,6 +145,15 @@ async function redirectAfterAuth(
   redirect(redirectTo ?? "/")
 }
 
+/**
+ * 화면에 보여줄 에러 문구. ApiError.message 는 `[ctx] 404: ...` 형태의 디버깅용이라
+ * 그대로 노출하면 안 된다 — 서버가 내려준 원본 문구(serverMessage)만 쓴다.
+ */
+function userMessage(e: unknown, fallback: string) {
+  if (e instanceof ApiError) return e.serverMessage
+  return e instanceof Error ? e.message : fallback
+}
+
 function getNormalizedPhoneNumber(formData: FormData) {
   const phoneNumber = normalizePhoneNumber(
     String(formData.get("phoneNumber") ?? "")
@@ -210,10 +219,10 @@ export async function sendRecoveryCodeAction(
   } catch (e) {
     return {
       ok: false,
-      error:
-        e instanceof Error
-          ? e.message
-          : "인증번호 발송 중 오류가 발생했습니다.",
+      error: userMessage(
+        e,
+        "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요."
+      ),
     }
   }
 }
@@ -232,7 +241,10 @@ export async function findUserIdAction(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "아이디 찾기에 실패했습니다.",
+      error: userMessage(
+        e,
+        "아이디를 찾지 못했어요. 입력한 정보를 확인해 주세요."
+      ),
     }
   }
 }
@@ -257,8 +269,10 @@ export async function startPasswordResetAction(
   } catch (e) {
     return {
       ok: false,
-      error:
-        e instanceof Error ? e.message : "비밀번호 재설정 인증에 실패했습니다.",
+      error: userMessage(
+        e,
+        "본인 확인에 실패했어요. 입력한 정보를 확인해 주세요."
+      ),
     }
   }
 }
@@ -302,10 +316,10 @@ export async function resetForgottenPasswordAction(
   } catch (e) {
     return {
       ok: false,
-      error:
-        e instanceof Error
-          ? e.message
-          : "비밀번호 재설정 중 오류가 발생했습니다.",
+      error: userMessage(
+        e,
+        "비밀번호를 바꾸지 못했어요. 잠시 후 다시 시도해 주세요."
+      ),
     }
   }
 }
@@ -325,13 +339,15 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
     userId = await promoteTokens(tokens, rememberMe, reauthUserId || undefined)
   } catch (e) {
     if (e instanceof ApiError) {
+      // 404(존재하지 않는 사용자)도 자격 증명 오류로 묶는다 — 계정 존재 여부를 흘리지 않고,
+      // "일시적 오류" 로 오인해 같은 아이디로 계속 재시도하는 것도 막는다.
       const msg =
-        e.status === 400 || e.status === 401
-          ? "아이디 또는 비밀번호가 올바르지 않습니다."
-          : "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+        e.status === 400 || e.status === 401 || e.status === 404
+          ? "아이디 또는 비밀번호가 올바르지 않아요."
+          : "로그인하지 못했어요. 잠시 후 다시 시도해 주세요."
       return { ok: false, error: msg }
     }
-    return { ok: false, error: e instanceof Error ? e.message : "로그인 실패" }
+    return { ok: false, error: userMessage(e, "로그인하지 못했어요.") }
   }
 
   return redirectAfterAuth(userId, redirectToRaw)
@@ -445,7 +461,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "회원가입 실패",
+      error: userMessage(e, "가입하지 못했어요. 잠시 후 다시 시도해 주세요."),
     }
   }
 
@@ -463,10 +479,13 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
  * userId 를 인자로 받지 않는다 — 받으면 임의 userId 로 OAuth code 를 발급받아 남의 계정으로
  * 로그인할 수 있다. 방금 심은 세션 쿠키에서 access token 을 꺼내 /users/me 로 확인한다.
  */
-export async function finishSignupAction(redirectToRaw: string): Promise<ActionResult> {
+export async function finishSignupAction(
+  redirectToRaw: string
+): Promise<ActionResult> {
   // accessToken 쿠키는 15분짜리라(ACCESS_MAX_AGE) 사업자 인증 스텝에 조금만 머물러도 사라진다.
   // 2주짜리 refreshToken 으로 복원해서, 가입은 끝났는데 마지막 이동만 막히는 상황을 없앤다.
-  const accessToken = (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
+  const accessToken =
+    (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
   if (!accessToken) {
     return {
       ok: false,
@@ -476,7 +495,10 @@ export async function finishSignupAction(redirectToRaw: string): Promise<ActionR
 
   const me = await getMe(accessToken)
   if (!me.id) {
-    return { ok: false, error: "세션을 확인하지 못했습니다. 다시 로그인해주세요." }
+    return {
+      ok: false,
+      error: "세션을 확인하지 못했습니다. 다시 로그인해주세요.",
+    }
   }
 
   return redirectAfterAuth(me.id, redirectToRaw)
@@ -491,7 +513,10 @@ async function restoreSessionFromRefreshToken(): Promise<string | null> {
   if (!restored.ok) return null
 
   // restore-token 은 access 만 새로 준다. refresh 는 기존 쿠키 값을 그대로 유지한다.
-  await setIdpSessionCookies({ accessToken: restored.accessToken, refreshToken })
+  await setIdpSessionCookies({
+    accessToken: restored.accessToken,
+    refreshToken,
+  })
   return restored.accessToken
 }
 
@@ -499,8 +524,11 @@ async function restoreSessionFromRefreshToken(): Promise<string | null> {
  * 가입 직후 사업자 인증. 국세청 진위확인은 user-service 가 직접 수행하므로
  * 여기서는 입력값만 전달한다. 법인 번호는 user-service 가 400 으로 거절한다.
  */
-export async function registerBusinessAction(formData: FormData): Promise<ActionResult> {
-  const accessToken = (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
+export async function registerBusinessAction(
+  formData: FormData
+): Promise<ActionResult> {
+  const accessToken =
+    (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
   if (!accessToken) {
     return {
       ok: false,
@@ -519,12 +547,20 @@ export async function registerBusinessAction(formData: FormData): Promise<Action
       return { ok: false, error: "파일 크기는 5MB 이하만 첨부할 수 있습니다." }
     }
     if (!BUSINESS_FILE_MIME_TYPES.includes(file.type)) {
-      return { ok: false, error: "JPG, PNG, GIF 이미지 파일만 첨부할 수 있습니다." }
+      return {
+        ok: false,
+        error: "JPG, PNG, GIF 이미지 파일만 첨부할 수 있습니다.",
+      }
     }
   }
 
-  const businessNumber = String(formData.get("businessNumber") ?? "").replace(/\D/g, "")
-  const representativeName = String(formData.get("representativeName") ?? "").trim()
+  const businessNumber = String(formData.get("businessNumber") ?? "").replace(
+    /\D/g,
+    ""
+  )
+  const representativeName = String(
+    formData.get("representativeName") ?? ""
+  ).trim()
   const startDate = String(formData.get("startDate") ?? "").replace(/\D/g, "")
 
   if (!hasFile) {
@@ -544,15 +580,20 @@ export async function registerBusinessAction(formData: FormData): Promise<Action
       const fileUrl = await uploadBusinessFile(accessToken, file)
       await createBusinessLicense(accessToken, { fileUrl })
     } else {
-      await createBusinessLicense(accessToken, { businessNumber, representativeName, startDate })
+      await createBusinessLicense(accessToken, {
+        businessNumber,
+        representativeName,
+        startDate,
+      })
     }
     return { ok: true }
   } catch (e) {
-    // ApiError.message 는 `[ctx] 400: ...` 형태의 디버깅용이라 그대로 노출하면 안 된다.
-    if (e instanceof ApiError) return { ok: false, error: e.serverMessage }
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "사업자 인증에 실패했습니다.",
+      error: userMessage(
+        e,
+        "사업자 인증에 실패했어요. 입력한 정보를 확인해 주세요."
+      ),
     }
   }
 }
@@ -604,7 +645,7 @@ export async function selectAccountAction(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "세션 검증 실패",
+      error: userMessage(e, "세션을 확인하지 못했어요."),
     }
   }
 
@@ -674,7 +715,7 @@ export async function completeSignupCallback(
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof Error ? e.message : "가입 완료 처리 실패",
+      error: userMessage(e, "가입 마무리에 실패했어요."),
     }
   }
 

@@ -135,7 +135,7 @@ function AgreementRow({
                   onCheckedChange(true)
                   setOpen(false)
                 }}
-                className="h-[52px] w-full rounded-xl text-base font-bold"
+                className="h-[52px] w-full rounded-lg text-base font-bold"
               >
                 확인
               </Button>

@@ -14,6 +14,8 @@ import {
   FloatingLabelInput,
   floatingInputClass,
 } from "@/components/ui/floating-label-input"
+import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 
 export function ProfileStep({
   defaultValues,
@@ -110,12 +112,21 @@ export function ProfileStep({
         </FloatingField>
         <Button
           type="button"
-          variant="secondary"
+          variant={codeSent ? "outline" : "default"}
           onClick={sendCode}
           disabled={sending}
-          className="h-14 shrink-0 rounded-lg px-4"
+          className={cn(
+            "h-14 shrink-0 rounded-lg px-4",
+            sending && "disabled:bg-primary disabled:text-primary-foreground"
+          )}
         >
-          {sending ? "발송 중..." : codeSent ? "재발송" : "인증번호 받기"}
+          {sending ? (
+            <Spinner className="size-5" />
+          ) : codeSent ? (
+            "재발송"
+          ) : (
+            "인증번호 받기"
+          )}
         </Button>
       </div>
 

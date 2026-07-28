@@ -15,6 +15,8 @@ import {
   useLoginIdAvailability,
   type AvailabilityState,
 } from "@/hooks/use-availability"
+import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 
 const PASSWORD_RULE = "영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자"
 const LOGIN_ID_RULE = "영문 소문자와 숫자만, 4~20자"
@@ -219,16 +221,20 @@ export function StepFooter({
         type="button"
         variant="secondary"
         onClick={onBack}
-        className="h-[52px] flex-1 rounded-xl text-base font-bold"
+        className="h-[52px] flex-1 rounded-lg text-base font-bold"
       >
         이전
       </Button>
       <Button
         type="submit"
         disabled={nextDisabled || pending}
-        className="h-[52px] flex-[2] rounded-xl text-base font-bold"
+        className={cn(
+          "h-[52px] flex-[2] rounded-lg text-base font-bold",
+          // 전송 중 disabled 는 로딩이므로 브랜드색을 유지해 로더가 읽히게 한다
+          pending && "disabled:bg-primary disabled:text-primary-foreground"
+        )}
       >
-        {pending ? "처리 중..." : nextLabel}
+        {pending ? <Spinner className="size-5" /> : nextLabel}
       </Button>
     </div>
   )

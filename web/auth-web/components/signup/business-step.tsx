@@ -9,6 +9,8 @@ import {
   FloatingLabelInput,
   floatingInputClass,
 } from "@/components/ui/floating-label-input"
+import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 import { Image as ImageIcon, Lock, Upload, X } from "lucide-react"
 
 // input 은 name="file" 로 남아 있어야 FormData 에 실린다.
@@ -127,7 +129,7 @@ export function BusinessStep({
             type="button"
             onClick={() => setOpened(true)}
             disabled={busy}
-            className="h-[52px] rounded-xl text-base font-bold"
+            className="h-[52px] rounded-lg text-base font-bold"
           >
             사업자 인증하기
           </Button>
@@ -136,9 +138,9 @@ export function BusinessStep({
             variant="ghost"
             onClick={onDone}
             disabled={busy}
-            className="h-[52px] rounded-xl text-base text-muted-foreground"
+            className="h-[52px] rounded-lg text-base text-muted-foreground"
           >
-            {pending ? "이동 중..." : "건너뛰기"}
+            {pending ? <Spinner className="size-5" /> : "건너뛰기"}
           </Button>
         </div>
       </div>
@@ -222,16 +224,19 @@ export function BusinessStep({
         <Button
           type="submit"
           disabled={busy}
-          className="h-[52px] rounded-xl text-base font-bold"
+          className={cn(
+            "h-[52px] rounded-lg text-base font-bold",
+            submitting && "disabled:bg-primary disabled:text-primary-foreground"
+          )}
         >
-          {submitting ? "인증 중..." : "인증하고 시작하기"}
+          {submitting ? <Spinner className="size-5" /> : "인증하고 시작하기"}
         </Button>
         <Button
           type="button"
           variant="ghost"
           onClick={onDone}
           disabled={busy}
-          className="h-[52px] rounded-xl text-base text-muted-foreground"
+          className="h-[52px] rounded-lg text-base text-muted-foreground"
         >
           건너뛰기
         </Button>
