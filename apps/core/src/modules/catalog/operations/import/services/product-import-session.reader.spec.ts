@@ -16,7 +16,30 @@ function makeDb(rows: any[]) {
 
 describe('ProductImportSessionReader.getSession', () => {
   it('세션이 없으면 NotFoundError', async () => {
-    const reader = new ProductImportSessionReader(makeDb([]));
+    const optionReadLoader = { getVariantOptionValues: jest.fn() } as any;
+    const reader = new ProductImportSessionReader(makeDb([]), optionReadLoader);
     await expect(reader.getSession('nope')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('ProductImportSessionReader.getVariantComboMap', () => {
+  it('옵션 없는 상품은 기본 variant 를 빈 문자열 키로 담는다', async () => {
+    const optionReadLoader = { getVariantOptionValues: jest.fn().mockResolvedValue([]) };
+    const reader = new ProductImportSessionReader(makeDb([{ variantId: 'v1' }]), optionReadLoader as any);
+
+    const map = await reader.getVariantComboMap('m1', 'ver1');
+
+    expect(map.get('')).toBe('v1');
+  });
+
+  it('옵션 조합을 comboKey 규칙으로 정규화해 담는다', async () => {
+    const optionReadLoader = {
+      getVariantOptionValues: jest.fn().mockResolvedValue([{ id: 'ov1', optionGroupName: '색상', displayName: '빨강' }]),
+    };
+    const reader = new ProductImportSessionReader(makeDb([{ variantId: 'v1' }]), optionReadLoader as any);
+
+    const map = await reader.getVariantComboMap('m1', 'ver1');
+
+    expect(map.get('색상=빨강')).toBe('v1');
   });
 });

@@ -13,7 +13,7 @@ import { ProductImportValidator } from './product-import.validator';
 async function buf(rows: string[][]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   const p = wb.addWorksheet('Products');
-  p.addRow(['productKey', 'name', 'marketPrice']);
+  p.addRow(['productKey', 'name', 'marketPrice', 'basePrice']);
   rows.forEach((r) => p.addRow(r));
   const arr = await wb.xlsx.writeBuffer();
   return Buffer.from(arr);
@@ -39,8 +39,8 @@ describe('ProductImportService.validate', () => {
     const { service, manager } = makeService();
     const preview = await service.validate(
       await buf([
-        ['P1', '니트', '19000'],
-        ['P2', '', '-1'],
+        ['P1', '니트', '19000', '29000'],
+        ['P2', '', '-1', '29000'],
       ]),
     );
 
@@ -57,7 +57,7 @@ describe('ProductImportService.validate', () => {
 describe('ProductImportService.commit', () => {
   it('정규화·검증 후 manager.commit 에 레코드를 넘긴다', async () => {
     const { service, manager } = makeService();
-    const result = await service.commit(await buf([['P1', '니트', '19000']]), 'f.xlsx', 'u1');
+    const result = await service.commit(await buf([['P1', '니트', '19000', '29000']]), 'f.xlsx', 'u1');
     expect(manager.commit).toHaveBeenCalledWith(expect.objectContaining({ fileName: 'f.xlsx', userId: 'u1' }));
     expect(result.sessionId).toBe('s1');
   });

@@ -46,6 +46,9 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductReadAssembler,
     // 카테고리 서비스가 상품-카테고리 변경 시 프로젝션 스냅샷을 재발행하는 데 사용한다.
     ProjectionSnapshotAssembler,
+    // 대량등록이 조합 문자열 → variantId 해석에 사용한다 (엑셀에 UUID 가 없으므로
+    // 옵션 표시명으로 variant 를 찾아야 한다).
+    OptionReadLoader,
   ],
 })
 export class ProductsModule {}

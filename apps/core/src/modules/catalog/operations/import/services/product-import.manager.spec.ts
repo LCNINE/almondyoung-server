@@ -5,7 +5,23 @@ jest.mock(
 );
 
 import { ProductImportManager } from './product-import.manager';
-import { ProductRecord } from '../dto/import.types';
+import { ProductRecord, comboKey } from '../dto/import.types';
+import { productVariants } from '../../../schema/catalog.schema';
+
+/**
+ * 실제 drizzle-orm `eq(column, value)` 가 반환하는 SQL 조각에서 값을 뽑아낸다.
+ * product-purchase-constraints.service.spec.ts 의 predicate 파싱 기법과 동일한 방식 —
+ * drizzle-orm 자체를 mock 하면 schema.ts 의 module-level pgTable() 호출까지 깨지므로
+ * 대신 실제 eq() 가 만든 SQL 조각의 Param chunk 를 읽는다.
+ */
+function extractEqValue(condition: unknown): unknown {
+  const chunks = (condition as { queryChunks?: unknown[] })?.queryChunks;
+  if (!Array.isArray(chunks)) return undefined;
+  const paramChunk = chunks.find(
+    (c) => c && Object.prototype.hasOwnProperty.call(c, 'value') && Object.prototype.hasOwnProperty.call(c, 'encoder'),
+  ) as { value?: unknown } | undefined;
+  return paramChunk?.value;
+}
 
 function validRecord(over: Partial<ProductRecord> = {}): ProductRecord {
   return {
@@ -16,6 +32,7 @@ function validRecord(over: Partial<ProductRecord> = {}): ProductRecord {
     categoryIds: [],
     categoryNames: [],
     options: [],
+    variantOverrides: [],
     errors: [],
     ...over,
   };
@@ -25,6 +42,7 @@ function validRecord(over: Partial<ProductRecord> = {}): ProductRecord {
 function makeHarness(createMasterImpl?: (userId: string) => any) {
   const inserted: any[] = [];
   const sessions: any[] = [];
+  const updatedVariantCodes: { variantId: string; variantCode: string }[] = [];
   const trx = {
     insert: (table: any) => ({
       values: (v: any) => {
@@ -32,7 +50,19 @@ function makeHarness(createMasterImpl?: (userId: string) => any) {
         return { returning: () => Promise.resolve([{ ...v, id: 'sess-1' }]) };
       },
     }),
-    update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
+    update: (table: any) => ({
+      set: (values: any) => ({
+        where: (condition: any) => {
+          if (table === productVariants) {
+            updatedVariantCodes.push({
+              variantId: extractEqValue(condition) as string,
+              variantCode: values.variantCode,
+            });
+          }
+          return Promise.resolve();
+        },
+      }),
+    }),
   };
   // insert 대상 테이블을 태그로 식별하기 위한 매핑 주입
   const db = {
@@ -48,9 +78,30 @@ function makeHarness(createMasterImpl?: (userId: string) => any) {
   const reader = {
     getSession: jest.fn(),
     getDraftVersionId: jest.fn(),
+    getVariantComboMap: jest.fn(async () => new Map()),
   } as any;
-  const manager = new ProductImportManager(db, reader, productMastersService, productVersionsService);
-  return { manager, inserted, productMastersService, productVersionsService, reader };
+  const pricingService = { replaceVersionRules: jest.fn(async () => ({})) } as any;
+  const pricingBuilder = {
+    build: jest.fn(() => ({ basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] })),
+  } as any;
+  const manager = new ProductImportManager(
+    db,
+    reader,
+    productMastersService,
+    productVersionsService,
+    pricingService,
+    pricingBuilder,
+  );
+  return {
+    manager,
+    inserted,
+    updatedVariantCodes,
+    productMastersService,
+    productVersionsService,
+    reader,
+    pricingService,
+    pricingBuilder,
+  };
 }
 
 describe('ProductImportManager.commit', () => {
@@ -105,6 +156,144 @@ describe('ProductImportManager.commit', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('variant 생성(updateVersion) 이후에 가격 규칙을 쓴다', async () => {
+    const { manager, productMastersService, reader, pricingService } = makeHarness();
+    const order: string[] = [];
+    productMastersService.updateVersion.mockImplementation(async () => {
+      order.push('updateVersion');
+      return undefined;
+    });
+    reader.getVariantComboMap.mockImplementation(async () => {
+      order.push('comboMap');
+      return new Map();
+    });
+    pricingService.replaceVersionRules.mockImplementation(async () => {
+      order.push('pricing');
+      return {};
+    });
+
+    await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [validRecord()] });
+
+    expect(order).toEqual(['updateVersion', 'comboMap', 'pricing']);
+  });
+
+  it('가격 빌더가 만든 규칙을 versionId 와 함께 replaceVersionRules 에 넘긴다', async () => {
+    const { manager, pricingService, pricingBuilder, reader } = makeHarness();
+    const comboMap = new Map([['색상=빨강', 'var-1']]);
+    reader.getVariantComboMap.mockResolvedValue(comboMap);
+    const dto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+    pricingBuilder.build.mockReturnValue(dto);
+
+    await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [validRecord()] });
+
+    expect(pricingBuilder.build).toHaveBeenCalledWith(expect.objectContaining({ productKey: 'P1' }), comboMap);
+    expect(pricingService.replaceVersionRules).toHaveBeenCalledWith('v1', dto, expect.anything());
+  });
+
+  it('variantCode 를 조합에 해당하는 variant 에 쓴다', async () => {
+    const { manager, reader, updatedVariantCodes } = makeHarness();
+    const key = comboKey([{ name: '색상', value: '빨강' }]);
+    reader.getVariantComboMap.mockResolvedValue(new Map([[key, 'var-1']]));
+    const record = validRecord();
+    record.variantOverrides = [
+      {
+        rowNumber: 1,
+        comboKey: key,
+        combination: [{ name: '색상', value: '빨강' }],
+        basePriceRaw: '',
+        membershipPriceRaw: '',
+        variantCode: 'KNIT-RD-L',
+      },
+    ];
+
+    await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [record] });
+
+    expect(updatedVariantCodes).toEqual([{ variantId: 'var-1', variantCode: 'KNIT-RD-L' }]);
+  });
+
+  it('같은 파일 안에서 variantCode 가 중복되면 그 행을 실패로 만든다', async () => {
+    const { manager, reader } = makeHarness();
+    const a = comboKey([{ name: '색상', value: '빨강' }]);
+    const b = comboKey([{ name: '색상', value: '파랑' }]);
+    reader.getVariantComboMap.mockResolvedValue(
+      new Map([
+        [a, 'var-1'],
+        [b, 'var-2'],
+      ]),
+    );
+    const record = validRecord();
+    record.variantOverrides = [
+      { rowNumber: 1, comboKey: a, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'DUP' },
+      { rowNumber: 2, comboKey: b, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'DUP' },
+    ];
+
+    const result = await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [record] });
+
+    expect(result.failedCount).toBe(1);
+    expect(result.items[0].errorMessage).toMatch(/variantCode/);
+  });
+
+  it('같은 파일의 서로 다른 상품끼리 variantCode 가 중복되면 나중 레코드를 실패로 만든다', async () => {
+    const { manager, reader, updatedVariantCodes } = makeHarness();
+    const a = comboKey([{ name: '색상', value: '빨강' }]);
+    // 두 상품 모두 자기 자신의 comboMap 에서는 유효한 variant 로 해석된다(서로 다른 variantId).
+    let call = 0;
+    reader.getVariantComboMap.mockImplementation(async () => {
+      call += 1;
+      return call === 1 ? new Map([[a, 'var-1']]) : new Map([[a, 'var-2']]);
+    });
+    const recordA = validRecord({ productKey: 'A' });
+    recordA.variantOverrides = [
+      { rowNumber: 1, comboKey: a, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'SHARED' },
+    ];
+    const recordB = validRecord({ productKey: 'B' });
+    recordB.variantOverrides = [
+      { rowNumber: 1, comboKey: a, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'SHARED' },
+    ];
+
+    const result = await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [recordA, recordB] });
+
+    expect(result.createdCount).toBe(1);
+    expect(result.failedCount).toBe(1);
+    expect(result.items.map((i) => i.status)).toEqual(['created', 'failed']);
+    expect(result.items[1].errorMessage).toMatch(/variantCode/);
+    expect(updatedVariantCodes).toEqual([{ variantId: 'var-1', variantCode: 'SHARED' }]);
+  });
+
+  it('레코드가 variantCode 를 claim 한 뒤 같은 트랜잭션의 다른 단계에서 실패하면, 그 코드는 해제되어 뒤 레코드가 쓸 수 있다', async () => {
+    const { manager, reader, pricingService } = makeHarness();
+    const a = comboKey([{ name: '색상', value: '빨강' }]);
+    let call = 0;
+    reader.getVariantComboMap.mockImplementation(async () => {
+      call += 1;
+      return call === 1 ? new Map([[a, 'var-1']]) : new Map([[a, 'var-2']]);
+    });
+    // record A 는 applyVariantCodes 까지는 성공(코드를 claim)하지만, 같은 트랜잭션의 뒤 단계
+    // (가격 규칙 반영)에서 실패한다 — 이 경우 A 의 트랜잭션 전체가 롤백되므로 claim 도 무효가 되어야 한다.
+    pricingService.replaceVersionRules.mockImplementationOnce(async () => {
+      throw new Error('가격 규칙 실패');
+    });
+
+    const recordA = validRecord({ productKey: 'A' });
+    recordA.variantOverrides = [
+      { rowNumber: 1, comboKey: a, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'REUSED' },
+    ];
+    const recordB = validRecord({ productKey: 'B' });
+    recordB.variantOverrides = [
+      { rowNumber: 1, comboKey: a, combination: [], basePriceRaw: '', membershipPriceRaw: '', variantCode: 'REUSED' },
+    ];
+
+    const result = await manager.commit({ fileName: 'f.xlsx', userId: 'u1', records: [recordA, recordB] });
+
+    // A 는 가격 규칙 실패로 failed. B 는 A 와 같은 variantCode 를 쓰지만, A 의 claim 은 롤백과
+    // 함께 무효화되었어야 하므로 "중복" 으로 튕기지 않고 정상적으로 created 여야 한다.
+    // seenVariantCodes 를 applyVariantCodes 내부에서 즉시(eager) 반영하도록 되돌리면 이 테스트가
+    // 깨진다 — B 가 잘못된 "파일 안 중복" 오류로 failed 가 된다.
+    expect(result.items.map((i) => i.status)).toEqual(['failed', 'created']);
+    expect(result.items[0].errorMessage).toMatch(/가격 규칙 실패/);
+    expect(result.items[1].errorMessage).toBeUndefined();
   });
 });
 

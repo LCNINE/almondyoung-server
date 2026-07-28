@@ -8,16 +8,21 @@ import {
   productImportSessions,
   productImportItems,
   productMasterVersions,
+  productMasterVariants,
 } from '../../../schema/catalog.schema';
-import { CategoryNode } from '../dto/import.types';
+import { CategoryNode, comboKey } from '../dto/import.types';
 import { DbTransaction } from '../../../catalog.types';
+import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 
 export type SessionRow = typeof productImportSessions.$inferSelect;
 export type ItemRow = typeof productImportItems.$inferSelect;
 
 @Injectable()
 export class ProductImportSessionReader {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly optionReadLoader: OptionReadLoader,
+  ) {}
 
   loadCategoryTree(tx?: DbTransaction): Promise<CategoryNode[]> {
     return this.db.run(
@@ -81,6 +86,27 @@ export class ProductImportSessionReader {
         .orderBy(desc(productMasterVersions.version))
         .limit(1);
       return row?.id ?? null;
+    }, tx);
+  }
+
+  /**
+   * 생성된 variant 의 옵션 조합 → variantId 맵. 키는 comboKey 와 같은 규칙으로 정규화한다.
+   * 옵션 없는 상품(기본 variant 1개)은 빈 문자열 키로 담는다.
+   */
+  async getVariantComboMap(masterId: string, versionId: string, tx?: DbTransaction): Promise<Map<string, string>> {
+    return this.db.run(async (trx) => {
+      const rows = await trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.versionId, versionId)));
+
+      const map = new Map<string, string>();
+      for (const row of rows) {
+        const displays = await this.optionReadLoader.getVariantOptionValues(trx, row.variantId, versionId, 'ko-KR');
+        const key = comboKey(displays.map((d) => ({ name: d.optionGroupName, value: d.displayName })));
+        map.set(key, row.variantId);
+      }
+      return map;
     }, tx);
   }
 }

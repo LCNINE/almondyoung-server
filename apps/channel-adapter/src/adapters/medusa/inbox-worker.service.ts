@@ -52,6 +52,18 @@ const INBOX_WORKER_EVENT_TYPES = [
  */
 const BULK_EVENT_TYPES = ['ProductSellableQuantityChanged'] as const;
 
+/**
+ * 한 inbox 핸들러가 슬롯을 물 수 있는 최대 시간.
+ *
+ * 채택 배치(variant ≤ 4, 25건)의 실측 호출시간이 약 0.73초, 측정 전체에서 최악이던
+ * 조합이 22초였다 (설계 스펙 §3). 60초는 최악값의 약 3배다.
+ *
+ * 이 값은 동시성 1 전환의 선행조건이다. Medusa SDK 에 요청 타임아웃 훅이 없어
+ * undici 기본값(300초)에 걸려 있었고, 동시성 2 에서는 한 요청이 멈춰도 절반이
+ * 살아있지만 1 에서는 전면 정지가 된다.
+ */
+export const INBOX_HANDLER_TIMEOUT_MS = 60_000;
+
 type InboxWorkerEventType = (typeof INBOX_WORKER_EVENT_TYPES)[number];
 type InboxEventRecord = Omit<typeof inboxEvents.$inferSelect, 'payload' | 'metadata'> & {
   payload: any;
@@ -83,6 +95,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly processingLeaseMs: number;
   private readonly shutdownDrainMs: number;
   private readonly maxRetries: number;
+  private readonly handlerTimeoutMs: number;
 
   constructor(
     private readonly dbService: DbService<ChannelAdapterSchema>,
@@ -100,6 +113,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     this.processingLeaseMs = this.readPositiveIntConfig('INBOX_PROCESSING_LEASE_MS', 15 * 60 * 1000);
     this.shutdownDrainMs = this.readNonNegativeIntConfig('INBOX_SHUTDOWN_DRAIN_MS', 25000);
     this.maxRetries = this.readPositiveIntConfig('INBOX_MAX_RETRIES', 5);
+    this.handlerTimeoutMs = this.readPositiveIntConfig('INBOX_HANDLER_TIMEOUT_MS', INBOX_HANDLER_TIMEOUT_MS);
   }
 
   async onModuleInit() {
@@ -123,7 +137,8 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Inbox worker started (handlerStartIntervalMs=${this.handlerStartIntervalMs}ms, ` +
         `maxConcurrentHandlers=${this.maxConcurrentHandlers}, processingLeaseMs=${this.processingLeaseMs}ms, ` +
-        `shutdownDrainMs=${this.shutdownDrainMs}ms, maxRetries=${this.maxRetries})`,
+        `shutdownDrainMs=${this.shutdownDrainMs}ms, maxRetries=${this.maxRetries}, ` +
+        `handlerTimeoutMs=${this.handlerTimeoutMs}ms)`,
     );
   }
 
@@ -286,7 +301,39 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     const chainId = event.metadata?.chainId ?? v7();
     const eventId = event.metadata?.messageId ?? generateMessageId();
 
-    await this.eventChainService.runWithChain(chainId, eventId, () => this.doProcessInboxEvent(event));
+    try {
+      await this.withHandlerTimeout(
+        this.eventChainService.runWithChain(chainId, eventId, () => this.doProcessInboxEvent(event)),
+        `inbox handler ${event.id} (${event.eventType})`,
+      );
+    } catch (error) {
+      // doProcessInboxEvent 는 자체 catch 로 handleFailure 를 부르므로, 여기 도달하는 것은
+      // 타임아웃(또는 그 catch 밖에서 터진 예외)뿐이다. 슬롯을 놓아주고 재시도로 넘긴다.
+      await this.handleFailure(event, this.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * ⚠️ 한계: in-flight HTTP 요청을 취소하지는 못한다 (SDK 에 signal 훅이 없다).
+   * 이 타임아웃은 **슬롯을 놓아주는** 장치이고, 원 요청은 undici 기본값까지 배경에서
+   * 계속된다. 그래서 재시도와 원 요청이 겹칠 수 있는데, Medusa 상품 경로는 handle 기준
+   * upsert 라 중복 적용이 같은 결과를 낸다. 완전한 취소가 필요해지면 undici global
+   * dispatcher(headersTimeout/bodyTimeout)로 올려야 하며, 그때는 Naver·Coupang
+   * 클라이언트까지 영향 범위에 들어온다는 점을 함께 판단해야 한다.
+   */
+  private withHandlerTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${label} timed out after ${this.handlerTimeoutMs}ms`)),
+        this.handlerTimeoutMs,
+      );
+      timer.unref?.();
+    });
+
+    return Promise.race([work, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    }) as Promise<T>;
   }
 
   private async doProcessInboxEvent(event: InboxEventRecord): Promise<void> {
@@ -599,34 +646,62 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
     if (attempts >= this.maxRetries) {
       // 최대 재시도 횟수 초과 → failed (DLQ)
-      await this.dbService.db
-        .update(inboxEvents)
-        .set({
-          status: 'failed',
-          attempts,
-          errorMessage,
-          failedAt: new Date(),
-        })
-        .where(eq(inboxEvents.id, eventId));
+      const applied = await this.applyFailureUpdate(eventId, attempts, {
+        status: 'failed',
+        attempts,
+        errorMessage,
+        failedAt: new Date(),
+      });
+      if (!applied) return;
 
       this.logger.error(`Inbox event failed permanently: ${eventId}`);
     } else {
       const nextAttemptAt = new Date(Date.now() + Math.pow(2, attempts) * 1000);
 
-      await this.dbService.db
-        .update(inboxEvents)
-        .set({
-          status: 'pending',
-          attempts,
-          errorMessage,
-          nextAttemptAt,
-        })
-        .where(eq(inboxEvents.id, eventId));
+      const applied = await this.applyFailureUpdate(eventId, attempts, {
+        status: 'pending',
+        attempts,
+        errorMessage,
+        nextAttemptAt,
+      });
+      if (!applied) return;
 
       this.logger.warn(
         `Inbox event retry scheduled: ${eventId} (attempts: ${attempts}, next: ${nextAttemptAt.toISOString()})`,
       );
     }
+  }
+
+  /**
+   * `handleFailure` 갱신을 "이 호출이 클레임됐을 때의 attempts 세대와 지금 행의 attempts 가
+   * 여전히 같을 때만" 적용한다 — stock_ledgers.version 과 같은 낙관적 잠금 패턴이다.
+   *
+   * `processInboxEvent` 의 타임아웃이 슬롯을 놓아준 뒤에도 방치된 원 요청은 계속 실행되다가
+   * 뒤늦게 자체 에러로 `doProcessInboxEvent` 의 내부 catch 를 태워 handleFailure 를 다시 부를 수
+   * 있다. 그 사이 이벤트가 재클레임돼 처리됐다면(`claimNextInboxEvent` 가 매 클레임마다 attempts
+   * 를 원자적으로 올린다) 지금 행의 attempts 는 이 스냅샷과 더 이상 같지 않다 — 그 경우 이 두 번째
+   * 호출은 이미 끝난(또는 진행 중인) 최신 시도를 스테일 데이터로 덮어써서는 안 되므로 조용히 무시한다.
+   */
+  private async applyFailureUpdate(
+    eventId: string,
+    claimedAttempts: number,
+    values: Partial<typeof inboxEvents.$inferInsert>,
+  ): Promise<boolean> {
+    const updated = await this.dbService.db
+      .update(inboxEvents)
+      .set(values)
+      .where(and(eq(inboxEvents.id, eventId), eq(inboxEvents.attempts, claimedAttempts)))
+      .returning({ id: inboxEvents.id });
+
+    if (updated.length === 0) {
+      this.logger.warn(
+        `Stale failure ignored: inbox event ${eventId} already advanced past attempt ${claimedAttempts} ` +
+          '(reclaimed and reprocessed since an abandoned handler timed out)',
+      );
+      return false;
+    }
+
+    return true;
   }
 
   async onModuleDestroy() {
