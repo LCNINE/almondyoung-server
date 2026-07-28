@@ -61,6 +61,30 @@ export const getRatingSummary = async (
 }
 
 /**
+ * 상품별 레이팅 요약 배치 조회 (목록용)
+ * 카드 그리드가 상품 수만큼 단건 조회하면 브라우저 동시연결 제한에 걸려 직렬화되므로 한 번에 받는다.
+ * 목록 카드가 쓰는 평균 평점·리뷰 수만 오고, 별점 분포는 오지 않는다.
+ */
+export const getRatingSummaries = async (
+  productIds: string[]
+): Promise<
+  { productId: string; averageRating: number; totalCount: number }[]
+> => {
+  if (productIds.length === 0) return []
+
+  const response = await api<{
+    summaries: { productId: string; averageRating: number; totalCount: number }[]
+  }>("ugc", `/reviews/rating-summaries`, {
+    method: "GET",
+    params: { productIds: productIds.join(",") },
+    withAuth: false,
+    cache: "no-store",
+  })
+
+  return response.summaries ?? []
+}
+
+/**
  * 내 리뷰 목록 조회
  */
 export const getMyReviews = async ({
