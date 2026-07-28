@@ -1,3 +1,4 @@
+import { AuthShell } from "@/components/auth-shell"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 
@@ -47,7 +48,7 @@ export default async function AccountHubPage({
   const hasAccounts = accounts.length > 0
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-[480px] flex-col gap-6 px-4 py-10">
+    <AuthShell>
       <ReloginNotice />
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl leading-8 font-bold text-foreground">
@@ -104,6 +105,6 @@ export default async function AccountHubPage({
           <Link href={signupHref}>새로 가입하기</Link>
         </Button>
       </div>
-    </main>
+    </AuthShell>
   )
 }

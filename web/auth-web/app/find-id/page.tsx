@@ -1,3 +1,4 @@
+import { AuthShell } from "@/components/auth-shell"
 import { FindIdForm } from "@/components/find-id-form"
 import { sanitizeRedirectTo } from "@/lib/redirect"
 
@@ -12,7 +13,7 @@ export default async function FindIdPage({
   const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-[480px] flex-col gap-6 px-4 py-10">
+    <AuthShell>
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl leading-8 font-bold text-foreground">
           아이디 찾기
@@ -22,6 +23,6 @@ export default async function FindIdPage({
         </p>
       </header>
       <FindIdForm redirectTo={redirectTo} />
-    </main>
+    </AuthShell>
   )
 }
