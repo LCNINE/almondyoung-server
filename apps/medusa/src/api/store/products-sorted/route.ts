@@ -10,28 +10,17 @@ import {
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'review_count';
 type SortOrder = 'asc' | 'desc';
 
-type ProductSortIndexRecord = {
-  id: string;
-  product_id: string;
-  min_price: number;
-  max_price: number;
-  sales_count: number;
-  currency_code: string;
-};
-
-type ProductSortIndexFilter = Omit<Partial<ProductSortIndexRecord>, 'product_id'> & {
-  product_id?: string | { $in: string[] };
-};
-
 interface ProductSortingService {
-  listProductSortIndices(
-    filters: ProductSortIndexFilter,
-    options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
-  ): Promise<ProductSortIndexRecord[]>;
-  listAndCountProductSortIndices(
-    filters: ProductSortIndexFilter,
-    options?: { order?: Record<string, 'ASC' | 'DESC'>; take?: number; skip?: number },
-  ): Promise<[ProductSortIndexRecord[], number]>;
+  listSortedProductIds(params: {
+    sortBy: SortBy;
+    order: SortOrder;
+    limit: number;
+    offset: number;
+    currencyCode: string;
+    categoryIds?: string[];
+    collectionId?: string;
+    excludeMembersOnly: boolean;
+  }): Promise<{ productIds: string[]; count: number }>;
 }
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
@@ -60,52 +49,20 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       });
     }
 
-    // 카테고리/컬렉션 필터가 있거나 비회원이면 해당 상품 ID들을 먼저 조회한다.
-    // status: 'published' 를 여기서 걸어야 미발행(판매중단) 상품이 정렬 인덱스 단계부터
-    // 제외되어 count 까지 정확해진다. (표준 /store/products 는 미들웨어가 자동으로
-    // published 필터를 강제하지만, 이 라우트는 query.graph 를 직접 호출하므로 명시 필요)
-    let scopedProductIds: string[] | null = null;
-    if (categoryIds.length > 0 || collectionId || !isMember) {
-      const categoryFilters: Record<string, unknown> = { status: 'published' };
-
-      if (categoryIds.length > 0) {
-        categoryFilters.categories = { id: categoryIds };
-      }
-
-      if (collectionId) {
-        categoryFilters.collection_id = collectionId;
-      }
-
-      const { data: categoryProducts } = await query.graph({
-        entity: 'product',
-        fields: ['id', 'metadata'],
-        filters: categoryFilters,
-      });
-
-      const visibleProducts = filterProductsForMemberState(categoryProducts as MembershipProduct[], isMember);
-      scopedProductIds = visibleProducts.map((p) => p.id).filter((id): id is string => typeof id === 'string');
-
-      if (scopedProductIds.length === 0) {
-        return res.json({ products: [], count: 0 });
-      }
-    }
-
-    // 정렬 인덱스 필터 구성
-    const sortIndexFilter: ProductSortIndexFilter = { currency_code: currencyCode };
-    if (scopedProductIds) {
-      sortIndexFilter.product_id = { $in: scopedProductIds };
-    }
-
-    const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(sortIndexFilter, {
-      // sales_count / review_count 는 0 인 상품이 많아 동점이 대량 발생한다.
-      // tie-breaker(product_id) 가 없으면 OFFSET 페이지네이션에서 동점 상품의
-      // 순서가 페이지마다 흔들려 같은 상품이 여러 페이지에 중복 출력된다.
-      order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC', product_id: 'ASC' },
-      take: limit,
-      skip: offset,
+    // 카테고리/컬렉션 필터 + 정렬 + 페이지네이션을 단일 SQL 로 끝낸다.
+    // status: 'published' 와 멤버십 전용 노출 제외를 여기서 걸어야 미발행(판매중단) 상품이
+    // 정렬 단계부터 빠져 count 까지 정확해진다. (표준 /store/products 는 미들웨어가 자동으로
+    // published 필터를 강제하지만, 이 라우트는 직접 조회하므로 명시 필요)
+    const { productIds, count: totalCount } = await sortingService.listSortedProductIds({
+      sortBy,
+      order,
+      limit,
+      offset,
+      currencyCode,
+      categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
+      collectionId: collectionId || undefined,
+      excludeMembersOnly: !isMember,
     });
-
-    const productIds = sortIndexes.map((s) => s.product_id);
 
     if (productIds.length === 0) {
       return res.json({ products: [], count: 0 });

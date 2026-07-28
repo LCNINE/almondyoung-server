@@ -5,20 +5,20 @@ import { SearchCombobox } from "@/components/search/search-combobox"
 import { SearchSheet } from "@/components/search/search-sheet"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { HomeQuickLinks } from "@/domains/home/components/quick-links"
-import { listCategories } from "@/lib/api/medusa/categories"
+import { listRootCategoriesCached } from "@/lib/data/category"
 import { getTranslations } from "next-intl/server"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
 import { MobileAuthLinks, UserInfo } from "./user-info"
 
-type Categories = Awaited<ReturnType<typeof listCategories>>
+type Categories = Awaited<ReturnType<typeof listRootCategoriesCached>>
 
 export async function MainHeader() {
   const t = await getTranslations("header.utility")
   let categories: Categories = []
 
   try {
-    categories = await listCategories({ parent_category_id: "null" })
+    categories = await listRootCategoriesCached()
   } catch (error) {
     console.error("[MainHeader] Failed to load categories:", error)
   }

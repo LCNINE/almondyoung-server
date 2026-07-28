@@ -1,6 +1,6 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
-import { listCategories } from "@/lib/api/medusa/categories"
+import { listRootCategoriesCached } from "@/lib/data/category"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@/lib/data/cookies"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
@@ -61,7 +61,7 @@ export async function HomeQuickLinks({
   let dropdownCategories: StoreProductCategoryTree[] = []
 
   try {
-    dropdownCategories = await listCategories({ parent_category_id: "null" })
+    dropdownCategories = await listRootCategoriesCached()
   } catch (error) {
     console.error("[HomeQuickLinks] Failed to load dropdown categories:", error)
   }

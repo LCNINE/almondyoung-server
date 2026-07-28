@@ -4,7 +4,12 @@ import { Public, RequireScopes, User } from '@app/authorization';
 import { ReviewsService } from '../services/reviews.service';
 import { CreateReviewDto } from '../dto/create-review.dto';
 import { MyReviewListQueryDto } from '../dto/my-review-list-query.dto';
-import { RatingSummaryQueryDto, RatingSummaryResponseDto } from '../dto/rating-summary.dto';
+import {
+  RatingSummariesQueryDto,
+  RatingSummariesResponseDto,
+  RatingSummaryQueryDto,
+  RatingSummaryResponseDto,
+} from '../dto/rating-summary.dto';
 import { AdminReviewListQueryDto, ReviewListQueryDto } from '../dto/review-list-query.dto';
 import { UpdateReviewDto } from '../dto/update-review.dto';
 import { UpdateReviewStatusDto } from '../dto/update-review-status.dto';
@@ -140,6 +145,18 @@ export class ReviewsController {
   })
   async ratingSummary(@Query() query: RatingSummaryQueryDto): Promise<RatingSummaryResponseDto> {
     return this.reviewsService.getRatingSummary(query.productId);
+  }
+
+  @Get('rating-summaries')
+  @Public()
+  @ApiOperation({ summary: '상품별 레이팅 요약 배치 조회 (목록용)' })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: '레이팅 요약 배치 조회 성공',
+    type: RatingSummariesResponseDto,
+  })
+  async ratingSummaries(@Query() query: RatingSummariesQueryDto): Promise<RatingSummariesResponseDto> {
+    return { summaries: await this.reviewsService.getRatingSummaries(query.productIds) };
   }
 
   // ─── 관리자용 조회 ───
