@@ -1,8 +1,7 @@
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
-import { ALL_SCOPES } from '../../../apps/core/src/platform/auth/merged-scopes';
-import { FULFILLMENT_ROLE_MAPPINGS } from '../../../apps/core/src/platform/auth/fulfillment-scopes';
+import { ALL_ROLE_MAPPINGS, ALL_SCOPES } from '../../../apps/core/src/platform/auth/merged-scopes';
 import { wmsSchema } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 import { makeDbService } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 
@@ -17,9 +16,9 @@ export async function bootstrapScopes(db: PostgresJsDatabase<typeof wmsSchema>):
   const service = new AuthorizationService(dbService as unknown as DbService, {
     microserviceName: 'almondyoung',
     scopes: ALL_SCOPES,
-    roleMappings: FULFILLMENT_ROLE_MAPPINGS,
+    roleMappings: ALL_ROLE_MAPPINGS,
   });
 
   await service.ensureScopesExist('almondyoung', ALL_SCOPES);
-  await service.ensureRoleScopeMappings(FULFILLMENT_ROLE_MAPPINGS);
+  await service.ensureRoleScopeMappings(ALL_ROLE_MAPPINGS);
 }
