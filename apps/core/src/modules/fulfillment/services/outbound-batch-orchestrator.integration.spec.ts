@@ -316,6 +316,87 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect(storedAfterClaim).toEqual({ status: 'created' });
   });
 
+  it('rejects a batch whose picking method is not supported by the warehouse', async () => {
+    const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
+
+    await expect(
+      services.batches.createBatch(
+        { warehouseId: warehouse.warehouseId, pickingMethod: 'total_picking', name: 'unsupported' },
+        `batch-create-${randomUUID()}`,
+        master,
+      ),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'OUTBOUND_BATCH_METHOD_NOT_SUPPORTED' }),
+    });
+  });
+
+  it('creates a multi_order batch once the warehouse supports pick_to_tote', async () => {
+    const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
+    await db
+      .update(wmsTables.warehouses)
+      .set({ supportedPickingStrategies: ['pick_to_tote'] })
+      .where(eq(wmsTables.warehouses.id, warehouse.warehouseId));
+
+    const created = await services.batches.createBatch(
+      { warehouseId: warehouse.warehouseId, pickingMethod: 'multi_order', cartCapacity: 24, name: 'tote batch' },
+      `batch-create-${randomUUID()}`,
+      master,
+    );
+    expect(created.batchId).toBeDefined();
+  });
+
+  async function multiOrderBatch(cartCapacity: number) {
+    const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
+    await db
+      .update(wmsTables.warehouses)
+      .set({ supportedPickingStrategies: ['pick_to_tote'] })
+      .where(eq(wmsTables.warehouses.id, warehouse.warehouseId));
+    const batch = await services.batches.createBatch(
+      {
+        warehouseId: warehouse.warehouseId,
+        pickingMethod: 'multi_order',
+        cartCapacity,
+        name: `Tote batch ${randomUUID()}`,
+      },
+      `batch-create-${randomUUID()}`,
+      master,
+    );
+    return { warehouse, batchId: batch.batchId };
+  }
+
+  it('refuses to add a shipment beyond the cart basket capacity', async () => {
+    const { warehouse, batchId } = await multiOrderBatch(1);
+    const first = await committedFixture({ warehouse });
+    const second = await committedFixture({ warehouse });
+
+    await services.batches.addShipment(batchId, first.shipment.id, `cap-add-${randomUUID()}`, master);
+
+    await expect(
+      services.batches.addShipment(batchId, second.shipment.id, `cap-over-${randomUUID()}`, master),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'OUTBOUND_BATCH_CART_CAPACITY_EXCEEDED' }),
+    });
+  });
+
+  it('frees a basket slot when a shipment is excluded', async () => {
+    const { warehouse, batchId } = await multiOrderBatch(1);
+    const first = await committedFixture({ warehouse });
+    const second = await committedFixture({ warehouse });
+
+    await services.batches.addShipment(batchId, first.shipment.id, `slot-add-${randomUUID()}`, master);
+    await services.batches.excludeShipment(
+      batchId,
+      first.shipment.id,
+      { reason: 'capacity test' },
+      `slot-exclude-${randomUUID()}`,
+      master,
+    );
+
+    await expect(
+      services.batches.addShipment(batchId, second.shipment.id, `slot-readd-${randomUUID()}`, master),
+    ).resolves.toBeDefined();
+  });
+
   it('allows a recalled dispatch history through batch add and exclusion while preserving the old attempt', async () => {
     const fixture = await committedFixture({ quantity: 2 });
     const attemptId = randomUUID();

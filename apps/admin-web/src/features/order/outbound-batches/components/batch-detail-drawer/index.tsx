@@ -7,13 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { usePermission } from '@/hooks/use-permission';
 import {
@@ -45,6 +38,7 @@ import {
 import type { PickingStrategyName } from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
+import { PICKING_METHOD_LABELS } from '../../picking-method';
 
 interface Props {
   batchId: string;
@@ -68,15 +62,12 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const claimPacker = useClaimBatchPacker();
   const handoff = useHandoffBatchWorkItem();
   const createPlan = useCreatePickingPlan();
-  const [strategy, setStrategy] = useState<PickingStrategyName | ''>('');
   const [targetWorkerId, setTargetWorkerId] = useState('');
   const [reason, setReason] = useState('shift_handoff');
   const retry = useWarehouseCommandRetry();
   const canOperateWarehouse =
     !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
 
-  const supportedStrategies =
-    batch?.warehouse?.supportedPickingStrategies ?? [];
   const shipmentIds = useMemo(
     () =>
       batch?.workItems
@@ -137,40 +128,12 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               <h3 className="font-medium">피킹 계획</h3>
               {canOperateWarehouse && (
                 <div className="flex flex-wrap items-end gap-2">
-                  <div className="space-y-1">
-                    <Label>창고 지원 전략</Label>
-                    <Select
-                      value={strategy}
-                      onValueChange={(value) =>
-                        setStrategy(value as PickingStrategyName)
-                      }
-                    >
-                      <SelectTrigger className="w-52">
-                        <SelectValue placeholder="전략 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {supportedStrategies.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {STRATEGY_LABELS[item]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
                   <Button
-                    disabled={
-                      !strategy ||
-                      shipmentIds.length === 0 ||
-                      createPlan.isPending
-                    }
+                    disabled={shipmentIds.length === 0 || createPlan.isPending}
                     onClick={() =>
                       command(
                         'plan',
-                        {
-                          batchId,
-                          strategy: strategy as PickingStrategyName,
-                          shipmentIds,
-                        },
+                        { batchId, shipmentIds },
                         (data, idempotencyKey) =>
                           createPlan.mutateAsync({ data, idempotencyKey })
                       )
@@ -182,12 +145,13 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                   </Button>
                 </div>
               )}
-              {canOperateWarehouse && supportedStrategies.length === 0 && (
-                <p className="text-sm text-destructive">
-                  이 창고가 지원하는 피킹 전략이 없습니다. 계획을 만들 수
-                  없습니다.
-                </p>
-              )}
+              <p className="text-sm text-muted-foreground">
+                이 배치는 <b>{PICKING_METHOD_LABELS[batch.pickingMethod]}</b>{' '}
+                방식입니다.
+                {batch.cartCapacity !== null &&
+                  ` 바구니 ${batch.cartCapacity}개.`}{' '}
+                전략은 방식에서 자동으로 결정됩니다.
+              </p>
               {batch.pickingPlan && (
                 <div className="rounded border p-3 text-sm">
                   <p>

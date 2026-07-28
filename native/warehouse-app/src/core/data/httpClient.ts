@@ -1,7 +1,14 @@
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { authHeader } from './authHeader';
 
-export class ConflictError extends Error {}
+export class ConflictError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
 
 export interface ApiClient {
   request<T>(opts: {
@@ -53,9 +60,8 @@ export function createApiClient(deps: {
       if (res.status === 409) res = await once({ ...o, method });
       if (res.status === 409) {
         const j = await res.json().catch(() => ({}));
-        throw new ConflictError(
-          (j as { message?: string }).message ?? 'version conflict'
-        );
+        const body = j as { message?: string; error?: string };
+        throw new ConflictError(body.message ?? 'version conflict', body.error);
       }
       if (!res.ok) throw new Error(`${method} ${o.path} → ${res.status}`);
       if (res.status === 204) return undefined as T;
