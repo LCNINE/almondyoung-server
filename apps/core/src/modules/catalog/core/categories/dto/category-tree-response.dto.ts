@@ -31,6 +31,9 @@ export class CategoryTreeNodeDto {
   @ApiProperty({ description: '멤버십 회원에게만 노출', required: false })
   isVisibleToMembersOnly?: boolean;
 
+  @ApiProperty({ description: '썸네일 (file-service fileId)', required: false, nullable: true })
+  thumbnail?: string | null;
+
   @ApiProperty({
     description: '하위 카테고리 목록',
     type: [CategoryTreeNodeDto],
