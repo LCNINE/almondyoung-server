@@ -3,6 +3,7 @@
   "build": {
     "preview": {
       "channel": "preview",
+      "environment": "preview",
       "android": { "buildType": "apk" },
       "distribution": "internal",
       "env": {
@@ -17,6 +18,7 @@
     },
     "production": {
       "channel": "production",
+      "environment": "production",
       "android": { "buildType": "app-bundle" },
       "env": {
         "EXPO_PUBLIC_STOREFRONT_ORIGIN": "https://almondyoung.com",
