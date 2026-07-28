@@ -32,6 +32,7 @@ export class CategoryMapper {
       childCount: entity.childCount,
       productCount: entity.productCount,
       thumbnail: entity.imageUrl, // DB의 imageUrl을 API의 thumbnail로 매핑
+      isVisibleToMembersOnly: entity.displaySettings?.isVisibleToMembersOnly ?? false,
     };
   }
 
