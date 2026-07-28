@@ -3,6 +3,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
+import { notifyAppLogout } from "@/lib/app-context/notify-app"
 import { ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
@@ -22,6 +23,7 @@ export function MenuList({ sections }: MenuListProps) {
   const handleLogout = () => {
     startTransition(async () => {
       try {
+        notifyAppLogout()
         await signout()
         setUser(null)
         router.replace("/")

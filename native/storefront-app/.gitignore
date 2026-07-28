@@ -1,0 +1,50 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files (repo root .gitignore also covers these; duplicated here so
+# this app's tree is self-contained if it's ever extracted)
+.env
+.env*.local
+google-services.json
+GoogleService-Info.plist
+
+# typescript
+*.tsbuildinfo
+
+# Claude Code local-only settings — e.g. enabling the Expo CLI marketplace
+# plugin for this project root. Never commit an enabledPlugins declaration
+# here without team sign-off; use settings.local.json for personal/local use.
+.claude/settings.local.json
+
+# generated native folders
+/ios
+/android

@@ -1,6 +1,11 @@
 // 목업 데이터 제거 - 실제 메두사 서버 또는 기본 리전 사용
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
+import {
+  APP_CONTEXT_HEADER,
+  parseAppContext,
+  serializeAppContext,
+} from "@/lib/app-context/parse"
 import { getBackendBaseUrl } from "@/lib/config/backend"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
@@ -299,6 +304,15 @@ export async function middleware(request: NextRequest) {
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
 
+    // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
+    // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해
+    // 앱 컨텍스트를 사칭할 수 있고, 이 헤더를 신뢰하는 의미가 사라진다.
+    requestHeaders.delete(APP_CONTEXT_HEADER)
+    const appContext = parseAppContext(request.headers.get("user-agent"))
+    if (appContext) {
+      requestHeaders.set(APP_CONTEXT_HEADER, serializeAppContext(appContext))
+    }
+
     if (isPrefetch && !request.headers.has("traceparent")) {
       const traceId = crypto.randomUUID().replace(/-/g, "")
       const spanId = traceId.substring(0, 16)
@@ -317,6 +331,15 @@ export async function middleware(request: NextRequest) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+
+    // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
+    // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해
+    // 앱 컨텍스트를 사칭할 수 있고, 이 헤더를 신뢰하는 의미가 사라진다.
+    requestHeaders.delete(APP_CONTEXT_HEADER)
+    const appContext = parseAppContext(request.headers.get("user-agent"))
+    if (appContext) {
+      requestHeaders.set(APP_CONTEXT_HEADER, serializeAppContext(appContext))
+    }
 
     if (isPrefetch && !request.headers.has("traceparent")) {
       const traceId = crypto.randomUUID().replace(/-/g, "")
