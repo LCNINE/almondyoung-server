@@ -321,6 +321,8 @@ export class ProductCategoriesService {
           ...category,
           isVisibleToMembersOnly:
             (category.displaySettings as CategoryDisplaySettings | null)?.isVisibleToMembersOnly ?? false,
+          // DB 의 imageUrl 을 API 의 thumbnail 로 맞춘다 (상세 응답과 동일한 이름)
+          thumbnail: category.imageUrl,
           children: [],
         });
       }
