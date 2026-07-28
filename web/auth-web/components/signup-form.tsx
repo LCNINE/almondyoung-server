@@ -84,26 +84,6 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
         </p>
       )}
 
-      {process.env.NEXT_PUBLIC_DEV_TOOLS_ENABLED === "true" && (
-        <div className="flex flex-wrap items-center gap-1 rounded-lg border border-dashed border-border p-2">
-          <span className="px-1 text-xs text-muted-foreground">테스트 이동</span>
-          {[...STEPS, "사업자 인증"].map((label, i) => (
-            <Button
-              key={label}
-              type="button"
-              variant={i === step ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => {
-                setError(null)
-                setStep(i)
-              }}
-            >
-              {i + 1}. {label}
-            </Button>
-          ))}
-        </div>
-      )}
-
       <Button asChild className="h-13" variant={"link"}>
         <Link
           href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
