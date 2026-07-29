@@ -77,7 +77,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     description: '사업자등록증',
     allowPublic: false,
     allowPrivate: true,
-    allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png'],
+    // 사용자가 들고 오는 이미지 포맷은 다 받는다 — 브라우저 저장본은 webp/avif, 아이폰은 heic.
+    // svg 는 제외(스크립트 실행 가능). heic 는 관리자 심사 화면에서 미리보기 대신 다운로드 링크로 떨어진다.
+    allowedMimeTypes: [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/webp',
+      'image/avif',
+      'image/heic',
+      'image/heif',
+    ],
     maxFileSize: 20971520,
     pathPrefix: 'business/verification',
     isActive: true,
