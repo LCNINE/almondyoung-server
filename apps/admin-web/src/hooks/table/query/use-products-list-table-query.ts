@@ -14,6 +14,7 @@ export const useProductsListTableQuery = ({
     'q',
     'categoryId',
     'brand',
+    'status',
     'mode',
     'productType',
     'approvalStatus',
@@ -28,6 +29,7 @@ export const useProductsListTableQuery = ({
     q,
     categoryId,
     brand,
+    status,
     mode,
     productType,
     approvalStatus,
@@ -45,7 +47,18 @@ export const useProductsListTableQuery = ({
     q: q?.trim() || undefined,
     categoryId,
     brand,
-    mode: mode === 'active-or-inactive' || mode === 'all' ? mode : undefined,
+    status:
+      status === 'active' || status === 'inactive' || status === 'draft'
+        ? status
+        : undefined,
+    mode:
+      status === 'inactive'
+        ? 'active-or-inactive'
+        : status === 'draft'
+          ? 'all'
+          : mode === 'active' || mode === 'active-or-inactive' || mode === 'all'
+            ? mode
+            : undefined,
     productType:
       productType === 'regular_sale' || productType === 'limited_edition'
         ? productType

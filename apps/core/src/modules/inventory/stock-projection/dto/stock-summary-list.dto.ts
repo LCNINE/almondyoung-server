@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../shared/dto';
 
@@ -17,6 +17,15 @@ export class GetStockSummaryListQueryDto extends PaginationQueryDto {
   @IsString()
   @IsOptional()
   search?: string;
+
+  @ApiProperty({
+    description: '운영 재고 상태 필터',
+    required: false,
+    enum: ['out_of_stock', 'reserved', 'inbound_pending', 'outbound_pending'],
+  })
+  @IsIn(['out_of_stock', 'reserved', 'inbound_pending', 'outbound_pending'])
+  @IsOptional()
+  quantityState?: 'out_of_stock' | 'reserved' | 'inbound_pending' | 'outbound_pending';
 }
 
 export class StockSummaryListItemDto {

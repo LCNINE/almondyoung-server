@@ -35,6 +35,12 @@ export class StockProjectionController {
   @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID 필터' })
   @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID 필터' })
   @ApiQuery({ name: 'search', required: false, description: 'SKU 이름 검색어 (부분일치)' })
+  @ApiQuery({
+    name: 'quantityState',
+    required: false,
+    enum: ['out_of_stock', 'reserved', 'inbound_pending', 'outbound_pending'],
+    description: '운영 재고 상태 필터',
+  })
   @ApiOkResponsePaginated(StockSummaryListItemDto)
   async listStockSummaries(
     @Query() query: GetStockSummaryListQueryDto,

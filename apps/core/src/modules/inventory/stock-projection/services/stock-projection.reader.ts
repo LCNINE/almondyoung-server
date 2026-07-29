@@ -69,7 +69,7 @@ export class StockProjectionReader {
     query: GetStockSummaryListQueryDto,
     tx?: DbTx,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
-    const { skuId, warehouseId, search, page = 1, limit = 20 } = query;
+    const { skuId, warehouseId, search, quantityState, page = 1, limit = 20 } = query;
     const offset = (page - 1) * limit;
 
     return this.dbService.run(async (trx) => {
@@ -97,6 +97,18 @@ export class StockProjectionReader {
           JOIN product_variant_sku_links l ON l.product_matching_id = pm.id
           WHERE pmv.name ILIKE ${like} AND pmv.status = 'active' AND pmv.deleted_at IS NULL
         )`);
+      }
+      if (quantityState === 'out_of_stock') {
+        conditions.push(sql`${v.availableQty} <= 0`);
+      }
+      if (quantityState === 'reserved') {
+        conditions.push(sql`${v.reservedQty} > 0`);
+      }
+      if (quantityState === 'inbound_pending') {
+        conditions.push(sql`${v.inboundPendingQty} > 0`);
+      }
+      if (quantityState === 'outbound_pending') {
+        conditions.push(sql`${v.onOrderQty} > 0`);
       }
 
       const rows = await trx

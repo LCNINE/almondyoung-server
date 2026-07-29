@@ -35,6 +35,7 @@ describe('ProductMastersController', () => {
       brand: undefined,
       name: '립스틱',
       mode: undefined,
+      status: undefined,
       productType: undefined,
       approvalStatus: undefined,
       createdFrom: undefined,
@@ -51,6 +52,7 @@ describe('ProductMastersController', () => {
 
     await controller.getMasters({
       productType: 'limited_edition',
+      status: 'inactive',
       approvalStatus: 'pending',
       createdFrom: '2026-01-01',
       createdTo: '2026-01-31',
@@ -63,6 +65,8 @@ describe('ProductMastersController', () => {
     expect(productMastersService.getMasters).toHaveBeenCalledWith(
       expect.objectContaining({
         productType: 'limited_edition',
+        mode: 'active-or-inactive',
+        status: 'inactive',
         approvalStatus: 'pending',
         createdFrom: '2026-01-01',
         createdTo: '2026-01-31',
@@ -78,5 +82,13 @@ describe('ProductMastersController', () => {
     const { controller, productMastersService } = makeController();
     await controller.getMasters({ name: '토너' } as any);
     expect(productMastersService.getMasters).toHaveBeenCalledWith(expect.objectContaining({ name: '토너' }));
+  });
+
+  it('widens mode automatically for draft status filtering', async () => {
+    const { controller, productMastersService } = makeController();
+    await controller.getMasters({ status: 'draft' } as any);
+    expect(productMastersService.getMasters).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'all', status: 'draft' }),
+    );
   });
 });

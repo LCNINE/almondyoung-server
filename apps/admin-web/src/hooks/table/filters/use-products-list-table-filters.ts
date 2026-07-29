@@ -16,15 +16,24 @@ export function useProductsListTableFilters(): Filter[] {
   );
 
   return [
-    // GET /masters 는 status 필터 대신 mode 를 노출한다.
     {
-      key: 'mode',
+      key: 'status',
       label: '판매 상태',
       type: 'select',
       options: [
         { label: '판매중', value: 'active' },
+        { label: '판매중단', value: 'inactive' },
+        { label: '작성중', value: 'draft' },
+      ],
+    },
+    {
+      key: 'mode',
+      label: '목록 범위',
+      type: 'select',
+      options: [
+        { label: '판매중만', value: 'active' },
         { label: '판매중단 포함', value: 'active-or-inactive' },
-        { label: '작성중(임시) 포함', value: 'all' },
+        { label: '작성중까지 전체', value: 'all' },
       ],
     },
     {

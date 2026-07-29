@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   selectedIdsFromRowSelection,
   reconcileSelectedSnapshots,
@@ -23,6 +24,86 @@ import { SelectedProductsModal } from '../selected-products-modal';
 
 const PAGE_SIZE = 20;
 
+const WORK_QUEUE_PRESETS = [
+  {
+    key: 'inactive',
+    label: '판매중단',
+    params: { status: 'inactive' },
+    clear: ['mode', 'stock', 'approvalStatus'],
+  },
+  {
+    key: 'sold_out',
+    label: '품절',
+    params: { status: 'active', stock: 'sold_out' },
+    clear: ['mode', 'approvalStatus'],
+  },
+  {
+    key: 'partial',
+    label: '부분품절',
+    params: { status: 'active', stock: 'partial' },
+    clear: ['mode', 'approvalStatus'],
+  },
+  {
+    key: 'pending',
+    label: '승인대기',
+    params: { mode: 'all', approvalStatus: 'pending' },
+    clear: ['status', 'stock'],
+  },
+  {
+    key: 'draft',
+    label: '작성중',
+    params: { status: 'draft' },
+    clear: ['mode', 'stock', 'approvalStatus'],
+  },
+] as const;
+
+function ProductListWorkQueues() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const applyPreset = (preset: (typeof WORK_QUEUE_PRESETS)[number]) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('page');
+    for (const key of preset.clear) {
+      params.delete(key);
+    }
+    if (isActive(preset)) {
+      for (const key of Object.keys(preset.params)) {
+        params.delete(key);
+      }
+    } else {
+      for (const [key, value] of Object.entries(preset.params)) {
+        params.set(key, value);
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`);
+  };
+
+  const isActive = (preset: (typeof WORK_QUEUE_PRESETS)[number]) =>
+    Object.entries(preset.params).every(
+      ([key, value]) => searchParams.get(key) === value
+    );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-2 py-3">
+      <span className="text-xs font-medium text-muted-foreground">업무 큐</span>
+      {WORK_QUEUE_PRESETS.map((preset) => (
+        <Button
+          key={preset.key}
+          type="button"
+          size="sm"
+          variant={isActive(preset) ? 'default' : 'outline'}
+          className="h-7 text-xs"
+          onClick={() => applyPreset(preset)}
+        >
+          {preset.label}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 export function ProductsListTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
   const [policyOpen, setPolicyOpen] = useState(false);
@@ -42,8 +123,6 @@ export function ProductsListTable() {
     getRowId: (row) => row.masterId,
     enableRowSelection: true,
   });
-
-  console.log('data:', data);
 
   const [selectedItems, setSelectedItems] = useState<
     Record<string, SelectedProductSnapshot>
@@ -88,6 +167,8 @@ export function ProductsListTable() {
 
   return (
     <div>
+      <ProductListWorkQueues />
+
       {selectedIds.length > 0 && (
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
           <SelectedProductsModal
@@ -139,6 +220,7 @@ export function ProductsListTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
+        searchPlaceholder="상품명/품번코드 검색"
         orderBy={[
           { key: 'createdAt', label: '등록일' },
           { key: 'name', label: '상품명' },

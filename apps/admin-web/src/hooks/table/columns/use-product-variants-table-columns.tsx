@@ -188,10 +188,10 @@ export function useProductVariantsTableColumns(
                 const links = row.original.matchingInfo?.matching?.links ?? [];
                 if (links.length === 0) return '-';
                 const first = links[0];
-                const label = first.skuCode ?? first.skuName ?? first.skuId;
+                const label = first.skuName ?? first.skuCode ?? first.skuId;
                 return (
                   <div className="flex max-w-[180px] flex-col gap-1">
-                    <span className="truncate font-mono text-xs" title={label}>
+                    <span className="truncate text-xs" title={label}>
                       {label}
                     </span>
                     <span className="text-xs text-muted-foreground">
