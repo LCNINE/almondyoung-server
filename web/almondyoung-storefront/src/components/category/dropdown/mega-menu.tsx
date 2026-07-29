@@ -284,7 +284,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
 
           {/* ─── 우측 영역: hover 중인 카테고리의 큰 썸네일 ─── */}
           <div className="min-w-0 flex-1 p-4">
-            {spotlightImage ? (
+            {spotlight ? (
               <NavigationMenuLink asChild>
                 <LocalizedClientLink
                   prefetch={false}
@@ -292,35 +292,21 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                   className="group flex h-full min-h-[380px] flex-col items-center justify-center gap-3"
                 >
                   <p className="text-foreground text-lg font-bold">
-                    {spotlight!.name}
+                    {spotlight.name}
                   </p>
-                  <div className="relative aspect-square w-full max-w-[320px] overflow-hidden rounded-2xl bg-white">
-                    <Image
-                      src={getThumbnailUrl(spotlightImage)}
-                      alt={spotlight!.name}
-                      fill
-                      sizes="320px"
-                      className="object-contain transition-transform duration-300 group-hover:scale-105"
-                    />
-                  </div>
+                  {spotlightImage && (
+                    <div className="relative aspect-square w-full max-w-[320px] overflow-hidden rounded-2xl bg-white">
+                      <Image
+                        src={getThumbnailUrl(spotlightImage)}
+                        alt={spotlight.name}
+                        fill
+                        sizes="320px"
+                        className="object-contain transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </div>
+                  )}
                 </LocalizedClientLink>
               </NavigationMenuLink>
-            ) : l1 && l1Children.length === 0 ? (
-              // 이미지도 하위도 없는 대분류: 중앙 CTA
-              <div className="flex h-full min-h-[380px] flex-col items-center justify-center gap-4 text-center">
-                <p className="text-xl font-bold text-gray-900">{l1.name}</p>
-                <p className="text-sm text-gray-500">{t("leafHint")}</p>
-                <NavigationMenuLink asChild>
-                  <LocalizedClientLink
-                    prefetch={false}
-                    href={`/category/${l1.handle || l1.id}`}
-                    className="bg-primary hover:bg-primary/90 inline-flex items-center gap-1 rounded-full px-5 py-2 text-sm font-semibold text-white transition-colors"
-                  >
-                    <span>{t("viewProducts")}</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </LocalizedClientLink>
-                </NavigationMenuLink>
-              </div>
             ) : (
               <div className="h-full min-h-[380px]" />
             )}
