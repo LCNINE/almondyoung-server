@@ -3,5 +3,11 @@
   "compilerOptions": {
     "declaration": false
   },
-  "include": ["apps/core/src/modules/catalog/operations/import/**/*.ts"]
+  "include": [
+    "apps/core/src/modules/catalog/operations/import/**/*.ts",
+    "apps/core/src/modules/catalog/core/products/services/product-versions.service.spec.ts",
+    "apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts",
+    "apps/channel-adapter/src/adapters/medusa/inbox-claim-order.integration.spec.ts",
+    "apps/channel-adapter/src/consumers/pim-product-event.consumer.spec.ts"
+  ]
 }

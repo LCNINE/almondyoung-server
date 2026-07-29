@@ -66,6 +66,7 @@
     "fulfillment:v2:verify": "tsx scripts/fulfillment-v2/verify.ts",
     "test:fulfillment-v2-cutover:integration": "REQUIRE_FULFILLMENT_V2_DB=1 jest --runInBand scripts/fulfillment-v2/cleanup.integration.spec.ts",
     "test:channel-dispatch:integration": "REQUIRE_CHANNEL_DISPATCH_DB=1 jest --runInBand apps/channel-adapter/src/services/shipment-dispatch-persistence.integration.spec.ts",
+    "test:inbox-claim-order:integration": "REQUIRE_INBOX_CLAIM_ORDER_DB=1 jest --runInBand apps/channel-adapter/src/adapters/medusa/inbox-claim-order.integration.spec.ts",
     "test:product-import-lease:integration": "REQUIRE_PRODUCT_IMPORT_LEASE_DB=1 jest --runInBand apps/core/src/modules/catalog/operations/import/services/product-import-job-lease.integration.spec.ts",
     "test:seed-dev-core:integration": "SEED_DEV_CORE_URL=postgresql://postgres:postgres@localhost:5432/dev_core jest --runInBand scripts/local/seed-dev-core/seed.integration.spec.ts",
     "gen:scope-types": "ts-node -r tsconfig-paths/register apps/user-service/database/generate-scope-types.ts",

@@ -15,6 +15,7 @@ import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../t
 import type {
   CategoryChangedPayload,
   ProductMasterDeletedPayload,
+  ProductPublishOrigin,
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
@@ -51,6 +52,14 @@ const INBOX_WORKER_EVENT_TYPES = [
  * 여기 넣을 기준: 지연돼도 "반영이 늦을 뿐" 인가? 고객이 즉시 체감하면 넣지 않는다.
  */
 const BULK_EVENT_TYPES = ['ProductSellableQuantityChanged'] as const;
+
+/**
+ * 대량 작업이 낸 이벤트임을 표시하는 origin 값. eventType 만으로는 갈리지 않는
+ * 경우 — 같은 `ProductMasterActiveVersionChanged` 라도 단건 UI 게시는 고객이
+ * 즉시 체감하고 임포트 일괄게시는 아니다 — 를 위해 존재한다.
+ * 값 판단 기준은 BULK_EVENT_TYPES 와 같다: 지연돼도 "반영이 늦을 뿐" 인가?
+ */
+const BULK_ORIGINS: readonly ProductPublishOrigin[] = ['bulk_import'];
 
 /**
  * 한 inbox 핸들러가 슬롯을 물 수 있는 최대 시간.
@@ -219,6 +228,18 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
       BULK_EVENT_TYPES.map((eventType) => sql`event_type = ${eventType}`),
       sql` OR `,
     );
+    // 출처가 대량인 행도 같은 후순위 레인으로 보낸다. origin 은 payload 가 아니라
+    // metadata 에서 읽는다 — ORDER BY 표현식은 LIMIT 1 이어도 후보 행 전부에 대해
+    // 계산되는데, payload 는 full snapshot 이라 TOAST 압축해제가 매 틱 붙는다.
+    //
+    // COALESCE 가 핵심이다. 빼면 마커 없는 행에서 `false OR NULL` = NULL 이 되고,
+    // NULL 은 ASC 정렬에서 맨 뒤로 간다 — 정상 이벤트가 통째로 후순위로 밀려
+    // 이 강등이 고치려던 문제가 정확히 반대 방향으로 발생한다. 에러는 안 난다.
+    // metadata 가 NULL 인 행(옛 컨슈머가 쓴 행)도 같은 경로로 흡수된다.
+    const bulkOriginsSql = sql.join(
+      BULK_ORIGINS.map((origin) => sql`COALESCE(metadata->>'origin', '') = ${origin}`),
+      sql` OR `,
+    );
     const excludeInFlightSql =
       inFlightIds.length > 0
         ? sql`AND id NOT IN (${sql.join(
@@ -243,7 +264,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             OR (status = 'processing' AND next_attempt_at <= NOW())
           )
           ${excludeInFlightSql}
-        ORDER BY ${bulkEventTypesSql}, created_at ASC
+        ORDER BY (${bulkEventTypesSql} OR ${bulkOriginsSql}), created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )

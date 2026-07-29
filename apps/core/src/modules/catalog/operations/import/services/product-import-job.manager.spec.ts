@@ -383,7 +383,10 @@ describe('runPublishSlice', () => {
     // 같은 CLAIM() 헬퍼로 맞춘다.
     await manager.runPublishSlice(CLAIM());
 
-    expect(versionsService.publishVersion).toHaveBeenCalledWith('draft-1', expect.anything());
+    expect(versionsService.publishVersion).toHaveBeenCalledWith('draft-1', expect.anything(), {
+      origin: 'bulk_import',
+      importSessionId: 'sess-1',
+    });
     const itemUpdate = updates.find((u) => u.table === 'items');
     expect(itemUpdate!.values).toMatchObject({ publishStatus: 'published' });
     expect(itemUpdate!.values.publishedAt).toBeInstanceOf(Date);

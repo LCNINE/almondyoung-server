@@ -3,7 +3,7 @@
 - 날짜: 2026-07-28
 - 대상: `apps/core` (catalog/operations/import, catalog/core/products) + `apps/channel-adapter` (medusa inbox worker) + `apps/admin-web`
 - 브랜치: `feat/product-bulk-import-v2` (base `46bf66ebe`)
-- 상태: 0~2 단계 develop 머지 완료 (`eb126fa38`). 3 단계 설계 확정 (§4.3.1~4.3.5), 4·5 단계는 계획 미착수
+- 상태: 0~3 단계 develop 머지 + live 배포 완료 (임포트 워커 가동 중). 4 단계 설계 확정 (§4.4.1~4.4.5), 5 단계는 계획 미착수
 - 선행 이슈: #550 (`InboxWorkerService` supersede 단위테스트가 red — 배치 claim 착수 전 정리 필요)
 - 관련: `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1), `docs/adr/0019-core-catalog-medusa-product-projection-events.md` (bulk edit 을 부채로 남긴 ADR), `docs/runbooks/selmate-stock-pipeline.md` §"반영이 늦을 때" (inbox 처리량 실측)
 
@@ -64,7 +64,7 @@ MD 의 공격적 소싱으로 손수 만들어지는 신규 상품 데이터를 
 
 ### 2.5 폭주 파급 경로
 
-`ProductMasterActiveVersionChanged` 는 `BULK_EVENT_TYPES`(강등 대상)에 없다. 강등 대상은 `ProductSellableQuantityChanged` 하나뿐이므로, 임포트 게시 이벤트는 **우선 레인**에서 멤버십·배송·주문취소와 `created_at` FIFO 로 경쟁한다. 2026-07-21 에 17,604 건 적체로 멤버십 1건이 이틀 대기한 사고와 같은 구조다.
+`ProductMasterActiveVersionChanged` 는 `BULK_EVENT_TYPES`(강등 대상)에 없다. 강등 대상은 `ProductSellableQuantityChanged` 하나뿐이므로(4단계 이전 기준 — §4.4 에서 origin 마커가 추가된다), 임포트 게시 이벤트는 **우선 레인**에서 멤버십·배송·주문취소와 `created_at` FIFO 로 경쟁한다. 2026-07-21 에 17,604 건 적체로 멤버십 1건이 이틀 대기한 사고와 같은 구조다.
 
 ## 3. 측정 결과 — Medusa 배치 API
 
@@ -212,10 +212,84 @@ publish 슬라이스가 더 작은 것은 건당 outbox 이벤트 + 스냅샷 �
 
 ### 4.4 이벤트 마커 + 레인 강등
 
-- `ProductMasterActiveVersionChanged` payload 에 `origin?: 'bulk_import'` 와 `importSessionId?: string` 를 추가한다 (additive — 기존 소비자 무영향).
+- `ProductMasterActiveVersionChanged` payload 에 `origin?: ProductPublishOrigin` 와 `importSessionId?: string` 를 추가한다 (additive — 기존 소비자 무영향). `ProductPublishOrigin` 은 지금 `'bulk_import'` 하나짜리 유니온이고 계약(`product.stream.ts`)이 export 한다 — core 와 channel-adapter 가 같은 리터럴을 공유하기 위해서다.
 - `InboxWorkerService` 의 강등 판정을 `eventType` 단독에서 `(eventType, origin)` 으로 확장한다. `origin='bulk_import'` 인 행은 `ProductSellableQuantityChanged` 와 같은 후순위 레인으로 보낸다.
 
 **이게 1순위다.** 배치가 3x 를 내도 임포트가 고객 체감 이벤트 앞에 줄 서는 문제는 남는다 — 3x 는 40분을 13분으로 줄이지만 0 으로 만들지 못한다.
+
+마이그레이션 없음, 신규 환경변수 없음. 건드리는 프로덕션 파일은 5개다 (계약 1 · core 2 · channel-adapter 2). 테스트는 별도.
+
+계약의 zod 스키마는 **소비 측에선 이미 런타임 게이트다** — `SchemaValidationInterceptor` 는 `EventsModule.forConsumerModule` 이 `APP_INTERCEPTOR` 로 등록하고(`libs/events/src/events.module.ts:271-277`), 기본 옵션(`validateOnConsume`/`throwOnValidationError` 둘 다 `true`, `packages/event-contracts/types/schema-validation.types.ts:55-60`)을 어느 소비자도 오버라이드하지 않는다. `ProductMasterActiveVersionChanged` 소비자는 셋이다 — channel-adapter 는 `EventsModule.forRoot` 로 붙어 있어 이 인터셉터가 없고(검증 없음), analytics(`analytics.module.ts:34`)와 search(`search.module.ts:32`)는 `forConsumerModule` 로 붙어 있어 검증에 걸리면 던진다. 검증이 없는 쪽은 오직 **발행** 경로다 — `OutboxDispatcher` 는 `publishRawEnvelope`(`libs/events/src/publishers/stream-publisher.service.ts:250-252`)로 나가는데 이 메서드는 페이로드 검증을 거치지 않는다. 그럼에도 좁은 `z.literal('bulk_import').optional()` 로 두면 소비자를 깨뜨릴 위험이 없는 이유는 검증 부재가 아니라 **unknown key strip** 이다 — `ProductMasterActiveVersionChangedSchema` 는 `.strict()` 없는 평범한 `z.object` 라, analytics/search 가 이 변경 이전 빌드로 떠 있는 동안 새 페이로드를 받아도 `origin`/`importSessionId` 는 조용히 잘려나가고 나머지 필드로 검증을 통과한다.
+
+#### 4.4.1 origin 은 publishVersion 의 선택적 인자로 흘린다
+
+`publishVersion` 은 임포트 워커와 단건 UI 가 **같이** 부른다. 임포트일 때만 마커가 붙어야 하므로 출처를 넘기는 배선이 필요하고, 이 단계에서 설계 판단이 필요한 곳은 여기 하나다. 나머지는 선택 필드 추가와 `ORDER BY` 한 항이다.
+
+```ts
+// product-versions.service.ts — PublishVersionOptions 는 이 파일이 정의·export 한다
+export interface PublishVersionOptions {
+  origin?: ProductPublishOrigin;
+  importSessionId?: string;
+}
+
+async publishVersion(versionId: string, tx?: DbTransaction, options?: PublishVersionOptions): Promise<void>
+```
+
+`options` 는 `_emitActiveVersionChangedEvent` 로 한 홉 전달되어 payload 에 병합된다. **호출부 3곳 중 임포트 워커 1곳만 수정한다** — 단건 UI 컨트롤러(`product-master-versions.controller.ts:200`)와 `product-bulk.service.bulkActivate`(`:209`)는 인자를 안 넘기므로 payload 가 지금과 동일하다(키 자체가 없다).
+
+AsyncLocalStorage 컨텍스트 대안은 버린다. 시그니처는 안 건드리지만 호출 그래프를 봐선 origin 이 어디서 오는지 알 수 없다.
+
+#### 4.4.2 강등 판정은 payload 가 아니라 inbox 행의 metadata 를 읽는다
+
+`ORDER BY` 표현식은 `LIMIT 1` 이어도 **후보 행 전부**에 대해 계산된다. `payload` 는 full snapshot 이라 TOAST 대상이고, 적체가 클수록 매 틱 압축해제 비용이 붙는다. 반면 `inbox_events.metadata` 는 correlationId·messageId 정도만 든 수백 바이트라 페이지 안에 있다.
+
+그래서 컨슈머(`pim-product-event.consumer.ts`)가 inbox 행을 쓸 때 `payload.origin` 을 `metadata.origin` 으로 **함께** 적고, 워커는 metadata 를 읽는다. `importSessionId` 는 복사하지 않는다 — 정렬 핫패스가 안 쓰고 운영 조회는 일회성이라 `payload->>'importSessionId'` 로 충분하다. metadata 에는 매 틱 읽히는 것만 넣는다.
+
+인덱스는 추가하지 않는다. 현행 쿼리도 이미 표현식 정렬이라 인덱스를 못 쓰는 건 마찬가지고, metadata 추출은 행당 사실상 공짜다.
+
+#### 4.4.3 `COALESCE` 가 없으면 레인이 뒤집힌다
+
+```sql
+ORDER BY (
+  event_type = 'ProductSellableQuantityChanged'
+  OR COALESCE(metadata->>'origin', '') = 'bulk_import'
+), created_at ASC
+```
+
+`COALESCE` 를 빼면 마커 없는 행에서 `false OR NULL` = **NULL** 이 되고, NULL 은 ASC 정렬에서 맨 뒤로 간다. 즉 정상 이벤트가 통째로 후순위로 밀려 **이 단계가 고치려던 문제가 정확히 반대 방향으로 발생한다.** 에러는 안 난다. `event_type` 은 NOT NULL 이라 현행 표현식엔 이 함정이 없었다 — jsonb 항을 OR 로 붙이면서 새로 생기는 것이다.
+
+표현식 전체를 괄호로 묶는 것도 좋다 — `ORDER BY` 항 구분 쉼표와 시각적으로 섞이지 않는다. (연산자 우선순위상 `OR` 가 쉼표보다 먼저 묶이므로 괄호가 없어도 파싱은 같다 — psql 로 확인함. 괄호는 가독성 문제고, 진짜 함정은 위의 `COALESCE` 다.)
+
+이 함정은 SQL 문자열 단정으로는 못 잡는다 (`COALESCE` 가 *있다*는 것만 보인다). §8 의 통합 테스트가 이걸 맡는다.
+
+#### 4.4.4 배포 순서 제약이 없다
+
+§7 표는 "core 선배포 → channel-adapter" 로 적었으나 **제약이 아니다.** 둘은 같은 `sst deploy` 로 나가고, origin 이 선택 필드라 어느 쪽이 먼저 떠도 깨지지 않는다.
+
+- core 선행 — payload 에 origin 이 실리지만 옛 컨슈머가 metadata 로 안 옮겨 강등이 안 걸린다
+- channel-adapter 선행 — 읽을 origin 이 없어 역시 안 걸린다
+
+어느 쪽이든 **현행 동작으로 degrade** 할 뿐이고, 달라지는 건 효과 발현 시점뿐이다. 배포 시점에 이미 inbox 에 쌓여 있던 임포트 이벤트도 metadata 에 origin 이 없어 강등되지 않는다 — 새로 들어오는 것부터 적용된다.
+
+#### 4.4.5 범위는 임포트 게시뿐이다
+
+`ProductMasterActiveVersionChanged` 의 생산자는 둘이다. 다른 하나인 `categories.service.publishProductProjectionRefresh` 는 이번에 마킹하지 않는다.
+
+이 경로는 카테고리 **연결이 실제로 바뀐 상품**만 재발행한다 (이름·부모·노출 변경은 `CategoryChanged` 만 내고 여기 안 온다). 호출부가 셋이다:
+
+| 호출부 | 대상 | 규모 |
+|---|---|---|
+| `deleteCategory` (`:252`) | 그 카테고리에 걸려 있던 활성 버전 전부 | 카테고리 소속 상품 수 — **무계** |
+| `moveProductsToCategory` (`:782`) | 호출자가 지정한 `versionIds` | 관리자가 고른 수 |
+| `addProductsToCategory` (`:870`) | 새로 연결된 것만 | 관리자가 고른 수 |
+
+셋 다 관리자가 방금 한 조작의 결과라 즉시 반영 기대가 임포트보다 강하다 (임포트는 접수 후 폴링 대기가 이미 전제다). 무계 폭발 가능성은 `deleteCategory` 하나뿐이고, 그건 origin 마커보다 "삭제 시 재발행을 슬라이스로 쪼갠다" 쪽이 어울리는 모양이며 지금 실측 근거가 없다.
+
+`product-bulk.service.bulkActivate` 도 마킹하지 않는다 — 관리자가 UI 에서 고른 수만큼이라 유계이고, 판매재개는 즉시 확인 대상이다.
+
+타입은 `ProductPublishOrigin` 유니온으로 두어 근거가 생기면 값만 늘리면 되게 한다.
+
+**단, 다음에 값을 늘릴 때는 §4.4 초입에서 정리한 배포 순서가 그대로 적용되지 않는다.** 예를 들어 `'category_refresh'` 를 추가하는 경우, analytics·search 는 `forConsumerModule` 로 검증을 걸고 실패 시 던지므로, 넓어진 유니온을 담은 계약이 analytics·search 에 **먼저** 반영돼 있어야 한다 — core 가 새 값을 담아 발행을 시작하는 시점보다 늦으면, 두 소비자 모두 `z.literal` 불일치로 검증에서 던지고 재시도 후 DLQ 로 간다 (`origin` 은 지금처럼 unknown key 로 잘려나가는 게 아니라, 값 자체가 허용된 리터럴 집합 밖이라 필드 검증에서 걸린다). §4.4.4 의 "배포 순서 제약이 없다" 는 **이번 변경**(선택 필드 추가, 값 1개)에만 해당하고, 값 추가에는 적용되지 않는다 — 값을 늘릴 때는 어느 서비스가 먼저 뜨는지 다시 확인한다.
 
 ### 4.5 InboxWorker — 동시성 1 + 배치 단위
 
@@ -259,6 +333,10 @@ publish 슬라이스가 더 작은 것은 건당 outbox 이벤트 + 스냅샷 �
 - **조합 variant 에 매칭이 생기지 않는다.** `createMaster` 는 기본 variant 1개에 대해 `ProductVariantCreated` + product-matching 직접호출을 하지만, 옵션 diff 로 조합 variant 를 만드는 `_generateVariantsWithoutEvents` 는 이름 그대로 이벤트를 내지 않는다. 그 뒤 기본 variant 는 정리되므로 **매칭이 붙은 variant 는 사라지고 남은 variant 는 매칭이 없다.** 런북이 기술한 "유령 매칭" 과 같은 계열이며, 매칭 없는 variant 는 `MATCHING_MISSING` 으로 재고 게이팅을 받지 않아 무한 판매된다. §4.1 의 `variantCode` 로 완화되지만 근본 해결은 별건이다.
 - **phantom masterId** — commit 중 한 행이 롤백되면 비-트랜잭션 Kafka 이벤트 + product-matching 행이 없는 masterId 로 잔존한다 (v1 스펙의 후속 트래킹 1번, 사용자 결정: 현상 유지).
 
+### 6.1 미확인 질문 (결함 아님 — 확인 필요)
+
+- **Medusa 가 상품이 연결된 카테고리 삭제를 어떻게 다루는가.** 상품이 여럿 붙은 카테고리를 지울 때 연결을 자동으로 끊고 삭제하는 기능이 Medusa 쪽에 있는지 확인하지 않았다. 있다면 core 의 `deleteCategory` 가 상품마다 스냅샷을 재발행하는 현재 방식(§4.4.5)이 필요 이상일 수 있다. 4 단계 범위 밖이고, 확인 결과에 따라 별건으로 다룬다.
+
 ## 7. 단계 분할
 
 | 단계 | 내용 | 배포 결합 |
@@ -267,7 +345,7 @@ publish 슬라이스가 더 작은 것은 건당 outbox 이벤트 + 스냅샷 �
 | **1** | 타임아웃 도입 (`MedusaClient` 전 호출) | channel-adapter 단독 |
 | **2** | 템플릿 확장 (Variants 시트 + 가격 + `variantCode` + `sortOrder` 수정) + 0원 게시 차단 | core → admin-web |
 | **3** | commit/publish 비동기 잡화 + `product_import_items` 게시상태 컬럼 | 마이그레이션 1건 (additive → `migrate` 먼저, 그 뒤 `deploy`) |
-| **4** | 이벤트 `origin` 마커 + 레인 강등 | core 선배포 → channel-adapter |
+| **4** | 이벤트 `origin` 마커 + 레인 강등 | **순서 제약 없음** (§4.4.4) |
 | **5** | InboxWorker 배치 claim + 동시성 1 + variant 게이팅 | channel-adapter 단독. 1·4 완료 후 |
 
 3 단계 마이그레이션은 additive 이므로 ADR-0005 §5 의 expand phase — **`migrate` → `deploy`** 순서다 (contract phase 의 반대).
@@ -277,7 +355,9 @@ publish 슬라이스가 더 작은 것은 건당 outbox 이벤트 + 스냅샷 �
 ## 8. 검증 계획
 
 - 단위: 조합 문자열 → variantId 해석, 가격 규칙 생성(order·scope 조합), 0원 차단, 배치 청킹의 variant 게이팅 경계값.
-- 타입 게이트: `nest build core`, `nest build channel-adapter`. 레포 eslint 는 전역 미게이트 debt 이므로 권위가 아니다.
+- 타입 게이트: `nest build core`, `nest build channel-adapter`. 레포 eslint 는 전역 미게이트 debt 이므로 권위가 아니다. spec 파일은 `nest build` 가 제외하므로 `npm run type-check:scoped` 로 따로 본다.
+- 전역 jest·전역 tsc 는 develop 에서도 red 라 "전체 그린"으로 판정할 수 없다. 변경 파일 기준 차분으로 본다.
+- 4 단계 정렬 회귀: 실 Postgres 통합 테스트 1건 (`REQUIRE_*_DB=1` opt-in, 테스트별 스키마 — `shipment-dispatch-persistence.integration.spec.ts` 선례). 마커 없는 행 / `bulk_import` 행 / `ProductSellableQuantityChanged` 행 / `metadata` 가 NULL 인 행을 섞어 넣고 클레임 순서를 단정한다. §4.4.3 의 NULL 함정은 터져도 에러가 안 나고 조용히 레인을 뒤집으므로, SQL 문자열 단정만으로는 방어가 안 된다.
 - 처리량 회귀: `apps/channel-adapter/scripts/bench-medusa-batch.ts` 를 배치 게이팅 구현 후 다시 돌려 §3 수치와 대조한다.
 - 배치 크기 확정: live 에서 `inbox_events.published_at` 분당 건수와 Medusa CPU 를 함께 보며 단계적으로 올린다. 런북의 측정 주의 두 가지(롤아웃 직후 5분의 lease 버스트, 최소 15분 관찰)를 따른다.
 
