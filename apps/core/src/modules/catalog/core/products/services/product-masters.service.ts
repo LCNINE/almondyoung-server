@@ -535,6 +535,7 @@ export class ProductMastersService {
 
       const mode = filters?.mode ?? 'active';
       const deleted = filters?.deleted ?? false;
+      const stockFilter = filters?.stock && filters.stock !== 'all' ? filters.stock : undefined;
 
       // ===== 모드별 버전 선택 서브쿼리 =====
       // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
@@ -650,6 +651,13 @@ export class ProductMastersService {
         whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
       }
 
+      // 품절 필터는 읽기모델(product_sellable_quantity_projections)을 SQL 조건으로 사용한다.
+      // 이전처럼 전체 상품을 앱 메모리로 가져와 실시간 계산한 뒤 slice 하면 상품 수에 비례해 느려지고
+      // DB count/limit/offset도 무력화된다.
+      if (stockFilter) {
+        whereConditions.push(this.buildStockFilterCondition(stockFilter));
+      }
+
       // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
       if (mode === 'active') {
         whereConditions.push(eq(productMasterVersions.status, 'active'));
@@ -718,32 +726,12 @@ export class ProductMastersService {
       // 안정 페이지네이션을 위해 master id 를 2차 정렬키로 고정
       const orderedQuery = filteredDataQuery.orderBy(sortDirection(sortColumn), desc(productMasters.id));
 
-      // 품절 필터 여부. soldOutState 는 SQL 이 아니라 후처리로 계산되므로,
-      // 이 필터가 걸리면 전체 매칭 행을 받아 계산·필터한 뒤 앱에서 페이징한다.
-      const stockFilter = filters?.stock && filters.stock !== 'all' ? filters.stock : undefined;
-
       let rawData: Awaited<typeof orderedQuery>;
       let total: number;
-      // 품절 필터 경로에서 전체 집합에 대해 계산한 soldOutState 맵. 아래 결과 조합에서 재사용한다.
-      let precomputedSoldOutMap: Map<string, SoldOutState> | undefined;
 
-      if (stockFilter) {
-        const allRows = await orderedQuery;
-        const allVersionIds = allRows.map((item) => item.product_master_versions.id);
-        const fullSoldOutMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(allVersionIds, trx);
-        const targetState: SoldOutState =
-          stockFilter === 'sold_out' ? 'all' : stockFilter === 'partial' ? 'partial' : 'none';
-        const filteredRows = allRows.filter(
-          (item) => (fullSoldOutMap.get(item.product_master_versions.id) ?? 'none') === targetState,
-        );
-        total = filteredRows.length;
-        rawData = returnAll ? filteredRows : filteredRows.slice(offset, offset + limit);
-        precomputedSoldOutMap = fullSoldOutMap;
-      } else {
-        const [{ c }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
-        total = c;
-        rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
-      }
+      const [{ c }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
+      total = c;
+      rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
 
       // ===== 결과 가공: ProductMasterWithVersion + aggregate 데이터 =====
 
@@ -789,10 +777,8 @@ export class ProductMastersService {
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
 
-      // 한 번에 모든 품절 상태 집계 (상수 쿼리 1회). 품절 필터 경로에서 이미 전체 집합에 대해
-      // 계산했다면 그 맵을 재사용해 중복 계산을 피한다.
-      const soldOutStateMap =
-        precomputedSoldOutMap ?? (await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx));
+      // 한 번에 모든 품절 상태 집계 (현재 페이지 기준 상수 쿼리 1회).
+      const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
 
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));
@@ -827,6 +813,45 @@ export class ProductMastersService {
         limit,
       };
     }, tx);
+  }
+
+  private buildStockFilterCondition(stockFilter: 'in_stock' | 'partial' | 'sold_out') {
+    const hasSoldOutVariant = sql`
+      EXISTS (
+        SELECT 1
+        FROM product_master_variants pmv_stock
+        INNER JOIN product_sellable_quantity_projections psq_stock
+          ON psq_stock.variant_id = pmv_stock.variant_id
+          AND psq_stock.version_id = pmv_stock.version_id
+        WHERE pmv_stock.version_id = ${productMasterVersions.id}
+          AND psq_stock.reason IN ('MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK')
+      )
+    `;
+
+    const hasNonSoldOutVariant = sql`
+      EXISTS (
+        SELECT 1
+        FROM product_master_variants pmv_stock
+        LEFT JOIN product_sellable_quantity_projections psq_stock
+          ON psq_stock.variant_id = pmv_stock.variant_id
+          AND psq_stock.version_id = pmv_stock.version_id
+        WHERE pmv_stock.version_id = ${productMasterVersions.id}
+          AND (
+            psq_stock.variant_id IS NULL
+            OR psq_stock.reason NOT IN ('MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK')
+          )
+      )
+    `;
+
+    if (stockFilter === 'sold_out') {
+      return sql`${hasSoldOutVariant} AND NOT ${hasNonSoldOutVariant}`;
+    }
+
+    if (stockFilter === 'partial') {
+      return sql`${hasSoldOutVariant} AND ${hasNonSoldOutVariant}`;
+    }
+
+    return sql`NOT ${hasSoldOutVariant}`;
   }
 
   /**

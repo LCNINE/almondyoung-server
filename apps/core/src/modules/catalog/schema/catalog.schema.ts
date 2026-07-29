@@ -308,6 +308,7 @@ export const productMasterVariants = pgTable(
   },
   (table) => [
     index('idx_master_variants_master_version').on(table.masterId, table.versionId),
+    index('idx_master_variants_version').on(table.versionId),
     uniqueIndex('unique_master_variant_version').on(table.masterId, table.variantId, table.versionId),
   ],
 );
