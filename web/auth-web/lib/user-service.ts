@@ -380,6 +380,23 @@ export async function createBusinessLicense(
   await throwIfBad(res, "create-business-license")
 }
 
+/**
+ * 등록 직후 심사 상태 확인용. POST 응답에는 상태가 없어서 한 번 더 조회한다.
+ * 번호 입력 경로도 국세청 조회가 실패하면 under_review 로 남으므로 클라이언트에서 추정하면 틀린다.
+ */
+export async function getMyBusinessLicenseStatus(
+  accessToken: string
+): Promise<string | null> {
+  const res = await fetch(`${env.userServiceUrl}/business-licenses/me`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "get-my-business-license")
+  const data = await readApiData<{ status?: string } | null>(res)
+  return data?.status ?? null
+}
+
 export async function checkLoginIdAvailable(loginId: string): Promise<boolean> {
   const res = await fetch(
     `${env.userServiceUrl}/users/login-id-available?loginId=${encodeURIComponent(loginId)}`,
