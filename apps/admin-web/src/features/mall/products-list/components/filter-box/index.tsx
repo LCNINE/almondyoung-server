@@ -34,18 +34,11 @@ import {
 
 const ALL = 'all';
 
-const PRODUCT_TYPE_OPTIONS = [
-  { value: ALL, label: '전체 상품 유형' },
-  { value: 'regular_sale', label: '정상판매' },
-  { value: 'limited_edition', label: '한정판' },
-];
-
 type FilterState = {
   datePreset: DatePreset;
   dateFrom: string;
   dateTo: string;
   categoryId: string;
-  productType: string;
   createdBy: string;
   classification: Classification;
   q: string;
@@ -89,7 +82,6 @@ export function ProductsListFilterBox() {
       dateFrom: range.from ?? '',
       dateTo: range.to ?? '',
       categoryId: searchParams.get('categoryId') ?? ALL,
-      productType: searchParams.get('productType') ?? ALL,
       createdBy: searchParams.get('createdBy') ?? ALL,
       classification: classificationFromParams(
         searchParams.get('status'),
@@ -108,8 +100,6 @@ export function ProductsListFilterBox() {
 
     if (filters.q.trim()) params.set('q', filters.q.trim());
     if (filters.categoryId !== ALL) params.set('categoryId', filters.categoryId);
-    if (filters.productType !== ALL)
-      params.set('productType', filters.productType);
     if (filters.createdBy !== ALL) params.set('createdBy', filters.createdBy);
 
     const { status, stock } = classificationToParams(filters.classification);
@@ -151,7 +141,6 @@ export function ProductsListFilterBox() {
       dateFrom: '',
       dateTo: '',
       categoryId: ALL,
-      productType: ALL,
       createdBy: ALL,
       classification: 'all',
       q: '',
@@ -197,14 +186,6 @@ export function ProductsListFilterBox() {
             value={filters.categoryId}
             onValueChange={(v) => patch({ categoryId: v })}
             placeholder="분류 선택"
-          />
-        </div>
-        <div className="w-48">
-          <FormSelect
-            options={PRODUCT_TYPE_OPTIONS}
-            value={filters.productType}
-            onValueChange={(v) => patch({ productType: v })}
-            placeholder="상품 유형"
           />
         </div>
         <div className="w-56">
