@@ -1119,21 +1119,6 @@
     "detailAgreementStatus": "Signature status",
     "detailCreatedAt": "Requested at"
   },
-  "payment": {
-    "pageTitle": "Payment Methods",
-    "pointTitle": "Almondyoung Points",
-    "pendingPointsTitle": "Points pending to be added",
-    "accountTitle": "Account",
-    "accountChangeAria": "Change account",
-    "noAccountRegistered": "No account registered",
-    "bnplLoadFail": "Failed to load buy-now-pay-later history",
-    "retry": "Retry",
-    "noAccountYet": "No account registered yet",
-    "registerMethod": "+ Add payment method",
-    "menuSecurity": "Payment password / Security",
-    "menuReceipt": "Cash receipt settings",
-    "menuTerms": "Buy-now-pay-later terms"
-  },
   "reviews": {
     "pageTitle": "Reviews",
     "countLabel": "Reviews {count}",

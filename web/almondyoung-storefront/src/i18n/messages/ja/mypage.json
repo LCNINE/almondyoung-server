@@ -1119,21 +1119,6 @@
     "detailAgreementStatus": "電子署名状態",
     "detailCreatedAt": "申請日"
   },
-  "payment": {
-    "pageTitle": "お支払い方法管理",
-    "pointTitle": "アモンドヤン ポイント",
-    "pendingPointsTitle": "まもなく付与されるポイントです",
-    "accountTitle": "口座",
-    "accountChangeAria": "口座変更",
-    "noAccountRegistered": "登録口座がありません",
-    "bnplLoadFail": "後払い履歴の読み込みに失敗しました",
-    "retry": "再試行",
-    "noAccountYet": "まだ口座が登録されていません",
-    "registerMethod": "+ 決済方法を登録",
-    "menuSecurity": "決済パスワード / セキュリティ設定",
-    "menuReceipt": "現金領収書設定",
-    "menuTerms": "後払い 利用規約・ポリシー"
-  },
   "reviews": {
     "pageTitle": "レビュー",
     "countLabel": "レビュー {count}",
