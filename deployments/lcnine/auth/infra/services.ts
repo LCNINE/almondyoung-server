@@ -70,6 +70,15 @@ export function setup(infra: IdpInfra) {
     port: 3000,
     serviceName: 'user-service',
     link: [db],
+    // 사업자등록증 등 증빙 첨부는 task role 로 S3 에 직접 쓴다(ACCESS_KEY 쌍 미주입).
+    // 이 권한이 없으면 업로드가 전부 AccessDenied 로 죽고, 사용자에겐
+    // "파일 업로드 중 오류가 발생했습니다" 로만 보인다(user-service file.service.ts).
+    permissions: [
+      {
+        actions: ['s3:PutObject', 's3:GetObject', 's3:DeleteObject'],
+        resources: ['arn:aws:s3:::almondyoung/*'],
+      },
+    ],
     loadBalancerHealth: {
       '3000/http': {
         path: '/health',
