@@ -289,8 +289,11 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                 <LocalizedClientLink
                   prefetch={false}
                   href={spotlightHref}
-                  className="group flex h-full min-h-[380px] flex-col items-center justify-center gap-4"
+                  className="group flex h-full min-h-[380px] flex-col items-center justify-center gap-3"
                 >
+                  <p className="text-foreground text-lg font-bold">
+                    {spotlight!.name}
+                  </p>
                   <div className="relative aspect-square w-full max-w-[320px] overflow-hidden rounded-2xl bg-white">
                     <Image
                       src={getThumbnailUrl(spotlightImage)}
@@ -300,13 +303,6 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                       className="object-contain transition-transform duration-300 group-hover:scale-105"
                     />
                   </div>
-                  <p className="text-foreground text-lg font-bold">
-                    {spotlight!.name}
-                  </p>
-                  <span className="bg-primary group-hover:bg-primary/90 inline-flex items-center gap-1 rounded-full px-5 py-2 text-sm font-semibold text-white transition-colors">
-                    {t("viewProducts")}
-                    <ChevronRight className="h-4 w-4" />
-                  </span>
                 </LocalizedClientLink>
               </NavigationMenuLink>
             ) : l1 && l1Children.length === 0 ? (
