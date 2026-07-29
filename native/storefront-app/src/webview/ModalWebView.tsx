@@ -1,4 +1,7 @@
-import { Modal, Pressable, SafeAreaView, StyleSheet, Text, View } from "react-native"
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native"
+// App.tsx 와 같은 이유로 `react-native` 내장 SafeAreaView 를 쓰지 않는다(Android no-op).
+// 이 모달은 결제 등 외부 도메인을 띄우므로 닫기 바가 상태바에 깔리면 빠져나갈 수 없게 된다.
+import { SafeAreaView } from "react-native-safe-area-context"
 import { WebView } from "react-native-webview"
 
 type Props = { url: string | null; onClose: () => void }
@@ -23,7 +26,7 @@ export function ModalWebView({ url, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
+  root: { flex: 1, backgroundColor: "#fff" },
   bar: {
     height: 48,
     justifyContent: "center",
