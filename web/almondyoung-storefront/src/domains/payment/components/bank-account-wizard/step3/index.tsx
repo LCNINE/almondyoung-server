@@ -191,7 +191,7 @@ export default function BankAgreementStep({
         )}
       </section>
 
-      <div className="fixed right-0 bottom-0 left-0 space-y-2 bg-white p-4">
+      <div className="fixed right-0 bottom-0 left-0 space-y-2 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         {/* 전자서명 영역 */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">

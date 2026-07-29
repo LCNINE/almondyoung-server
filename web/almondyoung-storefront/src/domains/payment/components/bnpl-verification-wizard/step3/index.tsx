@@ -45,7 +45,7 @@ export default function BankAccountStep({
         <BankAccountList bnplProfiles={bnplProfiles} />
       )}
 
-      <div className="bg-background fixed bottom-0 left-0 w-full px-4 pb-4">
+      <div className="bg-background fixed bottom-0 left-0 w-full px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <Button variant="default" className="w-full" onClick={openModal}>
           + {bnplProfiles.length === 0 ? "결제수단 등록" : "결제수단 추가"}
         </Button>
