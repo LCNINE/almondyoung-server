@@ -38,7 +38,11 @@ type Props = {
  * 창고는 재고 요약이 아니라 전체 창고 목록(useWarehouses)에서 고르므로, 재고 0인 신규
  * 품목도 첫 입고(0→N)가 가능하다. (재고현황 뷰의 zero 제외와 무관)
  */
-export function VariantStockAdjustDialog({ variant, open, onOpenChange }: Props) {
+export function VariantStockAdjustDialog({
+  variant,
+  open,
+  onOpenChange,
+}: Props) {
   const links = variant?.matchingInfo?.matching?.links ?? [];
   const queryClient = useQueryClient();
   const { data: warehouses = [] } = useWarehouses();
@@ -58,7 +62,7 @@ export function VariantStockAdjustDialog({ variant, open, onOpenChange }: Props)
 
   const { data: currentStock } = useSkuWarehouseStock(skuId, warehouseId);
   const currentQuantity =
-    skuId && warehouseId ? currentStock?.summary?.currentQuantity ?? 0 : null;
+    skuId && warehouseId ? (currentStock?.summary?.currentQuantity ?? 0) : null;
 
   const handleSubmit = async (delta: number, reason: string) => {
     try {
@@ -75,7 +79,7 @@ export function VariantStockAdjustDialog({ variant, open, onOpenChange }: Props)
   };
 
   const skuLabel = (link: (typeof links)[number]) =>
-    link.skuCode ?? link.skuName ?? link.skuId;
+    link.skuName ?? link.skuCode ?? link.skuId;
 
   const noSku = links.length === 0;
 
@@ -83,20 +87,20 @@ export function VariantStockAdjustDialog({ variant, open, onOpenChange }: Props)
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>재고 조정 — {variant?.variantName ?? variant?.id}</DialogTitle>
+          <DialogTitle>
+            재고 조정 — {variant?.variantName ?? variant?.id}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {noSku ? (
             <p className="text-sm text-destructive">
-              매칭된 SKU가 없어 재고를 조정할 수 없습니다. 먼저 매칭을 설정하세요.
+              매칭된 SKU가 없어 재고를 조정할 수 없습니다. 먼저 매칭을
+              설정하세요.
             </p>
           ) : links.length === 1 ? (
             <p className="text-sm text-muted-foreground">
-              SKU:{' '}
-              <span className="font-mono text-foreground">
-                {skuLabel(links[0])}
-              </span>
+              SKU: <span className="text-foreground">{skuLabel(links[0])}</span>
             </p>
           ) : (
             <div className="space-y-2">

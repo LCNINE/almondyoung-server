@@ -18,6 +18,10 @@ export class ListProductMastersQueryDto {
   mode?: 'active' | 'active-or-inactive' | 'all';
 
   @IsOptional()
+  @IsIn(['active', 'inactive', 'draft'])
+  status?: 'active' | 'inactive' | 'draft';
+
+  @IsOptional()
   @IsIn(['regular_sale', 'limited_edition'])
   productType?: 'regular_sale' | 'limited_edition';
 

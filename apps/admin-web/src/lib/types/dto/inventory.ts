@@ -863,6 +863,11 @@ export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
   search?: string;
+  quantityState?:
+    | 'out_of_stock'
+    | 'reserved'
+    | 'inbound_pending'
+    | 'outbound_pending';
   page?: number;
   limit?: number;
 }

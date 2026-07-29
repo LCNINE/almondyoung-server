@@ -15,6 +15,7 @@ type DataTableProps<TData extends RowData> = {
   orderBy?: { key: string; label: string }[];
   orderByPresetOnly?: boolean;
   search?: boolean;
+  searchPlaceholder?: string;
   navigateTo?: (row: Row<TData>) => string;
   /** navigateTo 경로를 같은 창 이동(router.push) 대신 새 팝업 창으로 연다 */
   openInNewWindow?: boolean;
@@ -32,6 +33,7 @@ export function DataTable<TData extends RowData>({
   orderBy,
   orderByPresetOnly,
   search,
+  searchPlaceholder,
   navigateTo,
   openInNewWindow,
   noRecords,
@@ -44,6 +46,7 @@ export function DataTable<TData extends RowData>({
         orderBy={orderBy}
         orderByPresetOnly={orderByPresetOnly}
         search={search}
+        searchPlaceholder={searchPlaceholder}
         prefix={prefix}
       />
       <DataTableRoot

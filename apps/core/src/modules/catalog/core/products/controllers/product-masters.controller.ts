@@ -173,6 +173,12 @@ export class ProductMastersController {
     enum: ['all', 'in_stock', 'partial', 'sold_out'],
     description: '품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음.',
   })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['active', 'inactive', 'draft'],
+    description: '상품 버전 판매 상태 필터. inactive/draft 는 목록 범위를 자동 보정한다.',
+  })
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
@@ -186,7 +192,10 @@ export class ProductMastersController {
       categoryId: query.categoryId,
       brand: query.brand,
       name: keyword,
-      mode: query.mode,
+      mode:
+        query.mode ??
+        (query.status === 'inactive' ? 'active-or-inactive' : query.status === 'draft' ? 'all' : undefined),
+      status: query.status,
       productType: query.productType,
       approvalStatus: query.approvalStatus,
       createdFrom: query.createdFrom,
@@ -405,10 +414,7 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateRequiresMembership(
-    @Param('masterId') masterId: string,
-    @Body() body: { requiresMembership: boolean },
-  ) {
+  async updateRequiresMembership(@Param('masterId') masterId: string, @Body() body: { requiresMembership: boolean }) {
     await this.productVersionsService.updateRequiresMembership(masterId, body.requiresMembership);
     return { success: true, masterId, requiresMembership: body.requiresMembership };
   }

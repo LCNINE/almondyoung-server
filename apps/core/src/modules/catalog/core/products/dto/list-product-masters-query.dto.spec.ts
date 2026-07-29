@@ -30,6 +30,7 @@ describe('ListProductMastersQueryDto', () => {
       categoryId: '018f9c2e-0000-7000-8000-000000000000',
       brand: 'Almond',
       mode: 'all',
+      status: 'inactive',
       productType: 'limited_edition',
       approvalStatus: 'pending',
       createdFrom: '2026-01-01',
@@ -41,9 +42,15 @@ describe('ListProductMastersQueryDto', () => {
   });
 
   it('rejects invalid enum values', async () => {
-    const dto = toDto({ productType: 'nonsense', approvalStatus: 'bogus', sort: 'price', order: 'up' });
+    const dto = toDto({
+      status: 'deleted',
+      productType: 'nonsense',
+      approvalStatus: 'bogus',
+      sort: 'price',
+      order: 'up',
+    });
     const errors = await validate(dto);
     const props = errors.map((e) => e.property).sort();
-    expect(props).toEqual(['approvalStatus', 'order', 'productType', 'sort']);
+    expect(props).toEqual(['approvalStatus', 'order', 'productType', 'sort', 'status']);
   });
 });

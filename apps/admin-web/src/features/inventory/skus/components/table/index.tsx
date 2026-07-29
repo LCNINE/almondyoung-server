@@ -23,13 +23,21 @@ export function SkusTable() {
 
   const [editRow, setEditRow] = useState<SkuResponseDto | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [changeGroupRow, setChangeGroupRow] = useState<SkuResponseDto | null>(null);
+  const [changeGroupRow, setChangeGroupRow] = useState<SkuResponseDto | null>(
+    null
+  );
   const [deleteRow, setDeleteRow] = useState<SkuResponseDto | null>(null);
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
 
   const handleEdit = useCallback((row: SkuResponseDto) => setEditRow(row), []);
-  const handleChangeGroup = useCallback((row: SkuResponseDto) => setChangeGroupRow(row), []);
-  const handleDelete = useCallback((row: SkuResponseDto) => setDeleteRow(row), []);
+  const handleChangeGroup = useCallback(
+    (row: SkuResponseDto) => setChangeGroupRow(row),
+    []
+  );
+  const handleDelete = useCallback(
+    (row: SkuResponseDto) => setDeleteRow(row),
+    []
+  );
 
   const columns = useSkusTableColumns({
     onEdit: handleEdit,
@@ -91,6 +99,7 @@ export function SkusTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
+        searchPlaceholder="SKU명 검색"
         noRecords={{ message: 'SKU 데이터가 없습니다.' }}
       />
 
@@ -108,13 +117,17 @@ export function SkusTable() {
       <ChangeGroupDialog
         sku={changeGroupRow}
         open={!!changeGroupRow}
-        onOpenChange={(open) => { if (!open) setChangeGroupRow(null); }}
+        onOpenChange={(open) => {
+          if (!open) setChangeGroupRow(null);
+        }}
       />
 
       <DeleteSkuDialog
         sku={deleteRow}
         open={!!deleteRow}
-        onOpenChange={(open) => { if (!open) setDeleteRow(null); }}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRow(null);
+        }}
       />
 
       <BulkAddToGroupDialog

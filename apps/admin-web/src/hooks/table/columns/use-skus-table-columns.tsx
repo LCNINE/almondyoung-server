@@ -4,6 +4,7 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import type { SkuResponseDto } from '@/lib/types/dto/inventory';
 
 const columnHelper = createColumnHelper<SkuResponseDto>();
@@ -24,6 +25,30 @@ const STOCK_TYPE_LABELS: Record<string, string> = {
 export const useSkusTableColumns = (actions: RowActions) => {
   return useMemo(
     () => [
+      columnHelper.display({
+        id: 'select',
+        meta: { clickTogglesRowSelection: true },
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && 'indeterminate')
+            }
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
+            aria-label="전체 선택"
+            onClick={(event) => event.stopPropagation()}
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            aria-label="행 선택"
+            className="pointer-events-none"
+          />
+        ),
+      }),
       columnHelper.accessor('code', {
         header: 'SKU 코드',
         cell: ({ getValue }) => (
@@ -46,7 +71,8 @@ export const useSkusTableColumns = (actions: RowActions) => {
         header: '공급사',
         cell: ({ getValue }) => {
           const suppliers = getValue();
-          if (!suppliers?.length) return <span className="text-xs text-muted-foreground/40">—</span>;
+          if (!suppliers?.length)
+            return <span className="text-xs text-muted-foreground/40">—</span>;
           return (
             <span className="text-xs text-muted-foreground">
               {suppliers.map((s) => s.name).join(', ')}
@@ -68,13 +94,17 @@ export const useSkusTableColumns = (actions: RowActions) => {
       columnHelper.accessor('stockType', {
         header: '재고유형',
         cell: ({ getValue }) => (
-          <span className="text-xs">{STOCK_TYPE_LABELS[getValue()] ?? getValue()}</span>
+          <span className="text-xs">
+            {STOCK_TYPE_LABELS[getValue()] ?? getValue()}
+          </span>
         ),
       }),
       columnHelper.accessor('safetyStock', {
         header: '안전재고',
         cell: ({ getValue }) => (
-          <span className="tabular-nums text-xs">{getValue().toLocaleString('ko-KR')}</span>
+          <span className="tabular-nums text-xs">
+            {getValue().toLocaleString('ko-KR')}
+          </span>
         ),
       }),
       columnHelper.accessor('updatedAt', {
@@ -85,7 +115,10 @@ export const useSkusTableColumns = (actions: RowActions) => {
         id: 'actions',
         header: '액션',
         cell: ({ row }) => (
-          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="flex items-center gap-1"
+            onClick={(e) => e.stopPropagation()}
+          >
             <Button
               variant="ghost"
               size="sm"

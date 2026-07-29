@@ -499,6 +499,7 @@ export class ProductMastersService {
       limit?: number;
       deleted?: boolean;
       ids?: string[];
+      status?: 'active' | 'inactive' | 'draft';
       productType?: 'regular_sale' | 'limited_edition';
       approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
       createdFrom?: string;
@@ -628,6 +629,10 @@ export class ProductMastersService {
       // 상품 유형 필터
       if (filters?.productType) {
         whereConditions.push(eq(productMasterVersions.productType, filters.productType));
+      }
+
+      if (filters?.status) {
+        whereConditions.push(eq(productMasterVersions.status, filters.status));
       }
 
       // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만

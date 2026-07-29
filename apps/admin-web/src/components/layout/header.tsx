@@ -135,7 +135,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
 
   // 사용자 역할 표시
   const getUserRole = () => {
-    const roleName = myRoles?.roles[0].role.name;
+    const roleName = myRoles?.roles?.[0]?.role?.name;
 
     switch (roleName) {
       case 'MASTER':
