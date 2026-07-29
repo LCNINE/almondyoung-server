@@ -51,6 +51,8 @@ export type SelectableCategory = {
   name: string;
   slug?: string;
   pathLabel: string;
+  /** 조상→자신 순 카테고리명. 이름에 `/` 가 들어가도 안전하게 다시 이어붙일 수 있다. */
+  pathSegments: string[];
   depth: number;
   parentId: string | null;
   isActive: boolean;
@@ -124,6 +126,7 @@ export function flattenCategoryTree(
         name: category.name,
         slug: category.slug,
         pathLabel: path.join(' / '),
+        pathSegments: path,
         depth,
         parentId: category.parentId ?? null,
         isActive: category.isActive,

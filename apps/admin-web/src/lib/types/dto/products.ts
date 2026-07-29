@@ -137,6 +137,8 @@ export interface MastersQuery {
   mode?: 'active' | 'active-or-inactive' | 'all';
   productType?: 'regular_sale' | 'limited_edition';
   approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  /** 등록자 UUID(user-service users.id). product_masters.createdBy 기준 */
+  createdBy?: string;
   /** 등록일 범위 시작(ISO). product_masters.createdAt 기준 */
   createdFrom?: string;
   createdTo?: string;

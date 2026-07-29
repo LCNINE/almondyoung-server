@@ -502,6 +502,7 @@ export class ProductMastersService {
       status?: 'active' | 'inactive' | 'draft';
       productType?: 'regular_sale' | 'limited_edition';
       approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+      createdBy?: string;
       createdFrom?: string;
       createdTo?: string;
       sort?: 'createdAt' | 'name' | 'updatedAt';
@@ -640,6 +641,11 @@ export class ProductMastersService {
       // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
       if (filters?.approvalStatus) {
         whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+      }
+
+      // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
+      if (filters?.createdBy) {
+        whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
       }
 
       // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준

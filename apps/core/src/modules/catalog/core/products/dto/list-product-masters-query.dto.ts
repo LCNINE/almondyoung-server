@@ -29,6 +29,9 @@ export class ListProductMastersQueryDto {
   @IsIn(['draft', 'pending', 'approved', 'rejected'])
   approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
 
+  /** 상품을 등록한 사용자 UUID. product_masters.createdBy 기준 */
+  @IsOptional() @IsUUID() createdBy?: string;
+
   @IsOptional() @IsDateString() createdFrom?: string;
   @IsOptional() @IsDateString() createdTo?: string;
 
