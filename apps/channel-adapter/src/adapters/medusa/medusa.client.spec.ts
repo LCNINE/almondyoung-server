@@ -1047,3 +1047,51 @@ describe('MedusaClient.ensureCategoryFromSnapshot 부모 필수 모드', () => {
     expect(update.mock.calls[0][1]).not.toHaveProperty('parent_category_id');
   });
 });
+
+describe('MedusaClient.ensureCategoryFromSnapshot 멤버십 전용 플래그 보존', () => {
+  function makeClient(existingMetadata: Record<string, unknown>) {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_x' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    const existing = { id: 'pcat_x', handle: 'cafe24-cat-339', metadata: existingMetadata };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue(existing);
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  // 상품 동기화 경로가 넘기는 형태 — 멤버십 전용 필드가 없다
+  const productPathSnapshot = {
+    id: 'pim-339',
+    name: '퍼마블렌드',
+    slug: 'cafe24-cat-339',
+    path: '339',
+    parentId: null,
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  };
+
+  it('플래그를 안 넘기면 기존 metadata 값을 덮어쓰지 않는다', async () => {
+    const { client, update } = makeClient({ isVisibleToMembersOnly: true });
+
+    await client.ensureCategoryFromSnapshot(productPathSnapshot);
+
+    const metadata = update.mock.calls[0][1].metadata;
+    expect(metadata.isVisibleToMembersOnly).toBe(true);
+  });
+
+  it('플래그를 명시하면 그 값으로 갱신한다', async () => {
+    const { client, update } = makeClient({ isVisibleToMembersOnly: true });
+
+    await client.ensureCategoryFromSnapshot({ ...productPathSnapshot, isVisibleToMembersOnly: false });
+
+    expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(false);
+  });
+})

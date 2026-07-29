@@ -645,7 +645,12 @@ export class MedusaClient {
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
       // storefront가 이 두 값을 읽는다 (썸네일 / 멤버십 전용 노출 여부)
       thumbnail: categorySnapshot.thumbnail ?? null,
-      isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly ?? false,
+      // 호출자가 값을 준 경우에만 쓴다. 상품 동기화 경로(ProductSnapshot.categories)에는
+      // 이 필드가 없어서, 기본값을 넣으면 카테고리 이벤트로 켜둔 설정을 상품 한 건 동기화가
+      // false 로 덮어써 버린다.
+      ...(categorySnapshot.isVisibleToMembersOnly !== undefined && {
+        isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly,
+      }),
     };
 
     let parentMedusaId: string | undefined;
