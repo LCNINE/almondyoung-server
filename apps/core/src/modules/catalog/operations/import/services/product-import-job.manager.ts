@@ -280,7 +280,14 @@ export class ProductImportJobManager {
       try {
         const draftVersionId = await this.reader.getDraftVersionId(masterId);
         if (draftVersionId) {
-          await this.db.run((trx) => this.versionsService.publishVersion(draftVersionId, trx));
+          // 임포트 게시임을 이벤트에 남긴다 — channel-adapter 의 inbox 클레임이 이 표시로
+          // 후순위 레인을 가른다(설계 스펙 §4.4). 단건 UI 게시에는 이 인자가 없다.
+          await this.db.run((trx) =>
+            this.versionsService.publishVersion(draftVersionId, trx, {
+              origin: 'bulk_import',
+              importSessionId: sessionId,
+            }),
+          );
         }
         // draft 가 없으면 이미 active 다 — 재실행에서 여기 오므로 published 로 마감한다(멱등).
         await this.db.run(async (trx) => {

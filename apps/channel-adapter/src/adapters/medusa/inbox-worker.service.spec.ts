@@ -338,6 +338,21 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     expect(claimSql.params).toContain('CoreOrderCancelled');
   });
 
+  it('renders the demotion order with a COALESCE guard so unmarked rows keep the priority lane', async () => {
+    const { service, dbMock } = createService();
+
+    await (service as any).claimNextInboxEvent();
+
+    const claimSql = new PgDialect().sqlToQuery(dbMock.execute.mock.calls[0][0]);
+    // COALESCE 가 빠지면 마커 없는 행이 `false OR NULL` = NULL 이 되고,
+    // NULL 은 ASC 정렬에서 맨 뒤로 가 우선 레인이 통째로 뒤집힌다.
+    expect(claimSql.sql).toContain(`COALESCE(metadata->>'origin', '')`);
+    expect(claimSql.params).toContain('bulk_import');
+    // 괄호는 정확성 요건은 아니다(OR 가 쉼표보다 먼저 묶여 파싱은 같다) — 렌더링된
+    // 모양이 ORDER BY 항 구분 쉼표와 안 섞여 보이는 가독성 형태를 유지하는지 고정한다.
+    expect(claimSql.sql).toMatch(/ORDER BY \(/);
+  });
+
   it('does not publish an older active-version retry after a newer product delete is present', async () => {
     const { service, dbMock, syncService } = createService({
       newerEvents: (condition) =>

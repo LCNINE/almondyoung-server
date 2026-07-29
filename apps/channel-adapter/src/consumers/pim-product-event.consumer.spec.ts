@@ -234,4 +234,51 @@ describe('PimProductEventConsumer product event idempotency', () => {
     expect(state.inbox).toHaveLength(0);
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
+
+  it('임포트 게시 이벤트의 origin 을 inbox metadata 로 옮긴다', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state);
+    const consumer = new PimProductEventConsumer({ db } as any);
+
+    await consumer.onProductMasterActiveVersionChanged(
+      { messageId: 'msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as any,
+      {
+        masterId: 'master-1',
+        versionId: 'version-1',
+        name: 'Lip Tint',
+        previousActiveVersionId: null,
+        changeReason: 'published',
+        changedAt: '2026-07-29T00:00:00.000Z',
+        origin: 'bulk_import',
+        importSessionId: 'session-1',
+        snapshot: { masterId: 'master-1', versionId: 'version-1', version: 1, name: 'Lip Tint', variants: [] },
+      } as any,
+    );
+
+    expect(state.inbox[0].metadata.origin).toBe('bulk_import');
+    // 정렬 핫패스가 안 쓰는 값은 metadata 에 넣지 않는다 — payload 에는 그대로 있다.
+    expect(state.inbox[0].metadata.importSessionId).toBeUndefined();
+    expect(state.inbox[0].payload.importSessionId).toBe('session-1');
+  });
+
+  it('단건 게시면 metadata 에 origin 키를 만들지 않는다', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state);
+    const consumer = new PimProductEventConsumer({ db } as any);
+
+    await consumer.onProductMasterActiveVersionChanged(
+      { messageId: 'msg-2', correlationId: 'corr-2', chainId: 'chain-2' } as any,
+      {
+        masterId: 'master-2',
+        versionId: 'version-2',
+        name: 'Lip Balm',
+        previousActiveVersionId: null,
+        changeReason: 'published',
+        changedAt: '2026-07-29T00:00:00.000Z',
+        snapshot: { masterId: 'master-2', versionId: 'version-2', version: 1, name: 'Lip Balm', variants: [] },
+      } as any,
+    );
+
+    expect(Object.prototype.hasOwnProperty.call(state.inbox[0].metadata, 'origin')).toBe(false);
+  });
 });

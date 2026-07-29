@@ -60,6 +60,14 @@ export interface ProductInventoryManagementChangedPayload {
   changedAt: string;
 }
 
+/**
+ * 이 이벤트를 낸 작업의 성격. 한 번에 수백~수천 건을 만들어내는 경로만 표시한다.
+ * channel-adapter 의 inbox 클레임이 이 값으로 레인을 가른다 —
+ * 값을 늘리려면 apps/channel-adapter/src/adapters/medusa/inbox-worker.service.ts 의
+ * BULK_ORIGINS 도 같이 본다.
+ */
+export type ProductPublishOrigin = 'bulk_import';
+
 export interface ProductMasterActiveVersionChangedPayload {
   masterId: string;
   versionId: string | null;
@@ -70,6 +78,10 @@ export interface ProductMasterActiveVersionChangedPayload {
   changeReason: 'published' | 'unpublished' | 'rollback';
   changedAt: string;
   snapshot?: ProductSnapshot | null;
+  /** 대량 작업이 낸 이벤트임을 표시한다. 단건 게시에는 키 자체가 없다. */
+  origin?: ProductPublishOrigin;
+  /** origin='bulk_import' 일 때의 임포트 세션 id (관측용 — 강등 판정은 쓰지 않는다). */
+  importSessionId?: string;
 }
 
 export interface ProductPurchaseConstraintSnapshot {
@@ -366,6 +378,8 @@ const ProductMasterActiveVersionChangedSchema = z.object({
   changeReason: z.enum(['published', 'unpublished', 'rollback']),
   changedAt: z.string().datetime(),
   snapshot: ProductSnapshotSchema.nullable().optional(),
+  origin: z.literal('bulk_import').optional(),
+  importSessionId: z.string().min(1).optional(),
 });
 
 const ProductMasterDeletedSchema = z.object({
