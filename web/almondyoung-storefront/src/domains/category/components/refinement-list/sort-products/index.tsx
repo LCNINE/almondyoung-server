@@ -30,10 +30,10 @@ const SortProducts = ({ sortBy, setQueryParams }: SortProductsProps) => {
     <div
       role="group"
       aria-label={t("label")}
-      className="flex flex-wrap items-center gap-y-1"
+      className="scrollbar-hide -mx-3 flex items-center overflow-x-auto px-3 sm:mx-0 sm:px-0"
     >
       {sortOptions.map((item, index) => (
-        <div key={item.value} className="flex items-center">
+        <div key={item.value} className="flex shrink-0 items-center">
           {index > 0 && (
             <span aria-hidden className="bg-border mx-2 h-3 w-px sm:mx-3" />
           )}
