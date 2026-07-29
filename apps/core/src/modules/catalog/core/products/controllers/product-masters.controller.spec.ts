@@ -42,6 +42,7 @@ describe('ProductMastersController', () => {
       createdTo: undefined,
       sort: undefined,
       order: undefined,
+      stock: undefined,
       deleted: false,
       ids: undefined,
     });

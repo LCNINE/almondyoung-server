@@ -1,0 +1,1 @@
+CREATE INDEX "idx_master_variants_version" ON "product_master_variants" USING btree ("version_id");
