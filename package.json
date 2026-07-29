@@ -146,6 +146,7 @@
     "start:wallet:prod": "node dist/apps/wallet/main.js",
     "wallet:dev:cms-member": "dotenv -e apps/wallet/.env -- npx tsx -r tsconfig-paths/register apps/wallet/scripts/dev-cms-member-state.ts",
     "test": "jest",
+    "test:admin-web": "jest --roots ./apps/admin-web --transform '{\"^.+\\\\.(t|j)s$\":[\"ts-jest\",{\"tsconfig\":\"apps/admin-web/tsconfig.jest.json\"}]}'",
     "test:api": "newman run postman/File-Service-MIME-Validation.postman_collection.json -e postman/File-Service-Local.postman_environment.json",
     "test:api:ci": "npm run test:api:setup && npm run test:api -- --bail",
     "test:api:report": "npm run test:api -- --reporters cli,htmlextra --reporter-htmlextra-export test-results/api-test-report.html",

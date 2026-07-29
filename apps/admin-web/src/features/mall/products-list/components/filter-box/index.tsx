@@ -5,7 +5,6 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   FormDateRangePicker,
   FormInput,
-  FormMultiSelect,
   FormRadioGroup,
   FormSelect,
 } from '@/components/common/form';
@@ -31,10 +30,38 @@ import {
   CLASSIFICATION_OPTIONS,
   classificationFromParams,
   classificationToParams,
+  toggle,
   type Classification,
 } from './products-list-filter-model';
 
 const ALL = 'all';
+
+/** 필터 행에 쓰는 토글 칩. 분류(단일)·공급처(다중) 가 같은 모양을 공유한다. */
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={cn(
+        'h-8 min-w-[68px] text-xs transition-colors',
+        active &&
+          'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
 
 type FilterState = {
   datePreset: DatePreset;
@@ -209,15 +236,6 @@ export function ProductsListFilterBox() {
           />
         </div>
         <div className="w-56">
-          <FormMultiSelect
-            options={supplierOptions}
-            value={filters.supplierIds}
-            onValueChange={(v) => patch({ supplierIds: v })}
-            allLabel="전체 공급처"
-            searchPlaceholder="공급처 검색"
-          />
-        </div>
-        <div className="w-56">
           <FormSelect
             options={registrantOptions}
             value={filters.createdBy}
@@ -227,22 +245,36 @@ export function ProductsListFilterBox() {
         </div>
       </FilterRow>
 
+      <FilterRow label="공급처">
+        {/* ponytail: 공급처 19개·이름 4~5자라 다 펼쳐도 두 줄이다.
+            30~80개로 늘면 선택된 칩을 앞으로 당기고 나머지는 '더보기'로 접는다(칩 유지).
+            100개를 넘으면 그때 배치 필터 모달로. 드롭다운으로 되돌리지 말 것. */}
+        <FilterChip
+          active={filters.supplierIds.length === 0}
+          onClick={() => patch({ supplierIds: [] })}
+        >
+          전체
+        </FilterChip>
+        {supplierOptions.map((option) => (
+          <FilterChip
+            key={option.value}
+            active={filters.supplierIds.includes(option.value)}
+            onClick={() => patch({ supplierIds: toggle(filters.supplierIds, option.value) })}
+          >
+            {option.label}
+          </FilterChip>
+        ))}
+      </FilterRow>
+
       <FilterRow label="분류">
         {CLASSIFICATION_OPTIONS.map((option) => (
-          <Button
+          <FilterChip
             key={option.value}
-            type="button"
-            size="sm"
-            variant="outline"
-            className={cn(
-              'h-8 min-w-[68px] text-xs transition-colors',
-              filters.classification === option.value &&
-                'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
-            )}
+            active={filters.classification === option.value}
             onClick={() => patch({ classification: option.value })}
           >
             {option.label}
-          </Button>
+          </FilterChip>
         ))}
       </FilterRow>
 

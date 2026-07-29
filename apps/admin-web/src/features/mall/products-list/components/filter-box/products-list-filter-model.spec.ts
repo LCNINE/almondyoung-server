@@ -2,7 +2,23 @@ import {
   CLASSIFICATION_OPTIONS,
   classificationFromParams,
   classificationToParams,
+  toggle,
 } from './products-list-filter-model';
+
+describe('공급처 다중 선택 토글', () => {
+  it('없으면 넣고 있으면 뺀다', () => {
+    expect(toggle([], 'a')).toEqual(['a']);
+    expect(toggle(['a'], 'b')).toEqual(['a', 'b']);
+    expect(toggle(['a', 'b'], 'a')).toEqual(['b']);
+    expect(toggle(['a'], 'a')).toEqual([]); // 마지막 하나를 빼면 전체로 돌아간다
+  });
+
+  it('원본 배열을 건드리지 않는다', () => {
+    const before = ['a'];
+    toggle(before, 'b');
+    expect(before).toEqual(['a']);
+  });
+});
 
 describe('products-list 분류 필터', () => {
   it('모든 분류가 파라미터 왕복을 견딘다', () => {

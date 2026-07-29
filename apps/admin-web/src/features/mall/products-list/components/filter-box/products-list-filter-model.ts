@@ -36,6 +36,13 @@ export const CLASSIFICATION_OPTIONS: {
   { value: 'partial', label: '부분품절' },
 ];
 
+/** 다중 선택 칩 토글. 빈 배열 = 전체. */
+export function toggle(values: string[], value: string): string[] {
+  return values.includes(value)
+    ? values.filter((v) => v !== value)
+    : [...values, value];
+}
+
 export function classificationToParams(
   value: Classification
 ): ClassificationParams {
