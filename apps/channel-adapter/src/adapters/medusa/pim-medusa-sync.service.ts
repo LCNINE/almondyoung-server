@@ -673,7 +673,7 @@ export class PimMedusaSyncService {
           isVisibleToMembersOnly: ancestorMembersOnly,
           thumbnail: ancestor.thumbnail ?? undefined,
           sortOrder: ancestor.sortOrder,
-        });
+        }, { refreshFields: true });
       }
 
       // Handle create/update/moved (all treated as upsert)
@@ -690,7 +690,7 @@ export class PimMedusaSyncService {
           category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
         thumbnail: category.thumbnail ?? undefined,
         sortOrder: category.sortOrder,
-      }, { requireParent: true });
+      }, { requireParent: true, refreshFields: true });
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
 
