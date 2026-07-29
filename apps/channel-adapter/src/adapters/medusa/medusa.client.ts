@@ -620,7 +620,7 @@ export class MedusaClient {
     thumbnail?: string;
     sortOrder?: number;
   },
-  options?: { requireParent?: boolean }): Promise<string> {
+  options?: { requireParent?: boolean; refreshFields?: boolean }): Promise<string> {
     // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
     // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
     // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
@@ -700,6 +700,16 @@ export class MedusaClient {
         return existing.id;
       }
 
+      // 상품 동기화 경로는 "카테고리가 있는지"만 확인하면 된다. 여기서 필드까지 덮으면
+      // 방금 카테고리 이벤트로 반영한 값(이름·rank·부모·metadata)을 오래된 스냅샷으로
+      // 되돌린다 — 실제로 멤버십 전용 설정이 계속 풀리는 원인이었다.
+      // 필드 갱신은 CategoryChanged 경로(refreshFields)만 한다.
+      if (!options?.refreshFields) {
+        this.setCategoryCache(preferredHandle, existing.id);
+        this.setCategoryCache(categorySnapshot.id, existing.id);
+        return existing.id;
+      }
+
       const updatePayload = {
         name: categorySnapshot.name,
         handle: preferredHandle,
@@ -708,7 +718,7 @@ export class MedusaClient {
         ...parentUpdate,
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
         metadata: {
-          ...(existing.metadata || {}),
+          ...(verified.metadata || existing.metadata || {}),
           ...pimMetadata,
         },
       };
