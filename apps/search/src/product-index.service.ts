@@ -459,6 +459,18 @@ export class ProductIndexService implements OnModuleInit {
             },
           },
           {
+            // 토큰이 여러 필드에 흩어진 경우("퍼마"=name, "색소"=category_names).
+            // 위 multi_match 는 best_fields 라 필드 하나가 전체 토큰을 가져야 해서
+            // 이런 조합을 통째로 놓친다. cross_fields 는 필드를 합쳐서 판정.
+            multi_match: {
+              query: q,
+              type: 'cross_fields',
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
+              operator: 'and',
+              boost: 20,
+            },
+          },
+          {
             match_phrase_prefix: {
               'name.standard': {
                 query: q,
