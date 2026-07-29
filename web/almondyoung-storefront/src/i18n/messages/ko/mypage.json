@@ -1131,21 +1131,6 @@
     "detailAgreementStatus": "전자서명 상태",
     "detailCreatedAt": "신청일"
   },
-  "payment": {
-    "pageTitle": "결제수단 관리",
-    "pointTitle": "아몬드영 적립금",
-    "pendingPointsTitle": "곧 적립될 아몬드영 적립금이에요",
-    "accountTitle": "계좌",
-    "accountChangeAria": "계좌 변경",
-    "noAccountRegistered": "등록한 계좌가 없어요",
-    "bnplLoadFail": "나중결제 내역을 불러오는데 실패했습니다",
-    "retry": "다시 시도",
-    "noAccountYet": "아직 등록한 계좌가 없습니다",
-    "registerMethod": "+ 결제수단 등록",
-    "menuSecurity": "결제 비밀번호 / 보안 설정",
-    "menuReceipt": "현금영수증 설정",
-    "menuTerms": "나중결제 약관 및 정책"
-  },
   "reviews": {
     "pageTitle": "리뷰",
     "countLabel": "리뷰 {count}",
