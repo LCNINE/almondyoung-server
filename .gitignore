@@ -453,6 +453,9 @@ scripts/ops/hayoung-*.ts
 scripts/ops/iceyou-*.ts
 scripts/ops/kwj0628-*.ts
 scripts/ops/membership-diag-*.ts
+scripts/ops/membership-group-reconcile.ts
+scripts/ops/membership-sync-audit.ts
+scripts/ops/yoonhaeing-*.ts
 
 # 임시 재고 가드 / 롤백용 ID 백업
 scripts/backorder-guard.ts
