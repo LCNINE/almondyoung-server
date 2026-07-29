@@ -58,8 +58,11 @@ const db=process.env.DB_NAME;
     const base="postgresql://"+auth+"@"+ip+":"+(s.port||5432);
     const sql=postgres(base+"/"+db+"?sslmode=require",{max:1,connect_timeout:8});
     try{
+      // DB 별 지표 테이블로 "엉뚱한 클러스터" 를 걸러낸다.
+      const probe = db==="medusa" ? ["public.inventory_level","public.reservation_item"]
+                                  : ["public.skus","public.stock_ledgers"];
       const [r]=await sql`select current_database() as db,
-        (to_regclass(${"public.skus"}) is not null and to_regclass(${"public.stock_ledgers"}) is not null) as schema_ok`;
+        (to_regclass(${probe[0]}) is not null and to_regclass(${probe[1]}) is not null) as schema_ok`;
       await sql.end();
       if(r && r.db===db && r.schema_ok){ console.log(base+"/"+db+"?sslmode=require"); process.exit(0); }
       loginOnly.push(ip+"(db="+(r&&r.db)+",schema_ok="+(r&&r.schema_ok)+")");
