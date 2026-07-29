@@ -6,6 +6,7 @@ import { FileText, Upload, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React from "react"
 import { useFormContext } from "react-hook-form"
+import { toast } from "sonner"
 import { BusinessDtoSchema } from "./schema"
 import Image from "next/image"
 import {
@@ -15,6 +16,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+
+// file-service 의 business-verification-file 컨텍스트 화이트리스트와 같은 목록.
+// 서버는 매직바이트로 최종 판정하므로 여기선 확장자만 바꾼 파일까진 못 막는다.
+const ACCEPTED_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+  "image/heic",
+  "image/heif",
+]
+const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif"
 
 export default function BusinessFileUploader() {
   return (
@@ -32,16 +46,22 @@ function BusinessFileForm() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFile = e.target.files?.[0]
+    e.target.value = ""
 
-    if (newFile) {
-      form.setValue("file", newFile, {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      })
+    if (!newFile) return
 
-      e.target.value = ""
+    // 지원하지 않는 형식이면 여기서 잘라낸다. 그냥 올리면 업로드가 서버 액션 안에서
+    // 터져 브라우저엔 500 으로만 보이고 사유가 사라진다.
+    if (!ACCEPTED_TYPES.includes(newFile.type)) {
+      toast.error(t("unsupportedType"))
+      return
     }
+
+    form.setValue("file", newFile, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    })
   }
 
   const handleRemoveFile = (e: React.MouseEvent) => {
@@ -60,7 +80,7 @@ function BusinessFileForm() {
         ref={inputRef}
         type="file"
         className="sr-only"
-        accept=".pdf,.jpg,.jpeg,.png"
+        accept={ACCEPT_ATTR}
         onChange={handleFileChange}
       />
 

@@ -42,9 +42,10 @@
     "fileDialogTitle": "View Business License",
     "fileDialogDescription": "View the full business license image.",
     "uploadPrompt": "Attach business license file",
-    "uploadHint": "PDF, JPG, PNG",
+    "uploadHint": "PDF, JPG, PNG, WEBP, AVIF",
     "removeFile": "Remove attached file",
-    "tapToZoom": "Tap to enlarge"
+    "tapToZoom": "Tap to enlarge",
+    "unsupportedType": "Only PDF or image files (JPG, PNG, WEBP, AVIF, HEIC) can be attached."
   },
   "display": {
     "statusLabel": "Status",

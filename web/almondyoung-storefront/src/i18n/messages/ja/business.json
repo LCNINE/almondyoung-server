@@ -42,9 +42,10 @@
     "fileDialogTitle": "事業者登録証を全画面表示",
     "fileDialogDescription": "事業者登録証の画像を大きく表示します",
     "uploadPrompt": "事業者登録証ファイルを添付",
-    "uploadHint": "PDF・JPG・PNG形式",
+    "uploadHint": "PDF、JPG、PNG、WEBP、AVIF形式",
     "removeFile": "添付ファイルを削除",
-    "tapToZoom": "タップで拡大"
+    "tapToZoom": "タップで拡大",
+    "unsupportedType": "PDFまたは画像ファイル（JPG、PNG、WEBP、AVIF、HEIC）のみ添付できます。"
   },
   "display": {
     "statusLabel": "状態",

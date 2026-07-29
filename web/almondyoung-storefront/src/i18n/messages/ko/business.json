@@ -42,9 +42,10 @@
     "fileDialogTitle": "사업자등록증 전체 보기",
     "fileDialogDescription": "사업자등록증 이미지를 크게 볼 수 있습니다",
     "uploadPrompt": "사업자등록증 파일 첨부",
-    "uploadHint": "PDF, JPG, PNG 형식",
+    "uploadHint": "PDF, JPG, PNG, WEBP, AVIF 형식",
     "removeFile": "첨부 파일 삭제",
-    "tapToZoom": "눌러서 크게 보기"
+    "tapToZoom": "눌러서 크게 보기",
+    "unsupportedType": "PDF 또는 이미지 파일(JPG, PNG, WEBP, AVIF, HEIC)만 첨부할 수 있어요."
   },
   "display": {
     "statusLabel": "상태",
