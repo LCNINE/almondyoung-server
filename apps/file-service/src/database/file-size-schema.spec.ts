@@ -6,6 +6,8 @@ import {
   fileContextMatchesSeed,
 } from './default-file-contexts';
 import { fileContexts, uploads } from './schema';
+import { FileContextValidator } from '../shared/services/file-context-validator.service';
+import type { FileContext } from '../shared/types/file.types';
 
 describe('file-service size schema and seed data', () => {
   it('stores upload and max file sizes in bigint columns', () => {
@@ -27,6 +29,17 @@ describe('file-service size schema and seed data', () => {
     });
     expect(DIGITAL_ASSET_FILE_MAX_SIZE_BYTES).toBe(10 * 1024 * 1024 * 1024);
     expect(DIGITAL_ASSET_FILE_MAX_SIZE_BYTES).toBeGreaterThan(2_147_483_647);
+  });
+
+  it('accepts the image formats users actually attach to a business license, but not svg', () => {
+    const context = FILE_CONTEXTS.find((ctx) => ctx.id === 'business-verification-file')!;
+    const validator = new FileContextValidator();
+    const asContext = { ...context, description: context.description ?? null } as unknown as FileContext;
+
+    for (const mimeType of ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/heic']) {
+      expect(validator.isValidMimeType(asContext, mimeType)).toBe(true);
+    }
+    expect(validator.isValidMimeType(asContext, 'image/svg+xml')).toBe(false);
   });
 
   it('treats the digital asset file context as seeded when bigint values come back as strings', () => {
