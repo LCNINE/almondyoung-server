@@ -152,4 +152,31 @@ export class MembershipMedusaSyncService {
       throw error;
     }
   }
+
+  /**
+   * 정합화 전용: SSOT 활성 회원을 Medusa 멤버십 그룹에 소속시킨다(누락 시 추가).
+   *
+   * handleMembershipStatusChanged 의 ACTIVE 경로를 재사용하지 않는 이유:
+   * 그 경로는 issuePromotionsByTrigger('membership_activated') 로 쿠폰을 발급한다.
+   * 전체 회원을 매일 도는 정합화에서 그걸 부르면 매일 전원 재발급 사고가 난다.
+   * 따라서 여기서는 순수하게 "그룹 소속만" 보장한다(쿠폰·카트refresh 없음).
+   * almond_user_id 로만 조회하므로 metadata 가 옳게 박힌 회원(대다수)을 커버한다 —
+   * metadata 드리프트 케이스는 이메일 fallback 이 필요해 실시간 이벤트 경로가 담당한다.
+   *
+   * @returns 'added' 신규 추가 | 'no_customer' 고객 미발견 | 'skipped' 그룹ID 미설정
+   */
+  async ensureInMembershipGroup(userId: string): Promise<'added' | 'no_customer' | 'skipped'> {
+    const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+    if (!membershipGroupId) {
+      this.logger.warn('MEDUSA_MEMBERSHIP_GROUP_ID is not set. Skipping reconcile.');
+      return 'skipped';
+    }
+
+    const customer = await this.medusaClient.findCustomerByAlmondUserId(userId);
+    if (!customer) return 'no_customer';
+
+    // addCustomerToGroup 은 이미 소속이면 no-op (중복 link 행 방지 내장).
+    await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
+    return 'added';
+  }
 }
