@@ -93,6 +93,8 @@ export function BusinessStep({
   const [opened, setOpened] = React.useState(false)
   const [submitting, setSubmitting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // 제출 결과. 즉시 승인인지 관리자 심사 대기인지 알려주지 않으면 "인증했는데 아무 일도 없다" 문의가 온다.
+  const [approved, setApproved] = React.useState<boolean | null>(null)
   // 파일을 첨부하면 서버가 번호/대표자명/개업일자를 무시하므로 입력칸도 잠근다.
   const [file, setFile] = React.useState<File | null>(null)
 
@@ -103,7 +105,7 @@ export function BusinessStep({
     const res = await registerBusinessAction(new FormData(e.currentTarget))
     setSubmitting(false)
     if (res.ok) {
-      onDone()
+      setApproved(res.approved)
     } else {
       setError(res.error)
     }
@@ -112,13 +114,41 @@ export function BusinessStep({
   const busy = submitting || pending
   const hasFile = file !== null
 
+  if (approved !== null) {
+    return (
+      <div className="flex flex-1 flex-col gap-6">
+        <div className="flex flex-col gap-2">
+          <h2 className="text-xl font-bold">
+            {approved ? "사업자 등록이 확인됐어요" : "사업자등록증을 접수했어요"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            {approved
+              ? "마이페이지에서 등록 정보를 확인할 수 있어요."
+              : "확인에는 영업일 기준 며칠이 걸릴 수 있어요. 결과는 마이페이지에서 확인할 수 있어요."}
+          </p>
+        </div>
+
+        <div className="mt-auto flex flex-col gap-2 pt-6">
+          <Button
+            type="button"
+            onClick={onDone}
+            disabled={pending}
+            className="h-[52px] rounded-lg text-base font-bold"
+          >
+            {pending ? <Spinner className="size-5" /> : "확인"}
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
   if (!opened) {
     return (
       <div className="flex flex-1 flex-col gap-6">
         <div className="flex flex-col gap-2">
           <h2 className="text-xl font-bold">가입이 완료됐어요</h2>
           <p className="text-sm text-muted-foreground">
-            사업자 회원이시라면 지금 인증하고 전용 상품과 가격을 볼 수 있어요.
+            사업자 회원이라면 사업자등록증을 지금 등록해 두세요.
             <br className="hidden sm:inline" /> 나중에 마이페이지에서 해도
             괜찮아요.
           </p>
@@ -131,7 +161,7 @@ export function BusinessStep({
             disabled={busy}
             className="h-[52px] rounded-lg text-base font-bold"
           >
-            사업자 인증하기
+            사업자등록증 등록하기
           </Button>
           <Button
             type="button"

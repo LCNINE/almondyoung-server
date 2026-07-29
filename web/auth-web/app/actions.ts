@@ -26,6 +26,7 @@ import {
   checkEmailAvailable,
   checkLoginIdAvailable,
   createBusinessLicense,
+  getMyBusinessLicenseStatus,
   findUserId,
   forgotPassword,
   getMe,
@@ -42,6 +43,10 @@ import {
 } from "@/lib/user-service"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
+
+export type RegisterBusinessActionResult =
+  | { ok: true; approved: boolean }
+  | { ok: false; error: string }
 
 export type SendRecoveryCodeResult =
   | { ok: true; message: string; phoneNumber: string }
@@ -526,7 +531,7 @@ async function restoreSessionFromRefreshToken(): Promise<string | null> {
  */
 export async function registerBusinessAction(
   formData: FormData
-): Promise<ActionResult> {
+): Promise<RegisterBusinessActionResult> {
   const accessToken =
     (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
   if (!accessToken) {
@@ -586,7 +591,11 @@ export async function registerBusinessAction(
         startDate,
       })
     }
-    return { ok: true }
+    // 상태 조회가 실패해도 등록 자체는 성공이다. 이 경우 "확인 중"으로 안내한다.
+    const status = await getMyBusinessLicenseStatus(accessToken).catch(
+      () => null
+    )
+    return { ok: true, approved: status === "approved" }
   } catch (e) {
     return {
       ok: false,
