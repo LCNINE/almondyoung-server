@@ -111,7 +111,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.root}>
+      {/*
+        상단만 앱이 인셋하고 **하단은 웹에 맡긴다.**
+
+        브라우저에서는 상단을 브라우저 크롬이 차지하므로 웹이 상단 인셋을 처리할 기회가
+        없다 — 그건 앱의 몫이다. 반대로 하단은 웹이 이미 처리해야 하고(iOS 홈 인디케이터)
+        실제로 storefront 의 고정 액션바들이 `pb-safe`(env(safe-area-inset-bottom))를
+        쓴다. 여기서 하단까지 인셋하면 둘이 겹쳐 간격이 정확히 두 배가 된다 —
+        Galaxy S25(내비바 144px)에서 하단 탭바 아래에 148px 짜리 빈 띠가 생겼다.
+
+        Android WebView 는 네이티브가 뷰를 인셋해도 window 기준으로 safe-area 를
+        보고하므로, 앱이 하단을 비워줘야 웹의 계산이 맞아떨어진다.
+      */}
+      <SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
         <StatusBar barStyle="dark-content" />
         {initialUrl === null ? (
           <SplashGate onReady={onReady} pendingPath={pendingPath} />
