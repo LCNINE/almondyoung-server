@@ -3,6 +3,7 @@
 셀메이트(창고관리)에서 받은 재고 CSV 를 Core/Medusa 에 반영하는 스크립트 모음과 실행 순서. 두 갈래다:
 
 - **Ⓐ 재고 동기화 (일일)** — 재고량을 WMS 로 강제 동기화하고 변동분 이벤트를 재발행해 **품절 처리**가 돌게 한다.
+- **Ⓑ 예약 정리 (일일, Ⓐ 직전)** — Medusa 에 영원히 남는 예약(reservation)을 걷어낸다. 안 하면 재고가 이중으로 깎인다.
 - **①②③ 입고예정 (수시)** — **스토어프론트에 입고예정일을 표시**한다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
@@ -10,9 +11,11 @@
 ## 전체 그림
 
 ```
-셀메이트 재고 CSV (EUC-KR, "상품코드(카페)" 컬럼 포함해서 다운로드)
+셀메이트 재고 CSV (EUC-KR, "상품코드(카페)" + "미발송주문수" 포함해서 다운로드)
    │
+   │ Ⓑ clear-reservations   (스냅샷 이전 Medusa 예약 해제 — Ⓐ 보다 먼저)
    │ Ⓐ import-products → sync-stock → recalc-sellable   (재고 동기화 + 이벤트 발행)
+   │      ↑ 반영값 = 현재재고 − 미발송주문수
    ▼
 core: skus / stock_events / stock_ledgers → ProductSellableQuantityChanged
    ▼
@@ -49,7 +52,12 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 - **Medusa Admin**: `MEDUSA_API_URL=https://medusa.almondyoung.com`, `MEDUSA_API_KEY` = `cd deployments/lcnine/services && npx sst secret list --stage live | grep MedusaApiKey`
   - 옛 `medusa.almondyoung-next.com` 은 NXDOMAIN 이다 (도메인 이관). curl 이 `HTTP 000` 이면 여기부터 확인.
   - 인증은 **HTTP Basic** — `curl -u "$MEDUSA_API_KEY:"`. `x-medusa-access-token` 헤더는 `{"message":"Unauthorized"}` 가 난다.
-- **CSV**: 셀메이트에서 컬럼 **상품코드(카페) / 바코드번호(서식) / 상품명 / 옵션명 / 입고예정일 / 입고예정수량** 포함해 다운로드.
+- **CSV**: 셀메이트에서 컬럼 **상품코드(카페) / 바코드번호(서식) / 상품명 / 옵션명 / 현재재고 / 미발송주문수 / 입고예정일 / 입고예정수량** 포함해 다운로드.
+  - ★ **`미발송주문수` 는 필수다.** 셀메이트 `현재재고` 는 아직 안 나간 주문분을 포함한 **물리 재고**라,
+    그대로 넣으면 이미 팔린 수량을 다시 파는 셈이 된다. 반영할 값은 **`현재재고 - 미발송주문수`** 이고
+    `sync-stock` 이 이 계산을 한다 (음수는 0 = 품절로 clamp, 몇 건인지 찍는다).
+    이 열이 없는 CSV 는 스크립트가 **중단**한다 (`ALLOW_NO_UNSHIPPED=1` 로만 우회 — 오버셀 각오할 때만).
+    2026-07-29 live 실측: 5,852행 / 현재재고 429,907 중 **미발송 24,094개**, 미발송>현재고인 행 153.
   - CSV 로 받으면 셀메이트가 코드·바코드를 `="P0000EXQ"` 로 감싸서 내보낸다(엑셀이 숫자로 바꾸는 걸 막는 장치).
     `scripts/sellmate/parse.ts` 의 `unarmor()` 가 벗겨내므로 그대로 넣으면 된다. 2026-07-22 이전에는 이걸
     안 벗겨서 `sku_barcodes` 절반과 `sku_groups` 2,319건에 `="..."` 가 그대로 저장됐고, 상품코드가 빈 행은
@@ -116,6 +124,42 @@ curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>
 ⚠️ **미매칭 품목은 이 방법으로 못 막는다** — variant 를 모르니 정책을 걸 대상이 없다. 2026-07-23 기준
 akf쌍커풀테이프 7옵션 중 6개는 매칭돼 품절 처리했고, `혼합(체험)` 1개는 미매칭이다. 이 상품은 Medusa 에서
 `draft` 라 스토어프론트에 노출 자체가 안 돼 문제가 없지만, **published 로 바뀌면 그 옵션이 팔릴 수 있다.**
+
+## Ⓑ 예약 정리 (일일, Ⓐ 직전) — `scripts/sellmate/clear-reservations.ts`
+
+**Medusa 에서 예약이 풀리는 유일한 경로는 fulfillment 인데, 우리는 fulfillment 를 만들지 않는다.**
+출고는 셀메이트에서 하고 Core `sales_orders.status` 만 직접 UPDATE 하기 때문이다. 그래서 주문 때 잡힌
+예약이 영원히 남는다.
+
+2026-07-29 live 실측:
+
+| | |
+|---|---|
+| `fulfillment` 테이블 | **0건** (한 번도 만든 적 없음) |
+| 살아있는 예약 | **2,830건 / 수량 12,358개** (주문 894건, 6/19~, 전부 `pending`) |
+| 예약 > 창고재고인 variant | **197개** ← 재고가 있는데 품절로 보이는 구간 |
+
+스토어프론트가 보는 값은 `available = stocked - reserved` 다. `sync-stock` 이 `stocked` 를
+`현재재고 - 미발송주문수` 로 정확히 맞춰도, **그 미발송분이 예약으로 한 번 더 빠져 이중 차감**된다.
+매일 동기화할수록 격차가 벌어진다.
+
+```bash
+# dry-run (기본) — CSV 파일명에서 스냅샷 시각을 읽는다
+DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations <csv>
+DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations <csv> --apply
+```
+
+- **기준은 "출고 여부" 가 아니라 "CSV 스냅샷 시각"** 이다. 그 시점까지의 미발송분은 CSV 의
+  `미발송주문수` 로 이미 재고에서 빠졌고 출고분은 `현재재고` 에서 빠졌으니, **스냅샷 이전 예약은
+  어느 쪽이든 이중 차감**이다. 스냅샷 이후 예약만 유효하다.
+  (Medusa order ↔ Core sales_order 는 orderId 불일치 이력이 있어 출고 판정이 못 미덥다 — 시각은 CSV 자체가 증거다.)
+- **Ⓐ 보다 먼저** 돌린다. 순서가 반대면 예약이 남은 채 재고가 내려가 `available` 이 잠깐 음수로 보인다.
+- `reservation_item` soft delete + `inventory_level.reserved_quantity` 차감을 **한 트랜잭션**에서 한다.
+  둘의 합계가 어긋나면(정상이면 일치) 부분 반영 없이 전체 롤백한다.
+- 멱등: 조건이 `created_at < 기준시각` 고정이라 같은 CSV 로 다시 돌려도 안전.
+
+⚠️ **이건 증상 치료다.** 근본은 셀메이트 출고 수집 시 Medusa fulfillment 를 만들거나(또는 예약을 해제)
+하는 것이고, 그 전까지는 매일 Ⓑ 를 돌려야 한다.
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 
@@ -486,7 +530,8 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 ## 실행 순서 (전체 반영)
 
 0. **Ⓐ-0 동기화 금지 목록 확인** (`scripts/sellmate/excluded.ts`) — 스크립트가 자동으로 거르지만, 새로 금지할 상품이 생겼으면 먼저 등록
-1. 터널 + CSV 준비 — **한국 / 해외 두 벌**, `옵션코드` 컬럼 포함해서 받을 것
+1. 터널 + CSV 준비 — **한국 / 해외 두 벌**, `옵션코드`·**`미발송주문수`** 컬럼 포함해서 받을 것
+1-B. **`Ⓑ clear-reservations --apply`** ← Ⓐ 보다 먼저. 빼먹으면 재고가 이중으로 깎인다
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
 3. `① import-inbound-plans --apply`  → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
@@ -504,7 +549,8 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 다음처럼 요청하면 이 런북대로 진행한다:
 
-- "셀메이트 재고 동기화 돌려줘 `<csv>`" → Ⓐ (A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ** (clear-reservations → A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
 - "○○ 는 재고동기화 하지 마 / 품절로 둬" → **Ⓐ-0** — `excluded.ts` 에 등록(코드로 강제) + `--set-manual-oos` 로 품절 고정 + 런북 표 갱신
 - "셀메이트 입고예정 CSV `<경로>` core 에 반영해줘" → ①
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
