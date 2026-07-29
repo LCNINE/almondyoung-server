@@ -1001,30 +1001,6 @@ export function MypageMembershipSkeleton() {
   )
 }
 
-export function MypagePaymentManagerSkeleton() {
-  return (
-    <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
-      <Skeleton className="h-6 w-40" />
-      <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
-        {repeat(4).map((_, index) => (
-          <Skeleton
-            key={`payment-section-${index}`}
-            className="h-20 w-full rounded-lg"
-          />
-        ))}
-      </div>
-      <div className="space-y-3">
-        {repeat(4).map((_, index) => (
-          <Skeleton
-            key={`payment-menu-${index}`}
-            className="h-12 w-full rounded-lg"
-          />
-        ))}
-      </div>
-    </div>
-  )
-}
-
 export function MypageProfileSkeleton() {
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
