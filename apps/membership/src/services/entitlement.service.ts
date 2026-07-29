@@ -133,6 +133,13 @@ export class EntitlementService {
   }
 
   /**
+   * 활성 멤버십 전체 userId 반환 (후보 목록 없이 전수). 전체 정합화 크론용.
+   */
+  async getAllActiveUserIds(): Promise<string[]> {
+    return this.reader.getAllActiveUserIds();
+  }
+
+  /**
    * 여러 사용자의 권한 정보 일괄 조회
    */
   async getBulkUserEntitlements(userIds: string[]) {

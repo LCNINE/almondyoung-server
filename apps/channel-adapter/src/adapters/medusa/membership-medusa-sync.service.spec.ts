@@ -75,3 +75,60 @@ describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
     ).rejects.toThrow(/Medusa customer not found/);
   });
 });
+
+describe('MembershipMedusaSyncService.ensureInMembershipGroup', () => {
+  const GROUP_ID = 'cusgroup_test';
+
+  function createService(byAlmondUserId: { id: string; email: string } | null) {
+    const medusaClient = {
+      findCustomerByAlmondUserId: jest.fn().mockResolvedValue(byAlmondUserId),
+      addCustomerToGroup: jest.fn().mockResolvedValue(undefined),
+      issuePromotionsByTrigger: jest.fn().mockResolvedValue(undefined),
+      refreshCustomerCartPrices: jest.fn(),
+    };
+    const eventTracking = { trackEffect: jest.fn().mockResolvedValue(undefined) };
+    const service = new MembershipMedusaSyncService(medusaClient as any, eventTracking as any);
+    return { service, medusaClient };
+  }
+
+  beforeEach(() => {
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = GROUP_ID;
+  });
+
+  it('almond_user_id 매칭 고객을 그룹에 추가하고 added 를 반환한다', async () => {
+    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
+
+    const result = await service.ensureInMembershipGroup('user-1');
+
+    expect(result).toBe('added');
+    expect(medusaClient.addCustomerToGroup).toHaveBeenCalledWith('cus_1', GROUP_ID);
+  });
+
+  it('정합화는 쿠폰 발급/카트 refresh 를 부르지 않는다 (매일 전원 재발급 사고 방지)', async () => {
+    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
+
+    await service.ensureInMembershipGroup('user-1');
+
+    expect(medusaClient.issuePromotionsByTrigger).not.toHaveBeenCalled();
+    expect(medusaClient.refreshCustomerCartPrices).not.toHaveBeenCalled();
+  });
+
+  it('고객을 못 찾으면 no_customer 를 반환하고 그룹 추가를 시도하지 않는다', async () => {
+    const { service, medusaClient } = createService(null);
+
+    const result = await service.ensureInMembershipGroup('user-1');
+
+    expect(result).toBe('no_customer');
+    expect(medusaClient.addCustomerToGroup).not.toHaveBeenCalled();
+  });
+
+  it('그룹 ID 미설정이면 skipped 를 반환한다', async () => {
+    delete process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
+
+    const result = await service.ensureInMembershipGroup('user-1');
+
+    expect(result).toBe('skipped');
+    expect(medusaClient.findCustomerByAlmondUserId).not.toHaveBeenCalled();
+  });
+});

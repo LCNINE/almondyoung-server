@@ -47,4 +47,15 @@ export class InternalMembershipController {
     const activeUserIds = await this.entitlementService.getActiveUserIds(userIds);
     return { activeUserIds };
   }
+
+  /**
+   * 활성 멤버십 전체 userId 반환 (후보 목록 없이 전수).
+   * channel-adapter 전체 정합화 크론이 실시간 그룹동기화 이벤트 유실분을 복구하는 데 쓴다.
+   */
+  @Post('memberships/active-all')
+  @HttpCode(HttpStatus.OK)
+  async getAllActiveMemberships(): Promise<{ activeUserIds: string[] }> {
+    const activeUserIds = await this.entitlementService.getAllActiveUserIds();
+    return { activeUserIds };
+  }
 }
