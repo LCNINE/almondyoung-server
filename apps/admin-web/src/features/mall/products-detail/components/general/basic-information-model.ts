@@ -9,6 +9,7 @@ export type BasicInformationDetail = {
   status: 'active' | 'inactive' | 'draft' | null;
   name: string;
   brand: string | null;
+  supplierId?: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -25,6 +26,7 @@ export type BasicInformationDetail = {
 export type BasicInformationFormValues = {
   name: string;
   brand: string;
+  supplierId?: string | null;
   seoTitle: string;
   seoDescription: string;
   seoKeywordsText: string;
@@ -74,6 +76,7 @@ export function toBasicInformationFormValues(
   return {
     name: detail.name,
     brand: detail.brand ?? '',
+    supplierId: detail.supplierId ?? null,
     seoTitle: detail.seoTitle ?? '',
     seoDescription: detail.seoDescription ?? '',
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
@@ -146,6 +149,7 @@ export function toBasicInformationUpdateDto(
   return {
     name: values.name.trim(),
     brand: brand.length > 0 ? brand : null,
+    supplierId: values.supplierId ?? null,
     seoTitle: trimToNullable(values.seoTitle),
     seoDescription: trimToNullable(values.seoDescription),
     seoKeywords: parseSeoKeywords(values.seoKeywordsText),

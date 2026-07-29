@@ -83,6 +83,7 @@ describe('basic information editing model', () => {
     expect(toBasicInformationFormValues(detail)).toEqual({
       name: 'Draft Product',
       brand: 'Almond',
+      supplierId: null,
       seoTitle: 'SEO title',
       seoDescription: 'SEO description',
       seoKeywordsText: 'almond, young',
@@ -115,6 +116,7 @@ describe('basic information editing model', () => {
     ).toEqual({
       name: 'Edited Product',
       brand: 'Almond Young',
+      supplierId: null,
       seoTitle: 'Custom SEO title',
       seoDescription: 'Custom SEO description',
       seoKeywords: ['glow', 'skincare', 'serum'],

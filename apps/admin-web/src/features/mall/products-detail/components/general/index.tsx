@@ -15,6 +15,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { FormSelect } from '@/components/common/form';
+import { useSuppliers } from '@/lib/services/inventory/queries';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
@@ -42,6 +44,9 @@ import {
   type SelectableCategory,
 } from './basic-information-model';
 import { ProductCategorySelectionModal } from './category-selection-modal';
+
+// Radix Select 는 빈 문자열 value 를 허용하지 않아 '없음' 을 나타낼 sentinel 이 필요하다.
+const NO_SUPPLIER = 'none';
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -92,6 +97,17 @@ function ProductBasicInformationEditDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateVersion = useUpdateMasterVersion();
+  const { data: suppliers } = useSuppliers({ limit: 200 });
+  const supplierOptions = useMemo(
+    () => [
+      { value: NO_SUPPLIER, label: '공급처 없음' },
+      ...(suppliers?.data ?? []).map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+      })),
+    ],
+    [suppliers?.data]
+  );
   const [values, setValues] = useState<BasicInformationFormValues>(() =>
     toBasicInformationFormValues(detail)
   );
@@ -206,6 +222,19 @@ function ProductBasicInformationEditDrawer({
                   value={values.brand}
                   onChange={(event) => setValue('brand', event.target.value)}
                   placeholder="브랜드명을 입력하세요."
+                  disabled={updateVersion.isPending}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="product-basic-supplier">공급처</Label>
+                <FormSelect
+                  options={supplierOptions}
+                  value={values.supplierId ?? NO_SUPPLIER}
+                  onValueChange={(v) =>
+                    setValue('supplierId', v === NO_SUPPLIER ? null : v)
+                  }
+                  placeholder="공급처 선택"
                   disabled={updateVersion.isPending}
                 />
               </div>

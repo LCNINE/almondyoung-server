@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
   FormDateRangePicker,
   FormInput,
+  FormMultiSelect,
   FormRadioGroup,
   FormSelect,
 } from '@/components/common/form';
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/ui';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import { useAdminUsers } from '@/lib/services/users/queries';
+import { useSuppliers } from '@/lib/services/inventory/queries';
 import { flattenCategoryTree } from '@/features/mall/products-detail/components/general/basic-information-model';
 import { toCategoryFilterOptions } from '@/hooks/table/filters/category-filter-options';
 import { parseDateRangeParam } from '@/hooks/table/query/date-range-param';
@@ -39,6 +41,8 @@ type FilterState = {
   dateFrom: string;
   dateTo: string;
   categoryId: string;
+  /** 다중 선택. 빈 배열 = 전체 공급처 */
+  supplierIds: string[];
   createdBy: string;
   classification: Classification;
   q: string;
@@ -54,6 +58,17 @@ export function ProductsListFilterBox() {
     roleName: 'admin,master',
     limit: 100,
   });
+  // ponytail: 서버 SupplierFiltersDto 가 limit @Max(100) — 200 이면 400 으로 목록이 통째로 빈다
+  const { data: suppliers } = useSuppliers({ limit: 100 });
+
+  const supplierOptions = useMemo(
+    () =>
+      (suppliers?.data ?? []).map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+      })),
+    [suppliers?.data]
+  );
 
   const registrantOptions = useMemo(
     () => [
@@ -82,6 +97,8 @@ export function ProductsListFilterBox() {
       dateFrom: range.from ?? '',
       dateTo: range.to ?? '',
       categoryId: searchParams.get('categoryId') ?? ALL,
+      supplierIds:
+        searchParams.get('supplierId')?.split(',').filter(Boolean) ?? [],
       createdBy: searchParams.get('createdBy') ?? ALL,
       classification: classificationFromParams(
         searchParams.get('status'),
@@ -100,6 +117,8 @@ export function ProductsListFilterBox() {
 
     if (filters.q.trim()) params.set('q', filters.q.trim());
     if (filters.categoryId !== ALL) params.set('categoryId', filters.categoryId);
+    if (filters.supplierIds.length > 0)
+      params.set('supplierId', filters.supplierIds.join(','));
     if (filters.createdBy !== ALL) params.set('createdBy', filters.createdBy);
 
     const { status, stock } = classificationToParams(filters.classification);
@@ -141,6 +160,7 @@ export function ProductsListFilterBox() {
       dateFrom: '',
       dateTo: '',
       categoryId: ALL,
+      supplierIds: [],
       createdBy: ALL,
       classification: 'all',
       q: '',
@@ -186,6 +206,15 @@ export function ProductsListFilterBox() {
             value={filters.categoryId}
             onValueChange={(v) => patch({ categoryId: v })}
             placeholder="분류 선택"
+          />
+        </div>
+        <div className="w-56">
+          <FormMultiSelect
+            options={supplierOptions}
+            value={filters.supplierIds}
+            onValueChange={(v) => patch({ supplierIds: v })}
+            allLabel="전체 공급처"
+            searchPlaceholder="공급처 검색"
           />
         </div>
         <div className="w-56">

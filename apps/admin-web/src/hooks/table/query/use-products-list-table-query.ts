@@ -20,6 +20,7 @@ export const useProductsListTableQuery = ({
     'approvalStatus',
     'createdAt',
     'createdBy',
+    'supplierId',
     'sort',
     'order',
     'stock',
@@ -36,6 +37,7 @@ export const useProductsListTableQuery = ({
     approvalStatus,
     createdAt,
     createdBy,
+    supplierId,
     sort,
     order,
     stock,
@@ -73,6 +75,7 @@ export const useProductsListTableQuery = ({
         ? approvalStatus
         : undefined,
     createdBy: createdBy || undefined,
+    supplierId: supplierId || undefined,
     createdFrom,
     createdTo,
     sort:

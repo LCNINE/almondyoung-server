@@ -503,6 +503,7 @@ export class ProductMastersService {
       productType?: 'regular_sale' | 'limited_edition';
       approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
       createdBy?: string;
+      supplierId?: string | string[];
       createdFrom?: string;
       createdTo?: string;
       sort?: 'createdAt' | 'name' | 'updatedAt';
@@ -646,6 +647,13 @@ export class ProductMastersService {
       // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
       if (filters?.createdBy) {
         whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
+      }
+
+      // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
+      const supplierIds =
+        typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
+      if (supplierIds.length > 0) {
+        whereConditions.push(inArray(productMasterVersions.supplierId, supplierIds));
       }
 
       // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준

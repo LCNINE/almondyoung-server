@@ -160,6 +160,12 @@ export class ProductMastersController {
     description: '등록자 UUID. product_masters.createdBy 기준',
   })
   @ApiQuery({
+    name: 'supplierId',
+    required: false,
+    type: String,
+    description: '공급처 UUID. 콤마로 여러 개(다중 선택) 지정 가능. product_master_versions.supplierId 기준',
+  })
+  @ApiQuery({
     name: 'createdFrom',
     required: false,
     type: String,
@@ -205,6 +211,7 @@ export class ProductMastersController {
       productType: query.productType,
       approvalStatus: query.approvalStatus,
       createdBy: query.createdBy,
+      supplierId: query.supplierId,
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
       sort: query.sort,

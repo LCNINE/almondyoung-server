@@ -28,6 +28,7 @@ export type ProductDetailView = {
   description: string | null;
   descriptionHtml: string | null;
   brand: string | null;
+  supplierId?: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -97,6 +98,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     description: detail.description,
     descriptionHtml: detail.descriptionHtml,
     brand: detail.brand,
+    supplierId: detail.supplierId ?? null,
     seoTitle: detail.seoTitle,
     seoDescription: detail.seoDescription,
     seoKeywords: detail.seoKeywords,

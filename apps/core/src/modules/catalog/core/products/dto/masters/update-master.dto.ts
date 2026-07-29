@@ -32,6 +32,11 @@ export class UpdateProductMasterDto {
   @IsString()
   description?: string;
 
+  @ApiProperty({ description: '공급처 ID (suppliers.id)', required: false, nullable: true })
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string | null;
+
   @ApiProperty({
     description: '카테고리 ID 배열 (기존 카테고리를 모두 대체)',
     type: [String],

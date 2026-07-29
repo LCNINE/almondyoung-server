@@ -32,6 +32,20 @@ export class ListProductMastersQueryDto {
   /** 상품을 등록한 사용자 UUID. product_masters.createdBy 기준 */
   @IsOptional() @IsUUID() createdBy?: string;
 
+  /** 공급처 UUID. 콤마로 여러 개 지정하면 OR 로 묶인다. product_master_versions.supplierId 기준 */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string'
+      ? value
+          .split(',')
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0)
+      : value,
+  )
+  @IsArray()
+  @IsUUID('all', { each: true })
+  supplierId?: string[];
+
   @IsOptional() @IsDateString() createdFrom?: string;
   @IsOptional() @IsDateString() createdTo?: string;
 

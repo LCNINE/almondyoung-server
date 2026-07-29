@@ -140,6 +140,7 @@ export type MasterVersionDetailDto = {
   description: string | null;
   descriptionHtml: string | null;
   brand: string | null;
+  supplierId?: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -180,6 +181,7 @@ export type UpdateMasterVersionDto = {
   description?: string | null;
   descriptionHtml?: string | null;
   brand?: string | null;
+  supplierId?: string | null;
   thumbnailFileId?: string | null;
   additionalImageFileIds?: string[];
   seoTitle?: string | null;
