@@ -6,7 +6,10 @@ const config: ExpoConfig = {
   slug: "almondyoung",
   // 계정이 여럿(lcnine / lcnine-co)이라 소유 조직을 명시한다. 프로젝트는 @lcnine-co/almondyoung.
   owner: "lcnine-co",
-  version: "1.0.0",
+  // 네이티브 의존성(react-native-safe-area-context)이 추가되면 runtimeVersion 도 달라져야
+  // 한다 — runtimeVersion 정책이 appVersion 이므로 version 을 올리지 않으면, 그 모듈이 없는
+  // 옛 빌드가 새 JS 를 OTA 로 받아 import 에서 죽는다.
+  version: "1.0.1",
   orientation: "portrait",
   scheme: "almondyoung",
   android: {
