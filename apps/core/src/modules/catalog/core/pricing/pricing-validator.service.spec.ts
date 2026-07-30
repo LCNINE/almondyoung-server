@@ -96,6 +96,36 @@ describe('PricingValidatorService.validateBasePriceCoverage', () => {
     );
   });
 
+  // 버전이 바뀌며 룰이 옛 variant id 를 물고 있는 경우 (라이브 90개 버전).
+  // 예전엔 validateScopeTargets 가 "Variant IDs not found" 로 저장을 통째로 막았다.
+  describe('이 버전에 없는 유령 variant 타깃', () => {
+    const GHOST = '99999999-9999-4999-8999-999999999999';
+
+    it('유령만 걸러내고 살아있는 타깃은 남긴다', async () => {
+      const service = makeService([VARIANT_A]);
+      const rules = {
+        ...realWorldRules,
+        basePriceRules: [{ ...realWorldRules.basePriceRules[0], scopeTargetIds: [VARIANT_A, GHOST] }],
+        membershipPriceRules: [],
+      };
+      const result = await service.validateRuleSet('master-1', 'version-1', rules);
+      expect(result.basePriceRules[0].scopeTargetIds).toEqual([VARIANT_A]);
+    });
+
+    it('유령만 가리키던 룰은 통째로 빠지고, 그 결과 커버리지가 비면 거절한다', async () => {
+      const service = makeService([VARIANT_A]);
+      const rules = {
+        ...realWorldRules,
+        basePriceRules: [{ ...realWorldRules.basePriceRules[0], scopeTargetIds: [GHOST] }],
+        membershipPriceRules: [],
+      };
+      // base 룰이 0개가 되므로 스키마의 "base 룰 최소 1개" 에서 걸린다.
+      await expect(service.validateRuleSet('master-1', 'version-1', rules)).rejects.toThrow(
+        /판매가 규칙이 적용되지 않는 옵션이 1개/,
+      );
+    });
+  });
+
   it('all_variants 룰은 variant 가 몇 개든 덮는다', async () => {
     const service = makeService([VARIANT_A, VARIANT_B]);
     const rules = {
