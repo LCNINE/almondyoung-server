@@ -66,7 +66,8 @@ import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
-import { JwtAuthGuard } from '@app/authorization';
+import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
+import { JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
 
 @Module({
@@ -79,7 +80,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'membership',
-      scopes: [],
+      // 부팅 시 auth.scopes / auth.role_scope_mapping 을 이 선언에 맞춰 정합화한다.
+      scopes: MEMBERSHIP_SCOPES,
+      roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
     }),
     HttpModule,
     ScheduleModule.forRoot(),
@@ -126,6 +129,11 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
+    },
+    // @RequireScopes 가 붙은 라우트만 검사한다(메타데이터 없으면 통과).
+    {
+      provide: APP_GUARD,
+      useClass: ScopeGuard,
     },
     InternalApiKeyGuard,
     // Business Layer (Services)

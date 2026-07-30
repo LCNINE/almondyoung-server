@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import {
   SubscriptionCancellationManager,
@@ -12,6 +12,7 @@ import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService, RefundOutcome } from './billing/payment-client.service';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 import { CancellationContext, CancellationContextReader } from './subscription/cancellation-context.reader';
+import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import {
   CancellationMode,
   CancellationOption,
@@ -180,16 +181,24 @@ export class SubscriptionCancellationService {
       await this.invoiceBillingManager.voidInvoicesForContract(contract.id, 'SUBSCRIPTION_CANCELLED');
     }
 
+    // 알림(해지 확인 메일)이 "언제까지 이용 가능한지 / 얼마가 환불되는지"를 그대로 안내할 수 있도록
+    // 안내에 필요한 값을 이벤트에 함께 싣는다. notification 서비스는 사용자 조회를 하지 않는다.
+    const immediate = result.type === 'IMMEDIATE_CANCELLATION';
     await this.membershipEventPublisher.publishStatusChanged({
       userId,
       email,
-      status: result.type === 'IMMEDIATE_CANCELLATION' ? 'CANCELLED' : 'RECURRING_CANCELLED',
+      status: immediate ? 'CANCELLED' : 'RECURRING_CANCELLED',
       occurredAt: new Date().toISOString(),
       contractId: contract.id,
       planId: plan.id,
       tierId: plan.tierId,
       reasonCode: params.reasonCode,
       reasonText: params.reasonText,
+      periodEndsAt: immediate ? undefined : context.entitlement.endsAt,
+      refundAmount: immediate ? (result as ImmediateCancellationResult).refundAmount : 0,
+      refundStatus: immediate
+        ? (result as ImmediateCancellationResult).refundStatus
+        : 'NOT_APPLICABLE',
     });
 
     return result;
@@ -250,12 +259,24 @@ export class SubscriptionCancellationService {
     partialRefundAmount?: number,
     refundReason?: string,
     refundReceiveAccount?: RefundReceiveAccount,
+    /** 정책 산정액 초과 환불 권한(membership.billing.refund_override) 보유 여부 */
+    canOverridePolicyAmount = false,
+    /** 해지 안내 메일 수신 주소. 없으면 알림이 발송되지 않는다(membership 은 사용자 조회를 하지 않는다). */
+    customerEmail?: string,
   ): Promise<CancellationResult> {
     const contract = await this.contractReader.findById(contractId);
     if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
 
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
+
+    await this.assertRefundAmountAllowed({
+      contract,
+      plan,
+      refundType,
+      partialRefundAmount,
+      canOverridePolicyAmount,
+    });
 
     const result = await this.cancellationManager.forceCancelSubscription(
       contract,
@@ -274,9 +295,32 @@ export class SubscriptionCancellationService {
       await this.invoiceBillingManager.voidInvoicesForContract(contract.id, 'SUBSCRIPTION_FORCE_CANCELLED');
     }
 
-    // 취소 이벤트 발행 (Medusa 고객 그룹 제거용)
+    // 환불을 먼저 실행한 뒤 이벤트를 발행한다 — 안내 메일이 실제 환불 결과(PENDING=계좌 송금 대기 등)를
+    // 담아야 하므로, 확정 전 상태를 실어 보내면 고객에게 잘못된 안내가 간다.
+    // executeRefund 는 예외를 삼키므로 환불 실패가 그룹 제거 이벤트를 막지는 않는다.
+    const finalResult =
+      result.refundAmount > 0
+        ? {
+            ...result,
+            refundStatus: this.toRefundStatus(
+              await this.executeRefund({
+                contractId: contract.id,
+                userId: contract.userId,
+                intentId: contract.lastPaymentIntentId,
+                amount: result.refundAmount,
+                reasonCode: 'ADMIN_CANCEL',
+                reasonText: refundReason ?? reason,
+                refundReceiveAccount,
+                manualOnly: false,
+              }),
+            ),
+          }
+        : result;
+
+    // 취소 이벤트 발행 (Medusa 고객 그룹 제거 + 해지 안내 알림)
     await this.membershipEventPublisher.publishStatusChanged({
       userId: contract.userId,
+      email: customerEmail,
       status: 'CANCELLED',
       occurredAt: new Date().toISOString(),
       contractId: contract.id,
@@ -284,26 +328,51 @@ export class SubscriptionCancellationService {
       tierId: plan.tierId,
       reasonCode: 'ADMIN_FORCED',
       reasonText: reason,
+      refundAmount: finalResult.refundAmount,
+      refundStatus: finalResult.refundStatus,
     });
 
-    if (result.refundAmount <= 0) return result;
-
-    const outcome = await this.executeRefund({
-      contractId: contract.id,
-      userId: contract.userId,
-      intentId: contract.lastPaymentIntentId,
-      amount: result.refundAmount,
-      reasonCode: 'ADMIN_CANCEL',
-      reasonText: refundReason ?? reason,
-      refundReceiveAccount,
-      manualOnly: false,
-    });
-
-    return { ...result, refundStatus: this.toRefundStatus(outcome) };
+    return finalResult;
   }
 
   async getCancellationReasons() {
     return this.reasonReader.findActiveReasons();
+  }
+
+  /**
+   * 관리자 환불 금액 상한 검사.
+   *
+   * 해지·환불 자체는 CS 의 일상 업무라 admin 에게 열려 있다. 위험한 건 **정책 산정액보다 많이**
+   * 환불하는 것(연간 회원에게 정산 없이 전액 환불 등)이라, 초과분만 별도 스코프로 막는다.
+   * 견적을 낼 수 없는 상태(활성 권한 없음 등)면 상한을 강제하지 않는다 — 이미 종료된 계약의
+   * 사후 보상 환불을 막아버리면 CS 가 손발이 묶인다.
+   */
+  private async assertRefundAmountAllowed(params: {
+    contract: { id: string; planId: string; userId: string };
+    plan: { price: number; durationDays: number; tierId: string };
+    refundType: 'FULL' | 'PARTIAL' | 'NONE';
+    partialRefundAmount?: number;
+    canOverridePolicyAmount: boolean;
+  }): Promise<void> {
+    if (params.refundType === 'NONE' || params.canOverridePolicyAmount) return;
+
+    const requested =
+      params.refundType === 'FULL' ? params.plan.price : (params.partialRefundAmount ?? 0);
+    if (requested <= 0) return;
+
+    const context = await this.contextReader.load({
+      contract: params.contract as Parameters<CancellationContextReader['load']>[0]['contract'],
+      plan: params.plan as Parameters<CancellationContextReader['load']>[0]['plan'],
+    });
+    if (!context) return;
+
+    const policyAmount = context.decision.immediateRefund.refundAmount;
+    if (requested > policyAmount) {
+      throw new ForbiddenError(
+        `정책 산정액(${policyAmount.toLocaleString()}원)을 초과하는 환불입니다. ` +
+          `초과 환불에는 별도 권한(${MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE})이 필요합니다.`,
+      );
+    }
   }
 
   private async loadContextForUser(userId: string): Promise<CancellationContext> {

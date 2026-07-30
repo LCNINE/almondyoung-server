@@ -150,6 +150,7 @@ export const useForceCancelSubscription = () => {
       refundType,
       refundAmount,
       adminNote,
+      customerEmail,
       refundReceiveAccount,
     }: {
       contractId: string;
@@ -157,6 +158,7 @@ export const useForceCancelSubscription = () => {
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
+      customerEmail?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }) =>
       membershipApi.forceCancelSubscription(contractId, {
@@ -164,6 +166,7 @@ export const useForceCancelSubscription = () => {
         refundType,
         refundAmount,
         adminNote,
+        customerEmail,
         refundReceiveAccount,
       }),
     onSuccess: () => {

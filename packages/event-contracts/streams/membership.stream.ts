@@ -30,6 +30,12 @@ export interface MembershipStatusChangedPayload {
   planId?: string;
   reasonCode?: string;
   reasonText?: string;
+  /** 이용 종료일 (YYYY-MM-DD). 해지 안내 메일이 "언제까지 쓸 수 있는지" 알리는 데 쓴다. */
+  periodEndsAt?: string;
+  /** 해지에 따른 환불 금액(원). 0 이면 환불 없음. */
+  refundAmount?: number;
+  /** 환불 처리 상태. PENDING 은 계좌 송금 대기(효성 CMS 등)로 안내 문구가 달라진다. */
+  refundStatus?: 'COMPLETED' | 'PENDING' | 'FAILED' | 'NOT_APPLICABLE';
 }
 
 // ===== Zod 스키마 정의 =====
@@ -44,6 +50,9 @@ const MembershipStatusChangedSchema = z.object({
   planId: z.string().min(1).optional(),
   reasonCode: z.string().min(1).optional(),
   reasonText: z.string().optional(),
+  periodEndsAt: z.string().min(1).optional(),
+  refundAmount: z.number().nonnegative().optional(),
+  refundStatus: z.enum(['COMPLETED', 'PENDING', 'FAILED', 'NOT_APPLICABLE']).optional(),
 });
 
 // ===== Stream Config =====

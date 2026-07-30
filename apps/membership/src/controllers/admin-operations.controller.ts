@@ -22,6 +22,8 @@ import {
 import { DLQHandler, createKafkaConfigFromEnv, getDLQTopicName } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { AuthorizationService, RequireScopes } from '@app/authorization';
+import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { AdminMembersReader } from '../services/admin/admin-members.reader';
@@ -72,6 +74,7 @@ export class AdminOperationsController {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
+    private readonly authorizationService: AuthorizationService,
     @Optional() private readonly dlqHandler?: DLQHandler,
   ) {}
 
@@ -593,9 +596,12 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  // 해지·환불 자체는 CS 일상 업무라 admin 에게 열어 두고, 정책 초과 환불만 아래에서 별도 검사한다.
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('force-cancel')
   async forceCancelSubscription(
     @User('userId') userId: string,
+    @User('roles') roles: string[] | undefined,
     @Param('contractId') contractId: string,
     @Body() dto: ForceCancelSubscriptionRequestDto,
   ) {
@@ -606,6 +612,11 @@ export class AdminOperationsController {
         `강제 구독 취소 요청 - contractId: ${contractId}, adminId: ${adminId}, refundType: ${dto.refundType}`,
       );
 
+      // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
+      const canOverridePolicyAmount =
+        (roles ?? []).includes('master') ||
+        (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE));
+
       const result = await this.cancellationService.forceCancelSubscription(
         contractId,
         adminId,
@@ -614,6 +625,8 @@ export class AdminOperationsController {
         dto.refundAmount,
         dto.adminNote,
         dto.refundReceiveAccount,
+        canOverridePolicyAmount,
+        dto.customerEmail,
       );
 
       // refundStatus 는 wallet 의 실제 환불 결과다. FAILED/PENDING 이면 돈은 아직 나가지 않았다
