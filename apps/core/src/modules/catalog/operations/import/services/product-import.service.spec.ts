@@ -9,6 +9,7 @@ import { ProductImportService } from './product-import.service';
 import { ProductImportParser } from './product-import.parser';
 import { ProductImportNormalizer } from './product-import.normalizer';
 import { ProductImportValidator } from './product-import.validator';
+import { ProductImportProgressBuilder } from './product-import-progress.builder';
 
 async function buf(rows: string[][]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -20,7 +21,11 @@ async function buf(rows: string[][]): Promise<Buffer> {
 }
 
 function makeService() {
-  const reader = { loadCategoryTree: jest.fn(async () => []), getSession: jest.fn() } as any;
+  const reader = {
+    loadCategoryTree: jest.fn(async () => []),
+    getSession: jest.fn(),
+    getProgressCounts: jest.fn(),
+  } as any;
   const manager = {
     acceptCommit: jest.fn(async () => ({
       sessionId: 's1',
@@ -38,6 +43,8 @@ function makeService() {
     reader,
     manager,
     variantCodeChecker,
+    // 순수 변환이라 목이 아니라 진짜를 넣는다 — 합성이 실제로 맞물리는지까지 본다.
+    new ProductImportProgressBuilder(),
   );
   return { service, reader, manager, variantCodeChecker };
 }
@@ -112,5 +119,37 @@ describe('ProductImportService.getSession', () => {
       publishFailedCount: 0,
     });
     expect(result.items[0]).toMatchObject({ publishStatus: 'published' });
+  });
+});
+
+describe('ProductImportService.getProgress', () => {
+  it('세션 집계를 단계별 진행률로 돌려준다 — 행 목록은 싣지 않는다', async () => {
+    const { service, reader } = makeService();
+    reader.getProgressCounts.mockResolvedValue({
+      session: {
+        id: 'sess-1',
+        fileName: 'f.xlsx',
+        totalRows: 5,
+        invalidCount: 1,
+        commitStatus: 'completed',
+        publishStatus: 'running',
+        commitError: null,
+        publishError: null,
+        cancelRequestedAt: null,
+      },
+      itemCounts: [
+        { status: 'failed', publishStatus: 'skipped', count: 1 },
+        { status: 'created', publishStatus: 'published', count: 3 },
+        { status: 'created', publishStatus: 'pending', count: 1 },
+      ],
+    });
+
+    const progress = await service.getProgress('sess-1');
+
+    expect(reader.getProgressCounts).toHaveBeenCalledWith('sess-1');
+    expect(progress).toMatchObject({ sessionId: 'sess-1', fileName: 'f.xlsx', canceled: false, invalidCount: 1 });
+    expect(progress.stages.find((s) => s.key === 'commit')).toMatchObject({ total: 4, done: 4, failed: 0 });
+    expect(progress.stages.find((s) => s.key === 'publish')).toMatchObject({ total: 4, done: 3, failed: 0 });
+    expect(progress).not.toHaveProperty('items');
   });
 });

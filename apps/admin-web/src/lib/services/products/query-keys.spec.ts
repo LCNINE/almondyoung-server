@@ -32,4 +32,11 @@ describe('productImports query keys', () => {
       's1',
     ]);
   });
+  it('진행률 키는 세션 키의 하위 키다 — 접두사 무효화가 함께 걸린다', () => {
+    expect(productQueryKeys.productImportProgress('s1')).toEqual([
+      'product-imports',
+      's1',
+      'progress',
+    ]);
+  });
 });

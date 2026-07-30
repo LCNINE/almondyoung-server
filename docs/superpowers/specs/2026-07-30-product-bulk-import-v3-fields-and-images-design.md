@@ -353,7 +353,7 @@ commit 의 분모를 위해 **세션에 `invalid_count` 를 얼린다** — §2.
 | 단계 | 내용 | 배포 결합 |
 |---|---|---|
 | **1** | 운영 구멍 — 세션 취소 + `consecutive_failures` 상한 + `invalid_count` 얼리기 | 마이그레이션 1건 (additive → `migrate` → `deploy`) |
-| **2** | 진행률 API + admin-web 폴링 전환 | core → admin-web (같은 `sst deploy`) |
+| **2** | 진행률 API + admin-web 폴링 전환 | core → admin-web (같은 `sst deploy`) — **구현 완료(2026-07-30)** |
 | **3** | 순수 스칼라 필드 6종 + `Categories`·`Constraints` 시트 | core → admin-web |
 | **4** | 이미지 파이프라인 — `Images` 시트 + `product_import_images` + probe/fetch 레인 + 업로드 클라이언트 | 마이그레이션 1건 (additive) |
 
