@@ -23,8 +23,8 @@ export interface ValidatePreviewDto {
   rows: ValidatePreviewRow[];
 }
 
-/** 커밋/게시 잡의 상태. idle 은 아직 아무 잡도 접수되지 않은 상태. */
-export type ImportJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed';
+/** 커밋/게시 잡의 상태. idle 은 아직 아무 잡도 접수되지 않은 상태, canceled 는 사람이 멈춘 상태. */
+export type ImportJobStatus = 'idle' | 'queued' | 'running' | 'completed' | 'failed' | 'canceled';
 
 /** 세션 아이템(행 단위)의 게시 상태. */
 export type ItemPublishStatus = 'pending' | 'published' | 'failed' | 'skipped';
@@ -56,6 +56,14 @@ export interface PublishAcceptedDto {
   targetCount: number;
 }
 
+/** POST /product-imports/:id/cancel 의 200 응답 — 진행 중이던 레인만 canceled 로 확정된다. */
+export interface CancelAcceptedDto {
+  sessionId: string;
+  commitStatus: ImportJobStatus;
+  publishStatus: ImportJobStatus;
+  canceledAt: string;
+}
+
 export interface SessionSummaryDto {
   id: string;
   fileName: string | null;
@@ -70,6 +78,10 @@ export interface SessionSummaryDto {
   publishFailedCount: number;
   commitError: string | null;
   publishError: string | null;
+  /** 접수 시점 검증실패 행 수. 컬럼 도입 이전 세션은 null 이라 화면이 폴백해야 한다. */
+  invalidCount: number | null;
+  /** 취소 요청 시각(JSON 직렬화 결과). null 이 아니면 이 세션은 종단이다. */
+  cancelRequestedAt: string | null;
 }
 
 export interface SessionDetailDto extends SessionSummaryDto {

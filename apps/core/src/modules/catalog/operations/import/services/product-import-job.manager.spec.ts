@@ -5,7 +5,7 @@ jest.mock(
 );
 
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { ProductImportJobManager, ClaimedSession } from './product-import-job.manager';
+import { ProductImportJobManager, ClaimedSession, MAX_CONSECUTIVE_JOB_FAILURES } from './product-import-job.manager';
 import { productImportSessions, productImportItems } from '../../../schema/catalog.schema';
 
 /**
@@ -38,10 +38,10 @@ function chain(rows: any[]): any {
   return builder;
 }
 
-function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; renewalRows?: any[][] } = {}) {
+function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; returningRows?: any[][] } = {}) {
   const updates: any[] = [];
   const pending = opts.pendingItems ?? [];
-  let renewalCallIndex = 0;
+  let returningCallIndex = 0;
 
   const trx = {
     // execute 는 실제로 sql 인자 하나를 받는다 — 시그니처를 무인자로 두면
@@ -59,15 +59,14 @@ function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; renewalRows?
         where: (condition?: unknown) => {
           updates.push({ table: table === productImportSessions ? 'sessions' : 'items', values, condition });
           const result: any = Promise.resolve();
-          // renewLease 만 .returning() 을 체이닝한다. 라운드 3 수정 이후 실제 코드는
-          // 이 결과의 **존재 여부(행이 있는가)** 만 보고 내용은 절대 읽지 않는다 — 그래서
-          // harness 도 완전히 엉뚱한 내용을 돌려줘 그 사실을 증명할 수 있게 열어 둔다.
-          // opts.renewalRows 를 안 주면 항상 성공(비어있지 않은 행)으로 취급한다.
+          // renewLease 와 recordJobError 가 .returning() 을 체이닝한다. opts.returningRows 를
+          // 안 주면 renewLease 는 성공(비어있지 않은 행)·취소 없음으로, recordJobError 는
+          // consecutiveFailures 미상(→ 0 취급)으로 떨어진다.
           result.returning = (_projection?: unknown) => {
-            const rows = opts.renewalRows
-              ? opts.renewalRows[Math.min(renewalCallIndex, opts.renewalRows.length - 1)]
-              : [{ id: 'sess-1' }];
-            renewalCallIndex += 1;
+            const rows = opts.returningRows
+              ? opts.returningRows[Math.min(returningCallIndex, opts.returningRows.length - 1)]
+              : [{ id: 'sess-1', cancelRequestedAt: null }];
+            returningCallIndex += 1;
             return Promise.resolve(rows);
           };
           return result;
@@ -290,12 +289,14 @@ describe('ProductImportJobManager', () => {
     expect(renderSql(written).toLowerCase()).toContain('now()');
   });
 
-  it('renewLease 는 .returning() 의 내용을 읽지 않고 행 존재 여부만 본다', async () => {
-    // .returning() 이 완전히 엉뚱한 내용을 돌려줘도 — 행이 존재하기만 하면(CAS 성공)
-    // 슬라이스는 그대로 진행한다. 내용을 파싱하기 시작하면 라운드 2·3 이 반복된다.
+  it('renewLease 는 lease_token·lease_until 값은 읽지 않는다', async () => {
+    // .returning() 이 lease_token·lease_until 에 완전히 엉뚱한 내용을 돌려줘도 — 행이
+    // 존재하기만 하면(CAS 성공) 슬라이스는 그대로 진행한다. cancelRequestedAt 은 이제
+    // 실제로 읽는다(취소 감지) — 보호 대상은 소유권 판정에 쓰이던 그 두 값이다. 그걸
+    // 소유권 판정에 쓰려다 세 번 깨졌다(라운드 2·3).
     const { manager, importManager } = makeHarness({
       pendingItems: [PENDING(1)],
-      renewalRows: [[{ id: 'sess-1', leaseToken: 'not-a-real-uuid-🔥' }]],
+      returningRows: [[{ id: 'sess-1', leaseToken: 'not-a-real-uuid-🔥', cancelRequestedAt: null }]],
     });
 
     await manager.runCommitSlice(CLAIM());
@@ -319,7 +320,7 @@ describe('ProductImportJobManager', () => {
   it('lease 를 잃으면(CAS 실패) 슬라이스를 즉시 중단하고 남은 행을 처리하지도, 마무리 release 도 하지 않는다', async () => {
     const { manager, updates, importManager } = makeHarness({
       pendingItems: [PENDING(1), PENDING(2)],
-      renewalRows: [[]], // 빈 배열 = CAS 실패(이미 다른 워커가 가져감)
+      returningRows: [[]], // 빈 배열 = CAS 실패(이미 다른 워커가 가져감)
     });
 
     await manager.runCommitSlice(CLAIM());
@@ -363,6 +364,108 @@ describe('ProductImportJobManager', () => {
     // 이나 leaseToken 이 다시 나타나면(null 이든 다른 값이든) 그 회귀다.
     expect(update!.values).not.toHaveProperty('leaseUntil');
     expect(update!.values).not.toHaveProperty('leaseToken');
+  });
+
+  it('슬라이스 밖 예외는 연속 실패를 올리기만 하고 레인 상태는 그대로 둔다', async () => {
+    const { manager, updates } = makeHarness({ returningRows: [[{ consecutiveFailures: 3 }]] });
+
+    await manager.recordJobError('sess-1', 'commit', 'DB 연결 끊김');
+
+    // 일시적 DB 오류로 임포트를 영구 실패시키는 편이 더 나쁘다 — 상한 전까지는 재시도한다.
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values.commitError).toBe('DB 연결 끊김');
+    expect(updates[0].values.commitStatus).toBeUndefined();
+    // returningRows 는 증가 *결과*를 흉내낼 뿐이라, 증가식 자체가 상수로 바뀌어도
+    // 나머지 단정은 전부 통과한다. 카운터가 1에서 멈추면 상한이 영원히 발화하지 않는다.
+    expect(renderSql(updates[0].values.consecutiveFailures).toLowerCase()).toContain('+ 1');
+    expect(updates[0].values.leaseToken).toBeUndefined();
+  });
+
+  it('연속 실패가 상한에 닿으면 그 레인을 failed 로 확정하고 lease 를 놓는다', async () => {
+    const { manager, updates } = makeHarness({
+      returningRows: [[{ consecutiveFailures: MAX_CONSECUTIVE_JOB_FAILURES }]],
+    });
+
+    await manager.recordJobError('sess-1', 'publish', '알 수 없는 오류');
+
+    expect(updates).toHaveLength(2);
+    // 스키마에만 있고 아무도 쓰지 않던 'failed' 값이 드디어 쓰이는 자리다.
+    expect(updates[1].values).toMatchObject({ publishStatus: 'failed', leaseUntil: null, leaseToken: null });
+  });
+
+  it('commit 레인의 상한도 commit_status 를 failed 로 만든다 — publish 로 고정되면 안 된다', async () => {
+    const { manager, updates } = makeHarness({
+      returningRows: [[{ consecutiveFailures: MAX_CONSECUTIVE_JOB_FAILURES + 5 }]],
+    });
+
+    await manager.recordJobError('sess-1', 'commit', '알 수 없는 오류');
+
+    expect(updates[1].values).toMatchObject({ commitStatus: 'failed' });
+    expect(updates[1].values.publishStatus).toBeUndefined();
+  });
+
+  it('연속 실패 리셋은 0 보다 클 때만 실제 행에 닿는다', async () => {
+    const { manager, updates } = makeHarness();
+
+    await manager.clearConsecutiveFailures('sess-1');
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values).toEqual({ consecutiveFailures: 0 });
+    expect(renderSql(updates[0].condition).toLowerCase()).toContain('"consecutive_failures" >');
+  });
+
+  it('클레임은 취소 요청된 세션을 집지 않는다 — 굳은 세션이 취소로 풀리는 경로다', async () => {
+    const { manager, trx } = makeHarness({ claimed: [] });
+
+    await manager.claimCommit();
+
+    const sql = renderSql(trx.execute.mock.calls[0][0]).toLowerCase();
+    // 이 조건이 없으면 취소된 세션도 계속 클레임돼 매 틱 같은 예외를 반복한다.
+    expect(sql).toContain('cancel_requested_at is null');
+  });
+
+  it('게시 클레임도 같은 취소 가드를 건다', async () => {
+    const { manager, trx } = makeHarness({ claimed: [] });
+
+    await manager.claimPublish();
+
+    expect(renderSql(trx.execute.mock.calls[0][0]).toLowerCase()).toContain('cancel_requested_at is null');
+  });
+
+  it('슬라이스 도중 취소가 감지되면 첫 행도 만들지 않고 lease 를 놓는다', async () => {
+    const { manager, updates, importManager } = makeHarness({
+      pendingItems: [PENDING(1), PENDING(2)],
+      returningRows: [[{ id: 'sess-1', cancelRequestedAt: new Date() }]],
+    });
+
+    await manager.runCommitSlice(CLAIM());
+
+    // 취소 검사는 행 처리보다 **먼저** 와야 한다 — 뒤에 두면 매 슬라이스마다 한 행씩 더 만든다.
+    expect(importManager.createFromRecord).not.toHaveBeenCalled();
+    // lease 를 놓는다: leaseToken 을 null 로 쓰는 세션 업데이트가 정확히 하나.
+    const released = updates.filter((u) => u.table === 'sessions' && u.values.leaseToken === null);
+    expect(released).toHaveLength(1);
+  });
+
+  it('마감은 취소된 세션을 completed 로 도장 찍지 않는다', async () => {
+    const { manager, updates } = makeHarness({ pendingItems: [] });
+
+    await manager.runCommitSlice(CLAIM());
+
+    const [finalize] = updates.filter((u) => u.table === 'sessions');
+    expect(finalize.values.commitStatus).toBe('completed');
+    // 취소 직후 pending 이 0 인 경계에서 좀비 마감이 canceled 를 completed 로 덮는 것을 막는다.
+    expect(renderSql(finalize.condition).toLowerCase()).toContain('cancel_requested_at" is null');
+  });
+
+  it('게시 마감도 같은 취소 가드를 건다', async () => {
+    const { manager, updates } = makeHarness({ pendingItems: [] });
+
+    await manager.runPublishSlice(CLAIM());
+
+    const [finalize] = updates.filter((u) => u.table === 'sessions');
+    expect(finalize.values.publishStatus).toBe('completed');
+    expect(renderSql(finalize.condition).toLowerCase()).toContain('cancel_requested_at" is null');
   });
 });
 
@@ -455,7 +558,7 @@ describe('runPublishSlice', () => {
   it('게시 lease 를 잃으면(CAS 실패) 슬라이스를 즉시 중단한다', async () => {
     const { manager, versionsService } = makeHarness({
       pendingItems: [CREATED(1), CREATED(2)],
-      renewalRows: [[]], // 빈 배열 = CAS 실패
+      returningRows: [[]], // 빈 배열 = CAS 실패
     });
 
     await manager.runPublishSlice(CLAIM());

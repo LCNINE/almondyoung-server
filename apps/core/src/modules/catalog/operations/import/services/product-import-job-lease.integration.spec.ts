@@ -13,7 +13,7 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { catalogSchema, type PimSchema } from '../../../schema/catalog.schema';
-import { ProductImportJobManager } from './product-import-job.manager';
+import { ProductImportJobManager, MAX_CONSECUTIVE_JOB_FAILURES } from './product-import-job.manager';
 import type { ProductImportManager } from './product-import.manager';
 import type { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
 import type { ProductImportSessionReader } from './product-import-session.reader';
@@ -81,7 +81,8 @@ function makeWorkerLike(client: postgres.Sql) {
   // `as` 캐스트 없이 시그니처를 그대로 유지한다.
   return {
     manager,
-    renew: (sessionId: string, token: string): Promise<boolean> => manager['renewLease'](sessionId, token),
+    renew: (sessionId: string, token: string): Promise<{ owned: boolean; canceled: boolean }> =>
+      manager['renewLease'](sessionId, token),
     release: (sessionId: string, token: string): Promise<void> => manager['releaseLease'](sessionId, token),
   };
 }
@@ -158,6 +159,17 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     return id;
   }
 
+  /** 취소 요청이 찍힌 세션 하나 — 레인은 cancelSession 이 확정한 대로 canceled 다. */
+  async function seedCanceledSession(): Promise<string> {
+    const id = randomUUID();
+    await admin`
+      INSERT INTO product_import_sessions
+             (id, file_name, total_rows, status, commit_status, cancel_requested_at)
+      VALUES (${id}, ${'it-cancel-' + id}, 0, 'completed', 'canceled', NOW())
+    `;
+    return id;
+  }
+
   async function readLease(sessionId: string) {
     const [row] = await admin`
       SELECT commit_status,
@@ -165,6 +177,8 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
              lease_token,
              lease_until,
              committed_at,
+             cancel_requested_at,
+             consecutive_failures,
              EXTRACT(EPOCH FROM lease_until)::float8 AS lease_epoch,
              (lease_until > NOW()) AS is_live
         FROM product_import_sessions
@@ -176,6 +190,8 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
       lease_token: string | null;
       lease_until: unknown;
       committed_at: unknown;
+      cancel_requested_at: unknown;
+      consecutive_failures: number;
       lease_epoch: number | null;
       is_live: boolean | null;
     };
@@ -204,14 +220,14 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     const afterClaim = await readLease(sessionId);
 
     await sleep(60);
-    expect(await a.renew(sessionId, claimed!.leaseToken)).toBe(true);
+    expect((await a.renew(sessionId, claimed!.leaseToken)).owned).toBe(true);
     const afterFirst = await readLease(sessionId);
     expect(afterFirst.lease_epoch!).toBeGreaterThan(afterClaim.lease_epoch!);
     // 토큰은 갱신해도 그대로다 — 클레임 한 번에 토큰 하나.
     expect(afterFirst.lease_token).toBe(claimed!.leaseToken);
 
     await sleep(60);
-    expect(await a.renew(sessionId, claimed!.leaseToken)).toBe(true);
+    expect((await a.renew(sessionId, claimed!.leaseToken)).owned).toBe(true);
     const afterSecond = await readLease(sessionId);
     expect(afterSecond.lease_epoch!).toBeGreaterThan(afterFirst.lease_epoch!);
 
@@ -231,7 +247,7 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     await sleep(60);
     const renewed = await b.renew(sessionId, randomUUID());
 
-    expect(renewed).toBe(false);
+    expect(renewed.owned).toBe(false);
     const after = await readLease(sessionId);
     expect(after.lease_epoch).toBe(before.lease_epoch);
     expect(after.lease_token).toBe(claimed!.leaseToken);
@@ -271,7 +287,7 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     // 펜싱의 핵심: 뒤늦게 깨어난 좀비 A 는 자기 토큰으로 아무 것도 하지 못한다.
     // `lease_until > NOW()` 생존검사였다면 후임이 방금 민 미래 시각을 통과해
     // 후임의 lease 를 갱신하거나 지워버렸을 것이다.
-    expect(await a.renew(sessionId, first!.leaseToken)).toBe(false);
+    expect((await a.renew(sessionId, first!.leaseToken)).owned).toBe(false);
     await a.release(sessionId, first!.leaseToken);
     const stillHeld = await readLease(sessionId);
     expect(stillHeld.lease_token).toBe(takeover!.leaseToken);
@@ -342,12 +358,12 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     const before = await readLease(sessionId);
 
     await sleep(60);
-    expect(await b.renew(sessionId, randomUUID())).toBe(false);
+    expect((await b.renew(sessionId, randomUUID())).owned).toBe(false);
     const afterWrong = await readLease(sessionId);
     expect(afterWrong.lease_epoch).toBe(before.lease_epoch);
     expect(afterWrong.lease_token).toBe(claimed!.leaseToken);
 
-    expect(await a.renew(sessionId, claimed!.leaseToken)).toBe(true);
+    expect((await a.renew(sessionId, claimed!.leaseToken)).owned).toBe(true);
     const afterRight = await readLease(sessionId);
     expect(afterRight.lease_epoch!).toBeGreaterThan(before.lease_epoch!);
     expect(afterRight.lease_token).toBe(claimed!.leaseToken);
@@ -387,5 +403,91 @@ describeIfDb('product import 잡 lease 소유권 (DB 통합)', () => {
     expect(after.lease_token).toBe(takeover!.leaseToken);
     expect(after.lease_epoch).toBe(beforeZombie.lease_epoch);
     expect(after.is_live).toBe(true);
+  });
+
+  it('클레임은 취소 요청된 세션을 집지 않는다 — 굳은 세션의 재시도 루프가 여기서 끊긴다', async () => {
+    await seedCanceledSession();
+
+    expect(await a.manager.claimCommit()).toBeNull();
+  });
+
+  it('취소 요청만 있고 레인이 아직 queued 여도 집지 않는다 — 두 조건이 독립적으로 막는다', async () => {
+    const sessionId = await seedQueuedSession();
+    await admin`UPDATE product_import_sessions SET cancel_requested_at = NOW() WHERE id = ${sessionId}`;
+
+    expect(await a.manager.claimCommit()).toBeNull();
+  });
+
+  it('renewLease 는 소유권을 유지한 채 취소 요청을 읽어 온다', async () => {
+    const sessionId = await seedQueuedSession();
+    const claimed = await a.manager.claimCommit();
+
+    // 클레임 이후에 취소가 들어온 상황 — 진행 중 슬라이스가 감지해야 하는 유일한 경로다.
+    await admin`UPDATE product_import_sessions SET cancel_requested_at = NOW() WHERE id = ${sessionId}`;
+
+    const lease = await a.renew(sessionId, claimed!.leaseToken);
+    expect(lease).toEqual({ owned: true, canceled: true });
+  });
+
+  it('취소가 없으면 renewLease 는 canceled:false 다', async () => {
+    const sessionId = await seedQueuedSession();
+    const claimed = await a.manager.claimCommit();
+
+    expect(await a.renew(sessionId, claimed!.leaseToken)).toEqual({ owned: true, canceled: false });
+  });
+
+  it('마감은 취소된 세션을 completed 로 덮지 않는다', async () => {
+    const sessionId = await seedQueuedSession();
+    const claimed = await a.manager.claimCommit();
+    await admin`UPDATE product_import_sessions
+                   SET cancel_requested_at = NOW(), commit_status = 'canceled'
+                 WHERE id = ${sessionId}`;
+
+    // pending 행이 0 이라 마감 경로로 들어간다(협력자는 한 번도 호출되지 않는다).
+    await a.manager.runCommitSlice(claimed!);
+
+    const row = await readLease(sessionId);
+    expect(row.commit_status).toBe('canceled');
+    expect(row.committed_at).toBeNull();
+  });
+
+  it('연속 실패가 상한에 닿으면 레인이 failed 로 확정되고 lease 가 풀린다', async () => {
+    const sessionId = await seedQueuedSession();
+    const claimed = await a.manager.claimCommit();
+    expect(claimed).not.toBeNull();
+
+    for (let i = 0; i < MAX_CONSECUTIVE_JOB_FAILURES; i += 1) {
+      await a.manager.recordJobError(sessionId, 'commit', `반복 오류 ${i}`);
+    }
+
+    const row = await readLease(sessionId);
+    expect(row.consecutive_failures).toBe(MAX_CONSECUTIVE_JOB_FAILURES);
+    expect(row.commit_status).toBe('failed');
+    expect(row.lease_token).toBeNull();
+    // failed 레인은 claim 후보가 아니다 — 무한 재시도가 여기서 끝난다.
+    expect(await a.manager.claimCommit()).toBeNull();
+  });
+
+  it('상한 직전까지는 레인을 건드리지 않는다', async () => {
+    const sessionId = await seedQueuedSession();
+    const claimed = await a.manager.claimCommit();
+
+    for (let i = 0; i < MAX_CONSECUTIVE_JOB_FAILURES - 1; i += 1) {
+      await a.manager.recordJobError(sessionId, 'commit', `일시적 오류 ${i}`);
+    }
+
+    const row = await readLease(sessionId);
+    expect(row.commit_status).toBe('running');
+    expect(row.lease_token).toBe(claimed!.leaseToken);
+  });
+
+  it('정상 종료한 슬라이스의 리셋이 카운터를 0 으로 되돌린다', async () => {
+    const sessionId = await seedQueuedSession();
+    await a.manager.claimCommit();
+    await a.manager.recordJobError(sessionId, 'commit', '일시적 오류');
+
+    await a.manager.clearConsecutiveFailures(sessionId);
+
+    expect((await readLease(sessionId)).consecutive_failures).toBe(0);
   });
 });

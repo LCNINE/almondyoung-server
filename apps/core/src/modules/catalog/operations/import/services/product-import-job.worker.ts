@@ -43,12 +43,16 @@ export class ProductImportJobWorker {
       claimed = await this.jobManager.claimCommit();
       if (claimed) {
         await this.jobManager.runCommitSlice(claimed);
+        // 여기 도달했다는 건 슬라이스가 예외 없이 끝났다는 뜻이다 — 연속 실패를 되돌린다.
+        // catch 블록에서 부르면 안 된다(리셋이 상한을 영원히 막는다).
+        await this.jobManager.clearConsecutiveFailures(claimed.sessionId);
         return;
       }
       kind = 'publish';
       claimed = await this.jobManager.claimPublish();
       if (claimed) {
         await this.jobManager.runPublishSlice(claimed);
+        await this.jobManager.clearConsecutiveFailures(claimed.sessionId);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '알 수 없는 오류';

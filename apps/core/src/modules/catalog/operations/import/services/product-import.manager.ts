@@ -14,7 +14,7 @@ import { PricingService } from '../../../core/pricing/pricing.service';
 import { ProductImportSessionReader } from './product-import-session.reader';
 import { ProductImportPricingBuilder } from './product-import-pricing.builder';
 import { ProductRecord } from '../dto/import.types';
-import { CommitAcceptedDto, PublishAcceptedDto } from '../dto/import-response.dto';
+import { CommitAcceptedDto, PublishAcceptedDto, CancelAcceptedDto } from '../dto/import-response.dto';
 
 @Injectable()
 export class ProductImportManager {
@@ -46,6 +46,9 @@ export class ProductImportManager {
           uploadedBy: userId,
           totalRows: records.length,
           failedCount: invalidCount,
+          // failedCount 는 이후 failItem 이 생성 실패마다 +1 하므로 두 종류가 섞인다.
+          // 접수 시점 값을 별도 컬럼에 얼려야 "생성 대상 행 수"를 복원할 수 있다.
+          invalidCount,
           // status 는 아카이브 플래그다. 잡 상태는 commitStatus/publishStatus 가 든다.
           status: 'completed',
           commitStatus: 'queued',
@@ -158,6 +161,11 @@ export class ProductImportManager {
         .where(eq(productImportSessions.id, sessionId))
         .limit(1);
       if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
+      // 취소는 종단이다. commit 이 completed 인 채로 게시만 취소된 세션은 아래
+      // commitStatus 검사를 통과하므로, 이 가드가 없으면 재게시가 열린다.
+      if (session.cancelRequestedAt) {
+        throw new ConflictError('취소된 세션입니다. 다시 등록하려면 워크북을 재업로드해 주세요.');
+      }
       if (session.commitStatus !== 'completed') {
         throw new ConflictError('상품 생성이 아직 끝나지 않았습니다. 완료 후 게시할 수 있습니다.');
       }
@@ -187,6 +195,66 @@ export class ProductImportManager {
         .where(eq(productImportSessions.id, sessionId));
 
       return { sessionId, status: 'queued' as const, targetCount: Number(targetRow?.value ?? 0) };
+    });
+  }
+
+  /**
+   * 세션을 취소한다. "여기서 멈춘다"이지 "없던 일로"가 아니다 — 이미 생성된 draft 상품과
+   * 이미 나간 이벤트는 되돌리지 않는다. 삭제는 되돌릴 수 없고, 부분 생성된 상품은 사람이
+   * 보고 판단하는 것이 맞다(세션 상세에 masterId 가 전부 있어 수동 정리가 가능하다).
+   *
+   * **lease 는 건드리지 않는다.** 지우면 진행 중 워커의 renewLease CAS 가 "lease 를
+   * 빼앗겼다" 경로로 빠져 취소를 인지하지 못한다. 워커는 renewLease 의 returning 으로
+   * cancel_requested_at 을 직접 읽고 멈춘다(product-import-job.manager.ts).
+   *
+   * **끝난 레인은 덮지 않는다.** commit 이 completed 인 상태에서 게시를 취소했다면
+   * 상품은 실제로 생성된 것이다 — canceled 로 덮으면 이력이 거짓이 된다.
+   *
+   * 취소는 **종단**이다. 재개 경로를 두지 않는 대신 굳은 세션(슬라이스 밖 예외가 반복돼
+   * 매 틱 재시도되는 세션)을 푸는 수단을 겸한다 — 별도 reset-lease API 가 없는 이유다.
+   */
+  async cancelSession(sessionId: string): Promise<CancelAcceptedDto> {
+    const active = (status: string): boolean => status === 'queued' || status === 'running';
+
+    return this.db.run(async (trx) => {
+      const [session] = await trx
+        .select()
+        .from(productImportSessions)
+        .where(eq(productImportSessions.id, sessionId))
+        .limit(1)
+        // 행 잠금이 필요한 이유: 이 SELECT 와 아래 UPDATE 사이에 워커의 마감 경로가
+        // 끼어들 수 있다. 마감의 WHERE 는 `cancel_requested_at IS NULL` 을 보는데
+        // 그 시점엔 아직 취소가 안 쓰여 통과하고, 그 뒤 우리가 completed 를 canceled 로
+        // 덮어 "끝난 레인은 덮지 않는다"가 깨진다. 잠그면 마감이 우리 커밋을 기다렸다가
+        // 갱신된 행으로 WHERE 를 다시 평가해(READ COMMITTED) 0행이 된다.
+        .for('update');
+      if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
+      if (session.cancelRequestedAt) throw new ConflictError('이미 취소된 세션입니다.');
+
+      const cancelCommit = active(session.commitStatus);
+      const cancelPublish = active(session.publishStatus);
+      if (!cancelCommit && !cancelPublish) {
+        throw new ConflictError('진행 중인 작업이 없어 취소할 수 없습니다.');
+      }
+
+      const canceledAt = new Date();
+      await trx
+        .update(productImportSessions)
+        .set({
+          cancelRequestedAt: canceledAt,
+          ...(cancelCommit ? { commitStatus: 'canceled' as const } : {}),
+          ...(cancelPublish ? { publishStatus: 'canceled' as const } : {}),
+        })
+        .where(eq(productImportSessions.id, sessionId));
+
+      return {
+        sessionId,
+        // 방금 쓴 값을 그대로 되돌린다 — .returning() 을 붙이지 않는 이유는 왕복이
+        // 하나 늘 뿐 새로 알게 되는 것이 없기 때문이다(같은 트랜잭션 안이다).
+        commitStatus: cancelCommit ? 'canceled' : session.commitStatus,
+        publishStatus: cancelPublish ? 'canceled' : session.publishStatus,
+        canceledAt,
+      };
     });
   }
 }

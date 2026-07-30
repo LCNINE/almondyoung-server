@@ -14,6 +14,7 @@ import {
   SessionSummaryDto,
   SessionDetailDto,
   PublishAcceptedDto,
+  CancelAcceptedDto,
 } from '../dto/import-response.dto';
 
 @Injectable()
@@ -87,6 +88,10 @@ export class ProductImportService {
     return this.manager.queuePublish(sessionId);
   }
 
+  cancelSession(sessionId: string): Promise<CancelAcceptedDto> {
+    return this.manager.cancelSession(sessionId);
+  }
+
   getTemplate(): Promise<Buffer> {
     return generateTemplateWorkbook();
   }
@@ -111,6 +116,8 @@ export class ProductImportService {
       publishFailedCount: session.publishFailedCount,
       commitError: session.commitError,
       publishError: session.publishError,
+      invalidCount: session.invalidCount,
+      cancelRequestedAt: session.cancelRequestedAt,
     };
   }
 }

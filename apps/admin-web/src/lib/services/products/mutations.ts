@@ -1055,3 +1055,20 @@ export const usePublishSession = () => {
     },
   });
 };
+
+/** 세션 취소 — 진행 중인 레인을 멈춘다. 이미 생성/게시된 것은 되돌아오지 않는다. */
+export const useCancelSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) => products.productImport.cancel(sessionId),
+    onSuccess: (_res, sessionId) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImport(sessionId),
+      });
+      // 목록의 상태 라벨도 '취소됨' 으로 바뀌어야 한다.
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImports,
+      });
+    },
+  });
+};

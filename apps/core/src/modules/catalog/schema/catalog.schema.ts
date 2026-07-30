@@ -989,6 +989,10 @@ export const productImportJobStatusEnum = pgEnum('product_import_job_status', [
   'running',
   'completed',
   'failed',
+  // 'canceled' 는 **맨 뒤**에 붙인다 — 바로 위 productImportItemStatusEnum 의 'pending' 과
+  // 같은 이유다. drizzle-kit 이 중간 삽입을 만나면 `ALTER TYPE ... ADD VALUE 'x' BEFORE 'y'`
+  // 를 만드는데, 뒤에 붙이면 단순 ADD VALUE 로 끝난다.
+  'canceled',
 ]);
 
 /** 행 단위 게시 상태. 'skipped' 는 생성 자체가 실패해 게시 대상이 아닌 행. */
@@ -1042,6 +1046,31 @@ export const productImportSessions = pgTable(
     publishError: text('publish_error'),
     publishedCount: integer('published_count').notNull().default(0),
     publishFailedCount: integer('publish_failed_count').notNull().default(0),
+
+    // ─── 운영 구멍 (v3 1단계) ───
+    /**
+     * 취소 요청 시각. NULL 이 아니면 워커가 이 세션을 **새로 클레임하지 않는다**.
+     * 굳은 세션(슬라이스 밖 예외가 반복돼 매 틱 재시도되는 세션)을 푸는 유일한 경로가
+     * 이것이라, claim 쿼리의 조건에 들어가는 것이 이 컬럼의 본체다. 진행 중인 슬라이스는
+     * renewLease 의 returning 으로 이 값을 읽어 스스로 멈춘다.
+     *
+     * 취소는 **종단**이다 — 재개하지 않는다. queuePublish 도 이 값이 있으면 거부한다.
+     */
+    cancelRequestedAt: timestamp('cancel_requested_at'),
+    /**
+     * 슬라이스 **밖으로 탈출한** 예외의 연속 횟수. 슬라이스가 정상 종료하면 0 으로 되돌린다.
+     * recordJobError 가 상태를 바꾸지 않도록 의도적으로 설계돼 있어(일시적 DB 오류로 임포트를
+     * 영구 실패시키는 편이 더 나쁘다) 예외가 반복되면 매 틱 무한 재시도한다 — 이 카운터가
+     * 그 무한을 유계로 만든다. 상한을 넘으면 그 레인이 'failed' 로 확정된다.
+     */
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /**
+     * **접수 시점** 검증실패 행 수. failed_count 는 접수 시점 검증실패로 초기화된 뒤
+     * failItem 이 생성 실패마다 +1 하므로 두 종류가 한 칸에 섞인다 — 그 값으로는
+     * "생성 대상 행 수"를 복원할 수 없다. 이 컬럼이 접수 시점 값을 얼려 둔다.
+     * 옛 세션은 NULL 이고 화면이 현행과 같은 표시로 폴백한다(백필하지 않는다).
+     */
+    invalidCount: integer('invalid_count'),
   },
   (table) => [
     index('idx_import_sessions_uploaded_by').on(table.uploadedBy),

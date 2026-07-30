@@ -5,6 +5,7 @@ jest.mock(
 );
 
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { ConflictError, NotFoundError } from '@app/shared';
 import { ProductImportManager } from './product-import.manager';
 import { ProductRecord, comboKey } from '../dto/import.types';
 import { productImportSessions, productImportItems, productVariants } from '../../../schema/catalog.schema';
@@ -51,21 +52,33 @@ function validRecord(over: Partial<ProductRecord> = {}): ProductRecord {
 /**
  * drizzle 셀렉트 빌더는 thenable 이면서 `.limit()` 체이닝도 된다. queuePublish 의
  * 두 select 형태(`where(...).limit(1)` 과 `.limit()` 없이 바로 destructure)를 하나로 받는다.
+ * `.limit()` 뒤에는 cancelSession 의 `.for('update')` 체이닝도 붙으므로(행 잠금),
+ * limit 결과도 thenable 이면서 `.for()` 를 받게 해둔다.
  */
 const chain = (rows: any[]): any => {
   const builder: any = Promise.resolve(rows);
-  builder.limit = () => Promise.resolve(rows);
+  builder.limit = () => {
+    const limited: any = Promise.resolve(rows);
+    limited.for = () => Promise.resolve(rows);
+    return limited;
+  };
   return builder;
 };
 
 /** 삽입된 아이템을 수집하는 db mock. run(fn) 은 fn(trx) 를 실행; trx.insert 는 values 를 기록. */
-function makeHarness(createMasterImpl?: (userId: string) => any, opts: { session?: Record<string, unknown> } = {}) {
-  const session = {
-    id: 'sess-1',
-    commitStatus: 'completed',
-    publishStatus: 'idle',
-    ...opts.session,
-  };
+function makeHarness(
+  createMasterImpl?: (userId: string) => any,
+  opts: { session?: Record<string, unknown>; sessionMissing?: boolean } = {},
+) {
+  const session = opts.sessionMissing
+    ? undefined
+    : {
+        id: 'sess-1',
+        commitStatus: 'completed',
+        publishStatus: 'idle',
+        cancelRequestedAt: null,
+        ...opts.session,
+      };
   const inserted: any[] = [];
   const sessions: any[] = [];
   const updatedVariantCodes: { variantId: string; variantCode: string }[] = [];
@@ -80,8 +93,9 @@ function makeHarness(createMasterImpl?: (userId: string) => any, opts: { session
     }),
     select: (projection?: any) => ({
       from: (table: any) => ({
-        // count() 프로젝션이면 집계 한 줄, 아니면 세션 한 줄
-        where: () => chain(projection?.value ? [{ value: 0 }] : table === productImportSessions ? [session] : []),
+        // count() 프로젝션이면 집계 한 줄, 아니면 세션 한 줄(없으면 빈 배열)
+        where: () =>
+          chain(projection?.value ? [{ value: 0 }] : table === productImportSessions && session ? [session] : []),
       }),
     }),
     update: (table: any) => ({
@@ -182,6 +196,21 @@ describe('acceptCommit', () => {
     await manager.acceptCommit({ fileName: 'f.xlsx', userId: 'u1', records: [validRecord()] });
 
     expect(productMastersService.createMaster).not.toHaveBeenCalled();
+  });
+
+  it('접수 시점 검증실패 수를 invalidCount 로 얼려 둔다 — failedCount 는 나중에 생성실패와 섞인다', async () => {
+    const { manager, sessions } = makeHarness();
+    const bad = validRecord({
+      rowNumber: 3,
+      productKey: 'P3',
+      errors: [{ sheet: 'Products', rowNumber: 3, message: '상품명이 없습니다' }],
+    });
+
+    await manager.acceptCommit({ fileName: 'f.xlsx', userId: 'u1', records: [validRecord(), bad] });
+
+    // failedCount 와 invalidCount 는 접수 시점에는 같은 값이지만, 이후 failItem 이
+    // failedCount 만 올리므로 갈라진다. 그 갈라짐을 복원하려고 얼려 두는 값이다.
+    expect(sessions[0]).toMatchObject({ totalRows: 2, failedCount: 1, invalidCount: 1 });
   });
 });
 
@@ -328,5 +357,75 @@ describe('queuePublish', () => {
     const { manager } = makeHarness(undefined, { session: { commitStatus: 'running', publishStatus: 'idle' } });
 
     await expect(manager.queuePublish('sess-1')).rejects.toThrow(/생성/);
+  });
+
+  it('취소된 세션은 다시 게시할 수 없다 — 재개하려면 워크북을 재업로드한다', async () => {
+    const { manager } = makeHarness(undefined, {
+      session: { commitStatus: 'completed', publishStatus: 'canceled', cancelRequestedAt: new Date() },
+    });
+
+    await expect(manager.queuePublish('sess-1')).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe('cancelSession', () => {
+  it('진행 중인 레인만 canceled 로 확정하고 끝난 레인은 그대로 둔다', async () => {
+    const { manager, updates } = makeHarness(undefined, {
+      session: { commitStatus: 'completed', publishStatus: 'running' },
+    });
+
+    const res = await manager.cancelSession('sess-1');
+
+    // commit 은 실제로 끝났다 — 상품이 생성됐는데 canceled 로 덮으면 이력이 거짓이 된다.
+    expect(res).toMatchObject({ sessionId: 'sess-1', commitStatus: 'completed', publishStatus: 'canceled' });
+    const sessionUpdates = updates.filter((u) => u.table === 'sessions');
+    expect(sessionUpdates).toHaveLength(1);
+    expect(sessionUpdates[0].values.publishStatus).toBe('canceled');
+    expect(sessionUpdates[0].values.commitStatus).toBeUndefined();
+    expect(sessionUpdates[0].values.cancelRequestedAt).toBeInstanceOf(Date);
+  });
+
+  it('queued 인 레인도 취소 대상이다 — 아직 시작 안 한 게시를 막을 수 있어야 한다', async () => {
+    const { manager, updates } = makeHarness(undefined, {
+      session: { commitStatus: 'completed', publishStatus: 'queued' },
+    });
+
+    await manager.cancelSession('sess-1');
+
+    expect(updates.filter((u) => u.table === 'sessions')[0].values.publishStatus).toBe('canceled');
+  });
+
+  it('lease 를 지우지 않는다 — 진행 중 워커가 renewLease 로 취소를 읽고 스스로 멈춰야 한다', async () => {
+    const { manager, updates } = makeHarness(undefined, {
+      session: { commitStatus: 'running', publishStatus: 'idle' },
+    });
+
+    await manager.cancelSession('sess-1');
+
+    const values = updates.filter((u) => u.table === 'sessions')[0].values;
+    expect(values.leaseToken).toBeUndefined();
+    expect(values.leaseUntil).toBeUndefined();
+  });
+
+  it('진행 중인 레인이 없으면 취소할 것이 없다', async () => {
+    const { manager } = makeHarness(undefined, {
+      session: { commitStatus: 'completed', publishStatus: 'completed' },
+    });
+
+    await expect(manager.cancelSession('sess-1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('이미 취소된 세션은 다시 취소되지 않는다 — 취소는 종단이다', async () => {
+    const { manager } = makeHarness(undefined, {
+      session: { commitStatus: 'canceled', publishStatus: 'idle', cancelRequestedAt: new Date() },
+    });
+
+    await expect(manager.cancelSession('sess-1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('없는 세션은 404 다', async () => {
+    const { manager } = makeHarness(undefined, { sessionMissing: true });
+
+    await expect(manager.cancelSession('nope')).rejects.toBeInstanceOf(NotFoundError);
   });
 });

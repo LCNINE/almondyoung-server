@@ -7,6 +7,7 @@ import type {
   SessionDetailDto,
   SessionListResponse,
   PublishAcceptedDto,
+  CancelAcceptedDto,
 } from '@/lib/types/dto/product-import';
 import { client } from '../../client';
 
@@ -51,6 +52,11 @@ export const productImportClient = {
 
   publish: async (sessionId: string): Promise<PublishAcceptedDto> => {
     const res = await client.post(`${BASE}/${sessionId}/publish`);
+    return res.data;
+  },
+
+  cancel: async (sessionId: string): Promise<CancelAcceptedDto> => {
+    const res = await client.post(`${BASE}/${sessionId}/cancel`);
     return res.data;
   },
 };
