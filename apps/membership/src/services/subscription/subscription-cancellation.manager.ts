@@ -73,13 +73,16 @@ export class SubscriptionCancellationManager {
     reasonText: string | undefined,
     eligibility: RefundEligibility,
   ): Promise<ImmediateCancellationResult> {
+    // 저장값과 반환값이 어긋나지 않게 한 시점을 만들어 둘 다에 쓴다.
+    const cancelledAt = new Date();
+
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 이벤트 배치 생성
       const [batch] = await tx
         .insert(schema.eventBatches)
         .values({
           type: 'SUBSCRIPTION_CANCELLED',
-          effectiveDate: new Date().toISOString().split('T')[0],
+          effectiveDate: cancelledAt.toISOString().split('T')[0],
         })
         .returning();
 
@@ -122,12 +125,12 @@ export class SubscriptionCancellationManager {
         .update(schema.subscriptionContracts)
         .set({
           status: 'CANCELLED',
-          cancelledAt: new Date(),
+          cancelledAt,
           cancellationReasonCode: reasonCode,
           autoRenewal: false,
           nextBillingDate: null,
           refundRequested: eligibility.eligible,
-          refundRequestedAt: eligibility.eligible ? new Date() : null,
+          refundRequestedAt: eligibility.eligible ? cancelledAt : null,
           eligibleRefundAmount: eligibility.amount,
           lastEventId: cancelEvent.id,
           updatedAt: new Date(),
@@ -144,7 +147,7 @@ export class SubscriptionCancellationManager {
         type: 'IMMEDIATE_CANCELLATION',
         contractId: contract.id,
         status: 'CANCELLED',
-        cancelledAt: new Date(),
+        cancelledAt,
         refundEligible: eligibility.eligible,
         refundAmount: eligibility.amount,
         refundStatus: eligibility.eligible ? 'PENDING' : 'NOT_APPLICABLE',
@@ -166,6 +169,8 @@ export class SubscriptionCancellationManager {
     reasonText: string | undefined,
     isRecurring = true,
   ): Promise<RecurringCancellationResult> {
+    const recurringCancelledAt = new Date();
+
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 현재 권한 조회 (만료일 확인)
       const [entitlement] = await tx
@@ -185,7 +190,7 @@ export class SubscriptionCancellationManager {
         .insert(schema.eventBatches)
         .values({
           type: 'RECURRING_CANCELLED',
-          effectiveDate: new Date().toISOString().split('T')[0],
+          effectiveDate: recurringCancelledAt.toISOString().split('T')[0],
         })
         .returning();
 
@@ -211,7 +216,7 @@ export class SubscriptionCancellationManager {
       await tx
         .update(schema.subscriptionContracts)
         .set({
-          recurringCancelledAt: new Date(),
+          recurringCancelledAt,
           recurringCancellationReasonCode: reasonCode,
           autoRenewal: false,
           nextBillingDate: null,
@@ -229,7 +234,7 @@ export class SubscriptionCancellationManager {
         type: 'RECURRING_CANCELLATION',
         contractId: contract.id,
         status: 'RECURRING_CANCELLED',
-        recurringCancelledAt: new Date(),
+        recurringCancelledAt,
         nextBillingDate: null,
         currentPeriodEndsAt: entitlement.endsAt,
         autoRenewal: false,
@@ -370,6 +375,8 @@ export class SubscriptionCancellationManager {
     refundAmount: number;
     refundStatus: 'PENDING' | 'NOT_APPLICABLE';
   }> {
+    const cancelledAt = new Date();
+
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
       // 1. 환불 금액 계산
       let refundAmount = 0;
@@ -391,7 +398,7 @@ export class SubscriptionCancellationManager {
         .values({
           type: 'SUBSCRIPTION_CANCELLED',
           adminId,
-          effectiveDate: new Date().toISOString().split('T')[0],
+          effectiveDate: cancelledAt.toISOString().split('T')[0],
         })
         .returning();
 
@@ -438,12 +445,12 @@ export class SubscriptionCancellationManager {
         .update(schema.subscriptionContracts)
         .set({
           status: 'CANCELLED',
-          cancelledAt: new Date(),
+          cancelledAt,
           cancellationReasonCode: 'ADMIN_FORCED',
           autoRenewal: false,
           nextBillingDate: null,
           refundRequested: refundAmount > 0,
-          refundRequestedAt: refundAmount > 0 ? new Date() : null,
+          refundRequestedAt: refundAmount > 0 ? cancelledAt : null,
           eligibleRefundAmount: refundAmount,
           lastEventId: cancelEvent.id,
           updatedAt: new Date(),
@@ -459,7 +466,7 @@ export class SubscriptionCancellationManager {
       return {
         contractId: contract.id,
         status: 'CANCELLED',
-        cancelledAt: new Date(),
+        cancelledAt,
         refundEligible: refundAmount > 0,
         refundAmount,
         refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE',
