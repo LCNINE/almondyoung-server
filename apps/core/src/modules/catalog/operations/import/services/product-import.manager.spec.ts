@@ -65,8 +65,14 @@ const chain = (rows: any[]): any => {
   return builder;
 };
 
-/** 삽입된 아이템을 수집하는 db mock. run(fn) 은 fn(trx) 를 실행; trx.insert 는 values 를 기록. */
-function makeHarness(
+/**
+ * 삽입된 아이템을 수집하는 db mock. run(fn) 은 fn(trx) 를 실행; trx.insert 는 values 를 기록.
+ *
+ * 매 호출이 독립된 목 세트를 만든다 — 한 describe 안의 여러 it 이 같은 jest.fn() 호출
+ * 이력을 공유하면 `not.toHaveBeenCalled()` 류 단정이 이전 테스트의 호출을 보고 통과해버려
+ * 의미를 잃는다.
+ */
+function harness(
   createMasterImpl?: (userId: string) => any,
   opts: { session?: Record<string, unknown>; sessionMissing?: boolean } = {},
 ) {
@@ -132,9 +138,18 @@ function makeHarness(
   const pricingBuilder = {
     build: jest.fn(() => ({ basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] })),
   } as any;
-  const manager = new ProductImportManager(db, reader, productMastersService, pricingService, pricingBuilder);
+  const purchaseConstraintsService = { upsertForDraft: jest.fn(async () => null) } as any;
+  const manager = new ProductImportManager(
+    db,
+    reader,
+    productMastersService,
+    pricingService,
+    pricingBuilder,
+    purchaseConstraintsService,
+  );
   return {
     manager,
+    db,
     sessions,
     inserted,
     updatedVariantCodes,
@@ -142,6 +157,7 @@ function makeHarness(
     reader,
     pricingService,
     pricingBuilder,
+    purchaseConstraintsService,
     updates,
     // createFromRecord 는 이제 tx 를 필수로 받는다. mock trx 는 DbTransaction 의
     // 일부(insert/update)만 흉내내므로, 나머지 harness 값들과 같은 방식으로
@@ -152,7 +168,7 @@ function makeHarness(
 
 describe('acceptCommit', () => {
   it('세션을 queued 로 만들고 유효한 행을 payload 와 함께 pending 으로 적는다', async () => {
-    const { manager, sessions, inserted } = makeHarness();
+    const { manager, sessions, inserted } = harness();
 
     const result = await manager.acceptCommit({
       fileName: 'f.xlsx',
@@ -174,7 +190,7 @@ describe('acceptCommit', () => {
   });
 
   it('검증 실패 행은 접수 즉시 failed + skipped 로 확정한다 — payload 없이', async () => {
-    const { manager, sessions, inserted } = makeHarness();
+    const { manager, sessions, inserted } = harness();
     const bad = validRecord({
       rowNumber: 1,
       productKey: 'P1',
@@ -191,7 +207,7 @@ describe('acceptCommit', () => {
   });
 
   it('상품을 만들지 않는다 — 그건 워커의 몫이다', async () => {
-    const { manager, productMastersService } = makeHarness();
+    const { manager, productMastersService } = harness();
 
     await manager.acceptCommit({ fileName: 'f.xlsx', userId: 'u1', records: [validRecord()] });
 
@@ -199,7 +215,7 @@ describe('acceptCommit', () => {
   });
 
   it('접수 시점 검증실패 수를 invalidCount 로 얼려 둔다 — failedCount 는 나중에 생성실패와 섞인다', async () => {
-    const { manager, sessions } = makeHarness();
+    const { manager, sessions } = harness();
     const bad = validRecord({
       rowNumber: 3,
       productKey: 'P3',
@@ -223,7 +239,7 @@ describe('createFromRecord', () => {
   // 이름의 테스트를 또 만들면 같은 사실을 두 번 주장하는 것뿐이다.
 
   it('createMaster→updateVersion 에 카테고리·optionDiff 를 전달한다', async () => {
-    const { manager, productMastersService, trx } = makeHarness();
+    const { manager, productMastersService, trx } = harness();
 
     await manager.createFromRecord(
       validRecord({
@@ -247,7 +263,7 @@ describe('createFromRecord', () => {
   });
 
   it('options 가 없으면 optionDiff 는 undefined 다', async () => {
-    const { manager, productMastersService, trx } = makeHarness();
+    const { manager, productMastersService, trx } = harness();
 
     await manager.createFromRecord(validRecord({ options: [] }), 'u1', trx);
 
@@ -259,7 +275,7 @@ describe('createFromRecord', () => {
     // variant 마다 4-join 조회를 도는 getVariantComboMap 은 Variants 시트를 안 쓴
     // 파일(v1 호환 경로)에서 비용을 물지 않아야 한다 — product-import.manager.ts 의
     // createFromRecord 가드(variantOverrides.length > 0 일 때만 호출).
-    const { manager, reader, trx } = makeHarness();
+    const { manager, reader, trx } = harness();
 
     await manager.createFromRecord(validRecord({ variantOverrides: [] }), 'u1', trx);
 
@@ -267,7 +283,7 @@ describe('createFromRecord', () => {
   });
 
   it('updateVersion → comboMap 조회 → 가격 규칙 쓰기 순서로 진행한다', async () => {
-    const { manager, productMastersService, reader, pricingService, trx } = makeHarness();
+    const { manager, productMastersService, reader, pricingService, trx } = harness();
     const order: string[] = [];
     productMastersService.updateVersion.mockImplementation(async () => {
       order.push('updateVersion');
@@ -291,7 +307,7 @@ describe('createFromRecord', () => {
   });
 
   it('가격 빌더가 만든 규칙을 versionId·comboMap 과 함께 replaceVersionRules 에 넘긴다', async () => {
-    const { manager, pricingService, pricingBuilder, reader, trx } = makeHarness();
+    const { manager, pricingService, pricingBuilder, reader, trx } = harness();
     const comboMap = new Map([['색상=빨강', 'var-1']]);
     reader.getVariantComboMap.mockResolvedValue(comboMap);
     const dto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
@@ -307,7 +323,7 @@ describe('createFromRecord', () => {
   });
 
   it('variantCode 를 조합에 해당하는 variant 에 쓴다', async () => {
-    const { manager, reader, updatedVariantCodes, trx } = makeHarness();
+    const { manager, reader, updatedVariantCodes, trx } = harness();
     const key = comboKey([{ name: '색상', value: '빨강' }]);
     reader.getVariantComboMap.mockResolvedValue(new Map([[key, 'var-1']]));
     const record = validRecord();
@@ -327,9 +343,83 @@ describe('createFromRecord', () => {
   });
 });
 
+describe('createFromRecord — v3 3단계 필드', () => {
+  function baseRecord(): ProductRecord {
+    return {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: { productKey: 'P1', name: '니트A' },
+      version: { name: '니트A', seoTitle: '겨울 니트', seoKeywords: ['니트', '겨울'], isWholesaleOnly: true },
+      basePrice: 29000,
+      categoryIds: ['c-knit', 'c-event'],
+      categoryNames: ['여성패션', '니트'],
+      primaryCategoryId: 'c-knit',
+      options: [],
+      variantOverrides: [],
+      errors: [],
+    };
+  }
+
+  it('다중 카테고리와 대표 카테고리를 updateVersion 에 넘긴다', async () => {
+    const { manager, productMastersService } = harness();
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+
+    const [, data] = productMastersService.updateVersion.mock.calls[0];
+    expect(data.categoryIds).toEqual(['c-knit', 'c-event']);
+    expect(data.primaryCategoryId).toBe('c-knit');
+    expect(data.seoKeywords).toEqual(['니트', '겨울']);
+    expect(data.isWholesaleOnly).toBe(true);
+  });
+
+  it('ISO 문자열 판매기간을 Date 로 되살려 넘긴다', async () => {
+    const { manager, productMastersService } = harness();
+    const record = baseRecord();
+    // 워커는 항상 jsonb 왕복을 거친 값을 본다 — 그 형태를 그대로 재현한다
+    record.salesStartDate = '2026-07-31T15:00:00.000Z';
+    record.salesEndDate = '2026-08-31T14:59:59.999Z';
+
+    await manager.createFromRecord(record, 'u1', {} as any);
+
+    const [, data] = productMastersService.updateVersion.mock.calls[0];
+    expect(data.salesStartDate).toBeInstanceOf(Date);
+    expect((data.salesStartDate as Date).toISOString()).toBe('2026-07-31T15:00:00.000Z');
+    expect((data.salesEndDate as Date).toISOString()).toBe('2026-08-31T14:59:59.999Z');
+  });
+
+  it('판매기간이 없으면 키 자체를 넣지 않는다 (기존 값을 null 로 덮지 않는다)', async () => {
+    const { manager, productMastersService } = harness();
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+
+    const [, data] = productMastersService.updateVersion.mock.calls[0];
+    expect('salesStartDate' in data).toBe(false);
+    expect('salesEndDate' in data).toBe(false);
+  });
+
+  it('구매제약이 있으면 draft 에 upsert 한다', async () => {
+    const { manager, purchaseConstraintsService } = harness();
+    const record = baseRecord();
+    record.purchaseConstraint = { requiresMembership: true, lifetimeQuantityLimit: 2 };
+
+    await manager.createFromRecord(record, 'u1', {} as any);
+
+    expect(purchaseConstraintsService.upsertForDraft).toHaveBeenCalledWith(
+      'm1',
+      'v1',
+      { requiresMembership: true, lifetimeQuantityLimit: 2 },
+      expect.anything(),
+    );
+  });
+
+  it('구매제약이 없으면 아예 호출하지 않는다', async () => {
+    const { manager, purchaseConstraintsService } = harness();
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+    expect(purchaseConstraintsService.upsertForDraft).not.toHaveBeenCalled();
+  });
+});
+
 describe('queuePublish', () => {
   it('publish_status 를 queued 로 올리고 실패했던 행만 pending 으로 되돌린다', async () => {
-    const { manager, updates } = makeHarness();
+    const { manager, updates } = harness();
 
     const result = await manager.queuePublish('sess-1');
 
@@ -348,19 +438,19 @@ describe('queuePublish', () => {
   });
 
   it('이미 running 이면 409 다', async () => {
-    const { manager } = makeHarness(undefined, { session: { publishStatus: 'running' } });
+    const { manager } = harness(undefined, { session: { publishStatus: 'running' } });
 
     await expect(manager.queuePublish('sess-1')).rejects.toThrow(/이미/);
   });
 
   it('commit 이 끝나지 않았으면 409 다', async () => {
-    const { manager } = makeHarness(undefined, { session: { commitStatus: 'running', publishStatus: 'idle' } });
+    const { manager } = harness(undefined, { session: { commitStatus: 'running', publishStatus: 'idle' } });
 
     await expect(manager.queuePublish('sess-1')).rejects.toThrow(/생성/);
   });
 
   it('취소된 세션은 다시 게시할 수 없다 — 재개하려면 워크북을 재업로드한다', async () => {
-    const { manager } = makeHarness(undefined, {
+    const { manager } = harness(undefined, {
       session: { commitStatus: 'completed', publishStatus: 'canceled', cancelRequestedAt: new Date() },
     });
 
@@ -370,7 +460,7 @@ describe('queuePublish', () => {
 
 describe('cancelSession', () => {
   it('진행 중인 레인만 canceled 로 확정하고 끝난 레인은 그대로 둔다', async () => {
-    const { manager, updates } = makeHarness(undefined, {
+    const { manager, updates } = harness(undefined, {
       session: { commitStatus: 'completed', publishStatus: 'running' },
     });
 
@@ -386,7 +476,7 @@ describe('cancelSession', () => {
   });
 
   it('queued 인 레인도 취소 대상이다 — 아직 시작 안 한 게시를 막을 수 있어야 한다', async () => {
-    const { manager, updates } = makeHarness(undefined, {
+    const { manager, updates } = harness(undefined, {
       session: { commitStatus: 'completed', publishStatus: 'queued' },
     });
 
@@ -396,7 +486,7 @@ describe('cancelSession', () => {
   });
 
   it('lease 를 지우지 않는다 — 진행 중 워커가 renewLease 로 취소를 읽고 스스로 멈춰야 한다', async () => {
-    const { manager, updates } = makeHarness(undefined, {
+    const { manager, updates } = harness(undefined, {
       session: { commitStatus: 'running', publishStatus: 'idle' },
     });
 
@@ -408,7 +498,7 @@ describe('cancelSession', () => {
   });
 
   it('진행 중인 레인이 없으면 취소할 것이 없다', async () => {
-    const { manager } = makeHarness(undefined, {
+    const { manager } = harness(undefined, {
       session: { commitStatus: 'completed', publishStatus: 'completed' },
     });
 
@@ -416,7 +506,7 @@ describe('cancelSession', () => {
   });
 
   it('이미 취소된 세션은 다시 취소되지 않는다 — 취소는 종단이다', async () => {
-    const { manager } = makeHarness(undefined, {
+    const { manager } = harness(undefined, {
       session: { commitStatus: 'canceled', publishStatus: 'idle', cancelRequestedAt: new Date() },
     });
 
@@ -424,7 +514,7 @@ describe('cancelSession', () => {
   });
 
   it('없는 세션은 404 다', async () => {
-    const { manager } = makeHarness(undefined, { sessionMissing: true });
+    const { manager } = harness(undefined, { sessionMissing: true });
 
     await expect(manager.cancelSession('nope')).rejects.toBeInstanceOf(NotFoundError);
   });

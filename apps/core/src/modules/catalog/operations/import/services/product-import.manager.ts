@@ -10,6 +10,7 @@ import {
 } from '../../../schema/catalog.schema';
 import { DbTransaction, UpdateProductMasterVersion } from '../../../catalog.types';
 import { ProductMastersService } from '../../../core/products/services/product-masters.service';
+import { ProductPurchaseConstraintsService } from '../../../core/products/services/product-purchase-constraints.service';
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { ProductImportSessionReader } from './product-import-session.reader';
 import { ProductImportPricingBuilder } from './product-import-pricing.builder';
@@ -24,6 +25,7 @@ export class ProductImportManager {
     private readonly productMastersService: ProductMastersService,
     private readonly pricingService: PricingService,
     private readonly pricingBuilder: ProductImportPricingBuilder,
+    private readonly purchaseConstraintsService: ProductPurchaseConstraintsService,
   ) {}
 
   /**
@@ -101,9 +103,25 @@ export class ProductImportManager {
       ...record.version,
       categoryIds: record.categoryIds,
       primaryCategoryId: record.primaryCategoryId,
+      // 판매기간은 record 가 ISO **문자열**로 들고 있다 — payload jsonb 왕복에서 Date 가
+      // 문자열이 되므로 처음부터 문자열로 두고 여기서만 되살린다. 문자열을 그대로 넘기면
+      // drizzle 의 timestamp 매퍼가 값의 .toISOString() 을 불러 TypeError 로 그 행이 죽는다.
+      // 값이 없으면 키 자체를 만들지 않는다 — undefined 를 넣으면 drizzle 이 무시하지만,
+      // 의도(설정 안 함)와 표현(null 로 덮기)을 구분해 두는 편이 읽기 쉽다.
+      ...(record.salesStartDate ? { salesStartDate: new Date(record.salesStartDate) } : {}),
+      ...(record.salesEndDate ? { salesEndDate: new Date(record.salesEndDate) } : {}),
       optionDiff: record.options.length > 0 ? { add: record.options } : undefined,
     };
     await this.productMastersService.updateVersion(version.id, data, tx);
+
+    // 구매제약은 버전 스칼라가 아니라 별도 테이블 + 매핑이다. 값이 없을 때 호출하지 않는
+    // 이유는 upsertForVersion 의 isDeleteIntent 가 "requiresMembership=false + limit=null" 을
+    // **삭제**로 해석하기 때문이다 — 신규 생성엔 지울 것이 없으니 왕복만 늘어난다.
+    // publishVersion 은 같은 versionId 의 status 만 뒤집으므로(product-versions.service.ts:302)
+    // 여기서 draft 에 심은 매핑이 게시 후에도 그대로 유효하다.
+    if (record.purchaseConstraint) {
+      await this.purchaseConstraintsService.upsertForDraft(version.masterId, version.id, record.purchaseConstraint, tx);
+    }
 
     // variant override 가 없으면 조합 → variantId 맵이 필요 없다. getVariantComboMap 은
     // variant 마다 4-join 조회를 돌리므로 Variants 시트를 안 쓴 파일(=v1 호환 경로)에서

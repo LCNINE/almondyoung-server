@@ -1,7 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { ParsedWorkbook, CategoryNode, ProductRecord, NormalizedOption, comboKey } from '../dto/import.types';
+import {
+  ParsedWorkbook,
+  CategoryNode,
+  ProductRecord,
+  NormalizedOption,
+  RawRow,
+  RowError,
+  comboKey,
+  parseBoolCell,
+} from '../dto/import.types';
 
 const VALUE_DELIMITER = '|';
+/** Products 루프와 Categories 시트 핸들러가 공유하는 문구 — 두 호출부에서 byte-identical 이어야 한다. */
+const UNRESOLVABLE_CATEGORY_PATH = '카테고리 경로를 해석할 수 없습니다(미존재 또는 동명 모호)';
 
 @Injectable()
 export class ProductImportNormalizer {
@@ -52,13 +63,16 @@ export class ProductImportNormalizer {
           record.errors.push({
             sheet: 'Products',
             rowNumber: row.rowNumber,
-            message: `카테고리 경로를 해석할 수 없습니다(미존재 또는 동명 모호): ${path}`,
+            message: `${UNRESOLVABLE_CATEGORY_PATH}: ${path}`,
           });
         }
       }
 
       records.push(record);
     }
+
+    this.applyCategorySheet(parsed.categories, records, byKey, bySlug, byParent, byId);
+    this.applyConstraintSheet(parsed.constraints, records, byKey);
 
     const optionSeqByKey = new Map<string, number>();
 
@@ -89,23 +103,9 @@ export class ProductImportNormalizer {
 
       const target = byKey.get(productKey);
       if (!target) {
-        const stub: ProductRecord = {
-          rowNumber: row.rowNumber,
-          productKey,
-          raw: {},
-          version: {},
-          categoryIds: [],
-          categoryNames: [],
-          options: [option],
-          variantOverrides: [],
-          errors: [
-            {
-              sheet: 'Options',
-              rowNumber: row.rowNumber,
-              message: `존재하지 않는 productKey 참조: ${productKey || '(빈 값)'}`,
-            },
-          ],
-        };
+        // 공통 stub 은 options: [] 로 시작하므로, 이 옵션 자체는 stub 을 만든 뒤 따로 심는다.
+        const stub = this.orphanRecord('Options', row);
+        stub.options = [option];
         records.push(stub);
         continue;
       }
@@ -117,23 +117,7 @@ export class ProductImportNormalizer {
       const target = byKey.get(productKey);
 
       if (!target) {
-        records.push({
-          rowNumber: row.rowNumber,
-          productKey,
-          raw: {},
-          version: {},
-          categoryIds: [],
-          categoryNames: [],
-          options: [],
-          variantOverrides: [],
-          errors: [
-            {
-              sheet: 'Variants',
-              rowNumber: row.rowNumber,
-              message: `존재하지 않는 productKey 참조: ${productKey || '(빈 값)'}`,
-            },
-          ],
-        });
+        records.push(this.orphanRecord('Variants', row));
         continue;
       }
 
@@ -225,6 +209,150 @@ export class ProductImportNormalizer {
     }
 
     return records;
+  }
+
+  /**
+   * 다른 시트가 존재하지 않는 productKey 를 참조했을 때 남기는 stub 레코드.
+   * 상품 본문이 없으므로 raw 는 비어 있고, validator 는 그걸 보고 필드 검증을 skip 한다.
+   * 메시지는 네 호출부(Options/Variants/Categories/Constraints) 모두 동일하므로 여기 하나로 모은다.
+   */
+  private orphanRecord(sheet: RowError['sheet'], row: RawRow): ProductRecord {
+    const productKey = row.cells.productKey ?? '';
+    return {
+      rowNumber: row.rowNumber,
+      productKey,
+      raw: {},
+      version: {},
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [
+        { sheet, rowNumber: row.rowNumber, message: `존재하지 않는 productKey 참조: ${productKey || '(빈 값)'}` },
+      ],
+    };
+  }
+
+  /**
+   * Categories 시트로 다중 카테고리를 지정한다.
+   *
+   * `Products.categoryPath` 는 기존 워크북 하위호환으로 남아 있고, **같은 상품에 둘 다
+   * 있으면 행 오류**다. 조용히 한쪽을 이기게 하면 MD 가 채운 카테고리가 말없이 사라지는데,
+   * 카테고리는 노출 위치를 결정하므로 그 실수는 게시 후에나 발견된다.
+   */
+  private applyCategorySheet(
+    rows: RawRow[],
+    records: ProductRecord[],
+    byKey: Map<string, ProductRecord>,
+    bySlug: Map<string, CategoryNode>,
+    byParent: Map<string | null, CategoryNode[]>,
+    byId: Map<string, CategoryNode>,
+  ): void {
+    if (rows.length === 0) return;
+
+    // 상품 단위로 모은다 — isPrimary "정확히 1개" 는 행 하나만 봐서는 판정할 수 없다.
+    const grouped = new Map<string, RawRow[]>();
+    for (const row of rows) {
+      const productKey = row.cells.productKey ?? '';
+      if (!byKey.has(productKey)) {
+        records.push(this.orphanRecord('Categories', row));
+        continue;
+      }
+      const list = grouped.get(productKey) ?? [];
+      list.push(row);
+      grouped.set(productKey, list);
+    }
+
+    for (const [productKey, sheetRows] of grouped) {
+      const target = byKey.get(productKey);
+      if (!target) continue; // grouped 에는 byKey.has 를 통과한 키만 들어온다
+      const push = (row: RawRow, message: string) =>
+        target.errors.push({ sheet: 'Categories', rowNumber: row.rowNumber, message });
+
+      if ((target.raw.categoryPath ?? '').trim() !== '') {
+        push(sheetRows[0], 'Products.categoryPath 와 Categories 시트를 동시에 쓸 수 없습니다. 한쪽만 채워주세요.');
+        continue;
+      }
+
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      const primaries: string[] = [];
+      let primaryNames: string[] = [];
+      let valid = true;
+
+      for (const row of sheetRows) {
+        const path = (row.cells.categoryPath ?? '').trim();
+        if (path === '') {
+          push(row, 'categoryPath 는 필수입니다.');
+          valid = false;
+          continue;
+        }
+        const resolved = this.resolveCategory(path, bySlug, byParent, byId);
+        if (!resolved) {
+          push(row, `${UNRESOLVABLE_CATEGORY_PATH}: ${path}`);
+          valid = false;
+          continue;
+        }
+        if (seen.has(resolved.id)) {
+          push(row, `같은 카테고리가 중복 지정되었습니다: ${path}`);
+          valid = false;
+          continue;
+        }
+        seen.add(resolved.id);
+        ids.push(resolved.id);
+        if (parseBoolCell(row.cells.isPrimary)) {
+          primaries.push(resolved.id);
+          primaryNames = resolved.names;
+        }
+      }
+
+      // 경로가 안 풀린 상태에서 개수까지 세면 "isPrimary 가 0개다"가 함께 나와 원인이
+      // 흐려진다 — 해석이 전부 성공했을 때만 개수를 본다.
+      if (valid && primaries.length !== 1) {
+        push(sheetRows[0], `isPrimary 는 상품당 정확히 1개여야 합니다 (현재 ${primaries.length}개).`);
+        valid = false;
+      }
+      if (!valid) continue;
+
+      target.categoryIds = ids;
+      target.primaryCategoryId = primaries[0];
+      target.categoryNames = primaryNames;
+    }
+  }
+
+  /**
+   * Constraints 시트를 상품에 접합한다. 숫자 파싱은 하지 않는다 — 오류 메시지를 한 곳에
+   * 모으기 위해 validator 가 한다(Variants 오버라이드 가격과 같은 분담).
+   */
+  private applyConstraintSheet(rows: RawRow[], records: ProductRecord[], byKey: Map<string, ProductRecord>): void {
+    const seenKeys = new Set<string>();
+
+    for (const row of rows) {
+      const productKey = row.cells.productKey ?? '';
+      const target = byKey.get(productKey);
+
+      if (!target) {
+        records.push(this.orphanRecord('Constraints', row));
+        continue;
+      }
+
+      if (seenKeys.has(productKey)) {
+        // 나중 행이 조용히 앞 행을 덮으면 어느 쪽이 적용됐는지 파일만 봐서는 알 수 없다.
+        target.errors.push({
+          sheet: 'Constraints',
+          rowNumber: row.rowNumber,
+          message: `구매제약은 상품당 한 행만 쓸 수 있습니다: ${productKey}`,
+        });
+        continue;
+      }
+      seenKeys.add(productKey);
+
+      target.purchaseConstraintRaw = {
+        rowNumber: row.rowNumber,
+        requiresMembershipRaw: (row.cells.requiresMembership ?? '').trim(),
+        lifetimeQuantityLimitRaw: (row.cells.lifetimeQuantityLimit ?? '').trim(),
+      };
+    }
   }
 
   private resolveCategory(

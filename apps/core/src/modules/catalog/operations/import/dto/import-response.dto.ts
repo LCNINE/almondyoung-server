@@ -7,6 +7,15 @@ export class ResolvedPreviewDto {
   @ApiProperty({ type: [String] })
   categoryNames: string[];
 
+  @ApiProperty({ description: '지정된 카테고리 총 개수. categoryNames 는 그중 대표 카테고리의 경로다.' })
+  categoryCount: number;
+
+  @ApiProperty({
+    description: "판매기간 'YYYY-MM-DD HH:mm ~ YYYY-MM-DD HH:mm' (KST). 지정 없으면 null.",
+    nullable: true,
+  })
+  salesPeriod: string | null;
+
   @ApiProperty()
   variantCount: number;
 }

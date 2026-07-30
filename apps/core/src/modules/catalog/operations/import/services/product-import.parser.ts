@@ -9,8 +9,33 @@ export const MAX_PRODUCT_ROWS = 1000;
  * 먼저 걸린다. 2만 행은 파싱 메모리를 보호하는 실용 상한이다.
  */
 export const MAX_VARIANT_ROWS = 20_000;
+/**
+ * 상품 1000행 × 카테고리 5개면 5,000 행이다. 도메인 상한은 없으나(_linkCategories 는
+ * 개수를 제한하지 않는다) 파싱 메모리를 보호하는 실용 상한을 둔다.
+ */
+export const MAX_CATEGORY_ROWS = 5_000;
+/** 구매제약은 상품당 최대 1행이므로 상품 상한과 같다. */
+export const MAX_CONSTRAINT_ROWS = MAX_PRODUCT_ROWS;
 
 const REQUIRED_PRODUCT_HEADERS = ['productKey', 'name'];
+
+/**
+ * 엑셀 날짜 셀을 워크북 규격 텍스트로 되돌린다.
+ *
+ * exceljs 는 날짜 서식 셀을 Date 로 읽고 `cell.text` 는 그 Date 의 `toString()` 이다 —
+ * "Sat Aug 01 2026 09:00:00 GMT+0900 (Korean Standard Time)" 같은 **서버 로케일·TZ 의존
+ * 문자열**이라 어떤 필드에도 쓸 수 없다. MD 가 날짜를 입력하면 Excel 이 자동으로 날짜
+ * 서식으로 바꿔버리므로, "텍스트 서식으로 넣으세요"를 요구하는 대신 여기서 되돌린다.
+ *
+ * UTC 성분으로 읽는다 — exceljs 는 시트의 날짜 serial 을 UTC 기준 Date 로 만든다.
+ * 로컬 성분(getMonth 등)으로 읽으면 서버 TZ 에 따라 날짜가 하루 밀린다.
+ */
+function formatWorkbookDateCell(value: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const date = `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+  const time = `${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}`;
+  return time === '00:00' ? date : `${date} ${time}`;
+}
 
 @Injectable()
 export class ProductImportParser {
@@ -61,7 +86,21 @@ export class ProductImportParser {
       throw new BadRequestError(`Variants 행이 상한(${MAX_VARIANT_ROWS})을 초과했습니다. 파일을 나눠 올려주세요.`);
     }
 
-    return { products, options, variants };
+    const categoriesSheet = wb.getWorksheet('Categories');
+    const categories = categoriesSheet ? this.readSheet(categoriesSheet) : [];
+    if (categories.length > MAX_CATEGORY_ROWS) {
+      throw new BadRequestError(`Categories 행이 상한(${MAX_CATEGORY_ROWS})을 초과했습니다. 파일을 나눠 올려주세요.`);
+    }
+
+    const constraintsSheet = wb.getWorksheet('Constraints');
+    const constraints = constraintsSheet ? this.readSheet(constraintsSheet) : [];
+    if (constraints.length > MAX_CONSTRAINT_ROWS) {
+      throw new BadRequestError(
+        `Constraints 행이 상한(${MAX_CONSTRAINT_ROWS})을 초과했습니다. 파일을 나눠 올려주세요.`,
+      );
+    }
+
+    return { products, options, variants, categories, constraints };
   }
 
   /** 1행=헤더, 이후=데이터. 빈 행은 건너뛰고 rowNumber 는 데이터 기준 1-based. */
@@ -81,7 +120,10 @@ export class ProductImportParser {
       let hasValue = false;
       headers.forEach((header, col) => {
         if (!header) return;
-        const value = String(row.getCell(col).text ?? '').trim();
+        const cell = row.getCell(col);
+        // 날짜 셀만 가로챈다. 수식 셀의 value 는 {formula, result} 객체라 instanceof 가
+        // 걸리지 않으므로 기존 text 경로를 그대로 탄다.
+        const value = cell.value instanceof Date ? formatWorkbookDateCell(cell.value) : String(cell.text ?? '').trim();
         cells[header] = value;
         if (value !== '') hasValue = true;
       });

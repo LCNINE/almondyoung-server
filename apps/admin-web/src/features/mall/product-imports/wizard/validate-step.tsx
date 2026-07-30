@@ -72,6 +72,7 @@ export function ValidateStep({
               <th className="p-2">상태</th>
               <th className="p-2">상품명</th>
               <th className="p-2">카테고리</th>
+              <th className="p-2">판매기간</th>
               <th className="p-2">변형 수</th>
               <th className="p-2">오류</th>
             </tr>
@@ -89,7 +90,18 @@ export function ValidateStep({
                   )}
                 </td>
                 <td className="p-2">{r.resolved.name}</td>
-                <td className="p-2">{r.resolved.categoryNames.join(' > ')}</td>
+                <td className="p-2">
+                  {r.resolved.categoryNames.join(' > ')}
+                  {r.resolved.categoryCount > 1 && (
+                    <span className="text-muted-foreground">
+                      {' '}
+                      +{r.resolved.categoryCount - 1}
+                    </span>
+                  )}
+                </td>
+                <td className="p-2 whitespace-nowrap">
+                  {r.resolved.salesPeriod ?? '-'}
+                </td>
                 <td className="p-2">{r.resolved.variantCount}</td>
                 <td className="p-2 text-destructive">
                   {r.errors.join(', ')}

@@ -10,6 +10,7 @@ import { ProductImportParser } from './product-import.parser';
 import { ProductImportNormalizer } from './product-import.normalizer';
 import { ProductImportValidator } from './product-import.validator';
 import { ProductImportProgressBuilder } from './product-import-progress.builder';
+import { ProductRecord } from '../dto/import.types';
 
 async function buf(rows: string[][]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -49,6 +50,47 @@ function makeService() {
   return { service, reader, manager, variantCodeChecker };
 }
 
+/**
+ * 파서·정규화기·검증기까지 목으로 감싼 하네스. `setRecords` 로 파이프라인 최종 결과를
+ * 직접 주입해, xlsx 워크북을 조립하지 않고도 ProductRecord 필드(다중 카테고리·판매기간 등)를
+ * 자유롭게 세팅해 프리뷰 매핑만 검증한다.
+ */
+function harness() {
+  const parser = {
+    parse: jest.fn(async () => ({ products: [], options: [], variants: [], categories: [], constraints: [] })),
+  } as any;
+  const normalizer = { normalize: jest.fn(() => []) } as any;
+  const validator = { validate: jest.fn((records: ProductRecord[]) => records) } as any;
+  const reader = {
+    loadCategoryTree: jest.fn(async () => []),
+    getSession: jest.fn(),
+    getProgressCounts: jest.fn(),
+  } as any;
+  const manager = {
+    acceptCommit: jest.fn(async () => ({
+      sessionId: 's1',
+      status: 'queued' as const,
+      totalRows: 1,
+      queuedCount: 1,
+      invalidCount: 0,
+    })),
+  } as any;
+  const variantCodeChecker = { check: jest.fn(async () => undefined) } as any;
+  const service = new ProductImportService(
+    parser,
+    normalizer,
+    validator,
+    reader,
+    manager,
+    variantCodeChecker,
+    new ProductImportProgressBuilder(),
+  );
+  function setRecords(records: ProductRecord[]): void {
+    validator.validate.mockReturnValue(records);
+  }
+  return { service, parser, normalizer, validator, reader, manager, variantCodeChecker, setRecords };
+}
+
 describe('ProductImportService.validate', () => {
   it('유효/무효 행을 집계한 프리뷰를 DB 쓰기 없이 반환한다', async () => {
     const { service, manager } = makeService();
@@ -66,6 +108,99 @@ describe('ProductImportService.validate', () => {
     const invalid = preview.rows.find((r) => r.productKey === 'P2');
     expect(invalid!.status).toBe('invalid');
     expect(invalid!.errors.length).toBeGreaterThan(0);
+  });
+
+  it('프리뷰가 카테고리 개수와 KST 판매기간을 담는다', async () => {
+    const { service, setRecords } = harness();
+    setRecords([
+      {
+        rowNumber: 1,
+        productKey: 'P1',
+        raw: { name: '니트A' },
+        version: { name: '니트A' },
+        basePrice: 29000,
+        categoryIds: ['c-knit', 'c-event'],
+        categoryNames: ['여성패션', '니트'],
+        primaryCategoryId: 'c-knit',
+        options: [],
+        variantOverrides: [],
+        errors: [],
+        salesStartDate: '2026-07-31T15:00:00.000Z',
+        salesEndDate: '2026-08-31T14:59:59.999Z',
+      },
+    ]);
+
+    const preview = await service.validate(Buffer.from(''));
+
+    expect(preview.rows[0].resolved.categoryCount).toBe(2);
+    expect(preview.rows[0].resolved.categoryNames).toEqual(['여성패션', '니트']);
+    expect(preview.rows[0].resolved.salesPeriod).toBe('2026-08-01 00:00 ~ 2026-08-31 23:59');
+  });
+
+  it('판매기간이 없으면 null 이다', async () => {
+    const { service, setRecords } = harness();
+    setRecords([
+      {
+        rowNumber: 1,
+        productKey: 'P1',
+        raw: { name: '니트A' },
+        version: { name: '니트A' },
+        basePrice: 29000,
+        categoryIds: [],
+        categoryNames: [],
+        options: [],
+        variantOverrides: [],
+        errors: [],
+      },
+    ]);
+
+    const preview = await service.validate(Buffer.from(''));
+    expect(preview.rows[0].resolved.salesPeriod).toBeNull();
+    expect(preview.rows[0].resolved.categoryCount).toBe(0);
+  });
+
+  it('시작일만 있으면 종료 쪽을 "종료일 없음"으로 명시한다 — 빈 문자열이면 제한없음으로 오독된다', async () => {
+    const { service, setRecords } = harness();
+    setRecords([
+      {
+        rowNumber: 1,
+        productKey: 'P1',
+        raw: { name: '니트A' },
+        version: { name: '니트A' },
+        basePrice: 29000,
+        categoryIds: [],
+        categoryNames: [],
+        options: [],
+        variantOverrides: [],
+        errors: [],
+        salesStartDate: '2026-07-31T15:00:00.000Z',
+      },
+    ]);
+
+    const preview = await service.validate(Buffer.from(''));
+    expect(preview.rows[0].resolved.salesPeriod).toBe('2026-08-01 00:00 ~ 종료일 없음');
+  });
+
+  it('종료일만 있으면 시작 쪽을 "시작일 없음"으로 명시한다', async () => {
+    const { service, setRecords } = harness();
+    setRecords([
+      {
+        rowNumber: 1,
+        productKey: 'P1',
+        raw: { name: '니트A' },
+        version: { name: '니트A' },
+        basePrice: 29000,
+        categoryIds: [],
+        categoryNames: [],
+        options: [],
+        variantOverrides: [],
+        errors: [],
+        salesEndDate: '2026-08-31T14:59:59.999Z',
+      },
+    ]);
+
+    const preview = await service.validate(Buffer.from(''));
+    expect(preview.rows[0].resolved.salesPeriod).toBe('시작일 없음 ~ 2026-08-31 23:59');
   });
 });
 

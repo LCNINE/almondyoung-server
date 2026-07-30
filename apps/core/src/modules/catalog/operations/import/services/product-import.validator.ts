@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ProductRecord } from '../dto/import.types';
+import { ProductRecord, parseBoolCell, formatKstMinutes } from '../dto/import.types';
 
 export const MAX_VARIANT_COMBINATIONS = 100;
 
@@ -18,6 +18,15 @@ const STRING_FIELDS = [
   'seller',
 ];
 
+const SALES_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const SALES_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
+/**
+ * 날짜만 적힌 칸을 KST 경계로 해석한다. UTC 로 읽으면 "8월 31일까지 판매"가 그날
+ * 09:00(KST) 에 끝나 SALES_ENDED 로 조용히 품절된다 — MD 는 KST 로 생각한다.
+ * KST 는 DST 가 없어 오프셋이 항상 +09:00 이므로 문자열에 박아 넣으면 서버 TZ 와 무관해진다.
+ */
+const KST_OFFSET = '+09:00';
+
 @Injectable()
 export class ProductImportValidator {
   validate(records: ProductRecord[]): ProductRecord[] {
@@ -27,6 +36,7 @@ export class ProductImportValidator {
       this.validateFields(record);
       this.validateOptions(record);
       this.validateVariantOverrides(record);
+      this.validatePurchaseConstraint(record);
     }
     return records;
   }
@@ -92,9 +102,45 @@ export class ProductImportValidator {
       push,
     );
 
+    const seoTitle = (raw.seoTitle ?? '').trim();
+    if (seoTitle !== '') {
+      // seo_title 은 varchar(255) 다. 넘겨도 프리뷰는 통과하고 commit 에서 Postgres 22001 로
+      // 그 행만 죽는다 — basePrice 를 입구에서 막는 것과 같은 이유로 여기서 막는다.
+      if (seoTitle.length > 255) push(`seoTitle 은 255자 이하여야 합니다 (현재 ${seoTitle.length}자).`);
+      else version.seoTitle = seoTitle;
+    }
+
+    const seoDescription = (raw.seoDescription ?? '').trim();
+    if (seoDescription !== '') version.seoDescription = seoDescription;
+
+    // seo_keywords 는 text[] 다. 구분자는 optionValues 와 같은 '|' 로 맞춘다.
+    const seoKeywords = (raw.seoKeywords ?? '')
+      .split('|')
+      .map((keyword) => keyword.trim())
+      .filter((keyword) => keyword !== '');
+    if (seoKeywords.length > 0) version.seoKeywords = seoKeywords;
+
     version.isOverseas = this.bool(raw.isOverseas);
     version.isVisibleToMembersOnly = this.bool(raw.isVisibleToMembersOnly);
     version.hideMembershipPriceForNonMembers = this.bool(raw.hideMembershipPriceForNonMembers);
+    version.isWholesaleOnly = this.bool(raw.isWholesaleOnly);
+
+    // ISO 문자열로 둔다 — payload jsonb 왕복에서 Date 는 문자열이 되므로 version 에 Date 를
+    // 넣으면 워커가 문자열을 drizzle timestamp 컬럼에 그대로 넘겨 TypeError 로 그 행이 죽는다.
+    // Date 로 되살리는 지점은 ProductImportManager.createFromRecord 한 곳이다.
+    const salesStartDate = this.salesDate(raw.salesStartDate, 'salesStartDate', false, push);
+    const salesEndDate = this.salesDate(raw.salesEndDate, 'salesEndDate', true, push);
+    if (salesStartDate !== undefined && salesEndDate !== undefined && salesStartDate >= salesEndDate) {
+      // 둘 다 toISOString() 결과(Z 고정·같은 자릿수)라 사전순 비교 = 시간순 비교다.
+      // 이 필드는 등록 후 화면에서 고칠 수 없으므로 MD 가 워크북에서 무엇이 해석됐는지
+      // 바로 보게 KST 로 렌더링해 echo 한다(원본 입력도 KST 였다).
+      push(
+        `salesEndDate 는 salesStartDate 보다 뒤여야 합니다: ${formatKstMinutes(salesEndDate)} <= ${formatKstMinutes(salesStartDate)}`,
+      );
+    } else {
+      record.salesStartDate = salesStartDate;
+      record.salesEndDate = salesEndDate;
+    }
 
     record.version = version;
   }
@@ -161,6 +207,34 @@ export class ProductImportValidator {
     }
   }
 
+  private validatePurchaseConstraint(record: ProductRecord): void {
+    const raw = record.purchaseConstraintRaw;
+    if (!raw) return;
+    const push = (message: string) => record.errors.push({ sheet: 'Constraints', rowNumber: raw.rowNumber, message });
+
+    const requiresMembership = parseBoolCell(raw.requiresMembershipRaw);
+
+    let lifetimeQuantityLimit: number | null = null;
+    if (raw.lifetimeQuantityLimitRaw !== '') {
+      const parsed = Number(raw.lifetimeQuantityLimitRaw);
+      // 컬럼이 integer(최대 2147483647)라 상한 없이 통과시키면 프리뷰는 지나가고
+      // commit 에서 Postgres 22003(numeric_value_out_of_range)로 그 행만 죽는다 —
+      // 위 seoTitle 255자 가드와 같은 이유로 여기서 미리 막는다.
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 2_147_483_647) {
+        push(`lifetimeQuantityLimit 는 1 이상 2147483647 이하의 정수여야 합니다: ${raw.lifetimeQuantityLimitRaw}`);
+        return;
+      }
+      lifetimeQuantityLimit = parsed;
+    }
+
+    // 둘 다 비어 있으면 "제약 없음"이고, 그 입력은 upsertForVersion 의 isDeleteIntent 가
+    // **삭제**로 해석한다(product-purchase-constraints.service.ts:32-34). 신규 생성엔 지울
+    // 것이 없으니 호출 자체를 하지 않는 것이 맞다 — 그래서 undefined 로 남긴다.
+    if (!requiresMembership && lifetimeQuantityLimit === null) return;
+
+    record.purchaseConstraint = { requiresMembership, lifetimeQuantityLimit };
+  }
+
   private optionalMoney(raw: string | undefined, field: string, push: (m: string) => void): number | undefined {
     const value = (raw ?? '').trim();
     if (value === '') return undefined;
@@ -220,8 +294,68 @@ export class ProductImportValidator {
     return value;
   }
 
+  /**
+   * 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm' 을 KST 로 해석해 ISO8601(UTC) 문자열로 돌려준다.
+   *
+   * 느슨한 `new Date(문자열)` 을 쓰지 않는 이유: '08/01/2026' 같은 입력을 구현 재량으로
+   * 조용히 해석해 MD 의 의도와 다른 날짜가 게시된다. 형식을 좁히고 명시적으로 거부한다.
+   * (엑셀 날짜 서식 셀은 파서가 이미 이 두 형식으로 정규화한다 — product-import.parser.ts)
+   *
+   * endOfDay 는 종료일 전용이다. 날짜만 주면 그 날 23:59:59.999(KST)까지 판매한다는 뜻이다.
+   */
+  private salesDate(
+    raw: string | undefined,
+    field: string,
+    endOfDay: boolean,
+    push: (m: string) => void,
+  ): string | undefined {
+    const value = (raw ?? '').trim();
+    if (value === '') return undefined;
+
+    let iso: string;
+    if (SALES_DATE_ONLY.test(value)) {
+      iso = `${value}T${endOfDay ? '23:59:59.999' : '00:00:00.000'}${KST_OFFSET}`;
+    } else if (SALES_DATE_TIME.test(value)) {
+      iso = `${value.replace(' ', 'T')}:00.000${KST_OFFSET}`;
+    } else {
+      push(`${field} 는 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm' 형식이어야 합니다: ${value}`);
+      return undefined;
+    }
+
+    // new Date(iso) 는 일(day) 오버플로를 다음 달로 조용히 굴려 보낸다(예: '2026-02-30' →
+    // 2026-03-02) — NaN 이 되지 않으므로 아래 Number.isNaN 만으로는 못 잡는다. 두 형식 모두
+    // 'YYYY-MM-DD' 로 시작하므로 고정 위치에서 잘라 달력 유효성을 먼저 확인한다. 월(1~12)·
+    // 시(0~23)·분(0~59) 범위 오버플로는 ISO 문자열 파싱 단계에서 이미 NaN 으로 걸러진다.
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(5, 7));
+    const day = Number(value.slice(8, 10));
+    if (!this.isValidCalendarDate(year, month, day)) {
+      push(`${field} 는 존재하지 않는 날짜입니다: ${value}`);
+      return undefined;
+    }
+
+    const parsed = new Date(iso);
+    if (Number.isNaN(parsed.getTime())) {
+      // 정규식은 통과하지만 존재하지 않는 시각이다. ECMAScript 는 24:00 을 다음날 00:00 으로
+      // 허용하므로(예: '2026-08-01T24:00:00+09:00' 는 8월 2일 00:00 KST 로 파싱된다) 24:00
+      // 자체는 여기서 걸리지 않는다 — 24:01 이상이나 분 60 이상 같은 진짜 오버플로만 NaN 이 된다.
+      push(`${field} 는 존재하지 않는 날짜입니다: ${value}`);
+      return undefined;
+    }
+    return parsed.toISOString();
+  }
+
+  /**
+   * Date.UTC 왕복으로 실재하지 않는 날짜(2026-02-30, 4월 31일 등)를 잡아낸다 — day 오버플로는
+   * new Date(ISO 문자열) 이 조용히 다음 달로 넘겨버려 NaN 이 되지 않으므로 별도 검증이 필요하다.
+   * UTC 만 쓰므로 KST 오프셋·서버 TZ 와 무관하다.
+   */
+  private isValidCalendarDate(year: number, month: number, day: number): boolean {
+    const d = new Date(Date.UTC(year, month - 1, day));
+    return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+  }
+
   private bool(raw: string | undefined): boolean {
-    const value = (raw ?? '').trim().toLowerCase();
-    return value === 'y' || value === 'true' || value === '1';
+    return parseBoolCell(raw);
   }
 }
