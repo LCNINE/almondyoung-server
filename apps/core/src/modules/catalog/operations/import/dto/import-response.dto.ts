@@ -106,10 +106,16 @@ export class SessionSummaryDto {
   @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({ enum: ['idle', 'queued', 'running', 'completed', 'failed'], description: '상품 생성 잡 상태' })
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '상품 생성 잡 상태',
+  })
   commitStatus: string;
 
-  @ApiProperty({ enum: ['idle', 'queued', 'running', 'completed', 'failed'], description: '게시 잡 상태' })
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '게시 잡 상태',
+  })
   publishStatus: string;
 
   @ApiProperty()
@@ -123,6 +129,20 @@ export class SessionSummaryDto {
 
   @ApiProperty({ required: false, nullable: true })
   publishError: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '접수 시점 검증실패 행 수. 옛 세션(컬럼 도입 이전)은 null 이다.',
+  })
+  invalidCount: number | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '취소 요청 시각. null 이 아니면 워커가 이 세션을 더 이상 집지 않는다.',
+  })
+  cancelRequestedAt: Date | null;
 }
 
 export class SessionDetailDto extends SessionSummaryDto {
@@ -139,4 +159,24 @@ export class PublishAcceptedDto {
 
   @ApiProperty({ description: '게시 대상 행 수. 진행은 GET /product-imports/:id 로 폴링한다.' })
   targetCount: number;
+}
+
+export class CancelAcceptedDto {
+  @ApiProperty()
+  sessionId: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 생성 잡 상태. 이미 끝난 레인은 completed 로 남는다.',
+  })
+  commitStatus: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 게시 잡 상태',
+  })
+  publishStatus: string;
+
+  @ApiProperty({ description: '취소 요청 시각' })
+  canceledAt: Date;
 }

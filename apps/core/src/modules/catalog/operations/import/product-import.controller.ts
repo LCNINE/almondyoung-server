@@ -15,7 +15,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { User } from '@app/authorization';
 import { ProductImportService } from './services/product-import.service';
-import { ValidatePreviewDto, CommitAcceptedDto, SessionDetailDto, PublishAcceptedDto } from './dto';
+import { ValidatePreviewDto, CommitAcceptedDto, SessionDetailDto, PublishAcceptedDto, CancelAcceptedDto } from './dto';
 
 @ApiTags('Product Import')
 @Controller('product-imports')
@@ -82,5 +82,16 @@ export class ProductImportController {
   @ApiResponse({ status: 202, type: PublishAcceptedDto })
   async publish(@Param('sessionId') sessionId: string): Promise<PublishAcceptedDto> {
     return this.service.publishSession(sessionId);
+  }
+
+  @Post(':sessionId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '세션 취소 — 진행 중인 레인을 멈춘다. 이미 생성/게시된 것은 되돌리지 않는다.',
+  })
+  @ApiResponse({ status: 200, type: CancelAcceptedDto })
+  @ApiResponse({ status: 409, description: '이미 취소됐거나 진행 중인 작업이 없음' })
+  async cancel(@Param('sessionId') sessionId: string): Promise<CancelAcceptedDto> {
+    return this.service.cancelSession(sessionId);
   }
 }

@@ -16,6 +16,8 @@ import { Plus } from 'lucide-react';
  * 세션 상세의 버튼 라벨("생성 중...","게시 중...")과 맞춘다 — 두 화면이 어긋나면 안 된다.
  */
 function jobStatusLabel(s: Pick<SessionSummaryDto, 'commitStatus' | 'publishStatus'>): string {
+  // 취소를 가장 먼저 본다 — 취소된 세션은 어느 레인이 어디서 멈췄든 사람에게는 '취소됨' 하나다.
+  if (s.commitStatus === 'canceled' || s.publishStatus === 'canceled') return '취소됨';
   if (s.commitStatus === 'queued' || s.commitStatus === 'running') return '생성 중';
   if (s.commitStatus === 'failed') return '생성 실패';
   if (s.publishStatus === 'queued' || s.publishStatus === 'running') return '게시 중';

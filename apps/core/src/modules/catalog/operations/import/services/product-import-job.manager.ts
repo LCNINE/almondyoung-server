@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDb, DbService } from '@app/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { type PimSchema, productImportSessions, productImportItems } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
@@ -14,6 +14,17 @@ import { ProductVersionsService } from '../../../core/products/services/product-
 export const DEFAULT_COMMIT_SLICE = 20;
 export const DEFAULT_PUBLISH_SLICE = 10;
 export const DEFAULT_LEASE_MS = 60_000;
+/**
+ * 슬라이스 밖으로 탈출한 예외의 연속 허용 횟수. 넘으면 그 레인을 failed 로 확정한다.
+ *
+ * 재시도 주기는 틱 간격(5초)이 아니다 — 슬라이스가 탈출 예외로 죽으면 recordJobError 가
+ * lease 를 의도적으로 지우지 않으므로, 다음 claim 은 `lease_until < NOW()` 에 막혀
+ * leaseMs(기본 60초)를 기다린 뒤에야 다시 잡힌다. 즉 10회는 ~60초 간격 기준 상한까지
+ * 최소 ~10분이다 — 일시적 DB 오류·배포 중 커넥션 끊김은 그 안에 회복되므로 "일시적
+ * 오류로 임포트를 영구 실패시키지 않는다"는 원래 설계 의도가 보존된다. 진짜 결정적
+ * 오류(payload 형태 불일치 등)만 상한에 닿는다.
+ */
+export const MAX_CONSECUTIVE_JOB_FAILURES = 10;
 
 /** 클레임 결과. leaseToken 이 이후 갱신·해제의 CAS 비교값이다. */
 export interface ClaimedSession {
@@ -100,6 +111,15 @@ export class ProductImportJobManager {
     // 타임스탬프로 소유권을 보려던 앞선 세 번의 시도가 모두 정밀도·타임존·드라이버 직렬화에서
     // 깨졌다. 토큰은 문자열이라 raw sql 바인딩도 안전하다.
     const leaseToken = uuidv7();
+    // `cancel_requested_at IS NULL` 가드는 오늘은 심층방어다 — cancelSession 이 레인도
+    // 함께 'canceled' 로 뒤집으므로, 위 `IN ('queued', 'running')` 만으로도 취소된 세션은
+    // 이미 걸러진다. 그래도 남겨두는 이유: 미래에 레인 상태를 바꾸지 않고
+    // cancel_requested_at 만 찍는 경로가 생기면(예: 취소 요청만 먼저 기록하고 레인 전이는
+    // 비동기로 미루는 설계 변경), 그 순간에도 굳은 세션의 재시도 루프를 끊어준다 —
+    // 슬라이스 밖으로 탈출한 예외는 renewLease 에 도달하기도 전에 나므로 워커 쪽 취소
+    // 감지만으로는 그 루프를 끊을 수 없다.
+    // (이 주석은 sql 템플릿 밖에 둔다 — 템플릿 안 `--` 주석은 매 클레임마다 Postgres 로
+    // 그대로 전송돼 pg_stat_activity 에 노이즈를 남긴다.)
     return this.db.run(async (trx) => {
       const rows = await trx.execute<{ id: string }>(sql`
         UPDATE product_import_sessions
@@ -111,6 +131,7 @@ export class ProductImportJobManager {
              FROM product_import_sessions
             WHERE ${statusColumn} IN ('queued', 'running')
               AND (lease_until IS NULL OR lease_until < NOW())
+              AND cancel_requested_at IS NULL
             ORDER BY created_at
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -162,7 +183,15 @@ export class ProductImportJobManager {
           // 마감도 renew·release 와 같은 토큰 CAS 를 건다. 무조건 쓰면, lease 가 만료된 뒤
           // 뒤늦게 깨어난 좀비가 pending 0 을 보고 **후임이 처리 중인 세션을** completed 로
           // 도장 찍고 committed_at 을 오늘로 덮어쓰며 후임의 lease_until 까지 지운다.
-          .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, leaseToken))),
+          // cancel 가드도 같은 계열이다 — 취소 직후 pending 이 0 인 경계에서 canceled 를
+          // completed 로 덮는 것을 막는다.
+          .where(
+            and(
+              eq(productImportSessions.id, sessionId),
+              eq(productImportSessions.leaseToken, leaseToken),
+              isNull(productImportSessions.cancelRequestedAt),
+            ),
+          ),
       );
       return;
     }
@@ -189,8 +218,17 @@ export class ProductImportJobManager {
       // 갱신은 토큰 CAS 다. 실패했다는 건 이미 lease 를 빼앗겼다는 뜻이므로 **즉시 멈춘다** —
       // 계속 진행하면 후임 워커와 같은 행을 나란히 처리하게 된다. 가드는 반드시 두
       // continue 경로보다 위에 있어야 한다(어느 경로든 시간을 쓴다).
-      if (!(await this.renewLease(sessionId, leaseToken))) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
         this.logger.warn(`임포트 세션 lease 를 잃어 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        // 취소는 종단이다 — 레인 상태는 cancelSession 이 이미 확정했으므로 여기서는
+        // lease 만 놓는다. 다음 틱의 claim 은 cancel_requested_at 가드에 막혀 이 세션을
+        // 다시 집지 않는다.
+        this.logger.log(`임포트 세션이 취소돼 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
         return;
       }
 
@@ -258,7 +296,13 @@ export class ProductImportJobManager {
           // commit 마감과 같은 이유로 토큰 CAS 를 건다 — lease 를 잃은 좀비가
           // 후임의 세션에 completed 를 도장 찍고 lease 를 지우는 것을 막는다.
           .set({ publishStatus: 'completed', leaseUntil: null, leaseToken: null })
-          .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, leaseToken))),
+          .where(
+            and(
+              eq(productImportSessions.id, sessionId),
+              eq(productImportSessions.leaseToken, leaseToken),
+              isNull(productImportSessions.cancelRequestedAt),
+            ),
+          ),
       );
       return;
     }
@@ -266,8 +310,14 @@ export class ProductImportJobManager {
     for (const item of items) {
       // commit 슬라이스와 같은 이유로 행마다 lease 를 갱신한다 — publishVersion 은
       // 가격검증 + 캐시 + 매칭 인계 + 스냅샷 조립이 붙어 행당 비용이 commit 보다 크다.
-      if (!(await this.renewLease(sessionId, leaseToken))) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
         this.logger.warn(`임포트 세션 lease 를 잃어 게시 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        this.logger.log(`임포트 세션이 취소돼 게시 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
         return;
       }
 
@@ -324,23 +374,30 @@ export class ProductImportJobManager {
 
   /**
    * lease 를 다시 민다 — **내 토큰을 그대로 들고 있을 때만**(CAS).
-   * false 면 그 사이 lease 가 만료돼 다른 워커가 세션을 가져갔다는 뜻이고,
-   * 호출자는 슬라이스를 즉시 중단해야 한다.
+   * `owned:false` 면 그 사이 lease 가 만료돼 다른 워커가 세션을 가져갔다는 뜻이고,
+   * `canceled:true` 면 취소 요청이 들어왔다는 뜻이다. 둘 다 슬라이스 즉시 중단 사유다.
+   *
+   * 취소 여부를 **여기서** 읽는 이유: 이 왕복은 행마다 이미 돌고 있다 — returning 에
+   * 컬럼 하나를 얹는 것은 쿼리를 늘리지 않는다(설계 스펙 §3.4.1).
    *
    * `lease_until > NOW()` 같은 *생존* 검사로는 부족하다. 후임 워커가 방금 민 lease 도
    * 미래이므로 그 조건을 통과한다 — 즉 정말 막아야 할 경우(후임이 넘겨받은 상태)에
    * 그대로 통과해 버려 아무 것도 막지 못한다. 소유권은 "내가 발급한 토큰"으로만 확인할 수 있다.
    */
-  private async renewLease(sessionId: string, token: string): Promise<boolean> {
+  private async renewLease(sessionId: string, token: string): Promise<{ owned: boolean; canceled: boolean }> {
     const rows = await this.db.run((trx) =>
       trx
         .update(productImportSessions)
         // 만료시각은 DB 시계로 다시 민다 — 이 값은 비교 대상이 아니므로 정밀도가 무관하다.
         .set({ leaseUntil: sql`NOW() + ${this.leaseMs} * interval '1 millisecond'` })
         .where(and(eq(productImportSessions.id, sessionId), eq(productImportSessions.leaseToken, token)))
-        .returning({ id: productImportSessions.id }),
+        .returning({ cancelRequestedAt: productImportSessions.cancelRequestedAt }),
     );
-    return rows.length > 0;
+    const [row] = rows;
+    if (!row) return { owned: false, canceled: false };
+    // Boolean() 으로 감싼다 — Date 는 truthy, null·undefined 는 falsy 다. `!== null` 로 쓰면
+    // 값이 없는 목 하네스에서 undefined 가 취소로 오독된다.
+    return { owned: true, canceled: Boolean(row.cancelRequestedAt) };
   }
 
   /** lease 를 놓는다 — 내 토큰을 그대로 들고 있을 때만(CAS). */
@@ -368,19 +425,60 @@ export class ProductImportJobManager {
   }
 
   /**
-   * 슬라이스를 탈출한 예외를 세션에 기록한다. 상태를 failed 로 바꾸지는 않는다 —
-   * 일시적 DB 오류로 임포트를 영구 실패시키는 편이 더 나쁘고, 재시도 횟수를 셀 컬럼이
-   * 없다. 대신 마지막 오류를 남겨 운영자가 API 로 볼 수 있게 한다.
+   * 슬라이스를 탈출한 예외를 세션에 기록하고 **연속 실패를 센다.**
+   *
+   * 상한 전까지는 상태를 바꾸지 않는다 — 일시적 DB 오류로 임포트를 영구 실패시키는 편이
+   * 더 나쁘다. lease 도 지우지 않는다: 예외가 났다는 건 우리가 지금 어떤 상태인지 모른다는
+   * 뜻이고, 그 상태에서 lease 를 지우면 후임 워커의 lease 를 지울 수도 있다. 만료를
+   * 기다리면 그만이다(최대 leaseMs).
+   *
+   * 상한에 닿으면 이야기가 달라진다 — 그 레인을 failed 로 확정하므로 claim 후보에서
+   * 빠지고, 새 후임이 생기지 않는다. 그래서 이때만은 lease 를 지운다(토큰 CAS 없이):
+   * 혹시 남아 있는 후임이 있다면 그 renewLease 가 실패해 스스로 멈추는데, 레인이 이미
+   * failed 인 이상 그 중단이 옳은 방향이다. CAS 를 걸면 소유권이 옮겨간 순간 상한이
+   * 영원히 발화하지 못한다.
    */
   async recordJobError(sessionId: string, kind: 'commit' | 'publish', message: string): Promise<void> {
+    const rows = await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        .set({
+          ...(kind === 'commit' ? { commitError: message } : { publishError: message }),
+          consecutiveFailures: sql`${productImportSessions.consecutiveFailures} + 1`,
+        })
+        .where(eq(productImportSessions.id, sessionId))
+        .returning({ consecutiveFailures: productImportSessions.consecutiveFailures }),
+    );
+
+    const failures = rows[0]?.consecutiveFailures ?? 0;
+    if (failures < MAX_CONSECUTIVE_JOB_FAILURES) return;
+
+    this.logger.error(`임포트 잡이 ${failures}회 연속 실패해 ${kind} 레인을 failed 로 확정한다 (session=${sessionId})`);
     await this.db.run((trx) =>
       trx
         .update(productImportSessions)
-        // lease 는 여기서 지우지 않는다 — 예외가 났다는 건 우리가 지금 어떤 상태인지
-        // 모른다는 뜻이고, 그 상태에서 lease 를 지우면 후임 워커의 lease 를 지울 수도 있다.
-        // 만료를 기다리면 그만이다(최대 leaseMs).
-        .set(kind === 'commit' ? { commitError: message } : { publishError: message })
+        .set({
+          ...(kind === 'commit' ? { commitStatus: 'failed' as const } : { publishStatus: 'failed' as const }),
+          leaseUntil: null,
+          leaseToken: null,
+        })
         .where(eq(productImportSessions.id, sessionId)),
+    );
+  }
+
+  /**
+   * 슬라이스가 예외 없이 끝났으면 연속 실패를 0 으로 되돌린다. 리셋이 없으면 산발적
+   * 오류가 누적돼 멀쩡한 세션이 언젠가 상한에 닿는다.
+   *
+   * `> 0` 조건을 붙여 흔한 경우(이미 0)에는 실제 행에 닿지 않게 한다 — 슬라이스마다 도는
+   * 왕복이라 write 를 만들지 않는 편이 낫다.
+   */
+  async clearConsecutiveFailures(sessionId: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        .set({ consecutiveFailures: 0 })
+        .where(and(eq(productImportSessions.id, sessionId), gt(productImportSessions.consecutiveFailures, 0))),
     );
   }
 }

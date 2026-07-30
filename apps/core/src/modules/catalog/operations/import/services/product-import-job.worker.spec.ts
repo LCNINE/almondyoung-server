@@ -25,6 +25,7 @@ function makeWorker(opts: { enabled?: string; claims?: Array<string | null> } = 
     claimPublish: jest.fn(async (): Promise<ClaimedSession | null> => null),
     runPublishSlice: jest.fn(async () => undefined),
     recordJobError: jest.fn(async () => undefined),
+    clearConsecutiveFailures: jest.fn(async () => undefined),
   } as any;
   const config = { get: jest.fn(() => opts.enabled) } as any;
   return { worker: new ProductImportJobWorker(jobManager, config), jobManager };
@@ -105,5 +106,31 @@ describe('ProductImportJobWorker', () => {
     await worker.tick();
 
     expect(jobManager.recordJobError).toHaveBeenCalledWith('sess-2', 'publish', '게시 실패');
+  });
+
+  it('슬라이스가 정상 종료하면 연속 실패를 리셋한다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: ['sess-1'] });
+
+    await worker.tick();
+
+    expect(jobManager.clearConsecutiveFailures).toHaveBeenCalledWith('sess-1');
+  });
+
+  it('슬라이스가 터지면 리셋하지 않는다 — 리셋하면 상한이 영원히 안 걸린다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: ['sess-1'] });
+    jobManager.runCommitSlice.mockRejectedValue(new Error('DB down'));
+
+    await worker.tick();
+
+    expect(jobManager.clearConsecutiveFailures).not.toHaveBeenCalled();
+  });
+
+  it('publish 슬라이스가 정상 종료해도 리셋한다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: [null] });
+    jobManager.claimPublish = jest.fn(async () => ({ sessionId: 'sess-2', leaseToken: 'tok-2' }));
+
+    await worker.tick();
+
+    expect(jobManager.clearConsecutiveFailures).toHaveBeenCalledWith('sess-2');
   });
 });
