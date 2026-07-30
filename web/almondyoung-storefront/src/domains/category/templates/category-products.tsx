@@ -30,7 +30,10 @@ export default async function CategoryProducts({
   productsIds?: string[]
   countryCode: string
 }) {
-  const region = await getRegion(countryCode)
+  const [region, customer] = await Promise.all([
+    getRegion(countryCode),
+    retrieveCustomer().catch(() => null),
+  ])
 
   if (!region) {
     return null
@@ -38,38 +41,42 @@ export default async function CategoryProducts({
 
   const effectiveSortBy = normalizeCategorySort(sortBy)
   const pageSize = normalizePageSize(limit)
-
-  // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
-  const {
-    response: { products: initialProducts, count: totalCount },
-    nextPage: initialNextPage,
-  } = isSortedOption(effectiveSortBy)
-    ? await listProductsSorted({
-        pageParam: 1,
-        ...mapSortParams(effectiveSortBy),
-        countryCode,
-        categoryId: categoryIds,
-        collectionId,
-        limit: pageSize,
-      })
-    : await listProducts({
-        pageParam: 1,
-        countryCode,
-        queryParams: {
-          limit: pageSize,
-          order: "-created_at",
-          category_id: categoryIds,
-          collection_id: collectionId ? [collectionId] : undefined,
-          id: productsIds,
-        },
-      })
-
-  const customer = await retrieveCustomer().catch(() => null)
   const groups = customer?.groups ?? []
   const isMembership = isMembershipGroup(groups)
 
-  // 로그인한 경우에만 위시리스트 조회
-  const wishlist = customer ? await getWishlist().catch(() => []) : []
+  // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
+  // 위시리스트는 customer 유무만 필요하므로 상품 조회와 같이 띄운다.
+  const [
+    {
+      response: { products: initialProducts, count: totalCount },
+      nextPage: initialNextPage,
+    },
+    wishlist,
+  ] = await Promise.all([
+    isSortedOption(effectiveSortBy)
+      ? listProductsSorted({
+          pageParam: 1,
+          ...mapSortParams(effectiveSortBy),
+          countryCode,
+          categoryId: categoryIds,
+          collectionId,
+          limit: pageSize,
+        })
+      : listProducts({
+          pageParam: 1,
+          countryCode,
+          queryParams: {
+            limit: pageSize,
+            order: "-created_at",
+            category_id: categoryIds,
+            collection_id: collectionId ? [collectionId] : undefined,
+            id: productsIds,
+          },
+        }),
+    // 로그인한 경우에만 위시리스트 조회
+    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
+  ])
+
   const initialWishlistIds = wishlist.map((item) => item.productId)
 
   const filteredProducts = filterProductsByMembershipVisibility(
