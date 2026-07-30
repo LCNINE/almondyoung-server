@@ -5,7 +5,6 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
-import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { Logger } from 'nestjs-pino';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { NotificationModule } from './notification.module';
@@ -91,7 +90,7 @@ async function bootstrap() {
 
   // Kafka Consumer 연결
   const consumerOptions = EventsModule.forConsumer({
-    streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM, MEMBERSHIP_STREAM],
+    streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
     groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
     kafka: createKafkaConfigFromEnv()!,
   });
@@ -99,7 +98,7 @@ async function bootstrap() {
   app.connectMicroservice(consumerOptions);
   await app.startAllMicroservices();
 
-  console.log('🚀 Kafka Consumer 연결 완료 (USER_STREAM, ORDER_STREAM, PAYMENT_STREAM, MEMBERSHIP_STREAM 구독)');
+  console.log('🚀 Kafka Consumer 연결 완료 (USER_STREAM, ORDER_STREAM, PAYMENT_STREAM 구독)');
 
   const port = process.env.PORT ?? 5001;
   await app.listen(port, '0.0.0.0');

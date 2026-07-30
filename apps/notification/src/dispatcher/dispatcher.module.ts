@@ -4,7 +4,6 @@ import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
-import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { SharedModule } from '../shared/shared.module';
 
 import { ProviderModule } from '../provider/provider.module';
@@ -14,7 +13,6 @@ import { EventController } from './controllers/event.controller';
 import { UserEventConsumer } from './handlers/user-event.consumer';
 import { OrderEventConsumer } from './handlers/order-event.consumer';
 import { WalletEventConsumer } from './handlers/wallet-event.consumer';
-import { MembershipEventConsumer } from './handlers/membership-event.consumer';
 // Redis가 있을 때만 NotificationProcessorModule import
 // TypeScript에서는 조건부 import가 어려우므로, 런타임에 에러가 발생할 수 있습니다.
 // 대신 NotificationProcessorModule 내부에서 Redis 체크를 수행합니다.
@@ -25,7 +23,7 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
     ProviderModule,
     SharedModule,
     EventsModule.forConsumerModule({
-      streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM, MEMBERSHIP_STREAM],
+      streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
       enableAutoDLQ: true,
       validation: {
@@ -39,14 +37,7 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
     // NotificationDispatcherService에서 직접 발송하도록 처리합니다.
     // ...(process.env.REDIS_HOST ? [NotificationProcessorModule] : []),
   ],
-  controllers: [
-    NotificationController,
-    EventController,
-    UserEventConsumer,
-    OrderEventConsumer,
-    WalletEventConsumer,
-    MembershipEventConsumer,
-  ],
+  controllers: [NotificationController, EventController, UserEventConsumer, OrderEventConsumer, WalletEventConsumer],
   providers: [NotificationDispatcherService],
   exports: [NotificationDispatcherService],
 })
