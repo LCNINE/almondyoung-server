@@ -52,6 +52,21 @@ export function parseCutoff(src: string): Date {
 
 type Row = { inventory_item_id: string; location_id: string; qty: string; n: string; title: string | null };
 
+/**
+ * `inventory_level.reserved_quantity` 는 `reservation_item` 의 캐시일 뿐인데, 예약 행만 지워지고
+ * 카운터가 안 내려간 칸이 생긴다 (2026-07-30 live: 243칸 / 9,465개, 그 탓에 47칸·2,355개 재고가 품절).
+ * 그래서 개별 차감(reserved - qty)이 아니라 **살아있는 예약 합계로 덮어쓴다** — 과거 잔재까지 같이 낫는다.
+ */
+const RESERVED_DRIFT = (tx: Sql) => tx<{ id: string; from: number; to: number }[]>`
+  SELECT il.id, il.reserved_quantity AS from, COALESCE(r.q, 0)::int AS to
+  FROM inventory_level il
+  LEFT JOIN (
+    SELECT inventory_item_id, location_id, SUM(quantity)::int AS q
+    FROM reservation_item WHERE deleted_at IS NULL GROUP BY 1, 2
+  ) r ON r.inventory_item_id = il.inventory_item_id AND r.location_id = il.location_id
+  WHERE il.deleted_at IS NULL AND il.reserved_quantity <> COALESCE(r.q, 0)
+`;
+
 async function main() {
   const argv = process.argv.slice(2);
   const apply = argv.includes('--apply');
@@ -97,14 +112,23 @@ async function main() {
     console.log(`\n📊 정리 대상: 예약 ${totalItems}건 / 수량 ${totalQty}개 (재고칸 ${rows.length}곳)`);
     console.log(`   유지(스냅샷 이후): 예약 ${remain.n}건 / 수량 ${remain.qty}개`);
 
-    if (rows.length === 0) {
-      console.log('\n✅ 정리할 예약이 없습니다.');
-      return;
+    if (rows.length > 0) {
+      console.log('\n🔎 회복량 상위 15건:');
+      for (const r of [...rows].sort((a, b) => Number(b.qty) - Number(a.qty)).slice(0, 15)) {
+        console.log(`   +${String(r.qty).padStart(4)}개 (예약 ${r.n}건)  ${r.title ?? '(상품 연결 없음)'}`);
+      }
     }
 
-    console.log('\n🔎 회복량 상위 15건:');
-    for (const r of [...rows].sort((a, b) => Number(b.qty) - Number(a.qty)).slice(0, 15)) {
-      console.log(`   +${String(r.qty).padStart(4)}개 (예약 ${r.n}건)  ${r.title ?? '(상품 연결 없음)'}`);
+    const drift = await RESERVED_DRIFT(sql);
+    const driftQty = drift.reduce((s, d) => s + (d.from - d.to), 0);
+    console.log(
+      `\n🧮 reserved 카운터 어긋남: ${drift.length}칸 / ${driftQty}개` +
+        (drift.length ? ' — 살아있는 예약 합계로 맞춥니다.' : ' (정상)'),
+    );
+
+    if (rows.length === 0 && drift.length === 0) {
+      console.log('\n✅ 할 일이 없습니다.');
+      return;
     }
 
     if (!apply) {
@@ -116,40 +140,25 @@ async function main() {
       const tx = txRaw as unknown as Sql;
       await tx`SELECT pg_advisory_xact_lock(hashtext('sellmate-clear-reservations'))`;
 
-      // 대상 집합을 트랜잭션 안에서 다시 잠그고 읽는다(같은 조건이라 멱등).
-      const locked = await tx<{ inventory_item_id: string; location_id: string; qty: string }[]>`
-        SELECT inventory_item_id, location_id, SUM(quantity)::text AS qty
-        FROM reservation_item
-        WHERE deleted_at IS NULL AND created_at < ${cutoff}
-        GROUP BY inventory_item_id, location_id
-      `;
-
       const deleted = await tx`
         UPDATE reservation_item SET deleted_at = now(), updated_at = now()
         WHERE deleted_at IS NULL AND created_at < ${cutoff}
       `;
 
-      let levels = 0;
-      for (const r of locked) {
-        const qty = Number(r.qty);
-        const res = await tx`
-          UPDATE inventory_level
-          SET reserved_quantity = reserved_quantity - ${qty}, updated_at = now()
-          WHERE inventory_item_id = ${r.inventory_item_id} AND location_id = ${r.location_id}
-            AND deleted_at IS NULL AND reserved_quantity >= ${qty}
-        `;
-        if (res.count !== 1) {
-          // 예약 합계와 level.reserved 가 어긋난 상태. 부분 반영하면 더 꼬이므로 전체 롤백.
-          throw new Error(
-            `reserved 차감 실패: item=${r.inventory_item_id} loc=${r.location_id} qty=${qty} (영향행 ${res.count}) — 전체 롤백`,
-          );
-        }
-        levels++;
+      // 삭제 후의 예약 원장을 그대로 카운터에 반영. 개별 차감이 아니라 덮어쓰기라
+      // 이번 삭제분과 과거 잔재가 한 번에 정합해진다.
+      const gaps = await RESERVED_DRIFT(tx);
+      for (const g of gaps) {
+        await tx`UPDATE inventory_level SET reserved_quantity = ${g.to}, updated_at = now() WHERE id = ${g.id}`;
       }
-      return { deleted: deleted.count, levels };
+
+      const left = (await RESERVED_DRIFT(tx)).length;
+      if (left !== 0) throw new Error(`재정합 후에도 어긋난 칸 ${left}곳 — 전체 롤백`);
+
+      return { deleted: deleted.count, levels: gaps.length };
     });
 
-    console.log(`\n✅ 정리 완료: 예약 ${result.deleted}건 해제, 재고칸 ${result.levels}곳 갱신.`);
+    console.log(`\n✅ 정리 완료: 예약 ${result.deleted}건 해제, 재고칸 ${result.levels}곳 reserved 재정합.`);
     console.log('   → 스토어프론트 반영은 캐시 TTL 이후. 급하면 해당 handle 을 /api/revalidate.');
   } finally {
     await sql.end();
