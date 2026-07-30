@@ -84,7 +84,11 @@ export default async function CategoryProducts({
     isMembership
   )
 
-  if (filteredProducts.length === 0) {
+  // Medusa 응답 미들웨어가 비회원에게 members-only 상품을 걸러내므로 첫 페이지가
+  // 통째로 빌 수 있다(예: 최신순 + 신규 상품이 전부 멤버십 전용). 다음 페이지가 남아
+  // 있는데 빈 상태로 끝내면 실제로는 상품이 있는 카테고리가 "상품이 없습니다"로 보인다.
+  // 이 경우엔 무한 로드에 넘겨 다음 페이지를 이어받게 한다.
+  if (filteredProducts.length === 0 && !initialNextPage) {
     const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
