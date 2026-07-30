@@ -56,8 +56,10 @@ export interface CancellationPolicyInput {
   plan: { price: number; durationDays: number };
   /** 동일 티어의 활성 월간 플랜 정가. 연간 중도해지 정산 기준. */
   monthlyListPrice: number;
-  /** 이번 결제 주기의 시작일. 미결제(트라이얼 중)면 null. */
+  /** 이번 결제 주기의 시작 = 마지막 결제 성공 시각. 미결제(트라이얼 중)면 null. */
   paidPeriodStart: Date | null;
+  /** 이번 주기 중 실제로 정지돼 있던 일수. 정지 중에는 혜택을 못 쓰므로 이용 기간에서 뺀다. */
+  pausedDaysInPeriod: number;
   /** 현재 이용 종료일 (entitlement.endsAt) */
   periodEndsAt: Date;
   /** 환불 대상 결제 intent 가 있는지 */
@@ -66,6 +68,14 @@ export interface CancellationPolicyInput {
   autoRefundSupported: boolean;
   /** 무통장 등 환불 수취 계좌가 필요한 결제였는지 */
   requiresReceiveAccount: boolean;
+  /**
+   * wallet 이 아직 환불할 수 있는 금액(이미 환불된 금액 제외). 조회 실패면 null.
+   *
+   * 정책액은 플랜 정가로 계산되므로, 부분 환불이 이미 나갔거나 실제 결제액이 더 적은 계약에서는
+   * 정책액이 실제로 돌려줄 수 있는 금액을 넘을 수 있다. 그 차액은 wallet 에서 실패하거나 과환불이
+   * 되므로 상한으로 쓴다.
+   */
+  refundableAmount: number | null;
   /** 이번 결제 주기의 혜택 사용량 (청약철회 판정용) */
   currentCycleBenefit: { orderCount: number; totalDiscountAmount: number };
   /** 이번 결제 주기 전체에 받은 할인 합계 (연간 정산 차감용) */
@@ -180,6 +190,17 @@ export class RefundPolicyService {
     return addDays(params.periodEndsAt, -params.durationDays);
   }
 
+  /**
+   * 정책액을 wallet 이 실제로 환불할 수 있는 금액으로 자른다.
+   *
+   * 조회 실패(null)나 0(=수단을 특정할 수 없는 경우 포함)이면 자르지 않는다 — 알 수 없는 값으로
+   * 환불을 막으면 정상 건까지 막힌다. 상한이 확인될 때만 낮춘다.
+   */
+  private capByRefundable(policyAmount: number, refundableAmount: number | null): number {
+    if (refundableAmount === null || refundableAmount <= 0) return policyAmount;
+    return Math.min(policyAmount, refundableAmount);
+  }
+
   private resolveImmediateOption(params: {
     input: CancellationPolicyInput;
     nowDate: string;
@@ -213,7 +234,7 @@ export class RefundPolicyService {
       return {
         ...base,
         available: true,
-        refundAmount: input.plan.price,
+        refundAmount: this.capByRefundable(input.plan.price, input.refundableAmount),
         refundKind: 'WITHDRAWAL_FULL',
         refundExecution: execution,
         requiresReceiveAccount,
@@ -222,12 +243,15 @@ export class RefundPolicyService {
 
     // 2) 연간 중도해지: 사용 개월을 월간 정가로 차감해 정산
     if (isAnnual) {
-      const { refundAmount, breakdown } = this.calculateAnnualProration({
+      const { refundAmount: policyAmount, breakdown } = this.calculateAnnualProration({
         paidAmount: input.plan.price,
         monthlyListPrice: input.monthlyListPrice,
-        daysElapsed: daysSincePeriodStart,
+        // 청약철회 창은 법정 기준(결제일로부터)이라 보정하지 않지만, '이용한 기간' 정산에서는
+        // 정지 기간을 빼야 한다 — 그 기간에는 멤버십 혜택을 쓸 수 없었다.
+        daysElapsed: daysSincePeriodStart - input.pausedDaysInPeriod,
         benefitDiscount: input.termBenefitDiscount,
       });
+      const refundAmount = this.capByRefundable(policyAmount, input.refundableAmount);
 
       if (refundAmount <= 0) {
         return {

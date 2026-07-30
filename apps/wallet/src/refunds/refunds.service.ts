@@ -291,6 +291,8 @@ export class RefundsService {
     intentId: string;
     refundableAmount: number;
     alreadyRefundedAmount: number;
+    /** 지금 실제로 더 환불할 수 있는 금액(= 환불 가능 charge 합계 − 이미 성공한 환불액) */
+    remainingRefundableAmount: number;
     autoRefundSupported: boolean;
     requiresReceiveAccount: boolean;
     methodTypes: string[];
@@ -316,10 +318,14 @@ export class RefundsService {
       if (type === 'BANK_TRANSFER') requiresReceiveAccount = true;
     }
 
+    const refundableAmount = refundableCharges.reduce((sum, c) => sum + c.amount, 0);
+
     return {
       intentId,
-      refundableAmount: refundableCharges.reduce((sum, c) => sum + c.amount, 0),
+      refundableAmount,
       alreadyRefundedAmount,
+      // 호출자가 gross 에서 이미 환불된 금액을 빼는 것을 잊으면 과환불 요청이 된다 — 여기서 답한다.
+      remainingRefundableAmount: Math.max(0, refundableAmount - alreadyRefundedAmount),
       autoRefundSupported,
       requiresReceiveAccount,
       methodTypes,

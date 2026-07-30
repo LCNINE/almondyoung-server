@@ -168,6 +168,8 @@ export class SubscriptionCancellationManager {
     reasonCode: string,
     reasonText: string | undefined,
     isRecurring = true,
+    /** 관리자 대행 해지면 감사 주체를 ADMIN 으로 남긴다(누가 해지했는지가 CS 분쟁의 핵심 기록이다). */
+    actor: { causedBy: 'USER' | 'ADMIN'; causedByUserId: string } = { causedBy: 'USER', causedByUserId: userId },
   ): Promise<RecurringCancellationResult> {
     const recurringCancelledAt = new Date();
 
@@ -205,11 +207,14 @@ export class SubscriptionCancellationManager {
           nextBillingDateBefore: contract.nextBillingDate,
           nextBillingDateAfter: null,
           currentPeriodEndsAt: entitlement.endsAt,
+          // 해지 후에는 autoRenewal 이 꺼져 1회 결제와 구분되지 않는다 — 해지 시점의 사실을 남긴다.
+          // 해지 철회(자동결제 재개)를 열어줄지 판단하는 근거다.
+          wasRecurring: isRecurring,
         },
-        'USER',
+        actor.causedBy,
         userId,
         batch.id,
-        userId,
+        actor.causedByUserId,
       );
 
       // 4. 계약 상태 업데이트 (정기결제 중단)
@@ -314,6 +319,8 @@ export class SubscriptionCancellationManager {
     userId: string,
     requestedAmount: number,
     outcome: RefundRecord,
+    /** 관리자가 수동 송금을 확정한 경우 그 사실을 감사 기록에 남긴다. */
+    actor: { causedBy: 'SYSTEM' | 'ADMIN'; causedByUserId?: string } = { causedBy: 'SYSTEM' },
   ): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
       const eventType =
@@ -333,8 +340,10 @@ export class SubscriptionCancellationManager {
           errorCode: outcome.errorCode ?? null,
           errorMessage: outcome.errorMessage ?? null,
         },
-        'SYSTEM',
+        actor.causedBy,
         userId,
+        undefined,
+        actor.causedByUserId,
       );
 
       if (outcome.status === 'SUCCEEDED') {

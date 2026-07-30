@@ -33,6 +33,7 @@ import { RefundPolicyService } from '../../src/services/subscription/refund-poli
 import { CancellationReasonReader } from '../../src/services/subscription/cancellation-reason.reader';
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { BenefitReader } from '../../src/services/benefit/benefit.reader';
+import { PauseReader } from '../../src/services/pause/pause.reader';
 import { BillingReader } from '../../src/services/billing/billing.reader';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
@@ -110,6 +111,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         CancellationReasonReader,
         ContractEventManager,
         BenefitReader,
+        PauseReader,
         BillingReader,
         AdminMembersReader,
         // AdminOperationsService 는 멤버십 전체 서비스 그래프를 끌어온다. 이 스펙이 검증하는 라우트가
@@ -229,6 +231,17 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
       endsAt: format(endsAt, 'yyyy-MM-dd'),
       isCurrent: true,
     });
+
+    // 이번 주기의 결제 사실. 청약철회 7일 창은 endsAt 역산이 아니라 이 시각을 기준으로 판정된다
+    // (paymentIntentId 는 유니크 제약 때문에 null — 여기선 시각만 의미가 있다).
+    if (params.hasPayment !== false) {
+      await db.db.insert(schema.billingEvents).values({
+        contractId: contract.id,
+        eventType: 'CHARGE_SUCCESS',
+        amount: isAnnual ? ANNUAL_PRICE : MONTHLY_PRICE,
+        createdAt: periodStart,
+      });
+    }
 
     return { userId, contract, endsAt: format(endsAt, 'yyyy-MM-dd') };
   }
@@ -350,6 +363,46 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         .where(eq(schema.subscriptionContracts.id, contract.id));
       expect(after.status).toBe('ACTIVE');
       expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('해지 예약은 사유 없이는 400 이고 계약을 건드리지 않는다', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+
+      const res = await req({
+        method: 'POST',
+        url: `/admin/subscriptions/${contract.id}/schedule-cancel`,
+        headers: { ...asAdmin(), 'idempotency-key': `sc-${contract.id}-1` },
+        payload: {},
+      });
+
+      expect(res.statusCode).toBe(400);
+      const [after] = await db.db
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+      expect(after.recurringCancelledAt).toBeNull();
+      expect(after.autoRenewal).toBe(true);
+    });
+
+    it('admin 의 해지 예약은 사유와 함께 기록되고 자동결제만 끊는다', async () => {
+      const { contract, endsAt } = await givenSubscription({ daysSincePeriodStart: 10 });
+
+      const res = await req({
+        method: 'POST',
+        url: `/admin/subscriptions/${contract.id}/schedule-cancel`,
+        headers: { ...asAdmin(), 'idempotency-key': `sc-${contract.id}-2` },
+        payload: { reason: '고객 전화 요청' },
+      });
+
+      expect(res.statusCode).toBe(201);
+      expect(res.json().currentPeriodEndsAt).toBe(endsAt);
+      const [after] = await db.db
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+      expect(after.status).toBe('ACTIVE');
+      expect(after.recurringCancelledAt).not.toBeNull();
+      expect(after.autoRenewal).toBe(false);
     });
 
     it('master 는 정책 한도를 넘겨 환불할 수 있다', async () => {

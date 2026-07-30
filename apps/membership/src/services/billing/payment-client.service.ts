@@ -57,11 +57,19 @@ export interface MandateTerminationResult {
   skipReason?: string;
 }
 
+/** 화면 경로에 있는 조회라 짧게 끊는다. 실패는 '자동환불 불가(수동 경로)'로 안전하게 떨어진다. */
+const REFUNDABILITY_TIMEOUT_MS = 3000;
+/** 같은 결제의 반복 조회를 흡수하는 TTL. 판단 보조값이라 짧은 staleness 는 무해하다. */
+const REFUNDABILITY_TTL_MS = 30_000;
+const REFUNDABILITY_CACHE_MAX = 500;
+
 /** 이 결제를 환불할 수 있는 경로 정보 (wallet SoT) */
 export interface RefundabilityInfo {
   intentId: string;
   refundableAmount: number;
   alreadyRefundedAmount: number;
+  /** 지금 더 환불할 수 있는 금액. 정책 산정액의 상한이다. */
+  remainingRefundableAmount?: number;
   /** false 면 PG 환불 API 가 없는 수단(효성 CMS) — 관리자 수동 송금만 가능 */
   autoRefundSupported: boolean;
   requiresReceiveAccount: boolean;
@@ -174,6 +182,9 @@ export interface WalletInvoiceResponse {
  */
 @Injectable()
 export class PaymentClientService {
+  /** intentId → 환불 가능 정보. TTL 이 짧아 프로세스 메모리로 충분하다(인스턴스 간 공유 불필요). */
+  private readonly refundabilityCache = new Map<string, { value: RefundabilityInfo; expiresAt: number }>();
+
   private readonly logger = new Logger(PaymentClientService.name);
   private readonly paymentServerUrl: string;
 
@@ -341,15 +352,38 @@ export class PaymentClientService {
    * "환불 완료" 를 안내하면 자격만 회수되고 돈은 안 나가는 사고가 된다.
    */
   async getRefundability(intentId: string): Promise<RefundabilityInfo> {
+    const cached = this.refundabilityCache.get(intentId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     const response = await firstValueFrom(
       this.httpService.get<RefundabilityInfo>(`${walletApiUrl}/v1/payment-intents/${intentId}/refundability`, {
         headers: { Authorization: `Bearer ${walletApiKey}` },
+        // 이 조회는 화면 렌더링 경로(마이페이지 진입)에 있다. wallet 이 느려질 때 마이페이지 전체가
+        // 함께 느려지지 않도록 짧게 끊고, 실패는 호출자가 '수동 환불 경로'로 안전하게 흡수한다.
+        timeout: REFUNDABILITY_TIMEOUT_MS,
       }),
     );
 
+    this.cacheRefundability(intentId, response.data);
     return response.data;
+  }
+
+  /**
+   * 같은 결제를 짧은 간격으로 반복 조회하는 것을 막는다(마이페이지 새로고침·미리보기→실행 연속 호출).
+   *
+   * 이 값은 판단 보조(자동환불 가능 여부·환불 상한)일 뿐 집행의 권위가 아니다 — 실제 환불은 wallet 이
+   * 자기 상태로 다시 판단하므로, 짧은 staleness 는 과환불로 이어지지 않는다.
+   */
+  private cacheRefundability(intentId: string, value: RefundabilityInfo): void {
+    // 무한 증식 방지 — 오래된 항목부터 비운다(TTL 이 짧아 실제로는 거의 차지 않는다).
+    if (this.refundabilityCache.size >= REFUNDABILITY_CACHE_MAX) {
+      const oldest = this.refundabilityCache.keys().next().value;
+      if (oldest) this.refundabilityCache.delete(oldest);
+    }
+    this.refundabilityCache.delete(intentId);
+    this.refundabilityCache.set(intentId, { value, expiresAt: Date.now() + REFUNDABILITY_TTL_MS });
   }
 
   /**

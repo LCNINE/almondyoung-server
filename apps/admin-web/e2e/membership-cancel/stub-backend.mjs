@@ -194,6 +194,21 @@ function routes(pathname, method, body) {
     };
   }
 
+  if (pathname === `/admin/subscriptions/${CONTRACT_ID}/schedule-cancel` && method === 'POST') {
+    calls.push({ path: 'schedule-cancel', body });
+    return {
+      type: 'RECURRING_CANCELLATION',
+      contractId: CONTRACT_ID,
+      status: 'RECURRING_CANCELLED',
+      recurringCancelledAt: new Date().toISOString(),
+      nextBillingDate: null,
+      currentPeriodEndsAt: MEMBER.endsAt,
+      autoRenewal: false,
+      refundEligible: false,
+      message: '정기결제가 중단되었습니다.',
+    };
+  }
+
   if (pathname === `/admin/contracts/${CONTRACT_ID}/auto-renewal` && method === 'PUT') {
     calls.push({ path: 'auto-renewal', body });
     return { contractId: CONTRACT_ID, autoRenewal: body?.autoRenewal };

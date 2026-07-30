@@ -21,15 +21,48 @@ describe('RefundPolicyService', () => {
       plan: { price: MONTHLY_PRICE, durationDays: 30 },
       monthlyListPrice: MONTHLY_PRICE,
       paidPeriodStart: addDays(now, -1),
+      pausedDaysInPeriod: 0,
       periodEndsAt: addDays(now, 29),
       hasPayment: true,
       autoRefundSupported: true,
       requiresReceiveAccount: false,
+      refundableAmount: null,
       currentCycleBenefit: { orderCount: 0, totalDiscountAmount: 0 },
       termBenefitDiscount: 0,
       ...overrides,
     };
   }
+
+  describe('일시정지 보정', () => {
+    it('정지 기간은 이용 기간으로 세지 않는다 (혜택을 쓸 수 없었던 기간)', () => {
+      const now = new Date('2026-07-30T00:00:00.000Z');
+      const base = {
+        plan: { price: ANNUAL_PRICE, durationDays: 365 },
+        paidPeriodStart: addDays(now, -75),
+        periodEndsAt: addDays(now, 290),
+        currentCycleBenefit: { orderCount: 1, totalDiscountAmount: 1000 },
+      };
+
+      // 75일 경과 → 3개월 차감(34,930원). 그중 40일이 정지였다면 35일 이용 → 2개월 차감(39,920원).
+      expect(policy.evaluate(input({ ...base, now })).immediateRefund.refundAmount).toBe(34930);
+      expect(
+        policy.evaluate(input({ ...base, now, pausedDaysInPeriod: 40 })).immediateRefund.refundAmount,
+      ).toBe(39920);
+    });
+  });
+
+  describe('실제 환불 가능액 상한', () => {
+    it('이미 일부가 환불된 결제면 정책액이 남은 환불 가능액으로 잘린다', () => {
+      const decision = policy.evaluate(input({ refundableAmount: 2000 }));
+
+      // 7일 내 + 혜택 미사용이라 정책상 전액(4,990)이지만 wallet 이 2,000 만 환불할 수 있다.
+      expect(decision.immediateRefund.refundAmount).toBe(2000);
+    });
+
+    it('환불 가능액을 알 수 없으면(조회 실패) 정책액을 그대로 쓴다', () => {
+      expect(policy.evaluate(input({ refundableAmount: null })).immediateRefund.refundAmount).toBe(MONTHLY_PRICE);
+    });
+  });
 
   describe('연간 중도해지 정산', () => {
     it.each([

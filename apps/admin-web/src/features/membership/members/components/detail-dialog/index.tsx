@@ -45,6 +45,8 @@ import {
   useSetAutoRenewal,
   useAdjustEntitlement,
   useForceCancelSubscription,
+  useScheduleCancelSubscription,
+  useCompleteManualRefund,
   useCancellationQuote,
   useRetryBilling,
   useReconcileInvoice,
@@ -63,6 +65,13 @@ interface MembershipMemberDetailDialogProps {
   member: AdminMemberListItem | null;
   open: boolean;
   onClose: () => void;
+}
+
+/** 서버가 내려준 안내 메시지(환불 한도 초과 사유 등)를 그대로 쓰기 위한 추출기. */
+function serverMessage(error: unknown): string | undefined {
+  const e = error as { response?: { data?: { message?: string } }; message?: string };
+  const msg = e?.response?.data?.message ?? e?.message;
+  return typeof msg === 'string' && msg.trim() ? msg : undefined;
 }
 
 // 라벨-값 한 줄 (shadcn Card 안에서 사용).
@@ -181,8 +190,9 @@ function ForceCancelDialog({
       }
       onSuccess();
       handleClose();
-    } catch {
-      toast.error('강제 취소에 실패했습니다.');
+    } catch (error) {
+      // 403(환불 한도 초과)·409(이미 해지됨) 처럼 조치 방법이 담긴 서버 메시지를 덮지 않는다.
+      toast.error(serverMessage(error) ?? '강제 취소에 실패했습니다.');
     }
   };
 
@@ -635,6 +645,8 @@ function PlanTab({
 }) {
   const { data: detail, isLoading, refetch } = useMemberDetail(userId);
   const setAutoRenewalMutation = useSetAutoRenewal();
+  const scheduleCancelMutation = useScheduleCancelSubscription();
+  const completeManualRefundMutation = useCompleteManualRefund();
   const [forceCancelOpen, setForceCancelOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleReason, setScheduleReason] = useState('');
@@ -652,9 +664,12 @@ function PlanTab({
       return;
     }
     try {
-      await setAutoRenewalMutation.mutateAsync({
+      // 고객 셀프해지와 같은 처리(해지 시각·사유 기록 + 자동이체 약정 종료)를 하는 전용 API.
+      // auto-renewal 토글은 청구만 멈춰 효성 약정이 은행에 그대로 남는다.
+      await scheduleCancelMutation.mutateAsync({
         contractId,
-        autoRenewal: false,
+        reason: scheduleReason.trim(),
+        customerEmail,
       });
       toast.success(
         `해지가 예약되었습니다. ${formatDate(detail?.endsAt)}까지 이용 후 자동 결제가 중단됩니다.`
@@ -662,8 +677,24 @@ function PlanTab({
       setScheduleOpen(false);
       setScheduleReason('');
       refetch();
-    } catch {
-      toast.error('해지 예약에 실패했습니다.');
+    } catch (error) {
+      toast.error(serverMessage(error) ?? '해지 예약에 실패했습니다.');
+    }
+  };
+
+  const handleCompleteManualRefund = async () => {
+    if (
+      !window.confirm(
+        `계좌로 ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`
+      )
+    )
+      return;
+    try {
+      await completeManualRefundMutation.mutateAsync({ contractId });
+      toast.success('환불 완료로 기록했습니다.');
+      refetch();
+    } catch (error) {
+      toast.error(serverMessage(error) ?? '환불 완료 처리에 실패했습니다.');
     }
   };
 
@@ -677,11 +708,7 @@ function PlanTab({
       refetch();
     } catch (error) {
       // 이미 만료된 구독은 재활성으로 복구되지 않는다(서버가 409로 거부) — 메시지를 그대로 보여준다.
-      toast.error(
-        error instanceof Error && error.message
-          ? error.message
-          : '해지 철회에 실패했습니다.'
-      );
+      toast.error(serverMessage(error) ?? '해지 철회에 실패했습니다.');
     }
   };
 
@@ -735,16 +762,32 @@ function PlanTab({
           </div>
           {/* 환불 미완료 건은 눈에 띄게 — 자격은 회수됐는데 돈이 안 나간 상태를 놓치지 않도록 */}
           {(detail?.refundRequested || detail?.refundCompleted) && (
-            <div className="flex items-center justify-between text-sm">
+            <div className="flex items-center justify-between gap-2 text-sm">
               <span className="text-muted-foreground">환불</span>
-              <span
-                className={
-                  detail?.refundCompleted ? '' : 'font-medium text-amber-700'
-                }
-              >
-                {detail?.refundCompleted
-                  ? `완료 ${formatDate(detail.refundCompletedAt)} (${(detail.eligibleRefundAmount ?? 0).toLocaleString()}원)`
-                  : `미완료 — ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원 처리 필요`}
+              <span className="flex items-center gap-2">
+                <span
+                  className={
+                    detail?.refundCompleted ? '' : 'font-medium text-amber-700'
+                  }
+                >
+                  {detail?.refundCompleted
+                    ? `완료 ${formatDate(detail.refundCompletedAt)} (${(detail.eligibleRefundAmount ?? 0).toLocaleString()}원)`
+                    : `미완료 — ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원 처리 필요`}
+                </span>
+                {/* 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다 — 여기서 확정한다. */}
+                {allowForceCancel && !detail?.refundCompleted && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={completeManualRefundMutation.isPending}
+                    onClick={handleCompleteManualRefund}
+                  >
+                    {completeManualRefundMutation.isPending
+                      ? '처리 중...'
+                      : '송금 완료 처리'}
+                  </Button>
+                )}
               </span>
             </div>
           )}
@@ -811,9 +854,9 @@ function PlanTab({
                     <Button
                       size="sm"
                       onClick={handleScheduleCancel}
-                      disabled={setAutoRenewalMutation.isPending}
+                      disabled={scheduleCancelMutation.isPending}
                     >
-                      {setAutoRenewalMutation.isPending
+                      {scheduleCancelMutation.isPending
                         ? '처리 중...'
                         : '해지 예약 확정'}
                     </Button>
