@@ -12,7 +12,7 @@ export default function LocationOptimizationTemplate() {
   const { data, isLoading } = useLocationOptimizationZones();
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="위치 최적화"
         subtitle="피킹 경로 및 존 구성 정보를 확인합니다."

@@ -7,7 +7,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export function CancellationsTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="해지 내역 조회"
         subtitle="멤버십을 해지한 회원 목록을 조회합니다."

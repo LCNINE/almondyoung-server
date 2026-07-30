@@ -36,7 +36,7 @@ export default function BannerGroupDetailTemplate({ id }: Props) {
         <GroupForm group={group} />
       </Container>
 
-      <Container className="mt-3 divide-y-0">
+      <Container className="mt-3">
         <Header title="소속 배너" subtitle="이 그룹에 속한 배너를 관리합니다." />
         <BannersTable groupId={id} />
       </Container>

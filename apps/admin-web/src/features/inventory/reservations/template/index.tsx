@@ -73,7 +73,7 @@ export default function ReservationsTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="재고 예약"
         subtitle="SKU · 주문 · 창고별 재고 예약을 모니터링하고 관리합니다."

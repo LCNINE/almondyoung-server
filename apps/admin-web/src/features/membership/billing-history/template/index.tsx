@@ -7,7 +7,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export function BillingHistoryTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="결제 내역 조회"
         subtitle="멤버십 정기결제 내역을 조회합니다."

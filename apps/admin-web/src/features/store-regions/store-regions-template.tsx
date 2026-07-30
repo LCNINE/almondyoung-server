@@ -35,7 +35,7 @@ export default function StoreRegionsTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="리전 설정 (Medusa)"
         subtitle="스토어의 통화·국가·세금 설정입니다. 결제수단 가용성은 '리전·결제수단 관리'에서 별도로 설정합니다."

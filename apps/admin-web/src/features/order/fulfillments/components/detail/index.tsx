@@ -109,7 +109,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
 
   if (!data) {
     return (
-      <Container className="divide-y-0">
+      <Container>
         <Header title="출고주문 상세" />
         <p className="p-6 text-sm text-muted-foreground">
           출고주문을 찾을 수 없습니다.
@@ -203,7 +203,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
       </Container>
 
       {/* FOI 라인 */}
-      <Container className="divide-y-0">
+      <Container>
         <Header title={`출고 라인 (${fo.items.length})`} />
         <div className="overflow-x-auto p-3">
           <table className="w-full text-sm">
@@ -254,7 +254,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
         </div>
       </Container>
 
-      <Container className="divide-y-0">
+      <Container>
         <Header title="운영 액션" />
         <div className="p-3">
           <Tabs defaultValue="inventory" className="w-full">

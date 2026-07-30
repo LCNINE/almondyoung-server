@@ -90,7 +90,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
   };
 
   return (
-    <Container className="divide-y-0 bg-background">
+    <Container className="bg-background">
       <Header title="상품 등록" />
 
       <div className="flex flex-col gap-4 px-6 pb-6">

@@ -40,7 +40,7 @@ export function SessionDetail({ sessionId }: Props) {
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="대량등록 세션 상세"
           subtitle={`${session.fileName ?? '(파일명 없음)'} · 생성 ${session.createdCount}/${session.totalRows} (실패 ${session.failedCount}) · 게시 ${session.publishedCount} (실패 ${session.publishFailedCount})`}

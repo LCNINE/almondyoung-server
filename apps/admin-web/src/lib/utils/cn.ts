@@ -1,29 +1,3 @@
-export function cn(
-  ...inputs: Array<
-    | string
-    | null
-    | undefined
-    | false
-    | Record<string, boolean | null | undefined>
-  >
-): string {
-  const out: string[] = [];
-
-  for (const input of inputs) {
-    if (!input) continue;
-
-    if (typeof input === 'string') {
-      if (input.trim()) out.push(input.trim());
-      continue;
-    }
-
-    if (typeof input === 'object') {
-      for (const [key, val] of Object.entries(input)) {
-        if (val) out.push(key);
-      }
-    }
-  }
-
-  // 중복 제거 (선택 사항)
-  return Array.from(new Set(out)).join(' ');
-}
+// 단순 concat 구현이었으나 className prop 으로 기본 클래스를 덮어쓸 수 없어(충돌 클래스가 둘 다
+// 남아 CSS 순서가 승자를 정함) twMerge 구현으로 통일. `./ui`, `../utils` 와 같은 함수다.
+export { cn } from './ui';

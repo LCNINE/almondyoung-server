@@ -154,7 +154,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
         <span>/</span>
         <span className="text-gray-900">가격 관리</span>
       </div>
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title={master?.name ?? '가격 관리'}
           subtitle={`마스터 상품의 버전별 가격 룰을 관리합니다. draft 버전만 편집 가능합니다.`}
@@ -181,7 +181,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
         </Container>
       ) : (
         <>
-          <Container className="divide-y-0">
+          <Container>
             {rulesLoading ? (
               <p className="p-6 text-center text-sm text-muted-foreground">룰 로딩 중...</p>
             ) : (
@@ -199,7 +199,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
           </Container>
 
           <div className="grid grid-cols-1 gap-y-2 lg:grid-cols-2 lg:gap-x-2 lg:gap-y-0">
-            <Container className="divide-y-0">
+            <Container>
               <Header title="가격 시뮬레이션" />
               {variantsLoading ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">품목 로딩 중...</p>
@@ -211,7 +211,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                 />
               )}
             </Container>
-            <Container className="divide-y-0">
+            <Container>
               <Header title="옵션별 가격 현황" />
               {variantsLoading ? (
                 <p className="p-6 text-center text-sm text-muted-foreground">품목 로딩 중...</p>

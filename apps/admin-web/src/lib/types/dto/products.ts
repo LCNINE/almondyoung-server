@@ -180,6 +180,12 @@ export interface MasterSummaryDto {
   /** 대표 이미지의 fileId. URL 아님 — file-service 경로로 변환 필요. */
   thumbnail: string | null;
   brand: string | null;
+  /** 품번코드. 사람이 읽는 식별자 — masterId(UUID)와 다르다. */
+  productCode: string | null;
+  /** 공급가(매입 단가). 도매가가 아니다 — 도매 판매가는 아직 데이터가 없다. */
+  supplyPrice: number | null;
+  /** 공급처 ID. 이름은 inventory BC 소유라 목록 API 가 주지 않는다 — useSuppliers 로 매핑. */
+  supplierId: string | null;
   /** 멤버십가 비공개 여부 — 비회원에게 멤버십가 숫자를 숨김. 상품 노출·구매 제한 아님. */
   hideMembershipPriceForNonMembers: boolean;
   /** 멤버십 회원 전용 노출 여부 — 비회원 목록·검색·상세에서 숨김. */
@@ -190,6 +196,8 @@ export interface MasterSummaryDto {
   isOverseas: boolean;
   status: ProductStatus;
   createdAt: string;
+  /** 노출 중인 버전의 수정 시각. master 자체에는 updatedAt 이 없다. */
+  updatedAt: string;
   optionGroupNames: string[];
   variantCount: number;
   priceSummary: PriceSummaryDto | null;

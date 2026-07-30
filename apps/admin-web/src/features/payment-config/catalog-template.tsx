@@ -36,7 +36,7 @@ export default function PaymentMethodCatalogTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="결제수단 관리"
         subtitle="시스템 전체에서 사용할 결제수단을 켜고 끕니다. 끄면 모든 리전에서 숨겨집니다. 리전별 노출은 '리전·결제수단 관리'에서 설정합니다."

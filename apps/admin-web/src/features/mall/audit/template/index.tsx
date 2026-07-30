@@ -8,7 +8,7 @@ import { AuditLogTable } from '../components/audit-log-table';
 
 export default function AuditTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="감사 이력 / 승인 관리"
         subtitle="상품 승인 요청을 처리하고 변경 이력을 확인합니다."
