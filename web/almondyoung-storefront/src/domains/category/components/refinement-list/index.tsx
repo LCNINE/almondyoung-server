@@ -1,7 +1,9 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useTransition } from "react"
 
+import { cn } from "@/lib/utils"
 import PageSizeSelect from "./page-size-select"
 import SortProducts, { type SortOptions } from "./sort-products"
 
@@ -19,6 +21,8 @@ export default function RefinementList({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
+  const [isPending, startTransition] = useTransition()
+
   const setQueryParams = (name: string, value: string) => {
     const params = new URLSearchParams(searchParams)
     params.set(name, value)
@@ -28,11 +32,19 @@ export default function RefinementList({
       params.delete("page")
     }
 
-    router.push(`${pathname}?${params.toString()}`)
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`)
+    })
   }
 
   return (
-    <div className="bg-muted flex items-center justify-between gap-4 rounded-lg px-3 py-1.5 sm:px-4">
+    <div
+      aria-busy={isPending}
+      className={cn(
+        "bg-muted flex items-center justify-between gap-4 rounded-lg px-3 py-1.5 transition-opacity sm:px-4",
+        isPending && "pointer-events-none opacity-50"
+      )}
+    >
       <div className="min-w-0 flex-1">
         <SortProducts sortBy={sortBy} setQueryParams={setQueryParams} />
       </div>
