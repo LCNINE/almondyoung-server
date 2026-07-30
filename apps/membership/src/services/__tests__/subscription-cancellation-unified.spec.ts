@@ -8,6 +8,7 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { CancellationReasonReader } from '../subscription/cancellation-reason.reader';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { BenefitReader } from '../benefit/benefit.reader';
+import { PauseReader } from '../pause/pause.reader';
 import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
 import { CancellationContextReader } from '../subscription/cancellation-context.reader';
 import { RefundPolicyService } from '../subscription/refund-policy.service';
@@ -31,6 +32,10 @@ describe('SubscriptionCancellationService', () => {
     findPlan: jest.fn(),
     findCurrentEntitlement: jest.fn(),
     findMonthlyListPrice: jest.fn().mockResolvedValue(4990),
+    // 해지 시점에 정기결제였는지 — 해지 철회(자동결제 재개)를 열어줄지 판단하는 값.
+    wasRecurringBeforeCancellation: jest.fn().mockResolvedValue(true),
+    // 결제 기록이 없는 계약을 가정 — 주기 시작은 endsAt 역산 폴백으로 계산된다.
+    findLastChargeSuccessAt: jest.fn().mockResolvedValue(null),
   };
 
   const mockCancellationManager = {
@@ -49,6 +54,9 @@ describe('SubscriptionCancellationService', () => {
     terminateBillingMandate: jest.fn(),
     createBillingAgreement: jest.fn().mockResolvedValue(undefined),
   };
+
+  // 일시정지 이력이 없는 일반 계약이 기본값 — 정지 보정은 정책 스펙에서 따로 다룬다.
+  const mockPauseReader = { sumPausedDaysSince: jest.fn().mockResolvedValue(0) };
 
   const mockBenefitReader = {
     findCurrentCycleBenefit: jest.fn(),
@@ -98,6 +106,7 @@ describe('SubscriptionCancellationService', () => {
     mockContractReader.findMonthlyListPrice.mockResolvedValue(4990);
     mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0 });
     mockBenefitReader.sumBenefitDiscountSince.mockResolvedValue(0);
+    mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
     // 기본은 카드/무통장처럼 PG 자동환불이 되는 수단
     mockPaymentClientService.getRefundability.mockResolvedValue({
       intentId: 'intent_001',
@@ -147,6 +156,7 @@ describe('SubscriptionCancellationService', () => {
         { provide: CancellationReasonReader, useValue: { findActiveReasons: jest.fn() } },
         { provide: PaymentClientService, useValue: mockPaymentClientService },
         { provide: BenefitReader, useValue: mockBenefitReader },
+        { provide: PauseReader, useValue: mockPauseReader },
         { provide: InvoiceBillingManager, useValue: { voidInvoicesForContract: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -519,6 +529,19 @@ describe('SubscriptionCancellationService', () => {
 
       expect(mockPaymentClientService.createBillingAgreement).toHaveBeenCalledWith('user_001', 'contract_001');
       expect(result.type).toBe('CANCELLATION_UNDONE');
+    });
+
+    it('1회 결제 계약의 철회는 거부한다 (동의 없는 정기결제 전환 방지)', async () => {
+      givenActiveContract({
+        plan: MONTHLY_PLAN,
+        daysSincePeriodStart: 5,
+        autoRenewal: false,
+        recurringCancelledAt: new Date(),
+      });
+      mockContractReader.wasRecurringBeforeCancellation.mockResolvedValueOnce(false);
+
+      await expect(service.undoCancellation('user_001', 'a@b.com')).rejects.toThrow(ConflictError);
+      expect(mockPaymentClientService.createBillingAgreement).not.toHaveBeenCalled();
     });
 
     it('약정 복구가 실패하면 상태를 되살리지 않는다', async () => {

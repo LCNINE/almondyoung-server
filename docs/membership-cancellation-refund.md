@@ -4,6 +4,9 @@
 화면, 가능한 모든 동작과 그 결과를 담는다. 정책 수치를 바꿀 때는 이 문서와
 `apps/membership/src/services/subscription/refund-policy.service.ts` 를 함께 고친다.
 
+- 조회 비용: 환불 가능 여부(wallet)는 **3초 타임아웃 + 30초 캐시**다. 이 조회는 마이페이지 렌더링
+  경로에 있어서, wallet 이 느려질 때 화면 전체가 함께 느려지면 안 된다. 실패하면 '자동환불 불가(수동
+  경로)'로 안전하게 떨어진다. 캐시는 판단 보조값에만 쓰이고 집행 권위는 wallet 에 있다.
 - 정책 소유자(코드): `RefundPolicyService` — DB·HTTP 를 모르는 순수 계산기. 고객 셀프해지·관리자
   강제취소·미리보기(견적)가 **모두 이 한 곳**을 통과한다.
 - 사실 수집: `CancellationContextReader` — 계약/플랜/자격/혜택사용/환불가능수단을 한 번에 모은다.
@@ -83,6 +86,20 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
 월간 정가는 동일 티어의 활성 30일 플랜에서 읽고, 없으면 `연간가 ÷ 10` 을 폴백으로 쓴다
 (`findMonthlyListPrice`). 할인 혜택액은 `membership_discount_events` 에서 취소되지 않은 주문만 합산.
 
+**이번 주기의 시작은 `billing_events` 의 마지막 `CHARGE_SUCCESS` 시각이다** (`findLastChargeSuccessAt`).
+`entitlement.endsAt − 플랜기간` 으로 역산하면, 결제와 무관하게 endsAt 를 미는 경로(관리자 기간 조정,
+일시정지 재개)에서 주기 시작이 함께 밀려 **이미 지난 청약철회 7일 창이 되살아난다** — CS 가 사과로
+7일을 연장해 준 고객이 전액 환불 대상이 되는 식이다. 결제 기록이 없는 옛 계약만 역산으로 폴백한다.
+
+**일시정지 기간은 이용 기간으로 세지 않는다.** 연간 정산의 경과일에서 그 주기의 정지 일수를 뺀다
+(`sumPausedDaysSince` — START~RESUME 구간 합산). 정지 중에는 혜택을 쓸 수 없기 때문이다. 반면
+청약철회 7일 창은 법정 기준(결제일)이라 보정하지 않는다.
+
+**환불액은 wallet 이 실제로 더 환불할 수 있는 금액을 넘지 않는다.** 정책액은 플랜 정가로 계산되므로,
+이미 부분 환불이 나갔거나 실제 결제액이 더 적은 계약에서는 정책액이 남은 환불 가능액을 넘을 수 있다.
+`GET /v1/payment-intents/:id/refundability` 의 `remainingRefundableAmount` 를 상한으로 쓴다(조회 실패나
+0 이면 자르지 않는다 — 알 수 없는 값으로 정상 환불까지 막지 않기 위해).
+
 **③ 월간, 7일 경과 → 환불 불가.** 해지 예약만 가능하다.
 
 **④ 관리자 예외 환불** — 정책과 무관하게 금액 지정 가능. 단 상한이 있다(§4-3).
@@ -136,7 +153,7 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
 | 해지 선택지·금액 확인 | 페이지 진입 시 자동 | `GET /subscriptions/cancel-preview` | 두 방식의 가능여부·금액·종료일·산출내역 |
 | 해지 예약 | `멤버십 해지하기` → 방식 선택 | `POST /subscriptions/cancel` `cancelType=AT_PERIOD_END` | 잔여기간 유지, 이후 청구 없음 |
 | 즉시 해지 + 환불 | 같은 모달에서 즉시해지 선택 | `POST /subscriptions/cancel` `cancelType=IMMEDIATE_REFUND` | 자격 즉시 종료 + 환불 |
-| **해지 철회** | 해지 예약 배너의 `해지 취소하고 계속 이용하기` | `POST /subscriptions/cancel/undo` | 자동결제 재개 |
+| **해지 철회** | 해지 예약 배너의 `해지 취소하고 계속 이용하기` | `POST /subscriptions/cancel/undo` | 자동결제 재개. **정기결제였던 계약만** (`canUndoCancellation`) |
 | 해지 사유 목록 | 모달 | `GET /subscriptions/cancellation-reasons` | 라디오 목록(없으면 '기타' 폴백) |
 
 모든 라우트는 `JwtAuthGuard`. **`userId` 는 토큰에서만 온다** — 남의 구독을 지정할 방법이 없다.
@@ -178,7 +195,11 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
 
 - 이 상태에서는 **해지 버튼이 사라진다**(중복 해지가 UI 에서 먼저 막힌다). 서버도 409 로 막는다.
 - 상태 카드는 `자동갱신 없음` 이면 "다음 결제 예정일" 대신 **이용 종료일**을 안내한다.
-- 1회 결제는 배너의 철회 버튼이 없다(되돌릴 정기결제가 없다).
+- 1회 결제는 배너의 철회 버튼이 없다(되돌릴 정기결제가 없다). 서버가 미리보기의
+  `canUndoCancellation` 으로 판단해 내려주고, `/cancel/undo` 도 409 로 막는다 — 철회는 wallet 자동이체
+  약정을 새로 만들기 때문에, 1회 결제 고객에게 열어주면 **동의한 적 없는 정기결제가 시작된다.**
+  해지 후에는 `autoRenewal` 이 꺼져 1회 결제와 구분되지 않으므로, 판정 근거는 해지 시점 사실
+  (`RECURRING_CANCELLED` 이벤트의 `wasRecurring`)이다.
 
 ### 3-5. 1회 결제 고객
 
@@ -206,7 +227,10 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
    놓치지 않게.
 2. **해지 예약됨** (해당 시) — 해지 신청 시각·종료일·사유 + `해지 예약 철회 (자동 결제 재개)`
 3. **해지 예약 (권장)** — 정기결제 계약에만. **사유 입력 필수**인 명시적 버튼.
-   (이전에는 '자동 연장' 토글에 숨어 있어 CS 가 해지 창구로 인식하지 못했다.)
+   `POST /admin/subscriptions/:contractId/schedule-cancel` — 고객 셀프해지의 `AT_PERIOD_END` 와
+   **완전히 같은 처리**다(해지 시각·사유 기록, `nextBillingDate=null`, dunning 삭제, 자동이체 약정 종료).
+   이전의 '자동 연장' 토글은 청구만 멈춰서 (a) 화면상 1회 결제로 보이고 (b) 사유가 남지 않고
+   (c) 은행에 걸린 효성 약정과 예정 출금이 살아남았다.
 4. **자동 결제 없음** (1회 결제) — 예약 해지가 필요 없다는 안내
 5. **즉시 해지 + 환불** — 파괴적 액션이라 마지막, `destructive` 스타일
 
@@ -256,10 +280,14 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
 |---|---|---|
 | 해지·환불 견적 | `GET /admin/subscriptions/:contractId/cancellation-quote` | |
 | 즉시 해지 + 환불 | `POST /admin/subscriptions/:contractId/force-cancel` | `@RequireScopes(BILLING_REFUND)` + `@IdempotentAdminOp` |
-| 해지 예약 / 철회 | `PUT /admin/contracts/:contractId/auto-renewal` | `autoRenewal: false/true` |
+| 수동 송금 환불 완료 | `POST /admin/subscriptions/:contractId/refund/manual-complete` | CMS·무통장 계좌 송금 후 확정 |
+| 해지 예약 | `POST /admin/subscriptions/:contractId/schedule-cancel` | 사유 필수. 셀프해지 `AT_PERIOD_END` 와 동일 처리 |
+| 해지 예약 철회 | `PUT /admin/contracts/:contractId/auto-renewal` | `autoRenewal: true` |
 
 전부 클래스 레벨 `@MembershipAdminAuth()`(= `RolesGuard('admin','master')`). 강제취소는
-`Idempotency-Key` 로 재전송을 막아 **환불이 두 번 나가지 않는다.**
+`Idempotency-Key` 로 재전송을 막고, **이미 `CANCELLED` 인 계약은 409 로 거부**해 환불이 두 번 나가지
+않게 한다(멱등키는 같은 요청의 재전송만 막지, 두 번째 클릭은 새 키로 통과한다). 추가 환불이 필요하면
+결제관리(wallet)에서 처리한다.
 
 `force-cancel` 요청에는 `customerEmail` 을 함께 보낸다 — membership 은 사용자 조회를 하지 않으므로,
 어드민 UI 가 이미 화면에 띄우고 있는 고객 이메일을 실어 보내야 나중에 알림을 붙일 수 있다.
@@ -310,6 +338,12 @@ POST /v1/billing-agreements/by-subscriber/terminate-mandate
 약정 종료가 실패해도 해지는 되돌리지 않는다 — 재청구는 DB 플래그로 이미 막혀 있고,
 `AGREEMENT_REVOKE_PENDING` 계약 이벤트로 후속 정리 대상만 남긴다.
 
+**남은 정리는 `AgreementCleanupService` 가 매시간 이어서 끝낸다.** 계약별 최신 약정 이벤트가
+`AGREEMENT_REVOKE_PENDING` 인 건만 골라 재시도하고, 성공하면 `AGREEMENT_REVOKED` 로 확정해 큐에서
+빠진다(상태 컬럼 없이 이벤트만으로 큐가 비워진다). 효성 삭제 가드처럼 재시도로 풀리지 않는 건은
+7일 뒤 `AGREEMENT_REVOKE_ABANDONED` 로 확정하고 재시도를 멈춘다 — 매시간 같은 실패를 반복하며
+아무도 처리하지 않는 상태를 만들지 않기 위해서다.
+
 ---
 
 ## 6. 상태 표현
@@ -335,7 +369,7 @@ POST /v1/billing-agreements/by-subscriber/terminate-mandate
 ```bash
 docker compose up -d postgres
 
-# 서비스 + HTTP 계층 (70 케이스)
+# 서비스 + HTTP 계층 (86 케이스)
 npm run test:membership:cancellation-e2e
 
 # 고객 UI — 실제 크로미움, 6 시나리오
@@ -345,8 +379,9 @@ cd web/almondyoung-storefront && npm run test:e2e:membership-cancel
 cd apps/admin-web && npm run test:e2e:membership-cancel
 ```
 
-- 서비스 계층(46): 상태 전이·자격·계약이벤트·더닝·재청구 차단을 실 DB 로 검증
-- HTTP 계층(24): JwtAuthGuard, ScopeGuard, zod, 도메인예외→상태코드, Idempotency-Key
+- 서비스 계층(60): 상태 전이·자격·계약이벤트·더닝·재청구 차단, 관리자 해지예약 대행, 1회 결제 철회 차단,
+  수동 송금 환불 완료 처리, 주기 시작 판정(관리자 연장·일시정지), 약정 정리 재시도
+- HTTP 계층(26): JwtAuthGuard, ScopeGuard, zod, 도메인예외→상태코드, Idempotency-Key
 - UI: 스텁 백엔드로 대체해 실제 화면 조작 (`e2e/membership-cancel/`)
 
 함정
@@ -368,7 +403,10 @@ cd apps/admin-web && npm run test:e2e:membership-cancel
   넣으면 동작한다(행이 없으면 컨슈머가 조용히 no-op 한다).
 - **고객관리 상세창 멤버십 탭은 브라우저로 검증하지 못했다.** 같은 패널을 렌더하지만 그 화면까지
   띄우려면 customers 페이지와 core API 스택을 스텁해야 한다.
-- **수동 환불 완료 처리 동선**: CMS·무통장 수동 송금 후 관리자가 wallet 결제관리에서 완료 처리해야
-  한다(`POST /v1/admin/refunds/:id/confirm`). 멤버십 화면에서 바로 완료 처리하는 버튼은 없다.
+- **수동 환불 완료 처리**는 멤버십 화면에서 한다 — 해지·환불 탭의 환불 행에 `송금 완료 처리` 버튼
+  (`POST /admin/subscriptions/:contractId/refund/manual-complete`). wallet 의 수동 완료
+  (`POST /v1/admin/refunds/:id/confirm`)는 **무통장 전용**이고, 효성 CMS 는 wallet 에 환불 행 자체가
+  만들어지지 않아(PG 환불 API 가 없다) 그 경로로 닫을 수 없다. 그대로 두면 `refundCompleted` 가
+  영구히 false 로 남아 "미완료 — N원 처리 필요" 가 계속 떠 있는다.
 - 이 작업은 **스키마 변경이 0건**이다. 라이브에는 마이그레이션 8건이 모두 적용돼 있어
   배포 시 `db:migrate` 가 필요 없다. 스코프 행은 부팅 시 자동 정합화된다.

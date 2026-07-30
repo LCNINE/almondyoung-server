@@ -83,6 +83,8 @@ function build() {
     withdrawalDaysRemaining: 0,
     withdrawalWindowDays: 7,
     refundProcessingBusinessDays: 3,
+    // 철회 가능 여부는 서버가 판단해 내려준다(1회 결제는 되살릴 자동결제가 없어 false).
+    canUndoCancellation: false,
     // 실제 서버는 항상 두 선택지를 내려주고, 즉시해지가 불가하면 available=false + 사유를 담는다.
     options: [
       atPeriodEnd,
@@ -195,6 +197,7 @@ function build() {
           alreadyScheduledForCancellation: true,
           recurringCancelledAt: cancelledAt,
           nextBillingDate: null,
+          canUndoCancellation: true,
         },
       };
     }

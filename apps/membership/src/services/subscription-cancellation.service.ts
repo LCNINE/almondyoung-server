@@ -51,6 +51,8 @@ export interface CancellationPreview {
   withdrawalDaysRemaining: number;
   withdrawalWindowDays: number;
   refundProcessingBusinessDays: number;
+  /** 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제는 되살릴 정기결제가 없어 false. */
+  canUndoCancellation: boolean;
   options: CancellationOption[];
 }
 
@@ -218,6 +220,12 @@ export class SubscriptionCancellationService {
       throw new ConflictError('해지 예약된 구독이 아닙니다.');
     }
 
+    // 1회 결제 계약은 되살릴 정기결제가 없다. 여기서 막지 않으면 아래 createBillingAgreement 가
+    // 자동이체 약정을 새로 만들어, 정기결제에 동의한 적 없는 고객이 다음 달부터 청구된다.
+    if (!(await this.contractReader.wasRecurringBeforeCancellation(data.contract.id))) {
+      throw new ConflictError('1회 결제 건이라 되돌릴 자동결제가 없습니다. 멤버십은 종료일까지 그대로 이용하실 수 있습니다.');
+    }
+
     const entitlement = await this.contractReader.findCurrentEntitlement(userId);
     if (!entitlement) {
       throw new ConflictError('이용 기간이 만료돼 해지 철회로 복구할 수 없습니다. 재가입이 필요합니다.');
@@ -246,6 +254,67 @@ export class SubscriptionCancellationService {
   }
 
   /**
+   * 해지 예약 (관리자 대행).
+   *
+   * 고객 셀프해지의 AT_PERIOD_END 와 **완전히 같은 일**을 한다. 이전에는 어드민이 '자동 연장 끄기'
+   * (autoRenewal=false) 만 호출해서, 청구는 멈추지만 (1) recurringCancelledAt 이 없어 화면상 1회 결제로
+   * 보이고 (2) 해지 사유가 남지 않으며 (3) 은행에 걸린 효성 자동이체 약정과 예정 출금이 그대로 살아
+   * 있었다. CMS 는 환불이 불가하므로 예정 출금이 남는 것은 곧 돌려주기 어려운 출금이다.
+   */
+  async scheduleCancellationByAdmin(
+    contractId: string,
+    adminId: string,
+    reason: string,
+    customerEmail?: string,
+  ): Promise<RecurringCancellationResult> {
+    const contract = await this.contractReader.findById(contractId);
+    if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
+    if (contract.status !== 'ACTIVE') {
+      throw new ConflictError('활성 상태인 구독만 해지 예약할 수 있습니다.');
+    }
+    if (contract.recurringCancelledAt) {
+      throw new ConflictError('이미 해지 예약된 구독입니다.');
+    }
+    if (!contract.autoRenewal) {
+      throw new BadRequestError('자동결제가 없는 1회 결제 계약입니다. 즉시 해지 + 환불을 사용하세요.');
+    }
+
+    const plan = await this.contractReader.findPlan(contract.planId);
+    if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
+
+    const result = await this.cancellationManager.cancelRecurringPayment(
+      contract.userId,
+      contract,
+      'ADMIN_REQUESTED',
+      reason,
+      true,
+      { causedBy: 'ADMIN', causedByUserId: adminId },
+    );
+
+    // 셀프해지와 같은 이유로 INVOICE 경로 해지예약은 약정 종료를 보류한다(남은 수금이 실패하면 무료 이용).
+    if (contract.billingPath !== 'INVOICE') {
+      await this.revokeBillingAgreementSafely(contract.id, contract.userId);
+    }
+
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId: contract.userId,
+      email: customerEmail,
+      status: 'RECURRING_CANCELLED',
+      occurredAt: new Date().toISOString(),
+      contractId: contract.id,
+      planId: plan.id,
+      tierId: plan.tierId,
+      reasonCode: 'ADMIN_REQUESTED',
+      reasonText: reason,
+      periodEndsAt: result.currentPeriodEndsAt,
+      refundAmount: 0,
+      refundStatus: 'NOT_APPLICABLE',
+    });
+
+    return result;
+  }
+
+  /**
    * 강제 구독 취소 (관리자 전용).
    *
    * 관리자는 정책 계산과 무관하게 금액을 정할 수 있다(장애 보상 등). 대신 실제 환불 결과를
@@ -266,6 +335,13 @@ export class SubscriptionCancellationService {
   ): Promise<CancellationResult> {
     const contract = await this.contractReader.findById(contractId);
     if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
+
+    // 이미 취소된 계약을 다시 취소하면 환불이 한 번 더 나간다(Idempotency-Key 는 같은 요청의 재전송만
+    // 막지, 두 번째 클릭·두 번째 CS 처리는 새 키로 통과한다). 자격은 이미 회수됐으므로 취소할 것도 없다.
+    // 추가 환불이 필요하면 결제관리(wallet)에서 환불한다.
+    if (contract.status === 'CANCELLED') {
+      throw new ConflictError('이미 해지된 구독입니다. 추가 환불이 필요하면 결제관리에서 처리하세요.');
+    }
 
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
@@ -333,6 +409,52 @@ export class SubscriptionCancellationService {
     });
 
     return finalResult;
+  }
+
+  /**
+   * 수동 송금 환불 완료 처리 (관리자).
+   *
+   * 효성 CMS 는 PG 환불 API 가 없어 wallet 에 환불 행 자체가 만들어지지 않는다. 그래서 wallet 의
+   * 수동 완료(`POST /v1/admin/refunds/:id/confirm`)로는 이 건을 닫을 수 없고(그 경로는 무통장 전용),
+   * 완료 처리 창구가 없으면 `refundCompleted` 가 영구히 false 로 남아 "미완료 — N원 처리 필요" 가
+   * 계속 떠 있게 된다. 계좌 송금을 끝낸 관리자가 여기서 사실을 확정한다.
+   */
+  async markManualRefundCompleted(
+    contractId: string,
+    adminId: string,
+    params: { amount?: number; memo?: string },
+  ): Promise<{ contractId: string; refundedAmount: number; refundCompletedAt: string }> {
+    const contract = await this.contractReader.findById(contractId);
+    if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
+    if (!contract.refundRequested) {
+      throw new ConflictError('환불 요청이 없는 계약입니다.');
+    }
+    if (contract.refundCompleted) {
+      throw new ConflictError('이미 환불 완료 처리된 계약입니다.');
+    }
+
+    const requested = contract.eligibleRefundAmount ?? 0;
+    const refundedAmount = params.amount ?? requested;
+    if (refundedAmount <= 0) throw new BadRequestError('환불 금액이 0원입니다.');
+    // 실제로 보낸 금액이 요청액과 다르면 그대로 기록한다(추정하지 않는다). 다만 요청액 초과는 막는다.
+    if (requested > 0 && refundedAmount > requested) {
+      throw new BadRequestError(`환불 요청액(${requested.toLocaleString()}원)을 초과할 수 없습니다.`);
+    }
+
+    await this.cancellationManager.recordRefundOutcome(
+      contractId,
+      contract.userId,
+      requested,
+      {
+        status: 'SUCCEEDED',
+        refundedAmount,
+        errorCode: 'MANUAL_TRANSFER_CONFIRMED',
+        errorMessage: params.memo,
+      },
+      { causedBy: 'ADMIN', causedByUserId: adminId },
+    );
+
+    return { contractId, refundedAmount, refundCompletedAt: new Date().toISOString() };
   }
 
   async getCancellationReasons() {
@@ -413,6 +535,7 @@ export class SubscriptionCancellationService {
       withdrawalDaysRemaining: context.decision.withdrawalDaysRemaining,
       withdrawalWindowDays: WITHDRAWAL_WINDOW_DAYS,
       refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
+      canUndoCancellation: context.alreadyScheduledForCancellation && context.isRecurring,
       options: [context.decision.atPeriodEnd, context.decision.immediateRefund],
     };
   }

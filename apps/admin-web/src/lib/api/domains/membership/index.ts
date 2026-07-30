@@ -252,6 +252,37 @@ export const membershipApi = {
     );
   },
 
+  /**
+   * 해지 예약 (관리자 대행). 고객 셀프해지의 '해지 예약' 과 같은 처리다.
+   * auto-renewal 토글은 청구만 멈추고 해지 사유·해지 시각·자동이체 약정 종료가 빠진다.
+   */
+  scheduleCancelSubscription: async (
+    contractId: string,
+    body: { reason: string; customerEmail?: string }
+  ): Promise<{ currentPeriodEndsAt: string; message: string }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/schedule-cancel`,
+      body,
+      idemConfig()
+    );
+    return res.data;
+  },
+
+  /**
+   * 수동 송금 환불 완료 처리. 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다.
+   */
+  completeManualRefund: async (
+    contractId: string,
+    body: { amount?: number; memo?: string }
+  ): Promise<{ contractId: string; refundedAmount: number }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/refund/manual-complete`,
+      body,
+      idemConfig()
+    );
+    return res.data;
+  },
+
   adjustEntitlement: async (
     userId: string,
     days: number,

@@ -647,6 +647,71 @@ export class AdminOperationsController {
   }
 
   /**
+   * 해지 예약 (관리자 대행)
+   *
+   * 고객 셀프해지의 '해지 예약' 과 같은 처리다. 예전처럼 auto-renewal 토글로 대신하면 청구만 멈추고
+   * 해지 사유·해지 시각이 남지 않으며, 은행에 걸린 효성 자동이체 약정과 예정 출금이 살아남는다.
+   */
+  @Post('subscriptions/:contractId/schedule-cancel')
+  @ApiOperation({
+    summary: '해지 예약 (어드민)',
+    description: '잔여 기간은 유지하고 다음 결제부터 청구하지 않습니다. 자동이체 약정도 함께 종료합니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('schedule-cancel')
+  async scheduleCancellation(
+    @User('userId') adminId: string,
+    @Param('contractId') contractId: string,
+    @Body() dto: { reason?: string; customerEmail?: string },
+  ) {
+    try {
+      const reason = dto?.reason?.trim();
+      if (!reason) throw new BadRequestException('해지 사유는 필수입니다');
+
+      return await this.cancellationService.scheduleCancellationByAdmin(
+        contractId,
+        adminId,
+        reason,
+        dto?.customerEmail,
+      );
+    } catch (error) {
+      this.handleError(error, '해지 예약', contractId);
+    }
+  }
+
+  /**
+   * 수동 송금 환불 완료 처리 (관리자)
+   *
+   * 효성 CMS 환불은 wallet 에 환불 행이 없어(PG 환불 API 자체가 없다) wallet 의 수동 완료 경로로
+   * 닫을 수 없다. 계좌 송금을 끝낸 관리자가 여기서 완료 사실을 확정한다.
+   */
+  @Post('subscriptions/:contractId/refund/manual-complete')
+  @ApiOperation({
+    summary: '수동 송금 환불 완료 처리 (어드민)',
+    description: '계좌 송금을 마친 환불 건을 완료로 확정합니다. 금액을 생략하면 요청 금액 전액입니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('refund-manual-complete')
+  async completeManualRefund(
+    @User('userId') adminId: string,
+    @Param('contractId') contractId: string,
+    @Body() dto: { amount?: number; memo?: string },
+  ) {
+    try {
+      return await this.cancellationService.markManualRefundCompleted(contractId, adminId, {
+        amount: dto?.amount,
+        memo: dto?.memo,
+      });
+    } catch (error) {
+      this.handleError(error, '수동 환불 완료 처리', contractId);
+    }
+  }
+
+  /**
    * 해지·환불 견적 (관리자)
    *
    * 강제취소 다이얼로그가 "지금 해지하면 정책상 얼마" 를 보여주기 위한 계산기.

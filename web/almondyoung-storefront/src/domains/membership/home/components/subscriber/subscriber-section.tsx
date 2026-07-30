@@ -121,7 +121,8 @@ export default function SubscriberSection({
               endsAt: formatDate(periodEndsAt, DATE_FORMATS.KO_LONG),
             })}
           </p>
-          {cancellationPreview?.isRecurring && (
+          {/* 철회는 되살릴 자동결제가 있을 때만. 1회 결제에 열어주면 동의한 적 없는 정기결제가 시작된다. */}
+          {cancellationPreview?.canUndoCancellation && (
             <button
               type="button"
               disabled={isUndoing}

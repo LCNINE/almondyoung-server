@@ -60,16 +60,18 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
 
     // 사유가 비면 토스트로 막고 요청은 보내지 않는다.
     await expect(page.getByText('해지 사유를 입력해주세요.')).toBeVisible();
-    expect((await stubCalls(request)).filter((c) => c.path === 'auto-renewal')).toHaveLength(0);
+    expect((await stubCalls(request)).filter((c) => c.path === 'schedule-cancel')).toHaveLength(0);
 
     await dialog.getByPlaceholder('고객 요청 내용 등').fill('고객 요청');
     await dialog.getByRole('button', { name: '해지 예약 확정' }).click();
 
+    // 해지 사유·해지 시각·자동이체 약정 종료까지 처리하는 전용 API 로 나가야 한다
+    // (auto-renewal 토글은 청구만 멈춘다).
     await expect
-      .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'auto-renewal').length)
+      .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'schedule-cancel').length)
       .toBe(1);
-    const call = (await stubCalls(request)).find((c) => c.path === 'auto-renewal')!;
-    expect(call.body.autoRenewal).toBe(false);
+    const call = (await stubCalls(request)).find((c) => c.path === 'schedule-cancel')!;
+    expect(call.body.reason).toBe('고객 요청');
   });
 
   test('해지 예약 상태는 해지일·사유·환불 미완료를 드러내고 철회할 수 있다', async ({ page, request }) => {

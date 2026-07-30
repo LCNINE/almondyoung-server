@@ -28,6 +28,7 @@ import { SubscriptionContractReader } from './services/subscription/subscription
 import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './services/subscription/cancellation-reason.reader';
 import { CancellationContextReader } from './services/subscription/cancellation-context.reader';
+import { AgreementCleanupService } from './services/subscription/agreement-cleanup.service';
 import { RefundPolicyService } from './services/subscription/refund-policy.service';
 import { RefundEventHandler } from './services/refund-event-handler.service';
 import { SubscriptionCreator } from './services/subscription/subscription.creator';
@@ -158,6 +159,8 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     SubscriptionCancellationManager,
     CancellationReasonReader,
     CancellationContextReader,
+    // 해지 시 실패한 자동이체 약정 종료를 이어서 끝낸다(은행에 약정이 남지 않게).
+    AgreementCleanupService,
 
     PauseReader,
     PauseManager,

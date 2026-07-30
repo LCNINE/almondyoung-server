@@ -25,12 +25,14 @@ import { RefundPolicyService } from '../../src/services/subscription/refund-poli
 import { CancellationReasonReader } from '../../src/services/subscription/cancellation-reason.reader';
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { BenefitReader } from '../../src/services/benefit/benefit.reader';
+import { PauseReader } from '../../src/services/pause/pause.reader';
 import { BillingReader } from '../../src/services/billing/billing.reader';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
 import { AdminMembersReader } from '../../src/services/admin/admin-members.reader';
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
+import { AgreementCleanupService } from '../../src/services/subscription/agreement-cleanup.service';
 
 type MembershipSchema = typeof membershipSchema;
 
@@ -49,6 +51,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
   let billingReader: BillingReader;
   let adminReader: AdminMembersReader;
   let refundEventHandler: RefundEventHandler;
+  let agreementCleanup: AgreementCleanupService;
 
   let tierId: string;
   let monthlyPlanId: string;
@@ -84,9 +87,11 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         CancellationReasonReader,
         ContractEventManager,
         BenefitReader,
+        PauseReader,
         BillingReader,
         AdminMembersReader,
         RefundEventHandler,
+        AgreementCleanupService,
         { provide: PaymentClientService, useValue: wallet },
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
@@ -98,6 +103,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     billingReader = module.get(BillingReader);
     adminReader = module.get(AdminMembersReader);
     refundEventHandler = module.get(RefundEventHandler);
+    agreementCleanup = module.get(AgreementCleanupService);
 
     // 같은 DB 를 쓰는 다른 스펙이 남긴 tier/plan 을 먼저 치운다 — tiers.code 가 유니크라
     // 남아 있으면 삽입이 깨지고, 실행 순서에 따라 결과가 달라진다(flaky).
@@ -163,6 +169,9 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     await db.db.delete(schema.membershipDunningQueue);
     await db.db.delete(schema.billingEvents);
     await db.db.delete(schema.subscriptionContractEvents);
+    // pause_events 는 entitlement 를 참조한다 — 먼저 지우지 않으면 FK 로 정리가 막힌다.
+    await db.db.delete(schema.pauseEventDetails);
+    await db.db.delete(schema.pauseEvents);
     await db.db.delete(schema.subscriptionEntitlement);
     await db.db.delete(schema.subscriptionContracts);
     await db.db.delete(schema.eventBatches);
@@ -212,6 +221,17 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       endsAt: format(endsAt, 'yyyy-MM-dd'),
       isCurrent: true,
     });
+
+    // 이번 주기의 결제 사실. 청약철회 7일 창은 endsAt 역산이 아니라 이 시각을 기준으로 판정된다
+    // (paymentIntentId 는 유니크 제약 때문에 null — 여기선 시각만 의미가 있다).
+    if (params.hasPayment !== false) {
+      await db.db.insert(schema.billingEvents).values({
+        contractId: contract.id,
+        eventType: 'CHARGE_SUCCESS',
+        amount: isAnnual ? ANNUAL_PRICE : MONTHLY_PRICE,
+        createdAt: periodStart,
+      });
+    }
 
     if (params.withDunning) {
       await db.db.insert(schema.membershipDunningQueue).values({
@@ -770,6 +790,224 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
   // ───────────────────────── 관리자 시나리오 ─────────────────────────
 
+  describe('자동이체 약정 정리 재시도', () => {
+    it('해지 때 실패한 약정 종료를 스케줄러가 이어서 끝낸다 (은행에 약정이 남지 않게)', async () => {
+      wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_PENDING');
+
+      await agreementCleanup.retryPendingAgreementRevokes();
+
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
+      // 이미 정리된 계약은 다음 실행에서 다시 시도하지 않는다.
+      wallet.terminateBillingMandate.mockClear();
+      await agreementCleanup.retryPendingAgreementRevokes();
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+    });
+
+    it('재시도로 풀리지 않는 건은 계속 재시도하지 않고 수동 처리 대상으로 확정한다', async () => {
+      wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      // 8일 전부터 실패해 온 건으로 만든다.
+      await db.db
+        .update(schema.subscriptionContractEvents)
+        .set({ createdAt: subDays(new Date(), 8) })
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_PENDING'),
+          ),
+        );
+      wallet.terminateBillingMandate.mockResolvedValue({
+        agreementFound: true,
+        cancelledWithdrawals: 0,
+        mandateTerminated: false,
+        skipReason: 'CMS_MEMBER_DELETE_BLOCKED_REGISTERED',
+      });
+
+      await agreementCleanup.retryPendingAgreementRevokes();
+
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_ABANDONED');
+      wallet.terminateBillingMandate.mockClear();
+      await agreementCleanup.retryPendingAgreementRevokes();
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('주기 시작 판정 — 결제 시각이 원천', () => {
+    it('관리자 기간 연장이 청약철회 7일 창을 되살리지 않는다', async () => {
+      // 20일 전 결제 → 청약철회 창은 이미 지났다.
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 20 });
+
+      // CS 가 사과로 이용 기간을 10일 연장한다(결제와 무관하게 endsAt 만 밀린다).
+      await db.db
+        .update(schema.subscriptionEntitlement)
+        .set({ endsAt: format(addDays(new Date(), 20), 'yyyy-MM-dd') })
+        .where(
+          and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+        );
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+      expect(immediate.available).toBe(false);
+      expect(preview.withdrawalDaysRemaining).toBe(0);
+      await expect(
+        service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' }),
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    it('연간 정산은 일시정지 기간을 이용 기간으로 세지 않는다', async () => {
+      const { userId } = await givenSubscription({ plan: 'annual', daysSincePeriodStart: 75 });
+      const [entitlement] = await db.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(eq(schema.subscriptionEntitlement.userId, userId));
+
+      // 결제 후 40일을 정지했다 → 실제 이용은 35일(2개월분 차감)
+      await db.db.insert(schema.pauseEvents).values([
+        { userId, entitlementId: entitlement.id, eventType: 'START', effectiveAt: subDays(new Date(), 60) },
+        { userId, entitlementId: entitlement.id, eventType: 'RESUME', effectiveAt: subDays(new Date(), 20) },
+      ]);
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+      expect(immediate.breakdown?.monthsElapsed).toBe(2);
+      expect(immediate.refundAmount).toBe(ANNUAL_PRICE - 2 * MONTHLY_PRICE);
+    });
+  });
+
+  describe('관리자 — 수동 송금 환불 완료 처리', () => {
+    it('CMS 수동 송금 건을 완료로 확정한다 (wallet 에는 환불 행이 없어 결제관리로 닫을 수 없다)', async () => {
+      wallet.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: MONTHLY_PRICE,
+        alreadyRefundedAmount: 0,
+        autoRefundSupported: false,
+        requiresReceiveAccount: false,
+        methodTypes: ['CMS_BATCH'],
+      });
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 1 });
+      await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+        refundReceiveAccount: { bank: '20', accountNumber: '110123456789', holderName: '홍길동' },
+      });
+      expect((await loadContract(contract.id)).refundCompleted).toBe(false);
+
+      const result = await service.markManualRefundCompleted(contract.id, 'admin_1', { memo: '계좌 송금 완료' });
+
+      expect(result.refundedAmount).toBe(MONTHLY_PRICE);
+      const after = await loadContract(contract.id);
+      expect(after.refundCompleted).toBe(true);
+      expect(after.refundCompletedAt).not.toBeNull();
+      expect(await loadEventTypes(contract.id)).toContain('REFUND_COMPLETED');
+    });
+
+    it('두 번 확정되지 않는다 (중복 송금 기록 방지)', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 2, recurring: false });
+      await service.forceCancelSubscription(contract.id, 'admin_1', '요청', 'PARTIAL', 1000);
+
+      // 위 강제취소는 PG 자동환불 성공(=이미 완료)이라 다시 확정할 수 없다.
+      await expect(service.markManualRefundCompleted(contract.id, 'admin_1', {})).rejects.toThrow(ConflictError);
+    });
+
+    it('요청 금액을 초과해 기록할 수 없다', async () => {
+      wallet.refundByIntent.mockResolvedValue({ status: 'PENDING', refundedAmount: 0 });
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 1 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
+
+      await expect(
+        service.markManualRefundCompleted(contract.id, 'admin_1', { amount: MONTHLY_PRICE + 1 }),
+      ).rejects.toThrow(BadRequestError);
+    });
+  });
+
+  describe('관리자 — 해지 예약 대행', () => {
+    it('고객 셀프해지와 같은 처리를 한다 (해지시각·사유 기록 + 자동이체 약정 종료 + 재청구 차단)', async () => {
+      const { contract, endsAt } = await givenSubscription({ daysSincePeriodStart: 10, withDunning: true });
+
+      const result = await service.scheduleCancellationByAdmin(contract.id, 'admin_1', '고객 전화 요청');
+
+      expect(result.currentPeriodEndsAt).toBe(endsAt);
+      const after = await loadContract(contract.id);
+      expect(after.status).toBe('ACTIVE'); // 잔여 기간은 그대로 이용한다
+      expect(after.recurringCancelledAt).not.toBeNull();
+      expect(after.recurringCancellationReasonCode).toBe('ADMIN_REQUESTED');
+      expect(after.autoRenewal).toBe(false);
+      expect(after.nextBillingDate).toBeNull();
+      expect(await countDunning(contract.id)).toBe(0);
+      // 효성 CMS 는 환불이 불가하므로 예정 출금이 남지 않게 약정까지 끊어야 한다.
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(
+        await billingReader.findDueContracts(format(addDays(new Date(), 400), 'yyyy-MM-dd')),
+      ).toHaveLength(0);
+    });
+
+    it('누가 해지했는지 감사 기록에 ADMIN 으로 남는다', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+
+      await service.scheduleCancellationByAdmin(contract.id, 'admin_1', '고객 전화 요청');
+
+      const [event] = await db.db
+        .select()
+        .from(schema.subscriptionContractEvents)
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'RECURRING_CANCELLED'),
+          ),
+        );
+      expect(event.causedBy).toBe('ADMIN');
+      expect(event.causedByUserId).toBe('admin_1');
+    });
+
+    it('1회 결제 계약은 예약 해지 대상이 아니다 (즉시 해지로 안내)', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 10, recurring: false });
+
+      await expect(service.scheduleCancellationByAdmin(contract.id, 'admin_1', '요청')).rejects.toThrow(
+        BadRequestError,
+      );
+    });
+
+    it('이미 해지 예약된 구독은 중복 예약되지 않는다', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.scheduleCancellationByAdmin(contract.id, 'admin_1', '요청');
+
+      await expect(service.scheduleCancellationByAdmin(contract.id, 'admin_1', '요청')).rejects.toThrow(ConflictError);
+    });
+  });
+
+  describe('해지 철회', () => {
+    it('1회 결제 고객에게는 철회를 열어주지 않는다 (동의 없는 정기결제 전환 방지)', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10, recurring: false });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      const preview = await service.previewCancellation(userId);
+      expect(preview.canUndoCancellation).toBe(false);
+
+      await expect(service.undoCancellation(userId, EMAIL)).rejects.toThrow(ConflictError);
+      expect(wallet.createBillingAgreement).not.toHaveBeenCalled();
+      expect((await loadContract(contract.id)).autoRenewal).toBe(false);
+    });
+
+    it('정기결제 해지 예약은 철회로 자동결제가 재개된다', async () => {
+      const { userId, contract, endsAt } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      expect((await service.previewCancellation(userId)).canUndoCancellation).toBe(true);
+
+      const result = await service.undoCancellation(userId, EMAIL);
+      expect(result.type).toBe('CANCELLATION_UNDONE');
+      const after = await loadContract(contract.id);
+      expect(after.autoRenewal).toBe(true);
+      expect(after.recurringCancelledAt).toBeNull();
+      expect(after.nextBillingDate).toBe(endsAt);
+    });
+  });
+
   describe('관리자 — 강제 해지 + 환불', () => {
     it('정책 산정액 이내 부분 환불은 허용된다', async () => {
       const { contract } = await givenSubscription({ plan: 'annual', daysSincePeriodStart: 75, recurring: false });
@@ -793,6 +1031,17 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(after.cancellationReasonCode).toBe('ADMIN_FORCED');
       expect(after.refundCompleted).toBe(true);
       expect(await loadCurrentEntitlement(contract.userId)).toBeUndefined();
+    });
+
+    it('이미 해지된 계약은 다시 강제취소되지 않는다 (환불 두 번 나가는 것을 막는다)', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 2, recurring: false });
+      await service.forceCancelSubscription(contract.id, 'admin_1', '1차', 'PARTIAL', 1000);
+      wallet.refundByIntent.mockClear();
+
+      await expect(
+        service.forceCancelSubscription(contract.id, 'admin_1', '2차', 'PARTIAL', 1000),
+      ).rejects.toThrow(ConflictError);
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
     });
 
     it('정책 산정액 초과 환불은 초과 권한 없이는 거부되고 계약도 그대로 남는다', async () => {

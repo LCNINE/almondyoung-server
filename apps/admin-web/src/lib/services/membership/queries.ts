@@ -141,6 +141,44 @@ export const useCancellationQuote = (contractId: string, enabled: boolean) =>
     staleTime: 0,
   });
 
+/** 해지 예약 (관리자 대행) — 고객 셀프해지와 같은 처리를 한다. */
+export const useScheduleCancelSubscription = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId,
+      reason,
+      customerEmail,
+    }: {
+      contractId: string;
+      reason: string;
+      customerEmail?: string;
+    }) => membershipApi.scheduleCancelSubscription(contractId, { reason, customerEmail }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+    },
+  });
+};
+
+/** 계좌 송금을 마친 환불 건을 완료로 확정한다(CMS·무통장 수동 송금). */
+export const useCompleteManualRefund = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      contractId,
+      amount,
+      memo,
+    }: {
+      contractId: string;
+      amount?: number;
+      memo?: string;
+    }) => membershipApi.completeManualRefund(contractId, { amount, memo }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+    },
+  });
+};
+
 export const useForceCancelSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({
