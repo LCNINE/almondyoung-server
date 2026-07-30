@@ -47,6 +47,7 @@ export class PricingValidatorService {
       const validatedRules = parseResult.data;
 
       await this.validateScopeTargets(masterId, versionId, validatedRules, trx);
+      await this.validateBasePriceCoverage(versionId, validatedRules, trx);
 
       return validatedRules;
     }, tx);
@@ -68,6 +69,39 @@ export class PricingValidatorService {
     const variantsTargetIds = this.collectTargetIds(allRules, hasVariantsScope);
     if (variantsTargetIds.length > 0) {
       await this.validateVariantIds(masterId, versionId, variantsTargetIds, tx);
+    }
+  }
+
+  /**
+   * 모든 variant 가 base_price 룰에 하나 이상 걸리는지 확인한다.
+   * 안 걸리면 계산기가 0 원을 내고 (pricing-calculator: currentPrice 는 0 에서 시작) 0원 상품이 게시된다.
+   */
+  private async validateBasePriceCoverage(
+    versionId: string,
+    rulesSet: ValidatedPricingRulesSet,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const variants = await tx
+      .select({ id: productMasterVariants.variantId })
+      .from(productMasterVariants)
+      .where(eq(productMasterVariants.versionId, versionId));
+
+    const uncovered: string[] = [];
+    for (const variant of variants) {
+      const matches = await Promise.all(
+        rulesSet.basePriceRules.map((rule) => this.calculatorService.matchesScope(variant.id, rule, tx)),
+      );
+      if (!matches.some(Boolean)) {
+        uncovered.push(variant.id);
+      }
+    }
+
+    if (uncovered.length > 0) {
+      const sample = uncovered.slice(0, 5).join(', ');
+      const suffix = uncovered.length > 5 ? ` 외 ${uncovered.length - 5}개` : '';
+      throw new BadRequestException(
+        `판매가 규칙이 적용되지 않는 옵션이 ${uncovered.length}개 있습니다 (0원으로 게시됩니다): ${sample}${suffix}`,
+      );
     }
   }
 
