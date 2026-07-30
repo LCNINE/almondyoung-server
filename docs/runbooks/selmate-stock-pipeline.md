@@ -3,7 +3,7 @@
 셀메이트(창고관리)에서 받은 재고 CSV 를 Core/Medusa 에 반영하는 스크립트 모음과 실행 순서. 두 갈래다:
 
 - **Ⓐ 재고 동기화 (일일)** — 재고량을 WMS 로 강제 동기화하고 변동분 이벤트를 재발행해 **품절 처리**가 돌게 한다.
-- **Ⓑ 예약 정리 (일일, Ⓐ 직전)** — Medusa 에 영원히 남는 예약(reservation)을 걷어낸다. 안 하면 재고가 이중으로 깎인다.
+- **Ⓑ 예약 정리 (일일, Ⓐ 직전)** — Medusa 에 영원히 남는 예약(reservation)을 걷어내고 `reserved` 카운터를 예약 원장과 정합시킨다. 안 하면 재고가 이중으로 깎인다.
 - **①②③ 입고예정 (수시)** — **스토어프론트에 입고예정일을 표시**한다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
@@ -77,10 +77,10 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 해당 행을 잘라낸다 (실행 시 `⛔ 동기화 제외 N행 — <사유>` 로 찍힘). **런북 문구만으론 사람이 빠뜨리므로
 스크립트가 강제한다.**
 
-| 상품 | 상품일련번호 | 조치 | 등록일 |
-|------|-------------|------|--------|
-| `akf쌍커풀테이프` | 13248 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
-| `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`) | 13333 | **재고동기화 금지 + 품절 유지** | 2026-07-23 |
+| 상품                                                                                       | 상품일련번호        | 조치                                                                                                                                        | 등록일     |
+| ------------------------------------------------------------------------------------------ | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `akf쌍커풀테이프`                                                                          | 13248               | **재고동기화 금지 + 품절 유지**                                                                                                             | 2026-07-23 |
+| `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`)                                             | 13333               | **재고동기화 금지 + 품절 유지**                                                                                                             | 2026-07-23 |
 | `씨엠 쌍커풀 테이프` (카페코드 `P0000EAZ`, Medusa `prod_01KT8JM7CESNJAB3C66NV3ERGP` draft) | — (셀메이트에 없음) | **재고동기화 금지 + 품절 유지** — 셀메이트 미등록이라 name pattern 만, 품절은 Medusa `manage_inventory=true` 로 강제 (3 variant 전부 재고0) | 2026-07-24 |
 
 제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
@@ -133,11 +133,11 @@ akf쌍커풀테이프 7옵션 중 6개는 매칭돼 품절 처리했고, `혼합
 
 2026-07-29 live 실측:
 
-| | |
-|---|---|
-| `fulfillment` 테이블 | **0건** (한 번도 만든 적 없음) |
-| 살아있는 예약 | **2,830건 / 수량 12,358개** (주문 894건, 6/19~, 전부 `pending`) |
-| 예약 > 창고재고인 variant | **197개** ← 재고가 있는데 품절로 보이는 구간 |
+|                           |                                                                 |
+| ------------------------- | --------------------------------------------------------------- |
+| `fulfillment` 테이블      | **0건** (한 번도 만든 적 없음)                                  |
+| 살아있는 예약             | **2,830건 / 수량 12,358개** (주문 894건, 6/19~, 전부 `pending`) |
+| 예약 > 창고재고인 variant | **197개** ← 재고가 있는데 품절로 보이는 구간                    |
 
 스토어프론트가 보는 값은 `available = stocked - reserved` 다. `sync-stock` 이 `stocked` 를
 `현재재고 - 미발송주문수` 로 정확히 맞춰도, **그 미발송분이 예약으로 한 번 더 빠져 이중 차감**된다.
@@ -154,9 +154,109 @@ DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations <csv> --appl
   어느 쪽이든 이중 차감**이다. 스냅샷 이후 예약만 유효하다.
   (Medusa order ↔ Core sales_order 는 orderId 불일치 이력이 있어 출고 판정이 못 미덥다 — 시각은 CSV 자체가 증거다.)
 - **Ⓐ 보다 먼저** 돌린다. 순서가 반대면 예약이 남은 채 재고가 내려가 `available` 이 잠깐 음수로 보인다.
-- `reservation_item` soft delete + `inventory_level.reserved_quantity` 차감을 **한 트랜잭션**에서 한다.
-  둘의 합계가 어긋나면(정상이면 일치) 부분 반영 없이 전체 롤백한다.
-- 멱등: 조건이 `created_at < 기준시각` 고정이라 같은 CSV 로 다시 돌려도 안전.
+- `reservation_item` soft delete → `inventory_level.reserved_quantity` **재정합**을 한 트랜잭션에서 한다.
+  재정합 후에도 어긋난 칸이 남으면 부분 반영 없이 전체 롤백한다.
+- 멱등: 조건이 `created_at < 기준시각` 고정이고 재정합은 덮어쓰기라 같은 CSV 로 다시 돌려도 안전.
+- **정리 대상이 0건이어도 그냥 돌려라.** 카운터 재정합은 예약 삭제와 별개로 매번 실행된다 (아래).
+
+### ★ `reserved` 는 캐시다 — 예약 원장이 정답
+
+Medusa 는 재고를 두 군데 적는다:
+
+|                                     |                                                  |
+| ----------------------------------- | ------------------------------------------------ |
+| `reservation_item`                  | 예약 **원장**. 행 하나 = 예약 하나 (soft delete) |
+| `inventory_level.reserved_quantity` | 그 합계를 미리 계산해둔 **캐시**                 |
+
+스토어프론트가 보는 값은 `available = stocked − reserved` 라 **캐시가 틀어지면 재고가 있어도 품절**이다.
+그래서 Ⓑ 는 `reserved − qty` 로 차감하지 않고 **살아있는 예약 합계로 덮어쓴다**. 차감식은 카운터가 이미
+틀어져 있으면 그 틀어짐을 영구히 이어받지만, 덮어쓰기는 매번 원장이 정답이라 **과거 잔재까지 같이 낫는다.**
+
+**2026-07-30 사고**: 예약 행은 지워졌는데 캐시가 안 내려간 칸이 **243칸 / 9,465개** 누적돼 있었다
+(살아있는 예약 7개 vs 캐시 합계 9,472개). 그 탓에 **재고가 있는데 품절인 상품 47개 / 묻힌 재고 2,355개** —
+`노몬드 아이패치 50개입`(stocked 187 / reserved 200 / available **−13**), `하이드로겔 아이패치 무지 고급형`(1,054개),
+`롤리킹 펌제 1제2제`(179개) 등. 어긋남은 **전부 한 방향**(reserved 과다)이었고 **243칸 전부 예약 삭제 이력이 있는 칸**이라,
+원인은 "예약 생성 경로" 가 아니라 "삭제 시 카운터 미차감" 으로 특정됐다. 덮어쓰기로 바꾼 뒤 전량 복구
+(`available` 음수 61칸 → 0, revalidate 47건).
+
+**"재고 있는데 품절" 신고를 받으면 이 카운터를 1번으로 의심한다** — Ⓐ·매칭·플래그를 다 파보기 전에 여기다.
+Ⓑ dry-run 이 한 줄로 알려준다:
+
+```
+🧮 reserved 카운터 어긋남: 243칸 / 9465개 — 살아있는 예약 합계로 맞춥니다.   ← 0칸이면 정상
+```
+
+### ⚠️ 반영은 캐시 2겹 — 순서를 지켜야 한다 (Ⓑ 의 진짜 함정)
+
+**Ⓑ 는 Medusa DB 직접 쓰기라 이벤트를 발행하지 않는다.** `recalc-sellable` 로도 안 풀린다 (Core 는 애초에
+정상 판정 중이었다). 그리고 그 아래로 캐시가 **두 겹** 있다:
+
+| 겹 | 무엇 | TTL | 어떻게 깨지나 |
+|----|------|-----|---------------|
+| 1 | **live Medusa 응답 캐시** (`@medusajs/caching-redis`, namespace `{medusa-cache}`, valkey 사이드카) | **1시간** (`@medusajs/caching` 기본값) | 태그 무효화는 **Medusa 이벤트로만** 돈다 → DB 직접 쓰기는 **안 깨진다** |
+| 2 | 스토어프론트 fetch 캐시 (`product-{handle}` 태그) | 1시간 | `/api/revalidate` |
+
+**순서가 반대면 헛수고다.** 1겹이 stale 한 상태에서 2겹을 무효화하면, 스토어프론트가 stale 값을 **다시 받아가
+캐시에 새로 굳는다.** 2026-07-30 이 실수를 했다: DB 를 187/0 으로 고치고 revalidate 47건을 때렸는데
+store API 가 `inventory_quantity −14` / `allow_backorder true`(둘 다 옛 값)를 계속 줘서 화면이 그대로였다.
+쿼리 문자열을 바꿔도 같은 값이 나오면 **1겹 캐시**다 (admin API 는 캐시를 안 타므로 admin 과 store 응답이
+다르면 확정).
+
+```bash
+# 1겹이 stale 한지 확인 — admin(진실) vs store(캐시) 대조
+K=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaApiKey=//p')
+curl -s -u "$K:" https://medusa.almondyoung.com/admin/inventory-items/<iitem_id>/location-levels   # DB 값
+PK=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaPublishableKey=//p')
+curl -s -H "x-publishable-api-key: $PK" -G https://medusa.almondyoung.com/store/products \
+  --data-urlencode "handle=<handle>" --data-urlencode "fields=*variants,+variants.inventory_quantity"
+```
+
+**깨는 방법 두 가지:**
+
+- **(a) 그냥 기다린다 — TTL 최대 1시간.** 리스크 0. 급하지 않으면 이게 정답이다.
+- **(b) Medusa 이벤트를 유발한다** — admin API 로 그 재고칸에 **같은 값**을 다시 써서 무효화를 태운다.
+  (live 쓰기라 승인 필요. `reserved` 는 건드리지 않고 `stocked_quantity` 만 동일값으로 PUT)
+
+  ```bash
+  curl -s -u "$K:" -X POST \
+    https://medusa.almondyoung.com/admin/inventory-items/<iitem_id>/location-levels/<sloc_id> \
+    -H 'Content-Type: application/json' -d '{"stocked_quantity":<현재값과 동일>}'
+  ```
+
+**그 다음에** 2겹(스토어프론트)을 무효화한다 — 복구된 handle 만 골라 때린다:
+
+```bash
+S=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^StorefrontRevalidateSecret=//p')
+while IFS=$'\t' read -r h _; do
+  curl -s -o /dev/null -w "%{http_code} $h\n" -X POST https://almondyoung.com/api/revalidate \
+    -H 'content-type: application/json' -H "x-revalidate-secret: $S" -d "{\"handle\":\"$h\"}"
+done < handles.tsv
+```
+
+⚠️ **최종 확인은 브라우저(시크릿 창)로 한다.** SSR HTML 의 CTA 는 항상 "옵션을 선택해주세요"(disabled) 라
+`curl | grep 품절` 로는 판정이 안 된다 (②-C 의 같은 경고 참조).
+
+복구 대상 handle 목록은 **--apply 전에** 뽑아야 한다 (적용 후엔 조건이 사라져 못 찾는다):
+
+```sql
+-- DB_NAME=medusa. reserved 재정합으로 품절이 풀릴 상품
+WITH live AS (
+  SELECT inventory_item_id, location_id, SUM(quantity)::int AS q
+  FROM reservation_item WHERE deleted_at IS NULL GROUP BY 1,2
+)
+SELECT DISTINCT p.handle, il.stocked_quantity, il.reserved_quantity, p.title
+FROM inventory_level il
+LEFT JOIN live ON live.inventory_item_id = il.inventory_item_id AND live.location_id = il.location_id
+JOIN product_variant_inventory_item pvii
+  ON pvii.inventory_item_id = il.inventory_item_id AND pvii.deleted_at IS NULL
+JOIN product_variant v ON v.id = pvii.variant_id AND v.deleted_at IS NULL
+JOIN product p ON p.id = v.product_id AND p.deleted_at IS NULL
+WHERE il.deleted_at IS NULL
+  AND il.reserved_quantity > COALESCE(live.q, 0)
+  AND il.stocked_quantity > 0
+  AND il.stocked_quantity - il.reserved_quantity <= 0
+ORDER BY il.stocked_quantity DESC;
+```
 
 ⚠️ **이건 증상 치료다.** 근본은 셀메이트 출고 수집 시 Medusa fulfillment 를 만들거나(또는 예약을 해제)
 하는 것이고, 그 전까지는 매일 Ⓑ 를 돌려야 한다.
@@ -254,11 +354,11 @@ CORE_DB_URL="postgresql://postgres:<pw>@<live-host>:5432/core?sslmode=require" \
 
 둘 다 **카페코드로 후보를 먼저 좁힌 뒤** 판정한다. 전역 상품명 매칭은 하지 않는다 — 다른 상품끼리 옵션명이 겹치면 멀쩡한 상품이 품절돼 버린다.
 
-| 규칙 | 조건 | 비고 |
-|------|------|------|
-| **C** | 셀메이트 `옵션코드` == Medusa `variant.title` (`ON01043` 형식) | **가장 정확. 이름을 안 본다** |
-| **A** | 카페코드 하나에 셀메이트 옵션 1개 **&** Medusa variant 1개 | 옵션 모호성 0 |
-| **B** | 카페코드에 여러 개가 걸릴 때, **옵션명이 양쪽에서 각각 유일하게** 하나씩 대응 | 옵션 상품 대부분이 여기 |
+| 규칙  | 조건                                                                          | 비고                          |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------- |
+| **C** | 셀메이트 `옵션코드` == Medusa `variant.title` (`ON01043` 형식)                | **가장 정확. 이름을 안 본다** |
+| **A** | 카페코드 하나에 셀메이트 옵션 1개 **&** Medusa variant 1개                    | 옵션 모호성 0                 |
+| **B** | 카페코드에 여러 개가 걸릴 때, **옵션명이 양쪽에서 각각 유일하게** 하나씩 대응 | 옵션 상품 대부분이 여기       |
 
 **규칙 C (옵션코드)** — CSV 다운로드 시 `옵션코드` 컬럼을 포함시켜야 쓸 수 있다 (셀메이트 엑셀 양식 설정에서 추가). 2026-07-21 기준 카페코드 교차검증에서 **불일치 0건**. 다만 Medusa 27,068 variant 중 `ON*` title 을 가진 건 **501개뿐**이라 만능 키가 아니라 래쉬 계열 전용 다리다. 있으면 최우선으로 쓰고, 없으면 A/B 로 내려간다.
 
@@ -267,16 +367,17 @@ CORE_DB_URL="postgresql://postgres:<pw>@<live-host>:5432/core?sslmode=require" \
 
 **B 의 옵션명 정규화 — 여기까지만 한다:**
 
-| 정규화 | 예 | 근거 |
-|--------|-----|------|
-| 구분자 `,` `/` 공백 | `골드,소형` ↔ `골드 / 소형` | 같은 값을 다르게 이었을 뿐 |
-| 토큰 순서 무시 | `0.20,13mm` ↔ `13mm / 0.20` | 〃 |
-| 한자·깨진문자(`?`) 제거 | `핑크 粉色` ↔ `핑크` | 셀메이트가 중국 공급처 원문을 병기. CP949 로 내보내며 `?` 로 깨진다 (셀메이트에 UTF-8 내보내기 옵션은 없다) |
-| **`컬` 접미 제거** | `J,0.15,9mm` ↔ `J컬 / 9mm / 0.15` | 래쉬 도메인에서 `J` = `J컬` (같은 컬 종류) |
+| 정규화                  | 예                                | 근거                                                                                                        |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 구분자 `,` `/` 공백     | `골드,소형` ↔ `골드 / 소형`       | 같은 값을 다르게 이었을 뿐                                                                                  |
+| 토큰 순서 무시          | `0.20,13mm` ↔ `13mm / 0.20`       | 〃                                                                                                          |
+| 한자·깨진문자(`?`) 제거 | `핑크 粉色` ↔ `핑크`              | 셀메이트가 중국 공급처 원문을 병기. CP949 로 내보내며 `?` 로 깨진다 (셀메이트에 UTF-8 내보내기 옵션은 없다) |
+| **`컬` 접미 제거**      | `J,0.15,9mm` ↔ `J컬 / 9mm / 0.15` | 래쉬 도메인에서 `J` = `J컬` (같은 컬 종류)                                                                  |
 
 **하지 않는 정규화** — `0.15mm`→`0.15`, `대형`→`대` 같은 단위·축약 제거는 안 한다. `8mm`↔`8` 오매칭이 곧 잘못된 품절이라 이득 대비 위험이 크다.
 
 ⚠️ **한자 제거 정규식은 코드포인트 escape 로만 쓸 것.** 리터럴로 `豈-﫿` 를 쓰면 겉보기가 똑같은 **U+8C48**(일반 한자)이 섞여 범위가 `U+8C48–U+FAFF` 가 되고, **한글 전체(U+AC00–U+D7A3)를 삼킨다**. 2026-07-21 이 버그로 `밍크 C/0.15/12mm` 가 `C / 0.15 / 12mm` 와 매칭되는 걸 측정 단계에서 잡았다 (적용 전이라 피해 없음). 정규화 함수에는 **한글 보존 / 한자 제거 assert 를 반드시 남긴다.**
+
 - 한 variant 에 셀메이트 SKU 가 둘 이상 걸리면 **양쪽 다 버린다**. 어느 쪽이 맞는지 알 수 없는데 재고를 잘못 붙이면 되돌리기 비싸다.
 - Medusa variant 1개인데 셀메이트 옵션이 여러 개인 카페코드도 이 규칙에 걸려 제외된다 (2026-07-21 기준 약 1,500건). 수동 매칭 대상.
 
@@ -348,8 +449,8 @@ NAME_FILTER='마스트|MAST' KIND_FILTER='머신|서플라이|배터리' EXCLUDE
 **이 예외 목록도 셀메이트에만 있는 정보라 Core 에 없다** — ②-B 와 같은 이유로 코드가 아니라 이 런북이 기억한다.
 지금까지 적용한 예외:
 
-| 브랜드/범위 | 플래그 | 적용일 | 비고 |
-|-------------|--------|--------|------|
+| 브랜드/범위                       | 플래그               | 적용일     | 비고                                                                             |
+| --------------------------------- | -------------------- | ---------- | -------------------------------------------------------------------------------- |
 | 마스트(MAST) 머신·서플라이·배터리 | `pre_stock_sellable` | 2026-07-23 | 대상 77품목 중 **매칭된 7개만** 실제 적용 (나머지 70개는 미매칭이라 이미 판매중) |
 
 ⚠️ 그때 77품목 중 70개가 미매칭이었다. **"품절로 보인다" 는 신고를 받으면 플래그부터 의심하지 말 것** —
@@ -395,12 +496,16 @@ curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/products/<prod_id>
 
 **진단 순서** — dry-run 이 찍는 `Core판정` 이 1차 분기다.
 
-| Core판정 | 뜻 | 다음 |
-|----------|-----|------|
-| `프로젝션없음` | 아직 계산된 적 없음 | `recalc-sellable` |
-| `품절/MANUAL_OUT_OF_STOCK` | 수동품절 | `--clear-manual-oos` |
-| `품절/…` 그 외 | Core 가 품절로 판단 | 플래그·재고 확인 |
-| **`판매가능/…`** | **Core 는 정상** | **원인은 하류** — inbox 지연 → Medusa `allow_backorder`/`available` → 스토어프론트 캐시 순으로 본다 |
+| Core판정                   | 뜻                  | 다음                                                                                                                          |
+| -------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `프로젝션없음`             | 아직 계산된 적 없음 | `recalc-sellable`                                                                                                             |
+| `품절/MANUAL_OUT_OF_STOCK` | 수동품절            | `--clear-manual-oos`                                                                                                          |
+| `품절/…` 그 외             | Core 가 품절로 판단 | 플래그·재고 확인                                                                                                              |
+| **`판매가능/…`**           | **Core 는 정상**    | **원인은 하류** — **Ⓑ `reserved` 카운터** → inbox 지연 → Medusa `allow_backorder`/`available` → 스토어프론트 캐시 순으로 본다 |
+
+**하류의 1번은 Ⓑ 다.** `available` 이 음수거나 `reserved` 가 살아있는 예약보다 크면 그 아래(inbox·캐시)를 볼
+필요가 없다 — Ⓑ dry-run 한 방으로 갈린다 (`🧮 reserved 카운터 어긋남` 줄). 2026-07-30 노몬드 아이패치가
+이 경로였다: Core 는 `판매가능`, Medusa `stocked 187 / reserved 200 / available −13`.
 
 **하류 확인 3단**. Medusa 를 고쳐도 스토어프론트는 안 바뀐다 — 캐시를 따로 깨야 한다.
 
@@ -447,12 +552,12 @@ curl -s "https://almondyoung.com/kr/products/<handle>" | grep -oE 'allow_backord
 
 dry-run 이 찍는 `skip` 카운터로 원인이 갈린다:
 
-| 사유 | 뜻 | 대응 |
-|------|-----|------|
-| `이미매칭` | 정상. pending 아님 | — |
-| `옵션명_해소실패` | 카페코드는 잡히나 옵션명이 양쪽에서 안 맞음 | 옵션명 정리 또는 admin 수동 매칭 |
-| `카페코드_medusa에없음` | 셀메이트에만 있는 상품 / Medusa 미등록 | 상품 등록 여부 확인 |
-| `sku_없음` | 바코드가 `sku_barcodes` 에 없음 | **Ⓐ A-1 `import-products` 를 먼저 돌렸는지 확인** |
+| 사유                    | 뜻                                          | 대응                                              |
+| ----------------------- | ------------------------------------------- | ------------------------------------------------- |
+| `이미매칭`              | 정상. pending 아님                          | —                                                 |
+| `옵션명_해소실패`       | 카페코드는 잡히나 옵션명이 양쪽에서 안 맞음 | 옵션명 정리 또는 admin 수동 매칭                  |
+| `카페코드_medusa에없음` | 셀메이트에만 있는 상품 / Medusa 미등록      | 상품 등록 여부 확인                               |
+| `sku_없음`              | 바코드가 `sku_barcodes` 에 없음             | **Ⓐ A-1 `import-products` 를 먼저 돌렸는지 확인** |
 
 ## ③ 입고예정 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
 
@@ -493,11 +598,11 @@ SELECT count(*) FROM inbox_events WHERE published_at >= now() - interval '5 minu
 `INBOX_MAX_CONCURRENT_HANDLERS`(deployments/lcnine/services/infra/services.ts)를 올리고 싶어지는데,
 **직관과 반대다.** live 실측:
 
-| 설정 | 처리량(안정 상태) | Medusa CPU 평균 |
-|------|------------------|-----------------|
-| 동시성 1 / 10초 | 분당 6건 | 41% |
-| 동시성 3 / 3초 | 분당 20건 | **90~93%** |
-| **동시성 2 / 3초** | 분당 20~25건 | **30~35%** |
+| 설정               | 처리량(안정 상태) | Medusa CPU 평균 |
+| ------------------ | ----------------- | --------------- |
+| 동시성 1 / 10초    | 분당 6건          | 41%             |
+| 동시성 3 / 3초     | 분당 20건         | **90~93%**      |
+| **동시성 2 / 3초** | 분당 20~25건      | **30~35%**      |
 
 **2 는 3 과 같은 속도를 CPU 3분의 1 로 낸다.** 동시 3 은 태운 CPU 가 처리량으로 돌아오지 않는다 —
 Medusa 1 vCPU 를 셋이 경합하며 요청당 시간만 늘었다. 즉 처리량 상한을 정하는 건 워커 설정이 아니라
@@ -505,10 +610,10 @@ Medusa 쪽이고, Medusa 는 valkey 사이드카 탓에 `scaling max 1` 이라 �
 
 > 측정 주의 두 가지.
 > ① 롤아웃 직후 5분은 lease 가 한꺼번에 풀려 **분당 40건 같은 버스트**가 찍힌다 — 그 값으로 판단하지 말 것.
->   최소 15분(3회 측정) 이상 지켜본 뒤 안정값을 본다.
+> 최소 15분(3회 측정) 이상 지켜본 뒤 안정값을 본다.
 > ② 동시성 3 구간에는 `recalc-sellable` 이 아직 돌고 있었다. CPU 90% 에 그 효과가 일부 섞였을 수 있다.
 > 다시 재려면 다른 작업이 없는 새벽에 한 번에 하나씩 바꿔 잰다. 게다가 Medusa CPU 포화는 **결제 콜백 타임아웃** 전력이
-있는 구간이다 — 재고 반영이 늦는 건 참을 수 있어도 결제 실패는 고객이 즉시 체감한다.
+> 있는 구간이다 — 재고 반영이 늦는 건 참을 수 있어도 결제 실패는 고객이 즉시 체감한다.
 
 더 빠르게 하려면 동시성이 아니라 Medusa 를 키우거나(valkey 분리 선행) 호출 수를 줄여야 한다.
 
@@ -516,10 +621,10 @@ Medusa 쪽이고, Medusa 는 valkey 사이드카 탓에 `scaling max 1` 이라 �
 
 같은 날 실측 (전체 기간 CSV 5,921행으로 Ⓐ 실행):
 
-| 작업 | 결과 |
-|------|------|
+| 작업                                   | 결과                                                |
+| -------------------------------------- | --------------------------------------------------- |
 | **Ⓐ 일일 재고 동기화** (전체 기간 CSV) | 재고 조정 390건 → **이벤트 339건** (몇 분이면 소화) |
-| **② 대량 SKU 매칭** | 20,689건 matched → **이벤트 18,176건** (시간 단위) |
+| **② 대량 SKU 매칭**                    | 20,689건 matched → **이벤트 18,176건** (시간 단위)  |
 
 A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 발행**한다(변동없음 20,410건).
 그래서 15년치 전체 CSV 를 받아도 일일 이벤트는 수백 건이다 — 전체 기간으로 받는 편이 오히려 안전하다.
@@ -538,9 +643,12 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 0. **Ⓐ-0 동기화 금지 목록 확인** (`scripts/sellmate/excluded.ts`) — 스크립트가 자동으로 거르지만, 새로 금지할 상품이 생겼으면 먼저 등록
 1. 터널 + CSV 준비 — **한국 / 해외 두 벌**, `옵션코드`·**`미발송주문수`** 컬럼 포함해서 받을 것
-1-B. **`Ⓑ clear-reservations --apply`** ← Ⓐ 보다 먼저. 빼먹으면 재고가 이중으로 깎인다
+   1-B. **`Ⓑ clear-reservations --apply`** ← Ⓐ 보다 먼저. 빼먹으면 재고가 이중으로 깎인다.
+   dry-run 의 `🧮 reserved 카운터 어긋남` 이 0칸이 아니면 **복구 handle 목록을 apply 전에 뽑아두고**,
+   apply 후 **Medusa 응답 캐시(1시간) → 스토어프론트 캐시 순서로** 깬다. 순서가 반대면 stale 이 다시
+   굳어 헛수고다 (Ⓑ 섹션 "반영은 캐시 2겹" 참조)
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
-3. `① import-inbound-plans --apply`  → core 입고예정
+3. `① import-inbound-plans --apply` → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
 5. **`②-B` 한국상품 `always_sellable_zero_stock` 적용** ← 빼먹으면 한국상품이 품절된다
    (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
@@ -558,6 +666,9 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 - "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ** (clear-reservations → A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
 - "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
+- **"○○ 는 재고 있는데 왜 품절/일시품절이야?"** → **Ⓑ dry-run 이 1번**. `🧮 reserved 카운터 어긋남` 이 0칸이 아니면
+  거기서 끝이다 (Ⓐ·매칭·플래그 파볼 필요 없음). 순서: Ⓑ dry-run → 복구 handle 목록 뽑기 → `--apply` → revalidate.
+  0칸이면 그때 ②-C 진단표(Core판정)로 내려간다
 - "○○ 는 재고동기화 하지 마 / 품절로 둬" → **Ⓐ-0** — `excluded.ts` 에 등록(코드로 강제) + `--set-manual-oos` 로 품절 고정 + 런북 표 갱신
 - "셀메이트 입고예정 CSV `<경로>` core 에 반영해줘" → ①
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
