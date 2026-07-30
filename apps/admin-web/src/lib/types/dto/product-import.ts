@@ -4,7 +4,15 @@
 
 export interface ResolvedPreview {
   name: string;
+  /** 대표 카테고리의 조상 경로. 지정된 카테고리 총 개수는 categoryCount 에 있다. */
   categoryNames: string[];
+  /** 지정된 카테고리 총 개수 (Categories 시트로 다중 지정 가능). */
+  categoryCount: number;
+  /**
+   * 'YYYY-MM-DD HH:mm ~ YYYY-MM-DD HH:mm' (KST). 지정 없으면 null.
+   * 임포트가 판매기간의 유일한 쓰기 경로라 화면에서 고칠 수 없다 — 커밋 전에 확인해야 한다.
+   */
+  salesPeriod: string | null;
   variantCount: number;
 }
 

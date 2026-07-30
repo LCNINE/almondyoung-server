@@ -7,7 +7,7 @@ import { ProductImportManager } from './product-import.manager';
 import { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
 import { ProductImportProgressBuilder } from './product-import-progress.builder';
 import { generateTemplateWorkbook } from './product-import.template';
-import { ProductRecord } from '../dto/import.types';
+import { ProductRecord, formatKstMinutes } from '../dto/import.types';
 import {
   ValidatePreviewDto,
   ValidatePreviewRowDto,
@@ -51,6 +51,8 @@ export class ProductImportService {
       resolved: {
         name: typeof r.version.name === 'string' ? r.version.name : (r.raw.name ?? ''),
         categoryNames: r.categoryNames,
+        categoryCount: r.categoryIds.length,
+        salesPeriod: this.salesPeriod(r),
         variantCount: this.variantCount(r),
       },
     }));
@@ -111,6 +113,23 @@ export class ProductImportService {
   private variantCount(record: ProductRecord): number {
     if (record.options.length === 0) return 1;
     return record.options.reduce((acc, o) => acc * Math.max(o.values.length, 1), 1);
+  }
+
+  /**
+   * 판매기간을 KST 로 사람이 읽을 수 있게 만든다.
+   *
+   * 프리뷰에 넣는 이유가 있다 — sales_start_date/sales_end_date 는 **임포트가 유일한 쓰기
+   * 경로**이고 admin 화면에 편집·해제 수단이 없다(레포 전체에 다른 write 경로가 없다).
+   * 잘못 넣으면 상품은 정상 게시되고 스토어프론트에서만 SALES_ENDED 로 조용히 품절되므로,
+   * 커밋 전에 확인할 수 있는 자리가 여기뿐이다.
+   */
+  private salesPeriod(record: ProductRecord): string | null {
+    if (!record.salesStartDate && !record.salesEndDate) return null;
+    // 한쪽만 있을 때 빈 문자열을 그대로 두면 "2026-08-01 00:00 ~ " 처럼 잘린 표시가 되어
+    // MD 가 "제한 없음"으로 오독할 수 있다 — 없는 쪽을 명시적으로 적는다.
+    const start = record.salesStartDate ? formatKstMinutes(record.salesStartDate) : '시작일 없음';
+    const end = record.salesEndDate ? formatKstMinutes(record.salesEndDate) : '종료일 없음';
+    return `${start} ~ ${end}`;
   }
 
   private toSummary(session: SessionRow): SessionSummaryDto {

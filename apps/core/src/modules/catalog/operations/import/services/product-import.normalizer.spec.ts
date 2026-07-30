@@ -13,6 +13,8 @@ function parsed(products: Record<string, string>[], options: Record<string, stri
     products: products.map((cells, i) => ({ rowNumber: i + 1, cells })),
     options: options.map((cells, i) => ({ rowNumber: i + 1, cells })),
     variants: [],
+    categories: [],
+    constraints: [],
   };
 }
 
@@ -96,6 +98,8 @@ describe('ProductImportNormalizer', () => {
           { rowNumber: 2, cells: { productKey: 'P1', optionName: '색상', optionValues: '빨강', sortOrder: '' } },
         ],
         variants: [],
+        categories: [],
+        constraints: [],
       },
       [],
     );
@@ -135,6 +139,8 @@ describe('ProductImportNormalizer', () => {
           variants: [
             { rowNumber: 1, cells: { productKey: 'P1', optionCombination: '사이즈=L;색상=빨강', basePrice: '31000' } },
           ],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -158,6 +164,8 @@ describe('ProductImportNormalizer', () => {
           products: PRODUCTS,
           options: OPTS,
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: combination } }],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -173,6 +181,8 @@ describe('ProductImportNormalizer', () => {
             { rowNumber: 1, cells: { productKey: 'P1', optionCombination: '색상=빨강;사이즈=L', basePrice: '31000' } },
             { rowNumber: 2, cells: { productKey: 'P1', optionCombination: '사이즈=L;색상=빨강', basePrice: '32000' } },
           ],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -189,6 +199,8 @@ describe('ProductImportNormalizer', () => {
           variants: [
             { rowNumber: 1, cells: { productKey: 'P1', optionCombination: '색상=빨강;색상=파랑', basePrice: '1000' } },
           ],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -212,6 +224,8 @@ describe('ProductImportNormalizer', () => {
               cells: { productKey: 'P1', optionCombination: '색상=빨강;색상=파랑;사이즈=L', basePrice: '1000' },
             },
           ],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -226,6 +240,8 @@ describe('ProductImportNormalizer', () => {
           products: PRODUCTS,
           options: [],
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: '색상=빨강', basePrice: '31000' } }],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -243,6 +259,8 @@ describe('ProductImportNormalizer', () => {
           products: PRODUCTS,
           options: [],
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: '', basePrice: '31000' } }],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -258,6 +276,8 @@ describe('ProductImportNormalizer', () => {
           products: PRODUCTS,
           options: OPTS,
           variants: [{ rowNumber: 1, cells: { productKey: 'NOPE', optionCombination: '색상=빨강;사이즈=L' } }],
+          categories: [],
+          constraints: [],
         },
         [],
       );
@@ -265,5 +285,158 @@ describe('ProductImportNormalizer', () => {
         true,
       );
     });
+  });
+});
+
+function parsedWith(
+  products: Record<string, string>[],
+  extra: { categories?: Record<string, string>[]; constraints?: Record<string, string>[] } = {},
+) {
+  return {
+    products: products.map((cells, i) => ({ rowNumber: i + 1, cells })),
+    options: [],
+    variants: [],
+    categories: (extra.categories ?? []).map((cells, i) => ({ rowNumber: i + 1, cells })),
+    constraints: (extra.constraints ?? []).map((cells, i) => ({ rowNumber: i + 1, cells })),
+  };
+}
+
+describe('ProductImportNormalizer — Categories 시트', () => {
+  const normalizer = new ProductImportNormalizer();
+
+  it('여러 카테고리를 시트 순서대로 붙이고 isPrimary 를 대표로 삼는다', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: '니트A' }], {
+        categories: [
+          { productKey: 'P1', categoryPath: '남성패션>니트', isPrimary: 'N' },
+          { productKey: 'P1', categoryPath: '여성패션>니트', isPrimary: 'Y' },
+        ],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.categoryIds).toEqual(['c-knit2', 'c-knit']);
+    expect(rec.primaryCategoryId).toBe('c-knit');
+    // categoryNames 는 대표 카테고리의 조상 경로다 (프리뷰가 이걸 그린다)
+    expect(rec.categoryNames).toEqual(['여성패션', '니트']);
+    expect(rec.errors).toEqual([]);
+  });
+
+  it('Products.categoryPath 와 동시 사용은 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', categoryPath: '여성패션>니트' }], {
+        categories: [{ productKey: 'P1', categoryPath: '남성패션>니트', isPrimary: 'Y' }],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Categories' && /동시에/.test(e.message))).toBe(true);
+    // 충돌 시 Categories 는 적용하지 않는다 — Products 쪽 해석만 남는다
+    expect(rec.categoryIds).toEqual(['c-knit']);
+  });
+
+  it('isPrimary 가 0개면 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        categories: [{ productKey: 'P1', categoryPath: '여성패션>니트', isPrimary: 'N' }],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Categories' && /isPrimary/.test(e.message))).toBe(true);
+    expect(rec.categoryIds).toEqual([]);
+  });
+
+  it('isPrimary 가 2개면 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        categories: [
+          { productKey: 'P1', categoryPath: '여성패션>니트', isPrimary: 'Y' },
+          { productKey: 'P1', categoryPath: '남성패션>니트', isPrimary: 'Y' },
+        ],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Categories' && /isPrimary/.test(e.message))).toBe(true);
+  });
+
+  it('같은 카테고리 중복 지정은 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        categories: [
+          { productKey: 'P1', categoryPath: '여성패션>니트', isPrimary: 'Y' },
+          { productKey: 'P1', categoryPath: 'women-knit', isPrimary: 'N' }, // slug 로 같은 노드
+        ],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Categories' && /중복/.test(e.message))).toBe(true);
+  });
+
+  it('해석 불가 경로는 행 오류이고 isPrimary 오류를 덧붙이지 않는다', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        categories: [{ productKey: 'P1', categoryPath: '없는>경로', isPrimary: 'Y' }],
+      }),
+      CATEGORIES,
+    );
+    const messages = rec.errors.filter((e) => e.sheet === 'Categories').map((e) => e.message);
+    expect(messages.some((m) => /카테고리 경로를 해석할 수 없습니다/.test(m))).toBe(true);
+    // 경로가 안 풀린 상태에서 "isPrimary 가 0개다"까지 얹으면 원인이 흐려진다
+    expect(messages.some((m) => /isPrimary/.test(m))).toBe(false);
+  });
+
+  it('존재하지 않는 productKey 참조는 stub 레코드로 남는다', () => {
+    const records = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        categories: [{ productKey: 'GHOST', categoryPath: '여성패션>니트', isPrimary: 'Y' }],
+      }),
+      CATEGORIES,
+    );
+    const ghost = records.find((r) => r.productKey === 'GHOST');
+    expect(ghost).toBeDefined();
+    expect(ghost!.errors.some((e) => e.sheet === 'Categories' && /productKey/.test(e.message))).toBe(true);
+  });
+});
+
+describe('ProductImportNormalizer — Constraints 시트', () => {
+  const normalizer = new ProductImportNormalizer();
+
+  it('상품에 구매제약 원본을 붙인다', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        constraints: [{ productKey: 'P1', requiresMembership: 'Y', lifetimeQuantityLimit: '2' }],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.purchaseConstraintRaw).toEqual({
+      rowNumber: 1,
+      requiresMembershipRaw: 'Y',
+      lifetimeQuantityLimitRaw: '2',
+    });
+    expect(rec.errors).toEqual([]);
+  });
+
+  it('한 상품에 두 행이면 두 번째가 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        constraints: [
+          { productKey: 'P1', requiresMembership: 'Y', lifetimeQuantityLimit: '' },
+          { productKey: 'P1', requiresMembership: 'N', lifetimeQuantityLimit: '3' },
+        ],
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Constraints' && e.rowNumber === 2)).toBe(true);
+    // 첫 행은 살아있다 — 나중 행이 조용히 덮지 않는다
+    expect(rec.purchaseConstraintRaw?.requiresMembershipRaw).toBe('Y');
+  });
+
+  it('존재하지 않는 productKey 참조는 stub 레코드로 남는다', () => {
+    const records = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        constraints: [{ productKey: 'GHOST', requiresMembership: 'Y', lifetimeQuantityLimit: '' }],
+      }),
+      CATEGORIES,
+    );
+    const ghost = records.find((r) => r.productKey === 'GHOST');
+    expect(ghost!.errors.some((e) => e.sheet === 'Constraints' && /productKey/.test(e.message))).toBe(true);
   });
 });

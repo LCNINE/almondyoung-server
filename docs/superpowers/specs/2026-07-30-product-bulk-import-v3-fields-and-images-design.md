@@ -3,7 +3,7 @@
 - 날짜: 2026-07-30
 - 대상: `apps/core` (catalog/operations/import) + `apps/admin-web` (product-imports 위저드·세션상세)
 - 브랜치: `feat/product-bulk-import-v3` (base `a2cadccd0`)
-- 상태: 설계 확정, 구현 계획 미착수
+- 상태: 설계 확정. 1~3단계 구현 완료(§6), 4단계(이미지 파이프라인)는 구현 계획 미착수
 - 관련:
   - `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1)
   - `docs/superpowers/specs/2026-07-28-product-bulk-import-v2-design.md` (v2 — 0~4단계 배포 완료, **5단계는 이 스펙 범위 밖으로 그대로 남는다**)
@@ -14,7 +14,7 @@
 
 v2 가 가격·`variantCode`·비동기 잡·이벤트 레인 강등을 해결했다. 남은 공백은 셋이다.
 
-1. **필드 공백** — 이미지를 넣을 수 없어 대량등록한 상품이 전부 이미지 없이 생성된다. 카테고리는 1개만, 구매제약·SEO·판매기간은 아예 없다.
+1. **필드 공백** — 이미지를 넣을 수 없어 대량등록한 상품이 전부 이미지 없이 생성된다. (카테고리 다중 지정·구매제약·SEO·판매기간은 3단계에서 이미 채워졌다 — §6.)
 2. **오류를 늦게 안다** — 이미지가 URL 기반이면 도달 가능성·MIME·크기는 다운로드해봐야 알고, 그건 워커 시점이다.
 3. **운영 구멍** — 세션 취소 수단이 없고, 슬라이스 밖으로 탈출한 예외가 무한 재시도로 굳는다. `product_import_job_status.'failed'` 를 쓰는 코드 경로가 하나도 없다.
 
@@ -26,9 +26,11 @@ v2 가 가격·`variantCode`·비동기 잡·이벤트 레인 강등을 해결�
 
 | 시트 | 필드 | 근거 |
 |---|---|---|
-| Products (23) | `productKey`, `name`\*, `basePrice`\*, `membershipPrice`, `productCode`, `brand`, `alternativeName`, `description`, `material`, `marketPrice`, `supplyPrice`, `productType`, `fulfillmentKind`, `salesClassification`, `purchaseClassification`, `ageRestriction`, `minQuantity`, `maxQuantity`, `seller`, `categoryPath`(단일), `isOverseas`, `isVisibleToMembersOnly`, `hideMembershipPriceForNonMembers` | `product-import.template.ts:3-27` |
+| Products (29) | `productKey`, `name`\*, `basePrice`\*, `membershipPrice`, `productCode`, `brand`, `alternativeName`, `description`, `material`, `marketPrice`, `supplyPrice`, `productType`, `fulfillmentKind`, `salesClassification`, `purchaseClassification`, `ageRestriction`, `minQuantity`, `maxQuantity`, `seller`, `categoryPath`(단일), `isOverseas`, `isVisibleToMembersOnly`, `hideMembershipPriceForNonMembers`, `seoTitle`, `seoDescription`, `seoKeywords`(`\|` 구분), `isWholesaleOnly`, `salesStartDate`, `salesEndDate` | `product-import.template.ts:3-33`(헤더) — 뒤 6개는 3단계 신설, `validator.ts:105-143` 이 채운다 |
 | Options (4) | `productKey`, `optionName`, `optionValues`(`\|` 구분), `sortOrder` | `normalizer.ts:73-82` — v1 의 죽은 컬럼이었으나 v2 2단계에서 실제로 읽는다 |
 | Variants (5, 선택) | `productKey`, `optionCombination`, `basePrice`, `membershipPrice`, `variantCode` | v2 2단계 신설. 축 순서 무시(`comboKey` 정렬 정규화) |
+| Categories (3, 선택) | `productKey`, `categoryPath`, `isPrimary`(상품당 정확히 1개) | 3단계 신설. `Products.categoryPath` 하위호환과 동시 사용 시 행 오류 — `normalizer.ts:243-321` |
+| Constraints (3, 선택) | `productKey`, `requiresMembership`, `lifetimeQuantityLimit`(1~2147483647 정수) | 3단계 신설. 상품당 최대 1행, 둘 다 비면 구매제약을 만들지 않는다 — `normalizer.ts:327-356`, `validator.ts:210-236` |
 
 `basePrice` 는 필수다 — 0 또는 누락이면 행 오류(`validator.ts:59-64`). v1 의 0원 게시 구멍은 입구에서 막혀 있다.
 
@@ -36,9 +38,9 @@ v2 가 가격·`variantCode`·비동기 잡·이벤트 레인 강등을 해결�
 
 | 구분 | 항목 |
 |---|---|
-| 버전 스칼라 | `thumbnail`(대표이미지), 부가이미지, `seoTitle`/`seoDescription`/`seoKeywords`, `isWholesaleOnly`, `salesStartDate`/`salesEndDate` |
-| 연관 엔티티 | 태그(`tagValueIds`), 구매제약(`requiresMembership`·`lifetimeQuantityLimit`), 옵션**값**별 `colorCode`/`imageUrl`/정렬 |
-| 구조적 제약 | 카테고리 1개만·기존 트리 해석만(신규 생성 불가), 가격은 상품/조합 2단만, **기존 상품 수정(upsert) 불가 — 신규 생성 전용** |
+| 버전 스칼라 | `thumbnail`(대표이미지), 부가이미지 |
+| 연관 엔티티 | 태그(`tagValueIds`), 옵션**값**별 `colorCode`/`imageUrl`/정렬 |
+| 구조적 제약 | 카테고리 신규 생성 불가(기존 트리 해석만), 가격은 상품/조합 2단만, **기존 상품 수정(upsert) 불가 — 신규 생성 전용** |
 
 `descriptionHtml` 도 현재 등록 불가이나 확장 대상이 아니다 — §2.3.
 
@@ -347,6 +349,8 @@ commit 의 분모를 위해 **세션에 `invalid_count` 를 얼린다** — §2.
 - **phantom masterId** — commit 중 한 행이 롤백되면 비-트랜잭션 Kafka 이벤트 + product-matching 행이 없는 masterId 로 잔존한다 (v1 스펙 후속 트래킹 1번, 사용자 결정: 현상 유지).
 - **file-service 고아 파일** — §2.8. 이번 스펙은 취소 경로에서만 정리한다. 전역 정리 잡은 별건.
 - **v2 2단계 리뷰 지적 ③군 5건** — `#1`(Products 시트 `variantCode`), `#3`(`values[].sortOrder`), `#5`(comboKey NFC), `#9`(`basePrice` 헤더 검사), `#10`(오류 행번호 불일치). 전부 1~5줄. v2 5단계 뒤 정리 커밋으로 묶기로 했던 것이 아직 남아 있다.
+- **판매기간에 편집·해제 UI 가 없다.** `sales_start_date`/`sales_end_date` 는 재고 게이팅이 읽지만(`product-sellable-quantity.calculator.ts:90-96`) 쓰기 경로가 v3 3단계 임포트뿐이다. 잘못 넣으면 화면에서 고칠 수 없고 스토어프론트만 조용히 품절된다 — 3단계는 프리뷰 표시(`resolved.salesPeriod`)로 커밋 전 확인만 제공한다. admin UI 판매기간 편집은 별건.
+- **varchar 길이 검증이 seoTitle 에만 있다.** `name`(255)·`brand`(100)·`productCode`(100)·`alternativeName`(255)·`salesClassification`(100)·`purchaseClassification`(100)·`seller`(100) 는 여전히 입구를 통과하고 commit 에서 Postgres 22001 로 그 행만 죽는다. v1 부터 있던 공백이고 5줄짜리 정리 건이다.
 
 ## 6. 단계 분할
 
@@ -354,7 +358,7 @@ commit 의 분모를 위해 **세션에 `invalid_count` 를 얼린다** — §2.
 |---|---|---|
 | **1** | 운영 구멍 — 세션 취소 + `consecutive_failures` 상한 + `invalid_count` 얼리기 | 마이그레이션 1건 (additive → `migrate` → `deploy`) |
 | **2** | 진행률 API + admin-web 폴링 전환 | core → admin-web (같은 `sst deploy`) — **구현 완료(2026-07-30)** |
-| **3** | 순수 스칼라 필드 6종 + `Categories`·`Constraints` 시트 | core → admin-web |
+| **3** | 순수 스칼라 필드 6종 + `Categories`·`Constraints` 시트 | core → admin-web — **구현 완료(2026-07-30)**, 마이그레이션 0건 |
 | **4** | 이미지 파이프라인 — `Images` 시트 + `product_import_images` + probe/fetch 레인 + 업로드 클라이언트 | 마이그레이션 1건 (additive) |
 
 **1·2 를 먼저 하는 이유가 있다.** 4단계(이미지)가 "commit 을 눌러야 오류를 안다"는 대가를 지불하는데, 그 대가를 받아낼 수단(취소)과 확인 수단(진행률)이 먼저 있어야 한다. 순서를 뒤집으면 이미지 실패를 만난 관리자가 굳은 세션을 손으로 풀어야 한다.
