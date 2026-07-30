@@ -7,6 +7,7 @@ function makeDb(rows: any[]) {
     from: () => chain,
     where: () => chain,
     orderBy: () => chain,
+    groupBy: () => chain,
     limit: () => chain,
     offset: () => chain,
     then: (resolve: (v: any) => void) => resolve(rows),
@@ -41,5 +42,13 @@ describe('ProductImportSessionReader.getVariantComboMap', () => {
     const map = await reader.getVariantComboMap('m1', 'ver1');
 
     expect(map.get('색상=빨강')).toBe('v1');
+  });
+});
+
+describe('ProductImportSessionReader.getProgressCounts', () => {
+  it('세션이 없으면 NotFoundError — 집계 쿼리까지 가지 않는다', async () => {
+    const optionReadLoader = { getVariantOptionValues: jest.fn() } as any;
+    const reader = new ProductImportSessionReader(makeDb([]), optionReadLoader);
+    await expect(reader.getProgressCounts('nope')).rejects.toBeInstanceOf(NotFoundError);
   });
 });

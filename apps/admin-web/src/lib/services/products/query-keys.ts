@@ -169,4 +169,9 @@ export const productQueryKeys = {
     [...productQueryKeys.productImports, 'list', page] as const,
   productImport: (sessionId: string) =>
     [...productQueryKeys.productImports, sessionId] as const,
+  // productImport(sessionId) 의 **하위 키**다 — 기존 뮤테이션들의
+  // invalidateQueries({ queryKey: productImport(sessionId) }) 가 접두사 일치로
+  // 진행률도 함께 무효화한다(mutations.ts 를 고칠 필요가 없는 이유).
+  productImportProgress: (sessionId: string) =>
+    [...productQueryKeys.productImport(sessionId), 'progress'] as const,
 } as const;

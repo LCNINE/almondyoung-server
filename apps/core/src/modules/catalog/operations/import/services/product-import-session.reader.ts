@@ -14,12 +14,15 @@ import {
 import { CategoryNode, comboKey } from '../dto/import.types';
 import { DbTransaction } from '../../../catalog.types';
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
+import type { ImportItemStatusCount } from './product-import-progress.builder';
 
 export type SessionRow = typeof productImportSessions.$inferSelect;
 /**
- * getSession() 이 실제로 매핑에 쓰는 열만 담은 축소 타입이다. admin-web 이 이 응답을
- * 2초마다 폴링하므로(queries.ts useImportSession) `payload`(jsonb, 행당 2-3KB) 같은
- * 안 쓰는 열을 실어 보내면 안 된다 — getSession() 아래 select 프로젝션과 항상 같이 좁힌다.
+ * getSession() 이 실제로 매핑에 쓰는 열만 담은 축소 타입이다. 더 이상 폴링 대상이
+ * 아니지만(진행률은 getProgressCounts 가 집계로 본다) admin-web 은 사용자가 행 목록을
+ * 펼치는 순간 이 응답을 통째로 가져온다 — 세션 하나가 수천 행일 수 있어 `payload`
+ * (jsonb, 행당 2-3KB) 같은 안 쓰는 열을 실어 보내면 안 된다. getSession() 아래 select
+ * 프로젝션과 항상 같이 좁힌다.
  */
 export type ItemRow = Pick<
   typeof productImportItems.$inferSelect,
@@ -85,6 +88,47 @@ export class ProductImportSessionReader {
         .where(eq(productImportItems.sessionId, sessionId))
         .orderBy(productImportItems.rowNumber);
       return { session, items };
+    }, tx);
+  }
+
+  /**
+   * 진행률 집계에 필요한 것만 읽는다 — 세션 1행 + 아이템 `(status, publish_status)`
+   * 조합별 행 수. 조합은 3×4 로 상한이 12행이라 **세션 크기와 무관한 고정 비용**이다.
+   *
+   * getSession() 을 2초마다 부르던 폴링을 이쪽으로 옮기는 것이 v3 2단계다 — 1,000행
+   * 세션이면 2초마다 1,000행이 오갔다(스펙 §2.9).
+   */
+  async getProgressCounts(
+    sessionId: string,
+    tx?: DbTransaction,
+  ): Promise<{ session: SessionRow; itemCounts: ImportItemStatusCount[] }> {
+    return this.db.run(async (trx) => {
+      const [session] = await trx
+        .select()
+        .from(productImportSessions)
+        .where(eq(productImportSessions.id, sessionId))
+        .limit(1);
+      if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
+
+      const grouped = await trx
+        .select({
+          status: productImportItems.status,
+          publishStatus: productImportItems.publishStatus,
+          value: count(),
+        })
+        .from(productImportItems)
+        .where(eq(productImportItems.sessionId, sessionId))
+        .groupBy(productImportItems.status, productImportItems.publishStatus);
+
+      return {
+        session,
+        itemCounts: grouped.map((row) => ({
+          status: row.status,
+          publishStatus: row.publishStatus,
+          // count() 는 드라이버에 따라 bigint 문자열로 올라온다 — getSessions 도 같은 이유로 Number() 를 씌운다.
+          count: Number(row.value),
+        })),
+      };
     }, tx);
   }
 
