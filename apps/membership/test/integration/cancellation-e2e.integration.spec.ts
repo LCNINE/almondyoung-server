@@ -903,6 +903,26 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
+    it('환불 대상 결제가 없으면 환불을 성공으로 위장하지 않는다 (무료 지급 회원)', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 5, hasPayment: false });
+
+      const result = await service.forceCancelSubscription(
+        contract.id,
+        'admin_1',
+        '오지급 정리',
+        'PARTIAL',
+        MONTHLY_PRICE,
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(result.refundStatus).toBe('FAILED');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+      expect((await loadContract(contract.id)).refundCompleted).toBe(false);
+      expect(await loadEventTypes(contract.id)).toContain('REFUND_FAILED');
+    });
+
     it('없는 계약이면 404', async () => {
       await expect(
         service.forceCancelSubscription(

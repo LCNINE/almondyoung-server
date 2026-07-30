@@ -326,15 +326,23 @@ describe('Subscription Cancellation Integration Tests', () => {
       }
     });
 
-    it('✅ 정기해지 후 재해지 - 멱등적으로 정기결제 중단 유지', async () => {
-      // 정기해지는 계약을 ACTIVE 로 두고 autoRenewal 만 끄므로(자격 유지), 재해지해도
-      // 에러 없이 RECURRING_CANCELLATION 상태를 그대로 반환한다(멱등).
+    it('✅ 정기해지 후 재해지 - 409 로 막아 해지 시각을 보존한다', async () => {
+      // 재해지를 통과시키면 recurringCancelledAt 이 새 시각으로 덮여 "언제 해지했는지"가 사라진다.
+      // 고객 화면은 해지 예약 상태에서 해지 버튼을 숨기므로, 여기 도달하는 건 중복 제출뿐이다.
       const first = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
       expect(first.status).toBe('RECURRING_CANCELLED');
+      const cancelledAt = (first as { recurringCancelledAt: Date }).recurringCancelledAt;
 
-      const second = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
-      expect(second.type).toBe('RECURRING_CANCELLATION');
-      expect(second.status).toBe('RECURRING_CANCELLED');
+      await expect(
+        cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' }),
+      ).rejects.toThrow('이미 해지 예약된 구독입니다');
+
+      const [contract] = await dbService.db
+        .select({ recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt })
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, testContractId))
+        .limit(1);
+      expect(contract.recurringCancelledAt?.getTime()).toBe(cancelledAt.getTime());
     });
   });
 
@@ -351,7 +359,9 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       expect(result.status).toBe('CANCELLED');
       expect(result.refundAmount).toBe(9900);
-      expect(result.refundStatus).toBe('PENDING');
+      // 이 계약엔 결제 intent 가 없다(무료 체험 중). 환불할 대상이 없으므로 FAILED 로 사실대로 보고한다 —
+      // 예전에는 PENDING(환불 대기)으로 표시해 관리자가 환불이 진행 중이라고 오인했다.
+      expect(result.refundStatus).toBe('FAILED');
 
       // 이벤트 확인
       const events = await contractEventManager.getContractEvents(testContractId);
@@ -395,7 +405,8 @@ describe('Subscription Cancellation Integration Tests', () => {
           'PARTIAL',
           15000, // plan.price(9900)보다 큼
         ),
-      ).rejects.toThrow('Refund amount exceeds plan price');
+        // 정책 산정액·관리자 재량 한도(월 정가)를 넘는 환불은 별도 권한이 필요하다.
+      ).rejects.toThrow('초과 환불에는 별도 권한');
     });
   });
 
