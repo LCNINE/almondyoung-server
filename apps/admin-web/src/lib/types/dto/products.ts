@@ -1064,3 +1064,37 @@ export interface ApproveProductDto {
 export interface RejectProductDto {
   reason: string;
 }
+
+
+// ===== 엑셀 내보내기 =====
+
+export interface ExportColumnDto {
+  /** 양식에 저장되는 식별자 — 서버 카탈로그와 값이 같아야 한다. */
+  key: string;
+  label: string;
+}
+
+export interface ExportColumnsResponseDto {
+  columns: ExportColumnDto[];
+  defaultKeys: string[];
+}
+
+/**
+ * 내보내기 필터. MastersQuery 와 거의 같지만 supplierId 가 배열이다 —
+ * 목록은 URL 이라 콤마 문자열, 내보내기는 JSON body 라 배열을 쓴다.
+ */
+export type ProductExportFiltersDto = Omit<
+  MastersQuery,
+  'supplierId' | 'page' | 'limit' | 'search' | 'pricingStrategy'
+> & {
+  supplierId?: string[];
+};
+
+export interface ProductExportRequestDto {
+  /** 내보낼 열 key 순서. 생략하면 서버 기본 양식. */
+  columns?: string[];
+  /** 선택항목 다운로드 — masterId 배열. 지정하면 filters 는 무시된다. */
+  ids?: string[];
+  /** 검색결과 전체 다운로드 — 목록 화면과 같은 필터. */
+  filters?: ProductExportFiltersDto;
+}

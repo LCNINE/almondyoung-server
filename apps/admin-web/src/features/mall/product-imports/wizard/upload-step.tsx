@@ -5,15 +5,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { products } from '@/lib/api/domains';
 import { FileDown, Upload } from 'lucide-react';
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { downloadBlob } from '@/lib/utils/download-blob';
 
 interface Props {
   onFileSelected: (file: File) => void;

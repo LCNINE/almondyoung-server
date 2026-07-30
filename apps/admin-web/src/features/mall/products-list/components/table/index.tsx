@@ -12,7 +12,7 @@ import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-
 import { useProductsListTableQuery } from '@/hooks/table/query/use-products-list-table-query';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
-import { Download, Trash2 } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import {
   BulkActionModal,
   type BulkActionType,
@@ -20,6 +20,7 @@ import {
 import { BulkPolicyModal } from '@/features/mall/bulk/components/bulk-policy-modal';
 import { SelectedProductsModal } from '../selected-products-modal';
 import { ProductsListFilterBox } from '../filter-box';
+import { ExcelDownloadMenu } from '../excel-download';
 
 const PAGE_SIZE = 20;
 
@@ -122,10 +123,10 @@ export function ProductsListTable() {
               }
               onClearAll={() => table.resetRowSelection()}
             />
-            <Button size="sm" variant="outline" disabled={!hasSelection}>
-              <Download className="w-3 h-3 mr-1" />
-              엑셀 다운로드
-            </Button>
+            <ExcelDownloadMenu
+              selectedIds={selectedIds}
+              totalCount={totalCount}
+            />
             <Button
               size="sm"
               variant="outline"
