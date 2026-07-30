@@ -1,7 +1,8 @@
 # feature/admin-web → develop 머지 런북
 
 상품 목록 필터를 피그마 디자인(grid 헤더형 검색 패널)으로 교체하고, 등록자·공급처 필터를
-추가한 작업의 머지·배포 절차. 2026-07-29 기준.
+추가한 작업의 머지·배포 절차. 이후 상품 목록 테이블을 피그마 격자형으로 재구성하고
+공급가(원가) 입력·백필을 붙였다. 2026-07-30 기준.
 
 ---
 
@@ -58,15 +59,27 @@ npx sst deploy --stage live --target Core --target AdminWeb
 
 ---
 
-## 4. 배포 후: 공급처 백필 (라이브 1회)
+## 4. 배포 후: 공급처 · 공급가 백필 (라이브 1회)
 
-공급처 값은 셀메이트에만 있다. Core 는 전부 비어 있으므로 백필해야 필터가 의미를 가진다.
+공급처와 공급가(원가) 둘 다 셀메이트에만 있다. 라이브 Core 는 `supplier_id` 도
+`supply_price` 도 **전부 비어 있다**(2026-07-30 확인). 백필해야 필터와 목록이 의미를 가진다.
 
 ### 4-1. 셀메이트 CSV 받기
 
 셀메이트 > **상품관리 > 상품목록** 에서 엑셀 다운로드.
-(재고 목록이 아니다 — 재고 목록엔 공급처 컬럼이 없다.)
-cp949 인코딩 47컬럼 CSV 이며 `공급처` 컬럼이 있어야 한다.
+cp949 인코딩 47컬럼 CSV 이며 `공급처`·`원가` 컬럼이 있어야 한다.
+
+**같은 CSV 로 공급가(원가)까지 백필한다** — 요청할 때 두 컬럼을 같이 확인한다:
+
+| 필요한 컬럼 | 쓰는 곳 |
+|---|---|
+| `공급처` | `product_master_versions.supplier_id` |
+| `원가` | `product_master_versions.supply_price` |
+| `바코드번호(서식)` | 두 백필의 공통 매칭 키 — 이게 없으면 아무것도 못 붙인다 |
+
+즉 셀메이트 담당자에게 **"상품목록 엑셀"을 한 번만 받으면 공급처·공급가 둘 다 처리된다.**
+따로 받을 필요 없다. 단, 재고 목록(`stk_stockList` 중 컬럼 16개짜리)에는 원가도 공급처도
+없으므로 **상품목록**을 받아야 한다.
 
 ### 4-2. 터널 열고 실행
 
@@ -75,12 +88,18 @@ cp949 인코딩 47컬럼 CSV 이며 `공급처` 컬럼이 있어야 한다.
 cd deployments/lcnine/services
 npx sst tunnel --stage live
 
-# 백필
+# 공급처
 DATABASE_URL='postgresql://.../core' \
   ./scripts/backfill-supplier-from-sellmate.sh ~/Downloads/<셀메이트CSV>
+
+# 공급가(원가) — 같은 CSV, 같은 매칭 경로. DRY_RUN=1 로 먼저 대상 수를 본다
+DRY_RUN=1 DATABASE_URL='postgresql://.../core' \
+  ./scripts/backfill-cost-from-sellmate.sh ~/Downloads/<셀메이트CSV>
+DATABASE_URL='postgresql://.../core' \
+  ./scripts/backfill-cost-from-sellmate.sh ~/Downloads/<셀메이트CSV>
 ```
 
-스크립트가 하는 일:
+공급처 스크립트가 하는 일:
 
 1. 바코드를 숫자만 남겨 정규화 (`="123"`, `1-123` 표기 혼재)
 2. `suppliers` 에 없는 공급처 이름만 INSERT
@@ -92,15 +111,26 @@ DATABASE_URL='postgresql://.../core' \
 `updated_at` 은 일부러 갱신하지 않는다 — 운영자의 상품 수정이 아니라 과거 데이터 정정이라,
 '최근 수정' 정렬과 변경 이력을 오염시키면 안 된다.
 
+공급가 스크립트(`backfill-cost-from-sellmate.sh`)는 매칭 경로가 같고, `원가` 컬럼을
+`supply_price` 에 넣는다. **주의 하나**: 셀메이트 원가는 옵션(variant) 단위인데
+`supply_price` 는 버전(master) 단위다. 한 상품 안에서 옵션별 원가가 갈리면
+**최댓값을 대표원가로** 쓴다(마진을 과소평가하는 쪽이 안전). 로컬 실측으로
+2,681개 상품 중 **142개**가 여기 해당한다. 옵션별 정확한 원가가 필요해지면
+`product_variants.supply_price` 신설이 필요하다.
+
 ### 4-3. 로컬 실행 결과 (참고 수치)
 
+라이브 상품 데이터 복제본 + 2026-07-29 셀메이트 상품목록 CSV 기준:
+
 ```
-공급처 마스터  18종 등록
-상품          8,962 / 10,654 (84%)
-버전 행       8,969
+공급처   마스터 18종 등록 / 상품 9,265건
+공급가   상품 2,664건 / 버전 2,779행 (원가 범위 14 ~ 980,000원)
+         CSV 원가 12,782건 중 SKU 매칭된 7,439 옵션 → 2,681 상품
 ```
 
-붙지 않는 16% 는 셀메이트에 없거나 SKU 매칭이 아직 안 된 상품이다.
+공급처가 붙지 않는 나머지는 셀메이트에 없거나 SKU 매칭이 아직 안 된 상품이다.
+공급가는 도달률이 더 낮다 — 셀메이트에서 `원가` 자체가 비어 있는 옵션이 많다
+(29,002행 중 12,782행만 원가 보유).
 실제로 값이 붙은 공급처는 9종(한국 7,404 · 중국 1,085 · 한국 직배 273 · PermaBlend 93 ·
 자체제작 89 · 중국 해외 직구 9 · 일본 7 · 케이영생산 1 · 베트남 1)이고,
 나머지 9종은 마스터에만 등록돼 있다가 매칭이 붙으면 채워진다.
@@ -119,7 +149,9 @@ DATABASE_URL='postgresql://.../core' \
 또한 `supplierId` 는 Medusa 로 나가는 `ProductSnapshot`(event-contracts)에 **없다.**
 공급처는 내부 조달 정보이므로 판매채널 projection 에 싣지 않는다.
 
-즉 8,962건을 백필해도 **Medusa 재발행 0건**이다.
+`supplyPrice` 도 마찬가지로 스냅샷에 없다 — 원가는 판매채널에 나가면 안 되는 정보다.
+
+즉 공급처·공급가를 백필해도 **Medusa 재발행 0건**이다.
 
 ---
 
@@ -136,6 +168,8 @@ DATABASE_URL='postgresql://.../core' \
 - [ ] 등록자 드롭다운에 `loginId (이름)` 형식으로 관리자가 뜬다
 - [ ] 공급처 드롭다운에 18종이 뜨고, 고르면 결과가 걸러진다
 - [ ] 상품 상세 > 기본정보에 **공급처 선택칸**이 있고 저장이 된다
+- [ ] 상품 목록 `판매가/멤버십가/공급가` 세 번째 줄에 공급가가 뜬다 (미입력은 `0` 이 아니라 `-`)
+- [ ] 상품 상세 > 기본정보 표에 `공급가`·`시장가` 행이 뜨고, draft 에서 `수정` 누르면 입력칸이 있다
 - [ ] `/mall/bulk`(일괄 작업)이 정상 동작한다 ← 아래 함정 참고
 
 ---
@@ -148,6 +182,7 @@ DATABASE_URL='postgresql://.../core' \
 
 ```sql
 UPDATE product_master_versions SET supplier_id = NULL WHERE supplier_id IS NOT NULL;
+UPDATE product_master_versions SET supply_price = NULL WHERE supply_price IS NOT NULL;
 -- 공급처 마스터까지 지우려면 (다른 데서 참조 없을 때만)
 DELETE FROM suppliers WHERE name <> '기본';
 ```
@@ -180,12 +215,27 @@ DELETE FROM suppliers WHERE name <> '기본';
 (국가는 95%뿐이고 `자체제작`·`3PL 제품`·`PermaBlend` 같은 값이 섞여 있다).
 디자인 문구와 다르더라도 **공급처**로 부른다.
 
+공급처에 `PermaBlend`·`OEM`·`우아한가` 같은 브랜드/벤더명이 섞여 보이는 것도
+셀메이트 원본 그대로다. **임의로 걸러내지 말 것** — 원본과 어긋난다.
+정리하려면 셀메이트 쪽 입력 규칙부터 손대야 한다.
+
+**⑦ 공급가는 '도매가'가 아니다.**
+피그마 목록 헤더는 `판매가 / 멤버십가 / 도매가` 지만, 도매 판매가 컬럼은 DB 에 없다.
+넣은 값은 셀메이트 `원가` = `supply_price`(매입 단가)이므로 화면 라벨도 **공급가**로 쓴다.
+그리고 `supply_price`·`market_price` 는 어떤 가격 계산에도 들어가지 않는다 —
+판매가·멤버십가는 pricing rules 가 산출한다(`product-import.validator.ts` 주석 참고).
+
 ---
 
 ## 9. 아직 안 된 것
 
 - **`material`(재질) 컬럼은 여전히 방치 상태** — DB 컬럼은 있는데 수정 DTO 에도 없어서
   값을 넣을 방법이 없다. 이번 작업 범위 밖.
+- **옵션별 공급가** — 셀메이트 원가는 옵션 단위인데 `supply_price` 는 버전 단위라
+  옵션별로 갈리는 142개 상품은 대표값(최댓값) 하나만 남는다.
+  정확히 담으려면 `product_variants.supply_price` 신설이 필요하다.
+- **공급가 대량 수정 UI 없음** — 건별 입력(상품 상세 draft)과 엑셀 대량등록
+  (`supplyPrice` 컬럼)만 있다. 목록에서 일괄 수정하는 화면은 없다.
 - 셀메이트 공급처 18종 중 9종은 아직 붙은 상품이 없다 (SKU 매칭 대기).
 - 멤버십 회원 페이지(`features/membership/members/components/filter-box`)가 같은 모양의
   필터를 **자기 인라인 코드로** 갖고 있다. `SearchFilterPanel` 로 이관하면 중복이 사라진다.
