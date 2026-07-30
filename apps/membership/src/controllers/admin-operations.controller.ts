@@ -613,13 +613,39 @@ export class AdminOperationsController {
         dto.refundType,
         dto.refundAmount,
         dto.adminNote,
+        dto.refundReceiveAccount,
       );
 
-      this.logger.log(`✅ 강제 구독 취소 성공 - contractId: ${contractId}`);
+      // refundStatus 는 wallet 의 실제 환불 결과다. FAILED/PENDING 이면 돈은 아직 나가지 않았다
+      // (효성 CMS 는 PG 환불 API 가 없어 항상 수동 송금이 필요하다).
+      this.logger.log(
+        `강제 구독 취소 완료 - contractId: ${contractId}, refundAmount: ${result.refundAmount}, refundStatus: ${result.refundStatus}`,
+      );
 
       return result;
     } catch (error) {
       this.handleError(error, '강제 구독 취소');
+    }
+  }
+
+  /**
+   * 해지·환불 견적 (관리자)
+   *
+   * 강제취소 다이얼로그가 "지금 해지하면 정책상 얼마" 를 보여주기 위한 계산기.
+   * 연간 중도해지 정산 내역(사용 개월·차감액)과 실제 환불 가능 수단까지 함께 내려준다.
+   */
+  @Get('subscriptions/:contractId/cancellation-quote')
+  @ApiOperation({
+    summary: '해지·환불 견적 조회 (어드민)',
+    description: '정책 기준 환불 금액과 산출 내역, 자동환불 가능 여부를 반환합니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  async getCancellationQuote(@Param('contractId') contractId: string) {
+    try {
+      return await this.cancellationService.previewCancellationByContract(contractId);
+    } catch (error) {
+      this.handleError(error, '해지 견적 조회');
     }
   }
 

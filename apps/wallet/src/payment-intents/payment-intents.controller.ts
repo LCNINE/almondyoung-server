@@ -152,6 +152,18 @@ export class PaymentIntentsController {
     return { intentId: id, refunds: refunds.map((r) => this.toRefundResponse(r)) };
   }
 
+  @Get(':id/refundability')
+  @ApiOperation({
+    summary: 'Check whether an intent can be refunded and by which route (API-key, server-to-server)',
+    description:
+      '멤버십 해지 화면·관리자 강제취소가 "환불됩니다" 를 안내하기 전에 확인하는 길목. ' +
+      'autoRefundSupported=false 면 PG 환불 API 가 없는 수단(효성 CMS)이라 관리자 수동 송금만 가능하다.',
+  })
+  async refundability(@Param('id') id: string) {
+    await this.service.findByIdOrThrow(id);
+    return this.refundsService.getRefundability(id);
+  }
+
   // userId가 null이면 atomic claim, 이미 설정됐으면 소유권 검증
   private async claimOrVerify(intentId: string, jwtUserId: string): Promise<void> {
     const intent = await this.service.findByIdOrThrow(intentId);

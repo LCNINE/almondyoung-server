@@ -76,6 +76,42 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 현재 활성 권한 조회 (해지 시 이용 종료일 판단용)
+   */
+  async findCurrentEntitlement(userId: string): Promise<{ id: string; endsAt: string; startsAt: string } | null> {
+    const [entitlement] = await this.dbService.db
+      .select({
+        id: schema.subscriptionEntitlement.id,
+        endsAt: schema.subscriptionEntitlement.endsAt,
+        startsAt: schema.subscriptionEntitlement.startsAt,
+      })
+      .from(schema.subscriptionEntitlement)
+      .where(
+        and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+      )
+      .limit(1);
+
+    return entitlement || null;
+  }
+
+  /**
+   * 동일 티어의 활성 월간 플랜 정가.
+   *
+   * 연간 중도해지 정산의 기준값이다. 연간가는 '월간 정가 × 12 − 2개월' 로 만들어졌으므로,
+   * 월간 플랜이 없거나 비활성이면 연간가/10 을 같은 뜻의 폴백으로 쓴다.
+   */
+  async findMonthlyListPrice(tierId: string, annualPrice: number): Promise<number> {
+    const [monthly] = await this.dbService.db
+      .select({ price: schema.plan.price })
+      .from(schema.plan)
+      .where(and(eq(schema.plan.tierId, tierId), eq(schema.plan.durationDays, 30), eq(schema.plan.isActive, true)))
+      .orderBy(desc(schema.plan.createdAt))
+      .limit(1);
+
+    return monthly?.price ?? Math.round(annualPrice / 10);
+  }
+
+  /**
    * 사용자의 모든 계약 이력 조회
    */
   async findContractsByUserId(userId: string): Promise<Contract[]> {

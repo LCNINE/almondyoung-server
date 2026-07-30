@@ -69,6 +69,14 @@ export interface AdminMemberDetail {
   createdAt: string;
   cancelledAt: string | null;
   autoRenewal: boolean;
+  /** 정기결제 해지 예약 시점 (status 는 ACTIVE 를 유지한다) */
+  recurringCancelledAt: string | null;
+  recurringCancellationReasonCode: string | null;
+  refundRequested: boolean;
+  refundRequestedAt: string | null;
+  eligibleRefundAmount: number | null;
+  refundCompleted: boolean;
+  refundCompletedAt: string | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -161,6 +169,40 @@ function buildQueryString(query: Record<string, unknown>): string {
     }
   });
   return params.toString();
+}
+
+/** 해지·환불 견적 (membership `/admin/subscriptions/:id/cancellation-quote`) */
+export interface AdminCancellationOption {
+  mode: 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
+  available: boolean;
+  unavailableReason?: string;
+  refundAmount: number;
+  refundKind: 'NONE' | 'WITHDRAWAL_FULL' | 'ANNUAL_PRORATION';
+  refundExecution: 'NONE' | 'AUTO' | 'MANUAL';
+  requiresReceiveAccount: boolean;
+  effectiveEndsAt: string;
+  breakdown?: {
+    paidAmount: number;
+    monthlyListPrice: number;
+    monthsElapsed: number;
+    usageDeduction: number;
+    benefitDeduction: number;
+  };
+}
+
+export interface AdminCancellationQuote {
+  contractId: string;
+  planName: { durationDays: number; price: number };
+  isRecurring: boolean;
+  alreadyScheduledForCancellation: boolean;
+  recurringCancelledAt: string | null;
+  currentPeriodEndsAt: string;
+  nextBillingDate: string | null;
+  recommendedMode: 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
+  withdrawalDaysRemaining: number;
+  withdrawalWindowDays: number;
+  refundProcessingBusinessDays: number;
+  options: AdminCancellationOption[];
 }
 
 export const membershipApi = {
@@ -291,6 +333,17 @@ export const membershipApi = {
     return res.data;
   },
 
+  /**
+   * 해지·환불 견적. 정책상 환불 금액과 산출 내역, 실제 환불 가능 수단을 반환한다.
+   * 관리자가 금액을 손으로 짐작하지 않게 하는 계산기.
+   */
+  getCancellationQuote: async (contractId: string): Promise<AdminCancellationQuote> => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/cancellation-quote`
+    );
+    return res.data;
+  },
+
   forceCancelSubscription: async (
     contractId: string,
     body: {
@@ -298,8 +351,10 @@ export const membershipApi = {
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }
   ): Promise<{
+    refundAmount: number;
     refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE';
   }> => {
     const res = await client.post(

@@ -132,6 +132,15 @@ export const useDeactivatePlan = () => {
   });
 };
 
+/** 해지·환불 견적. 다이얼로그를 열 때만 조회한다(enabled). */
+export const useCancellationQuote = (contractId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: membershipQueryKeys.cancellationQuote(contractId),
+    queryFn: () => membershipApi.getCancellationQuote(contractId),
+    enabled: enabled && !!contractId,
+    staleTime: 0,
+  });
+
 export const useForceCancelSubscription = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -141,18 +150,21 @@ export const useForceCancelSubscription = () => {
       refundType,
       refundAmount,
       adminNote,
+      refundReceiveAccount,
     }: {
       contractId: string;
       reason: string;
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }) =>
       membershipApi.forceCancelSubscription(contractId, {
         reason,
         refundType,
         refundAmount,
         adminNote,
+        refundReceiveAccount,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });

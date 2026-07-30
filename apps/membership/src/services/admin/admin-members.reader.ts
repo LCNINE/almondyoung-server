@@ -71,6 +71,15 @@ export interface AdminMemberDetail {
   createdAt: string;
   cancelledAt: string | null;
   autoRenewal: boolean;
+  /** 정기결제 해지 예약 시점. status=ACTIVE 를 유지하면서 자동결제만 끊긴 상태의 식별자. */
+  recurringCancelledAt: string | null;
+  recurringCancellationReasonCode: string | null;
+  /** 환불 추적 — 환불 요청은 했는데 완료되지 않은 건을 상세에서 바로 보이게 한다. */
+  refundRequested: boolean;
+  refundRequestedAt: string | null;
+  eligibleRefundAmount: number | null;
+  refundCompleted: boolean;
+  refundCompletedAt: string | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -370,6 +379,13 @@ export class AdminMembersReader {
         createdAt: schema.subscriptionContracts.createdAt,
         cancelledAt: schema.subscriptionContracts.cancelledAt,
         autoRenewal: schema.subscriptionContracts.autoRenewal,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+        recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
+        refundRequested: schema.subscriptionContracts.refundRequested,
+        refundRequestedAt: schema.subscriptionContracts.refundRequestedAt,
+        eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
+        refundCompleted: schema.subscriptionContracts.refundCompleted,
+        refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
         planId: schema.subscriptionContracts.planId,
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
@@ -427,6 +443,13 @@ export class AdminMembersReader {
       createdAt: r.createdAt.toISOString(),
       cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
       autoRenewal: r.autoRenewal,
+      recurringCancelledAt: r.recurringCancelledAt ? r.recurringCancelledAt.toISOString() : null,
+      recurringCancellationReasonCode: r.recurringCancellationReasonCode ?? null,
+      refundRequested: r.refundRequested ?? false,
+      refundRequestedAt: r.refundRequestedAt ? r.refundRequestedAt.toISOString() : null,
+      eligibleRefundAmount: r.eligibleRefundAmount ?? null,
+      refundCompleted: r.refundCompleted ?? false,
+      refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
       pauseCount,
       firstContractCreatedAt,
     };

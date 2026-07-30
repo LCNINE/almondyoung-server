@@ -1,6 +1,7 @@
 import SubscriberSection from "../components/subscriber/subscriber-section"
 import NonSubscriberSection from "../components/non-subscriber"
 import type {
+  CancellationPreviewDto,
   CancellationReasonDto,
   CycleBenefitDto,
   CycleBenefitHistoryDto,
@@ -20,6 +21,7 @@ interface MembershipTemplateProps {
   rangeSavings: RangeSavingsDto | null
   subscriptionHistory: SubscriptionHistoryItemDto[]
   cancellationReasons: CancellationReasonDto[]
+  cancellationPreview: CancellationPreviewDto | null
   currentBenefit: CycleBenefitDto | null
   benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
@@ -33,6 +35,7 @@ export default function MembershipTemplate({
   rangeSavings,
   subscriptionHistory,
   cancellationReasons,
+  cancellationPreview,
   currentBenefit,
   benefitHistory,
   hasCafe24Link,
@@ -47,6 +50,7 @@ export default function MembershipTemplate({
           rangeSavings={rangeSavings}
           subscriptionHistory={subscriptionHistory}
           cancellationReasons={cancellationReasons}
+          cancellationPreview={cancellationPreview}
           currentBenefit={currentBenefit}
           benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}

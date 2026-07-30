@@ -769,7 +769,13 @@
       "cancelNotice": "解約しても {date} までサービスを利用でき、その後自動決済が停止します。",
       "cancelRecurring": "定期決済を解約する",
       "mandatePendingNotice": "お支払い口座を銀行で確認中です（1～2営業日）。メンバーシップはすでにご利用いただけます。確認完了後に初回のお支払いが引き落とされます。",
-      "paymentActionCta": "決済手段を確認する"
+      "paymentActionCta": "決済手段を確認する",
+      "cancelScheduledTitle": "解約予約済み",
+      "cancelScheduledBody": "{cancelledAt}に解約を申請されました。{endsAt}まで特典をご利用いただけます。以降の決済は請求されません。",
+      "cancelScheduledUndo": "解約を取り消して継続する",
+      "cancelUndoSuccess": "解約を取り消しました。会員資格は継続します。",
+      "cancelUndoFailed": "解約の取り消しに失敗しました。しばらくしてから再度お試しください。",
+      "oneTimeNoCancelNeeded": "1回決済のため自動決済はありません。{date}に自動的に終了します。"
     },
     "invoices": {
       "title": "定期決済の請求履歴",
@@ -917,7 +923,8 @@
       "heroTitle": "アモンドヤン メンバーシップ サービス",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 有料メンバーシップ 月 4,990ウォン / 年 49,900ウォン",
-      "priceNoticeFreeMonths": "* 年間プランで 2ヶ月無料"
+      "priceNoticeFreeMonths": "* 年間プランで 2ヶ月無料",
+      "cancelWarningRecurring": "解約すると次回以降の請求は行われず、会員特典も終了します。"
     },
     "benefits": {
       "overviewTitle1": "ひと目で見る ",
@@ -935,8 +942,6 @@
       "guideTitle": "ODOK特典のご案内"
     },
     "cancel": {
-      "titleNoUsage": "今月の特典利用がないため",
-      "titleRefund": "自動的に全額返金されます。",
       "titleRejoin": "いつでも再加入できます!",
       "reasonHeading": "解約理由 (1つ選択)",
       "reasonSubheading": "より良いサービスのために取り組みます。",
@@ -945,10 +950,7 @@
       "cancelButton": "キャンセル",
       "confirmButton": "完了",
       "processing": "処理中...",
-      "titleUsedLine1": "今月の会員特典をすでにご利用されています。",
-      "titleUsedLine2": "返金はなく、利用期間終了までメンバーシップは維持されます。",
       "refundAccountHeading": "返金先口座",
-      "refundAccountNote": "返金をご希望の口座情報をご入力いただくと、お支払い金額を全額返金いたします。",
       "bankPlaceholder": "銀行を選択",
       "accountNumberPlaceholder": "口座番号（数字のみ）",
       "holderNamePlaceholder": "口座名義",
@@ -957,7 +959,20 @@
       "back": "戻る",
       "refundStepTitle": "返金情報をご確認ください",
       "stepReasonLabel": "解約理由ステップ",
-      "stepRefundLabel": "返金情報ステップ"
+      "stepRefundLabel": "返金情報ステップ",
+      "modeStepTitle": "解約方法を選択してください",
+      "modeAtPeriodEndTitle": "利用期間まで使ってから解約",
+      "modeAtPeriodEndTitleOneTime": "追加決済なしで解約",
+      "modeAtPeriodEndDesc": "{date}まで特典をご利用いただけます。以降の自動決済は行われません。返金はありません。",
+      "modeImmediateTitle": "今すぐ解約して{amount}ウォン返金",
+      "modeImmediateDesc": "特典は即時終了し、残りの期間はご利用いただけません。",
+      "breakdownPaid": "決済額 {amount}ウォン",
+      "breakdownUsage": "利用{months}ヶ月 × 月額 {monthly}ウォン = -{amount}ウォン",
+      "breakdownBenefit": "ご利用済みの会員割引 -{amount}ウォン",
+      "manualRefundNotice": "口座振替のお支払いは即時返金ができないため、ご入力の口座へ営業日{days}日以内にお振込みします。",
+      "summaryImmediate": "今すぐ解約すると{amount}ウォンが返金されます。",
+      "summaryAtPeriodEnd": "{date}まで利用後、自動的に終了します。",
+      "refundAccountNoteAmount": "{amount}ウォンをご入力の口座へ営業日{days}日以内に返金いたします。"
     },
     "manageTitle": "メンバーシップ管理"
   },

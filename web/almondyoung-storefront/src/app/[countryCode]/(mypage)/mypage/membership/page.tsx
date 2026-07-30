@@ -2,6 +2,7 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import MembershipTemplate from "@/domains/membership/home/template/membership-template"
 import { WithHeaderLayout } from "@components/layout"
 import {
+  getCancellationPreview,
   getCancellationReasons,
   getCurrentCycleBenefit,
   getCurrentMonthSavings,
@@ -14,6 +15,7 @@ import {
 import { getCafe24LinkInfo } from "@lib/api/users/cafe24"
 import { fetchMe } from "@lib/api/users/me"
 import type {
+  CancellationPreviewDto,
   CancellationReasonDto,
   CycleBenefitDto,
   CycleBenefitHistoryDto,
@@ -46,6 +48,8 @@ export default async function MembershipPage() {
   let currentBenefit: CycleBenefitDto | null = null
   let benefitHistory: CycleBenefitHistoryDto | null = null
   let cancellationReasons: CancellationReasonDto[] = []
+  // 해지 선택지·환불 금액은 서버 정책이 SoT — 클라이언트에서 추정하지 않는다.
+  let cancellationPreview: CancellationPreviewDto | null = null
   const membershipPlans: PlanWithTier[] = plans ?? []
 
   if (user?.id) {
@@ -60,6 +64,7 @@ export default async function MembershipPage() {
       cancellationReasonsResult,
       currentBenefitResult,
       benefitHistoryResult,
+      cancellationPreviewResult,
     ] = await Promise.all([
       getCurrentMonthSavings().catch(() => null),
       getRangeSavings(toDateString(startDate), toDateString(now)).catch(
@@ -69,6 +74,7 @@ export default async function MembershipPage() {
       getCancellationReasons().catch(() => []),
       getCurrentCycleBenefit(user.id).catch(() => null),
       getCycleBenefitHistory(user.id, 6).catch(() => null),
+      getCancellationPreview().catch(() => null),
     ])
 
     currentSavings = currentSavingsResult
@@ -77,6 +83,7 @@ export default async function MembershipPage() {
     cancellationReasons = cancellationReasonsResult
     currentBenefit = currentBenefitResult
     benefitHistory = benefitHistoryResult
+    cancellationPreview = cancellationPreviewResult
   }
 
   return (
@@ -97,6 +104,7 @@ export default async function MembershipPage() {
           rangeSavings={rangeSavings}
           subscriptionHistory={subscriptionHistory}
           cancellationReasons={cancellationReasons}
+          cancellationPreview={cancellationPreview}
           currentBenefit={currentBenefit}
           benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}
