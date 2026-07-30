@@ -289,6 +289,9 @@ export const ForceCancelSubscriptionRequestSchema = z.object({
   }),
   refundAmount: z.number().min(0, { error: '환불 금액은 0 이상이어야 합니다' }).optional(),
   adminNote: z.string().optional(),
+  // 해지 안내 메일 수신 주소. notification 서비스는 사용자 조회를 하지 않아 이벤트에 실려야 한다.
+  // 어드민 UI 가 이미 조회해 화면에 띄우고 있는 값을 그대로 넘긴다.
+  customerEmail: z.email({ error: '유효한 이메일이어야 합니다' }).optional(),
   // 무통장(가상계좌)·수동 송금 환불 시 필수. 없으면 wallet 이 PENDING(수동 처리)으로 남긴다.
   refundReceiveAccount: z
     .object({

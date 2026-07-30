@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { addDays, format } from 'date-fns';
-import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { SubscriptionCancellationService } from '../subscription-cancellation.service';
 import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from '../subscription/subscription-cancellation.manager';
@@ -35,6 +35,7 @@ describe('SubscriptionCancellationService', () => {
 
   const mockCancellationManager = {
     cancelImmediately: jest.fn(),
+    forceCancelSubscription: jest.fn(),
     cancelRecurringPayment: jest.fn(),
     undoRecurringCancellation: jest.fn(),
     recordRefundOutcome: jest.fn().mockResolvedValue(undefined),
@@ -373,6 +374,92 @@ describe('SubscriptionCancellationService', () => {
 
       expect(result.type).toBe('RECURRING_CANCELLATION');
       expect(mockCancellationManager.markAgreementRevokePending).toHaveBeenCalledWith('contract_001', 'user_001');
+    });
+  });
+
+  describe('forceCancelSubscription — 관리자 환불 금액 상한', () => {
+    it('정책 산정액 이내면 초과 권한 없이도 환불한다', async () => {
+      givenActiveContract({ plan: ANNUAL_PLAN, daysSincePeriodStart: 75, autoRenewal: false });
+      mockCancellationManager.forceCancelSubscription.mockResolvedValue({
+        contractId: 'contract_001',
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: true,
+        refundAmount: 30000,
+        refundStatus: 'PENDING',
+      });
+
+      const result = await service.forceCancelSubscription(
+        'contract_001',
+        'admin_1',
+        '고객 요청',
+        'PARTIAL',
+        30000,
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(result.refundStatus).toBe('COMPLETED');
+    });
+
+    it('정책 산정액을 초과하면 초과 권한 없이는 거부한다 (연간 전액 환불 방지)', async () => {
+      givenActiveContract({ plan: ANNUAL_PLAN, daysSincePeriodStart: 75, autoRenewal: false });
+
+      await expect(
+        service.forceCancelSubscription('contract_001', 'admin_1', '고객 요청', 'FULL', undefined, undefined, undefined, false),
+      ).rejects.toThrow(ForbiddenError);
+      expect(mockCancellationManager.forceCancelSubscription).not.toHaveBeenCalled();
+    });
+
+    it('초과 권한이 있으면 정책을 넘겨 환불할 수 있다 (장애 보상 등 예외)', async () => {
+      givenActiveContract({ plan: ANNUAL_PLAN, daysSincePeriodStart: 75, autoRenewal: false });
+      mockCancellationManager.forceCancelSubscription.mockResolvedValue({
+        contractId: 'contract_001',
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: true,
+        refundAmount: 49900,
+        refundStatus: 'PENDING',
+      });
+
+      const result = await service.forceCancelSubscription(
+        'contract_001',
+        'admin_1',
+        '서비스 장애 보상',
+        'FULL',
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+
+      expect(result.refundAmount).toBe(49900);
+    });
+
+    it('환불 없는 강제 취소는 상한 검사를 하지 않는다', async () => {
+      givenActiveContract({ plan: ANNUAL_PLAN, daysSincePeriodStart: 310, autoRenewal: false });
+      mockCancellationManager.forceCancelSubscription.mockResolvedValue({
+        contractId: 'contract_001',
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: false,
+        refundAmount: 0,
+        refundStatus: 'NOT_APPLICABLE',
+      });
+
+      const result = await service.forceCancelSubscription(
+        'contract_001',
+        'admin_1',
+        '중복 가입 정리',
+        'NONE',
+        undefined,
+        undefined,
+        undefined,
+        false,
+      );
+
+      expect(result.refundStatus).toBe('NOT_APPLICABLE');
     });
   });
 

@@ -80,6 +80,8 @@ interface ForceCancelDialogProps {
   open: boolean;
   onClose: () => void;
   contractId: string;
+  /** 해지 안내 메일 수신 주소. membership 은 사용자 조회를 하지 않아 여기서 실어 보낸다. */
+  customerEmail?: string;
   onSuccess: () => void;
 }
 
@@ -87,6 +89,7 @@ function ForceCancelDialog({
   open,
   onClose,
   contractId,
+  customerEmail,
   onSuccess,
 }: ForceCancelDialogProps) {
   const [reason, setReason] = useState('');
@@ -149,6 +152,7 @@ function ForceCancelDialog({
         refundAmount:
           refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
+        customerEmail,
         refundReceiveAccount:
           needsAccount && accountFilled
             ? {
@@ -596,10 +600,12 @@ function PlanTab({
   userId,
   contractId,
   allowForceCancel,
+  customerEmail,
 }: {
   userId: string;
   contractId: string;
   allowForceCancel: boolean;
+  customerEmail?: string;
 }) {
   const { data: detail, isLoading, refetch } = useMemberDetail(userId);
   const setAutoRenewalMutation = useSetAutoRenewal();
@@ -850,6 +856,7 @@ function PlanTab({
           open={forceCancelOpen}
           onClose={() => setForceCancelOpen(false)}
           contractId={contractId}
+          customerEmail={customerEmail}
           onSuccess={() => refetch()}
         />
       )}
@@ -1204,6 +1211,7 @@ export function MembershipDetailPanel({
             userId={userId}
             contractId={contractId}
             allowForceCancel={allowAdminActions}
+            customerEmail={userNames[userId]?.email || undefined}
           />
         </TabsContent>
 

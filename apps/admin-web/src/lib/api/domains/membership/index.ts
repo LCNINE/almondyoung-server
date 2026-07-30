@@ -351,6 +351,8 @@ export const membershipApi = {
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
+      /** 해지 안내 메일 수신 주소 (membership 은 사용자 조회를 하지 않아 여기서 넘겨야 한다) */
+      customerEmail?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }
   ): Promise<{
