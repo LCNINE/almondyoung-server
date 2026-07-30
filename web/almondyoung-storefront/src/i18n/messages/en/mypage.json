@@ -769,7 +769,13 @@
       "cancelNotice": "After cancelling you can still use the service until {date}, after which auto-billing stops.",
       "cancelRecurring": "Cancel auto-renewal",
       "mandatePendingNotice": "Your bank account is being verified (1–2 business days). Your membership is active now; the first payment will be withdrawn after verification.",
-      "paymentActionCta": "Review payment method"
+      "paymentActionCta": "Review payment method",
+      "cancelScheduledTitle": "Cancellation scheduled",
+      "cancelScheduledBody": "You requested cancellation on {cancelledAt}. You can use your membership until {endsAt}, and no further payments will be charged.",
+      "cancelScheduledUndo": "Undo cancellation and keep membership",
+      "cancelUndoSuccess": "Cancellation undone. Your membership continues.",
+      "cancelUndoFailed": "Failed to undo cancellation. Please try again shortly.",
+      "oneTimeNoCancelNeeded": "This is a one-time payment, so there is no recurring charge. It ends automatically on {date}."
     },
     "invoices": {
       "title": "Billing history",
@@ -917,7 +923,8 @@
       "heroTitle": "Almondyoung Membership Service",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
-      "priceNoticeFreeMonths": "* Get 2 months free with annual subscription"
+      "priceNoticeFreeMonths": "* Get 2 months free with annual subscription",
+      "cancelWarningRecurring": "Cancelling stops future charges and ends your membership benefits."
     },
     "benefits": {
       "overviewTitle1": "At a glance: ",
@@ -935,8 +942,6 @@
       "guideTitle": "ODOK Benefits"
     },
     "cancel": {
-      "titleNoUsage": "No benefits used this month —",
-      "titleRefund": "you'll be automatically refunded in full.",
       "titleRejoin": "You can rejoin anytime!",
       "reasonHeading": "Reason for cancelling (select one)",
       "reasonSubheading": "We'll keep improving our service.",
@@ -945,10 +950,7 @@
       "cancelButton": "Cancel",
       "confirmButton": "Confirm",
       "processing": "Processing...",
-      "titleUsedLine1": "You've already used this month's membership benefits.",
-      "titleUsedLine2": "No refund will be issued, and your membership stays active until the period ends.",
       "refundAccountHeading": "Refund account",
-      "refundAccountNote": "Enter the account you’d like your refund sent to, and we’ll refund the full amount you paid.",
       "bankPlaceholder": "Select bank",
       "accountNumberPlaceholder": "Account number (digits only)",
       "holderNamePlaceholder": "Account holder name",
@@ -957,7 +959,20 @@
       "back": "Back",
       "refundStepTitle": "Confirm your refund details",
       "stepReasonLabel": "Cancellation reason step",
-      "stepRefundLabel": "Refund details step"
+      "stepRefundLabel": "Refund details step",
+      "modeStepTitle": "Choose how to cancel",
+      "modeAtPeriodEndTitle": "Use until the period ends, then cancel",
+      "modeAtPeriodEndTitleOneTime": "Cancel with no further charges",
+      "modeAtPeriodEndDesc": "Keep your membership benefits until {date}. Automatic payments stop after that. No refund.",
+      "modeImmediateTitle": "Cancel now and get {amount} KRW refunded",
+      "modeImmediateDesc": "Benefits end immediately and the remaining period cannot be used.",
+      "breakdownPaid": "Paid {amount} KRW",
+      "breakdownUsage": "{months} month(s) used × {monthly} KRW monthly price = -{amount} KRW",
+      "breakdownBenefit": "Membership discounts already received -{amount} KRW",
+      "manualRefundNotice": "Direct-debit payments cannot be refunded instantly. We will transfer to the account you enter within {days} business days.",
+      "summaryImmediate": "Cancelling now refunds {amount} KRW.",
+      "summaryAtPeriodEnd": "Your membership ends automatically on {date}.",
+      "refundAccountNoteAmount": "We will refund {amount} KRW to the account you enter within {days} business days."
     },
     "manageTitle": "Membership"
   },

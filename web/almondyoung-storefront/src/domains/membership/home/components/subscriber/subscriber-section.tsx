@@ -8,10 +8,12 @@ import { useTranslations } from "next-intl"
 import { MembershipCancelModal } from "../../../components/modal"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
-import { cancelSubscription } from "@/lib/api/membership"
+import { cancelSubscription, undoCancellation } from "@/lib/api/membership"
 import { toast } from "sonner"
 import { pollCartRefreshUntilGroupRemoved } from "../../poll-cart-refresh"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type {
+  CancellationPreviewDto,
   CancellationReasonDto,
   CycleBenefitDto,
   CycleBenefitHistoryDto,
@@ -25,9 +27,6 @@ import type {
 import MembershipInvoicesSection from "./membership-invoices-section"
 import type { PlanWithTier } from "@lib/types/membership"
 
-//  멤버십 해지 버튼 임시 숨김 (2026-07-16). 되돌리려면 true.
-// non-subscriber/index.tsx 에도 같은 플래그가 있으니 같이 되돌릴 것.
-const SHOW_MEMBERSHIP_CANCEL: boolean = false
 
 /**
  * 멤버십 가입자 전용 섹션
@@ -46,6 +45,8 @@ interface SubscriberSectionProps {
   rangeSavings: RangeSavingsDto | null
   subscriptionHistory: SubscriptionHistoryItemDto[]
   cancellationReasons: CancellationReasonDto[]
+  /** 해지 선택지·환불 금액 (서버 정책). null 이면 해지 UI 를 숨긴다. */
+  cancellationPreview: CancellationPreviewDto | null
   currentBenefit: CycleBenefitDto | null
   benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
@@ -63,11 +64,13 @@ export default function SubscriberSection({
   membershipData,
   currentSavings,
   cancellationReasons,
+  cancellationPreview,
   currentBenefit,
   hasCafe24Link,
 }: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
   const [isCancelling, startTransition] = useTransition()
+  const [isUndoing, startUndoTransition] = useTransition()
   const router = useRouter()
   const params = useParams()
   const countryCode = (params?.countryCode as string) ?? "kr"
@@ -76,12 +79,19 @@ export default function SubscriberSection({
     () => cancellationReasons.length > 0,
     [cancellationReasons]
   )
-  // 이번 주기 혜택(멤버십가 구매·웰컴딜 등)을 하나도 안 썼으면 결제액 전액 환불 대상.
-  // 최종 환불 여부·금액은 서버가 확정하고, 여기선 모달 문구/환불계좌 노출을 위한 예측만 한다.
-  const refundEligible =
-    !currentBenefit ||
-    (currentBenefit.orderCount === 0 &&
-      currentBenefit.totalDiscountAmount === 0)
+  // 해지 예약 상태는 계약의 recurringCancelledAt 이 SoT. 미리보기가 없으면(활성 계약 없음 등)
+  // 해지 UI 자체를 숨긴다 — 누를 수 없는 버튼을 보여주지 않는다.
+  const scheduledCancelledAt =
+    cancellationPreview?.recurringCancelledAt ??
+    membershipData?.recurringCancelledAt ??
+    null
+  const isCancellationScheduled = !!scheduledCancelledAt
+  const periodEndsAt =
+    cancellationPreview?.currentPeriodEndsAt ??
+    membershipData?.currentPeriodEnd ??
+    membershipData?.endDate ??
+    null
+  const canCancel = !!cancellationPreview && !isCancellationScheduled
 
   return (
     <>
@@ -99,6 +109,46 @@ export default function SubscriberSection({
           currentBenefit={currentBenefit}
         />
       </MembershipStatusSection>
+      {/* 해지 예약 안내 — 언제 해지했고 언제까지 쓸 수 있는지 + 철회 */}
+      {isCancellationScheduled && (
+        <div className="border-border mt-3 w-full rounded-xl border bg-amber-50 px-4 py-3">
+          <p className="text-sm font-bold text-amber-900">
+            {t("billing.cancelScheduledTitle")}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-amber-900">
+            {t("billing.cancelScheduledBody", {
+              cancelledAt: formatDate(scheduledCancelledAt, DATE_FORMATS.KO_LONG),
+              endsAt: formatDate(periodEndsAt, DATE_FORMATS.KO_LONG),
+            })}
+          </p>
+          {cancellationPreview?.isRecurring && (
+            <button
+              type="button"
+              disabled={isUndoing}
+              onClick={() =>
+                startUndoTransition(async () => {
+                  try {
+                    await undoCancellation()
+                    toast.success(t("billing.cancelUndoSuccess"))
+                    router.refresh()
+                  } catch (error) {
+                    const err = error as Error & { digest?: string }
+                    if (
+                      err?.digest === "UNAUTHORIZED" ||
+                      err?.message === "UNAUTHORIZED"
+                    )
+                      throw error
+                    toast.error(t("billing.cancelUndoFailed"))
+                  }
+                })
+              }
+              className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-4 disabled:opacity-60"
+            >
+              {t("billing.cancelScheduledUndo")}
+            </button>
+          )}
+        </div>
+      )}
       {/* 정기결제 청구/미납 내역 (구독 계약이 없으면 자체적으로 숨김) */}
       <MembershipInvoicesSection />
       {/* 하단 액션 그룹 */}
@@ -135,7 +185,7 @@ export default function SubscriberSection({
           )}
         </div>
         {/* 해지 */}
-        {SHOW_MEMBERSHIP_CANCEL && (
+        {canCancel && (
           <div className="mt-6 flex flex-col items-start gap-2">
             <button
               type="button"
@@ -145,7 +195,9 @@ export default function SubscriberSection({
               {t("history.cancelMembership")}
             </button>
             <p className="text-muted-foreground text-xs">
-              {t("history.cancelWarning")}
+              {cancellationPreview?.isRecurring
+                ? t("history.cancelWarningRecurring")
+                : t("history.cancelWarning")}
             </p>
           </div>
         )}
@@ -155,8 +207,13 @@ export default function SubscriberSection({
         setOpen={setOpen}
         reasons={hasCancellationReasons ? cancellationReasons : []}
         isSubmitting={isCancelling}
-        refundEligible={refundEligible}
-        onConfirm={({ reasonCode, reasonText, refundReceiveAccount }) => {
+        preview={cancellationPreview}
+        onConfirm={({
+          reasonCode,
+          reasonText,
+          refundReceiveAccount,
+          cancelType,
+        }) => {
           // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
           // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
           startTransition(async () => {
@@ -164,7 +221,8 @@ export default function SubscriberSection({
               await cancelSubscription(
                 reasonCode,
                 reasonText,
-                refundReceiveAccount
+                refundReceiveAccount,
+                cancelType
               )
               setOpen(false)
               router.push(`/${countryCode}/mypage/membership`)

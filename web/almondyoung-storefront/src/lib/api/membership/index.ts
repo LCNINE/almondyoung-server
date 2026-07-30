@@ -1,6 +1,8 @@
 "use server"
 
 import type {
+  CancellationMode,
+  CancellationPreviewDto,
   CancellationReasonDto,
   CancellationReasonsResDto,
   CycleBenefitDto,
@@ -140,10 +142,12 @@ export async function getCancellationReasons(): Promise<
 }
 
 /**
- * 구독 취소
- * @param reasonCode 취소 사유 코드
- * @param reasonText 취소 사유 설명
- * @returns
+ * 구독 해지
+ *
+ * cancelType 을 명시해 해지 방식을 고객이 고른다.
+ * - AT_PERIOD_END: 잔여 기간 이용 후 종료 (환불 없음)
+ * - IMMEDIATE_REFUND: 즉시 종료 + 정책상 환불액 환불
+ * 생략하면 서버 권장값이 적용된다.
  */
 export async function cancelSubscription(
   reasonCode: string,
@@ -152,11 +156,41 @@ export async function cancelSubscription(
     bank: string
     accountNumber: string
     holderName: string
-  }
+  },
+  cancelType?: CancellationMode
 ) {
   return await api("membership", "/subscriptions/cancel", {
     method: "POST",
-    body: { reasonCode, reasonText, refundReceiveAccount },
+    body: { reasonCode, reasonText, refundReceiveAccount, cancelType },
+    withAuth: true,
+    cache: "no-store",
+  })
+}
+
+/**
+ * 해지 미리보기 — 선택 가능한 방식과 환불 금액.
+ * 화면에 보이는 금액과 실제 환불 금액이 어긋나지 않도록 서버 정책을 그대로 받아온다.
+ */
+export async function getCancellationPreview(): Promise<CancellationPreviewDto | null> {
+  try {
+    return await api<CancellationPreviewDto>(
+      "membership",
+      "/subscriptions/cancel-preview",
+      { method: "GET", withAuth: true, cache: "no-store" }
+    )
+  } catch (error) {
+    // 활성 구독이 없거나(404) 권한 만료면 해지 UI 를 숨기면 된다 — 페이지를 깨뜨리지 않는다.
+    if (error instanceof HttpApiError && error.status === 404) return null
+    throw error
+  }
+}
+
+/**
+ * 해지 예약 철회 — 자동결제를 재개한다.
+ */
+export async function undoCancellation() {
+  return await api("membership", "/subscriptions/cancel/undo", {
+    method: "POST",
     withAuth: true,
     cache: "no-store",
   })

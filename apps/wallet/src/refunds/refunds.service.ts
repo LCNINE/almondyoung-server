@@ -8,6 +8,7 @@ import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
+import { PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor } from '../providers/provider-descriptors';
 import { GATEWAY_AGGREGATE_TYPE, GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
 import { CreateRefundDto } from './dto';
 
@@ -277,6 +278,52 @@ export class RefundsService {
       });
     }
     return refund;
+  }
+
+  /**
+   * 이 결제를 실제로 환불할 수 있는지 판정한다.
+   *
+   * 호출자(멤버십 해지 화면·관리자 강제취소)가 "환불 됩니다" 라고 안내하기 전에 물어보는 길목이다.
+   * 효성 CMS(자동이체)처럼 PG 환불 API 자체가 없는 수단은 `autoRefundSupported=false` 로 내려가고,
+   * 이 경우 환불은 관리자가 계좌로 송금하는 수동 처리뿐이다.
+   */
+  async getRefundability(intentId: string): Promise<{
+    intentId: string;
+    refundableAmount: number;
+    alreadyRefundedAmount: number;
+    autoRefundSupported: boolean;
+    requiresReceiveAccount: boolean;
+    methodTypes: string[];
+  }> {
+    const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
+    const succeeded = await this.findSucceededRefundsByIntent(intentId);
+    const alreadyRefundedAmount = succeeded.reduce((sum, r) => sum + r.amount, 0);
+
+    const methodTypes: string[] = [];
+    let autoRefundSupported = refundableCharges.length > 0;
+    let requiresReceiveAccount = false;
+
+    for (const charge of refundableCharges) {
+      const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
+      const type = method?.type ?? 'UNKNOWN';
+      if (!methodTypes.includes(type)) methodTypes.push(type);
+
+      const descriptor: PaymentProviderDescriptor | undefined =
+        PAYMENT_PROVIDER_DESCRIPTORS[type as keyof typeof PAYMENT_PROVIDER_DESCRIPTORS];
+      // descriptor 를 모르는 수단은 안전한 쪽(수동 처리)으로 판정한다.
+      if (!descriptor || !descriptor.capabilities.includes('refund')) autoRefundSupported = false;
+      // 무통장은 송금할 계좌가 없으면 PENDING(수동)으로 떨어진다 — 미리 계좌를 받아야 한다.
+      if (type === 'BANK_TRANSFER') requiresReceiveAccount = true;
+    }
+
+    return {
+      intentId,
+      refundableAmount: refundableCharges.reduce((sum, c) => sum + c.amount, 0),
+      alreadyRefundedAmount,
+      autoRefundSupported,
+      requiresReceiveAccount,
+      methodTypes,
+    };
   }
 
   private async findSucceededRefundsByIntent(intentId: string): Promise<Refund[]> {

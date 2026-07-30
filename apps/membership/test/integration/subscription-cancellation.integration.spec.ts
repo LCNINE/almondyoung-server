@@ -6,6 +6,9 @@ import { SubscriptionContractReader } from '../../src/services/subscription/subs
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { CancellationReasonReader } from '../../src/services/subscription/cancellation-reason.reader';
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
+import { RefundPolicyService } from '../../src/services/subscription/refund-policy.service';
+import { CancellationContextReader } from '../../src/services/subscription/cancellation-context.reader';
+import { BenefitReader } from '../../src/services/benefit/benefit.reader';
 import { SubscriptionService } from '../../src/services/subscription.service';
 import { SubscriptionCreator } from '../../src/services/subscription/subscription.creator';
 import { SubscriptionManager } from '../../src/services/subscription/subscription.manager';
@@ -67,6 +70,10 @@ describe('Subscription Cancellation Integration Tests', () => {
         ContractEventManager,
         CancellationReasonReader,
         RefundEventHandler,
+        // 해지 정책 + 사실 수집 (미리보기와 실행이 같은 판단을 쓰는지 함께 검증)
+        RefundPolicyService,
+        CancellationContextReader,
+        BenefitReader,
         // 무료 체험 테스트를 위한 추가 providers
         SubscriptionService,
         SubscriptionCreator,
@@ -91,7 +98,16 @@ describe('Subscription Cancellation Integration Tests', () => {
           useValue: {
             directCharge: jest.fn().mockResolvedValue(undefined),
             refundMembershipPayment: jest.fn().mockResolvedValue(undefined),
-            refundByIntent: jest.fn().mockResolvedValue(undefined),
+            refundByIntent: jest.fn().mockResolvedValue({ status: 'SUCCEEDED', refundedAmount: 0 }),
+            getRefundability: jest.fn().mockResolvedValue({
+              intentId: 'intent',
+              refundableAmount: 0,
+              alreadyRefundedAmount: 0,
+              autoRefundSupported: true,
+              requiresReceiveAccount: false,
+              methodTypes: ['TOSS'],
+            }),
+            createBillingAgreement: jest.fn().mockResolvedValue(undefined),
             // async 메서드라 항상 Promise 를 반환한다 — fire-and-forget `.catch()` 대상이므로 반드시 resolved promise.
             revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
           },
@@ -262,7 +278,7 @@ describe('Subscription Cancellation Integration Tests', () => {
     it('✅ 무료 체험 기간 중 취소 - 정기결제 중단(환불 없음)', async () => {
       // 정책: 고객 셀프 해지는 무료체험 중이어도 환불하지 않고 정기결제만 중단한다(RECURRING_CANCELLED).
       // 자격은 기간말까지 유지되므로 계약 status 는 ACTIVE 로 남고 autoRenewal 만 꺼진다.
-      const result = await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD', '체험 기간 중 취소');
+      const result = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD', reasonText: '체험 기간 중 취소' });
 
       expect(result.type).toBe('RECURRING_CANCELLATION');
       expect(result.status).toBe('RECURRING_CANCELLED');
@@ -297,7 +313,7 @@ describe('Subscription Cancellation Integration Tests', () => {
         })
         .where(eq(schema.subscriptionContracts.id, testContractId));
 
-      const result = await cancellationService.cancelSubscription(testUserId, 'PRICE_TOO_HIGH');
+      const result = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'PRICE_TOO_HIGH' });
 
       if (result.type === 'RECURRING_CANCELLATION') {
         expect(result.status).toBe('RECURRING_CANCELLED');
@@ -313,10 +329,10 @@ describe('Subscription Cancellation Integration Tests', () => {
     it('✅ 정기해지 후 재해지 - 멱등적으로 정기결제 중단 유지', async () => {
       // 정기해지는 계약을 ACTIVE 로 두고 autoRenewal 만 끄므로(자격 유지), 재해지해도
       // 에러 없이 RECURRING_CANCELLATION 상태를 그대로 반환한다(멱등).
-      const first = await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD');
+      const first = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
       expect(first.status).toBe('RECURRING_CANCELLED');
 
-      const second = await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD');
+      const second = await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
       expect(second.type).toBe('RECURRING_CANCELLATION');
       expect(second.status).toBe('RECURRING_CANCELLED');
     });
@@ -386,7 +402,7 @@ describe('Subscription Cancellation Integration Tests', () => {
   describe('Task 6: Wallet 환불 이벤트 처리', () => {
     beforeEach(async () => {
       // 취소 상태로 만들기
-      await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD');
+      await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
     });
 
     it('✅ 환불 완료 이벤트 처리', async () => {
@@ -465,7 +481,7 @@ describe('Subscription Cancellation Integration Tests', () => {
   describe('Task 7: 이벤트 소싱 통합 확인', () => {
     it('✅ 전체 플로우 이벤트 추적', async () => {
       // 1. 취소
-      await cancellationService.cancelSubscription(testUserId, 'TRIAL_PERIOD');
+      await cancellationService.cancelSubscription(testUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
 
       // 2. 환불 완료
       await refundEventHandler.handleRefundCompleted({
@@ -537,7 +553,7 @@ describe('Subscription Cancellation Integration Tests', () => {
       await subscriptionService.createSubscription(newUserId, testPlanId);
 
       // 2. 취소
-      await cancellationService.cancelSubscription(newUserId, 'TRIAL_PERIOD', '체험 후 결정');
+      await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD', reasonText: '체험 후 결정' });
 
       // 3. 재구독
       const secondResult = await subscriptionService.createSubscription(newUserId, testPlanId);
@@ -567,11 +583,11 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       // 1차: 구독 → 취소
       await subscriptionService.createSubscription(newUserId, testPlanId);
-      await cancellationService.cancelSubscription(newUserId, 'TRIAL_PERIOD');
+      await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
 
       // 2차: 재구독 → 취소
       await subscriptionService.createSubscription(newUserId, testPlanId);
-      await cancellationService.cancelSubscription(newUserId, 'TRIAL_PERIOD');
+      await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
 
       // 3차: 재구독
       const thirdResult = await subscriptionService.createSubscription(newUserId, testPlanId);

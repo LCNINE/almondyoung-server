@@ -22,7 +22,7 @@ export interface ImmediateCancellationResult {
   cancelledAt: Date;
   refundEligible: boolean;
   refundAmount: number;
-  refundStatus: 'PENDING' | 'NOT_APPLICABLE';
+  refundStatus: 'COMPLETED' | 'PENDING' | 'FAILED' | 'NOT_APPLICABLE';
   message: string;
 }
 
@@ -38,33 +38,29 @@ export interface RecurringCancellationResult {
   message: string;
 }
 
+export interface UndoCancellationResult {
+  type: 'CANCELLATION_UNDONE';
+  contractId: string;
+  status: 'ACTIVE';
+  autoRenewal: true;
+  nextBillingDate: string;
+  message: string;
+}
+
+/** 환불 실행 결과를 계약에 기록할 때 쓰는 최소 형태 */
+export interface RefundRecord {
+  status: 'SUCCEEDED' | 'PENDING' | 'FAILED';
+  refundedAmount: number;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 @Injectable()
 export class SubscriptionCancellationManager {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
   ) {}
-
-  /**
-   * 환불 가능 여부 판단 (정책 기반)
-   */
-  checkRefundEligibility(contract: Contract, plan: Plan): RefundEligibility {
-    // 검증: 계약과 플랜 존재 확인
-    if (!contract) {
-      throw new Error('Contract not found');
-    }
-    if (!plan) {
-      throw new Error('Plan not found');
-    }
-
-    // 고객 셀프 해지는 자동 환불을 만들지 않는다.
-    // 서비스 장애/기술 오류 예외 환불은 어드민 강제 취소 경로에서 금액을 산정해 처리한다.
-    return {
-      eligible: false,
-      reason: '이용 시작 후 환불 불가',
-      amount: 0,
-    };
-  }
 
   /**
    * 즉시 취소 처리 (환불 가능 시점)
@@ -158,13 +154,17 @@ export class SubscriptionCancellationManager {
   }
 
   /**
-   * 정기결제 중단 처리 (환불 불가능 시점)
+   * 해지 예약 — 잔여 기간은 그대로 이용하고 이후 자동결제만 끊는다.
+   *
+   * 1회 결제 계약에도 같은 전이를 쓰지만(추가 청구가 없다는 사실을 기록), 안내 문구는 다르다.
+   * "정기결제가 중단되었습니다" 를 1회 결제 고객에게 보여주면 존재하지 않는 정기결제를 끊은 것처럼 읽힌다.
    */
   async cancelRecurringPayment(
     userId: string,
     contract: Contract,
     reasonCode: string,
     reasonText: string | undefined,
+    isRecurring = true,
   ): Promise<RecurringCancellationResult> {
     return await this.dbService.db.transaction(async (tx) => {
       // 1. 현재 권한 조회 (만료일 확인)
@@ -234,8 +234,120 @@ export class SubscriptionCancellationManager {
         currentPeriodEndsAt: entitlement.endsAt,
         autoRenewal: false,
         refundEligible: false,
-        message: `정기결제가 중단되었습니다. 현재 구독은 ${entitlement.endsAt}까지 유효합니다.`,
+        message: isRecurring
+          ? `정기결제가 중단되었습니다. 멤버십은 ${entitlement.endsAt}까지 이용하실 수 있습니다.`
+          : `해지 접수되었습니다. 1회 결제 건이므로 추가 결제는 없으며, 멤버십은 ${entitlement.endsAt}까지 이용하실 수 있습니다.`,
       };
+    });
+  }
+
+  /**
+   * 해지 예약 철회 — 자동결제를 되살린다.
+   *
+   * 호출 전에 wallet 자동이체 약정이 복구돼 있어야 한다(Service 책임). nextBillingDate 는 현재 주기
+   * 종료일로 복구해 다음 청구가 정확히 만료일에 잡히게 한다.
+   */
+  async undoRecurringCancellation(
+    userId: string,
+    contract: Contract,
+    periodEndsAt: string,
+  ): Promise<UndoCancellationResult> {
+    return await this.dbService.db.transaction(async (tx) => {
+      const [batch] = await tx
+        .insert(schema.eventBatches)
+        .values({
+          type: 'RECURRING_CANCELLATION_UNDONE',
+          effectiveDate: new Date().toISOString().split('T')[0],
+        })
+        .returning();
+
+      const event = await this.contractEventManager.addEvent(
+        tx,
+        contract.id,
+        'RECURRING_CANCELLATION_UNDONE',
+        {
+          recurringCancelledAtBefore: contract.recurringCancelledAt,
+          nextBillingDateAfter: periodEndsAt,
+        },
+        'USER',
+        userId,
+        batch.id,
+        userId,
+      );
+
+      await tx
+        .update(schema.subscriptionContracts)
+        .set({
+          recurringCancelledAt: null,
+          recurringCancellationReasonCode: null,
+          autoRenewal: true,
+          nextBillingDate: periodEndsAt,
+          lastEventId: event.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+
+      return {
+        type: 'CANCELLATION_UNDONE',
+        contractId: contract.id,
+        status: 'ACTIVE',
+        autoRenewal: true,
+        nextBillingDate: periodEndsAt,
+        message: `해지 예약이 철회되었습니다. ${periodEndsAt}에 다음 결제가 진행됩니다.`,
+      };
+    });
+  }
+
+  /**
+   * 환불 실행 결과 기록.
+   *
+   * refund_completed 는 돈이 실제로 돌아간 경우에만 true 다. 수동 송금 대기(PENDING)·실패(FAILED)는
+   * 계약 이벤트로 남겨 관리자가 후속 처리를 찾을 수 있게 한다.
+   */
+  async recordRefundOutcome(
+    contractId: string,
+    userId: string,
+    requestedAmount: number,
+    outcome: RefundRecord,
+  ): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      const eventType =
+        outcome.status === 'SUCCEEDED'
+          ? 'REFUND_COMPLETED'
+          : outcome.status === 'PENDING'
+            ? 'REFUND_PENDING'
+            : 'REFUND_FAILED';
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        eventType,
+        {
+          requestedAmount,
+          refundedAmount: outcome.refundedAmount,
+          errorCode: outcome.errorCode ?? null,
+          errorMessage: outcome.errorMessage ?? null,
+        },
+        'SYSTEM',
+        userId,
+      );
+
+      if (outcome.status === 'SUCCEEDED') {
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ refundCompleted: true, refundCompletedAt: new Date(), updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
+      }
+    });
+  }
+
+  /**
+   * wallet 약정 해지 실패를 계약 이벤트로 남긴다.
+   * 재청구는 autoRenewal=false + nextBillingDate=null 로 이미 막혀 있으므로, 이 기록은 정리 작업용이다.
+   */
+  async markAgreementRevokePending(contractId: string, userId: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      await this.contractEventManager.addEvent(tx, contractId, 'AGREEMENT_REVOKE_PENDING', {}, 'SYSTEM', userId);
     });
   }
 

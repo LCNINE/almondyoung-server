@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, desc } from 'drizzle-orm';
+import { eq, and, desc, gte, sum } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { differenceInDays, addDays } from 'date-fns';
@@ -129,6 +129,28 @@ export class BenefitReader {
   /**
    * 할인 이벤트 조회 (주문 ID로)
    */
+  /**
+   * 특정 날짜 이후 실제로 받은 할인 혜택 합계.
+   *
+   * 연간 중도해지 정산에서 차감할 금액이다. 취소된 주문(is_cancelled)은 혜택을 받지 않았으므로 제외한다.
+   * 30일 집계주기 단위인 membership_cycle_benefits 가 아니라 주문 단위 원장을 쓰는 이유는,
+   * 연간 계약은 결제 주기(365일)와 집계 주기(30일)가 달라 주기 합산이 기간 경계와 맞지 않기 때문이다.
+   */
+  async sumBenefitDiscountSince(userId: string, from: Date): Promise<number> {
+    const [row] = await this.db.db
+      .select({ total: sum(schema.membershipDiscountEvents.discountAmount) })
+      .from(schema.membershipDiscountEvents)
+      .where(
+        and(
+          eq(schema.membershipDiscountEvents.userId, userId),
+          eq(schema.membershipDiscountEvents.isCancelled, false),
+          gte(schema.membershipDiscountEvents.orderDate, from),
+        ),
+      );
+
+    return Number(row?.total ?? 0);
+  }
+
   async findDiscountEventByOrderId(orderId: string) {
     const [event] = await this.db.db
       .select()

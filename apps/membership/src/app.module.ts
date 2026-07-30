@@ -27,6 +27,9 @@ import { SubscriptionCancellationService } from './services/subscription-cancell
 import { SubscriptionContractReader } from './services/subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './services/subscription/cancellation-reason.reader';
+import { CancellationContextReader } from './services/subscription/cancellation-context.reader';
+import { RefundPolicyService } from './services/subscription/refund-policy.service';
+import { RefundEventHandler } from './services/refund-event-handler.service';
 import { SubscriptionCreator } from './services/subscription/subscription.creator';
 import { SubscriptionManager } from './services/subscription/subscription.manager';
 import { EntitlementReader } from './services/entitlement/entitlement.reader';
@@ -146,6 +149,7 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     SubscriptionManager,
     SubscriptionCancellationManager,
     CancellationReasonReader,
+    CancellationContextReader,
 
     PauseReader,
     PauseManager,
@@ -163,6 +167,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     InvoiceOutcomeHandler,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
+    // 해지·환불 정책 (연간 정산 / 청약철회 창)
+    RefundPolicyService,
+    RefundEventHandler,
     // Infrastructure
     PaymentClientService,
     MembershipEventPublisher,

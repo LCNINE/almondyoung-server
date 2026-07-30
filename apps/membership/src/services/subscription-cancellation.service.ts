@@ -1,24 +1,30 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { EntitlementService } from './entitlement.service';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import {
   SubscriptionCancellationManager,
   ImmediateCancellationResult,
   RecurringCancellationResult,
+  UndoCancellationResult,
 } from './subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './subscription/cancellation-reason.reader';
 import { MembershipEventPublisher } from './membership-event.publisher';
-import { PaymentClientService } from './billing/payment-client.service';
-import { BenefitReader } from './benefit/benefit.reader';
-import { RefundEligibility } from './subscription/subscription-cancellation.manager';
+import { PaymentClientService, RefundOutcome } from './billing/payment-client.service';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
+import { CancellationContext, CancellationContextReader } from './subscription/cancellation-context.reader';
+import {
+  CancellationMode,
+  CancellationOption,
+  REFUND_PROCESSING_BUSINESS_DAYS,
+  WITHDRAWAL_WINDOW_DAYS,
+} from './subscription/refund-policy.service';
 
 type RefundReceiveAccount = { bank: string; accountNumber: string; holderName: string };
 
-// 하위 호환성을 위한 타입 export
 export type {
   ImmediateCancellationResult,
   RecurringCancellationResult,
+  UndoCancellationResult,
 } from './subscription/subscription-cancellation.manager';
 export type { CancellationReason } from './subscription/cancellation-reason.reader';
 
@@ -31,104 +37,147 @@ export interface CancellationResult {
   refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE';
 }
 
+/** 고객·관리자에게 보여줄 해지 선택지 미리보기 */
+export interface CancellationPreview {
+  contractId: string;
+  planName: { durationDays: number; price: number };
+  isRecurring: boolean;
+  alreadyScheduledForCancellation: boolean;
+  recurringCancelledAt: string | null;
+  currentPeriodEndsAt: string;
+  nextBillingDate: string | null;
+  recommendedMode: CancellationMode;
+  withdrawalDaysRemaining: number;
+  withdrawalWindowDays: number;
+  refundProcessingBusinessDays: number;
+  options: CancellationOption[];
+}
+
 /**
- * 구독 취소 서비스 (Business Layer)
+ * 구독 해지 서비스 (Business Layer)
  *
- * 역할: 비즈니스 흐름만 표현 (2-3줄)
- * - 검증 로직 없음 (Manager가 담당)
- * - 상세 구현 없음 (Manager가 담당)
- * - 협력 도구 클래스들을 중계
+ * 흐름만 표현한다. 환불 정책 판단은 RefundPolicyService, 사실 수집은 CancellationContextReader,
+ * 쓰기는 SubscriptionCancellationManager 가 담당한다.
  */
 @Injectable()
 export class SubscriptionCancellationService {
   private readonly logger = new Logger(SubscriptionCancellationService.name);
 
   constructor(
-    private readonly entitlementService: EntitlementService,
     private readonly contractReader: SubscriptionContractReader,
+    private readonly contextReader: CancellationContextReader,
     private readonly cancellationManager: SubscriptionCancellationManager,
     private readonly reasonReader: CancellationReasonReader,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
-    private readonly benefitReader: BenefitReader,
     private readonly invoiceBillingManager: InvoiceBillingManager,
   ) {}
 
   /**
-   * 통합 구독 취소 (자동 분기)
+   * 해지 미리보기 — 고객이 무엇을 고를 수 있고 얼마가 환불되는지.
    *
-   * ✅ 흐름만 표현: "권한 체크 → 계약 조회 → 상태 검증 → 환불 판단 → 취소 실행"
+   * 실제 해지와 같은 컨텍스트/정책을 쓰므로 화면에 보인 금액과 실행 금액이 어긋나지 않는다.
+   */
+  async previewCancellation(userId: string): Promise<CancellationPreview> {
+    const context = await this.loadContextForUser(userId);
+    return this.toPreview(context);
+  }
+
+  /** 관리자 환불 견적 — 계약 ID 기준. 강제취소 다이얼로그의 금액 계산기. */
+  async previewCancellationByContract(contractId: string): Promise<CancellationPreview> {
+    const contract = await this.contractReader.findById(contractId);
+    if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
+
+    const plan = await this.contractReader.findPlan(contract.planId);
+    if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
+
+    const context = await this.contextReader.load({ contract, plan });
+    if (!context) throw new ConflictError('활성 이용 권한이 없어 해지 견적을 낼 수 없습니다.');
+
+    return this.toPreview(context);
+  }
+
+  /**
+   * 고객 셀프 해지.
+   *
+   * 흐름: 계약 조회 → 선택한 방식 검증 → 상태 전이 → 환불 실행 → 자동청구 원천 차단 → 이벤트 발행
    */
   async cancelSubscription(
     userId: string,
-    email: string,
-    reasonCode: string,
-    reasonText?: string,
-    refundReceiveAccount?: RefundReceiveAccount,
+    email: string | undefined,
+    params: {
+      reasonCode: string;
+      reasonText?: string;
+      /** 고객이 고른 해지 방식. 생략하면 정책 권장값. */
+      cancelType?: CancellationMode;
+      refundReceiveAccount?: RefundReceiveAccount;
+    },
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
-    // 1. ACTIVE 계약 조회
-    const data = await this.contractReader.findContractWithPlan(userId);
-    if (!data) {
-      // ACTIVE 계약이 없으면 취소된 계약이 있는지 확인
-      const allContracts = await this.contractReader.findContractsByUserId(userId);
-      const hasCancelledContract = allContracts.some((c) => c.status === 'CANCELLED');
+    const context = await this.loadContextForUser(userId);
+    const { contract, plan, decision } = context;
 
-      if (hasCancelledContract) {
-        throw new Error('Contract already cancelled');
-      }
+    const mode = params.cancelType ?? decision.recommendedMode;
+    const option = mode === 'IMMEDIATE_REFUND' ? decision.immediateRefund : decision.atPeriodEnd;
 
-      throw new Error('Active subscription not found');
+    if (!option.available) {
+      throw new BadRequestError(option.unavailableReason ?? '선택한 해지 방식을 사용할 수 없습니다.');
+    }
+    if (mode === 'AT_PERIOD_END' && context.alreadyScheduledForCancellation) {
+      throw new ConflictError('이미 해지 예약된 구독입니다.');
+    }
+    if (option.requiresReceiveAccount && mode === 'IMMEDIATE_REFUND' && !params.refundReceiveAccount) {
+      throw new BadRequestError('환불받을 계좌 정보가 필요합니다.');
     }
 
-    // 이번 주기 혜택 미사용이면 결제액 전액 환불 대상 (단건/정기 공통)
-    const eligibility = await this.resolveRefundEligibility(userId, data.contract, data.plan);
+    const result =
+      mode === 'IMMEDIATE_REFUND'
+        ? await this.cancellationManager.cancelImmediately(userId, contract, plan, params.reasonCode, params.reasonText, {
+            eligible: option.refundAmount > 0,
+            reason: option.refundKind,
+            amount: option.refundAmount,
+          })
+        : await this.cancellationManager.cancelRecurringPayment(
+            userId,
+            contract,
+            params.reasonCode,
+            params.reasonText,
+            context.isRecurring,
+          );
 
-    const result = eligibility.eligible
-      ? await this.cancellationManager.cancelImmediately(
-          userId,
-          data.contract,
-          data.plan,
-          reasonCode,
-          reasonText,
-          eligibility,
-        )
-      : await this.cancellationManager.cancelRecurringPayment(userId, data.contract, reasonCode, reasonText);
-
-    // 환불 실행 — eligible 이고 결제 intent 가 있을 때만. 실패해도 취소 자체는 유지되고
-    // 최종 상태는 wallet 의 환불 완료/실패 이벤트(RefundEventHandler)가 확정한다.
-    if (eligibility.eligible && data.contract.lastPaymentIntentId && eligibility.amount > 0) {
-      try {
-        await this.paymentClientService.refundByIntent(
-          data.contract.lastPaymentIntentId,
-          eligibility.amount,
-          reasonCode,
-          reasonText,
-          refundReceiveAccount,
-        );
-      } catch (err) {
-        this.logger.error(
-          `셀프해지 환불 요청 실패 (contractId=${data.contract.id}, intentId=${data.contract.lastPaymentIntentId}, amount=${eligibility.amount}): ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-          err instanceof Error ? err.stack : undefined,
-        );
-      }
+    if (mode === 'IMMEDIATE_REFUND' && option.refundAmount > 0) {
+      const outcome = await this.executeRefund({
+        contractId: contract.id,
+        userId: contract.userId,
+        intentId: contract.lastPaymentIntentId,
+        amount: option.refundAmount,
+        reasonCode: params.reasonCode,
+        reasonText: params.reasonText,
+        refundReceiveAccount: params.refundReceiveAccount,
+        // 자동환불이 불가능한 수단(효성 CMS)은 애초에 호출하지 않고 수동 처리로 남긴다.
+        manualOnly: option.refundExecution === 'MANUAL',
+      });
+      (result as ImmediateCancellationResult).refundStatus = this.toRefundStatus(outcome);
     }
 
-    // 즉시취소·정기해지 모두 향후 자동청구가 없으므로 wallet billing_agreement 를 해지한다(재청구 원천 차단).
-    this.paymentClientService
-      .revokeBillingAgreement(data.contract.id)
-      .catch((err: Error) =>
-        this.logger.error(
-          `billing_agreement revoke 실패 (contractId=${data.contract.id}): ${err?.message}`,
-          err?.stack,
-        ),
+    // 자동이체 약정 종료(재청구 원천 차단 + 은행에 걸린 효성 약정 정리 + 마감 전 예정 출금 취소).
+    //
+    // 단, INVOICE 경로의 해지예약은 미뤄야 한다 — 자격을 선지급했고 그 기간의 수금이 아직 남아 있어서,
+    // 지금 약정을 지우면 출금이 실패해 무료 이용이 된다. 인보이스가 정산/소멸될 때
+    // InvoiceOutcomeHandler 가 약정을 종료한다.
+    const deferForInvoiceCollection =
+      contract.billingPath === 'INVOICE' && result.type === 'RECURRING_CANCELLATION';
+    if (deferForInvoiceCollection) {
+      this.logger.log(
+        `자동이체 약정 종료 보류 — 남은 인보이스 수금 후 처리 (contractId=${contract.id})`,
       );
+    } else {
+      await this.revokeBillingAgreementSafely(contract.id, contract.userId);
+    }
 
     // 즉시취소(자격 회수)만 인보이스를 무효화한다 — 해지예약은 자격이 유지되는 기간의 수금이
-    // 계속돼야 하므로 void 하면 30일 무료가 된다.
-    if (data.contract.billingPath === 'INVOICE' && result.type === 'IMMEDIATE_CANCELLATION') {
-      await this.invoiceBillingManager.voidInvoicesForContract(data.contract.id, 'SUBSCRIPTION_CANCELLED');
+    // 계속돼야 하므로 void 하면 무료 이용이 된다.
+    if (contract.billingPath === 'INVOICE' && result.type === 'IMMEDIATE_CANCELLATION') {
+      await this.invoiceBillingManager.voidInvoicesForContract(contract.id, 'SUBSCRIPTION_CANCELLED');
     }
 
     await this.membershipEventPublisher.publishStatusChanged({
@@ -136,64 +185,62 @@ export class SubscriptionCancellationService {
       email,
       status: result.type === 'IMMEDIATE_CANCELLATION' ? 'CANCELLED' : 'RECURRING_CANCELLED',
       occurredAt: new Date().toISOString(),
-      contractId: data.contract.id,
-      planId: data.plan.id,
-      tierId: data.plan.tierId,
-      reasonCode,
-      reasonText,
+      contractId: contract.id,
+      planId: plan.id,
+      tierId: plan.tierId,
+      reasonCode: params.reasonCode,
+      reasonText: params.reasonText,
     });
 
     return result;
   }
 
   /**
-   * 셀프 해지 환불 자격 판단
+   * 해지 예약 철회 (고객).
    *
-   * 정책: 이번 결제 주기에 멤버십 혜택(멤버십가 구매·웰컴딜 등 할인 적용 주문)을 하나도
-   * 사용하지 않았고, 환불 대상 결제 intent 가 있으면 결제액 전액 환불 대상.
-   * 혜택을 한 번이라도 사용했으면 환불 불가 (기간 만료까지 이용 후 종료).
+   * 잔여기간이 남아있는 정기해지만 되돌릴 수 있다. 자동갱신을 되살리기 전에 wallet 자동이체 약정을
+   * 먼저 복구해야 한다 — 해지 때 REVOKE 했으므로, 순서를 뒤집으면 다음 청구가
+   * BILLING_AGREEMENT_NOT_FOUND 로 실패하고 즉시 해지로 이어진다.
    */
-  private async resolveRefundEligibility(
-    userId: string,
-    contract: { billingDate: string; lastPaymentIntentId: string | null },
-    plan: { price: number; durationDays: number },
-  ): Promise<RefundEligibility> {
-    if (!contract.lastPaymentIntentId) {
-      return { eligible: false, reason: '환불 대상 결제 내역 없음', amount: 0 };
+  async undoCancellation(userId: string, email: string | undefined): Promise<UndoCancellationResult> {
+    const data = await this.contractReader.findContractWithPlan(userId);
+    if (!data) throw new NotFoundError('활성 구독이 없습니다.');
+    if (!data.contract.recurringCancelledAt) {
+      throw new ConflictError('해지 예약된 구독이 아닙니다.');
     }
 
-    const subscriptionType = plan.durationDays === 30 ? 'MONTHLY' : 'YEAR';
-    const cycle = await this.benefitReader.findCurrentCycleBenefit(userId, new Date(contract.billingDate), subscriptionType);
-    const benefitUsed = cycle.orderCount > 0 || cycle.totalDiscountAmount > 0;
-
-    if (benefitUsed) {
-      return { eligible: false, reason: '이번 주기 혜택 사용 이력 있음', amount: 0 };
+    const entitlement = await this.contractReader.findCurrentEntitlement(userId);
+    if (!entitlement) {
+      throw new ConflictError('이용 기간이 만료돼 해지 철회로 복구할 수 없습니다. 재가입이 필요합니다.');
     }
 
-    // 정책: 이번 주기 혜택 미사용이면 결제액 전액 환불 (일할 계산/부분 환불은 하지 않음).
-    return { eligible: true, reason: '이번 주기 혜택 미사용', amount: plan.price };
+    // 약정 복구가 실패하면 상태를 되살리지 않는다(청구 불가 상태로 되살아나는 좀비 계약 방지).
+    await this.paymentClientService.createBillingAgreement(userId, data.contract.id);
+
+    const result = await this.cancellationManager.undoRecurringCancellation(
+      userId,
+      data.contract,
+      entitlement.endsAt,
+    );
+
+    await this.membershipEventPublisher.publishStatusChanged({
+      userId,
+      email,
+      status: 'ACTIVE',
+      occurredAt: new Date().toISOString(),
+      contractId: data.contract.id,
+      planId: data.plan.id,
+      tierId: data.plan.tierId,
+    });
+
+    return result;
   }
 
   /**
-   * 환불 금액 계산
+   * 강제 구독 취소 (관리자 전용).
    *
-   * ✅ 흐름만 표현: "계약 조회 → 플랜 조회 → 환불 자격 확인"
-   */
-  async calculateRefundAmount(contractId: string): Promise<number> {
-    const contract = await this.contractReader.findById(contractId);
-    if (!contract) throw new Error('Contract not found');
-
-    const plan = await this.contractReader.findPlan(contract.planId);
-    if (!plan) throw new Error('Plan not found');
-
-    const eligibility = await this.cancellationManager.checkRefundEligibility(contract, plan);
-    return eligibility.amount;
-  }
-
-  /**
-   * 강제 구독 취소 (관리자 전용)
-   *
-   * ✅ 흐름만 표현: "계약 조회 → 플랜 조회 → 강제 취소 실행"
+   * 관리자는 정책 계산과 무관하게 금액을 정할 수 있다(장애 보상 등). 대신 실제 환불 결과를
+   * 그대로 돌려준다 — 자동환불이 불가능한 수단이면 FAILED/PENDING 으로 표시돼야 한다.
    */
   async forceCancelSubscription(
     contractId: string,
@@ -202,12 +249,13 @@ export class SubscriptionCancellationService {
     refundType: 'FULL' | 'PARTIAL' | 'NONE',
     partialRefundAmount?: number,
     refundReason?: string,
+    refundReceiveAccount?: RefundReceiveAccount,
   ): Promise<CancellationResult> {
     const contract = await this.contractReader.findById(contractId);
-    if (!contract) throw new Error('Contract not found');
+    if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
 
     const plan = await this.contractReader.findPlan(contract.planId);
-    if (!plan) throw new Error('Plan not found');
+    if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
 
     const result = await this.cancellationManager.forceCancelSubscription(
       contract,
@@ -219,12 +267,7 @@ export class SubscriptionCancellationService {
       refundReason,
     );
 
-    // 강제 취소도 향후 자동청구가 없으므로 wallet billing_agreement 를 해지한다(재청구 원천 차단).
-    this.paymentClientService
-      .revokeBillingAgreement(contract.id)
-      .catch((err: Error) =>
-        this.logger.error(`billing_agreement revoke 실패 (contractId=${contract.id}): ${err?.message}`, err?.stack),
-      );
+    await this.revokeBillingAgreementSafely(contract.id, contract.userId);
 
     // 인보이스 경로(ADR-0027) 계약이면 열린 인보이스도 무효화 — 취소 뒤 출금 방지.
     if (contract.billingPath === 'INVOICE') {
@@ -243,34 +286,159 @@ export class SubscriptionCancellationService {
       reasonText: reason,
     });
 
-    if (result.refundAmount <= 0 || !contract.lastPaymentIntentId) {
-      return result;
+    if (result.refundAmount <= 0) return result;
+
+    const outcome = await this.executeRefund({
+      contractId: contract.id,
+      userId: contract.userId,
+      intentId: contract.lastPaymentIntentId,
+      amount: result.refundAmount,
+      reasonCode: 'ADMIN_CANCEL',
+      reasonText: refundReason ?? reason,
+      refundReceiveAccount,
+      manualOnly: false,
+    });
+
+    return { ...result, refundStatus: this.toRefundStatus(outcome) };
+  }
+
+  async getCancellationReasons() {
+    return this.reasonReader.findActiveReasons();
+  }
+
+  private async loadContextForUser(userId: string): Promise<CancellationContext> {
+    const data = await this.contractReader.findContractWithPlan(userId);
+    if (!data) {
+      const allContracts = await this.contractReader.findContractsByUserId(userId);
+      if (allContracts.some((c) => c.status === 'CANCELLED')) {
+        throw new ConflictError('이미 해지된 구독입니다.');
+      }
+      throw new NotFoundError('활성 구독이 없습니다.');
     }
 
-    try {
-      await this.paymentClientService.refundByIntent(
-        contract.lastPaymentIntentId,
-        result.refundAmount,
-        'ADMIN_CANCEL',
-        refundReason ?? reason,
-      );
-      return { ...result, refundStatus: 'COMPLETED' };
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(
-        `강제 취소 환불 실패 (contractId=${contractId}, amount=${result.refundAmount}): ${msg}`,
-        err instanceof Error ? err.stack : undefined,
-      );
-      return { ...result, refundStatus: 'FAILED' };
-    }
+    const context = await this.contextReader.load({ contract: data.contract, plan: data.plan });
+    if (!context) throw new ConflictError('활성 이용 권한이 없습니다.');
+    return context;
+  }
+
+  private toPreview(context: CancellationContext): CancellationPreview {
+    return {
+      contractId: context.contract.id,
+      planName: { durationDays: context.plan.durationDays, price: context.plan.price },
+      isRecurring: context.isRecurring,
+      alreadyScheduledForCancellation: context.alreadyScheduledForCancellation,
+      recurringCancelledAt: context.contract.recurringCancelledAt?.toISOString() ?? null,
+      currentPeriodEndsAt: context.entitlement.endsAt,
+      nextBillingDate: context.contract.nextBillingDate ?? null,
+      recommendedMode: context.decision.recommendedMode,
+      withdrawalDaysRemaining: context.decision.withdrawalDaysRemaining,
+      withdrawalWindowDays: WITHDRAWAL_WINDOW_DAYS,
+      refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
+      options: [context.decision.atPeriodEnd, context.decision.immediateRefund],
+    };
   }
 
   /**
-   * 취소 이유 목록 조회
+   * 환불 실행 + 결과를 계약에 기록.
    *
-   * ✅ 흐름만 표현: "Reader 호출"
+   * 자동환불이 불가능한 수단(효성 CMS)은 wallet 을 호출해도 반드시 FAILED 로 떨어지므로 호출하지 않고
+   * 곧바로 '수동 송금 대기'로 남긴다. 관리자가 계좌 송금 후 완료 처리해야 한다.
    */
-  async getCancellationReasons() {
-    return this.reasonReader.findActiveReasons();
+  private async executeRefund(params: {
+    contractId: string;
+    userId: string;
+    intentId: string | null;
+    amount: number;
+    reasonCode: string;
+    reasonText?: string;
+    refundReceiveAccount?: RefundReceiveAccount;
+    manualOnly: boolean;
+  }): Promise<RefundOutcome> {
+    if (!params.intentId) {
+      const outcome: RefundOutcome = { status: 'FAILED', refundedAmount: 0, errorCode: 'NO_PAYMENT_INTENT' };
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      return outcome;
+    }
+
+    if (params.manualOnly) {
+      const outcome: RefundOutcome = {
+        status: 'PENDING',
+        refundedAmount: 0,
+        errorCode: 'MANUAL_TRANSFER_REQUIRED',
+        errorMessage: '자동이체(효성 CMS) 결제는 PG 환불이 불가해 관리자 계좌 송금으로 처리해야 합니다.',
+      };
+      this.logger.warn(
+        `수동 환불 대기 등록 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount})`,
+      );
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      return outcome;
+    }
+
+    try {
+      const outcome = await this.paymentClientService.refundByIntent(
+        params.intentId,
+        params.amount,
+        params.reasonCode,
+        params.reasonText,
+        params.refundReceiveAccount,
+      );
+      if (outcome.status !== 'SUCCEEDED') {
+        this.logger.error(
+          `환불 미완료 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount}, status=${outcome.status}, code=${outcome.errorCode})`,
+        );
+      }
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      return outcome;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(
+        `환불 요청 실패 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount}): ${message}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      const outcome: RefundOutcome = { status: 'FAILED', refundedAmount: 0, errorCode: 'REFUND_REQUEST_ERROR', errorMessage: message };
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      return outcome;
+    }
+  }
+
+  private toRefundStatus(outcome: RefundOutcome): CancellationResult['refundStatus'] {
+    if (outcome.status === 'SUCCEEDED') return 'COMPLETED';
+    if (outcome.status === 'PENDING') return 'PENDING';
+    return 'FAILED';
+  }
+
+  /**
+   * 자동이체 약정 종료. 예정 출금 취소 → 약정 REVOKE → 효성 회원삭제까지 이어진다.
+   *
+   * 효성에는 약정해지 API 가 없고 회원삭제가 유일한 종료 수단이라, wallet 로컬 상태만 REVOKE 하면
+   * 고객의 자동이체 약정이 은행에 그대로 남는다. 실패해도 해지 자체는 유지하되 계약 이벤트로
+   * 후속 정리 대상을 남긴다(재청구는 DB 의 autoRenewal=false + nextBillingDate=null 로 이미 막혀 있다).
+   */
+  private async revokeBillingAgreementSafely(contractId: string, userId: string): Promise<void> {
+    try {
+      const result = await this.paymentClientService.terminateBillingMandate(contractId);
+      if (result.cancelledWithdrawals > 0) {
+        this.logger.log(
+          `해지에 따라 예정 출금 ${result.cancelledWithdrawals}건 취소 (contractId=${contractId}) — 해당 금액은 출금되지 않는다.`,
+        );
+      }
+      if (!result.mandateTerminated) {
+        // 결제수단이 다른 활성 구독과 공유되는 정상 케이스도 여기로 온다(skipReason 으로 구분).
+        this.logger.warn(
+          `자동이체 약정 미종료 (contractId=${contractId}, reason=${result.skipReason ?? 'UNKNOWN'})`,
+        );
+        if (result.skipReason !== 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT') {
+          await this.cancellationManager.markAgreementRevokePending(contractId, userId);
+        }
+      }
+    } catch (err) {
+      this.logger.error(
+        `자동이체 약정 종료 실패 — 자동청구는 DB 플래그로 차단됨, 약정 정리는 재시도 필요 (contractId=${contractId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      await this.cancellationManager.markAgreementRevokePending(contractId, userId);
+    }
   }
 }
