@@ -29,6 +29,8 @@ export type ProductDetailView = {
   descriptionHtml: string | null;
   brand: string | null;
   supplierId?: string | null;
+  supplyPrice?: number | null;
+  marketPrice?: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -66,6 +68,9 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     description: master.description,
     descriptionHtml: master.descriptionHtml,
     brand: master.brand,
+    supplierId: master.supplierId ?? null,
+    supplyPrice: master.supplyPrice ?? null,
+    marketPrice: master.marketPrice ?? null,
     seoTitle: master.seoTitle,
     seoDescription: master.seoDescription,
     seoKeywords: master.seoKeywords,
@@ -99,6 +104,8 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     descriptionHtml: detail.descriptionHtml,
     brand: detail.brand,
     supplierId: detail.supplierId ?? null,
+    supplyPrice: detail.supplyPrice ?? null,
+    marketPrice: detail.marketPrice ?? null,
     seoTitle: detail.seoTitle,
     seoDescription: detail.seoDescription,
     seoKeywords: detail.seoKeywords,

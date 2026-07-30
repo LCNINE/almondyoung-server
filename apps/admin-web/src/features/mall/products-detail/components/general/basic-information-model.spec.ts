@@ -84,6 +84,8 @@ describe('basic information editing model', () => {
       name: 'Draft Product',
       brand: 'Almond',
       supplierId: null,
+      supplyPriceText: '',
+      marketPriceText: '',
       seoTitle: 'SEO title',
       seoDescription: 'SEO description',
       seoKeywordsText: 'almond, young',
@@ -102,6 +104,8 @@ describe('basic information editing model', () => {
       toBasicInformationUpdateDto({
         name: '  Edited Product  ',
         brand: '  Almond Young  ',
+        supplyPriceText: '',
+        marketPriceText: '',
         seoTitle: '  Custom SEO title  ',
         seoDescription: '  Custom SEO description  ',
         seoKeywordsText: ' glow, skincare\n glow, serum ',
@@ -117,6 +121,8 @@ describe('basic information editing model', () => {
       name: 'Edited Product',
       brand: 'Almond Young',
       supplierId: null,
+      supplyPrice: null,
+      marketPrice: null,
       seoTitle: 'Custom SEO title',
       seoDescription: 'Custom SEO description',
       seoKeywords: ['glow', 'skincare', 'serum'],
@@ -134,6 +140,8 @@ describe('basic information editing model', () => {
       toBasicInformationUpdateDto({
         name: 'Edited Product',
         brand: '   ',
+        supplyPriceText: '  12,000 ',
+        marketPriceText: '   ',
         seoTitle: '   ',
         seoDescription: '   ',
         seoKeywordsText: ' ,  ',
@@ -147,6 +155,8 @@ describe('basic information editing model', () => {
       })
     ).toMatchObject({
       brand: null,
+      supplyPrice: 12000,
+      marketPrice: null,
       seoTitle: null,
       seoDescription: null,
       seoKeywords: [],

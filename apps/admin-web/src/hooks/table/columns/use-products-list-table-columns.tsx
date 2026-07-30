@@ -110,7 +110,7 @@ export function useProductsListTableColumns({
       }),
       columnHelper.accessor('variantCount', {
         header: '옵션제목/옵션수',
-        meta: { width: 118 },
+        meta: { width: 104 },
         cell: ({ row }) => {
           const { optionGroupNames, variantCount } = row.original;
           if (optionGroupNames.length === 0) {
@@ -126,7 +126,7 @@ export function useProductsListTableColumns({
       }),
       columnHelper.accessor('supplierId', {
         header: '공급처',
-        meta: { width: 78 },
+        meta: { width: 112 },
         cell: ({ getValue }) => <SupplierCell supplierId={getValue()} />,
       }),
       columnHelper.accessor('priceSummary', {
@@ -153,7 +153,7 @@ export function useProductsListTableColumns({
                 )}
                 {row.original.hideMembershipPriceForNonMembers && ' (숨김)'}
               </span>
-              {/* 공급가는 엑셀 대량등록만 채운다 — 없으면 0 이 아니라 미입력이다. */}
+              {/* 공급가 없음은 0원이 아니라 미입력이다. */}
               {row.original.supplyPrice == null ? (
                 <span className="text-muted-foreground">-</span>
               ) : (
@@ -194,7 +194,7 @@ export function useProductsListTableColumns({
       columnHelper.display({
         id: 'actions',
         header: '기능',
-        meta: { width: 96 },
+        meta: { width: 88 },
         cell: ({ row }) => (
           <Button
             size="sm"

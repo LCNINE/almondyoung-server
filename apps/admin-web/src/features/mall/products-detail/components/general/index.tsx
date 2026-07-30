@@ -71,6 +71,11 @@ function formatFulfillmentKind(kind: 'physical' | 'digital' | null): string {
   return '-';
 }
 
+function formatMoney(value: number | null | undefined): string {
+  if (value == null) return '-';
+  return `${value.toLocaleString('ko-KR')}원`;
+}
+
 function formatSeoKeywords(values: string[] | null): string {
   if (!values?.length) return '-';
   return values.join(', ');
@@ -237,6 +242,35 @@ function ProductBasicInformationEditDrawer({
                   placeholder="공급처 선택"
                   disabled={updateVersion.isPending}
                 />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-supply-price">공급가</Label>
+                  <Input
+                    id="product-basic-supply-price"
+                    inputMode="numeric"
+                    value={values.supplyPriceText}
+                    onChange={(event) =>
+                      setValue('supplyPriceText', event.target.value)
+                    }
+                    placeholder="매입 단가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-market-price">시장가</Label>
+                  <Input
+                    id="product-basic-market-price"
+                    inputMode="numeric"
+                    value={values.marketPriceText}
+                    onChange={(event) =>
+                      setValue('marketPriceText', event.target.value)
+                    }
+                    placeholder="정가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">
@@ -464,6 +498,8 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
     { key: '브랜드', value: data.brand ?? '-' },
+    { key: '공급가', value: formatMoney(data.supplyPrice) },
+    { key: '시장가', value: formatMoney(data.marketPrice) },
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
