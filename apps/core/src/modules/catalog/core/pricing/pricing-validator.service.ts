@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { eq, inArray, and } from 'drizzle-orm';
@@ -23,6 +23,8 @@ import { PricingCalculatorService } from './pricing-calculator.service';
 
 @Injectable()
 export class PricingValidatorService {
+  private readonly logger = new Logger(PricingValidatorService.name);
+
   constructor(
     @InjectTypedDb<typeof pimSchema>()
     private readonly dbService: DbService<typeof pimSchema>,
@@ -44,7 +46,7 @@ export class PricingValidatorService {
         });
       }
 
-      const validatedRules = parseResult.data;
+      const validatedRules = await this.dropStaleVariantTargets(versionId, parseResult.data, trx);
 
       await this.validateScopeTargets(masterId, versionId, validatedRules, trx);
       await this.validateBasePriceCoverage(versionId, validatedRules, trx);
@@ -70,6 +72,49 @@ export class PricingValidatorService {
     if (variantsTargetIds.length > 0) {
       await this.validateVariantIds(masterId, versionId, variantsTargetIds, tx);
     }
+  }
+
+  /**
+   * 이 버전에 없는 variant 를 가리키는 타깃을 걸러낸다.
+   * 버전이 바뀔 때 룰의 scopeTargetIds 가 새 variant 로 따라가지 않아 옛 id 가 남는 경우가 있고
+   * 그대로 두면 validateScopeTargets 가 "Variant IDs not found" 로 저장을 막는다.
+   * 유령 id 는 계산기가 어차피 매칭하지 않으므로 제거해도 가격은 변하지 않는다.
+   * 남는 타깃이 없어진 룰은 아무 variant 에도 적용되지 않으므로 룰째로 뺀다.
+   */
+  private async dropStaleVariantTargets(
+    versionId: string,
+    rulesSet: ValidatedPricingRulesSet,
+    tx: DbTransaction,
+  ): Promise<ValidatedPricingRulesSet> {
+    const variants = await tx
+      .select({ id: productMasterVariants.variantId })
+      .from(productMasterVariants)
+      .where(eq(productMasterVariants.versionId, versionId));
+    const live = new Set(variants.map((v) => v.id));
+
+    let dropped = 0;
+    const clean = (rules: PricingRuleInput[]): PricingRuleInput[] =>
+      rules.flatMap((rule) => {
+        if (rule.scopeType !== 'variants' || !rule.scopeTargetIds) return [rule];
+
+        const kept = rule.scopeTargetIds.filter((id) => live.has(id));
+        if (kept.length === rule.scopeTargetIds.length) return [rule];
+
+        dropped += rule.scopeTargetIds.length - kept.length;
+        return kept.length > 0 ? [{ ...rule, scopeTargetIds: kept }] : [];
+      });
+
+    const cleaned = {
+      basePriceRules: clean(rulesSet.basePriceRules),
+      membershipPriceRules: clean(rulesSet.membershipPriceRules),
+      tieredPriceRules: clean(rulesSet.tieredPriceRules),
+    };
+
+    if (dropped > 0) {
+      this.logger.warn(`version ${versionId}: 이 버전에 없는 variant 타깃 ${dropped}개를 룰에서 제거했습니다`);
+    }
+
+    return cleaned;
   }
 
   /**
