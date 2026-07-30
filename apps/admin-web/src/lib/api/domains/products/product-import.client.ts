@@ -8,6 +8,7 @@ import type {
   SessionListResponse,
   PublishAcceptedDto,
   CancelAcceptedDto,
+  ImportProgressDto,
 } from '@/lib/types/dto/product-import';
 import { client } from '../../client';
 
@@ -47,6 +48,11 @@ export const productImportClient = {
 
   getSession: async (sessionId: string): Promise<SessionDetailDto> => {
     const res = await client.get(`${BASE}/${sessionId}`);
+    return res.data;
+  },
+
+  getProgress: async (sessionId: string): Promise<ImportProgressDto> => {
+    const res = await client.get(`${BASE}/${sessionId}/progress`);
     return res.data;
   },
 
