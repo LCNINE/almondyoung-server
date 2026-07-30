@@ -342,8 +342,13 @@ export class SubscriptionCancellationService {
   /**
    * 관리자 환불 금액 상한 검사.
    *
-   * 해지·환불 자체는 CS 의 일상 업무라 admin 에게 열려 있다. 위험한 건 **정책 산정액보다 많이**
-   * 환불하는 것(연간 회원에게 정산 없이 전액 환불 등)이라, 초과분만 별도 스코프로 막는다.
+   * 해지·환불 자체는 CS 의 일상 업무라 admin 에게 열려 있다. 위험한 건 **큰 금액을 정책 없이**
+   * 환불하는 것(연간 회원에게 정산 없이 49,900원 전액 환불 등)이다.
+   *
+   * 그래서 한도를 `max(정책 산정액, 월 정가 1개월분)` 으로 둔다. 정책 산정액만으로 자르면 "월간
+   * 7일 경과 → 정책상 0원" 인 계약에 소액 보상조차 못 하게 되어 CS 가 매번 master 를 불러야 한다.
+   * 배송 지연 사과 같은 소액 보상은 admin 재량으로 두고, 그보다 큰 금액만 별도 권한을 요구한다.
+   *
    * 견적을 낼 수 없는 상태(활성 권한 없음 등)면 상한을 강제하지 않는다 — 이미 종료된 계약의
    * 사후 보상 환불을 막아버리면 CS 가 손발이 묶인다.
    */
@@ -367,9 +372,14 @@ export class SubscriptionCancellationService {
     if (!context) return;
 
     const policyAmount = context.decision.immediateRefund.refundAmount;
-    if (requested > policyAmount) {
+    // admin 재량 소액 보상 한도 = 월 정가 1개월분
+    const discretionLimit = await this.contractReader.findMonthlyListPrice(params.plan.tierId, params.plan.price);
+    const ceiling = Math.max(policyAmount, discretionLimit);
+
+    if (requested > ceiling) {
       throw new ForbiddenError(
-        `정책 산정액(${policyAmount.toLocaleString()}원)을 초과하는 환불입니다. ` +
+        `환불 한도(${ceiling.toLocaleString()}원 — 정책 산정액 ${policyAmount.toLocaleString()}원, ` +
+          `관리자 재량 한도 ${discretionLimit.toLocaleString()}원)를 초과하는 환불입니다. ` +
           `초과 환불에는 별도 권한(${MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE})이 필요합니다.`,
       );
     }
