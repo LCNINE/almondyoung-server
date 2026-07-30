@@ -31,6 +31,7 @@ import {
   classificationFromParams,
   classificationToParams,
   toggle,
+  UNASSIGNED_SUPPLIER,
   type Classification,
 } from './products-list-filter-model';
 
@@ -88,12 +89,16 @@ export function ProductsListFilterBox() {
   // ponytail: 서버 SupplierFiltersDto 가 limit @Max(100) — 200 이면 400 으로 목록이 통째로 빈다
   const { data: suppliers } = useSuppliers({ limit: 100 });
 
+  // 공급처가 없는 상품이 963건 있어 UUID 목록만으로는 '전체'를 표현할 수 없다.
+  // 서버가 'unassigned' sentinel 로 IS NULL 을 받는다.
   const supplierOptions = useMemo(
-    () =>
-      (suppliers?.data ?? []).map((supplier) => ({
+    () => [
+      { value: UNASSIGNED_SUPPLIER, label: '미지정' },
+      ...(suppliers?.data ?? []).map((supplier) => ({
         value: supplier.id,
         label: supplier.name,
       })),
+    ],
     [suppliers?.data]
   );
 
@@ -254,6 +259,16 @@ export function ProductsListFilterBox() {
           onClick={() => patch({ supplierIds: [] })}
         >
           전체
+        </FilterChip>
+        {/* 전체에서 몇 개만 빼고 검색하는 흐름을 위한 명시적 액션.
+            '미지정' 을 포함해 전부 켜므로 결과 집합은 '전체' 와 같다. */}
+        <FilterChip
+          active={false}
+          onClick={() =>
+            patch({ supplierIds: supplierOptions.map((o) => o.value) })
+          }
+        >
+          전체 선택
         </FilterChip>
         {supplierOptions.map((option) => (
           <FilterChip

@@ -36,6 +36,9 @@ export const CLASSIFICATION_OPTIONS: {
   { value: 'partial', label: '부분품절' },
 ];
 
+/** 공급처 '미지정'(supplier_id IS NULL) 을 가리키는 sentinel. 서버 DTO 와 값이 같아야 한다. */
+export const UNASSIGNED_SUPPLIER = 'unassigned';
+
 /** 다중 선택 칩 토글. 빈 배열 = 전체. */
 export function toggle(values: string[], value: string): string[] {
   return values.includes(value)
