@@ -331,7 +331,7 @@ export default function ProductActions({
   return (
     <>
       <div
-        className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+        className="hidden xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
         ref={actionsRef}
       >
         {/* 스크롤 영역: 옵션/선택목록이 길어져도 구매 버튼은 하단에 고정됨 */}
