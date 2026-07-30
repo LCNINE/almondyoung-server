@@ -362,6 +362,10 @@
       "<rootDir>/apps/wallet-web/.open-next",
       "<rootDir>/apps/wallet-web/node_modules"
     ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/e2e/membership-cancel/"
+    ],
     "rootDir": ".",
     "roots": [
       "<rootDir>/apps/",

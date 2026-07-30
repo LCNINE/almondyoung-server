@@ -68,6 +68,13 @@ export interface RefundabilityInfo {
   intentId: string;
   refundableAmount: number;
   alreadyRefundedAmount: number;
+  /**
+   * wallet 에 아직 확정되지 않은 환불이 잡혀 있는 금액(무통장 수동 송금 확정 대기 등).
+   *
+   * 0 보다 크면 **그 건은 wallet 이 닫는다** — membership 이 따로 '송금 완료' 를 찍으면 관리자가
+   * 계좌로 한 번 보내고 wallet 이 또 한 번 보내는 이중 환불이 된다.
+   */
+  pendingRefundAmount?: number;
   /** 지금 더 환불할 수 있는 금액. 정책 산정액의 상한이다. */
   remainingRefundableAmount?: number;
   /** false 면 PG 환불 API 가 없는 수단(효성 CMS) — 관리자 수동 송금만 가능 */

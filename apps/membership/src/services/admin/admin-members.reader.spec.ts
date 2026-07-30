@@ -6,6 +6,8 @@ function makeReader(opts: {
   contractRow?: unknown; // 첫 select().limit() → 계약
   entitlementRow?: unknown; // 둘째 select().limit() → 현재 권한
   createAgreement?: jest.Mock; // paymentClientService.createBillingAgreement
+  /** contractReader.canResumeRecurring — 1회 결제 계약이면 false 로 막힌다. 기본은 정기결제. */
+  canResumeRecurring?: jest.Mock;
 }) {
   const setSpy = jest.fn();
   const limit = jest
@@ -23,12 +25,14 @@ function makeReader(opts: {
   };
   const createBillingAgreement = opts.createAgreement ?? jest.fn().mockResolvedValue(undefined);
   const contractEventManager = { addEvent: jest.fn().mockResolvedValue({ id: 1 }) };
+  const canResumeRecurring = opts.canResumeRecurring ?? jest.fn().mockResolvedValue(true);
   const reader = new AdminMembersReader(
     { db } as never,
     contractEventManager as never,
     { createBillingAgreement } as never,
+    { canResumeRecurring } as never,
   );
-  return { reader, setSpy, transaction, createBillingAgreement };
+  return { reader, setSpy, transaction, createBillingAgreement, canResumeRecurring };
 }
 
 const axios404 = Object.assign(new Error('no selectable billing method'), {
@@ -64,6 +68,21 @@ describe('AdminMembersReader.updateAutoRenewal', () => {
     expect(transaction).toHaveBeenCalled();
     const committed = setSpy.mock.calls[0][0];
     expect(committed).toMatchObject({ autoRenewal: true, recurringCancelledAt: null, nextBillingDate: '2026-08-01' });
+  });
+
+  // 철회는 wallet 자동이체 약정을 새로 만든다. 1회 결제 계약에 열어주면 고객이 동의한 적 없는
+  // 정기결제가 시작된다 — 고객 셀프 철회와 같은 기준으로 여기서도 막는다.
+  it('1회 결제 계약이면 agreement 를 만들지 않고 ConflictError 로 막는다', async () => {
+    const createBillingAgreement = jest.fn();
+    const { reader, transaction } = makeReader({
+      contractRow: { userId: 'u1', nextBillingDate: null, recurringCancelledAt: new Date(1_700_000_000_000) },
+      entitlementRow: { endsAt: '2026-08-01' },
+      createAgreement: createBillingAgreement,
+      canResumeRecurring: jest.fn().mockResolvedValue(false),
+    });
+    await expect(reader.updateAutoRenewal('c1', true, 'admin1')).rejects.toBeInstanceOf(ConflictError);
+    expect(createBillingAgreement).not.toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 
   it('현재 주기가 만료돼 활성 권한이 없으면 ConflictError 이고 wallet 을 호출하지 않는다', async () => {
@@ -164,7 +183,7 @@ describe('AdminMembersReader.findDunningList', () => {
     const db = {
       select: () => ({ from: () => ({ innerJoin: () => ({ orderBy: () => Promise.resolve(rows) }) }) }),
     };
-    const reader = new AdminMembersReader({ db } as never, {} as never, {} as never);
+    const reader = new AdminMembersReader({ db } as never, {} as never, {} as never, {} as never);
 
     const res = await reader.findDunningList();
 

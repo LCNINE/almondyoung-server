@@ -7,8 +7,9 @@
  * SCENARIO:
  *   annual        연간 계약 — 정책 정산 견적(34,930원), 전액 환불 시 경고
  *   monthly-cms   월간 자동이체 — 자동환불 불가 → 계좌 입력 필요
- *   scheduled     해지 예약됨 — 배너 + 철회
+ *   scheduled     해지 예약됨 — 배너 + 철회 + 수동 송금 계좌 노출
  *   one-time      1회 결제 — 예약 해지 불필요 안내
+ *   one-time-scheduled  1회 결제인데 해지 예약됨 — 철회(=무단 정기결제 전환) 버튼이 없어야 한다
  */
 import { createServer } from 'node:http';
 
@@ -49,6 +50,8 @@ function detail() {
     eligibleRefundAmount: null,
     refundCompleted: false,
     refundCompletedAt: null,
+    canUndoCancellation: false,
+    manualRefundAccount: null,
     pauseCount: 0,
     firstContractCreatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
   };
@@ -66,9 +69,23 @@ function detail() {
         refundRequested: true,
         eligibleRefundAmount: MONTHLY,
         refundCompleted: false,
+        canUndoCancellation: true,
+        // 효성 CMS 수동 송금 대기 — 관리자가 이 계좌로 보내야 환불이 끝난다.
+        manualRefundAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
       };
     case 'one-time':
       return { ...base, autoRenewal: false, nextBillingDate: null };
+    // 1회 결제 고객이 해지 예약한 상태. 철회는 wallet 자동이체 약정을 새로 만들어 동의 없는
+    // 정기결제로 전환시키므로 서버가 canUndoCancellation=false 로 내려주고 버튼이 없어야 한다.
+    case 'one-time-scheduled':
+      return {
+        ...base,
+        autoRenewal: false,
+        nextBillingDate: null,
+        recurringCancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        recurringCancellationReasonCode: 'NOT_USING',
+        canUndoCancellation: false,
+      };
     default:
       return base;
   }
@@ -77,6 +94,7 @@ function detail() {
 function quote() {
   const isAnnual = SCENARIO === 'annual';
   const manual = SCENARIO === 'monthly-cms';
+  const scheduled = SCENARIO === 'scheduled' || SCENARIO === 'one-time-scheduled';
   const endsAt = isAnnual ? plus(290) : plus(25);
 
   const atPeriodEnd = {
@@ -119,11 +137,11 @@ function quote() {
   return {
     contractId: CONTRACT_ID,
     planName: { durationDays: isAnnual ? 365 : 30, price: isAnnual ? ANNUAL : MONTHLY },
-    isRecurring: SCENARIO !== 'one-time' && !isAnnual,
-    alreadyScheduledForCancellation: SCENARIO === 'scheduled',
-    recurringCancelledAt: SCENARIO === 'scheduled' ? new Date(Date.now() - 86400000).toISOString() : null,
+    isRecurring: !SCENARIO.startsWith('one-time') && !isAnnual,
+    alreadyScheduledForCancellation: scheduled,
+    recurringCancelledAt: scheduled ? new Date(Date.now() - 86400000).toISOString() : null,
     currentPeriodEndsAt: endsAt,
-    nextBillingDate: SCENARIO === 'scheduled' ? null : endsAt,
+    nextBillingDate: scheduled ? null : endsAt,
     recommendedMode: 'AT_PERIOD_END',
     withdrawalDaysRemaining: manual ? 6 : 0,
     withdrawalWindowDays: 7,

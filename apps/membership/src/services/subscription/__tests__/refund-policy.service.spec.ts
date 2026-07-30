@@ -23,6 +23,7 @@ describe('RefundPolicyService', () => {
       paidPeriodStart: addDays(now, -1),
       pausedDaysInPeriod: 0,
       periodEndsAt: addDays(now, 29),
+      pausedDaysAccrued: 0,
       hasPayment: true,
       autoRefundSupported: true,
       requiresReceiveAccount: false,
@@ -183,6 +184,14 @@ describe('RefundPolicyService', () => {
       expect(decision.atPeriodEnd.refundAmount).toBe(0);
       expect(decision.atPeriodEnd.effectiveEndsAt).toBe('2026-08-28');
     });
+
+    // 정지 중에는 종료일이 동결돼 있고 재개 시점에 정지 일수만큼 연장된다. 동결된 날짜를 그대로
+    // 안내하면 이미 쌓인 정지 일수를 떼먹는 안내가 된다.
+    it('정지 중이면 아직 반영되지 않은 정지 일수를 더한 날짜를 보여준다', () => {
+      const decision = policy.evaluate(input({ periodEndsAt: new Date('2026-08-28'), pausedDaysAccrued: 6 }));
+
+      expect(decision.atPeriodEnd.effectiveEndsAt).toBe('2026-09-03');
+    });
   });
 
   describe('resolvePaidPeriodStart', () => {
@@ -194,6 +203,32 @@ describe('RefundPolicyService', () => {
       });
 
       expect(start && start.toISOString().slice(0, 10)).toBe('2026-07-29');
+    });
+
+    // 역산은 endsAt 을 미는 모든 경로(관리자 기간 조정·정지 재개)에서 함께 밀려 지난 청약철회 창을
+    // 되살린다. 계약에 기록된 최초 결제일보다 뒤로는 가지 않게 자른다.
+    it('계약의 최초 결제일보다 뒤로는 가지 않는다 (지난 청약철회 창 부활 차단)', () => {
+      const start = policy.resolvePaidPeriodStart({
+        periodEndsAt: new Date('2026-08-28'),
+        durationDays: 30,
+        hasPayment: true,
+        billingDate: new Date('2026-07-01'),
+      });
+
+      expect(start && start.toISOString().slice(0, 10)).toBe('2026-07-01');
+    });
+
+    // 결제 기록이 없는데 역산값과 최초 결제일이 크게 어긋난다면 갱신이 아니라 endsAt 이 밀린
+    // 흔적이다. 이른 쪽(=청약철회가 닫히는 쪽)으로 잡는다 — 예외 환불 창구는 관리자에게 있다.
+    it('최초 결제일이 역산값보다 이르면 그쪽으로 잘린다', () => {
+      const start = policy.resolvePaidPeriodStart({
+        periodEndsAt: new Date('2026-08-28'),
+        durationDays: 30,
+        hasPayment: true,
+        billingDate: new Date('2026-01-01'),
+      });
+
+      expect(start && start.toISOString().slice(0, 10)).toBe('2026-01-01');
     });
 
     it('결제가 없으면 null', () => {

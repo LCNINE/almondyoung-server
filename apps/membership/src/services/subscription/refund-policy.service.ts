@@ -62,6 +62,13 @@ export interface CancellationPolicyInput {
   pausedDaysInPeriod: number;
   /** 현재 이용 종료일 (entitlement.endsAt) */
   periodEndsAt: Date;
+  /**
+   * 지금 정지 중이라면 아직 종료일에 반영되지 않은 정지 일수.
+   *
+   * 정지 중에는 endsAt 이 동결돼 있고 재개 시점에 실제 정지 일수만큼 연장된다. 해지 예약은 잔여
+   * 기간을 다 쓰고 끝낸다는 뜻이므로, 이 일수를 더한 날짜가 실제 이용 종료일이다.
+   */
+  pausedDaysAccrued: number;
   /** 환불 대상 결제 intent 가 있는지 */
   hasPayment: boolean;
   /** wallet 이 해당 결제를 PG 자동환불할 수 있는지. false 면 관리자 수동 송금. */
@@ -110,7 +117,8 @@ export interface CancellationPolicyDecision {
 export class RefundPolicyService {
   evaluate(input: CancellationPolicyInput): CancellationPolicyDecision {
     const nowDate = format(input.now, 'yyyy-MM-dd');
-    const periodEnd = format(input.periodEndsAt, 'yyyy-MM-dd');
+    // 정지 중이면 종료일이 동결돼 있다 — 해지 후 재개될 실제 종료일을 보여준다.
+    const periodEnd = format(addDays(input.periodEndsAt, Math.max(0, input.pausedDaysAccrued)), 'yyyy-MM-dd');
     const isAnnual = input.plan.durationDays >= ANNUAL_PLAN_MIN_DURATION_DAYS;
 
     const atPeriodEnd: CancellationOption = {
@@ -180,14 +188,27 @@ export class RefundPolicyService {
   }
 
   /**
-   * 이번 결제 주기의 시작일.
+   * 이번 결제 주기의 시작일 — **결제 기록이 없는 옛 계약 전용 폴백**.
    *
-   * entitlement.startsAt 은 갱신 때 원래 가입일이 그대로 승계되므로(billing-outcome.handler) 주기 시작으로
-   * 쓸 수 없다. 종료일에서 플랜 기간을 뺀 값이 이번 주기의 시작이다.
+   * 원천은 billing_events(CHARGE_SUCCESS) 시각이다. 그 기록이 없을 때만 종료일에서 플랜 기간을 빼
+   * 역산하는데, 이 값은 결제와 무관하게 endsAt 를 미는 경로(관리자 기간 조정, 일시정지 재개)에서
+   * 함께 밀려 **이미 지난 청약철회 7일 창을 되살린다**.
+   *
+   * 그래서 계약에 기록된 최초 결제일(`billingDate`)보다 뒤로는 가지 않게 자른다. 결제 기록이 없는
+   * 계약은 사실상 갱신을 겪지 않은 옛 계약이라 두 값이 같고, 어긋난다면 그건 결제가 아니라 관리자가
+   * endsAt 를 민 흔적이므로 자르는 쪽이 맞다. 자름으로 인해 정당한 청약철회가 막히더라도
+   * 관리자 예외 환불이라는 창구가 있지만, 반대 방향(정책 없이 전액 환불)은 되돌릴 방법이 없다.
    */
-  resolvePaidPeriodStart(params: { periodEndsAt: Date; durationDays: number; hasPayment: boolean }): Date | null {
+  resolvePaidPeriodStart(params: {
+    periodEndsAt: Date;
+    durationDays: number;
+    hasPayment: boolean;
+    billingDate?: Date | null;
+  }): Date | null {
     if (!params.hasPayment) return null;
-    return addDays(params.periodEndsAt, -params.durationDays);
+    const derived = addDays(params.periodEndsAt, -params.durationDays);
+    if (!params.billingDate) return derived;
+    return derived < params.billingDate ? derived : params.billingDate;
   }
 
   /**

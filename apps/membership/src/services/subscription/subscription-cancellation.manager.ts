@@ -53,6 +53,14 @@ export interface RefundRecord {
   refundedAmount: number;
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * 계좌 송금으로 돌려줘야 하는 건의 수취 계좌.
+   *
+   * PG 자동환불이 불가능한 수단(효성 CMS)이나 자동환불이 실패한 건은 관리자가 직접 송금해야 하는데,
+   * 그때 **어디로 보낼지**가 남아 있지 않으면 환불 자체를 끝낼 방법이 없다. 고객/관리자가 해지 시점에
+   * 입력한 계좌를 이벤트에 그대로 남겨 후속 송금 화면이 읽어간다.
+   */
+  receiveAccount?: { bank: string; accountNumber: string; holderName: string };
 }
 
 @Injectable()
@@ -339,6 +347,8 @@ export class SubscriptionCancellationManager {
           refundedAmount: outcome.refundedAmount,
           errorCode: outcome.errorCode ?? null,
           errorMessage: outcome.errorMessage ?? null,
+          // 돈이 아직 나가지 않은 건(PENDING/FAILED)에만 의미가 있다 — 관리자가 여기로 송금한다.
+          ...(outcome.receiveAccount ? { receiveAccount: outcome.receiveAccount } : {}),
         },
         actor.causedBy,
         userId,

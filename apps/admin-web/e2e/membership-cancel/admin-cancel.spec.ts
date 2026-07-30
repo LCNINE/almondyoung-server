@@ -44,7 +44,7 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     await expect(dialog.getByText('현재 플랜')).toBeVisible();
     if (SCENARIO === 'scheduled') {
       await expect(dialog.getByText('정기결제 (해지 예약됨)')).toBeVisible();
-    } else if (SCENARIO === 'one-time' || SCENARIO === 'annual') {
+    } else if (SCENARIO === 'one-time' || SCENARIO === 'one-time-scheduled' || SCENARIO === 'annual') {
       await expect(dialog.getByText('일시결제 (자동갱신 없음)')).toBeVisible();
     } else {
       await expect(dialog.getByText('정기결제 (자동갱신)')).toBeVisible();
@@ -87,11 +87,30 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     // 해지 예약 상태에서는 다시 예약할 수 없다.
     await expect(dialog.getByRole('button', { name: '해지 예약하기' })).toHaveCount(0);
 
+    // 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
+    // (효성 CMS 는 wallet 에 환불 행이 없어 결제관리 화면에도 이 건이 나타나지 않는다)
+    const account = dialog.getByTestId('manual-refund-account');
+    await expect(account).toContainText('110123456789');
+    await expect(account).toContainText('테스트고객');
+
     await dialog.getByRole('button', { name: /해지 예약 철회/ }).click();
     await expect
       .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'auto-renewal').length)
       .toBe(1);
     expect((await stubCalls(request))[0].body.autoRenewal).toBe(true);
+  });
+
+  // 철회는 wallet 자동이체 약정을 새로 만든다. 1회 결제 고객에게 열어주면 동의한 적 없는 정기결제가
+  // 시작되므로, 서버 판정(canUndoCancellation=false)에 따라 버튼 자체가 없어야 한다.
+  test('1회 결제의 해지 예약은 철회 버튼을 열지 않는다 (동의 없는 정기결제 전환 차단)', async ({ page, request }) => {
+    test.skip(SCENARIO !== 'one-time-scheduled', '1회 결제 해지 예약 시나리오만');
+
+    const dialog = await openCancelTab(page);
+
+    await expect(dialog.getByText('해지 예약됨', { exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: /해지 예약 철회/ })).toHaveCount(0);
+    await expect(dialog.getByText(/되살릴 자동결제가 없습니다/)).toBeVisible();
+    expect((await stubCalls(request)).filter((c) => c.path === 'auto-renewal')).toHaveLength(0);
   });
 
   test('1회 결제는 예약 해지가 필요 없다고 안내한다', async ({ page }) => {

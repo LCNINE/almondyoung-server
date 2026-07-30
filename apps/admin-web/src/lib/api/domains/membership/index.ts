@@ -77,6 +77,14 @@ export interface AdminMemberDetail {
   eligibleRefundAmount: number | null;
   refundCompleted: boolean;
   refundCompletedAt: string | null;
+  /** 해지 예약을 철회해 자동결제를 재개할 수 있는지(서버 판정). 1회 결제 계약은 false. */
+  canUndoCancellation: boolean;
+  /** 계좌 송금이 남은 환불 건의 수취 계좌. 이게 없으면 관리자가 어디로 보낼지 알 수 없다. */
+  manualRefundAccount: {
+    bank: string;
+    accountNumber: string;
+    holderName: string;
+  } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }

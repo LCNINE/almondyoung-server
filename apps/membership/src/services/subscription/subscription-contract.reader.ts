@@ -78,12 +78,17 @@ export class SubscriptionContractReader {
   /**
    * 현재 활성 권한 조회 (해지 시 이용 종료일 판단용)
    */
-  async findCurrentEntitlement(userId: string): Promise<{ id: string; endsAt: string; startsAt: string } | null> {
+  async findCurrentEntitlement(
+    userId: string,
+  ): Promise<{ id: string; endsAt: string; startsAt: string; pausedAt: Date | null } | null> {
     const [entitlement] = await this.dbService.db
       .select({
         id: schema.subscriptionEntitlement.id,
         endsAt: schema.subscriptionEntitlement.endsAt,
         startsAt: schema.subscriptionEntitlement.startsAt,
+        // 정지 중에는 endsAt 이 동결돼 있다(재개 시점에 정지 일수만큼 연장). 해지 화면이 이 값을
+        // 그대로 '이용 종료일'로 보여주면 이미 쌓인 정지 일수를 통째로 떼먹는 안내가 된다.
+        pausedAt: schema.subscriptionEntitlement.pausedAt,
       })
       .from(schema.subscriptionEntitlement)
       .where(
@@ -162,6 +167,71 @@ export class SubscriptionContractReader {
     const metadata = (event.metadata ?? {}) as { wasRecurring?: boolean; nextBillingDateBefore?: string | null };
     if (typeof metadata.wasRecurring === 'boolean') return metadata.wasRecurring;
     return metadata.nextBillingDateBefore != null;
+  }
+
+  /**
+   * 이 계약의 자동결제를 **되살려도 되는지**.
+   *
+   * 해지 철회(고객)·자동갱신 재활성(관리자)은 wallet 자동이체 약정을 새로 만든다. 1회 결제 고객에게
+   * 열어주면 **동의한 적 없는 정기결제가 시작된다.** 해지 후에는 `autoRenewal` 이 꺼져 1회 결제와
+   * 구분되지 않으므로, 가입 시점(CREATED.billingMode)과 해지 시점(RECURRING_CANCELLED.wasRecurring)의
+   * 사실에서 판정한다. 둘 다 없는 옛 계약은 막지 않는다 — 근거 없이 CS 를 막는 쪽이 더 나쁘다.
+   */
+  async canResumeRecurring(contract: Pick<Contract, 'id' | 'autoRenewal' | 'recurringCancelledAt'>): Promise<boolean> {
+    if (contract.autoRenewal) return true;
+
+    const billingMode = await this.findCreatedBillingMode(contract.id);
+    if (billingMode) return billingMode === 'recurring';
+    if (contract.recurringCancelledAt) return this.wasRecurringBeforeCancellation(contract.id);
+    return true;
+  }
+
+  /** 가입 시점의 결제 방식(CREATED 이벤트에 기록). 옛 계약은 없을 수 있어 null 을 돌려준다. */
+  private async findCreatedBillingMode(contractId: string): Promise<'recurring' | 'one_time' | null> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          eq(schema.subscriptionContractEvents.eventType, 'CREATED'),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    const mode = ((event?.metadata ?? {}) as { billingMode?: string }).billingMode;
+    return mode === 'recurring' || mode === 'one_time' ? mode : null;
+  }
+
+  /**
+   * 계좌 송금이 남아 있는 환불 건의 수취 계좌.
+   *
+   * 자동환불이 불가능한 수단(효성 CMS)이나 자동환불 실패 건은 관리자가 직접 송금해야 끝난다.
+   * 그 계좌는 해지 시점에 REFUND_PENDING/REFUND_FAILED 이벤트에 남겨두므로 여기서 다시 읽는다.
+   */
+  async findManualRefundAccount(
+    contractId: string,
+  ): Promise<{ bank: string; accountNumber: string; holderName: string } | null> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          inArray(schema.subscriptionContractEvents.eventType, ['REFUND_PENDING', 'REFUND_FAILED']),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    const account = ((event?.metadata ?? {}) as { receiveAccount?: Record<string, unknown> }).receiveAccount;
+    if (!account || typeof account.accountNumber !== 'string') return null;
+    return {
+      bank: String(account.bank ?? ''),
+      accountNumber: account.accountNumber,
+      holderName: String(account.holderName ?? ''),
+    };
   }
 
   /**

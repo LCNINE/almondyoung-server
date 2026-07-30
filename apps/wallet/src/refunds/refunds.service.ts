@@ -291,7 +291,15 @@ export class RefundsService {
     intentId: string;
     refundableAmount: number;
     alreadyRefundedAmount: number;
-    /** 지금 실제로 더 환불할 수 있는 금액(= 환불 가능 charge 합계 − 이미 성공한 환불액) */
+    /**
+     * 아직 확정되지 않았지만 **이미 잡혀 있는** 환불액(수동 확정 대기 등).
+     *
+     * 돈이 나가지 않았을 뿐 이 건은 곧 나갈 예정이므로, 다시 환불 가능한 금액으로 세면 같은 결제를
+     * 두 번 돌려주게 된다. 호출자가 "이 건은 wallet 이 닫는다" 를 알아야 자기 쪽에서 수동 완료
+     * 처리를 중복으로 하지 않는다.
+     */
+    pendingRefundAmount: number;
+    /** 지금 실제로 더 환불할 수 있는 금액(= 환불 가능 charge 합계 − 성공한 환불 − 대기 중 환불) */
     remainingRefundableAmount: number;
     autoRefundSupported: boolean;
     requiresReceiveAccount: boolean;
@@ -300,6 +308,8 @@ export class RefundsService {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
     const succeeded = await this.findSucceededRefundsByIntent(intentId);
     const alreadyRefundedAmount = succeeded.reduce((sum, r) => sum + r.amount, 0);
+    const pending = await this.findPendingRefundsByIntent(intentId);
+    const pendingRefundAmount = pending.reduce((sum, r) => sum + r.amount, 0);
 
     const methodTypes: string[] = [];
     let autoRefundSupported = refundableCharges.length > 0;
@@ -324,12 +334,23 @@ export class RefundsService {
       intentId,
       refundableAmount,
       alreadyRefundedAmount,
+      pendingRefundAmount,
       // 호출자가 gross 에서 이미 환불된 금액을 빼는 것을 잊으면 과환불 요청이 된다 — 여기서 답한다.
-      remainingRefundableAmount: Math.max(0, refundableAmount - alreadyRefundedAmount),
+      // 확정 대기 중인 건도 빼야 한다: 돈이 아직 안 나갔을 뿐 이미 잡혀 있는 환불이다.
+      remainingRefundableAmount: Math.max(0, refundableAmount - alreadyRefundedAmount - pendingRefundAmount),
       autoRefundSupported,
       requiresReceiveAccount,
       methodTypes,
     };
+  }
+
+  /** 확정 대기 중(PENDING)인 환불 — 무통장 수동 송금 확정 대기 등. wallet 이 닫아야 하는 건이다. */
+  private async findPendingRefundsByIntent(intentId: string): Promise<Refund[]> {
+    return this.dbService.db
+      .select()
+      .from(refunds)
+      .where(and(eq(refunds.intentId, intentId), eq(refunds.status, 'PENDING')))
+      .orderBy(asc(refunds.createdAt));
   }
 
   private async findSucceededRefundsByIntent(intentId: string): Promise<Refund[]> {

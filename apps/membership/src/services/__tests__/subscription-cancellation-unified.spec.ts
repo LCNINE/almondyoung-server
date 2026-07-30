@@ -9,6 +9,7 @@ import { CancellationReasonReader } from '../subscription/cancellation-reason.re
 import { PaymentClientService } from '../billing/payment-client.service';
 import { BenefitReader } from '../benefit/benefit.reader';
 import { PauseReader } from '../pause/pause.reader';
+import { PauseManager } from '../pause/pause.manager';
 import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
 import { CancellationContextReader } from '../subscription/cancellation-context.reader';
 import { RefundPolicyService } from '../subscription/refund-policy.service';
@@ -34,6 +35,8 @@ describe('SubscriptionCancellationService', () => {
     findMonthlyListPrice: jest.fn().mockResolvedValue(4990),
     // 해지 시점에 정기결제였는지 — 해지 철회(자동결제 재개)를 열어줄지 판단하는 값.
     wasRecurringBeforeCancellation: jest.fn().mockResolvedValue(true),
+    // 가입/해지 시점의 사실로 '되살릴 자동결제가 있는지'를 판정한다(1회 결제면 false).
+    canResumeRecurring: jest.fn().mockResolvedValue(true),
     // 결제 기록이 없는 계약을 가정 — 주기 시작은 endsAt 역산 폴백으로 계산된다.
     findLastChargeSuccessAt: jest.fn().mockResolvedValue(null),
   };
@@ -56,7 +59,12 @@ describe('SubscriptionCancellationService', () => {
   };
 
   // 일시정지 이력이 없는 일반 계약이 기본값 — 정지 보정은 정책 스펙에서 따로 다룬다.
-  const mockPauseReader = { sumPausedDaysSince: jest.fn().mockResolvedValue(0) };
+  const mockPauseReader = {
+    sumPausedDaysSince: jest.fn().mockResolvedValue(0),
+    // 기본은 정지 아님 — 정지 중 해지는 통합 스펙에서 실제 자격 전이까지 검증한다.
+    findPausedEntitlement: jest.fn().mockResolvedValue(null),
+  };
+  const mockPauseManager = { resumePause: jest.fn().mockResolvedValue(undefined) };
 
   const mockBenefitReader = {
     findCurrentCycleBenefit: jest.fn(),
@@ -107,6 +115,7 @@ describe('SubscriptionCancellationService', () => {
     mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0 });
     mockBenefitReader.sumBenefitDiscountSince.mockResolvedValue(0);
     mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
+    mockPauseReader.findPausedEntitlement.mockResolvedValue(null);
     // 기본은 카드/무통장처럼 PG 자동환불이 되는 수단
     mockPaymentClientService.getRefundability.mockResolvedValue({
       intentId: 'intent_001',
@@ -157,6 +166,7 @@ describe('SubscriptionCancellationService', () => {
         { provide: PaymentClientService, useValue: mockPaymentClientService },
         { provide: BenefitReader, useValue: mockBenefitReader },
         { provide: PauseReader, useValue: mockPauseReader },
+        { provide: PauseManager, useValue: mockPauseManager },
         { provide: InvoiceBillingManager, useValue: { voidInvoicesForContract: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
@@ -538,7 +548,7 @@ describe('SubscriptionCancellationService', () => {
         autoRenewal: false,
         recurringCancelledAt: new Date(),
       });
-      mockContractReader.wasRecurringBeforeCancellation.mockResolvedValueOnce(false);
+      mockContractReader.canResumeRecurring.mockResolvedValueOnce(false);
 
       await expect(service.undoCancellation('user_001', 'a@b.com')).rejects.toThrow(ConflictError);
       expect(mockPaymentClientService.createBillingAgreement).not.toHaveBeenCalled();
