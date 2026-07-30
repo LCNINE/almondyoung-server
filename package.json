@@ -157,6 +157,7 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/core/test/jest-e2e.json",
     "test:membership": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
+    "test:membership:cancellation-e2e": "./scripts/test/membership-cancellation-e2e.sh",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
     "test:membership:e2e:coverage": "npm run test:membership:coverage",
     "test:membership:e2e:verbose": "npm run test:membership:verbose",
