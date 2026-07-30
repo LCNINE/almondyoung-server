@@ -22,6 +22,7 @@ import {
 import { DLQHandler, createKafkaConfigFromEnv, getDLQTopicName } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApplicationException } from '@app/shared';
 import { AuthorizationService, RequireScopes } from '@app/authorization';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
@@ -83,8 +84,12 @@ export class AdminOperationsController {
     const contextInfo = context ? ` (${context})` : '';
     this.logger.error(`❌ ${operation} 실패${contextInfo}:`, msg);
 
-    // 서비스가 이미 상태코드를 결정한 예외(SubscriptionException 등)는 그대로 전달한다.
-    if (error instanceof HttpException) {
+    // 서비스가 이미 상태코드를 결정한 예외는 그대로 전달한다.
+    // - HttpException: SubscriptionException 등
+    // - ApplicationException(@app/shared): NotFoundError/ConflictError/ForbiddenError 등.
+    //   이걸 빼먹으면 아래 문자열 매칭으로 흘러가 ForbiddenError 가 500 이 된다(권한 부족을
+    //   서버 오류로 안내하게 됨). 상태코드 매핑은 GlobalExceptionFilter 가 담당한다.
+    if (error instanceof HttpException || error instanceof ApplicationException) {
       throw error;
     }
 
