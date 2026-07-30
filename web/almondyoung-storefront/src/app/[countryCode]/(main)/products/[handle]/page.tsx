@@ -37,12 +37,22 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     notFound()
   }
 
+  // Core PIM 의 SEO 입력값은 발행 시 Medusa product.metadata 로 넘어온다
+  // (apps/medusa/src/scripts/lib/transformer.ts). 비어 있으면 상품명으로 폴백.
+  const seo = product.metadata as
+    | { seoTitle?: string; seoDescription?: string; seoKeywords?: string | string[] }
+    | null
+    | undefined
+  const title = seo?.seoTitle || product.title
+  const description = seo?.seoDescription || product.title
+
   return {
-    title: `${product.title}`,
-    description: `${product.title}`,
+    title,
+    description,
+    ...(seo?.seoKeywords ? { keywords: seo.seoKeywords } : {}),
     openGraph: {
-      title: `${product.title}`,
-      description: `${product.title}`,
+      title,
+      description,
       images: product.thumbnail ? [product.thumbnail] : [],
     },
   }
