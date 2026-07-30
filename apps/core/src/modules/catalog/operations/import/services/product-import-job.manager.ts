@@ -37,7 +37,7 @@ export interface ClaimedSession {
  * 옛 형태를 읽을 수 있으므로, 창조 경로에 넘기기 전에 최소 형태를 확인한다.
  * 어긋나면 그 행만 실패시킨다 — 세션 전체를 막지 않는다.
  */
-function isProductRecord(value: unknown): value is ProductRecord {
+export function isProductRecord(value: unknown): value is ProductRecord {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
