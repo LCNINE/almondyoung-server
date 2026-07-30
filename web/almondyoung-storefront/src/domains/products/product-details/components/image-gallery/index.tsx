@@ -34,7 +34,7 @@ export function ImageGallery({ product }: Props) {
   }
 
   return (
-    <section className="mb-8 flex flex-col-reverse gap-3 md:flex-row lg:px-14">
+    <section className="mb-8 flex flex-col-reverse gap-3 md:flex-row md:justify-center xl:justify-start xl:px-14">
       {/* 썸네일 목록 */}
       {images.length > 1 && (
         <div className="flex gap-2 md:flex-col">
@@ -67,14 +67,15 @@ export function ImageGallery({ product }: Props) {
         </div>
       )}
 
-      {/* 메인 이미지 */}
-      <div className="bg-muted relative aspect-square w-full overflow-hidden rounded-lg">
+      {/* 메인 이미지 — 1단 구간(xl 미만)에서는 컨테이너 폭을 그대로 먹으면
+          정사각형이 화면을 넘길 만큼 커진다. 2단으로 갈라지는 xl 부터만 제한을 푼다. */}
+      <div className="bg-muted relative aspect-square w-full max-w-[560px] overflow-hidden rounded-lg xl:max-w-none">
         {selectedImage && (
           <Image
             src={getThumbnailUrl(selectedImage.url)}
             alt={product.title ?? t("mainAlt")}
             fill
-            sizes="(max-width: 1024px) 100vw, 700px"
+            sizes="(max-width: 767px) 100vw, (max-width: 1279px) 560px, 700px"
             quality={100}
             className="object-cover"
             priority
