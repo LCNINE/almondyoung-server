@@ -5,6 +5,7 @@ import { ProductImportValidator } from './product-import.validator';
 import { ProductImportSessionReader, SessionRow } from './product-import-session.reader';
 import { ProductImportManager } from './product-import.manager';
 import { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
+import { ProductImportProgressBuilder } from './product-import-progress.builder';
 import { generateTemplateWorkbook } from './product-import.template';
 import { ProductRecord } from '../dto/import.types';
 import {
@@ -16,6 +17,7 @@ import {
   PublishAcceptedDto,
   CancelAcceptedDto,
 } from '../dto/import-response.dto';
+import { ImportProgressDto } from '../dto/import-progress.dto';
 
 @Injectable()
 export class ProductImportService {
@@ -26,6 +28,7 @@ export class ProductImportService {
     private readonly reader: ProductImportSessionReader,
     private readonly manager: ProductImportManager,
     private readonly variantCodeChecker: ProductImportVariantCodeChecker,
+    private readonly progressBuilder: ProductImportProgressBuilder,
   ) {}
 
   private async pipeline(buffer: Buffer): Promise<ProductRecord[]> {
@@ -82,6 +85,15 @@ export class ProductImportService {
         publishError: i.publishError ?? undefined,
       })),
     };
+  }
+
+  /**
+   * 단계별 집계만 돌려준다 — 행 목록이 없어 응답 크기가 세션 크기와 무관하다.
+   * admin-web 의 폴링 대상은 getSession 이 아니라 이쪽이다.
+   */
+  async getProgress(sessionId: string): Promise<ImportProgressDto> {
+    const { session, itemCounts } = await this.reader.getProgressCounts(sessionId);
+    return this.progressBuilder.build(session, itemCounts);
   }
 
   publishSession(sessionId: string): Promise<PublishAcceptedDto> {

@@ -15,7 +15,14 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { User } from '@app/authorization';
 import { ProductImportService } from './services/product-import.service';
-import { ValidatePreviewDto, CommitAcceptedDto, SessionDetailDto, PublishAcceptedDto, CancelAcceptedDto } from './dto';
+import {
+  ValidatePreviewDto,
+  CommitAcceptedDto,
+  SessionDetailDto,
+  PublishAcceptedDto,
+  CancelAcceptedDto,
+  ImportProgressDto,
+} from './dto';
 
 @ApiTags('Product Import')
 @Controller('product-imports')
@@ -67,6 +74,17 @@ export class ProductImportController {
     const p = Math.max(1, Number.parseInt(page, 10) || 1);
     const l = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
     return this.service.getSessions(p, l);
+  }
+
+  // `:sessionId` 보다 먼저 선언한다. 두 세그먼트 경로라 실제로는 겹치지 않지만,
+  // 파라미터 라우트 뒤에 구체 경로를 두는 습관은 wildcard 가 하나만 끼어들어도 깨진다.
+  @Get(':sessionId/progress')
+  @ApiOperation({
+    summary: '세션 진행률(단계별 집계). 행 목록이 없어 응답이 세션 크기와 무관하다 — 폴링은 이쪽으로 한다.',
+  })
+  @ApiResponse({ status: 200, type: ImportProgressDto })
+  async getProgress(@Param('sessionId') sessionId: string): Promise<ImportProgressDto> {
+    return this.service.getProgress(sessionId);
   }
 
   @Get(':sessionId')

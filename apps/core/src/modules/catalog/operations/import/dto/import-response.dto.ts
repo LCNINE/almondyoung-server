@@ -68,7 +68,7 @@ export class CommitItemDto {
 }
 
 export class CommitAcceptedDto {
-  @ApiProperty({ description: '생성된 임포트 세션 id. 진행 상황은 GET /product-imports/:id 로 폴링한다.' })
+  @ApiProperty({ description: '생성된 임포트 세션 id. 진행 상황은 GET /product-imports/:id/progress 로 폴링한다.' })
   sessionId: string;
 
   @ApiProperty({ enum: ['queued'] })
@@ -157,7 +157,7 @@ export class PublishAcceptedDto {
   @ApiProperty({ enum: ['queued'] })
   status: 'queued';
 
-  @ApiProperty({ description: '게시 대상 행 수. 진행은 GET /product-imports/:id 로 폴링한다.' })
+  @ApiProperty({ description: '게시 대상 행 수. 진행은 GET /product-imports/:id/progress 로 폴링한다.' })
   targetCount: number;
 }
 

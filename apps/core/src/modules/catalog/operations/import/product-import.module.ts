@@ -7,6 +7,7 @@ import { ProductImportValidator } from './services/product-import.validator';
 import { ProductImportSessionReader } from './services/product-import-session.reader';
 import { ProductImportManager } from './services/product-import.manager';
 import { ProductImportPricingBuilder } from './services/product-import-pricing.builder';
+import { ProductImportProgressBuilder } from './services/product-import-progress.builder';
 import { ProductImportVariantCodeChecker } from './services/product-import-variant-code.checker';
 import { ProductImportJobManager } from './services/product-import-job.manager';
 import { ProductImportJobWorker } from './services/product-import-job.worker';
@@ -24,6 +25,7 @@ import { PricingModule } from '../../core/pricing/pricing.module';
     ProductImportSessionReader,
     ProductImportManager,
     ProductImportPricingBuilder,
+    ProductImportProgressBuilder,
     ProductImportVariantCodeChecker,
     ProductImportJobManager,
     ProductImportJobWorker,

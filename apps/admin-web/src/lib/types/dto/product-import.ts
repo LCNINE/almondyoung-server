@@ -94,3 +94,34 @@ export interface SessionListResponse {
   page: number;
   limit: number;
 }
+
+/**
+ * 진행률 화면의 단계 키. 워커 레인과 1:1 이 아니다 — v3 4단계에서 이미지 레인이
+ * 'probe'|'fetch' 두 단계로 갈라져 여기 붙는다. 화면은 stages 배열을 순회해 그리므로
+ * 그때 admin-web 은 이 유니온만 넓히면 된다.
+ */
+export type ImportProgressStageKey = 'commit' | 'publish';
+
+export interface ImportProgressStage {
+  key: ImportProgressStageKey;
+  label: string;
+  status: ImportJobStatus;
+  done: number;
+  total: number;
+  failed: number;
+  error: string | null;
+}
+
+/**
+ * GET /product-imports/:id/progress — 행 목록 없이 단계별 집계만. 응답이 세션 크기와
+ * 무관하게 작아 **폴링 대상은 이쪽**이다(세션 상세는 펼칠 때만 부른다).
+ */
+export interface ImportProgressDto {
+  sessionId: string;
+  fileName: string | null;
+  canceled: boolean;
+  cancelRequestedAt: string | null; // JSON 직렬화 결과(백엔드 Date → string)
+  totalRows: number;
+  invalidCount: number | null;
+  stages: ImportProgressStage[];
+}
