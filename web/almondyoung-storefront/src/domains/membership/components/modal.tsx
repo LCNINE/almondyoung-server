@@ -162,11 +162,11 @@ export function MembershipCancelModal({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent className="max-h-[90vh] gap-4 overflow-y-auto rounded-3xl pt-6 sm:max-w-md">
         {steps.length > 1 && (
-          <div className="flex justify-center gap-1.5">
+          // 단계는 각 단계의 제목이 알려주므로, 점 표시는 장식으로 둔다(이름 없는 요소가 읽히지 않게).
+          <div className="flex justify-center gap-1.5" aria-hidden="true">
             {steps.map((s) => (
               <span
                 key={s}
-                aria-current={step === s ? "step" : undefined}
                 className={cn(
                   "h-1.5 w-6 rounded-full transition-colors",
                   step === s ? "bg-primary" : "bg-border"
@@ -385,7 +385,10 @@ export function MembershipCancelModal({
                 })}
               </p>
               <Select value={bankCode} onValueChange={setBankCode}>
-                <SelectTrigger className="bg-background border-border h-11 w-full rounded-lg">
+                <SelectTrigger
+                  aria-label={t("bankPlaceholder")}
+                  className="bg-background border-border h-11 w-full rounded-lg"
+                >
                   <SelectValue placeholder={t("bankPlaceholder")} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
@@ -399,6 +402,9 @@ export function MembershipCancelModal({
               <Input
                 className="bg-background border-border h-11 rounded-lg border text-sm placeholder:text-sm"
                 inputMode="numeric"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label={t("accountNumberPlaceholder")}
                 value={accountNumber}
                 onChange={(event) =>
                   setAccountNumber(event.target.value.replace(/[^0-9]/g, ""))
@@ -407,15 +413,17 @@ export function MembershipCancelModal({
               />
               <Input
                 className="bg-background border-border h-11 rounded-lg border text-sm placeholder:text-sm"
+                autoComplete="off"
+                spellCheck={false}
+                aria-label={t("holderNamePlaceholder")}
                 value={holderName}
                 onChange={(event) => setHolderName(event.target.value)}
                 placeholder={t("holderNamePlaceholder")}
               />
-              {accountPartiallyFilled && (
-                <p className="text-destructive text-xs">
-                  {t("refundAccountIncomplete")}
-                </p>
-              )}
+              {/* 입력 도중 나타나는 안내라 스크린리더에도 전달돼야 한다 */}
+              <p className="text-destructive text-xs" role="status" aria-live="polite">
+                {accountPartiallyFilled ? t("refundAccountIncomplete") : ""}
+              </p>
             </div>
           </>
         )}

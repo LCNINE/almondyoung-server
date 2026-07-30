@@ -99,7 +99,13 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     adminReader = module.get(AdminMembersReader);
     refundEventHandler = module.get(RefundEventHandler);
 
+    // 같은 DB 를 쓰는 다른 스펙이 남긴 tier/plan 을 먼저 치운다 — tiers.code 가 유니크라
+    // 남아 있으면 삽입이 깨지고, 실행 순서에 따라 결과가 달라진다(flaky).
     await wipe();
+    await db.db.delete(schema.cancellationReasons);
+    await db.db.delete(schema.plan);
+    await db.db.delete(schema.tiers);
+
     const [tier] = await db.db.insert(schema.tiers).values({ code: 'MEMBERSHIP', priorityLevel: 1 }).returning();
     tierId = tier.id;
     const [monthly] = await db.db

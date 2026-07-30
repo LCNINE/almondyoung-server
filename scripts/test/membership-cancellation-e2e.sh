@@ -34,4 +34,4 @@ echo "▶ 마이그레이션 적용 (drizzle)"
 DATABASE_URL="$DB_URL" npx drizzle-kit migrate --config apps/membership/drizzle.config.ts
 
 echo "▶ E2E 실행"
-MEMBERSHIP_CANCELLATION_E2E=1 DATABASE_URL="$DB_URL" npx jest --testPathPattern=cancellation-e2e --runInBand "$@"
+MEMBERSHIP_CANCELLATION_E2E=1 DATABASE_URL="$DB_URL" npx jest --testPathPattern="cancellation-e2e|cancellation-http-e2e" --runInBand "$@"

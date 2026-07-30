@@ -24,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { TOSS_BANKS } from '@/lib/constants/toss-banks';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -346,32 +347,57 @@ function ForceCancelDialog({
           )}
 
           {needsAccount && (
-            <div className="space-y-1.5 rounded-md border p-3">
-              <Label>
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">
                 환불 송금 계좌 <span className="text-destructive">*</span>
-              </Label>
+              </p>
               <p className="text-xs text-muted-foreground">
                 {manualRefund
                   ? '자동이체(효성 CMS) 결제는 PG 환불이 불가해 이 계좌로 송금합니다.'
-                  : '무통장 결제 환불은 이 계좌로 송금됩니다.'}
+                  : '무통장 결제 환불은 이 계좌로 송금됩니다. 예금주명이 정확해야 합니다(실명 검증).'}
               </p>
-              <Input
-                placeholder="은행 코드 (토스 2자리)"
-                value={bank}
-                onChange={(e) => setBank(e.target.value)}
-              />
-              <Input
-                placeholder="계좌번호 (숫자만)"
-                value={accountNumber}
-                onChange={(e) =>
-                  setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
-                }
-              />
-              <Input
-                placeholder="예금주명"
-                value={holderName}
-                onChange={(e) => setHolderName(e.target.value)}
-              />
+              {/* 은행은 코드 직접 입력이 아니라 선택 — 결제관리 환불 화면과 같은 방식(오타로 송금 실패 방지) */}
+              <div className="space-y-1">
+                <Label htmlFor="refund-bank">환불 은행</Label>
+                <select
+                  id="refund-bank"
+                  className="w-full rounded border p-2 text-sm"
+                  value={bank}
+                  onChange={(e) => setBank(e.target.value)}
+                >
+                  <option value="">은행 선택</option>
+                  {TOSS_BANKS.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="refund-account-number">계좌번호</Label>
+                <Input
+                  id="refund-account-number"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="숫자만 입력 (예: 110123456789)"
+                  value={accountNumber}
+                  onChange={(e) =>
+                    setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="refund-holder-name">예금주명</Label>
+                <Input
+                  id="refund-holder-name"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="예금주 실명"
+                  value={holderName}
+                  onChange={(e) => setHolderName(e.target.value)}
+                />
+              </div>
             </div>
           )}
 
