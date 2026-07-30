@@ -1,6 +1,6 @@
 import { ProductImportValidator } from './product-import.validator';
 import { ProductImportNormalizer } from './product-import.normalizer';
-import { ProductRecord } from '../dto/import.types';
+import { ProductRecord, formatKstMinutes } from '../dto/import.types';
 
 function record(raw: Record<string, string>, options: ProductRecord['options'] = []): ProductRecord {
   return {
@@ -90,6 +90,8 @@ describe('ProductImportValidator', () => {
           { rowNumber: 2, cells: { productKey: 'P1', optionName: '색상', optionValues: '빨강', sortOrder: '' } },
         ],
         variants: [],
+        categories: [],
+        constraints: [],
       },
       [],
     );
@@ -246,5 +248,180 @@ describe('ProductImportValidator', () => {
       ),
     ).toBe(true);
     expect(out.variantOverrides[0].basePrice).toBeUndefined();
+  });
+});
+
+describe('ProductImportValidator — 구매제약', () => {
+  const validator = new ProductImportValidator();
+
+  function recordWithConstraint(raw: Partial<{ requiresMembershipRaw: string; lifetimeQuantityLimitRaw: string }>) {
+    const record: ProductRecord = {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: { productKey: 'P1', name: '니트A', basePrice: '29000' },
+      version: {},
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [],
+      purchaseConstraintRaw: {
+        rowNumber: 1,
+        requiresMembershipRaw: raw.requiresMembershipRaw ?? '',
+        lifetimeQuantityLimitRaw: raw.lifetimeQuantityLimitRaw ?? '',
+      },
+    };
+    return validator.validate([record])[0];
+  }
+
+  it('requiresMembership=Y 를 파싱한다', () => {
+    const out = recordWithConstraint({ requiresMembershipRaw: 'Y' });
+    expect(out.purchaseConstraint).toEqual({ requiresMembership: true, lifetimeQuantityLimit: null });
+    expect(out.errors).toEqual([]);
+  });
+
+  it('lifetimeQuantityLimit 만 있어도 제약이 생긴다', () => {
+    const out = recordWithConstraint({ requiresMembershipRaw: 'N', lifetimeQuantityLimitRaw: '2' });
+    expect(out.purchaseConstraint).toEqual({ requiresMembership: false, lifetimeQuantityLimit: 2 });
+  });
+
+  it('둘 다 비면 제약을 만들지 않는다 (삭제 의도로 해석되는 입력을 보내지 않는다)', () => {
+    const out = recordWithConstraint({});
+    expect(out.purchaseConstraint).toBeUndefined();
+    expect(out.errors).toEqual([]);
+  });
+
+  it('lifetimeQuantityLimit 0 이하·소수·상한 초과는 행 오류', () => {
+    // '2147483648' 은 컬럼 타입(integer, 최대 2147483647)의 상한 초과 — 방치하면 프리뷰는
+    // 통과하고 commit 에서 Postgres 22003 으로 그 행만 죽는다.
+    for (const bad of ['0', '-1', '1.5', 'abc', '2147483648']) {
+      const out = recordWithConstraint({ lifetimeQuantityLimitRaw: bad });
+      expect(out.errors.some((e) => e.sheet === 'Constraints' && /lifetimeQuantityLimit/.test(e.message))).toBe(true);
+      expect(out.purchaseConstraint).toBeUndefined();
+    }
+  });
+});
+
+describe('ProductImportValidator — SEO·도매전용', () => {
+  const validator = new ProductImportValidator();
+
+  function versionOf(raw: Record<string, string>) {
+    const record: ProductRecord = {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: { productKey: 'P1', name: '니트A', basePrice: '29000', ...raw },
+      version: {},
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [],
+    };
+    return validator.validate([record])[0];
+  }
+
+  it('seoTitle·seoDescription 을 version 에 넣는다', () => {
+    const out = versionOf({ seoTitle: '겨울 니트 추천', seoDescription: '부드러운 니트' });
+    expect(out.version.seoTitle).toBe('겨울 니트 추천');
+    expect(out.version.seoDescription).toBe('부드러운 니트');
+    expect(out.errors).toEqual([]);
+  });
+
+  it('seoKeywords 를 | 로 쪼갠다', () => {
+    const out = versionOf({ seoKeywords: '니트|겨울| 여성니트 |' });
+    expect(out.version.seoKeywords).toEqual(['니트', '겨울', '여성니트']);
+  });
+
+  it('빈 SEO 칸은 version 에 키를 만들지 않는다', () => {
+    const out = versionOf({ seoTitle: '  ', seoDescription: '', seoKeywords: '|' });
+    expect('seoTitle' in out.version).toBe(false);
+    expect('seoDescription' in out.version).toBe(false);
+    expect('seoKeywords' in out.version).toBe(false);
+  });
+
+  it('seoTitle 255자 초과는 행 오류', () => {
+    const out = versionOf({ seoTitle: 'ㄱ'.repeat(256) });
+    expect(out.errors.some((e) => e.sheet === 'Products' && /seoTitle/.test(e.message))).toBe(true);
+    expect('seoTitle' in out.version).toBe(false);
+  });
+
+  it('isWholesaleOnly 는 항상 불린으로 채워진다', () => {
+    expect(versionOf({ isWholesaleOnly: 'Y' }).version.isWholesaleOnly).toBe(true);
+    expect(versionOf({}).version.isWholesaleOnly).toBe(false);
+  });
+});
+
+describe('ProductImportValidator — 판매기간', () => {
+  const validator = new ProductImportValidator();
+
+  function salesOf(raw: Record<string, string>) {
+    const record: ProductRecord = {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: { productKey: 'P1', name: '니트A', basePrice: '29000', ...raw },
+      version: {},
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [],
+    };
+    return validator.validate([record])[0];
+  }
+
+  it('날짜만 주면 시작은 KST 자정, 종료는 KST 하루 끝이다', () => {
+    const out = salesOf({ salesStartDate: '2026-08-01', salesEndDate: '2026-08-31' });
+    // 2026-08-01 00:00 KST === 2026-07-31T15:00:00.000Z
+    expect(out.salesStartDate).toBe('2026-07-31T15:00:00.000Z');
+    // 2026-08-31 23:59:59.999 KST === 2026-08-31T14:59:59.999Z
+    expect(out.salesEndDate).toBe('2026-08-31T14:59:59.999Z');
+    expect(out.errors).toEqual([]);
+  });
+
+  it('시각까지 주면 그 분을 KST 로 해석한다', () => {
+    const out = salesOf({ salesStartDate: '2026-08-01 14:30' });
+    expect(out.salesStartDate).toBe('2026-08-01T05:30:00.000Z');
+    expect(out.salesEndDate).toBeUndefined();
+  });
+
+  it('version 에는 넣지 않는다 (manager 가 Date 로 되살린다)', () => {
+    const out = salesOf({ salesStartDate: '2026-08-01' });
+    expect('salesStartDate' in out.version).toBe(false);
+  });
+
+  it('형식이 다르면 행 오류', () => {
+    for (const bad of ['08/01/2026', '2026-8-1', '2026-08-01T14:30:00Z', 'Sat Aug 01 2026 09:00:00 GMT+0900']) {
+      const out = salesOf({ salesStartDate: bad });
+      expect(out.errors.some((e) => /salesStartDate/.test(e.message))).toBe(true);
+      expect(out.salesStartDate).toBeUndefined();
+    }
+  });
+
+  it('존재하지 않는 날짜는 행 오류', () => {
+    const out = salesOf({ salesStartDate: '2026-02-30' });
+    expect(out.errors.some((e) => /salesStartDate/.test(e.message))).toBe(true);
+  });
+
+  it('종료가 시작보다 앞이면 행 오류이고 둘 다 버린다 — 메시지가 KST 로 해석된 두 값을 보여준다', () => {
+    const out = salesOf({ salesStartDate: '2026-08-31', salesEndDate: '2026-08-01' });
+    const error = out.errors.find((e) => /salesEndDate/.test(e.message));
+    expect(error).toBeDefined();
+    expect(error!.message).toBe(
+      'salesEndDate 는 salesStartDate 보다 뒤여야 합니다: 2026-08-01 23:59 <= 2026-08-31 00:00',
+    );
+    expect(out.salesStartDate).toBeUndefined();
+    expect(out.salesEndDate).toBeUndefined();
+  });
+
+  it('빈 칸은 아무 것도 만들지 않는다', () => {
+    const out = salesOf({ salesStartDate: '', salesEndDate: '  ' });
+    expect(out.salesStartDate).toBeUndefined();
+    expect(out.salesEndDate).toBeUndefined();
+    expect(out.errors).toEqual([]);
+  });
+
+  it('formatKstMinutes 는 KST 분 단위로 되돌린다', () => {
+    expect(formatKstMinutes('2026-07-31T15:00:00.000Z')).toBe('2026-08-01 00:00');
+    expect(formatKstMinutes('2026-08-31T14:59:59.999Z')).toBe('2026-08-31 23:59');
   });
 });
