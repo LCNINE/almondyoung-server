@@ -34,6 +34,8 @@ import { CancellationReasonReader } from '../../src/services/subscription/cancel
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { BenefitReader } from '../../src/services/benefit/benefit.reader';
 import { PauseReader } from '../../src/services/pause/pause.reader';
+import { PauseManager } from '../../src/services/pause/pause.manager';
+import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { BillingReader } from '../../src/services/billing/billing.reader';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
@@ -112,6 +114,8 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         ContractEventManager,
         BenefitReader,
         PauseReader,
+        PauseManager,
+        MembershipPolicyService,
         BillingReader,
         AdminMembersReader,
         // AdminOperationsService 는 멤버십 전체 서비스 그래프를 끌어온다. 이 스펙이 검증하는 라우트가

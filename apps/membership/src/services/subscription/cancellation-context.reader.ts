@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { differenceInDays } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { SubscriptionContractReader } from './subscription-contract.reader';
 import { BenefitReader } from '../benefit/benefit.reader';
@@ -16,7 +17,9 @@ type Plan = typeof schema.plan.$inferSelect;
 export interface CancellationContext {
   contract: Contract;
   plan: Plan;
-  entitlement: { id: string; endsAt: string; startsAt: string };
+  entitlement: { id: string; endsAt: string; startsAt: string; pausedAt: Date | null };
+  /** 정지 중이라 아직 종료일에 반영되지 않은 일수. 해지 시 재개하며 이만큼 연장된다. */
+  pausedDaysAccrued: number;
   decision: CancellationPolicyDecision;
   /** 정기결제 계약인지 — 1회 결제는 '해지'가 아니라 '만료 시 종료'다 */
   isRecurring: boolean;
@@ -51,12 +54,21 @@ export class CancellationContextReader {
     if (!entitlement) return null;
 
     const periodEndsAt = new Date(entitlement.endsAt);
+    // 정지 중에는 endsAt 이 동결돼 있고 재개 시점에 실제 정지 일수만큼 연장된다.
+    const pausedDaysAccrued = entitlement.pausedAt
+      ? Math.max(0, differenceInDays(now, new Date(entitlement.pausedAt)))
+      : 0;
     const hasPayment = !!contract.lastPaymentIntentId;
     // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
     // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.
     const paidPeriodStart = hasPayment
       ? ((await this.contractReader.findLastChargeSuccessAt(contract.id)) ??
-        this.refundPolicy.resolvePaidPeriodStart({ periodEndsAt, durationDays: plan.durationDays, hasPayment }))
+        this.refundPolicy.resolvePaidPeriodStart({
+          periodEndsAt,
+          durationDays: plan.durationDays,
+          hasPayment,
+          billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
+        }))
       : null;
     const pausedDaysInPeriod = paidPeriodStart
       ? await this.pauseReader.sumPausedDaysSince(contract.userId, paidPeriodStart)
@@ -83,7 +95,7 @@ export class CancellationContextReader {
     const isRecurring = contract.autoRenewal
       ? true
       : contract.recurringCancelledAt
-        ? await this.contractReader.wasRecurringBeforeCancellation(contract.id)
+        ? await this.contractReader.canResumeRecurring(contract)
         : false;
 
     const decision = this.refundPolicy.evaluate({
@@ -94,6 +106,7 @@ export class CancellationContextReader {
       paidPeriodStart,
       pausedDaysInPeriod,
       periodEndsAt,
+      pausedDaysAccrued,
       hasPayment,
       // wallet 조회가 실패하면 자동환불을 단정하지 않는다(수동 경로로 안전하게 떨어뜨린다).
       autoRefundSupported: refundability?.autoRefundSupported ?? false,
@@ -113,6 +126,7 @@ export class CancellationContextReader {
       contract,
       plan,
       entitlement,
+      pausedDaysAccrued,
       decision,
       isRecurring,
       alreadyScheduledForCancellation: !!contract.recurringCancelledAt,

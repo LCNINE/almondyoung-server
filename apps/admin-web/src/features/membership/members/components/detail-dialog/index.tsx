@@ -74,6 +74,11 @@ function serverMessage(error: unknown): string | undefined {
   return typeof msg === 'string' && msg.trim() ? msg : undefined;
 }
 
+/** 은행코드를 사람이 읽는 이름으로. 모르는 코드는 코드 그대로 — 송금할 때 대조할 수 있어야 한다. */
+function bankName(code: string): string {
+  return TOSS_BANKS.find((b) => b.code === code)?.name ?? code;
+}
+
 // 라벨-값 한 줄 (shadcn Card 안에서 사용).
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -655,8 +660,14 @@ function PlanTab({
   const autoRenewal = detail?.autoRenewal ?? false;
   // 정기결제 여부·해지예약은 recurringCancelledAt 이 SoT다. nextBillingDate 로 추론하면
   // 해지 시 null 로 지워져 1회 결제와 구분되지 않는다.
-  const isRecurringContract = autoRenewal || !!detail?.recurringCancelledAt;
+  //
+  // 다만 recurringCancelledAt 만으로 '정기결제'로 단정하면 안 된다 — 1회 결제 고객도 해지 예약을 하고,
+  // 그때 철회 버튼을 열어주면 자동이체 약정이 새로 생겨 동의한 적 없는 정기결제가 시작된다.
+  // 되살릴 자동결제가 있는지는 서버가 가입/해지 시점의 사실로 판정해 내려준다.
+  const canUndoCancellation = detail?.canUndoCancellation ?? false;
+  const isRecurringContract = autoRenewal || canUndoCancellation;
   const isCancellationScheduled = isActive && !!detail?.recurringCancelledAt;
+  const manualRefundAccount = detail?.manualRefundAccount ?? null;
 
   const handleScheduleCancel = async () => {
     if (!scheduleReason.trim()) {
@@ -683,9 +694,13 @@ function PlanTab({
   };
 
   const handleCompleteManualRefund = async () => {
+    const account = detail?.manualRefundAccount;
+    const where = account
+      ? `${bankName(account.bank)} ${account.accountNumber} (${account.holderName})`
+      : '고객 계좌';
     if (
       !window.confirm(
-        `계좌로 ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`
+        `${where}로 ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`
       )
     )
       return;
@@ -791,6 +806,21 @@ function PlanTab({
               </span>
             </div>
           )}
+          {/* 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
+              (효성 CMS 는 wallet 에 환불 행 자체가 없어 결제관리 화면에도 나타나지 않는다) */}
+          {manualRefundAccount && (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs"
+              data-testid="manual-refund-account"
+            >
+              <p className="font-medium text-amber-900">환불 송금 계좌</p>
+              <p className="mt-0.5 text-amber-900">
+                {bankName(manualRefundAccount.bank)}{' '}
+                {manualRefundAccount.accountNumber} ·{' '}
+                {manualRefundAccount.holderName}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -810,16 +840,23 @@ function PlanTab({
           </CardHeader>
           {allowForceCancel && (
             <CardContent>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleUndoCancel}
-                disabled={setAutoRenewalMutation.isPending}
-              >
-                {setAutoRenewalMutation.isPending
-                  ? '처리 중...'
-                  : '해지 예약 철회 (자동 결제 재개)'}
-              </Button>
+              {canUndoCancellation ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleUndoCancel}
+                  disabled={setAutoRenewalMutation.isPending}
+                >
+                  {setAutoRenewalMutation.isPending
+                    ? '처리 중...'
+                    : '해지 예약 철회 (자동 결제 재개)'}
+                </Button>
+              ) : (
+                <p className="text-xs text-amber-900">
+                  1회 결제 건이라 되살릴 자동결제가 없습니다. 계속 이용하려면
+                  고객이 직접 재가입해야 합니다.
+                </p>
+              )}
             </CardContent>
           )}
         </Card>
@@ -882,8 +919,8 @@ function PlanTab({
           </Card>
         )}
 
-      {/* 1회 결제 계약 안내 — 해지할 정기결제가 없다 */}
-      {isActive && !isRecurringContract && (
+      {/* 1회 결제 계약 안내 — 해지할 정기결제가 없다 (이미 해지 예약된 건은 위 배너가 설명한다) */}
+      {isActive && !isRecurringContract && !isCancellationScheduled && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">자동 결제 없음</CardTitle>

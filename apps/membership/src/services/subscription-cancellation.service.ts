@@ -11,6 +11,8 @@ import { CancellationReasonReader } from './subscription/cancellation-reason.rea
 import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService, RefundOutcome } from './billing/payment-client.service';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
+import { PauseReader } from './pause/pause.reader';
+import { PauseManager } from './pause/pause.manager';
 import { CancellationContext, CancellationContextReader } from './subscription/cancellation-context.reader';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import {
@@ -74,6 +76,8 @@ export class SubscriptionCancellationService {
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
     private readonly invoiceBillingManager: InvoiceBillingManager,
+    private readonly pauseReader: PauseReader,
+    private readonly pauseManager: PauseManager,
   ) {}
 
   /**
@@ -116,6 +120,7 @@ export class SubscriptionCancellationService {
       refundReceiveAccount?: RefundReceiveAccount;
     },
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
+    await this.resumeIfPaused(userId);
     const context = await this.loadContextForUser(userId);
     const { contract, plan, decision } = context;
 
@@ -222,7 +227,7 @@ export class SubscriptionCancellationService {
 
     // 1회 결제 계약은 되살릴 정기결제가 없다. 여기서 막지 않으면 아래 createBillingAgreement 가
     // 자동이체 약정을 새로 만들어, 정기결제에 동의한 적 없는 고객이 다음 달부터 청구된다.
-    if (!(await this.contractReader.wasRecurringBeforeCancellation(data.contract.id))) {
+    if (!(await this.contractReader.canResumeRecurring(data.contract))) {
       throw new ConflictError('1회 결제 건이라 되돌릴 자동결제가 없습니다. 멤버십은 종료일까지 그대로 이용하실 수 있습니다.');
     }
 
@@ -281,6 +286,8 @@ export class SubscriptionCancellationService {
 
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
+
+    await this.resumeIfPaused(contract.userId);
 
     const result = await this.cancellationManager.cancelRecurringPayment(
       contract.userId,
@@ -433,6 +440,19 @@ export class SubscriptionCancellationService {
       throw new ConflictError('이미 환불 완료 처리된 계약입니다.');
     }
 
+    // wallet 이 환불 행을 들고 있는 건(무통장 수동 송금 확정 대기 등)은 wallet 이 닫아야 한다.
+    // 여기서 완료로 찍으면 관리자가 계좌로 한 번 보내고, 나중에 결제관리에서 확정될 때 또 한 번
+    // 나간다. 이 창구는 wallet 에 환불 행 자체가 없는 효성 CMS 를 위한 것이다.
+    if (contract.lastPaymentIntentId) {
+      const pending = await this.findPendingWalletRefundAmount(contract.lastPaymentIntentId);
+      if (pending > 0) {
+        throw new ConflictError(
+          `결제관리에 확정 대기 중인 환불(${pending.toLocaleString()}원)이 있습니다. ` +
+            `이중 송금을 막기 위해 그 건은 결제관리에서 완료 처리해야 합니다.`,
+        );
+      }
+    }
+
     const requested = contract.eligibleRefundAmount ?? 0;
     const refundedAmount = params.amount ?? requested;
     if (refundedAmount <= 0) throw new BadRequestError('환불 금액이 0원입니다.');
@@ -455,6 +475,24 @@ export class SubscriptionCancellationService {
     );
 
     return { contractId, refundedAmount, refundCompletedAt: new Date().toISOString() };
+  }
+
+  /**
+   * wallet 에 확정 대기 중인 환불액. 조회가 실패하면 0 으로 본다 — 알 수 없는 값으로 CS 의 유일한
+   * 완료 창구를 막아버리면 "미완료" 가 영구히 남는 쪽이 더 나쁘다.
+   */
+  private async findPendingWalletRefundAmount(intentId: string): Promise<number> {
+    try {
+      const refundability = await this.paymentClientService.getRefundability(intentId);
+      return refundability.pendingRefundAmount ?? 0;
+    } catch (err) {
+      this.logger.warn(
+        `확정 대기 환불 조회 실패 — 수동 완료를 막지 않는다 (intentId=${intentId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return 0;
+    }
   }
 
   async getCancellationReasons() {
@@ -505,6 +543,22 @@ export class SubscriptionCancellationService {
           `초과 환불에는 별도 권한(${MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE})이 필요합니다.`,
       );
     }
+  }
+
+  /**
+   * 해지 전에 일시정지를 푼다.
+   *
+   * 정지 중에는 종료일이 동결돼 있고 재개 시점에 실제 정지 일수만큼 연장된다. 정지 상태 그대로
+   * 해지하면 **이미 쌓인 정지 일수를 통째로 잃고, 남은 기간에도 혜택을 못 쓴다** — "잔여 기간을
+   * 다 쓰고 끝낸다" 는 해지 예약의 뜻과 정반대다. 즉시해지도 정지 구간이 이용 기간에서 빠지는 건
+   * 그대로이므로(정산은 pause_events 로 계산한다) 여기서 함께 풀어도 환불액은 달라지지 않는다.
+   */
+  private async resumeIfPaused(userId: string): Promise<void> {
+    const paused = await this.pauseReader.findPausedEntitlement(userId);
+    if (!paused?.pausedAt) return;
+
+    this.logger.log(`해지 전 일시정지 해제 — 정지 일수를 종료일에 반영한다 (userId=${userId})`);
+    await this.pauseManager.resumePause(userId, paused);
   }
 
   private async loadContextForUser(userId: string): Promise<CancellationContext> {
@@ -558,7 +612,10 @@ export class SubscriptionCancellationService {
   }): Promise<RefundOutcome> {
     if (!params.intentId) {
       const outcome: RefundOutcome = { status: 'FAILED', refundedAmount: 0, errorCode: 'NO_PAYMENT_INTENT' };
-      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
+        ...outcome,
+        receiveAccount: params.refundReceiveAccount,
+      });
       return outcome;
     }
 
@@ -572,7 +629,11 @@ export class SubscriptionCancellationService {
       this.logger.warn(
         `수동 환불 대기 등록 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount})`,
       );
-      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      // 송금할 계좌를 남기지 않으면 관리자가 어디로 보낼지 알 수 없어 환불을 끝낼 수 없다.
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
+        ...outcome,
+        receiveAccount: params.refundReceiveAccount,
+      });
       return outcome;
     }
 
@@ -589,7 +650,11 @@ export class SubscriptionCancellationService {
           `환불 미완료 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount}, status=${outcome.status}, code=${outcome.errorCode})`,
         );
       }
-      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      // 미완료 건은 결국 사람이 계좌로 보내야 끝난다 — 그때 쓸 계좌를 함께 남긴다.
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
+        ...outcome,
+        ...(outcome.status === 'SUCCEEDED' ? {} : { receiveAccount: params.refundReceiveAccount }),
+      });
       return outcome;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -598,7 +663,10 @@ export class SubscriptionCancellationService {
         err instanceof Error ? err.stack : undefined,
       );
       const outcome: RefundOutcome = { status: 'FAILED', refundedAmount: 0, errorCode: 'REFUND_REQUEST_ERROR', errorMessage: message };
-      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, outcome);
+      await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
+        ...outcome,
+        receiveAccount: params.refundReceiveAccount,
+      });
       return outcome;
     }
   }
@@ -624,14 +692,17 @@ export class SubscriptionCancellationService {
           `해지에 따라 예정 출금 ${result.cancelledWithdrawals}건 취소 (contractId=${contractId}) — 해당 금액은 출금되지 않는다.`,
         );
       }
-      if (!result.mandateTerminated) {
-        // 결제수단이 다른 활성 구독과 공유되는 정상 케이스도 여기로 온다(skipReason 으로 구분).
+      // 정리할 게 없는 정상 케이스가 둘 있다.
+      //  - agreementFound=false: 애초에 자동이체 약정이 없는 계약(1회 결제). 모든 1회 결제 해지가
+      //    허위 '정리 필요' 를 남기면 큐도 감사 로그도 못 믿게 된다.
+      //  - 결제수단을 다른 활성 구독과 공유: 남은 구독이 그 수단을 계속 써야 하므로 더 할 일이 없다.
+      const nothingToClean =
+        !result.agreementFound || result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
+      if (!result.mandateTerminated && !nothingToClean) {
         this.logger.warn(
           `자동이체 약정 미종료 (contractId=${contractId}, reason=${result.skipReason ?? 'UNKNOWN'})`,
         );
-        if (result.skipReason !== 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT') {
-          await this.cancellationManager.markAgreementRevokePending(contractId, userId);
-        }
+        await this.cancellationManager.markAgreementRevokePending(contractId, userId);
       }
     } catch (err) {
       this.logger.error(

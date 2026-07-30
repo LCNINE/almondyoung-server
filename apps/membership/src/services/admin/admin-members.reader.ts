@@ -9,6 +9,7 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { PaymentClientService } from '../billing/payment-client.service';
+import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -80,6 +81,14 @@ export interface AdminMemberDetail {
   eligibleRefundAmount: number | null;
   refundCompleted: boolean;
   refundCompletedAt: string | null;
+  /**
+   * 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제 계약은 되살릴 정기결제가 없어 false.
+   * 화면이 `autoRenewal || recurringCancelledAt` 으로 추론하면 1회 결제 해지 건까지 철회 버튼이 열려
+   * 동의 없는 정기결제로 전환된다 — 서버가 판정해 내려준다.
+   */
+  canUndoCancellation: boolean;
+  /** 계좌 송금이 남은 환불 건의 수취 계좌(효성 CMS·자동환불 실패). 없으면 null. */
+  manualRefundAccount: { bank: string; accountNumber: string; holderName: string } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -221,6 +230,7 @@ export class AdminMembersReader {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
     private readonly paymentClientService: PaymentClientService,
+    private readonly contractReader: SubscriptionContractReader,
   ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
@@ -426,6 +436,18 @@ export class AdminMembersReader {
       computedStatus = 'PAUSED';
     }
 
+    // 해지 예약 상태에서만 의미가 있는 두 값. 화면이 추론하지 않도록 서버가 판정해 내려준다.
+    const canUndoCancellation =
+      r.contractStatus === 'ACTIVE' &&
+      !!r.recurringCancelledAt &&
+      (await this.contractReader.canResumeRecurring({
+        id: r.contractId,
+        autoRenewal: r.autoRenewal,
+        recurringCancelledAt: r.recurringCancelledAt,
+      }));
+    const manualRefundAccount =
+      r.refundRequested && !r.refundCompleted ? await this.contractReader.findManualRefundAccount(r.contractId) : null;
+
     return {
       contractId: r.contractId,
       userId: r.userId,
@@ -450,6 +472,8 @@ export class AdminMembersReader {
       eligibleRefundAmount: r.eligibleRefundAmount ?? null,
       refundCompleted: r.refundCompleted ?? false,
       refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
+      canUndoCancellation,
+      manualRefundAccount,
       pauseCount,
       firstContractCreatedAt,
     };
@@ -695,6 +719,20 @@ export class AdminMembersReader {
         .limit(1);
 
       if (contract) {
+        // (0) 1회 결제 계약은 되살릴 자동결제가 없다. 여기서 막지 않으면 아래 createBillingAgreement 가
+        // 자동이체 약정을 새로 만들어, 정기결제에 동의한 적 없는 고객이 다음 주기부터 청구된다.
+        // 고객 셀프 철회(undoCancellation)와 같은 기준으로 판정한다.
+        const resumable = await this.contractReader.canResumeRecurring({
+          id: contractId,
+          autoRenewal: false,
+          recurringCancelledAt: contract.recurringCancelledAt,
+        });
+        if (!resumable) {
+          throw new ConflictError(
+            '1회 결제 계약이라 되살릴 자동결제가 없습니다. 정기결제가 필요하면 고객이 직접 재가입해야 합니다.',
+          );
+        }
+
         // (1) 해지로 nextBillingDate 가 null 이면 현재 주기 종료일로 복구해 결제 재개를 보장한다.
         if (!contract.nextBillingDate) {
           const [ent] = await this.dbService.db
