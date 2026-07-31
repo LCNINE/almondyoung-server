@@ -296,6 +296,7 @@ export function ProductsListFilterBox() {
       <FilterRow label="검색항목">
         <div className="w-[520px] max-w-full">
           <FormInput
+            className="bg-white"
             placeholder="상품명 / 품번코드 검색"
             value={filters.q}
             onChange={(e) => patch({ q: e.target.value })}
