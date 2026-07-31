@@ -156,7 +156,7 @@ export function ManualCreateForm() {
 
   return (
     <div className="flex flex-col w-full gap-y-3">
-      <Container className="divide-y-0">
+      <Container>
         <Header title="출고주문 수동 생성" />
 
         <div className="flex flex-col gap-5 p-4">

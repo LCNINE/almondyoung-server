@@ -9,6 +9,8 @@ import {
   IsEnum,
   IsBoolean,
   IsPositive,
+  IsInt,
+  Min,
   MinLength,
   ValidateNested,
   ArrayUnique,
@@ -31,6 +33,23 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiProperty({ description: '공급처 ID (suppliers.id)', required: false, nullable: true })
+  @IsOptional()
+  @IsUUID()
+  supplierId?: string | null;
+
+  @ApiProperty({ description: '공급가 (매입 단가, 원)', required: false, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  supplyPrice?: number | null;
+
+  @ApiProperty({ description: '시장가 (정가, 원)', required: false, nullable: true })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  marketPrice?: number | null;
 
   @ApiProperty({
     description: '카테고리 ID 배열 (기존 카테고리를 모두 대체)',

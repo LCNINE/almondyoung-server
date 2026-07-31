@@ -24,6 +24,15 @@ describe('ListProductMastersQueryDto', () => {
     expect(toDto({ ids: 'a, b ,c' }).ids).toEqual(['a', 'b', 'c']);
   });
 
+  it('normalises supplierId to an array (단일/콤마 다중 모두)', async () => {
+    const a = '11111111-1111-4111-8111-111111111111';
+    const b = '22222222-2222-4222-8222-222222222222';
+    expect(toDto({ supplierId: a }).supplierId).toEqual([a]);
+    expect(toDto({ supplierId: `${a}, ${b}` }).supplierId).toEqual([a, b]);
+    expect(await validate(toDto({ supplierId: `${a},${b}` }))).toHaveLength(0);
+    expect((await validate(toDto({ supplierId: 'not-a-uuid' }))).length).toBeGreaterThan(0);
+  });
+
   it('accepts a fully valid query with the new filters', async () => {
     const dto = toDto({
       q: '립스틱',

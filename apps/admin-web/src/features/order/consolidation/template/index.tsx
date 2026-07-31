@@ -122,7 +122,7 @@ export default function ConsolidationTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="합포장 계획"
         subtitle="서버가 검증한 Draft shipment 후보를 명시적으로 선택해 하나의 shipment로 합칩니다."

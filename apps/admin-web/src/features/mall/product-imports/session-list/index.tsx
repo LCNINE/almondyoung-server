@@ -36,7 +36,7 @@ export function SessionList() {
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="엑셀 대량등록"
           subtitle="과거 대량등록 세션을 확인하거나 새로 등록합니다."

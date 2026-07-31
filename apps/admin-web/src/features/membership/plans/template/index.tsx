@@ -139,7 +139,7 @@ export function MembershipPlansTemplate() {
   const activatePlanMutation = useActivatePlan();
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="멤버십 플랜"
         subtitle="멤버십 티어와 플랜을 관리합니다."

@@ -1,0 +1,309 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  FormDateRangePicker,
+  FormInput,
+  FormRadioGroup,
+  FormSelect,
+} from '@/components/common/form';
+import {
+  FilterRow,
+  SearchFilterPanel,
+} from '@/components/common/form/search-filter-panel';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils/ui';
+import { useCategoryTree } from '@/lib/services/products/queries';
+import { useAdminUsers } from '@/lib/services/users/queries';
+import { useSuppliers } from '@/lib/services/inventory/queries';
+import { flattenCategoryTree } from '@/features/mall/products-detail/components/general/basic-information-model';
+import { toCategoryFilterOptions } from '@/hooks/table/filters/category-filter-options';
+import { parseDateRangeParam } from '@/hooks/table/query/date-range-param';
+import {
+  DATE_PRESET_OPTIONS,
+  computeDateRange,
+  toLocalDateString,
+  type DatePreset,
+} from '@/lib/utils/date';
+import {
+  CLASSIFICATION_OPTIONS,
+  classificationFromParams,
+  classificationToParams,
+  toggle,
+  UNASSIGNED_SUPPLIER,
+  type Classification,
+} from './products-list-filter-model';
+
+const ALL = 'all';
+
+/** 필터 행에 쓰는 토글 칩. 분류(단일)·공급처(다중) 가 같은 모양을 공유한다. */
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className={cn(
+        'h-8 min-w-[68px] text-xs transition-colors',
+        active &&
+          'border-primary bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground'
+      )}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+}
+
+type FilterState = {
+  datePreset: DatePreset;
+  dateFrom: string;
+  dateTo: string;
+  categoryId: string;
+  /** 다중 선택. 빈 배열 = 전체 공급처 */
+  supplierIds: string[];
+  createdBy: string;
+  classification: Classification;
+  q: string;
+};
+
+export function ProductsListFilterBox() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const { data: categoryTree } = useCategoryTree({ includeInactive: true });
+  const { data: adminUsers } = useAdminUsers({
+    roleName: 'admin,master',
+    limit: 100,
+  });
+  // ponytail: 서버 SupplierFiltersDto 가 limit @Max(100) — 200 이면 400 으로 목록이 통째로 빈다
+  const { data: suppliers } = useSuppliers({ limit: 100 });
+
+  // 공급처가 없는 상품이 963건 있어 UUID 목록만으로는 '전체'를 표현할 수 없다.
+  // 서버가 'unassigned' sentinel 로 IS NULL 을 받는다.
+  const supplierOptions = useMemo(
+    () => [
+      { value: UNASSIGNED_SUPPLIER, label: '미지정' },
+      ...(suppliers?.data ?? []).map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+      })),
+    ],
+    [suppliers?.data]
+  );
+
+  const registrantOptions = useMemo(
+    () => [
+      { value: ALL, label: '전체 등록자' },
+      ...(adminUsers?.data ?? []).map((user) => ({
+        value: user.id,
+        label: `${user.loginId} (${user.username})`,
+      })),
+    ],
+    [adminUsers?.data]
+  );
+  const categoryOptions = useMemo(
+    () => [
+      { value: ALL, label: '전체 분류' },
+      ...toCategoryFilterOptions(
+        flattenCategoryTree(categoryTree?.categories ?? [])
+      ),
+    ],
+    [categoryTree?.categories]
+  );
+
+  const [filters, setFilters] = useState<FilterState>(() => {
+    const range = parseDateRangeParam(searchParams.get('createdAt') ?? undefined);
+    return {
+      datePreset: (searchParams.get('datePreset') as DatePreset) ?? 'all',
+      dateFrom: range.from ?? '',
+      dateTo: range.to ?? '',
+      categoryId: searchParams.get('categoryId') ?? ALL,
+      supplierIds:
+        searchParams.get('supplierId')?.split(',').filter(Boolean) ?? [],
+      createdBy: searchParams.get('createdBy') ?? ALL,
+      classification: classificationFromParams(
+        searchParams.get('status'),
+        searchParams.get('stock')
+      ),
+      q: searchParams.get('q') ?? '',
+    };
+  });
+
+  const patch = (next: Partial<FilterState>) =>
+    setFilters((prev) => ({ ...prev, ...next }));
+
+  const handleSearch = () => {
+    const params = new URLSearchParams();
+    params.set('page', '1');
+
+    if (filters.q.trim()) params.set('q', filters.q.trim());
+    if (filters.categoryId !== ALL) params.set('categoryId', filters.categoryId);
+    if (filters.supplierIds.length > 0)
+      params.set('supplierId', filters.supplierIds.join(','));
+    if (filters.createdBy !== ALL) params.set('createdBy', filters.createdBy);
+
+    const { status, stock } = classificationToParams(filters.classification);
+    if (status) params.set('status', status);
+    if (stock) params.set('stock', stock);
+
+    let from = filters.dateFrom;
+    let to = filters.dateTo;
+    if (filters.datePreset !== 'all' && filters.datePreset !== 'custom') {
+      const range = computeDateRange(filters.datePreset);
+      if (range) {
+        from = range.from;
+        to = range.to;
+      }
+    }
+    if (from || to) {
+      params.set(
+        'createdAt',
+        JSON.stringify({
+          ...(from ? { $gte: from } : {}),
+          ...(to ? { $lte: to } : {}),
+        })
+      );
+    }
+    if (filters.datePreset !== 'all') params.set('datePreset', filters.datePreset);
+
+    // 정렬은 필터와 독립이므로 검색해도 유지한다.
+    const sort = searchParams.get('sort');
+    const order = searchParams.get('order');
+    if (sort) params.set('sort', sort);
+    if (order) params.set('order', order);
+
+    router.replace(`${pathname}?${params.toString()}`);
+  };
+
+  const handleReset = () => {
+    setFilters({
+      datePreset: 'all',
+      dateFrom: '',
+      dateTo: '',
+      categoryId: ALL,
+      supplierIds: [],
+      createdBy: ALL,
+      classification: 'all',
+      q: '',
+    });
+    router.replace(pathname);
+  };
+
+  return (
+    <SearchFilterPanel onSearch={handleSearch} onReset={handleReset}>
+      <FilterRow label="일자">
+        {/* ponytail: 서버가 등록일 범위만 받는다. 수정일 필터가 생기면 select 로 바꾼다. */}
+        <span className="text-sm text-muted-foreground">상품등록일</span>
+        <FormRadioGroup
+          value={filters.datePreset}
+          onValueChange={(v) => patch({ datePreset: v as DatePreset })}
+          options={DATE_PRESET_OPTIONS}
+          orientation="horizontal"
+        />
+        {filters.datePreset === 'custom' && (
+          <FormDateRangePicker
+            value={
+              filters.dateFrom
+                ? {
+                    from: new Date(filters.dateFrom),
+                    to: filters.dateTo ? new Date(filters.dateTo) : undefined,
+                  }
+                : undefined
+            }
+            onChange={(range) =>
+              patch({
+                dateFrom: range?.from ? toLocalDateString(range.from) : '',
+                dateTo: range?.to ? toLocalDateString(range.to) : '',
+              })
+            }
+          />
+        )}
+      </FilterRow>
+
+      <FilterRow label="선택사항">
+        <div className="w-80">
+          <FormSelect
+            options={categoryOptions}
+            value={filters.categoryId}
+            onValueChange={(v) => patch({ categoryId: v })}
+            placeholder="분류 선택"
+          />
+        </div>
+        <div className="w-56">
+          <FormSelect
+            options={registrantOptions}
+            value={filters.createdBy}
+            onValueChange={(v) => patch({ createdBy: v })}
+            placeholder="등록자"
+          />
+        </div>
+      </FilterRow>
+
+      <FilterRow label="공급처">
+        {/* ponytail: 공급처 19개·이름 4~5자라 다 펼쳐도 두 줄이다.
+            30~80개로 늘면 선택된 칩을 앞으로 당기고 나머지는 '더보기'로 접는다(칩 유지).
+            100개를 넘으면 그때 배치 필터 모달로. 드롭다운으로 되돌리지 말 것. */}
+        <FilterChip
+          active={filters.supplierIds.length === 0}
+          onClick={() => patch({ supplierIds: [] })}
+        >
+          전체
+        </FilterChip>
+        {/* 전체에서 몇 개만 빼고 검색하는 흐름을 위한 명시적 액션.
+            '미지정' 을 포함해 전부 켜므로 결과 집합은 '전체' 와 같다. */}
+        <FilterChip
+          active={false}
+          onClick={() =>
+            patch({ supplierIds: supplierOptions.map((o) => o.value) })
+          }
+        >
+          전체 선택
+        </FilterChip>
+        {supplierOptions.map((option) => (
+          <FilterChip
+            key={option.value}
+            active={filters.supplierIds.includes(option.value)}
+            onClick={() => patch({ supplierIds: toggle(filters.supplierIds, option.value) })}
+          >
+            {option.label}
+          </FilterChip>
+        ))}
+      </FilterRow>
+
+      <FilterRow label="분류">
+        {CLASSIFICATION_OPTIONS.map((option) => (
+          <FilterChip
+            key={option.value}
+            active={filters.classification === option.value}
+            onClick={() => patch({ classification: option.value })}
+          >
+            {option.label}
+          </FilterChip>
+        ))}
+      </FilterRow>
+
+      <FilterRow label="검색항목">
+        <div className="w-[520px] max-w-full">
+          <FormInput
+            className="bg-white"
+            placeholder="상품명 / 품번코드 검색"
+            value={filters.q}
+            onChange={(e) => patch({ q: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+      </FilterRow>
+    </SearchFilterPanel>
+  );
+}

@@ -11,7 +11,7 @@ export default function RecurringBillingTemplate() {
   const { data: overview, isError, isLoading, refetch } = useRecurringBillingOverview();
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="정기결제 관리"
         subtitle="자동이체 결제수단 심사, 월 정기 출금, 출금 결과 대기 상태를 확인합니다."

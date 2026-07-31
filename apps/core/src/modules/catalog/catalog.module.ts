@@ -15,6 +15,7 @@ import { NoticesModule } from './core/notices/notices.module';
 import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
 import { ProductImportModule } from './operations/import/product-import.module';
+import { ProductExportModule } from './operations/export/product-export.module';
 import { AuditModule } from './operations/audit/audit.module';
 
 // Analytics modules
@@ -40,6 +41,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ApprovalModule,
     BulkModule,
     ProductImportModule,
+    ProductExportModule,
     AuditModule,
     // Analytics
     DashboardModule,
