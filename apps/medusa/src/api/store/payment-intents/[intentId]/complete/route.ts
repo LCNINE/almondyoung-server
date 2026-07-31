@@ -2,6 +2,10 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 import { capturePaymentWorkflow } from '@medusajs/core-flows';
+import {
+  AWAITING_DEPOSIT_STATUS,
+  fetchIntentStatus,
+} from '../../../carts/middlewares/reject-awaiting-deposit-complete';
 
 /**
  * intentId 로 결제 대상 카트를 서버사이드에서 찾아 주문을 완료한다.
@@ -19,6 +23,18 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const paymentModule = req.scope.resolve(Modules.PAYMENT);
+
+  // 무통장 입금대기 주문은 이 경로로 완료하면 안 된다. almond-payment 가 AWAITING_DEPOSIT 을
+  // 'authorized' 로 매핑하므로 완료 자체는 성공해버리고, 그러면 marker 없는 authorized 주문이 생겨
+  // WMS 수집 게이트를 통과한다(미입금 출고). 정상 무통장 주문은 wallet 웹훅이 marker 와 함께
+  // 선생성하므로 여기서 막아도 잃는 것이 없다. /store/carts/:id/complete 의 가드와 같은 정책.
+  if ((await fetchIntentStatus(intentId, logger)) === AWAITING_DEPOSIT_STATUS) {
+    res.status(409).json({
+      message: '무통장 입금대기 주문은 입금 확인 후 자동으로 처리됩니다. 주문내역에서 확인해 주세요.',
+      code: 'BANK_TRANSFER_AWAITING_DEPOSIT',
+    });
+    return;
+  }
 
   const sessions = await paymentModule.listPaymentSessions({ data: { intentId } } as any, {
     select: ['id', 'payment_collection_id'],
