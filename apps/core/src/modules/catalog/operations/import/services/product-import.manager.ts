@@ -6,6 +6,7 @@ import {
   type PimSchema,
   productImportSessions,
   productImportItems,
+  productImportImages,
   productVariants,
 } from '../../../schema/catalog.schema';
 import { DbTransaction, UpdateProductMasterVersion } from '../../../catalog.types';
@@ -14,7 +15,9 @@ import { ProductPurchaseConstraintsService } from '../../../core/products/servic
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { ProductImportSessionReader } from './product-import-session.reader';
 import { ProductImportPricingBuilder } from './product-import-pricing.builder';
-import { ProductRecord } from '../dto/import.types';
+import { ProductRecord, ImageSourceRef, SessionImageMap } from '../dto/import.types';
+import { replaceDirectiveImageKeys } from './product-import-image.directive';
+import { ProductImportImageCleaner } from './product-import-image.cleaner';
 import { CommitAcceptedDto, PublishAcceptedDto, CancelAcceptedDto } from '../dto/import-response.dto';
 
 @Injectable()
@@ -26,6 +29,7 @@ export class ProductImportManager {
     private readonly pricingService: PricingService,
     private readonly pricingBuilder: ProductImportPricingBuilder,
     private readonly purchaseConstraintsService: ProductPurchaseConstraintsService,
+    private readonly imageCleaner: ProductImportImageCleaner,
   ) {}
 
   /**
@@ -39,6 +43,9 @@ export class ProductImportManager {
   }): Promise<CommitAcceptedDto> {
     const { fileName, userId, records } = input;
     const invalidCount = records.filter((r) => r.errors.length > 0).length;
+    // **오류 없는 행의 참조만** 모은다 — 어차피 만들지 않을 상품의 이미지를 단일 NAT 로
+    // 끌어올 이유가 없다(스펙 §3.2.4: outbound 는 t4g.nano fck-nat 하나를 공유한다).
+    const imageRefs = this.dedupImageRefs(records.filter((r) => r.errors.length === 0));
 
     return this.db.run(async (trx) => {
       const [session] = await trx
@@ -53,7 +60,12 @@ export class ProductImportManager {
           invalidCount,
           // status 는 아카이브 플래그다. 잡 상태는 commitStatus/publishStatus 가 든다.
           status: 'completed',
-          commitStatus: 'queued',
+          // 이미지가 남아 있는 동안 커밋 레인을 **게이트**한다. claim 은 레인별로 독립이라
+          // 'queued' 로 두면 같은 틱에 커밋 레인이 이 세션을 집어 이미지 없는 상품을 만든다.
+          // 이미지 레인이 마감될 때 'queued' 로 열린다(runImageSlice, Task 9/10).
+          // publish_status 가 'idle' 로 시작하는 것과 같은 계열의 게이트다.
+          commitStatus: imageRefs.length > 0 ? 'idle' : 'queued',
+          imageStatus: imageRefs.length > 0 ? 'queued' : 'completed',
           publishStatus: 'idle',
         })
         .returning();
@@ -83,24 +95,80 @@ export class ProductImportManager {
         await trx.insert(productImportItems).values(rows.slice(i, i + 200));
       }
 
+      // 이미지 행도 아이템과 같은 이유로 청크로 나눈다(파라미터 상한·문 크기).
+      for (let i = 0; i < imageRefs.length; i += 200) {
+        await trx.insert(productImportImages).values(
+          imageRefs.slice(i, i + 200).map((ref) => ({
+            sessionId: session.id,
+            imageKey: ref.imageKey,
+            usage: ref.usage,
+            sourceUrl: ref.sourceUrl,
+            status: 'pending' as const,
+          })),
+        );
+      }
+
       return {
         sessionId: session.id,
         status: 'queued' as const,
         totalRows: records.length,
         queuedCount: records.length - invalidCount,
         invalidCount,
+        imageCount: imageRefs.length,
       };
     });
   }
 
   /**
+   * 행의 단위는 `(imageKey, usage)` 이지 참조 횟수가 아니다 — 여러 상품이 같은 키를 같은
+   * 용도로 가리키면 행 하나·업로드 한 번이고 fileId 를 공유한다. 같은 이미지를 여러 상품에
+   * 쓰는 것이 흔한 운용이라 이 dedup 이 NAT 부하를 직접 줄인다(스펙 §3.2.1).
+   *
+   * DB 의 UNIQUE(session_id, image_key, usage) 가 최종 방어선이지만, 여기서 미리 줄여야
+   * 3,000행 워크북이 수만 건의 INSERT 충돌을 내지 않는다.
+   */
+  private dedupImageRefs(records: ProductRecord[]): ImageSourceRef[] {
+    const byKey = new Map<string, ImageSourceRef>();
+    for (const record of records) {
+      for (const ref of record.imageRefs ?? []) {
+        const dedupKey = `${ref.usage}:${ref.imageKey}`;
+        if (!byKey.has(dedupKey)) byKey.set(dedupKey, ref);
+      }
+    }
+    return [...byKey.values()];
+  }
+
+  /**
    * 레코드 하나로 draft 상품을 만든다. 호출자가 연 트랜잭션 안에서 돈다 —
    * 이 안에서 터지면 그 행의 변경 전부가 롤백된다.
+   *
+   * `images` 는 **이 세션의 업로드 결과**다(슬라이스당 한 번 만들어 모든 행이 공유한다).
+   * 여기 도달했다는 건 호출부가 이미 `unresolvedImageError` 로 해결 가능성을 확인했다는
+   * 뜻이라, 아래 조회는 전부 성공한다고 보고 진행한다 — 판단 지점을 하나로 모은다.
    */
-  async createFromRecord(record: ProductRecord, userId: string, tx: DbTransaction): Promise<string> {
+  async createFromRecord(
+    record: ProductRecord,
+    userId: string,
+    tx: DbTransaction,
+    images: SessionImageMap,
+  ): Promise<string> {
     const version = await this.productMastersService.createMaster(userId, tx);
+
+    const thumbnailFileId = record.thumbnailImageKey ? images.main.get(record.thumbnailImageKey) : undefined;
+    // 지정 순서가 그대로 sortOrder 가 된다(updateVersion 이 index+1 을 넣는다).
+    const additionalImageFileIds = (record.additionalImageKeys ?? [])
+      .map((key) => images.main.get(key))
+      .filter((fileId): fileId is string => typeof fileId === 'string');
+    // 본문은 워크북에 imageKey 로 적혀 있다 — 저장 직전에 fileId 로 바꾼다.
+    // 워크북에는 UUID 가 등장하지 않는다는 것이 이 간접참조의 목적이다(스펙 §3.1).
+    const description =
+      typeof record.version.description === 'string'
+        ? replaceDirectiveImageKeys(record.version.description, images.description)
+        : undefined;
+
     const data: UpdateProductMasterVersion = {
       ...record.version,
+      ...(description !== undefined ? { description } : {}),
       categoryIds: record.categoryIds,
       primaryCategoryId: record.primaryCategoryId,
       // 판매기간은 record 가 ISO **문자열**로 들고 있다 — payload jsonb 왕복에서 Date 가
@@ -110,6 +178,11 @@ export class ProductImportManager {
       // 의도(설정 안 함)와 표현(null 로 덮기)을 구분해 두는 편이 읽기 쉽다.
       ...(record.salesStartDate ? { salesStartDate: new Date(record.salesStartDate) } : {}),
       ...(record.salesEndDate ? { salesEndDate: new Date(record.salesEndDate) } : {}),
+      // 값이 없으면 키 자체를 만들지 않는다 — updateVersion 은 `!== undefined` 로 분기해
+      // **기존 이미지를 지우는** 경로를 타므로(product-masters.service.ts:920,940), 신규
+      // 생성이라 지울 것이 없어도 불필요한 DELETE 왕복이 두 번 는다.
+      ...(thumbnailFileId ? { thumbnailFileId } : {}),
+      ...(additionalImageFileIds.length > 0 ? { additionalImageFileIds } : {}),
       optionDiff: record.options.length > 0 ? { add: record.options } : undefined,
     };
     await this.productMastersService.updateVersion(version.id, data, tx);
@@ -226,15 +299,29 @@ export class ProductImportManager {
    * cancel_requested_at 을 직접 읽고 멈춘다(product-import-job.manager.ts).
    *
    * **끝난 레인은 덮지 않는다.** commit 이 completed 인 상태에서 게시를 취소했다면
-   * 상품은 실제로 생성된 것이다 — canceled 로 덮으면 이력이 거짓이 된다.
+   * 상품은 실제로 생성된 것이다 — canceled 로 덮으면 이력이 거짓이 된다. `queued`/`running`/
+   * `failed` 인 레인만 대상이며, 이미지 레인(probe→fetch)도 커밋·게시와 동등하게 판정에
+   * 들어간다. `failed` 를 포함하는 이유는 아래 active() 주석 참조 — 상한에 닿아 확정된
+   * 레인은 스스로 못 빠져나오므로 취소가 유일한 해소 수단이다.
+   *
+   * **이미지 정리는 되돌리기가 아니다.** fetch 중 취소되면 이미 업로드된 이미지는
+   * ProductImportImageCleaner 가 트랜잭션 밖에서 지운다(file-service 에 고아 정리 잡이
+   * 없어 안 지우면 S3 에 영구 잔존한다). 정리 실패는 로그만 남기고 취소 자체는 막지 않는다.
    *
    * 취소는 **종단**이다. 재개 경로를 두지 않는 대신 굳은 세션(슬라이스 밖 예외가 반복돼
-   * 매 틱 재시도되는 세션)을 푸는 수단을 겸한다 — 별도 reset-lease API 가 없는 이유다.
+   * 매 틱 재시도되는 세션, 또는 recordJobError 가 상한에 닿아 failed 로 확정한 세션)을
+   * 푸는 수단을 겸한다 — 별도 reset-lease API 가 없는 이유다.
    */
   async cancelSession(sessionId: string): Promise<CancelAcceptedDto> {
-    const active = (status: string): boolean => status === 'queued' || status === 'running';
+    // 'failed' 를 포함하는 이유: 레인이 상한에 닿아 failed 로 확정되면 그 세션은 스스로
+    // 빠져나올 수 없다 — 커밋 레인은 'idle' 로 잠긴 채이고 워커는 더 이상 클레임하지 않는다.
+    // 설계상 굳은 세션을 푸는 수단이 취소뿐이므로(별도 reset API 를 두지 않기로 했다),
+    // 취소가 여기서도 열려 있어야 이미 업로드된 이미지를 정리할 수 있다. commit·publish
+    // 레인의 failed 도 같은 이유로 대상이다 — "끝난 레인은 덮지 않는다" 규칙은
+    // completed 에만 적용되고 여전히 유지된다.
+    const active = (status: string): boolean => status === 'queued' || status === 'running' || status === 'failed';
 
-    return this.db.run(async (trx) => {
+    const result = await this.db.run(async (trx) => {
       const [session] = await trx
         .select()
         .from(productImportSessions)
@@ -249,9 +336,10 @@ export class ProductImportManager {
       if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
       if (session.cancelRequestedAt) throw new ConflictError('이미 취소된 세션입니다.');
 
+      const cancelImage = active(session.imageStatus);
       const cancelCommit = active(session.commitStatus);
       const cancelPublish = active(session.publishStatus);
-      if (!cancelCommit && !cancelPublish) {
+      if (!cancelImage && !cancelCommit && !cancelPublish) {
         throw new ConflictError('진행 중인 작업이 없어 취소할 수 없습니다.');
       }
 
@@ -260,6 +348,7 @@ export class ProductImportManager {
         .update(productImportSessions)
         .set({
           cancelRequestedAt: canceledAt,
+          ...(cancelImage ? { imageStatus: 'canceled' as const } : {}),
           ...(cancelCommit ? { commitStatus: 'canceled' as const } : {}),
           ...(cancelPublish ? { publishStatus: 'canceled' as const } : {}),
         })
@@ -269,10 +358,22 @@ export class ProductImportManager {
         sessionId,
         // 방금 쓴 값을 그대로 되돌린다 — .returning() 을 붙이지 않는 이유는 왕복이
         // 하나 늘 뿐 새로 알게 되는 것이 없기 때문이다(같은 트랜잭션 안이다).
+        imageStatus: cancelImage ? 'canceled' : session.imageStatus,
         commitStatus: cancelCommit ? 'canceled' : session.commitStatus,
         publishStatus: cancelPublish ? 'canceled' : session.publishStatus,
         canceledAt,
       };
     });
+
+    // **트랜잭션 밖에서** 정리한다 — HTTP 호출이 DB 커넥션을 물면 안 된다. 실패해도
+    // 취소는 이미 확정됐고, 정리 실패로 취소가 실패하는 편이 더 나쁘다(스펙 §3.4.1).
+    //
+    // 이미지 레인이 'queued'/'running' 인 세션은 acceptCommit 의 게이트 때문에
+    // commit_status 가 'idle' 로 남아 위 cancelCommit 은 false 다 — 그래도 claim 쿼리의
+    // `cancel_requested_at IS NULL` 가드와 `IN ('queued','running')` 조건 둘 다에 막혀
+    // 커밋 레인이 다시 잡히지 않는다(안전).
+    await this.imageCleaner.cleanupUploaded(sessionId).catch(() => undefined);
+
+    return result;
   }
 }

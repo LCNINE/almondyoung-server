@@ -15,6 +15,7 @@ function parsed(products: Record<string, string>[], options: Record<string, stri
     variants: [],
     categories: [],
     constraints: [],
+    images: [],
   };
 }
 
@@ -100,6 +101,7 @@ describe('ProductImportNormalizer', () => {
         variants: [],
         categories: [],
         constraints: [],
+        images: [],
       },
       [],
     );
@@ -141,6 +143,7 @@ describe('ProductImportNormalizer', () => {
           ],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -166,6 +169,7 @@ describe('ProductImportNormalizer', () => {
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: combination } }],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -183,6 +187,7 @@ describe('ProductImportNormalizer', () => {
           ],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -201,6 +206,7 @@ describe('ProductImportNormalizer', () => {
           ],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -226,6 +232,7 @@ describe('ProductImportNormalizer', () => {
           ],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -242,6 +249,7 @@ describe('ProductImportNormalizer', () => {
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: '색상=빨강', basePrice: '31000' } }],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -261,6 +269,7 @@ describe('ProductImportNormalizer', () => {
           variants: [{ rowNumber: 1, cells: { productKey: 'P1', optionCombination: '', basePrice: '31000' } }],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -278,6 +287,7 @@ describe('ProductImportNormalizer', () => {
           variants: [{ rowNumber: 1, cells: { productKey: 'NOPE', optionCombination: '색상=빨강;사이즈=L' } }],
           categories: [],
           constraints: [],
+          images: [],
         },
         [],
       );
@@ -290,7 +300,11 @@ describe('ProductImportNormalizer', () => {
 
 function parsedWith(
   products: Record<string, string>[],
-  extra: { categories?: Record<string, string>[]; constraints?: Record<string, string>[] } = {},
+  extra: {
+    categories?: Record<string, string>[];
+    constraints?: Record<string, string>[];
+    images?: Record<string, string>[];
+  } = {},
 ) {
   return {
     products: products.map((cells, i) => ({ rowNumber: i + 1, cells })),
@@ -298,6 +312,7 @@ function parsedWith(
     variants: [],
     categories: (extra.categories ?? []).map((cells, i) => ({ rowNumber: i + 1, cells })),
     constraints: (extra.constraints ?? []).map((cells, i) => ({ rowNumber: i + 1, cells })),
+    images: (extra.images ?? []).map((cells, i) => ({ rowNumber: i + 1, cells })),
   };
 }
 
@@ -438,5 +453,139 @@ describe('ProductImportNormalizer — Constraints 시트', () => {
     );
     const ghost = records.find((r) => r.productKey === 'GHOST');
     expect(ghost!.errors.some((e) => e.sheet === 'Constraints' && /productKey/.test(e.message))).toBe(true);
+  });
+});
+
+describe('ProductImportNormalizer — Images 시트', () => {
+  const normalizer = new ProductImportNormalizer();
+  const IMAGES = [
+    { imageKey: 'IMG-1', sourceUrl: 'https://e.example/1.jpg' },
+    { imageKey: 'IMG-2', sourceUrl: 'https://e.example/2.jpg' },
+    { imageKey: 'IMG-3', sourceUrl: 'https://e.example/3.jpg' },
+  ];
+
+  it('대표·부가 키를 main 용도로, 본문 디렉티브 키를 description 용도로 접합한다', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith(
+        [
+          {
+            productKey: 'P1',
+            name: '니트A',
+            thumbnailImageKey: 'IMG-1',
+            additionalImageKeys: 'IMG-2|IMG-3',
+            description: '부드러운 니트\n::product-image{imageKey="IMG-2"}',
+          },
+        ],
+        { images: IMAGES },
+      ),
+      CATEGORIES,
+    );
+    expect(rec.errors).toEqual([]);
+    expect(rec.thumbnailImageKey).toBe('IMG-1');
+    expect(rec.additionalImageKeys).toEqual(['IMG-2', 'IMG-3']);
+    expect(rec.descriptionImageKeys).toEqual(['IMG-2']);
+    // IMG-2 는 main·description 양쪽에 쓰여 ref 가 둘이다 — 업로드도 두 번, fileId 도 둘.
+    expect(rec.imageRefs).toEqual([
+      { imageKey: 'IMG-1', usage: 'main', sourceUrl: 'https://e.example/1.jpg' },
+      { imageKey: 'IMG-2', usage: 'main', sourceUrl: 'https://e.example/2.jpg' },
+      { imageKey: 'IMG-3', usage: 'main', sourceUrl: 'https://e.example/3.jpg' },
+      { imageKey: 'IMG-2', usage: 'description', sourceUrl: 'https://e.example/2.jpg' },
+    ]);
+  });
+
+  it('대표와 부가에 같은 키를 지정해도 main ref 는 하나다', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', thumbnailImageKey: 'IMG-1', additionalImageKeys: 'IMG-1|IMG-2' }], {
+        images: IMAGES,
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors).toEqual([]);
+    expect(rec.imageRefs).toEqual([
+      { imageKey: 'IMG-1', usage: 'main', sourceUrl: 'https://e.example/1.jpg' },
+      { imageKey: 'IMG-2', usage: 'main', sourceUrl: 'https://e.example/2.jpg' },
+    ]);
+  });
+
+  it('이미지를 안 쓰는 행은 imageRefs 가 빈 배열이다', () => {
+    const [rec] = normalizer.normalize(parsedWith([{ productKey: 'P1', name: 'x' }]), CATEGORIES);
+    expect(rec.imageRefs).toEqual([]);
+    expect(rec.errors).toEqual([]);
+  });
+
+  it('정의되지 않은 imageKey 참조는 상품 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', thumbnailImageKey: 'GHOST' }], { images: IMAGES }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Products' && /GHOST/.test(e.message))).toBe(true);
+    expect(rec.imageRefs).toEqual([]);
+  });
+
+  it('본문 디렉티브가 정의되지 않은 키를 가리켜도 상품 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', description: '::product-image{imageKey="GHOST"}' }], {
+        images: IMAGES,
+      }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => e.sheet === 'Products' && /GHOST/.test(e.message))).toBe(true);
+  });
+
+  it('부가 이미지 6개는 상품 행 오류', () => {
+    const many = ['IMG-1', 'IMG-2', 'IMG-3', 'IMG-1', 'IMG-2', 'IMG-3'].join('|');
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', additionalImageKeys: many }], { images: IMAGES }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => /부가 이미지/.test(e.message))).toBe(true);
+  });
+
+  it('부가 이미지에 같은 키가 두 번이면 상품 행 오류', () => {
+    const [rec] = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', additionalImageKeys: 'IMG-2|IMG-2' }], { images: IMAGES }),
+      CATEGORIES,
+    );
+    expect(rec.errors.some((e) => /중복/.test(e.message))).toBe(true);
+  });
+
+  it('imageKey 중복은 Images 스텁 오류이고 첫 행은 살아있다', () => {
+    const records = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x', thumbnailImageKey: 'IMG-1' }], {
+        images: [
+          { imageKey: 'IMG-1', sourceUrl: 'https://e.example/first.jpg' },
+          { imageKey: 'IMG-1', sourceUrl: 'https://e.example/second.jpg' },
+        ],
+      }),
+      CATEGORIES,
+    );
+    const stub = records.find((r) => r.errors.some((e) => e.sheet === 'Images'));
+    expect(stub).toBeDefined();
+    expect(stub!.errors[0].rowNumber).toBe(2);
+    const [product] = records;
+    expect(product.imageRefs?.[0].sourceUrl).toBe('https://e.example/first.jpg');
+  });
+
+  it('http/https 가 아닌 sourceUrl 은 Images 스텁 오류', () => {
+    for (const bad of ['file:///etc/passwd', 'gopher://x/1', 'ftp://e.example/a.jpg', '그냥문자열']) {
+      const records = normalizer.normalize(
+        parsedWith([{ productKey: 'P1', name: 'x' }], { images: [{ imageKey: 'IMG-1', sourceUrl: bad }] }),
+        CATEGORIES,
+      );
+      expect(records.some((r) => r.errors.some((e) => e.sheet === 'Images' && /sourceUrl/.test(e.message)))).toBe(true);
+    }
+  });
+
+  it('imageKey 나 sourceUrl 이 비면 Images 스텁 오류', () => {
+    const records = normalizer.normalize(
+      parsedWith([{ productKey: 'P1', name: 'x' }], {
+        images: [
+          { imageKey: '', sourceUrl: 'https://e.example/1.jpg' },
+          { imageKey: 'IMG-9', sourceUrl: '' },
+        ],
+      }),
+      CATEGORIES,
+    );
+    expect(records.filter((r) => r.errors.some((e) => e.sheet === 'Images')).length).toBe(2);
   });
 });

@@ -6,9 +6,12 @@ import {
   NormalizedOption,
   RawRow,
   RowError,
+  ImageSourceRef,
+  MAX_ADDITIONAL_IMAGE_KEYS,
   comboKey,
   parseBoolCell,
 } from '../dto/import.types';
+import { extractDirectiveImageKeys } from './product-import-image.directive';
 
 const VALUE_DELIMITER = '|';
 /** Products 루프와 Categories 시트 핸들러가 공유하는 문구 — 두 호출부에서 byte-identical 이어야 한다. */
@@ -29,6 +32,14 @@ export class ProductImportNormalizer {
     const records: ProductRecord[] = [];
     const byKey = new Map<string, ProductRecord>();
     const seenKeys = new Set<string>();
+
+    // Images 시트를 먼저 사전으로 만든다 — Products 루프가 키를 해석해야 하므로.
+    // 시트 자체의 오류(중복 키·잘못된 URL)는 붙일 상품이 없으므로 스텁 레코드로 남긴다.
+    // 스텁은 별도 배열에 모았다가 Products 루프가 끝난 뒤 records 에 합친다 — 다른 시트의
+    // orphan 스텁(Options/Variants/Categories/Constraints)도 전부 Products 루프 뒤에
+    // 붙으므로, records[0] 이 항상 상품 레코드라는 불변식을 여기서도 지킨다.
+    const imageStubs: ProductRecord[] = [];
+    const imageSources = this.buildImageSources(parsed.images, imageStubs);
 
     for (const row of parsed.products) {
       const productKey = row.cells.productKey ?? '';
@@ -68,8 +79,12 @@ export class ProductImportNormalizer {
         }
       }
 
+      this.applyImageKeys(record, imageSources);
+
       records.push(record);
     }
+
+    records.push(...imageStubs);
 
     this.applyCategorySheet(parsed.categories, records, byKey, bySlug, byParent, byId);
     this.applyConstraintSheet(parsed.constraints, records, byKey);
@@ -231,6 +246,126 @@ export class ProductImportNormalizer {
         { sheet, rowNumber: row.rowNumber, message: `존재하지 않는 productKey 참조: ${productKey || '(빈 값)'}` },
       ],
     };
+  }
+
+  /**
+   * Images 시트 → `imageKey` → `sourceUrl` 사전.
+   *
+   * **형식만 본다.** 도달 가능성·MIME·크기는 다운로드해봐야 알고 그건 워커 시점이다
+   * (스펙 §3.2.2 — /validate 는 ALB 60초 천장에 걸리므로 probe 를 워커로 옮겼다).
+   */
+  private buildImageSources(rows: RawRow[], records: ProductRecord[]): Map<string, string> {
+    const sources = new Map<string, string>();
+
+    for (const row of rows) {
+      const imageKey = (row.cells.imageKey ?? '').trim();
+      const sourceUrl = (row.cells.sourceUrl ?? '').trim();
+
+      if (imageKey === '') {
+        records.push(this.imageSheetStub(row, 'imageKey 는 필수입니다.'));
+        continue;
+      }
+      if (sourceUrl === '') {
+        records.push(this.imageSheetStub(row, `sourceUrl 는 필수입니다: ${imageKey}`));
+        continue;
+      }
+      if (sources.has(imageKey)) {
+        // 나중 행이 조용히 앞 행을 덮으면 어느 URL 이 쓰였는지 파일만 봐서는 알 수 없다.
+        records.push(this.imageSheetStub(row, `중복 imageKey: ${imageKey}`));
+        continue;
+      }
+      if (!this.isHttpUrl(sourceUrl)) {
+        records.push(
+          this.imageSheetStub(row, `sourceUrl 는 http/https URL 이어야 합니다: ${imageKey} → ${sourceUrl}`),
+        );
+        continue;
+      }
+
+      sources.set(imageKey, sourceUrl);
+    }
+
+    return sources;
+  }
+
+  /** `new URL()` 로 파싱되고 스킴이 http/https 인지만 본다. SSRF 가드(사설 IP 등)는 워커가 건다. */
+  private isHttpUrl(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'http:' || url.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Images 시트 행 자체의 오류. 상품에 붙지 않으므로 고아 참조와 같은 스텁 레코드로 남긴다 —
+   * 그래야 프리뷰에 invalid 행으로 뜨고 acceptCommit 의 invalidCount 에도 들어간다.
+   */
+  private imageSheetStub(row: RawRow, message: string): ProductRecord {
+    return {
+      rowNumber: row.rowNumber,
+      productKey: (row.cells.imageKey ?? '').trim(),
+      raw: {},
+      version: {},
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      imageRefs: [],
+      errors: [{ sheet: 'Images', rowNumber: row.rowNumber, message }],
+    };
+  }
+
+  /**
+   * 상품 행의 이미지 키 3종(대표·부가·본문)을 해석해 `imageRefs` 로 접합한다.
+   *
+   * 용도는 **참조 지점**이 정한다(스펙 §3.1). 같은 키가 대표와 본문 양쪽에 등장하면 ref 가
+   * 둘 생기고, 워커가 서로 다른 file-service 컨텍스트로 두 번 올린다 — 컨텍스트별 MIME·크기
+   * 제약이 다르기 때문이다(product-image 는 jpeg/png/webp 10MB, description 은 image/* 20MB).
+   */
+  private applyImageKeys(record: ProductRecord, sources: Map<string, string>): void {
+    const push = (message: string) => record.errors.push({ sheet: 'Products', rowNumber: record.rowNumber, message });
+
+    const thumbnail = (record.raw.thumbnailImageKey ?? '').trim();
+    const additional = (record.raw.additionalImageKeys ?? '')
+      .split(VALUE_DELIMITER)
+      .map((key) => key.trim())
+      .filter((key) => key !== '');
+    const description = extractDirectiveImageKeys(record.raw.description);
+
+    record.additionalImageKeys = additional;
+    record.descriptionImageKeys = description;
+    if (thumbnail !== '') record.thumbnailImageKey = thumbnail;
+
+    if (additional.length > MAX_ADDITIONAL_IMAGE_KEYS) {
+      push(`부가 이미지는 최대 ${MAX_ADDITIONAL_IMAGE_KEYS}개까지 지정할 수 있습니다 (현재 ${additional.length}개).`);
+    }
+    const duplicated = additional.filter((key, index) => additional.indexOf(key) !== index);
+    if (duplicated.length > 0) {
+      push(`additionalImageKeys 에 같은 키가 중복 지정되었습니다: ${[...new Set(duplicated)].join(', ')}`);
+    }
+
+    const refs: ImageSourceRef[] = [];
+    const seen = new Set<string>();
+    const add = (imageKey: string, usage: ImageSourceRef['usage']): void => {
+      const sourceUrl = sources.get(imageKey);
+      if (!sourceUrl) {
+        push(`Images 시트에 정의되지 않은 imageKey 참조: ${imageKey}`);
+        return;
+      }
+      // 같은 상품이 같은 (키, 용도) 를 두 번 가리켜도 ref 는 하나다 — 대표와 부가에
+      // 같은 키를 넣은 경우가 여기 걸린다(막을 이유는 없고 업로드만 아끼면 된다).
+      const dedupKey = `${usage}:${imageKey}`;
+      if (seen.has(dedupKey)) return;
+      seen.add(dedupKey);
+      refs.push({ imageKey, usage, sourceUrl });
+    };
+
+    if (thumbnail !== '') add(thumbnail, 'main');
+    for (const key of additional) add(key, 'main');
+    for (const key of description) add(key, 'description');
+
+    record.imageRefs = refs;
   }
 
   /**

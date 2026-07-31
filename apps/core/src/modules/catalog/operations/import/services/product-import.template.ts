@@ -1,6 +1,9 @@
 import * as ExcelJS from 'exceljs';
 
-const PRODUCT_HEADERS = [
+// 스펙(product-import.template.spec.ts)이 헤더/예시행 길이 정렬을 직접 단언하려면 상수를
+// 봐야 한다 — 모듈 로드 시점에 throw 하던 이전 가드는 스펙 스위트 전체를 수집 실패로
+// 죽이고 core 부팅까지 막아 blast radius 가 과했다. 검증은 테스트로 옮기고 여기선 export 만.
+export const PRODUCT_HEADERS = [
   'productKey',
   'name',
   'basePrice',
@@ -8,6 +11,8 @@ const PRODUCT_HEADERS = [
   'productCode',
   'brand',
   'alternativeName',
+  'thumbnailImageKey',
+  'additionalImageKeys',
   'description',
   'material',
   'marketPrice',
@@ -36,51 +41,58 @@ const OPTION_HEADERS = ['productKey', 'optionName', 'optionValues', 'sortOrder']
 const VARIANT_HEADERS = ['productKey', 'optionCombination', 'basePrice', 'membershipPrice', 'variantCode'];
 const CATEGORY_HEADERS = ['productKey', 'categoryPath', 'isPrimary'];
 const CONSTRAINT_HEADERS = ['productKey', 'requiresMembership', 'lifetimeQuantityLimit'];
+const IMAGE_HEADERS = ['imageKey', 'sourceUrl'];
+
+export const PRODUCT_EXAMPLE_ROW = [
+  'P1',
+  '예시 니트',
+  '29000',
+  '26000',
+  'PROD-001',
+  'ACME',
+  '',              // alternativeName
+  'IMG-1',         // thumbnailImageKey — Images 시트의 키를 그대로 쓴다
+  'IMG-3|IMG-4',   // additionalImageKeys — '|' 구분, 최대 5개
+  // 본문 이미지는 URL 이 아니라 디렉티브다. imageKey 로 쓰면 임포터가 fileId 로 치환한다 —
+  // 워크북에는 UUID 가 등장하지 않는다.
+  '부드러운 니트\n::product-image{imageKey="IMG-2"}',
+  '아크릴 100%',
+  '39000',
+  '12000',
+  'regular_sale',
+  'physical',
+  '의류',
+  '사입',
+  '0',
+  '1',
+  '10',
+  'ACME',
+  // categoryPath 는 하위호환으로 남긴 단일 지정 컬럼이다. 아래 Categories 시트와
+  // **같은 상품에 동시 사용하면 행 오류**라 예시는 시트 쪽만 채운다.
+  '',
+  'N',
+  'N',
+  'N',
+  '겨울 니트 추천',
+  '부드럽고 따뜻한 겨울 니트',
+  // '|' 구분 — optionValues 와 같은 규칙
+  '니트|겨울|여성니트',
+  'N',
+  // salesStartDate/salesEndDate 는 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm' 형식이다. 날짜만
+  // 주면 KST 기준으로 시작은 00:00, 종료는 23:59:59 로 해석한다. 둘 다 비우면 판매기간
+  // 제한이 없다는 뜻이다. 이 필드는 등록 후 화면에서 고칠 수 없는(유일한 쓰기 경로가
+  // 임포트뿐인) 필드라 예시 행에는 값을 채우지 않는다 — 지우지 않고 그대로 올리면 그
+  // 값이 실제 판매기간으로 굳는다.
+  '',
+  '',
+];
 
 export async function generateTemplateWorkbook(): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
 
   const products = wb.addWorksheet('Products');
   products.addRow(PRODUCT_HEADERS);
-  products.addRow([
-    'P1',
-    '예시 니트',
-    '29000',
-    '26000',
-    'PROD-001',
-    'ACME',
-    '',
-    '부드러운 니트',
-    '아크릴 100%',
-    '39000',
-    '12000',
-    'regular_sale',
-    'physical',
-    '의류',
-    '사입',
-    '0',
-    '1',
-    '10',
-    'ACME',
-    // categoryPath 는 하위호환으로 남긴 단일 지정 컬럼이다. 아래 Categories 시트와
-    // **같은 상품에 동시 사용하면 행 오류**라 예시는 시트 쪽만 채운다.
-    '',
-    'N',
-    'N',
-    'N',
-    '겨울 니트 추천',
-    '부드럽고 따뜻한 겨울 니트',
-    // '|' 구분 — optionValues 와 같은 규칙
-    '니트|겨울|여성니트',
-    'N',
-    // salesStartDate/salesEndDate 는 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:mm' 형식이다. 날짜만
-    // 주면 KST 기준으로 시작은 00:00, 종료는 23:59:59 로 해석한다. 둘 다 비우면 판매기간
-    // 제한이 없다는 뜻이다. 이 필드는 등록 후 화면에서 고칠 수 없는(유일한 쓰기 경로가
-    // 임포트뿐인) 필드라 예시 행에는 값을 채우지 않는다 — 지우지 않고 그대로 올리면 그
-    // 값이 실제 판매기간으로 굳는다.
-    '',
-    '',
-  ]);
+  products.addRow(PRODUCT_EXAMPLE_ROW);
 
   const options = wb.addWorksheet('Options');
   options.addRow(OPTION_HEADERS);
@@ -105,6 +117,16 @@ export async function generateTemplateWorkbook(): Promise<Buffer> {
   const constraints = wb.addWorksheet('Constraints');
   constraints.addRow(CONSTRAINT_HEADERS);
   constraints.addRow(['P1', 'N', '2']);
+
+  // 선택 시트. 이미지 URL 사전이다. 같은 키를 여러 상품이 가리키면 **한 번만** 내려받아
+  // 공유한다. 한 키가 대표(thumbnail/additional)와 본문 양쪽에 쓰이면 용도가 달라
+  // 두 번 올라가고 fileId 도 둘이 된다 — 컨텍스트별 MIME·크기 제약이 다르기 때문이다.
+  const images = wb.addWorksheet('Images');
+  images.addRow(IMAGE_HEADERS);
+  images.addRow(['IMG-1', 'https://supplier.example/p/123/main.jpg']);
+  images.addRow(['IMG-2', 'https://supplier.example/p/123/detail-01.jpg']);
+  images.addRow(['IMG-3', 'https://supplier.example/p/123/sub-01.jpg']);
+  images.addRow(['IMG-4', 'https://supplier.example/p/123/sub-02.jpg']);
 
   const arr = await wb.xlsx.writeBuffer();
   return Buffer.from(arr);

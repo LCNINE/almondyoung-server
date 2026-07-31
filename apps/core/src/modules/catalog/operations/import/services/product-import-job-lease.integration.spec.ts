@@ -18,6 +18,8 @@ import type { ProductImportManager } from './product-import.manager';
 import type { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
 import type { ProductImportSessionReader } from './product-import-session.reader';
 import type { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import type { ProductImportImageFetcher } from './product-import-image.fetcher';
+import type { ProductImportFileClient } from './product-import-file.client';
 
 /**
  * lease 소유권(claim → renew → release)과 마감을 **진짜 Postgres** 에 대고 구동한다.
@@ -68,14 +70,16 @@ function makeWorkerLike(client: postgres.Sql) {
   } as unknown as DbService<PimSchema>;
   const manager = new ProductImportJobManager(
     dbService,
-    // 이 스펙은 lease 원장(claim/renew/release/마감)만 구동한다 — commit·publish 양쪽의
-    // 행 생성/게시 협력자 넷은 pending 행이 0 이라 한 번도 호출되지 않으므로(퍼블리시
-    // 케이스도 대상 없음 finalize 경로만 돈다) 스텁조차 필요 없다.
+    // 이 스펙은 lease 원장(claim/renew/release/마감)만 구동한다 — commit·publish·image
+    // 세 레인의 행 생성/게시/업로드 협력자는 pending 행이 0 이라 한 번도 호출되지 않으므로
+    // (퍼블리시 케이스도 대상 없음 finalize 경로만 돈다) 스텁조차 필요 없다.
     undefined as unknown as ProductImportManager,
     undefined as unknown as ProductImportVariantCodeChecker,
     new ConfigService({ PRODUCT_IMPORT_LEASE_MS: String(LEASE_MS) }),
     undefined as unknown as ProductImportSessionReader,
     undefined as unknown as ProductVersionsService,
+    undefined as unknown as ProductImportImageFetcher,
+    undefined as unknown as ProductImportFileClient,
   );
   // renewLease/releaseLease 는 private 이다 — 대괄호 접근은 TS 가 허용하는 표준 우회로이고
   // `as` 캐스트 없이 시그니처를 그대로 유지한다.

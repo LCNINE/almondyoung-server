@@ -11,6 +11,9 @@ import { ProductImportProgressBuilder } from './services/product-import-progress
 import { ProductImportVariantCodeChecker } from './services/product-import-variant-code.checker';
 import { ProductImportJobManager } from './services/product-import-job.manager';
 import { ProductImportJobWorker } from './services/product-import-job.worker';
+import { ProductImportImageFetcher } from './services/product-import-image.fetcher';
+import { ProductImportFileClient } from './services/product-import-file.client';
+import { ProductImportImageCleaner } from './services/product-import-image.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
 
@@ -29,6 +32,9 @@ import { PricingModule } from '../../core/pricing/pricing.module';
     ProductImportVariantCodeChecker,
     ProductImportJobManager,
     ProductImportJobWorker,
+    ProductImportImageFetcher,
+    ProductImportFileClient,
+    ProductImportImageCleaner,
   ],
   exports: [ProductImportService],
 })

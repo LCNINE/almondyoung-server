@@ -14,6 +14,8 @@ export interface ParsedWorkbook {
   categories: RawRow[];
   /** 선택 시트 — 구매제약. 없으면 빈 배열 */
   constraints: RawRow[];
+  /** 선택 시트 — 이미지 URL 사전(`imageKey` → `sourceUrl`). 없으면 빈 배열 */
+  images: RawRow[];
 }
 
 export interface CategoryNode {
@@ -31,7 +33,7 @@ export interface NormalizedOption {
 }
 
 export interface RowError {
-  sheet: 'Products' | 'Options' | 'Variants' | 'Categories' | 'Constraints';
+  sheet: 'Products' | 'Options' | 'Variants' | 'Categories' | 'Constraints' | 'Images';
   rowNumber: number;
   message: string;
 }
@@ -68,6 +70,38 @@ export function formatKstMinutes(iso: string): string {
   const shifted = new Date(new Date(iso).getTime() + 9 * 60 * 60 * 1000);
   return shifted.toISOString().slice(0, 16).replace('T', ' ');
 }
+
+/**
+ * 이미지 용도. **참조 지점에서 추론한다** — thumbnailImageKey/additionalImageKeys 에
+ * 등장하면 'main', description 본문 디렉티브에 등장하면 'description'.
+ * 양쪽에 등장하면 오류로 막지 않고 두 번 업로드해 fileId 두 개를 만든다(스펙 §3.1).
+ * MD/AI 가 채울 칸이 하나 줄고, 컨텍스트별 MIME 제약이 자동으로 맞는다.
+ */
+export type ProductImageUsage = 'main' | 'description';
+
+/** 도메인 상한이다 — create-master.dto.ts:11 의 `.max(5)`. */
+export const MAX_ADDITIONAL_IMAGE_KEYS = 5;
+
+/** 한 상품이 참조하는 이미지 하나. acceptCommit 이 이걸 모아 (키, 용도) 로 dedup 한다. */
+export interface ImageSourceRef {
+  imageKey: string;
+  usage: ProductImageUsage;
+  sourceUrl: string;
+}
+
+/**
+ * 커밋 슬라이스가 세션 이미지 행에서 만들어 `createFromRecord` 에 넘기는 맵.
+ * 용도별로 갈라 두어야 같은 키가 양쪽에 쓰일 때 서로 다른 fileId 가 섞이지 않는다.
+ */
+export interface SessionImageMap {
+  /** usage='main' 인 imageKey → fileId */
+  main: Map<string, string>;
+  /** usage='description' 인 imageKey → fileId */
+  description: Map<string, string>;
+}
+
+/** 이미지가 없는 세션·테스트용. 호출부가 매번 빈 Map 을 두 개 만들지 않게. */
+export const EMPTY_SESSION_IMAGES: SessionImageMap = { main: new Map(), description: new Map() };
 
 export interface NormalizedVariantOverride {
   rowNumber: number;
@@ -119,5 +153,21 @@ export interface ProductRecord {
    */
   salesStartDate?: string;
   salesEndDate?: string;
+  /**
+   * Products.thumbnailImageKey. **선택 필드인 이유는 롤링 배포다** — 옛 코드가 접수한
+   * payload 에는 이 키들이 없고, isProductRecord 가드를 확장하면 그 세션 전 행이 죽는다.
+   * 소비자는 전부 `?? []` / `?? undefined` 로 읽는다.
+   */
+  thumbnailImageKey?: string;
+  /** Products.additionalImageKeys ('|' 구분, 최대 5). 지정 순서가 sortOrder 가 된다. */
+  additionalImageKeys?: string[];
+  /** description 본문 디렉티브가 참조하는 키. 등장 순서·중복 제거. */
+  descriptionImageKeys?: string[];
+  /**
+   * 위 셋을 Images 시트와 접합한 결과. `(imageKey, usage)` 로 중복 제거돼 있다.
+   * acceptCommit 이 **오류 없는 행의 것만** 모아 product_import_images 를 만든다 —
+   * 어차피 만들지 않을 상품의 이미지를 NAT 로 끌어올 이유가 없다.
+   */
+  imageRefs?: ImageSourceRef[];
   errors: RowError[];
 }

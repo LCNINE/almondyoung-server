@@ -9,6 +9,9 @@ import { ProductImportJobManager, ClaimedSession } from './product-import-job.ma
  * 한 틱은 세션 하나의 슬라이스 하나만 돈다. isProcessing 가드가 틱 누적을 막고,
  * 슬라이스가 틱 길이를 유계로 만든다.
  *
+ * 레인 우선순위는 image → commit → publish 다 — 앞선 레인에 일이 있으면 뒤 레인은
+ * 그 틱에 굶는다(스펙 §3.3).
+ *
  * ScheduleModule.forRoot() 는 앱 어딘가에서 한 번만 부르면 되고
  * (apps/core/src/modules/inventory/core/inventory.module.ts:39) 전역 discovery 로
  * 이 @Cron 을 찾는다 — fulfillment.module.ts:78 과 같은 관례다.
@@ -37,9 +40,16 @@ export class ProductImportJobWorker {
 
     this.isProcessing = true;
     let claimed: ClaimedSession | null = null;
-    let kind: 'commit' | 'publish' = 'commit';
+    let kind: 'image' | 'commit' | 'publish' = 'image';
     try {
-      // commit 이 우선이다 — 생성이 끝나야 게시할 것이 생긴다.
+      // 이미지가 먼저다 — 이미지가 끝나야 커밋 레인의 게이트(commit_status='idle')가 열린다.
+      claimed = await this.jobManager.claimImage();
+      if (claimed) {
+        await this.jobManager.runImageSlice(claimed);
+        await this.jobManager.clearConsecutiveFailures(claimed.sessionId);
+        return;
+      }
+      kind = 'commit';
       claimed = await this.jobManager.claimCommit();
       if (claimed) {
         await this.jobManager.runCommitSlice(claimed);
