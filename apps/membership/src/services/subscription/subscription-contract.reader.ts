@@ -7,6 +7,27 @@ import { eq, and, desc, inArray, count } from 'drizzle-orm';
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
 
+/**
+ * 자동이체 약정 정리의 상태 축.
+ * PENDING(재시도 대기) · DEFERRED(수금 끝날 때까지 보류) · REVOKED(끝남) · ABANDONED(7일 초과, 사람이 처리).
+ */
+export const AGREEMENT_EVENT_TYPES = [
+  'AGREEMENT_REVOKE_PENDING',
+  'AGREEMENT_REVOKE_DEFERRED',
+  'AGREEMENT_REVOKED',
+  'AGREEMENT_REVOKE_ABANDONED',
+] as const;
+
+export type AgreementEventType = (typeof AGREEMENT_EVENT_TYPES)[number];
+
+export interface AgreementEventState {
+  contractId: string;
+  userId: string;
+  eventType: AgreementEventType;
+  metadata: Record<string, unknown>;
+  since: Date;
+}
+
 @Injectable()
 export class SubscriptionContractReader {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
@@ -260,6 +281,57 @@ export class SubscriptionContractReader {
       accountNumber: account.accountNumber,
       holderName: String(account.holderName ?? ''),
     };
+  }
+
+  /**
+   * 계약별 **최신** 자동이체 약정 정리 이벤트.
+   *
+   * 약정 정리에는 상태 컬럼이 없다(스키마를 늘리지 않으려고). 대신 계약별 마지막 약정 이벤트가
+   * 곧 현재 상태다 — REVOKED/ABANDONED 가 붙으면 자동으로 큐에서 빠진다. 재시도 스케줄러와
+   * 관리자 화면이 **같은 정의**를 봐야 "화면엔 없는데 매시간 재시도되는" 상태가 안 생기므로
+   * 그 판정을 여기 한 곳에 둔다.
+   */
+  async findLatestAgreementEvents(params: {
+    eventTypes: AgreementEventType[];
+    limit: number;
+  }): Promise<AgreementEventState[]> {
+    const latest = this.dbService.db
+      .selectDistinctOn([schema.subscriptionContractEvents.contractId], {
+        contractId: schema.subscriptionContractEvents.contractId,
+        userId: schema.subscriptionContractEvents.userId,
+        eventType: schema.subscriptionContractEvents.eventType,
+        metadata: schema.subscriptionContractEvents.metadata,
+        createdAt: schema.subscriptionContractEvents.createdAt,
+      })
+      .from(schema.subscriptionContractEvents)
+      .where(inArray(schema.subscriptionContractEvents.eventType, AGREEMENT_EVENT_TYPES))
+      .orderBy(
+        schema.subscriptionContractEvents.contractId,
+        desc(schema.subscriptionContractEvents.createdAt),
+        desc(schema.subscriptionContractEvents.id),
+      )
+      .as('latest');
+
+    const rows = await this.dbService.db
+      .select({
+        contractId: latest.contractId,
+        userId: latest.userId,
+        eventType: latest.eventType,
+        metadata: latest.metadata,
+        since: latest.createdAt,
+      })
+      .from(latest)
+      .where(inArray(latest.eventType, params.eventTypes))
+      .orderBy(latest.createdAt)
+      .limit(params.limit);
+
+    return rows.map((r) => ({
+      contractId: r.contractId,
+      userId: r.userId,
+      eventType: r.eventType as AgreementEventType,
+      metadata: (r.metadata ?? {}) as Record<string, unknown>,
+      since: r.since,
+    }));
   }
 
   /**

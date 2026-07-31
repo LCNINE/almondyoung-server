@@ -92,6 +92,14 @@ export default function SubscriberSection({
     membershipData?.endDate ??
     null
   const canCancel = !!cancellationPreview && !isCancellationScheduled
+  // 해지 예약 뒤에도 즉시해지+환불은 남아 있다. 예약을 먼저 고른 고객이 청약철회 7일 안에 마음을
+  // 바꾸면 전액 환불 대상인데, 진입점이 사라지면 그 돈을 되돌릴 방법이 화면에 없어진다
+  // (서버는 예약 상태에서도 IMMEDIATE_REFUND 를 받는다 — 막히는 건 재예약뿐이다).
+  const scheduledRefundOption = isCancellationScheduled
+    ? cancellationPreview?.options.find(
+        (option) => option.mode === "IMMEDIATE_REFUND" && option.available
+      )
+    : undefined
 
   return (
     <>
@@ -147,6 +155,17 @@ export default function SubscriberSection({
               className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-4 disabled:opacity-60"
             >
               {t("billing.cancelScheduledUndo")}
+            </button>
+          )}
+          {scheduledRefundOption && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="mt-2 block text-xs font-semibold text-amber-900 underline underline-offset-4"
+            >
+              {t("billing.cancelScheduledRefundNow", {
+                amount: scheduledRefundOption.refundAmount.toLocaleString("ko-KR"),
+              })}
             </button>
           )}
         </div>

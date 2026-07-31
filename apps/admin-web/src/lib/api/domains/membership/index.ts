@@ -85,13 +85,19 @@ export interface AdminMemberDetail {
     accountNumber: string;
     holderName: string;
   } | null;
-  /** 환불 대상 결제 내역이 있는지. 관리자 지급·이관 계약은 결제가 없어 환불 자체가 불가능하다. */
-  hasPaymentIntent: boolean;
+  /**
+   * 환불 대상 결제 내역이 있는지. 관리자 지급·이관 계약은 결제가 없어 환불 자체가 불가능하다.
+   *
+   * optional 인 이유는 배포 과도기다 — admin-web 이 membership 보다 먼저 뜨면 이 필드가 없다.
+   * 타입이 그 사실을 말해줘야 화면이 `!hasPaymentIntent` 같은 판정으로 뒤집히지 않는다.
+   */
+  hasPaymentIntent?: boolean;
   /**
    * 미완료 환불 건의 결제관리(wallet) 쪽 사실. 계좌로 송금하기 **전에** 확인해야 하는 값이다 —
    * 이미 PG 로 나갔거나 결제관리가 확정만 남긴 건에 또 보내면 돈이 두 번 나간다.
+   * 과도기·조회 실패에는 없거나 null 이다(= 알 수 없음, 아무것도 단정하지 않는다).
    */
-  refundSettlement: {
+  refundSettlement?: {
     alreadyRefundedAmount: number;
     pendingRefundAmount: number;
   } | null;
@@ -220,6 +226,11 @@ export interface AdminCancellationQuote {
   withdrawalDaysRemaining: number;
   withdrawalWindowDays: number;
   refundProcessingBusinessDays: number;
+  /**
+   * 환불 대상 결제 내역이 있는지. false 면 서버가 환불 유형을 400 으로 거부하므로 화면도 열지 않는다.
+   * 과도기(membership 이 옛 버전)엔 undefined — 그때는 서버 판정에 맡긴다.
+   */
+  hasPaymentIntent?: boolean;
   options: AdminCancellationOption[];
 }
 
@@ -526,6 +537,16 @@ export const membershipApi = {
     import('@/lib/types/dto/membership').DunningListResponse
   > => {
     const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/dunning`);
+    return res.data;
+  },
+
+  /** 해지했는데 은행에 자동이체 약정이 남은 계약. 로그에만 있던 ABANDONED 를 사람이 보게 한다. */
+  getAgreementCleanupQueue: async (): Promise<
+    import('@/lib/types/dto/membership').AgreementCleanupListResponse
+  > => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/agreement-cleanup`
+    );
     return res.data;
   },
 

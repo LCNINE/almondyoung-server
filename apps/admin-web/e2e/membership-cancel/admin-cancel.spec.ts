@@ -45,7 +45,7 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     if (SCENARIO === 'scheduled') {
       await expect(dialog.getByText('정기결제 (해지 예약됨)')).toBeVisible();
     } else if (
-      ['one-time', 'one-time-scheduled', 'annual', 'pg-settled', 'pg-pending', 'no-payment'].includes(
+      ['one-time', 'one-time-scheduled', 'annual', 'pg-settled', 'pg-pending', 'no-payment', 'no-payment-active', 'legacy-detail'].includes(
         SCENARIO
       )
     ) {
@@ -130,6 +130,34 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     await expect(dialog.getByText(/미완료 — 4,990원 처리 필요/)).toHaveCount(0);
   });
 
+  // 결제 내역이 없는 계약에는 서버가 환불 유형을 400 으로 거부한다. 다이얼로그가 그걸 모르면
+  // 관리자가 사유·금액·계좌를 다 채운 뒤에야 막히고, 왜 막혔는지도 그때서야 안다.
+  test('결제 내역이 없는 계약은 환불 유형을 아예 고를 수 없다', async ({ page }) => {
+    test.skip(SCENARIO !== 'no-payment-active', '결제 없는 활성 계약 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    await dialog.getByRole('button', { name: '즉시 해지 + 환불 처리' }).click();
+    const confirm = page.getByRole('dialog').filter({ hasText: '즉시 해지 + 환불' }).last();
+
+    await expect(confirm.getByTestId('refund-blocked-notice')).toContainText(/환불할 대상이 없습니다/);
+    await expect(confirm.getByRole('radio', { name: /전액 환불/ })).toBeDisabled();
+  });
+
+  // 배포 과도기: admin-web 이 membership 보다 먼저 뜨면 hasPaymentIntent 가 오지 않는다. 그때
+  // "값이 없다" 를 "결제가 없다" 로 읽으면 정상 수동 송금 건의 완료 창구가 통째로 사라진다.
+  test('옛 membership 응답(새 필드 없음)에서도 송금 완료 창구가 살아있다', async ({ page }) => {
+    test.skip(SCENARIO !== 'legacy-detail', '배포 과도기 시나리오만');
+
+    const dialog = await openCancelTab(page);
+
+    await expect(dialog.getByText(/미완료 — 4,990원 처리 필요/)).toBeVisible();
+    await expect(dialog.getByTestId('complete-manual-refund')).toBeVisible();
+    await expect(dialog.getByTestId('refund-impossible-notice')).toHaveCount(0);
+    await expect(dialog.getByText('환불 대상 결제 없음')).toHaveCount(0);
+    // 어디로 보낼지도 그대로 보여야 송금을 끝낼 수 있다.
+    await expect(dialog.getByTestId('manual-refund-account')).toBeVisible();
+  });
+
   // 자동환불이 실패로 기록됐어도 PG 로는 이미 나갔을 수 있다(타임아웃 등). 그 상태에서 관리자가
   // 계좌로 또 보내면 돈이 두 번 나간다 — 송금 버튼을 누르기 전에 화면이 사실을 알려야 한다.
   test('PG 로 이미 환불된 건은 추가 송금이 필요 없다고 알린다', async ({ page }) => {
@@ -172,8 +200,8 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
 
   test('즉시 해지 다이얼로그가 정책 견적과 산출 내역을 먼저 보여준다', async ({ page }) => {
     test.skip(
-      SCENARIO === 'scheduled' || SCENARIO === 'no-payment',
-      '해지 예약 상태는 견적 확인만 별도로 다루고, 이미 해지된 잔재 건에는 즉시해지 카드가 없다'
+      SCENARIO === 'scheduled' || SCENARIO === 'no-payment' || SCENARIO === 'legacy-detail',
+      '해지 예약 상태는 견적 확인만 별도로 다루고, 이미 해지된 건에는 즉시해지 카드가 없다'
     );
 
     const dialog = await openCancelTab(page);

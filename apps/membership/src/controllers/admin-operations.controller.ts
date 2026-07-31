@@ -1086,6 +1086,25 @@ export class AdminOperationsController {
   }
 
   /**
+   * 자동이체 약정 정리 큐 — 해지했는데 은행에 효성 약정이 남아 있는 계약.
+   *
+   * `AGREEMENT_REVOKE_ABANDONED` 는 스케줄러가 7일 뒤 재시도를 **멈춘** 건이라, 이 목록이 없으면
+   * 해지한 고객의 계좌에 자동이체가 남은 채 아무도 모르는 상태가 된다(지금까진 로그뿐이었다).
+   *
+   * GET /admin/agreement-cleanup
+   */
+  @Get('agreement-cleanup')
+  @ApiOperation({ summary: '자동이체 약정 정리 큐 (미정리·포기 건)' })
+  @UseGuards(JwtAuthGuard)
+  async getAgreementCleanupQueue() {
+    try {
+      return await this.adminMembersReader.findAgreementCleanupQueue();
+    } catch (error) {
+      this.handleError(error, '자동이체 약정 정리 큐 조회');
+    }
+  }
+
+  /**
    * 관리자 수동 조작: billingInProgress 플래그 해제.
    * wallet 결과 이벤트가 영구적으로 오지 않는 경우 사용.
    * 감사 이벤트(BILLING_PROGRESS_RESET_BY_ADMIN)를 남기고 reason 필수.

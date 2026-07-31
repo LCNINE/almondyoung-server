@@ -773,6 +773,7 @@
       "cancelScheduledTitle": "해지 예약됨",
       "cancelScheduledBody": "{cancelledAt}에 해지 신청하셨습니다. {endsAt}까지 멤버십 혜택을 이용하실 수 있으며, 이후 자동 결제는 청구되지 않습니다.",
       "cancelScheduledUndo": "해지 취소하고 계속 이용하기",
+      "cancelScheduledRefundNow": "지금 해지하고 {amount}원 환불받기",
       "cancelUndoSuccess": "해지가 철회되었습니다. 멤버십이 계속 유지됩니다.",
       "cancelUndoFailed": "해지 철회에 실패했습니다. 잠시 후 다시 시도해 주세요.",
       "oneTimeNoCancelNeeded": "1회 결제 건이라 자동 결제가 없습니다. {date}에 자동으로 종료됩니다.",

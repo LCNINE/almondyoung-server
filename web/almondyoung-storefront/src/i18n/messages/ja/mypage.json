@@ -773,6 +773,7 @@
       "cancelScheduledTitle": "解約予約済み",
       "cancelScheduledBody": "{cancelledAt}に解約を申請されました。{endsAt}まで特典をご利用いただけます。以降の決済は請求されません。",
       "cancelScheduledUndo": "解約を取り消して継続する",
+      "cancelScheduledRefundNow": "今すぐ解約して{amount}ウォン返金を受ける",
       "cancelUndoSuccess": "解約を取り消しました。会員資格は継続します。",
       "cancelUndoFailed": "解約の取り消しに失敗しました。しばらくしてから再度お試しください。",
       "oneTimeNoCancelNeeded": "1回決済のため自動決済はありません。{date}に自動的に終了します。",

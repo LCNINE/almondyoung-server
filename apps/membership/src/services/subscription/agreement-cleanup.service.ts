@@ -1,15 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { desc, eq, inArray } from 'drizzle-orm';
 import { format, subDays } from 'date-fns';
-import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { ContractEventManager } from './contract-event.manager';
+import { SubscriptionContractReader } from './subscription-contract.reader';
 
 /** 한 번에 처리할 최대 건수. 남은 건은 다음 실행이 이어받는다(스케줄러가 오래 물고 있지 않게). */
 const BATCH_SIZE = 50;
+/** 처리 대상 필터(보류 만기) 전에 읽어올 행 수. 보류 건이 배치 상한을 잡아먹지 않게 넉넉히 본다. */
+const SCAN_LIMIT = 500;
 /** 이 기간이 지나도 정리되지 않으면 사람이 봐야 한다(무한 재시도로 조용히 묻히지 않게). */
 const ESCALATE_AFTER_DAYS = 7;
 
@@ -32,6 +33,7 @@ export class AgreementCleanupService {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly paymentClientService: PaymentClientService,
     private readonly contractEventManager: ContractEventManager,
+    private readonly contractReader: SubscriptionContractReader,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -48,54 +50,25 @@ export class AgreementCleanupService {
   /**
    * 아직 정리되지 않은 계약.
    *
-   * 계약별 최신 약정 관련 이벤트가 `AGREEMENT_REVOKE_PENDING` 인 건만 고른다 —
+   * 계약별 최신 약정 관련 이벤트가 `AGREEMENT_REVOKE_PENDING`/`_DEFERRED` 인 건만 고른다 —
    * 그 뒤에 성공(REVOKED)/포기(ABANDONED) 이벤트가 붙으면 자연히 목록에서 빠진다.
    */
   private async findPending(): Promise<{ contractId: string; userId: string; pendingSince: Date }[]> {
-    const latest = this.dbService.db
-      .selectDistinctOn([schema.subscriptionContractEvents.contractId], {
-        contractId: schema.subscriptionContractEvents.contractId,
-        userId: schema.subscriptionContractEvents.userId,
-        eventType: schema.subscriptionContractEvents.eventType,
-        metadata: schema.subscriptionContractEvents.metadata,
-        createdAt: schema.subscriptionContractEvents.createdAt,
-      })
-      .from(schema.subscriptionContractEvents)
-      .where(
-        inArray(schema.subscriptionContractEvents.eventType, [
-          'AGREEMENT_REVOKE_PENDING',
-          'AGREEMENT_REVOKE_DEFERRED',
-          'AGREEMENT_REVOKED',
-          'AGREEMENT_REVOKE_ABANDONED',
-        ]),
-      )
-      .orderBy(
-        schema.subscriptionContractEvents.contractId,
-        desc(schema.subscriptionContractEvents.createdAt),
-        desc(schema.subscriptionContractEvents.id),
-      )
-      .as('latest');
-
-    const rows = await this.dbService.db
-      .select({
-        contractId: latest.contractId,
-        userId: latest.userId,
-        eventType: latest.eventType,
-        metadata: latest.metadata,
-        pendingSince: latest.createdAt,
-      })
-      .from(latest)
-      .where(inArray(latest.eventType, ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED']))
-      .orderBy(latest.createdAt)
-      .limit(BATCH_SIZE);
+    // 보류(DEFERRED) 건은 아직 처리 대상이 아니라도 목록을 차지한다. 배치 상한을 그 필터 **뒤**에
+    // 적용하려면 넉넉히 읽어야 한다 — 안 그러면 보류 건이 쌓였을 때 정작 재시도해야 할 PENDING 이
+    // 상한에 밀려 영영 실행되지 않는다(조용한 굶주림).
+    const rows = await this.contractReader.findLatestAgreementEvents({
+      eventTypes: ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED'],
+      limit: SCAN_LIMIT,
+    });
 
     const today = format(new Date(), 'yyyy-MM-dd');
     // 보류(DEFERRED) 건은 이용 기간이 끝나기 전에 지우면 남은 수금이 실패해 무료 이용이 된다.
     // 종료일이 지난 뒤에야 정리 대상이 된다.
-    return rows
+    const due = rows
       .filter((r) => {
         if (r.eventType !== 'AGREEMENT_REVOKE_DEFERRED') return true;
-        const notBefore = ((r.metadata ?? {}) as { notBefore?: string }).notBefore;
+        const notBefore = (r.metadata as { notBefore?: string }).notBefore;
         return !notBefore || notBefore < today;
       })
       .map((r) => ({
@@ -103,8 +76,16 @@ export class AgreementCleanupService {
         userId: r.userId,
         // 포기(ABANDONED) 시계는 '재시도가 가능해진 시점'부터 센다. 보류 기록 시각부터 세면
         // 이용 기간이 긴 계약은 첫 재시도 실패에 곧바로 포기 처리된다.
-        pendingSince: this.retryableSince(r.pendingSince, r.metadata),
+        pendingSince: this.retryableSince(r.since, r.metadata),
       }));
+
+    // 잘라낸 건을 조용히 버리지 않는다 — "0건 남음" 으로 읽히면 아무도 다음 실행을 기다리지 않는다.
+    if (due.length > BATCH_SIZE) {
+      this.logger.log(
+        `정리 대상 ${due.length}건 중 ${BATCH_SIZE}건만 이번 실행에서 처리 — 나머지는 다음 시간에 이어받는다`,
+      );
+    }
+    return due.slice(0, BATCH_SIZE);
   }
 
   private retryableSince(createdAt: Date, metadata: unknown): Date {

@@ -219,6 +219,28 @@ export interface StuckBillingContractsResponse {
   total: number;
 }
 
+/** 해지했는데 은행에 자동이체 약정이 남아 있는 계약 한 건. */
+export interface AgreementCleanupItem {
+  contractId: string;
+  userId: string;
+  /** AGREEMENT_REVOKE_ABANDONED(재시도 중단) | _PENDING(재시도 중) | _DEFERRED(수금 대기) */
+  state: string;
+  /** 이 상태가 된 시각 */
+  since: string;
+  /** DEFERRED 가 정리 대상이 되는 날(이용 종료일). 그 외엔 null */
+  notBefore: string | null;
+  /** 정리가 막힌 사유(효성 삭제 가드 등) */
+  reason: string | null;
+  contractStatus: string | null;
+  billingPath: string | null;
+  cancelledAt: string | null;
+}
+
+export interface AgreementCleanupListResponse {
+  data: AgreementCleanupItem[];
+  total: number;
+}
+
 export interface DunningListItem {
   contractId: string;
   userId: string;
@@ -1028,6 +1050,71 @@ export class AdminMembersReader {
       })),
       total: rows.length,
     };
+  }
+
+  /**
+   * 자동이체 약정 정리 큐 — **은행에 약정이 남아 있는 해지 계약**.
+   *
+   * 해지는 끝났는데 효성 CMS 약정이 고객 계좌에 살아 있는 상태다. 재청구는 DB 플래그로 막혀 있어
+   * 당장 돈이 나가진 않지만, 방치하면 해지한 고객의 계좌에 자동이체 등록이 남아 민원이 된다.
+   * 특히 `AGREEMENT_REVOKE_ABANDONED` 는 스케줄러가 **재시도를 멈춘** 건이라 사람이 처리하지 않으면
+   * 영원히 그대로다 — 그 사실이 로그에만 있으면 아무도 모른다.
+   */
+  async findAgreementCleanupQueue(): Promise<AgreementCleanupListResponse> {
+    const states = await this.contractReader.findLatestAgreementEvents({
+      eventTypes: ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED', 'AGREEMENT_REVOKE_ABANDONED'],
+      limit: 500,
+    });
+    if (states.length === 0) return { data: [], total: 0 };
+
+    const contracts = await this.dbService.db
+      .select({
+        id: schema.subscriptionContracts.id,
+        status: schema.subscriptionContracts.status,
+        billingPath: schema.subscriptionContracts.billingPath,
+        cancelledAt: schema.subscriptionContracts.cancelledAt,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        inArray(
+          schema.subscriptionContracts.id,
+          states.map((s) => s.contractId),
+        ),
+      );
+    const contractById = new Map(contracts.map((c) => [c.id, c]));
+
+    // 포기(ABANDONED) → 재시도 대기(PENDING) → 보류(DEFERRED) 순. 사람이 봐야 하는 것이 위로 온다.
+    const severity: Record<string, number> = {
+      AGREEMENT_REVOKE_ABANDONED: 0,
+      AGREEMENT_REVOKE_PENDING: 1,
+      AGREEMENT_REVOKE_DEFERRED: 2,
+    };
+
+    const data = states
+      .map((s) => {
+        const contract = contractById.get(s.contractId);
+        return {
+          contractId: s.contractId,
+          userId: s.userId,
+          state: s.eventType,
+          since: s.since.toISOString(),
+          /** 보류 건이 정리 대상이 되는 날(=이용 종료일). PENDING/ABANDONED 는 null. */
+          notBefore: (s.metadata as { notBefore?: string }).notBefore ?? null,
+          /** 왜 정리되지 않았는지. 효성 삭제 가드 등 재시도로 풀리지 않는 사유가 여기 담긴다. */
+          reason:
+            (s.metadata as { reason?: string }).reason ??
+            (s.metadata as { skipReason?: string | null }).skipReason ??
+            (s.metadata as { error?: string }).error ??
+            null,
+          contractStatus: contract?.status ?? null,
+          billingPath: contract?.billingPath ?? null,
+          cancelledAt: contract?.cancelledAt?.toISOString() ?? contract?.recurringCancelledAt?.toISOString() ?? null,
+        };
+      })
+      .sort((a, b) => (severity[a.state] ?? 9) - (severity[b.state] ?? 9) || a.since.localeCompare(b.since));
+
+    return { data, total: data.length };
   }
 
   /**

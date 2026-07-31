@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-SCENARIOS="${SCENARIOS:-recurring-withdrawal recurring-no-refund annual-proration scheduled one-time-scheduled one-time cms-manual}"
+SCENARIOS="${SCENARIOS:-recurring-withdrawal recurring-no-refund annual-proration scheduled scheduled-refundable one-time-scheduled one-time cms-manual}"
 PORT="${E2E_PORT:-8000}"
 BASE="http://localhost:${PORT}"
 LOG_DIR="${TMPDIR:-/tmp}/ay-membership-e2e"

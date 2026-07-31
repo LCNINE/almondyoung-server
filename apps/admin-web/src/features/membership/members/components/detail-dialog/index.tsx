@@ -124,6 +124,10 @@ function ForceCancelDialog({
 
   const immediate = quote?.options.find((o) => o.mode === 'IMMEDIATE_REFUND');
   const policyAmount = immediate?.refundAmount ?? 0;
+  // 결제 내역이 없는 계약(관리자 지급·이관)은 서버가 환불 유형을 400 으로 거부한다. 고를 수 있게
+  // 두면 관리자가 사유·금액·계좌를 다 채운 뒤에야 막히고, 왜 막혔는지도 그 시점에야 안다.
+  // 과도기(membership 이 옛 버전)엔 필드가 없다 — 그때는 서버 판정에 맡기고 막지 않는다.
+  const refundBlocked = quote?.hasPaymentIntent === false;
   const isAnnual = (quote?.planName.durationDays ?? 0) >= 180;
   // 자동환불이 불가한 수단(효성 CMS)은 계좌 송금이 유일한 방법이라 계좌를 반드시 받는다.
   const manualRefund = immediate?.refundExecution === 'MANUAL';
@@ -285,7 +289,17 @@ function ForceCancelDialog({
             <Label>
               환불 유형 <span className="text-destructive">*</span>
             </Label>
+            {refundBlocked && (
+              <p
+                className="rounded-md border p-2 text-xs text-muted-foreground"
+                data-testid="refund-blocked-notice"
+              >
+                결제 내역이 없는 계약(관리자 지급·이관)이라 환불할 대상이 없습니다. 환불 없이
+                해지하거나, 보상이 필요하면 결제관리에서 처리하세요.
+              </p>
+            )}
             <RadioGroup
+              disabled={refundBlocked}
               value={refundType}
               onValueChange={(v) => {
                 const next = v as 'FULL' | 'PARTIAL' | 'NONE';
@@ -677,8 +691,14 @@ function PlanTab({
   const pgConfirmPending = !!settlement && settlement.pendingRefundAmount > 0;
   // 결제한 적이 없는 계약(관리자 지급·이관)은 환불할 대상 자체가 없다. 옛 화면은 "미완료 — N원
   // 처리 필요" 만 띄워서, 보낼 곳도 근거도 없는 건을 CS 가 찾아 헤매게 만들었다.
+  // `=== false` 로 좁힌다: 배포 과도기(admin-web 이 membership 보다 먼저 뜬 창)에는 이 필드가
+  // undefined 로 오는데, `!undefined` 로 판정하면 **정상 수동 송금 건까지** 전부 "환불 대상 결제 없음"
+  // 으로 뒤집혀 송금 완료 처리 버튼이 사라진다.
   const refundImpossible =
-    !!detail && detail.refundRequested && !detail.refundCompleted && !detail.hasPaymentIntent;
+    !!detail &&
+    detail.refundRequested &&
+    !detail.refundCompleted &&
+    detail.hasPaymentIntent === false;
 
   const handleScheduleCancel = async () => {
     if (!scheduleReason.trim()) {
