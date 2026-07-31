@@ -10,6 +10,8 @@ import type {
 } from '@/lib/types/dto/product-import';
 
 const RUNNING: ReadonlySet<string> = new Set(['queued', 'running']);
+/** cancelSession 의 active() 와 같은 집합 — queued/running 에 failed 를 더한다. */
+const CANCELABLE: ReadonlySet<string> = new Set(['queued', 'running', 'failed']);
 
 /** 한 단계라도 진행 중이면 true. 폴링 유지 조건이다. */
 export function isProgressRunning(progress: ImportProgressDto | undefined): boolean {
@@ -20,6 +22,12 @@ export function isProgressRunning(progress: ImportProgressDto | undefined): bool
 /**
  * 화면용 진행 여부. progress 가 있으면 그쪽이 진실이고, 없으면 세션 레인 상태로
  * 폴백한다 — 롤링 배포 중 옛 core 태스크는 /progress 를 모른다(404).
+ *
+ * 폴백에서 imageStatus 도 봐야 한다 — 이미지 레인이 도는 세션은 commitStatus 가
+ * 'idle' 로 게이트돼 있어 커밋·게시만 보면 진행 중을 놓친다. `?? 'completed'` 인
+ * 이유: 옛 core 응답에는 이 키가 아예 없다(optional). `'queued'` 같은 값으로
+ * 기본을 잡으면 이미지 레인이 없던 옛 세션이 영원히 "진행 중"으로 보여 폴링이
+ * 멈추지 않는다.
  */
 export function isImportRunning(
   progress: ImportProgressDto | undefined,
@@ -27,7 +35,35 @@ export function isImportRunning(
 ): boolean {
   if (progress) return isProgressRunning(progress);
   if (!session) return false;
-  return RUNNING.has(session.commitStatus) || RUNNING.has(session.publishStatus);
+  return (
+    RUNNING.has(session.imageStatus ?? 'completed') ||
+    RUNNING.has(session.commitStatus) ||
+    RUNNING.has(session.publishStatus)
+  );
+}
+
+/**
+ * 취소 버튼 노출 조건. 서버 cancelSession 의 active() 판정과 같은 집합
+ * (queued/running/failed) 을 쓴다 — 레인이 연속 실패 상한에 닿아 failed 로 확정되면
+ * 스스로 빠져나올 수 없고, 설계상 취소가 유일한 해소 수단이다(design spec §3.4.2).
+ *
+ * isImportRunning 과 갈라 두는 이유: isImportRunning 은 **폴링 유지** 조건이라 failed 를
+ * 넣으면 안 된다 — failed 레인은 더 이상 워커가 갱신하지 않으므로 폴링이 되살아나면
+ * 안 된다. 이 함수는 오직 취소 가능 여부에만 쓴다.
+ */
+export function isImportCancelable(
+  progress: ImportProgressDto | undefined,
+  session: SessionSummaryDto | undefined
+): boolean {
+  if (progress) {
+    return !progress.canceled && progress.stages.some((s) => CANCELABLE.has(s.status));
+  }
+  if (!session || session.cancelRequestedAt) return false;
+  return (
+    CANCELABLE.has(session.imageStatus ?? 'completed') ||
+    CANCELABLE.has(session.commitStatus) ||
+    CANCELABLE.has(session.publishStatus)
+  );
 }
 
 /** 진행률 바 퍼센트. 분모 0 은 100% 가 아니라 0% 다 — 아직 분모가 없다는 뜻이다. */

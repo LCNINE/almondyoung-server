@@ -1,5 +1,6 @@
 import {
   importCounts,
+  isImportCancelable,
   isImportRunning,
   isProgressRunning,
   stagePercent,
@@ -85,6 +86,69 @@ describe('isImportRunning', () => {
   });
   it('둘 다 없으면 false', () => {
     expect(isImportRunning(undefined, undefined)).toBe(false);
+  });
+
+  it('이미지 레인이 진행 중이면 커밋이 idle 이어도 true 다 — 이미지 레인이 도는 동안 commit_status 는 게이트로 idle 에 묶여 있다', () => {
+    expect(
+      isImportRunning(
+        undefined,
+        session({ imageStatus: 'running', commitStatus: 'idle', publishStatus: 'idle' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('imageStatus 가 없는 옛 core 응답은 completed 로 간주한다 — 폴링이 영원히 안 멈추면 안 된다', () => {
+    expect(
+      isImportRunning(undefined, session({ commitStatus: 'completed', publishStatus: 'completed' })),
+    ).toBe(false);
+  });
+});
+
+describe('isImportCancelable', () => {
+  it('progress 가 있으면 failed 단계도 취소 가능으로 본다 — 굳은 세션을 취소로 풀 수 있어야 한다', () => {
+    expect(
+      isImportCancelable(
+        progress({ stages: [stage({ key: 'commit', status: 'failed' }), stage({ key: 'publish', status: 'idle' })] }),
+        undefined,
+      ),
+    ).toBe(true);
+  });
+
+  it('이미 취소된 세션(progress.canceled)은 취소 불가', () => {
+    expect(
+      isImportCancelable(
+        progress({ canceled: true, stages: [stage({ status: 'failed' })] }),
+        undefined,
+      ),
+    ).toBe(false);
+  });
+
+  it('progress 가 없으면 세션 레인으로 폴백한다 — imageStatus failed 도 취소 가능이다', () => {
+    expect(
+      isImportCancelable(
+        undefined,
+        session({ imageStatus: 'failed', commitStatus: 'idle', publishStatus: 'idle' }),
+      ),
+    ).toBe(true);
+  });
+
+  it('이미 취소 요청된 세션은 레인이 running 이어도 취소 불가 — 취소는 종단이다', () => {
+    expect(
+      isImportCancelable(
+        undefined,
+        session({ cancelRequestedAt: '2026-07-01T00:00:00.000Z', commitStatus: 'running' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('모든 레인이 completed 인 세션은 취소할 것이 없다', () => {
+    expect(
+      isImportCancelable(undefined, session({ commitStatus: 'completed', publishStatus: 'completed' })),
+    ).toBe(false);
+  });
+
+  it('둘 다 없으면 false', () => {
+    expect(isImportCancelable(undefined, undefined)).toBe(false);
   });
 });
 

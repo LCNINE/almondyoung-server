@@ -3,13 +3,21 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDb, DbService } from '@app/db';
 import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import { type PimSchema, productImportSessions, productImportItems } from '../../../schema/catalog.schema';
+import {
+  type PimSchema,
+  productImportSessions,
+  productImportItems,
+  productImportImages,
+} from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { ProductRecord } from '../dto/import.types';
 import { ProductImportManager } from './product-import.manager';
 import { ProductImportVariantCodeChecker } from './product-import-variant-code.checker';
 import { ProductImportSessionReader } from './product-import-session.reader';
 import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import { ProductImportImageFetcher } from './product-import-image.fetcher';
+import { ProductImportFileClient, MAX_BYTES_BY_USAGE } from './product-import-file.client';
+import { indexSessionImages, unresolvedImageError } from './product-import-image.resolver';
 
 export const DEFAULT_COMMIT_SLICE = 20;
 export const DEFAULT_PUBLISH_SLICE = 10;
@@ -25,6 +33,22 @@ export const DEFAULT_LEASE_MS = 60_000;
  * 오류(payload 형태 불일치 등)만 상한에 닿는다.
  */
 export const MAX_CONSECUTIVE_JOB_FAILURES = 10;
+
+/**
+ * 한 틱에 처리할 이미지 행 수. probe 는 바디를 안 받아 20개면 몇 초고, fetch 는 행마다
+ * lease 를 갱신하므로 오래 걸려도 lease 를 잃지 않는다.
+ *
+ * ⚠️ **동시성은 여전히 1이다** — 이 값은 "한 틱에 몇 개"이지 "동시에 몇 개"가 아니다.
+ * 근거는 core CPU 가 아니라 outbound NAT 다: 3,000장 × 평균 500KB ≈ 1.5GB 가 단일
+ * t4g.nano fck-nat 을 지나고, 그 인스턴스는 Medusa·notification 의 outbound 와 공유된다.
+ * 고정 EIP 라 소싱처가 IP 하나만 rate-limit 하면 전체가 막힌다.
+ * 느리다는 판단이 나오면 **올려야 할 것은 이 슬라이스가 아니라 NAT 인스턴스 타입**이다
+ * (deployments/lcnine/platform/infra/shared.ts:22 — `nat:"ec2"`, 타입 override 없음).
+ */
+export const DEFAULT_IMAGE_SLICE = 20;
+export const DEFAULT_IMAGE_FETCH_TIMEOUT_MS = 15_000;
+/** 컨텍스트 상한 중 큰 값. 실제 상한은 용도별 상한과 min 을 취한다. */
+export const DEFAULT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
 
 /** 클레임 결과. leaseToken 이 이후 갱신·해제의 CAS 비교값이다. */
 export interface ClaimedSession {
@@ -67,6 +91,8 @@ export class ProductImportJobManager {
     private readonly config: ConfigService,
     private readonly reader: ProductImportSessionReader,
     private readonly versionsService: ProductVersionsService,
+    private readonly imageFetcher: ProductImportImageFetcher,
+    private readonly fileClient: ProductImportFileClient,
   ) {}
 
   private positiveInt(key: string, fallback: number): number {
@@ -87,6 +113,18 @@ export class ProductImportJobManager {
     return this.positiveInt('PRODUCT_IMPORT_LEASE_MS', DEFAULT_LEASE_MS);
   }
 
+  get imageSlice(): number {
+    return this.positiveInt('PRODUCT_IMPORT_IMAGE_SLICE', DEFAULT_IMAGE_SLICE);
+  }
+
+  get imageFetchTimeoutMs(): number {
+    return this.positiveInt('PRODUCT_IMPORT_IMAGE_FETCH_TIMEOUT_MS', DEFAULT_IMAGE_FETCH_TIMEOUT_MS);
+  }
+
+  get imageMaxBytes(): number {
+    return this.positiveInt('PRODUCT_IMPORT_IMAGE_MAX_BYTES', DEFAULT_IMAGE_MAX_BYTES);
+  }
+
   /**
    * commit 대기 세션 하나를 원자적으로 잡는다. lease 를 미래로 밀어 두므로
    * 롤링 배포로 태스크가 잠시 둘이어도 같은 세션을 겹쳐 처리하지 않는다.
@@ -102,8 +140,16 @@ export class ProductImportJobManager {
     return this.claim('publish_status', tx);
   }
 
-  private async claim(column: 'commit_status' | 'publish_status', tx?: DbTransaction): Promise<ClaimedSession | null> {
-    // sql.raw 는 SQL 인젝션 경로지만 인자가 이 유니온 두 값뿐이라 외부 입력이 닿지 않는다.
+  /** claimCommit 과 같은 원자적 claim, image_status 컬럼을 잡는다. */
+  async claimImage(tx?: DbTransaction): Promise<ClaimedSession | null> {
+    return this.claim('image_status', tx);
+  }
+
+  private async claim(
+    column: 'image_status' | 'commit_status' | 'publish_status',
+    tx?: DbTransaction,
+  ): Promise<ClaimedSession | null> {
+    // sql.raw 는 SQL 인젝션 경로지만 인자가 이 유니온 세 값뿐이라 외부 입력이 닿지 않는다.
     // 컬럼명은 바인딩할 수 없으므로 raw 외의 선택지가 없다.
     const statusColumn = sql.raw(column);
     // lease 소유권은 **토큰**으로 확인한다. 만료시각은 DB 시계가 만들게 두고(비교하지 않고
@@ -210,6 +256,10 @@ export class ProductImportJobManager {
     const records = items.map((item) => item.payload).filter(isProductRecord);
     await this.variantCodeChecker.check(records);
 
+    // 세션 이미지 인덱스는 **슬라이스당 한 번**만 만든다. 행 수는 MAX_IMAGE_ROWS 로 유계고,
+    // 이미지가 없는 세션이면 조회가 0행이라 비용이 없다.
+    const imageIndex = indexSessionImages(await this.reader.getSessionImages(sessionId));
+
     for (const item of items) {
       // 행마다 lease 를 갱신한다. 클레임 때 한 번만 밀어두면 슬라이스가 lease 보다
       // 오래 걸릴 때 다른 워커가 같은 세션을 잡아 **아직 pending 인 같은 행을 함께
@@ -246,9 +296,18 @@ export class ProductImportJobManager {
         continue;
       }
 
+      // 참조한 이미지가 하나라도 못 올라왔으면 이 행은 실패다. 이미지 없이 만들면 그건
+      // 이 단계가 없애려는 실패 모드 그대로이고, 게다가 조용하다 — 관리자는 상품을
+      // 하나씩 열어보기 전엔 어디가 빠졌는지 모른다(계획 서두의 판단 1).
+      const imageError = unresolvedImageError(record, imageIndex);
+      if (imageError) {
+        await this.failItem(item.id, sessionId, imageError);
+        continue;
+      }
+
       try {
         await this.db.run(async (trx) => {
-          const masterId = await this.importManager.createFromRecord(record, userId, trx);
+          const masterId = await this.importManager.createFromRecord(record, userId, trx, imageIndex.fileIds);
           await trx
             .update(productImportItems)
             .set({ status: 'created', masterId })
@@ -359,6 +418,195 @@ export class ProductImportJobManager {
     await this.releaseLease(sessionId, leaseToken);
   }
 
+  /**
+   * 이미지 레인 한 슬라이스. 두 phase 를 **한 레인**이 번갈아 돈다 —
+   * `pending` 이 남아 있으면 probe, 없으면 `probed` 를 fetch, 둘 다 없으면 마감.
+   * 레인을 둘로 쪼개지 않는 이유는 세션 상태 컬럼과 굶주림 경로가 함께 늘기 때문이다(스펙 §3.3).
+   */
+  async runImageSlice(claimed: ClaimedSession): Promise<void> {
+    const { sessionId, leaseToken } = claimed;
+
+    const pending = await this.selectImages(sessionId, 'pending');
+    if (pending.length > 0) {
+      await this.runProbePhase(sessionId, leaseToken, pending);
+      return;
+    }
+
+    const probed = await this.selectImages(sessionId, 'probed');
+    if (probed.length > 0) {
+      await this.runFetchPhase(sessionId, leaseToken, probed);
+      return;
+    }
+
+    // 마감. **커밋 레인의 게이트를 여는 유일한 지점**이다(acceptCommit 이 'idle' 로 잠갔다).
+    // 토큰 CAS + 취소 가드는 commit/publish 마감과 같은 이유다 — lease 를 잃은 좀비가
+    // 후임의 세션에 completed 를 도장 찍고 lease 를 지우는 것을 막는다.
+    //
+    // commitStatus 를 조건 없이 'queued' 로 쓰는 것이 안전한 이유: 이미지가 있는 세션의
+    // commit_status 는 acceptCommit 이 'idle' 로 넣은 뒤 이 지점 전까지 아무도 건드리지
+    // 않고, 마감 후에는 image_status 가 'completed' 라 이 레인이 다시 클레임되지 않는다.
+    await this.db.run((trx) =>
+      trx
+        .update(productImportSessions)
+        .set({
+          imageStatus: 'completed',
+          commitStatus: 'queued',
+          leaseUntil: null,
+          leaseToken: null,
+          imageError: null,
+        })
+        .where(
+          and(
+            eq(productImportSessions.id, sessionId),
+            eq(productImportSessions.leaseToken, leaseToken),
+            isNull(productImportSessions.cancelRequestedAt),
+          ),
+        ),
+    );
+  }
+
+  private selectImages(sessionId: string, status: 'pending' | 'probed') {
+    return this.db.run((trx) =>
+      trx
+        .select()
+        .from(productImportImages)
+        .where(and(eq(productImportImages.sessionId, sessionId), eq(productImportImages.status, status)))
+        // uuidv7 이라 id 순서가 곧 삽입 순서다 — 슬라이스가 항상 같은 순서로 나아간다.
+        .orderBy(productImportImages.id)
+        .limit(this.imageSlice),
+    );
+  }
+
+  /**
+   * probe — 바디를 받지 않고 도달 가능성만 본다. **동시성 1**(위 DEFAULT_IMAGE_SLICE 주석).
+   * "probe 전량 완료"는 `count(status='pending') = 0` 으로 관측된다(진행률이 그걸 본다).
+   */
+  private async runProbePhase(
+    sessionId: string,
+    leaseToken: string,
+    rows: Array<typeof productImportImages.$inferSelect>,
+  ): Promise<void> {
+    for (const row of rows) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
+        this.logger.warn(`임포트 세션 lease 를 잃어 이미지 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        this.logger.log(`임포트 세션이 취소돼 이미지 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
+        return;
+      }
+
+      try {
+        const result = await this.imageFetcher.probe(row.sourceUrl);
+        await this.updateImage(row.id, {
+          status: 'probed',
+          mimeType: result.mimeType,
+          sizeBytes: result.sizeBytes,
+          errorMessage: null,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
+        this.logger.warn(`이미지 점검 실패 (session=${sessionId}, key=${row.imageKey}): ${message}`);
+        await this.updateImage(row.id, { status: 'probe_failed', errorMessage: message });
+      }
+    }
+
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  /** fetch — 바디를 받아 file-service 에 올린다. 크기 상한은 env 와 용도별 컨텍스트 상한의 min. */
+  private async runFetchPhase(
+    sessionId: string,
+    leaseToken: string,
+    rows: Array<typeof productImportImages.$inferSelect>,
+  ): Promise<void> {
+    const [session] = await this.db.run((trx) =>
+      trx
+        .select({ uploadedBy: productImportSessions.uploadedBy })
+        .from(productImportSessions)
+        .where(eq(productImportSessions.id, sessionId))
+        .limit(1),
+    );
+    const userId = session?.uploadedBy ?? '';
+
+    for (const row of rows) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
+        this.logger.warn(`임포트 세션 lease 를 잃어 이미지 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        this.logger.log(`임포트 세션이 취소돼 이미지 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
+        return;
+      }
+
+      // 업로드가 성공한 뒤 updateImage(...'uploaded'...) 가 던지면 이 행은 'probed' 로
+      // 남고 file_id 는 그 행 자체엔 아직 안 쓰였다 — 재시도가 같은 이미지를 또 올려
+      // 중복 객체를 만든다. catch 에서 이 값을 함께 남겨야 ProductImportImageCleaner 가
+      // (§finding4 (a) 의 fileId IS NOT NULL 필터로) 그 파일을 찾아 지운다.
+      let uploadedFileId: string | null = null;
+      try {
+        const maxBytes = Math.min(this.imageMaxBytes, MAX_BYTES_BY_USAGE[row.usage]);
+        const fetched = await this.imageFetcher.fetch(row.sourceUrl, maxBytes, this.imageFetchTimeoutMs);
+        const mimeType = fetched.mimeType ?? 'application/octet-stream';
+        const uploaded = await this.fileClient.upload({
+          body: fetched.body,
+          fileName: this.uploadFileName(row.imageKey, row.sourceUrl),
+          mimeType,
+          usage: row.usage,
+          userId,
+        });
+        uploadedFileId = uploaded.fileId;
+        await this.updateImage(row.id, {
+          status: 'uploaded',
+          fileId: uploaded.fileId,
+          mimeType,
+          sizeBytes: fetched.sizeBytes,
+          errorMessage: null,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '알 수 없는 오류';
+        this.logger.warn(`이미지 업로드 실패 (session=${sessionId}, key=${row.imageKey}): ${message}`);
+        // updateImage 가 또 던질 수 있다 — 그건 슬라이스 밖 예외로 recordJobError 가
+        // 세는 것이 맞으므로 여기서 추가로 감싸지 않는다.
+        await this.updateImage(row.id, { status: 'fetch_failed', fileId: uploadedFileId, errorMessage: message });
+      }
+    }
+
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  /**
+   * file-service 가 originalname 에서 확장자를 뽑아 저장 파일명을 만든다(upload.service.ts:72).
+   * 소스 URL 의 확장자를 살리되, 없거나 이상하면 `bin` 으로 둔다 — 저장 경로에만 쓰이고
+   * MIME 판정은 콘텐츠 스니핑이 하므로 틀려도 업로드가 깨지지 않는다.
+   */
+  private uploadFileName(imageKey: string, sourceUrl: string): string {
+    let extension = '';
+    try {
+      const path = new URL(sourceUrl).pathname;
+      const match = /\.([a-zA-Z0-9]{1,5})$/.exec(path);
+      extension = match ? match[1].toLowerCase() : '';
+    } catch {
+      extension = '';
+    }
+    // imageKey 는 워크북 입력이라 경로 구분자가 섞일 수 있다 — 파일명에 그대로 쓰지 않는다.
+    const safeKey = imageKey.replace(/[^a-zA-Z0-9._-]/g, '_');
+    return `${safeKey}.${extension || 'bin'}`;
+  }
+
+  private async updateImage(imageId: string, patch: Partial<typeof productImportImages.$inferInsert>): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productImportImages)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(productImportImages.id, imageId)),
+    );
+  }
+
   private async failPublish(itemId: string, sessionId: string, publishError: string): Promise<void> {
     await this.db.run(async (trx) => {
       await trx
@@ -438,14 +686,24 @@ export class ProductImportJobManager {
    * failed 인 이상 그 중단이 옳은 방향이다. CAS 를 걸면 소유권이 옮겨간 순간 상한이
    * 영원히 발화하지 못한다.
    */
-  async recordJobError(sessionId: string, kind: 'commit' | 'publish', message: string): Promise<void> {
+  async recordJobError(sessionId: string, kind: 'image' | 'commit' | 'publish', message: string): Promise<void> {
+    const errorColumn =
+      kind === 'image'
+        ? { imageError: message }
+        : kind === 'commit'
+          ? { commitError: message }
+          : { publishError: message };
+    const failedColumn =
+      kind === 'image'
+        ? { imageStatus: 'failed' as const }
+        : kind === 'commit'
+          ? { commitStatus: 'failed' as const }
+          : { publishStatus: 'failed' as const };
+
     const rows = await this.db.run((trx) =>
       trx
         .update(productImportSessions)
-        .set({
-          ...(kind === 'commit' ? { commitError: message } : { publishError: message }),
-          consecutiveFailures: sql`${productImportSessions.consecutiveFailures} + 1`,
-        })
+        .set({ ...errorColumn, consecutiveFailures: sql`${productImportSessions.consecutiveFailures} + 1` })
         .where(eq(productImportSessions.id, sessionId))
         .returning({ consecutiveFailures: productImportSessions.consecutiveFailures }),
     );
@@ -457,11 +715,7 @@ export class ProductImportJobManager {
     await this.db.run((trx) =>
       trx
         .update(productImportSessions)
-        .set({
-          ...(kind === 'commit' ? { commitStatus: 'failed' as const } : { publishStatus: 'failed' as const }),
-          leaseUntil: null,
-          leaseToken: null,
-        })
+        .set({ ...failedColumn, leaseUntil: null, leaseToken: null })
         .where(eq(productImportSessions.id, sessionId)),
     );
   }

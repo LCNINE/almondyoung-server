@@ -43,6 +43,7 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
     // 테스트는 아무 것도 증명하지 못한다.
     await admin.unsafe(`CREATE TABLE product_import_sessions (LIKE public.product_import_sessions INCLUDING ALL)`);
     await admin.unsafe(`CREATE TABLE product_import_items (LIKE public.product_import_items INCLUDING ALL)`);
+    await admin.unsafe(`CREATE TABLE product_import_images (LIKE public.product_import_images INCLUDING ALL)`);
 
     client = postgres(DATABASE_URL as string, { max: 1, prepare: false, connection: { search_path: schemaName } });
     const db = drizzle(client, { schema: catalogSchema });
@@ -64,15 +65,36 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
     await admin`DELETE FROM product_import_sessions`;
   });
 
-  async function seedSession(totalRows: number, invalidCount: number | null): Promise<string> {
+  async function seedSession(
+    totalRows: number,
+    invalidCount: number | null,
+    imageStatus = 'completed',
+  ): Promise<string> {
     const id = randomUUID();
     await admin`
       INSERT INTO product_import_sessions
-             (id, file_name, total_rows, invalid_count, status, commit_status, publish_status)
+             (id, file_name, total_rows, invalid_count, status, commit_status, publish_status, image_status)
       VALUES (${id}, ${'it-progress-' + id}, ${totalRows}, ${invalidCount},
-              'completed', 'completed', 'running')
+              'completed', 'completed', 'running', ${imageStatus})
     `;
     return id;
+  }
+
+  /** 이미지 행을 (status) 별로 count 만큼 심는다. imageKey 는 순번으로 고유하게 만든다. */
+  async function seedImages(sessionId: string, rows: Array<{ status: string; count: number }>): Promise<void> {
+    const values: string[] = [];
+    let n = 1;
+    for (const row of rows) {
+      for (let i = 0; i < row.count; i += 1) {
+        values.push(`('${randomUUID()}', '${sessionId}', 'IMG-${n}', 'main', 'https://x/${n}.jpg', '${row.status}')`);
+        n += 1;
+      }
+    }
+    if (values.length === 0) return;
+    await admin.unsafe(
+      `INSERT INTO product_import_images (id, session_id, image_key, usage, source_url, status)
+       VALUES ${values.join(', ')}`,
+    );
   }
 
   /**
@@ -111,7 +133,7 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
       { status: 'created', publishStatus: 'pending', count: 2 },
     ]);
 
-    const { session, itemCounts } = await reader.getProgressCounts(sessionId);
+    const { session, itemCounts, imageCounts } = await reader.getProgressCounts(sessionId);
 
     // GROUP BY 가 SQL 에 실리지 않았다면 행 10개가 그대로 올라온다.
     expect(itemCounts).toHaveLength(4);
@@ -119,7 +141,7 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
       expect(typeof row.count).toBe('number');
     }
 
-    const progress = builder.build(session, itemCounts);
+    const progress = builder.build(session, itemCounts, imageCounts);
     // 검증실패 2 는 commit 분모에서 빠지고, 남은 failed 1 이 생성 실패다.
     expect(progress.stages.find((s) => s.key === 'commit')).toMatchObject({ total: 8, done: 8, failed: 1 });
     // 게시 분모는 생성 7행. published 4 + failed 1 = 5 처리됨.
@@ -132,8 +154,8 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
     await seedItems(mine, [{ status: 'created', publishStatus: 'pending', count: 2 }]);
     await seedItems(theirs, [{ status: 'failed', publishStatus: 'skipped', count: 3 }]);
 
-    const { session, itemCounts } = await reader.getProgressCounts(mine);
-    const progress = builder.build(session, itemCounts);
+    const { session, itemCounts, imageCounts } = await reader.getProgressCounts(mine);
+    const progress = builder.build(session, itemCounts, imageCounts);
 
     expect(itemCounts).toEqual([{ status: 'created', publishStatus: 'pending', count: 2 }]);
     // 남의 세션 실패 3행이 섞였다면 total 이 5, failed 가 3 이 된다.
@@ -143,10 +165,11 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
   it('행이 하나도 없어도 죽지 않고 분모 0 을 돌려준다', async () => {
     const sessionId = await seedSession(0, 0);
 
-    const { session, itemCounts } = await reader.getProgressCounts(sessionId);
-    const progress = builder.build(session, itemCounts);
+    const { session, itemCounts, imageCounts } = await reader.getProgressCounts(sessionId);
+    const progress = builder.build(session, itemCounts, imageCounts);
 
     expect(itemCounts).toEqual([]);
+    expect(imageCounts).toEqual([]);
     expect(progress.stages.every((s) => s.total === 0 && s.done === 0)).toBe(true);
   });
 
@@ -157,11 +180,44 @@ describeIfDb('product import 진행률 집계 (DB 통합)', () => {
       { status: 'created', publishStatus: 'published', count: 2 },
     ]);
 
-    const { session, itemCounts } = await reader.getProgressCounts(sessionId);
-    const progress = builder.build(session, itemCounts);
+    const { session, itemCounts, imageCounts } = await reader.getProgressCounts(sessionId);
+    const progress = builder.build(session, itemCounts, imageCounts);
 
     expect(progress.invalidCount).toBeNull();
     expect(progress.stages.find((s) => s.key === 'commit')).toMatchObject({ total: 3, done: 3, failed: 1 });
+  });
+
+  it('이미지 집계도 실제 행 분포와 일치하고, probe 실패가 fetch 분모에서 빠진다', async () => {
+    const sessionId = await seedSession(10, 0, 'running');
+    await seedImages(sessionId, [
+      { status: 'probed', count: 2 },
+      { status: 'uploaded', count: 3 },
+      { status: 'probe_failed', count: 4 }, // fetch 분모에서 빠져야 한다
+      { status: 'fetch_failed', count: 1 },
+    ]);
+
+    const { session, itemCounts, imageCounts } = await reader.getProgressCounts(sessionId);
+
+    // GROUP BY 가 SQL 에 실리지 않았다면 행 10개가 그대로 올라온다.
+    expect(imageCounts).toHaveLength(4);
+    for (const row of imageCounts) {
+      expect(typeof row.count).toBe('number');
+    }
+
+    const progress = builder.build(session, itemCounts, imageCounts);
+    expect(progress.stages.find((s) => s.key === 'probe')).toMatchObject({
+      status: 'completed', // pending 이 0 이라 확정
+      total: 10,
+      done: 10,
+      failed: 4,
+    });
+    // 분모 = probed(2) + uploaded(3) + fetch_failed(1) = 6, probe_failed 4 는 빠진다.
+    expect(progress.stages.find((s) => s.key === 'fetch')).toMatchObject({
+      status: 'running',
+      total: 6,
+      done: 4,
+      failed: 1,
+    });
   });
 
   it('없는 세션은 NotFoundError', async () => {

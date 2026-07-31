@@ -266,8 +266,10 @@ describe('ProductImportService.getProgress', () => {
         fileName: 'f.xlsx',
         totalRows: 5,
         invalidCount: 1,
+        imageStatus: 'completed',
         commitStatus: 'completed',
         publishStatus: 'running',
+        imageError: null,
         commitError: null,
         publishError: null,
         cancelRequestedAt: null,
@@ -277,6 +279,7 @@ describe('ProductImportService.getProgress', () => {
         { status: 'created', publishStatus: 'published', count: 3 },
         { status: 'created', publishStatus: 'pending', count: 1 },
       ],
+      imageCounts: [],
     });
 
     const progress = await service.getProgress('sess-1');
@@ -285,6 +288,7 @@ describe('ProductImportService.getProgress', () => {
     expect(progress).toMatchObject({ sessionId: 'sess-1', fileName: 'f.xlsx', canceled: false, invalidCount: 1 });
     expect(progress.stages.find((s) => s.key === 'commit')).toMatchObject({ total: 4, done: 4, failed: 0 });
     expect(progress.stages.find((s) => s.key === 'publish')).toMatchObject({ total: 4, done: 3, failed: 0 });
+    expect(progress.stages.find((s) => s.key === 'probe')).toMatchObject({ total: 0, done: 0, failed: 0 });
     expect(progress).not.toHaveProperty('items');
   });
 });

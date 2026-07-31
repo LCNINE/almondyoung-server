@@ -17,6 +17,8 @@ function makeWorker(opts: { enabled?: string; claims?: Array<string | null> } = 
   const sessionIds = opts.claims ?? [null];
   let i = 0;
   const jobManager = {
+    claimImage: jest.fn(async (): Promise<ClaimedSession | null> => null),
+    runImageSlice: jest.fn(async () => undefined),
     claimCommit: jest.fn(async (): Promise<ClaimedSession | null> => {
       const sessionId = sessionIds[Math.min(i++, sessionIds.length - 1)] ?? null;
       return sessionId ? { sessionId, leaseToken: LEASE_TOKEN } : null;
@@ -73,6 +75,12 @@ describe('ProductImportJobWorker', () => {
     jobManager.runCommitSlice.mockImplementation(() => new Promise<void>((r) => (release = r)));
 
     const first = worker.tick();
+    // 이미지 레인 클레임이 커밋보다 먼저 도는 만큼(claimImage → claimCommit) 첫 틱이
+    // runCommitSlice 의 대기 Promise 에 실제로 도달할 때까지 보류 중인 마이크로태스크를
+    // 전부 비운다. 매크로태스크 경계(setImmediate)로 넘어가면 그 사이의 모든 await 체인이
+    // 이미 실행된 뒤이므로, 두 번째 tick() 이 isProcessing 을 정확히 관찰한다 —
+    // 그러지 않으면 아직 release 가 배정되기 전에 호출돼 테스트가 멈춘다.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     await worker.tick();
     release();
     await first;
@@ -132,5 +140,34 @@ describe('ProductImportJobWorker', () => {
     await worker.tick();
 
     expect(jobManager.clearConsecutiveFailures).toHaveBeenCalledWith('sess-2');
+  });
+
+  it('이미지 레인을 먼저 클레임하고, 잡으면 커밋을 시도하지 않는다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: ['sess-1'] });
+    jobManager.claimImage.mockResolvedValue({ sessionId: 's-1', leaseToken: 't-1' });
+
+    await worker.tick();
+
+    expect(jobManager.runImageSlice).toHaveBeenCalledWith({ sessionId: 's-1', leaseToken: 't-1' });
+    expect(jobManager.claimCommit).not.toHaveBeenCalled();
+  });
+
+  it('이미지 레인이 비면 커밋으로 넘어간다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: ['sess-1'] });
+    jobManager.claimImage.mockResolvedValue(null);
+
+    await worker.tick();
+
+    expect(jobManager.runCommitSlice).toHaveBeenCalled();
+  });
+
+  it('이미지 슬라이스가 던지면 image kind 로 기록한다', async () => {
+    const { worker, jobManager } = makeWorker({ claims: ['sess-1'] });
+    jobManager.claimImage.mockResolvedValue({ sessionId: 's-1', leaseToken: 't-1' });
+    jobManager.runImageSlice.mockRejectedValue(new Error('boom'));
+
+    await worker.tick();
+
+    expect(jobManager.recordJobError).toHaveBeenCalledWith('s-1', 'image', 'boom');
   });
 });

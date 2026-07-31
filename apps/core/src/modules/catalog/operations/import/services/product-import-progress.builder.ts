@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { productImportSessions, productImportItems } from '../../../schema/catalog.schema';
+import type { productImportSessions, productImportItems, productImportImages } from '../../../schema/catalog.schema';
 import { ImportProgressDto, ImportProgressStageDto } from '../dto/import-progress.dto';
 
 type SessionRow = typeof productImportSessions.$inferSelect;
 type ItemRow = typeof productImportItems.$inferSelect;
+type ImageRow = typeof productImportImages.$inferSelect;
 
 /** 진행률 계산이 실제로 읽는 세션 열만. 전체 행도 구조적으로 대입 가능하다. */
 export type ProgressSessionRow = Pick<
@@ -12,8 +13,10 @@ export type ProgressSessionRow = Pick<
   | 'fileName'
   | 'totalRows'
   | 'invalidCount'
+  | 'imageStatus'
   | 'commitStatus'
   | 'publishStatus'
+  | 'imageError'
   | 'commitError'
   | 'publishError'
   | 'cancelRequestedAt'
@@ -26,6 +29,12 @@ export interface ImportItemStatusCount {
   count: number;
 }
 
+/** 이미지 행의 status 별 개수. 상태가 5값이라 상한이 5행이다. */
+export interface ImportImageStatusCount {
+  status: ImageRow['status'];
+  count: number;
+}
+
 /**
  * 세션 집계 → 화면 단계별 진행률. DB 접근이 없는 순수 변환이라 단위테스트가 쉽다
  * (ProductImportPricingBuilder 와 같은 자리).
@@ -35,9 +44,33 @@ export interface ImportItemStatusCount {
  */
 @Injectable()
 export class ProductImportProgressBuilder {
-  build(session: ProgressSessionRow, itemCounts: ImportItemStatusCount[]): ImportProgressDto {
+  build(
+    session: ProgressSessionRow,
+    itemCounts: ImportItemStatusCount[],
+    imageCounts: ImportImageStatusCount[],
+  ): ImportProgressDto {
     const sum = (predicate: (row: ImportItemStatusCount) => boolean): number =>
       itemCounts.reduce((acc, row) => (predicate(row) ? acc + row.count : acc), 0);
+    const images = (...statuses: Array<ImageRow['status']>): number =>
+      imageCounts.reduce((acc, row) => (statuses.includes(row.status) ? acc + row.count : acc), 0);
+
+    // ─── 이미지 두 단계 ───
+    const pending = images('pending');
+    const probeFailed = images('probe_failed');
+    const uploaded = images('uploaded');
+    const fetchFailed = images('fetch_failed');
+    const probeTotal = images('pending', 'probed', 'uploaded', 'probe_failed', 'fetch_failed');
+    // probe 실패는 fetch 분모에서 빠진다 — 5값 enum 의 존재 이유가 이것이다. 뭉쳐 놓으면
+    // 분모가 틀려 진행률이 영영 100% 에 닿지 않는다(스펙 §3.2.1).
+    const fetchTotal = images('probed', 'uploaded', 'fetch_failed');
+
+    const probing = session.imageStatus === 'running' && pending > 0;
+    // 레인이 도는 중이고 pending 이 0 이면 probe 는 사실상 끝났다 — "probe 전량 완료"는
+    // `count(status='pending') = 0` 으로 관측된다(스펙 §3.2.2).
+    const probeStatus = session.imageStatus === 'running' && pending === 0 ? 'completed' : session.imageStatus;
+    // probe 가 도는 동안 fetch 는 아직 시작 전이다. 'running' 으로 두면 화면이 두 단계가
+    // 동시에 도는 것처럼 보인다.
+    const fetchStatus = probing ? 'queued' : session.imageStatus;
 
     const createdRows = sum((row) => row.status === 'created');
     const failedRows = sum((row) => row.status === 'failed');
@@ -58,6 +91,26 @@ export class ProductImportProgressBuilder {
     const publishPublished = sum((row) => row.status === 'created' && row.publishStatus === 'published');
 
     const stages: ImportProgressStageDto[] = [
+      {
+        key: 'probe',
+        label: '이미지 점검',
+        status: probeStatus,
+        done: probeTotal - pending,
+        total: probeTotal,
+        failed: probeFailed,
+        // 레인 오류는 어느 phase 에서 났는지 알 수 없으므로 두 단계 모두에 싣는다 —
+        // 한쪽에만 실으면 그 단계가 분모 0 으로 접힐 때 오류가 화면 어디에도 안 뜬다.
+        error: session.imageError,
+      },
+      {
+        key: 'fetch',
+        label: '이미지 업로드',
+        status: fetchStatus,
+        done: uploaded + fetchFailed,
+        total: fetchTotal,
+        failed: fetchFailed,
+        error: session.imageError,
+      },
       {
         key: 'commit',
         label: '상품 생성',

@@ -3,7 +3,7 @@
 - 날짜: 2026-07-30
 - 대상: `apps/core` (catalog/operations/import) + `apps/admin-web` (product-imports 위저드·세션상세)
 - 브랜치: `feat/product-bulk-import-v3` (base `a2cadccd0`)
-- 상태: 설계 확정. 1~3단계 구현 완료(§6), 4단계(이미지 파이프라인)는 구현 계획 미착수
+- 상태: 설계 확정. 1~4단계 구현 완료(§6)
 - 관련:
   - `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1)
   - `docs/superpowers/specs/2026-07-28-product-bulk-import-v2-design.md` (v2 — 0~4단계 배포 완료, **5단계는 이 스펙 범위 밖으로 그대로 남는다**)
@@ -351,6 +351,9 @@ commit 의 분모를 위해 **세션에 `invalid_count` 를 얼린다** — §2.
 - **v2 2단계 리뷰 지적 ③군 5건** — `#1`(Products 시트 `variantCode`), `#3`(`values[].sortOrder`), `#5`(comboKey NFC), `#9`(`basePrice` 헤더 검사), `#10`(오류 행번호 불일치). 전부 1~5줄. v2 5단계 뒤 정리 커밋으로 묶기로 했던 것이 아직 남아 있다.
 - **판매기간에 편집·해제 UI 가 없다.** `sales_start_date`/`sales_end_date` 는 재고 게이팅이 읽지만(`product-sellable-quantity.calculator.ts:90-96`) 쓰기 경로가 v3 3단계 임포트뿐이다. 잘못 넣으면 화면에서 고칠 수 없고 스토어프론트만 조용히 품절된다 — 3단계는 프리뷰 표시(`resolved.salesPeriod`)로 커밋 전 확인만 제공한다. admin UI 판매기간 편집은 별건.
 - **varchar 길이 검증이 seoTitle 에만 있다.** `name`(255)·`brand`(100)·`productCode`(100)·`alternativeName`(255)·`salesClassification`(100)·`purchaseClassification`(100)·`seller`(100) 는 여전히 입구를 통과하고 commit 에서 Postgres 22001 로 그 행만 죽는다. v1 부터 있던 공백이고 5줄짜리 정리 건이다.
+- **취소 정리에 한 장짜리 경계가 남는다.** 정리가 도는 사이 진행 중인 fetch 슬라이스가 이미지 하나를 더 올릴 수 있다(슬라이스는 행마다 취소를 확인하므로 창은 최대 한 장). 없애려면 정리를 워커로 옮겨야 하는데, 그러면 lease 를 아무도 안 들고 있는 세션 — 대부분의 취소 시점 — 이 영영 정리되지 않는다. 전역 고아 정리 잡이 생기면 함께 사라진다.
+- **참조 이미지가 하나라도 실패하면 그 상품 행이 실패한다.** 소싱처 URL 하나가 죽으면 그걸 참조하는 모든 행이 함께 죽는다. 이미지 없이 조용히 생성하는 대안보다 낫다는 판단이지만(4단계 계획 서두), 대량 실패가 잦으면 "부분 생성 + 경고" 로 바꾸는 것이 후속 논의 대상이다.
+- **라운드로빈 DNS 혼합 응답에 회귀 테스트가 없다.** `assertPublicHttpUrl` 은 `dns.lookup(host, {all:true})` 의 **모든** 주소를 검사해 하나라도 사설이면 거부하지만(공개/사설을 섞어 내려주는 우회를 막는다), 그 전수 검사에 테스트가 없어 정확성이 코드 읽기에만 의존한다. 가드를 고칠 때 조용히 첫 주소만 보게 되돌아가도 초록이다.
 
 ## 6. 단계 분할
 
@@ -359,13 +362,18 @@ commit 의 분모를 위해 **세션에 `invalid_count` 를 얼린다** — §2.
 | **1** | 운영 구멍 — 세션 취소 + `consecutive_failures` 상한 + `invalid_count` 얼리기 | 마이그레이션 1건 (additive → `migrate` → `deploy`) |
 | **2** | 진행률 API + admin-web 폴링 전환 | core → admin-web (같은 `sst deploy`) — **구현 완료(2026-07-30)** |
 | **3** | 순수 스칼라 필드 6종 + `Categories`·`Constraints` 시트 | core → admin-web — **구현 완료(2026-07-30)**, 마이그레이션 0건 |
-| **4** | 이미지 파이프라인 — `Images` 시트 + `product_import_images` + probe/fetch 레인 + 업로드 클라이언트 | 마이그레이션 1건 (additive) |
+| **4** | 이미지 파이프라인 — `Images` 시트 + `product_import_images` + probe/fetch 레인 + 업로드 클라이언트 | 마이그레이션 1건 (additive) — **구현 완료(2026-07-31)** |
 
 **1·2 를 먼저 하는 이유가 있다.** 4단계(이미지)가 "commit 을 눌러야 오류를 안다"는 대가를 지불하는데, 그 대가를 받아낼 수단(취소)과 확인 수단(진행률)이 먼저 있어야 한다. 순서를 뒤집으면 이미지 실패를 만난 관리자가 굳은 세션을 손으로 풀어야 한다.
 
 3 단계는 1·2 와 독립이라 병행 가능하지만, 같은 파일(`template.ts`·`normalizer.ts`·`validator.ts`)을 4단계가 다시 건드리므로 4 보다 먼저 둔다.
 
 **구현 계획은 단계별로 따로 쓴다.**
+
+- 1단계: `docs/superpowers/plans/2026-07-30-product-bulk-import-v3-stage1-ops-gaps.md`
+- 2단계: `docs/superpowers/plans/2026-07-30-product-bulk-import-v3-stage2-progress.md`
+- 3단계: `docs/superpowers/plans/2026-07-30-product-bulk-import-v3-stage3-fields-and-sheets.md`
+- 4단계: `docs/superpowers/plans/2026-07-31-product-bulk-import-v3-stage4-images.md`
 
 ## 7. 검증 계획
 
