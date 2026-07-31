@@ -65,6 +65,7 @@ export async function ProductTemplate({
                 customer={customer}
                 isDigital={isDigital}
                 isOverseas={isOverseas}
+                isPrimaryHeading
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}

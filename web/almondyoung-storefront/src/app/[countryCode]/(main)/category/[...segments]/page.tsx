@@ -16,7 +16,7 @@ type Props = {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { segments } = await params
+  const { countryCode, segments } = await params
 
   const category = await getCategoryByHandleCached(segments)
 
@@ -38,7 +38,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
     },
     alternates: {
-      canonical: `/category/${segments.join("/")}`,
+      // countryCode 를 빼면 리다이렉트되는 주소를 canonical 로 가리키게 된다.
+      canonical: `/${countryCode}/category/${segments.join("/")}`,
     },
   }
 }
