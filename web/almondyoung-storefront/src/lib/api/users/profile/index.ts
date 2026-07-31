@@ -1,5 +1,6 @@
 "use server"
 
+import { cache } from "react"
 import { api } from "@lib/api/api"
 import { ProfileDto, UserDetailDto } from "@lib/types/dto/users"
 import { HttpApiError } from "../../api-error"
@@ -12,8 +13,15 @@ import {
 
 /**
  * 현재 사용자 프로필 상세 조회 (전화번호, 주소, 상점 정보 포함)
+ *
+ * 한 번의 렌더 안에서 user-service 왕복은 한 번만 나가게 메모이제이션한다.
+ * 루트 레이아웃과 (main) 레이아웃이 각각 부르고 홈은 페이지에서 한 번 더 불러
+ * 페이지 하나 그리는 데 같은 조회가 2~3회 반복되고 있었다 (`cache: "no-store"`
+ * 라 Next 의 fetch 중복 제거도 걸리지 않는다).
+ *
+ * 수명은 요청 하나의 렌더 패스이며 요청 간에는 공유되지 않는다.
  */
-export const getMyProfile = async (): Promise<UserDetailDto> => {
+const getMyProfileOnce = cache(async (): Promise<UserDetailDto> => {
   try {
     const data = await api<UserDetailDto>("users", "/users/me/profile", {
       method: "GET",
@@ -40,7 +48,10 @@ export const getMyProfile = async (): Promise<UserDetailDto> => {
 
     throw error
   }
-}
+})
+
+// "use server" 파일은 async 함수만 export 할 수 있어 cache() 결과를 직접 내보내지 못한다.
+export const getMyProfile = async (): Promise<UserDetailDto> => getMyProfileOnce()
 
 export const updateProfile = async (
   profileData: Omit<Partial<ProfileDto>, "birthDate"> & { birthDate?: string }

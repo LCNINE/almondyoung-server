@@ -9,6 +9,14 @@ const DEFAULT_SEO = {
   twitterCreator: "@almondyoung",
 }
 
+// 링크 공유 카드(카톡·슬랙·트위터)에 뜨는 대표 이미지.
+const DEFAULT_OG_IMAGE = {
+  url: "/og-image.jpg",
+  width: 1200,
+  height: 630,
+  alt: "아몬드영 — 세상의 모든 미용재료가 있는 곳",
+}
+
 // OpenGraph 메타데이터 생성 함수
 const createOpenGraphMetadata = (openGraph: OpenGraph) => ({
   title: openGraph.title || siteConfig.appName,
@@ -17,6 +25,7 @@ const createOpenGraphMetadata = (openGraph: OpenGraph) => ({
   siteName: openGraph.title || siteConfig.appName,
   locale: DEFAULT_SEO.locale,
   type: DEFAULT_SEO.type,
+  images: [DEFAULT_OG_IMAGE],
 })
 
 // Twitter 메타데이터 생성 함수
@@ -25,6 +34,7 @@ const createTwitterMetadata = (openGraph: OpenGraph) => ({
   description: openGraph.description || siteConfig.appDescription,
   card: DEFAULT_SEO.cardType,
   creator: DEFAULT_SEO.twitterCreator,
+  images: [DEFAULT_OG_IMAGE],
 })
 
 // Schema.org 데이터 생성 함수
