@@ -54,6 +54,7 @@ import { CancelService } from './payment-intents/cancel.service';
 import { ChargeReleaseService } from './payment-intents/charge-release.service';
 import { AbandonService } from './payment-intents/abandon.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
+import { DeferredApprovalService } from './payment-intents/deferred-approval.service';
 
 // Refunds
 import { RefundsService } from './refunds/refunds.service';
@@ -486,6 +487,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     ChargeReleaseService,
     AbandonService,
     TossApproveService,
+    DeferredApprovalService,
 
     // Refunds
     RefundsService,
