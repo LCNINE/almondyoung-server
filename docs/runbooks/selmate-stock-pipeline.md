@@ -291,8 +291,19 @@ WHERE il.deleted_at IS NULL
 ORDER BY il.stocked_quantity DESC;
 ```
 
-⚠️ **이건 증상 치료다.** 근본은 셀메이트 출고 수집 시 Medusa fulfillment 를 만들거나(또는 예약을 해제)
-하는 것이고, 그 전까지는 매일 Ⓑ 를 돌려야 한다.
+### ⚠️ 이건 증상 치료다 — 그래도 WMS 전까지는 이게 정답
+
+예약이 쌓이는 건 WMS 미연동 기간의 구조적 부산물이다. **매일 Ⓑ 를 돌리면 실제로 사라진다** (스냅샷 시각
+이전 예약 삭제 + 카운터 재정합). WMS 가 붙으면 이 파이프라인 자체가 없어지므로, 여기에 코드를 더 붙이지 않는다.
+
+**❌ fulfillment 를 만들어 푸는 건 오답이다.** Ⓐ `sync-stock` 이 `stocked` 를 **"현재재고 − 미발송주문수"** 로
+맞추므로 미발송 주문분은 **이미 `stocked` 에서 빠져 있다.** 거기에
+
+- 예약(reservation) 이 같은 분량을 또 뺀다 → **이중 차감** (매일 Ⓑ 로 걷어내는 게 이것)
+- fulfillment 까지 만들면 `stocked` 를 한 번 더 깎는다 → **삼중 차감**
+
+예약의 유일한 정당한 역할은 **주문 ~ 다음 `sync-stock` 사이의 oversell 홀드**다. 그래서 스냅샷 이후 예약은
+남겨두고 이전 것만 지운다 — Ⓑ 의 `--before` 가 정확히 그 경계다.
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 
