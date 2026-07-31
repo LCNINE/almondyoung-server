@@ -32,15 +32,45 @@ export class InvoiceOutcomeHandler {
    * 효성에는 약정해지 API 가 없어 회원삭제가 유일한 종료 수단이므로, 정산이 끝나는 이 지점에서 이어준다.
    * best-effort — 실패해도 자격/청구 상태는 이미 확정돼 있다.
    */
-  private async terminateMandateAfterCollection(contractId: string): Promise<void> {
+  private async terminateMandateAfterCollection(contractId: string, userId: string): Promise<void> {
     try {
       const result = await this.paymentClientService.terminateBillingMandate(contractId);
       this.logger.log(
         `[invoice-outcome] 해지예약 계약 수금 완료 → 약정 종료 (contractId=${contractId}, terminated=${result.mandateTerminated}, cancelledWithdrawals=${result.cancelledWithdrawals})`,
       );
+      // 해지 시점에 보류(AGREEMENT_REVOKE_DEFERRED)로 남겨둔 건을 여기서 확정한다. 성공/실패를
+      // 남기지 않으면 AgreementCleanupService 의 큐에서 빠지지 않거나(성공) 이어받지 못한다(실패).
+      const done =
+        !result.agreementFound ||
+        result.mandateTerminated ||
+        result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
+      await this.recordAgreementOutcome(contractId, userId, done ? 'AGREEMENT_REVOKED' : 'AGREEMENT_REVOKE_PENDING', {
+        agreementFound: result.agreementFound,
+        mandateTerminated: result.mandateTerminated,
+        cancelledWithdrawals: result.cancelledWithdrawals,
+        skipReason: result.skipReason ?? null,
+      });
     } catch (err: unknown) {
-      this.logger.error(
-        `[invoice-outcome] 약정 종료 실패 — 후속 정리 필요 (contractId=${contractId}): ${
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[invoice-outcome] 약정 종료 실패 — 후속 정리 필요 (contractId=${contractId}): ${message}`);
+      await this.recordAgreementOutcome(contractId, userId, 'AGREEMENT_REVOKE_PENDING', { error: message });
+    }
+  }
+
+  /** 약정 정리 결과를 계약 이벤트로 남긴다(정리 큐가 이 이벤트만 보고 스스로 비워진다). */
+  private async recordAgreementOutcome(
+    contractId: string,
+    userId: string,
+    eventType: 'AGREEMENT_REVOKED' | 'AGREEMENT_REVOKE_PENDING',
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.dbService.db.transaction(async (tx) => {
+        await this.contractEventManager.addEvent(tx, contractId, eventType, metadata, 'SYSTEM', userId);
+      });
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[invoice-outcome] 약정 정리 기록 실패 (contractId=${contractId}): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
@@ -128,7 +158,7 @@ export class InvoiceOutcomeHandler {
 
       // 해지예약 계약의 마지막 수금이 끝났다 — 이제 약정을 지워도 안전하다.
       if (renewedUserId.wasCancellationScheduled) {
-        await this.terminateMandateAfterCollection(contractId);
+        await this.terminateMandateAfterCollection(contractId, renewedUserId.userId);
       }
     }
   }
@@ -254,7 +284,7 @@ export class InvoiceOutcomeHandler {
 
     // 청구가 소멸했으므로 남은 자동이체 약정도 정리한다(더 이상 출금할 근거가 없다).
     if (terminatedUserId) {
-      await this.terminateMandateAfterCollection(contractId);
+      await this.terminateMandateAfterCollection(contractId, terminatedUserId);
     }
 
     if (terminatedUserId) {

@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { and, desc, eq, gt, inArray, sql } from 'drizzle-orm';
-import { subDays } from 'date-fns';
+import { desc, eq, inArray } from 'drizzle-orm';
+import { format, subDays } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PaymentClientService } from '../billing/payment-client.service';
@@ -57,12 +57,14 @@ export class AgreementCleanupService {
         contractId: schema.subscriptionContractEvents.contractId,
         userId: schema.subscriptionContractEvents.userId,
         eventType: schema.subscriptionContractEvents.eventType,
+        metadata: schema.subscriptionContractEvents.metadata,
         createdAt: schema.subscriptionContractEvents.createdAt,
       })
       .from(schema.subscriptionContractEvents)
       .where(
         inArray(schema.subscriptionContractEvents.eventType, [
           'AGREEMENT_REVOKE_PENDING',
+          'AGREEMENT_REVOKE_DEFERRED',
           'AGREEMENT_REVOKED',
           'AGREEMENT_REVOKE_ABANDONED',
         ]),
@@ -75,13 +77,41 @@ export class AgreementCleanupService {
       .as('latest');
 
     const rows = await this.dbService.db
-      .select({ contractId: latest.contractId, userId: latest.userId, pendingSince: latest.createdAt })
+      .select({
+        contractId: latest.contractId,
+        userId: latest.userId,
+        eventType: latest.eventType,
+        metadata: latest.metadata,
+        pendingSince: latest.createdAt,
+      })
       .from(latest)
-      .where(eq(latest.eventType, 'AGREEMENT_REVOKE_PENDING'))
+      .where(inArray(latest.eventType, ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED']))
       .orderBy(latest.createdAt)
       .limit(BATCH_SIZE);
 
-    return rows;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    // 보류(DEFERRED) 건은 이용 기간이 끝나기 전에 지우면 남은 수금이 실패해 무료 이용이 된다.
+    // 종료일이 지난 뒤에야 정리 대상이 된다.
+    return rows
+      .filter((r) => {
+        if (r.eventType !== 'AGREEMENT_REVOKE_DEFERRED') return true;
+        const notBefore = ((r.metadata ?? {}) as { notBefore?: string }).notBefore;
+        return !notBefore || notBefore < today;
+      })
+      .map((r) => ({
+        contractId: r.contractId,
+        userId: r.userId,
+        // 포기(ABANDONED) 시계는 '재시도가 가능해진 시점'부터 센다. 보류 기록 시각부터 세면
+        // 이용 기간이 긴 계약은 첫 재시도 실패에 곧바로 포기 처리된다.
+        pendingSince: this.retryableSince(r.pendingSince, r.metadata),
+      }));
+  }
+
+  private retryableSince(createdAt: Date, metadata: unknown): Date {
+    const notBefore = ((metadata ?? {}) as { notBefore?: string }).notBefore;
+    if (!notBefore) return createdAt;
+    const eligibleAt = new Date(`${notBefore}T00:00:00`);
+    return Number.isNaN(eligibleAt.getTime()) || eligibleAt < createdAt ? createdAt : eligibleAt;
   }
 
   private async retryOne(item: { contractId: string; userId: string; pendingSince: Date }): Promise<void> {

@@ -9,7 +9,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-SCENARIOS="${SCENARIOS:-recurring-withdrawal recurring-no-refund annual-proration scheduled one-time cms-manual}"
+SCENARIOS="${SCENARIOS:-recurring-withdrawal recurring-no-refund annual-proration scheduled one-time-scheduled one-time cms-manual}"
 PORT="${E2E_PORT:-8000}"
 BASE="http://localhost:${PORT}"
 LOG_DIR="${TMPDIR:-/tmp}/ay-membership-e2e"
@@ -22,11 +22,25 @@ const b=(o)=>Buffer.from(JSON.stringify(o)).toString('base64url');
 console.log(b({alg:'HS256',typ:'JWT'})+'.'+b({sub:'e2e-user',exp:Math.floor(Date.now()/1000)+3600})+'.sig');
 ")
 
-cleanup() {
-  [[ -n "${STUB_PID:-}" ]] && kill "$STUB_PID" 2>/dev/null || true
-  [[ -n "${APP_PID:-}" ]] && kill "$APP_PID" 2>/dev/null || true
+# `npm run dev` / `npx next dev` 는 중간 셸을 거치므로 $! 는 실제 dev 서버가 아니라 그 셸의 PID 다.
+# 그 PID 만 죽이면 next 프로세스가 부모를 잃고 포트를 물고 남는다(다음 실행이 포트 충돌로 실패).
+# 그래서 자식들을 프로세스 그룹째 띄우고(setsid) 그룹 전체에 신호를 보낸다.
+kill_group() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  # setsid 로 띄웠으면 pgid == pid. 폴백으로 프로세스 자신에게도 보낸다.
+  kill -TERM -- "-${pid}" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
 }
-trap cleanup EXIT
+
+cleanup() {
+  kill_group "${STUB_PID:-}"
+  kill_group "${APP_PID:-}"
+  # TERM 을 흘려보내는 자식이 있어 잠시 기다린 뒤 확실히 정리한다(고아 dev 서버 방지).
+  sleep 1
+  kill -KILL -- "-${STUB_PID:-0}" 2>/dev/null || true
+  kill -KILL -- "-${APP_PID:-0}" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 wait_for() {
   local url="$1" name="$2"
@@ -45,7 +59,7 @@ start_app() {
   BACKEND_DOMAIN= \
   NEXT_PUBLIC_BACKEND_DOMAIN= \
   PORT="$PORT" \
-    npm run dev > "$LOG_DIR/storefront.log" 2>&1 &
+    setsid npm run dev > "$LOG_DIR/storefront.log" 2>&1 &
   APP_PID=$!
   wait_for "$BASE/kr" storefront
 }
@@ -56,8 +70,8 @@ start_app
 for scenario in $SCENARIOS; do
   echo ""
   echo "══════ 시나리오: ${scenario} ══════"
-  [[ -n "${STUB_PID:-}" ]] && kill "$STUB_PID" 2>/dev/null || true
-  SCENARIO="$scenario" node e2e/membership-cancel/stub-backend.mjs > "$LOG_DIR/stub-$scenario.log" 2>&1 &
+  kill_group "${STUB_PID:-}"
+  SCENARIO="$scenario" setsid node e2e/membership-cancel/stub-backend.mjs > "$LOG_DIR/stub-$scenario.log" 2>&1 &
   STUB_PID=$!
   wait_for "http://localhost:3001/subscriptions/cancel-preview" "stub($scenario)"
 

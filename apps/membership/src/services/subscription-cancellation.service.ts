@@ -120,8 +120,8 @@ export class SubscriptionCancellationService {
       refundReceiveAccount?: RefundReceiveAccount;
     },
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
-    await this.resumeIfPaused(userId);
-    const context = await this.loadContextForUser(userId);
+    // 환불 상한은 캐시 없이 확정한다 — 결제관리에서 방금 나간 환불을 못 보면 상한이 느슨해진다.
+    const context = await this.loadContextForUser(userId, { fresh: true });
     const { contract, plan, decision } = context;
 
     const mode = params.cancelType ?? decision.recommendedMode;
@@ -136,6 +136,10 @@ export class SubscriptionCancellationService {
     if (option.requiresReceiveAccount && mode === 'IMMEDIATE_REFUND' && !params.refundReceiveAccount) {
       throw new BadRequestError('환불받을 계좌 정보가 필요합니다.');
     }
+
+    // 정지 해제는 되돌릴 수 없으므로 **검증을 모두 통과한 뒤에** 한다. 앞에 두면 해지가 400/409 로
+    // 거절된 고객까지 정지가 풀려, 아무것도 해지하지 않은 채 남은 정지 일수를 잃는다.
+    await this.resumeIfPaused(userId);
 
     const result =
       mode === 'IMMEDIATE_REFUND'
@@ -161,8 +165,6 @@ export class SubscriptionCancellationService {
         reasonCode: params.reasonCode,
         reasonText: params.reasonText,
         refundReceiveAccount: params.refundReceiveAccount,
-        // 자동환불이 불가능한 수단(효성 CMS)은 애초에 호출하지 않고 수동 처리로 남긴다.
-        manualOnly: option.refundExecution === 'MANUAL',
       });
       (result as ImmediateCancellationResult).refundStatus = this.toRefundStatus(outcome);
     }
@@ -177,6 +179,13 @@ export class SubscriptionCancellationService {
     if (deferForInvoiceCollection) {
       this.logger.log(
         `자동이체 약정 종료 보류 — 남은 인보이스 수금 후 처리 (contractId=${contract.id})`,
+      );
+      // 보류 사실을 남겨야 후속 정리가 이어진다. 그 주기의 수금이 이미 끝난 계약에는 인보이스
+      // 이벤트가 더 오지 않아, 기록이 없으면 약정이 은행에 영구히 남는다.
+      await this.cancellationManager.markAgreementRevokeDeferred(
+        contract.id,
+        contract.userId,
+        (result as RecurringCancellationResult).currentPeriodEndsAt,
       );
     } else {
       await this.revokeBillingAgreementSafely(contract.id, contract.userId);
@@ -201,7 +210,9 @@ export class SubscriptionCancellationService {
       tierId: plan.tierId,
       reasonCode: params.reasonCode,
       reasonText: params.reasonText,
-      periodEndsAt: immediate ? undefined : context.entitlement.endsAt,
+      // 안내에 쓰는 종료일은 전이 트랜잭션이 실제로 기록한 값이다 — 정지 해제로 연장된 뒤의
+      // 종료일이라, 해지 전에 읽어둔 context 값(동결된 endsAt)을 쓰면 고객 안내가 어긋난다.
+      periodEndsAt: immediate ? undefined : (result as RecurringCancellationResult).currentPeriodEndsAt,
       refundAmount: immediate ? (result as ImmediateCancellationResult).refundAmount : 0,
       refundStatus: immediate
         ? (result as ImmediateCancellationResult).refundStatus
@@ -299,7 +310,13 @@ export class SubscriptionCancellationService {
     );
 
     // 셀프해지와 같은 이유로 INVOICE 경로 해지예약은 약정 종료를 보류한다(남은 수금이 실패하면 무료 이용).
-    if (contract.billingPath !== 'INVOICE') {
+    if (contract.billingPath === 'INVOICE') {
+      await this.cancellationManager.markAgreementRevokeDeferred(
+        contract.id,
+        contract.userId,
+        result.currentPeriodEndsAt,
+      );
+    } else {
       await this.revokeBillingAgreementSafely(contract.id, contract.userId);
     }
 
@@ -353,6 +370,16 @@ export class SubscriptionCancellationService {
     const plan = await this.contractReader.findPlan(contract.planId);
     if (!plan) throw new NotFoundError(`플랜을 찾을 수 없습니다: ${contract.planId}`);
 
+    // 결제한 적이 없는 계약(관리자 무료 지급·이관분)에는 환불할 대상이 없다. 그대로 통과시키면
+    // '환불 요청' 만 기록되고 돈은 나갈 수 없어, 관리자 화면에 "미완료 — N원 처리 필요" 가 영구히
+    // 남는다(라이브에 이렇게 만들어진 잔재가 2건 있다). 보상이 필요하면 결제관리·포인트로 한다.
+    if (refundType !== 'NONE' && !contract.lastPaymentIntentId) {
+      throw new BadRequestError(
+        '이 계약에는 환불 대상 결제 내역이 없습니다(관리자 지급·이관 계약). ' +
+          '환불 없이 해지하거나, 보상이 필요하면 결제관리에서 처리하세요.',
+      );
+    }
+
     await this.assertRefundAmountAllowed({
       contract,
       plan,
@@ -394,7 +421,6 @@ export class SubscriptionCancellationService {
                 reasonCode: 'ADMIN_CANCEL',
                 reasonText: refundReason ?? reason,
                 refundReceiveAccount,
-                manualOnly: false,
               }),
             ),
           }
@@ -440,20 +466,41 @@ export class SubscriptionCancellationService {
       throw new ConflictError('이미 환불 완료 처리된 계약입니다.');
     }
 
-    // wallet 이 환불 행을 들고 있는 건(무통장 수동 송금 확정 대기 등)은 wallet 이 닫아야 한다.
-    // 여기서 완료로 찍으면 관리자가 계좌로 한 번 보내고, 나중에 결제관리에서 확정될 때 또 한 번
-    // 나간다. 이 창구는 wallet 에 환불 행 자체가 없는 효성 CMS 를 위한 것이다.
+    const requested = contract.eligibleRefundAmount ?? 0;
+
+    // wallet 이 이 결제로 이미 내보낸 돈이 있으면, 그 금액만큼은 관리자가 다시 보낼 것이 아니다.
+    //  - 확정 대기(PENDING): 그 건은 결제관리가 닫는다. 여기서 완료로 찍으면 관리자 송금 + 결제관리
+    //    확정으로 두 번 나간다.
+    //  - 이미 성공(SUCCEEDED)한 환불이 요청액을 덮으면: PG 로 이미 나간 돈이다. 송금 없이 사실만
+    //    정리한다(409 로 막으면 '미완료' 가 영구히 남는다).
     if (contract.lastPaymentIntentId) {
-      const pending = await this.findPendingWalletRefundAmount(contract.lastPaymentIntentId);
-      if (pending > 0) {
+      const settlement = await this.findWalletRefundSettlement(contract.lastPaymentIntentId);
+      if (settlement.pendingRefundAmount > 0) {
         throw new ConflictError(
-          `결제관리에 확정 대기 중인 환불(${pending.toLocaleString()}원)이 있습니다. ` +
+          `결제관리에 확정 대기 중인 환불(${settlement.pendingRefundAmount.toLocaleString()}원)이 있습니다. ` +
             `이중 송금을 막기 위해 그 건은 결제관리에서 완료 처리해야 합니다.`,
         );
       }
+      if (requested > 0 && settlement.alreadyRefundedAmount >= requested) {
+        this.logger.warn(
+          `수동 송금 불필요 — PG 환불이 이미 완료됨 (contractId=${contractId}, intentId=${contract.lastPaymentIntentId}, refunded=${settlement.alreadyRefundedAmount})`,
+        );
+        await this.cancellationManager.recordRefundOutcome(
+          contractId,
+          contract.userId,
+          requested,
+          {
+            status: 'SUCCEEDED',
+            refundedAmount: requested,
+            errorCode: 'PG_REFUND_ALREADY_SETTLED',
+            errorMessage: params.memo,
+          },
+          { causedBy: 'ADMIN', causedByUserId: adminId },
+        );
+        return { contractId, refundedAmount: requested, refundCompletedAt: new Date().toISOString() };
+      }
     }
 
-    const requested = contract.eligibleRefundAmount ?? 0;
     const refundedAmount = params.amount ?? requested;
     if (refundedAmount <= 0) throw new BadRequestError('환불 금액이 0원입니다.');
     // 실제로 보낸 금액이 요청액과 다르면 그대로 기록한다(추정하지 않는다). 다만 요청액 초과는 막는다.
@@ -478,20 +525,27 @@ export class SubscriptionCancellationService {
   }
 
   /**
-   * wallet 에 확정 대기 중인 환불액. 조회가 실패하면 0 으로 본다 — 알 수 없는 값으로 CS 의 유일한
-   * 완료 창구를 막아버리면 "미완료" 가 영구히 남는 쪽이 더 나쁘다.
+   * wallet 기준으로 이 결제에서 이미 나간/잡힌 환불액. 조회가 실패하면 0 으로 본다 — 알 수 없는
+   * 값으로 CS 의 유일한 완료 창구를 막아버리면 "미완료" 가 영구히 남는 쪽이 더 나쁘다.
+   *
+   * 돈이 나가는 판단이라 캐시를 쓰지 않는다(결제관리에서 방금 확정한 환불이 보여야 한다).
    */
-  private async findPendingWalletRefundAmount(intentId: string): Promise<number> {
+  private async findWalletRefundSettlement(
+    intentId: string,
+  ): Promise<{ pendingRefundAmount: number; alreadyRefundedAmount: number }> {
     try {
-      const refundability = await this.paymentClientService.getRefundability(intentId);
-      return refundability.pendingRefundAmount ?? 0;
+      const refundability = await this.paymentClientService.getRefundability(intentId, { fresh: true });
+      return {
+        pendingRefundAmount: refundability.pendingRefundAmount ?? 0,
+        alreadyRefundedAmount: refundability.alreadyRefundedAmount ?? 0,
+      };
     } catch (err) {
       this.logger.warn(
         `확정 대기 환불 조회 실패 — 수동 완료를 막지 않는다 (intentId=${intentId}): ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      return 0;
+      return { pendingRefundAmount: 0, alreadyRefundedAmount: 0 };
     }
   }
 
@@ -528,6 +582,7 @@ export class SubscriptionCancellationService {
     const context = await this.contextReader.load({
       contract: params.contract as Parameters<CancellationContextReader['load']>[0]['contract'],
       plan: params.plan as Parameters<CancellationContextReader['load']>[0]['plan'],
+      fresh: true,
     });
     if (!context) return;
 
@@ -561,7 +616,7 @@ export class SubscriptionCancellationService {
     await this.pauseManager.resumePause(userId, paused);
   }
 
-  private async loadContextForUser(userId: string): Promise<CancellationContext> {
+  private async loadContextForUser(userId: string, opts?: { fresh?: boolean }): Promise<CancellationContext> {
     const data = await this.contractReader.findContractWithPlan(userId);
     if (!data) {
       const allContracts = await this.contractReader.findContractsByUserId(userId);
@@ -571,7 +626,11 @@ export class SubscriptionCancellationService {
       throw new NotFoundError('활성 구독이 없습니다.');
     }
 
-    const context = await this.contextReader.load({ contract: data.contract, plan: data.plan });
+    const context = await this.contextReader.load({
+      contract: data.contract,
+      plan: data.plan,
+      fresh: opts?.fresh,
+    });
     if (!context) throw new ConflictError('활성 이용 권한이 없습니다.');
     return context;
   }
@@ -608,7 +667,6 @@ export class SubscriptionCancellationService {
     reasonCode: string;
     reasonText?: string;
     refundReceiveAccount?: RefundReceiveAccount;
-    manualOnly: boolean;
   }): Promise<RefundOutcome> {
     if (!params.intentId) {
       const outcome: RefundOutcome = { status: 'FAILED', refundedAmount: 0, errorCode: 'NO_PAYMENT_INTENT' };
@@ -619,7 +677,9 @@ export class SubscriptionCancellationService {
       return outcome;
     }
 
-    if (params.manualOnly) {
+    // 자동환불 가능 여부는 wallet 이 소유한 사실이다(결제수단에 PG 환불 API 가 있는가). 호출자가
+    // 저마다 판단하면 같은 CMS 계약이 고객 경로에선 PENDING, 관리자 경로에선 FAILED 로 남는다.
+    if (await this.isManualRefundOnly(params.intentId)) {
       const outcome: RefundOutcome = {
         status: 'PENDING',
         refundedAmount: 0,
@@ -668,6 +728,24 @@ export class SubscriptionCancellationService {
         receiveAccount: params.refundReceiveAccount,
       });
       return outcome;
+    }
+  }
+
+  /**
+   * PG 자동환불이 불가능한 결제인지(효성 CMS 등). 조회가 실패하면 자동 경로를 시도한다 —
+   * 실제로 환불 가능한 건을 수동 대기로 떨어뜨리면 고객이 받을 돈이 사람 손을 거쳐야만 나간다.
+   */
+  private async isManualRefundOnly(intentId: string): Promise<boolean> {
+    try {
+      const refundability = await this.paymentClientService.getRefundability(intentId);
+      return refundability.autoRefundSupported === false;
+    } catch (err) {
+      this.logger.warn(
+        `자동환불 가능 여부 조회 실패 — 자동 환불을 시도한다 (intentId=${intentId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
     }
   }
 

@@ -775,7 +775,12 @@
       "cancelScheduledUndo": "해지 취소하고 계속 이용하기",
       "cancelUndoSuccess": "해지가 철회되었습니다. 멤버십이 계속 유지됩니다.",
       "cancelUndoFailed": "해지 철회에 실패했습니다. 잠시 후 다시 시도해 주세요.",
-      "oneTimeNoCancelNeeded": "1회 결제 건이라 자동 결제가 없습니다. {date}에 자동으로 종료됩니다."
+      "oneTimeNoCancelNeeded": "1회 결제 건이라 자동 결제가 없습니다. {date}에 자동으로 종료됩니다.",
+      "cancelUndoUnavailable": "1회 결제 건이라 되돌릴 자동결제가 없습니다. 종료일까지 그대로 이용하실 수 있습니다.",
+      "cancelScheduledDone": "해지가 접수되었습니다. 종료일까지 멤버십을 이용하실 수 있습니다.",
+      "cancelImmediateDone": "멤버십이 해지되었습니다.",
+      "cancelRefundCompleted": "멤버십이 해지되고 {amount}원이 환불되었습니다.",
+      "cancelRefundPending": "멤버십이 해지되었습니다. {amount}원은 입력하신 계좌로 영업일 {days}일 내 송금됩니다."
     },
     "invoices": {
       "title": "정기결제 청구 내역",

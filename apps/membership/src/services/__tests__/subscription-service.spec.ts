@@ -25,6 +25,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
   const mockContractReader = {
     findActiveContract: jest.fn(),
+    findById: jest.fn(),
     findPlan: jest.fn(),
     findContractsByUserId: jest.fn(),
     findByPaymentIntentId: jest.fn(),
@@ -44,6 +45,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
   };
 
   const mockPaymentClientService = {
+    getRefundability: jest.fn(),
     createMembershipCheckoutIntent: jest.fn(),
     getWalletPaymentIntent: jest.fn(),
     directCharge: jest.fn(),
@@ -291,13 +293,47 @@ describe('SubscriptionService - Layer Refactoring', () => {
   });
 
   describe('voidByPaymentIntent', () => {
-    it('intent 로 만든 ACTIVE 구독을 무효화한다', async () => {
-      const contract = { id: 'c1', userId: 'u1', status: 'ACTIVE' };
-      mockContractReader.findByPaymentIntentId.mockResolvedValue(contract);
+    const activeContract = { id: 'c1', userId: 'u1', status: 'ACTIVE', planId: 'p1' };
 
-      await service.voidByPaymentIntent('intent_1', '결제 환불');
+    /** wallet 이 보는 이 결제의 환불 규모. 전액이면 자격 회수, 부분이면 유지가 맞다. */
+    const givenWalletRefunded = (refundable: number, alreadyRefunded: number) =>
+      mockPaymentClientService.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: refundable,
+        alreadyRefundedAmount: alreadyRefunded,
+      });
 
-      expect(mockSubscriptionManager.voidSubscription).toHaveBeenCalledWith('u1', contract, '결제 환불');
+    it('전액 환불이면 intent 로 만든 ACTIVE 구독을 무효화한다', async () => {
+      mockContractReader.findByPaymentIntentId.mockResolvedValue(activeContract);
+      givenWalletRefunded(4990, 4990);
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불', 4990);
+
+      expect(mockSubscriptionManager.voidSubscription).toHaveBeenCalledWith('u1', activeContract, '결제 환불');
+    });
+
+    // 결제관리에서 배송 지연 사과 같은 소액 보상을 멤버십 결제에 걸면, 예전에는 그 환불 이벤트만으로
+    // 멤버십이 통째로 취소됐다 — 돈은 조금 돌려주고 남은 이용권을 전부 뺏는 결과다.
+    it('부분 환불이면 구독을 유지한다 (소액 보상이 멤버십을 취소하지 않는다)', async () => {
+      mockContractReader.findByPaymentIntentId.mockResolvedValue(activeContract);
+      givenWalletRefunded(49900, 1000);
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불', 1000);
+
+      expect(mockSubscriptionManager.voidSubscription).not.toHaveBeenCalled();
+    });
+
+    it('wallet 조회가 실패하면 이벤트 금액과 플랜 가격으로 판단한다', async () => {
+      mockContractReader.findByPaymentIntentId.mockResolvedValue(activeContract);
+      mockContractReader.findById.mockResolvedValue(activeContract);
+      mockPaymentClientService.getRefundability.mockRejectedValue(new Error('wallet down'));
+      mockPlanService.getPlanDetails.mockResolvedValue({ plan: { price: 4990 } });
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불', 1000);
+      expect(mockSubscriptionManager.voidSubscription).not.toHaveBeenCalled();
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불', 4990);
+      expect(mockSubscriptionManager.voidSubscription).toHaveBeenCalled();
     });
 
     it('해당 intent 의 구독이 없으면 아무것도 하지 않는다', async () => {

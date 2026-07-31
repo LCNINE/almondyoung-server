@@ -668,6 +668,17 @@ function PlanTab({
   const isRecurringContract = autoRenewal || canUndoCancellation;
   const isCancellationScheduled = isActive && !!detail?.recurringCancelledAt;
   const manualRefundAccount = detail?.manualRefundAccount ?? null;
+  // 계좌로 보내기 전에 결제관리(wallet) 쪽 사실을 먼저 본다 — 이미 나갔거나 확정만 남은 건에
+  // 또 송금하면 돈이 두 번 나간다. null 은 '알 수 없음'이라 아무것도 단정하지 않는다.
+  const settlement = detail?.refundSettlement ?? null;
+  const requestedRefund = detail?.eligibleRefundAmount ?? 0;
+  const pgAlreadyRefunded =
+    !!settlement && requestedRefund > 0 && settlement.alreadyRefundedAmount >= requestedRefund;
+  const pgConfirmPending = !!settlement && settlement.pendingRefundAmount > 0;
+  // 결제한 적이 없는 계약(관리자 지급·이관)은 환불할 대상 자체가 없다. 옛 화면은 "미완료 — N원
+  // 처리 필요" 만 띄워서, 보낼 곳도 근거도 없는 건을 CS 가 찾아 헤매게 만들었다.
+  const refundImpossible =
+    !!detail && detail.refundRequested && !detail.refundCompleted && !detail.hasPaymentIntent;
 
   const handleScheduleCancel = async () => {
     if (!scheduleReason.trim()) {
@@ -698,12 +709,12 @@ function PlanTab({
     const where = account
       ? `${bankName(account.bank)} ${account.accountNumber} (${account.holderName})`
       : '고객 계좌';
-    if (
-      !window.confirm(
-        `${where}로 ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`
-      )
-    )
-      return;
+    // PG 로 이미 나간 건은 '송금 확인'이 아니라 '기록 정리'다. 같은 문구로 물으면 관리자가
+    // 보내지 않아도 될 돈을 보내고 나서 누른다.
+    const question = pgAlreadyRefunded
+      ? `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불된 건입니다. 추가 송금 없이 완료로 정리할까요?`
+      : `${where}로 ${requestedRefund.toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`;
+    if (!window.confirm(question)) return;
     try {
       await completeManualRefundMutation.mutateAsync({ contractId });
       toast.success('환불 완료로 기록했습니다.');
@@ -787,28 +798,58 @@ function PlanTab({
                 >
                   {detail?.refundCompleted
                     ? `완료 ${formatDate(detail.refundCompletedAt)} (${(detail.eligibleRefundAmount ?? 0).toLocaleString()}원)`
-                    : `미완료 — ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원 처리 필요`}
+                    : refundImpossible
+                      ? '환불 대상 결제 없음'
+                      : `미완료 — ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원 처리 필요`}
                 </span>
-                {/* 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다 — 여기서 확정한다. */}
-                {allowForceCancel && !detail?.refundCompleted && (
+                {/* 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다 — 여기서 확정한다.
+                    결제관리가 닫아야 하는 건(확정 대기)은 여기서 누르면 이중 송금이라 버튼을 열지 않는다. */}
+                {allowForceCancel &&
+                  !detail?.refundCompleted &&
+                  !pgConfirmPending &&
+                  !refundImpossible && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 text-xs"
+                    data-testid="complete-manual-refund"
                     disabled={completeManualRefundMutation.isPending}
                     onClick={handleCompleteManualRefund}
                   >
                     {completeManualRefundMutation.isPending
                       ? '처리 중...'
-                      : '송금 완료 처리'}
+                      : pgAlreadyRefunded
+                        ? '완료로 정리'
+                        : '송금 완료 처리'}
                   </Button>
                 )}
               </span>
             </div>
           )}
+          {/* 결제 이력이 없는 계약에 환불 요청이 걸린 건 — 보낼 돈도 보낼 곳도 없다는 사실을 말해준다. */}
+          {refundImpossible && (
+            <p
+              className="rounded-md border p-2 text-xs text-muted-foreground"
+              data-testid="refund-impossible-notice"
+            >
+              결제 내역이 없는 계약(관리자 지급·이관)에 환불 요청이 기록된 건입니다. 받은 돈이 없어
+              송금할 대상이 없습니다 — 보상이 필요하면 결제관리에서 처리하세요.
+            </p>
+          )}
+          {/* 송금하기 전에 결제관리 쪽 사실을 먼저 알려준다 — 이 안내가 없으면 이미 나간 돈을 또 보낸다. */}
+          {!detail?.refundCompleted && (pgAlreadyRefunded || pgConfirmPending) && (
+            <p
+              className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-900"
+              data-testid="refund-settlement-notice"
+            >
+              {pgConfirmPending
+                ? `결제관리에 확정 대기 중인 환불 ${settlement!.pendingRefundAmount.toLocaleString()}원이 있습니다. 이 건은 결제관리에서 완료 처리하세요 — 여기서 송금하면 두 번 나갑니다.`
+                : `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불되었습니다. 추가 송금은 필요하지 않습니다.`}
+            </p>
+          )}
           {/* 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
               (효성 CMS 는 wallet 에 환불 행 자체가 없어 결제관리 화면에도 나타나지 않는다) */}
-          {manualRefundAccount && (
+          {manualRefundAccount && !pgAlreadyRefunded && (
             <div
               className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs"
               data-testid="manual-refund-account"

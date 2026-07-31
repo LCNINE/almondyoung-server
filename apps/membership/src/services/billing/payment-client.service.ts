@@ -358,8 +358,10 @@ export class PaymentClientService {
    * 효성 CMS(자동이체)는 환불 API 가 없어 autoRefundSupported=false 로 돌아온다. 이 확인 없이
    * "환불 완료" 를 안내하면 자격만 회수되고 돈은 안 나가는 사고가 된다.
    */
-  async getRefundability(intentId: string): Promise<RefundabilityInfo> {
-    const cached = this.refundabilityCache.get(intentId);
+  async getRefundability(intentId: string, opts?: { fresh?: boolean }): Promise<RefundabilityInfo> {
+    // 돈이 실제로 나가는 순간의 판단(환불 상한 확정, 수동 송금 완료 처리, 환불 규모 판정)은 캐시를
+    // 믿지 않는다 — 결제관리에서 방금 나간 환불이 30초 동안 안 보이면 상한이 느슨해진다.
+    const cached = opts?.fresh ? undefined : this.refundabilityCache.get(intentId);
     if (cached && cached.expiresAt > Date.now()) return cached.value;
 
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();

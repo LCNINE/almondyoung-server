@@ -46,7 +46,17 @@ export class CancellationContextReader {
     private readonly refundPolicy: RefundPolicyService,
   ) {}
 
-  async load(params: { contract: Contract; plan: Plan; now?: Date }): Promise<CancellationContext | null> {
+  /**
+   * @param params.fresh 환불 상한을 캐시 없이 확정한다. 실제로 환불을 집행하는 경로만 켠다 —
+   *   미리보기는 마이페이지 렌더링 경로라 짧은 캐시가 필요하지만, 집행 직전의 상한은 결제관리에서
+   *   방금 나간 환불까지 반영해야 한다.
+   */
+  async load(params: {
+    contract: Contract;
+    plan: Plan;
+    now?: Date;
+    fresh?: boolean;
+  }): Promise<CancellationContext | null> {
     const { contract, plan } = params;
     const now = params.now ?? new Date();
 
@@ -87,7 +97,9 @@ export class CancellationContextReader {
       ? await this.contractReader.findMonthlyListPrice(plan.tierId, plan.price)
       : plan.price;
 
-    const refundability = hasPayment ? await this.loadRefundability(contract.lastPaymentIntentId!) : null;
+    const refundability = hasPayment
+      ? await this.loadRefundability(contract.lastPaymentIntentId!, params.fresh === true)
+      : null;
 
     // 정기결제 판정: 자동갱신이 살아있거나, 해지 시점에 정기결제였던 계약.
     // recurringCancelledAt 만으로 판정하면 1회 결제 고객까지 '정기결제 해지 예약' 으로 보여
@@ -134,9 +146,9 @@ export class CancellationContextReader {
   }
 
   /** wallet 장애가 해지 자체를 막지 않도록 실패는 흡수하고 '자동환불 불가'로 본다. */
-  private async loadRefundability(intentId: string) {
+  private async loadRefundability(intentId: string, fresh: boolean) {
     try {
-      return await this.paymentClientService.getRefundability(intentId);
+      return await this.paymentClientService.getRefundability(intentId, { fresh });
     } catch (err) {
       this.logger.warn(
         `환불 가능 여부 조회 실패 — 수동 환불 경로로 판단한다 (intentId=${intentId}): ${

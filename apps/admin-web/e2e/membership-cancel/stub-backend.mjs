@@ -10,6 +10,9 @@
  *   scheduled     해지 예약됨 — 배너 + 철회 + 수동 송금 계좌 노출
  *   one-time      1회 결제 — 예약 해지 불필요 안내
  *   one-time-scheduled  1회 결제인데 해지 예약됨 — 철회(=무단 정기결제 전환) 버튼이 없어야 한다
+ *   no-payment    결제 내역이 없는 계약(관리자 지급)에 환불 요청이 걸린 잔재 — 보낼 곳이 없음을 알려야 한다
+ *   pg-settled    자동환불이 FAILED 로 기록됐지만 결제관리에는 실제로 환불이 나간 건 —
+ *                 관리자가 계좌로 또 보내지 않도록 화면이 먼저 알려야 한다
  */
 import { createServer } from 'node:http';
 
@@ -51,7 +54,9 @@ function detail() {
     refundCompleted: false,
     refundCompletedAt: null,
     canUndoCancellation: false,
+    hasPaymentIntent: true,
     manualRefundAccount: null,
+    refundSettlement: null,
     pauseCount: 0,
     firstContractCreatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
   };
@@ -75,6 +80,46 @@ function detail() {
       };
     case 'one-time':
       return { ...base, autoRenewal: false, nextBillingDate: null };
+    // 관리자 무료 지급 계약(결제 없음)에 '전액 환불' 강제취소가 걸린 라이브 잔재 형태.
+    case 'no-payment':
+      return {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: true,
+        eligibleRefundAmount: MONTHLY,
+        refundCompleted: false,
+        hasPaymentIntent: false,
+        manualRefundAccount: null,
+        refundSettlement: null,
+      };
+    // 자동환불이 실패로 기록됐지만 실제로는 PG 로 나간 건. 계좌 송금이 아니라 기록 정리만 남았다.
+    case 'pg-settled':
+      return {
+        ...base,
+        status: 'ACTIVE',
+        autoRenewal: false,
+        nextBillingDate: null,
+        refundRequested: true,
+        eligibleRefundAmount: MONTHLY,
+        refundCompleted: false,
+        manualRefundAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
+        refundSettlement: { alreadyRefundedAmount: MONTHLY, pendingRefundAmount: 0 },
+      };
+    // 무통장 환불이 결제관리에서 확정 대기 중 — 여기서 완료로 찍으면 이중 송금이 된다.
+    case 'pg-pending':
+      return {
+        ...base,
+        autoRenewal: false,
+        nextBillingDate: null,
+        refundRequested: true,
+        eligibleRefundAmount: MONTHLY,
+        refundCompleted: false,
+        manualRefundAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
+        refundSettlement: { alreadyRefundedAmount: 0, pendingRefundAmount: MONTHLY },
+      };
     // 1회 결제 고객이 해지 예약한 상태. 철회는 wallet 자동이체 약정을 새로 만들어 동의 없는
     // 정기결제로 전환시키므로 서버가 canUndoCancellation=false 로 내려주고 버튼이 없어야 한다.
     case 'one-time-scheduled':

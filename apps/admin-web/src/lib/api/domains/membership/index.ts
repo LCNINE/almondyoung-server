@@ -85,6 +85,16 @@ export interface AdminMemberDetail {
     accountNumber: string;
     holderName: string;
   } | null;
+  /** 환불 대상 결제 내역이 있는지. 관리자 지급·이관 계약은 결제가 없어 환불 자체가 불가능하다. */
+  hasPaymentIntent: boolean;
+  /**
+   * 미완료 환불 건의 결제관리(wallet) 쪽 사실. 계좌로 송금하기 **전에** 확인해야 하는 값이다 —
+   * 이미 PG 로 나갔거나 결제관리가 확정만 남긴 건에 또 보내면 돈이 두 번 나간다.
+   */
+  refundSettlement: {
+    alreadyRefundedAmount: number;
+    pendingRefundAmount: number;
+  } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }

@@ -40,7 +40,7 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
   });
 
   test('가입자 화면이 정상 렌더되고 해지 진입점이 보인다', async ({ page }) => {
-    if (SCENARIO === 'scheduled') {
+    if (SCENARIO === 'scheduled' || SCENARIO === 'one-time-scheduled') {
       // 해지 예약 상태에서는 해지 버튼을 감추고 배너를 보여준다(중복 해지 차단이 UI 에서 먼저 일어난다).
       await expect(page.getByText('해지 예약됨')).toBeVisible();
       await expect(page.getByRole('button', { name: '멤버십 해지하기' })).toHaveCount(0);
@@ -51,7 +51,7 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
   });
 
   test('해지 모달 흐름', async ({ page, request }) => {
-    test.skip(SCENARIO === 'scheduled', '해지 예약 상태는 해지 진입점이 없다');
+    test.skip(SCENARIO.includes('scheduled'), '해지 예약 상태는 해지 진입점이 없다');
 
     await page.getByRole('button', { name: '멤버십 해지하기' }).click();
     const dialog = page.getByRole('dialog');
@@ -115,6 +115,10 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     expect(cancelCall.body.cancelType).toBe(immediateAvailable ? 'IMMEDIATE_REFUND' : 'AT_PERIOD_END');
     if (SCENARIO === 'cms-manual') {
       expect(cancelCall.body.refundReceiveAccount).toMatchObject({ holderName: '홍길동' });
+      // 자동이체 환불은 돈이 아직 나가지 않았다(PENDING). "환불되었습니다" 로 알리면 고객은
+      // 계좌를 확인하고 사고로 받아들인다 — 언제 어떻게 들어오는지를 알려야 한다.
+      await expect(page.getByText(/영업일 3일 내 송금됩니다/)).toBeVisible();
+      await expect(page.getByText(/원이 환불되었습니다/)).toHaveCount(0);
     }
   });
 
@@ -138,7 +142,7 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
   });
 
   test('모달을 닫으면 아무 요청도 나가지 않는다', async ({ page, request }) => {
-    test.skip(SCENARIO === 'scheduled', '해지 진입점이 없다');
+    test.skip(SCENARIO.includes('scheduled'), '해지 진입점이 없다');
 
     const before = (await stubCalls(request)).length;
     await page.getByRole('button', { name: '멤버십 해지하기' }).click();
@@ -160,6 +164,16 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     await expect
       .poll(async () => (await stubCalls(request)).filter((c) => c.path === '/subscriptions/cancel/undo').length)
       .toBeGreaterThan(0);
+  });
+
+  // 철회 버튼만 사라지면 고객은 "왜 안 되는지·무엇을 하면 되는지" 를 알 수 없다.
+  test('1회 결제의 해지 예약은 철회가 불가능한 이유를 알려준다', async ({ page, request }) => {
+    test.skip(SCENARIO !== 'one-time-scheduled', '1회 결제 해지 예약 시나리오만');
+
+    await expect(page.getByText('해지 예약됨')).toBeVisible();
+    await expect(page.getByRole('button', { name: /해지 취소하고 계속 이용하기/ })).toHaveCount(0);
+    await expect(page.getByText(/되돌릴 자동결제가 없습니다/)).toBeVisible();
+    expect((await stubCalls(request)).filter((c) => c.path === '/subscriptions/cancel/undo')).toHaveLength(0);
   });
 
   test('1회 결제는 정기결제와 다른 문구로 안내한다', async ({ page }) => {
