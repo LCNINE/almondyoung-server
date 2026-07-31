@@ -365,6 +365,13 @@
       "when": 1785348626590,
       "tag": "20260729181026_product-import-cancel-and-failure-cap",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785438559298,
+      "tag": "20260730190919_product-import-images",
+      "breakpoints": true
     }
   ]
 }

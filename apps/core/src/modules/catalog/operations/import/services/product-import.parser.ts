@@ -16,6 +16,11 @@ export const MAX_VARIANT_ROWS = 20_000;
 export const MAX_CATEGORY_ROWS = 5_000;
 /** 구매제약은 상품당 최대 1행이므로 상품 상한과 같다. */
 export const MAX_CONSTRAINT_ROWS = MAX_PRODUCT_ROWS;
+/**
+ * 상품 1000행 × (대표 1 + 부가 5 + 본문 n) 을 넉넉히 담는 실용 상한. 파일 크기 상한
+ * (10MB)에 먼저 걸리는 것이 보통이고, 이 값은 파싱 메모리를 보호한다.
+ */
+export const MAX_IMAGE_ROWS = 10_000;
 
 const REQUIRED_PRODUCT_HEADERS = ['productKey', 'name'];
 
@@ -100,7 +105,13 @@ export class ProductImportParser {
       );
     }
 
-    return { products, options, variants, categories, constraints };
+    const imagesSheet = wb.getWorksheet('Images');
+    const images = imagesSheet ? this.readSheet(imagesSheet) : [];
+    if (images.length > MAX_IMAGE_ROWS) {
+      throw new BadRequestError(`Images 행이 상한(${MAX_IMAGE_ROWS})을 초과했습니다. 파일을 나눠 올려주세요.`);
+    }
+
+    return { products, options, variants, categories, constraints, images };
   }
 
   /** 1행=헤더, 이후=데이터. 빈 행은 건너뛰고 rowNumber 는 데이터 기준 1-based. */

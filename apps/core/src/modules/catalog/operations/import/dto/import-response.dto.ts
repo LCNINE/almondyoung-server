@@ -18,6 +18,11 @@ export class ResolvedPreviewDto {
 
   @ApiProperty()
   variantCount: number;
+
+  @ApiProperty({
+    description: '이 행이 참조하는 고유 이미지 수(대표+부가+본문). 커밋 전에 인식 여부를 확인하는 용도.',
+  })
+  imageCount: number;
 }
 
 export class ValidatePreviewRowDto {
@@ -91,6 +96,9 @@ export class CommitAcceptedDto {
 
   @ApiProperty({ description: '검증에서 이미 떨어진 행 수 — 접수 시점의 확정값' })
   invalidCount: number;
+
+  @ApiProperty({ description: '워커가 내려받을 고유 이미지 수. 0 이면 이미지 단계 없이 바로 상품 생성으로 간다.' })
+  imageCount: number;
 }
 
 export class SessionSummaryDto {
@@ -152,6 +160,15 @@ export class SessionSummaryDto {
     description: '취소 요청 시각. null 이 아니면 워커가 이 세션을 더 이상 집지 않는다.',
   })
   cancelRequestedAt: Date | null;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '이미지 레인(probe→fetch) 상태. Images 시트가 없는 워크북은 접수 즉시 completed 다.',
+  })
+  imageStatus: string;
+
+  @ApiProperty({ required: false, nullable: true })
+  imageError: string | null;
 }
 
 export class SessionDetailDto extends SessionSummaryDto {
@@ -173,6 +190,12 @@ export class PublishAcceptedDto {
 export class CancelAcceptedDto {
   @ApiProperty()
   sessionId: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 이미지 잡 상태. 이미 끝난 레인은 completed 로 남는다.',
+  })
+  imageStatus: string;
 
   @ApiProperty({
     enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],

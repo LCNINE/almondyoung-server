@@ -6,7 +6,7 @@ jest.mock(
 
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { ProductImportJobManager, ClaimedSession, MAX_CONSECUTIVE_JOB_FAILURES } from './product-import-job.manager';
-import { productImportSessions, productImportItems } from '../../../schema/catalog.schema';
+import { productImportSessions, productImportItems, productImportImages } from '../../../schema/catalog.schema';
 
 /**
  * drizzle sql 조각을 실제 SQL 문자열로 렌더한다. 클레임의 원자성은 바인딩 값이 아니라
@@ -38,10 +38,18 @@ function chain(rows: any[]): any {
   return builder;
 }
 
-function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; returningRows?: any[][] } = {}) {
+function makeHarness(
+  opts: {
+    pendingItems?: any[];
+    claimed?: any[];
+    returningRows?: any[][];
+    imageRows?: Record<'pending' | 'probed', any[]>;
+  } = {},
+) {
   const updates: any[] = [];
   const pending = opts.pendingItems ?? [];
   let returningCallIndex = 0;
+  let imageSelectCallIndex = 0;
 
   const trx = {
     // execute 는 실제로 sql 인자 하나를 받는다 — 시그니처를 무인자로 두면
@@ -49,7 +57,16 @@ function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; returningRow
     execute: jest.fn(async (_query?: unknown) => opts.claimed ?? []),
     select: (_projection?: any) => ({
       from: (table: any) => ({
-        where: () => chain(table === productImportItems ? pending : [{ id: 'sess-1', uploadedBy: 'u1' }]),
+        where: (condition?: unknown) => {
+          if (table === productImportImages) {
+            // status 별로 갈라 돌려준다. 조건절을 파싱하는 대신 호출 순서로 가른다 —
+            // runImageSlice 는 항상 pending 을 먼저, 그 다음 probed 를 조회한다.
+            const rows = imageSelectCallIndex === 0 ? (opts.imageRows?.pending ?? []) : (opts.imageRows?.probed ?? []);
+            imageSelectCallIndex += 1;
+            return chain(rows);
+          }
+          return chain(table === productImportItems ? pending : [{ id: 'sess-1', uploadedBy: 'u1' }]);
+        },
       }),
     }),
     update: (table: any) => ({
@@ -57,7 +74,11 @@ function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; returningRow
         // condition 도 남겨둔다 — release/renew 가 CAS 로 소유권을 확인하는지는
         // where 절 자체를 렌더링해야 단정할 수 있다(값만 보면 SET 절과 구분이 안 된다).
         where: (condition?: unknown) => {
-          updates.push({ table: table === productImportSessions ? 'sessions' : 'items', values, condition });
+          updates.push({
+            table: table === productImportSessions ? 'sessions' : table === productImportImages ? 'images' : 'items',
+            values,
+            condition,
+          });
           const result: any = Promise.resolve();
           // renewLease 와 recordJobError 가 .returning() 을 체이닝한다. opts.returningRows 를
           // 안 주면 renewLease 는 성공(비어있지 않은 행)·취소 없음으로, recordJobError 는
@@ -78,10 +99,30 @@ function makeHarness(opts: { pendingItems?: any[]; claimed?: any[]; returningRow
   const importManager = { createFromRecord: jest.fn(async () => 'master-1') } as any;
   const variantCodeChecker = { check: jest.fn(async () => undefined) } as any;
   const config = { get: jest.fn(() => undefined) } as any;
-  const reader = { getDraftVersionId: jest.fn(async () => 'draft-1') } as any;
+  // getSessionImages 는 runCommitSlice 가 슬라이스당 한 번 부른다 — 이 파일의 기존
+  // 테스트들은 이미지 키를 참조하는 행이 없으므로 빈 배열로 충분하다(indexSessionImages([])
+  // 가 빈 맵 두 개를 만들어 unresolvedImageError 가 항상 null 을 돌려준다).
+  const reader = {
+    getDraftVersionId: jest.fn(async () => 'draft-1'),
+    getSessionImages: jest.fn(async () => []),
+  } as any;
   const versionsService = { publishVersion: jest.fn(async () => undefined) } as any;
-  const manager = new ProductImportJobManager(db, importManager, variantCodeChecker, config, reader, versionsService);
-  return { manager, updates, trx, importManager, variantCodeChecker, reader, versionsService };
+  // 이 파일의 기존(commit/publish) 테스트들은 이미지 협력자를 쓰지 않는다 — 컴파일을
+  // 통과시키기 위한 최소 스텁이다. 이미지 레인 자체를 검증하는 테스트는 harness.db 로
+  // 별도 조립되는 imageManager() 를 쓴다(아래).
+  const imageFetcher = { probe: jest.fn(), fetch: jest.fn() } as any;
+  const fileClient = { upload: jest.fn(), softDelete: jest.fn() } as any;
+  const manager = new ProductImportJobManager(
+    db,
+    importManager,
+    variantCodeChecker,
+    config,
+    reader,
+    versionsService,
+    imageFetcher,
+    fileClient,
+  );
+  return { manager, updates, trx, db, importManager, variantCodeChecker, reader, versionsService };
 }
 
 const PENDING = (rowNumber: number) => ({
@@ -338,6 +379,43 @@ describe('ProductImportJobManager', () => {
     expect(variantCodeChecker.check).toHaveBeenCalled();
   });
 
+  it('참조한 이미지가 실패 상태면 그 행을 실패시키고 createFromRecord 를 부르지 않는다', async () => {
+    // 이 규칙이 이 단계의 핵심이다 — 배선(runCommitSlice)이 unresolvedImageError 를
+    // 실제로 부르는지는 순수 함수 자체의 단위테스트(resolver.spec)로는 잡히지 않는다.
+    // 스프레드로 새 리터럴을 만든다 — PENDING() 의 반환 타입에 없는 필드를 기존 변수에
+    // 직접 대입하면(TS2339) 타입체크가 막는다.
+    const base = PENDING(1);
+    const item = { ...base, payload: { ...base.payload, thumbnailImageKey: 'IMG-1' } };
+    const { manager, updates, importManager, reader } = makeHarness({ pendingItems: [item] });
+    reader.getSessionImages.mockResolvedValue([
+      { imageKey: 'IMG-1', usage: 'main', status: 'fetch_failed', fileId: null, errorMessage: '404' },
+    ]);
+
+    await manager.runCommitSlice(CLAIM());
+
+    expect(importManager.createFromRecord).not.toHaveBeenCalled();
+    const itemUpdates = updates.filter((u) => u.table === 'items');
+    expect(itemUpdates[0].values).toMatchObject({ status: 'failed', publishStatus: 'skipped' });
+    expect(itemUpdates[0].values.errorMessage).toContain('IMG-1');
+    expect(itemUpdates[0].values.errorMessage).toContain('404');
+  });
+
+  it('참조한 이미지가 업로드 완료 상태면 createFromRecord 에 fileId 맵을 넘긴다', async () => {
+    // 위 실패 케이스의 짝 — 실패 케이스만 있으면 "항상 실패시키는" 구현도 통과해버린다.
+    const base = PENDING(2);
+    const item = { ...base, payload: { ...base.payload, thumbnailImageKey: 'IMG-1' } };
+    const { manager, importManager, reader } = makeHarness({ pendingItems: [item] });
+    reader.getSessionImages.mockResolvedValue([
+      { imageKey: 'IMG-1', usage: 'main', status: 'uploaded', fileId: 'file-9', errorMessage: null },
+    ]);
+
+    await manager.runCommitSlice(CLAIM());
+
+    expect(importManager.createFromRecord).toHaveBeenCalledTimes(1);
+    const [, , , images] = importManager.createFromRecord.mock.calls[0];
+    expect(images.main.get('IMG-1')).toBe('file-9');
+  });
+
   it('errors 필드가 없는 payload 는 그 행만 실패시키고 슬라이스를 탈출하지 않는다', async () => {
     const payload: Record<string, unknown> = { ...PENDING(1).payload };
     delete payload.errors;
@@ -589,5 +667,250 @@ describe('runPublishSlice', () => {
     const { params } = renderQuery(release!.condition);
     expect(params).toHaveLength(2);
     expect(params).toContain(CLAIM_TOKEN);
+  });
+});
+
+const CLAIMED: ClaimedSession = { sessionId: 'sess-1', leaseToken: 'tok-1' };
+
+function imageRow(over: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'img-1',
+    sessionId: 'sess-1',
+    imageKey: 'IMG-1',
+    usage: 'main',
+    sourceUrl: 'https://e.example/1.jpg',
+    status: 'pending',
+    fileId: null,
+    mimeType: null,
+    sizeBytes: null,
+    errorMessage: null,
+    ...over,
+  };
+}
+
+function imageManager(
+  harness: ReturnType<typeof makeHarness>,
+  fetcher: { probe: jest.Mock; fetch: jest.Mock },
+  fileClient: { upload: jest.Mock; softDelete: jest.Mock },
+) {
+  return new ProductImportJobManager(
+    harness.db,
+    undefined as never, // importManager — 이미지 슬라이스는 부르지 않는다
+    { check: jest.fn() } as never, // variantCodeChecker
+    { get: () => undefined } as never, // config → 전부 기본값
+    undefined as never, // reader
+    undefined as never, // versionsService
+    fetcher as never,
+    fileClient as never,
+  );
+}
+
+describe('ProductImportJobManager — 이미지 레인', () => {
+  const fetcher = { probe: jest.fn(), fetch: jest.fn() };
+  const fileClient = { upload: jest.fn(), softDelete: jest.fn() };
+
+  beforeEach(() => {
+    fetcher.probe.mockReset();
+    fetcher.fetch.mockReset();
+    fileClient.upload.mockReset();
+    fileClient.softDelete.mockReset();
+  });
+
+  it('pending 이 있으면 probe 를 돌고 상태를 probed 로 바꾼다', async () => {
+    const harness = makeHarness({ imageRows: { pending: [imageRow()], probed: [] } });
+    fetcher.probe.mockResolvedValue({ mimeType: 'image/jpeg', sizeBytes: 1234 });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    expect(fetcher.probe).toHaveBeenCalledWith('https://e.example/1.jpg');
+    const imageUpdate = harness.updates.find((u) => u.table === 'images');
+    expect(imageUpdate.values).toMatchObject({ status: 'probed', mimeType: 'image/jpeg', sizeBytes: 1234 });
+    // 마감은 아직이다 — pending 을 처리한 슬라이스는 lease 만 놓는다.
+    expect(harness.updates.some((u) => u.table === 'sessions' && u.values.imageStatus === 'completed')).toBe(false);
+  });
+
+  it('probe 실패는 그 행만 probe_failed 로 만들고 슬라이스는 계속 돈다', async () => {
+    const harness = makeHarness({
+      imageRows: { pending: [imageRow({ id: 'img-1' }), imageRow({ id: 'img-2', imageKey: 'IMG-2' })], probed: [] },
+    });
+    fetcher.probe
+      .mockRejectedValueOnce(new Error('DNS 실패'))
+      .mockResolvedValueOnce({ mimeType: null, sizeBytes: null });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    const imageUpdates = harness.updates.filter((u) => u.table === 'images');
+    expect(imageUpdates[0].values).toMatchObject({ status: 'probe_failed', errorMessage: 'DNS 실패' });
+    expect(imageUpdates[1].values).toMatchObject({ status: 'probed' });
+  });
+
+  it('pending 이 없으면 probed 를 fetch 해 업로드하고 uploaded 로 바꾼다', async () => {
+    const harness = makeHarness({
+      imageRows: { pending: [], probed: [imageRow({ status: 'probed', usage: 'description' })] },
+    });
+    fetcher.fetch.mockResolvedValue({ body: Buffer.from([1, 2]), mimeType: 'image/png', sizeBytes: 2 });
+    fileClient.upload.mockResolvedValue({ fileId: 'file-9' });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    expect(fileClient.upload).toHaveBeenCalledWith(
+      expect.objectContaining({ usage: 'description', mimeType: 'image/png', userId: 'u1' }),
+    );
+    const imageUpdate = harness.updates.find((u) => u.table === 'images');
+    expect(imageUpdate.values).toMatchObject({ status: 'uploaded', fileId: 'file-9', sizeBytes: 2 });
+  });
+
+  it('용도별 크기 상한 중 작은 쪽을 쓴다 (main 은 10MB)', async () => {
+    const harness = makeHarness({ imageRows: { pending: [], probed: [imageRow({ status: 'probed' })] } });
+    fetcher.fetch.mockResolvedValue({ body: Buffer.from([1]), mimeType: 'image/jpeg', sizeBytes: 1 });
+    fileClient.upload.mockResolvedValue({ fileId: 'f-1' });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    expect(fetcher.fetch).toHaveBeenCalledWith('https://e.example/1.jpg', 10 * 1024 * 1024, 15_000);
+  });
+
+  it('fetch/업로드 실패는 그 행만 fetch_failed 로 만들고 예외가 슬라이스를 탈출하지 않는다', async () => {
+    const harness = makeHarness({ imageRows: { pending: [], probed: [imageRow({ status: 'probed' })] } });
+    fetcher.fetch.mockRejectedValue(new Error('크기 상한 초과'));
+
+    await expect(imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED)).resolves.toBeUndefined();
+
+    const imageUpdate = harness.updates.find((u) => u.table === 'images');
+    expect(imageUpdate.values).toMatchObject({ status: 'fetch_failed', errorMessage: '크기 상한 초과' });
+  });
+
+  it(
+    '업로드는 성공했는데 fileId 는 아직 없다 — fetch 자체가 실패하면 fetch_failed 행의 fileId 는 null 이다(§finding4 대조군)',
+    async () => {
+      const harness = makeHarness({ imageRows: { pending: [], probed: [imageRow({ status: 'probed' })] } });
+      fetcher.fetch.mockRejectedValue(new Error('연결 끊김'));
+
+      await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+      const imageUpdate = harness.updates.find((u) => u.table === 'images');
+      expect(imageUpdate.values).toMatchObject({ status: 'fetch_failed', fileId: null });
+    },
+  );
+
+  it(
+    '업로드는 성공했는데 그 직후 상태 기록이 실패하면, 재시도(fetch_failed) 행에 fileId 를 함께 남긴다 — ' +
+      '안 남기면 그 파일이 cleaner 의 fileId IS NOT NULL 필터에서 영영 빠져 S3 에 고아로 남는다(§finding4)',
+    async () => {
+      fetcher.fetch.mockResolvedValue({ body: Buffer.from([1]), mimeType: 'image/jpeg', sizeBytes: 1 });
+      fileClient.upload.mockResolvedValue({ fileId: 'file-orphan' });
+
+      const updates: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+      let imageSelectCallIndex = 0;
+      let imagesUpdateCallIndex = 0;
+      const trx = {
+        select: (_projection?: unknown) => ({
+          from: (table: unknown) => ({
+            where: () => {
+              if (table === productImportImages) {
+                // runImageSlice 는 pending 을 먼저 조회한다(빈 배열 → probed 로 넘어간다).
+                const rows = imageSelectCallIndex === 0 ? [] : [imageRow({ status: 'probed' })];
+                imageSelectCallIndex += 1;
+                return chain(rows);
+              }
+              return chain([{ id: 'sess-1', uploadedBy: 'u1' }]);
+            },
+          }),
+        }),
+        update: (table: unknown) => ({
+          set: (values: Record<string, unknown>) => ({
+            where: () => {
+              updates.push({ table, values });
+              if (table === productImportImages) {
+                imagesUpdateCallIndex += 1;
+                // 첫 updateImage 호출('uploaded' 확정) 만 실패시킨다 — Postgres 연결
+                // 유실 등 트랜잭션 밖 원인을 흉내낸다. 두 번째 호출(catch 의 fetch_failed
+                // 기록)은 성공해야 그 결과를 단정할 수 있다.
+                if (imagesUpdateCallIndex === 1) return Promise.reject(new Error('연결 끊김'));
+                return Promise.resolve();
+              }
+              const result: { returning: () => Promise<unknown[]> } = {
+                returning: () => Promise.resolve([{ id: 'sess-1', cancelRequestedAt: null }]),
+              };
+              return Object.assign(Promise.resolve(), result);
+            },
+          }),
+        }),
+      };
+      const db = { run: (fn: (t: unknown) => unknown, t?: unknown) => (t ? fn(t) : fn(trx)) } as never;
+      const manager = new ProductImportJobManager(
+        db,
+        undefined as never,
+        { check: jest.fn() } as never,
+        { get: () => undefined } as never,
+        undefined as never,
+        undefined as never,
+        fetcher as never,
+        fileClient as never,
+      );
+
+      await expect(manager.runImageSlice(CLAIMED)).resolves.toBeUndefined();
+
+      const imageUpdates = updates.filter((u) => u.table === productImportImages);
+      expect(imageUpdates).toHaveLength(2);
+      expect(imageUpdates[1].values).toMatchObject({ status: 'fetch_failed', fileId: 'file-orphan' });
+    },
+  );
+
+  it('pending·probed 가 모두 없으면 image 레인을 마감하고 commit 레인을 연다', async () => {
+    const harness = makeHarness({ imageRows: { pending: [], probed: [] } });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    const [sessionUpdate] = harness.updates.filter((u) => u.table === 'sessions');
+    expect(sessionUpdate.values).toMatchObject({
+      imageStatus: 'completed',
+      // 커밋 레인의 게이트를 여는 유일한 지점이다
+      commitStatus: 'queued',
+      leaseUntil: null,
+      leaseToken: null,
+      imageError: null,
+    });
+    // 마감도 토큰 CAS + 취소 가드를 건다 — 좀비가 후임의 세션에 도장을 찍지 못하게.
+    const rendered = renderQuery(sessionUpdate.condition);
+    expect(rendered.params).toContain('tok-1');
+    expect(rendered.sql).toMatch(/cancel_requested_at.*is null/i);
+  });
+
+  it('lease 를 잃으면 아무 행도 처리하지 않고 멈춘다', async () => {
+    // renewLease 의 returning 이 0행 → owned:false
+    const harness = makeHarness({ imageRows: { pending: [imageRow()], probed: [] }, returningRows: [[]] });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    expect(fetcher.probe).not.toHaveBeenCalled();
+    expect(harness.updates.some((u) => u.table === 'images')).toBe(false);
+  });
+
+  it('취소를 감지하면 lease 만 놓고 멈춘다', async () => {
+    const harness = makeHarness({
+      imageRows: { pending: [imageRow()], probed: [] },
+      returningRows: [[{ id: 'sess-1', cancelRequestedAt: new Date() }]],
+    });
+
+    await imageManager(harness, fetcher, fileClient).runImageSlice(CLAIMED);
+
+    expect(fetcher.probe).not.toHaveBeenCalled();
+    const [sessionUpdate] = harness.updates.filter((u) => u.table === 'sessions' && u.values.leaseToken === null);
+    expect(sessionUpdate.values).toMatchObject({ leaseUntil: null, leaseToken: null });
+    // 레인 상태는 cancelSession 이 이미 확정했다 — 워커는 덮지 않는다.
+    expect(sessionUpdate.values.imageStatus).toBeUndefined();
+  });
+
+  it('recordJobError 가 image kind 를 image_error 에 쓰고 상한에서 레인을 failed 로 만든다', async () => {
+    const harness = makeHarness({
+      returningRows: [[{ consecutiveFailures: MAX_CONSECUTIVE_JOB_FAILURES }]],
+    });
+
+    await imageManager(harness, fetcher, fileClient).recordJobError('sess-1', 'image', 'boom');
+
+    const sessionUpdates = harness.updates.filter((u) => u.table === 'sessions');
+    expect(sessionUpdates[0].values.imageError).toBe('boom');
+    expect(sessionUpdates[1].values).toMatchObject({ imageStatus: 'failed', leaseUntil: null, leaseToken: null });
   });
 });

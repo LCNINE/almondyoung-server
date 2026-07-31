@@ -92,6 +92,7 @@ describe('ProductImportValidator', () => {
         variants: [],
         categories: [],
         constraints: [],
+        images: [],
       },
       [],
     );
