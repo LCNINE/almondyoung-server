@@ -10,7 +10,10 @@ import {
   setCartId,
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
-import { isVariantSoldOut } from "@lib/utils/cart-availability"
+import {
+  isVariantQuantityUnavailable,
+  isVariantSoldOut,
+} from "@lib/utils/cart-availability"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -110,12 +113,22 @@ export async function retrieveCart(
 }
 
 /**
- * 카트 라인아이템 중 draft/미게시/삭제(또는 판매채널 이탈)된 상품을 가려낸다.
+ * 카트 라인아이템 중 draft/미게시/삭제(또는 판매채널 이탈)된 상품과,
+ * 담은 뒤 재고가 줄어 "담은 수량 > 가용 재고"가 된 상품을 가려낸다.
+ *
+ * 후자(insufficient*)는 담기 시점엔 통과했다가 결제 직전에야 부족해지는 케이스다. 이걸 막지
+ * 않으면 결제 후 cart.complete 의 재고예약이 실패해 주문이 안 생긴다.
+ * (지연 승인 도입으로 그때도 돈은 빠지지 않지만, 결제창까지 갔다가 실패하는 UX 는 막는 게 낫다.)
  */
 export async function findUnavailableLineItems(
   cart: HttpTypes.StoreCart,
   countryCode: string
-): Promise<{ variantIds: string[]; productNames: string[] }> {
+): Promise<{
+  variantIds: string[]
+  productNames: string[]
+  insufficientVariantIds: string[]
+  insufficientNames: string[]
+}> {
   const items = cart.items ?? []
   const productIds = Array.from(
     new Set(
@@ -125,13 +138,20 @@ export async function findUnavailableLineItems(
     )
   )
 
+  const empty = {
+    variantIds: [],
+    productNames: [],
+    insufficientVariantIds: [],
+    insufficientNames: [],
+  }
+
   if (productIds.length === 0) {
-    return { variantIds: [], productNames: [] }
+    return empty
   }
 
   const region = await getRegion(countryCode)
   if (!region) {
-    return { variantIds: [], productNames: [] }
+    return empty
   }
 
   const headers = {
@@ -179,22 +199,39 @@ export async function findUnavailableLineItems(
     return isVariantSoldOut(variant)
   })
 
-  const variantIds = Array.from(
-    new Set(
-      unavailableItems
-        .map((item) => item.variant_id)
-        .filter((id): id is string => Boolean(id))
-    )
-  )
-  const productNames = Array.from(
-    new Set(
-      unavailableItems
-        .map((item) => item.product_title || item.title || "")
-        .filter(Boolean)
-    )
-  )
+  // 품절은 아니지만 담은 수량이 가용 재고를 넘어선 라인 (담은 뒤 재고가 줄어든 경우).
+  const unavailableSet = new Set(unavailableItems)
+  const insufficientItems = items.filter((item) => {
+    if (unavailableSet.has(item)) return false
+    const variant =
+      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
+      item.variant
+    return isVariantQuantityUnavailable(variant, item.quantity)
+  })
 
-  return { variantIds, productNames }
+  const toVariantIds = (list: typeof items) =>
+    Array.from(
+      new Set(
+        list
+          .map((item) => item.variant_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    )
+  const toNames = (list: typeof items) =>
+    Array.from(
+      new Set(
+        list
+          .map((item) => item.product_title || item.title || "")
+          .filter(Boolean)
+      )
+    )
+
+  return {
+    variantIds: toVariantIds(unavailableItems),
+    productNames: toNames(unavailableItems),
+    insufficientVariantIds: toVariantIds(insufficientItems),
+    insufficientNames: toNames(insufficientItems),
+  }
 }
 
 export async function getOrSetCart(countryCode: string) {

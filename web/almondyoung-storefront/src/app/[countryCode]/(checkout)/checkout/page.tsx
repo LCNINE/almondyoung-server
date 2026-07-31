@@ -61,14 +61,17 @@ async function CheckoutManager({
   // 보조 가드: 1차 차단은 장바구니에서 하지만, 만일의 경우를 대비해서 작성했음
   // draft/미게시(판매중단) 상품을 직접 감지해서,
   // 결제를 진행하면 어차피 터질 카트를 미리 안내 화면으로 막는다.
-  const { productNames: unavailableNames } = await findUnavailableLineItems(
-    cart,
-    countryCode
+  // 담은 뒤 재고가 줄어 "담은 수량 > 가용재고"가 된 라인도 같이 막는다. 그대로 결제로 보내면
+  // 결제 후 cart.complete 의 재고예약이 실패해 주문이 생성되지 않는다.
+  const { productNames: unavailableNames, insufficientNames } =
+    await findUnavailableLineItems(cart, countryCode)
+  const blockedNames = Array.from(
+    new Set(unavailableNames.concat(insufficientNames))
   )
-  if (unavailableNames.length > 0) {
+  if (blockedNames.length > 0) {
     return (
       <ProtectedRoute>
-        <UnavailableItemsNotice unavailableNames={unavailableNames} />
+        <UnavailableItemsNotice unavailableNames={blockedNames} />
       </ProtectedRoute>
     )
   }
