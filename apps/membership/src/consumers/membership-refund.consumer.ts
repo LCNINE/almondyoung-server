@@ -41,8 +41,13 @@ export class MembershipRefundConsumer {
 
     // 환불 완료 기록. 해지 시점에 PENDING(무통장 수동송금 대기)이던 건이 실제로 완료되는 지점이 여기다.
     // 이 기록이 없으면 refund_completed 가 영구히 false 로 남아 미완료 환불을 추적할 수 없다.
+    //
+    // 단, **멤버십이 요청한 환불에만** 찍는다. 결제관리에서 건 소액 보상은 이제 구독을 취소하지 않고
+    // (voidByPaymentIntent 가 전액일 때만 회수한다) 계약이 살아남으므로, 그 이벤트로 refundCompleted 를
+    // 켜면 (1) 화면에 "완료 0원" 이 뜨고 (2) 나중에 진짜 해지 환불이 수동 송금으로 남았을 때
+    // markManualRefundCompleted 가 '이미 환불 완료' 로 영구히 409 를 내 CS 가 그 건을 닫을 수 없다.
     const contract = await this.contractReader.findByPaymentIntentId(payload.intentId);
-    if (contract) {
+    if (contract?.refundRequested && !contract.refundCompleted) {
       await this.refundEventHandler.handleRefundCompleted({
         contractId: contract.id,
         userId: contract.userId,

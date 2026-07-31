@@ -203,6 +203,35 @@ function build() {
       };
     }
 
+    // 해지 예약을 먼저 고른 고객이 청약철회 7일 안에 마음을 바꾼 상태. 예약 뒤에도 즉시해지 + 전액
+    // 환불은 서버가 받아준다(막히는 건 재예약뿐) — 화면에 진입점이 없으면 그 돈을 되돌릴 방법이 없다.
+    case 'scheduled-refundable': {
+      const cancelledAt = new Date(TODAY.getTime() - 86400000).toISOString();
+      return {
+        subscription: { ...base, autoRenewal: false, nextBillingDate: null, recurringCancelledAt: cancelledAt },
+        preview: {
+          ...previewBase,
+          alreadyScheduledForCancellation: true,
+          recurringCancelledAt: cancelledAt,
+          nextBillingDate: null,
+          canUndoCancellation: true,
+          withdrawalDaysRemaining: 5,
+          options: [
+            atPeriodEnd,
+            {
+              mode: 'IMMEDIATE_REFUND',
+              available: true,
+              refundAmount: MONTHLY,
+              refundKind: 'WITHDRAWAL_FULL',
+              refundExecution: 'AUTO',
+              requiresReceiveAccount: false,
+              effectiveEndsAt: iso(TODAY),
+            },
+          ],
+        },
+      };
+    }
+
     case 'one-time':
       return {
         subscription: { ...base, autoRenewal: false, nextBillingDate: null },

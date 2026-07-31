@@ -40,7 +40,7 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
   });
 
   test('가입자 화면이 정상 렌더되고 해지 진입점이 보인다', async ({ page }) => {
-    if (SCENARIO === 'scheduled' || SCENARIO === 'one-time-scheduled') {
+    if (SCENARIO.includes('scheduled')) {
       // 해지 예약 상태에서는 해지 버튼을 감추고 배너를 보여준다(중복 해지 차단이 UI 에서 먼저 일어난다).
       await expect(page.getByText('해지 예약됨')).toBeVisible();
       await expect(page.getByRole('button', { name: '멤버십 해지하기' })).toHaveCount(0);
@@ -174,6 +174,30 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     await expect(page.getByRole('button', { name: /해지 취소하고 계속 이용하기/ })).toHaveCount(0);
     await expect(page.getByText(/되돌릴 자동결제가 없습니다/)).toBeVisible();
     expect((await stubCalls(request)).filter((c) => c.path === '/subscriptions/cancel/undo')).toHaveLength(0);
+  });
+
+  // 해지 예약을 먼저 고른 고객이 청약철회 7일 안에 마음을 바꾸면 전액 환불 대상이다. 서버는 그
+  // 요청을 받아주는데(막히는 건 재예약뿐) 화면에 진입점이 없으면 창이 닫힐 때까지 그 돈을 되돌릴
+  // 방법이 없다. 예약 상태에서는 재예약이 반드시 거절되므로 방식 선택 없이 즉시해지로 바로 간다.
+  test('해지 예약 상태에서도 환불 가능하면 즉시해지로 빠져나갈 수 있다', async ({ page, request }) => {
+    test.skip(SCENARIO !== 'scheduled-refundable', '해지 예약 + 환불 가능 시나리오만');
+
+    await expect(page.getByText('해지 예약됨')).toBeVisible();
+    await page.getByRole('button', { name: /지금 해지하고 .*원 환불받기/ }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    // 고르면 반드시 409 로 거절되는 '해지 예약' 을 다시 보여주지 않는다.
+    await expect(dialog.getByText(/이용 기간까지 사용하고 해지|추가 결제 없이 해지/)).toHaveCount(0);
+
+    await dialog.getByText('이용하지 않아요').click();
+    await dialog.getByRole('button', { name: '완료' }).click();
+
+    await expect
+      .poll(async () => (await stubCalls(request)).filter((c) => c.path === '/subscriptions/cancel').length)
+      .toBeGreaterThan(0);
+    const call = (await lastCancelCall(request))!;
+    expect(call.body.cancelType).toBe('IMMEDIATE_REFUND');
   });
 
   test('1회 결제는 정기결제와 다른 문구로 안내한다', async ({ page }) => {

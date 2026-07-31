@@ -55,6 +55,12 @@ export interface CancellationPreview {
   refundProcessingBusinessDays: number;
   /** 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제는 되살릴 정기결제가 없어 false. */
   canUndoCancellation: boolean;
+  /**
+   * 환불 대상 결제 내역이 있는지. 관리자 지급·cafe24 이관 계약은 결제가 없어 **환불 유형 자체가
+   * 거부된다**(force-cancel 400). 견적 화면이 이 사실을 알아야 관리자가 금액·계좌를 다 채운 뒤에야
+   * 막히는 일이 없다.
+   */
+  hasPaymentIntent: boolean;
   options: CancellationOption[];
 }
 
@@ -649,6 +655,7 @@ export class SubscriptionCancellationService {
       withdrawalWindowDays: WITHDRAWAL_WINDOW_DAYS,
       refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
       canUndoCancellation: context.alreadyScheduledForCancellation && context.isRecurring,
+      hasPaymentIntent: !!context.contract.lastPaymentIntentId,
       options: [context.decision.atPeriodEnd, context.decision.immediateRefund],
     };
   }

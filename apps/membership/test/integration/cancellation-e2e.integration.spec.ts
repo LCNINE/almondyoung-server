@@ -844,7 +844,29 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
       expect(immediate.available).toBe(false);
       expect(immediate.unavailableReason).toContain('결제 내역');
+      expect(preview.hasPaymentIntent).toBe(false);
       expect(preview.options.find((o) => o.mode === 'AT_PERIOD_END')!.available).toBe(true);
+    });
+
+    // 해지 예약을 먼저 고른 고객이 청약철회 7일 안에 마음을 바꾸면 전액 환불 대상이다. 서버가 이
+    // 상태에서 즉시해지를 받지 않으면 그 돈을 되돌릴 창구가 사라진다(재예약만 막혀야 한다).
+    it('해지 예약 뒤에도 즉시해지 + 환불은 남아 있다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 1 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      const preview = await service.previewCancellation(userId);
+      expect(preview.alreadyScheduledForCancellation).toBe(true);
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!.available).toBe(true);
+
+      wallet.refundByIntent.mockResolvedValue({ status: 'SUCCEEDED', refundedAmount: MONTHLY_PRICE });
+      const result = await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+      });
+
+      expect(result.type).toBe('IMMEDIATE_CANCELLATION');
+      expect((await loadContract(contract.id)).status).toBe('CANCELLED');
+      expect(await loadCurrentEntitlement(userId)).toBeUndefined();
     });
 
     it('남은 청약철회 기간과 이용 종료일을 알려준다', async () => {
@@ -960,6 +982,63 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       wallet.terminateBillingMandate.mockClear();
       await agreementCleanup.retryPendingAgreementRevokes();
       expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+    });
+
+    // 재시도를 멈춘 건은 사람이 처리하지 않으면 고객 계좌에 자동이체가 그대로 남는다.
+    // 그 사실이 로그에만 있으면 아무도 모른다 — 관리자 목록이 그 상태를 드러내야 한다.
+    it('정리가 끝나지 않은 약정을 관리자 목록이 보여준다 (포기 건이 맨 위)', async () => {
+      wallet.terminateBillingMandate.mockRejectedValue(new Error('wallet down'));
+      const pendingCase = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(pendingCase.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+
+      const deferredCase = await givenSubscription({ daysSincePeriodStart: 10, billingPath: 'INVOICE' });
+      await service.cancelSubscription(deferredCase.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+
+      const abandonedCase = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(abandonedCase.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+      await db.db
+        .update(schema.subscriptionContractEvents)
+        .set({ eventType: 'AGREEMENT_REVOKE_ABANDONED', metadata: { reason: 'CMS_MEMBER_DELETE_BLOCKED_REGISTERED' } })
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, abandonedCase.contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_PENDING'),
+          ),
+        );
+
+      const queue = await adminReader.findAgreementCleanupQueue();
+      const byContract = new Map(queue.data.map((row) => [row.contractId, row]));
+
+      expect(queue.data[0].contractId).toBe(abandonedCase.contract.id);
+      expect(byContract.get(abandonedCase.contract.id)?.state).toBe('AGREEMENT_REVOKE_ABANDONED');
+      // 왜 막혔는지가 없으면 관리자가 효성에서 무엇을 해야 하는지 알 수 없다.
+      expect(byContract.get(abandonedCase.contract.id)?.reason).toBe('CMS_MEMBER_DELETE_BLOCKED_REGISTERED');
+      expect(byContract.get(pendingCase.contract.id)?.state).toBe('AGREEMENT_REVOKE_PENDING');
+      expect(byContract.get(deferredCase.contract.id)?.state).toBe('AGREEMENT_REVOKE_DEFERRED');
+      // 보류 건은 언제부터 정리 대상인지(=이용 종료일)가 보여야 "왜 아직 안 지웠나" 를 묻지 않는다.
+      expect(byContract.get(deferredCase.contract.id)?.notBefore).toBe(deferredCase.endsAt);
+    });
+
+    it('정리가 끝난 약정은 관리자 목록에서 빠진다', async () => {
+      wallet.terminateBillingMandate.mockResolvedValue({
+        agreementFound: true,
+        cancelledWithdrawals: 0,
+        mandateTerminated: true,
+      });
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      const queue = await adminReader.findAgreementCleanupQueue();
+      expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
     });
   });
 
@@ -1591,6 +1670,10 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       await expect(
         service.forceCancelSubscription(contract.id, 'admin_1', '품절로 전체 취소', 'FULL'),
       ).rejects.toThrow(BadRequestError);
+
+      // 견적이 그 사실을 먼저 말해줘야 관리자가 사유·금액·계좌를 다 채운 뒤에야 400 을 만나지 않는다.
+      const quote = await service.previewCancellationByContract(contract.id);
+      expect(quote.hasPaymentIntent).toBe(false);
 
       // 계약도 손대지 않고, 지킬 수 없는 환불 요청도 남기지 않는다.
       const after = await loadContract(contract.id);

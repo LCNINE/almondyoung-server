@@ -773,6 +773,7 @@
       "cancelScheduledTitle": "Cancellation scheduled",
       "cancelScheduledBody": "You requested cancellation on {cancelledAt}. You can use your membership until {endsAt}, and no further payments will be charged.",
       "cancelScheduledUndo": "Undo cancellation and keep membership",
+      "cancelScheduledRefundNow": "Cancel now and get a {amount} KRW refund",
       "cancelUndoSuccess": "Cancellation undone. Your membership continues.",
       "cancelUndoFailed": "Failed to undo cancellation. Please try again shortly.",
       "oneTimeNoCancelNeeded": "This is a one-time payment, so there is no recurring charge. It ends automatically on {date}.",

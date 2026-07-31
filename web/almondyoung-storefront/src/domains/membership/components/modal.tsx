@@ -65,7 +65,11 @@ export function MembershipCancelModal({
   const t = useTranslations("mypage.membership.cancel")
   const atPeriodEnd = preview?.options.find((o) => o.mode === "AT_PERIOD_END")
   const immediate = preview?.options.find((o) => o.mode === "IMMEDIATE_REFUND")
-  const canChooseImmediate = !!immediate?.available
+  // 이미 해지 예약된 구독은 예약을 또 걸 수 없다(서버가 409). 남은 선택지는 즉시해지 + 환불뿐이라
+  // 방식 선택 단계를 건너뛴다 — 고르면 반드시 거절되는 선택지를 보여주지 않는다.
+  const alreadyScheduled = !!preview?.alreadyScheduledForCancellation
+  const canChooseImmediate = !!immediate?.available && !alreadyScheduled
+  const immediateOnly = alreadyScheduled && !!immediate?.available
 
   const [mode, setMode] = useState<CancellationMode>("AT_PERIOD_END")
   const [step, setStep] = useState<Step>("reason")
@@ -78,14 +82,20 @@ export function MembershipCancelModal({
   // 열릴 때마다 초기화. 즉시해지가 가능한 경우에만 방식 선택 단계를 띄우고, 기본값은 서버 권장값.
   useEffect(() => {
     if (!open) return
-    setMode(canChooseImmediate ? (preview?.recommendedMode ?? "AT_PERIOD_END") : "AT_PERIOD_END")
+    setMode(
+      immediateOnly
+        ? "IMMEDIATE_REFUND"
+        : canChooseImmediate
+          ? (preview?.recommendedMode ?? "AT_PERIOD_END")
+          : "AT_PERIOD_END"
+    )
     setStep(canChooseImmediate ? "mode" : "reason")
     setSelectedReason("")
     setReasonText("")
     setBankCode("")
     setAccountNumber("")
     setHolderName("")
-  }, [open, canChooseImmediate, preview?.recommendedMode])
+  }, [open, canChooseImmediate, immediateOnly, preview?.recommendedMode])
 
   const selectedOption = mode === "IMMEDIATE_REFUND" ? immediate : atPeriodEnd
   const needsAccount = mode === "IMMEDIATE_REFUND" && !!selectedOption?.requiresReceiveAccount

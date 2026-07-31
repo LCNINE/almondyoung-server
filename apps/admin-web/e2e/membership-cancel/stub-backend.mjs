@@ -11,6 +11,8 @@
  *   one-time      1회 결제 — 예약 해지 불필요 안내
  *   one-time-scheduled  1회 결제인데 해지 예약됨 — 철회(=무단 정기결제 전환) 버튼이 없어야 한다
  *   no-payment    결제 내역이 없는 계약(관리자 지급)에 환불 요청이 걸린 잔재 — 보낼 곳이 없음을 알려야 한다
+ *   no-payment-active  결제 없는 활성 계약 — 강제취소 다이얼로그가 환불 유형을 열면 안 된다
+ *   legacy-detail 배포 과도기(옛 membership 응답) — 새 필드가 없어도 송금 완료 창구가 살아있어야 한다
  *   pg-settled    자동환불이 FAILED 로 기록됐지만 결제관리에는 실제로 환불이 나간 건 —
  *                 관리자가 계좌로 또 보내지 않도록 화면이 먼저 알려야 한다
  */
@@ -95,6 +97,28 @@ function detail() {
         manualRefundAccount: null,
         refundSettlement: null,
       };
+    // 결제 없는 계약이 아직 살아있는 상태. 강제취소 다이얼로그가 환불 유형을 열어주면 안 된다.
+    case 'no-payment-active':
+      return { ...base, autoRenewal: false, nextBillingDate: null, hasPaymentIntent: false };
+    // 배포 과도기 — admin-web 이 membership 보다 먼저 뜬 창. 새 필드(hasPaymentIntent/refundSettlement)가
+    // 아예 없는 옛 응답이다. 이때 화면이 "환불 대상 결제 없음" 으로 뒤집히면 정상 수동 송금 건의
+    // 완료 처리 창구가 사라진다.
+    case 'legacy-detail': {
+      const legacy = {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: true,
+        eligibleRefundAmount: MONTHLY,
+        refundCompleted: false,
+        manualRefundAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
+      };
+      delete legacy.hasPaymentIntent;
+      delete legacy.refundSettlement;
+      return legacy;
+    }
     // 자동환불이 실패로 기록됐지만 실제로는 PG 로 나간 건. 계좌 송금이 아니라 기록 정리만 남았다.
     case 'pg-settled':
       return {
@@ -191,6 +215,8 @@ function quote() {
     withdrawalDaysRemaining: manual ? 6 : 0,
     withdrawalWindowDays: 7,
     refundProcessingBusinessDays: 3,
+    // 결제 내역이 없는 계약은 서버가 환불 유형을 400 으로 거부한다 — 견적이 먼저 알려준다.
+    hasPaymentIntent: !SCENARIO.startsWith('no-payment'),
     options: [atPeriodEnd, immediate],
   };
 }
