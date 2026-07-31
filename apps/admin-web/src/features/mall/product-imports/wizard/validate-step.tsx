@@ -73,6 +73,7 @@ export function ValidateStep({
               <th className="p-2">상품명</th>
               <th className="p-2">카테고리</th>
               <th className="p-2">판매기간</th>
+              <th className="p-2">이미지</th>
               <th className="p-2">변형 수</th>
               <th className="p-2">오류</th>
             </tr>
@@ -102,6 +103,8 @@ export function ValidateStep({
                 <td className="p-2 whitespace-nowrap">
                   {r.resolved.salesPeriod ?? '-'}
                 </td>
+                {/* 옛 core 응답에는 imageCount 가 없다 — 0 으로 눌러 보이지 않게 한다. */}
+                <td className="p-2">{r.resolved.imageCount ?? 0}</td>
                 <td className="p-2">{r.resolved.variantCount}</td>
                 <td className="p-2 text-destructive">
                   {r.errors.join(', ')}

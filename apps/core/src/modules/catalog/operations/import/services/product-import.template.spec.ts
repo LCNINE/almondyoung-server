@@ -1,7 +1,22 @@
-import { generateTemplateWorkbook } from './product-import.template';
+import * as ExcelJS from 'exceljs';
+import { generateTemplateWorkbook, PRODUCT_HEADERS, PRODUCT_EXAMPLE_ROW } from './product-import.template';
 import { ProductImportParser } from './product-import.parser';
 import { ProductImportNormalizer } from './product-import.normalizer';
 import { ProductImportValidator } from './product-import.validator';
+
+/**
+ * exceljs 의 ambient Buffer 셰임(index.d.ts)과 @types/node 의 Buffer<T> 가 병합돼
+ * `.load()` 호출부에서 TS2345 가 난다 — product-import.parser.ts 의 동일 주석 참고.
+ * 값이 아니라 호출부 타입만 로컬 재선언해 우회한다(런타임은 평범한 Node Buffer).
+ */
+async function loadWorkbook(buffer: Buffer): Promise<ExcelJS.Workbook> {
+  const wb = new ExcelJS.Workbook();
+  const xlsx = wb.xlsx as unknown as {
+    load(buffer: Buffer, options?: Partial<ExcelJS.XlsxReadOptions>): Promise<ExcelJS.Workbook>;
+  };
+  await xlsx.load(buffer);
+  return wb;
+}
 
 describe('generateTemplateWorkbook', () => {
   it('생성한 템플릿은 파서가 읽을 수 있고 필수 헤더를 갖는다', async () => {
@@ -72,6 +87,47 @@ describe('generateTemplateWorkbook', () => {
   it('Products.categoryPath 는 비어 있다 (Categories 시트와 충돌하지 않게)', async () => {
     const parsed = await new ProductImportParser().parse(await generateTemplateWorkbook());
     expect(parsed.products[0].cells.categoryPath).toBe('');
+  });
+
+  it('Products 헤더에 이미지 컬럼 2개가 있다', async () => {
+    const wb = await loadWorkbook(await generateTemplateWorkbook());
+    const headers = wb.getWorksheet('Products')!.getRow(1).values as string[];
+    expect(headers).toContain('thumbnailImageKey');
+    expect(headers).toContain('additionalImageKeys');
+  });
+
+  it('Images 시트가 imageKey/sourceUrl 헤더로 있다', async () => {
+    const wb = await loadWorkbook(await generateTemplateWorkbook());
+    const sheet = wb.getWorksheet('Images');
+    expect(sheet).toBeDefined();
+    expect((sheet!.getRow(1).values as string[]).filter(Boolean)).toEqual(['imageKey', 'sourceUrl']);
+  });
+
+  it('예시 description 이 본문 디렉티브를 imageKey 로 쓴다', async () => {
+    const wb = await loadWorkbook(await generateTemplateWorkbook());
+    const headers = (wb.getWorksheet('Products')!.getRow(1).values as string[]) ?? [];
+    const col = headers.indexOf('description');
+    const value = String(wb.getWorksheet('Products')!.getRow(2).getCell(col).text);
+    expect(value).toMatch(/::product-image\{imageKey="IMG-2"\}/);
+  });
+
+  it('Products 헤더와 예시 행의 길이가 같다', () => {
+    // 하나라도 어긋나면 그 뒤 컬럼이 전부 밀려 MD 가 받는 워크북이 조용히 틀어진다.
+    expect(PRODUCT_EXAMPLE_ROW).toHaveLength(PRODUCT_HEADERS.length);
+  });
+
+  it('이미지 컬럼이 헤더에서 기대한 자리에 있고 예시 값이 그 자리에 대응한다', async () => {
+    const wb = await loadWorkbook(await generateTemplateWorkbook());
+    const sheet = wb.getWorksheet('Products')!;
+    const headers = (sheet.getRow(1).values as string[]) ?? [];
+    const example = (sheet.getRow(2).values as string[]) ?? [];
+
+    // 위치를 헤더에서 찾아 그 위치의 예시 셀을 본다 — 인덱스를 코드에 박지 않는다.
+    const at = (name: string): string => String(example[headers.indexOf(name)] ?? '');
+    expect(at('thumbnailImageKey')).toBe('IMG-1');
+    expect(at('additionalImageKeys')).toBe('IMG-3|IMG-4');
+    expect(at('description')).toMatch(/imageKey="IMG-2"/);
+    // 정렬이 밀리면 이 셋 중 최소 하나가 엉뚱한 값이 된다.
   });
 
   it('예시 SEO·구매제약이 검증기를 통과하고, 판매기간은 예시로 채워 넣지 않는다', async () => {

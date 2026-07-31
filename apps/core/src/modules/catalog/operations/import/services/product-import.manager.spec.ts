@@ -7,8 +7,13 @@ jest.mock(
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { ProductImportManager } from './product-import.manager';
-import { ProductRecord, comboKey } from '../dto/import.types';
-import { productImportSessions, productImportItems, productVariants } from '../../../schema/catalog.schema';
+import { ProductRecord, comboKey, EMPTY_SESSION_IMAGES, SessionImageMap } from '../dto/import.types';
+import {
+  productImportSessions,
+  productImportItems,
+  productImportImages,
+  productVariants,
+} from '../../../schema/catalog.schema';
 
 /**
  * 실제 drizzle-orm `eq(column, value)` 가 반환하는 SQL 조각에서 값을 뽑아낸다.
@@ -82,6 +87,7 @@ function harness(
         id: 'sess-1',
         commitStatus: 'completed',
         publishStatus: 'idle',
+        imageStatus: 'completed',
         cancelRequestedAt: null,
         ...opts.session,
       };
@@ -139,6 +145,9 @@ function harness(
     build: jest.fn(() => ({ basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] })),
   } as any;
   const purchaseConstraintsService = { upsertForDraft: jest.fn(async () => null) } as any;
+  // cancelSession 이 트랜잭션 밖에서 무조건 호출한다 — 이 harness 를 쓰는 대부분의 describe
+  // 는 cancelSession 을 부르지 않지만, 생성자는 7번째 인자를 요구하므로 여기서 채운다.
+  const imageCleaner = { cleanupUploaded: jest.fn().mockResolvedValue(undefined) } as any;
   const manager = new ProductImportManager(
     db,
     reader,
@@ -146,6 +155,7 @@ function harness(
     pricingService,
     pricingBuilder,
     purchaseConstraintsService,
+    imageCleaner,
   );
   return {
     manager,
@@ -158,6 +168,7 @@ function harness(
     pricingService,
     pricingBuilder,
     purchaseConstraintsService,
+    imageCleaner,
     updates,
     // createFromRecord 는 이제 tx 를 필수로 받는다. mock trx 는 DbTransaction 의
     // 일부(insert/update)만 흉내내므로, 나머지 harness 값들과 같은 방식으로
@@ -186,6 +197,7 @@ describe('acceptCommit', () => {
       totalRows: 2,
       queuedCount: 2,
       invalidCount: 0,
+      imageCount: 0,
     });
   });
 
@@ -230,6 +242,136 @@ describe('acceptCommit', () => {
   });
 });
 
+describe('ProductImportManager.acceptCommit — 이미지', () => {
+  /** insert 대상 테이블별로 values() 인자를 모으는 최소 트랜잭션 목. */
+  function harness() {
+    const inserted = new Map<unknown, unknown[]>();
+    const trx = {
+      insert: (table: unknown) => ({
+        values: (rows: unknown) => {
+          const list = inserted.get(table) ?? [];
+          list.push(...(Array.isArray(rows) ? rows : [rows]));
+          inserted.set(table, list);
+          return {
+            returning: () => Promise.resolve([{ id: 'session-1' }]),
+            then: (resolve: (v: unknown) => unknown) => Promise.resolve(undefined).then(resolve),
+          };
+        },
+      }),
+    };
+    const db = { run: (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never;
+    return { inserted, db };
+  }
+
+  /**
+   * acceptCommit 은 협력자를 **하나도 부르지 않는다** — 세션과 행을 적을 뿐이다.
+   * 목을 채우는 대신 undefined 로 두면, 나중에 누가 여기서 협력자를 부르도록 바꿨을 때
+   * 이 테스트가 TypeError 로 즉시 알려준다.
+   * 순서: reader, productMastersService, pricingService, pricingBuilder, purchaseConstraintsService, imageCleaner.
+   */
+  const COLLABORATORS = [
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+    undefined as never,
+  ] as const;
+
+  function record(over: Partial<ProductRecord>): ProductRecord {
+    return {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: { productKey: 'P1', name: 'x', basePrice: '1000' },
+      version: { name: 'x' },
+      basePrice: 1000,
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [],
+      ...over,
+    };
+  }
+
+  const REF_MAIN = { imageKey: 'IMG-1', usage: 'main' as const, sourceUrl: 'https://e.example/1.jpg' };
+  const REF_DESC = { imageKey: 'IMG-1', usage: 'description' as const, sourceUrl: 'https://e.example/1.jpg' };
+
+  it('이미지가 없으면 커밋 레인이 바로 queued 이고 image 레인은 completed 다', async () => {
+    const { inserted, db } = harness();
+    const manager = new ProductImportManager(db, ...COLLABORATORS);
+
+    const out = await manager.acceptCommit({ fileName: 'a.xlsx', userId: 'u-1', records: [record({})] });
+
+    expect(out.imageCount).toBe(0);
+    expect(inserted.get(productImportImages)).toBeUndefined();
+    const [session] = inserted.get(productImportSessions) as Array<Record<string, unknown>>;
+    expect(session.commitStatus).toBe('queued');
+    expect(session.imageStatus).toBe('completed');
+  });
+
+  it('이미지가 있으면 커밋 레인을 idle 로 게이트하고 image 레인을 queued 로 둔다', async () => {
+    const { inserted, db } = harness();
+    const manager = new ProductImportManager(db, ...COLLABORATORS);
+    const out = await manager.acceptCommit({
+      fileName: 'a.xlsx',
+      userId: 'u-1',
+      records: [record({ imageRefs: [REF_MAIN] })],
+    });
+
+    expect(out.imageCount).toBe(1);
+    const [session] = inserted.get(productImportSessions) as Array<Record<string, unknown>>;
+    expect(session.commitStatus).toBe('idle');
+    expect(session.imageStatus).toBe('queued');
+  });
+
+  it('여러 상품이 같은 (키, 용도) 를 가리키면 이미지 행은 하나다', async () => {
+    const { inserted, db } = harness();
+    const manager = new ProductImportManager(db, ...COLLABORATORS);
+    await manager.acceptCommit({
+      fileName: 'a.xlsx',
+      userId: 'u-1',
+      records: [
+        record({ rowNumber: 1, productKey: 'P1', imageRefs: [REF_MAIN] }),
+        record({ rowNumber: 2, productKey: 'P2', imageRefs: [REF_MAIN] }),
+      ],
+    });
+    expect(inserted.get(productImportImages)).toHaveLength(1);
+  });
+
+  it('같은 키가 용도가 다르면 행이 둘이다', async () => {
+    const { inserted, db } = harness();
+    const manager = new ProductImportManager(db, ...COLLABORATORS);
+    await manager.acceptCommit({
+      fileName: 'a.xlsx',
+      userId: 'u-1',
+      records: [record({ imageRefs: [REF_MAIN, REF_DESC] })],
+    });
+    const rows = inserted.get(productImportImages) as Array<Record<string, unknown>>;
+    expect(rows.map((r) => r.usage).sort()).toEqual(['description', 'main']);
+  });
+
+  it('오류 있는 행의 이미지는 내려받지 않는다', async () => {
+    const { inserted, db } = harness();
+    const manager = new ProductImportManager(db, ...COLLABORATORS);
+    const out = await manager.acceptCommit({
+      fileName: 'a.xlsx',
+      userId: 'u-1',
+      records: [
+        record({
+          imageRefs: [REF_MAIN],
+          errors: [{ sheet: 'Products', rowNumber: 1, message: 'name 은 필수입니다.' }],
+        }),
+      ],
+    });
+    expect(out.imageCount).toBe(0);
+    expect(inserted.get(productImportImages)).toBeUndefined();
+    const [session] = inserted.get(productImportSessions) as Array<Record<string, unknown>>;
+    // 내려받을 이미지가 없으므로 게이트도 걸지 않는다
+    expect(session.commitStatus).toBe('queued');
+  });
+});
+
 describe('createFromRecord', () => {
   // per-row 실패 격리(터진 행이 나머지를 막지 않는지)는 여기서 다시 테스트하지 않는다 —
   // 그 격리는 createFromRecord 자체가 아니라 호출자인 ProductImportJobManager.runCommitSlice
@@ -249,6 +391,7 @@ describe('createFromRecord', () => {
       }),
       'u1',
       trx,
+      EMPTY_SESSION_IMAGES,
     );
 
     expect(productMastersService.updateVersion).toHaveBeenCalledWith(
@@ -265,7 +408,7 @@ describe('createFromRecord', () => {
   it('options 가 없으면 optionDiff 는 undefined 다', async () => {
     const { manager, productMastersService, trx } = harness();
 
-    await manager.createFromRecord(validRecord({ options: [] }), 'u1', trx);
+    await manager.createFromRecord(validRecord({ options: [] }), 'u1', trx, EMPTY_SESSION_IMAGES);
 
     const [, data] = productMastersService.updateVersion.mock.calls[0];
     expect(data.optionDiff).toBeUndefined();
@@ -277,7 +420,7 @@ describe('createFromRecord', () => {
     // createFromRecord 가드(variantOverrides.length > 0 일 때만 호출).
     const { manager, reader, trx } = harness();
 
-    await manager.createFromRecord(validRecord({ variantOverrides: [] }), 'u1', trx);
+    await manager.createFromRecord(validRecord({ variantOverrides: [] }), 'u1', trx, EMPTY_SESSION_IMAGES);
 
     expect(reader.getVariantComboMap).not.toHaveBeenCalled();
   });
@@ -301,7 +444,7 @@ describe('createFromRecord', () => {
       variantOverrides: [{ rowNumber: 1, comboKey: '색상=빨강', basePriceRaw: '', membershipPriceRaw: '' }],
     });
 
-    await manager.createFromRecord(record, 'u1', trx);
+    await manager.createFromRecord(record, 'u1', trx, EMPTY_SESSION_IMAGES);
 
     expect(order).toEqual(['updateVersion', 'comboMap', 'pricing']);
   });
@@ -316,7 +459,7 @@ describe('createFromRecord', () => {
       variantOverrides: [{ rowNumber: 1, comboKey: '색상=빨강', basePriceRaw: '', membershipPriceRaw: '' }],
     });
 
-    await manager.createFromRecord(record, 'u1', trx);
+    await manager.createFromRecord(record, 'u1', trx, EMPTY_SESSION_IMAGES);
 
     expect(pricingBuilder.build).toHaveBeenCalledWith(expect.objectContaining({ productKey: 'P1' }), comboMap);
     expect(pricingService.replaceVersionRules).toHaveBeenCalledWith('v1', dto, expect.anything());
@@ -337,7 +480,7 @@ describe('createFromRecord', () => {
       },
     ];
 
-    await manager.createFromRecord(record, 'u1', trx);
+    await manager.createFromRecord(record, 'u1', trx, EMPTY_SESSION_IMAGES);
 
     expect(updatedVariantCodes).toEqual([{ variantId: 'var-1', variantCode: 'KNIT-RD-L' }]);
   });
@@ -362,7 +505,7 @@ describe('createFromRecord — v3 3단계 필드', () => {
 
   it('다중 카테고리와 대표 카테고리를 updateVersion 에 넘긴다', async () => {
     const { manager, productMastersService } = harness();
-    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any, EMPTY_SESSION_IMAGES);
 
     const [, data] = productMastersService.updateVersion.mock.calls[0];
     expect(data.categoryIds).toEqual(['c-knit', 'c-event']);
@@ -378,7 +521,7 @@ describe('createFromRecord — v3 3단계 필드', () => {
     record.salesStartDate = '2026-07-31T15:00:00.000Z';
     record.salesEndDate = '2026-08-31T14:59:59.999Z';
 
-    await manager.createFromRecord(record, 'u1', {} as any);
+    await manager.createFromRecord(record, 'u1', {} as any, EMPTY_SESSION_IMAGES);
 
     const [, data] = productMastersService.updateVersion.mock.calls[0];
     expect(data.salesStartDate).toBeInstanceOf(Date);
@@ -388,7 +531,7 @@ describe('createFromRecord — v3 3단계 필드', () => {
 
   it('판매기간이 없으면 키 자체를 넣지 않는다 (기존 값을 null 로 덮지 않는다)', async () => {
     const { manager, productMastersService } = harness();
-    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any, EMPTY_SESSION_IMAGES);
 
     const [, data] = productMastersService.updateVersion.mock.calls[0];
     expect('salesStartDate' in data).toBe(false);
@@ -400,7 +543,7 @@ describe('createFromRecord — v3 3단계 필드', () => {
     const record = baseRecord();
     record.purchaseConstraint = { requiresMembership: true, lifetimeQuantityLimit: 2 };
 
-    await manager.createFromRecord(record, 'u1', {} as any);
+    await manager.createFromRecord(record, 'u1', {} as any, EMPTY_SESSION_IMAGES);
 
     expect(purchaseConstraintsService.upsertForDraft).toHaveBeenCalledWith(
       'm1',
@@ -412,8 +555,96 @@ describe('createFromRecord — v3 3단계 필드', () => {
 
   it('구매제약이 없으면 아예 호출하지 않는다', async () => {
     const { manager, purchaseConstraintsService } = harness();
-    await manager.createFromRecord(baseRecord(), 'u1', {} as any);
+    await manager.createFromRecord(baseRecord(), 'u1', {} as any, EMPTY_SESSION_IMAGES);
     expect(purchaseConstraintsService.upsertForDraft).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProductImportManager.createFromRecord — 이미지', () => {
+  /** updateVersion 이 받은 data 를 캡처한다. 나머지 협력자는 최소 동작만. */
+  function capture() {
+    const updates: Array<Record<string, unknown>> = [];
+    const productMastersService = {
+      createMaster: jest.fn().mockResolvedValue({ id: 'v-1', masterId: 'm-1' }),
+      updateVersion: jest.fn(async (_versionId: string, data: Record<string, unknown>) => {
+        updates.push(data);
+      }),
+    };
+    const manager = new ProductImportManager(
+      { run: <T>(fn: (t: unknown) => Promise<T>) => fn({}) } as never,
+      { getVariantComboMap: jest.fn().mockResolvedValue(new Map()) } as never,
+      productMastersService as never,
+      { replaceVersionRules: jest.fn() } as never,
+      { build: jest.fn().mockReturnValue([]) } as never,
+      { upsertForDraft: jest.fn() } as never,
+      undefined as never,
+    );
+    return { manager, updates };
+  }
+
+  function record(over: Partial<ProductRecord>): ProductRecord {
+    return {
+      rowNumber: 1,
+      productKey: 'P1',
+      raw: {},
+      version: { name: '니트A' },
+      basePrice: 29000,
+      categoryIds: [],
+      categoryNames: [],
+      options: [],
+      variantOverrides: [],
+      errors: [],
+      ...over,
+    };
+  }
+
+  const images: SessionImageMap = {
+    main: new Map([
+      ['IMG-1', 'f-thumb'],
+      ['IMG-2', 'f-add-2'],
+      ['IMG-3', 'f-add-3'],
+    ]),
+    description: new Map([['IMG-9', 'f-desc']]),
+  };
+
+  it('대표·부가 fileId 를 updateVersion 에 넘긴다', async () => {
+    const { manager, updates } = capture();
+    await manager.createFromRecord(
+      record({ thumbnailImageKey: 'IMG-1', additionalImageKeys: ['IMG-2'] }),
+      'u-1',
+      {} as never,
+      images,
+    );
+    expect(updates[0]).toMatchObject({ thumbnailFileId: 'f-thumb', additionalImageFileIds: ['f-add-2'] });
+  });
+
+  it('부가 이미지 순서가 지정 순서 그대로다 (updateVersion 이 index+1 을 sortOrder 로 쓴다)', async () => {
+    const { manager, updates } = capture();
+    await manager.createFromRecord(record({ additionalImageKeys: ['IMG-3', 'IMG-2'] }), 'u-1', {} as never, images);
+    expect(updates[0].additionalImageFileIds).toEqual(['f-add-3', 'f-add-2']);
+  });
+
+  it('본문 디렉티브의 imageKey 를 fileId 로 치환한다', async () => {
+    const { manager, updates } = capture();
+    await manager.createFromRecord(
+      record({
+        version: { name: 'x', description: '앞\n::product-image{imageKey="IMG-9" alt="상세"}' },
+        descriptionImageKeys: ['IMG-9'],
+      }),
+      'u-1',
+      {} as never,
+      images,
+    );
+    expect(updates[0].description).toBe('앞\n::product-image{fileId="f-desc" alt="상세"}');
+  });
+
+  it('이미지를 안 쓰는 행은 이미지 키를 아예 만들지 않는다', async () => {
+    const { manager, updates } = capture();
+    await manager.createFromRecord(record({}), 'u-1', {} as never, EMPTY_SESSION_IMAGES);
+    // undefined 를 넣어도 drizzle 은 무시하지만, 키를 만들면 updateVersion 이
+    // `!== undefined` 분기로 기존 이미지를 지우는 DELETE 두 번을 더 돈다.
+    expect('thumbnailFileId' in updates[0]).toBe(false);
+    expect('additionalImageFileIds' in updates[0]).toBe(false);
   });
 });
 
@@ -517,5 +748,112 @@ describe('cancelSession', () => {
     const { manager } = harness(undefined, { sessionMissing: true });
 
     await expect(manager.cancelSession('nope')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('failed 레인도 취소 대상이다 — 연속 실패 상한에 닿아 굳은 세션도 취소로 풀 수 있어야 한다', async () => {
+    const { manager, updates, imageCleaner } = harness(undefined, {
+      session: { commitStatus: 'failed', publishStatus: 'idle' },
+    });
+
+    const res = await manager.cancelSession('sess-1');
+
+    expect(res).toMatchObject({ commitStatus: 'canceled' });
+    const sessionUpdates = updates.filter((u) => u.table === 'sessions');
+    expect(sessionUpdates[0].values.commitStatus).toBe('canceled');
+    // failed 확정으로 굳은 세션도 이미지 정리 경로가 열려야 한다(§finding1).
+    expect(imageCleaner.cleanupUploaded).toHaveBeenCalledWith('sess-1');
+  });
+});
+
+describe('ProductImportManager.cancelSession — 이미지 레인', () => {
+  function harness(session: Record<string, unknown>) {
+    const updates: Array<Record<string, unknown>> = [];
+    const cleanupUploaded = jest.fn().mockResolvedValue(undefined);
+    const trx = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: () => ({ for: () => Promise.resolve([session]) }) }) }),
+      }),
+      update: () => ({
+        set: (values: Record<string, unknown>) => {
+          updates.push(values);
+          return { where: () => Promise.resolve() };
+        },
+      }),
+    };
+    const manager = new ProductImportManager(
+      { run: <T>(fn: (t: unknown) => Promise<T>) => fn(trx) } as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      undefined as never,
+      { cleanupUploaded } as never,
+    );
+    return { manager, updates, cleanupUploaded };
+  }
+
+  const RUNNING_IMAGE = {
+    id: 's-1',
+    imageStatus: 'running',
+    // 이미지 레인이 도는 동안 커밋 레인은 게이트 때문에 'idle' 이다(acceptCommit).
+    commitStatus: 'idle',
+    publishStatus: 'idle',
+    cancelRequestedAt: null,
+  };
+
+  it('이미지 레인만 진행 중이어도 취소된다', async () => {
+    const { manager, updates } = harness(RUNNING_IMAGE);
+    const out = await manager.cancelSession('s-1');
+
+    expect(updates[0]).toMatchObject({ imageStatus: 'canceled' });
+    expect(updates[0].cancelRequestedAt).toBeInstanceOf(Date);
+    // 끝나지 않은(아직 시작도 안 한) 레인은 덮지 않는다 — 이력이 거짓이 되지 않게.
+    expect('commitStatus' in updates[0]).toBe(false);
+    expect('publishStatus' in updates[0]).toBe(false);
+    expect(out).toMatchObject({ imageStatus: 'canceled', commitStatus: 'idle', publishStatus: 'idle' });
+  });
+
+  it('취소 후 업로드된 이미지를 정리한다', async () => {
+    const { manager, cleanupUploaded } = harness(RUNNING_IMAGE);
+    await manager.cancelSession('s-1');
+    expect(cleanupUploaded).toHaveBeenCalledWith('s-1');
+  });
+
+  it('정리가 실패해도 취소 응답은 정상이다', async () => {
+    const { manager, cleanupUploaded } = harness(RUNNING_IMAGE);
+    cleanupUploaded.mockRejectedValue(new Error('file-service 다운'));
+    // 취소가 정리 때문에 실패하는 편이 더 나쁘다.
+    await expect(manager.cancelSession('s-1')).resolves.toMatchObject({ imageStatus: 'canceled' });
+  });
+
+  it('진행 중인 레인이 하나도 없으면 409 (이미지 레인까지 포함해 판정)', async () => {
+    const { manager, cleanupUploaded } = harness({
+      id: 's-1',
+      imageStatus: 'completed',
+      commitStatus: 'completed',
+      publishStatus: 'completed',
+      cancelRequestedAt: null,
+    });
+    await expect(manager.cancelSession('s-1')).rejects.toBeInstanceOf(ConflictError);
+    expect(cleanupUploaded).not.toHaveBeenCalled();
+  });
+
+  it('이미지 레인이 failed 여도 취소 대상이다 — 굳은 세션을 취소로 푸는 유일한 경로다', async () => {
+    const { manager, updates, cleanupUploaded } = harness({
+      id: 's-1',
+      imageStatus: 'failed',
+      commitStatus: 'idle',
+      publishStatus: 'idle',
+      cancelRequestedAt: null,
+    });
+
+    const out = await manager.cancelSession('s-1');
+
+    expect(updates[0]).toMatchObject({ imageStatus: 'canceled' });
+    // idle 인 커밋·게시 레인은 여전히 건드리지 않는다 — active() 판정 대상이 아니다.
+    expect('commitStatus' in updates[0]).toBe(false);
+    expect('publishStatus' in updates[0]).toBe(false);
+    expect(cleanupUploaded).toHaveBeenCalledWith('s-1');
+    expect(out).toMatchObject({ imageStatus: 'canceled' });
   });
 });

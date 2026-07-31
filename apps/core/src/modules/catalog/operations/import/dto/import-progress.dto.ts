@@ -2,14 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * 화면 단계 키. 워커 **레인**과 1:1 이 아니다 — 레인은 claim·lease·굶주림의 단위고
- * 단계는 사람이 이해하는 단위다. v3 4단계에서 이미지 레인 하나가 'probe'·'fetch'
- * 두 단계로 갈라져 여기 붙는다(스펙 §3.5). 그래서 화면은 이 배열을 순회해 그리고,
- * 단계 개수를 코드에 박지 않는다.
+ * 단계는 사람이 이해하는 단위다. 이미지 레인 하나가 'probe'·'fetch' 두 단계로 갈린다
+ * (스펙 §3.5). 화면은 이 배열을 순회해 그리고, 단계 개수를 코드에 박지 않는다.
  */
-export type ImportProgressStageKey = 'commit' | 'publish';
+export type ImportProgressStageKey = 'probe' | 'fetch' | 'commit' | 'publish';
 
 export class ImportProgressStageDto {
-  @ApiProperty({ enum: ['commit', 'publish'] })
+  @ApiProperty({ enum: ['probe', 'fetch', 'commit', 'publish'] })
   key: ImportProgressStageKey;
 
   @ApiProperty({ description: '관리자 화면에 그대로 노출되는 단계 이름' })

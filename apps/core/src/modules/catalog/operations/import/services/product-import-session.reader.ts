@@ -7,6 +7,7 @@ import {
   productCategories,
   productImportSessions,
   productImportItems,
+  productImportImages,
   productMasterVersions,
   productMasterVariants,
   productVariants,
@@ -14,7 +15,8 @@ import {
 import { CategoryNode, comboKey } from '../dto/import.types';
 import { DbTransaction } from '../../../catalog.types';
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
-import type { ImportItemStatusCount } from './product-import-progress.builder';
+import type { ImportItemStatusCount, ImportImageStatusCount } from './product-import-progress.builder';
+import type { SessionImageRow } from './product-import-image.resolver';
 
 export type SessionRow = typeof productImportSessions.$inferSelect;
 /**
@@ -101,7 +103,11 @@ export class ProductImportSessionReader {
   async getProgressCounts(
     sessionId: string,
     tx?: DbTransaction,
-  ): Promise<{ session: SessionRow; itemCounts: ImportItemStatusCount[] }> {
+  ): Promise<{
+    session: SessionRow;
+    itemCounts: ImportItemStatusCount[];
+    imageCounts: ImportImageStatusCount[];
+  }> {
     return this.db.run(async (trx) => {
       const [session] = await trx
         .select()
@@ -120,6 +126,13 @@ export class ProductImportSessionReader {
         .where(eq(productImportItems.sessionId, sessionId))
         .groupBy(productImportItems.status, productImportItems.publishStatus);
 
+      // 이미지 집계는 5행 이하다 — 세 번째 쿼리를 더해도 응답은 여전히 세션 크기와 무관하다.
+      const groupedImages = await trx
+        .select({ status: productImportImages.status, value: count() })
+        .from(productImportImages)
+        .where(eq(productImportImages.sessionId, sessionId))
+        .groupBy(productImportImages.status);
+
       return {
         session,
         itemCounts: grouped.map((row) => ({
@@ -128,8 +141,30 @@ export class ProductImportSessionReader {
           // count() 는 드라이버에 따라 bigint 문자열로 올라온다 — getSessions 도 같은 이유로 Number() 를 씌운다.
           count: Number(row.value),
         })),
+        imageCounts: groupedImages.map((row) => ({ status: row.status, count: Number(row.value) })),
       };
     }, tx);
+  }
+
+  /**
+   * 세션의 이미지 행 전체. 커밋 슬라이스가 **슬라이스당 한 번** 부르고 인덱스를 만들어
+   * 그 안의 모든 행이 공유한다. 행 수는 MAX_IMAGE_ROWS 로 유계다.
+   */
+  getSessionImages(sessionId: string, tx?: DbTransaction): Promise<SessionImageRow[]> {
+    return this.db.run(
+      (trx) =>
+        trx
+          .select({
+            imageKey: productImportImages.imageKey,
+            usage: productImportImages.usage,
+            status: productImportImages.status,
+            fileId: productImportImages.fileId,
+            errorMessage: productImportImages.errorMessage,
+          })
+          .from(productImportImages)
+          .where(eq(productImportImages.sessionId, sessionId)),
+      tx,
+    );
   }
 
   async getDraftVersionId(masterId: string, tx?: DbTransaction): Promise<string | null> {

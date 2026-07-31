@@ -1,6 +1,12 @@
 import * as ExcelJS from 'exceljs';
 import { BadRequestError } from '@app/shared';
-import { ProductImportParser, MAX_VARIANT_ROWS, MAX_CATEGORY_ROWS, MAX_CONSTRAINT_ROWS } from './product-import.parser';
+import {
+  ProductImportParser,
+  MAX_VARIANT_ROWS,
+  MAX_CATEGORY_ROWS,
+  MAX_CONSTRAINT_ROWS,
+  MAX_IMAGE_ROWS,
+} from './product-import.parser';
 
 async function workbookBuffer(build: (wb: ExcelJS.Workbook) => void): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
@@ -214,5 +220,39 @@ describe('ProductImportParser — 날짜 셀 정규화', () => {
       }),
     );
     expect(parsed.products[0].cells.salesStartDate).toBe('2026-08-01');
+  });
+});
+
+describe('ProductImportParser — Images 시트', () => {
+  const parser = new ProductImportParser();
+
+  it('시트가 없으면 빈 배열이다 (기존 워크북 하위호환)', async () => {
+    const parsed = await parser.parse(await buildWorkbook({ Products: PRODUCTS_MINIMAL }));
+    expect(parsed.images).toEqual([]);
+  });
+
+  it('Images 시트를 헤더명 → 셀 맵으로 읽는다', async () => {
+    const parsed = await parser.parse(
+      await buildWorkbook({
+        Products: PRODUCTS_MINIMAL,
+        Images: [
+          ['imageKey', 'sourceUrl'],
+          ['IMG-1', 'https://supplier.example/p/1/main.jpg'],
+          ['IMG-2', 'https://supplier.example/p/1/detail.jpg'],
+        ],
+      }),
+    );
+    expect(parsed.images).toEqual([
+      { rowNumber: 1, cells: { imageKey: 'IMG-1', sourceUrl: 'https://supplier.example/p/1/main.jpg' } },
+      { rowNumber: 2, cells: { imageKey: 'IMG-2', sourceUrl: 'https://supplier.example/p/1/detail.jpg' } },
+    ]);
+  });
+
+  it('Images 행 상한을 넘으면 거부한다', async () => {
+    const rows: string[][] = [['imageKey', 'sourceUrl']];
+    for (let i = 0; i <= MAX_IMAGE_ROWS; i++) rows.push([`IMG-${i}`, `https://e.example/${i}.jpg`]);
+    await expect(parser.parse(await buildWorkbook({ Products: PRODUCTS_MINIMAL, Images: rows }))).rejects.toThrow(
+      /Images/,
+    );
   });
 });

@@ -1003,6 +1003,33 @@ export const productImportItemPublishStatusEnum = pgEnum('product_import_item_pu
   'skipped',
 ]);
 
+/**
+ * 이미지 행의 두 phase 를 한 컬럼으로 표현한다. 레인을 둘로 쪼개지 않는 이유는
+ * 세션 상태 컬럼과 굶주림 경로가 함께 늘기 때문이다(스펙 §3.3).
+ *
+ * 5값으로 나누는 이유는 **진행률**이다 — probe 실패는 fetch 단계의 분모에서 빠져야
+ * 하는데, 실패를 한 값으로 뭉치면 어느 단계에서 죽었는지 알 수 없어 분모가 틀린다.
+ * 5값이면 `GROUP BY status` 하나로 두 단계의 분모·분자·실패가 전부 나온다.
+ */
+export const productImportImageStatusEnum = pgEnum('product_import_image_status', [
+  'pending',
+  'probed',
+  'uploaded',
+  'probe_failed',
+  'fetch_failed',
+]);
+
+/**
+ * 이미지의 **용도**. 참조 지점에서 추론한다 — thumbnailImageKey/additionalImageKeys 에
+ * 등장하면 'main', description 본문 디렉티브에 등장하면 'description'.
+ *
+ * 용도가 갈리는 이유는 file-service 컨텍스트가 다르기 때문이다: `product-image` 는
+ * jpeg/png/webp 만 10MB, `product-description-image` 는 image/* 20MB
+ * (file-service/src/database/default-file-contexts.ts). 한 키가 양쪽에 쓰이면 행이
+ * 둘 생기고 **두 번 업로드해 fileId 가 둘이 된다** — 막지 않는다(스펙 §3.1).
+ */
+export const productImportImageUsageEnum = pgEnum('product_import_image_usage', ['main', 'description']);
+
 export const productImportSessions = pgTable(
   'product_import_sessions',
   {
@@ -1071,6 +1098,20 @@ export const productImportSessions = pgTable(
      * 옛 세션은 NULL 이고 화면이 현행과 같은 표시로 폴백한다(백필하지 않는다).
      */
     invalidCount: integer('invalid_count'),
+
+    // ─── 이미지 레인 (v3 4단계) ───
+    /**
+     * 이미지 레인(probe → fetch)의 상태.
+     *
+     * ⚠️ DEFAULT 가 `'completed'` 인 것은 **필수**다. ADD COLUMN 은 기존 행에 DEFAULT 를
+     * 채우는데 `'queued'` 로 두면 **마이그레이션 이전 세션 전부가 이미지 레인에 걸려 영원히
+     * 대기한다**. 바로 위 commit_status 가 같은 이유로 `.default('completed')` 다.
+     * 새 세션은 acceptCommit 이 이미지 유무에 따라 명시로 넣으므로 DEFAULT 에 의존하지 않는다.
+     *
+     * `Images` 시트가 없는 워크북도 접수 즉시 `'completed'` 라 기존 흐름과 동일하게 동작한다.
+     */
+    imageStatus: productImportJobStatusEnum('image_status').notNull().default('completed'),
+    imageError: text('image_error'),
   },
   (table) => [
     index('idx_import_sessions_uploaded_by').on(table.uploadedBy),
@@ -1081,6 +1122,9 @@ export const productImportSessions = pgTable(
     // 워커별로 2컬럼 인덱스를 따로 둔다.
     index('idx_import_sessions_commit_claim').on(table.commitStatus, table.leaseUntil),
     index('idx_import_sessions_publish_claim').on(table.publishStatus, table.leaseUntil),
+    // 워커별 2컬럼 인덱스 컨벤션을 그대로 따른다 — 3컬럼 복합으로 묶으면 leading column 이
+    // 아닌 레인이 leftmost-prefix 규칙에 걸려 인덱스를 못 탄다.
+    index('idx_import_sessions_image_claim').on(table.imageStatus, table.leaseUntil),
   ],
 );
 
@@ -1114,6 +1158,42 @@ export const productImportItems = pgTable(
   (table) => [
     index('idx_import_items_session').on(table.sessionId),
     index('idx_import_items_session_status').on(table.sessionId, table.status),
+  ],
+);
+
+/**
+ * 세션 스코프의 이미지 행. **행의 단위는 `(imageKey, usage)` 이지 참조 횟수가 아니다** —
+ * 여러 상품이 같은 키를 같은 용도로 가리키면 행 하나·업로드 한 번이고 fileId 를 공유한다.
+ * 같은 이미지를 여러 상품에 쓰는 것이 흔한 운용이므로 이 dedup 이 NAT 부하를 직접 줄인다
+ * (스펙 §3.2.1 — outbound 는 단일 t4g.nano fck-nat 을 Medusa·notification 과 공유한다).
+ */
+export const productImportImages = pgTable(
+  'product_import_images',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => productImportSessions.id, { onDelete: 'cascade' }),
+    /** 워크북 스코프 키(`IMG-1` 등). 세션 밖에서는 의미가 없다. */
+    imageKey: varchar('image_key', { length: 255 }).notNull(),
+    usage: productImportImageUsageEnum('usage').notNull(),
+    sourceUrl: text('source_url').notNull(),
+    status: productImportImageStatusEnum('status').notNull().default('pending'),
+    /** 업로드 성공 시 file-service 가 준 id. 취소 정리가 이 값을 추적한다. */
+    fileId: uuid('file_id'),
+    mimeType: varchar('mime_type', { length: 255 }),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    // dedup 의 본체. 같은 세션에서 같은 (키, 용도) 는 반드시 한 행이다.
+    uniqueIndex('uq_import_images_session_key_usage').on(table.sessionId, table.imageKey, table.usage),
+    // 슬라이스 선택(`status='pending'` → `status='probed'`)과 진행률 GROUP BY 가 둘 다 탄다.
+    index('idx_import_images_session_status').on(table.sessionId, table.status),
   ],
 );
 
@@ -1152,6 +1232,7 @@ export const catalogSchema = {
   notices,
   productImportSessions,
   productImportItems,
+  productImportImages,
 };
 
 // ===== RELATIONS =====

@@ -19,6 +19,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container/c
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import {
   importCounts,
+  isImportCancelable,
   isImportRunning,
   productQueryKeys,
   useCancelSession,
@@ -56,8 +57,10 @@ export function SessionDetail({ sessionId }: Props) {
   const canceled = progress ? progress.canceled : Boolean(session?.cancelRequestedAt);
   const canceledAt = progress?.cancelRequestedAt ?? session?.cancelRequestedAt ?? null;
   const fileName = progress?.fileName ?? session?.fileName ?? null;
-  // 취소는 진행 중인 레인이 있을 때만 의미가 있다 — 서버도 같은 조건으로 409 를 던진다.
-  const cancellable = !canceled && running;
+  // 취소 가능 여부는 isImportRunning(폴링 유지 조건)과 다르다 — failed 로 확정된 레인은
+  // 워커가 더 이상 갱신하지 않아 running 은 false 지만, 굳은 세션을 푸는 유일한 수단인
+  // 취소 버튼은 떠 있어야 한다(서버 cancelSession 도 같은 이유로 failed 를 허용한다).
+  const cancellable = isImportCancelable(progress, session);
 
   // 진행이 멈추는 순간 한 번만 행 목록을 새로 고친다 — 펼쳐 둔 채 완료를 지켜본
   // 사용자가 옛 목록을 보고 있지 않게. exact 로 좁혀 진행률 키는 건드리지 않는다.

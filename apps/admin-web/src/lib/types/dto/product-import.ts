@@ -14,6 +14,8 @@ export interface ResolvedPreview {
    */
   salesPeriod: string | null;
   variantCount: number;
+  /** 이 행이 참조하는 고유 이미지 수. 롤링 배포 중 옛 core 응답에는 없다. */
+  imageCount?: number;
 }
 
 export interface ValidatePreviewRow {
@@ -55,6 +57,8 @@ export interface CommitAcceptedDto {
   totalRows: number;
   queuedCount: number;
   invalidCount: number;
+  /** 워커가 내려받을 고유 이미지 수. 옛 core 응답에는 없다. */
+  imageCount?: number;
 }
 
 /** POST /product-imports/:id/publish 의 202 응답 — 게시도 워커가 비동기로 진행한다. */
@@ -67,6 +71,7 @@ export interface PublishAcceptedDto {
 /** POST /product-imports/:id/cancel 의 200 응답 — 진행 중이던 레인만 canceled 로 확정된다. */
 export interface CancelAcceptedDto {
   sessionId: string;
+  imageStatus?: ImportJobStatus;
   commitStatus: ImportJobStatus;
   publishStatus: ImportJobStatus;
   canceledAt: string;
@@ -80,6 +85,9 @@ export interface SessionSummaryDto {
   failedCount: number;
   status: string;
   createdAt: string; // JSON 직렬화 결과(백엔드 Date → string)
+  /** 이미지 레인 상태. 롤링 배포 중 옛 core 응답에는 없다. */
+  imageStatus?: ImportJobStatus;
+  imageError?: string | null;
   commitStatus: ImportJobStatus;
   publishStatus: ImportJobStatus;
   publishedCount: number;
@@ -104,11 +112,10 @@ export interface SessionListResponse {
 }
 
 /**
- * 진행률 화면의 단계 키. 워커 레인과 1:1 이 아니다 — v3 4단계에서 이미지 레인이
- * 'probe'|'fetch' 두 단계로 갈라져 여기 붙는다. 화면은 stages 배열을 순회해 그리므로
- * 그때 admin-web 은 이 유니온만 넓히면 된다.
+ * 진행률 화면의 단계 키. 워커 레인과 1:1 이 아니다 — 이미지 레인 하나가 'probe'·'fetch'
+ * 두 단계로 갈린다. 화면은 stages 배열을 순회해 그리므로 여기만 넓히면 된다.
  */
-export type ImportProgressStageKey = 'commit' | 'publish';
+export type ImportProgressStageKey = 'probe' | 'fetch' | 'commit' | 'publish';
 
 export interface ImportProgressStage {
   key: ImportProgressStageKey;

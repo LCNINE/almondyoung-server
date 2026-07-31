@@ -54,6 +54,7 @@ export class ProductImportService {
         categoryCount: r.categoryIds.length,
         salesPeriod: this.salesPeriod(r),
         variantCount: this.variantCount(r),
+        imageCount: r.imageRefs?.length ?? 0,
       },
     }));
     const validCount = rows.filter((r) => r.status === 'valid').length;
@@ -94,8 +95,8 @@ export class ProductImportService {
    * admin-web 의 폴링 대상은 getSession 이 아니라 이쪽이다.
    */
   async getProgress(sessionId: string): Promise<ImportProgressDto> {
-    const { session, itemCounts } = await this.reader.getProgressCounts(sessionId);
-    return this.progressBuilder.build(session, itemCounts);
+    const { session, itemCounts, imageCounts } = await this.reader.getProgressCounts(sessionId);
+    return this.progressBuilder.build(session, itemCounts, imageCounts);
   }
 
   publishSession(sessionId: string): Promise<PublishAcceptedDto> {
@@ -149,6 +150,8 @@ export class ProductImportService {
       publishError: session.publishError,
       invalidCount: session.invalidCount,
       cancelRequestedAt: session.cancelRequestedAt,
+      imageStatus: session.imageStatus,
+      imageError: session.imageError,
     };
   }
 }
