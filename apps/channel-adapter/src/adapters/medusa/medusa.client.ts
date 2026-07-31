@@ -1059,7 +1059,8 @@ export class MedusaClient {
   private async getProductWithVariantDetails(productId: string): Promise<MedusaProduct> {
     const { product } = await this.sdk.admin.product.retrieve(productId, {
       fields:
-        'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,' +
+        'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.allow_backorder,' +
+        '+variants.sku,+variants.title,' +
         '+variants.inventory_items,+variants.inventory_items.inventory.id,+variants.inventory_items.inventory.sku,' +
         '+variants.inventory_items.inventory.metadata',
     });
@@ -1516,7 +1517,11 @@ export class MedusaClient {
     }
 
     const shouldManageInventory = shouldManageMedusaInventoryForSellableProjection(input);
-    const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder ?? false;
+    // ponytail: `?? false` 를 붙이지 않는다. retrieve fields 에서 allow_backorder 가 빠지면
+    // undefined 가 오는데, false 로 접으면 "이미 false" 로 오판해 업데이트를 건너뛴다
+    // (= true 로는 가고 false 로는 못 돌아오는 단방향 버그). undefined 로 두면 아래 비교가
+    // 항상 불일치가 되어 안전한 쪽 — 불필요한 업데이트 1회 — 으로 실패한다.
+    const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder;
     // 수동품절은 선판매(백오더)를 이긴다 — 강제 품절이 의도이므로 allow_backorder 를 끈다.
     // 그 외엔 선판매 정책(preStockSellable)을 그대로 반영해 해제 시 복원되게 한다.
     const desiredBackorder = input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;
