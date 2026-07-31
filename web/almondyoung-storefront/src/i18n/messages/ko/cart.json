@@ -35,7 +35,8 @@
     "soldOutHint": "판매가 중단된 상품입니다. 결제하려면 이 상품을 삭제해주세요.",
     "quantityMaxError": "재고가 {max}개 남았어요. {max}개 이하로 담아주세요.",
     "quantityStockError": "재고가 부족해 수량을 변경할 수 없어요. 잠시 후 다시 시도해 주세요.",
-    "quantityMaxHint": "최대 {max}개"
+    "quantityMaxHint": "최대 {max}개",
+    "quantitySoldOut": "품절된 상품이라 수량을 늘릴 수 없어요."
   },
   "summary": {
     "title": "주문 예상 금액",

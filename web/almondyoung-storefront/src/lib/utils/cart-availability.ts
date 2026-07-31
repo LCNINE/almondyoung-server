@@ -60,12 +60,17 @@ export function getAvailableQuantity(
 /**
  * 재고부족 응답을 어떤 안내로 바꿀지 결정한다.
  *
+ * - `sold-out`: 남은 재고가 0 → 수량 안내("0개 이하로 담아주세요")는 말이 안 되므로 품절로 안내한다.
  * - `exceeds-stock`: 요청 수량이 남은 재고보다 많다 → "재고가 N개 남았어요" 로 수량을 알려줄 수 있다.
  * - `cart-sum`: 재고 안에서 요청했는데도 실패 → 장바구니에 이미 담긴 수량과 합쳐 넘긴 경우
  *   (또는 방금 재고가 줄었다). 남은 수량만 알려주면 "N개인데 왜 안 되냐" 가 되므로 다르게 안내한다.
  * - `unknown`: 남은 재고를 모르는 화면(상품카드 퀵담기 등) → 수량 없이 일반 재고부족 안내.
  */
-export type StockShortageKind = "exceeds-stock" | "cart-sum" | "unknown"
+export type StockShortageKind =
+  | "sold-out"
+  | "exceeds-stock"
+  | "cart-sum"
+  | "unknown"
 
 export function describeStockShortage(input: {
   available?: number | null
@@ -73,7 +78,38 @@ export function describeStockShortage(input: {
 }): StockShortageKind {
   const { available } = input
   if (available === null || available === undefined) return "unknown"
+  if (available <= 0) return "sold-out"
   return (input.quantity ?? 1) > available ? "exceeds-stock" : "cart-sum"
+}
+
+/**
+ * 라인아이템별 수량 상한 맵. **재고가 계산된 variant(=/store/products 응답)** 에서만 상한을 뽑는다.
+ *
+ * 카트 라인아이템에 붙어오는 variant 에는 Medusa 가 inventory_quantity 를 채워주지 않는다.
+ * 그걸 폴백으로 쓰면 재고 0 으로 읽혀 "재고가 0개 남았어요" 를 띄우고 수량 증가를 통째로 막아버린다
+ * (상품 조회가 실패하면 전 라인이 그렇게 된다). 그래서 조회 결과에 없는 variant 는 상한 없음으로 둔다 —
+ * 잘못된 차단보다 서버 판정에 맡기는 쪽이 안전하다.
+ */
+export function buildAvailabilityMap(
+  items: Array<{ variant_id?: string | null }>,
+  variantById: Map<
+    string,
+    {
+      manage_inventory?: boolean | null
+      allow_backorder?: boolean | null
+      inventory_quantity?: number | null
+    }
+  >
+): Record<string, number> {
+  const map: Record<string, number> = {}
+  for (const item of items) {
+    if (!item.variant_id) continue
+    const fetched = variantById.get(item.variant_id)
+    if (!fetched) continue
+    const available = getAvailableQuantity(fetched)
+    if (available !== null) map[item.variant_id] = available
+  }
+  return map
 }
 
 export function isVariantSoldOut(

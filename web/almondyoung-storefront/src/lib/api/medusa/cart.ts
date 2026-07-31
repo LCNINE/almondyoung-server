@@ -11,7 +11,7 @@ import {
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
 import {
-  getAvailableQuantity,
+  buildAvailabilityMap,
   isVariantSoldOut,
 } from "@lib/utils/cart-availability"
 import { HttpTypes } from "@medusajs/types"
@@ -207,17 +207,11 @@ export async function findUnavailableLineItems(
     )
   )
 
-  const availableByVariantId: Record<string, number> = {}
-  for (const item of items) {
-    if (!item.variant_id) continue
-    const variant = variantById.get(item.variant_id) ?? item.variant
-    const available = getAvailableQuantity(variant)
-    if (available !== null) {
-      availableByVariantId[item.variant_id] = available
-    }
+  return {
+    variantIds,
+    productNames,
+    availableByVariantId: buildAvailabilityMap(items, variantById),
   }
-
-  return { variantIds, productNames, availableByVariantId }
 }
 
 export async function getOrSetCart(countryCode: string) {

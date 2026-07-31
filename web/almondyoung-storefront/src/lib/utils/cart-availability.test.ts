@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  buildAvailabilityMap,
   describeStockShortage,
   getAvailableQuantity,
   isInsufficientInventoryError,
@@ -43,8 +44,9 @@ describe("describeStockShortage", () => {
     expect(describeStockShortage({ available: 5, quantity: 5 })).toBe("cart-sum")
   })
 
-  it("재고가 0 이면 어떤 수량이든 초과다", () => {
-    expect(describeStockShortage({ available: 0, quantity: 1 })).toBe("exceeds-stock")
+  it("재고 0 은 품절로 구분한다 — 수량 안내로 가면 '0개 이하로 담아주세요' 가 된다", () => {
+    expect(describeStockShortage({ available: 0, quantity: 1 })).toBe("sold-out")
+    expect(describeStockShortage({ available: 0, quantity: 9 })).toBe("sold-out")
   })
 
   it("남은 재고를 모르는 화면은 수량 없는 일반 안내로 떨어진다", () => {
@@ -53,8 +55,8 @@ describe("describeStockShortage", () => {
   })
 
   it("수량을 안 넘기면 1개 담기로 본다", () => {
-    expect(describeStockShortage({ available: 0 })).toBe("exceeds-stock")
     expect(describeStockShortage({ available: 1 })).toBe("cart-sum")
+    expect(describeStockShortage({ available: 1, quantity: 2 })).toBe("exceeds-stock")
   })
 })
 
@@ -73,5 +75,40 @@ describe("isInsufficientInventoryError", () => {
   it("다른 에러는 재고부족으로 오인하지 않는다", () => {
     expect(isInsufficientInventoryError(new Error("Cart not found"))).toBe(false)
     expect(isInsufficientInventoryError(undefined)).toBe(false)
+  })
+})
+
+// 카트 라인아이템에 붙어오는 variant 에는 inventory_quantity 가 없다. 그걸 폴백으로 쓰면
+// 전 라인이 재고 0 으로 읽혀 수량 증가가 통째로 막히고 "재고가 0개 남았어요" 가 뜬다.
+describe("buildAvailabilityMap", () => {
+  const fetched = new Map([
+    ["variant_a", { ...tracked, inventory_quantity: 4 }],
+    ["variant_b", { manage_inventory: false, inventory_quantity: 0 }],
+  ])
+
+  it("재고가 계산된 variant 만 상한을 갖는다", () => {
+    const map = buildAvailabilityMap(
+      [{ variant_id: "variant_a" }, { variant_id: "variant_b" }],
+      fetched
+    )
+    expect(map).toEqual({ variant_a: 4 })
+  })
+
+  it("상품 조회에 없던 variant 는 상한을 두지 않는다 (조회 실패로 구매를 막지 않는다)", () => {
+    const map = buildAvailabilityMap([{ variant_id: "variant_missing" }], fetched)
+    expect(map).toEqual({})
+    expect(map.variant_missing).toBeUndefined()
+  })
+
+  it("조회가 통째로 실패해도(빈 맵) 아무 라인도 막지 않는다", () => {
+    const map = buildAvailabilityMap(
+      [{ variant_id: "variant_a" }, { variant_id: "variant_b" }],
+      new Map()
+    )
+    expect(map).toEqual({})
+  })
+
+  it("variant_id 가 없는 라인은 건너뛴다", () => {
+    expect(buildAvailabilityMap([{ variant_id: null }, {}], fetched)).toEqual({})
   })
 })

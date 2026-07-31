@@ -198,7 +198,9 @@ export function QuickAddDrawer({
         if (item && delta > 0) {
           const max = getAvailableQuantity(item.variant)
           if (max !== null && item.quantity + delta > max) {
-            toast.error(tOptions("stockLimitToast", { max }))
+            toast.error(
+              max <= 0 ? tOptions("soldOutToast") : tOptions("stockLimitToast", { max })
+            )
             return prev
           }
         }
@@ -247,11 +249,13 @@ export function QuickAddDrawer({
           })
           const message = !isInsufficientInventoryError(failed.error)
             ? failed.error
-            : shortage === "exceeds-stock"
-              ? tOptions("stockLimitToast", { max: max! })
-              : shortage === "cart-sum"
-                ? tOptions("stockConflictToast")
-                : tOptions("stockShortToast")
+            : shortage === "sold-out"
+              ? tOptions("soldOutToast")
+              : shortage === "exceeds-stock"
+                ? tOptions("stockLimitToast", { max: max! })
+                : shortage === "cart-sum"
+                  ? tOptions("stockConflictToast")
+                  : tOptions("stockShortToast")
           toast.error(message)
           return
         }
