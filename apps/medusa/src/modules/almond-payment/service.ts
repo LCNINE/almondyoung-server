@@ -55,7 +55,11 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body?.message ?? `Wallet API error ${res.status}: ${path}`);
+      const message = body?.message ?? `Wallet API error ${res.status}: ${path}`;
+      // 에러 코드를 메시지 앞에 붙인다 — 호출부가 코드로 분기할 수 있어야 한다
+      // (예: NO_STAGED_APPROVAL, INTENT_NOT_CANCELABLE). 코드 없이 메시지 문구에만
+      // 의존하면 wallet 쪽 문구가 바뀔 때 조용히 분기가 죽는다.
+      throw new Error(body?.error ? `${body.error}: ${message}` : message);
     }
     return res.json();
   }
@@ -110,6 +114,9 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const medusaSessionId = (data as any)?.session_id as string | undefined;
     if (medusaSessionId) metadata.medusaSessionId = medusaSessionId;
 
+    // 지연 승인 표식. wallet 은 이 값이 있는 intent 만 결제창 완료 시 승인을 보류한다.
+    if (this.deferredApprovalEnabled) metadata.approvalMode = 'DEFERRED';
+
     // userId는 wallet-web에서 첫 번째 JWT 인증 GET 요청 시 자동으로 claim되므로 여기서 전달하지 않음
     const intent = await this.walletFetch<{ id: string }>('/v1/payment-intents', {
       method: 'POST',
@@ -130,12 +137,56 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     return { id: intent.id, data: sessionData as unknown as Record<string, unknown> };
   }
 
+  /**
+   * 지연 승인(deferred approval): intent 생성 시 이 플래그를 달면 wallet 은 결제창 완료 시점에
+   * PG 승인(=실제 출금)을 하지 않고 파라미터만 적재해 둔다. 승인은 아래 authorizePayment —
+   * 즉 completeCartWorkflow 가 주문 생성과 재고예약을 모두 끝낸 마지막 단계 — 에서 트리거된다.
+   * 재고부족으로 워크플로가 실패하면 승인에 도달하지 못하므로 고아결제가 생기지 않는다.
+   *
+   * 롤백 스위치: ALMOND_DEFERRED_APPROVAL=false 로 두면 기존(결제창 완료 즉시 승인) 동작으로 되돌아간다.
+   * 플래그가 없는 intent 를 wallet 은 기존 방식으로 처리하므로, 이미 진행 중인 결제는 영향받지 않는다.
+   */
+  private get deferredApprovalEnabled(): boolean {
+    return process.env.ALMOND_DEFERRED_APPROVAL !== 'false';
+  }
+
   async authorizePayment(input: AuthorizePaymentInput): Promise<AuthorizePaymentOutput> {
     const data = input.data as unknown as WalletSessionData;
     const intent = await this.walletFetch<{ id: string; status: string }>(`/v1/payment-intents/${data.intentId}`);
 
+    // 적재된 승인이 있으면 여기서 확정한다 — 주문과 재고예약이 이미 확보된 시점이다.
+    // 승인 실패는 throw 되어 워크플로가 주문/예약을 롤백하고, 고객 돈은 움직이지 않는다.
+    if (this.mapStatus(intent.status, data.captured) === 'pending') {
+      const finalized = await this.finalizeDeferredApproval(data.intentId);
+      if (finalized) {
+        return { data: input.data, status: this.mapStatus(finalized, data.captured) };
+      }
+    }
+
     const status = this.mapStatus(intent.status, data.captured);
     return { data: input.data, status };
+  }
+
+  /**
+   * 적재된 승인을 확정한다. 확정할 것이 없으면(고객이 결제창을 완료하지 않았거나 적재가 만료 회수됨)
+   * null 을 돌려 기존 상태 매핑으로 진행한다 — 이 경우 Medusa 가 'pending' 을 승인 실패로 처리한다.
+   * 승인 API 자체가 실패하면(카드 한도초과 등) throw 해서 워크플로를 롤백시킨다.
+   */
+  private async finalizeDeferredApproval(intentId: string): Promise<string | null> {
+    try {
+      const result = await this.walletFetch<{ status: string }>(
+        `/v1/payment-intents/${intentId}/finalize-approval`,
+        { method: 'POST' },
+      );
+      return result.status ?? null;
+    } catch (err: any) {
+      const msg = (err?.message ?? '') as string;
+      // 적재된 승인 없음 / 지연 승인 대상 아님 → 구식 intent 이거나 미결제. 기존 경로로 진행.
+      if (msg.includes('NO_STAGED_APPROVAL') || msg.includes('NOT_DEFERRED_APPROVAL_INTENT')) {
+        return null;
+      }
+      throw err;
+    }
   }
 
   async capturePayment(input: CapturePaymentInput): Promise<CapturePaymentOutput> {
@@ -223,11 +274,14 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     }
 
     // create new intent — userId는 wallet-web에서 첫 GET 요청 시 자동 claim됨
+    // 금액 변경으로 intent 를 갈아끼워도 지연 승인 표식은 유지돼야 한다. 빠지면 그 카트만
+    // 결제창 완료 즉시 승인되는 옛 동작으로 돌아가 고아결제 창이 다시 열린다.
     const intent = await this.walletFetch<{ id: string }>('/v1/payment-intents', {
       method: 'POST',
       body: JSON.stringify({
         amount: newAmount,
         currency: newCurrency,
+        ...(this.deferredApprovalEnabled ? { metadata: { approvalMode: 'DEFERRED' } } : {}),
       }),
     });
 
