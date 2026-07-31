@@ -20,6 +20,11 @@ import { convertToLocale } from "@/lib/utils/price-utils"
 import { cn } from "@/lib/utils"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import { HttpTypes } from "@medusajs/types"
+import {
+  describeStockShortage,
+  getAvailableQuantity,
+  isInsufficientInventoryError,
+} from "@/lib/utils/cart-availability"
 import { isEqual } from "lodash"
 import { Minus, Plus, ShoppingCart, X } from "lucide-react"
 import Image from "next/image"
@@ -189,6 +194,14 @@ export function QuickAddDrawer({
       }
       setSelectedItems((prev) => {
         const item = prev.find((i) => i.variantId === variantId)
+        // 재고 상한을 넘기면 "품절" 이 아니라 남은 수량을 알려준다.
+        if (item && delta > 0) {
+          const max = getAvailableQuantity(item.variant)
+          if (max !== null && item.quantity + delta > max) {
+            toast.error(tOptions("stockLimitToast", { max }))
+            return prev
+          }
+        }
         if (item && item.quantity + delta < 1) {
           return prev.filter((i) => i.variantId !== variantId)
         }
@@ -197,7 +210,7 @@ export function QuickAddDrawer({
         )
       })
     },
-    [isWelcomeMembership, t]
+    [isWelcomeMembership, t, tOptions]
   )
 
   const removeItem = useCallback((variantId: string) => {
@@ -221,9 +234,25 @@ export function QuickAddDrawer({
             addToCart({ variantId: item.variantId, quantity: item.quantity, countryCode })
           )
         )
-        const failed = results.find((r) => r.error)
-        if (failed) {
-          toast.error(failed.error)
+        const failedIndex = results.findIndex((r) => r.error)
+        if (failedIndex >= 0) {
+          // Medusa 재고부족 원문(영문)이 그대로 토스트에 뜨던 자리. 남은 수량을 알면 수량으로,
+          // 모르면(장바구니 합산 초과 등) 재고 부족 안내로 바꾼다.
+          const failed = results[failedIndex]
+          const item = selectedItems[failedIndex]
+          const max = getAvailableQuantity(item?.variant)
+          const shortage = describeStockShortage({
+            available: max,
+            quantity: item?.quantity,
+          })
+          const message = !isInsufficientInventoryError(failed.error)
+            ? failed.error
+            : shortage === "exceeds-stock"
+              ? tOptions("stockLimitToast", { max: max! })
+              : shortage === "cart-sum"
+                ? tOptions("stockConflictToast")
+                : tOptions("stockShortToast")
+          toast.error(message)
           return
         }
         showActionToast({
