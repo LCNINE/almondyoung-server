@@ -44,7 +44,11 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     await expect(dialog.getByText('현재 플랜')).toBeVisible();
     if (SCENARIO === 'scheduled') {
       await expect(dialog.getByText('정기결제 (해지 예약됨)')).toBeVisible();
-    } else if (SCENARIO === 'one-time' || SCENARIO === 'one-time-scheduled' || SCENARIO === 'annual') {
+    } else if (
+      ['one-time', 'one-time-scheduled', 'annual', 'pg-settled', 'pg-pending', 'no-payment'].includes(
+        SCENARIO
+      )
+    ) {
       await expect(dialog.getByText('일시결제 (자동갱신 없음)')).toBeVisible();
     } else {
       await expect(dialog.getByText('정기결제 (자동갱신)')).toBeVisible();
@@ -113,6 +117,48 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     expect((await stubCalls(request)).filter((c) => c.path === 'auto-renewal')).toHaveLength(0);
   });
 
+  // 결제한 적 없는 계약(관리자 지급·이관)에 환불 요청이 걸린 잔재. 보낼 돈도 보낼 곳도 없는데
+  // "미완료 — N원 처리 필요" 만 뜨면 CS 가 송금할 계좌를 찾아 헤맨다.
+  test('결제 내역이 없는 계약은 환불할 대상이 없음을 알리고 송금 버튼을 열지 않는다', async ({ page }) => {
+    test.skip(SCENARIO !== 'no-payment', '결제 내역 없는 잔재 시나리오만');
+
+    const dialog = await openCancelTab(page);
+
+    await expect(dialog.getByText('환불 대상 결제 없음')).toBeVisible();
+    await expect(dialog.getByTestId('refund-impossible-notice')).toContainText(/받은 돈이 없어/);
+    await expect(dialog.getByTestId('complete-manual-refund')).toHaveCount(0);
+    await expect(dialog.getByText(/미완료 — 4,990원 처리 필요/)).toHaveCount(0);
+  });
+
+  // 자동환불이 실패로 기록됐어도 PG 로는 이미 나갔을 수 있다(타임아웃 등). 그 상태에서 관리자가
+  // 계좌로 또 보내면 돈이 두 번 나간다 — 송금 버튼을 누르기 전에 화면이 사실을 알려야 한다.
+  test('PG 로 이미 환불된 건은 추가 송금이 필요 없다고 알린다', async ({ page }) => {
+    test.skip(SCENARIO !== 'pg-settled', 'PG 정산 완료 시나리오만');
+
+    const dialog = await openCancelTab(page);
+
+    await expect(dialog.getByTestId('refund-settlement-notice')).toContainText(
+      /이미 4,990원이 환불되었습니다/
+    );
+    // 보낼 곳을 띄우면 '아직 보내야 한다' 로 읽힌다 — 계좌는 감춘다.
+    await expect(dialog.getByTestId('manual-refund-account')).toHaveCount(0);
+    // 버튼은 송금 확인이 아니라 기록 정리로 바뀐다.
+    await expect(dialog.getByTestId('complete-manual-refund')).toHaveText('완료로 정리');
+  });
+
+  test('결제관리가 닫아야 하는 환불에는 송금 완료 버튼을 열지 않는다 (이중 송금 차단)', async ({
+    page,
+  }) => {
+    test.skip(SCENARIO !== 'pg-pending', '확정 대기 시나리오만');
+
+    const dialog = await openCancelTab(page);
+
+    await expect(dialog.getByTestId('refund-settlement-notice')).toContainText(
+      /결제관리에서 완료 처리하세요/
+    );
+    await expect(dialog.getByTestId('complete-manual-refund')).toHaveCount(0);
+  });
+
   test('1회 결제는 예약 해지가 필요 없다고 안내한다', async ({ page }) => {
     test.skip(SCENARIO !== 'one-time', '1회 결제 시나리오만');
 
@@ -125,7 +171,10 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
   });
 
   test('즉시 해지 다이얼로그가 정책 견적과 산출 내역을 먼저 보여준다', async ({ page }) => {
-    test.skip(SCENARIO === 'scheduled', '해지 예약 상태는 견적 확인만 별도로 다룬다');
+    test.skip(
+      SCENARIO === 'scheduled' || SCENARIO === 'no-payment',
+      '해지 예약 상태는 견적 확인만 별도로 다루고, 이미 해지된 잔재 건에는 즉시해지 카드가 없다'
+    );
 
     const dialog = await openCancelTab(page);
     await dialog.getByRole('button', { name: '즉시 해지 + 환불 처리' }).click();

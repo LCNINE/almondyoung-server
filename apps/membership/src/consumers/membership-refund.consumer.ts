@@ -36,7 +36,8 @@ export class MembershipRefundConsumer {
     if (!payload.intentId) return;
 
     this.logger.log(`[MembershipRefund] 환불 성공 감지: intentId=${payload.intentId}`);
-    await this.subscriptionService.voidByPaymentIntent(payload.intentId, '결제 환불');
+    // 이번 환불액을 함께 넘긴다 — 부분 환불(소액 보상 등)로 멤버십 전체가 취소되지 않게 한다.
+    await this.subscriptionService.voidByPaymentIntent(payload.intentId, '결제 환불', payload.amount);
 
     // 환불 완료 기록. 해지 시점에 PENDING(무통장 수동송금 대기)이던 건이 실제로 완료되는 지점이 여기다.
     // 이 기록이 없으면 refund_completed 가 영구히 false 로 남아 미완료 환불을 추적할 수 없다.

@@ -122,25 +122,26 @@ export default function SubscriberSection({
             })}
           </p>
           {/* 철회는 되살릴 자동결제가 있을 때만. 1회 결제에 열어주면 동의한 적 없는 정기결제가 시작된다. */}
+          {/* 1회 결제는 되살릴 자동결제가 없다. 버튼만 사라지면 고객은 이유를 알 수 없다. */}
+          {cancellationPreview && !cancellationPreview.canUndoCancellation && (
+            <p className="mt-2 text-xs leading-4 text-amber-900">
+              {t("billing.cancelUndoUnavailable")}
+            </p>
+          )}
           {cancellationPreview?.canUndoCancellation && (
             <button
               type="button"
               disabled={isUndoing}
               onClick={() =>
                 startUndoTransition(async () => {
-                  try {
-                    await undoCancellation()
-                    toast.success(t("billing.cancelUndoSuccess"))
-                    router.refresh()
-                  } catch (error) {
-                    const err = error as Error & { digest?: string }
-                    if (
-                      err?.digest === "UNAUTHORIZED" ||
-                      err?.message === "UNAUTHORIZED"
-                    )
-                      throw error
-                    toast.error(t("billing.cancelUndoFailed"))
+                  const result = await undoCancellation()
+                  if (!result.ok) {
+                    // 서버 안내(만료돼 복구 불가 등)가 곧 다음 행동이다 — 일반 문구로 덮지 않는다.
+                    toast.error(result.message || t("billing.cancelUndoFailed"))
+                    return
                   }
+                  toast.success(t("billing.cancelUndoSuccess"))
+                  router.refresh()
                 })
               }
               className="mt-2 text-xs font-semibold text-amber-900 underline underline-offset-4 disabled:opacity-60"
@@ -218,29 +219,50 @@ export default function SubscriberSection({
           // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
           // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
           startTransition(async () => {
-            try {
-              await cancelSubscription(
-                reasonCode,
-                reasonText,
-                refundReceiveAccount,
-                cancelType
+            const result = await cancelSubscription(
+              reasonCode,
+              reasonText,
+              refundReceiveAccount,
+              cancelType
+            )
+            if (!result.ok) {
+              // 왜 막혔는지(계좌 정보 필요·이미 해지 예약됨 등)를 그대로 보여준다.
+              toast.error(result.message || t("history.cancelFailed"))
+              return
+            }
+            setOpen(false)
+            // 무엇이 처리됐는지 알린다. 특히 수동 송금 대기(PENDING)는 "환불됐다" 로 읽히면 안 된다.
+            if (result.type === "RECURRING_CANCELLATION") {
+              toast.success(t("billing.cancelScheduledDone"))
+            } else if (result.refundStatus === "COMPLETED") {
+              toast.success(
+                t("billing.cancelRefundCompleted", {
+                  amount: (result.refundAmount ?? 0).toLocaleString("ko-KR"),
+                })
               )
-              setOpen(false)
-              router.push(`/${countryCode}/mypage/membership`)
+            } else if (
+              result.refundStatus === "PENDING" ||
+              result.refundStatus === "FAILED"
+            ) {
+              toast.success(
+                t("billing.cancelRefundPending", {
+                  amount: (result.refundAmount ?? 0).toLocaleString("ko-KR"),
+                  days: cancellationPreview?.refundProcessingBusinessDays ?? 3,
+                })
+              )
+            } else {
+              toast.success(t("billing.cancelImmediateDone"))
+            }
+            router.push(`/${countryCode}/mypage/membership`)
+            // 자격이 즉시 회수되는 즉시해지에서만 장바구니 가격이 바뀐다 —
+            // 해지예약은 그룹이 유지되므로 30초 폴링이 끝까지 헛돈다.
+            if (result.type === "IMMEDIATE_CANCELLATION") {
               pollCartRefreshUntilGroupRemoved(() => {
                 toast.success(t("billing.cartPriceUpdated"))
                 router.refresh()
               })
-            } catch (error) {
-              const err = error as Error & { digest?: string }
-              // UNAUTHORIZED는 re-throw → error.tsx 토큰 복구
-              if (
-                err?.digest === "UNAUTHORIZED" ||
-                err?.message === "UNAUTHORIZED"
-              )
-                throw error
-              console.error("멤버십 해지 실패:", error)
-              toast.error(t("history.cancelFailed"))
+            } else {
+              router.refresh()
             }
           })
         }}

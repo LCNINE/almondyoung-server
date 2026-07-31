@@ -175,7 +175,14 @@ export class SubscriptionContractReader {
    * 해지 철회(고객)·자동갱신 재활성(관리자)은 wallet 자동이체 약정을 새로 만든다. 1회 결제 고객에게
    * 열어주면 **동의한 적 없는 정기결제가 시작된다.** 해지 후에는 `autoRenewal` 이 꺼져 1회 결제와
    * 구분되지 않으므로, 가입 시점(CREATED.billingMode)과 해지 시점(RECURRING_CANCELLED.wasRecurring)의
-   * 사실에서 판정한다. 둘 다 없는 옛 계약은 막지 않는다 — 근거 없이 CS 를 막는 쪽이 더 나쁘다.
+   * 사실에서 판정한다.
+   *
+   * 셋 다 없으면 **되살리지 않는다.** 근거가 없는 계약의 대부분은 관리자 지급·cafe24 이관분이고
+   * (라이브 활성 계약 697건 중 398건이 결제 이력 자체가 없다), 이들에게 자동결제를 켜면 동의한 적
+   * 없는 계좌 출금이 시작된다. 옛 정기결제 계약은 (a) autoRenewal 이 살아있거나 (b) 해지 기록이
+   * 있거나 (c) 예전 '자동 연장' 토글로 끈 기록(AUTO_RENEWAL_CHANGED)이 남아 있어 위 세 근거 중
+   * 하나에 걸린다. 근거 없이 막힌 고객은 재가입이라는 창구가 있지만, 근거 없이 시작된 출금은
+   * 되돌릴 창구가 없다.
    */
   async canResumeRecurring(contract: Pick<Contract, 'id' | 'autoRenewal' | 'recurringCancelledAt'>): Promise<boolean> {
     if (contract.autoRenewal) return true;
@@ -183,7 +190,28 @@ export class SubscriptionContractReader {
     const billingMode = await this.findCreatedBillingMode(contract.id);
     if (billingMode) return billingMode === 'recurring';
     if (contract.recurringCancelledAt) return this.wasRecurringBeforeCancellation(contract.id);
-    return true;
+    return this.wasAutoRenewalDisabledByAdmin(contract.id);
+  }
+
+  /**
+   * 예전 관리자 '자동 연장' 토글로 정기결제를 끈 흔적. CREATED 메타데이터가 없던 시절의 계약이
+   * 정기결제였음을 보여주는 유일한 기록이라, 해지 철회/재활성을 열어줄 근거로 쓴다.
+   */
+  private async wasAutoRenewalDisabledByAdmin(contractId: string): Promise<boolean> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          eq(schema.subscriptionContractEvents.eventType, 'AUTO_RENEWAL_CHANGED'),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    if (!event) return false;
+    return ((event.metadata ?? {}) as { autoRenewal?: boolean }).autoRenewal === false;
   }
 
   /** 가입 시점의 결제 방식(CREATED 이벤트에 기록). 옛 계약은 없을 수 있어 null 을 돌려준다. */

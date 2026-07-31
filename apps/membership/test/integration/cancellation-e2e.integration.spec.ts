@@ -890,6 +890,48 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
     });
 
+    // INVOICE 경로 해지예약은 남은 수금이 끝나야 약정을 지울 수 있어 종료를 미룬다. 그런데 그 주기의
+    // 수금이 이미 끝난 계약에는 인보이스 이벤트가 더 오지 않아, 보류 기록이 없으면 약정이 은행에
+    // 영원히 남는다(해지한 고객의 계좌에 자동이체 등록이 살아있는 상태).
+    it('INVOICE 해지예약의 보류된 약정 종료를 이용 기간이 끝난 뒤 이어서 끝낸다', async () => {
+      const { userId, contract, endsAt } = await givenSubscription({
+        daysSincePeriodStart: 10,
+        billingPath: 'INVOICE',
+      });
+
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      // 해지 시점에는 지우지 않는다(남은 수금이 실패하면 무료 이용이 된다).
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_DEFERRED');
+
+      // 이용 기간이 남아있는 동안에는 정리 스케줄러도 건드리지 않는다.
+      await agreementCleanup.retryPendingAgreementRevokes();
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+
+      // 종료일이 지나면(수금이 끝났든 아니든) 이어받아 끝낸다.
+      await db.db
+        .update(schema.subscriptionContractEvents)
+        .set({ metadata: { notBefore: format(subDays(new Date(), 1), 'yyyy-MM-dd') } })
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_DEFERRED'),
+          ),
+        );
+
+      await agreementCleanup.retryPendingAgreementRevokes();
+
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
+      expect(endsAt).toBeTruthy();
+
+      // 끝난 건은 다음 실행에서 다시 잡히지 않는다.
+      wallet.terminateBillingMandate.mockClear();
+      await agreementCleanup.retryPendingAgreementRevokes();
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+    });
+
     it('재시도로 풀리지 않는 건은 계속 재시도하지 않고 수동 처리 대상으로 확정한다', async () => {
       wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
       const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
@@ -1102,6 +1144,40 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect((await loadCurrentEntitlement(userId)).pausedAt).toBeNull();
     });
 
+    // 정지 해제는 되돌릴 수 없다. 해지가 거절되는 요청에서 먼저 풀어버리면, 고객은 아무것도
+    // 해지하지 않은 채 쌓아둔 정지 일수와 '정지 중' 상태를 잃는다.
+    it('해지가 거절되면 정지는 그대로 유지된다 (거절된 요청이 정지를 풀지 않는다)', async () => {
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 20 });
+      const entitlement = await givenPaused(userId, 5);
+
+      // 결제 후 7일이 지나 즉시해지가 불가능한 계약이다 → 400
+      await expect(
+        service.cancelSubscription(userId, EMAIL, {
+          reasonCode: 'NOT_USING',
+          cancelType: 'IMMEDIATE_REFUND',
+        }),
+      ).rejects.toThrow(BadRequestError);
+
+      const after = await loadCurrentEntitlement(userId);
+      expect(after.id).toBe(entitlement.id);
+      expect(after.pausedAt).not.toBeNull();
+      expect(after.endsAt).toBe(entitlement.endsAt);
+    });
+
+    it('이미 해지 예약된 구독의 중복 해지 예약도 정지를 풀지 않는다', async () => {
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 3 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      const entitlement = await givenPaused(userId, 4);
+
+      await expect(
+        service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' }),
+      ).rejects.toThrow(ConflictError);
+
+      const after = await loadCurrentEntitlement(userId);
+      expect(after.id).toBe(entitlement.id);
+      expect(after.pausedAt).not.toBeNull();
+    });
+
     it('즉시해지는 정지 기간을 이용으로 세지 않는 정산을 그대로 유지한다', async () => {
       const { userId } = await givenSubscription({ plan: 'annual', daysSincePeriodStart: 75 });
       await givenPaused(userId, 40);
@@ -1176,6 +1252,87 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       await expect(service.markManualRefundCompleted(contract.id, 'admin_1', {})).rejects.toThrow(ConflictError);
       expect((await loadContract(contract.id)).refundCompleted).toBe(false);
+    });
+
+    // 자동환불이 실패로 기록됐지만 실제로는 PG 로 돈이 나간 경우(타임아웃 등)가 있다. 그 상태에서
+    // 관리자가 계좌로 또 보내면 두 번 나간다 — 화면이 먼저 알려주고, 서버도 송금이 아니라 기록
+    // 정리로 처리한다.
+    it('PG 로 이미 환불된 건은 추가 송금 없이 기록만 정리한다', async () => {
+      wallet.refundByIntent.mockResolvedValue({ status: 'FAILED', refundedAmount: 0, errorCode: 'TIMEOUT' });
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 1 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
+      expect((await loadContract(contract.id)).refundCompleted).toBe(false);
+
+      // wallet 은 그 환불이 실제로 성공했다고 답한다.
+      wallet.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: MONTHLY_PRICE,
+        alreadyRefundedAmount: MONTHLY_PRICE,
+        pendingRefundAmount: 0,
+        remainingRefundableAmount: 0,
+        autoRefundSupported: true,
+        requiresReceiveAccount: false,
+        methodTypes: ['TOSS'],
+      });
+
+      // 관리자 화면이 송금 전에 이 사실을 볼 수 있어야 한다.
+      const detail = await adminReader.findDetailByUserId(userId);
+      expect(detail?.refundSettlement).toEqual({
+        alreadyRefundedAmount: MONTHLY_PRICE,
+        pendingRefundAmount: 0,
+      });
+
+      const result = await service.markManualRefundCompleted(contract.id, 'admin_1', {});
+
+      expect(result.refundedAmount).toBe(MONTHLY_PRICE);
+      expect((await loadContract(contract.id)).refundCompleted).toBe(true);
+      const [event] = await db.db
+        .select({ metadata: schema.subscriptionContractEvents.metadata })
+        .from(schema.subscriptionContractEvents)
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'REFUND_COMPLETED'),
+          ),
+        );
+      // '관리자가 계좌로 보냈다' 가 아니라 'PG 로 이미 나갔다' 로 남아야 감사에서 구분된다.
+      expect((event.metadata as { errorCode?: string }).errorCode).toBe('PG_REFUND_ALREADY_SETTLED');
+    });
+
+    // 같은 CMS 계약인데 고객 경로는 '수동 송금 대기(PENDING)', 관리자 경로는 '환불 실패(FAILED)' 로
+    // 남으면 같은 상황이 두 가지로 보고된다. 자동환불 가능 여부는 wallet 이 소유한 하나의 사실이다.
+    it('관리자 강제취소도 CMS 계약에는 wallet 을 호출하지 않고 수동 송금 대기로 남긴다', async () => {
+      wallet.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: MONTHLY_PRICE,
+        alreadyRefundedAmount: 0,
+        pendingRefundAmount: 0,
+        remainingRefundableAmount: MONTHLY_PRICE,
+        autoRefundSupported: false,
+        requiresReceiveAccount: false,
+        methodTypes: ['CMS_BATCH'],
+      });
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 3 });
+
+      const result = await service.forceCancelSubscription(
+        contract.id,
+        'admin_1',
+        '고객 요청',
+        'PARTIAL',
+        MONTHLY_PRICE,
+        '보상',
+        { bank: '20', accountNumber: '110123456789', holderName: '홍길동' },
+      );
+
+      expect(result.refundStatus).toBe('PENDING');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+      expect(await loadEventTypes(contract.id)).toContain('REFUND_PENDING');
+      // 관리자가 어디로 보낼지 화면에서 바로 볼 수 있어야 한다.
+      expect(await adminReader.findDetailByUserId(contract.userId).then((d) => d?.manualRefundAccount)).toEqual({
+        bank: '20',
+        accountNumber: '110123456789',
+        holderName: '홍길동',
+      });
     });
 
     it('요청 금액을 초과해 기록할 수 없다', async () => {
@@ -1422,24 +1579,36 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       ).rejects.toThrow(ForbiddenError);
     });
 
-    it('환불 대상 결제가 없으면 환불을 성공으로 위장하지 않는다 (무료 지급 회원)', async () => {
+    // 라이브에 이렇게 만들어진 잔재가 2건 있다: 관리자 무료 지급 계약(결제 없음)에 '전액 환불'
+    // 강제취소를 걸어 REFUND_REQUESTED 만 남고, 돌려줄 돈이 없어 "미완료 — 4,990원 처리 필요" 가
+    // 영구히 떠 있는 상태. 환불 실패로 기록하는 것보다 **요청 자체를 받지 않는 것**이 맞다.
+    it('환불 대상 결제가 없는 계약에는 환불 유형을 걸 수 없다 (무료 지급 회원)', async () => {
       const { contract } = await givenSubscription({ daysSincePeriodStart: 5, hasPayment: false });
 
-      const result = await service.forceCancelSubscription(
-        contract.id,
-        'admin_1',
-        '오지급 정리',
-        'PARTIAL',
-        MONTHLY_PRICE,
-        undefined,
-        undefined,
-        false,
-      );
+      await expect(
+        service.forceCancelSubscription(contract.id, 'admin_1', '오지급 정리', 'PARTIAL', MONTHLY_PRICE),
+      ).rejects.toThrow(BadRequestError);
+      await expect(
+        service.forceCancelSubscription(contract.id, 'admin_1', '품절로 전체 취소', 'FULL'),
+      ).rejects.toThrow(BadRequestError);
 
-      expect(result.refundStatus).toBe('FAILED');
+      // 계약도 손대지 않고, 지킬 수 없는 환불 요청도 남기지 않는다.
+      const after = await loadContract(contract.id);
+      expect(after.status).toBe('ACTIVE');
+      expect(after.refundRequested).toBe(false);
       expect(wallet.refundByIntent).not.toHaveBeenCalled();
-      expect((await loadContract(contract.id)).refundCompleted).toBe(false);
-      expect(await loadEventTypes(contract.id)).toContain('REFUND_FAILED');
+      expect(await loadEventTypes(contract.id)).not.toContain('REFUND_REQUESTED');
+    });
+
+    it('결제 내역이 없어도 환불 없는 강제 해지는 된다 (해지 창구까지 막지 않는다)', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 5, hasPayment: false });
+
+      const result = await service.forceCancelSubscription(contract.id, 'admin_1', '오지급 정리', 'NONE');
+
+      expect(result.status).toBe('CANCELLED');
+      expect(result.refundAmount).toBe(0);
+      expect((await loadContract(contract.id)).refundRequested).toBe(false);
+      expect(await loadCurrentEntitlement(userId)).toBeUndefined();
     });
 
     it('없는 계약이면 404', async () => {
@@ -1513,6 +1682,33 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       const after = await loadContract(contract.id);
       expect(after.autoRenewal).toBe(false);
       expect(after.recurringCancelledAt).not.toBeNull();
+    });
+
+    // 관리자 지급·cafe24 이관 계약에는 CREATED.billingMode 도 해지 기록도 없다. 근거 없이 열어두면
+    // 결제한 적조차 없는 회원의 계좌에서 자동이체가 시작된다(라이브 활성 계약의 절반이 이 부류다).
+    it('정기결제였다는 근거가 없는 계약은 자동갱신을 켤 수 없다', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 5, recurring: false });
+      jest.clearAllMocks();
+      wallet.createBillingAgreement.mockResolvedValue(undefined);
+
+      await expect(adminReader.updateAutoRenewal(contract.id, true, 'admin_1')).rejects.toThrow(ConflictError);
+
+      expect(wallet.createBillingAgreement).not.toHaveBeenCalled();
+      expect((await loadContract(contract.id)).autoRenewal).toBe(false);
+    });
+
+    // 반대로, 예전 '자동 연장' 토글로 끈 옛 정기결제 계약은 되살릴 수 있어야 한다 —
+    // CREATED 메타데이터가 없던 시절의 계약이 정기결제였음을 보여주는 유일한 기록이다.
+    it('예전 자동연장 토글로 끈 계약은 다시 켤 수 있다 (근거가 이벤트에 남아 있다)', async () => {
+      const { contract } = await givenSubscription({ daysSincePeriodStart: 5 });
+      await adminReader.updateAutoRenewal(contract.id, false, 'admin_1');
+      jest.clearAllMocks();
+      wallet.createBillingAgreement.mockResolvedValue(undefined);
+
+      await adminReader.updateAutoRenewal(contract.id, true, 'admin_1');
+
+      expect(wallet.createBillingAgreement).toHaveBeenCalled();
+      expect((await loadContract(contract.id)).autoRenewal).toBe(true);
     });
 
     it('관리자 상세는 원래 정기결제였는지를 서버가 판정해 내려준다 (화면이 추론하지 않게)', async () => {

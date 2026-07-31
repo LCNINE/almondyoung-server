@@ -10,6 +10,7 @@
  *   recurring-no-refund   정기결제 + 환불 불가(해지예약만)
  *   annual-proration      연간 + 중도해지 정산(34,930원)
  *   scheduled             이미 해지 예약된 상태(배너 + 철회 버튼)
+ *   one-time-scheduled    1회 결제의 해지 예약 — 철회 버튼 없이 그 이유를 안내해야 한다
  *   one-time              1회 결제(자동결제 없음)
  *   cms-manual            자동이체(CMS) — 즉시해지 시 계좌 입력 필요
  */
@@ -208,6 +209,23 @@ function build() {
         preview: { ...previewBase, isRecurring: false, nextBillingDate: null },
       };
 
+    // 1회 결제 고객의 해지 예약. 철회는 자동이체 약정을 새로 만들어 동의 없는 정기결제가 되므로
+    // 버튼이 없어야 하고, **왜 없는지**가 화면에 있어야 한다(없으면 고객은 방법을 못 찾는다).
+    case 'one-time-scheduled': {
+      const cancelledAt = new Date(TODAY.getTime() - 86400000).toISOString();
+      return {
+        subscription: { ...base, autoRenewal: false, nextBillingDate: null, recurringCancelledAt: cancelledAt },
+        preview: {
+          ...previewBase,
+          isRecurring: false,
+          alreadyScheduledForCancellation: true,
+          recurringCancelledAt: cancelledAt,
+          nextBillingDate: null,
+          canUndoCancellation: false,
+        },
+      };
+    }
+
     case 'cms-manual':
       return {
         subscription: base,
@@ -274,7 +292,8 @@ function routes(pathname, method, body) {
           cancelledAt: new Date().toISOString(),
           refundEligible: true,
           refundAmount: preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')?.refundAmount ?? 0,
-          refundStatus: 'COMPLETED',
+          // 효성 CMS 는 PG 환불 API 가 없어 돈이 아직 나가지 않은 상태로 끝난다(관리자 계좌 송금 대기).
+          refundStatus: SCENARIO === 'cms-manual' ? 'PENDING' : 'COMPLETED',
           message: '해지되었습니다.',
         }
       : {

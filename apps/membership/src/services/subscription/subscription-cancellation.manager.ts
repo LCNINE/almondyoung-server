@@ -376,6 +376,26 @@ export class SubscriptionCancellationManager {
   }
 
   /**
+   * 약정 종료를 **미룬** 사실을 남긴다 (INVOICE 경로 해지예약: 남은 수금이 끝나야 지울 수 있다).
+   *
+   * 남기지 않으면 그 주기에 인보이스 이벤트가 더 오지 않는 계약(이미 수금이 끝난 주기에 해지한 경우)
+   * 에서 약정 종료가 **영원히 일어나지 않는다** — 해지한 고객의 자동이체가 은행에 남는다.
+   * `notBefore`(자격 종료일) 이후에는 AgreementCleanupService 가 이어받아 끝낸다.
+   */
+  async markAgreementRevokeDeferred(contractId: string, userId: string, notBefore: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'AGREEMENT_REVOKE_DEFERRED',
+        { notBefore },
+        'SYSTEM',
+        userId,
+      );
+    });
+  }
+
+  /**
    * 강제 구독 취소 (관리자 전용)
    */
   async forceCancelSubscription(

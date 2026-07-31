@@ -149,6 +149,30 @@ export async function getCancellationReasons(): Promise<
  * - IMMEDIATE_REFUND: 즉시 종료 + 정책상 환불액 환불
  * 생략하면 서버 권장값이 적용된다.
  */
+/** 즉시해지 환불의 실제 결과. PENDING 은 돈이 아직 안 나간 상태(관리자 계좌 송금 대기)다. */
+export type CancelRefundStatus =
+  | "COMPLETED"
+  | "PENDING"
+  | "FAILED"
+  | "NOT_APPLICABLE"
+
+interface CancelSubscriptionSuccess {
+  type: "IMMEDIATE_CANCELLATION" | "RECURRING_CANCELLATION"
+  refundStatus?: CancelRefundStatus
+  refundAmount?: number
+  currentPeriodEndsAt?: string
+}
+
+export type CancelSubscriptionResult =
+  | ({ ok: true } & CancelSubscriptionSuccess)
+  | { ok: false; message?: string }
+
+/**
+ * 실패를 **던지지 않고 돌려주는** 이유: Server Action 이 던진 에러는 프로덕션에서 메시지가 지워지고
+ * digest 만 남아, 고객에게 "해지에 실패했습니다" 밖에 보여줄 수 없다. 왜 막혔는지(계좌 정보 필요,
+ * 이미 해지 예약됨 등)를 알려주려면 서버 안내를 값으로 넘겨야 한다.
+ * 인증 오류만 그대로 던진다 — error.tsx 의 토큰 복구 경로가 그 예외를 필요로 한다.
+ */
 export async function cancelSubscription(
   reasonCode: string,
   reasonText?: string,
@@ -158,13 +182,24 @@ export async function cancelSubscription(
     holderName: string
   },
   cancelType?: CancellationMode
-) {
-  return await api("membership", "/subscriptions/cancel", {
-    method: "POST",
-    body: { reasonCode, reasonText, refundReceiveAccount, cancelType },
-    withAuth: true,
-    cache: "no-store",
-  })
+): Promise<CancelSubscriptionResult> {
+  try {
+    const result = await api<CancelSubscriptionSuccess>(
+      "membership",
+      "/subscriptions/cancel",
+      {
+        method: "POST",
+        body: { reasonCode, reasonText, refundReceiveAccount, cancelType },
+        withAuth: true,
+        cache: "no-store",
+      }
+    )
+    return { ok: true, ...result }
+  } catch (error) {
+    if (error instanceof ApiAuthError) throw error
+    if (error instanceof HttpApiError) return { ok: false, message: error.message }
+    throw error
+  }
 }
 
 /**
@@ -188,12 +223,22 @@ export async function getCancellationPreview(): Promise<CancellationPreviewDto |
 /**
  * 해지 예약 철회 — 자동결제를 재개한다.
  */
-export async function undoCancellation() {
-  return await api("membership", "/subscriptions/cancel/undo", {
-    method: "POST",
-    withAuth: true,
-    cache: "no-store",
-  })
+export async function undoCancellation(): Promise<
+  { ok: true } | { ok: false; message?: string }
+> {
+  try {
+    await api("membership", "/subscriptions/cancel/undo", {
+      method: "POST",
+      withAuth: true,
+      cache: "no-store",
+    })
+    return { ok: true }
+  } catch (error) {
+    // 실패 이유(만료돼 복구 불가, 되살릴 자동결제 없음)가 곧 다음 행동 안내다 — 삼키지 않는다.
+    if (error instanceof ApiAuthError) throw error
+    if (error instanceof HttpApiError) return { ok: false, message: error.message }
+    throw error
+  }
 }
 
 /**
@@ -240,18 +285,6 @@ export async function getPlans(): Promise<PlanWithTier[]> {
   return await api<PlanWithTier[]>("membership", `/plans`, {
     method: "GET",
     withAuth: false,
-    cache: "no-store",
-  })
-}
-
-/**
- * 멤버십 구독 생성
- */
-export async function createSubscription(planId: string) {
-  return await api("membership", "/subscriptions", {
-    method: "POST",
-    body: { planId },
-    withAuth: true,
     cache: "no-store",
   })
 }

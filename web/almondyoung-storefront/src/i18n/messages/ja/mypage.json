@@ -775,7 +775,12 @@
       "cancelScheduledUndo": "解約を取り消して継続する",
       "cancelUndoSuccess": "解約を取り消しました。会員資格は継続します。",
       "cancelUndoFailed": "解約の取り消しに失敗しました。しばらくしてから再度お試しください。",
-      "oneTimeNoCancelNeeded": "1回決済のため自動決済はありません。{date}に自動的に終了します。"
+      "oneTimeNoCancelNeeded": "1回決済のため自動決済はありません。{date}に自動的に終了します。",
+      "cancelUndoUnavailable": "1回払いのため、復元する自動決済がありません。終了日まではそのままご利用いただけます。",
+      "cancelScheduledDone": "解約を受け付けました。終了日までメンバーシップをご利用いただけます。",
+      "cancelImmediateDone": "メンバーシップを解約しました。",
+      "cancelRefundCompleted": "メンバーシップを解約し、{amount}ウォンを返金しました。",
+      "cancelRefundPending": "メンバーシップを解約しました。{amount}ウォンはご入力の口座へ営業日{days}日以内に送金されます。"
     },
     "invoices": {
       "title": "定期決済の請求履歴",

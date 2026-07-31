@@ -775,7 +775,12 @@
       "cancelScheduledUndo": "Undo cancellation and keep membership",
       "cancelUndoSuccess": "Cancellation undone. Your membership continues.",
       "cancelUndoFailed": "Failed to undo cancellation. Please try again shortly.",
-      "oneTimeNoCancelNeeded": "This is a one-time payment, so there is no recurring charge. It ends automatically on {date}."
+      "oneTimeNoCancelNeeded": "This is a one-time payment, so there is no recurring charge. It ends automatically on {date}.",
+      "cancelUndoUnavailable": "This was a one-time payment, so there is no auto-payment to restore. You can keep using the membership until it ends.",
+      "cancelScheduledDone": "Your cancellation has been received. You can use the membership until the end date.",
+      "cancelImmediateDone": "Your membership has been cancelled.",
+      "cancelRefundCompleted": "Your membership was cancelled and {amount} KRW was refunded.",
+      "cancelRefundPending": "Your membership was cancelled. {amount} KRW will be transferred to the account you entered within {days} business days."
     },
     "invoices": {
       "title": "Billing history",

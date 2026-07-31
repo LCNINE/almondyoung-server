@@ -89,6 +89,17 @@ export interface AdminMemberDetail {
   canUndoCancellation: boolean;
   /** 계좌 송금이 남은 환불 건의 수취 계좌(효성 CMS·자동환불 실패). 없으면 null. */
   manualRefundAccount: { bank: string; accountNumber: string; holderName: string } | null;
+  /**
+   * 환불 대상 결제 내역이 있는지. 관리자 무료 지급·이관 계약은 결제가 없어 **환불 자체가 불가능**하다 —
+   * 화면이 이걸 모르면 "미완료 — N원 처리 필요" 를 보고 CS 가 보낼 곳을 찾아 헤맨다.
+   */
+  hasPaymentIntent: boolean;
+  /**
+   * 미완료 환불 건에 대한 wallet(결제관리) 쪽 사실. 관리자가 **계좌로 보내기 전에** 알아야 한다 —
+   * PG 로 이미 나갔거나 결제관리가 확정만 남긴 건에 또 송금하면 돈이 두 번 나간다.
+   * 조회 실패/대상 없음이면 null(=알 수 없음, 화면은 아무것도 단정하지 않는다).
+   */
+  refundSettlement: { alreadyRefundedAmount: number; pendingRefundAmount: number } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -396,6 +407,7 @@ export class AdminMembersReader {
         eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
+        lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
         planId: schema.subscriptionContracts.planId,
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
@@ -445,8 +457,14 @@ export class AdminMembersReader {
         autoRenewal: r.autoRenewal,
         recurringCancelledAt: r.recurringCancelledAt,
       }));
-    const manualRefundAccount =
-      r.refundRequested && !r.refundCompleted ? await this.contractReader.findManualRefundAccount(r.contractId) : null;
+    const refundOutstanding = !!r.refundRequested && !r.refundCompleted;
+    const manualRefundAccount = refundOutstanding
+      ? await this.contractReader.findManualRefundAccount(r.contractId)
+      : null;
+    const refundSettlement =
+      refundOutstanding && r.lastPaymentIntentId
+        ? await this.loadRefundSettlement(r.lastPaymentIntentId)
+        : null;
 
     return {
       contractId: r.contractId,
@@ -473,10 +491,30 @@ export class AdminMembersReader {
       refundCompleted: r.refundCompleted ?? false,
       refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
       canUndoCancellation,
+      hasPaymentIntent: !!r.lastPaymentIntentId,
       manualRefundAccount,
+      refundSettlement,
       pauseCount,
       firstContractCreatedAt,
     };
+  }
+
+  /**
+   * 미완료 환불 건의 wallet 정산 상태. 상세 화면 렌더링 경로라 실패는 흡수한다 —
+   * wallet 이 느리다고 멤버십 상세가 통째로 막히면 CS 가 아무것도 못 한다.
+   */
+  private async loadRefundSettlement(
+    intentId: string,
+  ): Promise<{ alreadyRefundedAmount: number; pendingRefundAmount: number } | null> {
+    try {
+      const r = await this.paymentClientService.getRefundability(intentId);
+      return {
+        alreadyRefundedAmount: r.alreadyRefundedAmount ?? 0,
+        pendingRefundAmount: r.pendingRefundAmount ?? 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async findBillingEventsByUserId(userId: string): Promise<BillingEventItem[]> {
