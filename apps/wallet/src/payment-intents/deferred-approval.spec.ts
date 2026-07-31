@@ -99,6 +99,60 @@ describe('deferred approval — staging', () => {
   });
 });
 
+describe('deferred approval — confirmStaged', () => {
+  const staged = {
+    provider: 'TOSS' as const,
+    providerToken: 'pk_live_1',
+    orderId: ORDER_ID,
+    amount: 10000,
+    stagedAt: new Date(0).toISOString(),
+  };
+
+  it('적재된 파라미터로 승인하고 AUTHORIZED 로 올린 뒤 캡처를 태운다', async () => {
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' });
+
+    await ctx.service.confirmStaged(makeCharge(), staged, 'corr-1');
+
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID);
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'AUTHORIZED',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.autoCaptureService.attemptAutoCapture).toHaveBeenCalled();
+  });
+
+  it('PG 승인 거절이면 charge 를 FAILED, intent 를 CREATED 로 되돌리고 throw 한다', async () => {
+    // throw 해야 호출자(Medusa completeCartWorkflow)가 주문·재고예약을 롤백한다.
+    // intent 를 CREATED 로 되돌려야 고객이 같은 결제 세션으로 재시도할 수 있다.
+    const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, makeCharge(), {
+      ok: false,
+      error: { code: 'REJECT_CARD_COMPANY', message: '카드사 승인 거절' },
+    });
+
+    await expect(ctx.service.confirmStaged(makeCharge(), staged, 'corr-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'REJECT_CARD_COMPANY' }),
+    });
+
+    expect(ctx.chargesService.updateStatus).toHaveBeenCalledWith(
+      CHARGE_ID,
+      'FAILED',
+      expect.objectContaining({ errorCode: 'REJECT_CARD_COMPANY' }),
+      expect.anything(),
+    );
+    expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'CREATED',
+      expect.anything(),
+      undefined,
+      expect.anything(),
+    );
+    expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+});
+
 describe('deferred approval — finalize', () => {
   function makeFinalizeContext(
     intentStatus: string,
