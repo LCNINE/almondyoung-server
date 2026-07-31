@@ -35,7 +35,8 @@
     "soldOutHint": "This item is no longer available. Remove it to continue to checkout.",
     "quantityMaxError": "Only {max} left in stock. Please choose {max} or fewer.",
     "quantityStockError": "Not enough stock to update the quantity. Please try again shortly.",
-    "quantityMaxHint": "Max {max}"
+    "quantityMaxHint": "Max {max}",
+    "quantitySoldOut": "This item is sold out, so the quantity cannot be increased."
   },
   "summary": {
     "title": "Order summary",

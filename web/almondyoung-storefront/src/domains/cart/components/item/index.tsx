@@ -86,7 +86,11 @@ function Item({
     // 재고 3개)에서 4개로 낮추는 것까지 막으면 고객이 수량을 조정할 방법이 없어진다.
     const isIncrease = quantity > item.quantity
     if (maxQuantity !== undefined && quantity > maxQuantity && isIncrease) {
-      const message = t("quantityMaxError", { max: maxQuantity })
+      // 재고 0 은 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
+      const message =
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
       toast.error(message)
       setError(message)
       return
@@ -204,15 +208,22 @@ function DesktopItem({
       num > maxQuantity &&
       num > (item?.quantity ?? 0)
     ) {
-      return toast.error(t("quantityMaxError", { max: maxQuantity }))
+      return toast.error(
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
+      )
     }
 
     await changeQuantity?.(num)
     setIsModalOpen(false)
   }
 
+  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
   const atStockLimit =
-    maxQuantity !== undefined && (item?.quantity ?? 0) >= maxQuantity
+    maxQuantity !== undefined &&
+    maxQuantity > 0 &&
+    (item?.quantity ?? 0) >= maxQuantity
 
   return (
     <TableRow className="w-full" data-testid="product-row">
@@ -465,15 +476,22 @@ function MobileItem({
       num > maxQuantity &&
       num > (item?.quantity ?? 0)
     ) {
-      return toast.error(t("quantityMaxError", { max: maxQuantity }))
+      return toast.error(
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
+      )
     }
 
     await changeQuantity?.(num)
     setIsModalOpen(false)
   }
 
+  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
   const atStockLimit =
-    maxQuantity !== undefined && (item?.quantity ?? 0) >= maxQuantity
+    maxQuantity !== undefined &&
+    maxQuantity > 0 &&
+    (item?.quantity ?? 0) >= maxQuantity
 
   return (
     <div className="flex gap-3 border-b py-4">

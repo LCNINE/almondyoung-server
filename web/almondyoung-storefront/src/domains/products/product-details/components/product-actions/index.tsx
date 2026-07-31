@@ -188,10 +188,15 @@ export default function ProductActions({
 
   // 재고 상한 안내. 옵션이 여러 개면 어느 옵션인지 같이 알려준다.
   const stockLimitMessage = useCallback(
-    (label: string, max: number) =>
-      isSimple
+    (label: string, max: number) => {
+      // 재고가 0이면 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
+      if (max <= 0) {
+        return isSimple ? t("soldOutToast") : t("soldOutToastNamed", { option: label })
+      }
+      return isSimple
         ? t("stockLimitToast", { max })
-        : t("stockLimitToastNamed", { option: label, max }),
+        : t("stockLimitToastNamed", { option: label, max })
+    },
     [isSimple, t]
   )
 
@@ -242,10 +247,11 @@ export default function ProductActions({
         prev.map((item) => {
           if (item.variantId !== variantId) return item
           // 직접입력으로 재고를 넘기면 상한까지만 반영하고 남은 수량을 안내한다.
+          // 재고 0(품절)이면 수량 0 으로 만들지 않고 1 로 둔다 — 담기 시도에서 품절로 안내된다.
           const max = getAvailableQuantity(item.variant)
           if (max !== null && quantity > max) {
             toast.error(stockLimitMessage(item.label, max))
-            return { ...item, quantity: max }
+            return { ...item, quantity: Math.max(1, max) }
           }
           return { ...item, quantity }
         })
@@ -299,6 +305,7 @@ export default function ProductActions({
   ) => {
     const max = getAvailableQuantity(variant)
     switch (describeStockShortage({ available: max, quantity })) {
+      case "sold-out":
       case "exceeds-stock":
         return stockLimitMessage(label, max!)
       case "cart-sum":

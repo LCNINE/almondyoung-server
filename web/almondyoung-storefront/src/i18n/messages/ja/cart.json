@@ -35,7 +35,8 @@
     "soldOutHint": "販売が終了した商品です。決済を進めるには削除してください。",
     "quantityMaxError": "在庫が残り{max}個です。{max}個以下でお選びください。",
     "quantityStockError": "在庫が不足しているため数量を変更できません。しばらくしてからお試しください。",
-    "quantityMaxHint": "最大{max}個"
+    "quantityMaxHint": "最大{max}個",
+    "quantitySoldOut": "品切れのため数量を増やせません。"
   },
   "summary": {
     "title": "ご注文金額",

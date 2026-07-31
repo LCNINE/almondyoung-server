@@ -41,6 +41,8 @@ export function useAddToCart() {
   ) => {
     if (isInsufficientInventoryError(message)) {
       switch (describeStockShortage(stock ?? {})) {
+        case "sold-out":
+          return t("soldOutToast")
         case "exceeds-stock":
           return t("stockLimitToast", { max: stock!.available! })
         case "cart-sum":
