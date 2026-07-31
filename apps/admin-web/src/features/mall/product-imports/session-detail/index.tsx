@@ -108,7 +108,7 @@ export function SessionDetail({ sessionId }: Props) {
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="대량등록 세션 상세"
           subtitle={

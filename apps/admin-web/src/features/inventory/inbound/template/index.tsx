@@ -29,7 +29,7 @@ export default function InboundTemplate() {
   );
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="입고 관리"
         subtitle="입고 계획 등록, 입고 처리, 입고 이력을 관리합니다."

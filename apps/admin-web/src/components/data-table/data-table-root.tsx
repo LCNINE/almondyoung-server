@@ -2,6 +2,7 @@
 
 import { Table } from '@/components/admin-ui-experimental/common/table/table';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils/ui';
 import {
   flexRender,
   type Row,
@@ -20,7 +21,15 @@ type DataTableRootProps<TData extends RowData> = {
   openInNewWindow?: boolean;
   pageSize: number;
   count: number;
+  variant?: 'plain' | 'grid';
+  rowClassName?: (row: Row<TData>) => string | undefined;
 };
+
+const ALIGN_CLASS = {
+  left: 'text-left',
+  center: 'text-center',
+  right: 'text-right',
+} as const;
 
 export function DataTableRoot<TData extends RowData>({
   table,
@@ -31,6 +40,8 @@ export function DataTableRoot<TData extends RowData>({
   openInNewWindow,
   pageSize,
   count,
+  variant = 'plain',
+  rowClassName,
 }: DataTableRootProps<TData>) {
   const router = useRouter();
 
@@ -53,18 +64,24 @@ export function DataTableRoot<TData extends RowData>({
 
   return (
     <div>
-      <Table>
+      <Table variant={variant}>
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <Table.Head key={header.id}>
-                  {flexRender(
-                    header.column.columnDef.header,
-                    header.getContext()
-                  )}
-                </Table.Head>
-              ))}
+              {headerGroup.headers.map((header) => {
+                const { width } = header.column.columnDef.meta ?? {};
+                return (
+                  <Table.Head
+                    key={header.id}
+                    style={width ? { width } : undefined}
+                  >
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext()
+                    )}
+                  </Table.Head>
+                );
+              })}
             </Table.Row>
           ))}
         </Table.Header>
@@ -94,17 +111,22 @@ export function DataTableRoot<TData extends RowData>({
               return (
                 <Table.Row
                   key={row.id}
-                  className={href ? 'cursor-pointer' : ''}
+                  className={cn(
+                    href && 'cursor-pointer',
+                    rowClassName?.(row)
+                  )}
                   onClick={href ? () => handleRowClick(href) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => {
-                    const togglesSelection =
-                      cell.column.columnDef.meta?.clickTogglesRowSelection;
+                    const { clickTogglesRowSelection, width, align } =
+                      cell.column.columnDef.meta ?? {};
                     return (
                       <Table.Cell
                         key={cell.id}
+                        style={width ? { width } : undefined}
+                        className={align ? ALIGN_CLASS[align] : undefined}
                         onClick={
-                          togglesSelection
+                          clickTogglesRowSelection
                             ? (e) => {
                                 e.stopPropagation();
                                 row.toggleSelected();

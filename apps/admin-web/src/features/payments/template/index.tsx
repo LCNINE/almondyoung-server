@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function PaymentListCard() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="결제 내역" />
       <PaymentIntentTable />
     </Container>

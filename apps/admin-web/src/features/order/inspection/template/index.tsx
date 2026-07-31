@@ -6,7 +6,7 @@ import { InspectionSessionStarter } from '../components/inspection-session-start
 
 export default function InspectionTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="검수 관리"
         subtitle="inspection-ready shipment의 PACKING custody와 source를 확인하고 검수합니다."

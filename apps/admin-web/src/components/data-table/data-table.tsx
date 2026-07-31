@@ -1,5 +1,6 @@
 'use client';
 
+import type * as React from 'react';
 import { type Row, type RowData, type Table } from '@tanstack/react-table';
 import { DataTableQuery } from './data-table-query';
 import { DataTableRoot } from './data-table-root';
@@ -21,6 +22,9 @@ type DataTableProps<TData extends RowData> = {
   openInNewWindow?: boolean;
   noRecords?: { message: string };
   prefix?: string;
+  variant?: 'plain' | 'grid';
+  rowClassName?: (row: Row<TData>) => string | undefined;
+  toolbar?: React.ReactNode;
 };
 
 export function DataTable<TData extends RowData>({
@@ -38,6 +42,9 @@ export function DataTable<TData extends RowData>({
   openInNewWindow,
   noRecords,
   prefix,
+  variant,
+  rowClassName,
+  toolbar,
 }: DataTableProps<TData>) {
   return (
     <div>
@@ -49,6 +56,7 @@ export function DataTable<TData extends RowData>({
         searchPlaceholder={searchPlaceholder}
         prefix={prefix}
       />
+      {toolbar}
       <DataTableRoot
         table={table}
         isLoading={isLoading}
@@ -58,6 +66,8 @@ export function DataTable<TData extends RowData>({
         openInNewWindow={openInNewWindow}
         pageSize={pageSize}
         count={count}
+        variant={variant}
+        rowClassName={rowClassName}
       />
     </div>
   );

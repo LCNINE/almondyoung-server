@@ -1,22 +1,23 @@
-import * as React from "react"
+import * as React from 'react';
 
-import { cn } from "@/lib/utils/cn"
+import { cn } from '@/lib/utils/cn';
 
-const Container = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentPropsWithoutRef<"div">
->(({ className, ...props }, ref) => {
-  return (
-    <div
-      ref={ref}
-      className={cn(
-        "shadow-[0px_0px_0px_2px_rgba(0,0,0,0.12)] w-full rounded-lg",
-        className
-      )}
-      {...props}
-    />
-  )
-})
-Container.displayName = "Container"
+type ContainerProps = React.ComponentPropsWithoutRef<'div'> & {
+  /** 기본 스타일(shadow-card, w-full, rounded-lg)을 전부 끈다. */
+  unstyled?: boolean;
+};
 
-export { Container }
+const Container = React.forwardRef<HTMLDivElement, ContainerProps>(
+  ({ className, unstyled = false, ...props }, ref) => {
+    return (
+      <div
+        ref={ref}
+        className={cn(!unstyled && 'shadow-card w-full rounded-lg', className)}
+        {...props}
+      />
+    );
+  }
+);
+Container.displayName = 'Container';
+
+export { Container };

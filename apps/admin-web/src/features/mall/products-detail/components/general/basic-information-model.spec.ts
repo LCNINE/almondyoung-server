@@ -83,6 +83,9 @@ describe('basic information editing model', () => {
     expect(toBasicInformationFormValues(detail)).toEqual({
       name: 'Draft Product',
       brand: 'Almond',
+      supplierId: null,
+      supplyPriceText: '',
+      marketPriceText: '',
       seoTitle: 'SEO title',
       seoDescription: 'SEO description',
       seoKeywordsText: 'almond, young',
@@ -101,6 +104,8 @@ describe('basic information editing model', () => {
       toBasicInformationUpdateDto({
         name: '  Edited Product  ',
         brand: '  Almond Young  ',
+        supplyPriceText: '',
+        marketPriceText: '',
         seoTitle: '  Custom SEO title  ',
         seoDescription: '  Custom SEO description  ',
         seoKeywordsText: ' glow, skincare\n glow, serum ',
@@ -115,6 +120,9 @@ describe('basic information editing model', () => {
     ).toEqual({
       name: 'Edited Product',
       brand: 'Almond Young',
+      supplierId: null,
+      supplyPrice: null,
+      marketPrice: null,
       seoTitle: 'Custom SEO title',
       seoDescription: 'Custom SEO description',
       seoKeywords: ['glow', 'skincare', 'serum'],
@@ -132,6 +140,8 @@ describe('basic information editing model', () => {
       toBasicInformationUpdateDto({
         name: 'Edited Product',
         brand: '   ',
+        supplyPriceText: '  12,000 ',
+        marketPriceText: '   ',
         seoTitle: '   ',
         seoDescription: '   ',
         seoKeywordsText: ' ,  ',
@@ -145,6 +155,8 @@ describe('basic information editing model', () => {
       })
     ).toMatchObject({
       brand: null,
+      supplyPrice: 12000,
+      marketPrice: null,
       seoTitle: null,
       seoDescription: null,
       seoKeywords: [],
@@ -199,6 +211,7 @@ describe('basic information editing model', () => {
         name: 'Beauty',
         slug: 'beauty',
         pathLabel: 'Beauty',
+        pathSegments: ['Beauty'],
         depth: 0,
         parentId: null,
         isActive: true,
@@ -208,6 +221,7 @@ describe('basic information editing model', () => {
         name: 'Skin Care',
         slug: 'skin-care',
         pathLabel: 'Beauty / Skin Care',
+        pathSegments: ['Beauty', 'Skin Care'],
         depth: 1,
         parentId: 'cat-root',
         isActive: true,
@@ -217,6 +231,7 @@ describe('basic information editing model', () => {
         name: 'Cream',
         slug: 'cream',
         pathLabel: 'Beauty / Skin Care / Cream',
+        pathSegments: ['Beauty', 'Skin Care', 'Cream'],
         depth: 2,
         parentId: 'cat-child',
         isActive: false,

@@ -16,7 +16,7 @@ export function PointsBalanceCards({ balance }: { balance: PointsBalanceDto | un
       {cards.map((card) => (
         <div
           key={card.label}
-          className="shadow-[0px_0px_0px_2px_rgba(0,0,0,0.12)] rounded-lg p-4"
+          className="shadow-card rounded-lg p-4"
         >
           <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
           <p className={`text-2xl font-bold mt-1 ${card.highlight ? 'text-primary' : ''}`}>

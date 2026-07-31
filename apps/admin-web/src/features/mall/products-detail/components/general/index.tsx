@@ -15,6 +15,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { FormSelect } from '@/components/common/form';
+import { useSuppliers } from '@/lib/services/inventory/queries';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
@@ -43,6 +45,9 @@ import {
 } from './basic-information-model';
 import { ProductCategorySelectionModal } from './category-selection-modal';
 
+// Radix Select 는 빈 문자열 value 를 허용하지 않아 '없음' 을 나타낼 sentinel 이 필요하다.
+const NO_SUPPLIER = 'none';
+
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
   inactive: '판매중단',
@@ -64,6 +69,11 @@ function formatFulfillmentKind(kind: 'physical' | 'digital' | null): string {
   if (kind === 'digital') return '디지털 (배송비 면제)';
   if (kind === 'physical') return '실물 (배송비 부과)';
   return '-';
+}
+
+function formatMoney(value: number | null | undefined): string {
+  if (value == null) return '-';
+  return `${value.toLocaleString('ko-KR')}원`;
 }
 
 function formatSeoKeywords(values: string[] | null): string {
@@ -92,6 +102,17 @@ function ProductBasicInformationEditDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateVersion = useUpdateMasterVersion();
+  const { data: suppliers } = useSuppliers({ limit: 200 });
+  const supplierOptions = useMemo(
+    () => [
+      { value: NO_SUPPLIER, label: '공급처 없음' },
+      ...(suppliers?.data ?? []).map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+      })),
+    ],
+    [suppliers?.data]
+  );
   const [values, setValues] = useState<BasicInformationFormValues>(() =>
     toBasicInformationFormValues(detail)
   );
@@ -208,6 +229,48 @@ function ProductBasicInformationEditDrawer({
                   placeholder="브랜드명을 입력하세요."
                   disabled={updateVersion.isPending}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="product-basic-supplier">공급처</Label>
+                <FormSelect
+                  options={supplierOptions}
+                  value={values.supplierId ?? NO_SUPPLIER}
+                  onValueChange={(v) =>
+                    setValue('supplierId', v === NO_SUPPLIER ? null : v)
+                  }
+                  placeholder="공급처 선택"
+                  disabled={updateVersion.isPending}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-supply-price">공급가</Label>
+                  <Input
+                    id="product-basic-supply-price"
+                    inputMode="numeric"
+                    value={values.supplyPriceText}
+                    onChange={(event) =>
+                      setValue('supplyPriceText', event.target.value)
+                    }
+                    placeholder="매입 단가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-market-price">시장가</Label>
+                  <Input
+                    id="product-basic-market-price"
+                    inputMode="numeric"
+                    value={values.marketPriceText}
+                    onChange={(event) =>
+                      setValue('marketPriceText', event.target.value)
+                    }
+                    placeholder="정가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">
@@ -435,6 +498,8 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
     { key: '브랜드', value: data.brand ?? '-' },
+    { key: '공급가', value: formatMoney(data.supplyPrice) },
+    { key: '시장가', value: formatMoney(data.marketPrice) },
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },

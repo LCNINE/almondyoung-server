@@ -6,7 +6,7 @@ import { NoticesTable } from '../components/table';
 
 export default function NoticesTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="공지사항"
         subtitle="고객에게 노출되는 공지사항을 관리합니다."

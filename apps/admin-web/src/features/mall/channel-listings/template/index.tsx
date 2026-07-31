@@ -19,7 +19,7 @@ export default function ChannelListingsTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="채널 노출 관리"
         subtitle="Variant와 판매 채널 간 매핑을 관리합니다. GET /lookup은 Channel Adapter 전용 경로입니다."

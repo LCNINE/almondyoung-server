@@ -6,7 +6,7 @@ import { OwnershipsTable } from '../components/table';
 
 export default function OwnershipsTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="디지털 사용권"
         subtitle="디지털 자산 사용권(ownership)을 고객·자산·주문 단위로 조회하고, 수동 부여·회수·재발급합니다."
