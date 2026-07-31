@@ -380,7 +380,9 @@ export async function middleware(request: NextRequest) {
     const normalizedRest = restPath ? `/${restPath}` : ""
 
     redirectUrl = `${request.nextUrl.origin}/${countryCode}${normalizedRest}${queryString}`
-    response = NextResponse.redirect(`${redirectUrl}`, 307)
+    // 308 = 영구 + 메서드 보존. 307(임시)이면 / 가 계속 별도 URL 로 남아
+    // /kr 로 링크 지분이 합쳐지지 않는다. 301 은 POST 를 GET 으로 바꿀 수 있어 308 사용.
+    response = NextResponse.redirect(`${redirectUrl}`, 308)
   }
 
   return response
