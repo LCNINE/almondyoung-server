@@ -56,15 +56,20 @@ type Row = { inventory_item_id: string; location_id: string; qty: string; n: str
  * `inventory_level.reserved_quantity` 는 `reservation_item` 의 캐시일 뿐인데, 예약 행만 지워지고
  * 카운터가 안 내려간 칸이 생긴다 (2026-07-30 live: 243칸 / 9,465개, 그 탓에 47칸·2,355개 재고가 품절).
  * 그래서 개별 차감(reserved - qty)이 아니라 **살아있는 예약 합계로 덮어쓴다** — 과거 잔재까지 같이 낫는다.
+ *
+ * ⚠️ 기준은 `raw_reserved_quantity`(BigNumber JSONB) 다. Medusa 가 available 계산에 쓰는 값은 raw 쪽이고
+ * 일반 컬럼은 곁다리 사본이다. 컬럼만 고치면 스토어프론트는 그대로 품절이면서, 다음 실행 때
+ * `컬럼 == 살아있는 예약` 이라 드리프트로 잡히지도 않아 영구 방치된다 (2026-07-31 live 853칸에서 발생).
  */
 const RESERVED_DRIFT = (tx: Sql) => tx<{ id: string; from: number; to: number }[]>`
-  SELECT il.id, il.reserved_quantity AS from, COALESCE(r.q, 0)::int AS to
+  SELECT il.id, (il.raw_reserved_quantity->>'value')::int AS from, COALESCE(r.q, 0)::int AS to
   FROM inventory_level il
   LEFT JOIN (
     SELECT inventory_item_id, location_id, SUM(quantity)::int AS q
     FROM reservation_item WHERE deleted_at IS NULL GROUP BY 1, 2
   ) r ON r.inventory_item_id = il.inventory_item_id AND r.location_id = il.location_id
-  WHERE il.deleted_at IS NULL AND il.reserved_quantity <> COALESCE(r.q, 0)
+  WHERE il.deleted_at IS NULL
+    AND ((il.raw_reserved_quantity->>'value')::numeric <> COALESCE(r.q, 0) OR il.reserved_quantity <> COALESCE(r.q, 0))
 `;
 
 async function main() {
@@ -149,7 +154,13 @@ async function main() {
       // 이번 삭제분과 과거 잔재가 한 번에 정합해진다.
       const gaps = await RESERVED_DRIFT(tx);
       for (const g of gaps) {
-        await tx`UPDATE inventory_level SET reserved_quantity = ${g.to}, updated_at = now() WHERE id = ${g.id}`;
+        await tx`
+          UPDATE inventory_level
+          SET reserved_quantity = ${g.to},
+              raw_reserved_quantity = jsonb_set(raw_reserved_quantity, '{value}', to_jsonb(${String(g.to)}::text)),
+              updated_at = now()
+          WHERE id = ${g.id}
+        `;
       }
 
       const left = (await RESERVED_DRIFT(tx)).length;
