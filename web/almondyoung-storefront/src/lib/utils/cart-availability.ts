@@ -37,6 +37,25 @@ export function extractUnavailableVariantIds(error: unknown): string[] {
  * 어드민 "수동 품절" 은 Medusa 재고를 0 으로 만들므로 이 함수로 잡힌다.
  * (상품은 여전히 published 라 publish 상태 기반 가드로는 안 잡힌다)
  */
+/**
+ * variant 가 품절은 아니지만 요청 수량을 감당하지 못하는지 판단한다.
+ * 담기 시점엔 Medusa 가 "수량 > 가용재고"를 거부하지만, 담은 뒤 다른 주문/재고 조정으로
+ * 재고가 줄면 결제 직전에 이 상태가 된다.
+ */
+export function isVariantQuantityUnavailable(
+  variant?: {
+    manage_inventory?: boolean | null
+    allow_backorder?: boolean | null
+    inventory_quantity?: number | null
+  } | null,
+  quantity?: number | null
+): boolean {
+  if (!variant) return false
+  if (!variant.manage_inventory) return false
+  if (variant.allow_backorder) return false
+  return (quantity ?? 0) > (variant.inventory_quantity ?? 0)
+}
+
 export function isVariantSoldOut(
   variant?: {
     manage_inventory?: boolean | null
