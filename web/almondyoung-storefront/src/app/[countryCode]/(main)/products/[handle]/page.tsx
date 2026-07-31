@@ -7,6 +7,7 @@ import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
@@ -57,7 +58,12 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     openGraph: {
       title,
       description,
-      images: product.thumbnail ? [product.thumbnail] : [],
+      // thumbnail 은 fileId 문자열만 담고 있다. 그대로 넘기면 metadataBase 기준
+      // 상대경로로 해석돼 https://almondyoung.com/{fileId} 라는 404 URL 이 나간다.
+      // 비어 있으면 키 자체를 빼서 루트 레이아웃의 기본 OG 이미지가 적용되게 한다.
+      ...(product.thumbnail
+        ? { images: [getThumbnailUrl(product.thumbnail)] }
+        : {}),
     },
   }
 }
