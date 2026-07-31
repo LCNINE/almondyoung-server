@@ -772,12 +772,13 @@ export async function handleCaptureProjection(
     payment = payments[0];
 
     if (!payment) {
-      // Recovery completed idempotently (cart was already completed via another path
-      // or the order already existed). No payment row to update — log and exit cleanly.
-      logger.warn(
-        `[payment-events] handleCaptureProjection: no payment row after recovery for intentId=${intentId}, skipping capture projection (messageId=${messageId})`,
+      // 세션은 있는데 payment 행이 없다 = 카트 완료(주문 생성) 워크플로가 아직 payment 를 만들기
+      // 전이다. 지연 승인 흐름에서는 승인 직후(=워크플로 마지막 단계 진행 중) 캡처 이벤트가 도착해
+      // 이 창에 빠질 수 있다. 여기서 조용히 넘기면 captured_at 투영이 영영 유실되므로 throw 해
+      // 재배달(지수 백오프)로 재시도한다. 워크플로가 끝나면 다음 배달에서 정상 투영된다.
+      throw new Error(
+        `[payment-events] handleCaptureProjection: no payment row yet for intentId=${intentId} (order creation in flight?), retrying (messageId=${messageId})`,
       );
-      return;
     }
   }
 

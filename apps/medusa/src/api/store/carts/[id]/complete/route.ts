@@ -1,9 +1,51 @@
 import { MedusaRequest, MedusaResponse, prepareRetrieveQuery } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
+import { capturePaymentWorkflow } from '@medusajs/core-flows';
 import { MedusaError } from '@medusajs/utils';
 import { refetchCart } from '../../helpers';
 import { defaultStoreCartFields } from '../../query-config';
+
+/**
+ * 주문 생성이 끝난 카트의 결제를 캡처한다.
+ *
+ * 지연 승인 흐름에서 PG 승인은 completeCartWorkflow 의 마지막 단계에서 일어나고, wallet 은 승인 직후
+ * 자동 캡처하며 payment.intent.captured 웹훅을 쏜다. 그런데 그 웹훅은 워크플로가 아직 payment 행을
+ * 만들기 전에 도착할 수 있어(카트 completed_at 은 이미 찍힌 상태) 캡처 투영이 유실될 수 있다.
+ * 여기서 명시적으로 캡처를 돌려 Medusa 쪽 captured_at 을 결정적으로 만든다.
+ *
+ * 멱등: 이미 captured 면 skip 하고, wallet 캡처 API 도 CAPTURED intent 에 대해 no-op 이다.
+ * 실패는 삼킨다 — 주문은 이미 생성됐고 결제도 이미 승인됐으므로 응답을 실패로 만들면 안 된다.
+ * 놓친 캡처는 wallet 웹훅과 orphan-payment-reconcile 잡이 뒤늦게 맞춘다.
+ */
+async function capturePaymentForCart(scope: any, cartId: string, logger: any): Promise<void> {
+  try {
+    const query = scope.resolve(ContainerRegistrationKeys.QUERY);
+    const { data: carts } = await query.graph({
+      entity: 'cart',
+      fields: ['id', 'payment_collection.payment_sessions.id'],
+      filters: { id: cartId },
+    });
+
+    const sessionIds: string[] = (
+      (carts[0] as any)?.payment_collection?.payment_sessions ?? []
+    ).map((s: any) => s?.id).filter(Boolean);
+    if (!sessionIds.length) return;
+
+    const paymentModule = scope.resolve(Modules.PAYMENT);
+    for (const sessionId of sessionIds) {
+      const payments = await paymentModule.listPayments({ payment_session_id: sessionId }, {});
+      const payment = payments[0];
+      if (!payment || payment.captured_at || payment.canceled_at) continue;
+
+      await capturePaymentWorkflow(scope).run({ input: { payment_id: payment.id } });
+      logger.info(`[cart-complete] captured payment ${payment.id} for cart ${cartId}`);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`[cart-complete] capture after completion failed for cart ${cartId}: ${msg}`);
+  }
+}
 
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const cart_id = req.params.id;
@@ -56,6 +98,8 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
     });
     return;
   }
+
+  await capturePaymentForCart(req.scope, cart_id, req.scope.resolve(ContainerRegistrationKeys.LOGGER));
 
   const { data } = await query.graph({
     entity: 'order',
