@@ -14,7 +14,7 @@ export default function OrderHistoryTemplate() {
         <OrderStatusSection />
       </Container>
 
-      <Container className="divide-y-0">
+      <Container>
         <Header title="주문 내역" />
         <OrderHistoryFilterProvider>
           <FilterBox />

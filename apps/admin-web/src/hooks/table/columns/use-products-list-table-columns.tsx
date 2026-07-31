@@ -9,6 +9,7 @@ import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
+import { SupplierCell } from '@/components/table/table-cells/supplier-cell';
 import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
@@ -20,14 +21,30 @@ const STATUS_LABELS: Record<string, string> = {
   archived: '보관',
 };
 
-export function useProductsListTableColumns() {
+const won = (v: number) => v.toLocaleString('ko-KR');
+
+const priceRange = (min: number, max: number) =>
+  min === max ? won(min) : `${won(min)} ~ ${won(max)}`;
+
+type Options = {
+  /** 행 번호는 전체 건수에서 역순으로 매긴다 (피그마: 최신이 9967). */
+  totalCount: number;
+  pageIndex: number;
+  pageSize: number;
+};
+
+export function useProductsListTableColumns({
+  totalCount,
+  pageIndex,
+  pageSize,
+}: Options) {
   const router = useRouter();
 
   return useMemo(
     () => [
       columnHelper.display({
         id: 'select',
-        meta: { clickTogglesRowSelection: true },
+        meta: { clickTogglesRowSelection: true, width: 48 },
         header: ({ table }) => (
           <Checkbox
             checked={
@@ -39,79 +56,118 @@ export function useProductsListTableColumns() {
             }
             aria-label="전체 선택"
             onClick={(e) => e.stopPropagation()}
+            className="size-5 border-2 border-neutral-400 bg-white"
           />
         ),
         // 표시 전용 — 선택 토글은 DataTableRoot 의 셀 onClick(meta.clickTogglesRowSelection)이 담당한다.
-        // 이 컬럼은 DataTableRoot 안에서만 렌더해야 선택이 동작한다.
         cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            aria-label="행 선택"
-            className="pointer-events-none"
-          />
+          <div className="flex flex-col items-center gap-1">
+            <Checkbox
+              checked={row.getIsSelected()}
+              aria-label="행 선택"
+              className="pointer-events-none size-5 border-2 border-neutral-400 bg-white"
+            />
+            <span className="text-xs tabular-nums">
+              {totalCount - pageIndex * pageSize - row.index}
+            </span>
+          </div>
         ),
       }),
-      columnHelper.accessor('masterId', {
+      columnHelper.accessor('productCode', {
         header: '품번코드',
-        cell: ({ getValue }) => <ShortId value={getValue()} />,
+        meta: { width: 104 },
+        cell: ({ getValue, row }) => {
+          const code = getValue();
+          // 품번코드 미부여 상품은 masterId 앞자리로 대체한다.
+          return code ? (
+            <span className="tabular-nums">{code}</span>
+          ) : (
+            <ShortId value={row.original.masterId} />
+          );
+        },
       }),
       columnHelper.accessor('thumbnail', {
         header: '이미지',
+        meta: { width: 72 },
         cell: ({ getValue }) => <ProductThumbnailCell thumbnail={getValue()} />,
       }),
       columnHelper.accessor('name', {
-        header: '상품명/옵션/브랜드',
+        header: () => (
+          <>
+            <p>상품명</p>
+            <p>브랜드 명</p>
+          </>
+        ),
+        meta: { align: 'left' },
         cell: ({ row }) => (
-          <div className="space-y-0.5">
-            <p className="text-sm font-medium leading-tight text-blue-800 break-words">
+          <div className="flex flex-col gap-1 text-left">
+            <p className="text-base font-medium text-[#1e40ae] underline break-words">
               {row.original.name}
             </p>
-            <p className="text-xs text-muted-foreground">
-              {row.original.optionGroupNames.join(' / ') || '-'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {row.original.brand ?? '-'}
-            </p>
+            <p className="text-[#757575]">{row.original.brand ?? '-'}</p>
           </div>
         ),
       }),
       columnHelper.accessor('variantCount', {
-        header: '옵션수',
-        cell: ({ getValue }) => {
-          const count = getValue();
+        header: '옵션제목/옵션수',
+        meta: { width: 104 },
+        cell: ({ row }) => {
+          const { optionGroupNames, variantCount } = row.original;
+          if (optionGroupNames.length === 0) {
+            return <span className="text-[#1e3a89]">단일상품</span>;
+          }
           return (
-            <span className="text-sm text-blue-900">
-              {count > 0 ? `${count}개` : '단일상품'}
+            <span className="text-[#1e3a89]">
+              <span className="underline">{optionGroupNames.join(' / ')}</span>
+              {` / ${variantCount}`}
             </span>
           );
         },
       }),
+      columnHelper.accessor('supplierId', {
+        header: '공급처',
+        meta: { width: 112 },
+        cell: ({ getValue }) => <SupplierCell supplierId={getValue()} />,
+      }),
       columnHelper.accessor('priceSummary', {
-        header: '판매가/멤버십가',
-        cell: ({ getValue }) => {
+        header: () => (
+          <>
+            <p>판매가</p>
+            <p>멤버십가</p>
+            <p>공급가</p>
+          </>
+        ),
+        meta: { width: 131, align: 'right' },
+        cell: ({ getValue, row }) => {
           const summary = getValue();
-          if (!summary) return <div className="text-sm text-right">-</div>;
-          const fmtRange = (min: number, max: number) =>
-            min === max
-              ? `${min.toLocaleString()}원`
-              : `${min.toLocaleString()} ~ ${max.toLocaleString()}원`;
+          if (!summary) return <span>-</span>;
           return (
-            <div className="space-y-0.5 text-right text-sm">
-              <p className="font-medium">
-                {fmtRange(summary.minBasePrice, summary.maxBasePrice)}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {fmtRange(
+            <div className="flex flex-col font-medium tabular-nums">
+              <span className="text-[#3f6212]">
+                {priceRange(summary.minBasePrice, summary.maxBasePrice)}
+              </span>
+              <span className="text-[#a86500]">
+                {priceRange(
                   summary.minMembershipPrice,
                   summary.maxMembershipPrice
                 )}
-              </p>
+                {row.original.hideMembershipPriceForNonMembers && ' (숨김)'}
+              </span>
+              {/* 공급가 없음은 0원이 아니라 미입력이다. */}
+              {row.original.supplyPrice == null ? (
+                <span className="text-muted-foreground">-</span>
+              ) : (
+                <span className="text-[#b81c1c]">
+                  {won(row.original.supplyPrice)}
+                </span>
+              )}
             </div>
           );
         },
       }),
       columnHelper.accessor('status', {
         header: '상태',
+        meta: { width: 74 },
         cell: ({ row }) => {
           const { status, soldOutState } = row.original;
 
@@ -135,13 +191,10 @@ export function useProductsListTableColumns() {
           return <Badge variant={variant}>{label}</Badge>;
         },
       }),
-      columnHelper.accessor('createdAt', {
-        header: '등록일',
-        cell: ({ getValue }) => <DateCell value={getValue()} />,
-      }),
       columnHelper.display({
         id: 'actions',
-        header: '작업',
+        header: '기능',
+        meta: { width: 88 },
         cell: ({ row }) => (
           <Button
             size="sm"
@@ -156,7 +209,24 @@ export function useProductsListTableColumns() {
           </Button>
         ),
       }),
+      columnHelper.accessor('createdAt', {
+        header: () => (
+          <>
+            <p>등록일시</p>
+            <p>수정일시</p>
+          </>
+        ),
+        meta: { width: 168 },
+        cell: ({ row }) => (
+          <div className="flex flex-col">
+            <DateCell value={row.original.createdAt} withTime />
+            <span className="text-[#757575]">
+              <DateCell value={row.original.updatedAt} withTime />
+            </span>
+          </div>
+        ),
+      }),
     ],
-    [router]
+    [router, totalCount, pageIndex, pageSize]
   );
 }

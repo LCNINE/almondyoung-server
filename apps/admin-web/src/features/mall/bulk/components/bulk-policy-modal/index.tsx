@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { useBulkUpdatePolicy } from '@/lib/services/products';
 import type { BulkUpdateFailureDto } from '@/lib/types/dto/products';
@@ -120,48 +121,45 @@ export function BulkPolicyModal({
         <div className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
             선택된 <strong>{selectedIds.length}개</strong> 상품에 적용됩니다.
-            변경할 항목만 켜기/끄기를 선택하세요.
+            변경할 항목만 체크하고 켜기/끄기를 선택하세요.
           </p>
 
           {ROWS.map(({ flag, label, desc }) => {
             const stats = flagStats(selectedItems, flag);
             const choice = choices[flag];
             const impact = flagImpact(stats, choice);
+            const willChange = choice !== 'unchanged';
+            const setChoice = (next: PolicyChoice) =>
+              setChoices((prev) => ({ ...prev, [flag]: next }));
             return (
-              <div key={flag} className="space-y-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <Label>{label}</Label>
-                  <span className="text-xs text-muted-foreground">
+              <div key={flag} className="rounded-md border p-3 space-y-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <Label className="flex items-start gap-2 font-medium">
+                    <Checkbox
+                      checked={willChange}
+                      onCheckedChange={(v) => setChoice(v ? 'on' : 'unchanged')}
+                      aria-label={`${label} 변경`}
+                    />
+                    {label}
+                  </Label>
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     현재: 켜짐 {stats.on} · 꺼짐 {stats.off}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground">{desc}</p>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  size="sm"
-                  value={choice}
-                  onValueChange={(v) =>
-                    v &&
-                    setChoices((prev) => ({
-                      ...prev,
-                      [flag]: v as PolicyChoice,
-                    }))
-                  }
-                  className="w-full"
-                >
-                  <ToggleGroupItem value="unchanged">
-                    변경 안 함
-                  </ToggleGroupItem>
-                  <ToggleGroupItem value="on">켜기</ToggleGroupItem>
-                  <ToggleGroupItem value="off">끄기</ToggleGroupItem>
-                </ToggleGroup>
-                {choice !== 'unchanged' && (
-                  <p className="text-xs text-muted-foreground">
-                    → {choice === 'on' ? '켜기' : '끄기'} 선택 시 {impact}개
-                    변경됩니다
-                  </p>
-                )}
+                <p className="pl-6 text-xs text-muted-foreground">{desc}</p>
+                <div className="flex items-center gap-2 pl-6">
+                  <Switch
+                    checked={choice === 'on'}
+                    disabled={!willChange}
+                    onCheckedChange={(v) => setChoice(v ? 'on' : 'off')}
+                    aria-label={`${label} 켜기/끄기`}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {willChange
+                      ? `${choice === 'on' ? '켜기' : '끄기'} — ${impact}개 변경됩니다`
+                      : '변경 안 함'}
+                  </span>
+                </div>
               </div>
             );
           })}

@@ -95,7 +95,7 @@ export default function OAuthClientsTemplate() {
     rotateMutation.isPending || clearPrevMutation.isPending || deactivateMutation.isPending;
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="OAuth 클라이언트"
         subtitle="외부/내부 서비스가 user-service 의 OAuth 로 인증할 때 사용하는 client 자격증명을 관리합니다."

@@ -161,6 +161,16 @@ export class ProductSummaryDto {
   @ApiProperty({ description: '브랜드', nullable: true })
   brand: string | null;
 
+  @ApiProperty({ description: '품번코드 (product_code). 목록의 사람이 읽는 식별자 — masterId(UUID)와 다르다.', nullable: true })
+  productCode: string | null;
+
+  @ApiProperty({ description: '공급가 (supply_price). 매입 단가.', nullable: true })
+  supplyPrice: number | null;
+
+  // 이름은 inventory BC(suppliers)에 있어 여기서 조인하지 않는다 — 호출자가 공급처 목록으로 매핑한다.
+  @ApiProperty({ description: '공급처 ID', nullable: true })
+  supplierId: string | null;
+
   @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)' })
   hideMembershipPriceForNonMembers: boolean;
 
@@ -181,6 +191,9 @@ export class ProductSummaryDto {
 
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
+
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
 
   @ApiProperty({ description: '옵션 그룹 이름 리스트' })
   optionGroupNames: string[];

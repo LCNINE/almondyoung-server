@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function FulfillmentsListTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="출고주문" />
       <FulfillmentsTable />
     </Container>

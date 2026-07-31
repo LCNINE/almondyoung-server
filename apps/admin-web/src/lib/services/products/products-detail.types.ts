@@ -43,6 +43,9 @@ export type ProductMasterDetail = {
   description: string | null;
   descriptionHtml: string | null;
   brand: string | null;
+  supplierId?: string | null;
+  supplyPrice?: number | null;
+  marketPrice?: number | null;
   status: string | null;
   isWholesaleOnly: boolean | null;
   /** 해외직구 상품 여부 — 주문 단계에서 개인통관고유부호 입력 필수. */
@@ -140,6 +143,9 @@ export type MasterVersionDetailDto = {
   description: string | null;
   descriptionHtml: string | null;
   brand: string | null;
+  supplierId?: string | null;
+  supplyPrice?: number | null;
+  marketPrice?: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -180,6 +186,9 @@ export type UpdateMasterVersionDto = {
   description?: string | null;
   descriptionHtml?: string | null;
   brand?: string | null;
+  supplierId?: string | null;
+  supplyPrice?: number | null;
+  marketPrice?: number | null;
   thumbnailFileId?: string | null;
   additionalImageFileIds?: string[];
   seoTitle?: string | null;

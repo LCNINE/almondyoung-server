@@ -52,7 +52,7 @@ export default function PointsTemplate() {
 
   return (
     <div className="space-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header title="적립금 관리" />
       </Container>
 
@@ -130,7 +130,7 @@ export default function PointsTemplate() {
             <PointsBalanceCards balance={balance} />
           )}
 
-          <Container className="divide-y-0">
+          <Container>
             <Header title="적립금 내역" />
             <PointsEventTable userId={searchUserId} />
           </Container>

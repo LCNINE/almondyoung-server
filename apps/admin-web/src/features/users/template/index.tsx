@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function UserListTemplate() {
   return (
-    <Container className='divide-y-0'>
+    <Container>
       <Header title="계정 관리"/>
       <UserTable />
     </Container>

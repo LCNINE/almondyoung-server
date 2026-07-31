@@ -9,6 +9,9 @@ export type BasicInformationDetail = {
   status: 'active' | 'inactive' | 'draft' | null;
   name: string;
   brand: string | null;
+  supplierId?: string | null;
+  supplyPrice?: number | null;
+  marketPrice?: number | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -25,6 +28,10 @@ export type BasicInformationDetail = {
 export type BasicInformationFormValues = {
   name: string;
   brand: string;
+  supplierId?: string | null;
+  /** 빈 문자열 = 미입력(null 로 저장). 0 원과 구분해야 한다. */
+  supplyPriceText: string;
+  marketPriceText: string;
   seoTitle: string;
   seoDescription: string;
   seoKeywordsText: string;
@@ -51,6 +58,8 @@ export type SelectableCategory = {
   name: string;
   slug?: string;
   pathLabel: string;
+  /** 조상→자신 순 카테고리명. 이름에 `/` 가 들어가도 안전하게 다시 이어붙일 수 있다. */
+  pathSegments: string[];
   depth: number;
   parentId: string | null;
   isActive: boolean;
@@ -72,6 +81,9 @@ export function toBasicInformationFormValues(
   return {
     name: detail.name,
     brand: detail.brand ?? '',
+    supplierId: detail.supplierId ?? null,
+    supplyPriceText: detail.supplyPrice == null ? '' : String(detail.supplyPrice),
+    marketPriceText: detail.marketPrice == null ? '' : String(detail.marketPrice),
     seoTitle: detail.seoTitle ?? '',
     seoDescription: detail.seoDescription ?? '',
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
@@ -100,6 +112,15 @@ function uniqueNonEmpty(values: string[]): string[] {
   );
 }
 
+/** 빈 문자열/공백은 미입력(null). 정수 아니거나 음수면 null 로 떨어뜨린다. */
+export function parseMoney(value: string): number | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const parsed = Number(trimmed.replace(/,/g, ''));
+  if (!Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 export function parseSeoKeywords(value: string): string[] {
   return uniqueNonEmpty(value.split(/[,\n]/));
 }
@@ -124,6 +145,7 @@ export function flattenCategoryTree(
         name: category.name,
         slug: category.slug,
         pathLabel: path.join(' / '),
+        pathSegments: path,
         depth,
         parentId: category.parentId ?? null,
         isActive: category.isActive,
@@ -143,6 +165,9 @@ export function toBasicInformationUpdateDto(
   return {
     name: values.name.trim(),
     brand: brand.length > 0 ? brand : null,
+    supplierId: values.supplierId ?? null,
+    supplyPrice: parseMoney(values.supplyPriceText),
+    marketPrice: parseMoney(values.marketPriceText),
     seoTitle: trimToNullable(values.seoTitle),
     seoDescription: trimToNullable(values.seoDescription),
     seoKeywords: parseSeoKeywords(values.seoKeywordsText),

@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function MedusaCustomerListTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="메두사 고객 관리" subtitle="Medusa 서버의 고객 정보를 조회합니다" />
       <MedusaCustomerTable />
     </Container>
