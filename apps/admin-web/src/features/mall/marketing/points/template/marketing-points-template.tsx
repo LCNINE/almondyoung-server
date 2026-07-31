@@ -22,7 +22,7 @@ function PointsStatsCards() {
   return (
     <div className="grid grid-cols-4 gap-4 px-4 pb-4">
       {cards.map((card) => (
-        <div key={card.label} className="shadow-[0px_0px_0px_2px_rgba(0,0,0,0.12)] rounded-lg p-4">
+        <div key={card.label} className="shadow-card rounded-lg p-4">
           <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
           <p className={`text-2xl font-bold mt-1 ${card.highlight ? 'text-primary' : ''}`}>
             {card.value.toLocaleString('ko-KR')}
@@ -37,7 +37,7 @@ function TopPointUsersCard() {
   const { data: users, isLoading } = useTopPointUsers(10);
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <div className="px-4 pt-4 pb-2">
         <p className="text-sm font-medium">잔액 상위 10명</p>
       </div>
@@ -76,7 +76,7 @@ export default function MarketingPointsTemplate() {
 
   return (
     <div className="space-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="적립금 관리"
           subtitle="적립금 통계 및 내역을 조회하고 일괄 지급합니다."
@@ -90,7 +90,7 @@ export default function MarketingPointsTemplate() {
       </Container>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
-        <Container className="divide-y-0">
+        <Container>
           <div className="p-4">
             <PointsEventsFilterBox />
             <PointsEventsTable />

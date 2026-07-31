@@ -12,7 +12,7 @@ export default function PurchaseOrdersTemplate() {
   const [cartOpen, setCartOpen] = useState(false);
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="발주관리"
         subtitle="공급처별 발주를 생성하고 심사 및 입고 상태를 관리합니다."

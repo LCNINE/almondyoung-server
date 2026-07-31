@@ -121,7 +121,7 @@ export default function RegionsTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="리전·결제수단 관리"
         subtitle="리전(국가)별로 노출할 결제수단을 설정합니다. 실제 노출은 결제수단의 글로벌 활성화와 리전 활성화가 모두 켜진 경우입니다."

@@ -6,7 +6,7 @@ import { BannerGroupsTable } from '../components/table';
 
 export default function BannerGroupsTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="배너 그룹"
         subtitle="배너 그룹을 관리합니다. 그룹 상세에서 소속 배너를 편집할 수 있습니다."

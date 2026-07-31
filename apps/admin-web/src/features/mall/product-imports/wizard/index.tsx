@@ -83,7 +83,7 @@ export default function ImportWizard() {
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="엑셀 대량등록"
           subtitle="엑셀로 판매상품을 일괄 등록합니다. (업로드 → 검증 → 커밋)"

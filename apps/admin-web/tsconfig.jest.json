@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "isolatedModules": true
+  },
+  // 루트 tsconfig 는 apps/admin-web 을 exclude 한다(next 가 자체 tsconfig 를 쓰므로).
+  // 그 exclude 를 그대로 두면 ts-jest 가 admin-web spec 을 변환하지 않아
+  // "Cannot use import statement outside a module" 로 죽는다.
+  "exclude": ["node_modules", "dist"]
+}

@@ -62,6 +62,9 @@ import {
   SoldOutState,
 } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
+/** 공급처 필터에서 '미지정'(supplier_id IS NULL) 을 가리키는 sentinel. */
+export const UNASSIGNED_SUPPLIER = 'unassigned';
+
 type VersionOptionValueDisplay = {
   optionValueId: string;
   displayName: string;
@@ -502,6 +505,8 @@ export class ProductMastersService {
       status?: 'active' | 'inactive' | 'draft';
       productType?: 'regular_sale' | 'limited_edition';
       approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+      createdBy?: string;
+      supplierId?: string | string[];
       createdFrom?: string;
       createdTo?: string;
       sort?: 'createdAt' | 'name' | 'updatedAt';
@@ -641,6 +646,26 @@ export class ProductMastersService {
       // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
       if (filters?.approvalStatus) {
         whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+      }
+
+      // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
+      if (filters?.createdBy) {
+        whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
+      }
+
+      // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
+      // 'unassigned' 는 공급처 미지정(IS NULL) 을 뜻한다. UUID 와 섞어 보낼 수 있다.
+      const supplierIds =
+        typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
+      if (supplierIds.length > 0) {
+        const includeUnassigned = supplierIds.includes(UNASSIGNED_SUPPLIER);
+        const concreteIds = supplierIds.filter((id) => id !== UNASSIGNED_SUPPLIER);
+        const supplierConditions = [
+          ...(concreteIds.length > 0 ? [inArray(productMasterVersions.supplierId, concreteIds)] : []),
+          ...(includeUnassigned ? [isNull(productMasterVersions.supplierId)] : []),
+        ];
+        // or() 는 인자가 1개면 그대로 통과하므로 단일 조건도 안전하다.
+        whereConditions.push(supplierConditions.length === 1 ? supplierConditions[0] : or(...supplierConditions));
       }
 
       // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준

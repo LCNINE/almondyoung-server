@@ -122,7 +122,7 @@ function ProfileHeader({
   const initials = me?.username?.slice(0, 2).toUpperCase() ?? '?';
 
   return (
-    <div className="bg-white rounded-lg shadow-[0px_0px_0px_2px_rgba(0,0,0,0.12)] p-6">
+    <div className="bg-white rounded-lg shadow-card p-6">
       <div className="flex items-center gap-5">
         <Avatar className="w-16 h-16 shrink-0">
           <AvatarFallback className="bg-primary text-primary-foreground text-xl font-bold">
