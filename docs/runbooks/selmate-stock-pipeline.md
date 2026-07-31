@@ -159,6 +159,24 @@ DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations <csv> --appl
 - 멱등: 조건이 `created_at < 기준시각` 고정이고 재정합은 덮어쓰기라 같은 CSV 로 다시 돌려도 안전.
 - **정리 대상이 0건이어도 그냥 돌려라.** 카운터 재정합은 예약 삭제와 별개로 매번 실행된다 (아래).
 
+#### ✅ 끝나고 반드시 확인한다 — "완료" 로그는 증거가 아니다
+
+2026-07-31 에 스크립트가 **"856칸 재정합 완료"** 를 찍고도 실제로는 한 칸도 안 고쳐진 사고가 있었다
+(컬럼만 쓰고 `raw_reserved_quantity` 를 안 건드림). 고객 신고로만 발견됐다. **아래 2줄을 매번 돌린다.**
+
+```bash
+# 1) DB — raw 기준 드리프트가 0 이어야 한다 (컬럼만 보면 안 된다)
+psql "$PGURL" -c "select count(*) from inventory_level
+  where deleted_at is null and (raw_reserved_quantity->>'value')::numeric <> reserved_quantity;"
+
+# 2) 화면이 보는 값 — 회복 대상 handle 하나를 골라 store API 로 확인. 음수면 아직 안 끝난 것이다.
+PK=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaPublishableKey=//p')
+curl -s -H "x-publishable-api-key: $PK" -G https://medusa.almondyoung.com/store/products \
+  --data-urlencode "handle=<handle>" --data-urlencode "fields=*variants,+variants.inventory_quantity"
+```
+
+2 번이 여전히 옛 값이면 **DB 가 아니라 캐시다** → 아래 「반영은 캐시 2겹」 의 태그 클리어로 간다.
+
 ### ★ `reserved` 는 캐시다 — 예약 원장이 정답
 
 Medusa 는 재고를 두 군데 적는다:
