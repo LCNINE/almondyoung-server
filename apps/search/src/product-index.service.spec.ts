@@ -5,6 +5,15 @@ import { OpenSearchService } from './opensearch.service';
 
 const MASTER_ID = '550e8400-e29b-41d4-a716-446655440000';
 
+// nori 토큰을 흉내낸다 — 기본은 뭉갬 없음(원문 그대로 한 토큰).
+function makeAnalyzeMock(tokens?: string[]) {
+  return jest.fn(({ body }: any) => {
+    const text: string = body.text;
+    const result = tokens ?? [text.replace(/\s+/g, '')];
+    return Promise.resolve({ body: { tokens: result.map((token) => ({ token })) } });
+  });
+}
+
 function makeOpenSearchClient(overrides: Partial<{
   exists: any;
   create: any;
@@ -12,12 +21,14 @@ function makeOpenSearchClient(overrides: Partial<{
   delete: any;
   search: any;
   putMapping: any;
+  analyze: any;
 }> = {}) {
   return {
     indices: {
       exists: jest.fn().mockResolvedValue({ body: true }),
       create: jest.fn().mockResolvedValue({}),
       putMapping: jest.fn().mockResolvedValue({}),
+      analyze: overrides.analyze ?? makeAnalyzeMock(),
     },
     update: jest.fn().mockResolvedValue({}),
     delete: jest.fn().mockResolvedValue({}),
@@ -366,5 +377,90 @@ describe('ProductIndexService.searchProducts - relevance without keyword', () =>
 
     const [callArg] = client.search.mock.calls[0];
     expect(callArg.body.query).not.toHaveProperty('function_score');
+  });
+});
+
+// nori 가 미등록 고유명사를 뭉개면("오샤레" → ["오"]) 남은 한 글자가 무관 상품을
+// name^8 로 끌어와 정답을 랭킹 밖으로 밀어낸다. 그 경우 nori 기반 절을 빼야 한다.
+describe('ProductIndexService.searchProducts - nori collapse guard', () => {
+  const buildService = async (analyze: any) => {
+    const client = makeOpenSearchClient({ analyze });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+      ],
+    }).compile();
+    return { service: module.get(ProductIndexService), client };
+  };
+
+  // strict 쿼리의 should 절에서 nori 를 타는 필드가 쓰였는지
+  const strictShouldOf = (client: ReturnType<typeof makeOpenSearchClient>) => {
+    const [callArg] = client.search.mock.calls[0];
+    return callArg.body.query.function_score.query.bool.must[0].bool.should;
+  };
+  const usesNoriFields = (should: any[]) =>
+    should.some(
+      (clause) =>
+        clause.multi_match !== undefined ||
+        (clause.match_phrase !== undefined && clause.match_phrase.name !== undefined),
+    );
+
+  it('collapsed keyword ("오샤레" → ["오"]): nori clauses are dropped', async () => {
+    const { service, client } = await buildService(makeAnalyzeMock(['오']));
+
+    await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(usesNoriFields(strictShouldOf(client))).toBe(false);
+  });
+
+  it('healthy keyword ("큐티클 오일"): nori clauses are kept', async () => {
+    const { service, client } = await buildService(makeAnalyzeMock(['큐티클', '오일']));
+
+    await service.searchProducts({ q: '큐티클 오일', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(usesNoriFields(strictShouldOf(client))).toBe(true);
+  });
+
+  it('short keyword (<3 chars) skips the analyze roundtrip entirely', async () => {
+    const analyze = makeAnalyzeMock(['젤']);
+    const { service, client } = await buildService(analyze);
+
+    await service.searchProducts({ q: '젤', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(analyze).not.toHaveBeenCalled();
+    expect(usesNoriFields(strictShouldOf(client))).toBe(true);
+  });
+
+  it('analyze failure falls back to keeping nori clauses', async () => {
+    const analyze = jest.fn().mockRejectedValue(new Error('opensearch down'));
+    const { service, client } = await buildService(analyze);
+
+    await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(usesNoriFields(strictShouldOf(client))).toBe(true);
+  });
+
+  // strict 만 nori 를 빼고 fallback 은 유지해야 한다. 둘 다 빼면 복합어 부분매칭에
+  // 기대는 검색어가 0건이 된다("엠보니들" 실측 138건 → 0건).
+  it('collapsed keyword: fallback keeps nori clauses (recall guard)', async () => {
+    const { service, client } = await buildService(makeAnalyzeMock(['오']));
+
+    await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
+
+    const [, fallbackCall] = client.search.mock.calls;
+    const fallbackShould = fallbackCall[0].body.query.function_score.query.bool.must[0].bool.should;
+    expect(fallbackShould.some((clause: any) => clause.multi_match !== undefined)).toBe(true);
+  });
+
+  it('repeated keyword hits the cache (analyze called once)', async () => {
+    const analyze = makeAnalyzeMock(['오']);
+    const { service } = await buildService(analyze);
+
+    await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 1, size: 20 } as any);
+    await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 2, size: 20 } as any);
+
+    expect(analyze).toHaveBeenCalledTimes(1);
   });
 });
