@@ -39,10 +39,10 @@ export function ProductSummary({
           <p className="text-sm text-gray-600">{brand}</p>
 
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold">
+            <h1 className="text-xl font-bold">
               {isOverseas && <OverseasBadge className="text-[12px]" />}
               {productName}
-            </h2>
+            </h1>
             {isDigital && (
               <span className="bg-primary/90 shrink-0 rounded px-2 py-0.5 text-[11px] font-medium text-white">
                 {t("digitalBadge")}

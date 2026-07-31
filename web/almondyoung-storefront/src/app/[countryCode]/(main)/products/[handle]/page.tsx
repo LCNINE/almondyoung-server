@@ -49,6 +49,10 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   return {
     title,
     description,
+    // 정렬·필터 쿼리스트링이 붙은 변형 URL 이 중복으로 색인되지 않게 고정.
+    alternates: {
+      canonical: `/${params.countryCode}/products/${handle}`,
+    },
     ...(seo?.seoKeywords ? { keywords: seo.seoKeywords } : {}),
     openGraph: {
       title,
