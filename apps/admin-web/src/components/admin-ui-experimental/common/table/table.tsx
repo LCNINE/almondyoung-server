@@ -12,9 +12,9 @@ import {
 import { Input } from '@/components/ui/input';
 
 const GRID_STYLES = {
-  head: 'h-auto border-[0.5px] border-[#757575] px-1 py-2 text-center align-middle text-sm font-bold leading-[18px] text-black whitespace-normal',
-  cell: 'h-auto border-[0.5px] border-[#757575] px-1 py-2 text-center align-middle text-sm leading-[18px] whitespace-normal',
-  header: 'bg-[#e6e4e3]',
+  head: 'h-auto border-[0.5px] border-[#D9D9D9] px-1 py-2 text-center align-middle text-sm font-bold leading-[18px] text-black whitespace-normal',
+  cell: 'h-auto border-[0.5px] border-[#D9D9D9] px-1 py-2 text-center align-middle text-sm leading-[18px] whitespace-normal',
+  header: 'bg-[#F5F5F5]',
   row: 'border-b-0 hover:bg-black/[0.02]',
 } as const;
 
