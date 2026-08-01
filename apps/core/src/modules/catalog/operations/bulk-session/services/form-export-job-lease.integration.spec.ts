@@ -6,7 +6,7 @@ import { DbService } from '@app/db';
 import { catalogSchema, type PimSchema } from '../../../schema/catalog.schema';
 import { FormExportJobManager, MAX_CONSECUTIVE_EXPORT_FAILURES } from './form-export-job.manager';
 import type { SnapshotItem } from './form-export.snapshot.reader';
-import type { PrefillWorkbookData } from './form-export.types';
+import type { PrefillBundle, PrefillWorkbookData } from './form-export.types';
 
 /**
  * lease 소유권(claim → 마감)을 **진짜 Postgres** 에 대고 구동한다.
@@ -61,6 +61,16 @@ const EMPTY_PREFILL_DATA: PrefillWorkbookData = {
   constraints: [],
   images: [],
   categoryPaths: [],
+};
+
+/** 이 스위트는 lease 소유권만 본다 — 스냅샷 값은 무관하다. `SnapshotItem.snapshot` 필수 필드용 최소 스텁. */
+const EMPTY_SNAPSHOT: PrefillBundle = {
+  product: {},
+  options: [],
+  variants: [],
+  categories: [],
+  constraint: null,
+  images: {},
 };
 
 /**
@@ -262,11 +272,29 @@ describeIfDb('form export 잡 lease 소유권 (DB 통합)', () => {
     // 실제 uuid 컬럼이라(product_form_export_items.master_id/version_id) 유효한 uuid
     // 문자열이어야 한다 — 문자열 리터럴('m1' 등)은 실 Postgres 에서 22P02 로 거부된다.
     const successorItems: SnapshotItem[] = [
-      { masterId: randomUUID(), versionId: randomUUID(), rowKey: 'P-000001', pricingEditable: true },
-      { masterId: randomUUID(), versionId: randomUUID(), rowKey: 'P-000002', pricingEditable: true },
+      {
+        masterId: randomUUID(),
+        versionId: randomUUID(),
+        rowKey: 'P-000001',
+        pricingEditable: true,
+        snapshot: EMPTY_SNAPSHOT,
+      },
+      {
+        masterId: randomUUID(),
+        versionId: randomUUID(),
+        rowKey: 'P-000002',
+        pricingEditable: true,
+        snapshot: EMPTY_SNAPSHOT,
+      },
     ];
     const zombieItems: SnapshotItem[] = [
-      { masterId: randomUUID(), versionId: randomUUID(), rowKey: 'Z-000001', pricingEditable: true },
+      {
+        masterId: randomUUID(),
+        versionId: randomUUID(),
+        rowKey: 'Z-000001',
+        pricingEditable: true,
+        snapshot: EMPTY_SNAPSHOT,
+      },
     ];
     b.buildPrefill.mockResolvedValueOnce({ data: EMPTY_PREFILL_DATA, items: successorItems });
     b.upload.mockResolvedValueOnce({ fileId: STUB_FILE_ID_B });

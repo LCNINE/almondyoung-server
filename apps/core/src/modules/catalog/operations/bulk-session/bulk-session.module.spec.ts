@@ -59,6 +59,10 @@ describeIfDb('BulkSessionModule DI', () => {
     const { FormExportSnapshotReader } = await import('./services/form-export.snapshot.reader');
     const { FormExportJobManager } = await import('./services/form-export-job.manager');
     const { FormExportJobWorker } = await import('./services/form-export-job.worker');
+    const { BulkSessionService } = await import('./services/bulk-session.service');
+    const { BulkSessionManager } = await import('./services/bulk-session.manager');
+    const { BulkSessionJobManager } = await import('./services/bulk-session-job.manager');
+    const { BulkSessionJobWorker } = await import('./services/bulk-session-job.worker');
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -89,11 +93,27 @@ describeIfDb('BulkSessionModule DI', () => {
     // ProductCategoriesService 4개 의존성이 실제로 해석됐는지 증명하는 지점이다
     // (ProductsModule 이 ProductVersionReadLoader 를 export 하지 않았다면 여기서 부팅이 깨진다).
     expect(moduleRef.get(FormExportSnapshotReader, { strict: false })).toBeInstanceOf(FormExportSnapshotReader);
-    // Task 8 산출물. FormExportJobWorker 의 생성자가 FormExportJobManager 를 받으므로,
-    // 이게 해석된다는 건 그 매니저의 DbService<PimSchema>/FormExportSnapshotReader/
+    // 앞선 커밋(양식 조립 워커) 산출물. FormExportJobWorker 의 생성자가 FormExportJobManager
+    // 를 받으므로, 이게 해석된다는 건 그 매니저의 DbService<PimSchema>/FormExportSnapshotReader/
     // FormExportFileClient/ConfigService 4개 의존성도 함께 실제로 해석됐다는 뜻이다.
     expect(moduleRef.get(FormExportJobManager, { strict: false })).toBeInstanceOf(FormExportJobManager);
     expect(moduleRef.get(FormExportJobWorker, { strict: false })).toBeInstanceOf(FormExportJobWorker);
+
+    // 업로드 접수 경로(POST /product-bulk-sessions) 산출물. BulkSessionService 는
+    // BulkSessionModule 의 export 목록에 없으므로 strict 조회로는 안 잡힌다 —
+    // { strict: false } 로 컨테이너 전체에서 찾는다. BulkSessionManager 가 해석된다는 건
+    // 그 생성자가 받는 DbService<PimSchema>/FormExportFileClient 2개 의존성도 함께
+    // 실제로 해석됐다는 뜻이다.
+    expect(moduleRef.get(BulkSessionService, { strict: false })).toBeInstanceOf(BulkSessionService);
+    expect(moduleRef.get(BulkSessionManager, { strict: false })).toBeInstanceOf(BulkSessionManager);
+
+    // 검증 레인. BulkSessionJobWorker 의 생성자가 BulkSessionJobManager 를 받으므로, 이게
+    // 해석된다는 건 그 매니저의 DbService<PimSchema>/FormExportFileClient/
+    // FormExportSnapshotReader/ProductCategoriesService/ConfigService 5개 의존성도 함께
+    // 실제로 해석됐다는 뜻이다 — ProductCategoriesService 는 CategoriesModule 이 export
+    // 해야만 잡히므로 여기서만 걸리는 종류의 배선 오류다.
+    expect(moduleRef.get(BulkSessionJobManager, { strict: false })).toBeInstanceOf(BulkSessionJobManager);
+    expect(moduleRef.get(BulkSessionJobWorker, { strict: false })).toBeInstanceOf(BulkSessionJobWorker);
 
     await moduleRef.close();
   });

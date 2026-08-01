@@ -5,6 +5,13 @@ import { sign as jwtSign } from 'jsonwebtoken';
 export const BULK_FORM_CONTEXT_ID = 'product-bulk-form';
 const MAX_ERROR_BODY_CHARS = 200;
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+/**
+ * `download` 의 실제 GET(서명 URL → S3)에 거는 타임아웃. 워크북 자체가 최대 10MB
+ * (bulk-upload.parser.ts 의 MAX_UPLOAD_BYTES)라 정상 다운로드는 수 초 안에 끝난다 —
+ * 30초는 그보다 몇 배의 여유를 주면서도, 멈춘 S3 연결이 (다음 태스크의) 검증 워커
+ * 슬라이스 하나를 통째로 붙잡는 것은 막는다.
+ */
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 
 /**
  * 양식 워크북을 file-service 에 올린다.
@@ -86,6 +93,27 @@ export class FormExportFileClient {
   }
 
   /**
+   * 업로드된 워크북을 바이트로 가져온다. 검증 레인이 파싱하려면 파일이 필요하고,
+   * file-service 는 S3 서명 URL 만 주므로 두 번 왕복한다(URL 발급 → 실제 GET).
+   *
+   * 실패 시 `describeFailure` 를 그대로 재사용하지 않는다 — 이 응답은 file-service 가
+   * 아니라 S3(서명 URL) 것이라 "file-service ... 실패" 문구가 원인을 잘못 가리킨다.
+   * 대신 같은 본문-절단·로깅 로직(`readTruncatedBody`)만 공유하고 메시지는 여기서
+   * 직접 짓는다 — 검증 레인이 멈췄을 때 운영자가 로그의 상태코드+본문으로 서명 만료
+   * (403)와 키 부재(404)를 구분할 수 있어야 한다.
+   */
+  async download(fileId: string, userId: string): Promise<Buffer> {
+    const url = await this.getDownloadUrl(fileId, userId);
+    const res = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+    if (!res.ok) {
+      const body = await this.readTruncatedBody(res);
+      this.logger.warn(`업로드 파일 다운로드 실패 ${res.status}: ${body}`);
+      throw new Error(`업로드 파일 다운로드 실패 (${res.status})`);
+    }
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  /**
    * 만료된 잡을 정리할 때 xlsx 도 함께 지운다(catalog.schema.ts:1016, product_form_exports.expiresAt
    * 주석). file-service 에 고아 파일 정리 잡이 없어(스펙 §2.7) 여기서 안 지우면 S3 에 영구
    * 잔존한다 — product-import-file.client.ts:softDelete 와 동일 패턴(DELETE /files/:fileId,
@@ -104,14 +132,24 @@ export class FormExportFileClient {
 
   /** file-service 원문 JSON 이 관리자 화면까지 새지 않게 자른다. */
   private async describeFailure(action: string, res: Response): Promise<string> {
-    let body = '';
-    try {
-      body = (await res.text()).slice(0, MAX_ERROR_BODY_CHARS);
-    } catch {
-      body = '(본문 없음)';
-    }
+    const body = await this.readTruncatedBody(res);
     this.logger.warn(`file-service ${action} 실패 ${res.status}: ${body}`);
     return `file-service ${action} 실패 (${res.status})`;
+  }
+
+  /**
+   * 실패 응답 본문을 잘라 돌려준다. `describeFailure`(file-service 응답)와
+   * `download`(S3 응답) 양쪽이 쓴다 — 본문을 읽지 않고 버리면 undici 커넥션이 GC 까지
+   * 물려 소켓이 샌다는 점도, 절단 길이도 두 경로가 같아 여기 하나로 둔다. 메시지 문구
+   * ("file-service ..." vs "업로드 파일 다운로드 ...")는 실패 원인 서버가 서로 달라
+   * 호출부가 각자 짓는다.
+   */
+  private async readTruncatedBody(res: Response): Promise<string> {
+    try {
+      return (await res.text()).slice(0, MAX_ERROR_BODY_CHARS);
+    } catch {
+      return '(본문 없음)';
+    }
   }
 
   /**

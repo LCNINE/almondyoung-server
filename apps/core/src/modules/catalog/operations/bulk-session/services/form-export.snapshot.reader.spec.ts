@@ -62,7 +62,13 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     expect(data.products).toHaveLength(1);
     expect(data.products[0].name).toBe('살아있는 상품');
     expect(items).toEqual([
-      { masterId: 'live-master', versionId: 'version-2', rowKey: 'P-000001', pricingEditable: true },
+      {
+        masterId: 'live-master',
+        versionId: 'version-2',
+        rowKey: 'P-000001',
+        pricingEditable: true,
+        snapshot: expect.any(Object) as unknown,
+      },
     ]);
   });
 

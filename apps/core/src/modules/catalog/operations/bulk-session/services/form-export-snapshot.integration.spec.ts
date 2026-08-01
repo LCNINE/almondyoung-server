@@ -39,6 +39,7 @@ import { ProductCategoriesService } from '../../../core/categories/categories.se
 import { OutboxPublisher } from '@app/events';
 import { PRICING_SENTINEL } from './form-export.sheets';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
+import { createImageKeyAllocator } from './form-export.types';
 
 /**
  * FormExportSnapshotReader 는 기존 로더 5~6개를 조합만 하는 어댑터라 목으로 단위 테스트를
@@ -403,7 +404,13 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     expect(row.isOverseas).toBe('N');
 
     expect(out.items).toEqual([
-      { masterId: fx.masterId, versionId: fx.versionId, rowKey: 'P-000001', pricingEditable: true },
+      {
+        masterId: fx.masterId,
+        versionId: fx.versionId,
+        rowKey: 'P-000001',
+        pricingEditable: true,
+        snapshot: expect.any(Object) as unknown,
+      },
     ]);
   });
 
@@ -624,5 +631,63 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     expect(variantRow.combinationLabel).toBe('');
     expect(variantRow.variantCode).toBe('AY-SINGLE');
     expect(out.result.items[0].masterId).toBe(out.fx.masterId);
+  });
+
+  it('items.snapshot 에 워크북에 찍힌 것과 같은 행이 담긴다', async () => {
+    const { data, items } = await inRollbackTx(async (tx) => {
+      const fx = await createRichProduct(tx);
+      return reader.buildPrefill(tx, [fx.masterId], 'exp-snapshot-value');
+    });
+
+    const item = items[0];
+    expect(item.snapshot.product.name).toBe(data.products[0].name);
+    expect(item.snapshot.product.basePrice).toBe(data.products[0].basePrice);
+    // 워크북 행에는 rowKey 가 있고 스냅샷에는 없다 — 그 하나만 다르다.
+    expect(item.snapshot.product.rowKey).toBeUndefined();
+  });
+
+  it('snapshot.images 는 그 상품이 참조하는 키만 담는다', async () => {
+    const fileA = randomUUID();
+    const fileB = randomUUID();
+    const fileBAdditional = randomUUID();
+
+    const { items, masterIdA } = await inRollbackTx(async (tx) => {
+      // A 는 대표이미지만(부가 없음), B 는 대표+부가 둘 다 — A 의 snapshot.images 가
+      // B 의 참조를 섞어 담지 않는지(상품별로 정확히 자기 것만 담는지)를 본다.
+      const pA = await createProductWithImages(tx, { name: '상품A', primaryFileId: fileA });
+      const pB = await createProductWithImages(tx, {
+        name: '상품B',
+        primaryFileId: fileB,
+        additionalFileId: fileBAdditional,
+      });
+      const out = await reader.buildPrefill(tx, [pA.masterId, pB.masterId], 'exp-snapshot-images');
+      return { items: out.items, masterIdA: pA.masterId };
+    });
+
+    const a = items.find((i) => i.masterId === masterIdA)!;
+    expect(Object.keys(a.snapshot.images)).toEqual([a.snapshot.product.thumbnailImageKey]);
+  });
+
+  it('renderMaster 를 seed 된 할당기로 다시 부르면 같은 이미지 키가 나온다', async () => {
+    const fileA = randomUUID();
+    const fileB = randomUUID();
+
+    // renderMaster 재호출은 같은 상품이 여전히 존재해야 하므로(재조회), 픽스처 생성과
+    // 재호출을 **같은** 롤백 트랜잭션 안에서 한다 — 트랜잭션 밖에서 부르면 이미
+    // 롤백되어 사라진 masterId 를 찾다 null 을 돌려받는다.
+    const { snapshot, again } = await inRollbackTx(async (tx) => {
+      const fx = await createProductWithImages(tx, {
+        name: '상품A',
+        primaryFileId: fileA,
+        additionalFileId: fileB,
+      });
+      const out = await reader.buildPrefill(tx, [fx.masterId], 'exp-snapshot-reseed');
+      const snapshot = out.items[0].snapshot;
+      const again = await reader.renderMaster(tx, fx.masterId, createImageKeyAllocator(snapshot.images), new Map());
+      return { snapshot, again };
+    });
+
+    expect(again!.product.thumbnailImageKey).toBe(snapshot.product.thumbnailImageKey);
+    expect(again!.product.additionalImageKeys).toBe(snapshot.product.additionalImageKeys);
   });
 });
