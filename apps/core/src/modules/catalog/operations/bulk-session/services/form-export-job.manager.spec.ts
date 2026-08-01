@@ -2,8 +2,22 @@ import { Logger } from '@nestjs/common';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { FormExportJobManager, MAX_CONSECUTIVE_EXPORT_FAILURES } from './form-export-job.manager';
 import { productFormExports, productFormExportItems } from '../../../schema/catalog.schema';
-import type { PrefillWorkbookData } from './form-export.types';
+import type { PrefillBundle, PrefillWorkbookData } from './form-export.types';
 import type { SnapshotItem } from './form-export.snapshot.reader';
+
+/**
+ * 이 스위트는 항목의 스냅샷 **값**을 검증하지 않는다(그건 form-export-snapshot.integration.spec.ts
+ * 몫이다) — 여기서는 runExport 의 클레임/마감/델리트-인서트 순서만 본다. `SnapshotItem.snapshot`
+ * 이 필수 필드라 리터럴을 타입에 맞추기 위한 최소 스텁.
+ */
+const EMPTY_SNAPSHOT: PrefillBundle = {
+  product: {},
+  options: [],
+  variants: [],
+  categories: [],
+  constraint: null,
+  images: {},
+};
 
 /**
  * drizzle sql 조각을 실제 SQL 문자열로 렌더한다. 클레임의 원자성은 바인딩 값이 아니라
@@ -245,7 +259,9 @@ describe('FormExportJobManager.runExport', () => {
   });
 
   it('요청 masterId 로 스냅샷을 만들어 업로드하고 completed 로 마감하며 true 를 돌려준다', async () => {
-    const items: SnapshotItem[] = [{ masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true }];
+    const items: SnapshotItem[] = [
+      { masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true, snapshot: EMPTY_SNAPSHOT },
+    ];
     const { manager, buildPrefill, upload, updates } = makeHarness({
       snapshotResult: { data: EMPTY_PREFILL_DATA, items },
       uploadResult: { fileId: 'file-9' },
@@ -285,7 +301,9 @@ describe('FormExportJobManager.runExport', () => {
   });
 
   it('재조립이면 옛 항목을 먼저 지운 뒤에 새로 넣는다 — UNIQUE 충돌을 피한다', async () => {
-    const items: SnapshotItem[] = [{ masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true }];
+    const items: SnapshotItem[] = [
+      { masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true, snapshot: EMPTY_SNAPSHOT },
+    ];
     const { manager, deletes, inserts } = makeHarness({ snapshotResult: { data: EMPTY_PREFILL_DATA, items } });
 
     await manager.runExport(CLAIMED);
@@ -313,7 +331,9 @@ describe('FormExportJobManager.runExport', () => {
   // product_form_export_items 를 자기 것으로 덮어쓰는 데이터 손상이 실 Postgres 에서
   // 재현됐다(리뷰 재현 로그: product_count=2 인데 items 는 1행만 남음).
   it('CAS 가 0행을 매치하면(레이스에서 짐) items 를 전혀 건드리지 않고 false 를 돌려준다', async () => {
-    const items: SnapshotItem[] = [{ masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true }];
+    const items: SnapshotItem[] = [
+      { masterId: 'm1', versionId: 'v1', rowKey: 'P-000001', pricingEditable: true, snapshot: EMPTY_SNAPSHOT },
+    ];
     const { manager, deletes, inserts } = makeHarness({
       snapshotResult: { data: EMPTY_PREFILL_DATA, items },
       finalizeOwned: false,

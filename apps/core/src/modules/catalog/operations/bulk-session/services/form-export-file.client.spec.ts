@@ -107,4 +107,63 @@ describe('FormExportFileClient', () => {
       await expect(client.getDownloadUrl(FILE_ID, 'u1')).rejects.toThrow(/404/);
     });
   });
+
+  describe('download', () => {
+    const FILE_ID = '0193cccc-dddd-7eee-8fff-000011112222';
+
+    /**
+     * getDownloadUrl(서명 URL 발급) → 실제 GET, 두 단계라 URL 로 갈라 응답을 다르게 준다.
+     * 실제 fetch 시그니처로 좁히기 위해 (url: string, init?: RequestInit) 로 받는다.
+     */
+    function twoStepFetchMock(secondStep: (init: RequestInit | undefined) => Promise<unknown>) {
+      return jest.fn((url: string, init?: RequestInit) => {
+        if (url.includes('/download?download=true')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ signedUrl: 'https://s3.example/form.xlsx?sig=abc' }),
+          });
+        }
+        return secondStep(init);
+      });
+    }
+
+    it('서명 URL 을 받아 실제로 GET 하고 바이트를 돌려주며, 타임아웃 signal 을 싣는다', async () => {
+      const fileBytes = Buffer.from('workbook-bytes', 'utf8');
+      const fetchMock = twoStepFetchMock((init) => {
+        // 멈춘 S3 연결이 검증 워커 슬라이스를 무한정 붙잡지 않도록 타임아웃 signal 이
+        // 실제 GET 에 실려 있어야 한다 — form-export-file.client.ts DOWNLOAD_TIMEOUT_MS 참조.
+        expect(init?.signal).toBeInstanceOf(AbortSignal);
+        return Promise.resolve({
+          ok: true,
+          arrayBuffer: () => Promise.resolve(new Uint8Array(fileBytes).buffer),
+        });
+      });
+      global.fetch = fetchMock as never;
+
+      const client = new FormExportFileClient(config);
+      const out = await client.download(FILE_ID, 'u1');
+
+      expect(out.equals(fileBytes)).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('S3 GET 이 실패 응답이면 상태코드를 담아 던지고, 본문은 로그에만 잘려 남는다 (상류 응답이 새지 않는다)', async () => {
+      const canary = 'S3-LEAK-CANARY-';
+      const upstreamJunk = canary + 'F'.repeat(500);
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const fetchMock = twoStepFetchMock(() =>
+        Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve(upstreamJunk) }),
+      );
+      global.fetch = fetchMock as never;
+
+      const client = new FormExportFileClient(config);
+      const promise = client.download(FILE_ID, 'u1');
+
+      await expect(promise).rejects.toThrow('업로드 파일 다운로드 실패 (403)');
+      // 캐나리는 예외 메시지에 절대 없어야 한다 — file-service 실패 경로(upload 테스트)와
+      // 같은 회귀 방지.
+      await expect(promise).rejects.not.toThrow(new RegExp(canary));
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(upstreamJunk.slice(0, 200)));
+    });
+  });
 });

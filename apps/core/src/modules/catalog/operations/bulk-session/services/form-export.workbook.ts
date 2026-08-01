@@ -67,12 +67,29 @@ export async function buildFormWorkbook(data: PrefillWorkbookData): Promise<Buff
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-/** 업로드된 워크북에서 exportId 를 되읽는다. 없으면 null — 신규 전용 세션이다. */
-export async function readExportIdFromWorkbook(buf: Buffer): Promise<string | null> {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf as unknown as ArrayBuffer);
+/**
+ * **이미 로드된** 워크북에서 exportId 를 읽는다. 없으면 null — 신규 전용 세션이다.
+ *
+ * `readExportIdFromWorkbook`(아래)에서 로드 책임을 분리했다 — `parseUploadWorkbook` 이
+ * 이미 같은 버퍼를 로드해둔 워크북 객체를 갖고 있어, 다시 버퍼를 로드하면 최대 10MB
+ * 파일을 같은 호출 안에서 두 번 파싱하는 셈이 된다(ALB 60초에 묶인 동기 요청 경로에서
+ * 비용이 실제로 든다). 메타 셀 위치 지식(SHEET_NAMES.meta, META_CELL)이 이 함수
+ * 하나에만 있고, 로드 방식(버퍼 vs 이미 로드된 객체)과 분리돼 있다.
+ */
+export function readExportIdFromLoadedWorkbook(wb: ExcelJS.Workbook): string | null {
   const meta = wb.getWorksheet(SHEET_NAMES.meta);
   if (!meta) return null;
   const value = meta.getCell(META_CELL).text.trim();
   return value.length > 0 ? value : null;
+}
+
+/**
+ * 업로드된 워크북 버퍼에서 exportId 를 되읽는다. 없으면 null — 신규 전용 세션이다.
+ * 이미 로드된 워크북이 있다면(예: `parseUploadWorkbook`) 대신
+ * `readExportIdFromLoadedWorkbook` 을 써서 같은 버퍼를 두 번 로드하지 않는다.
+ */
+export async function readExportIdFromWorkbook(buf: Buffer): Promise<string | null> {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as unknown as ArrayBuffer);
+  return readExportIdFromLoadedWorkbook(wb);
 }
