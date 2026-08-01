@@ -975,6 +975,85 @@ export const notices = pgTable(
   ],
 );
 
+// ===== PRODUCT FORM EXPORTS (일괄 세션 1단계 — 양식 생성 잡) =====
+
+export const productFormExportStatusEnum = pgEnum('product_form_export_status', [
+  'queued',
+  'running',
+  'completed',
+  'failed',
+]);
+
+export const productFormExports = pgTable(
+  'product_form_exports',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    requestedBy: uuid('requested_by').notNull(),
+    /**
+     * 접수 시 요청된 masterId 목록. 조립이 이 목록을 훑어 각 상품의 현재 active 를 찾는다.
+     *
+     * items 테이블에 미리 넣지 않는 이유: items 는 **실제로 프리필된 것만** 담아야
+     * 업로드 시 수정/신규 판정의 근거가 된다. 요청됐지만 active 가 없어 빠진 상품이
+     * items 에 남아 있으면, 그 상품키로 올라온 행이 "수정"으로 잘못 해석된다.
+     */
+    requestedMasterIds: uuid('requested_master_ids').array().notNull(),
+    status: productFormExportStatusEnum('status').notNull().default('queued'),
+    /** 완성된 xlsx 의 file-service fileId. status='completed' 일 때만 채워진다. */
+    fileId: uuid('file_id'),
+    productCount: integer('product_count').notNull().default(0),
+    errorMessage: text('error_message'),
+    /** 워커 클레임 lease 만료시각. NULL 이거나 과거면 다른 틱이 집어갈 수 있다. */
+    leaseUntil: timestamp('lease_until'),
+    /**
+     * lease 소유권 펜싱 토큰. 갱신·해제·마감을 이 값으로 CAS 한다.
+     * 타임스탬프로 소유권을 보려던 시도는 정밀도·타임존·드라이버 직렬화에서 세 번 깨졌다
+     * (product_import_sessions.lease_token 주석 참조).
+     */
+    leaseToken: uuid('lease_token'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /** 생성 + 30일. 만료 정리 잡이 잡 행과 xlsx 를 함께 지운다. */
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_form_exports_claim').on(table.status, table.leaseUntil),
+    index('idx_form_exports_expires').on(table.expiresAt),
+    index('idx_form_exports_requested_by').on(table.requestedBy),
+  ],
+);
+
+export const productFormExportItems = pgTable(
+  'product_form_export_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    exportId: uuid('export_id')
+      .notNull()
+      .references(() => productFormExports.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id').notNull(),
+    /**
+     * 다운로드 시점의 active 버전. **값이 아니라 이 uuid 만 보관한다** —
+     * active/inactive 버전은 CoW 라 불변이므로 나중에 원본을 재구성할 수 있다.
+     */
+    versionId: uuid('version_id').notNull(),
+    /** 워크북의 '상품키' 열 값. 업로드 시 이 키로 수정/신규를 가른다. */
+    rowKey: varchar('row_key', { length: 100 }).notNull(),
+    /**
+     * 프리필 시점의 "가격을 임포트로 표현할 수 있는가" 판정을 얼려둔다.
+     * 업로드 시점에 다시 판정하면 그 사이 누가 룰을 바꿨을 때 워크북의 센티넬과 어긋난다.
+     */
+    pricingEditable: boolean('pricing_editable').notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_form_export_items_master').on(table.exportId, table.masterId),
+    uniqueIndex('uq_form_export_items_row_key').on(table.exportId, table.rowKey),
+  ],
+);
+
 // ===== PRODUCT IMPORT (엑셀 대량등록 세션) =====
 export const productImportSessionStatusEnum = pgEnum('product_import_session_status', ['completed', 'archived']);
 // 'pending' 은 **맨 뒤**에 붙인다. drizzle-kit 이 중간 삽입을 만나면
@@ -1233,6 +1312,8 @@ export const catalogSchema = {
   productImportSessions,
   productImportItems,
   productImportImages,
+  productFormExports,
+  productFormExportItems,
 };
 
 // ===== RELATIONS =====

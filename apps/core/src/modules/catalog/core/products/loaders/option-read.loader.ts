@@ -55,6 +55,7 @@ export class OptionReadLoader {
         id: productOptionValues.id,
         optionGroupId: productOptionValues.optionGroupId,
         displayName: productOptionValueDisplays.displayName,
+        colorCode: productOptionValueDisplays.colorCode,
         sortOrder: productOptionValueDisplays.sortOrder,
         createdAt: productOptionValues.createdAt,
       })
@@ -96,6 +97,7 @@ export class OptionReadLoader {
         optionGroupId: productOptionValues.optionGroupId,
         optionGroupName: productOptionGroupDisplays.displayName,
         displayName: productOptionValueDisplays.displayName,
+        colorCode: productOptionValueDisplays.colorCode,
         sortOrder: productOptionValueDisplays.sortOrder,
         createdAt: productOptionValues.createdAt,
       })

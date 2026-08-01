@@ -276,6 +276,7 @@ export type OptionValueReadModel = {
   id: string;
   optionGroupId: string;
   displayName: string;
+  colorCode: string | null;
   sortOrder: number;
   createdAt: Date;
 };
