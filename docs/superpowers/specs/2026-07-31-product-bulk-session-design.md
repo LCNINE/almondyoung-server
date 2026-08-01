@@ -455,3 +455,93 @@ product_master_versions
 - 배포 순서: core 먼저 → admin-web
 - **신규 시크릿 없음** — `AUTH_SECRET`·`FILE_SERVICE_URL` 이 Core live env 에 이미 있다
 - `PRODUCT_IMPORT_WORKER_ENABLED` 계열의 킬스위치를 새 워커에도 둔다
+
+---
+
+# 부록 A — 1단계 구현이 실측한 사실 (2026-08-01)
+
+이 부록은 1단계(양식 생성 잡 + 프리필 다운로드) 구현 중 **실제 코드를 읽어 확인한 것**만 담는다. 스펙 본문과 1단계 계획서가 확인 없이 단언했다가 틀린 것들이 여기 있고, **2~5단계가 같은 자리를 다시 밟지 않도록** 남긴다.
+
+읽는 법: 아래 사실은 2026-08-01 시점 실측이다. 시간이 지나면 낡으므로, 다음 단계는 **자기 범위의 인터페이스를 다시 확인**하고 이 표를 출발점으로만 쓴다.
+
+## A.1 스펙 §6 전제의 처리
+
+**"active·inactive 버전은 CoW 없이 UPDATE 되지 않는다"** — 1단계 설계 전체가 여기 기댄다(스냅샷을 `versionId` 만으로 보관).
+
+**확인 방식: 도메인 소유자 확인(2026-08-01).** core 판매상품 모듈이 active/inactive 불변을 유지하도록 기능을 노출하고 있다는 소유자 판단. **코드 전수 조사로 확인한 것은 아니다** — 근거의 종류를 구분해 기록해 둔다. 이 전제가 흔들리면 스냅샷을 값 복사로 바꿔야 하고 잡 테이블이 커진다.
+
+## A.2 카탈로그 도메인
+
+| 사실 | 근거 | 왜 중요한가 |
+|---|---|---|
+| `productMasterVersions.thumbnail` 은 **죽은 컬럼**이다 | 쓰기 경로 `product-masters.service.ts:906-915` 가 채우지 않는다. 실제 대표이미지는 `productImages.isPrimary=true` 행이고 `ProductReadAssembler`·`ProductMapper`·`ProjectionSnapshotAssembler` 전부 이 규약 | 이 컬럼을 대표이미지 출처로 쓰면 거의 모든 상품에서 빈칸이 된다 |
+| `productCategories.path` 는 **ID materialized path** 다 | `categories.service.ts:106,401` 이 `${parentPath}/${id}` 로 쓴다 | 사람이 읽는 `조상>자식` 경로는 `getCategoryTree()` 에서 따로 만들어야 하고, 워크북의 두 시트가 같은 인덱스를 써야 매칭된다 |
+| `productMasterVersions.seller` 는 **실존**한다 | `catalog.schema.ts:200` | 1단계 계획서는 없을 수 있다고 추측했다 |
+| 옵션은 **정체성과 표시가 분리**돼 있다 | `product_option_values` 에 이름이 없다(`catalog.schema.ts:450`). 이름·색상·정렬은 `product_option_value_displays` 가 `(optionValueId, masterId, versionId, locale)` 로 스코프 | displayName 변경은 `optionValueId` 를 안 바꾸므로 매칭에 무해하다. 조합 참조는 반드시 ID 기반이어야 한다 |
+| 매칭 인계 키는 `_comboKey(optionValueIds)` — **ID 비교** | `product-versions.service.ts` `_reconcileMatchingsAfterPublish` | 위와 같은 이유 |
+| `OptionReadLoader.getOptionGroups()` 는 원래 `colorCode` 를 프로젝션하지 않았다 | 1단계에서 `OptionValueReadModel` 에 추가. 다른 소비자 2곳(`ProjectionSnapshotAssembler` 는 `{id,name}` 만 pick, `ProductReadAssembler` 는 통과)은 additive 라 안전함을 확인 | 지금은 흐른다 |
+| 가격 룰 3축의 **전체 집합** | layer `base_price|membership_price|tiered_price`, scopeType `all_variants|with_option|variants`, operationType `offset|scale|override` (`catalog.schema.ts:594-596`) | 임포트가 만드는 건 진부분집합이고 DTO 가 **replace** 다 |
+| 가격 계산기는 **매칭되는 룰마다** 가격을 덮어쓴다 | `pricing-calculator.service.ts:78-93`, `order` 오름차순 | `all_variants` 는 전 variant 에 매칭되므로 **뒤에 오는 all_variants 가 앞선 조합별 오버라이드를 이긴다.** 1단계 계획서가 이걸 반대로 알고 있었다 |
+| `parentVersionId` 로 **발행 시점 재충돌 감지가 공짜** | 스키마에 이미 있다 | `현재 active.id === draft.parentVersionId` 확인만으로 "그 사이 남이 발행했다"를 안다 |
+| `PublishVersionOptions { origin, importSessionId }` 가 이미 있다 | `product-versions.service.ts:54-57` (v2 4단계 산물) | 일괄 발행이 채널 어댑터 inbox 레인을 강등하는 데 그대로 쓴다 |
+| 새 테이블은 `catalogSchema` 집합에도 넣어야 한다 | 1단계 T1 이 빠뜨렸다가 T8 에서 보강 | 안 넣으면 나중에 `relations()` 를 달아도 drizzle 이 못 보고 **조용히 무시**한다 |
+
+## A.3 file-service 계약
+
+| 사실 | 근거 |
+|---|---|
+| 업로드는 `POST /files/upload`, 멀티파트 필드 `file`·`contextId`, 응답 `{ id }` | `upload.controller.ts:31,67` |
+| 다운로드 URL 은 **`GET /files/:fileId/download`** 이고 응답은 **`{ signedUrl, expiresAt }`** | `download.controller.ts:27`, `signed-url-response.dto.ts` |
+| **`?download=true` 를 붙여야** `Content-Disposition` 이 붙는다 | `download.service.ts:30-33`. 안 붙이면 S3 키(UUID) 이름으로 저장된다 |
+| `FileAccess.isMasterOrOwner` 는 `scopes:['master']` 에서 **단락**한다 | `file-access.ts:54-63`. core 가 발급하는 토큰은 항상 이 스코프라 **file-service 는 누가 core 를 호출했는지 전혀 강제하지 않는다** — 소유권 검사는 core 쪽에 있어야 한다 |
+| 컨텍스트는 **마이그레이션이 아니라 시드**로 만들어진다 | `scripts/seeding/steps/file-service.seed-step.ts`, `db:seed:ref` (그룹 `baseline`) |
+| `digital-asset-file` 외 전 컨텍스트는 `ON CONFLICT DO NOTHING` 이다 | 같은 파일 `:96-115`. **최초 시드 후 형태를 바꿔도 반영되지 않고 드리프트 감지도 안 된다** |
+| file-service 는 `file_contexts` 를 **DB 에서 실시간 조회**하고 `default-file-contexts.ts` 를 import 하지 않는다 | `file-context-validator.service.ts` | 컨텍스트 추가에 file-service **재배포 의존성이 없다** — 필요한 건 시드 실행뿐 |
+| 삭제는 **soft delete** 다 | `lifecycle.controller.ts:15`. S3 바이트는 남는다(§5.2 기존 부채) |
+
+## A.4 인증·인가
+
+| 사실 | 근거 |
+|---|---|
+| `@User()` 는 `{ userId: string }` 을 준다 | `libs/authorization/src/decorators/user.decorator.ts` + 기존 컨트롤러 10여 곳 |
+| `userId` 는 검증된 JWT 클레임에서 온다 | `JwtAccessStrategy.validate` → `AuthenticationService.validatePayload` (`userId: payload.sub`) — 클라이언트가 넣을 수 없다 |
+| **catalog 모듈에는 scope/role 데코레이터가 하나도 없다** | 전역 `JwtAuthGuard`(`app.module.ts:53`)만 걸린다. `fulfillment`·`inventory`·`warehouse` 는 `@RequireScopes` 를 쓰는 것과 대조 |
+| core 의 OIDC issuer 는 **storefront 와 공유**다 | `deployments/lcnine/services/infra/services.ts:346`. core 에 `ALLOWED_AUDIENCES` 가 설정돼 있지 않다 | 즉 "이 라우트에는 관리자 토큰만 온다"는 **성립하지 않는다.** 2~5단계도 소유권 검사를 각자 넣어야 한다 |
+
+## A.5 모듈·부트스트랩
+
+| 사실 | 근거 |
+|---|---|
+| 클래스명은 `CategoriesModule` 이다 (`ProductCategoriesModule` 은 없다) | `categories/categories.module.ts` |
+| `ProductsModule` 은 `ProductVersionReadLoader` 를 **export 하지 않고 있었다** | 1단계 T7 에서 추가. **타입 체크로는 절대 안 잡힌다** — Nest DI 는 런타임 reflection 이다 |
+| `ScheduleModule.forRoot()` 는 `inventory.module.ts:39` 에 한 번 있고 전역 discovery 로 모든 `@Cron` 을 찾는다 | `@nestjs/schedule` 의 `getProviders()` 기반 explorer |
+| `bootstrapKafkaTopics` 는 실패를 **삼킨다** | `topic-bootstrap.service.ts:56-69`. 브로커가 죽어도 앱은 뜨고, 대신 kafkajs 재시도 백오프로 ~11초 느려진다. `KAFKA_BOOTSTRAP_TOPICS=false` 로 건너뛴다 |
+| `CatalogModule` 체인은 `forConsumerModule` 을 타지 않는다 | 그래서 부팅 테스트에서 컴파일해도 컨슈머 행 위험이 없다 |
+
+## A.6 프런트엔드(admin-web)
+
+| 사실 | 근거 |
+|---|---|
+| `.tsx` 는 레포 `lint`/`format` 글롭(`**/*.ts`)을 **빠져나간다** | `npx eslint <파일>` 로 직접 봐야 한다 |
+| 테스트 실행은 루트에서 `npm run test:admin-web -- <경로>` 다 | `apps/admin-web` 에 jest 설정이 없어 `cd apps/admin-web && npx jest` 는 동작하지 않는다 |
+| 전역 query 기본값은 `retry: 2`, `refetchOnWindowFocus: false` | `query-provider.tsx:16-17` |
+| `refetchInterval` 콜백은 v5 의 `(query) => query.state.data` 형태를 쓴다 | 기존 `useImportProgress` 선례 |
+| **렌더러가 없다** — `@testing-library/react`·`react-test-renderer` 미설치 | 컴포넌트 배선은 단위 테스트 불가. 순수 헬퍼로 뽑아야 테스트된다 |
+| 상품 목록의 선택 id 는 **masterId** 다 | `products-list/components/table/index.tsx` 의 `getRowId: (row) => row.masterId` |
+
+## A.7 exceljs 실측 (4.4.0)
+
+| 동작 | 결과 |
+|---|---|
+| `worksheet.protect()` | async. `sheet:true` 는 write→load 왕복에서 살아남고, 하위 플래그는 떨어진다 |
+| `worksheet.state = 'veryHidden'` | 왕복에서 유지된다 |
+| `views` 고정 창 | 왕복에서 유지된다 |
+| `header.commit()` | 비스트리밍 `Workbook` 에서는 **no-op** 이다 |
+| 날짜 셀 | `cell.text` 가 로케일·TZ 의존 `Date.toString()` 이라 그대로 못 쓴다. 셀 값은 항상 규격 문자열로 굳힌다 |
+
+## A.8 1단계가 남긴 후속 (2~5단계가 이어받는다)
+
+- **`purgeExpired` 는 soft delete 라 S3 바이트가 남는다** — file-service 전역 고아 정리 잡이 생기면 함께 사라진다 (§5.2)
+- **스냅샷 리더가 상품당 ~7 쿼리 + variant 당 1 쿼리를 단일 장기 트랜잭션에서 돈다** — 5,000건 상한에서 커넥션 하나를 오래 점유하고 vacuum 을 막는다. 큰 선택이 실제로 들어오기 전에 배치화 필요
+- **`errorMessage` 가 원문 예외 텍스트다** — 관리자 화면에 그대로 렌더된다. 분류·절단 필요
+- **1단계는 기능 플래그 없이 노출된다**(§7 오버라이드) — 그래서 §3.1 의 "만료 exportId 는 업로드 거부" 가 2단계의 필수 조건이다
