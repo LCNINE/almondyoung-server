@@ -108,7 +108,10 @@ function harness(tables: HarnessTables) {
   // 생성자는 실제 DbService<PimSchema> 타입을 요구한다 — 이 페이크는 run() 만 구조적으로
   // 흉내내므로 `as never` 캐스팅은 bulk-session.manager.spec.ts harness 와 같은 관례.
   const reader = new BulkSessionReader(db as never);
-  return { reader };
+  // 3단계: hasPendingImageWork(trx, ...) 처럼 trx 를 명시로 받는 메서드를 테스트하려면
+  // 하네스가 만든 그 trx 가 필요하다. FakeTrx 는 select() 구조만 흉내내므로 실제
+  // DbTransaction 자리에 넣을 때는 위 `db as never` 와 같은 관례를 쓴다.
+  return { reader, trx: trx as never };
 }
 
 const SESSION_ROW: FakeRow = {
@@ -331,5 +334,190 @@ describe('BulkSessionReader.getSessions', () => {
     expect(result.total).toBe(1);
     expect(result.page).toBe(1);
     expect(result.limit).toBe(20);
+  });
+});
+
+describe('BulkSessionReader.hasPendingImageWork', () => {
+  const SESSION = '00000000-0000-7000-8000-000000000001';
+  const OTHER = '00000000-0000-7000-8000-0000000000ff';
+
+  it('요구된 파일이 아직 안 올라왔으면 true', async () => {
+    const { reader, trx } = harness({
+      items: [
+        {
+          sessionId: SESSION,
+          status: 'pending',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-1', usage: 'main' }] },
+        },
+      ],
+      images: [{ sessionId: SESSION, imageKey: 'IMG-1', usage: 'main', status: 'awaiting_upload' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(true);
+  });
+
+  it('전부 resolved 면 false', async () => {
+    const { reader, trx } = harness({
+      items: [
+        {
+          sessionId: SESSION,
+          status: 'pending',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-1', usage: 'main' }] },
+        },
+      ],
+      images: [{ sessionId: SESSION, imageKey: 'IMG-1', usage: 'main', status: 'resolved' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(false);
+  });
+
+  // 이 한 줄이 이 술어의 존재 이유다 — invalid 행이 참조하던 파일까지 세면 작업자가
+  // 절대 안 쓰일 파일을 올려야 다음으로 넘어간다.
+  it('invalid 행만 참조하는 미해결 이미지는 세지 않는다', async () => {
+    const { reader, trx } = harness({
+      items: [
+        {
+          sessionId: SESSION,
+          status: 'invalid',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-9', usage: 'main' }] },
+        },
+      ],
+      images: [{ sessionId: SESSION, imageKey: 'IMG-9', usage: 'main', status: 'awaiting_upload' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(false);
+  });
+
+  it('아무도 참조하지 않는 미해결 이미지도 세지 않는다', async () => {
+    const { reader, trx } = harness({
+      items: [{ sessionId: SESSION, status: 'pending', payload: { fields: {} } }],
+      images: [{ sessionId: SESSION, imageKey: 'IMG-ORPHAN', usage: 'main', status: 'awaiting_upload' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(false);
+  });
+
+  it('용도가 다르면 다른 참조다 — 본문용만 참조된 키는 대표용 업로드를 기다리지 않는다', async () => {
+    const { reader, trx } = harness({
+      items: [
+        {
+          sessionId: SESSION,
+          status: 'pending',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-1', usage: 'description' }] },
+        },
+      ],
+      images: [{ sessionId: SESSION, imageKey: 'IMG-1', usage: 'main', status: 'awaiting_upload' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(false);
+  });
+
+  it('남의 세션 행은 보지 않는다', async () => {
+    const { reader, trx } = harness({
+      items: [
+        {
+          sessionId: OTHER,
+          status: 'pending',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-1', usage: 'main' }] },
+        },
+      ],
+      images: [{ sessionId: OTHER, imageKey: 'IMG-1', usage: 'main', status: 'awaiting_upload' }],
+    });
+    await expect(reader.hasPendingImageWork(trx, SESSION)).resolves.toBe(false);
+  });
+});
+
+describe('BulkSessionReader.getImages', () => {
+  const SESSION = '00000000-0000-7000-8000-000000000001';
+  const USER = '00000000-0000-7000-8000-000000000009';
+  const ALL = { onlyRequired: false, page: 1, limit: 20 };
+
+  // Task 3 리뷰 Important #1: image1Status/image9Status 오버라이드가 없으면 기존 6개
+  // 테스트와 동일한 픽스처다(둘 다 awaiting_upload). requiredResolved 의 참(positive)
+  // 분기 — required 이면서 resolved — 를 켜려면 image1Status 를 'resolved' 로 준다.
+  function imageFixture(overrides: { image1Status?: string; image9Status?: string } = {}) {
+    return {
+      sessions: [{ id: SESSION, uploadedBy: USER }],
+      items: [
+        {
+          sessionId: SESSION,
+          status: 'pending',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-1', usage: 'main' }] },
+        },
+        {
+          sessionId: SESSION,
+          status: 'invalid',
+          payload: { fields: {}, imageRefs: [{ imageKey: 'IMG-9', usage: 'main' }] },
+        },
+      ],
+      images: [
+        {
+          sessionId: SESSION,
+          imageKey: 'IMG-1',
+          usage: 'main',
+          sourceKind: 'file_name',
+          sourceValue: 'front.jpg',
+          status: overrides.image1Status ?? 'awaiting_upload',
+          fileId: null,
+        },
+        {
+          sessionId: SESSION,
+          imageKey: 'IMG-9',
+          usage: 'main',
+          sourceKind: 'file_name',
+          sourceValue: 'ghost.jpg',
+          status: overrides.image9Status ?? 'awaiting_upload',
+          fileId: null,
+        },
+      ],
+    };
+  }
+
+  it('pending 행이 참조하는 이미지만 required 다', async () => {
+    const { reader } = harness(imageFixture());
+    const out = await reader.getImages(SESSION, USER, ALL);
+    expect(out.data.find((r) => r.imageKey === 'IMG-1')?.required).toBe(true);
+    expect(out.data.find((r) => r.imageKey === 'IMG-9')?.required).toBe(false);
+  });
+
+  it('게이트 분모·분자는 required 기준이다', async () => {
+    const { reader } = harness(imageFixture());
+    const out = await reader.getImages(SESSION, USER, ALL);
+    expect(out.requiredTotal).toBe(1);
+    expect(out.requiredResolved).toBe(0);
+  });
+
+  // Task 3 리뷰 Important #1: 위 테스트는 이미지 두 개가 전부 awaiting_upload 라
+  // requiredResolved 가 항상 0 을 기대했다 — 참(positive) 분기(row.status === 'resolved')가
+  // 한 번도 실행되지 않았다. IMG-1(required, resolved)·IMG-9(비required, resolved) 를 같이
+  // resolved 로 두면: (1) required 이면서 resolved 인 것이 분자에 실제로 잡히는지,
+  // (2) resolved 라도 required 가 아니면 분자에서 빠지는지(분자가 requiredRows 에서만
+  // 계산되는지) 를 한 픽스처로 같이 검증한다.
+  it('requiredResolved 는 required 이면서 resolved 인 것만 센다 — resolved 라도 required 가 아니면 분자에서 빠진다', async () => {
+    const { reader } = harness(imageFixture({ image1Status: 'resolved', image9Status: 'resolved' }));
+    const out = await reader.getImages(SESSION, USER, ALL);
+    expect(out.requiredTotal).toBe(1);
+    expect(out.requiredResolved).toBe(1);
+  });
+
+  it('용도에 맞는 업로드 컨텍스트를 함께 준다 — 클라이언트가 매핑을 다시 들지 않게', async () => {
+    const { reader } = harness(imageFixture());
+    const out = await reader.getImages(SESSION, USER, ALL);
+    expect(out.data[0].contextId).toBe('product-image');
+  });
+
+  it('onlyRequired 는 목록만 좁히고 요약 카운트는 세션 전체 기준을 유지한다', async () => {
+    const { reader } = harness(imageFixture());
+    const out = await reader.getImages(SESSION, USER, { ...ALL, onlyRequired: true });
+    expect(out.data).toHaveLength(1);
+    expect(out.total).toBe(1);
+    expect(out.requiredTotal).toBe(1);
+  });
+
+  it('status 필터가 걸린다', async () => {
+    const { reader } = harness(imageFixture());
+    const out = await reader.getImages(SESSION, USER, { ...ALL, status: 'resolved' });
+    expect(out.data).toHaveLength(0);
+    expect(out.requiredTotal).toBe(1);
+  });
+
+  it('남의 세션이면 존재 검사와 같은 NotFoundError', async () => {
+    const { reader } = harness(imageFixture());
+    await expect(reader.getImages(SESSION, 'someone-else', ALL)).rejects.toBeInstanceOf(NotFoundError);
   });
 });

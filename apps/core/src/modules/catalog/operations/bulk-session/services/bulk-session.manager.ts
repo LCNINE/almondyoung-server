@@ -7,7 +7,6 @@ import {
   type PimSchema,
   productBulkSessions,
   productBulkItems,
-  productBulkImages,
   productFormExportItems,
   productFormExports,
 } from '../../../schema/catalog.schema';
@@ -15,7 +14,7 @@ import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
 import { parseUploadWorkbook } from './bulk-upload.parser';
 import { BulkSessionReader, bulkItemRowColumns, toConflictDecisionMap, toConflictMap } from './bulk-session.reader';
-import { isBulkItemPayload, type ConflictDecisionMap } from './bulk-session.types';
+import { type ConflictDecisionMap } from './bulk-session.types';
 import { BulkSessionAcceptedDto, BulkSessionItemDto, BulkSessionProgressDto } from '../dto';
 
 export interface BulkSessionAcceptInput {
@@ -268,8 +267,8 @@ export class BulkSessionManager {
    * 4단계가 애초에 집지 않으므로 그 충돌은 절대 적용되지 않는다 — 어차피 버려질 행에
    * "남의 편집을 되돌릴지" 판단을 강요하면 `detectConflicts` 가 피하려던 노이즈가 된다.
    *
-   * 다음 phase 는 요구 이미지가 남았는지로 갈린다 — 판정은 `hasPendingImageWork` 가 하고,
-   * 거기에도 **같은 `status='pending'` 필터**가 걸린다(버려질 행이 참조하는 파일을 요구하면
+   * 다음 phase 는 요구 이미지가 남았는지로 갈린다 — 판정은 `BulkSessionReader.hasPendingImageWork`
+   * 가 하고, 거기에도 **같은 `status='pending'` 필터**가 걸린다(버려질 행이 참조하는 파일을 요구하면
    * 안 된다). 남았으면 `awaiting_images`(3단계가 게이트를 연다), 없으면 곧장 `drafting`.
    * **2단계에는 그 두 phase 를 처리하는 워커가 아직 없다** — 승인된 세션은 거기서 멈춘 채
    * 기다린다. 그게 의도다.
@@ -332,7 +331,7 @@ export class BulkSessionManager {
         throw new ConflictError(`결정하지 않은 충돌이 ${undecidedCount}건 있습니다 (예: ${preview})`);
       }
 
-      const nextPhase = (await this.hasPendingImageWork(trx, sessionId)) ? 'awaiting_images' : 'drafting';
+      const nextPhase = (await this.reader.hasPendingImageWork(trx, sessionId)) ? 'awaiting_images' : 'drafting';
 
       const [updated] = await trx
         .update(productBulkSessions)
@@ -354,47 +353,6 @@ export class BulkSessionManager {
   }
 
   /**
-   * 승인 다음 phase 를 가르는 질문: **적용될 행이 참조하는 이미지 중 아직 파일이 없는 것이
-   * 있는가.**
-   *
-   * "세션에 `awaiting_upload` 행이 하나라도 있는가"로 물으면 안 된다. `product_bulk_images`
-   * 행은 **파싱 시점**에 만들어지는데(bulk-session-job.manager.ts 의 파싱 슬라이스) 그때는
-   * 접합 오류만 알고 필드 검증 결과는 모른다 — 나중에 `invalid` 이 된 행이 참조하던
-   * 파일명 이미지가 그대로 `awaiting_upload` 로 남는다. 그것까지 세면 30행이 invalid 인
-   * 세션에서 작업자가 **절대 쓰이지 않을 파일 30개**를 올려야 다음으로 넘어간다.
-   *
-   * 바로 위 미결정 충돌 게이트가 `status='pending'` 만 세는 것과 **같은 이유·같은 필터**다.
-   * 참조 관계는 `payload.imageRefs` 에 있고, 이미지 행의 정체성은 (imageKey, usage) 쌍이다
-   * (`uq_bulk_images_session_key_usage`) — 키만 맞춰 보면 한 파일을 본문용으로만 쓰는 행이
-   * 대표용 업로드까지 기다리게 만든다.
-   *
-   * 미해결 이미지가 **하나도 없을 때는 items 를 읽지 않는다** — 흔한 경우(프리필 이미지는
-   * 전부 fileId 라 `resolved` 다)에서 payload 전량 스캔을 피한다.
-   */
-  private async hasPendingImageWork(trx: DbTransaction, sessionId: string): Promise<boolean> {
-    const awaiting = await trx
-      .select({ imageKey: productBulkImages.imageKey, usage: productBulkImages.usage })
-      .from(productBulkImages)
-      .where(and(eq(productBulkImages.sessionId, sessionId), eq(productBulkImages.status, 'awaiting_upload')));
-    if (awaiting.length === 0) return false;
-
-    const pendingRows = await trx
-      .select({ payload: productBulkItems.payload })
-      .from(productBulkItems)
-      .where(and(eq(productBulkItems.sessionId, sessionId), eq(productBulkItems.status, 'pending')));
-
-    const referenced = new Set<string>();
-    for (const row of pendingRows) {
-      // payload 는 jsonb 왕복 값이라 unknown 이다 — 가드를 통과한 것만 읽는다(롤링 배포에서
-      // 옛 코드가 쓴 shape 을 만나도 승인이 죽지 않는다).
-      if (!isBulkItemPayload(row.payload)) continue;
-      for (const ref of row.payload.imageRefs ?? []) referenced.add(`${ref.usage}:${ref.imageKey}`);
-    }
-
-    return awaiting.some((image) => referenced.has(`${image.usage}:${image.imageKey}`));
-  }
-
-  /**
    * 세션 취소. `phase NOT IN ('published', 'canceled')` 면 허용한다 — **failed 도 대상이다.**
    * v3 는 굳은 세션이 취소도 409 를 받아 영영 못 풀렸다(스펙 §3.2). 종단(published·canceled)
    * 만 409 다.
@@ -405,10 +363,9 @@ export class BulkSessionManager {
    * `finishValidating`/`failSession` 이 끼어들어도(둘 다 WHERE 에 `cancel_requested_at IS
    * NULL` 을 건다) 0행이 되어 아무 것도 덮어쓰지 못한다.
    *
-   * **이미지 정리는 여기서 하지 않는다.** 2단계 시점의 이미지 행은 우리가 올린 파일이
-   * 아니라 프리필 fileId 이거나(사용자가 참조만 했다) 아직 실제 파일이 없는 것(파일명
-   * 참조, 3단계가 받기 전)뿐이라 지울 대상 자체가 없다. 실제 업로드된 파일 정리는
-   * 3단계(이미지 레인)의 몫이다.
+   * **이미지 정리는 여기서 하지 않는다.** 취소는 즉시 끝나야 하고 세션당 이미지 행이
+   * 최대 1만 건이라 인라인 삭제가 불가능하다 — `BulkImageCleaner` 의 @Cron 스윕이
+   * `phase='canceled'` 세션을 찾아 지운다(draft 가 하나라도 붙은 세션은 건드리지 않는다).
    *
    * 마지막 UPDATE 는 `phase NOT IN ('published','canceled')` CAS 를 다시 건다(Task 10
    * 리뷰 #4) — 위 SELECT 와 이 UPDATE 사이에 다른 탭이 승인/게시를 끝냈으면(READ COMMITTED

@@ -63,6 +63,8 @@ describeIfDb('BulkSessionModule DI', () => {
     const { BulkSessionManager } = await import('./services/bulk-session.manager');
     const { BulkSessionJobManager } = await import('./services/bulk-session-job.manager');
     const { BulkSessionJobWorker } = await import('./services/bulk-session-job.worker');
+    const { BulkImageManager } = await import('./services/bulk-image.manager');
+    const { BulkImageCleaner } = await import('./services/bulk-image.cleaner');
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -114,6 +116,16 @@ describeIfDb('BulkSessionModule DI', () => {
     // 해야만 잡히므로 여기서만 걸리는 종류의 배선 오류다.
     expect(moduleRef.get(BulkSessionJobManager, { strict: false })).toBeInstanceOf(BulkSessionJobManager);
     expect(moduleRef.get(BulkSessionJobWorker, { strict: false })).toBeInstanceOf(BulkSessionJobWorker);
+
+    // 3단계 이미지 경로. BulkImageManager 가 해석된다는 건 그 생성자가 받는
+    // DbService<PimSchema>/FormExportFileClient/BulkSessionReader 3개 의존성도 함께 실제로
+    // 해석됐다는 뜻이다 — 특히 BulkSessionReader 는 2단계까지 BulkSessionManager 만 쓰던
+    // provider 라, 새 소비자가 붙는 순간 등록 누락이 여기서만 드러난다.
+    expect(moduleRef.get(BulkImageManager, { strict: false })).toBeInstanceOf(BulkImageManager);
+
+    // 정리 스윕. @Cron 은 provider 로 등록돼야 ScheduleExplorer 가 마운트한다 —
+    // 등록을 빠뜨리면 타입도 테스트도 초록인 채 **크론이 영영 안 돈다**.
+    expect(moduleRef.get(BulkImageCleaner, { strict: false })).toBeInstanceOf(BulkImageCleaner);
 
     await moduleRef.close();
   });

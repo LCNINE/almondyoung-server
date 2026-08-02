@@ -166,4 +166,162 @@ describe('FormExportFileClient', () => {
       expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining(upstreamJunk.slice(0, 200)));
     });
   });
+
+  describe('getMetadata', () => {
+    it('메타데이터를 core 가 쓰는 네 필드로 좁혀 돌려준다', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            id: 'f1',
+            contextId: 'product-image',
+            status: 'active',
+            originalName: 'front.jpg',
+            size: 10,
+            mimeType: 'image/jpeg',
+          }),
+      });
+      global.fetch = fetchMock as never;
+
+      const client = new FormExportFileClient(config);
+      await expect(client.getMetadata('f1', 'u1')).resolves.toEqual({
+        id: 'f1',
+        contextId: 'product-image',
+        status: 'active',
+        originalName: 'front.jpg',
+      });
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe('http://file-service/files/f1/metadata');
+      const auth = (init.headers as Record<string, string>).Authorization;
+      // 위임 토큰에 요청자 userId 가 실려야 file-service 접근 검사를 통과한다(upload 와 같은 근거).
+      expect(verify(auth.replace('Bearer ', ''), SECRET)).toMatchObject({ userId: 'u1' });
+    });
+
+    // 보안 회귀 방지 — 이미지 경로 토큰에 master 가 실리면 file-service 의
+    // `isMasterOrOwner`(file-access.ts:62)가 소유권 검사를 단락해, 작업자가 통보한
+    // **임의의 fileId** 를 core 가 master 권한으로 읽고 지우는 프리미티브가 된다.
+    it('이미지 경로 토큰에는 master 스코프가 없다 — file-service 가 업로더 소유권을 강제해야 한다', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'f1', contextId: 'product-image', status: 'active', originalName: 'a.jpg' }),
+      });
+      global.fetch = fetchMock as never;
+
+      const client = new FormExportFileClient(config);
+      await client.getMetadata('f1', 'u1');
+
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const auth = (init.headers as Record<string, string>).Authorization;
+      const payload = verify(auth.replace('Bearer ', ''), SECRET) as Record<string, unknown>;
+      // owner 분기(file-access.ts:55)가 읽는 클레임은 userId 다 — 이게 없으면 이미지
+      // 경로 전체가 403 으로 죽는다.
+      expect(payload.userId).toBe('u1');
+      expect(payload.scopes).toEqual([]);
+      expect(payload.scopes).not.toContain('master');
+      // roles 로도 master 가 새면 안 된다(file-access.ts:58 이 roles 도 본다).
+      expect(payload.roles).toBeUndefined();
+    });
+
+    // 이 분기가 "통보된 fileId 가 실재하는가"의 답이다 — 예외로 만들면 배치 한 건의
+    // 오타가 나머지 49건을 통째로 죽인다.
+    it('404 는 예외가 아니라 null 이다', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve('not found'),
+      }) as never;
+
+      const client = new FormExportFileClient(config);
+      await expect(client.getMetadata('f1', 'u1')).resolves.toBeNull();
+    });
+
+    it('그 밖의 실패는 상태코드를 담아 던진다', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('boom'),
+      }) as never;
+
+      const client = new FormExportFileClient(config);
+      await expect(client.getMetadata('f1', 'u1')).rejects.toThrow('(500)');
+    });
+
+    it('응답 형태가 다르면 던진다 — 조용히 통과시키면 검증이 무력화된다', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ id: 'f1' }),
+      }) as never;
+
+      const client = new FormExportFileClient(config);
+      await expect(client.getMetadata('f1', 'u1')).rejects.toThrow('형태');
+    });
+  });
+
+  /**
+   * 두 삭제 메서드는 라우트가 같고 **토큰만 다르다**. 그 차이가 이 브랜치의 보안 경계
+   * 자체이므로 각각 못 박는다 — 한쪽이 다른 쪽으로 통일되면 (a) 워크북 정리가 403 으로
+   * 죽거나 (b) 임의 파일 삭제 취약점이 되살아난다.
+   */
+  describe('삭제 — 워크북과 이미지의 토큰 분리', () => {
+    const FILE_ID = '0193cccc-dddd-7eee-8fff-000011112222';
+
+    function deleteFetchMock() {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 200, text: () => Promise.resolve('') });
+      global.fetch = fetchMock as never;
+      return fetchMock;
+    }
+
+    function tokenOf(fetchMock: jest.Mock): Record<string, unknown> {
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const auth = (init.headers as Record<string, string>).Authorization;
+      return verify(auth.replace('Bearer ', ''), SECRET) as Record<string, unknown>;
+    }
+
+    // 워크북은 만든 사람과 쓰는 사람이 다른 것이 정상이고(assertExportUsable), 만료 정리는
+    // 잡 소유자와 다른 맥락(크론)에서 돈다 — owner 검사를 통과할 수 없으므로 master 가 필요하다.
+    it('softDelete(워크북)는 master 스코프를 유지한다', async () => {
+      const fetchMock = deleteFetchMock();
+      await new FormExportFileClient(config).softDelete(FILE_ID, 'u1');
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`http://file-service/files/${FILE_ID}`);
+      expect(init.method).toBe('DELETE');
+      expect(tokenOf(fetchMock)).toMatchObject({ userId: 'u1', scopes: ['master'] });
+    });
+
+    it('softDeleteOwnedFile(이미지)는 master 스코프를 싣지 않는다 — 임의 파일 삭제 방지', async () => {
+      const fetchMock = deleteFetchMock();
+      await new FormExportFileClient(config).softDeleteOwnedFile(FILE_ID, 'u1');
+
+      const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(`http://file-service/files/${FILE_ID}`);
+      expect(init.method).toBe('DELETE');
+      const payload = tokenOf(fetchMock);
+      expect(payload.userId).toBe('u1');
+      expect(payload.scopes).toEqual([]);
+      expect(payload.roles).toBeUndefined();
+    });
+
+    // 404 = 이미 지워졌다 — 정리는 멱등해야 하므로 성공과 동등 취급한다(두 경로 공통).
+    it('두 경로 모두 404 를 성공으로 취급하고, 403 은 던진다', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const client = new FormExportFileClient(config);
+
+      global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') }) as never;
+      await expect(client.softDelete(FILE_ID, 'u1')).resolves.toBeUndefined();
+      await expect(client.softDeleteOwnedFile(FILE_ID, 'u1')).resolves.toBeUndefined();
+
+      // 남의 파일을 지우려 하면 file-service 가 403 을 준다 — 호출부가 best-effort 로
+      // 흡수하도록 여기서는 던지는 것이 맞다.
+      global.fetch = jest
+        .fn()
+        .mockResolvedValue({ ok: false, status: 403, text: () => Promise.resolve('forbidden') }) as never;
+      await expect(client.softDeleteOwnedFile(FILE_ID, 'u1')).rejects.toThrow('(403)');
+    });
+  });
 });

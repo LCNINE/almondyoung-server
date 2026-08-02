@@ -12,6 +12,8 @@ import { BulkSessionManager } from './services/bulk-session.manager';
 import { BulkSessionReader } from './services/bulk-session.reader';
 import { BulkSessionJobManager } from './services/bulk-session-job.manager';
 import { BulkSessionJobWorker } from './services/bulk-session-job.worker';
+import { BulkImageManager } from './services/bulk-image.manager';
+import { BulkImageCleaner } from './services/bulk-image.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
 import { CategoriesModule } from '../../core/categories/categories.module';
@@ -30,6 +32,11 @@ import { CategoriesModule } from '../../core/categories/categories.module';
 // 진행률 응답을 그대로 재사용한다) Reader 도 여기 provider 로 등록해야 한다.
 // BulkSessionJobManager/BulkSessionJobWorker 는 검증 레인이다 — 워커도 같은 이유로
 // provider 로 등록돼야 ScheduleExplorer 가 `@Cron` 을 찾아 마운트한다.
+// BulkImageManager 는 3단계 이미지 해석 통보 경로다. BulkSessionReader 를 주입받아
+// 전량 게이트 술어와 진행률을 승인 경로와 **공유**한다 — 복사본을 만들면 승인과 게이트가
+// 서로 다른 답을 내는 자리가 생긴다.
+// BulkImageCleaner 는 취소된 세션이 올린 파일을 지우는 @Cron 스윕이다. 워커와 마찬가지로
+// provider 로 등록돼야 (전역으로 이미 떠 있는) ScheduleModule 의 explorer 가 크론에 마운트한다.
 @Module({
   imports: [ProductsModule, PricingModule, CategoriesModule],
   controllers: [FormExportController, BulkSessionController],
@@ -45,6 +52,8 @@ import { CategoriesModule } from '../../core/categories/categories.module';
     BulkSessionReader,
     BulkSessionJobManager,
     BulkSessionJobWorker,
+    BulkImageManager,
+    BulkImageCleaner,
   ],
   exports: [FormExportService],
 })
