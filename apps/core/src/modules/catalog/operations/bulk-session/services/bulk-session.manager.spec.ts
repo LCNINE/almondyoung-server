@@ -11,6 +11,7 @@ import {
   productBulkSessions,
   productFormExportItems,
   productFormExports,
+  productMasterVersions,
 } from '../../../schema/catalog.schema';
 
 type FakeRow = Record<string, unknown>;
@@ -473,10 +474,11 @@ interface WriteFakeTrx {
   update: (table: unknown) => { set: (values: FakeRow) => { where: (condition?: unknown) => WriteUpdateChain } };
 }
 
-function tableKey(table: unknown): 'sessions' | 'items' | 'images' | 'other' {
+function tableKey(table: unknown): 'sessions' | 'items' | 'images' | 'versions' | 'other' {
   if (table === productBulkSessions) return 'sessions';
   if (table === productBulkItems) return 'items';
   if (table === productBulkImages) return 'images';
+  if (table === productMasterVersions) return 'versions';
   return 'other';
 }
 
@@ -484,6 +486,16 @@ interface WriteHarnessOpts {
   session: FakeRow;
   items?: FakeRow[];
   images?: FakeRow[];
+  /** 취소가 잠금을 푸는 대상 — 이 세션이 `bulkSessionId` 로 잠근 draft 픽스처. */
+  versions?: FakeRow[];
+  /**
+   * `취소 CAS 가 0행이면` 시나리오 전용 훅. `cancel()` 의 초기 가드와 CAS 는 같은 `phase`
+   * 필드를 보므로(다른 필드로는 이 페이크에서 경쟁을 재현할 수 없다) SELECT 가 픽스처를
+   * 읽은 **직후** `sessions` 배열을 이 값으로 갈아치워 "읽은 뒤 다른 탭이 phase 를
+   * 바꿨다"를 흉내낸다. select 가 반환한 결과(`rows`)는 교체 전 배열을 이미 캡처했으므로
+   * 가드는 원래 phase 로 통과하고, 뒤이은 CAS UPDATE 의 `.where()` 매칭만 새 phase 를 본다.
+   */
+  raceSessionPhaseTo?: string;
 }
 
 /**
@@ -500,19 +512,32 @@ function writeHarness(opts: WriteHarnessOpts) {
   let sessions: FakeRow[] = [{ ...opts.session }];
   let items = [...(opts.items ?? [])];
   let images = [...(opts.images ?? [])];
+  let versions = [...(opts.versions ?? [])];
   const sessionUpdates: FakeRow[] = [];
   const itemUpdates: FakeRow[] = [];
+  const versionUpdates: FakeRow[] = [];
 
   const tableRows = (table: unknown): FakeRow[] => {
     const key = tableKey(table);
     if (key === 'sessions') return sessions;
     if (key === 'items') return items;
     if (key === 'images') return images;
+    if (key === 'versions') return versions;
     return [];
   };
 
   const trx: WriteFakeTrx = {
-    select: () => ({ from: (table) => writeSelectChain(tableRows(table)) }),
+    select: () => ({
+      from: (table) => {
+        const chain = writeSelectChain(tableRows(table));
+        // raceSessionPhaseTo 문서 참조 — select 가 `tableRows`(교체 전 배열)를 이미
+        // 캡처한 뒤에 배열을 갈아치운다. 이후의 CAS UPDATE 는 새 배열을 본다.
+        if (table === productBulkSessions && opts.raceSessionPhaseTo !== undefined) {
+          sessions = sessions.map((row) => ({ ...row, phase: opts.raceSessionPhaseTo }));
+        }
+        return chain;
+      },
+    }),
     update: (table) => ({
       set: (values) => ({
         where: (condition): WriteUpdateChain => {
@@ -531,6 +556,9 @@ function writeHarness(opts: WriteHarnessOpts) {
               itemUpdates.push(values);
             } else if (key === 'images') {
               images = next;
+            } else if (key === 'versions') {
+              versions = next;
+              versionUpdates.push(values);
             }
           }
 
@@ -548,7 +576,15 @@ function writeHarness(opts: WriteHarnessOpts) {
   // 이 파일 상단 harness() 와 같은 관례 — 페이크는 db.run 만 구조적으로 흉내낸다.
   const reader = new BulkSessionReader(db as never);
   const manager = new BulkSessionManager(db as never, fileClient as never, reader);
-  return { manager, session: () => sessions[0], items: () => items, sessionUpdates, itemUpdates };
+  return {
+    manager,
+    session: () => sessions[0],
+    items: () => items,
+    versions: () => versions,
+    sessionUpdates,
+    itemUpdates,
+    versionUpdates,
+  };
 }
 
 function conflictItemFixture(overrides: FakeRow = {}): FakeRow {
@@ -851,10 +887,46 @@ describe('BulkSessionManager.cancel', () => {
     expect(result.phase).toBe('canceled');
   });
 
-  it('published 는 409 다', async () => {
-    const { manager } = writeHarness({ session: { ...SESSION_REVIEW, phase: 'published' }, items: [] });
+  // Task 9: 취소는 이 세션이 잠근 draft 의 잠금을 푼다(draft 자체는 남긴다). CAS 성공 뒤
+  // 같은 트랜잭션의 두 번째 UPDATE 로 나가야 한다.
+  it('취소는 이 세션이 잠근 draft 의 bulk_session_id 를 NULL 로 되돌린다', async () => {
+    const { manager, versionUpdates, versions } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'validating' },
+      items: [],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: 'sess-1', draftOwnerId: 'u1' }],
+    });
+
+    await manager.cancel('sess-1', 'u1');
+
+    expect(versionUpdates).toHaveLength(1);
+    expect(versionUpdates[0]).toEqual(expect.objectContaining({ bulkSessionId: null }));
+    expect(versions()[0].bulkSessionId).toBeNull();
+  });
+
+  // 취소 CAS 가 0행이면(그 사이 다른 탭이 발행을 끝냈으면) 잠금 UPDATE 는 나가면 안 된다 —
+  // 발행된 세션의 draft 잠금을 푸는 것은 명백히 틀렸다. raceSessionPhaseTo 로 "가드는
+  // 통과했지만 CAS 직전에 phase 가 published 로 바뀌었다"를 흉내낸다.
+  it('취소 CAS 가 0행이면 잠금을 풀지 않는다', async () => {
+    const { manager, versionUpdates } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'validating' },
+      items: [],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: 'sess-1', draftOwnerId: 'u1' }],
+      raceSessionPhaseTo: 'published',
+    });
 
     await expect(manager.cancel('sess-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+    expect(versionUpdates).toHaveLength(0);
+  });
+
+  it('published 는 409 다 — 초기 가드에서 걸리며, 이 경로에서도 잠금 UPDATE 는 나가지 않는다', async () => {
+    const { manager, versionUpdates } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'published' },
+      items: [],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: 'sess-1', draftOwnerId: 'u1' }],
+    });
+
+    await expect(manager.cancel('sess-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+    expect(versionUpdates).toHaveLength(0);
   });
 
   it('이미 canceled 인 세션도 409 다', async () => {

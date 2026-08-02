@@ -133,6 +133,18 @@ export const productMasterVersions = pgTable(
     parentVersionId: uuid('parent_version_id'),
     status: ProductMasterVersionStatusEnum('status').notNull().default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
+    /**
+     * 이 draft 를 소유한 일괄 세션. NULL 이면 통상의 개인 draft 다.
+     *
+     * **FK 를 걸지 않는다.** 같은 파일의 `product_bulk_sessions` 를 가리키지만, 이 컬럼의
+     * 역할은 `draft_owner_id` 와 같은 "누구 것인가" 태그이고 그쪽도 FK 가 없다. 세션 행을
+     * 지우는 경로가 없어(5단계 정리도 draft 와 이미지만 다룬다) 참조 무결성으로 얻을 것이
+     * 없는 반면, catalog core 테이블이 operations 테이블에 DDL 의존성을 갖게 된다.
+     *
+     * 값이 있으면: 개별 발행·삭제 거부, `my-drafts` 에서 제외. 편집은 허용한다(스펙 §3.3).
+     * 세션 취소가 NULL 로 되돌려 잠금을 푼다.
+     */
+    bulkSessionId: uuid('bulk_session_id'),
     // ===== VERSION MANAGEMENT FIELDS END =====
 
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
@@ -226,6 +238,7 @@ export const productMasterVersions = pgTable(
     index('idx_versions_supplier').on(table.supplierId),
     index('idx_versions_draft_owner').on(table.draftOwnerId),
     index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
+    index('idx_versions_bulk_session').on(table.bulkSessionId),
     uniqueIndex('unique_master_active_version')
       .on(table.masterId)
       .where(sql`${table.status} = 'active'`),

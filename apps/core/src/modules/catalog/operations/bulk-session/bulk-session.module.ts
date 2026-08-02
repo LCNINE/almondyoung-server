@@ -14,6 +14,7 @@ import { BulkSessionJobManager } from './services/bulk-session-job.manager';
 import { BulkSessionJobWorker } from './services/bulk-session-job.worker';
 import { BulkImageManager } from './services/bulk-image.manager';
 import { BulkImageCleaner } from './services/bulk-image.cleaner';
+import { BulkDraftApplier } from './services/bulk-draft.applier';
 import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
 import { CategoriesModule } from '../../core/categories/categories.module';
@@ -37,6 +38,8 @@ import { CategoriesModule } from '../../core/categories/categories.module';
 // 서로 다른 답을 내는 자리가 생긴다.
 // BulkImageCleaner 는 취소된 세션이 올린 파일을 지우는 @Cron 스윕이다. 워커와 마찬가지로
 // provider 로 등록돼야 (전역으로 이미 떠 있는) ScheduleModule 의 explorer 가 크론에 마운트한다.
+// BulkDraftApplier 는 4단계 draft 생성 경로다. catalog core 의 쓰기 서비스 여섯을 주입받아
+// 조립만 하므로 자체 DB 접근은 잠금 UPDATE 한 문장뿐이다.
 @Module({
   imports: [ProductsModule, PricingModule, CategoriesModule],
   controllers: [FormExportController, BulkSessionController],
@@ -54,6 +57,7 @@ import { CategoriesModule } from '../../core/categories/categories.module';
     BulkSessionJobWorker,
     BulkImageManager,
     BulkImageCleaner,
+    BulkDraftApplier,
   ],
   exports: [FormExportService],
 })

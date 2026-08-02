@@ -8,6 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { ConflictError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
@@ -1266,6 +1267,10 @@ export class ProductMastersService {
       const product = await this.getVersionById(id, { includeDeleted: true }, tx);
       if (!product) {
         throw new NotFoundException(`Product with ID ${id} not found`);
+      }
+
+      if (product.bulkSessionId) {
+        throw new ConflictError('일괄 등록 세션이 관리하는 상품입니다. 세션을 취소하면 삭제할 수 있습니다.');
       }
 
       if (product.deletedAt) {

@@ -140,4 +140,23 @@ export function isBulkItemPayload(value: unknown): value is BulkItemPayload {
   return typeof v.fields === 'object' && v.fields !== null;
 }
 
+/**
+ * 오류 하나를 작업자가 파일에서 그 자리를 찾을 수 있는 문자열로 만든다.
+ *
+ * (Task 6 리뷰, 2026-08-03) `bulk-session-job.manager.ts` 의 모듈 private 였던 것을 이곳으로
+ * 옮겼다 — `BulkDraftApplier` 도 이 포매터가 필요한데 job manager 는 export 하지 않았다.
+ * 동작을 바꾸지 않는 순수 이동이다(시그니처·본문·주석 동일).
+ */
+export function formatRowError(error: RowError): string {
+  // 접합 뒤에 붙은 오류(옵션·조합·카테고리)는 물리 행번호를 잃어 rowNumber 가 0 이다 —
+  // 그때 `0행` 을 찍으면 작업자가 없는 줄을 찾게 된다.
+  return error.rowNumber > 0
+    ? `[${error.sheet} ${error.rowNumber}행] ${error.message}`
+    : `[${error.sheet}] ${error.message}`;
+}
+
+export function formatRowErrors(errors: RowError[]): string {
+  return errors.map(formatRowError).join('; ');
+}
+
 export type { PrefillRow };

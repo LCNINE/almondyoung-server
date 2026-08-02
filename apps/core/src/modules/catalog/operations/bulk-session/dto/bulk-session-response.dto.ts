@@ -94,6 +94,12 @@ export class BulkSessionItemDto {
   @ApiProperty({ enum: ['pending', 'invalid', 'drafted', 'excluded', 'failed'] }) status: string;
   @ApiProperty({ required: false, nullable: true }) masterId: string | null;
   @ApiProperty({ required: false, nullable: true }) errorMessage: string | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '생성된 draft 버전. 이 id 로 통상의 draft 편집 화면을 연다',
+  })
+  draftVersionId: string | null;
   @ApiProperty({ type: [BulkSessionItemChangeDto], description: '이 행이 실제로 바꾸는 것' })
   changes: BulkSessionItemChangeDto[];
   @ApiProperty({

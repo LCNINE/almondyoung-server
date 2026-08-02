@@ -1,3 +1,15 @@
+// (Task 8) `BulkSessionJobWorker` → `BulkSessionJobManager` → `BulkDraftApplier` →
+// `product-masters.service.ts` 가 bare `@packages/event-contracts` 를 import 한다 — 루트 jest
+// 설정의 moduleNameMapper 에는 하위 경로만 있고 bare 경로 항목이 없어 해석되지 않는다(레포
+// 상시 debt). 레포 선례(bulk-draft.applier.spec.ts)와 같은 모양으로 가상 모듈을 세운다.
+jest.mock(
+  '@packages/event-contracts',
+  () => ({
+    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' },
+  }),
+  { virtual: true },
+);
+
 import { Logger } from '@nestjs/common';
 import { BulkSessionJobWorker } from './bulk-session-job.worker';
 import { ClaimedBulkSession } from './bulk-session-job.manager';
@@ -13,19 +25,21 @@ function makeWorker(opts: { enabled?: string; claimed?: ClaimedBulkSession | nul
   const claim = jest.fn((): Promise<ClaimedBulkSession | null> => Promise.resolve(claimed));
   const runParseSlice = jest.fn((): Promise<void> => Promise.resolve());
   const runValidateSlice = jest.fn((): Promise<void> => Promise.resolve());
+  const runDraftSlice = jest.fn((): Promise<void> => Promise.resolve());
   const recordJobError = jest.fn((): Promise<void> => Promise.resolve());
   const clearConsecutiveFailures = jest.fn((): Promise<void> => Promise.resolve());
   const config = { get: jest.fn(() => opts.enabled) };
 
   const worker = new BulkSessionJobWorker(
-    { claim, runParseSlice, runValidateSlice, recordJobError, clearConsecutiveFailures } as never,
+    { claim, runParseSlice, runValidateSlice, runDraftSlice, recordJobError, clearConsecutiveFailures } as never,
     config as never,
   );
-  return { worker, claim, runParseSlice, runValidateSlice, recordJobError, clearConsecutiveFailures };
+  return { worker, claim, runParseSlice, runValidateSlice, runDraftSlice, recordJobError, clearConsecutiveFailures };
 }
 
 const UPLOADED: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'uploaded' };
 const VALIDATING: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'validating' };
+const DRAFTING: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'drafting' };
 
 describe('BulkSessionJobWorker.tick', () => {
   it('uploaded 를 잡으면 파싱 슬라이스를 돈다', async () => {
@@ -43,6 +57,17 @@ describe('BulkSessionJobWorker.tick', () => {
     await worker.tick();
 
     expect(runValidateSlice).toHaveBeenCalledWith(VALIDATING);
+    expect(runParseSlice).not.toHaveBeenCalled();
+  });
+
+  it("phase 가 'drafting' 이면 runDraftSlice 를 부른다", async () => {
+    const { worker, runParseSlice, runValidateSlice, runDraftSlice } = makeWorker({ claimed: DRAFTING });
+
+    await worker.tick();
+
+    expect(runDraftSlice).toHaveBeenCalledTimes(1);
+    expect(runDraftSlice).toHaveBeenCalledWith(DRAFTING);
+    expect(runValidateSlice).not.toHaveBeenCalled();
     expect(runParseSlice).not.toHaveBeenCalled();
   });
 

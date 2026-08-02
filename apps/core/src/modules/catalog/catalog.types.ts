@@ -144,7 +144,9 @@ export interface ModifyOptionDisplayDto {
   values?: Array<{
     optionValueId: string;
     displayName?: string;
-    colorCode?: string;
+    // 빈칸(=색상 제거)을 표현하려면 null 이 필요하다. core `_applyOptionDiff` 가 `!== undefined` 로
+    // 처리해 실제로 컬럼을 비운다(product-masters.service.ts:1620). 컬럼은 nullable varchar(7).
+    colorCode?: string | null;
     imageUrl?: string;
     sortOrder?: number;
   }>;

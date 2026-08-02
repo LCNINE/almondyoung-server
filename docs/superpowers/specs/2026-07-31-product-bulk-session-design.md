@@ -403,7 +403,20 @@ product_master_versions
 
 - **commit 실패 행 재시도 없음** → §3.12 에 두 지점 신설
 - **upsert 불가** → 이 기능의 존재 이유
-- **phantom masterId** → v3 의 이 결함은 commit 중 행이 롤백돼도 비-트랜잭션 Kafka 이벤트와 product-matching 행이 남는 것이었다. draft 생성은 이벤트를 내지 않으므로(발행 때만 낸다) 구조적으로 사라진다. §3.12 의 "신규 건은 master 까지 지운다"는 별개 사안 — 정리 시 draft 만 지우면 빈 master 가 남는 문제다
+- **phantom masterId** → **부분 해소다. 아래 정정을 먼저 읽어라.** §3.12 의 "신규 건은 master 까지 지운다"는 별개 사안 — 정리 시 draft 만 지우면 빈 master 가 남는 문제다
+
+> **정정 (2026-08-03, 4단계 최종 리뷰).** 이 자리의 원문은 *"draft 생성은 이벤트를 내지 않으므로(발행 때만 낸다) 구조적으로 사라진다"* 였다. **그 단언은 거짓이다** — 4단계 최종 리뷰가 코드로 확인했다.
+>
+> **실제로 무엇이 남는가.** `createMaster` 는 트랜잭션 안에서 master·버전·기본 variant·매핑을 쓴 뒤 마지막에 `publishVariantCreatedEvent` 를 부른다(`apps/core/src/modules/catalog/core/products/services/product-masters.service.ts:228`). 그 함수는 트랜잭션 밖으로 새는 부수효과 **둘**을 낸다:
+>
+> 1. **비-트랜잭션 Kafka 이벤트.** `this.productPublisher.publishEvent({ eventType: 'ProductVariantCreated', … })`(`product-masters.service.ts:136`) → `StreamPublisher.publishEvent` → `sendMessage` 가 `kafkaClient.emit` 으로 **브로커에 곧장 보낸다**(`libs/events/src/publishers/stream-publisher.service.ts:209-228`). 아웃박스가 아니다 — 같은 클래스가 `outboxPublisher` 도 주입받고 있지만 이 경로는 그걸 쓰지 않는다. 발행 실패도 `catch` 로 삼켜 트랜잭션은 커밋된다(`:159-162`).
+> 2. **별도 커넥션의 `product_matchings` 행.** 이어서 `productMatchingService.handleVariantCreated(...)` 를 **`tx` 없이** 부른다(`product-masters.service.ts:167`). 그 안의 `handleManualMatchingRequest` 는 `this.dbService.run(async (trx) => …)`(`apps/core/src/modules/product-matching/services/product-matching.service.ts:272`)로 **자기 트랜잭션을 새로 열어** insert 한다(`:297`) — 호출자의 트랜잭션과 무관하게 독립 커밋된다. 주입은 `@Optional()`(`product-masters.service.ts:119-121`) 이지만 `ProductsModule` 이 `ProductMatchingModule` 을 임포트하고(`products.module.ts:22`) 그 모듈이 `ProductMatchingService` 를 export 하므로(`product-matching.module.ts:25`) **프로덕션에서는 항상 non-null 이다.**
+>
+> 즉 **`createMaster` 이후에 실패해 롤백된 신규 행마다, 존재하지 않는 masterId·variantId 를 가리키는 Kafka 이벤트 하나와 `product_matchings` 행 하나가 남는다.** v3 가 남긴 것과 정확히 같은 모양이다.
+>
+> **이 브랜치의 회귀가 아니다.** `createMaster` 의 이 동작은 v1·v3 와 공유하는 **기존** 경로이고 4단계가 건드리지 않았다. 4단계가 실제로 없앤 것은 *다른* 축이다 — "한 행 = 한 트랜잭션"(부록 C.6.3)이 **부분 커밋으로 인한 고아 master 행**을 없앴다. 하지만 그것이 위 두 부수효과를 없애지는 못한다.
+>
+> **5단계가 알아야 할 것.** (a) 부록 C 의 안전 논증은 이 정정 뒤에도 성립하지만, 그 범위는 "DB 안의 고아 행"까지이지 "Kafka·product-matching 까지"가 아니다. (b) 5단계가 신규 행 재시도(§3.12)를 만들 때, 같은 행을 다시 처리하면 `createMaster` 가 **또** 이벤트와 매칭 행을 낸다 — 재시도 횟수만큼 누적된다. (c) 근본 수정은 `publishVariantCreatedEvent` 를 아웃박스로 옮기고 `handleVariantCreated` 에 `tx` 를 전파하는 것이며, 이는 catalog core 전체에 걸리는 **별건**이다(v1 스펙 후속 트래킹 1번, 사용자 결정: 현상 유지).
 - **varchar 길이 검증이 일부 필드에만** → 전 필드 확장
 - **판매기간을 화면에서 해제할 수 없음** → 수정 임포트가 해제 경로가 된다
 
@@ -629,3 +642,195 @@ admin-web 은 `/api/proxy/file/files/upload` (Next.js 프록시)로 올린다(`l
 - **스윕은 soft delete 라 S3 바이트가 남는다**(file-service 전역 고아 정리 잡 부재 — 스펙 §5.2 기존 부채).
 - **`awaiting_images` 에 갇힌 세션을 푸는 길은 취소뿐이다.** 요구 파일을 못 구하면(원본 분실 등) 세션을 버리고 다시 올려야 한다. "이 이미지 참조를 포기하고 진행" 같은 탈출구는 만들지 않았다 — 스펙 §3.9 의 전량 게이트가 의도한 바다.
 - **4단계 주의**: draft 생성은 `product_bulk_images.file_id` 를 읽어 `::product-image{imageKey=...}` 를 `fileId=` 로 치환해야 한다(스펙 §3.9). 프리필 그대로인 참조는 `refs` 에 담기지 않으므로(2단계 `resolveImageRefs` 독스트링) `base_snapshot.images` 가 근거다.
+
+---
+
+# 부록 C — 4단계 구현이 실측한 사실 (2026-08-03)
+
+4단계(draft 생성 — 신규 + 수정 — + 잠금)는 **core 백엔드만** 구현했다(F1, 사용자 결정). admin-web 은 2~4단계 화면을 5단계 이후 한 번에 만든다.
+
+읽는 법: 부록 A·B 와 같다 — 아래는 2026-08-03 시점 실측이고, 5단계는 자기 범위의 인터페이스를 다시 확인한 뒤 이 표를 출발점으로만 쓴다. 계획서의 F1~F13(§"착수 전 확정된 사실")은 구현 착수 전 코드를 읽어 세운 예상이었다 — 이 부록은 그중 구현·리뷰·통합 테스트로 실제로 검증되거나 정정된 것만 추린다.
+
+## C.1 F4 — 옵션 표시명 truthiness 는 계획대로 "행 오류로 거부"가 됐다
+
+| 사실 | 근거 |
+|---|---|
+| `_applyOptionDiff` 는 여전히 truthiness 다 — `modify.displayName`(1603행), `valueModify.displayName`(1624행)이 빈 문자열을 falsy 로 거른다. `colorCode`는 `!== undefined`(1625행)라 반대로 빈 값이 실제로 써진다 | `product-masters.service.ts:1603,1624,1625` (Task 2 가 이 파일에 가드 2줄을 더하며 원래 1598/1619/1620 이던 줄번호가 밀렸다) |
+| core 의 공용 쓰기 경로는 **고치지 않았다** — 계획대로 4단계 쪽에서 빈칸을 행 오류로 막는다 | `bulk-draft.options.ts` `buildOptionModify`: 그룹 표시명·값 표시명이 빈 문자열이면 오류를 밀고 그 항목을 `modify` 배열에 담지 않는다(`bulk-draft.options.spec.ts` "옵션명을 비우면 행 오류다"·"옵션값명을 비워도 행 오류다") |
+| `colorCode` 는 반대로 **명시적 `null`** 을 담아 실제로 지워지게 한다 | `bulk-draft.options.ts` — F4 가 예상한 그대로. 정적 타입이 이를 막고 있었던 것은 별개 발견(C.1.1) |
+
+### C.1.1 부수 발견 — `ModifyOptionDisplayDto.colorCode` 의 정적 타입이 런타임 요구와 어긋나 있었다
+
+계획에 없던 타입 결함이다. `catalog.types.ts` 의 `ModifyOptionDisplayDto.values[].colorCode` 는 원래 `string | undefined` 로만 선언돼 있어, F4 가 요구하는 "빈칸 → 명시적 `null`" 을 대입하면 `TS2322`(`Type 'null' is not assignable to type 'string | undefined'`)가 났다. Task 4 는 "파일 2개만 만든다"는 자기 태스크 범위 제약과 "`any`/`as` 캐스팅 0건" 제약이 충돌한다고 보고했고, 코디네이터가 `colorCode?: string | null` 로 넓히는 것을 **파일 범위의 승인된 예외**로 승인했다. `grep -rn "ModifyOptionDisplayDto"` 로 다른 소비처를 확인했고, 유일한 실제 소비처(`_applyOptionDiff`)가 이미 `!== undefined` 로 `null` 을 처리하고 있어 widen 은 기존 동작과 완전히 일치했다(`catalog.types.ts:147` 근처).
+
+**5단계 경고**: 이런 "타입이 런타임 요구를 못 따라간" 자리가 이 도메인에 더 있을 수 있다 — `undefined`(안 건드림)와 `null`(지움)을 구분해야 하는 다른 `Modify*Dto` 필드를 다룰 때는 타입 선언을 먼저 확인한다.
+
+## C.2 F6 — variant CoW 는 계획대로 강제됐고, "가격은 CoW 뒤" 순서는 통합 테스트가 실제로 지킨다
+
+| 사실 | 근거 |
+|---|---|
+| 수정 경로는 `applyVariantCodes` 가 내부적으로 `bulkUpdateVariantsInDraft` 를 호출한다 — v3 의 직접 UPDATE 경로는 재사용하지 않았다 | `bulk-draft.applier.ts` `applyUpdate` ④ 단계 |
+| 신규 경로도 **같은 함수**(`applyVariantCodes`)를 공유한다 — 갓 만든 master 라 CoW 판정("다른 버전에도 매핑됐는가")이 단독 매핑에서 자연히 in-place UPDATE 로 떨어지므로, 경로를 둘로 나누지 않았다 | `bulk-draft.applier.ts:191-193` 주석: "두 경로를 나누면 나중에 한쪽만 고쳐진다" |
+| **가격 룰 조립은 CoW *뒤*, 반환된(CoW 된) variantId 로 한다** — `applyUpdate` 의 단계 순서 ④(`applyVariantCodes`) → ⑤(가격) 가 코드 순서 그대로 실행 순서다 | `bulk-draft.applier.ts:126-154` |
+| 이 순서가 결과를 실제로 바꾼다는 것을 **두 층에서 직접 실험으로 확인했다** | 단위: Task 7 이 가격 읽기를 ④ 앞으로 재배치한 임시 빌드로 돌려 `CoW 로 바뀐 variantId 로 가격 룰을 만든다` 케이스가 FAIL 함을 확인(`v-new` 단정이 깨짐) 후 원복. 통합: Task 11 의 케이스 5(`수정 행의 variantCode 변경이 active variant 를 건드리지 않는다`)가 실 Postgres 에서 `activeVariant.variantCode === 'OLD'` + `draft 쪽은 다른 variantId 로 'NEW'` 두 축을 동시에 단정 |
+| **순서가 이렇게 된 이유는 프로덕션 side-effect 다** — `bulkUpdateVariantsInDraft` 내부의 `_cascadeVariantCoWToPricingRules`(`product-variants.service.ts:503`)가 **같은 트랜잭션 안에서** draft 의 기존 가격룰 매핑을 `v-old`→`v-new` 로 이미 리포인트해 둔다. 그래서 CoW 뒤에 `getVersionRules` 를 부르면 리포인트된 결과가 보인다 — 순서를 지키지 않으면 룰이 이미 사라진 `v-old` 를 가리켜 가격 변경이 유령 variant 에 적용된다 | Task 7 fix round 1, §7-2 |
+
+**5단계 경고 (계획서가 이미 명시)**: 발행이 variant 를 다시 만지는 지점(`_reconcileMatchingsAfterPublish` 등)에서 같은 종류의 "CoW가 트랜잭션 내에서 참조를 바꾼 뒤에야 다음 단계가 정답을 본다" 규약을 다시 만난다. 정적 스텁으로 CoW 의 트랜잭션 내 side-effect 를 흉내 내려 하면 Task 7 이 처음 겪은 것과 같은 함정(§C.2 표 마지막 줄 — "현재(올바른) 순서에서도 정적 스텁으로는 테스트가 깨진다")에 걸린다. **상태 기반 페이크**(호출 여부로 분기하는 페이크)가 필요하다.
+
+## C.3 F7 — 신규 행 조합키는 이름으로만 이어지고, 표시명 중복은 그래서 행 오류다
+
+| 사실 | 근거 |
+|---|---|
+| `resolveCreatedCombos` 가 F7 의 4단계를 그대로 구현한다: `getOptionGroups` 로 (그룹명, 값명)→실제 id 맵 → 워크북 조합키를 `plan.valueNameByKey` 로 이름 조회 → id 로 치환해 정렬 조인 → `productMasterVariants` 의 각 variant 를 `getVariantOptionValues` 로 같은 방식의 id 키로 만들어 매칭 | `bulk-draft.applier.ts:214-231`(독스트링) + `:232-` |
+| 이름 쌍의 결합 키는 **NUL 문자**(` `)로 만든다 — 단순 공백 결합이면 그룹 "A B"+값 "C" 와 그룹 "A"+값 "B C" 가 충돌한다 | `bulk-draft.applier.ts` `namePairKey` (Task 6 §1-3 — 공백 결합이던 최초 구현을 자체적으로 교정) |
+| `combo === ''`(옵션 없는 상품)은 이름 조회를 건너뛰고 곧장 id 키 `''` 로 취급한다 — `getVariantOptionValues` 가 옵션 없는 variant 에 빈 배열을 돌려주므로 실제 쪽도 자연히 `''` 로 떨어져 F3 계약이 지켜진다 | `bulk-draft.applier.ts:223-226` |
+| **표시명 중복 금지의 이유가 F7 그 자체다** — 이름으로만 짝짓는 한, 같은 그룹 안에서 값 표시명이 겹치면 어느 옵션값에 매칭할지 원리적으로 모호해진다. 그래서 `checkCreateStructure` 가 (a) 같은 그룹 안 값 표시명 중복을 신규 행 구조 검증에서 행 오류로 막는다(§C.4) | `bulk-draft.options.ts` `checkCreateStructure`, `bulk-draft.options.spec.ts` "한 그룹 안에서 값 표시명이 겹치면 오류다" |
+| 수정 행은 이 문제가 없다 — 조합키가 이미 워크북 스냅샷 단계에서 실제 optionValueId 를 정렬 조인한 값이라(F3), `resolveExistingCombos` 는 이름 변환 없이 곧바로 `productMasterVariants` 조회 + 매칭만 한다 | `bulk-draft.applier.ts:340-347`(독스트링) — "`resolveCreatedCombos` 와 달리 이름→id 변환이 필요 없다" |
+
+## C.4 F8 — 신규 행 구조 검증 갭을 4단계가 닫았다 (부분적으로)
+
+계획서가 지목한 넷 중 **셋**을 `checkCreateStructure` 가 실제로 막는다: (a) 같은 그룹 안 값 표시명 중복, (b) 같은 옵션값키가 두 그룹에 걸침, (c) `조합` 이 옵션 시트에 없는 옵션값키를 가리킴. **넷째(같은 조합이 두 행)는 이 계층에서 검출 불가능하다는 것이 밝혀졌다** — 계획이 예상한 그대로 4단계가 다 메우지는 못했다.
+
+| 사실 | 근거 |
+|---|---|
+| `checkCreateStructure(fields, optionRows)` 는 (a)(b)(c) 를 실제 워크북 옵션 행(`optionRows`)에서 그룹 귀속을 읽어(§C.6.1) 검사한다 | `bulk-draft.options.ts`, `bulk-draft.options.spec.ts` |
+| (d) "같은 조합 두 번"은 함수 시그니처(`FlatFields` 를 받는 순수 함수) 로는 구조적으로 볼 수 없다 — `flattenBundle` 이 `variant:<조합>.<열>` 을 평면 맵의 키로 쓰므로, 같은 조합 문자열을 쓴 원본 행이 두 개 있어도 평면화 단계에서 **뒤 값이 앞 값을 덮어써 "몇 번 나왔는지" 정보 자체가 사라진다** | Task 4 §3.3, `bulk-session.fields.ts:64`(`flattenBundle` 의 덮어쓰기 지점), `bulk-draft.options.ts` 독스트링 — "**(a)(b)(c) 만 검사한다**", (d) 는 **의도적으로 구현하지 않았다** |
+| 이 갭은 **행 오류로도 못 잡고 조용히 뒤 값이 이긴다** — 별건이 아니라 이 계층의 구조적 한계로, 5단계 이전에 닫으려면 `checkCreateStructure` 를 `FlatFields` 가 아니라 `bundle.variants`(평면화 이전 원본 배열)를 받는 시그니처로 바꿔야 한다 | 계획서 §"착수 전 확정된 사실" F8, Task 4 §3.3, progress.md "Task 4: minor (deferred)" |
+
+## C.5 F9 — 가격은 재조립이고, `pricingEditable=false` 는 물론 "가격 칸 무터치"도 replace 를 막는다
+
+F9 는 계획서가 `pricingEditable=false` 조건 하나만 명시했다. 구현·리뷰 과정에서 **두 번째 조건이 필수임이 드러나 계획서 자체가 수정됐다** — 이건 4단계가 새로 발견한 사실이다.
+
+| 사실 | 근거 |
+|---|---|
+| `toReplaceDto(prices)` 는 `basePrice === null` 이면 **항상** `BadRequestError` 를 던진다 — `pricingRulesSetSchema` 의 "order 1 첫 base_price 룰은 all_variants" 제약을 어기는 DTO 를 안 만들려는 방어다 | `bulk-draft.pricing.ts` `toReplaceDto`, Task 5 리뷰 "toReplaceDto 는 basePrice=null 이면 항상 throw 한다(리뷰가 스키마로 확인)" |
+| **따라서 가격 칸을 하나도 안 건드린 수정 행이 `replaceVersionRules` 를 부르면, 룰에 판매가 override 가 없는 상품(예: 조합별 override 만 있고 all_variants 판매가가 없는 상품)에서 그 행이 실패한다** — 브랜드만 고친 행이 가격 때문에 죽는 사고. 이 사실이 드러난 뒤 계획서 Task 7 에 `touchesPrice` 가드가 **추가됐다**(원래 계획서엔 없었다) | Task 5 리뷰 "⚠️ 해소(컨트롤러 판정)", progress.md "Task 5: ⚠️ 해소" |
+| 최종 게이트는 **두 조건의 논리곱**이다: `input.baseSnapshot.pricingEditable !== false && touchesPrice` — 어느 한쪽만 있어도 `replaceVersionRules` 를 부르지 않는다. `touchesPrice` 는 `product.basePrice`·`product.membershipPrice`·`variant:*.basePrice`·`variant:*.membershipPrice` 중 하나라도 `fields` 에 있는지로 판정한다 | `bulk-draft.applier.ts:141-147` |
+| 손대지 않을 때는 `_copyMappings` 가 포크 시점에 복사해 둔 기존 룰 매핑이 그대로 draft 에 남는다 — 계획서 F9 의 마지막 문장이 예상한 그대로 | `bulk-draft.applier.ts:135-140`(주석) |
+| 신규 행은 이 가드가 없다 — 현재 룰이 원래 없으므로(빈 `SimplePrices` 에서 시작) 매번 `replaceVersionRules` 를 부른다. 판매가는 신규 상품에서 여전히 필수라(스펙 §3.8) `toReplaceDto` 의 throw 조건에 걸릴 일이 없다 | `bulk-draft.applier.ts:196-203`(`applyCreate` ⑥) |
+
+## C.6 구현 중 리뷰가 잡은 계획서 결함 셋
+
+계획서 자체에 있던 설계 구멍이다 — 아래 셋 다 "구현자의 이탈"이 아니라 **계획서가 틀렸거나 불완전했던 자리**였고, 코디네이터가 그렇게 판정했다(progress.md).
+
+### C.6.1 옵션 그룹 귀속을 `fields` 키 삽입 순서로 추론하면 그룹이 번갈아 나올 때 값이 샌다 (Task 4, Critical)
+
+계획서 초판은 "`fields` 의 키 삽입 순서로 마지막 그룹에 값을 붙인다"고 적었다. JS 객체는 **이미 있는 키를 재대입해도 삽입 위치가 움직이지 않는다** — 그래서 옵션 시트 행이 (색상,빨강)→(사이즈,S)→(색상,파랑) 순서면, `optionValue:C2`(파랑) 를 만나는 시점의 "마지막으로 본 그룹"이 `S` 로 관측돼 **파랑이 사이즈 그룹으로 샌다.** 신규 상품은 빈 템플릿에 사람이 직접 적으므로 행 순서를 강제할 수단이 없어 "색상 하나, 사이즈 하나, 색상 하나 더" 같은 흔한 편집으로 트리거된다.
+
+재현: 컨트롤러가 node 로 직접 확인한 삽입 순서 `{"C":["C1"],"S":["S1","C2","S2"]}`.
+
+수정: **계획서 자체를 고쳤다.** `buildOptionAdd`/`checkCreateStructure` 가 `optionRows: PrefillRow[]`(업로드 원본의 옵션 시트 행 — `optionKey`·`optionValueKey` 를 함께 담고 있어 추론이 필요 없다) 를 추가 인자로 받아, 그룹 귀속·그룹 순서·값 순서는 **전부 `optionRows` 에서** 읽고 표시값(표시명·색상·정렬)만 계속 `fields` 에서 읽는 2단계 구조로 재작성했다. `DraftInput.optionRows` 필드가 이 수정으로 새로 생겼고 Task 6·7·8 호출부 전부 이를 반영한다.
+
+회귀 테스트: `flattenBundle` 을 실제로 호출해 그룹이 번갈아 나오는 4행 시트를 재현하고 `plan.add`·`plan.valueNameByKey` 양쪽이 제 그룹에 붙는지 단정한다(`bulk-draft.options.spec.ts` "그룹이 번갈아 나오는 옵션 시트에서도 값이 제 그룹에 붙는다").
+
+### C.6.2 수정 행의 구매제약을 두 축 한 덩어리로 읽으면 안 건드린 축이 조용히 해제·삭제된다 (Task 7, Critical)
+
+계획서는 "`applyConstraint` 재사용" 을 지시했는데, 그 함수는 **fields 가 입력 전체인 신규 행 전용**이다. 수정 행의 `fields` 는 변경분만 담으므로(`computeChanges`), 두 축(`requiresMembership`/`lifetimeQuantityLimit`) 을 한 덩어리로 읽어 없는 축을 `false`/`null` 로 채우면:
+
+- 한도만 고친 행 → `requiresMembership` 이 `false` 로 조용히 해제됨
+- 멤버십필요만 고친 행 → `isDeleteIntent`(`requiresMembership===false && lifetimeQuantityLimit==null`) 에 걸려 **한도까지 통째로 삭제**됨
+
+둘 다 발행 후에야 발견되는 사고 모양이라 Critical 로 잡혔다. 수정: 수정 경로 전용 `applyConstraintUpdate` 를 새로 만들었다 — 두 축 중 fields 에 있는 축만 갱신하고, **없는 축은 포크한 draft 의 현재 값**(`constraints.getForVersion(masterId, draft.id, tx)` — 스냅샷이 아니라 포크한 draft, §3.6 병합 설계와 일관)으로 채운다. `applyConstraint`(신규 경로 전용)는 그대로 뒀다 — 거긴 안전하다.
+
+회귀 테스트 2건이 이 결함을 되돌리면 정확히 실패하는 것을 직접 실행해 확인했다(수정 전 코드로 되돌려 실행 → 기대와 다른 값 수신을 로그로 남김, Task 7 §7-4).
+
+### C.6.3 `draftOne` 이 한 행을 트랜잭션 둘로 쪼개면 phantom masterId 가 재발한다 (Task 8, Important)
+
+계획서 Task 8 초안은 `apply()` 커밋과 `status='drafted'` 갱신을 별도 `this.db.run` 두 개로 나눴다. 두 커밋 사이에 워커가 죽으면(롤링 배포의 task stop 이 정확히 이 창을 때린다) 행은 `pending` 으로 남고, 다음 틱이 같은 행을 재처리해 `applyCreate` 의 무조건 `createMaster` 가 master 를 한 벌 더 만든다 — 앞의 master 는 어떤 item 도 가리키지 않는 고아가 된다. **v3 의 phantom masterId 사고와 정확히 같은 모양**이고, 애초에 스펙 §5.1 이 "draft 생성은 이벤트를 내지 않으므로 구조적으로 사라진다"고 단언했던 것과 배치된다 — 트랜잭션이 하나가 아니면 그 단언이 성립하지 않는다.
+
+수정: `apply()` 호출과 `status='drafted'` 갱신을 **하나의 `this.db.run(async (trx) => {...})`** 로 합쳤다. 실패 시(`catch`)의 `failItem` 은 그대로 별도 트랜잭션이다(실패한 트랜잭션 안에서는 쓸 수 없다). 결과적으로 행 하나당 커밋은 "성공 시 1개, 실패 시 1개"로 확정됐다 — Task 11 케이스 6(22001 로 한 행만 실패)이 실 Postgres 에서 이 보장을 직접 확인한다(§C.8).
+
+**정정 (최종 리뷰, 2026-08-03) — 이 단락이 인용한 스펙 §5.1 의 단언 자체가 거짓이었다.** 위 문장의 *"애초에 스펙 §5.1 이 «draft 생성은 이벤트를 내지 않으므로 구조적으로 사라진다»고 단언했던 것"* 은 사실이 아니다. `createMaster` 는 **트랜잭션 밖으로 새는 부수효과 둘**을 낸다: 브로커로 직송하는 `ProductVariantCreated` Kafka 이벤트(`product-masters.service.ts:136` → `libs/events/src/publishers/stream-publisher.service.ts:209-228`, 아웃박스가 **아니다**)와, `tx` 를 전파받지 않아 자기 트랜잭션을 새로 여는 `product_matchings` insert(`product-masters.service.ts:167` → `apps/core/src/modules/product-matching/services/product-matching.service.ts:272,297`). 전체 근거·귀결은 **스펙 §5.1 의 정정 블록**에 적었다.
+
+이 정정이 위 C.6.3 의 수정 자체를 무효화하지는 않는다 — 트랜잭션을 하나로 합친 것은 여전히 옳고, 그것이 없애는 것은 **DB 안의 고아 master 행**이다. 다만 이 부록이 이후로 "phantom masterId 가 구조적으로 없다"를 근거로 삼는 자리(§C.8 의 케이스 6 서술 포함)는 그 범위를 **DB 행까지**로 읽어야 한다. `createMaster` 이후 롤백된 신규 행마다 Kafka 이벤트 하나 + `product_matchings` 행 하나는 **여전히 남는다.** 이 브랜치의 회귀가 아니라 v1·v3 와 공유하는 `createMaster` 의 기존 동작이며, 근본 수정은 catalog core 전체에 걸리는 별건이다.
+
+## C.7 Task 8 이 lease 통합 스펙을 module-not-found 로 죽였고 Task 11 이 닫았다
+
+Task 8 이 `BulkSessionJobManager` 에 `BulkDraftApplier` 를 정적으로 끌어오게 하면서(생성자 6번째 인자), **임포트 그래프가 `product-masters.service.ts` 까지 넓어졌다.** 그 파일은 bare `@packages/event-contracts` 를 임포트하는데, 루트 jest `moduleNameMapper` 는 **서브패스만** 매핑하고 bare import 는 매핑하지 않는다(레포 상시 debt). 그 결과 `bulk-session-lease.integration.spec.ts` 가 `Cannot find module '@packages/event-contracts'` 로 스위트 자체 부팅에서 죽었다 — Task 8 의 리뷰·재리뷰 둘 다 **DB 필요 스위트를 안 돌려서** 이 회귀를 못 잡았다.
+
+| 사실 | 근거 |
+|---|---|
+| `bulk-session-merge.integration.spec.ts` 는 **같은 시점에 죽지 않았다** — 하지만 이유가 Task 8 과 무관하다. merge 스펙은 Task 8 **이전부터** 같은 우회(`jest.mock('@packages/event-contracts', ...)`)를 이미 갖고 있었다(2단계에서 `ProductBulkService` 를 진짜로 부르느라 넣은 것) | Task 11 §4.1 fix round 1 정정 — 초판 보고서가 "Task 8 이 merge 엔 우회를 넣고 lease 엔 빠뜨렸다"고 인과를 잘못 적었다가 `git show` 로 정정함 |
+| Task 8 이 두 스펙 파일에 실제로 한 일은 `BulkSessionJobManager` 생성자 호출에 `undefined as never` 인자 하나씩을 채운 것뿐이다(둘 다 drafting 을 부르지 않는 범위) | Task 8 §4-1 |
+| Task 11 이 lease 스펙 상단에 merge 스펙과 **동형의** `jest.mock` 우회를 추가해 닫았다 | Task 11 §4.1, 실 diff 18줄(코드 6 + 주석 12) |
+
+**5단계 경고**: `bulk-draft.applier.ts`(→ catalog core 서비스들)를 새로 끌어오는 임포트를 추가할 때마다 이 그래프가 넓어질 수 있다. **DB 를 요구하는 통합 스펙은 `type-check:scoped`·단위 jest 로는 이 종류의 부팅 실패를 못 잡는다** — `describeIfDb` 가 스위트 내부를 skip 하지만 모듈 자체를 못 찾으면 스위트 로드 단계에서 죽으므로, 새 정적 임포트를 추가한 태스크는 **반드시 DB 를 붙여 통합 스위트를 한 번 돌려야** 이 종류의 회귀를 잡는다. 근본 수정(jest `moduleNameMapper` 에 bare `@packages/event-contracts` 항목 추가)은 전 스위트에 영향을 주는 별건으로 남아 있다(Task 11 §5).
+
+## C.8 통합 스위트의 역검증 — 포크를 스냅샷 기준으로 되돌리면 케이스 1 만 빨개진다
+
+스펙 §8 이 요구한 "핵심 주장 하나"(작업자가 A필드를, 남이 B필드를 바꿨을 때 발행 후 둘 다 살아있는가)를 4단계는 이렇게 검증했다: `bulk-draft.applier.ts` 의 `applyUpdate` 를 **스냅샷의 `versionId` 로 포크**하도록(= 스펙 §3.6 이전 설계로) 임시로 되돌리고 통합 스위트를 재실행했다.
+
+결과 — **6케이스 중 정확히 케이스 1(병합)만 실패했다**:
+
+```
+● 작업자가 판매가를, 남이 브랜드를 바꿨을 때 draft 에 둘 다 살아있다
+  Expected: "BETA"
+  Received: "ACME"
+Tests: 1 failed, 5 passed, 6 total
+```
+
+나머지 다섯(개별 발행 거부·my-drafts 제외·취소 잠금 해제·CoW·행 실패 격리)은 포크 기준과 무관하게 초록으로 남았다 — 즉 **이 설계의 유일한 회귀 잠금은 케이스 1 이고, 그것을 지우면 포크-후-적용 설계 전체가 무방비가 된다.** 단위 스펙(`bulk-draft.applier.spec.ts`)은 이 회귀를 애초에 못 잡는다 — 거기서는 `getActiveVersion`/`createDraftVersion` 이 둘 다 목이라 어느 버전에서 포크했든 목이 시킨 대로 답하기 때문이다. 임시 패치는 되돌렸고 `git status` 로 프로덕션 코드가 워킹트리에 남지 않았음을 확인했다(Task 11 §3.2).
+
+## C.9 알려진 갭 (5단계가 받는다)
+
+- **실패 행 탈출구가 없다.** `drafted` 에서 실패 행을 재시도하는 경로가 이 단계에 없다 — 스모크 중 행이 죽으면 취소 후 재업로드가 유일한 길이다. 스펙 §3.12 의 두 재시도 지점(생성 실패·발행 실패)을 5단계가 **한 쌍으로** 만든다. 이 결정의 근거: 라우트 shape·잠금 해제 규약·취소와의 상호작용을 두 번 열지 않기 위해서다(사용자 판단, 2026-08-02).
+- **`excluded` 전이가 없다.** 발행이 없는 단계에서 제외는 관측 가능한 효과가 없다. 5단계 몫.
+- **`variantCode` 전역 중복을 업로드 시점에 못 잡는다.** 2단계 검증기는 길이만 본다. 중복은 발행 시점 `_validateVariantCodeUniqueness`(`product-versions.service.ts:293` 호출, `:344` 정의 — Task 2 가 이 파일에 가드를 더하며 줄번호가 밀렸다)에서 그 행만 실패한다 — `productCode` 와 같은 성질이다(스펙 §5.2). v3 의 `ProductImportVariantCodeChecker` 에 해당하는 사전 검사는 이식하지 않았다.
+- **수정 행에서 카테고리를 전부 해제할 수 없다.** 카테고리 행을 지우는 것은 "변경 없음"이므로(`bulk-session.fields.ts:76-81`) 해제를 표현할 방법이 없다. 스펙 §3.4 의 행 삭제 규약이 만든 구조적 한계다.
+- **`errorMessage` 는 여전히 예외 원문이다.** 길이만 잘랐다(`ERROR_MESSAGE_MAX`, 500자). 분류는 부록 A.8 이 남긴 후속 그대로다.
+- **세션 원본 워크북(`source_file_id`)을 아무도 지우지 않는다**(부록 B.7). 5단계 정리 경로 몫.
+- **`applyUpdate` 가 행마다 옵션·variant 를 되읽는다.** 1,000행 세션에서 상품당 몇 번의 왕복이 붙는다. 슬라이스 10 으로 시작해 실측 후 `PRODUCT_BULK_DRAFT_SLICE` 로 조정한다(이름을 틀리면 `positiveInt` 가 파싱 실패를 조용히 기본값으로 흡수한다 — `bulk-session-job.manager.ts:176-179`).
+- **`checkCreateStructure` 가 신규 행의 "같은 조합 두 번"을 검출하지 못한다**(§C.4) — `flattenBundle` 이 평면화 단계에서 뒤 값으로 덮어써 이 계층에서 관측 불가능하다. 닫으려면 `bundle.variants` 원본 배열을 받는 시그니처가 필요하다.
+- ~~**`applyVariantCodes` 의 "조합에 해당하는 variant 없음" 오류가 `formatRowErrors` 를 안 거쳐 `[시트 N행]` 접두가 빠진다.**~~ → **최종 리뷰에서 닫았다.** `applyPriceChanges`(`bulk-draft.pricing.ts:65-69`)가 **똑같은 조건**에 대해 sheet `'조합'` 으로 `formatRowErrors` 를 타는 것과 형태를 맞췄다 — 이제 양쪽 다 `[조합] …` 접두가 붙는다(`bulk-draft.applier.ts` `applyVariantCodes`).
+- **`resolveExistingCombos`/`resolveCreatedCombos` 후반부에 중복(N+1 가능성)이 있고, 미사용 `this.db` 주입이 남아 있다.** `getActiveVersion` 이 Nest `NotFoundException` 을 던지는 것(도메인 예외가 아님)은 `draftOne` 의 행 단위 `catch (error instanceof Error)` 가 흡수하므로 관측 가능한 결함은 아니지만, 다음에 이 예외를 세분화하려는 사람은 이 지점을 먼저 본다(Task 7 minor deferred).
+- **`imageResolverFrom` 이 행마다 `Map` 을 다시 만든다.** 슬라이스 기본값(10)에서는 영향이 없지만, `PRODUCT_BULK_DRAFT_SLICE` 를 키우면 비용이 선형으로 는다(Task 8 minor deferred).
+- **`type-check:scoped` 의 사각지대**: `tsconfig.spec-scope.json` 이 `product-masters.service.ts` 를 커버하지 않는다(스펙-스코프 include 패턴이 이 파일을 안 짚는다) — Task 2 가 전역 `tsc` + 파일명 grep 으로 보강 확인했지만, 다음에 이 파일을 더 건드리는 태스크는 같은 사각지대를 다시 만난다(Task 2 minor deferred, 레포 툴링 이슈로 이 브랜치 범위 밖).
+- **`applyPriceChanges` 의 "입력 `current` 를 변형하지 않는다"를 단정하는 회귀 테스트가 없다.** 깊은 복사(`cloneSimplePrices`)는 코드로 확인됐으나 가드가 없다(Task 5 minor deferred).
+
+## C.10 이번 태스크(Task 12)가 실측한 새 사실 — lint 게이트
+
+계획서·브리프는 "변경 파일 기준 신규 lint error 0건"을 기대했다. 실측 결과 **정확히 0건이 아니다** — `product-versions.service.spec.ts` 에 develop 대비 **+11 error, +1 warning**(develop 114/71 → 브랜치 125/72)이 새로 생겼다. 다른 세 개의 기존 수정 파일(`product-masters.service.ts`, `product-versions.service.ts`, `catalog.schema.ts`)은 develop 과 문제 수가 **정확히 동일**했다(줄번호만 삽입만큼 밀림).
+
+새 12건 전부 Task 2 가 추가한 `'일괄 세션에 잠기지 않은 draft 는 그대로 발행된다'` 케이스에서 나온다 — 그 케이스는 `publishVersion` 전체 파이프라인을 통과시키려고 `(service as any).getActiveVersion = jest.fn()` 류로 사설 메서드 9개를 목으로 바꾸는데, 이건 **같은 파일의 기존 테스트(예: 503행의 `jest.spyOn(service as any, 'getActiveVersion')`)가 이미 반복해서 쓰는 패턴**을 새 테스트 하나가 한 번 더 반복한 것이다. `no-unsafe-assignment`/`no-unsafe-member-access`/`no-unsafe-call` 12건 전부 `any` 캐스팅에서 기계적으로 파생된다.
+
+**해소 (최종 리뷰, 2026-08-03).** 그 10개 스텁을 **같은 파일 503행이 이미 쓰는** `jest.spyOn(service as any, 'x').mockResolvedValue(...)` 형태로 바꿨다. 이 eslint 설정에서 그 형태는 `no-unsafe-argument`(**warning**)로만 재분류되므로 error 가 사라진다. 실측: `product-versions.service.spec.ts` 가 develop **114 error / 71 warning** → 브랜치 **114 error / 72 warning**. 즉 **신규 error 0건**, 신규 warning 1건(`publishVersion(version.id, tx as any)` 의 인자 — 이 파일 전역에 이미 같은 종류가 널려 있다). 두 테스트의 단정은 바꾸지 않았고 23개 케이스 전부 초록이다.
+
+**교훈**: 이 파일에서 사설 메서드를 목으로 바꿀 때 `(service as any).x = jest.fn()` 는 error 를, `jest.spyOn(service as any, 'x')` 는 warning 만 낸다. 같은 `any` 캐스팅인데 규칙이 다르게 걸린다 — 새 패턴을 발명하지 말고 후자를 쓴다.
+
+## C.11 최종 리뷰가 잡은 머지 차단 결함 — 취소 레이스가 draft 를 영구 미아로 만든다 (Critical)
+
+Task 9 가 만든 취소 경로(`BulkSessionManager.cancel`)의 잠금 해제 UPDATE 는 `WHERE bulk_session_id = :sessionId` 다(`bulk-session.manager.ts:412-415`). 그건 **아직 커밋되지 않은** draft 를 볼 수 없다. 한편 `draftOne` 은 행마다 `renewLease` 로 취소를 감지하지만, **그 검사와 커밋 사이**에 취소가 커밋되면 그 행의 draft 는 `bulk_session_id` 를 단 채 커밋된다.
+
+그 값을 나중에 지우는 경로가 레포에 **없다**:
+
+- `claim()` 은 `cancel_requested_at IS NOT NULL` 세션을 다시 안 집는다(`bulk-session-job.manager.ts` claim SQL)
+- 해제 writer 는 `cancel()` 하나뿐인데 `phase='canceled'` 면 `ConflictError`(409) 를 던진다(`bulk-session.manager.ts:397-399`)
+
+결과: 그 draft 는 개별 발행(`publishVersion` 이 `bulkSessionId` 로 거부)·삭제·재취소가 전부 막히고 `my-drafts` 목록에도 안 나온다 — **API 로 복구 불가, 수기 SQL 만이 탈출구.** 트리거는 "긴 drafting 중 사용자가 취소"라는 가장 흔한 시나리오다. 리뷰어가 실 Postgres 로 재현했다.
+
+**수정**: `draftOne` 의 트랜잭션 **첫 문장**으로 세션 행을 `SELECT … FOR UPDATE` 로 잠그고 `cancel_requested_at` 을 재확인한다. 취소가 걸려 있으면 **아무것도 쓰지 않고** 그 행을 건너뛴다 — 실패로 기록하지도 않는다(취소된 세션의 행은 실패가 아니다). 3단계 `bulk-image.manager.ts:192-212` 의 선례와 같은 형태이고, 잠그는 행이 하나(같은 세션)라 잠금 순서가 단일해 교착이 없다.
+
+`cancel()` 의 CAS UPDATE 가 **같은 세션 행을 잠그기 때문에** 두 순서 모두 안전해진다:
+
+- draft 가 먼저 잠그면 → 취소가 그 커밋을 기다렸다가 커밋된 draft 를 보고 잠금을 풀어 준다
+- 취소가 먼저 잠그면 → draft 가 여기서 기다렸다가 취소를 보고 아무것도 쓰지 않는다
+
+`renewLease` 기반의 기존 조기 중단은 **그대로 뒀다** — 그건 그 앞단의 값싼 필터이고 `FOR UPDATE` 가 마지막 방어선이다.
+
+**회귀 잠금 3건 (전부 수정을 되돌리면 실제로 빨개지는 것을 확인했다)**:
+
+| 층 | 케이스 | 되돌렸을 때 |
+|---|---|---|
+| 단위 | `draftOne 트랜잭션의 첫 문장은 세션 행 FOR UPDATE 잠금이다` — 페이크 트랜잭션에 begin/end 마커를 넣어 **순서**를 관측한다(별도 트랜잭션이거나 `apply` 뒤로 밀리면 창이 그대로 남으므로 "잠갔는가"만으로는 부족하다) | FAIL |
+| 단위 | `트랜잭션 안에서 취소가 관측되면 draft 도 행 갱신도 하지 않는다 (실패로도 적지 않는다)` — `renewRows` 는 취소를 못 보게, `sessionRow` 는 취소를 보게 두어 **정확히 그 창**을 재현한다 | FAIL |
+| 통합 | `취소가 커밋된 뒤 시작된 행은 draft 를 만들지 않는다 — 미아 draft 방지` (실 Postgres) | FAIL |
+
+**통합 케이스가 `renewLease` 를 목으로 덮는 이유**: 그 창은 두 커넥션의 커밋 순서로만 열리는데, `renewLease` 자체가 세션 행을 UPDATE 하므로 어떤 순서로 짜도 취소 트랜잭션의 행 잠금 때문에 **그 값싼 필터가 먼저 취소를 관측해 버린다**. 즉 "취소를 못 본 `renewLease`" 는 목으로만 재현된다. 목은 그 필터 하나뿐이고 DB·트랜잭션·applier 는 전부 진짜다.
+
+## C.12 통합 스위트가 옵션 있는 신규 행을 한 번도 돌리지 않았다 (최종 리뷰)
+
+Task 11 의 `seedSession` 은 아이템의 `input` 을 항상 `options: []` 로 심었다. 그래서 **이 단계에서 가장 복잡한 경로** — 옵션이 있는 신규 행(옵션 생성 → 이름으로 되읽어 조합키↔variantId 매칭(F7) → 조합별 가격·variantCode) — 이 실 DB 에서 한 번도 실행되지 않았다. 리뷰어가 임시 프로브로 정상임을 확인했지만 영구 테스트가 없었다.
+
+최종 리뷰가 통합 케이스 하나를 추가했다: **그룹이 번갈아 나오는** 옵션 시트((색상,빨강)→(사이즈,S)→(색상,파랑))로 신규 행 하나, 조합 2개, 각각 다른 `variantCode` 와 조합별 판매가. 단정 넷 — (a) 옵션값이 제 그룹에 귀속됐는가 (b) 조합 2개가 만들어졌는가 (c) `variantCode` 가 제 variant 에 붙었는가 (d) 조합별 가격 룰의 `scopeTargetIds` 가 올바른 variantId 를 가리키는가.
+
+이 케이스가 §C.6.1(그룹 귀속)과 F7(이름으로 id 되찾기)을 **실 DB 에서** 동시에 잠근다. 변이 테스트로 확인했다: `parseOptionSheet` 의 그룹 귀속을 "직전 행의 그룹"(인접성 추론 — C.6.1 이 고친 것과 같은 부류의 결함)으로 바꾸면 이 케이스만 FAIL 한다.

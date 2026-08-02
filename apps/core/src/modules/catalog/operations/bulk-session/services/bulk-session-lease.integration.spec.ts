@@ -1,3 +1,21 @@
+// Task 8(`f89c15f1d`)이 `BulkSessionJobManager` 에 `BulkDraftApplier` 를 물리면서 이 스펙의
+// 임포트 그래프가 `product-masters.service.ts` 까지 늘어났고, 그 파일이 bare
+// `@packages/event-contracts` 를 임포트한다. 루트 jest 설정의 moduleNameMapper 에는
+// `^@packages/event-contracts/(.*)$`(하위 경로)만 있어 bare 경로는 해석되지 않는다 — 레포
+// 상시 debt 다. 같은 커밋이 `bulk-session-merge.integration.spec.ts` 에는 이 우회를 이미
+// 두었지만 이 파일에는 빠져 스위트가 module-not-found 로 통째로 죽어 있었다.
+//
+// 값이 필요한 곳은 클래스 정의 시점에 평가되는 `@InjectStreamPublisher(PRODUCT_STREAM.topic.topic)`
+// 데코레이터 인자뿐이다 — 이 스위트는 그 서비스들을 인스턴스화하지도 부르지도 않는다
+// (`BulkSessionJobManager` 에 applier 로 `undefined as never` 를 넘긴다).
+jest.mock(
+  '@packages/event-contracts',
+  () => ({
+    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' },
+  }),
+  { virtual: true },
+);
+
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import * as postgres from 'postgres';
@@ -113,11 +131,15 @@ function makeWorkerLike(client: postgres.Sql) {
     PRODUCT_BULK_VALIDATE_SLICE: '20',
   };
 
+  // (Task 8) BulkSessionJobManager 생성자에 BulkDraftApplier 가 늘었다 — 이 스위트는
+  // lease·취소·재검증 방지만 보고(위 헤더 코멘트) drafting 슬라이스는 부르지 않으므로
+  // 실제 applier 를 세우지 않는다.
   const manager = new BulkSessionJobManager(
     dbService,
     { download } as never,
     { renderMaster } as never,
     { getCategoryTree } as never,
+    undefined as never,
     new ConfigService(config),
   );
   return { manager, download, renderMaster, getCategoryTree, config };

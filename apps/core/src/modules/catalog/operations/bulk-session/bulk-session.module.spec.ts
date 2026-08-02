@@ -65,6 +65,7 @@ describeIfDb('BulkSessionModule DI', () => {
     const { BulkSessionJobWorker } = await import('./services/bulk-session-job.worker');
     const { BulkImageManager } = await import('./services/bulk-image.manager');
     const { BulkImageCleaner } = await import('./services/bulk-image.cleaner');
+    const { BulkDraftApplier } = await import('./services/bulk-draft.applier');
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -126,6 +127,14 @@ describeIfDb('BulkSessionModule DI', () => {
     // 정리 스윕. @Cron 은 provider 로 등록돼야 ScheduleExplorer 가 마운트한다 —
     // 등록을 빠뜨리면 타입도 테스트도 초록인 채 **크론이 영영 안 돈다**.
     expect(moduleRef.get(BulkImageCleaner, { strict: false })).toBeInstanceOf(BulkImageCleaner);
+
+    // 타입체크는 provider export 누락을 못 잡는다 — DI 는 런타임 리플렉션이다.
+    // BulkDraftApplier 는 ProductMastersService·ProductVersionsService·ProductVariantsService·
+    // OptionReadLoader·PricingService·ProductPurchaseConstraintsService 여섯을 주입받는데,
+    // 앞의 넷은 ProductsModule 이, PricingService 는 PricingModule 이 export 한다
+    // (products.module.ts:41-56, pricing.module.ts:12) — 실측으로 확인된 사실이지만
+    // 그 export 목록이 바뀌면 이 스모크가 먼저 빨개져야 한다.
+    expect(moduleRef.get(BulkDraftApplier, { strict: false })).toBeDefined();
 
     await moduleRef.close();
   });
