@@ -1,12 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { BulkSessionManager, BulkSessionAcceptInput } from './bulk-session.manager';
-import { BulkSessionReader, BulkItemStatus } from './bulk-session.reader';
+import { BulkSessionReader, BulkItemStatus, BulkImageFilter } from './bulk-session.reader';
+import { BulkImageManager, ResolveEntry } from './bulk-image.manager';
 import {
   BulkSessionAcceptedDto,
+  BulkSessionImageListDto,
   BulkSessionItemDto,
   BulkSessionItemListDto,
   BulkSessionListDto,
   BulkSessionProgressDto,
+  ResolveImagesResponseDto,
 } from '../dto';
 
 /** 포트. 흐름만 표현하고 검증·DB 는 매니저·리더가 든다. */
@@ -15,6 +18,7 @@ export class BulkSessionService {
   constructor(
     private readonly manager: BulkSessionManager,
     private readonly reader: BulkSessionReader,
+    private readonly imageManager: BulkImageManager,
   ) {}
 
   upload(input: BulkSessionAcceptInput): Promise<BulkSessionAcceptedDto> {
@@ -54,5 +58,13 @@ export class BulkSessionService {
 
   cancel(sessionId: string, userId: string): Promise<BulkSessionProgressDto> {
     return this.manager.cancel(sessionId, userId);
+  }
+
+  getImages(sessionId: string, userId: string, filter: BulkImageFilter): Promise<BulkSessionImageListDto> {
+    return this.reader.getImages(sessionId, userId, filter);
+  }
+
+  resolveImages(sessionId: string, userId: string, entries: ResolveEntry[]): Promise<ResolveImagesResponseDto> {
+    return this.imageManager.resolve(sessionId, userId, entries);
   }
 }

@@ -11,7 +11,10 @@ import {
 import { DbTransaction } from '../../../catalog.types';
 import { flattenBundle, fieldLabel } from './bulk-session.fields';
 import { isBulkItemPayload, isPrefillBundle, type ConflictMap, type ConflictDecisionMap } from './bulk-session.types';
+import { BULK_IMAGE_CONTEXT_BY_USAGE, collectReferencedImageRefs, imageRefKey } from './bulk-session.images';
 import {
+  BulkSessionImageDto,
+  BulkSessionImageListDto,
   BulkSessionItemDto,
   BulkSessionItemListDto,
   BulkSessionListDto,
@@ -29,6 +32,14 @@ export function isBulkItemStatus(value: string): value is BulkItemStatus {
   return (
     value === 'pending' || value === 'invalid' || value === 'drafted' || value === 'excluded' || value === 'failed'
   );
+}
+
+/** GET /product-bulk-sessions/:id/images 의 필터. 컨트롤러가 파싱해 넘긴다. */
+export interface BulkImageFilter {
+  status?: 'resolved' | 'awaiting_upload';
+  onlyRequired: boolean;
+  page: number;
+  limit: number;
 }
 
 /**
@@ -207,6 +218,71 @@ export class BulkSessionReader {
   }
 
   /**
+   * 이 세션의 이미지 참조 목록. 작업자가 "무슨 파일을 올려야 하는가"를 보는 자리다.
+   *
+   * **행을 전부 읽어 메모리에서 자른다.** 페이지네이션을 SQL 로 내리지 않는 이유는
+   * `required` 판정과 요약 카운트(`requiredTotal`/`requiredResolved`)가 **필터와 무관하게
+   * 세션 전체 기준**이어야 하기 때문이다 — 전량 게이트의 분모를 페이지가 바꾸면 화면이
+   * "3/3 완료"라고 해놓고 다음으로 안 넘어간다. 이미지 행은 컬럼이 작고 파싱 슬라이스가
+   * 세션당 1만 건에서 끊으므로(bulk-session-job.manager.ts) 전량 적재가 감당된다.
+   */
+  async getImages(
+    sessionId: string,
+    userId: string,
+    filter: BulkImageFilter,
+    tx?: DbTransaction,
+  ): Promise<BulkSessionImageListDto> {
+    return this.db.run(async (trx) => {
+      await this.assertOwned(trx, sessionId, userId);
+
+      const rows = await trx
+        .select({
+          imageKey: productBulkImages.imageKey,
+          usage: productBulkImages.usage,
+          sourceKind: productBulkImages.sourceKind,
+          sourceValue: productBulkImages.sourceValue,
+          status: productBulkImages.status,
+          fileId: productBulkImages.fileId,
+        })
+        .from(productBulkImages)
+        .where(eq(productBulkImages.sessionId, sessionId))
+        .orderBy(productBulkImages.imageKey, productBulkImages.usage);
+
+      // 이미지 행이 없으면 payload 전량 스캔을 하지 않는다(hasPendingImageWork 와 같은 절약).
+      const referenced = rows.length > 0 ? await this.loadReferencedImageRefs(trx, sessionId) : new Set<string>();
+
+      const all: BulkSessionImageDto[] = rows.map((row) => ({
+        imageKey: row.imageKey,
+        usage: row.usage,
+        contextId: BULK_IMAGE_CONTEXT_BY_USAGE[row.usage],
+        sourceKind: row.sourceKind,
+        sourceValue: row.sourceValue,
+        status: row.status,
+        fileId: row.fileId,
+        required: referenced.has(imageRefKey(row.usage, row.imageKey)),
+      }));
+
+      const requiredRows = all.filter((row) => row.required);
+      const filtered = all.filter(
+        (row) =>
+          (!filter.onlyRequired || row.required) && (filter.status === undefined || row.status === filter.status),
+      );
+      const page = Math.max(filter.page, 1);
+      const limit = Math.max(filter.limit, 1);
+      const offset = (page - 1) * limit;
+
+      return {
+        data: filtered.slice(offset, offset + limit),
+        total: filtered.length,
+        page,
+        limit,
+        requiredTotal: requiredRows.length,
+        requiredResolved: requiredRows.filter((row) => row.status === 'resolved').length,
+      };
+    }, tx);
+  }
+
+  /**
    * 행 하나를 화면용 DTO 로 편다. 순수 변환이라 DB 접근이 없다 — 매니저가 충돌 결정을 쓴
    * 뒤 `.returning()` 결과를 그대로 넣어 재조회 없이 응답을 만들 때도 이 메서드를 쓴다.
    */
@@ -250,6 +326,47 @@ export class BulkSessionReader {
       changes,
       conflicts,
     };
+  }
+
+  /**
+   * **적용될 행이 참조하는 이미지 중 아직 파일이 없는 것이 있는가.**
+   *
+   * 2단계 `BulkSessionManager` 의 private 메서드였던 것을 여기로 옮겼다 — 같은 술어를
+   * 승인(`approve`)·요구 목록(`getImages`)·해석 후 게이트(`BulkImageManager.resolve`)
+   * 셋이 쓴다. 복사본이 생기면 셋 중 하나만 필터를 고쳤을 때 승인은 `drafting` 으로
+   * 보냈는데 해석 API 는 아직 남았다고 답하는(또는 그 반대) 어긋남이 생긴다.
+   *
+   * "세션에 `awaiting_upload` 행이 하나라도 있는가"로 물으면 안 된다. 이미지 행은
+   * **파싱 시점**에 만들어지는데 그때는 접합 오류만 알고 필드 검증 결과는 모른다 —
+   * 나중에 `invalid` 이 된 행이 참조하던 파일명 이미지가 그대로 `awaiting_upload` 로
+   * 남는다. 그것까지 세면 30행이 invalid 인 세션에서 작업자가 **절대 쓰이지 않을 파일
+   * 30개**를 올려야 다음으로 넘어간다. 미결정 충돌 게이트가 `status='pending'` 만 세는
+   * 것과 같은 이유·같은 필터다.
+   *
+   * 미해결 이미지가 **하나도 없을 때는 items 를 읽지 않는다** — 흔한 경우(프리필
+   * 이미지는 전부 fileId 라 `resolved` 다)에서 payload 전량 스캔을 피한다.
+   */
+  async hasPendingImageWork(trx: DbTransaction, sessionId: string): Promise<boolean> {
+    const awaiting = await trx
+      .select({ imageKey: productBulkImages.imageKey, usage: productBulkImages.usage })
+      .from(productBulkImages)
+      .where(and(eq(productBulkImages.sessionId, sessionId), eq(productBulkImages.status, 'awaiting_upload')));
+    if (awaiting.length === 0) return false;
+
+    const referenced = await this.loadReferencedImageRefs(trx, sessionId);
+    return awaiting.some((image) => referenced.has(imageRefKey(image.usage, image.imageKey)));
+  }
+
+  /**
+   * `status='pending'` 아이템이 참조하는 `(usage, imageKey)` 집합. 위 게이트와
+   * `getImages` 의 `required` 플래그가 같은 근거를 쓰도록 여기 하나만 둔다.
+   */
+  async loadReferencedImageRefs(trx: DbTransaction, sessionId: string): Promise<Set<string>> {
+    const rows = await trx
+      .select({ payload: productBulkItems.payload })
+      .from(productBulkItems)
+      .where(and(eq(productBulkItems.sessionId, sessionId), eq(productBulkItems.status, 'pending')));
+    return collectReferencedImageRefs(rows.map((row) => row.payload));
   }
 
   /**

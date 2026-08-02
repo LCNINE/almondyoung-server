@@ -545,3 +545,87 @@ product_master_versions
 - **스냅샷 리더가 상품당 ~7 쿼리 + variant 당 1 쿼리를 단일 장기 트랜잭션에서 돈다** — 5,000건 상한에서 커넥션 하나를 오래 점유하고 vacuum 을 막는다. 큰 선택이 실제로 들어오기 전에 배치화 필요
 - **`errorMessage` 가 원문 예외 텍스트다** — 관리자 화면에 그대로 렌더된다. 분류·절단 필요
 - **1단계는 기능 플래그 없이 노출된다**(§7 오버라이드) — 그래서 §3.1 의 "만료 exportId 는 업로드 거부" 가 2단계의 필수 조건이다
+
+---
+
+# 부록 B — 3단계 구현이 실측한 사실 (2026-08-02)
+
+3단계(이미지 단계)는 **core 백엔드만** 구현했다(사용자 결정). admin-web 은 2·3단계 화면을 나중에 한 번에 만든다.
+
+읽는 법: 부록 A 와 같다 — 아래는 2026-08-02 시점 실측이고, 다음 단계는 자기 범위의 인터페이스를 다시 확인한 뒤 이 표를 출발점으로만 쓴다.
+
+## B.1 file-service 계약 (부록 A.3 보강)
+
+| 사실 | 근거 |
+|---|---|
+| `GET /files/:fileId/metadata` 가 `{ id, contextId, status, originalName, mimeType, size, ... }` 를 준다 | `download.controller.ts:54`, `dto/file-metadata-response.dto.ts` |
+| `loadReadable` 이 `status !== 'active'` 인 파일을 **404 로 던진다** — soft-delete 된 파일도 아직 `pending` 인 파일도 `getMetadata` 에서 똑같이 `null` 로 보인다 | `apps/file-service/src/access/file-access.ts:20-24`, `download.service.ts:50` (`getMetadata` 가 `loadReadable` 을 그대로 씀) |
+| 위 결과로 `checkFileMetadata` 의 `status==='deleted'` 분기는 **실무상 도달하지 않는다** — 삭제된 파일은 애초에 `meta` 자체가 `null` 이라 그 앞의 `if (!meta)` 에서 걸린다. 방어적 코드로 그대로 남겼다 | `bulk-session.images.ts:87` |
+| 업로드 직후 `status:'active'` 다 — 활성화 단계도 미사용 파일 GC 도 없다 | `upload.service.ts:99,105` |
+| `POST /files/batch-upload` 는 `Promise.all` 이라 **한 장 실패 = 배치 전체 reject**, 성공분은 고아로 남는다 | `upload.service.ts:127-129` |
+| batch-upload 응답에 `originalName` 이 없다 — 로컬 파일과의 대응은 **배열 순서**뿐이다 | `dto/upload-response.dto.ts` |
+| 컨텍스트 제약: `product-image` = jpeg/png/webp 10MB, `product-description-image` = `image/*` 20MB | `default-file-contexts.ts:161-182` |
+| 두 이미지 컨텍스트 모두 `allowPublic: true, allowPrivate: false` 다 — 업로드된 상품 이미지는 **항상 공개**이고, `loadReadable` 이 `isPublic` 에서 먼저 단락하므로 메타데이터 조회는 소유자가 아니어도 통과한다. 반면 `delete` 에는 그 단락이 없어 소유권을 실제로 본다 | `default-file-contexts.ts:165-166,176-177`, `file-access.ts:25-27`(읽기 단락) vs `file-access.ts:42-52`(삭제) |
+
+**화면 단계가 읽을 것:** 위 두 줄 때문에 프런트는 batch-upload 를 큰 묶음으로 부르면 안 된다. 작은 청크로 나누고, 응답을 **인덱스로** 로컬 파일과 짝지어야 한다. 사용자에게 보이는 "찾을 수 없습니다" 문구는 삭제된 파일과 애초에 없는 파일을 구분하지 않는데, file-service 응답 자체가 구분을 안 주므로 그게 맞는 안내다.
+
+## B.2 스펙 §3.9 의 "브라우저 → file-service 직접"의 실제 의미
+
+admin-web 은 `/api/proxy/file/files/upload` (Next.js 프록시)로 올린다(`lib/api/domains/files/upload.client.ts`). "직접"은 **core 를 경유하지 않는다**는 뜻이지 브라우저가 file-service 오리진을 때린다는 뜻이 아니다. 그래서 CORS·인증 경로는 이미 있는 것을 그대로 쓴다.
+
+## B.3 이 단계가 정한 것 (스펙에 없던 결정)
+
+| 결정 | 이유 |
+|---|---|
+| core 가 통보받은 fileId 를 메타데이터로 검증한다(존재·컨텍스트) | 안 하면 깨진 참조가 4단계 draft 에 굳고 발견은 발행 후다 |
+| 해석 통보는 **부분 성공** — 요청당 최대 50건 | 배치 전체를 400 으로 돌리면 성공분이 재업로드돼 S3 고아가 생긴다(전역 GC 없음) |
+| `awaiting_images` 동안 이미 올린 파일의 **교체 허용**, 옛 fileId 는 best-effort soft delete | 엉뚱한 파일을 올렸을 때 되돌릴 길이 그것뿐이다 |
+| `sourceKind='file_id'` 행은 교체 불가 | 그건 워크북에서 키를 고칠 일이다 |
+| 취소 정리를 **인라인이 아니라 @Cron 스윕**으로 | 세션당 이미지 행 상한이 1만이라 인라인 삭제가 ALB 60초를 넘긴다 |
+| 스윕이 `draft_version_id` 붙은 세션을 제외 | `cancel` 이 `drafting` 이후에도 허용되므로, 4단계가 오면 스윕이 draft 가 쓰는 파일을 지우게 된다. 마이그레이션 없이 지금 막아 둔다 |
+| 전량 게이트 술어를 `BulkSessionReader` 로 이관 | 승인·조회·해석 셋이 공유해야 한다. 복사본이 생기면 승인과 게이트가 서로 다른 답을 낸다 |
+
+## B.4 동시 해석 요청의 게이트 경합 — 실측된 프로덕션 결함과 그 수정 (가장 중요)
+
+통합 테스트를 물리적으로 분리된 **두 커넥션**으로 바꾸자 드러난 결함이다. `max:1` 단일 커넥션으로 두 "동시" 트랜잭션을 흉내 내면 postgres.js 가 내부적으로 쿼리를 직렬화해 경합 자체가 재현되지 않는다 — 이 레포에 이미 그 선례가 있다(`bulk-session-lease.integration.spec.ts:149-150` 의 `clientA`/`clientB` 물리 분리).
+
+| 사실 | 근거 |
+|---|---|
+| READ COMMITTED 아래에서 동시 `resolve()` 두 개가 세션의 마지막 두 이미지를 나눠 채우면, 각 트랜잭션의 `hasPendingImageWork(trx, sessionId)` 호출이 **서로의 미커밋 UPDATE 를 보지 못해** 둘 다 "아직 이미지가 남았다"고 판정한다 → 전진 CAS 가 아무도 걸리지 않아 세션이 `awaiting_images` 에 멈춘다 | `bulk-image.manager.ts` ③ 블록(수정 전 상태), 재현 테스트 `bulk-session-image.integration.spec.ts:208`("동시 통보에서 전진 CAS 는 한 번만 이기고...") |
+| `hasPendingImageWork` 를 재평가하는 호출 지점은 `approve`(2단계 승인)·`resolve`(3단계 해석) 둘뿐이라 위 상태는 **스스로 풀리지 않는다** — 세션이 `awaiting_images` 에 영구 정체하고 탈출구는 취소(작업 전량 포기)뿐이다 | `bulk-session.reader.ts`(`hasPendingImageWork` 정의), 호출부는 `bulk-session.manager.ts:334`·`bulk-image.manager.ts:183` 두 곳뿐 |
+| **수정: `bulk-image.manager.ts` 의 ③ 트랜잭션 맨 앞에서 세션 행을 `SELECT ... FOR UPDATE` 로 잠가 동시 요청을 직렬화한다.** 잠그는 행이 세션 하나뿐이라 잠금 순서가 단일해 교착이 없다. 사용자 판정(2026-08-02) | `bulk-image.manager.ts:190-199`; 선례 `apps/core/src/modules/inventory/core/repositories/stock-event.store.ts:377`(dispatch attempt 잠금), `apps/core/src/modules/inventory/core/services/transfer.service.ts:128`(movement job 잠금) |
+| **잠금 구간은 짧지 않다 (2026-08-02 최종 리뷰 정정).** 초판이 "③ 안에는 HTTP 왕복이 없어 잠금 구간이 짧다"고 적었는데, **HTTP 가 없다는 것만 맞고 "짧다"는 틀렸다.** 잠금을 쥔 채 (1) `hasPendingImageWork` → `loadReferencedImageRefs` 가 세션의 `status='pending'` 아이템 **payload jsonb 를 전량** Node 로 끌어오고, (2) `getProgress` 가 아이템·이미지 집계 스캔을 둘 더 돈다. 아이템 상한 1,000행 × 수 KB payload 면 매 요청 수 MB 다 | `bulk-image.manager.ts:226`(게이트 호출)·`:248`(진행률), `bulk-session.reader.ts:349-358`(`hasPendingImageWork`)·`:364-370`(`loadReferencedImageRefs` — `select({ payload })` 전량), `:154-187`(`getProgress` 집계 둘) |
+| **완화 하나만 이번에 넣었다**: 취소 요청이 이미 걸린 세션은 전진 CAS 가 어차피 지므로 게이트 스캔 자체를 건너뛴다(`locked.cancelRequestedAt === null &&` 단축 평가) | `bulk-image.manager.ts:226` |
+
+**후속(이번 범위 밖, 성능)**: `loadReferencedImageRefs` 가 payload 전량 대신 `payload->'imageRefs'` 만 select 하도록 좁힌다. 그러면 잠금 아래로 오는 바이트가 한 자릿수 배 줄어든다. 게이트 술어를 SQL 쪽 `jsonb_array_elements` 집계로 내리는 것도 선택지이지만, 그 경우 `collectReferencedImageRefs` 의 방어적 형태 검증(옛 shape 을 만나도 안 죽는다)을 SQL 로 옮겨야 해서 비용이 더 크다. 어느 쪽이든 **동작 변경이 아니라 읽는 열만 좁히는 변경**이어야 한다 — 게이트 술어가 조금이라도 달라지면 승인(`approve`)과 해석(`resolve`)이 서로 다른 답을 내기 시작한다.
+
+**잠금은 phase 도 다시 읽는다 (2026-08-02 최종 리뷰에서 추가).** ①의 phase 검사와 ③ 사이에는 ②의 HTTP 왕복(최대 50건 × 5초)이 있어 그 창에서 phase 가 움직인다 — 이 부록 B.5 자신이 그 창을 근거로 전진 CAS 를 정당화한다. 그런데 **이미지 행 UPDATE 에는 phase 조건이 없었다.** 다른 탭이 먼저 `drafting` 으로 전진시키고 4단계 워커가 draft 를 만든 뒤 늦게 도착한 ③ 이 `fileId` 를 갈아끼우면, ④ 가 **draft 가 참조 중인 파일을 soft delete** 한다. 3단계에는 drafting 워커가 없어 도달 불가였지만 4단계에 활성화되는 지뢰였다. 수정: 잠금 select 가 `phase`·`cancelRequestedAt` 을 함께 읽고, `awaiting_images` 가 아니면 **아무것도 기록하지 않고 그 요청의 `applied` 항목을 실패로 내린다**(④ 정리도 건너뛴다). "UPDATE 만 조용히 건너뛰기"를 고르지 않은 이유는 이 응답의 계약이 "항목마다 그 파일이 기록됐는가"이기 때문이다 — 기록하지 않고 `ok:true` 를 주면 화면은 업로드 완료로 믿고 그 파일은 되돌릴 수 없는 S3 고아가 된다. 근거: `bulk-image.manager.ts:190-215`, 회귀 테스트 `bulk-image.manager.spec.ts:406-455`.
+
+**다음 단계 경고**: 게이트를 재평가하는 새 경로(4단계 drafting 워커 등)를 추가할 때 이 잠금 규약(세션 행 `FOR UPDATE` + 잠금 후 phase 재확인)을 함께 지켜야 한다. 그리고 **통합 테스트에서 진짜 경합을 보려면 커넥션을 물리적으로 분리해야 한다** — `max:1` 단일 커넥션으로 쓴 "동시성" 테스트는 검증력이 없다(postgres.js 가 직렬화한다). `bulk-session-image.integration.spec.ts:75-81` 이 이 이유를 그대로 코멘트로 남겨 뒀다.
+
+## B.5 전진 CAS 의 `isNull(cancelRequestedAt)` 조건 — 논리적으로는 잉여이지만 지우면 안 된다
+
+| 사실 | 근거 |
+|---|---|
+| `cancel()` 이 `phase`·`cancelRequestedAt` 을 **같은 UPDATE** 로 함께 쓴다 — `cancelRequestedAt` 이 non-null 인 유일한 경로는 그 순간 `phase` 도 `'canceled'` 로 바뀌는 경로뿐이다 | `bulk-session.manager.ts:389-395` |
+| 그 결과 `resolve()` 전진 CAS 의 `eq(phase,'awaiting_images')` 가 참이면, 지금 도달 가능한 상태 공간에서는 `isNull(cancelRequestedAt)` 도 항상 참이다 — **후자가 논리적으로 잉여**다 | `bulk-image.manager.ts:187-197` (CAS 정의) |
+| **그런데도 지우면 안 된다.** `bulk-image.manager.spec.ts:380-391`("취소 요청이 걸린 세션은 요구가 전부 채워져도 전진하지 않는다")가 `phase='awaiting_images'` 를 유지한 채 `cancelRequestedAt` 만 픽스처로 직접 채워 두 조건을 각각 고정한다. **직접 추적 확인(2026-08-02): `isNull(cancelRequestedAt)` 을 코드에서 지우면 이 테스트가 빨개진다** — 이 픽스처 상태는 실제 `cancel()` 경로로는 도달 불가능하지만(실 DB 에서는 그 조합이 생기지 않는다), 리뷰가 정확히 이 "겉보기엔 중복" 판단을 선제적으로 막아 뒀다 | `bulk-image.manager.spec.ts:376-379`(코멘트: "어느 하나만 검사해도 기존 14건은 전부 초록이었다"), 테스트 본문 `:380-391` |
+| **다음 단계 경고**: 4단계가 `phase` 를 `drafting` 너머로 옮기는 새 경로를 추가할 때, 그 경로가 "cancelRequestedAt 은 오직 `cancel()` 만 쓴다"는 지금의 불변식을 깨면(예: 취소 신청과 phase 전환을 분리하는 중간 상태를 도입하면) 이 조건이 잉여에서 **필수**로 바뀐다. 지금 지우지 않는 것이 안전한 기본값이다 | — |
+
+## B.6 정리 스윕(`BulkImageCleaner`)이 4단계에 놓는 함정
+
+- 스윕 대상 술어에 `notExists(draft_version_id 있는 아이템)` 이 있고, 이것이 **세션 단위 상관 서브쿼리**임을 코드로 확인했다 — `productBulkItems.sessionId = productBulkSessions.id` 로 엮여 세션 안에 draft 가 하나라도 있으면 그 세션 전체를 스윕 대상에서 뺀다(행 단위가 아니다) (`bulk-image.cleaner.ts:99-110`). `cancel` 이 `drafting` 이후에도 허용되므로, **4단계가 draft 를 만들기 시작하면 이 조건이 draft 참조 파일을 지키는 유일한 방어선**이 된다.
+- 스윕 성공 시 행을 `fileId=NULL, status='awaiting_upload'` 로 되돌려 멱등성을 얻는다 — 새 컬럼 없이 진행 상태를 표현한 것이다(`bulk-image.cleaner.ts:146-154`). 이 규약을 모르고 `status` 를 다른 의미로 쓰면(예: 4단계가 `awaiting_upload` 를 "업로드 대기" 이외의 뜻으로 재사용하면) 스윕이 대상 술어(`eq(productBulkImages.sourceKind, 'file_name'), isNotNull(fileId)`)를 잘못 계산해 무한 반복하거나 멈춘다.
+- 실패한 행은 `updatedAt` 만 갱신해 정렬 순서상 다음 배치 뒤로 밀린다(`bulk-image.cleaner.ts:112-115,140-142`) — 영구 실패 파일 하나가 매 틱 배치 앞머리를 차지해 뒤의 정상 행이 영영 안 지워지는 걸 막는 장치다. 이것도 4단계가 정렬 기준을 건드리면 같이 깨진다.
+
+## B.7 3단계가 남긴 후속
+
+- **세션 원본 워크북(`source_file_id`)은 아무도 지우지 않는다.** `productBulkSessions.sourceFileId` 는 업로드 시 쓰이고 검증 레인이 다시 내려받을 때 읽힐 뿐, 정리 경로가 없다(양식 잡에만 30일 만료가 있고 세션에는 없다). 5단계 정리 경로의 몫.
+- **임의 파일 삭제 취약점 — 3단계에서 수정함 (2026-08-02 최종 리뷰).** 3단계 초판은 이미지 경로도 `scopes:['master']` 위임 토큰을 썼다. file-service 는 master 스코프에서 소유권 검사를 단락하므로(`file-access.ts:54-63`), **"공격자가 정한 임의 fileId 를 core 가 master 권한으로 지운다"** 는 프리미티브가 만들어져 있었다. 익스플로잇 체인 네 고리 전부 확인됨: (1) `bulk-session.controller.ts` 에 role/scope 가드가 없고 전역 `JwtAuthGuard` 는 서명·만료만 본다, (2) core 의 OIDC issuer 가 storefront 와 공유이고 `allowedAudiences` 미설정이라 쇼핑몰 회원 토큰도 통과한다(`jwt-access.strategy.ts:110-120` — `aud` 검증이 설정 있을 때만 돈다), (3) 피해자 `fileId` 는 `@Public()` 인 `GET /masters/:id` 응답(`dto/products/product-image.dto.ts`)에서 공개로 샌다, (4) core 의 검증은 컨텍스트·상태뿐이라(`bulk-session.images.ts:82-89`) 남의 `product-image` 가 통과한다. 그 뒤 세션을 취소하면 `BulkImageCleaner` 가 1분 내 지우고, 자기 파일로 재통보하면 ④ 가 `previousFileId` 를 즉시 지운다.
+  - **수정: 이미지 경로의 위임 토큰에서만 master 스코프를 뺐다.** `FormExportFileClient` 가 토큰을 둘로 나눈다 — `masterToken`(워크북 전용: `upload`·`getDownloadUrl`·`download`·`softDelete`)과 `ownerToken`(이미지 전용: `getMetadata`·`softDeleteOwnedFile`). master 가 빠지면 `file-access.ts:55` 의 `file.uploadedBy === user.userId` 분기가 실제로 강제된다. 정상 파일은 작업자 본인이 admin-web 프록시(`/api/proxy/file/[...path]/route.ts` → `_lib/forward.ts` 가 작업자 `accessToken` 쿠키를 그대로 전달)로 올린 것이라 통과하고, 남의 파일은 403 이다. 403 은 `getMetadata` 쪽에서는 항목 실패로, 삭제 쪽에서는 best-effort catch 로 흡수된다.
+  - **워크북 경로가 master 를 유지하는 이유**: 양식을 만든 사람과 그 양식으로 업로드하는 사람이 다른 것이 정상 업무이고(`bulk-session.manager.ts` 의 `assertExportUsable`), 만료 정리(`form-export.manager.ts` 의 `purgeExpired`)는 잡 소유자와 다른 맥락(크론)에서 돈다. 그 대신 워크북 경로의 fileId 는 전부 core 가 스스로 만들어 DB 에 적어 둔 값이라 임의 주입 통로가 없다.
+  - **스키마·DTO·마이그레이션 0건이고 file-service 는 손대지 않았다.** 회귀 방지는 `form-export-file.client.spec.ts` 의 토큰 클레임 단정(이미지 토큰에 `master` 없음 + `userId` 있음 / 워크북 토큰에 `master` 있음)과, 이미지 스펙들의 페이크가 `softDelete` 를 **일부러 두지 않아** 되돌리면 TypeError 가 나는 장치다.
+  - **남은 것 (4단계 담당자에게)**: (a) `bulk-session.controller.ts` 에 여전히 role/scope 가드가 없다 — 인증된 아무나(쇼핑몰 회원 포함) 자기 소유 세션을 만들 수 있다. 이제 남의 파일은 못 지우지만 **가드 부재 자체는 별건으로 남는다.** (b) 상품 이미지 컨텍스트가 `allowPublic` 이라 `getMetadata` 는 남의 공개 파일도 읽는다 — 즉 남의 공개 `fileId` 를 자기 세션 행에 **기록**하는 것 자체는 아직 가능하다. 그건 작업자가 워크북에 파일ID 를 직접 적는 `sourceKind='file_id'` 경로로도 원래 가능한 일이라 새 권한 상승은 아니지만, 4단계 draft 가 그 참조를 굳히므로 소유자 필드가 생기면 그때 좁힌다(`BulkFileMetadata` 에 소유자 필드가 없다 — `form-export-file.client.ts` 의 `BulkFileMetadata`).
+- **스윕은 soft delete 라 S3 바이트가 남는다**(file-service 전역 고아 정리 잡 부재 — 스펙 §5.2 기존 부채).
+- **`awaiting_images` 에 갇힌 세션을 푸는 길은 취소뿐이다.** 요구 파일을 못 구하면(원본 분실 등) 세션을 버리고 다시 올려야 한다. "이 이미지 참조를 포기하고 진행" 같은 탈출구는 만들지 않았다 — 스펙 §3.9 의 전량 게이트가 의도한 바다.
+- **4단계 주의**: draft 생성은 `product_bulk_images.file_id` 를 읽어 `::product-image{imageKey=...}` 를 `fileId=` 로 치환해야 한다(스펙 §3.9). 프리필 그대로인 참조는 `refs` 에 담기지 않으므로(2단계 `resolveImageRefs` 독스트링) `base_snapshot.images` 가 근거다.

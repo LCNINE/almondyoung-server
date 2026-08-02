@@ -19,12 +19,15 @@ import { MAX_UPLOAD_BYTES } from './services/bulk-upload.parser';
 import { BULK_ITEM_STATUS_VALUES, BulkItemStatus, isBulkItemStatus } from './services/bulk-session.reader';
 import {
   BulkSessionAcceptedDto,
+  BulkSessionImageListDto,
   BulkSessionItemDto,
   BulkSessionItemListDto,
   BulkSessionListDto,
   BulkSessionProgressDto,
   ConflictDecisionDto,
   CreateBulkSessionDto,
+  ResolveImagesDto,
+  ResolveImagesResponseDto,
 } from './dto';
 
 function parsePage(page: string): number {
@@ -33,6 +36,11 @@ function parsePage(page: string): number {
 
 function parseLimit(limit: string): number {
   return Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+}
+
+/** 이미지 행은 아이템 행보다 훨씬 가벼워(문자열 몇 개) 상한을 높게 둔다. */
+function parseImageLimit(limit: string): number {
+  return Math.min(1000, Math.max(1, Number.parseInt(limit, 10) || 200));
 }
 
 @ApiTags('Product Bulk Session')
@@ -143,5 +151,53 @@ export class BulkSessionController {
   @ApiResponse({ status: 409, description: '이미 종료된 세션(published·canceled)' })
   async cancel(@Param('id') id: string, @User() user: { userId: string }): Promise<BulkSessionProgressDto> {
     return this.service.cancel(id, user.userId);
+  }
+
+  @Get(':id/images')
+  @ApiOperation({
+    summary:
+      '이 세션이 요구하는 이미지 목록. required=true 인 awaiting_upload 행의 sourceValue 가 올려야 할 파일명이다.',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: ['resolved', 'awaiting_upload'] })
+  @ApiQuery({ name: 'onlyRequired', required: false, description: 'true 면 적용될 행이 참조하는 것만' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiResponse({ status: 200, type: BulkSessionImageListDto })
+  @ApiResponse({ status: 404, description: '세션이 없거나 내 것이 아님' })
+  async getImages(
+    @Param('id') id: string,
+    @Query('status') status: string | undefined,
+    @Query('onlyRequired') onlyRequired: string | undefined,
+    @Query('page') page = '1',
+    @Query('limit') limit = '200',
+    @User() user: { userId: string },
+  ): Promise<BulkSessionImageListDto> {
+    if (status !== undefined && status !== 'resolved' && status !== 'awaiting_upload') {
+      throw new BadRequestException('status 는 resolved 또는 awaiting_upload 여야 합니다');
+    }
+    return this.service.getImages(id, user.userId, {
+      status,
+      onlyRequired: onlyRequired === 'true' || onlyRequired === '1',
+      page: parsePage(page),
+      limit: parseImageLimit(limit),
+    });
+  }
+
+  @Post(':id/images/resolve')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '브라우저가 file-service 에 올린 파일을 (imageKey, usage, fileId) 로 통보한다. 요구가 전부 채워지면 phase 가 drafting 으로 전진한다.',
+  })
+  @ApiResponse({ status: 200, type: ResolveImagesResponseDto, description: '부분 성공 — 항목별 결과를 본다' })
+  @ApiResponse({ status: 400, description: '요청 형식 오류 또는 상한 초과' })
+  @ApiResponse({ status: 404, description: '세션이 없거나 내 것이 아님' })
+  @ApiResponse({ status: 409, description: 'awaiting_images 단계가 아님' })
+  async resolveImages(
+    @Param('id') id: string,
+    @Body() dto: ResolveImagesDto,
+    @User() user: { userId: string },
+  ): Promise<ResolveImagesResponseDto> {
+    return this.service.resolveImages(id, user.userId, dto.resolutions);
   }
 }
