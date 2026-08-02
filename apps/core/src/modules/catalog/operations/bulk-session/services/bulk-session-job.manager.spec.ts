@@ -1,12 +1,54 @@
+// (Task 8) `BulkSessionJobManager` 가 이제 `BulkDraftApplier` 를 정적으로 끌어오고, 그게 다시
+// `product-masters.service.ts` 를 통해 bare `@packages/event-contracts` 를 import 한다 — 루트
+// jest 설정의 moduleNameMapper 에는 `^@packages/event-contracts/(.*)$`(하위 경로)만 있고 bare
+// 경로 항목이 없어 해석되지 않는다(레포 상시 debt). 레포 선례(bulk-draft.applier.spec.ts,
+// product-versions.service.spec.ts)와 같은 모양으로 가상 모듈을 세운다.
+jest.mock(
+  '@packages/event-contracts',
+  () => ({
+    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' },
+  }),
+  { virtual: true },
+);
+
 import { Logger } from '@nestjs/common';
 import { BadRequestError } from '@app/shared';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { productBulkSessions, productBulkItems, productBulkImages } from '../../../schema/catalog.schema';
-import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES } from './bulk-session-job.manager';
+import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES, imageResolverFrom } from './bulk-session-job.manager';
+import type { DraftInput } from './bulk-draft.applier';
 import type { ParsedUpload, RawSheetRow } from './bulk-upload.parser';
 import type { PrefillBundle } from './form-export.types';
 import { PRICING_SENTINEL } from './form-export.sheets';
 import { isBulkItemPayload, type BulkItemInput } from './bulk-session.types';
+
+/**
+ * 기록되는 페이크 applier. 기본은 성공이고, 케이스가 `fail` 로 특정 행만 던지게 만든다.
+ *
+ * `apply()` 에 넘어온 **실제 `DraftInput`** 을 `inputs` 에 쌓는다(Fix round 1 리뷰 Important 2)
+ * — 그래야 `optionRows`/`conflictDecision`/`baseSnapshot`/`images` 조립이 실제로 검증된다.
+ *
+ * (판단) 행 식별은 **호출 순서**를 대리로 쓴다. 브리프 원안은 `input.rowNumber` 였지만
+ * `DraftInput`(bulk-draft.applier.ts) 에는 그런 필드가 없다 — `draftOne` 이 넘기는 객체
+ * 리터럴에 없는 필드를 얹으면 초과 프로퍼티 검사에 걸린다. `runDraftSlice` 가 `rowNumber`
+ * 오름차순으로 순회하므로(select 의 `orderBy`), n 번째 호출은 항상 n 번째로 작은 rowNumber
+ * 를 가진 행이다 — 테스트가 이미 그 순서로 `bulkItems` 를 구성한다.
+ */
+function makeApplier(fail?: (callOrder: number) => boolean) {
+  const applied: number[] = [];
+  const inputs: DraftInput[] = [];
+  return {
+    applied,
+    inputs,
+    apply: (input: DraftInput) => {
+      inputs.push(input);
+      const callOrder = applied.length + 1;
+      applied.push(callOrder);
+      if (fail?.(callOrder)) return Promise.reject(new Error('생성 실패'));
+      return Promise.resolve({ draftVersionId: 'draft-1', masterId: 'master-1' });
+    },
+  };
+}
 
 // 파서만 목으로 둔다 — 파일 경계(실제 xlsx 버퍼)를 만드는 일은 Task 4 의 스위트가 이미
 // 검증했고, 여기서 보려는 것은 그 결과를 매니저가 어떻게 적재·검증하는지다. 접합기·검증기·
@@ -31,20 +73,48 @@ function renderQuery(query: unknown): { sql: string; params: unknown[] } {
 
 type FakeRow = Record<string, unknown>;
 
-/** drizzle 셀렉트 빌더는 thenable 이면서 where/orderBy/limit 이 체이닝된다. */
+/** drizzle 셀렉트 빌더는 thenable 이면서 where/orderBy/limit/for 가 체이닝된다. */
 interface SelectChain extends Promise<FakeRow[]> {
   where(condition?: unknown): SelectChain;
   orderBy(...columns: unknown[]): SelectChain;
   limit(n?: number): SelectChain;
+  /** `FOR UPDATE` 행 잠금. `draftOne` 의 취소 재확인이 이걸 쓴다. */
+  for(mode?: string): SelectChain;
 }
 
-function selectChain(rows: FakeRow[]): SelectChain {
+/**
+ * 트랜잭션 경계까지 담은 **순서 있는** 연산 로그. `selects`/`updates` 는 종류별로 나뉘어
+ * 있어 "이 문장이 저 문장보다 먼저인가"를 볼 수 없는데, `draftOne` 의 잠금은 **트랜잭션의
+ * 첫 문장**이어야만 의미가 있다(별도 트랜잭션이거나 apply 뒤면 취소 창이 그대로 남는다).
+ */
+interface TrxOp {
+  kind: 'begin' | 'end' | 'select' | 'insert' | 'update';
+  table?: string;
+  /** select 에 `.for('update')` 가 붙었는지. */
+  forUpdate?: boolean;
+}
+
+/**
+ * `onWhere` 는 `.where()` 에 넘어온 조건을 그대로 기록만 한다(rowMatchesCondition 처럼 실제로
+ * 거르지 않는다) — 이 파일의 기존 테스트들은 조건 없이 `rowsFor(table)` 이 준 행을 그대로
+ * 쓰는 것을 전제로 하므로, 여기서 필터링을 추가하면 그 테스트들의 픽스처를 전부 다시 짜야
+ * 한다. drafting 슬라이스 테스트는 "렌더된 SQL 에 정확한 술어가 있는가"만 본다(bulk-session.
+ * manager.spec.ts:40 의 `dialect.sqlToQuery` 선례와 같은 깊이).
+ */
+function selectChain(rows: FakeRow[], onWhere?: (condition: unknown) => void, onFor?: () => void): SelectChain {
   // Promise 인스턴스에 체이너를 얹어 thenable+체이너블 양쪽을 만족시킨다 — 이 형태 자체가
   // 실제 drizzle 빌더 타입과 구조적으로 다르므로 캐스팅이 불가피하다.
   const builder = Promise.resolve(rows) as SelectChain;
-  builder.where = () => builder;
+  builder.where = (condition) => {
+    onWhere?.(condition);
+    return builder;
+  };
   builder.orderBy = () => builder;
   builder.limit = () => builder;
+  builder.for = () => {
+    onFor?.();
+    return builder;
+  };
   return builder;
 }
 
@@ -124,11 +194,15 @@ interface HarnessOpts {
   renderMasterResult?: (PrefillBundle & { versionId: string }) | null;
   categoryTree?: { categories: Array<{ id: string; name: string; isActive: boolean; children?: [] }> };
   downloadError?: Error;
+  /** drafting 슬라이스가 쓰는 페이크 applier. 기본은 항상 성공하는 `makeApplier()`. */
+  applier?: ReturnType<typeof makeApplier>;
 }
 
 function makeHarness(opts: HarnessOpts = {}) {
   const updates: Array<{ table: string; values: FakeRow; condition?: unknown }> = [];
   const inserts: Array<{ table: string; values: FakeRow[] }> = [];
+  const selects: Array<{ table: string; condition: unknown }> = [];
+  const ops: TrxOp[] = [];
 
   const tableName = (table: unknown): string => {
     if (table === productBulkSessions) return 'sessions';
@@ -149,10 +223,23 @@ function makeHarness(opts: HarnessOpts = {}) {
 
   const trx: FakeTrx = {
     execute: jest.fn(() => Promise.resolve(opts.claimed ?? [])),
-    select: () => ({ from: (table) => selectChain(rowsFor(table)) }),
+    select: () => ({
+      from: (table) => {
+        const op: TrxOp = { kind: 'select', table: tableName(table), forUpdate: false };
+        ops.push(op);
+        return selectChain(
+          rowsFor(table),
+          (condition) => selects.push({ table: tableName(table), condition }),
+          () => {
+            op.forUpdate = true;
+          },
+        );
+      },
+    }),
     insert: (table) => ({
       values: (values) => {
         inserts.push({ table: tableName(table), values: values as FakeRow[] });
+        ops.push({ kind: 'insert', table: tableName(table) });
         return Promise.resolve();
       },
     }),
@@ -160,6 +247,7 @@ function makeHarness(opts: HarnessOpts = {}) {
       set: (values) => ({
         where: (condition): UpdateChain => {
           updates.push({ table: tableName(table), values, condition });
+          ops.push({ kind: 'update', table: tableName(table) });
           const result = Promise.resolve() as UpdateChain;
           result.returning = () => {
             // renewLease 만 leaseUntil 하나를 set 한다 — 마감/실패 CAS 와 구분되는 표시다.
@@ -178,7 +266,14 @@ function makeHarness(opts: HarnessOpts = {}) {
     }),
   };
 
-  const db = { run: <T>(fn: (t: FakeTrx) => Promise<T>) => fn(trx) };
+  // `run` 마다 begin/end 마커를 남긴다 — 페이크에는 진짜 트랜잭션이 없으므로 이 마커가
+  // "어느 문장이 어느 트랜잭션 안인가"를 관측할 유일한 수단이다.
+  const db = {
+    run: <T>(fn: (t: FakeTrx) => Promise<T>) => {
+      ops.push({ kind: 'begin' });
+      return fn(trx).finally(() => ops.push({ kind: 'end' }));
+    },
+  };
   const download: jest.Mock<Promise<Buffer>, unknown[]> = jest.fn(() =>
     opts.downloadError ? Promise.reject(opts.downloadError) : Promise.resolve(Buffer.from('xlsx')),
   );
@@ -189,19 +284,21 @@ function makeHarness(opts: HarnessOpts = {}) {
   );
   const getCategoryTree = jest.fn(() => Promise.resolve(opts.categoryTree ?? { categories: [] }));
   const config = { get: () => undefined };
+  const applier = opts.applier ?? makeApplier();
 
   // 생성자는 실제 DbService<PimSchema>/FormExportFileClient/FormExportSnapshotReader/
-  // ProductCategoriesService/ConfigService 타입을 요구한다 — 이 페이크들은 매니저가 실제로
-  // 부르는 메서드만 구조적으로 흉내내므로 `as never` 캐스팅은 이 하네스 관례를 따른다
-  // (form-export-job.manager.spec.ts:192-202).
+  // ProductCategoriesService/BulkDraftApplier/ConfigService 타입을 요구한다 — 이 페이크들은
+  // 매니저가 실제로 부르는 메서드만 구조적으로 흉내내므로 `as never` 캐스팅은 이 하네스
+  // 관례를 따른다(form-export-job.manager.spec.ts:192-202).
   const manager = new BulkSessionJobManager(
     db as never,
     { download } as never,
     { renderMaster } as never,
     { getCategoryTree } as never,
+    applier as never,
     config as never,
   );
-  return { manager, updates, inserts, trx, download, renderMaster, getCategoryTree };
+  return { manager, updates, inserts, selects, ops, trx, download, renderMaster, getCategoryTree, applier };
 }
 
 const SESSION_ROW: FakeRow = {
@@ -1054,6 +1151,251 @@ describe('BulkSessionJobManager.runValidateSlice', () => {
     const itemUpdate = updates.find((u) => u.table === 'items')!;
     expect(itemUpdate.values.status).toBe('pending');
     expect(itemUpdate.values.payload).toMatchObject({ imageRefs: [{ imageKey: 'IMG-1', usage: 'main' }] });
+  });
+});
+
+describe('BulkSessionJobManager.runDraftSlice', () => {
+  const DRAFTING = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'drafting' };
+
+  function draftItemRow(overrides: FakeRow = {}): FakeRow {
+    return {
+      id: 'item-1',
+      sessionId: 'sess-1',
+      rowNumber: 2,
+      rowKey: 'NEW-1',
+      kind: 'create',
+      masterId: null,
+      baseSnapshot: null,
+      input: {
+        bundle: { product: { name: '신규' }, options: [], variants: [], categories: [], constraint: null },
+        present: { ...EMPTY_PRESENT, products: ['name'] },
+        errors: [],
+      },
+      payload: { fields: { 'product.name': '신규' } },
+      conflictDecision: null,
+      status: 'pending',
+      ...overrides,
+    };
+  }
+
+  it('drafting 슬라이스는 status=pending 인 행만 집는다', async () => {
+    const { manager, selects } = makeHarness({ bulkItems: [] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const itemsSelect = selects.find((s) => s.table === 'items')!;
+    const { sql, params } = renderQuery(itemsSelect.condition);
+    expect(sql.toLowerCase()).toContain('"status" =');
+    expect(params).toContain('pending');
+  });
+
+  it('행 하나가 실패해도 나머지가 계속 진행된다', async () => {
+    const applier = makeApplier((callOrder) => callOrder === 2);
+    const { manager, updates } = makeHarness({
+      applier,
+      bulkItems: [
+        draftItemRow({ id: 'item-1', rowNumber: 2 }),
+        draftItemRow({ id: 'item-2', rowNumber: 3 }),
+        draftItemRow({ id: 'item-3', rowNumber: 4 }),
+      ],
+    });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const itemUpdates = updates.filter((u) => u.table === 'items');
+    expect(itemUpdates.map((u) => u.values.status)).toEqual(['drafted', 'failed', 'drafted']);
+    expect(String(itemUpdates[1].values.errorMessage)).toContain('생성 실패');
+  });
+
+  it('성공한 행에 draft_version_id 와 master_id 를 적는다', async () => {
+    const { manager, updates } = makeHarness({ bulkItems: [draftItemRow()] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const itemUpdate = updates.find((u) => u.table === 'items')!;
+    expect(itemUpdate.values).toMatchObject({ status: 'drafted', draftVersionId: 'draft-1', masterId: 'master-1' });
+  });
+
+  // Fix round 1 리뷰 Important 2: applier.apply 가 받는 DraftInput 이 실제로 조립되는지 잠근다
+  // — optionRows 는 원본 시트 행에서, conflictDecision 은 맵으로 변환돼, baseSnapshot 은
+  // 그대로, images 는 imageResolverFrom(item, imageRows) 의 결과가 넘어가야 한다.
+  it('applier.apply 에 optionRows·conflictDecision·baseSnapshot·images 를 조립해 넘긴다', async () => {
+    const applier = makeApplier();
+    const optionRows = [{ rowKey: 'NEW-1', optionKey: 'g1', optionValueKey: 'v1' }];
+    const baseSnapshot = snapshotOf();
+    const { manager } = makeHarness({
+      applier,
+      bulkItems: [
+        draftItemRow({
+          kind: 'update',
+          masterId: 'm-1',
+          baseSnapshot,
+          input: {
+            bundle: { product: { name: '신규' }, options: optionRows, variants: [], categories: [], constraint: null },
+            present: { ...EMPTY_PRESENT, products: ['name'] },
+            errors: [],
+          },
+          conflictDecision: { 'product.name': 'overwrite' },
+        }),
+      ],
+      // 세션 이미지 행 — imageResolverFrom 이 이걸 우선한다(단독 단위 테스트는 아래
+      // describe('imageResolverFrom') 이 순서 규칙 자체를 잠근다).
+      bulkImages: [{ imageKey: 'IMG-1', usage: 'main', fileId: 'file-a' }],
+    });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const [input] = applier.inputs;
+    expect(input.optionRows).toEqual(optionRows);
+    expect(input.conflictDecision).toEqual({ 'product.name': 'overwrite' });
+    expect(input.baseSnapshot).toMatchObject(baseSnapshot);
+    expect(input.images.fileIdFor('IMG-1', 'main')).toBe('file-a');
+  });
+
+  it('남은 행이 없으면 phase 를 drafted 로 민다 (토큰 CAS + 취소 가드)', async () => {
+    const { manager, updates } = makeHarness({ bulkItems: [] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const finish = updates.find((u) => u.values.phase === 'drafted')!;
+    const { sql, params } = renderQuery(finish.condition);
+    expect(sql.toLowerCase()).toMatch(/"lease_token"\s*=/);
+    expect(sql.toLowerCase()).toContain('"cancel_requested_at" is null');
+    expect(params).toContain('tok-1');
+    expect(finish.values).toMatchObject({ leaseUntil: null, leaseToken: null });
+  });
+
+  it('lease 를 잃으면 즉시 멈춘다', async () => {
+    const applier = makeApplier();
+    const { manager, updates } = makeHarness({
+      applier,
+      bulkItems: [draftItemRow(), draftItemRow({ id: 'item-2' })],
+      renewRows: [],
+    });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    expect(applier.applied).toEqual([]);
+    expect(updates.filter((u) => u.table === 'items')).toHaveLength(0);
+  });
+
+  it('취소가 감지되면 lease 만 놓고 멈춘다', async () => {
+    const { manager, updates } = makeHarness({
+      bulkItems: [draftItemRow()],
+      renewRows: [{ cancelRequestedAt: new Date() }],
+    });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    expect(updates.filter((u) => u.table === 'items')).toHaveLength(0);
+    const release = updates.filter((u) => u.table === 'sessions' && u.values.leaseToken === null);
+    expect(release).toHaveLength(1);
+    expect(release[0].values.phase).toBeUndefined();
+  });
+
+  // 부록 A.8 인계: error_message 는 행 목록 API 에 원문 그대로 나간다 — 최소한 길이는 자른다.
+  it('오류 메시지는 500자로 잘린다 — 원문 예외 텍스트가 관리자 화면에 그대로 나가면 안 된다', async () => {
+    const longMessage = '오'.repeat(600);
+    const applier = {
+      applied: [] as number[],
+      inputs: [] as DraftInput[],
+      apply: () => Promise.reject(new Error(longMessage)),
+    };
+    const { manager, updates } = makeHarness({ applier, bulkItems: [draftItemRow()] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const itemUpdate = updates.find((u) => u.table === 'items')!;
+    expect(itemUpdate.values.status).toBe('failed');
+    expect(String(itemUpdate.values.errorMessage).length).toBe(500);
+  });
+
+  // ─────────── 취소 레이스 (최종 리뷰 ①) ───────────
+  //
+  // `renewLease` 의 취소 검사와 draft 트랜잭션의 커밋 사이에 취소가 커밋되면, 그 행의 draft 는
+  // `bulk_session_id` 를 단 채 커밋된다. `cancel()` 의 해제 UPDATE 는 미커밋 draft 를 못 보고,
+  // 그 값을 나중에 지우는 경로가 레포에 없어 draft 가 영구 미아가 된다(발행·삭제·재취소 전부
+  // 차단, my-drafts 에도 안 나옴). 아래 두 케이스가 그 방어선을 잠근다.
+  it('draftOne 트랜잭션의 첫 문장은 세션 행 FOR UPDATE 잠금이다', async () => {
+    const { manager, ops } = makeHarness({ bulkItems: [draftItemRow()] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    // 행을 drafted 로 적는 UPDATE 가 들어있는 트랜잭션을 찾아, 그 begin 바로 다음 문장을 본다.
+    const updateIndex = ops.findIndex((op) => op.kind === 'update' && op.table === 'items');
+    expect(updateIndex).toBeGreaterThan(0);
+    let beginIndex = updateIndex;
+    while (ops[beginIndex].kind !== 'begin') beginIndex -= 1;
+    // 잠금이 apply 뒤로 밀리거나 별도 트랜잭션으로 빠지면 취소 창이 그대로 남는다.
+    expect(ops[beginIndex + 1]).toEqual({ kind: 'select', table: 'sessions', forUpdate: true });
+  });
+
+  it('트랜잭션 안에서 취소가 관측되면 draft 도 행 갱신도 하지 않는다 (실패로도 적지 않는다)', async () => {
+    const applier = makeApplier();
+    const { manager, updates } = makeHarness({
+      applier,
+      bulkItems: [draftItemRow()],
+      // renewLease 는 취소를 **못 본다** — 그 검사 직후에 취소가 커밋된 상황을 흉내낸다.
+      renewRows: [{ cancelRequestedAt: null }],
+      // 반면 트랜잭션 안의 FOR UPDATE 재확인은 커밋된 취소를 본다.
+      sessionRow: { ...SESSION_ROW, cancelRequestedAt: new Date() },
+    });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    expect(applier.applied).toEqual([]);
+    // 'drafted' 도 'failed' 도 아니다 — 취소된 세션의 행은 실패한 것이 아니라 그냥 pending 이다.
+    expect(updates.filter((u) => u.table === 'items')).toHaveLength(0);
+  });
+
+  // 롤링 배포 가드: 접수·검증과 drafting 사이에 배포가 끼면 옛 코드가 쓴 payload 를 만날 수
+  // 있다 — validateOne 의 isBulkItemInput 가드와 같은 이유로 그 행만 죽인다.
+  it('payload 형식이 다르면 그 행만 실패시키고 applier 를 부르지 않는다', async () => {
+    const applier = makeApplier();
+    const { manager, updates } = makeHarness({ applier, bulkItems: [draftItemRow({ payload: { legacy: true } })] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    expect(applier.applied).toEqual([]);
+    const itemUpdate = updates.find((u) => u.table === 'items')!;
+    expect(itemUpdate.values.status).toBe('failed');
+  });
+});
+
+// Fix round 1 리뷰 Important 2: 이 함수를 참조하는 스펙이 0건이었다 — "세션 행이 없을 때만
+// 프리필로 떨어진다"는 순서 규칙이 함정이라(순서가 바뀌면 방금 올린 파일 대신 옛 파일이
+// draft 에 굳는다) 모듈 레벨 순수 함수를 export 해 직접 잠근다.
+describe('imageResolverFrom', () => {
+  const SESSION_IMAGE_ROWS = [{ imageKey: 'IMG-1', usage: 'main', fileId: 'file-session' }];
+
+  function fakeItem(baseSnapshot: unknown): typeof productBulkItems.$inferSelect {
+    // imageResolverFrom 은 item.baseSnapshot 만 읽는다 — 이 파일의 다른 하네스와 같은 이유로
+    // 구조적으로 필요한 필드만 채운 페이크를 `as never` 로 좁힌다.
+    return { baseSnapshot } as never;
+  }
+
+  it('세션 이미지 행에 (usage, imageKey) 가 있으면 그 fileId 를 준다', () => {
+    const resolver = imageResolverFrom(fakeItem(null), SESSION_IMAGE_ROWS);
+
+    expect(resolver.fileIdFor('IMG-1', 'main')).toBe('file-session');
+  });
+
+  it('세션 행에 없으면 base_snapshot.images[imageKey] 로 떨어진다', () => {
+    const resolver = imageResolverFrom(
+      fakeItem(snapshotOf({ images: { 'IMG-2': 'file-prefill' } })),
+      SESSION_IMAGE_ROWS,
+    );
+
+    expect(resolver.fileIdFor('IMG-2', 'main')).toBe('file-prefill');
+  });
+
+  it('둘 다 있으면 세션 행이 이긴다 — 방금 올린 파일이 옛 프리필을 덮어써야 한다', () => {
+    const resolver = imageResolverFrom(
+      fakeItem(snapshotOf({ images: { 'IMG-1': 'file-prefill-stale' } })),
+      SESSION_IMAGE_ROWS,
+    );
+
+    expect(resolver.fileIdFor('IMG-1', 'main')).toBe('file-session');
   });
 });
 

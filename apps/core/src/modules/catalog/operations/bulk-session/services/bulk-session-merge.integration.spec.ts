@@ -156,11 +156,15 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     bulkService = new ProductBulkService(dbService, undefined as never, undefined as never);
 
     download = jest.fn<Promise<Buffer>, []>(() => Promise.resolve(Buffer.alloc(0)));
+    // (Task 8) BulkSessionJobManager 생성자에 BulkDraftApplier 가 늘었다 — 이 스위트는 병합
+    // (파싱→검증) 경로만 보고 drafting 슬라이스는 부르지 않으므로, bulkService 위의 두
+    // 협력자와 같은 이유로 실제 applier 를 세우지 않는다(부르면 즉시 TypeError 로 터진다).
     manager = new BulkSessionJobManager(
       dbService,
       { download } as never,
       reader,
       categories,
+      undefined as never,
       new ConfigService({ PRODUCT_BULK_LEASE_MS: '30000', PRODUCT_BULK_VALIDATE_SLICE: '50' }),
     );
   });

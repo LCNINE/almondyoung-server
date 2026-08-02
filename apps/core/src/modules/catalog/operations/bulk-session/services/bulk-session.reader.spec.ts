@@ -183,6 +183,7 @@ describe('BulkSessionReader.getItems', () => {
       conflict: null,
       conflictDecision: null,
       baseSnapshot: null,
+      draftVersionId: null,
       ...overrides,
     };
   }
@@ -295,6 +296,29 @@ describe('BulkSessionReader.getItems', () => {
     const { reader } = harness({ sessions: [{ ...SESSION_ROW, uploadedBy: 'other' }] });
 
     await expect(reader.getItems('sess-1', 'u1', undefined, 1, 20)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  // Task 9: draftVersionId 가 있어야 화면이 "생성된 draft 를 연다" 링크를 만들 수 있다.
+  it('행 목록이 draftVersionId 를 내려준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [itemRow({ status: 'drafted', draftVersionId: 'draft-1' })],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+
+    expect(result.data[0].draftVersionId).toBe('draft-1');
+  });
+
+  it('아직 draft 가 없는 행은 draftVersionId 가 null 이다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [itemRow({ draftVersionId: null })],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+
+    expect(result.data[0].draftVersionId).toBeNull();
   });
 });
 

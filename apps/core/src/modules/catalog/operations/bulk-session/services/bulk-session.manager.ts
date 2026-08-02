@@ -9,6 +9,7 @@ import {
   productBulkItems,
   productFormExportItems,
   productFormExports,
+  productMasterVersions,
 } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
@@ -371,6 +372,17 @@ export class BulkSessionManager {
    * 리뷰 #4) — 위 SELECT 와 이 UPDATE 사이에 다른 탭이 승인/게시를 끝냈으면(READ COMMITTED
    * 라 경쟁의 창이 있다) CAS 가 0행이 되어 `ConflictError` 로 거부한다. 읽기-검사만 하고
    * 쓰기를 무조건 걸면 그 사이의 전이를 조용히 덮어써 좀비 상태가 남는다.
+   *
+   * **CAS 가 성공한 뒤, 같은 트랜잭션 안에서 이 세션이 잠근 draft 의 잠금을 푼다**
+   * (`bulk_session_id = NULL`, Task 9) — 별도 트랜잭션으로 빼면 "취소는 됐는데 잠금은
+   * 남은" 상태가 생기고, 그 draft 는 발행도 삭제도 못 하는 미아가 된다. 반드시 위 CAS
+   * 성공(`updated` 존재) **뒤에** 두어야 한다 — CAS 가 0행이면(그 사이 다른 탭이 발행을
+   * 끝냈을 수 있다) 이미 위에서 던지므로 여기 도달하지 않는다. 발행된 세션의 draft
+   * 잠금을 푸는 것은 명백히 틀렸다.
+   *
+   * **draft 자체는 지우지 않는다** — 잠금만 푼다(스펙 §3.12). 수천 건 세션에서 작업
+   * 결과가 통째로 날아가는 것은 취소의 대가로 너무 크다. 풀린 draft 는 `draftOwnerId` 가
+   * 업로더 그대로이므로 자연스럽게 본인 draft 가 되어 my-drafts 목록에 다시 나타난다.
    */
   async cancel(sessionId: string, userId: string, tx?: DbTransaction): Promise<BulkSessionProgressDto> {
     return this.db.run(async (trx) => {
@@ -396,6 +408,11 @@ export class BulkSessionManager {
       if (!updated) {
         throw new ConflictError('세션 상태가 그 사이 바뀌어 취소하지 못했습니다. 다시 조회한 뒤 시도해 주세요.');
       }
+
+      await trx
+        .update(productMasterVersions)
+        .set({ bulkSessionId: null, updatedAt: new Date() })
+        .where(eq(productMasterVersions.bulkSessionId, sessionId));
 
       return this.reader.getProgress(sessionId, userId, trx);
     }, tx);

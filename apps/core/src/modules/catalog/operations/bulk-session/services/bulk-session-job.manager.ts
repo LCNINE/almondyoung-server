@@ -32,9 +32,15 @@ import {
 } from './bulk-session.structure';
 import { flattenBundle } from './bulk-session.fields';
 import { computeChanges, detectConflicts } from './bulk-session.diff';
+import { toConflictDecisionMap } from './bulk-session.reader';
+import { BulkDraftApplier } from './bulk-draft.applier';
+import type { ImageResolver } from './bulk-draft.fields';
 import {
+  formatRowError,
+  formatRowErrors,
   isBulkBaseSnapshot,
   isBulkItemInput,
+  isBulkItemPayload,
   isPrefillBundle,
   toPresentColumns,
   type BulkBaseSnapshot,
@@ -55,6 +61,9 @@ import {
 export const DEFAULT_BULK_LEASE_MS = 60_000;
 /** 한 틱에 검증할 행 수. 행마다 renderMaster(직렬 N+1 로더)가 붙어 임포트 커밋 슬라이스와 비슷한 무게다. */
 export const DEFAULT_VALIDATE_SLICE = 20;
+/** 한 틱에 draft 를 만들 행 수. publishVersion 만큼 무겁진 않지만 행마다 옵션·variant 되읽기가
+ *  붙는다 — 검증 슬라이스(20)보다 작게 시작하고 실측으로 조정한다. */
+export const DEFAULT_DRAFT_SLICE = 10;
 /**
  * 슬라이스 밖으로 탈출한 예외의 연속 허용 횟수. 넘으면 세션을 failed 로 확정한다.
  *
@@ -72,12 +81,12 @@ const KEY_MAX_LENGTH = 100;
 const INSERT_CHUNK = 200;
 
 /**
- * 검증 레인이 다루는 phase. `recordJobError` 의 WHERE 에도 쓴다 — 이미 레인을 벗어난
- * 세션(review·canceled·failed…)을 뒤늦게 깨어난 좀비가 다시 건드리면 안 된다
+ * 파싱·검증·drafting 레인이 다루는 phase. `recordJobError` 의 WHERE 에도 쓴다 — 이미 레인을
+ * 벗어난 세션(review·canceled·failed…)을 뒤늦게 깨어난 좀비가 다시 건드리면 안 된다
  * (1단계 `TERMINAL_EXPORT_STATUSES` 와 같은 이유). `inArray` 가 mutable 배열을 요구해
  * `as const` 를 쓰지 않는다.
  */
-const CLAIMABLE_PHASES: Array<'uploaded' | 'validating'> = ['uploaded', 'validating'];
+const CLAIMABLE_PHASES: Array<'uploaded' | 'validating' | 'drafting'> = ['uploaded', 'validating', 'drafting'];
 
 const EXPORT_MISSING_MESSAGE = '이 세션의 기준 양식을 더 이상 찾을 수 없습니다. 양식을 다시 받아 작업한 뒤 올려주세요.';
 
@@ -85,7 +94,7 @@ const EXPORT_MISSING_MESSAGE = '이 세션의 기준 양식을 더 이상 찾을
 export interface ClaimedBulkSession {
   sessionId: string;
   leaseToken: string;
-  /** 'uploaded' 면 파싱 슬라이스, 그 밖('validating')이면 검증 슬라이스다. */
+  /** 'uploaded' 면 파싱, 'drafting' 이면 draft 슬라이스, 그 밖('validating')이면 검증 슬라이스다. */
   phase: string;
 }
 
@@ -112,19 +121,6 @@ function toBaseSnapshot(base: ExportBase): unknown {
   return snapshot;
 }
 
-/** 오류 하나를 작업자가 파일에서 그 자리를 찾을 수 있는 문자열로 만든다. */
-function formatRowError(error: RowError): string {
-  // 접합 뒤에 붙은 오류(옵션·조합·카테고리)는 물리 행번호를 잃어 rowNumber 가 0 이다 —
-  // 그때 `0행` 을 찍으면 작업자가 없는 줄을 찾게 된다.
-  return error.rowNumber > 0
-    ? `[${error.sheet} ${error.rowNumber}행] ${error.message}`
-    : `[${error.sheet}] ${error.message}`;
-}
-
-function formatRowErrors(errors: RowError[]): string {
-  return errors.map(formatRowError).join('; ');
-}
-
 /** 합성 아이템·형식 불일치 행이 쓰는 최소 `input`. `isBulkItemInput` 을 만족해야 되읽기가 죽지 않는다. */
 function emptyInput(errors: RowError[]): BulkItemInput {
   return {
@@ -134,15 +130,46 @@ function emptyInput(errors: RowError[]): BulkItemInput {
   };
 }
 
+/**
+ * 이 행이 쓸 이미지 해석기. 근거가 둘이다(F11):
+ *   ① 세션 이미지 행 — 이 행이 **바꾼** 참조. 3단계가 fileId 로 해석해 뒀다
+ *   ② base_snapshot.images — 수정 행이 **손대지 않은** 프리필 참조. 2단계 resolveImageRefs 가
+ *      이런 참조를 refs 에 담지 않으므로 세션 이미지 행에도 없다
+ * ①이 없을 때만 ②로 떨어진다 — 순서가 바뀌면 작업자가 방금 올린 새 파일 대신 옛 파일이 굳는다.
+ *
+ * export 하는 이유: 모듈 레벨 순수 함수라 `BulkSessionJobManager` 인스턴스 없이 단위로 잠글 수
+ * 있고, "세션 행이 프리필을 이긴다"는 순서 규칙은 그 자체로 함정이라 직접 테스트가 필요하다
+ * (Fix round 1 리뷰 Important 2).
+ */
+export function imageResolverFrom(
+  item: typeof productBulkItems.$inferSelect,
+  imageRows: Array<{ imageKey: string; usage: string; fileId: string | null }>,
+): ImageResolver {
+  const byKeyUsage = new Map<string, string>();
+  for (const row of imageRows) {
+    if (row.fileId) byKeyUsage.set(`${row.usage}:${row.imageKey}`, row.fileId);
+  }
+  const prefilled = isBulkBaseSnapshot(item.baseSnapshot) ? (item.baseSnapshot.images ?? {}) : {};
+
+  return {
+    fileIdFor: (imageKey, usage) => byKeyUsage.get(`${usage}:${imageKey}`) ?? prefilled[imageKey],
+  };
+}
+
 @Injectable()
 export class BulkSessionJobManager {
   private readonly logger = new Logger(BulkSessionJobManager.name);
+
+  /** 오류 문구 상한. `error_message` 는 text 라 DB 제약은 아니지만, 스택이 통째로 실린 문자열이
+   *  행 목록 API 에 그대로 나가는 것을 막는다(부록 A.8 인계). */
+  private static readonly ERROR_MESSAGE_MAX = 500;
 
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly fileClient: FormExportFileClient,
     private readonly snapshot: FormExportSnapshotReader,
     private readonly categories: ProductCategoriesService,
+    private readonly applier: BulkDraftApplier,
     private readonly config: ConfigService,
   ) {}
 
@@ -159,12 +186,16 @@ export class BulkSessionJobManager {
     return this.positiveInt('PRODUCT_BULK_VALIDATE_SLICE', DEFAULT_VALIDATE_SLICE);
   }
 
+  get draftSlice(): number {
+    return this.positiveInt('PRODUCT_BULK_DRAFT_SLICE', DEFAULT_DRAFT_SLICE);
+  }
+
   /**
-   * 파싱·검증 대상 세션 하나를 원자적으로 잡는다.
+   * 파싱·검증·drafting 대상 세션 하나를 원자적으로 잡는다.
    *
-   * `uploaded` 와 `validating` 을 둘 다 후보로 둔다 — 전자는 첫 파싱, 후자는 이어서 검증
-   * (또는 lease 가 만료된 재개)이다. `cancel_requested_at IS NULL` 가드는 취소된 세션을
-   * 다시 집지 않게 한다.
+   * `uploaded`·`validating`·`drafting` 을 셋 다 후보로 둔다 — 첫째는 첫 파싱, 둘째는 이어서
+   * 검증, 셋째는 draft 생성이다(또는 각 lease 가 만료된 재개). `cancel_requested_at IS NULL`
+   * 가드는 취소된 세션을 다시 집지 않게 한다.
    *
    * product-import-job.manager.ts:148-192 의 claim 과 같은 알고리즘이다(컬럼만 다르다) —
    * lease 소유권은 이 레포에서 목이 초록인 채 세 번 깨졌고, 그때 얻은 결론이 "만료시각은
@@ -181,7 +212,7 @@ export class BulkSessionJobManager {
          WHERE id = (
            SELECT id
              FROM product_bulk_sessions
-            WHERE phase IN ('uploaded', 'validating')
+            WHERE phase IN ('uploaded', 'validating', 'drafting')
               AND (lease_until IS NULL OR lease_until < NOW())
               AND cancel_requested_at IS NULL
             ORDER BY created_at
@@ -683,6 +714,201 @@ export class BulkSessionJobManager {
   }
 
   /**
+   * `status='pending'` 인 행을 슬라이스만큼 draft 로 만든다. 남은 행이 없으면 phase 를
+   * drafted 로 민다.
+   *
+   * **행 하나가 트랜잭션 하나다.** 슬라이스를 통째로 감싸면 한 행의 22001 이 앞선 성공까지
+   * 되돌린다. 행 단위로 끊으면 실패 격리가 공짜로 오고, **DB 안에서는** 롤백이 진짜 롤백이다 —
+   * v3 의 고아 master 행이 구조적으로 없다. (그 근거는 `draftOne` 이 `apply()` 와 상태갱신을
+   * **같은 트랜잭션**에 묶는 데 있다 — master 생성과 "이 행이 그 master 를 안다"는 사실이 같은
+   * 커밋에 실려, 커밋 전에 워커가 죽어도 고아 master 가 남지 않는다.)
+   *
+   * **다만 "phantom masterId 가 완전히 사라진다"는 아니다**(최종 리뷰 정정, 스펙 §5.1). 롤백돼도
+   * `createMaster` 가 낸 두 부수효과는 남는다: 브로커로 직송된 `ProductVariantCreated` Kafka
+   * 이벤트(`product-masters.service.ts:136` → `stream-publisher.service.ts:209` — 아웃박스가
+   * 아니다)와, `tx` 를 전파받지 않아 독립 커밋되는 `product_matchings` 행
+   * (`product-masters.service.ts:167` → `product-matching.service.ts:272,297`). 이 브랜치의
+   * 회귀가 아니라 v1·v3 와 공유하는 `createMaster` 의 기존 동작이다.
+   */
+  async runDraftSlice(claimed: ClaimedBulkSession): Promise<void> {
+    const { sessionId, leaseToken } = claimed;
+
+    const items = await this.db.run((trx) =>
+      trx
+        .select()
+        .from(productBulkItems)
+        .where(and(eq(productBulkItems.sessionId, sessionId), eq(productBulkItems.status, 'pending')))
+        .orderBy(productBulkItems.rowNumber)
+        .limit(this.draftSlice),
+    );
+
+    if (items.length === 0) {
+      await this.finishDrafting(sessionId, leaseToken);
+      return;
+    }
+
+    // 이미지 해석 결과는 행과 무관한 세션 전역 참조라 슬라이스당 한 번만 읽는다.
+    const imageRows = await this.db.run((trx) =>
+      trx
+        .select({
+          imageKey: productBulkImages.imageKey,
+          usage: productBulkImages.usage,
+          fileId: productBulkImages.fileId,
+        })
+        .from(productBulkImages)
+        .where(eq(productBulkImages.sessionId, sessionId)),
+    );
+
+    const [session] = await this.db.run((trx) =>
+      trx
+        .select({ uploadedBy: productBulkSessions.uploadedBy })
+        .from(productBulkSessions)
+        .where(eq(productBulkSessions.id, sessionId))
+        .limit(1),
+    );
+    if (!session) {
+      this.logger.warn(`draft 를 만들 일괄 세션을 찾지 못했습니다 (session=${sessionId})`);
+      return;
+    }
+
+    for (const item of items) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
+        this.logger.warn(`일괄 세션 lease 를 잃어 draft 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        this.logger.log(`일괄 세션이 취소돼 draft 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
+        return;
+      }
+
+      await this.draftOne(sessionId, session.uploadedBy, item, imageResolverFrom(item, imageRows));
+    }
+
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  /**
+   * 행 하나를 자기 트랜잭션에서 draft 로 만든다. `apply()` 성공과 그 결과를 행에 적는 것은
+   * **한 트랜잭션**이다(§runDraftSlice 독스트링) — 실패는 별도 트랜잭션(`failItem`)으로
+   * **그 행에만** 적는다.
+   *
+   * 그 트랜잭션의 첫 문장은 세션 행 `SELECT … FOR UPDATE` + 취소 재확인이다(본문 주석) —
+   * 루프의 `renewLease` 는 그 앞단의 값싼 필터일 뿐이고, 미아 draft 를 실제로 막는 것은
+   * 이 잠금이다.
+   */
+  private async draftOne(
+    sessionId: string,
+    userId: string,
+    item: typeof productBulkItems.$inferSelect,
+    images: ImageResolver,
+  ): Promise<void> {
+    // 되읽기 가드. 롤링 배포에서 옛 코드가 쓴 payload 를 만나면 그 행만 실패시킨다
+    // (validateOne 의 isBulkItemInput 가드와 같은 이유).
+    if (!isBulkItemPayload(item.payload)) {
+      await this.failItem(item.id, '행 데이터 형식이 달라 처리할 수 없습니다. 파일을 다시 올려주세요.');
+      return;
+    }
+    // 로컬 const 로 뽑는다 — `item.payload` 의 가드 좁힘은 아래 db.run 콜백(별개 함수 스코프)
+    // 안에서 풀린다. 로컬 바인딩은 재대입이 없다는 걸 컴파일러가 증명할 수 있어 클로저
+    // 안에서도 좁힌 타입이 유지된다(toBaseSnapshot 의 updateBase 클로저와 같은 이유).
+    const payload = item.payload;
+
+    try {
+      // apply() 와 상태갱신을 **한 트랜잭션**으로 묶는다. 둘로 쪼개면 커밋 사이에 워커가
+      // 죽었을 때(롤링 배포의 task stop 이 정확히 이 창을 때린다) 행은 pending 으로 남고,
+      // 다음 틱이 같은 행을 다시 처리해 `applyCreate` 의 무조건 `createMaster` 가 master 를
+      // 한 벌 더 만든다 — 앞의 master 는 어떤 item 도 가리키지 않는 고아가 된다. 하나로
+      // 묶으면 이 창이 구조적으로 없다: master 생성과 "그 master 를 이 행이 안다"는 사실이
+      // 같은 커밋에 실리므로, 커밋이 안 됐으면 master 도 없다(진짜 롤백).
+      await this.db.run(async (trx) => {
+        // ─── 취소 레이스의 마지막 방어선 (최종 리뷰 ①) ───
+        //
+        // 세션 행을 **이 트랜잭션의 첫 문장으로** 잠그고 취소를 다시 읽는다. 위 루프의
+        // `renewLease` 검사만으로는 부족하다: 그 검사와 이 트랜잭션의 커밋 사이에 취소가
+        // 커밋되면, 이 행의 draft 는 `bulk_session_id` 를 단 채 커밋된다. 그런데
+        // `cancel()` 의 잠금 해제 UPDATE(`WHERE bulk_session_id = :sessionId`)는 아직
+        // 커밋되지 않은 그 draft 를 볼 수 없고, 그 뒤 이 값을 지우는 경로가 레포에 없다 —
+        // `claim()` 은 취소된 세션을 다시 집지 않고 `cancel()` 은 `phase='canceled'` 에
+        // 409 를 던진다. 결과는 발행·삭제·재취소가 전부 막히고 my-drafts 에도 안 나오는
+        // **영구 미아 draft** 이고, 탈출구가 수기 SQL 뿐이다.
+        //
+        // `cancel()` 의 CAS UPDATE 가 같은 세션 행을 잠그므로 두 순서 모두 안전해진다:
+        // 우리가 먼저 잠그면 취소가 커밋을 기다렸다가 우리 draft 를 보고 풀어 주고,
+        // 취소가 먼저 잠그면 우리가 여기서 기다렸다가 취소를 보고 아무것도 쓰지 않는다.
+        // 잠그는 행이 하나(같은 세션)라 잠금 순서가 단일해 교착이 없다 —
+        // `bulk-image.manager.ts:192` 의 3단계 선례와 같은 형태다.
+        //
+        // **실패로도 기록하지 않는다.** 취소된 세션의 행은 실패한 것이 아니다.
+        const [locked] = await trx
+          .select({ cancelRequestedAt: productBulkSessions.cancelRequestedAt })
+          .from(productBulkSessions)
+          .where(eq(productBulkSessions.id, sessionId))
+          .for('update');
+        // Boolean() 으로 감싸는 이유는 `renewLease` 와 같다 — Date 는 truthy, null 은 falsy.
+        if (!locked || Boolean(locked.cancelRequestedAt)) {
+          this.logger.log(`일괄 세션이 취소돼 이 행의 draft 를 만들지 않는다 (session=${sessionId}, item=${item.id})`);
+          return;
+        }
+
+        const result = await this.applier.apply(
+          {
+            sessionId,
+            userId,
+            kind: item.kind,
+            masterId: item.masterId,
+            payload,
+            // 신규 행의 옵션 그룹 귀속은 원본 시트 행에서만 복원된다(Task 4 리뷰). 형식이 다르면
+            // 빈 배열로 떨어뜨린다 — 그 행은 어차피 옵션 없는 상품으로 처리되고, 옵션을 참조하는
+            // 조합이 있으면 checkCreateStructure 가 "없는 옵션값키"로 잡아 그 행만 실패시킨다.
+            optionRows: isBulkItemInput(item.input) ? item.input.bundle.options : [],
+            conflictDecision: toConflictDecisionMap(item.conflictDecision),
+            baseSnapshot: isBulkBaseSnapshot(item.baseSnapshot) ? item.baseSnapshot : null,
+            images,
+          },
+          trx,
+        );
+
+        await trx
+          .update(productBulkItems)
+          .set({
+            status: 'drafted',
+            draftVersionId: result.draftVersionId,
+            masterId: result.masterId,
+            errorMessage: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(productBulkItems.id, item.id));
+      });
+    } catch (error) {
+      // 행 층 오류는 그 행만 죽인다(스펙 §3.12). 레인 층(슬라이스 밖 탈출)은 워커의
+      // recordJobError 가 센다 — 여기서 삼키므로 draft 실패는 연속 실패 상한을 태우지 않는다.
+      // 그것이 맞다: 1,000행 중 30행이 실패해도 세션은 계속 나아가야 한다.
+      //
+      // `error instanceof Error` 로만 좁히면 충분하다 — 도메인 예외(BadRequestError)뿐 아니라
+      // Nest 예외(예: getActiveVersion 의 NotFoundException)도 전부 Error 의 서브클래스라
+      // 여기서 함께 잡힌다.
+      const message = error instanceof Error ? error.message : '알 수 없는 오류';
+      await this.failItem(item.id, message);
+    }
+  }
+
+  /** 행 층 오류를 그 행에만 적는다. `error_message` 는 상한을 잘라 관리자 화면 렌더를 보호한다. */
+  private async failItem(itemId: string, message: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productBulkItems)
+        .set({
+          status: 'failed',
+          errorMessage: message.slice(0, BulkSessionJobManager.ERROR_MESSAGE_MAX),
+          updatedAt: new Date(),
+        })
+        .where(eq(productBulkItems.id, itemId)),
+    );
+  }
+
+  /**
    * 미검증 행이 없으면 세션을 review 로 넘긴다.
    *
    * 토큰 CAS + 취소 가드는 1단계·임포트 마감과 같은 이유다 — 무조건 쓰면 lease 가 만료된
@@ -695,6 +921,27 @@ export class BulkSessionJobManager {
       trx
         .update(productBulkSessions)
         .set({ phase: 'review', phaseError: null, leaseUntil: null, leaseToken: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(productBulkSessions.id, sessionId),
+            eq(productBulkSessions.leaseToken, leaseToken),
+            isNull(productBulkSessions.cancelRequestedAt),
+          ),
+        ),
+    );
+  }
+
+  /**
+   * 미착수 행(`status='pending'`)이 없으면 세션을 drafted 로 넘긴다.
+   *
+   * 토큰 CAS + 취소 가드는 `finishValidating` 과 같은 이유다 — 무조건 쓰면 뒤늦게 깨어난
+   * 좀비가 후임이 처리 중인 세션에 drafted 를 도장 찍고 후임의 lease 까지 지운다.
+   */
+  private async finishDrafting(sessionId: string, leaseToken: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productBulkSessions)
+        .set({ phase: 'drafted', phaseError: null, leaseUntil: null, leaseToken: null, updatedAt: new Date() })
         .where(
           and(
             eq(productBulkSessions.id, sessionId),
@@ -775,7 +1022,7 @@ export class BulkSessionJobManager {
    * lease 를 지운다(토큰 CAS 없이). CAS 를 걸면 소유권이 옮겨간 순간 상한이 영원히
    * 발화하지 못한다(product-import-job.manager.ts:675-688 과 같은 근거).
    *
-   * WHERE 에 `phase IN ('uploaded','validating')` 을 거는 것은 1단계
+   * WHERE 에 `phase IN ('uploaded','validating','drafting')` 을 거는 것은 1단계
    * `TERMINAL_EXPORT_STATUSES` 와 같은 이유다 — 이미 review 로 넘어갔거나 취소·실패로
    * 종결된 세션을 뒤늦게 깨어난 좀비의 예외가 다시 실패로 끌어내리면 안 된다.
    */

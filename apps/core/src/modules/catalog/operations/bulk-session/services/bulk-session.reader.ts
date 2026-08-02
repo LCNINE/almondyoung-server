@@ -60,6 +60,7 @@ export const bulkItemRowColumns = {
   conflict: productBulkItems.conflict,
   conflictDecision: productBulkItems.conflictDecision,
   baseSnapshot: productBulkItems.baseSnapshot,
+  draftVersionId: productBulkItems.draftVersionId,
 };
 
 export type BulkItemRow = Pick<
@@ -75,6 +76,7 @@ export type BulkItemRow = Pick<
   | 'conflict'
   | 'conflictDecision'
   | 'baseSnapshot'
+  | 'draftVersionId'
 >;
 
 interface ConflictEntry {
@@ -323,6 +325,8 @@ export class BulkSessionReader {
       status: row.status,
       masterId: row.masterId,
       errorMessage: row.errorMessage,
+      // Task 9: 생성된 draft 를 가리킨다 — 화면이 이 id 로 통상의 draft 편집 화면을 연다.
+      draftVersionId: row.draftVersionId,
       changes,
       conflicts,
     };
