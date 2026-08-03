@@ -8,7 +8,8 @@ export type PrefillCell = string;
 export type PrefillRow = Record<string, PrefillCell>;
 
 export interface PrefillWorkbookData {
-  exportId: string;
+  /** null 이면 빈 양식이다 — 숨은 메타 시트를 만들지 않아 업로드가 신규 전용 세션으로 읽는다. */
+  exportId: string | null;
   products: PrefillRow[];
   options: PrefillRow[];
   variants: PrefillRow[];

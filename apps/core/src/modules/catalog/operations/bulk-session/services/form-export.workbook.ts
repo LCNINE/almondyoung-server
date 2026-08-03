@@ -59,10 +59,16 @@ export async function buildFormWorkbook(data: PrefillWorkbookData): Promise<Buff
 
   // exportId 는 숨은 시트에 둔다. 스펙의 "숨은 열"을 시트로 구현한 것으로, 열은 정렬·삭제로
   // 쉽게 유실되지만 시트는 훨씬 덜 건드려진다. 유실되면 2단계가 신규 전용 세션으로 해석한다.
-  const meta = wb.addWorksheet(SHEET_NAMES.meta);
-  meta.getCell('A1').value = 'exportId';
-  meta.getCell(META_CELL).value = data.exportId;
-  meta.state = 'veryHidden';
+  //
+  // **빈 양식(exportId === null)은 이 시트를 아예 만들지 않는다.** 심어두면 30일 뒤 잡이
+  // 만료되면서 그 워크북이 "exportId 는 있는데 해석 안 됨" 으로 업로드 거부된다
+  // (bulk-session.manager.ts). 빈 양식은 프리필이 없어 만료라는 개념 자체가 없어야 한다.
+  if (data.exportId !== null) {
+    const meta = wb.addWorksheet(SHEET_NAMES.meta);
+    meta.getCell('A1').value = 'exportId';
+    meta.getCell(META_CELL).value = data.exportId;
+    meta.state = 'veryHidden';
+  }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

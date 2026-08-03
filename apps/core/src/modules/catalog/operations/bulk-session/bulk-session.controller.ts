@@ -17,7 +17,15 @@ import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiResponse, ApiTags } fr
 import { RolesGuard, User } from '@app/authorization';
 import { BulkSessionService } from './services/bulk-session.service';
 import { MAX_UPLOAD_BYTES } from './services/bulk-upload.parser';
-import { BULK_ITEM_STATUS_VALUES, BulkItemStatus, isBulkItemStatus } from './services/bulk-session.reader';
+import {
+  BULK_ITEM_STATUS_VALUES,
+  BulkItemStatus,
+  isBulkItemStatus,
+  BULK_PUBLISH_STATUS_VALUES,
+  BulkPublishStatus,
+  isBulkPublishStatus,
+} from './services/bulk-session.reader';
+import { CONFLICT_FILTER_VALUES, ConflictFilter, isConflictFilter } from './services/bulk-session.conflicts';
 import {
   BulkSessionAcceptedDto,
   BulkSessionImageListDto,
@@ -110,14 +118,28 @@ export class BulkSessionController {
   }
 
   @Get(':id/items')
-  @ApiOperation({ summary: '행 목록(변경분·충돌·라벨 포함). status 필터·페이지' })
+  @ApiOperation({ summary: '행 목록(변경분·충돌·라벨 포함). status·conflict·publishStatus 필터·페이지' })
   @ApiQuery({ name: 'status', required: false, enum: BULK_ITEM_STATUS_VALUES })
+  @ApiQuery({
+    name: 'conflict',
+    required: false,
+    enum: CONFLICT_FILTER_VALUES,
+    description: 'any=충돌 있는 행, undecided=미결정 충돌이 남은 행. status 와 AND 로 걸린다',
+  })
+  @ApiQuery({
+    name: 'publishStatus',
+    required: false,
+    enum: BULK_PUBLISH_STATUS_VALUES,
+    description: '발행 레인 상태 필터 — 아이템 status 와 축이 다르다. status·conflict 와 AND 로 걸린다',
+  })
   @ApiQuery({ name: 'page', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiResponse({ status: 200, type: BulkSessionItemListDto })
   async getItems(
     @Param('id') id: string,
     @Query('status') status: string | undefined,
+    @Query('conflict') conflict: string | undefined,
+    @Query('publishStatus') publishStatus: string | undefined,
     @Query('page') page = '1',
     @Query('limit') limit = '20',
     @User() user: { userId: string },
@@ -129,7 +151,29 @@ export class BulkSessionController {
       }
       validatedStatus = status;
     }
-    return this.service.getItems(id, user.userId, validatedStatus, parsePage(page), parseLimit(limit));
+    let validatedConflict: ConflictFilter | undefined;
+    if (conflict !== undefined) {
+      if (!isConflictFilter(conflict)) {
+        throw new BadRequestException(`conflict 는 ${CONFLICT_FILTER_VALUES.join(', ')} 중 하나여야 합니다`);
+      }
+      validatedConflict = conflict;
+    }
+    let validatedPublishStatus: BulkPublishStatus | undefined;
+    if (publishStatus !== undefined) {
+      if (!isBulkPublishStatus(publishStatus)) {
+        throw new BadRequestException(`publishStatus 는 ${BULK_PUBLISH_STATUS_VALUES.join(', ')} 중 하나여야 합니다`);
+      }
+      validatedPublishStatus = publishStatus;
+    }
+    return this.service.getItems(
+      id,
+      user.userId,
+      validatedStatus,
+      validatedConflict,
+      validatedPublishStatus,
+      parsePage(page),
+      parseLimit(limit),
+    );
   }
 
   @Patch(':id/items/:itemId/conflict-decision')

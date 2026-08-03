@@ -7,6 +7,7 @@ import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
 import { noticesClient } from './notices.client';
 import { bulkClient } from './bulk.client';
+import { bulkSessionClient } from './bulk-session.client';
 import { categoriesClient } from './categories.client';
 import { channelProductsClient } from './channel-products.client';
 import { channelsClient } from './channels.client';
@@ -30,6 +31,7 @@ export const products = {
   pricing: pricingClient,
   versions: versionsClient,
   bulk: bulkClient,
+  bulkSession: bulkSessionClient,
   formExport: formExportClient,
   audit: auditClient,
   approval: approvalClient,
@@ -47,6 +49,7 @@ export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';
 export { versionsClient } from './versions.client';
 export { bulkClient } from './bulk.client';
+export { bulkSessionClient } from './bulk-session.client';
 export { formExportClient } from './form-export.client';
 export { auditClient } from './audit.client';
 export { approvalClient } from './approval.client';

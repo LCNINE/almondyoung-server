@@ -167,4 +167,16 @@ export const productQueryKeys = {
   formExports: ['product-forms'] as const,
   formExport: (exportId: string) =>
     [...productQueryKeys.formExports, exportId] as const,
+
+  // 일괄 등록/수정 세션 관련
+  bulkSessions: ['product-bulk-sessions'] as const,
+  bulkSessionList: (page: number, limit: number) =>
+    [...productQueryKeys.bulkSessions, 'list', page, limit] as const,
+  bulkSession: (id: string) => [...productQueryKeys.bulkSessions, id] as const,
+  bulkSessionItems: (id: string, query: Record<string, unknown>) =>
+    [...productQueryKeys.bulkSession(id), 'items', query] as const,
+  bulkSessionUndecided: (id: string) =>
+    [...productQueryKeys.bulkSession(id), 'undecided'] as const,
+  bulkSessionImages: (id: string, query: Record<string, unknown>) =>
+    [...productQueryKeys.bulkSession(id), 'images', query] as const,
 } as const;

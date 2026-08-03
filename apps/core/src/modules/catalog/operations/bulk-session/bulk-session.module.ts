@@ -4,6 +4,7 @@ import { BulkSessionController } from './bulk-session.controller';
 import { FormExportService } from './services/form-export.service';
 import { FormExportManager } from './services/form-export.manager';
 import { FormExportSnapshotReader } from './services/form-export.snapshot.reader';
+import { FormExportBlankBuilder } from './services/form-export.blank';
 import { FormExportFileClient } from './services/form-export-file.client';
 import { FormExportJobManager } from './services/form-export-job.manager';
 import { FormExportJobWorker } from './services/form-export-job.worker';
@@ -56,6 +57,7 @@ import { CategoriesModule } from '../../core/categories/categories.module';
     FormExportService,
     FormExportManager,
     FormExportSnapshotReader,
+    FormExportBlankBuilder,
     FormExportFileClient,
     FormExportJobManager,
     FormExportJobWorker,
