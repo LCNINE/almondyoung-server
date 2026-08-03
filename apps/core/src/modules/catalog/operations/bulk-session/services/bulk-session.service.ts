@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BulkSessionManager, BulkSessionAcceptInput } from './bulk-session.manager';
-import { BulkSessionReader, BulkItemStatus, BulkImageFilter } from './bulk-session.reader';
+import { BulkSessionReader, BulkItemStatus, BulkImageFilter, BulkPublishStatus } from './bulk-session.reader';
+import { ConflictFilter } from './bulk-session.conflicts';
 import { BulkImageManager, ResolveEntry } from './bulk-image.manager';
 import {
   BulkSessionAcceptedDto,
@@ -38,10 +39,12 @@ export class BulkSessionService {
     sessionId: string,
     userId: string,
     status: BulkItemStatus | undefined,
+    conflict: ConflictFilter | undefined,
+    publishStatus: BulkPublishStatus | undefined,
     page: number,
     limit: number,
   ): Promise<BulkSessionItemListDto> {
-    return this.reader.getItems(sessionId, userId, status, page, limit);
+    return this.reader.getItems(sessionId, userId, status, conflict, publishStatus, page, limit);
   }
 
   setConflictDecision(

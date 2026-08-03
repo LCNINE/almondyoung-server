@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, StreamableFile, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, User } from '@app/authorization';
 import { FormExportService } from './services/form-export.service';
@@ -22,6 +22,17 @@ export class FormExportController {
   @ApiResponse({ status: 202, type: FormExportAcceptedDto })
   async create(@Body() dto: CreateFormExportDto, @User() user: { userId: string }): Promise<FormExportAcceptedDto> {
     return this.service.request(dto.masterIds, user.userId);
+  }
+
+  // ⚠️ 이 핸들러는 반드시 `@Get(':exportId')` 보다 **위**에 있어야 한다. Nest 는 선언
+  // 순서로 매칭하므로 아래에 두면 'blank' 가 :exportId 로 잡혀 404 가 난다.
+  @Get('blank')
+  @ApiOperation({ summary: '빈 양식 다운로드. 신규 전용 세션용 — 잡도 만료도 없다.' })
+  @ApiResponse({ status: 200, description: 'xlsx 바이너리' })
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @Header('Content-Disposition', 'attachment; filename="product-bulk-form-blank.xlsx"')
+  async getBlank(): Promise<StreamableFile> {
+    return new StreamableFile(await this.service.buildBlankWorkbook());
   }
 
   @Get(':exportId')

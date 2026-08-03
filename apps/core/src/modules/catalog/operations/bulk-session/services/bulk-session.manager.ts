@@ -14,7 +14,8 @@ import {
 import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
 import { parseUploadWorkbook } from './bulk-upload.parser';
-import { BulkSessionReader, bulkItemRowColumns, toConflictDecisionMap, toConflictMap } from './bulk-session.reader';
+import { BulkSessionReader, bulkItemRowColumns } from './bulk-session.reader';
+import { countUndecided, toConflictDecisionMap, toConflictMap } from './bulk-session.conflicts';
 import { type ConflictDecisionMap } from './bulk-session.types';
 import { BulkSessionAcceptedDto, BulkSessionItemDto, BulkSessionProgressDto } from '../dto';
 import { classifyPublishError } from './bulk-publish.errors';
@@ -325,16 +326,13 @@ export class BulkSessionManager {
       // 수 없다 — 이미 읽고 있는 rowNumber 를 메시지에 미리보기로 싣는다(추가 쿼리 없음).
       const undecidedRowNumbers: number[] = [];
       for (const item of conflictedItems) {
-        const conflictMap = toConflictMap(item.conflict);
-        const decisionMap = toConflictDecisionMap(item.conflictDecision);
-        let rowHasUndecided = false;
-        for (const field of Object.keys(conflictMap)) {
-          if (!decisionMap[field]) {
-            undecidedCount += 1;
-            rowHasUndecided = true;
-          }
+        // 목록 필터(getItems?conflict=undecided)와 **같은** 술어다. 복사본을 만들면
+        // 화면에 안 보이는 미결정 때문에 승인이 409 나는 상태가 생긴다.
+        const rowUndecided = countUndecided(item.conflict, item.conflictDecision);
+        if (rowUndecided > 0) {
+          undecidedCount += rowUndecided;
+          undecidedRowNumbers.push(item.rowNumber);
         }
-        if (rowHasUndecided) undecidedRowNumbers.push(item.rowNumber);
       }
       if (undecidedCount > 0) {
         const preview = undecidedRowNumbers

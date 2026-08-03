@@ -107,6 +107,12 @@ export class BulkSessionItemDto {
   @ApiProperty() rowNumber: number;
   @ApiProperty() rowKey: string;
   @ApiProperty({ enum: ['create', 'update'] }) kind: 'create' | 'update';
+  @ApiProperty({
+    description:
+      '검토 목록에 보여줄 표시용 상품명. update 행은 업로드값(새 이름)을 우선하고 없으면 스냅샷의 현재 이름으로 떨어진다. ' +
+      '행이 너무 망가져 어느 쪽에서도 이름을 뽑을 수 없으면 빈 문자열일 수 있다 — 화면이 대체 표시를 정한다.',
+  })
+  productName: string;
   @ApiProperty({ enum: ['pending', 'invalid', 'drafted', 'excluded', 'failed'] }) status: string;
   @ApiProperty({ required: false, nullable: true }) masterId: string | null;
   @ApiProperty({ required: false, nullable: true }) errorMessage: string | null;

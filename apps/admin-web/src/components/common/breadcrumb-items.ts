@@ -11,6 +11,7 @@ const mallProductBreadcrumbs = [
   { prefix: '/mall/channel-listings', label: '채널 노출 관리' },
   { prefix: '/mall/channel-categories', label: '채널 카테고리' },
   { prefix: '/mall/bulk', label: '일괄 작업' },
+  { prefix: '/mall/bulk-sessions', label: '엑셀 일괄 등록/수정' },
   { prefix: '/mall/audit', label: '감사 이력/승인' },
   { prefix: '/mall/digital-assets', label: '디지털 자산' },
   { prefix: '/mall/ownerships', label: '디지털 사용권' },

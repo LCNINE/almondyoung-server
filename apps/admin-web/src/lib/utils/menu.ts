@@ -221,6 +221,11 @@ export const mainMenus: MainMenu[] = [
       },
       { id: 'product-drafts', title: '작성중인 상품', path: '/mall/my-drafts' },
       {
+        id: 'product-bulk-sessions',
+        title: '엑셀 일괄 등록/수정',
+        path: '/mall/bulk-sessions',
+      },
+      {
         id: 'product-category',
         title: '분류/카테고리',
         path: '/mall/categories',

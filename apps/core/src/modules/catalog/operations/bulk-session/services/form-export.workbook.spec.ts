@@ -92,3 +92,46 @@ describe('buildFormWorkbook', () => {
     await expect(readExportIdFromWorkbook(buf)).resolves.toBeNull();
   });
 });
+
+describe('buildFormWorkbook — 빈 양식 (exportId 없음)', () => {
+  const blank: PrefillWorkbookData = {
+    exportId: null,
+    products: [],
+    options: [],
+    variants: [],
+    categories: [],
+    constraints: [],
+    images: [],
+    categoryPaths: ['여성패션', '여성패션>니트'],
+  };
+
+  it('메타 시트를 만들지 않는다 — 보이는 7개뿐이다', async () => {
+    const wb = await load(await buildFormWorkbook(blank));
+    expect(wb.worksheets.map((w) => w.name)).toEqual([
+      SHEET_NAMES.products,
+      SHEET_NAMES.options,
+      SHEET_NAMES.variants,
+      SHEET_NAMES.categories,
+      SHEET_NAMES.constraints,
+      SHEET_NAMES.images,
+      SHEET_NAMES.categoryReference,
+    ]);
+  });
+
+  it('exportId 를 읽으면 null 이다 — 업로드가 신규 전용 세션으로 해석한다', async () => {
+    expect(await readExportIdFromWorkbook(await buildFormWorkbook(blank))).toBeNull();
+  });
+
+  it('데이터가 0행이어도 한국어 헤더는 그대로 있다', async () => {
+    const wb = await load(await buildFormWorkbook(blank));
+    const header = wb.getWorksheet(SHEET_NAMES.products)!.getRow(1);
+    expect(labelsOf(PRODUCT_COLUMNS).map((_, i) => header.getCell(i + 1).text)).toEqual(labelsOf(PRODUCT_COLUMNS));
+  });
+
+  it('카테고리 참조 시트는 0행이 아니라 트리를 담는다', async () => {
+    const wb = await load(await buildFormWorkbook(blank));
+    const ws = wb.getWorksheet(SHEET_NAMES.categoryReference)!;
+    expect(ws.getRow(2).getCell(1).text).toBe('여성패션');
+    expect(ws.getRow(3).getCell(1).text).toBe('여성패션>니트');
+  });
+});
