@@ -17,7 +17,8 @@ export class RefundRequestsController {
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateRefundRequestDto) {
     if (!req.jwtUserId) throw new UnauthorizedException('JWT authentication required');
     const { intentId, ...account } = dto;
-    const request = await this.service.create(intentId, account, req.jwtUserId);
+    // 가드가 검증한 고객 토큰을 그대로 Core 디지털 가드 조회에 넘긴다 (헤더/쿠키 무관).
+    const request = await this.service.create(intentId, account, req.jwtUserId, req.jwtToken);
     return { id: request.id, status: request.status, createdAt: request.createdAt };
   }
 

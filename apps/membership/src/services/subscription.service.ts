@@ -147,22 +147,28 @@ export class SubscriptionService {
       planDetails.tier,
       options,
       billingMode,
+      false,
+      'CHARGE',
+      email,
     );
 
-    // 실패 시 로그만 남기고 구독 생성 자체는 성공으로 처리
-    this.membershipEventPublisher
-      .publishStatusChanged({
-        userId,
-        email,
-        status: 'ACTIVE',
-        occurredAt: new Date().toISOString(),
-        contractId: result.contractId,
-        planId: planDetails.plan.id,
-        tierId: planDetails.tier.id,
-      })
-      .catch((err: Error) =>
-        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
-      );
+    // one_time 은 createNewSubscription 이 아웃박스에 원자적으로 기록하므로 여기서 발행하지 않는다.
+    // recurring 만 기존 best-effort 발행 유지(가입 후 billing 설정까지 성공한 뒤 호출됨).
+    if (billingMode !== 'one_time') {
+      this.membershipEventPublisher
+        .publishStatusChanged({
+          userId,
+          email,
+          status: 'ACTIVE',
+          occurredAt: new Date().toISOString(),
+          contractId: result.contractId,
+          planId: planDetails.plan.id,
+          tierId: planDetails.tier.id,
+        })
+        .catch((err: Error) =>
+          this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+        );
+    }
 
     return result;
   }
@@ -516,6 +522,7 @@ export class SubscriptionService {
       billingMode,
       false,
       invoicePath ? 'INVOICE' : 'CHARGE',
+      email,
     );
 
     if (billingMode === 'recurring') {
@@ -551,19 +558,22 @@ export class SubscriptionService {
       }
     }
 
-    this.membershipEventPublisher
-      .publishStatusChanged({
-        userId,
-        email,
-        status: 'ACTIVE',
-        occurredAt: new Date().toISOString(),
-        contractId: result.contractId,
-        planId: planDetails.plan.id,
-        tierId: planDetails.tier.id,
-      })
-      .catch((err: Error) =>
-        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
-      );
+    // one_time 은 createNewSubscription 이 아웃박스에 원자적으로 기록하므로 여기서 발행하지 않는다.
+    if (billingMode !== 'one_time') {
+      this.membershipEventPublisher
+        .publishStatusChanged({
+          userId,
+          email,
+          status: 'ACTIVE',
+          occurredAt: new Date().toISOString(),
+          contractId: result.contractId,
+          planId: planDetails.plan.id,
+          tierId: planDetails.tier.id,
+        })
+        .catch((err: Error) =>
+          this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+        );
+    }
 
     return result;
   }
@@ -616,6 +626,7 @@ export class SubscriptionService {
     if (!planDetails) throw new PlanNotFoundException();
     if (!planDetails.plan.isActive) throw new PlanNotFoundException();
 
+    // 관리자 등록은 항상 one_time — createNewSubscription 이 아웃박스에 원자적으로 발행한다.
     const result = await this.subscriptionCreator.createNewSubscription(
       userId,
       planDetails.plan,
@@ -623,21 +634,9 @@ export class SubscriptionService {
       {},
       billingMode,
       true,
+      'CHARGE',
+      '',
     );
-
-    this.membershipEventPublisher
-      .publishStatusChanged({
-        userId,
-        email: '',
-        status: 'ACTIVE',
-        occurredAt: new Date().toISOString(),
-        contractId: result.contractId,
-        planId: planDetails.plan.id,
-        tierId: planDetails.tier.id,
-      })
-      .catch((err: Error) =>
-        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
-      );
 
     return result;
   }

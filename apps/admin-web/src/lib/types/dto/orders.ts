@@ -144,6 +144,8 @@ export interface OrderSalesChannel {
 export interface SalesOrdersResponseDto {
   data: SalesOrderDto[];
   total: number;
+  /** 필터 결과 전체 상품 라인 수 (전 페이지 합계) */
+  lineTotal?: number;
   page: number;
   limit: number;
   totalPages: number;
@@ -405,11 +407,34 @@ export interface OrderStatsDto {
 
 // ===== 쿼리 타입들 =====
 /** WMS SalesOrderFilterDto와 일치 */
+export type OrderTypeGroup =
+  | 'all'
+  | 'pending'
+  | 'ready'
+  | 'partial'
+  | 'hold'
+  | 'unmatched'
+  | 'direct';
+export type OrderKeywordType =
+  | 'all'
+  | 'orderNo'
+  | 'receiver'
+  | 'phone'
+  | 'product';
+
 export interface SalesOrdersQuery {
   status?: SalesOrderStatus;
   channel?: 'medusa' | 'naver' | 'coupang' | '3pl';
   startDate?: string;
   endDate?: string;
+  /** 구분 (재고/매칭 상태) — 서버측 필터 */
+  typeGroup?: OrderTypeGroup;
+  /** 취소/타임아웃 제외 (typeGroup='all'일 때) */
+  excludeTerminal?: boolean;
+  /** 환불 실패/수동처리 주문만 */
+  refundIssueOnly?: boolean;
+  keyword?: string;
+  keywordType?: OrderKeywordType;
   limit?: number;
   offset?: number;
 }

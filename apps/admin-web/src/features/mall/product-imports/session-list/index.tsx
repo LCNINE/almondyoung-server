@@ -6,7 +6,24 @@ import { Button } from '@/components/ui/button';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { useImportSessions } from '@/lib/services/products';
+import type { SessionSummaryDto } from '@/lib/types/dto/product-import';
 import { Plus } from 'lucide-react';
+
+/**
+ * `SessionSummaryDto.status` 는 잡 상태가 아니라 아카이브 플래그다(항상 'completed') —
+ * 세션 상세(session-detail/index.tsx)가 진행 상태를 commitStatus/publishStatus 로
+ * 판단하는 것과 같은 근거로, 목록도 같은 두 필드에서 라벨을 뽑는다. 단어 선택도
+ * 세션 상세의 버튼 라벨("생성 중...","게시 중...")과 맞춘다 — 두 화면이 어긋나면 안 된다.
+ */
+function jobStatusLabel(s: Pick<SessionSummaryDto, 'commitStatus' | 'publishStatus'>): string {
+  // 취소를 가장 먼저 본다 — 취소된 세션은 어느 레인이 어디서 멈췄든 사람에게는 '취소됨' 하나다.
+  if (s.commitStatus === 'canceled' || s.publishStatus === 'canceled') return '취소됨';
+  if (s.commitStatus === 'queued' || s.commitStatus === 'running') return '생성 중';
+  if (s.commitStatus === 'failed') return '생성 실패';
+  if (s.publishStatus === 'queued' || s.publishStatus === 'running') return '게시 중';
+  if (s.publishStatus === 'failed') return '게시 실패';
+  return '완료';
+}
 
 export function SessionList() {
   const router = useRouter();
@@ -19,7 +36,7 @@ export function SessionList() {
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="엑셀 대량등록"
           subtitle="과거 대량등록 세션을 확인하거나 새로 등록합니다."
@@ -67,7 +84,7 @@ export function SessionList() {
                     <td className="p-2">{s.totalRows}</td>
                     <td className="p-2 text-green-600">{s.createdCount}</td>
                     <td className="p-2 text-destructive">{s.failedCount}</td>
-                    <td className="p-2">{s.status}</td>
+                    <td className="p-2">{jobStatusLabel(s)}</td>
                     <td className="p-2">
                       {new Date(s.createdAt).toLocaleString('ko-KR')}
                     </td>

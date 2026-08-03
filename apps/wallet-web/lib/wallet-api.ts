@@ -85,6 +85,39 @@ export async function getPaymentIntent(intentId: string, cookieHeader?: string):
   return res.json();
 }
 
+export interface BankTransferDepositAccount {
+  bankName: string | null;
+  accountNumber: string | null;
+  accountHolder: string | null;
+  dueDate: string | null;
+  amount: number;
+  currency: string;
+}
+
+/**
+ * 무통장(가상계좌) 입금 안내 계좌. AWAITING_DEPOSIT 인텐트로 결제창에 재진입했을 때
+ * 발급된 계좌를 다시 보여주기 위해 쓴다. 계좌가 없거나 조회 실패면 null.
+ */
+export async function getBankTransferDepositAccount(
+  intentId: string,
+  cookieHeader?: string,
+): Promise<BankTransferDepositAccount | null> {
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  try {
+    const res = await fetch(`${BASE_URL}/v1/payment-intents/${intentId}/deposit-account`, {
+      headers,
+      credentials: cookieHeader ? undefined : 'include',
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as BankTransferDepositAccount | null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getPaymentMethods(cookieHeader?: string): Promise<PaymentMethod[]> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;

@@ -7,8 +7,22 @@ export class ResolvedPreviewDto {
   @ApiProperty({ type: [String] })
   categoryNames: string[];
 
+  @ApiProperty({ description: '지정된 카테고리 총 개수. categoryNames 는 그중 대표 카테고리의 경로다.' })
+  categoryCount: number;
+
+  @ApiProperty({
+    description: "판매기간 'YYYY-MM-DD HH:mm ~ YYYY-MM-DD HH:mm' (KST). 지정 없으면 null.",
+    nullable: true,
+  })
+  salesPeriod: string | null;
+
   @ApiProperty()
   variantCount: number;
+
+  @ApiProperty({
+    description: '이 행이 참조하는 고유 이미지 수(대표+부가+본문). 커밋 전에 인식 여부를 확인하는 용도.',
+  })
+  imageCount: number;
 }
 
 export class ValidatePreviewRowDto {
@@ -49,28 +63,42 @@ export class CommitItemDto {
   @ApiProperty()
   productKey: string;
 
-  @ApiProperty({ enum: ['created', 'failed'] })
-  status: 'created' | 'failed';
+  // 'pending' 은 접수 후 워커가 아직 처리하지 않은 행(비동기 커밋). 동기 커밋 응답에는
+  // 나타나지 않지만 getSession() 은 이 DTO 를 재사용해 세션 상세를 돌려주므로 포함한다.
+  @ApiProperty({ enum: ['created', 'failed', 'pending'] })
+  status: 'created' | 'failed' | 'pending';
 
   @ApiProperty({ required: false })
   masterId?: string;
 
   @ApiProperty({ required: false })
   errorMessage?: string;
+
+  @ApiProperty({ enum: ['pending', 'published', 'failed', 'skipped'] })
+  publishStatus: 'pending' | 'published' | 'failed' | 'skipped';
+
+  @ApiProperty({ required: false })
+  publishError?: string;
 }
 
-export class CommitResultDto {
-  @ApiProperty()
+export class CommitAcceptedDto {
+  @ApiProperty({ description: '생성된 임포트 세션 id. 진행 상황은 GET /product-imports/:id/progress 로 폴링한다.' })
   sessionId: string;
 
-  @ApiProperty()
-  createdCount: number;
+  @ApiProperty({ enum: ['queued'] })
+  status: 'queued';
 
   @ApiProperty()
-  failedCount: number;
+  totalRows: number;
 
-  @ApiProperty({ type: [CommitItemDto] })
-  items: CommitItemDto[];
+  @ApiProperty({ description: '워커가 처리할 유효 행 수' })
+  queuedCount: number;
+
+  @ApiProperty({ description: '검증에서 이미 떨어진 행 수 — 접수 시점의 확정값' })
+  invalidCount: number;
+
+  @ApiProperty({ description: '워커가 내려받을 고유 이미지 수. 0 이면 이미지 단계 없이 바로 상품 생성으로 간다.' })
+  imageCount: number;
 }
 
 export class SessionSummaryDto {
@@ -94,6 +122,53 @@ export class SessionSummaryDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '상품 생성 잡 상태',
+  })
+  commitStatus: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '게시 잡 상태',
+  })
+  publishStatus: string;
+
+  @ApiProperty()
+  publishedCount: number;
+
+  @ApiProperty()
+  publishFailedCount: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  commitError: string | null;
+
+  @ApiProperty({ required: false, nullable: true })
+  publishError: string | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '접수 시점 검증실패 행 수. 옛 세션(컬럼 도입 이전)은 null 이다.',
+  })
+  invalidCount: number | null;
+
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '취소 요청 시각. null 이 아니면 워커가 이 세션을 더 이상 집지 않는다.',
+  })
+  cancelRequestedAt: Date | null;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '이미지 레인(probe→fetch) 상태. Images 시트가 없는 워크북은 접수 즉시 completed 다.',
+  })
+  imageStatus: string;
+
+  @ApiProperty({ required: false, nullable: true })
+  imageError: string | null;
 }
 
 export class SessionDetailDto extends SessionSummaryDto {
@@ -101,18 +176,39 @@ export class SessionDetailDto extends SessionSummaryDto {
   items: CommitItemDto[];
 }
 
-export class PublishFailureDto {
+export class PublishAcceptedDto {
   @ApiProperty()
-  masterId: string;
+  sessionId: string;
 
-  @ApiProperty()
-  reason: string;
+  @ApiProperty({ enum: ['queued'] })
+  status: 'queued';
+
+  @ApiProperty({ description: '게시 대상 행 수. 진행은 GET /product-imports/:id/progress 로 폴링한다.' })
+  targetCount: number;
 }
 
-export class PublishResultDto {
+export class CancelAcceptedDto {
   @ApiProperty()
-  published: number;
+  sessionId: string;
 
-  @ApiProperty({ type: [PublishFailureDto] })
-  failed: PublishFailureDto[];
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 이미지 잡 상태. 이미 끝난 레인은 completed 로 남는다.',
+  })
+  imageStatus: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 생성 잡 상태. 이미 끝난 레인은 completed 로 남는다.',
+  })
+  commitStatus: string;
+
+  @ApiProperty({
+    enum: ['idle', 'queued', 'running', 'completed', 'failed', 'canceled'],
+    description: '취소 반영 후 게시 잡 상태',
+  })
+  publishStatus: string;
+
+  @ApiProperty({ description: '취소 요청 시각' })
+  canceledAt: Date;
 }

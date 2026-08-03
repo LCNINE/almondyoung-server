@@ -42,7 +42,7 @@ export function DraftCompletionChecklist({ masterId, versionId }: Props) {
   });
 
   return (
-    <Container className="divide-y-0 bg-background">
+    <Container className="bg-background">
       <Header
         title="Draft 완성 체크리스트"
         subtitle="남은 편집 작업을 빠르게 찾기 위한 안내입니다."

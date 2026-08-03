@@ -26,6 +26,8 @@ type ItemsProps = {
   onSelectItem: (itemId: string, checked: boolean) => void
   /** 판매중단(draft/미게시)으로 결제를 막는 variant id 집합 */
   unavailableVariantIds?: Set<string>
+  /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
+  availableByVariantId?: Record<string, number>
 }
 
 export default function Items({
@@ -35,12 +37,16 @@ export default function Items({
   onSelectAll,
   onSelectItem,
   unavailableVariantIds,
+  availableByVariantId,
 }: ItemsProps) {
   const [isPending, startTransition] = useTransition()
   const t = useTranslations("cart.items")
 
   const isItemUnavailable = (item: HttpTypes.StoreCartLineItem) =>
     !!item.variant_id && !!unavailableVariantIds?.has(item.variant_id)
+
+  const maxQuantityOf = (item: HttpTypes.StoreCartLineItem) =>
+    item.variant_id ? availableByVariantId?.[item.variant_id] : undefined
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
@@ -90,7 +96,11 @@ export default function Items({
               />
             </div>
             <div className="flex-1">
-              <Item item={item} isUnavailable={isItemUnavailable(item)}>
+              <Item
+                item={item}
+                isUnavailable={isItemUnavailable(item)}
+                maxQuantity={maxQuantityOf(item)}
+              >
                 <Item.Mobile />
               </Item>
             </div>
@@ -130,6 +140,7 @@ export default function Items({
                 onSelectChange={(checked) => onSelectItem(item.id, checked)}
                 selectDisabled={isPending}
                 isUnavailable={isItemUnavailable(item)}
+                maxQuantity={maxQuantityOf(item)}
               >
                 <Item.Desktop />
               </Item>

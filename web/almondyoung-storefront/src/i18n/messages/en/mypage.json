@@ -488,6 +488,8 @@
       "discount": "Discount",
       "membershipDiscount": "Membership Discount",
       "shippingFee": "Shipping",
+      "pointsUsed": "Points Used",
+      "paidWithPointsOnly": "Fully paid with points — nothing more to pay.",
       "totalPayment": "Total",
       "totalPaymentMobile": "Total Payment",
       "orderDate": "Order Date",
@@ -501,6 +503,7 @@
       "loadingMore": "Loading...",
       "loadMore": "Load more ({loaded}/{total})",
       "errorTitle": "Failed to load orders.",
+      "preparingOrder": "Preparing your order. This will just take a moment.",
       "items": "{count} items",
       "totalQuantity": "Total quantity {count}",
       "productSuffix": "and {count} more",
@@ -539,7 +542,13 @@
       "contactCs": "Contact Support",
       "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
       "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
-      "download": "Download"
+      "download": "Download",
+      "cancelUnavailable": {
+        "already_shipped": "This order has already shipped and cannot be canceled. Please use the return request instead.",
+        "channel_order": "Please cancel this order on the channel where it was placed.",
+        "already_processing": "Picking has started, so self-cancellation is unavailable. Please contact customer support.",
+        "digital_downloaded": "This order includes a digital item you already downloaded, so self-cancellation is unavailable. Please contact customer support."
+      }
     },
     "delivery": {
       "paid": "Paid",
@@ -691,7 +700,8 @@
       "success": "Your refund request has been received and will be processed after review.",
       "error": "Failed to submit refund request. Please try again.",
       "requested": "Refund requested · pending",
-      "refunded": "Refunded"
+      "refunded": "Refunded",
+      "digitalDownloadedBlocked": "This order includes a digital item you already downloaded, so a refund request cannot be submitted. Please contact customer support."
     },
     "depositAccount": {
       "title": "Deposit account",
@@ -704,6 +714,15 @@
       "amount": "Deposit amount",
       "dueDate": "Deposit deadline",
       "notice": "Please deposit to the account below. The depositor name does not need to match. Automatic confirmation after deposit may take some time; shipping proceeds once confirmed."
+    },
+    "digitalDownload": {
+      "title": "Digital downloads",
+      "download": "Download",
+      "downloading": "Downloading...",
+      "confirm": "Downloading “{name}” makes this item non-returnable and non-refundable. Continue?",
+      "started": "Download started",
+      "failed": "Download failed",
+      "exerciseFailed": "Failed to mark the license as used"
     }
   },
   "membership": {
@@ -1109,21 +1128,6 @@
     "detailPayerName": "Account holder",
     "detailAgreementStatus": "Signature status",
     "detailCreatedAt": "Requested at"
-  },
-  "payment": {
-    "pageTitle": "Payment Methods",
-    "pointTitle": "Almondyoung Points",
-    "pendingPointsTitle": "Points pending to be added",
-    "accountTitle": "Account",
-    "accountChangeAria": "Change account",
-    "noAccountRegistered": "No account registered",
-    "bnplLoadFail": "Failed to load buy-now-pay-later history",
-    "retry": "Retry",
-    "noAccountYet": "No account registered yet",
-    "registerMethod": "+ Add payment method",
-    "menuSecurity": "Payment password / Security",
-    "menuReceipt": "Cash receipt settings",
-    "menuTerms": "Buy-now-pay-later terms"
   },
   "reviews": {
     "pageTitle": "Reviews",

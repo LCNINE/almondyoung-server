@@ -34,9 +34,9 @@ import { WaybillService } from '../waybill/waybill.service';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import type { WaybillRow } from '../waybill/waybill.types';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { resolveSkuIdByBarcode, UUID_PATTERN } from './sku-barcode-resolution';
 
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export interface ShipmentDispatchActor {
   id: string;
@@ -163,7 +163,7 @@ export class ShipmentDispatchService {
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
-  async inspectionScan(shipmentId: string, input: InspectionScanInput): Promise<ShipmentDispatchResponse> {
+  async inspectionScan(shipmentId: string, input: InspectionScanInput, tx?: DbTx): Promise<ShipmentDispatchResponse> {
     this.workflowGate.assertV2MutationAllowed('shipment.inspection.scan');
     this.assertActor(input.actor);
     this.assertPositiveInteger('quantity', input.quantity);
@@ -179,48 +179,17 @@ export class ShipmentDispatchService {
           actorId: input.actor.id,
         },
       },
-      async (tx) => {
-        const aggregate = await this.lockAggregate(shipmentId, tx);
+      async (tx2) => {
+        const aggregate = await this.lockAggregate(shipmentId, tx2);
         this.assertDispatchCandidate(aggregate, input.actor, false);
-        const line = await this.resolveInspectionLine(input.barcode, input.quantity, aggregate.lines, tx);
-        if (line.inspectedQty + input.quantity > line.qty) {
-          throw this.conflict('SHIPMENT_LINE_OVER_INSPECTED', 'Inspection quantity exceeds the shipment line');
-        }
-
-        await this.moveInspectionCustody(
-          aggregate.session.id,
-          line,
-          input.quantity,
-          input.actor.id,
+        const line = await this.resolveInspectionLine(input.barcode, input.quantity, aggregate.lines, tx2);
+        const response = await this.applyInspectionEntries(
+          aggregate,
+          [{ shipmentLineId: line.id, quantity: input.quantity }],
+          input.actor,
           input.idempotencyKey,
-          tx,
+          tx2,
         );
-        const inspectedQty = line.inspectedQty + input.quantity;
-        await tx
-          .update(wmsTables.shipmentLines)
-          .set({ inspectedQty, lineVersion: line.lineVersion + 1 })
-          .where(
-            and(eq(wmsTables.shipmentLines.id, line.id), eq(wmsTables.shipmentLines.lineVersion, line.lineVersion)),
-          );
-        line.inspectedQty = inspectedQty;
-        line.lineVersion += 1;
-
-        let response: ShipmentDispatchResponse;
-        if (aggregate.lines.every((candidate) => candidate.inspectedQty === candidate.qty)) {
-          response = await this.dispatchLocked(aggregate, input.actor, tx);
-          response.shipmentLineId = line.id;
-          response.inspectedQty = inspectedQty;
-        } else {
-          response = {
-            shipmentId,
-            shipmentLineId: line.id,
-            inspectedQty,
-            status: 'inspecting',
-            dispatchAttemptId: null,
-            attemptNo: null,
-          };
-        }
-
         return {
           response,
           resourceType: 'shipment',
@@ -228,10 +197,125 @@ export class ShipmentDispatchService {
           attemptId: response.dispatchAttemptId ?? undefined,
         };
       },
+      tx,
     );
   }
 
-  async forceDispatch(shipmentId: string, input: ForceShipmentDispatchInput): Promise<ShipmentDispatchResponse> {
+  /**
+   * 라인을 이미 아는 호출자(단순출고)를 위한 검수 진입점. 바코드 해석만 건너뛰고
+   * 커스터디 이동·inspectedQty·전량 검수 시 자동 dispatch 는 같은 코드를 지난다.
+   */
+  async inspectShipmentLines(
+    shipmentId: string,
+    input: {
+      entries: Array<{ shipmentLineId: string; quantity: number }>;
+      actor: ShipmentDispatchActor;
+      idempotencyKey: string;
+    },
+    tx?: DbTx,
+  ): Promise<ShipmentDispatchResponse> {
+    this.workflowGate.assertV2MutationAllowed('shipment.inspection.lines');
+    this.assertActor(input.actor);
+    if (input.entries.length === 0) throw new BadRequestException('entries must not be empty');
+    for (const entry of input.entries) this.assertPositiveInteger('quantity', entry.quantity);
+    const seenLineIds = new Set<string>();
+    for (const entry of input.entries) {
+      if (seenLineIds.has(entry.shipmentLineId)) {
+        throw new BadRequestException(`entries must not repeat shipmentLineId: ${entry.shipmentLineId}`);
+      }
+      seenLineIds.add(entry.shipmentLineId);
+    }
+
+    return this.commands.execute(
+      {
+        commandType: 'shipment.inspection.lines',
+        idempotencyKey: input.idempotencyKey,
+        canonicalRequest: {
+          shipmentId,
+          entries: [...input.entries]
+            .map((entry) => ({ shipmentLineId: entry.shipmentLineId, quantity: entry.quantity }))
+            .sort((left, right) => left.shipmentLineId.localeCompare(right.shipmentLineId)),
+          actorId: input.actor.id,
+        },
+      },
+      async (tx2) => {
+        const aggregate = await this.lockAggregate(shipmentId, tx2);
+        this.assertDispatchCandidate(aggregate, input.actor, false);
+        const response = await this.applyInspectionEntries(
+          aggregate,
+          input.entries,
+          input.actor,
+          input.idempotencyKey,
+          tx2,
+        );
+        return {
+          response,
+          resourceType: 'shipment',
+          resourceId: shipmentId,
+          attemptId: response.dispatchAttemptId ?? undefined,
+        };
+      },
+      tx,
+    );
+  }
+
+  private async applyInspectionEntries(
+    aggregate: LockedDispatchAggregate,
+    entries: Array<{ shipmentLineId: string; quantity: number }>,
+    actor: ShipmentDispatchActor,
+    idempotencyKey: string,
+    tx: DbTx,
+  ): Promise<ShipmentDispatchResponse> {
+    let lastLineId = '';
+    let lastInspectedQty = 0;
+    for (const entry of entries) {
+      const line = aggregate.lines.find((candidate) => candidate.id === entry.shipmentLineId);
+      if (!line) {
+        throw this.conflict('SHIPMENT_INSPECTION_LINE_UNKNOWN', 'Shipment line does not belong to this shipment');
+      }
+      if (line.inspectedQty + entry.quantity > line.qty) {
+        throw this.conflict('SHIPMENT_LINE_OVER_INSPECTED', 'Inspection quantity exceeds the shipment line');
+      }
+      await this.moveInspectionCustody(
+        aggregate.session.id,
+        line,
+        entry.quantity,
+        actor.id,
+        `${idempotencyKey}:${line.id}`,
+        tx,
+      );
+      const inspectedQty = line.inspectedQty + entry.quantity;
+      await tx
+        .update(wmsTables.shipmentLines)
+        .set({ inspectedQty, lineVersion: line.lineVersion + 1 })
+        .where(and(eq(wmsTables.shipmentLines.id, line.id), eq(wmsTables.shipmentLines.lineVersion, line.lineVersion)));
+      line.inspectedQty = inspectedQty;
+      line.lineVersion += 1;
+      lastLineId = line.id;
+      lastInspectedQty = inspectedQty;
+    }
+
+    if (aggregate.lines.every((candidate) => candidate.inspectedQty === candidate.qty)) {
+      const dispatched = await this.dispatchLocked(aggregate, actor, tx);
+      dispatched.shipmentLineId = lastLineId;
+      dispatched.inspectedQty = lastInspectedQty;
+      return dispatched;
+    }
+    return {
+      shipmentId: aggregate.shipment.id,
+      shipmentLineId: lastLineId,
+      inspectedQty: lastInspectedQty,
+      status: 'inspecting',
+      dispatchAttemptId: null,
+      attemptNo: null,
+    };
+  }
+
+  async forceDispatch(
+    shipmentId: string,
+    input: ForceShipmentDispatchInput,
+    tx?: DbTx,
+  ): Promise<ShipmentDispatchResponse> {
     this.workflowGate.assertV2MutationAllowed('shipment.dispatch.force');
     this.assertActor(input.actor);
     if (!input.reason.trim()) throw new BadRequestException('reason is required');
@@ -302,6 +386,7 @@ export class ShipmentDispatchService {
           attemptId: response.dispatchAttemptId ?? undefined,
         };
       },
+      tx,
     );
   }
 
@@ -507,23 +592,7 @@ export class ShipmentDispatchService {
   ): Promise<ShipmentLineRow> {
     const normalized = barcode.trim();
     if (!normalized) throw new BadRequestException('barcode is required');
-    const parsed = this.barcode.parseBarcode(normalized);
-    const [registered] = await tx
-      .select({ skuId: wmsTables.skuBarcodes.skuId })
-      .from(wmsTables.skuBarcodes)
-      .where(eq(wmsTables.skuBarcodes.barcode, normalized))
-      .limit(1);
-    let skuId = registered?.skuId ?? null;
-    if (!skuId && parsed.type === 'sku' && UUID_PATTERN.test(parsed.id)) skuId = parsed.id.toLowerCase();
-    if (!skuId && parsed.type === 'unknown' && UUID_PATTERN.test(parsed.id)) skuId = parsed.id.toLowerCase();
-    if (!skuId) {
-      const [sku] = await tx
-        .select({ id: wmsTables.skus.id })
-        .from(wmsTables.skus)
-        .where(eq(wmsTables.skus.code, normalized))
-        .limit(1);
-      skuId = sku?.id ?? null;
-    }
+    const skuId = await resolveSkuIdByBarcode(this.barcode, normalized, tx);
     if (!skuId) throw this.conflict('SHIPMENT_INSPECTION_BARCODE_UNKNOWN', 'Barcode does not resolve to a SKU');
 
     const matching = lines

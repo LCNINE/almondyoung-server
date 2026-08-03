@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { RouterProvider } from '@tanstack/react-router';
+import { RouterProvider, createRouter, createMemoryHistory } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
+import { WarehouseProvider } from './warehouse-context';
+import { createMemoryPrefs } from '../core/data/devicePrefs';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { createAppRouter } from './router';
+import { routeTree } from './routeTree';
 import type { Session } from '../core/auth/session';
 
 vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => 'windows' }));
@@ -41,11 +44,29 @@ function makeStub() {
 }
 
 function renderApp(session: Session) {
-  return render(
+  return renderAppRouter(['/'], session);
+}
+
+/**
+ * `createAppRouter` hardcodes the initial entry to '/' — tests that need to
+ * land on a different starting path (e.g. redirect checks) build the router
+ * directly from `routeTree` instead, with the same providers `renderApp`
+ * wires up. Returns the router so callers can assert on `state.location`.
+ */
+function renderAppRouter(initialEntries: string[], session: Session) {
+  const router = createRouter({
+    routeTree,
+    history: createMemoryHistory({ initialEntries }),
+    context: { session },
+  });
+  render(
     <SessionProvider session={session}>
-      <RouterProvider router={createAppRouter(session)} />
+      <WarehouseProvider prefs={createMemoryPrefs()}>
+        <RouterProvider router={router} />
+      </WarehouseProvider>
     </SessionProvider>
   );
+  return router;
 }
 
 describe('router guard integration', () => {
@@ -61,14 +82,18 @@ describe('router guard integration', () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
     renderApp(session);
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
   });
 
   it('redirects to login when the session logs out', async () => {
     const { session, setAuthed } = makeStub();
     setAuthed(true);
     renderApp(session);
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
     await act(async () => {
       setAuthed(false);
     });
@@ -86,15 +111,19 @@ describe('router guard integration', () => {
     // locally instead of reusing that helper.
     render(
       <SessionProvider session={session}>
-        <ScanProvider>
-          <RouterProvider router={createAppRouter(session)} />
-        </ScanProvider>
+        <WarehouseProvider prefs={createMemoryPrefs()}>
+          <ScanProvider>
+            <RouterProvider router={createAppRouter(session)} />
+          </ScanProvider>
+        </WarehouseProvider>
       </SessionProvider>
     );
 
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('link', { name: /diagnostics/i }));
+    await user.click(screen.getByRole('link', { name: /진단/ }));
 
     expect(
       await screen.findByRole('heading', { name: /diagnostics/i })
@@ -105,6 +134,15 @@ describe('router guard integration', () => {
 
     await user.click(screen.getByRole('link', { name: /home/i }));
 
-    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /재고조회/ })
+    ).toBeInTheDocument();
+  });
+
+  it('/picking 과 /packing 은 /outbound 로 보낸다', async () => {
+    const { session, setAuthed } = makeStub();
+    setAuthed(true);
+    const router = renderAppRouter(['/picking'], session);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/outbound'));
   });
 });

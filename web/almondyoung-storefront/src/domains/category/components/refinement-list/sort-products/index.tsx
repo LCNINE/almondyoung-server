@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 
 export type SortOptions =
@@ -22,35 +16,43 @@ type SortProductsProps = {
 }
 
 const sortOptions: { value: SortOptions; labelKey: string }[] = [
-  { value: "sales_desc", labelKey: "salesDesc" },
   { value: "review_count_desc", labelKey: "reviewCountDesc" },
   { value: "price_asc", labelKey: "priceAsc" },
   { value: "price_desc", labelKey: "priceDesc" },
+  { value: "sales_desc", labelKey: "salesDesc" },
   { value: "created_at", labelKey: "createdAt" },
 ]
 
 const SortProducts = ({ sortBy, setQueryParams }: SortProductsProps) => {
   const t = useTranslations("category.sort")
 
-  const handleChange = (value: string) => {
-    setQueryParams("sortBy", value as SortOptions)
-  }
-
-  const selectedKey = sortOptions.find((opt) => opt.value === sortBy)?.labelKey
-
   return (
-    <Select value={sortBy} onValueChange={handleChange}>
-      <SelectTrigger className="h-8 w-auto cursor-pointer gap-1 border-none bg-transparent px-2 text-sm font-medium shadow-none">
-        <SelectValue>{selectedKey ? t(selectedKey) : null}</SelectValue>
-      </SelectTrigger>
-      <SelectContent align="end">
-        {sortOptions.map((item) => (
-          <SelectItem key={item.value} value={item.value}>
+    <div
+      role="group"
+      aria-label={t("label")}
+      className="scrollbar-hide -mx-3 flex items-center overflow-x-auto px-3 sm:mx-0 sm:px-0"
+    >
+      {sortOptions.map((item, index) => (
+        <div key={item.value} className="flex shrink-0 items-center">
+          {index > 0 && (
+            <span aria-hidden className="bg-border mx-2 h-3 w-px sm:mx-3" />
+          )}
+          <button
+            type="button"
+            aria-current={sortBy === item.value ? "true" : undefined}
+            onClick={() => setQueryParams("sortBy", item.value)}
+            className={cn(
+              "cursor-pointer text-sm whitespace-nowrap transition-colors",
+              sortBy === item.value
+                ? "text-foreground font-bold"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
             {t(item.labelKey)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+          </button>
+        </div>
+      ))}
+    </div>
   )
 }
 

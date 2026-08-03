@@ -122,6 +122,27 @@ export class EntitlementReader {
     return rows.map((r) => r.userId);
   }
 
+  /**
+   * 현재 멤버십이 활성(현재 권한 + 미만료 + 미정지)인 전체 userId 반환.
+   * getActiveUserIds 와 판정 기준은 동일하되 후보 목록 없이 전수 조회한다 —
+   * channel-adapter 전체 정합화 크론이 실시간 이벤트 유실분까지 그룹에 복구하는 데 쓴다.
+   */
+  async getAllActiveUserIds(): Promise<string[]> {
+    const today = new Date().toISOString().split('T')[0];
+    const rows = await this.dbService.db
+      .selectDistinct({ userId: schema.subscriptionEntitlement.userId })
+      .from(schema.subscriptionEntitlement)
+      .where(
+        and(
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+          gte(schema.subscriptionEntitlement.endsAt, today),
+          isNull(schema.subscriptionEntitlement.pausedAt),
+        ),
+      );
+
+    return rows.map((r) => r.userId);
+  }
+
   async getBulkUserEntitlementDetails(userIds: string[]) {
     if (!userIds.length) return [];
 

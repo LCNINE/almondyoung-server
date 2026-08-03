@@ -65,7 +65,7 @@ export class StockEventService {
             skuId: sku.id,
             barcode: subBarcode,
             isPrimary: false,
-            packingUnit: packingUnit || null,
+            packingUnit: packingUnit ?? null,
           })
           .onConflictDoNothing();
       }

@@ -1,6 +1,7 @@
 'use client';
 
 import { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID } from '@packages/product-description';
+import { fetchWithRefresh } from '../../fetch-with-refresh';
 
 // file-service 업로드 클라이언트.
 // 주의: axios `client`(baseURL='/api') 대신 fetch 절대경로를 쓴다.
@@ -24,6 +25,7 @@ export type FileSignedUrlResponse = {
 
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
+export const CATEGORY_IMAGE_CONTEXT_ID = 'category-image';
 export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {
@@ -46,7 +48,7 @@ export async function uploadFileToFileService(
     formData.append('metadata', JSON.stringify(metadata));
   }
 
-  const res = await fetch('/api/proxy/file/files/upload', {
+  const res = await fetchWithRefresh('/api/proxy/file/files/upload', {
     method: 'POST',
     body: formData, // Content-Type(multipart boundary)은 브라우저가 자동 설정 — 직접 지정 금지
     credentials: 'include', // 인증 쿠키 → forward.ts 가 file-service 로 전달
@@ -74,7 +76,7 @@ export async function getFileSignedUrlFromFileService(
   fileId: string,
   expiresIn = 300
 ): Promise<FileSignedUrlResponse> {
-  const res = await fetch(
+  const res = await fetchWithRefresh(
     `/api/proxy/file/files/${encodeURIComponent(fileId)}/download?expiresIn=${expiresIn}`,
     {
       method: 'GET',

@@ -56,6 +56,8 @@ export class BankTransferAdminService {
         bankName: sql<string | null>`${charges.responsePayload}->'nextAction'->>'bankName'`,
         accountNumber: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountNumber'`,
         accountHolder: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountHolder'`,
+        // 실제 입금 기대금액(포인트 차감 후). payableAmount 로 대사하면 포인트 쓴 건이 어긋난다.
+        depositAmount: sql<number | null>`(${charges.responsePayload}->'nextAction'->>'amount')::int`,
         // 토스 가상계좌 발급 건에만 paymentKey 가 스냅샷됨 (구 직접입금 건과 구분)
         paymentKey: sql<string | null>`${charges.responsePayload}->>'paymentKey'`,
       })
@@ -87,6 +89,7 @@ export class BankTransferAdminService {
       bankName: r.bankName || null,
       accountNumber: r.accountNumber || null,
       accountHolder: r.accountHolder || null,
+      depositAmount: r.depositAmount ?? null,
       tossVirtualAccount: !!r.paymentKey,
     }));
 

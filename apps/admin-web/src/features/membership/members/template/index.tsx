@@ -196,7 +196,7 @@ export default function MembershipMemberListTemplate() {
   const [subscribeDialogOpen, setSubscribeDialogOpen] = useState(false);
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="멤버십 회원 조회"
         subtitle="멤버십을 한 번이라도 구독했던 회원의 정보를 모두 조회할 수 있습니다."

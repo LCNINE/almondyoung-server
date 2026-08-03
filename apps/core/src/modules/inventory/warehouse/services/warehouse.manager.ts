@@ -98,6 +98,7 @@ export class WarehouseManager {
               name: data.name,
               type: data.type,
               location: data.location,
+              supportedPickingStrategies: [...data.supportedPickingStrategies],
             });
             await this.locationService.ensureSystemLocations(data.id, trx);
           });

@@ -4,6 +4,7 @@ import { Spinner } from "@/components/shared/spinner"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@/lib/api/users/signout"
+import { notifyAppLogout } from "@/lib/app-context/notify-app"
 import { useTranslations } from "next-intl"
 import { useTransition } from "react"
 
@@ -29,6 +30,7 @@ export function UserInfo() {
   const handleLogout = () => {
     startTransition(async () => {
       setUser(null)
+      notifyAppLogout()
       await signout()
     })
   }

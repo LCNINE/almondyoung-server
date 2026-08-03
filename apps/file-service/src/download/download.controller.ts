@@ -74,8 +74,17 @@ export class DownloadController {
   @ApiResponse({ status: 302, description: 'Redirects to S3 public URL' })
   @ApiResponse({ status: 404, description: 'File not found or not public' })
   async servePublicFile(@Param('fileId', ParseUUIDPipe) fileId: string, @Res() res: Response) {
-    const url = await this.downloadService.resolvePublicUrl(fileId);
-    return res.redirect(302, url);
+    try {
+      const url = await this.downloadService.resolvePublicUrl(fileId);
+      return res.redirect(302, url);
+    } catch (err) {
+      // 로컬 개발 편의: 이 인스턴스에 없는 파일은 상위 file-service 로 넘긴다.
+      // 로컬 업로드본과 라이브 시드 이미지를 한 base URL 로 같이 볼 수 있게 하는 용도.
+      // PUBLIC_FILE_FALLBACK_BASE_URL 이 없으면 기존대로 404.
+      const fallback = process.env.PUBLIC_FILE_FALLBACK_BASE_URL;
+      if (!fallback) throw err;
+      return res.redirect(302, `${fallback.replace(/\/+$/, '')}/files/public/${fileId}`);
+    }
   }
 
   @Head('public/:fileId')

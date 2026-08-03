@@ -15,6 +15,8 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { FormSelect } from '@/components/common/form';
+import { useSuppliers } from '@/lib/services/inventory/queries';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
@@ -43,6 +45,9 @@ import {
 } from './basic-information-model';
 import { ProductCategorySelectionModal } from './category-selection-modal';
 
+// Radix Select 는 빈 문자열 value 를 허용하지 않아 '없음' 을 나타낼 sentinel 이 필요하다.
+const NO_SUPPLIER = 'none';
+
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
   inactive: '판매중단',
@@ -64,6 +69,11 @@ function formatFulfillmentKind(kind: 'physical' | 'digital' | null): string {
   if (kind === 'digital') return '디지털 (배송비 면제)';
   if (kind === 'physical') return '실물 (배송비 부과)';
   return '-';
+}
+
+function formatMoney(value: number | null | undefined): string {
+  if (value == null) return '-';
+  return `${value.toLocaleString('ko-KR')}원`;
 }
 
 function formatSeoKeywords(values: string[] | null): string {
@@ -92,6 +102,17 @@ function ProductBasicInformationEditDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateVersion = useUpdateMasterVersion();
+  const { data: suppliers } = useSuppliers({ limit: 200 });
+  const supplierOptions = useMemo(
+    () => [
+      { value: NO_SUPPLIER, label: '공급처 없음' },
+      ...(suppliers?.data ?? []).map((supplier) => ({
+        value: supplier.id,
+        label: supplier.name,
+      })),
+    ],
+    [suppliers?.data]
+  );
   const [values, setValues] = useState<BasicInformationFormValues>(() =>
     toBasicInformationFormValues(detail)
   );
@@ -173,7 +194,7 @@ function ProductBasicInformationEditDrawer({
     <>
       <Drawer open={open} onOpenChange={handleOpenChange} direction="right">
         <DrawerContent>
-          <form onSubmit={handleSubmit} className="flex h-full flex-col">
+          <form onSubmit={handleSubmit} className="flex flex-col h-full">
             <DrawerHeader>
               <DrawerTitle>기본 정보 수정</DrawerTitle>
               <DrawerDescription>
@@ -182,7 +203,7 @@ function ProductBasicInformationEditDrawer({
               </DrawerDescription>
             </DrawerHeader>
 
-            <div className="flex flex-1 flex-col gap-4 overflow-auto px-4 pb-4">
+            <div className="flex flex-col flex-1 gap-4 px-4 pb-4 overflow-auto">
               <div className="flex flex-col gap-2">
                 <Label htmlFor="product-basic-name">상품명</Label>
                 <Input
@@ -208,6 +229,48 @@ function ProductBasicInformationEditDrawer({
                   placeholder="브랜드명을 입력하세요."
                   disabled={updateVersion.isPending}
                 />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="product-basic-supplier">공급처</Label>
+                <FormSelect
+                  options={supplierOptions}
+                  value={values.supplierId ?? NO_SUPPLIER}
+                  onValueChange={(v) =>
+                    setValue('supplierId', v === NO_SUPPLIER ? null : v)
+                  }
+                  placeholder="공급처 선택"
+                  disabled={updateVersion.isPending}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-supply-price">공급가</Label>
+                  <Input
+                    id="product-basic-supply-price"
+                    inputMode="numeric"
+                    value={values.supplyPriceText}
+                    onChange={(event) =>
+                      setValue('supplyPriceText', event.target.value)
+                    }
+                    placeholder="매입 단가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="product-basic-market-price">시장가</Label>
+                  <Input
+                    id="product-basic-market-price"
+                    inputMode="numeric"
+                    value={values.marketPriceText}
+                    onChange={(event) =>
+                      setValue('marketPriceText', event.target.value)
+                    }
+                    placeholder="정가 (원)"
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-2">
@@ -248,11 +311,11 @@ function ProductBasicInformationEditDrawer({
                 />
               </div>
 
-              <div className="flex flex-col gap-3 rounded-md border p-3">
+              <div className="flex flex-col gap-3 p-3 border rounded-md">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 flex-col gap-1">
+                  <div className="flex flex-col min-w-0 gap-1">
                     <Label>카테고리</Label>
-                    <p className="line-clamp-2 text-sm text-muted-foreground">
+                    <p className="text-sm line-clamp-2 text-muted-foreground">
                       {selectedCategorySummary}
                     </p>
                     {primaryCategoryLabel && (
@@ -274,7 +337,7 @@ function ProductBasicInformationEditDrawer({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3 rounded-md border p-3">
+              <div className="flex flex-col gap-3 p-3 border rounded-md">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="product-basic-digital">디지털 상품</Label>
@@ -317,13 +380,16 @@ function ProductBasicInformationEditDrawer({
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="product-basic-overseas">해외직구</Label>
                     <p className="text-sm text-muted-foreground">
-                      체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.
+                      해외 배송 상품일 시 체크해주세요. 체크 시 주문 단계에서
+                      개인통관고유부호 입력이 필수가 됩니다.
                     </p>
                   </div>
                   <Switch
                     id="product-basic-overseas"
                     checked={values.isOverseas}
-                    onCheckedChange={(checked) => setValue('isOverseas', checked)}
+                    onCheckedChange={(checked) =>
+                      setValue('isOverseas', checked)
+                    }
                     disabled={updateVersion.isPending}
                   />
                 </div>
@@ -424,11 +490,16 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     versionId
   );
   const updateOverseas = useUpdateOverseas(masterId, versionId);
-  const updateRequiresMembership = useUpdateRequiresMembership(masterId, versionId);
+  const updateRequiresMembership = useUpdateRequiresMembership(
+    masterId,
+    versionId
+  );
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
     { key: '브랜드', value: data.brand ?? '-' },
+    { key: '공급가', value: formatMoney(data.supplyPrice) },
+    { key: '시장가', value: formatMoney(data.marketPrice) },
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
@@ -471,7 +542,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
       onSuccess: () =>
         toast.success(
           checked
-            ? '해외직구 상품으로 설정했습니다. 주문 시 개인통관고유부호가 필수입니다.'
+            ? '해외직구 상품으로 설정했습니다.'
             : '해외직구 설정을 해제했습니다.'
         ),
       onError: () => toast.error('해외직구 설정 변경에 실패했습니다.'),
@@ -531,7 +602,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-col min-w-0 gap-1">
               <Label htmlFor="product-detail-membership-price-visibility">
                 멤버십가 비공개
               </Label>
@@ -550,7 +621,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-col min-w-0 gap-1">
               <Label htmlFor="product-detail-members-only-visibility">
                 멤버십 회원 전용 노출
               </Label>
@@ -568,13 +639,13 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-col min-w-0 gap-1">
               <Label htmlFor="product-detail-requires-membership">
                 멤버십 전용 구매
               </Label>
               <p className="text-xs text-gray-500">
-                멤버십 회원만 구매할 수 있습니다. 비회원과 일반회원에게는
-                품절로 표시됩니다. 상품 노출은 제한되지 않습니다.
+                멤버십 회원만 구매할 수 있습니다. 비회원과 일반회원에게는 품절로
+                표시됩니다. 상품 노출은 제한되지 않습니다.
               </p>
             </div>
             <Switch
@@ -587,10 +658,11 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
           </div>
 
           <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-col min-w-0 gap-1">
               <Label htmlFor="product-detail-overseas">해외직구</Label>
               <p className="text-xs text-gray-500">
-                체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.
+                해외 배송 상품일 시 체크해주세요. 체크 시 주문 단계에서
+                개인통관고유부호 입력이 필수가 됩니다.
               </p>
             </div>
             <Switch

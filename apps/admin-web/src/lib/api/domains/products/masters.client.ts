@@ -12,6 +12,8 @@ import type {
   PricePreviewDto,
   UpdateMasterDto,
   UpdatePricingStrategyDto,
+  ExportColumnsResponseDto,
+  ProductExportRequestDto,
 } from '../../../types/dto/products';
 import { client } from '../../client';
 
@@ -153,6 +155,27 @@ export const mastersClient = {
       `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/requires-membership`,
       { requiresMembership }
     );
+  },
+
+  /** 내보내기 항목 카탈로그. 양식 편집기가 쓴다. */
+  getExportColumns: async (): Promise<ExportColumnsResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/export/columns`
+    );
+    return response.data;
+  },
+
+  /**
+   * 상품 목록 엑셀 내보내기. ids 를 주면 선택항목만, 없으면 filters 로 전량.
+   * 열 목록·필터가 길어 URL 한계를 넘기므로 POST 다.
+   */
+  exportExcel: async (body: ProductExportRequestDto): Promise<Blob> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/export`,
+      body,
+      { responseType: 'blob' }
+    );
+    return response.data;
   },
 
   listByIds: async (

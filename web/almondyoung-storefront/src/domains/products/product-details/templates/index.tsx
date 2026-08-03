@@ -8,6 +8,7 @@ import {
 import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
+import { getIsOverseas } from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
@@ -43,17 +44,18 @@ export async function ProductTemplate({
 
   const t = await getTranslations("productDetail.section")
   const isDigital = isDigitalProduct(product)
+  const isOverseas = getIsOverseas(product)
 
   return (
     <div className="min-h-screen bg-white pt-6">
-      <div className="mx-auto max-w-[1360px] px-[15px] lg:px-[40px]">
-        <div className="py-2 lg:flex lg:items-start lg:gap-4">
+      <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+        <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
-          <main className="w-full min-w-0 flex-1 pb-24 lg:pb-0">
+          <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
             <ImageGallery product={product} />
 
             {/* 모바일 상품 정보 */}
-            <div className="lg:hidden">
+            <div className="xl:hidden">
               <ProductSummary
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
@@ -62,6 +64,8 @@ export async function ProductTemplate({
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
+                isOverseas={isOverseas}
+                isPrimaryHeading
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}
@@ -115,8 +119,8 @@ export async function ProductTemplate({
             </SectionTabsWrapper>
           </main>
 
-          <div className="lg:sticky lg:top-[216px] lg:flex lg:h-[calc(100vh-216px)] lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:flex-col lg:overflow-hidden">
-            <div className="hidden lg:flex lg:shrink-0 lg:flex-col">
+          <div className="xl:sticky xl:top-[216px] xl:flex xl:h-[calc(100vh-216px)] xl:w-full xl:max-w-[480px] xl:min-w-[383px] xl:flex-col xl:overflow-hidden">
+            <div className="hidden xl:flex xl:shrink-0 xl:flex-col">
               <ProductSummary
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}
@@ -125,6 +129,7 @@ export async function ProductTemplate({
                 countryCode={countryCode}
                 customer={customer}
                 isDigital={isDigital}
+                isOverseas={isOverseas}
               />
             </div>
 
@@ -139,7 +144,7 @@ export async function ProductTemplate({
               }
             >
               <ProductActionsWrapper
-                id={product.id}
+                handle={product.handle!}
                 region={region}
                 customer={customer}
               />

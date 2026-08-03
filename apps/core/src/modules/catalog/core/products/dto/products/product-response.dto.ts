@@ -145,6 +145,23 @@ export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
   primaryVersion: ProductVersionDto | null;
 }
 
+export class VariantPreviewDto {
+  @ApiProperty({ description: '품목 ID' })
+  variantId: string;
+
+  @ApiProperty({ description: '품목명. 수동 지정값이 없으면 옵션값 표시명을 이어 만든 이름.' })
+  name: string;
+
+  @ApiProperty({ description: '판매가. 가격 캐시가 아직 없으면 null.', nullable: true })
+  basePrice: number | null;
+
+  @ApiProperty({ description: '멤버십가. 가격 캐시가 아직 없으면 null.', nullable: true })
+  membershipPrice: number | null;
+
+  @ApiProperty({ description: '품목 상태', example: 'active' })
+  status: string;
+}
+
 export class ProductSummaryDto {
   @ApiProperty({ description: '마스터 상품 ID' })
   masterId: string;
@@ -160,6 +177,16 @@ export class ProductSummaryDto {
 
   @ApiProperty({ description: '브랜드', nullable: true })
   brand: string | null;
+
+  @ApiProperty({ description: '품번코드 (product_code). 목록의 사람이 읽는 식별자 — masterId(UUID)와 다르다.', nullable: true })
+  productCode: string | null;
+
+  @ApiProperty({ description: '공급가 (supply_price). 매입 단가.', nullable: true })
+  supplyPrice: number | null;
+
+  // 이름은 inventory BC(suppliers)에 있어 여기서 조인하지 않는다 — 호출자가 공급처 목록으로 매핑한다.
+  @ApiProperty({ description: '공급처 ID', nullable: true })
+  supplierId: string | null;
 
   @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)' })
   hideMembershipPriceForNonMembers: boolean;
@@ -182,11 +209,21 @@ export class ProductSummaryDto {
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
 
+  @ApiProperty({ description: '수정일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
+  updatedAt: string;
+
   @ApiProperty({ description: '옵션 그룹 이름 리스트' })
   optionGroupNames: string[];
 
   @ApiProperty({ description: '변형 개수' })
   variantCount: number;
+
+  @ApiProperty({
+    description:
+      '품목 미리보기. 목록 화면에서 품목명·가격을 펼쳐 보여주기 위한 값으로, 상품당 상한이 있어 variantCount 보다 적을 수 있다.',
+    type: [VariantPreviewDto],
+  })
+  variantPreviews: VariantPreviewDto[];
 
   @ApiProperty({
     description: '가격 요약 (일반가/멤버십가 최소·최대, 도매가 여부)',

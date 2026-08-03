@@ -6,7 +6,6 @@ import {
   IsInt,
   Min,
   MaxLength,
-  IsUrl,
   IsArray,
   ValidateNested,
 } from 'class-validator';
@@ -46,12 +45,15 @@ export class UpdateCategoryDto {
   slug?: string;
 
   @ApiProperty({
-    description: '카테고리 이미지 URL',
+    // 값은 file-service fileId(UUID) 를 저장한다 (읽는 쪽에서 file-service URL 을 붙임).
+    // 과거 @IsUrl() 이라 fileId 가 400 으로 막혔다. 전체 URL 도 허용하려고 문자열로 둔다.
+    description: '카테고리 이미지 (file-service fileId 또는 URL). 빈 문자열이면 제거',
     required: false,
-    example: 'https://example.com/image.jpg',
+    example: '019df045-8325-7890-abcd-0123456789ab',
   })
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  @MaxLength(2048)
   imageUrl?: string;
 
   @ApiProperty({
@@ -73,6 +75,15 @@ export class UpdateCategoryDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiProperty({
+    description: '멤버십 회원에게만 노출 (비가입자에겐 메뉴·카테고리 페이지 모두 비노출)',
+    required: false,
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isVisibleToMembersOnly?: boolean;
 
   @ApiProperty({
     description: '태그 그룹 연결 목록',

@@ -1,17 +1,19 @@
 // src/features/order/history/components/table/index.tsx
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type {
   SalesOrderBusinessTimelineItemDto,
   SalesOrdersQuery,
+  OrderTypeGroup,
+  OrderKeywordType,
 } from '@/lib/types/dto/orders';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
-import { filterRefundIssueRows } from '../../hooks/refund-filter.utils';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
+import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
 import { useSalesOrder, useAdminRetryRefund } from '@/lib/services/orders';
 import { MergedDataTable } from '@/components/common/merged-data-table';
 import type { MergedTableColumn } from '@/components/common/merged-data-table';
@@ -35,15 +37,35 @@ import { ManualRefundCompleteModal } from '../modals/manual-refund-complete-moda
 
 const PAGE_SIZE = 50;
 
+const KEYWORD_TYPE_MAP: Record<string, OrderKeywordType> = {
+  통합검색: 'all',
+  주문번호: 'orderNo',
+  수령자: 'receiver',
+  연락처: 'phone',
+  상품명: 'product',
+};
+
 function buildQuery(
-  filter: ReturnType<typeof useOrderHistoryFilter>['filter']
+  filter: ReturnType<typeof useOrderHistoryFilter>['filter'],
+  page: number
 ): SalesOrdersQuery {
+  const keyword = filter.keyword?.trim() || undefined;
+  // 환불이슈 모드는 '취소주문 중 환불 실패/수동'이므로 구분(typeGroup)·취소제외와 상충한다.
+  // 이 모드에선 구분/취소제외를 무시해 항상 정상 조회되게 한다.
+  const refundIssueOnly = filter.refundIssueOnly || undefined;
   return {
     channel: filter.channel as SalesOrdersQuery['channel'] | undefined,
     startDate: filter.dateFrom,
     endDate: filter.dateTo,
-    limit: 200,
-    offset: 0,
+    typeGroup: refundIssueOnly ? undefined : (filter.type as OrderTypeGroup),
+    // 취소/타임아웃 제외는 '전체' 구분일 때만 의미
+    excludeTerminal:
+      !refundIssueOnly && filter.type === 'all' ? filter.excludeTerminal : undefined,
+    refundIssueOnly,
+    keyword,
+    keywordType: keyword ? (KEYWORD_TYPE_MAP[filter.keywordType] ?? 'all') : undefined,
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
   };
 }
 
@@ -70,13 +92,14 @@ function StatusBadge({ row }: { row: OrderLineRow }) {
     );
   if (!isMatched)
     return (
-      <span className="inline-flex rounded-full bg-gray-100 text-gray-500 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-        매칭 없음
+      <span className="inline-flex rounded-full bg-orange-100 text-orange-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
+        매칭 대기
       </span>
     );
+  // 매칭 완료 · 재고차감 전 (pending/matched)
   return (
-    <span className="inline-flex rounded-full bg-orange-100 text-orange-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-      매칭 안됨
+    <span className="inline-flex rounded-full bg-gray-100 text-gray-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
+      출고 대기
     </span>
   );
 }
@@ -590,85 +613,36 @@ function BusinessTimelineModal({
 
 export default function OrderTable() {
   const { filter, searchToken } = useOrderHistoryFilter();
+
+  /* 페이지네이션 (서버측 — offset/limit) */
+  const [page, setPage] = useState(0); // 0-based index
+  // 검색/필터 변경(searchToken) 시 렌더 중 첫 페이지로 리셋.
+  // (useEffect 로 하면 1렌더 늦어 옛 offset 으로 한 번 낭비 요청이 나감)
+  const [prevSearchToken, setPrevSearchToken] = useState(searchToken);
+  if (prevSearchToken !== searchToken) {
+    setPrevSearchToken(searchToken);
+    setPage(0);
+  }
+
   const queryObj = useMemo(
-    () => ({ ...buildQuery(filter), _t: searchToken }),
-    [filter, searchToken]
+    () => ({ ...buildQuery(filter, page), _t: searchToken }),
+    [filter, page, searchToken]
   );
+  const { data, isInitialLoading, isFetching, total, lineTotal, pageCount } =
+    useSalesOrderRows(queryObj);
 
-  const { data, isLoading, isFetching } = useSalesOrderRows(queryObj);
-
-  /* 클라이언트 사이드 필터 */
-  const rows: OrderLineRow[] = useMemo(() => {
-    let items = data?.items ?? [];
-
-    if (filter.type !== 'all') {
-      items = items.filter((r) => {
-        switch (filter.type) {
-          case 'pending':
-            return r.orderStatus === 'pending';
-          case 'hold':
-            return r.isUnavailable;
-          case 'partial':
-            return r.isReadyToShip && !r.isOrderFullyAllocated;
-          case 'ready':
-            return r.isOrderFullyAllocated;
-          case 'unmatched':
-            return !r.isMatched;
-          case 'direct':
-            return r.isDirect;
-          default:
-            return true;
-        }
-      });
-    } else if (filter.excludeTerminal) {
-      items = items.filter(
-        (r) => r.orderStatus !== 'cancelled' && r.orderStatus !== 'timeout'
-      );
-    }
-
-    // 환불 이슈 필터: order 단위 — 해당 orderId의 모든 행 포함
-    if (filter.refundIssueOnly) {
-      items = filterRefundIssueRows(items);
-    }
-
-    if (filter.keyword) {
-      const kw = filter.keyword.toLowerCase();
-      items = items.filter((r) => {
-        switch (filter.keywordType) {
-          case '주문번호':
-            return r.orderNo.toLowerCase().includes(kw);
-          case '수령자':
-            return (r.receiverName ?? '').toLowerCase().includes(kw);
-          case '연락처':
-            return (r.phone ?? '').includes(kw);
-          case '상품명':
-            return r.productName.toLowerCase().includes(kw);
-          default:
-            return (
-              r.orderNo.toLowerCase().includes(kw) ||
-              (r.receiverName ?? '').toLowerCase().includes(kw) ||
-              (r.customerName ?? '').toLowerCase().includes(kw) ||
-              (r.phone ?? '').includes(kw) ||
-              r.productName.toLowerCase().includes(kw)
-            );
-        }
-      });
-    }
-
-    return items;
-  }, [
-    data?.items,
-    filter.type,
-    filter.excludeTerminal,
-    filter.refundIssueOnly,
-    filter.keyword,
-    filter.keywordType,
-  ]);
+  // 구분·키워드·환불이슈·기간 필터와 페이지네이션 모두 서버가 처리 → 클라이언트 필터/슬라이스 없음.
+  // 한 페이지 = 주문 ≤ PAGE_SIZE (라인 rowspan 병합은 테이블이 처리).
+  const rows: OrderLineRow[] = data?.items ?? [];
 
   /* 선택 상태 (groupKey = orderId 기준) */
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(
     new Set()
   );
+  // 검색/필터 변경 시 선택 초기화 — 서버 페이지네이션에서 다른 페이지의 유령 선택 방지
+  useEffect(() => {
+    setSelectedOrderIds(new Set());
+  }, [searchToken]);
 
   const isOrderSelectable = (r: OrderLineRow) =>
     r.isOrderFullyAllocated && r.orderStatus === 'confirmed';
@@ -683,17 +657,6 @@ export default function OrderTable() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showManualRefundModal, setShowManualRefundModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
-
-  /* 페이지네이션 */
-  const [page, setPage] = useState(0); // 0-based index (DataTable 방식)
-  const totalPages = useMemo(
-    () => Math.ceil(rows.length / PAGE_SIZE),
-    [rows.length]
-  );
-  const pageRows = useMemo(
-    () => rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE),
-    [rows, page]
-  );
 
   /* 컬럼 정의 */
   const columns: MergedTableColumn<OrderLineRow>[] = useMemo(
@@ -763,17 +726,8 @@ export default function OrderTable() {
       {
         key: 'imageUrl',
         label: '이미지',
-        width: '52px',
-        render: (_, r) =>
-          r.imageUrl ? (
-            <img
-              src={r.imageUrl}
-              alt={r.productName}
-              className="w-10 h-10 object-cover rounded border"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded border bg-gray-50" />
-          ),
+        width: '64px',
+        render: (_, r) => <ProductThumbnailCell thumbnail={r.imageUrl} />,
       },
       {
         key: 'quantity',
@@ -1003,7 +957,9 @@ export default function OrderTable() {
         <div className="flex items-center justify-between p-3 border-b gap-2 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="text-sm font-medium">
-              총 <b className="text-blue-600">{rows.length}</b>건
+              총 주문 <b className="text-blue-600">{total.toLocaleString()}</b>건
+              <span className="mx-1.5 text-gray-300">·</span>
+              상품 <b className="text-gray-700">{lineTotal.toLocaleString()}</b>라인
             </div>
             {isFetching && (
               <span className="text-xs text-gray-400">(갱신 중)</span>
@@ -1038,10 +994,11 @@ export default function OrderTable() {
 
         {/* 테이블 */}
         <MergedDataTable<OrderLineRow>
-          data={pageRows}
+          data={rows}
           columns={columns as MergedTableColumn<OrderLineRow>[]}
           rowKey="rowId"
           groupKey="orderId"
+          stickyHeader
           selectable
           mergeCheckbox
           selectedRowKeys={selectedOrderIds}
@@ -1052,8 +1009,8 @@ export default function OrderTable() {
             '조회된 주문이 없습니다. "검색" 버튼을 눌러 조회하세요.'
           }
           className="p-0"
-          loading={isLoading}
-          isFetching={isFetching}
+          loading={isInitialLoading}
+          isFetching={false}
           getRowClassName={(r) =>
             r.orderStatus === 'cancelled' ? 'opacity-50' : ''
           }
@@ -1061,14 +1018,14 @@ export default function OrderTable() {
 
         {/* 페이지네이션 - DataTable과 동일한 방식 */}
         <Table.Pagination
-          count={rows.length}
+          count={total}
           pageSize={PAGE_SIZE}
           pageIndex={page}
-          pageCount={totalPages}
+          pageCount={pageCount}
           canPreviousPage={page > 0}
-          canNextPage={page < totalPages - 1}
+          canNextPage={page < pageCount - 1}
           previousPage={() => setPage((p) => Math.max(0, p - 1))}
-          nextPage={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+          nextPage={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
           goPage={(idx) => setPage(idx)}
         />
       </div>

@@ -19,11 +19,16 @@ async function getProductHandles(): Promise<string[]> {
   let offset = 0
 
   for (let i = 0; i < MAX_PAGES; i++) {
+    // fields 에 metadata 를 반드시 포함할 것. Medusa 의 멤버십 은닉 미들웨어는
+    // 응답에 metadata 가 있을 때만 동작하므로, fields:"handle" 만 요청하면
+    // isVisibleToMembersOnly 상품이 그대로 새어나와 sitemap 에 실린다.
+    // 그 URL 을 크롤러가 밟으면 page.tsx 는 notFound() 를 부르지만 loading.tsx 로
+    // 200 shell 이 이미 flush 된 뒤라 상태코드를 못 바꿔 soft 404 가 된다.
     const { products, count } = await sdk.client.fetch<{
       products: { handle?: string }[]
       count: number
     }>("/store/products", {
-      query: { limit: PAGE_SIZE, offset, fields: "handle" },
+      query: { limit: PAGE_SIZE, offset, fields: "handle,*metadata" },
     })
 
     for (const p of products) if (p.handle) handles.push(p.handle)

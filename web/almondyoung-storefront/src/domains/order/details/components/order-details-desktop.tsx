@@ -12,12 +12,14 @@ import {
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import {
+  calculateMembershipDiscount,
+  getOrderPointsUsed,
+} from "@/lib/utils/price-utils"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import {
   OrderStatusBadges,
   getCoreDisplayStatus,
-  CANCEL_UNAVAILABLE_MESSAGES,
   getPaymentStatusI18nKey,
 } from "@/components/orders/order-status-badges"
 import {
@@ -36,6 +38,8 @@ import { toast } from "sonner"
 import { RefundRequestDialog } from "./refund-request-dialog"
 import { DepositAccountInfo } from "./deposit-account-info"
 import type { BankTransferDepositAccount } from "@/lib/api/wallet"
+import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
+import { OrderDigitalDownloads } from "./order-digital-downloads"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
@@ -47,6 +51,7 @@ export const OrderDetailsDesktop = ({
   intentId,
   depositAccount,
   refundRequestStatus,
+  digitalOwnerships = [],
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -55,6 +60,7 @@ export const OrderDetailsDesktop = ({
   intentId?: string
   depositAccount?: BankTransferDepositAccount | null
   refundRequestStatus?: string
+  digitalOwnerships?: DigitalAssetOwnership[]
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -94,6 +100,7 @@ export const OrderDetailsDesktop = ({
   const personalCustomsCode =
     (address?.metadata?.personalCustomsCode as string) || ""
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  const pointsUsed = getOrderPointsUsed(order.metadata)
   // 디지털 단독 주문이면 배송 정보를 숨긴다(배송이 필요한 라인이 하나도 없음).
   const requiresShipping = cartRequiresShipping(order.items)
 
@@ -110,9 +117,6 @@ export const OrderDetailsDesktop = ({
       order.fulfillment_status === "fulfilled" ||
       order.fulfillment_status === "partially_fulfilled")
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason
-  const cancelTooltip = cancelUnavailableReason
-    ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
-    : undefined
 
   // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
   // 셀프 취소를 막고 고객센터(카카오채널) 문의로 안내한다.
@@ -121,6 +125,17 @@ export const OrderDetailsDesktop = ({
     "confirmed"
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
+  // 이미 다운로드한 디지털 상품은 회수 불가 — 무통장 환불신청도 막고 고객센터 문의로 안내.
+  // (셀프 취소는 Core 가 cancelUnavailableReason='digital_downloaded' 로 이미 막음)
+  const hasExercisedDigital = digitalOwnerships.some((o) => !!o.exercisedAt)
+  // 취소/환불이 막힌 사유는 비활성 버튼이 아니라 버튼 줄 위 빨간 텍스트 한 줄로 안내한다.
+  // TODO: 부분취소/부분환불이 가능해지면 digital_downloaded 분기는 삭제 (Core 가드와 세트).
+  const blockedNotice =
+    showBankTransferCancelGuide && !refundRequestStatus && hasExercisedDigital
+      ? tRefundRequest("digitalDownloadedBlocked")
+      : cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled"
+        ? tActions(`cancelUnavailable.${cancelUnavailableReason}`)
+        : undefined
 
   const statusLabel = refundRequestStatus === "REQUESTED"
     ? tRefundRequest("requested")
@@ -168,22 +183,27 @@ export const OrderDetailsDesktop = ({
               ? cancelReasonDetail
               : undefined,
         })
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
         const message =
-          result.refundStatus === "succeeded"
+          result.actions.refundStatus === "succeeded"
             ? tActions("cancelSuccess")
-            : result.refundStatus === "pending"
+            : result.actions.refundStatus === "pending"
               ? tActions("cancelSuccessPending")
-              : result.refundStatus === "failed"
+              : result.actions.refundStatus === "failed"
                 ? tActions("cancelSuccessFailed")
-                : result.refundStatus === "manual_pending"
+                : result.actions.refundStatus === "manual_pending"
                   ? tActions("cancelSuccessManual")
                   : tActions("cancelOrder")
         toast.success(message)
         setShowCancelDialog(false)
         router.refresh()
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : undefined
-        toast.error(message ?? tActions("cancelError"))
+        // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
+        if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
+        toast.error(tActions("cancelError"))
       }
     })
   }
@@ -246,12 +266,15 @@ export const OrderDetailsDesktop = ({
                   </p>
                 )}
               </div>
+              {/* 디지털 라인: 이 주문의 ownership 이 잡히면 아래 다운로드 블록이 대신 처리한다. */}
               {isDigitalItem(item) ? (
-                <LocalizedClientLink href="/mypage/download">
-                  <CustomButton variant="outline" color="secondary" size="sm">
-                    {tActions("download")}
-                  </CustomButton>
-                </LocalizedClientLink>
+                digitalOwnerships.length > 0 ? null : (
+                  <LocalizedClientLink href="/mypage/download">
+                    <CustomButton variant="outline" color="secondary" size="sm">
+                      {tActions("download")}
+                    </CustomButton>
+                  </LocalizedClientLink>
+                )
               ) : (
                 <CustomButton variant="outline" color="secondary" size="sm">
                   {tActions("addToCart")}
@@ -260,6 +283,7 @@ export const OrderDetailsDesktop = ({
             </article>
           )
         })}
+        <OrderDigitalDownloads ownerships={digitalOwnerships} />
       </section>
 
       {requiresShipping && (
@@ -373,19 +397,22 @@ export const OrderDetailsDesktop = ({
                   {formatAmount(order.item_total)}
                 </dd>
               </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-base text-black">{tLabels("discount")}</dt>
-                <dd className="text-base text-black">
-                  {formatAmount(order.discount_total)}
-                </dd>
-              </div>
+              {/* 0원 줄은 정보가 아니라 노이즈다. 실제로 깎인 항목만 남겨 차감 흐름을 또렷하게 둔다. */}
+              {order.discount_total > 0 && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">{tLabels("discount")}</dt>
+                  <dd className="text-base text-black">
+                    -{formatAmount(order.discount_total)}
+                  </dd>
+                </div>
+              )}
               {membershipDiscount > 0 && (
                 <div className="flex items-center justify-between">
                   <dt className="text-base text-black">
                     {tLabels("membershipDiscount")}
                   </dt>
                   <dd className="text-base text-black">
-                    {formatAmount(membershipDiscount)}
+                    -{formatAmount(membershipDiscount)}
                   </dd>
                 </div>
               )}
@@ -397,6 +424,14 @@ export const OrderDetailsDesktop = ({
                   </dd>
                 </div>
               )}
+              {pointsUsed > 0 && (
+                <div className="flex items-center justify-between font-semibold">
+                  <dt className="text-base text-black">{tLabels("pointsUsed")}</dt>
+                  <dd className="text-base text-black">
+                    -{formatAmount(pointsUsed)}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
           <dl className="border-t-[0.5px] border-b-[0.5px] border-zinc-300 bg-gray-background p-3.5">
@@ -404,15 +439,27 @@ export const OrderDetailsDesktop = ({
               <dt className="text-base font-bold text-black">
                 {tLabels("totalPayment")}
               </dt>
-              <dd className="text-base font-bold text-black">
-                {formatAmount(order.total)}
+              {/* 포인트는 Medusa 상 결제수단이라 order.total 에 남아 있다. 고객이 실제로 낸 현금을 보여준다.
+                  브랜드 오렌지는 CTA 전용이라(DESIGN.md) 색이 아니라 크기·굵기로 위계를 준다. */}
+              <dd className="text-xl font-bold text-black">
+                {formatAmount(order.total - pointsUsed)}
               </dd>
             </div>
+            {order.total - pointsUsed === 0 && pointsUsed > 0 && (
+              <p className="mt-1 text-right text-sm text-muted-foreground">
+                {tLabels("paidWithPointsOnly")}
+              </p>
+            )}
           </dl>
         </div>
       </section>
 
       <section className="flex flex-wrap justify-center gap-2.5">
+        {blockedNotice && (
+          <p className="w-full text-center text-sm text-red-600">
+            {blockedNotice}
+          </p>
+        )}
         <LocalizedClientLink
           href="/mypage/order/list"
           className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm font-medium text-amber-500 outline-1 outline-amber-500"
@@ -452,20 +499,13 @@ export const OrderDetailsDesktop = ({
             {tActions("cancelOrder")}
           </button>
         )}
-        {showBankTransferCancelGuide && intentId && !refundRequestStatus && (
-          <RefundRequestDialog intentId={intentId} />
-        )}
+        {showBankTransferCancelGuide &&
+          intentId &&
+          !refundRequestStatus &&
+          !hasExercisedDigital && <RefundRequestDialog intentId={intentId} />}
         {showBankTransferCancelGuide && refundRequestStatus && (
           <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
             {tRefundRequest(refundRequestStatus === "APPROVED" ? "refunded" : "requested")}
-          </span>
-        )}
-        {!canCancel && cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled" && (
-          <span
-            className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200"
-            title={cancelTooltip}
-          >
-            {tActions("cancelOrder")}
           </span>
         )}
         {showBankTransferCancelGuide && (

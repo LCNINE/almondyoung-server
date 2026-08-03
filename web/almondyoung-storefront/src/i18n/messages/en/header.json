@@ -9,6 +9,11 @@
     "logout": "Log out"
   },
   "categoryDropdown": {
-    "trigger": "Categories"
+    "trigger": "Categories",
+    "shopTrade": "Shop Trade",
+    "brandHall": "Brand Hall",
+    "comingSoon": "Coming soon",
+    "viewAll": "View all",
+    "viewMore": "View more"
   }
 }

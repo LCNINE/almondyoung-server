@@ -105,6 +105,8 @@ export const CANCEL_UNAVAILABLE_MESSAGES: Record<string, string> = {
   channel_order: "채널 주문은 해당 채널에서 취소해 주세요.",
   already_processing:
     "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
+  digital_downloaded:
+    "이미 다운로드하신 디지털 상품이 포함되어 있어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
 }
 
 // ── Core 상태 → 고객 표시 텍스트 변환 ──────────────────────────────────
@@ -139,8 +141,17 @@ export function OrderStatusBadges({
     return badge ? <StatusBadge {...badge} /> : null
   }
 
+  const awaitingDepositBadge: BadgeProps | null =
+    actions.orderStatus === "pending" &&
+    actions.paymentStatus === "awaiting_payment"
+      ? { label: "입금 대기", color: "bg-amber-100 text-amber-700" }
+      : null
+
   // 환불 신청 대기중이면 '결제 완료' 대신 '환불 신청' 뱃지
-  const orderBadge = refundRequestBadge ?? ORDER_STATUS_MAP[actions.orderStatus]
+  const orderBadge =
+    refundRequestBadge ??
+    awaitingDepositBadge ??
+    ORDER_STATUS_MAP[actions.orderStatus]
   const fulfillBadge = FULFILLMENT_STATUS_MAP[actions.fulfillmentStatus]
   const refundBadge = REFUND_STATUS_MAP[actions.refundStatus]
 

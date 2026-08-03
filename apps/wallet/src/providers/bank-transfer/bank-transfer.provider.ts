@@ -125,8 +125,30 @@ export class BankTransferPaymentProvider implements PaymentProvider {
     return { status: 'SUCCEEDED' };
   }
 
-  async cancel(_params: ChargeParams): Promise<ChargeResult> {
-    return { status: 'SUCCEEDED' };
+  async cancel(params: ChargeParams): Promise<ChargeResult> {
+    // 내부 상태만 CANCELED 로 바꾸고 토스 가상계좌를 열어두면, 고객 화면/문자에 남은 계좌로
+    // 입금이 들어와도 웹훅이 'charge 가 REQUIRES_ACTION 이 아님' 으로 흘려버린다(= 돈만 들어오고
+    // 주문 없음). 실제 사고가 났던 경로라 취소 시 토스 계좌를 반드시 닫는다.
+    const paymentKey = await this.getPaymentKey(params.chargeId);
+    if (!paymentKey) {
+      // 계좌 발급 전이거나 구건(paymentKey 스냅샷 없음) — 닫을 토스 계좌가 없다.
+      return { status: 'SUCCEEDED' };
+    }
+
+    // 미입금 가상계좌 취소는 환불계좌가 필요 없다(입금 후 환불만 refundReceiveAccount 필수).
+    const result = await this.tossApi.cancelPayment(
+      paymentKey,
+      '결제 취소',
+      undefined,
+      `cancel:${params.idempotencyKey}`,
+    );
+    if (result.ok) {
+      return { status: 'SUCCEEDED' };
+    }
+
+    // 여기서 SUCCEEDED 로 넘기면 살아있는 계좌를 취소된 것처럼 취급해 같은 사고가 재발한다.
+    // 실패를 그대로 올려 내부 취소도 막고(고객은 재시도), 계좌 상태와 원장을 일치시킨다.
+    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
 
   async refund(params: RefundParams): Promise<RefundResult> {

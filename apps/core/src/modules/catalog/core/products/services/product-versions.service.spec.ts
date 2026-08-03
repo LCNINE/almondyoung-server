@@ -138,6 +138,55 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(productPublisher.publishEvent).not.toHaveBeenCalled();
   });
 
+  it('임포트 게시면 payload 에 origin 과 importSessionId 를 싣는다', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: null,
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+
+    await (service as any)._emitActiveVersionChangedEvent(
+      { id: 'version-2', masterId: 'master-1', name: 'Lip Tint' },
+      null,
+      'published',
+      {} as any,
+      { origin: 'bulk_import', importSessionId: 'session-1' },
+    );
+
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          origin: 'bulk_import',
+          importSessionId: 'session-1',
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('단건 게시면 origin 키 자체가 payload 에 없다', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: null,
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+
+    await (service as any)._emitActiveVersionChangedEvent(
+      { id: 'version-2', masterId: 'master-1', name: 'Lip Tint' },
+      null,
+      'published',
+      {} as any,
+    );
+
+    // `origin: undefined` 로도 통과하지 않도록 키 존재 자체를 본다 —
+    // 단건 경로의 payload 는 이 스테이지 전후로 바이트 단위로 같아야 한다.
+    const [{ payload }] = outboxPublisher.saveEvent.mock.calls[0];
+    expect(Object.prototype.hasOwnProperty.call(payload, 'origin')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(payload, 'importSessionId')).toBe(false);
+  });
+
   it('uses the caller-provided active changeReason instead of inferring rollback from previous active version', async () => {
     const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
@@ -393,8 +442,55 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     await service.publishVersion('version-draft', tx as any);
     await service.publishVersion('version-inactive', tx as any);
 
-    expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx);
-    expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx);
+    expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx, undefined);
+    expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx, undefined);
+  });
+
+  it('일괄 세션이 잠근 draft 는 개별 발행할 수 없다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-locked',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Locked Draft',
+      bulkSessionId: '0198f000-0000-7000-8000-000000000001',
+    };
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+
+    await expect(service.publishVersion(version.id)).rejects.toThrow(
+      '일괄 등록 세션이 관리하는 상품입니다. 세션 화면에서 일괄 발행해 주세요.',
+    );
+  });
+
+  it('일괄 세션에 잠기지 않은 draft 는 그대로 발행된다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-unlocked',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Unlocked Draft',
+      bulkSessionId: null,
+    };
+    const tx = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
+    jest.spyOn(service as any, '_validateVariantCodeUniqueness').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'validateProductCodeUniqueness').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileMatchingsAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileAssetLinksAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_validateDigitalAssetLinks').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_publishVariantChangeEvents').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_emitActiveVersionChangedEvent').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
+
+    await expect(service.publishVersion(version.id, tx as any)).resolves.toBeUndefined();
   });
 
   it('updateRequiresMembership: active 버전의 구매 제약을 upsert 하고 이벤트를 1회 발행한다', async () => {
@@ -575,6 +671,7 @@ describe('ProductVersionsService productCode publish validation', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any, // purchaseConstraints
     );
   }
 
@@ -619,6 +716,7 @@ describe('ProductVersionsService digital asset-link publish guard', () => {
       {} as any,
       variantAssetLinkService,
       {} as any,
+      {} as any, // purchaseConstraints
     );
   }
 
@@ -905,6 +1003,7 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any, // purchaseConstraints
     );
   }
 

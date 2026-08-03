@@ -10,12 +10,13 @@ import {
 } from '@nestjs/common';
 import { UserEvents } from '@packages/event-contracts/streams';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
+import { phoneNumberDigitVariants } from '../../commons/utils/phone-number';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRoleScopesResponseDto, UserRolesResponse } from './dto/user-role-scopes.response.dto';
@@ -155,6 +156,18 @@ export class UsersService {
     return user === null;
   }
 
+  // 로그인 ID 가입 가능 여부 확인 (isEmailAvailable 과 동일한 계약 — boolean 만, PII 미노출)
+  async isLoginIdAvailable(loginId: string, tx?: DbTransaction): Promise<boolean> {
+    const user = await this.findUserByLoginId(loginId, tx);
+    return !user;
+  }
+
+  // 닉네임 가입 가능 여부 확인 (isEmailAvailable 과 동일한 계약 — boolean 만, PII 미노출)
+  async isNicknameAvailable(nickname: string, tx?: DbTransaction): Promise<boolean> {
+    const user = await this.findUserByNickname(nickname, tx);
+    return !user;
+  }
+
   // 휴대폰 번호로 사용자 찾기 (복수 가능)
   async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);
@@ -165,7 +178,13 @@ export class UsersService {
         })
         .from(schema.users)
         .innerJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
-        .where(eq(schema.profiles.phoneNumber, phoneNumber));
+        // 저장된 표기가 E.164/하이픈/숫자로 섞여 있어, 숫자만 남긴 값으로 비교한다
+        .where(
+          inArray(
+            sql`regexp_replace(${schema.profiles.phoneNumber}, '[^0-9]', '', 'g')`,
+            phoneNumberDigitVariants(phoneNumber),
+          ),
+        );
 
       return rows.map((row) => row.user);
     } catch (error) {
@@ -289,10 +308,7 @@ export class UsersService {
       .where(
         and(
           eq(schema.userRoleAssignments.userId, userId),
-          or(
-            isNull(schema.userRoleAssignments.expiresAt),
-            gt(schema.userRoleAssignments.expiresAt, new Date()),
-          ),
+          or(isNull(schema.userRoleAssignments.expiresAt), gt(schema.userRoleAssignments.expiresAt, new Date())),
         ),
       );
     return [...new Set(rows.map((r) => r.roleName))];

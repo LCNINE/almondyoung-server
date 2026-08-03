@@ -30,7 +30,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderLineDto } from '@/lib/types/dto/orders';
 import { useResolveMatching } from '@/lib/services/matching';
 import { useCreateChannelProduct } from '@/lib/services/products';
-import { useSkus } from '@/lib/services/inventory';
+import { useSkuSearch } from '@/lib/services/inventory';
+import { useDebounced } from '@/hooks/use-debounced';
 import { Search, Trash2, Link2, X, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 
@@ -45,16 +46,6 @@ type LocalOption = {
   skuId?: string;
   skuName?: string;
 };
-
-/** 간단 디바운스 */
-function useDebounced<T>(value: T, delay = 350) {
-  const [v, setV] = useState(value);
-  useEffect(() => {
-    const t = setTimeout(() => setV(value), delay);
-    return () => clearTimeout(t);
-  }, [value, delay]);
-  return v;
-}
 
 interface ProductRegistrationDialogProps {
   isOpen: boolean;
@@ -82,7 +73,7 @@ export function ProductRegistrationDialog({
   // 재고연결 검색
   const [skuSearch, setSkuSearch] = useState('');
   const debounced = useDebounced(skuSearch, 350);
-  const { data: skuResults, isLoading: searching } = useSkus();
+  const { data: skuResults, isFetching: searching } = useSkuSearch(debounced);
 
   // 현재 “재고연결”을 눌러 편집중인 옵션 인덱스
   const [linkingIndex, setLinkingIndex] = useState<number | null>(null);
@@ -506,7 +497,7 @@ export function ProductRegistrationDialog({
                   <div className="relative flex-1">
                     <Search className="w-4 h-4 absolute left-2 top-2.5 text-gray-400" />
                     <FormInput
-                      placeholder="재고 상품명으로 검색"
+                      placeholder="재고 상품명 또는 코드로 검색"
                       className="pl-8"
                       value={skuSearch}
                       onChange={(e) => setSkuSearch(e.target.value)}
@@ -534,10 +525,7 @@ export function ProductRegistrationDialog({
               </div>
 
               <div className="space-y-2 max-h-[320px] overflow-y-auto">
-                {(
-                  (skuResults as any)?.items ??
-                  (Array.isArray(skuResults) ? skuResults : [])
-                ).map((s: any) => (
+                {(skuResults?.items ?? []).map((s) => (
                   <div
                     key={s.id}
                     className={cn(
@@ -548,8 +536,8 @@ export function ProductRegistrationDialog({
                       <div className="font-medium text-sm truncate">
                         {s.name}
                       </div>
-                      <div className="text-xs text-gray-500 truncate">
-                        {s.id}
+                      <div className="text-xs text-gray-500 truncate font-mono">
+                        {s.code}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -564,18 +552,13 @@ export function ProductRegistrationDialog({
                     </div>
                   </div>
                 ))}
-                {!searching &&
-                  ((skuResults as any)?.items?.length ??
-                    (Array.isArray(skuResults) ? skuResults.length : 0)) ===
-                    0 && (
-                    <div className="text-sm text-gray-500 p-2">
-                      검색 결과가 없습니다.
-                    </div>
-                  )}
-              </div>
-
-              <div className="text-center text-xs text-gray-400 mt-2">
-                페이지 네이션
+                {!searching && (skuResults?.items?.length ?? 0) === 0 && (
+                  <div className="text-sm text-gray-500 p-2">
+                    {debounced
+                      ? '검색 결과가 없습니다.'
+                      : '재고 상품명 또는 코드를 입력해 검색하세요.'}
+                  </div>
+                )}
               </div>
             </div>
           </TabsContent>

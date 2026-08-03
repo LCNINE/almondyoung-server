@@ -1,4 +1,24 @@
-import { formatAmount, formatDueDate } from './template-helpers';
+import { formatAmount, formatDueDate, formatOrderTotal } from './template-helpers';
+
+describe('formatOrderTotal', () => {
+  it('포인트 미사용이면 총액만 적는다', () => {
+    expect(formatOrderTotal(5990)).toBe('5,990');
+    expect(formatOrderTotal(5990, 0)).toBe('5,990');
+  });
+
+  it('포인트 전액 결제는 실결제 0 을 명시한다', () => {
+    expect(formatOrderTotal(5990, 5990)).toBe('5,990원 · 포인트 5,990원 사용 · 실결제 0');
+  });
+
+  it('일부 사용은 차액을 실결제로 적는다', () => {
+    expect(formatOrderTotal(78000, 5000)).toBe('78,000원 · 포인트 5,000원 사용 · 실결제 73,000');
+  });
+
+  it("템플릿이 '원' 을 덧붙이므로 반환값은 숫자로 끝난다", () => {
+    expect(formatOrderTotal(78000, 5000)).toMatch(/\d$/);
+    expect(formatOrderTotal(78000)).toMatch(/\d$/);
+  });
+});
 
 describe('formatAmount', () => {
   it('천단위 구분을 넣는다', () => {

@@ -17,7 +17,11 @@ export function BulkTable() {
 
   const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
   const { data, isLoading, isFetching } = useMastersSummary(query);
-  const columns = useProductsListTableColumns();
+  const columns = useProductsListTableColumns({
+    totalCount: data?.total ?? 0,
+    pageIndex: (query.page ?? 1) - 1,
+    pageSize: PAGE_SIZE,
+  });
   const filters = useProductsListTableFilters();
 
   const { table } = useDataTable({

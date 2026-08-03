@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsUUID, IsInt, Min, MaxLength, IsUrl, IsArray, ValidateNested } from 'class-validator';
+import { IsString, IsOptional, IsUUID, IsInt, Min, MaxLength, IsArray, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CategoryTagGroupLinkDto } from './category-tag-group-link.dto';
 
@@ -34,12 +34,14 @@ export class CreateCategoryDto {
   slug?: string;
 
   @ApiProperty({
-    description: '카테고리 이미지 URL',
+    // 값은 file-service fileId(UUID) 를 저장한다 (읽는 쪽에서 file-service URL 을 붙임).
+    description: '카테고리 이미지 (file-service fileId 또는 URL)',
     required: false,
-    example: 'https://example.com/image.jpg',
+    example: '019df045-8325-7890-abcd-0123456789ab',
   })
   @IsOptional()
-  @IsUrl()
+  @IsString()
+  @MaxLength(2048)
   imageUrl?: string;
 
   @ApiProperty({

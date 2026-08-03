@@ -66,7 +66,7 @@ export interface BarcodeDto {
   id: string;
   barcode: string;
   isPrimary: boolean;
-  packingUnit?: string | null;
+  packingUnit?: number | null;
 }
 
 export interface SupplierInfoDto {
@@ -836,6 +836,9 @@ export interface UpdateWarehouseDto {
   name?: string;
   type?: 'domestic' | 'overseas' | 'bonded' | 'return';
   location?: string;
+  supportedPickingStrategies?: Array<
+    'discrete' | 'aggregate_then_sort' | 'pick_to_tote'
+  >;
 }
 
 export interface WarehouseStockSummaryDto {
@@ -860,6 +863,11 @@ export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
   search?: string;
+  quantityState?:
+    | 'out_of_stock'
+    | 'reserved'
+    | 'inbound_pending'
+    | 'outbound_pending';
   page?: number;
   limit?: number;
 }

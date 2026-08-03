@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function BlacklistListTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="블랙리스트 관리" />
       <BlacklistTable />
     </Container>

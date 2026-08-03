@@ -30,11 +30,14 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
     const entitlementManager = { createEntitlement: jest.fn().mockResolvedValue({ id: 'e1' }) };
     const policyService = { getBooleanPolicy: jest.fn().mockResolvedValue(true) };
 
+    const membershipEventPublisher = { saveStatusChanged: jest.fn().mockResolvedValue(undefined) };
+
     return new SubscriptionCreator(
       dbService as never,
       contractEventManager as never,
       entitlementManager as never,
       policyService as never,
+      membershipEventPublisher as never,
     );
   }
 
@@ -74,11 +77,36 @@ describe('SubscriptionCreator — payment intent replay 차단', () => {
       { addEvent: jest.fn().mockResolvedValue(undefined) } as never,
       { createEntitlement: jest.fn().mockResolvedValue({ id: 'e1' }) } as never,
       { getBooleanPolicy: jest.fn().mockResolvedValue(true) } as never,
+      { saveStatusChanged: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     const result = await creator.createNewSubscription('u1', plan, tier, paymentRefs, 'one_time');
     expect(result.contractId).toBe('row1');
     expect(insertedBillingEvents).toHaveLength(1);
     expect(insertedBillingEvents[0]).toMatchObject({ eventType: 'CHARGE_SUCCESS', paymentIntentId: 'intent-1' });
+  });
+
+  it('one_time 은 같은 트랜잭션의 아웃박스에 MembershipStatusChanged(ACTIVE) 를 기록한다', async () => {
+    const tx = {
+      select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }) }),
+      insert: () => ({ values: () => ({ returning: () => Promise.resolve([{ id: 'row1' }]) }) }),
+    };
+    const saveStatusChanged = jest.fn().mockResolvedValue(undefined);
+    const creator = new SubscriptionCreator(
+      { db: { transaction: (fn: (t: unknown) => Promise<unknown>) => fn(tx) } } as never,
+      { addEvent: jest.fn().mockResolvedValue(undefined) } as never,
+      { createEntitlement: jest.fn().mockResolvedValue({ id: 'e1' }) } as never,
+      { getBooleanPolicy: jest.fn().mockResolvedValue(true) } as never,
+      { saveStatusChanged } as never,
+    );
+
+    await creator.createNewSubscription('u1', plan, tier, {}, 'one_time', false, 'CHARGE', 'buyer@example.com');
+
+    expect(saveStatusChanged).toHaveBeenCalledTimes(1);
+    // 같은 트랜잭션 객체(tx)로 저장돼야 원자적이다.
+    expect(saveStatusChanged).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'u1', email: 'buyer@example.com', status: 'ACTIVE', contractId: 'row1' }),
+      tx,
+    );
   });
 });

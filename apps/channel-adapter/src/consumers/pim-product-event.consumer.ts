@@ -7,6 +7,7 @@ import { DomainEvent } from '@packages/event-contracts/types';
 import {
   ProductMasterActiveVersionChangedPayload,
   ProductMasterDeletedPayload,
+  ProductPublishOrigin,
 } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
 import { processedEvents, inboxEvents } from '../schema';
@@ -63,6 +64,8 @@ export class PimProductEventConsumer {
     idempotencyKey: string;
     eventVersion: string;
     eventOccurredAt: Date;
+    /** 대량 작업이 낸 이벤트면 여기 담긴다. InboxWorker 의 레인 강등이 이 값을 읽는다. */
+    origin?: ProductPublishOrigin;
   }): Promise<boolean> {
     const db = this.dbService.db;
 
@@ -130,6 +133,9 @@ export class PimProductEventConsumer {
           timestamp: params.envelope.timestamp,
           occurredAt: params.envelope.occurredAt,
           eventOccurredAt: params.eventOccurredAt.toISOString(),
+          // 강등 판정이 매 틱 읽는 값이라 payload(full snapshot, TOAST 대상) 가 아니라
+          // 여기 둔다. 없으면 키를 만들지 않는다 — 판정 쪽 COALESCE 가 NULL 을 흡수한다.
+          ...(params.origin ? { origin: params.origin } : {}),
         },
         status: 'pending',
         eventOccurredAt: params.eventOccurredAt,
@@ -199,6 +205,7 @@ export class PimProductEventConsumer {
         idempotencyKey,
         eventVersion,
         eventOccurredAt,
+        origin: payload.origin,
       });
 
       if (!saved) return;

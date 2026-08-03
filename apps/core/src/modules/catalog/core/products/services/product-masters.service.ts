@@ -8,6 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { ConflictError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
@@ -38,6 +39,7 @@ import {
   productAuditLog,
   productMasterOptionGroups,
   productMasterVariants,
+  productVariantPriceCache,
   productMasterPricingRules,
   productMasterPurchaseConstraints,
   productPurchaseConstraints,
@@ -61,6 +63,21 @@ import {
   ProductSellableQuantityService,
   SoldOutState,
 } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+
+/** 공급처 필터에서 '미지정'(supplier_id IS NULL) 을 가리키는 sentinel. */
+export const UNASSIGNED_SUPPLIER = 'unassigned';
+
+/** 목록에 내려주는 상품당 품목 미리보기 상한. 잘린 나머지는 variantCount 와의 차이로 알 수 있다. */
+export const VARIANT_PREVIEW_LIMIT = 20;
+
+export type VariantPreview = {
+  variantId: string;
+  /** 수동 지정 이름이 없으면 옵션값 표시명을 ' / ' 로 이은 값. */
+  name: string;
+  basePrice: number | null;
+  membershipPrice: number | null;
+  status: string;
+};
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -499,12 +516,18 @@ export class ProductMastersService {
       limit?: number;
       deleted?: boolean;
       ids?: string[];
+      status?: 'active' | 'inactive' | 'draft';
       productType?: 'regular_sale' | 'limited_edition';
       approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+      createdBy?: string;
+      supplierId?: string | string[];
       createdFrom?: string;
       createdTo?: string;
       sort?: 'createdAt' | 'name' | 'updatedAt';
       order?: 'asc' | 'desc';
+      // 품절 상태 필터. soldOutState 는 후처리 계산이라 SQL 페이징과 함께 걸 수 없어
+      // 별도 경로로 처리한다(아래 stockFilter 블록). all=필터 없음.
+      stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -513,6 +536,7 @@ export class ProductMastersService {
       aggregate: {
         optionGroupNames: string[];
         variantCount: number;
+        variantPreviews: VariantPreview[];
         thumbnail: string | null;
         priceSummary: PriceSummary | null;
         soldOutState: SoldOutState;
@@ -531,6 +555,7 @@ export class ProductMastersService {
 
       const mode = filters?.mode ?? 'active';
       const deleted = filters?.deleted ?? false;
+      const stockFilter = filters?.stock && filters.stock !== 'all' ? filters.stock : undefined;
 
       // ===== 모드별 버전 선택 서브쿼리 =====
       // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
@@ -627,11 +652,35 @@ export class ProductMastersService {
         whereConditions.push(eq(productMasterVersions.productType, filters.productType));
       }
 
+      if (filters?.status) {
+        whereConditions.push(eq(productMasterVersions.status, filters.status));
+      }
+
       // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
       // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
       // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
       if (filters?.approvalStatus) {
         whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+      }
+
+      // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
+      if (filters?.createdBy) {
+        whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
+      }
+
+      // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
+      // 'unassigned' 는 공급처 미지정(IS NULL) 을 뜻한다. UUID 와 섞어 보낼 수 있다.
+      const supplierIds =
+        typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
+      if (supplierIds.length > 0) {
+        const includeUnassigned = supplierIds.includes(UNASSIGNED_SUPPLIER);
+        const concreteIds = supplierIds.filter((id) => id !== UNASSIGNED_SUPPLIER);
+        const supplierConditions = [
+          ...(concreteIds.length > 0 ? [inArray(productMasterVersions.supplierId, concreteIds)] : []),
+          ...(includeUnassigned ? [isNull(productMasterVersions.supplierId)] : []),
+        ];
+        // or() 는 인자가 1개면 그대로 통과하므로 단일 조건도 안전하다.
+        whereConditions.push(supplierConditions.length === 1 ? supplierConditions[0] : or(...supplierConditions));
       }
 
       // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준
@@ -640,6 +689,13 @@ export class ProductMastersService {
       }
       if (filters?.createdTo) {
         whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
+      }
+
+      // 품절 필터는 읽기모델(product_sellable_quantity_projections)을 SQL 조건으로 사용한다.
+      // 이전처럼 전체 상품을 앱 메모리로 가져와 실시간 계산한 뒤 slice 하면 상품 수에 비례해 느려지고
+      // DB count/limit/offset도 무력화된다.
+      if (stockFilter) {
+        whereConditions.push(this.buildStockFilterCondition(stockFilter));
       }
 
       // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
@@ -680,8 +736,6 @@ export class ProductMastersService {
             )
           : countBaseQuery;
 
-      const [{ c: total }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
-
       // ===== DATA 쿼리 (정렬 및 페이지네이션) =====
       const dataBaseQuery =
         mode === 'active'
@@ -712,7 +766,12 @@ export class ProductMastersService {
       // 안정 페이지네이션을 위해 master id 를 2차 정렬키로 고정
       const orderedQuery = filteredDataQuery.orderBy(sortDirection(sortColumn), desc(productMasters.id));
 
-      const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
+      let rawData: Awaited<typeof orderedQuery>;
+      let total: number;
+
+      const [{ c }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
+      total = c;
+      rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
 
       // ===== 결과 가공: ProductMasterWithVersion + aggregate 데이터 =====
 
@@ -753,12 +812,17 @@ export class ProductMastersService {
         .where(inArray(productMasterVariants.versionId, versionIds))
         .groupBy(productMasterVariants.versionId);
 
+      // 전량 조회(엑셀·배치)는 화면 렌더가 아니고 상품 수가 만 단위라 미리보기를 만들지 않는다.
+      const variantPreviewMap = returnAll
+        ? new Map<string, VariantPreview[]>()
+        : await this.getVariantPreviewsByVersionIds(versionIds, trx);
+
       // 한 번에 모든 primary 이미지 조회 (thumbnail용)
       const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, trx);
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
 
-      // 한 번에 모든 품절 상태 집계 (materialized projection 기준, 상수 쿼리 1회)
+      // 한 번에 모든 품절 상태 집계 (현재 페이지 기준 상수 쿼리 1회).
       const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
 
       // Map으로 변환 (O(1) 조회)
@@ -780,6 +844,7 @@ export class ProductMastersService {
           aggregate: {
             optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
+            variantPreviews: variantPreviewMap.get(version.id) ?? [],
             thumbnail: thumbnailMap.get(version.id) ?? null,
             priceSummary: priceSummaryMap.get(version.id) ?? null,
             soldOutState: soldOutStateMap.get(version.id) ?? 'none',
@@ -794,6 +859,156 @@ export class ProductMastersService {
         limit,
       };
     }, tx);
+  }
+
+  /** 이름은 수동 지정값 우선, 없으면 옵션값 표시명을 옵션그룹 순서대로 잇는다(상세 화면과 같은 규칙). */
+  private async getVariantPreviewsByVersionIds(
+    versionIds: string[],
+    trx: DbTransaction,
+  ): Promise<Map<string, VariantPreview[]>> {
+    if (versionIds.length === 0) {
+      return new Map();
+    }
+
+    const rankedVariants = trx
+      .select({
+        versionId: productMasterVariants.versionId,
+        variantId: productVariants.id,
+        variantName: productVariants.variantName,
+        status: productVariants.status,
+        basePrice: productVariantPriceCache.basePrice,
+        membershipPrice: productVariantPriceCache.membershipPrice,
+        rn: sql<number>`
+          ROW_NUMBER() OVER (
+            PARTITION BY ${productMasterVariants.versionId}
+            ORDER BY ${productVariants.displayOrder} ASC, ${productVariants.createdAt} ASC
+          )
+        `.as('rn'),
+      })
+      .from(productMasterVariants)
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .leftJoin(
+        productVariantPriceCache,
+        and(
+          eq(productVariantPriceCache.versionId, productMasterVariants.versionId),
+          eq(productVariantPriceCache.variantId, productVariants.id),
+        ),
+      )
+      .where(inArray(productMasterVariants.versionId, versionIds))
+      .as('ranked_variants');
+
+    const rows = await trx
+      .select()
+      .from(rankedVariants)
+      .where(sql`${rankedVariants.rn} <= ${VARIANT_PREVIEW_LIMIT}`)
+      .orderBy(asc(rankedVariants.versionId), asc(rankedVariants.rn));
+
+    if (rows.length === 0) {
+      return new Map();
+    }
+
+    // 이름이 비어 있는 품목만 옵션값 표시명으로 채운다.
+    const unnamedVariantIds = rows.filter((row) => !row.variantName).map((row) => row.variantId);
+    const optionLabelMap = new Map<string, string[]>();
+
+    if (unnamedVariantIds.length > 0) {
+      // 옵션 값은 master 스코프가 없고 이름만 (master, version) 별로 있어서, 페이지의 versionIds
+      // 전체로 조인하면 값 행을 공유하는 다른 상품의 이름이 붙는다.
+      const optionRows = await trx
+        .select({
+          variantId: variantOptionValues.variantId,
+          displayName: productOptionValueDisplays.displayName,
+        })
+        .from(productMasterVariants)
+        .innerJoin(variantOptionValues, eq(variantOptionValues.variantId, productMasterVariants.variantId))
+        .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
+        .innerJoin(
+          productOptionValueDisplays,
+          and(
+            eq(productOptionValueDisplays.optionValueId, productOptionValues.id),
+            eq(productOptionValueDisplays.masterId, productMasterVariants.masterId),
+            eq(productOptionValueDisplays.versionId, productMasterVariants.versionId),
+            eq(productOptionValueDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productOptionGroupDisplays.optionGroupId, productOptionValues.optionGroupId),
+            eq(productOptionGroupDisplays.masterId, productMasterVariants.masterId),
+            eq(productOptionGroupDisplays.versionId, productMasterVariants.versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(
+          and(
+            inArray(productMasterVariants.versionId, versionIds),
+            inArray(productMasterVariants.variantId, unnamedVariantIds),
+          ),
+        )
+        .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
+
+      for (const option of optionRows) {
+        const labels = optionLabelMap.get(option.variantId) ?? [];
+        labels.push(option.displayName);
+        optionLabelMap.set(option.variantId, labels);
+      }
+    }
+
+    const previewMap = new Map<string, VariantPreview[]>();
+
+    for (const row of rows) {
+      const previews = previewMap.get(row.versionId) ?? [];
+      previews.push({
+        variantId: row.variantId,
+        name: row.variantName ?? optionLabelMap.get(row.variantId)?.join(' / ') ?? '',
+        basePrice: row.basePrice ?? null,
+        membershipPrice: row.membershipPrice ?? null,
+        status: row.status,
+      });
+      previewMap.set(row.versionId, previews);
+    }
+
+    return previewMap;
+  }
+
+  private buildStockFilterCondition(stockFilter: 'in_stock' | 'partial' | 'sold_out') {
+    const hasSoldOutVariant = sql`
+      EXISTS (
+        SELECT 1
+        FROM product_master_variants pmv_stock
+        INNER JOIN product_sellable_quantity_projections psq_stock
+          ON psq_stock.variant_id = pmv_stock.variant_id
+          AND psq_stock.version_id = pmv_stock.version_id
+        WHERE pmv_stock.version_id = ${productMasterVersions.id}
+          AND psq_stock.reason IN ('MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK')
+      )
+    `;
+
+    const hasNonSoldOutVariant = sql`
+      EXISTS (
+        SELECT 1
+        FROM product_master_variants pmv_stock
+        LEFT JOIN product_sellable_quantity_projections psq_stock
+          ON psq_stock.variant_id = pmv_stock.variant_id
+          AND psq_stock.version_id = pmv_stock.version_id
+        WHERE pmv_stock.version_id = ${productMasterVersions.id}
+          AND (
+            psq_stock.variant_id IS NULL
+            OR psq_stock.reason NOT IN ('MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK')
+          )
+      )
+    `;
+
+    if (stockFilter === 'sold_out') {
+      return sql`${hasSoldOutVariant} AND NOT ${hasNonSoldOutVariant}`;
+    }
+
+    if (stockFilter === 'partial') {
+      return sql`${hasSoldOutVariant} AND ${hasNonSoldOutVariant}`;
+    }
+
+    return sql`NOT ${hasSoldOutVariant}`;
   }
 
   /**
@@ -1183,6 +1398,10 @@ export class ProductMastersService {
       const product = await this.getVersionById(id, { includeDeleted: true }, tx);
       if (!product) {
         throw new NotFoundException(`Product with ID ${id} not found`);
+      }
+
+      if (product.bulkSessionId) {
+        throw new ConflictError('일괄 등록 세션이 관리하는 상품입니다. 세션을 취소하면 삭제할 수 있습니다.');
       }
 
       if (product.deletedAt) {

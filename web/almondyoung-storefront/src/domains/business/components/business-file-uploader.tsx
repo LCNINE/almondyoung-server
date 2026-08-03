@@ -2,10 +2,11 @@
 
 import { Button } from "@/components/ui/button"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
-import { Upload, X } from "lucide-react"
+import { FileText, Upload, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React from "react"
 import { useFormContext } from "react-hook-form"
+import { toast } from "sonner"
 import { BusinessDtoSchema } from "./schema"
 import Image from "next/image"
 import {
@@ -15,6 +16,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+
+// file-service 의 business-verification-file 컨텍스트 화이트리스트와 같은 목록.
+// 서버는 매직바이트로 최종 판정하므로 여기선 확장자만 바꾼 파일까진 못 막는다.
+const ACCEPTED_TYPES = [
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/avif",
+  "image/heic",
+  "image/heif",
+]
+const ACCEPT_ATTR = ".pdf,.jpg,.jpeg,.png,.webp,.avif,.heic,.heif"
 
 export default function BusinessFileUploader() {
   return (
@@ -32,53 +46,70 @@ function BusinessFileForm() {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newFile = e.target.files?.[0]
+    e.target.value = ""
 
-    if (newFile) {
-      form.setValue("file", newFile, {
-        shouldDirty: true,
-        shouldTouch: true,
-        shouldValidate: true,
-      })
-      form.setValue("isSubmitting", true)
+    if (!newFile) return
 
-      e.target.value = ""
+    // 지원하지 않는 형식이면 여기서 잘라낸다. 그냥 올리면 업로드가 서버 액션 안에서
+    // 터져 브라우저엔 500 으로만 보이고 사유가 사라진다.
+    if (!ACCEPTED_TYPES.includes(newFile.type)) {
+      toast.error(t("unsupportedType"))
+      return
     }
+
+    form.setValue("file", newFile, {
+      shouldDirty: true,
+      shouldTouch: true,
+      shouldValidate: true,
+    })
   }
 
   const handleRemoveFile = (e: React.MouseEvent) => {
     e.stopPropagation()
     form.setValue("file", undefined, { shouldValidate: true })
     form.setValue("fileUrl", undefined)
-    form.setValue("isSubmitting", Boolean(form.getValues("nts")))
     if (inputRef.current) inputRef.current.value = ""
   }
 
-  return (
-    <div className="flex flex-col gap-3">
-      <label
-        htmlFor="businessFileInput"
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-center transition-colors hover:bg-muted"
-      >
-        <Upload className="h-6 w-6 text-muted-foreground" />
-        <span className="text-sm font-medium">{t("uploadPrompt")}</span>
-        <span className="text-xs text-muted-foreground">{t("uploadHint")}</span>
-        <input
-          id="businessFileInput"
-          ref={inputRef}
-          type="file"
-          className="hidden"
-          accept=".pdf,.jpg,.jpeg,.png"
-          onChange={handleFileChange}
-        />
-      </label>
+  const attached = Boolean(file || fileUrl)
 
-      <FilePreview
-        file={file ?? null}
-        fileUrl={fileUrl ?? null}
-        onRemove={handleRemoveFile}
+  return (
+    <div>
+      <input
+        id="businessFileInput"
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        accept={ACCEPT_ATTR}
+        onChange={handleFileChange}
       />
+
+      {attached ? (
+        <FilePreview
+          file={file ?? null}
+          fileUrl={fileUrl ?? null}
+          onRemove={handleRemoveFile}
+        />
+      ) : (
+        <label
+          htmlFor="businessFileInput"
+          className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-dashed px-4 py-6 text-center transition-colors hover:bg-muted"
+        >
+          <Upload className="text-muted-foreground size-5" />
+          <span className="text-sm font-medium">{t("uploadPrompt")}</span>
+          <span className="text-muted-foreground text-xs">
+            {t("uploadHint")}
+          </span>
+        </label>
+      )}
     </div>
   )
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)}KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
 function FilePreview({
@@ -107,31 +138,58 @@ function FilePreview({
   const previewUrl = filePreview ?? fileUrl
   const isLocalFile = Boolean(file) // blob URL 은 next/image 최적화 불가 → unoptimized
   const filename = file ? file.name : fileUrl ? getDisplayFilename(fileUrl) : ""
+  const isPdf = /\.pdf$/i.test(filename)
 
   if (!previewUrl) return null
 
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <div className="group relative h-40 w-40 cursor-pointer overflow-hidden rounded-sm border">
+  const card = (
+    <div className="flex items-center gap-3 rounded-xl border p-3">
+      {isPdf ? (
+        <div className="bg-muted flex size-11 shrink-0 items-center justify-center rounded-lg">
+          <FileText className="text-muted-foreground size-5" />
+        </div>
+      ) : (
+        <div className="bg-muted relative size-11 shrink-0 overflow-hidden rounded-lg">
           <Image
             src={previewUrl}
             alt={t("fileAlt")}
             fill
-            sizes="160px"
+            sizes="44px"
             unoptimized={isLocalFile}
-            className="object-contain transition-transform duration-200 group-hover:scale-110"
+            className="object-cover"
           />
-
-          <Button
-            type="button"
-            size="icon"
-            className="absolute top-1 right-1 h-6 w-6 cursor-pointer"
-            onClick={onRemove}
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col text-left">
+        <span className="truncate text-sm font-medium">{filename}</span>
+        <span className="text-muted-foreground text-xs">
+          {[file ? formatFileSize(file.size) : null, isPdf ? null : t("tapToZoom")]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0"
+        onClick={onRemove}
+        aria-label={t("removeFile")}
+      >
+        <X className="size-4" />
+      </Button>
+    </div>
+  )
+
+  // PDF 는 next/image 로 못 그리므로 확대 다이얼로그 없이 카드만 보여준다.
+  if (isPdf) return card
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className="w-full cursor-pointer">
+          {card}
+        </button>
       </DialogTrigger>
       <DialogContent
         className="w-auto max-w-[90vw]"

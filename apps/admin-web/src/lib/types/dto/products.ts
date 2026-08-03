@@ -28,6 +28,7 @@ export interface UpdateCategoryDto {
   imageUrl?: string;
   sortOrder?: number;
   isActive?: boolean;
+  isVisibleToMembersOnly?: boolean;
 }
 
 export interface CategoryDto {
@@ -39,6 +40,10 @@ export interface CategoryDto {
   level?: number;
   sortOrder?: number;
   isActive: boolean;
+  /** 대표 이미지의 fileId (URL 아님). 없으면 null. */
+  thumbnail?: string | null;
+  /** 멤버십 회원에게만 노출하는 카테고리 여부 */
+  isVisibleToMembersOnly?: boolean;
   createdAt: string;
   updatedAt: string;
   children?: CategoryDto[];
@@ -127,16 +132,22 @@ export interface MastersQuery {
   pricingStrategy?: PricingStrategy;
   brand?: string;
   categoryId?: string;
-  status?: ProductStatus;
+  status?: Extract<ProductStatus, 'active' | 'inactive' | 'draft'>;
   /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 / all: draft만 있는 상품 포함 */
   mode?: 'active' | 'active-or-inactive' | 'all';
   productType?: 'regular_sale' | 'limited_edition';
   approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  /** 등록자 UUID(user-service users.id). product_masters.createdBy 기준 */
+  createdBy?: string;
+  /** 공급처 UUID(suppliers.id). product_master_versions.supplierId 기준 */
+  supplierId?: string;
   /** 등록일 범위 시작(ISO). product_masters.createdAt 기준 */
   createdFrom?: string;
   createdTo?: string;
   sort?: 'createdAt' | 'name' | 'updatedAt';
   order?: 'asc' | 'desc';
+  /** 품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음. */
+  stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
   limit?: number;
   page?: number;
 }
@@ -162,6 +173,16 @@ export interface PriceSummaryDto {
   hasTieredPrices: boolean;
 }
 
+export interface VariantPreviewDto {
+  variantId: string;
+  /** 수동 지정 이름이 없으면 옵션값 표시명을 이어 만든 이름. */
+  name: string;
+  /** 가격 캐시가 아직 없는 품목은 null. */
+  basePrice: number | null;
+  membershipPrice: number | null;
+  status: string;
+}
+
 export interface MasterSummaryDto {
   masterId: string;
   versionId: string;
@@ -169,6 +190,12 @@ export interface MasterSummaryDto {
   /** 대표 이미지의 fileId. URL 아님 — file-service 경로로 변환 필요. */
   thumbnail: string | null;
   brand: string | null;
+  /** 품번코드. 사람이 읽는 식별자 — masterId(UUID)와 다르다. */
+  productCode: string | null;
+  /** 공급가(매입 단가). 도매가가 아니다 — 도매 판매가는 아직 데이터가 없다. */
+  supplyPrice: number | null;
+  /** 공급처 ID. 이름은 inventory BC 소유라 목록 API 가 주지 않는다 — useSuppliers 로 매핑. */
+  supplierId: string | null;
   /** 멤버십가 비공개 여부 — 비회원에게 멤버십가 숫자를 숨김. 상품 노출·구매 제한 아님. */
   hideMembershipPriceForNonMembers: boolean;
   /** 멤버십 회원 전용 노출 여부 — 비회원 목록·검색·상세에서 숨김. */
@@ -179,8 +206,12 @@ export interface MasterSummaryDto {
   isOverseas: boolean;
   status: ProductStatus;
   createdAt: string;
+  /** 노출 중인 버전의 수정 시각. master 자체에는 updatedAt 이 없다. */
+  updatedAt: string;
   optionGroupNames: string[];
   variantCount: number;
+  /** 목록에 펼쳐 보여주는 품목 미리보기. 상품당 상한이 있어 variantCount 보다 적을 수 있다. */
+  variantPreviews: VariantPreviewDto[];
   priceSummary: PriceSummaryDto | null;
   /** active 버전 품목 기준 품절 집계. none=판매가능, partial=부분품절, all=전체품절. */
   soldOutState: 'none' | 'partial' | 'all';
@@ -1044,4 +1075,38 @@ export interface ApproveProductDto {
 
 export interface RejectProductDto {
   reason: string;
+}
+
+
+// ===== 엑셀 내보내기 =====
+
+export interface ExportColumnDto {
+  /** 양식에 저장되는 식별자 — 서버 카탈로그와 값이 같아야 한다. */
+  key: string;
+  label: string;
+}
+
+export interface ExportColumnsResponseDto {
+  columns: ExportColumnDto[];
+  defaultKeys: string[];
+}
+
+/**
+ * 내보내기 필터. MastersQuery 와 거의 같지만 supplierId 가 배열이다 —
+ * 목록은 URL 이라 콤마 문자열, 내보내기는 JSON body 라 배열을 쓴다.
+ */
+export type ProductExportFiltersDto = Omit<
+  MastersQuery,
+  'supplierId' | 'page' | 'limit' | 'search' | 'pricingStrategy'
+> & {
+  supplierId?: string[];
+};
+
+export interface ProductExportRequestDto {
+  /** 내보낼 열 key 순서. 생략하면 서버 기본 양식. */
+  columns?: string[];
+  /** 선택항목 다운로드 — masterId 배열. 지정하면 filters 는 무시된다. */
+  ids?: string[];
+  /** 검색결과 전체 다운로드 — 목록 화면과 같은 필터. */
+  filters?: ProductExportFiltersDto;
 }

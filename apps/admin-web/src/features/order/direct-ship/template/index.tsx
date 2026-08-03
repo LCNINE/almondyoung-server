@@ -26,7 +26,7 @@ export default function DirectShipTemplate() {
   );
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="직배송 운영"
         subtitle="드롭십(직배송) 모드 풀필먼트 오더의 발송 및 완료 처리를 관리합니다."

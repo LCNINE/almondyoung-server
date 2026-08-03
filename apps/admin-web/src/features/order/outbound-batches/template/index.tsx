@@ -7,7 +7,7 @@ import { OutboundBatchesTable } from '../components/table';
 
 export default function OutboundBatchesTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header
         title="출고 배치 관리"
         subtitle="shipment를 배치하고 창고 지원 전략, 작업자 claim, custody 흐름을 관리합니다."

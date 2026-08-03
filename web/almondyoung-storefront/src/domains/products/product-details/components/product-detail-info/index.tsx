@@ -6,6 +6,7 @@ import { useState } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
+import { ProductDescriptionMarkdown } from "./product-description-markdown"
 
 type ProductInfo = {
   productNumber?: string
@@ -23,6 +24,8 @@ type ProductInfo = {
 
 type Props = {
   productInfo: ProductInfo
+  /** 어드민 상세설명 에디터가 저장하는 마크다운 (최우선) */
+  description?: string
   descriptionHtml?: string
   detailImages: string[]
   productName: string
@@ -32,6 +35,7 @@ const COLLAPSED_HEIGHT = 500
 
 export function ProductDetailInfo({
   productInfo,
+  description,
   descriptionHtml,
   detailImages,
   productName,
@@ -93,7 +97,12 @@ export function ProductDetailInfo({
           )}
           style={isExpanded ? undefined : { maxHeight: COLLAPSED_HEIGHT }}
         >
-          {descriptionHtml ? (
+          {description?.trim() ? (
+            <section>
+              <h4 className="sr-only">{t("detailSrTitle")}</h4>
+              <ProductDescriptionMarkdown markdown={description} />
+            </section>
+          ) : descriptionHtml ? (
             <section>
               <h4 className="sr-only">{t("detailSrTitle")}</h4>
               <div

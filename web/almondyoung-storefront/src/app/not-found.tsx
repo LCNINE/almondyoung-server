@@ -26,6 +26,7 @@ export default function NotFound() {
 
   return (
     <div className="bg-background flex min-h-screen flex-col">
+      <meta name="robots" content="noindex" />
       {/* Header */}
       <header className="border-border bg-foreground border-b">
         <div className="container mx-auto flex h-14 items-center px-4">

@@ -1,4 +1,5 @@
 import { ProductTemplate } from "@/domains/products/product-details/templates"
+import { redirectToLogin } from "@/lib/api/medusa/auth-utils"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getProductDetailByMasterId } from "@/lib/api/pim/products"
 import { getQnaSummary } from "@/lib/api/ugc"
@@ -6,6 +7,7 @@ import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
@@ -36,13 +38,32 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     notFound()
   }
 
+  // Core PIM 의 SEO 입력값은 발행 시 Medusa product.metadata 로 넘어온다
+  // (apps/medusa/src/scripts/lib/transformer.ts). 비어 있으면 상품명으로 폴백.
+  const seo = product.metadata as
+    | { seoTitle?: string; seoDescription?: string; seoKeywords?: string | string[] }
+    | null
+    | undefined
+  const title = seo?.seoTitle || product.title
+  const description = seo?.seoDescription || product.title
+
   return {
-    title: `${product.title}`,
-    description: `${product.title}`,
+    title,
+    description,
+    // 정렬·필터 쿼리스트링이 붙은 변형 URL 이 중복으로 색인되지 않게 고정.
+    alternates: {
+      canonical: `/${params.countryCode}/products/${handle}`,
+    },
+    ...(seo?.seoKeywords ? { keywords: seo.seoKeywords } : {}),
     openGraph: {
-      title: `${product.title}`,
-      description: `${product.title}`,
-      images: product.thumbnail ? [product.thumbnail] : [],
+      title,
+      description,
+      // thumbnail 은 fileId 문자열만 담고 있다. 그대로 넘기면 metadataBase 기준
+      // 상대경로로 해석돼 https://almondyoung.com/{fileId} 라는 404 URL 이 나간다.
+      // 비어 있으면 키 자체를 빼서 루트 레이아웃의 기본 OG 이미지가 적용되게 한다.
+      ...(product.thumbnail
+        ? { images: [getThumbnailUrl(product.thumbnail)] }
+        : {}),
     },
   }
 }
@@ -69,8 +90,13 @@ export default async function Page(props: Props) {
   }
 
   if (getIsVisibleToMembersOnly(pricedProduct)) {
-    const groups = customer?.groups ?? []
-    if (!isMembershipGroup(groups)) {
+    // customer=null 은 '미인증' 또는 '회원인데 세션이 꼬여 조회 실패'를 모두 포함한다.
+    // 이 경우 하드 404 대신 로그인/재인증으로 유도해 (회원이면) 그대로 상품에 복귀시킨다.
+    // redirect_to 에 현재 상품 경로가 담긴다.
+    if (!customer) {
+      await redirectToLogin()
+    } else if (!isMembershipGroup(customer.groups ?? [])) {
+      // 로그인했지만 진짜 비회원 → 기존대로 숨김
       notFound()
     }
   }

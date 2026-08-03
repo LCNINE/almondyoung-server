@@ -76,10 +76,14 @@ export const FormSelect = React.forwardRef<
                     />
                 </SelectTrigger>
                 <SelectContent
+                    // item-aligned 는 목록이 길면 뷰포트 전체로 늘어나 화면을 덮는다.
+                    position="popper"
+                    sideOffset={4}
                     className={cn(
                         "rounded-md",
                         "shadow-[0px_1px_2px_rgba(0,0,0,0.12),0px_0px_0px_1px_rgba(0,0,0,0.08)]",
-                        "border-0"
+                        "border-0",
+                        "max-h-72 w-[var(--radix-select-trigger-width)]"
                     )}
                 >
                     {options.map((option) => (

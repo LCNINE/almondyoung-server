@@ -16,7 +16,9 @@ export type StoreCancelUnavailableReason =
   | 'already_shipped'
   | 'already_cancelled'
   | 'channel_order'
-  | 'already_processing';
+  | 'already_processing'
+  // 다운로드(exercise)된 디지털 상품이 포함된 주문 — 회수가 불가하므로 셀프 취소 차단
+  | 'digital_downloaded';
 
 export type StoreClaimStatus =
   | 'none'

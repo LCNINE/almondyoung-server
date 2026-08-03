@@ -5,6 +5,7 @@ import { ApplicationException } from './application.exception';
 interface ErrorResponse {
   error?: string;
   message?: string | string[];
+  errors?: unknown;
 }
 
 @Catch()
@@ -18,6 +19,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let errorCode = 'INTERNAL_SERVER_ERROR';
     let message = '서버 오류가 발생했습니다';
     let devMessage: string | undefined;
+    // 검증 실패 상세 (zod issues 등). 이게 응답에서 빠져 있어서
+    // "Invalid pricing rules structure" 만 보이고 어느 룰이 문제인지 알 수 없었다.
+    let errors: unknown;
 
     // 1. Custom ApplicationException 처리
     if (exception instanceof ApplicationException) {
@@ -32,6 +36,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       const errorResponse = exception.getResponse() as ErrorResponse;
       errorCode = this.getErrorCode(status, errorResponse);
       message = this.getErrorMessage(errorResponse);
+      errors = errorResponse?.errors;
       devMessage = `${exception.message} - ${request.method} ${request.url}`;
     }
     // 3. 일반 Error 처리
@@ -51,6 +56,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       success: false,
       error: errorCode,
       message: message,
+      ...(errors !== undefined && { errors }),
       ...(process.env.NODE_ENV !== 'production' &&
         devMessage && {
           devMessage: devMessage,

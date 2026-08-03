@@ -323,6 +323,76 @@
       "when": 1784290811317,
       "tag": "20260717122011_drop-invoices",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1784702981671,
+      "tag": "20260722064941_add-order-list-perf-indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1784992753508,
+      "tag": "20260725151913_narrow-packing-unit-to-integer",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1785161696384,
+      "tag": "20260727141456_add-multi-order-picking-method-and-cart-capacity-check",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1785264313850,
+      "tag": "20260728184513_product-import-async-jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785297925173,
+      "tag": "20260729040525_late_the_captain",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785348626590,
+      "tag": "20260729181026_product-import-cancel-and-failure-cap",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1785438559298,
+      "tag": "20260730190919_product-import-images",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785530128350,
+      "tag": "20260731203528_product-form-exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785563488768,
+      "tag": "20260801055128_product-bulk-sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1785682343368,
+      "tag": "20260802145223_product-master-versions-bulk-session-id",
+      "breakpoints": true
     }
   ]
 }

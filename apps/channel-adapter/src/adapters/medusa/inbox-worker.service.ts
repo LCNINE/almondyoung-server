@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { channelDispatchOperations, inboxEvents, wmsOrderMappings } from '../../schema';
-import { eq, and, gt, inArray, sql } from 'drizzle-orm';
+import { eq, ne, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -15,6 +15,7 @@ import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../t
 import type {
   CategoryChangedPayload,
   ProductMasterDeletedPayload,
+  ProductPublishOrigin,
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
@@ -52,6 +53,26 @@ const INBOX_WORKER_EVENT_TYPES = [
  */
 const BULK_EVENT_TYPES = ['ProductSellableQuantityChanged'] as const;
 
+/**
+ * 대량 작업이 낸 이벤트임을 표시하는 origin 값. eventType 만으로는 갈리지 않는
+ * 경우 — 같은 `ProductMasterActiveVersionChanged` 라도 단건 UI 게시는 고객이
+ * 즉시 체감하고 임포트 일괄게시는 아니다 — 를 위해 존재한다.
+ * 값 판단 기준은 BULK_EVENT_TYPES 와 같다: 지연돼도 "반영이 늦을 뿐" 인가?
+ */
+const BULK_ORIGINS: readonly ProductPublishOrigin[] = ['bulk_import'];
+
+/**
+ * 한 inbox 핸들러가 슬롯을 물 수 있는 최대 시간.
+ *
+ * 채택 배치(variant ≤ 4, 25건)의 실측 호출시간이 약 0.73초, 측정 전체에서 최악이던
+ * 조합이 22초였다 (설계 스펙 §3). 60초는 최악값의 약 3배다.
+ *
+ * 이 값은 동시성 1 전환의 선행조건이다. Medusa SDK 에 요청 타임아웃 훅이 없어
+ * undici 기본값(300초)에 걸려 있었고, 동시성 2 에서는 한 요청이 멈춰도 절반이
+ * 살아있지만 1 에서는 전면 정지가 된다.
+ */
+export const INBOX_HANDLER_TIMEOUT_MS = 60_000;
+
 type InboxWorkerEventType = (typeof INBOX_WORKER_EVENT_TYPES)[number];
 type InboxEventRecord = Omit<typeof inboxEvents.$inferSelect, 'payload' | 'metadata'> & {
   payload: any;
@@ -83,6 +104,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly processingLeaseMs: number;
   private readonly shutdownDrainMs: number;
   private readonly maxRetries: number;
+  private readonly handlerTimeoutMs: number;
 
   constructor(
     private readonly dbService: DbService<ChannelAdapterSchema>,
@@ -100,6 +122,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     this.processingLeaseMs = this.readPositiveIntConfig('INBOX_PROCESSING_LEASE_MS', 15 * 60 * 1000);
     this.shutdownDrainMs = this.readNonNegativeIntConfig('INBOX_SHUTDOWN_DRAIN_MS', 25000);
     this.maxRetries = this.readPositiveIntConfig('INBOX_MAX_RETRIES', 5);
+    this.handlerTimeoutMs = this.readPositiveIntConfig('INBOX_HANDLER_TIMEOUT_MS', INBOX_HANDLER_TIMEOUT_MS);
   }
 
   async onModuleInit() {
@@ -123,7 +146,8 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `Inbox worker started (handlerStartIntervalMs=${this.handlerStartIntervalMs}ms, ` +
         `maxConcurrentHandlers=${this.maxConcurrentHandlers}, processingLeaseMs=${this.processingLeaseMs}ms, ` +
-        `shutdownDrainMs=${this.shutdownDrainMs}ms, maxRetries=${this.maxRetries})`,
+        `shutdownDrainMs=${this.shutdownDrainMs}ms, maxRetries=${this.maxRetries}, ` +
+        `handlerTimeoutMs=${this.handlerTimeoutMs}ms)`,
     );
   }
 
@@ -204,6 +228,18 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
       BULK_EVENT_TYPES.map((eventType) => sql`event_type = ${eventType}`),
       sql` OR `,
     );
+    // 출처가 대량인 행도 같은 후순위 레인으로 보낸다. origin 은 payload 가 아니라
+    // metadata 에서 읽는다 — ORDER BY 표현식은 LIMIT 1 이어도 후보 행 전부에 대해
+    // 계산되는데, payload 는 full snapshot 이라 TOAST 압축해제가 매 틱 붙는다.
+    //
+    // COALESCE 가 핵심이다. 빼면 마커 없는 행에서 `false OR NULL` = NULL 이 되고,
+    // NULL 은 ASC 정렬에서 맨 뒤로 간다 — 정상 이벤트가 통째로 후순위로 밀려
+    // 이 강등이 고치려던 문제가 정확히 반대 방향으로 발생한다. 에러는 안 난다.
+    // metadata 가 NULL 인 행(옛 컨슈머가 쓴 행)도 같은 경로로 흡수된다.
+    const bulkOriginsSql = sql.join(
+      BULK_ORIGINS.map((origin) => sql`COALESCE(metadata->>'origin', '') = ${origin}`),
+      sql` OR `,
+    );
     const excludeInFlightSql =
       inFlightIds.length > 0
         ? sql`AND id NOT IN (${sql.join(
@@ -228,7 +264,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             OR (status = 'processing' AND next_attempt_at <= NOW())
           )
           ${excludeInFlightSql}
-        ORDER BY ${bulkEventTypesSql}, created_at ASC
+        ORDER BY (${bulkEventTypesSql} OR ${bulkOriginsSql}), created_at ASC
         FOR UPDATE SKIP LOCKED
         LIMIT 1
       )
@@ -286,7 +322,39 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     const chainId = event.metadata?.chainId ?? v7();
     const eventId = event.metadata?.messageId ?? generateMessageId();
 
-    await this.eventChainService.runWithChain(chainId, eventId, () => this.doProcessInboxEvent(event));
+    try {
+      await this.withHandlerTimeout(
+        this.eventChainService.runWithChain(chainId, eventId, () => this.doProcessInboxEvent(event)),
+        `inbox handler ${event.id} (${event.eventType})`,
+      );
+    } catch (error) {
+      // doProcessInboxEvent 는 자체 catch 로 handleFailure 를 부르므로, 여기 도달하는 것은
+      // 타임아웃(또는 그 catch 밖에서 터진 예외)뿐이다. 슬롯을 놓아주고 재시도로 넘긴다.
+      await this.handleFailure(event, this.getErrorMessage(error));
+    }
+  }
+
+  /**
+   * ⚠️ 한계: in-flight HTTP 요청을 취소하지는 못한다 (SDK 에 signal 훅이 없다).
+   * 이 타임아웃은 **슬롯을 놓아주는** 장치이고, 원 요청은 undici 기본값까지 배경에서
+   * 계속된다. 그래서 재시도와 원 요청이 겹칠 수 있는데, Medusa 상품 경로는 handle 기준
+   * upsert 라 중복 적용이 같은 결과를 낸다. 완전한 취소가 필요해지면 undici global
+   * dispatcher(headersTimeout/bodyTimeout)로 올려야 하며, 그때는 Naver·Coupang
+   * 클라이언트까지 영향 범위에 들어온다는 점을 함께 판단해야 한다.
+   */
+  private withHandlerTimeout<T>(work: Promise<T>, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`${label} timed out after ${this.handlerTimeoutMs}ms`)),
+        this.handlerTimeoutMs,
+      );
+      timer.unref?.();
+    });
+
+    return Promise.race([work, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    }) as Promise<T>;
   }
 
   private async doProcessInboxEvent(event: InboxEventRecord): Promise<void> {
@@ -298,25 +366,26 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
-      const eventOccurredAt = this.resolveInboxEventOccurredAt(event);
 
       // aggregateId 기준 더 최신 lifecycle 이벤트가 있으면 현재 이벤트 스킵.
       // Product master delete는 늦게 도착한 이전 active-version retry보다 우선해야 한다.
+      //
+      // 비교는 전부 DB 안에서 한다. 예전엔 현재 이벤트의 시각을 JS Date 로 뽑아 바인딩했는데,
+      // 컬럼이 `timestamp without time zone` 이라 postgres.js 가 naive 값을 **로컬 타임존**으로
+      // 파싱한다. UTC 가 아닌 머신(KST 등)에선 그 Date 가 실제보다 9시간 과거가 되어,
+      // 좌변(naive 를 UTC 로 해석)과 어긋나 **이벤트가 자기 자신보다 최신**으로 판정됐다.
+      // 그 결과 모든 이벤트가 즉시 superseded 로 스킵됐다. 같은 이유로 `ne(id, eventId)` 도 필수.
       const [newerEvent] = await this.dbService.db
         .select({ id: inboxEvents.id })
         .from(inboxEvents)
         .where(
           and(
             eq(inboxEvents.aggregateId, aggregateId),
+            ne(inboxEvents.id, eventId),
             inArray(inboxEvents.eventType, supersedingEventTypes),
-            // drizzle 의 gt(raw sql, value) 는 좌변이 raw `sql` fragment 일 때 컬럼 타입 코덱을
-            // 적용하지 못해, Date 객체를 직렬화하지 못한 채 드라이버로 넘겨 ERR_INVALID_ARG_TYPE
-            // ("The string argument ... Received an instance of Date") 로 쿼리가 실패한다.
-            // 우변을 ISO 문자열 + ::timestamptz 로 바인딩하고, 좌변(timestamp without tz)은
-            // UTC instant 로 맞춰 정확히 비교한다.
             gt(
-              sql`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt}) at time zone 'UTC'`,
-              sql`${eventOccurredAt.toISOString()}::timestamptz`,
+              sql`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt})`,
+              sql`(select coalesce(e.event_occurred_at, e.created_at) from inbox_events e where e.id = ${eventId})`,
             ),
             inArray(inboxEvents.status, supersedingStatuses),
           ),
@@ -500,13 +569,19 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           // salesChannel='medusa' 매핑을 함께 확인한 경우에만 Medusa를 호출한다.
           const cancelPayload: { orderId: string; channelOrderId?: string } = event.payload;
 
+          // wmsOrderId 는 채널어댑터가 주문 수집 때 만든 id 라 Core 가 저장한 salesOrder.id 와 다르다.
+          // Core 는 취소 이벤트에 channelOrderId 를 실어 보내므로 그걸 우선 키로 쓴다.
           const [mapping] = await this.dbService.db
             .select({
               salesChannel: wmsOrderMappings.salesChannel,
               channelOrderId: wmsOrderMappings.channelOrderId,
             })
             .from(wmsOrderMappings)
-            .where(eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId))
+            .where(
+              cancelPayload.channelOrderId
+                ? eq(wmsOrderMappings.channelOrderId, cancelPayload.channelOrderId)
+                : eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
+            )
             .limit(1);
 
           if (!mapping) {
@@ -585,24 +660,6 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     return ['pending', 'processing'];
   }
 
-  private resolveInboxEventOccurredAt(event: any): Date {
-    const value =
-      event.eventOccurredAt ??
-      event.metadata?.eventOccurredAt ??
-      event.metadata?.occurredAt ??
-      event.metadata?.timestamp ??
-      event.payload?.changedAt ??
-      event.payload?.deletedAt ??
-      event.createdAt;
-    const date = value instanceof Date ? value : new Date(value);
-
-    if (Number.isNaN(date.getTime())) {
-      throw new Error(`Invalid inbox event occurrence time: eventId=${event.id}, value=${value}`);
-    }
-
-    return date;
-  }
-
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
   private async handleFailure(event: InboxEventRecord, errorMessage: string): Promise<void> {
     const eventId = event.id;
@@ -610,34 +667,62 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
     if (attempts >= this.maxRetries) {
       // 최대 재시도 횟수 초과 → failed (DLQ)
-      await this.dbService.db
-        .update(inboxEvents)
-        .set({
-          status: 'failed',
-          attempts,
-          errorMessage,
-          failedAt: new Date(),
-        })
-        .where(eq(inboxEvents.id, eventId));
+      const applied = await this.applyFailureUpdate(eventId, attempts, {
+        status: 'failed',
+        attempts,
+        errorMessage,
+        failedAt: new Date(),
+      });
+      if (!applied) return;
 
       this.logger.error(`Inbox event failed permanently: ${eventId}`);
     } else {
       const nextAttemptAt = new Date(Date.now() + Math.pow(2, attempts) * 1000);
 
-      await this.dbService.db
-        .update(inboxEvents)
-        .set({
-          status: 'pending',
-          attempts,
-          errorMessage,
-          nextAttemptAt,
-        })
-        .where(eq(inboxEvents.id, eventId));
+      const applied = await this.applyFailureUpdate(eventId, attempts, {
+        status: 'pending',
+        attempts,
+        errorMessage,
+        nextAttemptAt,
+      });
+      if (!applied) return;
 
       this.logger.warn(
         `Inbox event retry scheduled: ${eventId} (attempts: ${attempts}, next: ${nextAttemptAt.toISOString()})`,
       );
     }
+  }
+
+  /**
+   * `handleFailure` 갱신을 "이 호출이 클레임됐을 때의 attempts 세대와 지금 행의 attempts 가
+   * 여전히 같을 때만" 적용한다 — stock_ledgers.version 과 같은 낙관적 잠금 패턴이다.
+   *
+   * `processInboxEvent` 의 타임아웃이 슬롯을 놓아준 뒤에도 방치된 원 요청은 계속 실행되다가
+   * 뒤늦게 자체 에러로 `doProcessInboxEvent` 의 내부 catch 를 태워 handleFailure 를 다시 부를 수
+   * 있다. 그 사이 이벤트가 재클레임돼 처리됐다면(`claimNextInboxEvent` 가 매 클레임마다 attempts
+   * 를 원자적으로 올린다) 지금 행의 attempts 는 이 스냅샷과 더 이상 같지 않다 — 그 경우 이 두 번째
+   * 호출은 이미 끝난(또는 진행 중인) 최신 시도를 스테일 데이터로 덮어써서는 안 되므로 조용히 무시한다.
+   */
+  private async applyFailureUpdate(
+    eventId: string,
+    claimedAttempts: number,
+    values: Partial<typeof inboxEvents.$inferInsert>,
+  ): Promise<boolean> {
+    const updated = await this.dbService.db
+      .update(inboxEvents)
+      .set(values)
+      .where(and(eq(inboxEvents.id, eventId), eq(inboxEvents.attempts, claimedAttempts)))
+      .returning({ id: inboxEvents.id });
+
+    if (updated.length === 0) {
+      this.logger.warn(
+        `Stale failure ignored: inbox event ${eventId} already advanced past attempt ${claimedAttempts} ` +
+          '(reclaimed and reprocessed since an abandoned handler timed out)',
+      );
+      return false;
+    }
+
+    return true;
   }
 
   async onModuleDestroy() {

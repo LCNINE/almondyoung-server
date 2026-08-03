@@ -4,10 +4,15 @@ import Link from "next/link"
 import { useState, useTransition } from "react"
 
 import { signInAction } from "@/app/actions"
+import { PasswordInput } from "@/components/password-input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import {
+  FloatingLabelInput,
+  floatingInputClass,
+} from "@/components/ui/floating-label-input"
+import { Spinner } from "@/components/ui/spinner"
+import { cn } from "@/lib/utils"
 
 type Props = {
   redirectTo: string
@@ -39,7 +44,8 @@ export function SignInForm({
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const formData = new FormData(e.currentTarget)
-    setError(null)
+    // 여기서 setError(null) 하지 않는다 — 결과가 오면 덮어쓴다. 미리 지우면 에러 줄이 사라지며
+    // 버튼이 위로 튀었다가 다시 내려온다 (성공하면 어차피 화면을 떠난다).
     startTransition(async () => {
       const res = await signInAction(formData)
       if (res && !res.ok) setError(res.error)
@@ -47,77 +53,98 @@ export function SignInForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-1 flex-col gap-4">
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <input type="hidden" name="reauthUserId" value={reauthUserId} />
       {hasPrefilledLoginId ? (
         <input type="hidden" name="loginId" value={prefilledLoginId} />
       ) : (
-        <Field>
-          <FieldLabel htmlFor="loginId">아이디</FieldLabel>
-          <Input
-            id="loginId"
-            name="loginId"
-            autoComplete="username"
-            required
-            minLength={4}
-            maxLength={20}
-            pattern="[a-z0-9]+"
-            defaultValue={prefilledLoginId}
-          />
-        </Field>
-      )}
-      <Field>
-        <FieldLabel htmlFor="password">비밀번호</FieldLabel>
-        <Input
-          id="password"
-          name="password"
-          type="password"
-          autoComplete="current-password"
+        <FloatingLabelInput
+          id="loginId"
+          name="loginId"
+          label="아이디"
+          autoComplete="username"
           required
-          minLength={8}
+          minLength={4}
           maxLength={20}
-          autoFocus={isReauth}
+          pattern="[a-z0-9]+"
+          defaultValue={prefilledLoginId}
         />
-      </Field>
+      )}
+      <PasswordInput
+        id="password"
+        name="password"
+        label="비밀번호"
+        placeholder=" "
+        className={floatingInputClass}
+        autoComplete="current-password"
+        required
+        minLength={8}
+        maxLength={20}
+        autoFocus={isReauth}
+      />
       {!isReauth && (
         <label className="flex items-center gap-2 text-sm">
           <Checkbox id="rememberMe" name="rememberMe" />
           자동 로그인 유지
         </label>
       )}
-      {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending}>
-        {pending ? "로그인 중..." : isReauth ? "확인" : "로그인"}
-      </Button>
+
+      {/* mt-auto: 여기서부터 아래(에러·CTA·링크)는 화면 하단에 붙는다 */}
+      <div className="mt-auto flex flex-col gap-2 pt-6">
+        {error && (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          disabled={pending}
+          className={cn(
+            "h-[52px] rounded-lg text-base font-bold",
+            pending && "disabled:bg-primary disabled:text-primary-foreground"
+          )}
+        >
+          {pending ? (
+            <Spinner className="size-5" />
+          ) : isReauth ? (
+            "확인"
+          ) : (
+            "로그인"
+          )}
+        </Button>
+      </div>
       {!isReauth && (
-        <div className="grid grid-cols-2 gap-2">
-          <Button asChild variant="ghost" size="sm" className="w-full">
-            <Link
-              href={`/find-id${
-                redirectTo
-                  ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
-                  : ""
-              }`}
-            >
-              아이디 찾기
-            </Link>
-          </Button>
-          <Button asChild variant="ghost" size="sm" className="w-full">
-            <Link
-              href={`/forgot-password${
-                redirectTo
-                  ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
-                  : ""
-              }`}
-            >
-              비밀번호 찾기
-            </Link>
-          </Button>
+        <div className="flex items-center justify-center gap-4 text-sm">
+          <Link
+            href={`/find-id${
+              redirectTo
+                ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
+                : ""
+            }`}
+            className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            아이디 찾기
+          </Link>
+          <span className="h-3 w-px bg-border" aria-hidden />
+          <Link
+            href={`/forgot-password${
+              redirectTo
+                ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
+                : ""
+            }`}
+            className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          >
+            비밀번호 찾기
+          </Link>
         </div>
       )}
-      {isReauth ? (
-        <Button asChild variant="ghost" size="sm">
+      <Button
+        asChild
+        variant="ghost"
+        className="h-11 text-sm text-muted-foreground"
+      >
+        {isReauth ? (
           <Link
             href={`/signin${
               redirectTo
@@ -127,16 +154,14 @@ export function SignInForm({
           >
             다른 계정으로 로그인
           </Link>
-        </Button>
-      ) : (
-        <Button asChild variant="ghost" size="sm">
+        ) : (
           <Link
             href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
           >
             계정 리스트로 돌아가기
           </Link>
-        </Button>
-      )}
+        )}
+      </Button>
     </form>
   )
 }

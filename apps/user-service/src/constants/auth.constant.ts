@@ -1,4 +1,5 @@
-const JWT_ACCESS_TOKEN_EXPIRATION = '15m'; // 액세스 토큰 만료 시간
+// jsonwebtoken 의 expiresIn 은 '15m' 같은 리터럴 타입이라 env(string) 은 캐스팅이 필요하다.
+const JWT_ACCESS_TOKEN_EXPIRATION = (process.env.JWT_ACCESS_TOKEN_EXPIRATION ?? '15m') as `${number}m`;
 const JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION = '5m'; // 비밀번호 재설정 액세스 토큰 만료 시간
 const JWT_REFRESH_TOKEN_EXPIRATION = '2w'; // 일반 로그인 (2주)
 const JWT_REFRESH_TOKEN_LONG_EXPIRATION = '90d'; // 자동 로그인 (90일)

@@ -6,7 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 
 export default function BankTransferListTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="무통장입금 확인" />
       <BankTransferTable />
     </Container>

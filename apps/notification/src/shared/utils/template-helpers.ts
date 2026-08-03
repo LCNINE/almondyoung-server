@@ -24,6 +24,22 @@ export const formatAmount = (value: unknown): string => {
   return Number.isFinite(n) ? n.toLocaleString('ko-KR') : String(value ?? '-');
 };
 
+/**
+ * 주문 금액 안내 문구. 포인트는 할인이 아니라 결제수단이라 총액에 그대로 포함돼 있어,
+ * 총액만 적으면 포인트로 결제한 고객이 그 금액을 현금으로 낸 것으로 읽는다.
+ *
+ * 템플릿이 '{{total}}원' 으로 단위를 붙이므로 반환값은 반드시 숫자로 끝나야 한다
+ * (템플릿 렌더러는 단순 치환이라 조건 분기를 템플릿 쪽에 둘 수 없다).
+ */
+export const formatOrderTotal = (totalAmount: unknown, pointsAmount?: unknown): string => {
+  const total = Number(totalAmount);
+  const points = Number(pointsAmount);
+  if (!Number.isFinite(total) || !Number.isFinite(points) || points <= 0) {
+    return formatAmount(totalAmount);
+  }
+  return `${formatAmount(total)}원 · 포인트 ${formatAmount(points)}원 사용 · 실결제 ${formatAmount(total - points)}`;
+};
+
 export const formatDueDate = (value: unknown): string => {
   if (typeof value !== 'string') return '-';
   const d = new Date(value);

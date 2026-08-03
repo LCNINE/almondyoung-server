@@ -1,8 +1,9 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { NotFoundError } from '@app/shared';
+import { NotFoundError, ConflictError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM, type ProductSnapshot } from '@packages/event-contracts';
+import type { ProductPublishOrigin } from '@packages/event-contracts/streams/product.stream';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -45,6 +46,15 @@ import { ProductPurchaseConstraintsService } from './product-purchase-constraint
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
+
+/**
+ * publish 를 유발한 작업의 성격. 임포트 워커와 단건 UI 가 같은 `publishVersion` 을
+ * 부르므로 출처는 호출부가 넘겨야 한다 — 넘기지 않으면 payload 에 키가 생기지 않는다.
+ */
+export interface PublishVersionOptions {
+  origin?: ProductPublishOrigin;
+  importSessionId?: string;
+}
 
 @Injectable()
 export class ProductVersionsService {
@@ -255,9 +265,15 @@ export class ProductVersionsService {
    * - 새 active variant 들끼리의 variantCode 충돌 검증 (DB 강제 없음 — 런타임 검증)
    * - 다른 master 의 active 버전과 productCode 충돌 검증 (DB partial unique index와 이중 방어)
    */
-  async publishVersion(versionId: string, tx?: DbTransaction): Promise<void> {
+  async publishVersion(versionId: string, tx?: DbTransaction, options?: PublishVersionOptions): Promise<void> {
     return this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
+
+      // 일괄 세션이 소유한 draft 는 세션이 일괄로 발행한다 — 여기서 한 건씩 나가면 세션의
+      // 진행 상태와 실제 카탈로그가 갈린다(스펙 §3.3). 세션 취소가 이 값을 NULL 로 되돌린다.
+      if (version.bulkSessionId) {
+        throw new ConflictError('일괄 등록 세션이 관리하는 상품입니다. 세션 화면에서 일괄 발행해 주세요.');
+      }
 
       if (version.status !== 'draft' && version.status !== 'inactive') {
         throw new BadRequestException('Only draft or inactive versions can be published');
@@ -306,7 +322,7 @@ export class ProductVersionsService {
       // 이벤트 발행: 추가/삭제된 variant
       await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
-      await this._emitActiveVersionChangedEvent(version, previousActiveVersion, changeReason, tx);
+      await this._emitActiveVersionChangedEvent(version, previousActiveVersion, changeReason, tx, options);
 
       const variantIdsToRecalculate = [
         ...(await this.getVersionVariants(version.masterId, version.id, tx)),
@@ -867,6 +883,9 @@ export class ProductVersionsService {
     const whereClause = and(
       eq(productMasterVersions.status, 'draft'),
       eq(productMasterVersions.draftOwnerId, userId),
+      // 일괄 세션 draft 는 수백 건이라 이 화면에 쏟아지면 작업자가 따로 편집하던 draft 가
+      // 묻혀 화면의 용도 자체가 없어진다(스펙 §3.3). 세션 화면에서 본다.
+      isNull(productMasterVersions.bulkSessionId),
       isNull(productMasterVersions.deletedAt),
       isNull(productMasters.deletedAt),
       filters?.q ? ilike(productMasterVersions.name, `%${filters.q}%`) : undefined,
@@ -913,6 +932,7 @@ export class ProductVersionsService {
     previousActiveVersion: ProductMasterVersion | null,
     changeReason: 'published' | 'unpublished' | 'rollback',
     tx: DbTransaction,
+    options?: PublishVersionOptions,
   ): Promise<void> {
     const assembly =
       changeReason === 'unpublished'
@@ -938,6 +958,9 @@ export class ProductVersionsService {
           changeReason,
           changedAt: new Date().toISOString(),
           snapshot,
+          // 출처가 없으면 키를 만들지 않는다 — 단건 게시의 payload 를 그대로 두기 위해서다.
+          ...(options?.origin ? { origin: options.origin } : {}),
+          ...(options?.importSessionId ? { importSessionId: options.importSessionId } : {}),
         },
       },
       tx,

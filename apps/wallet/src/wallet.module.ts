@@ -59,6 +59,7 @@ import { TossApproveService } from './payment-intents/toss-approve.service';
 import { RefundsService } from './refunds/refunds.service';
 import { RefundsController } from './refunds/refunds.controller';
 import { RefundRequestsService } from './refunds/refund-requests.service';
+import { CoreDigitalGuardClient } from './refunds/core-digital-guard.client';
 import { RefundRequestsController } from './refunds/refund-requests.controller';
 import { RefundRequestsAdminController } from './admin/refund-requests-admin.controller';
 
@@ -153,6 +154,8 @@ export interface AuthenticatedRequest {
   };
   /** Set by WalletAuthGuard when JWT cookie auth succeeds */
   jwtUserId?: string;
+  /** 검증된 고객 access token 원문. 다른 서비스로 되전달할 때 쓴다(헤더/쿠키 어느 쪽이든). */
+  jwtToken?: string;
   /** Set by WalletAuthGuard when API-key auth is used (merchant backend) */
   isApiKeyAuth?: boolean;
 }
@@ -245,6 +248,7 @@ class WalletAuthGuard implements CanActivate {
     if (!jwtUserId) return false;
 
     request.jwtUserId = jwtUserId;
+    request.jwtToken = cookieToken ?? getBearerToken(originalAuthHeader) ?? undefined;
     return true;
   }
 
@@ -486,6 +490,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Refunds
     RefundsService,
     RefundRequestsService,
+    CoreDigitalGuardClient,
 
     // Cash receipts (현금영수증)
     CashReceiptsService,

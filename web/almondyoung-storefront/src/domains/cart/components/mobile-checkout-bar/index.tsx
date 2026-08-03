@@ -81,7 +81,7 @@ export default function MobileCheckoutBar({
   const isDisabled = hasError || selectedCount === 0 || isPendingCheckout
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-99 border-t bg-white lg:hidden">
+    <div className="pb-safe fixed inset-x-0 bottom-0 z-99 border-t bg-white lg:hidden">
       {/* 스크롤 페이드 인디케이터 */}
       <div
         className={`pointer-events-none absolute inset-x-0 -top-12 h-12 bg-linear-to-t from-white to-transparent transition-opacity duration-300 ${

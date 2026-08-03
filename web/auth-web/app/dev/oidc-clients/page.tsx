@@ -1,21 +1,21 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation"
 
-import { Toaster } from "@/components/ui/sonner";
-import { env } from "@/lib/env";
-import { probeListOAuthClients } from "@/lib/user-service-admin";
+import { Toaster } from "@/components/ui/sonner"
+import { env } from "@/lib/env"
+import { probeListOAuthClients } from "@/lib/user-service-admin"
 
-import { DevOidcClientsClient } from "./dev-oidc-clients-client";
-import { NoMasterScopeNotice } from "./no-master-scope";
+import { DevOidcClientsClient } from "./dev-oidc-clients-client"
+import { NoMasterScopeNotice } from "./no-master-scope"
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-dynamic"
 
 export default async function Page() {
-  if (!env.devToolsEnabled) notFound();
+  if (!env.devToolsEnabled) notFound()
 
-  const probe = await probeListOAuthClients();
+  const probe = await probeListOAuthClients()
 
   if (probe.kind === "unauthenticated") {
-    redirect("/signin?next=/dev/oidc-clients");
+    redirect("/signin?next=/dev/oidc-clients")
   }
 
   if (probe.kind === "forbidden") {
@@ -24,7 +24,7 @@ export default async function Page() {
         <Header />
         <NoMasterScopeNotice />
       </main>
-    );
+    )
   }
 
   return (
@@ -33,7 +33,7 @@ export default async function Page() {
       <DevOidcClientsClient initialClients={probe.clients} />
       <Toaster />
     </main>
-  );
+  )
 }
 
 function Header() {
@@ -41,8 +41,9 @@ function Header() {
     <header className="space-y-1">
       <h1 className="text-2xl font-semibold">OIDC Client (dev tools)</h1>
       <p className="text-sm text-muted-foreground">
-        dev stage 전용 화면입니다. 등록된 client_secret 은 생성/회전 직후 1회만 표시되며, 다시 조회할 수 없습니다.
+        dev stage 전용 화면입니다. 등록된 client_secret 은 생성/회전 직후 1회만
+        표시되며, 다시 조회할 수 없습니다.
       </p>
     </header>
-  );
+  )
 }

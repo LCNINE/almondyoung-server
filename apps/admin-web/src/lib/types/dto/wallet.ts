@@ -133,6 +133,8 @@ export interface PendingBankTransferDto {
   bankName: string | null;
   accountNumber: string | null;
   accountHolder: string | null;
+  /** 실제 입금 기대금액 (포인트 차감 후). 스냅샷 없는 구건은 null */
+  depositAmount: number | null;
   /** 토스 가상계좌 발급 건 여부 (false = 구 국민은행 직접입금 건) */
   tossVirtualAccount: boolean;
   createdAt: string;

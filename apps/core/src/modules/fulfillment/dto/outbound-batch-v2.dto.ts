@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { pickingMethodValues, type PickingMethodEnum } from '../../inventory/schema/enum-values';
 
 export type OutboundBatchActor = {
   id: string;
@@ -11,9 +12,17 @@ export class CreateOutboundBatchV2Dto {
   @IsUUID()
   warehouseId: string;
 
-  @ApiProperty({ enum: ['individual'] })
-  @IsIn(['individual'])
-  pickingMethod: 'individual';
+  @ApiProperty({ enum: pickingMethodValues })
+  @IsIn(pickingMethodValues)
+  pickingMethod: PickingMethodEnum;
+
+  /** multi_order 전용 — 카트 바구니 수 = 이 배치에 담을 수 있는 송장 수 상한. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(2147483647)
+  cartCapacity?: number;
 
   @IsString()
   @IsNotEmpty()
@@ -121,7 +130,10 @@ export class OutboundBatchV2DetailDto {
   batchNumber: string;
   name: string;
   warehouseId: string;
-  pickingMethod: string;
+  @ApiProperty({ enum: pickingMethodValues })
+  pickingMethod: PickingMethodEnum;
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  cartCapacity: number | null;
   status: 'created' | 'picking' | 'completed' | 'canceled';
   totalItems: number;
   totalQty: number;
@@ -183,7 +195,10 @@ export class OutboundBatchV2ListItemDto {
   name: string;
   warehouseId: string;
   status: string;
-  pickingMethod: string;
+  @ApiProperty({ enum: pickingMethodValues })
+  pickingMethod: PickingMethodEnum;
+  @ApiPropertyOptional({ type: Number, nullable: true })
+  cartCapacity: number | null;
   totalItems: number;
   totalQty: number;
   scheduledPickingAt: Date | null;
