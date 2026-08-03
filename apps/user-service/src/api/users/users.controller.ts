@@ -82,6 +82,31 @@ export class UsersController {
     return { available };
   }
 
+  @ApiOperation({
+    summary: '닉네임 가입 가능 여부 확인',
+    description: '회원가입 폼의 사전 중복 체크용. 사용자 정보(PII)를 노출하지 않고 가입 가능 여부만 반환한다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'available=true 면 가입 가능(미사용), false 면 이미 사용 중',
+  })
+  @ApiQuery({ name: 'nickname', description: '확인할 닉네임' })
+  @Get('nickname-available')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async checkNicknameAvailable(@Query('nickname') nickname: string): Promise<{ available: boolean }> {
+    const normalized = (nickname ?? '').trim();
+    if (!normalized) {
+      throw new BadRequestException('닉네임을 입력해주세요.');
+    }
+    // 가입 폼(BaseSignUpDto)과 같은 길이 규칙.
+    if (normalized.length < 2 || normalized.length > 8) {
+      throw new BadRequestException('닉네임은 2~8자로 입력해주세요.');
+    }
+    const available = await this.usersService.isNicknameAvailable(normalized);
+    return { available };
+  }
+
   @ApiOperation({ summary: '사용자 권한 정보 조회' })
   @ApiResponse({
     status: 200,

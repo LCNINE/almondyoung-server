@@ -31,6 +31,7 @@ import {
   createDefaultStockPolicy,
   normalizeStockPolicy,
   buildUpsertMatchingPayload,
+  isSameSkuLinks,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
@@ -91,6 +92,8 @@ export function VariantMatchingPanel({
       setLinks(
         currentSkuLinks.map((s) => ({
           skuId: s.skuId,
+          skuName: s.skuName,
+          skuCode: s.skuCode,
           quantity: s.quantity,
         })) ?? []
       );
@@ -125,14 +128,7 @@ export function VariantMatchingPanel({
   const handleSave = async () => {
     const currentSkuLinks = getCurrentSkuLinks(current);
     const currentStockPolicy = current?.stockPolicy ?? variantStockPolicy;
-    const changedLinks =
-      JSON.stringify(links) !==
-      JSON.stringify(
-        currentSkuLinks.map((s) => ({
-          skuId: s.skuId,
-          quantity: s.quantity,
-        })) ?? []
-      );
+    const changedLinks = !isSameSkuLinks(links, currentSkuLinks);
     const changedPolicy =
       JSON.stringify(stockPolicy) !==
       JSON.stringify(normalizeStockPolicy(currentStockPolicy));
@@ -175,12 +171,22 @@ export function VariantMatchingPanel({
       );
     }
 
-    if (promises.length > 0) {
+    if (promises.length === 0) {
+      toast.info('변경된 내용이 없습니다.');
+      return;
+    }
+
+    try {
       await Promise.all(promises);
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.mastersBatchStats([masterId]),
       });
+      toast.success('매칭을 저장했습니다.');
       onSaved?.();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : '매칭 저장에 실패했습니다.'
+      );
     }
   };
 

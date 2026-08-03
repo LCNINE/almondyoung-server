@@ -159,16 +159,45 @@ DB_NAME=medusa bash scripts/sellmate/run.sh live clear-reservations <csv> --appl
 - 멱등: 조건이 `created_at < 기준시각` 고정이고 재정합은 덮어쓰기라 같은 CSV 로 다시 돌려도 안전.
 - **정리 대상이 0건이어도 그냥 돌려라.** 카운터 재정합은 예약 삭제와 별개로 매번 실행된다 (아래).
 
+#### ✅ 끝나고 반드시 확인한다 — "완료" 로그는 증거가 아니다
+
+2026-07-31 에 스크립트가 **"856칸 재정합 완료"** 를 찍고도 실제로는 한 칸도 안 고쳐진 사고가 있었다
+(컬럼만 쓰고 `raw_reserved_quantity` 를 안 건드림). 고객 신고로만 발견됐다. **아래 2줄을 매번 돌린다.**
+
+```bash
+# 1) DB — raw 기준 드리프트가 0 이어야 한다 (컬럼만 보면 안 된다)
+psql "$PGURL" -c "select count(*) from inventory_level
+  where deleted_at is null and (raw_reserved_quantity->>'value')::numeric <> reserved_quantity;"
+
+# 2) 화면이 보는 값 — 회복 대상 handle 하나를 골라 store API 로 확인. 음수면 아직 안 끝난 것이다.
+PK=$(cd deployments/lcnine/services && npx sst secret list --stage live | sed -n 's/^MedusaPublishableKey=//p')
+curl -s -H "x-publishable-api-key: $PK" -G https://medusa.almondyoung.com/store/products \
+  --data-urlencode "handle=<handle>" --data-urlencode "fields=*variants,+variants.inventory_quantity"
+```
+
+2 번이 여전히 옛 값이면 **DB 가 아니라 캐시다** → 아래 「반영은 캐시 2겹」 의 태그 클리어로 간다.
+
 ### ★ `reserved` 는 캐시다 — 예약 원장이 정답
 
 Medusa 는 재고를 두 군데 적는다:
 
-|                                     |                                                  |
-| ----------------------------------- | ------------------------------------------------ |
-| `reservation_item`                  | 예약 **원장**. 행 하나 = 예약 하나 (soft delete) |
-| `inventory_level.reserved_quantity` | 그 합계를 미리 계산해둔 **캐시**                 |
+|                                         |                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------ |
+| `reservation_item`                      | 예약 **원장**. 행 하나 = 예약 하나 (soft delete)                    |
+| `inventory_level.raw_reserved_quantity` | 그 합계 캐시. **Medusa 가 실제로 읽는 값** (BigNumber JSONB)        |
+| `inventory_level.reserved_quantity`     | 같은 값의 **곁다리 사본**. 사람이 psql 로 보기 편한 용도            |
 
 스토어프론트가 보는 값은 `available = stocked − reserved` 라 **캐시가 틀어지면 재고가 있어도 품절**이다.
+
+⚠️ **정합은 반드시 `raw_reserved_quantity` 기준으로 한다.** 일반 컬럼만 고치면 두 가지가 동시에 일어난다:
+화면은 그대로 품절이고, 그러면서 **다음 실행 때 `컬럼 == 살아있는 예약` 이라 드리프트로 잡히지도 않는다** —
+즉 스스로를 은폐한다. `psql` 로 `reserved_quantity` 만 보고 "정상" 이라 판단하면 안 되는 이유다.
+
+```sql
+-- 진짜 어긋남은 이렇게 본다 (raw 기준)
+SELECT count(*) FROM inventory_level
+WHERE deleted_at IS NULL AND (raw_reserved_quantity->>'value')::numeric <> reserved_quantity;
+```
 그래서 Ⓑ 는 `reserved − qty` 로 차감하지 않고 **살아있는 예약 합계로 덮어쓴다**. 차감식은 카운터가 이미
 틀어져 있으면 그 틀어짐을 영구히 이어받지만, 덮어쓰기는 매번 원장이 정답이라 **과거 잔재까지 같이 낫는다.**
 
@@ -178,6 +207,13 @@ Medusa 는 재고를 두 군데 적는다:
 `롤리킹 펌제 1제2제`(179개) 등. 어긋남은 **전부 한 방향**(reserved 과다)이었고 **243칸 전부 예약 삭제 이력이 있는 칸**이라,
 원인은 "예약 생성 경로" 가 아니라 "삭제 시 카운터 미차감" 으로 특정됐다. 덮어쓰기로 바꾼 뒤 전량 복구
 (`available` 음수 61칸 → 0, revalidate 47건).
+
+**2026-07-31 사고 (같은 증상, 다른 층)**: 07-31 04:30 에 Ⓑ 를 돌려 "856칸 재정합 완료" 를 받았는데도
+화면은 그대로 품절이었다. 원인은 스크립트가 `reserved_quantity` **컬럼만** 쓰고 Medusa 가 읽는
+`raw_reserved_quantity` 를 안 고친 것 — `화이트 캐릭터 땅콩 브러쉬` 가 컬럼 0 / raw **390** / stocked 140 →
+store API `inventory_quantity` **−250**. live 전체로 **856칸 / 유령 13,665개**, 그중 재고가 있는데 품절인
+칸 **105개**. 스크립트를 raw 기준으로 고쳐 재실행 + 캐시 무효화로 전량 복구했다.
+**"재정합 완료" 로그는 복구의 증거가 아니다** — store API 값으로 확인해야 한다.
 
 **"재고 있는데 품절" 신고를 받으면 이 카운터를 1번으로 의심한다** — Ⓐ·매칭·플래그를 다 파보기 전에 여기다.
 Ⓑ dry-run 이 한 줄로 알려준다:
@@ -211,10 +247,23 @@ curl -s -H "x-publishable-api-key: $PK" -G https://medusa.almondyoung.com/store/
   --data-urlencode "handle=<handle>" --data-urlencode "fields=*variants,+variants.inventory_quantity"
 ```
 
-**깨는 방법 두 가지:**
+**깨는 방법 세 가지:**
 
 - **(a) 그냥 기다린다 — TTL 최대 1시간.** 리스크 0. 급하지 않으면 이게 정답이다.
-- **(b) Medusa 이벤트를 유발한다** — admin API 로 그 재고칸에 **같은 값**을 다시 써서 무효화를 태운다.
+- **(b) ★ 캐시 태그를 직접 턴다 — `POST /admin/clear-cache`.** 재고 드리프트엔 이게 제일 확실하다.
+
+  ⚠️ **`productIds` / `clearList` 로는 안 풀린다.** `inventory_quantity` 는 상품 응답 캐시가 아니라
+  `getVariantAvailability` 가 **따로** 캐싱한다 (`@medusajs/utils` 의 `product_variant_inventory_items`
+  + `inventory.location_levels.*` 조회, `cache: { enable: true }`). 태그가 재고 엔티티 쪽에 달리므로
+  아래 3개를 줘야 한다. 와일드카드라 **한 번에 전 상품이 풀린다** (2026-07-31 실측).
+
+  ```bash
+  curl -s -u "$K:" -X POST https://medusa.almondyoung.com/admin/clear-cache \
+    -H 'content-type: application/json' \
+    -d '{"tags":["InventoryLevel:list:*","InventoryItem:list:*","ProductVariantInventoryItem:list:*"]}'
+  ```
+
+- **(c) Medusa 이벤트를 유발한다** — admin API 로 그 재고칸에 **같은 값**을 다시 써서 무효화를 태운다.
   (live 쓰기라 승인 필요. `reserved` 는 건드리지 않고 `stocked_quantity` 만 동일값으로 PUT)
 
   ```bash
@@ -244,7 +293,9 @@ WITH live AS (
   SELECT inventory_item_id, location_id, SUM(quantity)::int AS q
   FROM reservation_item WHERE deleted_at IS NULL GROUP BY 1,2
 )
-SELECT DISTINCT p.handle, il.stocked_quantity, il.reserved_quantity, p.title
+-- ⚠️ reserved 는 raw_reserved_quantity 로 읽는다 (일반 컬럼은 사본이라 이미 0 일 수 있다)
+SELECT DISTINCT p.handle, il.stocked_quantity,
+       (il.raw_reserved_quantity->>'value')::numeric AS reserved, p.title
 FROM inventory_level il
 LEFT JOIN live ON live.inventory_item_id = il.inventory_item_id AND live.location_id = il.location_id
 JOIN product_variant_inventory_item pvii
@@ -252,14 +303,25 @@ JOIN product_variant_inventory_item pvii
 JOIN product_variant v ON v.id = pvii.variant_id AND v.deleted_at IS NULL
 JOIN product p ON p.id = v.product_id AND p.deleted_at IS NULL
 WHERE il.deleted_at IS NULL
-  AND il.reserved_quantity > COALESCE(live.q, 0)
+  AND (il.raw_reserved_quantity->>'value')::numeric > COALESCE(live.q, 0)
   AND il.stocked_quantity > 0
-  AND il.stocked_quantity - il.reserved_quantity <= 0
+  AND il.stocked_quantity - (il.raw_reserved_quantity->>'value')::numeric <= 0
 ORDER BY il.stocked_quantity DESC;
 ```
 
-⚠️ **이건 증상 치료다.** 근본은 셀메이트 출고 수집 시 Medusa fulfillment 를 만들거나(또는 예약을 해제)
-하는 것이고, 그 전까지는 매일 Ⓑ 를 돌려야 한다.
+### ⚠️ 이건 증상 치료다 — 그래도 WMS 전까지는 이게 정답
+
+예약이 쌓이는 건 WMS 미연동 기간의 구조적 부산물이다. **매일 Ⓑ 를 돌리면 실제로 사라진다** (스냅샷 시각
+이전 예약 삭제 + 카운터 재정합). WMS 가 붙으면 이 파이프라인 자체가 없어지므로, 여기에 코드를 더 붙이지 않는다.
+
+**❌ fulfillment 를 만들어 푸는 건 오답이다.** Ⓐ `sync-stock` 이 `stocked` 를 **"현재재고 − 미발송주문수"** 로
+맞추므로 미발송 주문분은 **이미 `stocked` 에서 빠져 있다.** 거기에
+
+- 예약(reservation) 이 같은 분량을 또 뺀다 → **이중 차감** (매일 Ⓑ 로 걷어내는 게 이것)
+- fulfillment 까지 만들면 `stocked` 를 한 번 더 깎는다 → **삼중 차감**
+
+예약의 유일한 정당한 역할은 **주문 ~ 다음 `sync-stock` 사이의 oversell 홀드**다. 그래서 스냅샷 이후 예약은
+남겨두고 이전 것만 지운다 — Ⓑ 의 `--before` 가 정확히 그 경계다.
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 

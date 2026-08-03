@@ -93,7 +93,11 @@
     "optionSelectTitle": "{title} 선택",
     "soldOutToast": "선택하신 옵션이 품절되어 담을 수 없습니다.",
     "soldOutToastNamed": "‘{option}’ 옵션이 품절되어 담을 수 없습니다.",
-    "optionPriceExtra": "(+{amount}원)"
+    "optionPriceExtra": "(+{amount}원)",
+    "stockLimitToast": "재고가 {max}개 남았어요. {max}개 이하로 담아주세요.",
+    "stockLimitToastNamed": "‘{option}’ 옵션은 재고가 {max}개 남았어요. {max}개 이하로 담아주세요.",
+    "stockConflictToast": "장바구니에 담긴 수량까지 더하면 재고를 넘어요. 장바구니 수량을 확인해 주세요.",
+    "stockShortToast": "재고가 부족해 담을 수 없어요. 수량을 줄여 다시 시도해 주세요."
   },
   "cartModal": {
     "addingTitle": "장바구니에 담는 중",

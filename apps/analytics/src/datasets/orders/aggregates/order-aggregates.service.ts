@@ -36,6 +36,7 @@ export class OrderAggregatesService {
         salesChannel: string;
         ordersCount: number;
         quantitySold: number;
+        grossRevenue: number;
       }
     >();
 
@@ -45,6 +46,7 @@ export class OrderAggregatesService {
       if (current) {
         current.ordersCount += seed.orderCount;
         current.quantitySold += seed.quantitySold;
+        current.grossRevenue += seed.revenue;
       } else {
         increments.set(key, {
           aggDate: seed.occurredDate,
@@ -52,6 +54,7 @@ export class OrderAggregatesService {
           salesChannel: seed.salesChannel,
           ordersCount: seed.orderCount,
           quantitySold: seed.quantitySold,
+          grossRevenue: seed.revenue,
         });
       }
     }
@@ -67,6 +70,7 @@ export class OrderAggregatesService {
             salesChannel: increment.salesChannel,
             ordersCount: increment.ordersCount,
             quantitySold: increment.quantitySold,
+            grossRevenue: increment.grossRevenue,
             updatedAt: now,
           })
           .onConflictDoUpdate({
@@ -74,6 +78,7 @@ export class OrderAggregatesService {
             set: {
               ordersCount: sql`${aggProductOrderDaily.ordersCount} + ${increment.ordersCount}`,
               quantitySold: sql`${aggProductOrderDaily.quantitySold} + ${increment.quantitySold}`,
+              grossRevenue: sql`${aggProductOrderDaily.grossRevenue} + ${increment.grossRevenue}`,
               updatedAt: now,
             },
           });
@@ -81,5 +86,90 @@ export class OrderAggregatesService {
     }, tx);
 
     this.logger.debug(`OrderCreated aggregates updated: ${increments.size} rows`);
+  }
+
+  async applyCancellation(
+    occurredDate: string,
+    salesChannel: string,
+    masterAmounts: Array<{ masterId: string; amount: number }>,
+    tx?: DbTx,
+  ): Promise<void> {
+    if (masterAmounts.length === 0) {
+      return;
+    }
+
+    await this.inTx(async (executor) => {
+      const now = new Date();
+      for (const { masterId, amount } of masterAmounts) {
+        await executor
+          .insert(aggProductOrderDaily)
+          .values({
+            aggDate: occurredDate,
+            masterId,
+            salesChannel,
+            ordersCount: 0,
+            quantitySold: 0,
+            cancelledAmount: amount,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [aggProductOrderDaily.aggDate, aggProductOrderDaily.masterId, aggProductOrderDaily.salesChannel],
+            set: {
+              cancelledAmount: sql`${aggProductOrderDaily.cancelledAmount} + ${amount}`,
+              updatedAt: now,
+            },
+          });
+      }
+    }, tx);
+
+    this.logger.debug(`OrderCancelled aggregates updated: ${masterAmounts.length} rows`);
+  }
+
+  /**
+   * 환불액을 상품 단위 `refundedAmount` 에 누적한다.
+   *
+   * `applyCancellation` 과 같은 모양이고 컬럼만 다르다. 이 메서드가 생기기 전까지
+   * `agg_product_order_daily.refundedAmount` 는 **컬럼만 있고 쓰는 곳이 없었다** —
+   * 채널 단위(`agg_channel_daily`)만 환불을 반영해서, 상품 순매출은 환불을 빼먹고
+   * 채널 순매출은 반영하는 상태였다. 두 테이블이 정확히 환불 총액만큼 어긋난다.
+   *
+   * `grossRevenue` 는 여기서도 건드리지 않는다 — 총매출은 감액하지 않고 감액분을 별도
+   * 컬럼에 쌓아 조회 시점에 빼는 것이 이 스키마의 규약이다.
+   */
+  async applyRefund(
+    occurredDate: string,
+    salesChannel: string,
+    masterAmounts: Array<{ masterId: string; amount: number }>,
+    tx?: DbTx,
+  ): Promise<void> {
+    if (masterAmounts.length === 0) {
+      return;
+    }
+
+    await this.inTx(async (executor) => {
+      const now = new Date();
+      for (const { masterId, amount } of masterAmounts) {
+        await executor
+          .insert(aggProductOrderDaily)
+          .values({
+            aggDate: occurredDate,
+            masterId,
+            salesChannel,
+            ordersCount: 0,
+            quantitySold: 0,
+            refundedAmount: amount,
+            updatedAt: now,
+          })
+          .onConflictDoUpdate({
+            target: [aggProductOrderDaily.aggDate, aggProductOrderDaily.masterId, aggProductOrderDaily.salesChannel],
+            set: {
+              refundedAmount: sql`${aggProductOrderDaily.refundedAmount} + ${amount}`,
+              updatedAt: now,
+            },
+          });
+      }
+    }, tx);
+
+    this.logger.debug(`OrderRefundCreated aggregates updated: ${masterAmounts.length} rows`);
   }
 }

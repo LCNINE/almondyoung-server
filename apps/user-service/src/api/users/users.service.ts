@@ -162,6 +162,12 @@ export class UsersService {
     return !user;
   }
 
+  // 닉네임 가입 가능 여부 확인 (isEmailAvailable 과 동일한 계약 — boolean 만, PII 미노출)
+  async isNicknameAvailable(nickname: string, tx?: DbTransaction): Promise<boolean> {
+    const user = await this.findUserByNickname(nickname, tx);
+    return !user;
+  }
+
   // 휴대폰 번호로 사용자 찾기 (복수 가능)
   async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);

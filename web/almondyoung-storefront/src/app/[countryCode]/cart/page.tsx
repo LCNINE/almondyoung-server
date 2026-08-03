@@ -45,10 +45,8 @@ export default async function Cart({
   }
 
   // draft/미게시(판매중단)된 상품을 직접 감지한다. (배송수단 throw 에 의존하지 않음)
-  const { variantIds: unavailableVariantIds } = await findUnavailableLineItems(
-    cart,
-    countryCode
-  )
+  const { variantIds: unavailableVariantIds, availableByVariantId } =
+    await findUnavailableLineItems(cart, countryCode)
 
   // 배송 옵션 자동 설정. draft 상품이 있으면 throw 할 수 있으나, 그대로 두면
   // 장바구니까지 500 으로 깨져 상품을 삭제할 화면조차 못 본다. 잡아서 원본 카트를
@@ -63,6 +61,10 @@ export default async function Cart({
   }
 
   return (
-    <CartTemplate cart={cart} unavailableVariantIds={unavailableVariantIds} />
+    <CartTemplate
+      cart={cart}
+      unavailableVariantIds={unavailableVariantIds}
+      availableByVariantId={availableByVariantId}
+    />
   )
 }

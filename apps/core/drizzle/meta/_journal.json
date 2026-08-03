@@ -372,6 +372,27 @@
       "when": 1785438559298,
       "tag": "20260730190919_product-import-images",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1785530128350,
+      "tag": "20260731203528_product-form-exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1785563488768,
+      "tag": "20260801055128_product-bulk-sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1785682343368,
+      "tag": "20260802145223_product-master-versions-bulk-session-id",
+      "breakpoints": true
     }
   ]
 }

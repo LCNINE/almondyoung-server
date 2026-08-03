@@ -5,10 +5,15 @@ import * as React from "react"
 import { sendRecoveryCodeAction } from "@/app/actions"
 import { BirthdayInput } from "@/components/birthday-input"
 import { PhoneNumberInput } from "@/components/phone-number-input"
-import { StepFooter } from "@/components/signup/account-step"
+import {
+  AvailabilityStatus,
+  StepFooter,
+  isConfirmed,
+} from "@/components/signup/account-step"
 import type { StepValues } from "@/components/signup/types"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { useNicknameAvailability } from "@/hooks/use-availability"
 import {
   FloatingField,
   FloatingLabelInput,
@@ -29,6 +34,8 @@ export function ProfileStep({
   pending: boolean
 }) {
   const formRef = React.useRef<HTMLFormElement>(null)
+  const [nickname, setNickname] = React.useState(defaultValues.nickname ?? "")
+  const nicknameAvailability = useNicknameAvailability(nickname)
   const [codeSent, setCodeSent] = React.useState(false)
   const [sending, setSending] = React.useState(false)
   const [sendError, setSendError] = React.useState<string | null>(null)
@@ -72,15 +79,27 @@ export function ProfileStep({
         maxLength={8}
         autoComplete="name"
       />
-      <FloatingLabelInput
-        id="nickname"
-        name="nickname"
-        label="닉네임"
-        defaultValue={defaultValues.nickname}
-        required
-        minLength={2}
-        maxLength={8}
-      />
+      <Field data-invalid={nicknameAvailability.status === "taken" || undefined}>
+        <FloatingLabelInput
+          id="nickname"
+          name="nickname"
+          label="닉네임"
+          required
+          minLength={2}
+          maxLength={8}
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          aria-invalid={nicknameAvailability.status === "taken" || undefined}
+          aria-describedby="nicknameStatus"
+        />
+        <AvailabilityStatus
+          id="nicknameStatus"
+          state={nicknameAvailability}
+          availableText="사용 가능한 닉네임입니다."
+          takenText="이미 사용 중인 닉네임입니다."
+          checkingText="닉네임 사용 가능 여부 확인 중..."
+        />
+      </Field>
 
       <Field>
         {/* 셀렉트 3개라 라벨이 떠오를 자리가 없다 — 여기만 일반 라벨을 쓴다. */}
@@ -160,7 +179,7 @@ export function ProfileStep({
       <StepFooter
         onBack={onBack}
         nextLabel="가입하기"
-        nextDisabled={!codeSent}
+        nextDisabled={!codeSent || !isConfirmed(nicknameAvailability)}
         pending={pending}
       />
       {!codeSent && (
