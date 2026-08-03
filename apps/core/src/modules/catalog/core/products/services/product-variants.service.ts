@@ -633,20 +633,15 @@ export class ProductVariantsService {
 
     if (!rows.length) return [];
 
-    // 변형이 여러 active 버전에 속할 경우 첫 번째만 사용
+    // master 당 active 는 1개(publishVersion 이 기존 active 를 내린다)라 후보는 사실상 하나다.
     const variantMap = new Map<string, (typeof rows)[0]>();
     for (const row of rows) {
       if (!variantMap.has(row.variantId)) variantMap.set(row.variantId, row);
     }
     const uniqueRows = Array.from(variantMap.values());
 
-    // 옵션 표시명 일괄 조회.
-    //
-    // 조인을 **위에서 고른 (variant, version) 쌍**으로 좁히는 것이 핵심이다. 옵션 그룹·값은
-    // master 스코프가 없는 식별자 행이고 이름은 (master, version) 별 display 테이블에만 있어서,
-    // 배치의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 표시명까지 붙는다.
-    // 쌍으로 좁히지 않고 productMasterVariants 만 조인해도 안 된다 — 한 variant 가 여러 active
-    // 버전에 매달리면 위 dedupe 가 고른 버전 말고 다른 버전의 표시명이 함께 딸려온다.
+    // 옵션 표시명 조회. 옵션 값은 master 스코프가 없고 이름만 (master, version) 별로 있어서,
+    // versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 이름이 붙는다.
     const variantVersionPairs = sql.join(
       uniqueRows.map((row) => sql`(${row.variantId}::uuid, ${row.versionId}::uuid)`),
       sql`, `,

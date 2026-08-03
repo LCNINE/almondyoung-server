@@ -26,16 +26,11 @@ import {
 import { outboxEvents, productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
 
 /**
- * 목록 API 의 **품목 미리보기**(`ProductSummaryDto.variantPreviews`)를 실 Postgres + 실 Nest DI 로 구동한다.
- *
- * 이 경로는 단위 스펙으로 잠글 수 없다 — 검증 대상이 SQL 그 자체(윈도우 상한, 표시명 조인 범위)라
- * DB 를 목으로 바꾸면 아무것도 확인하지 못한다. 특히 3번 케이스는 **옵션 값 행을 공유하는 두 상품이
- * 같은 페이지에 있을 때** 표시명이 섞이지 않는지를 본다: `product_option_groups`/`product_option_values`
- * 는 master 스코프가 없는 식별자 행이고 이름은 `(master, version)` 별 display 테이블에만 있으므로,
- * 표시명 조인을 페이지의 versionIds 전체로 걸면 남의 상품 이름이 붙는다.
+ * 목록 API 의 품목 미리보기를 실 Postgres + 실 Nest DI 로 구동한다. 검증 대상이 SQL 자체(윈도우
+ * 상한, 표시명 조인 범위)라 DB 를 목으로 두면 아무것도 확인하지 못한다.
  *
  * 실행: `npm run test:variant-preview:integration`
- * (전용 scratch DB `variant_preview_scratch` — 이 스위트는 롤백이 아니라 커밋한다)
+ * 전용 scratch DB `variant_preview_scratch` — 롤백이 아니라 커밋한다.
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 if (process.env.REQUIRE_VARIANT_PREVIEW_DB === '1' && !DATABASE_URL) {
@@ -156,10 +151,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
 
   // ─────────────────────────── 픽스처 ───────────────────────────
 
-  /**
-   * 발행까지 끝난 상품 하나를 **서비스 경로로만** 만든다. 옵션 그룹을 주면 조합만큼 품목이 생긴다.
-   * 손으로 INSERT 하면 실제 쓰기 경로가 만드는 행 모양과 갈라져 거짓 초록이 된다.
-   */
+  /** 발행까지 끝난 상품 하나. 손으로 INSERT 하면 실제 행 모양과 갈라져 거짓 초록이 된다. */
   async function seedProduct(opts: {
     name: string;
     basePrice: number;
@@ -222,11 +214,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     return { masterId: draft.masterId, versionId: draft.id };
   }
 
-  /**
-   * 품목 이름을 비운다. 쓰기 경로는 `variant_name` 을 채워 두지만(예: '블루 × 100ml'),
-   * cafe24 이관분처럼 이름이 비어 있는 상품이 목록의 다수다 — 그 경우에만 옵션 표시명 조인이
-   * 돌아가므로, 그 경로를 검증하려면 이름을 비운 상태를 만들어야 한다.
-   */
+  /** 쓰기 경로는 variant_name 을 채우므로(예: '블루 × 100ml') 비워야 옵션 표시명 조인이 돈다. */
   async function clearVariantNames(versionId: string): Promise<void> {
     const rows = await db.run((trx) =>
       trx
@@ -248,11 +236,8 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
   }
 
   /**
-   * 두 상품이 **같은 옵션 값 행을 공유**하게 만든다 — 스키마상 허용되는 모양이다(옵션 그룹·값에는
-   * master 스코프가 없고 이름은 (master, version) 별 display 테이블에만 있다). 이 상태에서
-   * 표시명 조인을 배치의 versionIds 전체로 걸면 서로의 이름이 붙는다.
-   *
-   * 두 상품의 품목 이름도 비운다 — 이름이 있으면 표시명 조인 자체가 돌지 않아 아무것도 검증하지 못한다.
+   * 두 상품이 같은 옵션 값 행을 공유하게 만든다(스키마상 허용). 이 상태에서 표시명 조인을
+   * versionIds 전체로 걸면 서로의 이름이 붙는다.
    */
   async function shareOptionValueRows(versionIdA: string, versionIdB: string): Promise<void> {
     await clearVariantNames(versionIdA);
@@ -283,8 +268,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
         .where(eq(productOptionValues.id, sharedValue.optionValueId)),
     );
 
-    // B 의 품목이 A 의 옵션 값 행을 가리키게 바꾸고, B 의 표시명도 그 값·그 그룹에 달아 준다.
-    // → 하나의 option_value_id 에 A 버전용 '빨강', B 버전용 '파랑' 표시명이 동시에 존재한다.
+    // 하나의 option_value_id 에 A 버전용 '빨강', B 버전용 '파랑' 표시명이 동시에 존재하게 된다.
     await db.run(async (trx) => {
       await trx
         .update(variantOptionValues)
@@ -354,9 +338,6 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
   });
 
   it('옵션 값 행을 공유하는 다른 상품이 같은 페이지에 있어도 표시명이 섞이지 않는다', async () => {
-    // 두 상품을 같은 페이지에서 조회하고, 두 번째 상품이 첫 번째의 옵션 값 행을 **재사용**하게 만든다.
-    // 스키마상 허용되는 모양이다(옵션 값에는 master 스코프가 없다). 이 상태에서 표시명 조인을
-    // versionIds 전체로 걸면 A 품목에 B 의 표시명이 붙어 이름이 중복·오표기된다.
     const productA = await seedProduct({
       name: '표시명 공유 A',
       basePrice: 10000,
@@ -379,8 +360,6 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
   });
 
   it('findByIds 의 옵션 라벨도 옵션 값 행을 공유하는 다른 상품과 섞이지 않는다', async () => {
-    // 매칭 화면이 쓰는 배치 조회(ProductVariantsService.findByIds)도 목록과 같은 표시명 조인을
-    // 한다 — 배치의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 이름이 붙는다.
     const productA = await seedProduct({
       name: '라벨 공유 A',
       basePrice: 10000,
