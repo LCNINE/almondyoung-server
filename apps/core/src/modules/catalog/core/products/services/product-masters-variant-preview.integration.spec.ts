@@ -61,6 +61,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
   let masters: import('./product-masters.service').ProductMastersService;
   let versions: import('./product-versions.service').ProductVersionsService;
   let pricing: import('../../pricing/pricing.service').PricingService;
+  let variants: import('./product-variants.service').ProductVariantsService;
 
   const createdMasterIds = new Set<string>();
 
@@ -80,6 +81,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     const { ProductMastersService } = await import('./product-masters.service');
     const { ProductVersionsService } = await import('./product-versions.service');
     const { PricingService } = await import('../../pricing/pricing.service');
+    const { ProductVariantsService } = await import('./product-variants.service');
 
     moduleRef = await Test.createTestingModule({
       imports: [
@@ -103,6 +105,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     masters = moduleRef.get(ProductMastersService, { strict: false });
     versions = moduleRef.get(ProductVersionsService, { strict: false });
     pricing = moduleRef.get(PricingService, { strict: false });
+    variants = moduleRef.get(ProductVariantsService, { strict: false });
   });
 
   afterAll(async () => {
@@ -244,6 +247,60 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     );
   }
 
+  /**
+   * 두 상품이 **같은 옵션 값 행을 공유**하게 만든다 — 스키마상 허용되는 모양이다(옵션 그룹·값에는
+   * master 스코프가 없고 이름은 (master, version) 별 display 테이블에만 있다). 이 상태에서
+   * 표시명 조인을 배치의 versionIds 전체로 걸면 서로의 이름이 붙는다.
+   *
+   * 두 상품의 품목 이름도 비운다 — 이름이 있으면 표시명 조인 자체가 돌지 않아 아무것도 검증하지 못한다.
+   */
+  async function shareOptionValueRows(versionIdA: string, versionIdB: string): Promise<void> {
+    await clearVariantNames(versionIdA);
+    await clearVariantNames(versionIdB);
+
+    const [sharedValue] = await db.run((trx) =>
+      trx
+        .select({ optionValueId: productOptionValueDisplays.optionValueId })
+        .from(productOptionValueDisplays)
+        .where(eq(productOptionValueDisplays.versionId, versionIdA)),
+    );
+    const [valueOfB] = await db.run((trx) =>
+      trx
+        .select({ optionValueId: productOptionValueDisplays.optionValueId, id: productOptionValueDisplays.id })
+        .from(productOptionValueDisplays)
+        .where(eq(productOptionValueDisplays.versionId, versionIdB)),
+    );
+    const [groupOfB] = await db.run((trx) =>
+      trx
+        .select({ id: productOptionGroupDisplays.id })
+        .from(productOptionGroupDisplays)
+        .where(eq(productOptionGroupDisplays.versionId, versionIdB)),
+    );
+    const [sharedGroup] = await db.run((trx) =>
+      trx
+        .select({ optionGroupId: productOptionValues.optionGroupId })
+        .from(productOptionValues)
+        .where(eq(productOptionValues.id, sharedValue.optionValueId)),
+    );
+
+    // B 의 품목이 A 의 옵션 값 행을 가리키게 바꾸고, B 의 표시명도 그 값·그 그룹에 달아 준다.
+    // → 하나의 option_value_id 에 A 버전용 '빨강', B 버전용 '파랑' 표시명이 동시에 존재한다.
+    await db.run(async (trx) => {
+      await trx
+        .update(variantOptionValues)
+        .set({ optionValueId: sharedValue.optionValueId })
+        .where(eq(variantOptionValues.optionValueId, valueOfB.optionValueId));
+      await trx
+        .update(productOptionValueDisplays)
+        .set({ optionValueId: sharedValue.optionValueId })
+        .where(eq(productOptionValueDisplays.id, valueOfB.id));
+      await trx
+        .update(productOptionGroupDisplays)
+        .set({ optionGroupId: sharedGroup.optionGroupId })
+        .where(eq(productOptionGroupDisplays.id, groupOfB.id));
+    });
+  }
+
   async function listPreviews(masterIds: string[]) {
     const result = await masters.getMasters({ page: 1, limit: 50, ids: masterIds, mode: 'all' });
     return new Map(
@@ -311,57 +368,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
       options: [{ group: '색상', values: ['파랑'] }],
     });
 
-    // 이름이 비어 있어야 표시명 조인이 돈다 — 이 케이스가 검증하려는 경로다.
-    await clearVariantNames(productA.versionId);
-    await clearVariantNames(productB.versionId);
-
-    const [sharedValue] = await db.run((trx) =>
-      trx
-        .select({ optionValueId: productOptionValueDisplays.optionValueId })
-        .from(productOptionValueDisplays)
-        .where(eq(productOptionValueDisplays.versionId, productA.versionId)),
-    );
-    const [valueOfB] = await db.run((trx) =>
-      trx
-        .select({
-          optionValueId: productOptionValueDisplays.optionValueId,
-          id: productOptionValueDisplays.id,
-        })
-        .from(productOptionValueDisplays)
-        .where(eq(productOptionValueDisplays.versionId, productB.versionId)),
-    );
-    const [groupOfB] = await db.run((trx) =>
-      trx
-        .select({
-          optionGroupId: productOptionGroupDisplays.optionGroupId,
-          id: productOptionGroupDisplays.id,
-        })
-        .from(productOptionGroupDisplays)
-        .where(eq(productOptionGroupDisplays.versionId, productB.versionId)),
-    );
-
-    // B 의 품목이 A 의 옵션 값 행을 가리키게 바꾸고, B 의 표시명도 그 값·그 그룹에 달아 준다.
-    // → 하나의 option_value_id 에 A 버전용 '빨강', B 버전용 '파랑' 표시명이 동시에 존재한다.
-    const [sharedGroup] = await db.run((trx) =>
-      trx
-        .select({ optionGroupId: productOptionValues.optionGroupId })
-        .from(productOptionValues)
-        .where(eq(productOptionValues.id, sharedValue.optionValueId)),
-    );
-    await db.run(async (trx) => {
-      await trx
-        .update(variantOptionValues)
-        .set({ optionValueId: sharedValue.optionValueId })
-        .where(eq(variantOptionValues.optionValueId, valueOfB.optionValueId));
-      await trx
-        .update(productOptionValueDisplays)
-        .set({ optionValueId: sharedValue.optionValueId })
-        .where(eq(productOptionValueDisplays.id, valueOfB.id));
-      await trx
-        .update(productOptionGroupDisplays)
-        .set({ optionGroupId: sharedGroup.optionGroupId })
-        .where(eq(productOptionGroupDisplays.id, groupOfB.id));
-    });
+    await shareOptionValueRows(productA.versionId, productB.versionId);
 
     const listed = await listPreviews([productA.masterId, productB.masterId]);
     const namesOfA = listed.get(productA.masterId)!.aggregate.variantPreviews.map((v) => v.name);
@@ -369,8 +376,46 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
 
     expect(namesOfA).toEqual(['빨강']);
     expect(namesOfB).toEqual(['파랑']);
-    // 그룹 표시명도 같은 이유로 상품별로 좁혀져야 한다.
-    expect(groupOfB.optionGroupId).toBeTruthy();
+  });
+
+  it('findByIds 의 옵션 라벨도 옵션 값 행을 공유하는 다른 상품과 섞이지 않는다', async () => {
+    // 매칭 화면이 쓰는 배치 조회(ProductVariantsService.findByIds)도 목록과 같은 표시명 조인을
+    // 한다 — 배치의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 이름이 붙는다.
+    const productA = await seedProduct({
+      name: '라벨 공유 A',
+      basePrice: 10000,
+      options: [{ group: '색상', values: ['빨강'] }],
+    });
+    const productB = await seedProduct({
+      name: '라벨 공유 B',
+      basePrice: 20000,
+      options: [{ group: '색상', values: ['파랑'] }],
+    });
+    await shareOptionValueRows(productA.versionId, productB.versionId);
+
+    const variantsOfA = await db.run((trx) =>
+      trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(eq(productMasterVariants.versionId, productA.versionId)),
+    );
+    const variantsOfB = await db.run((trx) =>
+      trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(eq(productMasterVariants.versionId, productB.versionId)),
+    );
+
+    const found = await variants.findByIds([
+      ...variantsOfA.map((row) => row.variantId),
+      ...variantsOfB.map((row) => row.variantId),
+    ]);
+
+    const labelOfA = found.find((item) => item.id === variantsOfA[0].variantId)?.optionLabel;
+    const labelOfB = found.find((item) => item.id === variantsOfB[0].variantId)?.optionLabel;
+
+    expect(labelOfA).toBe('빨강');
+    expect(labelOfB).toBe('파랑');
   });
 
   it('품목이 상한을 넘으면 잘라서 내려주되 variantCount 는 전체 개수를 유지한다', async () => {
