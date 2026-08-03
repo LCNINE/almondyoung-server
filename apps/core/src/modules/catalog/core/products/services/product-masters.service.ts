@@ -67,11 +67,7 @@ import {
 /** 공급처 필터에서 '미지정'(supplier_id IS NULL) 을 가리키는 sentinel. */
 export const UNASSIGNED_SUPPLIER = 'unassigned';
 
-/**
- * 목록에 내려주는 상품당 품목 미리보기 최대 개수.
- * 품목이 수십 개인 상품이 섞여도 응답 크기가 상품 수에 선형으로만 늘도록 SQL 단계에서 자른다.
- * 잘린 나머지는 variantCount 와의 차이로 화면에서 '+N개 더보기' 로 표시한다.
- */
+/** 목록에 내려주는 상품당 품목 미리보기 상한. 잘린 나머지는 variantCount 와의 차이로 알 수 있다. */
 export const VARIANT_PREVIEW_LIMIT = 20;
 
 export type VariantPreview = {
@@ -816,9 +812,7 @@ export class ProductMastersService {
         .where(inArray(productMasterVariants.versionId, versionIds))
         .groupBy(productMasterVariants.versionId);
 
-      // 목록에서 품목명·품목가를 펼쳐 보여주기 위한 미리보기 (버전당 상한 있음).
-      // page 없이 부르는 전량 조회(엑셀·배치)는 화면 렌더가 목적이 아니고 상품 수가 만 단위라
-      // 미리보기를 만들지 않는다 — 만들면 응답이 상품수×품목수로 부푼다.
+      // 전량 조회(엑셀·배치)는 화면 렌더가 아니고 상품 수가 만 단위라 미리보기를 만들지 않는다.
       const variantPreviewMap = returnAll
         ? new Map<string, VariantPreview[]>()
         : await this.getVariantPreviewsByVersionIds(versionIds, trx);
@@ -867,10 +861,7 @@ export class ProductMastersService {
     }, tx);
   }
 
-  /**
-   * 목록용 품목 미리보기 — 버전당 최대 VARIANT_PREVIEW_LIMIT 개.
-   * 이름은 수동 지정값 우선, 없으면 옵션값 표시명을 옵션그룹 순서대로 이어 만든다(상세 화면과 같은 규칙).
-   */
+  /** 이름은 수동 지정값 우선, 없으면 옵션값 표시명을 옵션그룹 순서대로 잇는다(상세 화면과 같은 규칙). */
   private async getVariantPreviewsByVersionIds(
     versionIds: string[],
     trx: DbTransaction,
@@ -921,9 +912,8 @@ export class ProductMastersService {
     const optionLabelMap = new Map<string, string[]>();
 
     if (unnamedVariantIds.length > 0) {
-      // 옵션 그룹/값은 master 스코프가 없는 식별자 행이고 표시명만 (master, version) 별로 있다.
-      // 따라서 표시명 조인은 반드시 그 품목이 속한 master+version 으로 좁혀야 한다 —
-      // 페이지의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 표시명까지 붙는다.
+      // 옵션 값은 master 스코프가 없고 이름만 (master, version) 별로 있어서, 페이지의 versionIds
+      // 전체로 조인하면 값 행을 공유하는 다른 상품의 이름이 붙는다.
       const optionRows = await trx
         .select({
           variantId: variantOptionValues.variantId,
