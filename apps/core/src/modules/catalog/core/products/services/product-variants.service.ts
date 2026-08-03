@@ -639,10 +639,19 @@ export class ProductVariantsService {
       if (!variantMap.has(row.variantId)) variantMap.set(row.variantId, row);
     }
     const uniqueRows = Array.from(variantMap.values());
-    const variantIds = uniqueRows.map((r) => r.variantId);
-    const versionIds = [...new Set(uniqueRows.map((r) => r.versionId))];
 
-    // 옵션 표시명 일괄 조회
+    // 옵션 표시명 일괄 조회.
+    //
+    // 조인을 **위에서 고른 (variant, version) 쌍**으로 좁히는 것이 핵심이다. 옵션 그룹·값은
+    // master 스코프가 없는 식별자 행이고 이름은 (master, version) 별 display 테이블에만 있어서,
+    // 배치의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 표시명까지 붙는다.
+    // 쌍으로 좁히지 않고 productMasterVariants 만 조인해도 안 된다 — 한 variant 가 여러 active
+    // 버전에 매달리면 위 dedupe 가 고른 버전 말고 다른 버전의 표시명이 함께 딸려온다.
+    const variantVersionPairs = sql.join(
+      uniqueRows.map((row) => sql`(${row.variantId}::uuid, ${row.versionId}::uuid)`),
+      sql`, `,
+    );
+
     const optionRows = await client
       .select({
         variantId: variantOptionValues.variantId,
@@ -650,26 +659,28 @@ export class ProductVariantsService {
         groupSortOrder: productOptionGroupDisplays.sortOrder,
         valueSortOrder: productOptionValueDisplays.sortOrder,
       })
-      .from(variantOptionValues)
+      .from(productMasterVariants)
+      .innerJoin(variantOptionValues, eq(variantOptionValues.variantId, productMasterVariants.variantId))
       .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
       .innerJoin(
         productOptionValueDisplays,
         and(
-          eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-          inArray(productOptionValueDisplays.versionId, versionIds),
+          eq(productOptionValueDisplays.optionValueId, productOptionValues.id),
+          eq(productOptionValueDisplays.masterId, productMasterVariants.masterId),
+          eq(productOptionValueDisplays.versionId, productMasterVariants.versionId),
           eq(productOptionValueDisplays.locale, 'ko-KR'),
         ),
       )
-      .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
       .innerJoin(
         productOptionGroupDisplays,
         and(
-          eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-          inArray(productOptionGroupDisplays.versionId, versionIds),
+          eq(productOptionGroupDisplays.optionGroupId, productOptionValues.optionGroupId),
+          eq(productOptionGroupDisplays.masterId, productMasterVariants.masterId),
+          eq(productOptionGroupDisplays.versionId, productMasterVariants.versionId),
           eq(productOptionGroupDisplays.locale, 'ko-KR'),
         ),
       )
-      .where(inArray(variantOptionValues.variantId, variantIds))
+      .where(sql`(${productMasterVariants.variantId}, ${productMasterVariants.versionId}) IN (${variantVersionPairs})`)
       .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
 
     const optionMap = new Map<string, string[]>();
