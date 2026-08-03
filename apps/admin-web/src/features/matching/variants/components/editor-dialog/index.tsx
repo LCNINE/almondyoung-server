@@ -28,7 +28,9 @@ import {
   createDefaultStockPolicy,
   normalizeStockPolicy,
   buildUpsertMatchingPayload,
+  isSameSkuLinks,
 } from '@/lib/services/matching';
+import { toast } from 'sonner';
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
 import { StrategySection } from '@/features/matching/products/components/variant-editor-dialog/strategy-section';
 import { StockPolicySection } from '@/features/matching/products/components/variant-editor-dialog/stock-policy-section';
@@ -69,6 +71,8 @@ export function VariantMatchingEditorDialog({
       setLinks(
         currentSkuLinks.map((s) => ({
           skuId: s.skuId,
+          skuName: s.skuName,
+          skuCode: s.skuCode,
           quantity: s.quantity,
         }))
       );
@@ -82,14 +86,7 @@ export function VariantMatchingEditorDialog({
     if (!matching) return;
 
     const currentSkuLinks = getCurrentSkuLinks(matching);
-    const changedLinks =
-      JSON.stringify(links) !==
-      JSON.stringify(
-        currentSkuLinks.map((s) => ({
-          skuId: s.skuId,
-          quantity: s.quantity,
-        }))
-      );
+    const changedLinks = !isSameSkuLinks(links, currentSkuLinks);
     const changedPolicy =
       JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(matching.stockPolicy));
     const changedStrategy = strategy !== matching.strategy;
@@ -121,10 +118,21 @@ export function VariantMatchingEditorDialog({
       );
     }
 
-    if (promises.length > 0) {
-      await Promise.all(promises);
+    if (promises.length === 0) {
+      toast.info('변경된 내용이 없습니다.');
+      return;
     }
-    onOpenChange(false);
+
+    try {
+      await Promise.all(promises);
+      toast.success('매칭을 저장했습니다.');
+      onOpenChange(false);
+    } catch (error) {
+      // 실패해도 닫지 않는다 — 닫아버리면 저장된 것처럼 보인다.
+      toast.error(
+        error instanceof Error ? error.message : '매칭 저장에 실패했습니다.'
+      );
+    }
   };
 
   const isLoading =

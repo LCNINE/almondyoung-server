@@ -84,10 +84,16 @@ export const useSkus = (query?: Parameters<typeof skusClient.getSkus>[0]) => {
   });
 };
 
+/** SKU 이름/코드 통합 검색. 검색어가 비어 있으면 요청하지 않는다. */
 export const useSkuSearch = (searchQuery: string, page = 1, limit = 10) => {
   return useQuery({
     queryKey: inventoryQueryKeys.skuSearch(searchQuery, page, limit),
-    queryFn: () => skusClient.getSkus({ name: searchQuery }),
+    queryFn: () =>
+      skusClient.searchAdvanced({
+        search: searchQuery,
+        limit,
+        offset: (page - 1) * limit,
+      }),
     enabled: !!searchQuery && searchQuery.length > 0,
     staleTime: 2 * 60 * 1000,
   });

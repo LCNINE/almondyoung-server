@@ -133,6 +133,18 @@ export const productMasterVersions = pgTable(
     parentVersionId: uuid('parent_version_id'),
     status: ProductMasterVersionStatusEnum('status').notNull().default('draft'), // 'draft' | 'inactive' | 'active'
     draftOwnerId: uuid('draft_owner_id'),
+    /**
+     * 이 draft 를 소유한 일괄 세션. NULL 이면 통상의 개인 draft 다.
+     *
+     * **FK 를 걸지 않는다.** 같은 파일의 `product_bulk_sessions` 를 가리키지만, 이 컬럼의
+     * 역할은 `draft_owner_id` 와 같은 "누구 것인가" 태그이고 그쪽도 FK 가 없다. 세션 행을
+     * 지우는 경로가 없어(5단계 정리도 draft 와 이미지만 다룬다) 참조 무결성으로 얻을 것이
+     * 없는 반면, catalog core 테이블이 operations 테이블에 DDL 의존성을 갖게 된다.
+     *
+     * 값이 있으면: 개별 발행·삭제 거부, `my-drafts` 에서 제외. 편집은 허용한다(스펙 §3.3).
+     * 세션 취소가 NULL 로 되돌려 잠금을 푼다.
+     */
+    bulkSessionId: uuid('bulk_session_id'),
     // ===== VERSION MANAGEMENT FIELDS END =====
 
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
@@ -226,6 +238,7 @@ export const productMasterVersions = pgTable(
     index('idx_versions_supplier').on(table.supplierId),
     index('idx_versions_draft_owner').on(table.draftOwnerId),
     index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
+    index('idx_versions_bulk_session').on(table.bulkSessionId),
     uniqueIndex('unique_master_active_version')
       .on(table.masterId)
       .where(sql`${table.status} = 'active'`),
@@ -975,6 +988,98 @@ export const notices = pgTable(
   ],
 );
 
+// ===== PRODUCT FORM EXPORTS (일괄 세션 1단계 — 양식 생성 잡) =====
+
+export const productFormExportStatusEnum = pgEnum('product_form_export_status', [
+  'queued',
+  'running',
+  'completed',
+  'failed',
+]);
+
+export const productFormExports = pgTable(
+  'product_form_exports',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    requestedBy: uuid('requested_by').notNull(),
+    /**
+     * 접수 시 요청된 masterId 목록. 조립이 이 목록을 훑어 각 상품의 현재 active 를 찾는다.
+     *
+     * items 테이블에 미리 넣지 않는 이유: items 는 **실제로 프리필된 것만** 담아야
+     * 업로드 시 수정/신규 판정의 근거가 된다. 요청됐지만 active 가 없어 빠진 상품이
+     * items 에 남아 있으면, 그 상품키로 올라온 행이 "수정"으로 잘못 해석된다.
+     */
+    requestedMasterIds: uuid('requested_master_ids').array().notNull(),
+    status: productFormExportStatusEnum('status').notNull().default('queued'),
+    /** 완성된 xlsx 의 file-service fileId. status='completed' 일 때만 채워진다. */
+    fileId: uuid('file_id'),
+    productCount: integer('product_count').notNull().default(0),
+    errorMessage: text('error_message'),
+    /** 워커 클레임 lease 만료시각. NULL 이거나 과거면 다른 틱이 집어갈 수 있다. */
+    leaseUntil: timestamp('lease_until'),
+    /**
+     * lease 소유권 펜싱 토큰. 갱신·해제·마감을 이 값으로 CAS 한다.
+     * 타임스탬프로 소유권을 보려던 시도는 정밀도·타임존·드라이버 직렬화에서 세 번 깨졌다
+     * (product_import_sessions.lease_token 주석 참조).
+     */
+    leaseToken: uuid('lease_token'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    /** 생성 + 30일. 만료 정리 잡이 잡 행과 xlsx 를 함께 지운다. */
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_form_exports_claim').on(table.status, table.leaseUntil),
+    index('idx_form_exports_expires').on(table.expiresAt),
+    index('idx_form_exports_requested_by').on(table.requestedBy),
+  ],
+);
+
+export const productFormExportItems = pgTable(
+  'product_form_export_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    exportId: uuid('export_id')
+      .notNull()
+      .references(() => productFormExports.id, { onDelete: 'cascade' }),
+    masterId: uuid('master_id').notNull(),
+    /**
+     * 다운로드 시점의 active 버전. **값이 아니라 이 uuid 만 보관한다** —
+     * active/inactive 버전은 CoW 라 불변이므로 나중에 원본을 재구성할 수 있다.
+     */
+    versionId: uuid('version_id').notNull(),
+    /** 워크북의 '상품키' 열 값. 업로드 시 이 키로 수정/신규를 가른다. */
+    rowKey: varchar('row_key', { length: 100 }).notNull(),
+    /**
+     * 프리필 시점의 "가격을 임포트로 표현할 수 있는가" 판정을 얼려둔다.
+     * 업로드 시점에 다시 판정하면 그 사이 누가 룰을 바꿨을 때 워크북의 센티넬과 어긋난다.
+     */
+    pricingEditable: boolean('pricing_editable').notNull(),
+    /**
+     * 양식에 실제로 찍은 프리필 행 전량(`PrefillBundle`). **nullable 이다.**
+     *
+     * 값으로 복사하는 이유: active 버전이 CoW 없이 직접 UPDATE 되는 경로가 실재해서
+     * (product-versions.service.ts 의 updateExposurePolicy 계열, product-bulk.service.ts
+     * 의 bulkUpdate 가 brand·seller 를 active 행에 바로 쓴다) versionId 만으로는 다운로드
+     * 시점 값을 되살릴 수 없다 — 되살렸다고 믿고 비교하면 남의 수정이 충돌로 잡히지 않고
+     * 조용히 되돌아간다(설계 스펙 §6 이 예고한 분기).
+     *
+     * NULL 인 행은 이 컬럼 이전에 만들어진 양식이다. 2단계 업로드는 그런 export 를
+     * **거부**한다 — 스냅샷 없이 수정 경로를 태우는 것이 정확히 위 사고다.
+     */
+    snapshot: jsonb('snapshot'),
+  },
+  (table) => [
+    uniqueIndex('uq_form_export_items_master').on(table.exportId, table.masterId),
+    uniqueIndex('uq_form_export_items_row_key').on(table.exportId, table.rowKey),
+  ],
+);
+
 // ===== PRODUCT IMPORT (엑셀 대량등록 세션) =====
 export const productImportSessionStatusEnum = pgEnum('product_import_session_status', ['completed', 'archived']);
 // 'pending' 은 **맨 뒤**에 붙인다. drizzle-kit 이 중간 삽입을 만나면
@@ -1197,6 +1302,160 @@ export const productImportImages = pgTable(
   ],
 );
 
+// ===== PRODUCT BULK SESSIONS (일괄 세션 2단계 — 업로드·검증) =====
+
+/**
+ * 세션 상태는 이 컬럼 **하나**다. v3 는 image/commit/publish 3개를 뒀는데, 조합 대부분이
+ * "있어서는 안 되는 상태"였고 v3 4단계 최종 리뷰가 잡은 Critical 버그가 정확히 그 종류였다
+ * (image_status='failed' + commit_status='idle' 이 막다른 길이 되어 취소도 409 를 받았다).
+ *
+ * 4·5단계 값(drafting·drafted·publishing·published)을 지금 전부 넣는다 — enum 값은 **맨 뒤에**
+ * 붙이는 것만 안전한데(productImportSessionStatusEnum 주석 참조), 나중에 중간 삽입이
+ * 필요해지는 것보다 지금 다 넣는 편이 싸다.
+ */
+export const productBulkSessionPhaseEnum = pgEnum('product_bulk_session_phase', [
+  'uploaded',
+  'validating',
+  'review',
+  'awaiting_images',
+  'drafting',
+  'drafted',
+  'publishing',
+  'published',
+  'canceled',
+  'failed',
+]);
+
+export const productBulkItemKindEnum = pgEnum('product_bulk_item_kind', ['create', 'update']);
+
+/**
+ * 'invalid'(검증 실패)와 'failed'(생성 실패)를 나눈다 — v3 는 둘 다 'failed' 로 적어
+ * invalid_count 를 얼려 뺄셈해야 했다(설계 스펙 §2.8). 새 테이블이라 기존 데이터가 없다.
+ */
+export const productBulkItemStatusEnum = pgEnum('product_bulk_item_status', [
+  'pending',
+  'invalid',
+  'drafted',
+  'excluded',
+  'failed',
+]);
+
+export const productBulkItemPublishStatusEnum = pgEnum('product_bulk_item_publish_status', [
+  'idle',
+  'pending',
+  'published',
+  'failed',
+]);
+
+export const productBulkImageUsageEnum = pgEnum('product_bulk_image_usage', ['main', 'description']);
+export const productBulkImageSourceKindEnum = pgEnum('product_bulk_image_source_kind', ['file_id', 'file_name']);
+export const productBulkImageStatusEnum = pgEnum('product_bulk_image_status', ['resolved', 'awaiting_upload']);
+
+export const productBulkSessions = pgTable(
+  'product_bulk_sessions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    /** 작업자가 붙인 이름. 비우면 업로드 파일명이 들어간다. */
+    name: varchar('name', { length: 200 }).notNull(),
+    /**
+     * 이 세션의 근거가 된 양식 잡. NULL 이면 **신규 전용 세션**(빈 양식으로 올린 경우)이다.
+     * 양식 잡은 30일 후 만료 삭제되므로 SET NULL 이다 — 세션이 그때 죽으면 안 된다.
+     * 수정 판정에 필요한 것은 이미 items.base_snapshot 으로 복사돼 있다.
+     */
+    exportId: uuid('export_id').references(() => productFormExports.id, { onDelete: 'set null' }),
+    uploadedBy: uuid('uploaded_by').notNull(),
+    fileName: varchar('file_name', { length: 500 }).notNull(),
+    /** 업로드된 원본 엑셀의 file-service fileId. 검증 레인이 이걸 다시 내려받아 파싱한다. */
+    sourceFileId: uuid('source_file_id').notNull(),
+    phase: productBulkSessionPhaseEnum('phase').notNull().default('uploaded'),
+    phaseError: text('phase_error'),
+    leaseUntil: timestamp('lease_until'),
+    /** lease 소유권 펜싱 토큰. 타임스탬프로 소유권을 보려던 시도는 이 레포에서 세 번 깨졌다. */
+    leaseToken: uuid('lease_token'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    cancelRequestedAt: timestamp('cancel_requested_at'),
+    totalRows: integer('total_rows').notNull().default(0),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_bulk_sessions_claim').on(table.phase, table.leaseUntil),
+    index('idx_bulk_sessions_uploaded_by').on(table.uploadedBy),
+  ],
+);
+
+export const productBulkItems = pgTable(
+  'product_bulk_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => productBulkSessions.id, { onDelete: 'cascade' }),
+    rowNumber: integer('row_number').notNull(),
+    /** 워크북 '상품키'. 이 키가 양식 잡의 items 에 있으면 수정, 없으면 신규다. */
+    rowKey: varchar('row_key', { length: 100 }).notNull(),
+    kind: productBulkItemKindEnum('kind').notNull(),
+    /** update: 입력값(어느 상품을 고치는가) / create: 결과값(4단계가 채운다). kind 가 의미를 가른다. */
+    masterId: uuid('master_id'),
+    /** update 전용. 다운로드 시점의 active 버전. */
+    baseVersionId: uuid('base_version_id'),
+    /** update 전용. 양식 잡 items.snapshot 의 복사본 — 세션을 양식 만료로부터 독립시킨다. */
+    baseSnapshot: jsonb('base_snapshot'),
+    /** 업로드 워크북에서 읽은 정규화 입력. 불변 — 재검증이 여기서 다시 출발한다. */
+    input: jsonb('input').notNull(),
+    /**
+     * 적용할 변경분. **NULL 이면 아직 검증 전이다** — 검증 슬라이스의 대상 판별에 쓴다.
+     * 변경이 하나도 없는 수정 행도 검증 후엔 `{}` 라 non-null 이 된다.
+     */
+    payload: jsonb('payload'),
+    status: productBulkItemStatusEnum('status').notNull().default('pending'),
+    /** 충돌 필드경로 → { base, mine, current }. */
+    conflict: jsonb('conflict'),
+    /** 충돌 필드경로 → 'overwrite' | 'skip'. **행 단위가 아니다**(설계 스펙 §3.6). */
+    conflictDecision: jsonb('conflict_decision'),
+    draftVersionId: uuid('draft_version_id'),
+    publishStatus: productBulkItemPublishStatusEnum('publish_status').notNull().default('idle'),
+    errorMessage: text('error_message'),
+    publishError: text('publish_error'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_bulk_items_session_row_key').on(table.sessionId, table.rowKey),
+    index('idx_bulk_items_session_status').on(table.sessionId, table.status),
+  ],
+);
+
+export const productBulkImages = pgTable(
+  'product_bulk_images',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => productBulkSessions.id, { onDelete: 'cascade' }),
+    imageKey: varchar('image_key', { length: 100 }).notNull(),
+    /** 참조 지점이 정한다 — 대표·부가는 main, 본문 디렉티브는 description. */
+    usage: productBulkImageUsageEnum('usage').notNull(),
+    sourceKind: productBulkImageSourceKindEnum('source_kind').notNull(),
+    /** fileId(UUID) 또는 작업자 로컬 파일명. 웹 URL 은 행 오류라 여기 오지 않는다. */
+    sourceValue: text('source_value').notNull(),
+    fileId: uuid('file_id'),
+    status: productBulkImageStatusEnum('status').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_bulk_images_session_key_usage').on(table.sessionId, table.imageKey, table.usage),
+    index('idx_bulk_images_session_status').on(table.sessionId, table.status),
+  ],
+);
+
 // Catalog BC 스키마 (ex-PIM)
 export const catalogSchema = {
   productCategories,
@@ -1233,6 +1492,11 @@ export const catalogSchema = {
   productImportSessions,
   productImportItems,
   productImportImages,
+  productFormExports,
+  productFormExportItems,
+  productBulkSessions,
+  productBulkItems,
+  productBulkImages,
 };
 
 // ===== RELATIONS =====

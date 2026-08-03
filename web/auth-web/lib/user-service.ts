@@ -411,6 +411,22 @@ export async function checkLoginIdAvailable(loginId: string): Promise<boolean> {
   return body.available
 }
 
+export async function checkNicknameAvailable(
+  nickname: string
+): Promise<boolean> {
+  const res = await fetch(
+    `${env.userServiceUrl}/users/nickname-available?nickname=${encodeURIComponent(nickname)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  await throwIfBad(res, "nickname-available")
+  const body = await readApiData<{ available: boolean }>(res)
+  return body.available
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",

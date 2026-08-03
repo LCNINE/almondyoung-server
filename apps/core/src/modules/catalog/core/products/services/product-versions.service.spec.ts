@@ -446,6 +446,53 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx, undefined);
   });
 
+  it('일괄 세션이 잠근 draft 는 개별 발행할 수 없다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-locked',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Locked Draft',
+      bulkSessionId: '0198f000-0000-7000-8000-000000000001',
+    };
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+
+    await expect(service.publishVersion(version.id)).rejects.toThrow(
+      '일괄 등록 세션이 관리하는 상품입니다. 세션 화면에서 일괄 발행해 주세요.',
+    );
+  });
+
+  it('일괄 세션에 잠기지 않은 draft 는 그대로 발행된다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-unlocked',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Unlocked Draft',
+      bulkSessionId: null,
+    };
+    const tx = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
+    jest.spyOn(service as any, '_validateVariantCodeUniqueness').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'validateProductCodeUniqueness').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileMatchingsAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileAssetLinksAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_validateDigitalAssetLinks').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_publishVariantChangeEvents').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_emitActiveVersionChangedEvent').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
+
+    await expect(service.publishVersion(version.id, tx as any)).resolves.toBeUndefined();
+  });
+
   it('updateRequiresMembership: active 버전의 구매 제약을 upsert 하고 이벤트를 1회 발행한다', async () => {
     const { service, outboxPublisher, projectionSnapshotAssembler, purchaseConstraints } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({

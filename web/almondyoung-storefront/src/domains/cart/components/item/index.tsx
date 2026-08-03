@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
 import { cn } from "@/lib/utils"
+import { isInsufficientInventoryError } from "@/lib/utils/cart-availability"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { HttpTypes } from "@medusajs/types"
@@ -31,6 +32,8 @@ type ItemProps = {
   selectDisabled?: boolean
   /** 판매중단(draft/미게시)으로 결제를 막는 상품이면 true */
   isUnavailable?: boolean
+  /** 남은 재고. 없으면(재고 미추적/백오더) 수량 상한이 없다는 뜻 */
+  maxQuantity?: number
 }
 
 type ItemChildProps = {
@@ -49,6 +52,7 @@ type ItemChildProps = {
   onSelectChange?: (checked: boolean) => void
   selectDisabled?: boolean
   isUnavailable?: boolean
+  maxQuantity?: number
 }
 
 type DesktopItemProps = Partial<ItemChildProps> & {
@@ -64,6 +68,7 @@ function Item({
   onSelectChange,
   selectDisabled,
   isUnavailable,
+  maxQuantity,
 }: ItemProps) {
   const t = useTranslations("cart.items")
   const [isPending, startTransition] = useTransition()
@@ -72,14 +77,42 @@ function Item({
 
   const changeQuantity = (quantity: number) => {
     if (quantity < 1) return
+
+    // 남은 재고를 넘기면 서버에 보내기 전에 남은 수량을 알려준다. 그대로 보내면 Medusa 가
+    // 영문 재고부족 에러(`Some variant does not have the required inventory`)를 던지고,
+    // 그게 그대로 토스트에 떠서 고객이 무슨 상황인지 알 수 없었다.
+    //
+    // 단 '줄이는' 방향은 막지 않는다. 담은 뒤 재고가 줄어 이미 상한을 넘긴 라인(예: 담긴 5개,
+    // 재고 3개)에서 4개로 낮추는 것까지 막으면 고객이 수량을 조정할 방법이 없어진다.
+    const isIncrease = quantity > item.quantity
+    if (maxQuantity !== undefined && quantity > maxQuantity && isIncrease) {
+      // 재고 0 은 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
+      const message =
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
+      toast.error(message)
+      setError(message)
+      return
+    }
+
     setError(null)
 
     startTransition(async () => {
       try {
         await updateLineItem({ lineId: item.id, quantity })
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : t("quantityUpdateFail")
+        const raw = err instanceof Error ? err.message : ""
+        // 재고 정보가 방금 바뀌어 상한 검사를 통과했는데도 실패한 경우. 백엔드가 한글로 던진
+        // 메시지(멤버십 제한 등)는 사용자용이라 그대로 쓰고, 그 외 영문 원문은 노출하지 않는다.
+        const message = isInsufficientInventoryError(raw)
+          ? t("quantityStockError")
+          : /[가-힣]/.test(raw)
+            ? raw
+            : t("quantityUpdateFail")
+        if (raw && !isInsufficientInventoryError(raw)) {
+          console.error("[cart] 수량 변경 실패:", raw)
+        }
         toast.error(message)
         setError(message)
       }
@@ -126,6 +159,7 @@ function Item({
     onSelectChange,
     selectDisabled,
     isUnavailable,
+    maxQuantity,
   } as ItemChildProps)
 }
 
@@ -146,6 +180,7 @@ function DesktopItem({
   onSelectChange,
   selectDisabled,
   isUnavailable,
+  maxQuantity,
 }: DesktopItemProps) {
   const t = useTranslations("cart.items")
   const tCart = useTranslations("cart")
@@ -166,9 +201,29 @@ function DesktopItem({
       return toast.error(t("quantityMinError"))
     }
 
+    // 상한을 넘기면 다이얼로그를 닫지 않고 남은 수량을 알려준다(고객이 바로 고쳐 넣을 수 있게).
+    // changeQuantity 와 같은 규칙으로 '줄이는' 방향은 통과시킨다.
+    if (
+      maxQuantity !== undefined &&
+      num > maxQuantity &&
+      num > (item?.quantity ?? 0)
+    ) {
+      return toast.error(
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
+      )
+    }
+
     await changeQuantity?.(num)
     setIsModalOpen(false)
   }
+
+  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
+  const atStockLimit =
+    maxQuantity !== undefined &&
+    maxQuantity > 0 &&
+    (item?.quantity ?? 0) >= maxQuantity
 
   return (
     <TableRow className="w-full" data-testid="product-row">
@@ -267,6 +322,11 @@ function DesktopItem({
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+          {atStockLimit && (
+            <p className="text-muted-foreground mt-1 text-xs">
+              {t("quantityMaxHint", { max: maxQuantity })}
+            </p>
+          )}
 
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent showCloseButton={false} className="max-w-xs">
@@ -390,6 +450,7 @@ function MobileItem({
   changeQuantity,
   handleDelete,
   isUnavailable,
+  maxQuantity,
 }: MobileItemProps) {
   const t = useTranslations("cart.items")
   const tCart = useTranslations("cart")
@@ -410,9 +471,27 @@ function MobileItem({
       return toast.error(t("quantityMinError"))
     }
 
+    if (
+      maxQuantity !== undefined &&
+      num > maxQuantity &&
+      num > (item?.quantity ?? 0)
+    ) {
+      return toast.error(
+        maxQuantity <= 0
+          ? t("quantitySoldOut")
+          : t("quantityMaxError", { max: maxQuantity })
+      )
+    }
+
     await changeQuantity?.(num)
     setIsModalOpen(false)
   }
+
+  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
+  const atStockLimit =
+    maxQuantity !== undefined &&
+    maxQuantity > 0 &&
+    (item?.quantity ?? 0) >= maxQuantity
 
   return (
     <div className="flex gap-3 border-b py-4">
@@ -510,6 +589,11 @@ function MobileItem({
             >
               <Plus className="h-4 w-4" />
             </Button>
+            {atStockLimit && (
+              <span className="text-muted-foreground ml-2 text-xs">
+                {t("quantityMaxHint", { max: maxQuantity })}
+              </span>
+            )}
           </div>
 
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>

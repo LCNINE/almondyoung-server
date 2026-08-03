@@ -12,7 +12,7 @@ import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-
 import { useProductsListTableQuery } from '@/hooks/table/query/use-products-list-table-query';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Trash2, FileSpreadsheet } from 'lucide-react';
 import {
   BulkActionModal,
   type BulkActionType,
@@ -21,12 +21,14 @@ import { BulkPolicyModal } from '@/features/mall/bulk/components/bulk-policy-mod
 import { SelectedProductsModal } from '../selected-products-modal';
 import { ProductsListFilterBox } from '../filter-box';
 import { ExcelDownloadMenu } from '../excel-download';
+import { FormExportModal } from '../form-export-modal';
 
 const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [formExportOpen, setFormExportOpen] = useState(false);
 
   const { searchParams: query } = useProductsListTableQuery({
     pageSize: PAGE_SIZE,
@@ -131,6 +133,15 @@ export function ProductsListTable() {
               size="sm"
               variant="outline"
               disabled={!hasSelection}
+              onClick={() => setFormExportOpen(true)}
+            >
+              <FileSpreadsheet className="w-3 h-3 mr-1" />
+              양식 다운로드
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!hasSelection}
               onClick={() => setModalAction('status')}
             >
               선택 상품상태변경
@@ -181,6 +192,12 @@ export function ProductsListTable() {
         selectedIds={selectedIds}
         selectedItems={selectedItemsList}
         onSuccess={handleSuccess}
+      />
+
+      <FormExportModal
+        open={formExportOpen}
+        masterIds={selectedIds}
+        onClose={() => setFormExportOpen(false)}
       />
     </div>
   );

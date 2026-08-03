@@ -148,6 +148,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     isActive: true,
   },
   {
+    id: 'product-bulk-form',
+    name: 'Product Bulk Form',
+    description: '상품 일괄 등록/수정 양식 워크북(xlsx)',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    maxFileSize: 52428800,
+    pathPrefix: 'products/bulk-forms',
+    isActive: true,
+  },
+  {
     id: 'product-description-image',
     name: 'Product Description Image',
     description: '상품 상세설명 본문 이미지',

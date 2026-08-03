@@ -11,6 +11,7 @@ import {
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
 import {
+  buildAvailabilityMap,
   isVariantQuantityUnavailable,
   isVariantSoldOut,
 } from "@lib/utils/cart-availability"
@@ -119,6 +120,10 @@ export async function retrieveCart(
  * 후자(insufficient*)는 담기 시점엔 통과했다가 결제 직전에야 부족해지는 케이스다. 이걸 막지
  * 않으면 결제 후 cart.complete 의 재고예약이 실패해 주문이 안 생긴다.
  * (지연 승인 도입으로 그때도 돈은 빠지지 않지만, 결제창까지 갔다가 실패하는 UX 는 막는 게 낫다.)
+ *
+ * availableByVariantId 는 재고를 추적하는 variant 의 남은 수량이다(추적 안 하거나 백오더 허용이면
+ * 상한 없음). 장바구니가 이 값으로 "재고가 N개 남았어요" 를 안내하고 수량 변경을 미리 막는다 —
+ * Medusa 재고부족 에러에는 수량 정보가 없어서 필요하다.
  */
 export async function findUnavailableLineItems(
   cart: HttpTypes.StoreCart,
@@ -128,6 +133,7 @@ export async function findUnavailableLineItems(
   productNames: string[]
   insufficientVariantIds: string[]
   insufficientNames: string[]
+  availableByVariantId: Record<string, number>
 }> {
   const items = cart.items ?? []
   const productIds = Array.from(
@@ -143,6 +149,7 @@ export async function findUnavailableLineItems(
     productNames: [],
     insufficientVariantIds: [],
     insufficientNames: [],
+    availableByVariantId: {},
   }
 
   if (productIds.length === 0) {
@@ -201,11 +208,11 @@ export async function findUnavailableLineItems(
 
   // 품절은 아니지만 담은 수량이 가용 재고를 넘어선 라인 (담은 뒤 재고가 줄어든 경우).
   const unavailableSet = new Set(unavailableItems)
+  // 재고가 계산된 variant 로만 판정한다. 카트 라인아이템 variant 는 inventory_quantity 가 비어 있어
+  // 폴백으로 쓰면 전 라인이 재고 0 으로 읽혀 멀쩡한 결제까지 막는다.
   const insufficientItems = items.filter((item) => {
     if (unavailableSet.has(item)) return false
-    const variant =
-      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
-      item.variant
+    const variant = item.variant_id ? variantById.get(item.variant_id) : undefined
     return isVariantQuantityUnavailable(variant, item.quantity)
   })
 
@@ -231,6 +238,7 @@ export async function findUnavailableLineItems(
     productNames: toNames(unavailableItems),
     insufficientVariantIds: toVariantIds(insufficientItems),
     insufficientNames: toNames(insufficientItems),
+    availableByVariantId: buildAvailabilityMap(items, variantById),
   }
 }
 

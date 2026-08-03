@@ -93,7 +93,11 @@
     "optionSelectTitle": "Select {title}",
     "soldOutToast": "The selected option is sold out.",
     "soldOutToastNamed": "‘{option}’ is sold out and cannot be added.",
-    "optionPriceExtra": "(+{amount} KRW)"
+    "optionPriceExtra": "(+{amount} KRW)",
+    "stockLimitToast": "Only {max} left in stock. Please choose {max} or fewer.",
+    "stockLimitToastNamed": "Only {max} of “{option}” left in stock. Please choose {max} or fewer.",
+    "stockConflictToast": "Adding this exceeds available stock once items already in your cart are counted. Please check your cart.",
+    "stockShortToast": "Not enough stock. Please reduce the quantity and try again."
   },
   "cartModal": {
     "addingTitle": "Adding to cart",
