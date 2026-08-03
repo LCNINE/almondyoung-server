@@ -1,6 +1,11 @@
 // 목업 데이터 제거 - 실제 메두사 서버 또는 기본 리전 사용
 import { HttpTypes } from "@medusajs/types"
 import { NextRequest, NextResponse } from "next/server"
+import {
+  APP_CONTEXT_HEADER,
+  parseAppContext,
+  serializeAppContext,
+} from "@/lib/app-context/parse"
 import { getBackendBaseUrl } from "@/lib/config/backend"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
@@ -161,6 +166,90 @@ async function getCountryCode(
   }
 }
 
+// 존재가 확인된 handle 만 담는다. 없는 handle 을 캐시하면 관리자가 새로 만든
+// 카테고리/상품이 TTL 동안 404 로 남는다.
+const knownHandles = new Map<string, number>()
+const KNOWN_HANDLE_TTL_MS = 5 * 60 * 1000
+
+const isKnownHandle = (key: string) => {
+  const seenAt = knownHandles.get(key)
+  if (!seenAt) return false
+  if (Date.now() - seenAt > KNOWN_HANDLE_TTL_MS) {
+    knownHandles.delete(key)
+    return false
+  }
+  return true
+}
+
+// countryCode 다음 세그먼트 → store API 경로/응답 키
+const STORE_LOOKUPS = {
+  category: {
+    path: "/store/product-categories",
+    key: "product_categories",
+  },
+  products: {
+    path: "/store/products",
+    key: "products",
+  },
+} as const
+
+type StoreLookupKind = keyof typeof STORE_LOOKUPS
+
+/**
+ * 존재하지 않거나 노출 대상이 아닌 카테고리/상품 URL 을 진짜 404 로 응답한다.
+ *
+ * 페이지 안에서 notFound() 를 불러도 상태가 200 으로 굳는다 — `(main)` 레이아웃이
+ * 헤더 데이터를 서버에서 받아오며 셸을 먼저 흘려보내기 때문이다(soft 404).
+ * 미들웨어는 렌더 전에 돌기 때문에 상태를 확실히 정할 수 있다.
+ *
+ * store API 는 비활성 카테고리와 미게시 상품을 애초에 돌려주지 않으므로,
+ * 삭제/숨김 처리된 URL 도 여기서 걸러진다.
+ * 조회 실패(네트워크/키 문제)는 통과시킨다 — 정상 페이지를 404 로 막는 쪽이 더 위험하다.
+ */
+async function resolveStorefrontNotFound(
+  request: NextRequest
+): Promise<NextResponse | undefined> {
+  const segments = request.nextUrl.pathname.split("/").filter(Boolean)
+  const kind = segments[1] as StoreLookupKind | undefined
+  if (!kind || !(kind in STORE_LOOKUPS)) return
+
+  // /category/대분류/중분류 는 마지막 세그먼트가 실제 카테고리, /products/{handle} 는 하나뿐
+  const handle = kind === "category" ? segments[segments.length - 1] : segments[2]
+  if (!handle || segments.length < 3) return
+
+  const cacheKey = `${kind}:${handle}`
+  if (isKnownHandle(cacheKey)) return
+
+  const lookup = STORE_LOOKUPS[kind]
+
+  try {
+    const url = new URL(lookup.path, MEDUSA_BASE_URL)
+    url.searchParams.set("handle", handle)
+    url.searchParams.set("fields", "id")
+    url.searchParams.set("limit", "1")
+
+    const res = await fetch(url, {
+      headers: PUBLISHABLE_API_KEY
+        ? { "x-publishable-api-key": PUBLISHABLE_API_KEY }
+        : {},
+    })
+    if (!res.ok) return
+
+    const body = (await res.json()) as Record<string, unknown[] | undefined>
+    if ((body[lookup.key]?.length ?? 0) > 0) {
+      knownHandles.set(cacheKey, Date.now())
+      return
+    }
+
+    return NextResponse.rewrite(
+      new URL(`/${segments[0]}/__not-found`, request.url),
+      { status: 404 }
+    )
+  } catch {
+    return
+  }
+}
+
 /**
  * Middleware to handle region selection and onboarding status.
  */
@@ -174,6 +263,11 @@ export async function middleware(request: NextRequest) {
   const isServerAction = request.headers.has("Next-Action")
   if (!isServerAction && refreshToken && isJwtExpired(accessToken)) {
     return buildRestoreTokenRedirect(request)
+  }
+
+  if (!isServerAction) {
+    const notFoundResponse = await resolveStorefrontNotFound(request)
+    if (notFoundResponse) return notFoundResponse
   }
 
   // 인증 게이트: 보호 경로에 비인증 접근 시 storefront /login 으로 redirect.
@@ -210,6 +304,15 @@ export async function middleware(request: NextRequest) {
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
 
+    // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
+    // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해
+    // 앱 컨텍스트를 사칭할 수 있고, 이 헤더를 신뢰하는 의미가 사라진다.
+    requestHeaders.delete(APP_CONTEXT_HEADER)
+    const appContext = parseAppContext(request.headers.get("user-agent"))
+    if (appContext) {
+      requestHeaders.set(APP_CONTEXT_HEADER, serializeAppContext(appContext))
+    }
+
     if (isPrefetch && !request.headers.has("traceparent")) {
       const traceId = crypto.randomUUID().replace(/-/g, "")
       const spanId = traceId.substring(0, 16)
@@ -228,6 +331,15 @@ export async function middleware(request: NextRequest) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
+
+    // requestHeaders 는 클라이언트 요청 헤더의 복사본이므로, 외부에서 실어 보낸
+    // APP_CONTEXT_HEADER 를 먼저 지운다. 지우지 않으면 아무나 헤더를 위조해
+    // 앱 컨텍스트를 사칭할 수 있고, 이 헤더를 신뢰하는 의미가 사라진다.
+    requestHeaders.delete(APP_CONTEXT_HEADER)
+    const appContext = parseAppContext(request.headers.get("user-agent"))
+    if (appContext) {
+      requestHeaders.set(APP_CONTEXT_HEADER, serializeAppContext(appContext))
+    }
 
     if (isPrefetch && !request.headers.has("traceparent")) {
       const traceId = crypto.randomUUID().replace(/-/g, "")
@@ -268,7 +380,9 @@ export async function middleware(request: NextRequest) {
     const normalizedRest = restPath ? `/${restPath}` : ""
 
     redirectUrl = `${request.nextUrl.origin}/${countryCode}${normalizedRest}${queryString}`
-    response = NextResponse.redirect(`${redirectUrl}`, 307)
+    // 308 = 영구 + 메서드 보존. 307(임시)이면 / 가 계속 별도 URL 로 남아
+    // /kr 로 링크 지분이 합쳐지지 않는다. 301 은 POST 를 GET 으로 바꿀 수 있어 308 사용.
+    response = NextResponse.redirect(`${redirectUrl}`, 308)
   }
 
   return response

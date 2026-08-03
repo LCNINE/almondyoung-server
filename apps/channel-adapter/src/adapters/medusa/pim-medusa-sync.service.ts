@@ -341,19 +341,23 @@ export class PimMedusaSyncService {
           .map((s) => s.trim())
           .filter(Boolean),
       );
-      const explicitSkipSlugs = new Set(
-        (process.env.SKIP_ATTACH_CATEGORY_SLUGS || '')
+      const explicitSkipSlugs = new Set([
+        // 전 상품이 붙는 카테고리라 attach 하면 row lock 으로 동기화가 직렬화된다.
+        // storefront 는 이 카테고리를 상품 목록으로 쓰지 않으므로 계속 제외.
+        'cafe24-cat-499', // 전체상품 보기
+        ...(process.env.SKIP_ATTACH_CATEGORY_SLUGS || '')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),
-      );
+      ]);
       const isAttachable = (pimCategoryId: string) => {
         if (referencedAsParent.has(pimCategoryId)) return false; // non-leaf
         if (explicitSkipIds.has(pimCategoryId)) return false;
         const c = allSnapshotCats.find((x) => x.id === pimCategoryId);
         if (!c) return true;
-        if (c.parentId == null) return false; // root
-        if (c.slug && explicitSkipSlugs.has(c.slug)) return false; // 환경변수로 명시 제외 (예: 전체상품 보기)
+        // 자식 없는 카테고리는 그 자체가 leaf 다. 예전엔 root 를 통째로 제외해서
+        // 상품이 어디에도 attach 되지 않아 카테고리가 빈 채로 노출됐다 (예: 퍼마블렌드).
+        if (c.slug && explicitSkipSlugs.has(c.slug)) return false;
         return true;
       };
       const attachableCategories = medusaCategories.filter((c) => isAttachable(c.pimCategoryId));
@@ -633,7 +637,7 @@ export class PimMedusaSyncService {
    * Handle CategoryChanged event from PIM
    */
   async handleCategoryChanged(event: CategoryChangedPayload): Promise<SyncResult> {
-    const { categoryId, changeType, category } = event;
+    const { categoryId, changeType, category, ancestors } = event;
 
     this.logger.log(`Processing CategoryChanged: ${categoryId} (${changeType})`);
 
@@ -648,6 +652,30 @@ export class PimMedusaSyncService {
         };
       }
 
+      // 조상을 루트부터 먼저 보장한다. 부모 이벤트가 아직 처리되지 않았어도
+      // 자식이 최상위로 잘못 붙지 않는다.
+      // 멤버십 전용은 자손까지 상속되므로 루트부터 누적한다 — 누적하지 않으면
+      // 자손 이벤트가 조상을 자기 플래그(false)로 덮어써 상속이 풀린다.
+      let ancestorMembersOnly = false;
+      for (const ancestor of ancestors ?? []) {
+        ancestorMembersOnly =
+          ancestorMembersOnly || ancestor.displaySettings?.isVisibleToMembersOnly === true;
+
+        await this.medusaClient.ensureCategoryFromSnapshot({
+          id: ancestor.id,
+          name: ancestor.name,
+          slug: ancestor.slug,
+          path: ancestor.path,
+          parentId: ancestor.parentId,
+          isActive: ancestor.isActive,
+          visibility: ancestor.visibility,
+          showOnMainCategory: ancestor.displaySettings?.showOnMainCategory ?? false,
+          isVisibleToMembersOnly: ancestorMembersOnly,
+          thumbnail: ancestor.thumbnail ?? undefined,
+          sortOrder: ancestor.sortOrder,
+        }, { refreshFields: true });
+      }
+
       // Handle create/update/moved (all treated as upsert)
       const medusaCategoryId = await this.medusaClient.ensureCategoryFromSnapshot({
         id: category.id,
@@ -658,11 +686,15 @@ export class PimMedusaSyncService {
         isActive: category.isActive,
         visibility: category.visibility,
         showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
+        isVisibleToMembersOnly:
+          category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
         thumbnail: category.thumbnail ?? undefined,
         sortOrder: category.sortOrder,
-      });
+      }, { requireParent: true, refreshFields: true });
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
+
+      await this.storefrontRevalidate.revalidateCategory(medusaCategoryId);
 
       return {
         success: true,
@@ -695,6 +727,7 @@ export class PimMedusaSyncService {
         this.medusaClient.invalidateCategoryCacheByHandle(existing.handle);
       }
       this.logger.log(`Marked Medusa category as inactive: ${existing.id} (handle=${existing.handle})`);
+      await this.storefrontRevalidate.revalidateCategory(existing.id);
     } catch (error) {
       this.logger.error(`Failed to delete category ${pimCategoryId} from Medusa`, error.stack);
       throw error;

@@ -3,7 +3,7 @@
 import { CategorySheet } from "@/components/category/sheet"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { cn } from "@/lib/utils"
-import { House, Menu, Search, ShoppingCart, User } from "lucide-react"
+import { House, LayoutGrid, Search, ShoppingCart, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { useParams, usePathname } from "next/navigation"
@@ -14,10 +14,11 @@ export function BottomNavigation() {
   const { onOpen } = useSearchSheetStore()
   const t = useTranslations("nav")
 
+  // 홈이 가운데 오도록 카테고리 → 검색 → 홈 → 장바구니 → 마이 순서로 고정
   const navItems = [
-    { label: t("home"), icon: House, href: `/${countryCode}`, type: "link" },
-    { label: t("category"), icon: Menu, type: "sheet" },
+    { label: t("category"), icon: LayoutGrid, type: "sheet" },
     { label: t("search"), icon: Search, type: "action", onClick: onOpen },
+    { label: t("home"), icon: House, href: `/${countryCode}`, type: "link" },
     {
       label: t("cart"),
       icon: ShoppingCart,
@@ -35,7 +36,12 @@ export function BottomNavigation() {
   return (
     <nav className="bg-background pb-safe fixed right-0 bottom-0 left-0 z-50 flex min-h-16 items-center justify-around border-t px-2 xl:hidden">
       {navItems.map((item) => {
-        const isActive = item.href ? pathname === item.href : false
+        // 홈은 정확히 일치할 때만, 나머지 링크는 하위 경로까지 활성 처리
+        const isActive = !item.href
+          ? false
+          : item.href === `/${countryCode}`
+            ? pathname === item.href
+            : (pathname?.startsWith(item.href) ?? false)
         const commonClassName = cn(
           "flex flex-1 flex-col items-center justify-center gap-1 transition-colors cursor-pointer bg-transparent border-none outline-none",
           isActive ? "text-primary" : "text-muted-foreground hover:text-primary"
@@ -49,7 +55,7 @@ export function BottomNavigation() {
               trigger={
                 <button className={commonClassName} type="button">
                   <item.icon
-                    className={cn("h-6 w-6", isActive && "fill-current")}
+                    className={cn("h-6 w-6", isActive && "stroke-[2.4]")}
                   />
                   <span className="text-[10px] leading-none font-medium">
                     {item.label}
@@ -70,7 +76,7 @@ export function BottomNavigation() {
               type="button"
             >
               <item.icon
-                className={cn("h-6 w-6", isActive && "fill-current")}
+                className={cn("h-6 w-6", isActive && "stroke-[2.4]")}
               />
               <span className="text-[10px] leading-none font-medium">
                 {item.label}
@@ -86,7 +92,7 @@ export function BottomNavigation() {
             href={item.href || "#"}
             className={commonClassName}
           >
-            <item.icon className={cn("h-6 w-6", isActive && "fill-current")} />
+            <item.icon className={cn("h-6 w-6", isActive && "stroke-[2.4]")} />
             <span className="text-[10px] leading-none font-medium">
               {item.label}
             </span>

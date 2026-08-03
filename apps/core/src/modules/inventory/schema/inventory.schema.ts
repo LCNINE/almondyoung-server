@@ -199,7 +199,7 @@ export const directShipStatusEnum = pgEnum('direct_ship_status', ['pending', 'fo
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
 // FOI 기반 확장 enums
-export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
+export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking', 'multi_order']);
 export const pickingStrategyEnum = pgEnum('picking_strategy', ['discrete', 'aggregate_then_sort', 'pick_to_tote']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
 // Outbound V2 expand enums. These are additive and intentionally coexist with V1 enums until Task 25.
@@ -557,17 +557,27 @@ export const skuSuppliers = pgTable(
   }),
 );
 
-export const skuBarcodes = pgTable('sku_barcodes', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'cascade' })
-    .notNull(),
-  barcode: varchar('barcode', { length: 64 }).notNull().unique(),
-  isPrimary: boolean('is_primary').notNull().default(false),
-  packingUnit: varchar('packing_unit', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const skuBarcodes = pgTable(
+  'sku_barcodes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'cascade' })
+      .notNull(),
+    barcode: varchar('barcode', { length: 64 }).notNull().unique(),
+    isPrimary: boolean('is_primary').notNull().default(false),
+    // 이 바코드 1회 스캔이 뜻하는 낱개 수량. 상자 바코드면 n, 낱개 바코드면 NULL.
+    packingUnit: integer('packing_unit'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ckPackingUnitPositive: check(
+      'ck_sku_barcodes_packing_unit_positive',
+      sql`${t.packingUnit} IS NULL OR ${t.packingUnit} >= 1`,
+    ),
+  }),
+);
 
 export const skuImages = pgTable(
   'sku_images',
@@ -1142,6 +1152,7 @@ export const salesOrders = pgTable(
   },
   (t) => ({
     uniqueChannelOrder: unique().on(t.salesChannel, t.channelOrderId), // 채널별 주문 ID 유니크
+    idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
   }),
 );
 
@@ -1183,6 +1194,7 @@ export const salesOrderLines = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    idxSalesOrderId: index('idx_sales_order_lines_sales_order_id').on(t.salesOrderId), // EXISTS/조인 주문별 라인 조회
     idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
     idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
     idxChannelOrderItem: index('idx_sales_order_lines_channel_order_item').on(t.channelOrderItemId),
@@ -2227,7 +2239,9 @@ export const outboundBatches = pgTable(
       .notNull(),
     status: batchStatusEnum('status').notNull().default('created'),
     pickingMethod: pickingMethodEnum('picking_method').notNull(),
-    cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
+    // multi_order(pick_to_tote) 전용 — 카트에 달린 바구니 수 = 배치 송장 수 상한.
+    // aggregate_then_sort 의 큰 카트에는 바구니가 없다(부피·무게가 상한이라 정형화 불가).
+    cartCapacity: integer('cart_capacity'),
     name: varchar('name', { length: 255 }),
     // Task 25 contract: assignedTo/totalItems/totalQty 제거 (writer 0 또는 상수 insert 뿐, reader 없음).
     scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
@@ -2240,6 +2254,15 @@ export const outboundBatches = pgTable(
   (t) => ({
     idxWarehouseStatus: index('idx_outbound_batches_warehouse_status').on(t.warehouseId, t.status),
     idxBatchNumber: index('idx_outbound_batches_number').on(t.batchNumber),
+    // multi_order(pick_to_tote) 배치는 카트 바구니 수 = 담을 수 있는 송장 수 상한이다.
+    // `::text` 캐스팅은 필수다. enum 리터럴로 직접 비교하면, 같은 마이그레이션 트랜잭션에서
+    // ADD VALUE 된 'multi_order' 를 쓰는 셈이라 Postgres 가 거부한다
+    // (unsafe use of new value of enum type). drizzle 은 대기 중인 마이그레이션 파일
+    // 전부를 하나의 트랜잭션에 묶으므로(pg-core/dialect.js:60) 파일을 나눠도 해결되지 않는다.
+    ckCartCapacity: check(
+      'ck_outbound_batches_cart_capacity',
+      sql`${t.pickingMethod}::text <> 'multi_order' OR (${t.cartCapacity} IS NOT NULL AND ${t.cartCapacity} >= 1)`,
+    ),
   }),
 );
 

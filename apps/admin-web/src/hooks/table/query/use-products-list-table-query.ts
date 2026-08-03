@@ -14,12 +14,16 @@ export const useProductsListTableQuery = ({
     'q',
     'categoryId',
     'brand',
+    'status',
     'mode',
     'productType',
     'approvalStatus',
     'createdAt',
+    'createdBy',
+    'supplierId',
     'sort',
     'order',
+    'stock',
   ]);
 
   const {
@@ -27,12 +31,16 @@ export const useProductsListTableQuery = ({
     q,
     categoryId,
     brand,
+    status,
     mode,
     productType,
     approvalStatus,
     createdAt,
+    createdBy,
+    supplierId,
     sort,
     order,
+    stock,
   } = queryObject;
 
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
@@ -43,7 +51,18 @@ export const useProductsListTableQuery = ({
     q: q?.trim() || undefined,
     categoryId,
     brand,
-    mode: mode === 'active-or-inactive' || mode === 'all' ? mode : undefined,
+    status:
+      status === 'active' || status === 'inactive' || status === 'draft'
+        ? status
+        : undefined,
+    mode:
+      status === 'inactive'
+        ? 'active-or-inactive'
+        : status === 'draft'
+          ? 'all'
+          : mode === 'active' || mode === 'active-or-inactive' || mode === 'all'
+            ? mode
+            : undefined,
     productType:
       productType === 'regular_sale' || productType === 'limited_edition'
         ? productType
@@ -55,6 +74,8 @@ export const useProductsListTableQuery = ({
       approvalStatus === 'rejected'
         ? approvalStatus
         : undefined,
+    createdBy: createdBy || undefined,
+    supplierId: supplierId || undefined,
     createdFrom,
     createdTo,
     sort:
@@ -62,6 +83,10 @@ export const useProductsListTableQuery = ({
         ? sort
         : undefined,
     order: order === 'asc' || order === 'desc' ? order : undefined,
+    stock:
+      stock === 'in_stock' || stock === 'partial' || stock === 'sold_out'
+        ? stock
+        : undefined,
   };
 
   return { searchParams, raw: queryObject };

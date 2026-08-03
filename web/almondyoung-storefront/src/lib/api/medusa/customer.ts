@@ -5,6 +5,7 @@ import { StoreCustomerWithGroupsResDto } from "@/lib/types/dto/medusa"
 import medusaError from "@lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
+import { cache } from "react"
 import {
   getAuthHeaders,
   getCacheTag,
@@ -13,7 +14,18 @@ import {
 } from "../../data/cookies"
 import { handleMedusaAuthError } from "./auth-utils"
 
-export const retrieveCustomer =
+/**
+ * 한 번의 렌더 안에서 고객 조회가 몇 번 일어나든 Medusa 왕복은 한 번만 나가게 한다.
+ *
+ * 홈만 해도 welcome-deals / best-categories / showcase-categories /
+ * interest-products-list 가 각각 부르고, 여기에 listProducts 마다 불리는
+ * getMembershipAwareCacheTags 까지 겹쳐 같은 응답을 여러 번 받아오고 있었다.
+ * `cache: "no-store"` 라 Next 의 fetch 중복 제거도 걸리지 않는다.
+ *
+ * 수명은 요청 하나의 렌더 패스이며 요청 간에는 공유되지 않는다. 따라서 로그인·
+ * 멤버십 상태 변경이 다음 요청에 반영되는 시점은 이전과 동일하다.
+ */
+const retrieveCustomerOnce = cache(
   async (): Promise<StoreCustomerWithGroupsResDto | null> => {
     const authHeaders = await getAuthHeaders()
 
@@ -37,6 +49,13 @@ export const retrieveCustomer =
       .then(({ customer }) => customer)
       .catch(() => null)
   }
+)
+
+// "use server" 파일은 async 함수만 export 할 수 있어 cache() 결과를 직접 내보내지
+// 못한다. 얇은 async 래퍼로 감싸 호출부 17곳을 그대로 두고 메모이제이션만 얹는다.
+export const retrieveCustomer =
+  async (): Promise<StoreCustomerWithGroupsResDto | null> =>
+    retrieveCustomerOnce()
 
 export const getCustomerAddresses = async (): Promise<
   HttpTypes.StoreCustomerAddress[] | null
@@ -119,10 +138,14 @@ export async function recoverCustomerCart(): Promise<HttpTypes.StoreCart | null>
     return null
   }
 
-  await setCartId(cart.id)
-
-  const cartCacheTag = await getCacheTag("carts")
-  revalidateTag(cartCacheTag)
+  //  카트 페이지가 명시 id 로 다시 조회해 표시할 수 있게 한다.
+  try {
+    await setCartId(cart.id)
+    const cartCacheTag = await getCacheTag("carts")
+    revalidateTag(cartCacheTag)
+  } catch {
+    // Server Action/Route Handler 밖(페이지 렌더)에서 호출되면 쿠키 쓰기 불가 — 무시하고 카트만 반환
+  }
 
   return cart
 }

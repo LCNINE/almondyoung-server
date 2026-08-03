@@ -9,21 +9,26 @@ import CategoryProducts from "./category-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
-import { normalizeCategorySort } from "../utils/sort-mapping"
+import { normalizeCategorySort, normalizePageSize } from "../utils/sort-mapping"
+
+const ALL_PRODUCTS_CATEGORY_HANDLE = "cafe24-cat-499"
 
 export function CategoryTemplate({
   sortBy,
+  limit,
   countryCode,
   category,
   segments,
 }: {
   sortBy?: SortOptions
+  limit?: string
   countryCode: string
   category?: HttpTypes.StoreProductCategory
   segments?: string[]
 }) {
   const t = useTranslations("category.products")
   const sort = normalizeCategorySort(sortBy)
+  const pageSize = normalizePageSize(limit)
 
   const hasChildren =
     category?.category_children && category.category_children.length > 0
@@ -62,8 +67,8 @@ export function CategoryTemplate({
         </div>
       )}
 
-      <div className="flex justify-end py-2">
-        <RefinementList sortBy={sort} />
+      <div className="py-2">
+        <RefinementList sortBy={sort} pageSize={pageSize} />
       </div>
 
       <div className="w-full">
@@ -71,8 +76,13 @@ export function CategoryTemplate({
           <Suspense fallback={<ProductsSkeleton />}>
             <CategoryProducts
               sortBy={sort}
+              limit={pageSize}
               countryCode={countryCode}
-              categoryIds={category ? collectCategoryIds(category) : undefined}
+              categoryIds={
+                category && category.handle !== ALL_PRODUCTS_CATEGORY_HANDLE
+                  ? collectCategoryIds(category)
+                  : undefined
+              }
             />
           </Suspense>
         </ErrorBoundary>

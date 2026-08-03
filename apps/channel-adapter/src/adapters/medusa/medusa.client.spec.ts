@@ -942,3 +942,208 @@ describe('MedusaClient.addCustomerToGroup', () => {
     expect(batchCustomerGroups).toHaveBeenCalledWith('cus_1', { add: [GROUP] });
   });
 });
+
+describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
+  function makeCategoryClient(parentLookup: { id: string } | null) {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+      categoryCache: { value: new Map(), writable: true },
+    });
+
+    // ensureCategoryFromSnapshot 이 쓰는 조회/캐시 헬퍼만 대체한다.
+    const existing = { id: 'pcat_child', handle: 'cafe24-cat-531', metadata: {} };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(parentLookup);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue(existing);
+    (client as any).setCategoryCache = jest.fn();
+
+    return { client, update };
+  }
+
+  const snapshot = (parentId: string | null) => ({
+    id: 'pim-child',
+    name: '주얼리',
+    slug: 'cafe24-cat-531',
+    path: '530/531',
+    parentId,
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  });
+
+  it('PIM 부모가 없으면 parent_category_id 를 null 로 명시해 루트로 올린다', async () => {
+    const { client, update } = makeCategoryClient(null);
+
+    await client.ensureCategoryFromSnapshot(snapshot(null), { refreshFields: true });
+
+    expect(update).toHaveBeenCalledWith('pcat_child', expect.objectContaining({ parent_category_id: null }));
+  });
+
+  it('PIM 부모를 찾으면 그 Medusa id 로 갱신한다', async () => {
+    const { client, update } = makeCategoryClient({ id: 'pcat_parent' });
+
+    await client.ensureCategoryFromSnapshot(snapshot('pim-parent'), { refreshFields: true });
+
+    expect(update).toHaveBeenCalledWith('pcat_child', expect.objectContaining({ parent_category_id: 'pcat_parent' }));
+  });
+
+  it('PIM 부모가 있는데 Medusa 에서 못 찾으면 부모 필드를 건드리지 않는다', async () => {
+    const { client, update } = makeCategoryClient(null);
+
+    await client.ensureCategoryFromSnapshot(snapshot('pim-parent-missing'), { refreshFields: true });
+
+    const payload = update.mock.calls[0][1];
+    expect(payload).not.toHaveProperty('parent_category_id');
+  });
+});
+
+describe('MedusaClient.ensureCategoryFromSnapshot 부모 필수 모드', () => {
+  function makeClient() {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } })
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).getCategoryById = jest.fn().mockResolvedValue({ id: 'pcat_child', metadata: {} });
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  const snapshot = {
+    id: 'pim-child',
+    name: '자식',
+    slug: 'child',
+    path: 'p/child',
+    parentId: 'pim-parent',
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  };
+
+  it('부모를 못 찾으면 던져서 inbox 재시도에 맡긴다', async () => {
+    const { client } = makeClient();
+
+    await expect(
+      client.ensureCategoryFromSnapshot(snapshot, { requireParent: true })
+    ).rejects.toThrow('재시도 대상');
+  });
+
+  it('requireParent 없이는 기존처럼 부모 필드를 건너뛰고 진행한다', async () => {
+    const { client, update } = makeClient();
+
+    await client.ensureCategoryFromSnapshot(snapshot, { refreshFields: true });
+
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0][1]).not.toHaveProperty('parent_category_id');
+  });
+});
+
+describe('MedusaClient.ensureCategoryFromSnapshot 멤버십 전용 플래그 보존', () => {
+  function makeClient(existingMetadata: Record<string, unknown>) {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_x' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    const existing = { id: 'pcat_x', handle: 'cafe24-cat-339', metadata: existingMetadata };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue(existing);
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  // 상품 동기화 경로가 넘기는 형태 — 멤버십 전용 필드가 없다
+  const productPathSnapshot = {
+    id: 'pim-339',
+    name: '퍼마블렌드',
+    slug: 'cafe24-cat-339',
+    path: '339',
+    parentId: null,
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  };
+
+  it('플래그를 안 넘기면 기존 metadata 값을 덮어쓰지 않는다', async () => {
+    const { client, update } = makeClient({ isVisibleToMembersOnly: true });
+
+    await client.ensureCategoryFromSnapshot(productPathSnapshot, { refreshFields: true });
+
+    const metadata = update.mock.calls[0][1].metadata;
+    expect(metadata.isVisibleToMembersOnly).toBe(true);
+  });
+
+  it('플래그를 명시하면 그 값으로 갱신한다', async () => {
+    const { client, update } = makeClient({ isVisibleToMembersOnly: true });
+
+    await client.ensureCategoryFromSnapshot(
+      { ...productPathSnapshot, isVisibleToMembersOnly: false },
+      { refreshFields: true }
+    );
+
+    expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(false);
+  });
+})
+
+describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건드리지 않는다', () => {
+  function makeClient() {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_x' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    // list 응답이 캐시 등으로 낡아 flag=false 를 들고 있는 상황
+    const stale = { id: 'pcat_x', handle: 'cafe24-cat-339', metadata: { isVisibleToMembersOnly: false } };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(stale);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(stale);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue({ ...stale, metadata: { isVisibleToMembersOnly: true } });
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  const snapshot = {
+    id: 'pim-339',
+    name: '퍼마블렌드',
+    slug: 'cafe24-cat-339',
+    path: '339',
+    parentId: null,
+    isActive: true,
+    visibility: true,
+    showOnMainCategory: false,
+  };
+
+  it('refreshFields 없이 호출하면 update 를 아예 하지 않는다', async () => {
+    const { client, update } = makeClient();
+
+    const id = await client.ensureCategoryFromSnapshot(snapshot);
+
+    expect(id).toBe('pcat_x');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('refreshFields 면 갱신하되, 낡은 list 응답이 아니라 재조회 결과를 병합한다', async () => {
+    const { client, update } = makeClient();
+
+    await client.ensureCategoryFromSnapshot(snapshot, { refreshFields: true });
+
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(true);
+  });
+})

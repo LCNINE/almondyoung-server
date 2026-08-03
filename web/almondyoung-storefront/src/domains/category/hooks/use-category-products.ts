@@ -10,8 +10,6 @@ import type { HttpTypes } from "@medusajs/types"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useCallback, useMemo } from "react"
 
-export const PRODUCT_LIMIT = 12
-
 type ProductPage = {
   response: { products: HttpTypes.StoreProduct[]; count: number }
   nextPage: number | null
@@ -19,6 +17,7 @@ type ProductPage = {
 
 type UseCategoryProductsParams = {
   sortBy: SortOptions
+  limit: number
   countryCode: string
   categoryIds?: string[]
   collectionId?: string
@@ -34,6 +33,7 @@ type UseCategoryProductsParams = {
  */
 export function useCategoryProducts({
   sortBy,
+  limit,
   countryCode,
   categoryIds,
   collectionId,
@@ -48,58 +48,59 @@ export function useCategoryProducts({
     isFetchingNextPage,
     fetchNextPage: fetchNextPageRaw,
     hasNextPage,
-  } =
-    useInfiniteQuery<ProductPage, Error>({
-      queryKey: [
-        "category-products",
-        sortBy,
-        countryCode,
-        categoryIds ?? null,
-        collectionId ?? null,
-        productsIds ?? null,
-      ],
-      initialPageParam: 1,
-      getNextPageParam: (lastPage) => lastPage.nextPage ?? undefined,
-      queryFn: async ({ pageParam }) => {
-        const page = pageParam as number
+  } = useInfiniteQuery<ProductPage, Error>({
+    queryKey: [
+      "category-products",
+      sortBy,
+      limit,
+      countryCode,
+      categoryIds ?? null,
+      collectionId ?? null,
+      productsIds ?? null,
+    ],
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.nextPage ?? undefined,
+    queryFn: async ({ pageParam }) => {
+      const page = pageParam as number
 
-        if (isSortedOption(sortBy)) {
-          const { sortBy: mappedSortBy, order } = mapSortParams(sortBy)
-          const result = await listProductsSorted({
-            pageParam: page,
-            sortBy: mappedSortBy,
-            order,
-            countryCode,
-            categoryId: categoryIds,
-            collectionId,
-            limit: PRODUCT_LIMIT,
-          })
-          return { response: result.response, nextPage: result.nextPage }
-        }
-
-        const result = await listProducts({
+      if (isSortedOption(sortBy)) {
+        const { sortBy: mappedSortBy, order } = mapSortParams(sortBy)
+        const result = await listProductsSorted({
           pageParam: page,
+          sortBy: mappedSortBy,
+          order,
           countryCode,
-          queryParams: {
-            limit: PRODUCT_LIMIT,
-            category_id: categoryIds,
-            collection_id: collectionId ? [collectionId] : undefined,
-            id: productsIds,
-          },
+          categoryId: categoryIds,
+          collectionId,
+          limit,
         })
         return { response: result.response, nextPage: result.nextPage }
-      },
-      initialData: {
-        pages: [
-          {
-            response: { products: initialProducts, count: totalCount },
-            nextPage: initialNextPage,
-          },
-        ],
-        pageParams: [1],
-      },
-      initialDataUpdatedAt: Date.now(),
-    })
+      }
+
+      const result = await listProducts({
+        pageParam: page,
+        countryCode,
+        queryParams: {
+          limit,
+          order: "-created_at",
+          category_id: categoryIds,
+          collection_id: collectionId ? [collectionId] : undefined,
+          id: productsIds,
+        },
+      })
+      return { response: result.response, nextPage: result.nextPage }
+    },
+    initialData: {
+      pages: [
+        {
+          response: { products: initialProducts, count: totalCount },
+          nextPage: initialNextPage,
+        },
+      ],
+      pageParams: [1],
+    },
+    initialDataUpdatedAt: Date.now(),
+  })
 
   const allProducts = useMemo(() => {
     const products = data ? data.pages.flatMap((p) => p.response.products) : []

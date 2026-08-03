@@ -3,10 +3,12 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   ValidatePreviewDto,
-  CommitResultDto,
+  CommitAcceptedDto,
   SessionDetailDto,
   SessionListResponse,
-  PublishResultDto,
+  PublishAcceptedDto,
+  CancelAcceptedDto,
+  ImportProgressDto,
 } from '@/lib/types/dto/product-import';
 import { client } from '../../client';
 
@@ -27,7 +29,7 @@ export const productImportClient = {
     return res.data;
   },
 
-  commit: async (file: File): Promise<CommitResultDto> => {
+  commit: async (file: File): Promise<CommitAcceptedDto> => {
     const formData = new FormData();
     formData.append('file', file);
     const res = await client.post(`${BASE}/commit`, formData, {
@@ -49,8 +51,18 @@ export const productImportClient = {
     return res.data;
   },
 
-  publish: async (sessionId: string): Promise<PublishResultDto> => {
+  getProgress: async (sessionId: string): Promise<ImportProgressDto> => {
+    const res = await client.get(`${BASE}/${sessionId}/progress`);
+    return res.data;
+  },
+
+  publish: async (sessionId: string): Promise<PublishAcceptedDto> => {
     const res = await client.post(`${BASE}/${sessionId}/publish`);
+    return res.data;
+  },
+
+  cancel: async (sessionId: string): Promise<CancelAcceptedDto> => {
+    const res = await client.post(`${BASE}/${sessionId}/cancel`);
     return res.data;
   },
 };

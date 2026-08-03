@@ -1,6 +1,7 @@
 "use server"
 
 import { api } from "@lib/api/api"
+import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
 
 // ── Tracking types ────────────────────────────────────────────────────────
 
@@ -136,16 +137,41 @@ export async function getOrderActionsBatchByMedusaId(
   )
 }
 
-/** Medusa order ID 기반 취소 — 스토어프론트에서 주로 사용 */
+export type StoreCancelOrderResult =
+  | { success: true; actions: StoreOrderActionsResponse }
+  | { success: false; error: string }
+
+/**
+ * Medusa order ID 기반 취소 — 스토어프론트에서 주로 사용
+ *
+ * 서버 액션이 throw 하면 프로덕션 빌드에서 메시지가 지워져 Next 내부 문구가
+ * 그대로 토스트에 노출된다. "이미 출고된 주문은 취소할 수 없습니다" 같은 거절
+ * 사유는 사용자에게 보여줘야 하므로 결과 객체로 돌려준다.
+ * (인증 실패만 error.tsx 토큰 복구로 전파)
+ */
 export async function cancelOrderByMedusaId(
   medusaOrderId: string,
   dto?: StoreCancelOrderRequest
-): Promise<StoreOrderActionsResponse> {
-  return api<StoreOrderActionsResponse>(
-    "wms",
-    `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/cancel-request`,
-    { method: "POST", body: dto ?? {}, withAuth: true }
-  )
+): Promise<StoreCancelOrderResult> {
+  try {
+    const actions = await api<StoreOrderActionsResponse>(
+      "wms",
+      `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/cancel-request`,
+      {
+        method: "POST",
+        body: dto ?? {},
+        withAuth: true,
+        // 서버 필수 헤더. 시도마다 새 키여야 과거 실패 응답이 재생되지 않는다.
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+      }
+    )
+    return { success: true, actions }
+  } catch (error) {
+    if (error instanceof ApiAuthError) throw error
+    if (error instanceof HttpApiError)
+      return { success: false, error: error.message }
+    throw error
+  }
 }
 
 /** Core SO UUID 기반 (필요 시 사용) */

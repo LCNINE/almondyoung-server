@@ -19,11 +19,14 @@ type Props = {
   cart: HttpTypes.StoreCart | null
   /** 판매중단(draft/미게시)으로 결제를 막는 variant id 목록 */
   unavailableVariantIds?: string[]
+  /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
+  availableByVariantId?: Record<string, number>
 }
 
 export default function CartTemplate({
   cart,
   unavailableVariantIds = [],
+  availableByVariantId,
 }: Props) {
   const router = useRouter()
   const params = useParams()
@@ -183,6 +186,7 @@ export default function CartTemplate({
                 onSelectAll={handleSelectAll}
                 onSelectItem={handleSelectItem}
                 unavailableVariantIds={unavailableVariantIdSet}
+                availableByVariantId={availableByVariantId}
               />
             </CardContent>
           </Card>

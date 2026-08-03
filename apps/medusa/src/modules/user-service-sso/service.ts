@@ -198,7 +198,9 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
           ...userMetadata,
           email: userMetadata.email ?? userinfo.email,
           name: userMetadata.name ?? userinfo.name ?? userinfo.nickname,
-          login_id: userMetadata.login_id ?? userinfo.username,
+          // userinfo.username 은 로그인 ID 가 아니라 실명이다. 표준 클레임을 먼저 보고,
+          // 없을 때만 예전 동작(username)으로 떨어진다.
+          login_id: userMetadata.login_id ?? userinfo.preferred_username ?? userinfo.username,
         };
       }
     }
@@ -286,7 +288,10 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
 
   private async fetchUserinfo(
     accessToken: string,
-  ): Promise<{ sub: string; email?: string; name?: string; nickname?: string; username?: string } | undefined> {
+  ): Promise<
+    | { sub: string; email?: string; name?: string; preferred_username?: string; nickname?: string; username?: string }
+    | undefined
+  > {
     const url = new URL('/oauth/userinfo', this.options_.userServiceUrl ?? this.options_.issuerUrl);
     const res = await fetch(url.toString(), {
       method: 'GET',

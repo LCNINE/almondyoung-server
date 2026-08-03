@@ -2,9 +2,9 @@
   "cafe24Link": {
     "label": "Notice",
     "date": "2026.06.15",
-    "title": "Link your existing Almondyoung (Cafe24) account",
-    "p1": "Following the website renewal, you need to link your existing Cafe24 Almondyoung account.",
-    "p2": "Linking your Cafe24 account lets you carry over your existing membership benefits to your new account.",
+    "title": "Link your account from our previous site",
+    "p1": "Following the website renewal, you need to link your Almondyoung account from our previous site.",
+    "p2": "Linking your previous site account lets you carry over your existing membership benefits to your new account.",
     "p3": "Please tap the button below to link your existing Almondyoung account.",
     "link": "Link existing account",
     "hideForToday": "Don't show again today"
@@ -17,8 +17,8 @@
     "p1": "As the website has been newly renewed, your previous membership information was not migrated, so you need to sign up again.",
     "p2": "We sincerely apologize for the inconvenience.",
     "p3": "After signing up again, you can use the service exactly as before.",
-    "p4": "After signing up, link your existing Cafe24 account on the My Page, and your existing membership (remaining period and benefits) will be transferred automatically.",
-    "p5": "However, your accumulated points are not transferred automatically. Please send us your new ID along with your existing Cafe24 ID via KakaoTalk inquiry, and we will move your points over.",
+    "p4": "After signing up, link your previous site account on the My Page, and your existing membership (remaining period and benefits) will be transferred automatically.",
+    "p5": "However, your accumulated points are not transferred automatically. Please send us your new ID along with your ID from the previous site via KakaoTalk inquiry, and we will move your points over.",
     "p6": "Thank you.",
     "hideForToday": "Don't show again today",
     "close": "Close"

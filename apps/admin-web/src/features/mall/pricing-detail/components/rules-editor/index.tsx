@@ -125,7 +125,13 @@ export function RulesEditor({
       toast.error('옵션값·옵션조합 범위의 룰은 적용 대상을 1개 이상 선택해주세요.');
       return;
     }
-    onSave({ basePriceRules: base, membershipPriceRules: membership, tieredPriceRules: tiered });
+    // 서버에서 받은 order 를 그대로 되돌려보내면 백필 데이터의 order 중복이 그대로 나가 400 이 난다.
+    // reorder 는 추가·삭제·순서이동에서만 불려서 범위/값만 고친 경우엔 중복이 남는다.
+    onSave({
+      basePriceRules: reorder(base),
+      membershipPriceRules: reorder(membership),
+      tieredPriceRules: reorder(tiered),
+    });
   };
 
   const renderTable = (

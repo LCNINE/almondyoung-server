@@ -290,7 +290,7 @@ export default function MarketingCouponsTemplate() {
 
   return (
     <div className="space-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="쿠폰 / 캠페인"
           subtitle="쿠폰을 생성·발급하고, 캠페인으로 묶어 관리합니다."
@@ -331,7 +331,7 @@ export default function MarketingCouponsTemplate() {
 
       {tab === 'campaigns' && <MarketingCampaignsTemplate />}
 
-      {tab === 'coupons' && <Container className="divide-y-0">
+      {tab === 'coupons' && <Container>
         <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />

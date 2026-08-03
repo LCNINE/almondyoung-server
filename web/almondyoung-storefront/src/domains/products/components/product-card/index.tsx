@@ -4,6 +4,7 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { ProductQuickActions } from "domains/products/components/product-quick-actions"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
+import { fetchRatingSummaryBatched } from "@/lib/api/ugc/rating-summary-batch"
 import { HttpTypes } from "@medusajs/types"
 import { Star } from "lucide-react"
 import { useTranslations } from "next-intl"
@@ -13,6 +14,8 @@ import Thumbnail from "../thumbnail"
 import { Quantity } from "./quantity"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
+import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
+import { getIsOverseas } from "@/lib/utils/product-card"
 
 type RatingSummary = {
   averageRating: number
@@ -39,17 +42,8 @@ const getMetadataRatingSummary = (
   ),
 })
 
-const fetchRatingSummary = (productId: string) => {
-  return fetch(`/api/ugc/rating-summary?${new URLSearchParams({ productId })}`, {
-    cache: "no-store",
-  })
-    .then((res) => (res.ok ? res.json() : null))
-    .then((data) => ({
-      averageRating: toFiniteNumber(data?.averageRating),
-      totalCount: toFiniteNumber(data?.totalCount),
-    }))
-    .catch(() => ({ averageRating: 0, totalCount: 0 }))
-}
+// 카드마다 호출하지만 같은 tick 의 요청은 한 번으로 합쳐진다
+const fetchRatingSummary = fetchRatingSummaryBatched
 
 function ProductCardRating({
   rating,
@@ -177,7 +171,7 @@ export default function ProductCard({
           />
 
           {isDigital && (
-            <span className="bg-primary/90 absolute left-2 top-2 z-10 rounded px-2 py-0.5 text-[11px] font-medium text-white">
+            <span className="bg-primary/90 absolute top-2 left-2 z-10 rounded px-2 py-0.5 text-[11px] font-medium text-white">
               {tCard("digitalBadge")}
             </span>
           )}
@@ -197,6 +191,7 @@ export default function ProductCard({
 
         <div className="mt-4 min-h-20">
           <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
+            {getIsOverseas(product) && <OverseasBadge />}
             {product.title}
           </h3>
           <ProductCardRating

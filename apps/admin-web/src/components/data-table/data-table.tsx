@@ -1,5 +1,6 @@
 'use client';
 
+import type * as React from 'react';
 import { type Row, type RowData, type Table } from '@tanstack/react-table';
 import { DataTableQuery } from './data-table-query';
 import { DataTableRoot } from './data-table-root';
@@ -15,11 +16,15 @@ type DataTableProps<TData extends RowData> = {
   orderBy?: { key: string; label: string }[];
   orderByPresetOnly?: boolean;
   search?: boolean;
+  searchPlaceholder?: string;
   navigateTo?: (row: Row<TData>) => string;
   /** navigateTo 경로를 같은 창 이동(router.push) 대신 새 팝업 창으로 연다 */
   openInNewWindow?: boolean;
   noRecords?: { message: string };
   prefix?: string;
+  variant?: 'plain' | 'grid';
+  rowClassName?: (row: Row<TData>) => string | undefined;
+  toolbar?: React.ReactNode;
 };
 
 export function DataTable<TData extends RowData>({
@@ -32,10 +37,14 @@ export function DataTable<TData extends RowData>({
   orderBy,
   orderByPresetOnly,
   search,
+  searchPlaceholder,
   navigateTo,
   openInNewWindow,
   noRecords,
   prefix,
+  variant,
+  rowClassName,
+  toolbar,
 }: DataTableProps<TData>) {
   return (
     <div>
@@ -44,8 +53,10 @@ export function DataTable<TData extends RowData>({
         orderBy={orderBy}
         orderByPresetOnly={orderByPresetOnly}
         search={search}
+        searchPlaceholder={searchPlaceholder}
         prefix={prefix}
       />
+      {toolbar}
       <DataTableRoot
         table={table}
         isLoading={isLoading}
@@ -55,6 +66,8 @@ export function DataTable<TData extends RowData>({
         openInNewWindow={openInNewWindow}
         pageSize={pageSize}
         count={count}
+        variant={variant}
+        rowClassName={rowClassName}
       />
     </div>
   );

@@ -38,7 +38,13 @@ export class OwnershipService {
 
   async listForCustomer(
     customerId: string,
-    opts: { skip?: number; take?: number; filter?: OwnershipFilter } = {},
+    opts: {
+      skip?: number;
+      take?: number;
+      filter?: OwnershipFilter;
+      /** 주문상세에서 그 주문의 ownership 만 뽑을 때 사용. */
+      salesOrderId?: string;
+    } = {},
     tx?: LibraryTx,
   ): Promise<OwnershipListResponseDto> {
     return this.dbService.run(async (trx) => {
@@ -52,6 +58,9 @@ export class OwnershipService {
       ];
       if (filter === 'new') conditions.push(isNull(digitalAssetOwnerships.exercisedAt));
       if (filter === 'used') conditions.push(isNotNull(digitalAssetOwnerships.exercisedAt));
+      if (opts.salesOrderId) {
+        conditions.push(eq(digitalAssetOwnerships.salesOrderId, opts.salesOrderId));
+      }
 
       const whereExpr = and(...conditions);
 
@@ -191,9 +200,14 @@ export class OwnershipService {
         .where(whereExpr);
 
       const rows = await trx
-        .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
+        .select({
+          ownership: digitalAssetOwnerships,
+          asset: digitalAssets,
+          channelOrderId: wmsTables.salesOrders.channelOrderId,
+        })
         .from(digitalAssetOwnerships)
         .innerJoin(digitalAssets, eq(digitalAssetOwnerships.assetId, digitalAssets.id))
+        .leftJoin(wmsTables.salesOrders, eq(digitalAssetOwnerships.salesOrderId, wmsTables.salesOrders.id))
         .where(whereExpr)
         .orderBy(desc(digitalAssetOwnerships.grantedAt))
         .limit(take)
@@ -374,12 +388,14 @@ export class OwnershipService {
   private _toAdminDto(row: {
     ownership: typeof digitalAssetOwnerships.$inferSelect;
     asset: typeof digitalAssets.$inferSelect;
+    channelOrderId?: string | null;
   }): AdminOwnershipResponseDto {
     return {
       id: row.ownership.id,
       customerId: row.ownership.customerId,
       assetId: row.ownership.assetId,
       salesOrderId: row.ownership.salesOrderId,
+      channelOrderId: row.channelOrderId ?? null,
       grantedAt: row.ownership.grantedAt,
       exercisedAt: row.ownership.exercisedAt,
       revokedAt: row.ownership.revokedAt,

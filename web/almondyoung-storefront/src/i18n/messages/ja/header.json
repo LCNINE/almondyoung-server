@@ -9,6 +9,11 @@
     "logout": "ログアウト"
   },
   "categoryDropdown": {
-    "trigger": "カテゴリ"
+    "trigger": "カテゴリ",
+    "shopTrade": "ショップ売買",
+    "brandHall": "ブランド館",
+    "comingSoon": "準備中",
+    "viewAll": "すべて見る",
+    "viewMore": "もっと見る"
   }
 }

@@ -40,6 +40,8 @@ type BaseProps<T> = {
     getRowClassName?: (row: T, globalIndex: number) => string;
     /** 행 클릭 시 이동할 URL (DataTable과 동일) */
     navigateTo?: (row: T) => string;
+    /** 긴 목록 스크롤 시 헤더를 상단에 고정 (opt-in) */
+    stickyHeader?: boolean;
 };
 
 type WithSelection<T> = BaseProps<T> & {
@@ -95,6 +97,7 @@ export function MergedDataTable<T extends Record<string, unknown>>(
         emptyMessage = '데이터가 없습니다.',
         getRowClassName,
         navigateTo,
+        stickyHeader = false,
     } = props;
 
     const {
@@ -224,7 +227,7 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                 <Table.Header>
                     <Table.Row>
                         {selectable && (
-                            <Table.Head className="w-[40px] text-center">
+                            <Table.Head className={cn('w-[40px] text-center', stickyHeader && 'sticky top-0 z-20 bg-background')}>
                                 <div className="flex justify-center items-center">
                                     <Checkbox
                                         className="w-4 h-4"
@@ -247,6 +250,7 @@ export function MergedDataTable<T extends Record<string, unknown>>(
                                     : col.align === 'left' ? 'text-left'
                                     : 'text-center',
                                     col.sortable && 'cursor-pointer hover:bg-muted/80',
+                                    stickyHeader && 'sticky top-0 z-20 bg-background',
                                 )}
                                 style={col.width ? { width: col.width } : undefined}
                                 onClick={() => col.sortable && handleSort(col.key)}

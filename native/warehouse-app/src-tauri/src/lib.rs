@@ -1,4 +1,5 @@
 mod oauth_loopback;
+mod printing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -6,7 +7,8 @@ pub fn run() {
     .manage(oauth_loopback::LoopbackState::default())
     .invoke_handler(tauri::generate_handler![
       oauth_loopback::oauth_loopback_start,
-      oauth_loopback::oauth_loopback_wait
+      oauth_loopback::oauth_loopback_wait,
+      printing::print_raw
     ])
     .plugin(
             tauri_plugin_stronghold::Builder::new(|pass| {

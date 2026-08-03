@@ -8,7 +8,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
-import { formatAmount } from '../../shared/utils/template-helpers';
+import { formatAmount, formatOrderTotal } from '../../shared/utils/template-helpers';
 
 /**
  * Order Service 이벤트 컨슈머
@@ -57,8 +57,11 @@ export class OrderEventConsumer {
         priority: eventMapping.priority as any,
         variables: {
           name: payload.shippingAddress?.recipientName ?? '고객',
-          orderNumber: payload.externalOrderId ?? payload.orderId,
-          total: formatAmount(payload.totalAmount),
+          // 고객에게는 내부 id(order_01…) 대신 사람이 읽는 주문번호(#2332)를 보여준다.
+          orderNumber: payload.displayOrderNo
+            ? `#${payload.displayOrderNo}`
+            : (payload.externalOrderId ?? payload.orderId),
+          total: formatOrderTotal(payload.totalAmount, payload.pointsAmount),
         },
       };
       await this.notificationDispatcherService.send(sendDto);

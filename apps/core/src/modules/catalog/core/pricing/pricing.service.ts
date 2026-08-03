@@ -163,6 +163,12 @@ export class PricingService {
         await trx.insert(productMasterPricingRules).values(mappings);
       }
 
+      // 가격 규칙은 별도 테이블이라, 여기서 찍지 않으면 목록의 '수정일시'가 가격 변경에 반응하지 않는다.
+      await trx
+        .update(productMasterVersions)
+        .set({ updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, versionId));
+
       return this.getVersionRules(versionId, trx);
     }, tx);
   }
@@ -200,6 +206,11 @@ export class PricingService {
           trx,
         );
       }
+
+      await trx
+        .update(productMasterVersions)
+        .set({ updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, versionId));
     }, tx);
   }
 

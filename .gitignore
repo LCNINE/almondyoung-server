@@ -2,6 +2,13 @@
 /dist
 /node_modules
 /build
+
+# superpowers brainstorm scratch (visual companion mockups)
+.superpowers/
+
+# Local git worktrees
+.worktrees/
+
 !packages/hms-api-wrapper/dist/
 !packages/hms-api-wrapper/dist/**
 
@@ -437,5 +444,29 @@ scripts/_tmp-*
 scripts/crawl_hwabang_to_cafe24.py
 scripts/check-membership-group.ts
 
+# Cellmate live-order collection tools (local operational scripts; never commit)
+scripts/ops/cellmate-local/
+
+# 특정 고객 건 일회성 운영/진단 스크립트 (개인정보 포함, 로컬 보관)
+scripts/ops/ejlove1029-*.ts
+scripts/ops/hayoung-*.ts
+scripts/ops/iceyou-*.ts
+scripts/ops/kwj0628-*.ts
+scripts/ops/membership-diag-*.ts
+scripts/ops/membership-group-reconcile.ts
+scripts/ops/membership-sync-audit.ts
+scripts/ops/yoonhaeing-*.ts
+
+# 임시 재고 가드 / 롤백용 ID 백업
+scripts/backorder-guard.ts
+scripts/backorder-temp-*.json
+
+# 매출 리포트 (고객·주문 데이터 포함, 로컬 보관)
+scripts/sales-report.ts
+scripts/reports/
+
 # 효성에프엠에스 계약 문서 (저작권상 저장소에 올리지 않음, 로컬 보관)
 apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
+
+# git worktrees (superpowers isolated workspaces)
+.worktrees/

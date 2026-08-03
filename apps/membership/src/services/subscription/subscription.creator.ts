@@ -8,6 +8,7 @@ import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 import { PaymentIntentAlreadyUsedException } from '../../shared/exceptions/subscription.exceptions';
 
 function isUniqueViolation(err: unknown): boolean {
@@ -41,10 +42,15 @@ export class SubscriptionCreator {
     private readonly contractEventManager: ContractEventManager,
     private readonly entitlementManager: EntitlementManager,
     private readonly policyService: MembershipPolicyService,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
 
   /**
    * 새 구독 생성 (계약 + 권한)
+   *
+   * one_time 경로는 이 트랜잭션 안에서 MembershipStatusChanged(ACTIVE) 를 아웃박스에 기록해
+   * 그룹 동기화 이벤트가 구독 커밋과 원자적으로 남게 한다(발행 유실 방지). recurring 은 가입 후
+   * billing_agreement 실패 시 void 될 수 있어 여기서 발행하지 않고 호출부가 최종 성공 후 발행한다.
    */
   async createNewSubscription(
     userId: string,
@@ -54,6 +60,7 @@ export class SubscriptionCreator {
     billingMode: 'one_time' | 'recurring' = 'one_time',
     skipTrial = false,
     billingPath: 'CHARGE' | 'INVOICE' = 'CHARGE',
+    email = '',
   ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
     if (billingMode === 'recurring' && plan.durationDays > RECURRING_MAX_DURATION_DAYS) {
       throw new BadRequestError(
@@ -170,6 +177,23 @@ export class SubscriptionCreator {
         endsAt,
         batch.id,
       );
+
+      // one_time 은 이 시점에 구독이 최종 확정(이후 void 되는 후속 단계 없음)이므로
+      // 그룹 동기화 이벤트를 같은 트랜잭션의 아웃박스에 원자적으로 기록한다.
+      if (billingMode === 'one_time') {
+        await this.membershipEventPublisher.saveStatusChanged(
+          {
+            userId,
+            email,
+            status: 'ACTIVE',
+            occurredAt: now.toISOString(),
+            contractId: contract.id,
+            planId: plan.id,
+            tierId: tier.id,
+          },
+          tx,
+        );
+      }
 
       return {
         contractId: contract.id,

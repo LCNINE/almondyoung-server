@@ -6,10 +6,19 @@ import { ProductImportNormalizer } from './services/product-import.normalizer';
 import { ProductImportValidator } from './services/product-import.validator';
 import { ProductImportSessionReader } from './services/product-import-session.reader';
 import { ProductImportManager } from './services/product-import.manager';
+import { ProductImportPricingBuilder } from './services/product-import-pricing.builder';
+import { ProductImportProgressBuilder } from './services/product-import-progress.builder';
+import { ProductImportVariantCodeChecker } from './services/product-import-variant-code.checker';
+import { ProductImportJobManager } from './services/product-import-job.manager';
+import { ProductImportJobWorker } from './services/product-import-job.worker';
+import { ProductImportImageFetcher } from './services/product-import-image.fetcher';
+import { ProductImportFileClient } from './services/product-import-file.client';
+import { ProductImportImageCleaner } from './services/product-import-image.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
+import { PricingModule } from '../../core/pricing/pricing.module';
 
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, PricingModule],
   controllers: [ProductImportController],
   providers: [
     ProductImportService,
@@ -18,6 +27,14 @@ import { ProductsModule } from '../../core/products/products.module';
     ProductImportValidator,
     ProductImportSessionReader,
     ProductImportManager,
+    ProductImportPricingBuilder,
+    ProductImportProgressBuilder,
+    ProductImportVariantCodeChecker,
+    ProductImportJobManager,
+    ProductImportJobWorker,
+    ProductImportImageFetcher,
+    ProductImportFileClient,
+    ProductImportImageCleaner,
   ],
   exports: [ProductImportService],
 })

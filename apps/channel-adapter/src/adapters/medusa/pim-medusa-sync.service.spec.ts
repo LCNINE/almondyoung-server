@@ -221,3 +221,87 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     expect(calls).toEqual(['remove', 'add']);
   });
 });
+
+describe('PimMedusaSyncService 카테고리 조상 처리', () => {
+  const makeService = () => {
+    const ensureCategoryFromSnapshot = jest.fn().mockResolvedValue('pcat_x');
+    const medusaClient = { ensureCategoryFromSnapshot } as any;
+    const service = Object.create(PimMedusaSyncService.prototype) as PimMedusaSyncService;
+    Object.defineProperties(service, {
+      medusaClient: { value: medusaClient },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      storefrontRevalidate: { value: { revalidateCategory: jest.fn() } },
+    });
+    return { service, ensureCategoryFromSnapshot };
+  };
+
+  const cat = (id: string, parentId: string | null, membersOnly = false) => ({
+    id,
+    name: id,
+    slug: id,
+    description: null,
+    parentId,
+    level: 0,
+    path: id,
+    sortOrder: 0,
+    isActive: true,
+    visibility: true,
+    thumbnail: null,
+    displaySettings: membersOnly ? { isVisibleToMembersOnly: true } : null,
+    seoConfig: null,
+    templateConfig: null,
+    createdAt: '2026-07-27T00:00:00.000Z',
+    updatedAt: '2026-07-27T00:00:00.000Z',
+  });
+
+  it('조상을 루트부터 먼저 보장하고 대상 카테고리는 마지막에 처리한다', async () => {
+    const { service, ensureCategoryFromSnapshot } = makeService();
+
+    await service.handleCategoryChanged({
+      categoryId: 'grand',
+      changeType: 'created',
+      timestamp: '2026-07-27T00:00:00.000Z',
+      category: cat('grand', 'child') as any,
+      ancestors: [cat('root', null) as any, cat('child', 'root') as any],
+    });
+
+    expect(ensureCategoryFromSnapshot.mock.calls.map((c) => c[0].id)).toEqual(['root', 'child', 'grand']);
+  });
+
+  it('조상이 멤버십 전용이면 자손과 중간 조상까지 상속시킨다', async () => {
+    const { service, ensureCategoryFromSnapshot } = makeService();
+
+    await service.handleCategoryChanged({
+      categoryId: 'grand',
+      changeType: 'created',
+      timestamp: '2026-07-27T00:00:00.000Z',
+      category: cat('grand', 'child') as any,
+      ancestors: [cat('root', null, true) as any, cat('child', 'root') as any],
+    });
+
+    const flags = ensureCategoryFromSnapshot.mock.calls.map((c) => [c[0].id, c[0].isVisibleToMembersOnly]);
+    expect(flags).toEqual([
+      ['root', true],
+      ['child', true],
+      ['grand', true],
+    ]);
+  });
+
+  it('조상이 일반이면 자손도 자기 값만 쓴다', async () => {
+    const { service, ensureCategoryFromSnapshot } = makeService();
+
+    await service.handleCategoryChanged({
+      categoryId: 'child',
+      changeType: 'created',
+      timestamp: '2026-07-27T00:00:00.000Z',
+      category: cat('child', 'root') as any,
+      ancestors: [cat('root', null) as any],
+    });
+
+    const flags = ensureCategoryFromSnapshot.mock.calls.map((c) => [c[0].id, c[0].isVisibleToMembersOnly]);
+    expect(flags).toEqual([
+      ['root', false],
+      ['child', false],
+    ]);
+  });
+});

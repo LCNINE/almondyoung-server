@@ -8,7 +8,12 @@ import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
-import { UserServiceSeedStep, type OAuthClientSeed } from '../steps/user-service.seed-step';
+import {
+  UserServiceSeedStep,
+  STOREFRONT_APP_CLIENT_SEED,
+  STOREFRONT_APP_WEBVIEW_REDIRECT,
+  type OAuthClientSeed,
+} from '../steps/user-service.seed-step';
 import { MembershipSeedStep } from '../steps/membership.seed-step';
 import { WalletSeedStep } from '../steps/wallet.seed-step';
 import { FileServiceSeedStep } from '../steps/file-service.seed-step';
@@ -110,17 +115,24 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
   // storefront(=medusa-storefront RP). 콜백 경로: `${BASE}/${countryCode}/callback/oidc`
   // (web/almondyoung-storefront/src/lib/api/medusa/sso.ts 의 buildCallbackUrl 과 동치).
   // 운영 country 가 kr 단일이라 한 개만 등록. country 추가 시 redirectUris 배열에 추가하면 됨.
+  //
+  // 쇼핑몰 앱의 웹뷰 로그인도 이 client 를 쓴다 — Medusa 의 user-service-sso 가 앱이 보낸
+  // callback_url 을 그대로 redirect_uri 로 넣어 authorize URL 을 만들기 때문이다.
   const storefrontBase = process.env.STOREFRONT_BASE_URL;
   if (storefrontBase) {
     oauthClients.push({
       clientId: 'medusa-storefront',
       clientType: 'confidential',
-      redirectUris: [`${storefrontBase}/kr/callback/oidc`],
+      redirectUris: [`${storefrontBase}/kr/callback/oidc`, STOREFRONT_APP_WEBVIEW_REDIRECT],
       postLogoutRedirectUris: [`${storefrontBase}/kr`],
       allowedScopes: ['openid', 'profile', 'email'],
       clientSecret: process.env.STOREFRONT_OIDC_CLIENT_SECRET,
     });
   }
+
+  // 쇼핑몰 Android 앱의 자체 public client (PKCE). 다른 RP 와 달리 base URL 이 없는 고정
+  // 커스텀 스킴이라 env gate 없이 항상 시드한다.
+  oauthClients.push(STOREFRONT_APP_CLIENT_SEED);
 
   // Demo user 비밀번호 (clip의 DEMO_PASSWORD_DEFAULT와 동일 기본값)
   const demoPassword = process.env.DEMO_PASSWORD || 'demo!1234';

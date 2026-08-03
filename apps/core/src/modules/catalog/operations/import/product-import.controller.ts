@@ -8,13 +8,21 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  HttpCode,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { User } from '@app/authorization';
 import { ProductImportService } from './services/product-import.service';
-import { ValidatePreviewDto, CommitResultDto, SessionDetailDto, PublishResultDto } from './dto';
+import {
+  ValidatePreviewDto,
+  CommitAcceptedDto,
+  SessionDetailDto,
+  PublishAcceptedDto,
+  CancelAcceptedDto,
+  ImportProgressDto,
+} from './dto';
 
 @ApiTags('Product Import')
 @Controller('product-imports')
@@ -44,14 +52,18 @@ export class ProductImportController {
   }
 
   @Post('commit')
+  @HttpCode(202)
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 10 * 1024 * 1024 } }))
-  @ApiOperation({ summary: '워크북 커밋(세션 생성 + draft 상품 일괄 생성)' })
+  @ApiOperation({ summary: '워크북 커밋 접수(세션 생성 + 행 적재). 상품 생성은 워커가 이어받는다.' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } }, required: ['file'] },
   })
-  @ApiResponse({ status: 201, type: CommitResultDto })
-  async commit(@UploadedFile() file: Express.Multer.File, @User() user: { userId: string }): Promise<CommitResultDto> {
+  @ApiResponse({ status: 202, type: CommitAcceptedDto })
+  async commit(
+    @UploadedFile() file: Express.Multer.File,
+    @User() user: { userId: string },
+  ): Promise<CommitAcceptedDto> {
     if (!file) throw new BadRequestException('file is required');
     return this.service.commit(file.buffer, file.originalname, user.userId);
   }
@@ -64,6 +76,17 @@ export class ProductImportController {
     return this.service.getSessions(p, l);
   }
 
+  // `:sessionId` 보다 먼저 선언한다. 두 세그먼트 경로라 실제로는 겹치지 않지만,
+  // 파라미터 라우트 뒤에 구체 경로를 두는 습관은 wildcard 가 하나만 끼어들어도 깨진다.
+  @Get(':sessionId/progress')
+  @ApiOperation({
+    summary: '세션 진행률(단계별 집계). 행 목록이 없어 응답이 세션 크기와 무관하다 — 폴링은 이쪽으로 한다.',
+  })
+  @ApiResponse({ status: 200, type: ImportProgressDto })
+  async getProgress(@Param('sessionId') sessionId: string): Promise<ImportProgressDto> {
+    return this.service.getProgress(sessionId);
+  }
+
   @Get(':sessionId')
   @ApiOperation({ summary: '임포트 세션 상세(성공/실패 아이템 전체)' })
   @ApiResponse({ status: 200, type: SessionDetailDto })
@@ -72,9 +95,21 @@ export class ProductImportController {
   }
 
   @Post(':sessionId/publish')
-  @ApiOperation({ summary: '세션 내 draft 일괄 publish' })
-  @ApiResponse({ status: 201, type: PublishResultDto })
-  async publish(@Param('sessionId') sessionId: string): Promise<PublishResultDto> {
+  @HttpCode(202)
+  @ApiOperation({ summary: '세션 내 draft 일괄 게시 접수' })
+  @ApiResponse({ status: 202, type: PublishAcceptedDto })
+  async publish(@Param('sessionId') sessionId: string): Promise<PublishAcceptedDto> {
     return this.service.publishSession(sessionId);
+  }
+
+  @Post(':sessionId/cancel')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '세션 취소 — 진행 중인 레인을 멈춘다. 이미 생성/게시된 것은 되돌리지 않는다.',
+  })
+  @ApiResponse({ status: 200, type: CancelAcceptedDto })
+  @ApiResponse({ status: 409, description: '이미 취소됐거나 진행 중인 작업이 없음' })
+  async cancel(@Param('sessionId') sessionId: string): Promise<CancelAcceptedDto> {
+    return this.service.cancelSession(sessionId);
   }
 }

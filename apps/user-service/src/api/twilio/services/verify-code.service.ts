@@ -29,12 +29,12 @@ export class VerifyCodeService {
       return '인증이 완료되었습니다';
     }
 
-    // 가장 최근의 유효한 코드만 조회
-    const verification = await this.findValidVerification(phoneNumber, code, tx);
+    // 가장 최근의 유효한 발급 건 (코드 일치 여부와 무관하게 조회 — 아래에서 비교한다)
+    const verification = await this.findValidVerification(phoneNumber, tx);
 
     if (!verification) {
       throw new TwilioException({
-        message: '잘못된 인증 코드입니다',
+        message: '유효한 인증 요청이 없습니다. 인증번호를 다시 요청해주세요',
         errorCode: 'TWILIO_INVALID_CODE_EXCEPTION',
         httpStatus: HttpStatus.BAD_REQUEST,
       });
@@ -99,8 +99,10 @@ export class VerifyCodeService {
     return alreadyVerified;
   }
 
-  // 유효한 인증 코드 조회
-  private async findValidVerification(phoneNumber: string, code: string, tx?: DbTransaction) {
+  /**
+   * 해당 번호의 "가장 최근 미인증·미만료" 발급 건을 가져온다.
+   */
+  private async findValidVerification(phoneNumber: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     const [verification] = await client
@@ -109,7 +111,6 @@ export class VerifyCodeService {
       .where(
         and(
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
-          eq(userServiceSchema.phoneVerifications.code, code),
           eq(userServiceSchema.phoneVerifications.isVerified, false),
           gt(userServiceSchema.phoneVerifications.expiresAt, new Date()),
         ),

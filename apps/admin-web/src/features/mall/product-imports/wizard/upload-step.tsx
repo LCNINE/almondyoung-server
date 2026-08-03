@@ -5,15 +5,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { products } from '@/lib/api/domains';
 import { FileDown, Upload } from 'lucide-react';
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { downloadBlob } from '@/lib/utils/download-blob';
 
 interface Props {
   onFileSelected: (file: File) => void;
@@ -48,8 +40,14 @@ export function UploadStep({ onFileSelected }: Props) {
       <div>
         <h3 className="mb-1 text-sm font-semibold">1. 엑셀 파일 업로드</h3>
         <p className="text-xs text-muted-foreground">
-          템플릿(Products/Options 시트)을 받아 작성한 뒤 업로드하세요. 업로드하면
-          자동으로 검증됩니다.
+          템플릿(Products/Options/Variants/Categories/Constraints 시트)을 받아
+          작성한 뒤 업로드하세요. Variants·Categories·Constraints 시트는
+          선택입니다 — Variants 는 조합별로 가격을 다르게 주거나 variantCode 를
+          심을 때, Categories 는 상품을 여러 카테고리에 넣을 때, Constraints 는
+          구매제약(멤버십 전용 여부·평생 구매수량 제한)을 지정할 때만 채웁니다.
+          판매기간(salesStartDate/salesEndDate)은 등록 후 화면에서 수정·해제할
+          수 없으니 프리뷰에서 반드시 확인하세요. 업로드하면 자동으로
+          검증됩니다.
         </p>
       </div>
 

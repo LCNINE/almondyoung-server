@@ -115,11 +115,18 @@ export const salesOrders = {
   // 관리자 주문 취소 + Wallet 자동 환불 (새 엔드포인트)
   adminCancelSalesOrder: async (
     id: string,
-    body?: CancelSalesOrderDto
-  ): Promise<{ status: string; refundStatus: string; refundAmount?: number; manualReason?: string | null }> => {
+    body?: CancelSalesOrderDto,
+    idempotencyKey: string = crypto.randomUUID()
+  ): Promise<{
+    status: string;
+    refundStatus: string;
+    refundAmount?: number;
+    manualReason?: string | null;
+  }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/cancel`,
-      body
+      body,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
     );
     return response.data;
   },
@@ -137,7 +144,7 @@ export const salesOrders = {
   adminManualRefundComplete: async (
     id: string,
     adminNote?: string,
-    refundLinkId?: string,
+    refundLinkId?: string
   ): Promise<{ refundStatus: string; completionType: string }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/manual-refund-complete`,

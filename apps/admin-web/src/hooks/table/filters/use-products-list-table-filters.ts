@@ -16,15 +16,35 @@ export function useProductsListTableFilters(): Filter[] {
   );
 
   return [
-    // GET /masters 는 status 필터 대신 mode 를 노출한다.
     {
-      key: 'mode',
+      key: 'status',
       label: '판매 상태',
       type: 'select',
       options: [
         { label: '판매중', value: 'active' },
+        { label: '판매중단', value: 'inactive' },
+        { label: '작성중', value: 'draft' },
+      ],
+    },
+    {
+      key: 'mode',
+      label: '목록 범위',
+      type: 'select',
+      options: [
+        { label: '판매중만', value: 'active' },
         { label: '판매중단 포함', value: 'active-or-inactive' },
-        { label: '작성중(임시) 포함', value: 'all' },
+        { label: '작성중까지 전체', value: 'all' },
+      ],
+    },
+    {
+      // 재고(품절) 상태 필터. 목록의 품절 배지와 동일한 집계 기준으로 필터한다.
+      key: 'stock',
+      label: '재고 상태',
+      type: 'select',
+      options: [
+        { label: '판매가능', value: 'in_stock' },
+        { label: '부분품절', value: 'partial' },
+        { label: '품절', value: 'sold_out' },
       ],
     },
     {

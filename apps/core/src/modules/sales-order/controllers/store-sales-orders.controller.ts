@@ -26,6 +26,24 @@ export class StoreSalesOrdersController {
     return this.service.getActions(id, customer.userId);
   }
 
+  @Get('by-wallet-intent/:walletIntentId/digital-exercised')
+  @ApiOperation({
+    summary: '해당 wallet intent 주문에 다운로드된 디지털 상품이 있는지 (환불신청 가드용)',
+    description: 'Wallet 이 무통장 환불신청을 받기 전에 호출한다. 본인 주문만 조회된다.',
+  })
+  @ApiParam({ name: 'walletIntentId', description: 'Wallet payment intent ID' })
+  async hasExercisedDigital(
+    @Param('walletIntentId') walletIntentId: string,
+    @User() customer: AuthenticatedCustomer,
+  ): Promise<{ hasExercisedDigital: boolean }> {
+    return {
+      hasExercisedDigital: await this.service.hasExercisedDigitalByWalletIntent(
+        walletIntentId,
+        customer.userId,
+      ),
+    };
+  }
+
   @Post(':id/cancel-request')
   @HttpCode(200)
   @ApiOperation({ summary: '고객 주문 취소 요청 (Core SO ID 기반)' })

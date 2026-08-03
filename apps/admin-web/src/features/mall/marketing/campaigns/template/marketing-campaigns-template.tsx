@@ -86,7 +86,7 @@ export default function MarketingCampaignsTemplate() {
 
   return (
     <div className="space-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="캠페인 관리"
           subtitle="여러 쿠폰을 묶는 행사 캠페인을 관리합니다."
@@ -99,7 +99,7 @@ export default function MarketingCampaignsTemplate() {
         />
       </Container>
 
-      <Container className="divide-y-0">
+      <Container>
         {isLoading ? (
           <div className="p-6 text-sm text-muted-foreground">불러오는 중...</div>
         ) : campaigns.length === 0 ? (

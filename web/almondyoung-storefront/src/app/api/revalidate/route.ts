@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  let body: { handle?: string; paths?: string[] } = {}
+  let body: { handle?: string; paths?: string[]; tags?: string[] } = {}
   try {
     body = await request.json()
   } catch {
@@ -86,6 +86,13 @@ export async function POST(request: NextRequest) {
   // (카테고리 페이지 수는 적어 비용이 작다. route group `(main)` 은 패턴에 포함되지 않는다)
   revalidatePath("/[countryCode]/category/[...segments]", "page")
   revalidated.push("/[countryCode]/category/[...segments]")
+
+  // 호출자가 명시한 태그(예: `category-thumbnail-{medusaCategoryId}`)를 무효화.
+  // 사용자별 접미사가 붙지 않는 태그만 유효하다 — Medusa SDK 캐시 태그엔 쓸 수 없다.
+  for (const tag of body.tags ?? []) {
+    revalidateTag(tag)
+    revalidated.push(`tag:${tag}`)
+  }
 
   // 호출자가 명시한 추가 경로가 있으면 함께 무효화.
   for (const p of body.paths ?? []) {

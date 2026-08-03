@@ -7,12 +7,16 @@ export const WAREHOUSE_CONSTANTS = {
     name: '국내 메인 창고',
     location: '부천시',
     type: 'domestic' as const,
+    // 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
+    // discrete(개별 피킹)만 켠다 — 토탈·멀티오더는 창고 설정 화면에서 명시적으로.
+    supportedPickingStrategies: ['discrete'] as const,
   },
   DEFAULT_OVERSEAS_WAREHOUSE: {
     id: '00000000-0000-0000-0000-000000000002',
     name: '해외 메인 창고',
     location: '중국',
     type: 'overseas' as const,
+    supportedPickingStrategies: ['discrete'] as const,
   },
 } as const;
 

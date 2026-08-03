@@ -95,19 +95,13 @@ export const pricingRulesSetSchema = z
     membershipPriceRules: z.array(membershipPriceRuleSchema),
     tieredPriceRules: z.array(tieredPriceRuleSchema),
   })
-  .refine(
-    (data) => {
-      if (data.basePriceRules.length === 0) {
-        return false;
-      }
-      const firstRule = data.basePriceRules.find((r) => r.order === 1);
-      return firstRule?.scopeType === 'all_variants';
-    },
-    {
-      message: 'First base_price rule (order=1) must have scopeType all_variants',
-      path: ['basePriceRules'],
-    },
-  )
+  // 모든 variant 가 base_price 를 하나 이상 받아야 한다 (안 그러면 계산기가 0 원을 낸다).
+  // 실제 커버리지 검사는 variant 목록을 알아야 하므로 PricingValidatorService 가 DB 를 보고 한다.
+  // 여기서는 DB 없이 확정 가능한 "base 룰이 아예 없음" 만 거른다.
+  .refine((data) => data.basePriceRules.length > 0, {
+    message: 'At least one base_price rule is required',
+    path: ['basePriceRules'],
+  })
   .refine(
     (data) => {
       const checkDuplicates = (rules: Array<{ order: number }>) => {

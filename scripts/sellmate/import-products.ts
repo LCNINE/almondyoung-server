@@ -39,6 +39,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns } from './parse';
+import { excludedReason } from './excluded';
 
 // 셀메이트 헤더 후보. 실제 양식 헤더(2026-06 개발팀 데이터 내보내기용) 기준으로 확정.
 const COLUMN_CANDIDATES = {
@@ -112,10 +113,17 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
   const get = (row: string[], idx: number) => (idx >= 0 ? (row[idx] ?? '').toString().trim() : '');
 
   const items: ParsedItem[] = [];
+  const skipped = new Map<string, number>();
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     const itemCode = get(row, cols.itemCode);
     if (!itemCode) continue;
+    // 동기화 금지 상품(excluded.ts)은 SKU 등록부터 막는다 — SKU 가 없으면 sync-stock 도 손댈 게 없다.
+    const excluded = excludedReason(get(row, cols.productSerial), get(row, cols.productName));
+    if (excluded) {
+      skipped.set(excluded, (skipped.get(excluded) ?? 0) + 1);
+      continue;
+    }
     let optionName = get(row, cols.optionName);
     if (SINGLE_OPTION_SENTINELS.has(optionName)) optionName = '';
     items.push({
@@ -129,6 +137,7 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
       file: path.basename(file),
     });
   }
+  for (const [reason, count] of skipped) console.log(`   ⛔ 등록 제외 ${count}행 — ${reason}`);
   return items;
 }
 
@@ -275,37 +284,66 @@ async function main() {
   }
   const sql = postgres(DATABASE_URL, { max: 4 });
 
+  // 행별 왕복은 터널 너머에서 감당이 안 된다(실측 475ms/쿼리 × 6만행 ≈ 8시간) → 다중행으로 묶는다.
+  const CHUNK = Number(process.env.IMPORT_CHUNK ?? 1000);
+  const chunk = <T>(arr: T[]): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += CHUNK) out.push(arr.slice(i, i + CHUNK));
+    return out;
+  };
+
+  // ponytail: 배치 upsert 를 live 에 커밋하기 전 한 번 돌려보는 용도. 결과 수치는 그대로 찍고 롤백한다.
+  const ROLLBACK = process.env.ROLLBACK === '1';
+  const ROLLBACK_SIGNAL = 'ROLLBACK_REQUESTED';
+  type Summary = {
+    groups: number;
+    skus: number;
+    inserted: number;
+    alreadyOk: number;
+    conflicts: { barcode: string; wantedSku: string; ownerSku: string }[];
+  };
+  let captured: Summary | null = null;
+
   try {
     const summary = await sql.begin(async (txRaw) => {
       // postgres TransactionSql 는 Omit 기반이라 호출 시그니처가 사라진다(TS 한계) → 호출 가능한 Sql 로 취급.
       const tx = txRaw as unknown as Sql;
       const now = new Date();
 
-      // 1) sku_groups upsert (행별, 전부 같은 트랜잭션)
+      // 1) sku_groups upsert (배치). 한 문장 안에 같은 code 가 두 번 들어가면 ON CONFLICT 가
+      //    같은 행을 두 번 건드려 에러나므로 code 로 먼저 유일화한다.
+      const uniqueGroups = [...new Map(groups.map((g) => [g.code, g])).values()];
       const groupIdByCode = new Map<string, string>();
-      for (const g of groups) {
-        const [r] = await tx<{ id: string; code: string }[]>`
-          INSERT INTO sku_groups (name, code, updated_at)
-          VALUES (${g.name}, ${g.code}, ${now})
+      for (const part of chunk(uniqueGroups)) {
+        const rows = part.map((g) => ({ name: g.name, code: g.code, updated_at: now }));
+        // 제네릭을 붙이면 다중행 헬퍼(tx(rows, ...)) 인자 타입이 never 로 좁혀진다(postgres.js 타입 한계)
+        // → 제네릭 대신 결과를 캐스팅한다.
+        const res = (await tx`
+          INSERT INTO sku_groups ${tx(rows, 'name', 'code', 'updated_at')}
           ON CONFLICT (code) DO UPDATE SET name = excluded.name, updated_at = ${now}
           RETURNING id, code
-        `;
-        groupIdByCode.set(r.code, r.id);
+        `) as unknown as { id: string; code: string }[];
+        for (const r of res) groupIdByCode.set(r.code, r.id);
       }
 
-      // 2) skus upsert
+      // 2) skus upsert (배치). skus 는 itemCode 로 이미 dedup 되어 code 가 유일하다.
       const skuIdByCode = new Map<string, string>();
-      for (const s of skus) {
-        const groupId = s.groupCode ? (groupIdByCode.get(s.groupCode) ?? null) : null;
-        const [r] = await tx<{ id: string; code: string }[]>`
-          INSERT INTO skus (name, code, option_key, group_id, updated_at)
-          VALUES (${s.name}, ${s.code}, ${s.optionKey}, ${groupId}, ${now})
+      for (const part of chunk(skus)) {
+        const rows = part.map((s) => ({
+          name: s.name,
+          code: s.code,
+          option_key: s.optionKey,
+          group_id: s.groupCode ? (groupIdByCode.get(s.groupCode) ?? null) : null,
+          updated_at: now,
+        }));
+        const res = (await tx`
+          INSERT INTO skus ${tx(rows, 'name', 'code', 'option_key', 'group_id', 'updated_at')}
           ON CONFLICT (code) DO UPDATE SET
             name = excluded.name, option_key = excluded.option_key,
             group_id = excluded.group_id, updated_at = ${now}
           RETURNING id, code
-        `;
-        skuIdByCode.set(r.code, r.id);
+        `) as unknown as { id: string; code: string }[];
+        for (const r of res) skuIdByCode.set(r.code, r.id);
       }
 
       // 3) 대표 바코드. itemCode 를 바코드로 위조하지 않고, 빈 바코드는 건너뛴다.
@@ -316,34 +354,56 @@ async function main() {
         .map((s) => ({ skuId: skuIdByCode.get(s.code)!, barcode: s.barcode }))
         .filter((r) => r.skuId && r.barcode);
 
-      let inserted = 0;
-      let alreadyOk = 0;
-      const conflicts: { barcode: string; wantedSku: string; ownerSku: string }[] = [];
-      for (const w of wanted) {
-        const [existing] = await tx<{ sku_id: string }[]>`
-          SELECT sku_id FROM sku_barcodes WHERE barcode = ${w.barcode}
-        `;
-        if (existing) {
-          if (existing.sku_id === w.skuId) {
-            alreadyOk++;
-          } else {
-            conflicts.push({ barcode: w.barcode, wantedSku: w.skuId, ownerSku: existing.sku_id });
-          }
-          continue;
-        }
-        // sku 당 primary 하나 보장: 기존 primary 내리고 새 바코드를 primary 로.
-        await tx`UPDATE sku_barcodes SET is_primary = false, updated_at = ${now} WHERE sku_id = ${w.skuId} AND is_primary = true`;
-        await tx`
-          INSERT INTO sku_barcodes (sku_id, barcode, is_primary, updated_at)
-          VALUES (${w.skuId}, ${w.barcode}, true, ${now})
-        `;
-        inserted++;
+      // 기존 점유자를 배치로 미리 읽어둔다(행별 SELECT 였던 자리).
+      const ownerByBarcode = new Map<string, string>();
+      for (const part of chunk(wanted.map((w) => w.barcode))) {
+        const res = (await tx`
+          SELECT barcode, sku_id FROM sku_barcodes WHERE barcode IN ${tx(part)}
+        `) as unknown as { barcode: string; sku_id: string }[];
+        for (const r of res) ownerByBarcode.set(r.barcode, r.sku_id);
       }
 
-      return { groups: groupIdByCode.size, skus: skuIdByCode.size, inserted, alreadyOk, conflicts };
+      let alreadyOk = 0;
+      const conflicts: { barcode: string; wantedSku: string; ownerSku: string }[] = [];
+      const toInsert: { skuId: string; barcode: string }[] = [];
+      for (const w of wanted) {
+        const owner = ownerByBarcode.get(w.barcode);
+        if (owner) {
+          if (owner === w.skuId) alreadyOk++;
+          else conflicts.push({ barcode: w.barcode, wantedSku: w.skuId, ownerSku: owner });
+          continue;
+        }
+        // 같은 바코드를 두 sku 가 원하면 행별 실행 때와 같이 먼저 온 쪽이 점유하고 뒤는 충돌로 남는다.
+        ownerByBarcode.set(w.barcode, w.skuId);
+        toInsert.push(w);
+      }
+
+      // sku 당 primary 하나 보장: 새 바코드가 붙을 sku 들의 기존 primary 를 먼저 내린다.
+      for (const part of chunk(toInsert.map((w) => w.skuId))) {
+        await tx`UPDATE sku_barcodes SET is_primary = false, updated_at = ${now}
+                 WHERE sku_id IN ${tx(part)} AND is_primary = true`;
+      }
+      for (const part of chunk(toInsert)) {
+        const rows = part.map((w) => ({ sku_id: w.skuId, barcode: w.barcode, is_primary: true, updated_at: now }));
+        await tx`INSERT INTO sku_barcodes ${tx(rows, 'sku_id', 'barcode', 'is_primary', 'updated_at')}`;
+      }
+
+      captured = {
+        groups: groupIdByCode.size,
+        skus: skuIdByCode.size,
+        inserted: toInsert.length,
+        alreadyOk,
+        conflicts,
+      };
+      if (ROLLBACK) throw new Error(ROLLBACK_SIGNAL);
+      return captured;
+    }).catch((e: unknown) => {
+      if (e instanceof Error && e.message === ROLLBACK_SIGNAL && captured) return captured;
+      throw e;
     });
 
     console.log(`✔ sku_groups: ${summary.groups}개 upsert`);
+    if (ROLLBACK) console.log('↩️  ROLLBACK=1 — 아래 수치는 롤백된 결과다(DB 미반영).');
     console.log(`✔ skus: ${summary.skus}개 upsert`);
     console.log(`✔ sku_barcodes: 신규 ${summary.inserted}개 / 기존 유지 ${summary.alreadyOk}개`);
     if (summary.conflicts.length) {

@@ -59,4 +59,21 @@ export class MembershipServiceClient {
       throw error;
     }
   }
+
+  /**
+   * 활성 멤버십 전체 userId 반환 (후보 목록 없이 전수).
+   * cafe24 매핑에 없는 신규 자체가입자까지 포함 — 전체 그룹 정합화 크론의 add 판정 기준.
+   */
+  async getAllActiveUserIds(): Promise<string[]> {
+    const url = `${this.getBaseUrl()}/internal/memberships/active-all`;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ activeUserIds: string[] }>(url, {}, { headers: this.getAuthHeaders() }),
+      );
+      return response.data?.activeUserIds ?? [];
+    } catch (error) {
+      this.logger.error(`getAllActiveUserIds 실패: ${error?.message}`);
+      throw error;
+    }
+  }
 }

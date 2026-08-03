@@ -57,6 +57,26 @@ const nextConfig = {
     return config
   },
 
+  // cafe24 시절 URL(/index.html)로 들어오는 유입 — 카카오 채널 "쇼핑몰 보기" 버튼 등.
+  // 미들웨어는 pathname 에 "." 이 있으면 정적 자산으로 보고 통과시키므로,
+  // 여기서 먼저 걷어내지 않으면 countryCode 가 "index.html" 로 잡혀 region 조회가 실패한다.
+  async redirects() {
+    const defaultRegion = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
+
+    return [
+      {
+        source: "/index.html",
+        destination: `/${defaultRegion}`,
+        permanent: true,
+      },
+      {
+        source: "/index.html/:path*",
+        destination: `/${defaultRegion}/:path*`,
+        permanent: true,
+      },
+    ]
+  },
+
   async headers() {
     return [
       {

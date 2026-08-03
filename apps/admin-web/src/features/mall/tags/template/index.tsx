@@ -25,7 +25,7 @@ export default function TagsTemplate() {
   );
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="태그 관리" subtitle="태그 그룹과 태그 값을 관리합니다." />
       <div className="p-4">
         <TwoColumnPage>

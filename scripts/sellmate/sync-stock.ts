@@ -4,8 +4,10 @@
  * 입력: 셀메이트 "재고관리 > 재고 현황 목록 > 엑셀 다운로드" 파일.
  *       import-products.ts 와 같은 파일을 그대로 쓰면 된다 (옵션정보일련번호 + 현재재고).
  *
- * 동작: 각 품목의 현재고(core, 부천 물류창고 ON_HAND 합계)를 셀메이트의 "현재재고" 값에
- *       맞추도록 차이(delta)만큼 ADJUST_UP / ADJUST_DOWN 이벤트를 기록한다.
+ * 동작: 각 품목의 현재고(core, 부천 물류창고 ON_HAND 합계)를 셀메이트의
+ *       **"현재재고 - 미발송주문수"** 값에 맞추도록 차이(delta)만큼 ADJUST_UP / ADJUST_DOWN
+ *       이벤트를 기록한다. 셀메이트 "현재재고" 는 아직 안 나간 주문분을 포함한 물리 재고라
+ *       그대로 넣으면 이미 팔린 수량을 다시 파는 셈이 된다 (음수는 0 으로 clamp).
  *       - delta = 0 → 아무것도 안 함 → 같은 파일 다시 돌려도 안전(idempotent)
  *       - 이벤트소싱: stock_events(불변 로그) insert + stock_ledgers(프로젝션) 갱신을
  *         InventoryCommandService.adjustUp/Down 과 동일하게 raw SQL 로 재현
@@ -36,6 +38,7 @@
  *   WAREHOUSE_ID        재고를 잡을 창고 (기본: 부천 물류창고)
  *   LOCATION_ID         증가분을 넣을 로케이션 (기본: 부천 입고기본존)
  *   ALLOW_MISSING=1     core 에 없는 품목이 있어도 나머지만 반영(기본: 중단)
+ *   ALLOW_NO_UNSHIPPED=1  '미발송주문수' 열 없는 CSV 도 허용(기본: 중단 — 오버셀 방지)
  *   ALLOW_DUP_FILES=1   여러 파일에 같은 품목이 다른 재고로 있어도 진행(기본: 중단)
  *   SKIP_SELLABLE_CHECK=1  매칭된 SKU stale 경고를 무시하고 0 으로 종료
  *   SELLMATE_ENCODING   HTML-xls 인코딩 (기본 euc-kr)
@@ -45,6 +48,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns, chunk } from './parse';
+import { excludedReason } from './excluded';
 
 // seeding 의 FIXED_UUIDS 와 동일 (scripts/seeding/constants/uuids.ts)
 const BUCHEON_WAREHOUSE_ID = process.env.WAREHOUSE_ID || '019d0001-0001-7000-a000-000000000001';
@@ -54,10 +58,17 @@ const ALLOW_MISSING = process.env.ALLOW_MISSING === '1' || process.env.ALLOW_MIS
 const ALLOW_DUP_FILES = process.env.ALLOW_DUP_FILES === '1' || process.env.ALLOW_DUP_FILES === 'true';
 const SKIP_SELLABLE_CHECK = process.env.SKIP_SELLABLE_CHECK === '1' || process.env.SKIP_SELLABLE_CHECK === 'true';
 const CLAMP_NEGATIVE = process.env.CLAMP_NEGATIVE === '1' || process.env.CLAMP_NEGATIVE === 'true';
+const ALLOW_NO_UNSHIPPED = process.env.ALLOW_NO_UNSHIPPED === '1' || process.env.ALLOW_NO_UNSHIPPED === 'true';
 
 const COLUMN_CANDIDATES = {
   itemCode: ['옵션정보일련번호', '옵션코드', '품목코드', '판매처옵션코드'],
   stock: ['현재재고', '가용재고', '재고', '재고수량'],
+  // 셀메이트 '현재재고' 는 아직 안 나간 주문분을 포함한 물리 재고다. 판매가능 재고는
+  // 현재재고 - 미발송주문수. 이 열이 없는 CSV 는 재고가 과다 반영되므로 중단한다.
+  unshipped: ['미발송주문수', '미출고주문수'],
+  // 제외 목록(excluded.ts) 판정용. 없어도 동작하지만 있으면 상품 단위로 정확히 거른다.
+  productSerial: ['상품일련번호'],
+  productName: ['상품명', '인쇄용상품명', '상품명(서식)'],
 } as const;
 type LogicalField = keyof typeof COLUMN_CANDIDATES;
 
@@ -101,19 +112,43 @@ export function parseStockRows(
       `[${path.basename(file)}] 필수 열(품목 고유키/현재재고)을 못 찾았습니다.\n   헤더: ${header.join(' | ')}`,
     );
   }
+  if (cols.unshipped < 0 && !ALLOW_NO_UNSHIPPED) {
+    throw new Error(
+      `[${path.basename(file)}] '미발송주문수' 열이 없습니다 — 현재재고만 넣으면 미발송 주문분이 재고로 잡혀 오버셀합니다.\n` +
+        `   셀메이트 엑셀 양식에 '미발송주문수' 를 추가해 다시 받으세요 (의도된 경우 ALLOW_NO_UNSHIPPED=1).\n` +
+        `   헤더: ${header.join(' | ')}`,
+    );
+  }
   const targets: Target[] = [];
   const errors: StockParseError[] = [];
+  const skipped = new Map<string, number>();
+  let clamped = 0;
   for (let i = 1; i < rows.length; i++) {
     const itemCode = (rows[i][cols.itemCode] ?? '').toString().trim();
     if (!itemCode) continue;
+    // 동기화 금지 상품(excluded.ts)은 재고를 맞추면 품절이 풀려 팔린다 — 여기서 잘라낸다.
+    const reason = excludedReason(
+      (rows[i][cols.productSerial] ?? '').toString(),
+      (rows[i][cols.productName] ?? '').toString(),
+    );
+    if (reason) {
+      skipped.set(reason, (skipped.get(reason) ?? 0) + 1);
+      continue;
+    }
     const raw = (rows[i][cols.stock] ?? '').toString();
-    const target = parseStock(raw, CLAMP_NEGATIVE);
-    if (target === null) {
+    const onHand = parseStock(raw, CLAMP_NEGATIVE);
+    if (onHand === null) {
       errors.push({ file: path.basename(file), rowNumber: i, itemCode, raw });
       continue;
     }
+    // 판매가능 재고 = 현재재고 - 미발송주문수. 음수는 오버셀 상태이므로 0(품절)으로 본다.
+    const unshipped = cols.unshipped >= 0 ? (parseStock((rows[i][cols.unshipped] ?? '').toString()) ?? 0) : 0;
+    const target = Math.max(0, onHand - unshipped);
+    if (onHand - unshipped < 0) clamped++;
     targets.push({ itemCode, target });
   }
+  for (const [reason, count] of skipped) console.log(`   ⛔ 동기화 제외 ${count}행 — ${reason}`);
+  if (clamped) console.log(`   ⚠️ 미발송이 현재고보다 많아 0 으로 처리한 품목 ${clamped}개 (오버셀 상태)`);
   return { targets, errors };
 }
 

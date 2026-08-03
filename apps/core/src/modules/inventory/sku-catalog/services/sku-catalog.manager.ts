@@ -226,7 +226,7 @@ export class SkuCatalogManager {
           skuId,
           barcode: dto.barcode,
           isPrimary: false,
-          packingUnit: dto.packingUnit,
+          packingUnit: dto.packingUnit ?? null,
         })
         .returning();
 

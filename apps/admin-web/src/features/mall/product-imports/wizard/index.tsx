@@ -8,7 +8,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { useValidateImport, useCommitImport } from '@/lib/services/products';
 import type {
   ValidatePreviewDto,
-  CommitResultDto,
+  CommitAcceptedDto,
 } from '@/lib/types/dto/product-import';
 import { UploadStep } from './upload-step';
 import { ValidateStep } from './validate-step';
@@ -19,7 +19,7 @@ type Step = 1 | 2 | 3;
 const STEP_LABELS: Record<Step, string> = {
   1: '업로드',
   2: '검증',
-  3: '완료',
+  3: '접수',
 };
 
 function Stepper({ current }: { current: Step }) {
@@ -46,7 +46,7 @@ export default function ImportWizard() {
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ValidatePreviewDto | null>(null);
-  const [result, setResult] = useState<CommitResultDto | null>(null);
+  const [result, setResult] = useState<CommitAcceptedDto | null>(null);
 
   const validate = useValidateImport();
   const commit = useCommitImport();
@@ -77,13 +77,13 @@ export default function ImportWizard() {
         setResult(res);
         setStep(3);
       },
-      onError: () => toast.error('커밋 중 오류가 발생했습니다.'),
+      onError: () => toast.error('커밋 접수 중 오류가 발생했습니다.'),
     });
   }
 
   return (
     <div className="flex flex-col gap-y-4">
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="엑셀 대량등록"
           subtitle="엑셀로 판매상품을 일괄 등록합니다. (업로드 → 검증 → 커밋)"

@@ -6,7 +6,7 @@ import { BusinessLicenseTable } from '../components/table';
 
 export default function BusinessLicenseListTemplate() {
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="사업자 인증 검토" />
       <BusinessLicenseTable />
     </Container>

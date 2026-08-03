@@ -7,8 +7,7 @@ import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
-import { ALL_SCOPES } from './platform/auth/merged-scopes';
-import { FULFILLMENT_ROLE_MAPPINGS } from './platform/auth/fulfillment-scopes';
+import { ALL_ROLE_MAPPINGS, ALL_SCOPES } from './platform/auth/merged-scopes';
 import { AppController } from './app.controller';
 
 import { CatalogModule } from './modules/catalog/catalog.module';
@@ -37,7 +36,7 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
     AuthorizationModule.forRoot({
       microserviceName: 'almondyoung',
       scopes: ALL_SCOPES,
-      roleMappings: FULFILLMENT_ROLE_MAPPINGS,
+      roleMappings: ALL_ROLE_MAPPINGS,
     }),
     // EventsModule.forRoot은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
 

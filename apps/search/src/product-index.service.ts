@@ -15,6 +15,16 @@ import { compactText } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
 
+// nori 가 미등록 고유명사를 동사 활용형으로 오분석해 토큰을 통째로 날려버리는 경우가 있다.
+// 예: "오샤레" → 오(VV 동사어간) + 샤(E 어미) + 레(E 어미) → posfilter 가 E 를 버려 ["오"] 만 남는다.
+// 남은 "오" 는 "타사와라"("와라"→"오") 같은 무관 상품과 name^8 로 매칭돼 정답을 랭킹 밖으로 밀어낸다.
+// nori 토큰 총 길이가 원문의 이 비율 미만이면 "뭉갬"으로 보고 nori 기반 절을 통째로 뺀다.
+// (측정: 오샤레 0.33 / 타사와라 0.75 / 그 외 대표 키워드 1.00 — 임계 0.6 은 양쪽에 여유가 있다.)
+const NORI_COLLAPSE_RATIO_THRESHOLD = 0.6;
+// 1~2음절 쿼리는 정상이어도 비율이 튀기 쉬워 감지 대상에서 뺀다.
+const NORI_COLLAPSE_MIN_LENGTH = 3;
+const NORI_ANALYZE_CACHE_LIMIT = 2000;
+
 @Injectable()
 export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
@@ -23,6 +33,7 @@ export class ProductIndexService implements OnModuleInit {
   private readonly reviewSortVolumeWeight: number;
   private readonly reviewSortCountSaturation: number;
   private initPromise: Promise<void> | null = null;
+  private readonly noriCollapseCache = new Map<string, boolean>();
 
   constructor(
     private readonly openSearchService: OpenSearchService,
@@ -143,17 +154,18 @@ export class ProductIndexService implements OnModuleInit {
     let total = 0;
 
     if (hasKeyword) {
+      const noriCollapsed = await this.isNoriCollapsed(query.q!.trim());
       const [strictResponse, fallbackResponse] = await Promise.all([
         this.executeSearch({
           index,
-          query: this.buildQuery(query, 'strict'),
+          query: this.buildQuery(query, 'strict', noriCollapsed),
           sort,
           from: 0,
           size: this.keywordResultPoolLimit,
         }),
         this.executeSearch({
           index,
-          query: this.buildQuery(query, 'fallback'),
+          query: this.buildQuery(query, 'fallback', noriCollapsed),
           sort,
           from: 0,
           size: this.keywordResultPoolLimit,
@@ -330,7 +342,49 @@ export class ProductIndexService implements OnModuleInit {
     return null;
   }
 
-  private buildQuery(query: ProductSearchQueryDto, stage: SearchStage): any {
+  // nori 가 검색어를 뭉갰는지 판정. 판정 실패(OpenSearch 오류 등)는 false —
+  // 뭉갬 방어는 랭킹 개선일 뿐이라 실패 시 기존 동작을 그대로 쓰는 편이 안전하다.
+  private async isNoriCollapsed(q: string): Promise<boolean> {
+    const compact = compactText(q);
+    if (compact.length < NORI_COLLAPSE_MIN_LENGTH) {
+      return false;
+    }
+
+    const cached = this.noriCollapseCache.get(compact);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    let collapsed = false;
+    try {
+      const response = await this.openSearchService.getClient().indices.analyze({
+        index: this.openSearchService.getProductsIndex(),
+        body: { analyzer: 'nori', text: q },
+      });
+      const tokens = (response.body?.tokens ?? []) as { token: string }[];
+      const analyzedLength = tokens.reduce((sum, item) => sum + item.token.length, 0);
+      collapsed = analyzedLength / compact.length < NORI_COLLAPSE_RATIO_THRESHOLD;
+
+      if (collapsed) {
+        this.logger.log(
+          `nori collapse detected for "${q}": ${analyzedLength}/${compact.length} — skipping nori clauses`,
+        );
+      }
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`nori collapse check failed for "${q}" (non-fatal): ${reason}`);
+      return false;
+    }
+
+    if (this.noriCollapseCache.size >= NORI_ANALYZE_CACHE_LIMIT) {
+      this.noriCollapseCache.clear();
+    }
+    this.noriCollapseCache.set(compact, collapsed);
+
+    return collapsed;
+  }
+
+  private buildQuery(query: ProductSearchQueryDto, stage: SearchStage, noriCollapsed = false): any {
     const q = query.q?.trim();
     const compactQ = compactText(q ?? '');
     const mustClauses: any[] = [];
@@ -338,7 +392,7 @@ export class ProductIndexService implements OnModuleInit {
 
     if (q) {
       if (stage === 'strict') {
-        mustClauses.push(this.buildStrictTextQuery(q, compactQ));
+        mustClauses.push(this.buildStrictTextQuery(q, compactQ, noriCollapsed));
       } else {
         mustClauses.push(this.buildFallbackTextQuery(q, compactQ));
       }
@@ -422,26 +476,50 @@ export class ProductIndexService implements OnModuleInit {
     return filters;
   }
 
-  private buildStrictTextQuery(q: string, _compactQ: string): any {
+  private buildStrictTextQuery(q: string, _compactQ: string, noriCollapsed = false): any {
+    // nori 를 타지 않는 절만 남긴다 — name.standard(standard) 와 name.ngram(edge_ngram).
+    // 이 둘은 미등록 외래어에도 원문 그대로 매칭돼서 뭉갬의 영향을 받지 않는다.
+    const noriFreeClauses = [
+      {
+        match_phrase: {
+          'name.standard': {
+            query: q,
+            boost: 25,
+          },
+        },
+      },
+      {
+        match: {
+          'name.ngram': {
+            query: q,
+            boost: 15,
+          },
+        },
+      },
+      {
+        match_phrase_prefix: {
+          'name.standard': {
+            query: q,
+            boost: 4,
+            max_expansions: 20,
+          },
+        },
+      },
+    ];
+
+    if (noriCollapsed) {
+      return {
+        bool: {
+          should: noriFreeClauses,
+          minimum_should_match: 1,
+        },
+      };
+    }
+
     return {
       bool: {
         should: [
-          {
-            match_phrase: {
-              'name.standard': {
-                query: q,
-                boost: 25,
-              },
-            },
-          },
-          {
-            match: {
-              'name.ngram': {
-                query: q,
-                boost: 15,
-              },
-            },
-          },
+          ...noriFreeClauses,
           {
             match_phrase: {
               name: {
@@ -459,12 +537,15 @@ export class ProductIndexService implements OnModuleInit {
             },
           },
           {
-            match_phrase_prefix: {
-              'name.standard': {
-                query: q,
-                boost: 4,
-                max_expansions: 20,
-              },
+            // 토큰이 여러 필드에 흩어진 경우("퍼마"=name, "색소"=category_names).
+            // 위 multi_match 는 best_fields 라 필드 하나가 전체 토큰을 가져야 해서
+            // 이런 조합을 통째로 놓친다. cross_fields 는 필드를 합쳐서 판정.
+            multi_match: {
+              query: q,
+              type: 'cross_fields',
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
+              operator: 'and',
+              boost: 20,
             },
           },
         ],
@@ -492,6 +573,9 @@ export class ProductIndexService implements OnModuleInit {
       multiMatch.fuzzy_transpositions = false;
     }
 
+    // fallback 은 뭉갬 여부와 무관하게 nori 절을 유지한다 — strict 가 정답을 앞세우고,
+    // fallback 이 재현율(0건 방지)을 받친다. 둘 다 빼면 "엠보니들"처럼 복합어 부분매칭에
+    // 의존하는 검색어가 138건 → 0건이 된다(실측).
     return {
       bool: {
         should: [

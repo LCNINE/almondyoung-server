@@ -1,6 +1,6 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
-import { listCategories } from "@/lib/api/medusa/categories"
+import { listRootCategoriesCached } from "@/lib/data/category"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@/lib/data/cookies"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
@@ -61,7 +61,7 @@ export async function HomeQuickLinks({
   let dropdownCategories: StoreProductCategoryTree[] = []
 
   try {
-    dropdownCategories = await listCategories({ parent_category_id: "null" })
+    dropdownCategories = await listRootCategoriesCached()
   } catch (error) {
     console.error("[HomeQuickLinks] Failed to load dropdown categories:", error)
   }
@@ -116,69 +116,64 @@ export async function HomeQuickLinks({
     })),
   ]
 
-  return (
-    <section
-      className={cn(
-        "w-full border-b",
-        isDesktopHeader
-          ? "border-header-border bg-header-background"
-          : "border-gray-100 bg-white xl:bg-[#fbfaf8]"
-      )}
-    >
-      <div
-        className={cn(
-          "container mx-auto max-w-[1360px]",
-          isDesktopHeader
-            ? "px-[40px] py-1.5"
-            : "px-3.5 py-4 xl:px-[40px] xl:py-5"
-        )}
+  const linkItems = (
+    <>
+      {externalLinks.map((link) => (
+        <ExternalQuickLink
+          key={`${link.label}-${link.href}`}
+          link={link}
+          compact={isDesktopHeader}
+        />
+      ))}
+
+      {categoryLinks.map((link) => (
+        <CategoryThumbnail
+          key={`${link.label}-${link.href}`}
+          name={link.label}
+          href={link.href}
+          imageUrl={link.imageUrl}
+          sizes={isDesktopHeader ? "24px" : "(min-width: 768px) 78px, 54px"}
+          className={cn(
+            "justify-self-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
+            isDesktopHeader
+              ? "w-auto min-w-max flex-row gap-1.5 text-xs [&>div]:h-5 [&>div]:w-5 [&>span]:min-h-0 [&>span]:text-[12px] [&>span]:font-medium [&>span]:text-white/85 hover:[&>span]:text-white"
+              : "w-full max-w-[54px] xl:max-w-[78px]"
+          )}
+        />
+      ))}
+    </>
+  )
+
+  // 데스크톱 헤더
+  if (isDesktopHeader) {
+    return (
+      <nav
+        aria-label="추천 바로가기"
+        className="scrollbar-hide grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible px-0.5"
       >
+        {linkItems}
+      </nav>
+    )
+  }
+
+  return (
+    <section className="w-full border-b border-gray-100 bg-white xl:bg-[#fbfaf8]">
+      <div className="container mx-auto max-w-[1360px] px-3.5 py-4 xl:px-[40px] xl:py-5">
         <div className="relative">
-          {!isDesktopHeader && <MobileQuickLinks items={mobileItems} />}
+          <MobileQuickLinks items={mobileItems} />
 
           <nav
             aria-label="추천 바로가기"
-            className={cn(
-              "scrollbar-hide overflow-x-auto px-0.5",
-              isDesktopHeader
-                ? "ml-[96px] grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible pb-0"
-                : "hidden xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
-            )}
+            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
           >
-            {!isDesktopHeader && (
-              <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
-                <CategoryDropdown
-                  categories={dropdownCategories}
-                  variant="quickLink"
-                />
-              </div>
-            )}
-
-            {externalLinks.map((link) => (
-              <ExternalQuickLink
-                key={`${link.label}-${link.href}`}
-                link={link}
-                compact={isDesktopHeader}
+            <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
+              <CategoryDropdown
+                categories={dropdownCategories}
+                variant="quickLink"
               />
-            ))}
+            </div>
 
-            {categoryLinks.map((link) => (
-              <CategoryThumbnail
-                key={`${link.label}-${link.href}`}
-                name={link.label}
-                href={link.href}
-                imageUrl={link.imageUrl}
-                sizes={
-                  isDesktopHeader ? "24px" : "(min-width: 768px) 78px, 54px"
-                }
-                className={cn(
-                  "justify-self-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
-                  isDesktopHeader
-                    ? "w-auto min-w-max flex-row gap-1.5 text-xs [&>div]:h-5 [&>div]:w-5 [&>span]:min-h-0 [&>span]:text-[12px] [&>span]:font-medium [&>span]:text-white/85 hover:[&>span]:text-white"
-                    : "w-full max-w-[54px] xl:max-w-[78px]"
-                )}
-              />
-            ))}
+            {linkItems}
           </nav>
         </div>
       </div>

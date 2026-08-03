@@ -52,7 +52,7 @@ export default function ReturnExchangeTemplate() {
   };
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <Header title="반품/교환 관리" />
       <Tabs defaultValue="returns">
         <TabsList className="mb-4">

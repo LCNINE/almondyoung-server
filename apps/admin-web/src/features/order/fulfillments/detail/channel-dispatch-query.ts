@@ -1,6 +1,7 @@
 'use client';
 
 import { useQueries } from '@tanstack/react-query';
+import { fetchWithRefresh } from '@/lib/api/fetch-with-refresh';
 import type { ShipmentAdminDetail } from '@/lib/types/dto/fulfillment';
 import {
   buildChannelDispatchTargets,
@@ -19,7 +20,7 @@ async function fetchChannelDispatch(
   dispatchAttemptId: string,
   salesOrderId: string
 ): Promise<ChannelDispatchApiResponse> {
-  const response = await fetch(
+  const response = await fetchWithRefresh(
     `/api/fulfillment/channel-dispatch/attempts/${encodeURIComponent(dispatchAttemptId)}/orders/${encodeURIComponent(salesOrderId)}`,
     { cache: 'no-store' }
   );

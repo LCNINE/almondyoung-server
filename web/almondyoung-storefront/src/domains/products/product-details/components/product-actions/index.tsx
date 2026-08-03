@@ -36,7 +36,11 @@ import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
 import { RestockNotice, pickEarliestRestock } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
-import { isInsufficientInventoryError } from "@/lib/utils/cart-availability"
+import {
+  describeStockShortage,
+  getAvailableQuantity,
+  isInsufficientInventoryError,
+} from "@/lib/utils/cart-availability"
 
 type ProductActionsProps = {
   customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
@@ -182,6 +186,20 @@ export default function ProductActions({
 
   const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
+  // 재고 상한 안내. 옵션이 여러 개면 어느 옵션인지 같이 알려준다.
+  const stockLimitMessage = useCallback(
+    (label: string, max: number) => {
+      // 재고가 0이면 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
+      if (max <= 0) {
+        return isSimple ? t("soldOutToast") : t("soldOutToastNamed", { option: label })
+      }
+      return isSimple
+        ? t("stockLimitToast", { max })
+        : t("stockLimitToastNamed", { option: label, max })
+    },
+    [isSimple, t]
+  )
+
   // 수량 변경 (1에서 -1 누르면 삭제, 단 옵션이 하나뿐이면 삭제하지 않음)
   const updateQuantity = useCallback(
     (variantId: string, delta: number) => {
@@ -191,6 +209,15 @@ export default function ProductActions({
       }
       setSelectedItems((prev) => {
         const item = prev.find((i) => i.variantId === variantId)
+        // 재고 상한을 넘겨 담으려 하면 "품절" 이 아니라 남은 수량을 알려준다.
+        // (여기서 막지 않으면 담기 버튼을 눌러야 비로소 실패해 혼란스럽다)
+        if (item && delta > 0) {
+          const max = getAvailableQuantity(item.variant)
+          if (max !== null && item.quantity + delta > max) {
+            toast.error(stockLimitMessage(item.label, max))
+            return prev
+          }
+        }
         if (item && item.quantity + delta < 1) {
           // isSimple(옵션 1개)이면 삭제하지 않고 수량 1 유지
           if (isSimple) {
@@ -203,7 +230,7 @@ export default function ProductActions({
         )
       })
     },
-    [isSimple, isWelcomeMembership, t]
+    [isSimple, isWelcomeMembership, stockLimitMessage, t]
   )
 
   // 항목 삭제
@@ -214,13 +241,24 @@ export default function ProductActions({
   }, [])
 
   // 특정 항목의 수량을 직접 지정 (input 직접 입력용)
-  const setItemQuantity = useCallback((variantId: string, quantity: number) => {
-    setSelectedItems((prev) =>
-      prev.map((item) =>
-        item.variantId === variantId ? { ...item, quantity } : item
+  const setItemQuantity = useCallback(
+    (variantId: string, quantity: number) => {
+      setSelectedItems((prev) =>
+        prev.map((item) => {
+          if (item.variantId !== variantId) return item
+          // 직접입력으로 재고를 넘기면 상한까지만 반영하고 남은 수량을 안내한다.
+          // 재고 0(품절)이면 수량 0 으로 만들지 않고 1 로 둔다 — 담기 시도에서 품절로 안내된다.
+          const max = getAvailableQuantity(item.variant)
+          if (max !== null && quantity > max) {
+            toast.error(stockLimitMessage(item.label, max))
+            return { ...item, quantity: Math.max(1, max) }
+          }
+          return { ...item, quantity }
+        })
       )
-    )
-  }, [])
+    },
+    [stockLimitMessage]
+  )
 
   // 총 수량 & 총 가격
   const totalQuantity = selectedItems.reduce(
@@ -258,6 +296,25 @@ export default function ProductActions({
         ? t("soldOut")
         : null
 
+  // 재고부족 응답을 사람 말로 바꾼다. 요청 수량이 이미 남은 재고를 넘었으면 남은 수량을 알려주고,
+  // 재고 안인데도 실패했으면 장바구니에 담긴 수량과 합쳐 넘긴 경우이므로 그렇게 안내한다.
+  const stockError = (
+    variant: HttpTypes.StoreProductVariant | undefined,
+    label: string,
+    quantity: number
+  ) => {
+    const max = getAvailableQuantity(variant)
+    switch (describeStockShortage({ available: max, quantity })) {
+      case "sold-out":
+      case "exceeds-stock":
+        return stockLimitMessage(label, max!)
+      case "cart-sum":
+        return t("stockConflictToast")
+      default:
+        return t("stockShortToast")
+    }
+  }
+
   // 장바구니 담기
   const handleAddToCart = () => {
     if (selectedItems.length === 0) return
@@ -274,11 +331,11 @@ export default function ProductActions({
           })
           if (result.error) {
             setShowCartModal(false)
+            // 담기 직전에 상한을 이미 걸러주므로, 여기까지 온 재고부족은 "이 옵션이 품절" 이 아니라
+            // 장바구니에 이미 담긴 수량과 합쳐 재고를 넘긴 경우다(또는 방금 재고가 줄었거나).
             toast.error(
               isInsufficientInventoryError(result.error)
-                ? isSimple
-                  ? t("soldOutToast")
-                  : t("soldOutToastNamed", { option: item.label })
+                ? stockError(item.variant, item.label, item.quantity)
                 : result.error
             )
             return
@@ -311,9 +368,10 @@ export default function ProductActions({
           })),
         })
         if (result.error) {
+          const offending = selectedItems[0]
           toast.error(
             isInsufficientInventoryError(result.error)
-              ? t("soldOutToast")
+              ? stockError(offending?.variant, offending?.label ?? "", offending?.quantity ?? 1)
               : result.error
           )
           return
@@ -331,7 +389,7 @@ export default function ProductActions({
   return (
     <>
       <div
-        className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+        className="hidden xl:flex xl:min-h-0 xl:flex-1 xl:flex-col"
         ref={actionsRef}
       >
         {/* 스크롤 영역: 옵션/선택목록이 길어져도 구매 버튼은 하단에 고정됨 */}

@@ -133,6 +133,21 @@ export const getProductSellableReasonBadgeVariant = (
   return 'secondary';
 };
 
+/**
+ * 링크를 전송/비교용 형태로 정규화한다. UI state 에는 표시용 skuName 이 붙어 있는데,
+ * 그대로 비교하면 이름 유무만으로 "변경됨" 판정이 나 매번 불필요한 upsert 가 나간다.
+ */
+export const toSkuLinkPayload = (
+  links: { skuId: string; skuName?: string; quantity: number }[]
+): NonNullable<UpsertMatchingDto['links']> =>
+  links.map((l) => ({ skuId: l.skuId, quantity: l.quantity }));
+
+export const isSameSkuLinks = (
+  a: { skuId: string; skuName?: string; quantity: number }[],
+  b: { skuId: string; skuName?: string; quantity: number }[]
+): boolean =>
+  JSON.stringify(toSkuLinkPayload(a)) === JSON.stringify(toSkuLinkPayload(b));
+
 export const buildUpsertMatchingPayload = ({
   masterId,
   links,
@@ -145,7 +160,7 @@ export const buildUpsertMatchingPayload = ({
   changedLinks: boolean;
 }): UpsertMatchingDto => ({
   masterId,
-  ...(changedLinks ? { links } : {}),
+  ...(changedLinks ? { links: toSkuLinkPayload(links) } : {}),
   policy,
 });
 

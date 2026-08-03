@@ -1,6 +1,7 @@
-import { Controller, Post, Body, Get, Query, Param } from '@nestjs/common';
+import { Controller, Post, Body, Get, Query, Param, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { InboundService } from '../services/inbound.service';
+import { InboundPutawayReader } from '../services/inbound-putaway.reader';
 import {
   SimpleInboundDto,
   IndividualInboundDto,
@@ -13,6 +14,7 @@ import {
   ReceiveFromPlanDto,
   UpdateInboundLineMemoDto,
 } from '../dto/simple-inbound.dto';
+import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
 import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
 
@@ -58,7 +60,10 @@ export class InboundController {
     return InboundReceiptMapper.toIndividualResponseDto(result.receipt, result.line);
   }
 
-  constructor(private readonly inboundService: InboundService) {}
+  constructor(
+    private readonly inboundService: InboundService,
+    private readonly putawayReader: InboundPutawayReader,
+  ) {}
 
   @Get('pending')
   @ApiOperation({ summary: '입고 예정 목록 조회' })
@@ -176,6 +181,34 @@ export class InboundController {
       limit: limit ? parseInt(limit, 10) : undefined,
       offset: offset ? parseInt(offset, 10) : undefined,
     });
+  }
+
+  @Get('putaway/pending')
+  @ApiOperation({ summary: '적치 대기 조회 — 시스템 존에 남은 미적치 잔량' })
+  @ApiQuery({ name: 'warehouseId', required: true })
+  @ApiQuery({
+    name: 'days',
+    required: false,
+    type: Number,
+    example: 1,
+    description: '최근 N일 (rolling, now − N×24h). 1~365, 미지정 시 전체 기간',
+  })
+  @ApiResponse({ status: 200, type: PutawayPendingListDto })
+  async listPutawayPending(
+    @Query('warehouseId') warehouseId?: string,
+    @Query('days') days?: string,
+  ): Promise<PutawayPendingListDto> {
+    if (!warehouseId) throw new BadRequestException('warehouseId is required');
+    // parseInt 는 '12abc' → 12, '1e21' → 1 처럼 숫자 아닌 접미사를 조용히 잘라먹는다
+    // — 순수 숫자 문자열만 허용해 그런 입력을 정직하게 400 으로 거절한다.
+    if (days !== undefined && !/^\d+$/.test(days)) {
+      throw new BadRequestException('days must be a positive integer between 1 and 365');
+    }
+    const parsedDays = days === undefined ? undefined : parseInt(days, 10);
+    if (parsedDays !== undefined && (parsedDays < 1 || parsedDays > 365)) {
+      throw new BadRequestException('days must be a positive integer between 1 and 365');
+    }
+    return this.putawayReader.listPending({ warehouseId, days: parsedDays });
   }
 
   @Post('putaway')

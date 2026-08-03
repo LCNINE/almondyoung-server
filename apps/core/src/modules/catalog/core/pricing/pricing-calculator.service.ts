@@ -244,10 +244,7 @@ export class PricingCalculatorService {
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
         .where(
-          and(
-            eq(productMasterVariants.masterId, version.masterId),
-            eq(productMasterVariants.versionId, versionId),
-          ),
+          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, versionId)),
         );
 
       const validVariantIds = new Set(mappings.map((m) => m.variantId));
@@ -347,7 +344,11 @@ export class PricingCalculatorService {
     }, tx);
   }
 
-  async matchesScope(variantId: string, rule: PricingRuleEntity, tx?: DbTransaction): Promise<boolean> {
+  async matchesScope(
+    variantId: string,
+    rule: { scopeType: ScopeType; scopeTargetIds?: string[] | null },
+    tx?: DbTransaction,
+  ): Promise<boolean> {
     return this.dbService.run(async (trx) => {
       switch (rule.scopeType) {
         case 'all_variants':

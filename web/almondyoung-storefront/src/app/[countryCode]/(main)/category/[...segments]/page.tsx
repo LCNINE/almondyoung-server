@@ -3,7 +3,7 @@ import { notFound } from "next/navigation"
 import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import { CategoryTemplate } from "@/domains/category/templates"
 import { siteConfig } from "@/lib/config/site"
-import { getCategoryByHandle } from "@/lib/api/medusa/categories"
+import { getCategoryByHandleCached } from "@/lib/data/category"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -16,9 +16,9 @@ type Props = {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { segments } = await params
+  const { countryCode, segments } = await params
 
-  const category = await getCategoryByHandle(segments)
+  const category = await getCategoryByHandleCached(segments)
 
   if (!category) {
     return {
@@ -38,7 +38,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       description,
     },
     alternates: {
-      canonical: `/category/${segments.join("/")}`,
+      // countryCode 를 빼면 리다이렉트되는 주소를 canonical 로 가리키게 된다.
+      canonical: `/${countryCode}/category/${segments.join("/")}`,
     },
   }
 }
@@ -46,6 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 type Params = {
   searchParams: Promise<{
     sortBy?: SortOptions
+    limit?: string
   }>
   params: Promise<{
     countryCode: string
@@ -56,9 +58,9 @@ type Params = {
 export default async function CategoryPage(props: Params) {
   const params = await props.params
   const searchParams = await props.searchParams
-  const { sortBy } = searchParams
+  const { sortBy, limit } = searchParams
 
-  const category = await getCategoryByHandle(params.segments)
+  const category = await getCategoryByHandleCached(params.segments)
 
   // 이 가드가 없으면 categoryIds가 undefined 로 흘러가 category_id 필터 없이 전체 상품이 노출된다.
   if (!category) {
@@ -68,6 +70,7 @@ export default async function CategoryPage(props: Params) {
   return (
     <CategoryTemplate
       sortBy={sortBy}
+      limit={limit}
       countryCode={params.countryCode}
       category={category}
       segments={params.segments}

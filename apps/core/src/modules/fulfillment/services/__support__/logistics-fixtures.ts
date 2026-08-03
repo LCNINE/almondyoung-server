@@ -4,11 +4,14 @@ import { wmsTables, DbTx } from '../../../inventory/schema/inventory.schema';
 import { InventoryCommandService } from '../../../inventory/core/services/inventory-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
 import { availableFromView } from './logistics-assertions';
+import { canonicalFulfillmentRequestHash } from '../fulfillment-command.service';
 
 export async function seedWarehouseWithZone(tx: DbTx): Promise<{ warehouseId: string; locationId: string }> {
   const [wh] = await tx
     .insert(wmsTables.warehouses)
-    .values({ name: `it-wh-${randomUUID().slice(0, 8)}` })
+    // 배치 생성이 창고 능력을 검사하므로 기본 창고는 discrete 를 지원해야 한다.
+    // 다른 전략이 필요한 스펙은 이 값을 자기가 덮어쓴다(outbound-v2-warehouse-scenarios 등).
+    .values({ name: `it-wh-${randomUUID().slice(0, 8)}`, supportedPickingStrategies: ['discrete'] })
     .returning();
   const [loc] = await tx
     .insert(wmsTables.locations)
@@ -239,4 +242,189 @@ export async function assertOutboundV2Checkpoint(tx: DbTx, checkpoint: OutboundV
     dispatchSourceCount: Number(dispatchSources?.count ?? 0),
     shipEventCount: Number(shipEvents?.count ?? 0),
   }).toEqual(checkpoint.expected);
+}
+
+export interface PickableShipmentFixture {
+  actorId: string;
+  warehouseId: string;
+  holderId: string;
+  skuId: string;
+  skuCode: string;
+  barcode: string;
+  locationId: string;
+  ledgerVersion: number;
+  shipmentId: string;
+  shipmentLineId: string;
+  batchId: string;
+  workItemId: string;
+  waybillId: string;
+  trackingNo: string;
+  qty: number;
+}
+
+/**
+ * 단순출고 시작 지점 픽스처 — 재고·예약·운송장은 준비됐고 피킹은 아직 시작하지
+ * 않은 상태(work item `queued`, plan·session 없음). `seedReadyShipment`(검수 직전)
+ * 와 달리 plan/session/HAND_IN 을 심지 않는다 — 그것을 만드는 것이 피검증 대상이다.
+ */
+export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableShipmentFixture> {
+  const suffix = randomUUID();
+  const actorId = randomUUID();
+  const [warehouse] = await tx
+    .insert(wmsTables.warehouses)
+    .values({ name: `simple-warehouse-${suffix}`, supportedPickingStrategies: ['discrete'] })
+    .returning();
+  const [holder] = await tx
+    .insert(wmsTables.holders)
+    .values({ name: `simple-holder-${suffix}` })
+    .returning();
+  // discrete-picking.strategy.assertPlanningEligibility 가 plan() 진입에 요구하는 최소 조건 —
+  // shipment.shippingProfileId + sku.deliveryProfileId 가 같은 완전한 delivery profile 을 가리켜야 한다.
+  const [deliveryProfile] = await tx
+    .insert(wmsTables.deliveryProfiles)
+    .values({
+      name: `simple-profile-${suffix}`,
+      sourceType: 'in_house',
+      senderSnapshot: { name: 'Simple Sender', phone: '02-0000-0000' },
+      originAddressSnapshot: { address: 'Origin' },
+      returnAddressSnapshot: { address: 'Return' },
+      carrierAccountRef: 'simple-center',
+      supportedFulfillmentModes: ['in_house'],
+    })
+    .returning();
+  const skuCode = `SIMPLE-${suffix}`;
+  const [sku] = await tx
+    .insert(wmsTables.skus)
+    .values({ name: 'Simple SKU', code: skuCode, holderId: holder.id, deliveryProfileId: deliveryProfile.id })
+    .returning();
+  const barcode = `880${suffix.replaceAll('-', '').slice(0, 10)}`;
+  await tx.insert(wmsTables.skuBarcodes).values({ skuId: sku.id, barcode, isPrimary: true });
+  const [location] = await tx
+    .insert(wmsTables.locations)
+    .values({ warehouseId: warehouse.id, code: `SIMPLE-ZONE-${suffix}`, locationType: 'zone' })
+    .returning();
+  const [ledger] = await tx
+    .insert(wmsTables.stockLedgers)
+    .values({ skuId: sku.id, warehouseId: warehouse.id, locationId: location.id, stockState: 'ON_HAND', qty })
+    .returning();
+
+  const [salesOrder] = await tx
+    .insert(wmsTables.salesOrders)
+    .values({
+      channelOrderId: `simple-order-${suffix}`,
+      salesChannel: 'medusa',
+      shippingAddress: {},
+      orderDate: new Date(),
+    })
+    .returning();
+  const [salesOrderLine] = await tx
+    .insert(wmsTables.salesOrderLines)
+    .values({
+      salesOrderId: salesOrder.id,
+      variantId: randomUUID(),
+      productName: 'Simple product',
+      quantity: qty,
+      channelOrderItemId: `simple-item-${suffix}`,
+      channelProductId: `simple-product-${suffix}`,
+    })
+    .returning();
+  const [fulfillmentOrder] = await tx
+    .insert(wmsTables.fulfillmentOrders)
+    .values({ salesOrderId: salesOrder.id, warehouseId: warehouse.id, status: 'processing', totalQty: qty })
+    .returning();
+  const [item] = await tx
+    .insert(wmsTables.fulfillmentOrderItems)
+    .values({
+      fulfillmentOrderId: fulfillmentOrder.id,
+      salesOrderId: salesOrder.id,
+      salesOrderLineId: salesOrderLine.id,
+      skuId: sku.id,
+      qty,
+      reservedQty: qty,
+      status: 'processing',
+    })
+    .returning();
+  // assertRecipientComplete 는 recipientName/phone/postalCode/roadAddress/detailAddress 다섯 필드를 요구한다.
+  const recipientSnapshot = {
+    recipientName: 'Simple Test',
+    phone: '010-3333-4444',
+    postalCode: '06236',
+    roadAddress: 'Teheran-ro 123',
+    detailAddress: '4F',
+  };
+  const [shipment] = await tx
+    .insert(wmsTables.shipments)
+    .values({
+      warehouseId: warehouse.id,
+      status: 'planned',
+      recipientSnapshot,
+      plannedAt: new Date(),
+      shippingProfileId: deliveryProfile.id,
+    })
+    .returning();
+  const [line] = await tx
+    .insert(wmsTables.shipmentLines)
+    .values({
+      shipmentId: shipment.id,
+      fulfillmentOrderItemId: item.id,
+      skuId: sku.id,
+      qty,
+      reservedQty: qty,
+      inspectedQty: 0,
+    })
+    .returning();
+  await tx.insert(wmsTables.stockReservations).values({
+    targetType: 'SHIPMENT_LINE',
+    targetId: line.id,
+    shipmentLineId: line.id,
+    skuId: sku.id,
+    warehouseId: warehouse.id,
+    quantity: qty,
+    status: 'confirmed',
+    requestedAt: new Date(),
+  });
+  const [batch] = await tx
+    .insert(wmsTables.outboundBatches)
+    .values({
+      batchNumber: `SIMPLE-BATCH-${suffix}`,
+      warehouseId: warehouse.id,
+      pickingMethod: 'individual',
+      status: 'created',
+    })
+    .returning();
+  const [workItem] = await tx
+    .insert(wmsTables.outboundBatchWorkItems)
+    .values({ batchId: batch.id, shipmentId: shipment.id, status: 'queued', leaseVersion: 0 })
+    .returning();
+  const trackingNo = `SIMPLE-TRACK-${suffix}`;
+  const [waybill] = await tx
+    .insert(wmsTables.waybills)
+    .values({
+      shipmentId: shipment.id,
+      source: 'manual',
+      carrier: 'HANJIN',
+      status: 'registered',
+      trackingNo,
+      manifestVersion: shipment.manifestVersion,
+      recipientHash: canonicalFulfillmentRequestHash(recipientSnapshot),
+    })
+    .returning();
+
+  return {
+    actorId,
+    warehouseId: warehouse.id,
+    holderId: holder.id,
+    skuId: sku.id,
+    skuCode,
+    barcode,
+    locationId: location.id,
+    ledgerVersion: ledger.version,
+    shipmentId: shipment.id,
+    shipmentLineId: line.id,
+    batchId: batch.id,
+    workItemId: workItem.id,
+    waybillId: waybill.id,
+    trackingNo,
+    qty,
+  };
 }

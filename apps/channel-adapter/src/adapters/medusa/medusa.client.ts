@@ -72,7 +72,9 @@ function mergeCoreShippingStatus(
 
 export interface MedusaOrder {
   id: string;
-  status?: 'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
+  /** 고객에게 노출되는 순번형 주문번호 (#2332) */
+  display_id?: number;
+  status?:'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
   payment_status?:
     | 'not_paid'
     | 'awaiting'
@@ -179,6 +181,7 @@ function isCollectableOrder(order: MedusaOrder): boolean {
 
 const ORDER_FIELDS = [
   'id',
+  'display_id',
   'status',
   'payment_status',
   'email',
@@ -613,9 +616,11 @@ export class MedusaClient {
     isActive: boolean;
     visibility: boolean;
     showOnMainCategory: boolean;
+    isVisibleToMembersOnly?: boolean;
     thumbnail?: string;
     sortOrder?: number;
-  }): Promise<string> {
+  },
+  options?: { requireParent?: boolean; refreshFields?: boolean }): Promise<string> {
     // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
     // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
     // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
@@ -638,9 +643,23 @@ export class MedusaClient {
       pimSlug: categorySnapshot.slug,
       pimVisibility: categorySnapshot.visibility,
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
+      // storefront가 이 두 값을 읽는다 (썸네일 / 멤버십 전용 노출 여부)
+      thumbnail: categorySnapshot.thumbnail ?? null,
+      // 호출자가 값을 준 경우에만 쓴다. 상품 동기화 경로(ProductSnapshot.categories)에는
+      // 이 필드가 없어서, 기본값을 넣으면 카테고리 이벤트로 켜둔 설정을 상품 한 건 동기화가
+      // false 로 덮어써 버린다.
+      ...(categorySnapshot.isVisibleToMembersOnly !== undefined && {
+        isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly,
+      }),
     };
 
     let parentMedusaId: string | undefined;
+    // 부모를 "건드리지 않음"과 "루트로 올림"은 다르다. undefined 를 그대로 payload 에 넣으면
+    // JSON 직렬화에서 키가 빠져 Medusa 가 기존 부모를 유지한다(= 루트 이동 미반영).
+    // - PIM 부모 없음        → null 을 명시해 부모 해제
+    // - PIM 부모 있고 찾음    → 그 id 로 변경
+    // - PIM 부모 있는데 못 찾음 → 필드 자체를 생략해 기존 부모 유지(잘못된 루트 이동 방지)
+    let parentUpdate: { parent_category_id?: string | null } = { parent_category_id: null };
 
     if (categorySnapshot.parentId) {
       // 부모는 자식과 같은 식별자 규약(handle=slug||id, metadata.pimCategoryId)을 따라 저장된다.
@@ -651,8 +670,18 @@ export class MedusaClient {
       });
       if (existingParent?.id) {
         parentMedusaId = existingParent.id;
+        parentUpdate = { parent_category_id: existingParent.id };
+      } else if (options?.requireParent) {
+        // 부모 없이 만들면 자식이 최상위 카테고리로 붙어 스토어프론트 메뉴에 그대로 노출된다.
+        // 부모 이벤트가 아직 처리되지 않은 순서 문제일 수 있으니 inbox 재시도에 맡긴다.
+        throw new Error(
+          `Parent category ${categorySnapshot.parentId} not yet in Medusa for category ${categorySnapshot.id} — 재시도 대상`,
+        );
       } else {
-        this.logger.warn(`Parent category ${categorySnapshot.parentId} not found in Medusa, creating without parent`);
+        this.logger.warn(
+          `Parent category ${categorySnapshot.parentId} not found in Medusa — 부모 필드는 건드리지 않는다 (category ${categorySnapshot.id})`,
+        );
+        parentUpdate = {};
       }
     }
 
@@ -671,16 +700,25 @@ export class MedusaClient {
         return existing.id;
       }
 
+      // 상품 동기화 경로는 "카테고리가 있는지"만 확인하면 된다. 여기서 필드까지 덮으면
+      // 방금 카테고리 이벤트로 반영한 값(이름·rank·부모·metadata)을 오래된 스냅샷으로
+      // 되돌린다 — 실제로 멤버십 전용 설정이 계속 풀리는 원인이었다.
+      // 필드 갱신은 CategoryChanged 경로(refreshFields)만 한다.
+      if (!options?.refreshFields) {
+        this.setCategoryCache(preferredHandle, existing.id);
+        this.setCategoryCache(categorySnapshot.id, existing.id);
+        return existing.id;
+      }
+
       const updatePayload = {
         name: categorySnapshot.name,
         handle: preferredHandle,
         is_internal: false,
         is_active: isActive,
-        parent_category_id: parentMedusaId,
-        ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
+        ...parentUpdate,
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
         metadata: {
-          ...(existing.metadata || {}),
+          ...(verified.metadata || existing.metadata || {}),
           ...pimMetadata,
         },
       };
@@ -704,7 +742,6 @@ export class MedusaClient {
       is_internal: false,
       is_active: isActive,
       parent_category_id: parentMedusaId,
-      ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
       ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
       metadata: {
         ...pimMetadata,
@@ -1022,7 +1059,8 @@ export class MedusaClient {
   private async getProductWithVariantDetails(productId: string): Promise<MedusaProduct> {
     const { product } = await this.sdk.admin.product.retrieve(productId, {
       fields:
-        'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,' +
+        'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.allow_backorder,' +
+        '+variants.sku,+variants.title,' +
         '+variants.inventory_items,+variants.inventory_items.inventory.id,+variants.inventory_items.inventory.sku,' +
         '+variants.inventory_items.inventory.metadata',
     });
@@ -1479,7 +1517,11 @@ export class MedusaClient {
     }
 
     const shouldManageInventory = shouldManageMedusaInventoryForSellableProjection(input);
-    const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder ?? false;
+    // ponytail: `?? false` 를 붙이지 않는다. retrieve fields 에서 allow_backorder 가 빠지면
+    // undefined 가 오는데, false 로 접으면 "이미 false" 로 오판해 업데이트를 건너뛴다
+    // (= true 로는 가고 false 로는 못 돌아오는 단방향 버그). undefined 로 두면 아래 비교가
+    // 항상 불일치가 되어 안전한 쪽 — 불필요한 업데이트 1회 — 으로 실패한다.
+    const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder;
     // 수동품절은 선판매(백오더)를 이긴다 — 강제 품절이 의도이므로 allow_backorder 를 끈다.
     // 그 외엔 선판매 정책(preStockSellable)을 그대로 반영해 해제 시 복원되게 한다.
     const desiredBackorder = input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;

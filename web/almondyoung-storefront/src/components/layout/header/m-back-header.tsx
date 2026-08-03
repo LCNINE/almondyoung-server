@@ -45,7 +45,6 @@ const getPageTitleFromPath = (pathname: string): string => {
       returns: "취소/반품/교환 목록",
       reviews: "리뷰관리",
       membership: "아몬드영 멤버십",
-      payment: "결제수단·적립금",
       subscribe: "구독 관리",
       exchange: "교환/반품",
       rebuy: "재주문",

@@ -156,8 +156,13 @@ describe('SubscriptionService - Layer Refactoring', () => {
         { id: 'tier_001', code: 'PREMIUM' },
         {},
         'one_time',
+        false,
+        'CHARGE',
+        email,
       );
-      expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalled();
+      // one_time 은 createNewSubscription 내부에서 아웃박스로 원자 발행하므로
+      // 서비스 레벨의 best-effort publishStatusChanged 는 호출되지 않는다.
+      expect(mockMembershipEventPublisher.publishStatusChanged).not.toHaveBeenCalled();
     });
 
     it('기존 구독이 있으면 에러를 발생시켜야 함', async () => {

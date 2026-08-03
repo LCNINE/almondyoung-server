@@ -25,6 +25,10 @@ export const fileServiceEnvSchema = z
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_S3_PUBLIC_BUCKET: z.string().optional(),
     AWS_S3_PRIVATE_BUCKET: z.string().optional(),
+
+    // 로컬 개발 전용: 이 인스턴스에 없는 공개 파일을 넘길 상위 file-service.
+    // 배포 환경에는 설정하지 않는다 (설정하면 404 대신 외부로 302 된다).
+    PUBLIC_FILE_FALLBACK_BASE_URL: z.string().url().optional(),
   })
   .refine(
     (data) => {

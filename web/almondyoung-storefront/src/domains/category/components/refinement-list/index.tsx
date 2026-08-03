@@ -1,30 +1,57 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useTransition } from "react"
 
+import { cn } from "@/lib/utils"
+import PageSizeSelect from "./page-size-select"
 import SortProducts, { type SortOptions } from "./sort-products"
 
 type RefinementListProps = {
   sortBy: SortOptions
+  pageSize: number
   search?: boolean
 }
 
-export default function RefinementList({ sortBy }: RefinementListProps) {
+export default function RefinementList({
+  sortBy,
+  pageSize,
+}: RefinementListProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+
+  const [isPending, startTransition] = useTransition()
 
   const setQueryParams = (name: string, value: string) => {
     const params = new URLSearchParams(searchParams)
     params.set(name, value)
 
-    // 정렬 변경 시 페이지를 1로 초기화
-    if (name === "sortBy") {
+    // 정렬·개수 변경 시 페이지를 1로 초기화
+    if (name === "sortBy" || name === "limit") {
       params.delete("page")
     }
 
-    router.push(`${pathname}?${params.toString()}`)
+    startTransition(() => {
+      router.push(`${pathname}?${params.toString()}`)
+    })
   }
 
-  return <SortProducts sortBy={sortBy} setQueryParams={setQueryParams} />
+  return (
+    <div
+      aria-busy={isPending}
+      className={cn(
+        "bg-muted flex items-center justify-between gap-4 rounded-lg px-3 py-1.5 transition-opacity sm:px-4",
+        isPending && "pointer-events-none opacity-50"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <SortProducts sortBy={sortBy} setQueryParams={setQueryParams} />
+      </div>
+      {/* ponytail: 무한 스크롤이라 모바일에선 로드 배치 크기 노출 생략 */}
+      <div className="hidden shrink-0 sm:block">
+        <PageSizeSelect pageSize={pageSize} setQueryParams={setQueryParams} />
+      </div>
+    </div>
+  )
 }

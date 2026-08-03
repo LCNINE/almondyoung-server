@@ -11,6 +11,12 @@ const GAP_X = 24
 const CARD_META_HEIGHT = 190
 // 컨테이너 폭을 아직 모를 때(초기 렌더)의 행 높이 fallback.
 const ESTIMATED_ROW_HEIGHT = 360
+// SSR 에는 window 가 없어 scrollRect 가 {0,0} 이 되고, 그러면 virtual item 이 0개라
+// HTML 에 상품 카드가 하나도 안 나간다 → 브라우저 프리로드 스캐너가 썸네일을 못 보고
+// 이미지 요청이 JS 하이드레이션 뒤로 밀린다. 초기 뷰포트 높이를 가정해 첫 행들을
+// 서버에서 렌더시킨다. 하이드레이션 후 실제 window 크기로 재측정되므로 오차는 무해하다.
+// ponytail: 정확한 기기별 높이가 아니라 "이미지가 HTML 에 실리게 하는 최소값"이면 된다.
+const SSR_VIEWPORT_HEIGHT = 800
 
 type UseProductGridVirtualizerParams = {
   itemCount: number
@@ -68,6 +74,7 @@ export function useProductGridVirtualizer({
     estimateSize: () => rowHeight,
     overscan: 4,
     scrollMargin,
+    initialRect: { width: 0, height: SSR_VIEWPORT_HEIGHT },
   })
 
   const virtualItems = virtualizer.getVirtualItems()

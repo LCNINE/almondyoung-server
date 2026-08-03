@@ -2,7 +2,7 @@ import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { SidebarSkeleton } from "@/components/skeletons/category-page"
 import { CategorySidebar } from "@/domains/category/components/category-sidebar"
 import { SidebarError } from "@/domains/category/components/category-sidebar/sidebar-error"
-import { listCategories } from "@/lib/api/medusa/categories"
+import { listRootCategoriesCached } from "@/lib/data/category"
 import { Suspense } from "react"
 
 export const dynamic = "force-dynamic"
@@ -36,7 +36,7 @@ export default async function CategoryLayout({
 
 async function SidebarWrapper() {
   // API에서 최상위 카테고리만 가져옴 (자식은 category_children에 포함)
-  const categories = await listCategories({ parent_category_id: "null" })
+  const categories = await listRootCategoriesCached()
 
   return <CategorySidebar categories={categories} />
 }

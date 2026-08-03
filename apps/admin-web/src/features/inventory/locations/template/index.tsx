@@ -24,7 +24,7 @@ export default function LocationsTemplate() {
   );
 
   return (
-    <Container className="divide-y-0">
+    <Container>
       <div className="flex items-start justify-between">
         <Header
           title="로케이션 관리"

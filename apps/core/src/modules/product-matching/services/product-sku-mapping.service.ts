@@ -232,9 +232,20 @@ export class ProductSkuMappingService {
       const policy = await trx.query.salesVariantPolicies.findFirst({
         where: (p, { eq }) => eq(p.variantId, variantId),
       });
-      const links = await trx.query.productVariantSkuLinks.findMany({
-        where: (l, { eq }) => eq(l.productMatchingId, matching.id),
-      });
+      // 배치 조회(getMatchingsByVariantIds)와 동일하게 SKU 이름/코드를 함께 내려준다.
+      // UUID 만 주면 어드민 매칭 화면이 어떤 재고인지 표시할 수 없다.
+      const links = await trx
+        .select({
+          productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+          skuId: wmsTables.productVariantSkuLinks.skuId,
+          quantity: wmsTables.productVariantSkuLinks.quantity,
+          createdAt: wmsTables.productVariantSkuLinks.createdAt,
+          skuName: wmsTables.skus.name,
+          skuCode: wmsTables.skus.code,
+        })
+        .from(wmsTables.productVariantSkuLinks)
+        .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
       return {
         ...matching,
         links,

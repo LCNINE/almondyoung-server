@@ -4,6 +4,7 @@ import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnai
 import { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Image from "next/image"
 
 interface CategorySectionProps {
@@ -18,6 +19,8 @@ export function CategorySection({
   const handle = category.handle || category.id
   const children = category.category_children || []
   const imageSrc = getCategoryThumbnail(category)
+  const t = useTranslations("categorySheet")
+  const viewProductsLabel = t("viewProducts")
 
   return (
     <section
@@ -47,6 +50,19 @@ export function CategorySection({
         </span>
         <ChevronRight className="h-4 w-4 text-gray-400" />
       </LocalizedClientLink>
+
+      {/* 하위 카테고리가 없는 대분류(추천관·단일 브랜드관 등)는 그리드가 비어
+          비활성처럼 보인다. 상품 목록으로 가는 버튼을 명시적으로 노출한다. */}
+      {children.length === 0 && (
+        <LocalizedClientLink
+          href={`/category/${handle}`}
+          onClick={onNavigate}
+          className="mx-3 flex items-center justify-between rounded-lg border border-gray-100 bg-gray-50 px-3 py-2.5 text-[12.5px] font-medium text-gray-700"
+        >
+          <span>{viewProductsLabel}</span>
+          <ChevronRight className="h-4 w-4 text-gray-400" />
+        </LocalizedClientLink>
+      )}
 
       {children.length > 0 && (
         <ul className="grid grid-cols-3 gap-x-2 gap-y-4 px-3">

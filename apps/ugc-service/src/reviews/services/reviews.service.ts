@@ -612,6 +612,50 @@ export class ReviewsService {
     }
   }
 
+  /**
+   * 여러 상품의 평점 요약을 한 번에 집계한다. 상품 목록(카드 그리드)이 상품 수만큼 단건 API 를
+   * 때리면 브라우저 동시연결 6개 제한에 걸려 직렬화되므로, 목록 경로는 이 배치를 쓴다.
+   *
+   * 목록 카드는 평균 평점과 리뷰 수만 쓰므로 별점 분포는 계산하지 않는다.
+   * 분포가 필요한 상세 화면은 단건 getRatingSummary 를 그대로 쓴다.
+   */
+  async getRatingSummaries(productIds: string[], tx?: DbTransaction) {
+    const uniqueIds = [...new Set(productIds)];
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+
+    return this.inTx(async (tx) => {
+      const rows = await tx
+        .select({
+          productId: reviews.productId,
+          totalCount: count(),
+          // 평균을 앱에서 다시 계산하지 않도록 가중합까지 DB 에서 끝낸다.
+          ratingSum: sql<number>`sum(${reviews.rating})`,
+        })
+        .from(reviews)
+        .where(
+          and(inArray(reviews.productId, uniqueIds), eq(reviews.status, 'active'), isNull(reviews.deletedAt)),
+        )
+        .groupBy(reviews.productId);
+
+      const byProduct = new Map(rows.map((row) => [row.productId, row]));
+
+      // 리뷰가 없는 상품도 0 으로 채워 돌려준다 — 호출부가 결과 누락과 "리뷰 없음" 을 구분하지 않아도 되게.
+      return uniqueIds.map((productId) => {
+        const row = byProduct.get(productId);
+        const totalCount = Number(row?.totalCount ?? 0);
+        const ratingSum = Number(row?.ratingSum ?? 0);
+
+        return {
+          productId,
+          averageRating: totalCount > 0 ? Math.round((ratingSum / totalCount) * 10) / 10 : 0,
+          totalCount,
+        };
+      });
+    }, tx);
+  }
+
   async getRatingSummary(productId: string, tx?: DbTransaction) {
     return this.inTx(async (tx) => {
       const rows = await tx

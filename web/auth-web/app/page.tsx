@@ -1,81 +1,110 @@
-import Link from "next/link";
-import { redirect } from "next/navigation";
+import { AuthShell } from "@/components/auth-shell"
+import Link from "next/link"
+import { redirect } from "next/navigation"
 
-import { AccountList } from "@/components/account-list";
-import { ReloginNotice } from "@/components/relogin-notice";
-import { Button } from "@/components/ui/button";
-import { listAccounts } from "@/lib/account-store";
-import { hasIdpRefreshToken } from "@/lib/idp-session";
-import { decodeJwtPayload } from "@/lib/jwt";
-import { sanitizeRedirectTo } from "@/lib/redirect";
+import { AccountList } from "@/components/account-list"
+import { ReloginNotice } from "@/components/relogin-notice"
+import { Button } from "@/components/ui/button"
+import { listAccounts } from "@/lib/account-store"
+import { hasIdpRefreshToken } from "@/lib/idp-session"
+import { decodeJwtPayload } from "@/lib/jwt"
+import { sanitizeRedirectTo } from "@/lib/redirect"
 
 type SearchParams = Promise<{
-  redirect_to?: string;
-  edit?: string;
-  force_login?: string;
-}>;
+  redirect_to?: string
+  edit?: string
+  force_login?: string
+}>
 
 export default async function AccountHubPage({
   searchParams,
 }: {
-  searchParams: SearchParams;
+  searchParams: SearchParams
 }) {
-  const params = await searchParams;
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? "";
-  const editing = params.edit === "1";
+  const params = await searchParams
+  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const editing = params.edit === "1"
 
   // prompt=login (authorize → /?force_login=1) → 계정 선택 건너뛰고 signin.
   if (params.force_login === "1") {
-    const qs = new URLSearchParams();
-    if (redirectTo) qs.set("redirect_to", redirectTo);
-    redirect(`/signin?${qs.toString()}`);
+    const qs = new URLSearchParams()
+    if (redirectTo) qs.set("redirect_to", redirectTo)
+    redirect(`/signin?${qs.toString()}`)
   }
 
-  const accounts = await listAccounts();
-  const idpRt = await hasIdpRefreshToken();
+  const accounts = await listAccounts()
+  const idpRt = await hasIdpRefreshToken()
   const activeUserId = idpRt
-    ? decodeJwtPayload<{ sub: string }>(idpRt)?.sub ?? null
-    : null;
+    ? (decodeJwtPayload<{ sub: string }>(idpRt)?.sub ?? null)
+    : null
 
-  const qs = new URLSearchParams();
-  if (redirectTo) qs.set("redirect_to", redirectTo);
-  const signinHref = `/signin?${qs.toString()}`;
-  const signupHref = `/signup?${qs.toString()}`;
+  const qs = new URLSearchParams()
+  if (redirectTo) qs.set("redirect_to", redirectTo)
+  const signinHref = `/signin?${qs.toString()}`
+  const signupHref = `/signup?${qs.toString()}`
+
+  // 저장된 계정이 없으면 "선택" 할 게 없다 — 목록 자리를 비워두는 대신 화면 전체를
+  // 로그인 안내로 바꾸고, 로그인이 주 액션이 된다.
+  const hasAccounts = accounts.length > 0
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 px-6 py-12">
+    <AuthShell>
       <ReloginNotice />
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold">계정 선택</h1>
-        <p className="text-sm text-muted-foreground">
-          계속 진행할 계정을 선택하거나 다른 계정으로 로그인하세요.
+        <h1 className="text-2xl leading-8 font-bold text-foreground">
+          {hasAccounts ? "계정 선택" : "로그인"}
+        </h1>
+        <p className="text-sm leading-5 text-muted-foreground">
+          {hasAccounts
+            ? "계속 진행할 계정을 선택하거나 다른 계정으로 로그인하세요."
+            : "아몬드영 계정으로 로그인하고 계속 진행하세요."}
         </p>
       </header>
 
-      <AccountList
-        accounts={accounts}
-        activeUserId={activeUserId}
-        redirectTo={redirectTo}
-        editing={editing}
-      />
+      <div className="flex flex-1 flex-col gap-2">
+        {hasAccounts && (
+          <div className="flex justify-end">
+            <Button
+              asChild
+              variant="ghost"
+              className="h-9 px-3 text-sm text-muted-foreground"
+            >
+              <Link
+                href={`/?${new URLSearchParams({ ...(redirectTo ? { redirect_to: redirectTo } : {}), ...(editing ? {} : { edit: "1" }) }).toString()}`}
+              >
+                {editing ? "편집 완료" : "편집"}
+              </Link>
+            </Button>
+          </div>
+        )}
+        <AccountList
+          accounts={accounts}
+          activeUserId={activeUserId}
+          redirectTo={redirectTo}
+          editing={editing}
+        />
+      </div>
 
-      <div className="flex flex-col gap-2">
-        <Button asChild variant="outline">
-          <Link href={signinHref}>다른 계정으로 로그인</Link>
+      {/* 하단 고정: 내용이 짧아도 CTA 는 화면 아래에 붙는다 (모바일 우선) */}
+      <div className="mt-auto flex flex-col gap-2 pt-6">
+        {/* 계정이 있으면 카드 선택이 주 액션이라 로그인은 중립 톤, 없으면 로그인이 주 액션 */}
+        <Button
+          asChild
+          variant={hasAccounts ? "secondary" : "default"}
+          className="h-[52px] rounded-lg text-base font-bold"
+        >
+          <Link href={signinHref}>
+            {hasAccounts ? "다른 계정으로 로그인" : "로그인"}
+          </Link>
         </Button>
-        <Button asChild variant="ghost">
+        <Button
+          asChild
+          variant="ghost"
+          className="h-[52px] rounded-lg text-base font-medium"
+        >
           <Link href={signupHref}>새로 가입하기</Link>
         </Button>
-        {accounts.length > 0 && (
-          <Button asChild variant="ghost" size="sm">
-            <Link
-              href={`/?${new URLSearchParams({ ...(redirectTo ? { redirect_to: redirectTo } : {}), ...(editing ? {} : { edit: "1" }) }).toString()}`}
-            >
-              {editing ? "편집 완료" : "편집"}
-            </Link>
-          </Button>
-        )}
       </div>
-    </main>
-  );
+    </AuthShell>
+  )
 }

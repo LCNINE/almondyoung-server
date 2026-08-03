@@ -11,6 +11,7 @@ export interface CategoryNode {
   slug?: string;
   description?: string;
   isActive: boolean;
+  isVisibleToMembersOnly: boolean;
   parentId: string | null;
   children: CategoryNode[];
   hasPendingMove: boolean;
@@ -29,6 +30,7 @@ interface FlatCategory {
   slug?: string;
   description?: string;
   isActive: boolean;
+  isVisibleToMembersOnly: boolean;
   parentId: string | null;
   sortOrder: number;
 }
@@ -41,6 +43,7 @@ function flatten(categories: CategoryDto[], parentId: string | null, out: FlatCa
       slug: c.slug,
       description: c.description,
       isActive: c.isActive,
+      isVisibleToMembersOnly: c.isVisibleToMembersOnly ?? false,
       parentId,
       sortOrder: c.sortOrder ?? 0,
     });
@@ -104,6 +107,7 @@ export function buildPendingTree(
         slug: f.slug,
         description: f.description,
         isActive: f.isActive,
+        isVisibleToMembersOnly: f.isVisibleToMembersOnly,
         parentId: f.parentId,
         hasPendingMove: movedIds.has(id),
         hasPendingReorder: reorderedParents.has(parentKeyOf(f.parentId)),

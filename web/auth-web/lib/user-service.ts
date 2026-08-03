@@ -331,6 +331,102 @@ export async function checkEmailAvailable(email: string): Promise<boolean> {
   return body.available
 }
 
+/**
+ * 증빙 서류 업로드. 반환값은 S3 public URL 문자열.
+ * 법인처럼 자동 검증이 안 되는 경우 이 URL 로 등록하면 관리자 심사(under_review)로 간다.
+ */
+export async function uploadBusinessFile(
+  accessToken: string,
+  file: File
+): Promise<string> {
+  const form = new FormData()
+  form.append("folderName", "business")
+  form.append("file", file, file.name)
+
+  const res = await fetch(`${env.userServiceUrl}/files/upload`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${accessToken}` },
+    body: form,
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "upload-business-file")
+  return readApiData<string>(res)
+}
+
+export type CreateBusinessLicenseInput = {
+  businessNumber?: string
+  representativeName?: string
+  /** 개업일자 YYYYMMDD. 국세청 진위확인에 사업자번호·대표자명과 함께 필요하다. */
+  startDate?: string
+  /** 증빙 첨부 경로. 이 값이 있으면 서버가 번호/대표자명 없이 관리자 심사로 넘긴다. */
+  fileUrl?: string
+}
+
+export async function createBusinessLicense(
+  accessToken: string,
+  body: CreateBusinessLicenseInput
+): Promise<void> {
+  const res = await fetch(`${env.userServiceUrl}/business-licenses`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "create-business-license")
+}
+
+/**
+ * 등록 직후 심사 상태 확인용. POST 응답에는 상태가 없어서 한 번 더 조회한다.
+ * 번호 입력 경로도 국세청 조회가 실패하면 under_review 로 남으므로 클라이언트에서 추정하면 틀린다.
+ */
+export async function getMyBusinessLicenseStatus(
+  accessToken: string
+): Promise<string | null> {
+  const res = await fetch(`${env.userServiceUrl}/business-licenses/me`, {
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "get-my-business-license")
+  const data = await readApiData<{ status?: string } | null>(res)
+  return data?.status ?? null
+}
+
+export async function checkLoginIdAvailable(loginId: string): Promise<boolean> {
+  const res = await fetch(
+    `${env.userServiceUrl}/users/login-id-available?loginId=${encodeURIComponent(loginId)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  await throwIfBad(res, "login-id-available")
+  const body = await readApiData<{ available: boolean }>(res)
+  return body.available
+}
+
+export async function checkNicknameAvailable(
+  nickname: string
+): Promise<boolean> {
+  const res = await fetch(
+    `${env.userServiceUrl}/users/nickname-available?nickname=${encodeURIComponent(nickname)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  await throwIfBad(res, "nickname-available")
+  const body = await readApiData<{ available: boolean }>(res)
+  return body.available
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",

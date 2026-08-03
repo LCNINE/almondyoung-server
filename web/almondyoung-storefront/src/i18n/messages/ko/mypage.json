@@ -488,6 +488,8 @@
       "discount": "할인금액",
       "membershipDiscount": "멤버십 할인",
       "shippingFee": "배송비",
+      "pointsUsed": "포인트 사용",
+      "paidWithPointsOnly": "포인트로 전액 결제되어 추가 결제 금액이 없어요.",
       "totalPayment": "총 결제금액",
       "totalPaymentMobile": "총 결제 금액",
       "orderDate": "주문일",
@@ -501,6 +503,7 @@
       "loadingMore": "불러오는 중...",
       "loadMore": "더 보기 ({loaded}/{total})",
       "errorTitle": "주문 목록을 불러오는데 실패했습니다",
+      "preparingOrder": "주문을 준비하고 있어요. 잠시만 기다려 주세요.",
       "items": "상품 {count}건",
       "totalQuantity": "총 수량 {count}개",
       "productSuffix": "외 {count}건",
@@ -539,7 +542,13 @@
       "contactCs": "고객센터 문의",
       "bankTransferCancelGuide": "무통장입금 주문의 취소·환불은 ‘환불 신청’ 버튼으로 신청해 주세요.",
       "bankTransferRefundNotice": "입금 전 미입금 주문은 입금 기한(7일) 경과 시 자동 취소됩니다. 입금 후 취소·환불은 ‘환불 신청’에서 환불 계좌(은행·계좌번호·예금주)를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불되며(약 2영업일), 예금주명이 정확해야 합니다.",
-      "download": "다운로드"
+      "download": "다운로드",
+      "cancelUnavailable": {
+        "already_shipped": "이미 출고된 주문이라 취소가 불가합니다. 반품 신청을 이용해 주세요.",
+        "channel_order": "채널 주문은 해당 채널에서 취소해 주세요.",
+        "already_processing": "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
+        "digital_downloaded": "이미 다운로드하신 디지털 상품이 포함되어 있어 직접 취소가 불가합니다. 고객센터로 문의해 주세요."
+      }
     },
     "delivery": {
       "paid": "결제완료",
@@ -691,7 +700,8 @@
       "success": "환불 신청이 접수되었습니다. 확인 후 처리됩니다.",
       "error": "환불 신청에 실패했습니다. 다시 시도해 주세요.",
       "requested": "환불 신청됨 · 처리 대기중",
-      "refunded": "환불 완료"
+      "refunded": "환불 완료",
+      "digitalDownloadedBlocked": "다운로드하신 디지털 상품이 포함되어 있어 환불 신청이 불가합니다. 고객센터로 문의해 주세요."
     },
     "depositAccount": {
       "title": "입금 계좌 안내",
@@ -704,6 +714,15 @@
       "amount": "입금 금액",
       "dueDate": "입금 기한",
       "notice": "아래 계좌로 입금해 주세요. 입금자명이 달라도 무방합니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있으며, 확인되면 배송이 진행됩니다."
+    },
+    "digitalDownload": {
+      "title": "디지털 상품 다운로드",
+      "download": "다운로드",
+      "downloading": "다운로드 중...",
+      "confirm": "‘{name}’을(를) 다운로드하면 반품·환불이 불가능합니다. 계속할까요?",
+      "started": "다운로드를 시작합니다",
+      "failed": "다운로드에 실패했습니다",
+      "exerciseFailed": "사용 처리에 실패했습니다"
     }
   },
   "membership": {
@@ -1121,21 +1140,6 @@
     "detailPayerName": "예금주",
     "detailAgreementStatus": "전자서명 상태",
     "detailCreatedAt": "신청일"
-  },
-  "payment": {
-    "pageTitle": "결제수단 관리",
-    "pointTitle": "아몬드영 적립금",
-    "pendingPointsTitle": "곧 적립될 아몬드영 적립금이에요",
-    "accountTitle": "계좌",
-    "accountChangeAria": "계좌 변경",
-    "noAccountRegistered": "등록한 계좌가 없어요",
-    "bnplLoadFail": "나중결제 내역을 불러오는데 실패했습니다",
-    "retry": "다시 시도",
-    "noAccountYet": "아직 등록한 계좌가 없습니다",
-    "registerMethod": "+ 결제수단 등록",
-    "menuSecurity": "결제 비밀번호 / 보안 설정",
-    "menuReceipt": "현금영수증 설정",
-    "menuTerms": "나중결제 약관 및 정책"
   },
   "reviews": {
     "pageTitle": "리뷰",

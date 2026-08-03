@@ -11,62 +11,72 @@ import {
   isSortedOption,
   mapSortParams,
   normalizeCategorySort,
+  normalizePageSize,
 } from "../utils/sort-mapping"
 import InfiniteProducts from "./infinite-products"
 
-const PRODUCT_LIMIT = 12
-
 export default async function CategoryProducts({
   sortBy,
+  limit,
   collectionId,
   categoryIds,
   productsIds,
   countryCode,
 }: {
   sortBy?: SortOptions
+  limit?: number
   collectionId?: string
   categoryIds?: string[]
   productsIds?: string[]
   countryCode: string
 }) {
-  const region = await getRegion(countryCode)
+  const [region, customer] = await Promise.all([
+    getRegion(countryCode),
+    retrieveCustomer().catch(() => null),
+  ])
 
   if (!region) {
     return null
   }
 
   const effectiveSortBy = normalizeCategorySort(sortBy)
-
-  // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
-  const {
-    response: { products: initialProducts, count: totalCount },
-    nextPage: initialNextPage,
-  } = isSortedOption(effectiveSortBy)
-    ? await listProductsSorted({
-        pageParam: 1,
-        ...mapSortParams(effectiveSortBy),
-        countryCode,
-        categoryId: categoryIds,
-        collectionId,
-        limit: PRODUCT_LIMIT,
-      })
-    : await listProducts({
-        pageParam: 1,
-        countryCode,
-        queryParams: {
-          limit: PRODUCT_LIMIT,
-          category_id: categoryIds,
-          collection_id: collectionId ? [collectionId] : undefined,
-          id: productsIds,
-        },
-      })
-
-  const customer = await retrieveCustomer().catch(() => null)
+  const pageSize = normalizePageSize(limit)
   const groups = customer?.groups ?? []
   const isMembership = isMembershipGroup(groups)
 
-  // 로그인한 경우에만 위시리스트 조회
-  const wishlist = customer ? await getWishlist().catch(() => []) : []
+  // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
+  // 위시리스트는 customer 유무만 필요하므로 상품 조회와 같이 띄운다.
+  const [
+    {
+      response: { products: initialProducts, count: totalCount },
+      nextPage: initialNextPage,
+    },
+    wishlist,
+  ] = await Promise.all([
+    isSortedOption(effectiveSortBy)
+      ? listProductsSorted({
+          pageParam: 1,
+          ...mapSortParams(effectiveSortBy),
+          countryCode,
+          categoryId: categoryIds,
+          collectionId,
+          limit: pageSize,
+        })
+      : listProducts({
+          pageParam: 1,
+          countryCode,
+          queryParams: {
+            limit: pageSize,
+            order: "-created_at",
+            category_id: categoryIds,
+            collection_id: collectionId ? [collectionId] : undefined,
+            id: productsIds,
+          },
+        }),
+    // 로그인한 경우에만 위시리스트 조회
+    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
+  ])
+
   const initialWishlistIds = wishlist.map((item) => item.productId)
 
   const filteredProducts = filterProductsByMembershipVisibility(
@@ -74,7 +84,11 @@ export default async function CategoryProducts({
     isMembership
   )
 
-  if (filteredProducts.length === 0) {
+  // Medusa 응답 미들웨어가 비회원에게 members-only 상품을 걸러내므로 첫 페이지가
+  // 통째로 빌 수 있다(예: 최신순 + 신규 상품이 전부 멤버십 전용). 다음 페이지가 남아
+  // 있는데 빈 상태로 끝내면 실제로는 상품이 있는 카테고리가 "상품이 없습니다"로 보인다.
+  // 이 경우엔 무한 로드에 넘겨 다음 페이지를 이어받게 한다.
+  if (filteredProducts.length === 0 && !initialNextPage) {
     const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
@@ -91,11 +105,12 @@ export default async function CategoryProducts({
 
   return (
     <InfiniteProducts
-      key={effectiveSortBy}
+      key={`${effectiveSortBy}-${pageSize}`}
       initialProducts={filteredProducts}
       initialNextPage={initialNextPage}
       totalCount={totalCount}
       sortBy={effectiveSortBy}
+      limit={pageSize}
       categoryIds={categoryIds}
       collectionId={collectionId}
       productsIds={productsIds}

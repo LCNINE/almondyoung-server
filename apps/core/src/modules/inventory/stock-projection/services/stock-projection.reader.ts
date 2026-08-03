@@ -9,6 +9,7 @@ import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/sto
 import { CurrentStockDto } from '../dto/current-stock.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { PaginatedResponseDto } from '../../shared/dto';
+import { LocationContentsDto } from '../dto/location-contents.dto';
 
 @Injectable()
 export class StockProjectionReader {
@@ -68,7 +69,7 @@ export class StockProjectionReader {
     query: GetStockSummaryListQueryDto,
     tx?: DbTx,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
-    const { skuId, warehouseId, search, page = 1, limit = 20 } = query;
+    const { skuId, warehouseId, search, quantityState, page = 1, limit = 20 } = query;
     const offset = (page - 1) * limit;
 
     return this.dbService.run(async (trx) => {
@@ -96,6 +97,18 @@ export class StockProjectionReader {
           JOIN product_variant_sku_links l ON l.product_matching_id = pm.id
           WHERE pmv.name ILIKE ${like} AND pmv.status = 'active' AND pmv.deleted_at IS NULL
         )`);
+      }
+      if (quantityState === 'out_of_stock') {
+        conditions.push(sql`${v.availableQty} <= 0`);
+      }
+      if (quantityState === 'reserved') {
+        conditions.push(sql`${v.reservedQty} > 0`);
+      }
+      if (quantityState === 'inbound_pending') {
+        conditions.push(sql`${v.inboundPendingQty} > 0`);
+      }
+      if (quantityState === 'outbound_pending') {
+        conditions.push(sql`${v.onOrderQty} > 0`);
       }
 
       const rows = await trx
@@ -175,11 +188,14 @@ export class StockProjectionReader {
         trx
           .select({
             locationId: wmsTables.stockLedgers.locationId,
+            locationCode: wmsTables.locations.code,
             stockState: wmsTables.stockLedgers.stockState,
             quantity: wmsTables.stockLedgers.qty,
           })
           .from(wmsTables.stockLedgers)
-          .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId))),
+          .leftJoin(wmsTables.locations, eq(wmsTables.stockLedgers.locationId, wmsTables.locations.id))
+          .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId)))
+          .orderBy(sql`${wmsTables.locations.code} ASC NULLS LAST`, wmsTables.stockLedgers.stockState),
       tx,
     );
 
@@ -199,6 +215,44 @@ export class StockProjectionReader {
         : null,
       details,
     };
+  }
+
+  async getLocationContents(locationId: string, tx?: DbTx): Promise<LocationContentsDto> {
+    return this.dbService.run(async (trx) => {
+      const [location] = await trx
+        .select({
+          id: wmsTables.locations.id,
+          code: wmsTables.locations.code,
+          warehouseId: wmsTables.locations.warehouseId,
+        })
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.id, locationId))
+        .limit(1);
+
+      if (!location) {
+        throw new NotFoundError(`Location not found: ${locationId}`);
+      }
+
+      const items = await trx
+        .select({
+          skuId: wmsTables.stockLedgers.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
+          stockState: wmsTables.stockLedgers.stockState,
+          quantity: wmsTables.stockLedgers.qty,
+        })
+        .from(wmsTables.stockLedgers)
+        .innerJoin(wmsTables.skus, eq(wmsTables.stockLedgers.skuId, wmsTables.skus.id))
+        .where(eq(wmsTables.stockLedgers.locationId, locationId))
+        .orderBy(wmsTables.skus.code, wmsTables.stockLedgers.stockState);
+
+      return {
+        locationId: location.id,
+        locationCode: location.code,
+        warehouseId: location.warehouseId,
+        items,
+      };
+    }, tx);
   }
 
   getHistory(skuId: string, warehouseId?: string, startDate?: string, endDate?: string) {

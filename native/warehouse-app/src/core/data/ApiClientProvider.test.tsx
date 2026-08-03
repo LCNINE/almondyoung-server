@@ -1,0 +1,65 @@
+import { describe, it, expect, vi } from 'vitest';
+import { useEffect } from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { SessionProvider } from '../../app/session-context';
+import { ApiClientProvider, useApiClient } from './ApiClientProvider';
+import type { Session } from '../auth/session';
+import { apiBaseUrl } from '../../app/config';
+
+const fetchMock = vi.fn(
+  async (..._args: unknown[]) =>
+    new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+);
+vi.mock('@tauri-apps/plugin-http', () => ({
+  fetch: (...args: unknown[]) => fetchMock(...args),
+}));
+
+const session = {
+  bootstrap: async () => {},
+  isAuthenticated: () => true,
+  getAccessToken: async () => 'tok',
+  login: async () => {},
+  logout: async () => {},
+  subscribe: () => () => {},
+} satisfies Session;
+
+function Probe() {
+  const api = useApiClient();
+  useEffect(() => {
+    void api.request({ path: '/ping' });
+  }, [api]);
+  return <div>probe</div>;
+}
+
+describe('ApiClientProvider', () => {
+  it('builds a client from the session and attaches the token', async () => {
+    render(
+      <SessionProvider session={session}>
+        <ApiClientProvider>
+          <Probe />
+        </ApiClientProvider>
+      </SessionProvider>
+    );
+    expect(screen.getByText('probe')).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    // mock.calls[0] is typed unknown[]; assert the [url, init] tuple shape we passed.
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    // apiBaseUrl varies per box (this box has a gitignored .env.local for
+    // live Phase 1a testing); assert relative to it rather than hardcoding.
+    expect(url).toBe(`${apiBaseUrl}/ping`);
+    // Default authMode is 'bearer': native plugin-http drops a manual Cookie
+    // header (Fetch forbidden header), so cookie mode can't deliver the token.
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer tok' });
+  });
+
+  it('throws when useApiClient is used outside the provider', () => {
+    function Bare() {
+      useApiClient();
+      return null;
+    }
+    expect(() => render(<Bare />)).toThrow(/ApiClientProvider/);
+  });
+});

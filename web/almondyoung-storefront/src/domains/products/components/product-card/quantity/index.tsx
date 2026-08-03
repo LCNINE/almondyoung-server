@@ -4,6 +4,7 @@ import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { HttpTypes } from "@medusajs/types"
 import { Calendar } from "lucide-react"
 import { useMemo } from "react"
+import { pickEarliestRestock } from "domains/products/product-details/components/product-actions/restock-notice"
 import { PartialSoldOutDialog } from "./partial-sold-out-dialog"
 import { calculateStockStatus } from "./stock-status"
 
@@ -17,10 +18,7 @@ export function Quantity({ product }: Props) {
   switch (status.kind) {
     case "soldOut": {
       // 품절 카드: 입고예정 있으면 재입고 날짜 표시, 없으면 품절 배지
-      const restockDate = (product.variants ?? [])
-        .map((v) => v?.metadata?.inboundDate)
-        .filter((d): d is string => typeof d === "string" && !!d)
-        .sort()[0]
+      const restockDate = pickEarliestRestock(product.variants ?? [])?.date
       return restockDate ? (
         <span className="text-yellow-30 inline-flex items-center gap-1 text-[11px] font-medium">
           <Calendar className="h-3 w-3" aria-hidden="true" />

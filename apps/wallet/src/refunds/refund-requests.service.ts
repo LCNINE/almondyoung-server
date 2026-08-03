@@ -12,6 +12,7 @@ import { WalletSchema, outboxEvents, paymentIntents, paymentMethods, refundReque
 import { RefundRequest } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { RefundsService } from './refunds.service';
+import { CoreDigitalGuardClient } from './core-digital-guard.client';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import { GATEWAY_AGGREGATE_TYPE, GatewayEventType } from '../messaging/gateway-event.builder';
 
@@ -34,10 +35,16 @@ export class RefundRequestsService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
     private readonly refundsService: RefundsService,
+    private readonly coreDigitalGuard: CoreDigitalGuardClient,
   ) {}
 
   /** 고객이 무통장(가상계좌) 주문에 대해 환불 요청을 제출한다. 실제 환불은 관리자 승인 시 실행. */
-  async create(intentId: string, input: CreateRefundRequestInput, userId: string): Promise<RefundRequest> {
+  async create(
+    intentId: string,
+    input: CreateRefundRequestInput,
+    userId: string,
+    accessToken?: string,
+  ): Promise<RefundRequest> {
     const intent = await this.dbService.db
       .select()
       .from(paymentIntents)
@@ -66,6 +73,16 @@ export class RefundRequestsService {
       throw new BadRequestException({
         error: 'NOT_BANK_TRANSFER',
         message: '무통장입금 주문만 환불 계좌 신청이 필요합니다.',
+      });
+    }
+
+    // 이미 다운로드한 디지털 상품은 회수가 불가하므로 환불신청을 받지 않는다 (Core 에 조회).
+    // TODO: 부분환불이 가능해지면 이 가드는 삭제 — 다운로드한 디지털 금액만 제외하고 나머지는
+    // 환불 신청을 받을 수 있어야 한다. (Core store-sales-orders.service 의 같은 TODO 와 세트)
+    if (await this.coreDigitalGuard.hasExercisedDigital(intentId, accessToken)) {
+      throw new BadRequestException({
+        error: 'DIGITAL_ALREADY_DOWNLOADED',
+        message: '이미 다운로드한 디지털 상품이 포함된 주문입니다. 고객센터로 문의해 주세요.',
       });
     }
 

@@ -290,9 +290,9 @@ export function NewPageSkeleton() {
 export function ProductDetailSkeleton() {
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
-      <div className="mx-auto max-w-[1360px] px-[15px] md:px-[40px]">
-        <div className="py-2 md:flex md:gap-4">
-          <main className="w-full min-w-0 flex-1 space-y-6 pb-24 md:pb-0">
+      <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+        <div className="py-2 xl:flex xl:gap-4">
+          <main className="w-full min-w-0 flex-1 space-y-6 pb-24 xl:pb-0">
             <div className="space-y-4">
               <Skeleton className="aspect-square w-full rounded-2xl" />
               <div className="grid grid-cols-4 gap-3">
@@ -305,7 +305,7 @@ export function ProductDetailSkeleton() {
               </div>
             </div>
 
-            <div className="space-y-3 md:hidden">
+            <div className="space-y-3 xl:hidden">
               <Skeleton className="h-6 w-2/3" />
               <Skeleton className="h-4 w-1/3" />
               <Skeleton className="h-5 w-1/2" />
@@ -350,7 +350,7 @@ export function ProductDetailSkeleton() {
             </div>
           </main>
 
-          <aside className="hidden w-[360px] shrink-0 space-y-4 md:block">
+          <aside className="hidden w-[360px] shrink-0 space-y-4 xl:block">
             <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
               <Skeleton className="h-6 w-40" />
               <Skeleton className="h-4 w-24" />
@@ -996,30 +996,6 @@ export function MypageMembershipSkeleton() {
           ))}
         </div>
         <Skeleton className="h-12 w-full rounded-lg" />
-      </div>
-    </div>
-  )
-}
-
-export function MypagePaymentManagerSkeleton() {
-  return (
-    <div className="rounded-xl bg-white px-3 pt-4 pb-9 md:px-6">
-      <Skeleton className="h-6 w-40" />
-      <div className="bg-gray-10 mt-5 mb-4 space-y-4 p-4">
-        {repeat(4).map((_, index) => (
-          <Skeleton
-            key={`payment-section-${index}`}
-            className="h-20 w-full rounded-lg"
-          />
-        ))}
-      </div>
-      <div className="space-y-3">
-        {repeat(4).map((_, index) => (
-          <Skeleton
-            key={`payment-menu-${index}`}
-            className="h-12 w-full rounded-lg"
-          />
-        ))}
       </div>
     </div>
   )

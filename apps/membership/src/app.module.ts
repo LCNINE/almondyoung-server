@@ -90,6 +90,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       streams: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM],
       serviceName: 'membership',
       enableDLQ: true,
+      // 트랜잭셔널 아웃박스: 신규 구독 생성 시 MembershipStatusChanged 를 엔타이틀먼트와
+      // 같은 트랜잭션에 기록하고, 디스패처가 재시도하며 Kafka 로 발행 — 실시간 발행 유실 방지.
+      enableOutbox: true,
     }),
     // 컨슈머 인프라(DLQ) — poison message 가 파티션을 재전달 루프로 정체시키지 않게 한다.
     EventsModule.forConsumerModule({

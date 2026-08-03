@@ -33,7 +33,7 @@ export default function SalesChannelTemplate() {
 
   return (
     <>
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="판매처 관리"
           subtitle="채널별 판매처를 관리하고 등록하세요"

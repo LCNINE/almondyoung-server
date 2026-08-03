@@ -117,7 +117,7 @@ function MatchingContent() {
 export default function MatchingTemplate() {
   return (
     <FilterProvider>
-      <Container className="divide-y-0">
+      <Container>
         <Header
           title="매칭체크"
           right={

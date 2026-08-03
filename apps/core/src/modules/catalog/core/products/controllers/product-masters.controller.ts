@@ -154,6 +154,18 @@ export class ProductMastersController {
       "승인 상태. mode='active'(기본)에선 승인된 active 버전만 조회되므로 draft/pending/rejected 필터는 mode='all'과 함께 사용.",
   })
   @ApiQuery({
+    name: 'createdBy',
+    required: false,
+    type: String,
+    description: '등록자 UUID. product_masters.createdBy 기준',
+  })
+  @ApiQuery({
+    name: 'supplierId',
+    required: false,
+    type: String,
+    description: '공급처 UUID. 콤마로 여러 개(다중 선택) 지정 가능. product_master_versions.supplierId 기준',
+  })
+  @ApiQuery({
     name: 'createdFrom',
     required: false,
     type: String,
@@ -167,6 +179,18 @@ export class ProductMastersController {
     description: '정렬 기준 (기본 createdAt)',
   })
   @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'], description: '정렬 방향 (기본 desc)' })
+  @ApiQuery({
+    name: 'stock',
+    required: false,
+    enum: ['all', 'in_stock', 'partial', 'sold_out'],
+    description: '품절 상태 필터. in_stock=판매가능, partial=부분품절, sold_out=전체품절. all/미지정=필터 없음.',
+  })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: ['active', 'inactive', 'draft'],
+    description: '상품 버전 판매 상태 필터. inactive/draft 는 목록 범위를 자동 보정한다.',
+  })
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
@@ -180,13 +204,19 @@ export class ProductMastersController {
       categoryId: query.categoryId,
       brand: query.brand,
       name: keyword,
-      mode: query.mode,
+      mode:
+        query.mode ??
+        (query.status === 'inactive' ? 'active-or-inactive' : query.status === 'draft' ? 'all' : undefined),
+      status: query.status,
       productType: query.productType,
       approvalStatus: query.approvalStatus,
+      createdBy: query.createdBy,
+      supplierId: query.supplierId,
       createdFrom: query.createdFrom,
       createdTo: query.createdTo,
       sort: query.sort,
       order: query.order,
+      stock: query.stock,
       deleted: query.deleted ?? false,
       ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
     };
@@ -398,10 +428,7 @@ export class ProductMastersController {
   })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateRequiresMembership(
-    @Param('masterId') masterId: string,
-    @Body() body: { requiresMembership: boolean },
-  ) {
+  async updateRequiresMembership(@Param('masterId') masterId: string, @Body() body: { requiresMembership: boolean }) {
     await this.productVersionsService.updateRequiresMembership(masterId, body.requiresMembership);
     return { success: true, masterId, requiresMembership: body.requiresMembership };
   }
