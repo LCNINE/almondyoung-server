@@ -1367,8 +1367,15 @@ export const productBulkSessions = pgTable(
     exportId: uuid('export_id').references(() => productFormExports.id, { onDelete: 'set null' }),
     uploadedBy: uuid('uploaded_by').notNull(),
     fileName: varchar('file_name', { length: 500 }).notNull(),
-    /** 업로드된 원본 엑셀의 file-service fileId. 검증 레인이 이걸 다시 내려받아 파싱한다. */
-    sourceFileId: uuid('source_file_id').notNull(),
+    /**
+     * 업로드된 원본 엑셀의 file-service fileId. 검증 레인이 이걸 다시 내려받아 파싱한다.
+     *
+     * **nullable 인 이유**: 종단(published·canceled) 세션의 워크북을 30일 뒤 지우는
+     * 만료 스윕(BulkSessionCleaner)이 "이미 지웠다"를 여기 NULL 로 표시한다 — 그것이
+     * 스윕의 멱등성이다(스펙 §10.6). 읽는 곳은 `runParseSlice` 하나뿐이고 그건
+     * `uploaded` phase 전용이라 종단 세션에서 도달하지 않는다.
+     */
+    sourceFileId: uuid('source_file_id'),
     phase: productBulkSessionPhaseEnum('phase').notNull().default('uploaded'),
     phaseError: text('phase_error'),
     leaseUntil: timestamp('lease_until'),

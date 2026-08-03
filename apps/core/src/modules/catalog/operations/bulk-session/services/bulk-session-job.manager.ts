@@ -1,7 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectDb, DbService } from '@app/db';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError } from '@app/shared';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import {
@@ -10,9 +10,12 @@ import {
   productBulkItems,
   productBulkImages,
   productFormExportItems,
+  productMasterVersions,
 } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
+import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import { classifyPublishError } from './bulk-publish.errors';
 import { FormExportFileClient } from './form-export-file.client';
 import { FormExportSnapshotReader, flattenCategoryTree } from './form-export.snapshot.reader';
 import { createImageKeyAllocator } from './form-export.types';
@@ -34,6 +37,7 @@ import { flattenBundle } from './bulk-session.fields';
 import { computeChanges, detectConflicts } from './bulk-session.diff';
 import { toConflictDecisionMap } from './bulk-session.reader';
 import { BulkDraftApplier } from './bulk-draft.applier';
+import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
 import type { ImageResolver } from './bulk-draft.fields';
 import {
   formatRowError,
@@ -65,6 +69,12 @@ export const DEFAULT_VALIDATE_SLICE = 20;
  *  붙는다 — 검증 슬라이스(20)보다 작게 시작하고 실측으로 조정한다. */
 export const DEFAULT_DRAFT_SLICE = 10;
 /**
+ * 한 틱에 발행할 행 수. `publishVersion` 한 건에 variantCode·productCode 유니크 검증,
+ * 가격 검증, 가격 캐시 생성, 매칭 인계, asset link 인계, 이벤트 3종, sellable 재계산이
+ * 전부 붙는다(스펙 §2.3) — draft 생성(10)보다 무겁다. 5에서 시작해 실측으로 조정한다.
+ */
+export const DEFAULT_PUBLISH_SLICE = 5;
+/**
  * 슬라이스 밖으로 탈출한 예외의 연속 허용 횟수. 넘으면 세션을 failed 로 확정한다.
  *
  * 재시도 주기는 틱 간격(5초)이 아니다 — `recordJobError` 가 lease 를 의도적으로 지우지
@@ -81,12 +91,17 @@ const KEY_MAX_LENGTH = 100;
 const INSERT_CHUNK = 200;
 
 /**
- * 파싱·검증·drafting 레인이 다루는 phase. `recordJobError` 의 WHERE 에도 쓴다 — 이미 레인을
- * 벗어난 세션(review·canceled·failed…)을 뒤늦게 깨어난 좀비가 다시 건드리면 안 된다
+ * 파싱·검증·drafting·발행 레인이 다루는 phase. `recordJobError` 의 WHERE 에도 쓴다 — 이미
+ * 레인을 벗어난 세션(review·canceled·failed…)을 뒤늦게 깨어난 좀비가 다시 건드리면 안 된다
  * (1단계 `TERMINAL_EXPORT_STATUSES` 와 같은 이유). `inArray` 가 mutable 배열을 요구해
  * `as const` 를 쓰지 않는다.
  */
-const CLAIMABLE_PHASES: Array<'uploaded' | 'validating' | 'drafting'> = ['uploaded', 'validating', 'drafting'];
+const CLAIMABLE_PHASES: Array<'uploaded' | 'validating' | 'drafting' | 'publishing'> = [
+  'uploaded',
+  'validating',
+  'drafting',
+  'publishing',
+];
 
 const EXPORT_MISSING_MESSAGE = '이 세션의 기준 양식을 더 이상 찾을 수 없습니다. 양식을 다시 받아 작업한 뒤 올려주세요.';
 
@@ -94,7 +109,8 @@ const EXPORT_MISSING_MESSAGE = '이 세션의 기준 양식을 더 이상 찾을
 export interface ClaimedBulkSession {
   sessionId: string;
   leaseToken: string;
-  /** 'uploaded' 면 파싱, 'drafting' 이면 draft 슬라이스, 그 밖('validating')이면 검증 슬라이스다. */
+  /** 'uploaded' 면 파싱, 'drafting' 이면 draft 슬라이스, 'publishing' 이면 발행 슬라이스,
+   *  그 밖('validating')이면 검증 슬라이스다. */
   phase: string;
 }
 
@@ -170,7 +186,9 @@ export class BulkSessionJobManager {
     private readonly snapshot: FormExportSnapshotReader,
     private readonly categories: ProductCategoriesService,
     private readonly applier: BulkDraftApplier,
+    private readonly versions: ProductVersionsService,
     private readonly config: ConfigService,
+    private readonly variantCodes: BulkVariantCodeChecker,
   ) {}
 
   private positiveInt(key: string, fallback: number): number {
@@ -190,12 +208,16 @@ export class BulkSessionJobManager {
     return this.positiveInt('PRODUCT_BULK_DRAFT_SLICE', DEFAULT_DRAFT_SLICE);
   }
 
+  get publishSlice(): number {
+    return this.positiveInt('PRODUCT_BULK_PUBLISH_SLICE', DEFAULT_PUBLISH_SLICE);
+  }
+
   /**
-   * 파싱·검증·drafting 대상 세션 하나를 원자적으로 잡는다.
+   * 파싱·검증·drafting·발행 대상 세션 하나를 원자적으로 잡는다.
    *
-   * `uploaded`·`validating`·`drafting` 을 셋 다 후보로 둔다 — 첫째는 첫 파싱, 둘째는 이어서
-   * 검증, 셋째는 draft 생성이다(또는 각 lease 가 만료된 재개). `cancel_requested_at IS NULL`
-   * 가드는 취소된 세션을 다시 집지 않게 한다.
+   * `uploaded`·`validating`·`drafting`·`publishing` 을 넷 다 후보로 둔다 — 첫째는 첫 파싱,
+   * 둘째는 이어서 검증, 셋째는 draft 생성, 넷째는 발행이다(또는 각 lease 가 만료된 재개).
+   * `cancel_requested_at IS NULL` 가드는 취소된 세션을 다시 집지 않게 한다.
    *
    * product-import-job.manager.ts:148-192 의 claim 과 같은 알고리즘이다(컬럼만 다르다) —
    * lease 소유권은 이 레포에서 목이 초록인 채 세 번 깨졌고, 그때 얻은 결론이 "만료시각은
@@ -212,7 +234,7 @@ export class BulkSessionJobManager {
          WHERE id = (
            SELECT id
              FROM product_bulk_sessions
-            WHERE phase IN ('uploaded', 'validating', 'drafting')
+            WHERE phase IN ('uploaded', 'validating', 'drafting', 'publishing')
               AND (lease_until IS NULL OR lease_until < NOW())
               AND cancel_requested_at IS NULL
             ORDER BY created_at
@@ -255,6 +277,13 @@ export class BulkSessionJobManager {
     );
     if (!session) {
       this.logger.warn(`파싱할 일괄 세션을 찾지 못했습니다 (session=${sessionId})`);
+      return;
+    }
+
+    if (!session.sourceFileId) {
+      // 도달 불가여야 한다 — 만료 스윕은 종단 phase 만 비우고 파싱은 uploaded 전용이다.
+      // 그래도 조용히 넘기지 않는다: NULL 을 만났다는 건 둘 중 하나의 전제가 깨졌다는 뜻이다.
+      await this.failSession(sessionId, leaseToken, '업로드된 원본 파일을 찾을 수 없습니다. 다시 올려주세요.');
       return;
     }
 
@@ -506,6 +535,13 @@ export class BulkSessionJobManager {
     );
 
     if (items.length === 0) {
+      // review 로 넘기기 직전, 세션 전역 검사를 한 번 돈다. 여기가 유일한 자리다 — 슬라이스
+      // 중간에 돌면 아직 검증 안 된 행의 코드를 못 보고, review 이후에 돌면 사람이 이미
+      // 프리뷰를 다 본 뒤다.
+      const flagged = await this.variantCodes.checkSession(sessionId);
+      if (flagged > 0) {
+        this.logger.log(`품목코드 중복으로 ${flagged}건을 invalid 로 표시했다 (session=${sessionId})`);
+      }
       await this.finishValidating(sessionId, leaseToken);
       return;
     }
@@ -790,6 +826,190 @@ export class BulkSessionJobManager {
   }
 
   /**
+   * `status='drafted'` ∧ `publish_status='pending'` 인 행을 슬라이스만큼 발행한다.
+   * 남은 행이 없으면 phase 를 published 로 민다.
+   *
+   * **실패 행이 남아 있어도 published 로 마감한다** — 세션 차원의 일은 끝났고, 남은 것은
+   * 그 행들의 재시도(`queuePublish` 재호출)나 제외다(스펙 §10.4).
+   *
+   * 행 하나가 트랜잭션 하나인 이유는 `runDraftSlice` 와 같다 — 한 행의 실패가 앞선 성공을
+   * 되돌리면 안 된다. 다만 여기서 되돌아가지 **않는** 것이 하나 있다: 발행이 커밋되면
+   * 카탈로그가 이미 바뀐 것이라 취소로 되돌릴 수 없다(스펙 §3.12 — 취소는 published 를
+   * 덮지 않는다).
+   */
+  async runPublishSlice(claimed: ClaimedBulkSession): Promise<void> {
+    const { sessionId, leaseToken } = claimed;
+
+    const items = await this.db.run((trx) =>
+      trx
+        .select()
+        .from(productBulkItems)
+        .where(
+          and(
+            eq(productBulkItems.sessionId, sessionId),
+            eq(productBulkItems.status, 'drafted'),
+            eq(productBulkItems.publishStatus, 'pending'),
+          ),
+        )
+        .orderBy(productBulkItems.rowNumber)
+        .limit(this.publishSlice),
+    );
+
+    if (items.length === 0) {
+      await this.finishPublishing(sessionId, leaseToken);
+      return;
+    }
+
+    for (const item of items) {
+      const lease = await this.renewLease(sessionId, leaseToken);
+      if (!lease.owned) {
+        this.logger.warn(`일괄 세션 lease 를 잃어 발행 슬라이스를 중단한다 (session=${sessionId})`);
+        return;
+      }
+      if (lease.canceled) {
+        this.logger.log(`일괄 세션이 취소돼 발행 슬라이스를 중단한다 (session=${sessionId})`);
+        await this.releaseLease(sessionId, leaseToken);
+        return;
+      }
+
+      await this.publishOne(sessionId, item);
+    }
+
+    await this.releaseLease(sessionId, leaseToken);
+  }
+
+  /**
+   * 행 하나를 자기 트랜잭션에서 발행한다. 관문 넷의 **순서가 계약이다**(스펙 §10.4).
+   *
+   * ① 세션 행 FOR UPDATE + 취소 재확인 — 루프의 `renewLease` 는 값싼 앞단 필터일 뿐이다.
+   *    그 검사와 이 커밋 사이에 취소가 커밋되면 "취소했는데 상품이 발행됨"이 된다.
+   *    `cancel()` 의 CAS UPDATE 가 같은 세션 행을 잠그므로 두 순서 모두 안전해진다.
+   *    (3단계 bulk-image.manager.ts:190, 4단계 draftOne 과 같은 형태·같은 이유)
+   * ② 행 상태 재확인 — ①과 같은 창에서 `excludeItem` 이 이 행을 뺐을 수 있다. 제외도
+   *    세션 행을 잠그므로 여기까지 오면 결정은 이미 확정돼 있다.
+   * ③ 발행 시점 가드 — `현재 active.id === draft.parentVersionId`. 다르면 그 사이 남이
+   *    발행했다는 뜻이고, 그대로 발행하면 남의 변경이 통째로 사라진다(스펙 §2.2·§3.10).
+   * ④ 잠금 해제 후 발행 — `publishVersion` 이 잠긴 draft 를 409 로 거부하므로 같은
+   *    트랜잭션에서 먼저 푼다(스펙 §10.3). 실패하면 롤백돼 잠금이 되살아나 재시도가 된다.
+   */
+  private async publishOne(sessionId: string, item: typeof productBulkItems.$inferSelect): Promise<void> {
+    const draftVersionId = item.draftVersionId;
+    if (!draftVersionId) {
+      await this.failPublish(item.id, '생성된 draft 가 없어 발행할 수 없습니다.');
+      return;
+    }
+
+    try {
+      await this.db.run(async (trx) => {
+        // ① 취소 재확인
+        const [locked] = await trx
+          .select({ cancelRequestedAt: productBulkSessions.cancelRequestedAt })
+          .from(productBulkSessions)
+          .where(eq(productBulkSessions.id, sessionId))
+          .for('update');
+        if (!locked || Boolean(locked.cancelRequestedAt)) {
+          this.logger.log(`일괄 세션이 취소돼 이 행을 발행하지 않는다 (session=${sessionId}, item=${item.id})`);
+          return;
+        }
+
+        // ② 행 상태 재확인 (제외·중복 발행 방지)
+        const [current] = await trx
+          .select({ status: productBulkItems.status, publishStatus: productBulkItems.publishStatus })
+          .from(productBulkItems)
+          .where(eq(productBulkItems.id, item.id));
+        if (!current || current.status !== 'drafted' || current.publishStatus !== 'pending') return;
+
+        const version = await this.versions.getVersionById(draftVersionId, trx);
+
+        // 멱등: 재시도로 다시 온 행이 이미 발행돼 있으면 도장만 찍는다.
+        if (version.status === 'active') {
+          await trx
+            .update(productBulkItems)
+            .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
+            .where(eq(productBulkItems.id, item.id));
+          return;
+        }
+
+        // ③ 발행 시점 가드
+        let currentActiveId: string | null = null;
+        try {
+          const active = await this.versions.getActiveVersion(version.masterId, trx);
+          currentActiveId = active.id;
+        } catch (error) {
+          // active 가 **없는 것**만 신규 행의 정상 상태다(getActiveVersion 은 이때
+          // NotFoundException 을 던진다 — product-versions.service.ts:141). 그 밖의 오류
+          // (커넥션 끊김·statement timeout)를 여기서 삼키면 두 가지로 배신한다: 수정 행은
+          // 멀쩡한데 "기준이 변경되었습니다"로 죽고, 신규 행(parentVersionId=null)은
+          // currentActiveId 가 null 이 되어 **가드를 그냥 통과한다** — 관문 ③ 이 막으려던
+          // 바로 그 사고다. 그래서 되던진다 — 바깥 catch 가 classifyPublishError 로 분류해
+          // 그 행만 정직하게 실패시킨다.
+          if (!(error instanceof NotFoundException)) throw error;
+          currentActiveId = null;
+        }
+        if (currentActiveId !== (version.parentVersionId ?? null)) {
+          throw new ConflictError('기준이 변경되었습니다. 이 상품은 양식을 다시 받아 작업해 주세요.');
+        }
+
+        // ④ 잠금 해제 → 발행
+        await trx
+          .update(productMasterVersions)
+          .set({ bulkSessionId: null, updatedAt: new Date() })
+          .where(eq(productMasterVersions.id, draftVersionId));
+
+        await this.versions.publishVersion(draftVersionId, trx, {
+          origin: 'bulk_import',
+          importSessionId: sessionId,
+        });
+
+        await trx
+          .update(productBulkItems)
+          .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
+          .where(eq(productBulkItems.id, item.id));
+      });
+    } catch (error) {
+      // 행 층 오류는 그 행만 죽인다. 원문은 로그로만 남기고 화면에는 분류된 문구를 준다.
+      this.logger.warn(
+        `일괄 세션 행 발행 실패 (session=${sessionId}, item=${item.id}): ${String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      await this.failPublish(item.id, classifyPublishError(error));
+    }
+  }
+
+  /** 발행 실패를 그 행에만 적는다. 문구는 이미 분류·절단된 것이 온다. */
+  private async failPublish(itemId: string, message: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productBulkItems)
+        .set({
+          publishStatus: 'failed',
+          publishError: message.slice(0, BulkSessionJobManager.ERROR_MESSAGE_MAX),
+          updatedAt: new Date(),
+        })
+        .where(eq(productBulkItems.id, itemId)),
+    );
+  }
+
+  /**
+   * 발행 대기 행이 없으면 세션을 published 로 넘긴다.
+   * 토큰 CAS + 취소 가드는 `finishDrafting` 과 같은 이유다(F6).
+   */
+  private async finishPublishing(sessionId: string, leaseToken: string): Promise<void> {
+    await this.db.run((trx) =>
+      trx
+        .update(productBulkSessions)
+        .set({ phase: 'published', phaseError: null, leaseUntil: null, leaseToken: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(productBulkSessions.id, sessionId),
+            eq(productBulkSessions.leaseToken, leaseToken),
+            isNull(productBulkSessions.cancelRequestedAt),
+          ),
+        ),
+    );
+  }
+
+  /**
    * 행 하나를 자기 트랜잭션에서 draft 로 만든다. `apply()` 성공과 그 결과를 행에 적는 것은
    * **한 트랜잭션**이다(§runDraftSlice 독스트링) — 실패는 별도 트랜잭션(`failItem`)으로
    * **그 행에만** 적는다.
@@ -863,6 +1083,10 @@ export class BulkSessionJobManager {
             // 빈 배열로 떨어뜨린다 — 그 행은 어차피 옵션 없는 상품으로 처리되고, 옵션을 참조하는
             // 조합이 있으면 checkCreateStructure 가 "없는 옵션값키"로 잡아 그 행만 실패시킨다.
             optionRows: isBulkItemInput(item.input) ? item.input.bundle.options : [],
+            // 신규 행의 "같은 조합 두 번" 검사(checkCreateStructure)가 평면화 이전 원본을
+            // 봐야 하므로 조합 시트 행도 그대로 넘긴다(Task 10). 형식이 다르면 optionRows 와
+            // 같은 이유로 빈 배열 — 그 행은 어차피 다른 되읽기 가드에서 이미 걸린다.
+            variantRows: isBulkItemInput(item.input) ? item.input.bundle.variants : [],
             conflictDecision: toConflictDecisionMap(item.conflictDecision),
             baseSnapshot: isBulkBaseSnapshot(item.baseSnapshot) ? item.baseSnapshot : null,
             images,
@@ -886,15 +1110,22 @@ export class BulkSessionJobManager {
       // recordJobError 가 센다 — 여기서 삼키므로 draft 실패는 연속 실패 상한을 태우지 않는다.
       // 그것이 맞다: 1,000행 중 30행이 실패해도 세션은 계속 나아가야 한다.
       //
-      // `error instanceof Error` 로만 좁히면 충분하다 — 도메인 예외(BadRequestError)뿐 아니라
-      // Nest 예외(예: getActiveVersion 의 NotFoundException)도 전부 Error 의 서브클래스라
-      // 여기서 함께 잡힌다.
-      const message = error instanceof Error ? error.message : '알 수 없는 오류';
-      await this.failItem(item.id, message);
+      // **원문은 로그로만 남기고 화면에는 분류된 문구를 준다** — `publishOne` 의 catch 와
+      // 같은 관례다. 최종 리뷰 발견 ②: 이 catch 가 지금까지 `classifyPublishError` 를 전혀
+      // 부르지 않고 예외 원문(영어 DB 오류 포함)을 그대로 `error_message` 에 실었다 — §10.7
+      // 이 "닫았다"고 적은 `errorMessage` 분류는 실은 발행 실패(`publishOne`)에만 걸려 있었고
+      // draft 생성 실패(여기)는 빠져 있었다. §3.12 가 "생성 시 22001" 을 행 오류로 명시하는데
+      // 그 가장 흔한 사고가 여전히 관리자 화면에 그대로 떴다는 뜻이다.
+      this.logger.warn(
+        `일괄 세션 행 draft 생성 실패 (session=${sessionId}, item=${item.id}): ${String(error)}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      await this.failItem(item.id, classifyPublishError(error, '생성'));
     }
   }
 
-  /** 행 층 오류를 그 행에만 적는다. `error_message` 는 상한을 잘라 관리자 화면 렌더를 보호한다. */
+  /** 행 층 오류를 그 행에만 적는다. 문구는 이미 분류·절단된 것이 온다. `error_message` 는
+   *  상한을 잘라 관리자 화면 렌더를 보호한다(호출부가 이미 분류해도, 방어적으로 다시 자른다). */
   private async failItem(itemId: string, message: string): Promise<void> {
     await this.db.run((trx) =>
       trx

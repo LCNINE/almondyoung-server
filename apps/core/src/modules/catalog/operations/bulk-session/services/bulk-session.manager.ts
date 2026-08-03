@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { isUUID } from 'class-validator';
-import { and, eq, isNotNull, isNull, notInArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull, isNull, ne, notInArray } from 'drizzle-orm';
 import {
   type PimSchema,
   productBulkSessions,
@@ -17,6 +17,9 @@ import { parseUploadWorkbook } from './bulk-upload.parser';
 import { BulkSessionReader, bulkItemRowColumns, toConflictDecisionMap, toConflictMap } from './bulk-session.reader';
 import { type ConflictDecisionMap } from './bulk-session.types';
 import { BulkSessionAcceptedDto, BulkSessionItemDto, BulkSessionProgressDto } from '../dto';
+import { classifyPublishError } from './bulk-publish.errors';
+import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import { ProductMastersService } from '../../../core/products/services/product-masters.service';
 
 export interface BulkSessionAcceptInput {
   buffer: Buffer;
@@ -29,6 +32,13 @@ export interface BulkSessionAcceptInput {
 const SESSION_NAME_MAX_LENGTH = 200;
 
 const EXPORT_UNUSABLE_MESSAGE = '이 양식은 더 이상 사용할 수 없습니다. 양식을 다시 받아 작업해 주세요.';
+
+/**
+ * 한 요청에 정리할 행 수. 행마다 draft 하드 삭제(+ 신규면 master soft delete)가 붙어
+ * ALB 60초 안에 수천 행을 끝낼 수 없다. 화면이 `remaining === 0` 까지 반복 호출한다 —
+ * 새 상태 컬럼 없이 진행을 표현하는 방법이다(3단계 이미지 스윕과 같은 계열).
+ */
+export const PURGE_DRAFTS_BATCH = 100;
 
 /**
  * drizzle-orm 0.44.x 는 driver 에러를 `DrizzleQueryError` 로 감싼다 — 실제 postgres.js
@@ -62,6 +72,8 @@ export class BulkSessionManager {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly fileClient: FormExportFileClient,
     private readonly reader: BulkSessionReader,
+    private readonly versions: ProductVersionsService,
+    private readonly masters: ProductMastersService,
   ) {}
 
   /**
@@ -416,5 +428,326 @@ export class BulkSessionManager {
 
       return this.reader.getProgress(sessionId, userId, trx);
     }, tx);
+  }
+
+  /**
+   * 일괄 발행 접수. **최초 발행과 실패 행 재발행을 겸한다**(v3 `queuePublish` 선례,
+   * 스펙 §10.5) — 라우트를 둘로 나누면 화면이 "지금 어느 쪽을 불러야 하는가"를 phase 로
+   * 판정해야 하고, 그 판정이 서버와 어긋나는 순간 버튼이 409 를 받는다.
+   *
+   * 아이템 갱신과 phase 전환이 **한 트랜잭션**이다 — 둘로 쪼개면 그 사이 워커가
+   * `publishing` 을 클레임해 "pending 이 하나도 없는" 세션을 곧장 published 로 마감한다.
+   *
+   * `status='drafted'` 조건이 제외(`excluded`)·검증 실패(`invalid`)·미착수(`pending`) 행을
+   * 자연히 뺀다. `publish_status='published'` 도 빠지므로 재호출이 이미 발행된 행을 다시
+   * 밀지 않는다(멱등).
+   */
+  async queuePublish(sessionId: string, userId: string, tx?: DbTransaction): Promise<BulkSessionProgressDto> {
+    return this.db.run(async (trx) => {
+      const [session] = await trx
+        .select({ phase: productBulkSessions.phase, uploadedBy: productBulkSessions.uploadedBy })
+        .from(productBulkSessions)
+        .where(eq(productBulkSessions.id, sessionId))
+        .limit(1);
+      if (!session || session.uploadedBy !== userId) {
+        throw new NotFoundError(`일괄 등록 세션을 찾을 수 없습니다: ${sessionId}`);
+      }
+      if (session.phase !== 'drafted' && session.phase !== 'published') {
+        throw new ConflictError('draft 검토가 끝난 세션만 발행할 수 있습니다.');
+      }
+
+      const queued = await trx
+        .update(productBulkItems)
+        .set({ publishStatus: 'pending', publishError: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(productBulkItems.sessionId, sessionId),
+            eq(productBulkItems.status, 'drafted'),
+            inArray(productBulkItems.publishStatus, ['idle', 'failed']),
+          ),
+        )
+        .returning({ id: productBulkItems.id });
+
+      if (queued.length === 0) {
+        throw new ConflictError('발행할 행이 없습니다.');
+      }
+
+      const [updated] = await trx
+        .update(productBulkSessions)
+        .set({ phase: 'publishing', phaseError: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(productBulkSessions.id, sessionId),
+            inArray(productBulkSessions.phase, ['drafted', 'published']),
+            isNull(productBulkSessions.cancelRequestedAt),
+          ),
+        )
+        .returning({ id: productBulkSessions.id });
+      if (!updated) {
+        throw new ConflictError('세션 상태가 그 사이 바뀌어 발행하지 못했습니다. 다시 조회한 뒤 시도해 주세요.');
+      }
+
+      return this.reader.getProgress(sessionId, userId, trx);
+    }, tx);
+  }
+
+  /**
+   * draft 생성 실패 행 재시도(스펙 §3.12 의 두 재시도 지점 중 앞의 것).
+   *
+   * ⚠️ **신규 행 재시도에는 대가가 있다.** `createMaster` 는 트랜잭션 밖으로 새는 부수효과
+   * 둘을 낸다 — 브로커로 직송되는 `ProductVariantCreated` 이벤트와, `tx` 를 전파받지 않아
+   * 독립 커밋되는 `product_matchings` 행(스펙 §5.1 정정). 롤백돼도 남으므로 **재시도
+   * 횟수만큼 누적된다.** 근본 수정은 catalog core 전체에 걸리는 별건이다.
+   */
+  async retryDraft(sessionId: string, userId: string, tx?: DbTransaction): Promise<BulkSessionProgressDto> {
+    return this.db.run(async (trx) => {
+      const [session] = await trx
+        .select({ phase: productBulkSessions.phase, uploadedBy: productBulkSessions.uploadedBy })
+        .from(productBulkSessions)
+        .where(eq(productBulkSessions.id, sessionId))
+        .limit(1);
+      if (!session || session.uploadedBy !== userId) {
+        throw new NotFoundError(`일괄 등록 세션을 찾을 수 없습니다: ${sessionId}`);
+      }
+      if (session.phase !== 'drafted') {
+        throw new ConflictError('draft 생성이 끝난 세션에서만 실패 행을 재시도할 수 있습니다.');
+      }
+
+      const retried = await trx
+        .update(productBulkItems)
+        .set({ status: 'pending', errorMessage: null, updatedAt: new Date() })
+        .where(and(eq(productBulkItems.sessionId, sessionId), eq(productBulkItems.status, 'failed')))
+        .returning({ id: productBulkItems.id });
+
+      if (retried.length === 0) {
+        throw new ConflictError('재시도할 실패 행이 없습니다.');
+      }
+
+      const [updated] = await trx
+        .update(productBulkSessions)
+        .set({ phase: 'drafting', phaseError: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(productBulkSessions.id, sessionId),
+            eq(productBulkSessions.phase, 'drafted'),
+            isNull(productBulkSessions.cancelRequestedAt),
+          ),
+        )
+        .returning({ id: productBulkSessions.id });
+      if (!updated) {
+        throw new ConflictError('세션 상태가 그 사이 바뀌어 재시도하지 못했습니다. 다시 조회한 뒤 시도해 주세요.');
+      }
+
+      return this.reader.getProgress(sessionId, userId, trx);
+    }, tx);
+  }
+
+  /**
+   * 행 하나를 세션에서 뺀다 — 발행 대상에서 제외하고 **그 draft 의 잠금을 푼다**(스펙 §10.5).
+   *
+   * 풀린 draft 는 `draftOwnerId` 가 업로더 그대로라 `my-drafts` 에 다시 나타나고 개별
+   * 발행·삭제가 열린다. 취소(§3.12, `cancel` 참조)와 같은 규약이다 — 규칙이 하나여야 사람이
+   * 예측한다.
+   *
+   * **되돌릴 수 없다.** 재포함을 만들려면 "푼 사이에 개별 발행됐거나 삭제된 draft" 를 전부
+   * 다뤄야 하는데, 잘못 제외해도 그 상품만 개별로 처리하면 되므로 잃는 것이 없다.
+   *
+   * 트랜잭션 첫 문장이 세션 행 `FOR UPDATE` 인 이유는 `publishOne`(bulk-session-job.
+   * manager.ts)과 같은 행을 두고 경합하기 때문이다 — 잠그지 않으면 제외가 잠금을 푸는 사이
+   * 발행이 커밋될 수 있다. `publishOne` ②의 행 상태 재확인(`status='drafted' ∧
+   * publishStatus='pending'`)이 그 반대편 절반이다: 우리가 먼저 잠그면 발행이 우리 커밋을
+   * 기다렸다가 바뀐 상태를 보고 스스로 물러나고, 발행이 먼저 잠그면 우리가 여기서 기다렸다가
+   * "이미 발행됨"으로 거부된다.
+   *
+   * **발행 여부 검사가 상태 검사보다 먼저다** — 이미 발행된 행에는 "이미 발행된 행은
+   * 제외할 수 없습니다"가 나가야지, 상태 검사가 먼저 걸려 "draft 가 만들어진 행만"이
+   * 나가면 원인을 오도한다(발행된 행은 보통 status 도 'drafted' 라 그 메시지 자체는
+   * 틀리지 않지만, 진짜 이유는 발행 여부다).
+   */
+  async excludeItem(
+    sessionId: string,
+    itemId: string,
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<BulkSessionItemDto> {
+    return this.db.run(async (trx) => {
+      const [session] = await trx
+        .select({ phase: productBulkSessions.phase, uploadedBy: productBulkSessions.uploadedBy })
+        .from(productBulkSessions)
+        .where(eq(productBulkSessions.id, sessionId))
+        .for('update');
+      if (!session || session.uploadedBy !== userId) {
+        throw new NotFoundError(`일괄 등록 세션을 찾을 수 없습니다: ${sessionId}`);
+      }
+      if (session.phase !== 'drafted' && session.phase !== 'published') {
+        throw new ConflictError('draft 검토 단계 이후에만 행을 제외할 수 있습니다.');
+      }
+
+      const [item] = await trx
+        .select({
+          id: productBulkItems.id,
+          status: productBulkItems.status,
+          publishStatus: productBulkItems.publishStatus,
+          draftVersionId: productBulkItems.draftVersionId,
+        })
+        .from(productBulkItems)
+        .where(and(eq(productBulkItems.id, itemId), eq(productBulkItems.sessionId, sessionId)))
+        .limit(1);
+      if (!item) throw new NotFoundError(`세션의 행을 찾을 수 없습니다: ${itemId}`);
+      if (item.publishStatus === 'published') {
+        throw new ConflictError('이미 발행된 행은 제외할 수 없습니다.');
+      }
+      if (item.status !== 'drafted' && item.status !== 'failed') {
+        throw new ConflictError('draft 가 만들어졌거나 실패한 행만 제외할 수 있습니다.');
+      }
+
+      const [updated] = await trx
+        .update(productBulkItems)
+        .set({ status: 'excluded', publishStatus: 'idle', publishError: null, updatedAt: new Date() })
+        .where(eq(productBulkItems.id, itemId))
+        .returning(bulkItemRowColumns);
+      if (!updated) throw new Error('행 제외를 저장하지 못했습니다');
+
+      if (item.draftVersionId) {
+        await trx
+          .update(productMasterVersions)
+          .set({ bulkSessionId: null, updatedAt: new Date() })
+          .where(eq(productMasterVersions.id, item.draftVersionId));
+      }
+
+      return this.reader.toItemDto(updated);
+    }, tx);
+  }
+
+  /**
+   * 취소된 세션이 남긴 draft 를 지운다. **취소 세션에서만 열리는 명시적 관리자 동작**이다
+   * (스펙 §3.12) — 취소 자체는 draft 를 남긴다. 수천 건 세션에서 작업 결과가 통째로
+   * 날아가는 것은 취소의 대가로 너무 크고, 지울지 말지는 사람이 보고 판단할 일이다.
+   *
+   * - 수정 행: draft 만 지운다(원래 active 는 멀쩡하다)
+   * - 신규 행: master 까지 지운다 — draft 만 지우면 어떤 버전도 없는 유령 master 가 남는다
+   * - 발행된 적 있는 행: 건드리지 않는다
+   * - **제외(`status='excluded'`)된 행: 건드리지 않는다**(최종 리뷰 발견 ①). `excludeItem` 은
+   *   행을 세션에서 뺄 때 `draft_version_id` 는 **일부러 남긴다** — 그 draft 를 "이제 당신
+   *   개인 draft" 로 돌려주는 것이 제외의 계약이다(`excludeItem` 독스트링). `status` 를 안 보고
+   *   `draft_version_id IS NOT NULL` 만 보면 이 계약을 어기고 두 가지 사고가 난다: (a) 세션을
+   *   취소한 뒤 정리를 부르면 작업자가 방금 넘겨받은 개인 draft 가 하드 삭제된다(`kind='create'`
+   *   면 master 까지) (b) 제외한 draft 를 작업자가 개별 발행한 뒤(제외의 존재 이유) 세션을
+   *   취소·정리하면, 그 버전은 이미 `active` 라 `deleteDraftVersion` 이 "Only draft versions
+   *   can be deleted"로 **영구 실패**하고 `remaining` 이 같은 필터로 재집계돼 0 이 되지 않는다
+   *   — 화면의 `remaining === 0` 반복 호출 계약이 끝나지 않는 루프가 된다.
+   *
+   * **이미지는 여기서 지우지 않는다.** 처리한 행의 `draft_version_id` 를 비우면 3단계
+   * `BulkImageCleaner` 의 스윕 제외 조건(`notExists(draft_version_id 있는 아이템)`,
+   * 부록 B.6)이 저절로 풀려 이미지 정리가 이어서 돈다. 새 코드가 필요 없다.
+   *
+   * **행마다 트랜잭션 하나다** — 슬라이스를 통째로 하나의 트랜잭션으로 묶으면 한 행의 삭제
+   * 실패가 앞선 성공까지 되돌리고, 재호출이 같은 일을 무한히 반복한다. `PURGE_DRAFTS_BATCH`
+   * 문서가 적은 ALB 60초 제약과 같은 이유로 한 요청은 최대 `PURGE_DRAFTS_BATCH` 행만
+   * 처리하고, 화면은 `remaining === 0` **또는 `purged === 0`**(진전이 없으면 멈춘다, 최종
+   * 리뷰 발견 ①)이 될 때까지 반복 호출한다 — 영구 실패 행(위 (b) 처럼 `excluded` 필터를
+   * 놓쳐도, 또는 다른 사유의 삭제 실패로도) 한 종류만으로는 `remaining` 이 절대 0 이 안 될 수
+   * 있으므로, `remaining === 0` 단독으로는 종료를 보장할 수 없다.
+   *
+   * 실패한 행은 `draft_version_id` 를 남긴다 — 다음 호출이 그 행을 다시 대상으로 잡는다
+   * (멱등). `errorMessage` 에는 `classifyPublishError(error, '정리')` 로 분류한 문구를
+   * 남긴다 — 함수 이름은 "publish" 지만 발행·정리 공용이다: 삭제 실패도 결국 같은 종류의
+   * DB/도메인 예외이고, 문구 분류기를 둘로 나누면 한쪽만 개선되는 자리가 생긴다. 두 번째
+   * 인자로 폴백 문구만 "정리에 실패했습니다"로 갈아끼운다 — 기본값('발행')을 그대로 썼다면
+   * 삭제 실패가 "발행에 실패했습니다"로 오진됐다(Task 6 리뷰 발견 2).
+   *
+   * **성공 UPDATE 도 `errorMessage: null` 을 함께 찍는다.** 이 메서드의 정상 흐름은 "실패 →
+   * 다음 호출에서 성공"이라, 지우지 않으면 이미 정리가 끝난(`draft_version_id = NULL`) 행이
+   * 옛 오류 문구를 영구히 달고 있는다(Task 6 리뷰 발견 3) — 이 레포의 다른 재시도 경로
+   * (`bulk-session-job.manager.ts`, `form-export-job.manager.ts`)와 같은 관례다.
+   *
+   * `remaining` 은 이번 배치 처리가 끝난 **뒤** 다시 센 값이다 — 화면이 이 값으로 반복
+   * 호출을 멈추므로, 낡은(배치 시작 전) 값을 주면 무한 루프나 조기 종료로 이어진다.
+   *
+   * **`tx` 매개변수가 없다 — 이 메서드는 상위 트랜잭션에 참여할 수 없다**(최종 리뷰 발견 ④).
+   * 다른 매니저 메서드와 달리 행마다 자기 트랜잭션을 여는 루프(위 "행마다 트랜잭션 하나다")와
+   * 배치 끝의 재집계가 있어, `tx?: DbTransaction` 을 받아도 가드 SELECT 에만 흘려보내고
+   * 나머지(행별 삭제·재집계)는 여전히 새 트랜잭션을 연다 — 시그니처가 "상위 트랜잭션 안에서
+   * 원자적으로 돈다"고 거짓말하게 된다. 호출부가 컨트롤러→서비스 경유 하나뿐이고 그마저
+   * `tx` 를 넘기지 않으므로, 받지 않는 편이 정직하다. 상위 트랜잭션 참여가 필요해지면
+   * 그때 배치 루프 설계 자체를 다시 볼 것.
+   */
+  async purgeDrafts(sessionId: string, userId: string): Promise<{ purged: number; failed: number; remaining: number }> {
+    const targetFilter = and(
+      eq(productBulkItems.sessionId, sessionId),
+      isNotNull(productBulkItems.draftVersionId),
+      ne(productBulkItems.publishStatus, 'published'),
+      // 제외된 행은 정리 대상이 아니다 — 위 독스트링 "제외된 행: 건드리지 않는다" 참조.
+      ne(productBulkItems.status, 'excluded'),
+    );
+
+    const targets = await this.db.run(async (trx) => {
+      const [session] = await trx
+        .select({ phase: productBulkSessions.phase, uploadedBy: productBulkSessions.uploadedBy })
+        .from(productBulkSessions)
+        .where(eq(productBulkSessions.id, sessionId))
+        .limit(1);
+      if (!session || session.uploadedBy !== userId) {
+        throw new NotFoundError(`일괄 등록 세션을 찾을 수 없습니다: ${sessionId}`);
+      }
+      if (session.phase !== 'canceled') {
+        throw new ConflictError('취소된 세션에서만 draft 를 정리할 수 있습니다.');
+      }
+
+      return trx
+        .select({
+          id: productBulkItems.id,
+          kind: productBulkItems.kind,
+          masterId: productBulkItems.masterId,
+          draftVersionId: productBulkItems.draftVersionId,
+        })
+        .from(productBulkItems)
+        .where(targetFilter)
+        .orderBy(productBulkItems.rowNumber)
+        .limit(PURGE_DRAFTS_BATCH);
+    });
+
+    let purged = 0;
+    let failed = 0;
+
+    for (const target of targets) {
+      const draftVersionId = target.draftVersionId;
+      if (!draftVersionId) continue;
+      try {
+        await this.db.run(async (trx) => {
+          await this.versions.deleteDraftVersion(draftVersionId, trx);
+          if (target.kind === 'create' && target.masterId) {
+            await this.masters.deleteMaster(target.masterId, userId, trx);
+          }
+          await trx
+            .update(productBulkItems)
+            // 이전 시도가 남긴 errorMessage 를 지운다 — 지우지 않으면 "실패 → 다음 호출에서
+            // 성공"이 정상 흐름인 이 메서드에서, 이미 지워진 행이 옛 오류 문구를 영구히 달고
+            // 있는다(Task 6 리뷰 발견 3). 이 레포의 다른 재시도 경로(bulk-session-job.
+            // manager.ts:736,1090, form-export-job.manager.ts:143)와 같은 관례다.
+            .set({ draftVersionId: null, errorMessage: null, updatedAt: new Date() })
+            .where(eq(productBulkItems.id, target.id));
+        });
+        purged += 1;
+      } catch (error) {
+        // action='정리' — 이름은 "publish" 지만 발행·정리 공용이다(Task 6 리뷰 발견 2).
+        // 기본값('발행')을 그대로 두면 삭제 실패가 "발행에 실패했습니다"로 오진된다.
+        const message = classifyPublishError(error, '정리').slice(0, 500);
+        this.logger.warn(`draft 정리 실패 (session=${sessionId}, item=${target.id}): ${message}`);
+        failed += 1;
+        await this.db.run((trx) =>
+          trx
+            .update(productBulkItems)
+            .set({ errorMessage: message, updatedAt: new Date() })
+            .where(eq(productBulkItems.id, target.id)),
+        );
+      }
+    }
+
+    const [remainingRow] = await this.db.run((trx) =>
+      trx.select({ value: count() }).from(productBulkItems).where(targetFilter),
+    );
+
+    return { purged, failed, remaining: Number(remainingRow?.value ?? 0) };
   }
 }

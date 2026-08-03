@@ -48,6 +48,20 @@ export class BulkSessionImageStatusCountDto {
   @ApiProperty() count: number;
 }
 
+export class BulkSessionPublishStatusCountDto {
+  @ApiProperty({ enum: ['idle', 'pending', 'published', 'failed'] }) status: string;
+  @ApiProperty() count: number;
+}
+
+export class PurgeDraftsResultDto {
+  @ApiProperty({ description: '이번 요청에서 지운 행 수' }) purged: number;
+  @ApiProperty({ description: '이번 요청에서 실패한 행 수. error_message 에 사유가 남는다' }) failed: number;
+  @ApiProperty({
+    description: '아직 남은 행 수. remaining===0 또는 purged===0(더 이상 진전이 없음)이 될 때까지 다시 호출한다',
+  })
+  remaining: number;
+}
+
 export class BulkSessionProgressDto {
   @ApiProperty() sessionId: string;
   @ApiProperty({ enum: BULK_SESSION_PHASES }) phase: string;
@@ -66,6 +80,8 @@ export class BulkSessionProgressDto {
     description: '이미지 status 별 실시간 집계(카운터 컬럼 아님)',
   })
   imageCounts: BulkSessionImageStatusCountDto[];
+  @ApiProperty({ type: [BulkSessionPublishStatusCountDto], description: '발행 단계 집계' })
+  publishCounts: BulkSessionPublishStatusCountDto[];
   @ApiProperty({ required: false, nullable: true }) cancelRequestedAt: Date | null;
 }
 
@@ -100,6 +116,14 @@ export class BulkSessionItemDto {
     description: '생성된 draft 버전. 이 id 로 통상의 draft 편집 화면을 연다',
   })
   draftVersionId: string | null;
+  @ApiProperty({
+    enum: ['idle', 'pending', 'published', 'failed'],
+    description:
+      '발행 레인의 상태 — 아이템 status 와 축이 다르다(한 행이 drafted 이면서 publishStatus=failed 일 수 있다)',
+  })
+  publishStatus: string;
+  @ApiProperty({ required: false, nullable: true, description: '분류된 한국어 실패 사유' })
+  publishError: string | null;
   @ApiProperty({ type: [BulkSessionItemChangeDto], description: '이 행이 실제로 바꾸는 것' })
   changes: BulkSessionItemChangeDto[];
   @ApiProperty({

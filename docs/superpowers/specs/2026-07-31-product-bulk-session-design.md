@@ -441,7 +441,7 @@ product_master_versions
 | **2** | 업로드 · 검증 레인 · 프리뷰 · 충돌 해소 | 테이블 3 |
 | **3** | 이미지 단계 (브라우저 직접 업로드 + 전량 게이트) | 0 |
 | **4** | draft 생성 (신규 + 수정) + 잠금 | 컬럼 1 (`bulk_session_id`) |
-| **5** | 일괄 발행 + 취소 + 정리 + 실패 행 재시도 | 0 |
+| **5** | 일괄 발행 + 정리 + 실패 행 재시도 (취소는 3·4단계가 이미 만들었다) | 컬럼 1 (`source_file_id` nullable — §10.6) |
 | **6** | 옛 `product_import_*` 제거 | **contract phase — 별도 PR** |
 
 **규모는 v3(4단계)보다 크고, 1~2단계만으로는 쓸 수 있는 게 없다.** 4단계까지 가야 처음으로 동작하는 기능이 된다.
@@ -468,6 +468,93 @@ product_master_versions
 - 배포 순서: core 먼저 → admin-web
 - **신규 시크릿 없음** — `AUTH_SECRET`·`FILE_SERVICE_URL` 이 Core live env 에 이미 있다
 - `PRODUCT_IMPORT_WORKER_ENABLED` 계열의 킬스위치를 새 워커에도 둔다
+
+## 10. 5단계 착수 전 확정 사항 (2026-08-03, 사용자 결정)
+
+5단계(일괄 발행 + 취소 + 정리 + 실패 행 재시도)를 계획하며 정한 것들이다. **본문과 어긋나는 것이 셋 있고 이 절이 우선한다** — §3.10 의 `origin` 값, §7 의 "마이그레이션 0건", 그리고 잠금 우회 방식이다.
+
+### 10.1 범위
+
+**core 백엔드만.** 2·3·4단계와 같은 선택이다. admin-web 의 2~5단계 화면은 별도 "화면 단계"로 빠지며, 6단계(옛 `product_import_*` 제거)와도 독립이다.
+
+취소는 이 단계의 신규 항목이 아니다 — `BulkSessionManager.cancel` 과 `BulkImageCleaner` 스윕이 3·4단계에서 이미 만들어졌다. 5단계가 하는 일은 **발행 레인 · 재시도 2지점 · `excluded` · 정리 두 종류**다.
+
+### 10.2 `origin` 은 `bulk_import` 를 재사용한다 (§3.10 정정)
+
+§3.10 은 `origin: 'bulk_session'` 을 적었지만 그러려면 `packages/event-contracts/streams/product.stream.ts:381` 의 `z.literal('bulk_import')` 를 enum 으로 넓혀야 하고, **런타임 zod 검증이 도는 소비자(analytics·search)의 선배포가 필수 조건이 된다**(§6 세 번째 전제). 세션 발행도 "한 번에 수백~수천 건"이라는 강등 판정 기준에는 동일하게 해당하고, 관측이 필요하면 `importSessionId` 가 세션 id 를 싣는다.
+
+따라서 **이벤트 계약 변경 0건**이고 `channel-adapter` 의 `BULK_ORIGINS` 도 그대로다. 6단계가 옛 임포트를 지우고 나면 이 값은 유일한 bulk 경로를 가리키게 된다.
+
+### 10.3 발행 경로는 플래그가 아니라 잠금 선해제로 4단계 가드를 통과한다
+
+4단계가 `publishVersion` 에 "`bulkSessionId` 가 있으면 409"를 넣었으므로(`product-versions.service.ts:274`) 세션의 일괄 발행이 그것을 통과할 방법이 필요하다. **`PublishVersionOptions` 에 우회 플래그를 더하지 않는다.** 대신 발행 트랜잭션 안에서 `bulk_session_id = NULL` 을 **먼저 쓰고** `publishVersion` 을 부른다.
+
+이유 둘:
+
+- 플래그는 "잠긴 draft 를 발행할 수 있는 경로"를 코드에 영구히 남긴다. 4단계가 막으려던 것이 다른 호출부에서 다시 열린다.
+- 플래그로 통과시키면 **active 가 된 버전에 `bulk_session_id` 가 그대로 남는다.** 그 값은 나중에 그 버전으로 롤백 발행(`publishVersion` 은 `inactive` 도 받는다)할 때 같은 가드에 막힌다. 세션은 이미 끝났는데도 그렇다.
+
+같은 트랜잭션이므로 발행 실패 시 잠금 해제도 함께 롤백돼 재시도 시 draft 는 여전히 세션 소유다.
+
+### 10.4 발행 레인의 행 단위 규약
+
+행 하나 = 트랜잭션 하나이고 순서가 계약이다.
+
+1. **세션 행 `SELECT … FOR UPDATE` + `cancel_requested_at` 재확인.** 취소가 걸려 있으면 아무것도 쓰지 않고 건너뛴다(실패로도 적지 않는다). 부록 B.4·C.11 이 다음 단계에 요구한 규약이며, 없으면 "취소했는데 상품이 발행됨"이 그대로 재현된다
+2. **발행 시점 가드** — `현재 active.id === draft.parentVersionId`. 다르면 그 행만 실패시키고 "기준이 변경되었습니다"를 남긴다(§3.10). 신규 행은 active 도 `parentVersionId` 도 없어 자연히 통과한다
+3. `bulk_session_id = NULL` (§10.3)
+4. `publishVersion(draftId, trx, { origin: 'bulk_import', importSessionId: sessionId })`
+5. `publish_status = 'published'`
+
+**멱등**: 대상 버전이 이미 `active` 면 발행하지 않고 완료로만 마감한다(v3 선례).
+
+**슬라이스는 5에서 시작**(`PRODUCT_BULK_PUBLISH_SLICE`). §2.3 의 목록이 행마다 붙어 draft 생성(10)보다 무겁다.
+
+**claim 확장은 세 곳이다** — claim SQL 의 `phase IN (...)`, `CLAIMABLE_PHASES`, `recordJobError` 의 WHERE. 한 곳만 고치면 레인 예외가 연속 실패를 못 세어 세션이 굳는다.
+
+**실패 행이 남아도 `phase='published'` 로 마감한다.** 세션 차원의 일은 끝났고 남은 것은 그 행들의 재시도·제외다.
+
+### 10.5 라우트 넷
+
+| 라우트 | 허용 phase | 대상 | 결과 |
+|---|---|---|---|
+| `POST :id/publish` | `drafted`·`published` | `status='drafted'` ∧ `publish_status IN ('idle','failed')` | → `publishing`. 최초 발행과 실패 행 재발행을 겸한다(v3 `queuePublish` 선례) |
+| `POST :id/retry-draft` | `drafted` | `status='failed'` | `pending` 으로 되돌리고 → `drafting` |
+| `POST :id/items/:itemId/exclude` | `drafted`·`published` | `status IN ('drafted','failed')` | `status='excluded'` + 그 draft 의 `bulk_session_id=NULL` |
+| `POST :id/purge-drafts` | `canceled` 뿐 | 발행된 적 없고 제외(`excluded`)되지 않은 행 | 한 요청당 최대 100행, `{ purged, remaining }` 응답 |
+
+**제외는 되돌릴 수 없다.** 재포함을 만들려면 "푼 사이에 개별 발행됐거나 삭제된 draft" 를 전부 다뤄야 해서 값이 비싸다. 풀린 draft 는 `my-drafts` 에 다시 나타나므로 개별 처리로 잃는 것이 없다.
+
+**신규 행 재시도에는 대가가 있다.** `createMaster` 가 트랜잭션 밖으로 내는 부수효과 둘(Kafka 직송 이벤트 + `product_matchings` 행 — §5.1 정정)은 롤백돼도 남으므로 **재시도 횟수만큼 누적된다.** 근본 수정은 catalog core 전체에 걸리는 별건이고, API 설명과 화면 문구가 "무한정 누를 것이 아니다"를 반영해야 한다.
+
+**`purge-drafts` 가 한 번에 안 끝나는 이유**: 취소 세션이 수천 행이면 삭제도 수천 번이라 ALB 60초를 넘는다. 100행씩 멱등하게 처리하고 화면이 `remaining === 0` **또는 `purged === 0`**(진전이 없으면 멈춘다 — 최종 리뷰가 정정: `remaining` 만으로는 영구 실패 행 앞에서 종료가 보장되지 않는다, D.5)까지 반복 호출한다 — 새 상태 컬럼 없이 진행을 표현하는 방법이다(3단계 이미지 스윕의 `fileId=NULL` 되돌리기와 같은 계열).
+
+정리 규칙은 §3.12 그대로다. 수정 행은 draft 만, 신규 행은 master 까지, **발행된 적 있는 행은 미접촉.** 처리한 행의 `draft_version_id` 를 비우면 부록 B.6 의 스윕 제외 조건(`notExists(draft_version_id)`)이 저절로 풀려 **이미지 정리가 새 코드 없이 이어서 돈다.**
+
+### 10.6 워크북 만료 — 마이그레이션 1건이 생긴다 (§7 정정)
+
+부록 B.7 이 남긴 "세션 원본 워크북(`source_file_id`)을 아무도 지우지 않는다"를 닫는다. 종단(`published`·`canceled`) 세션의 엑셀을 30일 뒤 soft delete 하는 @Cron 을 둔다(하루 1회, 틱당 200건, 킬스위치는 기존 `PRODUCT_BULK_SESSION_WORKER_ENABLED` 재사용).
+
+**`source_file_id` 를 nullable 로 푸는 마이그레이션 1건이 필요하다.** "이미 지웠다"를 표시할 자리가 그것뿐이고(스윕의 멱등성이 여기 걸린다), 지금은 NOT NULL 이다. NOT NULL 제거는 additive 라 **expand phase = `migrate` → `deploy`** 순서다. §7 표의 "5단계 마이그레이션 0" 은 이 결정으로 1이 된다.
+
+옛 코드가 NULL 을 만나는 창은 없다 — 그 값을 읽는 곳은 검증 레인의 재다운로드뿐이고 종단 세션은 거기 오지 않는다.
+
+### 10.7 함께 닫는 갭 4건 (C.9·A.8·B.7 에서 선택)
+
+- **컨트롤러 역할 가드** — `BulkSessionController` 와 `FormExportController` **둘 다** 에 `RolesGuard('master','admin')`(`libs/authorization/src/guards/master-role.guard.ts`, 고객센터 컨트롤러 선례). 한쪽만 걸면 우회로가 남는다. ⚠️ **배포 사고 위험**: 이 가드는 토큰의 `roles` 클레임을 본다. 1단계 "양식 다운로드"는 이미 라이브라, 실제 MD 계정에 `admin`·`master` 가 없으면 켜는 순간 403 이다. 시드 롤은 `master`·`admin`·`membership`·`user`·`logistics_worker`·`logistics_manager` 여섯(`scripts/seeding/steps/user-service.seed-step.ts:94-108`) — **라이브 DB 실측이 배포 선행조건이다**
+- **신규 행 "같은 조합 두 번"**(§C.4 d) — `checkCreateStructure` 가 `bundle.variants` 원본 배열을 함께 받도록 시그니처를 넓힌다. 지금은 평면화가 뒤 값으로 덮어써 오류도 없이 하나만 살아남는다
+- **`errorMessage` 분류**(부록 A.8) — 예외 원문이 관리자 화면에 그대로 뜬다. 발행 실패는 종류가 유한하다(22001 길이 초과 · `productCode` 중복 · `variantCode` 중복 · 가격 검증 · 기준 변경). 한국어 문장으로 옮기는 분류기 하나를 두고 원문은 로그로만 남긴다
+- **`variantCode` 전역 중복 사전검사**(§C.9) — v3 `ProductImportVariantCodeChecker` 를 2단계 검증 레인으로 이식한다. 지금은 전량 발행 뒤에야 그 행들이 죽는다
+
+닫지 않고 남기는 것: 수정 행의 카테고리 전체 해제(§C.9 — 워크북 규약이 만든 구조적 한계), `loadReferencedImageRefs` 의 payload 전량 select(부록 B.4 후속), 스냅샷 리더 배치화(A.8), `createMaster` 의 트랜잭션 밖 부수효과(§5.1 정정 — catalog core 별건).
+
+### 10.8 검증과 배포
+
+실 Postgres 통합 6건이 이 단계의 회귀 잠금이다: ① 발행 시점 가드가 그 행만 실패시키는가 ② 취소 커밋 뒤 시작된 행이 발행되지 않는가(**커넥션 물리 분리 필수** — 부록 B.4) ③ 발행 성공한 버전의 세션 표식이 비워져 롤백 발행이 되는가 ④ 제외가 잠금을 실제로 푸는가 ⑤ 재시도가 이미 발행된 행을 두 번 발행하지 않는가 ⑥ 정리가 신규는 master 까지·수정은 draft 만·발행된 행은 미접촉인가.
+
+부록 C.7 의 경고도 지킨다 — 새 정적 임포트가 통합 스위트를 부팅 단계에서 죽일 수 있으므로 **DB 를 붙여 한 번은 반드시 돌린다.**
+
+배포: 마이그레이션 1건(§10.6, `migrate` → `deploy`) · 이벤트 계약 변경 0건(§10.2) · 새 시크릿 없음 · 새 env 는 `PRODUCT_BULK_PUBLISH_SLICE` 하나(선택, 기본 5) · **MD 계정 roles 실측**(§10.7) · 2·3·4단계의 미수행 수동 스모크가 여기 누적되므로 5단계 것과 합친 목록으로 정리한다.
 
 ---
 
@@ -834,3 +921,126 @@ Task 11 의 `seedSession` 은 아이템의 `input` 을 항상 `options: []` 로 
 최종 리뷰가 통합 케이스 하나를 추가했다: **그룹이 번갈아 나오는** 옵션 시트((색상,빨강)→(사이즈,S)→(색상,파랑))로 신규 행 하나, 조합 2개, 각각 다른 `variantCode` 와 조합별 판매가. 단정 넷 — (a) 옵션값이 제 그룹에 귀속됐는가 (b) 조합 2개가 만들어졌는가 (c) `variantCode` 가 제 variant 에 붙었는가 (d) 조합별 가격 룰의 `scopeTargetIds` 가 올바른 variantId 를 가리키는가.
 
 이 케이스가 §C.6.1(그룹 귀속)과 F7(이름으로 id 되찾기)을 **실 DB 에서** 동시에 잠근다. 변이 테스트로 확인했다: `parseOptionSheet` 의 그룹 귀속을 "직전 행의 그룹"(인접성 추론 — C.6.1 이 고친 것과 같은 부류의 결함)으로 바꾸면 이 케이스만 FAIL 한다.
+
+---
+
+# 부록 D — 5단계 구현이 실측한 사실 (2026-08-03)
+
+5단계(일괄 발행 · 재시도 2지점 · `excluded` · 정리 두 종류)는 **core 백엔드만** 구현했다(§10.1, 사용자 결정). admin-web 은 2~5단계 화면을 별도 화면 단계로 미룬다.
+
+읽는 법: 부록 A·B·C 와 같다. 아래는 2026-08-03 시점 실측이고, 6단계(옛 `product_import_*` 제거)는 자기 범위의 인터페이스를 다시 확인한 뒤 이 표를 출발점으로만 쓴다. §10 은 착수 전 코드를 읽어 세운 결정이었다 — 이 부록은 그중 구현·리뷰·실 Postgres 통합으로 실제로 검증되거나 정정된 것만 추린다.
+
+## D.1 §10 의 결정 중 구현이 뒤집거나 보강한 것
+
+§10 은 계획 시점의 결정이지 검증된 사실이 아니었다. 리뷰가 잡은 계획서·초안 결함이 **7건**(진행 원장의 "Important" 표식 기준: Task 3 ×1, Task 6 ×3, Task 7 ×2, Task 9 ×1)이고, 그 밖에 자체 리뷰·통합 테스트가 잡은 것이 둘 더(Task 2, Task 12) 있다. §10.4 의 "관문이 실제로 막는다"·"발행 실패는 종류가 유한하다"는 계약이 이 아홉 건 전부의 판정 기준이었다 — 계약을 어기면 계획서가 지시한 코드라도 컨트롤러가 고치기로 판정했다.
+
+| # | 무엇이 틀렸는가 | 실제로 나는 사고 | 수정 | 근거 |
+|---|---|---|---|---|
+| 1 | §10.4②(발행 시점 가드)의 `getActiveVersion` 호출을 감싼 catch 가 바인딩 없는 bare catch 였다 | **신규 행**(`parentVersionId=null`)은 커넥션 끊김 같은 무관한 오류도 `currentActiveId=null`로 삼켜 가드를 **그냥 통과하고 발행됨** — 관문 ③이 막으려던 바로 그 사고. 수정 행은 반대로 무관한 오류에도 "기준이 변경되었습니다"로 오진단 | `catch (error) { if (!(error instanceof NotFoundException)) throw error; currentActiveId = null; }` — `@nestjs/common` 의 `NotFoundException`(`@app/shared` 의 `NotFoundError` 아님)만 "active 없음"으로 인정 | `bulk-session-job.manager.ts`, 커밋 `a507035c2`. 역검증: bare catch 로 되돌리면 "NotFound 아닌 오류" 회귀 테스트가 `publishVersion` 호출 0 기대·1 수신으로 FAIL |
+| 2 | `classifyPublishError` 의 한국어 도메인 예외 판정이 `/[가-힣]/`(한글이 **어디든** 있으면) 였다 — 문서는 "한글로 **시작**하면" | 영어 DB 오류에 한국어 값이 섞이면(`… Key (name)=(아몬드영 크림) already exists.`) 원문이 500자까지 그대로 노출 — 이 함수가 없애려던 증상이 재현 | `DOMAIN_MESSAGE = /^(\[[^\]]*\]\s*)?[가-힣]/` — 한글로 시작하거나 `[조합]` 류 접두 뒤가 한글일 때만 도메인 문구로 인정 | `bulk-publish.errors.ts`, 커밋 `59b14fc4d` |
+| 3 | `purgeDrafts` 의 `remaining` 재집계 테스트가 하네스의 `count()` 페이크가 필드를 무시하고 항상 원본 행을 돌려줘 값이 우연히 늘 0이었다 | `remaining` 계산 코드를 통째로 지워도(`return { purged, failed, remaining: 0 }`) 테스트가 계속 통과 — **아무것도 안 잠그는 테스트** | `aggregateCountKey(fields)` 헬퍼로 `.select({ value: count() })` 가 실제로 매칭된 행 수를 반환하도록 하네스를 고치고 "실패한 행은 remaining 재집계에 다시 잡힌다" 케이스 추가 | `bulk-session.manager.spec.ts`, 커밋 `0da944fe3` (아래 D.3 도 참조) |
+| 4 | 정리(`purgeDrafts`) 실패 시 `classifyPublishError`의 generic 폴백 문구가 "발행에 실패했습니다"로 고정 | 관리자 화면에 "삭제"인데 "발행"으로 뜬다 — 실측 로그: `draft 정리 실패 … 발행에 실패했습니다. (원인: boom)` | `classifyPublishError(error, action: '발행'\|'정리' = '발행')` — 기본값이 기존 발행 경로 9건 호출부를 한 글자도 안 바꿈 | `bulk-publish.errors.ts`/`bulk-session.manager.ts`, 커밋 `0da944fe3` |
+| 5 | `purgeDrafts` 성공 UPDATE 가 `errorMessage` 를 안 지웠다 | 실패 후 재시도로 성공해도 옛 오류 문구가 화면에 그대로 남는다 | 성공 `.set({...})` 에 `errorMessage: null` 추가 | `bulk-session.manager.ts`, 커밋 `0da944fe3` |
+| 6 | `BulkSessionCleaner`(워크북 스윕) 스펙의 페이크 `.where()` 가 인자를 안 받고, 테스트가 **자기만의 술어 사본**(`TERMINAL_PHASES.includes(...) && ...`)으로 행을 걸렀다 | `lt`→`gt` 뒤집기, `inArray(phase)` 절 삭제 둘 다 목이 초록 그대로 — 진행 중 세션·30일 미만 세션을 실수로 지워도 테스트가 못 잡는다 | `rowMatchesCondition`(공용 렌더러, D.3)에 `lt` 지원을 더해 실제 drizzle 조건을 렌더·판정하도록 스펙을 재작성 | `bulk-session.cleaner.spec.ts` + `__support__/drizzle-row-matcher.ts`, 커밋 `309c70a6b` |
+| 7 | 영구 실패 행(예: 며칠간 이어지는 file-service 장애로 soft-delete 가 계속 실패하는 행)이 `orderBy(updatedAt)` 정렬 때문에 워크북 스윕 배치 앞머리를 독점한다 | 형제 클래스(`BulkImageCleaner`)의 해법(실패 시 `updatedAt` 갱신해 뒤로 미룸)은 **여기서는 오히려 틀린다** — 이 스윕의 대상 판정 자체가 `updatedAt` 을 나이로 쓰므로, 갱신하면 판정이 자기 자신 때문에 흔들린다 | **수정 없음 — 사용자 판정(2026-08-03): 문서화하고 넘긴다.** 완화 근거: 하루 1회 · 배치 200 · core 가 자체 생성한 fileId. 도달하려면 다일간 file-service 장애가 필요하다. 진짜 해법(재시도 횟수 컬럼)은 마이그레이션이 필요해 5단계 범위 밖 | §D.5 "남긴 갭"에도 재기재. 리뷰가 실 코드로 지적, 컨트롤러가 파킹 |
+| 8 | `bulk-session.controller.ts` 의 `publish`·`retry-draft`·`purge-drafts` 세 라우트가 매니저의 `NotFoundError`(세션 없음/내 것 아님)를 문서화하지 않고 409 만 달았다 | Swagger 문서가 실제 응답과 불일치 — API 소비자가 404 케이스를 놓친다 | `@ApiResponse({ status: 404, description: '세션이 없거나 내 것이 아님' })` 3줄 추가(`exclude` 가 이미 쓰는 문구·위치와 동일) | `bulk-session.controller.ts`, 커밋 `a35433301`. **`approve`·`cancel` 라우트의 같은 누락은 이번에도 안 고쳤다** — Task 9 가 범위 밖으로 남기고 "최종 리뷰가 트리아지"라 적었지만 이후 별도 최종 리뷰 라운드가 없어 **미결로 남는다**(D.5) |
+| 9 | `BulkVariantCodeChecker.checkSession`(Task 11, §10.7 갭 4건 중 하나)의 정규식 `/^variant:.+\.variantCode$/`가 조합키 부분에 최소 1자를 요구했다 | **옵션 없는 상품**(카탈로그의 절대다수로 추정)은 조합키가 빈 문자열(`variant:.variantCode`)이라 `.+` 에 매칭되지 않는다 — 이 상품군에서 품목코드 중복 사전검사가 **한 번도 발동하지 않았다.** 발행 시점 DB 유니크 제약(`_validateVariantCodeUniqueness`)이 최종 방어선이라 데이터 정합성 자체는 안 깨졌지만, "업로드 직후 알려주기"라는 사전검사 고유의 목적이 무력했다 | `/^variant:.*\.variantCode$/`(`.+`→`.*`) — `bulk-session.fields.ts` 의 `parseFieldPath` 가 이미 같은 이유로 `.*` 를 쓰고 있었는데(§C.3 근거) Task 11 이 그 교훈을 놓쳤다 | `bulk-variant-code.checker.ts`, 커밋 `a48c520d7`. Task 12 가 실 DB 로 3테이블 조인을 처음 돌리며 발견(아래 D.3) |
+
+**5단계가 실측으로 정정한 §10 자체의 문장**: 없다. §10.2(`origin` 재사용)·§10.3(잠금 선해제)·§10.6(마이그레이션 1건)은 구현 그대로 확정됐고 통합 테스트가 이를 검증했다(D.2). §10 이 어긋난 곳은 전부 **본문의 결정이 아니라 그 결정을 구현한 초안 코드**였다 — 부록 C 의 4단계 패턴과 같다.
+
+## D.2 `publishVersion` 을 실 Postgres 로 확인한 것
+
+Task 12 가 `bulk-session-publish.integration.spec.ts`(8케이스, 실 Postgres + 실 Nest DI)로 검증했다. 5스위트 합계 47건 전부 통과(기존 39건 회귀 없음).
+
+### D.2.1 잠금 선해제 순서와 롤백 발행
+
+§10.3 이 계획한 "`bulk_session_id=NULL` 을 먼저 쓰고 `publishVersion` 을 부른다" 순서를 단위 테스트(Task 3, `ops` 로그의 `kind:'call'` 마커로 순서 관측)와 통합 테스트(Task 12 케이스 3) 양쪽에서 확인했다. 발행 성공 뒤 직접 `bulkSessionId IS NULL` 을 질의해 확인했고, 그 버전을 새 draft 발행으로 밀어내 `inactive` 로 만든 뒤 **다시 `publishVersion` 을 불러 세션 관련 409 없이 통과함**을 실측했다 — §10.3 이 이유로 든 "롤백 발행이 나중에 막히는 사고"가 실제로 없음을 확인.
+
+### D.2.2 두 커넥션 경합 (취소 레이스, 관문 ①)
+
+`publishOne` 관문 ①(`SELECT … FOR UPDATE` + 취소 재확인)이 막는 타이밍은 "취소의 UPDATE 가 아직 uncommitted 인 동안 관문 ①이 낡은 상태를 읽고, 그 뒤 취소가 커밋되는" 창이다. **순차 실행으로는 이 창이 재현되지 않는다** — `FOR UPDATE` 유무와 무관하게 항상 안전해 보여서 관문의 존재를 증명하지 못한다. 그래서 통합 케이스 2는 물리적으로 분리된 **세 번째 커넥션**(`raceConn`, `max:1`)으로 세션 행에 `SELECT … FOR UPDATE`를 걸어 콜백 안에서 붙잡고, `cancel()`이 그 뒤에 줄서게 한 뒤(`pg_locks WHERE NOT granted` 로 대기를 폴링 확인) `runPublishSlice()`(같은 Nest DI 풀에서 다른 물리 커넥션)를 발사해 대기 순서를 강제했다. `renewLease`(값싼 조기 필터)만 목으로 덮어 관문 ① 자체를 시험대에 올렸다 — DB·트랜잭션·`BulkDraftApplier`/`ProductVersionsService`는 전부 진짜다. 20회 이상 반복에서 재현성을 확인(350~405ms 로 일정, 넓은 타이밍 창에 우연히 걸린 것이 아님).
+
+### D.2.3 역검증 — 어느 관문을 지우면 어느 케이스가 빨개지는가
+
+| 지운 것 | 빨개진 케이스 (그 외 7건은 초록 유지) | 실측 |
+|---|---|---|
+| 관문 ③(발행 시점 가드, `if (false && currentActiveId !== ...)`) | ① 발행 시점에 남이 먼저 발행했으면 그 행만 실패한다 | `Expected: "failed", Received: "published"` |
+| 관문 ①의 `.for('update')` | ② 취소가 커밋된 뒤 시작된 행은 발행되지 않는다 (3회 반복 재현) | `Expected: "pending", Received: "published"` — FOR UPDATE 없으면 취소 커밋 뒤에도 실제로 발행돼 버린다 |
+| `BulkVariantCodeChecker` 정규식(`.*`→`.+` 되돌림) | ⑦ 품목코드 중복 사전검사의 3테이블 조인이 실 DB 에서 돈다 | `Expected: 1, Received: 0` |
+
+세 실험 모두 "정확히 그 케이스만" 빨개지고 나머지 7건은 흔들리지 않았다 — §10.8 이 요구한 6건의 회귀 잠금 목록에 케이스 7(품목코드 사전검사, D.1#9)이 실제 구현에서 하나 더 추가됐다.
+
+## D.3 테스트 하네스에 관한 교훈 — "통과하지만 아무것도 안 잠그는 테스트"가 네 번 나왔다
+
+같은 도메인(drizzle 페이크 하네스)에서 같은 종류의 결함이 4개 태스크에 걸쳐 반복됐다. 넷 다 **"조건을 실제로 렌더/평가하지 않고 항상 같은 답을 주는 페이크"** 라는 한 가지 모양이다.
+
+| 태스크 | 무엇이 항상 같은 답을 줬는가 | 어떻게 살아남았는가 (지금 막힌 자리) |
+|---|---|---|
+| 6 (`purgeDrafts`) | `trx.select(fields)` 가 `fields` 를 무시하고 원본 행을 그대로 반환 — `.select({ value: count() })` 를 호출해도 `.value` 가 없어 `?? 0` 이 항상 `0` | `aggregateCountKey(fields)` — `fields` 를 순회해 값이 drizzle `SQL` 인스턴스(일반 컬럼 참조인 `PgColumn` 과 구분)인 첫 키를 찾아, 매칭된 행 수를 그 키에 담아 반환하는 집계 헬퍼 |
+| 7 (`BulkSessionCleaner`) | `.where()` 가 인자를 안 받고, 스펙이 **자기 술어 사본**(`TERMINAL_PHASES.includes(...) && cutoff !== null && ...`)으로 필터링 — 프로덕션 조건과 완전히 분리돼 있어 `lt`→`gt` 뒤집기·`inArray` 절 삭제가 안 잡힘 | `rowMatchesCondition(row, condition)` — `PgDialect.sqlToQuery(condition)` 으로 **실제 drizzle 조건 트리를 렌더**해 정규식으로 판정. `__support__/drizzle-row-matcher.ts` 로 공용화(스펙-투-스펙 import 는 무관한 61건을 매번 같이 돌리는 부작용이 실측돼 기각) |
+| 8 (`getProgress` 의 `publishCounts`) | `groupBy` 페이크가 인자를 무시하고 항상 픽스처의 `row.status` 필드로 그룹핑 — `itemCounts`/`imageCounts` 는 그 축도 우연히 `status` 라서 안 들켰다 | `groupByField` — `groupBy(...)` 가 실제로 받은 첫 drizzle 컬럼의 `.name`(SQL 컬럼명)을 camelCase 로 바꿔 그 필드로 집계. 테스트도 `toHaveLength(2)` 를 추가해 "여러 그룹이 하나로 뭉치는" 실패를 `arrayContaining` 단독보다 확실히 잡게 함 |
+| 11 (`BulkVariantCodeChecker`) | 유닛 스펙 4건의 픽스처가 전부 조합키 **있는**(`variant:V-RED+V-S.variantCode`) 키만 썼다 — 정규식이 빈 문자열 조합키를 못 잡는 버그를 애초에 검증할 생각이 없었다 | 유닛 하네스 확장이 아니라 **실 Postgres 통합 테스트**(Task 12 케이스 7, 옵션 없는 신규 상품 픽스처)로 닫혔다 — 3테이블 조인이 실제로 처음 실행되며 잡힌 사고(D.1#9) |
+
+**패턴**: 처음 셋은 "페이크가 인자를 안 보고 고정된 방식으로 응답"하는 결함이라 **하네스 자체를 실제 조건/컬럼 인식형으로 고치는 것**이 해법이었다. 넷째는 하네스의 문제가 아니라 **테스트 픽스처가 애초에 문제되는 입력(빈 조합키)을 만들 생각을 안 한 것**이라 하네스를 아무리 고쳐도 못 잡았을 것 — 실 DB 로 그 모양의 데이터를 흘려보내는 통합 테스트만이 닫을 수 있었다. **6단계 이후에도 이 도메인의 페이크 하네스를 확장할 때는 "인자를 실제로 쓰는가"와 "픽스처가 그 조건의 경계값(빈 문자열·NULL·0건)을 포함하는가"를 둘 다 따로 물어야 한다.**
+
+## D.4 6단계가 알아야 할 것
+
+- **`origin: 'bulk_import'` 재사용이 실제로 이벤트 계약을 건드리지 않았다**(§10.2, D.1 "정정 없음" 참조) — 6단계가 옛 `product_import_*` 를 지우고 나면 이 값이 유일한 bulk 경로를 가리키게 된다. `channel-adapter` 의 `BULK_ORIGINS` 는 그대로 둔다.
+- **`createMaster` 의 트랜잭션 밖 부수효과(Kafka 직송 + `product_matchings` 미전파 insert, §C.6.3 정정)가 5단계의 신규 행 재시도로 실제로 누적된다.** §10.5 가 예고한 그대로이고 5단계는 이를 완화하지 않았다 — 재시도 버튼을 누를 때마다 유령 이벤트/행이 하나씩 남는다. 근본 수정은 catalog core 전체에 걸리는 별건.
+- **잠금 해제(§10.3)는 발행 트랜잭션 안에서만 유효하다** — `purgeDrafts`(정리)는 별도 트랜잭션에서 `draftVersionId=NULL` 을 쓰고 draft 버전 자체를 하드삭제한다. 6단계가 "세션이 끝난 뒤 남는 흔적"을 정리하려면 두 코드 경로(발행 완료 vs 취소 정리)가 `bulk_session_id`/`draft_version_id` 를 서로 다른 방식으로 비운다는 것을 알아야 한다.
+- **제외(`status='excluded'`)된 행은 `purgeDrafts` 의 정리 대상이 아니다**(최종 리뷰 발견 ①, `bulk-session.manager.ts` 의 `purgeDrafts`/`excludeItem`) — `excludeItem` 은 행을 세션에서 뺄 때 `draft_version_id` 를 **일부러 남겨** 그 draft 를 작업자 개인 draft 로 돌려준다. `purgeDrafts` 의 대상 판정이 `status` 를 안 보고 `draft_version_id`/`publish_status` 만 봤다면 취소 후 정리가 그 개인 draft 를 하드 삭제(신규 행이면 master 까지)하는 사고가 났다 — 지금은 `status<>'excluded'` 조건으로 막혀 있다. 6단계가 `bulk_session_id`/`draft_version_id` 두 경로를 다시 만나므로(위 항목), 세 상태(발행 완료·취소 정리·제외)가 이 두 컬럼을 각자 다르게 다룬다는 것을 셋 다 알아야 한다.
+- **역할 가드(§10.7)가 `BulkSessionController`와 `FormExportController` 둘 다에 걸렸다** — 6단계가 옛 임포트 컨트롤러를 지우면서 새 라우트를 추가한다면 같은 `RolesGuard('master','admin')` 패턴을 따라야 한다(고객센터 컨트롤러 선례, 두 파일에 "⚠️ 배포 위험" 주석으로 남김).
+- **워크북 만료 스윕(§10.6)의 "실패 시 `updatedAt` 갱신 금지" 규약**은 이 도메인의 형제 클래스(`BulkImageCleaner`)와 반대다 — 새 정리기를 만들 때 무심코 형제 클래스 패턴을 복사하면 D.1#7 과 같은 사고가 재발한다. 대상 판정이 스스로 나이를 재는 필드를 쓰는 스윕은 전부 이 규약을 따라야 한다.
+- **`approve`·`cancel` 라우트의 404 Swagger 문서 누락이 아직 안 고쳐졌다**(D.1#8) — 6단계 근처에서 이 컨트롤러를 다시 열 일이 있으면 같이 정리할 기회다.
+- **정적 임포트 확장은 통합 스위트 부팅을 죽일 수 있다**(부록 C.7 이 4단계에서 겪음, 5단계는 재발하지 않았지만 여전히 유효한 경고) — 6단계가 옛 `product_import_*` 를 지우며 새 임포트를 추가하면 **DB 를 붙인 통합 스위트를 반드시 한 번 돌려야** 이 종류의 회귀(모듈을 못 찾아 스위트 자체가 로드 단계에서 죽는 것, `describeIfDb` 로는 못 잡음)를 잡는다.
+
+## D.5 남긴 갭 — 이 단계가 남긴 갭 전량(원장 기준)
+
+닫지 않기로 한 것과 새로 발견해 미해결로 남은 것을 합친 목록이다. §10.7 말미의 "닫지 않고 남기는 것" 4건은 5단계에서도 그대로다(수정 행 카테고리 전체 해제 · `loadReferencedImageRefs` payload 전량 select · 스냅샷 리더 배치화 · `createMaster` 트랜잭션 밖 부수효과).
+
+아래 표는 그 위에 진행 원장(`progress.md`)의 `minor (deferred)` 항목 **19건 전부를 재대조**한 결과다. **6건은 이후 태스크가 실측으로 닫았다**(더 이상 갭이 아니라 여기서 뺐다):
+
+- Task 3 "`bulk-session.module.spec.ts` 의 `BulkSessionJobManager` 의존성 개수 주석이 낡았다(5→6)" — Task 11 이 자기 태스크에서 실제로 "8개"로 갱신(§D.1 근처 diff 로 확인)
+- Task 3 "`bulk-session-job.manager.ts` 의 주석이 아직 없는 `excludeItem` 을 선행 참조" — Task 5 가 그 메서드를 실제로 만들어 참조가 유효해짐(현재 주석 재확인: "② `excludeItem` 이 이 행을 뺐을 수 있다" — 사실과 일치)
+- Task 3 "DI 부팅은 Task 12 의 DB 실행 전까지 미증명" — Task 12 가 실 Postgres + 실 Nest DI 로 부팅 검증
+- Task 6 "세션 격리 술어 `eq(sessionId)` 에 테스트 없음 → Task 12 몫" — Task 12 케이스 8(`purgeDrafts` 는 다른 세션의 draft 를 건드리지 않는다)이 정확히 이 술어를 실 DB 로 검증
+- Task 6 "`bulk-publish.errors.spec.ts:39` prettier error" — 이번 태스크(T13)가 `--fix` 로 정리, 커밋 `9c0b442c0`
+- Task 11 "3테이블 조인이 실 DB 에서 한 번도 실행되지 않았다" — Task 12 가 돌려서 발견한 정규식 버그가 D.1#9 로 승격
+
+**남은 13건**을 아래 표에 실었다. 그 위에 §10.7·부록 C.9 를 다시 인용한 것(§10.5 의 `createMaster` 부수효과, C.9 의 `type-check:scoped` 사각지대) 과 사용자가 파킹한 D.1#7, 그리고 이번 리뷰가 직접 코드로 새로 확인한 것(모듈 스펙의 또 다른 낡은 의존성 개수 주석 — `BulkSessionManager` 쪽, 아래 표 첫 항목 다음 참조)을 더해 T13 시점 표는 17행이었다. **최종 전체 브랜치 리뷰가 3건을 더 추가했다**(순서만 다른 중복 조합의 (d) 검사 우회 · `retry-draft` 일방통행 · 킬스위치의 3중 범위) — 표 전체는 20행이다.
+
+| 갭 | 왜 남기는가 |
+|---|---|
+| **워크북 스윕의 영구 실패 행이 배치 앞머리를 독점한다**(D.1#7) | **사용자가 명시적으로 파킹**(2026-08-03). 하루 1회·배치 200·core 자체 생성 fileId 라 도달하려면 다일간 장애가 필요 — 진짜 해법(재시도 횟수 컬럼)은 마이그레이션이 필요해 5단계 범위 밖 |
+| **`approve`·`cancel` 라우트에 404 Swagger 문서가 없다**(D.1#8) | Task 9 가 범위 밖으로 미루며 "최종 리뷰가 트리아지"라 적었으나 이후 별도 최종 리뷰 라운드가 없어 미결로 남았다 — 다음에 이 컨트롤러를 여는 사람이 처리 |
+| **신규 행 재시도가 `createMaster` 부수효과를 누적시킨다**(§10.5, D.4) | 근본 수정이 catalog core 전체에 걸리는 별건. API 설명·화면 문구로 "무한정 누를 것이 아니다"를 알리는 완화만 있다 |
+| **소유권/존재 SELECT 블록이 7곳(approve·cancel·queuePublish·retryDraft·excludeItem·purgeDrafts 등)에 중복** | 트랜잭션 러너가 아니라 단순 조회라 ADR-0025 위반은 아니다 — 공용 private 헬퍼로 뽑을 여지만 있음(Task 4 부터 계속 누적) |
+| **`purgeDrafts` 행 오류 로그가 원문 대신 분류된 문구를 찍는다** | 분류기가 원문을 버리진 않지만(500자 미만은 로그에도 안 남을 수 있음) 디버깅 시 원문이 더 유용할 자리 — 영향 낮음(Task 6) |
+| **통합 케이스 7 의 `variantCode` 픽스처가 하드코딩**(`DUP-CODE-1`/`SELF-CODE-1`) | 중단된 실행이 스크래치 DB에 행을 남기면 다음 실행이 조용히 오염될 수 있다 — `randomUUID` 접미사 권고(Task 12) |
+| **통합 스위트 `afterAll` 에 try/finally 가 없다** | 정리 실패 시 Nest 풀이 안 닫혀 행·워커가 잔존할 수 있음(Task 12) |
+| **통합 케이스 2(취소 레이스)가 부하 시 무의미 통과로 퇴화 가능** | `waitForBlockedBackends` 가 타임아웃에도 throw 하지 않고 진행하도록 설계됨 — CI 부하가 로컬보다 훨씬 크면 대기자 수 확인 없이 통과할 수 있다(Task 12) |
+| **통합 케이스 8이 update kind 만 덮는다** | 타 세션의 create 행에 대한 `deleteMaster` 분기가 세션 격리 테스트에서 미검증(Task 12) |
+| **`checkOptionStructure`(수정 행 구조 검증)가 §C.4(d)와 같은 결함의 update 판을 그대로 갖고 있다** | Set 비교라 업로드 조합이 중복이면 dedupe 되어 no-op — 신규 행 쪽(§C.4(d))과 같은 근본 원인, 후속 태스크 권고(Task 10) |
+| **`type-check:scoped` 의 사각지대**(부록 C.9) | `tsconfig.spec-scope.json` 이 `product-masters.service.ts` 를 커버 안 함 — 5단계는 이 파일을 건드리지 않아 재확인만 하고 넘어감 |
+| **`bulk-session.module.spec.ts` 의 `BulkSessionManager` 의존성 개수 주석이 낡았다** — "`DbService<PimSchema>`/`FormExportFileClient` 2개 의존성"이라 적혀 있는데(`git log -S` 로 추적하면 이 문구는 **2단계**(`9d0cd7739`)에서 쓰여 그때는 사실이었다) `BulkSessionManager` 생성자는 5단계 Task 6 이후 `db, fileClient, reader, versions, masters` 5개다 | 원장 19건에 이 항목 자체는 없다 — 이번 T13 리뷰가 코드로 직접 새로 확인한 것이다. `BulkSessionJobManager` 쪽의 같은 종류 주석(5→8)은 Task 11 이 갱신했지만 `BulkSessionManager` 쪽은 갱신 담당 태스크가 없었다. 기능 영향 없는 문서 부채 — 다음에 이 생성자를 다시 여는 사람이 같이 고치면 된다 |
+| **`publishOne` 의 `!draftVersionId` 분기(즉시 실패, `bulk-session-job.manager.ts:897-900`)에 전용 단위 테스트가 없다** — `runPublishSlice` 단위 describe 의 `it` 들 중 이 분기를 지나는 것이 없다 | Task 3 부터 이어진 원래 갭(단위 테스트 기준). 코드 경로 자체는 단순(즉시 `failPublish`)해 리뷰가 위험도를 낮게 봤지만, 단위 회귀 테스트로 못박히진 않았다. **최종 리뷰 정정**: 이 행이 원래 함께 묶었던 **멱등 분기**(`version.status==='active'` 면 도장만, `:924-931`)는 갭이 아니다 — 통합 케이스 5의 2층("층 2: publishOne 자체의 멱등", `bulk-session-publish.integration.spec.ts:761-786`)이 그 분기를 실 DB 로 이미 잠근다. 역검증(이번 최종 리뷰가 실행): `if (version.status === 'active')` 를 `if (false && …)` 로 지우면 그 케이스가 관문 ③(발행 시점 가드)의 `ConflictError` 를 내며 `publishStatus` 가 `published` 대신 `failed` 로 떨어져 빨개진다 |
+| **`bulk-session.reader.spec.ts:61` 의 `groupByField` `'status'` 폴백 분기가 죽은 가지다** — 프로덕션은 항상 `.name` 이 있는 실제 drizzle 컬럼을 넘기므로 어떤 테스트도 이 분기에 도달하지 못한다 | 하네스 방어 코드일 뿐 프로덕션 동작에 영향 없음 — 지우거나 커버하거나 둘 다 낮은 우선순위(Task 8) |
+| **job manager 스펙의 `DraftInput` 조립 테스트가 `variantRows` 를 단정하지 않는다** — `optionRows`·`conflictDecision`·`baseSnapshot`·`images` 는 검사하면서 같은 객체의 `variantRows`(`item.input.bundle.variants` 배선, `bulk-session-job.manager.ts:1089`)는 빠졌다 | 배선 자체는 코드로 확인됨(위 줄 참조) — 회귀로 못박히지 않은 것이 갭. 테스트에 `expect(input.variantRows).toEqual(...)` 한 줄을 더하면 닫힌다(Task 10) |
+| **`excludeItem` 의 행 미발견 오류 문구가 `setConflictDecision` 선례와 다르다** — `excludeItem`: `세션의 행을 찾을 수 없습니다: ${itemId}`, `setConflictDecision`: `일괄 등록 세션의 행을 찾을 수 없습니다: ${itemId}`(`bulk-session.manager.ts:596`/`:243`) | 둘 다 정상 동작(문구만 다름) — 일관성 문제일 뿐 기능 결함이 아니다(Task 5) |
+| **Task 12 보고서의 역검증 출력이 raw jest 출력이 아니라 정리된 요약이다** | 역검증은 실제로 돌았고 Expected/Received 값이 실제 단정과 일치하지만, 보고서에 붙은 것은 정리된 요약이다. 다음 단계는 raw 출력을 붙이는 편이 낫다 |
+| **순서만 다른 중복 조합(`OV-1+OV-2` vs `OV-2+OV-1`)이 신규 행 (d) 중복 검사를 빠져나간다**(최종 리뷰 발견) — `checkCreateStructure` 의 (d)는 `variantRows` 원본 조합 문자열을 그대로 `Set` 비교하는데(`bulk-draft.options.ts:224-233`), `bulk-draft.applier.ts` 의 `workbookComboToIdKey`/`resolveCreatedCombos`(:268-271,286-301)는 실제 optionValueId 를 **정렬**해 매칭한다 — 순서만 다른 두 조합 문자열이 (d) 앞에서는 "다른 조합"으로 보이지만 실제로는 같은 variant 로 해석돼, 뒤 값이 앞 값을 조용히 덮어쓴다(§C.4(d)·D.5의 "`checkOptionStructure` update 판"과 같은 계열의 새 변종) | 실 워크북에서 같은 조합을 옵션값키 순서만 바꿔 두 번 적을 확률은 낮지만 구조적으로 열려 있다 — (d) 검사도 정렬 비교로 바꾸면 닫힌다. 5단계 범위 밖(신규 코드 아님, 회귀 아님) |
+| **`retry-draft` 는 일방통행이다**(최종 리뷰 발견) — `drafted` phase 에서만 열리는데, 세션이 한 번이라도 발행(`queuePublish`)을 거쳐 `publishing`→`published` 로 넘어가면(§10.4 "실패 행이 남아도 published 로 마감"이라 draft 생성 실패 행이 섞여 있어도 넘어간다) `retryDraft`(phase≠`drafted` 라 409)도 `cancel`(phase=`published` 라 409)도 다시 열리지 않는다 — 그 실패 행을 고칠 유일한 길은 새 세션 업로드뿐이다. `BulkSessionManager.retryDraft` 단위 describe 도 해피패스 1건뿐이라 이 409 분기들이 회귀로 못박혀 있지 않다 | 서버 결함이 아니라 작업 순서 문제다 — 화면 단계가 "발행 전에 재시도부터 끝내라"를 강제해야 한다. 화면 단계·후속 태스크 몫 |
+| **킬스위치 `PRODUCT_BULK_SESSION_WORKER_ENABLED` 가 워커·이미지 스윕(3단계)·워크북 스윕(5단계 §10.6) 셋을 동시에 끈다**(최종 리뷰가 배포 메모로 승격) — `bulk-session-job.worker.ts`·`bulk-image.cleaner.ts`·`bulk-session.cleaner.ts` 가 전부 같은 env 를 재사용한다(의도된 설계, `bulk-session.cleaner.ts:24` 주석 참조) | 갭이 아니라 배포·장애 대응 시 알아야 할 사실 — 하나만 끄고 싶어도 이 스위치로는 셋이 같이 꺼진다 |
+
+| **취소 세션의 이미지 스윕이 "살아있는 draft 를 든 행"이 하나라도 있으면 세션 전체를 영구히 건너뛴다**(최종 fix wave 재리뷰가 코드로 확인, **이 브랜치 이전부터 있던 동작**) — `bulk-image.cleaner.ts:99-109` 의 게이트가 행 단위가 아니라 **세션 단위 상관 서브쿼리**라, `draft_version_id` 가 남은 행이 하나라도 있으면 그 세션의 업로드 이미지가 영영 정리되지 않는다. 그런 행은 두 종류다: (1) 발행된 행 — `publishOne` 은 성공 시 `productMasterVersions.bulkSessionId` 만 비우고 `productBulkItems.draftVersionId` 는 **그대로 둔다**(`bulk-session-job.manager.ts:956`), 그리고 `purgeDrafts` 는 원래부터 `publishStatus='published'` 를 대상에서 뺐다 (2) 제외된 행 — 이번 수정이 `ne(status,'excluded')` 를 더하며 같은 범주에 들어왔다 | **새 결함이 아니라 기존 패턴의 확장이다** — (1)은 이 브랜치 이전부터 성립했다(발행 중 취소 시나리오). 닫으려면 "정리 대상이 아닌 행"과 "이미지를 아직 붙들고 있는 행"을 다른 컬럼으로 구분해야 하는데 그건 마이그레이션이 필요하다. **6단계가 `bulk_session_id` 와 `draft_version_id` 두 컬럼을 다시 만지므로 그때 함께 본다** |
+
+**5단계에서 새로 닫힌 것**(참고, 갭 아님): §10.7 의 갭 4건 중 컨트롤러 역할 가드·`errorMessage` 분류·`variantCode` 전역 사전검사 3건이 5단계에서 닫혔다(§10.7 이 예고한 그대로). **정정(최종 리뷰)**: T13 시점에는 이 "3건 닫힘" 이 부정확했다 — `errorMessage` 분류가 실은 발행 실패(`publishOne`)에만 걸려 있었고, draft 생성 실패(`draftOne`/`failItem`)는 `classifyPublishError` 를 아예 부르지 않고 예외 원문을 그대로 실었다(최종 리뷰 발견 ②, §3.12 가 명시한 "생성 시 22001"이 바로 이 경로). 이 최종 수정 라운드에서 `classifyPublishError` 의 `action` 유니온에 `'생성'` 을 더하고 `draftOne` 의 catch 가 그것을 쓰도록 고쳐(원문은 `publishOne` 과 같은 형태의 `logger.warn` 으로 남긴다) 지금은 실제로 3건이 닫혀 있다. 부록 C.9 가 남긴 "`excluded` 전이가 없다"·"실패 행 탈출구가 없다"도 5단계 라우트 넷으로 닫혔다.
+
+## D.6 배포 선행조건 체크리스트
+
+- [ ] **마이그레이션 1건** — `20260802213044_bulk-session-source-file-nullable.sql`(`source_file_id` DROP NOT NULL, additive). Expand phase 순서: **`migrate` → `deploy`**(§10.6)
+- [ ] ⚠️ **라이브 DB 에서 MD 계정의 `roles` 실측** — `BulkSessionController`·`FormExportController` 둘 다 클래스 레벨 `RolesGuard('master','admin')` 로 잠겨 있다(Task 9). 시드 롤 6종(`master`·`admin`·`membership`·`user`·`logistics_worker`·`logistics_manager`) 중 `admin`/`master` 가 없는 MD 계정은 배포 즉시 403 — 이미 라이브인 "양식 다운로드"(`product-forms`)부터 영향받는다
+- [ ] 새 env `PRODUCT_BULK_PUBLISH_SLICE`(선택, 기본값 5, `bulk-session-job.manager.ts:211-212` `get publishSlice()`) — **이름을 틀리면 `positiveInt` 파싱 실패가 조용히 기본값을 채택한다**(2·3·4단계의 `PRODUCT_BULK_LEASE_MS` 등과 같은 함정)
+- [ ] 이벤트 계약 변경 0건(§10.2, D.4 확인) · 새 시크릿 0건 · admin-web 변경 0건 — 이번 태스크에서 `git diff --name-only 9dd40c391..HEAD` 로 재확인: 변경 디렉터리는 `apps/core`·`docs/superpowers`·`package.json` 뿐
+- [ ] **2·3·4단계의 미수행 수동 스모크가 여기 누적된다**: 2단계 8건(전 구간) · 3단계 2건(master 없는 토큰의 file-service 실제 검증 — 본인 파일 교체 성공 / 남의 fileId 403) · 4단계는 별도 미수행 항목 없음(재검증 완료 기록)
+- [ ] **5단계 수모크 5건**: 발행 전 구간 1회(업로드→검증→drafting→발행 완료) · 발행 중 취소 1회(관문 ① 이 실제로 그 행을 건너뛰는지) · 실패 행 재시도 1회(`retry-draft`/`publish` 재호출) · 제외 1회(`exclude` 후 개별 발행이 실제로 열리는지) · 취소 후 draft 전량 정리 1회(`purge-drafts` 를 `remaining===0` 또는 `purged===0` 까지 반복 호출)
