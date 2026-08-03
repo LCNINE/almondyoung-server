@@ -442,7 +442,7 @@ product_master_versions
 | **3** | 이미지 단계 (브라우저 직접 업로드 + 전량 게이트) | 0 |
 | **4** | draft 생성 (신규 + 수정) + 잠금 | 컬럼 1 (`bulk_session_id`) |
 | **5** | 일괄 발행 + 정리 + 실패 행 재시도 (취소는 3·4단계가 이미 만들었다) | 컬럼 1 (`source_file_id` nullable — §10.6) |
-| **6** | 옛 `product_import_*` 제거 | **contract phase — 별도 PR** |
+| **6** | 옛 `product_import_*` 제거 | **contract phase — 별도 PR.** DROP TABLE 3 + DROP TYPE 6 짜리 마이그레이션 1건 (§11.2) |
 
 **규모는 v3(4단계)보다 크고, 1~2단계만으로는 쓸 수 있는 게 없다.** 4단계까지 가야 처음으로 동작하는 기능이 된다.
 
@@ -450,7 +450,7 @@ product_master_versions
 
 **대가는 §3.1 의 전제가 실운용에서 진짜가 된다는 것이다** — 노출 시점부터 스냅샷보다 오래 사는 워크북이 실제로 유통되므로, 2단계는 "`exportId` 있는데 해석 안 됨" 을 반드시 업로드 거부로 처리해야 한다. 이건 선택이 아니라 이 오버라이드가 만든 필수 조건이다.
 
-6단계만 파괴적이므로 앞 5단계가 실운용에 안착한 뒤 독립 PR 로 뺀다.
+~~6단계만 파괴적이므로 앞 5단계가 실운용에 안착한 뒤 독립 PR 로 뺀다.~~ **→ 오버라이드 (2026-08-03, 사용자 결정 — §11.1).** admin-web 화면 단계를 기다리지 않고 지금 제거한다. "실운용에 안착"이 6단계의 전제였던 이유는 *제거가 사람의 일을 끊는 것*이었는데, 옛 임포트가 한 번도 쓰인 적이 없다면 끊을 일 자체가 없다. 이 오버라이드는 그 전제(§11.4)에 통째로 기대며, 전제가 거짓이면 되돌릴 수 없는 DROP 이 이미 돈 뒤다 — 그래서 §11.5 가 전제를 배포 직전 쿼리 한 줄로 사실 확인한다.
 
 ## 8. 검증 계획
 
@@ -555,6 +555,111 @@ product_master_versions
 부록 C.7 의 경고도 지킨다 — 새 정적 임포트가 통합 스위트를 부팅 단계에서 죽일 수 있으므로 **DB 를 붙여 한 번은 반드시 돌린다.**
 
 배포: 마이그레이션 1건(§10.6, `migrate` → `deploy`) · 이벤트 계약 변경 0건(§10.2) · 새 시크릿 없음 · 새 env 는 `PRODUCT_BULK_PUBLISH_SLICE` 하나(선택, 기본 5) · **MD 계정 roles 실측**(§10.7) · 2·3·4단계의 미수행 수동 스모크가 여기 누적되므로 5단계 것과 합친 목록으로 정리한다.
+
+## 11. 6단계 착수 전 확정 사항 (2026-08-03, 사용자 결정)
+
+6단계(옛 `product_import_*` 제거)를 계획하며 정한 것들이다. §10 과 같은 모양이고, **본문과 어긋나는 것이 둘 있으며 이 절이 우선한다** — §7 의 "앞 5단계가 실운용에 안착한 뒤"와 §9 의 배포 순서다.
+
+### 11.1 화면 단계를 기다리지 않는다
+
+admin-web 의 새 세션 화면은 아직 없다 — 2~5단계는 전부 core 백엔드만 구현했고(§10.1), 살아있는 admin-web 자산은 옛 `/mall/product-imports` 위저드와 1단계 "양식 다운로드" 모달뿐이다. 따라서 6단계가 옛 임포트를 지우면 **새 화면이 나올 때까지 대량등록의 UI 경로가 없다.**
+
+그럼에도 지금 제거한다(사용자 결정). 근거는 §11.4 의 전제다 — 옛 임포트가 실제로 쓰인 적이 없다면 없앨 때 끊기는 일이 없다.
+
+### 11.2 제거 대상 — 실측 인벤토리 (2026-08-03, `8f5dde5f4`)
+
+~~**레포 전체에서 옛 임포트를 실제로 `import` 하는 문장은 `catalog.module.ts:17` 하나다.**~~ **→ 정정 (2026-08-03, 6단계 Task 4 구현이 실측).** 이 단언은 **거짓이었다.** 실제 결합은 **둘**이다:
+
+| 결합 | 왜 위 grep 이 놓쳤나 |
+|---|---|
+| `catalog.module.ts:17` → `./operations/import/product-import.module` | 놓치지 않았다 |
+| `bulk-session.structure.ts:1` → `'../../import/services/product-import-image.directive'` 의 `extractDirectiveImageKeys` | **상대 경로에 `operations/import` 문자열이 없다.** 착수 전 조사가 쓴 패턴(`from '.*operations/import`)이 구조적으로 볼 수 없는 자리였다 |
+
+즉 3·4단계가 "import 하지 않고 이식한다"를 **한 파일에서만 지키지 않았다.** `bulk-draft.fields.ts` 는 같은 원본 파일의 형제 함수를 제대로 이식해 놓고(§11.2 가 인용한 그 주석), `bulk-session.structure.ts` 는 import 로 남겨뒀다. Task 4 가 그 함수를 지역으로 이식해 닫았다(원본과 바이트 동일함을 리뷰가 확인).
+
+**교훈: 경로 문자열로 결합을 세면 상대 경로가 샌다.** 삭제 대상 모듈의 결합을 셀 때는 경로 패턴이 아니라 **삭제 후 타입 체크**가 유일하게 믿을 수 있는 계수기다 — 실제로 이 결합은 grep 이 아니라 `type-check:scoped` 가 잡았다.
+
+나머지는 맞았다: `bulk-session` 이 옛 임포트를 언급하는 17개 파일 중 위 하나를 뺀 전부는 "여기서 이식했다"는 **주석**이고 코드 결합이 아니다 — 3·4단계가 의도적으로 import 대신 이식을 택한 결과이며(부록 B·C), 그 선택의 값이 이 단계에서 회수된다.
+
+| 영역 | 대상 |
+|---|---|
+| core 모듈 | `apps/core/src/modules/catalog/operations/import/` 전체 — 46파일 / 약 10,070줄 |
+| core 배선 | `catalog.module.ts` 의 `import` 문 1 + `imports` 배열 1줄 |
+| core 스키마 | `catalog.schema.ts` 의 테이블 3(`product_import_sessions`·`_items`·`_images`) + **enum 6** + schema export 객체 3줄. 여섯 enum 전부 옛 모듈 전용임을 grep 으로 확인 |
+| core env | `env.validation.ts` 의 `PRODUCT_IMPORT_WORKER_ENABLED`·`_COMMIT_SLICE`·`_PUBLISH_SLICE`·`_LEASE_MS` |
+| 루트 | `package.json` 의 `test:product-import-*:integration` 3건 |
+| admin-web | 화면 3(`app/(admin)/mall/product-imports/**`) · 피처 8(`features/mall/product-imports/**`) · `product-import.client.ts` 와 `domains/products/index.ts` 배선 · `dto/product-import.ts` · `query-keys.ts` 의 `productImports`(+spec 3곳) · `menu.ts` 항목 · `breadcrumb-items.ts` 항목 |
+| 마이그레이션 | `DROP TABLE` 3 + `DROP TYPE` 6 짜리 1건 |
+
+부수 발견: `PRODUCT_IMPORT_IMAGE_SLICE`·`_IMAGE_FETCH_TIMEOUT_MS`·`_IMAGE_MAX_BYTES` 는 `product-import-job.manager.ts` 가 읽지만 `env.validation.ts` 에 **선언이 없다.** 기존 불일치이고 이 삭제로 자연 소멸한다.
+
+### 11.3 삭제 순서는 소비자 → 제공자다
+
+한 PR 안에서 커밋을 다섯으로 쪼갠다: admin-web → core 배선 → 서비스 본체 → 스키마 → 마이그레이션.
+
+이 PR 은 **삭제만** 하므로 유일한 검증 도구가 컴파일러와 테스트인데, 이 레포는 전역 `tsc`·`jest`·`nest build core` 가 develop 에서도 red 라 "전체 초록"으로 판정할 수 없다(상시 debt). 계층 순으로 지우면 각 커밋의 **신규** 오류가 정확히 그 계층에 남은 참조를 가리켜 차분 판정이 실제로 의미를 갖는다. 덤으로 DROP 마이그레이션이 마지막 커밋에 홀로 남아 리뷰가 쉽다.
+
+### 11.4 전제 — 옛 임포트는 한 번도 쓰인 적이 없다
+
+**이 절의 결정 대부분이 이 전제 하나에 걸려 있다.** 참이면 §11.1 의 공백에 대가가 없고, 이력 백업·고아 파일 정리·진행 중 세션 확인이 전부 불필요해진다.
+
+전제가 지우는 것:
+
+| 원래 필요했던 것 | 왜 사라지나 |
+|---|---|
+| `pg_dump -t 'product_import_*'` (이력 보존) | 지울 이력이 없다. 이 테이블은 "어느 상품이 어느 임포트로 생겼는가"의 유일한 기록인데 기록된 것이 없다 |
+| `product_import_images.file_id` 고아 실측 | file-service 에 올린 파일이 없다. §5.2 의 "전역 고아 정리 잡 없음"이 문제가 되지 않는다 |
+| 진행 중 세션 확인 | 진행한 적이 없다 |
+| MD 대량등록 공백 공지 | 잃을 기능이 없다 |
+| admin-web → core 배포 순서 | 아무도 안 쓰는 화면이라 라우트가 먼저 사라져 404 창이 열려도 잃는 것이 없다 |
+
+**전제가 거짓이면 되돌릴 수 없는 DROP 이 이미 돈 뒤다.** 그래서 §11.5 가 이것을 가정이 아니라 배포 직전 쿼리 한 줄의 사실로 바꾼다.
+
+### 11.5 배포 — `db:migrate` 를 배포 전에 한 번만 돌린다 (§9 정정, 2026-08-03 재정정)
+
+§9 는 additive 단계라 "core 먼저 → admin-web" 이었다. 6단계는 제공자를 없애므로 그 순서가 성립하지 않고, §11.4 덕에 **양쪽 순서 무관** 으로 줄어든다 — core·admin-web 사이의 순서는 여전히 무관하다.
+
+~~`deploy` → `migrate` 순서만은 §11.4 와 무관하게 지킨다.~~ **→ 정정 (2026-08-03, 최종 리뷰 픽스 웨이브).** 이 순서는 성립하지 않는다. 5단계 마이그레이션 `20260802213044_bulk-session-source-file-nullable.sql`(`source_file_id` DROP NOT NULL)이 아직 미적용 상태로 남아 있고(§E.6), §10.6 은 그것을 **expand phase** 로 규정해 `migrate` → `deploy` 를 요구한다. 반면 이 절이 원래 원했던 순서는 6단계 자신의 DROP 마이그레이션(`20260803115819_remove-product-import-tables.sql`)에 대해 `deploy` → `migrate` 였다. `drizzle-kit migrate` 는 대기 중인 journal 항목을 **전부** 한 번에 적용하고 부분 적용 플래그가 없으므로, 이 두 마이그레이션이 같은 저널에 나란히 쌓여 있는 한 한 번의 `db:migrate` 호출로 서로 다른 순서 요구를 동시에 만족시킬 수 없다. 아래는 **하나의 순서**로 정리한 결론이다.
+
+**결론: `db:migrate` 를 배포 직전에 한 번만 돌리고, 그 뒤에 core·admin-web 을 배포한다.** 이 선택이 여는 노출과 그것이 감당할 만한 이유:
+
+- `source_file_id` DROP NOT NULL 은 additive 라 옛 코드가 이 컬럼이 nullable 로 바뀐 것을 몰라도 깨지지 않는다 — 이쪽은 노출이 없다
+- 6단계의 DROP 은 옛 코드의 크론이 여전히 폴링하는 테이블을 지운다. 옛 워커는 `@Cron(EVERY_5_SECONDS)` 로 claim 쿼리 3개를 **행이 없어도 매 틱 무조건** 던지지만(`product-import-job.worker.ts:33`), `tick()` 전체(34~79행)가 `try`/`catch`/`finally` 로 감싸여 있어 DROP 이후 아직 교체되지 않은 옛 core task 는 5초마다 `relation does not exist` 를 **잡힌 예외**로 로그만 남긴다 — 크래시 루프가 아니라 롤링 배포가 끝날 때까지의 로그 노이즈다
+- 반대 순서(`deploy` 를 먼저)는 §10.6 의 expand-phase 요구(`source_file_id` 쪽은 `migrate` → `deploy`)를 어긴다 — 옛 순서를 지키려 하면 새 순서를 어기고, 새 순서를 지키면 옛 순서를 어기는 관계라 **둘 중 하나를 골라야 하고, 골라야 하는 쪽은 노출이 로그 노이즈뿐인 이 순서다**
+
+체크리스트(위 정정을 반영해 순서를 다시 세움 — 5단계 선행조건이 먼저, `count` 재확인이 `migrate` 바로 앞으로 이동):
+
+- [ ] **5단계 미배포분 선행 확인** — MD 계정 `roles` 실측(§10.7, 컨트롤러 역할 가드가 실제 계정을 막는지 배포 전 확인). `source_file_id` nullable 자체는 별도 호출이 아니라 아래 한 번의 `db:migrate` 에 DROP 과 함께 적용된다
+- [ ] **`SELECT count(*) FROM product_import_sessions;` = 0** — 배포 대상인 **라이브 core DB** 에서 실측한다. `dev_core` 는 이 판정의 근거가 될 수 없다 — 이 계열 마이그레이션이 전혀 적용되지 않은 채 방치돼 있다(§E.6). §11.4 의 전제를 사실로 바꾼다. `_items`·`_images` 는 `sessions` 에 `ON DELETE CASCADE` FK 라 이 한 줄이 0 이면 셋 다 0 이다. **0 이 아니면 DROP 을 멈추고 §11.4 표의 원안(백업·고아 실측·공지)으로 돌아간다**
+- [ ] `pg_dump -t 'product_import_*'` 로 스냅샷 하나 뜬다 — §11.4 는 "이력이 없으니 백업이 불필요하다"고 결론지었고 그 전제는 맞지만, DROP 은 되돌릴 수 없고 위 count 가 예상과 다르게 나올 가능성(전제가 거짓일 가능성)에 대한 유일한 안전망이 이 한 줄이다. 덤프는 수 초면 끝나 비용이 0 에 가깝다
+- [ ] **count 를 `db:migrate` 실행 바로 직전에 라이브 core DB 에서 다시 실측한다** — 옛 UI(`/mall/product-imports`)는 롤링 배포 내내 계속 살아 있으므로, 위 첫 count 이후 그 창에서 새로 만들어진 세션이 있으면 처음엔 0 이었어도 지금은 아닐 수 있다. 0 이 아니면 여기서도 멈추고 §11.4 표의 원안으로 돌아간다
+- [ ] `npm run db:migrate` — `source_file_id` nullable + DROP 을 한 번에 적용
+- [ ] core·admin-web 배포 (`migrate` 이후, 둘 사이 순서는 무관)
+- [ ] 이벤트 계약 변경 0건 · 새 시크릿 0건 · 새 env 0건. `origin: 'bulk_import'` 는 그대로 두며, 이 삭제 이후 그 값은 유일한 bulk 경로를 가리킨다(§10.2, 부록 D.4)
+
+### 11.6 함께 닫는 갭 — 저비용 위생 4건만
+
+- `bulk-session.controller.ts` 의 `approve`·`cancel` 라우트에 404 `@ApiResponse` (부록 D.1#8 — Task 9 가 남기고 이후 리뷰 라운드가 없어 미결)
+- `bulk-session.module.spec.ts` 의 `BulkSessionManager` 의존성 개수 주석 (2 → 5, 부록 D.5)
+- `bulk-session-publish.integration.spec.ts` 의 `afterAll` 에 `try/finally`
+- 같은 파일 통합 케이스 7 의 하드코딩 `variantCode` 픽스처 → `randomUUID` 접미사
+
+넷 다 문서·테스트 부채라 기능 위험이 0 이고, 파괴적 마이그레이션이 든 PR 에 동작 변경을 섞지 않는다는 원칙과 충돌하지 않는다.
+
+**닫지 않고 남기는 것**(부록 D.5 원장 그대로):
+
+- **이미지 스윕의 세션 단위 게이트** — `bulk-image.cleaner.ts:99-109` 의 `notExists` 가 세션 단위 상관 서브쿼리라 살아있는 draft 를 든 행 하나가 그 세션의 이미지 정리를 영구히 막는다. 부록 D.5 는 "6단계가 `bulk_session_id`·`draft_version_id` 두 컬럼을 다시 만지므로 그때 함께 본다"고 적었지만 **6단계는 그 두 컬럼을 만지지 않는다** — 옛 임포트 제거는 새 세션 스키마와 무관하다. 제대로 닫으려면 이미지별 참조 추적이 필요하고 참조가 `payload` jsonb 안에 있어(부록 B.4 후속) 별건 크기다
+- 조합 중복 검사 결함 2건 (`checkCreateStructure` (d) 의 정렬 미비교 · `checkOptionStructure` 의 같은 변종)
+- `retry-draft` 일방통행 — 화면 단계 몫이라고 부록 D.5 가 이미 배정했다
+- 소유권/존재 SELECT 블록 7곳 중복 · `createMaster` 의 트랜잭션 밖 부수효과(catalog core 별건)
+
+### 11.7 검증
+
+- `npm run type-check:scoped` — core 타입 게이트. 레포 eslint·전역 tsc 는 상시 미게이트 debt 이라 권위가 아니다
+- 변경 파일 기준 jest 차분 · admin-web `type-check` 차분
+- **DB 를 붙인 통합 스위트 1회 필수** — 부록 C.7 이 4단계에서 겪고 D.4 가 6단계에 명시 경고한 종류다. 정적 임포트가 *사라져도* 스위트가 로드 단계에서 죽을 수 있고 `describeIfDb` 로는 못 잡는다. §11.4 의 전제와 무관하게 남는 유일한 검증 항목이다
+- 잔여 참조 0 증명 — `product-import` · `productImport` · `product_import` 세 패턴을 주석 제외하고 grep. ⚠️ 이 스펙 파일은 **UTF-8 이지만 grep 이 binary 로 판정**해 `-a` 없이는 조용히 0건을 돌려준다(2026-08-03 실측). 잔여 참조 검사에 `grep -a` 를 쓰지 않으면 "깨끗함"이 거짓으로 나온다
+- 수동 스모크는 이 단계에 **없다** — 삭제뿐이고 새로 도는 경로가 없다. 2~5단계의 누적 미수행 스모크는 그대로 남아 화면 단계로 넘어간다
 
 ---
 
@@ -1044,3 +1149,146 @@ Task 12 가 `bulk-session-publish.integration.spec.ts`(8케이스, 실 Postgres 
 - [ ] 이벤트 계약 변경 0건(§10.2, D.4 확인) · 새 시크릿 0건 · admin-web 변경 0건 — 이번 태스크에서 `git diff --name-only 9dd40c391..HEAD` 로 재확인: 변경 디렉터리는 `apps/core`·`docs/superpowers`·`package.json` 뿐
 - [ ] **2·3·4단계의 미수행 수동 스모크가 여기 누적된다**: 2단계 8건(전 구간) · 3단계 2건(master 없는 토큰의 file-service 실제 검증 — 본인 파일 교체 성공 / 남의 fileId 403) · 4단계는 별도 미수행 항목 없음(재검증 완료 기록)
 - [ ] **5단계 수모크 5건**: 발행 전 구간 1회(업로드→검증→drafting→발행 완료) · 발행 중 취소 1회(관문 ① 이 실제로 그 행을 건너뛰는지) · 실패 행 재시도 1회(`retry-draft`/`publish` 재호출) · 제외 1회(`exclude` 후 개별 발행이 실제로 열리는지) · 취소 후 draft 전량 정리 1회(`purge-drafts` 를 `remaining===0` 또는 `purged===0` 까지 반복 호출)
+
+---
+
+# 부록 E — 6단계 구현이 실측한 사실 (2026-08-03)
+
+6단계(옛 `product_import_*` 제거)는 **새 코드를 한 줄도 추가하지 않았다** — admin-web 화면 3+8, core 배선, core 본체 46파일, 스키마 3테이블·6enum, DROP 마이그레이션 1건을 지우기만 했다(§11.2). 읽는 법은 부록 A~D 와 같다. 이 삭제 전용 태스크가 실측으로 얻은 것은 "지우는 작업 자체가 새로운 사고 유형을 낸다"는 확인이다 — 부록 A~D 가 전부 "추가한 코드가 계획과 달랐다"를 기록한 반면, 이 부록은 "삭제가 조용히 남긴 것"만 다룬다.
+
+## E.1 §11.2 인벤토리 — 수량은 맞았고, 완전성 주장은 두 번 더 틀렸다
+
+§11.2 가 예고한 수량은 실측과 정확히 일치했다:
+
+| §11.2 예고 | 실측 | 근거 |
+|---|---|---|
+| core 본체 46파일 / 약 10,070줄 | `48 files changed, 28 insertions(+), 10072 deletions(-)`(46 legacy 파일 + tsconfig 1줄 + structure.ts 이식 수정) — `git diff --cached --stat` 로 정확히 46파일/10,070삭제 확인 | Task 4 report §Step 2 |
+| 테이블 3 + enum 6 | 생성된 DROP SQL 이 `DROP TABLE` 3 + `DROP TYPE` 6, 정확히 9문장 | Task 5 report §Step 6 (아래 E.2) |
+| bulk-session 이 옛 임포트를 언급하는 파일 수(당시 "17개") | 착수 시점 17개였던 것이 Task 4 fix round(커밋 `9cd472742`)가 `bulk-session.structure.spec.ts` 에 이식 출처 주석 1줄을 더하며 **18개**로 늘었다 — 수량 자체는 매 시점 정확했고, "17"과 "18"은 서로 다른 시점의 참값이다 | Task 4 report + 이번 태스크의 재측정: `grep -arln "product-import" apps/core/src/modules/catalog/operations/bulk-session/ \| wc -l` → 18 |
+
+**완전성 주장은 이미 §11.2 자신이 한 번 정정했다** — "실제 결합은 `catalog.module.ts:17` 하나"라는 최초 조사가 `bulk-session.structure.ts:1` 의 상대 경로 import(`'../../import/services/product-import-image.directive'`)를 놓쳤던 사고다. 이 부록은 그 정정을 반복하지 않고, **이번 태스크의 Step 1~2 grep 이 또 다른 완전성 구멍을 찾았다**는 것만 덧붙인다(아래 §11.2 정정과 같은 종류이지만 코드 결합이 아니라 주석 수준):
+
+- `bulk-session-lease.integration.spec.ts:33`·`form-export-job-lease.integration.spec.ts:14` — snake_case `product_import_sessions` 를 이름으로 인용하는 독스트링. Step 1 패턴 1(`product_import`)의 "마이그레이션 SQL 에만 등장해야 한다"는 기대를 벗어난다.
+- `bulk-variant-code.checker.ts:22`·`bulk-session-job.worker.ts:7`·`form-export-job.worker.ts:8,14` — PascalCase `ProductImportVariantCodeChecker`/`ProductImportJobWorker` 를 이름으로 인용하는 독스트링 4건. Step 1 패턴 2(`ProductImport`)의 "출력 없음" 기대를 벗어난다.
+- `apps/channel-adapter/src/adapters/medusa/inbox-claim-order.integration.spec.ts:20` — **bulk-session 디렉터리 밖**, 완전히 다른 서비스(channel-adapter)의 격리 기법 설계 선례로 `product-import-job-lease.integration.spec.ts:48-56` 를 인용한다. Step 1 패턴 3(`product-import`)의 "bulk-session 안에만 있어야 한다" 기대를 벗어난다.
+
+7건 전부 코드 결합이 아님을 확인했다 — 분류 방법과 실제 재현 결과는 §E.5 정정판을 참조(최초 분류기는 `/** ... */` 한 줄 doc comment 를 놓치는 결함이 있었고, 이 부록도 그 결함을 그대로 물려받았다가 최종 리뷰에서 잡혔다). **교훈**: 세 grep 패턴은 "이 브랜치가 만들 것으로 예상한 주석"만 겨냥했지, 레포 전체에 흩어진 "다른 파일이 이 모듈을 선례로 인용하는 주석"은 설계 시점부터 범위 밖이었다 — §11.2 의 교훈("경로 문자열로 결합을 세면 상대 경로가 샌다")과 같은 계열이지만, 이번엔 코드가 아니라 산문이 새는 자리였다. 코드 결합의 유일한 계수기가 컴파일러이듯, **완전성 주장의 유일한 신뢰 가능한 근거는 "grep 결과를 실제로 읽어 한 줄씩 분류하는 것"**이며 grep 자체의 사전 예측(패턴이 어디까지 훑을지)은 매번 빗나갔다.
+
+## E.2 생성된 DROP SQL — 예상과 정확히 일치했다
+
+```sql
+DROP TABLE "product_import_images" CASCADE;
+DROP TABLE "product_import_items" CASCADE;
+DROP TABLE "product_import_sessions" CASCADE;
+DROP TYPE "public"."product_import_image_status";
+DROP TYPE "public"."product_import_image_usage";
+DROP TYPE "public"."product_import_item_publish_status";
+DROP TYPE "public"."product_import_item_status";
+DROP TYPE "public"."product_import_job_status";
+DROP TYPE "public"."product_import_session_status";
+```
+
+정확히 9문장(`DROP TABLE` 3 + `DROP TYPE` 6), `product_bulk_*`/`product_form_export*` 를 건드리는 문장 0개, drizzle-kit 의 rename 대화형 프롬프트 발생 0회. `apps/core/drizzle/20260803115819_remove-product-import-tables.sql` 파일 전체가 이 9줄뿐이다(Task 5 report §Step 5-6). §11.6 함께 닫는 갭 4건이 지시한 대로 이 커밋은 삭제 하나만 담았고 동작 변경을 섞지 않았다.
+
+## E.3 통합 스위트 — 이번엔 부팅 사고가 없었지만, 계획서의 실행 명령 자체가 틀렸다
+
+부록 C.7 이 4단계에서 겪은 사고(정적 임포트 확장이 통합 스위트를 부팅 단계에서 죽였는데 `describeIfDb` 로는 못 잡음)의 **반대 방향**은 이번엔 재현되지 않았다 — 임포트가 사라지는 6단계에서도 모듈 해석 실패로 스위트가 로드 단계에서 죽는 사고는 없었다. Step 6 실행 결과: `Test Suites: 5 passed, 5 total`, `Tests: 47 passed, 47 total`, 실행 후 `pg_stat_activity` 확인으로 커넥션 0건(Task 1 의 `afterAll` try/finally 가 실제로 동작).
+
+**그런데 계획서 자신의 검증 명령이 틀렸다는 사실이 이 검증 도중 드러났다(4가지 핵심 사실 중 하나, §E.4.2).**
+
+## E.4 계획서가 틀렸던 네 곳
+
+부록 A~D 는 전부 "계획서가 틀렸던 곳" 절을 갖는다 — 그것이 이 부록들의 존재 이유다. 6단계는 새 코드가 없어 §10류 설계 결정 자체는 검증 대상이 아니었지만, **실행 도중 네 가지 사실이 드러났다.** 넷 다 "삭제"라는 이 태스크의 성격이 만든 사고다.
+
+### E.4.1 "실제 결합은 하나"라는 §11.2 의 최초 단언이 거짓이었다 — grep 은 상대 경로를 못 본다
+
+**§11.2 가 이미 이 정정을 담고 있다** — 착수 전 조사(`from '.*operations/import`, 복수형 `product-imports` 포함)가 `bulk-session.structure.ts:1` 의 `import { extractDirectiveImageKeys } from '../../import/services/product-import-image.directive'` 를 놓쳤고, 실제 결합은 하나가 아니라 **둘**이었다. 여기서는 자세한 서술을 반복하지 않고 일반 교훈만 남긴다:
+
+> **결합의 권위 있는 계수기는 grep 이 아니라 삭제 후 타입 체크다.** 경로 문자열 패턴은 상대 경로 표기 하나가 조금만 달라도 구조적으로 못 본다 — 이 결합도 `grep`이 아니라 `type-check:scoped` 가 잡았다(`error TS2307: Cannot find module`). "삭제 대상에 결합이 0건"이라는 계획서 문장을 실행 전에 그대로 믿지 말고, 삭제 뒤 타입 체크 결과로 사후 확인한다.
+
+### E.4.2 계획서의 통합 테스트 명령이 틀렸다 — 그런데 "멈췄다"는 이 부록이 사실로 확정할 수 있는 부분이 아니다
+
+**확립된 것.** 계획서(Task 6 브리프 초판)가 지시한 그대로 `npm run test:bulk-session:integration` 을 아무 접두 없이 돌리면, 그 스크립트에 박힌 `dotenv -e apps/core/.env` 가 `DATABASE_URL` 을 `dev_core` 로 고정한다. `dev_core` 는 이 기능 계열의 2~5단계 테이블이 전혀 없는 DB 다(§E.6 에서 재확인 — `dev_core` 는 옛 `product_import_*` 3테이블만 갖고 있고 2~6단계 마이그레이션이 전혀 적용되지 않은 채 방치돼 있다). `bulk-session-publish.integration.spec.ts:91` 에는 이미 "`bulk_stage<N>_scratch` 패턴이 아니면 즉시 throw" 가드가 있다. 수정으로 `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch` 접두를 필수로 명시하도록 계획서 자체를 고쳤다(커밋 `e099cad40`) — 이 처방은 위 사실만으로도 충분히 정당하고 그대로 유지한다.
+
+**한 번 관측했지만 재현하지 않은 것.** 최초 실행(백그라운드로 띄운 작업)에서는 3초의 CPU 사용량이 14분에 걸쳐 흩어져 있었고, 두 개의 Postgres 백엔드가 `ClientRead` 상태로 대기했으며, jest 출력은 0줄이었다. 그런데 **같은 wrong-DB 조건을 통제해 재시도한 실행(포그라운드, 로그를 파일로 리다이렉트)은 멈추지 않고 즉시 끝났다** — `Test Suites: 5 failed, 5 total`(Task 1 report §Part B Step 8, `task-1-report.md:137`). 두 실행 사이에서 관측된 차이는 하나뿐이다: 전자는 백그라운드로 시작됐고 후자는 포그라운드였다. **이것이 원인이라는 것은 가설이며, 검증되지 않았다.**
+
+**확립되지 않은 것.** "잘못된 `DATABASE_URL` 이 이 통합 스위트를 멈추게 한다"는 이 두 실행만으로는 확립되지 않는다 — 같은 wrong-DB 조건에서 한 번은 멈춘 것처럼 보였고 한 번은 즉시 실패했으니, 원인이 DB 타겟인지 실행 방식(백그라운드/포그라운드)인지 혹은 둘 다인지를 이 데이터로는 가려낼 수 없다. **이 부록은 "멈췄다"를 확정 사실로 적지 않는다** — 앞선 판(2026-08-03 최초본)이 이걸 확정 사실처럼 서술한 것은 이 부록의 결함이었다.
+
+**교훈(위 미확립 부분에 의존하지 않는 형태로 다시 쓴다).** `bulk-session-publish.integration.spec.ts:91` 처럼 **자기 DB 타겟을 스스로 가드하는 스위트**는 잘못된 DB 를 확실히 거부한다. 하지만 잘못된 DB 를 **공급하는 러너**(`dotenv -e apps/core/.env` 가 `DATABASE_URL` 을 조용히 덮어쓰는 경우)는 "그 스위트가 실행되긴 했는가" 자체를 불확실하게 만들 수 있다 — 이번처럼 출력이 0줄인 실행을 만났을 때, 왜 느린지 이론화하기 전에 **정말 실행 중인지**부터 확인한다(프로세스 상태 확인, 포그라운드로 통제된 재현 시도 등). 이 교훈은 이번에 실제로 멈춤이 있었는지와 무관하게 성립한다: DB 를 요구하는 통합 스위트의 실행 명령을 계획서에 적을 때는, 그 명령이 실제 셸에서 어떤 `DATABASE_URL` 로 귀결되는지 직접 실행해 확인하지 않고는 "이 명령을 그대로 쓰면 된다"고 적지 않는다.
+
+### E.4.3 파일을 지우면 그 파일의 테스트도 같이 지워진다 — dedup 로직이 커버리지 없이 살아남았다
+
+`operations/import/` 삭제(Task 4, 커밋 `7b6e6b25a`)는 `bulk-session.structure.ts:1` 의 진짜 import(§E.4.1)를 지역 이식으로 닫으면서, 이식된 `extractDirectiveImageKeys` 함수 자체의 스펙(원래 `product-import-image.directive.spec.ts` 의 6개 케이스: 순서 보존, **중복 키 dedup**, 속성 순서 무관, `product-image` 아닌 디렉티브 거부, `imageKey` 없는 디렉티브 거부, undefined/빈 입력)은 이식하지 않은 채 파일과 함께 삭제됐다.
+
+이 함수의 유일한 호출부인 `resolveImageRefs`(같은 파일)의 `addRef` 는 `` `${usage}:${imageKey}` `` 로 **자기 자신의** dedup 을 한다 — 그래서 `extractDirectiveImageKeys` 내부 dedup 이 깨져도 `resolveImageRefs` 를 통한 간접 커버리지로는 절대 드러나지 않는다. 6개 케이스가 사라진 채로 리뷰가 통과할 뻔했다가, 리뷰가 이 마스킹을 지적해 커밋 `9cd472742`(fix round)가 함수를 `export` 하고 스펙에서 직접 부르는 방식으로 6케이스를 원본 그대로 복원했다.
+
+**역검증(이번 6단계 최종 검증이 직접 수행)**: 복원된 dedup 케이스가 실제로 뭔가를 잠그는지 확인하려고, `extractDirectiveImageKeys` 내부의 `seen` Set 기반 dedup 로직을 임시로 제거하고(`if (!key || seen.has(key)) continue; seen.add(key);` → `if (!key) continue;`) 해당 케이스만 재실행했다:
+
+```
+● extractDirectiveImageKeys › 같은 키가 여러 번 나와도 한 번만 돌려준다
+  Expected  ["IMG-2"]
+  Received  ["IMG-2", "IMG-2"]
+Tests: 1 failed, 34 skipped, 35 total
+```
+
+기대한 대로 FAIL. 원복 후 `bulk-session.structure.spec.ts` 35케이스 전부 재통과를 확인했고 `git status --short` 로 워킹트리에 흔적이 없음을 확인했다(§Verification 참조).
+
+**교훈**: 파일을 지우기 전에 "이 파일이 다른 곳에 이식된 함수의 유일한 스펙 커버리지를 갖고 있는가"를 확인해야 한다 — 이식 자체가 정확해도(바이트 동일 포팅) 테스트는 파일과 함께 자동으로 사라진다. 그리고 간접 커버리지(다른 함수를 통해 호출되므로 "테스트가 있다"고 착각하는 것)는 호출부 자신이 같은 종류의 dedup/필터를 갖고 있으면 내부 로직의 회귀를 완전히 가릴 수 있다 — 이건 부록 D.3 이 "통과하지만 아무것도 안 잠그는 테스트"라 부른 패턴의 새 변종이다(거기서는 페이크 하네스가 인자를 무시했지만, 여기서는 실제 프로덕션 코드의 이중 dedup 이 원인이다).
+
+### E.4.4 블록을 지우면 그 블록을 가리키던 주석이 고아가 된다 — CamelCase 전용 스윕은 snake_case 생존자를 못 본다
+
+`catalog.schema.ts` 의 `PRODUCT IMPORT` 섹션(222줄)을 지우면서(Task 5, 커밋 `c0a416d2a`), 그 섹션 **밖에** 있던 두 주석이 삭제된 내용을 이름으로 참조하는 채로 남았다:
+
+| 생존자 | 참조 방식 | 어떻게 잡혔나 |
+|---|---|---|
+| `productBulkSessionPhaseEnum` 의 독스트링 — `productImportSessionStatusEnum` 을 **CamelCase 이름으로** 언급 | "…붙이는 것만 안전한데(`productImportSessionStatusEnum` 주석 참조)…" | Step 3 검증 그 자체(`grep -arn "productImport" catalog.schema.ts` → 출력 없음이 기대치)가 CamelCase 를 훑으므로 **Task 5 Step 1 안에서 바로 잡혔다** — 참조 대상 이름을 지우고 설명을 그 자리에 재서술 |
+| `productFormExports.leaseToken` 의 독스트링 — `product_import_sessions.lease_token` 을 **snake_case 로** "주석 참조" 지시 | "타임스탬프로 소유권을 보려던 시도는 정밀도·타임존·드라이버 직렬화에서 세 번 깨졌다(`product_import_sessions.lease_token` 주석 참조)." | Task 5 Step 3 의 grep 이 CamelCase 전용이라 **구조적으로 못 봄** — 별도 리뷰가 코드로 직접 읽다가 발견, fix round(커밋 `4f353e3b9`)로 닫힘 |
+
+두 번째 생존자가 첫 번째보다 심각했다 — 단순히 "이름이 사라졌다"가 아니라 **"주석 참조"라고 명시적으로 가리킨 텍스트 자체가 사라졌다.** 그 텍스트는 lease 소유권을 타임스탬프로 확인하려다 세 번 연속 실패한 구체적 역사(① 생존검사를 소유권검사로 착각 ② 타임스탬프 등호 CAS 가 DB 마이크로초/JS 밀리초 불일치로 영구 실패 ③ 그 값을 raw SQL 에 Date 로 바인딩하면 드라이버가 직렬화 못 해 매 호출 throw — 이 세 번째는 별도로 기록된 라이브 버그와 같은 계열이다)를 담고 있었다. 단순히 참조를 끊는 것("주석 참조" 문구 삭제)만으로는 그 역사가 통째로 사라지므로, fix round는 **삭제된 원본 주석의 실제 세 문장을 `git show` 로 복원해 그대로 인라인**했다 — 포인터를 없애는 것과 내용을 옮기는 것은 다른 수정이라는 뜻이다.
+
+**교훈**: 블록을 지우기 전에 그 블록을 "이름으로" 가리키는 주석을 찾는 grep 은 **그 블록이 쓰던 표기법 하나만으로는 부족하다.** 이 스키마 파일은 TypeScript 심볼(CamelCase)과 실제 DB 식별자(snake_case) 둘 다를 주석에서 섞어 쓴다 — 삭제 전 완전성 스윕은 반드시 양쪽 표기 모두를 훑어야 한다. 그리고 "주석 참조"처럼 **내용을 옮기지 않고 가리키기만 하는 주석**을 쓰면, 가리키는 대상이 삭제될 때 그 내용 자체가 레포에서 영구히 사라진다는 것도 확인됐다 — 중요한 서술은 참조가 아니라 인라인이 더 안전하다.
+
+**부수 확인**: 이 네 번째 사실과 같은 모양의 다섯 번째 생존자가 admin-web 에도 있다 — `apps/admin-web/src/lib/services/products/form-export.ts:12` 의 독스트링이 "(선례: `queries.ts` 의 `useImportProgress` refetchInterval)"이라고 적혀 있는데, `useImportProgress` 는 Task 2(admin-web 제거, 커밋 `edddc8573`)가 `queries.ts` 에서 이미 지웠다. `useImportProgress` 라는 이름은 세 grep 패턴(`product_import`/`ProductImport`/`product-import`) 중 **어느 것에도 매칭되지 않으므로** 이번 태스크의 정규 검증 범위 밖이었다 — Task 2 진행 원장이 이미 "minor (deferred)"로 기록해 두었고(§E.5), 이번 확인이 현재도 유효함을 재확인했을 뿐이다. 이것 자체가 E.4.4 의 교훈을 한 번 더 증명한다: **고아 주석을 찾는 그 어떤 grep 패턴 집합도, 지워진 대상의 정확한 표기를 전부 열거하지 못하면 놓치는 생존자가 남는다.**
+
+## E.5 검증 결과 (Step 1~7 실측)
+
+- **패턴 1**(`product_import`): `apps/core/drizzle/` 안(옛 마이그레이션 4건 + 새 DROP 1건)에만 있어야 한다는 기대와 달리, `bulk-session-lease.integration.spec.ts:33`·`form-export-job-lease.integration.spec.ts:14` 두 곳에 역사적 근거를 설명하는 독스트링이 남아 있다 — 아래와 같은 정정된 분류기로 재확인: 2줄 모두 비주석 0건(§E.1)
+- **패턴 2**(`ProductImport`): "출력 없음"이라는 기대와 달리 4곳에 옛 클래스명을 선례로 인용하는 독스트링이 있다 — 같은 분류기로 재확인: 4줄 모두 비주석 0건(§E.1)
+- **패턴 3**(`product-import`): bulk-session 안 18개 파일의 주석 줄 51개와, bulk-session 밖 `apps/channel-adapter/.../inbox-claim-order.integration.spec.ts:20` 의 주석 1건, 합 52줄. `import`/`require` 문 0건. **분류 방법 정정(최종 리뷰)**: 이 부록의 최초본은 "51줄 전량을 프로그램으로 대조해 확인"이라고 적었는데, 그 분류기(`content.startswith('*') or content.startswith('//')`)는 한 줄짜리 `/** ... */` doc comment 를 인식하지 못하는 결함이 있었다 — 재실행하면 `bulk-draft.fields.ts:12`·`bulk-session-job.manager.ts:90` 두 줄이 "비주석"으로 오검출된다(둘 다 실제로는 `/** ... */` 한 줄짜리 doc comment 이고 코드 결합이 아니다, 직접 열어 확인함). 분류기에 `content.startswith('/*')` 를 더해 재실행한 결과가 위 52줄이고, **그 결과 비주석 0건**이다:
+  ```
+  $ grep -arn "product-import" apps/ libs/ scripts/ packages/ 2>/dev/null | grep -v node_modules | grep -v '/drizzle/' \
+    | python3 -c "
+  import sys
+  for line in sys.stdin:
+      parts = line.split(':', 2)
+      if len(parts) < 3: continue
+      c = parts[2].strip()
+      if not (c.startswith('*') or c.startswith('//') or c.startswith('/*')):
+          print('NON-COMMENT:', line, end='')
+  "
+  # 출력 없음 (52줄 중 비주석 0건)
+  ```
+- **`type-check:scoped`**: 0 errors(Task 3 Step 1 기준선과 동일, 신규 오류 없음)
+- **admin-web `type-check`**: exit 0, 0 errors(Task 2 Step 8 기준선 0건과 동일)
+- **`npx jest apps/core/src/modules/catalog/operations/bulk-session`**: `Test Suites: 37 passed, 37 total` / `Tests: 580 passed, 580 total`, skip 0건
+- **DB 통합 스위트**(`DATABASE_URL=...bulk_stage6_scratch npm run test:bulk-session:integration`): `Test Suites: 5 passed, 5 total` / `Tests: 47 passed, 47 total`, 부팅 사고 없음(§E.3), 실행 후 커넥션 잔존 0건
+- **커밋 5개 계층 순서**: `git log --oneline develop..HEAD` 를 시간순으로 읽으면 위생(`127286317`) → admin-web(`edddc8573`) → core 배선(`1de0fd90a`) → core 본체(`7b6e6b25a`) → 스키마+마이그레이션(`c0a416d2a`) 순서가 그대로 지켜졌다(사이사이 리뷰발 docs/fix 커밋은 각 계층 커밋 바로 뒤에 붙어 순서를 어지럽히지 않음)
+
+**최종 리뷰로 넘기는 것(진행 원장 `minor (deferred)` 재확인, 6단계는 코드 변경 태스크가 아니라 손대지 않았다)**:
+
+| 갭 | 위치 | 상태 |
+|---|---|---|
+| `useImportProgress` 를 이름으로 인용하는 고아 주석(§E.4.4 부수 확인) | `apps/admin-web/src/lib/services/products/form-export.ts:12` | Task 2 가 발견해 deferred, 이번 재확인으로도 유효 |
+| `PRODUCT_IMPORT_*` 4개 삭제 자리에 남은 빈 줄 2개가 develop 대비 신규 prettier 오류 1건을 낸다 | `apps/core/src/config/env.validation.ts`(WALLET_API_KEY 줄과 `// OpenTelemetry` 주석 사이) | 이번 태스크가 `npx prettier --check` 로 재확인: develop 원본은 깨끗, 이 브랜치만 새로 어긋남. "이 브랜치가 만든 신규 오류"이므로 최종 리뷰 fix wave 에서 `--write` 로 닫을 대상 |
+| `bulk-draft.fields.ts:12` 의 이식 출처 주석에 `bulk-session.structure.ts` 로의 역방향 포인터가 없어 비대칭(반대쪽은 Task 4 fix round 가 갱신하며 서로를 언급하게 됐는데 이쪽만 안 갱신됨) | `bulk-draft.fields.ts:12` | Task 4 가 발견해 deferred, 이번 재확인으로도 유효 |
+
+세 건 모두 기능 위험 0(문서·포맷 부채)이고 6단계의 "삭제만, 동작 변경 섞지 않는다" 원칙과 충돌하지 않아 이 태스크에서 고치지 않았다.
+
+## E.6 배포 선행조건 — 실측 상태 (2026-08-03)
+
+- [x] **DROP 마이그레이션 미적용 확인** — `db:migrate`/`db:push`/`drizzle-kit migrate` 호출 0회, `git status`로 마이그레이션 외 워킹트리 변경 없음을 재확인
+- [ ] **`SELECT count(*) FROM product_import_sessions;` = 0** — `dev_core` 에서 실측하면 0 이다(읽기 전용 SELECT, 마이그레이션 아님). 다만 **`dev_core` 는 이 판정의 근거로 쓸 수 없다** — `\dt public.product_import*`/`\dt public.product_bulk*` 로 확인한 결과 `dev_core` 는 옛 `product_import_sessions`/`_items`/`_images` 3테이블만 갖고 있고 이 기능 계열의 1~6단계 마이그레이션이 **전혀 적용되지 않은 채 방치돼 있다**(기존에도 알려진 AWS `dev` stage 폐기 상태, 관련 선례: v3 스펙의 "AWS `dev` stage 폐기 → `db:migrate --stage dev` 는 죽은 명령"). 즉 이 0 은 "옛 임포트가 dev 에서도 안 쓰였다"는 정황만 보여줄 뿐, §11.5 가 요구하는 **실제 배포 대상 DB**에서의 확인을 대신하지 못한다 — `migrate` 직전 그 DB에서 다시 실행해야 한다(§11.5 2026-08-03 정정 이후의 순서 기준. 이 항목을 적을 당시엔 "배포 직전"이라고 썼는데, 그 시점의 순서 자체가 정정됐다 — 아래 항목 참조)
+- [ ] ~~**`deploy` → `migrate` 순서** — §11.5 그대로 유지. core·admin-web 배포는 순서 무관, `migrate`(DROP)는 반드시 마지막. 옛 워커의 `@Cron(EVERY_5_SECONDS)` claim 이 순서를 어기면 교체 완료까지 5초마다 `relation does not exist` 로그를 낸다(데이터 사고는 아님)~~ **→ 정정 (2026-08-03, 최종 리뷰 픽스 웨이브).** 이 항목은 이 표를 쓴 시점에 §11.5 본문이 요구하던 순서를 그대로 옮긴 기록이다 — 당시엔 맞는 인용이었다. 최종 whole-branch 리뷰가 그 요구 자체를 **성립 불가능**으로 확인했다: 바로 아래 항목이 실측한 대로 5단계 마이그레이션(`source_file_id` DROP NOT NULL)이 아직 미적용이고 §10.6 은 그것에 `migrate → deploy` 를 요구하는데, `drizzle-kit migrate` 는 저널 대기 항목을 전부 한 번에 적용하고 부분 적용 플래그가 없어 같은 저널 안에서 두 순서를 동시에 만족시킬 수 없다. **순서의 단일 권위는 §11.5다** — 이 항목을 §11.5 와 별개로 다시 따르지 말 것. §11.5 는 지금 `db:migrate` 를 배포 직전 한 번만(두 마이그레이션 함께) 돌리고 그 뒤 core·admin-web 을 배포하도록 정정돼 있다
+- [ ] **5단계 미배포분이 이보다 먼저다** — `20260802213044_bulk-session-source-file-nullable.sql`(`source_file_id` DROP NOT NULL, §10.6) 미적용 확인(`dev_core` 에 `product_bulk_sessions` 테이블 자체가 없어 이 마이그레이션도 적용 전인 것으로 보인다) · 라이브 DB MD 계정 `roles` 실측(§10.7) 미수행. **이 미적용 사실이 바로 위 항목의 정정 근거다** — §11.5 정정 이후로는 "이보다 먼저" 걸리는 별도 `migrate` 호출이 아니라, §11.5 의 단일 `db:migrate` 호출에 이 마이그레이션이 함께 들어간다. MD 계정 `roles` 실측만 독립적인 선행 조치로 남는다
+- [ ] 이벤트 계약 변경 0건 · 새 시크릿 0건 · 새 env 0건 — 6단계는 `PRODUCT_IMPORT_*` 4개를 지우기만 했고 `PRODUCT_BULK_*` 는 손대지 않음(§11.2)
+

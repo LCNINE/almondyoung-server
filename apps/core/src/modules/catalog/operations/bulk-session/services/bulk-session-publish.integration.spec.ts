@@ -189,71 +189,74 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
   });
 
   afterAll(async () => {
-    if (db) {
-      // 세션을 지우기 **전에** 아이템이 가리키는 master 를 걷는다 — 신규 행이 만든 master 는
-      // 이 경로로만 알 수 있고, 세션을 먼저 지우면 items 가 CASCADE 로 함께 사라져 고아가 된다.
-      const sessionIds = [...createdSessionIds];
-      if (sessionIds.length > 0) {
-        const rows = await db.run((trx) =>
-          trx
-            .select({ masterId: productBulkItems.masterId })
-            .from(productBulkItems)
-            .where(inArray(productBulkItems.sessionId, sessionIds)),
-        );
-        for (const row of rows) if (row.masterId) createdMasterIds.add(row.masterId);
-      }
-
-      const masterIds = [...createdMasterIds];
-      // product_variants / pricing_rules 는 master 를 지워도 CASCADE 가 닿지 않는다(정션만
-      // 지워진다) — 정션이 살아 있는 동안 id 를 걷어 둔다.
-      let variantIds: string[] = [];
-      let pricingRuleIds: string[] = [];
-      if (masterIds.length > 0) {
-        variantIds = (
-          await db.run((trx) =>
-            trx
-              .select({ variantId: productMasterVariants.variantId })
-              .from(productMasterVariants)
-              .where(inArray(productMasterVariants.masterId, masterIds)),
-          )
-        ).map((row) => row.variantId);
-        pricingRuleIds = (
-          await db.run((trx) =>
-            trx
-              .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
-              .from(productMasterPricingRules)
-              .where(inArray(productMasterPricingRules.masterId, masterIds)),
-          )
-        ).map((row) => row.pricingRuleId);
-      }
-
-      await db.run(async (trx) => {
+    try {
+      if (db) {
+        // 세션을 지우기 **전에** 아이템이 가리키는 master 를 걷는다 — 신규 행이 만든 master 는
+        // 이 경로로만 알 수 있고, 세션을 먼저 지우면 items 가 CASCADE 로 함께 사라져 고아가 된다.
+        const sessionIds = [...createdSessionIds];
         if (sessionIds.length > 0) {
-          await trx.delete(productBulkSessions).where(inArray(productBulkSessions.id, sessionIds));
+          const rows = await db.run((trx) =>
+            trx
+              .select({ masterId: productBulkItems.masterId })
+              .from(productBulkItems)
+              .where(inArray(productBulkItems.sessionId, sessionIds)),
+          );
+          for (const row of rows) if (row.masterId) createdMasterIds.add(row.masterId);
         }
+
+        const masterIds = [...createdMasterIds];
+        // product_variants / pricing_rules 는 master 를 지워도 CASCADE 가 닿지 않는다(정션만
+        // 지워진다) — 정션이 살아 있는 동안 id 를 걷어 둔다.
+        let variantIds: string[] = [];
+        let pricingRuleIds: string[] = [];
         if (masterIds.length > 0) {
-          await trx.delete(productMasters).where(inArray(productMasters.id, masterIds));
+          variantIds = (
+            await db.run((trx) =>
+              trx
+                .select({ variantId: productMasterVariants.variantId })
+                .from(productMasterVariants)
+                .where(inArray(productMasterVariants.masterId, masterIds)),
+            )
+          ).map((row) => row.variantId);
+          pricingRuleIds = (
+            await db.run((trx) =>
+              trx
+                .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
+                .from(productMasterPricingRules)
+                .where(inArray(productMasterPricingRules.masterId, masterIds)),
+            )
+          ).map((row) => row.pricingRuleId);
         }
-        if (variantIds.length > 0) {
-          await trx
-            .delete(productSellableQuantityProjections)
-            .where(inArray(productSellableQuantityProjections.variantId, variantIds));
-          await trx.delete(productVariants).where(inArray(productVariants.id, variantIds));
-        }
-        if (pricingRuleIds.length > 0) {
-          await trx.delete(pricingRules).where(inArray(pricingRules.id, pricingRuleIds));
-        }
-        // 아웃박스 행. `publishVersion` 이 master 당 `ProductMasterActiveVersionChanged` 를,
-        // `recalculateAndPublishForVariant` 가 variant 당 `ProductSellableQuantityChanged` 를
-        // 쌓는다 — FK 가 없어 어떤 CASCADE 도 닿지 않으므로 실행마다(롤백 발행 포함) 단조
-        // 증가한다. `aggregate_id` 로 **이 스위트가 만든 것만** 지운다(테이블을 비우지 않는다).
-        const aggregateIds = [...new Set([...masterIds, ...variantIds])];
-        if (aggregateIds.length > 0) {
-          await trx.delete(outboxEvents).where(inArray(outboxEvents.aggregateId, aggregateIds));
-        }
-      });
+
+        await db.run(async (trx) => {
+          if (sessionIds.length > 0) {
+            await trx.delete(productBulkSessions).where(inArray(productBulkSessions.id, sessionIds));
+          }
+          if (masterIds.length > 0) {
+            await trx.delete(productMasters).where(inArray(productMasters.id, masterIds));
+          }
+          if (variantIds.length > 0) {
+            await trx
+              .delete(productSellableQuantityProjections)
+              .where(inArray(productSellableQuantityProjections.variantId, variantIds));
+            await trx.delete(productVariants).where(inArray(productVariants.id, variantIds));
+          }
+          if (pricingRuleIds.length > 0) {
+            await trx.delete(pricingRules).where(inArray(pricingRules.id, pricingRuleIds));
+          }
+          // 아웃박스 행. `publishVersion` 이 master 당 `ProductMasterActiveVersionChanged` 를,
+          // `recalculateAndPublishForVariant` 가 variant 당 `ProductSellableQuantityChanged` 를
+          // 쌓는다 — FK 가 없어 어떤 CASCADE 도 닿지 않으므로 실행마다(롤백 발행 포함) 단조
+          // 증가한다. `aggregate_id` 로 **이 스위트가 만든 것만** 지운다(테이블을 비우지 않는다).
+          const aggregateIds = [...new Set([...masterIds, ...variantIds])];
+          if (aggregateIds.length > 0) {
+            await trx.delete(outboxEvents).where(inArray(outboxEvents.aggregateId, aggregateIds));
+          }
+        });
+      }
+    } finally {
+      await moduleRef?.close();
     }
-    await moduleRef?.close();
   });
 
   // ─────────────────────────── 픽스처 헬퍼 ───────────────────────────
@@ -877,8 +880,11 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
    * `claims.size === 0` 에서 단락해 이 조인이 실 DB 에서 한 번도 실행되지 않았다.
    */
   it('품목코드 중복 사전검사의 3테이블 조인이 실 DB 에서 돈다', async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const dupCode = `DUP-CODE-${suffix}`;
+    const selfCode = `SELF-CODE-${suffix}`;
     // 다른 master 의 active 버전이 코드를 이미 쓴다 — 신규 행이 같은 코드를 주장하면 걸린다.
-    await seedActiveProduct({ name: '코드 소유자', brand: 'ACME', basePrice: 10000, variantCode: 'DUP-CODE-1' });
+    await seedActiveProduct({ name: '코드 소유자', brand: 'ACME', basePrice: 10000, variantCode: dupCode });
     const { sessionId: dupSessionId } = await seedSession([
       {
         rowNumber: 1,
@@ -886,7 +892,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
         fields: {
           'product.name': '중복 신규',
           'product.basePrice': '10000',
-          'variant:.variantCode': 'DUP-CODE-1',
+          'variant:.variantCode': dupCode,
         },
       },
     ]);
@@ -902,7 +908,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
       name: '자기 코드',
       brand: 'ACME',
       basePrice: 10000,
-      variantCode: 'SELF-CODE-1',
+      variantCode: selfCode,
     });
     const { sessionId: selfSessionId } = await seedSession([
       {
@@ -911,7 +917,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
         masterId: selfOwner.masterId,
         baseVersionId: selfOwner.versionId,
         baseSnapshot: await renderSnapshot(selfOwner.masterId),
-        fields: { 'variant:.variantCode': 'SELF-CODE-1' },
+        fields: { 'variant:.variantCode': selfCode },
       },
     ]);
     const flaggedSelf = await checker.checkSession(selfSessionId);
