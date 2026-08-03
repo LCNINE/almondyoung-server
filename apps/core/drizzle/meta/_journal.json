@@ -393,6 +393,13 @@
       "when": 1785682343368,
       "tag": "20260802145223_product-master-versions-bulk-session-id",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1785706244623,
+      "tag": "20260802213044_bulk-session-source-file-nullable",
+      "breakpoints": true
     }
   ]
 }

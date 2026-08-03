@@ -48,6 +48,19 @@ interface SelectChain extends Promise<FakeRow[]> {
   offset(n?: number): SelectChain;
 }
 
+/**
+ * `groupBy(column)` 에 실제로 넘어온 drizzle 컬럼에서 SQL 컬럼명을 뽑아 픽스처 키
+ * (camelCase)로 바꾼다. **`status` 로 고정하면 안 된다** — 이 리더는 이미 세 축을
+ * groupBy 한다: `productBulkItems.status`, `productBulkImages.status`,
+ * `productBulkItems.publishStatus`(Task 8). 고정 `row.status` 를 쓰면 `publishStatus` 로
+ * 그룹핑한 쿼리가 픽스처의 (전혀 다른 의미인) `status` 필드를 세는 거짓-초록이 생긴다 —
+ * Task 8 브리프가 명시적으로 경고한 함정이다.
+ */
+function groupByField(column: unknown): string {
+  const named = column as { name?: unknown };
+  return typeof named.name === 'string' ? toCamelKey(named.name) : 'status';
+}
+
 function selectChain(rows: FakeRow[], isCount: boolean): SelectChain {
   const resolved = isCount ? [{ value: rows.length }] : rows;
   const builder = Promise.resolve(resolved) as SelectChain;
@@ -57,13 +70,15 @@ function selectChain(rows: FakeRow[], isCount: boolean): SelectChain {
       isCount,
     );
   builder.orderBy = () => builder;
-  // 이 리더가 groupBy 하는 유일한 축은 status 다(getProgress 의 itemCounts/imageCounts) —
-  // 실제로 status 별로 세어 `{status, value}` 를 돌려준다.
-  builder.groupBy = () => {
+  // 실제로 groupBy 에 넘어온 컬럼(들 중 첫 번째)이 가리키는 필드로 세어 `{status, value}`
+  // 를 돌려준다 — 출력 키가 `status` 인 것은 세 그룹핑 쿼리 전부 `{ status: <col>, value:
+  // count() }` 로 프로젝션하기 때문이지, 입력 필드가 항상 `status` 라서가 아니다.
+  builder.groupBy = (...groupArgs) => {
+    const field = groupByField(groupArgs[0]);
     const counts = new Map<string, number>();
     for (const row of rows) {
-      const status = String(row.status);
-      counts.set(status, (counts.get(status) ?? 0) + 1);
+      const value = String(row[field]);
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     }
     return selectChain(
       [...counts.entries()].map(([status, value]) => ({ status, value })),
@@ -153,6 +168,33 @@ describe('BulkSessionReader.getProgress', () => {
     // totalRows 는 세션 행에서 그대로 온 것이지 items 집계의 합이 아니다.
     expect(progress.totalRows).toBe(3);
     expect(progress.phase).toBe('review');
+  });
+
+  // Task 8: 발행 단계는 아이템 status 와 축이 다르다 — 한 행이 status='drafted' 이면서
+  // publishStatus='failed' 일 수 있다. 여러 상태가 섞인 픽스처로 각 그룹의 개수가 맞는지
+  // 단정한다(브리프의 "집계 페이크" 경고 — 그룹핑 축을 잘못 잡으면 이 테스트가 거짓 초록이
+  // 된다). `toHaveLength(2)` 를 같이 걸어 "축을 착각해 한 그룹으로 뭉치는" 실패도 잡는다.
+  it('진행률이 publish_status 별 집계를 함께 준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'published' },
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'published' },
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'failed' },
+        // 다른 세션의 행 — eq(sessionId) 가 빠지면 이 행까지 집계에 섞인다.
+        { sessionId: 'other-session', status: 'drafted', publishStatus: 'published' },
+      ],
+    });
+
+    const progress = await reader.getProgress('sess-1', 'u1');
+
+    expect(progress.publishCounts).toEqual(
+      expect.arrayContaining([
+        { status: 'published', count: 2 },
+        { status: 'failed', count: 1 },
+      ]),
+    );
+    expect(progress.publishCounts).toHaveLength(2);
   });
 
   it('남의 세션은 404 다 — 있는데 내 것 아님과 아예 없음을 구분해주지 않는다', async () => {
@@ -319,6 +361,19 @@ describe('BulkSessionReader.getItems', () => {
     const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
 
     expect(result.data[0].draftVersionId).toBeNull();
+  });
+
+  // Task 8: 화면이 "무엇이 실패했는지" 보려면 publishStatus·publishError 가 행 목록에
+  // 실려야 한다 — 지금까지는 진행률 집계에만 있고 행 단위로는 내려주지 않았다.
+  it('행 목록이 발행 상태와 실패 사유를 함께 준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [itemRow({ id: 'I1', publishStatus: 'failed', publishError: '상품코드 중복' })],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+
+    expect(result.data[0]).toMatchObject({ publishStatus: 'failed', publishError: '상품코드 중복' });
   });
 });
 

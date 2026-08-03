@@ -56,6 +56,7 @@ import { ProductBulkService } from '../../bulk/product-bulk.service';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
 import { buildFormWorkbook } from './form-export.workbook';
 import { BulkSessionJobManager } from './bulk-session-job.manager';
+import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
 import type { PrefillRow, PrefillWorkbookData } from './form-export.types';
 
 /**
@@ -159,13 +160,22 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     // (Task 8) BulkSessionJobManager 생성자에 BulkDraftApplier 가 늘었다 — 이 스위트는 병합
     // (파싱→검증) 경로만 보고 drafting 슬라이스는 부르지 않으므로, bulkService 위의 두
     // 협력자와 같은 이유로 실제 applier 를 세우지 않는다(부르면 즉시 TypeError 로 터진다).
+    // (Task 3) ProductVersionsService 도 같은 이유로 `undefined as never` 다 — 이 스위트는
+    // 발행 슬라이스를 부르지 않는다.
+    // (Task 11) BulkVariantCodeChecker 는 이 스위트가 실제로 부르는 검증 슬라이스의 마감
+    // 분기에서 매번 불린다 — `undefined as never` 를 넘기면 TypeError 로 죽는다. 이 스위트의
+    // 워크북 픽스처는 조합 시트의 품목코드 열을 채우지 않으므로(변경분에 `variant:*.variantCode`
+    // 가 잡히지 않는다) 매 호출이 항상 0건으로 끝난다 — 같은 dbService 에 물린 진짜 인스턴스를
+    // 쓴다.
     manager = new BulkSessionJobManager(
       dbService,
       { download } as never,
       reader,
       categories,
       undefined as never,
+      undefined as never,
       new ConfigService({ PRODUCT_BULK_LEASE_MS: '30000', PRODUCT_BULK_VALIDATE_SLICE: '50' }),
+      new BulkVariantCodeChecker(dbService),
     );
   });
 

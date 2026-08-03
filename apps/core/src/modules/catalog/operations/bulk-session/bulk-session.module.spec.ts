@@ -66,6 +66,8 @@ describeIfDb('BulkSessionModule DI', () => {
     const { BulkImageManager } = await import('./services/bulk-image.manager');
     const { BulkImageCleaner } = await import('./services/bulk-image.cleaner');
     const { BulkDraftApplier } = await import('./services/bulk-draft.applier');
+    const { BulkVariantCodeChecker } = await import('./services/bulk-variant-code.checker');
+    const { BulkSessionCleaner } = await import('./services/bulk-session.cleaner');
 
     const moduleRef = await Test.createTestingModule({
       imports: [
@@ -112,11 +114,16 @@ describeIfDb('BulkSessionModule DI', () => {
 
     // 검증 레인. BulkSessionJobWorker 의 생성자가 BulkSessionJobManager 를 받으므로, 이게
     // 해석된다는 건 그 매니저의 DbService<PimSchema>/FormExportFileClient/
-    // FormExportSnapshotReader/ProductCategoriesService/ConfigService 5개 의존성도 함께
-    // 실제로 해석됐다는 뜻이다 — ProductCategoriesService 는 CategoriesModule 이 export
-    // 해야만 잡히므로 여기서만 걸리는 종류의 배선 오류다.
+    // FormExportSnapshotReader/ProductCategoriesService/BulkDraftApplier/ProductVersionsService/
+    // ConfigService/BulkVariantCodeChecker 8개 의존성도 함께 실제로 해석됐다는 뜻이다 —
+    // ProductCategoriesService 는 CategoriesModule 이 export 해야만 잡히므로 여기서만 걸리는
+    // 종류의 배선 오류다. (Task 11) BulkVariantCodeChecker 가 새 의존성이다 — 등록을
+    // 빠뜨리면 여기서 UnknownDependenciesException 으로 곧장 드러난다.
     expect(moduleRef.get(BulkSessionJobManager, { strict: false })).toBeInstanceOf(BulkSessionJobManager);
     expect(moduleRef.get(BulkSessionJobWorker, { strict: false })).toBeInstanceOf(BulkSessionJobWorker);
+    // BulkVariantCodeChecker 자체도 따로 확인한다 — 자기 의존성은 DbService<PimSchema>
+    // 하나뿐이지만, BulkSessionJobManager 를 통한 간접 해석과 별개로 단독 해석도 보장한다.
+    expect(moduleRef.get(BulkVariantCodeChecker, { strict: false })).toBeInstanceOf(BulkVariantCodeChecker);
 
     // 3단계 이미지 경로. BulkImageManager 가 해석된다는 건 그 생성자가 받는
     // DbService<PimSchema>/FormExportFileClient/BulkSessionReader 3개 의존성도 함께 실제로
@@ -135,6 +142,12 @@ describeIfDb('BulkSessionModule DI', () => {
     // (products.module.ts:41-56, pricing.module.ts:12) — 실측으로 확인된 사실이지만
     // 그 export 목록이 바뀌면 이 스모크가 먼저 빨개져야 한다.
     expect(moduleRef.get(BulkDraftApplier, { strict: false })).toBeDefined();
+
+    // 5단계 정리 스윕(Task 7/9). BulkSessionCleaner 가 해석된다는 건 그 생성자가 받는
+    // DbService<PimSchema>/FormExportFileClient/ConfigService 3개 의존성도 함께 실제로
+    // 해석됐다는 뜻이다. @Cron 은 provider 로 등록돼야 ScheduleExplorer 가 마운트한다 —
+    // 등록을 빠뜨리면 타입도 테스트도 초록인 채 워크북이 영영 안 지워진다.
+    expect(moduleRef.get(BulkSessionCleaner, { strict: false })).toBeInstanceOf(BulkSessionCleaner);
 
     await moduleRef.close();
   });

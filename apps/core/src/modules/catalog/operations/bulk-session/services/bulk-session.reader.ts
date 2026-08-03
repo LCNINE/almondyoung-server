@@ -61,6 +61,10 @@ export const bulkItemRowColumns = {
   conflictDecision: productBulkItems.conflictDecision,
   baseSnapshot: productBulkItems.baseSnapshot,
   draftVersionId: productBulkItems.draftVersionId,
+  // Task 8: 화면이 "무엇이 실패했는지" 를 보려면 발행 상태·실패 사유가 행 단위로 필요하다
+  // — 지금까지는 getProgress 의 집계에만 있었다.
+  publishStatus: productBulkItems.publishStatus,
+  publishError: productBulkItems.publishError,
 };
 
 export type BulkItemRow = Pick<
@@ -77,6 +81,8 @@ export type BulkItemRow = Pick<
   | 'conflictDecision'
   | 'baseSnapshot'
   | 'draftVersionId'
+  | 'publishStatus'
+  | 'publishError'
 >;
 
 interface ConflictEntry {
@@ -169,6 +175,14 @@ export class BulkSessionReader {
         .where(eq(productBulkImages.sessionId, sessionId))
         .groupBy(productBulkImages.status);
 
+      // 발행 단계의 분모·분자다. 아이템 status 집계와 축이 다르다 — 한 행은 status='drafted'
+      // 이면서 publish_status='failed' 일 수 있고, 화면은 그 둘을 함께 봐야 한다.
+      const publishCounts = await trx
+        .select({ status: productBulkItems.publishStatus, value: count() })
+        .from(productBulkItems)
+        .where(eq(productBulkItems.sessionId, sessionId))
+        .groupBy(productBulkItems.publishStatus);
+
       const mappedItemCounts = itemCounts.map((row) => ({ status: row.status, count: Number(row.value) }));
 
       return {
@@ -183,6 +197,7 @@ export class BulkSessionReader {
         itemTotal: mappedItemCounts.reduce((acc, row) => acc + row.count, 0),
         itemCounts: mappedItemCounts,
         imageCounts: imageCounts.map((row) => ({ status: row.status, count: Number(row.value) })),
+        publishCounts: publishCounts.map((row) => ({ status: row.status, count: Number(row.value) })),
         cancelRequestedAt: session.cancelRequestedAt,
       };
     }, tx);
@@ -327,6 +342,10 @@ export class BulkSessionReader {
       errorMessage: row.errorMessage,
       // Task 9: 생성된 draft 를 가리킨다 — 화면이 이 id 로 통상의 draft 편집 화면을 연다.
       draftVersionId: row.draftVersionId,
+      // Task 8: 발행 레인의 상태·실패 사유. 아이템 status 와 축이 다르다 — 한 행이
+      // status='drafted' 이면서 publishStatus='failed' 일 수 있다.
+      publishStatus: row.publishStatus,
+      publishError: row.publishError,
       changes,
       conflicts,
     };
