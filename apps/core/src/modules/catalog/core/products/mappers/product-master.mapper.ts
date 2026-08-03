@@ -1,6 +1,6 @@
 import { DateMapper } from '../../../common/mappers';
 import { ProductMasterDto, OptionGroupDto, OptionValueDto, VariantDto } from '../dto/masters/master-response.dto';
-import { PriceSummaryDto, ProductSummaryDto } from '../dto/products/product-response.dto';
+import { PriceSummaryDto, ProductSummaryDto, VariantPreviewDto } from '../dto/products/product-response.dto';
 import {
   ProductMasterVersionEntity,
   ProductOptionGroupEntity,
@@ -56,6 +56,7 @@ export class ProductMasterMapper {
     entity: ProductMasterWithVersion & {
       optionGroupNames: string[];
       variantCount: number;
+      variantPreviews?: VariantPreviewDto[];
       thumbnail?: string | null; // product_images에서 가져온 primary 이미지 fileId
       priceSummary?: PriceSummaryDto | null;
       soldOutState?: 'none' | 'partial' | 'all';
@@ -84,6 +85,7 @@ export class ProductMasterMapper {
       updatedAt: DateMapper.toNotNullString(entity.version.updatedAt),
       optionGroupNames: entity.optionGroupNames,
       variantCount: entity.variantCount,
+      variantPreviews: entity.variantPreviews ?? [],
       priceSummary: entity.priceSummary ?? null,
       soldOutState: entity.soldOutState ?? 'none',
     };

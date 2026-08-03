@@ -39,6 +39,7 @@ import {
   productAuditLog,
   productMasterOptionGroups,
   productMasterVariants,
+  productVariantPriceCache,
   productMasterPricingRules,
   productMasterPurchaseConstraints,
   productPurchaseConstraints,
@@ -65,6 +66,22 @@ import {
 
 /** 공급처 필터에서 '미지정'(supplier_id IS NULL) 을 가리키는 sentinel. */
 export const UNASSIGNED_SUPPLIER = 'unassigned';
+
+/**
+ * 목록에 내려주는 상품당 품목 미리보기 최대 개수.
+ * 품목이 수십 개인 상품이 섞여도 응답 크기가 상품 수에 선형으로만 늘도록 SQL 단계에서 자른다.
+ * 잘린 나머지는 variantCount 와의 차이로 화면에서 '+N개 더보기' 로 표시한다.
+ */
+export const VARIANT_PREVIEW_LIMIT = 20;
+
+export type VariantPreview = {
+  variantId: string;
+  /** 수동 지정 이름이 없으면 옵션값 표시명을 ' / ' 로 이은 값. */
+  name: string;
+  basePrice: number | null;
+  membershipPrice: number | null;
+  status: string;
+};
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -523,6 +540,7 @@ export class ProductMastersService {
       aggregate: {
         optionGroupNames: string[];
         variantCount: number;
+        variantPreviews: VariantPreview[];
         thumbnail: string | null;
         priceSummary: PriceSummary | null;
         soldOutState: SoldOutState;
@@ -798,6 +816,13 @@ export class ProductMastersService {
         .where(inArray(productMasterVariants.versionId, versionIds))
         .groupBy(productMasterVariants.versionId);
 
+      // 목록에서 품목명·품목가를 펼쳐 보여주기 위한 미리보기 (버전당 상한 있음).
+      // page 없이 부르는 전량 조회(엑셀·배치)는 화면 렌더가 목적이 아니고 상품 수가 만 단위라
+      // 미리보기를 만들지 않는다 — 만들면 응답이 상품수×품목수로 부푼다.
+      const variantPreviewMap = returnAll
+        ? new Map<string, VariantPreview[]>()
+        : await this.getVariantPreviewsByVersionIds(versionIds, trx);
+
       // 한 번에 모든 primary 이미지 조회 (thumbnail용)
       const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, trx);
 
@@ -825,6 +850,7 @@ export class ProductMastersService {
           aggregate: {
             optionGroupNames: optionGroupNamesMap.get(version.id) ?? [],
             variantCount: variantCountMap.get(version.id) ?? 0,
+            variantPreviews: variantPreviewMap.get(version.id) ?? [],
             thumbnail: thumbnailMap.get(version.id) ?? null,
             priceSummary: priceSummaryMap.get(version.id) ?? null,
             soldOutState: soldOutStateMap.get(version.id) ?? 'none',
@@ -839,6 +865,121 @@ export class ProductMastersService {
         limit,
       };
     }, tx);
+  }
+
+  /**
+   * 목록용 품목 미리보기 — 버전당 최대 VARIANT_PREVIEW_LIMIT 개.
+   * 이름은 수동 지정값 우선, 없으면 옵션값 표시명을 옵션그룹 순서대로 이어 만든다(상세 화면과 같은 규칙).
+   */
+  private async getVariantPreviewsByVersionIds(
+    versionIds: string[],
+    trx: DbTransaction,
+  ): Promise<Map<string, VariantPreview[]>> {
+    if (versionIds.length === 0) {
+      return new Map();
+    }
+
+    const rankedVariants = trx
+      .select({
+        versionId: productMasterVariants.versionId,
+        variantId: productVariants.id,
+        variantName: productVariants.variantName,
+        status: productVariants.status,
+        basePrice: productVariantPriceCache.basePrice,
+        membershipPrice: productVariantPriceCache.membershipPrice,
+        rn: sql<number>`
+          ROW_NUMBER() OVER (
+            PARTITION BY ${productMasterVariants.versionId}
+            ORDER BY ${productVariants.displayOrder} ASC, ${productVariants.createdAt} ASC
+          )
+        `.as('rn'),
+      })
+      .from(productMasterVariants)
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .leftJoin(
+        productVariantPriceCache,
+        and(
+          eq(productVariantPriceCache.versionId, productMasterVariants.versionId),
+          eq(productVariantPriceCache.variantId, productVariants.id),
+        ),
+      )
+      .where(inArray(productMasterVariants.versionId, versionIds))
+      .as('ranked_variants');
+
+    const rows = await trx
+      .select()
+      .from(rankedVariants)
+      .where(sql`${rankedVariants.rn} <= ${VARIANT_PREVIEW_LIMIT}`)
+      .orderBy(asc(rankedVariants.versionId), asc(rankedVariants.rn));
+
+    if (rows.length === 0) {
+      return new Map();
+    }
+
+    // 이름이 비어 있는 품목만 옵션값 표시명으로 채운다.
+    const unnamedVariantIds = rows.filter((row) => !row.variantName).map((row) => row.variantId);
+    const optionLabelMap = new Map<string, string[]>();
+
+    if (unnamedVariantIds.length > 0) {
+      // 옵션 그룹/값은 master 스코프가 없는 식별자 행이고 표시명만 (master, version) 별로 있다.
+      // 따라서 표시명 조인은 반드시 그 품목이 속한 master+version 으로 좁혀야 한다 —
+      // 페이지의 versionIds 전체로 조인하면 값 행을 공유하는 다른 상품의 표시명까지 붙는다.
+      const optionRows = await trx
+        .select({
+          variantId: variantOptionValues.variantId,
+          displayName: productOptionValueDisplays.displayName,
+        })
+        .from(productMasterVariants)
+        .innerJoin(variantOptionValues, eq(variantOptionValues.variantId, productMasterVariants.variantId))
+        .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
+        .innerJoin(
+          productOptionValueDisplays,
+          and(
+            eq(productOptionValueDisplays.optionValueId, productOptionValues.id),
+            eq(productOptionValueDisplays.masterId, productMasterVariants.masterId),
+            eq(productOptionValueDisplays.versionId, productMasterVariants.versionId),
+            eq(productOptionValueDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .innerJoin(
+          productOptionGroupDisplays,
+          and(
+            eq(productOptionGroupDisplays.optionGroupId, productOptionValues.optionGroupId),
+            eq(productOptionGroupDisplays.masterId, productMasterVariants.masterId),
+            eq(productOptionGroupDisplays.versionId, productMasterVariants.versionId),
+            eq(productOptionGroupDisplays.locale, 'ko-KR'),
+          ),
+        )
+        .where(
+          and(
+            inArray(productMasterVariants.versionId, versionIds),
+            inArray(productMasterVariants.variantId, unnamedVariantIds),
+          ),
+        )
+        .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
+
+      for (const option of optionRows) {
+        const labels = optionLabelMap.get(option.variantId) ?? [];
+        labels.push(option.displayName);
+        optionLabelMap.set(option.variantId, labels);
+      }
+    }
+
+    const previewMap = new Map<string, VariantPreview[]>();
+
+    for (const row of rows) {
+      const previews = previewMap.get(row.versionId) ?? [];
+      previews.push({
+        variantId: row.variantId,
+        name: row.variantName ?? optionLabelMap.get(row.variantId)?.join(' / ') ?? '',
+        basePrice: row.basePrice ?? null,
+        membershipPrice: row.membershipPrice ?? null,
+        status: row.status,
+      });
+      previewMap.set(row.versionId, previews);
+    }
+
+    return previewMap;
   }
 
   private buildStockFilterCondition(stockFilter: 'in_stock' | 'partial' | 'sold_out') {
