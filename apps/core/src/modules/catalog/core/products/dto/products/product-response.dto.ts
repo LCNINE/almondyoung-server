@@ -145,6 +145,23 @@ export class MasterProductWithPrimaryVersionDto extends ProductMasterEntity {
   primaryVersion: ProductVersionDto | null;
 }
 
+export class VariantPreviewDto {
+  @ApiProperty({ description: '품목 ID' })
+  variantId: string;
+
+  @ApiProperty({ description: '품목명. 수동 지정값이 없으면 옵션값 표시명을 이어 만든 이름.' })
+  name: string;
+
+  @ApiProperty({ description: '판매가. 가격 캐시가 아직 없으면 null.', nullable: true })
+  basePrice: number | null;
+
+  @ApiProperty({ description: '멤버십가. 가격 캐시가 아직 없으면 null.', nullable: true })
+  membershipPrice: number | null;
+
+  @ApiProperty({ description: '품목 상태', example: 'active' })
+  status: string;
+}
+
 export class ProductSummaryDto {
   @ApiProperty({ description: '마스터 상품 ID' })
   masterId: string;
@@ -200,6 +217,13 @@ export class ProductSummaryDto {
 
   @ApiProperty({ description: '변형 개수' })
   variantCount: number;
+
+  @ApiProperty({
+    description:
+      '품목 미리보기. 목록 화면에서 품목명·가격을 펼쳐 보여주기 위한 값으로, 상품당 상한이 있어 variantCount 보다 적을 수 있다.',
+    type: [VariantPreviewDto],
+  })
+  variantPreviews: VariantPreviewDto[];
 
   @ApiProperty({
     description: '가격 요약 (일반가/멤버십가 최소·최대, 도매가 여부)',
