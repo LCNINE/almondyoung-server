@@ -107,8 +107,9 @@ describeIfDb('BulkSessionModule DI', () => {
     // 업로드 접수 경로(POST /product-bulk-sessions) 산출물. BulkSessionService 는
     // BulkSessionModule 의 export 목록에 없으므로 strict 조회로는 안 잡힌다 —
     // { strict: false } 로 컨테이너 전체에서 찾는다. BulkSessionManager 가 해석된다는 건
-    // 그 생성자가 받는 DbService<PimSchema>/FormExportFileClient 2개 의존성도 함께
-    // 실제로 해석됐다는 뜻이다.
+    // 그 생성자가 받는 DbService<PimSchema>/FormExportFileClient/BulkSessionReader/
+    // ProductVersionsService/ProductMastersService 5개 의존성도 함께 실제로 해석됐다는
+    // 뜻이다(5단계 Task 6 이 정리·발행 경로를 붙이며 3개가 늘었다).
     expect(moduleRef.get(BulkSessionService, { strict: false })).toBeInstanceOf(BulkSessionService);
     expect(moduleRef.get(BulkSessionManager, { strict: false })).toBeInstanceOf(BulkSessionManager);
 

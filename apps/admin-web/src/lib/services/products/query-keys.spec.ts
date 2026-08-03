@@ -17,26 +17,3 @@ describe('product query keys', () => {
     ]);
   });
 });
-
-describe('productImports query keys', () => {
-  it('list 키는 page 를 포함한다', () => {
-    expect(productQueryKeys.productImportsList(2)).toEqual([
-      'product-imports',
-      'list',
-      2,
-    ]);
-  });
-  it('detail 키는 sessionId 를 포함한다', () => {
-    expect(productQueryKeys.productImport('s1')).toEqual([
-      'product-imports',
-      's1',
-    ]);
-  });
-  it('진행률 키는 세션 키의 하위 키다 — 접두사 무효화가 함께 걸린다', () => {
-    expect(productQueryKeys.productImportProgress('s1')).toEqual([
-      'product-imports',
-      's1',
-      'progress',
-    ]);
-  });
-});

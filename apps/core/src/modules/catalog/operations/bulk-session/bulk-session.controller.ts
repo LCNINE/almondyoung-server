@@ -151,6 +151,7 @@ export class BulkSessionController {
   @HttpCode(200)
   @ApiOperation({ summary: '검토 완료 승인. review → awaiting_images | drafting' })
   @ApiResponse({ status: 200, type: BulkSessionProgressDto })
+  @ApiResponse({ status: 404, description: '세션이 없거나 내 것이 아님' })
   @ApiResponse({ status: 409, description: '미결정 충돌이 있거나 review 단계가 아님' })
   async approve(@Param('id') id: string, @User() user: { userId: string }): Promise<BulkSessionProgressDto> {
     return this.service.approve(id, user.userId);
@@ -160,6 +161,7 @@ export class BulkSessionController {
   @HttpCode(200)
   @ApiOperation({ summary: '세션 취소. 진행 중 phase → canceled. failed 도 취소 대상이다.' })
   @ApiResponse({ status: 200, type: BulkSessionProgressDto })
+  @ApiResponse({ status: 404, description: '세션이 없거나 내 것이 아님' })
   @ApiResponse({ status: 409, description: '이미 종료된 세션(published·canceled)' })
   async cancel(@Param('id') id: string, @User() user: { userId: string }): Promise<BulkSessionProgressDto> {
     return this.service.cancel(id, user.userId);
