@@ -43,6 +43,12 @@ export interface ProductVersionDetailResponseDto {
   salesEndDate: Date | null;
   parentVersionId: string | null;
   draftOwnerId: string | null;
+  /**
+   * 일괄 등록/수정 세션이 이 draft 를 잠갔다면 그 세션 id. 화면은 이 값이 있으면
+   * 발행·삭제 버튼을 숨긴다 — 서버가 둘 다 409 로 거부하기 때문이다
+   * (product-versions.service.ts 의 세션 잠금 가드).
+   */
+  bulkSessionId: string | null;
   createdAt: string;
   updatedAt: string;
   images: ProductImageDto[];
@@ -100,6 +106,7 @@ export class ProductVersionMapper {
       salesEndDate: detail.salesEndDate,
       parentVersionId: detail.parentVersionId,
       draftOwnerId: detail.draftOwnerId,
+      bulkSessionId: detail.bulkSessionId ?? null,
       createdAt: DateMapper.toNotNullString(detail.createdAt),
       updatedAt: DateMapper.toNotNullString(detail.updatedAt),
       images: detail.images.map((img) => ProductImageMapper.toDto(img)),

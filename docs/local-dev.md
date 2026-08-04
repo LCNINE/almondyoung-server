@@ -177,6 +177,12 @@ npm run start:main:dev               # core :3100
   안 깨지며 5회 재시도 후 `failed` 로 종료된다(무한 pending 아님). 로컬 셋업이 고장난 게 아니다 — 드레인
   확인 시 이 26건은 제외하고 나머지가 쌓이지 않는지만 본다.
 
+## 상품 일괄 등록/수정 로컬 테스트
+
+admin-web → core → file-service 를 한 노트북에서 전 구간 돌리는 절차는 별도 문서에 있다 —
+`.env` 세 개, `file_contexts` 시드, HS256 우회 로그인이 추가로 필요하다:
+`docs/local-dev-bulk-session.md`
+
 ## 물류 통합 테스트 (jest, 로컬 DB)
 
 inventory/fulfillment 도메인의 통합 테스트(`*.integration.spec.ts`)는 서비스를 직접 와이어링해 실제 postgres 에 대고 도메인 불변식을 검증한다. HTTP·auth·Kafka 를 경유하지 않으므로 `.env` 도 불필요하다.

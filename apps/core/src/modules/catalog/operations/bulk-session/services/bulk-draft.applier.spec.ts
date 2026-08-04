@@ -140,6 +140,8 @@ function createInput(fields: FlatFields): DraftInput {
     payload: { fields },
     // 옵션 없는 상품이 기본값이다. 옵션이 있는 케이스는 행을 명시적으로 넘긴다.
     optionRows: [],
+    // 조합 중복 검사(checkCreateStructure)의 입력. 검사 대상 케이스는 행을 명시적으로 넘긴다.
+    variantRows: [],
     conflictDecision: {},
     baseSnapshot: null,
     images: { fileIdFor: () => undefined },
@@ -258,6 +260,8 @@ function updateInput(fields: FlatFields, overrides: Partial<DraftInput> = {}): D
     payload: { fields },
     // 수정 행은 옵션 구조를 못 바꾸므로 이 배열을 쓰지 않는다(그룹 귀속은 DB 에서 읽는다).
     optionRows: [],
+    // 수정 행은 checkCreateStructure(신규 행 전용)를 타지 않으므로 이 배열도 쓰지 않는다.
+    variantRows: [],
     conflictDecision: {},
     baseSnapshot: {
       product: {},

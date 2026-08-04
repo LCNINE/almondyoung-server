@@ -2,6 +2,7 @@ import {
   buildCategoryPathIndex,
   checkOptionStructure,
   classifyImageSource,
+  extractDirectiveImageKeys,
   resolveCategories,
   resolveImageRefs,
 } from './bulk-session.structure';
@@ -77,6 +78,41 @@ describe('classifyImageSource', () => {
     expect(classifyImageSource('https://example.com/a.jpg')).toEqual({
       error: 'URL 은 지원하지 않습니다. 파일을 직접 올리거나 파일명을 적어주세요.',
     });
+  });
+});
+
+// product-import-image.directive.spec.ts 에서 이식했다 — 6단계가 그 파일을 지웠다.
+//
+// `resolveImageRefs` 의 `addRef` 는 (usage, imageKey) 로 자체 dedup 을 하기 때문에, 이 함수
+// 자체의 dedup(같은 키 반복 시 한 번만 반환)이 깨져도 `resolveImageRefs` 를 통해서는 드러나지
+// 않는다. 그래서 여기서는 `resolveImageRefs` 를 거치지 않고 직접 부른다.
+describe('extractDirectiveImageKeys', () => {
+  it('본문의 imageKey 를 등장 순서로 뽑는다', () => {
+    const md = '앞\n::product-image{imageKey="IMG-2" alt="상세"}\n뒤\n::product-image{imageKey="IMG-3"}';
+    expect(extractDirectiveImageKeys(md)).toEqual(['IMG-2', 'IMG-3']);
+  });
+
+  it('같은 키가 여러 번 나와도 한 번만 돌려준다', () => {
+    const md = '::product-image{imageKey="IMG-2"}\n::product-image{imageKey="IMG-2"}';
+    expect(extractDirectiveImageKeys(md)).toEqual(['IMG-2']);
+  });
+
+  it('속성 순서가 달라도 찾는다', () => {
+    expect(extractDirectiveImageKeys('::product-image{alt="a" imageKey="IMG-9"}')).toEqual(['IMG-9']);
+  });
+
+  it('imageKey 가 없는 디렉티브(이미 fileId 인 것)는 무시한다', () => {
+    const md = '::product-image{fileId="0193aaaa-bbbb-cccc-dddd-eeeeeeeeeeee" alt="x"}';
+    expect(extractDirectiveImageKeys(md)).toEqual([]);
+  });
+
+  it('본문이 없으면 빈 배열', () => {
+    expect(extractDirectiveImageKeys(undefined)).toEqual([]);
+    expect(extractDirectiveImageKeys('')).toEqual([]);
+  });
+
+  it('다른 디렉티브는 건드리지 않는다', () => {
+    expect(extractDirectiveImageKeys('::note{imageKey="IMG-1"}')).toEqual([]);
   });
 });
 

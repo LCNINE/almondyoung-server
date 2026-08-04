@@ -4,7 +4,6 @@
     "declaration": false
   },
   "include": [
-    "apps/core/src/modules/catalog/operations/import/**/*.ts",
     "apps/core/src/modules/catalog/operations/bulk-session/**/*.ts",
     "apps/core/src/modules/catalog/core/products/services/product-versions.service.spec.ts",
     "apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts",

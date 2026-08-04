@@ -169,21 +169,27 @@ export function buildOptionAdd(fields: FlatFields, optionRows: PrefillRow[]): { 
 }
 
 /**
- * 신규 행 옵션 구조를 검증한다 — 스펙에 없던 갭. **(a)(b)(c) 만 검사한다:** (a) 한 그룹 안
+ * 신규 행 옵션 구조를 검증한다 — 스펙에 없던 갭. **(a)(b)(c)(d) 를 검사한다:** (a) 한 그룹 안
  * 값 표시명 중복, (b) 같은 값키가 두 그룹에 걸침, (c) `variant:<조합>` 이 참조하는 옵션값키가
- * 옵션 시트에 없음.
+ * 옵션 시트에 없음, (d) 같은 조합이 두 번 제출됨.
  *
- * **(d) 같은 조합이 두 번 제출됐는지는 의도적으로 구현하지 않았다** — 이 함수의 입력
- * (FlatFields) 만으로는 관측 불가능하기 때문이다. `flattenBundle` 이 `variant:<조합>.<열>` 을
- * 평면 맵의 키로 쓰는데(bulk-session.fields.ts:64), 같은 조합을 쓴 두 원본 행이 있어도 그
- * 평면화 단계에서 뒤 행의 값이 앞 행의 값을 덮어써(마지막 값이 이김, bulk-session.fields.ts:57-66)
- * "몇 번 나왔는지"가 이미 사라진다. 원본 `bundle.variants` 배열이 있어야 검사할 수 있고, 그건
- * 이 함수의 계약(FlatFields 순수 함수) 밖이다. 없는 정보로 검사를 지어내면 거짓 안전감만
- * 생기므로 여기서는 (d) 를 건너뛴다.
+ * (d) 는 `fields`(FlatFields) 만으로는 관측 불가능하다 — `flattenBundle` 이
+ * `variant:<조합>.<열>` 을 평면 맵의 키로 쓰므로(bulk-session.fields.ts:57-66), 같은 조합을
+ * 쓴 두 원본 행이 있어도 평면화 단계에서 뒤 행의 값이 앞 행의 값을 덮어써 "몇 번 나왔는지"가
+ * 이미 사라진다(마지막 값이 조용히 이긴다, 부록 C.4). 그래서 평면화 **이전** 원본
+ * `bundle.variants` 배열을 `variantRows` 로 따로 받아 그 위에서 직접 중복을 센다.
  *
  * @param optionRows `buildOptionAdd` 와 같다 — 그룹 귀속의 유일한 권위 있는 출처.
+ * @param variantRows 이 상품의 업로드 번들 조합 행(`BulkItemInput['bundle']['variants']`) —
+ * (d) 검사의 유일한 출처. 옵션 없는 상품은 조합 문자열이 빈 값(`''`)이고 그런 행은 정확히
+ * 하나여야 한다는 계약이라(`resolveCreatedCombos`, bulk-draft.applier.ts:223-226), 빈 문자열도
+ * 다른 조합과 동일하게 중복 검사 대상이다.
  */
-export function checkCreateStructure(fields: FlatFields, optionRows: PrefillRow[]): RowError[] {
+export function checkCreateStructure(
+  fields: FlatFields,
+  optionRows: PrefillRow[],
+  variantRows: PrefillRow[],
+): RowError[] {
   const { groups, valueGroupKeys, comboKeys } = parseOptionSheet(fields, optionRows);
   const errors: RowError[] = [];
   const push = (message: string): void => {
@@ -214,6 +220,24 @@ export function checkCreateStructure(fields: FlatFields, optionRows: PrefillRow[
         push(`조합이 옵션 시트에 없는 옵션값키를 참조합니다: ${part} (조합: ${combo})`);
       }
     }
+  }
+
+  // (d) 같은 조합이 두 번 제출됐는지 — 평면화 이전 원본 행에서 직접 센다(함수 독스트링 참조).
+  // 빈 문자열(옵션 없는 상품)도 다른 조합과 동일하게 취급한다: 그런 상품은 조합 행이
+  // 정확히 하나여야 정상이고, 둘 이상이면 뒤 값이 앞 값을 조용히 덮어쓰는 같은 사고다.
+  const seenCombos = new Set<string>();
+  const duplicatedCombos = new Set<string>();
+  for (const row of variantRows) {
+    const combo = row.combination ?? '';
+    if (seenCombos.has(combo)) duplicatedCombos.add(combo);
+    else seenCombos.add(combo);
+  }
+  for (const combo of duplicatedCombos) {
+    errors.push({
+      sheet: '조합',
+      rowNumber: 0,
+      message: `같은 조합이 두 번 이상 적혀 있습니다: ${combo || '(옵션 없음)'}`,
+    });
   }
 
   return errors;
