@@ -47,6 +47,23 @@ services:
     depends_on:
       - zookeeper
 
+  # 검색(apps/search)용. 라이브는 Railway OpenSearch 를 보는데, 로컬에서 그걸 그대로
+  # 쓰면 로컬 조작이 운영 검색 인덱스를 오염시킨다. nori 포함 이미지는 scripts/local/opensearch.
+  opensearch:
+    build:
+      context: ./scripts/local/opensearch
+    ports:
+      - '9200:9200'
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: 'true'
+      DISABLE_INSTALL_DEMO_CONFIG: 'true'
+      # colima 기본 VM 이 넉넉하지 않다 — 힙을 명시하지 않으면 호스트 메모리의 절반을 잡는다.
+      OPENSEARCH_JAVA_OPTS: '-Xms512m -Xmx512m'
+    volumes:
+      - local_opensearch_data:/usr/share/opensearch/data
+
 volumes:
   local_postgres_data:
   local_redis_data:
+  local_opensearch_data:
