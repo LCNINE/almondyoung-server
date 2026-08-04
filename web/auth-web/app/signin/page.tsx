@@ -1,6 +1,7 @@
 import { AuthShell } from "@/components/auth-shell"
 import { ReloginNotice } from "@/components/relogin-notice"
 import { SignInForm } from "@/components/signin-form"
+import { listAccounts } from "@/lib/account-store"
 import { sanitizeRedirectTo } from "@/lib/redirect"
 
 type SearchParams = Promise<{
@@ -19,6 +20,7 @@ export default async function SignInPage({
   const prefilledLoginId = (params.login_id ?? "").trim()
   const reauthUserId = (params.reauth_user_id ?? "").trim()
   const isReauth = reauthUserId.length > 0
+  const hasAccounts = (await listAccounts()).length > 0
   // 재인증인데 loginId 를 알면 어느 계정의 비밀번호를 묻는지 명시한다. loginId 를 모르는
   // (옛 메타 쿠키) 경우만 일반 안내 문구로 폴백.
   const reauthSubtitle = prefilledLoginId
@@ -40,6 +42,7 @@ export default async function SignInPage({
         redirectTo={redirectTo}
         prefilledLoginId={prefilledLoginId}
         reauthUserId={reauthUserId}
+        hasAccounts={hasAccounts}
       />
     </AuthShell>
   )

@@ -49,17 +49,19 @@ export type RegisterBusinessActionResult =
   | { ok: true; approved: boolean }
   | { ok: false; error: string }
 
+export type RecoveryField = "loginId" | "phoneNumber" | "code"
+
 export type SendRecoveryCodeResult =
   | { ok: true; message: string; phoneNumber: string }
-  | { ok: false; error: string }
+  | { ok: false; error: string; field?: RecoveryField }
 
 export type FindUserIdActionResult =
   | { ok: true; loginIds: string[] }
-  | { ok: false; error: string }
+  | { ok: false; error: string; field?: RecoveryField }
 
 export type StartPasswordResetResult =
   | { ok: true }
-  | { ok: false; error: string }
+  | { ok: false; error: string; field?: RecoveryField }
 
 export type ResetForgottenPasswordResult =
   | { ok: true }
@@ -91,7 +93,7 @@ async function promoteTokens(
   }
 
   if (expectUserId && me.id !== expectUserId) {
-    throw new Error(
+    throw new UserFacingError(
       "재인증을 요청한 계정과 다른 계정입니다. 계정 리스트에서 다시 시도하거나, 다른 계정으로 로그인하려면 일반 로그인을 이용해주세요."
     )
   }
@@ -151,13 +153,30 @@ async function redirectAfterAuth(
   redirect(redirectTo ?? "/")
 }
 
+class UserFacingError extends Error {}
+
 /**
  * 화면에 보여줄 에러 문구. ApiError.message 는 `[ctx] 404: ...` 형태의 디버깅용이라
  * 그대로 노출하면 안 된다 — 서버가 내려준 원본 문구(serverMessage)만 쓴다.
+ * ApiError/UserFacingError 가 아닌 것(네트워크 오류 등)은 fallback 으로 가린다.
  */
 function userMessage(e: unknown, fallback: string) {
   if (e instanceof ApiError) return e.serverMessage
-  return e instanceof Error ? e.message : fallback
+  if (e instanceof UserFacingError) return e.message
+  return fallback
+}
+
+function fieldFromMessage(message: string): RecoveryField | undefined {
+  if (message.includes("아이디")) return "loginId"
+  if (message.includes("인증번호")) return "code"
+  if (message.includes("휴대폰") || message.includes("전화번호"))
+    return "phoneNumber"
+  return undefined
+}
+
+function failure(e: unknown, fallback: string) {
+  const error = userMessage(e, fallback)
+  return { ok: false as const, error, field: fieldFromMessage(error) }
 }
 
 function getNormalizedPhoneNumber(formData: FormData) {
@@ -166,7 +185,7 @@ function getNormalizedPhoneNumber(formData: FormData) {
   )
 
   if (!phoneNumber) {
-    throw new Error("휴대폰 번호를 확인해주세요. 예: 01012345678")
+    throw new UserFacingError("휴대폰 번호를 확인해주세요. 예: 01012345678")
   }
 
   return phoneNumber
@@ -176,7 +195,7 @@ function getVerificationCode(formData: FormData) {
   const code = String(formData.get("code") ?? "").trim()
 
   if (!/^\d{6}$/.test(code)) {
-    throw new Error("인증번호 6자리를 입력해주세요.")
+    throw new UserFacingError("인증번호 6자리를 입력해주세요.")
   }
 
   return code
@@ -188,7 +207,7 @@ async function setPasswordResetTokenCookie(token: string) {
     httpOnly: true,
     secure: env.cookieSecure,
     sameSite: env.cookieSameSite,
-    path: "/forgot-password",
+    path: "/find-account",
     maxAge: PASSWORD_RESET_TOKEN_MAX_AGE,
   })
 }
@@ -204,7 +223,7 @@ async function clearPasswordResetTokenCookie() {
     httpOnly: true,
     secure: env.cookieSecure,
     sameSite: env.cookieSameSite,
-    path: "/forgot-password",
+    path: "/find-account",
     maxAge: 0,
   })
 }
@@ -223,13 +242,7 @@ export async function sendRecoveryCodeAction(
 
     return { ok: true, message: result.message, phoneNumber }
   } catch (e) {
-    return {
-      ok: false,
-      error: userMessage(
-        e,
-        "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요."
-      ),
-    }
+    return failure(e, "인증번호를 보내지 못했어요. 잠시 후 다시 시도해 주세요.")
   }
 }
 
@@ -245,41 +258,25 @@ export async function findUserIdAction(
 
     return { ok: true, loginIds: result.loginIds }
   } catch (e) {
-    return {
-      ok: false,
-      error: userMessage(
-        e,
-        "아이디를 찾지 못했어요. 입력한 정보를 확인해 주세요."
-      ),
-    }
+    return failure(e, "아이디를 찾지 못했어요. 입력한 정보를 확인해 주세요.")
   }
 }
 
-export async function startPasswordResetAction(
-  formData: FormData
+/**
+ * 아이디 찾기로 이미 번호 인증을 마친 상태에서, 고른 계정의 재설정 토큰만 발급받는다.
+ * 인증번호를 다시 받지 않는다 — user-service 가 phone_verifications 로 본인 확인을 재검증한다.
+ */
+export async function issuePasswordResetTokenAction(
+  loginId: string,
+  phoneNumber: string
 ): Promise<StartPasswordResetResult> {
   try {
-    const loginId = String(formData.get("loginId") ?? "").trim()
-    const phoneNumber = getNormalizedPhoneNumber(formData)
-    const code = getVerificationCode(formData)
-
-    if (!loginId) {
-      throw new Error("아이디를 입력해주세요.")
-    }
-
-    await verifyPhoneCode({ phoneNumber, code })
     const result = await forgotPassword({ loginId, phoneNumber })
     await setPasswordResetTokenCookie(result.verificationToken)
 
     return { ok: true }
   } catch (e) {
-    return {
-      ok: false,
-      error: userMessage(
-        e,
-        "본인 확인에 실패했어요. 입력한 정보를 확인해 주세요."
-      ),
-    }
+    return failure(e, "본인 확인에 실패했어요. 다시 인증해 주세요.")
   }
 }
 
@@ -291,11 +288,11 @@ export async function resetForgottenPasswordAction(
     const passwordConfirm = String(formData.get("passwordConfirm") ?? "")
 
     if (password !== passwordConfirm) {
-      throw new Error("비밀번호가 일치하지 않습니다.")
+      throw new UserFacingError("비밀번호가 일치하지 않습니다.")
     }
 
     if (password.length < 8 || password.length > 20) {
-      throw new Error("비밀번호는 8~20자여야 합니다.")
+      throw new UserFacingError("비밀번호는 8~20자여야 합니다.")
     }
 
     if (
@@ -303,14 +300,14 @@ export async function resetForgottenPasswordAction(
         password
       )
     ) {
-      throw new Error(
+      throw new UserFacingError(
         "비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다."
       )
     }
 
     const token = await getPasswordResetTokenCookie()
     if (!token) {
-      throw new Error(
+      throw new UserFacingError(
         "비밀번호 재설정 인증이 만료되었습니다. 다시 인증해주세요."
       )
     }
