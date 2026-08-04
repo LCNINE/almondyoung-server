@@ -6,6 +6,8 @@
   "couponGroupRestricted": "このクーポンは対象のお客様のみご利用いただけます。",
   "couponNotStarted": "まだ発行期間ではないクーポンです。",
   "couponNotAssigned": "発行済みのお客様のみご利用いただけるクーポンです。",
+  "couponExhausted": "発行枚数がすべて終了しました。",
+  "usableNow": "すぐに使えるクーポンです",
   "discountPercent": "{value}% 割引",
   "discountAmount": "{amount}ウォン 割引",
   "expiresAt": "{date} まで有効",
