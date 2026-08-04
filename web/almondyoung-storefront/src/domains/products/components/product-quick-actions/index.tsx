@@ -24,6 +24,8 @@ interface ProductQuickActionsProps {
   countryCode?: string
   onWishlistChange?: (isWishlisted: boolean) => void
   isWelcomeMembership?: boolean
+  /** 멤버십 전용 구매 상품을 비회원이 보는 중인지 */
+  membersOnlyPurchase?: boolean
 }
 
 /**
@@ -42,6 +44,7 @@ export function ProductQuickActions({
   countryCode = "kr",
   onWishlistChange,
   isWelcomeMembership = false,
+  membersOnlyPurchase = false,
 }: ProductQuickActionsProps) {
   const t = useTranslations("productCard")
   const [isPending, startTransition] = useTransition()
@@ -194,8 +197,7 @@ export function ProductQuickActions({
         />
       </Button>
 
-      {/* 장바구니 버튼 / 수량 선택 UI - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
-      {!showQuantitySelector ? (
+      {membersOnlyPurchase ? null : !showQuantitySelector ? (
         <Button
           variant="ghost"
           size="icon"

@@ -22,5 +22,6 @@
   "quickAddToCart": "カートに追加",
   "quickAddToCartWithPrice": "{price} カートに追加",
   "quickAddSelect": "オプションを選択してください",
-  "quickAddError": "オプション情報を読み込めませんでした。"
+  "quickAddError": "オプション情報を読み込めませんでした。",
+  "membersOnly": "メンバー限定"
 }
