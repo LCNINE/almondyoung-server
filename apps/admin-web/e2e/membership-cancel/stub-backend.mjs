@@ -329,6 +329,31 @@ function routes(pathname, method, body, params) {
       },
     ];
 
+    rows.push({
+      userId: 'e2e-user-4',
+      contractId: '44444444-4444-4444-8444-444444444444',
+      status: 'EXPIRED',
+      tierCode: 'MEMBERSHIP',
+      planDurationDays: 30,
+      startsAt: plus(-60),
+      endsAt: plus(-30),
+      createdAt: new Date(Date.now() - 60 * 86400000).toISOString(),
+      cancelledAt: null,
+      // 해지 예약 후 이용 종료일이 지나 실제로 끝난 건.
+      recurringCancelledAt: new Date(Date.now() - 45 * 86400000).toISOString(),
+      cancellationReasonCode: null,
+      cancellationReasonText: '이용하지 않아요',
+      recurringCancellationReasonCode: 'NOT_USING',
+      autoRenewal: false,
+      firstContractCreatedAt: new Date(Date.now() - 60 * 86400000).toISOString(),
+      refundRequested: false,
+      refundCompleted: false,
+      refundCompletedAt: null,
+      eligibleRefundAmount: null,
+      hasPaymentIntent: true,
+      billingPath: 'CHARGE',
+    });
+
     // 서버가 실제로 하는 필터를 그대로 흉내낸다 — 화면이 파라미터를 제대로 보내는지 검증하기 위함.
     const status = params?.get('status') ?? 'CANCELLED_ANY';
     const refundPending = params?.get('refundPending') === 'true';
@@ -338,7 +363,9 @@ function routes(pathname, method, body, params) {
           ? r.status === 'CANCELLED'
           : status === 'RECURRING_CANCELLED'
             ? r.status === 'ACTIVE' && !!r.recurringCancelledAt
-            : true,
+            : status === 'RECURRING_CANCELLED_ENDED'
+              ? r.status === 'EXPIRED' && !!r.recurringCancelledAt
+              : true,
       )
       .filter((r) => (refundPending ? r.refundRequested && !r.refundCompleted : true));
 

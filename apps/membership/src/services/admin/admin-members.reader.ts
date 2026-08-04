@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ConflictError } from '@app/shared';
+import { BadRequestError, ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -14,11 +14,30 @@ import {
   SubscriptionContractReader,
 } from '../subscription/subscription-contract.reader';
 
+/** 목록 필터로 허용되는 상태값. 모르는 값을 조용히 무시하면 '해지 내역' 이 '전체 회원' 이 된다. */
+export const ADMIN_MEMBER_STATUS_FILTERS = [
+  'ACTIVE',
+  'PAUSED',
+  'CANCELLED',
+  'EXPIRED',
+  'RECURRING_CANCELLED',
+  'RECURRING_CANCELLED_ENDED',
+  'CANCELLED_ANY',
+] as const;
+
+export type AdminMemberStatusFilter = (typeof ADMIN_MEMBER_STATUS_FILTERS)[number];
+
 export interface AdminMembersQuery {
   page?: number;
   limit?: number;
-  /** CANCELLED_ANY = 즉시해지(CANCELLED) + 해지예약(ACTIVE+recurringCancelledAt). 해지 내역 화면 기본값. */
-  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED' | 'CANCELLED_ANY';
+  /**
+   * 생략하면 전체. 해지 내역 화면은 `CANCELLED_ANY`(해지한 사람만) 를 쓴다.
+   *  - `CANCELLED`                 즉시해지·강제취소로 이미 끝난 계약
+   *  - `RECURRING_CANCELLED`       해지 예약(잔여기간 이용 중)
+   *  - `RECURRING_CANCELLED_ENDED` 해지 예약이 이용 종료일을 지나 실제로 끝난 계약
+   *  - `CANCELLED_ANY`             위 셋의 합집합
+   */
+  status?: AdminMemberStatusFilter;
   /** userId partial search */
   q?: string;
   /** filter by resolved userIds (from user-service lookup) */
@@ -286,6 +305,12 @@ export class AdminMembersReader {
     const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt', refundPending } = query;
     const offset = (page - 1) * limit;
 
+    // 모르는 상태값을 조용히 무시하면 조건이 통째로 빠져 '해지 내역' 화면에 전체 회원이 나온다.
+    // 배포 과도기(옛 서버 + 새 화면)에 그렇게 되면 CS 가 목록을 믿을 수 없다 — 명시적으로 거부한다.
+    if (status !== undefined && !ADMIN_MEMBER_STATUS_FILTERS.includes(status)) {
+      throw new BadRequestError(`알 수 없는 상태 필터입니다: ${String(status)}`);
+    }
+
     const baseConditions: SQL[] = [];
 
     if (q) {
@@ -330,16 +355,20 @@ export class AdminMembersReader {
     } else if (status === 'EXPIRED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'EXPIRED'));
     } else if (status === 'CANCELLED_ANY') {
-      // 해지 내역 화면: 이미 끝난 건(CANCELLED)과 잔여기간 이용 중인 예약 해지를 한 목록에서 본다.
+      // 해지 내역 화면: 즉시해지 + 해지예약(이용 중) + 해지예약 후 종료. 해지하지 않은 회원은 들어오지 않는다.
       baseConditions.push(
         or(
           eq(schema.subscriptionContracts.status, 'CANCELLED'),
           and(
-            eq(schema.subscriptionContracts.status, 'ACTIVE'),
+            inArray(schema.subscriptionContracts.status, ['ACTIVE', 'EXPIRED']),
             isNotNull(schema.subscriptionContracts.recurringCancelledAt),
           ),
         ) as SQL,
       );
+    } else if (status === 'RECURRING_CANCELLED_ENDED') {
+      // 해지 예약이 이용 종료일을 지나 실제로 끝난 계약. 그냥 만료(1회 결제 종료 등)와 구분된다.
+      baseConditions.push(eq(schema.subscriptionContracts.status, 'EXPIRED'));
+      baseConditions.push(isNotNull(schema.subscriptionContracts.recurringCancelledAt));
     } else if (status === 'RECURRING_CANCELLED') {
       // 정기결제 해지됐으나 현재 주기는 유효(ACTIVE)한 "해지 예약" 상태.
       // autoRenewal=false 는 one_time 가입자도 가지므로 식별자가 될 수 없다.

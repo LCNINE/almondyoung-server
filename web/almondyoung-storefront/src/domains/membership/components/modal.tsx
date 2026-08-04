@@ -234,6 +234,12 @@ export function MembershipCancelModal({
                       date: fmt(atPeriodEnd?.effectiveEndsAt),
                     })}
                   </span>
+                  {/* 아직 출금 전이라면 '예약' 을 고르는 순간 이번 기간 요금이 나간다 — 고르기 전에 알려야 한다. */}
+                  {preCollection && (
+                    <span className="text-muted-foreground text-xs leading-4">
+                      {t("atPeriodEndPreCollectionNote")}
+                    </span>
+                  )}
                 </span>
               </label>
 
@@ -265,6 +271,19 @@ export function MembershipCancelModal({
                       ? t("modeImmediatePreCollectionDesc")
                       : t("modeImmediateDesc")}
                   </span>
+                  {/* 왜 환불이 되는지를 알려준다 — 금액만 보여주면 고객은 근거를 알 수 없다. */}
+                  {immediate?.refundKind === "WITHDRAWAL_FULL" && (
+                    <span className="text-primary text-xs leading-4">
+                      {t("whyWithdrawal", {
+                        days: preview?.withdrawalWindowDays ?? 7,
+                      })}
+                    </span>
+                  )}
+                  {immediate?.refundKind === "ANNUAL_PRORATION" && (
+                    <span className="text-primary text-xs leading-4">
+                      {t("whyAnnual")}
+                    </span>
+                  )}
                   {/* 연간 중도해지 정산 내역 — 왜 이 금액인지 그대로 보여준다 */}
                   {immediate?.breakdown && (
                     <span className="text-muted-foreground mt-1 flex flex-col gap-0.5 text-xs leading-4">

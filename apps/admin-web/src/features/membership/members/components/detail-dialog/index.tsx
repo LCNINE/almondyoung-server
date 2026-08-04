@@ -698,6 +698,68 @@ function PeriodTab({ userId }: { userId: string }) {
   );
 }
 
+/**
+ * 이 계약을 지금 해지하면 어떻게 되는지 — 다이얼로그를 열기 전에 탭 본문에서 바로 보여준다.
+ *
+ * CS 가 고객 문의를 받는 순간 필요한 정보다: 환불이 되는지, 얼마인지, 왜 그런지, 돈이 자동으로
+ * 나가는지 사람이 송금해야 하는지. 강제취소 다이얼로그를 열어야만 알 수 있으면 그 전에 잘못 안내한다.
+ */
+function CancellationVerdict({ contractId }: { contractId: string }) {
+  const { data: quote, isLoading } = useCancellationQuote(contractId, true);
+  const immediate = quote?.options.find((o) => o.mode === 'IMMEDIATE_REFUND');
+
+  if (isLoading) return <Skeleton className="h-24 w-full bg-gray-200" />;
+  if (!immediate) return null;
+
+  const manual = immediate.refundExecution === 'MANUAL';
+  const kindLabel =
+    immediate.refundKind === 'WITHDRAWAL_FULL'
+      ? `청약철회(결제 ${quote?.withdrawalWindowDays ?? 7}일 내 · 혜택 미사용) — 전액 환불`
+      : immediate.refundKind === 'ANNUAL_PRORATION'
+        ? '연간 중도해지 — 이용 기간을 월 정가로 정산'
+        : immediate.refundKind === 'PRE_COLLECTION_WITHDRAWAL'
+          ? '출금 전 — 청구 없이 종료(돌려줄 금액 없음)'
+          : null;
+
+  return (
+    <Card
+      className={immediate.available ? 'border-emerald-300 bg-emerald-50/50' : 'border-amber-300 bg-amber-50/50'}
+      data-testid="cancellation-verdict"
+    >
+      <CardHeader>
+        <CardTitle className="text-sm">지금 해지하면</CardTitle>
+        <CardDescription>
+          {immediate.available
+            ? '즉시 해지와 해지 예약 중 고객이 고를 수 있습니다.'
+            : '즉시 해지는 불가하고 해지 예약만 가능합니다.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-1.5 text-sm">
+        {immediate.available ? (
+          <>
+            <p className="font-semibold">
+              즉시 해지 시 환불 {immediate.refundAmount.toLocaleString()}원
+            </p>
+            {kindLabel && <p className="text-xs text-muted-foreground">{kindLabel}</p>}
+            {immediate.refundAmount > 0 && (
+              <p className={`text-xs ${manual ? 'font-semibold text-amber-800' : 'text-muted-foreground'}`}>
+                {manual
+                  ? '자동이체(효성 CMS) 결제라 PG 환불이 불가합니다 — 고객이 입력한 계좌로 관리자가 직접 송금해야 합니다.'
+                  : 'PG 자동환불로 처리됩니다(별도 송금 불필요).'}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-xs leading-5 text-amber-900">{immediate.unavailableReason}</p>
+        )}
+        <p className="text-xs text-muted-foreground">
+          해지 예약 시 {formatDate(quote?.currentPeriodEndsAt)}까지 이용 후 종료되며 이후 청구되지 않습니다.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // 두번째 탭: 플랜 / 결제 방식 / 해지·환불 관리
 //
 // 해지는 두 가지뿐이고 둘 다 1급 액션으로 노출한다.
@@ -939,6 +1001,9 @@ function PlanTab({
           )}
         </CardContent>
       </Card>
+
+      {/* 지금 해지하면 어떻게 되는지 — 다이얼로그를 열기 전에 보여준다 */}
+      {isActive && <CancellationVerdict contractId={contractId} />}
 
       {/* 해지 예약 상태 + 철회 */}
       {isCancellationScheduled && (

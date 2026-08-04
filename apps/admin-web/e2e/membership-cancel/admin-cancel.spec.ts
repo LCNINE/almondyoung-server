@@ -40,19 +40,38 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   const rows = (page: import('playwright/test').Page) => page.getByRole('row');
 
-  test('즉시 해지와 해지 예약이 한 목록에 함께 보인다', async ({ page }) => {
+  test('해지한 사람의 세 상태가 한 목록에 함께 보인다', async ({ page }) => {
     await page.goto('/membership/cancellations');
-    await expect(page.getByText('즉시 해지').first()).toBeVisible();
+    const table = page.getByRole('table');
+    await expect(table.getByText('즉시 해지').first()).toBeVisible();
     // 예약 해지가 빠지면 고객이 해지 신청한 건을 CS 가 이 화면에서 찾을 수 없다.
-    await expect(page.getByText('해지 예약').first()).toBeVisible();
-    await expect(rows(page)).toHaveCount(4); // 헤더 + 3행
+    await expect(table.getByText('해지 예약', { exact: true }).first()).toBeVisible();
+    // 이용 종료까지 끝난 건은 별도 상태로 구분된다.
+    await expect(table.getByText('해지 완료').first()).toBeVisible();
+    await expect(rows(page)).toHaveCount(5); // 헤더 + 4행
+  });
+
+  test('해지 신청 시각을 분 단위까지 보여준다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    // 같은 날 여러 건이 들어오면 순서를 알 수 없다 — 날짜만으로는 부족하다.
+    await expect(page.getByRole('columnheader', { name: '해지 신청일시' })).toBeVisible();
+    await expect(page.getByText(/\d{2}\. \d{2}\. \d{2}\..*\d{2}:\d{2}/).first()).toBeVisible();
+  });
+
+  test('이용 종료까지 끝난 해지 건만 골라볼 수 있다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    await page.getByRole('radio', { name: '해지 완료' }).click();
+    await page.getByRole('button', { name: '검색' }).click();
+
+    await expect(rows(page)).toHaveCount(2);
+    await expect(page.getByRole('table').getByText('해지 완료')).toBeVisible();
   });
 
   test('환불 금액과 상태가 행에서 바로 보인다', async ({ page }) => {
     await page.goto('/membership/cancellations');
     await expect(page.getByText('4,990원 · 미완료 — 처리 필요')).toBeVisible();
     await expect(page.getByText('34,930원 · 완료')).toBeVisible();
-    await expect(page.getByText('환불 없음')).toBeVisible();
+    await expect(page.getByText('환불 없음').first()).toBeVisible();
   });
 
   test('환불 미완료만 보기로 돈이 안 나간 건을 추릴 수 있다', async ({ page }) => {
@@ -67,7 +86,7 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   test('해지 유형으로 예약 건만 골라볼 수 있다', async ({ page }) => {
     await page.goto('/membership/cancellations');
-    await page.getByRole('radio', { name: '해지 예약' }).click();
+    await page.getByRole('radio', { name: '해지 예약(이용 중)' }).click();
     await page.getByRole('button', { name: '검색' }).click();
 
     await expect(rows(page)).toHaveCount(2);
@@ -97,6 +116,27 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     } else {
       await expect(dialog.getByText('정기결제 (자동갱신)')).toBeVisible();
     }
+  });
+
+  // CS 가 문의를 받는 순간 필요한 판정이다 — 다이얼로그를 열어야만 알 수 있으면 그 전에 잘못 안내한다.
+  test('해지·환불 탭이 지금 해지하면 어떻게 되는지 먼저 알려준다', async ({ page }) => {
+    test.skip(!['monthly-cms', 'annual'].includes(SCENARIO), '견적이 있는 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    const verdict = dialog.getByTestId('cancellation-verdict');
+    await expect(verdict).toBeVisible();
+
+    if (SCENARIO === 'monthly-cms') {
+      await expect(verdict.getByText(/즉시 해지 시 환불 4,990원/)).toBeVisible();
+      await expect(verdict.getByText(/청약철회/)).toBeVisible();
+      // 돈이 자동으로 나가는지 사람이 보내야 하는지가 이 화면의 핵심이다.
+      await expect(verdict.getByText(/관리자가 직접 송금해야 합니다/)).toBeVisible();
+    } else {
+      await expect(verdict.getByText(/즉시 해지 시 환불 34,930원/)).toBeVisible();
+      await expect(verdict.getByText(/연간 중도해지/)).toBeVisible();
+      await expect(verdict.getByText(/PG 자동환불로 처리됩니다/)).toBeVisible();
+    }
+    await expect(verdict.getByText(/해지 예약 시 .*까지 이용 후 종료/)).toBeVisible();
   });
 
   test('해지 예약은 사유 없이는 확정할 수 없다', async ({ page, request }) => {

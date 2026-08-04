@@ -16,7 +16,7 @@ import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } 
 type SearchType = 'userId' | 'member';
 type DateCriteria = 'createdAt' | 'cancelledAt';
 /** 해지 유형 — 즉시 종료된 건과 잔여기간을 쓰고 있는 예약 건은 CS 대응이 다르다. */
-type CancelKind = 'ALL' | 'IMMEDIATE' | 'SCHEDULED';
+type CancelKind = 'ALL' | 'IMMEDIATE' | 'SCHEDULED' | 'ENDED';
 
 interface FilterState {
   dateCriteria: DateCriteria;
@@ -139,7 +139,8 @@ export function CancellationsFilterBox() {
             options={[
               { value: 'ALL', label: '전체' },
               { value: 'IMMEDIATE', label: '즉시 해지' },
-              { value: 'SCHEDULED', label: '해지 예약' },
+              { value: 'SCHEDULED', label: '해지 예약(이용 중)' },
+              { value: 'ENDED', label: '해지 완료' },
             ]}
             orientation="horizontal"
           />

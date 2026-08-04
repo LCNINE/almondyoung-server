@@ -27,7 +27,7 @@ import { AuthorizationService, RequireScopes } from '@app/authorization';
 import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
-import { AdminMembersReader } from '../services/admin/admin-members.reader';
+import { AdminMembersReader, AdminMemberStatusFilter } from '../services/admin/admin-members.reader';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { ContractEventManager } from '../services/subscription/contract-event.manager';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
@@ -873,14 +873,7 @@ export class AdminOperationsController {
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
-        status: status as
-          | 'ACTIVE'
-          | 'PAUSED'
-          | 'CANCELLED'
-          | 'EXPIRED'
-          | 'RECURRING_CANCELLED'
-          | 'CANCELLED_ANY'
-          | undefined,
+        status: status as AdminMemberStatusFilter | undefined,
         q,
         userIds: normalizedUserIds,
         dateFrom,

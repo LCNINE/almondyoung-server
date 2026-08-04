@@ -23,12 +23,28 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
-/** 해지 유형 — 즉시 종료된 건과 잔여기간을 쓰고 있는 예약 건은 CS 대응이 다르다. */
-function getCancelKind(row: AdminMemberListItem): { label: string; className: string } {
+/**
+ * 해지 유형 — 즉시 종료 / 잔여기간 이용 중 / 예약 후 실제 종료는 CS 대응이 각각 다르다.
+ *
+ * 근거(cancelledAt·recurringCancelledAt)가 없으면 아무 유형도 단정하지 않는다. 옛 서버 응답이나
+ * 필터가 어긋난 경우에 '해지 예약' 으로 보이면 해지하지도 않은 회원이 해지자로 읽힌다.
+ */
+function getCancelKind(
+  row: AdminMemberListItem
+): { label: string; className: string } | null {
   if (row.status === 'CANCELLED') {
     return { label: '즉시 해지', className: 'bg-red-50 text-red-700 border-red-200' };
   }
+  if (!row.recurringCancelledAt) return null;
+  if (row.status === 'EXPIRED') {
+    return { label: '해지 완료', className: 'bg-gray-100 text-gray-700 border-gray-300' };
+  }
   return { label: '해지 예약', className: 'bg-amber-50 text-amber-800 border-amber-200' };
+}
+
+/** 해지를 신청한 시각. 예약 해지는 cancelledAt 이 비어 있고 recurringCancelledAt 에 있다. */
+function getCancelledAt(row: AdminMemberListItem): string | null {
+  return row.cancelledAt ?? row.recurringCancelledAt ?? null;
 }
 
 /**
@@ -114,6 +130,7 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
         header: '해지 유형',
         cell: ({ row }) => {
           const kind = getCancelKind(row.original);
+          if (!kind) return <span className="text-sm text-muted-foreground">-</span>;
           return (
             <span className={`rounded border px-1.5 py-0.5 text-xs ${kind.className}`}>
               {kind.label}
@@ -122,13 +139,21 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
         },
       }),
       columnHelper.accessor('cancelledAt', {
-        header: '해지일',
+        header: '해지 신청일시',
         cell: ({ row }) => {
-          // 예약 해지는 cancelledAt 이 비어 있다 — 신청 시각은 recurringCancelledAt 에 있다.
-          const v = row.original.cancelledAt ?? row.original.recurringCancelledAt ?? null;
+          const v = getCancelledAt(row.original);
+          // 같은 날 여러 건이 들어오면 순서를 알 수 없다 — 분 단위까지 보여준다.
           return (
-            <span className="text-sm">
-              {v ? new Date(v).toLocaleDateString('ko-KR') : '-'}
+            <span className="text-sm whitespace-nowrap">
+              {v
+                ? new Date(v).toLocaleString('ko-KR', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : '-'}
             </span>
           );
         },
@@ -193,7 +218,13 @@ export function CancellationsTable() {
   const searchParams = useSearchParams();
   const cancelKind = searchParams.get('cancelKind') ?? 'ALL';
   const status =
-    cancelKind === 'IMMEDIATE' ? 'CANCELLED' : cancelKind === 'SCHEDULED' ? 'RECURRING_CANCELLED' : 'CANCELLED_ANY';
+    cancelKind === 'IMMEDIATE'
+      ? 'CANCELLED'
+      : cancelKind === 'SCHEDULED'
+        ? 'RECURRING_CANCELLED'
+        : cancelKind === 'ENDED'
+          ? 'RECURRING_CANCELLED_ENDED'
+          : 'CANCELLED_ANY';
   const refundPending = searchParams.get('refundPending') === 'true' ? true : undefined;
 
   const membershipQuery = memberQ && resolvedUserIds !== null

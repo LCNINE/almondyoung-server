@@ -1364,6 +1364,86 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     });
   });
 
+  // 해지 내역 화면은 '해지한 사람' 만 보여야 한다. 해지하지 않은 회원이 섞이면 CS 가 목록을 믿을 수 없다.
+  describe('관리자 — 해지 내역 목록 필터', () => {
+    /** 해지 예약 → 이용 종료일이 지나 실제로 끝난 계약 */
+    async function givenEndedAfterSchedule() {
+      const s = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.cancelSubscription(s.userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      await db.db
+        .update(schema.subscriptionContracts)
+        .set({ status: 'EXPIRED' })
+        .where(eq(schema.subscriptionContracts.id, s.contract.id));
+      return s;
+    }
+
+    it('해지하지 않은 회원은 목록에 없다', async () => {
+      const active = await givenSubscription({ daysSincePeriodStart: 5 });
+      // 해지 없이 그냥 만료된 계약(1회 결제 종료 등)도 해지 내역이 아니다.
+      const expiredOnly = await givenSubscription({ daysSincePeriodStart: 40, recurring: false });
+      await db.db
+        .update(schema.subscriptionContracts)
+        .set({ status: 'EXPIRED' })
+        .where(eq(schema.subscriptionContracts.id, expiredOnly.contract.id));
+
+      const scheduled = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.cancelSubscription(scheduled.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+      const immediate = await givenSubscription({ daysSincePeriodStart: 2 });
+      await service.cancelSubscription(immediate.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+      });
+      const ended = await givenEndedAfterSchedule();
+
+      const list = await adminReader.findAllWithDetails({ status: 'CANCELLED_ANY', limit: 100 });
+      const userIds = list.data.map((r) => r.userId);
+
+      expect(userIds).toContain(scheduled.userId);
+      expect(userIds).toContain(immediate.userId);
+      expect(userIds).toContain(ended.userId);
+      expect(userIds).not.toContain(active.userId);
+      expect(userIds).not.toContain(expiredOnly.userId);
+    });
+
+    it('해지 예약 건은 신청 시각을 내려준다 (화면이 날짜·시간을 보여줄 수 있게)', async () => {
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      const list = await adminReader.findAllWithDetails({ status: 'RECURRING_CANCELLED', limit: 100 });
+      const row = list.data.find((r) => r.userId === userId)!;
+
+      expect(row.cancelledAt).toBeNull();
+      expect(row.recurringCancelledAt).not.toBeNull();
+      // 시각까지 남아야 같은 날 여러 건의 순서를 알 수 있다.
+      expect(new Date(row.recurringCancelledAt!).getTime()).toBeGreaterThan(0);
+    });
+
+    it('이용 종료로 실제 끝난 해지 건만 따로 볼 수 있다', async () => {
+      const ended = await givenEndedAfterSchedule();
+      const stillUsing = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.cancelSubscription(stillUsing.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+
+      const list = await adminReader.findAllWithDetails({ status: 'RECURRING_CANCELLED_ENDED', limit: 100 });
+      const userIds = list.data.map((r) => r.userId);
+
+      expect(userIds).toContain(ended.userId);
+      expect(userIds).not.toContain(stillUsing.userId);
+    });
+
+    // 옛 서버 + 새 화면 조합에서 조건이 통째로 빠지면 '해지 내역' 이 '전체 회원' 이 된다.
+    it('모르는 상태 필터는 조용히 무시하지 않고 거부한다', async () => {
+      await expect(
+        adminReader.findAllWithDetails({ status: 'NOT_A_STATUS' as never, limit: 10 }),
+      ).rejects.toThrow(BadRequestError);
+    });
+  });
+
   describe('주기 시작 판정 — 결제 시각이 원천', () => {
     it('관리자 기간 연장이 청약철회 7일 창을 되살리지 않는다', async () => {
       // 20일 전 결제 → 청약철회 창은 이미 지났다.
