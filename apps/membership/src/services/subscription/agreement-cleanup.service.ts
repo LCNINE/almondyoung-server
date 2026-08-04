@@ -5,7 +5,14 @@ import { format, subDays } from 'date-fns';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { ContractEventManager } from './contract-event.manager';
-import { SubscriptionContractReader } from './subscription-contract.reader';
+import {
+  AgreementEventState,
+  isAgreementCleanupWithdrawn,
+  isCleanupWithdrawnBy,
+  SubscriptionContractReader,
+} from './subscription-contract.reader';
+
+type CleanupItem = { contractId: string; userId: string; pendingSince: Date; withdrawn: boolean };
 
 /** 한 번에 처리할 최대 건수. 남은 건은 다음 실행이 이어받는다(스케줄러가 오래 물고 있지 않게). */
 const BATCH_SIZE = 50;
@@ -53,7 +60,7 @@ export class AgreementCleanupService {
    * 계약별 최신 약정 관련 이벤트가 `AGREEMENT_REVOKE_PENDING`/`_DEFERRED` 인 건만 고른다 —
    * 그 뒤에 성공(REVOKED)/포기(ABANDONED) 이벤트가 붙으면 자연히 목록에서 빠진다.
    */
-  private async findPending(): Promise<{ contractId: string; userId: string; pendingSince: Date }[]> {
+  private async findPending(): Promise<CleanupItem[]> {
     // 보류(DEFERRED) 건은 아직 처리 대상이 아니라도 목록을 차지한다. 배치 상한을 그 필터 **뒤**에
     // 적용하려면 넉넉히 읽어야 한다 — 안 그러면 보류 건이 쌓였을 때 정작 재시도해야 할 PENDING 이
     // 상한에 밀려 영영 실행되지 않는다(조용한 굶주림).
@@ -67,17 +74,13 @@ export class AgreementCleanupService {
     // 종료일이 지난 뒤에야 정리 대상이 된다.
     const due = rows
       .filter((r) => {
+        // 해지를 철회한 계약은 보류 기한과 무관하게 즉시 닫는다(기한을 기다리면 살아있는 약정을 지운다).
+        if (isAgreementCleanupWithdrawn(r)) return true;
         if (r.eventType !== 'AGREEMENT_REVOKE_DEFERRED') return true;
         const notBefore = (r.metadata as { notBefore?: string }).notBefore;
         return !notBefore || notBefore < today;
       })
-      .map((r) => ({
-        contractId: r.contractId,
-        userId: r.userId,
-        // 포기(ABANDONED) 시계는 '재시도가 가능해진 시점'부터 센다. 보류 기록 시각부터 세면
-        // 이용 기간이 긴 계약은 첫 재시도 실패에 곧바로 포기 처리된다.
-        pendingSince: this.retryableSince(r.since, r.metadata),
-      }));
+      .map((r) => this.toItem(r));
 
     // 잘라낸 건을 조용히 버리지 않는다 — "0건 남음" 으로 읽히면 아무도 다음 실행을 기다리지 않는다.
     if (due.length > BATCH_SIZE) {
@@ -88,6 +91,17 @@ export class AgreementCleanupService {
     return due.slice(0, BATCH_SIZE);
   }
 
+  private toItem(state: AgreementEventState): CleanupItem {
+    return {
+      contractId: state.contractId,
+      userId: state.userId,
+      // 포기(ABANDONED) 시계는 '재시도가 가능해진 시점'부터 센다. 보류 기록 시각부터 세면
+      // 이용 기간이 긴 계약은 첫 재시도 실패에 곧바로 포기 처리된다.
+      pendingSince: this.retryableSince(state.since, state.metadata),
+      withdrawn: isAgreementCleanupWithdrawn(state),
+    };
+  }
+
   private retryableSince(createdAt: Date, metadata: unknown): Date {
     const notBefore = ((metadata ?? {}) as { notBefore?: string }).notBefore;
     if (!notBefore) return createdAt;
@@ -95,7 +109,16 @@ export class AgreementCleanupService {
     return Number.isNaN(eligibleAt.getTime()) || eligibleAt < createdAt ? createdAt : eligibleAt;
   }
 
-  private async retryOne(item: { contractId: string; userId: string; pendingSince: Date }): Promise<void> {
+  private async retryOne(item: CleanupItem): Promise<void> {
+    // 되살아난 정기결제의 약정은 지우면 안 된다. wallet 을 부르지 않고 큐에서만 닫는다.
+    // 목록을 읽은 시점의 판정만 믿으면 그 사이 들어온 철회를 놓치므로, 지우기 직전에 다시 본다.
+    const withdrawn = item.withdrawn || isCleanupWithdrawnBy(await this.contractReader.findById(item.contractId));
+    if (withdrawn) {
+      await this.record(item, 'AGREEMENT_REVOKE_UNDONE', { reason: 'CANCELLATION_WITHDRAWN' });
+      this.logger.log(`해지 철회로 약정 정리 취소 (contractId=${item.contractId})`);
+      return;
+    }
+
     try {
       const result = await this.paymentClientService.terminateBillingMandate(item.contractId);
 
@@ -131,10 +154,7 @@ export class AgreementCleanupService {
    * 효성 삭제 가드처럼 재시도로 풀리지 않는 실패가 있어서, 계속 두면 매시간 같은 실패만 반복하며
    * 로그를 채우고 실제로는 아무도 처리하지 않는다.
    */
-  private async escalateIfStale(
-    item: { contractId: string; userId: string; pendingSince: Date },
-    reason: string,
-  ): Promise<void> {
+  private async escalateIfStale(item: CleanupItem, reason: string): Promise<void> {
     if (item.pendingSince > subDays(new Date(), ESCALATE_AFTER_DAYS)) return;
 
     await this.record(item, 'AGREEMENT_REVOKE_ABANDONED', { reason, pendingSince: item.pendingSince.toISOString() });
@@ -145,7 +165,7 @@ export class AgreementCleanupService {
 
   private async record(
     item: { contractId: string; userId: string },
-    eventType: 'AGREEMENT_REVOKED' | 'AGREEMENT_REVOKE_ABANDONED',
+    eventType: 'AGREEMENT_REVOKED' | 'AGREEMENT_REVOKE_ABANDONED' | 'AGREEMENT_REVOKE_UNDONE',
     metadata: Record<string, unknown>,
   ): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {

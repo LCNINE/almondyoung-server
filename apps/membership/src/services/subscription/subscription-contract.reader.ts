@@ -9,13 +9,15 @@ type Plan = typeof schema.plan.$inferSelect;
 
 /**
  * 자동이체 약정 정리의 상태 축.
- * PENDING(재시도 대기) · DEFERRED(수금 끝날 때까지 보류) · REVOKED(끝남) · ABANDONED(7일 초과, 사람이 처리).
+ * PENDING(재시도 대기) · DEFERRED(수금 끝날 때까지 보류) · REVOKED(끝남) · ABANDONED(7일 초과, 사람이 처리) ·
+ * UNDONE(해지 철회로 정리 지시 자체가 사라짐).
  */
 export const AGREEMENT_EVENT_TYPES = [
   'AGREEMENT_REVOKE_PENDING',
   'AGREEMENT_REVOKE_DEFERRED',
   'AGREEMENT_REVOKED',
   'AGREEMENT_REVOKE_ABANDONED',
+  'AGREEMENT_REVOKE_UNDONE',
 ] as const;
 
 export type AgreementEventType = (typeof AGREEMENT_EVENT_TYPES)[number];
@@ -26,6 +28,26 @@ export interface AgreementEventState {
   eventType: AgreementEventType;
   metadata: Record<string, unknown>;
   since: Date;
+  /** 계약의 현재 상태. 아직 해지 중인 계약인지 봐야 정리 대상을 가릴 수 있다. */
+  contract: { status: string; autoRenewal: boolean; recurringCancelledAt: Date | null } | null;
+}
+
+/**
+ * 정리 지시가 철회된 계약인지.
+ *
+ * 해지 철회는 wallet 약정을 새로 만들지만 해지 때 남긴 `_PENDING`/`_DEFERRED` 는 그대로 남는다.
+ * 두면 정리 스케줄러가 살아있는 약정을 지우고, 다음 청구가 BILLING_AGREEMENT_NOT_FOUND 로 실패해
+ * 그대로 해지된다.
+ */
+export function isCleanupWithdrawnBy(
+  contract: { status: string; autoRenewal: boolean | null; recurringCancelledAt: Date | null } | null,
+): boolean {
+  if (!contract) return false;
+  return contract.status === 'ACTIVE' && contract.autoRenewal === true && contract.recurringCancelledAt === null;
+}
+
+export function isAgreementCleanupWithdrawn(state: AgreementEventState): boolean {
+  return isCleanupWithdrawnBy(state.contract);
 }
 
 @Injectable()
@@ -319,8 +341,12 @@ export class SubscriptionContractReader {
         eventType: latest.eventType,
         metadata: latest.metadata,
         since: latest.createdAt,
+        status: schema.subscriptionContracts.status,
+        autoRenewal: schema.subscriptionContracts.autoRenewal,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
       })
       .from(latest)
+      .leftJoin(schema.subscriptionContracts, eq(schema.subscriptionContracts.id, latest.contractId))
       .where(inArray(latest.eventType, params.eventTypes))
       .orderBy(latest.createdAt)
       .limit(params.limit);
@@ -331,7 +357,28 @@ export class SubscriptionContractReader {
       eventType: r.eventType as AgreementEventType,
       metadata: (r.metadata ?? {}) as Record<string, unknown>,
       since: r.since,
+      contract:
+        r.status === null
+          ? null
+          : { status: r.status, autoRenewal: r.autoRenewal === true, recurringCancelledAt: r.recurringCancelledAt },
     }));
+  }
+
+  /** 이 계약의 최신 약정 정리 이벤트 종류. 정리 지시가 아직 열려 있는지 판단하는 용도. */
+  async findLatestAgreementEventType(contractId: string): Promise<AgreementEventType | null> {
+    const [event] = await this.dbService.db
+      .select({ eventType: schema.subscriptionContractEvents.eventType })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          inArray(schema.subscriptionContractEvents.eventType, AGREEMENT_EVENT_TYPES),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    return (event?.eventType as AgreementEventType) ?? null;
   }
 
   /**
