@@ -121,3 +121,27 @@ describe('getProductSellableReasonLabel', () => {
     );
   });
 });
+
+describe('willComingSoonClearOnStock', () => {
+  const { willComingSoonClearOnStock } = transformers;
+
+  it('입고로 걷힌다 — 실재고를 세는 평범한 매칭', () => {
+    expect(
+      willComingSoonClearOnStock({ alwaysSellableZeroStock: false }, 'variant')
+    ).toBe(true);
+  });
+
+  // 자동 해제 트리거는 stockBoundQuantity > 0 하나뿐이라, 실재고가 안 붙는 상품은
+  // 관리자가 직접 풀기 전까지 영구 품절이 된다.
+  it('void 매칭은 걷히지 않는다 — 실재고가 없는 상품이다', () => {
+    expect(
+      willComingSoonClearOnStock({ alwaysSellableZeroStock: false }, 'void')
+    ).toBe(false);
+  });
+
+  it('항상판매도 걷히지 않는다 — 애초에 재고를 안 세려고 켜는 플래그다', () => {
+    expect(
+      willComingSoonClearOnStock({ alwaysSellableZeroStock: true }, 'variant')
+    ).toBe(false);
+  });
+});

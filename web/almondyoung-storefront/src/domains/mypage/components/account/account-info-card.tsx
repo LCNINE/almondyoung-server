@@ -347,7 +347,7 @@ function FieldEditDialog({
               : result.error === "invalid"
                 ? "birthdayInvalid"
                 : "failed"
-          toast.error(tEdit(key))
+          toast.error(result.message ?? tEdit(key))
         }
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }

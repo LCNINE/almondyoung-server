@@ -26,16 +26,22 @@ type Props = {
    * promoteTokens 의 expectUserId 로 전달한다.
    */
   reauthUserId?: string
+  hasAccounts?: boolean
 }
 
 export function SignInForm({
   redirectTo,
   prefilledLoginId = "",
   reauthUserId = "",
+  hasAccounts = false,
 }: Props) {
   const [pending, startTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
   const isReauth = reauthUserId.length > 0
+  const qs = redirectTo
+    ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
+    : ""
+  const findAccountHref = `/find-account${qs}`
   // 재인증이고 loginId 를 이미 아는 경우 아이디 필드를 노출하지 않는다. hidden 으로만 제출해
   // 자동완성이 다른 계정 아이디로 덮어써 expectUserId 매칭이 깨지는 사고를 막는다.
   // (서버는 reauthUserId 로 엄격 매칭하므로 hidden 값 변조도 차단된다.)
@@ -90,13 +96,12 @@ export function SignInForm({
         </label>
       )}
 
-      {/* mt-auto: 여기서부터 아래(에러·CTA·링크)는 화면 하단에 붙는다 */}
+      <p className="min-h-5 text-sm text-destructive" role="alert">
+        {error}
+      </p>
+
+      {/* mt-auto: 여기서부터 아래(CTA·링크)는 화면 하단에 붙는다 */}
       <div className="mt-auto flex flex-col gap-2 pt-6">
-        {error && (
-          <p className="text-sm text-destructive" role="alert">
-            {error}
-          </p>
-        )}
         <Button
           type="submit"
           disabled={pending}
@@ -115,53 +120,28 @@ export function SignInForm({
         </Button>
       </div>
       {!isReauth && (
-        <div className="flex items-center justify-center gap-4 text-sm">
+        <div className="flex items-center justify-center text-sm">
           <Link
-            href={`/find-id${
-              redirectTo
-                ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
-                : ""
-            }`}
+            href={findAccountHref}
             className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
-            아이디 찾기
-          </Link>
-          <span className="h-3 w-px bg-border" aria-hidden />
-          <Link
-            href={`/forgot-password${
-              redirectTo
-                ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
-                : ""
-            }`}
-            className="rounded-md px-1 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-          >
-            비밀번호 찾기
+            아이디·비밀번호 찾기
           </Link>
         </div>
       )}
-      <Button
-        asChild
-        variant="ghost"
-        className="h-11 text-sm text-muted-foreground"
-      >
-        {isReauth ? (
-          <Link
-            href={`/signin${
-              redirectTo
-                ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
-                : ""
-            }`}
-          >
-            다른 계정으로 로그인
-          </Link>
-        ) : (
-          <Link
-            href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
-          >
-            계정 리스트로 돌아가기
-          </Link>
-        )}
-      </Button>
+      {(isReauth || hasAccounts) && (
+        <Button
+          asChild
+          variant="ghost"
+          className="h-11 text-sm text-muted-foreground"
+        >
+          {isReauth ? (
+            <Link href={`/signin${qs}`}>다른 계정으로 로그인</Link>
+          ) : (
+            <Link href={`/${qs}`}>계정 리스트로 돌아가기</Link>
+          )}
+        </Button>
+      )}
     </form>
   )
 }

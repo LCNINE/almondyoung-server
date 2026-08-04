@@ -71,7 +71,11 @@ export async function updateProfileAction(
 export async function updateProfileFieldAction(
   field: "username" | "nickname" | "birthday",
   value: string
-): Promise<{ success: boolean; error?: "required" | "invalid" | "unknown" }> {
+): Promise<{
+  success: boolean
+  error?: "required" | "invalid" | "unknown"
+  message?: string
+}> {
   const trimmed = value.trim()
   const body: Record<string, string> = {}
 
@@ -96,6 +100,9 @@ export async function updateProfileFieldAction(
   } catch (error) {
     if (error instanceof HttpApiError && error.status === 401) {
       throw error
+    }
+    if (error instanceof HttpApiError && error.status === 400) {
+      return { success: false, error: "invalid", message: error.message }
     }
     return { success: false, error: "unknown" }
   }
