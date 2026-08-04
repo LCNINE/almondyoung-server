@@ -74,7 +74,7 @@ export interface MedusaOrder {
   id: string;
   /** 고객에게 노출되는 순번형 주문번호 (#2332) */
   display_id?: number;
-  status?:'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
+  status?: 'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
   payment_status?:
     | 'not_paid'
     | 'awaiting'
@@ -607,20 +607,22 @@ export class MedusaClient {
   }
 
   // 스냅샷 기반 카테고리 보장 (Phase 2 - PIM API 호출 없음)
-  async ensureCategoryFromSnapshot(categorySnapshot: {
-    id: string;
-    name: string;
-    slug: string;
-    path: string;
-    parentId: string | null;
-    isActive: boolean;
-    visibility: boolean;
-    showOnMainCategory: boolean;
-    isVisibleToMembersOnly?: boolean;
-    thumbnail?: string;
-    sortOrder?: number;
-  },
-  options?: { requireParent?: boolean; refreshFields?: boolean }): Promise<string> {
+  async ensureCategoryFromSnapshot(
+    categorySnapshot: {
+      id: string;
+      name: string;
+      slug: string;
+      path: string;
+      parentId: string | null;
+      isActive: boolean;
+      visibility: boolean;
+      showOnMainCategory: boolean;
+      isVisibleToMembersOnly?: boolean;
+      thumbnail?: string;
+      sortOrder?: number;
+    },
+    options?: { requireParent?: boolean; refreshFields?: boolean },
+  ): Promise<string> {
     // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
     // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
     // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
@@ -1522,12 +1524,20 @@ export class MedusaClient {
     // (= true 로는 가고 false 로는 못 돌아오는 단방향 버그). undefined 로 두면 아래 비교가
     // 항상 불일치가 되어 안전한 쪽 — 불필요한 업데이트 1회 — 으로 실패한다.
     const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder;
-    // 수동품절은 선판매(백오더)를 이긴다 — 강제 품절이 의도이므로 allow_backorder 를 끈다.
-    // 그 외엔 선판매 정책(preStockSellable)을 그대로 반영해 해제 시 복원되게 한다.
-    const desiredBackorder = input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;
+    // 수동품절·출시예정은 선판매(백오더)를 이긴다 — 둘 다 "지금은 팔면 안 된다"가 의도이므로
+    // allow_backorder 를 끈다. 출시예정은 입고 시 플래그가 자동 해제되므로(ADR-0028) 선판매도
+    // 그 순간 복원된다. 그 외엔 선판매 정책(preStockSellable)을 그대로 반영한다.
+    const comingSoon = input.availabilityOverride === 'coming_soon';
+    const forcedOutOfStock = input.availabilityOverride === 'manual_out_of_stock' || comingSoon;
+    const desiredBackorder = forcedOutOfStock ? false : !!input.preStockSellable;
     const newStock = shouldManageInventory ? Math.max(0, Math.trunc(input.sellableQuantity || 0)) : 0;
 
-    const variantUpdate: { id: string; manage_inventory?: boolean; allow_backorder?: boolean } = {
+    const variantUpdate: {
+      id: string;
+      manage_inventory?: boolean;
+      allow_backorder?: boolean;
+      metadata?: Record<string, unknown>;
+    } = {
       id: medusaVariant.id,
     };
     if (medusaVariant.manage_inventory !== shouldManageInventory) {
@@ -1535,6 +1545,24 @@ export class MedusaClient {
     }
     if (previousBackorder !== desiredBackorder) {
       variantUpdate.allow_backorder = desiredBackorder;
+    }
+
+    // 스토어프론트는 재고 0의 **사유**를 모른다 — 품절과 출시예정을 가르는 신호를 metadata 로 넘긴다.
+    // inboundDate(재입고 예정일) 와 같은 자리·같은 방식이다.
+    const previousMetadata = (medusaVariant.metadata ?? {}) as Record<string, unknown>;
+    const desiredComingSoon = comingSoon ? true : undefined;
+    const desiredComingSoonDate = comingSoon ? (input.comingSoonDate ?? undefined) : undefined;
+    if (
+      previousMetadata.comingSoon !== desiredComingSoon ||
+      previousMetadata.comingSoonDate !== desiredComingSoonDate
+    ) {
+      const metadata = { ...previousMetadata };
+      // 해제 시엔 키를 남기지 않는다 — 남으면 다음 품절 때 "곧 출시 예정" 이 되살아난다.
+      delete metadata.comingSoon;
+      delete metadata.comingSoonDate;
+      if (desiredComingSoon) metadata.comingSoon = true;
+      if (desiredComingSoonDate) metadata.comingSoonDate = desiredComingSoonDate;
+      variantUpdate.metadata = metadata;
     }
     if (Object.keys(variantUpdate).length > 1) {
       await this.sdk.admin.product.batchVariants(product.id, { update: [variantUpdate] });
@@ -1549,7 +1577,9 @@ export class MedusaClient {
     // 이 변경이 "판매중↔품절" 상태를 바꿨는지 계산 — 캐시 무효화는 이 전환 때만 한다
     const oldSoldOut = !!medusaVariant.manage_inventory && (previousStock ?? 0) <= 0 && !previousBackorder;
     const newSoldOut = shouldManageInventory && newStock <= 0 && !desiredBackorder;
-    const soldOutChanged = oldSoldOut !== newSoldOut;
+    // 출시예정 토글은 재고 0 → 0 이라 위 두 값이 똑같다. metadata 변경도 무효화 대상에 넣어야
+    // "품절" ↔ "곧 출시 예정" 문구 전환이 스토어프론트에 반영된다.
+    const soldOutChanged = oldSoldOut !== newSoldOut || variantUpdate.metadata !== undefined;
 
     this.logger.log(
       `Applied Product Sellable Quantity projection: pimVariantId=${input.variantId}, ` +

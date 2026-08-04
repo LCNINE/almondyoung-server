@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { PackagePlus, Pencil } from 'lucide-react';
+import { format } from 'date-fns';
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -218,6 +219,37 @@ export function useProductVariantsTableColumns(
                       ? 'manual_out_of_stock'
                       : null,
                   })
+                );
+              },
+            }),
+            columnHelper.display({
+              id: 'comingSoon',
+              header: '출시 예정',
+              cell: ({ row }) => {
+                const policy = normalizeStockPolicy(
+                  row.original.matchingInfo?.stockPolicy
+                );
+                const isComingSoon =
+                  policy.availabilityOverride === 'coming_soon';
+
+                return (
+                  <div className="flex items-center justify-center gap-1">
+                    {renderPolicyCheckbox(
+                      row.original,
+                      isComingSoon,
+                      '출시 예정',
+                      (current, checked) => ({
+                        ...current,
+                        availabilityOverride: checked ? 'coming_soon' : null,
+                        comingSoonDate: checked ? current.comingSoonDate : null,
+                      })
+                    )}
+                    <span className="w-10 text-left text-[11px] whitespace-nowrap text-muted-foreground">
+                      {isComingSoon && policy.comingSoonDate
+                        ? `(${format(new Date(policy.comingSoonDate), 'M/d')})`
+                        : ''}
+                    </span>
+                  </div>
                 );
               },
             }),

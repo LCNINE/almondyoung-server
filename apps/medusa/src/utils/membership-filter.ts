@@ -74,7 +74,7 @@ export const requiresMembershipToPurchase = (product: MembershipProduct): boolea
 
 /**
  * 비회원 응답에서 variant 를 품절 상태로 덮는다. 스토어프론트 품절 판정이 세 값의 조합이라 하나라도 빠지면 판매 가능이 된다.
- * 재입고 예정일도 지운다 — 멤버십 회원 전용 정보.
+ * 재입고 예정일과 출시예정 안내도 지운다 — 멤버십 회원 전용 정보.
  */
 const gateVariantForNonMember = (variant: ProductVariant): ProductVariant => {
   const gated: ProductVariant = {
@@ -88,6 +88,9 @@ const gateVariantForNonMember = (variant: ProductVariant): ProductVariant => {
     const metadata = { ...variant.metadata };
     delete metadata.inboundDate;
     delete metadata.inboundApproximate;
+    // 출시예정 안내도 회원 전용 정보다 — 남기면 비회원에게 미공개 상품의 출시일이 샌다.
+    delete metadata.comingSoon;
+    delete metadata.comingSoonDate;
     gated.metadata = metadata;
   }
 

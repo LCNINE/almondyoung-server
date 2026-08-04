@@ -1,5 +1,11 @@
 {
   "digitalBadge": "デジタル",
+  "partialSoldOutBadge": "一部品切れ",
+  "partialComingSoonBadge": "一部近日発売",
+  "variantComingSoon": "近日発売",
+  "variantComingSoonDated": "{date} 発売",
+  "comingSoonBadge": "近日発売",
+  "comingSoonBadgeDated": "{date} 発売",
   "overseasBadge": "海外",
   "addToCartAria": "カートに追加",
   "add": "追加",

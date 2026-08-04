@@ -1,5 +1,11 @@
 {
   "digitalBadge": "Digital",
+  "partialSoldOutBadge": "Some sold out",
+  "partialComingSoonBadge": "Some coming soon",
+  "variantComingSoon": "Coming soon",
+  "variantComingSoonDated": "Opens {date}",
+  "comingSoonBadge": "Coming soon",
+  "comingSoonBadgeDated": "Opens {date}",
   "overseasBadge": "Overseas",
   "addToCartAria": "Add to cart",
   "add": "Add",

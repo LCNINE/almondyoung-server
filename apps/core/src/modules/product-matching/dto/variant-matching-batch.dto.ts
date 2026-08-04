@@ -29,11 +29,11 @@ export class UpdateVariantStockPolicyDto {
     description: '수동 판매 가능 상태 override',
     required: false,
     nullable: true,
-    enum: ['manual_out_of_stock'],
+    enum: ['manual_out_of_stock', 'coming_soon'],
   })
   @IsOptional()
-  @IsEnum(['manual_out_of_stock'])
-  availabilityOverride?: 'manual_out_of_stock' | null;
+  @IsEnum(['manual_out_of_stock', 'coming_soon'])
+  availabilityOverride?: 'manual_out_of_stock' | 'coming_soon' | null;
 }
 
 export class VariantStockPolicyDto {
@@ -43,8 +43,15 @@ export class VariantStockPolicyDto {
   @ApiProperty({ description: '재고 0이어도 항상 판매 가능 정책' })
   alwaysSellableZeroStock: boolean;
 
-  @ApiProperty({ description: '수동 판매 가능 상태 override', nullable: true, enum: ['manual_out_of_stock'] })
-  availabilityOverride: 'manual_out_of_stock' | null;
+  @ApiProperty({
+    description: '수동 판매 가능 상태 override',
+    nullable: true,
+    enum: ['manual_out_of_stock', 'coming_soon'],
+  })
+  availabilityOverride: 'manual_out_of_stock' | 'coming_soon' | null;
+
+  @ApiProperty({ description: '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 표시 전용', nullable: true })
+  comingSoonDate: string | null;
 }
 
 export class ProductSellableQuantityProjectionComponentDto {
@@ -92,8 +99,15 @@ export class ProductSellableQuantityProjectionViewDto {
   @ApiProperty({ description: '재고 0이어도 항상 판매 가능 정책' })
   alwaysSellableZeroStock: boolean;
 
-  @ApiProperty({ description: '수동 판매 가능 상태 override', nullable: true, enum: ['manual_out_of_stock'] })
-  availabilityOverride: 'manual_out_of_stock' | null;
+  @ApiProperty({
+    description: '수동 판매 가능 상태 override',
+    nullable: true,
+    enum: ['manual_out_of_stock', 'coming_soon'],
+  })
+  availabilityOverride: 'manual_out_of_stock' | 'coming_soon' | null;
+
+  @ApiProperty({ description: '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 표시 전용', nullable: true })
+  comingSoonDate: string | null;
 
   @ApiProperty({ description: '계산 시각' })
   calculatedAt: string;

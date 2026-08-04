@@ -27,6 +27,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     sellableQuantity: 7,
     stockBoundQuantity: 7,
     isSellable: true,
+    comingSoonDate: null,
     reason: 'SELLABLE',
     preStockSellable: false,
     alwaysSellableZeroStock: false,

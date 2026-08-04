@@ -38,6 +38,7 @@ export function ProductGrid({
               src={product.imageSrc}
               alt={product.title}
               isSoldOut={isSoldOut}
+              comingSoon={product.comingSoon}
               rank={rank && <ProductCard.Rank rank={rank} />}
               action={
                 showQuickActions && !isSoldOut ? (

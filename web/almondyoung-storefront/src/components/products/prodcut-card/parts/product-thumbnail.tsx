@@ -10,6 +10,7 @@ export function ProductThumbnail({
   rank,
   className,
   isSoldOut = false,
+  comingSoon,
 }: {
   src: string
   alt: string
@@ -17,6 +18,7 @@ export function ProductThumbnail({
   rank?: React.ReactNode
   className?: string
   isSoldOut?: boolean
+  comingSoon?: { date: string | null } | null
 }) {
   return (
     <div
@@ -33,7 +35,7 @@ export function ProductThumbnail({
         className="pointer-events-none h-full w-full object-contain p-3 transition-transform duration-300 will-change-transform select-none group-hover:scale-105 sm:p-4"
       />
       {rank}
-      {isSoldOut && <SoldOutOverlay />}
+      {isSoldOut && <SoldOutOverlay comingSoon={comingSoon} />}
       {action}
     </div>
   )

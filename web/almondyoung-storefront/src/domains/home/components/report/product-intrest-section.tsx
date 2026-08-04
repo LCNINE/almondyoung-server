@@ -186,6 +186,7 @@ export default function ProductIntrestSection() {
                     src={product.imageSrc}
                     alt={product.title}
                     isSoldOut={isSoldOut}
+                    comingSoon={product.comingSoon}
                   />
                   <ProductCard.Info {...product} />
                 </ProductCard>

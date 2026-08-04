@@ -5,12 +5,13 @@ export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
 export type LegacyIgnoredResolutionTarget = 'pending' | 'void';
-export type AvailabilityOverride = 'manual_out_of_stock' | null;
+export type AvailabilityOverride = 'manual_out_of_stock' | 'coming_soon' | null;
 export type ProductSellableQuantityReason =
   | 'SELLABLE'
   | 'ALWAYS_SELLABLE_ZERO_STOCK'
   | 'PRE_STOCK_SELLABLE'
   | 'MANUAL_OUT_OF_STOCK'
+  | 'COMING_SOON'
   | 'NOT_ACTIVE_VERSION'
   | 'VARIANT_INACTIVE'
   | 'SALES_NOT_STARTED'
@@ -26,6 +27,8 @@ export interface StockPolicyDto {
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
   availabilityOverride?: AvailabilityOverride;
+  /** 표시 전용 출시예정일 (YYYY-MM-DD). 판매 개시는 입고가 연다 — ADR-0028. */
+  comingSoonDate?: string | null;
 }
 
 export interface SkuMappingDto {
@@ -240,6 +243,7 @@ export interface ProductSellableQuantityProjectionDto {
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
   availabilityOverride: AvailabilityOverride;
+  comingSoonDate: string | null;
   calculatedAt: string;
   components: ProductSellableQuantityProjectionComponentDto[];
 }

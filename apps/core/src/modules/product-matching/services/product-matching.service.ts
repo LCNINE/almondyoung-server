@@ -94,12 +94,20 @@ export class ProductMatchingService {
     const availabilityOverridePatch = hasAvailabilityOverride
       ? { availabilityOverride: stockPolicy?.availabilityOverride ?? null }
       : {};
+    // 출시예정을 끄면 날짜도 같이 비운다 — 남겨두면 다음에 다시 켤 때 옛 날짜가 되살아난다.
+    const comingSoonDatePatch = hasAvailabilityOverride
+      ? {
+          comingSoonDate:
+            stockPolicy?.availabilityOverride === 'coming_soon' ? (stockPolicy?.comingSoonDate ?? null) : null,
+        }
+      : {};
     const variantPolicyValues = {
       variantId,
       inventoryManagement: true,
       preStockSellable: stockPolicy?.preStockSellable ?? fallback.preStockSellable,
       alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
       ...availabilityOverridePatch,
+      ...comingSoonDatePatch,
       updatedAt: now,
     };
 
@@ -113,6 +121,7 @@ export class ProductMatchingService {
           preStockSellable: variantPolicyValues.preStockSellable,
           alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
           ...availabilityOverridePatch,
+          ...comingSoonDatePatch,
           updatedAt: now,
         },
       });
@@ -1092,15 +1101,17 @@ export class ProductMatchingService {
   }
 
   async setMatchingPriority(matchingId: string, priority: 'normal' | 'high', tx?: DbTx) {
-    const [updatedMatching] = await this.dbService.run(
-      async (trx) =>
-        trx
-          .update(wmsTables.productMatchings)
-          .set({ priority, updatedAt: new Date() })
-          .where(and(eq(wmsTables.productMatchings.id, matchingId), eq(wmsTables.productMatchings.isResolved, false)))
-          .returning(),
-      tx,
-    ).then((r) => r);
+    const [updatedMatching] = await this.dbService
+      .run(
+        async (trx) =>
+          trx
+            .update(wmsTables.productMatchings)
+            .set({ priority, updatedAt: new Date() })
+            .where(and(eq(wmsTables.productMatchings.id, matchingId), eq(wmsTables.productMatchings.isResolved, false)))
+            .returning(),
+        tx,
+      )
+      .then((r) => r);
 
     if (!updatedMatching) {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
@@ -1276,7 +1287,8 @@ export class ProductMatchingService {
   ): Promise<{
     preStockSellable: boolean;
     alwaysSellableZeroStock: boolean;
-    availabilityOverride: 'manual_out_of_stock' | null;
+    availabilityOverride: 'manual_out_of_stock' | 'coming_soon' | null;
+    comingSoonDate: string | null;
   } | null> {
     const { matching, policy } = await this.dbService.run(async (trx) => {
       const [row] = await trx
@@ -1290,6 +1302,7 @@ export class ProductMatchingService {
           preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
           alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
           availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+          comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
         })
         .from(wmsTables.salesVariantPolicies)
         .where(eq(wmsTables.salesVariantPolicies.variantId, variantId))
@@ -1305,6 +1318,7 @@ export class ProductMatchingService {
       preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? false,
       alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
       availabilityOverride: policy?.availabilityOverride ?? null,
+      comingSoonDate: policy?.comingSoonDate ?? null,
     };
   }
 

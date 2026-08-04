@@ -1,3 +1,4 @@
+import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
 import type { StoreProduct, StoreProductVariant } from "@medusajs/types"
 import type { ProductCardProps } from "@/lib/types/ui/product"
 import {
@@ -178,6 +179,7 @@ export function mapStoreProductToCardProps(
     isWelcomeMembership,
     isMembership,
     isOverseas: getIsOverseas(product),
+    comingSoon: pickComingSoon(product.variants),
   }
 }
 
