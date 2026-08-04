@@ -19,6 +19,9 @@ export type AvailabilityState =
 // 형식이 명백히 미완성인 값(예: 아직 @ 뒤를 입력 중)은 서버를 부르지 않는다.
 const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOOKS_LIKE_LOGIN_ID = /^[a-z0-9]{4,20}$/;
+// user-service sign-up.dto 의 NICKNAME_PATTERN 과 같은 규칙.
+const LOOKS_LIKE_NICKNAME = /^(?=.*[가-힣a-zA-Z0-9])[가-힣a-zA-Z0-9_-]+$/;
+export const NICKNAME_RULE = "한글, 영문, 숫자 2~8자";
 
 /**
  * 입력값을 debounce 하여 가입 가능 여부를 사전 확인한다.
@@ -89,10 +92,18 @@ export function useLoginIdAvailability(loginId: string): AvailabilityState {
 }
 
 export function useNicknameAvailability(nickname: string): AvailabilityState {
-  return useAvailability(
+  const state = useAvailability(
     nickname,
-    (v) => v.length >= 2 && v.length <= 8,
+    (v) => v.length >= 2 && v.length <= 8 && LOOKS_LIKE_NICKNAME.test(v),
     checkNicknameAvailableAction,
     "닉네임 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
   );
+  // 닉네임은 완성형/길이 위반 자체가 곧 오답이라, idle 로 두지 않고 사유를 바로 보여준다.
+  if (nickname.trim() && state.status === "idle") {
+    return {
+      status: "invalid",
+      message: `닉네임은 ${NICKNAME_RULE}로 입력해주세요.`,
+    };
+  }
+  return state;
 }

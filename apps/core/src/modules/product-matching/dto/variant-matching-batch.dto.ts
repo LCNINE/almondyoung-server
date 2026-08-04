@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ArrayMaxSize, IsArray, IsBoolean, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
 import { ProductSellableQuantityReason } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.calculator';
 
 export class BatchVariantMatchingsRequestDto {
@@ -34,6 +34,19 @@ export class UpdateVariantStockPolicyDto {
   @IsOptional()
   @IsEnum(['manual_out_of_stock', 'coming_soon'])
   availabilityOverride?: 'manual_out_of_stock' | 'coming_soon' | null;
+
+  // 전역 ValidationPipe 가 whitelist: true 라 여기 선언이 없으면 body 에서 통째로 잘려나간다.
+  // MatchingPolicyDto 에는 있는데 이쪽에만 없어서 stock-policy 경로로 저장한 출시일이
+  // 조용히 null 로 떨어졌다.
+  @ApiProperty({
+    description: '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 표시 전용 — 판매를 여는 건 입고다 (ADR-0028).',
+    required: false,
+    nullable: true,
+    example: '2026-08-10',
+  })
+  @IsOptional()
+  @IsDateString()
+  comingSoonDate?: string | null;
 }
 
 export class VariantStockPolicyDto {

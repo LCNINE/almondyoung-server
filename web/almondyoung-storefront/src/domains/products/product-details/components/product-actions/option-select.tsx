@@ -116,10 +116,18 @@ export default function OptionSelect({
   // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
   const useDropdown = visibleValues.length > DROPDOWN_THRESHOLD
 
+  // 전부 출시예정이면 칩마다 붙는 뱃지가 같은 말을 옵션 수만큼 반복할 뿐이다. 상품 전체가
+  // 출시예정이라는 건 이미지 위 뱃지가 이미 말하고 있으므로 개별 뱃지는 생략한다.
+  // 일부만 출시예정일 때는 어느 색이 안 나왔는지가 정보라서 그대로 붙인다.
+  const everyValueComingSoon =
+    visibleValues.length > 0 &&
+    visibleValues.every((value) => comingSoonByValue[value])
+
   const renderValueLabel = (value: string, isOutOfStock: boolean) => {
     if (!isOutOfStock) return value
     const comingSoon = comingSoonByValue[value]
     if (!comingSoon) return t("outOfStockSuffix", { value })
+    if (everyValueComingSoon) return value
     return (
       <span className="inline-flex items-center gap-1.5">
         {value}

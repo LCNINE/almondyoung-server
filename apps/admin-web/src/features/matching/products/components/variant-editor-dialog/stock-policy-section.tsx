@@ -1,18 +1,24 @@
 'use client';
 
-import type { StockPolicyDto } from '@/lib/types/dto/matching';
+import type { MatchingStrategy, StockPolicyDto } from '@/lib/types/dto/matching';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toLocalDateString } from '@/lib/utils/date';
+import {
+  COMING_SOON_MANUAL_CLEAR_HINT,
+  willComingSoonClearOnStock,
+} from '@/lib/services/matching';
 
 interface StockPolicySectionProps {
   value: StockPolicyDto;
+  strategy?: MatchingStrategy | null;
   onChange: (policy: StockPolicyDto) => void;
 }
 
 export function StockPolicySection({
   value,
+  strategy,
   onChange,
 }: StockPolicySectionProps) {
   const set =
@@ -42,34 +48,45 @@ export function StockPolicySection({
   const isPastDate = Boolean(
     value.comingSoonDate && value.comingSoonDate < today
   );
+  const clearsOnStock = willComingSoonClearOnStock(value, strategy);
+
+  // 출시예정 중에는 이 두 플래그가 계산기에서 무시되므로 "지금 적용되는 설정" 자리에 두면
+  // 거짓말이 된다. 그렇다고 잠가버리면 입고 후 어떻게 될지 볼 수도 고칠 수도 없다.
+  // 그래서 잠그는 대신 출시예정 하위 "입고 후 적용할 정책" 으로 자리를 옮긴다 — 값은 같은
+  // 컬럼 하나 그대로라 UI 가 둘로 갈라지지 않는다.
+  const sellFlags = (
+    <>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="preStockSellable"
+          checked={value.preStockSellable}
+          onCheckedChange={(c) => set('preStockSellable')(!!c)}
+        />
+        <Label htmlFor="preStockSellable" className="text-sm cursor-pointer">
+          선판매 허용 (재고 0이어도 주문 가능)
+        </Label>
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="alwaysSellableZeroStock"
+          checked={value.alwaysSellableZeroStock}
+          onCheckedChange={(c) => set('alwaysSellableZeroStock')(!!c)}
+        />
+        <Label
+          htmlFor="alwaysSellableZeroStock"
+          className="text-sm cursor-pointer"
+        >
+          항상 판매 가능 (직배/신상품)
+        </Label>
+      </div>
+    </>
+  );
 
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-muted-foreground">재고 정책</p>
       <div className="p-3 space-y-2 border rounded-md">
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="preStockSellable"
-            checked={value.preStockSellable}
-            onCheckedChange={(c) => set('preStockSellable')(!!c)}
-          />
-          <Label htmlFor="preStockSellable" className="text-sm cursor-pointer">
-            선판매 허용 (재고 0이어도 주문 가능)
-          </Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id="alwaysSellableZeroStock"
-            checked={value.alwaysSellableZeroStock}
-            onCheckedChange={(c) => set('alwaysSellableZeroStock')(!!c)}
-          />
-          <Label
-            htmlFor="alwaysSellableZeroStock"
-            className="text-sm cursor-pointer"
-          >
-            항상 판매 가능 (직배/신상품)
-          </Label>
-        </div>
+        {!isComingSoon && sellFlags}
         <div className="flex items-center gap-2">
           <Checkbox
             id="manualOutOfStock"
@@ -87,9 +104,16 @@ export function StockPolicySection({
             onCheckedChange={(c) => setComingSoon(!!c)}
           />
           <Label htmlFor="comingSoon" className="text-sm cursor-pointer">
-            출시 예정 (입고되면 자동 판매·자동 해제)
+            {clearsOnStock
+              ? '출시 예정 (입고되면 자동 판매·자동 해제)'
+              : '출시 예정 (자동 해제 안 됨 — 직접 풀어야 함)'}
           </Label>
         </div>
+        {isComingSoon && !clearsOnStock && (
+          <p role="alert" className="pl-6 text-xs font-medium text-destructive">
+            {COMING_SOON_MANUAL_CLEAR_HINT}
+          </p>
+        )}
         {isComingSoon && (
           <div className="pt-1 pl-6 space-y-1">
             <Label
@@ -127,6 +151,15 @@ export function StockPolicySection({
                 시점에 시작됩니다.
               </p>
             )}
+
+            <div className="pt-2 space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">
+                {clearsOnStock
+                  ? '입고 후 적용할 정책'
+                  : '출시 예정 해제 후 적용할 정책'}
+              </p>
+              {sellFlags}
+            </div>
           </div>
         )}
       </div>

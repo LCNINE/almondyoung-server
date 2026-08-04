@@ -108,21 +108,12 @@ export function VariantMatchingPanel({
     }
   }, [current, isMatchingFetched, variantStockPolicy]);
 
-  // 재고 정책은 인라인 테이블 체크박스와 동일하게 체크 즉시 저장한다
-  // (같은 mutation → 같은 query invalidate 라 테이블/목록과 자동 동기화).
+  // 저장 버튼이 있는 폼이므로 재고 정책도 저장 버튼에 태운다. 예전엔 체크 즉시 저장했는데,
+  // 그 invalidate 가 current 를 refetch 시키고 아래 useEffect 가 편집 중인 state 를 서버값으로
+  // 되덮어써서 (1) 입력한 출시일이 화면에서 사라지고 (2) 저장 버튼은 차이를 못 찾아
+  // "변경된 내용이 없습니다" 를 띄웠다.
   const handleStockPolicyChange = (policy: StockPolicyDto) => {
-    const normalized = normalizeStockPolicy(policy);
-    setStockPolicy(normalized);
-    updateStockPolicy.mutate(
-      { variantId, data: normalized },
-      {
-        onError: (error) => {
-          toast.error(
-            error instanceof Error ? error.message : '재고 정책 저장에 실패했습니다.'
-          );
-        },
-      }
-    );
+    setStockPolicy(normalizeStockPolicy(policy));
   };
 
   const handleSave = async () => {
@@ -141,7 +132,7 @@ export function VariantMatchingPanel({
 
     const promises: Promise<unknown>[] = [];
 
-    if (changedLinks || changedPolicy) {
+    if (changedLinks) {
       promises.push(
         upsert.mutateAsync({
           variantId,
@@ -152,6 +143,12 @@ export function VariantMatchingPanel({
             changedLinks,
           }),
         })
+      );
+    } else if (changedPolicy) {
+      // 링크가 그대로면 upsert 를 태우지 않는다 — 매칭이 없는 variant 에서 upsert 는
+      // 정책만 바꾸려다 매칭까지 만들어버린다. stock-policy 경로는 정책만 건드린다.
+      promises.push(
+        updateStockPolicy.mutateAsync({ variantId, data: stockPolicy })
       );
     }
     if (changedStrategy && current && 'id' in current) {
@@ -191,7 +188,10 @@ export function VariantMatchingPanel({
   };
 
   const isLoading =
-    upsert.isPending || setPriority.isPending || setStrategy.isPending;
+    upsert.isPending ||
+    updateStockPolicy.isPending ||
+    setPriority.isPending ||
+    setStrategy.isPending;
 
   return (
     <div className="py-2 space-y-4">
@@ -232,7 +232,11 @@ export function VariantMatchingPanel({
         onPriorityChange={setPriorityState}
       />
 
-      <StockPolicySection value={stockPolicy} onChange={handleStockPolicyChange} />
+      <StockPolicySection
+        value={stockPolicy}
+        strategy={strategy}
+        onChange={handleStockPolicyChange}
+      />
 
       <div className="sticky bottom-0 -mx-4 -mb-4 flex justify-end border-t bg-background px-4 py-3">
         <Button size="sm" onClick={handleSave} disabled={isLoading}>

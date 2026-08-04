@@ -5,8 +5,12 @@ import {
   getPricesForVariant,
   getProductPrice,
 } from "@/lib/utils/get-product-price"
-import { getIsMembershipOnly } from "@/lib/utils/product-card"
+import {
+  getIsMembershipOnly,
+  getRequiresMembershipToPurchase,
+} from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
+import { Lock } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 interface Props {
@@ -66,6 +70,9 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   // 멤버십가 비공개 상품: 비회원에게도 일반 판매가는 그대로 보여주고,
   // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원 공개"를 표시
   const showMembershipPriceHiddenNotice = !hasMembership && isMembershipOnly
+
+  const showMembersOnlyPurchaseNotice =
+    !hasMembership && getRequiresMembershipToPurchase(product)
 
   return (
     <div className="flex flex-col gap-1.5 pt-0 pb-2">
@@ -143,6 +150,15 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
             </p>
           </div>
         )
+      )}
+
+      {showMembersOnlyPurchaseNotice && (
+        <div className="border-primary/30 bg-primary/5 mt-1 flex items-center gap-2 rounded-lg border px-3 py-2">
+          <Lock className="text-primary size-4 shrink-0" />
+          <p className="text-primary text-sm font-semibold">
+            {t("membersOnlyPurchase")}
+          </p>
+        </div>
       )}
     </div>
   )

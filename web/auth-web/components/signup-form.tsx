@@ -86,9 +86,9 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
 
       <Button asChild className="h-13" variant={"link"}>
         <Link
-          href={`/?${redirectTo ? new URLSearchParams({ redirect_to: redirectTo }).toString() : ""}`}
+          href={`/signin${redirectTo ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}` : ""}`}
         >
-          계정 리스트로 돌아가기
+          로그인으로 돌아가기
         </Link>
       </Button>
     </div>

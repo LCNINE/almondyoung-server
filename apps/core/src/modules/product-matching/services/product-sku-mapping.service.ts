@@ -51,9 +51,7 @@ export class ProductSkuMappingService {
     const comingSoonDatePatch = this.hasAvailabilityOverride(policy)
       ? {
           comingSoonDate:
-            policy?.availabilityOverride === 'coming_soon'
-              ? ((policy as { comingSoonDate?: string | null })?.comingSoonDate ?? null)
-              : null,
+            policy?.availabilityOverride === 'coming_soon' ? (policy?.comingSoonDate ?? null) : null,
         }
       : {};
     const variantPolicyValues = {

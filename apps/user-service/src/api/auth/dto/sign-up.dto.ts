@@ -12,6 +12,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { AddressDto } from '../../../commons/dto/address.dto';
+import { NICKNAME_PATTERN, NICKNAME_RULE_MESSAGE } from '../../../commons/utils/nickname';
 import { IConsent } from '../../consents/types/consent.type';
 import { Transform } from 'class-transformer';
 
@@ -101,6 +102,7 @@ export class BaseSignUpDto extends PartialType(AddressDto) implements IConsent {
   @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
   @MinLength(2, { message: '닉네임은 최소 2자 이상이어야 합니다.' })
   @MaxLength(8, { message: '닉네임은 최대 8자 이하여야 합니다.' })
+  @Matches(NICKNAME_PATTERN, { message: NICKNAME_RULE_MESSAGE })
   nickname: string;
 }
 

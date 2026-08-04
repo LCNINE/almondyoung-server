@@ -52,6 +52,9 @@ import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies
 import { generateSocialNickname } from './utils/generate-social-nickname';
 import { isSamePhoneNumber } from '../../commons/utils/phone-number';
 
+const INVALID_CREDENTIALS_MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
+const NO_MATCHING_ACCOUNT_MESSAGE = '입력하신 정보와 일치하는 계정이 없습니다';
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -423,14 +426,16 @@ export class AuthService {
   ): Promise<void | { accessToken: string; refreshToken: string }> {
     const user = await this.usersService.findUserByLoginId(signInDto.loginId);
 
-    if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
+    // 아이디 없음과 비밀번호 틀림을 구분해 알려주면 계정 존재 여부가 새고, 사용자는
+    // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다.
+    if (!user) throw new BadRequestException(INVALID_CREDENTIALS_MESSAGE);
 
     if (user.deletedAt) {
       throw new ForbiddenException('휴면 처리된 사용자입니다. 관리자에게 문의해주세요.');
     }
 
     const isAuth = await bcrypt.compare(signInDto.password, user.password ?? '');
-    if (!isAuth) throw new BadRequestException('비밀번호가 일치하지 않습니다');
+    if (!isAuth) throw new BadRequestException(INVALID_CREDENTIALS_MESSAGE);
 
     const { refreshToken } = await this.setRefreshToken(user.id, reply, signInDto.rememberMe);
     const { accessToken } = await this.setAccessToken(user, reply);
@@ -858,7 +863,7 @@ export class AuthService {
     await this.assertPhoneVerified(phoneNumber);
 
     const user = await this.usersService.findUserByLoginId(loginId);
-    if (!user) throw new NotFoundException('존재하지 않는 아이디입니다');
+    if (!user) throw new NotFoundException(NO_MATCHING_ACCOUNT_MESSAGE);
 
     const [profile] = await this.dbService.db
       .select({
@@ -870,7 +875,7 @@ export class AuthService {
 
     // 저장된 표기가 E.164/하이픈/숫자로 섞여 있어 정확 비교하면 옛 계정이 항상 실패한다
     if (!profile || !isSamePhoneNumber(profile.phoneNumber ?? '', phoneNumber)) {
-      throw new NotFoundException('휴대폰 번호가 일치하지 않습니다');
+      throw new NotFoundException(NO_MATCHING_ACCOUNT_MESSAGE);
     }
 
     const verificationToken = await this.jwtService.signAsync(
