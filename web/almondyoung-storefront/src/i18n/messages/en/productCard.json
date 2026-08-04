@@ -22,5 +22,6 @@
   "quickAddToCart": "Add to Cart",
   "quickAddToCartWithPrice": "Add to Cart · {price}",
   "quickAddSelect": "Please select options",
-  "quickAddError": "Could not load product options."
+  "quickAddError": "Could not load product options.",
+  "membersOnly": "Members only"
 }

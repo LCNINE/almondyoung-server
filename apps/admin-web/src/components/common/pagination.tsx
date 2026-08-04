@@ -5,6 +5,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { getPageRange } from '@/components/admin-ui-experimental/common/table/page-range';
 
 export interface PaginationProps {
   currentPage: number;
@@ -30,34 +31,7 @@ export function Pagination({
   const startItem = totalItems > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
   const endItem = totalItems > 0 ? Math.min(currentPage * itemsPerPage, totalItems) : 0;
 
-  const getVisiblePages = () => {
-    if (totalPages <= 1) return [1];
-    const delta = 2;
-    const range: (number | string)[] = [];
-    const rangeWithDots: (number | string)[] = [];
-
-    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
-      range.push(i);
-    }
-
-    if (currentPage - delta > 2) {
-      rangeWithDots.push(1, '...');
-    } else {
-      rangeWithDots.push(1);
-    }
-
-    rangeWithDots.push(...range);
-
-    if (currentPage + delta < totalPages - 1) {
-      rangeWithDots.push('...', totalPages);
-    } else if (totalPages > 1) {
-      rangeWithDots.push(totalPages);
-    }
-
-    return rangeWithDots;
-  };
-
-  const visiblePages = getVisiblePages();
+  const visiblePages = getPageRange(currentPage, totalPages);
 
   return (
     <div className={`flex items-center justify-between bg-white px-4 py-3 border-t border-gray-200 ${className}`}>

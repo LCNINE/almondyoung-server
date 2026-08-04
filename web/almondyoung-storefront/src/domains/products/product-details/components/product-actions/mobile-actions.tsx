@@ -12,6 +12,7 @@ import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
   product: HttpTypes.StoreProduct
@@ -55,15 +56,11 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
 
-  const unavailableLabel = membersOnlyPurchase
-    ? t("membersOnly")
-    : t("soldOut")
-
   const disabledLabel =
     selectedItems.length === 0
       ? t("selectPlaceholder")
       : !inStock
-        ? unavailableLabel
+        ? t("soldOut")
         : null
 
   return (
@@ -93,8 +90,16 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             </Button>
           ) : ( ... )} */}
 
-          {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
-          {isSimple && !inStock ? (
+          {membersOnlyPurchase ? (
+            <LocalizedClientLink href="/mypage/membership" className="w-full">
+              <Button
+                className="h-12 w-full cursor-pointer text-base font-medium"
+                data-testid="members-only-cta"
+              >
+                {t("membersOnlyCta")}
+              </Button>
+            </LocalizedClientLink>
+          ) : isSimple && !inStock ? (
             <div className="w-full">
               {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
                 <RestockNotice variants={selectedItems.map((i) => i.variant)} />
@@ -105,7 +110,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   className="h-12 w-full cursor-pointer text-base font-medium"
                   data-testid="sold-out-button"
                 >
-                  {unavailableLabel}
+                  {t("soldOut")}
                 </Button>
               )}
             </div>
@@ -221,10 +226,24 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               ) : ( ... )} */}
 
               {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
-              {!inStock && selectedItems.length > 0 ? (
+              {membersOnlyPurchase ? (
+                <LocalizedClientLink
+                  href="/mypage/membership"
+                  className="w-full"
+                >
+                  <Button
+                    className="h-12 w-full cursor-pointer text-base font-medium"
+                    data-testid="members-only-cta"
+                  >
+                    {t("membersOnlyCta")}
+                  </Button>
+                </LocalizedClientLink>
+              ) : !inStock && selectedItems.length > 0 ? (
                 <div className="w-full">
                   {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
-                    <RestockNotice variants={selectedItems.map((i) => i.variant)} />
+                    <RestockNotice
+                      variants={selectedItems.map((i) => i.variant)}
+                    />
                   ) : (
                     <Button
                       variant="default"
@@ -232,7 +251,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       className="h-12 w-full cursor-pointer text-base font-medium"
                       data-testid="sold-out-button"
                     >
-                      {unavailableLabel}
+                      {t("soldOut")}
                     </Button>
                   )}
                 </div>

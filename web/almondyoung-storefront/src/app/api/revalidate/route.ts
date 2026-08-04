@@ -2,6 +2,7 @@ import { listRegions } from "@lib/api/medusa/regions"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 import { createWebLogger } from "@packages/web-observability"
+import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
 
 export const dynamic = "force-dynamic"
 
@@ -37,10 +38,10 @@ async function getCountryCodes(): Promise<string[]> {
  * 상품/재고가 백엔드(Core → channel-adapter → Medusa)에서 바뀌면 channel-adapter 가
  * 이 라우트를 호출해 해당 상품의 스토어프론트 페이지 캐시를 즉시 무효화한다.
  *
- * 주의: 캐시 태그가 `${tag}-${_medusa_cache_id}` 형태로 **사용자별** 이라
- * (middleware 가 방문자마다 randomUUID 발급), 백엔드에서 `revalidateTag` 로
- * 전역 무효화가 불가능하다. 그래서 사용자와 무관한 `revalidatePath` 로
- * **바뀐 상품의 상세 경로만** 정밀 무효화한다 (`/{locale}/products/{handle}`).
+ * 목록 fetch 의 캐시 태그는 `${tag}-${_medusa_cache_id}` 형태로 **방문자별** 이라
+ * (middleware 가 방문자마다 randomUUID 발급) 백엔드가 지목할 수 없다. 그래서 모든 목록이
+ * 방문자 무관 태그(`PRODUCT_LIST_TAG`)를 함께 달고, 여기서 그 태그를 쳐서 전역 무효화한다.
+ * 상세 페이지는 `product-{handle}` 태그와 경로로 추가 무효화한다.
  */
 export async function POST(request: NextRequest) {
   const secret = request.headers.get("x-revalidate-secret")
@@ -72,6 +73,9 @@ export async function POST(request: NextRequest) {
   if (body.handle) {
     revalidateTag(`product-${body.handle}`)
     revalidated.push(`tag:product-${body.handle}`)
+
+    revalidateTag(PRODUCT_LIST_TAG)
+    revalidated.push(`tag:${PRODUCT_LIST_TAG}`)
 
     const countryCodes = await getCountryCodes()
     for (const cc of countryCodes) {

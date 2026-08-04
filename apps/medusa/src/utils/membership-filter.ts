@@ -72,34 +72,25 @@ export const requiresMembershipToPurchase = (product: MembershipProduct): boolea
   return constraint.requiresMembership === true || constraint.requiresMembership === 'true';
 };
 
-/**
- * 비회원 응답에서 variant 를 품절 상태로 덮는다. 스토어프론트 품절 판정이 세 값의 조합이라 하나라도 빠지면 판매 가능이 된다.
- * 재입고 예정일과 출시예정 안내도 지운다 — 멤버십 회원 전용 정보.
- */
+/** 비회원 응답에서 재입고/출시예정 안내만 지운다. 재고와 판매 플래그는 건드리지 않는다. */
 const gateVariantForNonMember = (variant: ProductVariant): ProductVariant => {
-  const gated: ProductVariant = {
-    ...variant,
-    manage_inventory: true,
-    allow_backorder: false,
-    inventory_quantity: 0,
-  };
-
-  if (isRecord(variant.metadata)) {
-    const metadata = { ...variant.metadata };
-    delete metadata.inboundDate;
-    delete metadata.inboundApproximate;
-    // 출시예정 안내도 회원 전용 정보다 — 남기면 비회원에게 미공개 상품의 출시일이 샌다.
-    delete metadata.comingSoon;
-    delete metadata.comingSoonDate;
-    gated.metadata = metadata;
+  if (!isRecord(variant.metadata)) {
+    return variant;
   }
 
-  return gated;
+  const metadata = { ...variant.metadata };
+  delete metadata.inboundDate;
+  delete metadata.inboundApproximate;
+  delete metadata.comingSoon;
+  delete metadata.comingSoonDate;
+
+  return { ...variant, metadata };
 };
 
 /**
- * 멤버십 전용 구매 상품을 비회원에게 품절로 보인다. 회원 응답은 그대로 둔다.
- * 응답 변형이라 표시만 막는다 — 장바구니 API 직접 호출은 못 막는다.
+ * 멤버십 전용 구매 상품의 비회원 응답에서 회원 전용 안내만 걷어낸다.
+ * 노출·재고는 그대로 두고, 구매 차단은 장바구니 훅이 맡는다
+ * (`handle-validate-cart-items-inventory.ts`, `complete-cart.ts`).
  */
 export const applyPurchaseGateForNonMember = (product: MembershipProduct, isMember: boolean): MembershipProduct => {
   if (isMember || !requiresMembershipToPurchase(product)) {

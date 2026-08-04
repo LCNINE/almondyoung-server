@@ -104,7 +104,7 @@
     "stockLimitToastNamed": "Only {max} of “{option}” left in stock. Please choose {max} or fewer.",
     "stockConflictToast": "Adding this exceeds available stock once items already in your cart are counted. Please check your cart.",
     "stockShortToast": "Not enough stock. Please reduce the quantity and try again.",
-    "membersOnly": "Members only"
+    "membersOnlyCta": "Join membership to purchase"
   },
   "cartModal": {
     "addingTitle": "Adding to cart",
@@ -122,7 +122,8 @@
     "membershipBadgeLabel": "Member price",
     "membershipOnlyPrice": "Members only",
     "memberSavings": "Save {amount} KRW by joining membership",
-    "membersOnlyPurchase": "Members-only product. Join the membership to purchase."
+    "membersOnlyTitle": "Members-only product",
+    "membersOnlyDescription": "Only membership members can purchase"
   },
   "qna": {
     "title": "Q&A",

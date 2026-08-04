@@ -10,6 +10,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
+import { ChevronsUpDown } from 'lucide-react';
+import { getPageRange } from './page-range';
 
 const GRID_STYLES = {
   head: 'h-auto border-[0.5px] border-[#D9D9D9] px-1 py-2 text-center align-middle text-sm font-bold leading-[18px] text-black whitespace-normal',
@@ -181,7 +183,7 @@ const Pagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
       <div
         ref={ref}
         className={cn(
-          'flex w-full items-center justify-between px-2 py-2',
+          'sticky bottom-0 z-10 flex w-full items-center justify-between border-t bg-white px-2 py-2',
           className
         )}
         {...props}
@@ -189,7 +191,7 @@ const Pagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
         <div>
           <p className="text-xs">{`${count} 중 ${from} - ${to}`}</p>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
           <GoToPagePopover
             pageCount={pageCount}
             pageIndex={pageIndex}
@@ -197,15 +199,41 @@ const Pagination = React.forwardRef<HTMLDivElement, TablePaginationProps>(
           />
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             onClick={previousPage}
             disabled={!canPreviousPage}
           >
             이전
           </Button>
+          {pageCount > 1 &&
+            getPageRange(pageIndex + 1, pageCount).map((page, i) =>
+              page === '...' ? (
+                <span
+                  key={`gap-${i}`}
+                  className="px-1 text-xs text-muted-foreground"
+                >
+                  …
+                </span>
+              ) : (
+                <Button
+                  key={page}
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => goPage(page - 1)}
+                  aria-current={page === pageIndex + 1 ? 'page' : undefined}
+                  className={cn(
+                    'min-w-[27px] px-1.5 text-[var(--grayscale-80)]',
+                    page === pageIndex + 1 &&
+                      'bg-[var(--grayscale-80)] font-semibold text-white hover:bg-[var(--grayscale-90)] hover:text-white'
+                  )}
+                >
+                  {page}
+                </Button>
+              )
+            )}
           <Button
             size="sm"
-            variant="outline"
+            variant="secondary"
             onClick={nextPage}
             disabled={!canNextPage}
           >
@@ -244,7 +272,13 @@ function GoToPagePopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm">
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={ChevronsUpDown}
+          iconPosition="right"
+          aria-label={`${pageIndex + 1} / ${pageCount} 페이지, 클릭하면 페이지 이동`}
+        >
           {`${pageIndex + 1} / ${pageCount}`}
         </Button>
       </PopoverTrigger>
