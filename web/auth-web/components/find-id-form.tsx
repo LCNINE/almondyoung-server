@@ -65,8 +65,34 @@ export function FindIdForm({ redirectTo }: { redirectTo: string }) {
       }
 
       setLoginIds(res.loginIds)
-      setMessage("휴대폰 번호와 연결된 아이디를 찾았습니다.")
     })
+  }
+
+  // 아이디를 찾은 뒤엔 번호·인증번호 입력칸을 다시 보여줄 이유가 없다
+  if (loginIds) {
+    return (
+      <div className="flex flex-1 flex-col gap-4">
+        <Alert>
+          <AlertTitle>찾은 아이디</AlertTitle>
+          <AlertDescription>
+            <ul className="flex flex-col gap-1">
+              {loginIds.map((loginId) => (
+                <li key={loginId} className="font-medium text-foreground">
+                  {loginId}
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+
+        <Button
+          asChild
+          className="mt-auto h-[52px] rounded-lg text-base font-bold"
+        >
+          <Link href={signinHref(redirectTo)}>로그인하러 가기</Link>
+        </Button>
+      </div>
+    )
   }
 
   return (
@@ -117,20 +143,6 @@ export function FindIdForm({ redirectTo }: { redirectTo: string }) {
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {message && <p className="text-sm text-muted-foreground">{message}</p>}
-      {loginIds && (
-        <Alert>
-          <AlertTitle>찾은 아이디</AlertTitle>
-          <AlertDescription>
-            <ul className="flex flex-col gap-1">
-              {loginIds.map((loginId) => (
-                <li key={loginId} className="font-medium text-foreground">
-                  {loginId}
-                </li>
-              ))}
-            </ul>
-          </AlertDescription>
-        </Alert>
-      )}
 
       <Button
         type="submit"
