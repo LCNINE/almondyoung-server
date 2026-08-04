@@ -48,7 +48,8 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   // 멤버: Medusa가 실제 적용한 할인 (price list 기반)
   const memberActualDiscount = Math.round(
-    ((cheapestPrice.original_price_number - cheapestPrice.calculated_price_number) /
+    ((cheapestPrice.original_price_number -
+      cheapestPrice.calculated_price_number) /
       cheapestPrice.original_price_number) *
       100
   )
@@ -56,7 +57,8 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   const isMembershipApplied = hasMembership && hasMemberActualDiscount
 
-  const showOriginalPrice = cheapestPrice.calculated_price_number < cheapestPrice.original_price_number
+  const showOriginalPrice =
+    cheapestPrice.calculated_price_number < cheapestPrice.original_price_number
 
   // 옵션마다 가격이 다르면 대표가는 "최저가"이므로 "~"를 붙여 시작가임을 알림
   const variantAmounts =
@@ -119,7 +121,10 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
       {showMembershipPriceHiddenNotice ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
+            <ProductMembershipBadge
+              size="md"
+              label={t("membershipBadgeLabel")}
+            />
             <span className="text-primary text-lg font-bold">
               {t("membershipOnlyPrice")}
             </span>
@@ -153,11 +158,16 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
       )}
 
       {showMembersOnlyPurchaseNotice && (
-        <div className="border-primary/30 bg-primary/5 mt-1 flex items-center gap-2 rounded-lg border px-3 py-2">
-          <Lock className="text-primary size-4 shrink-0" />
-          <p className="text-primary text-sm font-semibold">
-            {t("membersOnlyPurchase")}
-          </p>
+        <div className="bg-muted mt-1 flex items-start gap-3 rounded-xl px-4 py-3.5">
+          <Lock className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="text-foreground text-sm font-bold">
+              {t("membersOnlyTitle")}
+            </p>
+            <p className="text-muted-foreground mt-0.5 text-[13px]">
+              {t("membersOnlyDescription")}
+            </p>
+          </div>
         </div>
       )}
     </div>
