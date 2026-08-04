@@ -1,0 +1,294 @@
+{
+  "sheetNames": {
+    "products": "상품",
+    "options": "옵션",
+    "variants": "조합",
+    "categories": "카테고리",
+    "constraints": "구매제약",
+    "images": "이미지",
+    "categoryReference": "카테고리 참조",
+    "meta": "_양식정보"
+  },
+  "pricingSentinel": "[복합 가격규칙]",
+  "sheets": {
+    "상품": [
+      {
+        "key": "rowKey",
+        "label": "상품키",
+        "required": true
+      },
+      {
+        "key": "name",
+        "label": "상품명",
+        "required": true
+      },
+      {
+        "key": "basePrice",
+        "label": "판매가",
+        "required": true
+      },
+      {
+        "key": "membershipPrice",
+        "label": "멤버십가",
+        "required": false
+      },
+      {
+        "key": "productCode",
+        "label": "상품코드",
+        "required": false
+      },
+      {
+        "key": "brand",
+        "label": "브랜드",
+        "required": false
+      },
+      {
+        "key": "thumbnailImageKey",
+        "label": "대표이미지키",
+        "required": false
+      },
+      {
+        "key": "additionalImageKeys",
+        "label": "부가이미지키",
+        "required": false
+      },
+      {
+        "key": "description",
+        "label": "상세설명",
+        "required": false
+      },
+      {
+        "key": "alternativeName",
+        "label": "별칭",
+        "required": false
+      },
+      {
+        "key": "material",
+        "label": "소재",
+        "required": false
+      },
+      {
+        "key": "marketPrice",
+        "label": "시중가",
+        "required": false
+      },
+      {
+        "key": "supplyPrice",
+        "label": "공급가",
+        "required": false
+      },
+      {
+        "key": "productType",
+        "label": "상품유형",
+        "required": false
+      },
+      {
+        "key": "fulfillmentKind",
+        "label": "배송유형",
+        "required": false
+      },
+      {
+        "key": "salesClassification",
+        "label": "판매분류",
+        "required": false
+      },
+      {
+        "key": "purchaseClassification",
+        "label": "구매분류",
+        "required": false
+      },
+      {
+        "key": "ageRestriction",
+        "label": "연령제한",
+        "required": false
+      },
+      {
+        "key": "minQuantity",
+        "label": "최소구매수량",
+        "required": false
+      },
+      {
+        "key": "maxQuantity",
+        "label": "최대구매수량",
+        "required": false
+      },
+      {
+        "key": "seller",
+        "label": "판매처",
+        "required": false
+      },
+      {
+        "key": "isOverseas",
+        "label": "해외직구",
+        "required": false
+      },
+      {
+        "key": "isVisibleToMembersOnly",
+        "label": "멤버십회원전용노출",
+        "required": false
+      },
+      {
+        "key": "hideMembershipPriceForNonMembers",
+        "label": "비회원에게멤버십가숨김",
+        "required": false
+      },
+      {
+        "key": "isWholesaleOnly",
+        "label": "도매전용",
+        "required": false
+      },
+      {
+        "key": "seoTitle",
+        "label": "SEO제목",
+        "required": false
+      },
+      {
+        "key": "seoDescription",
+        "label": "SEO설명",
+        "required": false
+      },
+      {
+        "key": "seoKeywords",
+        "label": "SEO키워드",
+        "required": false
+      },
+      {
+        "key": "salesStartDate",
+        "label": "판매시작",
+        "required": false
+      },
+      {
+        "key": "salesEndDate",
+        "label": "판매종료",
+        "required": false
+      }
+    ],
+    "옵션": [
+      {
+        "key": "rowKey",
+        "label": "상품키",
+        "required": true
+      },
+      {
+        "key": "optionKey",
+        "label": "옵션키",
+        "required": true
+      },
+      {
+        "key": "optionName",
+        "label": "옵션명",
+        "required": true
+      },
+      {
+        "key": "optionValueKey",
+        "label": "옵션값키",
+        "required": true
+      },
+      {
+        "key": "optionValueName",
+        "label": "옵션값명",
+        "required": true
+      },
+      {
+        "key": "optionSortOrder",
+        "label": "옵션정렬",
+        "required": false
+      },
+      {
+        "key": "colorCode",
+        "label": "색상코드",
+        "required": false
+      },
+      {
+        "key": "valueSortOrder",
+        "label": "값정렬",
+        "required": false
+      }
+    ],
+    "조합": [
+      {
+        "key": "rowKey",
+        "label": "상품키",
+        "required": true
+      },
+      {
+        "key": "combination",
+        "label": "조합",
+        "required": true
+      },
+      {
+        "key": "combinationLabel",
+        "label": "조합명(참고용)",
+        "required": false
+      },
+      {
+        "key": "basePrice",
+        "label": "판매가",
+        "required": false
+      },
+      {
+        "key": "membershipPrice",
+        "label": "멤버십가",
+        "required": false
+      },
+      {
+        "key": "variantCode",
+        "label": "품목코드",
+        "required": false
+      }
+    ],
+    "카테고리": [
+      {
+        "key": "rowKey",
+        "label": "상품키",
+        "required": true
+      },
+      {
+        "key": "categoryPath",
+        "label": "카테고리경로",
+        "required": true
+      },
+      {
+        "key": "isPrimary",
+        "label": "대표여부",
+        "required": true
+      }
+    ],
+    "구매제약": [
+      {
+        "key": "rowKey",
+        "label": "상품키",
+        "required": true
+      },
+      {
+        "key": "requiresMembership",
+        "label": "멤버십필요",
+        "required": false
+      },
+      {
+        "key": "lifetimeQuantityLimit",
+        "label": "평생구매한도",
+        "required": false
+      }
+    ],
+    "이미지": [
+      {
+        "key": "imageKey",
+        "label": "이미지키",
+        "required": true
+      },
+      {
+        "key": "sourceValue",
+        "label": "원본",
+        "required": true
+      }
+    ],
+    "카테고리 참조": [
+      {
+        "key": "categoryPath",
+        "label": "카테고리경로",
+        "required": true
+      }
+    ]
+  }
+}

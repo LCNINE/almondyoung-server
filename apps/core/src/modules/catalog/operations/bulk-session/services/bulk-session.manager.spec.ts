@@ -235,6 +235,16 @@ async function exportBackedWorkbook(exportId: string = EXPORT_ID): Promise<Buffe
   });
 }
 
+/** exportId 는 없는데 프리필에서 온 예약 상품키가 남아 있는 워크북 — 숨은 시트 유실의 흔적. */
+async function orphanedPrefillWorkbook(): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('상품');
+  ws.addRow(['상품키', '상품명', '판매가']);
+  ws.addRow(['P-000001', '티셔츠', '19000']);
+  ws.addRow(['P-000002', '니트', '29000']);
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
 describe('BulkSessionManager.accept — exportId 3갈래', () => {
   it('exportId 가 없으면 신규 전용 세션이다', async () => {
     const inserted: FakeRow[] = [];
@@ -414,6 +424,28 @@ describe('BulkSessionManager.accept — exportId 3갈래', () => {
     ).rejects.toThrow('일시적 DB 커넥션 오류');
     // FK 위반이 아니므로 정리 시도를 하지 않는다 — 파일은 여전히 유효한 세션을 기다릴 수 있다.
     expect(fileClient.softDelete).not.toHaveBeenCalled();
+  });
+
+  it('exportId 가 없는데 예약 상품키가 있으면 파일을 거부한다 — 대량 중복 생성 방어선', async () => {
+    const { manager, fileClient } = harness();
+
+    await expect(
+      manager.accept({ buffer: await orphanedPrefillWorkbook(), fileName: 'form.xlsx', userId: 'u1' }),
+    ).rejects.toThrow(BadRequestError);
+
+    // 게이트는 업로드보다 먼저 돈다 — 거부된 파일이 S3 에 고아로 남지 않아야 한다
+    // (file-service 에 고아 정리 잡이 없다).
+    expect(fileClient.upload).not.toHaveBeenCalled();
+  });
+
+  it('exportId 가 없어도 예약 형식이 아닌 상품키는 신규 전용 세션으로 정상 접수된다', async () => {
+    const inserted: FakeRow[] = [];
+    const { manager } = harness({ onInsert: (v) => inserted.push(v) });
+
+    const out = await manager.accept({ buffer: await newOnlyWorkbook(), fileName: 'form.xlsx', userId: 'u1' });
+
+    expect(out.phase).toBe('uploaded');
+    expect(inserted[0]?.exportId).toBeNull();
   });
 });
 

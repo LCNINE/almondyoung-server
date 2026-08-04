@@ -15,6 +15,7 @@ import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
 import { parseUploadWorkbook } from './bulk-upload.parser';
 import { BulkSessionReader, bulkItemRowColumns } from './bulk-session.reader';
+import { isReservedRowKey, RESERVED_ROW_KEY_WITHOUT_EXPORT_MESSAGE } from './bulk-session.row-key';
 import { countUndecided, toConflictDecisionMap, toConflictMap } from './bulk-session.conflicts';
 import { type ConflictDecisionMap } from './bulk-session.types';
 import { BulkSessionAcceptedDto, BulkSessionItemDto, BulkSessionProgressDto } from '../dto';
@@ -108,6 +109,25 @@ export class BulkSessionManager {
   async accept(input: BulkSessionAcceptInput, tx?: DbTransaction): Promise<BulkSessionAcceptedDto> {
     const parsed = await parseUploadWorkbook(input.buffer); // 파일 오류는 BadRequestError 로 던진다
     const exportId = parsed.exportId;
+
+    // **숨은 시트를 잃은 수정용 양식을 여기서 잡는다.**
+    //
+    // `exportId` 가 없으면 아래 INSERT 가 `exportId: null` 로 신규 전용 세션을 만들고,
+    // 검증 워커는 모든 행을 `kind='create'` 로 읽어 **프리필 행 전량을 신규 상품으로
+    // 재생성한다**. 그 사고를 되돌리는 비용이 크고, 원인은 파일 하나라 행 단위로 쪼갤
+    // 이유가 없다 — 파일 전체를 거부한다.
+    //
+    // `else if (parsed.exportId)` (bulk-session-job.manager.ts) 는 "세션 export_id 는
+    // NULL 인데 워크북엔 exportId 가 있다"는 **다른** 사고를 막는다. 그쪽은 접수 이후
+    // 잡이 삭제된 경우고, 이쪽은 워크북에서 exportId 자체가 사라진 경우다.
+    if (!exportId) {
+      const orphaned = parsed.sheets.products
+        .map((row) => (row.cells.rowKey ?? '').trim())
+        .filter((rowKey) => isReservedRowKey(rowKey));
+      if (orphaned.length > 0) {
+        throw new BadRequestError(RESERVED_ROW_KEY_WITHOUT_EXPORT_MESSAGE);
+      }
+    }
 
     if (exportId) {
       await this.db.run((trx) => this.assertExportUsable(exportId, trx), tx);

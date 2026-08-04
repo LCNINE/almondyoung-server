@@ -19,6 +19,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { SimplePagination } from '@/components/simple-pagination';
 import {
+  fetchAllInvalidItems,
   useApproveBulkSession,
   useBulkSessionItems,
   useBulkSessionUndecidedCount,
@@ -36,6 +37,7 @@ import type {
   ConflictDecision,
   ConflictFilter,
 } from '@/lib/types/dto/bulk-session';
+import { formatErrorReport } from '../../lib/error-report';
 import { notifySessionMutationError } from '../../lib/session-mutation-error';
 import { ItemRow } from './item-row';
 
@@ -82,6 +84,7 @@ export function ReviewPanel({
   const [tab, setTab] = useState<ReviewTab>('all');
   const [page, setPage] = useState(1);
   const [approveOpen, setApproveOpen] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const itemsQueryVars = { ...TAB_QUERY[tab], page, limit: PAGE_SIZE };
   const itemsQuery = useBulkSessionItems(sessionId, itemsQueryVars);
@@ -144,6 +147,19 @@ export function ReviewPanel({
     });
   }
 
+  async function handleCopyErrors() {
+    setCopying(true);
+    try {
+      const invalid = await fetchAllInvalidItems(sessionId);
+      await navigator.clipboard.writeText(formatErrorReport(invalid));
+      toast.success(`오류 ${invalid.length}건을 복사했습니다.`);
+    } catch {
+      toast.error('오류 목록을 복사하지 못했습니다.');
+    } finally {
+      setCopying(false);
+    }
+  }
+
   const undecided = undecidedQuery.data;
   const approvable =
     undecided !== undefined && canApprove(progress.phase, undecided);
@@ -172,41 +188,54 @@ export function ReviewPanel({
           )}
         </div>
 
-        <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
-          <Button
-            type="button"
-            disabled={!approvable || approve.isPending}
-            onClick={() => setApproveOpen(true)}
-          >
-            {approve.isPending && (
-              <Spinner size="sm" data-icon="inline-start" />
-            )}
-            승인
-          </Button>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>세션 승인</AlertDialogTitle>
-              <AlertDialogDescription>
-                오류 {invalidCount}건은 제외하고 {pendingCount}건을 진행합니다.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={approve.isPending}>
-                닫기
-              </AlertDialogCancel>
-              <AlertDialogAction
-                disabled={approve.isPending}
-                onClick={(event) => {
-                  event.preventDefault();
-                  handleApprove();
-                }}
-              >
-                {approve.isPending && <Spinner size="sm" />}
-                승인
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <div className="flex items-center gap-2">
+          {invalidCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handleCopyErrors()}
+              disabled={copying}
+            >
+              {copying ? '복사 중…' : `오류 목록 복사 (${invalidCount})`}
+            </Button>
+          )}
+
+          <AlertDialog open={approveOpen} onOpenChange={setApproveOpen}>
+            <Button
+              type="button"
+              disabled={!approvable || approve.isPending}
+              onClick={() => setApproveOpen(true)}
+            >
+              {approve.isPending && (
+                <Spinner size="sm" data-icon="inline-start" />
+              )}
+              승인
+            </Button>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>세션 승인</AlertDialogTitle>
+                <AlertDialogDescription>
+                  오류 {invalidCount}건은 제외하고 {pendingCount}건을 진행합니다.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={approve.isPending}>
+                  닫기
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={approve.isPending}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    handleApprove();
+                  }}
+                >
+                  {approve.isPending && <Spinner size="sm" />}
+                  승인
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </div>
 
       <Tabs value={tab} onValueChange={handleTabChange}>

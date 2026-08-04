@@ -97,3 +97,48 @@ describe('assembleUpload', () => {
     expect(images.get('IMG-1')?.sourceValue).toBe('a.jpg'); // 첫 행이 이긴다
   });
 });
+
+function parsedWith(productRows: Array<Record<string, string>>): ParsedUpload {
+  return {
+    exportId: null,
+    sheets: {
+      products: productRows.map((cells, i) => ({ rowNumber: i + 2, cells })),
+      options: [],
+      variants: [],
+      categories: [],
+      constraints: [],
+      images: [],
+    },
+    present: {
+      products: new Set(['rowKey', 'name', 'basePrice']),
+      options: new Set<string>(),
+      variants: new Set<string>(),
+      categories: new Set<string>(),
+      constraints: new Set<string>(),
+    },
+  };
+}
+
+describe('assembleUpload — 예약 상품키', () => {
+  it('매핑에 없는 예약 키 행은 오류로 표시한다 (다른 양식의 행을 섞은 경우)', () => {
+    const out = assembleUpload(parsedWith([{ rowKey: 'P-000042', name: '티셔츠' }]), new Set());
+
+    const row = out.rows[0];
+    expect(row.kind).toBe('create');
+    expect(row.errors.map((e) => e.message).join(' ')).toContain('P-000042');
+  });
+
+  it('매핑에 있는 예약 키는 정상 수정 행이다', () => {
+    const out = assembleUpload(parsedWith([{ rowKey: 'P-000042', name: '티셔츠' }]), new Set(['P-000042']));
+
+    expect(out.rows[0].kind).toBe('update');
+    expect(out.rows[0].errors).toEqual([]);
+  });
+
+  it('예약 형식이 아닌 신규 키는 영향받지 않는다', () => {
+    const out = assembleUpload(parsedWith([{ rowKey: 'NEW-001', name: '티셔츠' }]), new Set());
+
+    expect(out.rows[0].kind).toBe('create');
+    expect(out.rows[0].errors).toEqual([]);
+  });
+});
