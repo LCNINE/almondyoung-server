@@ -63,6 +63,16 @@
     "claimed": "발급 완료",
     "copyAria": "쿠폰 코드 복사",
     "publicSection": "공개 쿠폰",
+    "tabMine": "내 쿠폰",
+    "tabClaim": "쿠폰 받기",
+    "tabExpired": "만료 쿠폰",
+    "sortDiscount": "할인율 높은순",
+    "sortMinOrder": "최소주문금액 낮은순",
+    "expiredBadge": "만료됨",
+    "expiredNotice": "최근 한 달 내 만료된 쿠폰이에요.",
+    "emptyMine": "보유한 쿠폰이 없어요",
+    "emptyClaim": "받을 수 있는 쿠폰이 없어요",
+    "emptyExpired": "만료된 쿠폰이 없어요",
     "toasts": {
       "claimSuccess": "쿠폰이 발급되었습니다.",
       "claimFailed": "쿠폰 발급에 실패했습니다. 잠시 후 다시 시도해주세요."

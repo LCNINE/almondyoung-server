@@ -1,6 +1,8 @@
 import { MedusaService } from '@medusajs/framework/utils';
 import PromotionMeta from './models/promotion-meta';
 import PromotionIssueLog from './models/promotion-issue-log';
+import CouponEvent from './models/coupon-event';
+import CouponEventItem from './models/coupon-event-item';
 
 export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
 export type AdminIssueTrigger = 'admin_manual' | 'admin_force' | 'customer_claim';
@@ -16,7 +18,12 @@ export type PromotionMetaData = {
   auto_issue_trigger?: AutoIssueTrigger | null;
 };
 
-class PromotionMetaModuleService extends MedusaService({ PromotionMeta, PromotionIssueLog }) {
+class PromotionMetaModuleService extends MedusaService({
+  PromotionMeta,
+  PromotionIssueLog,
+  CouponEvent,
+  CouponEventItem,
+}) {
   async upsert(data: PromotionMetaData): Promise<any> {
     if (data.visibility != null && !['public', 'claimable', 'assigned_only'].includes(data.visibility)) {
       throw new Error(`Invalid visibility value: ${data.visibility}`);
@@ -134,6 +141,36 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
       `UPDATE "promotion_meta" SET "issued_count" = ? WHERE "promotion_id" = ?`,
       [safe, promotionId],
     );
+  }
+
+  /*───────────────────────────
+   * 쿠폰 이벤트 (배너용 쿠폰 묶음)
+   *──────────────────────────*/
+
+  async getEventBySlug(slug: string): Promise<any | null> {
+    const records = await (this as any).listCouponEvents({ slug });
+    return records[0] ?? null;
+  }
+
+  /** 이벤트에 담긴 쿠폰(프로모션) 항목을 sort_order 순으로 반환. */
+  async listEventItems(eventId: string): Promise<any[]> {
+    return (this as any).listCouponEventItems(
+      { event_id: eventId },
+      { order: { sort_order: 'ASC' } },
+    );
+  }
+
+  /** 이벤트의 쿠폰 구성을 통째로 교체(기존 항목 제거 후 순서대로 재생성). */
+  async setEventItems(eventId: string, promotionIds: string[]): Promise<void> {
+    const existing = await (this as any).listCouponEventItems({ event_id: eventId });
+    if (existing.length > 0) {
+      await (this as any).deleteCouponEventItems(existing.map((r: any) => r.id));
+    }
+    if (promotionIds.length > 0) {
+      await (this as any).createCouponEventItems(
+        promotionIds.map((promotion_id, i) => ({ event_id: eventId, promotion_id, sort_order: i })),
+      );
+    }
   }
 }
 
