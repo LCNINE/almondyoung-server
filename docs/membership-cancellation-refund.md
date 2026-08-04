@@ -63,6 +63,12 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
   2026-07-08 `f1821f213`)과 무통장 전용(`MEMBERSHIP_REQUIRES_BANK_TRANSFER`, 2026-07-14 `643e66d11`).
   라이브의 POINTS(~07-07)·TOSS(~07-15) charge 는 **전부 가드 도입 이전 데이터**고, 이후로는 0건이다.
   다만 그 이전 결제로 만들어진 계약은 지금도 살아 있으므로 **환불 상한·복합 환불 분기는 유지해야 한다**.
+- **`directCharge`(`POST /v1/direct-billing-charges`)에는 그 가드가 없지만 도달할 수 없다.** 이 경로는
+  `subscribe-with-method` 의 `one_time` 분기만 쓰는데, 라이브 실측(2026-08-04)에서
+  이 경로로 만들어진 payment intent 가 **0건**이고 MEMBERSHIP_FEE intent 915건은 전부 checkout 경로다.
+  `billing_methods` 도 **CMS_BATCH 뿐**(ACTIVE 73)이라 `one_time` 으로 가면 기존
+  `direct-billing-charge.service.ts:54` 의 CMS_BATCH 거부에 먼저 걸린다. 다른 provider 의 billing method 가
+  생기기 전까지는 가드를 더 얹을 실익이 없다 — 생기면 그때 `ConfirmService` 와 같은 판정을 넣는다.
 - 금액이 다른 환불 1건은 정책상의 '부분 보상'이 아니라 **복합결제에서 PG분만 환불**한 건이다
   (포인트 898원은 포인트 원장에서 별도로 처리된다). 그래도 "환불 이벤트 = 구독 취소" 가 성립하지
   않는다는 결론은 같다 — 그 판단은 wallet 의 누적 환불액으로 해야 한다(§8).
@@ -461,6 +467,29 @@ CMS 는 자동환불이 안 돼 관리자가 수동 송금을 승인해야만 �
 **재청구는 세 겹으로 막힌다**: `autoRenewal=false` + `nextBillingDate=null` + dunning 삭제.
 `findDueContracts` 가 어떤 해지 경로로도 그 계약을 다시 집지 않는다(E2E 로 검증).
 
+### Medusa 고객 그룹 — 뺄 때는 SSOT 를 다시 본다
+
+`MembershipStatusChanged(CANCELLED|EXPIRED)` 는 Medusa 멤버십 그룹에서 고객을 뺀다. 그런데 이 이벤트는
+**발행 시점의 사실**이고 도착까지 시간이 걸린다(Inbox 재시도·발행 지연). 그 사이 고객이 재가입하거나
+해지를 철회했으면 그 제거는 **돈 낸 고객의 할인을 뺏는다.** 만료 크론이 대상을 읽은 뒤 고객이 재가입하는
+창이 대표적이다.
+
+그래서 제거 직전에 SSOT(멤버십 서비스 `/internal/memberships/active`)에 현재 자격을 되묻고, 살아 있으면
+빼지 않는다. 판정 기준은 일일 정합화 크론이 쓰던 것과 같다(현재 자격 + 미만료 + 미정지).
+
+**조회가 실패하면 제거를 그대로 진행한다**(=이 확인이 없던 동작). 백스톱이 한쪽에만 있기 때문이다 —
+잘못 뺀 건은 02:30 전체 활성회원 정합화가 도로 넣어주지만, 빼지 못한 건은 02:00 정합화가 cafe24 연동
+회원만 돌아 자체가입자는 아무도 복구하지 않는다.
+
+**만료 처리 자체도 조건부다.** 크론이 목록을 읽은 뒤 자격이 갈아치워질 수 있어(해지 철회·재가입·갱신
+결제·기간 연장), `handleExpiration` 은 아직 만료 대상인 자격만 조건부로 닫고 실제로 닫은 경우에만 계약을
+EXPIRED 로 바꾸고 이벤트를 발행한다. 건너뛴 실행은 아무것도 쓰지 않는다.
+
+**종료된 계약에 뒤늦게 도착한 결제 성공도 자격을 건드리지 않는다.** 자격은 계약이 아니라 사용자 단위라,
+그 사이 재가입했으면 옛 계약의 결제로 **새 구독의 기간이 늘어난다.** CHARGE 경로(`handleSuccess`)도
+INVOICE 경로와 같이 `BILLING_SUCCESS_AFTER_TERMINATION` 으로 사실만 남기고 자격은 손대지 않는다
+(청구 선점 플래그는 정상적으로 해제하므로 reconcile 이 막히지 않는다).
+
 ### 효성 CMS 약정 종료
 
 효성 프로토콜(FMS-TE-0046)에는 **약정해지 API 가 없다.** 유일한 종료 수단이 회원삭제
@@ -487,6 +516,20 @@ POST /v1/billing-agreements/by-subscriber/terminate-mandate
 
 약정 종료가 실패해도 해지는 되돌리지 않는다 — 재청구는 DB 플래그로 이미 막혀 있고,
 `AGREEMENT_REVOKE_PENDING` 계약 이벤트로 후속 정리 대상만 남긴다.
+
+**해지를 철회하면 정리 지시도 함께 철회된다.** 해지 철회(고객 `/cancel/undo`·관리자 자동갱신 재활성)는
+wallet 자동이체 약정을 **새로 만든다.** 그런데 해지 때 남긴 `AGREEMENT_REVOKE_PENDING`/`_DEFERRED` 는
+그대로 남아 있어서, 그대로 두면 정리 스케줄러가 **살아있는 정기결제의 약정을 나중에 지운다** — 특히
+INVOICE 해지예약의 보류 건은 이용 종료일이 지나는 순간 반드시 그렇게 되고, 다음 청구가
+`BILLING_AGREEMENT_NOT_FOUND` 로 실패해 그대로 해지로 이어진다(계속 쓰겠다고 한 고객이 멤버십을 잃는다).
+그래서 정리 대상 판정에 **계약의 현재 상태**를 함께 본다(`isCleanupWithdrawnBy`): 되살아난 계약
+(`ACTIVE` + `autoRenewal` + `recurringCancelledAt=null`)은 wallet 을 부르지 않고 `AGREEMENT_REVOKE_UNDONE`
+로 큐에서 닫는다. 관리자 화면도 같은 판정을 쓴다. **목록을 읽은 시점의 판정만 믿지 않는다** — 지우기
+직전에 계약을 한 번 더 읽는다(배치가 도는 중에 들어온 철회를 놓치면 그 한 건이 약정을 잃는다).
+
+**약정 종료가 성공하면 그 사실도 남긴다.** 해지예약(보류) → 즉시해지처럼 앞선 기록이 열려 있는 경로에서
+성공을 남기지 않으면, 이미 끝난 건이 관리자 정리 큐에 '처리 필요' 로 계속 떠 있는다. 반대로 정리할 것이
+애초에 없던 계약(1회 결제 등)에는 남기지 않는다 — 허위 `AGREEMENT_REVOKE_PENDING` 을 걷어낸 것과 같은 이유다.
 
 **정리가 남은 건은 관리자 화면에 뜬다** — `멤버십 > 정기결제 관리 > 약정 정리` 탭
 (`GET /admin/agreement-cleanup`). 계약별 최신 약정 이벤트가 곧 상태이므로 재시도 스케줄러와 이 화면이
@@ -525,7 +568,7 @@ POST /v1/billing-agreements/by-subscriber/terminate-mandate
 ```bash
 docker compose up -d postgres
 
-# 서비스 + HTTP 계층 (112 케이스)
+# 서비스 + HTTP 계층 (118 케이스)
 npm run test:membership:cancellation-e2e
 
 # 고객 UI — 실제 크로미움, 8 시나리오
@@ -535,7 +578,7 @@ cd web/almondyoung-storefront && npm run test:e2e:membership-cancel
 cd apps/admin-web && npm run test:e2e:membership-cancel
 ```
 
-- 서비스 계층(86): 상태 전이·자격·계약이벤트·더닝·재청구 차단, 관리자 해지예약 대행, 1회 결제 철회 차단
+- 서비스 계층(92): 상태 전이·자격·계약이벤트·더닝·재청구 차단, 관리자 해지예약 대행, 1회 결제 철회 차단
   (고객·관리자 양쪽), 수동 송금 계좌 보존, 수동 송금 환불 완료 처리와 이중 송금 차단, 주기 시작 판정
   (관리자 연장·일시정지·결제기록 없는 옛 계약 폴백·INVOICE), 정지 중 해지, 약정 정리 재시도와
   **관리자 정리 큐**(포기 건 우선·정리된 건 제외), **해지 예약 뒤의 즉시해지 + 환불**
@@ -565,8 +608,9 @@ cd apps/admin-web && npm run test:e2e:membership-cancel
   넣으면 동작한다(행이 없으면 컨슈머가 조용히 no-op 한다).
 - **`markManualRefundCompleted` 는 wallet 에 확정 대기 환불이 있으면 409 로 거부한다** (그 건은
   결제관리가 닫는다). wallet 조회가 실패하면 막지 않는다 — "미완료" 가 영구히 남는 쪽이 더 나쁘다.
-- **고객관리 상세창 멤버십 탭은 브라우저로 검증하지 못했다.** 같은 패널을 렌더하지만 그 화면까지
-  띄우려면 customers 페이지와 core API 스택을 스텁해야 한다.
+- **고객관리 상세창 멤버십 탭도 브라우저로 검증했다** (관리자 UI E2E, `monthly-cms`/`scheduled`).
+  같은 패널이 같은 배너·계좌·즉시해지 다이얼로그를 열고, 다른 탭이 쓰는 Medusa/core API 가 스텁에 없어
+  404 로 떨어져도 이 화면의 렌더를 막지 않는다.
 - **수동 환불 완료 처리**는 멤버십 화면에서 한다 — 해지·환불 탭의 환불 행에 `송금 완료 처리` 버튼
   (`POST /admin/subscriptions/:contractId/refund/manual-complete`). wallet 의 수동 완료
   (`POST /v1/admin/refunds/:id/confirm`)는 **무통장 전용**이고, 효성 CMS 는 wallet 에 환불 행 자체가
@@ -591,13 +635,22 @@ cd apps/admin-web && npm run test:e2e:membership-cancel
   바꾸는 길은 열려 있지만 환불이 가능한 창 안에서만 손해가 없다. 붙일 자리는 결제 경로 위다 —
   비례정산 차액 청구(또는 잔여 환불) → 새 계약 생성 → 자격 이월 → 약정 전환. `subscriptionManager`
   의 upgrade/downgrade 는 청구축(nextBillingDate/billingDate/autoRenewal/agreement)을 정리하지 않아
-  그대로 재사용할 수 없다. 배포 블로커는 아니다 — 라이브 활성 계약 중 연간은 소수이고, 해지·환불
-  경로가 손실 없이 동작하는 한 CS 로 흡수 가능하다.
+  그대로 재사용할 수 없다. 배포 블로커는 아니다.
+
+  **CS 부담인지 라이브 데이터로 확인했다 (2026-08-04, 읽기 전용).** 아니었다.
+  - 활성 자격 703건 중 연간(365일)은 **69건(9.8%)**, 월간 634건. (이 문서가 근거 없이 '소수'라고
+    적어둔 값을 실측으로 대체했다 — 소수이긴 하나 1/10 규모다.)
+  - 계약에 남은 해지 사유 코드는 `ADMIN_FORCED` 74 · `EXPENSIVE` 1 · `NOT_USING` 1. 즉 **고객 셀프
+    해지는 2건뿐**이고 나머지는 관리자 강제취소다.
+  - 강제취소 사유 원문(계약 이벤트) 어디에도 **'플랜 변경' 성격의 사유가 없다.** 대부분 품절 보상
+    환불(`품절로 인해 취소 환불`, `LED 래쉬테이블 품절로 멤버십까지 환불 요청` 등)과 가격 적용
+    오류 정정(`멤버십 가격 적용 오류`, `오류로인해 다시 재가입`)이다. 월간↔연간 전환 요청은 0건.
+
+  → 지금 붙일 근거가 없다. 유료 플랜 변경은 계속 미구현으로 둔다.
 - 아직 열려 있는 것:
   - `refundByIntent` 의 멱등키가 `membership:refund:{intentId}:{amount}` 라, 같은 결제에 **같은 금액**의
     별개 환불이 필요한 경우 wallet 이 첫 응답을 재생한다(현재 경로에서는 발생하지 않는다 — 해지는
     계약당 1회로 막혀 있다).
-  - 해지 후 `isPastDue` 가 남는다. 고객 화면에는 활성 자격이 없으면 노출되지 않는다.
   - 심사 거절(`MANDATE_REJECTED`)로 자격이 회수된 고객에게 **알림이 가지 않는다.** 화면에는
     청구 내역(§B)이 남아 이유를 볼 수 있고 결제수단을 새로 등록해 재가입할 수 있지만, 고객이
     마이페이지에 들어와야만 안다. 알림은 notification 이 성숙한 뒤에 붙인다.
@@ -615,4 +668,5 @@ cd apps/admin-web && npm run test:e2e:membership-cancel
 | membership 이 wallet 보다 먼저 | 새 wallet API(`refundability`·`terminate-mandate`)가 404 → 전부 예외로 흡수된다. 즉시해지가 전부 '수동 송금 대기'로 떨어지고, 약정 종료는 `AGREEMENT_REVOKE_PENDING` 으로 남아 wallet 배포 후 시간당 크론이 스스로 회복한다. 돈이 잘못 나가지는 않는다 |
 | admin-web 이 membership 보다 먼저 | `hasPaymentIntent`/`refundSettlement` 가 undefined. 화면은 `=== false` 로만 판정하므로 "알 수 없음"이 "결제 없음"으로 뒤집히지 않는다(이 판정을 `!` 로 하면 **정상 수동 송금 건의 완료 창구가 전부 사라진다** — E2E `legacy-detail` 이 이를 잠근다). 새 `약정 정리` 탭만 404 로 빈 목록이 된다 |
 | storefront 가 membership 보다 먼저 | `canUndoCancellation` 이 undefined → 철회 버튼이 숨고 그 이유가 안내된다(과보호 방향). 즉시해지 진입점도 숨는다. 돈이 잘못 나가지 않는다 |
-| 롤백 | 새 계약 이벤트(`AGREEMENT_REVOKE_DEFERRED` 등)는 `text` 컬럼의 값일 뿐이고, 옛 코드에는 이 값을 읽는 곳이 없다(`AgreementCleanupService` 자체가 이 브랜치에서 생겼다). 관리자 로그 탭은 eventType 문자열을 그대로 출력한다 — 깨지지 않는다 |
+| 롤백 | 새 계약 이벤트(`AGREEMENT_REVOKE_DEFERRED`/`_UNDONE` 등)는 `text` 컬럼의 값일 뿐이고, 옛 코드에는 이 값을 읽는 곳이 없다(`AgreementCleanupService` 자체가 이 브랜치에서 생겼다). 관리자 로그 탭은 eventType 문자열을 그대로 출력한다 — 깨지지 않는다 |
+| channel-adapter 가 membership 보다 먼저 | 그룹 제거 전 SSOT 재확인이 `/internal/memberships/active` 를 부른다. 그 엔드포인트는 이 브랜치 이전부터 있고(일일 정합화 크론이 쓰던 것) 라이브에서 정상 동작 중이라 과도기에도 그대로다. 호출이 실패해도 제거는 그대로 진행된다(=확인이 없던 동작) |

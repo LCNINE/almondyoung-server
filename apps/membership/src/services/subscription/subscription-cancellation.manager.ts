@@ -376,6 +376,16 @@ export class SubscriptionCancellationManager {
   }
 
   /**
+   * 약정 종료가 끝났음을 남긴다. 앞서 남긴 보류/재시도 기록(`_DEFERRED`/`_PENDING`)을 닫는 용도다 —
+   * 남기지 않으면 이미 끝난 건이 정리 큐에 계속 잡힌다.
+   */
+  async markAgreementRevoked(contractId: string, userId: string, metadata: Record<string, unknown>): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      await this.contractEventManager.addEvent(tx, contractId, 'AGREEMENT_REVOKED', metadata, 'SYSTEM', userId);
+    });
+  }
+
+  /**
    * 약정 종료를 **미룬** 사실을 남긴다 (INVOICE 경로 해지예약: 남은 수금이 끝나야 지울 수 있다).
    *
    * 남기지 않으면 그 주기에 인보이스 이벤트가 더 오지 않는 계약(이미 수금이 끝난 주기에 해지한 경우)
