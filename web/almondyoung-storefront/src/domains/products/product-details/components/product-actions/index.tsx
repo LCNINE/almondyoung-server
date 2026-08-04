@@ -34,7 +34,7 @@ import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
-import { RestockNotice, pickEarliestRestock } from "./restock-notice"
+import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import {
   describeStockShortage,
@@ -491,7 +491,7 @@ export default function ProductActions({
           {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
           {!allInStock && selectedItems.length > 0 ? (
             <div className="w-full">
-              {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+              {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
                 <RestockNotice variants={selectedItems.map((i) => i.variant)} />
               ) : (
                 <Button

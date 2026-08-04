@@ -64,8 +64,12 @@ export class ProductSellableQuantityDto {
   @ApiProperty({ description: '재고 0이어도 항상 판매 가능 정책' })
   alwaysSellableZeroStock: boolean;
 
-  @ApiProperty({ description: '수동 판매 가능 상태 override', enum: ['manual_out_of_stock'], nullable: true })
-  availabilityOverride: 'manual_out_of_stock' | null;
+  @ApiProperty({
+    description: '수동 판매 가능 상태 override',
+    enum: ['manual_out_of_stock', 'coming_soon'],
+    nullable: true,
+  })
+  availabilityOverride: 'manual_out_of_stock' | 'coming_soon' | null;
 
   @ApiProperty({ type: [ProductSellableQuantityComponentDto] })
   components: ProductSellableQuantityComponentDto[];

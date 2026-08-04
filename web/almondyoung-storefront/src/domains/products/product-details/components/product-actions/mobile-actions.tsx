@@ -10,7 +10,7 @@ import React, { useState } from "react"
 import { useTranslations } from "next-intl"
 import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
-import { RestockNotice, pickEarliestRestock } from "./restock-notice"
+import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
 
 type MobileActionsProps = {
@@ -90,7 +90,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
           {isSimple && !inStock ? (
             <div className="w-full">
-              {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+              {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
                 <RestockNotice variants={selectedItems.map((i) => i.variant)} />
               ) : (
                 <Button
@@ -217,7 +217,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
               {!inStock && selectedItems.length > 0 ? (
                 <div className="w-full">
-                  {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+                  {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
                     <RestockNotice variants={selectedItems.map((i) => i.variant)} />
                   ) : (
                     <Button

@@ -234,7 +234,7 @@ export function VariantMatchingPanel({
 
       <StockPolicySection value={stockPolicy} onChange={handleStockPolicyChange} />
 
-      <div className="flex justify-end">
+      <div className="sticky bottom-0 -mx-4 -mb-4 flex justify-end border-t bg-background px-4 py-3">
         <Button size="sm" onClick={handleSave} disabled={isLoading}>
           {isLoading ? '저장 중...' : '저장'}
         </Button>

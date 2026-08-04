@@ -74,6 +74,12 @@
   "options": {
     "selectPlaceholder": "옵션을 선택해주세요",
     "soldOut": "품절",
+    "comingSoonHeadlineDated": "{date} 오픈",
+    "comingSoonHeadline": "곧 만나요",
+    "comingSoonSubDated": "새로 나와요",
+    "comingSoonSub": "출시 준비 중",
+    "comingSoon": "곧 출시 예정",
+    "comingSoonDated": "{date} 출시 예정",
     "soldOutTemporary": "일시 품절",
     "restockExpected": "재입고 : {date} 예정",
     "restockApproximate": "입고 예정일은 대략적이며 실제 입고일과 다를 수 있어요",

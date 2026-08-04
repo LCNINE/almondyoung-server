@@ -308,6 +308,8 @@ describe('calculateProductSellableQuantity', () => {
       isSellable: true,
       reason: 'SELLABLE',
       availabilityOverride: null,
+      comingSoonDate: null,
+      preStockSellable: false,
       calculatedAt: now.toISOString(),
     });
   });
@@ -326,5 +328,139 @@ describe('calculateProductSellableQuantity', () => {
         reason: projection.reason,
       }),
     ).toBe(false);
+  });
+
+  describe('출시예정(coming_soon)', () => {
+    // 판매를 여는 건 날짜가 아니라 입고다 — ADR-0028.
+    it('재고가 없으면 COMING_SOON 으로 0 을 낸다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({
+          availabilityOverride: 'coming_soon',
+          comingSoonDate: '2026-08-10',
+          components: [{ skuId: 'sku-1', requiredQuantity: 1, availableQuantity: 0 }],
+        }),
+        { now },
+      );
+
+      expect(result.sellableQuantity).toBe(0);
+      expect(result.isSellable).toBe(false);
+      expect(result.reason).toBe('COMING_SOON');
+      expect(result.comingSoonDate).toBe('2026-08-10');
+    });
+
+    it('재고가 붙으면 플래그가 남아 있어도 그대로 판매된다', () => {
+      const result = calculateProductSellableQuantity(makeInput({ availabilityOverride: 'coming_soon' }), { now });
+
+      expect(result.sellableQuantity).toBe(10);
+      expect(result.isSellable).toBe(true);
+      expect(result.reason).toBe('SELLABLE');
+    });
+
+    it('선판매를 이긴다 — 재고 0 이면 팔리지 않는다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({
+          availabilityOverride: 'coming_soon',
+          matching: {
+            id: 'matching-1',
+            status: 'matched',
+            strategy: 'variant',
+            preStockSellable: true,
+            alwaysSellableZeroStock: false,
+          },
+          components: [{ skuId: 'sku-1', requiredQuantity: 1, availableQuantity: 0 }],
+        }),
+        { now },
+      );
+
+      expect(result.sellableQuantity).toBe(0);
+      expect(result.reason).toBe('COMING_SOON');
+    });
+
+    it('항상판매를 이긴다 — 재고 0 이면 팔리지 않는다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({
+          availabilityOverride: 'coming_soon',
+          matching: {
+            id: 'matching-1',
+            status: 'matched',
+            strategy: 'variant',
+            preStockSellable: false,
+            alwaysSellableZeroStock: true,
+          },
+          components: [{ skuId: 'sku-1', requiredQuantity: 1, availableQuantity: 0 }],
+        }),
+        { now },
+      );
+
+      expect(result.sellableQuantity).toBe(0);
+      expect(result.reason).toBe('COMING_SOON');
+    });
+
+    it('매칭이 없어도 COMING_SOON 이다 — MATCHING_MISSING 은 non-stock-gated 라 팔려버린다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({ availabilityOverride: 'coming_soon', matching: null }),
+        { now },
+      );
+
+      expect(result.sellableQuantity).toBe(0);
+      expect(result.reason).toBe('COMING_SOON');
+    });
+
+    it('매칭이 pending 이어도 COMING_SOON 이다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({
+          availabilityOverride: 'coming_soon',
+          matching: {
+            id: 'matching-1',
+            status: 'pending',
+            strategy: 'variant',
+            preStockSellable: false,
+            alwaysSellableZeroStock: false,
+          },
+        }),
+        { now },
+      );
+
+      expect(result.reason).toBe('COMING_SOON');
+    });
+
+    it('void 매칭은 실재고가 없어 자동 해제 대상이 아니다 — 판매도 막힌다', () => {
+      const result = calculateProductSellableQuantity(
+        makeInput({
+          availabilityOverride: 'coming_soon',
+          matching: {
+            id: 'matching-1',
+            status: 'matched',
+            strategy: 'void',
+            preStockSellable: false,
+            alwaysSellableZeroStock: false,
+          },
+        }),
+        { now },
+      );
+
+      expect(result.sellableQuantity).toBe(0);
+      expect(result.reason).toBe('COMING_SOON');
+    });
+
+    it('날짜만 바뀌어도 변경으로 잡는다 — 안 그러면 Medusa 까지 전파되지 않는다', () => {
+      const current = calculateProductSellableQuantity(
+        makeInput({ availabilityOverride: 'coming_soon', comingSoonDate: '2026-08-12' }),
+        { now },
+      );
+
+      expect(
+        hasProductSellableQuantityProjectionChanged(current, {
+          masterId: current.masterId,
+          versionId: current.versionId,
+          matchingId: current.matchingId,
+          sellableQuantity: current.sellableQuantity,
+          stockBoundQuantity: current.stockBoundQuantity,
+          isSellable: current.isSellable,
+          reason: current.reason,
+          comingSoonDate: '2026-08-10',
+        }),
+      ).toBe(true);
+    });
   });
 });

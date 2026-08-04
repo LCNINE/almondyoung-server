@@ -84,6 +84,7 @@ export const createDefaultStockPolicy = (): StockPolicyDto => ({
   preStockSellable: true,
   alwaysSellableZeroStock: false,
   availabilityOverride: null,
+  comingSoonDate: null,
 });
 
 export const normalizeStockPolicy = (
@@ -92,12 +93,14 @@ export const normalizeStockPolicy = (
   ...createDefaultStockPolicy(),
   ...(policy ?? {}),
   availabilityOverride: policy?.availabilityOverride ?? null,
+  comingSoonDate: policy?.comingSoonDate ?? null,
 });
 
 export const PRODUCT_SELLABLE_REASON_LABELS: Record<string, string> = {
   SELLABLE: '판매 가능',
   ALWAYS_SELLABLE_ZERO_STOCK: '항상 판매 가능',
   PRE_STOCK_SELLABLE: '선판매 가능',
+  COMING_SOON: '출시 예정',
   MANUAL_OUT_OF_STOCK: '수동 품절',
   NOT_ACTIVE_VERSION: '운영 버전 아님',
   VARIANT_INACTIVE: '품목 비활성',

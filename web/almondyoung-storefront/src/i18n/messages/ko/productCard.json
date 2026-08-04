@@ -1,5 +1,11 @@
 {
   "digitalBadge": "디지털",
+  "partialSoldOutBadge": "일부 품절",
+  "partialComingSoonBadge": "일부 출시 예정",
+  "variantComingSoon": "곧 출시",
+  "variantComingSoonDated": "{date} 출시",
+  "comingSoonBadge": "곧 출시",
+  "comingSoonBadgeDated": "{date} 출시",
   "overseasBadge": "해외",
   "addToCartAria": "장바구니 담기",
   "add": "담기",

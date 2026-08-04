@@ -74,6 +74,12 @@
   "options": {
     "selectPlaceholder": "オプションを選択してください",
     "soldOut": "売り切れ",
+    "comingSoonHeadlineDated": "{date} 発売",
+    "comingSoonHeadline": "近日発売",
+    "comingSoonSubDated": "新登場",
+    "comingSoonSub": "発売準備中",
+    "comingSoon": "近日発売",
+    "comingSoonDated": "{date} 発売予定",
     "soldOutTemporary": "一時品切れ",
     "restockExpected": "再入荷 : {date} 予定",
     "restockApproximate": "入荷予定日はおおよその目安で、実際の入荷日と異なる場合があります",

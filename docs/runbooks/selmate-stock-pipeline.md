@@ -82,9 +82,40 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 | `akf쌍커풀테이프`                                                                          | 13248               | **재고동기화 금지 + 품절 유지**                                                                                                             | 2026-07-23 |
 | `미스티 래쉬` (중국 소싱, 카페코드 `P0000FJA`)                                             | 13333               | **재고동기화 금지 + 품절 유지**                                                                                                             | 2026-07-23 |
 | `씨엠 쌍커풀 테이프` (카페코드 `P0000EAZ`, Medusa `prod_01KT8JM7CESNJAB3C66NV3ERGP` draft) | — (셀메이트에 없음) | **재고동기화 금지 + 품절 유지** — 셀메이트 미등록이라 name pattern 만, 품절은 Medusa `manage_inventory=true` 로 강제 (3 variant 전부 재고0) | 2026-07-24 |
+| **앞치마 — 공급처 `중국` 26개** (`APRON_CHINA_SERIALS`)                                    | 11310, 11317, 13018, 13019, 13020, 25999~26005, 26012~26019, 26092~26094, 26099~26101 | **재고동기화 금지** — 주문제작이라 재고를 두지 않고 고객 구매 후 매입한다. 셀메이트 재고 ≠ 판매 가능 재고 | 2026-08-04 |
 
 제외 판정은 **상품일련번호 + 상품명 정규식** 두 갈래다 — 한쪽 열이 비어 있어도 다른 쪽이 잡는다.
 추가할 땐 `EXCLUDED_PRODUCT_SERIALS` / `EXCLUDED_NAME_PATTERNS` 양쪽에 사유와 날짜를 남기고 이 표도 갱신한다.
+
+⚠️ **앞치마는 상품명 정규식을 일부러 안 걸었다.** 공급처가 `한국` / `자체제작` 인 앞치마(피부관리사 유니폼,
+키스뉴욕, 페더리/블루밍 등 20여 개)는 정상 동기화 대상이라 `/앞치마/` 로 잡으면 같이 죽는다.
+**중국 앞치마가 새로 등록되면 상품일련번호를 손으로 추가해야 한다** — 이름만으론 안 걸린다.
+셀메이트 상품목록 CSV(`prd_prdLit_*.csv`, `공급처` 열)로 신규분을 뽑는다:
+
+```bash
+iconv -f EUC-KR -t UTF-8 prd_prdLit_<날짜>.csv | python3 -c "
+import sys,csv
+r=csv.reader(sys.stdin); next(r)
+for row in r:
+    if len(row)>8 and row[1]=='중국' and ('앞치마' in row[2] or '에이프런' in row[2]):
+        print(row[0], row[2])
+"
+```
+
+### ⚠️ "중국 소싱" 이 제외 기준이 아니다 — **통관 형태**로 갈린다
+
+공급처가 중국이라고 다 제외가 아니다. **판매 후에 매입하느냐**가 기준이고, 그건 통관 형태로 드러난다:
+
+| 형태                              | 예                                 | 재고연동  | 판매정책                    |
+| --------------------------------- | ---------------------------------- | --------- | --------------------------- |
+| **주문제작** — 팔린 뒤에 매입     | 앞치마 (공급처 중국)               | **금지**  | 선판매(`pre_stock_sellable`) |
+| **정상통관 해외배송** — 재고 보유 | 마스트 드로잉 볼펜 카트리지 (13548, 13559) | **유지**  | 기본(재고대로 품절)          |
+
+**볼펜 카트리지는 제외하면 안 된다** (2026-08-04 확인). 공급처는 중국이지만 정상통관으로 들여와 재고를
+쌓아두고 파는 상품이라, 재고연동이 끊기면 실물 없는 재고로 팔리거나 반대로 있는 재고가 품절로 굳는다.
+같은 이유로 **선판매도 켜지 않는다** — 재고대로 품절되는 게 정상 동작이다.
+
+새 상품을 제외할지 판단할 땐 공급처가 아니라 **"이거 주문 들어오고 나서 사오는 건가?"** 를 물어볼 것.
 
 **제외는 "안 건드림" 이지 "품절" 이 아니다.** 품절까지 걸어두려면 별도로:
 
@@ -349,6 +380,58 @@ bash scripts/sellmate/run.sh live recalc-sellable .
 - 멱등: A-1 은 code 기준 upsert, A-2 는 delta=0 이면 no-op, A-3 은 프로젝션이 이전과 같으면 publish 스킵. 같은 파일을 여러 번 돌려도 안전하다.
 - A-2 는 단일 트랜잭션 + advisory lock + `FOR UPDATE` 라 부분 반영이 없다.
 
+### ⚠️ A-3 가 "컬럼 없음" 으로 깨질 때 — 미배포 스키마를 로컬이 들고 있는 경우
+
+A-3 는 프로덕션 서비스 코드(`ProductSellableQuantityService`)를 **워킹트리에서 그대로 임포트**한다.
+그래서 **로컬에 아직 배포 안 된 스키마 변경이 있으면 A-3 만 깨진다** (A-1/A-2 는 raw SQL 이라 멀쩡하다):
+
+```
+❌ 실패: Failed query: select "variant_id", "availability_override", "coming_soon_date" from "sales_variant_policies"
+```
+
+**우회는 워크트리다 — live 스키마를 건드리지 말 것.** 배포된 브랜치를 별도 디렉터리에 체크아웃하면
+미배포 코드가 없으니 그대로 돈다. 작업 파일도 안 건드린다 (2026-08-04 실제 사용):
+
+```bash
+WT=/tmp/wt-develop
+git worktree add $WT origin/develop --detach
+ln -s "$(pwd)/node_modules" $WT/node_modules      # tsx 실행에 필요
+bash $WT/scripts/sellmate/run.sh live recalc-sellable .
+rm -f $WT/node_modules && git worktree remove --force $WT   # ★ 심링크 먼저 지울 것
+```
+
+⚠️ 스키마 파일에서 해당 컬럼만 주석 처리하는 우회는 **안 통한다.** 서비스 코드 20여 곳이 그 필드를
+참조해 drizzle `select` 에 `undefined` 가 들어가고 `Cannot convert undefined or null to object` 로 터진다.
+
+### ⚠️ `npm run db:migrate` 는 core 를 live 에 적용하지 못한다
+
+`apps/core/drizzle.config.ts:4` 가 `config({ path: './apps/core/.env' })` 로 로컬 `.env` 를 읽는데,
+그 `DATABASE_URL` 이 `localhost:5432/core`(도커)다. 러너(`scripts/seeding/phases/02-schema-sync.ts`)가
+live URL 을 주입해도 **이게 이겨서 도커에 적용된다.** 로그는 멀쩡히 `✓ migrations applied successfully` 를
+찍으므로 **성공 로그가 증거가 안 된다** (2026-08-04 실제로 당함 — live 는 그대로였고 도커에만 컬럼이 생겼다).
+
+core 만 이 구조다. 다른 서비스는 러너 URL 이 먹혀 로그에 live 주소가 찍힌다. **core 섹션에만
+`DATABASE_URL …` 로그가 없으면 그게 신호다.** 적용 여부는 로그가 아니라 live 에서 직접 확인한다:
+
+```sql
+SELECT table_name FROM information_schema.columns WHERE column_name = '<새컬럼>';
+```
+
+### ⚠️ 마이그레이션 타임스탬프가 역전되면 영영 건너뛴다
+
+drizzle migrator 는 `__drizzle_migrations` 의 **마지막 `created_at` 보다 큰** journal 항목만 적용한다.
+브랜치가 뒤처진 채로 마이그레이션을 만들면 이런 일이 생긴다 (2026-08-04):
+
+```
+live 최대 created_at : 1785758299750  (origin/develop 의 20260803115819_remove-product-import-tables)
+내 마이그레이션 when : 1785746018341  (20260803083338_add-coming-soon-flag)  ← 3시간 과거
+→ migrate 는 "이미 지난 것" 으로 보고 skip. 몇 번을 돌려도 신규 0건.
+```
+
+`git pull` 만으로는 안 풀린다 — 순서는 그대로다. **마이그레이션을 지우고 최신 타임스탬프로 재생성**하거나,
+SQL 을 직접 적용하고 `__drizzle_migrations` 에 이력을 넣어야 한다. 애초에 **마이그레이션 만들기 전에
+`git pull` 부터** 하는 게 예방책이다.
+
 ### ⚠️ A-3 는 배치로 돈다 — 한 트랜잭션에 몰지 말 것
 
 `ProductSellableQuantityService.recalculateAndPublishForVariants()` 는 **넘긴 목록 전체를 트랜잭션 하나로** 처리한다 (`dbService.run` 이 루프를 통째로 감쌈). 원래 이벤트 하나당 variant 몇 개를 다루는 함수라, 수만 개를 그대로 넘기면:
@@ -514,6 +597,7 @@ NAME_FILTER='마스트|MAST' KIND_FILTER='머신|서플라이|배터리' EXCLUDE
 | 브랜드/범위                       | 플래그               | 적용일     | 비고                                                                             |
 | --------------------------------- | -------------------- | ---------- | -------------------------------------------------------------------------------- |
 | 마스트(MAST) 머신·서플라이·배터리 | `pre_stock_sellable` | 2026-07-23 | 대상 77품목 중 **매칭된 7개만** 실제 적용 (나머지 70개는 미매칭이라 이미 판매중) |
+| 앞치마(공급처 중국) 25상품 92품목 | `pre_stock_sellable` | 2026-08-04 | 주문제작. **92품목 전부 매칭**돼 있었고 88건은 이미 ON, 실제 변경 4건. Ⓐ-0 제외와 **세트로 간다** — 제외만 걸면 재고 0인 품목이 품절로 굳는다 |
 
 ⚠️ 그때 77품목 중 70개가 미매칭이었다. **"품절로 보인다" 는 신고를 받으면 플래그부터 의심하지 말 것** —
 미매칭이면 Core 는 게이팅을 안 하므로 원인이 Medusa 쪽(`manage_inventory` 잔존 등)이다. dry-run 의

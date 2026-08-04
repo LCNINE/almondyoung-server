@@ -43,7 +43,7 @@ export function ProductSummary({
   return (
     <div className="bg-background">
       <header className="flex justify-between gap-4">
-        <div className="mb-4">
+        <div className="mb-2">
           <p className="text-sm text-gray-600">{brand}</p>
 
           <div className="flex items-center gap-2">

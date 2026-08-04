@@ -32,7 +32,7 @@ describe('ProductMatchingService strategy semantics', () => {
     };
     const transactionTxs = [...(options.transactionTxs ?? [])];
     const dbService = {
-      run: jest.fn(async (fn, tx) => tx ? fn(tx) : fn(transactionTxs.shift() ?? makeTx())),
+      run: jest.fn(async (fn, tx) => (tx ? fn(tx) : fn(transactionTxs.shift() ?? makeTx()))),
       db: {
         query: {
           skus: {
@@ -695,6 +695,7 @@ describe('ProductMatchingService strategy semantics', () => {
       preStockSellable: false,
       alwaysSellableZeroStock: false,
       availabilityOverride: 'manual_out_of_stock',
+      comingSoonDate: null,
     });
   });
 });

@@ -7,6 +7,8 @@ import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
+import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
+import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
 
 type Props = {
@@ -24,6 +26,7 @@ export function ImageGallery({ product }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedImage = images[selectedIndex]
   const isSoldOut = calculateStockStatus(product).kind === "soldOut"
+  const comingSoon = pickComingSoon(product.variants)
 
   if (images.length === 0) {
     return (
@@ -81,7 +84,14 @@ export function ImageGallery({ product }: Props) {
             priority
           />
         )}
-        {isSoldOut && (
+        {isSoldOut && comingSoon && (
+          <ComingSoonBadge
+            date={comingSoon.date}
+            size="lg"
+            className="absolute top-4 right-4 z-[6]"
+          />
+        )}
+        {isSoldOut && !comingSoon && (
           <SoldOutOverlay
             variants={product.variants}
             size="detail"
