@@ -998,7 +998,10 @@
       "keepBillingMethodKeep": "口座を残す（再登録なしで再加入できます）",
       "keepBillingMethodDelete": "口座も一緒に削除する",
       "keepBillingMethodNote": "削除すると銀行の自動引き落とし登録も解除されます。再加入時は口座を再登録し、銀行審査を受ける必要があります。",
-      "keepBillingMethodSafe": "残しても解約後に引き落としが行われることはありません。"
+      "keepBillingMethodSafe": "残しても解約後に引き落としが行われることはありません。",
+      "whyWithdrawal": "お支払いから{days}日以内で、特典を一度もご利用でないため全額返金が可能です。",
+      "whyAnnual": "年間プランはご利用期間を月額定価で精算し、残額を返金いたします。",
+      "atPeriodEndPreCollectionNote": "こちらを選ぶと今回の料金は予定どおり引き落とされ、その期間の終了後に解約となります。"
     },
     "manageTitle": "メンバーシップ管理",
     "refundStatus": {

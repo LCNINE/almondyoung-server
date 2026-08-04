@@ -998,7 +998,10 @@
       "keepBillingMethodKeep": "계좌를 남겨둘게요 (다음에 다시 가입할 때 바로 사용)",
       "keepBillingMethodDelete": "계좌도 함께 삭제할게요",
       "keepBillingMethodNote": "삭제하시면 은행 자동이체 등록까지 해지됩니다. 다시 가입하실 때는 계좌를 새로 등록하고 은행 심사를 받으셔야 해요.",
-      "keepBillingMethodSafe": "남겨두셔도 해지 후에는 출금되지 않아요."
+      "keepBillingMethodSafe": "남겨두셔도 해지 후에는 출금되지 않아요.",
+      "whyWithdrawal": "결제 후 {days}일 이내이고 멤버십 혜택을 한 번도 사용하지 않으셔서 전액 환불받으실 수 있어요.",
+      "whyAnnual": "연간 플랜은 이용하신 기간을 월 정가로 정산하고 남은 금액을 돌려드려요.",
+      "atPeriodEndPreCollectionNote": "이 방법을 고르시면 이번 기간 요금은 예정대로 출금되고, 그 기간까지 이용하신 뒤 종료돼요."
     },
     "manageTitle": "멤버십 관리",
     "refundStatus": {

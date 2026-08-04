@@ -998,7 +998,10 @@
       "keepBillingMethodKeep": "Keep it (ready to use if you subscribe again)",
       "keepBillingMethodDelete": "Delete the account as well",
       "keepBillingMethodNote": "Deleting also cancels the bank auto-debit registration. You would need to register the account again and pass bank screening to resubscribe.",
-      "keepBillingMethodSafe": "Keeping it does not allow any further withdrawals after cancellation."
+      "keepBillingMethodSafe": "Keeping it does not allow any further withdrawals after cancellation.",
+      "whyWithdrawal": "You are within {days} days of payment and have not used any membership benefit, so a full refund is available.",
+      "whyAnnual": "For annual plans we settle the period you used at the monthly list price and refund the rest.",
+      "atPeriodEndPreCollectionNote": "If you choose this, this cycle will be charged as scheduled and your membership ends after that period."
     },
     "manageTitle": "Membership",
     "refundStatus": {

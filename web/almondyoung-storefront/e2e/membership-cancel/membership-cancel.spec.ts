@@ -83,6 +83,12 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
       }
       if (SCENARIO === 'cms-manual') {
         await expect(dialog.getByText(/자동이체 결제는 즉시 환불이 불가/)).toBeVisible();
+        // 금액만 보여주면 고객은 왜 환불되는지 알 수 없다.
+        await expect(dialog.getByText(/7일 이내이고 멤버십 혜택을 한 번도 사용하지 않으셔서/)).toBeVisible();
+      }
+      if (SCENARIO === 'pre-collection') {
+        // 예약을 고르면 이번 기간 요금이 나간다는 사실을 고르기 전에 알려야 한다.
+        await expect(dialog.getByText(/이번 기간 요금은 예정대로 출금되고/)).toBeVisible();
       }
 
       await dialog.getByRole('button', { name: '다음' }).click();
