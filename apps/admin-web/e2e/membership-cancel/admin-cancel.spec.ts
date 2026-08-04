@@ -303,7 +303,33 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     expect(call.body.refundReceiveAccount).toMatchObject({ accountNumber: '110123456789', holderName: '홍길동' });
   });
 
-  // 고객관리 상세창(멤버십 탭)은 동일한 MembershipDetailPanel 을 allowAdminActions 기본값(=true)으로
-  // 렌더한다. 그 화면을 브라우저로 검증하려면 customers 페이지와 core API 스택까지 스텁해야 해서
-  // 이 스펙 범위를 넘는다 — 여기서는 멤버십 메뉴 경로만 검증한다.
+  // 고객관리 상세창(회원정보조회)의 멤버십 탭은 같은 MembershipDetailPanel 을 렌더하고 같은 해지·환불
+  // 액션을 쓴다. CS 가 실제로 여기서 처리하므로 이 경로도 브라우저로 확인한다 — 다른 탭(주문·장바구니)이
+  // 쓰는 Medusa/core API 는 스텁에 없어 404 로 떨어지지만, 그건 이 화면의 렌더를 막지 않아야 한다.
+  test('고객관리 상세창의 멤버십 탭도 같은 해지·환불 화면을 연다', async ({ page }) => {
+    test.skip(!['monthly-cms', 'scheduled'].includes(SCENARIO), '대표 시나리오 두 개로만 확인한다');
+
+    await page.goto('/customer-window/e2e-user');
+    await page.getByRole('button', { name: '멤버십', exact: true }).click();
+
+    const panel = page.getByRole('tabpanel');
+    await page.getByRole('tab', { name: '해지 · 환불' }).click();
+    await expect(panel.getByText('현재 플랜')).toBeVisible();
+
+    if (SCENARIO === 'scheduled') {
+      // 해지 예약 배너와 철회 버튼이 멤버십 메뉴와 똑같이 떠야 한다.
+      await expect(panel.getByText('해지 예약됨', { exact: true })).toBeVisible();
+      await expect(panel.getByRole('button', { name: /해지 예약 철회/ })).toBeVisible();
+      // 수동 송금 계좌도 같은 자리에 있어야 CS 가 여기서 환불을 끝낼 수 있다.
+      await expect(panel.getByTestId('manual-refund-account')).toBeVisible();
+      await expect(panel.getByTestId('complete-manual-refund')).toBeVisible();
+    } else {
+      await expect(panel.getByRole('button', { name: '해지 예약하기' })).toBeVisible();
+    }
+
+    // 즉시 해지 다이얼로그(견적 포함)까지 같은 동작이어야 한다.
+    await panel.getByRole('button', { name: '즉시 해지 + 환불 처리' }).click();
+    const modal = page.getByRole('dialog', { name: '즉시 해지 + 환불' });
+    await expect(modal.getByText('정책 기준 환불액')).toBeVisible();
+  });
 });

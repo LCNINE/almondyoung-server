@@ -8,6 +8,9 @@ describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
   function createService(params?: {
     byAlmondUserId?: { id: string; email: string } | null;
     byEmail?: { id: string; email: string } | null;
+    /** SSOT 가 이 사용자를 아직 활성으로 보는지 */
+    ssotActive?: boolean;
+    ssotError?: Error;
   }) {
     const medusaClient = {
       findCustomerByAlmondUserId: jest.fn().mockResolvedValue(params?.byAlmondUserId ?? null),
@@ -20,8 +23,17 @@ describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
       issuePromotionsByTrigger: jest.fn().mockResolvedValue(undefined),
     };
     const eventTracking = { trackEffect: jest.fn().mockResolvedValue(undefined) };
-    const service = new MembershipMedusaSyncService(medusaClient as any, eventTracking as any);
-    return { service, medusaClient };
+    const membershipServiceClient = {
+      getActiveUserIds: params?.ssotError
+        ? jest.fn().mockRejectedValue(params.ssotError)
+        : jest.fn().mockResolvedValue(params?.ssotActive ? [USER_ID] : []),
+    };
+    const service = new MembershipMedusaSyncService(
+      medusaClient as any,
+      eventTracking as any,
+      membershipServiceClient as any,
+    );
+    return { service, medusaClient, membershipServiceClient };
   }
 
   const event = (email?: string): MembershipStatusChangedPayload =>
@@ -67,6 +79,50 @@ describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
     );
   });
 
+  // 만료 크론이 대상을 읽은 뒤 재가입하면 EXPIRED 가 뒤늦게 도착한다.
+  it('SSOT 가 여전히 활성이면 그룹에서 빼지 않는다 (재가입·해지철회 뒤 도착한 EXPIRED)', async () => {
+    const { service, medusaClient } = createService({
+      byAlmondUserId: { id: 'cus_1', email: 'a@example.com' },
+      ssotActive: true,
+    });
+
+    const result = await service.handleMembershipStatusChanged({
+      ...event('a@example.com'),
+      status: 'EXPIRED',
+    });
+
+    expect(medusaClient.removeCustomerFromGroup).not.toHaveBeenCalled();
+    expect(result.data.action).toBe('skipped');
+  });
+
+  it('SSOT 가 활성이 아니면 그대로 그룹에서 뺀다', async () => {
+    const { service, medusaClient } = createService({
+      byAlmondUserId: { id: 'cus_1', email: 'a@example.com' },
+      ssotActive: false,
+    });
+
+    await service.handleMembershipStatusChanged({ ...event('a@example.com'), status: 'CANCELLED' });
+
+    expect(medusaClient.removeCustomerFromGroup).toHaveBeenCalledWith('cus_1', GROUP_ID);
+  });
+
+  // 백스톱이 한쪽에만 있다. 잘못 뺀 건은 02:30 전체 정합화가 도로 넣지만, 빼지 못한 건은
+  // 02:00 정합화가 cafe24 연동 회원만 돌아 자체가입자가 영구히 할인을 유지한다.
+  it('SSOT 조회가 실패하면 제거를 그대로 진행한다 (확인이 없던 동작으로 떨어진다)', async () => {
+    const { service, medusaClient } = createService({
+      byAlmondUserId: { id: 'cus_1', email: 'a@example.com' },
+      ssotError: new Error('membership service down'),
+    });
+
+    const result = await service.handleMembershipStatusChanged({
+      ...event('a@example.com'),
+      status: 'EXPIRED',
+    });
+
+    expect(medusaClient.removeCustomerFromGroup).toHaveBeenCalledWith('cus_1', GROUP_ID);
+    expect(result.success).toBe(true);
+  });
+
   it('어느 경로로도 고객을 못 찾으면 throw 해서 inbox 가 재시도하게 한다', async () => {
     const { service } = createService({ byAlmondUserId: null, byEmail: null });
 
@@ -87,7 +143,12 @@ describe('MembershipMedusaSyncService.ensureInMembershipGroup', () => {
       refreshCustomerCartPrices: jest.fn(),
     };
     const eventTracking = { trackEffect: jest.fn().mockResolvedValue(undefined) };
-    const service = new MembershipMedusaSyncService(medusaClient as any, eventTracking as any);
+    const membershipServiceClient = { getActiveUserIds: jest.fn().mockResolvedValue([]) };
+    const service = new MembershipMedusaSyncService(
+      medusaClient as any,
+      eventTracking as any,
+      membershipServiceClient as any,
+    );
     return { service, medusaClient };
   }
 

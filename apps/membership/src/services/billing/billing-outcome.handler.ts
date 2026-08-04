@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and, count, isNull, lt } from 'drizzle-orm';
 import { addDays, addHours, format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
@@ -49,6 +49,27 @@ export class BillingOutcomeHandler {
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && inserted.length === 0) {
         this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
+        return null;
+      }
+
+      // 종료된 계약에 뒤늦게 도착한 결제 성공. 자격은 사용자 단위라, 그 사이 재가입했으면
+      // 여기서 늘어나는 건 새 구독의 기간이다. 결제 사실만 남기고 자격은 손대지 않는다.
+      if (row.status === 'CANCELLED' || row.status === 'EXPIRED') {
+        this.logger.error(
+          `handleSuccess: 종료된 계약에 결제 성공 도착 — 수동 환불/정산 검토 필요 (contractId=${contractId}, status=${row.status}, intentId=${paymentIntentId ?? '-'}, amount=${amount})`,
+        );
+        await this.contractEventManager.addEvent(
+          tx,
+          contractId,
+          'BILLING_SUCCESS_AFTER_TERMINATION',
+          { amount, intentId: paymentIntentId ?? null, status: row.status },
+          'SYSTEM',
+          row.userId,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
         return null;
       }
 
@@ -267,7 +288,31 @@ export class BillingOutcomeHandler {
   }
 
   async handleExpiration(entitlementId: string, userId: string, contractId: string): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    // 크론이 목록을 읽은 뒤 자격이 갈아치워질 수 있다(해지 철회·재가입·갱신 결제·기간 연장).
+    // 무조건 EXPIRED 를 찍으면 되살아난 고객이 만료되고 그 이벤트가 Medusa 그룹까지 벗긴다.
+    const expired = await this.dbService.db.transaction(async (tx) => {
+      // 아직 만료 대상인 자격만 조건부로 닫는다. 건너뛴 실행은 아무것도 쓰지 않는다.
+      const closed = await tx
+        .update(schema.subscriptionEntitlement)
+        .set({ isCurrent: false, closedAt: new Date() })
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.id, entitlementId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+            // 정지 중에는 종료일이 동결된다 — 지나 보여도 만료 대상이 아니다.
+            isNull(schema.subscriptionEntitlement.pausedAt),
+            lt(schema.subscriptionEntitlement.endsAt, format(new Date(), 'yyyy-MM-dd')),
+          ),
+        )
+        .returning({ id: schema.subscriptionEntitlement.id });
+
+      if (closed.length === 0) {
+        this.logger.log(
+          `handleExpiration: 자격이 이미 교체·연장됨 — 만료 처리 생략 (entitlementId=${entitlementId}, contractId=${contractId})`,
+        );
+        return false;
+      }
+
       const [batch] = await tx
         .insert(schema.eventBatches)
         .values({ type: 'SUBSCRIPTION_EXPIRED', effectiveDate: format(new Date(), 'yyyy-MM-dd') })
@@ -275,7 +320,7 @@ export class BillingOutcomeHandler {
 
       await tx
         .update(schema.subscriptionEntitlement)
-        .set({ isCurrent: false, closedAt: new Date(), closedBatchId: batch.id })
+        .set({ closedBatchId: batch.id })
         .where(eq(schema.subscriptionEntitlement.id, entitlementId));
 
       await tx
@@ -292,7 +337,10 @@ export class BillingOutcomeHandler {
         userId,
         batch.id,
       );
+      return true;
     });
+
+    if (!expired) return;
 
     this.membershipEventPublisher
       .publishStatusChanged({ userId, status: 'EXPIRED', occurredAt: new Date().toISOString(), contractId })
@@ -485,6 +533,7 @@ export class BillingOutcomeHandler {
     const [row] = await tx
       .select({
         userId: schema.subscriptionContracts.userId,
+        status: schema.subscriptionContracts.status,
         durationDays: schema.plan.durationDays,
       })
       .from(schema.subscriptionContracts)
