@@ -68,7 +68,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const showMembershipPriceHiddenNotice = !hasMembership && isMembershipOnly
 
   return (
-    <div className="flex flex-col gap-2 py-2">
+    <div className="flex flex-col gap-1.5 pt-0 pb-2">
       {/* 원래 가격 (취소선) */}
       {showOriginalPrice && (
         <span className="text-sm text-gray-400 line-through">

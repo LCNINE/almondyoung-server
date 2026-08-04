@@ -74,6 +74,12 @@
   "options": {
     "selectPlaceholder": "Please select an option",
     "soldOut": "Sold out",
+    "comingSoonHeadlineDated": "Opens {date}",
+    "comingSoonHeadline": "Coming soon",
+    "comingSoonSubDated": "New arrival",
+    "comingSoonSub": "Getting ready",
+    "comingSoon": "Coming soon",
+    "comingSoonDated": "Coming {date}",
     "soldOutTemporary": "Temporarily sold out",
     "restockExpected": "Restock: {date}",
     "restockApproximate": "The restock date is approximate and may differ from the actual arrival.",

@@ -109,6 +109,7 @@ export const ProductRecommandSlider: React.FC<
                       src={product.imageSrc}
                       alt={product.title}
                       isSoldOut={isSoldOut}
+                      comingSoon={product.comingSoon}
                     />
                     <ProductCard.Info {...product} />
                   </ProductCard>

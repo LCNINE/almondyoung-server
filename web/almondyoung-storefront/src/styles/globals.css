@@ -444,6 +444,12 @@ input[type="search"]::-webkit-search-results-decoration {
   }
 }
 
+@keyframes spin-glow {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 @layer base {
   *,
   *::before,

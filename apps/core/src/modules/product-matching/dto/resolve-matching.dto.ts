@@ -1,4 +1,14 @@
-import { IsUUID, IsOptional, IsBoolean, IsArray, IsEnum, ValidateNested, IsNumber, Min } from 'class-validator';
+import {
+  IsUUID,
+  IsOptional,
+  IsBoolean,
+  IsArray,
+  IsEnum,
+  ValidateNested,
+  IsNumber,
+  Min,
+  IsDateString,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { matchingStrategyEnum } from '../schema/matching.schema';
@@ -27,14 +37,27 @@ export class StockPolicyDto {
   alwaysSellableZeroStock?: boolean = false;
 
   @ApiProperty({
-    description: '수동 판매 가능 상태 override. manual_out_of_stock이면 노출은 유지하되 판매가능수량을 0으로 projection합니다.',
+    description:
+      '수동 판매 가능 상태 override. manual_out_of_stock이면 노출은 유지하되 판매가능수량을 0으로 projection합니다.',
     required: false,
     nullable: true,
-    enum: ['manual_out_of_stock'],
+    enum: ['manual_out_of_stock', 'coming_soon'],
   })
   @IsOptional()
-  @IsEnum(['manual_out_of_stock'])
-  availabilityOverride?: 'manual_out_of_stock' | null;
+  @IsEnum(['manual_out_of_stock', 'coming_soon'])
+  availabilityOverride?: 'manual_out_of_stock' | 'coming_soon' | null;
+
+  @ApiProperty({
+    description:
+      '출시예정 안내에 띄울 날짜 (YYYY-MM-DD). 판매 개시를 트리거하지 않는 표시 전용 값이며, ' +
+      '비우면 스토어프론트가 "곧 출시 예정"만 띄운다. 판매를 여는 것은 입고다 (ADR-0028).',
+    required: false,
+    nullable: true,
+    example: '2026-08-10',
+  })
+  @IsOptional()
+  @IsDateString()
+  comingSoonDate?: string | null;
 }
 
 export class ResolveMatchingDto {

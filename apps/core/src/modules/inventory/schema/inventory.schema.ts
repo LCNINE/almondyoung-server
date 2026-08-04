@@ -1092,6 +1092,9 @@ export const productSellableQuantityProjections = pgTable(
     stockBoundQuantity: integer('stock_bound_quantity').notNull().default(0),
     isSellable: boolean('is_sellable').notNull().default(false),
     reason: varchar('reason', { length: 64 }).notNull(),
+    // 표시 전용 출시예정일. 여기 담아두는 이유는 변경 감지 때문이다 — 날짜만 고친 경우
+    // reason 이 그대로라 이 컬럼이 없으면 "변경 없음"으로 접혀 Medusa 까지 전파되지 않는다.
+    comingSoonDate: date('coming_soon_date'),
     calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1607,7 +1610,12 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   inventoryManagement: boolean('inventory_management').notNull().default(false),
   preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
   alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
-  availabilityOverride: varchar('availability_override', { length: 32 }).$type<'manual_out_of_stock' | null>(),
+  availabilityOverride: varchar('availability_override', {
+    length: 32,
+  }).$type<'manual_out_of_stock' | 'coming_soon' | null>(),
+  // 출시예정 안내에 띄울 날짜. 판매 개시를 트리거하지 않는 **표시 전용** 값이다
+  // (판매를 여는 건 입고 — ADR-0028). 비우면 스토어프론트가 "곧 출시 예정"만 띄운다.
+  comingSoonDate: date('coming_soon_date'),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
@@ -1724,7 +1732,11 @@ export const outboxEvents = pgTable(
     idxTopicStatusNext: index('idx_outbox_topic_status_next').on(t.topic, t.status, t.nextAttemptAt),
     // 두 컬럼이 이제 NOT NULL 이라 partial WHERE 는 항상 참 → 일반 unique 로 단순화.
     // ck_outbox_routing_pair(both-null-or-both-set)는 NOT NULL 로 대체돼 제거.
-    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency').on(t.topic, t.eventType, t.idempotencyKey),
+    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency').on(
+      t.topic,
+      t.eventType,
+      t.idempotencyKey,
+    ),
   }),
 );
 

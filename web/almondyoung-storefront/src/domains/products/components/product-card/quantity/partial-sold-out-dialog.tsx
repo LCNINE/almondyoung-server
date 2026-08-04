@@ -10,6 +10,10 @@ import {
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { useState } from "react"
+import { useTranslations } from "next-intl"
+import { formatDate } from "@/lib/utils/format-date"
+import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
+import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import {
   LOW_STOCK_THRESHOLD,
   getVariantLabel,
@@ -25,7 +29,21 @@ const VariantStockBadge = ({
   variant: HttpTypes.StoreProductVariant
   stock: number
 }) => {
+  const t = useTranslations("productCard")
+
   if (isVariantSoldOut(variant)) {
+    const comingSoon = pickComingSoon([variant])
+    if (comingSoon) {
+      return (
+        <span className="text-[13px] font-medium text-gray-700">
+          {comingSoon.date
+            ? t("variantComingSoonDated", {
+                date: formatDate(comingSoon.date, "M/d"),
+              })
+            : t("variantComingSoon")}
+        </span>
+      )
+    }
     return <span className="text-[13px] font-medium text-red-500">품절</span>
   }
   if (stock <= LOW_STOCK_THRESHOLD) {
@@ -85,6 +103,8 @@ interface Props {
 
 export function PartialSoldOutDialog({ product, variants, total }: Props) {
   const [open, setOpen] = useState(false)
+  const t = useTranslations("productCard")
+  const hasComingSoon = Boolean(pickComingSoon(variants))
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -100,12 +120,19 @@ export function PartialSoldOutDialog({ product, variants, total }: Props) {
           className="inline-flex items-center gap-2 focus:outline-none"
           aria-label="옵션별 재고 현황 보기"
         >
-          <Badge
-            variant="outline"
-            className="cursor-pointer border-gray-300 font-bold text-gray-600 hover:bg-gray-100"
-          >
-            일부 품절
-          </Badge>
+          {hasComingSoon ? (
+            <ComingSoonBadge
+              label={t("partialComingSoonBadge")}
+              className="cursor-pointer"
+            />
+          ) : (
+            <Badge
+              variant="outline"
+              className="cursor-pointer border-gray-300 font-bold text-gray-600 hover:bg-gray-100"
+            >
+              {t("partialSoldOutBadge")}
+            </Badge>
+          )}
 
           {total > 0 && total <= LOW_STOCK_THRESHOLD && (
             <span className="text-[12px] text-red-500">{total}개 남음</span>

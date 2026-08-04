@@ -258,6 +258,7 @@ export type ProductSellableQuantityReason =
   | 'PRE_STOCK_SELLABLE'
   | 'ALWAYS_SELLABLE_ZERO_STOCK'
   | 'MANUAL_OUT_OF_STOCK'
+  | 'COMING_SOON'
   | 'NOT_ACTIVE_VERSION'
   | 'VARIANT_INACTIVE'
   | 'SALES_NOT_STARTED'
@@ -278,7 +279,9 @@ export interface ProductSellableQuantityChangedPayload {
   stockBoundQuantity?: number;
   isSellable: boolean;
   reason?: ProductSellableQuantityReason;
-  availabilityOverride?: 'manual_out_of_stock' | null;
+  availabilityOverride?: 'manual_out_of_stock' | 'coming_soon' | null;
+  /** 표시 전용 출시예정일 (YYYY-MM-DD). 판매 개시를 트리거하지 않는다 — ADR-0028. */
+  comingSoonDate?: string | null;
   preStockSellable?: boolean;
   calculatedAt: string;
 }
@@ -454,6 +457,7 @@ const ProductSellableQuantityReasonSchema = z.enum([
   'PRE_STOCK_SELLABLE',
   'ALWAYS_SELLABLE_ZERO_STOCK',
   'MANUAL_OUT_OF_STOCK',
+  'COMING_SOON',
   'NOT_ACTIVE_VERSION',
   'VARIANT_INACTIVE',
   'SALES_NOT_STARTED',
@@ -475,7 +479,8 @@ const ProductSellableQuantityChangedSchema = z.object({
   stockBoundQuantity: z.number().int().nonnegative().optional(),
   isSellable: z.boolean(),
   reason: ProductSellableQuantityReasonSchema.optional(),
-  availabilityOverride: z.enum(['manual_out_of_stock']).nullable().optional(),
+  availabilityOverride: z.enum(['manual_out_of_stock', 'coming_soon']).nullable().optional(),
+  comingSoonDate: z.string().nullable().optional(),
   preStockSellable: z.boolean().optional(),
   calculatedAt: z.string().datetime(),
 });

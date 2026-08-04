@@ -10,6 +10,8 @@ import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
+import { pickComingSoon } from "./coming-soon"
+import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 
 // 표시할 옵션 값이 이 개수를 초과하면 칩 대신 드롭다운으로 전환
 const DROPDOWN_THRESHOLD = 8
@@ -56,12 +58,13 @@ export default function OptionSelect({
   selectedValues,
 }: OptionSelectProps) {
   const t = useTranslations("productDetail.options")
-  const { visibleValues, outOfStockSet, priceByValue } = useMemo(() => {
+  const { visibleValues, outOfStockSet, comingSoonByValue, priceByValue } = useMemo(() => {
     const allValues = (option.values ?? []).map((v) => v.value)
     if (!variants) {
       return {
         visibleValues: allValues,
         outOfStockSet: new Set<string>(),
+        comingSoonByValue: {} as Record<string, { date: string | null }>,
         priceByValue: {} as Record<string, number>,
       }
     }
@@ -74,6 +77,7 @@ export default function OptionSelect({
 
     const visible: string[] = []
     const outOfStock = new Set<string>()
+    const comingSoonByValue: Record<string, { date: string | null }> = {}
     // 값 → 최저가 대비 추가금(extra). 최저가 옵션은 0.
     const priceByValue: Record<string, number> = {}
 
@@ -92,6 +96,8 @@ export default function OptionSelect({
       visible.push(value)
       if (!matchingVariants.some(hasStock)) {
         outOfStock.add(value)
+        const comingSoon = pickComingSoon(matchingVariants)
+        if (comingSoon) comingSoonByValue[value] = comingSoon
       }
 
       // ponytail: 옵션값이 variant 1개에만 매핑될 때만 가격 표기. 다중옵션 상품은
@@ -104,11 +110,23 @@ export default function OptionSelect({
       }
     }
 
-    return { visibleValues: visible, outOfStockSet: outOfStock, priceByValue }
+    return { visibleValues: visible, outOfStockSet: outOfStock, comingSoonByValue, priceByValue }
   }, [option, variants, selectedOptions])
 
   // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
   const useDropdown = visibleValues.length > DROPDOWN_THRESHOLD
+
+  const renderValueLabel = (value: string, isOutOfStock: boolean) => {
+    if (!isOutOfStock) return value
+    const comingSoon = comingSoonByValue[value]
+    if (!comingSoon) return t("outOfStockSuffix", { value })
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {value}
+        <ComingSoonBadge date={comingSoon.date} />
+      </span>
+    )
+  }
 
   const renderPriceLabel = (value: string) => {
     const extra = priceByValue[value]
@@ -148,7 +166,7 @@ export default function OptionSelect({
                 >
                   <span className="flex w-full items-center justify-between gap-3">
                     <span>
-                      {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                      {renderValueLabel(v, isOutOfStock)}
                     </span>
                     {renderPriceLabel(v)}
                   </span>
@@ -178,7 +196,7 @@ export default function OptionSelect({
               >
                 <span className="flex flex-col items-center leading-tight">
                   <span>
-                    {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                    {renderValueLabel(v, isOutOfStock)}
                   </span>
                   {renderPriceLabel(v)}
                 </span>

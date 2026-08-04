@@ -47,6 +47,15 @@ export class ProductSkuMappingService {
     const availabilityOverridePatch = this.hasAvailabilityOverride(policy)
       ? { availabilityOverride: policy?.availabilityOverride ?? null }
       : {};
+    // 출시예정을 끄면 날짜도 같이 비운다 — 남겨두면 다시 켤 때 옛 날짜가 되살아난다.
+    const comingSoonDatePatch = this.hasAvailabilityOverride(policy)
+      ? {
+          comingSoonDate:
+            policy?.availabilityOverride === 'coming_soon'
+              ? ((policy as { comingSoonDate?: string | null })?.comingSoonDate ?? null)
+              : null,
+        }
+      : {};
     const variantPolicyValues = {
       variantId,
       inventoryManagement: true,
@@ -54,6 +63,7 @@ export class ProductSkuMappingService {
       alwaysSellableZeroStock:
         policy?.alwaysSellableZeroStock ?? existingPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
       ...availabilityOverridePatch,
+      ...comingSoonDatePatch,
       updatedAt: now,
     };
 
@@ -67,6 +77,7 @@ export class ProductSkuMappingService {
           preStockSellable: variantPolicyValues.preStockSellable,
           alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
           ...availabilityOverridePatch,
+          ...comingSoonDatePatch,
           updatedAt: now,
         },
       });
@@ -107,6 +118,7 @@ export class ProductSkuMappingService {
               preStockSellable: true,
               alwaysSellableZeroStock: false,
               availabilityOverride: null,
+              comingSoonDate: null,
             },
             projection: null,
           })),
@@ -144,6 +156,7 @@ export class ProductSkuMappingService {
           preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
           alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
           availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+          comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
         })
         .from(wmsTables.salesVariantPolicies)
         .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
@@ -185,6 +198,7 @@ export class ProductSkuMappingService {
           preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? true,
           alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
           availabilityOverride: policy?.availabilityOverride ?? null,
+          comingSoonDate: policy?.comingSoonDate ?? null,
         };
 
         if (!existingVariantIds.has(variantId)) {
@@ -253,6 +267,7 @@ export class ProductSkuMappingService {
           preStockSellable: matching.preStockSellable,
           alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
           availabilityOverride: policy?.availabilityOverride ?? null,
+          comingSoonDate: policy?.comingSoonDate ?? null,
         },
       };
     }, tx);

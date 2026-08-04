@@ -91,6 +91,8 @@ export interface ProductCardProps {
   isMembership?: boolean
   /** 해외 배송(해외직구) 상품 — 카드 제목 앞에 "해외" 뱃지 표시 */
   isOverseas?: boolean
+  /** 출시예정 상품 — 품절 오버레이 대신 "곧 출시 예정" 을 띄운다. date 는 표시 전용 (ADR-0028) */
+  comingSoon?: { date: string | null } | null
 }
 
 /**
