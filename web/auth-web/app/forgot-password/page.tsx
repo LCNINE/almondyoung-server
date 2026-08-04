@@ -1,5 +1,5 @@
-import { AuthShell } from "@/components/auth-shell"
-import { ForgotPasswordForm } from "@/components/forgot-password-form"
+import { redirect } from "next/navigation"
+
 import { sanitizeRedirectTo } from "@/lib/redirect"
 
 type SearchParams = Promise<{ redirect_to?: string }>
@@ -10,19 +10,13 @@ export default async function ForgotPasswordPage({
   searchParams: SearchParams
 }) {
   const params = await searchParams
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const redirectTo = sanitizeRedirectTo(params.redirect_to)
 
-  return (
-    <AuthShell>
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl leading-8 font-bold text-foreground">
-          비밀번호 찾기
-        </h1>
-        <p className="text-sm leading-5 text-muted-foreground">
-          휴대폰 인증 후 새 비밀번호를 설정할 수 있습니다.
-        </p>
-      </header>
-      <ForgotPasswordForm redirectTo={redirectTo} />
-    </AuthShell>
+  redirect(
+    `/find-account${
+      redirectTo
+        ? `?${new URLSearchParams({ redirect_to: redirectTo }).toString()}`
+        : ""
+    }`
   )
 }
