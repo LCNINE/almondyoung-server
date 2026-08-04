@@ -23,6 +23,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { catalogSchema, type PimSchema } from '../../../schema/catalog.schema';
 import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES } from './bulk-session-job.manager';
+import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
 import { buildFormWorkbook } from './form-export.workbook';
 import type { PrefillRow, PrefillWorkbookData } from './form-export.types';
 
@@ -133,14 +134,22 @@ function makeWorkerLike(client: postgres.Sql) {
 
   // (Task 8) BulkSessionJobManager 생성자에 BulkDraftApplier 가 늘었다 — 이 스위트는
   // lease·취소·재검증 방지만 보고(위 헤더 코멘트) drafting 슬라이스는 부르지 않으므로
-  // 실제 applier 를 세우지 않는다.
+  // 실제 applier 를 세우지 않는다. (Task 3) ProductVersionsService 도 같은 이유로
+  // `undefined as never` 다 — 이 스위트는 발행 슬라이스를 부르지 않는다.
+  // (Task 11) BulkVariantCodeChecker 는 이 스위트가 **실제로 부르는** 검증 슬라이스의 마감
+  // 분기(review 직전)에서 매번 불린다 — `undefined as never` 를 넘기면 lease 시나리오
+  // 자체가 TypeError 로 죽는다. 픽스처 행에는 variantCode 를 주장하는 조합 시트가 없어
+  // (NEW_ROW_* 는 상품 시트뿐이다) 매 호출이 안전하게 0건으로 끝나므로, 진짜 인스턴스를
+  // 같은 dbService 에 물려 real Postgres 를 그대로 타게 한다.
   const manager = new BulkSessionJobManager(
     dbService,
     { download } as never,
     { renderMaster } as never,
     { getCategoryTree } as never,
     undefined as never,
+    undefined as never,
     new ConfigService(config),
+    new BulkVariantCodeChecker(dbService),
   );
   return { manager, download, renderMaster, getCategoryTree, config };
 }

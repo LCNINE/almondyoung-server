@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import {
@@ -164,17 +165,26 @@ export function FormExportModal({ open, masterIds, onClose }: Props) {
           {data?.status === 'completed' &&
             data.downloadable &&
             (data.productCount > 0 ? (
-              <p>
-                상품 <strong>{data.productCount}건</strong>이 담긴 양식이
-                준비됐습니다.
-                {data.productCount < masterIds.length && (
-                  <>
-                    {' '}
-                    판매 중인 버전이 없는 상품{' '}
-                    {masterIds.length - data.productCount}건은 제외됐습니다.
-                  </>
-                )}
-              </p>
+              <>
+                <p>
+                  상품 <strong>{data.productCount}건</strong>이 담긴 양식이
+                  준비됐습니다.
+                  {data.productCount < masterIds.length && (
+                    <>
+                      {' '}
+                      판매 중인 버전이 없는 상품{' '}
+                      {masterIds.length - data.productCount}건은 제외됐습니다.
+                    </>
+                  )}
+                </p>
+                <p className="mt-2 text-muted-foreground">
+                  작성을 마치면{' '}
+                  <Link href="/mall/bulk-sessions" className="underline">
+                    엑셀 일괄 등록/수정
+                  </Link>{' '}
+                  화면에서 올려 주세요.
+                </p>
+              </>
             ) : (
               // 선택한 상품 전부가 active 버전 없음 등으로 빠져 실제로 담긴 상품이 0건인
               // 경우다. 잡 자체는 completed·downloadable(파일은 존재)이라 위 분기로는

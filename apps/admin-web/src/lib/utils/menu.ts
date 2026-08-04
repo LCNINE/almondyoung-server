@@ -221,6 +221,11 @@ export const mainMenus: MainMenu[] = [
       },
       { id: 'product-drafts', title: '작성중인 상품', path: '/mall/my-drafts' },
       {
+        id: 'product-bulk-sessions',
+        title: '엑셀 일괄 등록/수정',
+        path: '/mall/bulk-sessions',
+      },
+      {
         id: 'product-category',
         title: '분류/카테고리',
         path: '/mall/categories',
@@ -239,11 +244,6 @@ export const mainMenus: MainMenu[] = [
       { id: 'product-display', title: '진열' },
       { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
       { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
-      {
-        id: 'product-imports',
-        title: '엑셀 대량등록',
-        path: '/mall/product-imports',
-      },
       { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
       {
         id: 'digital-assets',
@@ -487,9 +487,8 @@ export const mainMenus: MainMenu[] = [
           // { id: 'popups', title: '팝업' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
-          { id: 'promotions', title: '프로모션' },
+          { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'deposit', title: '예치금' },
-          { id: 'events', title: '이벤트' },
         ],
       },
       {

@@ -46,6 +46,48 @@ export interface SubscriptionDetailsDto {
   tier: MembershipTierDto
 }
 
+/*───────────────────────────
+ * 해지 미리보기 (서버 정책 SoT)
+ *──────────────────────────*/
+export type CancellationMode = "AT_PERIOD_END" | "IMMEDIATE_REFUND"
+
+export interface CancellationOptionDto {
+  mode: CancellationMode
+  available: boolean
+  unavailableReason?: string
+  refundAmount: number
+  refundKind: "NONE" | "WITHDRAWAL_FULL" | "ANNUAL_PRORATION"
+  refundExecution: "NONE" | "AUTO" | "MANUAL"
+  /** 환불 송금 계좌 입력이 필요한지 */
+  requiresReceiveAccount: boolean
+  /** 이 방식을 택했을 때 이용이 끝나는 날 (YYYY-MM-DD) */
+  effectiveEndsAt: string
+  breakdown?: {
+    paidAmount: number
+    monthlyListPrice: number
+    monthsElapsed: number
+    usageDeduction: number
+    benefitDeduction: number
+  }
+}
+
+export interface CancellationPreviewDto {
+  contractId: string
+  planName: { durationDays: number; price: number }
+  isRecurring: boolean
+  alreadyScheduledForCancellation: boolean
+  recurringCancelledAt: string | null
+  currentPeriodEndsAt: string
+  nextBillingDate: string | null
+  recommendedMode: CancellationMode
+  withdrawalDaysRemaining: number
+  withdrawalWindowDays: number
+  refundProcessingBusinessDays: number
+  /** 해지 예약을 철회해 자동결제를 재개할 수 있는지 (1회 결제는 false) */
+  canUndoCancellation: boolean
+  options: CancellationOptionDto[]
+}
+
 export interface CurrentSubscriptionResDto {
   success: boolean
   meta: {

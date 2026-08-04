@@ -11,6 +11,8 @@ export const membershipQueryKeys = {
     [...membershipQueryKeys.all, 'contractEvents', userId] as const,
   billingHistory: (query: AdminBillingHistoryQuery) =>
     [...membershipQueryKeys.all, 'billingHistory', query] as const,
+  cancellationQuote: (contractId: string) =>
+    [...membershipQueryKeys.all, 'cancellationQuote', contractId] as const,
   tiersWithPlans: () => [...membershipQueryKeys.all, 'tiersWithPlans'] as const,
   recurringBilling: () => [...membershipQueryKeys.all, 'recurringBilling'] as const,
   recurringBillingOverview: () => [...membershipQueryKeys.all, 'recurringBilling', 'overview'] as const,

@@ -29,6 +29,7 @@ export type PromotionDto = {
   is_automatic: boolean
   is_assigned: boolean
   visibility?: "public" | "claimable" | "assigned_only"
+  min_order_amount?: number | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
   metadata: Record<string, unknown> | null
@@ -40,6 +41,7 @@ export type PromotionDto = {
 export type PromotionsResponseDto = {
   promotions: PromotionDto[]
   claimable_promotions: PromotionDto[]
+  expired_promotions?: PromotionDto[]
   count: number
   offset: number
   limit: number

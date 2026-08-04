@@ -4,6 +4,11 @@ export type VersionLifecycleDetail = {
   source: 'master' | 'version';
   status: VersionLifecycleStatus;
   versionId: string | null;
+  /**
+   * 일괄 등록/수정 세션이 이 버전을 잠갔다면 그 세션 id.
+   * 서버가 개별 발행·삭제를 둘 다 409 로 거부하므로 버튼을 아예 내린다.
+   */
+  bulkSessionId?: string | null;
 };
 
 export type VersionLifecycleActions = {
@@ -19,11 +24,15 @@ export type VersionLifecycleError = {
 export function getVersionLifecycleActions(
   detail: VersionLifecycleDetail
 ): VersionLifecycleActions {
-  const isVersionDetail = detail.source === 'version' && Boolean(detail.versionId);
+  const isVersionDetail =
+    detail.source === 'version' && Boolean(detail.versionId);
+  const locked = Boolean(detail.bulkSessionId);
   const canPublish =
+    !locked &&
     isVersionDetail &&
     (detail.status === 'draft' || detail.status === 'inactive');
-  const canDeleteDraft = isVersionDetail && detail.status === 'draft';
+  const canDeleteDraft =
+    !locked && isVersionDetail && detail.status === 'draft';
 
   return {
     canPublish,
@@ -99,12 +108,11 @@ export function formatVersionLifecycleError(
   const responseMessage = bodyRecord?.message;
   const responseMessageLines =
     typeof responseMessage === 'string' ? splitTextLines(responseMessage) : [];
-  const title =
-    responseMessageLines[0]
-      ? responseMessageLines[0]
-      : error instanceof Error
-        ? error.message
-        : '발행할 수 없습니다.';
+  const title = responseMessageLines[0]
+    ? responseMessageLines[0]
+    : error instanceof Error
+      ? error.message
+      : '발행할 수 없습니다.';
   const responseMessageDetails = responseMessageLines.slice(1);
 
   const detailSources = bodyRecord
@@ -119,9 +127,10 @@ export function formatVersionLifecycleError(
 
   const details = Array.from(
     new Set(
-      [...responseMessageDetails, ...detailSources.flatMap(collectTexts)].filter(
-        (text) => text !== title
-      )
+      [
+        ...responseMessageDetails,
+        ...detailSources.flatMap(collectTexts),
+      ].filter((text) => text !== title)
     )
   );
 

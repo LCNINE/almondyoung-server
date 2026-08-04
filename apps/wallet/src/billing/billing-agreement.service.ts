@@ -144,4 +144,91 @@ export class BillingAgreementService {
         ),
       );
   }
+
+  /**
+   * 구독 해지에 따른 자동이체 약정 완전 종료.
+   *
+   * `revokeBySubscriberRef` 는 wallet 로컬 상태만 REVOKED 로 바꾼다 — 은행에 걸린 효성 CMS 약정은
+   * 그대로 살아있다. 효성 프로토콜(FMS-TE-0046)에는 약정해지 API 가 없고 **회원삭제**(DELETE
+   * /v1/members/{memberId})가 유일한 종료 수단이므로, 여기서 그 경로까지 이어준다.
+   *
+   * 순서가 중요하다:
+   *  1) 아직 출금되지 않은 예정 출금을 먼저 삭제한다 — CMS 는 환불 API 가 없어서, 일단 나가면
+   *     돌려주는 방법이 수동 송금뿐이다. 마감 전 취소가 유일하게 깔끔한 회수다.
+   *  2) 약정 행을 REVOKED 로 내린다.
+   *  3) 그 결제수단을 쓰는 **다른 활성 약정이 없을 때만** 효성 회원을 삭제한다. 결제수단은
+   *     사용자당 공유되므로, 남은 구독이 있으면 지우면 그 구독의 청구가 깨진다.
+   */
+  async terminateMandateBySubscriberRef(
+    subscriberType: string,
+    subscriberRef: string,
+  ): Promise<{
+    agreementFound: boolean;
+    cancelledWithdrawals: number;
+    mandateTerminated: boolean;
+    skipReason?: string;
+  }> {
+    const [agreement] = await this.dbService.db
+      .select()
+      .from(billingAgreements)
+      .where(
+        and(
+          eq(billingAgreements.subscriberType, subscriberType),
+          eq(billingAgreements.subscriberRef, subscriberRef),
+        ),
+      )
+      .limit(1);
+
+    if (!agreement) {
+      return { agreementFound: false, cancelledWithdrawals: 0, mandateTerminated: false };
+    }
+
+    // 1) 마감 전 예정 출금 취소 (돈이 나가는 것을 애초에 막는다)
+    const cancelledWithdrawals = await this.billingMethodService.cancelPendingCmsWithdrawals(
+      agreement.billingMethodId,
+    );
+
+    // 2) 약정 비활성화
+    if (agreement.status === 'ACTIVE') {
+      await this.revokeBySubscriberRef(subscriberType, subscriberRef);
+    }
+
+    // 3) 같은 결제수단을 쓰는 다른 활성 약정이 남아있으면 효성 회원은 지우지 않는다
+    const others = await this.dbService.db
+      .select({ id: billingAgreements.id })
+      .from(billingAgreements)
+      .where(
+        and(
+          eq(billingAgreements.billingMethodId, agreement.billingMethodId),
+          eq(billingAgreements.status, 'ACTIVE'),
+        ),
+      );
+
+    if (others.length > 0) {
+      return {
+        agreementFound: true,
+        cancelledWithdrawals,
+        mandateTerminated: false,
+        skipReason: 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT',
+      };
+    }
+
+    try {
+      await this.billingMethodService.revoke(agreement.billingMethodId, agreement.userId);
+      return { agreementFound: true, cancelledWithdrawals, mandateTerminated: true };
+    } catch (error) {
+      // 이미 삭제된 수단이거나 효성 삭제 가드(CMS_MEMBER_DELETE_BLOCKED_REGISTERED)에 걸린 경우.
+      // 구독 해지 자체는 되돌리지 않고, 약정 정리만 후속 처리 대상으로 남긴다.
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `CMS 약정 종료 실패 (subscriber=${subscriberType}:${subscriberRef}, billingMethod=${agreement.billingMethodId}): ${message}`,
+      );
+      return {
+        agreementFound: true,
+        cancelledWithdrawals,
+        mandateTerminated: false,
+        skipReason: message,
+      };
+    }
+  }
 }

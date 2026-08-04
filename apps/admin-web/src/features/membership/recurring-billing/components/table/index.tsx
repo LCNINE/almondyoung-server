@@ -16,6 +16,7 @@ import { RecurringContractsView } from './contracts-view';
 import { StuckBillingView } from './stuck-view';
 import { DunningView } from './dunning-view';
 import { RecurringInvoicesView } from './invoices-view';
+import { AgreementCleanupView } from './agreement-cleanup-view';
 
 const PAGE_SIZE = 20;
 
@@ -36,6 +37,10 @@ export function RecurringBillingTable() {
 
   if (query.view === 'invoices') {
     return <RecurringInvoicesView />;
+  }
+
+  if (query.view === 'agreement-cleanup') {
+    return <AgreementCleanupView />;
   }
 
   return <RecurringBillingCmsTable query={query} />;

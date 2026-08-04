@@ -87,6 +87,25 @@ export class BillingAgreementController {
     }
   }
 
+  @Post('by-subscriber/terminate-mandate')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Terminate the CMS mandate behind a subscriber agreement (server-to-server, API key auth)',
+    description:
+      '구독 해지 시 호출. 예정 출금을 먼저 삭제하고 약정을 REVOKED 로 내린 뒤, 해당 결제수단을 쓰는 다른 ' +
+      '활성 약정이 없으면 효성 회원삭제(=자동이체 약정 종료)까지 수행한다. 효성에는 약정해지 API 가 없어 ' +
+      '회원삭제가 유일한 종료 수단이다(FMS-TE-0046 §2).',
+  })
+  async terminateMandateBySubscriber(
+    @Query('subscriberType') subscriberType: string,
+    @Query('subscriberRef') subscriberRef: string,
+  ) {
+    if (!subscriberType || !subscriberRef) {
+      throw new BadRequestException('subscriberType and subscriberRef are required');
+    }
+    return this.service.terminateMandateBySubscriberRef(subscriberType, subscriberRef);
+  }
+
   @Delete(':id')
   @HttpCode(204)
   @WalletJwtAuth()

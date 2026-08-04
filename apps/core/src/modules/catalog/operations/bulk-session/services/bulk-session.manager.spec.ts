@@ -1,7 +1,18 @@
+// Task 6(purgeDrafts) 부터 이 매니저가 `product-versions.service.ts`/`product-masters.service.ts`
+// 를 정적으로 끌어오는데, 그 둘이 bare `@packages/event-contracts` 를 import 한다 — 루트 jest
+// 설정의 moduleNameMapper 에는 `^@packages/event-contracts/(.*)$`(하위 경로)만 있고 bare 경로
+// 항목이 없어 해석되지 않는다(레포 상시 debt). 이미 있는 선례(bulk-draft.applier.spec.ts:1-12,
+// product-versions.service.spec.ts:1-7)와 같은 모양으로 가상 모듈을 세운다.
+jest.mock(
+  '@packages/event-contracts',
+  () => ({ PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' } }),
+  { virtual: true },
+);
+
 import * as ExcelJS from 'exceljs';
 import { Logger } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { SQL } from 'drizzle-orm';
 import { BulkSessionManager } from './bulk-session.manager';
 import { BulkSessionReader } from './bulk-session.reader';
 import { buildFormWorkbook } from './form-export.workbook';
@@ -13,57 +24,21 @@ import {
   productFormExports,
   productMasterVersions,
 } from '../../../schema/catalog.schema';
+import { type FakeRow, rowMatchesCondition } from './__support__/drizzle-row-matcher';
 
-type FakeRow = Record<string, unknown>;
-
-// ─── `.where()` 를 실제로 거는 공용 렌더러 ───
+// ─── `.where()` 를 실제로 거는 공용 렌더러(`rowMatchesCondition`, `__support__/drizzle-row-matcher.ts`) ───
 //
 // 이 파일의 두 하네스(accept 용 `harness`, 쓰기 경로용 `writeHarness`)가 **같은 것**을 쓴다.
 // 처음에는 쓰기 경로에만 있었고 accept 하네스는 `where: () => rows` 로 술어를 통째로 버렸다 —
 // 그래서 접수 게이트(만료·해석 불가 양식 거부)가 WHERE 를 잘못 걸어도 목이 초록이었다.
 // 그 게이트는 "프리필 행을 신규로 재분류해 카탈로그를 통째로 중복 생성"하는 사고를 막는
 // 유일한 서버측 방어선이라(스펙 §3.1 ⚠️) 목이 그것을 검증하지 못하는 것 자체가 결함이다.
-
-const dialect = new PgDialect();
-
-/** drizzle 컬럼명(snake_case) → 픽스처 키(camelCase). */
-function toCamelKey(column: string): string {
-  return column.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase());
-}
-
-/**
- * `.where()` 에 넘어온 조건을 렌더해 행 하나가 그 조건을 만족하는지 판정한다. `eq`/
- * `isNotNull`/`isNull`/`notInArray` 조합만 지원한다 — 이 매니저가 실제로 쓰는 연산자가
- * 그것뿐이다(더 복잡한 조건이 생기면 그때 확장한다).
- */
-function rowMatchesCondition(row: FakeRow, condition: unknown): boolean {
-  if (condition === undefined) return true;
-  const { sql, params } = dialect.sqlToQuery(condition as never);
-  const lowered = sql.toLowerCase();
-  let ok = true;
-
-  for (const m of lowered.matchAll(/"(\w+)"\s*=\s*\$(\d+)/g)) {
-    const key = toCamelKey(m[1]);
-    if (row[key] !== params[Number(m[2]) - 1]) ok = false;
-  }
-  for (const m of lowered.matchAll(/"(\w+)"\s+is\s+not\s+null/g)) {
-    const key = toCamelKey(m[1]);
-    if (row[key] === null || row[key] === undefined) ok = false;
-  }
-  // "is not null" 도 문자열로는 "is ... null" 을 담지만 "not" 이 공백이 아니라서 아래
-  // `\s+null` 에 안 걸린다 — 두 정규식이 서로의 매치를 침범하지 않는다.
-  for (const m of lowered.matchAll(/"(\w+)"\s+is\s+null/g)) {
-    const key = toCamelKey(m[1]);
-    if (!(row[key] === null || row[key] === undefined)) ok = false;
-  }
-  for (const m of lowered.matchAll(/"(\w+)"\s+not\s+in\s+\(([^)]*)\)/g)) {
-    const key = toCamelKey(m[1]);
-    const excluded = m[2].split(',').map((placeholder) => params[Number(placeholder.trim().replace('$', '')) - 1]);
-    if (excluded.includes(row[key])) ok = false;
-  }
-
-  return ok;
-}
+//
+// 렌더러는 이 파일에서 `__support__/` 로 옮겨졌다(Task 7 리뷰) — `bulk-session.cleaner.spec.ts`
+// 도 같은 렌더러가 필요해졌는데, 처음에는 이 스펙 파일을 직접 import 하게 했더니 그 스펙을
+// 단독 실행해도 이 파일의 describe/it 61건이 같이 등록되어 도는 부작용이 났다(자세한 이유는
+// 헬퍼 파일 주석 참조). `__support__/*.ts` 는 `*.spec.ts` 로 안 끝나 jest `testRegex` 에 안
+// 걸리므로 그 부작용이 없다.
 
 interface WriteSelectChain extends Promise<FakeRow[]> {
   where(condition?: unknown): WriteSelectChain;
@@ -71,15 +46,55 @@ interface WriteSelectChain extends Promise<FakeRow[]> {
   groupBy(...args: unknown[]): WriteSelectChain;
   limit(n?: number): WriteSelectChain;
   offset(n?: number): WriteSelectChain;
+  /** `FOR UPDATE` 행 잠금. Task 5(excludeItem)의 "잠금이 트랜잭션 첫 문장인가" 관측이 이걸
+   *  쓴다 — `onFor` 콜백은 `.where()`/`.limit()` 체이닝을 거쳐도(재귀 호출로 새 체인을
+   *  만들므로) 그대로 전달된다. */
+  for(mode?: string): WriteSelectChain;
 }
 
-function writeSelectChain(rows: FakeRow[]): WriteSelectChain {
-  const builder = Promise.resolve(rows) as WriteSelectChain;
-  builder.where = (condition) => writeSelectChain(rows.filter((row) => rowMatchesCondition(row, condition)));
+/**
+ * `.select(fields)` 에 넘어온 필드 객체가 drizzle 집계(`count()` 등)를 담고 있는지 판정한다.
+ * 리뷰 발견 1 픽스 — 평범한 컬럼 투영(`{ phase: table.phase }`)의 값은 `PgColumn` 인스턴스라
+ * `SQL` 이 아니고, `count()`/`sum()` 같은 집계는 `SQL` 인스턴스를 돌려준다(직접 렌더해
+ * `count()` → `{ sql: 'count(*)', params: [] }` 로 확인했다). 그 필드의 **키 이름**을 그대로
+ * 돌려준다 — 매니저 코드가 실제로 쓴 별칭(`{ value: count() }` 의 `value`)과 결과 행의 키가
+ * 어긋나지 않아야 하기 때문이다.
+ *
+ * **`groupBy` 는 다루지 않는다(YAGNI)** — 지금 이 파일의 유일한 집계 쿼리(`purgeDrafts` 의
+ * `remaining` 재집계)는 group 없이 단일 합계 한 행만 요구한다. 그룹별 집계가 필요해지면
+ * 그때 넓힌다.
+ */
+function aggregateCountKey(fields: unknown): string | undefined {
+  if (!fields || typeof fields !== 'object') return undefined;
+  for (const [key, value] of Object.entries(fields as Record<string, unknown>)) {
+    if (value instanceof SQL) return key;
+  }
+  return undefined;
+}
+
+/**
+ * `aggregateKey` 가 있으면 이 체인이 결국 돌려주는 값은 원시 행 배열이 아니라 **매칭된 행
+ * 수를 담은 행 하나**(`[{ [aggregateKey]: rows.length }]`)다 — `.select({ value: count() })`
+ * 를 실제로 흉내내는 지점. `.where()` 로 필터링된 뒤의 행 수를 세야 하므로, 재귀 호출마다
+ * (아래 `builder.where`) `aggregateKey` 를 그대로 전달해 최종 필터링 결과에 반영되게 한다.
+ */
+function writeSelectChain(rows: FakeRow[], onFor?: () => void, aggregateKey?: string): WriteSelectChain {
+  const resolvedValue: FakeRow[] = aggregateKey ? [{ [aggregateKey]: rows.length }] : rows;
+  const builder = Promise.resolve(resolvedValue) as WriteSelectChain;
+  builder.where = (condition) =>
+    writeSelectChain(
+      rows.filter((row) => rowMatchesCondition(row, condition)),
+      onFor,
+      aggregateKey,
+    );
   builder.orderBy = () => builder;
   builder.groupBy = () => builder;
   builder.limit = () => builder;
   builder.offset = () => builder;
+  builder.for = () => {
+    onFor?.();
+    return builder;
+  };
   return builder;
 }
 
@@ -171,12 +186,14 @@ function harness(
     softDelete: opts.softDeleteImpl ? jest.fn(opts.softDeleteImpl) : jest.fn(() => Promise.resolve(undefined)),
   };
 
-  // Manager 생성자는 실제 DbService<PimSchema>/FormExportFileClient/BulkSessionReader 타입을
-  // 요구한다 — 이 페이크는 Manager 가 실제로 부르는 메서드(run/upload/softDelete)만 구조적으로
-  // 흉내내므로 완전한 구조 일치가 아니다. form-export.manager.spec.ts harness 와 같은 관례로
-  // `as never` 캐스팅한다. accept() 는 reader 를 전혀 쓰지 않으므로 빈 객체로 충분하다 —
-  // setConflictDecision/approve/cancel 을 도는 테스트는 아래 writeHarness 를 따로 쓴다.
-  const manager = new BulkSessionManager(db as never, fileClient as never, {} as never);
+  // Manager 생성자는 실제 DbService<PimSchema>/FormExportFileClient/BulkSessionReader/
+  // ProductVersionsService/ProductMastersService 타입을 요구한다 — 이 페이크는 Manager 가
+  // 실제로 부르는 메서드(run/upload/softDelete)만 구조적으로 흉내내므로 완전한 구조 일치가
+  // 아니다. form-export.manager.spec.ts harness 와 같은 관례로 `as never` 캐스팅한다.
+  // accept() 는 reader/versions/masters 를 전혀 쓰지 않으므로 빈 객체로 충분하다 —
+  // setConflictDecision/approve/cancel/purgeDrafts 를 도는 테스트는 아래 writeHarness 를
+  // 따로 쓴다.
+  const manager = new BulkSessionManager(db as never, fileClient as never, {} as never, {} as never, {} as never);
   return { manager, trx, fileClient, runCalls: () => runCalls, insertedTables };
 }
 
@@ -482,6 +499,15 @@ function tableKey(table: unknown): 'sessions' | 'items' | 'images' | 'versions' 
   return 'other';
 }
 
+/** 실제 SQL 테이블명(snake_case) — Task 5 잠금 순서 관측(`calls`)이 단정하는 값. */
+function sqlTableName(table: unknown): string {
+  if (table === productBulkSessions) return 'product_bulk_sessions';
+  if (table === productBulkItems) return 'product_bulk_items';
+  if (table === productBulkImages) return 'product_bulk_images';
+  if (table === productMasterVersions) return 'product_master_versions';
+  return 'unknown_table';
+}
+
 interface WriteHarnessOpts {
   session: FakeRow;
   items?: FakeRow[];
@@ -510,12 +536,25 @@ interface WriteHarnessOpts {
  */
 function writeHarness(opts: WriteHarnessOpts) {
   let sessions: FakeRow[] = [{ ...opts.session }];
-  let items = [...(opts.items ?? [])];
+  // Task 6(purgeDrafts) 픽스처는 `sessionId` 를 생략한다 — 다른 describe 들의
+  // `conflictItemFixture()` 처럼 매번 반복해서 적을 이유가 없다(테스트 세션이 하나뿐이므로
+  // "이 행이 어느 세션 것인지"는 항상 자명하다). `eq(productBulkItems.sessionId, sessionId)`
+  // 술어가 실제로 걸리려면 행에 그 필드가 있어야 하므로, item 이 명시하지 않으면 세션의
+  // `id` 를 기본값으로 채운다 — item 자신의 `sessionId` 가 있으면 그대로 우선한다.
+  let items: FakeRow[] = (opts.items ?? []).map((item): FakeRow => ({ sessionId: opts.session.id, ...item }));
   let images = [...(opts.images ?? [])];
   let versions = [...(opts.versions ?? [])];
   const sessionUpdates: FakeRow[] = [];
   const itemUpdates: FakeRow[] = [];
   const versionUpdates: FakeRow[] = [];
+  // Task 5(excludeItem)의 "잠금이 트랜잭션 첫 문장인가" 관측. **모든** select 문을 실행
+  // 순서대로 기록한다 — `.for()` 가 붙은 것만 기록하면 "잠갔는가"만 보게 되어, 잠금이
+  // 두 번째 문장으로 밀려도 여전히 `calls[0]` 이 그 하나뿐인 for-update 항목이 되는 함정에
+  // 빠진다(실제로 그렇게 짰다가 순서를 일부러 뒤집는 변이 테스트로 잡아냈다). `.from()`
+  // 시점에 `kind: 'select'` 로 항목을 밀어 넣고, 같은 체인에서 나중에 `.for()` 가 불리면
+  // (`.where()` 뒤에 온다) **같은 객체**를 `'select-for-update'` 로 바꿔 쓴다 — `calls` 는
+  // 그 객체 참조를 이미 담고 있으므로 나중의 변경이 그대로 보인다.
+  const calls: Array<{ kind: string; table: string }> = [];
 
   const tableRows = (table: unknown): FakeRow[] => {
     const key = tableKey(table);
@@ -527,9 +566,17 @@ function writeHarness(opts: WriteHarnessOpts) {
   };
 
   const trx: WriteFakeTrx = {
-    select: () => ({
+    select: (fields) => ({
       from: (table) => {
-        const chain = writeSelectChain(tableRows(table));
+        const call = { kind: 'select', table: sqlTableName(table) };
+        calls.push(call);
+        const chain = writeSelectChain(
+          tableRows(table),
+          () => {
+            call.kind = 'select-for-update';
+          },
+          aggregateCountKey(fields),
+        );
         // raceSessionPhaseTo 문서 참조 — select 가 `tableRows`(교체 전 배열)를 이미
         // 캡처한 뒤에 배열을 갈아치운다. 이후의 CAS UPDATE 는 새 배열을 본다.
         if (table === productBulkSessions && opts.raceSessionPhaseTo !== undefined) {
@@ -575,15 +622,36 @@ function writeHarness(opts: WriteHarnessOpts) {
   const fileClient = { upload: jest.fn(), softDelete: jest.fn() };
   // 이 파일 상단 harness() 와 같은 관례 — 페이크는 db.run 만 구조적으로 흉내낸다.
   const reader = new BulkSessionReader(db as never);
-  const manager = new BulkSessionManager(db as never, fileClient as never, reader);
+  // Task 6(purgeDrafts) 전용 페이크. `versions`/`masters` 라는 이름은 이미 위에서 이 세션이
+  // 잠근 draft 픽스처 배열(`let versions: FakeRow[]`)에 쓰이고 있어 겹친다 — 서비스 페이크는
+  // `productVersionsService`/`productMastersService` 로 구분한다. 메서드는 jest.fn() 하나뿐이라
+  // (bulk-draft.applier.spec.ts 의 fileClient 페이크와 같은 관례로) 기본 구현 없이 둔다 —
+  // `await jest.fn()()` 은 `undefined` 를 즉시 resolve 하므로 성공 케이스엔 그걸로 충분하고,
+  // 실패 케이스는 개별 테스트가 `mockRejectedValueOnce` 로 얹는다.
+  const deleteDraftVersion = jest.fn();
+  const deleteMaster = jest.fn();
+  const productVersionsService = { deleteDraftVersion };
+  const productMastersService = { deleteMaster };
+  const manager = new BulkSessionManager(
+    db as never,
+    fileClient as never,
+    reader,
+    productVersionsService as never,
+    productMastersService as never,
+  );
   return {
     manager,
     session: () => sessions[0],
     items: () => items,
+    /** purgeDrafts 테스트 전용 — 처리 대상이 아닌 행이 그대로인지 그 자리에서 바로 읽는다. */
+    itemRows: items,
     versions: () => versions,
     sessionUpdates,
     itemUpdates,
     versionUpdates,
+    calls,
+    deleteDraftVersion,
+    deleteMaster,
   };
 }
 
@@ -939,5 +1007,346 @@ describe('BulkSessionManager.cancel', () => {
     const { manager } = writeHarness({ session: { ...SESSION_REVIEW, uploadedBy: 'other' }, items: [] });
 
     await expect(manager.cancel('sess-1', 'u1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('BulkSessionManager.queuePublish', () => {
+  it('drafted 세션의 미발행 행을 pending 으로 돌리고 publishing 으로 민다', async () => {
+    const { manager, session, items } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'drafted' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          publishStatus: 'idle',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    await manager.queuePublish('sess-1', 'u1');
+
+    expect(items()[0]).toMatchObject({ publishStatus: 'pending', publishError: null });
+    expect(session().phase).toBe('publishing');
+  });
+
+  it('published 세션에서는 실패 행만 다시 pending 으로 돌린다', async () => {
+    const { manager, items } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'published' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          publishStatus: 'published',
+          conflict: null,
+          conflictDecision: null,
+        }),
+        conflictItemFixture({
+          id: 'item-2',
+          status: 'drafted',
+          publishStatus: 'failed',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    await manager.queuePublish('sess-1', 'u1');
+
+    // 이미 발행된 행은 건드리지 않는다 — 재호출 멱등성이 여기 걸려 있다.
+    expect(items().find((row) => row.id === 'item-1')?.publishStatus).toBe('published');
+    expect(items().find((row) => row.id === 'item-2')?.publishStatus).toBe('pending');
+  });
+
+  it('발행할 행이 하나도 없으면 409 다', async () => {
+    const { manager } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'published' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          publishStatus: 'published',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    await expect(manager.queuePublish('sess-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('drafting 중인 세션은 발행할 수 없다', async () => {
+    const { manager } = writeHarness({ session: { ...SESSION_REVIEW, phase: 'drafting' }, items: [] });
+
+    await expect(manager.queuePublish('sess-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('남의 세션은 404 다', async () => {
+    const { manager } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'drafted', uploadedBy: 'other' },
+      items: [],
+    });
+
+    await expect(manager.queuePublish('sess-1', 'u1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('BulkSessionManager.retryDraft', () => {
+  it('draft 생성 실패 행만 pending 으로 돌리고 drafting 으로 민다', async () => {
+    const { manager, session, items } = writeHarness({
+      session: { ...SESSION_REVIEW, phase: 'drafted' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'failed',
+          errorMessage: '무언가 실패',
+          conflict: null,
+          conflictDecision: null,
+        }),
+        conflictItemFixture({ id: 'item-2', status: 'drafted', conflict: null, conflictDecision: null }),
+      ],
+    });
+
+    await manager.retryDraft('sess-1', 'u1');
+
+    expect(items().find((row) => row.id === 'item-1')).toMatchObject({ status: 'pending', errorMessage: null });
+    expect(items().find((row) => row.id === 'item-2')?.status).toBe('drafted');
+    expect(session().phase).toBe('drafting');
+  });
+});
+
+// ─── excludeItem ───
+//
+// 발행 대상에서 행을 빼고 그 draft 의 세션 잠금을 푼다(스펙 §10.5) — cancel() 이 세션 전체에
+// 대해 하는 일(Task 9)을 행 하나에 대해 하는 것이라 같은 규약을 쓴다. `bulk-session-job.
+// manager.ts` 의 `publishOne` 이 같은 세션 행을 `FOR UPDATE` 로 잠그고 이어 행 상태
+// (`status='drafted' ∧ publishStatus='pending'`)를 재확인하므로, 이 메서드도 같은 세션 행을
+// **트랜잭션 첫 문장**으로 잠가야 둘이 직렬화된다 — 그러지 않으면 제외가 잠금을 푸는 사이
+// 발행이 커밋되는 창이 열린다.
+describe('BulkSessionManager.excludeItem', () => {
+  it('제외한 행의 draft 잠금을 푼다', async () => {
+    const { manager, items, versions } = writeHarness({
+      session: { id: 'sess-1', uploadedBy: 'u1', phase: 'drafted' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          draftVersionId: 'v-1',
+          publishStatus: 'idle',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: 'sess-1', draftOwnerId: 'u1' }],
+    });
+
+    await manager.excludeItem('sess-1', 'item-1', 'u1');
+
+    expect(items()[0].status).toBe('excluded');
+    expect(versions()[0].bulkSessionId).toBeNull();
+  });
+
+  // 발행 레인의 publishOne 과 같은 행을 두고 경합한다 — 둘 다 같은 세션 행을 잠가야
+  // 직렬화된다. 잠그지 않으면 "제외했는데 발행됨"이 열린다. 이 테스트는 잠갔는지가 아니라
+  // **트랜잭션의 첫 문장인지**를 단정한다 — 잠금이 뒤로 밀리면(예: item 조회 뒤) 경쟁의
+  // 창이 그대로 남기 때문이다.
+  it('트랜잭션 첫 문장은 세션 행 FOR UPDATE 잠금이다', async () => {
+    const { manager, calls } = writeHarness({
+      session: { id: 'sess-1', uploadedBy: 'u1', phase: 'drafted' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          draftVersionId: 'v-1',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: 'sess-1', draftOwnerId: 'u1' }],
+    });
+
+    await manager.excludeItem('sess-1', 'item-1', 'u1');
+
+    expect(calls[0]).toEqual({ kind: 'select-for-update', table: 'product_bulk_sessions' });
+  });
+
+  // draft 생성 슬라이스가 아직 처리하지 않은 행(payload 검증만 끝나고 draftVersionId 가
+  // 없는 pending-이었던 행은 애초에 status 가 'drafted'/'failed' 가 아니라 여기 안 온다 —
+  // 다만 'failed'(draft 생성 자체가 실패한 행)는 draftVersionId 가 null 인 채로 제외
+  // 대상이다. 잠글 draft 가 없으니 잠금 해제 UPDATE 만 건너뛰어야지, 행 자체를 못 뺀다고
+  // 착각하면 안 된다.
+  it('draft 생성이 실패해 draftVersionId 가 없는 행도 제외된다 — 잠금 해제만 건너뛴다', async () => {
+    const { manager, items, versionUpdates } = writeHarness({
+      session: { id: 'sess-1', uploadedBy: 'u1', phase: 'drafted' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'failed',
+          draftVersionId: null,
+          publishStatus: 'idle',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    await manager.excludeItem('sess-1', 'item-1', 'u1');
+
+    expect(items()[0].status).toBe('excluded');
+    expect(versionUpdates).toHaveLength(0);
+  });
+
+  it('이미 발행된 행은 제외할 수 없다', async () => {
+    const { manager } = writeHarness({
+      session: { id: 'sess-1', uploadedBy: 'u1', phase: 'published' },
+      items: [
+        conflictItemFixture({
+          id: 'item-1',
+          status: 'drafted',
+          publishStatus: 'published',
+          draftVersionId: 'v-1',
+          conflict: null,
+          conflictDecision: null,
+        }),
+      ],
+      versions: [{ id: 'v-1', masterId: 'm-1', bulkSessionId: null, draftOwnerId: 'u1' }],
+    });
+
+    await expect(manager.excludeItem('sess-1', 'item-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('drafted·published 가 아닌 phase 에서는 제외할 수 없다', async () => {
+    const { manager } = writeHarness({
+      session: { id: 'sess-1', uploadedBy: 'u1', phase: 'review' },
+      items: [conflictItemFixture({ id: 'item-1', status: 'pending' })],
+    });
+
+    await expect(manager.excludeItem('sess-1', 'item-1', 'u1')).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+// ─── purgeDrafts ───
+//
+// Task 6: 취소된 세션이 남긴 draft 를 명시적으로 지운다(스펙 §3.12). 취소(cancel) 는 draft
+// 잠금만 풀고 draft 자체는 남긴다 — 이 메서드가 그 나머지를 사람이 판단해 실행하는 관리자
+// 동작이다. writeHarness 가 새로 노출하는 `deleteDraftVersion`/`deleteMaster` 는 주입한
+// ProductVersionsService/ProductMastersService 페이크의 jest.fn 이고, `itemRows` 는 처리
+// 대상이 아닌 행이 건드려지지 않았는지 그 자리에서 바로 읽기 위한 원본 배열 참조다.
+describe('BulkSessionManager.purgeDrafts', () => {
+  it('취소된 세션에서만 열린다', async () => {
+    const { manager } = writeHarness({ session: { id: 'S1', uploadedBy: 'U1', phase: 'drafted' }, items: [] });
+    await expect(manager.purgeDrafts('S1', 'U1')).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it('수정 행은 draft 만 지운다', async () => {
+    const { manager, deleteDraftVersion, deleteMaster } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [{ id: 'I1', kind: 'update', masterId: 'M1', draftVersionId: 'V1', publishStatus: 'idle' }],
+    });
+    await manager.purgeDrafts('S1', 'U1');
+    expect(deleteDraftVersion).toHaveBeenCalledWith('V1', expect.anything());
+    expect(deleteMaster).not.toHaveBeenCalled();
+  });
+
+  it('신규 행은 master 까지 지운다 — draft 만 지우면 빈 껍데기가 남는다', async () => {
+    const { manager, deleteDraftVersion, deleteMaster } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [{ id: 'I1', kind: 'create', masterId: 'M1', draftVersionId: 'V1', publishStatus: 'idle' }],
+    });
+    await manager.purgeDrafts('S1', 'U1');
+    expect(deleteDraftVersion).toHaveBeenCalledWith('V1', expect.anything());
+    expect(deleteMaster).toHaveBeenCalledWith('M1', 'U1', expect.anything());
+  });
+
+  it('한 번이라도 발행된 행은 건드리지 않는다', async () => {
+    const { manager, deleteDraftVersion, itemRows } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [{ id: 'I1', kind: 'update', draftVersionId: 'V1', publishStatus: 'published' }],
+    });
+    const result = await manager.purgeDrafts('S1', 'U1');
+    expect(deleteDraftVersion).not.toHaveBeenCalled();
+    expect(itemRows[0].draftVersionId).toBe('V1');
+    expect(result).toEqual({ purged: 0, failed: 0, remaining: 0 });
+  });
+
+  it('한 행이 실패해도 나머지는 지우고 failed 로 센다', async () => {
+    const { manager, deleteDraftVersion } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [
+        { id: 'I1', kind: 'update', draftVersionId: 'V1', publishStatus: 'idle' },
+        { id: 'I2', kind: 'update', draftVersionId: 'V2', publishStatus: 'idle' },
+      ],
+    });
+    deleteDraftVersion.mockRejectedValueOnce(new Error('boom'));
+    const result = await manager.purgeDrafts('S1', 'U1');
+    expect(result.purged).toBe(1);
+    expect(result.failed).toBe(1);
+  });
+
+  // 리뷰 발견 1 픽스: 실패한 행은 draftVersionId 를 남기므로 재집계에 다시 잡혀야 한다.
+  // 2행 중 1행만 실패하면 remaining 은 정확히 1이어야 한다 — writeHarness 의 select 페이크가
+  // `{ value: count() }` 를 실제로 흉내내지 못하면(원시 행을 그대로 돌려주면) 이 값이 늘
+  // 0이 되어 이 단정이 거짓 초록을 낸다(리뷰가 지적한 바로 그 결함).
+  it('실패한 행은 remaining 재집계에 다시 잡힌다', async () => {
+    const { manager, deleteDraftVersion } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [
+        { id: 'I1', kind: 'update', draftVersionId: 'V1', publishStatus: 'idle' },
+        { id: 'I2', kind: 'update', draftVersionId: 'V2', publishStatus: 'idle' },
+      ],
+    });
+    deleteDraftVersion.mockRejectedValueOnce(new Error('boom'));
+    const result = await manager.purgeDrafts('S1', 'U1');
+    expect(result).toEqual({ purged: 1, failed: 1, remaining: 1 });
+  });
+
+  // 리뷰 발견 3 픽스: "실패 → 다음 호출에서 성공"이 이 메서드의 정상 흐름이다. 첫 실패가
+  // 남긴 errorMessage 를 성공 UPDATE 가 지우지 않으면, 이미 정리가 끝난 행이 옛 오류 문구를
+  // 영구히 달고 있는다.
+  it('실패 후 재호출로 성공하면 옛 errorMessage 가 지워진다', async () => {
+    // `itemRows` (writeHarness 상단 문서 참조)는 초기 배열에 대한 **정적** 참조라, 이
+    // 케이스처럼 행이 실제로 UPDATE 되면(`items = next` 로 재할당) 갱신을 못 본다 —
+    // 반드시 `items()` 게터를 써야 한다(4번째 테스트의 "안 건드려짐" 단정과는 다른 경우다).
+    const { manager, deleteDraftVersion, items } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [
+        { id: 'I1', kind: 'update', draftVersionId: 'V1', publishStatus: 'idle', errorMessage: '이전 정리 실패 문구' },
+      ],
+    });
+    deleteDraftVersion.mockResolvedValueOnce(undefined);
+
+    await manager.purgeDrafts('S1', 'U1');
+
+    expect(items()[0].errorMessage).toBeNull();
+  });
+
+  // 최종 리뷰 발견 ①: targetFilter 가 draftVersionId·publishStatus 만 보고 status 를 안 봐서
+  // excludeItem 이 남긴 status='excluded' 행(작업자에게 넘긴 개인 draft)까지 정리 대상으로
+  // 잡았다 — 세션 취소 후 purge-drafts 를 부르면 그 draft 가 하드 삭제되는 데이터 손실이었다.
+  it('제외된 행은 정리 대상이 아니다 — draft 를 지우지 않고 remaining 에도 잡히지 않는다', async () => {
+    const { manager, deleteDraftVersion, itemRows } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [{ id: 'I1', kind: 'update', status: 'excluded', draftVersionId: 'V1', publishStatus: 'idle' }],
+    });
+    const result = await manager.purgeDrafts('S1', 'U1');
+    expect(deleteDraftVersion).not.toHaveBeenCalled();
+    expect(itemRows[0].draftVersionId).toBe('V1');
+    expect(result).toEqual({ purged: 0, failed: 0, remaining: 0 });
+  });
+
+  it('제외된 행과 함께 있어도 나머지 정리 대상 행은 정상 처리된다', async () => {
+    const { manager, deleteDraftVersion, items } = writeHarness({
+      session: { id: 'S1', uploadedBy: 'U1', phase: 'canceled' },
+      items: [
+        { id: 'I1', kind: 'update', status: 'excluded', draftVersionId: 'V1', publishStatus: 'idle' },
+        { id: 'I2', kind: 'update', draftVersionId: 'V2', publishStatus: 'idle' },
+      ],
+    });
+    const result = await manager.purgeDrafts('S1', 'U1');
+    expect(deleteDraftVersion).toHaveBeenCalledTimes(1);
+    expect(deleteDraftVersion).toHaveBeenCalledWith('V2', expect.anything());
+    expect(items().find((row) => row.id === 'I1')?.draftVersionId).toBe('V1');
+    expect(result).toEqual({ purged: 1, failed: 0, remaining: 0 });
   });
 });

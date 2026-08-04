@@ -7,6 +7,7 @@ import { format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DrizzleTransaction } from '../../shared/schemas/types';
+import { PaymentClientService } from './payment-client.service';
 
 /**
  * wallet 인보이스 결과 이벤트의 자격 연장/회수(ADR-0027 §4-2). 더닝/락은 다루지 않는다.
@@ -20,7 +21,61 @@ export class InvoiceOutcomeHandler {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
+    private readonly paymentClientService: PaymentClientService,
   ) {}
+
+  /**
+   * 해지예약된 인보이스 경로 계약의 수금이 끝난 뒤 자동이체 약정을 종료한다.
+   *
+   * 해지 시점에는 종료하지 못한다 — 자격을 선지급했고 그 기간의 수금이 남아 있어서, 약정을 미리 지우면
+   * 출금이 실패해 무료 이용이 된다(SubscriptionCancellationService 가 보류하는 이유).
+   * 효성에는 약정해지 API 가 없어 회원삭제가 유일한 종료 수단이므로, 정산이 끝나는 이 지점에서 이어준다.
+   * best-effort — 실패해도 자격/청구 상태는 이미 확정돼 있다.
+   */
+  private async terminateMandateAfterCollection(contractId: string, userId: string): Promise<void> {
+    try {
+      const result = await this.paymentClientService.terminateBillingMandate(contractId);
+      this.logger.log(
+        `[invoice-outcome] 해지예약 계약 수금 완료 → 약정 종료 (contractId=${contractId}, terminated=${result.mandateTerminated}, cancelledWithdrawals=${result.cancelledWithdrawals})`,
+      );
+      // 해지 시점에 보류(AGREEMENT_REVOKE_DEFERRED)로 남겨둔 건을 여기서 확정한다. 성공/실패를
+      // 남기지 않으면 AgreementCleanupService 의 큐에서 빠지지 않거나(성공) 이어받지 못한다(실패).
+      const done =
+        !result.agreementFound ||
+        result.mandateTerminated ||
+        result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
+      await this.recordAgreementOutcome(contractId, userId, done ? 'AGREEMENT_REVOKED' : 'AGREEMENT_REVOKE_PENDING', {
+        agreementFound: result.agreementFound,
+        mandateTerminated: result.mandateTerminated,
+        cancelledWithdrawals: result.cancelledWithdrawals,
+        skipReason: result.skipReason ?? null,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[invoice-outcome] 약정 종료 실패 — 후속 정리 필요 (contractId=${contractId}): ${message}`);
+      await this.recordAgreementOutcome(contractId, userId, 'AGREEMENT_REVOKE_PENDING', { error: message });
+    }
+  }
+
+  /** 약정 정리 결과를 계약 이벤트로 남긴다(정리 큐가 이 이벤트만 보고 스스로 비워진다). */
+  private async recordAgreementOutcome(
+    contractId: string,
+    userId: string,
+    eventType: 'AGREEMENT_REVOKED' | 'AGREEMENT_REVOKE_PENDING',
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      await this.dbService.db.transaction(async (tx) => {
+        await this.contractEventManager.addEvent(tx, contractId, eventType, metadata, 'SYSTEM', userId);
+      });
+    } catch (err: unknown) {
+      this.logger.warn(
+        `[invoice-outcome] 약정 정리 기록 실패 (contractId=${contractId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+  }
 
   /** invoice.paid — 자격을 periodEnd 까지 보장(선적용으로 이미 연장돼 있으면 no-op) + 다음 주기 예약. */
   async handlePaid(
@@ -86,13 +141,13 @@ export class InvoiceOutcomeHandler {
         contract.userId,
       );
 
-      return contract.userId;
+      return { userId: contract.userId, wasCancellationScheduled: !!contract.recurringCancelledAt };
     });
 
     if (renewedUserId) {
       this.membershipEventPublisher
         .publishStatusChanged({
-          userId: renewedUserId,
+          userId: renewedUserId.userId,
           status: 'ACTIVE',
           occurredAt: new Date().toISOString(),
           contractId,
@@ -100,6 +155,11 @@ export class InvoiceOutcomeHandler {
         .catch((e: unknown) =>
           this.logger.warn(`Kafka 발행 실패 (ACTIVE/invoice.paid): ${e instanceof Error ? e.message : String(e)}`),
         );
+
+      // 해지예약 계약의 마지막 수금이 끝났다 — 이제 약정을 지워도 안전하다.
+      if (renewedUserId.wasCancellationScheduled) {
+        await this.terminateMandateAfterCollection(contractId, renewedUserId.userId);
+      }
     }
   }
 
@@ -222,6 +282,11 @@ export class InvoiceOutcomeHandler {
       return contract.userId;
     });
 
+    // 청구가 소멸했으므로 남은 자동이체 약정도 정리한다(더 이상 출금할 근거가 없다).
+    if (terminatedUserId) {
+      await this.terminateMandateAfterCollection(contractId, terminatedUserId);
+    }
+
     if (terminatedUserId) {
       this.membershipEventPublisher
         .publishStatusChanged({
@@ -311,6 +376,7 @@ export class InvoiceOutcomeHandler {
         autoRenewal: schema.subscriptionContracts.autoRenewal,
         billingPath: schema.subscriptionContracts.billingPath,
         nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
       })
       .from(schema.subscriptionContracts)
       .where(eq(schema.subscriptionContracts.id, contractId))

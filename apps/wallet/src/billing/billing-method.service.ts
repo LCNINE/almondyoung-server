@@ -2,7 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { WalletSchema, billingAgreements, billingMethods, cmsAgreements, cmsMembers, paymentMethods } from '../schema';
+import {
+  WalletSchema,
+  billingAgreements,
+  billingMethods,
+  cmsAgreements,
+  cmsMembers,
+  cmsWithdrawals,
+  paymentMethods,
+} from '../schema';
 import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import { BillingMethod, CmsAgreementRecord, CmsMember } from '../types';
 import { CmsApiClient } from '../cms/cms-api.client';
@@ -77,6 +85,52 @@ export class BillingMethodService {
     if (updated.length === 0) {
       throw new Error('billing method not found or already inactive');
     }
+  }
+
+  /**
+   * 아직 출금되지 않은 예정 출금을 효성에서 삭제한다 (구독 해지 시 호출).
+   *
+   * CMS 는 환불 API 가 없으므로 마감 전 출금삭제가 유일하게 깔끔한 회수 수단이다.
+   * 이미 정산(SUCCEEDED)·삭제(DELETED)된 건은 건너뛴다. 개별 실패는 삼키고 다음 건을 계속 처리한다 —
+   * 해지 흐름을 막는 것보다 최대한 많이 막는 게 낫고, 남은 건은 정산 폴러가 결과를 기록한다.
+   */
+  async cancelPendingCmsWithdrawals(billingMethodId: string): Promise<number> {
+    const [cmsMember] = await this.dbService.db
+      .select({ cmsMemberId: cmsMembers.cmsMemberId })
+      .from(cmsMembers)
+      .where(eq(cmsMembers.billingMethodId, billingMethodId))
+      .limit(1);
+
+    if (!cmsMember?.cmsMemberId) return 0;
+
+    const pending = await this.dbService.db
+      .select({ transactionId: cmsWithdrawals.transactionId })
+      .from(cmsWithdrawals)
+      .where(
+        and(
+          eq(cmsWithdrawals.cmsMemberId, cmsMember.cmsMemberId),
+          inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING']),
+        ),
+      );
+
+    let cancelled = 0;
+    for (const row of pending) {
+      const result = await this.cmsApi.deleteWithdrawal(row.transactionId);
+      if (!result.ok) {
+        // 마감 후면 취소 불가 — 이미 나간 돈은 수동 송금 환불 대상이다.
+        this.logger.warn(
+          `CMS 예정 출금 취소 실패 (transactionId=${row.transactionId}): ${result.error.code} ${result.error.message}`,
+        );
+        continue;
+      }
+      await this.dbService.db
+        .update(cmsWithdrawals)
+        .set({ status: 'DELETED', updatedAt: new Date() })
+        .where(eq(cmsWithdrawals.transactionId, row.transactionId));
+      cancelled += 1;
+    }
+
+    return cancelled;
   }
 
   private async deleteCmsBillingMethod(method: BillingMethod): Promise<void> {

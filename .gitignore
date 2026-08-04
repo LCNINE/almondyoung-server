@@ -470,3 +470,12 @@ apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
 
 # git worktrees (superpowers isolated workspaces)
 .worktrees/
+
+# UI E2E 산출물 (playwright)
+web/almondyoung-storefront/test-results/
+web/almondyoung-storefront/playwright-report/
+apps/admin-web/test-results/
+apps/admin-web/playwright-report/
+
+# file-service STORAGE_PROVIDER=LOCAL 의 저장 루트 (로컬 개발 전용)
+/uploads/

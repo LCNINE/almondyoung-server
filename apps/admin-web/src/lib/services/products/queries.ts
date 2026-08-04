@@ -5,7 +5,6 @@
 
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
-import { isProgressRunning } from './import-progress';
 import { products } from '@/lib/api/domains';
 import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
 import { channelCategoriesClient } from '@/lib/api/domains/products/channel-categories.client';
@@ -632,52 +631,5 @@ export const useNotice = (id: string) => {
     queryFn: () => products.notices.get(id),
     enabled: !!id,
     staleTime: 2 * 60 * 1000,
-  });
-};
-
-// ===== 대량등록(엑셀 임포트) 쿼리 =====
-
-/** 임포트 세션 목록(페이지네이션, limit 20 고정) */
-export const useImportSessions = (page: number) => {
-  return useQuery({
-    queryKey: productQueryKeys.productImportsList(page),
-    queryFn: () => products.productImport.getSessions(page, 20),
-    staleTime: 30 * 1000,
-  });
-};
-
-/**
- * 임포트 세션 상세(행 목록 포함). **폴링하지 않는다** — 1,000행 세션이면 2초마다
- * 1,000행이 오갔다(v3 스펙 §2.9). 진행률은 useImportProgress 가 집계 응답으로 본다.
- * 행 목록은 사용자가 펼칠 때만 필요하므로 호출부가 enabled 로 켠다.
- */
-export const useImportSession = (sessionId: string, enabled = true) => {
-  return useQuery({
-    queryKey: productQueryKeys.productImport(sessionId),
-    queryFn: () => products.productImport.getSession(sessionId),
-    enabled: !!sessionId && enabled,
-  });
-};
-
-/**
- * 세션 진행률(단계별 집계). 응답이 세션 크기와 무관하게 작아 **폴링은 이쪽**이다.
- * 진행 중인 단계가 하나도 없으면 false 가 되어 폴링이 멈춘다 — 완료된 세션 화면을
- * 열어두어도 요청이 계속 나가지 않는다.
- */
-export const useImportProgress = (sessionId: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.productImportProgress(sessionId),
-    queryFn: () => products.productImport.getProgress(sessionId),
-    enabled: !!sessionId,
-    // 롤링 배포 중 옛 core 태스크는 이 엔드포인트를 모른다(404). 재시도로 화면을
-    // 붙잡아두지 말고 곧장 세션 카운터 폴백으로 넘긴다(importCounts).
-    retry: false,
-    // data 가 아직 없는 동안(초기 로드 · 404 · 일시적 5xx)에도 계속 두드려야 한다.
-    // retry: false 라 이 인터벌이 재시도 역할을 대신한다 — 그러지 않으면 첫 요청이
-    // 한 번만 실패해도 data 가 영영 undefined 로 남아 인터벌이 걸리지 않고, 화면이
-    // 마운트 동안 영구히 멈춘다. data 가 있는 동안 두드리면 롤링 배포 창이 끝나는
-    // 순간 진행률 패널이 리로드 없이 스스로 살아난다.
-    refetchInterval: (query) =>
-      query.state.data === undefined || isProgressRunning(query.state.data) ? 2000 : false,
   });
 };

@@ -26,6 +26,63 @@ export interface PaymentIntentResponse {
   createdAt: string;
   updatedAt: string;
 }
+/** wallet 이 환불 요청에 돌려주는 본문. provider 실패도 200 으로 오므로 status 를 반드시 본다. */
+export interface WalletRefundResponse {
+  intentId: string;
+  refunds: Array<{
+    id: string;
+    amount: number;
+    status: 'PENDING' | 'SUCCEEDED' | 'FAILED';
+    reasonCode?: string | null;
+    reasonMessage?: string | null;
+  }>;
+}
+
+/** 환불 실행 결과. PENDING 은 수동 송금/확정 대기(무통장 등). */
+export interface RefundOutcome {
+  status: 'SUCCEEDED' | 'PENDING' | 'FAILED';
+  refundedAmount: number;
+  refundIds?: string[];
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+/** 자동이체 약정 종료 결과 */
+export interface MandateTerminationResult {
+  agreementFound: boolean;
+  /** 마감 전에 취소한 예정 출금 건수 — 이만큼은 돈이 아예 나가지 않는다 */
+  cancelledWithdrawals: number;
+  /** 효성 회원삭제(=약정 종료)까지 완료됐는지 */
+  mandateTerminated: boolean;
+  skipReason?: string;
+}
+
+/** 화면 경로에 있는 조회라 짧게 끊는다. 실패는 '자동환불 불가(수동 경로)'로 안전하게 떨어진다. */
+const REFUNDABILITY_TIMEOUT_MS = 3000;
+/** 같은 결제의 반복 조회를 흡수하는 TTL. 판단 보조값이라 짧은 staleness 는 무해하다. */
+const REFUNDABILITY_TTL_MS = 30_000;
+const REFUNDABILITY_CACHE_MAX = 500;
+
+/** 이 결제를 환불할 수 있는 경로 정보 (wallet SoT) */
+export interface RefundabilityInfo {
+  intentId: string;
+  refundableAmount: number;
+  alreadyRefundedAmount: number;
+  /**
+   * wallet 에 아직 확정되지 않은 환불이 잡혀 있는 금액(무통장 수동 송금 확정 대기 등).
+   *
+   * 0 보다 크면 **그 건은 wallet 이 닫는다** — membership 이 따로 '송금 완료' 를 찍으면 관리자가
+   * 계좌로 한 번 보내고 wallet 이 또 한 번 보내는 이중 환불이 된다.
+   */
+  pendingRefundAmount?: number;
+  /** 지금 더 환불할 수 있는 금액. 정책 산정액의 상한이다. */
+  remainingRefundableAmount?: number;
+  /** false 면 PG 환불 API 가 없는 수단(효성 CMS) — 관리자 수동 송금만 가능 */
+  autoRefundSupported: boolean;
+  requiresReceiveAccount: boolean;
+  methodTypes: string[];
+}
+
 // 추후 결제서버에서 결제정책을 판단하도록 바꿀것 즉 provider없애도됨
 // Wallet v4: 서버 간 결제 실행 요청 (PaymentOrchestratorService 사용)
 export interface PaymentProcessRequest {
@@ -132,6 +189,9 @@ export interface WalletInvoiceResponse {
  */
 @Injectable()
 export class PaymentClientService {
+  /** intentId → 환불 가능 정보. TTL 이 짧아 프로세스 메모리로 충분하다(인스턴스 간 공유 불필요). */
+  private readonly refundabilityCache = new Map<string, { value: RefundabilityInfo; expiresAt: number }>();
+
   private readonly logger = new Logger(PaymentClientService.name);
   private readonly paymentServerUrl: string;
 
@@ -292,17 +352,64 @@ export class PaymentClientService {
     );
   }
 
+  /**
+   * 이 결제를 실제로 환불할 수 있는지 wallet 에 확인한다.
+   *
+   * 효성 CMS(자동이체)는 환불 API 가 없어 autoRefundSupported=false 로 돌아온다. 이 확인 없이
+   * "환불 완료" 를 안내하면 자격만 회수되고 돈은 안 나가는 사고가 된다.
+   */
+  async getRefundability(intentId: string, opts?: { fresh?: boolean }): Promise<RefundabilityInfo> {
+    // 돈이 실제로 나가는 순간의 판단(환불 상한 확정, 수동 송금 완료 처리, 환불 규모 판정)은 캐시를
+    // 믿지 않는다 — 결제관리에서 방금 나간 환불이 30초 동안 안 보이면 상한이 느슨해진다.
+    const cached = opts?.fresh ? undefined : this.refundabilityCache.get(intentId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    const response = await firstValueFrom(
+      this.httpService.get<RefundabilityInfo>(`${walletApiUrl}/v1/payment-intents/${intentId}/refundability`, {
+        headers: { Authorization: `Bearer ${walletApiKey}` },
+        // 이 조회는 화면 렌더링 경로(마이페이지 진입)에 있다. wallet 이 느려질 때 마이페이지 전체가
+        // 함께 느려지지 않도록 짧게 끊고, 실패는 호출자가 '수동 환불 경로'로 안전하게 흡수한다.
+        timeout: REFUNDABILITY_TIMEOUT_MS,
+      }),
+    );
+
+    this.cacheRefundability(intentId, response.data);
+    return response.data;
+  }
+
+  /**
+   * 같은 결제를 짧은 간격으로 반복 조회하는 것을 막는다(마이페이지 새로고침·미리보기→실행 연속 호출).
+   *
+   * 이 값은 판단 보조(자동환불 가능 여부·환불 상한)일 뿐 집행의 권위가 아니다 — 실제 환불은 wallet 이
+   * 자기 상태로 다시 판단하므로, 짧은 staleness 는 과환불로 이어지지 않는다.
+   */
+  private cacheRefundability(intentId: string, value: RefundabilityInfo): void {
+    // 무한 증식 방지 — 오래된 항목부터 비운다(TTL 이 짧아 실제로는 거의 차지 않는다).
+    if (this.refundabilityCache.size >= REFUNDABILITY_CACHE_MAX) {
+      const oldest = this.refundabilityCache.keys().next().value;
+      if (oldest) this.refundabilityCache.delete(oldest);
+    }
+    this.refundabilityCache.delete(intentId);
+    this.refundabilityCache.set(intentId, { value, expiresAt: Date.now() + REFUNDABILITY_TTL_MS });
+  }
+
+  /**
+   * 환불 실행. wallet 은 provider 환불이 실패해도 200 + status=FAILED 로 응답하므로
+   * 반드시 본문을 해석해 실제 결과를 돌려준다(void 로 삼키면 실패가 성공으로 보고된다).
+   */
   async refundByIntent(
     intentId: string,
     amount: number,
     reasonCode?: string,
     reasonMessage?: string,
     refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string },
-  ): Promise<void> {
+  ): Promise<RefundOutcome> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
-    await firstValueFrom(
-      this.httpService.post(
+    const response = await firstValueFrom(
+      this.httpService.post<WalletRefundResponse>(
         `${walletApiUrl}/v1/payment-intents/${intentId}/refund`,
         // 멤버십 결제는 wallet 에서 환불 차단됨. 이 경로는 정책상 예외 환불(admin 강제취소,
         // 셀프해지 중 이번 주기 혜택 미사용 건)이므로 차단을 우회한다.
@@ -317,6 +424,65 @@ export class PaymentClientService {
         },
       ),
     );
+
+    return this.interpretRefundResponse(response.data, amount);
+  }
+
+  /**
+   * wallet 응답을 하나의 결과로 접는다. 복합결제(포인트+PG)는 refund 가 여러 건으로 쪼개지므로
+   * 하나라도 실패면 FAILED, 실패 없이 대기 건이 있으면 PENDING(수동 완료 대기)로 본다.
+   */
+  private interpretRefundResponse(body: WalletRefundResponse | undefined, requestedAmount: number): RefundOutcome {
+    const refunds = body?.refunds ?? [];
+    if (refunds.length === 0) {
+      return { status: 'FAILED', refundedAmount: 0, errorCode: 'REFUND_NOT_CREATED' };
+    }
+
+    const failed = refunds.filter((r) => r.status === 'FAILED');
+    const pending = refunds.filter((r) => r.status === 'PENDING');
+    const succeededAmount = refunds.filter((r) => r.status === 'SUCCEEDED').reduce((sum, r) => sum + r.amount, 0);
+
+    if (failed.length > 0) {
+      return {
+        status: 'FAILED',
+        refundedAmount: succeededAmount,
+        errorCode: failed[0].reasonCode ?? 'REFUND_FAILED',
+        errorMessage: failed[0].reasonMessage ?? undefined,
+      };
+    }
+    if (pending.length > 0) {
+      return { status: 'PENDING', refundedAmount: succeededAmount, refundIds: refunds.map((r) => r.id) };
+    }
+    return {
+      status: succeededAmount >= requestedAmount ? 'SUCCEEDED' : 'PENDING',
+      refundedAmount: succeededAmount,
+      refundIds: refunds.map((r) => r.id),
+    };
+  }
+
+  /**
+   * 자동이체 약정 완전 종료. 예정 출금 삭제 + 약정 REVOKE + (공유되지 않으면) 효성 회원삭제.
+   *
+   * 효성 프로토콜에는 약정해지 API 가 없어 회원삭제가 유일한 종료 수단이다. 이걸 호출하지 않으면
+   * 해지한 고객의 자동이체 약정이 은행에 그대로 살아남는다.
+   */
+  async terminateBillingMandate(contractId: string): Promise<MandateTerminationResult> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    const response = await firstValueFrom(
+      this.httpService.post<MandateTerminationResult>(
+        `${walletApiUrl}/v1/billing-agreements/by-subscriber/terminate-mandate?subscriberType=MEMBERSHIP&subscriberRef=${encodeURIComponent(contractId)}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
+            'Idempotency-Key': `membership:terminate-mandate:MEMBERSHIP:${contractId}`,
+          },
+        },
+      ),
+    );
+
+    return response.data;
   }
 
   async revokeBillingAgreement(contractId: string): Promise<void> {

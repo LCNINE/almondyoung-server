@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull } from 'drizzle-orm';
 import {
   type PimSchema,
   productBulkSessions,
@@ -10,8 +10,9 @@ import {
 } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { flattenBundle, fieldLabel } from './bulk-session.fields';
-import { isBulkItemPayload, isPrefillBundle, type ConflictMap, type ConflictDecisionMap } from './bulk-session.types';
+import { isBulkItemPayload, isPrefillBundle } from './bulk-session.types';
 import { BULK_IMAGE_CONTEXT_BY_USAGE, collectReferencedImageRefs, imageRefKey } from './bulk-session.images';
+import { hasUndecided, toConflictDecisionMap, toConflictMap, type ConflictFilter } from './bulk-session.conflicts';
 import {
   BulkSessionImageDto,
   BulkSessionImageListDto,
@@ -32,6 +33,24 @@ export function isBulkItemStatus(value: string): value is BulkItemStatus {
   return (
     value === 'pending' || value === 'invalid' || value === 'drafted' || value === 'excluded' || value === 'failed'
   );
+}
+
+/**
+ * GET /product-bulk-sessions/:id/items 의 publishStatus 필터가 받는 값.
+ * productBulkItemPublishStatusEnum 과 같다. `status` 와 다른 축이다 — 한 행이
+ * status='drafted' 이면서 publishStatus='failed' 일 수 있다(getProgress 의 publishCounts
+ * 주석과 같은 경고).
+ *
+ * fix-round: published 패널이 실패 행을 찾을 서버 필터가 없어서(admin-web 이 limit=1000
+ * 을 보냈지만 이 라우트의 실제 상한은 parseLimit 이 미는 100 이라 100행 이후 실패는
+ * 조용히 사라졌다) 이 필터를 추가한다. status 필터와 같은 관례를 그대로 따른다.
+ */
+export const BULK_PUBLISH_STATUS_VALUES = ['idle', 'pending', 'published', 'failed'] as const;
+export type BulkPublishStatus = (typeof BULK_PUBLISH_STATUS_VALUES)[number];
+
+/** isBulkItemStatus 와 같은 이유로 비교 체인을 쓴다 — `.includes()` 캐스팅을 피한다. */
+export function isBulkPublishStatus(value: string): value is BulkPublishStatus {
+  return value === 'idle' || value === 'pending' || value === 'published' || value === 'failed';
 }
 
 /** GET /product-bulk-sessions/:id/images 의 필터. 컨트롤러가 파싱해 넘긴다. */
@@ -61,6 +80,10 @@ export const bulkItemRowColumns = {
   conflictDecision: productBulkItems.conflictDecision,
   baseSnapshot: productBulkItems.baseSnapshot,
   draftVersionId: productBulkItems.draftVersionId,
+  // Task 8: 화면이 "무엇이 실패했는지" 를 보려면 발행 상태·실패 사유가 행 단위로 필요하다
+  // — 지금까지는 getProgress 의 집계에만 있었다.
+  publishStatus: productBulkItems.publishStatus,
+  publishError: productBulkItems.publishError,
 };
 
 export type BulkItemRow = Pick<
@@ -77,51 +100,14 @@ export type BulkItemRow = Pick<
   | 'conflictDecision'
   | 'baseSnapshot'
   | 'draftVersionId'
+  | 'publishStatus'
+  | 'publishError'
 >;
 
-interface ConflictEntry {
-  base: string;
-  mine: string;
-  current: string;
-}
-
-/**
- * conflict/conflictDecision 은 `.$type<>()` 없는 jsonb 라 drizzle 이 `unknown` 으로 돌려준다
- * — 런타임에 형태를 확인해야 한다. `bulk-session.types.ts` 의 `isBulkItemInput` 등과 같은
- * 관례: `as Partial<X>` 로 타입만 좁히고 실제 판정은 아래 typeof 로 한다.
- */
-function isConflictEntry(value: unknown): value is ConflictEntry {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Partial<ConflictEntry>;
-  return typeof v.base === 'string' && typeof v.mine === 'string' && typeof v.current === 'string';
-}
-
-/** jsonb 로 왕복한 conflict 열을 되살린다. 형태가 다르면(옛 코드가 쓴 값 등) 그 필드만 버린다. */
-export function toConflictMap(value: unknown): ConflictMap {
-  if (typeof value !== 'object' || value === null) return {};
-  const out: ConflictMap = {};
-  // `Object.entries(value)` 를 `value: object` 에 바로 쓰면 TS 가 색인 시그니처가 없는
-  // 오버로드로 빠져 `[string, any][]` 가 된다(no-unsafe-assignment) — 위 isConflictEntry
-  // 와 같은 근거로 한 번만 좁혀서 `Object.entries` 가 `[string, unknown][]` 오버로드를
-  // 타게 한다.
-  const record = value as Record<string, unknown>;
-  for (const [field, entry] of Object.entries(record)) {
-    if (isConflictEntry(entry)) out[field] = entry;
-  }
-  return out;
-}
-
-/** jsonb 로 왕복한 conflictDecision 열을 되살린다. `overwrite`/`skip` 이 아닌 값은 버린다. */
-export function toConflictDecisionMap(value: unknown): ConflictDecisionMap {
-  if (typeof value !== 'object' || value === null) return {};
-  const out: ConflictDecisionMap = {};
-  // toConflictMap 과 같은 이유의 캐스팅 — Object.entries 가 unknown 오버로드를 타게 한다.
-  const record = value as Record<string, unknown>;
-  for (const [field, decision] of Object.entries(record)) {
-    if (decision === 'overwrite' || decision === 'skip') out[field] = decision;
-  }
-  return out;
-}
+// bulk-session.conflicts.ts 로 옮겼다(승인 가드와 목록 필터가 같은 판정을 쓰게 하려고) —
+// 여기서는 재export 만 한다. `bulk-session-job.manager.ts` 등 외부 소비자가 그대로
+// `./bulk-session.reader` 에서 import 할 수 있어야 한다.
+export { toConflictMap, toConflictDecisionMap };
 
 @Injectable()
 export class BulkSessionReader {
@@ -169,6 +155,14 @@ export class BulkSessionReader {
         .where(eq(productBulkImages.sessionId, sessionId))
         .groupBy(productBulkImages.status);
 
+      // 발행 단계의 분모·분자다. 아이템 status 집계와 축이 다르다 — 한 행은 status='drafted'
+      // 이면서 publish_status='failed' 일 수 있고, 화면은 그 둘을 함께 봐야 한다.
+      const publishCounts = await trx
+        .select({ status: productBulkItems.publishStatus, value: count() })
+        .from(productBulkItems)
+        .where(eq(productBulkItems.sessionId, sessionId))
+        .groupBy(productBulkItems.publishStatus);
+
       const mappedItemCounts = itemCounts.map((row) => ({ status: row.status, count: Number(row.value) }));
 
       return {
@@ -183,16 +177,19 @@ export class BulkSessionReader {
         itemTotal: mappedItemCounts.reduce((acc, row) => acc + row.count, 0),
         itemCounts: mappedItemCounts,
         imageCounts: imageCounts.map((row) => ({ status: row.status, count: Number(row.value) })),
+        publishCounts: publishCounts.map((row) => ({ status: row.status, count: Number(row.value) })),
         cancelRequestedAt: session.cancelRequestedAt,
       };
     }, tx);
   }
 
-  /** 행 목록. status 필터·페이지. 변경분·충돌·라벨은 toItemDto 가 붙인다. */
+  /** 행 목록. status·conflict·publishStatus 필터·페이지. 변경분·충돌·라벨은 toItemDto 가 붙인다. */
   async getItems(
     sessionId: string,
     userId: string,
     status: BulkItemStatus | undefined,
+    conflict: ConflictFilter | undefined,
+    publishStatus: BulkPublishStatus | undefined,
     page = 1,
     limit = 20,
     tx?: DbTransaction,
@@ -200,22 +197,56 @@ export class BulkSessionReader {
     return this.db.run(async (trx) => {
       await this.assertOwned(trx, sessionId, userId);
 
-      const conditions = status
-        ? and(eq(productBulkItems.sessionId, sessionId), eq(productBulkItems.status, status))
-        : eq(productBulkItems.sessionId, sessionId);
+      const base = [eq(productBulkItems.sessionId, sessionId)];
+      if (status) base.push(eq(productBulkItems.status, status));
+      // publishStatus 는 status 와 마찬가지로 단순 컬럼 동치라 공유 SQL 조건에 얹는다 —
+      // 아래 두 분기(SQL 페이징/메모리 필터) 모두가 이 base 를 쓰므로 conflict 필터와
+      // 같이 걸어도 새지 않는다.
+      if (publishStatus) base.push(eq(productBulkItems.publishStatus, publishStatus));
+      // 'any'·'undecided' 둘 다 "충돌이 있는 행"이 출발점이다. undecided 는 그 위에
+      // 메모리 필터를 한 번 더 건다.
+      if (conflict) base.push(isNotNull(productBulkItems.conflict));
+      const conditions = and(...base);
 
-      const offset = (Math.max(page, 1) - 1) * Math.max(limit, 1);
-      const rows = await trx
+      const safePage = Math.max(page, 1);
+      const safeLimit = Math.max(limit, 1);
+
+      // 필터가 없으면 기존 경로 그대로 — SQL 페이징이다.
+      if (!conflict) {
+        const rows = await trx
+          .select(bulkItemRowColumns)
+          .from(productBulkItems)
+          .where(conditions)
+          .orderBy(productBulkItems.rowNumber)
+          .limit(safeLimit)
+          .offset((safePage - 1) * safeLimit);
+        const [totalRow] = await trx.select({ value: count() }).from(productBulkItems).where(conditions);
+        return {
+          data: rows.map((row) => this.toItemDto(row)),
+          total: Number(totalRow?.value ?? 0),
+          page: safePage,
+          limit: safeLimit,
+        };
+      }
+
+      // 충돌 필터는 getImages 와 같은 방식이다 — 대상 행만 적재해 메모리에서 자른다.
+      // `undecided` 가 jsonb 두 개의 키 차집합이라 SQL 술어로 못 내리고, 충돌은 정의상
+      // (작업자가 바꾼 필드 ∩ 남이 바꾼 필드) 드물어 전량 적재가 감당된다.
+      const all = await trx
         .select(bulkItemRowColumns)
         .from(productBulkItems)
         .where(conditions)
-        .orderBy(productBulkItems.rowNumber)
-        .limit(limit)
-        .offset(offset);
+        .orderBy(productBulkItems.rowNumber);
+      const filtered =
+        conflict === 'undecided' ? all.filter((row) => hasUndecided(row.conflict, row.conflictDecision)) : all;
+      const offset = (safePage - 1) * safeLimit;
 
-      const [totalRow] = await trx.select({ value: count() }).from(productBulkItems).where(conditions);
-
-      return { data: rows.map((row) => this.toItemDto(row)), total: Number(totalRow?.value ?? 0), page, limit };
+      return {
+        data: filtered.slice(offset, offset + safeLimit).map((row) => this.toItemDto(row)),
+        total: filtered.length,
+        page: safePage,
+        limit: safeLimit,
+      };
     }, tx);
   }
 
@@ -304,6 +335,19 @@ export class BulkSessionReader {
       // create 행의 손대지 않은 선택 필드(빈 문자열)는 "바꾼 것"이 아니다.
       .filter((change) => change.before !== change.after);
 
+    // productName: 검토 목록에 보여줄 표시용 이름. `changes` 는 before!==after 인 필드만
+    // 남기므로(위 filter), 이름을 건드리지 않은 update 행에는 'product.name' 이 아예 없을 수
+    // 있다 — 그 경우를 위해 changes 와 별도로 여기서 직접 뽑는다.
+    // - create 행은 비교 대상(스냅샷)이 없다 — 업로드값만 쓴다.
+    // - update 행은 업로드값을 우선한다 — 승인되면 그 이름이 될 것이기 때문이다(리네임 행은
+    //   새 이름을 보여줘야 한다). 업로드값이 비어 있으면(이름을 안 건드린 흔한 경우) 스냅샷의
+    //   현재 이름으로 떨어진다.
+    // - 둘 다 없으면 빈 문자열이다 — 자리표시자를 지어내지 않는다(화면이 대체 표시를 정한다).
+    const productName =
+      row.kind === 'create'
+        ? (fields['product.name'] ?? '')
+        : fields['product.name'] || baseFields['product.name'] || '';
+
     const conflictMap = toConflictMap(row.conflict);
     const decisionMap = toConflictDecisionMap(row.conflictDecision);
     const conflicts = Object.entries(conflictMap).map(([field, entry]) => ({
@@ -322,11 +366,16 @@ export class BulkSessionReader {
       rowNumber: row.rowNumber,
       rowKey: row.rowKey,
       kind: row.kind,
+      productName,
       status: row.status,
       masterId: row.masterId,
       errorMessage: row.errorMessage,
       // Task 9: 생성된 draft 를 가리킨다 — 화면이 이 id 로 통상의 draft 편집 화면을 연다.
       draftVersionId: row.draftVersionId,
+      // Task 8: 발행 레인의 상태·실패 사유. 아이템 status 와 축이 다르다 — 한 행이
+      // status='drafted' 이면서 publishStatus='failed' 일 수 있다.
+      publishStatus: row.publishStatus,
+      publishError: row.publishError,
       changes,
       conflicts,
     };

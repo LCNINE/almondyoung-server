@@ -71,11 +71,10 @@ export default function CustomerDetailWindowTemplate({
         <main className="min-w-0 flex-1 overflow-y-auto p-5">
           {activeTab === 'home' && <HomeTab customerId={customerId} />}
           {activeTab === 'detail' && <DetailTab customerId={customerId} />}
+          {/* CS 가 고객 창에서 곧바로 해지·환불을 처리해야 한다 — 멤버십 메뉴로 이동하지 않도록
+              멤버십 메뉴와 동일한 액션을 허용한다(백엔드는 admin|master 로 이미 게이트됨). */}
           {activeTab === 'membership' && (
-            <MembershipDetailPanel
-              userId={customerId}
-              allowAdminActions={false}
-            />
+            <MembershipDetailPanel userId={customerId} />
           )}
           {activeTab === 'orders' && <OrdersTab customerId={customerId} />}
           {activeTab === 'inquiries' && (
