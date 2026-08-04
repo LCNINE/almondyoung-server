@@ -470,3 +470,6 @@ apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
 
 # git worktrees (superpowers isolated workspaces)
 .worktrees/
+
+# file-service STORAGE_PROVIDER=LOCAL 의 저장 루트 (로컬 개발 전용)
+/uploads/

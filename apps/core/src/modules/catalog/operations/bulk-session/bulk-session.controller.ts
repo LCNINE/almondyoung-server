@@ -8,15 +8,14 @@ import {
   Patch,
   Post,
   Query,
-  UploadedFile,
+  Req,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import type { FastifyRequest } from 'fastify';
 import { ApiBody, ApiConsumes, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, User } from '@app/authorization';
 import { BulkSessionService } from './services/bulk-session.service';
-import { MAX_UPLOAD_BYTES } from './services/bulk-upload.parser';
+import { readWorkbookUpload } from './services/bulk-upload.multipart';
 import {
   BULK_ITEM_STATUS_VALUES,
   BulkItemStatus,
@@ -34,7 +33,6 @@ import {
   BulkSessionListDto,
   BulkSessionProgressDto,
   ConflictDecisionDto,
-  CreateBulkSessionDto,
   PurgeDraftsResultDto,
   ResolveImagesDto,
   ResolveImagesResponseDto,
@@ -70,7 +68,6 @@ export class BulkSessionController {
 
   @Post()
   @HttpCode(202)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_UPLOAD_BYTES } }))
   @ApiOperation({ summary: '작성한 양식 업로드 접수. 파싱·검증은 워커가 이어받는다.' })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -83,17 +80,14 @@ export class BulkSessionController {
   @ApiResponse({ status: 202, type: BulkSessionAcceptedDto })
   @ApiResponse({ status: 400, description: '파일 오류 또는 해석할 수 없는 양식' })
   async create(
-    @UploadedFile() file: Express.Multer.File,
-    @Body() dto: CreateBulkSessionDto,
+    // `@UploadedFile()` + `FileInterceptor` 가 아니라 요청을 직접 받는다 — 이유는
+    // `readWorkbookUpload` 독스트링에 있다(core 는 Fastify 라 multer 가 죽는다).
+    // `@Body()` DTO 도 함께 뺐다. multipart 를 여기서 소비하므로 파이프가 볼 body 가 없다.
+    @Req() request: FastifyRequest,
     @User() user: { userId: string },
   ): Promise<BulkSessionAcceptedDto> {
-    if (!file) throw new BadRequestException('file is required');
-    return this.service.upload({
-      buffer: file.buffer,
-      fileName: file.originalname,
-      name: dto.name,
-      userId: user.userId,
-    });
+    const { buffer, fileName, name } = await readWorkbookUpload(request);
+    return this.service.upload({ buffer, fileName, name, userId: user.userId });
   }
 
   @Get()
