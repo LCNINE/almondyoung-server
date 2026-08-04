@@ -13,7 +13,7 @@ import {
 import type { StepValues } from "@/components/signup/types"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { useNicknameAvailability } from "@/hooks/use-availability"
+import { NICKNAME_RULE, useNicknameAvailability } from "@/hooks/use-availability"
 import {
   FloatingField,
   FloatingLabelInput,
@@ -36,6 +36,9 @@ export function ProfileStep({
   const formRef = React.useRef<HTMLFormElement>(null)
   const [nickname, setNickname] = React.useState(defaultValues.nickname ?? "")
   const nicknameAvailability = useNicknameAvailability(nickname)
+  const isNicknameInvalid =
+    nicknameAvailability.status === "taken" ||
+    nicknameAvailability.status === "invalid"
   const [codeSent, setCodeSent] = React.useState(false)
   const [sending, setSending] = React.useState(false)
   const [sendError, setSendError] = React.useState<string | null>(null)
@@ -79,7 +82,7 @@ export function ProfileStep({
         maxLength={8}
         autoComplete="name"
       />
-      <Field data-invalid={nicknameAvailability.status === "taken" || undefined}>
+      <Field data-invalid={isNicknameInvalid || undefined}>
         <FloatingLabelInput
           id="nickname"
           name="nickname"
@@ -89,12 +92,13 @@ export function ProfileStep({
           maxLength={8}
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
-          aria-invalid={nicknameAvailability.status === "taken" || undefined}
+          aria-invalid={isNicknameInvalid || undefined}
           aria-describedby="nicknameStatus"
         />
         <AvailabilityStatus
           id="nicknameStatus"
           state={nicknameAvailability}
+          idleText={NICKNAME_RULE}
           availableText="사용 가능한 닉네임입니다."
           takenText="이미 사용 중인 닉네임입니다."
           checkingText="닉네임 사용 가능 여부 확인 중..."

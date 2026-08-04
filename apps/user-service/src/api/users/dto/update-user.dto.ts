@@ -49,10 +49,10 @@ export class UpdateUserDto {
     maxLength: 8,
     required: false,
   })
+  // 규칙 검증은 UsersService 가 한다 — 규칙 이전에 만들어진 닉네임을 그대로 다시 저장하는
+  // 요청(다른 항목만 수정)까지 막지 않으려면 "값이 바뀔 때만" 봐야 하기 때문.
   @IsString({ message: '닉네임은 문자열이어야 합니다.' })
   @IsNotEmpty({ message: '닉네임은 필수 입력 항목입니다.' })
-  @MinLength(2, { message: '닉네임은 최소 2자 이상이어야 합니다.' })
-  @MaxLength(8, { message: '닉네임은 최대 8자 이하여야 합니다.' })
   @IsOptional()
   nickname?: string;
 
