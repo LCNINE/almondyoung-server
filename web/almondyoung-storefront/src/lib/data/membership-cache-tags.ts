@@ -26,6 +26,17 @@ const getMembershipSegment = cache(async (): Promise<string> => {
 })
 
 /**
+ * 멤버십 상태를 캐시 **키**에 태우는 요청 헤더.
+ *
+ * Next 의 fetch 캐시 키는 `[url, method, headers, ...]` 로 만들어지고 `next.tags` 는
+ * 포함되지 않는다. 태그만 나눠두면 가입/해지 후에도 `revalidate` 만료까지 옛 응답을 읽는다.
+ * Medusa 는 모르는 헤더를 무시한다.
+ */
+export const getMembershipSegmentHeader = async (): Promise<
+  Record<string, string>
+> => ({ "x-membership-segment": await getMembershipSegment() })
+
+/**
  * 멤버십/로그인 상태에 따라 응답이 달라지는 목록(상품 등)용 캐시 태그.
  *
  * 기본 방문자별 태그(`${tag}-${_medusa_cache_id}`)에 인증 주체와 멤버십 세그먼트를
