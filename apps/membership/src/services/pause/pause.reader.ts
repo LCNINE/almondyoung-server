@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, desc, isNull, isNotNull, lte } from 'drizzle-orm';
+import { eq, and, asc, desc, isNull, isNotNull, lte } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -26,6 +26,45 @@ export interface PauseHistoryItem {
 @Injectable()
 export class PauseReader {
   constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
+
+  /**
+   * 특정 시점 이후 실제로 정지돼 있던 일수.
+   *
+   * 연간 중도해지 정산이 "이용한 기간"을 세는데, 정지 기간에는 혜택을 쓸 수 없으므로 이용으로 세면
+   * 안 된다. START~RESUME 을 시간순으로 짝지어 실제 정지 구간만 더한다(아직 재개 전이면 지금까지).
+   */
+  async sumPausedDaysSince(userId: string, from: Date): Promise<number> {
+    const events = await this.dbService.db
+      .select({ eventType: schema.pauseEvents.eventType, effectiveAt: schema.pauseEvents.effectiveAt })
+      .from(schema.pauseEvents)
+      .where(eq(schema.pauseEvents.userId, userId))
+      .orderBy(asc(schema.pauseEvents.effectiveAt));
+
+    const now = new Date();
+    let pausedSince: Date | null = null;
+    let totalMs = 0;
+
+    for (const event of events) {
+      if (event.eventType === 'START') {
+        pausedSince = event.effectiveAt;
+        continue;
+      }
+      if (event.eventType === 'RESUME' && pausedSince) {
+        totalMs += this.overlapMs(pausedSince, event.effectiveAt, from, now);
+        pausedSince = null;
+      }
+    }
+    if (pausedSince) totalMs += this.overlapMs(pausedSince, now, from, now);
+
+    return Math.floor(totalMs / (1000 * 60 * 60 * 24));
+  }
+
+  /** [start,end) 와 [windowStart,windowEnd) 의 겹치는 시간(ms). 주기 이전의 정지는 세지 않는다. */
+  private overlapMs(start: Date, end: Date, windowStart: Date, windowEnd: Date): number {
+    const from = Math.max(start.getTime(), windowStart.getTime());
+    const to = Math.min(end.getTime(), windowEnd.getTime());
+    return Math.max(0, to - from);
+  }
 
   /**
    * 특정 사용자의 모든 일시정지 이력 조회

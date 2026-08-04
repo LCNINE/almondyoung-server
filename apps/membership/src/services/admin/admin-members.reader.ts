@@ -9,6 +9,7 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { PaymentClientService } from '../billing/payment-client.service';
+import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -71,6 +72,34 @@ export interface AdminMemberDetail {
   createdAt: string;
   cancelledAt: string | null;
   autoRenewal: boolean;
+  /** 정기결제 해지 예약 시점. status=ACTIVE 를 유지하면서 자동결제만 끊긴 상태의 식별자. */
+  recurringCancelledAt: string | null;
+  recurringCancellationReasonCode: string | null;
+  /** 환불 추적 — 환불 요청은 했는데 완료되지 않은 건을 상세에서 바로 보이게 한다. */
+  refundRequested: boolean;
+  refundRequestedAt: string | null;
+  eligibleRefundAmount: number | null;
+  refundCompleted: boolean;
+  refundCompletedAt: string | null;
+  /**
+   * 해지 예약을 철회해 자동결제를 재개할 수 있는지. 1회 결제 계약은 되살릴 정기결제가 없어 false.
+   * 화면이 `autoRenewal || recurringCancelledAt` 으로 추론하면 1회 결제 해지 건까지 철회 버튼이 열려
+   * 동의 없는 정기결제로 전환된다 — 서버가 판정해 내려준다.
+   */
+  canUndoCancellation: boolean;
+  /** 계좌 송금이 남은 환불 건의 수취 계좌(효성 CMS·자동환불 실패). 없으면 null. */
+  manualRefundAccount: { bank: string; accountNumber: string; holderName: string } | null;
+  /**
+   * 환불 대상 결제 내역이 있는지. 관리자 무료 지급·이관 계약은 결제가 없어 **환불 자체가 불가능**하다 —
+   * 화면이 이걸 모르면 "미완료 — N원 처리 필요" 를 보고 CS 가 보낼 곳을 찾아 헤맨다.
+   */
+  hasPaymentIntent: boolean;
+  /**
+   * 미완료 환불 건에 대한 wallet(결제관리) 쪽 사실. 관리자가 **계좌로 보내기 전에** 알아야 한다 —
+   * PG 로 이미 나갔거나 결제관리가 확정만 남긴 건에 또 송금하면 돈이 두 번 나간다.
+   * 조회 실패/대상 없음이면 null(=알 수 없음, 화면은 아무것도 단정하지 않는다).
+   */
+  refundSettlement: { alreadyRefundedAmount: number; pendingRefundAmount: number } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -190,6 +219,28 @@ export interface StuckBillingContractsResponse {
   total: number;
 }
 
+/** 해지했는데 은행에 자동이체 약정이 남아 있는 계약 한 건. */
+export interface AgreementCleanupItem {
+  contractId: string;
+  userId: string;
+  /** AGREEMENT_REVOKE_ABANDONED(재시도 중단) | _PENDING(재시도 중) | _DEFERRED(수금 대기) */
+  state: string;
+  /** 이 상태가 된 시각 */
+  since: string;
+  /** DEFERRED 가 정리 대상이 되는 날(이용 종료일). 그 외엔 null */
+  notBefore: string | null;
+  /** 정리가 막힌 사유(효성 삭제 가드 등) */
+  reason: string | null;
+  contractStatus: string | null;
+  billingPath: string | null;
+  cancelledAt: string | null;
+}
+
+export interface AgreementCleanupListResponse {
+  data: AgreementCleanupItem[];
+  total: number;
+}
+
 export interface DunningListItem {
   contractId: string;
   userId: string;
@@ -212,6 +263,7 @@ export class AdminMembersReader {
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
     private readonly paymentClientService: PaymentClientService,
+    private readonly contractReader: SubscriptionContractReader,
   ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
@@ -370,6 +422,14 @@ export class AdminMembersReader {
         createdAt: schema.subscriptionContracts.createdAt,
         cancelledAt: schema.subscriptionContracts.cancelledAt,
         autoRenewal: schema.subscriptionContracts.autoRenewal,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+        recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
+        refundRequested: schema.subscriptionContracts.refundRequested,
+        refundRequestedAt: schema.subscriptionContracts.refundRequestedAt,
+        eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
+        refundCompleted: schema.subscriptionContracts.refundCompleted,
+        refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
+        lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
         planId: schema.subscriptionContracts.planId,
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
@@ -410,6 +470,24 @@ export class AdminMembersReader {
       computedStatus = 'PAUSED';
     }
 
+    // 해지 예약 상태에서만 의미가 있는 두 값. 화면이 추론하지 않도록 서버가 판정해 내려준다.
+    const canUndoCancellation =
+      r.contractStatus === 'ACTIVE' &&
+      !!r.recurringCancelledAt &&
+      (await this.contractReader.canResumeRecurring({
+        id: r.contractId,
+        autoRenewal: r.autoRenewal,
+        recurringCancelledAt: r.recurringCancelledAt,
+      }));
+    const refundOutstanding = !!r.refundRequested && !r.refundCompleted;
+    const manualRefundAccount = refundOutstanding
+      ? await this.contractReader.findManualRefundAccount(r.contractId)
+      : null;
+    const refundSettlement =
+      refundOutstanding && r.lastPaymentIntentId
+        ? await this.loadRefundSettlement(r.lastPaymentIntentId)
+        : null;
+
     return {
       contractId: r.contractId,
       userId: r.userId,
@@ -427,9 +505,38 @@ export class AdminMembersReader {
       createdAt: r.createdAt.toISOString(),
       cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
       autoRenewal: r.autoRenewal,
+      recurringCancelledAt: r.recurringCancelledAt ? r.recurringCancelledAt.toISOString() : null,
+      recurringCancellationReasonCode: r.recurringCancellationReasonCode ?? null,
+      refundRequested: r.refundRequested ?? false,
+      refundRequestedAt: r.refundRequestedAt ? r.refundRequestedAt.toISOString() : null,
+      eligibleRefundAmount: r.eligibleRefundAmount ?? null,
+      refundCompleted: r.refundCompleted ?? false,
+      refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
+      canUndoCancellation,
+      hasPaymentIntent: !!r.lastPaymentIntentId,
+      manualRefundAccount,
+      refundSettlement,
       pauseCount,
       firstContractCreatedAt,
     };
+  }
+
+  /**
+   * 미완료 환불 건의 wallet 정산 상태. 상세 화면 렌더링 경로라 실패는 흡수한다 —
+   * wallet 이 느리다고 멤버십 상세가 통째로 막히면 CS 가 아무것도 못 한다.
+   */
+  private async loadRefundSettlement(
+    intentId: string,
+  ): Promise<{ alreadyRefundedAmount: number; pendingRefundAmount: number } | null> {
+    try {
+      const r = await this.paymentClientService.getRefundability(intentId);
+      return {
+        alreadyRefundedAmount: r.alreadyRefundedAmount ?? 0,
+        pendingRefundAmount: r.pendingRefundAmount ?? 0,
+      };
+    } catch {
+      return null;
+    }
   }
 
   async findBillingEventsByUserId(userId: string): Promise<BillingEventItem[]> {
@@ -672,6 +779,20 @@ export class AdminMembersReader {
         .limit(1);
 
       if (contract) {
+        // (0) 1회 결제 계약은 되살릴 자동결제가 없다. 여기서 막지 않으면 아래 createBillingAgreement 가
+        // 자동이체 약정을 새로 만들어, 정기결제에 동의한 적 없는 고객이 다음 주기부터 청구된다.
+        // 고객 셀프 철회(undoCancellation)와 같은 기준으로 판정한다.
+        const resumable = await this.contractReader.canResumeRecurring({
+          id: contractId,
+          autoRenewal: false,
+          recurringCancelledAt: contract.recurringCancelledAt,
+        });
+        if (!resumable) {
+          throw new ConflictError(
+            '1회 결제 계약이라 되살릴 자동결제가 없습니다. 정기결제가 필요하면 고객이 직접 재가입해야 합니다.',
+          );
+        }
+
         // (1) 해지로 nextBillingDate 가 null 이면 현재 주기 종료일로 복구해 결제 재개를 보장한다.
         if (!contract.nextBillingDate) {
           const [ent] = await this.dbService.db
@@ -929,6 +1050,71 @@ export class AdminMembersReader {
       })),
       total: rows.length,
     };
+  }
+
+  /**
+   * 자동이체 약정 정리 큐 — **은행에 약정이 남아 있는 해지 계약**.
+   *
+   * 해지는 끝났는데 효성 CMS 약정이 고객 계좌에 살아 있는 상태다. 재청구는 DB 플래그로 막혀 있어
+   * 당장 돈이 나가진 않지만, 방치하면 해지한 고객의 계좌에 자동이체 등록이 남아 민원이 된다.
+   * 특히 `AGREEMENT_REVOKE_ABANDONED` 는 스케줄러가 **재시도를 멈춘** 건이라 사람이 처리하지 않으면
+   * 영원히 그대로다 — 그 사실이 로그에만 있으면 아무도 모른다.
+   */
+  async findAgreementCleanupQueue(): Promise<AgreementCleanupListResponse> {
+    const states = await this.contractReader.findLatestAgreementEvents({
+      eventTypes: ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED', 'AGREEMENT_REVOKE_ABANDONED'],
+      limit: 500,
+    });
+    if (states.length === 0) return { data: [], total: 0 };
+
+    const contracts = await this.dbService.db
+      .select({
+        id: schema.subscriptionContracts.id,
+        status: schema.subscriptionContracts.status,
+        billingPath: schema.subscriptionContracts.billingPath,
+        cancelledAt: schema.subscriptionContracts.cancelledAt,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        inArray(
+          schema.subscriptionContracts.id,
+          states.map((s) => s.contractId),
+        ),
+      );
+    const contractById = new Map(contracts.map((c) => [c.id, c]));
+
+    // 포기(ABANDONED) → 재시도 대기(PENDING) → 보류(DEFERRED) 순. 사람이 봐야 하는 것이 위로 온다.
+    const severity: Record<string, number> = {
+      AGREEMENT_REVOKE_ABANDONED: 0,
+      AGREEMENT_REVOKE_PENDING: 1,
+      AGREEMENT_REVOKE_DEFERRED: 2,
+    };
+
+    const data = states
+      .map((s) => {
+        const contract = contractById.get(s.contractId);
+        return {
+          contractId: s.contractId,
+          userId: s.userId,
+          state: s.eventType,
+          since: s.since.toISOString(),
+          /** 보류 건이 정리 대상이 되는 날(=이용 종료일). PENDING/ABANDONED 는 null. */
+          notBefore: (s.metadata as { notBefore?: string }).notBefore ?? null,
+          /** 왜 정리되지 않았는지. 효성 삭제 가드 등 재시도로 풀리지 않는 사유가 여기 담긴다. */
+          reason:
+            (s.metadata as { reason?: string }).reason ??
+            (s.metadata as { skipReason?: string | null }).skipReason ??
+            (s.metadata as { error?: string }).error ??
+            null,
+          contractStatus: contract?.status ?? null,
+          billingPath: contract?.billingPath ?? null,
+          cancelledAt: contract?.cancelledAt?.toISOString() ?? contract?.recurringCancelledAt?.toISOString() ?? null,
+        };
+      })
+      .sort((a, b) => (severity[a.state] ?? 9) - (severity[b.state] ?? 9) || a.since.localeCompare(b.since));
+
+    return { data, total: data.length };
   }
 
   /**

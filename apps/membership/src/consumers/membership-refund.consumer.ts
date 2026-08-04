@@ -2,9 +2,14 @@ import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SubscriptionService } from '../services/subscription.service';
+import { SubscriptionContractReader } from '../services/subscription/subscription-contract.reader';
+import { RefundEventHandler } from '../services/refund-event-handler.service';
 
 interface RefundEventPayload {
   intentId?: string;
+  amount?: number;
+  refundId?: string;
+  occurredAt?: string;
 }
 
 /**
@@ -20,14 +25,38 @@ interface RefundEventPayload {
 export class MembershipRefundConsumer {
   private readonly logger = new Logger(MembershipRefundConsumer.name);
 
-  constructor(private readonly subscriptionService: SubscriptionService) {}
+  constructor(
+    private readonly subscriptionService: SubscriptionService,
+    private readonly contractReader: SubscriptionContractReader,
+    private readonly refundEventHandler: RefundEventHandler,
+  ) {}
 
   @OnEvent('payments.events.v1', 'gateway.refund.succeeded')
   async onRefundSucceeded(@EventPayload() payload: RefundEventPayload) {
     if (!payload.intentId) return;
 
     this.logger.log(`[MembershipRefund] 환불 성공 감지: intentId=${payload.intentId}`);
-    await this.subscriptionService.voidByPaymentIntent(payload.intentId, '결제 환불');
+    // 이번 환불액을 함께 넘긴다 — 부분 환불(소액 보상 등)로 멤버십 전체가 취소되지 않게 한다.
+    await this.subscriptionService.voidByPaymentIntent(payload.intentId, '결제 환불', payload.amount);
+
+    // 환불 완료 기록. 해지 시점에 PENDING(무통장 수동송금 대기)이던 건이 실제로 완료되는 지점이 여기다.
+    // 이 기록이 없으면 refund_completed 가 영구히 false 로 남아 미완료 환불을 추적할 수 없다.
+    //
+    // 단, **멤버십이 요청한 환불에만** 찍는다. 결제관리에서 건 소액 보상은 이제 구독을 취소하지 않고
+    // (voidByPaymentIntent 가 전액일 때만 회수한다) 계약이 살아남으므로, 그 이벤트로 refundCompleted 를
+    // 켜면 (1) 화면에 "완료 0원" 이 뜨고 (2) 나중에 진짜 해지 환불이 수동 송금으로 남았을 때
+    // markManualRefundCompleted 가 '이미 환불 완료' 로 영구히 409 를 내 CS 가 그 건을 닫을 수 없다.
+    const contract = await this.contractReader.findByPaymentIntentId(payload.intentId);
+    if (contract?.refundRequested && !contract.refundCompleted) {
+      await this.refundEventHandler.handleRefundCompleted({
+        contractId: contract.id,
+        userId: contract.userId,
+        amount: payload.amount ?? contract.eligibleRefundAmount ?? 0,
+        walletTransactionId: payload.refundId ?? payload.intentId,
+        completedAt: payload.occurredAt ?? new Date().toISOString(),
+      });
+    }
+
     this.logger.log(`[MembershipRefund] 회수 처리 완료(또는 대상 아님): intentId=${payload.intentId}`);
   }
 }

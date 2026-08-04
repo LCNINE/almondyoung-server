@@ -50,6 +50,32 @@ export interface StuckBillingContractsResponse {
   total: number;
 }
 
+/**
+ * 해지가 끝났는데 은행에 효성 자동이체 약정이 남아 있는 계약.
+ * ABANDONED 는 스케줄러가 재시도를 멈춘 건이라 사람이 처리하지 않으면 영원히 그대로다.
+ */
+export interface AgreementCleanupItem {
+  contractId: string;
+  userId: string;
+  state:
+    | 'AGREEMENT_REVOKE_ABANDONED'
+    | 'AGREEMENT_REVOKE_PENDING'
+    | 'AGREEMENT_REVOKE_DEFERRED';
+  since: string;
+  /** DEFERRED 가 정리 대상이 되는 날(이용 종료일). 그 외엔 null */
+  notBefore: string | null;
+  /** 정리가 막힌 사유(효성 삭제 가드 등) */
+  reason: string | null;
+  contractStatus: string | null;
+  billingPath: string | null;
+  cancelledAt: string | null;
+}
+
+export interface AgreementCleanupListResponse {
+  data: AgreementCleanupItem[];
+  total: number;
+}
+
 export interface DunningListItem {
   contractId: string;
   userId: string;

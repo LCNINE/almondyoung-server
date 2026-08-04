@@ -21,10 +21,10 @@ import {
   CardAction,
   CardContent,
 } from '@/components/ui/card';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { TOSS_BANKS } from '@/lib/constants/toss-banks';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -45,6 +45,9 @@ import {
   useSetAutoRenewal,
   useAdjustEntitlement,
   useForceCancelSubscription,
+  useScheduleCancelSubscription,
+  useCompleteManualRefund,
+  useCancellationQuote,
   useRetryBilling,
   useReconcileInvoice,
   useGrantSubscriptionByDays,
@@ -64,6 +67,18 @@ interface MembershipMemberDetailDialogProps {
   onClose: () => void;
 }
 
+/** 서버가 내려준 안내 메시지(환불 한도 초과 사유 등)를 그대로 쓰기 위한 추출기. */
+function serverMessage(error: unknown): string | undefined {
+  const e = error as { response?: { data?: { message?: string } }; message?: string };
+  const msg = e?.response?.data?.message ?? e?.message;
+  return typeof msg === 'string' && msg.trim() ? msg : undefined;
+}
+
+/** 은행코드를 사람이 읽는 이름으로. 모르는 코드는 코드 그대로 — 송금할 때 대조할 수 있어야 한다. */
+function bankName(code: string): string {
+  return TOSS_BANKS.find((b) => b.code === code)?.name ?? code;
+}
+
 // 라벨-값 한 줄 (shadcn Card 안에서 사용).
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -74,11 +89,14 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-// 강제 즉시 취소 다이얼로그
+// 즉시 해지 + 환불 다이얼로그.
+// 정책 견적(cancellation-quote)을 먼저 보여주고, 관리자는 그 금액을 그대로 쓰거나 사유와 함께 바꾼다.
 interface ForceCancelDialogProps {
   open: boolean;
   onClose: () => void;
   contractId: string;
+  /** 해지 안내 메일 수신 주소. membership 은 사용자 조회를 하지 않아 여기서 실어 보낸다. */
+  customerEmail?: string;
   onSuccess: () => void;
 }
 
@@ -86,6 +104,7 @@ function ForceCancelDialog({
   open,
   onClose,
   contractId,
+  customerEmail,
   onSuccess,
 }: ForceCancelDialogProps) {
   const [reason, setReason] = useState('');
@@ -94,13 +113,37 @@ function ForceCancelDialog({
   );
   const [refundAmount, setRefundAmount] = useState('');
   const [adminNote, setAdminNote] = useState('');
+  const [bank, setBank] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+  const [holderName, setHolderName] = useState('');
   const forceCancelMutation = useForceCancelSubscription();
+  const { data: quote, isLoading: quoteLoading } = useCancellationQuote(
+    contractId,
+    open
+  );
+
+  const immediate = quote?.options.find((o) => o.mode === 'IMMEDIATE_REFUND');
+  const policyAmount = immediate?.refundAmount ?? 0;
+  // 결제 내역이 없는 계약(관리자 지급·이관)은 서버가 환불 유형을 400 으로 거부한다. 고를 수 있게
+  // 두면 관리자가 사유·금액·계좌를 다 채운 뒤에야 막히고, 왜 막혔는지도 그 시점에야 안다.
+  // 과도기(membership 이 옛 버전)엔 필드가 없다 — 그때는 서버 판정에 맡기고 막지 않는다.
+  const refundBlocked = quote?.hasPaymentIntent === false;
+  const isAnnual = (quote?.planName.durationDays ?? 0) >= 180;
+  // 자동환불이 불가한 수단(효성 CMS)은 계좌 송금이 유일한 방법이라 계좌를 반드시 받는다.
+  const manualRefund = immediate?.refundExecution === 'MANUAL';
+  const needsAccount =
+    refundType !== 'NONE' &&
+    (manualRefund || !!immediate?.requiresReceiveAccount);
+  const accountFilled = !!bank && !!accountNumber.trim() && !!holderName.trim();
 
   const handleClose = () => {
     setReason('');
     setRefundType('NONE');
     setRefundAmount('');
     setAdminNote('');
+    setBank('');
+    setAccountNumber('');
+    setHolderName('');
     onClose();
   };
 
@@ -116,6 +159,10 @@ function ForceCancelDialog({
         return;
       }
     }
+    if (needsAccount && !accountFilled) {
+      toast.error('환불 송금 계좌(은행·계좌번호·예금주)를 입력해주세요.');
+      return;
+    }
     try {
       const result = await forceCancelMutation.mutateAsync({
         contractId,
@@ -124,34 +171,108 @@ function ForceCancelDialog({
         refundAmount:
           refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
+        customerEmail,
+        refundReceiveAccount:
+          needsAccount && accountFilled
+            ? {
+                bank,
+                accountNumber: accountNumber.trim(),
+                holderName: holderName.trim(),
+              }
+            : undefined,
       });
+      // 환불 결과를 그대로 알린다 — PENDING/FAILED 는 돈이 아직 나가지 않았다는 뜻이다.
       if (result.refundStatus === 'FAILED') {
         toast.warning(
-          '구독은 취소되었으나 환불 처리에 실패했습니다. 수동으로 환불해주세요.'
+          '구독은 취소되었으나 환불이 실패했습니다. 계좌 송금으로 수동 처리해주세요.'
+        );
+      } else if (result.refundStatus === 'PENDING') {
+        toast.warning(
+          '구독이 취소되었습니다. 환불은 수동 송금 대기 상태입니다 — 송금 후 결제관리에서 완료 처리해주세요.'
+        );
+      } else if (result.refundStatus === 'COMPLETED') {
+        toast.success(
+          `구독이 즉시 취소되고 ${result.refundAmount.toLocaleString()}원이 환불되었습니다.`
         );
       } else {
-        toast.success('구독이 즉시 취소되었습니다.');
+        toast.success('구독이 즉시 취소되었습니다. (환불 없음)');
       }
       onSuccess();
       handleClose();
-    } catch {
-      toast.error('강제 취소에 실패했습니다.');
+    } catch (error) {
+      // 403(환불 한도 초과)·409(이미 해지됨) 처럼 조치 방법이 담긴 서버 메시지를 덮지 않는다.
+      toast.error(serverMessage(error) ?? '강제 취소에 실패했습니다.');
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-destructive">
-            구독 강제 즉시 취소
+            즉시 해지 + 환불
           </DialogTitle>
           <DialogDescription>
-            구독이 즉시 종료됩니다. 이 작업은 되돌릴 수 없습니다.
+            현재 구독 기간까지 즉시 종료됩니다. 이 작업은 되돌릴 수 없습니다.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* 정책 견적 — 관리자가 금액을 짐작하지 않게 한다 */}
+          <div className="rounded-md border bg-muted/40 p-3 text-sm space-y-1.5">
+            <p className="font-semibold">정책 기준 환불액</p>
+            {quoteLoading ? (
+              <Skeleton className="h-4 w-32 bg-gray-200" />
+            ) : immediate ? (
+              <>
+                <p className="text-base font-bold">
+                  {policyAmount.toLocaleString()}원
+                  <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+                    {immediate.refundKind === 'WITHDRAWAL_FULL'
+                      ? '(7일 내 청약철회 · 전액)'
+                      : immediate.refundKind === 'ANNUAL_PRORATION'
+                        ? '(연간 중도해지 정산)'
+                        : '(정책상 환불 없음)'}
+                  </span>
+                </p>
+                {immediate.breakdown && (
+                  <ul className="text-xs text-muted-foreground space-y-0.5">
+                    <li>
+                      결제액 {immediate.breakdown.paidAmount.toLocaleString()}원
+                    </li>
+                    <li>
+                      이용 {immediate.breakdown.monthsElapsed}개월 × 월 정가{' '}
+                      {immediate.breakdown.monthlyListPrice.toLocaleString()}원 =
+                      -{immediate.breakdown.usageDeduction.toLocaleString()}원
+                    </li>
+                    {immediate.breakdown.benefitDeduction > 0 && (
+                      <li>
+                        사용한 할인 혜택 -
+                        {immediate.breakdown.benefitDeduction.toLocaleString()}원
+                      </li>
+                    )}
+                  </ul>
+                )}
+                {!immediate.available && immediate.unavailableReason && (
+                  <p className="text-xs text-amber-700">
+                    {immediate.unavailableReason} (예외 환불은 아래에서 금액을
+                    직접 지정)
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  환불 수단:{' '}
+                  {manualRefund
+                    ? '자동환불 불가 — 계좌 송금 필요(효성 CMS 등)'
+                    : 'PG 자동환불 가능'}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                견적을 불러올 수 없습니다. 금액을 직접 지정해주세요.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label>
               취소 사유 <span className="text-destructive">*</span>
@@ -168,12 +289,27 @@ function ForceCancelDialog({
             <Label>
               환불 유형 <span className="text-destructive">*</span>
             </Label>
+            {refundBlocked && (
+              <p
+                className="rounded-md border p-2 text-xs text-muted-foreground"
+                data-testid="refund-blocked-notice"
+              >
+                결제 내역이 없는 계약(관리자 지급·이관)이라 환불할 대상이 없습니다. 환불 없이
+                해지하거나, 보상이 필요하면 결제관리에서 처리하세요.
+              </p>
+            )}
             <RadioGroup
+              disabled={refundBlocked}
               value={refundType}
-              onValueChange={(v) =>
-                setRefundType(v as 'FULL' | 'PARTIAL' | 'NONE')
-              }
-              className="flex gap-4"
+              onValueChange={(v) => {
+                const next = v as 'FULL' | 'PARTIAL' | 'NONE';
+                setRefundType(next);
+                // 정책 금액을 기본값으로 채워 오타·짐작을 줄인다.
+                if (next === 'PARTIAL' && !refundAmount && policyAmount > 0) {
+                  setRefundAmount(String(policyAmount));
+                }
+              }}
+              className="flex flex-wrap gap-4"
             >
               <div className="flex items-center gap-1.5">
                 <RadioGroupItem value="NONE" id="refund-none" />
@@ -185,24 +321,31 @@ function ForceCancelDialog({
                 </Label>
               </div>
               <div className="flex items-center gap-1.5">
-                <RadioGroupItem value="FULL" id="refund-full" />
-                <Label
-                  htmlFor="refund-full"
-                  className="font-normal cursor-pointer"
-                >
-                  전액 환불
-                </Label>
-              </div>
-              <div className="flex items-center gap-1.5">
                 <RadioGroupItem value="PARTIAL" id="refund-partial" />
                 <Label
                   htmlFor="refund-partial"
                   className="font-normal cursor-pointer"
                 >
-                  부분 환불
+                  {policyAmount > 0 ? '정책 금액/직접 입력' : '금액 직접 입력'}
+                </Label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="FULL" id="refund-full" />
+                <Label
+                  htmlFor="refund-full"
+                  className="font-normal cursor-pointer"
+                >
+                  전액 환불{isAnnual ? ' (연간 전액 — 주의)' : ''}
                 </Label>
               </div>
             </RadioGroup>
+            {refundType === 'FULL' && isAnnual && (
+              <p className="text-xs text-amber-700">
+                연간 플랜 전액 환불은 정책 정산(
+                {policyAmount.toLocaleString()}원)보다 큽니다. 장애 보상 등
+                예외인지 확인해주세요.
+              </p>
+            )}
           </div>
 
           {refundType === 'PARTIAL' && (
@@ -210,13 +353,80 @@ function ForceCancelDialog({
               <Label>
                 환불 금액 (원) <span className="text-destructive">*</span>
               </Label>
-              <Input
-                type="number"
-                placeholder="환불 금액 입력"
-                value={refundAmount}
-                onChange={(e) => setRefundAmount(e.target.value)}
-                min={0}
-              />
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="환불 금액 입력"
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(e.target.value)}
+                  min={0}
+                />
+                {policyAmount > 0 && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRefundAmount(String(policyAmount))}
+                  >
+                    정책 금액
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {needsAccount && (
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">
+                환불 송금 계좌 <span className="text-destructive">*</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {manualRefund
+                  ? '자동이체(효성 CMS) 결제는 PG 환불이 불가해 이 계좌로 송금합니다.'
+                  : '무통장 결제 환불은 이 계좌로 송금됩니다. 예금주명이 정확해야 합니다(실명 검증).'}
+              </p>
+              {/* 은행은 코드 직접 입력이 아니라 선택 — 결제관리 환불 화면과 같은 방식(오타로 송금 실패 방지) */}
+              <div className="space-y-1">
+                <Label htmlFor="refund-bank">환불 은행</Label>
+                <select
+                  id="refund-bank"
+                  className="w-full rounded border p-2 text-sm"
+                  value={bank}
+                  onChange={(e) => setBank(e.target.value)}
+                >
+                  <option value="">은행 선택</option>
+                  {TOSS_BANKS.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="refund-account-number">계좌번호</Label>
+                <Input
+                  id="refund-account-number"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="숫자만 입력 (예: 110123456789)"
+                  value={accountNumber}
+                  onChange={(e) =>
+                    setAccountNumber(e.target.value.replace(/[^0-9]/g, ''))
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="refund-holder-name">예금주명</Label>
+                <Input
+                  id="refund-holder-name"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="예금주 실명"
+                  value={holderName}
+                  onChange={(e) => setHolderName(e.target.value)}
+                />
+              </div>
             </div>
           )}
 
@@ -240,7 +450,7 @@ function ForceCancelDialog({
             onClick={handleConfirm}
             disabled={forceCancelMutation.isPending}
           >
-            {forceCancelMutation.isPending ? '처리 중...' : '즉시 취소 확인'}
+            {forceCancelMutation.isPending ? '처리 중...' : '즉시 해지 확인'}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -435,49 +645,123 @@ function PeriodTab({ userId }: { userId: string }) {
   );
 }
 
-// 두번째 탭: 플랜 / 결제 방식 / 해지 관리
+// 두번째 탭: 플랜 / 결제 방식 / 해지·환불 관리
+//
+// 해지는 두 가지뿐이고 둘 다 1급 액션으로 노출한다.
+//  - 해지 예약: 잔여 기간은 그대로 쓰고 다음 결제만 중단 (고객 셀프해지 기본값과 동일)
+//  - 즉시 해지 + 환불: 자격을 즉시 회수하고 정책 견적대로 환불
+// 예전에는 해지예약이 '자동 연장' 토글에 숨어 있어 CS 가 해지 처리 창구로 인식하지 못했다.
 function PlanTab({
   userId,
   contractId,
   allowForceCancel,
+  customerEmail,
 }: {
   userId: string;
   contractId: string;
   allowForceCancel: boolean;
+  customerEmail?: string;
 }) {
   const { data: detail, isLoading, refetch } = useMemberDetail(userId);
   const setAutoRenewalMutation = useSetAutoRenewal();
-  const [pendingAutoRenewal, setPendingAutoRenewal] = useState<boolean | null>(
-    null
-  );
+  const scheduleCancelMutation = useScheduleCancelSubscription();
+  const completeManualRefundMutation = useCompleteManualRefund();
   const [forceCancelOpen, setForceCancelOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduleReason, setScheduleReason] = useState('');
 
-  const effectiveAutoRenewal =
-    pendingAutoRenewal ?? detail?.autoRenewal ?? true;
   const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
+  const autoRenewal = detail?.autoRenewal ?? false;
+  // 정기결제 여부·해지예약은 recurringCancelledAt 이 SoT다. nextBillingDate 로 추론하면
+  // 해지 시 null 로 지워져 1회 결제와 구분되지 않는다.
+  //
+  // 다만 recurringCancelledAt 만으로 '정기결제'로 단정하면 안 된다 — 1회 결제 고객도 해지 예약을 하고,
+  // 그때 철회 버튼을 열어주면 자동이체 약정이 새로 생겨 동의한 적 없는 정기결제가 시작된다.
+  // 되살릴 자동결제가 있는지는 서버가 가입/해지 시점의 사실로 판정해 내려준다.
+  const canUndoCancellation = detail?.canUndoCancellation ?? false;
+  const isRecurringContract = autoRenewal || canUndoCancellation;
+  const isCancellationScheduled = isActive && !!detail?.recurringCancelledAt;
+  const manualRefundAccount = detail?.manualRefundAccount ?? null;
+  // 계좌로 보내기 전에 결제관리(wallet) 쪽 사실을 먼저 본다 — 이미 나갔거나 확정만 남은 건에
+  // 또 송금하면 돈이 두 번 나간다. null 은 '알 수 없음'이라 아무것도 단정하지 않는다.
+  const settlement = detail?.refundSettlement ?? null;
+  const requestedRefund = detail?.eligibleRefundAmount ?? 0;
+  const pgAlreadyRefunded =
+    !!settlement && requestedRefund > 0 && settlement.alreadyRefundedAmount >= requestedRefund;
+  const pgConfirmPending = !!settlement && settlement.pendingRefundAmount > 0;
+  // 결제한 적이 없는 계약(관리자 지급·이관)은 환불할 대상 자체가 없다. 옛 화면은 "미완료 — N원
+  // 처리 필요" 만 띄워서, 보낼 곳도 근거도 없는 건을 CS 가 찾아 헤매게 만들었다.
+  // `=== false` 로 좁힌다: 배포 과도기(admin-web 이 membership 보다 먼저 뜬 창)에는 이 필드가
+  // undefined 로 오는데, `!undefined` 로 판정하면 **정상 수동 송금 건까지** 전부 "환불 대상 결제 없음"
+  // 으로 뒤집혀 송금 완료 처리 버튼이 사라진다.
+  const refundImpossible =
+    !!detail &&
+    detail.refundRequested &&
+    !detail.refundCompleted &&
+    detail.hasPaymentIntent === false;
 
-  const handleAutoRenewalSave = async () => {
-    if (pendingAutoRenewal === null) return;
+  const handleScheduleCancel = async () => {
+    if (!scheduleReason.trim()) {
+      toast.error('해지 사유를 입력해주세요.');
+      return;
+    }
+    try {
+      // 고객 셀프해지와 같은 처리(해지 시각·사유 기록 + 자동이체 약정 종료)를 하는 전용 API.
+      // auto-renewal 토글은 청구만 멈춰 효성 약정이 은행에 그대로 남는다.
+      await scheduleCancelMutation.mutateAsync({
+        contractId,
+        reason: scheduleReason.trim(),
+        customerEmail,
+      });
+      toast.success(
+        `해지가 예약되었습니다. ${formatDate(detail?.endsAt)}까지 이용 후 자동 결제가 중단됩니다.`
+      );
+      setScheduleOpen(false);
+      setScheduleReason('');
+      refetch();
+    } catch (error) {
+      toast.error(serverMessage(error) ?? '해지 예약에 실패했습니다.');
+    }
+  };
+
+  const handleCompleteManualRefund = async () => {
+    const account = detail?.manualRefundAccount;
+    const where = account
+      ? `${bankName(account.bank)} ${account.accountNumber} (${account.holderName})`
+      : '고객 계좌';
+    // PG 로 이미 나간 건은 '송금 확인'이 아니라 '기록 정리'다. 같은 문구로 물으면 관리자가
+    // 보내지 않아도 될 돈을 보내고 나서 누른다.
+    const question = pgAlreadyRefunded
+      ? `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불된 건입니다. 추가 송금 없이 완료로 정리할까요?`
+      : `${where}로 ${requestedRefund.toLocaleString()}원을 실제로 송금했나요? 완료로 확정합니다.`;
+    if (!window.confirm(question)) return;
+    try {
+      await completeManualRefundMutation.mutateAsync({ contractId });
+      toast.success('환불 완료로 기록했습니다.');
+      refetch();
+    } catch (error) {
+      toast.error(serverMessage(error) ?? '환불 완료 처리에 실패했습니다.');
+    }
+  };
+
+  const handleUndoCancel = async () => {
     try {
       await setAutoRenewalMutation.mutateAsync({
         contractId,
-        autoRenewal: pendingAutoRenewal,
+        autoRenewal: true,
       });
-      toast.success(
-        pendingAutoRenewal
-          ? '자동갱신이 재개되었습니다.'
-          : '해지가 예약되었습니다. 현재 구독 기간 만료 후 자동갱신이 중단됩니다.'
-      );
-      setPendingAutoRenewal(null);
-    } catch {
-      toast.error('설정 저장에 실패했습니다.');
+      toast.success('해지 예약이 철회되었습니다. 자동 결제가 재개됩니다.');
+      refetch();
+    } catch (error) {
+      // 이미 만료된 구독은 재활성으로 복구되지 않는다(서버가 409로 거부) — 메시지를 그대로 보여준다.
+      toast.error(serverMessage(error) ?? '해지 철회에 실패했습니다.');
     }
   };
 
   function getBillingTypeLabel() {
     if (!detail) return '-';
-    if (detail.autoRenewal) return '정기결제 (자동갱신)';
-    if (!detail.nextBillingDate) return '일시결제';
+    if (autoRenewal) return '정기결제 (자동갱신)';
+    if (!isRecurringContract) return '일시결제 (자동갱신 없음)';
     return '정기결제 (해지 예약됨)';
   }
 
@@ -514,49 +798,199 @@ function PlanTab({
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">
-              {detail?.autoRenewal ? '다음 결제일' : '구독 종료일'}
+              {autoRenewal ? '다음 결제일' : '이용 종료일'}
             </span>
             <span>
-              {detail?.autoRenewal
-                ? formatDate(detail.nextBillingDate)
+              {autoRenewal
+                ? formatDate(detail?.nextBillingDate)
                 : formatDate(detail?.endsAt)}
             </span>
           </div>
+          {/* 환불 미완료 건은 눈에 띄게 — 자격은 회수됐는데 돈이 안 나간 상태를 놓치지 않도록 */}
+          {(detail?.refundRequested || detail?.refundCompleted) && (
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span className="text-muted-foreground">환불</span>
+              <span className="flex items-center gap-2">
+                <span
+                  className={
+                    detail?.refundCompleted ? '' : 'font-medium text-amber-700'
+                  }
+                >
+                  {detail?.refundCompleted
+                    ? `완료 ${formatDate(detail.refundCompletedAt)} (${(detail.eligibleRefundAmount ?? 0).toLocaleString()}원)`
+                    : refundImpossible
+                      ? '환불 대상 결제 없음'
+                      : `미완료 — ${(detail?.eligibleRefundAmount ?? 0).toLocaleString()}원 처리 필요`}
+                </span>
+                {/* 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다 — 여기서 확정한다.
+                    결제관리가 닫아야 하는 건(확정 대기)은 여기서 누르면 이중 송금이라 버튼을 열지 않는다. */}
+                {allowForceCancel &&
+                  !detail?.refundCompleted &&
+                  !pgConfirmPending &&
+                  !refundImpossible && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    data-testid="complete-manual-refund"
+                    disabled={completeManualRefundMutation.isPending}
+                    onClick={handleCompleteManualRefund}
+                  >
+                    {completeManualRefundMutation.isPending
+                      ? '처리 중...'
+                      : pgAlreadyRefunded
+                        ? '완료로 정리'
+                        : '송금 완료 처리'}
+                  </Button>
+                )}
+              </span>
+            </div>
+          )}
+          {/* 결제 이력이 없는 계약에 환불 요청이 걸린 건 — 보낼 돈도 보낼 곳도 없다는 사실을 말해준다. */}
+          {refundImpossible && (
+            <p
+              className="rounded-md border p-2 text-xs text-muted-foreground"
+              data-testid="refund-impossible-notice"
+            >
+              결제 내역이 없는 계약(관리자 지급·이관)에 환불 요청이 기록된 건입니다. 받은 돈이 없어
+              송금할 대상이 없습니다 — 보상이 필요하면 결제관리에서 처리하세요.
+            </p>
+          )}
+          {/* 송금하기 전에 결제관리 쪽 사실을 먼저 알려준다 — 이 안내가 없으면 이미 나간 돈을 또 보낸다. */}
+          {!detail?.refundCompleted && (pgAlreadyRefunded || pgConfirmPending) && (
+            <p
+              className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs text-amber-900"
+              data-testid="refund-settlement-notice"
+            >
+              {pgConfirmPending
+                ? `결제관리에 확정 대기 중인 환불 ${settlement!.pendingRefundAmount.toLocaleString()}원이 있습니다. 이 건은 결제관리에서 완료 처리하세요 — 여기서 송금하면 두 번 나갑니다.`
+                : `결제관리에서 이미 ${settlement!.alreadyRefundedAmount.toLocaleString()}원이 환불되었습니다. 추가 송금은 필요하지 않습니다.`}
+            </p>
+          )}
+          {/* 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
+              (효성 CMS 는 wallet 에 환불 행 자체가 없어 결제관리 화면에도 나타나지 않는다) */}
+          {manualRefundAccount && !pgAlreadyRefunded && (
+            <div
+              className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs"
+              data-testid="manual-refund-account"
+            >
+              <p className="font-medium text-amber-900">환불 송금 계좌</p>
+              <p className="mt-0.5 text-amber-900">
+                {bankName(manualRefundAccount.bank)}{' '}
+                {manualRefundAccount.accountNumber} ·{' '}
+                {manualRefundAccount.holderName}
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {allowForceCancel && isActive && (
+      {/* 해지 예약 상태 + 철회 */}
+      {isCancellationScheduled && (
+        <Card className="border-amber-300 bg-amber-50/60">
+          <CardHeader>
+            <CardTitle className="text-sm text-amber-900">해지 예약됨</CardTitle>
+            <CardDescription className="text-amber-900">
+              {formatDateTime(detail?.recurringCancelledAt)} 해지 신청 ·{' '}
+              {formatDate(detail?.endsAt)}까지 멤버십 혜택 유지 · 이후 자동
+              결제는 청구되지 않습니다.
+              {detail?.recurringCancellationReasonCode
+                ? ` (사유: ${detail.recurringCancellationReasonCode})`
+                : ''}
+            </CardDescription>
+          </CardHeader>
+          {allowForceCancel && (
+            <CardContent>
+              {canUndoCancellation ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleUndoCancel}
+                  disabled={setAutoRenewalMutation.isPending}
+                >
+                  {setAutoRenewalMutation.isPending
+                    ? '처리 중...'
+                    : '해지 예약 철회 (자동 결제 재개)'}
+                </Button>
+              ) : (
+                <p className="text-xs text-amber-900">
+                  1회 결제 건이라 되살릴 자동결제가 없습니다. 계속 이용하려면
+                  고객이 직접 재가입해야 합니다.
+                </p>
+              )}
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* 해지 예약 — 정기결제 계약에만 의미가 있다 */}
+      {allowForceCancel &&
+        isActive &&
+        isRecurringContract &&
+        !isCancellationScheduled && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">해지 예약 (권장)</CardTitle>
+              <CardDescription>
+                {formatDate(detail?.endsAt)}까지는 그대로 이용하고 다음 결제부터
+                청구하지 않습니다. 환불은 발생하지 않습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {scheduleOpen ? (
+                <>
+                  <Label className="text-xs">
+                    해지 사유 <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    rows={2}
+                    placeholder="고객 요청 내용 등"
+                    value={scheduleReason}
+                    onChange={(e) => setScheduleReason(e.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={handleScheduleCancel}
+                      disabled={scheduleCancelMutation.isPending}
+                    >
+                      {scheduleCancelMutation.isPending
+                        ? '처리 중...'
+                        : '해지 예약 확정'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setScheduleOpen(false)}
+                    >
+                      취소
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={() => setScheduleOpen(true)}
+                >
+                  해지 예약하기
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+      {/* 1회 결제 계약 안내 — 해지할 정기결제가 없다 (이미 해지 예약된 건은 위 배너가 설명한다) */}
+      {isActive && !isRecurringContract && !isCancellationScheduled && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm">자동갱신 설정</CardTitle>
+            <CardTitle className="text-sm">자동 결제 없음</CardTitle>
+            <CardDescription>
+              1회 결제 건이라 예약 해지가 필요하지 않습니다.{' '}
+              {formatDate(detail?.endsAt)}에 자동 종료됩니다. 즉시 종료·환불이
+              필요하면 아래 즉시 해지를 사용하세요.
+            </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm">자동 연장</p>
-                <p className="text-xs text-muted-foreground">
-                  {effectiveAutoRenewal
-                    ? '구독 만료 시 자동으로 갱신됩니다.'
-                    : '현재 구독 기간 만료 후 자동갱신이 중단됩니다.'}
-                </p>
-              </div>
-              <Switch
-                checked={effectiveAutoRenewal}
-                onCheckedChange={(checked) => setPendingAutoRenewal(checked)}
-              />
-            </div>
-
-            {pendingAutoRenewal !== null && (
-              <Button
-                size="sm"
-                onClick={handleAutoRenewalSave}
-                disabled={setAutoRenewalMutation.isPending}
-                className="w-full"
-              >
-                {setAutoRenewalMutation.isPending ? '저장 중...' : '변경 저장'}
-              </Button>
-            )}
-          </CardContent>
         </Card>
       )}
 
@@ -564,11 +998,11 @@ function PlanTab({
         <Card className="border-destructive/30">
           <CardHeader>
             <CardTitle className="text-sm text-destructive">
-              강제 즉시 취소
+              즉시 해지 + 환불
             </CardTitle>
             <CardDescription>
-              구독을 즉시 종료합니다. 정기결제 해지 예약과 달리 현재 구독 기간도
-              즉시 종료됩니다. 환불 여부를 선택할 수 있습니다.
+              현재 구독 기간까지 즉시 종료하고 정책 기준 환불액을 지급합니다.
+              (청약철회 7일 내 전액 / 연간 중도해지 정산 / 예외 보상)
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -578,7 +1012,7 @@ function PlanTab({
               className="w-full"
               onClick={() => setForceCancelOpen(true)}
             >
-              강제 즉시 취소
+              즉시 해지 + 환불 처리
             </Button>
           </CardContent>
         </Card>
@@ -589,6 +1023,7 @@ function PlanTab({
           open={forceCancelOpen}
           onClose={() => setForceCancelOpen(false)}
           contractId={contractId}
+          customerEmail={customerEmail}
           onSuccess={() => refetch()}
         />
       )}
@@ -929,7 +1364,7 @@ export function MembershipDetailPanel({
       <Tabs defaultValue="period">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="period">멤버십 기간 관리</TabsTrigger>
-          <TabsTrigger value="plan">플랜 구독 변경</TabsTrigger>
+          <TabsTrigger value="plan">해지 · 환불</TabsTrigger>
           <TabsTrigger value="billing">결제 기록</TabsTrigger>
           <TabsTrigger value="log">로그</TabsTrigger>
         </TabsList>
@@ -943,6 +1378,7 @@ export function MembershipDetailPanel({
             userId={userId}
             contractId={contractId}
             allowForceCancel={allowAdminActions}
+            customerEmail={userNames[userId]?.email || undefined}
           />
         </TabsContent>
 

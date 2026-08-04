@@ -22,6 +22,9 @@ import {
 import { DLQHandler, createKafkaConfigFromEnv, getDLQTopicName } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { ApplicationException } from '@app/shared';
+import { AuthorizationService, RequireScopes } from '@app/authorization';
+import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { AdminMembersReader } from '../services/admin/admin-members.reader';
@@ -72,6 +75,7 @@ export class AdminOperationsController {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
+    private readonly authorizationService: AuthorizationService,
     @Optional() private readonly dlqHandler?: DLQHandler,
   ) {}
 
@@ -80,8 +84,12 @@ export class AdminOperationsController {
     const contextInfo = context ? ` (${context})` : '';
     this.logger.error(`❌ ${operation} 실패${contextInfo}:`, msg);
 
-    // 서비스가 이미 상태코드를 결정한 예외(SubscriptionException 등)는 그대로 전달한다.
-    if (error instanceof HttpException) {
+    // 서비스가 이미 상태코드를 결정한 예외는 그대로 전달한다.
+    // - HttpException: SubscriptionException 등
+    // - ApplicationException(@app/shared): NotFoundError/ConflictError/ForbiddenError 등.
+    //   이걸 빼먹으면 아래 문자열 매칭으로 흘러가 ForbiddenError 가 500 이 된다(권한 부족을
+    //   서버 오류로 안내하게 됨). 상태코드 매핑은 GlobalExceptionFilter 가 담당한다.
+    if (error instanceof HttpException || error instanceof ApplicationException) {
       throw error;
     }
 
@@ -593,9 +601,12 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  // 해지·환불 자체는 CS 일상 업무라 admin 에게 열어 두고, 정책 초과 환불만 아래에서 별도 검사한다.
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('force-cancel')
   async forceCancelSubscription(
     @User('userId') userId: string,
+    @User('roles') roles: string[] | undefined,
     @Param('contractId') contractId: string,
     @Body() dto: ForceCancelSubscriptionRequestDto,
   ) {
@@ -606,6 +617,11 @@ export class AdminOperationsController {
         `강제 구독 취소 요청 - contractId: ${contractId}, adminId: ${adminId}, refundType: ${dto.refundType}`,
       );
 
+      // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
+      const canOverridePolicyAmount =
+        (roles ?? []).includes('master') ||
+        (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE));
+
       const result = await this.cancellationService.forceCancelSubscription(
         contractId,
         adminId,
@@ -613,13 +629,106 @@ export class AdminOperationsController {
         dto.refundType,
         dto.refundAmount,
         dto.adminNote,
+        dto.refundReceiveAccount,
+        canOverridePolicyAmount,
+        dto.customerEmail,
       );
 
-      this.logger.log(`✅ 강제 구독 취소 성공 - contractId: ${contractId}`);
+      // refundStatus 는 wallet 의 실제 환불 결과다. FAILED/PENDING 이면 돈은 아직 나가지 않았다
+      // (효성 CMS 는 PG 환불 API 가 없어 항상 수동 송금이 필요하다).
+      this.logger.log(
+        `강제 구독 취소 완료 - contractId: ${contractId}, refundAmount: ${result.refundAmount}, refundStatus: ${result.refundStatus}`,
+      );
 
       return result;
     } catch (error) {
       this.handleError(error, '강제 구독 취소');
+    }
+  }
+
+  /**
+   * 해지 예약 (관리자 대행)
+   *
+   * 고객 셀프해지의 '해지 예약' 과 같은 처리다. 예전처럼 auto-renewal 토글로 대신하면 청구만 멈추고
+   * 해지 사유·해지 시각이 남지 않으며, 은행에 걸린 효성 자동이체 약정과 예정 출금이 살아남는다.
+   */
+  @Post('subscriptions/:contractId/schedule-cancel')
+  @ApiOperation({
+    summary: '해지 예약 (어드민)',
+    description: '잔여 기간은 유지하고 다음 결제부터 청구하지 않습니다. 자동이체 약정도 함께 종료합니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('schedule-cancel')
+  async scheduleCancellation(
+    @User('userId') adminId: string,
+    @Param('contractId') contractId: string,
+    @Body() dto: { reason?: string; customerEmail?: string },
+  ) {
+    try {
+      const reason = dto?.reason?.trim();
+      if (!reason) throw new BadRequestException('해지 사유는 필수입니다');
+
+      return await this.cancellationService.scheduleCancellationByAdmin(
+        contractId,
+        adminId,
+        reason,
+        dto?.customerEmail,
+      );
+    } catch (error) {
+      this.handleError(error, '해지 예약', contractId);
+    }
+  }
+
+  /**
+   * 수동 송금 환불 완료 처리 (관리자)
+   *
+   * 효성 CMS 환불은 wallet 에 환불 행이 없어(PG 환불 API 자체가 없다) wallet 의 수동 완료 경로로
+   * 닫을 수 없다. 계좌 송금을 끝낸 관리자가 여기서 완료 사실을 확정한다.
+   */
+  @Post('subscriptions/:contractId/refund/manual-complete')
+  @ApiOperation({
+    summary: '수동 송금 환불 완료 처리 (어드민)',
+    description: '계좌 송금을 마친 환불 건을 완료로 확정합니다. 금액을 생략하면 요청 금액 전액입니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
+  @IdempotentAdminOp('refund-manual-complete')
+  async completeManualRefund(
+    @User('userId') adminId: string,
+    @Param('contractId') contractId: string,
+    @Body() dto: { amount?: number; memo?: string },
+  ) {
+    try {
+      return await this.cancellationService.markManualRefundCompleted(contractId, adminId, {
+        amount: dto?.amount,
+        memo: dto?.memo,
+      });
+    } catch (error) {
+      this.handleError(error, '수동 환불 완료 처리', contractId);
+    }
+  }
+
+  /**
+   * 해지·환불 견적 (관리자)
+   *
+   * 강제취소 다이얼로그가 "지금 해지하면 정책상 얼마" 를 보여주기 위한 계산기.
+   * 연간 중도해지 정산 내역(사용 개월·차감액)과 실제 환불 가능 수단까지 함께 내려준다.
+   */
+  @Get('subscriptions/:contractId/cancellation-quote')
+  @ApiOperation({
+    summary: '해지·환불 견적 조회 (어드민)',
+    description: '정책 기준 환불 금액과 산출 내역, 자동환불 가능 여부를 반환합니다.',
+  })
+  @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
+  @UseGuards(JwtAuthGuard)
+  async getCancellationQuote(@Param('contractId') contractId: string) {
+    try {
+      return await this.cancellationService.previewCancellationByContract(contractId);
+    } catch (error) {
+      this.handleError(error, '해지 견적 조회');
     }
   }
 
@@ -973,6 +1082,25 @@ export class AdminOperationsController {
       return await this.adminMembersReader.findDunningList();
     } catch (error) {
       this.handleError(error, 'dunning 목록 조회');
+    }
+  }
+
+  /**
+   * 자동이체 약정 정리 큐 — 해지했는데 은행에 효성 약정이 남아 있는 계약.
+   *
+   * `AGREEMENT_REVOKE_ABANDONED` 는 스케줄러가 7일 뒤 재시도를 **멈춘** 건이라, 이 목록이 없으면
+   * 해지한 고객의 계좌에 자동이체가 남은 채 아무도 모르는 상태가 된다(지금까진 로그뿐이었다).
+   *
+   * GET /admin/agreement-cleanup
+   */
+  @Get('agreement-cleanup')
+  @ApiOperation({ summary: '자동이체 약정 정리 큐 (미정리·포기 건)' })
+  @UseGuards(JwtAuthGuard)
+  async getAgreementCleanupQueue() {
+    try {
+      return await this.adminMembersReader.findAgreementCleanupQueue();
+    } catch (error) {
+      this.handleError(error, '자동이체 약정 정리 큐 조회');
     }
   }
 

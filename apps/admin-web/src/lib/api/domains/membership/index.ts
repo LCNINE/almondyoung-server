@@ -69,6 +69,38 @@ export interface AdminMemberDetail {
   createdAt: string;
   cancelledAt: string | null;
   autoRenewal: boolean;
+  /** 정기결제 해지 예약 시점 (status 는 ACTIVE 를 유지한다) */
+  recurringCancelledAt: string | null;
+  recurringCancellationReasonCode: string | null;
+  refundRequested: boolean;
+  refundRequestedAt: string | null;
+  eligibleRefundAmount: number | null;
+  refundCompleted: boolean;
+  refundCompletedAt: string | null;
+  /** 해지 예약을 철회해 자동결제를 재개할 수 있는지(서버 판정). 1회 결제 계약은 false. */
+  canUndoCancellation: boolean;
+  /** 계좌 송금이 남은 환불 건의 수취 계좌. 이게 없으면 관리자가 어디로 보낼지 알 수 없다. */
+  manualRefundAccount: {
+    bank: string;
+    accountNumber: string;
+    holderName: string;
+  } | null;
+  /**
+   * 환불 대상 결제 내역이 있는지. 관리자 지급·이관 계약은 결제가 없어 환불 자체가 불가능하다.
+   *
+   * optional 인 이유는 배포 과도기다 — admin-web 이 membership 보다 먼저 뜨면 이 필드가 없다.
+   * 타입이 그 사실을 말해줘야 화면이 `!hasPaymentIntent` 같은 판정으로 뒤집히지 않는다.
+   */
+  hasPaymentIntent?: boolean;
+  /**
+   * 미완료 환불 건의 결제관리(wallet) 쪽 사실. 계좌로 송금하기 **전에** 확인해야 하는 값이다 —
+   * 이미 PG 로 나갔거나 결제관리가 확정만 남긴 건에 또 보내면 돈이 두 번 나간다.
+   * 과도기·조회 실패에는 없거나 null 이다(= 알 수 없음, 아무것도 단정하지 않는다).
+   */
+  refundSettlement?: {
+    alreadyRefundedAmount: number;
+    pendingRefundAmount: number;
+  } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -163,6 +195,45 @@ function buildQueryString(query: Record<string, unknown>): string {
   return params.toString();
 }
 
+/** 해지·환불 견적 (membership `/admin/subscriptions/:id/cancellation-quote`) */
+export interface AdminCancellationOption {
+  mode: 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
+  available: boolean;
+  unavailableReason?: string;
+  refundAmount: number;
+  refundKind: 'NONE' | 'WITHDRAWAL_FULL' | 'ANNUAL_PRORATION';
+  refundExecution: 'NONE' | 'AUTO' | 'MANUAL';
+  requiresReceiveAccount: boolean;
+  effectiveEndsAt: string;
+  breakdown?: {
+    paidAmount: number;
+    monthlyListPrice: number;
+    monthsElapsed: number;
+    usageDeduction: number;
+    benefitDeduction: number;
+  };
+}
+
+export interface AdminCancellationQuote {
+  contractId: string;
+  planName: { durationDays: number; price: number };
+  isRecurring: boolean;
+  alreadyScheduledForCancellation: boolean;
+  recurringCancelledAt: string | null;
+  currentPeriodEndsAt: string;
+  nextBillingDate: string | null;
+  recommendedMode: 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
+  withdrawalDaysRemaining: number;
+  withdrawalWindowDays: number;
+  refundProcessingBusinessDays: number;
+  /**
+   * 환불 대상 결제 내역이 있는지. false 면 서버가 환불 유형을 400 으로 거부하므로 화면도 열지 않는다.
+   * 과도기(membership 이 옛 버전)엔 undefined — 그때는 서버 판정에 맡긴다.
+   */
+  hasPaymentIntent?: boolean;
+  options: AdminCancellationOption[];
+}
+
 export const membershipApi = {
   getAdminMembers: async (
     query: AdminMembersQuery
@@ -208,6 +279,37 @@ export const membershipApi = {
       { autoRenewal },
       idemConfig()
     );
+  },
+
+  /**
+   * 해지 예약 (관리자 대행). 고객 셀프해지의 '해지 예약' 과 같은 처리다.
+   * auto-renewal 토글은 청구만 멈추고 해지 사유·해지 시각·자동이체 약정 종료가 빠진다.
+   */
+  scheduleCancelSubscription: async (
+    contractId: string,
+    body: { reason: string; customerEmail?: string }
+  ): Promise<{ currentPeriodEndsAt: string; message: string }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/schedule-cancel`,
+      body,
+      idemConfig()
+    );
+    return res.data;
+  },
+
+  /**
+   * 수동 송금 환불 완료 처리. 효성 CMS 환불은 wallet 에 환불 행이 없어 결제관리에서 닫을 수 없다.
+   */
+  completeManualRefund: async (
+    contractId: string,
+    body: { amount?: number; memo?: string }
+  ): Promise<{ contractId: string; refundedAmount: number }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/refund/manual-complete`,
+      body,
+      idemConfig()
+    );
+    return res.data;
   },
 
   adjustEntitlement: async (
@@ -291,6 +393,17 @@ export const membershipApi = {
     return res.data;
   },
 
+  /**
+   * 해지·환불 견적. 정책상 환불 금액과 산출 내역, 실제 환불 가능 수단을 반환한다.
+   * 관리자가 금액을 손으로 짐작하지 않게 하는 계산기.
+   */
+  getCancellationQuote: async (contractId: string): Promise<AdminCancellationQuote> => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/cancellation-quote`
+    );
+    return res.data;
+  },
+
   forceCancelSubscription: async (
     contractId: string,
     body: {
@@ -298,8 +411,12 @@ export const membershipApi = {
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
+      /** 해지 안내 메일 수신 주소 (membership 은 사용자 조회를 하지 않아 여기서 넘겨야 한다) */
+      customerEmail?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }
   ): Promise<{
+    refundAmount: number;
     refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE';
   }> => {
     const res = await client.post(
@@ -420,6 +537,16 @@ export const membershipApi = {
     import('@/lib/types/dto/membership').DunningListResponse
   > => {
     const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/dunning`);
+    return res.data;
+  },
+
+  /** 해지했는데 은행에 자동이체 약정이 남은 계약. 로그에만 있던 ABANDONED 를 사람이 보게 한다. */
+  getAgreementCleanupQueue: async (): Promise<
+    import('@/lib/types/dto/membership').AgreementCleanupListResponse
+  > => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/agreement-cleanup`
+    );
     return res.data;
   },
 
