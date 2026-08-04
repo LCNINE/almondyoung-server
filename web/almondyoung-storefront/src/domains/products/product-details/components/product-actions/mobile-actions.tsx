@@ -25,6 +25,7 @@ type MobileActionsProps = {
   totalPrice: number
   isSimple: boolean
   isWelcomeMembership: boolean
+  membersOnlyPurchase: boolean
   inStock: boolean
   handleAddToCart: () => void
   handleBuyNow: () => void
@@ -44,6 +45,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   totalPrice,
   isSimple,
   isWelcomeMembership,
+  membersOnlyPurchase,
   inStock,
   handleAddToCart,
   handleBuyNow,
@@ -53,11 +55,15 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
 
+  const unavailableLabel = membersOnlyPurchase
+    ? t("membersOnly")
+    : t("soldOut")
+
   const disabledLabel =
     selectedItems.length === 0
       ? t("selectPlaceholder")
       : !inStock
-        ? t("soldOut")
+        ? unavailableLabel
         : null
 
   return (
@@ -99,7 +105,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   className="h-12 w-full cursor-pointer text-base font-medium"
                   data-testid="sold-out-button"
                 >
-                  {t("soldOut")}
+                  {unavailableLabel}
                 </Button>
               )}
             </div>
@@ -226,7 +232,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       className="h-12 w-full cursor-pointer text-base font-medium"
                       data-testid="sold-out-button"
                     >
-                      {t("soldOut")}
+                      {unavailableLabel}
                     </Button>
                   )}
                 </div>
