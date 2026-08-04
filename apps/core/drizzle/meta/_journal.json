@@ -397,8 +397,6 @@
     {
       "idx": 54,
       "version": "7",
-      "when": 1785746018341,
-      "tag": "20260803083338_add-coming-soon-flag",
       "when": 1785706244623,
       "tag": "20260802213044_bulk-session-source-file-nullable",
       "breakpoints": true
@@ -408,6 +406,13 @@
       "version": "7",
       "when": 1785758299750,
       "tag": "20260803115819_remove-product-import-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1785812469776,
+      "tag": "20260804030109_add-coming-soon-flag",
       "breakpoints": true
     }
   ]
