@@ -104,7 +104,7 @@
     "stockLimitToastNamed": "「{option}」の在庫は残り{max}個です。{max}個以下でお選びください。",
     "stockConflictToast": "カート内の数量と合わせると在庫を超えます。カートの数量をご確認ください。",
     "stockShortToast": "在庫が不足しているため追加できません。数量を減らしてお試しください。",
-    "membersOnly": "メンバー限定"
+    "membersOnlyCta": "メンバーシップに加入して購入"
   },
   "cartModal": {
     "addingTitle": "カートに追加中",
@@ -122,7 +122,8 @@
     "membershipBadgeLabel": "メンバー割引価格",
     "membershipOnlyPrice": "メンバーシップ会員のみ表示",
     "memberSavings": "メンバーシップ加入で {amount}ウォン節約",
-    "membersOnlyPurchase": "メンバーシップ会員限定商品です。ご加入後に購入できます。"
+    "membersOnlyTitle": "メンバー限定商品",
+    "membersOnlyDescription": "メンバーシップ会員のみ購入できます"
   },
   "qna": {
     "title": "Q&A",

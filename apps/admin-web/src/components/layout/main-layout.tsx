@@ -71,7 +71,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           activeItem={activeItem ?? undefined}
           onMenuChange={handleMenuChange}
         />
-        <main className="py-4 overflow-y-auto bg-white ">{children}</main>
+        <main className="py-4 bg-white ">{children}</main>
       </div>
     </SidebarProvider>
   );

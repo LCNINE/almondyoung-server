@@ -2,11 +2,13 @@
 
 import { ChevronDown, ChevronUp } from "lucide-react"
 import Image from "next/image"
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
+import { useIntersection } from "@/hooks/use-intersection"
 import { ProductDescriptionMarkdown } from "./product-description-markdown"
+import { shouldShowFloatingCollapse } from "./floating-collapse"
 
 type ProductInfo = {
   productNumber?: string
@@ -43,6 +45,23 @@ export function ProductDetailInfo({
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
 
+  const sectionRef = useRef<HTMLElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLDivElement>(null)
+
+  const contentVisible = useIntersection(contentRef)
+  const triggerFullyVisible = useIntersection(triggerRef, "0px", 1)
+  const showFloatingCollapse = shouldShowFloatingCollapse({
+    isExpanded,
+    contentVisible,
+    triggerFullyVisible,
+  })
+
+  const handleFloatingCollapse = () => {
+    setIsExpanded(false)
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   const infoFields = [
     { key: "productNumber", label: t("fieldProductNumber") },
     { key: "weight", label: t("fieldWeight") },
@@ -57,7 +76,7 @@ export function ProductDetailInfo({
   ]
 
   return (
-    <article className="bg-white px-0 py-6 md:px-6">
+    <article ref={sectionRef} className="scroll-mt-20 bg-white px-0 py-6 md:px-6">
       <header>
         <h3 className="mb-4 text-lg font-bold">{t("title")}</h3>
       </header>
@@ -91,6 +110,7 @@ export function ProductDetailInfo({
       {/* 상품 상세 정보 (접힘/펼침) */}
       <div className="relative mt-8">
         <div
+          ref={contentRef}
           className={cn(
             "overflow-hidden transition-all duration-300",
             !isExpanded && "max-h-[500px]"
@@ -140,18 +160,37 @@ export function ProductDetailInfo({
       </div>
 
       {/* 더보기/접기 버튼 */}
-      <Button
-        type="button"
-        onClick={() => setIsExpanded((prev) => !prev)}
-        className="mt-4 w-full cursor-pointer"
-      >
-        {isExpanded ? t("showLess") : t("showMore")}
-        {isExpanded ? (
-          <ChevronUp className="h-4 w-4" />
-        ) : (
-          <ChevronDown className="h-4 w-4" />
-        )}
-      </Button>
+      <div ref={triggerRef}>
+        <Button
+          type="button"
+          onClick={() => setIsExpanded((prev) => !prev)}
+          className="mt-4 w-full cursor-pointer"
+        >
+          {isExpanded ? t("showLess") : t("showMore")}
+          {isExpanded ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+
+      {showFloatingCollapse && (
+        <div className="pointer-events-none sticky bottom-6 z-40 h-0">
+          <div className="flex -translate-y-full justify-center pb-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleFloatingCollapse}
+              className="animate-in fade-in slide-in-from-bottom-4 pointer-events-auto cursor-pointer gap-1 bg-white shadow-lg duration-200"
+            >
+              <ChevronUp className="h-4 w-4" />
+              {t("showLess")}
+            </Button>
+          </div>
+        </div>
+      )}
+
     </article>
   )
 }

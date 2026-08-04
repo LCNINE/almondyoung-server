@@ -22,5 +22,6 @@
   "quickAddToCart": "장바구니 담기",
   "quickAddToCartWithPrice": "{price} 장바구니 담기",
   "quickAddSelect": "옵션을 선택해 주세요",
-  "quickAddError": "옵션 정보를 불러올 수 없습니다."
+  "quickAddError": "옵션 정보를 불러올 수 없습니다.",
+  "membersOnly": "멤버십 전용"
 }

@@ -6,6 +6,7 @@ import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { getRequiresMembershipToPurchase } from "@/lib/utils/product-card"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   CustomerGroupRef,
   isMembershipGroup,
@@ -192,7 +193,9 @@ export default function ProductActions({
     (label: string, max: number) => {
       // 재고가 0이면 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
       if (max <= 0) {
-        return isSimple ? t("soldOutToast") : t("soldOutToastNamed", { option: label })
+        return isSimple
+          ? t("soldOutToast")
+          : t("soldOutToastNamed", { option: label })
       }
       return isSimple
         ? t("stockLimitToast", { max })
@@ -290,19 +293,15 @@ export default function ProductActions({
   const actionsRef = useRef<HTMLDivElement>(null)
   const inView = useIntersection(actionsRef, "0px")
 
-  // 멤버십 전용 구매 상품은 비회원 응답에서 재고가 0 으로 마스킹돼 품절과 구분되지 않는다.
   const membersOnlyPurchase =
     !isMembershipGroup(customer?.groups) &&
     getRequiresMembershipToPurchase(product)
-  const unavailableLabel = membersOnlyPurchase
-    ? t("membersOnly")
-    : t("soldOut")
 
   const disabledLabel =
     selectedItems.length === 0
       ? t("selectPlaceholder")
       : !allInStock
-        ? unavailableLabel
+        ? t("soldOut")
         : null
 
   // 재고부족 응답을 사람 말로 바꾼다. 요청 수량이 이미 남은 재고를 넘었으면 남은 수량을 알려주고,
@@ -380,7 +379,11 @@ export default function ProductActions({
           const offending = selectedItems[0]
           toast.error(
             isInsufficientInventoryError(result.error)
-              ? stockError(offending?.variant, offending?.label ?? "", offending?.quantity ?? 1)
+              ? stockError(
+                  offending?.variant,
+                  offending?.label ?? "",
+                  offending?.quantity ?? 1
+                )
               : result.error
           )
           return
@@ -497,8 +500,16 @@ export default function ProductActions({
             </Button>
           ) : ( ... )} */}
 
-          {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
-          {!allInStock && selectedItems.length > 0 ? (
+          {membersOnlyPurchase ? (
+            <LocalizedClientLink href="/mypage/membership" className="w-full">
+              <Button
+                className="h-12 w-full cursor-pointer text-base font-medium"
+                data-testid="members-only-cta"
+              >
+                {t("membersOnlyCta")}
+              </Button>
+            </LocalizedClientLink>
+          ) : !allInStock && selectedItems.length > 0 ? (
             <div className="w-full">
               {hasStockNotice(selectedItems.map((i) => i.variant)) ? (
                 <RestockNotice variants={selectedItems.map((i) => i.variant)} />
@@ -509,7 +520,7 @@ export default function ProductActions({
                   className="h-12 w-full cursor-pointer text-base font-medium"
                   data-testid="sold-out-button"
                 >
-                  {unavailableLabel}
+                  {t("soldOut")}
                 </Button>
               )}
             </div>

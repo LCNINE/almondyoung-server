@@ -225,14 +225,13 @@ describe('requiresMembershipToPurchase', () => {
 });
 
 describe('applyPurchaseGateForNonMember', () => {
-  it('비회원에게는 재고가 있어도 품절로 덮는다 (세 값 모두)', () => {
+  it('비회원 응답에서도 재고와 판매 플래그를 건드리지 않는다', () => {
     const gated = applyPurchaseGateForNonMember(makeMembersOnlyPurchaseProduct(), false);
     const variant = gated.variants?.[0];
 
-    // 셋 중 하나라도 빠지면 스토어프론트가 판매 가능으로 판정한다.
-    expect(variant?.manage_inventory).toBe(true);
-    expect(variant?.allow_backorder).toBe(false);
-    expect(variant?.inventory_quantity).toBe(0);
+    expect(variant?.inventory_quantity).toBe(7);
+    expect(variant?.manage_inventory).toBe(makeMembersOnlyPurchaseProduct().variants?.[0]?.manage_inventory);
+    expect(variant?.allow_backorder).toBe(makeMembersOnlyPurchaseProduct().variants?.[0]?.allow_backorder);
   });
 
   it('비회원에게는 재입고 예정일을 숨기고 나머지 variant metadata 는 보존한다', () => {
@@ -257,21 +256,19 @@ describe('applyPurchaseGateForNonMember', () => {
 });
 
 describe('transformStoreProductsPayload - 멤버십 전용 구매 게이트', () => {
-  it('목록 응답에서 비회원에게 품절로 덮는다', () => {
+  it('목록 응답에서 비회원에게도 재고를 그대로 두고 회원 전용 안내만 지운다', () => {
     const payload = { products: [makeMembersOnlyPurchaseProduct()], count: 1 };
     const result = transformStoreProductsPayload(payload, false) as typeof payload;
 
-    expect(result.products[0].variants?.[0]?.inventory_quantity).toBe(0);
-    expect(result.products[0].variants?.[0]?.allow_backorder).toBe(false);
+    expect(result.products[0].variants?.[0]?.inventory_quantity).toBe(7);
     expect(result.products[0].variants?.[0]?.metadata).toEqual({ sku: 'SKU-1' });
   });
 
-  it('단건 응답에서도 비회원에게 품절로 덮는다', () => {
+  it('단건 응답에서도 재고를 그대로 둔다', () => {
     const payload = { product: makeMembersOnlyPurchaseProduct() };
     const result = transformStoreProductsPayload(payload, false) as typeof payload;
 
-    expect(result.product.variants?.[0]?.inventory_quantity).toBe(0);
-    expect(result.product.variants?.[0]?.allow_backorder).toBe(false);
+    expect(result.product.variants?.[0]?.inventory_quantity).toBe(7);
   });
 
   it('멤버에게는 목록/단건 모두 재고를 그대로 노출한다', () => {
