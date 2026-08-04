@@ -1,10 +1,17 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, StreamableFile, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { RolesGuard, User } from '@app/authorization';
 import { FormExportService } from './services/form-export.service';
 import { CreateFormExportDto, FormExportAcceptedDto, FormExportDownloadDto, FormExportStatusDto } from './dto';
 
 @ApiTags('Product Bulk Form')
+// bulk-session.controller.ts 와 같은 이유·같은 형태로 잠근다 — 이 컨트롤러(양식 생성·
+// 다운로드)도 잠그지 않으면 세션 컨트롤러만 잠근 우회로가 남는다.
+//
+// ⚠️ 배포 위험: "양식 다운로드"는 이미 라이브 노출 상태다. 실제 MD 계정 토큰의 `roles`
+// 클레임에 admin/master 가 없으면 배포 즉시 403 이 된다. 배포 전 실측이 선행조건 —
+// Task 13 체크리스트 항목, 이 자리에서 판단할 사안이 아니다.
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('product-forms')
 export class FormExportController {
   constructor(private readonly service: FormExportService) {}
@@ -15,6 +22,17 @@ export class FormExportController {
   @ApiResponse({ status: 202, type: FormExportAcceptedDto })
   async create(@Body() dto: CreateFormExportDto, @User() user: { userId: string }): Promise<FormExportAcceptedDto> {
     return this.service.request(dto.masterIds, user.userId);
+  }
+
+  // ⚠️ 이 핸들러는 반드시 `@Get(':exportId')` 보다 **위**에 있어야 한다. Nest 는 선언
+  // 순서로 매칭하므로 아래에 두면 'blank' 가 :exportId 로 잡혀 404 가 난다.
+  @Get('blank')
+  @ApiOperation({ summary: '빈 양식 다운로드. 신규 전용 세션용 — 잡도 만료도 없다.' })
+  @ApiResponse({ status: 200, description: 'xlsx 바이너리' })
+  @Header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+  @Header('Content-Disposition', 'attachment; filename="product-bulk-form-blank.xlsx"')
+  async getBlank(): Promise<StreamableFile> {
+    return new StreamableFile(await this.service.buildBlankWorkbook());
   }
 
   @Get(':exportId')

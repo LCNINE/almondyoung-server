@@ -49,6 +49,12 @@ export interface DraftInput {
    * 한 행이 optionKey·optionValueKey 를 함께 들고 있는 이 배열이 유일한 권위 있는 출처다.
    */
   optionRows: PrefillRow[];
+  /**
+   * 업로드 원본의 조합 시트 행(`BulkItemInput['bundle']['variants']`). `checkCreateStructure`
+   * 가 "같은 조합 두 번" 을 검사하는 유일한 출처다 — `payload.fields` 는 평면화 과정에서
+   * 뒤 행이 앞 행을 덮어써 몇 번 나왔는지 정보가 이미 사라진다(Task 10, 부록 C.4).
+   */
+  variantRows: PrefillRow[];
   conflictDecision: ConflictDecisionMap;
   baseSnapshot: BulkBaseSnapshot | null;
   images: ImageResolver;
@@ -166,7 +172,7 @@ export class BulkDraftApplier {
 
     // ① 구조 검증이 먼저다 — master 를 만든 뒤 실패하면 롤백이 지워주긴 하지만, 검증이
     //    가능한 것을 쓰기 뒤로 미루면 실패 비용만 커진다.
-    const structureErrors = checkCreateStructure(fields, input.optionRows);
+    const structureErrors = checkCreateStructure(fields, input.optionRows, input.variantRows);
     if (structureErrors.length > 0) throw new BadRequestError(formatRowErrors(structureErrors));
 
     const { data, errors } = buildVersionData(fields, input.payload, input.images);

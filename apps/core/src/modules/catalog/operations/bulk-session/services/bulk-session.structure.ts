@@ -1,8 +1,46 @@
-import { extractDirectiveImageKeys } from '../../import/services/product-import-image.directive';
 import type { AssembledRow } from './bulk-upload.assembler';
 import type { RowError, PrefillRow, UploadedBundle } from './bulk-session.types';
 import type { PrefillBundle } from './form-export.types';
 import type { FlatCategory } from './form-export.snapshot.reader';
+
+/**
+ * `::product-image{...}` 한 덩어리. product-import-image.directive.ts 에서 이식했다 — 6단계가 그 파일을 지운다.
+ *
+ * 같은 정규식 두 개(이 줄과 다음 줄)가 bulk-draft.fields.ts:13-14 에도 그대로 있다 — 그쪽은
+ * `replaceDirectiveImageKeys` 이식본용이다. 두 파일이 각자 이식했을 뿐 서로 참조하지 않으므로,
+ * 디렉티브 문법(`::product-image{...}` 형태나 속성 이름)이 바뀌면 **두 군데를 다 고쳐야** 한다.
+ * 통합은 이 작업의 스코프 밖이다.
+ */
+const DIRECTIVE_RE = /::product-image\{([^}]*)\}/g;
+/** 속성 하나. 순서에 의존하지 않으려고 attrs 안에서 따로 찾는다. */
+const IMAGE_KEY_ATTR_RE = /imageKey\s*=\s*"([^"]*)"/;
+
+/**
+ * 본문 마크다운의 `::product-image{imageKey="..."}` 디렉티브에서 참조된 imageKey 목록만 뽑는다.
+ *
+ * product-import-image.directive.ts 의 `extractDirectiveImageKeys` 를 **이식**했다(import
+ * 하지 않는다 — 6단계가 그 모듈을 통째로 지운다). 자매 함수 `replaceDirectiveImageKeys` 의
+ * 이식본은 이미 bulk-draft.fields.ts 에 있다.
+ *
+ * `resolveImageRefs`(아래)를 통해서만 쓰이는데, 그 호출부의 `addRef` 가 자체 `seen` Set 으로
+ * (usage, imageKey) 를 또 dedup 한다 — 그래서 이 함수의 dedup 이 깨져도 `resolveImageRefs`
+ * 수준에서는 안 드러난다. `export` 해서 아래 스펙에서 직접 부르는 이유가 그것이다.
+ */
+export function extractDirectiveImageKeys(markdown: string | undefined): string[] {
+  if (!markdown) return [];
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  // 전역 정규식은 lastIndex 를 들고 있다 — 모듈 상수를 여러 호출이 공유하므로
+  // matchAll 로 새 이터레이터를 만든다(exec 루프를 쓰면 호출 간에 상태가 샌다).
+  for (const match of markdown.matchAll(DIRECTIVE_RE)) {
+    const attr = IMAGE_KEY_ATTR_RE.exec(match[1]);
+    const key = attr?.[1]?.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    keys.push(key);
+  }
+  return keys;
+}
 
 /**
  * 수정 행의 옵션 구조가 스냅샷과 **완전히 같은지** 본다.

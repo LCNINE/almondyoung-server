@@ -26,20 +26,39 @@ function makeWorker(opts: { enabled?: string; claimed?: ClaimedBulkSession | nul
   const runParseSlice = jest.fn((): Promise<void> => Promise.resolve());
   const runValidateSlice = jest.fn((): Promise<void> => Promise.resolve());
   const runDraftSlice = jest.fn((): Promise<void> => Promise.resolve());
+  const runPublishSlice = jest.fn((): Promise<void> => Promise.resolve());
   const recordJobError = jest.fn((): Promise<void> => Promise.resolve());
   const clearConsecutiveFailures = jest.fn((): Promise<void> => Promise.resolve());
   const config = { get: jest.fn(() => opts.enabled) };
 
   const worker = new BulkSessionJobWorker(
-    { claim, runParseSlice, runValidateSlice, runDraftSlice, recordJobError, clearConsecutiveFailures } as never,
+    {
+      claim,
+      runParseSlice,
+      runValidateSlice,
+      runDraftSlice,
+      runPublishSlice,
+      recordJobError,
+      clearConsecutiveFailures,
+    } as never,
     config as never,
   );
-  return { worker, claim, runParseSlice, runValidateSlice, runDraftSlice, recordJobError, clearConsecutiveFailures };
+  return {
+    worker,
+    claim,
+    runParseSlice,
+    runValidateSlice,
+    runDraftSlice,
+    runPublishSlice,
+    recordJobError,
+    clearConsecutiveFailures,
+  };
 }
 
 const UPLOADED: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'uploaded' };
 const VALIDATING: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'validating' };
 const DRAFTING: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'drafting' };
+const PUBLISHING: ClaimedBulkSession = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'publishing' };
 
 describe('BulkSessionJobWorker.tick', () => {
   it('uploaded 를 잡으면 파싱 슬라이스를 돈다', async () => {
@@ -69,6 +88,15 @@ describe('BulkSessionJobWorker.tick', () => {
     expect(runDraftSlice).toHaveBeenCalledWith(DRAFTING);
     expect(runValidateSlice).not.toHaveBeenCalled();
     expect(runParseSlice).not.toHaveBeenCalled();
+  });
+
+  it('publishing 을 클레임하면 발행 슬라이스를 돈다', async () => {
+    const { worker, runPublishSlice, runValidateSlice } = makeWorker({ claimed: PUBLISHING });
+
+    await worker.tick();
+
+    expect(runPublishSlice).toHaveBeenCalledWith(PUBLISHING);
+    expect(runValidateSlice).not.toHaveBeenCalled();
   });
 
   it('슬라이스가 예외 없이 끝나면 연속 실패를 리셋한다', async () => {

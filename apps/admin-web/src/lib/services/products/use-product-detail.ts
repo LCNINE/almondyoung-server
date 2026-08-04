@@ -50,6 +50,8 @@ export type ProductDetailView = {
   images: ProductImage[];
   // version 모드에서만 채워짐. master 모드는 별도 variants 훅 사용.
   variantsInline: ProductVariantRow[] | null;
+  /** 일괄 세션이 이 버전을 잠갔으면 그 세션 id. master 모드는 항상 null. */
+  bulkSessionId: string | null;
 };
 
 function fromMaster(master: ProductMasterDetail): ProductDetailView {
@@ -89,6 +91,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     optionGroups: master.optionGroups,
     images: master.images,
     variantsInline: null,
+    bulkSessionId: null,
   };
 }
 
@@ -136,6 +139,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
       optionValues: v.optionValues,
       price: v.price,
     })),
+    bulkSessionId: detail.bulkSessionId ?? null,
   };
 }
 

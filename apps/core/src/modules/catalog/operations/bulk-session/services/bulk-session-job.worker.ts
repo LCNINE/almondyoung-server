@@ -8,8 +8,9 @@ import { BulkSessionJobManager, ClaimedBulkSession } from './bulk-session-job.ma
  * `@Cron` + 원자적 claim + `isProcessing` 가드.
  *
  * 한 틱은 세션 하나의 슬라이스 하나만 돈다. 클레임한 phase 가 레인을 가른다: `uploaded`
- * 면 파싱(1회), `drafting` 이면 draft 슬라이스, 그 밖(`validating`)이면 검증 슬라이스다.
- * 슬라이스가 틱 길이를 유계로 만들고, `isProcessing` 가드가 틱 누적을 막는다.
+ * 면 파싱(1회), `drafting` 이면 draft 슬라이스, `publishing` 이면 발행 슬라이스, 그 밖
+ * (`validating`)이면 검증 슬라이스다. 슬라이스가 틱 길이를 유계로 만들고, `isProcessing`
+ * 가드가 틱 누적을 막는다.
  *
  * `ScheduleModule.forRoot()` 는 앱 어딘가에서 한 번만 부르면 되고(전역 모듈이라
  * `apps/core/src/modules/inventory/core/inventory.module.ts:39` 의 등록이 앱 전체에
@@ -45,6 +46,7 @@ export class BulkSessionJobWorker {
       if (!claimed) return;
       if (claimed.phase === 'uploaded') await this.jobManager.runParseSlice(claimed);
       else if (claimed.phase === 'drafting') await this.jobManager.runDraftSlice(claimed);
+      else if (claimed.phase === 'publishing') await this.jobManager.runPublishSlice(claimed);
       else await this.jobManager.runValidateSlice(claimed);
       // 여기 도달했다는 건 슬라이스가 예외 없이 끝났다는 뜻이다. catch 에서 부르면 안 된다
       // (리셋이 연속 실패 상한을 영원히 막는다).

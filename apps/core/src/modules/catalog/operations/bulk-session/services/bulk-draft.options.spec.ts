@@ -139,6 +139,12 @@ describe('buildOptionAdd (신규 행)', () => {
   });
 });
 
+/** `createFields` 가 나타내는 조합 시트 원본 행 — 조합 중복 검사의 유일한 출처(bundle.variants). */
+const createVariantRows: PrefillRow[] = [
+  { rowKey: 'P1', combination: 'C1', basePrice: '10000' },
+  { rowKey: 'P1', combination: 'C2', basePrice: '10000' },
+];
+
 describe('checkCreateStructure (신규 행 구조 검증 — 스펙에 없던 갭)', () => {
   it('한 그룹 안에서 값 표시명이 겹치면 오류다', () => {
     const errors = checkCreateStructure(
@@ -147,6 +153,7 @@ describe('checkCreateStructure (신규 행 구조 검증 — 스펙에 없던 �
         'optionValue:C2.optionValueName': '빨강',
       },
       createOptionRows,
+      createVariantRows,
     );
 
     expect(errors).toHaveLength(1);
@@ -154,13 +161,39 @@ describe('checkCreateStructure (신규 행 구조 검증 — 스펙에 없던 �
   });
 
   it('조합이 옵션 시트에 없는 옵션값키를 가리키면 오류다', () => {
-    const errors = checkCreateStructure({ ...createFields, 'variant:C9.basePrice': '10000' }, createOptionRows);
+    const errors = checkCreateStructure(
+      { ...createFields, 'variant:C9.basePrice': '10000' },
+      createOptionRows,
+      createVariantRows,
+    );
 
     expect(errors.some((e) => e.message.includes('C9'))).toBe(true);
   });
 
   it('정상 구조에는 오류가 없다', () => {
-    expect(checkCreateStructure(createFields, createOptionRows)).toEqual([]);
+    expect(checkCreateStructure(createFields, createOptionRows, createVariantRows)).toEqual([]);
+  });
+
+  it('같은 조합이 두 행에 있으면 행 오류다', () => {
+    const variantRows: PrefillRow[] = [
+      { rowKey: 'P1', combination: 'OV-1+OV-3', basePrice: '10000' },
+      { rowKey: 'P1', combination: 'OV-1+OV-3', basePrice: '20000' },
+    ];
+
+    const errors = checkCreateStructure(createFields, createOptionRows, variantRows);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].sheet).toBe('조합');
+    expect(errors[0].message).toContain('OV-1+OV-3');
+  });
+
+  it('서로 다른 조합은 오류가 아니다', () => {
+    const variantRows: PrefillRow[] = [
+      { rowKey: 'P1', combination: 'OV-1+OV-3' },
+      { rowKey: 'P1', combination: 'OV-2+OV-3' },
+    ];
+
+    expect(checkCreateStructure(createFields, createOptionRows, variantRows)).toHaveLength(0);
   });
 });
 

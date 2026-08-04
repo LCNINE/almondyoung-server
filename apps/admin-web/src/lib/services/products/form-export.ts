@@ -8,8 +8,9 @@ import { productQueryKeys } from './query-keys';
 
 /**
  * 데이터가 아직 없는 동안에도 계속 두드린다 — 첫 요청이 한 번 실패해도 화면이 얼지 않는다.
- * TanStack Query 는 에러 상태를 이 콜백에 넘기지 않으므로 판단 재료가 data 뿐이다
- * (선례: queries.ts 의 useImportProgress refetchInterval).
+ * TanStack Query 는 에러 상태를 이 콜백에 넘기지 않으므로 판단 재료가 data 뿐이다.
+ * data 를 undefined 로 두면(초기 로드 · 일시적 5xx) 인터벌이 걸리지 않아 화면이 마운트
+ * 내내 멈춘 채로 남으므로, 값이 들어올 때까지는 진행 중으로 보고 계속 두드려야 한다.
  */
 export function formExportRefetchInterval(
   data: FormExportStatus | undefined

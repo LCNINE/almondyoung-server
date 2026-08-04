@@ -11,10 +11,15 @@ jest.mock(
   { virtual: true },
 );
 
-import { Logger } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { BadRequestError } from '@app/shared';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { productBulkSessions, productBulkItems, productBulkImages } from '../../../schema/catalog.schema';
+import {
+  productBulkSessions,
+  productBulkItems,
+  productBulkImages,
+  productMasterVersions,
+} from '../../../schema/catalog.schema';
 import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES, imageResolverFrom } from './bulk-session-job.manager';
 import type { DraftInput } from './bulk-draft.applier';
 import type { ParsedUpload, RawSheetRow } from './bulk-upload.parser';
@@ -88,10 +93,13 @@ interface SelectChain extends Promise<FakeRow[]> {
  * 첫 문장**이어야만 의미가 있다(별도 트랜잭션이거나 apply 뒤면 취소 창이 그대로 남는다).
  */
 interface TrxOp {
-  kind: 'begin' | 'end' | 'select' | 'insert' | 'update';
+  kind: 'begin' | 'end' | 'select' | 'insert' | 'update' | 'call';
   table?: string;
   /** select 에 `.for('update')` 가 붙었는지. */
   forUpdate?: boolean;
+  /** `kind: 'call'` 일 때 어느 서비스 메서드 호출인지 — `publishOne` 의 관문 ④ 순서
+   *  (잠금 해제 UPDATE 가 `publishVersion` 보다 먼저인가)를 관측할 유일한 수단이다. */
+  fn?: string;
 }
 
 /**
@@ -196,6 +204,18 @@ interface HarnessOpts {
   downloadError?: Error;
   /** drafting 슬라이스가 쓰는 페이크 applier. 기본은 항상 성공하는 `makeApplier()`. */
   applier?: ReturnType<typeof makeApplier>;
+  /** 발행 슬라이스의 `getVersionById` 가 돌려줄 draft 버전. 기본은 발행 시점 가드(관문 ③)를
+   *  통과하는 조합이다 — parentVersionId 가 아래 `publishActiveVersion.id` 와 같다. */
+  publishDraftVersion?: FakeRow;
+  /** 발행 슬라이스의 `getActiveVersion` 이 돌려줄 현재 active. `null` 이면 "active 없음"
+   *  (실제 서비스가 던지는 NotFoundException)을 흉내낸다 — 신규 행의 정상 상태다. */
+  publishActiveVersion?: FakeRow | null;
+  /** `publishActiveVersion` 이 `null` 일 때 `getActiveVersion` 이 던질 오류. 기본은 실제
+   *  서비스와 같은 `NotFoundException`이다 — 관문 ③의 "NotFound 가 아니면 되던진다" 회귀를
+   *  잠그려면 이 필드로 다른 오류 클래스(커넥션 끊김 등)를 주입한다. */
+  publishActiveVersionError?: Error;
+  /** `BulkVariantCodeChecker.checkSession` 의 반환값(새로 invalid 로 표시한 행 수). 기본 0. */
+  variantCodeFlagged?: number;
 }
 
 function makeHarness(opts: HarnessOpts = {}) {
@@ -208,6 +228,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     if (table === productBulkSessions) return 'sessions';
     if (table === productBulkItems) return 'items';
     if (table === productBulkImages) return 'images';
+    if (table === productMasterVersions) return 'masterVersions';
     return 'other';
   };
 
@@ -286,19 +307,67 @@ function makeHarness(opts: HarnessOpts = {}) {
   const config = { get: () => undefined };
   const applier = opts.applier ?? makeApplier();
 
+  // 발행 슬라이스가 쓰는 ProductVersionsService 페이크. 세 메서드만 흉내낸다.
+  // `publishVersion` 호출은 `ops` 에도 마커를 남긴다 — 관문 ④(잠금 해제가 발행보다 먼저)의
+  // **순서**를 확인하려면 masterVersions UPDATE 와 이 호출의 상대 위치가 필요하기 때문이다.
+  const publishDraftVersion: FakeRow = {
+    id: 'draft-1',
+    masterId: 'master-1',
+    parentVersionId: 'v-base',
+    status: 'draft',
+    ...opts.publishDraftVersion,
+  };
+  const publishActiveVersion = opts.publishActiveVersion === undefined ? { id: 'v-base' } : opts.publishActiveVersion;
+  const getVersionById = jest.fn(() => Promise.resolve(publishDraftVersion));
+  const getActiveVersion = jest.fn(() =>
+    publishActiveVersion
+      ? Promise.resolve(publishActiveVersion)
+      : Promise.reject(opts.publishActiveVersionError ?? new NotFoundException('활성 버전을 찾을 수 없습니다')),
+  );
+  const publishVersion = jest.fn(() => {
+    ops.push({ kind: 'call', fn: 'publishVersion' });
+    return Promise.resolve();
+  });
+  const versions = { getVersionById, getActiveVersion, publishVersion };
+
+  // 검증 슬라이스의 마감 분기(items.length===0)가 review 전 세션 전역 variantCode 검사를
+  // 부른다(Task 11) — 실제 구현을 세우지 않고 반환값만 흉내낸다. `ops` 에도 마커를 남겨
+  // "review CAS 보다 먼저 불렸는가" 순서를 확인할 수 있게 한다.
+  const checkSession = jest.fn(() => {
+    ops.push({ kind: 'call', fn: 'checkSession' });
+    return Promise.resolve(opts.variantCodeFlagged ?? 0);
+  });
+  const variantCodes = { checkSession };
+
   // 생성자는 실제 DbService<PimSchema>/FormExportFileClient/FormExportSnapshotReader/
-  // ProductCategoriesService/BulkDraftApplier/ConfigService 타입을 요구한다 — 이 페이크들은
-  // 매니저가 실제로 부르는 메서드만 구조적으로 흉내내므로 `as never` 캐스팅은 이 하네스
-  // 관례를 따른다(form-export-job.manager.spec.ts:192-202).
+  // ProductCategoriesService/BulkDraftApplier/ProductVersionsService/ConfigService/
+  // BulkVariantCodeChecker 타입을 요구한다 — 이 페이크들은 매니저가 실제로 부르는 메서드만
+  // 구조적으로 흉내내므로 `as never` 캐스팅은 이 하네스 관례를 따른다
+  // (form-export-job.manager.spec.ts:192-202).
   const manager = new BulkSessionJobManager(
     db as never,
     { download } as never,
     { renderMaster } as never,
     { getCategoryTree } as never,
     applier as never,
+    versions as never,
     config as never,
+    variantCodes as never,
   );
-  return { manager, updates, inserts, selects, ops, trx, download, renderMaster, getCategoryTree, applier };
+  return {
+    manager,
+    updates,
+    inserts,
+    selects,
+    ops,
+    trx,
+    download,
+    renderMaster,
+    getCategoryTree,
+    applier,
+    versions,
+    checkSession,
+  };
 }
 
 const SESSION_ROW: FakeRow = {
@@ -800,7 +869,7 @@ describe('BulkSessionJobManager.runValidateSlice', () => {
   });
 
   it('미검증 행이 없으면 phase 를 review 로 밀고 토큰 CAS + 취소 가드를 건다', async () => {
-    const { manager, updates } = makeHarness({ bulkItems: [] });
+    const { manager, updates, checkSession } = makeHarness({ bulkItems: [] });
 
     await manager.runValidateSlice(VALIDATING);
 
@@ -810,6 +879,27 @@ describe('BulkSessionJobManager.runValidateSlice', () => {
     expect(sql.toLowerCase()).toContain('"cancel_requested_at" is null');
     expect(params).toContain('tok-1');
     expect(finish.values).toMatchObject({ leaseUntil: null, leaseToken: null });
+    // review 로 넘기기 직전에 세션 전역 variantCode 사전검사(Task 11)를 정확히 이 세션에 대해 부른다.
+    expect(checkSession).toHaveBeenCalledWith('sess-1');
+  });
+
+  it('세션 전역 variantCode 검사는 미검증 행이 남아 있으면 부르지 않는다 — 아직 못 본 코드로 오판할 수 있다', async () => {
+    const { manager, checkSession } = makeHarness({ bulkItems: [itemRow()] });
+
+    await manager.runValidateSlice(VALIDATING);
+
+    expect(checkSession).not.toHaveBeenCalled();
+  });
+
+  it('세션 전역 variantCode 검사는 review CAS 보다 먼저 불린다', async () => {
+    const { manager, ops } = makeHarness({ bulkItems: [] });
+
+    await manager.runValidateSlice(VALIDATING);
+
+    const checkOrder = ops.findIndex((op) => op.kind === 'call' && op.fn === 'checkSession');
+    const reviewOrder = ops.findIndex((op) => op.kind === 'update' && op.table === 'sessions');
+    expect(checkOrder).toBeGreaterThanOrEqual(0);
+    expect(checkOrder).toBeLessThan(reviewOrder);
   });
 
   it('기준 상품의 active 가 사라졌으면 그 행만 invalid 다', async () => {
@@ -1310,6 +1400,30 @@ describe('BulkSessionJobManager.runDraftSlice', () => {
     expect(String(itemUpdate.values.errorMessage).length).toBe(500);
   });
 
+  // 최종 리뷰 발견 ②: 이 catch(draftOne)가 지금까지 classifyPublishError 를 전혀 부르지
+  // 않고 예외 원문(영어 DB 오류 포함)을 그대로 error_message 에 실었다 — §10.7 이 "닫았다"고
+  // 적은 errorMessage 분류는 실은 publishOne 쪽에만 걸려 있었다. 분류가 붙었는지와, 원문이
+  // 로그로는 여전히 남는지를 함께 잠근다.
+  it('draft 생성 실패는 원문이 아니라 분류된 문구를 error_message 에 남기고, 원문은 로그로 남는다', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const applier = {
+      applied: [] as number[],
+      inputs: [] as DraftInput[],
+      apply: () => Promise.reject(new Error('value too long for type character varying(50)')),
+    };
+    const { manager, updates } = makeHarness({ applier, bulkItems: [draftItemRow()] });
+
+    await manager.runDraftSlice(DRAFTING);
+
+    const itemUpdate = updates.find((u) => u.table === 'items')!;
+    expect(itemUpdate.values.errorMessage).toBe('입력한 값이 저장할 수 있는 길이(50자)를 넘었습니다.');
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('value too long for type character varying(50)'),
+      expect.any(String),
+    );
+    warnSpy.mockRestore();
+  });
+
   // ─────────── 취소 레이스 (최종 리뷰 ①) ───────────
   //
   // `renewLease` 의 취소 검사와 draft 트랜잭션의 커밋 사이에 취소가 커밋되면, 그 행의 draft 는
@@ -1359,6 +1473,159 @@ describe('BulkSessionJobManager.runDraftSlice', () => {
     expect(applier.applied).toEqual([]);
     const itemUpdate = updates.find((u) => u.table === 'items')!;
     expect(itemUpdate.values.status).toBe('failed');
+  });
+});
+
+describe('BulkSessionJobManager.runPublishSlice', () => {
+  const PUBLISHING = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'publishing' };
+
+  function publishItemRow(overrides: FakeRow = {}): FakeRow {
+    return {
+      id: 'item-1',
+      sessionId: 'sess-1',
+      rowNumber: 2,
+      status: 'drafted',
+      publishStatus: 'pending',
+      draftVersionId: 'draft-1',
+      masterId: 'master-1',
+      ...overrides,
+    };
+  }
+
+  // 관문 ①: 세션 행 FOR UPDATE 잠금이 트랜잭션의 첫 문장이어야 한다. `renewLease`(루프의
+  // 값싼 앞단 필터)만으로는 부족하다 — 그 검사와 이 커밋 사이에 취소가 커밋되면 "취소했는데
+  // 상품이 발행됨"이 된다. 4단계 draftOne 회귀 테스트(위 파일 상단)와 같은 형태로, ops 로그의
+  // begin 바로 다음 문장을 본다.
+  it('발행 트랜잭션의 첫 문장은 세션 행 FOR UPDATE 잠금이다', async () => {
+    const { manager, ops } = makeHarness({ bulkItems: [publishItemRow()] });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    const updateIndex = ops.findIndex((op) => op.kind === 'update' && op.table === 'items');
+    expect(updateIndex).toBeGreaterThan(0);
+    let beginIndex = updateIndex;
+    while (ops[beginIndex].kind !== 'begin') beginIndex -= 1;
+    // 잠금이 publishVersion 뒤로 밀리면 취소 레이스의 창이 그대로 남는다.
+    expect(ops[beginIndex + 1]).toEqual({ kind: 'select', table: 'sessions', forUpdate: true });
+  });
+
+  // 관문 ①의 실효성: renewLease 는 취소를 못 보게, 잠근 세션 행은 취소를 보게 둔다 —
+  // 정확히 draftOne 이 막던 그 창이다(스펙 §10.4).
+  it('트랜잭션 안에서 취소가 관측되면 발행도 행 갱신도 하지 않는다', async () => {
+    const { manager, versions, updates } = makeHarness({
+      bulkItems: [publishItemRow()],
+      // renewLease 는 취소를 **못 본다** — 그 검사 직후에 취소가 커밋된 상황을 흉내낸다.
+      renewRows: [{ cancelRequestedAt: null }],
+      // 트랜잭션 안의 FOR UPDATE 재확인은 커밋된 취소를 본다.
+      sessionRow: { ...SESSION_ROW, cancelRequestedAt: new Date() },
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(versions.publishVersion).not.toHaveBeenCalled();
+    expect(updates.filter((u) => u.table === 'items')).toHaveLength(0);
+  });
+
+  // 관문 ③: 발행 시점 가드. 현재 active 가 draft 의 parentVersionId 와 다르면 그 사이 남이
+  // 먼저 발행했다는 뜻이고, 그대로 발행하면 남의 변경이 통째로 사라진다(스펙 §2.2·§3.10).
+  it('현재 active 가 draft 의 parentVersionId 와 다르면 그 행만 실패시킨다', async () => {
+    const { manager, versions, updates } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: 'V-draft' })],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: 'V-base', status: 'draft' },
+      publishActiveVersion: { id: 'V-other' },
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(versions.publishVersion).not.toHaveBeenCalled();
+    const itemUpdates = updates.filter((u) => u.table === 'items');
+    expect(itemUpdates).toHaveLength(1);
+    expect(itemUpdates[0].values.publishStatus).toBe('failed');
+    expect(String(itemUpdates[0].values.publishError)).toContain('기준이 변경되었습니다');
+  });
+
+  // 관문 ③ 회귀 (code review Important): `getActiveVersion` 이 NotFound 로 던지는 것은
+  // "active 가 없다"는 신규 행의 정상 상태다 — parentVersionId=null 과 currentActiveId=null
+  // 이 일치해 가드를 통과해야 한다. 세션 행의 절반이 신규 행이라 이 경로에 커버리지가
+  // 없으면 관문 ③ 은 수정 행에서만 검증된 셈이다.
+  it('신규 행은 active 가 없어도 발행된다 (getActiveVersion 의 NotFound 는 정상 흐름이다)', async () => {
+    const { manager, versions, updates } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: 'V-draft' })],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: null, status: 'draft' },
+      // 신규 행: active 가 아직 없다 — 기본값(NotFoundException)을 그대로 쓴다.
+      publishActiveVersion: null,
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', expect.anything(), {
+      origin: 'bulk_import',
+      importSessionId: 'sess-1',
+    });
+    const itemUpdate = updates.find((u) => u.table === 'items')!;
+    expect(itemUpdate.values.publishStatus).toBe('published');
+  });
+
+  // 관문 ③ 회귀 (code review Important): bare catch 였을 때 정확히 이 픽스처가 가드를
+  // 우회시켰다 — parentVersionId=null 인 신규 행에서 getActiveVersion 이 NotFound **가
+  // 아닌** 오류(커넥션 끊김 등)를 던지면 currentActiveId 가 조용히 null 이 되어
+  // `null !== null` 이 거짓이 되므로 가드가 통과해 버렸다. 되던지기가 이 사고를 막는다 —
+  // 바깥 catch 가 그 오류를 분류해 이 행만 실패시켜야 한다.
+  it('getActiveVersion 이 NotFound 가 아닌 오류를 던지면 그 행을 실패시킨다 (가드를 통과시키지 않는다)', async () => {
+    const { manager, versions, updates } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: 'V-draft' })],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: null, status: 'draft' },
+      publishActiveVersion: null,
+      publishActiveVersionError: new Error('커넥션 끊김'),
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(versions.publishVersion).not.toHaveBeenCalled();
+    const itemUpdates = updates.filter((u) => u.table === 'items');
+    expect(itemUpdates).toHaveLength(1);
+    expect(itemUpdates[0].values.publishStatus).toBe('failed');
+  });
+
+  // 관문 ④: bulk_session_id 를 풀고 나서 publishVersion 을 부른다. `publishVersion` 자신이
+  // bulkSessionId 가 남아있으면 409 로 거부하므로(product-versions.service.ts:274-276),
+  // 순서가 바뀌면 이 호출이 바로 그 자리에서 죽는다.
+  it('발행 직전에 bulk_session_id 를 풀고 publishVersion 을 origin=bulk_import 로 부른다', async () => {
+    const { manager, versions, updates, ops } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: 'V-draft' })],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: 'V-base', status: 'draft' },
+      publishActiveVersion: { id: 'V-base' },
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    const versionUpdate = updates.find((u) => u.table === 'masterVersions')!;
+    const { params } = renderQuery(versionUpdate.condition);
+    expect(params).toContain('V-draft');
+    expect(versionUpdate.values).toMatchObject({ bulkSessionId: null });
+    expect(versions.publishVersion).toHaveBeenCalledWith('V-draft', expect.anything(), {
+      origin: 'bulk_import',
+      importSessionId: 'sess-1',
+    });
+
+    // 순서가 계약이다 — 잠금 해제가 뒤로 가면 publishVersion 이 409 로 죽는다.
+    const versionUpdateOpIndex = ops.findIndex((op) => op.kind === 'update' && op.table === 'masterVersions');
+    const publishCallOpIndex = ops.findIndex((op) => op.kind === 'call' && op.fn === 'publishVersion');
+    expect(versionUpdateOpIndex).toBeGreaterThan(-1);
+    expect(publishCallOpIndex).toBeGreaterThan(versionUpdateOpIndex);
+  });
+
+  it('대상이 없으면 phase 를 published 로 마감한다 (토큰 CAS)', async () => {
+    const { manager, updates } = makeHarness({ bulkItems: [] });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    const finish = updates.find((u) => u.values.phase === 'published')!;
+    const { sql, params } = renderQuery(finish.condition);
+    expect(sql.toLowerCase()).toMatch(/"lease_token"\s*=/);
+    expect(sql.toLowerCase()).toContain('"cancel_requested_at" is null');
+    expect(params).toContain('tok-1');
+    expect(finish.values).toMatchObject({ leaseUntil: null, leaseToken: null });
   });
 });
 

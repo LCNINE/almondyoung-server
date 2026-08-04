@@ -30,6 +30,14 @@ function rowMatchesCondition(row: FakeRow, condition: unknown): boolean {
     const key = toCamelKey(m[1]);
     if (row[key] !== params[Number(m[2]) - 1]) ok = false;
   }
+  // Task 3 리뷰: getItems 의 conflict 필터가 `isNotNull(productBulkItems.conflict)` 를
+  // 건다 — 이건 `"col" = $n` 모양이 아니라 `"col" is not null` 로 렌더된다(파라미터 없음).
+  // 위 등호 루프가 못 잡는 패턴이라 이 필터를 그냥 무시하고 전부 통과시키는 거짓-초록이
+  // 났었다. 같은 렌더-후-패턴매치 기법을 한 줄 더 얹는다.
+  for (const m of lowered.matchAll(/"(\w+)"\s+is not null/g)) {
+    const key = toCamelKey(m[1]);
+    if (row[key] === null || row[key] === undefined) ok = false;
+  }
   return ok;
 }
 
@@ -48,6 +56,19 @@ interface SelectChain extends Promise<FakeRow[]> {
   offset(n?: number): SelectChain;
 }
 
+/**
+ * `groupBy(column)` 에 실제로 넘어온 drizzle 컬럼에서 SQL 컬럼명을 뽑아 픽스처 키
+ * (camelCase)로 바꾼다. **`status` 로 고정하면 안 된다** — 이 리더는 이미 세 축을
+ * groupBy 한다: `productBulkItems.status`, `productBulkImages.status`,
+ * `productBulkItems.publishStatus`(Task 8). 고정 `row.status` 를 쓰면 `publishStatus` 로
+ * 그룹핑한 쿼리가 픽스처의 (전혀 다른 의미인) `status` 필드를 세는 거짓-초록이 생긴다 —
+ * Task 8 브리프가 명시적으로 경고한 함정이다.
+ */
+function groupByField(column: unknown): string {
+  const named = column as { name?: unknown };
+  return typeof named.name === 'string' ? toCamelKey(named.name) : 'status';
+}
+
 function selectChain(rows: FakeRow[], isCount: boolean): SelectChain {
   const resolved = isCount ? [{ value: rows.length }] : rows;
   const builder = Promise.resolve(resolved) as SelectChain;
@@ -57,13 +78,15 @@ function selectChain(rows: FakeRow[], isCount: boolean): SelectChain {
       isCount,
     );
   builder.orderBy = () => builder;
-  // 이 리더가 groupBy 하는 유일한 축은 status 다(getProgress 의 itemCounts/imageCounts) —
-  // 실제로 status 별로 세어 `{status, value}` 를 돌려준다.
-  builder.groupBy = () => {
+  // 실제로 groupBy 에 넘어온 컬럼(들 중 첫 번째)이 가리키는 필드로 세어 `{status, value}`
+  // 를 돌려준다 — 출력 키가 `status` 인 것은 세 그룹핑 쿼리 전부 `{ status: <col>, value:
+  // count() }` 로 프로젝션하기 때문이지, 입력 필드가 항상 `status` 라서가 아니다.
+  builder.groupBy = (...groupArgs) => {
+    const field = groupByField(groupArgs[0]);
     const counts = new Map<string, number>();
     for (const row of rows) {
-      const status = String(row.status);
-      counts.set(status, (counts.get(status) ?? 0) + 1);
+      const value = String(row[field]);
+      counts.set(value, (counts.get(value) ?? 0) + 1);
     }
     return selectChain(
       [...counts.entries()].map(([status, value]) => ({ status, value })),
@@ -155,6 +178,33 @@ describe('BulkSessionReader.getProgress', () => {
     expect(progress.phase).toBe('review');
   });
 
+  // Task 8: 발행 단계는 아이템 status 와 축이 다르다 — 한 행이 status='drafted' 이면서
+  // publishStatus='failed' 일 수 있다. 여러 상태가 섞인 픽스처로 각 그룹의 개수가 맞는지
+  // 단정한다(브리프의 "집계 페이크" 경고 — 그룹핑 축을 잘못 잡으면 이 테스트가 거짓 초록이
+  // 된다). `toHaveLength(2)` 를 같이 걸어 "축을 착각해 한 그룹으로 뭉치는" 실패도 잡는다.
+  it('진행률이 publish_status 별 집계를 함께 준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'published' },
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'published' },
+        { sessionId: 'sess-1', status: 'drafted', publishStatus: 'failed' },
+        // 다른 세션의 행 — eq(sessionId) 가 빠지면 이 행까지 집계에 섞인다.
+        { sessionId: 'other-session', status: 'drafted', publishStatus: 'published' },
+      ],
+    });
+
+    const progress = await reader.getProgress('sess-1', 'u1');
+
+    expect(progress.publishCounts).toEqual(
+      expect.arrayContaining([
+        { status: 'published', count: 2 },
+        { status: 'failed', count: 1 },
+      ]),
+    );
+    expect(progress.publishCounts).toHaveLength(2);
+  });
+
   it('남의 세션은 404 다 — 있는데 내 것 아님과 아예 없음을 구분해주지 않는다', async () => {
     const { reader } = harness({ sessions: [{ ...SESSION_ROW, uploadedBy: 'other' }] });
 
@@ -196,7 +246,7 @@ describe('BulkSessionReader.getItems', () => {
       items: [itemRow({ id: 'item-42' })],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].id).toBe('item-42');
   });
@@ -218,7 +268,7 @@ describe('BulkSessionReader.getItems', () => {
       ],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].changes[0]).toEqual({
       field: 'product.basePrice',
@@ -235,9 +285,71 @@ describe('BulkSessionReader.getItems', () => {
       items: [itemRow({ kind: 'create', payload: { fields: { 'product.name': '새 상품' } }, baseSnapshot: null })],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].changes[0]).toMatchObject({ field: 'product.name', before: '', after: '새 상품' });
+  });
+
+  // 상품 오너 fix-round: BulkSessionItemDto 에 productName 이 없어 화면이 이름을 뽑을 방법이
+  // 없었다(changes 는 before!==after 인 필드만 남기므로, 이름을 안 건드린 update 행에는
+  // 'product.name' 이 아예 없다). 세 경우(create·이름 안 건드린 update·리네임한 update) 를
+  // 각각 검증한다.
+  it('create 행의 productName 은 업로드값이다 — 비교 대상(스냅샷)이 없다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [itemRow({ kind: 'create', payload: { fields: { 'product.name': '새 상품' } }, baseSnapshot: null })],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
+
+    expect(result.data[0].productName).toBe('새 상품');
+  });
+
+  it('이름을 건드리지 않은 update 행은 productName 이 스냅샷의 현재 이름으로 떨어진다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({
+          kind: 'update',
+          // 이름은 업로드 payload 에 없다 — 다른 필드만 바꾼 흔한 경우.
+          payload: { fields: { 'product.basePrice': '15000' } },
+          baseSnapshot: {
+            product: { name: '기존 상품', basePrice: '10000' },
+            options: [],
+            variants: [],
+            categories: [],
+            constraint: null,
+          },
+        }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
+
+    expect(result.data[0].productName).toBe('기존 상품');
+  });
+
+  it('이름을 바꾼 update 행은 productName 이 새 이름이다 — 승인되면 그 이름이 될 것이다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({
+          kind: 'update',
+          payload: { fields: { 'product.name': '새 이름' } },
+          baseSnapshot: {
+            product: { name: '옛 이름' },
+            options: [],
+            variants: [],
+            categories: [],
+            constraint: null,
+          },
+        }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
+
+    expect(result.data[0].productName).toBe('새 이름');
   });
 
   it('결정하지 않은 충돌은 decision: null 로 온다', async () => {
@@ -251,7 +363,7 @@ describe('BulkSessionReader.getItems', () => {
       ],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].conflicts[0]).toEqual({
       field: 'product.brand',
@@ -274,7 +386,7 @@ describe('BulkSessionReader.getItems', () => {
       ],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].conflicts[0].decision).toBe('overwrite');
   });
@@ -286,7 +398,7 @@ describe('BulkSessionReader.getItems', () => {
       items: [itemRow({ id: 'item-1' }), itemRow({ id: 'item-2', sessionId: 'other-session' })],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data.map((row) => row.id)).toEqual(['item-1']);
     expect(result.total).toBe(1);
@@ -295,7 +407,9 @@ describe('BulkSessionReader.getItems', () => {
   it('남의 세션은 404 다', async () => {
     const { reader } = harness({ sessions: [{ ...SESSION_ROW, uploadedBy: 'other' }] });
 
-    await expect(reader.getItems('sess-1', 'u1', undefined, 1, 20)).rejects.toBeInstanceOf(NotFoundError);
+    await expect(reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
   });
 
   // Task 9: draftVersionId 가 있어야 화면이 "생성된 draft 를 연다" 링크를 만들 수 있다.
@@ -305,7 +419,7 @@ describe('BulkSessionReader.getItems', () => {
       items: [itemRow({ status: 'drafted', draftVersionId: 'draft-1' })],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].draftVersionId).toBe('draft-1');
   });
@@ -316,9 +430,205 @@ describe('BulkSessionReader.getItems', () => {
       items: [itemRow({ draftVersionId: null })],
     });
 
-    const result = await reader.getItems('sess-1', 'u1', undefined, 1, 20);
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
 
     expect(result.data[0].draftVersionId).toBeNull();
+  });
+
+  // Task 8: 화면이 "무엇이 실패했는지" 보려면 publishStatus·publishError 가 행 목록에
+  // 실려야 한다 — 지금까지는 진행률 집계에만 있고 행 단위로는 내려주지 않았다.
+  it('행 목록이 발행 상태와 실패 사유를 함께 준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [itemRow({ id: 'I1', publishStatus: 'failed', publishError: '상품코드 중복' })],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
+
+    expect(result.data[0]).toMatchObject({ publishStatus: 'failed', publishError: '상품코드 중복' });
+  });
+
+  // Task 3 리뷰 Important: conflict 필터가 배선한 SQL 게이트(isNotNull)·메모리 필터
+  // (hasUndecided)·슬라이스·total 계산 어느 것도 테스트가 없었다. 아래 다섯 개가 그 자리를
+  // 채운다.
+  const CONFLICT_ENTRY = { base: 'A', mine: 'B', current: 'C' };
+
+  it('conflict=undefined 는 충돌 여부와 무관하게 기존 SQL 페이징 경로로 전부 돌려준다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({ id: 'with-conflict', conflict: { 'product.brand': CONFLICT_ENTRY } }),
+        itemRow({ id: 'no-conflict', conflict: null }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, undefined, 1, 20);
+
+    expect(result.data.map((row) => row.id).sort()).toEqual(['no-conflict', 'with-conflict']);
+    expect(result.total).toBe(2);
+  });
+
+  it('conflict=any 는 충돌이 있는 행만 돌려주고 없는 행은 뺀다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({ id: 'with-conflict', conflict: { 'product.brand': CONFLICT_ENTRY } }),
+        itemRow({ id: 'no-conflict', conflict: null }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 'any', undefined, 1, 20);
+
+    expect(result.data.map((row) => row.id)).toEqual(['with-conflict']);
+    expect(result.total).toBe(1);
+  });
+
+  it('conflict=undecided 는 전부 결정된 행은 빼고 미결정 필드가 남은 행만 남긴다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({
+          id: 'all-decided',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: { 'product.brand': 'overwrite' },
+        }),
+        itemRow({
+          id: 'has-undecided',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 'undecided', undefined, 1, 20);
+
+    expect(result.data.map((row) => row.id)).toEqual(['has-undecided']);
+  });
+
+  // 화면의 미결정-충돌 배지가 limit=1 로 이 total 만 읽는다(브리프 페이징 규약) — SQL 이
+  // 통과시킨(=conflict 가 있는) 행 수(3)가 아니라 메모리 필터를 거친 뒤(=undecided 인)
+  // 행 수(1)가 나와야 한다. 버그로 `all.length` 를 돌려주면 이 단정이 3 을 보고 깨진다.
+  it('conflict=undecided 의 total 은 SQL 이 통과시킨 개수가 아니라 메모리 필터 후 개수다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({
+          id: 'decided-1',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: { 'product.brand': 'overwrite' },
+        }),
+        itemRow({
+          id: 'decided-2',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: { 'product.brand': 'skip' },
+        }),
+        itemRow({
+          id: 'undecided-1',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 'undecided', undefined, 1, 20);
+
+    expect(result.total).toBe(1);
+    expect(result.data.map((row) => row.id)).toEqual(['undecided-1']);
+  });
+
+  // limit 이 필터링된 집합보다 작을 때: data 는 그 페이지분만, total 은 필터링된 전체
+  // 개수를 유지해야 한다(슬라이스가 total 계산 뒤에 일어나야 한다는 뜻).
+  it('필터링된 결과를 limit 보다 크면 페이지로 자르되 total 은 필터링된 전체 개수를 유지한다', async () => {
+    const undecidedRow = (id: string) =>
+      itemRow({ id, conflict: { 'product.brand': CONFLICT_ENTRY }, conflictDecision: null });
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [undecidedRow('row-1'), undecidedRow('row-2'), undecidedRow('row-3')],
+    });
+
+    const page1 = await reader.getItems('sess-1', 'u1', undefined, 'undecided', undefined, 1, 2);
+    expect(page1.data.map((row) => row.id)).toEqual(['row-1', 'row-2']);
+    expect(page1.total).toBe(3);
+
+    const page2 = await reader.getItems('sess-1', 'u1', undefined, 'undecided', undefined, 2, 2);
+    expect(page2.data.map((row) => row.id)).toEqual(['row-3']);
+    expect(page2.total).toBe(3);
+  });
+
+  // fix-round: published 패널이 실패 행을 찾을 서버 필터가 없어서(admin-web 이 넉넉한
+  // limit 을 보냈지만 이 라우트의 실제 상한은 parseLimit 이 미는 100 이라, 세션이 100행을
+  // 넘으면 뒤쪽 실패 행이 클라이언트 필터에 조용히 안 잡혔다) publishStatus 필터를
+  // 추가한다. conflict 필터가 이미 세운 다섯 개 테스트와 같은 자리에, 같은 형태로 붙인다.
+  it('publishStatus 필터가 걸린다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({ id: 'failed-1', publishStatus: 'failed' }),
+        itemRow({ id: 'published-1', publishStatus: 'published' }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, 'failed', 1, 20);
+
+    expect(result.data.map((row) => row.id)).toEqual(['failed-1']);
+  });
+
+  it('publishStatus 는 status 와 AND 로 걸린다 — 두 축이 다르므로 둘 다 맞아야 한다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({ id: 'drafted-failed', status: 'drafted', publishStatus: 'failed' }),
+        itemRow({ id: 'excluded-failed', status: 'excluded', publishStatus: 'failed' }),
+        itemRow({ id: 'drafted-published', status: 'drafted', publishStatus: 'published' }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', 'drafted', undefined, 'failed', 1, 20);
+
+    expect(result.data.map((row) => row.id)).toEqual(['drafted-failed']);
+  });
+
+  it('publishStatus 필터의 total 은 필터링된 개수를 반영한다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({ id: 'f1', publishStatus: 'failed' }),
+        itemRow({ id: 'f2', publishStatus: 'failed' }),
+        itemRow({ id: 'p1', publishStatus: 'published' }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, undefined, 'failed', 1, 20);
+
+    expect(result.total).toBe(2);
+    expect(result.data).toHaveLength(2);
+  });
+
+  // publishStatus 는 sessionId·status 와 함께 공유 SQL 조건(base)에 실린다 — conflict 가
+  // 걸려 메모리-필터 분기로 넘어가도 그 base 를 그대로 쓰므로 새지 않아야 한다. 분기를
+  // 하나만 필터링하는 회귀를 여기서 잡는다.
+  it('conflict 필터(메모리 분기)와 같이 걸어도 publishStatus 가 계속 적용된다', async () => {
+    const { reader } = harness({
+      sessions: [SESSION_ROW],
+      items: [
+        itemRow({
+          id: 'match',
+          publishStatus: 'failed',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: null,
+        }),
+        itemRow({
+          id: 'wrong-publish-status',
+          publishStatus: 'published',
+          conflict: { 'product.brand': CONFLICT_ENTRY },
+          conflictDecision: null,
+        }),
+      ],
+    });
+
+    const result = await reader.getItems('sess-1', 'u1', undefined, 'undecided', 'failed', 1, 20);
+
+    expect(result.data.map((row) => row.id)).toEqual(['match']);
   });
 });
 
