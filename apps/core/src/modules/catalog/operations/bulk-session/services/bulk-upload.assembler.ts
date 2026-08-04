@@ -1,5 +1,6 @@
 import type { ParsedUpload, RawSheetRow } from './bulk-upload.parser';
 import type { UploadedBundle, RowError } from './bulk-session.types';
+import { isReservedRowKey, reservedRowKeyUnresolvedMessage } from './bulk-session.row-key';
 
 export interface AssembledRow {
   rowNumber: number;
@@ -54,6 +55,17 @@ export function assembleUpload(parsed: ParsedUpload, knownRowKeys: Set<string>):
     } else {
       seen.add(rowKey);
       byKey.set(rowKey, row);
+      // 예약 형식인데 신규로 분류됐다 = 이 양식의 매핑에 없는 시스템 발급 키다.
+      // 서로 다른 양식의 시트를 섞은 경우가 대표적이다. 그대로 두면 신규 상품이 만들어져
+      // 원본과 중복된다. 파일 전체가 잘못된 것은 아니므로(bulk-session.manager.ts 의 파일
+      // 수준 게이트가 그 경우를 이미 걸렀다) 이 행만 떨군다.
+      if (row.kind === 'create' && isReservedRowKey(rowKey)) {
+        row.errors.push({
+          sheet: '상품',
+          rowNumber: raw.rowNumber,
+          message: reservedRowKeyUnresolvedMessage(rowKey),
+        });
+      }
     }
     rows.push(row);
   }

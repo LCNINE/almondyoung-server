@@ -7,6 +7,7 @@ import type {
   BulkImageStatus,
   BulkItemStatus,
   BulkPublishStatus,
+  BulkSessionItem,
   BulkSessionProgress,
   ConflictDecision,
   ConflictFilter,
@@ -48,6 +49,32 @@ export function useBulkSessionItems(
     queryKey: productQueryKeys.bulkSessionItems(id, query),
     queryFn: () => products.bulkSession.getItems(id, query),
   });
+}
+
+/** 서버가 `limit` 을 100 으로 클램프한다(bulk-session.controller.ts `parseLimit`). */
+const ITEMS_MAX_LIMIT = 100;
+
+/**
+ * 무효 행을 **전량** 모은다 — 「오류 목록 복사」 버튼(review-panel)이 쓴다.
+ *
+ * `limit=1000` 을 한 번 보내는 방식은 쓰지 않는다 — 서버가 조용히 100 으로 잘라
+ * 나머지가 유실된다. 이 저장소는 발행 패널에서 정확히 그 사고를 이미 겪었다
+ * (bulk-session.reader.ts 의 `fix-round` 주석). 반드시 페이지를 끝까지 돈다.
+ */
+export async function fetchAllInvalidItems(
+  sessionId: string
+): Promise<BulkSessionItem[]> {
+  const collected: BulkSessionItem[] = [];
+  for (let page = 1; ; page += 1) {
+    const res = await products.bulkSession.getItems(sessionId, {
+      status: 'invalid',
+      page,
+      limit: ITEMS_MAX_LIMIT,
+    });
+    collected.push(...res.data);
+    if (collected.length >= res.total || res.data.length === 0) break;
+  }
+  return collected;
 }
 
 /**
