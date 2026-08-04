@@ -36,6 +36,7 @@ import { AdminMembersReader } from '../../src/services/admin/admin-members.reade
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
 import { AgreementCleanupService } from '../../src/services/subscription/agreement-cleanup.service';
 import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
+import { InvoiceOutcomeHandler } from '../../src/services/billing/invoice-outcome.handler';
 
 type MembershipSchema = typeof membershipSchema;
 
@@ -56,6 +57,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
   let refundEventHandler: RefundEventHandler;
   let agreementCleanup: AgreementCleanupService;
   let billingOutcome: BillingOutcomeHandler;
+  let invoiceOutcome: InvoiceOutcomeHandler;
 
   let tierId: string;
   let monthlyPlanId: string;
@@ -99,6 +101,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         RefundEventHandler,
         AgreementCleanupService,
         BillingOutcomeHandler,
+        InvoiceOutcomeHandler,
         { provide: PaymentClientService, useValue: wallet },
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
@@ -112,6 +115,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     refundEventHandler = module.get(RefundEventHandler);
     agreementCleanup = module.get(AgreementCleanupService);
     billingOutcome = module.get(BillingOutcomeHandler);
+    invoiceOutcome = module.get(InvoiceOutcomeHandler);
 
     // 같은 DB 를 쓰는 다른 스펙이 남긴 tier/plan 을 먼저 치운다 — tiers.code 가 유니크라
     // 남아 있으면 삽입이 깨지고, 실행 순서에 따라 결과가 달라진다(flaky).
@@ -334,7 +338,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(due.map((d) => d.id)).not.toContain(contract.id);
 
       expect(wallet.refundByIntent).toHaveBeenCalledWith('intent_1', MONTHLY_PRICE, 'NOT_USING', undefined, undefined);
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
       expect(events.publishStatusChanged).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'CANCELLED', refundAmount: MONTHLY_PRICE, refundStatus: 'COMPLETED' }),
       );
@@ -719,7 +723,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
 
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
     });
 
     it('INVOICE 경로 해지예약은 남은 수금 때문에 약정 종료를 보류한다', async () => {
@@ -738,7 +742,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
 
       expect(invoices.voidInvoicesForContract).toHaveBeenCalledWith(contract.id, 'SUBSCRIPTION_CANCELLED');
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
     });
 
     it('결제수단이 다른 구독과 공유되면 약정을 지우지 않고 후속 정리 대상으로도 남기지 않는다', async () => {
@@ -900,6 +904,70 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
   // ───────────────────────── 관리자 시나리오 ─────────────────────────
 
+  // 해지하면 출금은 멈추지만, 은행에 등록된 자동이체 계좌까지 지울지는 고객이 정한다.
+  // 남겨두면 재가입할 때 은행 재심사를 다시 받지 않아도 된다.
+  describe('해지 시 자동이체 계좌 처리', () => {
+    /** 계좌를 남긴 경우 wallet 이 돌려주는 형태 */
+    const keptResult = {
+      agreementFound: true,
+      cancelledWithdrawals: 1,
+      mandateTerminated: false,
+      billingMethodKept: true,
+      skipReason: 'BILLING_METHOD_KEPT_BY_REQUEST',
+    };
+
+    it('기본은 계좌를 남긴다 (정리 큐에도 남기지 않는다)', async () => {
+      wallet.terminateBillingMandate.mockResolvedValue(keptResult);
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
+      // 계좌를 남긴 건 '정리 실패' 가 아니다 — 매시간 헛도는 재시도를 만들면 안 된다.
+      expect(await loadEventTypes(contract.id)).not.toContain('AGREEMENT_REVOKE_PENDING');
+      const queue = await adminReader.findAgreementCleanupQueue();
+      expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
+    });
+
+    it('고객이 요청하면 계좌까지 삭제한다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+
+      await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+        deleteBillingMethod: true,
+      });
+
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, true);
+    });
+
+    // INVOICE 해지예약은 수금이 끝난 뒤에 정리된다 — 그때까지 고객의 선택을 기억해야 한다.
+    it('보류된 정리도 해지 시점의 선택을 그대로 따른다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10, billingPath: 'INVOICE' });
+
+      await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+        deleteBillingMethod: true,
+      });
+
+      await db.db
+        .update(schema.subscriptionContractEvents)
+        .set({ metadata: { notBefore: format(subDays(new Date(), 1), 'yyyy-MM-dd'), deleteBillingMethod: true } })
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_DEFERRED'),
+          ),
+        );
+      wallet.terminateBillingMandate.mockClear();
+
+      await agreementCleanup.retryPendingAgreementRevokes();
+
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, true);
+    });
+  });
+
   describe('자동이체 약정 정리 재시도', () => {
     it('해지 때 실패한 약정 종료를 스케줄러가 이어서 끝낸다 (은행에 약정이 남지 않게)', async () => {
       wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
@@ -948,7 +1016,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       await agreementCleanup.retryPendingAgreementRevokes();
 
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
       expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
       expect(endsAt).toBeTruthy();
 
@@ -1115,7 +1183,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
 
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
       expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
       const queue = await adminReader.findAgreementCleanupQueue();
       expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
@@ -1132,6 +1200,167 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       const queue = await adminReader.findAgreementCleanupQueue();
       expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
+    });
+  });
+
+  // 효성 CMS(인보이스 경로)는 자격을 먼저 주고 출금은 나중에 확정된다. 그 사이 해지하면
+  // 돌려줄 돈은 없지만 **나갈 돈은 남아 있다**.
+  describe('CMS 선지급 — 출금 전 해지', () => {
+    /** 자격은 받았지만 아직 수금이 확정되지 않은 계약(lastPaymentIntentId 없음) */
+    const givenAdvanceGranted = (daysSincePeriodStart: number) =>
+      givenSubscription({ daysSincePeriodStart, billingPath: 'INVOICE', hasPayment: false });
+
+    it('혜택 미사용이면 결제 없이 즉시 해지되고 예정 출금이 삭제된다', async () => {
+      const { userId, contract } = await givenAdvanceGranted(2);
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+      expect(immediate.available).toBe(true);
+      expect(immediate.refundAmount).toBe(0);
+      expect(immediate.refundKind).toBe('PRE_COLLECTION_WITHDRAWAL');
+      // 이번 요금 청구가 사라지는 쪽이 고객에게 유리하므로 기본 선택도 즉시해지다.
+      expect(preview.recommendedMode).toBe('IMMEDIATE_REFUND');
+      // 돌려줄 돈이 없으니 계좌를 묻지 않는다.
+      expect(immediate.requiresReceiveAccount).toBe(false);
+
+      const result = await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+      });
+
+      expect(result.type).toBe('IMMEDIATE_CANCELLATION');
+      const after = await loadContract(contract.id);
+      expect(after.status).toBe('CANCELLED');
+      // 환불 요청이 만들어지면 관리자 화면에 '미완료 — N원 처리 필요' 가 영구히 남는다.
+      expect(after.refundRequested).toBe(false);
+      expect(await loadCurrentEntitlement(userId)).toBeUndefined();
+      // 예정 출금 삭제 + 인보이스 소멸 — 이 두 개가 '돈이 아예 안 나간다' 의 실체다.
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
+      expect(invoices.voidInvoicesForContract).toHaveBeenCalledWith(contract.id, 'SUBSCRIPTION_CANCELLED');
+      expect(wallet.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('혜택을 썼으면 결제 없이 종료할 수 없고, 이번 기간은 출금된다고 안내한다', async () => {
+      const { userId, contract, periodStart } = await givenAdvanceGranted(2);
+      await givenBenefitUsed(userId, contract.id, periodStart);
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+      expect(immediate.available).toBe(false);
+      expect(immediate.unavailableReason).toContain('이번 기간 요금은 예정대로 출금됩니다');
+      expect(immediate.unavailableReason).toContain('다음 기간부터는 청구되지 않습니다');
+
+      await expect(
+        service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' }),
+      ).rejects.toThrow(BadRequestError);
+    });
+
+    // 안내 문구가 약속하는 동선: 이번 기간은 출금되고 그 기간까지 이용, 다음 기간부터 청구 없음.
+    it('혜택을 쓴 뒤 해지 예약하면 이번 기간은 출금되고 다음 기간부터 청구되지 않는다', async () => {
+      const { userId, contract, endsAt, periodStart } = await givenAdvanceGranted(2);
+      await givenBenefitUsed(userId, contract.id, periodStart);
+
+      const result = await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'AT_PERIOD_END',
+      });
+
+      expect(result.type).toBe('RECURRING_CANCELLATION');
+      const after = await loadContract(contract.id);
+      expect(after.status).toBe('ACTIVE');
+      expect(after.autoRenewal).toBe(false);
+      expect(after.nextBillingDate).toBeNull();
+      // 자격은 종료일까지 유지된다.
+      expect((await loadCurrentEntitlement(userId)).endsAt).toBe(endsAt);
+      // 이번 기간 수금이 남아 있으므로 약정을 지우지 않는다(지우면 출금이 실패해 무료 이용이 된다).
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+      expect(invoices.voidInvoicesForContract).not.toHaveBeenCalled();
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_DEFERRED');
+
+      // 다음 기간 청구 대상에서 빠진다.
+      const due = await billingReader.findDueContracts(format(addDays(new Date(), 400), 'yyyy-MM-dd'));
+      expect(due.map((d) => d.id)).not.toContain(contract.id);
+
+      // 이번 기간 출금이 확정되면 자격은 그대로, 다음 청구는 살아나지 않고, 약정은 그때 종료된다.
+      await invoiceOutcome.handlePaid(contract.id, 'inv_1', endsAt, MONTHLY_PRICE, 'intent_paid');
+
+      const afterPaid = await loadContract(contract.id);
+      expect(afterPaid.nextBillingDate).toBeNull();
+      expect(afterPaid.status).toBe('ACTIVE');
+      expect((await loadCurrentEntitlement(userId)).endsAt).toBe(endsAt);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
+    });
+
+    it('관리자도 결제 내역이 없는 선지급 계약에 환불을 걸 수 없다', async () => {
+      const { contract } = await givenAdvanceGranted(2);
+
+      await expect(
+        service.forceCancelSubscription(contract.id, 'admin_1', '고객 요청', 'FULL'),
+      ).rejects.toThrow(BadRequestError);
+    });
+  });
+
+  // 즉시해지하면 마이페이지가 비가입자 화면으로 바뀐다. 해지 직후 안내를 놓친 고객이
+  // "얼마가 언제 들어오는지" 를 다시 볼 창구가 없으면 그대로 문의가 된다.
+  describe('고객 — 환불 진행 상황 조회', () => {
+    it('해지된 계약의 환불도 조회된다 (수동 송금 대기)', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 2 });
+      wallet.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: MONTHLY_PRICE,
+        alreadyRefundedAmount: 0,
+        pendingRefundAmount: 0,
+        remainingRefundableAmount: MONTHLY_PRICE,
+        autoRefundSupported: false, // 효성 CMS — 관리자 계좌 송금
+        requiresReceiveAccount: true,
+        methodTypes: ['CMS_BATCH'],
+      });
+
+      await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+        refundReceiveAccount: { bank: '국민', accountNumber: '110123456789', holderName: '홍길동' },
+      });
+
+      const status = await service.getRefundStatus(userId);
+      expect(status).not.toBeNull();
+      expect(status!.contractId).toBe(contract.id);
+      expect(status!.amount).toBe(MONTHLY_PRICE);
+      expect(status!.status).toBe('PENDING');
+      // 계좌번호 전체를 다시 보여줄 이유가 없다 — 확인에는 뒤 4자리면 충분하다.
+      expect(status!.maskedAccount?.accountNumber).toBe('****6789');
+      expect(status!.maskedAccount?.holderName).toBe('홍길동');
+    });
+
+    it('환불이 완료되면 완료 시각과 함께 조회된다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 2 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
+
+      const status = await service.getRefundStatus(userId);
+      expect(status!.status).toBe('COMPLETED');
+      expect(status!.completedAt).not.toBeNull();
+      // 이미 나간 돈의 계좌를 다시 노출할 이유가 없다.
+      expect(status!.maskedAccount).toBeNull();
+      expect(contract.id).toBeTruthy();
+    });
+
+    it('완료된 지 오래된 환불은 더 이상 보여주지 않는다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 2 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
+      await db.db
+        .update(schema.subscriptionContracts)
+        .set({ refundCompletedAt: subDays(new Date(), 31) })
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+
+      expect(await service.getRefundStatus(userId)).toBeNull();
+    });
+
+    it('환불 요청이 없으면 아무것도 내려주지 않는다', async () => {
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 2 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+
+      expect(await service.getRefundStatus(userId)).toBeNull();
     });
   });
 
@@ -1533,7 +1762,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(after.nextBillingDate).toBeNull();
       expect(await countDunning(contract.id)).toBe(0);
       // 효성 CMS 는 환불이 불가하므로 예정 출금이 남지 않게 약정까지 끊어야 한다.
-      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id, false);
       expect(
         await billingReader.findDueContracts(format(addDays(new Date(), 400), 'yyyy-MM-dd')),
       ).toHaveLength(0);

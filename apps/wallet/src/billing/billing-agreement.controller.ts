@@ -99,11 +99,17 @@ export class BillingAgreementController {
   async terminateMandateBySubscriber(
     @Query('subscriberType') subscriberType: string,
     @Query('subscriberRef') subscriberRef: string,
+    /** 등록된 자동이체 계좌까지 지울지. 기본은 남긴다(재가입 시 재심사를 강요하지 않기 위해). */
+    @Query('deleteBillingMethod') deleteBillingMethod?: string,
   ) {
     if (!subscriberType || !subscriberRef) {
       throw new BadRequestException('subscriberType and subscriberRef are required');
     }
-    return this.service.terminateMandateBySubscriberRef(subscriberType, subscriberRef);
+    return this.service.terminateMandateBySubscriberRef(
+      subscriberType,
+      subscriberRef,
+      deleteBillingMethod === 'true',
+    );
   }
 
   @Delete(':id')

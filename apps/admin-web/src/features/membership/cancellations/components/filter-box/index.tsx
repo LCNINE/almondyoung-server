@@ -15,6 +15,8 @@ import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } 
 
 type SearchType = 'userId' | 'member';
 type DateCriteria = 'createdAt' | 'cancelledAt';
+/** 해지 유형 — 즉시 종료된 건과 잔여기간을 쓰고 있는 예약 건은 CS 대응이 다르다. */
+type CancelKind = 'ALL' | 'IMMEDIATE' | 'SCHEDULED';
 
 interface FilterState {
   dateCriteria: DateCriteria;
@@ -24,6 +26,9 @@ interface FilterState {
   searchType: SearchType;
   q: string;
   memberQ: string;
+  cancelKind: CancelKind;
+  /** 환불 요청은 있는데 아직 돈이 안 나간 건만 */
+  refundPending: boolean;
 }
 
 export function CancellationsFilterBox() {
@@ -39,6 +44,8 @@ export function CancellationsFilterBox() {
     searchType: searchParams.get('memberQ') ? 'member' : 'userId',
     q: searchParams.get('q') ?? '',
     memberQ: searchParams.get('memberQ') ?? '',
+    cancelKind: (searchParams.get('cancelKind') as CancelKind) ?? 'ALL',
+    refundPending: searchParams.get('refundPending') === 'true',
   });
 
   const handleSearch = () => {
@@ -57,12 +64,24 @@ export function CancellationsFilterBox() {
     if (to) params.set('dateTo', to);
     if (filters.datePreset && filters.datePreset !== 'all') params.set('datePreset', filters.datePreset);
     if (filters.dateCriteria !== 'createdAt') params.set('dateCriteria', filters.dateCriteria);
+    if (filters.cancelKind !== 'ALL') params.set('cancelKind', filters.cancelKind);
+    if (filters.refundPending) params.set('refundPending', 'true');
 
     router.replace(`${pathname}?${params.toString()}`);
   };
 
   const handleReset = () => {
-    setFilters({ dateCriteria: 'createdAt', datePreset: 'all', dateFrom: '', dateTo: '', searchType: 'userId', q: '', memberQ: '' });
+    setFilters({
+      dateCriteria: 'createdAt',
+      datePreset: 'all',
+      dateFrom: '',
+      dateTo: '',
+      searchType: 'userId',
+      q: '',
+      memberQ: '',
+      cancelKind: 'ALL',
+      refundPending: false,
+    });
     router.replace(pathname);
   };
 
@@ -111,6 +130,31 @@ export function CancellationsFilterBox() {
           </FormField>
         </div>
       )}
+
+      <div className="flex flex-wrap items-end gap-4">
+        <FormField label="해지 유형" direction="horizontal">
+          <FormRadioGroup
+            value={filters.cancelKind}
+            onValueChange={(v) => setFilters((p) => ({ ...p, cancelKind: v as CancelKind }))}
+            options={[
+              { value: 'ALL', label: '전체' },
+              { value: 'IMMEDIATE', label: '즉시 해지' },
+              { value: 'SCHEDULED', label: '해지 예약' },
+            ]}
+            orientation="horizontal"
+          />
+        </FormField>
+        <label className="flex cursor-pointer items-center gap-1.5 text-sm" htmlFor="refund-pending">
+          <input
+            id="refund-pending"
+            type="checkbox"
+            className="size-4"
+            checked={filters.refundPending}
+            onChange={(e) => setFilters((p) => ({ ...p, refundPending: e.target.checked }))}
+          />
+          환불 미완료만
+        </label>
+      </div>
 
       <div className="flex flex-wrap items-end gap-4">
         <FormField label="검색 유형" direction="horizontal">

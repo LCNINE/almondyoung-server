@@ -69,6 +69,9 @@ export class CancellationContextReader {
       ? Math.max(0, differenceInDays(now, new Date(entitlement.pausedAt)))
       : 0;
     const hasPayment = !!contract.lastPaymentIntentId;
+    // 인보이스 경로는 자격을 먼저 주고 효성 출금이 나중에 확정된다(lastPaymentIntentId 는 그때 붙는다).
+    // 그 사이 해지하면 돌려줄 돈은 없지만 나갈 돈은 남아 있다 — 예정 출금을 지우는 쪽이 정석이다.
+    const awaitingCollection = !hasPayment && contract.billingPath === 'INVOICE';
     // 주기 시작은 '마지막 결제 성공 시각'이 원천이다. endsAt 역산은 관리자 기간 조정·일시정지 재개로
     // endsAt 가 밀리면 함께 밀려 청약철회 7일 창을 되살린다. 결제 기록이 없는 옛 계약만 역산으로 폴백.
     const paidPeriodStart = hasPayment
@@ -79,7 +82,10 @@ export class CancellationContextReader {
           hasPayment,
           billingDate: contract.billingDate ? new Date(contract.billingDate) : null,
         }))
-      : null;
+      : // 수금 전 선지급은 결제일이 없다. 청약철회 창은 재화 공급일(=자격 개시일)부터 센다.
+        awaitingCollection
+        ? new Date(entitlement.startsAt)
+        : null;
     const pausedDaysInPeriod = paidPeriodStart
       ? await this.pauseReader.sumPausedDaysSince(contract.userId, paidPeriodStart)
       : 0;
@@ -120,6 +126,7 @@ export class CancellationContextReader {
       periodEndsAt,
       pausedDaysAccrued,
       hasPayment,
+      awaitingCollection,
       // wallet 조회가 실패하면 자동환불을 단정하지 않는다(수동 경로로 안전하게 떨어뜨린다).
       autoRefundSupported: refundability?.autoRefundSupported ?? false,
       requiresReceiveAccount: refundability?.requiresReceiveAccount ?? false,

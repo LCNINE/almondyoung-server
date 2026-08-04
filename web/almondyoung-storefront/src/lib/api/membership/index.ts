@@ -9,6 +9,7 @@ import type {
   CycleBenefitHistoryDto,
   MembershipPlanDto,
   MembershipTierDto,
+  RefundStatusDto,
   SubscriptionDetailsDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
@@ -181,7 +182,9 @@ export async function cancelSubscription(
     accountNumber: string
     holderName: string
   },
-  cancelType?: CancellationMode
+  cancelType?: CancellationMode,
+  /** 등록된 자동이체 계좌까지 지울지. 생략하면 남긴다(재가입 시 재심사 불필요). */
+  deleteBillingMethod?: boolean
 ): Promise<CancelSubscriptionResult> {
   try {
     const result = await api<CancelSubscriptionSuccess>(
@@ -189,7 +192,13 @@ export async function cancelSubscription(
       "/subscriptions/cancel",
       {
         method: "POST",
-        body: { reasonCode, reasonText, refundReceiveAccount, cancelType },
+        body: {
+          reasonCode,
+          reasonText,
+          refundReceiveAccount,
+          cancelType,
+          deleteBillingMethod,
+        },
         withAuth: true,
         cache: "no-store",
       }
@@ -215,6 +224,23 @@ export async function getCancellationPreview(): Promise<CancellationPreviewDto |
     )
   } catch (error) {
     // 활성 구독이 없거나(404) 권한 만료면 해지 UI 를 숨기면 된다 — 페이지를 깨뜨리지 않는다.
+    if (error instanceof HttpApiError && error.status === 404) return null
+    throw error
+  }
+}
+
+/**
+ * 환불 진행 상황 — 해지 뒤에도 조회된다(즉시해지하면 화면이 비가입자로 바뀐다).
+ */
+export async function getRefundStatus(): Promise<RefundStatusDto | null> {
+  try {
+    return await api<RefundStatusDto | null>(
+      "membership",
+      "/subscriptions/refund-status",
+      { method: "GET", withAuth: true, cache: "no-store" }
+    )
+  } catch (error) {
+    // 환불 이력이 없거나 조회에 실패해도 마이페이지는 그대로 떠야 한다.
     if (error instanceof HttpApiError && error.status === 404) return null
     throw error
   }

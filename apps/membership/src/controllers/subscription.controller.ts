@@ -206,7 +206,20 @@ export class SubscriptionController {
       reasonText: cancelSubscriptionDto.reasonText,
       cancelType: cancelSubscriptionDto.cancelType,
       refundReceiveAccount: cancelSubscriptionDto.refundReceiveAccount,
+      deleteBillingMethod: cancelSubscriptionDto.deleteBillingMethod,
     });
+  }
+
+  /**
+   * 환불 진행 상황 — 해지 직후 안내를 놓친 고객이 다시 확인하는 창구.
+   * 즉시해지하면 화면이 비가입자로 바뀌므로 계약 상태와 무관하게 조회된다.
+   */
+  @Get('refund-status')
+  @ApiOperation({ summary: '환불 진행 상황 조회' })
+  @UseGuards(JwtAuthGuard)
+  async getRefundStatus(@User('userId') userId: string) {
+    if (!userId) throw new BadRequestException('userId가 필요합니다');
+    return this.cancellationService.getRefundStatus(userId);
   }
 
   /**

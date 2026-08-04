@@ -3,7 +3,7 @@ import { ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { eq, and, or, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { isAxiosError } from 'axios';
@@ -17,7 +17,8 @@ import {
 export interface AdminMembersQuery {
   page?: number;
   limit?: number;
-  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED';
+  /** CANCELLED_ANY = 즉시해지(CANCELLED) + 해지예약(ACTIVE+recurringCancelledAt). 해지 내역 화면 기본값. */
+  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED' | 'CANCELLED_ANY';
   /** userId partial search */
   q?: string;
   /** filter by resolved userIds (from user-service lookup) */
@@ -26,6 +27,8 @@ export interface AdminMembersQuery {
   dateTo?: string;
   /** date field for range filter — only meaningful when status=CANCELLED */
   dateCriteria?: 'createdAt' | 'cancelledAt';
+  /** 돈이 아직 안 나간 건만. CS 가 매일 훑어야 하는 목록이다. */
+  refundPending?: boolean;
 }
 
 export interface AdminMemberListItem {
@@ -49,6 +52,16 @@ export interface AdminMemberListItem {
   recurringCancellationReasonCode: string | null;
   /** 취소 사유 코드를 마스터 테이블 displayText로 해석한 값(없으면 null → 화면은 코드/대체 라벨로 폴백) */
   cancellationReasonText: string | null;
+  /** 해지 예약 시각. 있으면 '예약 해지'(잔여기간 이용 중), 없고 cancelledAt 이 있으면 '즉시 해지'. */
+  recurringCancelledAt: string | null;
+  refundRequested: boolean;
+  refundCompleted: boolean;
+  refundCompletedAt: string | null;
+  eligibleRefundAmount: number | null;
+  /** 환불 대상 결제가 있는지. 관리자 지급·이관 계약은 돌려줄 돈 자체가 없다. */
+  hasPaymentIntent: boolean;
+  /** 효성 CMS 인보이스 경로인지. 수금이 늦어 '선지급 후 출금' 상태가 존재한다. */
+  billingPath: string;
 }
 
 export interface AdminMembersResponse {
@@ -270,7 +283,7 @@ export class AdminMembersReader {
   ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
-    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt' } = query;
+    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt', refundPending } = query;
     const offset = (page - 1) * limit;
 
     const baseConditions: SQL[] = [];
@@ -283,17 +296,26 @@ export class AdminMembersReader {
       baseConditions.push(inArray(schema.subscriptionContracts.userId, userIds));
     }
 
-    const dateField =
-      dateCriteria === 'cancelledAt'
-        ? schema.subscriptionContracts.cancelledAt
-        : schema.subscriptionContracts.createdAt;
+    // 해지일 기준 필터는 즉시해지(cancelledAt)와 예약해지(recurringCancelledAt) 를 모두 잡아야 한다 —
+    // 한쪽만 보면 예약 해지 건이 날짜 필터에서 통째로 사라진다.
+    const cancelledAtField = sql`coalesce(${schema.subscriptionContracts.cancelledAt}, ${schema.subscriptionContracts.recurringCancelledAt})`;
 
     if (dateFrom) {
-      baseConditions.push(gte(dateField, new Date(dateFrom)));
+      const from = new Date(dateFrom);
+      baseConditions.push(
+        dateCriteria === 'cancelledAt'
+          ? sql`${cancelledAtField} >= ${from}`
+          : gte(schema.subscriptionContracts.createdAt, from),
+      );
     }
 
     if (dateTo) {
-      baseConditions.push(lte(dateField, endOfDay(new Date(dateTo))));
+      const to = endOfDay(new Date(dateTo));
+      baseConditions.push(
+        dateCriteria === 'cancelledAt'
+          ? sql`${cancelledAtField} <= ${to}`
+          : lte(schema.subscriptionContracts.createdAt, to),
+      );
     }
 
     // PAUSED/ACTIVE는 entitlement.pausedAt 컬럼으로 SQL에서 직접 구분
@@ -307,12 +329,29 @@ export class AdminMembersReader {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'CANCELLED'));
     } else if (status === 'EXPIRED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'EXPIRED'));
+    } else if (status === 'CANCELLED_ANY') {
+      // 해지 내역 화면: 이미 끝난 건(CANCELLED)과 잔여기간 이용 중인 예약 해지를 한 목록에서 본다.
+      baseConditions.push(
+        or(
+          eq(schema.subscriptionContracts.status, 'CANCELLED'),
+          and(
+            eq(schema.subscriptionContracts.status, 'ACTIVE'),
+            isNotNull(schema.subscriptionContracts.recurringCancelledAt),
+          ),
+        ) as SQL,
+      );
     } else if (status === 'RECURRING_CANCELLED') {
       // 정기결제 해지됐으나 현재 주기는 유효(ACTIVE)한 "해지 예약" 상태.
       // autoRenewal=false 는 one_time 가입자도 가지므로 식별자가 될 수 없다.
       // recurringCancelledAt 은 cancelRecurringPayment 에서만 세팅되므로 이것이 유일한 기준.
       baseConditions.push(eq(schema.subscriptionContracts.status, 'ACTIVE'));
       baseConditions.push(isNotNull(schema.subscriptionContracts.recurringCancelledAt));
+    }
+
+    // 환불 요청은 있는데 아직 돈이 안 나간 건 — 관리자가 매일 확인해야 하는 목록이다.
+    if (refundPending) {
+      baseConditions.push(eq(schema.subscriptionContracts.refundRequested, true));
+      baseConditions.push(eq(schema.subscriptionContracts.refundCompleted, false));
     }
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
@@ -334,6 +373,13 @@ export class AdminMembersReader {
         autoRenewal: schema.subscriptionContracts.autoRenewal,
         cancellationReasonCode: schema.subscriptionContracts.cancellationReasonCode,
         recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
+        recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+        refundRequested: schema.subscriptionContracts.refundRequested,
+        refundCompleted: schema.subscriptionContracts.refundCompleted,
+        refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
+        eligibleRefundAmount: schema.subscriptionContracts.eligibleRefundAmount,
+        lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
+        billingPath: schema.subscriptionContracts.billingPath,
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
         tierPriority: schema.tiers.priorityLevel,
@@ -379,6 +425,13 @@ export class AdminMembersReader {
         cancellationReasonCode: r.cancellationReasonCode,
         recurringCancellationReasonCode: r.recurringCancellationReasonCode,
         cancellationReasonText: null as string | null,
+        recurringCancelledAt: r.recurringCancelledAt ? r.recurringCancelledAt.toISOString() : null,
+        refundRequested: r.refundRequested === true,
+        refundCompleted: r.refundCompleted === true,
+        refundCompletedAt: r.refundCompletedAt ? r.refundCompletedAt.toISOString() : null,
+        eligibleRefundAmount: r.eligibleRefundAmount ?? null,
+        hasPaymentIntent: !!r.lastPaymentIntentId,
+        billingPath: r.billingPath,
       };
     });
 

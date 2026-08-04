@@ -791,7 +791,9 @@
       "cancelScheduledDone": "해지가 접수되었습니다. 종료일까지 멤버십을 이용하실 수 있습니다.",
       "cancelImmediateDone": "멤버십이 해지되었습니다.",
       "cancelRefundCompleted": "멤버십이 해지되고 {amount}원이 환불되었습니다.",
-      "cancelRefundPending": "멤버십이 해지되었습니다. {amount}원은 입력하신 계좌로 영업일 {days}일 내 송금됩니다."
+      "cancelRefundPending": "멤버십이 해지되었습니다. {amount}원은 입력하신 계좌로 영업일 {days}일 내 송금됩니다.",
+      "cancelPreCollectionDone": "결제 없이 해지되었습니다. 이번 요금은 청구되지 않습니다.",
+      "cancelScheduledPreCollectionNow": "결제 없이 지금 해지하기"
     },
     "invoices": {
       "title": "정기결제 청구 내역",
@@ -988,9 +990,25 @@
       "manualRefundNotice": "자동이체 결제는 즉시 환불이 불가해, 입력하신 계좌로 영업일 {days}일 내 송금해 드립니다.",
       "summaryImmediate": "지금 해지하면 {amount}원이 환불됩니다.",
       "summaryAtPeriodEnd": "{date}까지 이용 후 자동 종료됩니다.",
-      "refundAccountNoteAmount": "{amount}원을 입력하신 계좌로 영업일 {days}일 내 환불해 드립니다."
+      "refundAccountNoteAmount": "{amount}원을 입력하신 계좌로 영업일 {days}일 내 환불해 드립니다.",
+      "modeImmediatePreCollectionTitle": "결제 없이 지금 해지",
+      "modeImmediatePreCollectionDesc": "아직 출금 전이라 이번 요금이 청구되지 않고 바로 종료됩니다. 결제된 금액이 없어 돌려받을 금액도 없습니다.",
+      "summaryImmediatePreCollection": "결제 없이 지금 해지됩니다. 이번 요금은 청구되지 않습니다.",
+      "keepBillingMethodTitle": "등록한 자동이체 계좌",
+      "keepBillingMethodKeep": "계좌를 남겨둘게요 (다음에 다시 가입할 때 바로 사용)",
+      "keepBillingMethodDelete": "계좌도 함께 삭제할게요",
+      "keepBillingMethodNote": "삭제하시면 은행 자동이체 등록까지 해지됩니다. 다시 가입하실 때는 계좌를 새로 등록하고 은행 심사를 받으셔야 해요.",
+      "keepBillingMethodSafe": "남겨두셔도 해지 후에는 출금되지 않아요."
     },
-    "manageTitle": "멤버십 관리"
+    "manageTitle": "멤버십 관리",
+    "refundStatus": {
+      "pendingTitle": "환불 진행 중",
+      "completedTitle": "환불 완료",
+      "pendingBody": "{amount}원을 영업일 {days}일 내 입금해 드릴 예정이에요.",
+      "completedBody": "{amount}원이 {date}에 환불되었습니다.",
+      "account": "입금 계좌: {bank} {account} ({holder})",
+      "failedNote": "자동 환불이 처리되지 않아 담당자가 직접 확인하고 있어요. 조금만 기다려 주세요."
+    }
   },
   "page": {
     "trackDelivery": "배송 조회",

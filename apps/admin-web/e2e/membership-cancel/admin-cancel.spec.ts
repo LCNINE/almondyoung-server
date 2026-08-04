@@ -33,7 +33,51 @@ async function openCancelTab(page: import('playwright/test').Page) {
   return dialog;
 }
 
+// 해지 내역 목록은 CS 가 매일 여는 화면이다. 해지 예약 건이 빠지거나 환불 상태가 안 보이면
+// 돈이 안 나간 건을 목록에서 찾을 수 없다.
+test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
+  test.skip(SCENARIO !== 'cancellation-list', '해지 목록 시나리오만');
+
+  const rows = (page: import('playwright/test').Page) => page.getByRole('row');
+
+  test('즉시 해지와 해지 예약이 한 목록에 함께 보인다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    await expect(page.getByText('즉시 해지').first()).toBeVisible();
+    // 예약 해지가 빠지면 고객이 해지 신청한 건을 CS 가 이 화면에서 찾을 수 없다.
+    await expect(page.getByText('해지 예약').first()).toBeVisible();
+    await expect(rows(page)).toHaveCount(4); // 헤더 + 3행
+  });
+
+  test('환불 금액과 상태가 행에서 바로 보인다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    await expect(page.getByText('4,990원 · 미완료 — 처리 필요')).toBeVisible();
+    await expect(page.getByText('34,930원 · 완료')).toBeVisible();
+    await expect(page.getByText('환불 없음')).toBeVisible();
+  });
+
+  test('환불 미완료만 보기로 돈이 안 나간 건을 추릴 수 있다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    await page.getByLabel('환불 미완료만').check();
+    await page.getByRole('button', { name: '검색' }).click();
+
+    await expect(page.getByText('4,990원 · 미완료 — 처리 필요')).toBeVisible();
+    await expect(page.getByText('34,930원 · 완료')).toHaveCount(0);
+    await expect(rows(page)).toHaveCount(2);
+  });
+
+  test('해지 유형으로 예약 건만 골라볼 수 있다', async ({ page }) => {
+    await page.goto('/membership/cancellations');
+    await page.getByRole('radio', { name: '해지 예약' }).click();
+    await page.getByRole('button', { name: '검색' }).click();
+
+    await expect(rows(page)).toHaveCount(2);
+    await expect(page.getByText('해지 예약').first()).toBeVisible();
+  });
+});
+
 test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
+  test.skip(SCENARIO === 'cancellation-list', '해지 목록 전용 시나리오');
+
   test.beforeEach(async ({ request }) => {
     await resetStub(request);
   });
@@ -259,6 +303,40 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     expect(call.body).toMatchObject({ refundType: 'PARTIAL', refundAmount: 34930, reason: '고객 요청' });
     // 해지 안내 메일 수신 주소가 함께 전달돼야 한다(멤버십은 사용자 조회를 하지 않는다).
     expect(call.body.customerEmail).toBe('customer@example.com');
+  });
+
+  // 해지해도 출금은 멈춘다. 계좌 삭제는 은행 등록까지 지우는 별도 조치라 기본은 유지여야 한다 —
+  // 무심코 지우면 고객이 재가입할 때 계좌 재등록 + 은행 재심사를 다시 겪는다.
+  test('즉시 해지는 계좌를 남기는 것이 기본이고, 원하면 삭제까지 보낸다', async ({ page, request }) => {
+    test.skip(SCENARIO !== 'annual', '대표 시나리오 하나로 확인');
+
+    const dialog = await openCancelTab(page);
+    await dialog.getByRole('button', { name: '즉시 해지 + 환불 처리' }).click();
+    const modal = page.getByRole('dialog', { name: '즉시 해지 + 환불' });
+    await expect(modal.getByTestId('billing-method-choice')).toBeVisible();
+    await expect(modal.getByText(/해지하면 출금은 멈춥니다/)).toBeVisible();
+
+    await modal.getByPlaceholder('취소 사유를 입력해주세요').fill('고객 요청');
+    await modal.getByRole('button', { name: '즉시 해지 확인' }).click();
+    await expect
+      .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'force-cancel').length)
+      .toBe(1);
+    expect((await stubCalls(request)).find((c) => c.path === 'force-cancel')!.body.deleteBillingMethod).toBe(false);
+
+    // 계좌까지 지우겠다고 고르면 그 사실이 그대로 전달된다.
+    await resetStub(request);
+    await page.reload();
+    const dialog2 = await openCancelTab(page);
+    await dialog2.getByRole('button', { name: '즉시 해지 + 환불 처리' }).click();
+    const modal2 = page.getByRole('dialog', { name: '즉시 해지 + 환불' });
+    await modal2.getByLabel('계좌도 삭제').click();
+    await expect(modal2.getByText(/은행 자동이체 등록까지 해지됩니다/)).toBeVisible();
+    await modal2.getByPlaceholder('취소 사유를 입력해주세요').fill('고객 요청');
+    await modal2.getByRole('button', { name: '즉시 해지 확인' }).click();
+    await expect
+      .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'force-cancel').length)
+      .toBe(1);
+    expect((await stubCalls(request)).find((c) => c.path === 'force-cancel')!.body.deleteBillingMethod).toBe(true);
   });
 
   test('사유 없이 즉시 해지를 확인하면 막힌다', async ({ page, request }) => {

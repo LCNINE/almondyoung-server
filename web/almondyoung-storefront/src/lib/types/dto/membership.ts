@@ -56,7 +56,12 @@ export interface CancellationOptionDto {
   available: boolean
   unavailableReason?: string
   refundAmount: number
-  refundKind: "NONE" | "WITHDRAWAL_FULL" | "ANNUAL_PRORATION"
+  refundKind:
+    | "NONE"
+    | "WITHDRAWAL_FULL"
+    | "ANNUAL_PRORATION"
+    /** 효성 CMS 선지급 — 아직 출금 전이라 청구 없이 종료된다(환불액 0) */
+    | "PRE_COLLECTION_WITHDRAWAL"
   refundExecution: "NONE" | "AUTO" | "MANUAL"
   /** 환불 송금 계좌 입력이 필요한지 */
   requiresReceiveAccount: boolean
@@ -168,4 +173,16 @@ export interface CycleBenefitHistoryDto {
   }>
   totalCycles: number
   totalDiscountAllTime: number
+}
+
+/** 환불 진행 상황 — 해지 직후 안내를 놓쳐도 다시 확인할 수 있어야 한다. */
+export interface RefundStatusDto {
+  contractId: string
+  amount: number
+  status: "COMPLETED" | "PENDING" | "FAILED"
+  requestedAt: string | null
+  completedAt: string | null
+  refundProcessingBusinessDays: number
+  /** 계좌번호는 뒤 4자리만 온다 */
+  maskedAccount: { bank: string; accountNumber: string; holderName: string } | null
 }

@@ -364,6 +364,46 @@ export class SubscriptionContractReader {
     }));
   }
 
+  /**
+   * 환불을 요청한 가장 최근 계약. 해지된 뒤에도 고객이 진행 상황을 봐야 하므로 상태로 거르지 않는다.
+   */
+  async findLatestRefundRequestedContract(userId: string): Promise<Contract | null> {
+    const [contract] = await this.dbService.db
+      .select()
+      .from(schema.subscriptionContracts)
+      .where(
+        and(
+          eq(schema.subscriptionContracts.userId, userId),
+          eq(schema.subscriptionContracts.refundRequested, true),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContracts.refundRequestedAt), desc(schema.subscriptionContracts.createdAt))
+      .limit(1);
+
+    return contract || null;
+  }
+
+  /** 이 계약의 최신 환불 결과 이벤트. 완료 전 상태(대기/실패)를 구분하는 데 쓴다. */
+  async findLatestRefundOutcome(contractId: string): Promise<string | null> {
+    const [event] = await this.dbService.db
+      .select({ eventType: schema.subscriptionContractEvents.eventType })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          inArray(schema.subscriptionContractEvents.eventType, [
+            'REFUND_COMPLETED',
+            'REFUND_PENDING',
+            'REFUND_FAILED',
+          ]),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    return event?.eventType ?? null;
+  }
+
   /** 이 계약의 최신 약정 정리 이벤트 종류. 정리 지시가 아직 열려 있는지 판단하는 용도. */
   async findLatestAgreementEventType(contractId: string): Promise<AgreementEventType | null> {
     const [event] = await this.dbService.db

@@ -60,6 +60,8 @@ export function MembershipCancelModal({
     reasonText?: string
     refundReceiveAccount?: RefundReceiveAccount
     cancelType: CancellationMode
+    /** 등록된 자동이체 계좌까지 지울지. 정기결제 계약에서만 값이 온다. */
+    deleteBillingMethod?: boolean
   }) => void
 }) {
   const t = useTranslations("mypage.membership.cancel")
@@ -68,6 +70,8 @@ export function MembershipCancelModal({
   // 이미 해지 예약된 구독은 예약을 또 걸 수 없다(서버가 409). 남은 선택지는 즉시해지 + 환불뿐이라
   // 방식 선택 단계를 건너뛴다 — 고르면 반드시 거절되는 선택지를 보여주지 않는다.
   const alreadyScheduled = !!preview?.alreadyScheduledForCancellation
+  // 효성 CMS 선지급 건: 출금 전이라 청구 없이 끝난다. '0원 환불' 로 읽히면 손해 보는 선택처럼 보인다.
+  const preCollection = immediate?.refundKind === "PRE_COLLECTION_WITHDRAWAL"
   const canChooseImmediate = !!immediate?.available && !alreadyScheduled
   const immediateOnly = alreadyScheduled && !!immediate?.available
 
@@ -75,6 +79,7 @@ export function MembershipCancelModal({
   const [step, setStep] = useState<Step>("reason")
   const [selectedReason, setSelectedReason] = useState<string>("")
   const [reasonText, setReasonText] = useState<string>("")
+  const [deleteBillingMethod, setDeleteBillingMethod] = useState(false)
   const [bankCode, setBankCode] = useState<string>("")
   const [accountNumber, setAccountNumber] = useState<string>("")
   const [holderName, setHolderName] = useState<string>("")
@@ -92,11 +97,14 @@ export function MembershipCancelModal({
     setStep(canChooseImmediate ? "mode" : "reason")
     setSelectedReason("")
     setReasonText("")
+    setDeleteBillingMethod(false)
     setBankCode("")
     setAccountNumber("")
     setHolderName("")
   }, [open, canChooseImmediate, immediateOnly, preview?.recommendedMode])
 
+  // 등록된 자동이체 계좌가 있는 정기결제 계약에서만 물어본다(1회 결제는 지울 계좌가 없다).
+  const canKeepBillingMethod = !!preview?.isRecurring
   const selectedOption = mode === "IMMEDIATE_REFUND" ? immediate : atPeriodEnd
   const needsAccount = mode === "IMMEDIATE_REFUND" && !!selectedOption?.requiresReceiveAccount
 
@@ -158,6 +166,7 @@ export function MembershipCancelModal({
       reasonText: showOtherInput ? reasonText : undefined,
       cancelType: mode,
       refundReceiveAccount: needsAccount && accountFilled ? account : undefined,
+      deleteBillingMethod: canKeepBillingMethod ? deleteBillingMethod : undefined,
     })
   }
 
@@ -245,12 +254,16 @@ export function MembershipCancelModal({
                 />
                 <span className="flex flex-col gap-0.5">
                   <span className="text-foreground text-sm font-bold">
-                    {t("modeImmediateTitle", {
-                      amount: won(immediate?.refundAmount ?? 0),
-                    })}
+                    {preCollection
+                      ? t("modeImmediatePreCollectionTitle")
+                      : t("modeImmediateTitle", {
+                          amount: won(immediate?.refundAmount ?? 0),
+                        })}
                   </span>
                   <span className="text-muted-foreground text-xs leading-4">
-                    {t("modeImmediateDesc")}
+                    {preCollection
+                      ? t("modeImmediatePreCollectionDesc")
+                      : t("modeImmediateDesc")}
                   </span>
                   {/* 연간 중도해지 정산 내역 — 왜 이 금액인지 그대로 보여준다 */}
                   {immediate?.breakdown && (
@@ -295,9 +308,11 @@ export function MembershipCancelModal({
               <DialogTitle className="text-foreground text-center text-base leading-6 font-medium sm:text-lg sm:leading-7">
                 {mode === "IMMEDIATE_REFUND" ? (
                   <>
-                    {t("summaryImmediate", {
-                      amount: won(immediate?.refundAmount ?? 0),
-                    })}
+                    {preCollection
+                      ? t("summaryImmediatePreCollection")
+                      : t("summaryImmediate", {
+                          amount: won(immediate?.refundAmount ?? 0),
+                        })}
                     <br />
                     {t("titleRejoin")}
                   </>
@@ -372,6 +387,56 @@ export function MembershipCancelModal({
                 placeholder={t("etcPlaceholder")}
                 className="border-border h-11 rounded-lg border text-sm placeholder:text-sm"
               />
+            )}
+
+            {/* 해지해도 출금은 멈추므로 계좌는 남기는 것이 기본이다 — 남겨두면 재가입할 때
+                은행 심사를 다시 받지 않아도 된다. 출금동의까지 철회하려는 고객은 여기서 고른다. */}
+            {canKeepBillingMethod && (
+              <div
+                className="border-border space-y-2 rounded-xl border p-3 text-left"
+                data-testid="billing-method-choice"
+              >
+                <p className="text-foreground text-sm font-semibold">
+                  {t("keepBillingMethodTitle")}
+                </p>
+                <RadioGroup
+                  value={deleteBillingMethod ? "delete" : "keep"}
+                  onValueChange={(v) => setDeleteBillingMethod(v === "delete")}
+                  className="w-full gap-1"
+                >
+                  <label
+                    htmlFor="billing-method-keep"
+                    className="flex cursor-pointer items-start gap-2.5 py-1"
+                  >
+                    <RadioGroupItem
+                      id="billing-method-keep"
+                      value="keep"
+                      className="border-border data-[state=checked]:border-primary mt-0.5 shadow-none"
+                    />
+                    <span className="text-foreground text-sm leading-5 select-none">
+                      {t("keepBillingMethodKeep")}
+                    </span>
+                  </label>
+                  <label
+                    htmlFor="billing-method-delete"
+                    className="flex cursor-pointer items-start gap-2.5 py-1"
+                  >
+                    <RadioGroupItem
+                      id="billing-method-delete"
+                      value="delete"
+                      className="border-border data-[state=checked]:border-primary mt-0.5 shadow-none"
+                    />
+                    <span className="text-foreground text-sm leading-5 select-none">
+                      {t("keepBillingMethodDelete")}
+                    </span>
+                  </label>
+                </RadioGroup>
+                <p className="text-muted-foreground text-xs leading-4">
+                  {deleteBillingMethod
+                    ? t("keepBillingMethodNote")
+                    : t("keepBillingMethodSafe")}
+                </p>
+              </div>
             )}
           </>
         )}

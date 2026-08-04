@@ -33,6 +33,8 @@ async function lastCancelCall(request: import('playwright/test').APIRequestConte
 const SCENARIO = process.env.SCENARIO ?? 'recurring-withdrawal';
 
 test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
+  test.skip(SCENARIO.startsWith('refund-'), '해지 후 환불 상태 시나리오는 별도 describe 에서 다룬다');
+
   test.beforeEach(async ({ page, request }) => {
     await resetStub(request);
     await page.goto(MEMBERSHIP_URL);
@@ -57,13 +59,22 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
 
-    const immediateAvailable = ['recurring-withdrawal', 'annual-proration', 'cms-manual'].includes(SCENARIO);
+    const immediateAvailable = ['recurring-withdrawal', 'annual-proration', 'cms-manual', 'pre-collection'].includes(
+      SCENARIO
+    );
 
     if (immediateAvailable) {
       // 1단계: 해지 방식 선택. 두 선택지가 금액/종료일과 함께 보여야 한다.
       await expect(dialog.getByText('해지 방법을 선택해 주세요')).toBeVisible();
-      const expectedAmount = SCENARIO === 'annual-proration' ? '34,930' : '4,990';
-      await expect(dialog.getByText(new RegExp(`지금 해지하고 ${expectedAmount}원 환불`))).toBeVisible();
+      if (SCENARIO === 'pre-collection') {
+        // 출금 전이라 청구 자체가 없다. '0원 환불' 로 보이면 손해 보는 선택처럼 읽힌다.
+        await expect(dialog.getByText('결제 없이 지금 해지')).toBeVisible();
+        await expect(dialog.getByText(/아직 출금 전이라 이번 요금이 청구되지 않고/)).toBeVisible();
+        await expect(dialog.getByText(/0원 환불/)).toHaveCount(0);
+      } else {
+        const expectedAmount = SCENARIO === 'annual-proration' ? '34,930' : '4,990';
+        await expect(dialog.getByText(new RegExp(`지금 해지하고 ${expectedAmount}원 환불`))).toBeVisible();
+      }
 
       if (SCENARIO === 'annual-proration') {
         // 연간 정산 근거를 그대로 보여준다 — 왜 이 금액인지 고객이 확인할 수 있어야 한다.
@@ -78,7 +89,13 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     } else {
       // 즉시해지가 불가하면 방식 선택 단계를 건너뛰고, 그 사유를 숨기지 않는다.
       await expect(dialog.getByText('해지 방법을 선택해 주세요')).toHaveCount(0);
-      await expect(dialog.getByText(/환불이 불가/)).toBeVisible();
+      if (SCENARIO === 'pre-collection-benefit-used') {
+        // 이미 혜택을 썼으면 이번 기간 요금은 나간다. 그 사실과 다음 동선을 같이 알려야 한다.
+        await expect(dialog.getByText(/이번 기간 요금은 예정대로 출금됩니다/)).toBeVisible();
+        await expect(dialog.getByText(/다음 기간부터는 청구되지 않습니다/)).toBeVisible();
+      } else {
+        await expect(dialog.getByText(/환불이 불가/)).toBeVisible();
+      }
     }
 
     // 2단계: 사유 선택 — 고르기 전에는 진행 버튼이 비활성이어야 한다.
@@ -113,6 +130,11 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     const cancelCall = (await lastCancelCall(request))!;
     expect(cancelCall.body.reasonCode).toBe('NOT_USING');
     expect(cancelCall.body.cancelType).toBe(immediateAvailable ? 'IMMEDIATE_REFUND' : 'AT_PERIOD_END');
+    if (SCENARIO === 'pre-collection') {
+      // 청구가 없었다는 사실을 그대로 알린다.
+      await expect(page.getByText(/결제 없이 해지되었습니다/)).toBeVisible();
+      await expect(page.getByText(/환불되었습니다/)).toHaveCount(0);
+    }
     if (SCENARIO === 'cms-manual') {
       expect(cancelCall.body.refundReceiveAccount).toMatchObject({ holderName: '홍길동' });
       // 자동이체 환불은 돈이 아직 나가지 않았다(PENDING). "환불되었습니다" 로 알리면 고객은
@@ -120,6 +142,32 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
       await expect(page.getByText(/영업일 3일 내 송금됩니다/)).toBeVisible();
       await expect(page.getByText(/원이 환불되었습니다/)).toHaveCount(0);
     }
+  });
+
+  // 해지해도 출금은 멈추므로 계좌는 남기는 것이 기본이다. 무심코 지우면 재가입 때
+  // 계좌 재등록 + 은행 심사를 다시 겪는다.
+  test('정기결제 해지는 계좌를 남기는 것이 기본이고, 원하면 삭제까지 보낸다', async ({ page, request }) => {
+    test.skip(SCENARIO !== 'recurring-no-refund', '정기결제 대표 시나리오 하나로 확인');
+
+    await page.getByRole('button', { name: '멤버십 해지하기' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('billing-method-choice')).toBeVisible();
+    await expect(dialog.getByText(/남겨두셔도 해지 후에는 출금되지 않아요/)).toBeVisible();
+
+    await dialog.getByText('이용하지 않아요').click();
+    await dialog.getByRole('button', { name: /완료|다음/ }).click();
+    await expect.poll(async () => (await lastCancelCall(request))?.body.deleteBillingMethod).toBe(false);
+
+    // 계좌까지 지우겠다고 고르면 그 사실이 그대로 전달된다.
+    await resetStub(request);
+    await page.goto(MEMBERSHIP_URL);
+    await page.getByRole('button', { name: '멤버십 해지하기' }).click();
+    const dialog2 = page.getByRole('dialog');
+    await dialog2.getByText('이용하지 않아요').click();
+    await dialog2.getByText('계좌도 함께 삭제할게요').click();
+    await expect(dialog2.getByText(/은행 자동이체 등록까지 해지됩니다/)).toBeVisible();
+    await dialog2.getByRole('button', { name: /완료|다음/ }).click();
+    await expect.poll(async () => (await lastCancelCall(request))?.body.deleteBillingMethod).toBe(true);
   });
 
   test('해지 방식을 바꿔 고를 수 있다 (즉시해지 자격이 있어도 잔여기간 이용 가능)', async ({ page, request }) => {
@@ -222,5 +270,27 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     // Esc 로 닫힌다.
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
+  });
+});
+
+// 즉시해지하면 화면이 비가입자로 바뀐다. 해지 직후 토스트를 놓친 고객이 "얼마가 언제 들어오는지"
+// 다시 확인할 수 없으면 그대로 문의가 된다.
+test.describe(`해지 후 환불 진행 상황 (${SCENARIO})`, () => {
+  test.skip(!SCENARIO.startsWith('refund-'), '환불 상태 시나리오만');
+
+  test('가입자가 아니어도 환불 진행 상황이 보인다', async ({ page }) => {
+    await page.goto(MEMBERSHIP_URL);
+    const card = page.getByTestId('refund-status-card');
+    await expect(card).toBeVisible();
+
+    if (SCENARIO === 'refund-pending') {
+      await expect(card.getByText('환불 진행 중')).toBeVisible();
+      await expect(card.getByText(/4,990원을 영업일 3일 내 입금해 드릴 예정/)).toBeVisible();
+      // 어디로 들어오는지가 없으면 고객은 어느 계좌를 봐야 할지 모른다. 단 계좌는 마스킹된 값이어야 한다.
+      await expect(card.getByText(/국민은행 \*\*\*\*6789 \(홍길동\)/)).toBeVisible();
+    } else {
+      await expect(card.getByText('환불 완료')).toBeVisible();
+      await expect(card.getByText(/4,990원이 .*환불되었습니다/)).toBeVisible();
+    }
   });
 });

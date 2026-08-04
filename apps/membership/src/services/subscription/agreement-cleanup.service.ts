@@ -12,7 +12,14 @@ import {
   SubscriptionContractReader,
 } from './subscription-contract.reader';
 
-type CleanupItem = { contractId: string; userId: string; pendingSince: Date; withdrawn: boolean };
+type CleanupItem = {
+  contractId: string;
+  userId: string;
+  pendingSince: Date;
+  withdrawn: boolean;
+  /** 해지 시점에 고객이 계좌 삭제까지 요청했는지(보류 이벤트에 남겨둔 선택). */
+  deleteBillingMethod: boolean;
+};
 
 /** 한 번에 처리할 최대 건수. 남은 건은 다음 실행이 이어받는다(스케줄러가 오래 물고 있지 않게). */
 const BATCH_SIZE = 50;
@@ -99,6 +106,7 @@ export class AgreementCleanupService {
       // 이용 기간이 긴 계약은 첫 재시도 실패에 곧바로 포기 처리된다.
       pendingSince: this.retryableSince(state.since, state.metadata),
       withdrawn: isAgreementCleanupWithdrawn(state),
+      deleteBillingMethod: (state.metadata as { deleteBillingMethod?: boolean }).deleteBillingMethod === true,
     };
   }
 
@@ -120,13 +128,14 @@ export class AgreementCleanupService {
     }
 
     try {
-      const result = await this.paymentClientService.terminateBillingMandate(item.contractId);
+      const result = await this.paymentClientService.terminateBillingMandate(item.contractId, item.deleteBillingMethod);
 
       // 약정이 없거나(이미 정리됨) 종료됐으면 끝. 결제수단이 다른 활성 구독과 공유돼 건너뛴 경우도
       // 정상 종료다 — 남은 구독이 그 수단을 계속 써야 하므로 더 할 일이 없다.
       const done =
         !result.agreementFound ||
         result.mandateTerminated ||
+        result.billingMethodKept === true ||
         result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
 
       if (done) {

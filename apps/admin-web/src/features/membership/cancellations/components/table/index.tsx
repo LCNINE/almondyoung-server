@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMembershipMembers } from '@/lib/services/membership';
 import { useMemberUserSearch } from '@/hooks/use-member-user-search';
@@ -20,6 +21,33 @@ function getPlanLabel(durationDays: number): string {
   if (durationDays >= 365) return '연간';
   if (durationDays >= 28) return '월간';
   return `${durationDays}일`;
+}
+
+/** 해지 유형 — 즉시 종료된 건과 잔여기간을 쓰고 있는 예약 건은 CS 대응이 다르다. */
+function getCancelKind(row: AdminMemberListItem): { label: string; className: string } {
+  if (row.status === 'CANCELLED') {
+    return { label: '즉시 해지', className: 'bg-red-50 text-red-700 border-red-200' };
+  }
+  return { label: '해지 예약', className: 'bg-amber-50 text-amber-800 border-amber-200' };
+}
+
+/**
+ * 환불 상태 — 돈이 나갔는지가 한눈에 보여야 한다.
+ * 과도기(membership 이 옛 버전)엔 필드가 undefined 라 아무것도 단정하지 않는다.
+ */
+function getRefundState(row: AdminMemberListItem): { label: string; className: string } | null {
+  if (row.refundRequested === undefined) return null;
+  if (!row.refundRequested) {
+    return { label: '환불 없음', className: 'text-muted-foreground' };
+  }
+  if (row.refundCompleted) {
+    return { label: '완료', className: 'text-emerald-700' };
+  }
+  if (row.hasPaymentIntent === false) {
+    // 결제 이력이 없는 계약(관리자 지급·이관)에 환불 요청만 남은 건 — 보낼 곳도 근거도 없다.
+    return { label: '대상 결제 없음', className: 'text-muted-foreground' };
+  }
+  return { label: '미완료 — 처리 필요', className: 'font-semibold text-amber-700' };
 }
 
 const CANCEL_REASON_LABELS: Record<string, string> = {
@@ -81,16 +109,56 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
           <span className="text-sm">{new Date(getValue()).toLocaleDateString('ko-KR')}</span>
         ),
       }),
+      columnHelper.display({
+        id: 'cancelKind',
+        header: '해지 유형',
+        cell: ({ row }) => {
+          const kind = getCancelKind(row.original);
+          return (
+            <span className={`rounded border px-1.5 py-0.5 text-xs ${kind.className}`}>
+              {kind.label}
+            </span>
+          );
+        },
+      }),
       columnHelper.accessor('cancelledAt', {
         header: '해지일',
-        cell: ({ getValue }) => {
-          const v = getValue();
+        cell: ({ row }) => {
+          // 예약 해지는 cancelledAt 이 비어 있다 — 신청 시각은 recurringCancelledAt 에 있다.
+          const v = row.original.cancelledAt ?? row.original.recurringCancelledAt ?? null;
           return (
             <span className="text-sm">
               {v ? new Date(v).toLocaleDateString('ko-KR') : '-'}
             </span>
           );
         },
+      }),
+      columnHelper.display({
+        id: 'refund',
+        header: '환불',
+        cell: ({ row }) => {
+          const state = getRefundState(row.original);
+          if (!state) return <span className="text-sm text-muted-foreground">-</span>;
+          const amount = row.original.eligibleRefundAmount ?? 0;
+          return (
+            <span className={`text-sm ${state.className}`}>
+              {row.original.refundRequested && amount > 0
+                ? `${amount.toLocaleString()}원 · ${state.label}`
+                : state.label}
+            </span>
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'endsAt',
+        header: '이용 종료일',
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {row.original.endsAt
+              ? new Date(row.original.endsAt).toLocaleDateString('ko-KR')
+              : '-'}
+          </span>
+        ),
       }),
       columnHelper.accessor('cancellationReasonCode', {
         id: 'cancelReason',
@@ -120,9 +188,17 @@ export function CancellationsTable() {
   const { searchParams: query, memberQ } = useMembershipMemberTableQuery({ pageSize: PAGE_SIZE });
   const { resolvedUserIds, isSearchingUsers } = useMemberUserSearch(memberQ);
 
+  // 해지 내역은 즉시해지(CANCELLED)와 예약해지(잔여기간 이용 중)를 함께 봐야 한다 —
+  // CANCELLED 만 보면 고객이 해지 신청한 건이 목록에서 통째로 빠진다.
+  const searchParams = useSearchParams();
+  const cancelKind = searchParams.get('cancelKind') ?? 'ALL';
+  const status =
+    cancelKind === 'IMMEDIATE' ? 'CANCELLED' : cancelKind === 'SCHEDULED' ? 'RECURRING_CANCELLED' : 'CANCELLED_ANY';
+  const refundPending = searchParams.get('refundPending') === 'true' ? true : undefined;
+
   const membershipQuery = memberQ && resolvedUserIds !== null
-    ? { ...query, q: undefined, userIds: resolvedUserIds, status: 'CANCELLED' as const }
-    : { ...query, status: 'CANCELLED' as const };
+    ? { ...query, q: undefined, userIds: resolvedUserIds, status, refundPending }
+    : { ...query, status, refundPending };
 
   const { data, isLoading, isFetching } = useMembershipMembers(membershipQuery, {
     enabled: !memberQ || (Array.isArray(resolvedUserIds) && resolvedUserIds.length > 0),

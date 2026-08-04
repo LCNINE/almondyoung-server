@@ -111,6 +111,9 @@ export const CancelSubscriptionRequestSchema = z.object({
       holderName: z.string(),
     })
     .optional(),
+  // 등록된 자동이체 계좌까지 삭제할지. 생략하면 남긴다 — 해지만으로 출금은 멈추고,
+  // 남겨두면 재가입할 때 은행 재심사 없이 같은 계좌를 쓸 수 있다.
+  deleteBillingMethod: z.boolean().optional(),
 });
 
 export const ResumeSubscriptionRequestSchema = z.object({
@@ -300,6 +303,8 @@ export const ForceCancelSubscriptionRequestSchema = z.object({
       holderName: z.string(),
     })
     .optional(),
+  // 등록된 자동이체 계좌까지 삭제할지. 생략하면 남긴다(재가입 시 은행 재심사 불필요).
+  deleteBillingMethod: z.boolean().optional(),
 });
 
 export type ForceCancelSubscriptionRequest = z.infer<typeof ForceCancelSubscriptionRequestSchema>;

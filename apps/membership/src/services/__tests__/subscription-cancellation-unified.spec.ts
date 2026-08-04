@@ -362,7 +362,7 @@ describe('SubscriptionCancellationService', () => {
         cancelType: 'AT_PERIOD_END',
       });
 
-      expect(mockPaymentClientService.terminateBillingMandate).toHaveBeenCalledWith('contract_001');
+      expect(mockPaymentClientService.terminateBillingMandate).toHaveBeenCalledWith('contract_001', false);
       expect(mockCancellationManager.markAgreementRevokePending).not.toHaveBeenCalled();
     });
 
