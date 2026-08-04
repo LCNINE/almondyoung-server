@@ -350,6 +350,7 @@ function VariantsTable({
   const [pendingPolicyVariantId, setPendingPolicyVariantId] = useState<
     string | null
   >(null);
+  const [bulkPolicyPending, setBulkPolicyPending] = useState(false);
   const bulkUpdateVariants = useBulkUpdateDraftVariants();
   const updateStockPolicy = useUpdateVariantStockPolicy();
   const queryClient = useQueryClient();
@@ -388,13 +389,55 @@ function VariantsTable({
     [pendingPolicyVariantId, queryClient, updateStockPolicy]
   );
 
+  // 헤더 체크박스에서 전 품목에 같은 정책을 적용한다. 서버가 variant 별 advisory lock 을
+  // 잡으므로 순차로 보낸다 — 동시에 던지면 락 경합만 늘고 빨라지지 않는다.
+  const handleBulkPolicyChange = useCallback(
+    async (
+      rows: ProductVariantTableRow[],
+      patch: (policy: StockPolicyDto) => StockPolicyDto
+    ) => {
+      if (bulkPolicyPending || pendingPolicyVariantId) return;
+      setBulkPolicyPending(true);
+      let applied = 0;
+      try {
+        for (const row of rows) {
+          const current = normalizeStockPolicy(row.matchingInfo?.stockPolicy);
+          const next = normalizeStockPolicy(patch(current));
+          // 이미 같은 값인 품목까지 저장하면 무의미한 요청 + 이벤트가 그만큼 나간다.
+          if (JSON.stringify(next) === JSON.stringify(current)) continue;
+          await updateStockPolicy.mutateAsync({ variantId: row.id, data: next });
+          applied += 1;
+        }
+        toast.success(
+          applied > 0
+            ? `${applied}개 품목에 적용했습니다.`
+            : '이미 모든 품목에 적용되어 있습니다.'
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : '일괄 적용에 실패했습니다. 일부만 반영되었을 수 있습니다.'
+        );
+      } finally {
+        setBulkPolicyPending(false);
+        queryClient.invalidateQueries({
+          queryKey: matchingQueryKeys.variantMatchingBatches(),
+        });
+      }
+    },
+    [bulkPolicyPending, pendingPolicyVariantId, queryClient, updateStockPolicy]
+  );
+
   const matchingActions = useMemo(
     () =>
       showMatchingColumns
         ? {
             isLoading: matchingBatchLoading,
             pendingVariantId: pendingPolicyVariantId,
+            isBulkPending: bulkPolicyPending,
             onPolicyChange: handlePolicyChange,
+            onBulkPolicyChange: handleBulkPolicyChange,
             onEditMatching: setMatchingEditingVariant,
             onAdjustStock: setAdjustingVariant,
           }
@@ -403,7 +446,9 @@ function VariantsTable({
       showMatchingColumns,
       matchingBatchLoading,
       pendingPolicyVariantId,
+      bulkPolicyPending,
       handlePolicyChange,
+      handleBulkPolicyChange,
     ]
   );
 

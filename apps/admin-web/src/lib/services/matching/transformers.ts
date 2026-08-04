@@ -3,6 +3,7 @@
 import type {
   MatchingDto,
   MatchingsResponseDto,
+  MatchingStrategy,
   ResolveMatchingDto,
   StockPolicyDto,
   UpsertMatchingDto,
@@ -95,6 +96,26 @@ export const normalizeStockPolicy = (
   availabilityOverride: policy?.availabilityOverride ?? null,
   comingSoonDate: policy?.comingSoonDate ?? null,
 });
+
+/**
+ * 출시예정이 입고로 스스로 걷힐 상품인지 (ADR-0028 §4).
+ *
+ * 자동 해제 트리거는 실재고(`stockBoundQuantity > 0`) 하나뿐이다. 그래서 실재고가 붙을 일이
+ * 없는 상품은 트리거가 영영 오지 않고, 관리자가 직접 체크를 풀기 전까지 영구 품절이 된다.
+ * ADR 은 void 만 예외로 적어놨지만, 항상판매도 애초에 재고를 안 세려고 켜는 플래그라 같은
+ * 구멍에 빠진다 — 그쪽은 실입고가 잡히면 걷히므로 "안 걷힌다" 가 아니라 "안 걷힐 수 있다" 다.
+ */
+export const willComingSoonClearOnStock = (
+  policy: Pick<StockPolicyDto, 'alwaysSellableZeroStock'>,
+  strategy?: MatchingStrategy | null
+): boolean => strategy !== 'void' && !policy.alwaysSellableZeroStock;
+
+export const COMING_SOON_MANUAL_CLEAR_HINT =
+  '이 상품은 실재고가 잡히지 않으면 출시예정이 자동으로 걷히지 않습니다. 판매를 열려면 체크를 직접 풀어야 합니다.';
+
+/** 테이블 컬럼 툴팁 — 출시예정 행의 선판매·항상판매는 "지금" 이 아니라 "입고 후" 값이다. */
+export const COMING_SOON_WINS_HINT =
+  '출시 예정 중에는 적용되지 않습니다. 입고 후 적용될 설정입니다.';
 
 export const PRODUCT_SELLABLE_REASON_LABELS: Record<string, string> = {
   SELLABLE: '판매 가능',
