@@ -13,8 +13,16 @@ export class StorefrontRevalidateService {
   private readonly url = process.env.STOREFRONT_REVALIDATE_URL;
   private readonly secret = process.env.STOREFRONT_REVALIDATE_SECRET;
 
+  /**
+   * 상품 변경(가격·재고·상세설명) 후 호출한다.
+   *
+   * `handle` 만 넘기면 스토어프론트는 `product-{handle}` 태그와 상세 경로만 무효화하는데,
+   * 상세설명(descriptionHtml)은 Core `/masters/{id}` 응답이라 `pim-detail-{masterId}` 로
+   * 따로 캐시된다 (storefront `src/lib/api/pim/products.ts`). 그 태그를 같이 비우지 않으면
+   * 상세설명 변경이 최대 1시간 늦게 노출된다. Medusa handle === Core masterId 라 같은 값이다.
+   */
   async revalidateProduct(handle: string): Promise<void> {
-    await this.post({ handle }, `handle=${handle}`);
+    await this.post({ handle, tags: [`pim-detail-${handle}`] }, `handle=${handle}`);
   }
 
   /**
