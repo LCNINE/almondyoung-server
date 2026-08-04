@@ -35,6 +35,7 @@ import { InvoiceBillingManager } from '../../src/services/billing/invoice-billin
 import { AdminMembersReader } from '../../src/services/admin/admin-members.reader';
 import { RefundEventHandler } from '../../src/services/refund-event-handler.service';
 import { AgreementCleanupService } from '../../src/services/subscription/agreement-cleanup.service';
+import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
 
 type MembershipSchema = typeof membershipSchema;
 
@@ -54,6 +55,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
   let adminReader: AdminMembersReader;
   let refundEventHandler: RefundEventHandler;
   let agreementCleanup: AgreementCleanupService;
+  let billingOutcome: BillingOutcomeHandler;
 
   let tierId: string;
   let monthlyPlanId: string;
@@ -96,6 +98,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         AdminMembersReader,
         RefundEventHandler,
         AgreementCleanupService,
+        BillingOutcomeHandler,
         { provide: PaymentClientService, useValue: wallet },
         { provide: MembershipEventPublisher, useValue: events },
         { provide: InvoiceBillingManager, useValue: invoices },
@@ -108,6 +111,7 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     adminReader = module.get(AdminMembersReader);
     refundEventHandler = module.get(RefundEventHandler);
     agreementCleanup = module.get(AgreementCleanupService);
+    billingOutcome = module.get(BillingOutcomeHandler);
 
     // 같은 DB 를 쓰는 다른 스펙이 남긴 tier/plan 을 먼저 치운다 — tiers.code 가 유니크라
     // 남아 있으면 삽입이 깨지고, 실행 순서에 따라 결과가 달라진다(flaky).
@@ -1028,6 +1032,95 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(byContract.get(deferredCase.contract.id)?.notBefore).toBe(deferredCase.endsAt);
     });
 
+    // 해지 철회는 wallet 자동이체 약정을 새로 만들어 정기결제를 되살린다. 그런데 해지 때 남긴
+    // 보류 기록은 그대로라, 이용 종료일이 지나면 정리 스케줄러가 **살아있는 약정을 지운다.**
+    // 다음 청구가 BILLING_AGREEMENT_NOT_FOUND 로 실패해 그대로 해지되므로, 계속 쓰겠다고 한
+    // 고객이 멤버십을 잃는다.
+    it('해지를 철회한 계약의 약정은 지우지 않고 큐에서 닫는다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10, billingPath: 'INVOICE' });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_DEFERRED');
+
+      await service.undoCancellation(userId, EMAIL);
+
+      // 보류 기한이 지나도(이용 종료일 경과) 살아있는 정기결제의 약정을 건드리면 안 된다.
+      await db.db
+        .update(schema.subscriptionContractEvents)
+        .set({ metadata: { notBefore: format(subDays(new Date(), 1), 'yyyy-MM-dd') } })
+        .where(
+          and(
+            eq(schema.subscriptionContractEvents.contractId, contract.id),
+            eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_DEFERRED'),
+          ),
+        );
+      wallet.terminateBillingMandate.mockClear();
+
+      await agreementCleanup.retryPendingAgreementRevokes();
+
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_UNDONE');
+      // 큐가 스스로 비워져야 관리자가 '처리 필요' 로 보지 않는다.
+      const queue = await adminReader.findAgreementCleanupQueue();
+      expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
+    });
+
+    // 목록을 읽은 뒤 wallet 을 부르기 전에 철회가 들어오는 창. 읽은 시점 판정만 믿으면 그 사이
+    // 되살아난 약정을 지운다.
+    it('배치가 도는 중에 철회가 들어와도 약정을 지우지 않는다', async () => {
+      wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      wallet.terminateBillingMandate.mockClear();
+
+      // 목록을 읽은 **뒤** 철회가 커밋되는 인터리빙. 읽은 시점 판정만 믿으면 여기서 걸러지지 않는다.
+      const reader = module.get(SubscriptionContractReader);
+      const readLatest = reader.findLatestAgreementEvents.bind(reader);
+      const spy = jest
+        .spyOn(reader, 'findLatestAgreementEvents')
+        .mockImplementation(async (params) => {
+          const rows = await readLatest(params);
+          await service.undoCancellation(userId, EMAIL);
+          return rows;
+        });
+
+      try {
+        await agreementCleanup.retryPendingAgreementRevokes();
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(wallet.terminateBillingMandate).not.toHaveBeenCalled();
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKE_UNDONE');
+      expect((await loadContract(contract.id)).autoRenewal).toBe(true);
+    });
+
+    it('해지를 철회한 계약은 정리가 끝나기 전에도 관리자 목록에 뜨지 않는다', async () => {
+      wallet.terminateBillingMandate.mockRejectedValueOnce(new Error('wallet down'));
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      expect((await adminReader.findAgreementCleanupQueue()).data.some((r) => r.contractId === contract.id)).toBe(true);
+
+      await service.undoCancellation(userId, EMAIL);
+
+      const queue = await adminReader.findAgreementCleanupQueue();
+      expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
+    });
+
+    // 해지예약(INVOICE)은 보류 기록을 남긴다. 그 뒤 즉시해지로 약정이 실제로 종료되면 그 사실을
+    // 남겨야 큐가 비워진다 — 남기지 않으면 이미 끝난 건이 '처리 필요' 로 계속 떠 있는다.
+    it('해지예약 뒤 즉시해지로 약정이 끝나면 보류 기록이 닫힌다', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 2, billingPath: 'INVOICE' });
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'AT_PERIOD_END' });
+      expect((await adminReader.findAgreementCleanupQueue()).data.some((r) => r.contractId === contract.id)).toBe(true);
+
+      await service.cancelSubscription(userId, EMAIL, { reasonCode: 'NOT_USING', cancelType: 'IMMEDIATE_REFUND' });
+
+      expect(wallet.terminateBillingMandate).toHaveBeenCalledWith(contract.id);
+      expect(await loadEventTypes(contract.id)).toContain('AGREEMENT_REVOKED');
+      const queue = await adminReader.findAgreementCleanupQueue();
+      expect(queue.data.some((row) => row.contractId === contract.id)).toBe(false);
+    });
+
     it('정리가 끝난 약정은 관리자 목록에서 빠진다', async () => {
       wallet.terminateBillingMandate.mockResolvedValue({
         agreementFound: true,
@@ -1805,6 +1898,100 @@ describeE2E('멤버십 해지·환불 E2E', () => {
 
       expect((await adminReader.findDetailByUserId(oneTime.userId))?.canUndoCancellation).toBe(false);
       expect((await adminReader.findDetailByUserId(recurring.userId))?.canUndoCancellation).toBe(true);
+    });
+  });
+
+  // 해지·만료와 재가입은 같은 사용자에게서 겹칠 수 있다. 자격(entitlement)은 계약이 아니라 사용자
+  // 단위라, 끝난 계약의 뒤늦은 처리가 **새 구독의 자격**을 건드릴 수 있다.
+  describe('종료된 계약의 뒤늦은 처리 — 재가입과의 경합', () => {
+    /** 이미 끝난 계약과, 그 뒤 재가입해 살아있는 자격을 함께 만든다. */
+    async function givenTerminatedThenResubscribed(status: 'CANCELLED' | 'EXPIRED') {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 10 });
+      await db.db
+        .update(schema.subscriptionContracts)
+        .set({ status, autoRenewal: false, nextBillingDate: null })
+        .where(eq(schema.subscriptionContracts.id, contract.id));
+      await db.db
+        .update(schema.subscriptionEntitlement)
+        .set({ isCurrent: false, closedAt: new Date() })
+        .where(eq(schema.subscriptionEntitlement.userId, userId));
+
+      // 재가입 — 새 계약과 새 자격.
+      const newEndsAt = format(addDays(new Date(), 30), 'yyyy-MM-dd');
+      const [newContract] = await db.db
+        .insert(schema.subscriptionContracts)
+        .values({
+          userId,
+          planId: monthlyPlanId,
+          billingDate: format(new Date(), 'yyyy-MM-dd'),
+          nextBillingDate: newEndsAt,
+          autoRenewal: true,
+          status: 'ACTIVE',
+          billingPath: 'CHARGE',
+          lastPaymentIntentId: 'intent_new',
+        })
+        .returning();
+      await db.db.insert(schema.subscriptionEntitlement).values({
+        userId,
+        tierId,
+        startsAt: format(new Date(), 'yyyy-MM-dd'),
+        endsAt: newEndsAt,
+        isCurrent: true,
+      });
+
+      return { userId, oldContract: contract, newContract, newEndsAt };
+    }
+
+    it('해지된 계약에 뒤늦게 도착한 결제 성공이 재가입 자격을 늘리지 않는다', async () => {
+      const { userId, oldContract, newEndsAt } = await givenTerminatedThenResubscribed('CANCELLED');
+
+      await billingOutcome.handleSuccess(oldContract.id, MONTHLY_PRICE, 'intent_late');
+
+      // 자격은 새 구독의 것이다 — 옛 계약의 결제로 늘어나면 안 낸 돈만큼 공짜 기간이 생긴다.
+      expect((await loadCurrentEntitlement(userId)).endsAt).toBe(newEndsAt);
+      // 사실은 남긴다 — 수동 환불/정산 검토 대상이다.
+      expect(await loadEventTypes(oldContract.id)).toContain('BILLING_SUCCESS_AFTER_TERMINATION');
+      expect((await loadContract(oldContract.id)).status).toBe('CANCELLED');
+    });
+
+    // 만료 크론은 대상을 먼저 읽고 나중에 처리한다. 그 사이 자격이 갈아치워지면(재가입·해지철회·갱신)
+    // 무조건 만료 처리하는 순간 방금 결제한 고객이 EXPIRED 로 떨어지고, 그 이벤트가 Medusa 할인
+    // 그룹까지 벗긴다.
+    it('만료 처리 전에 자격이 교체됐으면 만료시키지 않는다 (재가입 직후 도착한 만료 처리)', async () => {
+      const { userId, oldContract, newContract, newEndsAt } = await givenTerminatedThenResubscribed('EXPIRED');
+      const staleEntitlementId = (
+        await db.db
+          .select({ id: schema.subscriptionEntitlement.id })
+          .from(schema.subscriptionEntitlement)
+          .where(
+            and(
+              eq(schema.subscriptionEntitlement.userId, userId),
+              eq(schema.subscriptionEntitlement.isCurrent, false),
+            ),
+          )
+      )[0].id;
+      events.publishStatusChanged.mockClear();
+
+      await billingOutcome.handleExpiration(staleEntitlementId, userId, newContract.id);
+
+      // 새 계약은 그대로 살아 있어야 하고, EXPIRED 이벤트도 나가면 안 된다(그룹 제거로 이어진다).
+      expect((await loadContract(newContract.id)).status).toBe('ACTIVE');
+      expect((await loadCurrentEntitlement(userId)).endsAt).toBe(newEndsAt);
+      expect(events.publishStatusChanged).not.toHaveBeenCalled();
+      expect(await loadEventTypes(newContract.id)).not.toContain('EXPIRED');
+      expect(oldContract.id).toBeTruthy();
+    });
+
+    it('정상 만료는 그대로 처리된다 (가드가 과하게 걸리지 않는지)', async () => {
+      const { userId, contract } = await givenSubscription({ daysSincePeriodStart: 40, recurring: false });
+      const entitlement = await loadCurrentEntitlement(userId);
+      events.publishStatusChanged.mockClear();
+
+      await billingOutcome.handleExpiration(entitlement.id, userId, contract.id);
+
+      expect((await loadContract(contract.id)).status).toBe('EXPIRED');
+      expect(await loadCurrentEntitlement(userId)).toBeUndefined();
+      expect(events.publishStatusChanged).toHaveBeenCalled();
     });
   });
 

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import { MedusaClient } from './medusa.client';
 import { EventTrackingService } from '@app/events';
+import { MembershipServiceClient } from '../../services/membership-service.client';
 import type { SyncResult } from '../../types';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class MembershipMedusaSyncService {
   constructor(
     private readonly medusaClient: MedusaClient,
     private readonly eventTrackingService: EventTrackingService,
+    private readonly membershipServiceClient: MembershipServiceClient,
   ) { }
 
   /** 그룹 변경 후 카트 가격 재계산 트리거.즉시 리턴됨. */
@@ -121,6 +123,22 @@ export class MembershipMedusaSyncService {
       }
 
       if (removeStatuses.has(status)) {
+        // 이벤트 도착이 늦는 사이 재가입·해지철회로 자격이 되살아났을 수 있다. 그대로 빼면
+        // 돈 낸 고객이 할인 없는 장바구니를 본다.
+        if (await this.isStillActiveInSsot(userId)) {
+          this.logger.warn(`멤버십 그룹 제거 취소 — SSOT 기준 여전히 활성 (userId=${userId}, status=${status})`);
+          await this.eventTrackingService
+            .trackEffect({
+              resourceType: 'UserMembership',
+              resourceId: userId,
+              action: 'SKIPPED',
+              description: `멤버십 그룹 제거 취소 — SSOT 활성 (userId=${userId}, status=${status})`,
+              eventType: 'MembershipStatusChanged',
+            })
+            .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
+          return { success: true, data: { userId, action: 'skipped' } };
+        }
+
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
         this.refreshCartPricesAfterGroupChange(customer.id, userId);
         await this.eventTrackingService
@@ -150,6 +168,27 @@ export class MembershipMedusaSyncService {
     } catch (error) {
       this.logger.error(`Failed to sync membership group for userId=${userId}`, error.stack);
       throw error;
+    }
+  }
+
+  /**
+   * SSOT(멤버십 서비스) 기준 자격 생존 여부.
+   *
+   * 조회에 실패하면 **제거를 그대로 진행한다**(=이 확인이 없던 동작). 백스톱이 한쪽에만 있기 때문이다.
+   * 잘못 뺀 건은 02:30 전체 활성회원 정합화가 도로 넣어주지만, 빼지 못한 건은 02:00 정합화가
+   * cafe24 연동 회원만 돌아 자체가입자는 아무도 복구하지 않는다.
+   */
+  private async isStillActiveInSsot(userId: string): Promise<boolean> {
+    try {
+      const activeUserIds = await this.membershipServiceClient.getActiveUserIds([userId]);
+      return activeUserIds.includes(userId);
+    } catch (err) {
+      this.logger.warn(
+        `SSOT 자격 조회 실패 — 제거를 그대로 진행한다 (userId=${userId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
     }
   }
 

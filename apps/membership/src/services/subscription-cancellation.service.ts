@@ -788,7 +788,16 @@ export class SubscriptionCancellationService {
           `자동이체 약정 미종료 (contractId=${contractId}, reason=${result.skipReason ?? 'UNKNOWN'})`,
         );
         await this.cancellationManager.markAgreementRevokePending(contractId, userId);
+        return;
       }
+      // 앞서 남은 보류/재시도 기록을 닫는다(해지예약 → 즉시해지). 닫지 않으면 이미 끝난 건이
+      // 관리자 정리 큐에 계속 남는다.
+      await this.closeOpenAgreementCleanup(contractId, userId, {
+        agreementFound: result.agreementFound,
+        mandateTerminated: result.mandateTerminated,
+        cancelledWithdrawals: result.cancelledWithdrawals,
+        skipReason: result.skipReason ?? null,
+      });
     } catch (err) {
       this.logger.error(
         `자동이체 약정 종료 실패 — 자동청구는 DB 플래그로 차단됨, 약정 정리는 재시도 필요 (contractId=${contractId}): ${
@@ -797,6 +806,28 @@ export class SubscriptionCancellationService {
         err instanceof Error ? err.stack : undefined,
       );
       await this.cancellationManager.markAgreementRevokePending(contractId, userId);
+    }
+  }
+
+  /**
+   * 열려 있는 정리 기록만 닫는다. 정리할 것이 없던 계약(1회 결제 등)까지 남기면 계약 로그가
+   * 의미 없는 줄로 채워진다. 기록 실패는 삼킨다 — 약정 종료 자체는 이미 끝났다.
+   */
+  private async closeOpenAgreementCleanup(
+    contractId: string,
+    userId: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      const latest = await this.contractReader.findLatestAgreementEventType(contractId);
+      if (latest !== 'AGREEMENT_REVOKE_PENDING' && latest !== 'AGREEMENT_REVOKE_DEFERRED') return;
+      await this.cancellationManager.markAgreementRevoked(contractId, userId, metadata);
+    } catch (err) {
+      this.logger.warn(
+        `약정 정리 완료 기록 실패 (contractId=${contractId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   }
 }

@@ -9,7 +9,10 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 import { isAxiosError } from 'axios';
 import { randomUUID } from 'crypto';
 import { PaymentClientService } from '../billing/payment-client.service';
-import { SubscriptionContractReader } from '../subscription/subscription-contract.reader';
+import {
+  isAgreementCleanupWithdrawn,
+  SubscriptionContractReader,
+} from '../subscription/subscription-contract.reader';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -1061,10 +1064,12 @@ export class AdminMembersReader {
    * 영원히 그대로다 — 그 사실이 로그에만 있으면 아무도 모른다.
    */
   async findAgreementCleanupQueue(): Promise<AgreementCleanupListResponse> {
-    const states = await this.contractReader.findLatestAgreementEvents({
+    const found = await this.contractReader.findLatestAgreementEvents({
       eventTypes: ['AGREEMENT_REVOKE_PENDING', 'AGREEMENT_REVOKE_DEFERRED', 'AGREEMENT_REVOKE_ABANDONED'],
       limit: 500,
     });
+    // 해지를 철회한 계약은 정리 대상이 아니다(스케줄러가 다음 실행에서 큐를 닫는다).
+    const states = found.filter((s) => !isAgreementCleanupWithdrawn(s));
     if (states.length === 0) return { data: [], total: 0 };
 
     const contracts = await this.dbService.db
