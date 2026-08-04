@@ -16,6 +16,7 @@ import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
+import { NICKNAME_RULE_MESSAGE, isValidNickname } from '../../commons/utils/nickname';
 import { phoneNumberDigitVariants } from '../../commons/utils/phone-number';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
@@ -243,6 +244,16 @@ export class UsersService {
       updateUserDto;
 
     const client = this.getClient(tx);
+
+    if (nickname) {
+      const [current] = await client
+        .select({ nickname: schema.users.nickname })
+        .from(schema.users)
+        .where(eq(schema.users.id, userId));
+      if (nickname !== current?.nickname && !isValidNickname(nickname)) {
+        throw new BadRequestException(NICKNAME_RULE_MESSAGE);
+      }
+    }
 
     try {
       if (username || nickname) {
