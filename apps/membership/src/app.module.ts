@@ -27,6 +27,10 @@ import { SubscriptionCancellationService } from './services/subscription-cancell
 import { SubscriptionContractReader } from './services/subscription/subscription-contract.reader';
 import { SubscriptionCancellationManager } from './services/subscription/subscription-cancellation.manager';
 import { CancellationReasonReader } from './services/subscription/cancellation-reason.reader';
+import { CancellationContextReader } from './services/subscription/cancellation-context.reader';
+import { AgreementCleanupService } from './services/subscription/agreement-cleanup.service';
+import { RefundPolicyService } from './services/subscription/refund-policy.service';
+import { RefundEventHandler } from './services/refund-event-handler.service';
 import { SubscriptionCreator } from './services/subscription/subscription.creator';
 import { SubscriptionManager } from './services/subscription/subscription.manager';
 import { EntitlementReader } from './services/entitlement/entitlement.reader';
@@ -63,7 +67,8 @@ import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
-import { JwtAuthGuard } from '@app/authorization';
+import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
+import { JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
 
 @Module({
@@ -76,7 +81,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'membership',
-      scopes: [],
+      // 부팅 시 auth.scopes / auth.role_scope_mapping 을 이 선언에 맞춰 정합화한다.
+      scopes: MEMBERSHIP_SCOPES,
+      roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
     }),
     HttpModule,
     ScheduleModule.forRoot(),
@@ -124,6 +131,11 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    // @RequireScopes 가 붙은 라우트만 검사한다(메타데이터 없으면 통과).
+    {
+      provide: APP_GUARD,
+      useClass: ScopeGuard,
+    },
     InternalApiKeyGuard,
     // Business Layer (Services)
     PlanService,
@@ -146,6 +158,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     SubscriptionManager,
     SubscriptionCancellationManager,
     CancellationReasonReader,
+    CancellationContextReader,
+    // 해지 시 실패한 자동이체 약정 종료를 이어서 끝낸다(은행에 약정이 남지 않게).
+    AgreementCleanupService,
 
     PauseReader,
     PauseManager,
@@ -163,6 +178,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     InvoiceOutcomeHandler,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
+    // 해지·환불 정책 (연간 정산 / 청약철회 창)
+    RefundPolicyService,
+    RefundEventHandler,
     // Infrastructure
     PaymentClientService,
     MembershipEventPublisher,

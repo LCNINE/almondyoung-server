@@ -363,7 +363,17 @@ export interface AdminRecurringBillingOverview {
 export interface AdminRecurringBillingListQuery {
   page?: number;
   limit?: number;
-  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts' | 'stuck' | 'dunning' | 'invoices';
+  // stuck/dunning/invoices/agreement-cleanup 은 wallet 이 아니라 membership 전용 엔드포인트를 쓰는
+  // 화면 탭이다(같은 페이지의 뷰 전환이라 여기 함께 둔다).
+  view?:
+    | 'needs-action'
+    | 'members'
+    | 'withdrawals'
+    | 'contracts'
+    | 'stuck'
+    | 'dunning'
+    | 'invoices'
+    | 'agreement-cleanup';
   dateType?: 'updatedAt' | 'createdAt' | 'paymentDate' | 'nextBillingDate';
   dateFrom?: string;
   dateTo?: string;

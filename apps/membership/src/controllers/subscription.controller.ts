@@ -191,38 +191,61 @@ export class SubscriptionController {
     description: '취소할 활성 구독을 찾을 수 없음',
     type: ErrorResponseDto,
   })
-  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
+  @UseGuards(JwtAuthGuard)
   async cancelSubscription(
     @User() user: { userId: string; email?: string },
     @Body(new ZodValidationPipe(CancelSubscriptionRequestSchema))
     cancelSubscriptionDto: CancelSubscriptionRequest,
   ) {
     const userId = user?.userId;
-    const email = user?.email;
-    try {
-      if (!userId) {
-        throw new BadRequestException('userId가 필요합니다');
-      }
-      if (!email) {
-        throw new BadRequestException('email이 필요합니다');
-      }
-      return await this.cancellationService.cancelSubscription(
-        userId,
-        email,
-        cancelSubscriptionDto.reasonCode,
-        cancelSubscriptionDto.reasonText,
-        cancelSubscriptionDto.refundReceiveAccount,
-      );
-    } catch (e: any) {
-      const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('not found')) {
-        throw new NotFoundException(e.message);
-      }
-      if (msg.includes('already cancelled')) {
-        throw new BadRequestException(e.message);
-      }
-      throw new InternalServerErrorException(e.message);
-    }
+    if (!userId) throw new BadRequestException('userId가 필요합니다');
+
+    // 도메인 예외(@app/shared)는 GlobalExceptionFilter 가 상태코드로 변환한다 — 문자열 매칭 불필요.
+    return this.cancellationService.cancelSubscription(userId, this.resolveEmail(user), {
+      reasonCode: cancelSubscriptionDto.reasonCode,
+      reasonText: cancelSubscriptionDto.reasonText,
+      cancelType: cancelSubscriptionDto.cancelType,
+      refundReceiveAccount: cancelSubscriptionDto.refundReceiveAccount,
+    });
+  }
+
+  /**
+   * 해지 미리보기 — 선택 가능한 해지 방식과 환불 금액
+   */
+  @Get('cancel-preview')
+  @ApiOperation({
+    summary: '해지 미리보기',
+    description:
+      '해지예약/즉시해지 중 무엇을 고를 수 있고 각각 얼마가 환불되는지 반환한다. 실제 해지와 동일한 정책을 사용한다.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async previewCancellation(@User('userId') userId: string) {
+    if (!userId) throw new BadRequestException('userId가 필요합니다');
+    return this.cancellationService.previewCancellation(userId);
+  }
+
+  /**
+   * 해지 예약 철회
+   */
+  @Post('cancel/undo')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '해지 예약 철회',
+    description: '잔여 기간이 남은 정기결제 해지 예약을 되돌려 자동결제를 재개한다.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async undoCancellation(@User() user: { userId: string; email?: string }) {
+    if (!user?.userId) throw new BadRequestException('userId가 필요합니다');
+    return this.cancellationService.undoCancellation(user.userId, this.resolveEmail(user));
+  }
+
+  /**
+   * 이벤트 발행용 email. 토큰에 email 이 없어도 해지 자체를 막지 않는다 — email 은 Medusa 그룹
+   * 동기화 보조 키일 뿐이고(그룹 해제는 userId 로 한다), 해지를 못 하게 하는 것이 훨씬 큰 피해다.
+   * 빈 문자열은 이벤트 스키마(z.string().email())를 깨뜨리므로 undefined 로 넘긴다.
+   */
+  private resolveEmail(user: { userId: string; email?: string }): string | undefined {
+    return user.email && user.email.length > 0 ? user.email : undefined;
   }
 
   /**

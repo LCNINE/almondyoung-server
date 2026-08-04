@@ -269,12 +269,54 @@ export class SubscriptionService {
    * wallet 이 발행하는 환불 성공 이벤트를 받아 해당 결제 intent 로 만들어진 구독을 무효화한다.
    * 멤버십이 시작한 취소(cancelSubscription → 환불 요청)는 이미 CANCELLED 라 멱등 스킵된다.
    */
-  async voidByPaymentIntent(intentId: string, reason: string) {
+  async voidByPaymentIntent(intentId: string, reason: string, refundedAmount?: number) {
     const contract = await this.contractReader.findByPaymentIntentId(intentId);
     if (!contract) return; // 멤버십 결제가 아니거나 구독 미생성 — 무시
     if (contract.status === 'CANCELLED') return; // 이미 회수됨 (취소→환불 경로 등) — 멱등
 
+    // 부분 환불은 자격을 회수하지 않는다. 결제관리에서 배송 지연 사과 같은 소액 보상을 이 결제에
+    // 걸면, 예전에는 그 이벤트만으로 멤버십 전체가 취소돼 돈은 조금 돌려주고 남은 이용권을 통째로
+    // 뺏는 결과가 됐다. 회수는 '이 결제가 사실상 전부 환불됐을 때' 만 한다.
+    if (!(await this.isFullyRefunded(intentId, contract.id, refundedAmount))) {
+      this.logger.warn(
+        `부분 환불 감지 — 구독은 유지한다 (intentId=${intentId}, contractId=${contract.id}, refunded=${refundedAmount ?? '-'})`,
+      );
+      return;
+    }
+
     await this.subscriptionManager.voidSubscription(contract.userId, contract, reason);
+  }
+
+  /**
+   * 이 결제가 전부 환불됐는지. wallet 이 권위(누적 환불액 대 환불 가능 총액)이고, 조회가 실패하면
+   * 이벤트에 실린 이번 환불액을 플랜 정가와 비교해 판단한다.
+   *
+   * wallet 을 먼저 묻는 이유가 둘이다. (1) **누적** — 2,495원씩 두 번 나간 환불은 합계가 전액이지만
+   * 이벤트 하나만 보면 영원히 부분으로 보인다. (2) **결제액 ≠ 플랜 정가일 수 있다** — 라이브 실측
+   * (2026-07-31)에 멤버십 결제 중 포인트가 섞인 복합결제 4건이 있었고, 실제로 부분 환불된 건도
+   * 있었다(4,990원 결제에 4,092원 환불). 정가 비교는 wallet 을 못 물었을 때의 거친 폴백일 뿐이다.
+   *
+   * 알 수 없으면 **회수하지 않는다** — 잘못 회수하면 고객이 산 이용권이 사라지고 되돌릴 창구도 없지만,
+   * 회수가 늦어지는 건 관리자 강제취소로 언제든 끝낼 수 있다.
+   */
+  private async isFullyRefunded(intentId: string, contractId: string, refundedAmount?: number): Promise<boolean> {
+    try {
+      const r = await this.paymentClientService.getRefundability(intentId, { fresh: true });
+      // 환불 가능 charge 가 남아있지 않으면(전부 REFUNDED 로 전이) 완전 환불이다.
+      if (r.refundableAmount <= 0) return true;
+      return r.alreadyRefundedAmount >= r.refundableAmount;
+    } catch (err) {
+      this.logger.warn(
+        `환불 규모 조회 실패 — 이벤트 금액으로 판단한다 (intentId=${intentId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      if (refundedAmount == null) return false;
+      const plan = await this.planService.getPlanDetails(
+        (await this.contractReader.findById(contractId))?.planId ?? '',
+      );
+      return !!plan && refundedAmount >= plan.plan.price;
+    }
   }
 
   /**
