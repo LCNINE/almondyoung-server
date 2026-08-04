@@ -173,6 +173,16 @@ export interface PriceSummaryDto {
   hasTieredPrices: boolean;
 }
 
+export interface VariantPreviewDto {
+  variantId: string;
+  /** 수동 지정 이름이 없으면 옵션값 표시명을 이어 만든 이름. */
+  name: string;
+  /** 가격 캐시가 아직 없는 품목은 null. */
+  basePrice: number | null;
+  membershipPrice: number | null;
+  status: string;
+}
+
 export interface MasterSummaryDto {
   masterId: string;
   versionId: string;
@@ -200,6 +210,8 @@ export interface MasterSummaryDto {
   updatedAt: string;
   optionGroupNames: string[];
   variantCount: number;
+  /** 목록에 펼쳐 보여주는 품목 미리보기. 상품당 상한이 있어 variantCount 보다 적을 수 있다. */
+  variantPreviews: VariantPreviewDto[];
   priceSummary: PriceSummaryDto | null;
   /** active 버전 품목 기준 품절 집계. none=판매가능, partial=부분품절, all=전체품절. */
   soldOutState: 'none' | 'partial' | 'all';

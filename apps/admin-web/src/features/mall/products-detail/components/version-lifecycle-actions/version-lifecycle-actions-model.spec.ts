@@ -100,4 +100,35 @@ describe('version lifecycle actions model', () => {
       ],
     });
   });
+
+  describe('getVersionLifecycleActions — 일괄 세션 잠금', () => {
+    const locked = {
+      source: 'version' as const,
+      status: 'draft' as const,
+      versionId: 'v1',
+      bulkSessionId: 'session-1',
+    };
+
+    it('세션에 잠긴 draft 는 발행도 삭제도 못 한다 — 서버가 둘 다 409 다', () => {
+      expect(getVersionLifecycleActions(locked)).toEqual({
+        canPublish: false,
+        canDeleteDraft: false,
+      });
+    });
+
+    it('잠기지 않은 draft 는 평소대로다', () => {
+      expect(
+        getVersionLifecycleActions({ ...locked, bulkSessionId: null })
+      ).toEqual({
+        canPublish: true,
+        canDeleteDraft: true,
+      });
+    });
+
+    it('inactive 버전도 세션에 잠겨 있으면 발행하지 못한다', () => {
+      expect(
+        getVersionLifecycleActions({ ...locked, status: 'inactive' })
+      ).toEqual({ canPublish: false, canDeleteDraft: false });
+    });
+  });
 });

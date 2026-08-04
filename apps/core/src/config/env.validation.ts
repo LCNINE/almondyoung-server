@@ -62,12 +62,6 @@ export const almondyoungEnvSchema = z
     WALLET_BASE_URL: z.string().url().optional(),
     WALLET_API_KEY: z.string().min(1).optional(),
 
-    // 대량등록 비동기 잡 워커 (3단계)
-    PRODUCT_IMPORT_WORKER_ENABLED: z.enum(['true', 'false']).optional(),
-    PRODUCT_IMPORT_COMMIT_SLICE: z.string().regex(/^\d+$/).optional(),
-    PRODUCT_IMPORT_PUBLISH_SLICE: z.string().regex(/^\d+$/).optional(),
-    PRODUCT_IMPORT_LEASE_MS: z.string().regex(/^\d+$/).optional(),
-
     // OpenTelemetry
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     OTEL_SERVICE_NAME: z.string().optional(),

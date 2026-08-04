@@ -176,22 +176,27 @@ export default function OrderActions({
               ? cancelReasonDetail
               : undefined,
         })
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
         const message =
-          result.refundStatus === "succeeded"
+          result.actions.refundStatus === "succeeded"
             ? "주문이 취소되고 환불이 완료되었습니다."
-            : result.refundStatus === "pending"
+            : result.actions.refundStatus === "pending"
               ? "주문이 취소되었습니다. 환불 처리 중입니다."
-              : result.refundStatus === "failed"
+              : result.actions.refundStatus === "failed"
                 ? "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요."
-                : result.refundStatus === "manual_pending"
+                : result.actions.refundStatus === "manual_pending"
                   ? "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다."
                   : "주문이 취소되었습니다."
         toast.success(message)
         setShowCancelDialog(false)
         router.refresh()
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : undefined
-        toast.error(message ?? "취소 처리 중 오류가 발생했습니다.")
+        // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
+        if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
+        toast.error("취소 처리 중 오류가 발생했습니다.")
       }
     })
   }

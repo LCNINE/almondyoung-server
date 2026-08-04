@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   checkEmailAvailableAction,
   checkLoginIdAvailableAction,
+  checkNicknameAvailableAction,
   type CheckEmailResult,
 } from "@/app/actions";
 
@@ -84,5 +85,14 @@ export function useLoginIdAvailability(loginId: string): AvailabilityState {
     (v) => LOOKS_LIKE_LOGIN_ID.test(v),
     checkLoginIdAvailableAction,
     "아이디 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+  );
+}
+
+export function useNicknameAvailability(nickname: string): AvailabilityState {
+  return useAvailability(
+    nickname,
+    (v) => v.length >= 2 && v.length <= 8,
+    checkNicknameAvailableAction,
+    "닉네임 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
   );
 }

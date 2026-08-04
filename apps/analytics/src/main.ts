@@ -6,7 +6,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { GlobalExceptionFilter } from '@app/shared';
 import fastifyCookie from '@fastify/cookie';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { ORDER_STREAM } from '@packages/event-contracts';
+import { ORDER_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AnalyticsModule } from './analytics.module';
 
@@ -61,15 +61,26 @@ async function bootstrap() {
 
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
+    // NOTE: this `streams` list is what kafkajs actually subscribes to (via
+    // EventsModule.forConsumer -> connectMicroservice). It is independent of the
+    // `streams` passed to EventsModule.forConsumerModule() in analytics.module.ts,
+    // which only wires interceptors/validation/DLQ for those topics — it does not
+    // itself subscribe. A stream present in the module but absent here is silent:
+    // the consumer is constructed, its @OnEvent decorator registers fine, and no
+    // message ever arrives (no exception, no log). PRODUCT_STREAM is one such
+    // pre-existing gap: ProductEventsConsumer/ProductDimensionsService are fully
+    // wired in DI but products.events.v1 is not in this array, so they have never
+    // received a live message. Left as-is here (out of scope for this change) —
+    // flagged for follow-up.
     const consumerOptions = EventsModule.forConsumer({
-      streams: [ORDER_STREAM],
+      streams: [ORDER_STREAM, MEMBERSHIP_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
       kafka: kafkaConfig,
     });
 
     app.connectMicroservice(consumerOptions);
     await app.startAllMicroservices();
-    logger.log('Kafka consumer connected (orders.events.v1).');
+    logger.log('Kafka consumer connected (orders.events.v1, membership.events.v1).');
   } else {
     logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
   }

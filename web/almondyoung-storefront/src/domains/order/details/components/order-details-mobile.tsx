@@ -190,22 +190,27 @@ export const OrderDetailsMobile = ({
               ? cancelReasonDetail
               : undefined,
         })
+        if (!result.success) {
+          toast.error(result.error)
+          return
+        }
         const message =
-          result.refundStatus === "succeeded"
+          result.actions.refundStatus === "succeeded"
             ? tActions("cancelSuccess")
-            : result.refundStatus === "pending"
+            : result.actions.refundStatus === "pending"
               ? tActions("cancelSuccessPending")
-              : result.refundStatus === "failed"
+              : result.actions.refundStatus === "failed"
                 ? tActions("cancelSuccessFailed")
-                : result.refundStatus === "manual_pending"
+                : result.actions.refundStatus === "manual_pending"
                   ? tActions("cancelSuccessManual")
                   : tActions("cancelOrder")
         toast.success(message)
         setShowCancelDialog(false)
         router.refresh()
       } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : undefined
-        toast.error(message ?? tActions("cancelError"))
+        // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
+        if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
+        toast.error(tActions("cancelError"))
       }
     })
   }

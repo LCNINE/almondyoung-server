@@ -68,7 +68,9 @@ prometheus.scrape "core" {
 	]
 
 	metrics_path    = "/metrics"
-	scrape_interval = "60s"
+	// 60s 로는 Core 의 메모리 스파이크(200MB → 440MB, 1분 내 OOM)가 한 점으로 뭉개져
+	// 힙에서 튀었는지 힙 밖(external)에서 튀었는지 구분이 안 된다. 원인 특정 후 60s 로 되돌릴 것.
+	scrape_interval = "30s"
 	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
 }
 

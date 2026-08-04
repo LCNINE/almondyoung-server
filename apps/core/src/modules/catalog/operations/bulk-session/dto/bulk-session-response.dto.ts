@@ -1,0 +1,147 @@
+import { ApiProperty } from '@nestjs/swagger';
+
+/** productBulkSessionPhaseEnum 전량. 4·5단계 값도 지금 다 노출한다 — schema 주석과 같은 이유. */
+const BULK_SESSION_PHASES = [
+  'uploaded',
+  'validating',
+  'review',
+  'awaiting_images',
+  'drafting',
+  'drafted',
+  'publishing',
+  'published',
+  'canceled',
+  'failed',
+] as const;
+
+export class BulkSessionAcceptedDto {
+  @ApiProperty() sessionId: string;
+  @ApiProperty({ enum: ['uploaded'] }) phase: 'uploaded';
+  @ApiProperty({ description: '"상품" 시트 데이터 행 수' }) totalRows: number;
+}
+
+export class BulkSessionSummaryDto {
+  @ApiProperty() id: string;
+  @ApiProperty() name: string;
+  @ApiProperty() fileName: string;
+  @ApiProperty({ enum: BULK_SESSION_PHASES }) phase: string;
+  @ApiProperty({ required: false, nullable: true }) phaseError: string | null;
+  @ApiProperty({ description: '"상품" 시트 데이터 행 수(합성 아이템 제외)' }) totalRows: number;
+  @ApiProperty({ required: false, nullable: true }) cancelRequestedAt: Date | null;
+  @ApiProperty() createdAt: Date;
+}
+
+export class BulkSessionListDto {
+  @ApiProperty({ type: [BulkSessionSummaryDto] }) data: BulkSessionSummaryDto[];
+  @ApiProperty() total: number;
+  @ApiProperty() page: number;
+  @ApiProperty() limit: number;
+}
+
+export class BulkSessionItemStatusCountDto {
+  @ApiProperty({ enum: ['pending', 'invalid', 'drafted', 'excluded', 'failed'] }) status: string;
+  @ApiProperty() count: number;
+}
+
+export class BulkSessionImageStatusCountDto {
+  @ApiProperty({ enum: ['resolved', 'awaiting_upload'] }) status: string;
+  @ApiProperty() count: number;
+}
+
+export class BulkSessionPublishStatusCountDto {
+  @ApiProperty({ enum: ['idle', 'pending', 'published', 'failed'] }) status: string;
+  @ApiProperty() count: number;
+}
+
+export class PurgeDraftsResultDto {
+  @ApiProperty({ description: '이번 요청에서 지운 행 수' }) purged: number;
+  @ApiProperty({ description: '이번 요청에서 실패한 행 수. error_message 에 사유가 남는다' }) failed: number;
+  @ApiProperty({
+    description: '아직 남은 행 수. remaining===0 또는 purged===0(더 이상 진전이 없음)이 될 때까지 다시 호출한다',
+  })
+  remaining: number;
+}
+
+export class BulkSessionProgressDto {
+  @ApiProperty() sessionId: string;
+  @ApiProperty({ enum: BULK_SESSION_PHASES }) phase: string;
+  @ApiProperty({ required: false, nullable: true }) phaseError: string | null;
+  @ApiProperty({
+    description:
+      '"상품" 시트 데이터 행 수. 진행률 분모로 쓰지 마라 — 합성 아이템(고아 참조 등)이 빠져 있어 아이템 수와 어긋난다.',
+  })
+  totalRows: number;
+  @ApiProperty({ description: 'itemCounts 의 합 — 진행률의 올바른 분모는 이것이다(totalRows 가 아니다).' })
+  itemTotal: number;
+  @ApiProperty({ type: [BulkSessionItemStatusCountDto], description: '아이템 status 별 실시간 집계(카운터 컬럼 아님)' })
+  itemCounts: BulkSessionItemStatusCountDto[];
+  @ApiProperty({
+    type: [BulkSessionImageStatusCountDto],
+    description: '이미지 status 별 실시간 집계(카운터 컬럼 아님)',
+  })
+  imageCounts: BulkSessionImageStatusCountDto[];
+  @ApiProperty({ type: [BulkSessionPublishStatusCountDto], description: '발행 단계 집계' })
+  publishCounts: BulkSessionPublishStatusCountDto[];
+  @ApiProperty({ required: false, nullable: true }) cancelRequestedAt: Date | null;
+}
+
+export class BulkSessionItemChangeDto {
+  @ApiProperty() field: string;
+  @ApiProperty({ description: '서버가 붙인 워크북 한국어 헤더 라벨' }) label: string;
+  @ApiProperty() before: string;
+  @ApiProperty() after: string;
+}
+
+export class BulkSessionItemConflictDto {
+  @ApiProperty() field: string;
+  @ApiProperty({ description: '서버가 붙인 워크북 한국어 헤더 라벨' }) label: string;
+  @ApiProperty() base: string;
+  @ApiProperty() mine: string;
+  @ApiProperty() current: string;
+  @ApiProperty({ enum: ['overwrite', 'skip'], nullable: true, description: '미결정이면 null' })
+  decision: 'overwrite' | 'skip' | null;
+}
+
+export class BulkSessionItemDto {
+  @ApiProperty({ description: 'PATCH .../items/:itemId/conflict-decision 에 쓰는 id' }) id: string;
+  @ApiProperty() rowNumber: number;
+  @ApiProperty() rowKey: string;
+  @ApiProperty({ enum: ['create', 'update'] }) kind: 'create' | 'update';
+  @ApiProperty({
+    description:
+      '검토 목록에 보여줄 표시용 상품명. update 행은 업로드값(새 이름)을 우선하고 없으면 스냅샷의 현재 이름으로 떨어진다. ' +
+      '행이 너무 망가져 어느 쪽에서도 이름을 뽑을 수 없으면 빈 문자열일 수 있다 — 화면이 대체 표시를 정한다.',
+  })
+  productName: string;
+  @ApiProperty({ enum: ['pending', 'invalid', 'drafted', 'excluded', 'failed'] }) status: string;
+  @ApiProperty({ required: false, nullable: true }) masterId: string | null;
+  @ApiProperty({ required: false, nullable: true }) errorMessage: string | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: '생성된 draft 버전. 이 id 로 통상의 draft 편집 화면을 연다',
+  })
+  draftVersionId: string | null;
+  @ApiProperty({
+    enum: ['idle', 'pending', 'published', 'failed'],
+    description:
+      '발행 레인의 상태 — 아이템 status 와 축이 다르다(한 행이 drafted 이면서 publishStatus=failed 일 수 있다)',
+  })
+  publishStatus: string;
+  @ApiProperty({ required: false, nullable: true, description: '분류된 한국어 실패 사유' })
+  publishError: string | null;
+  @ApiProperty({ type: [BulkSessionItemChangeDto], description: '이 행이 실제로 바꾸는 것' })
+  changes: BulkSessionItemChangeDto[];
+  @ApiProperty({
+    type: [BulkSessionItemConflictDto],
+    description: '사람이 결정해야 하는 것만. 비어 있으면 승인에 걸림돌이 없다.',
+  })
+  conflicts: BulkSessionItemConflictDto[];
+}
+
+export class BulkSessionItemListDto {
+  @ApiProperty({ type: [BulkSessionItemDto] }) data: BulkSessionItemDto[];
+  @ApiProperty() total: number;
+  @ApiProperty() page: number;
+  @ApiProperty() limit: number;
+}

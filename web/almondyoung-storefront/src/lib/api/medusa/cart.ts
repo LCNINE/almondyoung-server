@@ -10,7 +10,10 @@ import {
   setCartId,
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
-import { isVariantSoldOut } from "@lib/utils/cart-availability"
+import {
+  buildAvailabilityMap,
+  isVariantSoldOut,
+} from "@lib/utils/cart-availability"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -111,11 +114,19 @@ export async function retrieveCart(
 
 /**
  * 카트 라인아이템 중 draft/미게시/삭제(또는 판매채널 이탈)된 상품을 가려낸다.
+ *
+ * availableByVariantId 는 재고를 추적하는 variant 의 남은 수량이다(추적 안 하거나 백오더 허용이면
+ * 아예 담기지 않는다 = 상한 없음). 장바구니가 이 값으로 "재고가 N개 남았어요" 를 안내하고
+ * 수량 변경을 미리 막는다 — Medusa 재고부족 에러에는 수량 정보가 없어서 필요하다.
  */
 export async function findUnavailableLineItems(
   cart: HttpTypes.StoreCart,
   countryCode: string
-): Promise<{ variantIds: string[]; productNames: string[] }> {
+): Promise<{
+  variantIds: string[]
+  productNames: string[]
+  availableByVariantId: Record<string, number>
+}> {
   const items = cart.items ?? []
   const productIds = Array.from(
     new Set(
@@ -125,13 +136,15 @@ export async function findUnavailableLineItems(
     )
   )
 
+  const empty = { variantIds: [], productNames: [], availableByVariantId: {} }
+
   if (productIds.length === 0) {
-    return { variantIds: [], productNames: [] }
+    return empty
   }
 
   const region = await getRegion(countryCode)
   if (!region) {
-    return { variantIds: [], productNames: [] }
+    return empty
   }
 
   const headers = {
@@ -194,7 +207,11 @@ export async function findUnavailableLineItems(
     )
   )
 
-  return { variantIds, productNames }
+  return {
+    variantIds,
+    productNames,
+    availableByVariantId: buildAvailabilityMap(items, variantById),
+  }
 }
 
 export async function getOrSetCart(countryCode: string) {

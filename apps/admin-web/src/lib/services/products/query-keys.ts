@@ -163,15 +163,20 @@ export const productQueryKeys = {
   approvalHistory: (masterId: string) =>
     ['approval', 'history', masterId] as const,
 
-  // 대량등록(엑셀 임포트) 관련
-  productImports: ['product-imports'] as const,
-  productImportsList: (page: number) =>
-    [...productQueryKeys.productImports, 'list', page] as const,
-  productImport: (sessionId: string) =>
-    [...productQueryKeys.productImports, sessionId] as const,
-  // productImport(sessionId) 의 **하위 키**다 — 기존 뮤테이션들의
-  // invalidateQueries({ queryKey: productImport(sessionId) }) 가 접두사 일치로
-  // 진행률도 함께 무효화한다(mutations.ts 를 고칠 필요가 없는 이유).
-  productImportProgress: (sessionId: string) =>
-    [...productQueryKeys.productImport(sessionId), 'progress'] as const,
+  // 프리필 양식(대량등록 재출력) 관련
+  formExports: ['product-forms'] as const,
+  formExport: (exportId: string) =>
+    [...productQueryKeys.formExports, exportId] as const,
+
+  // 일괄 등록/수정 세션 관련
+  bulkSessions: ['product-bulk-sessions'] as const,
+  bulkSessionList: (page: number, limit: number) =>
+    [...productQueryKeys.bulkSessions, 'list', page, limit] as const,
+  bulkSession: (id: string) => [...productQueryKeys.bulkSessions, id] as const,
+  bulkSessionItems: (id: string, query: Record<string, unknown>) =>
+    [...productQueryKeys.bulkSession(id), 'items', query] as const,
+  bulkSessionUndecided: (id: string) =>
+    [...productQueryKeys.bulkSession(id), 'undecided'] as const,
+  bulkSessionImages: (id: string, query: Record<string, unknown>) =>
+    [...productQueryKeys.bulkSession(id), 'images', query] as const,
 } as const;

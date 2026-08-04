@@ -54,6 +54,21 @@ export const skusClient = {
     return data;
   },
 
+  /**
+   * SKU 이름 **또는** 코드로 부분일치 검색한다. getSkus 는 name 만 부분일치이고
+   * code 는 정확일치라, 검색창 하나로 둘 다 잡으려면 이 엔드포인트를 써야 한다.
+   */
+  searchAdvanced: async (query: {
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/search/advanced?${buildQueryString(query)}`
+    );
+    return response.data;
+  },
+
   getSku: async (id: string): Promise<SkuResponseDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/skus/${encodeURIComponent(id)}`

@@ -330,10 +330,7 @@ export function useProductVariantsTableColumns(
         cell: ({ getValue }) => getValue() ?? '-',
       }),
       ...optionColumns,
-      columnHelper.accessor('displayOrder', {
-        header: '순서',
-        cell: ({ getValue }) => getValue() ?? '-',
-      }),
+      // 순서(displayOrder)는 실무에서 쓰지 않아 목록에서 감춘다 — 값과 편집 드로어 입력은 유지.
       columnHelper.accessor('isDefault', {
         header: '기본',
         cell: ({ getValue }) =>

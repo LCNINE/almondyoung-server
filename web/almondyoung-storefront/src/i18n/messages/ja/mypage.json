@@ -63,6 +63,16 @@
     "claimed": "受け取り済み",
     "copyAria": "クーポンコードをコピー",
     "publicSection": "公開クーポン",
+    "tabMine": "マイクーポン",
+    "tabClaim": "クーポン受け取り",
+    "tabExpired": "期限切れ",
+    "sortDiscount": "割引率の高い順",
+    "sortMinOrder": "最低注文金額の低い順",
+    "expiredBadge": "期限切れ",
+    "expiredNotice": "直近1か月以内に期限切れになったクーポンです。",
+    "emptyMine": "保有しているクーポンはありません",
+    "emptyClaim": "受け取れるクーポンはありません",
+    "emptyExpired": "期限切れのクーポンはありません",
     "toasts": {
       "claimSuccess": "クーポンを受け取りました。",
       "claimFailed": "クーポンの受け取りに失敗しました。しばらくしてから再度お試しください。"

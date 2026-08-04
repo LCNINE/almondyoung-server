@@ -20,6 +20,8 @@ export const fileServiceEnvSchema = z
 
     // Storage Configuration
     STORAGE_PROVIDER: z.enum(['S3', 'LOCAL']).default('S3'),
+    // STORAGE_PROVIDER=LOCAL 일 때 파일이 쌓이는 디렉터리. 기본값 <cwd>/uploads.
+    LOCAL_STORAGE_DIR: z.string().optional(),
     AWS_REGION: z.string().optional(),
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
