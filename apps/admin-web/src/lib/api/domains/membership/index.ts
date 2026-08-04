@@ -20,6 +20,8 @@ export interface AdminMembersQuery {
   dateFrom?: string;
   dateTo?: string;
   dateCriteria?: 'createdAt' | 'cancelledAt';
+  /** 환불 요청은 있는데 아직 돈이 안 나간 건만 */
+  refundPending?: boolean;
 }
 
 export interface AdminMemberListItem {
@@ -43,6 +45,14 @@ export interface AdminMemberListItem {
   recurringCancellationReasonCode: string | null;
   /** 백엔드가 취소 사유 코드를 마스터 displayText로 해석한 값(없으면 null) */
   cancellationReasonText: string | null;
+  /** 해지 예약 시각. 있으면 잔여기간 이용 중인 '예약 해지'. 과도기엔 undefined. */
+  recurringCancelledAt?: string | null;
+  refundRequested?: boolean;
+  refundCompleted?: boolean;
+  refundCompletedAt?: string | null;
+  eligibleRefundAmount?: number | null;
+  hasPaymentIntent?: boolean;
+  billingPath?: string;
 }
 
 export interface AdminMembersResponse {
@@ -201,7 +211,12 @@ export interface AdminCancellationOption {
   available: boolean;
   unavailableReason?: string;
   refundAmount: number;
-  refundKind: 'NONE' | 'WITHDRAWAL_FULL' | 'ANNUAL_PRORATION';
+  refundKind:
+    | 'NONE'
+    | 'WITHDRAWAL_FULL'
+    | 'ANNUAL_PRORATION'
+    /** 효성 CMS 선지급 — 아직 출금 전이라 청구 없이 종료된다(돌려줄 돈 자체가 없다) */
+    | 'PRE_COLLECTION_WITHDRAWAL';
   refundExecution: 'NONE' | 'AUTO' | 'MANUAL';
   requiresReceiveAccount: boolean;
   effectiveEndsAt: string;
@@ -287,7 +302,7 @@ export const membershipApi = {
    */
   scheduleCancelSubscription: async (
     contractId: string,
-    body: { reason: string; customerEmail?: string }
+    body: { reason: string; customerEmail?: string; deleteBillingMethod?: boolean }
   ): Promise<{ currentPeriodEndsAt: string; message: string }> => {
     const res = await client.post(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/schedule-cancel`,
@@ -414,6 +429,8 @@ export const membershipApi = {
       /** 해지 안내 메일 수신 주소 (membership 은 사용자 조회를 하지 않아 여기서 넘겨야 한다) */
       customerEmail?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
+      /** 등록된 자동이체 계좌까지 지울지. 생략하면 남긴다(재가입 시 은행 재심사 불필요). */
+      deleteBillingMethod?: boolean;
     }
   ): Promise<{
     refundAmount: number;

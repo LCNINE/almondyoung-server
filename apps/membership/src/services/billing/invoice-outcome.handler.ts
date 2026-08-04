@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, desc } from 'drizzle-orm';
 import { format } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
@@ -34,7 +34,9 @@ export class InvoiceOutcomeHandler {
    */
   private async terminateMandateAfterCollection(contractId: string, userId: string): Promise<void> {
     try {
-      const result = await this.paymentClientService.terminateBillingMandate(contractId);
+      // 계좌까지 지울지는 해지 시점에 고객이 정했다. 그 선택은 보류 기록에 남아 있다.
+      const deleteBillingMethod = await this.findDeferredDeleteChoice(contractId);
+      const result = await this.paymentClientService.terminateBillingMandate(contractId, deleteBillingMethod);
       this.logger.log(
         `[invoice-outcome] 해지예약 계약 수금 완료 → 약정 종료 (contractId=${contractId}, terminated=${result.mandateTerminated}, cancelledWithdrawals=${result.cancelledWithdrawals})`,
       );
@@ -43,6 +45,7 @@ export class InvoiceOutcomeHandler {
       const done =
         !result.agreementFound ||
         result.mandateTerminated ||
+        result.billingMethodKept === true ||
         result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
       await this.recordAgreementOutcome(contractId, userId, done ? 'AGREEMENT_REVOKED' : 'AGREEMENT_REVOKE_PENDING', {
         agreementFound: result.agreementFound,
@@ -55,6 +58,23 @@ export class InvoiceOutcomeHandler {
       this.logger.error(`[invoice-outcome] 약정 종료 실패 — 후속 정리 필요 (contractId=${contractId}): ${message}`);
       await this.recordAgreementOutcome(contractId, userId, 'AGREEMENT_REVOKE_PENDING', { error: message });
     }
+  }
+
+  /** 해지 시점에 남긴 '계좌도 삭제' 선택. 기록이 없으면 남기는 쪽(기본)이다. */
+  private async findDeferredDeleteChoice(contractId: string): Promise<boolean> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          eq(schema.subscriptionContractEvents.eventType, 'AGREEMENT_REVOKE_DEFERRED'),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    return ((event?.metadata ?? {}) as { deleteBillingMethod?: boolean }).deleteBillingMethod === true;
   }
 
   /** 약정 정리 결과를 계약 이벤트로 남긴다(정리 큐가 이 이벤트만 보고 스스로 비워진다). */

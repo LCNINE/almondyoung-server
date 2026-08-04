@@ -52,8 +52,10 @@ export interface MandateTerminationResult {
   agreementFound: boolean;
   /** 마감 전에 취소한 예정 출금 건수 — 이만큼은 돈이 아예 나가지 않는다 */
   cancelledWithdrawals: number;
-  /** 효성 회원삭제(=약정 종료)까지 완료됐는지 */
+  /** 효성 회원삭제(=은행 자동이체 등록 해지)까지 완료됐는지 */
   mandateTerminated: boolean;
+  /** 요청에 따라(또는 다른 구독이 쓰고 있어) 계좌를 남겼는지. 남긴 건 정리 실패가 아니다. */
+  billingMethodKept?: boolean;
   skipReason?: string;
 }
 
@@ -466,17 +468,22 @@ export class PaymentClientService {
    * 효성 프로토콜에는 약정해지 API 가 없어 회원삭제가 유일한 종료 수단이다. 이걸 호출하지 않으면
    * 해지한 고객의 자동이체 약정이 은행에 그대로 살아남는다.
    */
-  async terminateBillingMandate(contractId: string): Promise<MandateTerminationResult> {
+  /**
+   * @param deleteBillingMethod 등록된 자동이체 계좌까지 지울지. 기본은 남긴다 — 출금은 우리가 요청할
+   *   때만 일어나므로 계좌를 남겨도 돈은 나가지 않고, 재가입 시 은행 재심사를 다시 받지 않아도 된다.
+   */
+  async terminateBillingMandate(contractId: string, deleteBillingMethod = false): Promise<MandateTerminationResult> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     const response = await firstValueFrom(
       this.httpService.post<MandateTerminationResult>(
-        `${walletApiUrl}/v1/billing-agreements/by-subscriber/terminate-mandate?subscriberType=MEMBERSHIP&subscriberRef=${encodeURIComponent(contractId)}`,
+        `${walletApiUrl}/v1/billing-agreements/by-subscriber/terminate-mandate?subscriberType=MEMBERSHIP&subscriberRef=${encodeURIComponent(contractId)}&deleteBillingMethod=${deleteBillingMethod}`,
         {},
         {
           headers: {
             Authorization: `Bearer ${walletApiKey}`,
-            'Idempotency-Key': `membership:terminate-mandate:MEMBERSHIP:${contractId}`,
+            // 같은 계약이라도 '계좌 삭제까지' 는 별개의 요청이다 — 키를 나누지 않으면 앞선 응답이 재생된다.
+            'Idempotency-Key': `membership:terminate-mandate:MEMBERSHIP:${contractId}:${deleteBillingMethod ? 'with-method' : 'keep-method'}`,
           },
         },
       ),

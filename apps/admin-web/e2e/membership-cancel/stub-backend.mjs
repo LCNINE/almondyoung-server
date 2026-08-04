@@ -223,8 +223,23 @@ function quote() {
 
 const MEMBER = detail();
 
-function routes(pathname, method, body) {
+function routes(pathname, method, body, params) {
   // user-service (useUserNames → 고객 email 을 화면과 강제취소 요청에 쓴다)
+  if (pathname.startsWith('/admin/users/') && pathname !== `/admin/users/${USER_ID}` && !pathname.endsWith('/pause-history'))
+    return {
+      id: pathname.split('/').pop(),
+      loginId: pathname.split('/').pop(),
+      username: '테스트고객2',
+      nickname: null,
+      email: 'customer2@example.com',
+      isEmailVerified: true,
+      lastActivityAt: null,
+      createdAt: '',
+      updatedAt: '',
+      deletedAt: null,
+      roles: ['user'],
+    };
+
   if (pathname === `/admin/users/${USER_ID}`)
     return {
       id: USER_ID,
@@ -239,6 +254,96 @@ function routes(pathname, method, body) {
       deletedAt: null,
       roles: ['user'],
     };
+
+  // 해지 내역 목록: 즉시해지와 예약해지가 한 화면에 있어야 하고, 환불 상태가 행에서 바로 보여야 한다.
+  if (pathname === '/admin/members' && SCENARIO === 'cancellation-list') {
+    const rows = [
+      {
+        userId: USER_ID,
+        contractId: CONTRACT_ID,
+        status: 'CANCELLED',
+        tierCode: 'MEMBERSHIP',
+        planDurationDays: 30,
+        startsAt: plus(-20),
+        endsAt: plus(-1),
+        createdAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        recurringCancelledAt: null,
+        cancellationReasonCode: 'NOT_USING',
+        cancellationReasonText: '이용하지 않아요',
+        recurringCancellationReasonCode: null,
+        autoRenewal: false,
+        firstContractCreatedAt: new Date(Date.now() - 20 * 86400000).toISOString(),
+        refundRequested: true,
+        refundCompleted: false,
+        refundCompletedAt: null,
+        eligibleRefundAmount: MONTHLY,
+        hasPaymentIntent: true,
+        billingPath: 'INVOICE',
+      },
+      {
+        userId: 'e2e-user-2',
+        contractId: '22222222-2222-4222-8222-222222222222',
+        status: 'ACTIVE',
+        tierCode: 'MEMBERSHIP',
+        planDurationDays: 30,
+        startsAt: plus(-5),
+        endsAt: plus(25),
+        createdAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+        cancelledAt: null,
+        recurringCancelledAt: new Date(Date.now() - 3600000).toISOString(),
+        cancellationReasonCode: null,
+        cancellationReasonText: '가격이 부담돼요',
+        recurringCancellationReasonCode: 'EXPENSIVE',
+        autoRenewal: false,
+        firstContractCreatedAt: new Date(Date.now() - 5 * 86400000).toISOString(),
+        refundRequested: false,
+        refundCompleted: false,
+        refundCompletedAt: null,
+        eligibleRefundAmount: null,
+        hasPaymentIntent: true,
+        billingPath: 'CHARGE',
+      },
+      {
+        userId: 'e2e-user-3',
+        contractId: '33333333-3333-4333-8333-333333333333',
+        status: 'CANCELLED',
+        tierCode: 'MEMBERSHIP',
+        planDurationDays: 365,
+        startsAt: plus(-100),
+        endsAt: plus(-2),
+        createdAt: new Date(Date.now() - 100 * 86400000).toISOString(),
+        cancelledAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+        recurringCancelledAt: null,
+        cancellationReasonCode: 'ADMIN_FORCED',
+        cancellationReasonText: null,
+        recurringCancellationReasonCode: null,
+        autoRenewal: false,
+        firstContractCreatedAt: new Date(Date.now() - 100 * 86400000).toISOString(),
+        refundRequested: true,
+        refundCompleted: true,
+        refundCompletedAt: new Date(Date.now() - 86400000).toISOString(),
+        eligibleRefundAmount: 34930,
+        hasPaymentIntent: true,
+        billingPath: 'CHARGE',
+      },
+    ];
+
+    // 서버가 실제로 하는 필터를 그대로 흉내낸다 — 화면이 파라미터를 제대로 보내는지 검증하기 위함.
+    const status = params?.get('status') ?? 'CANCELLED_ANY';
+    const refundPending = params?.get('refundPending') === 'true';
+    const filtered = rows
+      .filter((r) =>
+        status === 'CANCELLED'
+          ? r.status === 'CANCELLED'
+          : status === 'RECURRING_CANCELLED'
+            ? r.status === 'ACTIVE' && !!r.recurringCancelledAt
+            : true,
+      )
+      .filter((r) => (refundPending ? r.refundRequested && !r.refundCompleted : true));
+
+    return { data: filtered, total: filtered.length, page: 1, limit: 20 };
+  }
 
   // membership admin
   if (pathname === '/admin/members')
@@ -324,7 +429,7 @@ createServer((req, res) => {
       body = undefined;
     }
 
-    const data = routes(url.pathname, req.method, body);
+    const data = routes(url.pathname, req.method, body, url.searchParams);
     res.setHeader('content-type', 'application/json');
     if (data === null) {
       res.statusCode = 404;

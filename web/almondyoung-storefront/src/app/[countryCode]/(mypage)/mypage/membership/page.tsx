@@ -10,6 +10,7 @@ import {
   getCycleBenefitHistory,
   getPlans,
   getRangeSavings,
+  getRefundStatus,
   getSubscriptionHistory,
 } from "@lib/api/membership"
 import { getCafe24LinkInfo } from "@lib/api/users/cafe24"
@@ -19,6 +20,7 @@ import type {
   CancellationReasonDto,
   CycleBenefitDto,
   CycleBenefitHistoryDto,
+  RefundStatusDto,
   SubscriptionDetailsDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
@@ -50,6 +52,8 @@ export default async function MembershipPage() {
   let cancellationReasons: CancellationReasonDto[] = []
   // 해지 선택지·환불 금액은 서버 정책이 SoT — 클라이언트에서 추정하지 않는다.
   let cancellationPreview: CancellationPreviewDto | null = null
+  // 해지 뒤에도 환불이 어디까지 왔는지 보여준다(즉시해지하면 화면이 비가입자로 바뀐다).
+  let refundStatus: RefundStatusDto | null = null
   const membershipPlans: PlanWithTier[] = plans ?? []
 
   if (user?.id) {
@@ -65,6 +69,7 @@ export default async function MembershipPage() {
       currentBenefitResult,
       benefitHistoryResult,
       cancellationPreviewResult,
+      refundStatusResult,
     ] = await Promise.all([
       getCurrentMonthSavings().catch(() => null),
       getRangeSavings(toDateString(startDate), toDateString(now)).catch(
@@ -75,6 +80,7 @@ export default async function MembershipPage() {
       getCurrentCycleBenefit(user.id).catch(() => null),
       getCycleBenefitHistory(user.id, 6).catch(() => null),
       getCancellationPreview().catch(() => null),
+      getRefundStatus().catch(() => null),
     ])
 
     currentSavings = currentSavingsResult
@@ -84,6 +90,7 @@ export default async function MembershipPage() {
     currentBenefit = currentBenefitResult
     benefitHistory = benefitHistoryResult
     cancellationPreview = cancellationPreviewResult
+    refundStatus = refundStatusResult
   }
 
   return (
@@ -108,6 +115,7 @@ export default async function MembershipPage() {
           currentBenefit={currentBenefit}
           benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}
+          refundStatus={refundStatus}
         />
       </MypageLayout>
     </WithHeaderLayout>

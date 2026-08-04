@@ -277,6 +277,60 @@ function build() {
         },
       };
 
+    // 효성 CMS 선지급 — 자격은 받았지만 아직 출금 전. 청구 없이 즉시 종료되고 환불액은 0원이다.
+    // '0원 환불' 로 안내하면 손해 보는 선택처럼 읽히므로 문구가 달라야 한다.
+    case 'pre-collection':
+      return {
+        subscription: base,
+        preview: {
+          ...previewBase,
+          // 수금 전 해지는 이번 요금 청구가 사라지므로 서버가 즉시해지를 권장한다.
+          recommendedMode: 'IMMEDIATE_REFUND',
+          withdrawalDaysRemaining: 5,
+          options: [
+            atPeriodEnd,
+            {
+              mode: 'IMMEDIATE_REFUND',
+              available: true,
+              refundAmount: 0,
+              refundKind: 'PRE_COLLECTION_WITHDRAWAL',
+              refundExecution: 'NONE',
+              requiresReceiveAccount: false,
+              effectiveEndsAt: iso(TODAY),
+            },
+          ],
+        },
+      };
+
+    // 선지급 상태에서 이미 혜택을 쓴 경우 — 즉시 종료가 막히고 그 이유가 안내돼야 한다.
+    case 'pre-collection-benefit-used':
+      return {
+        subscription: base,
+        preview: {
+          ...previewBase,
+          options: [
+            atPeriodEnd,
+            {
+              mode: 'IMMEDIATE_REFUND',
+              available: false,
+              refundAmount: 0,
+              refundKind: 'NONE',
+              refundExecution: 'NONE',
+              requiresReceiveAccount: false,
+              effectiveEndsAt: iso(TODAY),
+              unavailableReason:
+                '이미 멤버십 혜택을 사용하셔서 이번 기간 요금은 예정대로 출금됩니다. ' +
+                '해지 예약을 하시면 이번 기간까지 이용하신 뒤 종료되고, 다음 기간부터는 청구되지 않습니다.',
+            },
+          ],
+        },
+      };
+
+    // 즉시해지가 끝난 뒤 — 화면은 비가입자로 바뀌지만 환불이 어디까지 왔는지는 보여야 한다.
+    case 'refund-pending':
+    case 'refund-completed':
+      return { subscription: null, preview: null };
+
     default:
       throw new Error(`unknown SCENARIO: ${SCENARIO}`);
   }
@@ -301,10 +355,33 @@ function routes(pathname, method, body) {
   // membership
   if (pathname === '/subscriptions/current') return subscription;
   if (pathname === '/subscriptions/cancel-preview') return preview;
+  if (pathname === '/subscriptions/refund-status') {
+    if (SCENARIO === 'refund-pending')
+      return {
+        contractId: 'contract-1',
+        amount: MONTHLY,
+        status: 'PENDING',
+        requestedAt: new Date().toISOString(),
+        completedAt: null,
+        refundProcessingBusinessDays: 3,
+        maskedAccount: { bank: '국민은행', accountNumber: '****6789', holderName: '홍길동' },
+      };
+    if (SCENARIO === 'refund-completed')
+      return {
+        contractId: 'contract-1',
+        amount: MONTHLY,
+        status: 'COMPLETED',
+        requestedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
+        completedAt: new Date(Date.now() - 86400000).toISOString(),
+        refundProcessingBusinessDays: 3,
+        maskedAccount: null,
+      };
+    return null;
+  }
   // 스토어프론트는 { reasons: [...] } 형태를 기대한다(api() 가 { data } 를 벗긴 뒤 .reasons 를 읽는다).
   if (pathname === '/subscriptions/cancellation-reasons') return { reasons: CANCELLATION_REASONS };
   if (pathname === '/subscriptions/history') return [];
-  if (pathname === '/plans') return [{ plan: subscription.plan, tier: TIER }];
+  if (pathname === '/plans') return subscription ? [{ plan: subscription.plan, tier: TIER }] : [];
   if (pathname === '/membership/savings/current-month') return { totalSavings: 12000, orderCount: 2 };
   if (pathname === '/membership/savings/range') return { months: [] };
   if (pathname === '/membership/benefits/current')
@@ -322,7 +399,7 @@ function routes(pathname, method, body) {
           refundEligible: true,
           refundAmount: preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')?.refundAmount ?? 0,
           // 효성 CMS 는 PG 환불 API 가 없어 돈이 아직 나가지 않은 상태로 끝난다(관리자 계좌 송금 대기).
-          refundStatus: SCENARIO === 'cms-manual' ? 'PENDING' : 'COMPLETED',
+          refundStatus: SCENARIO === 'cms-manual' ? 'PENDING' : SCENARIO === 'pre-collection' ? 'NOT_APPLICABLE' : 'COMPLETED',
           message: '해지되었습니다.',
         }
       : {
@@ -361,7 +438,9 @@ function routes(pathname, method, body) {
     return { ok: true };
   }
 
-  return null;
+  // 미등록 경로만 undefined. null 은 '없음' 을 뜻하는 정상 응답이라 200 으로 내려야 한다
+  // (환불 이력 없음, 활성 구독 없음 등).
+  return undefined;
 }
 
 function start(port, label) {
@@ -381,7 +460,7 @@ function start(port, label) {
       res.setHeader('content-type', 'application/json');
       res.setHeader('access-control-allow-origin', '*');
 
-      if (data === null) {
+      if (data === undefined) {
         res.statusCode = 404;
         res.end(JSON.stringify({ message: 'not found' }));
         return;

@@ -1,11 +1,13 @@
 import SubscriberSection from "../components/subscriber/subscriber-section"
 import NonSubscriberSection from "../components/non-subscriber"
 import MembershipInvoicesSection from "../components/subscriber/membership-invoices-section"
+import RefundStatusCard from "../components/refund-status-card"
 import type {
   CancellationPreviewDto,
   CancellationReasonDto,
   CycleBenefitDto,
   CycleBenefitHistoryDto,
+  RefundStatusDto,
   SubscriptionDetailsDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
@@ -26,6 +28,8 @@ interface MembershipTemplateProps {
   currentBenefit: CycleBenefitDto | null
   benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
+  /** 진행 중이거나 최근 완료된 환불. 해지 뒤에도 고객이 확인할 수 있어야 한다. */
+  refundStatus: RefundStatusDto | null
 }
 
 export default function MembershipTemplate({
@@ -40,9 +44,13 @@ export default function MembershipTemplate({
   currentBenefit,
   benefitHistory,
   hasCafe24Link,
+  refundStatus,
 }: MembershipTemplateProps) {
   return (
     <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
+      {/* 해지 직후 토스트를 놓쳐도 얼마가 언제 들어오는지 다시 확인할 수 있어야 한다.
+          즉시해지하면 아래가 비가입자 화면으로 바뀌므로 가입 여부와 무관하게 맨 위에 둔다. */}
+      {refundStatus && <RefundStatusCard refundStatus={refundStatus} />}
       {isMember ? (
         <SubscriberSection
           membershipData={membershipData}

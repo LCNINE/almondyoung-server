@@ -791,7 +791,9 @@
       "cancelScheduledDone": "Your cancellation has been received. You can use the membership until the end date.",
       "cancelImmediateDone": "Your membership has been cancelled.",
       "cancelRefundCompleted": "Your membership was cancelled and {amount} KRW was refunded.",
-      "cancelRefundPending": "Your membership was cancelled. {amount} KRW will be transferred to the account you entered within {days} business days."
+      "cancelRefundPending": "Your membership was cancelled. {amount} KRW will be transferred to the account you entered within {days} business days.",
+      "cancelPreCollectionDone": "Cancelled without payment. This cycle will not be charged.",
+      "cancelScheduledPreCollectionNow": "Cancel now without payment"
     },
     "invoices": {
       "title": "Billing history",
@@ -988,9 +990,25 @@
       "manualRefundNotice": "Direct-debit payments cannot be refunded instantly. We will transfer to the account you enter within {days} business days.",
       "summaryImmediate": "Cancelling now refunds {amount} KRW.",
       "summaryAtPeriodEnd": "Your membership ends automatically on {date}.",
-      "refundAccountNoteAmount": "We will refund {amount} KRW to the account you enter within {days} business days."
+      "refundAccountNoteAmount": "We will refund {amount} KRW to the account you enter within {days} business days.",
+      "modeImmediatePreCollectionTitle": "Cancel now without payment",
+      "modeImmediatePreCollectionDesc": "The payment has not been withdrawn yet, so this cycle will not be charged and your membership ends right away. There is no amount to refund.",
+      "summaryImmediatePreCollection": "Your membership ends now and this cycle will not be charged.",
+      "keepBillingMethodTitle": "Registered auto-debit account",
+      "keepBillingMethodKeep": "Keep it (ready to use if you subscribe again)",
+      "keepBillingMethodDelete": "Delete the account as well",
+      "keepBillingMethodNote": "Deleting also cancels the bank auto-debit registration. You would need to register the account again and pass bank screening to resubscribe.",
+      "keepBillingMethodSafe": "Keeping it does not allow any further withdrawals after cancellation."
     },
-    "manageTitle": "Membership"
+    "manageTitle": "Membership",
+    "refundStatus": {
+      "pendingTitle": "Refund in progress",
+      "completedTitle": "Refund completed",
+      "pendingBody": "KRW {amount} will be transferred within {days} business days.",
+      "completedBody": "KRW {amount} was refunded on {date}.",
+      "account": "To: {bank} {account} ({holder})",
+      "failedNote": "The automatic refund did not go through, so our team is handling it manually."
+    }
   },
   "orderActions": {
     "trackDelivery": "Track delivery",

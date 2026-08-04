@@ -100,6 +100,10 @@ export default function SubscriberSection({
         (option) => option.mode === "IMMEDIATE_REFUND" && option.available
       )
     : undefined
+  // 효성 CMS 선지급 건은 출금 전이라 청구 없이 끝난다(환불액 0).
+  const isPreCollectionCancel =
+    cancellationPreview?.options.find((o) => o.mode === "IMMEDIATE_REFUND")
+      ?.refundKind === "PRE_COLLECTION_WITHDRAWAL"
 
   return (
     <>
@@ -163,9 +167,12 @@ export default function SubscriberSection({
               onClick={() => setOpen(true)}
               className="mt-2 block text-xs font-semibold text-amber-900 underline underline-offset-4"
             >
-              {t("billing.cancelScheduledRefundNow", {
-                amount: scheduledRefundOption.refundAmount.toLocaleString("ko-KR"),
-              })}
+              {scheduledRefundOption.refundKind === "PRE_COLLECTION_WITHDRAWAL"
+                ? t("billing.cancelScheduledPreCollectionNow")
+                : t("billing.cancelScheduledRefundNow", {
+                    amount:
+                      scheduledRefundOption.refundAmount.toLocaleString("ko-KR"),
+                  })}
             </button>
           )}
         </div>
@@ -234,6 +241,7 @@ export default function SubscriberSection({
           reasonText,
           refundReceiveAccount,
           cancelType,
+          deleteBillingMethod,
         }) => {
           // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
           // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
@@ -242,7 +250,8 @@ export default function SubscriberSection({
               reasonCode,
               reasonText,
               refundReceiveAccount,
-              cancelType
+              cancelType,
+              deleteBillingMethod
             )
             if (!result.ok) {
               // 왜 막혔는지(계좌 정보 필요·이미 해지 예약됨 등)를 그대로 보여준다.
@@ -253,6 +262,9 @@ export default function SubscriberSection({
             // 무엇이 처리됐는지 알린다. 특히 수동 송금 대기(PENDING)는 "환불됐다" 로 읽히면 안 된다.
             if (result.type === "RECURRING_CANCELLATION") {
               toast.success(t("billing.cancelScheduledDone"))
+            } else if (isPreCollectionCancel) {
+              // 출금 전이라 청구 자체가 없다 — '0원 환불' 로 안내하면 손해 본 것처럼 읽힌다.
+              toast.success(t("billing.cancelPreCollectionDone"))
             } else if (result.refundStatus === "COMPLETED") {
               toast.success(
                 t("billing.cancelRefundCompleted", {

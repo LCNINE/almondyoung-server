@@ -79,6 +79,49 @@ function bankName(code: string): string {
   return TOSS_BANKS.find((b) => b.code === code)?.name ?? code;
 }
 
+/**
+ * 등록된 자동이체 계좌를 어떻게 할지.
+ *
+ * 해지만으로 출금은 멈춘다(예정 출금 삭제 + 약정 REVOKED). 계좌를 지우는 건 은행에 남은 자동이체
+ * 등록까지 해지하는 추가 조치라, 남겨두면 고객이 재가입할 때 은행 재심사를 다시 받지 않아도 된다.
+ */
+function BillingMethodChoice({
+  value,
+  onChange,
+}: {
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="space-y-1.5" data-testid="billing-method-choice">
+      <Label>등록된 자동이체 계좌</Label>
+      <RadioGroup
+        value={value ? 'delete' : 'keep'}
+        onValueChange={(v) => onChange(v === 'delete')}
+        className="flex flex-wrap gap-4"
+      >
+        <div className="flex items-center gap-1.5">
+          <RadioGroupItem value="keep" id="billing-method-keep" />
+          <Label htmlFor="billing-method-keep" className="cursor-pointer font-normal">
+            계좌 유지 (재가입 시 바로 사용)
+          </Label>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <RadioGroupItem value="delete" id="billing-method-delete" />
+          <Label htmlFor="billing-method-delete" className="cursor-pointer font-normal">
+            계좌도 삭제
+          </Label>
+        </div>
+      </RadioGroup>
+      <p className="text-xs text-muted-foreground">
+        {value
+          ? '은행 자동이체 등록까지 해지됩니다. 재가입 시 계좌를 새로 등록하고 은행 심사를 받아야 합니다.'
+          : '해지하면 출금은 멈춥니다. 계좌를 남겨두면 재가입 시 재심사 없이 바로 쓸 수 있습니다.'}
+      </p>
+    </div>
+  );
+}
+
 // 라벨-값 한 줄 (shadcn Card 안에서 사용).
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -116,6 +159,7 @@ function ForceCancelDialog({
   const [bank, setBank] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [holderName, setHolderName] = useState('');
+  const [deleteBillingMethod, setDeleteBillingMethod] = useState(false);
   const forceCancelMutation = useForceCancelSubscription();
   const { data: quote, isLoading: quoteLoading } = useCancellationQuote(
     contractId,
@@ -144,6 +188,7 @@ function ForceCancelDialog({
     setBank('');
     setAccountNumber('');
     setHolderName('');
+    setDeleteBillingMethod(false);
     onClose();
   };
 
@@ -172,6 +217,7 @@ function ForceCancelDialog({
           refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
         customerEmail,
+        deleteBillingMethod,
         refundReceiveAccount:
           needsAccount && accountFilled
             ? {
@@ -232,7 +278,9 @@ function ForceCancelDialog({
                       ? '(7일 내 청약철회 · 전액)'
                       : immediate.refundKind === 'ANNUAL_PRORATION'
                         ? '(연간 중도해지 정산)'
-                        : '(정책상 환불 없음)'}
+                        : immediate.refundKind === 'PRE_COLLECTION_WITHDRAWAL'
+                          ? '(출금 전 · 청구 없이 종료)'
+                          : '(정책상 환불 없음)'}
                   </span>
                 </p>
                 {immediate.breakdown && (
@@ -260,10 +308,13 @@ function ForceCancelDialog({
                   </p>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  환불 수단:{' '}
-                  {manualRefund
-                    ? '자동환불 불가 — 계좌 송금 필요(효성 CMS 등)'
-                    : 'PG 자동환불 가능'}
+                  {immediate.refundKind === 'PRE_COLLECTION_WITHDRAWAL'
+                    ? '아직 출금 전이라 이번 요금이 청구되지 않고 종료됩니다. 돌려줄 금액은 없습니다.'
+                    : `환불 수단: ${
+                        manualRefund
+                          ? '자동환불 불가 — 계좌 송금 필요(효성 CMS 등)'
+                          : 'PG 자동환불 가능'
+                      }`}
                 </p>
               </>
             ) : (
@@ -272,6 +323,8 @@ function ForceCancelDialog({
               </p>
             )}
           </div>
+
+          <BillingMethodChoice value={deleteBillingMethod} onChange={setDeleteBillingMethod} />
 
           <div className="space-y-1.5">
             <Label>
@@ -669,6 +722,7 @@ function PlanTab({
   const [forceCancelOpen, setForceCancelOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleReason, setScheduleReason] = useState('');
+  const [scheduleDeleteMethod, setScheduleDeleteMethod] = useState(false);
 
   const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
   const autoRenewal = detail?.autoRenewal ?? false;
@@ -712,6 +766,7 @@ function PlanTab({
         contractId,
         reason: scheduleReason.trim(),
         customerEmail,
+        deleteBillingMethod: scheduleDeleteMethod,
       });
       toast.success(
         `해지가 예약되었습니다. ${formatDate(detail?.endsAt)}까지 이용 후 자동 결제가 중단됩니다.`
@@ -947,6 +1002,10 @@ function PlanTab({
                     placeholder="고객 요청 내용 등"
                     value={scheduleReason}
                     onChange={(e) => setScheduleReason(e.target.value)}
+                  />
+                  <BillingMethodChoice
+                    value={scheduleDeleteMethod}
+                    onChange={setScheduleDeleteMethod}
                   />
                   <div className="flex gap-2">
                     <Button

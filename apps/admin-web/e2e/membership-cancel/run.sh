@@ -20,7 +20,7 @@ if [[ ! -x "$PW_BIN" ]]; then
 fi
 export NODE_PATH="$PW_MODULES"
 
-SCENARIOS="${SCENARIOS:-annual monthly-cms scheduled one-time one-time-scheduled pg-settled pg-pending no-payment no-payment-active legacy-detail}"
+SCENARIOS="${SCENARIOS:-annual monthly-cms scheduled one-time one-time-scheduled pg-settled pg-pending no-payment no-payment-active legacy-detail cancellation-list}"
 PORT="${E2E_PORT:-4800}"
 STUB_PORT="${STUB_PORT:-4801}"
 BASE="http://localhost:${PORT}"

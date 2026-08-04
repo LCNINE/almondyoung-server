@@ -4,7 +4,7 @@ import { addDays, differenceInCalendarDays, format } from 'date-fns';
 /** 해지 방식. 고객이 직접 고른다(서버가 강제 분기하지 않는다). */
 export type CancellationMode = 'AT_PERIOD_END' | 'IMMEDIATE_REFUND';
 
-export type RefundKind = 'NONE' | 'WITHDRAWAL_FULL' | 'ANNUAL_PRORATION';
+export type RefundKind = 'NONE' | 'WITHDRAWAL_FULL' | 'ANNUAL_PRORATION' | 'PRE_COLLECTION_WITHDRAWAL';
 
 /** 환불 집행 방식. MANUAL 은 PG 자동환불이 불가능해 관리자가 계좌로 송금해야 하는 건(효성 CMS 등). */
 export type RefundExecution = 'NONE' | 'AUTO' | 'MANUAL';
@@ -71,6 +71,14 @@ export interface CancellationPolicyInput {
   pausedDaysAccrued: number;
   /** 환불 대상 결제 intent 가 있는지 */
   hasPayment: boolean;
+  /**
+   * 자격은 선지급됐는데 아직 수금이 확정되지 않은 상태(효성 CMS 인보이스 경로).
+   *
+   * 돌려줄 돈은 없지만 **나갈 돈은 남아 있다.** 예정 출금을 지우면 애초에 나가지 않으므로,
+   * 청약철회 창 안이고 혜택을 쓰지 않았다면 '결제 없이 즉시 종료'가 고객에게 가장 유리하다.
+   * 혜택을 이미 썼다면 막는다 — 그건 무료 이용이 된다.
+   */
+  awaitingCollection: boolean;
   /** wallet 이 해당 결제를 PG 자동환불할 수 있는지. false 면 관리자 수동 송금. */
   autoRefundSupported: boolean;
   /** 무통장 등 환불 수취 계좌가 필요한 결제였는지 */
@@ -152,8 +160,13 @@ export class RefundPolicyService {
     return {
       atPeriodEnd,
       immediateRefund,
-      // 즉시해지는 잔여 이용권을 포기하는 선택이라, 환불이 가능할 때만 권장한다.
-      recommendedMode: immediateRefund.available && immediateRefund.refundAmount > 0 ? 'IMMEDIATE_REFUND' : 'AT_PERIOD_END',
+      // 즉시해지는 잔여 이용권을 포기하는 선택이라, 돌려받거나(환불) 안 내게 되는(수금 전) 돈이
+      // 있을 때만 권장한다. 수금 전 건은 환불액이 0이어도 이번 요금 청구가 사라지므로 유리하다.
+      recommendedMode:
+        immediateRefund.available &&
+        (immediateRefund.refundAmount > 0 || immediateRefund.refundKind === 'PRE_COLLECTION_WITHDRAWAL')
+          ? 'IMMEDIATE_REFUND'
+          : 'AT_PERIOD_END',
       withdrawalDaysRemaining: benefitUnused ? withdrawalDaysRemaining : 0,
     };
   }
@@ -242,7 +255,29 @@ export class RefundPolicyService {
       effectiveEndsAt: nowDate,
     };
 
-    if (!input.hasPayment || daysSincePeriodStart === null) {
+    if (!input.hasPayment) {
+      // 선지급 + 수금 전: 돌려줄 돈은 없지만 예정 출금을 지우면 나갈 돈도 없어진다.
+      if (input.awaitingCollection && daysSincePeriodStart !== null && withinWithdrawalWindow && benefitUnused) {
+        return {
+          ...base,
+          available: true,
+          refundAmount: 0,
+          refundKind: 'PRE_COLLECTION_WITHDRAWAL',
+          refundExecution: 'NONE',
+          requiresReceiveAccount: false,
+        };
+      }
+      if (input.awaitingCollection && !benefitUnused) {
+        return {
+          ...base,
+          unavailableReason:
+            '이미 멤버십 혜택을 사용하셔서 이번 기간 요금은 예정대로 출금됩니다. ' +
+            '해지 예약을 하시면 이번 기간까지 이용하신 뒤 종료되고, 다음 기간부터는 청구되지 않습니다.',
+        };
+      }
+      return { ...base, unavailableReason: '환불 대상 결제 내역이 없습니다.' };
+    }
+    if (daysSincePeriodStart === null) {
       return { ...base, unavailableReason: '환불 대상 결제 내역이 없습니다.' };
     }
 

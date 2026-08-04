@@ -632,6 +632,7 @@ export class AdminOperationsController {
         dto.refundReceiveAccount,
         canOverridePolicyAmount,
         dto.customerEmail,
+        dto.deleteBillingMethod === true,
       );
 
       // refundStatus 는 wallet 의 실제 환불 결과다. FAILED/PENDING 이면 돈은 아직 나가지 않았다
@@ -664,7 +665,7 @@ export class AdminOperationsController {
   async scheduleCancellation(
     @User('userId') adminId: string,
     @Param('contractId') contractId: string,
-    @Body() dto: { reason?: string; customerEmail?: string },
+    @Body() dto: { reason?: string; customerEmail?: string; deleteBillingMethod?: boolean },
   ) {
     try {
       const reason = dto?.reason?.trim();
@@ -675,6 +676,7 @@ export class AdminOperationsController {
         adminId,
         reason,
         dto?.customerEmail,
+        dto?.deleteBillingMethod === true,
       );
     } catch (error) {
       this.handleError(error, '해지 예약', contractId);
@@ -864,18 +866,27 @@ export class AdminOperationsController {
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
     @Query('dateCriteria') dateCriteria?: 'createdAt' | 'cancelledAt',
+    @Query('refundPending') refundPending?: string,
   ) {
     try {
       const normalizedUserIds = userIds ? (Array.isArray(userIds) ? userIds : [userIds]) : undefined;
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
-        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED' | undefined,
+        status: status as
+          | 'ACTIVE'
+          | 'PAUSED'
+          | 'CANCELLED'
+          | 'EXPIRED'
+          | 'RECURRING_CANCELLED'
+          | 'CANCELLED_ANY'
+          | undefined,
         q,
         userIds: normalizedUserIds,
         dateFrom,
         dateTo,
         dateCriteria,
+        refundPending: refundPending === 'true',
       });
       return result;
     } catch (error) {

@@ -791,7 +791,9 @@
       "cancelScheduledDone": "解約を受け付けました。終了日までメンバーシップをご利用いただけます。",
       "cancelImmediateDone": "メンバーシップを解約しました。",
       "cancelRefundCompleted": "メンバーシップを解約し、{amount}ウォンを返金しました。",
-      "cancelRefundPending": "メンバーシップを解約しました。{amount}ウォンはご入力の口座へ営業日{days}日以内に送金されます。"
+      "cancelRefundPending": "メンバーシップを解約しました。{amount}ウォンはご入力の口座へ営業日{days}日以内に送金されます。",
+      "cancelPreCollectionDone": "決済なしで解約されました。今回の料金は請求されません。",
+      "cancelScheduledPreCollectionNow": "決済なしで今すぐ解約"
     },
     "invoices": {
       "title": "定期決済の請求履歴",
@@ -988,9 +990,25 @@
       "manualRefundNotice": "口座振替のお支払いは即時返金ができないため、ご入力の口座へ営業日{days}日以内にお振込みします。",
       "summaryImmediate": "今すぐ解約すると{amount}ウォンが返金されます。",
       "summaryAtPeriodEnd": "{date}まで利用後、自動的に終了します。",
-      "refundAccountNoteAmount": "{amount}ウォンをご入力の口座へ営業日{days}日以内に返金いたします。"
+      "refundAccountNoteAmount": "{amount}ウォンをご入力の口座へ営業日{days}日以内に返金いたします。",
+      "modeImmediatePreCollectionTitle": "決済なしで今すぐ解約",
+      "modeImmediatePreCollectionDesc": "まだ引き落とし前のため、今回の料金は請求されずにすぐ終了します。決済された金額がないため返金もありません。",
+      "summaryImmediatePreCollection": "決済なしで今すぐ解約されます。今回の料金は請求されません。",
+      "keepBillingMethodTitle": "登録済みの自動引き落とし口座",
+      "keepBillingMethodKeep": "口座を残す（再登録なしで再加入できます）",
+      "keepBillingMethodDelete": "口座も一緒に削除する",
+      "keepBillingMethodNote": "削除すると銀行の自動引き落とし登録も解除されます。再加入時は口座を再登録し、銀行審査を受ける必要があります。",
+      "keepBillingMethodSafe": "残しても解約後に引き落としが行われることはありません。"
     },
-    "manageTitle": "メンバーシップ管理"
+    "manageTitle": "メンバーシップ管理",
+    "refundStatus": {
+      "pendingTitle": "返金手続き中",
+      "completedTitle": "返金完了",
+      "pendingBody": "{amount}円を営業日{days}日以内にお振り込みいたします。",
+      "completedBody": "{amount}円が{date}に返金されました。",
+      "account": "振込先: {bank} {account}（{holder}）",
+      "failedNote": "自動返金が完了しなかったため、担当者が確認しています。"
+    }
   },
   "orderActions": {
     "trackDelivery": "配送照会",

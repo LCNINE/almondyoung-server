@@ -149,11 +149,14 @@ export const useScheduleCancelSubscription = () => {
       contractId,
       reason,
       customerEmail,
+      deleteBillingMethod,
     }: {
       contractId: string;
       reason: string;
       customerEmail?: string;
-    }) => membershipApi.scheduleCancelSubscription(contractId, { reason, customerEmail }),
+      deleteBillingMethod?: boolean;
+    }) =>
+      membershipApi.scheduleCancelSubscription(contractId, { reason, customerEmail, deleteBillingMethod }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
     },
@@ -190,6 +193,7 @@ export const useForceCancelSubscription = () => {
       adminNote,
       customerEmail,
       refundReceiveAccount,
+      deleteBillingMethod,
     }: {
       contractId: string;
       reason: string;
@@ -198,6 +202,7 @@ export const useForceCancelSubscription = () => {
       adminNote?: string;
       customerEmail?: string;
       refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
+      deleteBillingMethod?: boolean;
     }) =>
       membershipApi.forceCancelSubscription(contractId, {
         reason,
@@ -206,6 +211,7 @@ export const useForceCancelSubscription = () => {
         adminNote,
         customerEmail,
         refundReceiveAccount,
+        deleteBillingMethod,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });

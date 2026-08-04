@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { differenceInCalendarDays } from 'date-fns';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import {
@@ -23,6 +24,9 @@ import {
 } from './subscription/refund-policy.service';
 
 type RefundReceiveAccount = { bank: string; accountNumber: string; holderName: string };
+
+/** 완료된 환불을 고객 화면에 남겨두는 기간. 지나면 확인할 이유가 없다. */
+const REFUND_STATUS_VISIBLE_DAYS = 30;
 
 export type {
   ImmediateCancellationResult,
@@ -124,6 +128,11 @@ export class SubscriptionCancellationService {
       /** 고객이 고른 해지 방식. 생략하면 정책 권장값. */
       cancelType?: CancellationMode;
       refundReceiveAccount?: RefundReceiveAccount;
+      /**
+       * 등록된 자동이체 계좌까지 삭제할지. 기본은 남긴다 — 해지만으로 출금은 이미 멈추고,
+       * 남겨두면 재가입할 때 은행 재심사 없이 같은 계좌를 바로 쓸 수 있다.
+       */
+      deleteBillingMethod?: boolean;
     },
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
     // 환불 상한은 캐시 없이 확정한다 — 결제관리에서 방금 나간 환불을 못 보면 상한이 느슨해진다.
@@ -192,9 +201,10 @@ export class SubscriptionCancellationService {
         contract.id,
         contract.userId,
         (result as RecurringCancellationResult).currentPeriodEndsAt,
+        params.deleteBillingMethod === true,
       );
     } else {
-      await this.revokeBillingAgreementSafely(contract.id, contract.userId);
+      await this.revokeBillingAgreementSafely(contract.id, contract.userId, params.deleteBillingMethod === true);
     }
 
     // 즉시취소(자격 회수)만 인보이스를 무효화한다 — 해지예약은 자격이 유지되는 기간의 수금이
@@ -288,6 +298,8 @@ export class SubscriptionCancellationService {
     adminId: string,
     reason: string,
     customerEmail?: string,
+    /** 고객이 자동이체 계좌 삭제까지 요청한 경우에만 true. 기본은 계좌를 남긴다. */
+    deleteBillingMethod = false,
   ): Promise<RecurringCancellationResult> {
     const contract = await this.contractReader.findById(contractId);
     if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
@@ -321,9 +333,10 @@ export class SubscriptionCancellationService {
         contract.id,
         contract.userId,
         result.currentPeriodEndsAt,
+        deleteBillingMethod,
       );
     } else {
-      await this.revokeBillingAgreementSafely(contract.id, contract.userId);
+      await this.revokeBillingAgreementSafely(contract.id, contract.userId, deleteBillingMethod);
     }
 
     await this.membershipEventPublisher.publishStatusChanged({
@@ -362,6 +375,8 @@ export class SubscriptionCancellationService {
     canOverridePolicyAmount = false,
     /** 해지 안내 메일 수신 주소. 없으면 알림이 발송되지 않는다(membership 은 사용자 조회를 하지 않는다). */
     customerEmail?: string,
+    /** 고객이 자동이체 계좌 삭제까지 요청한 경우에만 true. 기본은 계좌를 남긴다. */
+    deleteBillingMethod = false,
   ): Promise<CancellationResult> {
     const contract = await this.contractReader.findById(contractId);
     if (!contract) throw new NotFoundError(`구독 계약을 찾을 수 없습니다: ${contractId}`);
@@ -404,7 +419,7 @@ export class SubscriptionCancellationService {
       refundReason,
     );
 
-    await this.revokeBillingAgreementSafely(contract.id, contract.userId);
+    await this.revokeBillingAgreementSafely(contract.id, contract.userId, deleteBillingMethod);
 
     // 인보이스 경로(ADR-0027) 계약이면 열린 인보이스도 무효화 — 취소 뒤 출금 방지.
     if (contract.billingPath === 'INVOICE') {
@@ -553,6 +568,52 @@ export class SubscriptionCancellationService {
       );
       return { pendingRefundAmount: 0, alreadyRefundedAmount: 0 };
     }
+  }
+
+  /**
+   * 고객이 자기 환불이 어디까지 왔는지 확인하는 값.
+   *
+   * 즉시해지하면 마이페이지가 비가입자 화면으로 바뀌어, 해지 직후 토스트를 놓치면 "얼마가 언제
+   * 들어오는지" 를 다시 볼 방법이 없다. 계약이 해지된 뒤에도 조회되도록 상태와 무관하게 찾는다.
+   * 계좌번호는 뒤 4자리만 남긴다 — 확인에는 충분하고, 노출 범위는 좁을수록 좋다.
+   */
+  async getRefundStatus(userId: string): Promise<{
+    contractId: string;
+    amount: number;
+    status: 'COMPLETED' | 'PENDING' | 'FAILED';
+    requestedAt: string | null;
+    completedAt: string | null;
+    refundProcessingBusinessDays: number;
+    maskedAccount: { bank: string; accountNumber: string; holderName: string } | null;
+  } | null> {
+    const contract = await this.contractReader.findLatestRefundRequestedContract(userId);
+    if (!contract) return null;
+
+    // 완료된 환불은 한동안만 보여준다. 반년 전 환불이 재가입한 회원의 화면에 계속 떠 있으면
+    // 소음일 뿐이다. 아직 안 나간 돈(PENDING/FAILED)은 기한 없이 보여준다.
+    if (contract.refundCompleted && contract.refundCompletedAt) {
+      const daysSinceCompletion = differenceInCalendarDays(new Date(), contract.refundCompletedAt);
+      if (daysSinceCompletion > REFUND_STATUS_VISIBLE_DAYS) return null;
+    }
+
+    const status = contract.refundCompleted
+      ? 'COMPLETED'
+      : (await this.contractReader.findLatestRefundOutcome(contract.id)) === 'REFUND_FAILED'
+        ? 'FAILED'
+        : 'PENDING';
+    const account = status === 'COMPLETED' ? null : await this.contractReader.findManualRefundAccount(contract.id);
+
+    return {
+      contractId: contract.id,
+      amount: contract.eligibleRefundAmount ?? 0,
+      status,
+      requestedAt: contract.refundRequestedAt?.toISOString() ?? null,
+      completedAt: contract.refundCompletedAt?.toISOString() ?? null,
+      refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
+      maskedAccount: account
+        ? { ...account, accountNumber: `****${account.accountNumber.slice(-4)}` }
+        : null,
+    };
   }
 
   async getCancellationReasons() {
@@ -769,9 +830,13 @@ export class SubscriptionCancellationService {
    * 고객의 자동이체 약정이 은행에 그대로 남는다. 실패해도 해지 자체는 유지하되 계약 이벤트로
    * 후속 정리 대상을 남긴다(재청구는 DB 의 autoRenewal=false + nextBillingDate=null 로 이미 막혀 있다).
    */
-  private async revokeBillingAgreementSafely(contractId: string, userId: string): Promise<void> {
+  private async revokeBillingAgreementSafely(
+    contractId: string,
+    userId: string,
+    deleteBillingMethod = false,
+  ): Promise<void> {
     try {
-      const result = await this.paymentClientService.terminateBillingMandate(contractId);
+      const result = await this.paymentClientService.terminateBillingMandate(contractId, deleteBillingMethod);
       if (result.cancelledWithdrawals > 0) {
         this.logger.log(
           `해지에 따라 예정 출금 ${result.cancelledWithdrawals}건 취소 (contractId=${contractId}) — 해당 금액은 출금되지 않는다.`,
@@ -781,8 +846,11 @@ export class SubscriptionCancellationService {
       //  - agreementFound=false: 애초에 자동이체 약정이 없는 계약(1회 결제). 모든 1회 결제 해지가
       //    허위 '정리 필요' 를 남기면 큐도 감사 로그도 못 믿게 된다.
       //  - 결제수단을 다른 활성 구독과 공유: 남은 구독이 그 수단을 계속 써야 하므로 더 할 일이 없다.
+      // 계좌를 남긴 건 '정리 실패' 가 아니다 — 예정 출금이 지워지고 약정이 REVOKED 면 출금은 멈춘다.
       const nothingToClean =
-        !result.agreementFound || result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
+        !result.agreementFound ||
+        result.billingMethodKept === true ||
+        result.skipReason === 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT';
       if (!result.mandateTerminated && !nothingToClean) {
         this.logger.warn(
           `자동이체 약정 미종료 (contractId=${contractId}, reason=${result.skipReason ?? 'UNKNOWN'})`,

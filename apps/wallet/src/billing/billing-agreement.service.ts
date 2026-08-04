@@ -159,13 +159,22 @@ export class BillingAgreementService {
    *  3) 그 결제수단을 쓰는 **다른 활성 약정이 없을 때만** 효성 회원을 삭제한다. 결제수단은
    *     사용자당 공유되므로, 남은 구독이 있으면 지우면 그 구독의 청구가 깨진다.
    */
+  /**
+   * @param deleteBillingMethod 등록된 자동이체 계좌(효성 회원)까지 지울지.
+   *   기본은 **남긴다** — 출금은 우리가 요청할 때만 일어나므로 계좌를 남겨도 돈은 나가지 않고,
+   *   재가입할 때 같은 계좌를 은행 재심사 없이 바로 쓸 수 있다. 고객이 출금동의 철회까지 원하면
+   *   true 로 부른다(그 경우에만 효성 회원삭제).
+   */
   async terminateMandateBySubscriberRef(
     subscriberType: string,
     subscriberRef: string,
+    deleteBillingMethod = false,
   ): Promise<{
     agreementFound: boolean;
     cancelledWithdrawals: number;
     mandateTerminated: boolean;
+    /** 요청에 따라 계좌를 남겼는지. 남긴 건 '정리 실패' 가 아니므로 재시도 대상이 아니다. */
+    billingMethodKept: boolean;
     skipReason?: string;
   }> {
     const [agreement] = await this.dbService.db
@@ -180,7 +189,7 @@ export class BillingAgreementService {
       .limit(1);
 
     if (!agreement) {
-      return { agreementFound: false, cancelledWithdrawals: 0, mandateTerminated: false };
+      return { agreementFound: false, cancelledWithdrawals: 0, mandateTerminated: false, billingMethodKept: false };
     }
 
     // 1) 마감 전 예정 출금 취소 (돈이 나가는 것을 애초에 막는다)
@@ -209,13 +218,26 @@ export class BillingAgreementService {
         agreementFound: true,
         cancelledWithdrawals,
         mandateTerminated: false,
+        billingMethodKept: true,
         skipReason: 'BILLING_METHOD_IN_USE_BY_OTHER_AGREEMENT',
+      };
+    }
+
+    // 계좌를 남기는 것이 기본이다. 예정 출금이 지워지고 약정이 REVOKED 면 더 이상 출금되지 않는다 —
+    // 효성 회원삭제는 '은행에 남은 등록까지 지우는' 추가 조치이지 돈을 막는 수단이 아니다.
+    if (!deleteBillingMethod) {
+      return {
+        agreementFound: true,
+        cancelledWithdrawals,
+        mandateTerminated: false,
+        billingMethodKept: true,
+        skipReason: 'BILLING_METHOD_KEPT_BY_REQUEST',
       };
     }
 
     try {
       await this.billingMethodService.revoke(agreement.billingMethodId, agreement.userId);
-      return { agreementFound: true, cancelledWithdrawals, mandateTerminated: true };
+      return { agreementFound: true, cancelledWithdrawals, mandateTerminated: true, billingMethodKept: false };
     } catch (error) {
       // 이미 삭제된 수단이거나 효성 삭제 가드(CMS_MEMBER_DELETE_BLOCKED_REGISTERED)에 걸린 경우.
       // 구독 해지 자체는 되돌리지 않고, 약정 정리만 후속 처리 대상으로 남긴다.
@@ -227,6 +249,7 @@ export class BillingAgreementService {
         agreementFound: true,
         cancelledWithdrawals,
         mandateTerminated: false,
+        billingMethodKept: false,
         skipReason: message,
       };
     }

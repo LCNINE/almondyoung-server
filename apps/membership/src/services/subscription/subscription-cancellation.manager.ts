@@ -392,13 +392,19 @@ export class SubscriptionCancellationManager {
    * 에서 약정 종료가 **영원히 일어나지 않는다** — 해지한 고객의 자동이체가 은행에 남는다.
    * `notBefore`(자격 종료일) 이후에는 AgreementCleanupService 가 이어받아 끝낸다.
    */
-  async markAgreementRevokeDeferred(contractId: string, userId: string, notBefore: string): Promise<void> {
+  async markAgreementRevokeDeferred(
+    contractId: string,
+    userId: string,
+    notBefore: string,
+    /** 고객이 계좌 삭제까지 요청했는지. 정리는 나중에 일어나므로 그때 쓰도록 함께 남긴다. */
+    deleteBillingMethod = false,
+  ): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
       await this.contractEventManager.addEvent(
         tx,
         contractId,
         'AGREEMENT_REVOKE_DEFERRED',
-        { notBefore },
+        { notBefore, deleteBillingMethod },
         'SYSTEM',
         userId,
       );
