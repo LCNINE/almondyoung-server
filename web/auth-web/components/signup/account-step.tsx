@@ -36,6 +36,9 @@ export function AccountStep({
   const emailAvailability = useEmailAvailability(email)
   const loginIdTaken = loginIdAvailability.status === "taken"
   const emailTaken = emailAvailability.status === "taken"
+  // 중복확인이 끝나기 전에 넘어가면 중복인 채로 마지막 스텝까지 가서야 실패한다.
+  const unconfirmed =
+    !isConfirmed(loginIdAvailability) || !isConfirmed(emailAvailability)
   const [mismatch, setMismatch] = React.useState(false)
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -148,12 +151,20 @@ export function AccountStep({
         />
       </Field>
 
-      <StepFooter onBack={onBack} nextDisabled={emailTaken || loginIdTaken} />
+      <StepFooter onBack={onBack} nextDisabled={unconfirmed} />
     </form>
   )
 }
 
-function AvailabilityStatus({
+/**
+ * 중복확인이 끝났고 넘어가도 되는 상태인지.
+ * error 는 확인 API 장애라 여기서 막으면 가입 자체가 불가능해진다 — 서버가 가입 시점에 다시 검증한다.
+ */
+export function isConfirmed(state: AvailabilityState) {
+  return state.status === "available" || state.status === "error"
+}
+
+export function AvailabilityStatus({
   id,
   state,
   idleText,

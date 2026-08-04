@@ -19,6 +19,7 @@ export interface MasterMatchingRowVM extends MasterDto {
 export interface SkuLinkState {
   skuId: string;
   skuName?: string;
+  skuCode?: string;
   quantity: number;
 }
 

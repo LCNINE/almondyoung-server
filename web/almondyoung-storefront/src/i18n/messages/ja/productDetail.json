@@ -93,7 +93,11 @@
     "optionSelectTitle": "{title} 選択",
     "soldOutToast": "選択されたオプションは在庫切れのため追加できません。",
     "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。",
-    "optionPriceExtra": "(+{amount}ウォン)"
+    "optionPriceExtra": "(+{amount}ウォン)",
+    "stockLimitToast": "在庫が残り{max}個です。{max}個以下でお選びください。",
+    "stockLimitToastNamed": "「{option}」の在庫は残り{max}個です。{max}個以下でお選びください。",
+    "stockConflictToast": "カート内の数量と合わせると在庫を超えます。カートの数量をご確認ください。",
+    "stockShortToast": "在庫が不足しているため追加できません。数量を減らしてお試しください。"
   },
   "cartModal": {
     "addingTitle": "カートに追加中",

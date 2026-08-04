@@ -14,15 +14,30 @@ import {
   StorageProviderType,
   StorageError,
 } from '../storage-provider.interface';
+import { localUploadsDir } from '../local-storage.path';
 
 @Injectable()
 export class LocalStorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(LocalStorageProvider.name);
-  private readonly baseDir = path.join(process.cwd(), 'uploads');
+  private readonly baseDir: string;
   private readonly port: string;
 
   constructor(private readonly configService: ConfigService) {
     this.port = this.configService.get<string>('PORT', '3000');
+    this.baseDir = localUploadsDir(this.configService);
+  }
+
+  /**
+   * 이 URL 을 실제로 받아내는 라우트는 `LocalFileController` 다(`GET /files/local/*`).
+   * 둘 중 하나만 고치면 업로드는 되는데 되읽기가 404 가 되므로 같이 본다.
+   */
+  private buildUrl(key: string, responseContentDisposition?: string): string {
+    const base = `http://localhost:${this.port}/files/local/${key}`;
+    // S3 의 ResponseContentDisposition 대응물. 이게 없으면 워크북이 원본 파일명 대신
+    // UUID 로 저장돼 `download=true` 의 의미가 로컬에서만 사라진다.
+    return responseContentDisposition
+      ? `${base}?disposition=${encodeURIComponent(responseContentDisposition)}`
+      : base;
   }
 
   async upload(request: UploadRequest): Promise<UploadResult> {
@@ -35,7 +50,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
 
       await fs.writeFile(filePath, request.buffer);
 
-      const url = `http://localhost:${this.port}/files/local/${request.key}`;
+      const url = this.buildUrl(request.key);
 
       this.logger.log(`File uploaded to local (${isPublic ? 'public' : 'private'}): ${request.key}`);
 
@@ -66,7 +81,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
   }
 
   async getSignedUrl(request: SignedUrlRequest): Promise<SignedUrlResult> {
-    const signedUrl = `http://localhost:${this.port}/files/local/${request.key}`;
+    const signedUrl = this.buildUrl(request.key, request.responseContentDisposition);
     const expiresAt = new Date(Date.now() + request.expiresIn * 1000);
 
     return { signedUrl, expiresAt };

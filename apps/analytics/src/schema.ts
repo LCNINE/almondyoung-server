@@ -5,6 +5,7 @@ import {
   jsonb,
   timestamp,
   integer,
+  bigint,
   text,
   date,
   boolean,
@@ -87,6 +88,9 @@ export const aggProductOrderDaily = pgTable(
     salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
     ordersCount: integer('orders_count').notNull().default(0),
     quantitySold: integer('quantity_sold').notNull().default(0),
+    grossRevenue: bigint('gross_revenue', { mode: 'number' }).notNull().default(0),
+    cancelledAmount: bigint('cancelled_amount', { mode: 'number' }).notNull().default(0),
+    refundedAmount: bigint('refunded_amount', { mode: 'number' }).notNull().default(0),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
   },
@@ -186,11 +190,137 @@ export const aggUserProductPurchase = pgTable(
   ],
 );
 
+export const aggChannelDaily = pgTable(
+  'agg_channel_daily',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    aggDate: date('agg_date').notNull(),
+    salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
+    ordersCount: integer('orders_count').notNull().default(0),
+    grossRevenue: bigint('gross_revenue', { mode: 'number' }).notNull().default(0),
+    cancelledAmount: bigint('cancelled_amount', { mode: 'number' }).notNull().default(0),
+    refundedAmount: bigint('refunded_amount', { mode: 'number' }).notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_agg_channel_daily').on(table.aggDate, table.salesChannel),
+    index('idx_agg_channel_daily_date').on(table.aggDate),
+  ],
+);
+
+export const aggVariantOrderDaily = pgTable(
+  'agg_variant_order_daily',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    aggDate: date('agg_date').notNull(),
+    variantId: varchar('variant_id', { length: 255 }).notNull(),
+    masterId: varchar('master_id', { length: 255 }).notNull(),
+    salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
+    quantitySold: integer('quantity_sold').notNull().default(0),
+    grossRevenue: bigint('gross_revenue', { mode: 'number' }).notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_agg_variant_order_daily').on(table.aggDate, table.variantId, table.salesChannel),
+    index('idx_agg_variant_order_daily_date').on(table.aggDate),
+    index('idx_agg_variant_order_daily_master').on(table.masterId),
+  ],
+);
+
+export const aggCustomerLifetime = pgTable(
+  'agg_customer_lifetime',
+  {
+    customerId: varchar('customer_id', { length: 255 }).primaryKey(),
+    firstOrderAt: timestamp('first_order_at'),
+    lastOrderAt: timestamp('last_order_at'),
+    ordersCount: integer('orders_count').notNull().default(0),
+    totalRevenue: bigint('total_revenue', { mode: 'number' }).notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [index('idx_agg_customer_lifetime_first_order').on(table.firstOrderAt)],
+);
+
+export const factMembershipEvents = pgTable(
+  'fact_membership_events',
+  {
+    messageId: varchar('message_id', { length: 26 }).primaryKey(),
+    userId: varchar('user_id', { length: 255 }).notNull(),
+    status: varchar('status', { length: 30 }).notNull(),
+    tierId: varchar('tier_id', { length: 255 }),
+    planId: varchar('plan_id', { length: 255 }),
+    contractId: varchar('contract_id', { length: 255 }),
+    reasonCode: varchar('reason_code', { length: 100 }),
+    reasonText: text('reason_text'),
+    occurredAt: timestamp('occurred_at').notNull(),
+    payload: jsonb('payload').notNull(),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [
+    index('idx_fact_membership_events_user').on(table.userId),
+    index('idx_fact_membership_events_occurred_at').on(table.occurredAt),
+    index('idx_fact_membership_events_status').on(table.status),
+    index('idx_fact_membership_events_reason').on(table.reasonCode),
+  ],
+);
+
+export const dimCustomerMembership = pgTable(
+  'dim_customer_membership',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    userId: varchar('user_id', { length: 255 }).notNull(),
+    tierId: varchar('tier_id', { length: 255 }).notNull().default('UNKNOWN'),
+    contractId: varchar('contract_id', { length: 255 }),
+    validFrom: timestamp('valid_from').notNull(),
+    validTo: timestamp('valid_to'),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_dim_customer_membership').on(table.userId, table.validFrom),
+    index('idx_dim_customer_membership_user').on(table.userId),
+    index('idx_dim_customer_membership_valid_to').on(table.validTo),
+  ],
+);
+
+export const aggMembershipDaily = pgTable(
+  'agg_membership_daily',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    aggDate: date('agg_date').notNull(),
+    status: varchar('status', { length: 30 }).notNull(),
+    tierId: varchar('tier_id', { length: 255 }).notNull().default('UNKNOWN'),
+    membersCount: integer('members_count').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow(),
+    updatedAt: timestamp('updated_at').defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_agg_membership_daily').on(table.aggDate, table.status, table.tierId),
+    index('idx_agg_membership_daily_date').on(table.aggDate),
+  ],
+);
+
 export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
   aggProductOrderDaily,
   aggUserProductPurchase,
+  aggChannelDaily,
+  aggVariantOrderDaily,
+  aggCustomerLifetime,
+  factMembershipEvents,
+  dimCustomerMembership,
+  aggMembershipDaily,
   dimProductMasters,
   dimProductVariants,
   dimProductCategories,

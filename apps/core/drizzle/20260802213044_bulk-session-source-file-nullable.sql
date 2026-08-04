@@ -1,0 +1,1 @@
+ALTER TABLE "product_bulk_sessions" ALTER COLUMN "source_file_id" DROP NOT NULL;

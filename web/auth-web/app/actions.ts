@@ -25,6 +25,7 @@ import {
   callbackSignup,
   checkEmailAvailable,
   checkLoginIdAvailable,
+  checkNicknameAvailable,
   createBusinessLicense,
   getMyBusinessLicenseStatus,
   findUserId,
@@ -409,6 +410,28 @@ export async function checkEmailAvailableAction(
     return {
       status: "error",
       message: "이메일 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+    }
+  }
+}
+
+export async function checkNicknameAvailableAction(
+  nickname: string
+): Promise<CheckEmailResult> {
+  const normalized = nickname.trim()
+  if (!normalized) {
+    return { status: "invalid", message: "닉네임을 입력해주세요." }
+  }
+
+  try {
+    const available = await checkNicknameAvailable(normalized)
+    return available ? { status: "available" } : { status: "taken" }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 400) {
+      return { status: "invalid", message: "닉네임은 2~8자로 입력해주세요." }
+    }
+    return {
+      status: "error",
+      message: "닉네임 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
     }
   }
 }

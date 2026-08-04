@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
 import { SupplierCell } from '@/components/table/table-cells/supplier-cell';
+import { VariantPreviewCell } from '@/components/table/table-cells/variant-preview-cell';
 import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
@@ -109,20 +110,15 @@ export function useProductsListTableColumns({
         ),
       }),
       columnHelper.accessor('variantCount', {
-        header: '옵션제목/옵션수',
-        meta: { width: 104 },
-        cell: ({ row }) => {
-          const { optionGroupNames, variantCount } = row.original;
-          if (optionGroupNames.length === 0) {
-            return <span className="text-[#1e3a89]">단일상품</span>;
-          }
-          return (
-            <span className="text-[#1e3a89]">
-              <span className="underline">{optionGroupNames.join(' / ')}</span>
-              {` / ${variantCount}`}
-            </span>
-          );
-        },
+        header: '품목',
+        meta: { width: 260, align: 'left' },
+        cell: ({ row }) => (
+          <VariantPreviewCell
+            optionGroupNames={row.original.optionGroupNames}
+            variantCount={row.original.variantCount}
+            variantPreviews={row.original.variantPreviews ?? []}
+          />
+        ),
       }),
       columnHelper.accessor('supplierId', {
         header: '공급처',
