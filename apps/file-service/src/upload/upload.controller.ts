@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiConsumes, ApiBody, ApiResponse, ApiBearerAuth
 import { UploadService } from './upload.service';
 import { UploadFileDto } from './dto/upload-file.dto';
 import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response.dto';
+import { UPLOAD_MULTER_OPTIONS } from './multer-options';
 import { User } from '@app/authorization';
 
 interface JwtPayload {
@@ -64,7 +65,7 @@ export class UploadController {
     type: UploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', UPLOAD_MULTER_OPTIONS))
   async uploadFile(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadFileDto,
@@ -120,7 +121,7 @@ export class UploadController {
     type: BatchUploadResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  @UseInterceptors(FilesInterceptor('files'))
+  @UseInterceptors(FilesInterceptor('files', undefined, UPLOAD_MULTER_OPTIONS))
   async batchUploadFiles(
     @UploadedFiles() files: Express.Multer.File[],
     @Body() dto: UploadFileDto,
