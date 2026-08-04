@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator"
 import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
+import { getRequiresMembershipToPurchase } from "@/lib/utils/product-card"
 import {
   CustomerGroupRef,
   isMembershipGroup,
@@ -289,11 +290,19 @@ export default function ProductActions({
   const actionsRef = useRef<HTMLDivElement>(null)
   const inView = useIntersection(actionsRef, "0px")
 
+  // 멤버십 전용 구매 상품은 비회원 응답에서 재고가 0 으로 마스킹돼 품절과 구분되지 않는다.
+  const membersOnlyPurchase =
+    !isMembershipGroup(customer?.groups) &&
+    getRequiresMembershipToPurchase(product)
+  const unavailableLabel = membersOnlyPurchase
+    ? t("membersOnly")
+    : t("soldOut")
+
   const disabledLabel =
     selectedItems.length === 0
       ? t("selectPlaceholder")
       : !allInStock
-        ? t("soldOut")
+        ? unavailableLabel
         : null
 
   // 재고부족 응답을 사람 말로 바꾼다. 요청 수량이 이미 남은 재고를 넘었으면 남은 수량을 알려주고,
@@ -500,7 +509,7 @@ export default function ProductActions({
                   className="h-12 w-full cursor-pointer text-base font-medium"
                   data-testid="sold-out-button"
                 >
-                  {t("soldOut")}
+                  {unavailableLabel}
                 </Button>
               )}
             </div>
@@ -549,6 +558,7 @@ export default function ProductActions({
         totalPrice={totalPrice}
         isSimple={isSimple}
         isWelcomeMembership={isWelcomeMembership}
+        membersOnlyPurchase={membersOnlyPurchase}
         inStock={allInStock}
         handleAddToCart={handleAddToCart}
         handleBuyNow={handleBuyNow}

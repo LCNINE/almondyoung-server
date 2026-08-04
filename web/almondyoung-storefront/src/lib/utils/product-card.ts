@@ -33,6 +33,22 @@ export function getIsVisibleToMembersOnly(
   )
 }
 
+/**
+ * 멤버십 회원만 구매 가능한 상품 여부 (노출·검색은 그대로, 구매만 차단).
+ * Medusa 응답 미들웨어가 비회원 variant 를 재고 0 으로 마스킹하므로 화면상 품절과
+ * 구분되지 않는다 — 이 판정으로 "멤버십 전용" 문구를 대신 띄운다.
+ */
+export function getRequiresMembershipToPurchase(
+  product: Pick<StoreProduct, "metadata">
+): boolean {
+  const constraint = product.metadata?.pimPurchaseConstraint
+  if (typeof constraint !== "object" || constraint === null) return false
+
+  const requiresMembership = (constraint as Record<string, unknown>)
+    .requiresMembership
+  return requiresMembership === true || requiresMembership === "true"
+}
+
 /** 해외 배송(해외직구) 상품 여부 */
 export function getIsOverseas(
   product: Pick<StoreProduct, "metadata">
