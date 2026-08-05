@@ -150,15 +150,16 @@ async function main() {
     }
 
     // --- Medusa: 카페코드별 variant 목록 (+ 옵션값 조합 라벨) ---
-    // variant.title 은 `ON00804` 같은 내부코드라 셀메이트 옵션명과 대조 불가.
     // 사람이 보는 옵션명은 product_option_value 를 옵션명 순으로 이어붙인 것.
+    // 옵션코드는 `metadata.optionCode` 에 둔다 — title 은 주문서에 그대로 찍히는 자리라
+    // 코드를 넣으면 고객이 `ON03886` 을 옵션명으로 보게 된다 (2026-08-05 실주문 488건에서 발생).
     const mv: { code: string; pimv: string | null; opt_label: string | null; product_title: string;
-                vtitle: string | null }[] =
+                option_code: string | null }[] =
       await medusa.unsafe(`
         SELECT left(v.barcode,8) AS code,
                v.metadata->>'pimVariantId' AS pimv,
                p.title AS product_title,
-               v.title AS vtitle,
+               v.metadata->>'optionCode' AS option_code,
                (SELECT string_agg(ov.value, ' / ' ORDER BY o.title)
                   FROM product_variant_option pvo
                   JOIN product_option_value ov ON ov.id = pvo.option_value_id
@@ -166,13 +167,13 @@ async function main() {
                  WHERE pvo.variant_id = v.id) AS opt_label
         FROM product_variant v
         JOIN product p ON p.id = v.product_id AND p.deleted_at IS NULL
-        WHERE v.deleted_at IS NULL AND (v.barcode ~ '^P' OR v.title ~ '^ON[0-9]')`);
+        WHERE v.deleted_at IS NULL AND (v.barcode ~ '^P' OR v.metadata->>'optionCode' IS NOT NULL)`);
     const medByCafe = new Map<string, typeof mv>();
     for (const r of mv) (medByCafe.get(r.code) ?? medByCafe.set(r.code, []).get(r.code)!).push(r);
-    // 규칙 C: 셀메이트 옵션코드 == Medusa variant.title (`ON01043`). 이름을 안 보므로 가장 정확하다.
-    // 다만 ON 코드를 가진 variant 가 전체의 2% 뿐이라 만능 키가 아니다 — 있으면 우선 쓰고 없으면 A/B.
+    // 규칙 C: 셀메이트 옵션코드 == Medusa `metadata.optionCode` (`ON01043`). 이름을 안 보므로 가장 정확하다.
+    // 다만 옵션코드를 가진 variant 가 전체의 2% 뿐이라 만능 키가 아니다 — 있으면 우선 쓰고 없으면 A/B.
     const medByOptionCode = new Map<string, (typeof mv)[number]>();
-    for (const r of mv) if (r.vtitle && /^ON[0-9]/.test(r.vtitle)) medByOptionCode.set(r.vtitle, r);
+    for (const r of mv) if (r.option_code) medByOptionCode.set(r.option_code, r);
 
     // --- core: 바코드 → sku_id (후보 그룹에 등장한 바코드 전부) ---
     const codes = [...new Set([...byCafe.values()].flat().map((r) => r.barcode))];
