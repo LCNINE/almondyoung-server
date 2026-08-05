@@ -81,13 +81,16 @@ describe('FormExportJobWorker.tick', () => {
     await expect(worker.tick()).resolves.toBeUndefined();
   });
 
-  it('조립이 터지면 클레임한 잡에 오류를 기록한다', async () => {
+  // 토큰을 같이 넘겨야 recordJobError 의 CAS 가 성립한다 — 토큰이 빠지면 좀비의 뒤늦은
+  // 예외가 후임의 살아있는 잡의 lease 를 짧게 깎아 제3의 워커가 인수하고, 이중 조립·이중
+  // 업로드로 진 쪽 xlsx 가 영구 고아가 된다.
+  it('조립이 터지면 클레임한 잡에 lease 토큰과 함께 오류를 기록한다', async () => {
     const { worker, runExport, recordJobError } = makeWorker({ claims: ['exp-1'] });
     runExport.mockRejectedValue(new Error('DB down'));
 
     await worker.tick();
 
-    expect(recordJobError).toHaveBeenCalledWith('exp-1', 'DB down');
+    expect(recordJobError).toHaveBeenCalledWith('exp-1', 'tok-1', 'DB down');
   });
 
   it('조립이 정상 종료하면 연속 실패를 리셋한다', async () => {

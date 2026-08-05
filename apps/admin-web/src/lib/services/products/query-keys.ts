@@ -167,6 +167,8 @@ export const productQueryKeys = {
   formExports: ['product-forms'] as const,
   formExport: (exportId: string) =>
     [...productQueryKeys.formExports, exportId] as const,
+  formExportList: (page: number, limit: number) =>
+    [...productQueryKeys.formExports, 'list', page, limit] as const,
 
   // 일괄 등록/수정 세션 관련
   bulkSessions: ['product-bulk-sessions'] as const,

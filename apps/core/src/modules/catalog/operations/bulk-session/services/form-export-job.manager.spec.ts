@@ -1,6 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { FormExportJobManager, MAX_CONSECUTIVE_EXPORT_FAILURES } from './form-export-job.manager';
+import {
+  DEFAULT_EXPORT_LEASE_MS,
+  FORM_EXPORT_RETRY_DELAY_MS,
+  FormExportJobManager,
+  MAX_CONSECUTIVE_EXPORT_FAILURES,
+} from './form-export-job.manager';
 import { productFormExports, productFormExportItems } from '../../../schema/catalog.schema';
 import type { PrefillBundle, PrefillWorkbookData } from './form-export.types';
 import type { SnapshotItem } from './form-export.snapshot.reader';
@@ -221,6 +226,15 @@ describe('FormExportJobManager.claim', () => {
     expect(sql).toContain('::uuid');
     // 만료시각은 DB 시계가 만든다 — 비교 대상이 아니므로 정밀도가 무관하다.
     expect(sql).toContain('now()');
+    // 재클레임 카운트 절이 있는지만 잠근다 — **의미론이 아니라 절의 존재**다. 목
+    // trx.execute 는 SQL 을 실행하지 않고 미리 정한 행을 돌려줄 뿐이라
+    // `CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END` 이 실제로 옳게 세는지(의미론)는
+    // 여기서 검증할 수 없다 — 그건 form-export-job-lease.integration.spec.ts 의 실 DB
+    // 케이스 몫이다(주석은 위 claim() 정의부에도 있다). 이 줄이 없으면 이 2줄을 통째로
+    // 지워도(리뷰 뮤테이션 확인) 기본 스위트(582 tests)가 전부 초록이었다 — 통합 스펙은
+    // DATABASE_URL 이 없으면 skip 되고 이 레포엔 jest 를 도는 CI 가 없어 유일한 방어선이
+    // 없는 채였다.
+    expect(sql).toContain('case when lease_token is null');
 
     const { params } = renderQuery(trx.execute.mock.calls[0][0]);
     // 소유권 값은 DB 가 만들지 않는다 — 클레임이 uuid 토큰을 발급해 바인딩한다.
@@ -242,6 +256,44 @@ describe('FormExportJobManager.claim', () => {
   it('클레임할 잡이 없으면 null 이다', async () => {
     const { manager } = makeHarness({ claimed: [] });
     expect(await manager.claim()).toBeNull();
+  });
+});
+
+/**
+ * recordJobError 의 토큰 CAS 가 뚫는 구멍(좀비의 실패가 안 세어져 상한에 영원히 못 닿음)을
+ * claim 이 막는다 — 재클레임 시점에 lease_token 이 남아 있으면 직전 소유자가 못 끝내고
+ * 죽었다는 뜻이므로 거기서 +1 한다.
+ *
+ * `CASE WHEN lease_token IS NULL` 이라는 **SQL 의미론 자체**는 여기서 잠글 수 없다 — 목
+ * trx.execute 는 SQL 을 실행하지 않고 미리 정한 행을 돌려줄 뿐이다. 여기서는 그 카운트를
+ * 받아든 뒤의 **분기**(상한 미만이면 조립, 상한이면 즉시 확정)만 본다. CASE 의미론은
+ * form-export-job-lease.integration.spec.ts 의 실 DB 케이스 2건이 잠근다.
+ */
+describe('claim 이 재클레임을 실패로 센다', () => {
+  it('상한 미만이면 잡을 돌려준다', async () => {
+    const { manager } = makeHarness({ claimed: [{ id: 'exp-1', consecutive_failures: 1 }] });
+
+    const claimed = await manager.claim();
+
+    expect(claimed?.exportId).toBe('exp-1');
+  });
+
+  it('재클레임 누적이 상한이면 조립하지 않고 failed 로 확정한 뒤 null 을 돌려준다', async () => {
+    const { manager, updates } = makeHarness({
+      claimed: [{ id: 'exp-1', consecutive_failures: MAX_CONSECUTIVE_EXPORT_FAILURES }],
+    });
+
+    const claimed = await manager.claim();
+
+    expect(claimed).toBeNull();
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values).toMatchObject({ status: 'failed', leaseUntil: null, leaseToken: null });
+    // 순수 하드킬 경로(recordJobError 가 한 번도 안 불려 error_message 가 NULL)에서도
+    // 실패 사유가 채워져야 한다 — 안 채우면 목록 화면이 "실패" 뱃지만 띄우고 사유를
+    // 못 보여준다. COALESCE 라 이미 있는 값은 안 건드리고, 없을 때만 이 기본 문구를 쓴다.
+    const { sql: errorSql, params: errorParams } = renderQuery(updates[0].values.errorMessage);
+    expect(errorSql.toLowerCase()).toContain('coalesce');
+    expect(errorParams).toContain('조립이 lease 안에 끝나지 않아 실패로 확정했습니다');
   });
 });
 
@@ -365,37 +417,80 @@ describe('FormExportJobManager.recordJobError', () => {
   it('상한 미만이면 상태를 바꾸지 않는다 — 일시적 오류로 잡을 죽이지 않는다', async () => {
     const { manager, updates } = makeHarness({ returningRows: [[{ failures: 1 }]] });
 
-    await manager.recordJobError('e1', '일시적 DB 오류');
+    await manager.recordJobError('e1', 'TOKEN-1', '일시적 DB 오류');
 
     expect(updates.some((u) => u.values.status === 'failed')).toBe(false);
     const update = updates[0];
     expect(update.values).toMatchObject({ errorMessage: '일시적 DB 오류' });
-    // 예외가 났다는 건 우리가 지금 어떤 상태인지 모른다는 뜻이다 — lease 를 여기서
-    // 지우면 이미 세션을 넘겨받은 후임 워커의 살아있는 lease 를 지울 수 있다.
-    expect(update.values).not.toHaveProperty('leaseUntil');
-    expect(update.values).not.toHaveProperty('leaseToken');
+    // 토큰을 **비운다**. claim 의 `CASE WHEN lease_token IS NULL` 은 "직전 소유자가 못
+    // 끝내고 죽었는가" 를 묻는데, 실패를 정상적으로 기록하고 떠난 소유자는 죽은 게 아니다
+    // — 토큰을 남기면 뒤이은 재클레임이 같은 실패를 또 세어 재시도 예산이 절반이 된다.
+    // 이 잡의 CAS 기준점은 내 토큰이 아니라 **후임이 새로 발급할 토큰**이라 지워도 안전하다.
+    expect(update.values.leaseToken).toBeNull();
   });
 
-  it('상한에 닿으면 failed 로 확정하고 lease 를 놓는다', async () => {
+  // 이 태스크의 핵심. lease_until 한 컬럼이 겸하던 두 축("조립 중 점유 보호" / "재시도
+  // 대기") 중 재시도 쪽만 짧게 되돌린다. 예전 구현은 이 값을 **아예 안 건드려** 재시도
+  // 주기가 lease 만료(30분)였고 3회 결론까지 약 90분이 걸렸다.
+  it('토큰이 일치하면 실패를 기록하고 재시도 대기를 짧게 되돌린다', async () => {
+    const { manager, updates } = makeHarness({ returningRows: [[{ failures: 1 }]] });
+
+    await manager.recordJobError('exp-1', 'TOKEN-1', 'boom');
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].values.errorMessage).toBe('boom');
+    // lease 를 짧게 되돌리는 것이 이 변경의 핵심이다 — 예전엔 이 값을 아예 안 건드렸다.
+    expect(updates[0].values.leaseUntil).toBeDefined();
+    // `toBeDefined()` 만으로는 "짧게" 를 잠그지 못한다 — lease(30분)를 그대로 다시 밀어도
+    // 통과한다. 되돌리는 값이 재시도 대기 상수인지 바인딩된 파라미터로 확인한다.
+    const { params } = renderQuery(updates[0].values.leaseUntil);
+    expect(params).toContain(FORM_EXPORT_RETRY_DELAY_MS);
+    expect(params).not.toContain(DEFAULT_EXPORT_LEASE_MS);
+  });
+
+  // 짧은 재시도의 **전제조건**이 토큰 CAS 다. 이 단정이 없으면 아래 '좀비' 케이스가 CAS 를
+  // 전혀 잠그지 못한다 — 목 trx 는 WHERE 를 실행하지 않고 미리 정한 행을 돌려줄 뿐이라,
+  // WHERE 에서 토큰 조건을 통째로 지워도 그 케이스는 초록으로 남는다. 그래서 조건절 자체를
+  // 렌더해 본다(runExport 의 '마감은 토큰 CAS 를 건다' 와 같은 기법).
+  it('WHERE 가 lease 토큰 CAS 를 건다 — 좀비가 후임의 살아있는 lease 를 깎으면 안 된다', async () => {
+    const { manager, updates } = makeHarness({ returningRows: [[{ failures: 1 }]] });
+
+    await manager.recordJobError('exp-1', 'TOKEN-1', 'boom');
+
+    const { sql, params } = renderQuery(updates[0].condition);
+    expect(sql.toLowerCase()).toMatch(/"lease_token"\s*=/);
+    expect(params).toContain('TOKEN-1');
+  });
+
+  it('토큰이 다르면(좀비) 두 번째 UPDATE 로 넘어가지 않는다', async () => {
+    const { manager, updates } = makeHarness({ returningRows: [[]] });
+
+    await manager.recordJobError('exp-1', 'STALE-TOKEN', 'boom');
+
+    // CAS 0행 매치 → failed 확정 UPDATE 가 없어야 한다
+    expect(updates).toHaveLength(1);
+  });
+
+  it('상한에 닿으면 failed 로 확정하고 lease 를 푼다', async () => {
     const { manager, updates } = makeHarness({
       returningRows: [[{ failures: MAX_CONSECUTIVE_EXPORT_FAILURES }]],
     });
 
-    await manager.recordJobError('e1', '반복 오류');
+    await manager.recordJobError('exp-1', 'TOKEN-1', 'boom');
 
     expect(updates).toHaveLength(2);
-    const final = updates.find((u) => u.values.status === 'failed');
-    expect(final).toMatchObject({ values: { status: 'failed', leaseUntil: null, leaseToken: null } });
+    expect(updates[1].values).toEqual({ status: 'failed', leaseUntil: null, leaseToken: null });
   });
 
   // Critical(리뷰): WHERE 가 id 만으로 매치하면, lease 를 잃은 좀비의 뒤늦은 예외가 후임이
   // 이미 completed 로 끝낸 잡을 다시 건드려 연속 3회면 failed 로 되돌릴 수 있다 — 실제
-  // xlsx 는 멀쩡한데 getDownloadUrl 이 영구히 409 를 돌려주게 된다. WHERE 절 자체가 종결
-  // 상태(completed/failed)를 제외하는지를 SQL 모양으로 단정한다.
+  // xlsx 는 멀쩡한데 getDownloadUrl 이 영구히 409 를 돌려주게 된다. 토큰 CAS 만으로도
+  // 대부분 막히지만 대가가 커서 가드를 이중으로 둔다 — WHERE 절 자체가 종결 상태
+  // (completed/failed)를 제외하는지를 SQL 모양으로 단정한다.
   it('WHERE 절이 종결 상태(completed/failed)를 제외한다 — 이미 끝난 잡은 다시 건드리지 않는다', async () => {
     const { manager, updates } = makeHarness({ returningRows: [[{ failures: 1 }]] });
 
-    await manager.recordJobError('e1', '일시적 DB 오류');
+    await manager.recordJobError('e1', 'TOKEN-1', '일시적 DB 오류');
 
     const { sql } = renderQuery(updates[0].condition);
     expect(sql.toLowerCase()).toContain('"status" not in');
@@ -407,7 +502,7 @@ describe('FormExportJobManager.recordJobError', () => {
   it('가드가 0 행을 매치하면(이미 종결 상태) failed 확정 update 를 시도하지 않는다', async () => {
     const { manager, updates } = makeHarness({ returningRows: [[]] });
 
-    await manager.recordJobError('e1', '좀비의 뒤늦은 예외');
+    await manager.recordJobError('e1', 'TOKEN-1', '좀비의 뒤늦은 예외');
 
     expect(updates).toHaveLength(1);
     expect(updates.some((u) => u.values.status === 'failed')).toBe(false);

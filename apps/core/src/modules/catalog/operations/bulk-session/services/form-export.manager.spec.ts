@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
+import { and, eq, inArray } from 'drizzle-orm';
 import { FormExportManager, FORM_EXPORT_TTL_DAYS } from './form-export.manager';
 import { ConflictError, NotFoundError } from '@app/shared';
+import { productFormExports } from '../../../schema/catalog.schema';
 
 type FakeRow = Record<string, unknown>;
 
@@ -96,6 +98,107 @@ describe('FormExportManager.accept', () => {
 
     const days = (captured!.expiresAt.getTime() - Date.now()) / 86_400_000;
     expect(Math.round(days)).toBe(FORM_EXPORT_TTL_DAYS);
+  });
+});
+
+describe('FormExportManager.accept 중복 제거', () => {
+  /**
+   * `where()` 에 실제로 넘어온 조건을 캡처한다 — listHarness(:406-429) 와 같은 패턴.
+   * 이전 하네스는 `where: () => Promise.resolve(inFlight)` 로 조건을 통째로 버려,
+   * 소유권(`requestedBy`)이나 상태 필터(`queued`/`running`)를 구현에서 지워도 전부
+   * 초록이었다(리뷰에서 뮤테이션으로 증명됨) — 특히 소유권 필터가 지워지면 남의
+   * 진행 중 잡이 재사용돼 요청자가 소유하지 않은 exportId 를 돌려받는 사고가 난다.
+   */
+  function acceptHarness(inFlight: Record<string, unknown>[]) {
+    const inserted: Record<string, unknown>[] = [];
+    const calls: { whereConditions: unknown[] } = { whereConditions: [] };
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: (condition: unknown) => {
+            calls.whereConditions.push(condition);
+            return Promise.resolve(inFlight);
+          },
+        }),
+      }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => ({
+          returning: () => {
+            inserted.push(v);
+            return Promise.resolve([{ id: 'NEW', ...v }]);
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+    return { manager, inserted, calls };
+  }
+
+  it('같은 집합의 진행 중 잡이 있으면 그것을 돌려주고 새로 만들지 않는다', async () => {
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] }]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result).toEqual({ exportId: 'E1', status: 'running', requestedCount: 2, reused: true });
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('순서만 다른 같은 집합도 재사용한다', async () => {
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'queued', requestedMasterIds: ['m2', 'm1'] }]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result.exportId).toBe('E1');
+    expect(result.reused).toBe(true);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('중복된 masterId 를 제거한 뒤 비교한다', async () => {
+    const { manager } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] }]);
+
+    const result = await manager.accept(['m1', 'm2', 'm2'], 'U1');
+
+    expect(result.reused).toBe(true);
+    expect(result.requestedCount).toBe(2);
+  });
+
+  it('집합이 다르면 새 잡을 만든다', async () => {
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1'] }]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result.exportId).toBe('NEW');
+    expect(result.reused).toBe(false);
+    expect(inserted).toHaveLength(1);
+  });
+
+  it('진행 중 잡이 없으면 새 잡을 만든다', async () => {
+    const { manager, inserted } = acceptHarness([]);
+
+    const result = await manager.accept(['m1'], 'U1');
+
+    expect(result).toEqual({ exportId: 'NEW', status: 'queued', requestedCount: 1, reused: false });
+    expect(inserted).toHaveLength(1);
+  });
+
+  // 리뷰 지적: 조건을 버리는 하네스는 소유권/상태 필터를 지워도 계속 초록이었다. 진행
+  // 중 잡 조회의 where() 에 소유권(requestedBy = 넘긴 userId)과 상태 필터
+  // (queued/running) 둘 다 담겨 있는지 직접 단정한다 — 하나라도 지워지면 이 테스트가
+  // 빨개져야 한다.
+  it('진행 중 잡 조회는 소유권과 상태(queued/running) 필터를 함께 건다', async () => {
+    const { manager, calls } = acceptHarness([]);
+
+    await manager.accept(['m1'], 'U1');
+
+    const expectedCondition = and(
+      eq(productFormExports.requestedBy, 'U1'),
+      inArray(productFormExports.status, ['queued', 'running']),
+    );
+    expect(calls.whereConditions).toHaveLength(1);
+    expect(calls.whereConditions[0]).toEqual(expectedCondition);
   });
 });
 
@@ -237,5 +340,191 @@ describe('FormExportManager.purgeExpired', () => {
     expect(fileClient.softDelete).toHaveBeenNthCalledWith(1, 'f1', 'u1');
     expect(fileClient.softDelete).toHaveBeenNthCalledWith(2, 'f2', 'u2');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('e1'));
+  });
+});
+
+describe('FormExportManager.retry', () => {
+  it('원본의 masterIds 로 accept 를 다시 부른다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([{ id: 'E1', requestedBy: 'U1', requestedMasterIds: ['m1', 'm2'] }]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+    const spy = jest.spyOn(manager, 'accept').mockResolvedValue({
+      exportId: 'NEW',
+      status: 'queued',
+      requestedCount: 2,
+      reused: false,
+    });
+
+    const result = await manager.retry('E1', 'U1');
+
+    expect(spy).toHaveBeenCalledWith(['m1', 'm2'], 'U1', expect.anything());
+    expect(result.exportId).toBe('NEW');
+  });
+
+  it('남의 잡은 404 다 — 존재 여부를 알려주지 않는다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([{ id: 'E1', requestedBy: 'OTHER', requestedMasterIds: ['m1'] }]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    await expect(manager.retry('E1', 'U1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('없는 잡도 404 다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    await expect(manager.retry('MISSING', 'U1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
+describe('FormExportManager.list', () => {
+  interface ListTrx {
+    select: (fields?: unknown) => {
+      from: () => {
+        where: (condition: unknown) => {
+          orderBy: () => { limit: () => { offset: () => Promise<Record<string, unknown>[]> } };
+        } & Promise<Record<string, unknown>[]>;
+      };
+    };
+  }
+
+  /**
+   * `where()` 에 실제로 넘어온 조건을 캡처한다 — 소유권 필터가 지워지거나 엉뚱한
+   * 컬럼으로 바뀌어도 이전 하네스는 계속 초록이었다(리뷰 지적). 행 조회·count 두 질의
+   * 모두 같은 조건을 받는지 별도로 기록해, 한쪽만 필터링해 total 이 새는 회귀도 잡는다.
+   */
+  function listHarness(rows: Record<string, unknown>[], total: number) {
+    const calls: { orderBy: number; whereConditions: unknown[] } = { orderBy: 0, whereConditions: [] };
+    const page = Promise.resolve(rows);
+    const trx: ListTrx = {
+      select: (fields?: unknown) => ({
+        from: () => {
+          // count 질의는 select({ value: count() }) 로 필드를 넘긴다 — 그걸로 갈라낸다.
+          const isCount = fields !== undefined;
+          return {
+            where: (condition: unknown) => {
+              calls.whereConditions.push(condition);
+              return Object.assign(isCount ? Promise.resolve([{ value: total }]) : page, {
+                orderBy: () => {
+                  calls.orderBy += 1;
+                  return { limit: () => ({ offset: () => page }) };
+                },
+              });
+            },
+          };
+        },
+      }),
+    };
+    return { trx, calls };
+  }
+
+  it('본인 잡만, 최신순으로, 페이지를 잘라 돌려준다', async () => {
+    const { trx, calls } = listHarness(
+      [
+        {
+          id: 'E2',
+          status: 'completed',
+          requestedMasterIds: ['m1', 'm2'],
+          productCount: 2,
+          errorMessage: null,
+          consecutiveFailures: 0,
+          fileId: 'F1',
+          createdAt: new Date('2026-08-06T00:00:00Z'),
+          expiresAt: new Date('2026-09-05T00:00:00Z'),
+        },
+      ],
+      7,
+    );
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    const result = await manager.list('U1', 2, 20);
+
+    expect(result.total).toBe(7);
+    expect(result.page).toBe(2);
+    expect(result.limit).toBe(20);
+    expect(calls.orderBy).toBe(1);
+    // 행 조회·count 두 질의 모두 where() 를 받았고, 둘 다 같은 소유권 조건이어야 한다 —
+    // 한쪽만 필터링하면 total 이 남의 잡까지 세는 버그가 되는데 흔히 있을 법한 실수다.
+    const expectedOwnership = eq(productFormExports.requestedBy, 'U1');
+    expect(calls.whereConditions).toHaveLength(2);
+    expect(calls.whereConditions[0]).toEqual(expectedOwnership);
+    expect(calls.whereConditions[1]).toEqual(expectedOwnership);
+    expect(result.data).toEqual([
+      {
+        exportId: 'E2',
+        status: 'completed',
+        requestedCount: 2,
+        productCount: 2,
+        errorMessage: null,
+        consecutiveFailures: 0,
+        downloadable: true,
+        createdAt: '2026-08-06T00:00:00.000Z',
+        expiresAt: '2026-09-05T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('fileId 가 없으면 completed 여도 downloadable 이 아니다', async () => {
+    const { trx } = listHarness(
+      [
+        {
+          id: 'E3',
+          status: 'completed',
+          requestedMasterIds: ['m1'],
+          productCount: 0,
+          errorMessage: null,
+          consecutiveFailures: 0,
+          fileId: null,
+          createdAt: new Date('2026-08-06T00:00:00Z'),
+          expiresAt: new Date('2026-09-05T00:00:00Z'),
+        },
+      ],
+      1,
+    );
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    const result = await manager.list('U1', 1, 20);
+
+    expect(result.data[0].downloadable).toBe(false);
   });
 });
