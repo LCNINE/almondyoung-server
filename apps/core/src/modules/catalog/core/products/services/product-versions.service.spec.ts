@@ -307,6 +307,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     } = makeService();
     const order: string[] = [];
     const tx = {
+      execute: jest.fn().mockResolvedValue([{ next: 10001 }]),
       update: jest.fn(() => ({
         set: jest.fn((values: { status?: string }) => ({
           where: jest.fn(async () => {
@@ -398,6 +399,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   it('determines publish changeReason from the target version pre-publish status', async () => {
     const { service } = makeService();
     const tx = {
+      execute: jest.fn().mockResolvedValue([{ next: 10001 }]),
       update: jest.fn(() => ({
         set: jest.fn(() => ({
           where: jest.fn().mockResolvedValue(undefined),
@@ -472,6 +474,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       bulkSessionId: null,
     };
     const tx = {
+      execute: jest.fn().mockResolvedValue([{ next: 10001 }]),
       update: jest.fn(() => ({
         set: jest.fn(() => ({
           where: jest.fn().mockResolvedValue(undefined),
@@ -491,6 +494,71 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
 
     await expect(service.publishVersion(version.id, tx as any)).resolves.toBeUndefined();
+  });
+
+  it('품번코드가 비어 있으면 발행 시 AY- 순번으로 발번한다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-nocode',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'No Code',
+      productCode: null,
+      bulkSessionId: null,
+    };
+    const sets: any[] = [];
+    const tx = {
+      execute: jest.fn().mockResolvedValue([{ next: 10042 }]),
+      update: jest.fn(() => ({
+        set: jest.fn((v: any) => {
+          sets.push(v);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
+    for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
+                     '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
+                     '_emitActiveVersionChangedEvent'])
+      jest.spyOn(service as any, m).mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
+
+    await service.publishVersion(version.id, tx as any);
+
+    expect(sets).toContainEqual({ productCode: 'AY-10042' });
+    expect(version.productCode).toBe('AY-10042');
+  });
+
+  it('품번코드가 이미 있으면 발번하지 않고 그대로 둔다', async () => {
+    const { service } = makeService();
+    const version = {
+      id: 'version-hascode',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Has Code',
+      productCode: 'cafe24-2203',
+      bulkSessionId: null,
+    };
+    const tx = {
+      execute: jest.fn(),
+      update: jest.fn(() => ({ set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })) })),
+    };
+    jest.spyOn(service as any, 'getVersionById').mockResolvedValue(version);
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
+    for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
+                     '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
+                     '_emitActiveVersionChangedEvent'])
+      jest.spyOn(service as any, m).mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'getVersionVariants').mockResolvedValue([]);
+
+    await service.publishVersion(version.id, tx as any);
+
+    // 발번 쿼리(advisory lock) 자체가 돌지 않아야 한다
+    expect(tx.execute).not.toHaveBeenCalled();
+    expect(version.productCode).toBe('cafe24-2203');
   });
 
   it('updateRequiresMembership: active 버전의 구매 제약을 upsert 하고 이벤트를 1회 발행한다', async () => {
