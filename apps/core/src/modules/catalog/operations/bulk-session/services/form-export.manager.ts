@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { ConflictError, NotFoundError } from '@app/shared';
-import { eq, lt } from 'drizzle-orm';
+import { count, desc, eq, lt } from 'drizzle-orm';
 import { type PimSchema, productFormExports } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
-import { FormExportAcceptedDto, FormExportStatusDto } from '../dto';
+import { FormExportAcceptedDto, FormExportListDto, FormExportStatusDto } from '../dto';
 
 export const FORM_EXPORT_TTL_DAYS = 30;
 
@@ -65,8 +65,46 @@ export class FormExportManager {
         status: row.status,
         productCount: row.productCount,
         errorMessage: row.errorMessage,
+        consecutiveFailures: row.consecutiveFailures,
         downloadable: row.status === 'completed' && row.fileId !== null,
         expiresAt: row.expiresAt.toISOString(),
+      };
+    }, tx);
+  }
+
+  /**
+   * 내 양식 생성 목록. 남의 잡은 애초에 SELECT 에 들어오지 않는다 —
+   * getStatus 가 소유권 실패를 404 로 합치는 것과 같은 이유로, 목록도 본인 것만 본다.
+   */
+  async list(userId: string, page: number, limit: number, tx?: DbTransaction): Promise<FormExportListDto> {
+    return this.db.run(async (trx) => {
+      const owned = eq(productFormExports.requestedBy, userId);
+
+      const rows = await trx
+        .select()
+        .from(productFormExports)
+        .where(owned)
+        .orderBy(desc(productFormExports.createdAt))
+        .limit(limit)
+        .offset((page - 1) * limit);
+
+      const [totalRow] = await trx.select({ value: count() }).from(productFormExports).where(owned);
+
+      return {
+        data: rows.map((row) => ({
+          exportId: row.id,
+          status: row.status,
+          requestedCount: row.requestedMasterIds.length,
+          productCount: row.productCount,
+          errorMessage: row.errorMessage,
+          consecutiveFailures: row.consecutiveFailures,
+          downloadable: row.status === 'completed' && row.fileId !== null,
+          createdAt: row.createdAt.toISOString(),
+          expiresAt: row.expiresAt.toISOString(),
+        })),
+        total: totalRow?.value ?? 0,
+        page,
+        limit,
       };
     }, tx);
   }
