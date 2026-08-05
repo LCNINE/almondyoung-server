@@ -69,7 +69,7 @@
 
 ### 3.1 목록 API
 
-`GET /product-forms?page=1&limit=20` — 세션 목록의 관례를 그대로 따른다(같은 페이지 파싱 규칙, 같은 `{ items, total, page, limit }`).
+`GET /product-forms?page=1&limit=20` — 세션 목록의 관례를 그대로 따른다(같은 페이지 파싱 규칙, 같은 `{ data, total, page, limit }` — 필드명은 `items` 가 아니라 **`data`** 다, `BulkSessionItemListDto` 선례).
 
 **`parsePage`/`parseLimit` 은 공용 헬퍼가 아니다** — `bulk-session.controller.ts:41-47` 의 모듈 지역 함수다. 두 컨트롤러가 같은 규칙을 써야 하므로 bulk-session 폴더 안의 작은 공용 모듈로 **추출**한다(복제하지 않는다). `parseImageLimit`(`:50`)은 상한이 달라 그대로 둔다.
 
