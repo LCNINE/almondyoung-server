@@ -1350,7 +1350,7 @@ Expected: PASS (10 tests)
     [...productQueryKeys.formExports, 'list', page, limit] as const,
 ```
 
-`form-export.ts` — `useFormExportStatus`·`formExportRefetchInterval`·`isFormExportRunning` 을 **지우고**(단건 폴링은 모달과 함께 사라진다) 다음을 더한다:
+`form-export.ts` — 기존 export 는 **하나도 지우지 않는다.** 모달이 Task 10 까지 살아 있어 `useFormExportStatus`·`isFormExportRunning` 을 계속 쓰고, `form-export.spec.ts` 가 `formExportRefetchInterval`·`isFormExportRunning` 을 테스트한다 — 여기서 지우면 타입 체크와 기존 스펙이 함께 깨진다. **정리는 Task 10 이 모달을 지울 때 함께 한다.** 다음을 더하기만 한다:
 
 ```typescript
 export function useFormExportList(page: number, limit: number) {
@@ -1372,7 +1372,7 @@ export function useRetryFormExport() {
 }
 ```
 
-> `useRequestFormExport` 는 남긴다 — Task 10 의 상품목록이 계속 쓴다.
+> `useRequestFormExport` 도 그대로 둔다 — Task 10 의 상품목록이 계속 쓴다.
 
 - [ ] **Step 7: 타입 체크와 커밋**
 
@@ -1394,7 +1394,8 @@ feat(admin-web): 양식 생성 목록 타입·클라이언트·훅과 순수 판
 "생성 중"과 "재시도 대기 중"은 status 가 아니라 consecutiveFailures 로
 갈린다. 서버가 실패해도 상한 전까지는 running 을 유지하기 때문이다.
 
-단건 폴링 훅(useFormExportStatus)은 모달과 함께 사라지므로 제거한다.
+기존 export 는 하나도 지우지 않는다 — 모달이 아직 살아 있어 쓴다.
+정리는 모달을 지우는 태스크가 함께 한다.
 
 Claude-Session: https://claude.ai/code/session_01D7vdy5eDc6PUuJHRjXwFz5
 EOF
@@ -1755,12 +1756,31 @@ EOF
 git rm -r apps/admin-web/src/features/mall/products-list/components/form-export-modal
 ```
 
-- [ ] **Step 3: 남은 참조가 없는지 확인한다**
+- [ ] **Step 3: 모달과 함께 죽은 단건 폴링 배선을 지운다**
+
+Task 6 이 남겨둔 것들을 여기서 정리한다. 모달이 사라진 지금은 아무도 안 쓴다.
+
+`lib/services/products/form-export.ts` 에서 제거:
+- `useFormExportStatus`
+- `isFormExportRunning`
+- `formExportRefetchInterval`
+
+`useRequestFormExport` 는 **남긴다**(이 태스크의 버튼이 쓴다).
+
+```bash
+git rm apps/admin-web/src/lib/services/products/form-export.spec.ts
+```
+
+이 스펙 파일(57줄)은 방금 지운 두 함수만 테스트한다 — 파일 전체가 죽는다. 목록 쪽 회귀는 Task 6 이 만든 `form-export-model.spec.ts` 가 이어받는다.
+
+`features/mall/products-detail/components/version-lifecycle-actions/index.tsx:60` 의 주석이 `form-export.ts 의 useFormExportStatus` 를 선례로 인용한다 — 그 함수가 사라지므로 주석에서 그 참조를 빼거나 `bulk-session.ts` 의 살아있는 선례로 바꾼다.
+
+- [ ] **Step 4: 남은 참조가 없는지 확인한다**
 
 Run: `rg -n 'FormExportModal|form-export-modal|useFormExportStatus|isFormExportRunning|formExportRefetchInterval' apps/admin-web/src`
 Expected: 출력 없음
 
-- [ ] **Step 4: 타입 체크와 테스트**
+- [ ] **Step 5: 타입 체크와 테스트**
 
 Run: `npx tsc -p apps/admin-web/tsconfig.json --noEmit 2>&1 | grep -E 'products-list|form-export' || echo "신규 에러 없음"`
 Expected: 신규 에러 없음
@@ -1768,10 +1788,10 @@ Expected: 신규 에러 없음
 Run: `npx jest --testPathPattern='(form-export|bulk-sessions|products-list)'`
 Expected: PASS — `request-guard.spec.ts` 가 사라진 만큼 총 개수가 줄어드는 것은 정상
 
-- [ ] **Step 5: 커밋**
+- [ ] **Step 6: 커밋**
 
 ```bash
-git add -A apps/admin-web/src/features/mall/products-list
+git add -A apps/admin-web/src/features/mall/products-list apps/admin-web/src/lib/services/products
 git commit -m "$(cat <<'EOF'
 feat(admin-web)!: 양식 생성 모달을 제거하고 목록 탭을 새 창으로 연다
 
@@ -1784,7 +1804,9 @@ window.open 을 POST 보다 먼저 동기로 부르는 이유는 팝업 차단�
 같은 탭 router.push 로 폴백한다.
 
 모달과 함께 응답 순서 보호 로직(request-guard)도 사라진다 — 상태가
-목록 한 곳에만 있으면 애초에 필요 없는 방어였다.
+목록 한 곳에만 있으면 애초에 필요 없는 방어였다. 단건 폴링 훅
+(useFormExportStatus·isFormExportRunning·formExportRefetchInterval)과
+그것만 테스트하던 form-export.spec.ts 도 함께 죽는다.
 
 Claude-Session: https://claude.ai/code/session_01D7vdy5eDc6PUuJHRjXwFz5
 EOF
