@@ -340,6 +340,12 @@ export class ProductSellableQuantityService {
             },
           });
 
+        // masterId 가 없으면(NOT_ACTIVE_VERSION — 죽은 버전에 남은 매칭) 소비자가 Medusa 상품을
+        // 특정할 수 없어 반드시 실패한다. 프로젝션은 남기되 발행은 건너뛴다.
+        if (!projection.masterId) {
+          return { projection, published: false };
+        }
+
         await this.outbox.enqueue(
           {
             topic: INVENTORY_STREAM.topic.topic,
