@@ -56,7 +56,9 @@ export class FormExportJobWorker {
         `양식 조립 실패 (export=${claimed?.exportId ?? 'none'}): ${message}`,
         error instanceof Error ? error.stack : undefined,
       );
-      if (claimed) await this.jobManager.recordJobError(claimed.exportId, message);
+      // 토큰을 같이 넘겨야 recordJobError 의 CAS 가 성립한다 — 내가 이미 lease 를 잃은
+      // 좀비라면 그쪽에서 0행을 매치해 조용히 버린다(후임의 lease 를 깎지 않는다).
+      if (claimed) await this.jobManager.recordJobError(claimed.exportId, claimed.leaseToken, message);
     } finally {
       this.isProcessing = false;
     }

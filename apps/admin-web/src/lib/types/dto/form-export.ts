@@ -4,8 +4,10 @@
 
 export interface FormExportAccepted {
   exportId: string;
-  status: 'queued';
+  status: 'queued' | 'running';
   requestedCount: number;
+  /** 진행 중인 같은 요청을 재사용했으면 true. */
+  reused: boolean;
 }
 
 export interface FormExportStatus {
@@ -14,6 +16,8 @@ export interface FormExportStatus {
   /** 실제로 프리필된 상품 수. active 버전이 없는 상품은 조용히 빠지므로 requestedCount 보다 작을 수 있다. */
   productCount: number;
   errorMessage: string | null;
+  /** running 인데 0 보다 크면 재시도 대기 중이다. */
+  consecutiveFailures: number;
   /** 완료 시에만 true. */
   downloadable: boolean;
   expiresAt: string;
@@ -21,4 +25,24 @@ export interface FormExportStatus {
 
 export interface FormExportDownloadUrl {
   url: string;
+}
+
+export interface FormExportSummary {
+  exportId: string;
+  status: 'queued' | 'running' | 'completed' | 'failed';
+  requestedCount: number;
+  productCount: number;
+  errorMessage: string | null;
+  /** running 인데 0 보다 크면 재시도 대기 중이다. */
+  consecutiveFailures: number;
+  downloadable: boolean;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface FormExportList {
+  data: FormExportSummary[];
+  total: number;
+  page: number;
+  limit: number;
 }

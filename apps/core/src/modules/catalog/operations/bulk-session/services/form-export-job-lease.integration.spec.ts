@@ -4,7 +4,11 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { catalogSchema, type PimSchema } from '../../../schema/catalog.schema';
-import { FormExportJobManager, MAX_CONSECUTIVE_EXPORT_FAILURES } from './form-export-job.manager';
+import {
+  FORM_EXPORT_RETRY_DELAY_MS,
+  FormExportJobManager,
+  MAX_CONSECUTIVE_EXPORT_FAILURES,
+} from './form-export-job.manager';
 import type { SnapshotItem } from './form-export.snapshot.reader';
 import type { PrefillBundle, PrefillWorkbookData } from './form-export.types';
 
@@ -351,43 +355,191 @@ describeIfDb('form export 잡 lease 소유권 (DB 통합)', () => {
     expect(a.upload).toHaveBeenCalled();
   });
 
+  /**
+   * 워커 한 번의 재시도 사이클: 재시도 대기가 지난 상황을 만들고 → 클레임하고 → 조립이
+   * 터져 실패를 기록한다. 한 클레임당 실패는 정확히 한 번 기록된다(같은 토큰으로 두 번
+   * 기록하려 하면 두 번째는 CAS 가 0행을 매치한다 — 그것도 이중 계상이므로 옳다).
+   * 클레임을 못 받으면 `null` 을 돌려주므로 호출부가 "예산이 남았는지" 를 셀 수 있다.
+   */
+  async function retryCycle(exportId: string, worker: typeof a, message: string): Promise<string | null> {
+    await admin`
+      UPDATE product_form_exports SET lease_until = NOW() - interval '1 second'
+       WHERE id = ${exportId} AND status = 'running'
+    `;
+    const claimed = await worker.manager.claim();
+    if (!claimed) return null;
+    await worker.manager.recordJobError(exportId, claimed.leaseToken, message);
+    return claimed.exportId;
+  }
+
   it('연속 실패가 상한에 닿으면 failed 로 확정되고 lease 가 풀린다', async () => {
     const exportId = await seedQueuedExport();
-    const claimed = await a.manager.claim();
-    expect(claimed).not.toBeNull();
 
     for (let i = 0; i < MAX_CONSECUTIVE_EXPORT_FAILURES; i += 1) {
-      await a.manager.recordJobError(exportId, `반복 오류 ${i}`);
+      expect(await retryCycle(exportId, a, `반복 오류 ${i}`)).toBe(exportId);
     }
 
     const row = await readExport(exportId);
-    expect(row.consecutive_failures).toBe(MAX_CONSECUTIVE_EXPORT_FAILURES);
+    expect(Number(row.consecutive_failures)).toBe(MAX_CONSECUTIVE_EXPORT_FAILURES);
     expect(row.status).toBe('failed');
     expect(row.lease_token).toBeNull();
     // failed 잡은 claim 후보가 아니다 — 무한 재시도가 여기서 끝난다.
     expect(await a.manager.claim()).toBeNull();
   });
 
+  // 상한이 3 이면 **실제 조립 시도도 3회**여야 한다. 이 단정이 재시도 예산 그 자체다 —
+  // 정상 재시도 경로에서 실패가 두 번 세어지면(recordJobError 가 +1, 뒤이은 claim 이 또
+  // +1) 예산이 조용히 2회로 줄어들고, 여기서 세 번째 사이클이 null 을 받아 빨개진다.
+  it('정상 재시도 경로에서 조립 시도가 상한 횟수만큼 보장된다', async () => {
+    const exportId = await seedQueuedExport();
+
+    let attempts = 0;
+    for (let i = 0; i < MAX_CONSECUTIVE_EXPORT_FAILURES; i += 1) {
+      if ((await retryCycle(exportId, a, `일시적 오류 ${i}`)) === null) break;
+      attempts += 1;
+    }
+
+    expect(attempts).toBe(MAX_CONSECUTIVE_EXPORT_FAILURES);
+    expect((await readExport(exportId)).status).toBe('failed');
+  });
+
   it('상한 직전까지는 잡을 건드리지 않는다', async () => {
     const exportId = await seedQueuedExport();
-    const claimed = await a.manager.claim();
 
     for (let i = 0; i < MAX_CONSECUTIVE_EXPORT_FAILURES - 1; i += 1) {
-      await a.manager.recordJobError(exportId, `일시적 오류 ${i}`);
+      expect(await retryCycle(exportId, a, `일시적 오류 ${i}`)).toBe(exportId);
     }
 
     const row = await readExport(exportId);
     expect(row.status).toBe('running');
-    expect(row.lease_token).toBe(claimed!.leaseToken);
+    expect(Number(row.consecutive_failures)).toBe(MAX_CONSECUTIVE_EXPORT_FAILURES - 1);
+    // 아직 예산이 남았다 — 다음 틱이 다시 집어갈 수 있어야 한다.
+    expect(await retryCycle(exportId, a, '마지막 오류')).toBe(exportId);
+  });
+
+  // ─── 리뷰 Important: 정상 재시도 경로의 이중 계상 ───
+  //
+  // recordJobError 가 lease_token 을 남기면, 60초 뒤 claim 이 그 행을 집을 때
+  // `lease_token IS NOT NULL` 이라 CASE WHEN 이 **또** +1 한다 — 직전 소유자는 죽은 게
+  // 아니라 실패를 정상적으로 기록하고 떠났는데도. 그래서 recordJobError 가 토큰을 비운다:
+  // "토큰이 남아 있다 = 소유자가 **기록도 못 하고** 죽었다" 가 정확히 성립한다.
+  it('실패를 정상적으로 기록한 뒤 재클레임해도 실패는 한 번만 세어진다', async () => {
+    const exportId = await seedQueuedExport();
+    const claimed = await a.manager.claim();
+
+    await a.manager.recordJobError(exportId, claimed!.leaseToken, '일시적 오류');
+    expect(Number((await readExport(exportId)).consecutive_failures)).toBe(1);
+
+    // 토큰을 비워도 재시도 대기(60초) 안에는 아무도 못 집는다 — 후보 필터의
+    // `lease_until IS NULL OR lease_until < NOW()` 가 계속 막는다. 이게 "토큰을 비우면
+    // 레이스가 생기지 않나" 에 대한 답이고, 여기서 실측한다.
+    expect(await b.manager.claim()).toBeNull();
+
+    // 재시도 대기가 지났다.
+    await admin`UPDATE product_form_exports SET lease_until = NOW() - interval '1 second' WHERE id = ${exportId}`;
+    const reclaimed = await b.manager.claim();
+
+    expect(reclaimed?.exportId).toBe(exportId);
+    // 실패는 여전히 1건이다 — 2 면 이중 계상이다.
+    expect(Number((await readExport(exportId)).consecutive_failures)).toBe(1);
   });
 
   it('정상 종료한 조립의 리셋이 카운터를 0 으로 되돌린다', async () => {
     const exportId = await seedQueuedExport();
-    await a.manager.claim();
-    await a.manager.recordJobError(exportId, '일시적 오류');
+    const claimed = await a.manager.claim();
+    await a.manager.recordJobError(exportId, claimed!.leaseToken, '일시적 오류');
 
     await a.manager.clearConsecutiveFailures(exportId);
 
     expect((await readExport(exportId)).consecutive_failures).toBe(0);
+  });
+
+  // ─── `CASE WHEN lease_token IS NULL` 의미론의 **유일한** 검증 ───
+  //
+  // 이 두 케이스는 단위 스펙으로 옮길 수 없다 — 목 trx.execute 는 SQL 을 실행하지 않고
+  // 미리 정한 행을 돌려줄 뿐이라, CASE 절을 통째로 지워도 목 기반 테스트는 초록으로
+  // 남는다. 실제 Postgres 가 실제 행에 그 UPDATE 를 적용해야만 잠긴다.
+  it('첫 클레임(lease_token NULL)은 실패로 세지 않는다', async () => {
+    const exportId = await seedQueuedExport();
+
+    const claimed = await a.manager.claim();
+
+    expect(claimed?.exportId).toBe(exportId);
+    expect(Number((await readExport(exportId)).consecutive_failures)).toBe(0);
+  });
+
+  it('lease 만료 재클레임은 직전 시도를 실패로 센다', async () => {
+    const exportId = await seedQueuedExport();
+    // 1회차 클레임이 토큰을 박고 lease 를 미래로 민다.
+    await a.manager.claim();
+    // 워커가 끝내지 못한 채 lease 만 만료된 상황을 만든다.
+    await admin`
+      UPDATE product_form_exports SET lease_until = NOW() - interval '1 minute' WHERE id = ${exportId}
+    `;
+
+    const reclaimed = await b.manager.claim();
+
+    expect(reclaimed?.exportId).toBe(exportId);
+    expect(Number((await readExport(exportId)).consecutive_failures)).toBe(1);
+  });
+
+  // 재클레임 카운트가 상한을 채우면 claim 이 **조립을 시작하지 않고** 곧장 failed 로
+  // 확정한다 — 워커가 강제 종료돼 catch(=recordJobError)가 아예 실행되지 않는 경우에도
+  // 무한 재시도가 여기서 유계가 된다. 현행 구현이 못 세던 경우가 정확히 이것이다.
+  it('재클레임 누적이 상한에 닿으면 claim 이 조립 없이 failed 로 확정한다', async () => {
+    const exportId = await seedQueuedExport();
+
+    // 매번 lease 를 만료시켜 "워커가 lease 안에 못 끝내고 죽었다" 를 상한 횟수만큼 만든다.
+    for (let i = 0; i < MAX_CONSECUTIVE_EXPORT_FAILURES; i += 1) {
+      await a.manager.claim();
+      await admin`UPDATE product_form_exports SET lease_until = NOW() - interval '1 minute' WHERE id = ${exportId}`;
+    }
+
+    // 상한을 채운 상태의 재클레임 — 잡을 돌려주지 않고 확정만 한다.
+    expect(await b.manager.claim()).toBeNull();
+
+    const row = await readExport(exportId);
+    expect(row.status).toBe('failed');
+    expect(row.lease_token).toBeNull();
+    expect(row.lease_until).toBeNull();
+    // 조립은 시작조차 하지 않았다 — 스냅샷/업로드 협력자가 불리면 안 된다.
+    expect(b.buildPrefill).not.toHaveBeenCalled();
+    expect(b.upload).not.toHaveBeenCalled();
+  });
+
+  // 짧아진 재시도 대기가 실제로 lease 컬럼에 반영되는지 — 90분이 아니라 분 단위여야 한다.
+  it('실패 기록이 재시도 대기를 lease(30분)가 아니라 분 단위로 되돌린다', async () => {
+    const exportId = await seedQueuedExport();
+    const claimed = await a.manager.claim();
+    const afterClaim = await readExport(exportId);
+
+    await a.manager.recordJobError(exportId, claimed!.leaseToken, '일시적 오류');
+
+    const afterError = await readExport(exportId);
+    // 클레임이 민 lease 보다 **앞당겨져야** 한다(이 스위트의 LEASE_MS 는 30초).
+    expect(afterError.lease_epoch!).toBeLessThan(afterClaim.lease_epoch! + FORM_EXPORT_RETRY_DELAY_MS / 1000);
+    // 그러면서도 미래여야 한다 — 과거로 밀면 다음 틱이 곧장 집어가 재시도가 사실상 없어진다.
+    expect(afterError.is_live).toBe(true);
+  });
+
+  // 좀비의 뒤늦은 예외가 **후임의 살아있는 lease 를 깎지 못한다**. CAS 가 없으면 여기서
+  // 후임의 lease_until 이 60초 뒤로 당겨져 제3의 워커가 인수하고, 이중 조립·이중 업로드로
+  // 진 쪽 xlsx 가 file-service 에 영구 고아로 남는다.
+  it('좀비의 실패 기록은 후임의 lease 를 건드리지 못한다', async () => {
+    const exportId = await seedQueuedExport();
+    const zombie = await a.manager.claim();
+    await admin`UPDATE product_form_exports SET lease_until = NOW() - interval '1 minute' WHERE id = ${exportId}`;
+    const successor = await b.manager.claim();
+    expect(successor!.leaseToken).not.toBe(zombie!.leaseToken);
+    const beforeZombie = await readExport(exportId);
+
+    await a.manager.recordJobError(exportId, zombie!.leaseToken, '뒤늦게 도착한 예외');
+
+    const after = await readExport(exportId);
+    expect(after.lease_token).toBe(successor!.leaseToken);
+    expect(after.lease_epoch).toBe(beforeZombie.lease_epoch);
+    expect(after.error_message).toBeNull();
+    // 재클레임이 이미 1 을 세어뒀다 — 좀비의 예외가 그 위에 또 얹히면 이중 계상이다.
+    expect(Number(after.consecutive_failures)).toBe(1);
   });
 });

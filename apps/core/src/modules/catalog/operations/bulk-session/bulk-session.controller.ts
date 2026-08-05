@@ -37,14 +37,7 @@ import {
   ResolveImagesDto,
   ResolveImagesResponseDto,
 } from './dto';
-
-function parsePage(page: string): number {
-  return Math.max(1, Number.parseInt(page, 10) || 1);
-}
-
-function parseLimit(limit: string): number {
-  return Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
-}
+import { parsePage, parseLimit } from './pagination';
 
 /** 이미지 행은 아이템 행보다 훨씬 가벼워(문자열 몇 개) 상한을 높게 둔다. */
 function parseImageLimit(limit: string): number {

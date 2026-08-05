@@ -1,8 +1,15 @@
-import { Body, Controller, Get, Header, HttpCode, Param, Post, StreamableFile, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Header, HttpCode, Param, Post, Query, StreamableFile, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, User } from '@app/authorization';
 import { FormExportService } from './services/form-export.service';
-import { CreateFormExportDto, FormExportAcceptedDto, FormExportDownloadDto, FormExportStatusDto } from './dto';
+import {
+  CreateFormExportDto,
+  FormExportAcceptedDto,
+  FormExportDownloadDto,
+  FormExportListDto,
+  FormExportStatusDto,
+} from './dto';
+import { parsePage, parseLimit } from './pagination';
 
 @ApiTags('Product Bulk Form')
 // bulk-session.controller.ts 와 같은 이유·같은 형태로 잠근다 — 이 컨트롤러(양식 생성·
@@ -22,6 +29,19 @@ export class FormExportController {
   @ApiResponse({ status: 202, type: FormExportAcceptedDto })
   async create(@Body() dto: CreateFormExportDto, @User() user: { userId: string }): Promise<FormExportAcceptedDto> {
     return this.service.request(dto.masterIds, user.userId);
+  }
+
+  @Get()
+  @ApiOperation({ summary: '내 양식 생성 목록(페이지)' })
+  @ApiQuery({ name: 'page', required: false })
+  @ApiQuery({ name: 'limit', required: false })
+  @ApiResponse({ status: 200, type: FormExportListDto })
+  async list(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @User() user: { userId: string },
+  ): Promise<FormExportListDto> {
+    return this.service.list(user.userId, parsePage(page), parseLimit(limit));
   }
 
   // ⚠️ 이 핸들러는 반드시 `@Get(':exportId')` 보다 **위**에 있어야 한다. Nest 는 선언
@@ -51,5 +71,14 @@ export class FormExportController {
     @User() user: { userId: string },
   ): Promise<FormExportDownloadDto> {
     return { url: await this.service.getDownloadUrl(exportId, user.userId) };
+  }
+
+  @Post(':exportId/retry')
+  @HttpCode(202)
+  @ApiOperation({ summary: '같은 상품 집합으로 양식 생성을 다시 접수한다' })
+  @ApiResponse({ status: 202, type: FormExportAcceptedDto })
+  @ApiResponse({ status: 404, description: '없거나 내 잡이 아님' })
+  async retry(@Param('exportId') exportId: string, @User() user: { userId: string }): Promise<FormExportAcceptedDto> {
+    return this.service.retry(exportId, user.userId);
   }
 }

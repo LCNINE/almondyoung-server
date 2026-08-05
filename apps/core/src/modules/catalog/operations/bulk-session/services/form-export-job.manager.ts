@@ -24,15 +24,27 @@ import { buildFormWorkbook } from './form-export.workbook';
  */
 export const DEFAULT_EXPORT_LEASE_MS = 1_800_000;
 /**
- * 상한에 닿으면 잡을 failed 로 확정한다. 실제 소요는 상한 × lease 만료(30분)다 —
- * recordJobError 가 lease 를 의도적으로 안 지우므로 재시도 주기가 틱이 아니라 lease 다.
- * 조립은 임포트 슬라이스보다 훨씬 길어 lease 가 훨씬 길고, 그래서 상한을 3으로 낮춘다 —
- * import 의 10 대비 좀비 워커가 후임의 살아있는 잡을 failed 로 잘못 확정시킬 수 있는
- * 창이 3배 더 가깝다는 뜻이다(연속 3회 예외 vs 10회). recordJobError 가 CAS 없이 id
- * 만으로 쓰는 이상(아래 recordJobError 참조) 이 트레이드오프는 받아들인다 — 대신 lease
- * 를 30분으로 길게 잡아 "좀비가 3연속 예외를 낼 기회" 자체를 줄인다.
+ * 상한에 닿으면 잡을 failed 로 확정한다. **이 값은 실제 조립 시도 횟수와 같다** — 정상
+ * 재시도 경로에서 실패는 recordJobError 한 곳에서만 세어지고, 뒤이은 재클레임은 토큰이
+ * 비어 있어 다시 세지 않는다(claim / recordJobError 참조). 결론까지의 실제 소요는
+ * (상한 − 1) × FORM_EXPORT_RETRY_DELAY_MS + 조립 시간 × 상한 ≈ 2~3분이다 — 재시도 주기가
+ * lease 만료(30분)가 아니라 그 대기값이기 때문이다.
+ *
+ * 상한을 임포트의 10 이 아니라 3 으로 두는 이유는 조립이 통짜 작업이라 부분 진척이 없기
+ * 때문이다 — 세 번 연속 터진 조립이 네 번째에 성공할 가능성보다, 화면에 실패를 빨리
+ * 보여주고 사람이 다시 누르게 하는 편이 낫다. 좀비 워커가 후임의 살아있는 잡을 잘못
+ * 확정시키는 창은 recordJobError 의 토큰 CAS 가 닫는다(아래 참조) — 예전에는 그 CAS 가
+ * 없어 상한 3 이 위험 요소였지만, 지금은 좀비의 실패가 후임의 카운터에 닿지 못한다.
  */
 export const MAX_CONSECUTIVE_EXPORT_FAILURES = 3;
+/**
+ * 실패 후 다음 시도까지의 대기. **lease 와 다른 축이다** — lease(30분)는 조립 중 점유를
+ * 지키는 값이고, 이 값은 "실패한 잡을 얼마 뒤에 다시 집을까"다. recordJobError 는 예외가
+ * 던져진 뒤에 불리므로 그 시점엔 조립이 이미 끝났고, lease 의 점유 보호 역할도 끝났다 —
+ * 그래서 여기서만 짧게 되돌려도 살아있는 작업을 뺏지 않는다. 워커 틱이 10초라 3회
+ * 결론까지 약 2~3분이다.
+ */
+export const FORM_EXPORT_RETRY_DELAY_MS = 60_000;
 
 /**
  * `recordJobError` 가 손대면 안 되는 종결 상태. 한번 닿으면 다시 claim 되지 않는다.
@@ -75,11 +87,20 @@ export class FormExportJobManager {
   async claim(tx?: DbTransaction): Promise<ClaimedExport | null> {
     const leaseToken = uuidv7();
     return this.db.run(async (trx) => {
-      const rows = await trx.execute<{ id: string }>(sql`
+      // lease_token 이 남아 있는 행을 집었다는 건 **직전 소유자가 실패를 기록도 못 하고
+      // 죽었다**는 뜻이다 — 토큰을 푸는 경로가 셋뿐이기 때문이다: 마감(completed),
+      // 상한 확정(failed), 그리고 recordJobError(실패를 정상적으로 기록하고 떠남).
+      // recordJobError 의 토큰 CAS 는 좀비의 뒤늦은 예외를 버리므로 그 실패는 아무도 세지
+      // 않는데, 그걸 여기서 원자적으로 센다 — 이게 없으면 매 시도가 lease 를 넘기는 잡은
+      // (워커 강제 종료로 catch 조차 못 도는 경우) 카운터가 영원히 안 올라 무한 재시도가
+      // 된다. 첫 클레임(queued, 토큰 NULL)과 실패가 이미 기록된 재클레임은 세지 않는다.
+      const rows = await trx.execute<{ id: string; consecutive_failures: number }>(sql`
         UPDATE product_form_exports
            SET status = 'running',
                lease_until = NOW() + ${this.leaseMs} * interval '1 millisecond',
                lease_token = ${leaseToken}::uuid,
+               consecutive_failures = consecutive_failures
+                                    + CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END,
                updated_at = NOW()
          WHERE id = (
            SELECT id
@@ -90,12 +111,36 @@ export class FormExportJobManager {
             LIMIT 1
             FOR UPDATE SKIP LOCKED
          )
-        RETURNING id
+        RETURNING id, consecutive_failures
       `);
       // drizzle 의 execute 는 postgres-js RowList 를 돌려주며 제네릭이 원소 타입까지
       // 좁혀주지 않는다 — fulfillment-order-reservation-retry.worker.ts:111 과 같은 선례.
-      const [row] = rows as unknown as Array<{ id: string }>;
-      return row ? { exportId: row.id, leaseToken } : null;
+      const [row] = rows as unknown as Array<{ id: string; consecutive_failures: number }>;
+      if (!row) return null;
+
+      // 재클레임 카운트가 상한을 채웠다면 조립할 이유가 없다 — 바로 확정하고 이 틱은 쉰다.
+      if (row.consecutive_failures >= MAX_CONSECUTIVE_EXPORT_FAILURES) {
+        await trx
+          .update(productFormExports)
+          .set({
+            status: 'failed',
+            leaseUntil: null,
+            leaseToken: null,
+            // 이 경로는 순수 하드킬(워커가 강제 종료돼 catch 가 한 번도 안 돌아
+            // recordJobError 가 호출되지 못한 채 lease 만 반복해서 만료된 경우)이다 —
+            // 그런 경우 error_message 가 NULL 인 채 failed 로 확정돼, 목록 화면이 "실패"
+            // 뱃지만 띄우고 사유를 못 보여준다. COALESCE 로 **이미 있는 값은 덮어쓰지
+            // 않는다** — 혼합 경로(recordJobError 가 한 번은 정상적으로 실패를 기록했고
+            // 그 다음 재시도에서 하드킬로 상한에 닿은 경우)에서는 직전의 진짜 실패
+            // 사유가 이 기본 문구보다 더 유용하다.
+            errorMessage: sql`COALESCE(${productFormExports.errorMessage}, ${'조립이 lease 안에 끝나지 않아 실패로 확정했습니다'})`,
+          })
+          .where(eq(productFormExports.id, row.id));
+        this.logger.error(`양식 생성 잡 ${row.id} 이 재클레임 누적으로 연속 실패 상한에 닿아 failed 로 확정됐습니다`);
+        return null;
+      }
+
+      return { exportId: row.id, leaseToken };
     }, tx);
   }
 
@@ -168,51 +213,56 @@ export class FormExportJobManager {
   }
 
   /**
-   * 조립 중 예외를 기록한다. **상태를 바꾸지 않는 것이 기본이다** — 일시적 DB 오류로
-   * 양식 생성을 영구 실패시키는 편이 더 나쁘다. 대신 연속 실패가 상한에 닿으면 failed 로
-   * 확정해 무한 재시도를 유계로 만든다.
+   * 조립 중 예외를 기록하고 다음 시도를 예약한다.
    *
-   * 이 update 는 **의도적으로** 토큰 CAS 를 걸지 않는다(id 로만 잡는다) —
-   * product-import-job.manager.ts:683-687 과 같은 이유다. CAS 를 걸면, lease 가 만료돼
-   * 소유권이 후임으로 넘어간 순간부터 좀비의 recordJobError 호출은 전부 0행을 매치해
-   * 조용히 아무 일도 안 하게 되고, 그러면 연속 실패 카운터가 상한에 영원히 닿지 못한다
-   * (좀비가 계속 실패해도 그 실패가 후임의 카운터에 반영되지 않는다). id 만으로 잡으면
-   * 그 반대 방향의 사고가 생긴다 — 좀비의 예외가 **후임의 살아있는 잡**의 카운터를
-   * 올릴 수 있고, `MAX_CONSECUTIVE_EXPORT_FAILURES = 3` 이면 좀비 혼자 연속 3번만
-   * 실패해도 후임의 진행 중인 잡을 failed 로 잘못 확정시킬 수 있다. import 의 상한(10)
-   * 보다 이 창이 3배 더 가깝다는 뜻이다 — 그래서 lease 를 30분으로 길게 잡아(위
-   * DEFAULT_EXPORT_LEASE_MS 참조) 애초에 좀비가 그 3연속을 만들 기회 자체를 줄인다.
-   * 두 실패 모드 중 이쪽(받아들인 쪽)이 낫다고 판단한 근거도 동일하다: 상한이 영원히
-   * 안 걸리는 것보다는, 드물게 후임의 잡 하나가 잘못 failed 되고 사람이 재시도 버튼을
-   * 누르는 편이 낫다.
+   * **토큰 CAS 를 건다.** 이건 재시도 단축의 전제조건이다 — CAS 없이 lease_until 을
+   * 짧게 쓰면 좀비(lease 를 잃고도 살아있던 워커)가 **후임의 살아있는 잡**의 lease 를
+   * 깎아 제3의 워커가 그 잡을 집어가고, 이중 조립·이중 업로드가 되어 file-service 에
+   * 고아 정리 잡이 없으니 진 쪽 xlsx 가 영구 고아로 남는다.
    *
-   * 위 트레이드오프는 후임의 **살아있는(running)** 잡이 잘못 failed 될 수 있다는 것까지만
-   * 받아들인 것이다 — 후임이 이미 **끝난(completed/failed)** 잡까지 좀비가 다시 건드리는
-   * 것은 별개의, 받아들이지 않은 사고다. lease 가 만료된 뒤 뒤늦게 깨어난 좀비가 예외를
-   * 던졌을 때 후임이 이미 성공적으로 completed 를 찍었다면, id 만으로 매치하는 이 update 는
-   * 그 completed 행도 그대로 잡아 카운터를 올리고, 연속 3회면 성공한 잡을 failed 로
-   * 되돌린다 — downloadable 이 영구히 false 가 되어 getDownloadUrl 이 실제로는 멀쩡한
-   * xlsx 를 두고 409 를 영원히 돌려준다(워크북 자체는 지워지지 않았는데도). 그래서 종결
-   * 상태(TERMINAL_EXPORT_STATUSES: completed/failed)는 이 update 의 WHERE 에서 항상
-   * 제외한다 — 종결 상태에 닿은 잡은 다시 claim 되지 않으므로(claim 의 후보 조건은
-   * status IN ('queued','running')뿐이다) 정상 경로에서는 이 가드에 걸릴 일이 없고,
-   * 좀비의 뒤늦은 예외만 조용히 무시된다.
+   * CAS 가 뚫는 구멍(좀비의 실패가 안 세어져 연속 실패 상한에 영원히 못 닿음)은 claim
+   * 이 막는다 — 거기서 "lease 안에 못 끝낸 시도"를 재클레임 시점에 센다.
+   *
+   * 두 곳이 같은 실패를 겹쳐 세지 않도록 **여기서 lease_token 을 비운다**. claim 의
+   * `CASE WHEN lease_token IS NULL` 은 "직전 소유자가 못 끝내고 죽었는가" 를 묻는데,
+   * 실패를 정상적으로 기록하고 떠난 소유자는 죽은 게 아니다 — 토큰을 남기면 뒤이은
+   * 재클레임이 같은 실패를 또 세어 재시도 예산이 상한의 절반으로 조용히 줄어든다.
+   * 토큰을 비워도 레이스는 없다: 바로 위에서 lease_until 을 +60초 미래로 밀었고, claim
+   * 의 후보 필터가 `lease_until IS NULL OR lease_until < NOW()` 라 그 60초 동안은 토큰과
+   * 무관하게 아무도 이 행을 집지 못한다. 두 곳을 합치면 실패한 시도가 정확히 한 번씩,
+   * 올바른 잡에 귀속된다.
+   *
+   * 종결 상태(completed/failed)는 WHERE 에서 계속 제외한다. 토큰 CAS 만으로도 대부분
+   * 막히지만, 성공한 잡을 되돌리는 사고는 대가가 커서 가드를 이중으로 둔다.
    */
-  async recordJobError(exportId: string, message: string): Promise<void> {
+  async recordJobError(exportId: string, leaseToken: string, message: string): Promise<void> {
     await this.db.run(async (trx) => {
       const [row] = await trx
         .update(productFormExports)
         .set({
           errorMessage: message,
           consecutiveFailures: sql`${productFormExports.consecutiveFailures} + 1`,
+          leaseUntil: sql`NOW() + ${FORM_EXPORT_RETRY_DELAY_MS} * interval '1 millisecond'`,
+          leaseToken: null,
           updatedAt: new Date(),
         })
         .where(
-          and(eq(productFormExports.id, exportId), notInArray(productFormExports.status, TERMINAL_EXPORT_STATUSES)),
+          and(
+            eq(productFormExports.id, exportId),
+            eq(productFormExports.leaseToken, leaseToken),
+            notInArray(productFormExports.status, TERMINAL_EXPORT_STATUSES),
+          ),
         )
         .returning({ failures: productFormExports.consecutiveFailures });
 
-      if (row && row.failures >= MAX_CONSECUTIVE_EXPORT_FAILURES) {
+      if (!row) {
+        this.logger.warn(
+          `양식 생성 잡 ${exportId} 의 실패 기록을 건너뜁니다 — lease 토큰이 일치하지 않습니다(좀비 워커)`,
+        );
+        return;
+      }
+
+      if (row.failures >= MAX_CONSECUTIVE_EXPORT_FAILURES) {
         await trx
           .update(productFormExports)
           .set({ status: 'failed', leaseUntil: null, leaseToken: null })
