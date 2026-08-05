@@ -239,3 +239,109 @@ describe('FormExportManager.purgeExpired', () => {
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('e1'));
   });
 });
+
+describe('FormExportManager.list', () => {
+  interface ListTrx {
+    select: (fields?: unknown) => {
+      from: () => {
+        where: () => {
+          orderBy: () => { limit: () => { offset: () => Promise<Record<string, unknown>[]> } };
+        } & Promise<Record<string, unknown>[]>;
+      };
+    };
+  }
+
+  function listHarness(rows: Record<string, unknown>[], total: number) {
+    const calls: { orderBy: number } = { orderBy: 0 };
+    const page = Promise.resolve(rows);
+    const trx: ListTrx = {
+      select: (fields?: unknown) => ({
+        from: () => {
+          // count 질의는 select({ value: count() }) 로 필드를 넘긴다 — 그걸로 갈라낸다.
+          const isCount = fields !== undefined;
+          const whereResult = Object.assign(
+            isCount ? Promise.resolve([{ value: total }]) : page,
+            {
+              orderBy: () => {
+                calls.orderBy += 1;
+                return { limit: () => ({ offset: () => page }) };
+              },
+            },
+          );
+          return { where: () => whereResult };
+        },
+      }),
+    };
+    return { trx, calls };
+  }
+
+  it('본인 잡만, 최신순으로, 페이지를 잘라 돌려준다', async () => {
+    const { trx, calls } = listHarness(
+      [
+        {
+          id: 'E2',
+          status: 'completed',
+          requestedMasterIds: ['m1', 'm2'],
+          productCount: 2,
+          errorMessage: null,
+          consecutiveFailures: 0,
+          fileId: 'F1',
+          createdAt: new Date('2026-08-06T00:00:00Z'),
+          expiresAt: new Date('2026-09-05T00:00:00Z'),
+        },
+      ],
+      7,
+    );
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    const result = await manager.list('U1', 2, 20);
+
+    expect(result.total).toBe(7);
+    expect(result.page).toBe(2);
+    expect(result.limit).toBe(20);
+    expect(calls.orderBy).toBe(1);
+    expect(result.data).toEqual([
+      {
+        exportId: 'E2',
+        status: 'completed',
+        requestedCount: 2,
+        productCount: 2,
+        errorMessage: null,
+        consecutiveFailures: 0,
+        downloadable: true,
+        createdAt: '2026-08-06T00:00:00.000Z',
+        expiresAt: '2026-09-05T00:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('fileId 가 없으면 completed 여도 downloadable 이 아니다', async () => {
+    const { trx } = listHarness(
+      [
+        {
+          id: 'E3',
+          status: 'completed',
+          requestedMasterIds: ['m1'],
+          productCount: 0,
+          errorMessage: null,
+          consecutiveFailures: 0,
+          fileId: null,
+          createdAt: new Date('2026-08-06T00:00:00Z'),
+          expiresAt: new Date('2026-09-05T00:00:00Z'),
+        },
+      ],
+      1,
+    );
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    const result = await manager.list('U1', 1, 20);
+
+    expect(result.data[0].downloadable).toBe(false);
+  });
+});
