@@ -40,15 +40,23 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   const rows = (page: import('playwright/test').Page) => page.getByRole('row');
 
-  test('해지한 사람의 세 상태가 한 목록에 함께 보인다', async ({ page }) => {
+  test('해지 경로와 상태를 각각 보여준다', async ({ page }) => {
     await page.goto('/membership/cancellations');
     const table = page.getByRole('table');
-    await expect(table.getByText('즉시 해지').first()).toBeVisible();
-    // 예약 해지가 빠지면 고객이 해지 신청한 건을 CS 가 이 화면에서 찾을 수 없다.
-    await expect(table.getByText('해지 예약', { exact: true }).first()).toBeVisible();
-    // 이용 종료까지 끝난 건은 별도 상태로 구분된다.
-    await expect(table.getByText('해지 완료').first()).toBeVisible();
-    await expect(rows(page)).toHaveCount(5); // 헤더 + 4행
+
+    // 경로 — 누가 왜 끝냈나. 즉시해지도 '이용 종료' 라 상태와 한 칸에 섞으면 라벨이 겹친다.
+    await expect(table.getByText('고객 즉시해지').first()).toBeVisible();
+    await expect(table.getByText('고객 해지예약').first()).toBeVisible();
+    // 시스템이 끊은 건이 고객 해지로 보이면 CS 가 잘못 안내한다.
+    await expect(table.getByText('계좌 심사 거절로 종료')).toBeVisible();
+    await expect(table.getByText('계좌 자동이체 심사 거절')).toBeVisible();
+    await expect(table.getByText('(Q201)')).toBeVisible();
+
+    // 상태 — 지금 쓰고 있는지 끝났는지
+    await expect(table.getByText('이용 중', { exact: true }).first()).toBeVisible();
+    await expect(table.getByText('이용 종료', { exact: true }).first()).toBeVisible();
+
+    await expect(rows(page)).toHaveCount(6); // 헤더 + 5행
   });
 
   test('해지 신청 시각을 분 단위까지 보여준다', async ({ page }) => {
@@ -60,11 +68,11 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   test('이용 종료까지 끝난 해지 건만 골라볼 수 있다', async ({ page }) => {
     await page.goto('/membership/cancellations');
-    await page.getByRole('radio', { name: '해지 완료' }).click();
+    await page.getByRole('radio', { name: '예약 후 종료' }).click();
     await page.getByRole('button', { name: '검색' }).click();
 
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByRole('table').getByText('해지 완료')).toBeVisible();
+    await expect(page.getByRole('table').getByText('이용 종료', { exact: true })).toBeVisible();
   });
 
   test('환불 금액과 상태가 행에서 바로 보인다', async ({ page }) => {
@@ -90,7 +98,7 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
     await page.getByRole('button', { name: '검색' }).click();
 
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByText('해지 예약').first()).toBeVisible();
+    await expect(page.getByRole('table').getByText('고객 해지예약').first()).toBeVisible();
   });
 });
 

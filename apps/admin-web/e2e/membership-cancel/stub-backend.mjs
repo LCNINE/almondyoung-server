@@ -330,6 +330,31 @@ function routes(pathname, method, body, params) {
     ];
 
     rows.push({
+      userId: 'e2e-user-5',
+      contractId: '55555555-5555-4555-8555-555555555555',
+      status: 'CANCELLED',
+      tierCode: 'MEMBERSHIP',
+      planDurationDays: 30,
+      startsAt: plus(-4),
+      endsAt: plus(26),
+      createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      cancelledAt: new Date().toISOString(),
+      recurringCancelledAt: null,
+      // 시스템이 계좌 심사 거절로 끊은 건 — 고객이 해지한 것이 아니다.
+      cancellationReasonCode: 'MANDATE_REJECTED',
+      cancellationReasonText: null,
+      recurringCancellationReasonCode: null,
+      autoRenewal: false,
+      firstContractCreatedAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      refundRequested: false,
+      refundCompleted: false,
+      refundCompletedAt: null,
+      eligibleRefundAmount: null,
+      hasPaymentIntent: false,
+      billingPath: 'INVOICE',
+    });
+
+    rows.push({
       userId: 'e2e-user-4',
       contractId: '44444444-4444-4444-8444-444444444444',
       status: 'EXPIRED',
@@ -354,6 +379,46 @@ function routes(pathname, method, body, params) {
       billingPath: 'CHARGE',
     });
 
+    // 서버가 계산해 내려주는 종료 사실. 화면은 이 값을 그대로 쓴다(추론하지 않는다).
+    const withCancellation = (r) => {
+      const info =
+        r.status === 'CANCELLED' && r.cancellationReasonCode === 'MANDATE_REJECTED'
+          ? {
+              origin: 'MANDATE_REJECTED',
+              originLabel: '계좌 심사 거절로 종료',
+              reasonLabel: '계좌 자동이체 심사 거절',
+              reasonDetail: 'Q201',
+              customerNotice: '등록하신 계좌의 자동이체 심사가 거절되어 멤버십이 종료되었습니다.',
+            }
+          : r.status === 'CANCELLED'
+            ? {
+                origin: 'CUSTOMER_IMMEDIATE',
+                originLabel: '고객 즉시해지',
+                reasonLabel: r.cancellationReasonText ?? null,
+                reasonDetail: null,
+                customerNotice: null,
+              }
+            : {
+                origin: 'CUSTOMER_SCHEDULED',
+                originLabel: '고객 해지예약',
+                reasonLabel: r.cancellationReasonText ?? null,
+                reasonDetail: null,
+                customerNotice: null,
+              };
+      const ended = r.status !== 'ACTIVE';
+      return {
+        ...r,
+        cancellation: {
+          ...info,
+          state: ended ? 'ENDED' : 'SCHEDULED_ACTIVE',
+          stateLabel: ended ? '이용 종료' : '이용 중',
+          requestedAt: r.cancelledAt ?? r.recurringCancelledAt ?? null,
+          endedAt: r.cancelledAt ?? null,
+          endsAt: r.endsAt ?? null,
+        },
+      };
+    };
+
     // 서버가 실제로 하는 필터를 그대로 흉내낸다 — 화면이 파라미터를 제대로 보내는지 검증하기 위함.
     const status = params?.get('status') ?? 'CANCELLED_ANY';
     const refundPending = params?.get('refundPending') === 'true';
@@ -369,7 +434,7 @@ function routes(pathname, method, body, params) {
       )
       .filter((r) => (refundPending ? r.refundRequested && !r.refundCompleted : true));
 
-    return { data: filtered, total: filtered.length, page: 1, limit: 20 };
+    return { data: filtered.map(withCancellation), total: filtered.length, page: 1, limit: 20 };
   }
 
   // membership admin

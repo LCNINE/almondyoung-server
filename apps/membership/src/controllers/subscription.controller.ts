@@ -225,6 +225,17 @@ export class SubscriptionController {
   /**
    * 해지 미리보기 — 선택 가능한 해지 방식과 환불 금액
    */
+  /**
+   * 멤버십이 왜 끝났는지 — 계좌 심사 거절·미수로 끊긴 고객이 이유와 다음 행동을 알 수 있어야 한다.
+   */
+  @Get('termination-notice')
+  @ApiOperation({ summary: '멤버십 종료 사유 안내' })
+  @UseGuards(JwtAuthGuard)
+  async getTerminationNotice(@User('userId') userId: string) {
+    if (!userId) throw new BadRequestException('userId가 필요합니다');
+    return this.cancellationService.getTerminationNotice(userId);
+  }
+
   @Get('cancel-preview')
   @ApiOperation({
     summary: '해지 미리보기',
