@@ -563,6 +563,44 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     });
   });
 
+  // 환불 가능 여부(정책)와 집행 수단(결제수단)은 다른 축이다. 섞으면 CMS 계약이 'PG 자동환불' 로
+  // 보이고 계좌를 안 받은 채 관리자 예외 환불이 나가 '보낼 곳 없는 수동 대기' 가 된다.
+  describe('환불 집행 수단은 정책과 무관하게 항상 판정된다', () => {
+    it('정책상 환불 0원인 CMS 계약도 수동 송금·계좌 필요로 판정된다', async () => {
+      wallet.getRefundability.mockResolvedValue({
+        intentId: 'intent_1',
+        refundableAmount: MONTHLY_PRICE,
+        alreadyRefundedAmount: 0,
+        pendingRefundAmount: 0,
+        remainingRefundableAmount: MONTHLY_PRICE,
+        autoRefundSupported: false, // 효성 CMS
+        requiresReceiveAccount: true,
+        methodTypes: ['CMS_BATCH'],
+      });
+      // 7일 경과 → 정책상 환불 불가
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 20 });
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+
+      expect(immediate.available).toBe(false);
+      expect(immediate.refundAmount).toBe(0);
+      // 관리자 예외 환불이 이 수단으로 나간다 — 'PG 자동환불' 로 보이면 계좌를 안 받는다.
+      expect(immediate.refundExecution).toBe('MANUAL');
+      expect(immediate.requiresReceiveAccount).toBe(true);
+    });
+
+    it('환불 대상 결제가 없으면 집행 수단도 없음으로 남는다', async () => {
+      const { userId } = await givenSubscription({ daysSincePeriodStart: 20, hasPayment: false });
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+
+      expect(immediate.refundExecution).toBe('NONE');
+      expect(immediate.requiresReceiveAccount).toBe(false);
+    });
+  });
+
   describe('고객 — 환불 집행 경로', () => {
     it('자동이체(CMS)는 wallet 환불을 호출하지 않고 수동 송금 대기로 남긴다', async () => {
       wallet.getRefundability.mockResolvedValue({

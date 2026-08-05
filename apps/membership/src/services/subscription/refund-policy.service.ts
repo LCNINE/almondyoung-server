@@ -245,13 +245,21 @@ export class RefundPolicyService {
   }): CancellationOption {
     const { input, nowDate, isAnnual, daysSincePeriodStart, withinWithdrawalWindow, benefitUnused } = params;
 
+    // 집행 수단은 **환불 가능 여부와 다른 축이다.** 정책상 환불이 안 되는 계약이라도 관리자는 예외
+    // 환불을 넣을 수 있고, 그 돈은 결제수단에 따라 PG 로 나가거나 사람이 계좌로 보내야 한다.
+    // 여기서 비워두면 화면이 CMS 계약을 'PG 자동환불 가능' 으로 안내하고 계좌 입력도 띄우지 않아,
+    // 관리자 예외 환불이 **보낼 곳 없는 수동 대기**로 떨어진다.
+    const execution: RefundExecution = !input.hasPayment ? 'NONE' : input.autoRefundSupported ? 'AUTO' : 'MANUAL';
+    const requiresReceiveAccount =
+      input.hasPayment && (input.requiresReceiveAccount || execution === 'MANUAL');
+
     const base: CancellationOption = {
       mode: 'IMMEDIATE_REFUND',
       available: false,
       refundAmount: 0,
       refundKind: 'NONE',
-      refundExecution: 'NONE',
-      requiresReceiveAccount: false,
+      refundExecution: execution,
+      requiresReceiveAccount,
       effectiveEndsAt: nowDate,
     };
 
@@ -280,10 +288,6 @@ export class RefundPolicyService {
     if (daysSincePeriodStart === null) {
       return { ...base, unavailableReason: '환불 대상 결제 내역이 없습니다.' };
     }
-
-    const execution: RefundExecution = input.autoRefundSupported ? 'AUTO' : 'MANUAL';
-    // 자동환불이 안 되는 수단(효성 CMS)은 계좌로 송금해야 하므로 수취 계좌가 반드시 필요하다.
-    const requiresReceiveAccount = input.requiresReceiveAccount || execution === 'MANUAL';
 
     // 1) 청약철회: 결제 후 7일 내 + 혜택 미사용 → 전액 환불
     if (withinWithdrawalWindow && benefitUnused) {

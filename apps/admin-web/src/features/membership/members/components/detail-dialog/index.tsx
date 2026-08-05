@@ -307,14 +307,17 @@ function ForceCancelDialog({
                     직접 지정)
                   </p>
                 )}
+                {/* 환불 가능 여부와 집행 수단은 다른 축이다. 정책상 0원이어도 관리자 예외 환불은
+                    이 수단으로 나간다 — CMS 인데 'PG 자동환불' 로 보이면 계좌를 안 받고 실행해
+                    보낼 곳 없는 수동 대기가 된다. */}
                 <p className="text-xs text-muted-foreground">
                   {immediate.refundKind === 'PRE_COLLECTION_WITHDRAWAL'
                     ? '아직 출금 전이라 이번 요금이 청구되지 않고 종료됩니다. 돌려줄 금액은 없습니다.'
-                    : `환불 수단: ${
-                        manualRefund
-                          ? '자동환불 불가 — 계좌 송금 필요(효성 CMS 등)'
-                          : 'PG 자동환불 가능'
-                      }`}
+                    : immediate.refundExecution === 'MANUAL'
+                      ? '환불 수단: 자동환불 불가 — 계좌 송금 필요(효성 CMS 등)'
+                      : immediate.refundExecution === 'AUTO'
+                        ? '환불 수단: PG 자동환불 가능'
+                        : '환불 대상 결제 내역이 없습니다.'}
                 </p>
               </>
             ) : (
