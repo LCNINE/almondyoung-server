@@ -2,8 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class FormExportAcceptedDto {
   @ApiProperty() exportId: string;
-  @ApiProperty({ enum: ['queued'] }) status: 'queued';
+  @ApiProperty({ enum: ['queued', 'running'] }) status: 'queued' | 'running';
   @ApiProperty({ description: '요청한 상품 수' }) requestedCount: number;
+  @ApiProperty({ description: '진행 중인 같은 요청을 재사용했으면 true' }) reused: boolean;
 }
 
 export class FormExportStatusDto {

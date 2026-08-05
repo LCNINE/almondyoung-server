@@ -101,6 +101,83 @@ describe('FormExportManager.accept', () => {
   });
 });
 
+describe('FormExportManager.accept 중복 제거', () => {
+  function acceptHarness(inFlight: Record<string, unknown>[]) {
+    const inserted: Record<string, unknown>[] = [];
+    const trx = {
+      select: () => ({ from: () => ({ where: () => Promise.resolve(inFlight) }) }),
+      insert: () => ({
+        values: (v: Record<string, unknown>) => ({
+          returning: () => {
+            inserted.push(v);
+            return Promise.resolve([{ id: 'NEW', ...v }]);
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+    return { manager, inserted };
+  }
+
+  it('같은 집합의 진행 중 잡이 있으면 그것을 돌려주고 새로 만들지 않는다', async () => {
+    const { manager, inserted } = acceptHarness([
+      { id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] },
+    ]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result).toEqual({ exportId: 'E1', status: 'running', requestedCount: 2, reused: true });
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('순서만 다른 같은 집합도 재사용한다', async () => {
+    const { manager, inserted } = acceptHarness([
+      { id: 'E1', status: 'queued', requestedMasterIds: ['m2', 'm1'] },
+    ]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result.exportId).toBe('E1');
+    expect(result.reused).toBe(true);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it('중복된 masterId 를 제거한 뒤 비교한다', async () => {
+    const { manager } = acceptHarness([
+      { id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] },
+    ]);
+
+    const result = await manager.accept(['m1', 'm2', 'm2'], 'U1');
+
+    expect(result.reused).toBe(true);
+    expect(result.requestedCount).toBe(2);
+  });
+
+  it('집합이 다르면 새 잡을 만든다', async () => {
+    const { manager, inserted } = acceptHarness([
+      { id: 'E1', status: 'running', requestedMasterIds: ['m1'] },
+    ]);
+
+    const result = await manager.accept(['m1', 'm2'], 'U1');
+
+    expect(result.exportId).toBe('NEW');
+    expect(result.reused).toBe(false);
+    expect(inserted).toHaveLength(1);
+  });
+
+  it('진행 중 잡이 없으면 새 잡을 만든다', async () => {
+    const { manager, inserted } = acceptHarness([]);
+
+    const result = await manager.accept(['m1'], 'U1');
+
+    expect(result).toEqual({ exportId: 'NEW', status: 'queued', requestedCount: 1, reused: false });
+    expect(inserted).toHaveLength(1);
+  });
+});
+
 describe('FormExportManager.getStatus', () => {
   it('없는 exportId 조회는 NotFoundError 다', async () => {
     const { manager } = harness({ exportRow: null });
