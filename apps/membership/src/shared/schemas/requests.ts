@@ -106,9 +106,9 @@ export const CancelSubscriptionRequestSchema = z.object({
   // 무통장(가상계좌) 결제 환불 시 필수 — 이 계좌로 자동 송금된다. 카드 결제는 불필요.
   refundReceiveAccount: z
     .object({
-      bank: z.string(), // 토스 2자리 은행코드
-      accountNumber: z.string(),
-      holderName: z.string(),
+      bank: z.string().min(1, { error: '은행을 선택해주세요' }), // 토스 2자리 은행코드
+      accountNumber: z.string().min(1, { error: '계좌번호를 입력해주세요' }),
+      holderName: z.string().min(1, { error: '예금주명을 입력해주세요' }),
     })
     .optional(),
   // 등록된 자동이체 계좌까지 삭제할지. 생략하면 남긴다 — 해지만으로 출금은 멈추고,
@@ -295,12 +295,13 @@ export const ForceCancelSubscriptionRequestSchema = z.object({
   // 해지 안내 메일 수신 주소. notification 서비스는 사용자 조회를 하지 않아 이벤트에 실려야 한다.
   // 어드민 UI 가 이미 조회해 화면에 띄우고 있는 값을 그대로 넘긴다.
   customerEmail: z.email({ error: '유효한 이메일이어야 합니다' }).optional(),
-  // 무통장(가상계좌)·수동 송금 환불 시 필수. 없으면 wallet 이 PENDING(수동 처리)으로 남긴다.
+  // 무통장(가상계좌)·수동 송금 환불 시 필수. 빈 값은 계좌를 안 준 것과 같다 — 여기서 거르지 않으면
+  // '계좌가 있다' 는 판정만 통과하고 실제로는 보낼 곳이 없는 환불이 된다.
   refundReceiveAccount: z
     .object({
-      bank: z.string(),
-      accountNumber: z.string(),
-      holderName: z.string(),
+      bank: z.string().min(1, { error: '은행을 선택해주세요' }),
+      accountNumber: z.string().min(1, { error: '계좌번호를 입력해주세요' }),
+      holderName: z.string().min(1, { error: '예금주명을 입력해주세요' }),
     })
     .optional(),
   // 등록된 자동이체 계좌까지 삭제할지. 생략하면 남긴다(재가입 시 은행 재심사 불필요).

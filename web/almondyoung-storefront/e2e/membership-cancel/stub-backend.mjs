@@ -379,7 +379,8 @@ function routes(pathname, method, body) {
         requestedAt: new Date().toISOString(),
         completedAt: null,
         refundProcessingBusinessDays: 3,
-        maskedAccount: { bank: '국민은행', accountNumber: '****6789', holderName: '홍길동' },
+        // 서버가 내려주는 값은 토스 2자리 은행코드다(은행명이 아니다) — 화면이 이름으로 바꿔야 한다.
+        maskedAccount: { bank: '06', accountNumber: '****6789', holderName: '홍길동' },
       };
     if (SCENARIO === 'refund-completed')
       return {
