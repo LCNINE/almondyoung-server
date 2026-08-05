@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { ConflictError, NotFoundError } from '@app/shared';
-import { count, desc, eq, lt } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, lt } from 'drizzle-orm';
 import { type PimSchema, productFormExports } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { FormExportFileClient } from './form-export-file.client';
@@ -27,6 +27,33 @@ export class FormExportManager {
     const unique = [...new Set(masterIds)];
 
     return this.db.run(async (trx) => {
+      // 진행 중인 같은 요청이 있으면 그것을 돌려준다. 워커가 인스턴스당 한 번에 잡
+      // 하나만 처리하는 직렬 큐라, 중복 잡은 남의 대기시간을 직접 늘린다.
+      //
+      // SQL 배열 동등 비교(requested_master_ids = ...)를 쓰지 않는 이유: 그러려면 저장 시
+      // 정렬이 전제인데 기존 행들은 정렬돼 있지 않아 영영 매칭되지 않는다. 진행 중 잡은
+      // 보통 0~2건이므로 가져와서 집합으로 비교한다 — 선택 순서가 달라도 같게 본다.
+      const inFlight = await trx
+        .select()
+        .from(productFormExports)
+        .where(
+          and(
+            eq(productFormExports.requestedBy, userId),
+            inArray(productFormExports.status, ['queued', 'running']),
+          ),
+        );
+
+      const wanted = new Set(unique);
+      const match = inFlight.find((row) => sameIdSet(row.requestedMasterIds, wanted));
+      if (match) {
+        return {
+          exportId: match.id,
+          status: match.status === 'running' ? ('running' as const) : ('queued' as const),
+          requestedCount: unique.length,
+          reused: true,
+        };
+      }
+
       const expiresAt = new Date(Date.now() + FORM_EXPORT_TTL_DAYS * 86_400_000);
       const [row] = await trx
         .insert(productFormExports)
@@ -41,7 +68,7 @@ export class FormExportManager {
       if (!row) throw new Error('양식 생성 잡을 만들지 못했습니다');
 
       // items 는 여기서 만들지 않는다 — 조립 시점에 실제 active 를 확인한 것만 담긴다.
-      return { exportId: row.id, status: 'queued' as const, requestedCount: unique.length };
+      return { exportId: row.id, status: 'queued' as const, requestedCount: unique.length, reused: false };
     }, tx);
   }
 
@@ -174,4 +201,17 @@ export class FormExportManager {
 
     return rows.length;
   }
+}
+
+/**
+ * 저장된 masterId 배열이 요청 집합과 같은지 본다. 저장본에 중복이 있을 수 있어
+ * (옛 행은 정렬도 중복 제거도 보장되지 않는다) 길이 비교 대신 Set 으로 접는다.
+ */
+function sameIdSet(stored: string[], wanted: Set<string>): boolean {
+  const storedSet = new Set(stored);
+  if (storedSet.size !== wanted.size) return false;
+  for (const id of storedSet) {
+    if (!wanted.has(id)) return false;
+  }
+  return true;
 }
