@@ -1,6 +1,8 @@
 import { Logger } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { FormExportManager, FORM_EXPORT_TTL_DAYS } from './form-export.manager';
 import { ConflictError, NotFoundError } from '@app/shared';
+import { productFormExports } from '../../../schema/catalog.schema';
 
 type FakeRow = Record<string, unknown>;
 
@@ -244,31 +246,37 @@ describe('FormExportManager.list', () => {
   interface ListTrx {
     select: (fields?: unknown) => {
       from: () => {
-        where: () => {
+        where: (condition: unknown) => {
           orderBy: () => { limit: () => { offset: () => Promise<Record<string, unknown>[]> } };
         } & Promise<Record<string, unknown>[]>;
       };
     };
   }
 
+  /**
+   * `where()` 에 실제로 넘어온 조건을 캡처한다 — 소유권 필터가 지워지거나 엉뚱한
+   * 컬럼으로 바뀌어도 이전 하네스는 계속 초록이었다(리뷰 지적). 행 조회·count 두 질의
+   * 모두 같은 조건을 받는지 별도로 기록해, 한쪽만 필터링해 total 이 새는 회귀도 잡는다.
+   */
   function listHarness(rows: Record<string, unknown>[], total: number) {
-    const calls: { orderBy: number } = { orderBy: 0 };
+    const calls: { orderBy: number; whereConditions: unknown[] } = { orderBy: 0, whereConditions: [] };
     const page = Promise.resolve(rows);
     const trx: ListTrx = {
       select: (fields?: unknown) => ({
         from: () => {
           // count 질의는 select({ value: count() }) 로 필드를 넘긴다 — 그걸로 갈라낸다.
           const isCount = fields !== undefined;
-          const whereResult = Object.assign(
-            isCount ? Promise.resolve([{ value: total }]) : page,
-            {
-              orderBy: () => {
-                calls.orderBy += 1;
-                return { limit: () => ({ offset: () => page }) };
-              },
+          return {
+            where: (condition: unknown) => {
+              calls.whereConditions.push(condition);
+              return Object.assign(isCount ? Promise.resolve([{ value: total }]) : page, {
+                orderBy: () => {
+                  calls.orderBy += 1;
+                  return { limit: () => ({ offset: () => page }) };
+                },
+              });
             },
-          );
-          return { where: () => whereResult };
+          };
         },
       }),
     };
@@ -303,6 +311,12 @@ describe('FormExportManager.list', () => {
     expect(result.page).toBe(2);
     expect(result.limit).toBe(20);
     expect(calls.orderBy).toBe(1);
+    // 행 조회·count 두 질의 모두 where() 를 받았고, 둘 다 같은 소유권 조건이어야 한다 —
+    // 한쪽만 필터링하면 total 이 남의 잡까지 세는 버그가 되는데 흔히 있을 법한 실수다.
+    const expectedOwnership = eq(productFormExports.requestedBy, 'U1');
+    expect(calls.whereConditions).toHaveLength(2);
+    expect(calls.whereConditions[0]).toEqual(expectedOwnership);
+    expect(calls.whereConditions[1]).toEqual(expectedOwnership);
     expect(result.data).toEqual([
       {
         exportId: 'E2',
