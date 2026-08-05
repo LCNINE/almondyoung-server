@@ -56,8 +56,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
     queryKey: productQueryKeys.bulkSession(bulkSessionId ?? ''),
     // `enabled` 가 bulkSessionId 있을 때만 이 queryFn 을 부르지만 TS 는 같은 객체
     // 리터럴의 두 옵션 사이 관계를 좁혀주지 않는다. non-null 단언 대신 가드로 좁힌다 —
-    // 이 분기에 실제로 들어오면 enabled 배선이 깨진 것이므로 바로 던진다
-    // (form-export.ts 의 useFormExportStatus 가 같은 함정을 같은 방식으로 처리했다).
+    // 이 분기에 실제로 들어오면 enabled 배선이 깨진 것이므로 바로 던진다.
     queryFn: () => {
       if (!bulkSessionId) {
         throw new Error(
