@@ -78,10 +78,7 @@ export class FormExportController {
   @ApiOperation({ summary: '같은 상품 집합으로 양식 생성을 다시 접수한다' })
   @ApiResponse({ status: 202, type: FormExportAcceptedDto })
   @ApiResponse({ status: 404, description: '없거나 내 잡이 아님' })
-  async retry(
-    @Param('exportId') exportId: string,
-    @User() user: { userId: string },
-  ): Promise<FormExportAcceptedDto> {
+  async retry(@Param('exportId') exportId: string, @User() user: { userId: string }): Promise<FormExportAcceptedDto> {
     return this.service.retry(exportId, user.userId);
   }
 }

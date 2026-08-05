@@ -2,7 +2,10 @@
 // 양식 생성 목록의 판정 로직. admin-web 은 컴포넌트 테스트가 불가능하므로(렌더러 없음)
 // 화면이 쓰는 판정은 전부 여기 순수 함수로 두고 spec 으로 잠근다.
 
-import type { FormExportList, FormExportSummary } from '@/lib/types/dto/form-export';
+import type {
+  FormExportList,
+  FormExportSummary,
+} from '@/lib/types/dto/form-export';
 
 /** 서버의 MAX_CONSECUTIVE_EXPORT_FAILURES 와 같은 값. 문구에만 쓴다. */
 const MAX_FAILURES = 3;
@@ -17,9 +20,13 @@ export interface FormExportRowState {
  * 진행 중 항목이 하나라도 있으면 계속 두드린다. 데이터가 아직 없을 때(초기 로드·일시적
  * 5xx)도 두드린다 — 여기서 멈추면 화면이 마운트 내내 굳는다.
  */
-export function formExportListRefetchInterval(list: FormExportList | undefined): number | false {
+export function formExportListRefetchInterval(
+  list: FormExportList | undefined
+): number | false {
   if (!list) return 5000;
-  const running = list.data.some((item) => item.status === 'queued' || item.status === 'running');
+  const running = list.data.some(
+    (item) => item.status === 'queued' || item.status === 'running'
+  );
   return running ? 5000 : false;
 }
 
@@ -30,7 +37,9 @@ export function formExportListRefetchInterval(list: FormExportList | undefined):
  * failed). 그래서 "생성 중"과 "재시도 대기 중"은 status 가 아니라 이 카운터로 갈린다 —
  * 이 구분이 없으면 사용자는 실패를 진행 중으로 오해한 채 기다린다.
  */
-export function formExportRowState(item: FormExportSummary): FormExportRowState {
+export function formExportRowState(
+  item: FormExportSummary
+): FormExportRowState {
   if (item.status === 'failed') {
     return { label: '실패', tone: 'error', action: 'retry' };
   }

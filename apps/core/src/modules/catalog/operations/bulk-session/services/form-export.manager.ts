@@ -37,10 +37,7 @@ export class FormExportManager {
         .select()
         .from(productFormExports)
         .where(
-          and(
-            eq(productFormExports.requestedBy, userId),
-            inArray(productFormExports.status, ['queued', 'running']),
-          ),
+          and(eq(productFormExports.requestedBy, userId), inArray(productFormExports.status, ['queued', 'running'])),
         );
 
       const wanted = new Set(unique);
@@ -147,11 +144,7 @@ export class FormExportManager {
    */
   async retry(exportId: string, userId: string, tx?: DbTransaction): Promise<FormExportAcceptedDto> {
     return this.db.run(async (trx) => {
-      const [row] = await trx
-        .select()
-        .from(productFormExports)
-        .where(eq(productFormExports.id, exportId))
-        .limit(1);
+      const [row] = await trx.select().from(productFormExports).where(eq(productFormExports.id, exportId)).limit(1);
       // getStatus 와 같은 이유로 소유권 실패를 404 로 합친다 — 구분해 주면 그 구분
       // 자체가 id 존재 여부를 캐는 오라클이 된다.
       if (!row || row.requestedBy !== userId) {

@@ -25,7 +25,9 @@ export function useRetryFormExport() {
   return useMutation({
     mutationFn: (exportId: string) => products.formExport.retry(exportId),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: productQueryKeys.formExports });
+      void queryClient.invalidateQueries({
+        queryKey: productQueryKeys.formExports,
+      });
     },
   });
 }
