@@ -43,7 +43,8 @@ import { productMatchings, productVariantSkuLinks } from '../../../../inventory/
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
-import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
+import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, count } from 'drizzle-orm';
+import { keywordMatch } from '../../../common/keyword-match';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
@@ -289,6 +290,16 @@ export class ProductVersionsService {
         this.logger.debug(`No previous active version for ${version.masterId}`);
       }
 
+      // 품번코드가 비어 있으면 발번한다 — 검증보다 먼저 채워야 중복 검사가 새 코드까지 본다.
+      if (!version.productCode) {
+        version.productCode = await this.issueProductCode(tx);
+        await tx
+          .update(productMasterVersions)
+          .set({ productCode: version.productCode })
+          .where(eq(productMasterVersions.id, versionId));
+        this.logger.log(`Issued productCode ${version.productCode} for version ${versionId}`);
+      }
+
       // 새 active 가 될 버전의 variantCode 충돌 검증
       await this._validateVariantCodeUniqueness(versionId, tx);
       await this.validateProductCodeUniqueness(version, tx);
@@ -363,6 +374,25 @@ export class ProductVersionsService {
     if (dups.size > 0) {
       throw new BadRequestException(`Duplicate variantCode in version ${versionId}: ${Array.from(dups).join(', ')}`);
     }
+  }
+
+  /**
+   * 품번코드를 발번한다 (`AY-10001` 순번). 사람이 적어둔 값이 있으면 그대로 두고, 비어 있을 때만 채운다.
+   *
+   * 비워두면 어드민 목록이 masterId(UUID) 를 대신 보여줘 사람이 부를 수 없는 번호가 된다.
+   * cafe24-{N} 은 이관 이력이라 신규 채번에 쓰지 않는다.
+   *
+   * advisory lock 으로 발번 구간을 직렬화한다 — 동시 발행 시 같은 번호가 두 번 나가는 걸 막는다.
+   * 시퀀스 대신 max+1 을 쓰는 이유는 마이그레이션 없이 끝나고, 발행 동시성이 낮기 때문이다.
+   */
+  private async issueProductCode(tx: DbTransaction): Promise<string> {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('product_code_issue'))`);
+    const rows = await tx.execute(sql`
+      SELECT COALESCE(MAX(SUBSTRING(product_code FROM '^AY-([0-9]+)$')::int), 10000) + 1 AS next
+      FROM product_master_versions
+      WHERE product_code ~ '^AY-[0-9]+$'`);
+    const next = Number((rows as unknown as Array<{ next: number }>)[0]?.next ?? 10001);
+    return `AY-${next}`;
   }
 
   async validateProductCodeUniqueness(
@@ -888,7 +918,7 @@ export class ProductVersionsService {
       isNull(productMasterVersions.bulkSessionId),
       isNull(productMasterVersions.deletedAt),
       isNull(productMasters.deletedAt),
-      filters?.q ? ilike(productMasterVersions.name, `%${filters.q}%`) : undefined,
+      filters?.q ? keywordMatch(filters.q, [productMasterVersions.name]) : undefined,
     );
 
     return this.db.run(async (tx) => {

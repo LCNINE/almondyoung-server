@@ -33,7 +33,10 @@ async function lastCancelCall(request: import('playwright/test').APIRequestConte
 const SCENARIO = process.env.SCENARIO ?? 'recurring-withdrawal';
 
 test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
-  test.skip(SCENARIO.startsWith('refund-'), '해지 후 환불 상태 시나리오는 별도 describe 에서 다룬다');
+  test.skip(
+    SCENARIO.startsWith('refund-') || SCENARIO === 'mandate-rejected',
+    '가입자가 아닌 시나리오는 별도 describe 에서 다룬다'
+  );
 
   test.beforeEach(async ({ page, request }) => {
     await resetStub(request);
@@ -298,5 +301,21 @@ test.describe(`해지 후 환불 진행 상황 (${SCENARIO})`, () => {
       await expect(card.getByText('환불 완료')).toBeVisible();
       await expect(card.getByText(/4,990원이 .*환불되었습니다/)).toBeVisible();
     }
+  });
+});
+
+// 계좌 심사 거절·미수로 끊긴 고객에게 화면에 '가입하기' 만 남으면 왜 끊겼는지 알 방법이 없다.
+test.describe(`멤버십 종료 사유 안내 (${SCENARIO})`, () => {
+  test.skip(SCENARIO !== 'mandate-rejected', '종료 사유 시나리오만');
+
+  test('왜 끝났는지와 다음에 무엇을 하면 되는지 알려준다', async ({ page }) => {
+    await page.goto(MEMBERSHIP_URL);
+    const card = page.getByTestId('termination-notice-card');
+    await expect(card).toBeVisible();
+
+    await expect(card.getByText('멤버십이 종료되었습니다', { exact: true })).toBeVisible();
+    await expect(card.getByText(/자동이체 심사가 거절되어/)).toBeVisible();
+    // 이유만 알려주고 방법을 안 알려주면 그대로 문의가 된다.
+    await expect(card.getByText(/다른 계좌로 다시 등록/)).toBeVisible();
   });
 });

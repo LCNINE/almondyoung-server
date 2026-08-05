@@ -186,3 +186,12 @@ export interface RefundStatusDto {
   /** 계좌번호는 뒤 4자리만 온다 */
   maskedAccount: { bank: string; accountNumber: string; holderName: string } | null
 }
+
+/** 멤버십이 왜 끝났는지 — 계좌 심사 거절·미수로 끊긴 고객에게 이유와 다음 행동을 알린다. */
+export interface TerminationNoticeDto {
+  origin: string
+  originLabel: string
+  reasonLabel: string | null
+  notice: string
+  endedAt: string | null
+}

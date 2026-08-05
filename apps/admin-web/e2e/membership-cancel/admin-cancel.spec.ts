@@ -40,15 +40,23 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   const rows = (page: import('playwright/test').Page) => page.getByRole('row');
 
-  test('해지한 사람의 세 상태가 한 목록에 함께 보인다', async ({ page }) => {
+  test('해지 경로와 상태를 각각 보여준다', async ({ page }) => {
     await page.goto('/membership/cancellations');
     const table = page.getByRole('table');
-    await expect(table.getByText('즉시 해지').first()).toBeVisible();
-    // 예약 해지가 빠지면 고객이 해지 신청한 건을 CS 가 이 화면에서 찾을 수 없다.
-    await expect(table.getByText('해지 예약', { exact: true }).first()).toBeVisible();
-    // 이용 종료까지 끝난 건은 별도 상태로 구분된다.
-    await expect(table.getByText('해지 완료').first()).toBeVisible();
-    await expect(rows(page)).toHaveCount(5); // 헤더 + 4행
+
+    // 경로 — 누가 왜 끝냈나. 즉시해지도 '이용 종료' 라 상태와 한 칸에 섞으면 라벨이 겹친다.
+    await expect(table.getByText('고객 즉시해지').first()).toBeVisible();
+    await expect(table.getByText('고객 해지예약').first()).toBeVisible();
+    // 시스템이 끊은 건이 고객 해지로 보이면 CS 가 잘못 안내한다.
+    await expect(table.getByText('계좌 심사 거절로 종료')).toBeVisible();
+    await expect(table.getByText('계좌 자동이체 심사 거절')).toBeVisible();
+    await expect(table.getByText('(Q201)')).toBeVisible();
+
+    // 상태 — 지금 쓰고 있는지 끝났는지
+    await expect(table.getByText('이용 중', { exact: true }).first()).toBeVisible();
+    await expect(table.getByText('이용 종료', { exact: true }).first()).toBeVisible();
+
+    await expect(rows(page)).toHaveCount(6); // 헤더 + 5행
   });
 
   test('해지 신청 시각을 분 단위까지 보여준다', async ({ page }) => {
@@ -60,11 +68,11 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
 
   test('이용 종료까지 끝난 해지 건만 골라볼 수 있다', async ({ page }) => {
     await page.goto('/membership/cancellations');
-    await page.getByRole('radio', { name: '해지 완료' }).click();
+    await page.getByRole('radio', { name: '예약 후 종료' }).click();
     await page.getByRole('button', { name: '검색' }).click();
 
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByRole('table').getByText('해지 완료')).toBeVisible();
+    await expect(page.getByRole('table').getByText('이용 종료', { exact: true })).toBeVisible();
   });
 
   test('환불 금액과 상태가 행에서 바로 보인다', async ({ page }) => {
@@ -90,7 +98,7 @@ test.describe(`관리자 해지 내역 목록 (${SCENARIO})`, () => {
     await page.getByRole('button', { name: '검색' }).click();
 
     await expect(rows(page)).toHaveCount(2);
-    await expect(page.getByText('해지 예약').first()).toBeVisible();
+    await expect(page.getByRole('table').getByText('고객 해지예약').first()).toBeVisible();
   });
 });
 
@@ -108,9 +116,18 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     if (SCENARIO === 'scheduled') {
       await expect(dialog.getByText('정기결제 (해지 예약됨)')).toBeVisible();
     } else if (
-      ['one-time', 'one-time-scheduled', 'annual', 'pg-settled', 'pg-pending', 'no-payment', 'no-payment-active', 'legacy-detail'].includes(
-        SCENARIO
-      )
+      [
+        'one-time',
+        'one-time-scheduled',
+        'annual',
+        'pg-settled',
+        'pg-pending',
+        'no-payment',
+        'no-payment-active',
+        'legacy-detail',
+        'external-refund',
+        'refunded-account',
+      ].includes(SCENARIO)
     ) {
       await expect(dialog.getByText('일시결제 (자동갱신 없음)')).toBeVisible();
     } else {
@@ -284,7 +301,7 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
 
   test('즉시 해지 다이얼로그가 정책 견적과 산출 내역을 먼저 보여준다', async ({ page }) => {
     test.skip(
-      SCENARIO === 'scheduled' || SCENARIO === 'no-payment' || SCENARIO === 'legacy-detail',
+      ['scheduled', 'no-payment', 'legacy-detail', 'external-refund', 'refunded-account'].includes(SCENARIO),
       '해지 예약 상태는 견적 확인만 별도로 다루고, 이미 해지된 건에는 즉시해지 카드가 없다'
     );
 
@@ -377,6 +394,28 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
       .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'force-cancel').length)
       .toBe(1);
     expect((await stubCalls(request)).find((c) => c.path === 'force-cancel')!.body.deleteBillingMethod).toBe(true);
+  });
+
+  // 결제관리에서 직접 환불한 건은 멤버십이 요청한 적이 없어 '환불 없음' 으로 보였다(라이브 실제 사례).
+  test('결제관리에서 나간 환불도 화면에 보인다', async ({ page }) => {
+    test.skip(SCENARIO !== 'external-refund', '결제관리 환불 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    const row = dialog.getByTestId('external-refund');
+    await expect(row).toBeVisible();
+    await expect(row.getByText(/결제관리 환불 4,990원/)).toBeVisible();
+    await expect(dialog.getByText('환불 없음')).toHaveCount(0);
+  });
+
+  // "환불이 안 들어왔다" 는 문의에 어느 계좌로 보냈는지 답할 수 있어야 한다.
+  test('완료된 환불도 어느 계좌로 들어갔는지 보여준다', async ({ page }) => {
+    test.skip(SCENARIO !== 'refunded-account', '환불 완료 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    const account = dialog.getByTestId('refunded-account');
+    await expect(account).toBeVisible();
+    await expect(account.getByText(/110123456789/)).toBeVisible();
+    await expect(account.getByText(/테스트고객/)).toBeVisible();
   });
 
   test('사유 없이 즉시 해지를 확인하면 막힌다', async ({ page, request }) => {

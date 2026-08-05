@@ -1,6 +1,11 @@
 import { useTranslations } from "next-intl"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { TOSS_BANKS } from "@lib/constants/toss-banks"
 import type { RefundStatusDto } from "@lib/types/dto/membership"
+
+/** 서버가 내려주는 값은 토스 2자리 은행코드다. 그대로 두면 고객이 "20 ****6789" 를 보게 된다. */
+const bankName = (code: string) =>
+  TOSS_BANKS.find((bank) => bank.code === code)?.name ?? code
 
 /**
  * 환불 진행 상황.
@@ -47,7 +52,7 @@ export default function RefundStatusCard({
       {!completed && refundStatus.maskedAccount && (
         <p className="mt-1 text-xs leading-5 text-amber-900">
           {t("account", {
-            bank: refundStatus.maskedAccount.bank,
+            bank: bankName(refundStatus.maskedAccount.bank),
             account: refundStatus.maskedAccount.accountNumber,
             holder: refundStatus.maskedAccount.holderName,
           })}

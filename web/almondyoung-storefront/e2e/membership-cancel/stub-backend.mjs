@@ -329,6 +329,8 @@ function build() {
     // 즉시해지가 끝난 뒤 — 화면은 비가입자로 바뀌지만 환불이 어디까지 왔는지는 보여야 한다.
     case 'refund-pending':
     case 'refund-completed':
+    // 계좌 심사 거절로 멤버십이 끊긴 고객 — 화면에 '가입하기' 만 남으면 이유를 알 수 없다.
+    case 'mandate-rejected':
       return { subscription: null, preview: null };
 
     default:
@@ -355,6 +357,19 @@ function routes(pathname, method, body) {
   // membership
   if (pathname === '/subscriptions/current') return subscription;
   if (pathname === '/subscriptions/cancel-preview') return preview;
+  if (pathname === '/subscriptions/termination-notice') {
+    if (SCENARIO === 'mandate-rejected')
+      return {
+        origin: 'MANDATE_REJECTED',
+        originLabel: '계좌 심사 거절로 종료',
+        reasonLabel: '계좌 자동이체 심사 거절',
+        notice:
+          '등록하신 계좌의 자동이체 심사가 거절되어 멤버십이 종료되었습니다. 다른 계좌로 다시 등록하시면 이어서 이용하실 수 있어요.',
+        endedAt: new Date().toISOString(),
+      };
+    return null;
+  }
+
   if (pathname === '/subscriptions/refund-status') {
     if (SCENARIO === 'refund-pending')
       return {
@@ -364,7 +379,8 @@ function routes(pathname, method, body) {
         requestedAt: new Date().toISOString(),
         completedAt: null,
         refundProcessingBusinessDays: 3,
-        maskedAccount: { bank: '국민은행', accountNumber: '****6789', holderName: '홍길동' },
+        // 서버가 내려주는 값은 토스 2자리 은행코드다(은행명이 아니다) — 화면이 이름으로 바꿔야 한다.
+        maskedAccount: { bank: '06', accountNumber: '****6789', holderName: '홍길동' },
       };
     if (SCENARIO === 'refund-completed')
       return {

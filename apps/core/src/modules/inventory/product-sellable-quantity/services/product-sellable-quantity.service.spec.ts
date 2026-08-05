@@ -205,6 +205,29 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     });
   });
 
+  it('masterId가 없으면(죽은 버전 매칭) projection만 저장하고 publish하지 않는다', async () => {
+    const outbox = makeOutbox();
+    const db = makeDbService();
+    const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
+    jest.spyOn(service, 'getByVariantId').mockResolvedValue({
+      ...projection,
+      masterId: null,
+      versionId: null,
+      sellableQuantity: 0,
+      stockBoundQuantity: 0,
+      isSellable: false,
+      reason: 'NOT_ACTIVE_VERSION',
+    });
+    const { tx, inserted } = makeTx();
+
+    const result = await service.recalculateAndPublishForVariant(projection.variantId, tx);
+
+    // 소비자가 Medusa 상품을 특정할 수 없어 발행하면 반드시 실패한다.
+    expect(result.published).toBe(false);
+    expect(inserted).toHaveLength(1);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
   it('계산 결과가 이전 projection과 같으면 outbox enqueue 없이 no-op 처리한다', async () => {
     const outbox = makeOutbox();
     const { service } = makeService(outbox);

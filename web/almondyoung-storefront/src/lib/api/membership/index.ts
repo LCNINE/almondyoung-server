@@ -11,6 +11,7 @@ import type {
   MembershipTierDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
+  TerminationNoticeDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 import type { PlanWithTier } from "@lib/types/membership"
@@ -241,6 +242,22 @@ export async function getRefundStatus(): Promise<RefundStatusDto | null> {
     )
   } catch (error) {
     // 환불 이력이 없거나 조회에 실패해도 마이페이지는 그대로 떠야 한다.
+    if (error instanceof HttpApiError && error.status === 404) return null
+    throw error
+  }
+}
+
+/**
+ * 멤버십 종료 사유 — 활성 자격이 없을 때만 값이 온다.
+ */
+export async function getTerminationNotice(): Promise<TerminationNoticeDto | null> {
+  try {
+    return await api<TerminationNoticeDto | null>(
+      "membership",
+      "/subscriptions/termination-notice",
+      { method: "GET", withAuth: true, cache: "no-store" }
+    )
+  } catch (error) {
     if (error instanceof HttpApiError && error.status === 404) return null
     throw error
   }

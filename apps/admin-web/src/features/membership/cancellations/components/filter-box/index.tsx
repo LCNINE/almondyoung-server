@@ -132,15 +132,15 @@ export function CancellationsFilterBox() {
       )}
 
       <div className="flex flex-wrap items-end gap-4">
-        <FormField label="해지 유형" direction="horizontal">
+        <FormField label="해지 상태" direction="horizontal">
           <FormRadioGroup
             value={filters.cancelKind}
             onValueChange={(v) => setFilters((p) => ({ ...p, cancelKind: v as CancelKind }))}
             options={[
               { value: 'ALL', label: '전체' },
-              { value: 'IMMEDIATE', label: '즉시 해지' },
+              { value: 'IMMEDIATE', label: '즉시 종료' },
               { value: 'SCHEDULED', label: '해지 예약(이용 중)' },
-              { value: 'ENDED', label: '해지 완료' },
+              { value: 'ENDED', label: '예약 후 종료' },
             ]}
             orientation="horizontal"
           />

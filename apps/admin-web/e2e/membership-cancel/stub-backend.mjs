@@ -119,6 +119,33 @@ function detail() {
       delete legacy.refundSettlement;
       return legacy;
     }
+    // 결제관리에서 직접 환불한 건 — 멤버십은 환불을 요청한 적이 없어 '환불 없음' 으로 보였다.
+    case 'external-refund':
+      return {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: false,
+        refundCompleted: false,
+        eligibleRefundAmount: null,
+        refundSettlement: { alreadyRefundedAmount: MONTHLY, pendingRefundAmount: 0 },
+      };
+    // 무통장 자동환불이 끝난 건 — 어느 계좌로 나갔는지 남아야 문의에 답할 수 있다.
+    case 'refunded-account':
+      return {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: true,
+        refundCompleted: true,
+        refundCompletedAt: new Date(Date.now() - 86400000).toISOString(),
+        eligibleRefundAmount: MONTHLY,
+        refundReceiveAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
+      };
     // 자동환불이 실패로 기록됐지만 실제로는 PG 로 나간 건. 계좌 송금이 아니라 기록 정리만 남았다.
     case 'pg-settled':
       return {
@@ -330,6 +357,31 @@ function routes(pathname, method, body, params) {
     ];
 
     rows.push({
+      userId: 'e2e-user-5',
+      contractId: '55555555-5555-4555-8555-555555555555',
+      status: 'CANCELLED',
+      tierCode: 'MEMBERSHIP',
+      planDurationDays: 30,
+      startsAt: plus(-4),
+      endsAt: plus(26),
+      createdAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      cancelledAt: new Date().toISOString(),
+      recurringCancelledAt: null,
+      // 시스템이 계좌 심사 거절로 끊은 건 — 고객이 해지한 것이 아니다.
+      cancellationReasonCode: 'MANDATE_REJECTED',
+      cancellationReasonText: null,
+      recurringCancellationReasonCode: null,
+      autoRenewal: false,
+      firstContractCreatedAt: new Date(Date.now() - 4 * 86400000).toISOString(),
+      refundRequested: false,
+      refundCompleted: false,
+      refundCompletedAt: null,
+      eligibleRefundAmount: null,
+      hasPaymentIntent: false,
+      billingPath: 'INVOICE',
+    });
+
+    rows.push({
       userId: 'e2e-user-4',
       contractId: '44444444-4444-4444-8444-444444444444',
       status: 'EXPIRED',
@@ -354,6 +406,46 @@ function routes(pathname, method, body, params) {
       billingPath: 'CHARGE',
     });
 
+    // 서버가 계산해 내려주는 종료 사실. 화면은 이 값을 그대로 쓴다(추론하지 않는다).
+    const withCancellation = (r) => {
+      const info =
+        r.status === 'CANCELLED' && r.cancellationReasonCode === 'MANDATE_REJECTED'
+          ? {
+              origin: 'MANDATE_REJECTED',
+              originLabel: '계좌 심사 거절로 종료',
+              reasonLabel: '계좌 자동이체 심사 거절',
+              reasonDetail: 'Q201',
+              customerNotice: '등록하신 계좌의 자동이체 심사가 거절되어 멤버십이 종료되었습니다.',
+            }
+          : r.status === 'CANCELLED'
+            ? {
+                origin: 'CUSTOMER_IMMEDIATE',
+                originLabel: '고객 즉시해지',
+                reasonLabel: r.cancellationReasonText ?? null,
+                reasonDetail: null,
+                customerNotice: null,
+              }
+            : {
+                origin: 'CUSTOMER_SCHEDULED',
+                originLabel: '고객 해지예약',
+                reasonLabel: r.cancellationReasonText ?? null,
+                reasonDetail: null,
+                customerNotice: null,
+              };
+      const ended = r.status !== 'ACTIVE';
+      return {
+        ...r,
+        cancellation: {
+          ...info,
+          state: ended ? 'ENDED' : 'SCHEDULED_ACTIVE',
+          stateLabel: ended ? '이용 종료' : '이용 중',
+          requestedAt: r.cancelledAt ?? r.recurringCancelledAt ?? null,
+          endedAt: r.cancelledAt ?? null,
+          endsAt: r.endsAt ?? null,
+        },
+      };
+    };
+
     // 서버가 실제로 하는 필터를 그대로 흉내낸다 — 화면이 파라미터를 제대로 보내는지 검증하기 위함.
     const status = params?.get('status') ?? 'CANCELLED_ANY';
     const refundPending = params?.get('refundPending') === 'true';
@@ -369,7 +461,7 @@ function routes(pathname, method, body, params) {
       )
       .filter((r) => (refundPending ? r.refundRequested && !r.refundCompleted : true));
 
-    return { data: filtered, total: filtered.length, page: 1, limit: 20 };
+    return { data: filtered.map(withCancellation), total: filtered.length, page: 1, limit: 20 };
   }
 
   // membership admin

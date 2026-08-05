@@ -48,6 +48,7 @@ import {
   tagGroups,
 } from '../../../schema/catalog.schema';
 import { eq, and, or, ilike, count, asc, desc, gte, lte, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { keywordMatch } from '../../../common/keyword-match';
 import { ProductVersionsService } from './product-versions.service';
 import { resolveMasterSort } from './product-masters-sort.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
@@ -632,14 +633,13 @@ export class ProductMastersService {
         whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
       }
 
-      // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자 무시)
+      // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
       if (filters?.name) {
-        whereConditions.push(
-          or(
-            ilike(productMasterVersions.name, `%${filters.name}%`),
-            ilike(productMasterVersions.productCode, `%${filters.name}%`),
-          ),
-        );
+        const match = keywordMatch(filters.name, [
+          productMasterVersions.name,
+          productMasterVersions.productCode,
+        ]);
+        if (match) whereConditions.push(match);
       }
 
       // ids 필터 (배치 조회용)
