@@ -226,6 +226,15 @@ describe('FormExportJobManager.claim', () => {
     expect(sql).toContain('::uuid');
     // 만료시각은 DB 시계가 만든다 — 비교 대상이 아니므로 정밀도가 무관하다.
     expect(sql).toContain('now()');
+    // 재클레임 카운트 절이 있는지만 잠근다 — **의미론이 아니라 절의 존재**다. 목
+    // trx.execute 는 SQL 을 실행하지 않고 미리 정한 행을 돌려줄 뿐이라
+    // `CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END` 이 실제로 옳게 세는지(의미론)는
+    // 여기서 검증할 수 없다 — 그건 form-export-job-lease.integration.spec.ts 의 실 DB
+    // 케이스 몫이다(주석은 위 claim() 정의부에도 있다). 이 줄이 없으면 이 2줄을 통째로
+    // 지워도(리뷰 뮤테이션 확인) 기본 스위트(582 tests)가 전부 초록이었다 — 통합 스펙은
+    // DATABASE_URL 이 없으면 skip 되고 이 레포엔 jest 를 도는 CI 가 없어 유일한 방어선이
+    // 없는 채였다.
+    expect(sql).toContain('case when lease_token is null');
 
     const { params } = renderQuery(trx.execute.mock.calls[0][0]);
     // 소유권 값은 DB 가 만들지 않는다 — 클레임이 uuid 토큰을 발급해 바인딩한다.
@@ -278,7 +287,13 @@ describe('claim 이 재클레임을 실패로 센다', () => {
 
     expect(claimed).toBeNull();
     expect(updates).toHaveLength(1);
-    expect(updates[0].values).toEqual({ status: 'failed', leaseUntil: null, leaseToken: null });
+    expect(updates[0].values).toMatchObject({ status: 'failed', leaseUntil: null, leaseToken: null });
+    // 순수 하드킬 경로(recordJobError 가 한 번도 안 불려 error_message 가 NULL)에서도
+    // 실패 사유가 채워져야 한다 — 안 채우면 목록 화면이 "실패" 뱃지만 띄우고 사유를
+    // 못 보여준다. COALESCE 라 이미 있는 값은 안 건드리고, 없을 때만 이 기본 문구를 쓴다.
+    const { sql: errorSql, params: errorParams } = renderQuery(updates[0].values.errorMessage);
+    expect(errorSql.toLowerCase()).toContain('coalesce');
+    expect(errorParams).toContain('조립이 lease 안에 끝나지 않아 실패로 확정했습니다');
   });
 });
 

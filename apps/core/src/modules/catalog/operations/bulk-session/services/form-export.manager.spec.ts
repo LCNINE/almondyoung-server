@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { FormExportManager, FORM_EXPORT_TTL_DAYS } from './form-export.manager';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { productFormExports } from '../../../schema/catalog.schema';
@@ -102,10 +102,25 @@ describe('FormExportManager.accept', () => {
 });
 
 describe('FormExportManager.accept 중복 제거', () => {
+  /**
+   * `where()` 에 실제로 넘어온 조건을 캡처한다 — listHarness(:406-429) 와 같은 패턴.
+   * 이전 하네스는 `where: () => Promise.resolve(inFlight)` 로 조건을 통째로 버려,
+   * 소유권(`requestedBy`)이나 상태 필터(`queued`/`running`)를 구현에서 지워도 전부
+   * 초록이었다(리뷰에서 뮤테이션으로 증명됨) — 특히 소유권 필터가 지워지면 남의
+   * 진행 중 잡이 재사용돼 요청자가 소유하지 않은 exportId 를 돌려받는 사고가 난다.
+   */
   function acceptHarness(inFlight: Record<string, unknown>[]) {
     const inserted: Record<string, unknown>[] = [];
+    const calls: { whereConditions: unknown[] } = { whereConditions: [] };
     const trx = {
-      select: () => ({ from: () => ({ where: () => Promise.resolve(inFlight) }) }),
+      select: () => ({
+        from: () => ({
+          where: (condition: unknown) => {
+            calls.whereConditions.push(condition);
+            return Promise.resolve(inFlight);
+          },
+        }),
+      }),
       insert: () => ({
         values: (v: Record<string, unknown>) => ({
           returning: () => {
@@ -119,13 +134,11 @@ describe('FormExportManager.accept 중복 제거', () => {
       { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
       {} as never,
     );
-    return { manager, inserted };
+    return { manager, inserted, calls };
   }
 
   it('같은 집합의 진행 중 잡이 있으면 그것을 돌려주고 새로 만들지 않는다', async () => {
-    const { manager, inserted } = acceptHarness([
-      { id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] },
-    ]);
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] }]);
 
     const result = await manager.accept(['m1', 'm2'], 'U1');
 
@@ -134,9 +147,7 @@ describe('FormExportManager.accept 중복 제거', () => {
   });
 
   it('순서만 다른 같은 집합도 재사용한다', async () => {
-    const { manager, inserted } = acceptHarness([
-      { id: 'E1', status: 'queued', requestedMasterIds: ['m2', 'm1'] },
-    ]);
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'queued', requestedMasterIds: ['m2', 'm1'] }]);
 
     const result = await manager.accept(['m1', 'm2'], 'U1');
 
@@ -146,9 +157,7 @@ describe('FormExportManager.accept 중복 제거', () => {
   });
 
   it('중복된 masterId 를 제거한 뒤 비교한다', async () => {
-    const { manager } = acceptHarness([
-      { id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] },
-    ]);
+    const { manager } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1', 'm2'] }]);
 
     const result = await manager.accept(['m1', 'm2', 'm2'], 'U1');
 
@@ -157,9 +166,7 @@ describe('FormExportManager.accept 중복 제거', () => {
   });
 
   it('집합이 다르면 새 잡을 만든다', async () => {
-    const { manager, inserted } = acceptHarness([
-      { id: 'E1', status: 'running', requestedMasterIds: ['m1'] },
-    ]);
+    const { manager, inserted } = acceptHarness([{ id: 'E1', status: 'running', requestedMasterIds: ['m1'] }]);
 
     const result = await manager.accept(['m1', 'm2'], 'U1');
 
@@ -175,6 +182,23 @@ describe('FormExportManager.accept 중복 제거', () => {
 
     expect(result).toEqual({ exportId: 'NEW', status: 'queued', requestedCount: 1, reused: false });
     expect(inserted).toHaveLength(1);
+  });
+
+  // 리뷰 지적: 조건을 버리는 하네스는 소유권/상태 필터를 지워도 계속 초록이었다. 진행
+  // 중 잡 조회의 where() 에 소유권(requestedBy = 넘긴 userId)과 상태 필터
+  // (queued/running) 둘 다 담겨 있는지 직접 단정한다 — 하나라도 지워지면 이 테스트가
+  // 빨개져야 한다.
+  it('진행 중 잡 조회는 소유권과 상태(queued/running) 필터를 함께 건다', async () => {
+    const { manager, calls } = acceptHarness([]);
+
+    await manager.accept(['m1'], 'U1');
+
+    const expectedCondition = and(
+      eq(productFormExports.requestedBy, 'U1'),
+      inArray(productFormExports.status, ['queued', 'running']),
+    );
+    expect(calls.whereConditions).toHaveLength(1);
+    expect(calls.whereConditions[0]).toEqual(expectedCondition);
   });
 });
 

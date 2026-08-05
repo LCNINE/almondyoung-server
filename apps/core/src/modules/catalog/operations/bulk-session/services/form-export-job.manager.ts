@@ -122,7 +122,19 @@ export class FormExportJobManager {
       if (row.consecutive_failures >= MAX_CONSECUTIVE_EXPORT_FAILURES) {
         await trx
           .update(productFormExports)
-          .set({ status: 'failed', leaseUntil: null, leaseToken: null })
+          .set({
+            status: 'failed',
+            leaseUntil: null,
+            leaseToken: null,
+            // 이 경로는 순수 하드킬(워커가 강제 종료돼 catch 가 한 번도 안 돌아
+            // recordJobError 가 호출되지 못한 채 lease 만 반복해서 만료된 경우)이다 —
+            // 그런 경우 error_message 가 NULL 인 채 failed 로 확정돼, 목록 화면이 "실패"
+            // 뱃지만 띄우고 사유를 못 보여준다. COALESCE 로 **이미 있는 값은 덮어쓰지
+            // 않는다** — 혼합 경로(recordJobError 가 한 번은 정상적으로 실패를 기록했고
+            // 그 다음 재시도에서 하드킬로 상한에 닿은 경우)에서는 직전의 진짜 실패
+            // 사유가 이 기본 문구보다 더 유용하다.
+            errorMessage: sql`COALESCE(${productFormExports.errorMessage}, ${'조립이 lease 안에 끝나지 않아 실패로 확정했습니다'})`,
+          })
           .where(eq(productFormExports.id, row.id));
         this.logger.error(`양식 생성 잡 ${row.id} 이 재클레임 누적으로 연속 실패 상한에 닿아 failed 로 확정됐습니다`);
         return null;
