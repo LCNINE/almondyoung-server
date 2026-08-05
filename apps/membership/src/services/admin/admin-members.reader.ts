@@ -141,6 +141,12 @@ export interface AdminMemberDetail {
    * 조회 실패/대상 없음이면 null(=알 수 없음, 화면은 아무것도 단정하지 않는다).
    */
   refundSettlement: { alreadyRefundedAmount: number; pendingRefundAmount: number } | null;
+  /**
+   * 이 환불이 실제로 들어간(들어갈) 계좌 — **완료 건 포함**. 무통장 자동환불은 토스가 고객이 입력한
+   * 계좌로 보내는데 wallet 은 그 계좌를 저장하지 않는다. 어디로 나갔는지 남지 않으면 "환불이 안
+   * 들어왔다" 는 문의에 답할 수가 없다.
+   */
+  refundReceiveAccount: { bank: string; accountNumber: string; holderName: string } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -631,6 +637,9 @@ export class AdminMembersReader {
         recurringCancelledAt: r.recurringCancelledAt,
       }));
     const refundOutstanding = !!r.refundRequested && !r.refundCompleted;
+    // 환불 계좌는 완료 뒤에도 필요하다(어디로 나갔는지). 환불 이력이 있으면 항상 읽는다.
+    const refundReceiveAccount =
+      r.refundRequested || r.refundCompleted ? await this.contractReader.findRefundReceiveAccount(r.contractId) : null;
     const manualRefundAccount = refundOutstanding
       ? await this.contractReader.findManualRefundAccount(r.contractId)
       : null;
@@ -667,6 +676,7 @@ export class AdminMembersReader {
       hasPaymentIntent: !!r.lastPaymentIntentId,
       manualRefundAccount,
       refundSettlement,
+      refundReceiveAccount,
       pauseCount,
       firstContractCreatedAt,
     };

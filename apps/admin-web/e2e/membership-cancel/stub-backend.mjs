@@ -119,6 +119,33 @@ function detail() {
       delete legacy.refundSettlement;
       return legacy;
     }
+    // 결제관리에서 직접 환불한 건 — 멤버십은 환불을 요청한 적이 없어 '환불 없음' 으로 보였다.
+    case 'external-refund':
+      return {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: false,
+        refundCompleted: false,
+        eligibleRefundAmount: null,
+        refundSettlement: { alreadyRefundedAmount: MONTHLY, pendingRefundAmount: 0 },
+      };
+    // 무통장 자동환불이 끝난 건 — 어느 계좌로 나갔는지 남아야 문의에 답할 수 있다.
+    case 'refunded-account':
+      return {
+        ...base,
+        status: 'CANCELLED',
+        autoRenewal: false,
+        nextBillingDate: null,
+        cancelledAt: new Date(Date.now() - 86400000).toISOString(),
+        refundRequested: true,
+        refundCompleted: true,
+        refundCompletedAt: new Date(Date.now() - 86400000).toISOString(),
+        eligibleRefundAmount: MONTHLY,
+        refundReceiveAccount: { bank: '20', accountNumber: '110123456789', holderName: '테스트고객' },
+      };
     // 자동환불이 실패로 기록됐지만 실제로는 PG 로 나간 건. 계좌 송금이 아니라 기록 정리만 남았다.
     case 'pg-settled':
       return {

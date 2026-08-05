@@ -135,6 +135,15 @@ export interface AdminMemberDetail {
     alreadyRefundedAmount: number;
     pendingRefundAmount: number;
   } | null;
+  /**
+   * 환불이 실제로 들어간(들어갈) 계좌 — **완료 건 포함**. 무통장 자동환불은 토스가 이 계좌로 보내는데
+   * wallet 은 계좌를 저장하지 않아, 남겨두지 않으면 "환불이 안 들어왔다" 는 문의에 답할 수 없다.
+   */
+  refundReceiveAccount?: {
+    bank: string;
+    accountNumber: string;
+    holderName: string;
+  } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }

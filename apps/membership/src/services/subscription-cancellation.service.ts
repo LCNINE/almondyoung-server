@@ -810,10 +810,11 @@ export class SubscriptionCancellationService {
           `환불 미완료 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount}, status=${outcome.status}, code=${outcome.errorCode})`,
         );
       }
-      // 미완료 건은 결국 사람이 계좌로 보내야 끝난다 — 그때 쓸 계좌를 함께 남긴다.
+      // 성공 건에도 계좌를 남긴다. 무통장 환불은 토스가 이 계좌로 송금하는데, 어디로 나갔는지
+      // 남지 않으면 "환불이 안 들어왔다" 는 문의에 CS 가 답할 수가 없다(wallet 도 계좌를 저장하지 않는다).
       await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
         ...outcome,
-        ...(outcome.status === 'SUCCEEDED' ? {} : { receiveAccount: params.refundReceiveAccount }),
+        receiveAccount: params.refundReceiveAccount,
       });
       return outcome;
     } catch (err) {

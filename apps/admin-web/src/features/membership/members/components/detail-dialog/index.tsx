@@ -810,6 +810,10 @@ function PlanTab({
   // `=== false` 로 좁힌다: 배포 과도기(admin-web 이 membership 보다 먼저 뜬 창)에는 이 필드가
   // undefined 로 오는데, `!undefined` 로 판정하면 **정상 수동 송금 건까지** 전부 "환불 대상 결제 없음"
   // 으로 뒤집혀 송금 완료 처리 버튼이 사라진다.
+  // 결제관리에서 직접 환불한 건은 멤버십이 요청한 적이 없어 refundRequested=false 다.
+  // 그래도 돈은 나갔으므로 화면이 '환불 없음' 으로 보이면 안 된다.
+  const externalRefunded =
+    !detail?.refundRequested && !!settlement && settlement.alreadyRefundedAmount > 0;
   const refundImpossible =
     !!detail &&
     detail.refundRequested &&
@@ -924,6 +928,20 @@ function PlanTab({
             </span>
           </div>
           {/* 환불 미완료 건은 눈에 띄게 — 자격은 회수됐는데 돈이 안 나간 상태를 놓치지 않도록 */}
+          {externalRefunded && (
+            <div
+              className="flex items-center justify-between gap-2 text-sm"
+              data-testid="external-refund"
+            >
+              <span className="text-muted-foreground">환불</span>
+              <span>
+                결제관리 환불 {settlement!.alreadyRefundedAmount.toLocaleString()}원
+                <span className="ml-1 text-xs text-muted-foreground">
+                  (멤버십 해지 요청이 아닌 결제관리에서 직접 처리된 건)
+                </span>
+              </span>
+            </div>
+          )}
           {(detail?.refundRequested || detail?.refundCompleted) && (
             <div className="flex items-center justify-between gap-2 text-sm">
               <span className="text-muted-foreground">환불</span>
@@ -986,6 +1004,17 @@ function PlanTab({
           )}
           {/* 계좌 송금이 남은 건은 '어디로 보낼지'가 같은 화면에 있어야 실제로 끝낼 수 있다.
               (효성 CMS 는 wallet 에 환불 행 자체가 없어 결제관리 화면에도 나타나지 않는다) */}
+          {/* 완료된 환불도 '어디로 갔는지' 가 필요하다 — "환불이 안 들어왔다" 문의에 답하려면. */}
+          {detail?.refundCompleted && detail?.refundReceiveAccount && (
+            <div className="rounded-md border p-2 text-xs" data-testid="refunded-account">
+              <p className="font-medium">환불 입금 계좌</p>
+              <p className="mt-0.5 text-muted-foreground">
+                {bankName(detail.refundReceiveAccount.bank)}{' '}
+                {detail.refundReceiveAccount.accountNumber} ·{' '}
+                {detail.refundReceiveAccount.holderName}
+              </p>
+            </div>
+          )}
           {manualRefundAccount && !pgAlreadyRefunded && (
             <div
               className="rounded-md border border-amber-300 bg-amber-50/60 p-2 text-xs"

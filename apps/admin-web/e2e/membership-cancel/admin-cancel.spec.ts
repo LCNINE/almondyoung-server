@@ -116,9 +116,18 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
     if (SCENARIO === 'scheduled') {
       await expect(dialog.getByText('정기결제 (해지 예약됨)')).toBeVisible();
     } else if (
-      ['one-time', 'one-time-scheduled', 'annual', 'pg-settled', 'pg-pending', 'no-payment', 'no-payment-active', 'legacy-detail'].includes(
-        SCENARIO
-      )
+      [
+        'one-time',
+        'one-time-scheduled',
+        'annual',
+        'pg-settled',
+        'pg-pending',
+        'no-payment',
+        'no-payment-active',
+        'legacy-detail',
+        'external-refund',
+        'refunded-account',
+      ].includes(SCENARIO)
     ) {
       await expect(dialog.getByText('일시결제 (자동갱신 없음)')).toBeVisible();
     } else {
@@ -292,7 +301,7 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
 
   test('즉시 해지 다이얼로그가 정책 견적과 산출 내역을 먼저 보여준다', async ({ page }) => {
     test.skip(
-      SCENARIO === 'scheduled' || SCENARIO === 'no-payment' || SCENARIO === 'legacy-detail',
+      ['scheduled', 'no-payment', 'legacy-detail', 'external-refund', 'refunded-account'].includes(SCENARIO),
       '해지 예약 상태는 견적 확인만 별도로 다루고, 이미 해지된 건에는 즉시해지 카드가 없다'
     );
 
@@ -385,6 +394,28 @@ test.describe(`관리자 해지·환불 UI (${SCENARIO})`, () => {
       .poll(async () => (await stubCalls(request)).filter((c) => c.path === 'force-cancel').length)
       .toBe(1);
     expect((await stubCalls(request)).find((c) => c.path === 'force-cancel')!.body.deleteBillingMethod).toBe(true);
+  });
+
+  // 결제관리에서 직접 환불한 건은 멤버십이 요청한 적이 없어 '환불 없음' 으로 보였다(라이브 실제 사례).
+  test('결제관리에서 나간 환불도 화면에 보인다', async ({ page }) => {
+    test.skip(SCENARIO !== 'external-refund', '결제관리 환불 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    const row = dialog.getByTestId('external-refund');
+    await expect(row).toBeVisible();
+    await expect(row.getByText(/결제관리 환불 4,990원/)).toBeVisible();
+    await expect(dialog.getByText('환불 없음')).toHaveCount(0);
+  });
+
+  // "환불이 안 들어왔다" 는 문의에 어느 계좌로 보냈는지 답할 수 있어야 한다.
+  test('완료된 환불도 어느 계좌로 들어갔는지 보여준다', async ({ page }) => {
+    test.skip(SCENARIO !== 'refunded-account', '환불 완료 시나리오만');
+
+    const dialog = await openCancelTab(page);
+    const account = dialog.getByTestId('refunded-account');
+    await expect(account).toBeVisible();
+    await expect(account.getByText(/110123456789/)).toBeVisible();
+    await expect(account.getByText(/테스트고객/)).toBeVisible();
   });
 
   test('사유 없이 즉시 해지를 확인하면 막힌다', async ({ page, request }) => {
