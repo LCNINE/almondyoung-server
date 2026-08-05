@@ -319,6 +319,74 @@ describe('FormExportManager.purgeExpired', () => {
   });
 });
 
+describe('FormExportManager.retry', () => {
+  it('원본의 masterIds 로 accept 를 다시 부른다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([{ id: 'E1', requestedBy: 'U1', requestedMasterIds: ['m1', 'm2'] }]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+    const spy = jest.spyOn(manager, 'accept').mockResolvedValue({
+      exportId: 'NEW',
+      status: 'queued',
+      requestedCount: 2,
+      reused: false,
+    });
+
+    const result = await manager.retry('E1', 'U1');
+
+    expect(spy).toHaveBeenCalledWith(['m1', 'm2'], 'U1', expect.anything());
+    expect(result.exportId).toBe('NEW');
+  });
+
+  it('남의 잡은 404 다 — 존재 여부를 알려주지 않는다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([{ id: 'E1', requestedBy: 'OTHER', requestedMasterIds: ['m1'] }]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    await expect(manager.retry('E1', 'U1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('없는 잡도 404 다', async () => {
+    const trx = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const p = Promise.resolve([]);
+            return Object.assign(p, { limit: () => p });
+          },
+        }),
+      }),
+    };
+    const manager = new FormExportManager(
+      { run: async (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never,
+      {} as never,
+    );
+
+    await expect(manager.retry('MISSING', 'U1')).rejects.toBeInstanceOf(NotFoundError);
+  });
+});
+
 describe('FormExportManager.list', () => {
   interface ListTrx {
     select: (fields?: unknown) => {
