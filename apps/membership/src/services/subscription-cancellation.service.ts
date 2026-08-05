@@ -409,6 +409,16 @@ export class SubscriptionCancellationService {
       canOverridePolicyAmount,
     });
 
+    // 계좌 송금으로만 나갈 수 있는 환불(효성 CMS·무통장)에 수취 계좌가 없으면 여기서 막는다.
+    // 통과시키면 자격만 회수되고 환불은 보낼 곳 없는 수동 대기로 영구히 남는다. 화면 검증에만
+    // 맡길 수 없다 — 견적을 못 불러온 창(활성 권한 없음, 조회 실패)에서는 화면이 계좌를 요구하지
+    // 못하는데, 집행 수단은 결제수단만으로 판정되므로 견적과 무관하게 성립한다.
+    await this.assertReceiveAccountForManualRefund({
+      intentId: contract.lastPaymentIntentId,
+      amount: refundType === 'FULL' ? plan.price : (partialRefundAmount ?? 0),
+      refundReceiveAccount,
+    });
+
     const result = await this.cancellationManager.forceCancelSubscription(
       contract,
       plan,
@@ -488,6 +498,9 @@ export class SubscriptionCancellationService {
     }
 
     const requested = contract.eligibleRefundAmount ?? 0;
+    // 완료 기록에도 계좌를 다시 싣는다. 화면은 **최신** 환불 이벤트 하나만 읽으므로, 여기서 빼면
+    // 완료로 찍는 순간 "어디로 보냈는지" 가 사라져 "환불이 안 들어왔다" 문의에 답할 수 없게 된다.
+    const receiveAccount = (await this.contractReader.findManualRefundAccount(contractId)) ?? undefined;
 
     // wallet 이 이 결제로 이미 내보낸 돈이 있으면, 그 금액만큼은 관리자가 다시 보낼 것이 아니다.
     //  - 확정 대기(PENDING): 그 건은 결제관리가 닫는다. 여기서 완료로 찍으면 관리자 송금 + 결제관리
@@ -515,6 +528,7 @@ export class SubscriptionCancellationService {
             refundedAmount: requested,
             errorCode: 'PG_REFUND_ALREADY_SETTLED',
             errorMessage: params.memo,
+            receiveAccount,
           },
           { causedBy: 'ADMIN', causedByUserId: adminId },
         );
@@ -538,6 +552,7 @@ export class SubscriptionCancellationService {
         refundedAmount,
         errorCode: 'MANUAL_TRANSFER_CONFIRMED',
         errorMessage: params.memo,
+        receiveAccount,
       },
       { causedBy: 'ADMIN', causedByUserId: adminId },
     );
@@ -616,6 +631,38 @@ export class SubscriptionCancellationService {
     };
   }
 
+  /**
+   * 내 멤버십이 왜 끝났는지 — 고객이 마이페이지에서 확인하는 값.
+   *
+   * 계좌 심사 거절·미수로 끊긴 고객에게 화면에 `가입하기` 만 남으면 **왜 끊겼는지 알 방법이 없다.**
+   * 활성 자격이 있으면 알릴 것이 없으므로 null.
+   */
+  async getTerminationNotice(userId: string): Promise<{
+    origin: string;
+    originLabel: string;
+    reasonLabel: string | null;
+    notice: string;
+    endedAt: string | null;
+  } | null> {
+    const entitlement = await this.contractReader.findCurrentEntitlement(userId);
+    if (entitlement) return null;
+
+    const contracts = await this.contractReader.findContractsByUserId(userId);
+    const latest = contracts[0];
+    if (!latest) return null;
+
+    const info = await this.contractReader.resolveCancellation(latest);
+    if (!info?.customerNotice) return null;
+
+    return {
+      origin: info.origin,
+      originLabel: info.originLabel,
+      reasonLabel: info.reasonLabel,
+      notice: info.customerNotice,
+      endedAt: info.endedAt,
+    };
+  }
+
   async getCancellationReasons() {
     return this.reasonReader.findActiveReasons();
   }
@@ -665,6 +712,45 @@ export class SubscriptionCancellationService {
           `초과 환불에는 별도 권한(${MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE})이 필요합니다.`,
       );
     }
+  }
+
+  /**
+   * 계좌 송금으로만 나갈 수 있는 환불에 수취 계좌가 붙어 있는지 확인한다.
+   *
+   * 판정 축은 **결제수단**이다(환불 가능 여부·정책 산정액과 무관). 효성 CMS 는 PG 환불 API 가 없어
+   * 사람이 송금해야 하고, 무통장은 토스가 이 계좌로 송금한다. 둘 다 계좌가 없으면 환불을 끝낼 방법이
+   * 없다 — "미완료 N원 처리 필요" 만 남고 보낼 곳을 아무도 모른다.
+   *
+   * 조회가 실패하면 막지 않는다. 알 수 없는 값으로 환불을 거부하면 자동환불이 되는 정상 건까지
+   * 멈추고, 실제로 수동 건이었다면 결과가 PENDING 으로 그대로 드러난다.
+   */
+  private async assertReceiveAccountForManualRefund(params: {
+    intentId: string | null;
+    amount: number;
+    refundReceiveAccount?: RefundReceiveAccount;
+  }): Promise<void> {
+    if (params.amount <= 0 || !params.intentId || params.refundReceiveAccount) return;
+
+    let refundability;
+    try {
+      refundability = await this.paymentClientService.getRefundability(params.intentId, { fresh: true });
+    } catch (err) {
+      this.logger.warn(
+        `환불 수단 조회 실패 — 계좌 검증을 건너뛴다 (intentId=${params.intentId}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return;
+    }
+
+    const manualOnly = refundability.autoRefundSupported === false;
+    if (!manualOnly && refundability.requiresReceiveAccount !== true) return;
+
+    throw new BadRequestError(
+      manualOnly
+        ? '자동이체(효성 CMS) 결제는 PG 환불이 불가해 계좌 송금으로만 환불할 수 있습니다. 환불 송금 계좌(은행·계좌번호·예금주)를 입력해주세요.'
+        : '무통장 결제 환불은 송금할 계좌가 필요합니다. 환불 송금 계좌(은행·계좌번호·예금주)를 입력해주세요.',
+    );
   }
 
   /**
@@ -778,10 +864,11 @@ export class SubscriptionCancellationService {
           `환불 미완료 (contractId=${params.contractId}, intentId=${params.intentId}, amount=${params.amount}, status=${outcome.status}, code=${outcome.errorCode})`,
         );
       }
-      // 미완료 건은 결국 사람이 계좌로 보내야 끝난다 — 그때 쓸 계좌를 함께 남긴다.
+      // 성공 건에도 계좌를 남긴다. 무통장 환불은 토스가 이 계좌로 송금하는데, 어디로 나갔는지
+      // 남지 않으면 "환불이 안 들어왔다" 는 문의에 CS 가 답할 수가 없다(wallet 도 계좌를 저장하지 않는다).
       await this.cancellationManager.recordRefundOutcome(params.contractId, params.userId, params.amount, {
         ...outcome,
-        ...(outcome.status === 'SUCCEEDED' ? {} : { receiveAccount: params.refundReceiveAccount }),
+        receiveAccount: params.refundReceiveAccount,
       });
       return outcome;
     } catch (err) {

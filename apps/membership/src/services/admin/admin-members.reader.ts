@@ -13,6 +13,7 @@ import {
   isAgreementCleanupWithdrawn,
   SubscriptionContractReader,
 } from '../subscription/subscription-contract.reader';
+import { CancellationInfo, resolveCancellationInfo } from '../subscription/cancellation-info';
 
 /** 목록 필터로 허용되는 상태값. 모르는 값을 조용히 무시하면 '해지 내역' 이 '전체 회원' 이 된다. */
 export const ADMIN_MEMBER_STATUS_FILTERS = [
@@ -81,6 +82,11 @@ export interface AdminMemberListItem {
   hasPaymentIntent: boolean;
   /** 효성 CMS 인보이스 경로인지. 수금이 늦어 '선지급 후 출금' 상태가 존재한다. */
   billingPath: string;
+  /**
+   * 이 계약이 **어떻게 끝났는지**(경로·상태·사유). 해지된 적이 없으면 null.
+   * 화면이 상태 필드로 추론하면 시스템 종료가 '고객 즉시해지' 로 보인다 — 서버가 계산해 내려준다.
+   */
+  cancellation: CancellationInfo | null;
 }
 
 export interface AdminMembersResponse {
@@ -135,6 +141,12 @@ export interface AdminMemberDetail {
    * 조회 실패/대상 없음이면 null(=알 수 없음, 화면은 아무것도 단정하지 않는다).
    */
   refundSettlement: { alreadyRefundedAmount: number; pendingRefundAmount: number } | null;
+  /**
+   * 이 환불이 실제로 들어간(들어갈) 계좌 — **완료 건 포함**. 무통장 자동환불은 토스가 고객이 입력한
+   * 계좌로 보내는데 wallet 은 그 계좌를 저장하지 않는다. 어디로 나갔는지 남지 않으면 "환불이 안
+   * 들어왔다" 는 문의에 답할 수가 없다.
+   */
+  refundReceiveAccount: { bank: string; accountNumber: string; holderName: string } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
 }
@@ -403,6 +415,8 @@ export class AdminMembersReader {
         cancellationReasonCode: schema.subscriptionContracts.cancellationReasonCode,
         recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
         recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+        isVoided: schema.subscriptionContracts.isVoided,
+        voidReason: schema.subscriptionContracts.reason,
         refundRequested: schema.subscriptionContracts.refundRequested,
         refundCompleted: schema.subscriptionContracts.refundCompleted,
         refundCompletedAt: schema.subscriptionContracts.refundCompletedAt,
@@ -461,11 +475,47 @@ export class AdminMembersReader {
         eligibleRefundAmount: r.eligibleRefundAmount ?? null,
         hasPaymentIntent: !!r.lastPaymentIntentId,
         billingPath: r.billingPath,
+        cancellation: null as CancellationInfo | null,
       };
     });
 
     // 취소 사유 코드 → 표시 텍스트 해석. 고객 자율 취소 사유는 마스터 테이블에만 존재하므로
     // 코드를 그대로 노출하지 않도록 displayText를 한 번에 조회해 매핑한다.
+    // 종료 사실 계산에 쓰는 원천 행(계약 상태·무효화 여부 등)
+    const rowByContract = new Map(rows.map((r) => [r.contractId, r]));
+    let reasonTextByCode = new Map<string, string>();
+
+    // 종료 경로·사유는 계약 이벤트에 흩어져 있다. 행마다 조회하면 N+1 이라 한 번에 모아 온다.
+    const contractIds = data.map((d) => d.contractId);
+    const eventsByContract = new Map<string, { eventType: string; causedBy: string; metadata: Record<string, unknown> }[]>();
+    if (contractIds.length > 0) {
+      const eventRows = await this.dbService.db
+        .select({
+          contractId: schema.subscriptionContractEvents.contractId,
+          eventType: schema.subscriptionContractEvents.eventType,
+          causedBy: schema.subscriptionContractEvents.causedBy,
+          metadata: schema.subscriptionContractEvents.metadata,
+          createdAt: schema.subscriptionContractEvents.createdAt,
+        })
+        .from(schema.subscriptionContractEvents)
+        .where(
+          and(
+            inArray(schema.subscriptionContractEvents.contractId, contractIds),
+            inArray(schema.subscriptionContractEvents.eventType, ['CANCELLED', 'RECURRING_CANCELLED', 'TERMINATED']),
+          ),
+        )
+        .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id));
+      for (const row of eventRows) {
+        const list = eventsByContract.get(row.contractId) ?? [];
+        list.push({
+          eventType: row.eventType,
+          causedBy: row.causedBy,
+          metadata: (row.metadata ?? {}) as Record<string, unknown>,
+        });
+        eventsByContract.set(row.contractId, list);
+      }
+    }
+
     const reasonCodes = Array.from(
       new Set(
         data
@@ -486,6 +536,28 @@ export class AdminMembersReader {
         const code = d.cancellationReasonCode ?? d.recurringCancellationReasonCode;
         d.cancellationReasonText = code ? textByCode.get(code) ?? null : null;
       }
+      reasonTextByCode = textByCode;
+    }
+
+    // 종료 경로·상태·사유를 서버가 확정해 내려준다 — 화면이 상태 필드로 추론하면 시스템 종료가
+    // '고객이 즉시 해지함' 으로 보인다(라이브에서 실제로 그렇게 보였다).
+    for (const d of data) {
+      const row = rowByContract.get(d.contractId);
+      if (!row) continue;
+      d.cancellation = resolveCancellationInfo({
+        contract: {
+          status: row.contractStatus,
+          cancelledAt: row.cancelledAt,
+          recurringCancelledAt: row.recurringCancelledAt,
+          cancellationReasonCode: row.cancellationReasonCode,
+          recurringCancellationReasonCode: row.recurringCancellationReasonCode,
+          isVoided: row.isVoided,
+          reason: row.voidReason,
+        },
+        events: eventsByContract.get(d.contractId) ?? [],
+        endsAt: d.endsAt,
+        reasonTextByCode,
+      });
     }
 
     return { data, total, page, limit };
@@ -565,13 +637,17 @@ export class AdminMembersReader {
         recurringCancelledAt: r.recurringCancelledAt,
       }));
     const refundOutstanding = !!r.refundRequested && !r.refundCompleted;
+    // 환불 계좌는 완료 뒤에도 필요하다(어디로 나갔는지). 환불 이력이 있으면 항상 읽는다.
+    const refundReceiveAccount =
+      r.refundRequested || r.refundCompleted ? await this.contractReader.findRefundReceiveAccount(r.contractId) : null;
     const manualRefundAccount = refundOutstanding
       ? await this.contractReader.findManualRefundAccount(r.contractId)
       : null;
+    // 결제관리에서 직접 나간 환불은 멤버십에 요청 기록이 없다(refundRequested=false). 미완료 요청에만
+    // 물어보면 그 건은 화면에 영영 나타나지 않아 "환불 없음" 으로 보인다 — 돈은 이미 나갔는데도.
+    // 그래서 아직 환불이 확정되지 않은 계약이면 결제 기준으로 확인한다(조회 실패는 흡수된다).
     const refundSettlement =
-      refundOutstanding && r.lastPaymentIntentId
-        ? await this.loadRefundSettlement(r.lastPaymentIntentId)
-        : null;
+      r.lastPaymentIntentId && !r.refundCompleted ? await this.loadRefundSettlement(r.lastPaymentIntentId) : null;
 
     return {
       contractId: r.contractId,
@@ -601,6 +677,7 @@ export class AdminMembersReader {
       hasPaymentIntent: !!r.lastPaymentIntentId,
       manualRefundAccount,
       refundSettlement,
+      refundReceiveAccount,
       pauseCount,
       firstContractCreatedAt,
     };

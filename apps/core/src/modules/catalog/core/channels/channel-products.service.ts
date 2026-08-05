@@ -11,8 +11,9 @@ import {
   DbClient,
 } from '../../catalog.types';
 import { type PimSchema, channelProducts, salesChannels, productMasterVersions } from '../../schema/catalog.schema';
-import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL } from 'drizzle-orm';
+import { eq, and, or, like, count, asc, desc, sql, inArray, SQL } from 'drizzle-orm';
 import { ChannelProductWithChannelDto } from './dto';
+import { keywordMatch } from '../../common/keyword-match';
 import { ChannelProductMapper } from './mappers';
 import { ChannelProductEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
@@ -197,12 +198,8 @@ export class ChannelProductsService {
 
     // 검색 필터 (상품명에서 검색 - 오버라이드된 이름 또는 Master 이름)
     if (filters?.search) {
-      whereConditions.push(
-        or(
-          ilike(channelProducts.name, `%${filters.search}%`),
-          ilike(productMasterVersions.name, `%${filters.search}%`),
-        ) as SQL,
-      );
+      const match = keywordMatch(filters.search, [channelProducts.name, productMasterVersions.name]);
+      if (match) whereConditions.push(match);
     }
 
     // WHERE 조건 결합

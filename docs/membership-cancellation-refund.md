@@ -211,6 +211,16 @@ CMS 는 자동환불이 안 돼 관리자가 수동 송금을 승인해야만 �
 관리자 강제취소가 같은 판정을 쓴다. 호출자마다 판단하면 같은 CMS 계약이 고객 경로에선 '수동 송금
 대기(PENDING)', 관리자 경로에선 '환불 실패(FAILED)' 로 남아 같은 상황이 두 가지로 보고된다.
 
+**수취 계좌는 성공 건에도 남긴다.** 무통장 자동환불은 토스가 고객이 입력한 계좌로 송금하는데
+**wallet `refunds` 에는 계좌 컬럼이 없다** — 남기지 않으면 "환불이 안 들어왔다" 는 문의에 어디로
+보냈는지 답할 수가 없다. 그래서 `REFUND_COMPLETED` 에도 `receiveAccount` 를 기록하고, 관리자 상세가
+`환불 입금 계좌` 로 보여준다.
+
+**결제관리(wallet)에서 직접 환불한 건도 화면에 보인다.** 그 건은 멤버십이 환불을 요청한 적이 없어
+`refundRequested=false` 라, 예전에는 해지 화면에 **`환불 없음`** 으로 떴다(라이브에 실제 사례가 있다).
+종료된 계약이면 wallet 의 `alreadyRefundedAmount` 를 조회해 `결제관리 환불 N원` 으로 표시한다 —
+`refundCompleted` 는 그대로 두므로(§8 의 이유) 수동 송금 완료 창구는 막히지 않는다.
+
 수동 송금이 남는 건(`REFUND_PENDING`/`REFUND_FAILED`)은 **고객·관리자가 입력한 수취 계좌를 계약
 이벤트 metadata(`receiveAccount`)에 남긴다.** 남기지 않으면 관리자가 어디로 보낼지 알 수 없어 환불을
 끝낼 방법이 없다. 관리자 상세(`manualRefundAccount`)가 이 값을 그대로 읽어 `송금 완료 처리` 버튼 옆에
@@ -349,6 +359,14 @@ CMS 는 자동환불이 안 돼 관리자가 수동 송금을 승인해야만 �
 해지 예약 배너에서 철회 버튼이 없을 때는 **그 이유**를 함께 보여준다(1회 결제 건이라 되돌릴 자동결제가
 없다). 버튼만 사라지면 고객은 무엇을 하면 되는지 알 수 없다.
 
+### 3-4-4. 멤버십이 왜 끝났는지
+
+`GET /subscriptions/termination-notice` — 활성 자격이 없고 **시스템이 끊은 경우에만** 값이 온다.
+마이페이지 맨 위에 사유와 다음 행동을 함께 띄운다(`TerminationNoticeCard`).
+
+계좌 심사 거절(`MANDATE_REJECTED`)·미수로 끊긴 고객에게 화면에 `가입하기` 만 남으면 **왜 끊겼는지 알
+방법이 없다.** 고객이 직접 해지한 경우에는 띄우지 않는다(본인이 안다).
+
 ### 3-4-3. 환불 진행 상황
 
 `GET /subscriptions/refund-status` — 진행 중이거나 최근 완료된 환불을 마이페이지 맨 위 카드로 보여준다
@@ -392,14 +410,38 @@ CMS 는 자동환불이 안 돼 관리자가 수동 송금을 승인해야만 �
 
 파일: `apps/admin-web/src/features/membership/members/components/detail-dialog/index.tsx`
 
+### 4-0. 종료 사실은 서버가 확정한다 (`resolveCancellationInfo`)
+
+계약이 끝나는 경로가 여섯 가지인데 **각각 남기는 흔적이 다르다.** 화면이 상태 필드로 추론하면 반드시
+어긋난다 — 라이브에서 계좌 심사 거절로 시스템이 끊은 건이 `고객 즉시해지` 로 보였다.
+
+| 경로 | 흔적 |
+|---|---|
+| `CUSTOMER_IMMEDIATE` 고객 즉시해지 | `CANCELLED`(USER) + 사유 코드 |
+| `CUSTOMER_SCHEDULED` 고객 해지예약 | `RECURRING_CANCELLED`(USER) |
+| `ADMIN_FORCED` 관리자 강제취소 | `CANCELLED`(ADMIN, `isForced`) |
+| `ADMIN_SCHEDULED` 관리자 해지예약 | `RECURRING_CANCELLED`(ADMIN) |
+| `MANDATE_REJECTED` / `PAYMENT_FAILED` 시스템 종료 | `TERMINATED`(SYSTEM) `metadata.reason`(`MANDATE_REJECTED:Q201` 등) |
+| `REFUND_VOIDED` 환불로 자격 회수 | **계약 이벤트 없음** — `isVoided` + `contracts.reason` |
+
+**경로(누가 왜 끝냈나)와 상태(지금 어떤가)는 다른 축이다.** 즉시해지도 '이용 종료' 이므로 한 컬럼에
+섞으면 라벨이 논리적으로 겹친다. `resolveCancellationInfo` 는 DB·HTTP 를 모르는 순수 함수라 목록·상세·
+고객 화면이 **같은 판정**을 쓴다.
+
+시스템 종료에는 **고객에게 그대로 보여줄 안내**(`customerNotice`)를 함께 만든다 — 이유만 알려주고
+다음 행동을 안 알려주면 그대로 문의가 된다(`다른 계좌로 다시 등록하시면 이어서 이용하실 수 있어요`).
+
 ### 4-1-1. 해지 내역 목록 (`/membership/cancellations`)
 
 CS 가 매일 여는 화면이라 **해지와 환불이 한 행에서 보여야 한다.**
 
-- **해지한 사람만, 세 상태로** 보여준다(`status=CANCELLED_ANY`).
-  `즉시 해지`(CANCELLED) · `해지 예약`(ACTIVE + recurringCancelledAt) ·
-  `해지 완료`(EXPIRED + recurringCancelledAt — 예약이 이용 종료일을 지나 실제로 끝난 건).
-  해지 없이 그냥 만료된 계약(1회 결제 종료 등)은 들어오지 않는다. 필터로 셋을 각각 볼 수 있다.
+- **해지한 사람만** 보여준다(`status=CANCELLED_ANY`). 해지 없이 그냥 만료된 계약(1회 결제 종료 등)은
+  들어오지 않는다.
+- **경로 컬럼과 상태 컬럼을 나눈다.** 경로는 `고객 즉시해지`/`고객 해지예약`/`관리자 강제취소`/
+  `관리자 해지예약`/`계좌 심사 거절로 종료`/`결제 실패로 종료`/`환불로 자격 회수`, 상태는 `이용 중`/
+  `이용 종료`. 필터는 상태 기준(`즉시 종료`·`해지 예약(이용 중)`·`예약 후 종료`)이다.
+- **사유는 서버 판정을 우선한다.** 시스템 종료의 사유는 계약 이벤트에만 있어서 계약 컬럼만 보면 `-` 로
+  뜬다. 원인 코드(`Q201` 등)도 괄호로 함께 보여준다.
 - **모르는 상태값은 400 으로 거부한다.** 조용히 무시하면 조건이 통째로 빠져 이 화면에 **전체 회원**이
   뜬다 — 옛 서버 + 새 화면 조합에서 실제로 그렇게 됐다. 화면도 근거(`recurringCancelledAt`)가 없으면
   해지 유형을 단정하지 않고 `-` 로 둔다.
@@ -665,13 +707,13 @@ INVOICE 해지예약의 보류 건은 이용 종료일이 지나는 순간 반�
 ```bash
 docker compose up -d postgres
 
-# 서비스 + HTTP 계층 (134 케이스)
+# 서비스 + HTTP 계층 (135 케이스 + 종료 판정 단위 10)
 npm run test:membership:cancellation-e2e
 
-# 고객 UI — 실제 크로미움, 13 시나리오
+# 고객 UI — 실제 크로미움, 14 시나리오
 cd web/almondyoung-storefront && npm run test:e2e:membership-cancel
 
-# 관리자 UI — 실제 크로미움, 12 시나리오
+# 관리자 UI — 실제 크로미움, 14 시나리오
 cd apps/admin-web && npm run test:e2e:membership-cancel
 ```
 

@@ -11,6 +11,7 @@ import {
   getPlans,
   getRangeSavings,
   getRefundStatus,
+  getTerminationNotice,
   getSubscriptionHistory,
 } from "@lib/api/membership"
 import { getCafe24LinkInfo } from "@lib/api/users/cafe24"
@@ -22,6 +23,7 @@ import type {
   CycleBenefitHistoryDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
+  TerminationNoticeDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 import type { PlanWithTier } from "@lib/types/membership"
@@ -54,6 +56,8 @@ export default async function MembershipPage() {
   let cancellationPreview: CancellationPreviewDto | null = null
   // 해지 뒤에도 환불이 어디까지 왔는지 보여준다(즉시해지하면 화면이 비가입자로 바뀐다).
   let refundStatus: RefundStatusDto | null = null
+  // 멤버십이 끊긴 고객에게 이유와 다음 행동을 알린다.
+  let terminationNotice: TerminationNoticeDto | null = null
   const membershipPlans: PlanWithTier[] = plans ?? []
 
   if (user?.id) {
@@ -70,6 +74,7 @@ export default async function MembershipPage() {
       benefitHistoryResult,
       cancellationPreviewResult,
       refundStatusResult,
+      terminationNoticeResult,
     ] = await Promise.all([
       getCurrentMonthSavings().catch(() => null),
       getRangeSavings(toDateString(startDate), toDateString(now)).catch(
@@ -81,6 +86,7 @@ export default async function MembershipPage() {
       getCycleBenefitHistory(user.id, 6).catch(() => null),
       getCancellationPreview().catch(() => null),
       getRefundStatus().catch(() => null),
+      getTerminationNotice().catch(() => null),
     ])
 
     currentSavings = currentSavingsResult
@@ -91,6 +97,7 @@ export default async function MembershipPage() {
     benefitHistory = benefitHistoryResult
     cancellationPreview = cancellationPreviewResult
     refundStatus = refundStatusResult
+    terminationNotice = terminationNoticeResult
   }
 
   return (
@@ -116,6 +123,7 @@ export default async function MembershipPage() {
           benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}
           refundStatus={refundStatus}
+          terminationNotice={terminationNotice}
         />
       </MypageLayout>
     </WithHeaderLayout>

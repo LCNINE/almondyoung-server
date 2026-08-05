@@ -598,6 +598,37 @@ describe('MedusaClient product sellable inventory projection', () => {
     expect(result.variants[1]).not.toHaveProperty('id');
   });
 
+  it('relinks by barcode when a republish issued a new pimVariantId', async () => {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      variants: [
+        {
+          id: 'variant_medusa_1',
+          barcode: 'P0000CDH000A',
+          manage_inventory: true,
+          metadata: { pimVariantId: 'pim-var-old' },
+        },
+      ],
+    });
+
+    const result = await (client as any).enrichPayloadWithExistingVariantIds('prod_1', {
+      variants: [
+        {
+          title: '골드',
+          barcode: 'P0000CDH000A',
+          manage_inventory: false,
+          metadata: { pimVariantId: 'pim-var-new' },
+        },
+      ],
+    });
+
+    // 기존 variant 를 갱신해야 "barcode already exists" 로 생성이 거부되지 않는다.
+    expect(result.variants[0]).toMatchObject({
+      id: 'variant_medusa_1',
+      metadata: { pimVariantId: 'pim-var-new' },
+    });
+  });
+
   it('creates variant projection inventory items instead of reusing product SKU inventory identities', async () => {
     const batchVariantInventoryItems = jest.fn().mockResolvedValue({});
     const client = Object.create(MedusaClient.prototype) as MedusaClient;

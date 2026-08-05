@@ -1062,7 +1062,7 @@ export class MedusaClient {
     const { product } = await this.sdk.admin.product.retrieve(productId, {
       fields:
         'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.allow_backorder,' +
-        '+variants.sku,+variants.title,' +
+        '+variants.sku,+variants.title,+variants.barcode,' +
         '+variants.inventory_items,+variants.inventory_items.inventory.id,+variants.inventory_items.inventory.sku,' +
         '+variants.inventory_items.inventory.metadata',
     });
@@ -1084,6 +1084,10 @@ export class MedusaClient {
     type ExistingVariant = NonNullable<MedusaProduct['variants']>[number];
     const pimVariantIdToVariant = new Map<string, ExistingVariant>();
     const skuToVariant = new Map<string, ExistingVariant>();
+    // 옵션을 바꾼 재발행은 Core 에서 variant 를 새로 발급하므로 pimVariantId 가 어긋난다.
+    // barcode 는 재발행을 건너 유지되고 Medusa 에서 unique 라, 그때 기존 variant 를 되찾는 유일한 키다.
+    // 이게 없으면 생성으로 흘러 "barcode already exists" 로 상품 동기화 전체가 실패한다.
+    const barcodeToVariant = new Map<string, ExistingVariant>();
     for (const variant of existingVariants) {
       const pimVariantId = variant.metadata?.pimVariantId;
       if (pimVariantId) {
@@ -1092,13 +1096,17 @@ export class MedusaClient {
       if (variant.sku) {
         skuToVariant.set(variant.sku, variant);
       }
+      if (variant.barcode) {
+        barcodeToVariant.set(variant.barcode, variant);
+      }
     }
 
     const variants = payload.variants.map((variant) => {
       const pimVariantId = variant.metadata?.pimVariantId;
       const matchedVariant =
         (pimVariantId ? pimVariantIdToVariant.get(pimVariantId) : undefined) ||
-        (variant.sku ? skuToVariant.get(variant.sku) : undefined);
+        (variant.sku ? skuToVariant.get(variant.sku) : undefined) ||
+        (variant.barcode ? barcodeToVariant.get(variant.barcode) : undefined);
 
       if (!matchedVariant) {
         return variant;
