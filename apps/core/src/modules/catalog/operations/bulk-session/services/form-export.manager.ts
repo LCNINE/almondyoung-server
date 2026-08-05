@@ -50,8 +50,8 @@ export class FormExportManager {
    * 넣었을 때 "있는데 내 것이 아님(403)"과 "아예 없음(404)"을 구분해 주면, 그 구분
    * 자체가 UUIDv7 id 존재 여부를 캐는 오라클이 된다. library/services/ownership.service.ts
    * `_loadOwnedOrThrow`(:365-368, "본인 외 접근은 존재 여부를 노출하지 않기 위해 404 와
-   * 동등 취급")와 같은 선례를 따른다. 오늘은 이 모듈에 목록 API 가 없어 실질 위험은
-   * 낮지만(스펙 §11a), 다음 단계들이 이 모듈 모양을 그대로 복제하므로 지금 바로잡는다.
+   * 동등 취급")와 같은 선례를 따른다. 이 모듈에는 이제 목록 API(list())가 있지만, 그쪽도
+   * 본인 잡만 SELECT 에 올리므로 남의 id 존재 여부를 노출하지 않는다 — 이 판단은 그대로 유효하다.
    */
   async getStatus(exportId: string, userId: string, tx?: DbTransaction): Promise<FormExportStatusDto> {
     return this.db.run(async (trx) => {
