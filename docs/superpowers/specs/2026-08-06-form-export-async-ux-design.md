@@ -42,9 +42,13 @@
 
 즉 한 컬럼(`lease_until`)이 **점유 보호**와 **재시도 대기**를 겸하고 있고, 재시도만 줄이려면 둘을 분리해야 한다. **lease 상수를 낮추는 것은 오답이다.**
 
-### 2.3 `recordJobError` 는 CAS 없이 id 로만 쓴다
+### 2.3 `recordJobError` 가 CAS 를 쓰지 않는 것은 실수가 아니라 선택이다
 
-코드가 이 트레이드오프를 알면서 받아들이고 있다(`:31-33`) — 그 결과 좀비 워커가 **후임의 살아있는 잡** 카운터를 올려 잘못 `failed` 로 확정시킬 수 있다. §3.3 이 이걸 같이 닫는다.
+독스트링(`form-export-job.manager.ts:170-199`)이 이유를 명시한다:
+
+> CAS 를 걸면 … 좀비의 `recordJobError` 호출은 전부 0행을 매치해 조용히 아무 일도 안 하게 되고, **그러면 연속 실패 카운터가 상한에 영원히 닿지 못한다**
+
+즉 **종료 보장**을 사기 위해 **잘못된 귀속**(좀비의 예외가 후임의 카운터를 올림)을 감수한 것이다. 이 스펙은 그 교환을 뒤집는 게 아니라, **양쪽을 다 갖도록** 고친다(§3.3).
 
 ### 2.4 마이그레이션이 필요 없다
 
@@ -96,12 +100,35 @@ SET   consecutive_failures = consecutive_failures + 1,
       lease_until = NOW() + FORM_EXPORT_RETRY_DELAY_MS
 ```
 
-**왜 이 시점에 lease 를 줄여도 안전한가:** `recordJobError` 는 예외가 던져진 **뒤에** 불린다. 그 순간 조립은 이미 끝났고, lease 의 점유 보호 역할도 끝났다. 유일한 예외가 좀비 워커인데 그게 정확히 CAS 가 막는 것이다.
+**왜 이 시점에 lease 를 줄여도 안전한가:** `recordJobError` 는 예외가 던져진 **뒤에** 불린다. 그 순간 조립은 이미 끝났고, lease 의 점유 보호 역할도 끝났다.
 
-- 0행 매치 = 좀비 → 경고 로그만, **아무것도 쓰지 않는다** (§2.3 의 기존 결함이 같이 닫힌다)
+**CAS 는 선택이 아니라 전제조건이다.** CAS 없이 `lease_until` 을 60초로 줄이면 좀비가 **후임의 살아있는 잡**의 lease 를 깎아, 60초 뒤 제3의 워커가 그 잡을 집어간다 → 이중 조립 → **영구 고아 xlsx**(§2.2 가 경고한 바로 그 사고).
+
+- 0행 매치 = 좀비 → 경고 로그만, **아무것도 쓰지 않는다**
 - 상한 도달 → `status='failed'`, lease 해제 (기존과 동일)
 - `FORM_EXPORT_RETRY_DELAY_MS = 60_000` → 워커 틱 10초 기준 **3회 결론까지 약 2~3분**
 - **`DEFAULT_EXPORT_LEASE_MS` 는 손대지 않는다** (§2.2)
+
+### 3.3.1 CAS 가 뚫는 구멍은 claim 이 막는다
+
+CAS 를 걸면 §2.3 이 지적한 종료 보장이 깨진다 — 매 시도가 lease 를 넘겨 좀비가 되는 잡은 카운터가 한 번도 안 올라 무한 재시도가 된다.
+
+CAS 가 놓치는 것은 정확히 **"lease 안에 못 끝낸 시도"** 하나이고, 그건 **재클레임하는 쪽이 원자적으로 셀 수 있다**. `claim()` 의 UPDATE 에 더한다:
+
+```sql
+SET status = 'running',
+    lease_until = NOW() + <lease>,
+    lease_token = <새 토큰>,
+    consecutive_failures = consecutive_failures
+                         + CASE WHEN lease_token IS NULL THEN 0 ELSE 1 END
+RETURNING id, consecutive_failures
+```
+
+- `lease_token IS NULL` = 첫 클레임(`queued`) → 세지 않는다
+- 토큰이 남아 있다 = **직전 소유자가 못 끝내고 죽었다** → 센다
+- 반환된 카운트가 `MAX_CONSECUTIVE_EXPORT_FAILURES` 이상이면 **조립하지 않고 즉시 `failed` 확정**, lease 해제, `claim()` 은 `null` 을 돌려준다(그 틱은 쉰다)
+
+결과: **모든 실패한 시도가 정확히 한 번씩, 올바른 잡에 귀속되어** 집계된다. 덤으로 현행이 아예 못 세는 경우(워커 프로세스 강제 종료로 `catch` 가 실행조차 안 됨)도 잡혀 **현행보다 엄밀히 낫다**.
 
 워커 `tick()` 은 `claimed.leaseToken` 을 넘기도록 한 줄 바뀐다.
 
@@ -167,7 +194,8 @@ SET   consecutive_failures = consecutive_failures + 1,
 **서버** — 기존 스펙 파일에 붙인다.
 
 - `form-export.manager.spec.ts`: 진행 중 같은 집합 → 재사용 · **순서만 다른 집합도 재사용**(집합 비교의 핵심) · 완료된 잡은 재사용 안 함 · 다른 집합이면 새 잡 · 목록은 본인 것만·최신순
-- `form-export-job.manager.spec.ts`: 토큰 일치 → 실패 기록 + 짧은 lease · **토큰 불일치(좀비) → 0행, 아무것도 쓰지 않음** · 상한 도달 → `failed` + lease 해제
+- `form-export-job.manager.spec.ts` (`recordJobError`): 토큰 일치 → 실패 기록 + 짧은 lease · **토큰 불일치(좀비) → 0행, 아무것도 쓰지 않음** · 상한 도달 → `failed` + lease 해제
+- `form-export-job.manager.spec.ts` (`claim`): 첫 클레임(`lease_token IS NULL`) → 카운터 그대로 · **재클레임(토큰 잔존) → 카운터 +1** · 재클레임으로 상한 도달 → 조립 없이 `failed` 확정하고 `null` 반환
 - lease 회귀는 이미 있는 `form-export-job-lease.integration.spec.ts` 에 실 DB 로 붙인다
 
 **admin-web** — 순수 함수 3개(`행 상태 판정`·`폴링 간격`·`탭 파라미터 파싱`)에 `.spec.ts`. **이 함수들로 뽑히지 않은 로직은 검증되지 않는다**(§2.5)를 전제로 설계한다.
