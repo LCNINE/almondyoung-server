@@ -27,6 +27,10 @@ export class FormExportService {
     return this.manager.getDownloadUrl(exportId, userId);
   }
 
+  retry(exportId: string, userId: string): Promise<FormExportAcceptedDto> {
+    return this.manager.retry(exportId, userId);
+  }
+
   buildBlankWorkbook(): Promise<Buffer> {
     return this.blankBuilder.build();
   }

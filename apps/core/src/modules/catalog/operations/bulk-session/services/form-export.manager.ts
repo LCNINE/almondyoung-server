@@ -136,6 +136,31 @@ export class FormExportManager {
     }, tx);
   }
 
+  /**
+   * 같은 상품 집합으로 다시 뽑는다. 별도 경로를 만들지 않고 accept 를 그대로 부르는
+   * 이유는, 그래야 중복 제거·응답 모양·reused 플래그가 자동으로 똑같이 적용되기
+   * 때문이다.
+   *
+   * **원본 상태에 제약을 두지 않는다.** failed 든 completed 든 "이 집합으로 다시
+   * 뽑아줘"는 언제나 정당하고, 노출은 화면이 통제한다. 서버에 상태 제약을 넣으면
+   * 화면 표와 서버 표를 둘 다 관리해야 한다.
+   */
+  async retry(exportId: string, userId: string, tx?: DbTransaction): Promise<FormExportAcceptedDto> {
+    return this.db.run(async (trx) => {
+      const [row] = await trx
+        .select()
+        .from(productFormExports)
+        .where(eq(productFormExports.id, exportId))
+        .limit(1);
+      // getStatus 와 같은 이유로 소유권 실패를 404 로 합친다 — 구분해 주면 그 구분
+      // 자체가 id 존재 여부를 캐는 오라클이 된다.
+      if (!row || row.requestedBy !== userId) {
+        throw new NotFoundError(`양식 생성 잡을 찾을 수 없습니다: ${exportId}`);
+      }
+      return this.accept(row.requestedMasterIds, userId, trx);
+    }, tx);
+  }
+
   async getDownloadUrl(exportId: string, userId: string, tx?: DbTransaction): Promise<string> {
     const fileId = await this.db.run(async (trx) => {
       const [row] = await trx
