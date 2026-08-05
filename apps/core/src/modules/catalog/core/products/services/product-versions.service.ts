@@ -43,7 +43,8 @@ import { productMatchings, productVariantSkuLinks } from '../../../../inventory/
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
-import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
+import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, count } from 'drizzle-orm';
+import { keywordMatch } from '../../../common/keyword-match';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
@@ -917,7 +918,7 @@ export class ProductVersionsService {
       isNull(productMasterVersions.bulkSessionId),
       isNull(productMasterVersions.deletedAt),
       isNull(productMasters.deletedAt),
-      filters?.q ? ilike(productMasterVersions.name, `%${filters.q}%`) : undefined,
+      filters?.q ? keywordMatch(filters.q, [productMasterVersions.name]) : undefined,
     );
 
     return this.db.run(async (tx) => {
