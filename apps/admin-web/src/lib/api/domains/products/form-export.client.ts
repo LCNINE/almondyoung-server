@@ -5,6 +5,7 @@ import type {
   FormExportAccepted,
   FormExportStatus,
   FormExportDownloadUrl,
+  FormExportList,
 } from '@/lib/types/dto/form-export';
 import { client } from '../../client';
 import { fetchWithRefresh } from '../../fetch-with-refresh';
@@ -19,6 +20,16 @@ export const formExportClient = {
 
   getStatus: async (exportId: string): Promise<FormExportStatus> => {
     const res = await client.get(`${BASE}/${exportId}`);
+    return res.data;
+  },
+
+  list: async (page: number, limit: number): Promise<FormExportList> => {
+    const res = await client.get(BASE, { params: { page, limit } });
+    return res.data;
+  },
+
+  retry: async (exportId: string): Promise<FormExportAccepted> => {
+    const res = await client.post(`${BASE}/${exportId}/retry`);
     return res.data;
   },
 
