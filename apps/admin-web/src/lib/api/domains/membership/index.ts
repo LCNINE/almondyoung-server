@@ -53,6 +53,30 @@ export interface AdminMemberListItem {
   eligibleRefundAmount?: number | null;
   hasPaymentIntent?: boolean;
   billingPath?: string;
+  /** 서버가 확정한 종료 사실(경로·상태·사유). 해지된 적이 없으면 null, 과도기엔 undefined. */
+  cancellation?: CancellationInfoDto | null;
+}
+
+/** 계약이 어떻게 끝났는지 — 경로(누가 왜)와 상태(지금 어떤가)는 다른 축이다. */
+export interface CancellationInfoDto {
+  origin:
+    | 'CUSTOMER_IMMEDIATE'
+    | 'CUSTOMER_SCHEDULED'
+    | 'ADMIN_FORCED'
+    | 'ADMIN_SCHEDULED'
+    | 'PAYMENT_FAILED'
+    | 'MANDATE_REJECTED'
+    | 'REFUND_VOIDED'
+    | 'NATURAL_EXPIRY';
+  originLabel: string;
+  state: 'SCHEDULED_ACTIVE' | 'ENDED';
+  stateLabel: string;
+  requestedAt: string | null;
+  endedAt: string | null;
+  endsAt: string | null;
+  reasonLabel: string | null;
+  reasonDetail: string | null;
+  customerNotice: string | null;
 }
 
 export interface AdminMembersResponse {

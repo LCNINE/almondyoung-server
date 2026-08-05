@@ -1011,6 +1011,10 @@
       "completedBody": "{amount}円が{date}に返金されました。",
       "account": "振込先: {bank} {account}（{holder}）",
       "failedNote": "自動返金が完了しなかったため、担当者が確認しています。"
+    },
+    "termination": {
+      "title": "メンバーシップが終了しました",
+      "reason": "理由: {reason}"
     }
   },
   "orderActions": {

@@ -24,27 +24,25 @@ function getPlanLabel(durationDays: number): string {
 }
 
 /**
- * 해지 유형 — 즉시 종료 / 잔여기간 이용 중 / 예약 후 실제 종료는 CS 대응이 각각 다르다.
+ * 해지 경로 — 누가 왜 끝냈나. 서버가 확정한 값을 그대로 쓴다.
  *
- * 근거(cancelledAt·recurringCancelledAt)가 없으면 아무 유형도 단정하지 않는다. 옛 서버 응답이나
- * 필터가 어긋난 경우에 '해지 예약' 으로 보이면 해지하지도 않은 회원이 해지자로 읽힌다.
+ * 화면이 상태 필드로 추론하면 시스템이 계좌 심사 거절로 끊은 건이 '고객 즉시해지' 로 보인다
+ * (라이브에서 실제로 그렇게 보였다). 값이 없으면 아무것도 단정하지 않는다.
  */
-function getCancelKind(
-  row: AdminMemberListItem
-): { label: string; className: string } | null {
-  if (row.status === 'CANCELLED') {
-    return { label: '즉시 해지', className: 'bg-red-50 text-red-700 border-red-200' };
-  }
-  if (!row.recurringCancelledAt) return null;
-  if (row.status === 'EXPIRED') {
-    return { label: '해지 완료', className: 'bg-gray-100 text-gray-700 border-gray-300' };
-  }
-  return { label: '해지 예약', className: 'bg-amber-50 text-amber-800 border-amber-200' };
-}
+const ORIGIN_STYLE: Record<string, string> = {
+  CUSTOMER_IMMEDIATE: 'bg-red-50 text-red-700 border-red-200',
+  CUSTOMER_SCHEDULED: 'bg-amber-50 text-amber-800 border-amber-200',
+  ADMIN_FORCED: 'bg-purple-50 text-purple-700 border-purple-200',
+  ADMIN_SCHEDULED: 'bg-purple-50 text-purple-700 border-purple-200',
+  PAYMENT_FAILED: 'bg-orange-50 text-orange-800 border-orange-200',
+  MANDATE_REJECTED: 'bg-orange-50 text-orange-800 border-orange-200',
+  REFUND_VOIDED: 'bg-blue-50 text-blue-700 border-blue-200',
+  NATURAL_EXPIRY: 'bg-gray-100 text-gray-700 border-gray-300',
+};
 
 /** 해지를 신청한 시각. 예약 해지는 cancelledAt 이 비어 있고 recurringCancelledAt 에 있다. */
 function getCancelledAt(row: AdminMemberListItem): string | null {
-  return row.cancelledAt ?? row.recurringCancelledAt ?? null;
+  return row.cancellation?.requestedAt ?? row.cancelledAt ?? row.recurringCancelledAt ?? null;
 }
 
 /**
@@ -126,14 +124,34 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
         ),
       }),
       columnHelper.display({
-        id: 'cancelKind',
-        header: '해지 유형',
+        id: 'cancelOrigin',
+        header: '해지 경로',
         cell: ({ row }) => {
-          const kind = getCancelKind(row.original);
-          if (!kind) return <span className="text-sm text-muted-foreground">-</span>;
+          const c = row.original.cancellation;
+          if (!c) return <span className="text-sm text-muted-foreground">-</span>;
           return (
-            <span className={`rounded border px-1.5 py-0.5 text-xs ${kind.className}`}>
-              {kind.label}
+            <span
+              className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-xs ${
+                ORIGIN_STYLE[c.origin] ?? 'bg-gray-100 text-gray-700 border-gray-300'
+              }`}
+            >
+              {c.originLabel}
+            </span>
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'cancelState',
+        header: '상태',
+        cell: ({ row }) => {
+          const c = row.original.cancellation;
+          if (!c) return <span className="text-sm text-muted-foreground">-</span>;
+          // 즉시해지도 '이용 종료' 다 — 경로와 상태는 다른 축이라 섞지 않는다.
+          return (
+            <span
+              className={`text-sm ${c.state === 'SCHEDULED_ACTIVE' ? 'font-medium text-amber-700' : 'text-muted-foreground'}`}
+            >
+              {c.stateLabel}
             </span>
           );
         },
@@ -188,7 +206,19 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
       columnHelper.accessor('cancellationReasonCode', {
         id: 'cancelReason',
         header: '해지 사유',
-        cell: ({ row }) => <span className="text-sm">{getCancelReasonLabel(row.original)}</span>,
+        cell: ({ row }) => {
+          const c = row.original.cancellation;
+          // 시스템 종료는 사유가 계약 이벤트에만 있다 — 서버 판정이 있으면 그것이 사실이다.
+          const label = c?.reasonLabel ?? getCancelReasonLabel(row.original);
+          return (
+            <span className="text-sm">
+              {label}
+              {c?.reasonDetail && (
+                <span className="ml-1 text-xs text-muted-foreground">({c.reasonDetail})</span>
+              )}
+            </span>
+          );
+        },
       }),
       columnHelper.display({
         id: 'actions',

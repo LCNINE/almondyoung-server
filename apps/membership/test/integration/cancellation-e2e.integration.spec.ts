@@ -1436,6 +1436,45 @@ describeE2E('멤버십 해지·환불 E2E', () => {
       expect(userIds).not.toContain(stillUsing.userId);
     });
 
+    // 라이브에서 계좌 심사 거절로 시스템이 끊은 건이 '고객 즉시해지' 로 보였다.
+    it('종료 경로를 서버가 확정해 내려준다 (화면이 추론하지 않게)', async () => {
+      const self = await givenSubscription({ daysSincePeriodStart: 2 });
+      await service.cancelSubscription(self.userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+      });
+      const scheduled = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.cancelSubscription(scheduled.userId, EMAIL, {
+        reasonCode: 'EXPENSIVE',
+        cancelType: 'AT_PERIOD_END',
+      });
+      const forced = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.forceCancelSubscription(forced.contract.id, 'admin_1', '품절 보상', 'NONE');
+      const adminScheduled = await givenSubscription({ daysSincePeriodStart: 5 });
+      await service.scheduleCancellationByAdmin(adminScheduled.contract.id, 'admin_1', '고객 전화 요청');
+
+      // 계좌 심사 거절 — 시스템이 끊은 건
+      const rejected = await givenSubscription({ daysSincePeriodStart: 3, billingPath: 'INVOICE' });
+      await invoiceOutcome.handleMandateRejected(rejected.contract.id, null, 'Q201');
+
+      const list = await adminReader.findAllWithDetails({ status: 'CANCELLED_ANY', limit: 100 });
+      const by = (userId: string) => list.data.find((r) => r.userId === userId)?.cancellation;
+
+      expect(by(self.userId)?.origin).toBe('CUSTOMER_IMMEDIATE');
+      expect(by(scheduled.userId)?.origin).toBe('CUSTOMER_SCHEDULED');
+      expect(by(scheduled.userId)?.state).toBe('SCHEDULED_ACTIVE');
+      expect(by(forced.userId)?.origin).toBe('ADMIN_FORCED');
+      expect(by(forced.userId)?.reasonLabel).toBe('품절 보상');
+      expect(by(adminScheduled.userId)?.origin).toBe('ADMIN_SCHEDULED');
+      expect(by(adminScheduled.userId)?.reasonLabel).toBe('고객 전화 요청');
+
+      const rejectedInfo = by(rejected.userId);
+      expect(rejectedInfo?.origin).toBe('MANDATE_REJECTED');
+      expect(rejectedInfo?.reasonDetail).toBe('Q201');
+      // 고객에게 다음 행동까지 알려줄 수 있어야 문의로 이어지지 않는다.
+      expect(rejectedInfo?.customerNotice).toContain('다른 계좌로 다시 등록');
+    });
+
     // 옛 서버 + 새 화면 조합에서 조건이 통째로 빠지면 '해지 내역' 이 '전체 회원' 이 된다.
     it('모르는 상태 필터는 조용히 무시하지 않고 거부한다', async () => {
       await expect(

@@ -1011,6 +1011,10 @@
       "completedBody": "{amount}원이 {date}에 환불되었습니다.",
       "account": "입금 계좌: {bank} {account} ({holder})",
       "failedNote": "자동 환불이 처리되지 않아 담당자가 직접 확인하고 있어요. 조금만 기다려 주세요."
+    },
+    "termination": {
+      "title": "멤버십이 종료되었습니다",
+      "reason": "사유: {reason}"
     }
   },
   "page": {

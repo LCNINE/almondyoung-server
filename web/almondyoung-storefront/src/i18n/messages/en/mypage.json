@@ -1011,6 +1011,10 @@
       "completedBody": "KRW {amount} was refunded on {date}.",
       "account": "To: {bank} {account} ({holder})",
       "failedNote": "The automatic refund did not go through, so our team is handling it manually."
+    },
+    "termination": {
+      "title": "Your membership has ended",
+      "reason": "Reason: {reason}"
     }
   },
   "orderActions": {

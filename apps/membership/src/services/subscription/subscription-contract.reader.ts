@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, inArray, count } from 'drizzle-orm';
+import { CancellationInfo, resolveCancellationInfo } from './cancellation-info';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -402,6 +403,41 @@ export class SubscriptionContractReader {
       .limit(1);
 
     return event?.eventType ?? null;
+  }
+
+  /** 이 계약이 어떻게 끝났는지. 고객·관리자 화면이 같은 판정을 쓴다. */
+  async resolveCancellation(contract: Contract): Promise<CancellationInfo | null> {
+    const events = await this.dbService.db
+      .select({
+        eventType: schema.subscriptionContractEvents.eventType,
+        causedBy: schema.subscriptionContractEvents.causedBy,
+        metadata: schema.subscriptionContractEvents.metadata,
+      })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contract.id),
+          inArray(schema.subscriptionContractEvents.eventType, ['CANCELLED', 'RECURRING_CANCELLED', 'TERMINATED']),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id));
+
+    const [entitlement] = await this.dbService.db
+      .select({ endsAt: schema.subscriptionEntitlement.endsAt })
+      .from(schema.subscriptionEntitlement)
+      .where(eq(schema.subscriptionEntitlement.userId, contract.userId))
+      .orderBy(desc(schema.subscriptionEntitlement.createdAt))
+      .limit(1);
+
+    return resolveCancellationInfo({
+      contract,
+      events: events.map((e) => ({
+        eventType: e.eventType,
+        causedBy: e.causedBy,
+        metadata: (e.metadata ?? {}) as Record<string, unknown>,
+      })),
+      endsAt: entitlement?.endsAt ?? null,
+    });
   }
 
   /** 이 계약의 최신 약정 정리 이벤트 종류. 정리 지시가 아직 열려 있는지 판단하는 용도. */

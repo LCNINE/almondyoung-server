@@ -616,6 +616,38 @@ export class SubscriptionCancellationService {
     };
   }
 
+  /**
+   * 내 멤버십이 왜 끝났는지 — 고객이 마이페이지에서 확인하는 값.
+   *
+   * 계좌 심사 거절·미수로 끊긴 고객에게 화면에 `가입하기` 만 남으면 **왜 끊겼는지 알 방법이 없다.**
+   * 활성 자격이 있으면 알릴 것이 없으므로 null.
+   */
+  async getTerminationNotice(userId: string): Promise<{
+    origin: string;
+    originLabel: string;
+    reasonLabel: string | null;
+    notice: string;
+    endedAt: string | null;
+  } | null> {
+    const entitlement = await this.contractReader.findCurrentEntitlement(userId);
+    if (entitlement) return null;
+
+    const contracts = await this.contractReader.findContractsByUserId(userId);
+    const latest = contracts[0];
+    if (!latest) return null;
+
+    const info = await this.contractReader.resolveCancellation(latest);
+    if (!info?.customerNotice) return null;
+
+    return {
+      origin: info.origin,
+      originLabel: info.originLabel,
+      reasonLabel: info.reasonLabel,
+      notice: info.customerNotice,
+      endedAt: info.endedAt,
+    };
+  }
+
   async getCancellationReasons() {
     return this.reasonReader.findActiveReasons();
   }
