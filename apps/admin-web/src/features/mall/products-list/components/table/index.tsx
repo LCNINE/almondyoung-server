@@ -1,12 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   selectedIdsFromRowSelection,
   reconcileSelectedSnapshots,
   type SelectedProductSnapshot,
 } from './products-list-selection-model';
 import { useMastersSummary } from '@/lib/services/products/queries';
+import { useRequestFormExport } from '@/lib/services/products/form-export';
+import { parseServerError } from '@/lib/api/server-error';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
 import { useProductsListTableQuery } from '@/hooks/table/query/use-products-list-table-query';
@@ -21,14 +25,14 @@ import { BulkPolicyModal } from '@/features/mall/bulk/components/bulk-policy-mod
 import { SelectedProductsModal } from '../selected-products-modal';
 import { ProductsListFilterBox } from '../filter-box';
 import { ExcelDownloadMenu } from '../excel-download';
-import { FormExportModal } from '../form-export-modal';
 
 const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
+  const router = useRouter();
+  const requestFormExport = useRequestFormExport();
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [formExportOpen, setFormExportOpen] = useState(false);
 
   const { searchParams: query } = useProductsListTableQuery({
     pageSize: PAGE_SIZE,
@@ -132,8 +136,34 @@ export function ProductsListTable() {
             <Button
               size="sm"
               variant="outline"
-              disabled={!hasSelection}
-              onClick={() => setFormExportOpen(true)}
+              disabled={!hasSelection || requestFormExport.isPending}
+              onClick={() => {
+                // window.open 은 사용자 제스처 핸들러 안에서 **동기적으로** 불러야
+                // 팝업 차단에 안 걸린다. POST 응답을 기다렸다 열면 차단되므로 창을
+                // 먼저 열고 요청은 이 탭에서 보낸다. 새 탭은 목록을 폴링하므로
+                // 접수된 잡이 곧 나타난다.
+                const opened = window.open(
+                  '/mall/bulk-sessions?tab=forms',
+                  '_blank'
+                );
+                if (!opened) {
+                  toast.info('팝업이 차단되어 이 탭에서 엽니다.');
+                  router.push('/mall/bulk-sessions?tab=forms');
+                }
+                requestFormExport.mutate(selectedIds, {
+                  onSuccess: (res) =>
+                    toast.success(
+                      res.reused
+                        ? '이미 진행 중인 같은 요청이 있어 그것으로 이어집니다.'
+                        : '양식 생성을 접수했습니다. 새 탭에서 진행 상황을 확인하세요.'
+                    ),
+                  onError: (error) =>
+                    toast.error(
+                      parseServerError(error, '양식 생성 요청에 실패했습니다.')
+                        .message
+                    ),
+                });
+              }}
             >
               <FileSpreadsheet className="w-3 h-3 mr-1" />
               양식 다운로드
@@ -192,12 +222,6 @@ export function ProductsListTable() {
         selectedIds={selectedIds}
         selectedItems={selectedItemsList}
         onSuccess={handleSuccess}
-      />
-
-      <FormExportModal
-        open={formExportOpen}
-        masterIds={selectedIds}
-        onClose={() => setFormExportOpen(false)}
       />
     </div>
   );

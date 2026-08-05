@@ -15,8 +15,7 @@ export interface FormExportRowState {
 
 /**
  * 진행 중 항목이 하나라도 있으면 계속 두드린다. 데이터가 아직 없을 때(초기 로드·일시적
- * 5xx)도 두드린다 — 여기서 멈추면 화면이 마운트 내내 굳는다(formExportRefetchInterval
- * 이 같은 이유로 그렇게 돼 있었다).
+ * 5xx)도 두드린다 — 여기서 멈추면 화면이 마운트 내내 굳는다.
  */
 export function formExportListRefetchInterval(list: FormExportList | undefined): number | false {
   if (!list) return 5000;
