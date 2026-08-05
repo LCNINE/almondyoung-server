@@ -643,10 +643,11 @@ export class AdminMembersReader {
     const manualRefundAccount = refundOutstanding
       ? await this.contractReader.findManualRefundAccount(r.contractId)
       : null;
+    // 결제관리에서 직접 나간 환불은 멤버십에 요청 기록이 없다(refundRequested=false). 미완료 요청에만
+    // 물어보면 그 건은 화면에 영영 나타나지 않아 "환불 없음" 으로 보인다 — 돈은 이미 나갔는데도.
+    // 그래서 아직 환불이 확정되지 않은 계약이면 결제 기준으로 확인한다(조회 실패는 흡수된다).
     const refundSettlement =
-      refundOutstanding && r.lastPaymentIntentId
-        ? await this.loadRefundSettlement(r.lastPaymentIntentId)
-        : null;
+      r.lastPaymentIntentId && !r.refundCompleted ? await this.loadRefundSettlement(r.lastPaymentIntentId) : null;
 
     return {
       contractId: r.contractId,
