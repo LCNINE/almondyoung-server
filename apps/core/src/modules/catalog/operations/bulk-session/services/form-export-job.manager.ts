@@ -24,8 +24,11 @@ import { buildFormWorkbook } from './form-export.workbook';
  */
 export const DEFAULT_EXPORT_LEASE_MS = 1_800_000;
 /**
- * 상한에 닿으면 잡을 failed 로 확정한다. 실제 소요는 상한 × FORM_EXPORT_RETRY_DELAY_MS
- * (1분) ≈ 2~3분이다 — 재시도 주기가 lease 만료가 아니라 이 대기값이기 때문이다.
+ * 상한에 닿으면 잡을 failed 로 확정한다. **이 값은 실제 조립 시도 횟수와 같다** — 정상
+ * 재시도 경로에서 실패는 recordJobError 한 곳에서만 세어지고, 뒤이은 재클레임은 토큰이
+ * 비어 있어 다시 세지 않는다(claim / recordJobError 참조). 결론까지의 실제 소요는
+ * (상한 − 1) × FORM_EXPORT_RETRY_DELAY_MS + 조립 시간 × 상한 ≈ 2~3분이다 — 재시도 주기가
+ * lease 만료(30분)가 아니라 그 대기값이기 때문이다.
  *
  * 상한을 임포트의 10 이 아니라 3 으로 두는 이유는 조립이 통짜 작업이라 부분 진척이 없기
  * 때문이다 — 세 번 연속 터진 조립이 네 번째에 성공할 가능성보다, 화면에 실패를 빨리
@@ -84,11 +87,13 @@ export class FormExportJobManager {
   async claim(tx?: DbTransaction): Promise<ClaimedExport | null> {
     const leaseToken = uuidv7();
     return this.db.run(async (trx) => {
-      // lease_token 이 남아 있는 행을 집었다는 건 **직전 소유자가 못 끝내고 죽었다**는
-      // 뜻이다(정상 종료는 완료/실패로 lease 를 푼다). recordJobError 의 토큰 CAS 는
-      // 그 좀비의 뒤늦은 예외를 버리므로, 그 실패를 여기서 원자적으로 센다 — 이게 없으면
-      // 매 시도가 lease 를 넘기는 잡은 카운터가 영원히 안 올라 무한 재시도가 된다.
-      // 첫 클레임(queued, 토큰 NULL)은 실패가 아니므로 세지 않는다.
+      // lease_token 이 남아 있는 행을 집었다는 건 **직전 소유자가 실패를 기록도 못 하고
+      // 죽었다**는 뜻이다 — 토큰을 푸는 경로가 셋뿐이기 때문이다: 마감(completed),
+      // 상한 확정(failed), 그리고 recordJobError(실패를 정상적으로 기록하고 떠남).
+      // recordJobError 의 토큰 CAS 는 좀비의 뒤늦은 예외를 버리므로 그 실패는 아무도 세지
+      // 않는데, 그걸 여기서 원자적으로 센다 — 이게 없으면 매 시도가 lease 를 넘기는 잡은
+      // (워커 강제 종료로 catch 조차 못 도는 경우) 카운터가 영원히 안 올라 무한 재시도가
+      // 된다. 첫 클레임(queued, 토큰 NULL)과 실패가 이미 기록된 재클레임은 세지 않는다.
       const rows = await trx.execute<{ id: string; consecutive_failures: number }>(sql`
         UPDATE product_form_exports
            SET status = 'running',
@@ -204,8 +209,16 @@ export class FormExportJobManager {
    * 고아 정리 잡이 없으니 진 쪽 xlsx 가 영구 고아로 남는다.
    *
    * CAS 가 뚫는 구멍(좀비의 실패가 안 세어져 연속 실패 상한에 영원히 못 닿음)은 claim
-   * 이 막는다 — 거기서 "lease 안에 못 끝낸 시도"를 재클레임 시점에 센다. 두 곳을 합치면
-   * 실패한 시도가 정확히 한 번씩, 올바른 잡에 귀속된다.
+   * 이 막는다 — 거기서 "lease 안에 못 끝낸 시도"를 재클레임 시점에 센다.
+   *
+   * 두 곳이 같은 실패를 겹쳐 세지 않도록 **여기서 lease_token 을 비운다**. claim 의
+   * `CASE WHEN lease_token IS NULL` 은 "직전 소유자가 못 끝내고 죽었는가" 를 묻는데,
+   * 실패를 정상적으로 기록하고 떠난 소유자는 죽은 게 아니다 — 토큰을 남기면 뒤이은
+   * 재클레임이 같은 실패를 또 세어 재시도 예산이 상한의 절반으로 조용히 줄어든다.
+   * 토큰을 비워도 레이스는 없다: 바로 위에서 lease_until 을 +60초 미래로 밀었고, claim
+   * 의 후보 필터가 `lease_until IS NULL OR lease_until < NOW()` 라 그 60초 동안은 토큰과
+   * 무관하게 아무도 이 행을 집지 못한다. 두 곳을 합치면 실패한 시도가 정확히 한 번씩,
+   * 올바른 잡에 귀속된다.
    *
    * 종결 상태(completed/failed)는 WHERE 에서 계속 제외한다. 토큰 CAS 만으로도 대부분
    * 막히지만, 성공한 잡을 되돌리는 사고는 대가가 커서 가드를 이중으로 둔다.
@@ -218,6 +231,7 @@ export class FormExportJobManager {
           errorMessage: message,
           consecutiveFailures: sql`${productFormExports.consecutiveFailures} + 1`,
           leaseUntil: sql`NOW() + ${FORM_EXPORT_RETRY_DELAY_MS} * interval '1 millisecond'`,
+          leaseToken: null,
           updatedAt: new Date(),
         })
         .where(

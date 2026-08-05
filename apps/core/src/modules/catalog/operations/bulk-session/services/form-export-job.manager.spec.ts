@@ -407,9 +407,11 @@ describe('FormExportJobManager.recordJobError', () => {
     expect(updates.some((u) => u.values.status === 'failed')).toBe(false);
     const update = updates[0];
     expect(update.values).toMatchObject({ errorMessage: '일시적 DB 오류' });
-    // 토큰은 건드리지 않는다 — 다음 시도는 claim 이 **새 토큰**을 발급해 인수한다.
-    // 여기서 토큰을 지우면 CAS 의 기준점이 사라져 좀비 판별이 무너진다.
-    expect(update.values).not.toHaveProperty('leaseToken');
+    // 토큰을 **비운다**. claim 의 `CASE WHEN lease_token IS NULL` 은 "직전 소유자가 못
+    // 끝내고 죽었는가" 를 묻는데, 실패를 정상적으로 기록하고 떠난 소유자는 죽은 게 아니다
+    // — 토큰을 남기면 뒤이은 재클레임이 같은 실패를 또 세어 재시도 예산이 절반이 된다.
+    // 이 잡의 CAS 기준점은 내 토큰이 아니라 **후임이 새로 발급할 토큰**이라 지워도 안전하다.
+    expect(update.values.leaseToken).toBeNull();
   });
 
   // 이 태스크의 핵심. lease_until 한 컬럼이 겸하던 두 축("조립 중 점유 보호" / "재시도
