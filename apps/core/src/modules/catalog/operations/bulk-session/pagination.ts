@@ -6,12 +6,9 @@
  * (행이 훨씬 가벼워 1000) 그대로 컨트롤러에 남긴다.
  */
 export function parsePage(page: string): number {
-  const parsed = Number.parseInt(page, 10);
-  return Math.max(1, isNaN(parsed) ? 1 : parsed);
+  return Math.max(1, Number.parseInt(page, 10) || 1);
 }
 
 export function parseLimit(limit: string): number {
-  const parsed = Number.parseInt(limit, 10);
-  const fallback = isNaN(parsed) ? 20 : parsed;
-  return Math.min(100, Math.max(1, fallback));
+  return Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
 }
