@@ -277,6 +277,40 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 이 환불이 실제로 들어간(들어갈) 계좌 — 완료 건 포함.
+   *
+   * 무통장 자동환불은 토스가 고객이 입력한 계좌로 송금하는데 wallet 은 그 계좌를 저장하지 않는다.
+   * 남기지 않으면 "환불이 안 들어왔다" 는 문의에 어디로 보냈는지 답할 수가 없다.
+   */
+  async findRefundReceiveAccount(
+    contractId: string,
+  ): Promise<{ bank: string; accountNumber: string; holderName: string } | null> {
+    const [event] = await this.dbService.db
+      .select({ metadata: schema.subscriptionContractEvents.metadata })
+      .from(schema.subscriptionContractEvents)
+      .where(
+        and(
+          eq(schema.subscriptionContractEvents.contractId, contractId),
+          inArray(schema.subscriptionContractEvents.eventType, [
+            'REFUND_COMPLETED',
+            'REFUND_PENDING',
+            'REFUND_FAILED',
+          ]),
+        ),
+      )
+      .orderBy(desc(schema.subscriptionContractEvents.createdAt), desc(schema.subscriptionContractEvents.id))
+      .limit(1);
+
+    const account = ((event?.metadata ?? {}) as { receiveAccount?: Record<string, unknown> }).receiveAccount;
+    if (!account || typeof account.accountNumber !== 'string') return null;
+    return {
+      bank: String(account.bank ?? ''),
+      accountNumber: account.accountNumber,
+      holderName: String(account.holderName ?? ''),
+    };
+  }
+
+  /**
    * 계좌 송금이 남아 있는 환불 건의 수취 계좌.
    *
    * 자동환불이 불가능한 수단(효성 CMS)이나 자동환불 실패 건은 관리자가 직접 송금해야 끝난다.

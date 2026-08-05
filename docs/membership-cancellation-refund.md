@@ -211,6 +211,16 @@ CMS 는 자동환불이 안 돼 관리자가 수동 송금을 승인해야만 �
 관리자 강제취소가 같은 판정을 쓴다. 호출자마다 판단하면 같은 CMS 계약이 고객 경로에선 '수동 송금
 대기(PENDING)', 관리자 경로에선 '환불 실패(FAILED)' 로 남아 같은 상황이 두 가지로 보고된다.
 
+**수취 계좌는 성공 건에도 남긴다.** 무통장 자동환불은 토스가 고객이 입력한 계좌로 송금하는데
+**wallet `refunds` 에는 계좌 컬럼이 없다** — 남기지 않으면 "환불이 안 들어왔다" 는 문의에 어디로
+보냈는지 답할 수가 없다. 그래서 `REFUND_COMPLETED` 에도 `receiveAccount` 를 기록하고, 관리자 상세가
+`환불 입금 계좌` 로 보여준다.
+
+**결제관리(wallet)에서 직접 환불한 건도 화면에 보인다.** 그 건은 멤버십이 환불을 요청한 적이 없어
+`refundRequested=false` 라, 예전에는 해지 화면에 **`환불 없음`** 으로 떴다(라이브에 실제 사례가 있다).
+종료된 계약이면 wallet 의 `alreadyRefundedAmount` 를 조회해 `결제관리 환불 N원` 으로 표시한다 —
+`refundCompleted` 는 그대로 두므로(§8 의 이유) 수동 송금 완료 창구는 막히지 않는다.
+
 수동 송금이 남는 건(`REFUND_PENDING`/`REFUND_FAILED`)은 **고객·관리자가 입력한 수취 계좌를 계약
 이벤트 metadata(`receiveAccount`)에 남긴다.** 남기지 않으면 관리자가 어디로 보낼지 알 수 없어 환불을
 끝낼 방법이 없다. 관리자 상세(`manualRefundAccount`)가 이 값을 그대로 읽어 `송금 완료 처리` 버튼 옆에
@@ -703,7 +713,7 @@ npm run test:membership:cancellation-e2e
 # 고객 UI — 실제 크로미움, 14 시나리오
 cd web/almondyoung-storefront && npm run test:e2e:membership-cancel
 
-# 관리자 UI — 실제 크로미움, 12 시나리오
+# 관리자 UI — 실제 크로미움, 14 시나리오
 cd apps/admin-web && npm run test:e2e:membership-cancel
 ```
 
