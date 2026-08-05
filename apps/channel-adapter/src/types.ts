@@ -738,6 +738,7 @@ export interface MedusaProduct {
     id: string;
     title: string;
     sku?: string;
+    barcode?: string | null;
     manage_inventory?: boolean | null;
     inventory_items?: Array<{
       inventory_item_id?: string;
