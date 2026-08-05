@@ -15,7 +15,8 @@ describe('페이지 파라미터 파싱', () => {
   });
 
   it('limit 은 1~100 으로 잘린다', () => {
-    expect(parseLimit('0')).toBe(1);
+    // '0' 은 parseInt 결과가 falsy 라 하한 1 이 아니라 기본값 20 으로 떨어진다 — 원래 계약이다
+    expect(parseLimit('0')).toBe(20);
     expect(parseLimit('500')).toBe(100);
     expect(parseLimit('50')).toBe(50);
   });
