@@ -143,7 +143,7 @@ export function useProductVariantsTableColumns(
         ).length;
 
         return (
-          <div className="flex w-full flex-col items-center gap-1">
+          <div className="flex flex-col items-center w-full gap-1">
             <span className="whitespace-nowrap">{label}</span>
             <Checkbox
               checked={
@@ -177,7 +177,7 @@ export function useProductVariantsTableColumns(
       const disabled = !matchingActions || !info || pending;
       return (
         // 헤더의 일괄 체크박스와 세로로 맞추려면 셀도 같은 가운데 정렬이어야 한다.
-        <div className="flex w-full justify-center">
+        <div className="flex justify-center w-full">
           <Checkbox
             checked={checked}
             disabled={disabled}
@@ -272,7 +272,7 @@ export function useProductVariantsTableColumns(
                 const label = first.skuName ?? first.skuCode ?? first.skuId;
                 return (
                   <div className="flex max-w-[180px] flex-col gap-1">
-                    <span className="truncate text-xs" title={label}>
+                    <span className="text-xs truncate" title={label}>
                       {label}
                     </span>
                     <span className="text-xs text-muted-foreground">
@@ -489,10 +489,7 @@ export function useProductVariantsTableColumns(
             }),
           ]
         : []),
-      columnHelper.accessor('variantName', {
-        header: '이름',
-        cell: ({ getValue }) => getValue() ?? '-',
-      }),
+
       ...optionColumns,
       // 순서(displayOrder)는 실무에서 쓰지 않아 목록에서 감춘다 — 값과 편집 드로어 입력은 유지.
       columnHelper.accessor('isDefault', {
