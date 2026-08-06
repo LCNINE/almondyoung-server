@@ -5,6 +5,7 @@ const XLSX = require('xlsx');
 
 const latest = Number(process.env.LATEST_DISPLAY_ID || 0);
 const awaiting = (process.env.AWAITING_IDS || '').split(',').map(Number).filter(Boolean);
+const excludedDisplayIds = new Set((process.env.EXCLUDE_DISPLAY_IDS || '').split(',').map(Number).filter(Boolean));
 const includeAllAwaiting = process.env.INCLUDE_ALL_AWAITING === '1';
 const prefix = process.env.OUTPUT_PREFIX || `cellmate-after-${latest}`;
 const outputDir = process.env.OUTPUT_DIR || process.cwd();
@@ -31,7 +32,7 @@ function csv(value) { const s = value == null ? '' : String(value); return /[",\
   for (const order of orders) {
     const shipping = { name: [order.last_name, order.first_name].filter(Boolean).join('').trim(), address: [order.address_1, order.address_2].filter(Boolean).join(' ').trim(), postal: String(order.postal_code || ''), phone: phone(order.phone) };
     const items = itemsByOrder.get(order.id) || []; const orderNo = `${kstDate(order.created_at)}-${order.display_id}`; const bank = order.metadata && order.metadata.bank_transfer_status; let reason = '';
-    if (order.canceled_at) reason = 'canceled'; else if (bank === 'awaiting_deposit') reason = 'awaiting_deposit'; else if (order.intent_id && refundIds.has(order.intent_id)) reason = 'refund_requested'; else if (items.some((x) => Number(x.shipped_quantity || 0) > 0)) reason = 'already_shipped'; else if (!shipping.address && !shipping.postal && !shipping.phone) reason = 'no_shipping_info_digital_or_non_delivery';
+    if (excludedDisplayIds.has(Number(order.display_id))) reason = 'manually_excluded'; else if (order.canceled_at) reason = 'canceled'; else if (bank === 'awaiting_deposit') reason = 'awaiting_deposit'; else if (order.intent_id && refundIds.has(order.intent_id)) reason = 'refund_requested'; else if (items.some((x) => Number(x.shipped_quantity || 0) > 0)) reason = 'already_shipped'; else if (!shipping.address && !shipping.postal && !shipping.phone) reason = 'no_shipping_info_digital_or_non_delivery';
     source.push({ ...order, shipping, orderNo, items });
     if (reason) { excluded.push({ display_id: order.display_id, name: shipping.name, reason }); continue; }
     let lineCount = 0;
