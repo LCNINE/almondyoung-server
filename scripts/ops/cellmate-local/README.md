@@ -12,6 +12,7 @@ Run from `deployments/lcnine/services` inside `npx sst shell --stage live`, with
 NODE_PATH=/home/hyunji/문서/GitHub/almondyoung-server/apps/medusa/node_modules:/home/hyunji/문서/GitHub/almondyoung-server/node_modules \
 DB_TUNNEL_HOST=127.0.0.1 DB_TUNNEL_PORT=15432 \
 LATEST_DISPLAY_ID=<last> AWAITING_IDS=<comma-separated> INCLUDE_ALL_AWAITING=1 \
+EXCLUDE_DISPLAY_IDS=<comma-separated IDs already uploaded separately> \
 OUTPUT_PREFIX=cellmate-after-<last>-with-confirmed-YYYYMMDD \
 OUTPUT_DIR=/home/hyunji/문서/GitHub/almondyoung-server/apps/medusa \
 npx sst shell --stage live -- node ../../../scripts/ops/cellmate-local/collect-cellmate.js
