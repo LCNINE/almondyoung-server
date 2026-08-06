@@ -5,6 +5,8 @@ import { ProductCategoriesService } from '../../../core/categories/categories.se
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { ProductVersionReadLoader } from '../../../core/products/loaders/product-version-read.loader';
 import { PricingService } from '../../../core/pricing/pricing.service';
+import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
+import type { VariantStockPolicyDto } from '../../../../product-matching/dto/variant-matching-batch.dto';
 import { extractSimplePrices, isPricingEditable, SimplePrices } from './form-export.pricing-judge';
 import { PRICING_SENTINEL } from './form-export.sheets';
 import {
@@ -29,6 +31,13 @@ export interface SnapshotItem {
 const yn = (value: boolean | null | undefined): string => (value ? 'Y' : 'N');
 const str = (value: string | number | null | undefined): string =>
   value === null || value === undefined ? '' : String(value);
+
+/** DB enum → 워크북 표기. null 은 빈칸(= 재정의 없음). */
+function overrideCell(value: 'manual_out_of_stock' | 'coming_soon' | null | undefined): string {
+  if (value === 'manual_out_of_stock') return '품절';
+  if (value === 'coming_soon') return '출시예정';
+  return '';
+}
 
 export interface FlatCategory {
   id: string;
@@ -77,6 +86,7 @@ export class FormExportSnapshotReader {
     private readonly optionLoader: OptionReadLoader,
     private readonly pricing: PricingService,
     private readonly categories: ProductCategoriesService,
+    private readonly skuMapping: ProductSkuMappingService,
   ) {}
 
   /**
@@ -253,9 +263,21 @@ export class FormExportSnapshotReader {
 
     const variantsOut: PrefillRow[] = [];
     const versionVariants = await this.versionLoader.getVariants(tx, masterId, version.id);
+
+    // 정책 읽기 우선순위(matching ?? policy ?? 기본값)를 여기서 재구현하지 않는다 —
+    // 화면이 쓰는 것과 같은 서비스를 부른다. 두 벌이 되면 엑셀과 화면이 조용히 갈린다.
+    // 배치 API 상한이 500 이라 그 단위로 자른다.
+    const policyByVariantId = new Map<string, VariantStockPolicyDto>();
+    for (let i = 0; i < versionVariants.length; i += 500) {
+      const chunk = versionVariants.slice(i, i + 500).map((v) => v.id);
+      const batch = await this.skuMapping.getVariantMatchingBatch(chunk, tx);
+      for (const row of batch.data) policyByVariantId.set(row.variantId, row.stockPolicy);
+    }
+
     for (const variant of versionVariants) {
       const optionValues = await this.optionLoader.getVariantOptionValues(tx, variant.id, version.id, LOCALE);
       const override = prices.variantOverrides.get(variant.id);
+      const policy = policyByVariantId.get(variant.id);
       variantsOut.push({
         // 조합 참조는 **이름이 아니라 optionValueId 결합**이다. 이름으로 쓰면 옵션값
         // displayName 을 바꾸는 순간 참조가 깨진다. 정렬해서 축 순서에 무관하게 만든다.
@@ -273,6 +295,13 @@ export class FormExportSnapshotReader {
         basePrice: pricingEditable ? str(override?.basePrice) : PRICING_SENTINEL,
         membershipPrice: pricingEditable ? str(override?.membershipPrice) : PRICING_SENTINEL,
         variantCode: str(variant.variantCode),
+        availabilityOverride: overrideCell(policy?.availabilityOverride),
+        // coming_soon 이 아닐 때 날짜를 찍으면 검증기가 그 행을 오류로 잡는다(Task 4).
+        comingSoonDate: policy?.availabilityOverride === 'coming_soon' ? (policy.comingSoonDate ?? '') : '',
+        // 정책 행이 없는 품목의 기본값은 배치 API 의 기본값과 같아야 한다 — 프리필이 다른
+        // 기본값을 찍으면 아무도 손대지 않은 행이 전부 차분을 만든다.
+        preStockSellable: yn(policy?.preStockSellable ?? true),
+        alwaysSellableZeroStock: yn(policy?.alwaysSellableZeroStock ?? false),
       });
     }
 

@@ -1,5 +1,5 @@
 import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { DbService, InjectTypedDb } from '@app/db';
+import { AnyTx, DbService, InjectTypedDb } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
@@ -50,8 +50,7 @@ export class ProductSkuMappingService {
     // 출시예정을 끄면 날짜도 같이 비운다 — 남겨두면 다시 켤 때 옛 날짜가 되살아난다.
     const comingSoonDatePatch = this.hasAvailabilityOverride(policy)
       ? {
-          comingSoonDate:
-            policy?.availabilityOverride === 'coming_soon' ? (policy?.comingSoonDate ?? null) : null,
+          comingSoonDate: policy?.availabilityOverride === 'coming_soon' ? (policy?.comingSoonDate ?? null) : null,
         }
       : {};
     const variantPolicyValues = {
@@ -90,7 +89,15 @@ export class ProductSkuMappingService {
     };
   }
 
-  async getVariantMatchingBatch(variantIds: string[], tx?: DbTx): Promise<VariantMatchingBatchResponseDto> {
+  /**
+   * catalog(PimSchema) 대량등록 프리필(FormExportSnapshotReader)이 잡의 단일 트랜잭션
+   * 위에서 이 메서드를 부른다 — 그 tx 는 wmsSchema 가 아니라 PimSchema 로 타입된
+   * 트랜잭션이다(둘 다 core 앱의 같은 단일 DbModule.forRootAsync 연결 위의 타입 뷰일
+   * 뿐이라 런타임엔 안전하다 — ADR-0025 cross-BC seam). 그래서 이 메서드만 `AnyTx` 로
+   * 넓히고 `run()` 호출부에서 한 번만 `DbTx` 로 좁힌다. 본문은 전부 raw
+   * select/insert(스키마 무관)라 이 타입 확장만으로 충분하다.
+   */
+  async getVariantMatchingBatch(variantIds: string[], tx?: AnyTx): Promise<VariantMatchingBatchResponseDto> {
     if (!Array.isArray(variantIds)) {
       throw new BadRequestException('variantIds must be an array');
     }
@@ -103,136 +110,139 @@ export class ProductSkuMappingService {
       return { data: [] };
     }
 
-    return this.dbService.run(async (trx) => {
-      const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))];
+    return this.dbService.run(
+      async (trx) => {
+        const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))];
 
-      if (uniqueVariantIds.length === 0) {
-        return {
-          data: variantIds.map((variantId) => ({
-            variantId,
-            exists: false,
-            matching: null,
-            stockPolicy: {
-              preStockSellable: true,
-              alwaysSellableZeroStock: false,
-              availabilityOverride: null,
-              comingSoonDate: null,
-            },
-            projection: null,
-          })),
-        };
-      }
-
-      const variants = await (trx as any)
-        .select({
-          id: productVariants.id,
-        })
-        .from(productVariants)
-        .where(inArray(productVariants.id, uniqueVariantIds));
-
-      const matchings = await trx
-        .select({
-          id: wmsTables.productMatchings.id,
-          variantId: wmsTables.productMatchings.variantId,
-          masterId: wmsTables.productMatchings.masterId,
-          skuGroupId: wmsTables.productMatchings.skuGroupId,
-          status: wmsTables.productMatchings.status,
-          priority: wmsTables.productMatchings.priority,
-          strategy: wmsTables.productMatchings.strategy,
-          isResolved: wmsTables.productMatchings.isResolved,
-          preStockSellable: wmsTables.productMatchings.preStockSellable,
-          alwaysSellableZeroStock: wmsTables.productMatchings.alwaysSellableZeroStock,
-          createdAt: wmsTables.productMatchings.createdAt,
-          updatedAt: wmsTables.productMatchings.updatedAt,
-        })
-        .from(wmsTables.productMatchings)
-        .where(inArray(wmsTables.productMatchings.variantId, uniqueVariantIds));
-
-      const policies = await trx
-        .select({
-          variantId: wmsTables.salesVariantPolicies.variantId,
-          preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
-          alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
-          availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
-          comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
-        })
-        .from(wmsTables.salesVariantPolicies)
-        .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
-
-      const matchingIds = matchings.map((matching) => matching.id);
-      const links =
-        matchingIds.length > 0
-          ? await trx
-              .select({
-                productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
-                skuId: wmsTables.productVariantSkuLinks.skuId,
-                quantity: wmsTables.productVariantSkuLinks.quantity,
-                skuName: wmsTables.skus.name,
-                skuCode: wmsTables.skus.code,
-              })
-              .from(wmsTables.productVariantSkuLinks)
-              .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
-              .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds))
-          : [];
-
-      const projections = await this.productSellableQuantity.getByVariantIds(uniqueVariantIds, trx as any);
-
-      const existingVariantIds = new Set(variants.map((variant) => variant.id));
-      const matchingByVariantId = new Map(matchings.map((matching) => [matching.variantId, matching]));
-      const policyByVariantId = new Map(policies.map((policy) => [policy.variantId, policy]));
-      const projectionByVariantId = new Map(projections.map((projection) => [projection.variantId, projection]));
-      const linksByMatchingId = new Map<string, typeof links>();
-
-      for (const link of links) {
-        const matchingLinks = linksByMatchingId.get(link.productMatchingId) ?? [];
-        matchingLinks.push(link);
-        linksByMatchingId.set(link.productMatchingId, matchingLinks);
-      }
-
-      const data: VariantMatchingBatchItemDto[] = variantIds.map((variantId) => {
-        const matching = matchingByVariantId.get(variantId);
-        const policy = policyByVariantId.get(variantId);
-        const stockPolicy = {
-          preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? true,
-          alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
-          availabilityOverride: policy?.availabilityOverride ?? null,
-          comingSoonDate: policy?.comingSoonDate ?? null,
-        };
-
-        if (!existingVariantIds.has(variantId)) {
+        if (uniqueVariantIds.length === 0) {
           return {
-            variantId,
-            exists: false,
-            matching: null,
-            stockPolicy,
-            projection: null,
+            data: variantIds.map((variantId) => ({
+              variantId,
+              exists: false,
+              matching: null,
+              stockPolicy: {
+                preStockSellable: true,
+                alwaysSellableZeroStock: false,
+                availabilityOverride: null,
+                comingSoonDate: null,
+              },
+              projection: null,
+            })),
           };
         }
 
-        return {
-          variantId,
-          exists: true,
-          matching: matching
-            ? {
-                ...matching,
-                createdAt: matching.createdAt.toISOString(),
-                updatedAt: matching.updatedAt.toISOString(),
-                stockPolicy,
-                links: (linksByMatchingId.get(matching.id) ?? []).map((link) => ({
-                  skuId: link.skuId,
-                  skuName: link.skuName ?? undefined,
-                  skuCode: link.skuCode ?? undefined,
-                  quantity: link.quantity,
-                })),
-              }
-            : null,
-          stockPolicy,
-          projection: this.toProjectionView(projectionByVariantId.get(variantId)),
-        };
-      });
+        const variants = await (trx as any)
+          .select({
+            id: productVariants.id,
+          })
+          .from(productVariants)
+          .where(inArray(productVariants.id, uniqueVariantIds));
 
-      return { data };
-    }, tx);
+        const matchings = await trx
+          .select({
+            id: wmsTables.productMatchings.id,
+            variantId: wmsTables.productMatchings.variantId,
+            masterId: wmsTables.productMatchings.masterId,
+            skuGroupId: wmsTables.productMatchings.skuGroupId,
+            status: wmsTables.productMatchings.status,
+            priority: wmsTables.productMatchings.priority,
+            strategy: wmsTables.productMatchings.strategy,
+            isResolved: wmsTables.productMatchings.isResolved,
+            preStockSellable: wmsTables.productMatchings.preStockSellable,
+            alwaysSellableZeroStock: wmsTables.productMatchings.alwaysSellableZeroStock,
+            createdAt: wmsTables.productMatchings.createdAt,
+            updatedAt: wmsTables.productMatchings.updatedAt,
+          })
+          .from(wmsTables.productMatchings)
+          .where(inArray(wmsTables.productMatchings.variantId, uniqueVariantIds));
+
+        const policies = await trx
+          .select({
+            variantId: wmsTables.salesVariantPolicies.variantId,
+            preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
+            alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
+            availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+            comingSoonDate: wmsTables.salesVariantPolicies.comingSoonDate,
+          })
+          .from(wmsTables.salesVariantPolicies)
+          .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
+
+        const matchingIds = matchings.map((matching) => matching.id);
+        const links =
+          matchingIds.length > 0
+            ? await trx
+                .select({
+                  productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+                  skuId: wmsTables.productVariantSkuLinks.skuId,
+                  quantity: wmsTables.productVariantSkuLinks.quantity,
+                  skuName: wmsTables.skus.name,
+                  skuCode: wmsTables.skus.code,
+                })
+                .from(wmsTables.productVariantSkuLinks)
+                .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+                .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds))
+            : [];
+
+        const projections = await this.productSellableQuantity.getByVariantIds(uniqueVariantIds, trx as any);
+
+        const existingVariantIds = new Set(variants.map((variant) => variant.id));
+        const matchingByVariantId = new Map(matchings.map((matching) => [matching.variantId, matching]));
+        const policyByVariantId = new Map(policies.map((policy) => [policy.variantId, policy]));
+        const projectionByVariantId = new Map(projections.map((projection) => [projection.variantId, projection]));
+        const linksByMatchingId = new Map<string, typeof links>();
+
+        for (const link of links) {
+          const matchingLinks = linksByMatchingId.get(link.productMatchingId) ?? [];
+          matchingLinks.push(link);
+          linksByMatchingId.set(link.productMatchingId, matchingLinks);
+        }
+
+        const data: VariantMatchingBatchItemDto[] = variantIds.map((variantId) => {
+          const matching = matchingByVariantId.get(variantId);
+          const policy = policyByVariantId.get(variantId);
+          const stockPolicy = {
+            preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? true,
+            alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
+            availabilityOverride: policy?.availabilityOverride ?? null,
+            comingSoonDate: policy?.comingSoonDate ?? null,
+          };
+
+          if (!existingVariantIds.has(variantId)) {
+            return {
+              variantId,
+              exists: false,
+              matching: null,
+              stockPolicy,
+              projection: null,
+            };
+          }
+
+          return {
+            variantId,
+            exists: true,
+            matching: matching
+              ? {
+                  ...matching,
+                  createdAt: matching.createdAt.toISOString(),
+                  updatedAt: matching.updatedAt.toISOString(),
+                  stockPolicy,
+                  links: (linksByMatchingId.get(matching.id) ?? []).map((link) => ({
+                    skuId: link.skuId,
+                    skuName: link.skuName ?? undefined,
+                    skuCode: link.skuCode ?? undefined,
+                    quantity: link.quantity,
+                  })),
+                }
+              : null,
+            stockPolicy,
+            projection: this.toProjectionView(projectionByVariantId.get(variantId)),
+          };
+        });
+
+        return { data };
+      },
+      tx as DbTx | undefined,
+    );
   }
 
   async getByVariant(variantId: string, tx?: DbTx) {
