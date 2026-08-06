@@ -323,7 +323,9 @@
       "networkError": "ネットワークエラー"
     },
     "retry": "再試行する",
-    "goBack": "前のページに戻る"
+    "goBack": "前のページに戻る",
+    "shippingMethodMissing": "配送料の情報が変更されたため、注文を完了できませんでした。カートに戻ってもう一度お試しください。",
+    "shippingMethodNone": "配送方法が設定されていません。カートに戻ってもう一度お試しください。"
   },
   "callback": {
     "paymentFailed": "決済に失敗しました。",

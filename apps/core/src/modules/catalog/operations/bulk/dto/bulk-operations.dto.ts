@@ -55,4 +55,9 @@ export class BulkPolicyDto {
   @IsOptional()
   @IsBoolean()
   isOverseas?: boolean;
+
+  /** 배송비 그룹 코드. null 이면 기본 그룹으로 되돌린다. */
+  @IsOptional()
+  @IsString()
+  shippingGroupCode?: string | null;
 }

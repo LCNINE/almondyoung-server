@@ -16,6 +16,8 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { FormSelect } from '@/components/common/form';
+import type { ShippingGroup } from '@/lib/api/domains/medusa/shipping-groups';
+import { useShippingGroups } from '@/lib/services/medusa-shipping-groups';
 import { useSuppliers } from '@/lib/services/inventory/queries';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -28,6 +30,7 @@ import {
   useUpdateMembersOnlyVisibility,
   useUpdateOverseas,
   useUpdateRequiresMembership,
+  useUpdateShippingGroup,
 } from '@/lib/services/products/mutations';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import {
@@ -44,9 +47,17 @@ import {
   type SelectableCategory,
 } from './basic-information-model';
 import { ProductCategorySelectionModal } from './category-selection-modal';
+import { ShippingInfoBlock } from './shipping-info-block';
 
 // Radix Select 는 빈 문자열 value 를 허용하지 않아 '없음' 을 나타낼 sentinel 이 필요하다.
 const NO_SUPPLIER = 'none';
+function labelByShippingGroupCode(
+  groups: ShippingGroup[] | undefined,
+  code: string | null
+): string {
+  if (!code) return '기본 설정 사용';
+  return (groups ?? []).find((group) => group.code === code)?.name ?? code;
+}
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -102,6 +113,7 @@ function ProductBasicInformationEditDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateVersion = useUpdateMasterVersion();
+  const { data: shippingGroups } = useShippingGroups();
   const { data: suppliers } = useSuppliers({ limit: 200 });
   const supplierOptions = useMemo(
     () => [
@@ -272,6 +284,14 @@ function ProductBasicInformationEditDrawer({
                   />
                 </div>
               </div>
+
+              <ShippingInfoBlock
+                value={values.shippingGroupCode}
+                onChange={(next) => setValue('shippingGroupCode', next)}
+                groups={shippingGroups}
+                disabled={updateVersion.isPending}
+                digital={values.fulfillmentKind === 'digital'}
+              />
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="product-basic-seo-title">SEO 제목</Label>
@@ -494,6 +514,19 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     masterId,
     versionId
   );
+  const updateShippingGroup = useUpdateShippingGroup(masterId, versionId);
+  const { data: shippingGroups } = useShippingGroups();
+
+  function handleShippingGroupChange(value: string) {
+    const nextCode = value ? value : null;
+    updateShippingGroup.mutate(nextCode, {
+      onSuccess: () =>
+        toast.success(
+          `배송비 그룹을 '${labelByShippingGroupCode(shippingGroups, nextCode)}'(으)로 변경했습니다.`
+        ),
+      onError: () => toast.error('배송비 그룹 변경에 실패했습니다.'),
+    });
+  }
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
@@ -502,6 +535,13 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '시장가', value: formatMoney(data.marketPrice) },
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
+    {
+      key: '배송비 그룹',
+      value:
+        data.fulfillmentKind === 'digital'
+          ? '-'
+          : labelByShippingGroupCode(shippingGroups, data.shippingGroupCode),
+    },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
     { key: '해외직구', value: formatBool(data.isOverseas) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },
@@ -656,6 +696,14 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
               className="data-[state=unchecked]:border-gray-300"
             />
           </div>
+
+          <ShippingInfoBlock
+            value={data.shippingGroupCode ?? ''}
+            onChange={handleShippingGroupChange}
+            groups={shippingGroups}
+            disabled={updateShippingGroup.isPending}
+            digital={data.fulfillmentKind === 'digital'}
+          />
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col min-w-0 gap-1">

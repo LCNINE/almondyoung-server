@@ -240,6 +240,7 @@ export class MedusaClient {
   private readonly typeCache = new Map<string, string>(); // key: value
   private readonly salesChannelCache = new Map<string, string>(); // key: name
   private defaultShippingProfileId?: string;
+  private readonly shippingProfileIdByGroupCode = new Map<string, string>(); // key: 배송비 그룹 코드
   private projectionStockLocationId?: string;
   private shipmentProjectionQueues?: Map<string, Promise<void>>;
   // 대용량 상품일 때 한번에 보내는 variants 수를 제한 (unknown_error 완화 목적)
@@ -267,6 +268,7 @@ export class MedusaClient {
     this.typeCache.clear();
     this.salesChannelCache.clear();
     this.defaultShippingProfileId = undefined;
+    this.shippingProfileIdByGroupCode.clear();
     this.logger.log('All caches cleared');
   }
 
@@ -948,6 +950,39 @@ export class MedusaClient {
 
     this.defaultShippingProfileId = profile.id;
     return profile.id;
+  }
+
+  /**
+   * 배송비 그룹 코드 → Medusa shipping profile id.
+   *
+   * 그룹 정의는 Medusa 가 소유하고 Core 는 코드만 들고 있으므로 여기서 해석한다.
+   * 모르는 코드는 기본 그룹으로 떨어뜨린다 — 상품이 배송옵션 없는 profile 을 가리키면
+   * 장바구니에 담기는 순간 결제가 막히므로, 조용히 깨지는 것보다 기본 배송비가 낫다.
+   */
+  async getShippingProfileIdForGroup(shippingGroupCode?: string | null): Promise<string> {
+    const code = shippingGroupCode?.trim();
+    if (!code || code === 'default') {
+      return this.getDefaultShippingProfileId();
+    }
+
+    const cached = this.shippingProfileIdByGroupCode.get(code);
+    if (cached) return cached;
+
+    const { shipping_groups } = await this.sdk.client.fetch<{
+      shipping_groups: Array<{ code: string; shippingProfileId: string }>;
+    }>('/admin/shipping-groups', { method: 'GET' });
+
+    this.shippingProfileIdByGroupCode.clear();
+    for (const group of shipping_groups ?? []) {
+      this.shippingProfileIdByGroupCode.set(group.code, group.shippingProfileId);
+    }
+
+    const resolved = this.shippingProfileIdByGroupCode.get(code);
+    if (!resolved) {
+      this.logger.warn(`Unknown shipping group code "${code}" — falling back to the default shipping profile.`);
+      return this.getDefaultShippingProfileId();
+    }
+    return resolved;
   }
 
   // handle로 medusa product 조회

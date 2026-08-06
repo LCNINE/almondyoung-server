@@ -50,11 +50,6 @@ export default function MobileCheckoutBar({
     0
   )
 
-  const selectedItemSubtotal = selectedItems.reduce(
-    (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
-    0
-  )
-
   useEffect(() => {
     const handleScroll = () => {
       const scrollTop = window.scrollY
@@ -192,7 +187,7 @@ export default function MobileCheckoutBar({
             </div>
 
             {selectedCount > 0 && (
-              <FreeShippingProgress itemSubtotal={selectedItemSubtotal} className="mb-3" />
+              <FreeShippingProgress items={selectedItems} className="mb-3" />
             )}
 
             {/* 구매 버튼 */}

@@ -42,7 +42,7 @@ async function CheckoutManager({
 }) {
   let cart = (await retrieveCart(
     cartId,
-    "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.metadata, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
+    "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.metadata, +items.product.shipping_profile.id, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
     "no-store"
   )) as CartResponseDto["cart"]
 
@@ -74,9 +74,11 @@ async function CheckoutManager({
   }
 
   // 장바구니 아이템 타입에 따라 올바른 배송 옵션 자동 설정.
+  // refreshAmounts: 여기서 확정된 금액으로 결제가 진행되므로 배송비를 다시 계산해 붙인다.
+  // 어드민이 배송비 그룹 금액을 고쳐도 옛 금액으로 결제되지 않는다.
   let shippingResult: Awaited<ReturnType<typeof ensureCorrectShippingMethod>>
   try {
-    shippingResult = await ensureCorrectShippingMethod(cart)
+    shippingResult = await ensureCorrectShippingMethod(cart, { refreshAmounts: true })
   } catch (error) {
     if (isUnavailableVariantError(error)) {
       return (
@@ -122,12 +124,17 @@ async function CheckoutManager({
     })
   )
 
-  // 배송료 정보
+  // 배송료 정보.
+  // 금액은 카트의 shipping_total 을 쓴다 — 배송옵션 조회(/store/shipping-options)는 계산형 옵션의
+  // amount 를 주지 않고(null), 배송비 그룹이 2개 이상이면 첫 옵션 금액만으로는 합계가 되지 않는다.
   const shippingMethod = shippingMethods?.[0]
   const tProcess = await getTranslations("checkout.process")
+  const shippingNames = (cart.shipping_methods ?? [])
+    .map((method) => method.name)
+    .filter(Boolean)
   const shipping: ShippingInfo = {
-    amount: shippingMethod?.amount ?? 0,
-    name: shippingMethod?.name ?? tProcess("shippingFallback"),
+    amount: cart.shipping_total ?? 0,
+    name: shippingNames.length ? shippingNames.join(" · ") : (shippingMethod?.name ?? tProcess("shippingFallback")),
     description: shippingMethod?.type?.description ?? "",
   }
   const customer = await retrieveCustomer()

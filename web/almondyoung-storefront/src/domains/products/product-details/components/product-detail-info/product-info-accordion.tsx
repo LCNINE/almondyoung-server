@@ -1,11 +1,46 @@
 "use client"
 
 import { ChevronDown } from "lucide-react"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 
-export function ProductInfoAccordion() {
+import { useShippingGroups } from "@/contexts/shipping-groups-context"
+import { formatPrice } from "@/lib/utils/price-utils"
+import {
+  describeShippingFee,
+  findShippingGroupDelivery,
+} from "../../utils/describe-shipping-fee"
+
+export function ProductInfoAccordion({
+  productMetadata,
+}: {
+  productMetadata?: Record<string, unknown> | null
+}) {
   const t = useTranslations("productDetail.accordion")
+  const shippingGroups = useShippingGroups()
+  const shippingFeeLabel = useMemo(() => {
+    const fee = describeShippingFee(productMetadata, shippingGroups)
+    switch (fee.kind) {
+      case "free":
+        return t("shippingFeeFree")
+      case "flat":
+        return t("shippingFeeFlat", { amount: formatPrice(fee.amount) })
+      case "conditionalFree":
+        return t("shippingFeeConditional", {
+          amount: formatPrice(fee.amount),
+          threshold: formatPrice(fee.threshold),
+        })
+      case "perQuantity":
+        return t("shippingFeePerQuantity", { amount: formatPrice(fee.amount) })
+      default:
+        return t("shippingFee")
+    }
+  }, [productMetadata, shippingGroups, t])
+
+  const delivery = useMemo(
+    () => findShippingGroupDelivery(productMetadata, shippingGroups),
+    [productMetadata, shippingGroups]
+  )
   const [accordionStates, setAccordionStates] = useState({
     payment: false,
     shipping: false,
@@ -67,10 +102,23 @@ export function ProductInfoAccordion() {
             <div className="overflow-hidden">
               <div className="px-4 pb-4 text-sm text-gray-600">
                 <ul className="list-disc space-y-1 pl-4">
-                  <li>{t("shippingMethod")}</li>
-                  <li>{t("shippingArea")}</li>
-                  <li>{t("shippingFee")}</li>
-                  <li>{t("shippingDuration")}</li>
+                  <li>
+                    {delivery
+                      ? t("shippingMethodValue", { method: delivery.method })
+                      : t("shippingMethod")}
+                  </li>
+                  <li>
+                    {delivery ? t("shippingAreaValue", { area: delivery.area }) : t("shippingArea")}
+                  </li>
+                  <li>{shippingFeeLabel}</li>
+                  <li>
+                    {delivery
+                      ? t("shippingDurationValue", {
+                          min: delivery.leadTimeMinDays,
+                          max: delivery.leadTimeMaxDays,
+                        })
+                      : t("shippingDuration")}
+                  </li>
                   <li>{t("shippingCarrier")}</li>
                 </ul>
                 <p className="mt-4">{t("shippingNote1")}</p>

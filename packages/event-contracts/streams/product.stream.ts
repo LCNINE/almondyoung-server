@@ -121,6 +121,8 @@ export interface ProductSnapshot {
   tags?: string[];
   productType?: string;
   fulfillmentKind?: 'physical' | 'digital';
+  /** 배송비 그룹 코드. 없으면 기본 그룹('default'). */
+  shippingGroupCode?: string;
   optionGroups?: Array<{
     id: string;
     name: string;
@@ -353,6 +355,7 @@ const ProductSnapshotSchema = z.object({
   tags: z.array(z.string()).optional(),
   productType: z.string().optional(),
   fulfillmentKind: z.enum(['physical', 'digital']).optional(),
+  shippingGroupCode: z.string().optional(),
   optionGroups: z.array(ProductSnapshotOptionGroupSchema).optional(),
   variants: z.array(ProductSnapshotVariantSchema),
   status: z.enum(['active', 'draft', 'archived']),

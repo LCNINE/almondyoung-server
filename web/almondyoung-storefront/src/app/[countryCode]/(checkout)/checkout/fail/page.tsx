@@ -3,6 +3,13 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
+import { CHECKOUT_ERROR_CODES } from "@/lib/api/medusa/checkout-error-code"
+
+// 코드가 잡히는 에러는 Medusa 영문 원문 대신 안내 문구를 보여준다.
+const MESSAGE_KEY_BY_CODE: Record<string, string> = {
+  [CHECKOUT_ERROR_CODES.shippingMethodMissing]: "shippingMethodMissing",
+  [CHECKOUT_ERROR_CODES.shippingMethodNone]: "shippingMethodNone",
+}
 
 export default function CheckoutFailPage() {
   const t = useTranslations("checkout.fail")
@@ -16,7 +23,10 @@ export default function CheckoutFailPage() {
 
   useEffect(() => {
     const code = searchParams.get("code") || "UNKNOWN_ERROR"
-    const message = searchParams.get("message") || t("unknownError")
+    const messageKey = MESSAGE_KEY_BY_CODE[code]
+    const message = messageKey
+      ? t(messageKey)
+      : searchParams.get("message") || t("unknownError")
 
     setErrorInfo({ code, message })
   }, [searchParams, t])

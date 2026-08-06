@@ -1027,6 +1027,8 @@ export interface BulkUpdatePolicyDto {
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
   isOverseas?: boolean;
+  /** null 이면 기본 배송비 그룹으로 되돌린다. */
+  shippingGroupCode?: string | null;
 }
 
 // POST /masters/bulk/policy 응답 모양 (products 없음).

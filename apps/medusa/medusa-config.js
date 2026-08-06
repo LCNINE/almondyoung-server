@@ -168,6 +168,26 @@ module.exports = defineConfig({
         ],
       },
     },
+    // fulfillment 는 지금까지 기본값(manual provider 만)으로 돌았다. 배송비 그룹 계산을 위해
+    // 명시 등록으로 바꾸고 almond provider 를 추가한다. manual 은 기존 배송옵션이 참조하므로 유지.
+    {
+      resolve: '@medusajs/medusa/fulfillment',
+      // almond provider 가 배송비 그룹을 판정하려면 상품→shipping profile 을 조회해야 한다.
+      // dependencies 는 모듈 레벨에서만 모듈 컨테이너에 등록된다 (provider 항목에 적으면 무시됨).
+      dependencies: [ContainerRegistrationKeys.QUERY],
+      options: {
+        providers: [
+          {
+            resolve: '@medusajs/medusa/fulfillment-manual',
+            id: 'manual',
+          },
+          {
+            resolve: './src/modules/almond-fulfillment',
+            id: 'almond',
+          },
+        ],
+      },
+    },
     {
       resolve: '@medusajs/api-key',
       options: {},

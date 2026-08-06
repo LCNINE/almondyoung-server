@@ -59,7 +59,9 @@
   },
   "freeShipping": {
     "reached": "Free shipping applied!",
-    "remaining": "Add {amount} KRW more for free shipping"
+    "remaining": "Add {amount} KRW more for free shipping",
+    "reachedInGroup": "Free shipping applied for {group}!",
+    "remainingInGroup": "Add {amount} KRW more in {group} for free shipping"
   },
   "priceError": {
     "message": "Couldn't load the amount",

@@ -5,6 +5,7 @@ import type { PimProductSnapshot, MedusaProductPayload } from '../../../types';
 const logger = new Logger('PimToMedusaTransformer');
 const DEFAULT_OPTION_TITLE = '기본 옵션';
 const DEFAULT_OPTION_VALUE = '기본 옵션값';
+const DEFAULT_SHIPPING_GROUP_CODE = 'default';
 
 export interface MedusaSyncOverrides {
   categories?: Array<{ id: string }>;
@@ -70,6 +71,7 @@ export function transformPimToMedusa(
 
   const fulfillmentKind = snapshot.fulfillmentKind ?? 'physical';
   const requiresShipping = fulfillmentKind === 'physical';
+  const shippingGroupCode = snapshot.shippingGroupCode?.trim() || DEFAULT_SHIPPING_GROUP_CODE;
 
   // 6. 메타데이터
   const hideMembershipPriceForNonMembers =
@@ -93,6 +95,7 @@ export function transformPimToMedusa(
     pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,
     fulfillmentKind,
     requiresShipping,
+    shippingGroupCode,
     syncedAt: new Date().toISOString(),
   };
 

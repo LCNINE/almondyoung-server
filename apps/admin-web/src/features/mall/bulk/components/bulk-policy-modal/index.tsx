@@ -26,8 +26,13 @@ import {
 import {
   buildPolicyPatch,
   hasAnyChange,
+  SHIPPING_GROUP_DEFAULT,
+  SHIPPING_GROUP_UNCHANGED,
   type PolicyChoices,
 } from './build-policy-patch';
+import { FormSelect } from '@/components/common/form';
+import { DEFAULT_SHIPPING_GROUP_CODE } from '@/lib/api/domains/medusa/shipping-groups';
+import { useShippingGroups } from '@/lib/services/medusa-shipping-groups';
 
 interface Props {
   open: boolean;
@@ -69,19 +74,31 @@ export function BulkPolicyModal({
   onSuccess,
 }: Props) {
   const [choices, setChoices] = useState<PolicyChoices>(INITIAL);
+  const [shippingGroupChoice, setShippingGroupChoice] = useState<string>(
+    SHIPPING_GROUP_UNCHANGED
+  );
+  const { data: shippingGroups } = useShippingGroups();
+  const shippingGroupOptions = [
+    { value: SHIPPING_GROUP_UNCHANGED, label: '변경 안 함' },
+    { value: SHIPPING_GROUP_DEFAULT, label: '기본 설정 사용' },
+    ...(shippingGroups ?? [])
+      .filter((group) => group.code !== DEFAULT_SHIPPING_GROUP_CODE)
+      .map((group) => ({ value: group.code, label: group.name })),
+  ];
   const [failedItems, setFailedItems] = useState<BulkUpdateFailureDto[]>([]);
   const bulkPolicy = useBulkUpdatePolicy();
 
   function handleOpenChange(next: boolean) {
     if (!next) {
       setChoices(INITIAL);
+      setShippingGroupChoice(SHIPPING_GROUP_UNCHANGED);
       setFailedItems([]);
     }
     onOpenChange(next);
   }
 
   async function handleConfirm() {
-    const patch = buildPolicyPatch(choices);
+    const patch = buildPolicyPatch(choices, shippingGroupChoice);
     setFailedItems([]);
     try {
       const result = await bulkPolicy.mutateAsync({
@@ -164,6 +181,19 @@ export function BulkPolicyModal({
             );
           })}
 
+          <div className="flex flex-col gap-2 rounded-md border p-3">
+            <Label htmlFor="bulk-policy-shipping-group">배송비 그룹</Label>
+            <p className="text-xs text-muted-foreground">
+              같은 그룹 상품끼리는 배송비가 한 번만 부과됩니다. 디지털 상품에는
+              적용되지 않습니다.
+            </p>
+            <FormSelect
+              value={shippingGroupChoice}
+              onValueChange={setShippingGroupChoice}
+              options={shippingGroupOptions}
+            />
+          </div>
+
           <BulkFailureList items={failedItems} />
         </div>
 
@@ -173,7 +203,9 @@ export function BulkPolicyModal({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={bulkPolicy.isPending || !hasAnyChange(choices)}
+            disabled={
+              bulkPolicy.isPending || !hasAnyChange(choices, shippingGroupChoice)
+            }
           >
             {bulkPolicy.isPending ? '처리 중...' : '확인'}
           </Button>

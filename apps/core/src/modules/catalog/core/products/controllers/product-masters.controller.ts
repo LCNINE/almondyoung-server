@@ -454,6 +454,30 @@ export class ProductMastersController {
     return { success: true, masterId, isOverseas: body.isOverseas };
   }
 
+  @Patch(':masterId/shipping-group')
+  @ApiOperation({
+    summary: '배송비 그룹 변경',
+    description:
+      'draft 없이 active 버전의 배송비 그룹을 직접 수정합니다. null 또는 빈 문자열이면 기본 그룹이 적용됩니다. ' +
+      '그룹 정의(금액·무료 기준·지역 추가비)는 Medusa 의 배송비 그룹에서 관리합니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { shippingGroupCode: { type: 'string', nullable: true, example: 'meal' } },
+      required: ['shippingGroupCode'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateShippingGroup(@Param('masterId') masterId: string, @Body() body: { shippingGroupCode: string | null }) {
+    await this.productVersionsService.updateExposurePolicy(masterId, {
+      shippingGroupCode: body.shippingGroupCode ?? null,
+    });
+    return { success: true, masterId, shippingGroupCode: body.shippingGroupCode ?? null };
+  }
+
   @Patch(':masterId/unpublish')
   @ApiOperation({
     summary: '제품 마스터 비공개 처리',

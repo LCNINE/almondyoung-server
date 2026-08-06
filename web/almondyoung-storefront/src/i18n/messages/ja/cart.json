@@ -59,7 +59,9 @@
   },
   "freeShipping": {
     "reached": "送料無料が適用されます!",
-    "remaining": "あと{amount}ウォンで送料無料"
+    "remaining": "あと{amount}ウォンで送料無料",
+    "reachedInGroup": "{group} 送料無料が適用されます！",
+    "remainingInGroup": "{group} あと{amount}ウォンで送料無料"
   },
   "priceError": {
     "message": "金額を取得できませんでした",

@@ -48,6 +48,11 @@ export const defaultStoreCartFields = [
   'items.product_id',
   'items.product.categories.id',
   'items.product.tags.id',
+  // 장바구니가 라인별 배송비 그룹을 알아야 그룹별 무료배송 진행바를 그릴 수 있다.
+  'items.product.metadata',
+  // 카트에 실제로 필요한 배송비 그룹을 판정한다. /store/shipping-options 는 배송권역의 모든
+  // 옵션을 주므로, 이 값이 없으면 담기지도 않은 그룹의 배송수단까지 붙게 된다.
+  'items.product.shipping_profile.id',
   'items.product.collection_id',
   'items.product.type_id',
   'items.product_type_id',

@@ -43,6 +43,7 @@ export type ProductDetailView = {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
+  shippingGroupCode: string | null;
   categories: ProductDetailCategory[];
   createdAt: string;
   updatedAt: string;
@@ -85,6 +86,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     isMembershipOnly:
       master.hideMembershipPriceForNonMembers ?? master.isMembershipOnly,
     fulfillmentKind: master.fulfillmentKind ?? null,
+    shippingGroupCode: master.shippingGroupCode ?? null,
     categories: master.categories,
     createdAt: master.createdAt,
     updatedAt: master.updatedAt,
@@ -121,6 +123,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     isMembershipOnly:
       detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly,
     fulfillmentKind: detail.fulfillmentKind ?? null,
+    shippingGroupCode: detail.shippingGroupCode ?? null,
     categories: detail.categories,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
