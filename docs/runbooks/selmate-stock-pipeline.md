@@ -546,9 +546,13 @@ CORE_DB_URL=...core MEDUSA_DB_URL=...medusa \
 - 멱등: 이미 matched 는 pending 조회에서 자동 제외. 대량은 300건씩 배치 커밋(timeout 회피).
 - **분석 전용**: `match-dryrun.ts` 는 매칭 가능 규모만 측정(쓰기 없음). 매칭률/미매칭 원인 확인용.
 
-### ②-B ★ 매칭 직후 반드시: 한국상품 `always_sellable_zero_stock` 적용
+### ②-B ★ 매칭 직후 반드시: 한국상품 `pre_stock_sellable`(선판매) 적용
 
 **이걸 빼먹으면 한국상품이 재고 0 인 순간 전부 품절된다.** 매칭 스크립트는 이 플래그를 켜지 않는다.
+
+⚠️ **2026-08-06 정책 변경 — 한국상품은 "항상 판매" 가 아니라 "선판매" 로 건다.** 그 전엔
+`always_sellable_zero_stock` 이었다. 계산기 동작(재고 0 → 무한판매)은 둘이 같고 바뀌는 건 **의미와 어드민 표시**다
+— 국내는 조달이 빨라 "입고 전 선판매" 가 실제 상태에 맞다. 아래 명령·checklist 의 플래그를 그대로 쓸 것.
 
 정책은 "**한국상품은 재고 0 이어도 계속 판매, 해외(중국 등)만 품절**" 이다. 국내는 조달이 빨라서다. 그런데 **한국/해외 구분은 셀메이트에만 있는 정보**라 Core 스키마에 없다 — 그래서 코드가 아니라 **이 런북의 절차**로 유지한다. CSV 를 받을 때마다 다시 걸어야 한다.
 
@@ -557,8 +561,8 @@ CORE_DB_URL=...core MEDUSA_DB_URL=...medusa \
 #    (둘의 옵션정보일련번호는 겹치지 않고 합치면 전체가 된다)
 
 # 2) 한국 CSV 로 플래그 ON (dry-run → apply). 옵션정보일련번호 → skus.code 조인은 스크립트가 한다.
-bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag always_sellable_zero_stock --on
-bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag always_sellable_zero_stock --on --apply \
+bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag pre_stock_sellable --on
+bash scripts/sellmate/run.sh live set-sellable-policy <한국csv> --flag pre_stock_sellable --on --apply \
   --out kr-variants.txt
 
 # 3) ★ Medusa 반영 — 스크립트는 이벤트를 발행하지 않는다
@@ -577,15 +581,18 @@ VARIANT_IDS="$(paste -sd, kr-variants.txt)" bash scripts/sellmate/run.sh live re
 - **매칭 안 된 품목은 건드리지 않는다** — `MATCHING_PENDING` 이라 애초에 게이팅이 없어 이미 무제한 판매 중이다.
   dry-run 이 `[미매칭]` 으로 표시하는 게 정상이며, 이 숫자가 크면 정책 문제가 아니라 ② 매칭이 안 붙은 것이다.
 
-계산기 순서상 `always_sellable_zero_stock` 이 `pre_stock_sellable` 보다 **먼저** 평가된다. 둘 다 무한판매로 가지만 의미가 다르다 — **"항상 판매"는 `always_sellable_zero_stock`, "입고 전 선판매"는 `pre_stock_sellable`.** 한국상품 정책은 전자다. 매칭이 켜는 값(`pre_stock_sellable=false`)과 충돌하지 않는다.
+계산기 순서상 `always_sellable_zero_stock` 이 `pre_stock_sellable` 보다 **먼저** 평가된다. 둘 다 무한판매로 가지만 의미가 다르다 — **"항상 판매"는 `always_sellable_zero_stock`, "입고 전 선판매"는 `pre_stock_sellable`.** 한국상품·해외예외(②-C) 둘 다 후자를 쓴다.
+
+**옛 플래그가 켜진 한국상품은 그대로 둬도 판매동작은 같다** (계산기가 `always_` 를 먼저 보고 무한판매로 보냄). 어드민 표시까지 "선판매" 로 맞추려면 두 번 돌린다 — `--flag always_sellable_zero_stock --off` 후 `--flag pre_stock_sellable --on`. 순서를 반대로 하면 중간에 잠깐 품절로 보일 수 있다.
+
+⚠️ **매칭이 두 플래그를 모두 false 로 덮어쓴다** (`match-sku-to-variant.ts`). 새로 매칭되는 순간 정책이 날아가므로 순서는 항상 **② 매칭 → ②-B 플래그 → Ⓐ A-3 recalc** 다. 이미 matched 인 건은 pending 조회에서 빠지므로 재실행해도 안 지워진다.
 
 미매칭(`pending`) 상품은 `MATCHING_PENDING` 이라 어차피 비-게이팅이므로 플래그가 없어도 팔린다. **문제는 새로 매칭되는 순간**이다 — 그래서 매칭할 때마다 이 절차를 같이 돌린다.
 
 ### ②-C 해외상품 중 품절시키면 안 되는 예외 — `pre_stock_sellable`
 
 ②-B 의 "해외는 품절" 은 기본값이지 전부가 아니다. **주문받고 들여오는 해외 브랜드**가 있고, 이건 재고 0 이
-정상 영업상태다. 이때 쓰는 건 `always_sellable_zero_stock`(항상판매) 이 아니라 **`pre_stock_sellable`(선판매)** 이다 —
-둘 다 무한판매로 가지만 "입고 전 선판매" 라는 의미가 맞고, 어드민 표시도 그렇게 나온다.
+정상 영업상태다. 쓰는 플래그는 ②-B(한국상품)와 같은 **`pre_stock_sellable`(선판매)** 이다 — 대상 CSV 만 다르다.
 
 **마스트(MAST) 는 해외상품 전부가 선판매다** (2026-08-06 확정). 종류로 가리지 않는다 — 머신·파워서플라이·배터리뿐
 아니라 부속류(RCA선/어댑터/부분품)도 포함이다. 2026-07-23 에 쓰던 `KIND_FILTER`/`EXCLUDE_FILTER` 는 더 이상 쓰지 않는다.
@@ -807,7 +814,7 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
 3. `① import-inbound-plans --apply` → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
-5. **`②-B` 한국상품 `always_sellable_zero_stock` 적용** ← 빼먹으면 한국상품이 품절된다
+5. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
    (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
 6. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
 7. `③ sync-restock-to-medusa --apply` → Medusa metadata
