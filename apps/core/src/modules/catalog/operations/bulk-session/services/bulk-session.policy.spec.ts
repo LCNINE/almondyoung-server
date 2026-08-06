@@ -29,12 +29,13 @@ describe('extractVariantPolicies', () => {
     const out = extractVariantPolicies(
       { 'variant:c1.preStockSellable': 'Y', 'variant:c1.alwaysSellableZeroStock': 'N' },
       rows('c1', {}),
+      'update',
     );
     expect(out.get('c1')).toEqual({ preStockSellable: true, alwaysSellableZeroStock: false });
   });
 
   it('빈칸은 지시 없음이라 키를 만들지 않는다', () => {
-    const out = extractVariantPolicies({ 'variant:c1.preStockSellable': '' }, rows('c1', {}));
+    const out = extractVariantPolicies({ 'variant:c1.preStockSellable': '' }, rows('c1', {}), 'update');
     expect(out.get('c1')).toBeUndefined();
   });
 
@@ -42,6 +43,7 @@ describe('extractVariantPolicies', () => {
     const out = extractVariantPolicies(
       { 'variant:c1.availabilityOverride': '' },
       rows('c1', { availabilityOverride: '', comingSoonDate: '' }),
+      'update',
     );
     expect(out.get('c1')).toEqual({ availabilityOverride: null, comingSoonDate: null });
   });
@@ -50,6 +52,7 @@ describe('extractVariantPolicies', () => {
     const out = extractVariantPolicies(
       { 'variant:c1.availabilityOverride': '출시예정' },
       rows('c1', { availabilityOverride: '출시예정', comingSoonDate: '2026-09-01' }),
+      'update',
     );
     expect(out.get('c1')).toEqual({ availabilityOverride: 'coming_soon', comingSoonDate: '2026-09-01' });
   });
@@ -60,13 +63,81 @@ describe('extractVariantPolicies', () => {
     const out = extractVariantPolicies(
       { 'variant:c1.comingSoonDate': '2026-10-01' },
       rows('c1', { availabilityOverride: '출시예정', comingSoonDate: '2026-10-01' }),
+      'update',
     );
     expect(out.get('c1')).toEqual({ availabilityOverride: 'coming_soon', comingSoonDate: '2026-10-01' });
   });
 
   it('정책 차분이 없는 조합은 항목을 만들지 않는다', () => {
-    const out = extractVariantPolicies({ 'variant:c1.variantCode': 'V-1' }, rows('c1', {}));
+    const out = extractVariantPolicies({ 'variant:c1.variantCode': 'V-1' }, rows('c1', {}), 'update');
     expect(out.size).toBe(0);
+  });
+
+  /**
+   * 신규 행의 `fields` 는 차분이 아니라 **파일 값 전체**라(신규 행은 비교 대상이 없다) 정책 열을
+   * 손도 안 댄 행에도 조합마다 빈 `판매상태재정의` 키가 들어 있다. 그것을 '해제'로 읽으면 조합
+   * 하나마다 무변화 `updateVariantStockPolicy` 가 발행 트랜잭션 안에서 돈다 — 조합 50 · 행 200
+   * 이면 무변화 쓰기 10,000 건이다.
+   *
+   * 두 방향을 **둘 다** 잠근다. 빈칸 쪽만 잠그면 기능을 죽이는 수정도 초록이 된다.
+   */
+  describe('신규(create) 행', () => {
+    it('정책 열을 손대지 않은 행은 패치를 만들지 않는다', () => {
+      const out = extractVariantPolicies(
+        {
+          'variant:c1.variantCode': 'V-1',
+          'variant:c1.availabilityOverride': '',
+          'variant:c1.comingSoonDate': '',
+          'variant:c1.preStockSellable': '',
+          'variant:c1.alwaysSellableZeroStock': '',
+        },
+        rows('c1', { availabilityOverride: '', comingSoonDate: '' }),
+        'create',
+      );
+      expect(out.size).toBe(0);
+    });
+
+    it('실제로 품절을 적었으면 그대로 적용된다', () => {
+      const out = extractVariantPolicies(
+        { 'variant:c1.availabilityOverride': '품절', 'variant:c1.comingSoonDate': '' },
+        rows('c1', { availabilityOverride: '품절', comingSoonDate: '' }),
+        'create',
+      );
+      expect(out.get('c1')).toEqual({ availabilityOverride: 'manual_out_of_stock', comingSoonDate: null });
+    });
+
+    it('출시예정은 날짜와 한 단위로 실린다', () => {
+      const out = extractVariantPolicies(
+        { 'variant:c1.availabilityOverride': '출시예정', 'variant:c1.comingSoonDate': '2026-09-01' },
+        rows('c1', { availabilityOverride: '출시예정', comingSoonDate: '2026-09-01' }),
+        'create',
+      );
+      expect(out.get('c1')).toEqual({ availabilityOverride: 'coming_soon', comingSoonDate: '2026-09-01' });
+    });
+
+    it('선판매만 적은 행은 선판매만 실린다 — 빈 override 가 끼어들지 않는다', () => {
+      const out = extractVariantPolicies(
+        {
+          'variant:c1.availabilityOverride': '',
+          'variant:c1.comingSoonDate': '',
+          'variant:c1.preStockSellable': 'Y',
+          'variant:c1.alwaysSellableZeroStock': '',
+        },
+        rows('c1', { availabilityOverride: '', comingSoonDate: '' }),
+        'create',
+      );
+      expect(out.get('c1')).toEqual({ preStockSellable: true });
+    });
+
+    it('수정 행의 빈 override 는 여전히 명시적 해제다', () => {
+      // 같은 입력이 kind 하나로 갈린다 — 위 첫 케이스와 짝이다.
+      const out = extractVariantPolicies(
+        { 'variant:c1.availabilityOverride': '', 'variant:c1.comingSoonDate': '' },
+        rows('c1', { availabilityOverride: '', comingSoonDate: '' }),
+        'update',
+      );
+      expect(out.get('c1')).toEqual({ availabilityOverride: null, comingSoonDate: null });
+    });
   });
 });
 
@@ -90,7 +161,11 @@ describe('applyPolicyDecisions', () => {
 
     expect(decided).toEqual({});
     // 짝 칸 규약이 시트에서 값을 되읽지 못하는지까지 본다 — 거른 뒤 실제 추출까지 태운다.
-    const policies = extractVariantPolicies(decided, rows('c1', { availabilityOverride: '품절', comingSoonDate: '' }));
+    const policies = extractVariantPolicies(
+      decided,
+      rows('c1', { availabilityOverride: '품절', comingSoonDate: '' }),
+      'update',
+    );
     expect(policies.size).toBe(0);
   });
 
@@ -105,7 +180,11 @@ describe('applyPolicyDecisions', () => {
     const decided = applyPolicyDecisions(fields, { 'variant:c1.availabilityOverride': 'skip' });
 
     expect(decided).toEqual({});
-    const policies = extractVariantPolicies(decided, rows('c1', { availabilityOverride: '품절', comingSoonDate: '' }));
+    const policies = extractVariantPolicies(
+      decided,
+      rows('c1', { availabilityOverride: '품절', comingSoonDate: '' }),
+      'update',
+    );
     expect(policies.get('c1')).toBeUndefined();
   });
 

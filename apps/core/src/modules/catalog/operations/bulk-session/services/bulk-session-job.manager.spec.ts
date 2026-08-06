@@ -1789,6 +1789,28 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
     expect(String(itemUpdates[0].publishError)).toContain('조합');
   });
 
+  /**
+   * (최종 리뷰 Finding 3) 이 조기 반환은 트랜잭션을 열지 않아 관문 ①②를 지나치지 않는다.
+   * 카탈로그는 안 건드리지만 `publish_status` 는 쓴다 — `runPublishSlice` 는 슬라이스를 한 번
+   * SELECT 한 뒤 루프를 도니, 그 사이 `excludeItem` 이 커밋되면(`status='excluded'`,
+   * `publishStatus='idle'`) 제외된 행에 '발행됨'이 찍힌다. 그래서 도장의 `where` 가 관문 ②와
+   * 같은 술어를 들어야 한다. 페이크 trx 는 조건으로 거르지 않으므로(파일 상단 주석) 렌더된
+   * SQL 의 술어를 본다 — `recordJobError` 스위트와 같은 깊이다.
+   */
+  it('도장의 where 가 drafted·pending 을 재확인한다 — 그 사이 제외된 행에 발행됨이 찍히면 안 된다', async () => {
+    const { manager, updates } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: null })],
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    const stamp = updates.filter((u) => u.table === 'items')[0];
+    const { sql, params } = renderQuery(stamp.condition);
+    expect(sql).toContain('"status"');
+    expect(sql).toContain('"publish_status"');
+    expect(params).toEqual(['item-1', 'drafted', 'pending']);
+  });
+
   it('draft 도 정책 변경도 없는 행은 아무 것도 하지 않고 발행됨으로 도장만 찍는다', async () => {
     const { manager, versions, skuMapping, updates } = makeHarness({
       bulkItems: [publishItemRow({ draftVersionId: null })],
@@ -1868,6 +1890,56 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
     expect(fieldsArg).toEqual(fields);
     expect(planArg).toEqual(buildOptionAdd(fields, optionRows).plan);
     expect(planArg.valueNameByKey.get('V1')).toEqual({ groupName: '색상', valueName: '빨강' });
+  });
+
+  /**
+   * (최종 리뷰 Finding 1) 신규 행의 `payload.fields` 는 차분이 아니라 **파일 값 전체**라, 정책
+   * 열을 손도 안 댄 행에도 조합마다 빈 `판매상태재정의` 키가 실려 온다. 그것을 '해제'로 읽으면
+   * 조합 하나마다 무변화 정책 쓰기(투영 재계산 + 아웃박스 이벤트)가 세션 행을 잠근 채 돈다.
+   * 여기서 잠그는 것은 **배선**(`item.kind` 가 실제로 넘어가는가)이고, 의미론은
+   * `bulk-session.policy.spec.ts` 가 양방향으로 덮는다. 바로 위 케이스가 반대 방향 —
+   * 신규 행이 실제로 '품절' 을 적으면 그대로 적용된다 — 를 잠그고 있다.
+   */
+  it('신규 행의 빈 정책 칸은 지시 없음이다 — 무변화 정책 쓰기를 내지 않는다', async () => {
+    const { manager, skuMapping, updates } = makeHarness({
+      bulkItems: [
+        publishItemRow({
+          kind: 'create',
+          draftVersionId: 'V-draft',
+          masterId: 'master-new',
+          payload: {
+            fields: {
+              'variant:c1.variantCode': 'SKU-1',
+              'variant:c1.availabilityOverride': '',
+              'variant:c1.comingSoonDate': '',
+              'variant:c1.preStockSellable': '',
+              'variant:c1.alwaysSellableZeroStock': '',
+            },
+          },
+          input: {
+            bundle: {
+              product: {},
+              options: [],
+              variants: [{ combination: 'c1', availabilityOverride: '', comingSoonDate: '' }],
+              categories: [],
+              constraint: null,
+            },
+            present: EMPTY_PRESENT,
+            errors: [],
+          },
+        }),
+      ],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-new', parentVersionId: null, status: 'draft' },
+      publishActiveVersion: null,
+      createdComboMap: new Map([['c1', 'v-created']]),
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(skuMapping.updateVariantStockPolicy).not.toHaveBeenCalled();
+    // 버전 발행 자체는 그대로 된다 — 정책만 안 나갈 뿐이다.
+    const itemUpdates = itemUpdatesOf(updates);
+    expect(itemUpdates[itemUpdates.length - 1]).toMatchObject({ publishStatus: 'published' });
   });
 
   /**
