@@ -1,4 +1,4 @@
-import { extractVariantPolicies, stripPolicyFields } from './bulk-session.policy';
+import { extractVariantPolicies, hasPolicyFields, stripPolicyFields } from './bulk-session.policy';
 
 const rows = (combo: string, cells: Record<string, string>) => [{ combination: combo, ...cells }];
 
@@ -62,5 +62,15 @@ describe('extractVariantPolicies', () => {
   it('정책 차분이 없는 조합은 항목을 만들지 않는다', () => {
     const out = extractVariantPolicies({ 'variant:c1.variantCode': 'V-1' }, rows('c1', {}));
     expect(out.size).toBe(0);
+  });
+});
+
+describe('hasPolicyFields', () => {
+  it('정책 경로가 있으면 참이다', () => {
+    expect(hasPolicyFields({ 'variant:c1.preStockSellable': 'Y' })).toBe(true);
+  });
+
+  it('정책 경로가 없으면 거짓이다', () => {
+    expect(hasPolicyFields({ 'product.name': '새 이름', 'variant:c1.variantCode': 'V-1' })).toBe(false);
   });
 });
