@@ -6,6 +6,8 @@ import { ProductVersionReadLoader } from '../../../core/products/loaders/product
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingRulesResponseDto } from '../../../core/pricing/dto';
 import { DbTransaction } from '../../../catalog.types';
+import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
+import { createImageKeyAllocator, type ImageKeyAllocator } from './form-export.types';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
 
 /**
@@ -46,8 +48,11 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     const categories = {
       getCategoryTree: jest.fn().mockResolvedValue(emptyTree),
     } as unknown as ProductCategoriesService;
+    // 이 스위트는 variantId 를 안 만드니(getVariants 가 늘 []) skuMapping 은 절대 안 불린다 —
+    // 생성자 인자 수만 맞추면 되는 자리 채우기용.
+    const skuMapping = { getVariantMatchingBatch: jest.fn() } as unknown as ProductSkuMappingService;
 
-    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories);
+    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
   }
 
   it('NotFoundException 은 해당 masterId 만 건너뛰고 나머지는 정상 처리한다', async () => {
@@ -83,5 +88,148 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     await expect(reader.buildPrefill(tx, ['broken-master', 'live-master'], 'exp-unit-throw')).rejects.toBe(boom);
     // 두 번째 masterId 는 첫 에러가 던져진 시점에 아직 처리되지 않았어야 한다.
     expect(getActiveVersion).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `renderMaster` 가 품목(variant) 판매정책을 프리필에 채우는지를 본다. 우선순위 재구현
+ * 여부는 여기서 검증하지 않는다(그건 ProductSkuMappingService 자신의 스펙 몫이다) —
+ * 대신 그 서비스가 돌려준 stockPolicy 를 리더가 **그대로 받아 워크북 표기로만 옮기는지**를
+ * 본다. skuMapping 을 목으로 넣어 배치 응답을 통제한다.
+ */
+describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () => {
+  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+  const tx = {} as unknown as DbTransaction;
+
+  let reader: FormExportSnapshotReader;
+  let allocator: ImageKeyAllocator;
+  let skuMapping: { getVariantMatchingBatch: jest.Mock };
+
+  beforeEach(() => {
+    const versionLoader = {
+      getActiveVersion: jest.fn().mockResolvedValue({
+        id: 'version-1',
+        name: '테스트 상품',
+        productCode: 'PC-1',
+        brand: null,
+        description: null,
+        alternativeName: null,
+        material: null,
+        marketPrice: null,
+        supplyPrice: null,
+        productType: null,
+        fulfillmentKind: null,
+        salesClassification: null,
+        purchaseClassification: null,
+        ageRestriction: null,
+        minQuantity: null,
+        maxQuantity: null,
+        seller: null,
+        isOverseas: false,
+        isVisibleToMembersOnly: false,
+        hideMembershipPriceForNonMembers: false,
+        isWholesaleOnly: false,
+        seoTitle: null,
+        seoDescription: null,
+        seoKeywords: null,
+        salesStartDate: null,
+        salesEndDate: null,
+      }),
+      getImages: jest.fn().mockResolvedValue([]),
+      // 프리필이 배치 조회에 넘길 variantId 를 이 목이 결정한다 — 아래 세 테스트의
+      // skuMapping 응답은 전부 이 id('v1')를 답한다고 가정한다.
+      getVariants: jest.fn().mockResolvedValue([{ id: 'v1', variantCode: 'VC-1' }]),
+      getCategories: jest.fn().mockResolvedValue([]),
+      getPurchaseConstraint: jest.fn().mockResolvedValue(null),
+    } as unknown as ProductVersionReadLoader;
+    const optionLoader = {
+      getOptionGroups: jest.fn().mockResolvedValue([]),
+      getVariantOptionValues: jest.fn().mockResolvedValue([]),
+    } as unknown as OptionReadLoader;
+    const pricing = {
+      getVersionRules: jest.fn().mockResolvedValue(emptyRules),
+    } as unknown as PricingService;
+    const categories = {
+      getCategoryTree: jest.fn().mockResolvedValue({ categories: [], totalCount: 0, maxDepth: 0 }),
+    } as unknown as ProductCategoriesService;
+    skuMapping = { getVariantMatchingBatch: jest.fn() };
+
+    reader = new FormExportSnapshotReader(
+      versionLoader,
+      optionLoader,
+      pricing,
+      categories,
+      skuMapping as unknown as ProductSkuMappingService,
+    );
+    allocator = createImageKeyAllocator();
+  });
+
+  it('프리필이 화면과 같은 우선순위로 판매정책을 채운다', async () => {
+    skuMapping.getVariantMatchingBatch.mockResolvedValue({
+      data: [
+        {
+          variantId: 'v1',
+          exists: true,
+          matching: null,
+          stockPolicy: {
+            preStockSellable: true,
+            alwaysSellableZeroStock: false,
+            availabilityOverride: 'manual_out_of_stock',
+            comingSoonDate: null,
+          },
+          projection: null,
+        },
+      ],
+    });
+
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+
+    expect(bundle?.variants[0]).toMatchObject({
+      availabilityOverride: '품절',
+      comingSoonDate: '',
+      preStockSellable: 'Y',
+      alwaysSellableZeroStock: 'N',
+    });
+  });
+
+  it('출시예정은 날짜와 함께 찍힌다', async () => {
+    skuMapping.getVariantMatchingBatch.mockResolvedValue({
+      data: [
+        {
+          variantId: 'v1',
+          exists: true,
+          matching: null,
+          stockPolicy: {
+            preStockSellable: false,
+            alwaysSellableZeroStock: true,
+            availabilityOverride: 'coming_soon',
+            comingSoonDate: '2026-09-01',
+          },
+          projection: null,
+        },
+      ],
+    });
+
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+
+    expect(bundle?.variants[0]).toMatchObject({
+      availabilityOverride: '출시예정',
+      comingSoonDate: '2026-09-01',
+      preStockSellable: 'N',
+      alwaysSellableZeroStock: 'Y',
+    });
+  });
+
+  it('정책 행이 없는 품목은 기본값으로 찍힌다', async () => {
+    skuMapping.getVariantMatchingBatch.mockResolvedValue({ data: [] });
+
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+
+    expect(bundle?.variants[0]).toMatchObject({
+      availabilityOverride: '',
+      comingSoonDate: '',
+      preStockSellable: 'Y',
+      alwaysSellableZeroStock: 'N',
+    });
   });
 });

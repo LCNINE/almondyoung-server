@@ -21,13 +21,20 @@ import { BulkSessionCleaner } from './services/bulk-session.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
 import { CategoriesModule } from '../../core/categories/categories.module';
+import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 
 // FormExportSnapshotReader 는 FormExportService(접수·조회)가 직접 쓰진 않지만, Task 5
 // 산출물이 아직 어떤 모듈에도 물려 있지 않아 DI 그래프 검증이 안 된 상태였다 — 여기서
 // 같이 등록해 ProductVersionReadLoader/OptionReadLoader/PricingService/
 // ProductCategoriesService 4개 의존성이 실제로 해석되는지 부트 검증한다(ProductsModule
 // 이 ProductVersionReadLoader 를 export 하지 않아 막혀 있던 것을 그 커밋에서 함께
-// 고쳤다 — products.module.ts 참조). FormExportJobManager/FormExportJobWorker 는
+// 고쳤다 — products.module.ts 참조). (Task 3) 프리필이 품목 판매정책을 채우려면 화면과
+// 같은 ProductSkuMappingService(product-matching BC)가 다섯 번째 의존성으로 필요하다 —
+// 그래서 ProductMatchingModule 을 imports 에 더한다. products.module.ts 가 같은 모듈을
+// forwardRef 로 감싸는 건 ProductsModule 자신이 product-matching 서비스를 직접
+// 주입받기 때문이고(순환), 여기 BulkSessionModule 은 그 방향의 순환이 없어 그냥
+// import 한다.
+// FormExportJobManager/FormExportJobWorker 는
 // 앞선 커밋(양식 조립 워커) 산출물이다 — 워커는 `@Cron` 데코레이터만으로는 아무 것도
 // 하지 않는다. Nest 컨테이너의 provider 로 등록돼야 (전역으로 이미 떠 있는)
 // ScheduleModule 의 ScheduleExplorer 가 discovery 로 찾아 크론에 마운트한다.
@@ -51,7 +58,7 @@ import { CategoriesModule } from '../../core/categories/categories.module';
 // 물기 때문에, 등록을 빠뜨리면 (다른 provider 들처럼 조용히 무해한 게 아니라) 부팅 자체가
 // UnknownDependenciesException 으로 죽는다.
 @Module({
-  imports: [ProductsModule, PricingModule, CategoriesModule],
+  imports: [ProductsModule, PricingModule, CategoriesModule, ProductMatchingModule],
   controllers: [FormExportController, BulkSessionController],
   providers: [
     FormExportService,

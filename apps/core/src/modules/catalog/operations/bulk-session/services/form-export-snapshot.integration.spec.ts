@@ -37,6 +37,7 @@ import { PricingCalculatorService } from '../../../core/pricing/pricing-calculat
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { OutboxPublisher } from '@app/events';
+import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import { PRICING_SENTINEL } from './form-export.sheets';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
 import { createImageKeyAllocator } from './form-export.types';
@@ -102,8 +103,15 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
     const categories = new ProductCategoriesService(dbService, readAssembler, snapshotAssembler, outbox);
+    // 이 스위트는 필드명/가격 센티넬/이미지 키 등 리더 자체의 매핑을 검증하지, 품목 판매정책
+    // 우선순위(그건 product-sku-mapping.service.spec.ts 와 form-export.snapshot.reader.spec.ts
+    // 의 renderMaster 스위트 몫이다)를 검증하지 않는다. 실 ProductSkuMappingService 는
+    // inventory BC 의 무거운 의존성 그래프를 끌고 오므로 여기서는 빈 배치 응답 스텁만 채운다.
+    const skuMapping = {
+      getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
+    } as unknown as ProductSkuMappingService;
 
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories);
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
   });
 
   afterAll(async () => {
