@@ -21,7 +21,7 @@
   - `npx eslint <변경 파일>` (lint 차분)
 - 통합 테스트는 **전용 scratch DB** 에서만 돈다. 실행법(환경변수 접두가 `dotenv -e` 를 이긴다):
   ```
-  DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern=<spec>
+  DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern=<spec>
   ```
   정상 소요는 7초 내외. 분 단위로 끌면 DB 를 잘못 잡은 것이다.
 - 커밋 메시지는 한국어 본문 + conventional prefix. 각 태스크 끝에서 커밋한다.
@@ -102,7 +102,7 @@ it('CoW 로 variantId 가 갈려도 판매정책이 새 품목으로 인계된�
 
 - [ ] **Step 2: 테스트를 돌려 실패를 확인한다**
 
-Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration -t 'CoW 로 variantId'`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration -t 'CoW 로 variantId'`
 Expected: FAIL — `policy` 가 `undefined` 라 `expect(undefined?.availabilityOverride).toBe('manual_out_of_stock')` 가 깨진다.
 
 - [ ] **Step 3: 인계를 구현한다**
@@ -158,7 +158,7 @@ if (inheritedPolicyCount > 0) {
 
 - [ ] **Step 4: 테스트를 돌려 통과를 확인한다**
 
-Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration`
 Expected: PASS — 새 케이스 포함 전량 초록.
 
 - [ ] **Step 5: 역검증 — 수정을 되돌리면 실제로 빨개지는가**
@@ -984,7 +984,7 @@ Expected: PASS — **기존 케이스가 하나도 안 바뀐 채로** 통과해
 
 - [ ] **Step 4: 통합 회귀도 돌린다**
 
-Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-draft.integration`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-draft.integration`
 Expected: PASS — 이 해석기는 실 DB 에서 옵션값 조회를 N+1 로 돈다. 유닛 페이크만으로는 이동이 옳았는지 증명되지 않는다.
 
 - [ ] **Step 5: 게이트 + 커밋**
@@ -1239,7 +1239,7 @@ it('조합키가 안 풀리면 그 행만 실패한다', async () => {
 
 - [ ] **Step 6: 통합을 돌린다**
 
-Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration`
+Run: `DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern=bulk-session-publish.integration`
 Expected: PASS 전량. 소요 7초 내외.
 
 - [ ] **Step 7: 역검증**
@@ -1432,7 +1432,7 @@ draftVersionId 와 changes 로 전부 파생되므로 서버 변경이 없다.
 
 ```bash
 npx jest --testPathPattern='bulk-session|form-export|product-versions'
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npx jest --testPathPattern='bulk-session.*integration'
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npx jest --testPathPattern='bulk-session.*integration'
 npm run type-check:scoped
 ```
 Expected: 전량 PASS.

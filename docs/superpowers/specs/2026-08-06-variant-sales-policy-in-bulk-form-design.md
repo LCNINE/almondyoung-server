@@ -213,7 +213,7 @@ CoW 는 draft 편집 시점에 일어난다(`product-variants.service.ts:390-420
 통합 DB 호출법은 모체 스펙과 같다 — 환경변수 접두가 `dotenv -e` 를 이긴다:
 
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/bulk_stage6_scratch npm run test:bulk-session:integration
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/bulk_stage6_scratch npm run test:bulk-session:integration
 ```
 
 **게이트**: `type-check:scoped` + 범위 jest + 통합 + 변경 파일 기준 lint 차분. 전역 `npm test`·`tsc`·`lint` 는 develop 에서도 red 다(`[[lint-scope-caveat]]`).
