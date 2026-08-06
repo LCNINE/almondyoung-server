@@ -1,0 +1,4 @@
+const { Client } = require('pg');
+const ids = (process.env.DISPLAY_IDS || '').split(',').map(Number).filter(Boolean); const d = JSON.parse(process.env.SST_RESOURCE_Db);
+const c = new Client({ connectionString: `postgresql://${d.username}:${d.password}@${process.env.DB_TUNNEL_HOST || d.host}:${process.env.DB_TUNNEL_PORT || d.port}/medusa?sslmode=disable` });
+(async () => { await c.connect(); const r = await c.query(`update order_item oi set shipped_quantity=oi.quantity,updated_at=now() where oi.deleted_at is null and oi.shipped_quantity<oi.quantity and exists(select 1 from "order" o join order_line_item oli on oli.id=oi.item_id and oli.deleted_at is null where o.id=oi.order_id and o.display_id=any($1::int[]) and oli.requires_shipping=true)`, [ids]); console.log(JSON.stringify({ ids, updatedRows: r.rowCount })); await c.end(); })().catch((e) => { console.error(e); process.exit(1); });
