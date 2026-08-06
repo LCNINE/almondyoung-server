@@ -40,7 +40,7 @@ import { BulkDraftApplier } from './bulk-draft.applier';
 import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
 import { BulkSessionComboResolver } from './bulk-session.combos';
 import { buildOptionAdd } from './bulk-draft.options';
-import { extractVariantPolicies } from './bulk-session.policy';
+import { applyPolicyDecisions, extractVariantPolicies } from './bulk-session.policy';
 import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import type { ImageResolver } from './bulk-draft.fields';
 import {
@@ -921,10 +921,16 @@ export class BulkSessionJobManager {
     const payload = item.payload;
     const input = isBulkItemInput(item.input) ? item.input : null;
 
-    // 정책 차분은 **차분(payload.fields)과 시트 원본(input.bundle.variants) 둘 다**에서 뽑는다 —
+    // 충돌 결정을 **먼저** 건다. 버전 경로는 `bulk-draft.applier` 가 `applyDecisions` 로
+    // 하는 일인데 정책은 버전에 담기지 않아 그 단계를 지나치지 않는다 — 안 걸면 작업자가
+    // `skip`(현재 값 유지)으로 결정한 정책 셀을 양식의 옛 값이 그대로 덮는다(스펙 §4.2).
+    // 짝 칸 되살아남까지 막는 이유는 `applyPolicyDecisions` 독스트링에 있다.
+    const policyFields = applyPolicyDecisions(payload.fields, toConflictDecisionMap(item.conflictDecision));
+
+    // 정책 차분은 **차분(policyFields)과 시트 원본(input.bundle.variants) 둘 다**에서 뽑는다 —
     // `판매상태재정의`/`출시예정일` 은 한 단위라 안 바뀐 짝 칸의 값이 시트에만 있다
     // (`extractVariantPolicies` 독스트링).
-    const policies = extractVariantPolicies(payload.fields, input ? input.bundle.variants : []);
+    const policies = extractVariantPolicies(policyFields, input ? input.bundle.variants : []);
 
     // draft 도 정책도 없으면 할 일이 없다 — 변경이 아예 없던 행이다. 실패가 아니다.
     if (!draftVersionId && policies.size === 0) {

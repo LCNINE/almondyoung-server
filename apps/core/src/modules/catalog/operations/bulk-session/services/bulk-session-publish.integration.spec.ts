@@ -1136,4 +1136,92 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     );
     expect(goodPolicy?.availabilityOverride).toBe('manual_out_of_stock');
   });
+
+  /**
+   * (리뷰 Finding 3) **계약 2(b) 를 실 DB 로 잠근다** — "수정 행은 CoW 인계를 받은 뒤라야
+   * 작업자가 적은 값이 인계값을 이긴다".
+   *
+   * 유닛의 순서 단언은 페이크 위 상대 위치만 본다. 실 DB 에서만 잡히는 것은 따로 있다:
+   * `publishVersion` 이후 `resolveExisting(masterId, draftVersionId)` 가 CoW 로 **새로 갈린**
+   * variantId 를 돌려주는가. 옛 variantId 를 돌려주면 정책이 활성 버전과 무관한 품목에 붙고
+   * 행은 '발행됨' 으로 보이며 **예외조차 안 난다**.
+   *
+   * 위 `CoW 로 variantId 가 갈려도 판매정책이 새 품목으로 인계된다`(Task 1)는 레인이 아니라
+   * `versions.publishVersion` 을 직접 불러서 이 결합을 안 덮는다. 여기서는 draft + 정책 +
+   * CoW 를 **한 행에** 태운다: 품목코드 변경이 버전 필드라 draft 가 생기고 CoW 가 일어나며,
+   * 같은 조합에 정책도 적혀 있다.
+   *
+   * 인계값(`coming_soon`)과 작업자 값(`manual_out_of_stock`)을 **서로 다르게** 잡는 것이
+   * 이 단언의 전부다 — 같으면 인계만 돌아도 초록이 된다.
+   */
+  it('CoW 로 갈린 새 품목에 작업자가 적은 정책이 인계값을 이긴다', async () => {
+    const fx = await seedActiveProduct({
+      name: 'CoW + 정책',
+      brand: 'ACME',
+      basePrice: 10000,
+      variantCode: `ORIG-${randomUUID().slice(0, 8)}`,
+    });
+
+    // 인계될 옛 값. Task 1 의 `_reconcileMatchingsAfterPublish` 가 이것을 새 variantId 로 옮긴다.
+    await db.run((trx) =>
+      trx.insert(salesVariantPolicies).values({
+        variantId: fx.variantId,
+        inventoryManagement: true,
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'coming_soon',
+        comingSoonDate: '2026-12-01',
+      }),
+    );
+
+    const changedCode = `CHANGED-${randomUUID().slice(0, 8)}`;
+    const { sessionId, leaseToken, uploaderId } = await seedSession([
+      {
+        rowNumber: 1,
+        kind: 'update',
+        masterId: fx.masterId,
+        baseVersionId: fx.versionId,
+        baseSnapshot: await renderSnapshot(fx.masterId),
+        fields: {
+          // 버전 필드 — draft 를 만들고, 포크한 draft 에서 CoW 를 일으킨다.
+          'variant:.variantCode': changedCode,
+          // 정책 필드 — 작업자가 적은 값. 인계값(출시예정)과 다르다.
+          'variant:.availabilityOverride': '품절',
+        },
+        variantRows: [{ combination: '', variantCode: changedCode, availabilityOverride: '품절', comingSoonDate: '' }],
+      },
+    ]);
+
+    await jobManager.runDraftSlice({ sessionId, leaseToken, phase: 'drafting' });
+    const [drafted] = await readItems(sessionId);
+    expect(drafted.status).toBe('drafted');
+    const draftVersionId = drafted.draftVersionId as string;
+    expect(draftVersionId).toBeTruthy();
+    await finishDraftingPhase(sessionId);
+
+    await sessionManager.queuePublish(sessionId, uploaderId);
+    const publishLease = randomUUID();
+    await grantLease(sessionId, publishLease);
+    await jobManager.runPublishSlice({ sessionId, leaseToken: publishLease, phase: 'publishing' });
+
+    expect((await readItemById(drafted.id)).publishStatus).toBe('published');
+
+    // 발행된 버전의 variant — CoW 로 원래 것과 갈렸어야 한다(안 갈렸으면 이 케이스가 아무
+    // 결합도 시험하지 않은 것이다).
+    const [mapping] = await db.run((trx) =>
+      trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(eq(productMasterVariants.versionId, draftVersionId)),
+    );
+    expect(mapping.variantId).not.toBe(fx.variantId);
+
+    const [policy] = await db.run((trx) =>
+      trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, mapping.variantId)),
+    );
+    // 작업자가 적은 값이 인계값(coming_soon)을 이긴다 — 순서가 뒤집히면 여기가 coming_soon 이다.
+    expect(policy?.availabilityOverride).toBe('manual_out_of_stock');
+    // 출시예정이 아니게 됐으므로 날짜도 함께 정리된다(짝 칸 규약).
+    expect(policy?.comingSoonDate).toBeNull();
+  });
 });
