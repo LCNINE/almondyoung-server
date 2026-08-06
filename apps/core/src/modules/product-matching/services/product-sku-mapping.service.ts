@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { AnyTx, DbService, InjectTypedDb } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
+import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
+import { MergedSchema } from '../../../platform/database/merged-schema';
+import { wmsTables, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
@@ -15,13 +16,19 @@ import {
 
 type StockPolicyPatch = UpsertMatchingDto['policy'] | UpdateVariantStockPolicyDto | undefined;
 
+// ADR-0025 cross-BC seam 마커. catalog(PimSchema) 호출자(FormExportSnapshotReader)가 이
+// 서비스에 자기 트랜잭션을 그대로 넘길 수 있어야 해서, 이 서비스는 ProductSellableQuantityService
+// 와 같은 모양으로 `DbService<MergedSchema>` 를 선언한다 — `git grep 'DbService<MergedSchema>'`
+// 로 cross-BC 접점을 셀 때 이 서비스가 그 목록에 있어야 한다.
+type MergedTx = TxFor<MergedSchema>;
+
 @Injectable()
 export class ProductSkuMappingService {
   private readonly logger = new Logger(ProductSkuMappingService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>()
-    private readonly dbService: DbService<typeof wmsSchema>,
+    @InjectTypedDb<MergedSchema>()
+    private readonly dbService: DbService<MergedSchema>,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
   ) {}
@@ -92,10 +99,10 @@ export class ProductSkuMappingService {
   /**
    * catalog(PimSchema) 대량등록 프리필(FormExportSnapshotReader)이 잡의 단일 트랜잭션
    * 위에서 이 메서드를 부른다 — 그 tx 는 wmsSchema 가 아니라 PimSchema 로 타입된
-   * 트랜잭션이다(둘 다 core 앱의 같은 단일 DbModule.forRootAsync 연결 위의 타입 뷰일
-   * 뿐이라 런타임엔 안전하다 — ADR-0025 cross-BC seam). 그래서 이 메서드만 `AnyTx` 로
-   * 넓히고 `run()` 호출부에서 한 번만 `DbTx` 로 좁힌다. 본문은 전부 raw
-   * select/insert(스키마 무관)라 이 타입 확장만으로 충분하다.
+   * 트랜잭션이다. 이 클래스가 `DbService<MergedSchema>`(위 `MergedTx` 참조)를 선언하는
+   * 이유가 그것이다 — PimSchema/wmsSchema 둘 다 `MergedSchema` 의 부분집합이라 `AnyTx` 로
+   * 받은 뒤 `run()` 호출부에서 `MergedTx` 로 한 번만 좁히면 어느 BC 의 트랜잭션이 와도
+   * 타입이 맞는다(ADR-0025 cross-BC seam — `ProductSellableQuantityService` 와 같은 모양).
    */
   async getVariantMatchingBatch(variantIds: string[], tx?: AnyTx): Promise<VariantMatchingBatchResponseDto> {
     if (!Array.isArray(variantIds)) {
@@ -241,74 +248,191 @@ export class ProductSkuMappingService {
 
         return { data };
       },
-      tx as DbTx | undefined,
+      tx as MergedTx | undefined,
     );
   }
 
-  async getByVariant(variantId: string, tx?: DbTx) {
-    return await this.dbService.run(async (trx) => {
-      const matching = await trx.query.productMatchings.findFirst({
-        where: (m, { eq }) => eq(m.variantId, variantId),
-      });
-      if (!matching) return null;
-      const policy = await trx.query.salesVariantPolicies.findFirst({
-        where: (p, { eq }) => eq(p.variantId, variantId),
-      });
-      // 배치 조회(getMatchingsByVariantIds)와 동일하게 SKU 이름/코드를 함께 내려준다.
-      // UUID 만 주면 어드민 매칭 화면이 어떤 재고인지 표시할 수 없다.
-      const links = await trx
-        .select({
-          productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
-          skuId: wmsTables.productVariantSkuLinks.skuId,
-          quantity: wmsTables.productVariantSkuLinks.quantity,
-          createdAt: wmsTables.productVariantSkuLinks.createdAt,
-          skuName: wmsTables.skus.name,
-          skuCode: wmsTables.skus.code,
-        })
-        .from(wmsTables.productVariantSkuLinks)
-        .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
-        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
-      return {
-        ...matching,
-        links,
-        stockPolicy: {
-          preStockSellable: matching.preStockSellable,
-          alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
-          availabilityOverride: policy?.availabilityOverride ?? null,
-          comingSoonDate: policy?.comingSoonDate ?? null,
-        },
-      };
-    }, tx);
+  async getByVariant(variantId: string, tx?: AnyTx) {
+    return await this.dbService.run(
+      async (trx) => {
+        const matching = await trx.query.productMatchings.findFirst({
+          where: (m, { eq }) => eq(m.variantId, variantId),
+        });
+        if (!matching) return null;
+        const policy = await trx.query.salesVariantPolicies.findFirst({
+          where: (p, { eq }) => eq(p.variantId, variantId),
+        });
+        // 배치 조회(getMatchingsByVariantIds)와 동일하게 SKU 이름/코드를 함께 내려준다.
+        // UUID 만 주면 어드민 매칭 화면이 어떤 재고인지 표시할 수 없다.
+        const links = await trx
+          .select({
+            productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+            skuId: wmsTables.productVariantSkuLinks.skuId,
+            quantity: wmsTables.productVariantSkuLinks.quantity,
+            createdAt: wmsTables.productVariantSkuLinks.createdAt,
+            skuName: wmsTables.skus.name,
+            skuCode: wmsTables.skus.code,
+          })
+          .from(wmsTables.productVariantSkuLinks)
+          .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matching.id));
+        return {
+          ...matching,
+          links,
+          stockPolicy: {
+            preStockSellable: matching.preStockSellable,
+            alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
+            availabilityOverride: policy?.availabilityOverride ?? null,
+            comingSoonDate: policy?.comingSoonDate ?? null,
+          },
+        };
+      },
+      tx as MergedTx | undefined,
+    );
   }
 
-  async upsert(variantId: string, dto: UpsertMatchingDto, tx?: DbTx) {
-    return this.dbService.run(async (trx) => {
-      if (!variantId) throw new BadRequestException('variantId required');
-      const hasLinks = Array.isArray(dto.links) && dto.links.length > 0;
+  async upsert(variantId: string, dto: UpsertMatchingDto, tx?: AnyTx) {
+    return this.dbService.run(
+      async (trx) => {
+        if (!variantId) throw new BadRequestException('variantId required');
+        const hasLinks = Array.isArray(dto.links) && dto.links.length > 0;
 
-      if (!hasLinks && dto.policy === undefined) {
-        throw new BadRequestException('variant strategy requires at least one SKU link');
-      }
+        if (!hasLinks && dto.policy === undefined) {
+          throw new BadRequestException('variant strategy requires at least one SKU link');
+        }
 
-      const existing = await trx.query.productMatchings.findFirst({
-        where: (m, { eq }) => eq(m.variantId, variantId),
-      });
-      const hasExplicitEmptyLinks = Array.isArray(dto.links) && dto.links.length === 0;
-      const existingLinksForEmptyUpdate =
-        existing && hasExplicitEmptyLinks
-          ? await trx.query.productVariantSkuLinks.findMany({
-              where: (l, { eq }) => eq(l.productMatchingId, existing.id),
-            })
-          : [];
-      const isClearingExistingLinks = hasExplicitEmptyLinks && !!existing && existingLinksForEmptyUpdate.length > 0;
-      const isPolicyOnlySave = !hasLinks && !isClearingExistingLinks && dto.policy !== undefined;
+        const existing = await trx.query.productMatchings.findFirst({
+          where: (m, { eq }) => eq(m.variantId, variantId),
+        });
+        const hasExplicitEmptyLinks = Array.isArray(dto.links) && dto.links.length === 0;
+        const existingLinksForEmptyUpdate =
+          existing && hasExplicitEmptyLinks
+            ? await trx.query.productVariantSkuLinks.findMany({
+                where: (l, { eq }) => eq(l.productMatchingId, existing.id),
+              })
+            : [];
+        const isClearingExistingLinks = hasExplicitEmptyLinks && !!existing && existingLinksForEmptyUpdate.length > 0;
+        const isPolicyOnlySave = !hasLinks && !isClearingExistingLinks && dto.policy !== undefined;
 
-      if (isPolicyOnlySave) {
+        if (isPolicyOnlySave) {
+          const now = new Date();
+          const matchingPolicyPatch = {
+            ...(dto.policy?.preStockSellable !== undefined ? { preStockSellable: dto.policy.preStockSellable } : {}),
+            ...(dto.policy?.alwaysSellableZeroStock !== undefined
+              ? { alwaysSellableZeroStock: dto.policy.alwaysSellableZeroStock }
+              : {}),
+            updatedAt: now,
+          };
+
+          if (existing && Object.keys(matchingPolicyPatch).length > 1) {
+            await trx
+              .update(wmsTables.productMatchings)
+              .set(matchingPolicyPatch)
+              .where(eq(wmsTables.productMatchings.variantId, variantId));
+          }
+
+          await this.upsertSalesVariantPolicy(
+            trx,
+            variantId,
+            dto.policy,
+            {
+              preStockSellable: existing?.preStockSellable ?? true,
+              alwaysSellableZeroStock: existing?.alwaysSellableZeroStock ?? false,
+            },
+            now,
+          );
+
+          await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+          return this.getByVariant(variantId, trx);
+        }
+
+        const base = {
+          variantId: variantId,
+          masterId: dto.masterId ?? existing?.masterId ?? null,
+          status: 'matched' as const,
+          priority: 'normal' as const,
+          strategy: 'variant' as const,
+          isResolved: true,
+          preStockSellable: dto.policy?.preStockSellable ?? true,
+          alwaysSellableZeroStock: dto.policy?.alwaysSellableZeroStock ?? false,
+        };
+
+        let matchingId: string;
+        if (existing) {
+          const [row] = await trx
+            .update(wmsTables.productMatchings)
+            .set(base)
+            .where(eq(wmsTables.productMatchings.variantId, variantId))
+            .returning();
+          matchingId = row.id;
+          await trx
+            .delete(wmsTables.productVariantSkuLinks)
+            .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
+        } else {
+          const [row] = await trx.insert(wmsTables.productMatchings).values(base).returning();
+          matchingId = row.id;
+        }
+
+        if (Array.isArray(dto.links) && dto.links.length > 0) {
+          await trx.insert(wmsTables.productVariantSkuLinks).values(
+            dto.links.map((l) => ({
+              productMatchingId: matchingId,
+              skuId: l.skuId,
+              quantity: Math.max(1, l.quantity),
+            })),
+          );
+        }
+
+        await this.upsertSalesVariantPolicy(
+          trx,
+          variantId,
+          dto.policy,
+          {
+            preStockSellable: base.preStockSellable,
+            alwaysSellableZeroStock: base.alwaysSellableZeroStock,
+          },
+          undefined,
+          { preserveExistingUnspecified: false },
+        );
+
+        await trx
+          .update(wmsTables.salesOrderLines)
+          .set({ productMatchingId: matchingId })
+          .where(eq(wmsTables.salesOrderLines.variantId, variantId));
+
+        await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+        await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
+
+        return this.getByVariant(variantId, trx);
+      },
+      tx as MergedTx | undefined,
+    );
+  }
+
+  async updateVariantStockPolicy(variantId: string, dto: UpdateVariantStockPolicyDto, tx?: AnyTx) {
+    return this.dbService.run(
+      async (trx) => {
+        if (!variantId) throw new BadRequestException('variantId required');
+
+        const policy: UpdateVariantStockPolicyDto = dto ?? {};
+        const [variant] = await (trx as any)
+          .select({ id: productVariants.id })
+          .from(productVariants)
+          .where(eq(productVariants.id, variantId))
+          .limit(1);
+
+        if (!variant) {
+          throw new NotFoundException(`Variant not found: ${variantId}`);
+        }
+
+        const existing = await trx.query.productMatchings.findFirst({
+          where: (m, { eq }) => eq(m.variantId, variantId),
+        });
         const now = new Date();
         const matchingPolicyPatch = {
-          ...(dto.policy?.preStockSellable !== undefined ? { preStockSellable: dto.policy.preStockSellable } : {}),
-          ...(dto.policy?.alwaysSellableZeroStock !== undefined
-            ? { alwaysSellableZeroStock: dto.policy.alwaysSellableZeroStock }
+          ...(policy.preStockSellable !== undefined ? { preStockSellable: policy.preStockSellable } : {}),
+          ...(policy.alwaysSellableZeroStock !== undefined
+            ? { alwaysSellableZeroStock: policy.alwaysSellableZeroStock }
             : {}),
           updatedAt: now,
         };
@@ -323,7 +447,7 @@ export class ProductSkuMappingService {
         await this.upsertSalesVariantPolicy(
           trx,
           variantId,
-          dto.policy,
+          policy,
           {
             preStockSellable: existing?.preStockSellable ?? true,
             alwaysSellableZeroStock: existing?.alwaysSellableZeroStock ?? false,
@@ -332,119 +456,11 @@ export class ProductSkuMappingService {
         );
 
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
-        return this.getByVariant(variantId, trx);
-      }
-
-      const base = {
-        variantId: variantId,
-        masterId: dto.masterId ?? existing?.masterId ?? null,
-        status: 'matched' as const,
-        priority: 'normal' as const,
-        strategy: 'variant' as const,
-        isResolved: true,
-        preStockSellable: dto.policy?.preStockSellable ?? true,
-        alwaysSellableZeroStock: dto.policy?.alwaysSellableZeroStock ?? false,
-      };
-
-      let matchingId: string;
-      if (existing) {
-        const [row] = await trx
-          .update(wmsTables.productMatchings)
-          .set(base)
-          .where(eq(wmsTables.productMatchings.variantId, variantId))
-          .returning();
-        matchingId = row.id;
-        await trx
-          .delete(wmsTables.productVariantSkuLinks)
-          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
-      } else {
-        const [row] = await trx.insert(wmsTables.productMatchings).values(base).returning();
-        matchingId = row.id;
-      }
-
-      if (Array.isArray(dto.links) && dto.links.length > 0) {
-        await trx.insert(wmsTables.productVariantSkuLinks).values(
-          dto.links.map((l) => ({
-            productMatchingId: matchingId,
-            skuId: l.skuId,
-            quantity: Math.max(1, l.quantity),
-          })),
-        );
-      }
-
-      await this.upsertSalesVariantPolicy(
-        trx,
-        variantId,
-        dto.policy,
-        {
-          preStockSellable: base.preStockSellable,
-          alwaysSellableZeroStock: base.alwaysSellableZeroStock,
-        },
-        undefined,
-        { preserveExistingUnspecified: false },
-      );
-
-      await trx
-        .update(wmsTables.salesOrderLines)
-        .set({ productMatchingId: matchingId })
-        .where(eq(wmsTables.salesOrderLines.variantId, variantId));
-
-      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
-      await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
-
-      return this.getByVariant(variantId, trx);
-    }, tx);
-  }
-
-  async updateVariantStockPolicy(variantId: string, dto: UpdateVariantStockPolicyDto, tx?: DbTx) {
-    return this.dbService.run(async (trx) => {
-      if (!variantId) throw new BadRequestException('variantId required');
-
-      const policy: UpdateVariantStockPolicyDto = dto ?? {};
-      const [variant] = await (trx as any)
-        .select({ id: productVariants.id })
-        .from(productVariants)
-        .where(eq(productVariants.id, variantId))
-        .limit(1);
-
-      if (!variant) {
-        throw new NotFoundException(`Variant not found: ${variantId}`);
-      }
-
-      const existing = await trx.query.productMatchings.findFirst({
-        where: (m, { eq }) => eq(m.variantId, variantId),
-      });
-      const now = new Date();
-      const matchingPolicyPatch = {
-        ...(policy.preStockSellable !== undefined ? { preStockSellable: policy.preStockSellable } : {}),
-        ...(policy.alwaysSellableZeroStock !== undefined
-          ? { alwaysSellableZeroStock: policy.alwaysSellableZeroStock }
-          : {}),
-        updatedAt: now,
-      };
-
-      if (existing && Object.keys(matchingPolicyPatch).length > 1) {
-        await trx
-          .update(wmsTables.productMatchings)
-          .set(matchingPolicyPatch)
-          .where(eq(wmsTables.productMatchings.variantId, variantId));
-      }
-
-      await this.upsertSalesVariantPolicy(
-        trx,
-        variantId,
-        policy,
-        {
-          preStockSellable: existing?.preStockSellable ?? true,
-          alwaysSellableZeroStock: existing?.alwaysSellableZeroStock ?? false,
-        },
-        now,
-      );
-
-      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
-      const response = await this.getVariantMatchingBatch([variantId], trx);
-      return response.data[0];
-    }, tx);
+        const response = await this.getVariantMatchingBatch([variantId], trx);
+        return response.data[0];
+      },
+      tx as MergedTx | undefined,
+    );
   }
 
   /**
@@ -452,95 +468,98 @@ export class ProductSkuMappingService {
    * SO 확정 시 각 라인별로 호출하여 해당 시점의 매핑을 동결한다.
    * @returns 생성된 스냅샷 ID, 매핑이 없으면 null
    */
-  async createSnapshotForVariant(variantId: string, warehouseId: string, tx?: DbTx): Promise<string | null> {
-    return this.dbService.run(async (trx) => {
-      // 1. 현재 활성 SKU 매핑 조회 (productSkuMappings + productSkuMappingItems)
-      const mappingInfo = await trx
-        .select({
-          mappingId: wmsTables.productSkuMappings.id,
-          productId: wmsTables.productSkuMappings.productId,
-          version: wmsTables.productSkuMappings.version,
-          skuId: wmsTables.productSkuMappingItems.skuId,
-          quantity: wmsTables.productSkuMappingItems.qtyPerProduct,
-        })
-        .from(wmsTables.productSkuMappingItems)
-        .innerJoin(
-          wmsTables.productSkuMappings,
-          eq(wmsTables.productSkuMappingItems.mappingId, wmsTables.productSkuMappings.id),
-        )
-        .where(
-          and(
-            eq(wmsTables.productSkuMappingItems.variantId, variantId),
-            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-            eq(wmsTables.productSkuMappings.isActive, true),
-          ),
-        )
-        .orderBy(desc(wmsTables.productSkuMappings.version))
-        .limit(1);
+  async createSnapshotForVariant(variantId: string, warehouseId: string, tx?: AnyTx): Promise<string | null> {
+    return this.dbService.run(
+      async (trx) => {
+        // 1. 현재 활성 SKU 매핑 조회 (productSkuMappings + productSkuMappingItems)
+        const mappingInfo = await trx
+          .select({
+            mappingId: wmsTables.productSkuMappings.id,
+            productId: wmsTables.productSkuMappings.productId,
+            version: wmsTables.productSkuMappings.version,
+            skuId: wmsTables.productSkuMappingItems.skuId,
+            quantity: wmsTables.productSkuMappingItems.qtyPerProduct,
+          })
+          .from(wmsTables.productSkuMappingItems)
+          .innerJoin(
+            wmsTables.productSkuMappings,
+            eq(wmsTables.productSkuMappingItems.mappingId, wmsTables.productSkuMappings.id),
+          )
+          .where(
+            and(
+              eq(wmsTables.productSkuMappingItems.variantId, variantId),
+              eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+              eq(wmsTables.productSkuMappings.isActive, true),
+            ),
+          )
+          .orderBy(desc(wmsTables.productSkuMappings.version))
+          .limit(1);
 
-      if (mappingInfo.length === 0) {
-        // Fallback: productMatchings (Global Matching) 확인
-        const globalMatching = await this.getByVariant(variantId, trx);
+        if (mappingInfo.length === 0) {
+          // Fallback: productMatchings (Global Matching) 확인
+          const globalMatching = await this.getByVariant(variantId, trx);
 
-        if (globalMatching && globalMatching.links && globalMatching.links.length > 0) {
-          const primaryLink = globalMatching.links[0];
-          const [snapshot] = await trx
-            .insert(wmsTables.productSkuMappingSnapshots)
-            .values({
-              productId: globalMatching.masterId ?? 'unknown',
-              sourceVersion: 0,
-              warehouseId,
-              variantId,
-              skuId: primaryLink.skuId,
-              quantity: primaryLink.quantity,
-              mappingId: null,
-              snapshotData: {
-                items: globalMatching.links.map((l) => ({ skuId: l.skuId, qtyPerProduct: l.quantity })),
-                capturedAt: new Date().toISOString(),
-                source: 'global_matching',
-              },
-            })
-            .returning();
+          if (globalMatching && globalMatching.links && globalMatching.links.length > 0) {
+            const primaryLink = globalMatching.links[0];
+            const [snapshot] = await trx
+              .insert(wmsTables.productSkuMappingSnapshots)
+              .values({
+                productId: globalMatching.masterId ?? 'unknown',
+                sourceVersion: 0,
+                warehouseId,
+                variantId,
+                skuId: primaryLink.skuId,
+                quantity: primaryLink.quantity,
+                mappingId: null,
+                snapshotData: {
+                  items: globalMatching.links.map((l) => ({ skuId: l.skuId, qtyPerProduct: l.quantity })),
+                  capturedAt: new Date().toISOString(),
+                  source: 'global_matching',
+                },
+              })
+              .returning();
 
-          this.logger.log(
-            `Created fallback snapshot from global matching for variantId=${variantId}: snapshotId=${snapshot.id}`,
-          );
-          return snapshot.id;
+            this.logger.log(
+              `Created fallback snapshot from global matching for variantId=${variantId}: snapshotId=${snapshot.id}`,
+            );
+            return snapshot.id;
+          }
+
+          this.logger.warn(`No active mapping found for variantId=${variantId}, warehouseId=${warehouseId}`);
+          return null;
         }
 
-        this.logger.warn(`No active mapping found for variantId=${variantId}, warehouseId=${warehouseId}`);
-        return null;
-      }
+        const { mappingId, productId, version, skuId, quantity } = mappingInfo[0];
 
-      const { mappingId, productId, version, skuId, quantity } = mappingInfo[0];
+        // 2. 스냅샷 생성
+        const [snapshot] = await trx
+          .insert(wmsTables.productSkuMappingSnapshots)
+          .values({
+            productId,
+            sourceVersion: version,
+            warehouseId,
+            variantId,
+            skuId,
+            quantity,
+            mappingId,
+            snapshotData: {
+              items: [{ skuId, qtyPerProduct: quantity }],
+              capturedAt: new Date().toISOString(),
+            },
+          })
+          .returning();
 
-      // 2. 스냅샷 생성
-      const [snapshot] = await trx
-        .insert(wmsTables.productSkuMappingSnapshots)
-        .values({
-          productId,
-          sourceVersion: version,
-          warehouseId,
-          variantId,
-          skuId,
-          quantity,
-          mappingId,
-          snapshotData: {
-            items: [{ skuId, qtyPerProduct: quantity }],
-            capturedAt: new Date().toISOString(),
-          },
-        })
-        .returning();
-
-      this.logger.log(`Created mapping snapshot for variantId=${variantId}: snapshotId=${snapshot.id}`);
-      return snapshot.id;
-    }, tx);
+        this.logger.log(`Created mapping snapshot for variantId=${variantId}: snapshotId=${snapshot.id}`);
+        return snapshot.id;
+      },
+      tx as MergedTx | undefined,
+    );
   }
 
   async getActiveMapping(
     productId: string,
     warehouseId: string,
-    tx?: DbTx,
+    tx?: AnyTx,
   ): Promise<{
     id: string;
     productId: string;
@@ -549,46 +568,49 @@ export class ProductSkuMappingService {
     isActive: boolean;
     mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
   } | null> {
-    return this.dbService.run(async (trx) => {
-      const mappings = await trx
-        .select()
-        .from(wmsTables.productSkuMappings)
-        .where(
-          and(
-            eq(wmsTables.productSkuMappings.productId, productId),
-            eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
-            eq(wmsTables.productSkuMappings.isActive, true),
-          ),
-        )
-        .orderBy(desc(wmsTables.productSkuMappings.version))
-        .limit(1);
+    return this.dbService.run(
+      async (trx) => {
+        const mappings = await trx
+          .select()
+          .from(wmsTables.productSkuMappings)
+          .where(
+            and(
+              eq(wmsTables.productSkuMappings.productId, productId),
+              eq(wmsTables.productSkuMappings.warehouseId, warehouseId),
+              eq(wmsTables.productSkuMappings.isActive, true),
+            ),
+          )
+          .orderBy(desc(wmsTables.productSkuMappings.version))
+          .limit(1);
 
-      const mapping = mappings[0];
-      if (!mapping) return null;
+        const mapping = mappings[0];
+        if (!mapping) return null;
 
-      const items = await trx
-        .select()
-        .from(wmsTables.productSkuMappingItems)
-        .where(eq(wmsTables.productSkuMappingItems.mappingId, mapping.id));
+        const items = await trx
+          .select()
+          .from(wmsTables.productSkuMappingItems)
+          .where(eq(wmsTables.productSkuMappingItems.mappingId, mapping.id));
 
-      return {
-        id: mapping.id,
-        productId: mapping.productId,
-        warehouseId: mapping.warehouseId,
-        version: mapping.version,
-        isActive: mapping.isActive,
-        mappings: items.map((item) => ({
-          variantId: item.variantId,
-          skuId: item.skuId,
-          quantity: item.qtyPerProduct,
-        })),
-      };
-    }, tx);
+        return {
+          id: mapping.id,
+          productId: mapping.productId,
+          warehouseId: mapping.warehouseId,
+          version: mapping.version,
+          isActive: mapping.isActive,
+          mappings: items.map((item) => ({
+            variantId: item.variantId,
+            skuId: item.skuId,
+            quantity: item.qtyPerProduct,
+          })),
+        };
+      },
+      tx as MergedTx | undefined,
+    );
   }
 
   async getMappingSnapshot(
     snapshotId: string,
-    tx?: DbTx,
+    tx?: AnyTx,
   ): Promise<{
     id: string;
     productId: string;
@@ -598,45 +620,49 @@ export class ProductSkuMappingService {
     warehouseId: string;
     mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
   }> {
-    return this.dbService.run(async (trx) => {
-      const snapshots = await trx
-        .select()
-        .from(wmsTables.productSkuMappingSnapshots)
-        .where(eq(wmsTables.productSkuMappingSnapshots.id, snapshotId))
-        .limit(1);
-      const snapshot = snapshots[0];
-      if (!snapshot) {
-        throw new NotFoundException(`Mapping snapshot with ID ${snapshotId} not found`);
-      }
-      const data = snapshot.snapshotData as { items: Array<{ skuId: string; qtyPerProduct: number }> };
-      const items = data?.items || [];
-      return {
-        id: snapshot.id,
-        productId: snapshot.productId,
-        version: snapshot.sourceVersion,
-        effectiveFrom: snapshot.createdAt,
-        isActive: true,
-        warehouseId: snapshot.warehouseId,
-        mappings: items.map((item) => ({
-          variantId: snapshot.variantId,
-          skuId: item.skuId,
-          quantity: item.qtyPerProduct,
-        })),
-      };
-    }, tx);
+    return this.dbService.run(
+      async (trx) => {
+        const snapshots = await trx
+          .select()
+          .from(wmsTables.productSkuMappingSnapshots)
+          .where(eq(wmsTables.productSkuMappingSnapshots.id, snapshotId))
+          .limit(1);
+        const snapshot = snapshots[0];
+        if (!snapshot) {
+          throw new NotFoundException(`Mapping snapshot with ID ${snapshotId} not found`);
+        }
+        const data = snapshot.snapshotData as { items: Array<{ skuId: string; qtyPerProduct: number }> };
+        const items = data?.items || [];
+        return {
+          id: snapshot.id,
+          productId: snapshot.productId,
+          version: snapshot.sourceVersion,
+          effectiveFrom: snapshot.createdAt,
+          isActive: true,
+          warehouseId: snapshot.warehouseId,
+          mappings: items.map((item) => ({
+            variantId: snapshot.variantId,
+            skuId: item.skuId,
+            quantity: item.qtyPerProduct,
+          })),
+        };
+      },
+      tx as MergedTx | undefined,
+    );
   }
 
-  async getMastersBatchStats(masterIds: string[], tx?: DbTx) {
-    return this.dbService.run(async (trx) => {
-      if (!masterIds || masterIds.length === 0) {
-        return [];
-      }
+  async getMastersBatchStats(masterIds: string[], tx?: AnyTx) {
+    return this.dbService.run(
+      async (trx) => {
+        if (!masterIds || masterIds.length === 0) {
+          return [];
+        }
 
-      const results = await trx
-        .select({
-          masterId: wmsTables.productMatchings.masterId,
-          totalVariants: sql<number>`count(*)::int`,
-          matchedVariants: sql<number>`count(*) FILTER (
+        const results = await trx
+          .select({
+            masterId: wmsTables.productMatchings.masterId,
+            totalVariants: sql<number>`count(*)::int`,
+            matchedVariants: sql<number>`count(*) FILTER (
             WHERE ${wmsTables.productMatchings.status} = 'matched'
               AND (
                 ${wmsTables.productMatchings.strategy} = 'void'
@@ -650,7 +676,7 @@ export class ProductSkuMappingService {
                 )
               )
           )::int`,
-          pendingVariants: sql<number>`count(*) FILTER (
+            pendingVariants: sql<number>`count(*) FILTER (
             WHERE ${wmsTables.productMatchings.status} = 'pending'
               OR (
                 ${wmsTables.productMatchings.status} = 'matched'
@@ -666,47 +692,50 @@ export class ProductSkuMappingService {
                 )
               )
           )::int`,
-          ignoredVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'ignored')::int`,
-        })
-        .from(wmsTables.productMatchings)
-        .where(inArray(wmsTables.productMatchings.masterId, masterIds))
-        .groupBy(wmsTables.productMatchings.masterId);
+            ignoredVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'ignored')::int`,
+          })
+          .from(wmsTables.productMatchings)
+          .where(inArray(wmsTables.productMatchings.masterId, masterIds))
+          .groupBy(wmsTables.productMatchings.masterId);
 
-      const statsMap = results.reduce(
-        (acc, stat) => {
-          if (stat.masterId) {
-            acc[stat.masterId] = {
-              totalVariants: stat.totalVariants,
-              matchedVariants: stat.matchedVariants,
-              pendingVariants: stat.pendingVariants,
-              ignoredVariants: stat.ignoredVariants,
-              matchingRate: stat.totalVariants > 0 ? Math.round((stat.matchedVariants / stat.totalVariants) * 100) : 0,
-            };
-          }
-          return acc;
-        },
-        {} as Record<
-          string,
-          {
-            totalVariants: number;
-            matchedVariants: number;
-            pendingVariants: number;
-            ignoredVariants: number;
-            matchingRate: number;
-          }
-        >,
-      );
+        const statsMap = results.reduce(
+          (acc, stat) => {
+            if (stat.masterId) {
+              acc[stat.masterId] = {
+                totalVariants: stat.totalVariants,
+                matchedVariants: stat.matchedVariants,
+                pendingVariants: stat.pendingVariants,
+                ignoredVariants: stat.ignoredVariants,
+                matchingRate:
+                  stat.totalVariants > 0 ? Math.round((stat.matchedVariants / stat.totalVariants) * 100) : 0,
+              };
+            }
+            return acc;
+          },
+          {} as Record<
+            string,
+            {
+              totalVariants: number;
+              matchedVariants: number;
+              pendingVariants: number;
+              ignoredVariants: number;
+              matchingRate: number;
+            }
+          >,
+        );
 
-      return masterIds.map((masterId) => ({
-        masterId,
-        ...(statsMap[masterId] || {
-          totalVariants: 0,
-          matchedVariants: 0,
-          pendingVariants: 0,
-          ignoredVariants: 0,
-          matchingRate: 0,
-        }),
-      }));
-    }, tx);
+        return masterIds.map((masterId) => ({
+          masterId,
+          ...(statsMap[masterId] || {
+            totalVariants: 0,
+            matchedVariants: 0,
+            pendingVariants: 0,
+            ignoredVariants: 0,
+            matchingRate: 0,
+          }),
+        }));
+      },
+      tx as MergedTx | undefined,
+    );
   }
 }
