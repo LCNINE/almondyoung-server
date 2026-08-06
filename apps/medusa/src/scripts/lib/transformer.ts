@@ -40,6 +40,7 @@ export interface PimProductSnapshot {
   brand?: string;
   tags?: string[];
   productType?: string;
+  shippingGroupCode?: string;
   optionGroups?: Array<{
     id: string;
     name: string;
@@ -178,6 +179,7 @@ export function transformPimToMedusa(
     isVisibleToMembersOnly: snapshot.isVisibleToMembersOnly ?? false,
     isOverseas: snapshot.isOverseas ?? false,
     productType: snapshot.productType,
+    shippingGroupCode: snapshot.shippingGroupCode ?? 'default',
     syncedAt: new Date().toISOString(),
   };
 

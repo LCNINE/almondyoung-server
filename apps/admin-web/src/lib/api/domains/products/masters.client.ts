@@ -147,6 +147,16 @@ export const mastersClient = {
     );
   },
 
+  updateShippingGroup: async (
+    masterId: string,
+    shippingGroupCode: string | null
+  ): Promise<void> => {
+    await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/shipping-group`,
+      { shippingGroupCode }
+    );
+  },
+
   updateRequiresMembership: async (
     masterId: string,
     requiresMembership: boolean

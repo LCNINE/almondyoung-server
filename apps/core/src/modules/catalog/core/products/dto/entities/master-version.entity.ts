@@ -79,6 +79,9 @@ export class ProductVersionDto {
   @ApiProperty({ description: '배송 방법 ID', nullable: true })
   shippingMethodId: string | null;
 
+  @ApiProperty({ description: "배송비 그룹 코드 (null 이면 기본 그룹 'default')", nullable: true })
+  shippingGroupCode: string | null;
+
   @ApiProperty({ description: '소비자가', nullable: true })
   marketPrice: number | null;
 

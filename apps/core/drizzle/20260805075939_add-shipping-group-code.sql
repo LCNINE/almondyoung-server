@@ -1,0 +1,1 @@
+ALTER TABLE "product_master_versions" ADD COLUMN "shipping_group_code" varchar(50);

@@ -27,11 +27,12 @@ import {
 import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
+  shippingMethodsMatchOptions,
 } from "./shipping-method-policy"
 
 // 카트 조회 시 사용하는 기본 fields
 const DEFAULT_CART_FIELDS =
-  "*items, +items.requires_shipping, +items.product_type, *region, *items.product, *items.product.metadata, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+  "*items, +items.requires_shipping, +items.product_type, *region, *items.product, *items.product.metadata, +items.product.shipping_profile.id, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
@@ -1310,24 +1311,39 @@ export const addCartShippingMethod = async (
  * 서버 컴포넌트 렌더 중 호출용: revalidateTag 없이 shipping method만 추가합니다.
  * revalidateTag는 렌더 중 호출 불가 (Next.js 제약)이므로 이 함수를 사용하세요.
  */
-export const addCartShippingMethodDuringRender = async (
+/**
+ * 카트의 배송수단을 주어진 옵션들로 통째로 교체한다.
+ * (커스텀 라우트 POST /store/carts/:id/shipping-methods/bulk)
+ *
+ * Medusa 기본 라우트는 option_id 를 하나만 받고, 내부 워크플로가 기존 배송수단을 전부 지운 뒤
+ * 새로 만든다. 그래서 배송비 그룹이 2개 이상인 카트는 순차 호출로 붙일 수 없다.
+ */
+export const setCartShippingMethods = async (
   cartId: string,
-  optionId: string
+  optionIds: string[]
 ) => {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  return sdk.store.cart
-    .addShippingMethod(
-      cartId,
-      { option_id: optionId },
-      { fields: DEFAULT_CART_FIELDS },
-      headers
+  return sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart }>(
+      `/store/carts/${cartId}/shipping-methods/bulk`,
+      {
+        method: "POST",
+        body: { option_ids: optionIds },
+        query: { fields: DEFAULT_CART_FIELDS },
+        headers,
+      }
     )
-    .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
+    .then(({ cart }) => cart)
     .catch(medusaError)
 }
+
+export const addCartShippingMethodDuringRender = async (
+  cartId: string,
+  optionIds: string[]
+) => setCartShippingMethods(cartId, optionIds)
 
 /**
  * 카트의 모든 배송 method 를 제거한다. (커스텀 라우트 DELETE /store/carts/:id/shipping-methods)
@@ -1353,7 +1369,7 @@ export const clearCartShippingMethods = async (cartId: string) => {
 
 export const listCartShippingMethods = async (
   cartId: string,
-  cache: RequestCache = "force-cache"
+  cache: RequestCache = "no-store"
 ) => {
   const headers = {
     ...(await getAuthHeaders()),
@@ -1370,7 +1386,7 @@ export const listCartShippingMethods = async (
         method: "GET",
         query: {
           cart_id: cartId,
-          fields: "id,name,amount,type",
+          fields: "id,name,amount,type,shipping_profile_id",
         },
         headers,
         next,
@@ -1389,14 +1405,25 @@ export const listCartShippingMethods = async (
  * @returns 업데이트된 cart와 필터링된 배송 옵션
  */
 export async function ensureCorrectShippingMethod(
-  cart: HttpTypes.StoreCart
+  cart: HttpTypes.StoreCart,
+  /**
+   * 배송수단 구성이 이미 맞더라도 다시 붙인다. 붙이는 순간 서버가 배송비를 다시 계산하므로,
+   * 어드민이 배송비 그룹 금액을 고친 뒤에도 최신 금액으로 맞춰진다.
+   *
+   * 결제 금액을 확정하기 직전(체크아웃 진입)에만 켠다. 결제가 끝난 뒤에 켜면 이미 결제한 금액과
+   * 주문 금액이 어긋난다.
+   */
+  options?: { refreshAmounts?: boolean }
 ): Promise<{
   cart: HttpTypes.StoreCart
   shippingMethods: HttpTypes.StoreCartShippingOption[] | null
   requiresShipping: boolean
 }> {
-  // 1. 모든 배송 옵션 조회
-  const allShippingMethods = await listCartShippingMethods(cart.id)
+  // 1. 이 카트에 적용 가능한 배송 옵션 조회.
+  // 캐시하면 안 된다 — 응답이 **카트 내용에 따라 달라진다**. Medusa 는 카트에 담긴 상품의
+  // shipping profile 에 해당하는 옵션만 돌려주므로, 배송비 그룹이 다른 상품을 담으면 목록이
+  // 바뀐다. 캐시된 옛 목록을 보면 새로 담은 그룹의 배송비가 영영 안 붙는다.
+  const allShippingMethods = await listCartShippingMethods(cart.id, "no-store")
 
   const requiresShipping = cartRequiresShipping(cart.items)
   const shippingMethods = selectShippingOptionsForCart(
@@ -1419,20 +1446,20 @@ export async function ensureCorrectShippingMethod(
   }
 
   // 4. 배송 옵션 자동 설정/업데이트
-  // - shipping method가 없거나
-  // - 현재 설정된 옵션이 필터링된 옵션에 포함되지 않으면 업데이트
-  const currentShippingOptionId = cart.shipping_methods?.[0]?.shipping_option_id
-  const isCurrentOptionValid = shippingMethods?.some(
-    (option) => option.id === currentShippingOptionId
+  // 배송비 그룹마다 배송수단이 하나씩 있어야 하므로, 현재 붙은 것들이 목표 집합과
+  // 정확히 일치하지 않으면 통째로 다시 설정한다.
+  const alreadyCorrect = shippingMethodsMatchOptions(
+    cart.shipping_methods?.map((method) => ({
+      shipping_option_id: method.shipping_option_id,
+      amount: method.amount,
+    })),
+    shippingMethods
   )
 
-  if (
-    shippingMethods?.[0] &&
-    (!currentShippingOptionId || !isCurrentOptionValid)
-  ) {
-    const updatedCart = await addCartShippingMethodDuringRender(
+  if (shippingMethods.length > 0 && (!alreadyCorrect || options?.refreshAmounts)) {
+    const updatedCart = await setCartShippingMethods(
       cart.id,
-      shippingMethods[0].id
+      shippingMethods.map((option) => option.id)
     )
     if (updatedCart) {
       return { cart: updatedCart, shippingMethods, requiresShipping }

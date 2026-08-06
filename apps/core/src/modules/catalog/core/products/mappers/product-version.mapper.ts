@@ -33,6 +33,7 @@ export interface ProductVersionDetailResponseDto {
   salesClassification: string | null;
   purchaseClassification: string | null;
   shippingMethodId: string | null;
+  shippingGroupCode: string | null;
   marketPrice: number | null;
   supplyPrice: number | null;
   supplierId: string | null;
@@ -96,6 +97,7 @@ export class ProductVersionMapper {
       salesClassification: detail.salesClassification,
       purchaseClassification: detail.purchaseClassification,
       shippingMethodId: detail.shippingMethodId,
+      shippingGroupCode: detail.shippingGroupCode ?? null,
       marketPrice: detail.marketPrice,
       supplyPrice: detail.supplyPrice,
       supplierId: detail.supplierId,

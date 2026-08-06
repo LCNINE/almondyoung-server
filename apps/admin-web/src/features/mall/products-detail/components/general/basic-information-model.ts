@@ -22,6 +22,7 @@ export type BasicInformationDetail = {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
+  shippingGroupCode: string | null;
   categories: ProductDetailCategory[];
 };
 
@@ -40,6 +41,8 @@ export type BasicInformationFormValues = {
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
   fulfillmentKind: 'physical' | 'digital';
+  /** 빈 문자열 = 기본 배송비 그룹. */
+  shippingGroupCode: string;
   categoryIds: string[];
   primaryCategoryId: string | null;
 };
@@ -95,6 +98,7 @@ export function toBasicInformationFormValues(
       false,
     isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
     fulfillmentKind: detail.fulfillmentKind ?? 'physical',
+    shippingGroupCode: detail.shippingGroupCode ?? '',
     categoryIds: detail.categories.map((category) => category.id),
     primaryCategoryId:
       detail.categories.find((category) => category.isPrimary)?.id ?? null,
@@ -177,6 +181,7 @@ export function toBasicInformationUpdateDto(
     isMembershipOnly: values.hideMembershipPriceForNonMembers,
     isVisibleToMembersOnly: values.isVisibleToMembersOnly,
     fulfillmentKind: values.fulfillmentKind,
+    shippingGroupCode: trimToNullable(values.shippingGroupCode),
     categoryIds,
     primaryCategoryId:
       primaryCategoryId && categoryIds.includes(primaryCategoryId)

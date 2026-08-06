@@ -246,6 +246,24 @@ export const useUpdateOverseas = (masterId: string, versionId: string | null) =>
   });
 };
 
+/**
+ * 배송비 그룹 변경 (draft 없이 즉시 적용)
+ */
+export const useUpdateShippingGroup = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (shippingGroupCode: string | null) =>
+      products.masters.updateShippingGroup(masterId, shippingGroupCode),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
 export const useUpdateRequiresMembership = (masterId: string, versionId: string | null) => {
   const queryClient = useQueryClient();
 

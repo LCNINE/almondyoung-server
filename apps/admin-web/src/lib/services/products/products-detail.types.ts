@@ -57,6 +57,7 @@ export type ProductMasterDetail = {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
+  shippingGroupCode?: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -159,6 +160,7 @@ export type MasterVersionDetailDto = {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
+  shippingGroupCode?: string | null;
   parentVersionId: string | null;
   draftOwnerId: string | null;
   /** 일괄 세션이 이 draft 를 잠갔으면 그 세션 id. 있으면 발행·삭제가 409 다. */
@@ -206,6 +208,7 @@ export type UpdateMasterVersionDto = {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   fulfillmentKind?: 'physical' | 'digital';
+  shippingGroupCode?: string | null;
   optionDiff?: ProductOptionDiff;
 };
 

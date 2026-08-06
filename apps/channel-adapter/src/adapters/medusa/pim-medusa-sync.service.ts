@@ -324,7 +324,9 @@ export class PimMedusaSyncService {
       const defaultSalesChannelId = await this.medusaClient.getDefaultSalesChannel();
       const fulfillmentKind = snapshot.fulfillmentKind ?? 'physical';
       const shippingProfileId =
-        fulfillmentKind === 'physical' ? await this.medusaClient.getDefaultShippingProfileId() : null;
+        fulfillmentKind === 'physical'
+          ? await this.medusaClient.getShippingProfileIdForGroup(snapshot.shippingGroupCode)
+          : null;
 
       // 같은 product 의 snapshot 안에서 다른 카테고리의 부모인 항목(=루트 또는 중간 노드)은
       // attach 에서 제외한다. 같은 카테고리에 모든 product 가 동시에 attach 하면 Medusa

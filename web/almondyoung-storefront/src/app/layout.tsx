@@ -4,10 +4,12 @@ import { ObservabilityProvider } from "@/components/providers/observability-prov
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
 import { PushNotificationProvider } from "@/components/providers/push-notification-provider"
 import { CartProvider } from "@/contexts/cart-context"
+import { ShippingGroupsProvider } from "@/contexts/shipping-groups-context"
 import { UserProvider } from "@/contexts/user-context"
 import { getMyProfile } from "@/lib/api/users/profile"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
+import { listShippingGroups } from "@lib/api/medusa/shipping-groups"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { QueryProvider } from "@lib/providers/query-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
@@ -41,12 +43,14 @@ export const viewport: Viewport = {
 }
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const [userDetailInfo, cart, locale, messages] = await Promise.all([
-    getMyProfile().catch(() => null),
-    retrieveCart(undefined, undefined, "no-store").catch(() => null),
-    getLocale(),
-    getMessages(),
-  ])
+  const [userDetailInfo, cart, locale, messages, shippingGroups] =
+    await Promise.all([
+      getMyProfile().catch(() => null),
+      retrieveCart(undefined, undefined, "no-store").catch(() => null),
+      getLocale(),
+      getMessages(),
+      listShippingGroups(),
+    ])
 
   // GA4 — NEXT_PUBLIC_GA_ID 는 live 빌드에만 주입된다(dev 데이터 오염 방지).
   const gaId = process.env.NEXT_PUBLIC_GA_ID
@@ -75,6 +79,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                 <ObservabilityProvider />
                 <PushNotificationProvider />
                 <CartProvider initialCart={cart}>
+                  <ShippingGroupsProvider groups={shippingGroups}>
                   <ThemeProvider
                     attribute="class"
                     defaultTheme="light"
@@ -91,6 +96,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                     </CustomThemeProvider>
                   </ThemeProvider>
                   <BottomNavigation />
+                  </ShippingGroupsProvider>
                 </CartProvider>
               </UserProvider>
               <Footer />

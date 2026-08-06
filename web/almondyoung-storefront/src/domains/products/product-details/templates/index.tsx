@@ -91,7 +91,7 @@ export async function ProductTemplate({
                   </Suspense>
                 </ErrorBoundary>
 
-                <ProductInfoAccordion />
+                <ProductInfoAccordion productMetadata={product.metadata} />
               </SectionTabPanel>
 
               {/* 리뷰 Tab Panel */}

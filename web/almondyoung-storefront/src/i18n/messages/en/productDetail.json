@@ -49,7 +49,7 @@
     "paymentBody": "For high-value payments, the card issuer may call to verify your purchase.\n\nIf the verification process indicates a stolen card or unauthorized order, the order may be held or cancelled.\n\nFor bank transfer payments, you can transfer the product cost via PC banking, internet banking, phone banking, or in person at the nearest bank.\n\nThe depositor name entered at order must match the actual depositor; payment must be made within 7 days, otherwise the order will be automatically cancelled.",
     "shippingMethod": "Method: Parcel delivery",
     "shippingArea": "Area: Nationwide",
-    "shippingFee": "Fee: 2,500 KRW",
+    "shippingFee": "Shipping fee: shown at checkout",
     "shippingDuration": "Duration: 2-3 days",
     "shippingCarrier": "Carrier: CJ Logistics",
     "shippingNote1": "Average delivery takes 1-2 days; please note delays may occur depending on the carrier.",
@@ -69,7 +69,14 @@
     "notReturnable3": "- When the product value is significantly reduced by the customer's use or partial consumption (cosmetics: only when a trial product was provided)",
     "notReturnable4": "- When the product value is significantly reduced over time, making resale difficult",
     "notReturnable5": "- When packaging of copyable products is damaged (for details, please use customer service 1:1 email)",
-    "exchangeNotice": "※ If you change your mind and request exchange/return, the return shipping cost is the customer's responsibility.\n(Includes color/size exchanges)"
+    "exchangeNotice": "※ If you change your mind and request exchange/return, the return shipping cost is the customer's responsibility.\n(Includes color/size exchanges)",
+    "shippingFeeFree": "Shipping fee: Free",
+    "shippingFeeFlat": "Shipping fee: {amount} KRW",
+    "shippingFeeConditional": "Shipping fee: {amount} KRW (free over {threshold} KRW)",
+    "shippingFeePerQuantity": "Shipping fee: {amount} KRW per item",
+    "shippingMethodValue": "Shipping method: {method}",
+    "shippingAreaValue": "Shipping area: {area}",
+    "shippingDurationValue": "Delivery time: {min}–{max} days"
   },
   "options": {
     "selectPlaceholder": "Please select an option",

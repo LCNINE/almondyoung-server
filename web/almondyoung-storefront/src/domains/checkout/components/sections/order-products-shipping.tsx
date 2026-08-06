@@ -36,11 +36,6 @@ export const OrderProductsSection = ({
     )
   }
 
-  const itemSubtotal = products.reduce(
-    (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
-    0
-  )
-
   const requiresShipping = cartRequiresShipping(products)
 
   return (
@@ -65,7 +60,7 @@ export const OrderProductsSection = ({
 
         {requiresShipping && (
           <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
-            <FreeShippingProgress className="mb-3" itemSubtotal={itemSubtotal} />
+            <FreeShippingProgress className="mb-3" items={products} />
             <p className="text-right text-[12px] text-gray-600 lg:text-sm">
               {t("shippingFee", { amount: formatPrice(shipping) })}
             </p>
