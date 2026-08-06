@@ -32,7 +32,11 @@ import {
 // 정리 전용 임포트. `publishVersion` 이 남기는 두 행 모두 catalog 쪽 CASCADE 가 닿지 않는다
 // (투영은 product_variants 에 FK 가 없고, 아웃박스는 애초에 FK 가 없다) — 4단계 스위트와
 // 같은 이유·같은 형태다.
-import { outboxEvents, productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
+import {
+  outboxEvents,
+  productSellableQuantityProjections,
+  salesVariantPolicies,
+} from '../../../../inventory/schema/inventory.schema';
 import type { DbTransaction } from '../../../catalog.types';
 import type { BulkBaseSnapshot, BulkItemInput, BulkItemPayload, FlatFields, PrefillRow } from './bulk-session.types';
 
@@ -239,6 +243,9 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
             await trx
               .delete(productSellableQuantityProjections)
               .where(inArray(productSellableQuantityProjections.variantId, variantIds));
+            // sales_variant_policies 도 product_variants 에 FK 가 없어 catalog CASCADE 가
+            // 닿지 않는다 — 위 두 테이블과 같은 이유(파일 상단 정리 전용 임포트 주석 참조).
+            await trx.delete(salesVariantPolicies).where(inArray(salesVariantPolicies.variantId, variantIds));
             await trx.delete(productVariants).where(inArray(productVariants.id, variantIds));
           }
           if (pricingRuleIds.length > 0) {
@@ -954,5 +961,45 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     const versionB = await readVersion(rowB.draftVersionId);
     expect(versionB.status).toBe('draft');
     expect(versionB.bulkSessionId).toBe(rowB.sessionId);
+  });
+
+  /**
+   * ADR-0004 의 CoW(변형 draft 편집 시 variantId 가 갈리는 것)와 `publishVersion` 의
+   * `_reconcileMatchingsAfterPublish` 사이의 구멍을 잠근다. 매칭(`product_matchings`)은
+   * 이전 active 의 같은 옵션 조합 variant 로부터 인계되지만, `sales_variant_policies`(수동
+   * 품절·출시 예정)는 인계되지 않아 CoW 를 겪은 품목은 발행 즉시 정책이 조용히 풀렸다.
+   */
+  it('CoW 로 variantId 가 갈려도 판매정책이 새 품목으로 인계된다', async () => {
+    // ① active 버전 + 품목 하나를 만든다
+    const fx = await seedActiveProduct({ name: 'CoW 정책 인계', brand: 'ACME', basePrice: 10000 });
+
+    // ② 그 품목에 수동 품절을 건다 (화면이 하는 것과 같은 경로)
+    await db.run((trx) =>
+      trx.insert(salesVariantPolicies).values({
+        variantId: fx.variantId,
+        inventoryManagement: true,
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      }),
+    );
+
+    // ③ draft 를 떠서 품목코드를 바꾼다 → CoW 가 새 variantId 를 만든다 (active 버전이 이미
+    // 그 variantId 를 물고 있는 상태에서 draft 의 매핑만 갈아치우는 것이 CoW 의 발동 조건이다).
+    const draft = await versions.createDraftVersion(fx.versionId, randomUUID(), true);
+    const cow = await variants.updateVariantInDraft(fx.masterId, draft.id, fx.variantId, {
+      variantCode: `CHANGED-${randomUUID().slice(0, 8)}`,
+    });
+    expect(cow.cowed).toBe(true);
+    expect(cow.variantId).not.toBe(fx.variantId);
+
+    // ④ 발행
+    await versions.publishVersion(draft.id);
+
+    // ⑤ 새 variantId 가 정책을 이어받았는가
+    const [policy] = await db.run((trx) =>
+      trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, cow.variantId)),
+    );
+    expect(policy?.availabilityOverride).toBe('manual_out_of_stock');
   });
 });
