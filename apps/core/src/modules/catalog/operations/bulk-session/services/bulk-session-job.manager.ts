@@ -38,6 +38,10 @@ import { computeChanges, detectConflicts } from './bulk-session.diff';
 import { toConflictDecisionMap } from './bulk-session.reader';
 import { BulkDraftApplier } from './bulk-draft.applier';
 import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
+import { BulkSessionComboResolver } from './bulk-session.combos';
+import { buildOptionAdd } from './bulk-draft.options';
+import { extractVariantPolicies } from './bulk-session.policy';
+import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import type { ImageResolver } from './bulk-draft.fields';
 import {
   formatRowError,
@@ -189,6 +193,10 @@ export class BulkSessionJobManager {
     private readonly versions: ProductVersionsService,
     private readonly config: ConfigService,
     private readonly variantCodes: BulkVariantCodeChecker,
+    // (Task 8) 발행이 품목 판매정책을 적용하는 데 쓰는 둘. 정책은 상품 버전에 담기지 않으므로
+    // (설계 스펙 §2) 발행 레인이 "조합키 → variantId" 를 직접 풀어 정책 서비스에 넘긴다.
+    private readonly combos: BulkSessionComboResolver,
+    private readonly skuMapping: ProductSkuMappingService,
   ) {}
 
   private positiveInt(key: string, fallback: number): number {
@@ -891,11 +899,36 @@ export class BulkSessionJobManager {
    *    발행했다는 뜻이고, 그대로 발행하면 남의 변경이 통째로 사라진다(스펙 §2.2·§3.10).
    * ④ 잠금 해제 후 발행 — `publishVersion` 이 잠긴 draft 를 409 로 거부하므로 같은
    *    트랜잭션에서 먼저 푼다(스펙 §10.3). 실패하면 롤백돼 잠금이 되살아나 재시도가 된다.
+   * ③′ 정책 적용 — 반드시 발행 **뒤**다. 근거 둘이 모두 성립해야 한다: (a) 신규 행은
+   *    발행되어야 variant 가 존재하고, (b) 수정 행은 CoW 인계(`_reconcileMatchingsAfterPublish`)
+   *    를 받은 뒤라야 작업자가 적은 값이 인계값을 이긴다. 순서가 뒤집히면 둘 다 조용히 틀린다.
+   *
+   * **draft 가 없는 행이 정상이다**(Task 6) — 품목 판매정책은 상품 버전에 담기지 않으므로
+   * (설계 스펙 §2) 정책만 바뀐 수정 행은 버전 변경분이 비어 draft 가 만들어지지 않는다.
+   * 그런 행은 발행할 버전 없이 정책만 적용한다. 신규(create) 행은 항상 draft 를 갖는다.
    */
   private async publishOne(sessionId: string, item: typeof productBulkItems.$inferSelect): Promise<void> {
     const draftVersionId = item.draftVersionId;
-    if (!draftVersionId) {
-      await this.failPublish(item.id, '생성된 draft 가 없어 발행할 수 없습니다.');
+
+    // 되읽기 가드. 롤링 배포에서 옛 코드가 쓴 payload 를 만나면 그 행만 실패시킨다
+    // (`draftOne`·`validateOne` 의 같은 가드와 같은 이유). 정책 차분을 payload 에서 뽑으므로
+    // 여기서도 필요해졌다.
+    if (!isBulkItemPayload(item.payload)) {
+      await this.failPublish(item.id, '행 데이터 형식이 달라 발행할 수 없습니다.');
+      return;
+    }
+    // 로컬 const 로 뽑는다 — 프로퍼티 접근의 가드 좁힘은 아래 db.run 콜백 안에서 풀린다.
+    const payload = item.payload;
+    const input = isBulkItemInput(item.input) ? item.input : null;
+
+    // 정책 차분은 **차분(payload.fields)과 시트 원본(input.bundle.variants) 둘 다**에서 뽑는다 —
+    // `판매상태재정의`/`출시예정일` 은 한 단위라 안 바뀐 짝 칸의 값이 시트에만 있다
+    // (`extractVariantPolicies` 독스트링).
+    const policies = extractVariantPolicies(payload.fields, input ? input.bundle.variants : []);
+
+    // draft 도 정책도 없으면 할 일이 없다 — 변경이 아예 없던 행이다. 실패가 아니다.
+    if (!draftVersionId && policies.size === 0) {
+      await this.markPublished(item.id);
       return;
     }
 
@@ -919,52 +952,104 @@ export class BulkSessionJobManager {
           .where(eq(productBulkItems.id, item.id));
         if (!current || current.status !== 'drafted' || current.publishStatus !== 'pending') return;
 
-        const version = await this.versions.getVersionById(draftVersionId, trx);
+        /** 정책을 적용할 대상 버전. draft 가 있으면 방금 발행한 그것, 없으면 현재 active 다. */
+        let versionId: string;
 
-        // 멱등: 재시도로 다시 온 행이 이미 발행돼 있으면 도장만 찍는다.
-        if (version.status === 'active') {
-          await trx
-            .update(productBulkItems)
-            .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
-            .where(eq(productBulkItems.id, item.id));
-          return;
+        if (draftVersionId) {
+          const version = await this.versions.getVersionById(draftVersionId, trx);
+          versionId = draftVersionId;
+
+          // 멱등: 재시도로 다시 온 행이 이미 발행돼 있으면 **발행만** 건너뛴다. 정책 적용과
+          // 도장은 아래에서 그대로 탄다 — `updateVariantStockPolicy` 는 upsert 라 재적용이
+          // 안전하고, 여기서 곧장 return 하면 "발행은 됐는데 정책이 안 걸린" 재시도 행이
+          // 정책 없이 published 로 굳는다.
+          if (version.status !== 'active') {
+            // ③ 발행 시점 가드
+            let currentActiveId: string | null = null;
+            try {
+              const active = await this.versions.getActiveVersion(version.masterId, trx);
+              currentActiveId = active.id;
+            } catch (error) {
+              // active 가 **없는 것**만 신규 행의 정상 상태다(getActiveVersion 은 이때
+              // NotFoundException 을 던진다 — product-versions.service.ts:141). 그 밖의 오류
+              // (커넥션 끊김·statement timeout)를 여기서 삼키면 두 가지로 배신한다: 수정 행은
+              // 멀쩡한데 "기준이 변경되었습니다"로 죽고, 신규 행(parentVersionId=null)은
+              // currentActiveId 가 null 이 되어 **가드를 그냥 통과한다** — 관문 ③ 이 막으려던
+              // 바로 그 사고다. 그래서 되던진다 — 바깥 catch 가 classifyPublishError 로 분류해
+              // 그 행만 정직하게 실패시킨다.
+              if (!(error instanceof NotFoundException)) throw error;
+              currentActiveId = null;
+            }
+            if (currentActiveId !== (version.parentVersionId ?? null)) {
+              throw new ConflictError('기준이 변경되었습니다. 이 상품은 양식을 다시 받아 작업해 주세요.');
+            }
+
+            // ④ 잠금 해제 → 발행
+            await trx
+              .update(productMasterVersions)
+              .set({ bulkSessionId: null, updatedAt: new Date() })
+              .where(eq(productMasterVersions.id, draftVersionId));
+
+            await this.versions.publishVersion(draftVersionId, trx, {
+              origin: 'bulk_import',
+              importSessionId: sessionId,
+            });
+          }
+        } else {
+          // 버전 없는 행(정책만 바뀐 수정 행): 정책을 걸 대상 버전은 현재 active 다.
+          // 관문 ③ 같은 발행 시점 가드가 없다 — 발행할 버전이 없으니 남의 변경을 덮어쓸
+          // 일도 없고, 정책은 버전과 무관한 축이라 그 사이 남이 발행했어도 지금의 active 에
+          // 거는 것이 맞다.
+          if (!item.masterId) {
+            throw new BadRequestError('기준 상품이 없어 판매정책을 적용할 수 없습니다.');
+          }
+          const active = await this.versions.getActiveVersion(item.masterId, trx);
+          versionId = active.id;
         }
 
-        // ③ 발행 시점 가드
-        let currentActiveId: string | null = null;
-        try {
-          const active = await this.versions.getActiveVersion(version.masterId, trx);
-          currentActiveId = active.id;
-        } catch (error) {
-          // active 가 **없는 것**만 신규 행의 정상 상태다(getActiveVersion 은 이때
-          // NotFoundException 을 던진다 — product-versions.service.ts:141). 그 밖의 오류
-          // (커넥션 끊김·statement timeout)를 여기서 삼키면 두 가지로 배신한다: 수정 행은
-          // 멀쩡한데 "기준이 변경되었습니다"로 죽고, 신규 행(parentVersionId=null)은
-          // currentActiveId 가 null 이 되어 **가드를 그냥 통과한다** — 관문 ③ 이 막으려던
-          // 바로 그 사고다. 그래서 되던진다 — 바깥 catch 가 classifyPublishError 로 분류해
-          // 그 행만 정직하게 실패시킨다.
-          if (!(error instanceof NotFoundException)) throw error;
-          currentActiveId = null;
+        // ③′ 정책 적용. **발행 뒤여야 한다** (독스트링 ③′).
+        if (policies.size > 0) {
+          const masterId = item.masterId;
+          if (!masterId) {
+            throw new BadRequestError('기준 상품이 없어 판매정책을 적용할 수 없습니다.');
+          }
+
+          // 조합키 해석은 **이 트랜잭션 안에서** 한다. draft 시점에 풀어 저장하지 않는 이유:
+          // 정책만 바뀐 행은 발행 시점 가드(관문 ③)가 없어 draft 와 publish 사이에 남이 새
+          // 버전을 발행할 수 있고, 그러면 저장해 둔 variantId 가 고아를 가리킨다.
+          //
+          // 신규 행의 조합키는 작업자가 지은 이름이라 되읽어 짝지어야 한다(F7). 그 열쇠인
+          // `OptionPlan.valueNameByKey` 는 `buildOptionAdd` 가 **순수 함수로** 만들고, 그
+          // 입력(payload.fields + 옵션 시트 행)이 둘 다 행에 저장돼 있으므로 발행 시점에
+          // 그대로 다시 만들 수 있다 — `applyCreate` 가 쓰는 것과 같은 호출이다.
+          // `errors` 는 버린다: 이 행이 여기까지 왔다는 것은 `applyCreate` 가 이미 같은
+          // 호출로 오류 0 을 확인했다는 뜻이고(bulk-draft.applier.ts) 그 뒤로 입력이 바뀌지
+          // 않았다. 다시 검사하면 같은 결론을 두 번 내면서 실패 경로만 늘어난다.
+          const comboToVariant =
+            item.kind === 'create'
+              ? await this.combos.resolveCreated(
+                  masterId,
+                  versionId,
+                  payload.fields,
+                  buildOptionAdd(payload.fields, input ? input.bundle.options : []).plan,
+                  trx,
+                )
+              : await this.combos.resolveExisting(masterId, versionId, trx);
+
+          for (const [combo, patch] of policies) {
+            const variantId = comboToVariant.get(combo);
+            // 조용히 건너뛰지 않는다 — 정책이 안 걸렸는데 '발행됨'으로 보이는 것이 이
+            // 기능에서 가장 나쁜 침묵이다.
+            if (!variantId) {
+              throw new BadRequestError(`조합 '${combo}' 에 해당하는 품목을 찾지 못해 판매정책을 적용하지 못했습니다.`);
+            }
+            // 두 테이블 쓰기·coming_soon 날짜 정리·투영 재계산·이벤트 발행을 이 서비스가
+            // 한 트랜잭션 안에서 전부 한다 — 직접 테이블을 쓰지 않는다.
+            await this.skuMapping.updateVariantStockPolicy(variantId, patch, trx);
+          }
         }
-        if (currentActiveId !== (version.parentVersionId ?? null)) {
-          throw new ConflictError('기준이 변경되었습니다. 이 상품은 양식을 다시 받아 작업해 주세요.');
-        }
 
-        // ④ 잠금 해제 → 발행
-        await trx
-          .update(productMasterVersions)
-          .set({ bulkSessionId: null, updatedAt: new Date() })
-          .where(eq(productMasterVersions.id, draftVersionId));
-
-        await this.versions.publishVersion(draftVersionId, trx, {
-          origin: 'bulk_import',
-          importSessionId: sessionId,
-        });
-
-        await trx
-          .update(productBulkItems)
-          .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
-          .where(eq(productBulkItems.id, item.id));
+        await this.markPublishedIn(trx, item.id);
       });
     } catch (error) {
       // 행 층 오류는 그 행만 죽인다. 원문은 로그로만 남기고 화면에는 분류된 문구를 준다.
@@ -974,6 +1059,30 @@ export class BulkSessionJobManager {
       );
       await this.failPublish(item.id, classifyPublishError(error));
     }
+  }
+
+  /**
+   * 행에 '발행됨' 도장을 찍는다 — **주어진 트랜잭션 안에서**. 발행·정책 적용과 같은 커밋에
+   * 실려야 "발행은 됐는데 행은 pending" 창이 생기지 않는다.
+   *
+   * `publishError` 를 함께 비우는 것이 계약이다: 재시도로 성공한 행에 옛 실패 문구가 남으면
+   * 관리자 화면이 성공한 행을 실패로 읽는다.
+   */
+  private async markPublishedIn(trx: DbTransaction, itemId: string): Promise<void> {
+    await trx
+      .update(productBulkItems)
+      .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
+      .where(eq(productBulkItems.id, itemId));
+  }
+
+  /**
+   * 같은 도장을 자체 트랜잭션에서 찍는다. 호출부는 하나뿐이다 — draft 도 정책 변경도 없어
+   * **트랜잭션을 열 이유가 없는** 행(`publishOne` 의 조기 반환). 관문 ①②는 무엇을 쓰기 전에
+   * 취소·제외를 재확인하는 장치인데, 이 경로는 카탈로그를 전혀 건드리지 않으므로 되돌릴
+   * 것도 지킬 것도 없다.
+   */
+  private async markPublished(itemId: string): Promise<void> {
+    await this.db.run((trx) => this.markPublishedIn(trx, itemId));
   }
 
   /** 발행 실패를 그 행에만 적는다. 문구는 이미 분류·절단된 것이 온다. */

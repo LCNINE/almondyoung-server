@@ -334,10 +334,16 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     return { ...bundle, pricingEditable: true };
   }
 
-  /** 아이템의 `input`(notNull). 이 스위트의 행은 옵션이 없는 상품뿐이라 항상 빈 옵션 시트다. */
-  function inputWith(options: PrefillRow[]): BulkItemInput {
+  /**
+   * 아이템의 `input`(notNull). 이 스위트의 행은 옵션이 없는 상품뿐이라 항상 빈 옵션 시트다.
+   *
+   * (Task 8) 조합 시트 행은 비어 있지 않을 수 있다 — 발행의 정책 추출이 차분뿐 아니라
+   * **시트 원본**도 읽기 때문이다(`판매상태재정의`/`출시예정일` 은 한 단위라 안 바뀐 짝 칸의
+   * 값이 시트에만 있다).
+   */
+  function inputWith(options: PrefillRow[], variants: PrefillRow[] = []): BulkItemInput {
     return {
-      bundle: { product: {}, options, variants: [], categories: [], constraint: null },
+      bundle: { product: {}, options, variants, categories: [], constraint: null },
       present: { products: [], options: [], variants: [], categories: [], constraints: [] },
       errors: [],
     };
@@ -350,6 +356,8 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
     baseVersionId?: string;
     baseSnapshot?: BulkBaseSnapshot;
     fields: FlatFields;
+    /** (Task 8) 조합 시트 원본 행. 정책 칸을 실은 케이스만 채운다. */
+    variantRows?: PrefillRow[];
   }
 
   /**
@@ -386,7 +394,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
           masterId: item.masterId ?? null,
           baseVersionId: item.baseVersionId ?? null,
           baseSnapshot: item.baseSnapshot ?? null,
-          input: inputWith([]),
+          input: inputWith([], item.variantRows ?? []),
           payload: { fields: item.fields } satisfies BulkItemPayload,
           // 'pending' 이어야 슬라이스가 집는다.
           status: 'pending' as const,
@@ -419,6 +427,20 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
       trx.select().from(productMasterVersions).where(eq(productMasterVersions.id, versionId)),
     );
     return row;
+  }
+
+  /**
+   * (Task 8) 이 master 에 달린 버전 수. "정책만 바뀐 행은 **버전을 만들지 않는다**"는
+   * 실 DB 로만 볼 수 있는 사실이고, 이 수가 그 유일한 증거다.
+   */
+  async function countVersions(masterId: string): Promise<number> {
+    const rows = await db.run((trx) =>
+      trx
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.masterId, masterId)),
+    );
+    return rows.length;
   }
 
   async function readMaster(masterId: string) {
@@ -1001,5 +1023,117 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
       trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, cow.variantId)),
     );
     expect(policy?.availabilityOverride).toBe('manual_out_of_stock');
+  });
+
+  /**
+   * (Task 8) 품목 판매정책은 상품 버전에 담기지 않는다(설계 스펙 §2). 그래서 정책만 바꾼 행은
+   * **버전 없이** 정책만 적용돼야 한다 — 4단계 applier 가 draft 를 아예 만들지 않고(`Task 6`),
+   * 발행 레인이 현재 active 를 대상으로 정책을 건다.
+   *
+   * 페이크 위에서는 잡을 수 없는 것 셋을 여기서 못 박는다: (1) 조합키 `''`(옵션 없는 상품의
+   * F3 계약)가 실제 `product_master_variants` 조회로 풀리는지, (2) `updateVariantStockPolicy`
+   * 가 발행 트랜잭션 안에서 `sales_variant_policies` 에 실제로 커밋되는지, (3) 그 과정에서
+   * 버전이 하나도 늘지 않는지.
+   */
+  it('정책만 바뀐 행은 새 버전 없이 정책만 적용된다', async () => {
+    const fx = await seedActiveProduct({ name: '정책만 수정', brand: 'ACME', basePrice: 10000 });
+    const beforeCount = await countVersions(fx.masterId);
+
+    const { sessionId, leaseToken, uploaderId } = await seedSession([
+      {
+        rowNumber: 1,
+        kind: 'update',
+        masterId: fx.masterId,
+        baseVersionId: fx.versionId,
+        baseSnapshot: await renderSnapshot(fx.masterId),
+        // 옵션 없는 상품은 조합키가 빈 문자열이다(F3) — `variant:.<키>` 형태가 된다.
+        fields: { 'variant:.availabilityOverride': '품절' },
+        variantRows: [{ combination: '', availabilityOverride: '품절', comingSoonDate: '' }],
+      },
+    ]);
+
+    await jobManager.runDraftSlice({ sessionId, leaseToken, phase: 'drafting' });
+    const [drafted] = await readItems(sessionId);
+    expect(drafted.status).toBe('drafted');
+    // 버전 필드 변경분이 비어 draft 자체가 없다 — 이 태스크가 닫은 구멍의 입구다.
+    expect(drafted.draftVersionId).toBeNull();
+    await finishDraftingPhase(sessionId);
+
+    await sessionManager.queuePublish(sessionId, uploaderId);
+    const publishLease = randomUUID();
+    await grantLease(sessionId, publishLease);
+    await jobManager.runPublishSlice({ sessionId, leaseToken: publishLease, phase: 'publishing' });
+
+    const published = await readItemById(drafted.id);
+    expect(published.publishStatus).toBe('published');
+    expect(published.publishError).toBeNull();
+
+    // 버전이 안 늘었다.
+    expect(await countVersions(fx.masterId)).toBe(beforeCount);
+
+    const [policy] = await db.run((trx) =>
+      trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, fx.variantId)),
+    );
+    expect(policy?.availabilityOverride).toBe('manual_out_of_stock');
+  });
+
+  /**
+   * (Task 8) 조합키가 안 풀리면 **조용히 건너뛰지 않는다** — 정책이 안 걸렸는데 '발행됨'으로
+   * 보이는 것이 이 기능에서 가장 나쁜 침묵이다. 실 DB 로 보는 이유: 해석 실패가 그 행의
+   * 트랜잭션을 통째로 롤백시켜야 하고(정책이 절반만 걸린 행이 남으면 안 된다), 그 롤백이
+   * 옆 행의 성공을 되돌리지 않아야 한다.
+   */
+  it('조합키가 안 풀리면 그 행만 실패한다', async () => {
+    const fxBad = await seedActiveProduct({ name: '조합 미해석', brand: 'ACME', basePrice: 10000 });
+    const fxGood = await seedActiveProduct({ name: '옆 행', brand: 'ACME', basePrice: 20000 });
+
+    const { sessionId, leaseToken, uploaderId } = await seedSession([
+      {
+        rowNumber: 1,
+        kind: 'update',
+        masterId: fxBad.masterId,
+        baseVersionId: fxBad.versionId,
+        baseSnapshot: await renderSnapshot(fxBad.masterId),
+        // 이 상품에 존재하지 않는 조합키다 — 옵션이 없어 실제 조합키는 `''` 뿐이다.
+        fields: { 'variant:없는조합.availabilityOverride': '품절' },
+        variantRows: [{ combination: '없는조합', availabilityOverride: '품절', comingSoonDate: '' }],
+      },
+      {
+        rowNumber: 2,
+        kind: 'update',
+        masterId: fxGood.masterId,
+        baseVersionId: fxGood.versionId,
+        baseSnapshot: await renderSnapshot(fxGood.masterId),
+        fields: { 'variant:.availabilityOverride': '품절' },
+        variantRows: [{ combination: '', availabilityOverride: '품절', comingSoonDate: '' }],
+      },
+    ]);
+
+    await jobManager.runDraftSlice({ sessionId, leaseToken, phase: 'drafting' });
+    const draftedRows = await readItems(sessionId);
+    expect(draftedRows.map((r) => r.status)).toEqual(['drafted', 'drafted']);
+    await finishDraftingPhase(sessionId);
+
+    await sessionManager.queuePublish(sessionId, uploaderId);
+    const publishLease = randomUUID();
+    await grantLease(sessionId, publishLease);
+    await jobManager.runPublishSlice({ sessionId, leaseToken: publishLease, phase: 'publishing' });
+
+    const badRow = await readItemById(draftedRows[0].id);
+    expect(badRow.publishStatus).toBe('failed');
+    expect(badRow.publishError).toContain('조합');
+    // 실패 행의 정책은 하나도 커밋되지 않았다.
+    const badPolicies = await db.run((trx) =>
+      trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, fxBad.variantId)),
+    );
+    expect(badPolicies).toHaveLength(0);
+
+    // 옆 행은 멀쩡히 발행됐다 — 한 행의 롤백이 다른 행을 되돌리지 않는다.
+    const goodRow = await readItemById(draftedRows[1].id);
+    expect(goodRow.publishStatus).toBe('published');
+    const [goodPolicy] = await db.run((trx) =>
+      trx.select().from(salesVariantPolicies).where(eq(salesVariantPolicies.variantId, fxGood.variantId)),
+    );
+    expect(goodPolicy?.availabilityOverride).toBe('manual_out_of_stock');
   });
 });

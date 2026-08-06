@@ -216,6 +216,9 @@ interface HarnessOpts {
   publishActiveVersionError?: Error;
   /** `BulkVariantCodeChecker.checkSession` 의 반환값(새로 invalid 로 표시한 행 수). 기본 0. */
   variantCodeFlagged?: number;
+  /** (Task 8) `BulkSessionComboResolver` 의 두 메서드가 돌려줄 조합키 → variantId. 기본은 빈 맵
+   *  (= 아무 조합도 안 풀린다 — 해석 실패 경로가 그 기본값을 그대로 쓴다). */
+  comboMap?: Map<string, string>;
 }
 
 function makeHarness(opts: HarnessOpts = {}) {
@@ -339,11 +342,22 @@ function makeHarness(opts: HarnessOpts = {}) {
   });
   const variantCodes = { checkSession };
 
+  // (Task 8) 발행 슬라이스의 정책 적용 경로가 쓰는 둘. `updateVariantStockPolicy` 도 `ops` 에
+  // 마커를 남긴다 — "정책 적용이 publishVersion **뒤**인가"는 두 호출의 상대 위치로만 관측된다.
+  const resolveExisting = jest.fn(() => Promise.resolve(opts.comboMap ?? new Map<string, string>()));
+  const resolveCreated = jest.fn(() => Promise.resolve(opts.comboMap ?? new Map<string, string>()));
+  const combos = { resolveExisting, resolveCreated };
+  const updateVariantStockPolicy = jest.fn(() => {
+    ops.push({ kind: 'call', fn: 'updateVariantStockPolicy' });
+    return Promise.resolve({});
+  });
+  const skuMapping = { updateVariantStockPolicy };
+
   // 생성자는 실제 DbService<PimSchema>/FormExportFileClient/FormExportSnapshotReader/
   // ProductCategoriesService/BulkDraftApplier/ProductVersionsService/ConfigService/
-  // BulkVariantCodeChecker 타입을 요구한다 — 이 페이크들은 매니저가 실제로 부르는 메서드만
-  // 구조적으로 흉내내므로 `as never` 캐스팅은 이 하네스 관례를 따른다
-  // (form-export-job.manager.spec.ts:192-202).
+  // BulkVariantCodeChecker/BulkSessionComboResolver/ProductSkuMappingService 타입을 요구한다 —
+  // 이 페이크들은 매니저가 실제로 부르는 메서드만 구조적으로 흉내내므로 `as never` 캐스팅은
+  // 이 하네스 관례를 따른다 (form-export-job.manager.spec.ts:192-202).
   const manager = new BulkSessionJobManager(
     db as never,
     { download } as never,
@@ -353,6 +367,8 @@ function makeHarness(opts: HarnessOpts = {}) {
     versions as never,
     config as never,
     variantCodes as never,
+    combos as never,
+    skuMapping as never,
   );
   return {
     manager,
@@ -367,6 +383,8 @@ function makeHarness(opts: HarnessOpts = {}) {
     applier,
     versions,
     checkSession,
+    combos,
+    skuMapping,
   };
 }
 
@@ -1479,17 +1497,52 @@ describe('BulkSessionJobManager.runDraftSlice', () => {
 describe('BulkSessionJobManager.runPublishSlice', () => {
   const PUBLISHING = { sessionId: 'sess-1', leaseToken: 'tok-1', phase: 'publishing' };
 
+  // (Task 8) `payload`/`input` 은 실제 DB 행이면 항상 채워져 있다(`validateOne` 이 어떤 경로로
+  // 끝나든 payload 를 쓰고, `input` 은 notNull 이다) — 발행이 그 둘에서 정책 차분을 뽑으므로
+  // 픽스처도 그 모양을 갖춘다. 기본은 정책 칸이 하나도 없는 행이다.
   function publishItemRow(overrides: FakeRow = {}): FakeRow {
     return {
       id: 'item-1',
       sessionId: 'sess-1',
       rowNumber: 2,
+      kind: 'update',
       status: 'drafted',
       publishStatus: 'pending',
       draftVersionId: 'draft-1',
       masterId: 'master-1',
+      payload: { fields: {} },
+      input: {
+        bundle: { product: {}, options: [], variants: [], categories: [], constraint: null },
+        present: EMPTY_PRESENT,
+        errors: [],
+      },
       ...overrides,
     };
+  }
+
+  /**
+   * 정책 칸이 실린 행. `extractVariantPolicies` 는 **둘 다** 본다 — 차분(`payload.fields`)이
+   * "무엇이 바뀌었나"를, 시트 원본(`input.bundle.variants`)이 "안 바뀐 짝 칸의 값"을 준다.
+   */
+  function policyItemRow(
+    fields: Record<string, string>,
+    variantRows: Array<Record<string, string>>,
+    overrides: FakeRow = {},
+  ): FakeRow {
+    return publishItemRow({
+      payload: { fields },
+      input: {
+        bundle: { product: {}, options: [], variants: variantRows, categories: [], constraint: null },
+        present: EMPTY_PRESENT,
+        errors: [],
+      },
+      ...overrides,
+    });
+  }
+
+  /** 발행 슬라이스가 items 에 쓴 값 하나. 이 스위트의 픽스처는 항상 행 하나뿐이다. */
+  function itemUpdatesOf(updates: Array<{ table: string; values: FakeRow }>): FakeRow[] {
+    return updates.filter((u) => u.table === 'items').map((u) => u.values);
   }
 
   // 관문 ①: 세션 행 FOR UPDATE 잠금이 트랜잭션의 첫 문장이어야 한다. `renewLease`(루프의
@@ -1613,6 +1666,130 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
     const publishCallOpIndex = ops.findIndex((op) => op.kind === 'call' && op.fn === 'publishVersion');
     expect(versionUpdateOpIndex).toBeGreaterThan(-1);
     expect(publishCallOpIndex).toBeGreaterThan(versionUpdateOpIndex);
+  });
+
+  // ─── (Task 8) 정책 적용 ───
+  //
+  // 품목 판매정책은 상품 버전에 담기지 않는다(설계 스펙 §2) — 그래서 발행 레인이 행마다
+  // "버전 발행(변경분이 있으면) + 정책 적용(정책 변경이 있으면)"을 한다. 아래 넷이 그 갈래
+  // 전부다: 정책만 · 버전+정책(순서) · 정책 없음 · 해석 실패.
+
+  it('draft 가 없는 행은 버전을 발행하지 않고 정책만 적용한다', async () => {
+    const { manager, versions, skuMapping, updates } = makeHarness({
+      bulkItems: [
+        policyItemRow(
+          { 'variant:c1.availabilityOverride': '품절' },
+          [{ combination: 'c1', availabilityOverride: '품절' }],
+          {
+            draftVersionId: null,
+            masterId: 'm1',
+          },
+        ),
+      ],
+      comboMap: new Map([['c1', 'v1']]),
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    // 버전 변경분이 비어 draft 가 아예 없다 — 발행할 버전이 없다는 뜻이지 실패가 아니다.
+    expect(versions.publishVersion).not.toHaveBeenCalled();
+    expect(skuMapping.updateVariantStockPolicy).toHaveBeenCalledWith(
+      'v1',
+      { availabilityOverride: 'manual_out_of_stock', comingSoonDate: null },
+      expect.anything(),
+    );
+    // 정책 적용 대상 버전은 현재 active 다 — draft 가 없으므로 다른 후보가 없다.
+    expect(versions.getActiveVersion).toHaveBeenCalledWith('m1', expect.anything());
+    // 매처(expect.any)를 object literal 안에 섞지 않는다 — 그 `any` 반환 타입이
+    // no-unsafe-assignment 를 낸다(이 파일 위쪽 claim 스펙과 같은 이유).
+    const itemUpdates = itemUpdatesOf(updates);
+    expect(itemUpdates).toHaveLength(1);
+    expect(itemUpdates[0]).toMatchObject({ publishStatus: 'published', publishError: null });
+    expect(itemUpdates[0].updatedAt).toBeInstanceOf(Date);
+  });
+
+  it('draft 가 있는 행은 발행 뒤에 정책을 적용한다', async () => {
+    const { manager, skuMapping, ops } = makeHarness({
+      bulkItems: [
+        policyItemRow({ 'variant:c1.preStockSellable': 'Y' }, [{ combination: 'c1', preStockSellable: 'Y' }], {
+          draftVersionId: 'V-draft',
+        }),
+      ],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: 'V-base', status: 'draft' },
+      publishActiveVersion: { id: 'V-base' },
+      comboMap: new Map([['c1', 'v1']]),
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(skuMapping.updateVariantStockPolicy).toHaveBeenCalledWith(
+      'v1',
+      { preStockSellable: true },
+      expect.anything(),
+    );
+    // 순서가 계약이다: 신규 행은 발행되어야 variant 가 존재하고, 수정 행은 CoW 인계
+    // (_reconcileMatchingsAfterPublish)를 받은 뒤라야 작업자가 적은 값이 인계값을 이긴다.
+    // 뒤집히면 둘 다 **조용히** 틀린다 — 그래서 ops 로그로 상대 위치를 못 박는다.
+    const publishIndex = ops.findIndex((op) => op.kind === 'call' && op.fn === 'publishVersion');
+    const policyIndex = ops.findIndex((op) => op.kind === 'call' && op.fn === 'updateVariantStockPolicy');
+    expect(publishIndex).toBeGreaterThan(-1);
+    expect(policyIndex).toBeGreaterThan(publishIndex);
+  });
+
+  it('정책 변경이 없는 행은 정책 API 도 조합 해석도 부르지 않는다', async () => {
+    const { manager, skuMapping, combos } = makeHarness({
+      bulkItems: [policyItemRow({ 'product.brand': '나이키' }, [], { draftVersionId: 'V-draft' })],
+      publishDraftVersion: { id: 'V-draft', masterId: 'master-1', parentVersionId: 'V-base', status: 'draft' },
+      publishActiveVersion: { id: 'V-base' },
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(skuMapping.updateVariantStockPolicy).not.toHaveBeenCalled();
+    expect(combos.resolveExisting).not.toHaveBeenCalled();
+    expect(combos.resolveCreated).not.toHaveBeenCalled();
+  });
+
+  it('조합키가 안 풀리면 그 행을 실패로 남긴다 (조용히 건너뛰지 않는다)', async () => {
+    const { manager, skuMapping, updates } = makeHarness({
+      bulkItems: [
+        policyItemRow(
+          { 'variant:c1.availabilityOverride': '품절' },
+          [{ combination: 'c1', availabilityOverride: '품절' }],
+          {
+            draftVersionId: null,
+            masterId: 'm1',
+          },
+        ),
+      ],
+      // 아무 조합도 안 풀린다(기본 빈 맵).
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(skuMapping.updateVariantStockPolicy).not.toHaveBeenCalled();
+    const itemUpdates = itemUpdatesOf(updates);
+    expect(itemUpdates).toHaveLength(1);
+    expect(itemUpdates[0].publishStatus).toBe('failed');
+    // 정책이 안 걸렸는데 '발행됨'으로 보이는 것이 이 기능에서 가장 나쁜 침묵이다.
+    expect(String(itemUpdates[0].publishError)).toContain('조합');
+  });
+
+  it('draft 도 정책 변경도 없는 행은 아무 것도 하지 않고 발행됨으로 도장만 찍는다', async () => {
+    const { manager, versions, skuMapping, updates } = makeHarness({
+      bulkItems: [publishItemRow({ draftVersionId: null })],
+    });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    expect(versions.publishVersion).not.toHaveBeenCalled();
+    expect(skuMapping.updateVariantStockPolicy).not.toHaveBeenCalled();
+    // 매처(expect.any)를 object literal 안에 섞지 않는다 — 그 `any` 반환 타입이
+    // no-unsafe-assignment 를 낸다(이 파일 위쪽 claim 스펙과 같은 이유).
+    const itemUpdates = itemUpdatesOf(updates);
+    expect(itemUpdates).toHaveLength(1);
+    expect(itemUpdates[0]).toMatchObject({ publishStatus: 'published', publishError: null });
+    expect(itemUpdates[0].updatedAt).toBeInstanceOf(Date);
   });
 
   it('대상이 없으면 phase 를 published 로 마감한다 (토큰 CAS)', async () => {
