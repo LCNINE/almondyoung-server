@@ -19,6 +19,7 @@ import { applyPriceChanges, toReplaceDto } from './bulk-draft.pricing';
 import { extractSimplePrices } from './form-export.pricing-judge';
 import { applyDecisions } from './bulk-session.diff';
 import { parseFieldPath } from './bulk-session.fields';
+import { stripPolicyFields } from './bulk-session.policy';
 import {
   formatRowErrors,
   type BulkBaseSnapshot,
@@ -82,8 +83,13 @@ export class BulkDraftApplier {
     private readonly constraints: ProductPurchaseConstraintsService,
   ) {}
 
-  /** 성공하면 draft 버전 id 와 (신규면) 새 masterId 를 돌려준다. 행 오류는 BadRequestError 로 던진다. */
-  async apply(input: DraftInput, tx: DbTransaction): Promise<{ draftVersionId: string; masterId: string }> {
+  /**
+   * 성공하면 draft 버전 id 와 (신규면) 새 masterId 를 돌려준다. 행 오류는 BadRequestError 로
+   * 던진다. **수정 행은 `draftVersionId` 가 `null` 일 수 있다** — 버전 필드 변경분이 비어
+   * (정책만 바뀌었거나 아예 변경이 없거나) 새 버전을 만들 이유가 없을 때다. 신규(create) 행은
+   * master 자체가 없어 "변경분이 비었다"가 성립하지 않으므로 항상 non-null 이다.
+   */
+  async apply(input: DraftInput, tx: DbTransaction): Promise<{ draftVersionId: string | null; masterId: string }> {
     if (input.kind === 'update') {
       return this.applyUpdate(input, tx);
     }
@@ -99,7 +105,7 @@ export class BulkDraftApplier {
   private async applyUpdate(
     input: DraftInput,
     tx: DbTransaction,
-  ): Promise<{ draftVersionId: string; masterId: string }> {
+  ): Promise<{ draftVersionId: string | null; masterId: string }> {
     const masterId = input.masterId;
     if (!masterId || !input.baseSnapshot) {
       throw new BadRequestError('기준 상품 정보가 없어 수정할 수 없습니다. 양식을 다시 받아 주세요.');
@@ -110,15 +116,26 @@ export class BulkDraftApplier {
     //    는 이미 같은 의미론을 갖고 있고 자체 스펙이 덮는다 — 여기서 복제하지 않는다.
     const fields = applyDecisions(input.payload.fields, input.conflictDecision);
 
+    // ①′ 판매정책은 버전에 담기지 않는다(설계 스펙 §2). 버전 적용기에 넘길 적용분에서 뺀다.
+    //    정책 자체는 발행 시점에 publishOne 이 적용한다.
+    const versionFields = stripPolicyFields(fields);
+
+    // ①″ 버전 필드 변경분이 비면 **버전을 만들지 않는다**. 정책만 바뀐 행과 완전 무변경
+    //     행이 같은 경로다. 판정이 applyDecisions **뒤**인 것이 중요하다 — 충돌을 전부
+    //     skip 으로 결정한 행은 그때서야 비고, 앞에서 재면 빈 버전이 생긴다.
+    if (Object.keys(versionFields).length === 0) {
+      return { draftVersionId: null, masterId };
+    }
+
     // ② 현재 active 에서 포크한다. 스냅샷에서 포크하면 그 사이 남이 발행한 변경이 이 draft 가
     //    발행되는 순간 통째로 사라진다.
     const active = await this.versions.getActiveVersion(masterId, tx);
     const draft = await this.versions.createDraftVersion(active.id, input.userId, true, tx);
 
     // ③ 스칼라·이미지·카테고리 + 옵션 표시 변경. 수정 행은 옵션 구조를 못 바꾸므로
-    //    optionRows 가 아니라 buildOptionModify(순수 함수, fields 만 본다)를 쓴다.
-    const { data, errors } = buildVersionData(fields, { ...input.payload, fields }, input.images);
-    const { modify, errors: optionErrors } = buildOptionModify(fields);
+    //    optionRows 가 아니라 buildOptionModify(순수 함수, versionFields 만 본다)를 쓴다.
+    const { data, errors } = buildVersionData(versionFields, { ...input.payload, fields: versionFields }, input.images);
+    const { modify, errors: optionErrors } = buildOptionModify(versionFields);
     const all = [...errors, ...optionErrors];
     if (all.length > 0) throw new BadRequestError(formatRowErrors(all));
 
@@ -130,13 +147,14 @@ export class BulkDraftApplier {
     );
 
     // ④ variant. 포크한 draft 는 active 와 variantId 를 공유하므로 반드시 CoW 경로다(F6) —
-    //    bulkUpdateVariantsInDraft 가 그 경로를 돈다. fields 에 variant 스코프 키가 없으면
-    //    조회 자체를 안 한다(resolveCreatedCombos 와 같은 이유·같은 패턴).
-    const touchesVariant = Object.keys(fields).some((path) => parseFieldPath(path)?.scope === 'variant');
+    //    bulkUpdateVariantsInDraft 가 그 경로를 돈다. versionFields 에 variant 스코프 키가
+    //    없으면 조회 자체를 안 한다(resolveCreatedCombos 와 같은 이유·같은 패턴). 정책 경로가
+    //    이미 빠진 맵을 보므로, 정책만 바뀐 조합은 여기서 자동으로 손대지 않는 쪽이 된다.
+    const touchesVariant = Object.keys(versionFields).some((path) => parseFieldPath(path)?.scope === 'variant');
     const variantIdByCombo = touchesVariant
       ? await this.resolveExistingCombos(masterId, draft.id, tx)
       : new Map<string, string>();
-    const cowMap = await this.applyVariantCodes(masterId, draft.id, fields, variantIdByCombo, tx);
+    const cowMap = await this.applyVariantCodes(masterId, draft.id, versionFields, variantIdByCombo, tx);
 
     // ⑤ 가격. 두 경우에 **아예 손대지 않는다**:
     //   (a) 얼린 판정이 false — replace 를 부르는 순간 복합 룰이 단순 override 로 뭉개진다(F9)
@@ -144,7 +162,7 @@ export class BulkDraftApplier {
     //       부르면 같은 룰을 지웠다 다시 만드는 왕복일 뿐이고, 더 나쁘게는 all_variants 판매가
     //       룰이 없는 상품에서 `toReplaceDto` 가 throw 해 가격과 무관한 수정(브랜드만 바꾼 행)이
     //       실패한다(Task 5 리뷰 — toReplaceDto 는 basePrice 가 null 이면 항상 throw 한다).
-    const touchesPrice = Object.keys(fields).some(
+    const touchesPrice = Object.keys(versionFields).some(
       (path) =>
         path === 'product.basePrice' ||
         path === 'product.membershipPrice' ||
@@ -154,12 +172,12 @@ export class BulkDraftApplier {
       // 포크한 draft 의 룰을 읽는다(active 가 아니라) — _copyMappings 가 이미 복사했으므로
       // 값은 같지만, replace 대상과 "지금 이 draft 에 실제로 달린 것"을 일치시킨다.
       const current = extractSimplePrices(await this.pricing.getVersionRules(draft.id, tx));
-      const { prices, errors: priceErrors } = applyPriceChanges(current, fields, cowMap);
+      const { prices, errors: priceErrors } = applyPriceChanges(current, versionFields, cowMap);
       if (priceErrors.length > 0) throw new BadRequestError(formatRowErrors(priceErrors));
       await this.pricing.replaceVersionRules(draft.id, toReplaceDto(prices), tx);
     }
 
-    await this.applyConstraintUpdate(masterId, draft.id, fields, tx);
+    await this.applyConstraintUpdate(masterId, draft.id, versionFields, tx);
     await this.lockDraft(draft.id, input.sessionId, tx);
     return { draftVersionId: draft.id, masterId };
   }
