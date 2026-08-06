@@ -26,6 +26,10 @@ import type {
   BulkSessionProgress,
 } from '@/lib/types/dto/bulk-session';
 import { notifySessionMutationError } from '../../lib/session-mutation-error';
+import {
+  itemVersionState,
+  itemVersionStateLabel,
+} from '../../lib/item-version-state';
 import { ItemActions } from './item-actions';
 
 const PAGE_SIZE = 20;
@@ -205,6 +209,11 @@ export function DraftedPanel({
                     {item.rowNumber} · {item.rowKey} · {KIND_LABEL[item.kind]} ·{' '}
                     {displayName}
                   </span>
+                  {itemVersionStateLabel(itemVersionState(item)) && (
+                    <span className="text-xs text-muted-foreground">
+                      {itemVersionStateLabel(itemVersionState(item))}
+                    </span>
+                  )}
                   {item.errorMessage && (
                     <span role="alert" className="text-destructive">
                       {item.errorMessage}
