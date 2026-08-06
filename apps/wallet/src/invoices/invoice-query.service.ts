@@ -40,6 +40,11 @@ export interface MyInvoiceView {
   maxAttempts: number;
   nextAttemptAt: string | null;
   lastErrorCode: string | null;
+  /**
+   * 실패 사유 원문(효성이 준 '잔액부족' 등). 코드만으로는 고객이 무엇을 해야 할지 알 수 없다 —
+   * 잔액을 채우면 되는 건지 계좌를 바꿔야 하는 건지가 갈린다.
+   */
+  lastErrorMessage: string | null;
   /** 고객이 즉시 재시도할 수 있는 상태(진짜 실패=PAST_DUE)만 true. 심사대기/진행중은 재시도 불가. */
   isRetryable: boolean;
   createdAt: string;
@@ -95,6 +100,7 @@ export class InvoiceQueryService {
       maxAttempts: r.maxAttempts,
       nextAttemptAt: r.nextAttemptAt ? r.nextAttemptAt.toISOString() : null,
       lastErrorCode: (r.metadata?.lastErrorCode as string | undefined) ?? null,
+      lastErrorMessage: (r.metadata?.lastErrorMessage as string | undefined) ?? null,
       isRetryable: r.status === 'PAST_DUE',
       createdAt: r.createdAt.toISOString(),
     }));

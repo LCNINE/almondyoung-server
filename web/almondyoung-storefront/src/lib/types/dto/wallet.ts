@@ -334,6 +334,8 @@ export interface MyInvoiceDto {
   maxAttempts: number
   nextAttemptAt: string | null
   lastErrorCode: string | null
+  /** 실패 사유 원문(효성 '잔액부족' 등). 없을 수도 있어 화면은 일반 안내로 폴백한다. */
+  lastErrorMessage: string | null
   isRetryable: boolean
   createdAt: string
 }

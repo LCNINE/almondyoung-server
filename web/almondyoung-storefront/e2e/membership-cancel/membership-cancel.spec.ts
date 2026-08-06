@@ -34,7 +34,9 @@ const SCENARIO = process.env.SCENARIO ?? 'recurring-withdrawal';
 
 test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
   test.skip(
-    SCENARIO.startsWith('refund-') || SCENARIO === 'mandate-rejected',
+    SCENARIO.startsWith('refund-') ||
+      SCENARIO === 'mandate-rejected' ||
+      SCENARIO === 'billing-uncollectible',
     '가입자가 아닌 시나리오는 별도 describe 에서 다룬다'
   );
 
@@ -304,6 +306,28 @@ test.describe(`해지 후 환불 진행 상황 (${SCENARIO})`, () => {
   });
 });
 
+// 출금 실패는 상태 배지("결제 실패")만으로는 아무것도 못 한다 — 잔액을 채우면 되는 건지, 몇 번
+// 남았는지, 언제 끊기는지를 같은 자리에서 알려줘야 CS 로 오지 않는다.
+test.describe(`출금 실패 안내 (${SCENARIO})`, () => {
+  test.skip(SCENARIO !== 'billing-past-due', '출금 실패 시나리오만');
+
+  test('왜 실패했는지·몇 번째인지·언제 끊기는지·무엇을 하면 되는지 모두 보인다', async ({ page }) => {
+    await page.goto(MEMBERSHIP_URL);
+
+    const invoice = page.getByText('결제 실패', { exact: true }).locator('..').locator('..');
+    await expect(invoice).toBeVisible();
+    // 효성이 준 사유를 그대로 — '결제 실패' 만으로는 무엇을 해야 할지 알 수 없다.
+    await expect(invoice.getByText(/실패 사유: 잔액부족/)).toBeVisible();
+    await expect(invoice.getByText(/계좌 잔액을 확인/)).toBeVisible();
+    // 몇 번째 실패인지 + 몇 번 더 실패하면 끊기는지 (예고 없이 종료되면 안 된다)
+    await expect(invoice.getByText(/출금 시도 2\/3회/)).toBeVisible();
+    await expect(invoice.getByText(/1번 더 실패하면 멤버십이 종료/)).toBeVisible();
+    await expect(invoice.getByText(/다음 시도/)).toBeVisible();
+    // 기다리지 않고 지금 바로 끝낼 수 있는 길
+    await expect(page.getByRole('button', { name: '다시 결제하기' })).toBeVisible();
+  });
+});
+
 // 계좌 심사 거절·미수로 끊긴 고객에게 화면에 '가입하기' 만 남으면 왜 끊겼는지 알 방법이 없다.
 test.describe(`멤버십 종료 사유 안내 (${SCENARIO})`, () => {
   test.skip(SCENARIO !== 'mandate-rejected', '종료 사유 시나리오만');
@@ -317,5 +341,23 @@ test.describe(`멤버십 종료 사유 안내 (${SCENARIO})`, () => {
     await expect(card.getByText(/자동이체 심사가 거절되어/)).toBeVisible();
     // 이유만 알려주고 방법을 안 알려주면 그대로 문의가 된다.
     await expect(card.getByText(/다른 계좌로 다시 등록/)).toBeVisible();
+  });
+});
+
+// 재시도 소진으로 자격이 회수된 뒤. 계좌는 지워지지 않으므로 재등록이 아니라 재가입이 필요하다 —
+// "결제수단을 다시 등록하세요" 로 안내하면 멀쩡한 계좌를 지우고 CMS 심사를 며칠 다시 겪는다.
+test.describe(`미수 종료 안내 (${SCENARIO})`, () => {
+  test.skip(SCENARIO !== 'billing-uncollectible', '미수 종료 시나리오만');
+
+  test('출금 실패로 끝났다는 사실과 재가입 방법을 알려준다', async ({ page }) => {
+    await page.goto(MEMBERSHIP_URL);
+    const card = page.getByTestId('termination-notice-card');
+    await expect(card).toBeVisible();
+
+    await expect(card.getByText(/출금이 여러 번 실패해/)).toBeVisible();
+    await expect(card.getByText(/다시 가입하시면/)).toBeVisible();
+    // 계좌를 새로 등록해야 한다고 읽히면 안 된다(재심사 며칠을 헛되이 겪는다).
+    await expect(card.getByText(/계좌를 새로 등록하실 필요는 없습니다/)).toBeVisible();
+    await expect(card.getByText('결제 실패(재시도 소진)')).toBeVisible();
   });
 });

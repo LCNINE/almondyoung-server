@@ -326,6 +326,14 @@ function build() {
         },
       };
 
+    // 출금이 실패했지만 아직 자격은 살아있는 상태 — 몇 번째 실패인지·언제 끊기는지 보여야 한다.
+    case 'billing-past-due':
+      return { subscription: base, preview: previewBase };
+
+    // 재시도 소진으로 자격이 회수된 뒤 — 왜 끝났는지와 재가입 안내가 남아야 한다.
+    case 'billing-uncollectible':
+      return { subscription: null, preview: null };
+
     // 즉시해지가 끝난 뒤 — 화면은 비가입자로 바뀌지만 환불이 어디까지 왔는지는 보여야 한다.
     case 'refund-pending':
     case 'refund-completed':
@@ -365,6 +373,17 @@ function routes(pathname, method, body) {
         reasonLabel: '계좌 자동이체 심사 거절',
         notice:
           '등록하신 계좌의 자동이체 심사가 거절되어 멤버십이 종료되었습니다. 다른 계좌로 다시 등록하시면 이어서 이용하실 수 있어요.',
+        endedAt: new Date().toISOString(),
+      };
+    // 미수 확정으로 끊긴 고객. 계좌는 지워지지 않으므로 재등록이 아니라 **재가입**을 안내해야 한다.
+    if (SCENARIO === 'billing-uncollectible')
+      return {
+        origin: 'PAYMENT_FAILED',
+        originLabel: '결제 실패로 종료',
+        reasonLabel: '결제 실패(재시도 소진)',
+        notice:
+          '출금이 여러 번 실패해 멤버십이 종료되었습니다. 계좌에 금액을 채우신 뒤 다시 가입하시면 ' +
+          '등록해 두신 계좌로 이어서 이용하실 수 있어요(계좌를 새로 등록하실 필요는 없습니다).',
         endedAt: new Date().toISOString(),
       };
     return null;
@@ -444,7 +463,49 @@ function routes(pathname, method, body) {
   }
 
   // wallet
-  if (pathname === '/v1/me/invoices') return [];
+  // 출금이 실패했을 때 고객이 '왜' 와 '몇 번 남았는지' 를 알 수 있어야 한다 — 상태 배지만으론
+  // 잔액을 채우면 되는 건지 계좌를 바꿔야 하는 건지 알 수 없어 그대로 CS 로 온다.
+  if (pathname === '/v1/me/invoices') {
+    if (SCENARIO === 'billing-past-due')
+      return [
+        {
+          invoiceId: 'inv-past-due',
+          status: 'PAST_DUE',
+          periodStart: plus(-3),
+          periodEnd: plus(27),
+          amountDue: MONTHLY,
+          currency: 'KRW',
+          dueDate: plus(-3),
+          attemptCount: 2,
+          maxAttempts: 3,
+          nextAttemptAt: new Date(TODAY.getTime() + 2 * 86400000).toISOString(),
+          lastErrorCode: '9999',
+          lastErrorMessage: '잔액부족',
+          isRetryable: true,
+          createdAt: new Date(TODAY.getTime() - 3 * 86400000).toISOString(),
+        },
+      ];
+    if (SCENARIO === 'billing-uncollectible')
+      return [
+        {
+          invoiceId: 'inv-uncollectible',
+          status: 'UNCOLLECTIBLE',
+          periodStart: plus(-33),
+          periodEnd: plus(-3),
+          amountDue: MONTHLY,
+          currency: 'KRW',
+          dueDate: plus(-33),
+          attemptCount: 3,
+          maxAttempts: 3,
+          nextAttemptAt: null,
+          lastErrorCode: '9999',
+          lastErrorMessage: '잔액부족',
+          isRetryable: false,
+          createdAt: new Date(TODAY.getTime() - 33 * 86400000).toISOString(),
+        },
+      ];
+    return [];
+  }
   if (pathname.startsWith('/v1/billing-methods')) return [];
 
   // 테스트 전용 — 호출 기록 확인/초기화 (테스트 간 누적을 끊는다)

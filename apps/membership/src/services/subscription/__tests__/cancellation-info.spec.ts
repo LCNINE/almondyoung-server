@@ -83,7 +83,11 @@ describe('resolveCancellationInfo', () => {
     ]);
     expect(info?.origin).toBe('PAYMENT_FAILED');
     expect(info?.reasonLabel).toBe('결제 실패(재시도 소진)');
-    expect(info?.customerNotice).toContain('결제수단을 다시 등록');
+    // 출금 실패 종료는 계좌를 지우지 않는다(해지 기본이 '계좌 유지'). 재등록을 안내하면 고객이
+    // 멀쩡한 계좌를 지우고 며칠짜리 CMS 재심사를 다시 겪는다 — 필요한 건 재가입뿐이다.
+    expect(info?.customerNotice).toContain('다시 가입');
+    expect(info?.customerNotice).toContain('계좌를 새로 등록하실 필요는 없습니다');
+    expect(info?.customerNotice).not.toContain('결제수단을 다시 등록');
   });
 
   // 결제관리에서 환불하면 계약 이벤트 없이 isVoided 로만 남는다.
