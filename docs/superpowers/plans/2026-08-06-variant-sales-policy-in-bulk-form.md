@@ -1290,8 +1290,19 @@ describe('itemVersionState', () => {
   });
 
   it('draft 가 없고 변경분이 있으면 정책만 적용이다', () => {
+    // `as` 캐스팅을 쓰지 않는다(레포 규칙) — BulkSessionItemChange 를 온전히 만든다.
     expect(
-      itemVersionState({ draftVersionId: null, changes: [{ field: 'variant:c1.availabilityOverride' }] as never }),
+      itemVersionState({
+        draftVersionId: null,
+        changes: [
+          {
+            field: 'variant:c1.availabilityOverride',
+            label: '판매상태재정의 (조합 c1)',
+            before: '',
+            after: '품절',
+          },
+        ],
+      })
     ).toBe('policy-only');
   });
 
