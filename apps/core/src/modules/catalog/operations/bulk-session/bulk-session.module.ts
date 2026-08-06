@@ -16,6 +16,7 @@ import { BulkSessionJobWorker } from './services/bulk-session-job.worker';
 import { BulkImageManager } from './services/bulk-image.manager';
 import { BulkImageCleaner } from './services/bulk-image.cleaner';
 import { BulkDraftApplier } from './services/bulk-draft.applier';
+import { BulkSessionComboResolver } from './services/bulk-session.combos';
 import { BulkVariantCodeChecker } from './services/bulk-variant-code.checker';
 import { BulkSessionCleaner } from './services/bulk-session.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
@@ -50,6 +51,9 @@ import { ProductMatchingModule } from '../../../product-matching/product-matchin
 // provider 로 등록돼야 (전역으로 이미 떠 있는) ScheduleModule 의 explorer 가 크론에 마운트한다.
 // BulkDraftApplier 는 4단계 draft 생성 경로다. catalog core 의 쓰기 서비스 여섯을 주입받아
 // 조립만 하므로 자체 DB 접근은 잠금 UPDATE 한 문장뿐이다.
+// BulkSessionComboResolver 는 (Task 7) 조합키(수정 행의 idKey / 신규 행의 워크북 이름 키) →
+// variantId 해석기다. 원래 BulkDraftApplier 의 private 메서드였는데, 발행 경로(Task 8)가
+// 같은 해석을 다시 써야 해서 공용 모듈로 뽑았다 — BulkDraftApplier 가 생성자로 주입받는다.
 // BulkSessionCleaner 는 5단계 종단 세션 워크북 정리 @Cron 스윕이다(BulkImageCleaner 와는
 // 다른 대상 — 취소 세션 이미지가 아니라 발행 완료·취소 세션이 남긴 원본 엑셀). 다른 크론
 // provider 들과 같은 이유로 등록해야 ScheduleExplorer 가 마운트한다.
@@ -76,6 +80,7 @@ import { ProductMatchingModule } from '../../../product-matching/product-matchin
     BulkImageManager,
     BulkImageCleaner,
     BulkDraftApplier,
+    BulkSessionComboResolver,
     BulkVariantCodeChecker,
     BulkSessionCleaner,
   ],

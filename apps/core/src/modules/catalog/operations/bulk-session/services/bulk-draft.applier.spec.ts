@@ -21,6 +21,7 @@ jest.mock('./bulk-draft.fields', () => {
 
 import { BulkDraftApplier, type DraftInput } from './bulk-draft.applier';
 import { buildVersionData } from './bulk-draft.fields';
+import { BulkSessionComboResolver } from './bulk-session.combos';
 import type { FlatFields } from './bulk-session.types';
 
 const VERSION_ID = '0198f000-0000-7000-8000-000000000001';
@@ -128,6 +129,8 @@ function makeApplier(overrides: Overrides = {}) {
     ...overrides.constraints,
   };
 
+  const combos = new BulkSessionComboResolver(optionLoader as never);
+
   const applier = new BulkDraftApplier(
     db as never,
     masters as never,
@@ -136,6 +139,7 @@ function makeApplier(overrides: Overrides = {}) {
     optionLoader as never,
     pricing as never,
     constraints as never,
+    combos,
   );
   return { applier, calls, trx };
 }
