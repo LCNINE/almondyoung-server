@@ -7,6 +7,8 @@ export interface ColumnDef {
   key: string;
   label: string;
   required: boolean;
+  /** 허용값·빈칸 의미. 스킬이 읽는 열 문서에 그대로 실린다(form-export.columns-doc.ts). */
+  note?: string;
 }
 
 /** 가격 룰이 임포트 표현 집합 밖을 때 판매가 칸에 넣는 값. 그대로면 "가격 변경 없음"이다. */
@@ -25,8 +27,8 @@ export const SHEET_NAMES = {
   meta: '_양식정보',
 } as const;
 
-const req = (key: string, label: string): ColumnDef => ({ key, label, required: true });
-const opt = (key: string, label: string): ColumnDef => ({ key, label, required: false });
+const req = (key: string, label: string, note?: string): ColumnDef => ({ key, label, required: true, note });
+const opt = (key: string, label: string, note?: string): ColumnDef => ({ key, label, required: false, note });
 
 export const PRODUCT_COLUMNS: ColumnDef[] = [
   req('rowKey', '상품키'),
@@ -79,6 +81,19 @@ export const VARIANT_COLUMNS: ColumnDef[] = [
   opt('basePrice', '판매가'),
   opt('membershipPrice', '멤버십가'),
   opt('variantCode', '품목코드'),
+  // ── 판매정책. 버전에 담기지 않고 발행 시점에 즉시 적용된다(설계 스펙 §2). ──
+  opt(
+    'availabilityOverride',
+    '판매상태재정의',
+    "'품절' 또는 '출시예정'. 값이 찍혀 있던 칸을 비우면 해제된다. 원래 비어 있던 칸은 변경 없음.",
+  ),
+  opt(
+    'comingSoonDate',
+    '출시예정일',
+    "YYYY-MM-DD. 같은 행의 판매상태재정의가 '출시예정'일 때만 쓸 수 있다. 표시 전용이며 판매를 열지 않는다.",
+  ),
+  opt('preStockSellable', '선판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).'),
+  opt('alwaysSellableZeroStock', '항상판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).'),
 ];
 
 export const CATEGORY_COLUMNS: ColumnDef[] = [

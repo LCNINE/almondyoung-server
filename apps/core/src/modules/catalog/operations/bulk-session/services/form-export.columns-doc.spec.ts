@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildColumnsJson, buildColumnsMarkdown } from './form-export.columns-doc';
-import { ALL_COLUMN_SETS } from './form-export.sheets';
+import { ALL_COLUMN_SETS, VARIANT_COLUMNS } from './form-export.sheets';
 
 const SKILL_ROOT = join(__dirname, '../../../../../../../../skills/product-bulk-form');
 
@@ -16,10 +16,30 @@ describe('열 레퍼런스 생성기', () => {
 
   it('JSON 은 라벨↔키 매핑을 시트별로 담는다', () => {
     const parsed = JSON.parse(buildColumnsJson()) as {
-      sheets: Record<string, Array<{ key: string; label: string; required: boolean }>>;
+      sheets: Record<string, Array<{ key: string; label: string; required: boolean; note: string | null }>>;
     };
     expect(Object.keys(parsed.sheets)).toEqual(ALL_COLUMN_SETS.map((s) => s.name));
-    expect(parsed.sheets['상품']).toContainEqual({ key: 'rowKey', label: '상품키', required: true });
+    expect(parsed.sheets['상품']).toContainEqual({ key: 'rowKey', label: '상품키', required: true, note: null });
+  });
+
+  it('조합 시트에 판매정책 열 4종이 있고 각각 설명을 갖는다', () => {
+    const keys = VARIANT_COLUMNS.map((c) => c.key);
+    expect(keys).toEqual(
+      expect.arrayContaining(['availabilityOverride', 'comingSoonDate', 'preStockSellable', 'alwaysSellableZeroStock']),
+    );
+    for (const key of ['availabilityOverride', 'comingSoonDate', 'preStockSellable', 'alwaysSellableZeroStock']) {
+      const col = VARIANT_COLUMNS.find((c) => c.key === key);
+      expect(col?.required).toBe(false);
+      // 허용값과 빈칸 의미가 스킬 문서에 실려야 한다 — 열 이름만으로는 '품절'/'출시예정' 을 알 수 없다.
+      expect(col?.note ?? '').not.toBe('');
+    }
+  });
+
+  it('생성된 마크다운이 열 설명을 싣는다', () => {
+    const md = buildColumnsMarkdown();
+    expect(md).toContain('판매상태재정의');
+    expect(md).toContain('품절');
+    expect(md).toContain('출시예정');
   });
 });
 

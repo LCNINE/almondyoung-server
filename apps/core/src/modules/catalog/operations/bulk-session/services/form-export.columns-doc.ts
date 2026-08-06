@@ -20,10 +20,10 @@ export function buildColumnsMarkdown(): string {
   ];
 
   for (const set of ALL_COLUMN_SETS) {
-    lines.push(`## ${set.name}`, '', '| 열 | 내부 키 | 필수 |', '|---|---|---|');
+    lines.push(`## ${set.name}`, '', '| 열 | 내부 키 | 필수 | 설명 |', '|---|---|---|---|');
     for (const col of set.columns) {
       const label = col.required ? `**${col.label}**` : col.label;
-      lines.push(`| ${label} | \`${col.key}\` | ${col.required ? 'O' : ''} |`);
+      lines.push(`| ${label} | \`${col.key}\` | ${col.required ? 'O' : ''} | ${col.note ?? ''} |`);
     }
     lines.push('');
   }
@@ -43,9 +43,14 @@ export function buildColumnsMarkdown(): string {
 }
 
 export function buildColumnsJson(): string {
-  const sheets: Record<string, Array<{ key: string; label: string; required: boolean }>> = {};
+  const sheets: Record<string, Array<{ key: string; label: string; required: boolean; note: string | null }>> = {};
   for (const set of ALL_COLUMN_SETS) {
-    sheets[set.name] = set.columns.map((col) => ({ key: col.key, label: col.label, required: col.required }));
+    sheets[set.name] = set.columns.map((col) => ({
+      key: col.key,
+      label: col.label,
+      required: col.required,
+      note: col.note ?? null,
+    }));
   }
   return `${JSON.stringify({ sheetNames: SHEET_NAMES, pricingSentinel: PRICING_SENTINEL, sheets }, null, 2)}\n`;
 }
