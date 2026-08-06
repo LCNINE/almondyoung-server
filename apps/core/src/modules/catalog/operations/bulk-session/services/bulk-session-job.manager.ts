@@ -930,7 +930,11 @@ export class BulkSessionJobManager {
     // 정책 차분은 **차분(policyFields)과 시트 원본(input.bundle.variants) 둘 다**에서 뽑는다 —
     // `판매상태재정의`/`출시예정일` 은 한 단위라 안 바뀐 짝 칸의 값이 시트에만 있다
     // (`extractVariantPolicies` 독스트링).
-    const policies = extractVariantPolicies(policyFields, input ? input.bundle.variants : []);
+    //
+    // `item.kind` 를 넘기는 이유: 신규 행의 `fields` 는 차분이 아니라 파일 값 전체라 정책 열을
+    // 손대지 않아도 조합마다 빈 `판매상태재정의` 키가 들어 있다. 그것을 '해제'로 읽으면
+    // 조합마다 무변화 정책 쓰기(투영 재계산 + 이벤트)가 세션 행을 잠근 채 돈다.
+    const policies = extractVariantPolicies(policyFields, input ? input.bundle.variants : [], item.kind);
 
     // draft 도 정책도 없으면 할 일이 없다 — 변경이 아예 없던 행이다. 실패가 아니다.
     if (!draftVersionId && policies.size === 0) {
@@ -1077,18 +1081,42 @@ export class BulkSessionJobManager {
   private async markPublishedIn(trx: DbTransaction, itemId: string): Promise<void> {
     await trx
       .update(productBulkItems)
-      .set({ publishStatus: 'published', publishError: null, updatedAt: new Date() })
+      .set(BulkSessionJobManager.PUBLISHED_STAMP())
       .where(eq(productBulkItems.id, itemId));
   }
 
   /**
+   * 도장의 `set` 절. 두 경로가 공유한다 — `publishError` 를 함께 비우는 것이 계약이라
+   * 두 벌이 되면 한쪽만 고쳤을 때 성공한 행에 옛 실패 문구가 남는다.
+   */
+  private static PUBLISHED_STAMP() {
+    return { publishStatus: 'published' as const, publishError: null, updatedAt: new Date() };
+  }
+
+  /**
    * 같은 도장을 자체 트랜잭션에서 찍는다. 호출부는 하나뿐이다 — draft 도 정책 변경도 없어
-   * **트랜잭션을 열 이유가 없는** 행(`publishOne` 의 조기 반환). 관문 ①②는 무엇을 쓰기 전에
-   * 취소·제외를 재확인하는 장치인데, 이 경로는 카탈로그를 전혀 건드리지 않으므로 되돌릴
-   * 것도 지킬 것도 없다.
+   * **카탈로그를 전혀 건드리지 않는** 행(`publishOne` 의 조기 반환).
+   *
+   * **그래도 지킬 것이 있다: `publish_status` 는 쓴다.** `runPublishSlice` 는 슬라이스를 한 번
+   * SELECT 한 뒤 루프를 도므로, 그 사이 `excludeItem` 이 커밋되면(`status='excluded'`,
+   * `publishStatus='idle'`) 이 경로가 제외된 행에 '발행됨'을 덮어쓴다 — 제외 탭에 발행됨 배지가
+   * 뜨고, `excludeItem` 의 `publishStatus === 'published'` 가드가 이후 조작을 막고, 진행률이
+   * 부푼다. 그래서 `where` 에 관문 ②와 **같은 조건**을 건다: 도장은 여전히 drafted·pending 인
+   * 행에만 찍힌다. (트랜잭션 경로는 세션 행을 잠근 뒤 관문 ②가 같은 것을 확인하므로 그대로 둔다.)
    */
   private async markPublished(itemId: string): Promise<void> {
-    await this.db.run((trx) => this.markPublishedIn(trx, itemId));
+    await this.db.run((trx) =>
+      trx
+        .update(productBulkItems)
+        .set(BulkSessionJobManager.PUBLISHED_STAMP())
+        .where(
+          and(
+            eq(productBulkItems.id, itemId),
+            eq(productBulkItems.status, 'drafted'),
+            eq(productBulkItems.publishStatus, 'pending'),
+          ),
+        ),
+    );
   }
 
   /** 발행 실패를 그 행에만 적는다. 문구는 이미 분류·절단된 것이 온다. */

@@ -102,10 +102,18 @@ function toOverride(cell: string): 'manual_out_of_stock' | 'coming_soon' | null 
  *
  * **`선판매`·`항상판매` 의 빈칸은 지시 없음이다**(설계 스펙 §4.1) — Y/N 두 상태뿐인 칸을
  * 비우는 것은 해제가 아니다. 키를 만들지 않는다.
+ *
+ * **신규(create) 행은 `판매상태재정의` 의 빈칸도 지시 없음이다.** 신규 행의 `fields` 는
+ * 차분이 아니라 **파일 값 전체**이므로(`bulk-session-job.manager.ts` — 신규 행은 비교 대상이
+ * 없다) 정책 열을 손도 안 댄 행에도 조합마다 빈 override 키가 들어 있다. 그것을 '해제'로
+ * 읽으면 조합마다 무변화 `updateVariantStockPolicy`(투영 재계산 + 아웃박스 이벤트)가 발행
+ * 트랜잭션 안에서 돈다. 의미상으로도 신규 행에는 **지울 옛 값이 없다** — `선판매`·`항상판매`
+ * 가 이미 쓰는 규칙과 같은 자리로 모은다. 수정 행은 그대로 명시적 해제다.
  */
 export function extractVariantPolicies(
   fields: FlatFields,
   variantRows: PrefillRow[],
+  kind: 'create' | 'update',
 ): Map<string, UpdateVariantStockPolicyDto> {
   const cellsByCombo = new Map<string, PrefillRow>();
   for (const row of variantRows) cellsByCombo.set((row.combination ?? '').trim(), row);
@@ -125,9 +133,14 @@ export function extractVariantPolicies(
     const patch: UpdateVariantStockPolicyDto = {};
 
     if (OVERRIDE_PAIR_KEYS.some((key) => keys.has(key))) {
-      const override = toOverride(cells?.availabilityOverride ?? fields[`variant:${combo}.availabilityOverride`] ?? '');
-      patch.availabilityOverride = override;
-      patch.comingSoonDate = override === 'coming_soon' ? (cells?.comingSoonDate ?? '').trim() || null : null;
+      const cell = cells?.availabilityOverride ?? fields[`variant:${combo}.availabilityOverride`] ?? '';
+      // 신규 행의 빈칸은 지시 없음이다(독스트링). 짝 칸을 통째로 만들지 않는다 — `출시예정일`
+      // 만 남겨 봤자 `upsertSalesVariantPolicy` 가 override 키의 존재로 게이팅해 버려진다.
+      if (kind === 'update' || cell.trim() !== '') {
+        const override = toOverride(cell);
+        patch.availabilityOverride = override;
+        patch.comingSoonDate = override === 'coming_soon' ? (cells?.comingSoonDate ?? '').trim() || null : null;
+      }
     }
 
     for (const key of ['preStockSellable', 'alwaysSellableZeroStock'] as const) {
