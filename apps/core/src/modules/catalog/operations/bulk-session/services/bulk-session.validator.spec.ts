@@ -247,3 +247,48 @@ describe('validateFields — Y/N 형식', () => {
     expect(messages(errors)).toContain('멤버십필요');
   });
 });
+
+describe('판매정책 칸', () => {
+  it("판매상태재정의가 '품절'·'출시예정'·빈칸 외면 오류다", () => {
+    const r = rowWithVariant({ name: 'x', basePrice: '10000' }, { availabilityOverride: '단종' });
+    const errors = validateFields(r, { pricingEditable: true });
+    expect(messages(errors)).toContain('판매상태재정의');
+  });
+
+  it("판매상태재정의가 '출시예정'이 아닌데 출시예정일이 있으면 오류다", () => {
+    const r = rowWithVariant(
+      { name: 'x', basePrice: '10000' },
+      { availabilityOverride: '품절', comingSoonDate: '2026-09-01' },
+    );
+    const errors = validateFields(r, { pricingEditable: true });
+    expect(messages(errors)).toContain('출시예정일');
+  });
+
+  it('출시예정일 형식이 틀리면 오류다', () => {
+    const r = rowWithVariant(
+      { name: 'x', basePrice: '10000' },
+      { availabilityOverride: '출시예정', comingSoonDate: '2026/09/01' },
+    );
+    const errors = validateFields(r, { pricingEditable: true });
+    expect(messages(errors)).toContain('YYYY-MM-DD');
+  });
+
+  it('선판매·항상판매는 Y/N/빈칸만 받는다', () => {
+    const r = rowWithVariant({ name: 'x', basePrice: '10000' }, { preStockSellable: 'true' });
+    const errors = validateFields(r, { pricingEditable: true });
+    expect(messages(errors)).toContain('선판매');
+  });
+
+  it('정상값은 오류가 없다', () => {
+    const r = rowWithVariant(
+      { name: 'x', basePrice: '10000' },
+      {
+        availabilityOverride: '출시예정',
+        comingSoonDate: '2026-09-01',
+        preStockSellable: 'Y',
+        alwaysSellableZeroStock: 'N',
+      },
+    );
+    expect(validateFields(r, { pricingEditable: true })).toEqual([]);
+  });
+});

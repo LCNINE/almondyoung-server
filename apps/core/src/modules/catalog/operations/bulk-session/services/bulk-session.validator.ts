@@ -63,6 +63,10 @@ const ENUMS: Record<string, string[]> = {
   isWholesaleOnly: ['Y', 'N'],
 };
 
+/** 워크북 표기 → DB enum. 빈칸은 여기 없다(= 재정의 해제). */
+const AVAILABILITY_OVERRIDE_CELLS = ['품절', '출시예정'];
+const COMING_SOON_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 const SALES_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 const SALES_DATE_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 /**
@@ -347,6 +351,32 @@ export function validateFields(row: AssembledRow, ctx: { pricingEditable: boolea
       errors.push({ sheet: '조합', rowNumber: 0, message: `[조합 ${combo}] ${message}` });
 
     checkMaxLength(variant, VARIANT_MAX_LENGTH, pushVariant);
+
+    const overrideRaw = (variant.availabilityOverride ?? '').trim();
+    if (overrideRaw !== '' && !AVAILABILITY_OVERRIDE_CELLS.includes(overrideRaw)) {
+      pushVariant(`${label('availabilityOverride')}는 '품절' 또는 '출시예정'이어야 합니다: ${overrideRaw}`);
+    }
+
+    const comingSoonRaw = (variant.comingSoonDate ?? '').trim();
+    if (comingSoonRaw !== '') {
+      if (!COMING_SOON_DATE.test(comingSoonRaw)) {
+        pushVariant(`${label('comingSoonDate')}은(는) 'YYYY-MM-DD' 형식이어야 합니다: ${comingSoonRaw}`);
+      }
+      // 서버는 coming_soon 이 아니면 날짜를 비운다(product-sku-mapping.service.ts:50-56).
+      // 조용히 버리면 작업자는 자기가 넣은 날짜가 사라진 것을 모른다.
+      if (overrideRaw !== '출시예정') {
+        pushVariant(
+          `${label('comingSoonDate')}은(는) ${label('availabilityOverride')}가 '출시예정'일 때만 쓸 수 있습니다.`,
+        );
+      }
+    }
+
+    for (const key of ['preStockSellable', 'alwaysSellableZeroStock'] as const) {
+      const raw = (variant[key] ?? '').trim();
+      if (raw !== '' && raw !== 'Y' && raw !== 'N') {
+        pushVariant(`${label(key)}는 Y 또는 N 이어야 합니다: ${raw}`);
+      }
+    }
 
     const vp = parsePriceCells(variant, ctx, pushVariant);
     if (ctx.pricingEditable) {
