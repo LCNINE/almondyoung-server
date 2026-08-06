@@ -20,7 +20,7 @@ export class ProductBulkService {
   }
 
   /**
-   * 선택 상품의 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구) 일괄 변경.
+   * 선택 상품의 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구/배송비 그룹) 일괄 변경.
    * undefined 아닌 플래그만 반영. active 버전이 없는 master 는 failed 로 수집한다.
    * master 단위 독립 처리 — 각 건이 자체 이벤트를 발행(Medusa·검색·analytics 재싱크).
    */
@@ -29,11 +29,13 @@ export class ProductBulkService {
       hideMembershipPriceForNonMembers?: boolean;
       isVisibleToMembersOnly?: boolean;
       isOverseas?: boolean;
+      shippingGroupCode?: string | null;
     } = {};
     if (dto.hideMembershipPriceForNonMembers !== undefined)
       patch.hideMembershipPriceForNonMembers = dto.hideMembershipPriceForNonMembers;
     if (dto.isVisibleToMembersOnly !== undefined) patch.isVisibleToMembersOnly = dto.isVisibleToMembersOnly;
     if (dto.isOverseas !== undefined) patch.isOverseas = dto.isOverseas;
+    if (dto.shippingGroupCode !== undefined) patch.shippingGroupCode = dto.shippingGroupCode;
 
     if (Object.keys(patch).length === 0) {
       throw new BadRequestException('변경할 노출 정책 항목이 없습니다.');

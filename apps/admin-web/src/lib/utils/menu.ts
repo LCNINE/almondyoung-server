@@ -502,6 +502,11 @@ export const mainMenus: MainMenu[] = [
         isComingSoon: true,
       },
       {
+        id: 'shipping-groups',
+        title: '배송비 그룹',
+        path: '/mall/shipping-groups',
+      },
+      {
         id: 'store-regions',
         title: '리전 설정 (통화/세금)',
         path: '/mall/regions',

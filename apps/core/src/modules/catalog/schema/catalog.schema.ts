@@ -183,6 +183,9 @@ export const productMasterVersions = pgTable(
 
     // Shipping
     shippingMethodId: uuid('shipping_method_id'),
+    // 배송비 그룹 코드. NULL 이면 기본 그룹('default'). 그룹 정의(금액/무료기준)는 Medusa 의
+    // shipping option data 가 단일 진실이고, 여기에는 참조 코드만 둔다.
+    shippingGroupCode: varchar('shipping_group_code', { length: 50 }),
 
     // Pricing (additional)
     marketPrice: bigint('market_price', { mode: 'number' }),

@@ -17,6 +17,7 @@ interface MasterRow {
   seo_keywords?: string[];
   product_type?: string;
   fulfillment_kind?: PimFulfillmentKind | null;
+  shipping_group_code?: string | null;
   status: string;
   is_wholesale_only: boolean;
   hide_membership_price_for_non_members: boolean;
@@ -143,6 +144,7 @@ export class PimSnapshotBuilder {
         pmv.seo_keywords,
         pmv.product_type,
         pmv.fulfillment_kind,
+        pmv.shipping_group_code,
         pmv.status,
         pmv.is_wholesale_only,
         pmv.hide_membership_price_for_non_members,
@@ -397,6 +399,7 @@ export class PimSnapshotBuilder {
         brand: master.brand,
         productType: master.product_type,
         fulfillmentKind: master.fulfillment_kind ?? undefined,
+        shippingGroupCode: master.shipping_group_code ?? undefined,
         categories: masterCategories,
         categoryIds: masterCategories.map((c) => c.id),
         variants: masterVariants,

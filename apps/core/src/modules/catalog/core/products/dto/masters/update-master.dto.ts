@@ -14,6 +14,7 @@ import {
   MinLength,
   ValidateNested,
   ArrayUnique,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OptionDiffDto } from './option-diff.dto';
@@ -103,6 +104,17 @@ export class UpdateProductMasterDto {
   @IsOptional()
   @IsEnum(['physical', 'digital'])
   fulfillmentKind?: 'physical' | 'digital';
+
+  @ApiProperty({
+    description: "배송비 그룹 코드. 비우거나 null 이면 기본 그룹('default')이 적용된다.",
+    required: false,
+    nullable: true,
+    example: 'meal',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9-]{0,49}$/, { message: 'shippingGroupCode 는 영소문자·숫자·하이픈 50자 이내여야 합니다.' })
+  shippingGroupCode?: string | null;
 
   // ========== 이미지 관련 필드 ==========
 

@@ -49,7 +49,7 @@
     "paymentBody": "高額決済の場合、安全のためカード会社から確認のお電話をすることがあります。\n\n確認過程で盗難カードの使用や他人名義の注文など、正常な注文でないと判断された場合、注文を保留または取消することがあります。\n\n振込決済の場合、商品代金はPCバンキング、インターネットバンキング、テレフォンバンキング、または最寄りの銀行から直接お振込みください。\n\n注文時に入力された振込人名義と実際の振込人名義が必ず一致している必要があり、7日以内に振込みを行わない場合、注文は自動的に取消されます。",
     "shippingMethod": "配送方法 : 宅配",
     "shippingArea": "配送地域 : 全国",
-    "shippingFee": "配送料 : 2,500ウォン",
+    "shippingFee": "配送料 : 注文画面でご確認ください",
     "shippingDuration": "配送期間 : 2日~3日",
     "shippingCarrier": "配送のご案内 : 配送会社はCJ大韓通運です。",
     "shippingNote1": "平均的に1~2日程度かかりますが、配送会社の事情により変動する場合がありますので、ご了承ください。",
@@ -69,7 +69,14 @@
     "notReturnable3": "- お客様のご使用または一部消費により商品価値が著しく減少した場合(化粧品等の場合、試用品を提供した場合に限ります)",
     "notReturnable4": "- 時間経過により再販売が困難なほど商品価値が著しく減少した場合",
     "notReturnable5": "- 複製可能な商品の包装を毀損した場合(詳細はカスタマーセンター 1:1 E-MAIL相談をご利用ください)",
-    "exchangeNotice": "※ お客様のお気持ちが変わり交換・返品をされる場合、商品返送費用はお客様のご負担となります。\n(色交換、サイズ交換等を含む)"
+    "exchangeNotice": "※ お客様のお気持ちが変わり交換・返品をされる場合、商品返送費用はお客様のご負担となります。\n(色交換、サイズ交換等を含む)",
+    "shippingFeeFree": "配送料 : 無料",
+    "shippingFeeFlat": "配送料 : {amount}ウォン",
+    "shippingFeeConditional": "配送料 : {amount}ウォン（{threshold}ウォン以上で無料）",
+    "shippingFeePerQuantity": "配送料 : 商品1点あたり {amount}ウォン",
+    "shippingMethodValue": "配送方法 : {method}",
+    "shippingAreaValue": "配送地域 : {area}",
+    "shippingDurationValue": "配送期間 : {min}日 ~ {max}日"
   },
   "options": {
     "selectPlaceholder": "オプションを選択してください",

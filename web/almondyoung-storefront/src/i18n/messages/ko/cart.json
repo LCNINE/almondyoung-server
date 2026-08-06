@@ -59,7 +59,9 @@
   },
   "freeShipping": {
     "reached": "무료배송 혜택이 적용됩니다!",
-    "remaining": "{amount}원 더 담으면 무료배송"
+    "remaining": "{amount}원 더 담으면 무료배송",
+    "reachedInGroup": "{group} 무료배송 혜택이 적용됩니다!",
+    "remainingInGroup": "{group} {amount}원 더 담으면 무료배송"
   },
   "priceError": {
     "message": "금액을 불러오지 못했어요",

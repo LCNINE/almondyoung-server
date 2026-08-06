@@ -583,6 +583,8 @@ export interface PimProductSnapshot {
   tags?: string[];
   productType?: string;
   fulfillmentKind?: PimFulfillmentKind;
+  /** 배송비 그룹 코드. 없으면 기본 그룹('default'). */
+  shippingGroupCode?: string;
 
   // 옵션 그룹
   optionGroups?: Array<{
@@ -715,6 +717,8 @@ export interface MedusaProductPayload {
     productType?: string;
     fulfillmentKind: PimFulfillmentKind;
     requiresShipping: boolean;
+    /** 배송비 그룹 코드. 상품상세 배송 안내와 장바구니 진행바가 읽는다. */
+    shippingGroupCode: string;
     syncedAt: string;
   };
 

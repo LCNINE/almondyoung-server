@@ -785,7 +785,7 @@ export class ProductVersionsService {
   }
 
   /**
-   * 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구)을 한 번의 UPDATE + 한 번의
+   * 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구/배송비 그룹)을 한 번의 UPDATE + 한 번의
    * 이벤트로 반영한다. undefined 아닌 필드만 변경. draft 없이 active 버전 직접 수정 후 채널 재싱크.
    */
   async updateExposurePolicy(
@@ -794,6 +794,7 @@ export class ProductVersionsService {
       hideMembershipPriceForNonMembers?: boolean;
       isVisibleToMembersOnly?: boolean;
       isOverseas?: boolean;
+      shippingGroupCode?: string | null;
     },
     tx?: DbTransaction,
   ): Promise<void> {
@@ -810,6 +811,10 @@ export class ProductVersionsService {
       }
       if (patch.isOverseas !== undefined) {
         set.isOverseas = patch.isOverseas;
+      }
+      if (patch.shippingGroupCode !== undefined) {
+        // 빈 문자열은 "기본 그룹" 을 뜻하는 null 로 정규화한다.
+        set.shippingGroupCode = patch.shippingGroupCode?.trim() ? patch.shippingGroupCode.trim() : null;
       }
 
       await tx.update(productMasterVersions).set(set).where(eq(productMasterVersions.id, activeVersion.id));
@@ -1430,6 +1435,7 @@ export class ProductVersionsService {
         'salesClassification',
         'purchaseClassification',
         'shippingMethodId',
+        'shippingGroupCode',
         'marketPrice',
         'supplyPrice',
         'supplierId',

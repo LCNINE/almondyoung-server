@@ -1,8 +1,10 @@
 "use server"
 
+import { toCheckoutErrorCode } from "@/lib/api/medusa/checkout-error-code"
 import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
+  shippingMethodsMatchOptions,
 } from "@/lib/api/medusa/shipping-method-policy"
 import { getIntent } from "@/lib/api/wallet"
 import { sdk } from "@/lib/config/medusa"
@@ -31,13 +33,17 @@ async function ensureShippingMethod(
         requires_shipping?: boolean | null
         product_type?: string | null
       }[]
-      shipping_methods?: { id: string; shipping_option_id?: string | null }[]
+      shipping_methods?: {
+        id: string
+        shipping_option_id?: string | null
+        amount?: number | null
+      }[]
     }
   }>(`/store/carts/${cartId}`, {
     method: "GET",
     query: {
       fields:
-        "+items,+items.requires_shipping,+items.product_type,+shipping_methods,+shipping_methods.shipping_option_id",
+        "+items,+items.requires_shipping,+items.product_type,+items.product.shipping_profile.id,+shipping_methods,+shipping_methods.shipping_option_id,+shipping_methods.amount",
     },
     headers,
   })
@@ -59,11 +65,12 @@ async function ensureShippingMethod(
       id: string
       name: string
       amount: number
+      shipping_profile_id?: string | null
       type?: { code?: string | null } | null
     }[]
   }>("/store/shipping-options", {
     method: "GET",
-    query: { cart_id: cartId, fields: "id,name,amount,type" },
+    query: { cart_id: cartId, fields: "id,name,amount,type,shipping_profile_id" },
     headers,
   })
 
@@ -94,33 +101,37 @@ async function ensureShippingMethod(
     )
   }
 
-  const currentShippingOptionId = cart.shipping_methods?.[0]?.shipping_option_id
-  const isCurrentOptionValid = standardOptions.some(
-    (option) => option.id === currentShippingOptionId
-  )
-
-  if (currentShippingOptionId && isCurrentOptionValid) {
+  // 배송비 그룹마다 배송수단이 하나씩 있어야 결제 완료를 통과한다.
+  if (
+    shippingMethodsMatchOptions(
+      cart.shipping_methods?.map((method) => ({
+        shipping_option_id: method.shipping_option_id,
+        amount: method.amount,
+      })),
+      standardOptions
+    )
+  ) {
     logger.info("storefront.checkout.shipping_method.already_valid", {
       attributes: {
         cart_id: cartId,
-        shipping_option_id: currentShippingOptionId,
+        shipping_option_ids: standardOptions.map((option) => option.id),
       },
     })
     return
   }
 
-  const targetOption = standardOptions[0]
-  await sdk.store.cart.addShippingMethod(
-    cartId,
-    { option_id: targetOption.id },
-    {},
-    headers
-  )
+  await sdk.client.fetch(`/store/carts/${cartId}/shipping-methods/bulk`, {
+    method: "POST",
+    body: { option_ids: standardOptions.map((option) => option.id) },
+    headers,
+  })
   logger.info("storefront.checkout.shipping_method.assigned", {
     attributes: {
       cart_id: cartId,
-      shipping_option_id: targetOption.id,
-      shipping_option_name: targetOption.name,
+      shipping_options: standardOptions.map((option) => ({
+        id: option.id,
+        name: option.name,
+      })),
     },
   })
 }
@@ -415,9 +426,10 @@ export async function processPaymentCallback(
           error_message: errMsg,
         },
       })
+      const knownCode = toCheckoutErrorCode(errMsg)
       return {
         success: false,
-        redirectUrl: `/${countryCode}/checkout/fail?code=ORDER_FAILED&message=${encodeURIComponent(errMsg)}`,
+        redirectUrl: `/${countryCode}/checkout/fail?code=${knownCode ?? "ORDER_FAILED"}&message=${encodeURIComponent(errMsg)}`,
       }
     }
 
@@ -445,12 +457,15 @@ export async function processPaymentCallback(
         cart_id_param: cartId ?? null,
       },
     })
+    // 아는 에러는 코드로 넘겨 실패 페이지가 한국어로 안내하게 한다.
+    // (매핑 안 되면 지금처럼 Medusa 영문 원문이 그대로 노출된다.)
+    const knownCode = toCheckoutErrorCode(err)
     return {
       success: false,
       redirectUrl:
         mode === "membership"
           ? `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`
-          : `/${countryCode}/checkout/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(errorMessage)}`,
+          : `/${countryCode}/checkout/fail?code=${knownCode ?? "CALLBACK_ERROR"}&message=${encodeURIComponent(errorMessage)}`,
     }
   }
 }

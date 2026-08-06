@@ -101,6 +101,7 @@ export class ProjectionSnapshotAssembler {
       tags: tags.map((tag) => tag.name),
       productType: version.productType ?? undefined,
       fulfillmentKind: version.fulfillmentKind ?? 'physical',
+      shippingGroupCode: version.shippingGroupCode ?? undefined,
       optionGroups: snapshotOptionGroups,
       variants: activeVariants.map((variant) => {
         const price = priceMap.get(variant.id);

@@ -33,6 +33,10 @@ export default function Summary({
     () => buildCartSummaryTotals(cart, selectedIds),
     [cart, selectedIds]
   )
+  const selectedItems = useMemo(
+    () => cart.items?.filter((item) => selectedIds.has(item.id)) ?? [],
+    [cart.items, selectedIds]
+  )
 
   // 필수 금액 값이 유효한지 체크
   const isTotalValid = cart.total !== null && cart.total !== undefined
@@ -45,7 +49,7 @@ export default function Summary({
       <h2 className="text-2xl font-semibold">{t("title")}</h2>
 
       {selectedCount > 0 && (
-        <FreeShippingProgress itemSubtotal={totalsPreview.item_subtotal ?? 0} />
+        <FreeShippingProgress items={selectedItems} />
       )}
 
       <Divider />
