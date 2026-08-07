@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useParams, useSearchParams, useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import {
@@ -21,9 +21,17 @@ export default function CallbackPage() {
   const searchParams = useSearchParams()
 
   const countryCode = params.countryCode as string
+  // 콜백 처리는 결제 1건당 정확히 한 번만 돈다.
+  //
+  // 서버 액션이 revalidateTag 를 부르면 라우터가 refresh 되고, 그 리렌더로 이 effect 의 deps 가
+  // 바뀌어 다시 실행된다. 예전에는 이 지점에서 cancelled 플래그가 router.replace 까지 막아버려
+  // 이동은 못 하고 서버 액션만 무한 재호출됐다("결제 처리 중" 에서 영영 안 넘어감). 주문·결제는
+  // 이미 끝난 상태라 사용자만 갇힌다. 실행 자체를 한 번으로 막고, 이동은 무슨 일이 있어도 막지 않는다.
+  const startedRef = useRef(false)
 
   useEffect(() => {
-    let cancelled = false
+    if (startedRef.current) return
+    startedRef.current = true
 
     const failUrl = (code: string, message: string, mode?: string | null) =>
       mode === "membership"
@@ -31,9 +39,7 @@ export default function CallbackPage() {
         : `/${countryCode}/checkout/fail?code=${code}&message=${encodeURIComponent(message)}`
 
     const replace = (url: string) => {
-      if (!cancelled) {
-        router.replace(url)
-      }
+      router.replace(url)
     }
 
     const clearPendingPayment = (paymentIntentId?: string | null) => {
@@ -153,10 +159,6 @@ export default function CallbackPage() {
         failUrl("CALLBACK_ERROR", getErrorMessage(err, t("callbackError")))
       )
     })
-
-    return () => {
-      cancelled = true
-    }
   }, [countryCode, searchParams, router, t])
 
   return (

@@ -53,10 +53,25 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   if (!cartId) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `No cart for intent ${intentId}`);
   }
+  const completedAt = (collections[0] as any)?.cart?.completed_at ?? null;
 
   const existingOrderId = await findOrderId(query, cartId);
   if (existingOrderId) {
     res.status(200).json({ type: 'order', order_id: existingOrderId, cart_id: cartId });
+    return;
+  }
+
+  // 완료된 카트를 다시 완료하면 retrieveCart 가 비어 validate-cart-payments 가
+  // `cart.payment_collection` 을 읽다 터진다. 그 에러가 그대로 나가면 결제·주문이 정상인데도
+  // 스토어프론트가 실패 페이지를 띄운다. order_cart 링크는 주문 직후 레이스로 안 보일 수 있으므로
+  // completed_at 을 같이 본다(이미 조회하고 있던 값이다).
+  // order_id 없이 내려갈 수 있다(링크가 아직 안 보이는 순간). 성공 페이지는 intentId 로 주문을
+  // 찾으므로 문제 없다 — 여기서 실패로 내리는 것보다 낫다.
+  if (completedAt) {
+    logger.info(
+      `[store/payment-intents/complete] cart ${cartId} 는 이미 완료됨(${completedAt}) — 워크플로 재실행 없이 성공으로 응답한다`,
+    );
+    res.status(200).json({ type: 'order', cart_id: cartId });
     return;
   }
 
@@ -68,6 +83,17 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
 
   if (errors?.[0]) {
     const error = errors[0].error as any;
+    // 동시 호출(중복 콜백·capture 웹훅)이 먼저 완료시켰으면 주문은 이미 있다. 실패로 내려보내면
+    // 정상 결제가 실패 페이지로 간다 — 주문이 생겼는지 다시 확인하고 있으면 성공으로 응답한다.
+    const racedOrderId = await findOrderId(query, cartId);
+    if (racedOrderId) {
+      logger.info(
+        `[store/payment-intents/complete] cart ${cartId} 완료 레이스 — 다른 호출이 만든 주문 ${racedOrderId} 을 반환한다`,
+      );
+      res.status(200).json({ type: 'order', order_id: racedOrderId, cart_id: cartId });
+      return;
+    }
+
     logger.warn(
       `[store/payment-intents/complete] completeCartWorkflow failed for cart ${cartId} intentId=${intentId}: ${error?.message}`,
     );

@@ -478,9 +478,13 @@ export async function processPaymentCallback(
     const completion = await completeCartByIntent(intentId)
     if (completion?.type === "order") {
       revalidateTag(await getCacheTag("orders"))
+      // 이미 완료된 카트를 성공으로 돌려받는 경로에서는 order_id 가 없을 수 있다.
+      // 그대로 붙이면 `orderId=undefined` 가 URL 에 실린다 — 없으면 빼고 intentId 로만 보낸다.
       return {
         success: true,
-        redirectUrl: `/${countryCode}/checkout/success/${intentId}?orderId=${completion.order_id}`,
+        redirectUrl: completion.order_id
+          ? `/${countryCode}/checkout/success/${intentId}?orderId=${completion.order_id}`
+          : `/${countryCode}/checkout/success/${intentId}`,
       }
     }
 
