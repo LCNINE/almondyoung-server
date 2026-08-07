@@ -140,6 +140,16 @@ for (const app of selected) {
   all.push(...scanApp(app, cfg).map((r) => ({ ...r, cfg })));
 }
 
+/**
+ * [B] IDOR 검사 대상 판정. printReport 와 --json 이 **반드시** 같은 식을 써야 한다.
+ * 두 곳에 복사하면 APPS 맵이 바뀔 때 조용히 어긋난다.
+ *
+ *   기본차단 앱(core 등): 표시 없는 라우트는 직원 전용이라 정상. 고객이 닿는 @StoreRoute 만 대상.
+ *   그 외 앱: 표시가 없으면 인증만 통과하므로 전부 대상.
+ */
+const isIdorTarget = (r, cfg) =>
+  cfg.defaultDeny ? r.storeRoute : !r.isPublic && !r.storeRoute && !r.authz;
+
 const print = (title, list) => {
   if (!list.length) return;
   console.log(`  [${title}] ${list.length}`);
@@ -154,7 +164,13 @@ const inertTotal = all.filter((r) => r.inertScope).length;
 // 또 여기서 `process.exit()` 를 부르면 안 된다 — stdout 이 파이프일 때 큰 JSON 이 flush 되기 전에
 // 프로세스가 죽어 출력이 잘린다(전 앱 883 라우트에서 실제로 잘렸다). node 가 알아서 끝내게 둔다.
 if (asJson) {
-  console.log(JSON.stringify(all.map(({ cfg, ...r }) => r), null, 2));
+  console.log(
+    JSON.stringify(
+      all.map(({ cfg, ...r }) => ({ ...r, idorTarget: isIdorTarget(r, cfg) })),
+      null,
+      2,
+    ),
+  );
 } else {
   printReport();
 }
@@ -166,7 +182,6 @@ function printReport() {
     const rows = all.filter((r) => r.app === app);
     if (!rows.length) continue;
     const cfg = APPS[app];
-    const unmarked = rows.filter((r) => !r.isPublic && !r.storeRoute && !r.authz);
 
     console.log(
       `\n########## ${app} — 라우트 ${rows.length} ` +
@@ -178,15 +193,12 @@ function printReport() {
       rows.filter((r) => r.inertScope),
     );
 
-    if (cfg.defaultDeny) {
-      // 기본 차단 앱에서 표시 없는 라우트는 정상(=직원/API key 전용). 셀프서비스만 따로 본다.
-      print(
-        'B: @StoreRoute (고객 — IDOR 검사 대상)',
-        rows.filter((r) => r.storeRoute),
-      );
-    } else {
-      print('B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)', unmarked);
-    }
+    print(
+      cfg.defaultDeny
+        ? 'B: @StoreRoute (고객 — IDOR 검사 대상)'
+        : 'B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)',
+      rows.filter((r) => isIdorTarget(r, cfg)),
+    );
     print(
       'C: @Public 쓰기 (키/서명 검증이 있는지 반드시 확인)',
       rows.filter((r) => r.isPublic && WRITE.has(r.verb)),
