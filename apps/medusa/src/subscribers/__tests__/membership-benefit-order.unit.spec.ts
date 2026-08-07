@@ -56,16 +56,26 @@ describe('calculateMembershipDiscount - 혜택 사용 판정 신호', () => {
 describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
   const logger = { warn: jest.fn() };
 
-  /** 비회원가를 priceSet 별로 돌려주는 컨테이너 스텁. */
-  const containerWith = (nonMemberPriceByVariant: Record<string, number>) => ({
+  /**
+   * 비회원가를 priceSet 별로 돌려주는 컨테이너 스텁.
+   *
+   * 값이 함수면 `(quantity) => 가격` 으로 해석한다 — 수량 할인은 pricing 모듈이 컨텍스트의
+   * quantity 로 min_quantity 를 걸러 고르므로, 스텁도 같은 축을 흉내내야 회귀를 잡는다.
+   */
+  const containerWith = (
+    nonMemberPriceByVariant: Record<string, number | ((quantity: number) => number)>
+  ) => ({
     resolve: (key: string) => {
       if (key === 'pricing') {
         return {
-          calculatePrices: async () =>
-            Object.entries(nonMemberPriceByVariant).map(([variantId, amount]) => ({
-              id: `ps_${variantId}`,
-              calculated_amount: amount,
-            })),
+          calculatePrices: async (filters: { id: string[] }, opts: { context: { quantity?: number } }) =>
+            Object.entries(nonMemberPriceByVariant)
+              .filter(([variantId]) => filters.id.includes(`ps_${variantId}`))
+              .map(([variantId, priced]) => ({
+                id: `ps_${variantId}`,
+                calculated_amount:
+                  typeof priced === 'function' ? priced(opts.context.quantity ?? 1) : priced,
+              })),
         };
       }
       return {
@@ -136,6 +146,37 @@ describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
     const discount = await resolveMembershipDiscount(items, null, containerWith({ v1: 8000 }), logger);
 
     expect(discount).toBe(2000);
+  });
+
+  // 수량 할인은 min_quantity 로 걸린다. 조회 컨텍스트에 quantity 를 안 넘기면 pricing 모듈이
+  // 수량 할인가를 빼버려 비회원가가 정가로 나오고, 수량 할인분이 다시 멤버십 귀속으로 잡힌다.
+  it('수량 할인 상품을 수량 조건과 함께 조회해 멤버십 귀속에서 뺀다', async () => {
+    // 정가 10000, 10개 이상 8000. 고객은 10개를 사서 8000 에 받았다 — 멤버십 기여는 0이다.
+    const tiered = (quantity: number) => (quantity >= 10 ? 8000 : 10000);
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 10 })];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: tiered }), logger);
+
+    expect(discount).toBe(0);
+  });
+
+  it('수량이 다른 라인은 각자의 수량 조건으로 조회한다', async () => {
+    const tiered = (quantity: number) => (quantity >= 10 ? 8000 : 10000);
+    const items = [
+      // 10개 → 수량 할인 8000 이 정당하다. 멤버십 기여 0.
+      item({ id: 'a', variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 10 }),
+      // 2개 → 수량 할인 대상이 아닌데 8000 에 샀다. 차액 2000 은 멤버십 기여다.
+      item({ id: 'b', variant_id: 'v2', unit_price: 8000, compare_at_unit_price: 10000, quantity: 2 }),
+    ];
+
+    const discount = await resolveMembershipDiscount(
+      items,
+      'grp_membership',
+      containerWith({ v1: tiered, v2: tiered }),
+      logger
+    );
+
+    expect(discount).toBe(4000);
   });
 
   // 과소 계상은 "혜택을 썼는데 전액 환불" 로 이어진다 — 돈이 나가면 되돌릴 수 없다.

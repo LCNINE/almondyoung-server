@@ -107,23 +107,42 @@ export async function resolveMembershipDiscount(
     for (const v of variants ?? []) {
       if (v.price_set?.id) variantToPriceSet.set(v.id, v.price_set.id);
     }
-    const priceSetIds = [...new Set(variantToPriceSet.values())];
-    if (priceSetIds.length === 0) return compareAtDiscount;
+    if (variantToPriceSet.size === 0) return compareAtDiscount;
+
+    // 수량 할인(Tiered Prices)은 price.min_quantity 로 걸러진다 — 컨텍스트에 quantity 가 없으면
+    // pricing 모듈이 `min_quantity <= 1` 만 남겨 수량 할인가를 통째로 빼버린다. 그러면 비회원가가
+    // 정가로 나와 수량 할인분까지 멤버십 귀속으로 잡힌다(= 고치려던 그 버그).
+    // quantity 는 라인마다 다르므로 수량별로 묶어 각각 조회한다.
+    const priceSetsByQuantity = new Map<number, Set<string>>();
+    for (const item of items) {
+      const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
+      if (!priceSetId) continue;
+      const bucket = priceSetsByQuantity.get(item.quantity) ?? new Set<string>();
+      bucket.add(priceSetId);
+      priceSetsByQuantity.set(item.quantity, bucket);
+    }
+    if (priceSetsByQuantity.size === 0) return compareAtDiscount;
 
     // 멤버십 그룹을 뺀 컨텍스트 = "이 고객이 회원이 아니었다면 냈을 가격".
-    const nonMemberPrices = await pricingModule.calculatePrices(
-      { id: priceSetIds },
-      {
-        context: {
-          currency_code: pricingContext.currency_code ?? 'krw',
-          region_id: pricingContext.region_id ?? undefined,
-          customer: { groups: [] },
+    // 빈 groups 배열은 pricing 모듈이 컨텍스트에서 걸러내므로 멤버십 price list 규칙이 매칭되지 않는다.
+    const amountByQuantityAndPriceSet = new Map<string, number>();
+    for (const [quantity, priceSetIdSet] of priceSetsByQuantity) {
+      const nonMemberPrices = await pricingModule.calculatePrices(
+        { id: [...priceSetIdSet] },
+        {
+          context: {
+            currency_code: pricingContext.currency_code ?? 'krw',
+            region_id: pricingContext.region_id ?? undefined,
+            quantity,
+            customer: { groups: [] },
+          },
         },
-      },
-    );
-    const priceSetToAmount = new Map<string, number>();
-    for (const cp of nonMemberPrices ?? []) {
-      if (cp.calculated_amount != null) priceSetToAmount.set(cp.id, Number(cp.calculated_amount));
+      );
+      for (const cp of nonMemberPrices ?? []) {
+        if (cp.calculated_amount != null) {
+          amountByQuantityAndPriceSet.set(`${quantity}:${cp.id}`, Number(cp.calculated_amount));
+        }
+      }
     }
 
     let membershipDiscount = 0;
@@ -134,7 +153,9 @@ export async function resolveMembershipDiscount(
       const hasDiscount =
         item.compare_at_unit_price != null && item.compare_at_unit_price > item.unit_price;
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
-      const nonMemberPrice = priceSetId ? priceSetToAmount.get(priceSetId) : undefined;
+      const nonMemberPrice = priceSetId
+        ? amountByQuantityAndPriceSet.get(`${item.quantity}:${priceSetId}`)
+        : undefined;
 
       if (nonMemberPrice == null) {
         if (hasDiscount) unresolvedDiscountedItems += 1;
