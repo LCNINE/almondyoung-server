@@ -8,8 +8,8 @@
 
 ## 0. 한 줄 요약
 
-라우트 883개 중 **인가 가드 축은 1차 정리 완료**(PR #572 머지·live 배포). 남은 것은
-**(a) 무인증 내부 API 2건 — 포인트 발행 체인 포함**, **(b) IDOR 전수 95건**, (c) 인증 설계 부채 2건.
+라우트 883개 중 **인가 가드 축(PR #572)과 무인증 내부 API(P0)는 정리 완료**. 남은 것은
+**(a) IDOR 전수 95건 — 최대 계열**, (b) 인증 설계 부채 2건, (c) 조용히 죽은 경로 4건.
 
 ---
 
@@ -38,34 +38,43 @@ core 는 이 가드를 전역 등록하지 않고 컨트롤러마다 수동으�
 
 ---
 
+## 1-2. 완료 🟩 — P0 무인증 내부 API (2026-08-07, 배포 2단계)
+
+**무엇이 문제였나**: 아래 3개 라우트가 `@Public()` 만 붙고 키 검증이 없어 공개 ALB 에서 누구나
+호출 가능했다.
+
+| # | 라우트 | 위험 |
+|---|---|---|
+| P0-1 | `POST /reviews/eligibilities` (ugc) | 바디의 `userId` 로 리뷰 자격 발급 → 리뷰 작성 시 `review-reward-publisher.service.ts:23` 이 `EarnPointsRequested` 발행 → wallet `ugc-command.consumer.ts:15` 가 포인트 적립. **무인증 포인트 발행 체인** |
+| P0-2 | `POST /membership/benefits/internal/{record,cancel}` | 임의 `userId` 의 멤버십 절약액 조작. `cancel` 은 `orderId` 만으로 남의 기록 취소 |
+
+**해결**: ugc 에 `UgcInternalApiKeyGuard` + `@UgcInternalAuth()` 신설(membership 패턴 복제,
+fail-closed), membership 두 건은 기존 `@MembershipInternalAuth()` 로 전환. 호출자(Medusa)는
+`Authorization: Bearer` 를 보낸다. 새 SST 시크릿 `UgcInternalKey`.
+
+**왜 PR 이 아니라 배포를 둘로 쪼갰나** — Medusa·ugc·membership 이 **한 `sst deploy` 로 같이 뜬다**.
+태스크 교체 순서를 통제할 수 없는데, ugc 리뷰자격 등록은 `confirm-purchase-workflow` 의 **step 2**
+라 실패가 step 1(결제 캡처) **롤백**으로 번진다 → 가드가 키보다 먼저 뜨면 고객 구매확정이 깨진다.
+그래서 ①호출자가 키를 보내는 배포 → ②가드를 켜는 배포로 분리했다. 각 단계는 단독으로 무해하다.
+
+**감사 문서에 없던 발견**: 스토어프론트도 `POST /reviews/eligibilities` 를 고객 토큰으로 호출하고
+있었다(`lib/api/ugc/reviews.ts`). 다만 `userId` 를 안 보내 **항상 400** 이었고 `orders.ts` 의
+try/catch 가 삼켜 왔다 — 같은 일을 Medusa 워크플로가 이미 하므로 중복이고, 누가 `userId` 를 채워
+"고치면" 취약점이 되살아나는 지뢰라 삭제했다.
+
+**회귀 가드**: `scripts/security/route-authz-audit.spec.ts` — 감사 도구를 그대로 돌려
+membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을 못 박는다(허용 목록은 비어 있고,
+추가하려면 이유를 적어야 한다). 개별 라우트가 아니라 **규칙**으로 걸어야 다음 사고를 잡는다.
+가드 자체 spec 도 양쪽에 신설(membership 은 그동안 spec 이 0개였다).
+
+**같이 고친 것**: 감사 도구 `--json` 이 `process.exit(0)` 때문에 stdout flush 전에 죽어 출력이
+잘리고 있었다(883 라우트에서 실제로 잘림). 사람 출력이 JSON 에 섞이던 것도 함께 정리.
+
+---
+
 ## 2. 미해결 — 우선순위 순
 
-### P0 ⬜ 무인증 내부 API 2건 (공개 ALB 노출)
-
-두 건 모두 `@Public()` 만 붙고 **키 검증이 없다**. 각 앱에 올바른 패턴이 이미 존재하는데
-이 라우트들만 빠졌다.
-
-| # | 라우트 | 위치 | 올바른 패턴 |
-|---|---|---|---|
-| P0-1 | `POST /reviews/eligibilities` | `apps/ugc-service/src/reviews/controllers/review-eligibility.controller.ts:18` | (ugc 에 내부키 가드 없음 — 신설 필요) |
-| P0-2 | `POST /membership/benefits/internal/record`<br>`POST /membership/benefits/internal/cancel` | `apps/membership/src/controllers/benefit-tracking.controller.ts:14,33` | `@MembershipInternalAuth()` (이미 3곳에서 사용 중) |
-
-**P0-1 이 더 심각하다 — 무인증 포인트 발행 체인이다.**
-`CreateReviewEligibilityDto` 는 `userId`(UUID), `productId`, `orderId`, `orderLineId` 가 전부
-바디로 들어온다. 즉 인증 없이 **임의 사용자에게 리뷰 작성 자격을 부여**할 수 있고, 리뷰를 쓰면
-`review-reward-publisher.service.ts:23` 이 `EarnPointsRequested` 를 발행 → `apps/wallet` 의
-`ugc-command.consumer.ts:15` 가 포인트를 적립한다. 금전 영향.
-
-P0-2 는 임의 `userId` 의 멤버십 절약액·혜택 기록 조작, `cancel` 은 `orderId` 만으로 남의 기록 취소
-(소유권 바인딩 없음).
-
-**고칠 때 주의 — 양쪽 배포 순서**:
-- 호출자 `apps/medusa/src/subscribers/membership-benefit-order.ts:248,275` 가 지금 `Content-Type`
-  만 보낸다. 가드만 붙이면 혜택 적립이 끊긴다.
-- 다행히 `MEMBERSHIP_INTERNAL_KEY` 는 **이미 Medusa env 에 주입돼 있다**
-  (`deployments/lcnine/services/infra/services.ts:539`). 양쪽 각 한 줄.
-- **키를 보내는 쪽(Medusa)을 먼저 배포**해야 무중단이다.
-- P0-1 의 Medusa 측 호출자도 같은 방식으로 먼저 찾을 것 (`reviews/eligibilities` grep).
+### P0 🟩 무인증 내부 API 2건 — 해결 (위 §1-2, 배포 순서는 §4)
 
 ### P1 ⬜ IDOR 전수 조사 — 95건 (그중 쓰기 37건)
 
@@ -176,6 +185,9 @@ P0-2 는 임의 `userId` 의 멤버십 절약액·혜택 기록 조작, `cancel`
 - `npx eslint <변경파일>` → SST `services.ts` 의 ~399건은 기존 debt. 변경 파일 기준 **14건이 기준선**
 - `node scripts/security/route-authz-audit.js` → **`[A] 무력화 0` 이 정상**. 0 이 아니면 스코프도
   역할도 검사하지 않는 라우트가 생긴 것 (스크립트가 exit 1 로 알린다)
+- `npx jest scripts/security` → 위 두 불변식을 테스트로도 건다.
+  **새 `@Public` 쓰기 라우트를 만들면 여기서 빨개진다** — 키/서명 검증을 붙이거나, 정당하면
+  `ALLOWED` 에 이유를 적어 추가한다
 
 ### 3-4. 이번 감사에서 확인해서 **문제없던** 것 (재검 불필요)
 
@@ -194,8 +206,17 @@ mass assignment(DTO whitelist), SSRF, `@Public` 75건의 데이터 노출 개별
 
 ## 4. 착수 순서 제안
 
-1. **P0 2건** — 작고 명확하다. 별도 PR 2개(앱이 다르고 배포 순서가 다르다). P0-1 먼저(금전 영향).
+1. ~~P0 2건~~ 🟩 완료 (§1-2). **배포는 아직** — 아래 순서를 지켜야 한다.
 2. **P1 IDOR** — file-service(5) → membership(26) → ugc(12) → user-service(20) → core 나머지.
    앱 단위로 PR 을 끊는 게 리뷰하기 좋다.
 3. P2 는 설계 논의가 필요하니 이슈로 먼저 올린다.
 4. P3 는 기능 요구 확인 후.
+
+### P0 배포 순서 (어기면 고객 구매확정이 깨진다)
+
+1. `sst secret set UgcInternalKey <값> --stage live` — 안 하면 배포 2 자체가 실패한다
+2. **PR 1**(호출자가 키를 보냄) 머지 → `sst deploy --stage live`
+3. Medusa 태스크가 새 이미지로 교체됐는지 확인
+4. **PR 2**(가드 부착) 머지 → `sst deploy --stage live`
+
+마이그레이션 0건. 되돌릴 때는 **PR2 → PR1 역순**으로만 (PR1 만 되돌리면 401 이 된다).

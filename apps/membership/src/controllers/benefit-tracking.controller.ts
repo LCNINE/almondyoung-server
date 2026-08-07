@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
-import { Public, User } from '@app/authorization';
+import { User } from '@app/authorization';
+import { MembershipInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
 import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
 
@@ -9,9 +10,10 @@ export class BenefitTrackingController {
 
   /**
    * 내부 API: 혜택 기록
-   * 외부 시스템(Medusa order.placed subscriber)에서 JWT 없이 호출 → @Public 필수.
+   * 외부 시스템(Medusa order.placed subscriber)이 JWT 없이 호출하므로 내부키로 인증한다.
+   * `userId` 를 바디로 받아 그대로 믿으므로 `@Public()` 단독이면 임의 사용자의 혜택을 조작할 수 있다.
    */
-  @Public()
+  @MembershipInternalAuth()
   @Post('internal/record')
   async recordDiscount(@Body() dto: RecordDiscountDto) {
     try {
@@ -28,9 +30,10 @@ export class BenefitTrackingController {
 
   /**
    * 내부 API: 혜택 취소
-   * 외부 시스템(Medusa order.canceled subscriber)에서 JWT 없이 호출 → @Public 필수.
+   * 외부 시스템(Medusa order.canceled subscriber)이 JWT 없이 호출하므로 내부키로 인증한다.
+   * `orderId` 만 받고 소유권 검사가 없다 — 신뢰된 호출자만 닿아야 성립한다.
    */
-  @Public()
+  @MembershipInternalAuth()
   @Post('internal/cancel')
   async cancelDiscount(@Body('orderId') orderId: string) {
     try {
