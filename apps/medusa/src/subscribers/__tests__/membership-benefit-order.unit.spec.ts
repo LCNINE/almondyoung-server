@@ -1,18 +1,53 @@
 import {
   calculateMembershipDiscount,
   resolveMembershipDiscount,
+  resolveQuantity,
   type OrderItem,
 } from '../membership-benefit-order';
 
 // 멤버십 혜택 기록(→ 해지 시 환불 차단)은 이 함수가 > 0 을 낼 때만 트리거된다.
 // (subscriber: `if (discountAmount <= 0) return;`)
 // 즉 "멤버십 할인가가 실제 적용된 상품(compare_at > 실결제가)"을 샀을 때만 혜택 사용으로 잡힌다.
-const item = (o: Partial<OrderItem>): OrderItem => ({
+// 수량은 order_line_item 이 아니라 order_item(=detail)에 있다. graph 가 실제로 내려주는 모양을
+// 그대로 쓴다 — 예전 헬퍼처럼 item.quantity 를 직접 채우면 라이브에서만 터지는 버그를 못 잡는다.
+const item = ({ quantity = 1, ...o }: Partial<OrderItem> & { quantity?: number }): OrderItem => ({
   id: 'li',
   unit_price: 10000,
   compare_at_unit_price: null,
-  quantity: 1,
+  detail: { quantity },
   ...o,
+});
+
+describe('resolveQuantity - 수량의 출처', () => {
+  it('수량은 detail(order_item)에서 온다', () => {
+    expect(resolveQuantity({ id: 'li', unit_price: 0, compare_at_unit_price: null, detail: { quantity: 3 } })).toBe(3);
+  });
+
+  it('detail 이 없으면 라인의 quantity 로 폴백한다', () => {
+    expect(resolveQuantity({ id: 'li', unit_price: 0, compare_at_unit_price: null, quantity: 2 })).toBe(2);
+  });
+
+  it('둘 다 없으면 NaN — 0/1 로 눙치면 금액이 조용히 틀어진다', () => {
+    expect(resolveQuantity({ id: 'li', unit_price: 0, compare_at_unit_price: null })).toBeNaN();
+  });
+});
+
+describe('수량 조회 실패는 금액을 오염시킨다', () => {
+  it('detail 도 quantity 도 없으면 할인액이 NaN 이다 (경계 가드가 잡아야 하는 값)', () => {
+    // 라이브에서 `items.quantity` 만 요청해 전 라인이 undefined 로 오던 상태의 재현.
+    // NaN 은 `<= 0` 가드를 통과하고 JSON.stringify 가 null 로 직렬화해 기록 API 가 400 을 냈다.
+    const broken: OrderItem = { id: 'li', unit_price: 11900, compare_at_unit_price: 18000 };
+    expect(calculateMembershipDiscount([broken])).toBeNaN();
+    expect(JSON.parse(JSON.stringify({ amount: calculateMembershipDiscount([broken]) })).amount).toBeNull();
+  });
+
+  it('detail 로 수량이 오면 정상 계산된다', () => {
+    expect(
+      calculateMembershipDiscount([
+        { id: 'li', unit_price: 11900, compare_at_unit_price: 18000, detail: { quantity: 3 } },
+      ]),
+    ).toBe(18300);
+  });
 });
 
 describe('calculateMembershipDiscount - 혜택 사용 판정 신호', () => {

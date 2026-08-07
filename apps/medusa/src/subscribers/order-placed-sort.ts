@@ -6,7 +6,8 @@ import type ProductSortingModuleService from '../modules/product-sorting/service
 type OrderItem = {
   id: string;
   product_id: string;
-  quantity: number;
+  /** order_line_item 에는 quantity 컬럼이 없다 — 수량은 `detail`(order_item) 에서 온다. */
+  detail?: { quantity?: number | null } | null;
 };
 
 type OrderData = {
@@ -24,7 +25,9 @@ export default async function handleOrderPlacedSort({ event, container }: Subscr
 
     const { data } = await query.graph({
       entity: 'order',
-      fields: ['id', 'items.id', 'items.product_id', 'items.quantity'],
+      // 수량은 order_item(=detail)에만 있다. `items.quantity` 는 항상 undefined 로 와서
+      // 모든 라인이 수량 1 로 세어졌다(판매순 정렬 과소집계).
+      fields: ['id', 'items.id', 'items.product_id', 'items.detail.quantity'],
       filters: { id: orderId },
     });
 

@@ -8,8 +8,24 @@ export type OrderItem = {
   variant_id?: string | null;
   unit_price: number;
   compare_at_unit_price: number | null;
-  quantity: number;
+  /** order_line_item 에는 없다 — `detail`(order_item) 에서 온다. 아래 `resolveQuantity` 참고. */
+  quantity?: number | null;
+  /** order_item(버전 조인). 수량의 실제 출처다. */
+  detail?: { quantity?: number | null } | null;
 };
+
+/**
+ * 라인 수량.
+ *
+ * `order_line_item` 테이블에는 quantity 컬럼이 없다 — `order_item`(버전 조인)에만 있고, graph 에는
+ * `items.detail.quantity` 로 노출된다. `items.quantity` 만 요청하면 전 라인이 undefined 로 오고,
+ * 금액 계산이 통째로 NaN 이 된다(`JSON.stringify` 가 null 로 직렬화해 기록 API 가 400 을 낸다).
+ */
+export function resolveQuantity(item: OrderItem): number {
+  const raw = item.detail?.quantity ?? item.quantity;
+  const quantity = Number(raw);
+  return Number.isFinite(quantity) ? quantity : NaN;
+}
 
 type OrderData = {
   id: string;
@@ -43,7 +59,8 @@ async function getOrderWithPricing(orderId: string, container: any): Promise<Ord
       'items.variant_id',
       'items.unit_price',
       'items.compare_at_unit_price',
-      'items.quantity',
+      // 수량은 order_item(=detail)에만 있다. `items.quantity` 는 항상 undefined 로 온다.
+      'items.detail.quantity',
     ],
     filters: { id: orderId },
   });
@@ -61,7 +78,7 @@ export function calculateMembershipDiscount(items: OrderItem[]): number {
   return items.reduce((acc, item) => {
     const compareAt = item.compare_at_unit_price;
     if (compareAt != null && compareAt > item.unit_price) {
-      return acc + (compareAt - item.unit_price) * item.quantity;
+      return acc + (compareAt - item.unit_price) * resolveQuantity(item);
     }
     return acc;
   }, 0);
@@ -117,9 +134,11 @@ export async function resolveMembershipDiscount(
     for (const item of items) {
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
       if (!priceSetId) continue;
-      const bucket = priceSetsByQuantity.get(item.quantity) ?? new Set<string>();
+      const quantity = resolveQuantity(item);
+      if (!Number.isFinite(quantity)) continue;
+      const bucket = priceSetsByQuantity.get(quantity) ?? new Set<string>();
       bucket.add(priceSetId);
-      priceSetsByQuantity.set(item.quantity, bucket);
+      priceSetsByQuantity.set(quantity, bucket);
     }
     if (priceSetsByQuantity.size === 0) return compareAtDiscount;
 
@@ -153,16 +172,18 @@ export async function resolveMembershipDiscount(
       const hasDiscount =
         item.compare_at_unit_price != null && item.compare_at_unit_price > item.unit_price;
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
-      const nonMemberPrice = priceSetId
-        ? amountByQuantityAndPriceSet.get(`${item.quantity}:${priceSetId}`)
-        : undefined;
+      const quantity = resolveQuantity(item);
+      const nonMemberPrice =
+        priceSetId && Number.isFinite(quantity)
+          ? amountByQuantityAndPriceSet.get(`${quantity}:${priceSetId}`)
+          : undefined;
 
       if (nonMemberPrice == null) {
         if (hasDiscount) unresolvedDiscountedItems += 1;
         continue;
       }
       const perUnit = nonMemberPrice - item.unit_price;
-      if (perUnit > 0) membershipDiscount += perUnit * item.quantity;
+      if (perUnit > 0) membershipDiscount += perUnit * quantity;
     }
 
     if (unresolvedDiscountedItems > 0) {
@@ -207,6 +228,15 @@ export default async function handleMembershipBenefitOrder({ event, container }:
         logger,
         { currency_code: order.currency_code, region_id: order.region_id },
       );
+      // NaN 은 `<= 0` 을 통과한다. 그대로 두면 JSON.stringify 가 null 로 직렬화해 기록 API 가 400 을
+      // 내고, 그 실패가 조용히 쌓여 "혜택 미사용" 판정 → 부당 전액 환불로 이어진다. 여기서 끊고 크게 운다.
+      if (!Number.isFinite(discountAmount)) {
+        logger.error(
+          `[MembershipBenefit] 할인액 계산이 수치가 아니다(${discountAmount}) — 기록을 건너뛴다. ` +
+            `orderId=${orderId} (주문 라인의 수량 조회 실패가 흔한 원인이다)`,
+        );
+        return;
+      }
       if (discountAmount <= 0) return;
 
       const userId = await getAlmondUserId(customerId, container);
