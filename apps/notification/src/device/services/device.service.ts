@@ -45,10 +45,13 @@ export class DeviceService {
         .values(values)
         .onConflictDoUpdate({ target: [fcmTokens.userId, fcmTokens.deviceId], set: updateSet });
     } else {
+      // fcmTokens.token 은 전역 unique 라 충돌 대상이 호출자 소유가 아닐 수 있다.
+      // setWhere 로 소유자가 아니면 DO UPDATE 를 건너뛴다(no-op) — 남의 행을 절대
+      // 덮어쓰지 않는다. userId 는 set 에도 없으므로 소유권 이전도 일어나지 않는다.
       await this.db
         .insert(fcmTokens)
         .values(values)
-        .onConflictDoUpdate({ target: fcmTokens.token, set: updateSet });
+        .onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) });
     }
 
     this.logger.log('FCM token registered', { userId, platform: dto.platform });

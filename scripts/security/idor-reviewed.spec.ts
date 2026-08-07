@@ -6,7 +6,6 @@ type Verdict = 'SAFE' | 'VULN' | 'N/A' | 'UNCLEAR';
 /** 미해결(VULN/UNCLEAR) 판정 목록. 전부 해소하면 []로 바꿔 회귀를 막는다. */
 const EXPECTED_OPEN: string[] = [
   'membership POST /subscriptions/confirm-checkout-intent [VULN] 소유권 검사 없음. 핸들러(subscription.controller.ts:163-167)가 호출자 신원을 전혀 받지 않고 바디의 intentId 만 받으며, 서비스가 userId 를 intent 메타데이터에서 뽑는다. 재현: 인증된 A 가 B 의 intentId 로 호출하면 B 명의 구독이 생성된다. 영향 제한적 — intent 가 AUTHORIZED/CAPTURED 여야 하므로 B 가 이미 결제한 건이고 A 는 이득이 없다. 오케스트레이터 직접 확인 (조사 에이전트는 N/A 로 오판, 자기 observations 와 모순이었음).',
-  "notification POST /devices/fcm-token [VULN] DeviceController.registerToken (device.controller.ts:23) forwards the caller's own JWT userId, so the deviceId-scoped upsert branch (device.service.ts:46, target: [fcmTokens.userId, fcmTokens.deviceId]) is inherently self-scoped. But when dto.deviceId is omitted, the upsert instead resolves conflicts on target: fcmTokens.token (device.service.ts:51), which is the table's globally-unique token column (idx_fcm_token, notification-schema.ts:223) - not scoped by userId. onConflictDoUpdate's set (updateSet, lines 31-40) has no accompanying `where` clause tying the update to eq(fcmTokens.userId, userId). Repro: caller A knows/obtains a token string already registered by user B (no deviceId in that prior registration, or A just guesses/reuses a leaked token) and POSTs {token, platform} with no deviceId; the row (owned by B per its userId column) is updated in place - platform/deviceModel/deviceName/isActive/lastUsedAt get overwritten by A's request - with zero check that B == A. Contrast with DELETE below, which does carry the ownership predicate.",
 ];
 
 /**
@@ -376,10 +375,11 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     note: "DeviceController.deactivateToken -> DeviceService.deactivateToken(userId, dto.token) issues the update gated on both eq(fcmTokens.userId, userId) and eq(fcmTokens.token, token), so a caller can only deactivate a token row that is already theirs; supplying another user's token value matches zero rows.",
   },
   'notification POST /devices/fcm-token': {
-    verdict: 'VULN',
-    evidence: 'apps/notification/src/device/services/device.service.ts:51',
-    predicate: '',
-    note: "DeviceController.registerToken (device.controller.ts:23) forwards the caller's own JWT userId, so the deviceId-scoped upsert branch (device.service.ts:46, target: [fcmTokens.userId, fcmTokens.deviceId]) is inherently self-scoped. But when dto.deviceId is omitted, the upsert instead resolves conflicts on target: fcmTokens.token (device.service.ts:51), which is the table's globally-unique token column (idx_fcm_token, notification-schema.ts:223) - not scoped by userId. onConflictDoUpdate's set (updateSet, lines 31-40) has no accompanying `where` clause tying the update to eq(fcmTokens.userId, userId). Repro: caller A knows/obtains a token string already registered by user B (no deviceId in that prior registration, or A just guesses/reuses a leaked token) and POSTs {token, platform} with no deviceId; the row (owned by B per its userId column) is updated in place - platform/deviceModel/deviceName/isActive/lastUsedAt get overwritten by A's request - with zero check that B == A. Contrast with DELETE below, which does carry the ownership predicate.",
+    verdict: 'SAFE',
+    evidence: 'apps/notification/src/device/services/device.service.ts:54',
+    predicate:
+      '.onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) });',
+    note: "Fixed (task-7, 2026-08-08). The no-deviceId branch's onConflictDoUpdate now carries setWhere: eq(fcmTokens.userId, userId) (device.service.ts:54), so when the globally-unique token column (idx_fcm_token) conflicts with a row owned by a different user, Postgres's ON CONFLICT ... DO UPDATE ... WHERE skips the update entirely (silent no-op) instead of overwriting it. updateSet still has no userId, so ownership can never transfer even on a self-match. Proven by apps/notification/src/device/services/__tests__/device.service.idor.spec.ts, which asserts the exact setWhere predicate reaches onConflictDoUpdate (not just the return value). Contrast with DELETE below, which carries the same kind of ownership predicate via a WHERE clause.",
   },
   'search GET /health': {
     verdict: 'N/A',
