@@ -42,7 +42,10 @@ export default async function handleOrderPlacedSort({ event, container }: Subscr
     for (const item of order.items) {
       if (item.product_id) {
         const current = productQuantityMap.get(item.product_id) || 0;
-        productQuantityMap.set(item.product_id, current + (item.quantity || 1));
+        productQuantityMap.set(
+          item.product_id,
+          current + (item.detail?.quantity ?? 1)
+        );
       }
     }
 
