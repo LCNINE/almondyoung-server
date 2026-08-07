@@ -10,14 +10,22 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { AiDraftButton, MAX_AI_DRAFT_IMAGES } from './ai-draft-button';
+import { AiPromptDialog } from './ai-prompt-dialog';
+import { AiPromptSelect, BUILTIN_PRESET_VALUE } from './ai-prompt-select';
 import { MarkdownImageUploadButton } from './markdown-image-upload-button';
 import { ProductDescriptionMarkdown } from './product-description-markdown';
 import { insertAtCursor } from './product-description-insert';
+import {
+  SELECTED_PRESET_STORAGE_KEY,
+  useAiPromptPresets,
+} from './use-ai-prompt-presets';
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialValue: string;
+  productName?: string;
   onSave: (value: string) => void;
   pending: boolean;
 };
@@ -26,17 +34,38 @@ export function ProductDescriptionFocusEditor({
   open,
   onOpenChange,
   initialValue,
+  productName,
   onSave,
   pending,
 }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [draft, setDraft] = useState(initialValue);
+  const [presetId, setPresetId] = useState(BUILTIN_PRESET_VALUE);
+  const { presets, refresh } = useAiPromptPresets(open);
 
   // 저장 후에도 오버레이는 열려 있으므로, 저장된 값으로의 재-seed 는 '열릴 때'에만 한다.
   useEffect(() => {
     if (open) setDraft(initialValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(SELECTED_PRESET_STORAGE_KEY);
+    if (stored) setPresetId(stored);
+  }, []);
+
+  // 지웠거나 남이 삭제한 양식이 기억돼 있으면 기본 양식으로 되돌린다.
+  useEffect(() => {
+    if (presetId === BUILTIN_PRESET_VALUE || presets.length === 0) return;
+    if (!presets.some((preset) => preset.id === presetId)) {
+      setPresetId(BUILTIN_PRESET_VALUE);
+    }
+  }, [presets, presetId]);
+
+  const selectPreset = (next: string) => {
+    setPresetId(next);
+    window.localStorage.setItem(SELECTED_PRESET_STORAGE_KEY, next);
+  };
 
   const insertMarkdown = (markdown: string) => {
     const el = textareaRef.current;
@@ -50,6 +79,16 @@ export function ProductDescriptionFocusEditor({
       return insertAtCursor(current, markdown, selection);
     });
     textareaRef.current?.focus();
+  };
+
+  const applyAiDraft = (markdown: string) => {
+    if (draft.trim().length > 0) {
+      const confirmed = window.confirm(
+        '작성 중인 내용을 AI 초안으로 덮어쓸까요? 되돌릴 수 없습니다.'
+      );
+      if (!confirmed) return;
+    }
+    setDraft(markdown);
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -83,13 +122,43 @@ export function ProductDescriptionFocusEditor({
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-2">
           {/* 에디터: 좁을 땐 위(order-1), 넓을 땐 오른쪽(order-2) */}
           <div className="order-1 flex min-h-0 flex-col gap-2 lg:order-2">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium">Markdown</span>
-              <MarkdownImageUploadButton
-                disabled={pending}
-                onInsert={insertMarkdown}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <AiPromptSelect
+                  presets={presets}
+                  value={presetId}
+                  disabled={pending}
+                  onChange={selectPreset}
+                />
+                <AiPromptDialog
+                  presets={presets}
+                  selectedId={presetId}
+                  disabled={pending}
+                  onRefresh={refresh}
+                  onSelect={selectPreset}
+                />
+                <AiDraftButton
+                  disabled={pending}
+                  productName={productName}
+                  presetId={presetId === BUILTIN_PRESET_VALUE ? undefined : presetId}
+                  onGenerated={applyAiDraft}
+                />
+                <MarkdownImageUploadButton
+                  disabled={pending}
+                  onInsert={insertMarkdown}
+                />
+              </div>
             </div>
+
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              상품 이미지(제품 사진·해외 패키지·스펙표 등)를 고르면 AI 가 이미지 속 내용을
+              한국어로 옮겨 상세페이지 초안을 쓰고, 이미지도 알맞은 위치에 배치합니다.
+              고르는 순서는 상관없습니다. <b>한 번에 최대 {MAX_AI_DRAFT_IMAGES}장</b>,
+              장수가 많을수록 시간과 비용이 늘어나니 정보가 담긴 이미지 위주로 고르세요.
+              작성 방식은 <b>양식</b>으로 정해지며 <b>양식 관리</b>에서 직접 추가·수정할 수
+              있습니다.
+            </p>
             <Textarea
               ref={textareaRef}
               value={draft}

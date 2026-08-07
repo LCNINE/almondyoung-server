@@ -421,6 +421,13 @@
       "when": 1785916779939,
       "tag": "20260805075939_add-shipping-group-code",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1786065454996,
+      "tag": "20260807011734_add-ai-prompt-presets",
+      "breakpoints": true
     }
   ]
 }

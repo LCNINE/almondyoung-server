@@ -235,6 +235,7 @@ function ProductDetailDescriptionContent({
           open={overlayOpen}
           onOpenChange={setOverlayOpen}
           initialValue={data.description ?? ''}
+          productName={data.name}
           onSave={handleSave}
           pending={updateVersion.isPending}
         />

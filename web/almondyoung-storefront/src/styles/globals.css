@@ -3,6 +3,8 @@
 @import "./font.css";
 @import "tailwindcss";
 @plugin "tailwindcss-animate";
+/* 상품 상세설명 마크다운(.prose) 의 문단 여백·제목 위계를 담당. 없으면 전부 붙어서 렌더된다. */
+@plugin "@tailwindcss/typography";
 
 /* iOS 홈 인디케이터 등 safe-area 하단 여백 (viewport-fit=cover 필요) */
 @utility pb-safe {
@@ -575,4 +577,63 @@ input[type="search"]::-webkit-search-results-decoration {
     @apply shadow-md;
     transform: translateY(-1px);
   }
+}
+
+.prose {
+  --tw-prose-body: var(--foreground);
+  --tw-prose-headings: var(--foreground);
+  --tw-prose-bold: var(--foreground);
+  --tw-prose-captions: var(--muted-foreground);
+  --tw-prose-th-borders: var(--border);
+  --tw-prose-td-borders: var(--border);
+  --tw-prose-hr: var(--border);
+}
+
+.prose h1 {
+  font-size: 26px;
+  line-height: 35px;
+  font-weight: 700;
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+.prose h2 {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 700;
+  margin-top: 48px;
+  margin-bottom: 16px;
+}
+.prose h3 {
+  font-size: 20px;
+  line-height: 27px;
+  font-weight: 700;
+  margin-top: 32px;
+  margin-bottom: 12px;
+}
+.prose p {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+.prose li {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+/* 스펙표 — 헤더에 면을 깔아야 항목/값이 구분된다 */
+.prose table {
+  margin: 24px 0;
+  font-size: 14px;
+}
+.prose thead th {
+  padding: 12px;
+  background: var(--muted);
+  font-weight: 700;
+}
+.prose tbody td {
+  padding: 12px;
+}
+
+.prose img {
+  margin: 24px 0;
+  border-radius: 12px;
 }

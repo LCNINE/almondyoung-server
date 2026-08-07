@@ -94,6 +94,8 @@ export function setup(infra: SharedInfra) {
   const adminWebOidcClientSecret = new sst.Secret('AdminWebOidcClientSecret');
   // wallet-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
   const walletWebOidcClientSecret = new sst.Secret('WalletWebOidcClientSecret');
+  // admin-web 상품 상세설명 AI 초안 생성용 Anthropic API key.
+  const anthropicApiKey = new sst.Secret('AnthropicApiKey');
 
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
@@ -549,7 +551,11 @@ export function setup(infra: SharedInfra) {
     path: '../../../apps/admin-web',
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
-    server: { architecture: 'arm64' },
+    //
+    // timeout 기본값은 20초라 AI 초안의 작성 단계(30초 안팎)가 잘린다. CloudFront 가
+    // 60초에서 끊으므로 이 값이 올릴 수 있는 상한이고, 그래서 AI 초안은 이미지 분석과
+    // 작성을 여러 호출로 쪼갠다 (features/mall/products-detail/.../ai-draft.ts).
+    server: { architecture: 'arm64', timeout: '60 seconds' },
     domain: { name: domain('admin') },
     environment: {
       AUTH_SECRET: authSecret.value,
@@ -574,6 +580,7 @@ export function setup(infra: SharedInfra) {
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
       NEXT_PUBLIC_STOREFRONT_URL: storefrontUrl,
       NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: 'kr',
+      ANTHROPIC_API_KEY: anthropicApiKey.value,
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
       OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,

@@ -123,6 +123,7 @@
     "@medusajs/types": "2.13.4",
     "@svgr/webpack": "^8.1.0",
     "@tailwindcss/postcss": "^4.1.13",
+    "@tailwindcss/typography": "^0.5.20",
     "@types/lodash": "^4.17.21",
     "@types/node": "17.0.21",
     "@types/pg": "^8.11.0",

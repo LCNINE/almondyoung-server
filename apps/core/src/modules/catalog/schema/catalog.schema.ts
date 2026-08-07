@@ -1248,8 +1248,35 @@ export const productBulkImages = pgTable(
   ],
 );
 
+/**
+ * 어드민이 코드 배포 없이 저장하는 AI 프롬프트 양식. 한 scope 에 여러 행.
+ * 목록은 어드민 전체가 공유해 골라 쓰고, 수정·삭제는 ownerId 본인만 한다.
+ * 아무것도 고르지 않으면 호출부가 코드의 기본 프롬프트를 쓴다.
+ */
+export const aiPromptPresets = pgTable(
+  'ai_prompt_presets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** 어느 AI 기능의 양식인지. 현재는 'product-description'. */
+    scope: varchar('scope', { length: 64 }).notNull(),
+    title: varchar('title', { length: 120 }).notNull(),
+    content: text('content').notNull(),
+    /** 수정·삭제 권한 판정용. admin-web 서버가 검증된 토큰에서 주입한다. */
+    ownerId: varchar('owner_id', { length: 255 }).notNull(),
+    /** 목록 표시용 작성자 이름. */
+    ownerName: varchar('owner_name', { length: 120 }),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    index('idx_ai_prompt_presets_scope').on(table.scope, table.updatedAt),
+    uniqueIndex('uq_ai_prompt_presets_scope_title').on(table.scope, table.title),
+  ],
+);
+
 // Catalog BC 스키마 (ex-PIM)
 export const catalogSchema = {
+  aiPromptPresets,
   productCategories,
   productMasters,
   productMasterVersions,
