@@ -9,6 +9,7 @@ import {
   uploadFileToFileService,
 } from '@/lib/api/domains/files/upload.client';
 import { generateAiDraft } from './generate-ai-draft';
+import { shrinkImageForAi } from './shrink-image';
 
 /**
  * 이미지는 8장씩 나눠 분석하므로 API 제약상 더 올려도 되지만, 장수만큼 호출과 비용이
@@ -68,9 +69,11 @@ export function AiDraftButton({
     render();
 
     try {
+      // Claude 는 8000px 를 넘는 이미지를 거부한다. 상세 이미지는 세로로 길어 흔히
+      // 넘으므로 업로드 전에 줄인다 (자세한 배경은 shrink-image.ts).
       const uploads = await Promise.all(
-        files.map((file) =>
-          uploadFileToFileService(file, {
+        files.map(async (file) =>
+          uploadFileToFileService(await shrinkImageForAi(file), {
             contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
             isPublic: true,
           })
