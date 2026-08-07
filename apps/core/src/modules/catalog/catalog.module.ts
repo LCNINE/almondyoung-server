@@ -10,6 +10,7 @@ import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
 import { NoticesModule } from './core/notices/notices.module';
+import { AiPromptsModule } from './core/ai-prompts/ai-prompts.module';
 
 // Operations modules
 import { ApprovalModule } from './operations/approval/approval.module';
@@ -37,6 +38,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     TagsModule,
     BannersModule,
     NoticesModule,
+    AiPromptsModule,
     // Operations
     ApprovalModule,
     BulkModule,
@@ -46,6 +48,15 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     // Analytics
     DashboardModule,
   ],
-  exports: [ProductsModule, CategoriesModule, ChannelsModule, PricingModule, TagsModule, BannersModule, NoticesModule],
+  exports: [
+    ProductsModule,
+    CategoriesModule,
+    ChannelsModule,
+    PricingModule,
+    TagsModule,
+    BannersModule,
+    NoticesModule,
+    AiPromptsModule,
+  ],
 })
 export class CatalogModule {}
