@@ -25,7 +25,7 @@
 
 ### Task 1: `InboxWorkerService` supersede 테스트를 요구사항 기준으로 재작성 (#550)
 
-배치 claim 을 얹기 전에 이 테스트가 무엇을 검증하는지 확정해야 한다. 현재는 "쿼리에 어떤 값이 바인딩되는가" 를 스니핑해서 red 다 — `94fb60e6e` 가 비교를 전부 SQL 로 옮기며 타임스탬프 바인딩을 없앴기 때문이다. 렌더된 SQL 을 검사하는 방식으로 바꿔 요구사항(발생시각 기준 정렬)을 직접 단정한다.
+배치 claim 을 얹기 전에 이 테스트가 무엇을 검증하는지 확정해야 한다. 현재는 "쿼리에 어떤 값이 바인딩되는가" 를 스니핑해서 red 다 — `2d238bd4b` 가 비교를 전부 SQL 로 옮기며 타임스탬프 바인딩을 없앴기 때문이다. 렌더된 SQL 을 검사하는 방식으로 바꿔 요구사항(발생시각 기준 정렬)을 직접 단정한다.
 
 **Files:**
 - Modify: `apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts:356-388`

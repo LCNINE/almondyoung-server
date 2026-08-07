@@ -1,7 +1,7 @@
 # 창고 쓰기 엔드포인트 스코프 authorization (#546)
 
 - 이슈: [#546](https://github.com/LCNINE/almondyoung-server/issues/546)
-- 브랜치: `fix/inventory-warehouse-scope-authorization` (base `46bf66ebe`)
+- 브랜치: `fix/inventory-warehouse-scope-authorization` (base `3073756ce`)
 - 마이그레이션: **0건**
 
 ## 문제
@@ -16,7 +16,7 @@
 | `warehouse.controller.ts:45` `@Patch(':id')` | 맨몸 |
 | `warehouse.controller.ts:57` `@Delete(':id')` | 맨몸 |
 
-#545(`46bf66ebe`)가 `PATCH` 로 `supportedPickingStrategies` 를 열면서 이 엔드포인트는
+#545(`3073756ce`)가 `PATCH` 로 `supportedPickingStrategies` 를 열면서 이 엔드포인트는
 **피킹 방식 개통 스위치**가 됐다. 공백을 새로 만든 건 아니지만 공백의 대가가 올라갔다 —
 전에는 창고 이름 변경이었고, 이제는 `supportedPickingStrategies: []` 로 특정 창고의
 출고를 멈출 수 있다.

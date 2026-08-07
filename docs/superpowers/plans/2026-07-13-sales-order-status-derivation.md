@@ -9,7 +9,7 @@
 **Tech Stack:** NestJS · Drizzle ORM(postgres.js) · Jest.
 
 **설계 spec:** `docs/superpowers/specs/2026-07-13-sales-order-status-derivation-design.md`
-**브랜치:** `feat/sales-order-status-derivation` (spec 커밋 `265e8107f` 위에 이어서)
+**브랜치:** `feat/sales-order-status-derivation` (spec 커밋 `f84133531` 위에 이어서)
 
 ## Global Constraints
 
@@ -387,7 +387,7 @@ Expected: 변경 파일 신규 error 0 (사전존재 debt 는 develop 대조로 
 > - 설계 `docs/superpowers/specs/2026-07-13-sales-order-status-derivation-design.md` · 계획 `docs/superpowers/plans/2026-07-13-sales-order-status-derivation.md`.
 > - 브랜치 `feat/sales-order-status-derivation` → **develop 스쿼시 머지 대기(사용자 수동 머지)**.
 > - 검증: `nest build core` exit 0 · arch 경계 PASS · getStats 유닛 GREEN(dead status 합과 FO 도출 구분 회귀 가드) · 변경 파일 신규 eslint 0 · admin-web 무변경. 스키마 무변경이라 dev DB ⏸ 없음. 통합 spec 없음(신규 전부 유닛, 작업 11·13 판례).
-> - **비고**: 작업 13·14 코드는 이미 develop 반영됨(스쿼시 `5669866a9`·`599d82523`) — 상황판 "머지 대기" 표기가 뒤처졌던 것으로, WS-D 잔여는 ② 보류(게이지 실측) + P2-12 취소경로 key + P1-11(별도 설계)뿐.
+> - **비고**: 작업 13·14 코드는 이미 develop 반영됨(스쿼시 `46c2b1412`·`c5725b279`) — 상황판 "머지 대기" 표기가 뒤처졌던 것으로, WS-D 잔여는 ② 보류(게이지 실측) + P2-12 취소경로 key + P1-11(별도 설계)뿐.
 > - **WS-D 본류(작업 13~15) 완료** — 잔여: ② 보류 · P2-12 취소경로(명시적 후속) · P1-11(별도 설계 항목).
 ```
 

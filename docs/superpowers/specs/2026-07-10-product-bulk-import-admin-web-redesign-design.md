@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-10
 - 대상: `apps/admin-web` (Next.js admin) — 기존 CSV 대량등록 UI 제거 + 신규 엑셀 임포트 UI 구축
-- 짝이 되는 백엔드: 브랜치 `feat/product-bulk-import-redesign` (tip `213e418e1`, 미병합).
+- 짝이 되는 백엔드: 브랜치 `feat/product-bulk-import-redesign` (tip `3cfcd7a17`, 미병합).
   백엔드 설계: `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md`
 
 ## 1. 배경 / 문제

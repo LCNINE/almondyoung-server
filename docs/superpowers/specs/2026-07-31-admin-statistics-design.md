@@ -1,6 +1,6 @@
 # admin-web 통계 페이지 + analytics 집계 확장
 
-- 브랜치: `feat/admin-statistics` (base `c6b9c0af6`)
+- 브랜치: `feat/admin-statistics` (base `5d29514e8`)
 - 스키마 변경: **7항목** (전부 추가형 — expand phase, `migrate → deploy`).
   `drizzle-kit generate` 는 이를 묶어 마이그레이션 파일 1건으로 낼 수 있다 — 파일 개수가 아니라 변경 항목 수다.
 - 백필: **주문·멤버십 양쪽 수행** (전용 스크립트)

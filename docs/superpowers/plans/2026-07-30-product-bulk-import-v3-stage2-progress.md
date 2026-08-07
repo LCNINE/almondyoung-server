@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **마이그레이션 없음.** 이 단계는 기존 컬럼만 읽는다. 스키마 변경은 v3 1단계(완료, `739949ad8`)와 4단계(미착수)에만 있다.
+- **마이그레이션 없음.** 이 단계는 기존 컬럼만 읽는다. 스키마 변경은 v3 1단계(완료, `79901a3a9`)와 4단계(미착수)에만 있다.
 - **배포 결합:** core → admin-web 같은 `sst deploy`. 롤링 창에서 새 admin-web 이 옛 core 태스크를 만나 `/progress` 가 404 날 수 있으므로 **모든 화면 경로는 progress 없이도 렌더돼야 한다**(세션 카운터 폴백).
 - **레이어 규칙(CLAUDE.md):** Controller → Service → Reader/Builder → DB. Service 는 2-3줄 위임만. Reader 는 `trx.select().from().where()` 만 쓰고 `db.query.*`·`with` 관계·`any`/`as` 캐스팅 금지. DB 주입은 `@InjectDb()` + `DbService<PimSchema>`.
 - **도메인 예외:** `@app/shared` 의 `NotFoundError` 등. `HttpException` 을 서비스/리더에서 던지지 않는다.
@@ -21,7 +21,7 @@
   - `npx jest apps/admin-web/src/lib/services/products apps/admin-web/src/features/mall/product-imports` → 기준선 **18 passed**
   - `npm run type-check:scoped` → 기준선 **exit 0** (`tsconfig.spec-scope.json` 이 import 폴더 전체를 이미 포함하므로 새 파일은 자동 포함)
   - `cd apps/admin-web && npx tsc --noEmit` → 기준선 **exit 0**
-- **워크트리 준비:** 브랜치 `feat/product-bulk-import-v3-progress` (base `739949ad8`). 루트 `npm install` 과 `apps/admin-web` 의 `npm install` 이 **둘 다** 끝나 있어야 한다 — admin-web 의 `queries.spec.ts` 가 `@tanstack/react-query` 를 실제로 require 한다.
+- **워크트리 준비:** 브랜치 `feat/product-bulk-import-v3-progress` (base `79901a3a9`). 루트 `npm install` 과 `apps/admin-web` 의 `npm install` 이 **둘 다** 끝나 있어야 한다 — admin-web 의 `queries.spec.ts` 가 `@tanstack/react-query` 를 실제로 require 한다.
 
 ## 참조 스펙
 

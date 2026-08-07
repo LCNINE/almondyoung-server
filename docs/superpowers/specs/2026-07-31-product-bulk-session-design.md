@@ -1,5 +1,7 @@
 # 상품 일괄 등록/수정 세션 설계 스펙
 
+> **커밋 해시 주의(2026-08-07 히스토리 재작성)**: 이 문서가 인용하는 일부 해시는 origin 에 올라간 적 없는 로컬 브랜치의 것이라 새 히스토리로 치환되지 않았다. 현재 레포에서 해석되지 않는 것이 정상이며, 백업 번들에서만 조회된다 — 레포 루트 `docs/git-history-rewrite-2026-08-07.md` 참고.
+
 - 날짜: 2026-07-31
 - 대상: `apps/core` (catalog) + `apps/admin-web`
 - 상태: **설계 확정, 구현 미착수**
@@ -21,7 +23,7 @@
 
 **v3 를 대체한다.** 기존 대량등록 메뉴는 새 세션으로 바뀌고, v3 4단계의 URL 이미지 파이프라인(probe/fetch 레인, SSRF 가드, `product_import_images`, 정리기)은 제거한다. v3 4단계는 아직 실운용에 안 쓴 상태라 걷어낼 비용이 가장 싼 시점이다.
 
-## 2. 현재 상태 실측 (2026-07-31, `d96576365`)
+## 2. 현재 상태 실측 (2026-07-31, `38b0486ad`)
 
 ### 2.1 버전 시스템이 이미 이 설계의 절반을 갖고 있다
 
@@ -566,7 +568,7 @@ admin-web 의 새 세션 화면은 아직 없다 — 2~5단계는 전부 core �
 
 그럼에도 지금 제거한다(사용자 결정). 근거는 §11.4 의 전제다 — 옛 임포트가 실제로 쓰인 적이 없다면 없앨 때 끊기는 일이 없다.
 
-### 11.2 제거 대상 — 실측 인벤토리 (2026-08-03, `8f5dde5f4`)
+### 11.2 제거 대상 — 실측 인벤토리 (2026-08-03, `a1a7111d8`)
 
 ~~**레포 전체에서 옛 임포트를 실제로 `import` 하는 문장은 `catalog.module.ts:17` 하나다.**~~ **→ 정정 (2026-08-03, 6단계 Task 4 구현이 실측).** 이 단언은 **거짓이었다.** 실제 결합은 **둘**이다:
 
@@ -1127,7 +1129,7 @@ Task 12 가 `bulk-session-publish.integration.spec.ts`(8케이스, 실 Postgres 
 | **통합 케이스 8이 update kind 만 덮는다** | 타 세션의 create 행에 대한 `deleteMaster` 분기가 세션 격리 테스트에서 미검증(Task 12) |
 | **`checkOptionStructure`(수정 행 구조 검증)가 §C.4(d)와 같은 결함의 update 판을 그대로 갖고 있다** | Set 비교라 업로드 조합이 중복이면 dedupe 되어 no-op — 신규 행 쪽(§C.4(d))과 같은 근본 원인, 후속 태스크 권고(Task 10) |
 | **`type-check:scoped` 의 사각지대**(부록 C.9) | `tsconfig.spec-scope.json` 이 `product-masters.service.ts` 를 커버 안 함 — 5단계는 이 파일을 건드리지 않아 재확인만 하고 넘어감 |
-| **`bulk-session.module.spec.ts` 의 `BulkSessionManager` 의존성 개수 주석이 낡았다** — "`DbService<PimSchema>`/`FormExportFileClient` 2개 의존성"이라 적혀 있는데(`git log -S` 로 추적하면 이 문구는 **2단계**(`9d0cd7739`)에서 쓰여 그때는 사실이었다) `BulkSessionManager` 생성자는 5단계 Task 6 이후 `db, fileClient, reader, versions, masters` 5개다 | 원장 19건에 이 항목 자체는 없다 — 이번 T13 리뷰가 코드로 직접 새로 확인한 것이다. `BulkSessionJobManager` 쪽의 같은 종류 주석(5→8)은 Task 11 이 갱신했지만 `BulkSessionManager` 쪽은 갱신 담당 태스크가 없었다. 기능 영향 없는 문서 부채 — 다음에 이 생성자를 다시 여는 사람이 같이 고치면 된다 |
+| **`bulk-session.module.spec.ts` 의 `BulkSessionManager` 의존성 개수 주석이 낡았다** — "`DbService<PimSchema>`/`FormExportFileClient` 2개 의존성"이라 적혀 있는데(`git log -S` 로 추적하면 이 문구는 **2단계**(`bbeef8443`)에서 쓰여 그때는 사실이었다) `BulkSessionManager` 생성자는 5단계 Task 6 이후 `db, fileClient, reader, versions, masters` 5개다 | 원장 19건에 이 항목 자체는 없다 — 이번 T13 리뷰가 코드로 직접 새로 확인한 것이다. `BulkSessionJobManager` 쪽의 같은 종류 주석(5→8)은 Task 11 이 갱신했지만 `BulkSessionManager` 쪽은 갱신 담당 태스크가 없었다. 기능 영향 없는 문서 부채 — 다음에 이 생성자를 다시 여는 사람이 같이 고치면 된다 |
 | **`publishOne` 의 `!draftVersionId` 분기(즉시 실패, `bulk-session-job.manager.ts:897-900`)에 전용 단위 테스트가 없다** — `runPublishSlice` 단위 describe 의 `it` 들 중 이 분기를 지나는 것이 없다 | Task 3 부터 이어진 원래 갭(단위 테스트 기준). 코드 경로 자체는 단순(즉시 `failPublish`)해 리뷰가 위험도를 낮게 봤지만, 단위 회귀 테스트로 못박히진 않았다. **최종 리뷰 정정**: 이 행이 원래 함께 묶었던 **멱등 분기**(`version.status==='active'` 면 도장만, `:924-931`)는 갭이 아니다 — 통합 케이스 5의 2층("층 2: publishOne 자체의 멱등", `bulk-session-publish.integration.spec.ts:761-786`)이 그 분기를 실 DB 로 이미 잠근다. 역검증(이번 최종 리뷰가 실행): `if (version.status === 'active')` 를 `if (false && …)` 로 지우면 그 케이스가 관문 ③(발행 시점 가드)의 `ConflictError` 를 내며 `publishStatus` 가 `published` 대신 `failed` 로 떨어져 빨개진다 |
 | **`bulk-session.reader.spec.ts:61` 의 `groupByField` `'status'` 폴백 분기가 죽은 가지다** — 프로덕션은 항상 `.name` 이 있는 실제 drizzle 컬럼을 넘기므로 어떤 테스트도 이 분기에 도달하지 못한다 | 하네스 방어 코드일 뿐 프로덕션 동작에 영향 없음 — 지우거나 커버하거나 둘 다 낮은 우선순위(Task 8) |
 | **job manager 스펙의 `DraftInput` 조립 테스트가 `variantRows` 를 단정하지 않는다** — `optionRows`·`conflictDecision`·`baseSnapshot`·`images` 는 검사하면서 같은 객체의 `variantRows`(`item.input.bundle.variants` 배선, `bulk-session-job.manager.ts:1089`)는 빠졌다 | 배선 자체는 코드로 확인됨(위 줄 참조) — 회귀로 못박히지 않은 것이 갭. 테스트에 `expect(input.variantRows).toEqual(...)` 한 줄을 더하면 닫힌다(Task 10) |
@@ -1146,7 +1148,7 @@ Task 12 가 `bulk-session-publish.integration.spec.ts`(8케이스, 실 Postgres 
 - [ ] **마이그레이션 1건** — `20260802213044_bulk-session-source-file-nullable.sql`(`source_file_id` DROP NOT NULL, additive). Expand phase 순서: **`migrate` → `deploy`**(§10.6)
 - [ ] ⚠️ **라이브 DB 에서 MD 계정의 `roles` 실측** — `BulkSessionController`·`FormExportController` 둘 다 클래스 레벨 `RolesGuard('master','admin')` 로 잠겨 있다(Task 9). 시드 롤 6종(`master`·`admin`·`membership`·`user`·`logistics_worker`·`logistics_manager`) 중 `admin`/`master` 가 없는 MD 계정은 배포 즉시 403 — 이미 라이브인 "양식 다운로드"(`product-forms`)부터 영향받는다
 - [ ] 새 env `PRODUCT_BULK_PUBLISH_SLICE`(선택, 기본값 5, `bulk-session-job.manager.ts:211-212` `get publishSlice()`) — **이름을 틀리면 `positiveInt` 파싱 실패가 조용히 기본값을 채택한다**(2·3·4단계의 `PRODUCT_BULK_LEASE_MS` 등과 같은 함정)
-- [ ] 이벤트 계약 변경 0건(§10.2, D.4 확인) · 새 시크릿 0건 · admin-web 변경 0건 — 이번 태스크에서 `git diff --name-only 9dd40c391..HEAD` 로 재확인: 변경 디렉터리는 `apps/core`·`docs/superpowers`·`package.json` 뿐
+- [ ] 이벤트 계약 변경 0건(§10.2, D.4 확인) · 새 시크릿 0건 · admin-web 변경 0건 — 이번 태스크에서 `git diff --name-only 0e4df51b3..HEAD` 로 재확인: 변경 디렉터리는 `apps/core`·`docs/superpowers`·`package.json` 뿐
 - [ ] **2·3·4단계의 미수행 수동 스모크가 여기 누적된다**: 2단계 8건(전 구간) · 3단계 2건(master 없는 토큰의 file-service 실제 검증 — 본인 파일 교체 성공 / 남의 fileId 403) · 4단계는 별도 미수행 항목 없음(재검증 완료 기록)
 - [ ] **5단계 수모크 5건**: 발행 전 구간 1회(업로드→검증→drafting→발행 완료) · 발행 중 취소 1회(관문 ① 이 실제로 그 행을 건너뛰는지) · 실패 행 재시도 1회(`retry-draft`/`publish` 재호출) · 제외 1회(`exclude` 후 개별 발행이 실제로 열리는지) · 취소 후 draft 전량 정리 1회(`purge-drafts` 를 `remaining===0` 또는 `purged===0` 까지 반복 호출)
 

@@ -1,7 +1,7 @@
 # 원장 대사(Ledger Reconciliation) 잡 설계 (P2-14 / WS-A)
 
 > 스프린트 허브: `docs/logistics-backend-hardening-2026-07.md` — WS-A "원장 쓰기 단일화 강제" 잔여 항목.
-> 선행: 작업 1(실사 정상화, `e9ce5597d`)에서 `inventory-write-boundary.arch.spec.ts`(정적 쓰기 경계 봉인) 신설 완료. 본 작업은 그 **런타임/데이터 레벨 짝**이다.
+> 선행: 작업 1(실사 정상화, `b84f14495`)에서 `inventory-write-boundary.arch.spec.ts`(정적 쓰기 경계 봉인) 신설 완료. 본 작업은 그 **런타임/데이터 레벨 짝**이다.
 
 ## 1. 배경 / 문제
 

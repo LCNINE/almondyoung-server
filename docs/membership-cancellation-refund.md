@@ -60,7 +60,7 @@ CMS 는 환불이 불가하므로, 돈을 되돌리는 방법은 두 가지뿐�
 읽는 법:
 - **INVOICE 해지예약의 약정 종료 보류 큐(§5)는 미래 대비가 아니라 지금 21건에 걸리는 경로다.**
 - **포인트·카드는 이미 막혀 있다.** 서버 가드가 두 겹이다 — 포인트 차단(`POINTS_NOT_APPLICABLE_TO_MEMBERSHIP`,
-  2026-07-08 `f1821f213`)과 무통장 전용(`MEMBERSHIP_REQUIRES_BANK_TRANSFER`, 2026-07-14 `643e66d11`).
+  2026-07-08 `8be4d4200`)과 무통장 전용(`MEMBERSHIP_REQUIRES_BANK_TRANSFER`, 2026-07-14 `bef3c496e`).
   라이브의 POINTS(~07-07)·TOSS(~07-15) charge 는 **전부 가드 도입 이전 데이터**고, 이후로는 0건이다.
   다만 그 이전 결제로 만들어진 계약은 지금도 살아 있으므로 **환불 상한·복합 환불 분기는 유지해야 한다**.
 - **`directCharge`(`POST /v1/direct-billing-charges`)에는 그 가드가 없지만 도달할 수 없다.** 이 경로는
@@ -742,7 +742,7 @@ cd apps/admin-web && npm run test:e2e:membership-cancel
 ## 8. 남은 것
 
 - **해지·환불 알림 없음.** notification 서비스가 미성숙해(프로덕션 실동 채널이 Resend 이메일 하나,
-  큐 없이 Kafka 핸들러에서 동기 발송) 보류했다. 복원 지점 커밋 `3e993916b`.
+  큐 없이 Kafka 핸들러에서 동기 발송) 보류했다. 복원 지점 커밋 `5796e0530`.
   `MembershipStatusChanged` 에는 이미 `email` / `periodEndsAt` / `refundAmount` / `refundStatus` 가
   실려 있어 발행측을 다시 손대지 않아도 된다. 컨슈머 + `templates` / `notification_events` 행만
   넣으면 동작한다(행이 없으면 컨슈머가 조용히 no-op 한다).

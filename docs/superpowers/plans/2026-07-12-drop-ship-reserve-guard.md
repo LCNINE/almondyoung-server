@@ -18,7 +18,7 @@
 - 광고 규칙: drop_ship non-terminal → `reserve`·`transferReservation` **제외**, `unreserve` **유지**.
 - `unreserve` 는 facade 에서 drop_ship 가드하지 않음(예약을 줄이는 방향이라 불변식과 정합, 수동 정리 escape hatch).
 - 검증(공통 규약): `nest build core` exit 0 · arch 경계 spec PASS · 변경 파일 **신규** eslint 0(repo 전역 lint 는 상시 debt — 전역 판정 금지) · admin-web `type-check` 신규 0. 스키마 무변경이라 dev DB ⏸ 없음.
-- 브랜치: `feat/drop-ship-reserve-guard`(이미 생성, spec 커밋 `216c098ea` 위).
+- 브랜치: `feat/drop-ship-reserve-guard`(이미 생성, spec 커밋 `61e065635` 위).
 
 ## File Structure
 

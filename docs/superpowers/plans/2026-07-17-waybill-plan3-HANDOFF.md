@@ -1,7 +1,7 @@
 # 운송장(waybill) 재설계 — 플랜 3(컷오버) 핸드오프
 
 - 작성: 2026-07-17 (플랜 2 완료 직후)
-- 브랜치: `feat/waybill-module-redesign` (tip `e2cda3ce1`, develop 대비 +36 커밋, **미머지**)
+- 브랜치: `feat/waybill-module-redesign` (tip `224ef02f9`, develop 대비 +36 커밋, **미머지**)
 - 목적: 플랜 1(캐리어층)·플랜 2(도메인층) 완료 후, **플랜 3(소비자 컷오버 + 구 invoice 삭제)** 를 다른 세션에서 이어받기 위한 상태·seam 계약·rewire 맵·주의.
 
 ## 0. 먼저 읽을 것
@@ -92,7 +92,7 @@ class WaybillService {
 
 ## 8. 이어가는 법
 
-1. 브랜치 `feat/waybill-module-redesign` 체크아웃(`.superpowers/sdd/progress.md`로 플랜 1·2 완료 확인 — **재실행 금지**). tip=`e2cda3ce1`.
+1. 브랜치 `feat/waybill-module-redesign` 체크아웃(`.superpowers/sdd/progress.md`로 플랜 1·2 완료 확인 — **재실행 금지**). tip=`224ef02f9`.
 2. spec §12 재독 + §2 seam API 숙지 → **플랜 3를 writing-plans로 작성**(모듈 순환 해소·recall-void 시맨틱·마이그레이션 순서·테스트 rewire를 태스크로) → SDD로 실행.
 3. 컷오버 후: 무회귀 outbound 통합 green → 실 app-boot DI smoke → develop 머지 → `db:setup`(add-waybills + drop-invoices 마이그레이션 적용) → 스테이징 스모크.
 

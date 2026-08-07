@@ -2,10 +2,10 @@
 
 - 날짜: 2026-07-28
 - 대상: `apps/core` (fulfillment, inventory warehouse) + `apps/admin-web` + `native/warehouse-app`
-- 브랜치: `feat/picking-activation-prerequisites` (base `3cc396a3e` = origin/develop)
+- 브랜치: `feat/picking-activation-prerequisites` (base `bd5e07bc3` = origin/develop)
 - 상태: 설계 승인됨 (구현 전) — 브레인스토밍 산출물
 - 해결 이슈: #544 (단순출고가 배치 `pickingMethod` 를 검증하지 않는다), #545 (`supported_picking_strategies` 설정 수단 부재)
-- 관련: #543 (정합성 작업, develop `3cc396a3e`), #546 (창고 쓰기 엔드포인트 스코프 부재 — 이번 작업 중 발견, 분리), #542 (하드닝 현황판 W4), `docs/superpowers/specs/2026-07-27-picking-method-strategy-alignment-design.md`
+- 관련: #543 (정합성 작업, develop `bd5e07bc3`), #546 (창고 쓰기 엔드포인트 스코프 부재 — 이번 작업 중 발견, 분리), #542 (하드닝 현황판 W4), `docs/superpowers/specs/2026-07-27-picking-method-strategy-alignment-design.md`
 
 ## 1. 목표
 

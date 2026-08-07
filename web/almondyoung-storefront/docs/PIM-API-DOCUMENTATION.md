@@ -1,5 +1,7 @@
 # PIM (Product Information Management) API 문서
 
+> **커밋 해시 주의(2026-08-07 히스토리 재작성)**: 이 문서가 인용하는 일부 해시는 `refs/pull/*` 에만 남아있던 PR 브랜치 커밋이라 새 대응물이 존재하지 않는다 — 레포 루트 `docs/git-history-rewrite-2026-08-07.md` 참고.
+
 > **작성일:** 2025년 12월 8일  
 > **최신 업데이트 커밋:** `c99531a` - PIM의 Jest 테스트 제거 및 타입 안정화
 

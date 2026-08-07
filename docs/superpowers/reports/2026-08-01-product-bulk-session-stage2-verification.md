@@ -1,7 +1,9 @@
 # Task 11 — 2단계(업로드·검증) 마무리 검증 보고서
 
+> **커밋 해시 주의(2026-08-07 히스토리 재작성)**: 이 문서가 인용하는 일부 해시는 origin 에 올라간 적 없는 로컬 브랜치의 것이라 새 히스토리로 치환되지 않았다. 현재 레포에서 해석되지 않는 것이 정상이며, 백업 번들에서만 조회된다 — 레포 루트 `docs/git-history-rewrite-2026-08-07.md` 참고.
+
 Worktree: `.claude/worktrees/feat+product-bulk-session-stage2`, branch `feat/product-bulk-session-stage2`
-Merge base (develop): `beb85f1fc` — 1단계와 같다
+Merge base (develop): `e34582104` — 1단계와 같다
 1단계 브랜치 tip (= 이 브랜치의 스택 베이스): `aaa8920d3`
 검증 시점 브랜치 head: `3fda1271f` (이 태스크의 첫 커밋 직전). 커밋 후 Part A 의 스위트·게이트를
 **다시 돌려** 같은 결과를 확인했다. 이후 두 번의 픽스 웨이브가 있었다 — (1) Task 11 리뷰
@@ -300,7 +302,7 @@ apps/core/src/modules/catalog/schema/catalog.schema.ts
 두 줄 다 merge base 와 **바이트 동일**하고, 이 브랜치의 hunk 는 전부 append 다:
 
 ```
-$ git diff -U0 beb85f1fc..HEAD -- apps/core/src/modules/catalog/schema/catalog.schema.ts | grep '^@@'
+$ git diff -U0 e34582104..HEAD -- apps/core/src/modules/catalog/schema/catalog.schema.ts | grep '^@@'
 @@ -977,0 +978,92 @@
 @@ -1199,0 +1292,154 @@
 @@ -1235,0 +1482,5 @@
@@ -332,9 +334,9 @@ findings 이 그대로 재현된다: admin-web 파일 6건(루트 config 로 adm
 전 레포 `npx jest` 는 이 레포에서 develop 에서도 red 다(`lint-scope-caveat` 메모리 항목).
 "전체 그린"은 애초에 판정 기준이 아니므로 **차분**으로 봤다.
 
-방법: 스크래치 디렉터리에 `git clone --local` 로 merge base(`beb85f1fc`) 일회용 클론을 만들고
-(그 클론 **안에서만** `git checkout beb85f1fc`, 배정된 워크트리는 건드리지 않았다),
-`package-lock.json` 이 이 브랜치에서 무변경임을 확인한 뒤(`git diff --name-only beb85f1fc..HEAD
+방법: 스크래치 디렉터리에 `git clone --local` 로 merge base(`e34582104`) 일회용 클론을 만들고
+(그 클론 **안에서만** `git checkout e34582104`, 배정된 워크트리는 건드리지 않았다),
+`package-lock.json` 이 이 브랜치에서 무변경임을 확인한 뒤(`git diff --name-only e34582104..HEAD
 -- package.json package-lock.json` → `package.json` 만) 루트 `node_modules` 를 심링크하고,
 **두 트리에서 순차로**(동시 실행하면 타임아웃 flake 가 서로를 오염시킨다) 같은 명령을
 `DATABASE_URL` 을 벗긴 동일 환경에서 돌렸다.

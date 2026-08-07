@@ -997,10 +997,10 @@ npx jest \
   apps/channel-adapter/src/consumers/pim-product-event.consumer.spec.ts \
   apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts
 ```
-Expected: PASS. **예외는 선행 이슈 #550 의 supersede 케이스뿐** — 그건 base 커밋에서도 red 다. 판단이 서지 않으면 base(`6ab21aeef`)에 임시 워크트리를 띄워 같은 명령을 돌리고 차분으로 비교한다:
+Expected: PASS. **예외는 선행 이슈 #550 의 supersede 케이스뿐** — 그건 base 커밋에서도 red 다. 판단이 서지 않으면 base(`66cac358b`)에 임시 워크트리를 띄워 같은 명령을 돌리고 차분으로 비교한다:
 
 ```bash
-git worktree add /tmp/base-check 6ab21aeef && cd /tmp/base-check && npm install
+git worktree add /tmp/base-check 66cac358b && cd /tmp/base-check && npm install
 # 위 jest 명령을 그대로 실행해 red 목록을 비교
 # 끝나면: cd - && git worktree remove /tmp/base-check
 ```
@@ -1016,14 +1016,14 @@ Expected: PASS (2건)
 - [ ] **Step 5: 마이그레이션·환경변수가 정말 0인지 확인**
 
 ```bash
-git diff --stat 6ab21aeef -- '*/drizzle/*' 'apps/*/src/config/env.validation.ts'
+git diff --stat 66cac358b -- '*/drizzle/*' 'apps/*/src/config/env.validation.ts'
 ```
 Expected: 출력 없음 (변경 0)
 
 - [ ] **Step 6: 최종 diff 검토**
 
 ```bash
-git diff 6ab21aeef --stat
+git diff 66cac358b --stat
 ```
 Expected: 15개 파일 — 프로덕션 5 + 테스트 6 + `package.json` + `tsconfig.spec-scope.json` + 문서 2 (스펙·이 계획).
 테스트 6 = 신규 2 (`product-stream-origin.spec.ts`, `inbox-claim-order.integration.spec.ts`) + 수정 4.

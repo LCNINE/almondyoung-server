@@ -11,7 +11,7 @@
 
 WS-C(예약 보강)의 첫 단계. 예약 코어(`UnifiedReservationService.reserveStock`)에 잠금을 넣기(작업 10) 전에, 그 코어를 우회하거나 죽어 있는 진입점·메서드·서비스를 먼저 걷어낸다. 진입점이 적을수록 작업 10의 잠금 설계가 단순해지고, 방어 안 되는 우회로가 남지 않는다.
 
-## 2. 착수 재확인으로 확정한 사실 (2026-07-11, develop @ `0ec29f19e`)
+## 2. 착수 재확인으로 확정한 사실 (2026-07-11, develop @ `8c42e3996`)
 
 - **직행 `POST /inventory/reservations`**: admin-web 호출 0 (admin-web reservations.client 는 by-target·by-sku·summary·`DELETE :id`·expire-stale 만 사용).
 - **`AllocationStrategyService`**: 내부 서비스 호출자 0. `allocateStock`·`getTotalAvailableQuantity`·`getAvailableQuantityByWarehouse` 는 **오직 `reservation.controller` 2개 라우트에서만** 사용. `getAvailableLocations` 호출자 0. `stock-event.service.ts:22` 주입은 본문 미사용(dead 주입).

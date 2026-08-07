@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-30
 - 대상: `apps/core` (catalog/operations/import) + `apps/admin-web` (product-imports 위저드·세션상세)
-- 브랜치: `feat/product-bulk-import-v3` (base `a2cadccd0`)
+- 브랜치: `feat/product-bulk-import-v3` (base `e855a3b4c`)
 - 상태: 설계 확정. 1~4단계 구현 완료(§6)
 - 관련:
   - `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1)
@@ -20,7 +20,7 @@ v2 가 가격·`variantCode`·비동기 잡·이벤트 레인 강등을 해결�
 
 **이벤트 발행량은 이 스펙에서 바뀌지 않는다.** v2 4단계(origin 마커 + inbox 레인 강등)가 배포돼 임포트 게시가 후순위 레인으로 가고 있고, 5단계(inbox 배치 claim)는 별개 이니셔티브로 남는다.
 
-## 2. 현재 상태 실측 (2026-07-30, `a2cadccd0`)
+## 2. 현재 상태 실측 (2026-07-30, `e855a3b4c`)
 
 ### 2.1 등록 가능한 필드
 

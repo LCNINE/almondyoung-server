@@ -1,7 +1,9 @@
 # Task 10 — 마무리 검증 보고서
 
+> **커밋 해시 주의(2026-08-07 히스토리 재작성)**: 이 문서가 인용하는 일부 해시는 origin 에 올라간 적 없는 로컬 브랜치의 것이라 새 히스토리로 치환되지 않았다. 현재 레포에서 해석되지 않는 것이 정상이며, 백업 번들에서만 조회된다 — 레포 루트 `docs/git-history-rewrite-2026-08-07.md` 참고.
+
 Worktree: `.claude/worktrees/feat+product-bulk-session-stage1`, branch `feat/product-bulk-session-stage1`
-Merge base: `beb85f1fc` (develop, 2026-08-01 03:47:09 +0900)
+Merge base: `e34582104` (develop, 2026-08-01 03:47:09 +0900)
 Branch head at time of verification: `fe27ff154`
 Verification run: 2026-08-01, Node v22.23.1
 
@@ -121,7 +123,7 @@ Both admin-web spec files this branch added (`form-export.spec.ts`, `request-gua
 
 ### A.7 — ESLint on every file this branch added or changed under `apps/`
 
-File list derived from `git diff --name-only beb85f1fc..HEAD -- apps/` (42 `.ts`/`.tsx` files: 10 admin-web, 32 core/file-service).
+File list derived from `git diff --name-only e34582104..HEAD -- apps/` (42 `.ts`/`.tsx` files: 10 admin-web, 32 core/file-service).
 
 **core + file-service files, root ESLint config** (the correct config for these paths):
 
@@ -139,8 +141,8 @@ apps/file-service/src/database/default-file-contexts.ts
 ✖ 5 problems (5 errors, 0 warnings)
 ```
 
-Traced both files' flagged lines against `git diff beb85f1fc..HEAD`:
-- `catalog.schema.ts:19` (`import { eq, sql } from 'drizzle-orm'`, `eq` unused) and `:351` (`(table) =>` in an unrelated pre-existing `pgTable` third-arg callback) are **byte-identical between `beb85f1fc` and HEAD** — this branch only appended new table definitions later in the file; it did not touch these lines. Pre-existing debt.
+Traced both files' flagged lines against `git diff e34582104..HEAD`:
+- `catalog.schema.ts:19` (`import { eq, sql } from 'drizzle-orm'`, `eq` unused) and `:351` (`(table) =>` in an unrelated pre-existing `pgTable` third-arg callback) are **byte-identical between `e34582104` and HEAD** — this branch only appended new table definitions later in the file; it did not touch these lines. Pre-existing debt.
 - `default-file-contexts.ts:28,33,34` are inside `normalizeAllowedMimeTypes()` (lines 26–41), also untouched by this branch's diff — the branch only appended one new `FileContextSeed` object literal at line 150. Pre-existing debt.
 
 **admin-web files, root ESLint config** (wrong config for this path — included here only to show why it's wrong): produced 2 more findings — `react-hooks/exhaustive-deps` "rule not found" (root config doesn't register the `eslint-plugin-react-hooks` that the `eslint-disable-next-line` comment references) and one `no-misused-promises` on `onClick={handleDownload}`. Re-run with admin-web's **own** `eslint.config.mjs` (`next/core-web-vitals` + `next/typescript`, the config `npm run lint:admin-web` actually uses):
@@ -156,7 +158,7 @@ $ cd apps/admin-web && npx eslint src/features/.../form-export-modal/index.tsx s
 
 ## Part B — global regression differential
 
-Full `npx jest` across the whole monorepo takes ~5 minutes and is documented repo debt (`lint-scope-caveat.md`), so "all green" was never the bar. To get an honest differential without running `git checkout`/`git switch`/`git worktree` inside this worktree (forbidden by the task), I made a **disposable local clone** of the repo at `beb85f1fc` in the scratchpad directory (`git clone --local`, then `git checkout beb85f1fc` *inside that separate clone only* — the assigned worktree here was never touched), symlinked `node_modules` (root, `apps/admin-web`, `packages/hms-api-wrapper`) from this worktree into it since `package-lock.json` is unchanged on this branch (only `package.json` gained one script line — confirmed via `git diff --name-only beb85f1fc..HEAD -- package.json package-lock.json`), and ran the identical `npx jest` command in both trees, in background, at the same time.
+Full `npx jest` across the whole monorepo takes ~5 minutes and is documented repo debt (`lint-scope-caveat.md`), so "all green" was never the bar. To get an honest differential without running `git checkout`/`git switch`/`git worktree` inside this worktree (forbidden by the task), I made a **disposable local clone** of the repo at `e34582104` in the scratchpad directory (`git clone --local`, then `git checkout e34582104` *inside that separate clone only* — the assigned worktree here was never touched), symlinked `node_modules` (root, `apps/admin-web`, `packages/hms-api-wrapper`) from this worktree into it since `package-lock.json` is unchanged on this branch (only `package.json` gained one script line — confirmed via `git diff --name-only e34582104..HEAD -- package.json package-lock.json`), and ran the identical `npx jest` command in both trees, in background, at the same time.
 
 ```
 HEAD:     Test Suites: 42 failed, 65 skipped, 321 passed, 363 of 428 total   (301s)

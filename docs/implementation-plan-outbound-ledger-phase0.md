@@ -11,7 +11,7 @@
 
 ## 검증 결과 (2026-06-29, 착수 전 코드 대조)
 
-아래 전제를 실제 코드와 대조해 확정했다 (file:line 은 develop@`2a1d13bb8` 머지 기준):
+아래 전제를 실제 코드와 대조해 확정했다 (file:line 은 develop@`9dd2cc5a6` 머지 기준):
 
 - `InventoryCommandService.ship()` (`inventory/core/services/inventory-command.service.ts:108–191`) 는 SHIP 이벤트 append(`transitionType:'SHIP'`, `fromState:'ON_HAND'`) + `stock_ledgers` ON_HAND 차감 + `StockShipped` outbox 를 모두 한다. **호출처 0건 (dead).** 멱등은 `idempotencyKey` + `stock-event.store.ts:72` `onConflictDoNothing(unique)`.
 - 버그 경로: `FulfillmentsService.ship()` (`fulfillments.service.ts:1230`) 가 `handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx)` 호출 → `reservation-lifecycle.service.ts:38–39,79–108` `releaseFulfillmentOrderReservations()` → `releaseReservation()` (status='released'만, on_hand 무접근). **FOI.shippedQty 는 `:1221` 에서 `:1230` 이전에 세팅** → consume 가 읽을 때 이미 채워져 있음(순서 안전).

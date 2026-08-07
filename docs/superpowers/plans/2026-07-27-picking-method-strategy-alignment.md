@@ -10,7 +10,7 @@
 
 **스펙:** `docs/superpowers/specs/2026-07-27-picking-method-strategy-alignment-design.md`
 **이슈:** #543
-**브랜치:** `docs/picking-method-strategy-alignment` (base `611f104e0`)
+**브랜치:** `docs/picking-method-strategy-alignment` (base `4a5d0eca7`)
 
 ## Global Constraints
 

@@ -7,7 +7,7 @@
 
 작업 11(좀비 예약 대사)에서 발견: drop_ship FO의 불변식은 **"타사 재고라 자사 `confirmed` 예약을 갖지 않는다"** 인데, 그 불변식을 **생성 시점에 강제하는 가드가 없다**. `ship()`(`fulfillments.service.ts:908-917`)·`markDelivered()`(`:971-980`)가 terminal 도달 시 방어 sweep(`releaseLeftoverReservations`)으로 잔존 예약을 release 하고 warn 을 남기지만, 이는 **사후 청소**일 뿐이다. 생성 경로가 뚫려 있어 operator 가 그 sweep-warn 경로에 **도달 가능**하다.
 
-## 2. 착수 재확인으로 확정한 사실 (2026-07-12, develop @ `2bf6c705f`)
+## 2. 착수 재확인으로 확정한 사실 (2026-07-12, develop @ `3ae7a1bfb`)
 
 ### 2.1 서버 — 예약 생성 경로 3종에 drop_ship 가드 부재
 - **`FulfillmentReservationsFacade.reserve`**(`fulfillment-reservations.facade.ts:33`) — FO 잠금 후 terminal/warehouseId 만 검사하고 `fulfillmentMode` 는 보지 않음. drop_ship FO 에 `confirmed` 예약을 그대로 생성.

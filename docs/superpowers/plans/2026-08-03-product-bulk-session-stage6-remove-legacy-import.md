@@ -111,7 +111,7 @@
 
 - [ ] **Step 2: 낡은 의존성 개수 주석을 정정한다**
 
-`bulk-session.module.spec.ts:110-111` 의 주석은 2단계(`9d0cd7739`)에 쓰였을 때는 사실이었지만, `BulkSessionManager` 생성자는 5단계 이후 `db, fileClient, reader, versions, masters` **5개**다.
+`bulk-session.module.spec.ts:110-111` 의 주석은 2단계(`bbeef8443`)에 쓰였을 때는 사실이었지만, `BulkSessionManager` 생성자는 5단계 이후 `db, fileClient, reader, versions, masters` **5개**다.
 
 찾을 것:
 

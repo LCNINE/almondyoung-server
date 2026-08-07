@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-26
 - 대상: `native/warehouse-app` + `apps/core` (fulfillment)
-- 브랜치: `docs/warehouse-app-phase3-outbound` (base `ec107e7e4`)
+- 브랜치: `docs/warehouse-app-phase3-outbound` (base `0e06eb42b`)
 - 상태: 설계 승인됨 (구현 전) — 브레인스토밍 산출물
 - 상위 문서: `docs/superpowers/specs/2026-07-20-warehouse-native-app-design.md` (마스터 §11 Phase 3), `docs/superpowers/specs/2026-07-22-warehouse-app-page-structure-design.md` (IA 스켈레톤)
 - 관련: `docs/adr/0027-outbound-shipment-consumes-stock-ledger.md`, `docs/logistics-backend-hardening-2026-07.md` (W4)

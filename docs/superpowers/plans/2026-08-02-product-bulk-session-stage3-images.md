@@ -25,7 +25,7 @@
 - **마이그레이션 0건이다**(스펙 §7). 이 단계에서 `catalog.schema.ts` 를 고치는 일이 생기면 그건 설계가 어긋났다는 신호다 — 멈추고 보고한다.
 - 검증 게이트: `npm run type-check:scoped` exit 0, 변경 파일 기준 신규 lint error 0. **전역 `npx jest`·전역 `tsc`·`nest build core` 는 develop 에서도 red 이므로 "전체 그린"으로 판정하지 않는다** — 변경 파일 차분으로만 본다.
 - 통합 테스트는 **scratch DB**(`bulk_stage3_scratch`)에 대고 돈다. `dev_core` 에 마이그레이션을 돌리거나 행을 남기지 않는다.
-- 브랜치는 `feat/product-bulk-session-stage3` 이고 `develop`(9d0cd7739 = 2단계 머지본) 위에 바로 서 있다. 스택이 아니다 — rebase 걱정이 없다.
+- 브랜치는 `feat/product-bulk-session-stage3` 이고 `develop`(bbeef8443 = 2단계 머지본) 위에 바로 서 있다. 스택이 아니다 — rebase 걱정이 없다.
 
 ---
 

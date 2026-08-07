@@ -1,7 +1,7 @@
 # sku_barcodes.packing_unit 타입 교정 (varchar → integer)
 
 - 작성일: 2026-07-25
-- 브랜치: `fix/packing-unit-integer` (base `origin/develop` @ `c64d65e63`)
+- 브랜치: `fix/packing-unit-integer` (base `origin/develop` @ `a3584a157`)
 - 관련: PR #540 (Phase 2 입고/검수, 머지됨), ADR-0005
 
 ## 배경

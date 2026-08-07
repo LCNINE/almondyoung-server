@@ -19,7 +19,7 @@
 - **admin-web 무변경**.
 - 삭제 심볼(`InventoryCommandService.reverseEvent`) **저장소 전역 참조 0**.
 - 통합 spec 은 dev DB 부재로 **⏸(SKIP)** — `describeIfDb` 가드. build/jest 가 `isolatedModules` 라 spec 을 타입체크 안 하므로, deferred spec 은 별도 `tsc`(isolatedModules off)로 타입체크(작업 10 발견).
-- 브랜치 `feat/reverse-event-lock-and-guard` (이미 생성됨, 스펙 커밋 `4440228ed`).
+- 브랜치 `feat/reverse-event-lock-and-guard` (이미 생성됨, 스펙 커밋 `2c87e00f6`).
 
 **공용 검증 커맨드:**
 ```bash

@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-14
 - 상태: **Accepted — 구현 계획 작성 기준선**
-- 코드 감사 기준: `de7c443a3bf3`
+- 코드 감사 기준: `d1895baf5eea`
 - 제품 결정 SoT: [`outbound-consolidation-split-backorder-decision-record.md`](../../outbound-consolidation-split-backorder-decision-record.md)
 - 기존 원장 결정: [`adr/0027-outbound-shipment-consumes-stock-ledger.md`](../../adr/0027-outbound-shipment-consumes-stock-ledger.md)
 - 목적: 제품·도메인 결정을 현재 Core 코드와 스키마에 투영하고, 구현 전에 고정해야 할 기술 구조·호환 전략·단계 경계를 정한다.

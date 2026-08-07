@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-28
 - 대상: `apps/core` (catalog/operations/import, catalog/core/products) + `apps/channel-adapter` (medusa inbox worker) + `apps/admin-web`
-- 브랜치: `feat/product-bulk-import-v2` (base `46bf66ebe`)
+- 브랜치: `feat/product-bulk-import-v2` (base `3073756ce`)
 - 상태: 0~3 단계 develop 머지 + live 배포 완료 (임포트 워커 가동 중). 4 단계 설계 확정 (§4.4.1~4.4.5), 5 단계는 계획 미착수
 - 선행 이슈: #550 (`InboxWorkerService` supersede 단위테스트가 red — 배치 claim 착수 전 정리 필요)
 - 관련: `docs/superpowers/specs/2026-07-10-product-bulk-import-redesign-design.md` (v1), `docs/adr/0019-core-catalog-medusa-product-projection-events.md` (bulk edit 을 부채로 남긴 ADR), `docs/runbooks/selmate-stock-pipeline.md` §"반영이 늦을 때" (inbox 처리량 실측)
@@ -363,7 +363,7 @@ ORDER BY (
 
 ## 9. 2 단계 리뷰 지적 13건의 처리 순서
 
-2 단계(`eb126fa38`) 머지 후 제기된 지적 13건은 성격이 갈린다. "3·4·5 단계를 먼저 끝내고 일괄 수정" 은 ① 무리에 대해서만 옳다.
+2 단계(`68175bdca`) 머지 후 제기된 지적 13건은 성격이 갈린다. "3·4·5 단계를 먼저 끝내고 일괄 수정" 은 ① 무리에 대해서만 옳다.
 
 **① 3~5 단계가 그 코드를 다시 쓰는 것 — 해당 단계에 흡수한다 (별도 패스 없음)**
 

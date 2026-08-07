@@ -2,7 +2,7 @@
 
 - 날짜: 2026-07-27
 - 대상: `apps/core` (fulfillment, inventory schema) + `apps/admin-web`
-- 브랜치: `docs/picking-method-strategy-alignment` (base `611f104e0`)
+- 브랜치: `docs/picking-method-strategy-alignment` (base `4a5d0eca7`)
 - 상태: 설계 승인됨 (구현 전) — 브레인스토밍 산출물
 - 해결 이슈: #543 (배치 `pickingMethod` ↔ 피킹 전략 정합성 공백)
 - 관련: #542 (하드닝 현황판 W4 정정 — 이 작업 후 갱신), `docs/superpowers/specs/2026-07-26-warehouse-app-phase3-outbound-design.md` §3.5 (발견 지점), `docs/adr/0005-drizzle-migration-and-autodeploy.md` (마이그레이션 순서)

@@ -19,7 +19,7 @@
 - **마이그레이션 0건.** 이 작업은 스키마를 건드리지 않는다. `npm run db:generate:*` 를 부르지 말 것.
 - **통합 스펙은 `DATABASE_URL` 이 없으면 조용히 초록이다** (`describeIfDb`). 반드시 `DATABASE_URL` 을 주고 돌린다.
 - **커밋 메시지 마지막 줄**: `Claude-Session: https://claude.ai/code/session_01FDMZrnfMy6iZt1bt9puriD`
-- **브랜치**: `feat/warehouse-app-putaway-queue` (이미 생성됨, `origin/develop` `71166cd12` 기반)
+- **브랜치**: `feat/warehouse-app-putaway-queue` (이미 생성됨, `origin/develop` `4a9888c19` 기반)
 - **검증 스코프**: `npm run lint` 는 repo 상시 debt 가 있다. 변경한 파일에 신규 error 가 없는지만 본다.
 
 ---

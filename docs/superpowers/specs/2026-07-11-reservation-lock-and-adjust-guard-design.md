@@ -15,7 +15,7 @@ WS-C(예약 보강)의 코어. 작업 9 가 예약 진입점 표면을 축소(�
 
 P1-4 와 P1-5 를 **한 세트**로 묶는 이유: 둘 다 이 불변식을 깨며, **같은 `(sku, warehouse)` 잠금을 공유**해야 직렬화된다. P1-4 는 reserve↔reserve 레이스, P1-5 는 adjustDown↔reserve 레이스 — 셋(reserve·adjustDown·transferShip)이 같은 락을 잡아야 서로 못 끼어든다.
 
-## 2. 착수 재확인으로 확정한 사실 (2026-07-11, develop @ `d3412b882`)
+## 2. 착수 재확인으로 확정한 사실 (2026-07-11, develop @ `46c201953`)
 
 - **작업 9 머지 확인**: `AllocationStrategyService`·`adjustReservationOnQuantityChange`·`handleMovementTaskStatusChange`·`ReserveStockDto`(컨트롤러)·`ReservationTargetType` 전역 참조 0 → squash 머지 완료. 직행 예약 라우트 부재 재확인.
 - **P1-4 재현**: `reserveStock`(`unified-reservation.service.ts:56-87`)은 `getAvailableStock`(`:215`, ON_HAND 원장 합 − confirmed 예약 합) 읽고 → `INSERT` 까지 **락 전무**. READ COMMITTED 라 두 tx 무충돌 커밋 = 초과예약.

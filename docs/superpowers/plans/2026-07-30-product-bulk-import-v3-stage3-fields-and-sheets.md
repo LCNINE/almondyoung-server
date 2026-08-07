@@ -8,7 +8,7 @@
 
 **Tech Stack:** NestJS, Drizzle ORM(postgres.js), ExcelJS, Jest, Next.js(admin-web), Zod/class-validator
 
-**베이스:** `develop` @ `1627bce6d` (v3 1·2단계 모두 머지됨 — 2단계 `8958107d0`, 1단계 마이그레이션 `20260729181026`)
+**베이스:** `develop` @ `6d6d9897b` (v3 1·2단계 모두 머지됨 — 2단계 `3891b8882`, 1단계 마이그레이션 `20260729181026`)
 **브랜치/워크트리:** `feat/product-bulk-import-v3-fields` @ `.claude/worktrees/feat+product-bulk-import-v3-fields`
 **스펙:** `docs/superpowers/specs/2026-07-30-product-bulk-import-v3-fields-and-images-design.md` §3.1 · §6 3단계
 

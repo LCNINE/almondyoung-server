@@ -24,7 +24,7 @@
 - **마이그레이션은 정확히 1건이다** — `product_master_versions.bulk_session_id` 컬럼 + 인덱스. 그 밖에 `catalog.schema.ts` 를 고칠 일이 생기면 설계가 어긋난 신호다(enum 값은 이미 전부 있다 — F1 참조). 멈추고 보고한다.
 - 검증 게이트: `npm run type-check:scoped` exit 0, 변경 파일 기준 신규 lint error 0. **전역 `npx jest`·전역 `tsc`·`nest build core` 는 develop 에서도 red 이므로 "전체 그린"으로 판정하지 않는다** — 변경 파일 차분으로만 본다.
 - 통합 테스트는 **scratch DB**(`bulk_stage4_scratch`)에 대고 돈다. `dev_core` 에 마이그레이션을 돌리거나 행을 남기지 않는다.
-- 브랜치는 `feat/product-bulk-session-stage4`, 워크트리는 `.claude/worktrees/feat+product-bulk-session-stage4`, `develop`(`e809e3207` = 3단계 머지본) 바로 위다. 스택이 아니다.
+- 브랜치는 `feat/product-bulk-session-stage4`, 워크트리는 `.claude/worktrees/feat+product-bulk-session-stage4`, `develop`(`074162269` = 3단계 머지본) 바로 위다. 스택이 아니다.
 
 ---
 

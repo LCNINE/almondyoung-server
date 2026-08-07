@@ -8,7 +8,7 @@
 
 **Tech Stack:** NestJS, Drizzle ORM(postgres.js), ExcelJS, Node 22 전역 `fetch`/`FormData`/`Blob`/`AbortSignal.timeout`, `dns/promises`, jsonwebtoken(HS256), Jest, Next.js(admin-web)
 
-**베이스:** `develop` @ `c6b9c0af6` (v3 1·2·3단계 전부 머지됨 — 3단계 `c6b9c0af6`, 1단계 마이그레이션 `20260729181026`)
+**베이스:** `develop` @ `5d29514e8` (v3 1·2·3단계 전부 머지됨 — 3단계 `5d29514e8`, 1단계 마이그레이션 `20260729181026`)
 **브랜치/워크트리:** `feat/product-bulk-import-v3-images` @ `.claude/worktrees/feat+product-bulk-import-v3-images`
 **스펙:** `docs/superpowers/specs/2026-07-30-product-bulk-import-v3-fields-and-images-design.md` §3.1~§3.5 · §6 4단계
 

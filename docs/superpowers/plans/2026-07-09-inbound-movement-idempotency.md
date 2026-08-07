@@ -815,7 +815,7 @@ Expected: 전부 GREEN (arch test `inventory-write-boundary.arch.spec.ts` 포함
 `docs/logistics-backend-hardening-2026-07.md`:
 - P2-4 행(:68) 상태 `⬜` → `🟩`, 결함 설명 끝에 완료 요약 1문장 추가: `**완료(작업3): 전용 idempotency 테이블+래퍼로 9개 경로 요청 멱등화, 이벤트 파생 키 병행, admin-web 키 수명주기 래퍼**`.
 - §5 WS-A 블록(:141)의 "WS-A 잔여(미착수): P0-4, P2-2, P2-4" → `P0-4, P2-2`로 수정하고, 작업 1·2 블록과 같은 형식으로 **작업 3 완료 블록** 추가 (브랜치명·tip 해시·스펙/계획 경로·⏸ 통합 스펙 dev DB 대기 명기).
-- 작업 2 블록(:138)의 "develop 미머지, 머지 후 해시 기입" → `develop 스쿼시 머지 \`ae5f979c0\` (2026-07-09)`로 정정.
+- 작업 2 블록(:138)의 "develop 미머지, 머지 후 해시 기입" → `develop 스쿼시 머지 \`9f2c599b2\` (2026-07-09)`로 정정.
 
 - [ ] **Step 5: 커밋**
 

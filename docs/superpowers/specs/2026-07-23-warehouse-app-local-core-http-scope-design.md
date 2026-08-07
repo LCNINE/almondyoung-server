@@ -10,7 +10,7 @@
 
 ## 1. 배경
 
-`dev_core` 시드 작업(위 스펙, develop 에 squash `650436d4e` 로 머지됨)이 §8 에서 warehouse-app 을
+`dev_core` 시드 작업(위 스펙, develop 에 squash `4e5e67929` 로 머지됨)이 §8 에서 warehouse-app 을
 로컬 core 로 전환했다. 실제로 반영된 것은 둘이다.
 
 - `native/warehouse-app/.env.local.example` 의 `VITE_API_BASE_URL` 기본값 → `http://localhost:3100`

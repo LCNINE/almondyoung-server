@@ -9,7 +9,7 @@
 
 **PR A · 배포 · 운영자 정리 · PR B 코드까지 끝났다 (2026-07-16 세션 3). 남은 것은 PR B 의 운영자 배포(`deploy → migrate`) 뿐이다.**
 
-> **PR B 코드 완료 (세션 3, 커밋 `6e97f8525`·`bfe519c25`·`089095cba`·`4a79d6794` 등).** 스코프는 아래
+> **PR B 코드 완료 (세션 3, 커밋 `c0bf43079`·`8b38447e3`·`1cd58b07b`·`11f596dd4` 등).** 스코프는 아래
 > "PR B 확정 스코프" 블록 참조. 핵심 결과:
 > - **facade 예약 transfer 은퇴** → `shipmentLineId` NOT NULL 가능(마지막 null 생성자 제거).
 > - **스키마 contract**: `fulfillment_status` 11값·`invoice_method` 'direct'·`shipment_status` 'open' 드롭,
@@ -139,7 +139,7 @@ expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포�
 
 **후속 결정 필요**: Goodsflow 를 코드에서 제거할지, enum·기존 행은 두고 신규 발행만 한진으로 돌릴지. 전자는 `invoice_method` enum 값 제거라 destructive — Task 25 로 미루는 게 자연스럽다(아래 "실측 결과" 참조).
 
-**Task 24 중 완료된 것**: expand 배포 배선. `FULFILLMENT_WORKFLOW_MODE` 가 배포 매니페스트에 없어서 이 브랜치를 배포하면 Core 가 부팅 실패했다(production 에서 필수 — `env.validation.ts:71`, 배포는 `NODE_ENV=production`). `deployments/lcnine/services/infra/services.ts` 의 Core `environment` 에 `legacy` 를 배선했고, 런북에 빠져 있던 expand 배포 절차와 증거표를 추가했다. 커밋 `85d37a4f3`.
+**Task 24 중 완료된 것**: expand 배포 배선. `FULFILLMENT_WORKFLOW_MODE` 가 배포 매니페스트에 없어서 이 브랜치를 배포하면 Core 가 부팅 실패했다(production 에서 필수 — `env.validation.ts:71`, 배포는 `NODE_ENV=production`). `deployments/lcnine/services/infra/services.ts` 의 Core `environment` 에 `legacy` 를 배선했고, 런북에 빠져 있던 expand 배포 절차와 증거표를 추가했다. 커밋 `f7bfe9e3f`.
 
 **expand 배포는 `migrate → deploy` 순서다** (contract 와 반대). ADR-0005 §5 의 `deploy → migrate` 는 contract 전용이고, expand 를 지키는 "additive 만" 컨벤션은 *새 schema 가 옛 코드를 안 깨는 것*만 보장한다. 반대 방향은 보장하지 않는데, 이 릴리스는 outbox 에 `topic`/`idempotency_key` 를 가르치고 outbox 는 V1 경로도 탄다.
 
@@ -149,7 +149,7 @@ expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포�
 - **Task 23**: 전 항목 완료. 잔여 5건(체크박스 4개)은 모두 *테스트가 초록인데 자기가 검증한다고 주장하는 것을 실제로는 검증하지 않는* 유형이었고 — 항등식 단언, 배포 설정 대신 테스트 자신의 복사본 검증, 3행만 해싱, 이름이 증명 범위를 초과 — 고친 뒤 **각각 가드를 일부러 부숴 red 를 확인하고 되돌리는 방식으로** 검증했다. 이 규율이 없으면 같은 함정에 다시 빠진다. 실제로 이 과정에서 사보타주 자체가 no-op 이거나(이미 0인 값에 `qty > 0` 조건) 엉뚱한 메서드에 주입돼 "초록"이 나온 사례가 두 번 있었다 — 사보타주가 red 를 만드는지부터 확인해야 증명이 성립한다.
 - **Release gate checklist**: 전부 미체크다. 로컬 스위트 통과는 첫 항목의 필요조건일 뿐이고, 나머지는 실환경 커토버(Task 24) 없이는 채울 수 없다.
 
-**Task 23 리뷰에서 발견돼 고친 것** (커밋 `85dc008bb`, `b24fe78bd`):
+**Task 23 리뷰에서 발견돼 고친 것** (커밋 `2235be57f`, `a752be54f`):
 
 - recall 의 데드락 수정이 short-pick 에 적용되지 않아 recall↔short-pick / short-pick↔short-pick 데드락이 남아 있었다. `shipment_operation_members.shipment_id` FK 가 KEY SHARE 를 잡는다는 사실이 누락된 결과다.
 - migration rehearsal 의 watermark 검증이 `isNewSalesOrder: false` 로 단락돼, cutover 비교 로직을 지워도 통과하는 상태였다. Task 24 의 "replay an older event and prove it cannot enqueue FO" 게이트가 이 테스트에 걸려 있었다.
@@ -180,7 +180,7 @@ expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포�
 
 **Tech Stack:** NestJS, TypeScript, Drizzle ORM/PostgreSQL, Kafka typed streams/outbox, Jest, Next.js admin-web, Yarn workspace.
 
-**Source of Truth:** `docs/superpowers/specs/2026-07-14-outbound-consolidation-split-backorder-technical-design.md`. 코드 감사 기준은 `de7c443a3`이며, 구현 중 설계 의미를 바꿔야 하는 발견이 나오면 코드부터 바꾸지 말고 스펙/결정 기록을 먼저 갱신한다.
+**Source of Truth:** `docs/superpowers/specs/2026-07-14-outbound-consolidation-split-backorder-technical-design.md`. 코드 감사 기준은 `d1895baf5`이며, 구현 중 설계 의미를 바꿔야 하는 발견이 나오면 코드부터 바꾸지 말고 스펙/결정 기록을 먼저 갱신한다.
 
 ## 구현 경계
 
@@ -978,7 +978,7 @@ session handed-in
 
 #### 제거 범위 실측 (2026-07-16)
 
-아래 체크리스트가 적어둔 제거 목록은 **실제 사장 범위를 과소평가한다**. 코드에서 실측한 결과를 먼저 싣는다. 최초 기록은 `5d6ebee94` 시점 기준이었고, **PR A 배포 직전(2026-07-16 세션 3)에 재실측해 아래에 반영했다** — 그 과정에서 최초 표의 오류 1건이 드러났다(`shipped`). 착수 시 다시 재실측할 것.
+아래 체크리스트가 적어둔 제거 목록은 **실제 사장 범위를 과소평가한다**. 코드에서 실측한 결과를 먼저 싣는다. 최초 기록은 `9ec9cc4a5` 시점 기준이었고, **PR A 배포 직전(2026-07-16 세션 3)에 재실측해 아래에 반영했다** — 그 과정에서 최초 표의 오류 1건이 드러났다(`shipped`). 착수 시 다시 재실측할 것.
 
 **enum 값이 컬럼보다 크다.** `fulfillment_status` 는 20개 값인데 V2 progress calculator(`fulfillment-progress.service.ts`)가 내는 것은 **8개**뿐이다: `created, partially_reserved, ready, processing, partially_shipped, completed, canceled, recovery_required`.
 
@@ -1149,7 +1149,7 @@ V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰�
 - [ ] Remove old FO status writes (`picked/invoiced` — **`shipped` 는 제외**: drop_ship `ship()` 이 살아있는 producer 다, "제거 범위 실측" 절의 2026-07-16 정정 참조), lazy shipment open-box creation, FIFO-at-dispatch consumption and V1 in-house dispatch paths.
 - [ ] Keep v1 fulfillment event contracts/projections only for explicitly documented full-completion consumers. Remove them only in a separately approved contract version.
 - [x] Remove expand compatibility fallback from outbox topic routing and fail any topicless new write.
-      - **PR A 에서 완료 (2026-07-16, `a78e1d8d6`).** 호출부는 실측 13곳(목록의 12곳 + `inventory-command.service.ts` ship 비배치 갈래)이었고 전부 명시 topic+idempotencyKey 로 전환(폴백 목적지 보존). 두 outbox 서비스의 topicless union 갈래 제거로 새 topicless write 는 컴파일 실패(사보타주 확인). dispatcher 폴백은 fail-closed throw 로 대체하고 명시 분기를 5개 스트림으로 확장 — `inventory.events.v1`/`core.orders.events.v1` 명시 topic 이 "Unknown explicit topic" 으로 죽던 잠재 버그도 함께 해소. published 삭제와 `topic` NOT NULL(PR B)의 선행 조건 충족.
+      - **PR A 에서 완료 (2026-07-16, `aedd08647`).** 호출부는 실측 13곳(목록의 12곳 + `inventory-command.service.ts` ship 비배치 갈래)이었고 전부 명시 topic+idempotencyKey 로 전환(폴백 목적지 보존). 두 outbox 서비스의 topicless union 갈래 제거로 새 topicless write 는 컴파일 실패(사보타주 확인). dispatcher 폴백은 fail-closed throw 로 대체하고 명시 분기를 5개 스트림으로 확장 — `inventory.events.v1`/`core.orders.events.v1` 명시 topic 이 "Unknown explicit topic" 으로 죽던 잠재 버그도 함께 해소. published 삭제와 `topic` NOT NULL(PR B)의 선행 조건 충족.
 - [ ] Generate/review migration and run it against the rehearsal snapshot plus populated V2 fixtures. Verify downgrade is intentionally unsupported after V2 data; recovery uses forward repair.
 - [ ] Run `rg` gates for every removed column/status/service, full Core/channel/admin builds, all V2 integration tests and schema reconciliation.
 - [ ] Commit: `refactor(fulfillment): remove legacy FO outbound contract`.
