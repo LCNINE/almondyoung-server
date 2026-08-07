@@ -106,6 +106,20 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @Post(':id/finalize-approval')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Finalize a staged PG approval after the order was created (API-key, Medusa 전용)',
+    description:
+      '지연 승인(deferred approval) 모드 intent 의 적재된 승인 파라미터로 실제 PG 승인을 수행한다. ' +
+      '주문 생성 + 재고예약이 끝난 뒤에만 호출되므로, 이 호출 전에 워크플로가 실패하면 고객 돈은 움직이지 않는다.',
+  })
+  async finalizeApproval(@Param('id') id: string): Promise<PaymentIntentResponseDto> {
+    await this.service.finalizeDeferredApproval(id);
+    const updated = await this.service.findByIdOrThrow(id);
+    return this.toResponse(updated);
+  }
+
   @Post(':id/capture')
   @HttpCode(200)
   @ApiOperation({ summary: 'Capture an authorized payment intent (API-key authenticated, merchant backend)' })

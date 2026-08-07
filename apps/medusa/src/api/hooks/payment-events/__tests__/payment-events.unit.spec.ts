@@ -327,6 +327,27 @@ describe('handleAwaitingDepositProjection', () => {
 });
 
 describe('handleCaptureProjection', () => {
+  it('카트는 완료됐는데 payment 행이 아직 없으면 throw 해서 재배달로 재시도한다', async () => {
+    // 지연 승인: 승인 직후(=워크플로가 payment 를 만들기 직전) 캡처 이벤트가 도착하는 창.
+    // 여기서 조용히 넘기면 captured_at 투영이 영영 유실된다.
+    const graph: GraphFn = async ({ entity }) => {
+      if (entity === 'payment_collection')
+        return { data: [{ id: 'pc_1', cart: { id: 'cart_1', completed_at: '2026-07-31T00:00:00Z' } }] };
+      return { data: [] };
+    };
+    const { scope } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+        listPayments: jest.fn().mockResolvedValue([]),
+      },
+      graph,
+    });
+
+    await expect(
+      handleCaptureProjection(scope as any, 'intent_inflight', 'msg_inflight', logger as any),
+    ).rejects.toThrow(/no payment row yet/);
+  });
+
   it('session 자체가 없으면 무통장 복구를 시도하지 않고 skip 한다', async () => {
     const { scope } = makeScope({
       paymentModule: { listPaymentSessions: jest.fn().mockResolvedValue([]) },

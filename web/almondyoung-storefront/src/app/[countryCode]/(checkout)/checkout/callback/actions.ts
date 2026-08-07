@@ -278,6 +278,35 @@ async function removePurchasedItemsFromSourceCart(
   }
 }
 
+interface IntentCompletionResult {
+  type: "order" | "error"
+  order_id?: string
+  cart_id?: string
+  error?: { message?: string; name?: string; type?: string }
+}
+
+/**
+ * checkout cart 를 특정하지 못했을 때의 서버사이드 완료 경로.
+ * Medusa 가 intent 로 카트를 역추적해 completeCartWorkflow 를 돌린다(이미 주문이 있으면 그대로 반환).
+ */
+async function completeCartByIntent(
+  intentId: string
+): Promise<IntentCompletionResult | null> {
+  try {
+    const headers = { ...(await getAuthHeaders()) }
+    return await sdk.client.fetch<IntentCompletionResult>(
+      `/store/payment-intents/${intentId}/complete`,
+      { method: "POST", headers }
+    )
+  } catch (err) {
+    logger.error("storefront.checkout.intent_complete.request_failed", {
+      error: err,
+      attributes: { intent_id: intentId },
+    })
+    return null
+  }
+}
+
 export async function processPaymentCallback(
   countryCode: string,
   intentId: string,
@@ -433,8 +462,11 @@ export async function processPaymentCallback(
       }
     }
 
-    // targetCartId(=cartId) 식별 실패 — 위 if 블록을 타지 않은 경우. 주문은 서버측 capture 웹훅이
-    // 생성하므로 쿠키를 건드리지 않고 성공 페이지로 보낸다(빈 장바구니 방지).
+    // targetCartId(=cartId) 식별 실패 — sessionStorage 매핑 유실 등. 이 경우 Medusa 가
+    // intent → payment_session → cart 로 결제 대상 카트를 서버사이드에서 찾아 주문을 완료한다.
+    // (지연 승인에서는 카트를 완료해야 비로소 PG 승인이 일어나므로, 아무도 완료하지 않으면
+    //  결제도 주문도 성립하지 않는다 — 예전처럼 capture 웹훅에 맡길 수 없다.)
+    // 쿠키는 건드리지 않는다(어느 카트인지 모르므로 빈 장바구니 사고 방지).
     logger.info("storefront.checkout.payment_callback.no_checkout_cart_mapping", {
       attributes: {
         country_code: countryCode,
@@ -442,9 +474,28 @@ export async function processPaymentCallback(
         mode: mode ?? null,
       },
     })
+
+    const completion = await completeCartByIntent(intentId)
+    if (completion?.type === "order") {
+      revalidateTag(await getCacheTag("orders"))
+      return {
+        success: true,
+        redirectUrl: `/${countryCode}/checkout/success/${intentId}?orderId=${completion.order_id}`,
+      }
+    }
+
+    const fallbackError =
+      completion?.error?.message ?? "주문 처리에 실패했습니다."
+    logger.warn("storefront.checkout.payment_callback.intent_complete_failed", {
+      attributes: {
+        intent_id: intentId,
+        result_type: completion?.type ?? null,
+        error_message: fallbackError,
+      },
+    })
     return {
-      success: true,
-      redirectUrl: `/${countryCode}/checkout/success/${intentId}`,
+      success: false,
+      redirectUrl: `/${countryCode}/checkout/fail?code=ORDER_FAILED&message=${encodeURIComponent(fallbackError)}`,
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류"

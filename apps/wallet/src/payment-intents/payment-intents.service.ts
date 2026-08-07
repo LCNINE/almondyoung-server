@@ -25,6 +25,7 @@ import { CaptureService } from './capture.service';
 import { CancelService } from './cancel.service';
 import { AbandonService } from './abandon.service';
 import { TossApproveService } from './toss-approve.service';
+import { DeferredApprovalService } from './deferred-approval.service';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
@@ -52,6 +53,7 @@ export class PaymentIntentsService {
     private readonly cancelService: CancelService,
     private readonly abandonService: AbandonService,
     private readonly tossApproveService: TossApproveService,
+    private readonly deferredApprovalService: DeferredApprovalService,
   ) {}
 
   async create(dto: CreatePaymentIntentDto): Promise<typeof paymentIntents.$inferSelect> {
@@ -302,6 +304,15 @@ export class PaymentIntentsService {
     await this.findByIdOrThrow(intentId);
     const correlationId = `toss-approve:${intentId}:${Date.now()}`;
     await this.tossApproveService.approve(intentId, dto.paymentKey, dto.orderId, dto.amount, correlationId);
+  }
+
+  /**
+   * 지연 승인 확정 — Medusa 가 주문 생성 + 재고예약을 성공시킨 뒤에만 호출한다.
+   * 여기서 비로소 PG 승인(실제 출금)이 일어난다.
+   */
+  async finalizeDeferredApproval(intentId: string): Promise<{ status: string }> {
+    const correlationId = `finalize-approval:${intentId}:${Date.now()}`;
+    return this.deferredApprovalService.finalize(intentId, correlationId);
   }
 
   async capture(intentId: string): Promise<void> {

@@ -13,7 +13,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 // 이면 비정상(직접 호출 / 레이스)이므로 거부해도 정상 흐름에 영향이 없다(주문은 웹훅이 만든다).
 // 카드 intent 는 AWAITING_DEPOSIT 이 아니므로 항상 통과한다.
 
-const AWAITING_DEPOSIT_STATUS = 'AWAITING_DEPOSIT';
+export const AWAITING_DEPOSIT_STATUS = 'AWAITING_DEPOSIT';
 
 type MwLogger = { warn: (msg: string) => void; error: (msg: string) => void };
 
@@ -28,7 +28,7 @@ type MwLogger = { warn: (msg: string) => void; error: (msg: string) => void };
  * env 누락 시 fail-CLOSED 로 막으면 카드 포함 모든 cart.complete 가 중단되는 전면 장애가 되므로,
  * 여기서는 fail-open 을 유지하되 loud 로깅으로 관측 가능하게 한다.
  */
-async function fetchIntentStatus(intentId: string, logger: MwLogger): Promise<string | null> {
+export async function fetchIntentStatus(intentId: string, logger: MwLogger): Promise<string | null> {
   const base = process.env.WALLET_BASE_URL;
   const key = process.env.WALLET_API_KEY;
   if (!base || !key) {

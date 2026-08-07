@@ -29,14 +29,12 @@ export function extractUnavailableVariantIds(error: unknown): string[] {
   return Array.from(new Set(ids))
 }
 
-/**
- * variant 가 재고 기준으로 품절인지 판단한다.
- * 상품 상세의 `isInStock`/`hasStock` 과 동일 기준 — 재고관리를 켜고(manage_inventory),
- * 백오더 불가(allow_backorder=false)이며, 가용 재고가 0 이하이면 품절.
- *
- * 어드민 "수동 품절" 은 Medusa 재고를 0 으로 만들므로 이 함수로 잡힌다.
- * (상품은 여전히 published 라 publish 상태 기반 가드로는 안 잡힌다)
- */
+type VariantStock = {
+  manage_inventory?: boolean | null
+  allow_backorder?: boolean | null
+  inventory_quantity?: number | null
+}
+
 /**
  * variant 에 남은 구매 가능 수량. 재고관리를 안 하거나 백오더 허용이면 상한이 없다는 뜻으로 null.
  *
@@ -45,16 +43,25 @@ export function extractUnavailableVariantIds(error: unknown): string[] {
  * 에러 문구를 파싱하는 방식으로는 안내할 수 없다.
  */
 export function getAvailableQuantity(
-  variant?: {
-    manage_inventory?: boolean | null
-    allow_backorder?: boolean | null
-    inventory_quantity?: number | null
-  } | null
+  variant?: VariantStock | null
 ): number | null {
   if (!variant) return null
   if (!variant.manage_inventory) return null
   if (variant.allow_backorder) return null
   return Math.max(0, variant.inventory_quantity ?? 0)
+}
+
+/**
+ * variant 가 품절은 아니지만 요청 수량을 감당하지 못하는지 판단한다.
+ * 담기 시점엔 Medusa 가 "수량 > 가용재고"를 거부하지만, 담은 뒤 다른 주문/재고 조정으로
+ * 재고가 줄면 결제 직전에 이 상태가 된다.
+ */
+export function isVariantQuantityUnavailable(
+  variant?: VariantStock | null,
+  quantity?: number | null
+): boolean {
+  const available = getAvailableQuantity(variant)
+  return available !== null && (quantity ?? 0) > available
 }
 
 /**
@@ -92,14 +99,7 @@ export function describeStockShortage(input: {
  */
 export function buildAvailabilityMap(
   items: Array<{ variant_id?: string | null }>,
-  variantById: Map<
-    string,
-    {
-      manage_inventory?: boolean | null
-      allow_backorder?: boolean | null
-      inventory_quantity?: number | null
-    }
-  >
+  variantById: Map<string, VariantStock>
 ): Record<string, number> {
   const map: Record<string, number> = {}
   for (const item of items) {
@@ -112,13 +112,15 @@ export function buildAvailabilityMap(
   return map
 }
 
-export function isVariantSoldOut(
-  variant?: {
-    manage_inventory?: boolean | null
-    allow_backorder?: boolean | null
-    inventory_quantity?: number | null
-  } | null
-): boolean {
+/**
+ * variant 가 재고 기준으로 품절인지 판단한다.
+ * 상품 상세의 `isInStock`/`hasStock` 과 동일 기준 — 재고관리를 켜고(manage_inventory),
+ * 백오더 불가(allow_backorder=false)이며, 가용 재고가 0 이하이면 품절.
+ *
+ * 어드민 "수동 품절" 은 Medusa 재고를 0 으로 만들므로 이 함수로 잡힌다.
+ * (상품은 여전히 published 라 publish 상태 기반 가드로는 안 잡힌다)
+ */
+export function isVariantSoldOut(variant?: VariantStock | null): boolean {
   if (!variant) return false
   if (!variant.manage_inventory) return false
   if (variant.allow_backorder) return false
