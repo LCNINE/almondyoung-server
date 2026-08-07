@@ -11,7 +11,17 @@ jest.mock(
   { virtual: true },
 );
 
+// Task 6, 마지막 케이스 전용: buildVersionData 를 실제 구현을 감싼 jest.fn 으로 만들어
+// 호출 인자만 엿본다(동작은 그대로 유지 — replace 하면 그 이후 단계가 깨진다). 정책 경로가
+// 버전 적용기(buildVersionData)로 새지 않는다를 잠그는 유일한 방법이다.
+jest.mock('./bulk-draft.fields', () => {
+  const actual = jest.requireActual<typeof import('./bulk-draft.fields')>('./bulk-draft.fields');
+  return { ...actual, buildVersionData: jest.fn(actual.buildVersionData) };
+});
+
 import { BulkDraftApplier, type DraftInput } from './bulk-draft.applier';
+import { buildVersionData } from './bulk-draft.fields';
+import { BulkSessionComboResolver } from './bulk-session.combos';
 import type { FlatFields } from './bulk-session.types';
 
 const VERSION_ID = '0198f000-0000-7000-8000-000000000001';
@@ -119,6 +129,8 @@ function makeApplier(overrides: Overrides = {}) {
     ...overrides.constraints,
   };
 
+  const combos = new BulkSessionComboResolver(optionLoader as never);
+
   const applier = new BulkDraftApplier(
     db as never,
     masters as never,
@@ -127,6 +139,7 @@ function makeApplier(overrides: Overrides = {}) {
     optionLoader as never,
     pricing as never,
     constraints as never,
+    combos,
   );
   return { applier, calls, trx };
 }
@@ -456,5 +469,88 @@ describe('BulkDraftApplier — 수정 경로', () => {
     await applier.apply(updateInput({ 'constraint.requiresMembership': 'N' }), trx as never);
 
     expect(calls.upsertForDraft[0][2]).toEqual({ requiresMembership: false, lifetimeQuantityLimit: 3 });
+  });
+
+  // (Task 6) 판매정책은 상품 버전에 담기지 않는다(설계 스펙 §2) — 어떤 행의 유일한 변화가
+  // 정책이면 새 draft 버전을 만들 이유가 없다. 아래 3케이스가 "빈 변경분" 경로를 잠근다.
+  it('정책만 바뀐 수정 행은 draft 버전을 만들지 않는다', async () => {
+    const created: string[] = [];
+    const { applier, trx } = makeApplier({
+      versions: {
+        getActiveVersion: () => Promise.resolve({ id: ACTIVE_ID, masterId: MASTER_ID }),
+        createDraftVersion: () => {
+          created.push('called');
+          return Promise.resolve({ id: VERSION_ID, masterId: MASTER_ID });
+        },
+      },
+    });
+
+    const result = await applier.apply(updateInput({ 'variant:.availabilityOverride': '품절' }), trx as never);
+
+    expect(result.draftVersionId).toBeNull();
+    expect(created).toEqual([]);
+  });
+
+  it('변경분이 아예 없는 수정 행도 draft 버전을 만들지 않는다', async () => {
+    const created: string[] = [];
+    const { applier, trx } = makeApplier({
+      versions: {
+        getActiveVersion: () => Promise.resolve({ id: ACTIVE_ID, masterId: MASTER_ID }),
+        createDraftVersion: () => {
+          created.push('called');
+          return Promise.resolve({ id: VERSION_ID, masterId: MASTER_ID });
+        },
+      },
+    });
+
+    const result = await applier.apply(updateInput({}), trx as never);
+
+    expect(result.draftVersionId).toBeNull();
+    expect(created).toEqual([]);
+  });
+
+  it('충돌을 전부 skip 으로 결정해 비게 된 행도 버전을 만들지 않는다', async () => {
+    // applyDecisions 가 skip 필드를 빼므로 **결정 후에야** 빈다. 앞에서 재면 빈 버전이 생긴다.
+    const created: string[] = [];
+    const { applier, trx } = makeApplier({
+      versions: {
+        getActiveVersion: () => Promise.resolve({ id: ACTIVE_ID, masterId: MASTER_ID }),
+        createDraftVersion: () => {
+          created.push('called');
+          return Promise.resolve({ id: VERSION_ID, masterId: MASTER_ID });
+        },
+      },
+    });
+
+    const result = await applier.apply(
+      updateInput({ 'product.brand': '나이키' }, { conflictDecision: { 'product.brand': 'skip' } }),
+      trx as never,
+    );
+
+    expect(result.draftVersionId).toBeNull();
+    expect(created).toEqual([]);
+  });
+
+  it('버전 필드가 하나라도 바뀌면 draft 를 만든다', async () => {
+    const { applier, trx } = makeApplier();
+
+    const result = await applier.apply(
+      updateInput({ 'product.brand': '나이키', 'variant:.availabilityOverride': '품절' }),
+      trx as never,
+    );
+
+    expect(result.draftVersionId).toBe(VERSION_ID);
+  });
+
+  it('정책 경로는 버전 적용기에 넘어가지 않는다', async () => {
+    const { applier, trx } = makeApplier();
+
+    await applier.apply(updateInput({ 'product.brand': '나이키', 'variant:.preStockSellable': 'Y' }), trx as never);
+
+    const calls = jest.mocked(buildVersionData).mock.calls;
+    const passedFields = calls[calls.length - 1][0];
+    // 키 자체에 '.'이 들어 있어 문자열 경로를 쓰면 Jest 가 중첩 경로로 오해해 항상
+    // "없음"으로 (거짓으로) 통과한다 — 배열 형태로 줘야 리터럴 키 하나로 비교된다.
+    expect(passedFields).not.toHaveProperty(['variant:.preStockSellable']);
   });
 });

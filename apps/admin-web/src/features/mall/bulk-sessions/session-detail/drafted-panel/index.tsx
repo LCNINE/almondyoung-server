@@ -26,6 +26,10 @@ import type {
   BulkSessionProgress,
 } from '@/lib/types/dto/bulk-session';
 import { notifySessionMutationError } from '../../lib/session-mutation-error';
+import {
+  itemVersionState,
+  itemVersionStateLabel,
+} from '../../lib/item-version-state';
 import { ItemActions } from './item-actions';
 
 const PAGE_SIZE = 20;
@@ -195,6 +199,12 @@ export function DraftedPanel({
         <div className="flex flex-col divide-y rounded-lg border">
           {items.map((item) => {
             const displayName = item.productName || '—';
+            // 버전 상태 배지는 **작성됨 탭에서만** 단다. draft 생성이 실패한 행은
+            // `draftVersionId` 가 null 이라 판정이 '변경 없음'/'판매정책만 적용'으로 나오는데,
+            // 그 행은 아무것도 적용되지 않았으므로 오류 메시지 바로 위에 정반대로 읽히는
+            // 문구가 붙는다. 제외 탭도 같다.
+            const versionLabel =
+              tab === 'drafted' ? itemVersionStateLabel(itemVersionState(item)) : null;
             return (
               <div
                 key={item.id}
@@ -205,6 +215,11 @@ export function DraftedPanel({
                     {item.rowNumber} · {item.rowKey} · {KIND_LABEL[item.kind]} ·{' '}
                     {displayName}
                   </span>
+                  {versionLabel && (
+                    <span className="text-xs text-muted-foreground">
+                      {versionLabel}
+                    </span>
+                  )}
                   {item.errorMessage && (
                     <span role="alert" className="text-destructive">
                       {item.errorMessage}

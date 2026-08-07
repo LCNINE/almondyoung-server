@@ -53,6 +53,7 @@ import { PricingCalculatorService } from '../../../core/pricing/pricing-calculat
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { ProductBulkService } from '../../bulk/product-bulk.service';
+import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
 import { buildFormWorkbook } from './form-export.workbook';
 import { BulkSessionJobManager } from './bulk-session-job.manager';
@@ -146,7 +147,15 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
     categories = new ProductCategoriesService(dbService, readAssembler, snapshotAssembler, outbox);
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories);
+    // 이 스위트는 §F1(브랜드/셀러 병합) 회귀 잠금이지 품목 판매정책 프리필 검증이 아니다
+    // — 실 ProductSkuMappingService 는 inventory BC 의 무거운 의존성 그래프(SharedModule
+    // 등)를 끌고 오므로, 여기서는 빈 배치 응답 스텁만 채운다. base/current 양쪽 renderMaster
+    // 호출이 같은 스텁을 공유해 항상 같은 기본값을 내므로, 이 스위트가 보는 diff(§F1 필드)에
+    // 정책 필드가 잡음으로 끼어들지 않는다.
+    const skuMapping = {
+      getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
+    } as unknown as ProductSkuMappingService;
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
 
     // `ProductBulkService.bulkUpdate` 의 brand/seller 경로(§F1 회귀 잠금)는 dto.status 가
     // 없으면 productVersionsService/productMastersService 를 **한 번도** 부르지 않는다
@@ -176,6 +185,10 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
       undefined as never,
       new ConfigService({ PRODUCT_BULK_LEASE_MS: '30000', PRODUCT_BULK_VALIDATE_SLICE: '50' }),
       new BulkVariantCodeChecker(dbService),
+      // (Task 8) 조합키 해석기·판매정책 서비스는 발행 슬라이스 전용이다 — 이 스위트는 그
+      // 슬라이스를 부르지 않으므로 위 applier·versions 와 같은 이유로 비워 둔다.
+      undefined as never,
+      undefined as never,
     );
   });
 

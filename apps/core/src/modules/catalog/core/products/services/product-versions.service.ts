@@ -39,7 +39,11 @@ import {
   tagValues,
   productImages,
 } from '../../../schema/catalog.schema';
-import { productMatchings, productVariantSkuLinks } from '../../../../inventory/schema/inventory.schema';
+import {
+  productMatchings,
+  productVariantSkuLinks,
+  salesVariantPolicies,
+} from '../../../../inventory/schema/inventory.schema';
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
@@ -448,7 +452,6 @@ export class ProductVersionsService {
       .where(inArray(productMatchings.variantId, newVariantIds));
     const matched = new Set(existingMatchings.map((m) => m.variantId));
     const unmatched = newVariants.filter((v) => !matched.has(v.variantId));
-    if (unmatched.length === 0) return;
 
     const prevVariants = await this._getVersionVariantsWithOptionValues(previousActiveVersionId, tx);
     if (prevVariants.length === 0) {
@@ -461,6 +464,62 @@ export class ProductVersionsService {
     const prevByComboKey = new Map<string, { variantId: string }>();
     for (const pv of prevVariants) {
       prevByComboKey.set(this._comboKey(pv.optionValueIds), { variantId: pv.variantId });
+    }
+
+    // 판매정책은 버전에 담기지 않지만(설계 의도), CoW 로 variantId 가 갈리면 "같은 상품의
+    // 같은 품목"인데 정책이 끊긴다. 매칭 인계와 **조건이 독립**이어야 한다 — 매칭이 이미
+    // 있는 품목도 정책 행은 없을 수 있으므로 위 `unmatched` 를 재사용하면 안 된다.
+    const existingPolicies = await tx
+      .select({ variantId: salesVariantPolicies.variantId })
+      .from(salesVariantPolicies)
+      .where(inArray(salesVariantPolicies.variantId, newVariantIds));
+    const hasPolicy = new Set(existingPolicies.map((p) => p.variantId));
+
+    // 인계할 twin 정책은 **한 번에** 읽는다 — 아래 `prevMatchingsByVariantId` 블록과 같은
+    // 모양이다. 품목마다 select 를 돌리면 정책 행이 없는 흔한 경우에도 품목 수만큼 빈 쿼리가
+    // 나가고, `publishVersion` 은 판매상품 상세의 단건 발행도 쓰는 공용 경로라 그 N+1 이
+    // 모든 발행에 상시로 붙는다.
+    const prevPoliciesByVariantId = new Map<string, typeof salesVariantPolicies.$inferSelect>();
+    {
+      const prevVariantIds = prevVariants.map((p) => p.variantId);
+      if (prevVariantIds.length > 0) {
+        const rows = await tx
+          .select()
+          .from(salesVariantPolicies)
+          .where(inArray(salesVariantPolicies.variantId, prevVariantIds));
+        for (const row of rows) {
+          prevPoliciesByVariantId.set(row.variantId, row);
+        }
+      }
+    }
+
+    let inheritedPolicyCount = 0;
+    for (const nv of newVariants) {
+      if (hasPolicy.has(nv.variantId)) continue;
+      const twin = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      if (!twin) continue;
+
+      const prevPolicy = prevPoliciesByVariantId.get(twin.variantId);
+      if (!prevPolicy) continue;
+
+      await tx.insert(salesVariantPolicies).values({
+        variantId: nv.variantId,
+        inventoryManagement: prevPolicy.inventoryManagement,
+        preStockSellable: prevPolicy.preStockSellable,
+        alwaysSellableZeroStock: prevPolicy.alwaysSellableZeroStock,
+        availabilityOverride: prevPolicy.availabilityOverride,
+        comingSoonDate: prevPolicy.comingSoonDate,
+        effectiveFrom: prevPolicy.effectiveFrom,
+        effectiveTo: prevPolicy.effectiveTo,
+        updatedBy: prevPolicy.updatedBy,
+      });
+      inheritedPolicyCount++;
+    }
+
+    if (inheritedPolicyCount > 0) {
+      this.logger.log(
+        `Policy reconciliation: inherited ${inheritedPolicyCount} variant sales policies from version ${previousActiveVersionId} to ${newVersionId}`,
+      );
     }
 
     const prevMatchingsByVariantId = new Map<
