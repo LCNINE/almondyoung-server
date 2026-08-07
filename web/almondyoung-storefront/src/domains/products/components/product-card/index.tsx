@@ -195,6 +195,8 @@ export default function ProductCard({
             productTitle={product.title ?? ""}
             productImage={product.thumbnail ?? undefined}
             variantId={product.variants?.[0]?.id}
+            productPrice={cheapestPrice?.calculated_price_number ?? 0}
+            productCurrency={cheapestPrice?.currency_code}
             isSingleOption={isSingleOption}
             countryCode={countryCode}
             isWishlisted={isWishlisted}

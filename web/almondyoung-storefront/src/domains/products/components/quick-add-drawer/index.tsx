@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getProductForQuickAdd } from "@/lib/api/medusa/products"
 import { addToCart } from "@/lib/api/medusa/cart"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
+import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { convertToLocale } from "@/lib/utils/price-utils"
 import { cn } from "@/lib/utils"
 import { useMediaQuery } from "@/hooks/use-media-query"
@@ -259,6 +260,17 @@ export function QuickAddDrawer({
           toast.error(message)
           return
         }
+        trackEvent("add_to_cart", {
+          currency: toGaCurrency(selectedItems[0]?.price.currency_code),
+          value: totalPrice,
+          items: selectedItems.map((item) => ({
+            item_id: productId,
+            item_name: productTitle,
+            item_variant: item.label,
+            price: item.price.calculated_price_number,
+            quantity: item.quantity,
+          })),
+        })
         showActionToast({
           icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,
           label: t("addedToast"),

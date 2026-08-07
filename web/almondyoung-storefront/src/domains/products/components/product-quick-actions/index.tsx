@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { useAddToCart } from "@hooks/api/use-add-to-cart"
+import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { cn } from "@/lib/utils"
 import { showActionToast } from "@/components/shared/action-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
@@ -19,6 +20,9 @@ interface ProductQuickActionsProps {
   productTitle?: string
   productImage?: string
   variantId?: string
+  /** GA4 add_to_cart 용 단가 (원 단위 정수) */
+  productPrice?: number
+  productCurrency?: string
   isSingleOption: boolean
   isWishlisted?: boolean
   countryCode?: string
@@ -39,6 +43,8 @@ export function ProductQuickActions({
   productTitle = "",
   productImage,
   variantId,
+  productPrice = 0,
+  productCurrency,
   isSingleOption,
   isWishlisted: initialWishlisted = false,
   countryCode = "kr",
@@ -143,6 +149,18 @@ export function ProductQuickActions({
     const result = await addToCart({ variantId, quantity })
 
     if (result?.success) {
+      trackEvent("add_to_cart", {
+        currency: toGaCurrency(productCurrency),
+        value: productPrice * quantity,
+        items: [
+          {
+            item_id: productId,
+            item_name: productTitle,
+            price: productPrice,
+            quantity,
+          },
+        ],
+      })
       setIsAddedToCart(true)
       showActionToast({
         icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,

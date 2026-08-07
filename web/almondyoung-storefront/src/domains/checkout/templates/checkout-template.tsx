@@ -32,8 +32,9 @@ import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
+import { toGaCurrency, trackEvent, trackEventOnce } from "@/lib/analytics/gtag"
 
 interface CheckoutTemplateProps {
   isMembership: boolean
@@ -130,6 +131,31 @@ export default function CheckoutTemplate({
     }
   }, [cart, cartItems, shipping, isMembership, requiresShipping])
 
+  const gaEcommerce = useMemo(
+    () => ({
+      currency: toGaCurrency(cartTotals.currency_code),
+      value: cartTotals.finalTotal,
+      items: cartItems.map((item) => ({
+        item_id: item.product_id ?? item.id,
+        item_name: item.product_title ?? item.title,
+        item_variant: item.title ?? undefined,
+        price: item.unit_price ?? 0,
+        quantity: item.quantity,
+      })),
+    }),
+    [cartItems, cartTotals.currency_code, cartTotals.finalTotal]
+  )
+
+  // 결제창은 wallet-web(다른 도메인)으로 넘어가 GA 세션이 끊기므로, 리다이렉트 이전인
+  // 체크아웃 진입 시점에 발사한다. 장바구니 경로와 바로구매 경로가 여기서 합류한다.
+  useEffect(() => {
+    trackEventOnce(
+      `ga4_begin_checkout_${checkoutCartId}`,
+      "begin_checkout",
+      gaEcommerce
+    )
+  }, [checkoutCartId, gaEcommerce])
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -191,6 +217,11 @@ export default function CheckoutTemplate({
         setLoading(false)
         return
       }
+
+      // 결제창(wallet-web) 이동 직전. begin_checkout 과의 차이가 "체크아웃만 보고 나간 사람",
+      // purchase 와의 차이가 "결제창까지 갔는데 결제 안 한 사람"이 된다.
+      // 재시도도 유의미한 신호라 1회 가드를 두지 않는다.
+      trackEvent("add_payment_info", gaEcommerce)
 
       // 배송이 필요한 카트에서만 배송메모를 저장한다.
       // 사용자가 메모를 바꾸지 않아 카트에 이미 같은 값이 있으면 저장을 건너뛴다.

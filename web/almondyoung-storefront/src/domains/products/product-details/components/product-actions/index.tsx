@@ -11,6 +11,7 @@ import {
   CustomerGroupRef,
   isMembershipGroup,
 } from "@/lib/utils/membership-group"
+import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
 import { Loader2 } from "lucide-react"
@@ -323,6 +324,23 @@ export default function ProductActions({
     }
   }
 
+  const trackAddToCart = (items: SelectedItem[]) => {
+    trackEvent("add_to_cart", {
+      currency: toGaCurrency(items[0]?.price.currency_code),
+      value: items.reduce(
+        (sum, i) => sum + i.price.calculated_price_number * i.quantity,
+        0
+      ),
+      items: items.map((i) => ({
+        item_id: product.id,
+        item_name: product.title,
+        item_variant: i.label,
+        price: i.price.calculated_price_number,
+        quantity: i.quantity,
+      })),
+    })
+  }
+
   // 장바구니 담기
   const handleAddToCart = () => {
     if (selectedItems.length === 0) return
@@ -349,6 +367,7 @@ export default function ProductActions({
             return
           }
         }
+        trackAddToCart(selectedItems)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         setShowCartModal(false)

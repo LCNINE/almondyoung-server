@@ -2,24 +2,13 @@
 
 import { useEffect } from "react"
 
-interface PurchaseItem {
-  item_id: string
-  item_name: string
-  price: number
-  quantity: number
-}
+import { GaItem, trackEventOnce } from "@/lib/analytics/gtag"
 
 interface PurchaseTrackerProps {
   transactionId: string
   value: number
   currency: string
-  items: PurchaseItem[]
-}
-
-declare global {
-  interface Window {
-    gtag?: (...args: unknown[]) => void
-  }
+  items: GaItem[]
 }
 
 /**
@@ -35,18 +24,12 @@ export function PurchaseTracker({
   items,
 }: PurchaseTrackerProps) {
   useEffect(() => {
-    if (typeof window === "undefined" || !window.gtag) return
-
-    const key = `ga4_purchase_${transactionId}`
-    if (sessionStorage.getItem(key)) return
-
-    window.gtag("event", "purchase", {
+    trackEventOnce(`ga4_purchase_${transactionId}`, "purchase", {
       transaction_id: transactionId,
       value,
       currency,
       items,
     })
-    sessionStorage.setItem(key, "1")
   }, [transactionId, value, currency, items])
 
   return null

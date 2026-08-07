@@ -1,4 +1,7 @@
 import { ProductTemplate } from "@/domains/products/product-details/templates"
+import { ViewItemTracker } from "@/domains/products/product-details/components/view-item-tracker"
+import { toGaCurrency } from "@/lib/analytics/gtag"
+import { getProductPrice } from "@/lib/utils/get-product-price"
 import { redirectToLogin } from "@/lib/api/medusa/auth-utils"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getProductDetailByMasterId } from "@/lib/api/pim/products"
@@ -138,11 +141,19 @@ export default async function Page(props: Props) {
       : {}),
   }
 
+  const viewPrice = getProductPrice({ product: pricedProduct }).cheapestPrice
+
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+      />
+      <ViewItemTracker
+        itemId={pricedProduct.id}
+        itemName={pricedProduct.title}
+        price={viewPrice?.calculated_price_number ?? 0}
+        currency={toGaCurrency(viewPrice?.currency_code)}
       />
       <ProductTemplate
         product={pricedProduct}
