@@ -15,6 +15,9 @@ type OrderData = {
   id: string;
   customer_id?: string | null;
   created_at: string;
+  /** 비회원가를 같은 조건으로 다시 계산하기 위한 가격 컨텍스트 */
+  currency_code?: string | null;
+  region_id?: string | null;
   items?: OrderItem[];
 };
 
@@ -34,6 +37,8 @@ async function getOrderWithPricing(orderId: string, container: any): Promise<Ord
       'id',
       'customer_id',
       'created_at',
+      'currency_code',
+      'region_id',
       'items.id',
       'items.variant_id',
       'items.unit_price',
@@ -78,6 +83,8 @@ export async function resolveMembershipDiscount(
   membershipGroupId: string | null,
   container: any,
   logger: { warn: (msg: string) => void },
+  /** 주문의 가격 컨텍스트. 실결제가와 같은 조건으로 비교해야 차액이 멤버십 기여분이 된다. */
+  pricingContext: { currency_code?: string | null; region_id?: string | null } = {},
 ): Promise<number> {
   const compareAtDiscount = calculateMembershipDiscount(items);
   if (compareAtDiscount <= 0) return 0;
@@ -106,7 +113,13 @@ export async function resolveMembershipDiscount(
     // 멤버십 그룹을 뺀 컨텍스트 = "이 고객이 회원이 아니었다면 냈을 가격".
     const nonMemberPrices = await pricingModule.calculatePrices(
       { id: priceSetIds },
-      { context: { currency_code: 'krw', customer: { groups: [] } } },
+      {
+        context: {
+          currency_code: pricingContext.currency_code ?? 'krw',
+          region_id: pricingContext.region_id ?? undefined,
+          customer: { groups: [] },
+        },
+      },
     );
     const priceSetToAmount = new Map<string, number>();
     for (const cp of nonMemberPrices ?? []) {
@@ -114,12 +127,29 @@ export async function resolveMembershipDiscount(
     }
 
     let membershipDiscount = 0;
+    // 할인이 걸린 품목 중 비회원가를 못 구한 게 하나라도 있으면 결과를 신뢰할 수 없다.
+    // 그대로 두면 "멤버십 귀속 0원" 이 되어 혜택을 쓴 고객이 전액 환불된다 — 돌이킬 수 없는 방향이다.
+    let unresolvedDiscountedItems = 0;
     for (const item of items) {
+      const hasDiscount =
+        item.compare_at_unit_price != null && item.compare_at_unit_price > item.unit_price;
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
       const nonMemberPrice = priceSetId ? priceSetToAmount.get(priceSetId) : undefined;
-      if (nonMemberPrice == null) continue;
+
+      if (nonMemberPrice == null) {
+        if (hasDiscount) unresolvedDiscountedItems += 1;
+        continue;
+      }
       const perUnit = nonMemberPrice - item.unit_price;
       if (perUnit > 0) membershipDiscount += perUnit * item.quantity;
+    }
+
+    if (unresolvedDiscountedItems > 0) {
+      logger.warn(
+        `[MembershipBenefit] 비회원가를 구하지 못한 할인 품목 ${unresolvedDiscountedItems}건 — ` +
+          'compare_at 기준으로 대체한다(과소 계상 시 혜택을 쓴 고객이 전액 환불된다)',
+      );
+      return compareAtDiscount;
     }
 
     return Math.min(membershipDiscount, compareAtDiscount);
@@ -154,6 +184,7 @@ export default async function handleMembershipBenefitOrder({ event, container }:
         process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim() || null,
         container,
         logger,
+        { currency_code: order.currency_code, region_id: order.region_id },
       );
       if (discountAmount <= 0) return;
 

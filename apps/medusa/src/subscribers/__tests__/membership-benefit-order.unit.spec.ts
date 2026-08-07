@@ -138,6 +138,72 @@ describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
     expect(discount).toBe(2000);
   });
 
+  // 과소 계상은 "혜택을 썼는데 전액 환불" 로 이어진다 — 돈이 나가면 되돌릴 수 없다.
+  // 반대(과다 계상)는 환불이 막힐 뿐이고 관리자 예외 환불이라는 창구가 있다.
+  it('비회원가를 못 구하면 0 이 아니라 compare_at 기준으로 떨어진다', async () => {
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 })];
+    const emptyPricing = {
+      resolve: (key: string) =>
+        key === 'pricing'
+          ? { calculatePrices: async () => [] }
+          : { graph: async () => ({ data: [{ id: 'v1', price_set: { id: 'ps_v1' } }] }) },
+    };
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', emptyPricing, logger);
+
+    expect(discount).toBe(2000);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('할인 품목 일부만 비회원가를 구해도 전체를 compare_at 기준으로 떨어뜨린다', async () => {
+    const items = [
+      item({ id: 'a', variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 }),
+      item({ id: 'b', variant_id: 'v2', unit_price: 5000, compare_at_unit_price: 6000, quantity: 1 }),
+    ];
+    const partial = {
+      resolve: (key: string) =>
+        key === 'pricing'
+          ? { calculatePrices: async () => [{ id: 'ps_v1', calculated_amount: 8000 }] }
+          : {
+              graph: async () => ({
+                data: [
+                  { id: 'v1', price_set: { id: 'ps_v1' } },
+                  { id: 'v2', price_set: { id: 'ps_v2' } },
+                ],
+              }),
+            },
+    };
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', partial, logger);
+
+    expect(discount).toBe(3000);
+  });
+
+  it('할인 없는 품목의 가격을 못 구한 건 결과를 흔들지 않는다', async () => {
+    const items = [
+      item({ id: 'a', variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 }),
+      item({ id: 'b', variant_id: 'v2', unit_price: 5000, compare_at_unit_price: null, quantity: 1 }),
+    ];
+    const partial = {
+      resolve: (key: string) =>
+        key === 'pricing'
+          ? { calculatePrices: async () => [{ id: 'ps_v1', calculated_amount: 8000 }] }
+          : {
+              graph: async () => ({
+                data: [
+                  { id: 'v1', price_set: { id: 'ps_v1' } },
+                  { id: 'v2', price_set: { id: 'ps_v2' } },
+                ],
+              }),
+            },
+    };
+
+    // v1 은 비회원도 8000 → 멤버십 기여 0. v2 는 애초에 할인이 없어 판정과 무관하다.
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', partial, logger);
+
+    expect(discount).toBe(0);
+  });
+
   it('할인 자체가 없으면 가격 조회 없이 0', async () => {
     const items = [item({ variant_id: 'v1', unit_price: 10000, compare_at_unit_price: null })];
     const container = { resolve: () => { throw new Error('불려서는 안 된다'); } };

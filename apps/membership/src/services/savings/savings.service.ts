@@ -141,7 +141,8 @@ export class SavingsService {
    */
   async getRangeSavings(userId: string, startDate: Date, endDate: Date) {
     if (startDate > endDate) throw new BadRequestError('startDate must be before or equal to endDate');
-    return this.savingsReader.getRangeSavings(userId, startDate, endDate);
+    const result = await this.savingsReader.getRangeSavings(userId, startDate, endDate);
+    return { userId, ...result };
   }
 
   /**
