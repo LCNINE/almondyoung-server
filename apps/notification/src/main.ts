@@ -7,6 +7,7 @@ import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { Logger } from 'nestjs-pino';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import fastifyCookie from '@fastify/cookie';
 import { NotificationModule } from './notification.module';
 import { AllExceptionsFilter } from './shared/filters/exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
@@ -17,6 +18,12 @@ async function bootstrap() {
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
+
+  // admin-web 은 이 서비스를 자기 프록시(/api/proxy/notification/*)로 부르면서 토큰을
+  // Authorization 헤더가 아니라 accessToken **쿠키**로 넘긴다 (admin-web forward.ts).
+  // 이 플러그인이 없으면 request.cookies 가 undefined 라 JwtAccessStrategy 의 쿠키 추출기가
+  // 항상 빈손이 되고, 관리자 화면이 전부 401 이 된다.
+  await app.register(fastifyCookie);
 
   // NOTE: 기존 body-parser urlencoded 파서는 제거됨. urlencoded 를 쓰던 경로는 Twilio 웹훅뿐이며
   // 현재 휴면(TWILIO_* env 미설정, 서명검증 TODO). 재활성화 시 @fastify/formbody 등록 필요.

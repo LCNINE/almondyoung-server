@@ -3,7 +3,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
-import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
+import { AdminRealmGuard, AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
@@ -50,6 +50,12 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
     CustomerServiceModule,
   ],
   controllers: [AppController],
-  providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
+  providers: [
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // JwtAuthGuard 다음에 등록해야 request.user 가 채워진 뒤 역할을 본다 (APP_GUARD 는 등록 순).
+    // 표시가 없는 라우트를 직원 전용으로 막는다 — @Public/@OptionalAuth/@StoreRoute/@RequireScopes
+    // 중 하나가 붙은 라우트는 각자의 정책에 위임한다. 상세는 AdminRealmGuard 주석 참조.
+    { provide: APP_GUARD, useClass: AdminRealmGuard },
+  ],
 })
 export class AppModule {}

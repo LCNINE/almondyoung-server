@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Logger, Post, UnauthorizedException, Headers } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Public } from '@app/authorization';
 import { DbService } from '@app/db';
 import { InboxService } from '../services/inbox.service';
 import { MembershipDailySyncService } from '../services/membership-daily-sync.service';
@@ -19,6 +20,10 @@ interface FirebaseSyncBody {
  * almond-auth Firestore trigger의 멤버십 변경 콜백을 수신합니다.
  * Inbox 패턴으로 즉시 ACK 후 비동기 처리합니다.
  */
+// 호출자는 almond-auth Firestore 트리거 / 운영 스크립트라 사용자 JWT 가 없다. 전역 JwtAuthGuard 를
+// 면제하는 대신 **모든 핸들러가** `verifyInternalKey()` 로 CHANNEL_ADAPTER_INTERNAL_KEY 를 직접
+// 검증한다 — 이 클래스에 핸들러를 추가할 때 그 호출을 빠뜨리면 무인증으로 열린다.
+@Public()
 @Controller('internal/membership')
 export class InternalMembershipController {
   private readonly logger = new Logger(InternalMembershipController.name);

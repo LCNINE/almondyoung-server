@@ -5,6 +5,7 @@ import { Logger } from 'nestjs-pino';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import fastifyCookie from '@fastify/cookie';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import {
@@ -21,6 +22,10 @@ async function bootstrap() {
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
+
+  // admin-web 프록시(/api/proxy/channel/*)가 토큰을 accessToken 쿠키로 넘긴다.
+  // 이 플러그인이 없으면 JwtAccessStrategy 의 쿠키 추출기가 빈손이 되어 관리자 화면이 401 이 된다.
+  await app.register(fastifyCookie);
 
   app.useGlobalPipes(new ValidationPipe());
 
