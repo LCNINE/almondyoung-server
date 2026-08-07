@@ -215,13 +215,30 @@ AST 로 판정할 수 없다. **초록불을 "IDOR 없음"으로 읽지 말 것.
     `apps/user-service/check-user-schema.js`)에 **서로 다른 11개** Neon 프로젝트의 실제
     접속문자열이 그대로 커밋돼 있었다 — `.ts` 만 보는 스코프는 구조적으로 이걸 볼 수 없었다.
     재검증에서 테스트 pathspec 을 `*.ts *.js *.json *.yml *.yaml *.md *.example *.env*` 로
-    넓히고, `envs/*.example` 10곳과 README 는 자리표시자로 교체(파일·키는 유지, 개발자가
-    복사해 쓰는 템플릿이라서), 죽은 스크립트 3개는 삭제했다. 정당한 비-크레덴셜 매치(문서의
+    넓히고, `envs/*.example` 10곳과 README 는 자리표시자로 교체, 죽은 스크립트 3개는
+    삭제했다. 정당한 비-크레덴셜 매치(문서의
     자리표시자 문법, `guard.spec.ts` 의 반대 방향 픽스처, `postgres:postgres` 로컬
     docker-compose 기본값 등)는 `ALLOWED` 맵에 이유와 함께 등록했다.
   - **바로잡은 총계: 3개가 아니라 14개의 서로 다른 Neon 프로젝트**(호스트 접두어 기준,
     2026-08-08 재검증). 회귀는 이제 넓어진 `scripts/security/no-cloud-credentials.spec.ts` 가
     막는다.
+  - **후속(2026-08-08): `envs/` 디렉터리 전체를 삭제했다.** 자리표시자로 남겨뒀던 12개
+    `.example` 파일이 실은 **아무것도 참조하지 않는 고아**였다 — SST 는 그 변수명을 쓰지
+    않고, 코드·스크립트 어디서도 `envs/.env.*` 를 읽지 않는다. 아래 출처 표기의
+    `envs/...` 경로는 **발견 당시의 좌표**이고 지금 그 파일은 없다.
+  - **DB 접속문자열 말고 다른 시크릿도 같은 파일들에 있었다** — `AUTH_SECRET`(6개 서비스
+    공유), Kafka(Confluent) 키, AWS/S3 시크릿, `KAKAO_CLIENT_SECRET`,
+    `ELASTICSEARCH_PASSWORD`, `MEDUSA_API_KEY`, medusa `JWT_SECRET`/`COOKIE_SECRET` 등.
+    운영자 확인 결과 대조한 8건이 전부 현재 값과 불일치(길이·접두사 기준)라 **한 시점의 낡은
+    스냅샷**으로 판정했다. AWS 키는 과거 노출 사고 때 이미 회전됐고, Confluent 는 현재
+    미사용(Redpanda 로 이전)이다. 미확인 잔여: `ELASTICSEARCH_PASSWORD`,
+    user-service `JWT_REFRESH_SECRET`/`JWT_VERIFICATION_TOKEN_SECRET`.
+    `KAKAO_CLIENT_SECRET` 은 라이브 env 에 없으나 **카카오 콘솔에서 무효화된 것은 아니므로**
+    재발급해두면 이 갈래가 닫힌다.
+  - **히스토리 재작성은 하지 않기로 했다.** 2026-08-07 에 이 레포에서 이미 시도했고,
+    `refs/pull` 364개와 포크 3개가 원본 blob 을 붙들어 **노출이 끊기지 않았다**(실측). 비용은
+    전원 재클론 + 커밋 해시 244곳 치환이었다. 죽은 값을 위해 그 비용을 다시 치를 이유가 없다 —
+    살아있는 값이 나오면 재작성이 아니라 **로테이션**으로 닫는다.
   - ⚠️ **크레덴셜 자체는 여전히 유효하다.** 코드에서 지워도 공개 이력에서 회수되지 않는다
     (`docs/git-history-rewrite-2026-08-07.md`). 남은 건 **사람 작업**이다 — 아래 14개
     프로젝트를 전부 삭제하거나 회전(rotate)해야 이 항목이 닫힌다. 이 문서가 상황판이지
