@@ -48,10 +48,22 @@ export class DeviceService {
       // fcmTokens.token 은 전역 unique 라 충돌 대상이 호출자 소유가 아닐 수 있다.
       // setWhere 로 소유자가 아니면 DO UPDATE 를 건너뛴다(no-op) — 남의 행을 절대
       // 덮어쓰지 않는다. userId 는 set 에도 없으므로 소유권 이전도 일어나지 않는다.
-      await this.db
+      // returning() 으로 실제 쓰기가 일어났는지 확인한다 — WHERE 가 막아 아무 행도
+      // 안 나오면(충돌 대상이 남의 토큰) 클라이언트 응답은 그대로 두고(오라클 방지)
+      // 서버 로그에만 신호를 남긴다. 토큰 문자열 자체는 자격증명이라 로그하지 않는다.
+      const written = await this.db
         .insert(fcmTokens)
         .values(values)
-        .onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) });
+        .onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) })
+        .returning({ userId: fcmTokens.userId });
+
+      if (written.length === 0) {
+        // 클라이언트 응답은 그대로 201 로 둔다(오라클 방지) — "등록됨" 로그를 남기지
+        // 않고 여기서 리턴해, 실제로 아무것도 쓰지 않은 요청이 성공 로그와 함께
+        // 뭉개지지 않게 한다.
+        this.logger.warn('FCM token registration skipped: token already owned by another user', { userId });
+        return;
+      }
     }
 
     this.logger.log('FCM token registered', { userId, platform: dto.platform });

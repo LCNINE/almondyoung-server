@@ -376,10 +376,10 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'notification POST /devices/fcm-token': {
     verdict: 'SAFE',
-    evidence: 'apps/notification/src/device/services/device.service.ts:54',
+    evidence: 'apps/notification/src/device/services/device.service.ts:57',
     predicate:
-      '.onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) });',
-    note: "Fixed (task-7, 2026-08-08). The no-deviceId branch's onConflictDoUpdate now carries setWhere: eq(fcmTokens.userId, userId) (device.service.ts:54), so when the globally-unique token column (idx_fcm_token) conflicts with a row owned by a different user, Postgres's ON CONFLICT ... DO UPDATE ... WHERE skips the update entirely (silent no-op) instead of overwriting it. updateSet still has no userId, so ownership can never transfer even on a self-match. Proven by apps/notification/src/device/services/__tests__/device.service.idor.spec.ts, which asserts the exact setWhere predicate reaches onConflictDoUpdate (not just the return value). Contrast with DELETE below, which carries the same kind of ownership predicate via a WHERE clause.",
+      '.onConflictDoUpdate({ target: fcmTokens.token, set: updateSet, setWhere: eq(fcmTokens.userId, userId) })',
+    note: "Fixed (task-7, 2026-08-08; observability added in fix round 1). The no-deviceId branch's onConflictDoUpdate carries setWhere: eq(fcmTokens.userId, userId) (device.service.ts:57), so when the globally-unique token column (idx_fcm_token) conflicts with a row owned by a different user, Postgres's ON CONFLICT ... DO UPDATE ... WHERE skips the update entirely (silent no-op, still 201 to the client - avoids a token-existence oracle) instead of overwriting it. updateSet still has no userId, so ownership can never transfer even on a self-match. The skip is not silent server-side: .returning({ userId: fcmTokens.userId }) (device.service.ts:58) detects the zero-row result and DeviceService.registerToken logs a warn ('FCM token registration skipped: token already owned by another user', { userId }) - never the token itself - then returns before the unconditional success log. Proven by apps/notification/src/device/services/__tests__/device.service.idor.spec.ts: one test asserts the exact setWhere predicate reaches onConflictDoUpdate (not just the return value), two more assert the skip path logs exactly { userId } (no token) and suppresses the success log, and the normal path logs no warning. Contrast with DELETE below, which carries the same kind of ownership predicate via a WHERE clause.",
   },
   'search GET /health': {
     verdict: 'N/A',
