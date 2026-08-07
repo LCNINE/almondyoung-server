@@ -1,5 +1,8 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+const REPO = join(__dirname, '..', '..');
 
 type Verdict = 'SAFE' | 'VULN' | 'N/A' | 'UNCLEAR';
 
@@ -370,7 +373,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'notification DELETE /devices/fcm-token': {
     verdict: 'SAFE',
-    evidence: 'apps/notification/src/device/services/device.service.ts:61',
+    evidence: 'apps/notification/src/device/services/device.service.ts:76',
     predicate: '.where(and(eq(fcmTokens.userId, userId), eq(fcmTokens.token, token)));',
     note: "DeviceController.deactivateToken -> DeviceService.deactivateToken(userId, dto.token) issues the update gated on both eq(fcmTokens.userId, userId) and eq(fcmTokens.token, token), so a caller can only deactivate a token row that is already theirs; supplying another user's token value matches zero rows.",
   },
@@ -646,6 +649,39 @@ describe('IDOR 검사 대상 집합', () => {
       .map(([k]) => k);
 
     expect(missing).toEqual([]);
+  });
+
+  // 이전엔 evidence 좌표가 `:\d+$` 형식인지만 봤다 — 그건 "숫자로 끝나는가"만 확인할 뿐,
+  // 그 줄 근처에 predicate 원문이 실제로 있는지는 안 본다. notification DELETE
+  // /devices/fcm-token 이 이 구멍으로 조용히 드리프트했다: 이전 커밋들이 device.service.ts
+  // 위쪽에 ~15줄을 추가했지만 형제 POST 엔트리만 재조정되고 이 엔트리는 그대로 남아 있었다.
+  // 여기서는 evidence 파일을 열어 그 줄 ±5줄 안에 predicate 문자열이 실제로 존재하는지 본다.
+  it('predicate 원문이 evidence 좌표 ±5줄 안에 실제로 있다 (좌표 드리프트 감지)', () => {
+    const WINDOW = 5;
+    const drifted = Object.entries(IDOR_REVIEWED)
+      .filter(([, v]) => v.predicate.trim() !== '')
+      .map(([k, v]) => {
+        const m = /^(.+):(\d+)$/.exec(v.evidence);
+        if (!m) return `${k}: evidence 가 file:line 형식이 아님 (${v.evidence})`;
+        const [, file, lineStr] = m;
+        const targetLine = Number(lineStr);
+
+        let lines: string[];
+        try {
+          lines = readFileSync(join(REPO, file), 'utf8').split('\n');
+        } catch {
+          return `${k}: evidence 파일을 찾을 수 없음 (${file})`;
+        }
+
+        const start = Math.max(0, targetLine - 1 - WINDOW);
+        const end = Math.min(lines.length, targetLine - 1 + WINDOW + 1);
+        const window = lines.slice(start, end).join('\n');
+
+        return window.includes(v.predicate) ? null : `${k}: predicate 가 ${v.evidence} 주변 ±${WINDOW}줄에 없음`;
+      })
+      .filter((x): x is string => x !== null);
+
+    expect(drifted).toEqual([]);
   });
 
   it('미해결(VULN·UNCLEAR)이 남아 있으면 그 목록이 여기 보인다', () => {

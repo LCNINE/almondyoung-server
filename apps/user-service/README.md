@@ -59,7 +59,7 @@
 
 ```env
 # .env 파일 생성
-DATABASE_URL=postgresql://almond-users-service_owner:npg_PESMZpX6nu5L@ep-jolly-river-a8oplnnc-pooler.eastus2.azure.neon.tech/almond-users-service?sslmode=require
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require
 ```
 
 ### 2. 설치 및 실행

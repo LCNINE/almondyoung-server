@@ -111,6 +111,9 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 그 인용문을 인용된 `file:line` 과 기계적으로 대조했다(74건 중 불일치 0건). 쓰기 라우트
 SAFE 28건은 추가로 **적대적 반박(adversarial refutation) 패스**를 거쳤다 — "이 방어를 깨는
 입력이 있는가"를 별도로 캐물은 것. 뒤집힌 판정 0건.
+(위 표의 SAFE 75건과 숫자가 다른 이유: 이 기계적 대조는 `POST /devices/fcm-token` 이
+VULN→SAFE 로 뒤집히기 **전**에 74건을 대상으로 돌았다. 그 라우트는 별도 회귀
+테스트로 검증됐다 — 아래 "VULN 1건 해결" 항목 참고.)
 
 **VULN 1건 해결 🟩 — notification `POST /devices/fcm-token`**
 (`apps/notification/src/device/services/device.service.ts:54-66`, 2026-08-08,
@@ -129,8 +132,16 @@ SAFE 28건은 추가로 **적대적 반박(adversarial refutation) 패스**를 �
   확인해, 0행이면 `logger.warn('FCM token registration skipped: token already owned by
   another user', { userId })` 을 남기고(토큰 문자열은 자격증명이라 로그하지 않음) 성공 로그는
   안 남긴다. 이전엔 스킵 여부와 무관하게 무조건 성공 로그가 찍혔다.
-- **외부 응답은 그대로**: 스킵돼도 클라이언트에는 여전히 201/무본문 — "토큰 존재 여부
-  오라클"이 되지 않게 의도적으로 유지.
+- **외부 응답은 그대로 (단, `deviceId` 없는 분기에 한해)**: `dto.deviceId` 를 안 보내는
+  분기는 스킵돼도 클라이언트에 여전히 201/무본문이라 "토큰 존재 여부 오라클"이 되지 않게
+  의도적으로 유지된다. `deviceId` 를 보내는 분기(42-46행, `target:
+  [fcmTokens.userId, fcmTokens.deviceId]`)는 이 보장 밖이다 — 그 target 은 (userId,
+  deviceId) 복합 유니크만 잡고, 전역 유니크 인덱스(`idx_fcm_token`)에서 다른 사용자
+  소유 토큰과 충돌하면 어떤 `ON CONFLICT` 절도 안 걸려 처리되지 않은 유니크 위반이 그대로
+  터져 500 이 난다 — "토큰이 남의 것" 과 "그냥 성공(201)" 을 구분하는 오라클이 된다. 이번에
+  건드린 게 아니라 원래 있던 문제이고, 실사용에서 뚫기는 어렵다(FCM 토큰은 ~163자 엔트로피고,
+  이 라우트는 현재 프로덕션에서 인증 자체가 401 이라 도달 불가) — 그래도 청구를 이 분기까지
+  넓혀 말하면 안 된다.
 - **회귀**: `apps/notification/src/device/services/__tests__/device.service.idor.spec.ts`.
   `scripts/security/idor-reviewed.spec.ts` 에서 이 라우트가 SAFE 로 뒤집혔고
   `EXPECTED_OPEN` 에서 빠졌다(위 표에 반영).
@@ -189,17 +200,47 @@ AST 로 판정할 수 없다. **초록불을 "IDOR 없음"으로 읽지 말 것.
     `cancelRequest`/`cancelRequestByChannelOrder` 가 `@User()` 의 `customer.roles` 를 그대로
     `fulfillmentCommandContext.actorRoles` 로 넘긴다. IDOR 축은 아니지만 JWT claim 을 검증 없이
     믿고 하위 커맨드 권한판단에 쓰는 것은 위 두 항목과 같은 계열.
-- 🟩 **하드코딩 DB 크레덴셜 — 코드 제거 완료 (2026-08-08)**. 이 항목은 원래
+- 🟨 **하드코딩 DB 크레덴셜 — 코드 제거 완료, 그러나 처음 집계는 과소 계산이었다
+  (1차 2026-08-08, 스코프 확장 재검증 2026-08-08)**. 이 항목은 원래
   `apps/channel-adapter/src/adapter.module.ts` 1건으로 적혀 있었으나, 전수로 훑으니
-  **3개 Neon 프로젝트 × 5곳**이었다. 4곳은 죽은 코드였고(도달 불가 fallback 1, 없는 모듈을
+  **3개 Neon 프로젝트 × 5곳**이었다(당시 `scripts/security/no-cloud-credentials.spec.ts` 의
+  `git grep` 스코프가 `*.ts` 뿐이었다). 4곳은 죽은 코드였고(도달 불가 fallback 1, 없는 모듈을
   import 해 실행 불가능한 테스트 2, import 하는 곳이 없는 파일 1), `apps/membership/drizzle/seed.ts`
   만 **살아있는 진입점**이라 `DATABASE_URL` 없이 `npm run db:seed` 를 돌리면 클라우드 DB 에
-  시드를 썼다. 회귀는 `scripts/security/no-cloud-credentials.spec.ts` 가 막는다.
+  시드를 썼다.
+  - ⚠️ **`*.ts`-only 스코프가 구멍이었다.** 그 3개짜리 집계가 초록불이던 바로 그 순간,
+    `envs/*.example` 10개 파일과 `apps/user-service/README.md`, 그리고 참조되지 않는
+    죽은 스크립트 3개(`apps/notification/fix-consents-service.js`,
+    `apps/user-service/add-marketing-consent-column.js`,
+    `apps/user-service/check-user-schema.js`)에 **서로 다른 11개** Neon 프로젝트의 실제
+    접속문자열이 그대로 커밋돼 있었다 — `.ts` 만 보는 스코프는 구조적으로 이걸 볼 수 없었다.
+    재검증에서 테스트 pathspec 을 `*.ts *.js *.json *.yml *.yaml *.md *.example *.env*` 로
+    넓히고, `envs/*.example` 10곳과 README 는 자리표시자로 교체(파일·키는 유지, 개발자가
+    복사해 쓰는 템플릿이라서), 죽은 스크립트 3개는 삭제했다. 정당한 비-크레덴셜 매치(문서의
+    자리표시자 문법, `guard.spec.ts` 의 반대 방향 픽스처, `postgres:postgres` 로컬
+    docker-compose 기본값 등)는 `ALLOWED` 맵에 이유와 함께 등록했다.
+  - **바로잡은 총계: 3개가 아니라 14개의 서로 다른 Neon 프로젝트**(호스트 접두어 기준,
+    2026-08-08 재검증). 회귀는 이제 넓어진 `scripts/security/no-cloud-credentials.spec.ts` 가
+    막는다.
   - ⚠️ **크레덴셜 자체는 여전히 유효하다.** 코드에서 지워도 공개 이력에서 회수되지 않는다
-    (`docs/git-history-rewrite-2026-08-07.md`). 남은 건 **사람 작업**이다:
-  - [ ] Neon 프로젝트 `ep-divine-hill-a1nspuc3` 삭제 (membership)
-  - [ ] Neon 프로젝트 `ep-young-pine-a149ey1z` 삭제 (wallet)
-  - [ ] Neon 프로젝트 `ep-young-thunder-a1bkhlx2` 삭제 (channel-adapter)
+    (`docs/git-history-rewrite-2026-08-07.md`). 남은 건 **사람 작업**이다 — 아래 14개
+    프로젝트를 전부 삭제하거나 회전(rotate)해야 이 항목이 닫힌다. 이 문서가 상황판이지
+    수정 문서가 아니듯, 이 리스트도 코드가 아니라 사람이 처리할 큐다:
+  - [ ] Neon 프로젝트 `ep-divine-hill-a1nspuc3` 삭제 (membership, `.ts` 스코프에서 발견)
+  - [ ] Neon 프로젝트 `ep-young-pine-a149ey1z` 삭제 (wallet, `.ts` 스코프에서 발견)
+  - [ ] Neon 프로젝트 `ep-young-thunder-a1bkhlx2` 삭제 (channel-adapter, `.ts` 스코프에서 발견)
+  - [ ] Neon 프로젝트 `ep-wandering-union-a1ead79i` 삭제 (analytics, `envs/.env.analytics.example`)
+  - [ ] Neon 프로젝트 `ep-silent-sea-a191s6x9` 삭제 (channel-adapter, `envs/.env.channel-adapter.example` — young-thunder 와는 별개 프로젝트)
+  - [ ] Neon 프로젝트 `ep-still-shape-a14xh93f` 삭제 (file-service, `envs/.env.file-service.example`)
+  - [ ] Neon 프로젝트 `ep-muddy-bird-a1ao43dw` 삭제 (medusa, `envs/.env.medusa.example`)
+  - [ ] Neon 프로젝트 `ep-lively-fire-a1qf7wvd` 삭제 (membership, `envs/.env.membership.example` — divine-hill 과는 별개 프로젝트)
+  - [ ] Neon 프로젝트 `ep-wild-poetry-a1x5p1po` 삭제 (pim, `envs/.env.pim.example`)
+  - [ ] Neon 프로젝트 `ep-patient-frost-a11kkz8r` 삭제 (ugc-service, `envs/.env.ugc-service.example`)
+  - [ ] Neon 프로젝트 `ep-little-grass-a1s81mkd` 삭제 (user-service, `envs/.env.user-service.example`)
+  - [ ] Neon 프로젝트 `ep-tiny-art-a1bwtgfe` 삭제 (wallet, `envs/.env.wallet.example` — young-pine 과는 별개 프로젝트)
+  - [ ] Neon 프로젝트 `ep-billowing-band-a1cgr277` 삭제 (wms, `envs/.env.wms.example`)
+  - [ ] Neon 프로젝트 `ep-jolly-river-a8oplnnc` 삭제 (user-service, `apps/user-service/README.md` +
+        삭제된 죽은 스크립트 3개가 같은 접속문자열을 썼다 — little-grass 와는 별개 프로젝트)
 
 **IDOR 조사(P1) 중 나온 나머지 부산물 — VULN 은 아니고 지금은 안전하지만, 설계로 남기면
 다음 리팩터링에서 조용히 구멍이 되는 것들**:

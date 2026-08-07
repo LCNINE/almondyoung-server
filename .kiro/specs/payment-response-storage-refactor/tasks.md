@@ -62,7 +62,10 @@
   - Provider 응답 저장 테스트 (HMS_CARD, HMS_BNPL, TOSS)
   - 에러 메시지 추출 테스트 (getErrorMessage 헬퍼)
   - CMS 응답 이력 조회 테스트
-  - 테스트 파일: `apps/wallet/test/integration/payment-response-storage.integration.spec.ts`
+  - 테스트 파일: ~~`apps/wallet/test/integration/payment-response-storage.integration.spec.ts`~~
+    (2026-08-08 `574ce3d11` 에서 삭제됨 — 존재하지 않는 모듈을 import 해 애초에 실행
+    불가능한 죽은 코드였다. 상세: `docs/superpowers/plans/2026-08-08-p1-idor-audit.md`.
+    이 task 자체의 완료 여부와는 무관.)
   - _Requirements: 1.1, 3.4, 4.1, 4.2, 4.3_
 
 - [x] 7. 레이어 아키텍처 리팩토링
