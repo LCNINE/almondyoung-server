@@ -17,7 +17,18 @@ import { join } from 'node:path';
  * 기준이다.
  *
  * localhost 계열은 개발 자리표시자라 허용한다. 그 외 호스트는 실재하는 크레덴셜로 본다.
- * 정당한 예외는 `ALLOWED` 에 **이유와 함께** 추가한다 — 그 추가 자체가 리뷰 대상이다.
+ *
+ * ⚠️ **2026-08-08 2차 감사 — 좌표 기반 ALLOWED 의 재발**: 처음 이 테스트는 `ALLOWED` 를
+ * `"file:line": "이유"` 로 키를 잡고, 매치된 줄의 **내용은 조회 후 버렸다**. 그 결과
+ * `envs/*.example` 10곳과 README 1곳(정확히 지금 자리표시자 `USER:PASSWORD@HOST` 가 앉은
+ * 자리)이 좌표만으로 허용돼 있었다 — 그 좌표엔 한때 진짜 Neon 크레덴셜이 있었다. 즉
+ * 개발자가 그 줄에 진짜 값을 다시 채워넣어도 좌표가 같으니 테스트는 계속 초록불이었다.
+ * 이 파일이 막으려던 사고가 허용 목록 안에서 그대로 재발한 것이다. 그래서 판정 기준을
+ * **내용(자리표시자 모양인가)** 으로 옮겼다 — 아래 `isPlaceholderCredentialContent`.
+ * `ALLOWED` 좌표 맵은 내용으로 못 덮는 진짜 예외만 남기는 **축소된** 폴백이고, 지금은
+ * 그런 예외가 하나도 없어 비어 있다. 새 항목을 추가할 땐 반드시 이유를 적고, 그 좌표가
+ * 자리표시자 모양이 아닌 진짜 이유(예: 정규식이 못 잡는 형식)가 있는지부터 의심할 것 —
+ * 좌표 예외는 내용 검사를 우회하는 구멍이라는 걸 항상 기억한다.
  */
 const REPO = join(__dirname, '..', '..');
 
@@ -31,38 +42,88 @@ const PATTERN = String.raw`(postgres|postgresql|mysql|mongodb|redis)://[A-Za-z0-
 
 const LOCAL_HOST = /@(localhost|127\.0\.0\.1|host\.docker\.internal)[:/]/i;
 
-/** `"<파일>:<줄>": '이유'` */
-const ALLOWED: Record<string, string> = {
-  'scripts/local/seed-dev-core/guard.spec.ts:16':
-    '원격 호스트를 거부하는지 검증하는 반대 방향 픽스처. 자격증명은 postgres:postgres 기본값이다.',
-  'docs/superpowers/plans/2026-07-23-local-core-dev-environment.md:114':
-    '위 guard.spec.ts:16 과 동일한 반대 방향 픽스처를 인용하는 설계 문서. 자격증명은 u:p 자리표시자다.',
-  'apps/medusa/docker-compose.yml:54':
-    'medusa 로컬 docker-compose 스택. 호스트 "postgres" 는 같은 compose 네트워크 안의 서비스명이지 실재 원격 호스트가 아니고, 자격증명은 postgres:postgres 기본값이다.',
-  'apps/file-service/docs/deployment-guide.md:57':
-    '배포 가이드의 예시 접속문자열. user/password/prod-host 모두 자리표시자다.',
-  'apps/outbox-demo/.env.example:2': '예시 env 파일. user/password/host 모두 자리표시자다.',
-  'apps/search/.env.example:28': '예시 env 파일. user/password/host 모두 자리표시자다.',
-  'docs/local-dev.md:117':
-    '로컬 개발 문서의 예시. postgres:postgres 는 compose 기본값이고 호스트는 <노트북 IP> 자리표시자다.',
-  'docs/runbooks/selmate-stock-pipeline.md:487':
-    '런북 예시 명령어. <pw>/<live-host> 는 자리표시자이지 실재 값이 아니다.',
-  'scripts/seed-data/README.md:201':
-    '트러블슈팅 안내문의 형식 예시. user/password/host/port/database 모두 자리표시자다.',
-  // envs/*.example 은 실제 개발자가 복사해 쓰는 템플릿이라 파일 자체나 키를 지우지 않는다.
-  // 2026-08-08 에 각 파일의 실제 Neon 접속문자열을 자리표시자로 교체했다 — 이 자리표시자도
-  // 정규식 형태상 매치되므로(HOST 가 localhost 가 아님) 명시적으로 허용해둔다.
-  'envs/.env.analytics.example:1': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.channel-adapter.example:1': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.file-service.example:3': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.medusa.example:11': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.membership.example:1': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.pim.example:3': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.ugc-service.example:5': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.user-service.example:6': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.wallet.example:1': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'envs/.env.wms.example:3': 'envs 템플릿 자리표시자 (USER:PASSWORD@HOST) — 실제 값 아님.',
-  'apps/user-service/README.md:62': 'README 의 예시 env 스니펫. 2026-08-08 에 실제 접속문자열을 자리표시자로 교체했다.',
+/**
+ * `PATTERN` 은 git grep(POSIX ERE) 전용이라 `[:space:]` 를 쓴다. JS `RegExp` 는 그 클래스를
+ * 모르니 `\s` 로 옮겨 쓰고, user/password 를 캡처하도록 그룹을 추가한 것이 이 정규식이다.
+ * 구조(스킴 목록·문자 클래스)는 `PATTERN` 과 반드시 같아야 한다 — `PATTERN` 을 고치면 이것도
+ * 같이 고칠 것.
+ */
+const CRED_SEGMENT = /(?:postgres|postgresql|mysql|mongodb|redis):\/\/([A-Za-z0-9_.-]+):([^'"\s@]+)@/;
+
+/**
+ * user 또는 password 자리에 그대로 들어있으면 "채워 넣으라는 자리표시자" 로 보는 정확한
+ * 리터럴. 대소문자를 그대로 비교한다 — 느슨하게 소문자로 내려서 비교하면 `Postgres` 같은
+ * 변형까지 허용 범위가 넓어지므로 지금 레포에 실제로 쓰인 형태만 정확히 나열한다.
+ */
+const PLACEHOLDER_LITERALS = new Set(['postgres', 'user', 'u', 'password', 'p']);
+
+/**
+ * `USER`, `PASSWORD`, `PW` 처럼 사람이 "여기 채워라" 라고 표시하는 전형적인 ALL-CAPS 토큰.
+ * 진짜 Neon 비밀번호(`npg_` 접두사 + 대소문자가 섞인 12~14자 나머지, 예: `npg_***`)는
+ * 소문자로 시작하고 대소문자가 섞여 있어 이 정규식에 걸리지 않는다 — 이 클래스를 느슨하게
+ * 만들 때(예: 소문자 허용, 언더스코어 이외 특수문자 허용) 그 보장이 깨진다.
+ */
+const CAPS_TOKEN = /^[A-Z][A-Z0-9_]*$/;
+
+/** `<pw>`, `<live-host>` 처럼 각괄호로 감싼 자리표시자. 중첩 각괄호는 없다고 가정한다. */
+const ANGLE_TOKEN = /^<[^<>]*>$/;
+
+const isPlaceholderSegment = (segment: string): boolean =>
+  PLACEHOLDER_LITERALS.has(segment) || CAPS_TOKEN.test(segment) || ANGLE_TOKEN.test(segment);
+
+/**
+ * 매치된 줄의 **내용**에서 `scheme://user:password@` 부분을 뽑아, user 와 password 가
+ * 둘 다 자리표시자 모양인지 판정한다. 둘 중 하나라도 자리표시자 모양이 아니면(즉 실제 값일
+ * 가능성이 있으면) 자리표시자로 보지 않는다 — 이게 이 함수가 fail-closed 인 이유다.
+ *
+ * `CRED_SEGMENT` 가 아예 매치하지 않는 경우(방어적으로만 가능 — git grep 이 이미 `PATTERN`
+ * 으로 매치를 찾아온 상태라 보통 일어나지 않는다)는 "자리표시자 아님" 으로 취급한다:
+ * 판정을 못 하면 안전한 쪽(거부)으로 기운다.
+ */
+export const isPlaceholderCredentialContent = (content: string): boolean => {
+  const match = CRED_SEGMENT.exec(content);
+  if (!match) return false;
+  const [, user, password] = match;
+  return isPlaceholderSegment(user) && isPlaceholderSegment(password);
+};
+
+/**
+ * git grep 출력은 `file:lineNo:content` 형식이고, content 자체에도 콜론이 얼마든지 나온다
+ * (접속문자열의 `://` 가 그 예다). 파일 경로와 줄번호에는 콜론이 없다고 보고 앞의 콜론 두
+ * 개까지만 구분자로 쓴다 — `line.split(':')` 로 전체를 자르면 content 안의 콜론에서 배열이
+ * 계속 쪼개져 뒷부분을 잃는다.
+ */
+const splitGrepLine = (rawLine: string): { location: string; content: string } => {
+  const firstColon = rawLine.indexOf(':');
+  const secondColon = rawLine.indexOf(':', firstColon + 1);
+  return {
+    location: rawLine.slice(0, secondColon),
+    content: rawLine.slice(secondColon + 1),
+  };
+};
+
+/**
+ * 내용 기반 검사로 못 덮는 **진짜** 예외만 남기는 폴백. `"<파일>:<줄>": '이유'` 형태이고,
+ * 이유는 "왜 자리표시자 모양이 아닌데도 안전한가" 를 설명해야 한다 — 그 설명 자체가 리뷰
+ * 대상이다. 지금은 비어 있다: 이전에 여기 있던 20개 항목은 전부 `isPlaceholderCredentialContent`
+ * 로 커버되어 제거됐다. 좌표 예외는 내용을 안 보고 통과시키는 구멍이므로, 새 항목을 추가하기
+ * 전에 먼저 위 세 상수(`PLACEHOLDER_LITERALS`/`CAPS_TOKEN`/`ANGLE_TOKEN`)로 덮을 수 없는지
+ * 확인할 것.
+ */
+const ALLOWED: Record<string, string> = {};
+
+/**
+ * 매치 한 줄이 "진짜 문제(finding)" 인지 판정한다. 순서가 중요하다: localhost 는 개발
+ * 자리표시자라 먼저 걸러내고, 그 다음 **내용**이 자리표시자 모양인지 본다 — 좌표(`ALLOWED`)
+ * 조회는 내용으로 자리표시자임을 확인할 수 없을 때만 최후 수단으로 쓴다. 이 순서를 바꿔
+ * `ALLOWED` 를 먼저 보면, 자리표시자였던 좌표에 진짜 값이 들어와도 좌표만 보고 통과시키는
+ * 옛 버그가 되돌아온다.
+ */
+const isOffendingMatch = (rawLine: string): boolean => {
+  if (LOCAL_HOST.test(rawLine)) return false;
+  const { location, content } = splitGrepLine(rawLine);
+  if (isPlaceholderCredentialContent(content)) return false;
+  return !(location in ALLOWED);
 };
 
 const scan = (): string[] => {
@@ -87,14 +148,52 @@ const scan = (): string[] => {
 
 describe('소스에 클라우드 DB 크레덴셜이 없다', () => {
   it('비-localhost 접속문자열이 0건이다', () => {
+    // 실패 시에도 매치된 줄의 내용(크레덴셜 자체)을 출력하지 않는다 — location 만 남긴다.
     const offenders = scan()
-      .filter((line) => !LOCAL_HOST.test(line))
-      .map((line) => {
-        const [file, lineNo] = line.split(':');
-        return `${file}:${lineNo}`;
-      })
-      .filter((loc) => !(loc in ALLOWED));
+      .filter(isOffendingMatch)
+      .map((rawLine) => splitGrepLine(rawLine).location);
 
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * 이 테스트가 증명하려는 사고: 좌표 기반 `ALLOWED` 는 `envs/*.example` 10곳과 README
+   * 1곳에서 실제로 일어났다 — 그 좌표들엔 한때 진짜 Neon 크레덴셜이 있었고, 좌표만 보는
+   * 허용 목록은 그 자리에 값이 다시 채워져도 계속 초록불을 냈을 것이다. 지금은 `ALLOWED`
+   * 가 비어 있어 이 시나리오를 그대로 재현할 수 없으므로, 과거에 그 문제가 있었던 정확한
+   * 좌표(`envs/.env.analytics.example:1`) 에 진짜 크레덴셜처럼 생긴 값(`npg_` 접두사 +
+   * 대소문자 섞인 문자열 — 실제로 유출됐던 적 없는, 이 테스트만을 위해 지어낸 값)을 얹은
+   * 줄을 합성해 판정 함수에 직접 넣는다. 트래킹된 파일은 건드리지 않는다.
+   */
+  it('자리표시자였던 좌표라도 내용이 진짜 크레덴셜처럼 보이면 거부한다 (fail-closed)', () => {
+    const formerlyAllowedCoordinate = 'envs/.env.analytics.example:1';
+
+    // 이 파일도 `*.ts` 로서 매 실행마다 git grep 스캔 대상이다 — 가짜 접속문자열을 한 줄에
+    // 통짜로 써 두면 이 파일 자신이 offender 로 잡혀 위쪽 "0건이다" 테스트를 깨뜨린다.
+    // 그래서 스킴/비밀번호를 여러 조각으로 나눠 조립한다 — 트래킹된 소스 어떤 한 줄에도
+    // `scheme://user:password@` 가 통째로 나타나지 않게 하려는 것뿐, 값 자체를 숨기려는
+    // 게 아니다(어차피 실제로 유출된 적 없는 지어낸 값이다).
+    const fakeScheme = 'postgres' + 'ql';
+    const fakeUser = 'neondb_owner';
+    const fakePassword = ['npg_', 'FakeTestOnly9Zq'].join('');
+    const fakeHost = 'ep-synthetic-test-01.ap-northeast-2.aws.neon.tech';
+    const fakeConnectionString =
+      `${fakeScheme}` + `://${fakeUser}:${fakePassword}` + `@${fakeHost}/neondb?sslmode=require`;
+    const realLookingLine = `${formerlyAllowedCoordinate}:DATABASE_URL=${fakeConnectionString}`;
+
+    expect(formerlyAllowedCoordinate in ALLOWED).toBe(false);
+    expect(isOffendingMatch(realLookingLine)).toBe(true);
+  });
+
+  /**
+   * 위 fail-closed 테스트의 대조군: 지금 그 좌표에 실제로 있는 자리표시자 내용
+   * (`USER:PASSWORD@HOST`) 은 여전히 허용되어야 한다 — 아니면 진짜 초록불을 내야 할 템플릿
+   * 파일까지 막아버리는 반대 방향 회귀다.
+   */
+  it('현재 자리표시자 내용(USER:PASSWORD@HOST)은 여전히 허용된다', () => {
+    const placeholderLine =
+      'envs/.env.analytics.example:1:DATABASE_URL=postgresql://USER:PASSWORD@HOST/DATABASE?sslmode=require';
+
+    expect(isOffendingMatch(placeholderLine)).toBe(false);
   });
 });
