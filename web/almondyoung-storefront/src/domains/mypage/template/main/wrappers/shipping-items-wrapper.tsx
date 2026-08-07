@@ -58,14 +58,6 @@ export async function ShippingItemsWrapper() {
         quantity: order.items?.length || 0,
         options,
         showInquiry: false,
-        orderItems: (order.items ?? [])
-          .filter(
-            (item: any) => item.variant?.product?.handle || item.product_handle
-          )
-          .map((item: any) => ({
-            productId: item.variant?.product?.handle ?? item.product_handle,
-            orderLineId: item.id,
-          })),
         variantId: firstItem?.variant_id ?? "",
         bankTransferStatus:
           ((order.metadata as Record<string, unknown> | null)

@@ -3,6 +3,20 @@ import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
+/**
+ * membership 의 `internal/*` 라우트는 `Authorization: Bearer ${MEMBERSHIP_INTERNAL_KEY}` 를 요구한다.
+ *
+ * 키가 없으면 호출을 아예 하지 않고 던진다(바깥 try/catch 가 로그로 받는다). 헤더 없이 보내면 401 이
+ * 되는데, 그 실패는 "혜택 미사용" 판정 → 부당 전액 환불로 이어지므로 조용히 흘려보내면 안 된다.
+ */
+function internalHeaders(): Record<string, string> {
+  const key = process.env.MEMBERSHIP_INTERNAL_KEY;
+  if (!key) {
+    throw new Error('MEMBERSHIP_INTERNAL_KEY is not configured');
+  }
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
+}
+
 export type OrderItem = {
   id: string;
   variant_id?: string | null;
@@ -247,7 +261,7 @@ export default async function handleMembershipBenefitOrder({ event, container }:
 
       const recordRes = await fetch(`${MEMBERSHIP_SERVICE_URL}/membership/benefits/internal/record`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: internalHeaders(),
         body: JSON.stringify({
           orderId,
           userId,
@@ -272,12 +286,22 @@ export default async function handleMembershipBenefitOrder({ event, container }:
         `[MembershipBenefit] Recorded discount: userId=${userId}, orderId=${orderId}, amount=${discountAmount}`,
       );
     } else if (eventName === 'order.canceled') {
-      await fetch(`${MEMBERSHIP_SERVICE_URL}/membership/benefits/internal/cancel`, {
+      const cancelRes = await fetch(`${MEMBERSHIP_SERVICE_URL}/membership/benefits/internal/cancel`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: internalHeaders(),
         body: JSON.stringify({ orderId }),
         signal: AbortSignal.timeout(5000),
       });
+
+      // record 와 같은 이유로 응답을 확인한다. 안 보면 401/500 이 조용히 삼켜져 취소가 영영 반영되지
+      // 않고, 그 주문의 혜택이 계속 "사용됨" 으로 남는다.
+      if (!cancelRes.ok) {
+        const body = await cancelRes.text().catch(() => '');
+        logger.error(
+          `[MembershipBenefit] cancel failed (${cancelRes.status}) orderId=${orderId}: ${body.slice(0, 300)}`,
+        );
+        return;
+      }
 
       logger.info(`[MembershipBenefit] Cancelled benefit for order ${orderId}`);
     }

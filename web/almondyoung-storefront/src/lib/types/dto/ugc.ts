@@ -99,11 +99,6 @@ interface ReviewEligibilityResponseDto {
   expiresAt: string
 }
 
-interface CreateReviewEligibilityDto {
-  orderId: string
-  items: Array<{ productId: string; orderLineId: string }>
-}
-
 type EligibilityStatus = "available" | "consumed"
 
 interface ReviewEligibilityListQueryDto {
@@ -234,7 +229,6 @@ export type {
   RewardPolicyResponseDto,
   ReviewRewardType,
   ReviewEligibilityResponseDto,
-  CreateReviewEligibilityDto,
   EligibilityStatus,
   ReviewEligibilityListQueryDto,
 }

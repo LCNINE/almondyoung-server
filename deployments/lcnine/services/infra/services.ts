@@ -61,6 +61,9 @@ export function setup(infra: SharedInfra) {
   // Membership — 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
   const membershipInternalKey = new sst.Secret('MembershipInternalKey');
 
+  // UGC — 서버 간(internal) 라우트 인증 키 (medusa 구매확정 → ugc 리뷰자격 등록)
+  const ugcInternalKey = new sst.Secret('UgcInternalKey');
+
   // Notification
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
@@ -267,6 +270,7 @@ export function setup(infra: SharedInfra) {
     AUTH_SECRET: authSecret.value,
     JWT_ISSUER: 'almondyoung-auth',
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    UGC_INTERNAL_KEY: ugcInternalKey.value,
   });
   const searchEnv = withPrefix('SEARCH', {
     // search 백엔드는 Railway OpenSearch. AWS OpenSearch 도메인은 미사용으로 제거됨 (shared.ts 참조).
@@ -538,6 +542,7 @@ export function setup(infra: SharedInfra) {
       MEMBERSHIP_SERVICE_URL: url('membership'),
       MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
       UGC_SERVICE_URL: url('ugc'),
+      UGC_INTERNAL_KEY: ugcInternalKey.value,
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // S3
       S3_FILE_URL: 'https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com',

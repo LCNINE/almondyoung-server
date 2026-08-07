@@ -17,6 +17,14 @@ export const createReviewEligibilityStep = createStep(
       throw new Error('UGC_SERVICE_URL is not configured');
     }
 
+    // ugc 의 리뷰자격 등록은 내부 전용 라우트다(바디의 userId 를 그대로 신뢰한다).
+    // 키가 없으면 여기서 끊는다 — 헤더 없이 보내면 ugc 가 401 을 내고, 이 스텝은 워크플로의
+    // step 2 라 실패가 step 1(결제 캡처) 롤백으로 번진다. 조용히 빠뜨리는 게 가장 위험하다.
+    const ugcInternalKey = process.env.UGC_INTERNAL_KEY;
+    if (!ugcInternalKey) {
+      throw new Error('UGC_INTERNAL_KEY is not configured');
+    }
+
     // customer metadata에서 almond_user_id 조회
     const query = container.resolve<RemoteQueryFunction>(ContainerRegistrationKeys.QUERY);
     const { data: customers } = await query.graph({
@@ -43,7 +51,10 @@ export const createReviewEligibilityStep = createStep(
 
     const response = await fetch(`${ugcServiceUrl}/reviews/eligibilities`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ugcInternalKey}`,
+      },
       body: JSON.stringify({
         userId: almondUserId,
         orderId: input.orderId,
