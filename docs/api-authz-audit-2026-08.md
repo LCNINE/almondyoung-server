@@ -9,10 +9,12 @@
 ## 0. 한 줄 요약
 
 라우트 883개 중 **인가 가드 축(PR #572)과 무인증 내부 API(P0)는 정리 완료**. **IDOR 전수
-95건 조사도 완료** — SAFE 74 / N/A 19 / VULN 2 / UNCLEAR 0. 남은 것은 **(a) VULN 2건
-(notification·membership) 조치 대기**, (b) 인증/방어심층 설계 부채 다수 건(기존 JWT `iss`
-2건 + IDOR 조사 중 나온 부산물 9군데 — 하드코딩 크레덴셜은 코드 제거 완료·Neon 프로젝트
-삭제만 사람 작업으로 남음), (c) 조용히 죽은 경로 4건 + 동작/의도 확인 3건.
+95건 조사도 완료** — SAFE 75 / N/A 19 / VULN 1 / UNCLEAR 0 (notification `fcm-token` 은
+2026-08-08 수정·커밋 완료로 VULN → SAFE 전환, §2 P1). 남은 것은 **(a) VULN 1건(membership
+`confirm-checkout-intent`) 조치 대기 — 착수 전 런타임 로그 확인이 선행조건(§2 P3, §4)**,
+(b) 인증/방어심층 설계 부채 다수 건(기존 JWT `iss` 1건 + 하드코딩 크레덴셜 1건 + IDOR 조사
+중 나온 부산물 9군데 — 하드코딩 크레덴셜은 코드 제거 완료·Neon 프로젝트 삭제만 사람 작업으로
+남음), (c) 조용히 죽은 경로 4건 + 동작/의도 확인 3건.
 
 P1 착수 설계는 `docs/superpowers/specs/2026-08-08-p1-idor-audit-design.md`,
 실행 계획은 `docs/superpowers/plans/2026-08-08-p1-idor-audit.md` 다.
@@ -82,7 +84,7 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 
 ### P0 🟩 무인증 내부 API 2건 — 해결 (위 §1-2, 배포 순서는 §4)
 
-### P1 🟨 IDOR 전수 조사 — 95건 완료, VULN 2건 조치 대기
+### P1 🟨 IDOR 전수 조사 — 95건 완료, VULN 1건 조치 대기 (1건은 해결)
 
 95건 전부 라우트별로 컨트롤러 → 서비스 → 리포지토리를 따라가 `userId`/`customerId` 가
 **쿼리 조건에 실제로 들어가는지** 확인했다. grep 이 아니라 엔드포인트별 수기 판독이다
@@ -95,10 +97,10 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 | membership | 18 | 7 | 1 | 0 | 26 | 7 |
 | ugc-service | 11 | 1 | 0 | 0 | 12 | 7 |
 | file-service | 3 | 2 | 0 | 0 | 5 | 3 |
-| notification | 1 | 0 | 1 | 0 | 2 | 2 |
+| notification | 2 | 0 | 0 | 0 | 2 | 2 |
 | search | 0 | 4 | 0 | 0 | 4 | 0 |
 | analytics | 1 | 3 | 0 | 0 | 4 | 0 |
-| **합계** | **74** | **19** | **2** | **0** | **95** | **37** |
+| **합계** | **75** | **19** | **1** | **0** | **95** | **37** |
 
 전체 라우트 883건 중 95건이 IDOR 검사 대상(나머지는 `@Public` 이거나 애초에 인가 대상이 아님),
 그중 쓰기 37건. 판정 근거 원본은 `scripts/security/idor-reviewed.spec.ts` 의
@@ -110,14 +112,44 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 SAFE 28건은 추가로 **적대적 반박(adversarial refutation) 패스**를 거쳤다 — "이 방어를 깨는
 입력이 있는가"를 별도로 캐물은 것. 뒤집힌 판정 0건.
 
-**VULN 2건 — 조치 대기**:
+**VULN 1건 해결 🟩 — notification `POST /devices/fcm-token`**
+(`apps/notification/src/device/services/device.service.ts:54-66`, 2026-08-08,
+`b09083e55` → `47088602e`):
+
+원래 문제: `dto.deviceId` 를 안 보내면 `onConflictDoUpdate({ target: fcmTokens.token })` 가
+**전역 유니크 인덱스**(`idx_fcm_token`, notification schema 223행)를 타겟으로 잡고 `set` 에
+소유자 조건이 없어, A 가 B 소유의 토큰 문자열을 알아내(또는 유출된 토큰을 재사용해)
+`deviceId` 없이 POST 하면 B 의 행이 갱신됐다.
+
+- **고침**: `onConflictDoUpdate` 에 `setWhere: eq(fcmTokens.userId, userId)` 추가
+  (`device.service.ts:57`) — 충돌 대상 행이 호출자 소유가 아니면 Postgres 가 `DO UPDATE`
+  자체를 건너뛴다(no-op). `updateSet` 에는 여전히 `userId` 가 없어 self-match 여도 소유권이
+  넘어가진 않는다.
+- **관측 가능하게 만듦**: `.returning({ userId: fcmTokens.userId })` 로 실제 쓰기 행 수를
+  확인해, 0행이면 `logger.warn('FCM token registration skipped: token already owned by
+  another user', { userId })` 을 남기고(토큰 문자열은 자격증명이라 로그하지 않음) 성공 로그는
+  안 남긴다. 이전엔 스킵 여부와 무관하게 무조건 성공 로그가 찍혔다.
+- **외부 응답은 그대로**: 스킵돼도 클라이언트에는 여전히 201/무본문 — "토큰 존재 여부
+  오라클"이 되지 않게 의도적으로 유지.
+- **회귀**: `apps/notification/src/device/services/__tests__/device.service.idor.spec.ts`.
+  `scripts/security/idor-reviewed.spec.ts` 에서 이 라우트가 SAFE 로 뒤집혔고
+  `EXPECTED_OPEN` 에서 빠졌다(위 표에 반영).
+- **알려진 한계 — 결함이 아니라 다음 사람이 알아야 할 트레이드오프**: 이 구멍을 막았다는 건
+  정당한 교차사용자 토큰 재할당(기기 공유 핸드오프, 또는 FCM 이 재설치 후 같은 토큰 문자열을
+  재사용하는 경우)도 이제 **조용한 no-op** 이 된다는 뜻이다 — 이전처럼 탈취가 일어나진
+  않지만, 성공하지도 않는다. 오늘 코드에는 소유권 이전 프로토콜이 없다 — 그 흐름이 실제로
+  필요해지면(예: "이 토큰을 내 계정으로 옮긴다"는 명시적 액션) 별도로 설계해야 한다. 지금
+  이대로 방치해도 안전하지만, 필요해질 때 이 문서를 안 보고 손대면 다시 구멍이 날 수 있다.
+
+**VULN 1건 — 조치 대기**:
 
 | 라우트 | 위치 | 문제 | 재현 | 영향 |
 |---|---|---|---|---|
-| `POST /devices/fcm-token` (notification) | `apps/notification/src/device/services/device.service.ts:51` | `dto.deviceId` 를 안 보내면 `onConflictDoUpdate({ target: fcmTokens.token })` 가 **전역 유니크 인덱스**(`idx_fcm_token`, notification schema 223행)를 타겟으로 잡고, `set` 에 소유자 조건이 없다 | A 가 B 소유의 토큰 문자열을 알아내(또는 유출된 토큰을 재사용해) `deviceId` 없이 POST 하면 B 의 행이 갱신된다 | `platform`/`deviceModel`/`deviceName`/`isActive` 가 덮어써진다. `userId` 는 `set` 에 없어 소유권 자체는 안 넘어간다(계정 탈취는 아니고 메타데이터 훼손+알림 방해). **다만 이 라우트는 배포 env 에 `JWT_ACCESS_SECRET` 이 없어 지금은 항상 401 이라 잠재 상태**(§2 P3) |
 | `POST /subscriptions/confirm-checkout-intent` (membership) | `apps/membership/src/services/subscription.service.ts:220` | 핸들러(`subscription.controller.ts:163-167`)가 호출자 신원을 전혀 받지 않는다. 바디의 `intentId` 만으로 payment intent 를 조회해 그 메타데이터의 `userId` 로 구독을 만든다 — 소유권 검사 없음 | 로그인한 A 가 B 의 `intentId` 를 알아내 호출하면 B 명의로 구독이 확정된다 | intent 가 AUTHORIZED/CAPTURED 상태여야 하므로 **B 는 이미 결제를 마친 건**이고 A 가 얻는 이득은 없다 — 그래서 영향은 제한적이지만 검사가 없다는 사실 자체는 남는다. 이 라우트는 **별도 문제(JWT 주석-구현 불일치)** 도 갖고 있음 — §2 P3 참고 |
 
-두 VULN 모두 코드 수정이 필요하다(이 문서는 상황판이라 수정하지 않음). 착수 순서는 §4.
+membership 은 코드 수정이 필요하다(이 문서는 상황판이라 수정하지 않음). **다만 지금 착수하면
+안 된다** — 올바른 수정 내용이 아직 없는 런타임 증거에 달려 있다. 확인 절차는 §2 P3, 착수
+순서는 §4.
 
 **UNCLEAR 0건** — 판정을 못 내려 유보한 라우트는 없다. 95건 전부 SAFE/N/A/VULN 중 하나로
 확정됐다.
@@ -233,9 +265,9 @@ AST 로 판정할 수 없다. **초록불을 "IDOR 없음"으로 읽지 말 것.
     묶음으로 공개하면 안 된다 — 도메인 판단 필요.
 - 스토어프론트 `GET /products` — core 에 해당 컨트롤러가 없음 → **404** (죽은 호출)
 - notification `/devices/fcm-token` — `JWT_ACCESS_SECRET` 이 배포 env 에 없음 → **항상 401**
-  (`getOrThrow` 가 try 안이라 catch 가 401 로 삼킨다). 같은 라우트가 §2 P1 의 VULN 2건 중
-  하나다 — 지금은 이 401 덕에 잠재 상태일 뿐이니, 시크릿을 채우기 전에 §2 P1 의 소유권 검사를
-  먼저 고쳐야 한다.
+  (`getOrThrow` 가 try 안이라 catch 가 401 로 삼킨다). 같은 라우트가 §2 P1 의 VULN 이었으나
+  소유권 검사는 이미 수정·커밋됐다(`b09083e55`, `47088602e` — §2 P1 참고). 이 401(시크릿
+  누락) 자체는 별개 문제로 남아 있다 — 시크릿을 채워도 더 이상 §2 P1 문제는 재발하지 않는다.
 - channel-adapter → core `POST /channel-listings` — 인증 헤더를 안 보냄 → **항상 401**
 - **의도 확인 1** — `search` 4개 읽기 라우트에 인증이 전혀 없다(상품검색·연관검색어·추천).
   공개 카탈로그 검색이라 의도일 가능성이 높지만 확인 필요.
@@ -245,17 +277,33 @@ AST 로 판정할 수 없다. **초록불을 "IDOR 없음"으로 읽지 말 것.
   자체가 민감해 의도된 공개인지 재확인 필요. 같은 컨트롤러의 `GET /summary` 는 현재
   `NotImplementedException` 스텁(`analytics.service.ts:18-20`)이라 실질 노출은 없음(항상
   501) — 구현이 채워질 때 인증 여부를 다시 봐야 한다.
-- **동작 확인** — membership `POST /subscriptions/confirm-checkout-intent` 는 주석과 실제
-  가드가 반대다. `subscription.controller.ts:137-139` 의 doc comment 는 "JWT 불필요 - wallet
-  API key 로 검증" 이라 하지만, membership 은 전역 `JwtAuthGuard`(`app.module.ts:131-133`)를
-  걸어놓았고 이 라우트엔 `@Public()` 이 없다 — **실제로는 JWT 가 필요하다**. 이 엔드포인트는
-  크로스도메인 결제 리다이렉트로 `accessToken` 쿠키가 사라지는 상황을 우회하려고 만들어졌다
-  (주석에 그렇게 적혀 있다). 스토어프론트는 Next 프록시가 raw `Cookie` 헤더를 그대로 전달하지만
+- **동작 확인 — membership `POST /subscriptions/confirm-checkout-intent`, §2 P1 의 남은
+  VULN 1건이 이 확인 결과에 달려 있다.** 주석과 실제 가드가 반대다.
+  `subscription.controller.ts:137-139` 의 doc comment 는 "JWT 불필요 - wallet API key 로
+  검증" 이라 하지만, membership 은 전역 `JwtAuthGuard`(`app.module.ts:131-133`)를 걸어놓았고
+  이 라우트엔 `@Public()` 이 없다 — **실제로는 JWT 가 필요하다**. 이 엔드포인트는 크로스도메인
+  결제 리다이렉트로 `accessToken` 쿠키가 사라지는 상황을 우회하려고 만들어졌다(주석에 그렇게
+  적혀 있다). 스토어프론트는 Next 프록시가 raw `Cookie` 헤더를 그대로 전달하지만
   (`web/almondyoung-storefront/src/app/api/membership/[...path]/route.ts:26-30`), **그 시점에
   쿠키가 실제로 살아있는지는 정적 분석으로 확정할 수 없다** — 이 문서는 살아있다고도 죽었다고도
-  단정하지 않는다. 필요한 건 **런타임 증거**: 실제 결제를 완료한 뒤 이 라우트 호출이 200 인지
-  401 인지 확인. 죽어 있다면 결제를 마친 고객이 구독을 못 받는 것이므로 §1-2 의 P0 들과 같은
-  등급의 임팩트다. (같은 라우트의 소유권 검사 부재는 별개 문제로 §2 P1 VULN 에 있다.)
+  단정하지 않는다.
+  - **확인 절차**: membership 서비스 라이브 로그(CloudWatch)에서 `POST
+    /subscriptions/confirm-checkout-intent` 의 응답코드 분포를 본다.
+    - **200 이 대다수**면 쿠키가 리다이렉트를 살아서 넘어온다는 뜻 — 이 라우트는 실제로 인증된
+      상태로 호출되고 있는 것이다. 이 경우 고칠 내용은 좁다: 호출자 토큰의 `userId` 와
+      `intent.metadata.userId` 를 대조해 불일치를 거부하면 §2 P1 의 IDOR 이 닫힌다. 그 외엔
+      바꿀 게 없다.
+    - **401 이 대다수**면 IDOR 보다 훨씬 심각하다 — 결제를 완료한 고객이 구독을 못 받고 있다는
+      뜻이다(§1-2 의 P0 들과 같은 등급의 임팩트). "JWT 필요" 와 "크로스도메인 리다이렉트로
+      쿠키가 사라지는 상황을 우회하려고 만든 라우트" 라는 자기모순이 실제로 터지고 있는 것 —
+      패치가 아니라 설계 결정(예: `@Public()` + API key 검증으로 doc comment 를 실제로
+      구현하기)이 필요하다.
+    - **추측으로 고치면 안 된다** — 잘못된 분기를 고르면 둘 중 한쪽 문제를 더 악화시킨다. IDOR
+      패치부터 넣으면 401 이 원인인 구독 유실을 못 보고 지나치고, 로그를 안 보고 `@Public()`
+      부터 열면 소유권 검사 없는 채로 인가 자체를 없애 IDOR 이 더 커진다. 위 로그 확인이 선행
+      조건이다 — 이 문서는 어느 쪽인지 단정하지 않는다.
+  - (같은 라우트의 소유권 검사 부재는 §2 P1 VULN 에 있다 — 이 절차의 결과가 그 조치 내용을
+    정한다.)
 
 ---
 
@@ -322,16 +370,18 @@ mass assignment(DTO whitelist), SSRF, `@Public` 75건의 데이터 노출 개별
 ## 4. 착수 순서 제안
 
 1. ~~P0 2건~~ 🟩 완료 (§1-2). **배포는 아직** — 아래 순서를 지켜야 한다.
-2. ~~P1 IDOR 전수 조사(95건)~~ 🟨 조사 완료 (§2 P1). 남은 건 **VULN 2건 수정** —
-   notification `fcm-token` (upsert 를 `token` 전역 인덱스가 아니라 `userId` 로 좁히거나
-   `set` 에 소유자 조건 추가), membership `confirm-checkout-intent` (호출자 신원을 받아
-   `intent` 소유자와 대조). 각각 별도 PR, 테스트로 회귀 고정.
+2. ~~P1 IDOR 전수 조사(95건)~~ 🟨 조사 완료 (§2 P1). notification `fcm-token` 은 🟩 수정·커밋
+   완료(§2 P1, `b09083e55`/`47088602e`). 남은 건 **VULN 1건** — membership
+   `confirm-checkout-intent`. **먼저** §2 P3 의 확인 절차대로 CloudWatch 응답코드 분포부터
+   본다 — 200/401 중 무엇이 대다수냐에 따라 고칠 내용이 완전히 다르다(좁은 IDOR 패치 vs 설계
+   결정). 로그를 보기 전에는 착수하지 않는다.
 3. P2(설계 부채, 총 11건)는 설계 논의가 필요하니 이슈로 먼저 올린다. 그중
    `cafe24/internal/*` 무인증 GET(§2 P2)은 공개 ALB 도달 여부부터 확인 — 도달하면 P0 급이라
    먼저 처리한다.
 4. P3(죽은 경로 4건 + 확인 필요 3건)는 기능 요구/런타임 확인 후. membership
-   `confirm-checkout-intent` 의 쿠키 생존 여부(§2 P3)는 VULN 수정(2번)과 같은 PR 에서 같이
-   보는 게 효율적 — 어차피 같은 라우트를 연다.
+   `confirm-checkout-intent` 의 확인 절차는 2번에서 이미 선행 조건으로 명시했다 — 그 로그
+   결과가 나와야 PR 을 연다(추측 금지). 어차피 같은 라우트라 결과가 곧 §2 P1 VULN 의 수정
+   내용이 된다.
 
 ### P0 배포 순서 (어기면 고객 구매확정이 깨진다)
 
