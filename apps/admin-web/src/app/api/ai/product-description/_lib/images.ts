@@ -1,3 +1,5 @@
+import sharp from 'sharp';
+
 const FILE_SERVICE_URL =
   process.env.FILE_SERVICE_URL ?? 'http://localhost:3080';
 
@@ -8,18 +10,19 @@ const FILE_SERVICE_URL =
  */
 export const IMAGES_PER_CHUNK = 8;
 
-/**
- * 서버에서 이미지를 축소하지 않는다. Claude 는 긴 변이 2576px 를 넘으면 알아서 줄여서
- * 처리하고, 청크가 8장이라 20장 초과 시 걸리는 해상도 제한도 해당 없다. 미리 줄여 아끼는
- * 토큰은 장당 900 개 남짓(30장에 $0.1 미만)이라 sharp 를 안고 갈 값어치가 없다 —
- * 네이티브 바이너리라 배포 플랫폼(linux)과 개발 머신(darwin)이 어긋나면 런타임에 터진다.
- */
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 /**
  * Claude API 는 요청 전체가 32MB 를 넘으면 거부한다. base64 는 원본의 약 1.37배라
  * 원본 합계는 20MB 아래로 묶는다. 청크 단위로 적용되므로 전체 장수와 무관하다.
  */
 const MAX_CHUNK_BYTES = 20 * 1024 * 1024;
+/**
+ * Claude API 는 **8000x8000px 를 넘는 이미지를 거부한다(400)**. 상품 상세 이미지는
+ * 세로로 아주 길어(예: 860x12000) 이 한도를 쉽게 넘으므로 보내기 전에 반드시 줄인다.
+ * 8000px 이하는 Claude 가 알아서 축소하지만 초과분은 축소가 아니라 거절이다.
+ * 2000px 는 스펙표의 작은 글씨까지 읽히면서 용량은 감당되는 선.
+ */
+const MAX_IMAGE_EDGE = 2000;
 
 const SUPPORTED_MEDIA_TYPES = [
   'image/jpeg',
@@ -61,6 +64,35 @@ function sniffMediaType(buffer: Buffer): SupportedMediaType | null {
   return null;
 }
 
+/**
+ * 긴 변이 MAX_IMAGE_EDGE 를 넘거나 장당 한도를 넘으면 축소한다.
+ * 축소가 필요한 경우에만 JPEG 로 재인코딩 — 그대로 통과하는 이미지는 원본 화질을 지킨다.
+ */
+async function shrinkIfNeeded(
+  buffer: Buffer,
+  mediaType: SupportedMediaType
+): Promise<{ buffer: Buffer; mediaType: SupportedMediaType }> {
+  const image = sharp(buffer, { animated: false });
+  const meta = await image.metadata();
+  const longestEdge = Math.max(meta.width ?? 0, meta.height ?? 0);
+
+  if (longestEdge <= MAX_IMAGE_EDGE && buffer.byteLength <= MAX_IMAGE_BYTES) {
+    return { buffer, mediaType };
+  }
+
+  const resized = await image
+    .resize({
+      width: MAX_IMAGE_EDGE,
+      height: MAX_IMAGE_EDGE,
+      fit: 'inside',
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: 85 })
+    .toBuffer();
+
+  return { buffer: resized, mediaType: 'image/jpeg' };
+}
+
 async function loadImage(fileId: string): Promise<LoadedImage> {
   const res = await fetch(
     `${FILE_SERVICE_URL.replace(/\/+$/, '')}/files/public/${encodeURIComponent(fileId)}`
@@ -85,18 +117,20 @@ async function loadImage(fileId: string): Promise<LoadedImage> {
     );
   }
 
-  if (buffer.byteLength > MAX_IMAGE_BYTES) {
-    const mb = (buffer.byteLength / 1024 / 1024).toFixed(1);
+  // 원본이 크면 서버에서 줄인다 — 어드민이 이미지를 미리 손보게 만들지 않기 위해서.
+  const normalized = await shrinkIfNeeded(buffer, mediaType);
+  if (normalized.buffer.byteLength > MAX_IMAGE_BYTES) {
+    const mb = (normalized.buffer.byteLength / 1024 / 1024).toFixed(1);
     throw new Error(
-      `이미지 한 장이 너무 큽니다. (${mb}MB — 장당 5MB 이하) 용량을 줄여 다시 올려주세요.`
+      `이미지가 너무 큽니다. (fileId: ${fileId}, 축소 후에도 ${mb}MB)`
     );
   }
 
   return {
     fileId,
-    mediaType,
-    data: buffer.toString('base64'),
-    bytes: buffer.byteLength,
+    mediaType: normalized.mediaType,
+    data: normalized.buffer.toString('base64'),
+    bytes: normalized.buffer.byteLength,
   };
 }
 
