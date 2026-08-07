@@ -17,13 +17,9 @@ import { useRef, useState } from "react"
 const BRAND_CATEGORY_HANDLE = "cafe24-cat-728"
 
 // 메가메뉴 목록에서 아예 숨길 대분류 handle.
-// - cafe24-cat-499(전체상품 보기): catch-all 이라 네비게이션 목록에서 제외.
 // - cafe24-cat-82(베스트) / cafe24-cat-498(100원 웰컴딜): 프로모성 → 목록 슬림화 위해 숨김.
-const HIDDEN_CATEGORY_HANDLES = new Set([
-  "cafe24-cat-499",
-  "cafe24-cat-82",
-  "cafe24-cat-498",
-])
+// cafe24-cat-499(전체상품 보기)는 모바일 시트·카테고리 사이드바에 노출되므로 여기서도 노출한다.
+const HIDDEN_CATEGORY_HANDLES = new Set(["cafe24-cat-82", "cafe24-cat-498"])
 
 const HOVER_INTENT_MS = 20
 
