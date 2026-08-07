@@ -6,6 +6,14 @@ export const channelAdapterEnvSchema = z.object({
   PORT: z.string().regex(/^\d+$/).optional(),
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
 
+  // 전역 JwtAuthGuard/AdminRealmGuard 용 (dual-mode). 둘 중 하나는 필수인데, 그 강제는
+  // AuthorizationModule 의 AUTH_CONFIG 팩토리가 이미 한다 — 검증을 두 곳에 두지 않는다.
+  AUTH_SECRET: z.string().min(1).optional(),
+  OIDC_ISSUER_URL: z.string().url().optional(),
+  ALLOWED_AUDIENCES: z.string().optional(),
+  JWT_ISSUER: z.string().optional(),
+  JWT_AUDIENCE: z.string().optional(),
+
   // Kafka Configuration
   KAFKA_CLIENT_ID_PREFIX: z.string(),
   KAFKA_BROKERS: z.string(),

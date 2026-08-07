@@ -208,6 +208,9 @@ export function setup(infra: SharedInfra) {
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
+    // 전역 JwtAuthGuard/AdminRealmGuard 용 (위 notification 과 같은 이유).
+    AUTH_SECRET: authSecret.value,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
     CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEDUSA_API_KEY: medusaApiKey.value,
@@ -243,6 +246,10 @@ export function setup(infra: SharedInfra) {
   const notificationEnv = withPrefix('NOTIFICATION', {
     DATABASE_URL: dbUrl('notification'),
     ...kafkaEnv('notification', 'notification-group'),
+    // 전역 JwtAuthGuard/AdminRealmGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
+    // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
+    AUTH_SECRET: authSecret.value,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
     NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
     NHN_APP_KEY: nhnAppKey.value,
     NHN_SECRET_KEY: nhnSecretKey.value,

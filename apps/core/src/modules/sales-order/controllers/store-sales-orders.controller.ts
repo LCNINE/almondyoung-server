@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { StoreRoute, User } from '@app/authorization';
 import {
   StoreBatchOrderActionsRequestDto,
   StoreCancelOrderDto,
@@ -15,6 +15,7 @@ interface AuthenticatedCustomer {
 }
 
 @ApiTags('Store - Orders')
+@StoreRoute()
 @Controller('store/orders')
 export class StoreSalesOrdersController {
   constructor(private readonly service: StoreSalesOrdersService) {}

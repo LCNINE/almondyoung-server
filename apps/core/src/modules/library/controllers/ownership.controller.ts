@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { StoreRoute } from '@app/authorization';
 
 import { OwnershipFilter, OwnershipService } from '../services/ownership.service';
 import { FileServiceClient } from '../clients/file-service.client';
@@ -22,6 +23,9 @@ import {
 const ALLOWED_FILTERS: OwnershipFilter[] = ['all', 'new', 'used'];
 
 @ApiTags('Library / Ownerships')
+// 고객 본인의 디지털 상품 보유분. 모든 핸들러가 `_requireUserId(req)` 로 얻은 customerId 로
+// 범위를 좁히므로 직원 역할을 요구하지 않는다. 관리자용 부여/회수는 ownership-admin.controller.ts.
+@StoreRoute()
 @Controller('library/ownerships')
 export class OwnershipController {
   constructor(

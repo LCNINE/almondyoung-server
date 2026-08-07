@@ -2,10 +2,15 @@
 import { Controller, Post, Body, Headers, HttpCode, Req, BadRequestException, RawBodyRequest } from '@nestjs/common';
 import { FastifyRequest } from 'fastify';
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import { WebhookService } from '../services/webhook.service';
 import { ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
 
 @ApiTags('webhooks')
+// 호출자는 Resend/Twilio/NHN 이라 사용자 JWT 가 없다. 인증 대신 **프로바이더 서명**이 게이트다
+// (svix-signature / X-Twilio-Signature / X-Toast-Webhook-Signature — 각 핸들러가 검증).
+// 여기에 핸들러를 추가할 때 서명 검증을 빠뜨리면 무인증 엔드포인트가 된다.
+@Public()
 @Controller('webhooks')
 export class WebhookController {
   constructor(private readonly webhookService: WebhookService) {}

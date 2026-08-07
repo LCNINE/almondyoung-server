@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { StoreRoute, User } from '@app/authorization';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
 import {
   StoreCreateReturnRequestDto,
@@ -15,6 +15,7 @@ interface AuthenticatedCustomer {
 }
 
 @ApiTags('Store - Return/Exchange')
+@StoreRoute()
 @Controller('store/orders')
 export class StoreSalesOrderReturnExchangeController {
   constructor(private readonly service: StoreReturnExchangeService) {}

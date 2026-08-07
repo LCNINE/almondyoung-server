@@ -62,6 +62,17 @@ export const notificationEnvSchema = z.object({
 
   // FCM 토큰 등록 엔드포인트 JWT 검증용 (user-service와 동일한 AUTH_SECRET)
   JWT_ACCESS_SECRET: z.string().optional(),
+
+  // 전역 JwtAuthGuard/AdminRealmGuard 용. core 등 다른 서비스와 같은 dual-mode:
+  //   - HS256 legacy: AUTH_SECRET
+  //   - RS256/OIDC:   OIDC_ISSUER_URL
+  // 여기서 둘 다 optional 인 이유는 AuthorizationModule 의 AUTH_CONFIG 팩토리가 "둘 중 하나는
+  // 필수" 를 이미 강제하며 부팅을 세우기 때문이다. 검증을 두 곳에 두지 않는다.
+  AUTH_SECRET: z.string().min(1).optional(),
+  OIDC_ISSUER_URL: z.string().url().optional(),
+  ALLOWED_AUDIENCES: z.string().optional(),
+  JWT_ISSUER: z.string().optional(),
+  JWT_AUDIENCE: z.string().optional(),
 });
 
 export type NotificationEnvConfig = z.infer<typeof notificationEnvSchema>;

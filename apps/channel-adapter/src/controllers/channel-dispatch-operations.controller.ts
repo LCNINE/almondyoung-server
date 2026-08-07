@@ -1,6 +1,7 @@
 import { Controller, Get, Headers, Logger, Param, ParseUUIDPipe, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { Public } from '@app/authorization';
 import {
   ChannelDispatchOperationObservation,
   ShipmentDispatchInboxWorker,
@@ -8,6 +9,9 @@ import {
 
 @ApiTags('internal-channel-dispatch-operations')
 @ApiBearerAuth()
+// admin-web 이 사용자 토큰이 아니라 CHANNEL_ADAPTER_INTERNAL_KEY 를 Bearer 로 보낸다. 전역
+// JwtAuthGuard 를 태우면 그 키를 JWT 로 파싱하려다 401 이 된다. 아래 verifyInternalKey 가 게이트다.
+@Public()
 @Controller('internal/channel-dispatch-operations')
 export class ChannelDispatchOperationsController {
   private readonly logger = new Logger(ChannelDispatchOperationsController.name);

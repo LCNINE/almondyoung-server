@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { AdminRealmGuard, AuthorizationModule, JwtAuthGuard } from '@app/authorization';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
@@ -111,6 +113,9 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
       },
       schema: { ...channelAdapterSchema },
     }),
+    // 스코프는 선언하지 않는다 — 이 서비스의 인가는 "직원이냐" 한 축뿐이다.
+    // 내부 호출용 `internal/*` 는 각자 공유키를 직접 검증하므로 @Public 로 빠진다.
+    AuthorizationModule.forRoot({ microserviceName: 'channel-adapter', scopes: [] }),
     EventTraceApiModule,
     // Kafka 환경변수가 있으면 실제 EventsModule 활성화 (로컬 개발 환경 제외)
     ...(process.env.KAFKA_BROKERS
@@ -156,6 +161,10 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     ChannelDispatchOperationsController,
   ],
   providers: [
+    // 이 서비스도 공용 ALB 와일드카드로 인터넷에 노출돼 있는데 인증이 전혀 없었다.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: AdminRealmGuard },
+
     ChannelAdapterService,
     SyncStatusService,
     ChannelAdapterFactory,
