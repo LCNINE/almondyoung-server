@@ -87,7 +87,6 @@ interface OrderItem {
   quantity: string
   options: string[]
   showInquiry: boolean
-  orderItems: Array<{ productId: string; orderLineId: string }>
   variantId: string
   bankTransferStatus?: string
 }
@@ -191,13 +190,6 @@ const mapStoreOrderToOrderItem = (
     quantity: `${ctx.tList("items", { count: lineItemCount })} · ${ctx.tList("totalQuantity", { count: totalQuantity })}`,
     options,
     showInquiry: order.fulfillment_status === "fulfilled",
-    orderItems: (order.items ?? [])
-      .filter((item) => item.variant?.product?.handle || item.product_handle)
-      .map((item) => ({
-        productId: (item.variant?.product?.handle ??
-          item.product_handle) as string,
-        orderLineId: item.id,
-      })),
     variantId: firstItem?.variant_id ?? "",
     bankTransferStatus:
       ((order.metadata as Record<string, unknown> | null)
@@ -454,7 +446,6 @@ export function OrderList({
                     paymentStatus={order.paymentStatus}
                     productName={order.productName}
                     variantId={order.variantId}
-                    orderItems={order.orderItems}
                     showInquiry={order.showInquiry}
                     coreActions={actions}
                     bankTransferStatus={order.bankTransferStatus}

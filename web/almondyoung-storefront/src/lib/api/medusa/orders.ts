@@ -5,7 +5,6 @@ import { HttpTypes, OrderStatus } from "@medusajs/types"
 import { revalidatePath } from "next/cache"
 import { handleMedusaAuthError } from "./auth-utils"
 import { getAuthHeaders, getCacheOptions } from "../../data/cookies"
-import { createReviewEligibility } from "../ugc/reviews"
 
 export interface MedusaOrder {
   id: string
@@ -144,9 +143,10 @@ export async function getOrder(
     })
 }
 
+// 리뷰 작성 자격은 여기서 따로 만들지 않는다. 아래 confirm-purchase 가 Medusa 쪽에서
+// confirmPurchaseWorkflow 를 돌리고, 그 step 2 가 ugc 에 등록한다(내부키 인증).
 export async function captureOrderPayment(
-  orderId: string,
-  items?: Array<{ productId: string; orderLineId: string }>
+  orderId: string
 ): Promise<{ success: boolean; message?: string }> {
   const authHeaders = await getAuthHeaders()
   if (!authHeaders) {
@@ -168,15 +168,6 @@ export async function captureOrderPayment(
       method: "POST",
       headers,
     })
-
-    if (items && items.length > 0) {
-      try {
-        await createReviewEligibility({ orderId, items })
-      } catch (e) {
-        console.error("createReviewEligibility error:", e)
-        // eligibility 생성 실패해도 구매 확정은 성공으로 처리
-      }
-    }
 
     revalidatePath("/mypage/order/list")
     return { success: true }

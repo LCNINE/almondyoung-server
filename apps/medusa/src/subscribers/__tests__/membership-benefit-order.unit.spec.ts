@@ -1,4 +1,4 @@
-import {
+import handleMembershipBenefitOrder, {
   calculateMembershipDiscount,
   resolveMembershipDiscount,
   resolveQuantity,
@@ -285,5 +285,64 @@ describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
     const container = { resolve: () => { throw new Error('불려서는 안 된다'); } };
 
     await expect(resolveMembershipDiscount(items, 'grp_membership', container, logger)).resolves.toBe(0);
+  });
+});
+
+/**
+ * membership 의 `internal/*` 는 내부키 인증을 요구한다(2026-08 API 인가 감사 P0-2).
+ *
+ * `order.canceled` 경로는 주문/가격 조회 없이 곧장 fetch 로 가므로, 헤더가 **실제 호출에
+ * 실려 나가는지**를 스텁 없이 확인할 수 있는 지점이다. 헤더 생성 함수만 따로 테스트하면
+ * "초록인데 배선은 죽어있는" 상태를 못 잡는다.
+ */
+describe('internal 호출 인증 — order.canceled', () => {
+  const logger = { warn: jest.fn(), error: jest.fn(), info: jest.fn() };
+  const container = { resolve: () => logger };
+  const cancelEvent = { name: 'order.canceled', data: { id: 'order_1' } };
+  const keyBefore = process.env.MEMBERSHIP_INTERNAL_KEY;
+
+  type FetchResult = { ok: boolean; status: number; text: () => Promise<string> };
+  const fetchMock = jest.fn<Promise<FetchResult>, [string, RequestInit]>();
+  const respondWith = (ok: boolean, status: number, body = '') =>
+    fetchMock.mockResolvedValue({ ok, status, text: () => Promise.resolve(body) });
+
+  const run = () => handleMembershipBenefitOrder({ event: cancelEvent, container } as never);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.MEMBERSHIP_INTERNAL_KEY = 'test-internal-key';
+    global.fetch = fetchMock as unknown as typeof fetch;
+    respondWith(true, 200);
+  });
+
+  afterAll(() => {
+    if (keyBefore === undefined) delete process.env.MEMBERSHIP_INTERNAL_KEY;
+    else process.env.MEMBERSHIP_INTERNAL_KEY = keyBefore;
+  });
+
+  it('Authorization: Bearer <키> 를 실어 보낸다', async () => {
+    await run();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/membership/benefits/internal/cancel');
+    expect(init.headers).toMatchObject({ Authorization: 'Bearer test-internal-key' });
+  });
+
+  it('키가 없으면 호출 자체를 하지 않는다 — 헤더 없이 보내면 401 이고 그건 조용한 유실이다', async () => {
+    delete process.env.MEMBERSHIP_INTERNAL_KEY;
+
+    await run();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('membership 이 401 을 내면 성공으로 치지 않고 에러로 남긴다', async () => {
+    respondWith(false, 401, 'Invalid internal API key');
+
+    await run();
+
+    expect(logger.error).toHaveBeenCalledWith(expect.stringContaining('cancel failed (401)'));
+    expect(logger.info).not.toHaveBeenCalled();
   });
 });

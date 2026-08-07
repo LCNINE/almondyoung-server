@@ -48,7 +48,6 @@ export interface ShippingOrder {
   quantity: number
   options: string[]
   showInquiry: boolean
-  orderItems: Array<{ productId: string; orderLineId: string }>
   variantId: string
   bankTransferStatus?: string
 }

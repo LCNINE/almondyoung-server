@@ -47,7 +47,6 @@ interface OrderActionsProps {
   productName: string
   variantId: string
   showInquiry?: boolean
-  orderItems?: Array<{ productId: string; orderLineId: string }>
   coreActions?: StoreOrderActionsResponse
   availableActions?: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
@@ -85,7 +84,6 @@ export default function OrderActions({
   productName,
   variantId,
   showInquiry = true,
-  orderItems,
   coreActions,
   availableActions: availableActionsProp,
   cancelUnavailableReason: cancelUnavailableReasonProp,
@@ -142,7 +140,7 @@ export default function OrderActions({
   const handleConfirmPurchaseSubmit = () => {
     setShowConfirmPurchaseDialog(false)
     startTransition(async () => {
-      const result = await captureOrderPayment(orderId, orderItems)
+      const result = await captureOrderPayment(orderId)
       if (!result.success) {
         toast.error(result.message ?? "구매확정에 실패했습니다.")
         return
