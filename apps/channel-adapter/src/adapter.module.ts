@@ -107,9 +107,11 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     HttpModule,
     DbModule.forRoot({
       config: {
-        connectionString:
-          process.env.DATABASE_URL ||
-          'postgresql://neondb_owner:npg_4jlXAK7qVywN@ep-young-thunder-a1bkhlx2-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
+        // fallback 을 두지 않는다. `config/env.validation.ts` 가 DATABASE_URL 을 필수로
+        // 강제하므로(z.string().url()) 값이 없으면 부팅이 죽는 게 옳다 — 조용히 다른 DB 에
+        // 붙는 것보다 낫다. 여기 있던 하드코딩 Neon 문자열은 2026-08-08 제거했다.
+        // `as string` 은 그 검증이 보장하는 불변식을 TS 에 알리는 용도다.
+        connectionString: process.env.DATABASE_URL as string,
       },
       schema: { ...channelAdapterSchema },
     }),

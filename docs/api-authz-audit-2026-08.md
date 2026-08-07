@@ -9,7 +9,11 @@
 ## 0. 한 줄 요약
 
 라우트 883개 중 **인가 가드 축(PR #572)과 무인증 내부 API(P0)는 정리 완료**. 남은 것은
-**(a) IDOR 전수 95건 — 최대 계열**, (b) 인증 설계 부채 2건, (c) 조용히 죽은 경로 4건.
+**(a) IDOR 전수 95건 — 최대 계열**, (b) 인증 설계 부채 2건(하드코딩 크레덴셜은 코드 제거
+완료 · Neon 프로젝트 삭제가 사람 작업으로 남음), (c) 조용히 죽은 경로 4건.
+
+P1 착수 설계는 `docs/superpowers/specs/2026-08-08-p1-idor-audit-design.md`,
+실행 계획은 `docs/superpowers/plans/2026-08-08-p1-idor-audit.md` 다.
 
 ---
 
@@ -115,15 +119,23 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 **방법**: 라우트별로 컨트롤러 → 서비스 → 리포지토리를 따라가 `userId`/`customerId` 가
 **쿼리 조건에 실제로 들어가는지** 확인한다. 파라미터로 받기만 하고 안 쓰는 경우가 함정이다.
 
-### P2 ⬜ 인증 설계 부채 2건
+### P2 🟨 인증 설계 부채 2건 — 크레덴셜 건은 코드 제거 완료, 사람 작업 대기
 
 - **`libs/authorization/src/strategies/jwt-access.strategy.ts:110`** — `if (payload?.iss)` 조건
   때문에 `iss` 클레임 없는 HS256 토큰은 **issuer/audience 검증을 통째로 건너뛴다**. 레거시 Medusa
   토큰 호환이 의도. IdP·Medusa·core·wallet·file-service 가 `AUTH_SECRET` 하나를 공유하므로 한
   서비스에서 시크릿이 새면 전 서비스 위조가 된다.
-- **`apps/channel-adapter/src/adapter.module.ts`** `DbModule.forRoot` fallback 에 Neon 접속
-  문자열이 **비밀번호까지 하드코딩**. 공개 레포 유출 이력이 있으므로
-  (`docs/git-history-rewrite-2026-08-07.md`) 이 크레덴셜은 이미 노출됐다고 보고 **로테이션** 필요.
+- 🟩 **하드코딩 DB 크레덴셜 — 코드 제거 완료 (2026-08-08)**. 이 항목은 원래
+  `apps/channel-adapter/src/adapter.module.ts` 1건으로 적혀 있었으나, 전수로 훑으니
+  **3개 Neon 프로젝트 × 5곳**이었다. 4곳은 죽은 코드였고(도달 불가 fallback 1, 없는 모듈을
+  import 해 실행 불가능한 테스트 2, import 하는 곳이 없는 파일 1), `apps/membership/drizzle/seed.ts`
+  만 **살아있는 진입점**이라 `DATABASE_URL` 없이 `npm run db:seed` 를 돌리면 클라우드 DB 에
+  시드를 썼다. 회귀는 `scripts/security/no-cloud-credentials.spec.ts` 가 막는다.
+  - ⚠️ **크레덴셜 자체는 여전히 유효하다.** 코드에서 지워도 공개 이력에서 회수되지 않는다
+    (`docs/git-history-rewrite-2026-08-07.md`). 남은 건 **사람 작업**이다:
+  - [ ] Neon 프로젝트 `ep-divine-hill-a1nspuc3` 삭제 (membership)
+  - [ ] Neon 프로젝트 `ep-young-pine-a149ey1z` 삭제 (wallet)
+  - [ ] Neon 프로젝트 `ep-young-thunder-a1bkhlx2` 삭제 (channel-adapter)
 
 ### P3 ⬜ 조용히 죽어 있는 경로 4건 + 의도 확인 1건
 
@@ -180,8 +192,9 @@ membership·ugc 에 **키 검증 없는 `@Public` 쓰기 라우트가 0** 임을
 ### 3-3. 기준선 (이 수치보다 늘면 내 변경 탓)
 
 - `npx jest libs/authorization apps/notification apps/channel-adapter apps/core/src/platform`
-  → **실패 4건이 정상**: `coupang-integration`, `pim-snapshot-builder`, `medusa.client`,
-  `channel-adapter.integration` (전부 기존 debt)
+  → **실패 3건이 정상**: `coupang-integration`, `pim-snapshot-builder`, `medusa.client`
+  (전부 기존 debt). `channel-adapter.integration` 은 2026-08-08 삭제 — 없는 모듈
+  (`../channel-adapter.repository`)을 import 해 **실행 자체가 불가능**했다. DB 문제가 아니었다.
 - `npx eslint <변경파일>` → SST `services.ts` 의 ~399건은 기존 debt. 변경 파일 기준 **14건이 기준선**
 - `node scripts/security/route-authz-audit.js` → **`[A] 무력화 0` 이 정상**. 0 이 아니면 스코프도
   역할도 검사하지 않는 라우트가 생긴 것 (스크립트가 exit 1 로 알린다)

@@ -3,10 +3,14 @@ import postgres from 'postgres';
 import { format, addDays, subDays } from 'date-fns';
 import * as schema from '../src/shared/schemas/entities/schema';
 
-// 환경변수에서 DB URL 가져오기
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  'postgresql://neondb_owner:npg_VR7yj1uOfPTs@ep-divine-hill-a1nspuc3-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
+// 시드는 접속처를 추측하지 않는다. 여기 있던 기본값은 fallback 이 아니라 실제 기본 접속처라서,
+// DATABASE_URL 없이 `npm run db:seed` 를 돌리면 클라우드 DB 에 시드를 썼다 (2026-08-08 제거).
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL 이 없다. 접속처를 명시할 것 — ' + '`dotenv -e apps/membership/.env -- npm run db:seed:membership`',
+  );
+}
 
 const sql = postgres(DATABASE_URL);
 const db = drizzle(sql, { schema });
