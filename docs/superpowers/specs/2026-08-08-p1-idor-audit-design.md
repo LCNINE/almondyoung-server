@@ -196,7 +196,7 @@ const IDOR_REVIEWED = {
 
 | 단계 | 내용 | 마이그 |
 |---|---|---|
-| PR-0 | Neon fallback 제거 (독립·선행 가능) | 0 |
+| PR-0 | Neon 크레덴셜 5곳 제거 + 회귀 테스트 (독립·선행 가능) | 0 |
 | — | 조사 6 + 반증 3 (코드 변경 없음) | — |
 | PR-1 | 스냅샷 테스트 + 감사 문서 P1 섹션 갱신 | 0 |
 | PR-2..n | `VULN` 수정, 앱 단위 | 0 예상 |
@@ -208,23 +208,38 @@ const IDOR_REVIEWED = {
 그 동작에 의존 중이면 깨진다 (감사 문서 P3 의 죽은 경로 4건이 같은 종류의 부채다). 수정 PR 은
 호출자 확인이 선행 조건이다.
 
-## 8. Neon fallback 제거 (PR-0)
+## 8. Neon 크레덴셜 제거 (PR-0)
 
-`apps/channel-adapter/src/adapter.module.ts:112` 의 `DbModule.forRoot` fallback 에 Neon 접속
-문자열이 **비밀번호까지 하드코딩**되어 있다.
+감사 문서 P2 는 이 문제를 `adapter.module.ts` 1건으로 적었으나, 전수로 훑으니
+**3개 Neon 프로젝트 × 5곳**이었다. 5곳 전부를 PR-0 에 넣는다 — 같은 종류의 문제이고 고치는 모양도
+같아서, 한 PR 로 묶으면 "소스에 비-localhost 접속문자열 0" 이라는 불변식 하나가 5곳을 한꺼번에
+막는다.
 
-**동작 위험 없음 — 증명**: `apps/channel-adapter/src/config/env.validation.ts:5` 가
-`DATABASE_URL: z.string().url()` 로 이미 필수이고, SST 가 `deployments/lcnine/services/infra/services.ts:212`
-에서 `dbUrl('channel_adapter')` 로 주입한다. env 가 없으면 fallback 을 쓰기 전에 검증이 부팅을
-죽인다. 즉 이 fallback 은 **이미 도달 불가능한 죽은 코드**다.
+| 위치 | 상태 | 근거 |
+|---|---|---|
+| `channel-adapter/src/adapter.module.ts:112` | 도달 불가 | `env.validation.ts:5` 가 `DATABASE_URL` 필수. SST 가 `services.ts:212` 에서 주입 |
+| `channel-adapter/src/services/__tests__/channel-adapter.integration.spec.ts:52` | 실행 불가 | `Cannot find module '../channel-adapter.repository'` |
+| `wallet/test/integration/payment-response-storage.integration.spec.ts:44` | 실행 불가 | `Cannot find module '../../src/shared/database/schema'` |
+| `membership/test/test-app.module.ts:30` | 죽은 파일 | 이 파일을 import 하는 곳 0건 |
+| **`membership/drizzle/seed.ts:9`** | **살아있음** | `package.json:56` `db:seed:membership` 의 진입점 |
+
+넷은 죽은 코드라 제거에 동작 위험이 없다. 다섯째는 다르다 — fallback 이 아니라 **실행되는 기본
+접속처**라서, `DATABASE_URL` 없이 `npm run db:seed` 를 돌리면 저 클라우드 DB 에 시드를 쓴다.
+
+통합 테스트 2건은 DB 에 닿기도 전에 모듈 해석에서 죽는다. 커버리지가 0 이면서 크레덴셜만 들고
+있었다는 뜻이므로 스크럽이 아니라 **삭제**한다. 그중 `channel-adapter.integration` 은 감사 문서
+§3-3 이 "기준선 실패"로 적어둔 4건 중 하나다 — 원인은 DB 가 아니라 stale import 였다. 삭제하면
+기준선 실패는 3건이 된다.
 
 ### 사람 작업 (코드로 못 끝낸다)
 
 코드에서 지워도 크레덴셜은 회수되지 않는다. 공개 레포 히스토리 재작성 이후에도 `refs/pull` 364개와
 포크 3개가 원본을 붙들고 있다 (`docs/git-history-rewrite-2026-08-07.md`).
 
-- [ ] Neon 콘솔에서 해당 프로젝트/DB **삭제** (미사용 확인됨) — 이것이 진짜 종결이다
-- [ ] 삭제 대신 유지한다면 비밀번호 **로테이션**
+- [ ] Neon 프로젝트 `ep-divine-hill-a1nspuc3` 삭제 (membership)
+- [ ] Neon 프로젝트 `ep-young-pine-a149ey1z` 삭제 (wallet)
+- [ ] Neon 프로젝트 `ep-young-thunder-a1bkhlx2` 삭제 (channel-adapter)
+- [ ] 삭제 대신 유지하는 것이 있다면 비밀번호 **로테이션**
 
 ## 9. 검증 기준선
 
