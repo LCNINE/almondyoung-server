@@ -579,21 +579,10 @@ input[type="search"]::-webkit-search-results-decoration {
   }
 }
 
-/* ─────────────────────────────────────────────────────────────
- * 상품 상세설명(.prose) — DESIGN.md 토큰에 맞춘 오버라이드
- *
- * @tailwindcss/typography 기본값은 h1 36px/weight 800 처럼 DESIGN.md 규정
- * (최대 26px, weight 400/500/700만)을 벗어난다. 상세설명만 다른 톤으로 튀지 않도록 덮는다.
- * 색은 하드코딩 hex 대신 :root 시맨틱 변수를 쓰고, 여백은 전부 4px 그리드 값.
- *
- * 본문 16px 는 DESIGN.md 의 body(14px)에 대한 의도적 예외 — 상세설명은 길게 읽는 글이라
- * 14px 로는 피로하다. 다른 화면의 본문에는 이 예외를 적용하지 않는다.
- * ───────────────────────────────────────────────────────────── */
 .prose {
   --tw-prose-body: var(--foreground);
   --tw-prose-headings: var(--foreground);
   --tw-prose-bold: var(--foreground);
-  --tw-prose-quotes: var(--foreground);
   --tw-prose-captions: var(--muted-foreground);
   --tw-prose-th-borders: var(--border);
   --tw-prose-td-borders: var(--border);
@@ -628,25 +617,6 @@ input[type="search"]::-webkit-search-results-decoration {
 .prose li {
   margin-top: 4px;
   margin-bottom: 4px;
-}
-
-/* 후킹 카피 — 오렌지를 쓰는 몇 안 되는 자리 (DESIGN.md §1: 한 화면에 강조는 사실상 하나).
-   틴트 #fff2ec 는 DESIGN.md 표에 있으나 :root 변수로는 없어 hex 로 둔다. */
-.prose blockquote {
-  margin: 24px 0;
-  padding: 16px 20px;
-  border-left: 3px solid var(--primary);
-  border-radius: 8px;
-  background: #fff2ec;
-  font-style: normal;
-  font-weight: 500;
-}
-.prose blockquote p {
-  margin: 0;
-}
-.prose blockquote p::before,
-.prose blockquote p::after {
-  content: none;
 }
 
 /* 스펙표 — 헤더에 면을 깔아야 항목/값이 구분된다 */
