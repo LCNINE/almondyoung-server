@@ -551,7 +551,11 @@ export function setup(infra: SharedInfra) {
     path: '../../../apps/admin-web',
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
-    server: { architecture: 'arm64' },
+    //
+    // timeout 기본값은 20초라 AI 초안의 작성 단계(30초 안팎)가 잘린다. CloudFront 가
+    // 60초에서 끊으므로 이 값이 올릴 수 있는 상한이고, 그래서 AI 초안은 이미지 분석과
+    // 작성을 여러 호출로 쪼갠다 (features/mall/products-detail/.../ai-draft.ts).
+    server: { architecture: 'arm64', timeout: '60 seconds' },
     domain: { name: domain('admin') },
     environment: {
       AUTH_SECRET: authSecret.value,
