@@ -9,6 +9,10 @@ import { RefundEventHandler } from '../../src/services/refund-event-handler.serv
 import { RefundPolicyService } from '../../src/services/subscription/refund-policy.service';
 import { CancellationContextReader } from '../../src/services/subscription/cancellation-context.reader';
 import { BenefitReader } from '../../src/services/benefit/benefit.reader';
+import { PauseReader } from '../../src/services/pause/pause.reader';
+import { PauseManager } from '../../src/services/pause/pause.manager';
+import { SavingsService } from '../../src/services/savings/savings.service';
+import { SavingsReader } from '../../src/services/savings/savings.reader';
 import { SubscriptionService } from '../../src/services/subscription.service';
 import { SubscriptionCreator } from '../../src/services/subscription/subscription.creator';
 import { SubscriptionManager } from '../../src/services/subscription/subscription.manager';
@@ -74,6 +78,12 @@ describe('Subscription Cancellation Integration Tests', () => {
         RefundPolicyService,
         CancellationContextReader,
         BenefitReader,
+        // 정지 일수는 연간 정산의 '이용한 기간' 계산에 직접 들어간다 — mock 하면 정산 금액 검증이 무의미해진다.
+        PauseReader,
+        PauseManager,
+        // 절약액 집계는 구독 이력 응답에 실려 나간다 — 실제 구현을 써야 판정과 같은 원장을 보는지 확인된다.
+        SavingsService,
+        SavingsReader,
         // 무료 체험 테스트를 위한 추가 providers
         SubscriptionService,
         SubscriptionCreator,
@@ -347,6 +357,27 @@ describe('Subscription Cancellation Integration Tests', () => {
   });
 
   describe('Task 4: 강제 구독 취소 (어드민)', () => {
+    // 환불 금액 산정을 보려면 환불 대상 결제가 있어야 한다. 기본 fixture 는 결제 전 계약이므로
+    // 이 그룹에서만 결제 intent 를 붙인다(intent 없는 계약의 거절은 아래 별도 테스트가 덮는다).
+    beforeEach(async () => {
+      await dbService.db
+        .update(schema.subscriptionContracts)
+        .set({ lastPaymentIntentId: 'intent_001' })
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+    });
+
+    it('❌ 결제 내역 없는 계약의 환불 - 거절', async () => {
+      await dbService.db
+        .update(schema.subscriptionContracts)
+        .set({ lastPaymentIntentId: null })
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+
+      // 관리자 지급·이관 계약은 돌려줄 결제가 없다. PENDING 으로 표시하면 환불이 진행 중이라고 오인한다.
+      await expect(
+        cancellationService.forceCancelSubscription(testContractId, 'admin-001', '시스템 장애', 'FULL'),
+      ).rejects.toThrow('환불 대상 결제 내역이 없습니다');
+    });
+
     it('✅ 강제 취소 - FULL 환불', async () => {
       const result = await cancellationService.forceCancelSubscription(
         testContractId,
@@ -359,9 +390,7 @@ describe('Subscription Cancellation Integration Tests', () => {
 
       expect(result.status).toBe('CANCELLED');
       expect(result.refundAmount).toBe(9900);
-      // 이 계약엔 결제 intent 가 없다(무료 체험 중). 환불할 대상이 없으므로 FAILED 로 사실대로 보고한다 —
-      // 예전에는 PENDING(환불 대기)으로 표시해 관리자가 환불이 진행 중이라고 오인했다.
-      expect(result.refundStatus).toBe('FAILED');
+      expect(result.refundStatus).toBe('COMPLETED');
 
       // 이벤트 확인
       const events = await contractEventManager.getContractEvents(testContractId);
