@@ -13,7 +13,8 @@
 - 설계 근거는 `docs/superpowers/specs/2026-08-08-p1-idor-audit-design.md` 다. 계획과 스펙이 어긋나면 스펙이 옳다.
 - 상위 상황판은 `docs/api-authz-audit-2026-08.md` 다. 착수/완료 시 그 문서의 상태를 갱신한다.
 - 마이그레이션 **0건**. 이 계획의 어떤 태스크도 DB 스키마를 건드리지 않는다.
-- 서브에이전트는 **레포 안의 어떤 파일도 수정 금지**. 쓰기는 scratchpad 한정. (워크트리 오염이 5회 재발했고, 미커밋 편집 변종은 `origin/develop..develop` 탐지를 통과한다.)
+- **조사/반증 에이전트**(Task 3·4)는 **레포 안의 어떤 파일도 수정 금지**. 쓰기는 scratchpad 한정. (워크트리 오염이 5회 재발했고, 미커밋 편집 변종은 `origin/develop..develop` 탐지를 통과한다.) 이 제약은 조사 에이전트에만 걸린다 — Task 2·5·6·7 의 구현 에이전트는 당연히 레포를 고친다.
+- **Task 3·4 는 오케스트레이터가 직접 수행한다.** 그 자체가 에이전트 fan-out 이라 구현 에이전트에게 위임하면 중첩이 된다.
 - 브랜치는 `docs/p1-idor-audit-design` 위에서 이어간다. `develop` 에 직접 커밋하지 않는다.
 - 검증 기준선:
   - `node scripts/security/route-authz-audit.js` → `[A] 무력화 0` (아니면 exit 1)
