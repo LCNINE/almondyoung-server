@@ -59,6 +59,12 @@ export function toAnthropicErrorResponse(err: unknown): Response | null {
     );
   }
   if (err instanceof Anthropic.APIError) {
+    // 상태코드만으로는 원인을 못 좁힌다 — 400 은 스키마·이미지·요청크기 어느 쪽이든 난다.
+    console.error('[ai/product-description] Anthropic API 오류', {
+      status: err.status,
+      message: err.message?.slice(0, 500),
+      body: JSON.stringify(err.error ?? {}).slice(0, 1500),
+    });
     return Response.json(
       { message: `AI 호출에 실패했습니다. (${err.status})` },
       { status: 502 }
