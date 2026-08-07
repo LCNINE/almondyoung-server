@@ -41,7 +41,7 @@ const APPS = {
     authz: ['MembershipAdminAuth', 'MembershipInternalAuth'],
   },
   'file-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
-  'ugc-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
+  'ugc-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: ['UgcInternalAuth'] },
   // WalletAuthGuard 의 마지막 분기가 requireApiKeyAuth 라 표시 없는 라우트도 API key 를 요구한다.
   wallet: { globalScope: false, adminRealm: false, defaultDeny: true, authz: ['WalletAdminAuth', 'WalletJwtAuth'] },
   search: { globalScope: false, adminRealm: false, defaultDeny: false, authz: [] },
@@ -140,11 +140,6 @@ for (const app of selected) {
   all.push(...scanApp(app, cfg).map((r) => ({ ...r, cfg })));
 }
 
-if (asJson) {
-  console.log(JSON.stringify(all.map(({ cfg, ...r }) => r), null, 2));
-  process.exit(0);
-}
-
 const print = (title, list) => {
   if (!list.length) return;
   console.log(`  [${title}] ${list.length}`);
@@ -153,33 +148,53 @@ const print = (title, list) => {
   }
 };
 
-let inertTotal = 0;
-for (const app of selected) {
-  const rows = all.filter((r) => r.app === app);
-  if (!rows.length) continue;
-  const cfg = APPS[app];
-  const unmarked = rows.filter((r) => !r.isPublic && !r.storeRoute && !r.authz);
+const inertTotal = all.filter((r) => r.inertScope).length;
 
-  console.log(
-    `\n########## ${app} — 라우트 ${rows.length} ` +
-      `(ScopeGuard전역=${cfg.globalScope} AdminRealm=${cfg.adminRealm} 기본차단=${cfg.defaultDeny}) ##########`,
-  );
-
-  const inert = rows.filter((r) => r.inertScope);
-  inertTotal += inert.length;
-  print('A: @RequireScopes 무력화 — ScopeGuard 미바인딩 (0 이어야 함)', inert);
-
-  if (cfg.defaultDeny) {
-    // 기본 차단 앱에서 표시 없는 라우트는 정상(=직원/API key 전용). 셀프서비스만 따로 본다.
-    print('B: @StoreRoute (고객 — IDOR 검사 대상)', rows.filter((r) => r.storeRoute));
-  } else {
-    print('B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)', unmarked);
-  }
-  print('C: @Public 쓰기 (키/서명 검증이 있는지 반드시 확인)', rows.filter((r) => r.isPublic && WRITE.has(r.verb)));
+// `--json` 은 stdout 을 통째로 JSON 으로 쓴다. 사람이 읽는 출력이 한 줄이라도 섞이면 파싱이 깨진다.
+// 또 여기서 `process.exit()` 를 부르면 안 된다 — stdout 이 파이프일 때 큰 JSON 이 flush 되기 전에
+// 프로세스가 죽어 출력이 잘린다(전 앱 883 라우트에서 실제로 잘렸다). node 가 알아서 끝내게 둔다.
+if (asJson) {
+  console.log(JSON.stringify(all.map(({ cfg, ...r }) => r), null, 2));
+} else {
+  printReport();
 }
 
-console.log(`\n총 라우트 ${all.length} / [A] 무력화 ${inertTotal}`);
-if (inertTotal > 0) {
-  console.log('⚠ [A] 가 0 이 아니다 — 스코프도 역할도 검사하지 않는 라우트가 있다는 뜻이다.');
-  process.exitCode = 1;
+if (inertTotal > 0) process.exitCode = 1;
+
+function printReport() {
+  for (const app of selected) {
+    const rows = all.filter((r) => r.app === app);
+    if (!rows.length) continue;
+    const cfg = APPS[app];
+    const unmarked = rows.filter((r) => !r.isPublic && !r.storeRoute && !r.authz);
+
+    console.log(
+      `\n########## ${app} — 라우트 ${rows.length} ` +
+        `(ScopeGuard전역=${cfg.globalScope} AdminRealm=${cfg.adminRealm} 기본차단=${cfg.defaultDeny}) ##########`,
+    );
+
+    print(
+      'A: @RequireScopes 무력화 — ScopeGuard 미바인딩 (0 이어야 함)',
+      rows.filter((r) => r.inertScope),
+    );
+
+    if (cfg.defaultDeny) {
+      // 기본 차단 앱에서 표시 없는 라우트는 정상(=직원/API key 전용). 셀프서비스만 따로 본다.
+      print(
+        'B: @StoreRoute (고객 — IDOR 검사 대상)',
+        rows.filter((r) => r.storeRoute),
+      );
+    } else {
+      print('B: 인가 표시 없음 — 인증만 통과 (IDOR 검사 대상)', unmarked);
+    }
+    print(
+      'C: @Public 쓰기 (키/서명 검증이 있는지 반드시 확인)',
+      rows.filter((r) => r.isPublic && WRITE.has(r.verb)),
+    );
+  }
+
+  console.log(`\n총 라우트 ${all.length} / [A] 무력화 ${inertTotal}`);
+  if (inertTotal > 0) {
+    console.log('⚠ [A] 가 0 이 아니다 — 스코프도 역할도 검사하지 않는 라우트가 있다는 뜻이다.');
+  }
 }
