@@ -65,6 +65,15 @@ export interface CancellationPreview {
    * 막히는 일이 없다.
    */
   hasPaymentIntent: boolean;
+  /**
+   * 이번 결제 주기에 실제로 받은 멤버십 할인 — 환불 가능 여부를 가른 근거 그 자체.
+   *
+   * 화면이 이 숫자를 보여줘야 "혜택을 쓰셔서 환불이 안 됩니다" 가 검증 가능한 안내가 된다.
+   * 판정은 `totalDiscountAmount > 0` 하나로 갈린다(주문 건수는 표시용).
+   */
+  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
+  /** 위 혜택 사용량을 센 구간의 시작. 결제 기록이 없으면 null. */
+  benefitPeriodStart: string | null;
   options: CancellationOption[];
 }
 
@@ -803,6 +812,8 @@ export class SubscriptionCancellationService {
       refundProcessingBusinessDays: REFUND_PROCESSING_BUSINESS_DAYS,
       canUndoCancellation: context.alreadyScheduledForCancellation && context.isRecurring,
       hasPaymentIntent: !!context.contract.lastPaymentIntentId,
+      currentPeriodBenefit: context.currentPeriodBenefit,
+      benefitPeriodStart: context.benefitPeriodStart,
       options: [context.decision.atPeriodEnd, context.decision.immediateRefund],
     };
   }

@@ -1,4 +1,8 @@
-import { calculateMembershipDiscount, type OrderItem } from '../membership-benefit-order';
+import {
+  calculateMembershipDiscount,
+  resolveMembershipDiscount,
+  type OrderItem,
+} from '../membership-benefit-order';
 
 // 멤버십 혜택 기록(→ 해지 시 환불 차단)은 이 함수가 > 0 을 낼 때만 트리거된다.
 // (subscriber: `if (discountAmount <= 0) return;`)
@@ -44,5 +48,100 @@ describe('calculateMembershipDiscount - 혜택 사용 판정 신호', () => {
 
   it('빈 주문은 0', () => {
     expect(calculateMembershipDiscount([])).toBe(0);
+  });
+});
+
+// compare_at 은 멤버십가뿐 아니라 수량 할인(Tiered Prices)에도 채워진다 — 수량 할인은 고객그룹 규칙이
+// 없어 비회원도 받는다. 멤버십 귀속분만 남기려면 '회원이 아니었다면 냈을 가격'과 비교해야 한다.
+describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
+  const logger = { warn: jest.fn() };
+
+  /** 비회원가를 priceSet 별로 돌려주는 컨테이너 스텁. */
+  const containerWith = (nonMemberPriceByVariant: Record<string, number>) => ({
+    resolve: (key: string) => {
+      if (key === 'pricing') {
+        return {
+          calculatePrices: async () =>
+            Object.entries(nonMemberPriceByVariant).map(([variantId, amount]) => ({
+              id: `ps_${variantId}`,
+              calculated_amount: amount,
+            })),
+        };
+      }
+      return {
+        graph: async () => ({
+          data: Object.keys(nonMemberPriceByVariant).map((variantId) => ({
+            id: variantId,
+            price_set: { id: `ps_${variantId}` },
+          })),
+        }),
+      };
+    },
+  });
+
+  beforeEach(() => logger.warn.mockClear());
+
+  it('수량 할인만 받은 주문은 멤버십 귀속 0 → 혜택 미기록', async () => {
+    // 정가 10000, 수량 할인가 8000. 회원도 비회원도 8000 이므로 멤버십이 깎아준 몫은 없다.
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 2 })];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 8000 }), logger);
+
+    expect(discount).toBe(0);
+  });
+
+  it('멤버십가만 받은 주문은 전액이 멤버십 귀속', async () => {
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 2 })];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 10000 }), logger);
+
+    expect(discount).toBe(4000);
+  });
+
+  it('수량 할인 + 멤버십가가 겹치면 멤버십 기여분만 센다', async () => {
+    // 정가 10000 → 수량 할인 9000 → 멤버십가 8000. 멤버십이 깎은 건 1000 뿐이다.
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 3 })];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 9000 }), logger);
+
+    expect(discount).toBe(3000);
+  });
+
+  it('compare_at 기준 할인액을 넘지 않는다', async () => {
+    // 주문 뒤 정가가 올랐어도 고객이 실제로 덜 낸 금액(2000)보다 크게 잡지 않는다.
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 })];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 50000 }), logger);
+
+    expect(discount).toBe(2000);
+  });
+
+  it('가격 조회가 실패하면 compare_at 기준으로 떨어진다', async () => {
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 })];
+    const brokenContainer = {
+      resolve: () => {
+        throw new Error('pricing module down');
+      },
+    };
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', brokenContainer, logger);
+
+    expect(discount).toBe(2000);
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('멤버십 그룹 설정이 없으면 compare_at 기준을 그대로 쓴다', async () => {
+    const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 1 })];
+
+    const discount = await resolveMembershipDiscount(items, null, containerWith({ v1: 8000 }), logger);
+
+    expect(discount).toBe(2000);
+  });
+
+  it('할인 자체가 없으면 가격 조회 없이 0', async () => {
+    const items = [item({ variant_id: 'v1', unit_price: 10000, compare_at_unit_price: null })];
+    const container = { resolve: () => { throw new Error('불려서는 안 된다'); } };
+
+    await expect(resolveMembershipDiscount(items, 'grp_membership', container, logger)).resolves.toBe(0);
   });
 });

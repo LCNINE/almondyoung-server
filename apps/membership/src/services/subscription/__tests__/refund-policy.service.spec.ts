@@ -28,7 +28,7 @@ describe('RefundPolicyService', () => {
       autoRefundSupported: true,
       requiresReceiveAccount: false,
       refundableAmount: null,
-      currentCycleBenefit: { orderCount: 0, totalDiscountAmount: 0 },
+      currentPeriodBenefit: { orderCount: 0, totalDiscountAmount: 0 },
       termBenefitDiscount: 0,
       ...overrides,
     };
@@ -41,7 +41,7 @@ describe('RefundPolicyService', () => {
         plan: { price: ANNUAL_PRICE, durationDays: 365 },
         paidPeriodStart: addDays(now, -75),
         periodEndsAt: addDays(now, 290),
-        currentCycleBenefit: { orderCount: 1, totalDiscountAmount: 1000 },
+        currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1000 },
       };
 
       // 75일 경과 → 3개월 차감(34,930원). 그중 40일이 정지였다면 35일 이용 → 2개월 차감(39,920원).
@@ -132,17 +132,19 @@ describe('RefundPolicyService', () => {
       expect(decision.withdrawalDaysRemaining).toBe(0);
     });
 
-    it('혜택을 한 번이라도 썼으면 7일 내라도 환불 불가', () => {
-      const decision = policy.evaluate(input({ currentCycleBenefit: { orderCount: 1, totalDiscountAmount: 0 } }));
+    it('할인을 1원이라도 받았으면 7일 내라도 환불 불가', () => {
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 1, totalDiscountAmount: 1 } }));
 
       expect(decision.immediateRefund.available).toBe(false);
       expect(decision.immediateRefund.unavailableReason).toContain('혜택');
     });
 
-    it('할인 금액만 있고 주문 수가 0이어도 사용으로 본다', () => {
-      const decision = policy.evaluate(input({ currentCycleBenefit: { orderCount: 0, totalDiscountAmount: 1 } }));
+    it('주문은 했지만 멤버십 할인이 0원이면 혜택 미사용 — 전액 환불', () => {
+      const decision = policy.evaluate(input({ currentPeriodBenefit: { orderCount: 3, totalDiscountAmount: 0 } }));
 
-      expect(decision.immediateRefund.available).toBe(false);
+      expect(decision.immediateRefund.available).toBe(true);
+      expect(decision.immediateRefund.refundKind).toBe('WITHDRAWAL_FULL');
+      expect(decision.withdrawalDaysRemaining).toBeGreaterThan(0);
     });
 
     it('남은 철회 기간을 알려준다', () => {

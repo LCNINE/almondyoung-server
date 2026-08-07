@@ -279,6 +279,16 @@ export interface AdminCancellationQuote {
    * 과도기(membership 이 옛 버전)엔 undefined — 그때는 서버 판정에 맡긴다.
    */
   hasPaymentIntent?: boolean;
+  /**
+   * 이번 결제 주기에 실제로 받은 멤버십 할인 — 환불 가능 여부를 가른 근거 그 자체.
+   *
+   * CS 가 "혜택을 쓰셔서 환불이 안 됩니다" 를 숫자로 확인하고 답할 수 있어야 한다.
+   * 판정은 `totalDiscountAmount > 0` 하나로 갈린다(주문 건수는 표시용).
+   * 과도기(membership 이 옛 버전)엔 undefined.
+   */
+  currentPeriodBenefit?: { orderCount: number; totalDiscountAmount: number };
+  /** 위 혜택 사용량을 센 구간의 시작. 결제 기록이 없으면 null. */
+  benefitPeriodStart?: string | null;
   options: AdminCancellationOption[];
 }
 

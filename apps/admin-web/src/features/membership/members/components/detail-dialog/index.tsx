@@ -755,6 +755,20 @@ function CancellationVerdict({ contractId }: { contractId: string }) {
         ) : (
           <p className="text-xs leading-5 text-amber-900">{immediate.unavailableReason}</p>
         )}
+        {/* 환불을 가른 근거를 숫자로 — "혜택을 쓰셔서 안 됩니다" 만으로는 문의에 답할 수 없다.
+            판정 축은 받은 할인 금액 하나다(주문 건수는 참고값). */}
+        {quote?.currentPeriodBenefit && (
+          <p className="text-xs text-muted-foreground" data-testid="benefit-usage">
+            이번 결제 주기 혜택 사용:{' '}
+            <span className="font-medium text-foreground">
+              할인 {quote.currentPeriodBenefit.totalDiscountAmount.toLocaleString()}원
+            </span>{' '}
+            · 할인받은 주문 {quote.currentPeriodBenefit.orderCount}건
+            {quote.benefitPeriodStart && ` (${formatDate(quote.benefitPeriodStart)} 부터)`}
+            {quote.currentPeriodBenefit.totalDiscountAmount === 0 &&
+              ' — 할인을 받은 적이 없어 청약철회 대상입니다.'}
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           해지 예약 시 {formatDate(quote?.currentPeriodEndsAt)}까지 이용 후 종료되며 이후 청구되지 않습니다.
         </p>

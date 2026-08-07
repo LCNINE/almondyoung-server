@@ -126,6 +126,17 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
             <span className="font-medium text-gray-900">
               {item.plan ? t("billing.amountWon", { amount: item.plan.price.toLocaleString() }) : "-"}
             </span>
+            {/* 얼마 내고 얼마 아꼈는지가 나란히 보여야 재가입 판단이 된다 */}
+            <span className="text-gray-400">{t("history.historySavings")}</span>
+            <span className="font-medium text-gray-900">
+              {t("billing.amountWon", {
+                amount: (item.savings?.totalSavings ?? 0).toLocaleString(),
+              })}
+              <span className="ml-1.5 text-xs font-normal text-gray-400">
+                {item.savings?.orderCount ?? 0}
+                {t("stats.unitCount")}
+              </span>
+            </span>
             <span className="text-gray-400">{t("billing.subscriptionType")}</span>
             <span className="font-medium text-gray-900">
               {item.plan ? planLabel(item.plan.durationDays) : "-"}

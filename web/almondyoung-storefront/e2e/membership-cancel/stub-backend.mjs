@@ -351,6 +351,38 @@ const { subscription, preview } = build();
 /** 호출 기록 — 테스트가 "무엇이 어떤 payload 로 전송됐는지" 확인한다. */
 const calls = [];
 
+// 절약 내역은 결제 주기 단위로 끊는다(달력 월 아님). isoAt 은 주기 경계를 시각까지 표현한다.
+const isoAt = (days) => new Date(TODAY.getTime() + days * 86400000).toISOString();
+const SAVINGS_PERIODS = [
+  {
+    id: 'contract-1:2',
+    contractId: 'contract-1',
+    periodNumber: 2,
+    startDate: isoAt(-3),
+    endDate: isoAt(27),
+    isCurrent: true,
+    totalSavings: 12000,
+    orderCount: 2,
+  },
+  {
+    id: 'contract-1:1',
+    contractId: 'contract-1',
+    periodNumber: 1,
+    startDate: isoAt(-33),
+    endDate: isoAt(-3),
+    isCurrent: false,
+    totalSavings: 8000,
+    orderCount: 1,
+  },
+];
+const SAVINGS_ORDERS = {
+  'contract-1:2': [
+    { orderId: 'order_2001', orderDate: isoAt(-2), discountAmount: 7000 },
+    { orderId: 'order_2002', orderDate: isoAt(-1), discountAmount: 5000 },
+  ],
+  'contract-1:1': [{ orderId: 'order_1001', orderDate: isoAt(-30), discountAmount: 8000 }],
+};
+
 const CANCELLATION_REASONS = [
   { code: 'NOT_USING', displayText: '이용하지 않아요', category: 'GENERAL', sortOrder: 1 },
   { code: 'EXPENSIVE', displayText: '가격이 비싸요', category: 'PRICE', sortOrder: 2 },
@@ -417,6 +449,18 @@ function routes(pathname, method, body) {
   if (pathname === '/subscriptions/cancellation-reasons') return { reasons: CANCELLATION_REASONS };
   if (pathname === '/subscriptions/history') return [];
   if (pathname === '/plans') return subscription ? [{ plan: subscription.plan, tier: TIER }] : [];
+  // 절약액은 결제 주기 단위다 — 환불 판정과 같은 기간 경계를 써야 화면 금액과 판정 근거가 맞는다.
+  if (pathname === '/membership/savings/overview')
+    return {
+      currentPeriod: SAVINGS_PERIODS[0],
+      periods: SAVINGS_PERIODS,
+      allTime: { totalSavings: 20000, orderCount: 3 },
+    };
+  if (pathname.startsWith('/membership/savings/periods/')) {
+    const periodId = decodeURIComponent(pathname.slice('/membership/savings/periods/'.length));
+    const period = SAVINGS_PERIODS.find((p) => p.id === periodId) ?? SAVINGS_PERIODS[0];
+    return { ...period, orders: SAVINGS_ORDERS[period.id] ?? [] };
+  }
   if (pathname === '/membership/savings/current-month') return { totalSavings: 12000, orderCount: 2 };
   if (pathname === '/membership/savings/range') return { months: [] };
   if (pathname === '/membership/benefits/current')

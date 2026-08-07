@@ -15,15 +15,10 @@ import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type {
   CancellationPreviewDto,
   CancellationReasonDto,
-  CycleBenefitDto,
-  CycleBenefitHistoryDto,
   SubscriptionDetailsDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
-import type {
-  MonthlySavingsDto,
-  RangeSavingsDto,
-} from "@lib/types/dto/membership-savings"
+import type { SavingsOverviewDto } from "@lib/types/dto/membership-savings"
 import MembershipInvoicesSection from "./membership-invoices-section"
 import type { PlanWithTier } from "@lib/types/membership"
 
@@ -41,14 +36,12 @@ import type { PlanWithTier } from "@lib/types/membership"
 interface SubscriberSectionProps {
   membershipData: SubscriptionDetailsDto | null
   plans: PlanWithTier[]
-  currentSavings: MonthlySavingsDto | null
-  rangeSavings: RangeSavingsDto | null
+  /** 결제 주기별 절약액. 환불 판정과 같은 기간 경계를 쓴다. */
+  savingsOverview: SavingsOverviewDto | null
   subscriptionHistory: SubscriptionHistoryItemDto[]
   cancellationReasons: CancellationReasonDto[]
   /** 해지 선택지·환불 금액 (서버 정책). null 이면 해지 UI 를 숨긴다. */
   cancellationPreview: CancellationPreviewDto | null
-  currentBenefit: CycleBenefitDto | null
-  benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
 }
 
@@ -62,10 +55,9 @@ const LEGACY_URL =
 
 export default function SubscriberSection({
   membershipData,
-  currentSavings,
+  savingsOverview,
   cancellationReasons,
   cancellationPreview,
-  currentBenefit,
   hasCafe24Link,
 }: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
@@ -117,8 +109,7 @@ export default function SubscriberSection({
       <MembershipStatusSection>
         <MemberDetails
           membershipData={membershipData}
-          currentSavings={currentSavings}
-          currentBenefit={currentBenefit}
+          savingsOverview={savingsOverview}
         />
       </MembershipStatusSection>
       {/* 해지 예약 안내 — 언제 해지했고 언제까지 쓸 수 있는지 + 철회 */}

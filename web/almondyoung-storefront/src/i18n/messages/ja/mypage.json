@@ -826,15 +826,19 @@
       }
     },
     "stats": {
-      "monthlySavings": "今月の節約金額",
-      "monthlyOrders": "今月の注文件数",
       "cycleSavings": "今サイクルの節約金額",
       "cycleOrders": "サイクル内注文件数",
       "cycleRemaining": "サイクル終了まで",
       "unitWon": "ウォン",
       "unitCount": "件",
       "unitDay": "日",
-      "change": "変更"
+      "change": "変更",
+      "currentPeriodTag": "現在のサイクル",
+      "periodSelectLabel": "照会期間（決済サイクル）",
+      "allTimeSavings": "加入後の累計節約",
+      "orderBreakdown": "注文別の割引明細",
+      "loadingBreakdown": "明細を読み込み中",
+      "noBreakdown": "この期間に会員割引を受けた注文はありません。"
     },
     "currentBenefits": {
       "benefit01": {
@@ -954,7 +958,8 @@
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 有料メンバーシップ 月 4,990ウォン / 年 49,900ウォン",
       "priceNoticeFreeMonths": "* 年間プランで 2ヶ月無料",
-      "cancelWarningRecurring": "解約すると次回以降の請求は行われず、会員特典も終了します。"
+      "cancelWarningRecurring": "解約すると次回以降の請求は行われず、会員特典も終了します。",
+      "historySavings": "受けた割引"
     },
     "benefits": {
       "overviewTitle1": "ひと目で見る ",

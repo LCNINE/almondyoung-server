@@ -67,7 +67,7 @@ describe('SubscriptionCancellationService', () => {
   const mockPauseManager = { resumePause: jest.fn().mockResolvedValue(undefined) };
 
   const mockBenefitReader = {
-    findCurrentCycleBenefit: jest.fn(),
+    findBenefitUsageBetween: jest.fn(),
     sumBenefitDiscountSince: jest.fn().mockResolvedValue(0),
   };
 
@@ -112,7 +112,7 @@ describe('SubscriptionCancellationService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     mockContractReader.findMonthlyListPrice.mockResolvedValue(4990);
-    mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0 });
+    mockBenefitReader.findBenefitUsageBetween.mockResolvedValue({ orderCount: 0, totalDiscountAmount: 0 });
     mockBenefitReader.sumBenefitDiscountSince.mockResolvedValue(0);
     mockPauseReader.sumPausedDaysSince.mockResolvedValue(0);
     mockPauseReader.findPausedEntitlement.mockResolvedValue(null);
@@ -237,7 +237,7 @@ describe('SubscriptionCancellationService', () => {
 
     it('7일 내라도 이번 주기에 혜택을 썼으면 환불 불가', async () => {
       givenActiveContract({ plan: MONTHLY_PLAN, daysSincePeriodStart: 3 });
-      mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000 });
+      mockBenefitReader.findBenefitUsageBetween.mockResolvedValue({ orderCount: 1, totalDiscountAmount: 3000 });
 
       await expect(
         service.cancelSubscription('user_001', 'a@b.com', {

@@ -21,6 +21,14 @@ export interface CancellationContext {
   /** 정지 중이라 아직 종료일에 반영되지 않은 일수. 해지 시 재개하며 이만큼 연장된다. */
   pausedDaysAccrued: number;
   decision: CancellationPolicyDecision;
+  /**
+   * 이번 결제 주기에 실제로 받은 멤버십 할인. 환불 가능 여부를 가른 근거 그 자체다.
+   *
+   * 고객·CS 가 "왜 환불이 막혔는지" 를 숫자로 확인할 수 있어야 문의에 답할 수 있다.
+   */
+  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
+  /** 혜택 사용량을 센 구간의 시작(=이번 결제 주기 시작). 결제 기록이 없으면 null. */
+  benefitPeriodStart: string | null;
   /** 정기결제 계약인지 — 1회 결제는 '해지'가 아니라 '만료 시 종료'다 */
   isRecurring: boolean;
   /** 이미 해지 예약된 상태인지 */
@@ -91,13 +99,14 @@ export class CancellationContextReader {
       : 0;
 
     const isAnnual = plan.durationDays >= ANNUAL_PLAN_MIN_DURATION_DAYS;
-    const currentCycleBenefit = await this.benefitReader.findCurrentCycleBenefit(
-      contract.userId,
-      new Date(contract.billingDate),
-      isAnnual ? 'YEAR' : 'MONTHLY',
-    );
-    const termBenefitDiscount =
-      isAnnual && paidPeriodStart ? await this.benefitReader.sumBenefitDiscountSince(contract.userId, paidPeriodStart) : 0;
+    // 혜택 사용량은 **이번 결제 주기**(마지막 결제 성공 시각 이후)로 센다. 30일 고정 집계주기를 쓰면
+    // 연간 계약에서 기간 경계가 어긋나고, 가입 전 주문이나 옛 계약의 할인이 섞여 들어온다.
+    // 청약철회 창과 같은 기준점(paidPeriodStart)을 써야 화면 금액과 판정 근거가 어긋나지 않는다.
+    const currentPeriodBenefit = paidPeriodStart
+      ? await this.benefitReader.findBenefitUsageBetween(contract.userId, paidPeriodStart)
+      : { orderCount: 0, totalDiscountAmount: 0 };
+    // 연간 정산 차감액은 같은 집계에서 나온다 — 두 함수가 같은 할인을 다르게 세지 않게 한다.
+    const termBenefitDiscount = isAnnual ? currentPeriodBenefit.totalDiscountAmount : 0;
 
     const monthlyListPrice = isAnnual
       ? await this.contractReader.findMonthlyListPrice(plan.tierId, plan.price)
@@ -134,10 +143,7 @@ export class CancellationContextReader {
         ? (refundability.remainingRefundableAmount ??
           Math.max(0, refundability.refundableAmount - refundability.alreadyRefundedAmount))
         : null,
-      currentCycleBenefit: {
-        orderCount: currentCycleBenefit.orderCount,
-        totalDiscountAmount: currentCycleBenefit.totalDiscountAmount,
-      },
+      currentPeriodBenefit,
       termBenefitDiscount,
     });
 
@@ -147,6 +153,8 @@ export class CancellationContextReader {
       entitlement,
       pausedDaysAccrued,
       decision,
+      currentPeriodBenefit,
+      benefitPeriodStart: paidPeriodStart ? paidPeriodStart.toISOString() : null,
       isRecurring,
       alreadyScheduledForCancellation: !!contract.recurringCancelledAt,
     };

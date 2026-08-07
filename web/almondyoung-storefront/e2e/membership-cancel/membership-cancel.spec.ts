@@ -57,6 +57,28 @@ test.describe(`멤버십 해지 UI (${SCENARIO})`, () => {
     await expect(page.getByText('해지 예약됨')).toHaveCount(0);
   });
 
+  // 절약액은 환불 판정과 같은 기간 경계(결제 주기)로 보여야 한다. 달력 월로 끊으면 고객이 본 금액과
+  // 환불 판정 근거가 어긋나고, 가입 전 주문까지 섞여 들어온다.
+  test('절약 금액을 결제 주기 단위로 보여주고 기간을 골라볼 수 있다', async ({ page }) => {
+    await expect(page.getByText('이번 주기 절약 금액')).toBeVisible();
+    await expect(page.getByText('12,000')).toBeVisible();
+    await expect(page.getByText('가입 후 누적 절약')).toBeVisible();
+
+    // '이번달' 로 읽히는 문구가 남아 있으면 안 된다 — 집계 기간이 달력 월이 아니다.
+    await expect(page.getByText('이번달 멤버십으로 절약한 금액')).toHaveCount(0);
+
+    // 지난 주기를 고르면 그 주기 금액으로 바뀐다
+    await page.getByLabel('조회 기간 (결제 주기)').selectOption('contract-1:1');
+    await expect(page.getByText('8,000')).toBeVisible();
+  });
+
+  test('주문별 할인 내역을 펼쳐 대조할 수 있다', async ({ page }) => {
+    await page.getByRole('button', { name: '주문별 할인 내역' }).click();
+
+    await expect(page.getByText('order_2001')).toBeVisible();
+    await expect(page.getByText('order_2002')).toBeVisible();
+  });
+
   test('해지 모달 흐름', async ({ page, request }) => {
     test.skip(SCENARIO.includes('scheduled'), '해지 예약 상태는 해지 진입점이 없다');
 

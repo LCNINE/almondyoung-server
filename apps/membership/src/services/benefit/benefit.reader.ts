@@ -1,10 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, desc, gte, sum } from 'drizzle-orm';
+import { eq, and, desc, gte, lt, sql } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { differenceInDays, addDays } from 'date-fns';
 import { calculateCycleStart, calculateCycleEnd, formatDate, isCycleCompleted } from '../../utils/cycle.utils';
+
+/**
+ * 어떤 기간에 실제로 받은 멤버십 할인.
+ *
+ * 원천은 주문 단위 원장(`membership_discount_events`)이다. 집계 테이블
+ * (`membership_cycle_benefits`)은 30일 고정 주기라 결제 주기와 경계가 어긋나고, 기록/취소 경로에서만
+ * 갱신돼 원장과 벌어질 수 있다. 돈이 걸린 판정(환불 가능 여부·연간 정산)과 고객 화면은 모두 원장을 본다.
+ */
+export interface BenefitUsage {
+  /** 해당 기간에 받은 멤버십 할인 합계 (취소된 주문 제외) */
+  totalDiscountAmount: number;
+  /** 할인을 받은 주문 수. 표시용이며 혜택 사용 판정에는 쓰지 않는다. */
+  orderCount: number;
+}
 
 export interface CurrentCycleBenefit {
   userId: string;
@@ -127,28 +141,65 @@ export class BenefitReader {
   }
 
   /**
-   * 할인 이벤트 조회 (주문 ID로)
-   */
-  /**
-   * 특정 날짜 이후 실제로 받은 할인 혜택 합계.
+   * 한 기간에 실제로 받은 할인 혜택.
    *
-   * 연간 중도해지 정산에서 차감할 금액이다. 취소된 주문(is_cancelled)은 혜택을 받지 않았으므로 제외한다.
-   * 30일 집계주기 단위인 membership_cycle_benefits 가 아니라 주문 단위 원장을 쓰는 이유는,
-   * 연간 계약은 결제 주기(365일)와 집계 주기(30일)가 달라 주기 합산이 기간 경계와 맞지 않기 때문이다.
+   * `from` 이상 `to` 미만(주면)의 주문을 센다. 취소된 주문(is_cancelled)은 혜택을 받지 않았으므로 제외.
+   *
+   * 이 하나가 청약철회 판정·연간 정산 차감·고객 화면 절약액의 공통 정의다. 예전에는 판정이 30일
+   * 집계 테이블을, 정산이 원장을, 화면이 달력 월을 각각 봐서 같은 할인을 서로 다르게 셌다.
    */
-  async sumBenefitDiscountSince(userId: string, from: Date): Promise<number> {
-    const [row] = await this.db.db
-      .select({ total: sum(schema.membershipDiscountEvents.discountAmount) })
-      .from(schema.membershipDiscountEvents)
-      .where(
-        and(
-          eq(schema.membershipDiscountEvents.userId, userId),
-          eq(schema.membershipDiscountEvents.isCancelled, false),
-          gte(schema.membershipDiscountEvents.orderDate, from),
-        ),
-      );
+  async findBenefitUsageBetween(userId: string, from: Date, to?: Date): Promise<BenefitUsage> {
+    const conditions = [
+      eq(schema.membershipDiscountEvents.userId, userId),
+      eq(schema.membershipDiscountEvents.isCancelled, false),
+      gte(schema.membershipDiscountEvents.orderDate, from),
+    ];
+    if (to) conditions.push(lt(schema.membershipDiscountEvents.orderDate, to));
 
-    return Number(row?.total ?? 0);
+    const [row] = await this.db.db
+      .select({
+        total: sql<string>`COALESCE(SUM(${schema.membershipDiscountEvents.discountAmount}), 0)`,
+        count: sql<string>`COUNT(*)`,
+      })
+      .from(schema.membershipDiscountEvents)
+      .where(and(...conditions));
+
+    return {
+      totalDiscountAmount: Number(row?.total ?? 0),
+      orderCount: Number(row?.count ?? 0),
+    };
+  }
+
+  /** 특정 날짜 이후 실제로 받은 할인 혜택 합계. 연간 중도해지 정산에서 차감할 금액이다. */
+  async sumBenefitDiscountSince(userId: string, from: Date): Promise<number> {
+    const usage = await this.findBenefitUsageBetween(userId, from);
+    return usage.totalDiscountAmount;
+  }
+
+  /** 기간 내 할인 주문 목록. 고객이 "어느 주문에서 얼마 아꼈는지" 를 확인하는 용도다. */
+  async findDiscountEventsBetween(
+    userId: string,
+    from: Date,
+    to?: Date,
+  ): Promise<Array<{ orderId: string; orderDate: Date; discountAmount: number }>> {
+    const conditions = [
+      eq(schema.membershipDiscountEvents.userId, userId),
+      eq(schema.membershipDiscountEvents.isCancelled, false),
+      gte(schema.membershipDiscountEvents.orderDate, from),
+    ];
+    if (to) conditions.push(lt(schema.membershipDiscountEvents.orderDate, to));
+
+    const rows = await this.db.db
+      .select({
+        orderId: schema.membershipDiscountEvents.orderId,
+        orderDate: schema.membershipDiscountEvents.orderDate,
+        discountAmount: schema.membershipDiscountEvents.discountAmount,
+      })
+      .from(schema.membershipDiscountEvents)
+      .where(and(...conditions))
+      .orderBy(desc(schema.membershipDiscountEvents.orderDate));
+
+    return rows;
   }
 
   async findDiscountEventByOrderId(orderId: string) {

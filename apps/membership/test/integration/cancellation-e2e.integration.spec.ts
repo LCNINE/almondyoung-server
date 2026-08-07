@@ -256,16 +256,39 @@ describeE2E('멤버십 해지·환불 E2E', () => {
     return { userId, contract, endsAt: format(endsAt, 'yyyy-MM-dd'), periodStart };
   }
 
-  /** 이번 집계 주기에 멤버십 할인 혜택을 사용한 이력을 만든다. */
-  async function givenBenefitUsed(userId: string, contractId: string, cycleStart: Date) {
-    await db.db.insert(schema.membershipCycleBenefits).values({
+  /**
+   * 이번 결제 주기에 멤버십 할인을 받은 주문 이력을 만든다.
+   *
+   * 원장(`membership_discount_events`)에 넣는다 — 판정이 보는 곳이 여기다. 집계 테이블
+   * (`membership_cycle_benefits`)은 30일 고정 주기라 결제 주기와 경계가 어긋난다.
+   */
+  async function givenBenefitUsed(
+    userId: string,
+    contractId: string,
+    periodStart: Date,
+    discountAmount = 3000,
+  ) {
+    await db.db.insert(schema.membershipDiscountEvents).values({
+      orderId: `order_benefit_${contractId}_${discountAmount}`,
       userId,
-      cycleStartDate: format(cycleStart, 'yyyy-MM-dd'),
-      cycleEndDate: format(addDays(cycleStart, 29), 'yyyy-MM-dd'),
-      totalDiscountAmount: 3000,
-      orderCount: 1,
+      discountAmount,
+      tierId,
+      cycleStartDate: format(periodStart, 'yyyy-MM-dd'),
       subscriptionId: contractId,
-      cycleNumber: 1,
+      orderDate: addDays(periodStart, 1),
+    });
+  }
+
+  /** 주문은 했지만 멤버십 할인은 0원인 주문 — 혜택을 누린 게 아니다. */
+  async function givenOrderWithoutDiscount(userId: string, contractId: string, periodStart: Date) {
+    await db.db.insert(schema.membershipDiscountEvents).values({
+      orderId: `order_nodiscount_${contractId}`,
+      userId,
+      discountAmount: 0,
+      tierId,
+      cycleStartDate: format(periodStart, 'yyyy-MM-dd'),
+      subscriptionId: contractId,
+      orderDate: addDays(periodStart, 1),
     });
   }
 
@@ -404,6 +427,69 @@ describeE2E('멤버십 해지·환불 E2E', () => {
         cancelType: 'AT_PERIOD_END',
       });
       expect(result.type).toBe('RECURRING_CANCELLATION');
+    });
+
+    it('주문은 했지만 멤버십 할인이 0원이면 혜택 미사용 — 전액 환불', async () => {
+      const { userId, contract, periodStart } = await givenSubscription({ daysSincePeriodStart: 3 });
+      await givenOrderWithoutDiscount(userId, contract.id, periodStart);
+
+      const preview = await service.previewCancellation(userId);
+      const immediate = preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!;
+      expect(immediate.available).toBe(true);
+      expect(immediate.refundKind).toBe('WITHDRAWAL_FULL');
+      expect(preview.currentPeriodBenefit.totalDiscountAmount).toBe(0);
+
+      const result = await service.cancelSubscription(userId, EMAIL, {
+        reasonCode: 'NOT_USING',
+        cancelType: 'IMMEDIATE_REFUND',
+      });
+      expect(result.type).toBe('IMMEDIATE_CANCELLATION');
+    });
+
+    it('할인 1원이라도 받았으면 환불 불가', async () => {
+      const { userId, contract, periodStart } = await givenSubscription({ daysSincePeriodStart: 3 });
+      await givenBenefitUsed(userId, contract.id, periodStart, 1);
+
+      const preview = await service.previewCancellation(userId);
+      expect(preview.currentPeriodBenefit.totalDiscountAmount).toBe(1);
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!.available).toBe(false);
+    });
+
+    it('가입 전 주문의 할인은 이번 주기 혜택에 섞이지 않는다', async () => {
+      const { userId, contract, periodStart } = await givenSubscription({ daysSincePeriodStart: 3 });
+      // 주기 시작 하루 전 주문 — 멤버십이 깎아준 게 아니다.
+      await db.db.insert(schema.membershipDiscountEvents).values({
+        orderId: `order_before_${contract.id}`,
+        userId,
+        discountAmount: 5000,
+        tierId,
+        cycleStartDate: format(periodStart, 'yyyy-MM-dd'),
+        subscriptionId: contract.id,
+        orderDate: addDays(periodStart, -1),
+      });
+
+      const preview = await service.previewCancellation(userId);
+      expect(preview.currentPeriodBenefit.totalDiscountAmount).toBe(0);
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!.available).toBe(true);
+    });
+
+    it('취소된 주문의 할인은 혜택 사용으로 세지 않는다 — 환불 가능', async () => {
+      const { userId, contract, periodStart } = await givenSubscription({ daysSincePeriodStart: 3 });
+      await db.db.insert(schema.membershipDiscountEvents).values({
+        orderId: `order_cancelled_benefit_${contract.id}`,
+        userId,
+        discountAmount: 5000,
+        tierId,
+        cycleStartDate: format(periodStart, 'yyyy-MM-dd'),
+        subscriptionId: contract.id,
+        orderDate: addDays(periodStart, 1),
+        isCancelled: true,
+        cancelledAt: new Date(),
+      });
+
+      const preview = await service.previewCancellation(userId);
+      expect(preview.currentPeriodBenefit.totalDiscountAmount).toBe(0);
+      expect(preview.options.find((o) => o.mode === 'IMMEDIATE_REFUND')!.available).toBe(true);
     });
 
     it('이미 해지 예약된 구독에 다시 해지예약하면 409', async () => {

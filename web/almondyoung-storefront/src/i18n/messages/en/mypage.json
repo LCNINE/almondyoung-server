@@ -826,15 +826,19 @@
       }
     },
     "stats": {
-      "monthlySavings": "Savings this month",
-      "monthlyOrders": "Orders this month",
       "cycleSavings": "Cycle savings",
       "cycleOrders": "Cycle orders",
       "cycleRemaining": "Days until cycle ends",
       "unitWon": "KRW",
       "unitCount": "orders",
       "unitDay": "days",
-      "change": "Change"
+      "change": "Change",
+      "currentPeriodTag": "Current cycle",
+      "periodSelectLabel": "Period (billing cycle)",
+      "allTimeSavings": "Total saved since joining",
+      "orderBreakdown": "Discounts by order",
+      "loadingBreakdown": "Loading breakdown",
+      "noBreakdown": "No membership discounts in this period."
     },
     "currentBenefits": {
       "benefit01": {
@@ -954,7 +958,8 @@
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
       "priceNoticeFreeMonths": "* Get 2 months free with annual subscription",
-      "cancelWarningRecurring": "Cancelling stops future charges and ends your membership benefits."
+      "cancelWarningRecurring": "Cancelling stops future charges and ends your membership benefits.",
+      "historySavings": "Discount received"
     },
     "benefits": {
       "overviewTitle1": "At a glance: ",

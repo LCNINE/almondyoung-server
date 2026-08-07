@@ -91,7 +91,7 @@ export default function HistoryCard({
     }
   }
 
-  const Row = ({ label, value }: { label: string; value: string }) => (
+  const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
     <div className="flex items-center justify-between py-2.5 text-sm">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-foreground font-medium">{value}</span>
@@ -159,6 +159,21 @@ export default function HistoryCard({
                       amount: item.plan.price.toLocaleString(),
                     })
                   : "-"
+              }
+            />
+            {/* 얼마 내고 얼마 아꼈는지가 나란히 보여야 재가입 판단이 된다 */}
+            <Row
+              label={t("history.historySavings")}
+              value={
+                <>
+                  {t("billing.amountWon", {
+                    amount: (item.savings?.totalSavings ?? 0).toLocaleString(),
+                  })}
+                  <span className="text-muted-foreground ml-1.5 text-xs font-normal">
+                    {item.savings?.orderCount ?? 0}
+                    {t("stats.unitCount")}
+                  </span>
+                </>
               }
             />
             <Row

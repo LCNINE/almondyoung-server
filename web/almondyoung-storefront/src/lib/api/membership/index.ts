@@ -20,6 +20,8 @@ import { ApiAuthError, HttpApiError } from "../api-error"
 import type {
   MonthlySavingsDto,
   RangeSavingsDto,
+  SavingsOverviewDto,
+  SavingsPeriodDetailDto,
 } from "@lib/types/dto/membership-savings"
 
 /**
@@ -286,6 +288,10 @@ export async function undoCancellation(): Promise<
 
 /**
  * 현재 주기 혜택 조회
+ *
+ * @deprecated 30일 고정 집계 테이블(`membership_cycle_benefits`)을 읽는다 — 결제 주기와 경계가
+ * 어긋나고 기록/취소 경로에서만 갱신돼 주문 원장과 벌어질 수 있다. 화면에는
+ * `getSavingsOverview` 를 쓴다(환불 판정과 같은 정의).
  */
 export async function getCurrentCycleBenefit(
   userId: string
@@ -304,6 +310,8 @@ export async function getCurrentCycleBenefit(
 
 /**
  * 혜택 이력 조회
+ *
+ * @deprecated 30일 고정 집계 테이블을 읽는다. 주기별 절약 이력은 `getSavingsOverview` 를 쓴다.
  */
 export async function getCycleBenefitHistory(
   userId: string,
@@ -350,7 +358,35 @@ export async function getTierBenefits(tierId: string): Promise<{
   )
 }
 
-// 이번달 절약액 조회
+/**
+ * 결제 주기별 절약액 + 전체 누적.
+ *
+ * 화면의 기본 조회다. 환불 판정과 같은 기간 경계를 쓴다.
+ */
+export async function getSavingsOverview(): Promise<SavingsOverviewDto> {
+  return await api<SavingsOverviewDto>("membership", "/membership/savings/overview", {
+    method: "GET",
+    withAuth: true,
+    cache: "no-store",
+  })
+}
+
+/** 한 결제 주기의 절약 내역 (주문별 상세 포함) */
+export async function getSavingsPeriodDetail(
+  periodId: string
+): Promise<SavingsPeriodDetailDto> {
+  return await api<SavingsPeriodDetailDto>(
+    "membership",
+    `/membership/savings/periods/${encodeURIComponent(periodId)}`,
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}
+
+/** @deprecated 달력 월 기준. 신규 화면은 `getSavingsOverview` 를 쓴다. */
 export async function getCurrentMonthSavings(): Promise<MonthlySavingsDto> {
   return await api<MonthlySavingsDto>(
     "membership",

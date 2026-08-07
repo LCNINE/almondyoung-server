@@ -126,6 +126,8 @@ export interface SubscriptionHistoryItemDto {
   plan?: { price: number; currency: string; durationDays: number } | null
   tier?: { code: string } | null
   adjustments?: SubscriptionAdjustmentDto[]
+  /** 이 계약 기간 동안 받은 멤버십 할인 합계. 결제 주기 경계로 끊은 값이라 환불 판정과 같은 정의다. */
+  savings?: { totalSavings: number; orderCount: number } | null
   // legacy compat
   startDate?: string
 }

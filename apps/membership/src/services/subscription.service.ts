@@ -16,6 +16,7 @@ import { BillingManager } from './billing/billing.manager';
 import { BillingReader } from './billing/billing.reader';
 import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 import { ConfigService } from '@nestjs/config';
+import { SavingsService } from './savings/savings.service';
 import { format } from 'date-fns';
 
 /**
@@ -50,6 +51,7 @@ export class SubscriptionService {
     private readonly billingReader: BillingReader,
     private readonly invoiceBillingManager: InvoiceBillingManager,
     private readonly configService: ConfigService,
+    private readonly savingsService: SavingsService,
   ) {}
 
   /** ADR-0027 Phase 2 dual-path flag — 신규 정기 가입에만 적용, 기존 계약 경로는 불변. */
@@ -385,10 +387,12 @@ export class SubscriptionService {
    * ✅ 흐름만 표현: "계약 이력 조회 + 현재 entitlement endsAt + 조정 이벤트"
    */
   async getSubscriptionHistory(userId: string) {
-    const [rows, currentEntitlementData, adjustmentEvents] = await Promise.all([
+    const [rows, currentEntitlementData, adjustmentEvents, savingsByContract] = await Promise.all([
       this.contractReader.findContractsByUserIdWithPlan(userId),
       this.entitlementService.getUserEntitlement(userId),
       this.contractReader.findAdjustmentEventsByUserId(userId),
+      // 얼마 내고 얼마 아꼈는지가 한 줄에 보여야 재가입 판단이 된다. 실패해도 이력 자체는 보여준다.
+      this.savingsService.getSavingsByContract(userId).catch(() => ({})),
     ]);
 
     const currentEndsAt = currentEntitlementData?.entitlement.endsAt ?? null;
@@ -429,6 +433,8 @@ export class SubscriptionService {
         plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
         tier: tier?.id ? { code: tier.code } : null,
         adjustments: contractAdjustments,
+        // 이 계약 기간 동안 받은 멤버십 할인 합계. 결제 주기 경계로 끊은 값이라 환불 판정과 같은 정의다.
+        savings: savingsByContract[contract.id] ?? { totalSavings: 0, orderCount: 0 },
       };
     });
   }
@@ -437,11 +443,12 @@ export class SubscriptionService {
    * 구독 이력 조회
    */
   async getSubscriptionHistoryPaged(userId: string, limit: number, offset: number) {
-    const [rows, total, currentEntitlementData, adjustmentEvents] = await Promise.all([
+    const [rows, total, currentEntitlementData, adjustmentEvents, savingsByContract] = await Promise.all([
       this.contractReader.findContractsByUserIdWithPlanPaged(userId, limit, offset),
       this.contractReader.countContractsByUserId(userId),
       this.entitlementService.getUserEntitlement(userId),
       this.contractReader.findAdjustmentEventsByUserId(userId),
+      this.savingsService.getSavingsByContract(userId).catch(() => ({})),
     ]);
 
     const currentEndsAt = currentEntitlementData?.entitlement.endsAt ?? null;
@@ -482,6 +489,8 @@ export class SubscriptionService {
         plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
         tier: tier?.id ? { code: tier.code } : null,
         adjustments: contractAdjustments,
+        // 이 계약 기간 동안 받은 멤버십 할인 합계. 결제 주기 경계로 끊은 값이라 환불 판정과 같은 정의다.
+        savings: savingsByContract[contract.id] ?? { totalSavings: 0, orderCount: 0 },
       };
     });
 

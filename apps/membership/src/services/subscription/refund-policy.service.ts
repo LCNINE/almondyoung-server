@@ -91,8 +91,13 @@ export interface CancellationPolicyInput {
    * 되므로 상한으로 쓴다.
    */
   refundableAmount: number | null;
-  /** 이번 결제 주기의 혜택 사용량 (청약철회 판정용) */
-  currentCycleBenefit: { orderCount: number; totalDiscountAmount: number };
+  /**
+   * 이번 결제 주기에 실제로 받은 멤버십 할인 (청약철회 판정용).
+   *
+   * 판정 축은 **할인 금액 하나뿐이다.** 주문 건수는 화면 표시용으로만 함께 넘어온다 — 주문을 했어도
+   * 멤버십 할인이 0원이었다면 혜택을 누린 게 아니므로 환불을 막지 않는다.
+   */
+  currentPeriodBenefit: { orderCount: number; totalDiscountAmount: number };
   /** 이번 결제 주기 전체에 받은 할인 합계 (연간 정산 차감용) */
   termBenefitDiscount: number;
 }
@@ -143,8 +148,9 @@ export class RefundPolicyService {
       ? differenceInCalendarDays(input.now, input.paidPeriodStart)
       : null;
     const withinWithdrawalWindow = daysSincePeriodStart !== null && daysSincePeriodStart <= WITHDRAWAL_WINDOW_DAYS;
-    const benefitUnused =
-      input.currentCycleBenefit.orderCount === 0 && input.currentCycleBenefit.totalDiscountAmount === 0;
+    // 혜택을 썼는지는 **받은 할인 금액**으로만 가른다. 주문 건수를 함께 보면, 주문은 했지만 멤버십
+    // 할인이 0원이던 고객(정가 상품만 산 경우)이 '혜택 사용'으로 잡혀 정당한 청약철회가 막힌다.
+    const benefitUnused = input.currentPeriodBenefit.totalDiscountAmount <= 0;
     const withdrawalDaysRemaining =
       daysSincePeriodStart === null ? 0 : Math.max(0, WITHDRAWAL_WINDOW_DAYS - daysSincePeriodStart);
 

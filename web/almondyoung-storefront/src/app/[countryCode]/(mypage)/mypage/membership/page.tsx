@@ -4,13 +4,10 @@ import { WithHeaderLayout } from "@components/layout"
 import {
   getCancellationPreview,
   getCancellationReasons,
-  getCurrentCycleBenefit,
-  getCurrentMonthSavings,
   getCurrentSubscription,
-  getCycleBenefitHistory,
   getPlans,
-  getRangeSavings,
   getRefundStatus,
+  getSavingsOverview,
   getTerminationNotice,
   getSubscriptionHistory,
 } from "@lib/api/membership"
@@ -19,13 +16,12 @@ import { fetchMe } from "@lib/api/users/me"
 import type {
   CancellationPreviewDto,
   CancellationReasonDto,
-  CycleBenefitDto,
-  CycleBenefitHistoryDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
   TerminationNoticeDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
+import type { SavingsOverviewDto } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
 import { getTranslations } from "next-intl/server"
 
@@ -46,11 +42,8 @@ export default async function MembershipPage() {
     cafe24Info.data
   )
 
-  let currentSavings = null
-  let rangeSavings = null
+  let savingsOverview: SavingsOverviewDto | null = null
   let subscriptionHistory: SubscriptionHistoryItemDto[] = []
-  let currentBenefit: CycleBenefitDto | null = null
-  let benefitHistory: CycleBenefitHistoryDto | null = null
   let cancellationReasons: CancellationReasonDto[] = []
   // 해지 선택지·환불 금액은 서버 정책이 SoT — 클라이언트에서 추정하지 않는다.
   let cancellationPreview: CancellationPreviewDto | null = null
@@ -61,40 +54,25 @@ export default async function MembershipPage() {
   const membershipPlans: PlanWithTier[] = plans ?? []
 
   if (user?.id) {
-    const now = new Date()
-    const startDate = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-    const toDateString = (date: Date) => date.toISOString().slice(0, 10)
-
     const [
-      currentSavingsResult,
-      rangeSavingsResult,
+      savingsOverviewResult,
       subscriptionHistoryResult,
       cancellationReasonsResult,
-      currentBenefitResult,
-      benefitHistoryResult,
       cancellationPreviewResult,
       refundStatusResult,
       terminationNoticeResult,
     ] = await Promise.all([
-      getCurrentMonthSavings().catch(() => null),
-      getRangeSavings(toDateString(startDate), toDateString(now)).catch(
-        () => null
-      ),
+      getSavingsOverview().catch(() => null),
       getSubscriptionHistory().catch(() => []),
       getCancellationReasons().catch(() => []),
-      getCurrentCycleBenefit(user.id).catch(() => null),
-      getCycleBenefitHistory(user.id, 6).catch(() => null),
       getCancellationPreview().catch(() => null),
       getRefundStatus().catch(() => null),
       getTerminationNotice().catch(() => null),
     ])
 
-    currentSavings = currentSavingsResult
-    rangeSavings = rangeSavingsResult
+    savingsOverview = savingsOverviewResult
     subscriptionHistory = subscriptionHistoryResult
     cancellationReasons = cancellationReasonsResult
-    currentBenefit = currentBenefitResult
-    benefitHistory = benefitHistoryResult
     cancellationPreview = cancellationPreviewResult
     refundStatus = refundStatusResult
     terminationNotice = terminationNoticeResult
@@ -114,13 +92,10 @@ export default async function MembershipPage() {
           isMember={isMember}
           membershipData={membershipData}
           plans={membershipPlans}
-          currentSavings={currentSavings}
-          rangeSavings={rangeSavings}
+          savingsOverview={savingsOverview}
           subscriptionHistory={subscriptionHistory}
           cancellationReasons={cancellationReasons}
           cancellationPreview={cancellationPreview}
-          currentBenefit={currentBenefit}
-          benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}
           refundStatus={refundStatus}
           terminationNotice={terminationNotice}

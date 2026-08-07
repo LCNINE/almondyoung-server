@@ -11,6 +11,7 @@ import { BillingManager } from '../billing/billing.manager';
 import { BillingReader } from '../billing/billing.reader';
 import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
 import { ConfigService } from '@nestjs/config';
+import { SavingsService } from '../savings/savings.service';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -116,6 +117,10 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: SavingsService,
+          useValue: { getSavingsByContract: jest.fn().mockResolvedValue({}) },
         },
       ],
     }).compile();

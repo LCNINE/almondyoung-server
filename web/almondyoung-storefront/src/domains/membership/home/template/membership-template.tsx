@@ -6,29 +6,22 @@ import TerminationNoticeCard from "../components/termination-notice-card"
 import type {
   CancellationPreviewDto,
   CancellationReasonDto,
-  CycleBenefitDto,
-  CycleBenefitHistoryDto,
   RefundStatusDto,
   SubscriptionDetailsDto,
   TerminationNoticeDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
-import type {
-  MonthlySavingsDto,
-  RangeSavingsDto,
-} from "@lib/types/dto/membership-savings"
+import type { SavingsOverviewDto } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
 interface MembershipTemplateProps {
   isMember: boolean
   membershipData: SubscriptionDetailsDto | null
   plans: PlanWithTier[]
-  currentSavings: MonthlySavingsDto | null
-  rangeSavings: RangeSavingsDto | null
+  /** 결제 주기별 절약액. 환불 판정과 같은 기간 경계를 쓴다. */
+  savingsOverview: SavingsOverviewDto | null
   subscriptionHistory: SubscriptionHistoryItemDto[]
   cancellationReasons: CancellationReasonDto[]
   cancellationPreview: CancellationPreviewDto | null
-  currentBenefit: CycleBenefitDto | null
-  benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
   /** 진행 중이거나 최근 완료된 환불. 해지 뒤에도 고객이 확인할 수 있어야 한다. */
   refundStatus: RefundStatusDto | null
@@ -40,13 +33,10 @@ export default function MembershipTemplate({
   isMember,
   membershipData,
   plans,
-  currentSavings,
-  rangeSavings,
+  savingsOverview,
   subscriptionHistory,
   cancellationReasons,
   cancellationPreview,
-  currentBenefit,
-  benefitHistory,
   hasCafe24Link,
   refundStatus,
   terminationNotice,
@@ -62,13 +52,10 @@ export default function MembershipTemplate({
         <SubscriberSection
           membershipData={membershipData}
           plans={plans}
-          currentSavings={currentSavings}
-          rangeSavings={rangeSavings}
+          savingsOverview={savingsOverview}
           subscriptionHistory={subscriptionHistory}
           cancellationReasons={cancellationReasons}
           cancellationPreview={cancellationPreview}
-          currentBenefit={currentBenefit}
-          benefitHistory={benefitHistory}
           hasCafe24Link={hasCafe24Link}
         />
       ) : (

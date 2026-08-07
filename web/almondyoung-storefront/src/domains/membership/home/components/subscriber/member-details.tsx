@@ -7,21 +7,18 @@ import { useParams, useRouter } from "next/navigation"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { getCmsBillingMethodStatuses } from "@lib/api/wallet"
 import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
-import type {
-  CycleBenefitDto,
-  SubscriptionDetailsDto,
-} from "@lib/types/dto/membership"
-import type { MonthlySavingsDto } from "@lib/types/dto/membership-savings"
+import type { SubscriptionDetailsDto } from "@lib/types/dto/membership"
+import type { SavingsOverviewDto } from "@lib/types/dto/membership-savings"
+import SavingsSection from "./savings-section"
 
 interface MemberDetailsProps {
   membershipData: SubscriptionDetailsDto | null
-  currentSavings: MonthlySavingsDto | null
-  currentBenefit: CycleBenefitDto | null
+  savingsOverview: SavingsOverviewDto | null
 }
 
 export default function MemberDetails({
   membershipData,
-  currentSavings,
+  savingsOverview,
 }: MemberDetailsProps) {
   const t = useTranslations("mypage.membership")
   const router = useRouter()
@@ -68,8 +65,6 @@ export default function MemberDetails({
     membershipData?.tier?.name ??
     membershipData?.plan?.tier?.name ??
     t("defaultTierName")
-
-  const savingsTotal = currentSavings?.totalSavings ?? 0
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
@@ -135,20 +130,8 @@ export default function MemberDetails({
       {/* 2. 구분선 */}
       <hr className="w-full border-t border-gray-200" />
 
-      {/* 3. 이번달 절약 금액 히어로  */}
-      <article className="flex w-full flex-col justify-center gap-1.5 rounded-2xl bg-white py-6">
-        <h3 className="text-muted-foreground text-center text-sm font-medium">
-          {t("stats.monthlySavings")}
-        </h3>
-        <div className="flex items-end justify-center gap-1">
-          <span className="text-primary text-3xl font-bold">
-            {savingsTotal.toLocaleString()}
-          </span>
-          <span className="text-muted-foreground pb-1 text-sm">
-            {t("stats.unitWon")}
-          </span>
-        </div>
-      </article>
+      {/* 3. 절약 금액 — 결제 주기 단위 (환불 판정과 같은 경계) */}
+      <SavingsSection overview={savingsOverview} />
     </div>
   )
 }

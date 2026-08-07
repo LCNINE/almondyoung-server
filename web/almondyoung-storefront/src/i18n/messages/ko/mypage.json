@@ -826,15 +826,19 @@
       }
     },
     "stats": {
-      "monthlySavings": "이번달 멤버십으로 절약한 금액",
-      "monthlyOrders": "이번달 주문 건수",
       "cycleSavings": "이번 주기 절약 금액",
       "cycleOrders": "주기 내 주문 건수",
       "cycleRemaining": "주기 종료까지",
       "unitWon": "원",
       "unitCount": "건",
       "unitDay": "일",
-      "change": "변경"
+      "change": "변경",
+      "currentPeriodTag": "현재 주기",
+      "periodSelectLabel": "조회 기간 (결제 주기)",
+      "allTimeSavings": "가입 후 누적 절약",
+      "orderBreakdown": "주문별 할인 내역",
+      "loadingBreakdown": "내역을 불러오는 중",
+      "noBreakdown": "이 기간에 멤버십 할인을 받은 주문이 없습니다."
     },
     "currentBenefits": {
       "benefit01": {
@@ -954,7 +958,8 @@
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 유료 멤버십 월 4,990원 / 연 49,900원",
       "priceNoticeFreeMonths": "* 연간 구독 시 2개월 무료 사용",
-      "cancelWarningRecurring": "해지하면 다음 결제부터 청구되지 않고, 멤버십 혜택도 종료됩니다."
+      "cancelWarningRecurring": "해지하면 다음 결제부터 청구되지 않고, 멤버십 혜택도 종료됩니다.",
+      "historySavings": "받은 할인"
     },
     "benefits": {
       "overviewTitle1": "한 눈에 보는 ",
