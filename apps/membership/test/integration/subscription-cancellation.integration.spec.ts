@@ -39,7 +39,15 @@ import * as path from 'path';
 // .env 파일 로드
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-describe('Subscription Cancellation Integration Tests', () => {
+// DB 가 없으면 스위트를 건너뛴다 (core·channel-adapter 의 REQUIRE_*_DB 컨벤션과 동일).
+// CI 등 DB 가 반드시 있어야 하는 경로에서는 REQUIRE_MEMBERSHIP_DB=1 로 누락을 실패시킨다.
+const DATABASE_URL = process.env.DATABASE_URL ?? '';
+if (process.env.REQUIRE_MEMBERSHIP_DB === '1' && !DATABASE_URL) {
+  throw new Error('DATABASE_URL is required for the membership integration suite.');
+}
+const describeIfDb = DATABASE_URL ? describe : describe.skip;
+
+describeIfDb('Subscription Cancellation Integration Tests', () => {
   let cancellationService: SubscriptionCancellationService;
   let contractEventManager: ContractEventManager;
   let cancellationReasonReader: CancellationReasonReader;
@@ -54,15 +62,11 @@ describe('Subscription Cancellation Integration Tests', () => {
   let testContractId: string;
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL is not set. Please check your .env file.');
-    }
-
     module = await Test.createTestingModule({
       imports: [
         DbModule.forRoot({
           config: {
-            connectionString: process.env.DATABASE_URL,
+            connectionString: DATABASE_URL,
           },
           schema: membershipSchema,
         }),

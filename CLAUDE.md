@@ -19,8 +19,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `search` | Elasticsearch/OpenSearch product search |
 | `analytics` | Analytics data collection |
 | `ugc-service` | User-generated content (reviews) |
-| `orchestrator` | Saga orchestration for cross-service workflows |
-| `outbox-demo` | Transactional outbox pattern demo |
 
 ### Frontend Apps
 - `apps/admin-web` — Next.js admin dashboard

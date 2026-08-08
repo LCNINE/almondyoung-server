@@ -18,7 +18,15 @@ import { eq } from 'drizzle-orm';
  * 2. 중복 주문 → 멱등성 확인
  * 3. 주문 취소 → 혜택 차감 확인
  */
-describe('BenefitTrackingService (Integration)', () => {
+// DB 가 없으면 스위트를 건너뛴다 (core·channel-adapter 의 REQUIRE_*_DB 컨벤션과 동일).
+// CI 등 DB 가 반드시 있어야 하는 경로에서는 REQUIRE_MEMBERSHIP_DB=1 로 누락을 실패시킨다.
+const DATABASE_URL = process.env.DATABASE_URL ?? '';
+if (process.env.REQUIRE_MEMBERSHIP_DB === '1' && !DATABASE_URL) {
+  throw new Error('DATABASE_URL is required for the membership integration suite.');
+}
+const describeIfDb = DATABASE_URL ? describe : describe.skip;
+
+describeIfDb('BenefitTrackingService (Integration)', () => {
   let service: BenefitTrackingService;
   let dbService: DbService<MembershipSchema>;
   let module: TestingModule;
@@ -30,14 +38,10 @@ describe('BenefitTrackingService (Integration)', () => {
   let testContractId: string;
 
   beforeAll(async () => {
-    if (!process.env.DATABASE_URL) {
-      throw new Error('DATABASE_URL is not set. Please check your .env file.');
-    }
-
     module = await Test.createTestingModule({
       imports: [
         DbModule.forRoot({
-          config: { connectionString: process.env.DATABASE_URL },
+          config: { connectionString: DATABASE_URL },
           schema: membershipSchema,
         }),
       ],
