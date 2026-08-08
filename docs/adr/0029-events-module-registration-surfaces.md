@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기존 ADR 을 대체하지 않는다.
+Accepted (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기존 ADR 을 대체하지 않는다.
+
+설계가 코드로 실현되기 시작한 시점에 Accepted 로 올렸다 — 계약 레지스트리(Follow-up 2) · 인메모리 어댑터(3) · `startConsumer` 도출과 소비 인터셉터 배선(4·§8)이 머지됐다. 남은 Follow-up 5~7 은 이 결정의 **이행**이지 재검토가 아니다. 이행 중 설계가 바뀌면 이 문서를 먼저 고친다.
 
 ## Context
 
