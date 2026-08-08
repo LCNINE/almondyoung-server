@@ -75,24 +75,6 @@
         "tsConfigPath": "apps/notification/tsconfig.app.json"
       }
     },
-    "orchestrator": {
-      "type": "application",
-      "root": "apps/orchestrator",
-      "entryFile": "main",
-      "sourceRoot": "apps/orchestrator/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/orchestrator/tsconfig.app.json"
-      }
-    },
-    "outbox-demo": {
-      "type": "application",
-      "root": "apps/outbox-demo",
-      "entryFile": "main",
-      "sourceRoot": "apps/outbox-demo/src",
-      "compilerOptions": {
-        "tsConfigPath": "apps/outbox-demo/tsconfig.app.json"
-      }
-    },
     "search": {
       "type": "application",
       "root": "apps/search",

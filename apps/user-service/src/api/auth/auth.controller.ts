@@ -115,7 +115,7 @@ export class AuthController {
   /**
    * @deprecated OIDC RP 들은 표준 `/oauth/token` (refresh_token grant) 을 사용해야 한다.
    * 이 엔드포인트는 admin-web 이 OIDC RP 로 전환되기 전 parent-domain 쿠키 SSO 를 위해 존재했고,
-   * 지금은 storefront 의 `/api/auth/restore-token` 프록시, df-admin, wallet-web, auth-web 의
+   * 지금은 storefront 의 `/api/auth/restore-token` 프록시, wallet-web, auth-web 의
    * 자체 IdP 세션 복구 등에서만 호출된다. 이들이 모두 OIDC 또는 user-service 자체 BFF 로 마이그레이션되면
    * 이 라우트를 제거할 예정. 호출 빈도/소비자 식별을 위해 deprecation warning 로그 발행.
    */
