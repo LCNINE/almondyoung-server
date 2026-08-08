@@ -103,6 +103,29 @@ envelope 를 최외곽 인터셉터에서 한 번 파싱해 컨텍스트에 싣�
 
 deep module 이 소유할 것: envelope 구성 · 검증 · `messageId`/`correlationId`/`chainId` 전파 · retry·DLQ 분류. 어댑터가 소유할 것: 전송뿐. 프로덕션 Kafka 와 인메모리, **두 어댑터가 생겨야 이 seam 이 가설이 아니라 실재가 된다** — 어댑터가 하나뿐인 seam 은 간접층일 뿐이다.
 
+**port 는 발행 방향에만 긋는다. 소비 방향은 port 가 아니다** (2026-08-09 결정):
+
+```ts
+export interface EventTransport {
+  send(topic: string, message: { key: string; value: string; headers?: Record<string, string> }): Promise<void>;
+}
+```
+
+`subscribe(topics, handler)` 를 같은 port 에 넣지 않는 이유는 **소비 루프를 `libs/events` 가 소유하고 있지 않기 때문**이다. 소비는 각 앱 `main.ts` 의 `app.connectMicroservice()` 가 만든 Nest `ServerKafka` 가 수행하며, `libs/events` 는 설정값만 넘긴다 — 그나마 그 설정값 중 `subscribe.topics` 는 Nest 가 덮어쓴다(이 ADR Context 참조). 따라서 `KafkaTransport.subscribe()` 는 ① Nest 의 컨슈머를 대체하거나(대규모 동작 변경, 이 ADR 의 expand-contract 규율 위반) ② 스텁으로 남는(한 어댑터가 구현 못 하는 메서드 = 거짓 인터페이스) 두 길뿐이고, 둘 다 나쁘다.
+
+대신 **소비 방향의 다형성은 Nest 가 이미 제공하는 확장점에서 얻는다** — `CustomTransportStrategy`. 운영은 Nest 의 `ServerKafka`, 테스트는 `InMemoryServer` 를 `connectMicroservice({ strategy })` 로 붙인다. 두 구현 모두 실재이고, 운영 경로는 한 줄도 바뀌지 않는다.
+
+**인메모리 배달은 반드시 진짜 `KafkaContext` 인스턴스를 만들어야 한다.** 이것이 이 비대칭 설계의 결정적 제약이다:
+
+```ts
+// libs/events/src/interceptors/event-retry.interceptor.ts:72
+if (!(kafkaContext instanceof KafkaContext)) return next.handle();
+```
+
+가짜 context 객체를 넣으면 이 줄에서 빠져나가 **재시도·DLQ 분류가 통째로 건너뛰어진다.** 그러면 "스키마 위반 → DLQ" 테스트는 초록불이 뜨지만 아무것도 증명하지 못한다 — 이 ADR 이 없애려는 실패 모드(무증상 거짓)를 테스트 안에서 재생산하는 꼴이다. `EventTypeGuard`(52곳에서 `@UseInterceptors` 로 부착)와 `SchemaValidationInterceptor` 도 같은 이유로 `KafkaContext` 를 요구한다. `Server` 를 상속한 전략은 이 요구를 자연히 만족하지만, 손으로 만든 페이크 디스패처는 만족하지 못한다.
+
+**Kafka 로 나가는 모든 경로가 이 port 를 지난다.** `StreamPublisher.sendMessage` · `OutboxDispatcher`(publisher 경유) · `DLQHandler.sendToDLQ`. 특히 `DLQHandler` 는 `@Inject('KAFKA_CLIENT')` 로 `ClientKafka` 를 직접 잡고 있었으므로 함께 이관한다 — 그러지 않으면 DLQ 적재를 관찰할 방법이 port 밖에 따로 생겨 "모든 발행은 port 를 지난다" 가 거짓이 된다. `GracefulShutdownService` 는 전송이 아니라 연결 종료가 관심사이므로 `KAFKA_CLIENT` 를 계속 쓴다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.

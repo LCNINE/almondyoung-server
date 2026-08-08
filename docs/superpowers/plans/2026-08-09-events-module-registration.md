@@ -54,9 +54,11 @@
 | 파일 | 책임 | 태스크 |
 |---|---|---|
 | `packages/event-contracts/streams/registry.ts` (신규) | `topic → StreamConfig` 레지스트리 | 1 |
-| `libs/events/src/transport/transport.port.ts` (신규) | 전송 port 인터페이스 | 2 |
-| `libs/events/src/transport/in-memory.transport.ts` (신규) | 테스트용 어댑터 | 2 |
+| `libs/events/src/transport/transport.port.ts` (신규) | 발행 port 인터페이스 + `EVENT_TRANSPORT` 토큰 | 2 |
 | `libs/events/src/transport/kafka.transport.ts` (신규) | 프로덕션 어댑터 (기존 배선 이관) | 2 |
+| `libs/events/src/transport/in-memory.broker.ts` (신규) | 토픽별 발행 로그 · 적대적 입력 주입 | 2 |
+| `libs/events/src/transport/in-memory.transport.ts` (신규) | 테스트용 발행 어댑터 | 2 |
+| `libs/events/src/transport/in-memory.server.ts` (신규) | 테스트용 **소비** 전략 (Nest `CustomTransportStrategy`) | 2 |
 | `libs/events/src/events.module.ts` | `startConsumer` 추가, `forConsumer({streams})` deprecate | 3 |
 | `libs/events/src/consumers/decorators.ts` | `@On` / `@Payload` 추가 (기존 `@OnEvent` 병행 유지) | 4 |
 | `libs/events/src/publishers/stream-publisher.service.ts` | `publish`/`enqueue` 통합 인터페이스, `publishRawEnvelope` zod 우회 제거 | 6 |
@@ -105,12 +107,17 @@
 
 **이 워크스트림에서 가장 중요한 태스크다.** ADR-0029 는 이것을 원래 마지막에 두려 했으나 앞으로 당겼다 — 지금은 발행→소비를 브로커 없이 검증할 방법이 아예 없어서, 이게 없으면 이후 모든 태스크가 "되는 것 같다"로 끝나고 다음 세션의 작업자는 앞 단계가 무엇을 보장했는지 알 수 없다.
 
-- [ ] `TransportPort` 정의: 발행(`send(topic, key, envelope)`) + 구독(`subscribe(topics, handler)`) 최소 표면
-- [ ] `KafkaTransport` — 기존 배선을 그대로 옮긴다. **동작 변경 없음**
-- [ ] `InMemoryTransport` — 토픽별 큐, 동기 디스패치, 테스트에서 관찰 가능한 발행 로그
+**⚠️ port 표면은 브레인스토밍에서 확정됐다 (2026-08-09): 발행 방향만.** `subscribe(topics, handler)` 는 port 에 넣지 않는다 — 소비 루프는 `libs/events` 가 아니라 Nest `ServerKafka` 가 소유하므로 정직한 Kafka 구현이 없다. 근거와 대안(`CustomTransportStrategy`)은 ADR-0029 §7 에 있다. **이 플랜의 옛 문구(`send` + `subscribe` 대칭)는 ADR 과 충돌해 폐기됐다.**
+
+- [ ] `EventTransport` 정의: `send(topic, {key, value, headers})` 만. `EVENT_TRANSPORT` DI 토큰 동봉
+- [ ] `KafkaTransport` — `ClientKafka.emit` + `firstValueFrom` 을 그대로 옮긴다. **동작 변경 없음** (GZIP 압축은 어댑터 내부로)
+- [ ] `InMemoryBroker` — 토픽별 발행 로그(`messagesOn`), 적대적 envelope 주입(`inject`)
+- [ ] `InMemoryTransport` — `send` → broker 적재 → 구독 서버에 **동기** 배달 (await 후 단언 가능해야 함)
+- [ ] `InMemoryServer` — `Server implements CustomTransportStrategy`. **진짜 `KafkaContext` 인스턴스**를 만들어야 한다 (`event-retry.interceptor.ts:72` 의 `instanceof` 게이트). 디스패치는 `ServerKafka.handleEvent` 를 그대로 흉내 — `handler(data, ctx)` 한 번만 부르면 다중 핸들러 체인은 `ListenersController.forkJoinHandlersIfAttached` 가 알아서 순회한다
+- [ ] `StreamPublisher` · `DLQHandler` 생성자를 port 로 교체, `events.module.ts` 배선 4곳 조정. **앱 코드 변경 0**
 - [ ] 왕복 스펙: `StreamPublisher.publishEvent` → 인메모리 → `@OnEvent` 핸들러 호출까지 한 프로세스에서 검증
 - [ ] 왕복 스펙에 **`EventTypeGuard` 필터링**(같은 토픽 다중 핸들러 중 1개만 실행) 케이스 포함
-- [ ] 왕복 스펙에 **스키마 위반 → DLQ 분류** 케이스 포함
+- [ ] 왕복 스펙에 **스키마 위반 → DLQ 분류** 케이스 포함. ⚠️ `validateOnPublish` 기본값이 `true` 라 잘못된 payload 는 발행 단계에서 먼저 터진다 — publisher 를 우회해 `broker.inject()` 로 적대적 envelope 를 직접 넣을 것 (실제로도 그런 메시지는 *다른 서비스가* 보낸다)
 - [ ] `npm run type-check` 초록 · 커밋 · 푸시
 
 **완료 기준:** 브로커 없이 발행→소비 왕복이 테스트로 증명된다. 이후 모든 태스크는 이 하네스 위에서 증거를 남긴다.
