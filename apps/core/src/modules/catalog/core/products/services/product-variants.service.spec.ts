@@ -48,6 +48,7 @@ describe('ProductVariantsService draft variant updates', () => {
       productVersionsService as unknown as ConstructorParameters<typeof ProductVariantsService>[1],
       {} as ConstructorParameters<typeof ProductVariantsService>[2],
       {} as ConstructorParameters<typeof ProductVariantsService>[3],
+      {} as ConstructorParameters<typeof ProductVariantsService>[4],
     );
     service.productSellableQuantity = productSellableQuantity;
 
@@ -80,6 +81,7 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
   function makeService() {
     return new ProductVariantsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -195,7 +197,8 @@ describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
     const service = new ProductVariantsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productVersionsService as any,
-      {} as any,
+      {} as any, // priceCacheService
+      {} as any, // pricingCalculator
       variantAssetLinkService as any,
     );
     return { service, variantAssetLinkService };

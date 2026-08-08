@@ -54,7 +54,6 @@ describe('ProductCategoriesService Medusa projection outbox events', () => {
 
     const service = new (ProductCategoriesService as any)(
       db,
-      {} as any,
       projectionSnapshotAssembler,
       outboxPublisher,
     ) as ProductCategoriesService;
@@ -126,7 +125,6 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
 
     const service = new (ProductCategoriesService as any)(
       db,
-      {} as any,
       projectionSnapshotAssembler,
       outboxPublisher,
     ) as ProductCategoriesService;
@@ -272,7 +270,6 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
     const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
-      {} as any,
       { assembleActiveVersionSnapshot: jest.fn() },
       outboxPublisher,
     ) as ProductCategoriesService;
@@ -354,7 +351,6 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
     const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
-      {} as any,
       { assembleActiveVersionSnapshot: jest.fn() },
       outboxPublisher,
     ) as ProductCategoriesService;
@@ -425,7 +421,6 @@ describe('ProductCategoriesService 레거시 path 대응', () => {
     const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
-      {} as any,
       { assembleActiveVersionSnapshot: jest.fn() },
       outboxPublisher,
     ) as ProductCategoriesService;

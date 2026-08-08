@@ -29,7 +29,6 @@ import {
 import { ProductVersionReadLoader } from '../../../core/products/loaders/product-version-read.loader';
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { TagReadLoader } from '../../../core/products/loaders/tag-read.loader';
-import { ProductReadAssembler } from '../../../core/products/assemblers/product-read.assembler';
 import { ProjectionSnapshotAssembler } from '../../../core/products/assemblers/projection-snapshot.assembler';
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
@@ -97,12 +96,11 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     // ProductCategoriesService.getCategoryTree()(이 스위트가 실제로 부르는 유일한 메서드)는
     // productReadAssembler/projectionSnapshotAssembler/outboxPublisher 중 어느 것도 건드리지
     // 않는다 — 그래도 생성자 그래프를 채우려면 실 인스턴스가 필요하다(any/as 스텁 대신).
-    const readAssembler = new ProductReadAssembler(dbService, priceCache, optionLoader, tagLoader, versionLoader);
     const snapshotAssembler = new ProjectionSnapshotAssembler(versionLoader, optionLoader, tagLoader, priceCache);
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
-    const categories = new ProductCategoriesService(dbService, readAssembler, snapshotAssembler, outbox);
+    const categories = new ProductCategoriesService(dbService, snapshotAssembler, outbox);
     // 이 스위트는 필드명/가격 센티넬/이미지 키 등 리더 자체의 매핑을 검증하지, 품목 판매정책
     // 우선순위(그건 product-sku-mapping.service.spec.ts 와 form-export.snapshot.reader.spec.ts
     // 의 renderMaster 스위트 몫이다)를 검증하지 않는다. 실 ProductSkuMappingService 는

@@ -1150,8 +1150,12 @@ async _processOptions(
 
 옵션이 정의되면 모든 조합을 자동으로 생성합니다.
 
+> ⚠️ 아래 `_generateVariants` 는 2026-08-08 에 삭제됐다 (호출자 0). 현재 draft 의 variant
+> 생성·재생성은 `_applyOptionDiff` → `_regenerateVariantsForVersion` 경로다. 아래 코드는
+> 옵션 조합 생성 규칙의 설명용으로만 남긴다.
+
 ```typescript
-// ProductMastersService._generateVariants()
+// ProductMastersService._generateVariants()  — 삭제됨
 async _generateVariants(
   master: ProductMaster,
   optionGroups: any[],
@@ -2154,16 +2158,11 @@ async updateMaster(versionId: string, data: UpdateMasterDto, tx?: DbTransaction)
 **제약:**
 - Draft 상태만 수정 가능 (컨트롤러에서 권한 확인)
 
-#### 8.1.3 _generateVariants()
+#### 8.1.3 _generateVariants() — 삭제됨 (2026-08-08)
 
-```typescript
-private async _generateVariants(master: ProductMaster, optionGroups: any[], tx: DbTransaction): Promise<void>
-```
-
-**기능:**
-- 옵션 조합 자동 계산
-- Variant 레코드 생성
-- 매핑 테이블 연결
+> `_generateVariants` / `generateVariants` / `generateDefaultVariant` / `regenerateVariants` 는
+> 호출자가 없어 삭제됐다. draft 의 variant 생성·재생성은
+> `ProductMastersService._applyOptionDiff` → `_regenerateVariantsForVersion` 이 담당한다.
 - WMS 이벤트 발행
 
 **알고리즘:**
@@ -2523,7 +2522,7 @@ v1 → v2 → v3 (v2 삭제) → v4 (v2 재사용 안 됨)
 #### 9.2.1 Variant는 절대 삭제 안 됨
 
 ```typescript
-// regenerateVariants에서도 매핑만 삭제
+// _regenerateVariantsForVersion 에서도 매핑만 삭제
 await txn.delete(productMasterVariants)
   .where(...);
 

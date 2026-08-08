@@ -33,7 +33,6 @@ import {
   CategorySeoConfig,
   CategoryTemplateConfig,
 } from '../../schema/catalog.schema';
-import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
 import { ProjectionSnapshotAssembler } from '../products/assemblers/projection-snapshot.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
@@ -54,7 +53,6 @@ export class ProductCategoriesService {
 
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-    private readonly productReadAssembler: ProductReadAssembler,
     private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,
     private readonly outboxPublisher: OutboxPublisher,
   ) {}
@@ -285,19 +283,6 @@ export class ProductCategoriesService {
     return responseDto;
   }
 
-  // 트리 구조 관리
-  async getRootCategories(tx?: DbTransaction): Promise<CategoryResponseDto[]> {
-    const client = this.getClient(tx);
-
-    const categories = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(isNull(pimSchema.productCategories.parentId));
-
-    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
-    return responseDto;
-  }
-
   async getCategoryTree(
     maxDepth?: number,
     includeInactive?: boolean,
@@ -319,8 +304,7 @@ export class ProductCategoriesService {
       if (maxDepth === undefined || category.level <= maxDepth) {
         categoryMap.set(category.id, {
           ...category,
-          isVisibleToMembersOnly:
-            (category.displaySettings as CategoryDisplaySettings | null)?.isVisibleToMembersOnly ?? false,
+          isVisibleToMembersOnly: category.displaySettings?.isVisibleToMembersOnly ?? false,
           // DB 의 imageUrl 을 API 의 thumbnail 로 맞춘다 (상세 응답과 동일한 이름)
           thumbnail: category.imageUrl,
           children: [],
@@ -500,163 +484,6 @@ export class ProductCategoriesService {
       })),
       fullPath: path.map((cat) => cat.name).join(' / '),
     };
-  }
-
-  async getCategoryDepth(categoryId: string, tx?: DbTransaction): Promise<number> {
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({
-        maxLevel: sql<number>`MAX(${pimSchema.productCategories.level})`,
-      })
-      .from(pimSchema.productCategories)
-      .where(like(pimSchema.productCategories.path, `%/${categoryId}/%`));
-
-    const [category] = await client
-      .select({ level: pimSchema.productCategories.level })
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
-
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
-
-    const maxChildLevel = result[0]?.maxLevel || category.level;
-    return maxChildLevel - category.level;
-  }
-
-  async getAncestors(categoryId: string, tx?: DbTransaction): Promise<CategoryResponseDto[]> {
-    const client = this.getClient(tx);
-
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
-
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
-
-    const pathIds = category.path.split('/').filter((id) => id && id !== categoryId);
-
-    if (pathIds.length === 0) {
-      return [];
-    }
-
-    const ancestors = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(inArray(pimSchema.productCategories.id, pathIds))
-      .orderBy(pimSchema.productCategories.level);
-
-    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(ancestors);
-    return responseDto;
-  }
-
-  async getDescendants(categoryId: string, tx?: DbTransaction): Promise<CategoryResponseDto[]> {
-    const client = this.getClient(tx);
-
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
-
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
-
-    // path 기반으로 모든 자손 조회 (현재 카테고리 제외)
-    const descendants = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(
-        and(
-          like(pimSchema.productCategories.path, `${category.path}/%`),
-          sql`${pimSchema.productCategories.id} != ${categoryId}`,
-        ),
-      )
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
-
-    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(descendants);
-    return responseDto;
-  }
-
-  // 상품 관리
-  async getProductsByCategory(categoryId: string, includeSubcategories: boolean, tx?: DbTransaction) {
-    const client = this.getClient(tx);
-
-    // 카테고리 존재 확인
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
-
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
-
-    let categoryIds = [categoryId];
-
-    if (includeSubcategories) {
-      // 하위 카테고리들도 포함
-      const descendants = await client
-        .select({ id: pimSchema.productCategories.id })
-        .from(pimSchema.productCategories)
-        .where(like(pimSchema.productCategories.path, `${category.path}/%`));
-
-      categoryIds = [...categoryIds, ...descendants.map((d) => d.id)];
-    }
-
-    // 해당 카테고리(들)의 상품들 조회
-    const products = await client
-      .select({
-        id: pimSchema.productMasterVersions.id,
-        name: pimSchema.productMasterVersions.name,
-        description: pimSchema.productMasterVersions.description,
-        brand: pimSchema.productMasterVersions.brand,
-        seoTitle: pimSchema.productMasterVersions.seoTitle,
-        seoDescription: pimSchema.productMasterVersions.seoDescription,
-        seoKeywords: pimSchema.productMasterVersions.seoKeywords,
-        descriptionHtml: pimSchema.productMasterVersions.descriptionHtml,
-        status: pimSchema.productMasterVersions.status,
-        isWholesaleOnly: pimSchema.productMasterVersions.isWholesaleOnly,
-        hideMembershipPriceForNonMembers: pimSchema.productMasterVersions.hideMembershipPriceForNonMembers,
-        isVisibleToMembersOnly: pimSchema.productMasterVersions.isVisibleToMembersOnly,
-        isOverseas: pimSchema.productMasterVersions.isOverseas,
-        isMembershipOnly: pimSchema.productMasterVersions.isMembershipOnly,
-        createdAt: pimSchema.productMasterVersions.createdAt,
-        updatedAt: pimSchema.productMasterVersions.updatedAt,
-        createdBy: pimSchema.productMasterVersions.createdBy,
-        updatedBy: pimSchema.productMasterVersions.updatedBy,
-        versionId: pimSchema.productMasterVersions.id, // product_images 조회용
-      })
-      .from(pimSchema.productMasterVersions)
-      .innerJoin(
-        pimSchema.productMasterCategories,
-        and(
-          eq(pimSchema.productMasterCategories.masterId, pimSchema.productMasterVersions.masterId),
-          eq(pimSchema.productMasterCategories.versionId, pimSchema.productMasterVersions.id),
-        ),
-      )
-      .where(
-        and(
-          inArray(pimSchema.productMasterCategories.categoryId, categoryIds),
-          eq(pimSchema.productMasterVersions.status, 'active'),
-        ),
-      )
-      .orderBy(pimSchema.productMasterVersions.name);
-
-    // product_images에서 primary 이미지 조회 (thumbnail용)
-    const versionIds = products.map((p) => p.versionId);
-    const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, tx);
-
-    const productsWithThumbnail = products.map((product) => ({
-      ...product,
-      thumbnail: thumbnailMap.get(product.versionId) ?? null,
-      images: null,
-    }));
-
-    return productsWithThumbnail;
   }
 
   async getCategoryProductCount(
@@ -875,67 +702,6 @@ export class ProductCategoriesService {
     await this.db.run(executeAdd, tx);
   }
 
-  // 검색 및 필터링
-  async searchCategories(query: string, parentId?: string, tx?: DbTransaction): Promise<CategoryResponseDto[]> {
-    const client = this.getClient(tx);
-
-    if (!query || query.trim() === '') {
-      throw new BadRequestError('Search query is required');
-    }
-
-    const searchTerm = `%${query.trim()}%`;
-    const whereConditions = [
-      or(like(pimSchema.productCategories.name, searchTerm), like(pimSchema.productCategories.description, searchTerm)),
-    ];
-
-    // 부모 ID가 지정된 경우 해당 부모 하위에서만 검색
-    if (parentId) {
-      // 부모 카테고리 존재 확인
-      const [parentCategory] = await client
-        .select()
-        .from(pimSchema.productCategories)
-        .where(eq(pimSchema.productCategories.id, parentId));
-
-      if (!parentCategory) {
-        throw new Error(`Parent category not found: ${parentId}`);
-      }
-
-      // 부모 ID 또는 부모의 자손인 카테골리만 포함
-      whereConditions.push(
-        or(
-          eq(pimSchema.productCategories.parentId, parentId),
-          like(pimSchema.productCategories.path, `${parentCategory.path}/%`),
-        ),
-      );
-    }
-
-    const categories = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(and(...whereConditions))
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.name);
-
-    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
-    return responseDto;
-  }
-
-  async getCategoriesByLevel(level: number, tx?: DbTransaction): Promise<CategoryResponseDto[]> {
-    const client = this.getClient(tx);
-
-    if (level < 0) {
-      throw new BadRequestError('Level must be non-negative');
-    }
-
-    const categories = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.level, level))
-      .orderBy(pimSchema.productCategories.sortOrder, pimSchema.productCategories.name);
-
-    const responseDto: CategoryResponseDto[] = CategoryMapper.toDtoArray(categories);
-    return responseDto;
-  }
-
   // 정렬 및 순서
   async reorderCategories(parentId: string, categoryIds: string[], tx?: DbTransaction): Promise<void> {
     if (!categoryIds || categoryIds.length === 0) {
@@ -999,79 +765,6 @@ export class ProductCategoriesService {
     await this.db.run(executeReorder, tx);
   }
 
-  async updateSortOrder(categoryId: string, sortOrder: number, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    if (sortOrder < 0) {
-      throw new BadRequestError('Sort order must be non-negative');
-    }
-
-    return this.db.run(async (client) => {
-      // 카테고리 존재 확인
-      const [category] = await client
-        .select()
-        .from(pimSchema.productCategories)
-        .where(eq(pimSchema.productCategories.id, categoryId));
-
-      if (!category) {
-        throw new NotFoundError(`Category not found: ${categoryId}`);
-      }
-
-      // sortOrder 업데이트
-      const [updatedCategory] = await client
-        .update(pimSchema.productCategories)
-        .set({
-          sortOrder: sortOrder,
-          updatedAt: new Date(),
-        })
-        .where(eq(pimSchema.productCategories.id, categoryId))
-        .returning();
-
-      // Enqueue CategoryChanged event
-      const snapshot = this.buildCategorySnapshot(updatedCategory);
-      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
-
-      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
-      return responseDto;
-    }, tx);
-  }
-
-  // 검증 및 유틸리티
-  async validateCategoryMove(categoryId: string, newParentId?: string, tx?: DbTransaction): Promise<boolean> {
-    const client = this.getClient(tx);
-
-    try {
-      // 1. 이동할 카테고리 존재 확인
-      const [category] = await client
-        .select()
-        .from(pimSchema.productCategories)
-        .where(eq(pimSchema.productCategories.id, categoryId));
-
-      if (!category) {
-        return false; // 카테고리가 존재하지 않음
-      }
-
-      // 2. 새 부모 존재 확인 (newParentId가 있는 경우)
-      if (newParentId) {
-        const [newParent] = await client
-          .select()
-          .from(pimSchema.productCategories)
-          .where(eq(pimSchema.productCategories.id, newParentId));
-
-        if (!newParent) {
-          return false; // 새 부모 카테고리가 존재하지 않음
-        }
-
-        // 3. 순환 참조 확인
-        if (await this.checkCircularReference(categoryId, newParentId, tx)) {
-          return false; // 순환 참조 감지
-        }
-      }
-
-      return true; // 모든 검증 통과
-    } catch (error) {
-      return false; // 오류 발생 시 검증 실패
-    }
-  }
-
   async checkCircularReference(categoryId: string, newParentId: string, tx?: DbTransaction): Promise<boolean> {
     const client = this.getClient(tx);
 
@@ -1101,50 +794,6 @@ export class ProductCategoriesService {
 
     // newParent의 path가 currentCategory의 path로 시작하는지 확인 (자손 관계)
     return newParent.path.startsWith(currentCategory.path + '/') || newParent.path === currentCategory.path;
-  }
-
-  async rebuildCategoryPaths(tx?: DbTransaction): Promise<void> {
-    const client = this.getClient(tx);
-
-    const executeRebuild = async (txn: DbTransaction) => {
-      // 1. 모든 카테고리를 레벨 순으로 정렬하여 가져오기
-      const allCategories = await txn
-        .select()
-        .from(pimSchema.productCategories)
-        .orderBy(pimSchema.productCategories.level);
-
-      // 2. 각 카테고리의 path와 level 재계산
-      for (const category of allCategories) {
-        let newPath = category.id;
-        let newLevel = 0;
-
-        if (category.parentId) {
-          // 부모 카테고리 정보 조회
-          const [parent] = await txn
-            .select()
-            .from(pimSchema.productCategories)
-            .where(eq(pimSchema.productCategories.id, category.parentId));
-
-          if (parent) {
-            newPath = `${parent.path}/${category.id}`;
-            newLevel = parent.level + 1;
-          }
-        }
-
-        // 3. 카테고리 업데이트
-        await txn
-          .update(pimSchema.productCategories)
-          .set({
-            path: newPath,
-            level: newLevel,
-            updatedAt: new Date(),
-          })
-          .where(eq(pimSchema.productCategories.id, category.id));
-      }
-    };
-
-    // 트랜잭션 처리
-    await this.db.run(executeRebuild, tx);
   }
 
   // ===== Event Publishing Helpers =====
@@ -1195,12 +844,7 @@ export class ProductCategoriesService {
     }
 
     for (const descendant of descendants) {
-      await this.publishCategoryEvent(
-        descendant.id,
-        'updated',
-        this.buildCategorySnapshot(descendant),
-        txn,
-      );
+      await this.publishCategoryEvent(descendant.id, 'updated', this.buildCategorySnapshot(descendant), txn);
     }
 
     if (descendants.length > 0) {
@@ -1214,10 +858,7 @@ export class ProductCategoriesService {
    * 소비자(Medusa 동기화)가 부모를 먼저 보장하지 않으면, 부모보다 자식 이벤트가 먼저
    * 처리될 때 자식이 최상위 카테고리로 붙는다. 이벤트 순서에 기대지 않도록 함께 싣는다.
    */
-  private async buildAncestorSnapshots(
-    snapshot: CategorySnapshot,
-    tx: DbTransaction,
-  ): Promise<CategorySnapshot[]> {
+  private async buildAncestorSnapshots(snapshot: CategorySnapshot, tx: DbTransaction): Promise<CategorySnapshot[]> {
     // path 는 신뢰하지 않는다 — 레거시(cafe24 마이그레이션) 행은 path 가 '728' 처럼
     // 코드 문자열이라 UUID 로 조회하면 터진다. parentId 를 따라 직접 올라간다.
     const ancestors: CategorySnapshot[] = [];

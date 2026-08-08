@@ -66,17 +66,4 @@ describe('ChannelProductsService — 외부채널 디지털 master 차단', () =
       '디지털 상품을 지원하지 않습니다',
     );
   });
-
-  it('bulkCreateChannelProducts: 외부채널(naver) + 디지털 master 는 차단한다', async () => {
-    // master존재 → channels존재 → (assert)site → (assert)master digital
-    const { service, client } = makeService([
-      [{ id: 'm1' }],
-      [{ id: 'ch' }],
-      [{ site: 'naver' }],
-      [{ fulfillmentKind: 'digital' }],
-    ]);
-    await expect(
-      service.bulkCreateChannelProducts('m1', [{ channelId: 'ch' }], client as any),
-    ).rejects.toThrow('디지털 상품을 지원하지 않습니다');
-  });
 });

@@ -18,7 +18,6 @@ import {
   DbTransaction,
   OptionDiff,
   ProductMasterWithVersion,
-  ProductImage,
   ProductDetailDto,
   PriceSummary,
 } from '../../../catalog.types';
@@ -96,16 +95,6 @@ type VersionOptionGroupWithDisplays = {
   values: VersionOptionValueDisplay[];
 };
 
-// generateOptionCombinations 결과에서 사용하는 항목 타입
-type VariantCombinationItem = {
-  id: string;
-  displayName: string;
-  groupName?: string | null;
-  name?: string | null;
-};
-
-type VariantCombination = VariantCombinationItem[];
-
 // Master 목록 조회 모드
 type MasterListMode =
   | 'active' // active 버전만
@@ -141,11 +130,7 @@ export class ProductMastersService {
    * variant 생성 시 WMS에 매칭 생성을 위한 이벤트를 발행합니다.
    * 이벤트 발행 실패해도 트랜잭션은 커밋됩니다 (Orchestrator가 WMS에 직접 요청하므로 복원력 보장).
    */
-  private async publishVariantCreatedEvent(
-    version: ProductMasterVersion,
-    variant: any,
-    optionCombination: Array<{ name: string; value: string }> | null,
-  ): Promise<void> {
+  private async publishVariantCreatedEvent(version: ProductMasterVersion, variant: any): Promise<void> {
     try {
       await this.productPublisher.publishEvent({
         eventType: 'ProductVariantCreated',
@@ -164,7 +149,6 @@ export class ProductMastersService {
           preStockSellable: false,
           alwaysSellableZeroStock: false,
 
-          optionCombination: optionCombination ?? undefined,
           createdAt: new Date().toISOString(),
         },
       });
@@ -239,7 +223,7 @@ export class ProductMastersService {
       });
 
       // 5. WMS 이벤트 발행
-      await this.publishVariantCreatedEvent(version, variant, null);
+      await this.publishVariantCreatedEvent(version, variant);
 
       return version;
     }, tx);
@@ -286,72 +270,6 @@ export class ProductMastersService {
     await tx.insert(productMasterCategories).values(categoryRelations);
   }
 
-  private async _generateVariants(
-    masterId: string,
-    versionId: string,
-    optionGroups: VersionOptionGroupWithDisplays[],
-    tx: DbTransaction,
-  ): Promise<void> {
-    const version = await this.getVersionById(versionId, {}, tx);
-
-    if (!optionGroups || optionGroups.length === 0) {
-      const [variant] = await tx
-        .insert(productVariants)
-        .values({
-          variantName: null,
-          isDefault: true,
-          status: 'active',
-        })
-        .returning();
-
-      await tx.insert(productMasterVariants).values({
-        id: uuidv7(),
-        masterId,
-        variantId: variant.id,
-        versionId,
-      });
-
-      await this.publishVariantCreatedEvent(version, variant, null);
-      return;
-    }
-
-    const combinations: VariantCombination[] = this.generateOptionCombinations(optionGroups);
-
-    for (const combination of combinations) {
-      const [variant] = await tx
-        .insert(productVariants)
-        .values({
-          variantName: combination.map((v) => v.displayName).join(' × '),
-          isDefault: false,
-          status: 'active',
-        })
-        .returning();
-
-      await tx.insert(productMasterVariants).values({
-        id: uuidv7(),
-        masterId,
-        variantId: variant.id,
-        versionId,
-      });
-
-      for (const optionValue of combination) {
-        await tx.insert(variantOptionValues).values({
-          variantId: variant.id,
-          optionValueId: optionValue.id,
-        });
-      }
-
-      await this.publishVariantCreatedEvent(
-        version,
-        variant,
-        combination.map((opt) => ({
-          name: opt.groupName ?? opt.name ?? opt.displayName,
-          value: opt.displayName,
-        })),
-      );
-    }
-  }
-
   async getVersionById(
     versionId: string,
     options?: { includeDeleted?: boolean },
@@ -380,127 +298,6 @@ export class ProductMastersService {
     }
 
     return version;
-  }
-
-  async tryGetVersionById(
-    versionId: string,
-    options?: { includeDeleted?: boolean },
-    tx?: DbTransaction,
-  ): Promise<ProductMasterVersion | null> {
-    if (!versionId) {
-      throw new BadRequestException('Version ID is required');
-    }
-
-    const conditions = [eq(productMasterVersions.id, versionId)];
-    if (!options?.includeDeleted) {
-      conditions.push(isNull(productMasterVersions.deletedAt));
-    }
-
-    const version = await this.db.run(async (tx) => {
-      const result = await tx
-        .select()
-        .from(productMasterVersions)
-        .where(and(...conditions));
-
-      return result.length > 0 ? result[0] : null;
-    }, tx);
-
-    return version;
-  }
-
-  async getMasterById(masterId: string, tx?: DbTransaction): Promise<ProductMasterWithVersion> {
-    if (!masterId) {
-      throw new BadRequestException('Master ID is required');
-    }
-
-    const masterWithVersion = await this.db.run(async (tx) => {
-      const [result] = await tx
-        .select()
-        .from(productMasterVersions)
-        .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            eq(productMasterVersions.status, 'active'),
-            isNull(productMasterVersions.deletedAt),
-            isNull(productMasters.deletedAt),
-          ),
-        )
-        .limit(1);
-
-      return result
-        ? {
-            ...result.product_masters,
-            version: result.product_master_versions,
-          }
-        : null;
-    }, tx);
-
-    if (!masterWithVersion) {
-      throw new NotFoundException(`Master ${masterId} not found`);
-    }
-
-    return masterWithVersion;
-  }
-
-  async tryGetMasterById(masterId: string, tx?: DbTransaction): Promise<ProductMasterWithVersion | null> {
-    if (!masterId) {
-      throw new BadRequestException('Master ID is required');
-    }
-
-    const masterWithVersion = await this.db.run(async (tx) => {
-      const [result] = await tx
-        .select()
-        .from(productMasterVersions)
-        .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
-        .where(
-          and(
-            eq(productMasterVersions.masterId, masterId),
-            isNull(productMasterVersions.deletedAt),
-            isNull(productMasters.deletedAt),
-          ),
-        )
-        .limit(1);
-
-      return result
-        ? {
-            ...result.product_masters,
-            version: result.product_master_versions,
-          }
-        : null;
-    }, tx);
-
-    return masterWithVersion;
-  }
-
-  async getVersionWithImages(
-    versionId: string,
-    tx?: DbTransaction,
-  ): Promise<ProductMasterVersion & { images: ProductImage[] }> {
-    if (!versionId) {
-      throw new BadRequestException('Version ID is required');
-    }
-
-    const versionWithImages = await this.db.run(async (tx) => {
-      const [version] = await tx.select().from(productMasterVersions).where(eq(productMasterVersions.id, versionId));
-
-      if (!version) {
-        throw new NotFoundException(`Version ${versionId} not found`);
-      }
-
-      const images = await tx
-        .select()
-        .from(productImages)
-        .where(eq(productImages.versionId, versionId))
-        .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
-
-      return {
-        ...version,
-        images,
-      };
-    }, tx);
-
-    return versionWithImages;
   }
 
   async getMasterDetail(masterId: string, tx?: DbTransaction): Promise<ProductDetailDto> {
@@ -635,10 +432,7 @@ export class ProductMastersService {
 
       // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
       if (filters?.name) {
-        const match = keywordMatch(filters.name, [
-          productMasterVersions.name,
-          productMasterVersions.productCode,
-        ]);
+        const match = keywordMatch(filters.name, [productMasterVersions.name, productMasterVersions.productCode]);
         if (match) whereConditions.push(match);
       }
 
@@ -670,8 +464,7 @@ export class ProductMastersService {
 
       // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
       // 'unassigned' 는 공급처 미지정(IS NULL) 을 뜻한다. UUID 와 섞어 보낼 수 있다.
-      const supplierIds =
-        typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
+      const supplierIds = typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
       if (supplierIds.length > 0) {
         const includeUnassigned = supplierIds.includes(UNASSIGNED_SUPPLIER);
         const concreteIds = supplierIds.filter((id) => id !== UNASSIGNED_SUPPLIER);
@@ -1190,153 +983,6 @@ export class ProductMastersService {
     }, tx);
   }
 
-  async generateVariants(versionId: string, tx?: DbTransaction): Promise<void> {
-    if (!versionId) {
-      throw new BadRequestException('Master ID is required');
-    }
-
-    await this.db.run(async (tx) => {
-      const version = await this.getVersionById(versionId, {}, tx);
-      if (!version) {
-        throw new NotFoundException(`Version not found: ${versionId}`);
-      }
-
-      // 매핑 테이블을 통해 기존 variants 확인
-      const existingMappings = await tx
-        .select({ count: count() })
-        .from(productMasterVariants)
-        .where(
-          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
-        );
-
-      if (existingMappings[0].count > 0) {
-        throw new BadRequestException('Master already has variants. Use regenerateVariants to recreate them.');
-      }
-
-      // Display 테이블을 통해 optionGroups 조회
-      const optionGroups = await this._getVersionOptionGroupsWithDisplays(version.masterId, version.id, 'ko-KR', tx);
-
-      await this._generateVariants(version.masterId, version.id, optionGroups, tx);
-    }, tx);
-  }
-
-  async generateDefaultVariant(versionId: string, tx?: DbTransaction): Promise<void> {
-    await this.db.run(async (tx) => {
-      const version = await this.getVersionById(versionId, {}, tx);
-      if (!version) {
-        throw new NotFoundException(`Version not found: ${versionId}`);
-      }
-
-      // 매핑 테이블을 통해 optionGroups 확인
-      const existingOptionGroups = await tx
-        .select({ count: count() })
-        .from(productMasterOptionGroups)
-        .where(
-          and(
-            eq(productMasterOptionGroups.masterId, version.masterId),
-            eq(productMasterOptionGroups.versionId, version.id),
-          ),
-        );
-
-      if (existingOptionGroups[0].count > 0) {
-        throw new BadRequestException(
-          'Cannot generate default variant for master with option groups. Use generateVariants instead.',
-        );
-      }
-
-      // 매핑 테이블을 통해 기존 variants 확인
-      const existingVariants = await tx
-        .select({ count: count() })
-        .from(productMasterVariants)
-        .where(
-          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
-        );
-
-      if (existingVariants[0].count > 0) {
-        throw new BadRequestException('Master already has variants. Cannot generate default variant.');
-      }
-
-      // variant 생성 후 매핑
-      const [variant] = await tx
-        .insert(productVariants)
-        .values({
-          variantName: null,
-          isDefault: true,
-          status: 'active',
-          displayOrder: 0,
-        })
-        .returning();
-
-      await tx.insert(productMasterVariants).values({
-        id: uuidv7(),
-        masterId: version.masterId,
-        variantId: variant.id,
-        versionId: version.id,
-        createdAt: new Date(),
-      });
-    }, tx);
-  }
-
-  async regenerateVariants(versionId: string, tx?: DbTransaction): Promise<void> {
-    if (!versionId) {
-      throw new BadRequestException('Version ID is required');
-    }
-
-    await this.db.run(async (tx) => {
-      const version = await this.getVersionById(versionId, {}, tx);
-      if (!version) {
-        throw new NotFoundException(`Version not found: ${versionId}`);
-      }
-
-      // 매핑 테이블을 통해 기존 variants 삭제
-      const existingMappings = await tx
-        .select({ variantId: productMasterVariants.variantId })
-        .from(productMasterVariants)
-        .where(
-          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
-        );
-
-      // 매핑 삭제
-      await tx
-        .delete(productMasterVariants)
-        .where(
-          and(eq(productMasterVariants.masterId, version.masterId), eq(productMasterVariants.versionId, version.id)),
-        );
-
-      // 실제 variant 레코드 삭제 (다른 버전에서 사용되지 않는 경우)
-      await deleteEntitiesIfUnmapped(
-        tx,
-        {
-          entityTable: productVariants,
-          entityIdColumn: productVariants.id,
-          junctionTable: productMasterVariants,
-          junctionFkColumn: productMasterVariants.variantId,
-        },
-        existingMappings.map((m) => m.variantId),
-      );
-
-      // 매핑 테이블과 Display 테이블을 통해 optionGroups 조회
-      const optionGroups = await this._getVersionOptionGroupsWithDisplays(version.masterId, version.id, 'ko-KR', tx);
-
-      await this._generateVariants(version.masterId, version.id, optionGroups, tx);
-    }, tx);
-  }
-
-  async existsMaster(masterId: string, tx?: DbTransaction): Promise<boolean> {
-    if (!masterId) {
-      return false;
-    }
-
-    const result = await this.db.run(async (tx) => {
-      return await tx
-        .select({ count: count() })
-        .from(productMasters)
-        .where(and(eq(productMasters.id, masterId), isNull(productMasters.deletedAt)));
-    }, tx);
-
-    return result[0].count > 0;
-  }
-
   private generateOptionCombinations(optionGroups: any[]): any[][] {
     if (!optionGroups || optionGroups.length === 0) {
       return [];
@@ -1361,11 +1007,6 @@ export class ProductMastersService {
     }
 
     return combinations;
-  }
-
-  public generateOptionCombinationsForTest(optionGroups: any[]): string[][] {
-    const combinations = this.generateOptionCombinations(optionGroups);
-    return combinations.map((combination) => combination.map((option) => option.value || option));
   }
 
   /**

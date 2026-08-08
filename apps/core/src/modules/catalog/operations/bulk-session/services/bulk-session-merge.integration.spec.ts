@@ -45,7 +45,6 @@ import {
 import { ProductVersionReadLoader } from '../../../core/products/loaders/product-version-read.loader';
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { TagReadLoader } from '../../../core/products/loaders/tag-read.loader';
-import { ProductReadAssembler } from '../../../core/products/assemblers/product-read.assembler';
 import { ProjectionSnapshotAssembler } from '../../../core/products/assemblers/projection-snapshot.assembler';
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
@@ -141,12 +140,11 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     const versionLoader = new ProductVersionReadLoader();
     const optionLoader = new OptionReadLoader();
     const tagLoader = new TagReadLoader();
-    const readAssembler = new ProductReadAssembler(dbService, priceCache, optionLoader, tagLoader, versionLoader);
     const snapshotAssembler = new ProjectionSnapshotAssembler(versionLoader, optionLoader, tagLoader, priceCache);
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
-    categories = new ProductCategoriesService(dbService, readAssembler, snapshotAssembler, outbox);
+    categories = new ProductCategoriesService(dbService, snapshotAssembler, outbox);
     // 이 스위트는 §F1(브랜드/셀러 병합) 회귀 잠금이지 품목 판매정책 프리필 검증이 아니다
     // — 실 ProductSkuMappingService 는 inventory BC 의 무거운 의존성 그래프(SharedModule
     // 등)를 끌고 오므로, 여기서는 빈 배치 응답 스텁만 채운다. base/current 양쪽 renderMaster

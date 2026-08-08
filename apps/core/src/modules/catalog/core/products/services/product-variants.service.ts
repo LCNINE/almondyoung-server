@@ -1,6 +1,6 @@
-import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { ProductVariant, UpdateProductVariant, DbTransaction, DbClient } from '../../../catalog.types';
+import { UpdateProductVariant, DbTransaction, DbClient } from '../../../catalog.types';
 import { ProductVariantMapper } from '../mappers';
 import { VariantWithPriceDto } from '../dto/variants/variant-response.dto';
 import {
@@ -22,10 +22,10 @@ import { v7 as uuidv7 } from 'uuid';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
+import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
 
 type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
-type VariantOptionsKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 
 @Injectable()
 export class ProductVariantsService {
@@ -33,6 +33,7 @@ export class ProductVariantsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productVersionsService: ProductVersionsService,
     private readonly priceCacheService: VariantPriceCacheService,
+    private readonly pricingCalculator: PricingCalculatorService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
   ) {}
 
@@ -240,13 +241,11 @@ export class ProductVariantsService {
         .where(eq(variantOptionValues.variantId, variantId))
         .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
 
-      let price: number;
-      try {
-        price = await this.calculateVariantPrice(variantId, tx);
-      } catch (error) {
-        console.warn(`Failed to calculate price for variant ${variantId}:`, error.message);
-        price = 0;
-      }
+      // 캐시(productVariantPriceCache)는 publish 시점에만 채워지므로 draft 버전에는 행이 없다.
+      // 상세 조회는 draft 편집 중에도 실제 가격을 보여야 하므로 계산기로 직접 구한다.
+      // calculateVariantPriceSet 은 variant 가 그 version 소속이 아니면 BadRequest 를 던진다.
+      const priceSet = await this.pricingCalculator.calculateVariantPriceSet(versionId, variantId, tx);
+      const price = priceSet.basePrice;
 
       return ProductVariantMapper.toWithPriceDto(
         {
@@ -257,88 +256,6 @@ export class ProductVariantsService {
         },
         price,
       );
-    }, tx);
-  }
-
-  async getVariantOptions(
-    keys: VariantOptionsKeysParam,
-    tx?: DbTransaction,
-  ): Promise<
-    Array<{
-      optionGroup: {
-        id: string;
-        displayName: string;
-        sortOrder: number | null;
-      };
-      optionValue: {
-        id: string;
-        displayName: string;
-        sortOrder: number | null;
-      };
-    }>
-  > {
-    return await this.db.run(async (tx) => {
-      let versionId: string;
-      let masterId: string;
-
-      if ('versionId' in keys) {
-        versionId = keys.versionId;
-        const [version] = await tx
-          .select({ masterId: productMasterVersions.masterId })
-          .from(productMasterVersions)
-          .where(eq(productMasterVersions.id, versionId))
-          .limit(1);
-
-        if (!version) {
-          throw new NotFoundException(`Version ${versionId} not found`);
-        }
-
-        masterId = version.masterId;
-      } else {
-        const activeVersion = await this.productVersionsService.getActiveVersion(keys.masterId, tx);
-        versionId = activeVersion.id;
-        masterId = keys.masterId;
-      }
-
-      const variantId = keys.variantId;
-
-      // Display 테이블을 통해 optionInfo 조회
-      const optionInfo = await tx
-        .select({
-          optionGroup: {
-            id: productOptionGroups.id,
-            displayName: productOptionGroupDisplays.displayName,
-            sortOrder: productOptionGroupDisplays.sortOrder,
-          },
-          optionValue: {
-            id: productOptionValues.id,
-            displayName: productOptionValueDisplays.displayName,
-            sortOrder: productOptionValueDisplays.sortOrder,
-          },
-        })
-        .from(variantOptionValues)
-        .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
-        .innerJoin(
-          productOptionValueDisplays,
-          and(
-            eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
-            eq(productOptionValueDisplays.versionId, versionId),
-            eq(productOptionValueDisplays.locale, 'ko-KR'),
-          ),
-        )
-        .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
-        .innerJoin(
-          productOptionGroupDisplays,
-          and(
-            eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
-            eq(productOptionGroupDisplays.versionId, versionId),
-            eq(productOptionGroupDisplays.locale, 'ko-KR'),
-          ),
-        )
-        .where(eq(variantOptionValues.variantId, variantId))
-        .orderBy(asc(productOptionGroupDisplays.sortOrder), asc(productOptionValueDisplays.sortOrder));
-
-      return optionInfo;
     }, tx);
   }
 
@@ -577,28 +494,6 @@ export class ProductVariantsService {
     }
   }
 
-  async calculateVariantPrice(variantId: string, tx?: DbTransaction): Promise<number> {
-    // NOTE: This method has been moved to PricingCalculatorService
-    // Use PricingCalculatorService.calculateVariantPrice() instead
-    throw new GoneException(
-      'calculateVariantPrice has been moved to PricingCalculatorService. Use the new pricing API.',
-    );
-  }
-
-  async calculateVariantPrices(variantIds: string[], tx?: DbTransaction): Promise<Record<string, number>> {
-    // NOTE: This method has been moved to PricingCalculatorService
-    throw new GoneException(
-      'calculateVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.',
-    );
-  }
-
-  async calculateAllVariantPrices(masterId: string, tx?: DbTransaction): Promise<Record<string, number>> {
-    // NOTE: This method has been moved to PricingCalculatorService
-    throw new GoneException(
-      'calculateAllVariantPrices has been moved to PricingCalculatorService. Use the new pricing API.',
-    );
-  }
-
   async findByIds(ids: string[]): Promise<
     {
       id: string;
@@ -693,77 +588,5 @@ export class ProductVariantsService {
       optionLabel: optionMap.get(row.variantId)?.join(', '),
       thumbnail: row.thumbnail ?? null,
     }));
-  }
-
-  async existsVariant(variantId: string, tx?: DbTransaction): Promise<boolean> {
-    if (!variantId) {
-      return false;
-    }
-
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({ count: count() })
-      .from(productVariants)
-      .where(eq(productVariants.id, variantId));
-
-    return result[0].count > 0;
-  }
-
-  async getActiveVariants(masterId: string, versionId?: string, tx?: DbTransaction): Promise<ProductVariant[]> {
-    if (!masterId) {
-      throw new BadRequestException('Master ID is required');
-    }
-
-    return await this.db.run(async (tx) => {
-      let targetVersionId: string;
-
-      if (!versionId) {
-        const targetVersion = await this.productVersionsService.getActiveVersion(masterId, tx);
-        targetVersionId = targetVersion.id;
-      } else {
-        targetVersionId = versionId;
-      }
-
-      const results = await tx
-        .select()
-        .from(productMasterVariants)
-        .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
-        .where(
-          and(
-            eq(productMasterVariants.masterId, masterId),
-            eq(productMasterVariants.versionId, targetVersionId),
-            eq(productVariants.status, 'active'),
-          ),
-        )
-        .orderBy(asc(productVariants.displayOrder));
-
-      return results.map((r) => r.product_variants);
-    }, tx);
-  }
-
-  async updateDisplayOrder(variantId: string, displayOrder: number, tx?: DbTransaction): Promise<void> {
-    if (!variantId) {
-      throw new BadRequestException('Variant ID is required');
-    }
-
-    if (displayOrder < 0) {
-      throw new BadRequestException('Display order must be non-negative');
-    }
-
-    const client = this.getClient(tx);
-
-    const exists = await this.existsVariant(variantId, tx);
-    if (!exists) {
-      throw new NotFoundException(`Variant not found: ${variantId}`);
-    }
-
-    await client
-      .update(productVariants)
-      .set({
-        displayOrder,
-        updatedAt: new Date(),
-      })
-      .where(eq(productVariants.id, variantId));
   }
 }
