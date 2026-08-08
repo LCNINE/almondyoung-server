@@ -5,7 +5,7 @@
  */
 
 import { DynamicModule, Global, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
-import { ClientsModule, Transport } from '@nestjs/microservices';
+import { ClientKafka, ClientsModule, Transport } from '@nestjs/microservices';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
@@ -28,6 +28,18 @@ import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbService } from '@app/db';
+import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
+import { KafkaTransport } from './transport/kafka.transport';
+
+/**
+ * Kafka 로 나가는 유일한 통로 (ADR-0029 §7). `KAFKA_CLIENT` 를 감싸며,
+ * `GracefulShutdownService` 만 연결 종료 목적으로 `KAFKA_CLIENT` 를 계속 직접 쓴다.
+ */
+const eventTransportProvider = {
+  provide: EVENT_TRANSPORT,
+  useFactory: (kafkaClient: ClientKafka): EventTransport => new KafkaTransport(kafkaClient),
+  inject: ['KAFKA_CLIENT'],
+};
 
 /**
  * EventsModule 설정 옵션 (Publisher용)
@@ -87,12 +99,12 @@ export class EventsModule {
     const publisherProviders = options.streams.map((stream) => ({
       provide: this.getPublisherToken(stream.topic.topic),
       useFactory: (
-        kafkaClient: any,
+        transport: EventTransport,
         eventChainService: EventChainService,
         eventTrackingService: EventTrackingService,
       ) => {
         return new StreamPublisher(
-          kafkaClient,
+          transport,
           stream,
           serviceName,
           options.validation, // 스키마 검증 옵션 전달
@@ -100,17 +112,17 @@ export class EventsModule {
           eventTrackingService,
         );
       },
-      inject: ['KAFKA_CLIENT', EventChainService, EventTrackingService],
+      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
     const dlqProvider = enableDLQ
       ? {
           provide: DLQHandler,
-          useFactory: (kafkaClient: any) => {
-            return new DLQHandler(kafkaClient);
+          useFactory: (transport: EventTransport) => {
+            return new DLQHandler(transport);
           },
-          inject: ['KAFKA_CLIENT'],
+          inject: [EVENT_TRANSPORT],
         }
       : null;
 
@@ -146,7 +158,7 @@ export class EventsModule {
             provide: OutboxDispatcher,
             useFactory: (
               dbService: DbService,
-              kafkaClient: any,
+              transport: EventTransport,
               eventChainService: EventChainService,
               eventTrackingService: EventTrackingService,
             ) => {
@@ -154,7 +166,7 @@ export class EventsModule {
               const publisherMap = new Map<string, StreamPublisher>();
               options.streams.forEach((stream) => {
                 const publisher = new StreamPublisher(
-                  kafkaClient,
+                  transport,
                   stream,
                   serviceName,
                   options.validation,
@@ -166,7 +178,7 @@ export class EventsModule {
 
               return new OutboxDispatcher(dbService, publisherMap, options.outbox);
             },
-            inject: [DbService, 'KAFKA_CLIENT', EventChainService, EventTrackingService],
+            inject: [DbService, EVENT_TRANSPORT, EventChainService, EventTrackingService],
           },
         ]
       : [];
@@ -186,6 +198,7 @@ export class EventsModule {
 
     const providers = [
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
+      eventTransportProvider, // Kafka 로 나가는 유일한 통로
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,
@@ -253,10 +266,10 @@ export class EventsModule {
     const dlqProvider = enableAutoDLQ
       ? {
           provide: DLQHandler,
-          useFactory: (kafkaClient: any) => {
-            return new DLQHandler(kafkaClient);
+          useFactory: (transport: EventTransport) => {
+            return new DLQHandler(transport);
           },
-          inject: ['KAFKA_CLIENT'],
+          inject: [EVENT_TRANSPORT],
         }
       : null;
 
@@ -300,6 +313,7 @@ export class EventsModule {
     };
 
     const providers = [
+      eventTransportProvider, // Kafka 로 나가는 유일한 통로
       ...(dlqProvider ? [dlqProvider] : []),
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록

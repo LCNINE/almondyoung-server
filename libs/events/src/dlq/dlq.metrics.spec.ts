@@ -1,8 +1,7 @@
-import { of, throwError } from 'rxjs';
-import type { ClientKafka } from '@nestjs/microservices';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 import { DLQHandler } from './dlq-handler.service';
 import { dlqMessagesTotal, dlqSendFailuresTotal } from './dlq.metrics';
+import type { EventTransport } from '../transport/transport.port';
 
 function buildParams() {
   const originalMessage = {
@@ -32,8 +31,9 @@ describe('DLQHandler metrics', () => {
   });
 
   it('DLQ 발행 성공 시 events_dlq_messages_total 을 라벨과 함께 증가시킨다', async () => {
-    const kafka = { emit: () => of(undefined) } as unknown as ClientKafka;
-    const handler = new DLQHandler(kafka);
+    // port 덕분에 캐스팅 없이 그대로 만족하는 테스트 더블
+    const transport: EventTransport = { send: async () => undefined };
+    const handler = new DLQHandler(transport);
 
     await handler.sendToDLQ(buildParams());
 
@@ -48,10 +48,12 @@ describe('DLQHandler metrics', () => {
   });
 
   it('DLQ 발행 실패 시 events_dlq_send_failures_total 을 증가시키고 에러를 재던진다', async () => {
-    const kafka = {
-      emit: () => throwError(() => new Error('broker down')),
-    } as unknown as ClientKafka;
-    const handler = new DLQHandler(kafka);
+    const transport: EventTransport = {
+      send: async () => {
+        throw new Error('broker down');
+      },
+    };
+    const handler = new DLQHandler(transport);
 
     await expect(handler.sendToDLQ(buildParams())).rejects.toThrow('broker down');
 

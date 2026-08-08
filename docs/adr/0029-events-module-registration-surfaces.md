@@ -172,11 +172,14 @@ if (!(kafkaContext instanceof KafkaContext)) return next.handle();
 
 1. ~~**`apps/analytics/src/main.ts:65–75` 의 틀린 주석을 즉시 삭제한다.**~~ **완료 (2026-08-09).** 실제 동작을 설명하는 주석으로 교체했다. 검증: `ProductEventsConsumer` 는 `analytics.module.ts:50` 의 `controllers` 에 등록돼 있고 `products.events.v1` 핸들러 6개를 선언하므로 해당 토픽은 정상 구독된다 — 옛 주석의 "have never received a live message" 는 틀렸다. `apps/search/src/search.module.ts:26` 은 **고치지 않았다**: "forConsumerModule 은 provider 만 등록하고 connectMicroservice 를 부르지 않으므로 두 번째 컨슈머를 만들지 않는다"는 사실이며 #510 회귀 방지 근거로 유효하다. 두 표면을 "짝"이라 부른 표현만 느슨할 뿐이다.
 2. 계약 레지스트리(`topic → StreamConfig`) 추가 — 순수 추가, 위험 0.
-3. **인메모리 transport 어댑터 + 발행→소비 왕복 테스트.** 원래 마지막에 두려던 것을 앞으로 당긴다. 지금은 발행→소비를 브로커 없이 검증할 방법이 **아예 없어서**(`libs/events/src` 소스 29 / 스펙 5, 페이크 트랜스포트 0), 어댑터가 없으면 이후 모든 단계가 자기 증거를 남기지 못한다. 여러 세션에 걸쳐 진행되는 작업에서 이는 치명적이다 — 다음 작업자는 앞 단계가 실제로 무엇을 보장했는지 알 수 없다. **검증 도구를 먼저 만들고 나머지를 그 위에 얹는다.**
+3. ~~**인메모리 transport 어댑터 + 발행→소비 왕복 테스트.**~~ **완료 (2026-08-09).** 하네스가 첫 실행에서 실재 버그를 찾았다: Nest 는 수신 `value` 를 `KafkaParser` 로 JSON 파싱해 넘기는데(즉 **객체**), `schema-validation.interceptor.ts:69` · `event-retry.interceptor.ts:194` · `chain-context.interceptor.ts:26` 이 `String(value)` 관용구로 `"[object Object]"` 를 만들어 `JSON.parse` 가 터졌다. `validateOnConsume: true` 인 core·analytics·search 에서 **모든 메시지가 재시도 3회 후 DLQ 전송마저 실패 → offset 미커밋 → 무한 재전달**이었다. `utils/envelope.util.ts` 의 `parseEnvelope` 로 수정. **이 ADR 이 "두 번째 어댑터가 없어서 배선 문제가 어떤 테스트로도 안 잡힌다"고 한 주장의 실증 사례다.** 남은 별건: 소비 경로에 CLS 컨텍스트가 열리지 않아(`middleware.mount: false` + RPC 용 ClsGuard 부재) `chainId` 전파가 죽어 있다 — `round-trip.spec.ts` 에 `it.failing` 으로 박아뒀다. 아래 9번.
+
+   착수 당시 근거(보존): 원래 마지막에 두려던 것을 앞으로 당겼다. 발행→소비를 브로커 없이 검증할 방법이 **아예 없어서**(`libs/events/src` 소스 29 / 스펙 5, 페이크 트랜스포트 0) 어댑터가 없으면 이후 모든 단계가 자기 증거를 남기지 못하고, 여러 세션에 걸친 작업에서 다음 작업자는 앞 단계가 무엇을 보장했는지 알 수 없기 때문이다. **검증 도구를 먼저 만들고 나머지를 그 위에 얹는다** — 그 판단은 결과로 정당화됐다.
 4. `startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.
 5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR).
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
 8. channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.
+9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정). `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/ClsInterceptor 가 없어 `EventChainService.setChainId` 가 "No CLS context available" 로 던지고, `ChainContextInterceptor` 의 `catch {}` 가 그것을 삼킨다. 결과적으로 **소비 측 `chainId`/`eventId` 전파가 전 앱에서 죽어 있다.** 3번의 파싱 버그와 원인이 다르므로 별도 수정이 필요하다 — 이 워크스트림에 묶을지 독립 처리할지 결정한다. 회귀 감지는 `round-trip.spec.ts` 의 `it.failing` 이 맡는다.
 
 실행 계획은 [`docs/superpowers/plans/2026-08-09-events-module-registration.md`](../superpowers/plans/2026-08-09-events-module-registration.md).
