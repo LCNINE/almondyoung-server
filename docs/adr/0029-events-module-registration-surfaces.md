@@ -2,7 +2,9 @@
 
 ## Status
 
-Proposed (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기존 ADR 을 대체하지 않는다.
+Accepted (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기존 ADR 을 대체하지 않는다.
+
+설계가 코드로 실현되기 시작한 시점에 Accepted 로 올렸다 — 계약 레지스트리(Follow-up 2) · 인메모리 어댑터(3) · `startConsumer` 도출과 소비 인터셉터 배선(4·§8)이 머지됐다. 남은 Follow-up 5~7 은 이 결정의 **이행**이지 재검토가 아니다. 이행 중 설계가 바뀌면 이 문서를 먼저 고친다.
 
 ## Context
 
@@ -15,10 +17,12 @@ Proposed (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기�
 async bindEvents(consumer) {
   const registeredPatterns = [...this.messageHandlers.keys()];
   const consumerSubscribeOptions = this.options.subscribe || {};
-  await this.consumer.subscribe({
-    ...consumerSubscribeOptions,
-    topics: registeredPatterns,   // ← spread 뒤에 오므로 subscribe.topics 를 덮어쓴다
-  });
+  if (registeredPatterns.length > 0) {        // ← 0개면 subscribe 자체를 건너뛴다
+    await this.consumer.subscribe({
+      ...consumerSubscribeOptions,
+      topics: registeredPatterns,             // ← spread 뒤에 오므로 subscribe.topics 를 덮어쓴다
+    });
+  }
 }
 ```
 
@@ -126,6 +130,51 @@ if (!(kafkaContext instanceof KafkaContext)) return next.handle();
 
 **Kafka 로 나가는 모든 경로가 이 port 를 지난다.** `StreamPublisher.sendMessage` · `OutboxDispatcher`(publisher 경유) · `DLQHandler.sendToDLQ`. 특히 `DLQHandler` 는 `@Inject('KAFKA_CLIENT')` 로 `ClientKafka` 를 직접 잡고 있었으므로 함께 이관한다 — 그러지 않으면 DLQ 적재를 관찰할 방법이 port 밖에 따로 생겨 "모든 발행은 port 를 지난다" 가 거짓이 된다. `GracefulShutdownService` 는 전송이 아니라 연결 종료가 관심사이므로 `KAFKA_CLIENT` 를 계속 쓴다.
 
+### 8. 소비 측 전역 인터셉터는 `APP_INTERCEPTOR` 가 아니라 마이크로서비스 스코프로 붙인다
+
+**(2026-08-09 실측으로 추가된 결정. 이 ADR 이 고치려는 실패 모드의 세 번째 실례다.)**
+
+`EventRetryInterceptor`(재시도·DLQ·offset commit) · `SchemaValidationInterceptor` · `ChainContextInterceptor` 는 `forRoot`/`forConsumerModule` 에서 `APP_INTERCEPTOR` 로 등록된다. `event-retry.interceptor.ts` 의 주석은 "전역(APP_INTERCEPTOR) 등록 전제"라고 못박고 있다. **그 전제가 현재 7개 소비 앱 전부에서 성립하지 않는다.**
+
+```js
+// node_modules/@nestjs/core/nest-application.js:125–131  (v11.1.17)
+connectMicroservice(microserviceOptions, hybridAppOptions = {}) {
+  const { inheritAppConfig } = hybridAppOptions;
+  const applicationConfig = inheritAppConfig
+    ? this.config
+    : new ApplicationConfig();          // ← 기본값: 전역 enhancer 가 하나도 없는 새 config
+  const instance = new NestMicroservice(this.container, microserviceOptions, this.graphInspector, applicationConfig);
+```
+
+7개 앱 모두 `app.connectMicroservice(consumerOptions)` 를 두 번째 인자 없이 부른다(실측). 따라서 Kafka 핸들러는 **빈 `ApplicationConfig`** 위에서 바인딩되고, `APP_INTERCEPTOR` 로 모은 전역 인터셉터 목록은 소비 경로에 **적용되지 않는다**. 컨트롤러 레벨 `@UseInterceptors(EventTypeGuard)`(52곳)는 메타데이터에서 해석되므로 영향이 없다 — 그래서 필터링은 동작하고 검증·재시도·DLQ 만 조용히 죽어 있었다.
+
+인메모리 하네스로 확인한 결과 (`libs/events/src/transport/start-consumer.spec.ts`):
+
+| 배선 | 스키마 위반 메시지 | DLQ | `onModuleInit` 호출 |
+|---|---|---|---|
+| `connectMicroservice(opts)` — **현재 7개 앱** | **핸들러까지 도달** | 0건 | 1회 |
+| `connectMicroservice(opts, { inheritAppConfig: true })` | 차단 | 1건 | 1회 |
+| `connectMicroservice(opts, { deferInitialization: true })` + `useGlobalInterceptors` | 차단 | 1건 | **2회** ⚠️ |
+| 위 + `registerListeners()` + `setIsInitialized/setIsInitHookCalled` | 차단 | 1건 | 1회 |
+
+`inheritAppConfig: true` 는 기각한다. HTTP 앱의 전역 파이프·필터·**가드**까지 통째로 RPC 핸들러에 얹히며, 앱마다 그 목록이 다르다 — 이벤트 소비가 각 앱의 HTTP 인증 가드를 통과해야 하는 상태가 된다.
+
+`deferInitialization: true` 단독도 기각한다. 초기화가 미뤄진 마이크로서비스는 `listen()` 에서 `registerModules()` 를 부르고, 그 안에서 `callInitHook()`/`callBootstrapHook()` 이 **컨테이너 전체에 대해 다시** 실행된다(`nest-microservice.js:66–79`). 위 표의 `onModuleInit` 2회가 그것이다.
+
+**따라서 `startConsumer` 는 마이크로서비스 자신의 `ApplicationConfig` 에만 이벤트 인터셉터를 얹는다:**
+
+```ts
+const microservice = app.connectMicroservice(options, { deferInitialization: true });
+microservice.useGlobalInterceptors(retry, schemaValidation, chainContext);  // 등록 순서 = 래핑 순서
+microservice.registerListeners();          // 비-defer 경로가 하던 일을 그대로
+microservice.setIsInitialized(true);       // 초기화 훅 재실행을 막는다
+microservice.setIsInitHookCalled(true);
+```
+
+붙는 것은 이벤트 인터셉터 셋뿐이고 앱의 HTTP 설정은 건드리지 않는다. `useGlobalInterceptors` 는 인스턴스를 받으므로 `startConsumer` 가 직접 생성한다 — `SchemaValidationInterceptor` 는 **도출된** 스트림 목록을, 검증 정책(`validateOnConsume` 등)은 앱이 이미 선언한 것을 컨테이너에서 읽어 쓴다. 정책은 도출 불가한 사실이므로 선언이 옳고(§1), 스트림 목록은 도출 가능하므로 선언을 지운다.
+
+**이행 결과: 앱 이주(§Follow-up 5)는 동작 중립이 아니다.** `startConsumer` 로 옮기는 순간 그 앱에서 스키마 검증·재시도·DLQ 가 **처음으로 켜진다.** 지금까지 검증 없이 소비해 온 인바운드 payload 가 스키마를 만족하지 않으면 이주 자체가 DLQ 폭탄이 된다. channel-adapter 에만 붙어 있던 경고가 **7개 앱 전부**로 확대된다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.
@@ -144,6 +193,7 @@ if (!(kafkaContext instanceof KafkaContext)) return next.handle();
 | `forConsumerModule` 에 스트림 누락 | 메시지마다 warn, 검증 없이 통과 | 파생되므로 불가능 |
 | outbox 에 잘못된 payload | 검증 0 → 소비자에서 터지거나 조용히 통과 | enqueue 실패 = 도메인 연산 실패 |
 | `forRoot` 에 스트림 누락 + 발행 | DI 실패 / 디스패처 throw | 동일 (이미 시끄럽다) |
+| 하이브리드 앱에서 소비 인터셉터 미적용 | **완전 무증상** (검증·재시도·DLQ 가 통째로 죽음) | `startConsumer` 가 마이크로서비스 스코프로 직접 붙인다 (§8) |
 
 **가장 치명적인 실수가 가장 조용하다는 현재의 역전이 해소된다.**
 
@@ -172,14 +222,18 @@ if (!(kafkaContext instanceof KafkaContext)) return next.handle();
 
 1. ~~**`apps/analytics/src/main.ts:65–75` 의 틀린 주석을 즉시 삭제한다.**~~ **완료 (2026-08-09).** 실제 동작을 설명하는 주석으로 교체했다. 검증: `ProductEventsConsumer` 는 `analytics.module.ts:50` 의 `controllers` 에 등록돼 있고 `products.events.v1` 핸들러 6개를 선언하므로 해당 토픽은 정상 구독된다 — 옛 주석의 "have never received a live message" 는 틀렸다. `apps/search/src/search.module.ts:26` 은 **고치지 않았다**: "forConsumerModule 은 provider 만 등록하고 connectMicroservice 를 부르지 않으므로 두 번째 컨슈머를 만들지 않는다"는 사실이며 #510 회귀 방지 근거로 유효하다. 두 표면을 "짝"이라 부른 표현만 느슨할 뿐이다.
 2. 계약 레지스트리(`topic → StreamConfig`) 추가 — 순수 추가, 위험 0.
-3. ~~**인메모리 transport 어댑터 + 발행→소비 왕복 테스트.**~~ **완료 (2026-08-09).** 하네스가 첫 실행에서 실재 버그를 찾았다: Nest 는 수신 `value` 를 `KafkaParser` 로 JSON 파싱해 넘기는데(즉 **객체**), `schema-validation.interceptor.ts:69` · `event-retry.interceptor.ts:194` · `chain-context.interceptor.ts:26` 이 `String(value)` 관용구로 `"[object Object]"` 를 만들어 `JSON.parse` 가 터졌다. `validateOnConsume: true` 인 core·analytics·search 에서 **모든 메시지가 재시도 3회 후 DLQ 전송마저 실패 → offset 미커밋 → 무한 재전달**이었다. `utils/envelope.util.ts` 의 `parseEnvelope` 로 수정. **이 ADR 이 "두 번째 어댑터가 없어서 배선 문제가 어떤 테스트로도 안 잡힌다"고 한 주장의 실증 사례다.** 남은 별건: 소비 경로에 CLS 컨텍스트가 열리지 않아(`middleware.mount: false` + RPC 용 ClsGuard 부재) `chainId` 전파가 죽어 있다 — `round-trip.spec.ts` 에 `it.failing` 으로 박아뒀다. 아래 9번.
+3. ~~**인메모리 transport 어댑터 + 발행→소비 왕복 테스트.**~~ **완료 (2026-08-09).** 하네스가 첫 실행에서 실재 버그를 찾았다: Nest 는 수신 `value` 를 `KafkaParser` 로 JSON 파싱해 넘기는데(즉 **객체**), `schema-validation.interceptor.ts:69` · `event-retry.interceptor.ts:194` · `chain-context.interceptor.ts:26` 이 `String(value)` 관용구로 `"[object Object]"` 를 만들어 `JSON.parse` 가 터졌다. `utils/envelope.util.ts` 의 `parseEnvelope` 로 수정.
+
+   ⚠️ **2026-08-09 정정 (아래 10번의 발견에 따름).** 당시 이 항목은 "`validateOnConsume: true` 인 core·analytics·search 에서 모든 메시지가 재시도 3회 후 DLQ 전송마저 실패 → offset 미커밋 → **무한 재전달**"이라고 단언했다. **그 결론은 틀렸다.** 그 세 인터셉터는 `APP_INTERCEPTOR` 전역 등록에 의존하는데, 7개 소비 앱 모두 하이브리드 `connectMicroservice` 를 쓰므로 애초에 소비 경로에 붙지 않는다(§8). 즉 파싱 버그의 프로덕션 영향 범위는 **0** 이었다 — 터질 코드가 실행되지 않았기 때문이다. 수정 자체는 유효하고 필요하다: §8 의 배선이 켜지는 순간 그 경로가 살아나며, 그때 이 버그가 없어야 한다. 하네스가 "실재 버그를 찾았다"는 것도 여전히 사실이다. 틀린 것은 **영향 범위 추정**이며, 그 오판의 원인도 같다 — 두 번째 어댑터가 없어 배선을 실행해 본 적이 없었다. **이 ADR 이 "두 번째 어댑터가 없어서 배선 문제가 어떤 테스트로도 안 잡힌다"고 한 주장의 실증 사례다.** 남은 별건: 소비 경로에 CLS 컨텍스트가 열리지 않아(`middleware.mount: false` + RPC 용 ClsGuard 부재) `chainId` 전파가 죽어 있다 — `round-trip.spec.ts` 에 `it.failing` 으로 박아뒀다. 아래 9번.
 
    착수 당시 근거(보존): 원래 마지막에 두려던 것을 앞으로 당겼다. 발행→소비를 브로커 없이 검증할 방법이 **아예 없어서**(`libs/events/src` 소스 29 / 스펙 5, 페이크 트랜스포트 0) 어댑터가 없으면 이후 모든 단계가 자기 증거를 남기지 못하고, 여러 세션에 걸친 작업에서 다음 작업자는 앞 단계가 무엇을 보장했는지 알 수 없기 때문이다. **검증 도구를 먼저 만들고 나머지를 그 위에 얹는다** — 그 판단은 결과로 정당화됐다.
-4. `startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.
-5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR).
+4. ~~`startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.~~ **완료 (2026-08-09).** 소비 집합은 `@OnEvent` 데코레이터에서 도출되고, 레지스트리에 없는 토픽·핸들러 0개는 부팅을 거부한다. 도출 과정에서 §8 과 아래 10번을 발견했다.
+5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR). ⚠️ **§8 에 따라 이주는 동작 중립이 아니다** — 그 앱에서 스키마 검증·재시도·DLQ 가 처음으로 켜진다.
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
 8. channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.
-9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정). `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/ClsInterceptor 가 없어 `EventChainService.setChainId` 가 "No CLS context available" 로 던지고, `ChainContextInterceptor` 의 `catch {}` 가 그것을 삼킨다. 결과적으로 **소비 측 `chainId`/`eventId` 전파가 전 앱에서 죽어 있다.** 3번의 파싱 버그와 원인이 다르므로 별도 수정이 필요하다 — 이 워크스트림에 묶을지 독립 처리할지 결정한다. 회귀 감지는 `round-trip.spec.ts` 의 `it.failing` 이 맡는다.
+9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정).
+ `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/ClsInterceptor 가 없어 `EventChainService.setChainId` 가 "No CLS context available" 로 던지고, `ChainContextInterceptor` 의 `catch {}` 가 그것을 삼킨다. 결과적으로 **소비 측 `chainId`/`eventId` 전파가 전 앱에서 죽어 있다.** 3번의 파싱 버그와 원인이 다르므로 별도 수정이 필요하다 — 이 워크스트림에 묶을지 독립 처리할지 결정한다. 회귀 감지는 `round-trip.spec.ts` 의 `it.failing` 이 맡는다. (그 인터셉터 자체가 하이브리드 앱에서 붙지 않는다는 §8 이 겹친다 — 두 원인이 독립적으로 존재한다.)
+10. 🔴 **라이브 구멍: 7개 소비 앱 전부에서 스키마 검증·재시도·DLQ·chain 인터셉터가 적용되지 않고 있다** (2026-08-09 발견, §8). `startConsumer` 는 이 구멍이 없는 새 배선을 제공하지만, **앱들이 이주하기 전까지 라이브 상태는 그대로다.** 옛 표면(`forConsumer`)에 같은 배선을 소급 적용하는 것은 의도적으로 하지 않았다 — 7개 앱에서 검증·DLQ 가 한 배포에 동시에 켜지며, 지금까지 검증 없이 통과하던 인바운드 payload 가 있다면 그 배포가 DLQ 폭탄이 된다. 대신 앱별 이주(5번)에서 하나씩, 관찰 가능한 단위로 켠다. **이 항목이 닫히는 시점은 마지막 앱이 이주한 때다.**
 
 실행 계획은 [`docs/superpowers/plans/2026-08-09-events-module-registration.md`](../superpowers/plans/2026-08-09-events-module-registration.md).

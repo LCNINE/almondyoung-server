@@ -38,7 +38,9 @@
 
 이 플랜이 의존하는 사실. **재확인 없이 뒤집지 말 것.**
 
-- `ServerKafka.bindEvents()` 가 `subscribe.topics` 를 `[...this.messageHandlers.keys()]` 로 덮어쓴다 (`node_modules/@nestjs/microservices/server/server-kafka.js:92`, v11.1.17). 따라서 `forConsumer({streams})` 의 `streams` 는 **무효**다.
+- `ServerKafka.bindEvents()` 가 `subscribe.topics` 를 `[...this.messageHandlers.keys()]` 로 덮어쓴다 (`node_modules/@nestjs/microservices/server/server-kafka.js:92`, v11.1.17). 따라서 `forConsumer({streams})` 의 `streams` 는 **무효**다. 같은 함수에 `registeredPatterns.length > 0` 가드가 있어, 핸들러가 0개면 **subscribe 자체를 건너뛴다** — 컨트롤러 미등록이 로그조차 남기지 않는 이유다 (2026-08-09 추가 확인).
+- `NestApplication.connectMicroservice(opts)` 를 두 번째 인자 없이 부르면 마이크로서비스에 **새 `ApplicationConfig`** 가 주어진다 (`nest-application.js:128`). **7개 소비 앱 전부가 그렇게 부르므로 `APP_INTERCEPTOR` 전역 인터셉터가 소비 경로에 적용되지 않는다** — 스키마 검증·재시도·DLQ·chain 이 전부 죽어 있다. 컨트롤러 레벨 `@UseInterceptors(EventTypeGuard)` 만 살아 있다 (2026-08-09 실측, ADR-0029 §8).
+- `deferInitialization: true` 로 붙인 마이크로서비스는 `listen()` 에서 `registerModules()` 를 타고, 그 안에서 `callInitHook()` 이 컨테이너 전체에 대해 **다시** 실행된다 — `onModuleInit` 2회 (실측). 그래서 `startConsumer` 는 `registerListeners()` + 초기화 플래그를 직접 세운다.
 - `@OnEvent(topic, type)` = `EventPattern(topic)` + `SetMetadata(EVENT_TYPE_FILTER, type)` (`libs/events/src/consumers/decorators.ts:76`). 등록 패턴이 곧 토픽 문자열.
 - 한 토픽의 event handler 는 링크드 리스트로 이어져 **전부 실행**된다 (`server.js:51–56` + `listeners-controller.js:87`). `EventTypeGuard` 가 `messageType` 불일치 시 `of(undefined)` 로 조용히 버리며, **호출마다 `JSON.parse`** 한다.
 - `OutboxPublisher.saveEvent` 는 검증하지 않고, `OutboxDispatcher` 는 `publishRawEnvelope` → `sendMessage` 로 zod 를 우회한다. **outbox 경로에 스키마 검증이 없다.**
@@ -150,15 +152,36 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 
 ## Task 3: `startConsumer(app)` 도입, `forConsumer({streams})` deprecate
 
-- [ ] `EventsModule.startConsumer(app, { groupId, kafka })` 추가. `DiscoveryService` 로 `@OnEvent`/`@On` 메타데이터를 훑어 `(topic, eventType)` 집합을 얻는다
-- [ ] 그 집합에서 **구독 토픽 · 검증 스키마 맵 · 토픽 부트스트랩 목록**을 파생 (Task 1 레지스트리 사용)
-- [ ] 레지스트리에 없는 토픽을 구독하려 하면 **부팅 거부**
-- [ ] `@OnEvent` 핸들러가 하나도 없는데 `startConsumer` 를 부르면 **부팅 거부** (컨트롤러 미등록 = 현재 가장 조용한 실수)
-- [ ] `forConsumer({streams})` 의 `streams` 를 `@deprecated` 로 표시하고 무시. 시그니처는 유지 — 앱을 아직 고치지 않는다
-- [ ] Task 2 하네스로 파생 결과를 검증하는 스펙
-- [ ] `npm run type-check` 초록 · 커밋 · 푸시
+- [x] `EventsModule.startConsumer(app, { groupId, kafka })` 추가. `DiscoveryService` 로 `@OnEvent`/`@On` 메타데이터를 훑어 `(topic, eventType)` 집합을 얻는다
+- [x] 그 집합에서 **구독 토픽 · 검증 스키마 맵 · 토픽 부트스트랩 목록**을 파생 (Task 1 레지스트리 사용)
+- [x] 레지스트리에 없는 토픽을 구독하려 하면 **부팅 거부**
+- [x] `@OnEvent` 핸들러가 하나도 없는데 `startConsumer` 를 부르면 **부팅 거부** (컨트롤러 미등록 = 현재 가장 조용한 실수)
+- [x] `forConsumer({streams})` 의 `streams` 를 `@deprecated` 로 표시하고 무시. 시그니처는 유지 — 앱을 아직 고치지 않는다
+- [x] Task 2 하네스로 파생 결과를 검증하는 스펙
+- [x] `npm run type-check` 초록 · 커밋 · 푸시
 
 **완료 기준:** `startConsumer` 가 존재하고 테스트되며, **기존 8개 앱은 한 줄도 고치지 않았고 전부 그대로 동작한다.**
+
+**완료 (2026-08-09).** 브랜치 `feat/events-start-consumer`.
+
+- 도출은 Nest 자신의 `ListenerMetadataExplorer` 로 한다 (`consumers/consumer-discovery.ts`). 흉내낸 스캐너를 쓰면 "우리가 도출한 집합"과 "Nest 가 바인딩하는 집합"이 갈라질 수 있고, 그 어긋남이 정확히 이 워크스트림이 없애려는 종류의 무증상 결함이다. **컨트롤러만 훑는다** — Nest 의 `setupListeners` 도 `module.controllers` 만 순회하므로 provider 의 `@OnEvent` 는 지금도 아무 일을 하지 않는다(스펙으로 고정).
+- 도출은 순수 함수 2개로 갈랐다: `discoverEventHandlers(app)`(컨테이너 → 핸들러 목록) · `deriveConsumerConfig(handlers)`(핸들러 목록 → 토픽·계약, 거부 판정). 후자는 컨테이너 없이 테스트된다.
+- 부팅 거부 두 건 다 실행 가능한 스펙으로 박혔다. 에러 메시지가 **어느 컨트롤러의 어느 메서드**인지 지목한다.
+- `forConsumer` 는 이제 `subscribe.topics` 를 **만들지 않는다.** 남겨두면 "이 목록이 구독을 결정한다"는 틀린 모델이 다시 자란다. 옵션 타입도 `ConsumerTransportOptions` 로 갈라 `streams` 를 optional + `@deprecated` 로 표시했다 — 기존 7개 호출부는 그대로 컴파일된다.
+- 실측 보강: `ServerKafka.bindEvents` 에는 `registeredPatterns.length > 0` 가드가 있다. 즉 핸들러 0개면 **subscribe 자체를 건너뛴다** — 로그조차 남지 않으므로 "핸들러 0개 → 부팅 거부"는 장식이 아니다. (ADR Context 의 인용문을 이 가드까지 포함하도록 고쳤다.)
+
+**🔴 이 태스크가 두 번째 실재 프로덕션 결함을 찾았다 — 이번엔 영향 범위가 크다.**
+
+`app.connectMicroservice(opts)` 를 두 번째 인자 없이 부르면 Nest 가 마이크로서비스에 **빈 `ApplicationConfig`** 를 만들어 준다(`nest-application.js:128`). **7개 소비 앱 전부가 그렇게 부른다.** 따라서 `APP_INTERCEPTOR` 로 등록한 `SchemaValidationInterceptor` · `EventRetryInterceptor`(재시도·DLQ·offset commit) · `ChainContextInterceptor` 가 **소비 경로에 하나도 붙지 않는다.** 컨트롤러 레벨 `@UseInterceptors(EventTypeGuard)` 는 메타데이터에서 해석되므로 살아 있다 — 그래서 필터링만 동작하고 검증·재시도·DLQ 는 조용히 죽어 있었다.
+
+하네스로 4가지 배선을 실행해 비교했고(ADR-0029 §8 표), 채택한 것은 **마이크로서비스 스코프 전역 인터셉터**다: `deferInitialization: true` → `useGlobalInterceptors` → `registerListeners()` → 초기화 플래그 수동 세팅. `inheritAppConfig: true` 는 앱의 HTTP 전역 파이프·필터·**가드**까지 RPC 에 얹혀 기각했고, `deferInitialization` 단독은 `onModuleInit` 이 **2회** 실행돼 기각했다(둘 다 실측).
+
+**파급 1 — Task 2 의 결론 일부가 틀렸다.** Task 2 는 파싱 버그가 "core·analytics·search 에서 무한 재전달"을 일으킨다고 적었다. 그 세 인터셉터가 애초에 붙지 않으므로 **프로덕션 영향 범위는 0** 이었다. 수정 자체는 유효하다(§8 배선이 켜지면 그 경로가 살아난다). ADR Follow-up 3 에 정정을 남겼다.
+
+**파급 2 — Task 5 는 동작 중립이 아니다.** 아래 Task 5 경고 참조.
+
+- 검증: `libs/events`+계약 패키지 **16 suite / 145 tests 초록**(Task 2 대비 +2 suite / +16 tests) · `npm run type-check` **164 = develop 기준선과 동일** · **10개 앱 전부 `nest build` 초록** · 신규 파일 eslint 초록(`events.module.ts` 는 기존 부채 11 error / 4 warning 그대로) · 전체 jest 실패 suite 집합이 develop 과 **동일**(18).
+- **Task 4·5 에 넘기는 사실:** `startConsumer` 는 검증 **정책**(`validateOnConsume` 등)을 `EVENTS_CONSUMER_POLICY` 토큰으로 컨테이너에서 읽는다 — `forConsumerModule({validation})` 이 등록한다. 정책은 도출 불가한 사실이라 선언이 맞고, 스트림 목록만 도출로 대체됐다. **`forConsumerModule` 을 부르지 않는 앱(channel-adapter)은 이 토큰이 없어 기본값(`validateOnConsume: true`)으로 떨어진다.** Task 7 에서 `forConsumerModule` 을 걷어낼 때 이 정책을 `forApp` 으로 옮겨야 하며, 그 전에는 정책 선언을 지우면 안 된다 — 지우는 순간 `validateOnConsume: false` 를 명시한 앱(notification·membership·wallet)에서 검증이 켜진다.
 
 ---
 
@@ -197,7 +220,15 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 - [ ] `nest build <app>` · `npm run type-check` 초록
 - [ ] 커밋 · 푸시 · **배포 후 다음 앱으로**
 
-**⚠️ 5g 전에 반드시:** channel-adapter 의 인바운드 payload 가 실제로 zod 스키마를 만족하는지 확인한다. 지금까지 검증 없이 소비해 왔으므로, 확인 없이 이주하면 **이주 자체가 DLQ 폭탄이 된다.** 확인 방법은 5g 착수 시 결정 — 스테이징 트래픽 샘플링 또는 `validateOnConsume: false` 로 먼저 붙이고 로그만 관찰.
+**⚠️ 이주는 동작 중립이 아니다 — 7개 앱 전부에 해당 (Task 3 발견, ADR-0029 §8).**
+
+원래 이 경고는 5g(channel-adapter) 에만 붙어 있었다. Task 3 이 밝혀낸 바에 따르면 **7개 앱 모두** 지금 소비 측 스키마 검증·재시도·DLQ 가 적용되지 않고 있다 — `app.connectMicroservice(opts)` 가 빈 `ApplicationConfig` 를 만들기 때문이다. `startConsumer` 로 이주하는 순간 그 앱에서 이 셋이 **처음으로 켜진다.**
+
+따라서 각 앱 이주 PR 은 다음을 포함해야 한다:
+
+- [ ] 그 앱의 `validateOnConsume` 선언 확인. `false` 를 명시한 앱(notification·membership·wallet)은 검증이 계속 꺼진 채 이주하므로 위험이 낮다. 명시하지 않은 앱(core·analytics·search = 기본값 `true`)과 `forConsumerModule` 자체가 없는 앱(channel-adapter)은 **이주가 곧 검증 활성화**다.
+- [ ] 검증이 새로 켜지는 앱은 인바운드 payload 가 실제로 zod 스키마를 만족하는지 먼저 확인한다. 확인 없이 이주하면 **이주 자체가 DLQ 폭탄이 된다.** 확인 방법은 착수 시 결정 — 스테이징 트래픽 샘플링 또는 `validateOnConsume: false` 로 먼저 붙이고 로그만 관찰.
+- [ ] 재시도·DLQ 가 새로 켜지는 것은 **전 앱 공통**이다. 지금까지 핸들러 에러는 아무 분류 없이 Nest 기본 경로로 갔다. 이주 후에는 `@RetryPolicy` 분류 → backoff 재시도 → DLQ 로 흐른다. 그 앱의 핸들러가 idempotent 한지 확인한다 (재시도가 처음으로 실재하게 된다).
 
 **완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이다.
 

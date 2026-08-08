@@ -4,8 +4,22 @@
  * Stream 기반 이벤트 시스템을 위한 NestJS 모듈
  */
 
-import { DynamicModule, Global, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
-import { ClientKafka, ClientsModule, Transport } from '@nestjs/microservices';
+import {
+  DynamicModule,
+  Global,
+  INestApplication,
+  Inject,
+  Module,
+  OnApplicationShutdown,
+  Logger,
+} from '@nestjs/common';
+import {
+  ClientKafka,
+  ClientsModule,
+  CustomTransportStrategy,
+  NestMicroservice,
+  Transport,
+} from '@nestjs/microservices';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
@@ -30,6 +44,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
 import { KafkaTransport } from './transport/kafka.transport';
+import { DerivedConsumerConfig, deriveConsumerConfig, discoverEventHandlers } from './consumers/consumer-discovery';
+import { buildConsumerInterceptors, EVENTS_CONSUMER_POLICY } from './consumers/consumer-interceptors';
 
 /**
  * Kafka 로 나가는 유일한 통로 (ADR-0029 §7). `KAFKA_CLIENT` 를 감싸며,
@@ -73,6 +89,49 @@ export interface ConsumerModuleOptions {
 
   // 스키마 검증 설정
   validation?: SchemaValidationOptions; // 스키마 검증 옵션
+}
+
+/**
+ * `forConsumer()` 전송 설정 (deprecated 경로)
+ *
+ * `streams` 만 빠져 있다 — Nest 가 `subscribe.topics` 를 덮어쓰므로 무의미했다.
+ * 아래 `forConsumer` 의 JSDoc 참조.
+ */
+export interface ConsumerTransportOptions extends Omit<ConsumerModuleOptions, 'streams'> {
+  /**
+   * @deprecated 무시된다. Nest 의 `ServerKafka.bindEvents()` 가 `subscribe.topics` 를
+   * 등록된 `@OnEvent` 패턴으로 덮어쓰기 때문에 이 목록은 한 번도 효과를 낸 적이 없다
+   * (ADR-0029 Context). 필드는 기존 호출부 호환을 위해 남겨두었다.
+   */
+  streams?: StreamConfig[];
+}
+
+/**
+ * `startConsumer()` 옵션 (ADR-0029 §3)
+ *
+ * **구독 목록이 없다.** 소비 집합은 `@OnEvent` 데코레이터에서 도출된다.
+ * 여기 남는 것은 코드에서 도출할 수 없는 사실 — 전송 설정뿐이다.
+ */
+export interface StartConsumerOptions {
+  groupId: string;
+  kafka?: KafkaConfig; // 없으면 환경변수에서 생성
+
+  sessionTimeout?: number; // ms (기본: 30000)
+  heartbeatInterval?: number; // ms (기본: 3000)
+  maxPollInterval?: number; // ms (기본: 300000)
+  autoCommit?: boolean; // 기본: false
+
+  /** 도출된 토픽의 DLQ 토픽까지 부트스트랩할지 (기본: true) */
+  enableAutoDLQ?: boolean;
+
+  /**
+   * 소비 전략 교체 (ADR-0029 §7).
+   *
+   * 생략하면 Nest `ServerKafka`. 테스트는 `InMemoryServer` 를 넘겨 브로커 없이 같은
+   * 파이프라인(인터셉터·가드·파라미터 데코레이터·DI)을 그대로 탄다. 전략을 넘기면
+   * Kafka 토픽 부트스트랩은 건너뛴다 — 붙을 브로커가 없다.
+   */
+  strategy?: CustomTransportStrategy;
 }
 
 @Global()
@@ -312,12 +371,21 @@ export class EventsModule {
       useClass: ChainContextInterceptor,
     };
 
+    // 앱이 선언한 검증 정책. `startConsumer` 가 읽어 마이크로서비스 스코프 인터셉터를
+    // 만들 때 쓴다 (ADR-0029 §8) — 정책은 도출 불가한 사실이라 선언이 맞고, 스트림
+    // 목록만 도출로 대체된다.
+    const consumerPolicyProvider = {
+      provide: EVENTS_CONSUMER_POLICY,
+      useValue: { validation: options.validation },
+    };
+
     const providers = [
       eventTransportProvider, // Kafka 로 나가는 유일한 통로
       ...(dlqProvider ? [dlqProvider] : []),
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
       chainInterceptorProvider, // chain context 전파 인터셉터
+      consumerPolicyProvider, // startConsumer 가 읽는 소비 정책
       shutdownProvider, // Graceful shutdown 항상 등록
       topicBootstrapProvider, // MSK Serverless 등 auto-create 불가 환경 대응
       { provide: EventChainService, useClass: EventChainService },
@@ -353,31 +421,33 @@ export class EventsModule {
   }
 
   /**
-   * Consumer 설정 반환 (main.ts에서 connectMicroservice()에 사용)
+   * Consumer 전송 설정 반환 (main.ts에서 connectMicroservice()에 사용)
    *
-   * 주의: 이 메서드는 자동 DLQ 처리를 포함하지 않습니다.
-   * 자동 DLQ 처리를 원하면 forConsumerModule()을 사용하세요.
+   * @deprecated `startConsumer(app, { groupId })` 를 쓴다. 두 가지 이유다 (ADR-0029):
+   *
+   * 1. **`streams` 인자가 무효다.** Nest 의 `ServerKafka.bindEvents()` 가
+   *    `subscribe.topics` 를 등록된 `@OnEvent` 패턴으로 덮어쓴다. 이 목록은 한 번도
+   *    구독에 영향을 준 적이 없으며, 그럼에도 "여기 없으면 메시지가 안 온다"는 틀린
+   *    모델이 주석으로 자라 2026-08-08 아키텍처 리뷰의 오판을 낳았다.
+   * 2. **이 경로로 붙인 마이크로서비스에는 소비 인터셉터가 적용되지 않는다.**
+   *    호출부가 `app.connectMicroservice(opts)` 를 두 번째 인자 없이 부르면 Nest 가
+   *    빈 `ApplicationConfig` 를 만들어, `APP_INTERCEPTOR` 로 등록한 스키마 검증·재시도·
+   *    DLQ 인터셉터가 전부 무력화된다 (ADR-0029 §8). `startConsumer` 는 그 배선을 한다.
    *
    * @example
-   * // apps/events-test/src/main.ts
-   * const consumerOptions = EventsModule.forConsumer({
-   *   streams: [TEST_STREAM],
-   *   groupId: 'events-test-consumer',
-   * });
-   *
+   * const consumerOptions = EventsModule.forConsumer({ groupId: 'events-test-consumer' });
    * app.connectMicroservice(consumerOptions);
    * await app.startAllMicroservices();
    */
-  static forConsumer(options: ConsumerModuleOptions): {
+  static forConsumer(options: ConsumerTransportOptions): {
     transport: Transport.KAFKA;
     options: any;
   } {
     // Kafka 설정 (환경변수 또는 명시적)
     const kafka = options.kafka || this.createKafkaConfigFromEnv();
 
-    // 모든 stream의 토픽 수집
-    const topics = options.streams.map((s) => s.topic.topic);
-
+    // subscribe.topics 를 만들지 않는다 — Nest 가 어차피 덮어쓴다. 만들어 두면
+    // "이 목록이 구독을 결정한다"는 틀린 모델이 다시 자란다.
     return {
       transport: Transport.KAFKA,
       options: {
@@ -396,7 +466,6 @@ export class EventsModule {
           allowAutoTopicCreation: false,
         },
         subscribe: {
-          topics,
           fromBeginning: false,
         },
         run: {
@@ -406,6 +475,73 @@ export class EventsModule {
         },
       },
     };
+  }
+
+  /**
+   * 소비를 시작한다 — 구독 목록 인자 없음 (ADR-0029 §3)
+   *
+   * 컨테이너를 훑어 `@OnEvent` 핸들러를 찾고, 거기서 **구독 토픽 · 검증 스키마 맵 ·
+   * 토픽 부트스트랩 목록을 전부 파생**한다. 선언과 실제가 어긋날 자리가 없다.
+   *
+   * 두 가지를 부팅에서 거부한다 — 둘 다 지금까지 완전 무증상이던 실수다:
+   * - 계약 레지스트리에 없는 토픽 구독
+   * - `@OnEvent` 핸들러 0개 (컨트롤러를 `controllers: []` 에 등록하지 않은 경우.
+   *   Nest 는 이때 `subscribe` 자체를 건너뛰므로 로그조차 남지 않는다)
+   *
+   * 그리고 소비 인터셉터(재시도·DLQ·스키마 검증·chain)를 **마이크로서비스 스코프**로
+   * 붙인다. 하이브리드 앱에서 `APP_INTERCEPTOR` 가 소비 경로에 닿지 않기 때문이며,
+   * 근거와 대안 비교는 ADR-0029 §8 에 있다.
+   *
+   * @example
+   * const app = await NestFactory.create(AppModule);
+   * await EventsModule.startConsumer(app, { groupId: 'search-indexer' });
+   * await app.listen(port);
+   *
+   * @returns 도출 결과 — 로깅·테스트용
+   */
+  static async startConsumer(app: INestApplication, options: StartConsumerOptions): Promise<DerivedConsumerConfig> {
+    const logger = new Logger('EventsConsumer');
+    const derived = deriveConsumerConfig(discoverEventHandlers(app));
+
+    const kafka = options.kafka || this.createKafkaConfigFromEnv();
+    const enableAutoDLQ = options.enableAutoDLQ ?? true;
+
+    if (!options.strategy) {
+      await bootstrapKafkaTopics({ kafka, streams: derived.streams, includeDLQ: enableAutoDLQ });
+    }
+
+    const microserviceOptions = options.strategy
+      ? { strategy: options.strategy }
+      : this.forConsumer({
+          groupId: options.groupId,
+          kafka,
+          sessionTimeout: options.sessionTimeout,
+          heartbeatInterval: options.heartbeatInterval,
+          maxPollInterval: options.maxPollInterval,
+          autoCommit: options.autoCommit,
+        });
+
+    // deferInitialization 없이 부르면 Nest 가 즉시 리스너를 바인딩해버려
+    // useGlobalInterceptors 가 늦는다. 미룬 뒤 인터셉터를 얹고, 비-defer 경로가
+    // 하던 일(리스너 바인딩 + 초기화 플래그)을 직접 한다 — 플래그를 세우지 않으면
+    // listen() 이 registerModules() 를 타면서 onModuleInit 이 두 번 실행된다.
+    const microservice = app.connectMicroservice(microserviceOptions, {
+      deferInitialization: true,
+    }) as NestMicroservice;
+
+    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams));
+    microservice.registerListeners();
+    microservice.setIsInitialized(true);
+    microservice.setIsInitHookCalled(true);
+
+    await app.startAllMicroservices();
+
+    logger.log(
+      `Consumer started (groupId=${options.groupId}) — ${derived.handlers.length} handler(s) on ` +
+        `${derived.topics.length} topic(s): ${derived.topics.join(', ')}`,
+    );
+
+    return derived;
   }
 
   /**

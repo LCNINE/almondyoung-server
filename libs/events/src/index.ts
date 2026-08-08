@@ -28,6 +28,10 @@ export * from './publishers/stream-publisher.service';
 export * from './consumers/decorators';
 export * from './guards/event-type.guard';
 
+// 소비 집합 도출 + 소비 인터셉터 배선 (ADR-0029 §3·§8)
+export * from './consumers/consumer-discovery';
+export * from './consumers/consumer-interceptors';
+
 // DLQ
 export * from './dlq/dlq.types';
 export * from './dlq/dlq-handler.service';
