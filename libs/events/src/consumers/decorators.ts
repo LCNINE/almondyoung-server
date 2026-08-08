@@ -8,6 +8,7 @@ import { applyDecorators, SetMetadata, createParamDecorator, ExecutionContext } 
 import { EventPattern, Payload, Ctx } from '@nestjs/microservices';
 import { KafkaContext } from '@nestjs/microservices';
 import { MessageEnvelope, DomainEvent, DomainCommand } from '@packages/event-contracts/types';
+import type { EventKeysOf, StreamConfig, StreamEventTypes } from '@packages/event-contracts/types';
 
 export const STREAM_EVENT_METADATA = 'STREAM_EVENT_METADATA';
 export const EVENT_TYPE_FILTER = 'EVENT_TYPE_FILTER';
@@ -75,6 +76,55 @@ export function StreamEventHandler(
  */
 export function OnEvent(topic: string, eventType: string) {
   return applyDecorators(EventPattern(topic), SetMetadata(EVENT_TYPE_FILTER, eventType));
+}
+
+/**
+ * 계약에서 토픽·이벤트명을 도출하는 핸들러 데코레이터 (ADR-0029 §4)
+ *
+ * `@OnEvent('products.events.v1', 'ProductMasterDeleted')` 는 **두 개의 생문자열**이다.
+ * 토픽은 계약이 이미 알고 있고(`STREAM.topic.topic`), 이벤트명은 계약이 가진 키 집합에
+ * 속해야 한다. `@On` 은 토픽을 계약에서 읽고 이벤트명을 `EventKeysOf` 로 좁혀,
+ * 오타가 **컴파일 에러**가 되게 한다.
+ *
+ * 런타임 동작은 `@OnEvent` 과 **완전히 같다** — `EventPattern(topic)` +
+ * `SetMetadata(EVENT_TYPE_FILTER, eventName)`. 따라서 `EventTypeGuard` · 소비 집합
+ * 도출(`consumer-discovery.ts`) · Nest 의 바인딩이 전부 그대로 동작하며, 두 데코레이터를
+ * 한 앱에서 섞어 써도 된다 (앱별 이주 중에는 실제로 섞인다).
+ *
+ * @example
+ * @Controller()
+ * @UseInterceptors(EventTypeGuard)
+ * export class ProductEventsConsumer {
+ *   @On(PRODUCT_STREAM, 'ProductMasterDeleted')
+ *   async onDeleted(
+ *     @EventEnvelope() envelope: EnvelopeOf<typeof PRODUCT_STREAM, 'ProductMasterDeleted'>,
+ *     @EventPayload() payload: EventPayloadOf<typeof PRODUCT_STREAM, 'ProductMasterDeleted'>,
+ *   ): Promise<void> {}
+ * }
+ */
+export function On<S extends StreamConfig<StreamEventTypes>, K extends EventKeysOf<S> & string>(
+  stream: S,
+  eventName: K,
+) {
+  const topic = stream?.topic?.topic;
+
+  if (typeof topic !== 'string' || topic.length === 0) {
+    throw new Error(
+      `@On(): 스트림에 토픽이 없다 (${JSON.stringify(topic)}). ` +
+        'packages/event-contracts 의 stream() 으로 만든 StreamConfig 를 넘겨야 한다.',
+    );
+  }
+
+  // 타입 단계에서 이미 좁혀지지만, `as any` 로 빠져나온 호출은 데코레이터 평가 시점
+  // (= 부팅)에 죽인다. 조용히 통과하면 그 핸들러는 영원히 실행되지 않는다.
+  if (!Object.prototype.hasOwnProperty.call(stream.events, eventName)) {
+    throw new Error(
+      `@On(): ${topic} 계약에 "${String(eventName)}" 이벤트가 없다. ` +
+        `사용 가능한 이벤트: ${Object.keys(stream.events).join(', ')}`,
+    );
+  }
+
+  return OnEvent(topic, eventName);
 }
 
 /**

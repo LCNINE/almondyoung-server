@@ -23,6 +23,9 @@ export * from './transport/in-memory.server';
 
 // Publisher
 export * from './publishers/stream-publisher.service';
+// 계약에서 도출하는 주입 표면 (ADR-0029 §4) — @InjectStreamPublisher 와 병행
+export * from './publishers/publisher-token';
+export * from './publishers/inject-publisher';
 
 // Consumer Decorators & Guards
 export * from './consumers/decorators';

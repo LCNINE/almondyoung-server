@@ -88,6 +88,13 @@ async onVerified(@Payload() payload: EventPayloadOf<typeof USER_STREAM, 'UserEma
 
 `@InjectStreamPublisher('orders.events.v1') p: StreamPublisher<OrderEvents>` 의 **문자열과 제네릭 두 사실**이 하나로 줄고, payload 타입이 계약에서 도출되어 손으로 단 주석과 스키마가 어긋날 수 없게 된다.
 
+**이행 시 위 스케치에서 두 가지가 달라졌다 (2026-08-09, Follow-up 5 전반부).**
+
+- **payload 파라미터 데코레이터는 기존 `@EventPayload()` 를 그대로 쓴다.** 위 예시의 `@Payload()` 는 채택하지 않았다 — `@nestjs/microservices` 가 이미 `Payload` 라는 이름으로 **다른 것**(파싱된 메시지 전체)을 export 하고 있고, `@app/events` 는 `export *` 로 데코레이터를 공개하므로 같은 이름이 import 경로에 따라 다른 뜻을 갖게 된다. 그건 이 ADR 이 없애려는 실패 모드를 이름 공간에서 재생산하는 것이다. 도출되는 것은 데코레이터 이름이 아니라 **타입**이므로(`EventPayloadOf<typeof S, 'K'>`) §4 의 목적은 그대로 달성된다.
+- **`EnvelopeOf<S, K>` 를 계약 패키지에 추가했다.** 소비 핸들러 87개 중 75개가 `@EventEnvelope() envelope: DomainEvent<XPayload>` 를 함께 받는다(실측). `DomainEvent<EventPayloadOf<typeof S, 'K'>>` 를 매번 손으로 조합하게 두면 이주 시 옛 손수 타입이 그대로 살아남는다.
+
+**`@On` 이 핸들러 시그니처를 타입으로 강제하지는 않는다.** 검토했고 기각했다. 파라미터 데코레이터 순서가 앱마다 다르고(envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10, 실측), 이 레포는 `strictFunctionTypes` 가 꺼져 있어 `TypedPropertyDescriptor` 제약이 반공변으로 걸리지도 않는다. 따라서 `@On(S, 'A')` 와 `@EventPayload() p: EventPayloadOf<typeof S, 'B'>` 가 어긋나는 것은 여전히 컴파일을 통과한다 — 이벤트명 **오타**는 잡히지만 이벤트명 **불일치**는 잡히지 않는다. 이를 닫으려면 "명시적으로 하지 않는 것" 의 핸들러 레코드 형태가 필요하며, 그 판단은 바뀌지 않았다.
+
 ### 5. 발행 경로를 하나의 인터페이스로 통합한다
 
 ```ts
@@ -229,6 +236,8 @@ microservice.setIsInitHookCalled(true);
    착수 당시 근거(보존): 원래 마지막에 두려던 것을 앞으로 당겼다. 발행→소비를 브로커 없이 검증할 방법이 **아예 없어서**(`libs/events/src` 소스 29 / 스펙 5, 페이크 트랜스포트 0) 어댑터가 없으면 이후 모든 단계가 자기 증거를 남기지 못하고, 여러 세션에 걸친 작업에서 다음 작업자는 앞 단계가 무엇을 보장했는지 알 수 없기 때문이다. **검증 도구를 먼저 만들고 나머지를 그 위에 얹는다** — 그 판단은 결과로 정당화됐다.
 4. ~~`startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.~~ **완료 (2026-08-09).** 소비 집합은 `@OnEvent` 데코레이터에서 도출되고, 레지스트리에 없는 토픽·핸들러 0개는 부팅을 거부한다. 도출 과정에서 §8 과 아래 10번을 발견했다.
 5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR). ⚠️ **§8 에 따라 이주는 동작 중립이 아니다** — 그 앱에서 스키마 검증·재시도·DLQ 가 처음으로 켜진다.
+
+   **전반부(데코레이터 도입) 완료 (2026-08-09).** `@On` · `@InjectPublisher` · `PublisherFor` · `EnvelopeOf` 가 옛 표면과 **병행**으로 존재한다. `@On` 은 `@OnEvent` 과 **바이트 단위로 같은 메타데이터**를 남기고(스펙이 메타데이터 키 집합과 값을 전수 비교한다), `@InjectPublisher` 는 `EventsModule.getPublisherToken` 과 같은 토큰을 만든다 — 토큰 형식은 `publishers/publisher-token.ts` 한 곳으로 모았다. 따라서 한 앱 안에서 두 표면을 섞어 써도 되고, 앱 이주는 파일 단위로 쪼갤 수 있다. 앱 이주(후반부)는 아직 0개다. 위 §4 의 두 가지 이행 차이도 참조.
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
 8. channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.

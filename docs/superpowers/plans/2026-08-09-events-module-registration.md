@@ -189,13 +189,29 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 
 기존 `@OnEvent` / `@InjectStreamPublisher` 와 **병행**한다. 아직 아무 앱도 고치지 않는다.
 
-- [ ] `@On(STREAM, 'EventName')` — 이벤트명을 `EventKeysOf` 로 좁힌다
-- [ ] `@Payload()` + `EventPayloadOf<typeof STREAM, 'EventName'>` 로 payload 타입이 계약에서 도출되게 한다
-- [ ] `@InjectPublisher(STREAM)` + `PublisherFor<typeof STREAM>` — 문자열 토큰과 제네릭 두 사실을 하나로
-- [ ] 타입 레벨 스펙: 잘못된 이벤트명이 컴파일 에러가 되는지 (`@ts-expect-error`)
-- [ ] `npm run type-check` 초록 · 커밋 · 푸시
+- [x] `@On(STREAM, 'EventName')` — 이벤트명을 `EventKeysOf` 로 좁힌다
+- [x] ~~`@Payload()`~~ 기존 `@EventPayload()` + `EventPayloadOf<typeof STREAM, 'EventName'>` 로 payload 타입이 계약에서 도출되게 한다
+- [x] `@InjectPublisher(STREAM)` + `PublisherFor<typeof STREAM>` — 문자열 토큰과 제네릭 두 사실을 하나로
+- [x] 타입 레벨 스펙: 잘못된 이벤트명이 컴파일 에러가 되는지 (`@ts-expect-error`)
+- [x] `npm run type-check` 초록 · 커밋 · 푸시
 
 **완료 기준:** 새 데코레이터가 존재하고 타입이 도출되며, 옛 데코레이터도 그대로 동작한다.
+
+**완료 (2026-08-09).** 브랜치 `feat/events-typed-decorators`.
+
+- 새 표면 4개: `@On` · `@InjectPublisher` · `PublisherFor<S>` · `EnvelopeOf<S, K>`. 옛 표면(`@OnEvent` · `@InjectStreamPublisher`)은 한 줄도 안 건드렸고 **앱 코드 변경 0**.
+- **`@Payload()` 는 채택하지 않았다.** ADR §4 스케치가 그렇게 적혀 있었지만 `@nestjs/microservices` 가 이미 `Payload` 로 **다른 것**(메시지 전체)을 export 한다. `@app/events` 는 `export *` 라 같은 이름이 import 경로에 따라 다른 뜻이 되고, 그건 이 워크스트림이 없애려는 실패 모드를 이름 공간에서 재생산하는 것이다. 도출되는 것은 데코레이터 이름이 아니라 **타입**이므로 §4 의 목적은 그대로 달성된다. **ADR §4 를 먼저 고쳤다.**
+- **`EnvelopeOf<S, K>` 를 계약 패키지에 추가했다** (ADR §4 에도 기록). 소비 핸들러 87개 중 **75개**가 `@EventEnvelope() envelope: DomainEvent<XPayload>` 를 함께 받는다(실측). 이 조합을 매번 손으로 쓰게 두면 이주해도 옛 손수 타입이 그대로 살아남는다.
+- **런타임 동등성이 스펙으로 고정됐다.** `@On` 이 남기는 메타데이터를 `@OnEvent` 과 **키 집합·값 전수 비교**하고, 인메모리 하네스(Task 2)로 `@InjectPublisher` → 발행 → `@On` 핸들러 왕복을 실제로 돌린다. "같아 보인다"가 아니라 실행 증거다. 그래서 앱 이주는 **파일 단위로** 쪼갤 수 있다.
+- Publisher 토큰 형식(`STREAM_PUBLISHER_${topic}`)을 `publishers/publisher-token.ts` 한 곳으로 모으고 `EventsModule.getPublisherToken` 이 그것을 부르게 했다 — 두 벌이면 어긋남이 무증상 DI 실패로 나온다.
+- 타입을 우회한 호출(`as any`)은 **데코레이터 평가 시점 = 부팅**에 던진다. 계약에 없는 이벤트명 · 토픽 없는 객체 둘 다.
+
+**⚠️ Task 5 에 넘기는 사실 — `@On` 은 이벤트명 *오타*를 잡지만 *불일치*는 못 잡는다.**
+
+`@On(S, 'A')` + `@EventPayload() p: EventPayloadOf<typeof S, 'B'>` 는 여전히 컴파일된다. 핸들러 시그니처를 타입으로 강제하는 안을 검토하고 기각했다: 파라미터 데코레이터 순서가 앱마다 다르고(**envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10**, 실측 87개), 이 레포는 `strictFunctionTypes` 가 꺼져 있어 `TypedPropertyDescriptor` 제약이 반공변으로 걸리지도 않는다. **이주할 때 payload/envelope 주석의 이벤트명을 사람이 맞춰야 한다** — 기계가 안 잡아준다.
+
+- 검증: `libs/events`+계약 패키지 **17 suite / 151 tests 초록**(Task 3 대비 +1 suite / +6 tests) · `npm run type-check` **164 = develop 기준선과 동일** · **10개 앱 전부 `nest build` 초록** · 신규 파일 eslint 초록, 손댄 기존 파일(`decorators.ts` 4 · `events.module.ts` 15)은 메시지 집합이 develop 과 동일 · 전체 jest 실패 suite **18 = develop 과 동일**(3013 통과).
+- `@ts-expect-error` 단언이 살아 있음을 확인했다 — 하나를 지우면 `tsc` 가 `TS2345: '"NoSuchEvent"' is not assignable to '"OrderCreated" | "OrderCancelled"'` 로 실패한다(실행 확인). 쓸모없어진 directive 는 `TS2578` 로 스스로 드러나므로 이 단언들은 썩어도 조용하지 않다.
 
 ---
 
@@ -216,7 +232,7 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 각 앱에서:
 
 - [ ] `main.ts` 를 `startConsumer(app, { groupId })` 로 교체 (streams 인자 제거)
-- [ ] `@OnEvent` → `@On`, `@InjectStreamPublisher` → `@InjectPublisher` 로 이주
+- [ ] `@OnEvent` → `@On`, `@InjectStreamPublisher` → `@InjectPublisher` 로 이주. payload/envelope 주석도 `EventPayloadOf` / `EnvelopeOf` 로 — **이벤트명을 사람이 맞춰야 한다** (Task 4 경고 참조)
 - [ ] `nest build <app>` · `npm run type-check` 초록
 - [ ] 커밋 · 푸시 · **배포 후 다음 앱으로**
 
