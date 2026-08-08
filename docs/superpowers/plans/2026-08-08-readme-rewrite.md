@@ -1,5 +1,15 @@
 # 공개 레포 README 재작성 Implementation Plan
 
+> ⚠️ **정정 (2026-08-09) — 아래 "검증된 이벤트 토폴로지" 표는 틀렸다.**
+> 그 표는 각 앱 `main.ts` 의 `EventsModule.forConsumer({streams})` 를 "실제 런타임 구독"으로 읽었으나,
+> Nest 의 `ServerKafka.bindEvents()` 가 `subscribe.topics` 를 `[...this.messageHandlers.keys()]` 로
+> **덮어쓴다** (`node_modules/@nestjs/microservices/server/server-kafka.js:92`, v11.1.17). 실제 구독 집합은
+> `@OnEvent` 데코레이터가 결정하며 `forConsumer` 의 `streams` 는 사용되지 않는다.
+> 누락된 실제 구독: **channel-adapter 의 `PAYMENT`·`USER`·`CORE_ORDER`**, **analytics 의 `PRODUCT`**.
+> 이 플랜은 완료됐으므로 본문은 히스토리로 보존한다. 이 표를 새 다이어그램의 근거로 재사용하지 말 것.
+> 정본은 [`docs/adr/0029-events-module-registration-surfaces.md`](../../adr/0029-events-module-registration-surfaces.md).
+> (`README.md` 자체는 결제 경로를 아예 그리지 않은 축약도라 틀린 내용을 담고 있지는 않다.)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 공개 레포를 처음 보는 개발자에게 시스템의 지향점과 전체 구조를 전달하는 README 로 교체하고, 첫인상을 해치는 루트 잔재를 정리하고, BSL 1.1 라이선스를 명시한다.

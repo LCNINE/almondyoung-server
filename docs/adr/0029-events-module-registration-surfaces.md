@@ -1,0 +1,159 @@
+# `@app/events` 등록 표면 — 소비 집합은 선언하지 않고 도출한다
+
+## Status
+
+Proposed (2026-08-09). `@app/events` 등록 방식을 규정하는 첫 ADR. 기존 ADR 을 대체하지 않는다.
+
+## Context
+
+2026-08-08 아키텍처 리뷰가 channel-adapter 의 배선 비대칭을 발견했다 — `adapter.module.ts` 의 `EventsModule.forRoot({streams})` 에는 스트림이 11개인데 `main.ts` 의 `EventsModule.forConsumer({streams})` 에는 6개뿐이고, `PAYMENT_STREAM`·`USER_STREAM`·`CORE_ORDER_STREAM` 이 빠져 있다. 리뷰는 이를 근거로 **21개 `@OnEvent` 핸들러가 영원히 구독되지 않으며 Medusa 결제 Projection 에 살아있는 producer 가 없다**고 결론지었다.
+
+**그 결론은 틀렸다.** 이 ADR 이 존재하는 첫 번째 이유가 이것이다 — 같은 오판이 재발할 조건이 코드에 그대로 남아 있다.
+
+```js
+// node_modules/@nestjs/microservices/server/server-kafka.js:92  (v11.1.17)
+async bindEvents(consumer) {
+  const registeredPatterns = [...this.messageHandlers.keys()];
+  const consumerSubscribeOptions = this.options.subscribe || {};
+  await this.consumer.subscribe({
+    ...consumerSubscribeOptions,
+    topics: registeredPatterns,   // ← spread 뒤에 오므로 subscribe.topics 를 덮어쓴다
+  });
+}
+```
+
+`@OnEvent(topic, eventType)` 은 `applyDecorators(EventPattern(topic), SetMetadata(EVENT_TYPE_FILTER, eventType))` 이고 (`libs/events/src/consumers/decorators.ts:76`), `EventPattern` 의 패턴이 곧 토픽 문자열이다. 따라서 **실제 구독 집합은 컨테이너 안의 데코레이터가 결정하며, `forConsumer` 에 넘긴 `streams` 는 사용되지 않는다.** 21개 핸들러는 정상 구독돼 있다.
+
+측정된 사실:
+
+- **세 등록 표면이 같은 이름·같은 타입의 `streams` 를 받고 각각 다른 뜻이다.** `forRoot` → 스트림당 `StreamPublisher` provider + 토픽 부트스트랩 (= 발행 능력 선언). `forConsumerModule` → `SchemaValidationInterceptor` 의 `topic → StreamConfig` 조회 맵 + 부트스트랩 (= 검증 능력 선언). `forConsumer` → `subscribe.topics` 를 만들지만 Nest 가 버림 (= 무의미). 어느 표면이 어느 능력을 주는지 타입은 말하지 않는다.
+- **틀린 모델이 코드에 체크인돼 있다.** `apps/analytics/src/main.ts:65–75` 의 10줄 주석이 "`forConsumer` 에 없는 스트림은 메시지가 영영 안 온다"고 단언하고 `PRODUCT_STREAM` 을 그 사례로 지목한다. 리뷰가 오판한 직접 원인이다. `apps/search/src/search.module.ts:26` 도 두 표면을 "짝"으로 설명한다.
+- **한 토픽의 핸들러는 전부 실행된다.** `server.js:51–56` 이 같은 패턴의 event handler 를 링크드 리스트로 잇고 `listeners-controller.js:87` 이 `handlerRef.next` 를 타고 체인 전체를 호출한다. `EventTypeGuard` 가 `envelope.messageType` 으로 걸러 안 맞으면 `of(undefined)` 로 조용히 버린다. channel-adapter 는 payments 메시지 하나당 17개 핸들러가 실행되고 16개가 no-op 하며, `EventTypeGuard` 가 호출마다 `message.value` 를 `JSON.parse` 한다.
+- **outbox 가 5벌이다.** `libs/events/src/outbox/`(자체 `outbox_events` 테이블) · `apps/core/.../fulfillment/outbox/` · `apps/core/.../inventory/shared/outbox/` · `apps/wallet/src/messaging/` · `apps/channel-adapter/src/services/outbox-dispatcher.service.ts`. core 의 두 벌은 **import 경로 한 줄만 다르고 나머지가 완전히 동일**하며 같은 `wmsTables.outboxEvents` 를 쓴다. 그리고 core 판본의 `enqueue` 는 `idempotencyKey`·`partitionKey` 를 받는데 공용 `saveEvent` 는 **둘 다 없다** — 앱들이 공용 모듈을 우회한 게 아니라 공용 모듈이 부족해서 각자 다시 만들었다.
+- **outbox 경로에는 스키마 검증이 없다.** `OutboxPublisher.saveEvent` 는 검증 없이 envelope 를 넣고, `OutboxDispatcher.processEvent` 는 `publishRawEnvelope` → `sendMessage` 로 zod 를 우회한다. 직접 발행만 `validateOnPublish` 를 탄다. 즉 **트랜잭션에 묶이는 가장 중요한 이벤트가 검증되지 않는 쪽 경로를 탄다.**
+- **깊은 인터페이스를 만들 타입 기계가 이미 있고 아무도 안 쓴다.** `packages/event-contracts/types/stream-builder.ts` 의 `EventKeysOf` · `EventPayloadOf` · `EventMessageTypeOf` 사용처 **각 0건**. 대신 `@OnEvent('users.events.v1', 'UserEmailVerified')` 의 토픽·이벤트명이 생문자열이고 `@EventPayload() payload: UserEmailVerifiedPayload` 의 타입은 손으로 단 주석이다.
+- **두 번째 어댑터가 없다.** `libs/events/src` 소스 29 / 스펙 5, 인메모리·페이크 트랜스포트 0개. 발행→소비 왕복을 브로커 없이 테스트할 방법이 없고, 그래서 위의 배선 문제는 **어떤 테스트로도 잡히지 않는다.**
+
+## Decision
+
+### 1. 사실별로 소유자를 하나만 둔다
+
+| 사실 | 소유자 |
+|---|---|
+| 계약 (스트림·이벤트·payload) | `packages/event-contracts` — 그대로 |
+| 이 프로세스가 **발행**하는 것 | 선언 (`publishes`) — 코드에서 도출 불가하므로 선언이 필요하다 |
+| 이 프로세스가 **소비**하는 것 | **데코레이터** — 이미 authoritative 하므로 선언하지 않는다 |
+| 전송 설정 (groupId·브로커·튜닝) | 선언 |
+| 정책 (검증·DLQ·retry) | 선언 |
+
+**원칙: 선언은 코드에서 도출할 수 없는 사실에만 둔다.** 도출 가능한 사실을 선언으로 받으면 두 벌이 생기고, 두 벌은 어긋나고, 어긋남이 무증상이면 그 자리에 틀린 주석이 자란다.
+
+### 2. `forConsumer` 의 `streams` 를 제거한다
+
+인자를 deprecated 로 표시하고 무시한 뒤 제거한다. `forConsumer` 가 실제로 기여하는 것은 `groupId`·브로커 설정·`sessionTimeout`·`autoCommit` 이며 이는 유지한다.
+
+### 3. 표면을 하나로 줄이고 소비 집합은 파생한다
+
+```ts
+// app.module.ts — 이 앱이 가진 "능력"만 선언
+EventsModule.forApp({
+  service: 'channel-adapter',
+  kafka: kafkaFromEnv(),
+  publishes: [ORDER_STREAM, CHANNEL_ADAPTER_STREAM],
+  policy: { validateOnConsume: true },
+})
+
+// main.ts — 구독 리스트 인자 없음
+await EventsModule.startConsumer(app, { groupId });
+```
+
+`startConsumer` 는 컨테이너를 갖고 있으므로 `DiscoveryService` 로 `@On` 메타데이터를 훑어 `(topic, eventType)` 집합을 얻고, 거기서 **구독 토픽 · 검증 스키마 맵 · 토픽 부트스트랩 목록을 전부 파생**한다. 계약 레지스트리에 없는 토픽을 구독하려 하면 부팅을 거부한다.
+
+이를 위해 `packages/event-contracts` 에 `topic → StreamConfig` 레지스트리를 추가한다. `streams/index.ts` 가 이미 전 스트림을 export 하므로 순수 추가이며 위험이 없다.
+
+### 4. 계약을 타입 seam 으로 끌어올린다
+
+이미 존재하는 유틸을 실제 seam 에 연결한다.
+
+```ts
+@On(USER_STREAM, 'UserEmailVerified')                                  // 이벤트명은 EventKeysOf 로 좁혀짐
+async onVerified(@Payload() payload: EventPayloadOf<typeof USER_STREAM, 'UserEmailVerified'>) {}
+
+@InjectPublisher(ORDER_STREAM) private readonly orders: PublisherFor<typeof ORDER_STREAM>;
+```
+
+`@InjectStreamPublisher('orders.events.v1') p: StreamPublisher<OrderEvents>` 의 **문자열과 제네릭 두 사실**이 하나로 줄고, payload 타입이 계약에서 도출되어 손으로 단 주석과 스키마가 어긋날 수 없게 된다.
+
+### 5. 발행 경로를 하나의 인터페이스로 통합한다
+
+```ts
+await this.orders.publish('OrderCreated', { aggregateId, payload });        // 즉시
+await this.orders.enqueue('OrderCreated', { aggregateId, payload }, tx);    // outbox
+```
+
+같은 객체·같은 타입 도출·같은 검증. 다른 것은 배달 방식뿐이다. 공용 outbox 에 `idempotencyKey`·`partitionKey` 를 넣어 앱 자체 판본과 기능 동등하게 만든 뒤 5벌을 회수한다.
+
+**검증은 `enqueue` 시점에, 도메인 트랜잭션 안에서** 수행한다. 잘못된 payload 가 poison row 로 남는 대신 비즈니스 연산을 즉시 실패시킨다. `publishRawEnvelope` 의 zod 우회는 제거한다.
+
+### 6. 토픽당 한 번 파싱하고 타입으로 디스패치한다
+
+envelope 를 최외곽 인터셉터에서 한 번 파싱해 컨텍스트에 싣고, 토픽당 디스패처가 `messageType` 테이블 조회로 핸들러를 고른다. 핸들러 작성 모양은 그대로 두되 N회 파싱과 N−1회 no-op 을 없앤다.
+
+### 7. transport 를 port 로 두고 인메모리 어댑터를 만든다
+
+deep module 이 소유할 것: envelope 구성 · 검증 · `messageId`/`correlationId`/`chainId` 전파 · retry·DLQ 분류. 어댑터가 소유할 것: 전송뿐. 프로덕션 Kafka 와 인메모리, **두 어댑터가 생겨야 이 seam 이 가설이 아니라 실재가 된다** — 어댑터가 하나뿐인 seam 은 간접층일 뿐이다.
+
+### 명시적으로 하지 않는 것
+
+- **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.
+- **핸들러 레코드 형태**(`handlers(STREAM, { EventName: async (payload) => … })`)는 payload 완전 추론과 "소비 집합이 값이 됨"이라는 이점이 있으나 클로저에서 Nest DI 생성자 주입을 잃고 8개 앱을 한 번에 고쳐야 한다. 지금은 채택하지 않되 4번의 데코레이터 설계가 이를 막지 않도록 둔다.
+- **계약 패키지 구조**(`stream()`/`event()` 빌더, zod 병치, 프레임워크 독립성)는 바꾸지 않는다. 좋은 상태다.
+- **outbox 패턴 자체 · DLQ · retry interceptor** 는 유지한다. 문제는 개념이 아니라 seam 위치다.
+
+## Consequences
+
+**실패 모드의 소리 크기가 재정렬된다.** 현재 상태:
+
+| 실수 | 지금 | 이후 |
+|---|---|---|
+| 컨트롤러를 `controllers: []` 에 미등록 | **완전 무증상** | 부팅 거부 (선언된 능력과 불일치) |
+| `forConsumer` 에 스트림 누락 | **아무 일도 안 일어남** | 인자가 없어짐 |
+| `forConsumerModule` 에 스트림 누락 | 메시지마다 warn, 검증 없이 통과 | 파생되므로 불가능 |
+| outbox 에 잘못된 payload | 검증 0 → 소비자에서 터지거나 조용히 통과 | enqueue 실패 = 도메인 연산 실패 |
+| `forRoot` 에 스트림 누락 + 발행 | DI 실패 / 디스패처 throw | 동일 (이미 시끄럽다) |
+
+**가장 치명적인 실수가 가장 조용하다는 현재의 역전이 해소된다.**
+
+`validateOnConsume` 기본값이 `true` 이므로 (`packages/event-contracts/types/schema-validation.types.ts:55–60`), zod 스키마에 **enum·literal 값을 추가할 때는 소비자를 먼저 배포해야 한다**는 기존 제약은 그대로 유지된다. 현재 해당하는 앱: core · analytics · search. notification·membership·wallet 은 `validateOnConsume: false` 를 명시했고, channel-adapter 는 `forConsumerModule` 을 아예 호출하지 않아 소비 측 검증이 없다 — 이 ADR 이 시행되면 channel-adapter 도 검증 대상이 되므로 **이주 시점에 그 앱의 인바운드 payload 가 스키마를 실제로 만족하는지 먼저 확인해야 한다.**
+
+**이행은 expand-contract 로 한다** — [[0005-drizzle-migration-and-autodeploy]] §5 가 스키마에 요구하는 것과 같은 규율이다. 새 표면을 추가 → 앱을 하나씩 이주 → 마지막에 옛 표면 제거.
+
+한 번에 갈아엎는 rewrite 는 선택지가 아니다. 이 모듈은 **가볍게 쓰이는 유틸이 아니라 plumbing 의 중심**이다 (2026-08-09 실측, spec 제외):
+
+| app | 소비 `@OnEvent` | 직접 발행 | outbox enqueue/save |
+|---|---:|---:|---:|
+| channel-adapter | 34 | 8 | 10 |
+| notification | 22 | — | 1 |
+| membership | 11 | 4 | 1 |
+| analytics | 11 | — | — |
+| core | 4 | 8 | 25 |
+| wallet | 4 | — | — |
+| search | 3 | — | — |
+| user-service | — | 17 | — |
+| ugc-service | — | 2 | — |
+| **합계** | **89** | **39** | **37** |
+
+7개 앱 · 컨슈머 핸들러 89개 · 발행 호출 76곳 · 부팅 경로 8개. **outbox 가 5벌인 것은 이 모듈이 안 쓰여서가 아니라 공용 판본이 부족해서 초과 수요가 각자 구현으로 샌 결과다** — 무관심의 흔적이 아니라 그 반대다. 동시에 `libs/events/src` 는 소스 29 / 스펙 5, 인메모리 어댑터 0개다. 즉 **무겁게 쓰이면서 저투자 상태**이고, 이것이 재설계의 값어치를 키우는 동시에 rewrite 를 금지하는 같은 하나의 사실이다.
+
+## Follow-ups
+
+1. ~~**`apps/analytics/src/main.ts:65–75` 의 틀린 주석을 즉시 삭제한다.**~~ **완료 (2026-08-09).** 실제 동작을 설명하는 주석으로 교체했다. 검증: `ProductEventsConsumer` 는 `analytics.module.ts:50` 의 `controllers` 에 등록돼 있고 `products.events.v1` 핸들러 6개를 선언하므로 해당 토픽은 정상 구독된다 — 옛 주석의 "have never received a live message" 는 틀렸다. `apps/search/src/search.module.ts:26` 은 **고치지 않았다**: "forConsumerModule 은 provider 만 등록하고 connectMicroservice 를 부르지 않으므로 두 번째 컨슈머를 만들지 않는다"는 사실이며 #510 회귀 방지 근거로 유효하다. 두 표면을 "짝"이라 부른 표현만 느슨할 뿐이다.
+2. 계약 레지스트리(`topic → StreamConfig`) 추가 — 순수 추가, 위험 0.
+3. **인메모리 transport 어댑터 + 발행→소비 왕복 테스트.** 원래 마지막에 두려던 것을 앞으로 당긴다. 지금은 발행→소비를 브로커 없이 검증할 방법이 **아예 없어서**(`libs/events/src` 소스 29 / 스펙 5, 페이크 트랜스포트 0), 어댑터가 없으면 이후 모든 단계가 자기 증거를 남기지 못한다. 여러 세션에 걸쳐 진행되는 작업에서 이는 치명적이다 — 다음 작업자는 앞 단계가 실제로 무엇을 보장했는지 알 수 없다. **검증 도구를 먼저 만들고 나머지를 그 위에 얹는다.**
+4. `startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.
+5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR).
+6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
+7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
+8. channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.
+
+실행 계획은 [`docs/superpowers/plans/2026-08-09-events-module-registration.md`](../superpowers/plans/2026-08-09-events-module-registration.md).
