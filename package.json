@@ -154,6 +154,8 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/core/test/jest-e2e.json",
+    "test:medusa": "cd apps/medusa && npm run test:unit",
+    "test:medusa:integration": "cd apps/medusa && npm run test:integration:modules && npm run test:integration:http",
     "test:membership": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
     "test:membership:cancellation-e2e": "./scripts/test/membership-cancellation-e2e.sh",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
@@ -348,11 +350,11 @@
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
       "^@packages/event-contracts/(.*)$": "<rootDir>/packages/event-contracts/$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
-      "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1"
+      "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
+      "^apps/(.*)$": "<rootDir>/apps/$1"
     },
     "modulePathIgnorePatterns": [
-      "<rootDir>/apps/medusa/.medusa",
-      "<rootDir>/apps/medusa/node_modules",
+      "<rootDir>/apps/medusa",
       "<rootDir>/apps/admin-web/.next",
       "<rootDir>/apps/admin-web/.open-next",
       "<rootDir>/apps/admin-web/node_modules",
