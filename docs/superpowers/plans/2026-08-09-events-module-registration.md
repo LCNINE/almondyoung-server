@@ -54,9 +54,11 @@
 | 파일 | 책임 | 태스크 |
 |---|---|---|
 | `packages/event-contracts/streams/registry.ts` (신규) | `topic → StreamConfig` 레지스트리 | 1 |
-| `libs/events/src/transport/transport.port.ts` (신규) | 전송 port 인터페이스 | 2 |
-| `libs/events/src/transport/in-memory.transport.ts` (신규) | 테스트용 어댑터 | 2 |
+| `libs/events/src/transport/transport.port.ts` (신규) | 발행 port 인터페이스 + `EVENT_TRANSPORT` 토큰 | 2 |
 | `libs/events/src/transport/kafka.transport.ts` (신규) | 프로덕션 어댑터 (기존 배선 이관) | 2 |
+| `libs/events/src/transport/in-memory.broker.ts` (신규) | 토픽별 발행 로그 · 적대적 입력 주입 | 2 |
+| `libs/events/src/transport/in-memory.transport.ts` (신규) | 테스트용 발행 어댑터 | 2 |
+| `libs/events/src/transport/in-memory.server.ts` (신규) | 테스트용 **소비** 전략 (Nest `CustomTransportStrategy`) | 2 |
 | `libs/events/src/events.module.ts` | `startConsumer` 추가, `forConsumer({streams})` deprecate | 3 |
 | `libs/events/src/consumers/decorators.ts` | `@On` / `@Payload` 추가 (기존 `@OnEvent` 병행 유지) | 4 |
 | `libs/events/src/publishers/stream-publisher.service.ts` | `publish`/`enqueue` 통합 인터페이스, `publishRawEnvelope` zod 우회 제거 | 6 |
@@ -105,15 +107,44 @@
 
 **이 워크스트림에서 가장 중요한 태스크다.** ADR-0029 는 이것을 원래 마지막에 두려 했으나 앞으로 당겼다 — 지금은 발행→소비를 브로커 없이 검증할 방법이 아예 없어서, 이게 없으면 이후 모든 태스크가 "되는 것 같다"로 끝나고 다음 세션의 작업자는 앞 단계가 무엇을 보장했는지 알 수 없다.
 
-- [ ] `TransportPort` 정의: 발행(`send(topic, key, envelope)`) + 구독(`subscribe(topics, handler)`) 최소 표면
-- [ ] `KafkaTransport` — 기존 배선을 그대로 옮긴다. **동작 변경 없음**
-- [ ] `InMemoryTransport` — 토픽별 큐, 동기 디스패치, 테스트에서 관찰 가능한 발행 로그
-- [ ] 왕복 스펙: `StreamPublisher.publishEvent` → 인메모리 → `@OnEvent` 핸들러 호출까지 한 프로세스에서 검증
-- [ ] 왕복 스펙에 **`EventTypeGuard` 필터링**(같은 토픽 다중 핸들러 중 1개만 실행) 케이스 포함
-- [ ] 왕복 스펙에 **스키마 위반 → DLQ 분류** 케이스 포함
-- [ ] `npm run type-check` 초록 · 커밋 · 푸시
+**⚠️ port 표면은 브레인스토밍에서 확정됐다 (2026-08-09): 발행 방향만.** `subscribe(topics, handler)` 는 port 에 넣지 않는다 — 소비 루프는 `libs/events` 가 아니라 Nest `ServerKafka` 가 소유하므로 정직한 Kafka 구현이 없다. 근거와 대안(`CustomTransportStrategy`)은 ADR-0029 §7 에 있다. **이 플랜의 옛 문구(`send` + `subscribe` 대칭)는 ADR 과 충돌해 폐기됐다.**
+
+- [x] `EventTransport` 정의: `send(topic, {key, value, headers})` 만. `EVENT_TRANSPORT` DI 토큰 동봉
+- [x] `KafkaTransport` — `ClientKafka.emit` + `firstValueFrom` 을 그대로 옮긴다. **동작 변경 없음** (GZIP 압축은 어댑터 내부로)
+- [x] `InMemoryBroker` — 토픽별 발행 로그(`messagesOn`), 적대적 envelope 주입(`inject`)
+- [x] `InMemoryTransport` — `send` → broker 적재 → 구독 서버에 **동기** 배달 (await 후 단언 가능해야 함)
+- [x] `InMemoryServer` — `Server implements CustomTransportStrategy`. **진짜 `KafkaContext` 인스턴스**를 만들어야 한다 (`event-retry.interceptor.ts:72` 의 `instanceof` 게이트). 디스패치는 `ServerKafka.handleEvent` 를 그대로 흉내 — `handler(data, ctx)` 한 번만 부르면 다중 핸들러 체인은 `ListenersController.forkJoinHandlersIfAttached` 가 알아서 순회한다
+- [x] `StreamPublisher` · `DLQHandler` 생성자를 port 로 교체, `events.module.ts` 배선 4곳 조정. **앱 코드 변경 0**
+- [x] 왕복 스펙: `StreamPublisher.publishEvent` → 인메모리 → `@OnEvent` 핸들러 호출까지 한 프로세스에서 검증
+- [x] 왕복 스펙에 **`EventTypeGuard` 필터링**(같은 토픽 다중 핸들러 중 1개만 실행) 케이스 포함
+- [x] 왕복 스펙에 **스키마 위반 → DLQ 분류** 케이스 포함. ⚠️ `validateOnPublish` 기본값이 `true` 라 잘못된 payload 는 발행 단계에서 먼저 터진다 — publisher 를 우회해 `broker.inject()` 로 적대적 envelope 를 직접 넣을 것 (실제로도 그런 메시지는 *다른 서비스가* 보낸다)
+- [x] `npm run type-check` 초록 · 커밋 · 푸시
 
 **완료 기준:** 브로커 없이 발행→소비 왕복이 테스트로 증명된다. 이후 모든 태스크는 이 하네스 위에서 증거를 남긴다.
+
+**완료 (2026-08-09).** 브랜치 `feat/events-transport-port`.
+
+- port 표면은 **발행만**(`send`). 소비 다형성은 Nest `CustomTransportStrategy` 에서 얻는다 — 근거는 ADR-0029 §7.
+- **하네스는 `EventsModule` 을 실제로 import 한다.** `forRoot` + `forConsumerModule` 을 그대로 쓰고 `EVENT_TRANSPORT` 하나만 `overrideProvider` 로 바꾼다. 즉 인터셉터·가드·파라미터 데코레이터·생성자 DI 가 전부 실물이다.
+- `InMemoryServer` 는 Nest 가 export 하는 `KafkaParser` 를 **그대로 재사용**한다. 흉내내면 운영과 다른 것을 테스트하게 된다.
+- **`Kafka 로 나가는 모든 경로`가 port 를 지난다** — `StreamPublisher` · `OutboxDispatcher`(publisher 경유) · `DLQHandler`. `GracefulShutdownService` 만 연결 종료 목적으로 `KAFKA_CLIENT` 를 계속 쓴다.
+
+**🔴 하네스가 첫 실행에서 실재 프로덕션 버그를 찾았다 (같은 브랜치에서 수정).**
+
+Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘긴다(`keepBinary` 기본 false). 즉 운영에서 `KafkaContext.getMessage().value` 는 Buffer 가 **아니라 객체**다. 그런데 세 곳이 `Buffer.isBuffer(v) ? v.toString() : String(v)` 관용구를 써서 `"[object Object]"` 를 만들고 `JSON.parse` 가 터졌다:
+
+| 위치 | 증상 |
+|---|---|
+| `schema-validation.interceptor.ts:69` | 모든 메시지가 SyntaxError → 재시도 3회(7초 블로킹) |
+| `event-retry.interceptor.ts:194` | DLQ 전송도 같은 이유로 실패 → `DlqDeliveryError` → **offset 미커밋 → 무한 재전달** |
+| `chain-context.interceptor.ts:26` | `catch {}` 로 삼킴 → 조용히 no-op |
+
+`validateOnConsume: true` 인 앱(**core · analytics · search**)이 해당. 수정은 `utils/envelope.util.ts` 의 `parseEnvelope` 하나로 모았다. 인접한 4곳(`event-type.guard.ts:41`, `decorators.ts` 3곳)은 원래부터 객체를 처리하고 있었다 — 관용구가 불일치했던 것.
+
+**⚠️ 고치지 않고 남긴 것:** 소비 경로에서 `chainId` 가 CLS 로 전파되지 않는다. 파싱과 **무관한 별개 원인** — `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/Interceptor 가 없어 `setChainId` 가 "No CLS context available" 로 던지며 `ChainContextInterceptor` 의 `catch {}` 가 삼킨다(실측 확인). 범위 밖이라 `round-trip.spec.ts` 에 **`it.failing`** 으로 박아뒀다 — 누가 고치면 그 테스트가 실패해서 알린다.
+
+- 검증: `libs/events`+계약 패키지 **14 suite / 129 tests 초록** · `npm run type-check` **164 = develop 기준선과 동일**(libs/events 잔여 4건은 전부 기존 부채) · **9개 앱 전부 `nest build` 초록** · 신규 파일 eslint 초록(libs/events 기존 부채 116건은 별개) · 전체 jest 실패 suite 집합이 develop 과 **동일**(18), 통과 테스트 +9.
+- **Task 3 에 넘기는 사실:** `InMemoryServer.dispatch` 는 `handler(data, ctx)` 를 **한 번만** 부른다. 같은 토픽 다중 핸들러 순회는 `ListenersController.forkJoinHandlersIfAttached` 가 하므로 운영과 동일하다. 또한 같은 토픽 핸들러가 N개면 인터셉터 체인도 N번 돌아 **스키마 위반 시 DLQ 메시지가 N개** 생긴다(하네스에서 확인) — Task 6 의 "토픽당 한 번 파싱" 설계가 이것도 같이 없앤다.
 
 ---
 

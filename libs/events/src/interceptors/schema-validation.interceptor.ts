@@ -17,6 +17,7 @@ import {
 } from '@packages/event-contracts/types';
 import { validateSchemaOrThrow, isZodSchema, formatValidationErrors } from '../validation/schema-validation.util';
 import { EVENT_TYPE_FILTER } from '../consumers/decorators';
+import { parseEnvelope } from '../utils/envelope.util';
 
 @Injectable()
 export class SchemaValidationInterceptor implements NestInterceptor {
@@ -60,14 +61,8 @@ export class SchemaValidationInterceptor implements NestInterceptor {
         return next.handle();
       }
 
-      // 메시지 파싱
-      const message = kafkaContext.getMessage();
-      const value = message.value;
-      if (!value) {
-        throw new Error('Kafka message value is null or undefined');
-      }
-      const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
-      const envelope = JSON.parse(jsonString) as MessageEnvelope;
+      // 메시지 파싱 — Nest 가 이미 객체로 파싱해 넘긴다 (parseEnvelope 주석 참조)
+      const envelope = parseEnvelope(kafkaContext.getMessage().value);
 
       // 이벤트 타입별 스키마 검증
       const eventType = envelope.messageType;

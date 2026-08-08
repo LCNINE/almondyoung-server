@@ -13,6 +13,14 @@ export * from './events.module';
 // Kafka Config Builder
 export { createKafkaConfigFromEnv } from './kafka-config.util';
 
+// Transport Port + 어댑터 (ADR-0029 §7)
+export * from './transport/transport.port';
+export * from './transport/kafka.transport';
+// 테스트 하네스 — 앱 스펙에서도 쓸 수 있게 공개 표면에 둔다
+export * from './transport/in-memory.broker';
+export * from './transport/in-memory.transport';
+export * from './transport/in-memory.server';
+
 // Publisher
 export * from './publishers/stream-publisher.service';
 

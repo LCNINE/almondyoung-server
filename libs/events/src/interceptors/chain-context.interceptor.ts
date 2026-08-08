@@ -2,8 +2,8 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from '@nes
 import { Observable } from 'rxjs';
 import { KafkaContext } from '@nestjs/microservices';
 import { v7 } from 'uuid';
-import { MessageEnvelope } from '@packages/event-contracts/types';
 import { EventChainService } from '../tracking/event-chain.service';
+import { parseEnvelope } from '../utils/envelope.util';
 
 /**
  * Kafka 메시지 수신 시 envelope에서 chainId/eventId를 CLS에 설정하는 인터셉터
@@ -23,8 +23,7 @@ export class ChainContextInterceptor implements NestInterceptor {
       const value = message.value;
 
       if (value) {
-        const jsonString = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value);
-        const envelope = JSON.parse(jsonString) as MessageEnvelope;
+        const envelope = parseEnvelope(value);
 
         const chainId = envelope.chainId ?? v7();
         const eventId = envelope.messageId;

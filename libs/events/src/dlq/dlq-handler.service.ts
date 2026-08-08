@@ -8,10 +8,9 @@
  */
 
 import { Injectable, Logger, Inject } from '@nestjs/common';
-import { ClientKafka } from '@nestjs/microservices';
 import { Kafka } from 'kafkajs';
-import { firstValueFrom } from 'rxjs';
 import { MessageEnvelope, KafkaConfig } from '@packages/event-contracts/types';
+import { EVENT_TRANSPORT, EventTransport } from '../transport/transport.port';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
 import { DLQMessage, BatchReprocessResult } from './dlq.types';
@@ -22,8 +21,8 @@ export class DLQHandler {
   private readonly logger = new Logger(DLQHandler.name);
 
   constructor(
-    @Inject('KAFKA_CLIENT')
-    private readonly kafkaClient: ClientKafka,
+    @Inject(EVENT_TRANSPORT)
+    private readonly transport: EventTransport,
   ) {}
 
   /**
@@ -90,22 +89,20 @@ export class DLQHandler {
 
     try {
       // DLQ 토픽으로 발행
-      await firstValueFrom(
-        this.kafkaClient.emit(dlqTopic, {
-          key: params.originalMessage.source.aggregateId,
-          value: JSON.stringify(dlqMessage),
-          headers: {
-            'dlq-message-id': dlqMessageId,
-            'original-topic': params.originalTopic,
-            'original-message-type': params.originalMessage.messageType,
-            'original-message-id': params.originalMessage.messageId,
-            'original-aggregate-id': params.originalMessage.source.aggregateId,
-            'failure-reason': params.error.name,
-            'retry-count': String(params.context.retryCount),
-            'failed-at': dlqMessage.failedAt,
-          },
-        }),
-      );
+      await this.transport.send(dlqTopic, {
+        key: params.originalMessage.source.aggregateId,
+        value: JSON.stringify(dlqMessage),
+        headers: {
+          'dlq-message-id': dlqMessageId,
+          'original-topic': params.originalTopic,
+          'original-message-type': params.originalMessage.messageType,
+          'original-message-id': params.originalMessage.messageId,
+          'original-aggregate-id': params.originalMessage.source.aggregateId,
+          'failure-reason': params.error.name,
+          'retry-count': String(params.context.retryCount),
+          'failed-at': dlqMessage.failedAt,
+        },
+      });
 
       this.logger.warn(`📤 Message sent to DLQ: ${params.originalMessage.messageType}`, {
         dlqTopic,
@@ -173,19 +170,17 @@ export class DLQHandler {
 
     try {
       // 원본 토픽으로 재발행
-      await firstValueFrom(
-        this.kafkaClient.emit(dlqMessage.originalTopic, {
-          key: dlqMessage.originalMessage.source.aggregateId,
-          value: JSON.stringify(dlqMessage.originalMessage),
-          partition: params.options?.targetPartition,
-          headers: {
-            'reprocess-attempt': 'true',
-            'original-dlq-id': dlqMessage.dlqMessageId,
-            'reprocess-count': String(dlqMessage.reprocessAttempts + 1),
-            'reprocessed-at': new Date().toISOString(),
-          },
-        }),
-      );
+      await this.transport.send(dlqMessage.originalTopic, {
+        key: dlqMessage.originalMessage.source.aggregateId,
+        value: JSON.stringify(dlqMessage.originalMessage),
+        partition: params.options?.targetPartition,
+        headers: {
+          'reprocess-attempt': 'true',
+          'original-dlq-id': dlqMessage.dlqMessageId,
+          'reprocess-count': String(dlqMessage.reprocessAttempts + 1),
+          'reprocessed-at': new Date().toISOString(),
+        },
+      });
 
       this.logger.log(`✅ DLQ message reprocessed: ${dlqMessage.dlqMessageId}`, {
         originalTopic: dlqMessage.originalTopic,

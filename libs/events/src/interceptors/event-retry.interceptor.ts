@@ -16,7 +16,8 @@ import { Reflector } from '@nestjs/core';
 import { KafkaContext, KafkaHeaders } from '@nestjs/microservices';
 import { defer, lastValueFrom, Observable } from 'rxjs';
 import { DLQHandler } from '../dlq/dlq-handler.service';
-import { MessageEnvelope, SchemaValidationError } from '@packages/event-contracts/types';
+import { SchemaValidationError } from '@packages/event-contracts/types';
+import { parseEnvelope } from '../utils/envelope.util';
 import {
   RETRY_POLICY_METADATA,
   DISABLE_DLQ_METADATA,
@@ -190,11 +191,10 @@ export class EventRetryInterceptor implements NestInterceptor {
     const topic = kafkaContext.getTopic();
 
     try {
-      const value = message.value;
-      const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value ?? '{}');
-      // as 정당화: JSON.parse 는 unknown 을 반환하며 런타임 스키마 검증은 SchemaValidationInterceptor 소관.
-      // DLQ 전송은 실패 메시지 보존이 목적이라 envelope 형태를 신뢰하고 전달한다 (schema-validation.interceptor.ts:70 과 동일 관례).
-      const envelope = JSON.parse(jsonString) as MessageEnvelope;
+      // DLQ 전송은 실패 메시지 보존이 목적이라 envelope 형태를 신뢰하고 전달한다.
+      // 파싱 관용구를 직접 쓰지 않는 이유는 parseEnvelope 주석 참조 — 여기서 터지면
+      // DlqDeliveryError 가 되어 offset 미커밋 → 무한 재전달이 된다.
+      const envelope = parseEnvelope(message.value);
 
       await dlqHandler.sendToDLQ({
         originalTopic: topic,

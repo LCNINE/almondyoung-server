@@ -5,9 +5,6 @@
  */
 
 import { Injectable, Inject, Logger, Optional } from '@nestjs/common';
-import { ClientKafka } from '@nestjs/microservices';
-import { CompressionTypes } from 'kafkajs';
-import { firstValueFrom } from 'rxjs';
 import { v7 } from 'uuid';
 import { DomainEvent, DomainCommand, MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamConfig, StreamEventTypes, EventType } from '@packages/event-contracts/types';
@@ -16,6 +13,7 @@ import { SchemaValidationOptions, DEFAULT_SCHEMA_VALIDATION_OPTIONS } from '@pac
 import { validateSchemaOrThrow, logValidationError, isZodSchema } from '../validation/schema-validation.util';
 import { EventChainService } from '../tracking/event-chain.service';
 import { EventTrackingService } from '../tracking/event-tracking.service';
+import { EventTransport } from '../transport/transport.port';
 
 export interface CausedByResource {
   resourceType: string;
@@ -60,7 +58,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
   private readonly validationOptions: Required<SchemaValidationOptions>;
 
   constructor(
-    private readonly kafkaClient: ClientKafka,
+    private readonly transport: EventTransport,
     private readonly streamConfig: StreamConfig<TEvents>,
     private readonly serviceName: string,
     validationOptions?: SchemaValidationOptions,
@@ -204,28 +202,26 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
   }
 
   /**
-   * Kafka로 메시지 전송 (내부 메서드)
+   * 전송 (내부 메서드) — 어댑터가 Kafka 인지 인메모리인지 여기서는 모른다
    */
   private async sendMessage(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
     const topic = this.streamConfig.topic.topic;
 
     try {
-      await firstValueFrom(
-        this.kafkaClient.emit(topic, {
-          key: partitionKey, // 파티션 키 (순서 보장)
-          value: JSON.stringify(envelope),
-          compression: CompressionTypes.GZIP, // 압축
-          headers: {
-            'message-id': envelope.messageId,
-            'message-type': envelope.messageType,
-            'message-kind': envelope.messageKind,
-            'aggregate-type': envelope.source.aggregateType,
-            'aggregate-id': envelope.source.aggregateId,
-            'correlation-id': envelope.correlationId,
-            timestamp: envelope.timestamp,
-          },
-        }),
-      );
+      await this.transport.send(topic, {
+        key: partitionKey, // 파티션 키 (순서 보장)
+        value: JSON.stringify(envelope),
+        compress: true,
+        headers: {
+          'message-id': envelope.messageId,
+          'message-type': envelope.messageType,
+          'message-kind': envelope.messageKind,
+          'aggregate-type': envelope.source.aggregateType,
+          'aggregate-id': envelope.source.aggregateId,
+          'correlation-id': envelope.correlationId,
+          timestamp: envelope.timestamp,
+        },
+      });
 
       this.logger.debug(`📤 ${envelope.messageKind} published: ${envelope.messageType}`, {
         messageId: envelope.messageId,
