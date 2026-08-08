@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "description": "A starter for Medusa projects.",
   "author": "Medusa (https://medusajs.com)",
-  "license": "MIT",
+  "license": "BUSL-1.1",
   "keywords": [
     "sqlite",
     "postgres",
