@@ -1,8 +1,13 @@
 {
+  "//exclude": "이 tsconfig 는 백엔드(apps/libs/packages/scripts) 전용 타입 게이트다. 자체 tsconfig 와 게이트를 가진 프론트엔드·네이티브·인프라 트리는 여기서 검사하지 않는다 — 잘못된 컴파일러 옵션(예: jsx 미설정)으로 검사하면 신호가 아니라 잡음 17k 건이 나온다.",
   "exclude": [
     "apps/wallet-web",
     "apps/admin-web",
     "apps/medusa",
+    "web",
+    "native",
+    "deployments",
+    ".sst",
     "node_modules",
     "dist"
   ],
