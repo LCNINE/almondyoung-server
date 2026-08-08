@@ -83,12 +83,21 @@
 
 순수 추가. 아무것도 소비하지 않으므로 위험 0.
 
-- [ ] `packages/event-contracts/streams/registry.ts` 에 `STREAM_REGISTRY: Record<string, StreamConfig>` 를 만든다. `streams/index.ts` 가 이미 전 스트림을 export 하므로 그것을 모은다
-- [ ] `streamForTopic(topic: string): StreamConfig | undefined` 를 노출
-- [ ] 스펙: 모든 등록 스트림의 `topic.topic` 이 레지스트리 키와 일치하고, 키 중복이 없음을 단언
-- [ ] `npm run type-check` 초록 · 커밋 · 푸시
+- [x] `packages/event-contracts/streams/registry.ts` 에 `STREAM_REGISTRY: Record<string, StreamConfig>` 를 만든다. `streams/index.ts` 가 이미 전 스트림을 export 하므로 그것을 모은다
+- [x] `streamForTopic(topic: string): StreamConfig | undefined` 를 노출
+- [x] 스펙: 모든 등록 스트림의 `topic.topic` 이 레지스트리 키와 일치하고, 키 중복이 없음을 단언
+- [x] `npm run type-check` 초록 · 커밋 · 푸시
 
 **완료 기준:** 레지스트리가 존재하고 스펙이 초록. 소비자는 아직 없다.
+
+**완료 (2026-08-09).** 브랜치 `feat/events-stream-registry`.
+
+- 레지스트리는 선언이 아니라 **도출**이다 — `import * as from './index'` 를 훑어 `StreamConfig` 모양인 export 만 고른다. 스트림을 추가해도 손댈 목록이 없다.
+- 중복 토픽 · 빈 토픽은 **모듈 로드 시점에 throw**. 스펙 단언에 그치지 않고 부팅에서 죽는다.
+- 공개 표면은 패키지 루트 `index.ts` 에만 추가했다. `streams/index.ts` 에 넣으면 순환 import 라 레지스트리가 빈 채로 굳는다 — `registry.public-api.spec.ts` 가 그 회귀를 잡는다.
+- 실측: 도출된 토픽 15개. `TEST_STREAM`·`INVENTORY_STREAM_WITH_SCHEMA` 는 `streams/index.ts` 가 export 하지 않으므로 제외됐고, 어느 앱도 구독하지 않는다(확인함).
+- **Task 3 에 넘기는 사실:** 앱들이 `@OnEvent` 로 실제 구독하는 토픽은 14개이며 **전부 레지스트리에 있다.** 즉 Task 3 의 "레지스트리에 없는 토픽 → 부팅 거부" 는 현재 앱을 하나도 깨지 않는다. (`analytics.events.v1` 은 `retry-policy.decorator.ts` 의 doc 주석, `wiring.*.v1` 은 `event-retry.wiring.spec.ts` 안에만 있다.)
+- 검증: 스펙 13개 초록(계약 패키지 전체 7 suite / 99 tests) · `npm run type-check` 오류 164개로 develop 과 **file:line:code 집합 동일** · `nest build core` 초록 · eslint 초록.
 
 ---
 
