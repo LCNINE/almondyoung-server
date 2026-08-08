@@ -9,3 +9,7 @@ export * from './types';
 
 // Stream Definitions
 export * from './streams';
+
+// Stream Registry (topic → StreamConfig)
+// `streams/index.ts` 가 아니라 여기서 내보낸다 — streams/index.ts 에 두면 순환 import 가 된다.
+export * from './streams/registry';
