@@ -61,17 +61,24 @@ async function bootstrap() {
 
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
-    // NOTE: this `streams` list is what kafkajs actually subscribes to (via
-    // EventsModule.forConsumer -> connectMicroservice). It is independent of the
-    // `streams` passed to EventsModule.forConsumerModule() in analytics.module.ts,
-    // which only wires interceptors/validation/DLQ for those topics — it does not
-    // itself subscribe. A stream present in the module but absent here is silent:
-    // the consumer is constructed, its @OnEvent decorator registers fine, and no
-    // message ever arrives (no exception, no log). PRODUCT_STREAM is one such
-    // pre-existing gap: ProductEventsConsumer/ProductDimensionsService are fully
-    // wired in DI but products.events.v1 is not in this array, so they have never
-    // received a live message. Left as-is here (out of scope for this change) —
-    // flagged for follow-up.
+    // NOTE: this `streams` list does NOT determine what we subscribe to — it is inert.
+    // forConsumer() builds `subscribe.topics` from it, but Nest's ServerKafka overrides
+    // that field: `bindEvents()` spreads `options.subscribe` and then sets
+    // `topics: [...this.messageHandlers.keys()]` after the spread
+    // (node_modules/@nestjs/microservices/server/server-kafka.js:92, v11.1.17). Since
+    // @OnEvent(topic, type) is EventPattern(topic) + metadata, the registered patterns
+    // ARE the topic strings, so the real subscription set comes from the @OnEvent
+    // decorators on controllers registered in analytics.module.ts.
+    //
+    // Concretely: PRODUCT_STREAM is absent from this array and products.events.v1 is
+    // still subscribed, because ProductEventsConsumer is in `controllers` and declares
+    // six @OnEvent('products.events.v1', ...) handlers. (An earlier version of this
+    // comment claimed the opposite and was wrong — see docs/adr/0029.)
+    //
+    // The list that does carry weight is the one passed to forConsumerModule() in
+    // analytics.module.ts: it supplies the topic -> StreamConfig map used by
+    // SchemaValidationInterceptor, plus topic bootstrap. Load-bearing args here are
+    // groupId and kafka.
     const consumerOptions = EventsModule.forConsumer({
       streams: [ORDER_STREAM, MEMBERSHIP_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
