@@ -81,10 +81,16 @@ export class EventRetryInterceptor implements NestInterceptor {
     }
 
     const handler = context.getHandler();
+    // 핸들러 → 클래스 순으로 조회한다. 배열 순서가 우선순위라 핸들러 선언이 클래스 선언을
+    // 덮는다. 클래스 레벨을 보는 이유: 한 컨슈머의 모든 핸들러에 같은 정책을 줘야 하는 경우가
+    // 실재하는데(notification 22개 핸들러), 핸들러만 보면 데코레이터를 22번 반복해야 하고
+    // 새 핸들러가 추가될 때 조용히 누락된다.
+    const policyTargets = [handler, context.getClass()];
     const retryPolicy = normalizeRetryPolicy(
-      this.reflector.get<RetryPolicyConfig | undefined>(RETRY_POLICY_METADATA, handler) ?? {},
+      this.reflector.getAllAndOverride<RetryPolicyConfig | undefined>(RETRY_POLICY_METADATA, policyTargets) ?? {},
     );
-    const disableDLQ = this.reflector.get<boolean | undefined>(DISABLE_DLQ_METADATA, handler) ?? false;
+    const disableDLQ =
+      this.reflector.getAllAndOverride<boolean | undefined>(DISABLE_DLQ_METADATA, policyTargets) ?? false;
 
     // 방어 복사 — @RetryPolicy 메타데이터가 소유한 배열을 in-place 변형하지 않는다
     const nonRetryable = [...(retryPolicy.nonRetryableErrors ?? [])];
