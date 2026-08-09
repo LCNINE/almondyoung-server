@@ -553,11 +553,15 @@ export class EventsModule {
   }
 
   /**
-   * Publisher 토큰 생성
+   * Publisher 토큰 생성 — provider 등록·테스트 조회용.
+   *
+   * **생성자 주입에는 쓰지 않는다.** `@Inject(getPublisherToken(topic))` 은 토큰과
+   * 파라미터 타입이 아무 데서도 대조되지 않는 우회이며 `npm run audit:event-publishers`
+   * 가 `RAW_TOKEN` 으로 막는다. 주입은 `@InjectPublisher(STREAM)` 을 쓴다 (ADR-0029 §4).
    *
    * @example
-   * @Inject(EventsModule.getPublisherToken('orders.events.v1'))
-   * private readonly orderPublisher: StreamPublisher<OrderEvents>
+   * // provider 등록 (로컬 fake 등)
+   * { provide: EventsModule.getPublisherToken(ORDER_STREAM.topic.topic), useClass: NullEventPublisher }
    */
   static getPublisherToken(topicName: string): string {
     return getPublisherToken(topicName);
@@ -566,10 +570,15 @@ export class EventsModule {
   /**
    * Publisher 주입 데코레이터
    *
+   * @deprecated 토픽 문자열과 이벤트 타입 제네릭 두 사실을 따로 적게 한다. 계약에서
+   * 도출하는 `@InjectPublisher(STREAM)` + `PublisherFor<typeof STREAM>` 을 쓰라 —
+   * 같은 토큰을 만들므로 동작은 같다 (ADR-0029 §4). 앱 사용처는 Task 6-B 로 전부
+   * 이주해 0건이며, 이 표면 자체는 Task 7(contract phase)에서 삭제한다.
+   *
    * @example
    * constructor(
-   *   @InjectStreamPublisher('orders.events.v1')
-   *   private readonly orderPublisher: StreamPublisher<OrderEvents>
+   *   @InjectPublisher(ORDER_STREAM)
+   *   private readonly orderPublisher: PublisherFor<typeof ORDER_STREAM>
    * ) {}
    */
   static InjectStreamPublisher(topicName: string) {
@@ -599,5 +608,7 @@ export class EventsModule {
 
 /**
  * Publisher 주입 데코레이터 (단축)
+ *
+ * @deprecated `@InjectPublisher(STREAM)` 을 쓰라 — 위 `EventsModule.InjectStreamPublisher` 참조.
  */
 export const InjectStreamPublisher = EventsModule.InjectStreamPublisher.bind(EventsModule);

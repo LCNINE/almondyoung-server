@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
-import { StreamPublisher, InjectStreamPublisher } from '@app/events';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { PublisherFor, InjectPublisher } from '@app/events';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
@@ -13,8 +13,8 @@ export class DormantService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_2AM)

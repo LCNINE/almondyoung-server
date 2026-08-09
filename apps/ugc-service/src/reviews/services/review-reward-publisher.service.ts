@@ -1,15 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectStreamPublisher } from '@app/events';
-import { StreamPublisher } from '@app/events';
-import type { UgcCommandEvents } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class ReviewRewardPublisher {
   private readonly logger = new Logger(ReviewRewardPublisher.name);
 
   constructor(
-    @InjectStreamPublisher('ugc.commands.v1')
-    private readonly publisher: StreamPublisher<UgcCommandEvents>,
+    @InjectPublisher(UGC_COMMAND_STREAM)
+    private readonly publisher: PublisherFor<typeof UGC_COMMAND_STREAM>,
   ) {}
 
   async publishEarnPointsCommand(params: {

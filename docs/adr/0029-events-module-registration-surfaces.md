@@ -103,6 +103,16 @@ async onVerified(@Payload() payload: EventPayloadOf<typeof USER_STREAM, 'UserEma
 
 **해소는 계약을 채우는 쪽이다** — 소비 중인 이벤트가 계약에 없으면 틀린 것은 소비자가 아니라 계약이다(§1: 계약의 소유자는 `packages/event-contracts`). 다만 **스키마는 관대하게(전 필드 optional + passthrough) 둔다.** `PaymentIntentEventSchema` 가 이미 같은 이유로 그렇게 돼 있다: 계약 등록만으로 소비 검증이 켜지면 그 순간이 라이브 트래픽의 DLQ 폭탄이 된다. 검증을 조이는 결정은 payload 를 실제로 샘플링한 뒤 앱별 이주(Follow-up 5 / 플랜 Task 5-C)에서 내린다. 이 원칙 덕분에 **데코레이터 이주는 계약을 채우면서도 동작 중립을 유지한다.**
 
+**발행 쪽에도 같은 함정이 있고, 같은 방법으로 닫았다 (2026-08-09, Task 6-B).** `@InjectPublisher(S)` 는 `Inject(getPublisherToken(S.topic.topic))` 만 돌려주므로 **파라미터 타입과 아무 관계가 없다.** 따라서 아래는 컴파일된다:
+
+```ts
+@InjectPublisher(ORDER_STREAM) p: PublisherFor<typeof PRODUCT_STREAM>
+```
+
+런타임에는 orders 토픽 publisher 를 쥔 채 PRODUCT 이벤트를 발행하게 되고, `publishEvent` 의 `validatePayload` 는 `streamConfig.events[eventType]` 를 못 찾으면 **warn 하고 통과시킨다** — 조용히 잘못된 토픽으로 나간다. 데코레이터는 파라미터 타입을 볼 수 없으므로(`Inject()` 의 반환은 `ParameterDecorator` 이고 그 시그니처에 타입이 들어오지 않는다) 타입으로 막을 방법이 없다. 그래서 `scripts/events/publisher-contract-audit.js`(`npm run audit:event-publishers`)가 AST 로 **데코레이터 스트림 ≡ 타입 파라미터 스트림**을 단언한다. 소비 쪽 게이트와 같은 이유로 남는다.
+
+이 게이트는 **주입 표면 자체가 우회되는 것도 함께 막는다** — `@Inject(getPublisherToken(topic))`(토큰 직접 생성) 과 `'STREAM_PUBLISHER_…'`(손으로 적은 토큰 문자열). 둘 다 이주 시점에 실재했다(아래 §4 이행 결과 참조). 7종 검사를 전부 일부러 어긋뜨려 exit 1 을 재현했고, `STREAM_MISMATCH` 는 실제 파일 변이로 기본 스캔 경로에서도 무는 것을 확인했다.
+
 **`@On` 이 핸들러 시그니처를 타입으로 강제하지는 않는다.** 검토했고 기각했다. 파라미터 데코레이터 순서가 앱마다 다르고(envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10, 실측), 이 레포는 `strictFunctionTypes` 가 꺼져 있어 `TypedPropertyDescriptor` 제약이 반공변으로 걸리지도 않는다. 따라서 `@On(S, 'A')` 와 `@EventPayload() p: EventPayloadOf<typeof S, 'B'>` 가 어긋나는 것은 여전히 컴파일을 통과한다 — 이벤트명 **오타**는 잡히지만 이벤트명 **불일치**는 잡히지 않는다. 이를 닫으려면 "명시적으로 하지 않는 것" 의 핸들러 레코드 형태가 필요하며, 그 판단은 바뀌지 않았다.
 
 ### 5. 발행 경로를 하나의 인터페이스로 통합한다
@@ -278,6 +288,7 @@ microservice.setIsInitHookCalled(true);
 
 | 실수 | 지금 | 이후 |
 |---|---|---|
+| publisher 주입의 스트림과 타입이 어긋남 | **완전 무증상** (잘못된 토픽으로 발행, `validatePayload` 는 warn 후 통과) | `audit:event-publishers` 가 exit 1 (§4) |
 | 컨트롤러를 `controllers: []` 에 미등록 | **완전 무증상** | 부팅 거부 (선언된 능력과 불일치) |
 | `forConsumer` 에 스트림 누락 | **아무 일도 안 일어남** | 인자가 없어짐 |
 | `forConsumerModule` 에 스트림 누락 | 메시지마다 warn, 검증 없이 통과 | 파생되므로 불가능 |
@@ -326,14 +337,24 @@ microservice.setIsInitHookCalled(true);
 
    **검증 스위치(C) — core 만 켰다 (2026-08-09).** `apps/core/.../sales-order.module.ts` 가 `validateOnConsume: true`. 근거는 샘플링이 아니라 발행 경로 전수 폐쇄이며 상세는 위 §8 의 "검증 스위치(C)" 절에 있다. **나머지 3개 앱(analytics·search·channel-adapter)은 6번(outbox enqueue 검증) 뒤로 미뤘다** — 막는 원인이 관측성이 아니라 outbox 의 zod 우회라, 6번이 그것을 메우면 추측 없이 켤 수 있다. notification·membership·wallet 은 원래부터 해당 없음이다. 판정과 회귀 방지는 `npm run audit:consume-validation -- --gate` 가 맡는다.
 
-   **앱별 데코레이터 이주 완료 (2026-08-09).** 7개 앱 · 소비 핸들러 **87개 전량**이 `@On` + `EventPayloadOf`/`EnvelopeOf` 로 옮겨졌고 `@OnEvent` 호출은 0건이다. `main.ts` 는 손대지 않았으므로 **이 단계는 동작 중립**이다 — §8 의 라이브 구멍은 배선 이주(플랜 Task 5-B) 전까지 그대로 남는다. 이주 중 계약의 구멍 두 종류가 드러났다(위 §4 의 "`@On` 은 계약에 없는 이벤트를 소비할 수 없다" 참조). 회귀 방지는 `scripts/events/event-handler-contract-audit.js` (`npm run audit:event-handlers`) 가 맡는다 — `@On` 의 이벤트 키와 payload/envelope 도출 키의 불일치는 타입이 끝내 잡지 못하므로, 이 게이트는 이주 종료 후에도 남긴다. **`@InjectStreamPublisher` → `@InjectPublisher` 는 아직 0건**(21곳): 발행 쪽 표면이라 Follow-up 6 에서 발행 경로를 통합할 때 함께 옮긴다.
+   **앱별 데코레이터 이주 완료 (2026-08-09).** 7개 앱 · 소비 핸들러 **87개 전량**이 `@On` + `EventPayloadOf`/`EnvelopeOf` 로 옮겨졌고 `@OnEvent` 호출은 0건이다. `main.ts` 는 손대지 않았으므로 **이 단계는 동작 중립**이다 — §8 의 라이브 구멍은 배선 이주(플랜 Task 5-B) 전까지 그대로 남는다. 이주 중 계약의 구멍 두 종류가 드러났다(위 §4 의 "`@On` 은 계약에 없는 이벤트를 소비할 수 없다" 참조). 회귀 방지는 `scripts/events/event-handler-contract-audit.js` (`npm run audit:event-handlers`) 가 맡는다 — `@On` 의 이벤트 키와 payload/envelope 도출 키의 불일치는 타입이 끝내 잡지 못하므로, 이 게이트는 이주 종료 후에도 남긴다.
+
+   **발행 쪽 이주 완료 (2026-08-09, Task 6-B).** `@InjectStreamPublisher` 사용처 **0건**이고 주입 지점 **22곳 전부**가 `@InjectPublisher(STREAM)` + `PublisherFor<typeof STREAM>` 이다. 이 단계는 **동작 중립**이다 — 두 표면이 같은 토큰을 만든다. 실측이 플랜과 세 군데 어긋났다:
+
+   - **21곳이 아니라 22곳.** wallet outbox dispatcher 가 `@Inject(EventsModule.getPublisherToken(PAYMENT_EVENTS_TOPIC))` 로 토큰을 직접 만들어 주입하고 있었고, 타입은 제네릭 없는 `StreamPublisher` 였다 — 스트림과의 연결이 **아예 없어** 옛 표면보다 나빴다. `@InjectStreamPublisher` 를 세는 어떤 grep 에도 안 잡힌다. 게이트의 `RAW_TOKEN` 검사가 여기서 나왔다.
+   - **토큰 문자열이 손으로 5벌.** `adapter.module.ts` 의 로컬용 `NullEventPublisher` fallback provider 들이 `'STREAM_PUBLISHER_orders.events.v1'` 식 리터럴이었다 — 형식의 소유자를 `publisher-token.ts` 한 곳으로 모은 뒤에도 살아남은 사본이다. 계약 상수에서 도출하도록 바꿨고 `HARDCODED_TOKEN` 검사가 재발을 막는다.
+   - **`order-event.publisher.legacy.ts` 는 죽어 있었다 — 삭제했다.** 어느 모듈의 providers 에도 없고 참조는 자기 spec 과 형제 파일의 `@see` 뿐이었다. 게다가 산 판본과 **동작이 이미 갈라져 있었다**(`customerId` 에 구매자 이름을 넣는다 vs 산 판본은 `null`) — 죽은 코드가 옛 동작의 예제로 남는 전형적인 모양이다.
+
+   **`@InjectStreamPublisher` 자체는 남겨 `@deprecated` 만 달았다** — 삭제는 Follow-up 7(contract phase)이다. 사용처가 0이고 게이트가 재유입을 막으므로 남겨두는 비용이 없다.
 
    **전반부(데코레이터 도입) 완료 (2026-08-09).** `@On` · `@InjectPublisher` · `PublisherFor` · `EnvelopeOf` 가 옛 표면과 **병행**으로 존재한다. `@On` 은 `@OnEvent` 과 **바이트 단위로 같은 메타데이터**를 남기고(스펙이 메타데이터 키 집합과 값을 전수 비교한다), `@InjectPublisher` 는 `EventsModule.getPublisherToken` 과 같은 토큰을 만든다 — 토큰 형식은 `publishers/publisher-token.ts` 한 곳으로 모았다. 따라서 한 앱 안에서 두 표면을 섞어 써도 되고, 앱 이주는 파일 단위로 쪼갤 수 있다. 앱 이주(후반부)는 아직 0개다. 위 §4 의 두 가지 이행 차이도 참조.
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
 
    ~~⚠️ **이 항목이 5-C 의 나머지 3개 앱을 막고 있다.**~~ **enqueue 시점 검증 완료 (2026-08-09, Task 6-A).** `StreamPublisher.enqueue` + `publishStoredEnvelope` 두 문이 들어가 zod 우회가 0이 됐고, `npm run audit:consume-validation` 의 UNVERIFIED 가 **14 → 0** 이 됐다. 막고 있던 4개 이벤트만이 아니라 membership 의 5건까지 함께 풀렸다(원인이 달랐다 — 위 §8 참조). **7개 앱 전부 `켜도 안전`이다.**
 
-   남은 것은 이 항목의 다른 절반이다: `idempotencyKey`·`partitionKey` 추가와 5벌 회수(Task 6-C, 데이터 마이그레이션 성격) + `@InjectStreamPublisher` → `@InjectPublisher` 26곳(Task 6-B). 6-A 에서 `OutboxPublisher.saveEvent` 는 삭제했고 공용 outbox 의 유일한 진입점은 `OutboxWriter.write` 다 — 6-C 의 회수 대상은 그 port 뒤로 들어온다.
+   **`@InjectStreamPublisher` → `@InjectPublisher` 완료 (2026-08-09, Task 6-B)** — 사용처 0건, 주입 지점 22곳 전부 도출. 상세는 위 5번의 "발행 쪽 이주 완료" 참조.
+
+   남은 것은 이 항목의 다른 절반이다: `idempotencyKey`·`partitionKey` 추가와 5벌 회수(Task 6-C, 데이터 마이그레이션 성격). 6-A 에서 `OutboxPublisher.saveEvent` 는 삭제했고 공용 outbox 의 유일한 진입점은 `OutboxWriter.write` 다 — 6-C 의 회수 대상은 그 port 뒤로 들어온다.
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
 8. ~~channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.~~ **결정: 이주에 묶었다 (2026-08-09).** 다만 배선 이주 시점에 **검증을 켜지는 않았다.** `forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true` 라, 아무 조치 없이 `startConsumer` 로 옮기면 이 앱만 배선과 검증이 **선택이 아니라 누락으로** 동시에 켜진다. 외부 채널 유래 payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록하고 `validateOnConsume: false` 를 명시했다. `forConsumerModule` 을 새로 부르지 않은 이유는 그 표면이 `streams` 를 필수로 받기 때문이다 — 그 목록이야말로 §2·§3 이 지우는 중인 두 번째 진실이라, 정책 하나를 얻자고 그것을 되살릴 수 없다. Task 7 의 `forApp` 이 이 자리를 흡수한다. 검증을 실제로 켜는 것은 payload 샘플링 후(플랜 Task 5-C).
 9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정).

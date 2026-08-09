@@ -1,18 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher, type DbTx } from '@app/events';
-import {
-  MEMBERSHIP_STREAM,
-  type MembershipEvents,
-  type MembershipStatusChangedPayload,
-} from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor, type DbTx } from '@app/events';
+import { MEMBERSHIP_STREAM, type MembershipStatusChangedPayload } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class MembershipEventPublisher {
   private readonly logger = new Logger(MembershipEventPublisher.name);
 
   constructor(
-    @InjectStreamPublisher(MEMBERSHIP_STREAM.topic.topic)
-    private readonly publisher: StreamPublisher<MembershipEvents>,
+    @InjectPublisher(MEMBERSHIP_STREAM)
+    private readonly publisher: PublisherFor<typeof MEMBERSHIP_STREAM>,
   ) {}
 
   async publishStatusChanged(payload: MembershipStatusChangedPayload): Promise<void> {

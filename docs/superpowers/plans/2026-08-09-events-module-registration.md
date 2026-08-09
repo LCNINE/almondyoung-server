@@ -376,7 +376,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 6-A   outbox enqueue 시점 zod 검증            ✅ 완료 — UNVERIFIED 14 → 0
 5-C   analytics · search · channel-adapter     남은 것은 `validateOnConsume` 한 줄을 뒤집는 결정뿐
       (+ membership — 원인이 달랐으나 6-A 가 함께 풀었다)
-6-B   @InjectStreamPublisher → @InjectPublisher (26곳)
+6-B   @InjectStreamPublisher → @InjectPublisher (21곳)   ✅ 완료 — 실측 22곳(raw 토큰 1)
 6-C   outbox 5벌 회수 (Task 0 선행)
 ```
 
@@ -390,7 +390,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **Task 5 완료 후 실측(2026-08-09)이 이 태스크를 세 조각으로 갈랐다.** 원안은 한 PR 을 가정했으나 두 사실이 그걸 막는다:
 
-- `@InjectStreamPublisher` 는 플랜이 적은 21곳이 아니라 **26곳**이다 (core 7 · user-service 7 · libs/events 5 · channel-adapter 3 · membership 2 · ugc-service 2). **`user-service`·`ugc-service` 는 이 워크스트림이 한 번도 건드리지 않은 앱**이다 — Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
+- `@InjectStreamPublisher` 는 **21곳**이다 — core 7 · user-service 7 · channel-adapter 3 · membership 2 · ugc-service 2. (2026-08-09 에 한 번 "26곳"으로 정정했다가 되돌렸다. 그 26 은 `libs/events` 의 JSDoc 예시 3건과 import 문을 걸러내지 못한 grep 이었다 — **플랜의 원래 숫자 21 이 맞다.**) 중요한 것은 수가 아니라 분포다: **`user-service`(7)·`ugc-service`(2) 는 이 워크스트림이 한 번도 건드리지 않은 앱**이고, Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
 - outbox 5벌은 **서로 다른 테이블**에 쓴다 (`outbox_events` / `wmsTables.outboxEvents` / wallet 자체 스키마). 회수는 리팩터가 아니라 **앱 간 데이터 마이그레이션**이다.
 
 그리고 **5-C 를 막고 있는 것은 6-A 하나뿐**이다. 6-B·6-C 를 기다릴 이유가 없다.
@@ -411,10 +411,27 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **⚠️ 배포 전 결정 1건 (사람):** wallet 아웃박스에 **이 배포 시점에 PENDING 으로 남아 있는 행**은 `enqueue` 를 지나지 않았으므로 `publishStoredEnvelope` 에서 처음 검증을 만난다. 위반하면 발행되지 않고 백오프 후 `DEAD_LETTER` 로 남는다(옛 동작: 그대로 발행). 정적으로는 안전하다 — wallet 의 `invoice.*`/`mandate.rejected` payload 는 전부 계약 타입으로 빌드되고(`invoice-event.builder.ts`), `payment.intent.*`/`gateway.*` 스키마는 `catchall` 이라 확장 필드를 보존한다. 그래도 배포 직후 `outbox_events` 의 `DEAD_LETTER`/`FAILED` 증가와 `lastErrorCode` 를 한 번 본다.
 
-### Task 6-B: `@InjectStreamPublisher` → `@InjectPublisher` (26곳)
+### Task 6-B: `@InjectStreamPublisher` → `@InjectPublisher` (21곳) — ✅ 완료 (2026-08-09)
 
-- [ ] 5-A 가 "발행 표면이라 PR 경계가 깔끔하다"는 이유로 미뤄둔 것. 동작 중립
-- [ ] `user-service`(7) · `ugc-service`(2) 는 소비 이주를 하지 않은 앱이다 — `startConsumer` 를 부르지 않으므로 **발행 표면만** 바꾼다
+- [x] 5-A 가 "발행 표면이라 PR 경계가 깔끔하다"는 이유로 미뤄둔 것. 동작 중립 — 같은 토큰(`getPublisherToken`), 같은 인스턴스
+- [x] 호출 스타일 두 가지 전부 이주 — 생문자열 12곳(user-service 7 · ugc-service 2 · channel-adapter legacy 1 … 나머지는 아래 참조) / `STREAM.topic.topic` 10곳(core 7 · membership 2 · channel-adapter 2 중 일부)
+- [x] `order-event.publisher.legacy.ts` 는 **죽었다 — 삭제했다.** 어느 모듈의 providers 에도 없고, 참조는 자기 spec 과 형제 파일의 `@see` 주석뿐이었다. 산 판본과 **동작이 이미 갈라져 있었다**(`customerId: buyer?.name ?? 'guest'` vs 산 판본의 `null`) — 살려두면 옛 동작이 예제로 남는다. spec 도 함께 삭제(2 tests): 그 두 단언(외부 라인 식별자 보존/`channelProductId` 미조작)은 `order-event.publisher.spec.ts` 가 양 채널로 이미 덮는다
+- [x] `user-service`(7) · `ugc-service`(2) 는 발행 표면만 바꿨다 — `startConsumer` 를 넣지 않았고 `main.ts` 를 건드리지 않았다
+- [x] **새 게이트 `npm run audit:event-publishers`** (`scripts/events/publisher-contract-audit.js`) — 데코레이터 스트림 ≡ 타입 파라미터 스트림 을 AST 로 단언한다. 7종 검사를 전부 일부러 어긋뜨려 exit 1 확인 + 실파일 변이로도 확인
+
+**플랜과 어긋난 실측 3건:**
+
+1. **주입 지점은 21곳이 아니라 22곳이었다.** `apps/wallet/src/messaging/outbox-dispatcher.service.ts:45` 가 `@Inject(EventsModule.getPublisherToken(PAYMENT_EVENTS_TOPIC))` 로 **토큰을 직접 만들어** 주입하고 있었다 — `@InjectStreamPublisher` 를 세는 grep 에 안 잡힌다. 타입은 제네릭 없는 `StreamPublisher` 라 스트림과의 연결이 **아예 없었다**(옛 표면보다 나쁘다). 새 게이트의 `RAW_TOKEN` 검사가 이것 때문에 생겼고, 함께 이주했다
+2. **`ExtractPayloadType` 은 legacy 에서만 쓰이지 않는다** — `channel-adapter/src/services/null-event-publisher.service.ts` 가 쓴다. 플랜의 괄호 주석이 틀렸다. 삭제하지 않았다
+3. **토큰 문자열이 손으로 5벌 적혀 있었다** — `adapter.module.ts` 의 `NullEventPublisher` fallback provider 들이 `'STREAM_PUBLISHER_orders.events.v1'` 식 리터럴이었다. ADR-0029 §4 가 형식의 소유자를 `publisher-token.ts` 한 곳으로 모은 뒤에도 남아 있던 사본이다. 계약 상수 배열 + `getPublisherToken()` 으로 도출하게 바꿨고, 게이트의 `HARDCODED_TOKEN` 검사가 재발을 막는다
+
+**게이트 실측:** `type-check` **164 = 기준선**(file:line:code 집합 완전 동일, 신규 0) · `audit:event-handlers` exit 0 (87 핸들러) · `audit:consume-validation --gate` exit 0 · `audit:event-publishers` exit 0 (22 주입 지점 / 옛 표면 0) · 전체 jest **실패 suite 18 = 기준선**(집합 동일) · 10개 앱 `nest build` 전부 OK · 변경 파일 eslint 신규 메시지 0.
+
+통과 suite 는 370 → 369, 테스트는 3039 → 3037 로 줄었다 — **전부 삭제한 legacy spec 1개(2 tests)** 이고 그 외 감소는 없다.
+
+**게이트가 무는 것을 확인한 방법 (7종):** `LEGACY`(옛 데코레이터) · `RAW_TOKEN`(`@Inject(getPublisherToken(…))`) · `HARDCODED_TOKEN`(`'STREAM_PUBLISHER_…'` 리터럴) · `UNRESOLVED_STREAM`(정적으로 못 푸는 데코레이터 인자) · `UNDERIVED`(옛 `StreamPublisher<XEvents>` 타입) · `UNRESOLVED_DERIVED`(`PublisherFor<T>` 의 T 가 `typeof S` 가 아님) · `STREAM_MISMATCH`(두 이름 불일치). 픽스처로 7종 전부 exit 1 을 재현했고, 그중 핵심인 `STREAM_MISMATCH` 는 **실제 파일**(`product-versions.service.ts`)을 변이시켜 기본 스캔 경로에서도 무는 것을 확인한 뒤 sha1 대조로 원복했다.
+
+**`@InjectStreamPublisher` 는 삭제하지 않고 `@deprecated` 만 달았다** — 삭제는 Task 7(contract phase)이다. 앱 사용처는 0건이고 게이트가 재유입을 막으므로 남겨두는 비용이 없다.
 
 ### Task 6-C: outbox 5벌 회수 (데이터 마이그레이션 성격)
 
@@ -424,9 +441,9 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 - [ ] **마이그레이션은 expand phase 이므로 `migrate → deploy` 순서** (CLAUDE.md 의 phase 별 순서 주의 — contract phase 와 반대다)
 - [ ] 테이블이 다르므로 **기존 미발행 행의 이관 전략을 먼저 정한다** (dual-write 후 드레인 / 옛 dispatcher 를 큐가 빌 때까지 유지 / 그 외)
 
-각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
+각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
 
-**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다.
+**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다 (JSDoc 예시 제외).
 
 ---
 

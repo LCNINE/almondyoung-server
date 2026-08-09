@@ -3,8 +3,6 @@
  *
  * Channel Adapter에서 발생하는 주문 이벤트를 Inbox를 통해 Kafka로 발행합니다.
  * WMS OrderEventsConsumer가 이 이벤트를 구독하여 Sales Order를 생성합니다.
- *
- * @see order-event.publisher.legacy.ts - 원본 직접 발행 버전
  */
 
 import { Injectable, Logger } from '@nestjs/common';

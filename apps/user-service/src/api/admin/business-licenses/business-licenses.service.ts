@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { UserEvents } from '@packages/event-contracts';
+import { USER_STREAM } from '@packages/event-contracts';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
@@ -17,8 +17,8 @@ export class BusinessLicensesService {
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
 
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
 
     private readonly usersService: UsersService,
   ) {}

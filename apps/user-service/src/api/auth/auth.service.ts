@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   BadRequestException,
   ConflictException,
@@ -15,7 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as jwt from 'jsonwebtoken';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import {
   User,
   UserWithoutPassword,
@@ -64,8 +64,8 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
     @Optional() private readonly cafe24LinkService?: Cafe24LinkService,

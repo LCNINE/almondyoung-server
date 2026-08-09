@@ -4,7 +4,7 @@
 // `^@packages/event-contracts/(.*)$`(하위 경로)만 있고 bare 경로 항목이 없어 해석되지
 // 않는다 — 레포 상시 debt 다. 레포에 이미 있는 선례(product-versions.service.spec.ts:1-7)와
 // **같은 모양**으로 가상 모듈을 세운다. 값이 필요한 곳은 클래스 정의 시점에 평가되는
-// `@InjectStreamPublisher(PRODUCT_STREAM.topic.topic)` 데코레이터 인자뿐이고, 이 스위트는
+// `@InjectPublisher(PRODUCT_STREAM)` 데코레이터 인자뿐이고(그 안에서 `stream.topic.topic` 만 읽는다), 이 스위트는
 // 그 두 서비스를 인스턴스화하지도 부르지도 않는다(아래 bulkService 생성 코멘트 참조).
 jest.mock(
   '@packages/event-contracts',

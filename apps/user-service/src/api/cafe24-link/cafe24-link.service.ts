@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -14,7 +14,7 @@ import {
   users,
   type UserServiceSchema,
 } from '../../../database/drizzle/schema';
-import type { UserEvents } from '@packages/event-contracts/streams';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import { DbTransaction } from '../../commons/types';
 
 export interface Cafe24SignupPrefill {
@@ -49,8 +49,8 @@ export class Cafe24LinkService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
 
   private getClient(tx?: DbTransaction) {

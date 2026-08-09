@@ -1,14 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import type { RatingDistribution, UgcDomainEvents } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { UGC_EVENT_STREAM, type RatingDistribution } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class ReviewStatsPublisher {
   private readonly logger = new Logger(ReviewStatsPublisher.name);
 
   constructor(
-    @InjectStreamPublisher('ugc.events.v1')
-    private readonly publisher: StreamPublisher<UgcDomainEvents>,
+    @InjectPublisher(UGC_EVENT_STREAM)
+    private readonly publisher: PublisherFor<typeof UGC_EVENT_STREAM>,
   ) {}
 
   async publishProductReviewStatsChanged(params: {

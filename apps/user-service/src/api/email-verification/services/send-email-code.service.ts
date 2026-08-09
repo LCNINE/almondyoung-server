@@ -1,8 +1,8 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { eq } from 'drizzle-orm';
 import { SendEmailCodeDto } from '../dto/email-verification.dto';
@@ -12,7 +12,7 @@ import { ExpireEmailCodesService } from './expire-email-codes.service';
 export class SendEmailCodeService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectStreamPublisher('users.events.v1') private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM) private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
     private readonly expireEmailCodesService: ExpireEmailCodesService,
   ) {}
 

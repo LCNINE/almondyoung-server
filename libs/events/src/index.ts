@@ -23,7 +23,8 @@ export * from './transport/in-memory.server';
 
 // Publisher
 export * from './publishers/stream-publisher.service';
-// 계약에서 도출하는 주입 표면 (ADR-0029 §4) — @InjectStreamPublisher 와 병행
+// 계약에서 도출하는 주입 표면 (ADR-0029 §4). 앱 사용처는 Task 6-B 로 전부 이주했고
+// 옛 @InjectStreamPublisher 는 Task 7 에서 삭제한다. 회귀 방지: npm run audit:event-publishers
 export * from './publishers/publisher-token';
 export * from './publishers/inject-publisher';
 

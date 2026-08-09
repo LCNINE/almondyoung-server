@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   CHANNEL_ADAPTER_STREAM,
   ChannelAdapterEvents,
@@ -47,10 +47,10 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   constructor(
     private readonly db: DbService<typeof channelAdapterSchema>,
-    @InjectStreamPublisher(CHANNEL_ADAPTER_STREAM.topic.topic)
-    private readonly channelAdapterPublisher: StreamPublisher<ChannelAdapterEvents>,
-    @InjectStreamPublisher(ORDER_STREAM.topic.topic)
-    private readonly ordersPublisher: StreamPublisher<OrderEvents>,
+    @InjectPublisher(CHANNEL_ADAPTER_STREAM)
+    private readonly channelAdapterPublisher: PublisherFor<typeof CHANNEL_ADAPTER_STREAM>,
+    @InjectPublisher(ORDER_STREAM)
+    private readonly ordersPublisher: PublisherFor<typeof ORDER_STREAM>,
   ) {}
 
   onModuleInit() {
