@@ -390,7 +390,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **Task 5 완료 후 실측(2026-08-09)이 이 태스크를 세 조각으로 갈랐다.** 원안은 한 PR 을 가정했으나 두 사실이 그걸 막는다:
 
-- `@InjectStreamPublisher` 는 플랜이 적은 21곳이 아니라 **26곳**이다 (core 7 · user-service 7 · libs/events 5 · channel-adapter 3 · membership 2 · ugc-service 2). **`user-service`·`ugc-service` 는 이 워크스트림이 한 번도 건드리지 않은 앱**이다 — Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
+- `@InjectStreamPublisher` 는 **21곳**이다 — core 7 · user-service 7 · channel-adapter 3 · membership 2 · ugc-service 2. (2026-08-09 에 한 번 "26곳"으로 정정했다가 되돌렸다. 그 26 은 `libs/events` 의 JSDoc 예시 3건과 import 문을 걸러내지 못한 grep 이었다 — **플랜의 원래 숫자 21 이 맞다.**) 중요한 것은 수가 아니라 분포다: **`user-service`(7)·`ugc-service`(2) 는 이 워크스트림이 한 번도 건드리지 않은 앱**이고, Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
 - outbox 5벌은 **서로 다른 테이블**에 쓴다 (`outbox_events` / `wmsTables.outboxEvents` / wallet 자체 스키마). 회수는 리팩터가 아니라 **앱 간 데이터 마이그레이션**이다.
 
 그리고 **5-C 를 막고 있는 것은 6-A 하나뿐**이다. 6-B·6-C 를 기다릴 이유가 없다.
@@ -414,6 +414,8 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 ### Task 6-B: `@InjectStreamPublisher` → `@InjectPublisher` (26곳)
 
 - [ ] 5-A 가 "발행 표면이라 PR 경계가 깔끔하다"는 이유로 미뤄둔 것. 동작 중립
+- [ ] 호출 스타일이 두 가지다 (실측) — 생문자열 12곳(`@InjectStreamPublisher('users.events.v1')`, user-service·ugc-service·channel-adapter legacy) / `STREAM.topic.topic` 10곳(core·membership·channel-adapter). 후자는 이미 절반쯤 도출돼 있다
+- [ ] `apps/channel-adapter/src/services/order-event.publisher.legacy.ts` 는 doc 주석 한 줄에서만 참조된다 — 죽었는지 확인하고 죽었으면 이주 대신 삭제한다 (`ExtractPayloadType` 도 거기서만 쓴다)
 - [ ] `user-service`(7) · `ugc-service`(2) 는 소비 이주를 하지 않은 앱이다 — `startConsumer` 를 부르지 않으므로 **발행 표면만** 바꾼다
 
 ### Task 6-C: outbox 5벌 회수 (데이터 마이그레이션 성격)
@@ -426,7 +428,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
 
-**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다.
+**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다 (JSDoc 예시 제외).
 
 ---
 
