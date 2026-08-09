@@ -588,8 +588,14 @@ export class EventsModule {
    * 가 `RAW_TOKEN` 으로 막는다. 주입은 `@InjectPublisher(STREAM)` 을 쓴다 (ADR-0029 §4).
    *
    * @example
-   * // provider 등록 (로컬 fake 등)
-   * { provide: EventsModule.getPublisherToken(ORDER_STREAM.topic.topic), useClass: NullEventPublisher }
+   * // provider 등록 (로컬 fake 등). 스텁 클래스가 아니라 **진짜 `StreamPublisher`** 를
+   * // no-op 전송으로 세우는 편이 낫다 — 오리-타이핑 스텁은 `enqueue` 처럼 나중에 생기는
+   * // 메서드를 조용히 빠뜨리고, 문자열 토큰 뒤라 그 불일치가 컴파일에 잡히지 않는다
+   * // (channel-adapter 의 `NullEventPublisher` 가 그렇게 6-C-3 에서 터졌다).
+   * {
+   *   provide: EventsModule.getPublisherToken(ORDER_STREAM.topic.topic),
+   *   useFactory: () => new StreamPublisher({ send: async () => undefined }, ORDER_STREAM, 'my-svc'),
+   * }
    */
   static getPublisherToken(topicName: string): string {
     return getPublisherToken(topicName);

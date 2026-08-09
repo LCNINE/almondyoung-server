@@ -2,8 +2,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { eq, and } from 'drizzle-orm';
 import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
 import { SyncStatusService } from '../sync-status.service';
-import { InboxService } from '../inbox.service';
 import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
 import {
@@ -44,7 +45,8 @@ export class OrderPollerOrchestrator {
     @Inject(CHANNEL_ORDER_PROVIDER)
     private readonly providers: ChannelOrderProvider[],
     private readonly syncStatusService: SyncStatusService,
-    private readonly inboxService: InboxService,
+    @InjectPublisher(ORDER_STREAM)
+    private readonly ordersPublisher: PublisherFor<typeof ORDER_STREAM>,
     private readonly pollingHashService: PollingChangeHashService,
     private readonly orderCollectionFailureService: OrderCollectionFailureService,
     private readonly db: DbService<typeof channelAdapterSchema>,
@@ -309,20 +311,21 @@ export class OrderPollerOrchestrator {
           return false;
         }
 
-        await this.inboxService.enqueue(
+        // 공용 아웃박스에 적재 (ADR-0029 §5-1, Task 6-C-3). 매핑 insert 와 **같은 트랜잭션**
+        // 이라는 성질이 그대로다 — 그것이 이 경로의 요점이다. 매핑만 남고 이벤트가 사라지면
+        // 그 주문은 "수집됨" 으로 굳어 영영 재발행되지 않는다.
+        //
+        // `metadata` 의 `causedBy` 는 싣지 않는다. 옛 디스패처가 행의 metadata 컬럼을 읽지
+        // 않고 `{ partitionKey }` 만 envelope 에 넣었으므로 **한 번도 나간 적이 없는 값**이고,
+        // 회수는 나가는 envelope 를 바꾸지 않는다. (인과 추적을 켤 거면 `publishEvent` 의
+        // `causedBy` 파라미터가 그 자리이고, 그건 이 조각의 범위 밖이다.)
+        await this.ordersPublisher.enqueue(
           {
             eventType: 'OrderCreated',
             aggregateId: payload.orderId,
-            aggregateType: 'ChannelAdapter',
-            partitionKey: provider.channel,
             payload,
-            metadata: {
-              salesChannel: provider.channel,
-              causedBy: {
-                resourceType: 'MEDUSA_ORDER',
-                resourceId: payload.externalOrderId,
-              },
-            },
+            partitionKey: provider.channel,
+            metadata: { partitionKey: provider.channel },
           },
           tx,
         );
@@ -453,25 +456,25 @@ export class OrderPollerOrchestrator {
       };
     }
 
+    const wmsOrderId = mapping[0].wmsOrderId;
+
     await this.db.db.transaction(async (tx) => {
-      await this.inboxService.enqueue(
-        {
-          eventType: item.eventType,
-          aggregateId: mapping[0].wmsOrderId,
-          aggregateType: 'ChannelAdapter',
-          partitionKey: provider.channel,
-          payload,
-          metadata: {
-            salesChannel: provider.channel,
-            causedBy: {
-              resourceType: 'MEDUSA_ORDER_LIFECYCLE',
-              resourceId: item.externalOrderId,
-            },
-            lifecycleEventKey: item.eventKey,
-          },
-        },
-        tx,
-      );
+      // 이벤트 키마다 payload 타입이 다르므로 **분기해서** 적재한다. `OrderLifecycleEventItem`
+      // 이 판별 유니온이라 각 가지에서 `item.payload` 가 알아서 좁혀진다 — 캐스팅이 없다.
+      // metadata 를 `{ partitionKey }` 로 두는 근거는 `enqueueOrderCreated` 와 같다.
+      const common = {
+        aggregateId: wmsOrderId,
+        partitionKey: provider.channel,
+        metadata: { partitionKey: provider.channel },
+      };
+
+      if (item.eventType === 'OrderCancelled') {
+        const cancelled: OrderCancelledPayload = { orderId: wmsOrderId, ...item.payload };
+        await this.ordersPublisher.enqueue({ eventType: 'OrderCancelled', payload: cancelled, ...common }, tx);
+      } else {
+        const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...item.payload };
+        await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
+      }
 
       await this.pollingHashService.upsert(
         provider.channel,

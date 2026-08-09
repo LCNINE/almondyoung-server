@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
 import { ChannelAdapterFactory, ChannelType } from '../adapters/channel-adapter.factory';
 import { InternalOrderEvent, DataType, SyncToChannelPayload, SyncResult, channelAdapterSchema } from '../types';
 import { ChannelAdapterValidator } from '../validators/channel-adapter.validator';
 import { ChannelsConfig } from '../config/channels.config';
-import { InboxService } from './inbox.service';
 import { syncHistories, eventLogs } from '../schema';
 
 /**
@@ -27,7 +28,8 @@ export class ChannelSyncManager {
 
   constructor(
     private readonly db: DbService<typeof channelAdapterSchema>,
-    private readonly inboxService: InboxService,
+    @InjectPublisher(CHANNEL_ADAPTER_STREAM)
+    private readonly channelAdapterPublisher: PublisherFor<typeof CHANNEL_ADAPTER_STREAM>,
     private readonly adapterFactory: ChannelAdapterFactory,
   ) {}
 
@@ -77,9 +79,9 @@ export class ChannelSyncManager {
         await tx.insert(eventLogs).values(eventLogsData);
       }
 
-      // 3️⃣ Outbox에 이벤트 enqueue (같은 트랜잭션!)
+      // 3️⃣ 공용 아웃박스에 적재 (같은 트랜잭션!, ADR-0029 §5-1 Task 6-C-3)
       if (dataType === 'orders') {
-        await this.inboxService.enqueue(
+        await this.channelAdapterPublisher.enqueue(
           {
             eventType: 'OrderSyncCompleted',
             aggregateId: `${channel}-sync`,
@@ -97,9 +99,10 @@ export class ChannelSyncManager {
               })),
               syncDurationMs: Date.now() - startTime,
             },
-            metadata: {
-              dataType,
-            },
+            // 옛 디스패처는 행의 metadata 컬럼을 읽지 않고 `{ partitionKey }` 만 envelope 에
+            // 실었다 — 즉 `{ dataType }` 은 한 번도 나간 적이 없다. 회수는 나가는 envelope 를
+            // 바꾸지 않으므로 그대로 둔다.
+            metadata: { partitionKey: channel },
           },
           tx,
         );
@@ -130,18 +133,25 @@ export class ChannelSyncManager {
     });
 
     if (payload.dataType === 'inventory' && result.success) {
-      await this.inboxService.enqueue({
-        eventType: 'InventorySyncCompleted',
-        aggregateId: `${channel}-inventory-${payload.payload.productId}`,
-        partitionKey: channel,
-        payload: {
-          channelType: channel,
-          productId: payload.payload.productId,
-          syncType: payload.payload.isOptionProduct ? 'option' : 'single',
-          stockQuantity: payload.payload.stockQuantity,
-          syncResult: 'success' as const,
+      // 옛 경로는 `aggregateType` 을 넘기지 않아 컬럼 기본값 `'ChannelAdapter'` 로 떨어지는
+      // 아웃박스 행이었다. 트랜잭션은 옛 경로에도 없었다(insert 한 문, 위 syncHistories 쓰기와
+      // 원자적으로 묶여 있지 않다).
+      await this.channelAdapterPublisher.enqueue(
+        {
+          eventType: 'InventorySyncCompleted',
+          aggregateId: `${channel}-inventory-${payload.payload.productId}`,
+          partitionKey: channel,
+          payload: {
+            channelType: channel,
+            productId: payload.payload.productId,
+            syncType: payload.payload.isOptionProduct ? 'option' : 'single',
+            stockQuantity: payload.payload.stockQuantity,
+            syncResult: 'success' as const,
+          },
+          metadata: { partitionKey: channel },
         },
-      });
+        this.db.db,
+      );
     }
 
     this.logger.log(`${result.success ? '✅' : '❌'} [${channel}] ${payload.dataType} 동기화 로그 기록`);
