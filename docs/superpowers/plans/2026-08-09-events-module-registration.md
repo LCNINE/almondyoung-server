@@ -18,6 +18,7 @@
   2. 끝난 시점에 `npm run type-check` 와 `nest build <app>` 이 초록
   3. **다른 태스크의 배포를 선행조건으로 요구하지 않음** (Task 7 만 예외 — 아래)
   4. 기존 앱을 고치지 않고도 동작 (Task 5 의 앱별 이주 제외)
+- **이 워크스트림의 작업 단위는 세 박자다 — 준비(중립) → 앱별 이주(동작) → 제거(contract).** Task 5(A/B/C) · Task 6(A/B/C) · Task 6-C(1/2·3/4) 가 연속으로 같은 모양으로 갈렸다. 우연이 아니라 expand-contract 가 강제하는 모양이다. **다음 태스크는 처음부터 이 모양으로 쓴다** — 한 덩이로 쓴 뒤 쪼개면 이미 쓴 코드를 되돌려야 한다.
 - **머지 리듬과 배포 리듬은 분리한다.** 머지는 태스크마다, 배포는 편할 때 묶어서. 이 레포는 autodeploy 가 없어(ADR-0005 §4) 배포가 사람이 `sst deploy` 를 부르는 수동 작업이므로, 태스크마다 배포를 강제하지 않는다. 실제로 필요한 배포 요구는 아래뿐이다:
 
   | 구간 | 배포 요구 |
@@ -433,14 +434,41 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **`@InjectStreamPublisher` 는 삭제하지 않고 `@deprecated` 만 달았다** — 삭제는 Task 7(contract phase)이다. 앱 사용처는 0건이고 게이트가 재유입을 막으므로 남겨두는 비용이 없다.
 
-### Task 6-C: outbox 5벌 회수 (데이터 마이그레이션 성격)
+### Task 6-C: outbox 를 `event.outbox_events` 로 수렴 — 4덩이
 
-- [ ] **선행: Task 0** — core 의 `outbox.service.ts` 2벌(fulfillment · inventory/shared, import 경로만 다름)을 먼저 합친다. 안 하면 같은 회수를 두 번 한다
-- [ ] **먼저 공용을 core 와 기능 동등하게.** 격차 실측: 공용에는 `idempotencyKey`·`partitionKey` 가 없고 재시도가 `retryCount`(즉시 폴링)인 반면 core 는 `idempotencyKey` + **`unique(topic, eventType, idempotencyKey)`** · `partitionKey` · `attempts`+**`nextAttemptAt`**(예약 백오프)를 가진다. **core 에서 `idempotencyKey` 를 넘기는 호출이 254곳** — 컬럼 없이 갈아끼우면 그 중복 방어가 조용히 사라진다
-- [ ] `nextAttemptAt` 은 컬럼이 아니라 **의미론 차이**다. 공용 디스패처는 예약 재시도를 모른다. 넣든지, 안 넣기로 하고 손실을 명시하든지 **택일해서 ADR 에 기록**한다
-- [ ] 앱 자체 판본을 하나씩 회수 — core · wallet · channel-adapter
-- [ ] **마이그레이션이 생긴다면 컬럼 정합용 per-app additive 뿐이다.** expand phase 이므로 `migrate → deploy` 순서 (CLAUDE.md 의 phase 별 순서 주의 — contract phase 와 반대다)
-- [ ] **행 이관은 없다.** 앱마다 DB 가 달라 테이블이 그 자리에 남는다. 옛 dispatcher 를 드레인할 필요도 없다 — 같은 테이블을 새 구현이 계속 읽으면 된다
+종착지는 ADR §5-1 (B). **경계 3개 중 2개는 선택이 아니라 배포 울타리가 강제한다** — PR 안에 배포를 끼워 넣을 수 없다.
+
+| 울타리 | 왜 |
+|---|---|
+| 6-C-1 **→** 6-C-2·3 | 컬럼이 각 앱 DB 에 **적용된 뒤에야** 그 앱 코드가 쓸 수 있다. 마이그레이션은 배포다 |
+| 6-C-2·3 **→** 6-C-4 | 옛 디스패처가 옛 테이블을 **비운 뒤에야** 지울 수 있다 |
+
+#### 6-C-1: core 판본을 공용으로 승격 (호출자 변경 0)
+
+"공용에 컬럼 추가"가 아니라 **승격**이다. core 디스패처는 공용보다 두 세대 앞서 있다 — `outbox-dispatcher.service.ts:132` 가 `nextAttemptAt` 을 lease 로 쓰고(발행 중 죽으면 만료 후 재시도), `:127` 이 attempts 증가 지점을 하나로 모으고, `:252` 가 지수 백오프를 계산한다. 공용은 `status='PENDING' AND retryCount < max` 로 5초마다 즉시 재시도할 뿐이다.
+
+- [ ] **Task 0 을 여기 접는다** — core 의 `outbox.service.ts` 2벌(fulfillment · inventory/shared, import 경로만 다름)을 먼저 하나로. 6-C-2 가 어차피 그 파일들을 건드린다
+- [ ] 공용 스키마에 `idempotencyKey` + **`unique(topic, eventType, idempotencyKey)`** · `partitionKey` 추가. 앱별 additive 마이그레이션, expand phase 이므로 **`migrate → deploy`**
+- [ ] 공용 디스패처에 **예약 백오프(`nextAttemptAt`)와 lease 를 넣는다** (ADR §5-1 결정). 안 넣으면 6-C-2 가 조용한 동작 변경이 된다
+- [ ] 호출자는 하나도 고치지 않는다. 이 조각이 끝나도 라이브 동작은 그대로다
+
+#### 6-C-2: core 회수 (단독)
+
+- [ ] fulfillment 11 · inventory 6 · sales-order 1 = **18파일**. `wmsTables.outboxEvents` → 공용
+- [ ] **유일하게 재시도 의미론이 바뀌는 조각**이다. 6-C-1 이 백오프를 넣었는지 먼저 확인한다
+- [ ] expand — 새 코드는 `event.outbox_events` 에 쓰고 **옛 디스패처는 그대로 둔다**(옛 테이블을 비워야 하므로)
+
+#### 6-C-3: wallet + channel-adapter 회수
+
+- [ ] 둘 다 작고 서로 무관해 한 PR 로 묶는다. wallet 이 예상 밖으로 커지면 그때 쪼갠다
+- [ ] 6-C-2 와 같은 expand 규칙 — 옛 디스패처 유지
+
+#### 6-C-4: contract — 옛 테이블·디스패처 삭제
+
+- [ ] **6-C-2·3 이 전부 배포되고 옛 테이블이 빈 뒤에만.** outbox 행은 5초 주기로 비는 휘발성 데이터라 드레인이 짧다
+- [ ] 앱별로 쪼개지 않는다 — 한 번에 지우는 게 상태 수가 적다
+
+**행 이관은 없지만 드레인은 있다.** 앱마다 DB 가 달라 테이블을 옮길 일은 없다. 다만 옛 테이블에 남은 미발행 행은 옛 디스패처가 비워야 하므로, 6-C-4 는 그때까지 기다린다.
 
 각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
 
