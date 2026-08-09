@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
 import { ChannelAdapterFactory, ChannelType } from '../adapters/channel-adapter.factory';
-import { ChannelCommand, SyncResult } from '../types';
+import { ChannelCommand, SyncResult, channelAdapterSchema } from '../types';
 import { ChannelsConfig } from '../config/channels.config';
-import { InboxService } from './inbox.service';
 
 /**
  * 채널 명령 Manager
@@ -15,7 +17,7 @@ import { InboxService } from './inbox.service';
  * 특징:
  * - 비즈니스 로직 포함
  * - 검증 로직 포함
- * - DB 접근 없음 (필요시 Repository 추가)
+ * - DB 접근은 아웃박스 적재 한 곳뿐 (Task 6-C-3)
  */
 @Injectable()
 export class ChannelCommandManager {
@@ -23,7 +25,9 @@ export class ChannelCommandManager {
 
   constructor(
     private readonly adapterFactory: ChannelAdapterFactory,
-    private readonly inboxService: InboxService,
+    private readonly db: DbService<typeof channelAdapterSchema>,
+    @InjectPublisher(CHANNEL_ADAPTER_STREAM)
+    private readonly channelAdapterPublisher: PublisherFor<typeof CHANNEL_ADAPTER_STREAM>,
   ) {}
 
   /**
@@ -55,23 +59,34 @@ export class ChannelCommandManager {
 
     const duration = Date.now() - startTime;
 
-    // 3️⃣ Inbox에 이벤트 enqueue
+    // 3️⃣ 공용 아웃박스에 적재 (ADR-0029 §5-1, Task 6-C-3).
+    //
+    // 옛 경로는 `InboxService.enqueue` 였고 `aggregateType` 을 넘기지 않아 컬럼 기본값
+    // `'ChannelAdapter'` 로 떨어졌다 — 그래서 `inbox_events` 에 있으면서도 아웃박스 행이었다.
+    // 그 암묵을 없애고 스트림을 이름으로 지목한다.
+    //
+    // 트랜잭션이 없다: 옛 경로도 없었고(insert 한 문), 이 이벤트는 외부 명령 실행 *뒤에*
+    // 기록되는 관측이라 원자적으로 묶을 도메인 쓰기가 애초에 없다.
     const targetId = this.extractTargetId(command);
 
-    await this.inboxService.enqueue({
-      eventType: 'CommandExecuted',
-      aggregateId: `${channel}-${targetId}`,
-      partitionKey: channel,
-      payload: {
-        channelType: channel,
-        commandType: command.type,
-        targetId,
-        executionResult: result.success ? 'success' : 'failed',
-        processedCount: result.processedCount || 0,
-        failedCount: result.failedCount || 0,
-        executionDurationMs: duration,
+    await this.channelAdapterPublisher.enqueue(
+      {
+        eventType: 'CommandExecuted',
+        aggregateId: `${channel}-${targetId}`,
+        partitionKey: channel,
+        payload: {
+          channelType: channel,
+          commandType: command.type,
+          targetId,
+          executionResult: result.success ? 'success' : 'failed',
+          processedCount: result.processedCount || 0,
+          failedCount: result.failedCount || 0,
+          executionDurationMs: duration,
+        },
+        metadata: { partitionKey: channel },
       },
-    });
+      this.db.db,
+    );
 
     if (result.success) {
       this.logger.log(`✅ [${channel}] 명령 실행 성공: ${command.type} (${duration}ms)`);

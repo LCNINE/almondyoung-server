@@ -14,7 +14,11 @@ import {
   createKafkaConfigFromEnv,
   getPublisherToken,
   EVENTS_CONSUMER_POLICY,
+  OutboxPublisher,
+  StreamPublisher,
+  type EventTransport,
   type EventsConsumerPolicy,
+  type StreamConfig,
 } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
@@ -26,7 +30,6 @@ import { ChannelAdapterController } from './controllers/channel-adapter.controll
 import { HealthController } from './controllers/health.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
-import { NullEventPublisher } from './services/null-event-publisher.service';
 import { DbModule } from '@app/db';
 import {
   CHANNEL_ADAPTER_STREAM,
@@ -97,6 +100,30 @@ import { MedusaOrderProvider } from './services/order-collection/medusa-order.pr
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 
+/**
+ * `KAFKA_BROKERS` 가 없는 로컬 부팅에서 즉시 발행을 버리는 전송.
+ *
+ * `EventTransport` 는 발행 방향 한 메서드뿐이라(ADR-0029 §7) 스텁이 이 한 줄로 끝난다.
+ * 아웃박스 적재는 이 전송을 지나지 않으므로 그대로 동작한다 — 로컬에서 이벤트 흐름을
+ * 확인하려면 `event.outbox_events` 를 보면 된다.
+ */
+const DISCARDING_TRANSPORT: EventTransport = { send: () => Promise.resolve() };
+
+/**
+ * `KAFKA_BROKERS` 없는 부팅에서 publisher DI 를 채울 스트림들.
+ *
+ * `StreamConfig[]` 로 **명시 표기**한다. 이종 스트림 배열을 그냥 `.map` 하면 원소 타입이
+ * 유니온으로 넓어져 `new StreamPublisher(...)` 의 제네릭 추론이 첫 원소에 고정되고 나머지가
+ * 거부된다. `EventsModule.forRoot({ streams })` 도 같은 표기를 받는다.
+ */
+const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
+  CHANNEL_ADAPTER_STREAM,
+  ORDER_STREAM,
+  CORE_ORDER_STREAM,
+  USER_STREAM,
+  PAYMENT_STREAM,
+];
+
 @Module({
   imports: [
     LoggerModule.forRoot(loggerConfig),
@@ -140,6 +167,12 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
             ],
             serviceName: 'channel-adapter',
             kafka: createKafkaConfigFromEnv()!,
+            // 공용 아웃박스를 켠다 (ADR-0029 §5-1, Task 6-C-3). 이것이 `OutboxPublisher`
+            // (적재기)와 `OutboxDispatcher`(발행기)를 등록한다. 이 목록이 이미
+            // CHANNEL_ADAPTER_STREAM · ORDER_STREAM 을 담고 있으므로 디스패처의 publisherMap
+            // 이 회수 대상 두 토픽을 처음부터 안다 — core 가 6-C-2 에서 겪은
+            // `No publisher found for topic` 은 여기서 발생하지 않는다.
+            enableOutbox: true,
             validation: {
               validateOnPublish: true,
               throwOnValidationError: true,
@@ -271,15 +304,44 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
       useValue: { validation: { validateOnConsume: false } } satisfies EventsConsumerPolicy,
     },
 
-    // Kafka 환경변수 없을 때(로컬): NullEventPublisher로 DI 채우기.
-    // 토큰 문자열을 손으로 적지 않는다 — 형식의 소유자는 `publisher-token.ts` 한 곳이며
-    // (ADR-0029 §4), 손으로 적은 사본은 형식이 바뀌어도 조용히 어긋난다. 계약 상수에서
-    // 도출하면 `forRoot({streams})` 목록과 이 목록이 같은 출처를 갖는다.
+    // Kafka 환경변수 없을 때(로컬): publisher DI 를 채운다.
+    //
+    // **`NullEventPublisher` 를 여기서 없앴다 (Task 6-C-3).** 그 클래스는 `publishEvent` /
+    // `publishEvents` 만 가진 오리-타이핑 스텁이었는데, 주입 지점의 타입은
+    // `PublisherFor<typeof S>` 였다 — 문자열 토큰 뒤라 구조 불일치가 컴파일에 잡히지 않는
+    // **DI 거짓말**이다. 회수가 그것을 실증했다: 아웃박스 적재는 `enqueue` 를 부르는데 스텁에
+    // 그 메서드가 없어 로컬에서 `TypeError` 가 났을 것이다.
+    //
+    // no-op 으로 때울 수 없는 이유가 있다 — `OrderPollerOrchestrator` 는 `wms_order_mappings`
+    // insert 와 **같은 트랜잭션**에서 적재한다. 적재가 조용히 사라지면 매핑만 남아 그 주문은
+    // "수집됨" 으로 굳고 **영영 재발행되지 않는다.**
+    //
+    // 그래서 스텁 대신 **진짜 `StreamPublisher`** 를 no-op 전송으로 세운다. 아웃박스 적재는
+    // 실제로 일어나고(검증·envelope 조립 포함) 즉시 발행만 버려진다. 로컬에는 디스패처가
+    // 없으므로 행은 `PENDING` 으로 남는다 — 옛 경로가 행을 넣고 스텁 발행으로 `published`
+    // 처리하던 것보다 정직하다.
     ...(!process.env.KAFKA_BROKERS
-      ? [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, CORE_ORDER_STREAM, USER_STREAM, PAYMENT_STREAM].map((stream) => ({
-          provide: getPublisherToken(stream.topic.topic),
-          useClass: NullEventPublisher,
-        }))
+      ? [
+          // 적재기. `EventsModule.forRoot` 가 없는 분기라 여기서 직접 등록한다.
+          { provide: OutboxPublisher, useClass: OutboxPublisher },
+          // 토큰 문자열을 손으로 적지 않는다 — 형식의 소유자는 `publisher-token.ts` 한 곳이며
+          // (ADR-0029 §4), 손으로 적은 사본은 형식이 바뀌어도 조용히 어긋난다. 계약 상수에서
+          // 도출하면 `forRoot({streams})` 목록과 이 목록이 같은 출처를 갖는다.
+          ...NO_KAFKA_PUBLISHER_STREAMS.map((stream) => ({
+            provide: getPublisherToken(stream.topic.topic),
+            useFactory: (outboxWriter: OutboxPublisher) =>
+              new StreamPublisher(
+                DISCARDING_TRANSPORT,
+                stream,
+                'channel-adapter',
+                { validateOnPublish: true, throwOnValidationError: true },
+                undefined,
+                undefined,
+                outboxWriter,
+              ),
+            inject: [OutboxPublisher],
+          })),
+        ]
       : []),
   ],
 })

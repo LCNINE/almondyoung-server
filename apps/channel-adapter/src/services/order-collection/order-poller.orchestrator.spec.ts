@@ -19,14 +19,14 @@ describe('OrderPollerOrchestrator', () => {
         .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -35,8 +35,8 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(1);
-    expect(inbox.enqueue).toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'OrderCreated',
         aggregateId: '11111111-1111-4111-8111-111111111111',
@@ -58,14 +58,19 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    // 이 케이스만 mock 을 타입 지어 둔다 — 아래에서 `partitionKey` 를 실제로 읽기 때문이다.
+    const outbox = {
+      enqueue: jest
+        .fn<Promise<void>, [{ eventType: string; aggregateId: string; partitionKey?: string }, unknown]>()
+        .mockResolvedValue(undefined),
+    };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -73,8 +78,8 @@ describe('OrderPollerOrchestrator', () => {
 
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(2);
-    expect(inbox.enqueue.mock.calls.map(([event]) => event)).toEqual([
+    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue.mock.calls.map(([event]) => event)).toEqual([
       expect.objectContaining({
         eventType: 'OrderCreated',
         aggregateId: '11111111-1111-4111-8111-111111111111',
@@ -87,6 +92,12 @@ describe('OrderPollerOrchestrator', () => {
         }),
       }),
     ]);
+
+    // 두 적재 모두 파티션 키가 **채널명**이어야 한다 (Task 6-C-3). ORDER_STREAM 에는 파생
+    // 함수가 없어 생략하면 `aggregateId`(주문 UUID)로 떨어지고, 그 순간 채널 단위 순서가
+    // 조용히 사라진다 — 옛 경로는 행의 `partition_key` 컬럼(= 채널명)을 Kafka 키로 썼다.
+    // 이 단언이 없으면 `partitionKey` 를 지워도 스펙이 초록이다.
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.partitionKey)).toEqual(['medusa', 'medusa']);
   });
 
   it('quarantines collected Medusa order modifications instead of emitting OrderModified', async () => {
@@ -106,14 +117,14 @@ describe('OrderPollerOrchestrator', () => {
         }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -123,8 +134,8 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(1);
-    expect(inbox.enqueue).not.toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue).not.toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderModified' }),
       expect.anything(),
     );
@@ -154,14 +165,14 @@ describe('OrderPollerOrchestrator', () => {
         .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], failures: [], lifecycleEvents }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -171,8 +182,8 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(3);
-    expect(inbox.enqueue).toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledTimes(3);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'OrderCancelled',
         aggregateId: '11111111-1111-4111-8111-111111111111',
@@ -183,7 +194,7 @@ describe('OrderPollerOrchestrator', () => {
       }),
       expect.anything(),
     );
-    expect(inbox.enqueue).toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'OrderRefundCreated',
         aggregateId: '11111111-1111-4111-8111-111111111111',
@@ -194,7 +205,7 @@ describe('OrderPollerOrchestrator', () => {
       }),
       expect.anything(),
     );
-    expect(inbox.enqueue).not.toHaveBeenCalledWith(
+    expect(outbox.enqueue).not.toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderModified' }),
       expect.anything(),
     );
@@ -224,14 +235,14 @@ describe('OrderPollerOrchestrator', () => {
         }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -240,8 +251,8 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(2);
-    expect(inbox.enqueue).toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderRefundCreated' }),
       expect.anything(),
     );
@@ -278,14 +289,14 @@ describe('OrderPollerOrchestrator', () => {
         }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -294,7 +305,7 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
     await orchestrator.poll();
 
-    expect(inbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
     expect(failures.recordFailure).toHaveBeenCalledWith(
       'medusa',
       expect.objectContaining({
@@ -319,14 +330,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -334,7 +345,7 @@ describe('OrderPollerOrchestrator', () => {
 
     await orchestrator.poll();
 
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(db.mappings.size).toBe(0);
     expect(failures.recordFailure).not.toHaveBeenCalled();
     // The snapshot is terminal (never collectable), so the watermark advances past it instead
@@ -361,14 +372,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -384,7 +395,7 @@ describe('OrderPollerOrchestrator', () => {
     // Second poll fetches from the rewound watermark (01:10 − 2min), not from null: the
     // terminal snapshot did not freeze the watermark and the scan window keeps moving forward.
     expect(provider.fetchOrders).toHaveBeenLastCalledWith(new Date('2026-05-26T01:08:00.000Z'));
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:10:00.000Z'));
   });
 
@@ -400,14 +411,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -419,7 +430,7 @@ describe('OrderPollerOrchestrator', () => {
     // refund is processed: both emit in order and the watermark advances to the shared
     // timestamp. A missing mapping at lifecycle time is therefore terminal UNLESS the order is
     // quarantined (covered by the next test), in which case the watermark is held instead.
-    expect(inbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual([
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual([
       'OrderCreated',
       'OrderRefundCreated',
     ]);
@@ -462,14 +473,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -481,11 +492,11 @@ describe('OrderPollerOrchestrator', () => {
     // replay path would never reprocess it — the watermark must therefore stay at/below the
     // observation so the next poll re-fetches it once the quarantine is replayed. Critically, the
     // collected 01:05 order does NOT drag the watermark past the unrecorded refund at 01:00.
-    expect(inbox.enqueue).toHaveBeenCalledWith(
+    expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderCreated' }),
       expect.anything(),
     );
-    expect(inbox.enqueue).not.toHaveBeenCalledWith(
+    expect(outbox.enqueue).not.toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'OrderRefundCreated' }),
       expect.anything(),
     );
@@ -514,14 +525,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockRejectedValue(new Error('lifecycle enqueue failed')) };
+    const outbox = { enqueue: jest.fn().mockRejectedValue(new Error('lifecycle enqueue failed')) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -543,14 +554,14 @@ describe('OrderPollerOrchestrator', () => {
       fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockRejectedValue(new Error('enqueue failed')) };
+    const outbox = { enqueue: jest.fn().mockRejectedValue(new Error('enqueue failed')) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -571,14 +582,14 @@ describe('OrderPollerOrchestrator', () => {
       fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
     };
     const syncStatus = makeSyncStatus(new Date('2026-05-26T01:10:00.000Z'));
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -596,14 +607,14 @@ describe('OrderPollerOrchestrator', () => {
       fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -611,7 +622,7 @@ describe('OrderPollerOrchestrator', () => {
 
     await orchestrator.poll();
 
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(hashes.upsert).not.toHaveBeenCalled();
     expect(syncStatus.recordSyncComplete).toHaveBeenCalledWith(
       'medusa',
@@ -633,14 +644,14 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -648,7 +659,7 @@ describe('OrderPollerOrchestrator', () => {
 
     await orchestrator.poll();
 
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(failures.recordFailure).toHaveBeenCalledWith(
       'medusa',
       expect.objectContaining({
@@ -680,7 +691,7 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
     failures.recordFailure.mockRejectedValue(new Error('quarantine failed'));
@@ -688,7 +699,7 @@ describe('OrderPollerOrchestrator', () => {
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -714,7 +725,7 @@ describe('OrderPollerOrchestrator', () => {
       }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
     failures.findById.mockResolvedValue({
@@ -736,7 +747,7 @@ describe('OrderPollerOrchestrator', () => {
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -755,7 +766,7 @@ describe('OrderPollerOrchestrator', () => {
       dedupedUnchanged: 0,
     });
     expect(failures.closeAsTerminalLifecycle).toHaveBeenCalledWith('failure_1', expect.any(String));
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(failures.markReplayed).not.toHaveBeenCalled();
   });
 
@@ -811,7 +822,7 @@ describe('OrderPollerOrchestrator', () => {
         .mockResolvedValueOnce({ orders: [], failures: [], lifecycleEvents: [cancelObservation] }),
     };
     const syncStatus = makeSyncStatus();
-    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
     const failures = makeFailureService();
     // The durable quarantine from poll 1 is still open when poll 2 observes the cancellation.
@@ -820,7 +831,7 @@ describe('OrderPollerOrchestrator', () => {
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
-      inbox as any,
+      outbox as any,
       hashes as any,
       failures as any,
       db as any,
@@ -829,7 +840,7 @@ describe('OrderPollerOrchestrator', () => {
     await orchestrator.poll();
 
     // Poll 1: refund held (no mapping, still quarantined) → not emitted, quarantine not closed.
-    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
     expect(failures.closeAsTerminalLifecycle).not.toHaveBeenCalled();
 
     await orchestrator.poll();

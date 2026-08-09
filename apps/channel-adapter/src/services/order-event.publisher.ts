@@ -1,12 +1,18 @@
 /**
- * Order Event Publisher (Inbox Pattern 적용)
+ * Order Event Publisher (공용 아웃박스, ADR-0029 §5-1 Task 6-C-3)
  *
- * Channel Adapter에서 발생하는 주문 이벤트를 Inbox를 통해 Kafka로 발행합니다.
+ * Channel Adapter에서 발생하는 주문 이벤트를 아웃박스를 통해 Kafka로 발행합니다.
  * WMS OrderEventsConsumer가 이 이벤트를 구독하여 Sales Order를 생성합니다.
+ *
+ * 적재 대상은 `event.outbox_events`(공용)다. 옛 경로는 `inbox_events` 에 `aggregate_type =
+ * 'ChannelAdapter'` 행을 쓰고 앱 자체 `OutboxDispatcherService` 가 그것을 발행했는데, 그
+ * 경로에는 **적재 시점 검증이 없었다** — 계약 위반 payload 가 poison row 로 남아 재시도를
+ * 소진했다. `enqueue` 는 zod 를 먼저 태우므로 위반이 호출자의 도메인 트랜잭션에서 드러난다.
  */
 
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  ORDER_STREAM,
   OrderCreatedPayload,
   OrderCancelledPayload,
   OrderModifiedPayload,
@@ -14,10 +20,10 @@ import {
   OrderItem,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { InternalOrderEvent, UnmappedItem } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { ChannelListingClient, LookupVariantResult } from './clients/channel-listing.client';
-import { InboxService } from './inbox.service';
 import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../types';
 
@@ -59,10 +65,23 @@ export class OrderEventPublisher {
   private readonly logger = new Logger(OrderEventPublisher.name);
 
   constructor(
-    private readonly inboxService: InboxService,
+    private readonly db: DbService<typeof channelAdapterSchema>,
     private readonly channelListingClient: ChannelListingClient,
+    @InjectPublisher(ORDER_STREAM)
+    private readonly ordersPublisher: PublisherFor<typeof ORDER_STREAM>,
   ) {
-    this.logger.log('📤 OrderEventPublisher 초기화 완료 (Inbox Pattern)');
+    this.logger.log('📤 OrderEventPublisher 초기화 완료 (공용 아웃박스)');
+  }
+
+  /**
+   * 아웃박스 적재 대상. 호출자가 트랜잭션을 주면 거기에, 아니면 커넥션에 직접 쓴다.
+   *
+   * 옛 `InboxService.enqueue` 는 tx 가 없을 때 **자기 트랜잭션을 열었다**. insert 한 문이라
+   * 트랜잭션이 더 보장하는 것이 없어 그대로 커넥션에 쓴다 — 공용 `DbTx` 가
+   * `Pick<PostgresJsDatabase, 'insert'>` 인 것도 같은 이유다.
+   */
+  private writer(tx?: DbTx) {
+    return tx ?? this.db.db;
   }
 
   /**
@@ -185,26 +204,29 @@ export class OrderEventPublisher {
       createdAt: orderEvent.createdAt ?? new Date().toISOString(),
     };
 
-    // Inbox에 enqueue (트랜잭션 내에서 호출 가능)
-    // aggregateType은 'ChannelAdapter'로 통일 (동영님 의견: 채널 어댑터 서비스 자체가 aggregateType)
-    // OutboxDispatcherService가 eventType으로 orders.events.v1 또는 channel-adapter.events.v1로 분기
-    await this.inboxService.enqueue(
+    // 공용 아웃박스에 적재 (트랜잭션 내에서 호출 가능).
+    //
+    // `partitionKey` 를 **명시**한다. ORDER_STREAM 에는 파생 함수가 없어 생략하면
+    // `aggregateId`(= externalOrderId) 로 떨어지는데, 옛 디스패처는 행의 `partition_key`
+    // (= 채널명)를 Kafka 키로 썼다. 생략하면 주문마다 파티션이 흩어져 **채널 단위 순서가
+    // 조용히 사라진다.**
+    //
+    // `metadata` 는 `{ orderId, salesChannel, variantId }` 를 싣지 않는다 — 옛 디스패처가
+    // 행의 metadata 컬럼을 읽지 않고 `{ partitionKey }` 만 envelope 에 넣었기 때문이다
+    // (`outbox-dispatcher.service.ts:171`). 이 조각은 회수이지 개선이 아니므로 나가는
+    // envelope 를 그대로 유지한다. 그 세 값은 로그로 남는다.
+    await this.ordersPublisher.enqueue(
       {
         eventType: 'OrderCreated',
         aggregateId: orderEvent.externalOrderId,
-        partitionKey: channel,
         payload,
-        aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
-        metadata: {
-          orderId,
-          salesChannel,
-          variantId: listing.variantId,
-        },
+        partitionKey: channel,
+        metadata: { partitionKey: channel },
       },
-      tx,
+      this.writer(tx),
     );
 
-    this.logger.log(`📤 [OrderCreated] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderCreated] Enqueued to outbox: ${orderEvent.externalOrderId} from ${channel}`, {
       orderId,
       salesChannel,
       variantId: listing.variantId,
@@ -233,23 +255,19 @@ export class OrderEventPublisher {
       refundAmount: orderEvent.priceAmount,
     };
 
-    // Inbox에 enqueue
-    await this.inboxService.enqueue(
+    // 공용 아웃박스에 적재. partitionKey·metadata 근거는 `enqueueOrderCreated` 주석 참조.
+    await this.ordersPublisher.enqueue(
       {
         eventType: 'OrderCancelled',
         aggregateId: orderEvent.externalOrderId,
-        partitionKey: channel,
         payload,
-        aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
-        metadata: {
-          reason,
-          cancelledBy,
-        },
+        partitionKey: channel,
+        metadata: { partitionKey: channel },
       },
-      tx,
+      this.writer(tx),
     );
 
-    this.logger.log(`📤 [OrderCancelled] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderCancelled] Enqueued to outbox: ${orderEvent.externalOrderId} from ${channel}`, {
       reason,
       cancelledBy,
     });
@@ -281,23 +299,19 @@ export class OrderEventPublisher {
       reason: orderEvent.reason,
     };
 
-    // Inbox에 enqueue
-    await this.inboxService.enqueue(
+    // 공용 아웃박스에 적재. partitionKey·metadata 근거는 `enqueueOrderCreated` 주석 참조.
+    await this.ordersPublisher.enqueue(
       {
         eventType: 'OrderModified',
         aggregateId: orderEvent.externalOrderId,
-        partitionKey: channel,
         payload,
-        aggregateType: 'ChannelAdapter', // 채널 어댑터 서비스에서 발행한 이벤트
-        metadata: {
-          modifiedBy,
-          hasAddressChange: !!changes.shippingAddress,
-        },
+        partitionKey: channel,
+        metadata: { partitionKey: channel },
       },
-      tx,
+      this.writer(tx),
     );
 
-    this.logger.log(`📤 [OrderModified] Enqueued to Inbox: ${orderEvent.externalOrderId} from ${channel}`, {
+    this.logger.log(`📤 [OrderModified] Enqueued to outbox: ${orderEvent.externalOrderId} from ${channel}`, {
       modifiedBy,
       hasAddressChange: !!changes.shippingAddress,
     });
