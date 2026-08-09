@@ -33,15 +33,25 @@
  *
  * ## 사용법
  *
- *   npx tsx scripts/events/outbox-marker-backfill.ts --app core            # dry-run
- *   npx tsx scripts/events/outbox-marker-backfill.ts --app core --execute
- *   npx tsx scripts/events/outbox-marker-backfill.ts --app wallet --execute
+ * 접속은 `db:migrate` 등과 **같은 방식**이다 — `sst shell` 안에서 SST Resource 로 자격증명을
+ * 얻고 앱별 논리 DB 이름을 붙인다. `sst shell` 밖에서 부르면 스스로 재진입하므로 그냥 부르면
+ * 된다(`--stage` 필수). 터널이 필요하면 다른 터미널에서
+ * `./scripts/sst-tunnel.sh deployments/lcnine/services live` 를 먼저 띄운다.
  *
- * `DATABASE_URL` 은 **그 앱의 논리 DB** 를 가리켜야 한다. core 와 wallet 은 서로 다른 DB 다.
- * channel-adapter 는 대상이 아니다 — 옛 아웃박스를 읽는 코드가 0곳이었다(6-C-3 실측).
+ *   npm run events:marker-backfill -- --app wallet --stage live --deployment lcnine-services
+ *   npm run events:marker-backfill -- --app wallet --stage live --deployment lcnine-services --execute
+ *
+ * **`--execute` 없이는 dry-run** 이다. `missing` 이 이번에 옮겨질 행 수다.
+ *
+ * 로컬/스크래치 DB 를 직접 겨냥하려면 `--url` 이나 `DATABASE_URL` 을 쓴다 — 그 경우
+ * `sst shell` 재진입을 건너뛴다(검증 하네스가 이 경로를 쓴다).
+ *
+ * core 와 wallet 은 서로 다른 논리 DB 다. channel-adapter 는 대상이 아니다 — 옛 아웃박스를
+ * 읽는 코드가 0곳이었다(6-C-3 실측).
  */
 
 import postgres, { type Sql } from 'postgres';
+import { ensureInsideSstShell } from '../seeding/lib/sst-shell-relaunch';
 
 const FULFILLMENT_TOPIC = 'fulfillments.events.v1';
 const FULFILLMENT_SHIPPED = 'FulfillmentShipped';
@@ -275,6 +285,9 @@ async function backfillWallet(sql: Sql, execute: boolean): Promise<MarkerReport[
   return reports;
 }
 
+/** `--app` → 논리 DB 이름. `scripts/seeding/lib/service-registry.ts` 와 같은 매핑이다. */
+const APP_DATABASE: Record<AppName, string> = { core: 'core', wallet: 'wallet' };
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const app = args.get('app');
@@ -283,8 +296,20 @@ async function main(): Promise<void> {
   }
   const execute = args.get('execute') === true;
 
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error(`DATABASE_URL is required (the ${app} logical database).`);
+  // 명시 URL(로컬·스크래치)이 있으면 그대로 쓰고 sst 재진입을 건너뛴다. 없으면 `db:migrate`
+  // 와 같은 경로로 간다 — `sst shell` 안에서 Resource 자격증명 + 앱별 논리 DB 이름.
+  const explicitUrl = typeof args.get('url') === 'string' ? (args.get('url') as string) : process.env.DATABASE_URL;
+
+  let databaseUrl: string;
+  if (explicitUrl) {
+    databaseUrl = explicitUrl;
+  } else {
+    const stage = typeof args.get('stage') === 'string' ? (args.get('stage') as string) : undefined;
+    const deployment = typeof args.get('deployment') === 'string' ? (args.get('deployment') as string) : undefined;
+    await ensureInsideSstShell({ stage, deployment });
+    const { buildDatabaseUrl } = await import('../seeding/lib/db-connection');
+    databaseUrl = buildDatabaseUrl(APP_DATABASE[app]);
+  }
 
   const sql = postgres(databaseUrl, { max: 1, prepare: false });
   try {
