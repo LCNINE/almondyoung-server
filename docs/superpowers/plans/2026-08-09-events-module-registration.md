@@ -357,6 +357,8 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **🔴 순서를 뒤집었다 — 나머지 3개 앱의 게이트는 관측성이 아니라 Task 6 이다.** 세 앱을 막는 UNVERIFIED 는 전부 같은 원인의 **4개 이벤트**다: `MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`. 넷 다 `OutboxPublisher.saveEvent` 로 적재돼 `publishRawEnvelope` 로 나간다. Task 6 의 "enqueue 시점 zod 검증"이 정확히 이 구멍이며, 들어가는 순간 넷 다 기계적으로 PROVEN 이 된다. 5-C 를 먼저 하면 payload 를 추측해야 하고, Task 6 을 먼저 하면 추측할 것이 남지 않는다. 게다가 Task 6 은 실패를 **발행자의 도메인 트랜잭션**에서 드러내므로 소비자 DLQ 에서 사후 발견하는 것보다 진단 위치가 낫다. **ADR-0029 §8 과 Follow-up 6 을 먼저 고쳤다.**
 
+**남은 5-C 대상은 3개가 아니라 4개다 (2026-08-09 게이트 리포트 실측).** `membership` 도 UNVERIFIED 5건으로 같은 처지인데 5-C 논의에서 빠져 있었다 — 6-A 후에 함께 판정한다. 반대로 **`notification`(UNVERIFIED 0 · PROVEN 21) 과 `wallet`(PROVEN 4) 은 이미 `켜도 안전`** 이다. 두 앱의 `validateOnConsume: false` 는 이 워크스트림 이전부터의 **의도**(notification 은 "HTTP 요청과 충돌 방지" 주석)이므로 그대로 두되, **Task 7 에서 정책을 `forApp` 으로 옮길 때 그 `false` 를 반드시 보존해야 한다** — 안 그러면 의도치 않게 켜진다.
+
 - **core 를 켠 근거:** 4개 이벤트가 전부 `orders.events.v1` 이고 발행자 셋(channel-adapter order publisher 2벌 + 자체 outbox dispatcher)이 모두 `publishEvent` 를 지난다. `OrderRefundCreated` 는 발행자가 아예 없다. 우회 2곳 중 어느 것도 이 토픽에 닿지 않는다. core 는 **DLQ 가 관측되는 유일한 앱**이라(`dlq.metrics.ts:10`) 증명이 틀렸을 때 알아차릴 수 있는 유일한 앱이기도 하다.
 - **분석을 상시 불변식으로 바꿨다.** `--gate` 는 *검증을 켜 둔 앱*에 UNVERIFIED 가 생기면 exit 1 한다 — core 에 나중에 outbox 발행 이벤트 핸들러를 추가하면 CI 가 막는다. 게이트가 실제로 무는 것을 확인했다(search 를 일부러 `true` 로 바꿔 exit 1 재현 후 원복). 게이트는 자기 가정도 감시한다: `publishRawEnvelope` 호출 지점을 AST 로 세어 손으로 유지하는 우회 목록과 어긋나면 실패하며, **첫 실행에서 실제로 걸렸다** — grep 판본이 내가 방금 쓴 근거 주석 속 함수명을 세 번째 "호출자"로 집계했다. 그래서 AST 로 바꿨다.
 - **켜는 비용이 낮다는 것도 실행으로 고정했다.** `SchemaValidationError` 는 `nonRetryableErrors` 에 강제 편입되므로(`event-retry.interceptor.ts:91`) 위반 메시지는 백오프 없이 즉시 DLQ 로 가고 offset 이 전진한다 — 재시도 폭풍으로 파티션이 막히지 않는다. `libs/events/src/transport/consume-validation.spec.ts` 가 이것과 멱등성을 함께 고정하며, 재시도 억제는 **대조군**(스키마와 무관한 에러는 같은 `@RetryPolicy` 로 4회 실행)과 나란히 두었다 — 대조군이 없으면 `maxRetries` 를 0으로 바꿔도 초록이라 아무것도 증명하지 못한다. 검증을 끄는 변이를 넣어 6개 중 3개가 실패하는 것도 확인했다.
@@ -383,16 +385,37 @@ Task 6  outbox enqueue 시점 zod 검증            ← 여기가 나머지를 �
 
 > ⚠️ **이 태스크가 5-C 의 나머지 3개 앱을 막고 있다** (2026-08-09, ADR-0029 Follow-up 6). analytics·search·channel-adapter 에서 검증을 못 켜는 원인은 관측성이 아니라 `saveEvent`→`publishRawEnvelope` 의 zod 우회다. 아래 "enqueue 시점 zod 검증"이 들어가면 막고 있던 4개 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`)가 기계적으로 PROVEN 이 된다. **완료 후 `npm run audit:consume-validation` 이 그 세 앱을 `켜도 안전` 으로 바꾸는지 확인하고, 그 시점에 5-C 를 마저 끝낸다.**
 
-- [ ] `PublisherFor<S>` 에 `publish(eventName, {...})` 와 `enqueue(eventName, {...}, tx)` 를 함께 둔다
-- [ ] **`enqueue` 시점에 zod 검증** — 잘못된 payload 가 poison row 가 되는 대신 도메인 트랜잭션을 실패시킨다
-- [ ] `publishRawEnvelope` 의 zod 우회 제거
-- [ ] 공용 outbox 스키마에 `idempotencyKey` · `partitionKey` 추가 (core 판본과 기능 동등하게)
-- [ ] 앱 자체 outbox 판본을 하나씩 회수 — core(Task 0 이후 1벌) · wallet · channel-adapter
-- [ ] Task 2 하네스로 "잘못된 payload → enqueue 실패" 를 증명하는 스펙
-- [ ] 마이그레이션이 필요하면 **expand phase 이므로 `migrate → deploy` 순서** (CLAUDE.md 의 phase 별 순서 주의)
-- [ ] `npm run type-check` 초록 · 커밋 · 푸시
+**Task 5 완료 후 실측(2026-08-09)이 이 태스크를 세 조각으로 갈랐다.** 원안은 한 PR 을 가정했으나 두 사실이 그걸 막는다:
 
-**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지난다.
+- `@InjectStreamPublisher` 는 플랜이 적은 21곳이 아니라 **26곳**이다 (core 7 · user-service 7 · libs/events 5 · channel-adapter 3 · membership 2 · ugc-service 2). **`user-service`·`ugc-service` 는 이 워크스트림이 한 번도 건드리지 않은 앱**이다 — Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
+- outbox 5벌은 **서로 다른 테이블**에 쓴다 (`outbox_events` / `wmsTables.outboxEvents` / wallet 자체 스키마). 회수는 리팩터가 아니라 **앱 간 데이터 마이그레이션**이다.
+
+그리고 **5-C 를 막고 있는 것은 6-A 하나뿐**이다. 6-B·6-C 를 기다릴 이유가 없다.
+
+### Task 6-A: enqueue 시점 zod 검증 (5-C 를 푸는 최소 변경)
+
+- [ ] `PublisherFor<S>` 에 `enqueue(eventName, {...}, tx)` 를 둔다 — `publish` 와 같은 타입 도출, 같은 검증. 다른 건 배달 방식뿐
+- [ ] **`enqueue` 시점에 zod 검증** — 잘못된 payload 가 poison row 가 되는 대신 도메인 트랜잭션을 실패시킨다
+- [ ] `publishRawEnvelope` 의 zod 우회 제거. 호출자는 정확히 **2곳** (2026-08-09 실측): `libs/events/src/outbox/outbox-dispatcher.service.ts:121` · `apps/wallet/src/messaging/outbox-dispatcher.service.ts:171`
+- [ ] Task 2 하네스로 "잘못된 payload → enqueue 실패" 를 증명하는 스펙. **대조군 필수** — 검증을 끄는 변이로 실패하는지 확인하지 않으면 초록불이 무엇을 뜻하는지 알 수 없다
+- [ ] `npm run audit:consume-validation` 이 analytics·search·channel-adapter 를 `켜기 전 사람 확인 필요` → `켜도 안전` 으로 바꾸는지 확인. **안 바뀌면 6-A 가 목적을 달성하지 못한 것이다**
+
+### Task 6-B: `@InjectStreamPublisher` → `@InjectPublisher` (26곳)
+
+- [ ] 5-A 가 "발행 표면이라 PR 경계가 깔끔하다"는 이유로 미뤄둔 것. 동작 중립
+- [ ] `user-service`(7) · `ugc-service`(2) 는 소비 이주를 하지 않은 앱이다 — `startConsumer` 를 부르지 않으므로 **발행 표면만** 바꾼다
+
+### Task 6-C: outbox 5벌 회수 (데이터 마이그레이션 성격)
+
+- [ ] **선행: Task 0** — core 의 `outbox.service.ts` 2벌(fulfillment · inventory/shared, import 경로만 다름)을 먼저 합친다. 안 하면 같은 회수를 두 번 한다
+- [ ] 공용 outbox 스키마에 `idempotencyKey` · `partitionKey` 추가 (core 판본과 기능 동등하게) — **이게 5벌이 생긴 원인이다.** 공용이 부족해서 각자 만든 것이지 우회한 게 아니다
+- [ ] 앱 자체 판본을 하나씩 회수 — core · wallet · channel-adapter
+- [ ] **마이그레이션은 expand phase 이므로 `migrate → deploy` 순서** (CLAUDE.md 의 phase 별 순서 주의 — contract phase 와 반대다)
+- [ ] 테이블이 다르므로 **기존 미발행 행의 이관 전략을 먼저 정한다** (dual-write 후 드레인 / 옛 dispatcher 를 큐가 빌 때까지 유지 / 그 외)
+
+각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
+
+**완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다.
 
 ---
 
