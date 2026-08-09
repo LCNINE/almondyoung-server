@@ -215,38 +215,73 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 
 ---
 
-## Task 5: 앱별 이주 (7 PR)
+## Task 5: 앱별 이주 — 스위치 3개로 분해한다
 
-**앱 하나 = PR 하나 = 세션 하나.** 순서는 위험도 역순 — 작은 앱부터 배워서 큰 앱으로 간다.
+**앱 하나를 이주시키면 독립적인 스위치 3개가 동시에 켜진다.** 위험 프로파일이 완전히 다르므로 한 PR 에 묶지 않는다. 묶으면 C 때문에 롤백할 때 멀쩡한 A 까지 되돌아가고, 각 PR 의 blast radius 가 불분명해진다.
 
-권장 순서와 규모 (핸들러 / 발행 / outbox):
+| 스위치 | 무엇이 바뀌나 | 위험 |
+|---|---|---|
+| **A. 데코레이터** | 없음 — Task 4 가 런타임 동등성을 실행 증거로 고정 | 0 (단, 핸들러 87개 수작업 함정) |
+| **B. 배선** (`startConsumer`) | 재시도·DLQ·chain-context 가 **처음으로** 붙는다 | 낮음 — 오히려 이득 |
+| **C. 검증 정책** (`validateOnConsume`) | 스키마 검증이 **처음으로** 켜진다 | **여기가 진짜 게이트** |
 
-- [ ] 5a. `search` (3 / — / —)
-- [ ] 5b. `wallet` (4 / — / —)
-- [ ] 5c. `core` (4 / 8 / 25)
-- [ ] 5d. `analytics` (11 / — / —)
-- [ ] 5e. `membership` (11 / 4 / 1)
-- [ ] 5f. `notification` (22 / — / 1)
-- [ ] 5g. `channel-adapter` (34 / 8 / 10) — **마지막.** 유일하게 `forConsumerModule` 을 호출하지 않는 앱이라 이주 시 처음으로 소비 측 zod 검증이 켜진다
+### 앱별로 C 가 무엇을 바꾸는가 (실측)
 
-각 앱에서:
+| 앱 | 현재 정책 | C 가 바꾸는 것 | DLQ 관측 |
+|---|---|---|---|
+| `core` (4 핸들러) | 기본 `true` | 검증 ON | ✅ Alloy 스크레이프 |
+| `analytics` (11) | 기본 `true` | 검증 ON | ❌ |
+| `search` (3) | 기본 `true` | 검증 ON | ❌ |
+| **`channel-adapter` (34)** | **정책 없음 → 기본 `true`** | 검증 ON, 외부 유래 payload | ❌ |
+| `notification` (22) | 명시 `false` | **없음 (no-op)** | ❌ |
+| `membership` (11) | 명시 `false` | **없음 (no-op)** | ❌ |
+| `wallet` (4) | 명시 `false` | **없음 (no-op)** | ❌ |
 
-- [ ] `main.ts` 를 `startConsumer(app, { groupId })` 로 교체 (streams 인자 제거)
-- [ ] `@OnEvent` → `@On`, `@InjectStreamPublisher` → `@InjectPublisher` 로 이주. payload/envelope 주석도 `EventPayloadOf` / `EnvelopeOf` 로 — **이벤트명을 사람이 맞춰야 한다** (Task 4 경고 참조)
+**⚠️ channel-adapter 함정 — 누락으로 터진다.** `forConsumerModule` 을 호출하지 않으므로 `EVENTS_CONSUMER_POLICY` 프로바이더가 없고, `consumer-interceptors.ts:59` 의 `optionalGet` 이 `undefined` 를 반환해 `DEFAULT_SCHEMA_VALIDATION_OPTIONS` 의 `validateOnConsume: true` 가 먹는다. **아무 조치 없이 이주하면 B 와 C 가 같은 PR 에서 동시에 켜진다** — 선택이 아니라 누락으로. 이주 시 `validateOnConsume: false` 를 **명시**할 것.
+
+**관측성 제약.** `dlq/dlq.metrics.ts:10` — Alloy 는 Core `/metrics` 만 스크레이프한다. **core 외 6개 앱은 DLQ 카운터가 돌아도 아무도 보지 않는다.** C 를 core 밖에서 먼저 켜는 것은 눈 감고 켜는 것이다.
+
+---
+
+### Task 5-A: 데코레이터 일괄 이주 (위험 0)
+
+- [ ] **AST 게이트 스크립트를 먼저 만든다.** `@On(S,'A')` + `@EventPayload() p: EventPayloadOf<typeof S,'B'>` 는 컴파일된다 — 파라미터 데코레이터 순서가 4가지(envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10)이고 `strictFunctionTypes` 도 꺼져 있어 타입으로 막을 수 없다. 핸들러 87개를 사람 눈으로 맞추면 실수가 난다. 핸들러마다 `@On` 의 이벤트 키와 `EventPayloadOf<…, K>` 의 K 일치를 단언하고 불일치면 exit 1. **선례: `scripts/security/route-authz-audit.js`**
+- [ ] 게이트를 켠 채 7개 앱의 `@OnEvent` → `@On`, `@InjectStreamPublisher` → `@InjectPublisher`, payload/envelope 타입을 `EventPayloadOf` / `EnvelopeOf` 로 이주
+- [ ] `npm run type-check` 기준선(164) · 10개 앱 `nest build` 초록 · AST 게이트 exit 0
+- [ ] 스크립트는 이주 종료 후 버리거나 CI 게이트로 남긴다 (착수 시 결정)
+
+`main.ts` 는 건드리지 않는다. Task 4 가 두 표면 혼재를 실행으로 검증했으므로 앱 단위·파일 단위로 쪼개도 안전하다.
+
+### Task 5-B: 배선 켜기 (`startConsumer`) — 앱별
+
+- [ ] **선행 확인 1건.** 지금 핸들러가 throw 하면 실제로 어떻게 되는지(재전달 루프인지 Nest 가 삼키는지)를 Task 2 하네스로 재현해 확정한다. B 의 before/after 를 말할 수 있어야 한다
+- [ ] 각 앱: `main.ts` 를 `startConsumer(app, { groupId })` 로 교체 (streams 인자 제거)
+- [ ] **검증이 기본 ON 으로 넘어가는 앱은 이 PR 에서 `validateOnConsume: false` 를 명시**해 B 와 C 를 분리한다 (core · analytics · search · **channel-adapter**)
+- [ ] 그 앱 핸들러의 idempotency 확인 — 재시도가 처음으로 실재하게 된다
 - [ ] `nest build <app>` · `npm run type-check` 초록
-- [ ] 커밋 · 푸시 · **배포 후 다음 앱으로**
 
-**⚠️ 이주는 동작 중립이 아니다 — 7개 앱 전부에 해당 (Task 3 발견, ADR-0029 §8).**
+B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 가깝다.** `EventRetryInterceptor` 의 의미론은 "최종 실패 → DLQ 전송 후 에러 삼킴 → offset commit" 인데 지금은 그게 안 붙어 있어 독약 메시지에 탈출구가 없다.
 
-원래 이 경고는 5g(channel-adapter) 에만 붙어 있었다. Task 3 이 밝혀낸 바에 따르면 **7개 앱 모두** 지금 소비 측 스키마 검증·재시도·DLQ 가 적용되지 않고 있다 — `app.connectMicroservice(opts)` 가 빈 `ApplicationConfig` 를 만들기 때문이다. `startConsumer` 로 이주하는 순간 그 앱에서 이 셋이 **처음으로 켜진다.**
+### Task 5-C: 검증 켜기 — 앱별, 게이트
 
-따라서 각 앱 이주 PR 은 다음을 포함해야 한다:
+- [ ] notification · membership · wallet 은 **해당 없음** — 명시 `false` 가 정상 상태다. 5-A + 5-B 로 종결
+- [ ] 나머지 4개 앱: 인바운드 payload 가 실제로 zod 스키마를 만족하는지 **먼저** 확인 (스테이징 샘플링 또는 5-B 상태에서 로그 관찰)
+- [ ] core 를 먼저 켜고 DLQ 대시보드로 관찰한다 — **유일하게 관측 가능한 앱**
+- [ ] core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지, 로그 기반으로 갈지 결정한다
+- [ ] `validateOnConsume` 명시를 걷어내거나 `true` 로 전환
 
-- [ ] 그 앱의 `validateOnConsume` 선언 확인. `false` 를 명시한 앱(notification·membership·wallet)은 검증이 계속 꺼진 채 이주하므로 위험이 낮다. 명시하지 않은 앱(core·analytics·search = 기본값 `true`)과 `forConsumerModule` 자체가 없는 앱(channel-adapter)은 **이주가 곧 검증 활성화**다.
-- [ ] 검증이 새로 켜지는 앱은 인바운드 payload 가 실제로 zod 스키마를 만족하는지 먼저 확인한다. 확인 없이 이주하면 **이주 자체가 DLQ 폭탄이 된다.** 확인 방법은 착수 시 결정 — 스테이징 트래픽 샘플링 또는 `validateOnConsume: false` 로 먼저 붙이고 로그만 관찰.
-- [ ] 재시도·DLQ 가 새로 켜지는 것은 **전 앱 공통**이다. 지금까지 핸들러 에러는 아무 분류 없이 Nest 기본 경로로 갔다. 이주 후에는 `@RetryPolicy` 분류 → backoff 재시도 → DLQ 로 흐른다. 그 앱의 핸들러가 idempotent 한지 확인한다 (재시도가 처음으로 실재하게 된다).
+### 권장 순서
 
-**완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이다.
+```
+5-A   데코레이터 일괄 (7앱)                    위험 0 · AST 게이트
+5-B   notification · membership · wallet       C 가 no-op → 여기서 종결
+5-B   core  →  5-C core                        관측 가능한 유일한 앱. 여기서 C 를 배운다
+5-B+C search → analytics                       작다. core 가 패턴을 증명한 뒤
+5-B   channel-adapter (validateOnConsume:false 명시)
+5-C   channel-adapter                          payload 샘플링 후, 마지막
+```
+
+**완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이며, `@OnEvent` 호출이 0건이다. `start-consumer.spec.ts` 의 "옛 배선" describe 를 삭제한다 (그게 초록이라는 사실이 라이브 결함의 증거였다).
 
 ---
 
