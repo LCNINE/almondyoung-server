@@ -168,7 +168,10 @@ export class OutboxDispatcherService {
       payload: event.payload,
     };
 
-    await this.publisher.publishRawEnvelope(envelope, event.partitionKey);
+    // 검증을 탄다 (ADR-0029 §5). wallet 은 아웃박스 행을 테이블에 직접 insert 하므로
+    // `StreamPublisher.enqueue` 의 적재 시점 검증을 받지 않는다 — 그 앱에서 이 줄이 유일한
+    // zod 게이트다. 스키마 위반은 발행되지 않고 `markFailure` 로 백오프 후 DEAD_LETTER 로 남는다.
+    await this.publisher.publishStoredEnvelope(envelope, event.partitionKey);
 
     this.logger.debug(
       `Outbox dispatched to Kafka: id=${event.id}, eventType=${event.eventType}, partitionKey=${event.partitionKey}`,

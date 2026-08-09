@@ -1,11 +1,4 @@
-jest.mock(
-  '@packages/event-contracts/streams/product.stream',
-  () => ({
-    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' },
-  }),
-  { virtual: true },
-);
-
+import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import { ProductCategoriesService } from './categories.service';
 
 describe('ProductCategoriesService Medusa projection outbox events', () => {
@@ -44,8 +37,8 @@ describe('ProductCategoriesService Medusa projection outbox events', () => {
     const db = {
       run: jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>, t?: typeof tx) => callback(t ?? tx)),
     };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+    const productPublisher = {
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
 
     const projectionSnapshotAssembler = {
@@ -55,22 +48,20 @@ describe('ProductCategoriesService Medusa projection outbox events', () => {
     const service = new (ProductCategoriesService as any)(
       db,
       projectionSnapshotAssembler,
-      outboxPublisher,
+      productPublisher,
     ) as ProductCategoriesService;
 
-    return { service, tx, outboxPublisher, projectionSnapshotAssembler };
+    return { service, tx, productPublisher, projectionSnapshotAssembler };
   }
 
   it('enqueues CategoryChanged through the transactional outbox using the category transaction', async () => {
-    const { service, tx, outboxPublisher } = makeService();
+    const { service, tx, productPublisher } = makeService();
 
     await service.updateCategory('cat-1', { name: 'Updated Lip' } as any);
 
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        topic: 'products.events.v1',
         eventType: 'CategoryChanged',
-        aggregateType: 'Product',
         aggregateId: 'cat-1',
         payload: expect.objectContaining({
           categoryId: 'cat-1',
@@ -114,7 +105,7 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
     const db = {
       run: jest.fn(async (callback: (trx: unknown) => Promise<unknown>, t?: unknown) => callback(t ?? tx)),
     };
-    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const projectionSnapshotAssembler = {
       assembleActiveVersionSnapshot: jest.fn().mockResolvedValue({
         snapshot: { name: '아몬드 립' },
@@ -126,14 +117,14 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
     const service = new (ProductCategoriesService as any)(
       db,
       projectionSnapshotAssembler,
-      outboxPublisher,
+      productPublisher,
     ) as ProductCategoriesService;
 
-    return { service, outboxPublisher, projectionSnapshotAssembler };
+    return { service, productPublisher, projectionSnapshotAssembler };
   }
 
-  const productEvents = (outboxPublisher: { saveEvent: jest.Mock }) =>
-    outboxPublisher.saveEvent.mock.calls.filter(
+  const productEvents = (productPublisher: { enqueue: jest.Mock }) =>
+    productPublisher.enqueue.mock.calls.filter(
       ([params]) => params.eventType === 'ProductMasterActiveVersionChanged',
     );
 
@@ -143,11 +134,11 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       [{ versionId: 'v1', masterId: 'm1', version: 1 }], // 활성 버전
       [], // 기존 연결 없음
     ]);
-    const { service, outboxPublisher } = makeService(tx);
+    const { service, productPublisher } = makeService(tx);
 
     await service.addProductsToCategory(['v1'], 'cat-2');
 
-    const events = productEvents(outboxPublisher);
+    const events = productEvents(productPublisher);
     expect(events).toHaveLength(1);
     expect(events[0][0]).toEqual(
       expect.objectContaining({
@@ -171,11 +162,11 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       [{ versionId: 'v1', masterId: 'm1', version: 1 }],
       [{ masterId: 'm1', versionId: 'v1', categoryId: 'cat-2' }], // 이미 연결됨
     ]);
-    const { service, outboxPublisher } = makeService(tx);
+    const { service, productPublisher } = makeService(tx);
 
     await service.addProductsToCategory(['v1'], 'cat-2');
 
-    expect(productEvents(outboxPublisher)).toHaveLength(0);
+    expect(productEvents(productPublisher)).toHaveLength(0);
   });
 
   it('moveProductsToCategory: 이동한 활성 버전을 재발행한다', async () => {
@@ -183,11 +174,11 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       [{ id: 'cat-2' }],
       [{ versionId: 'v1', masterId: 'm1', version: 1 }],
     ]);
-    const { service, outboxPublisher } = makeService(tx);
+    const { service, productPublisher } = makeService(tx);
 
     await service.moveProductsToCategory(['v1'], 'cat-2');
 
-    const events = productEvents(outboxPublisher);
+    const events = productEvents(productPublisher);
     expect(events).toHaveLength(1);
     expect(events[0][0].payload).toEqual(expect.objectContaining({ masterId: 'm1', versionId: 'v1' }));
   });
@@ -199,14 +190,14 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       [{ masterId: 'm1', versionId: 'v1', categoryId: 'cat-1' }], // 상품 연결
       [{ masterId: 'm1', versionId: 'v1' }], // 그중 활성 버전
     ]);
-    const { service, outboxPublisher } = makeService(tx);
+    const { service, productPublisher } = makeService(tx);
 
     await service.deleteCategory('cat-1');
 
     expect(
-      outboxPublisher.saveEvent.mock.calls.filter(([params]) => params.eventType === 'CategoryChanged'),
+      productPublisher.enqueue.mock.calls.filter(([params]) => params.eventType === 'CategoryChanged'),
     ).toHaveLength(1);
-    const events = productEvents(outboxPublisher);
+    const events = productEvents(productPublisher);
     expect(events).toHaveLength(1);
     expect(events[0][0].aggregateId).toBe('m1');
   });
@@ -220,14 +211,14 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       ],
       [],
     ]);
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService(tx);
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService(tx);
     projectionSnapshotAssembler.assembleActiveVersionSnapshot
       .mockRejectedValueOnce(new Error('활성 variant 없음'))
       .mockResolvedValueOnce({ snapshot: { name: 'ok' }, categoryIds: ['cat-2'], primaryCategoryId: null });
 
     await expect(service.addProductsToCategory(['v1', 'v2'], 'cat-2')).resolves.toBeUndefined();
 
-    const events = productEvents(outboxPublisher);
+    const events = productEvents(productPublisher);
     expect(events).toHaveLength(1);
     expect(events[0][0].aggregateId).toBe('m2');
   });
@@ -267,13 +258,13 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
     const db = {
       run: jest.fn(async (callback: (trx: unknown) => Promise<unknown>, t?: unknown) => callback(t ?? tx)),
     };
-    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
       { assembleActiveVersionSnapshot: jest.fn() },
-      outboxPublisher,
+      productPublisher,
     ) as ProductCategoriesService;
-    return { service, outboxPublisher, setSpy };
+    return { service, productPublisher, setSpy };
   }
 
   it('기존 display_settings 를 보존한 채 멤버십 전용 플래그만 병합한다', async () => {
@@ -289,11 +280,11 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
   });
 
   it('플래그가 CategoryChanged 스냅샷으로 전달된다', async () => {
-    const { service, outboxPublisher } = makeService({ showOnMainCategory: true });
+    const { service, productPublisher } = makeService({ showOnMainCategory: true });
 
     await service.updateCategory('cat-1', { isVisibleToMembersOnly: true } as any);
 
-    const [params] = outboxPublisher.saveEvent.mock.calls.find(
+    const [params] = productPublisher.enqueue.mock.calls.find(
       ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
     );
     expect(params.payload.category.displaySettings).toEqual(
@@ -348,13 +339,13 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
     };
     queue.push(rows.descendants ?? [], rows.ancestors ?? []);
     const db = { run: jest.fn(async (cb: (t: unknown) => Promise<unknown>, t?: unknown) => cb(t ?? tx)) };
-    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
       { assembleActiveVersionSnapshot: jest.fn() },
-      outboxPublisher,
+      productPublisher,
     ) as ProductCategoriesService;
-    return { service, outboxPublisher };
+    return { service, productPublisher };
   }
 
   it('멤버십 전용 변경 시 자손 카테고리 이벤트도 발행한다', async () => {
@@ -376,11 +367,11 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       createdAt: new Date('2026-07-27T00:00:00.000Z'),
       updatedAt: new Date('2026-07-27T00:00:00.000Z'),
     };
-    const { service, outboxPublisher } = makeService({ descendants: [descendant] });
+    const { service, productPublisher } = makeService({ descendants: [descendant] });
 
     await service.updateCategory('cat-2', { isVisibleToMembersOnly: true } as any);
 
-    const ids = outboxPublisher.saveEvent.mock.calls
+    const ids = productPublisher.enqueue.mock.calls
       .filter(([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged')
       .map(([p]: [{ aggregateId: string }]) => p.aggregateId);
     expect(ids).toContain('cat-2');
@@ -418,18 +409,83 @@ describe('ProductCategoriesService 레거시 path 대응', () => {
       insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
     };
     const db = { run: jest.fn(async (cb: (t: unknown) => Promise<unknown>, t?: unknown) => cb(t ?? tx)) };
-    const outboxPublisher = { saveEvent: jest.fn().mockResolvedValue(undefined) };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new (ProductCategoriesService as any)(
       db,
       { assembleActiveVersionSnapshot: jest.fn() },
-      outboxPublisher,
+      productPublisher,
     ) as ProductCategoriesService;
 
     await expect(service.updateCategory(legacy.id, { name: '브랜드' } as any)).resolves.toBeDefined();
 
-    const event = outboxPublisher.saveEvent.mock.calls.find(
+    const event = productPublisher.enqueue.mock.calls.find(
       ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
     );
     expect(event[0].payload.ancestors).toEqual([]);
+  });
+});
+
+
+/**
+ * ADR-0029 §5 이후 `CategoryChanged` 는 **적재 시점에 zod 파싱을 탄다.** 그 전까지 이 스키마는
+ * 런타임에서 한 번도 실행된 적이 없었다 — 이 이벤트의 발행자는 아웃박스뿐이었고 아웃박스에는
+ * 검증이 없었기 때문이다.
+ *
+ * 손실 여부를 함께 보는 이유가 이 이벤트에서 특히 크다. zod object 는 미선언 키를 **조용히**
+ * 떼어내는데, `ancestors` 가 정확히 그런 키였다(payload 인터페이스에는 있고 스키마에는 없었다).
+ * channel-adapter 의 Medusa 카테고리 동기화가 그 배열로 부모를 먼저 보장하므로
+ * (`pim-medusa-sync.service.ts:662`), 조용한 손실은 자식 카테고리가 최상위로 붙는 버그가 된다.
+ */
+describe('ProductCategoriesService CategoryChanged 계약 적합성', () => {
+  const CHILD_ID = '019fa2dc-670f-7018-ab1e-f46df45ff8aa';
+  const PARENT_ID = '019fa2dc-670f-7018-ab1e-f46df45ff8bb';
+
+  function row(overrides: Record<string, unknown>) {
+    return {
+      description: null,
+      level: 0,
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: null,
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-07-27T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+      ...overrides,
+    };
+  }
+
+  it('조상까지 포함한 payload 가 계약을 손실 없이 통과한다', async () => {
+    const child = row({ id: CHILD_ID, name: '자식', slug: 'child', parentId: PARENT_ID, level: 1, path: 'p/c' });
+    const parent = row({ id: PARENT_ID, name: '부모', slug: 'parent', parentId: null, path: 'p' });
+
+    // 이름만 바꾸므로 display_settings 를 읽지 않는다. select 순서는 조상(parentId 체인) 뿐이다.
+    const queue: unknown[][] = [[parent], []];
+    const tx = {
+      select: jest.fn(() => ({ from: () => ({ where: () => Promise.resolve(queue.shift() ?? []) }) })),
+      update: jest.fn(() => ({ set: () => ({ where: () => ({ returning: () => [child] }) }) })),
+      delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+      insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
+    };
+    const db = { run: jest.fn(async (cb: (t: unknown) => Promise<unknown>, t?: unknown) => cb(t ?? tx)) };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const service = new (ProductCategoriesService as any)(
+      db,
+      { assembleActiveVersionSnapshot: jest.fn() },
+      productPublisher,
+    ) as ProductCategoriesService;
+
+    await service.updateCategory(CHILD_ID, { name: '자식' } as any);
+
+    const [{ payload }] = productPublisher.enqueue.mock.calls.find(
+      ([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged',
+    );
+
+    expect(payload.ancestors).toHaveLength(1);
+
+    const parsed = PRODUCT_STREAM.events.CategoryChanged.schema!.parse(payload);
+    expect(parsed).toEqual(payload);
   });
 });

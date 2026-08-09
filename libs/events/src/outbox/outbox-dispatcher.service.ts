@@ -118,7 +118,10 @@ export class OutboxDispatcher {
         throw new Error(`No publisher found for topic: ${event.topic}`);
       }
 
-      await publisher.publishRawEnvelope(event.payload, event.aggregateId);
+      // 검증을 탄다 (ADR-0029 §5). `enqueue` 를 지나지 않은 행 — 이 변경 이전에 적재된 PENDING
+      // 행 — 이 스키마를 위반하면 여기서 실패로 기록되고 재시도 후 FAILED 로 남는다. 발행돼서
+      // 소비자 DLQ 에 쌓이는 것보다 발행 측에 남는 편이 진단에 가깝다.
+      await publisher.publishStoredEnvelope(event.payload, event.aggregateId);
 
       await this.db
         .update(outbox_events)

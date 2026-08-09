@@ -414,6 +414,15 @@ const CategoryChangedSchema = z.object({
   changeType: z.enum(['created', 'updated', 'deleted', 'moved']),
   timestamp: z.string().datetime(),
   category: CategorySnapshotSchema.nullable(),
+  /**
+   * `CategoryChangedPayload` 는 처음부터 이 필드를 선언했는데 스키마에만 빠져 있었다.
+   * 검증이 발행 경로에 없던 동안은 무증상이었지만, 적재 시점 검증(ADR-0029 §5)이 켜지면
+   * zod 가 미선언 키를 **조용히 떼어낸다** — channel-adapter 의 Medusa 카테고리 동기화가
+   * `ancestors` 로 부모를 먼저 보장하므로(`pim-medusa-sync.service.ts:662`), 그 조용한 손실이
+   * 자식 카테고리를 최상위로 붙이는 버그가 된다. 계약을 채우는 쪽이 옳다 (ADR-0029 §1).
+   * 추가는 additive 라 옛 producer 를 깨지 않는다.
+   */
+  ancestors: z.array(CategorySnapshotSchema).optional(),
 });
 
 // ===== Stream Config =====

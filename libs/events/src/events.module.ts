@@ -4,15 +4,7 @@
  * Stream 기반 이벤트 시스템을 위한 NestJS 모듈
  */
 
-import {
-  DynamicModule,
-  Global,
-  INestApplication,
-  Inject,
-  Module,
-  OnApplicationShutdown,
-  Logger,
-} from '@nestjs/common';
+import { DynamicModule, Global, INestApplication, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
 import {
   ClientKafka,
   ClientsModule,
@@ -38,6 +30,7 @@ import { SchemaValidationOptions } from '@packages/event-contracts/types';
 import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
+import { OutboxWriter } from './outbox/outbox-writer.port';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
@@ -155,6 +148,10 @@ export class EventsModule {
     const serviceName = options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
     const enableDLQ = options.enableDLQ ?? true;
 
+    // 아웃박스를 켠 앱에서만 `enqueue` 가 동작한다 — publisher 가 적재 대상을 알아야 하기
+    // 때문이다(ADR-0029 §5). 켜지 않은 앱에서 `enqueue` 를 부르면 던진다.
+    const enableOutbox = options.enableOutbox ?? false;
+
     // 각 stream별 StreamPublisher 제공자 생성
     const publisherProviders = options.streams.map((stream) => ({
       provide: this.getPublisherToken(stream.topic.topic),
@@ -162,6 +159,7 @@ export class EventsModule {
         transport: EventTransport,
         eventChainService: EventChainService,
         eventTrackingService: EventTrackingService,
+        outboxWriter?: OutboxWriter,
       ) => {
         return new StreamPublisher(
           transport,
@@ -170,9 +168,10 @@ export class EventsModule {
           options.validation, // 스키마 검증 옵션 전달
           eventChainService,
           eventTrackingService,
+          outboxWriter,
         );
       },
-      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService],
+      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService, ...(enableOutbox ? [OutboxPublisher] : [])],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
@@ -207,7 +206,6 @@ export class EventsModule {
     };
 
     // Outbox 관련 providers
-    const enableOutbox = options.enableOutbox ?? false;
     const outboxProviders = enableOutbox
       ? [
           {

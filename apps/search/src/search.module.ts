@@ -35,15 +35,12 @@ import { SearchKeywordService } from './search-keyword.service';
             groupId: process.env.KAFKA_GROUP_ID || 'search-indexer',
             kafka: createKafkaConfigFromEnv()!,
             enableAutoDLQ: true,
-            // ⚠️ 아직 끈다. core 는 5-C 에서 켰지만 이 앱은 못 켠다 (ADR-0029 §8).
+            // ⚠️ 아직 끈다 — 그러나 **막는 이유는 사라졌다** (ADR-0029 §5, 플랜 Task 6-A).
             //
-            // 막는 것은 딱 2개 이벤트다 — `ProductMasterActiveVersionChanged` ·
-            // `ProductMasterDeleted`. 둘 다 core 카탈로그가 `OutboxPublisher.saveEvent` 로
-            // 발행하는데, 그 경로는 `publishRawEnvelope` 로 zod 를 우회한다. 즉 이 토픽에
-            // 스키마를 안 지키는 payload 가 올라올 수 있는지 정적으로 증명되지 않는다.
-            //
-            // **이걸 여는 것은 Task 6 이다** (enqueue 시점 zod 검증). 그게 들어가면 두 이벤트가
-            // 자동으로 PROVEN 이 되어 이 줄을 뒤집을 수 있다. 그 전에 켜는 것은 추측이다.
+            // 이 앱을 막던 2개 이벤트(`ProductMasterActiveVersionChanged` ·
+            // `ProductMasterDeleted`)는 core 카탈로그가 아웃박스로 내보내며 zod 를 우회했다.
+            // 6-A 가 적재·발행 양쪽에 문을 달아 그 우회를 없앴고 둘 다 PROVEN 이 됐다.
+            // 남은 것은 이 한 줄을 뒤집는 결정뿐이며 그건 5-C 의 마지막 조각이다.
             // 현황: `npm run audit:consume-validation -- search`
             validation: { validateOnConsume: false },
           }),

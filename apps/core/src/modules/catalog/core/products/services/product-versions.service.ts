@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError, ConflictError } from '@app/shared';
-import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
 import type { ProductPublishOrigin } from '@packages/event-contracts/streams/product.stream';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
@@ -66,7 +66,6 @@ export class ProductVersionsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
-    private readonly outboxPublisher: OutboxPublisher,
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,
@@ -1026,11 +1025,9 @@ export class ProductVersionsService {
     const categoryIds = assembly?.categoryIds ?? [];
     const primaryCategoryId = assembly?.primaryCategoryId ?? null;
 
-    await this.outboxPublisher.saveEvent(
+    await this.productPublisher.enqueue(
       {
-        topic: PRODUCT_STREAM.topic.topic,
         eventType: 'ProductMasterActiveVersionChanged',
-        aggregateType: PRODUCT_STREAM.aggregateType,
         aggregateId: newVersion.masterId,
         payload: {
           masterId: newVersion.masterId,

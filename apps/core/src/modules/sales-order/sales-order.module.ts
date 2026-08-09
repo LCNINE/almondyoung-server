@@ -38,8 +38,8 @@ import { WalletRefundClient } from './services/wallet-refund.client';
       // order publisher 2벌 + 자체 outbox dispatcher 뿐이며 셋 다 `StreamPublisher.publishEvent`
       // 를 지난다. `publishEvent` 는 envelope 에 원본이 아니라 **zod 가 파싱한 결과**를 싣기
       // 때문에(`stream-publisher.service.ts:123`) 같은 스키마로 다시 검증하면 반드시 통과한다.
-      // zod 를 우회하는 `publishRawEnvelope` 경로는 레포에 2곳뿐이고 둘 다 이 토픽에 닿지
-      // 않는다. (`OrderRefundCreated` 는 발행자가 아예 없다.)
+      // (`OrderRefundCreated` 는 발행자가 아예 없다.) Task 6-A 이후로는 이 앱만의 논증이
+      // 아니라 레포 전체의 불변식이다 — zod 를 우회하는 발행 경로가 하나도 남지 않았다.
       //
       // 이 논증은 `npm run audit:consume-validation -- --gate` 가 상시 재검증한다 — 검증을
       // 켜 둔 앱에 우회 경로가 닿는 이벤트가 새로 생기면 게이트가 exit 1 로 막는다.

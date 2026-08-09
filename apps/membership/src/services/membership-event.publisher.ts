@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher, OutboxPublisher, type DbTx } from '@app/events';
+import { InjectStreamPublisher, StreamPublisher, type DbTx } from '@app/events';
 import {
   MEMBERSHIP_STREAM,
   type MembershipEvents,
@@ -13,7 +13,6 @@ export class MembershipEventPublisher {
   constructor(
     @InjectStreamPublisher(MEMBERSHIP_STREAM.topic.topic)
     private readonly publisher: StreamPublisher<MembershipEvents>,
-    private readonly outboxPublisher: OutboxPublisher,
   ) {}
 
   async publishStatusChanged(payload: MembershipStatusChangedPayload): Promise<void> {
@@ -32,15 +31,6 @@ export class MembershipEventPublisher {
    * 실제 Kafka 발행은 OutboxDispatcher 가 재시도하며 담당한다.
    */
   async saveStatusChanged(payload: MembershipStatusChangedPayload, tx: DbTx): Promise<void> {
-    await this.outboxPublisher.saveEvent(
-      {
-        topic: MEMBERSHIP_STREAM.topic.topic,
-        eventType: 'MembershipStatusChanged',
-        aggregateType: MEMBERSHIP_STREAM.aggregateType,
-        aggregateId: payload.userId,
-        payload,
-      },
-      tx,
-    );
+    await this.publisher.enqueue({ eventType: 'MembershipStatusChanged', aggregateId: payload.userId, payload }, tx);
   }
 }

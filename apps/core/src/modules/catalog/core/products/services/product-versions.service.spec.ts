@@ -24,9 +24,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
     const projectionSnapshotAssembler = {
       assembleActiveVersionSnapshot: jest.fn(),
@@ -48,7 +46,6 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     const service = new ProductVersionsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       pricingValidator as any,
       {} as any,
       projectionSnapshotAssembler as any,
@@ -61,7 +58,6 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     return {
       service,
       productPublisher,
-      outboxPublisher,
       projectionSnapshotAssembler,
       pricingValidator,
       priceCacheService,
@@ -71,7 +67,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   }
 
   it('enqueues ProductMasterActiveVersionChanged through the transactional outbox using the provided tx', async () => {
-    const { service, productPublisher, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
     const snapshot = {
       masterId: 'master-1',
@@ -111,11 +107,9 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     );
 
     expect(projectionSnapshotAssembler.assembleActiveVersionSnapshot).toHaveBeenCalledWith('master-1', 'version-2', tx);
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        topic: 'products.events.v1',
         eventType: 'ProductMasterActiveVersionChanged',
-        aggregateType: 'Product',
         aggregateId: 'master-1',
         payload: expect.objectContaining({
           masterId: 'master-1',
@@ -139,7 +133,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   });
 
   it('임포트 게시면 payload 에 origin 과 importSessionId 를 싣는다', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
       snapshot: null,
       categoryIds: [],
@@ -154,7 +148,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       { origin: 'bulk_import', importSessionId: 'session-1' },
     );
 
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({
           origin: 'bulk_import',
@@ -166,7 +160,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   });
 
   it('단건 게시면 origin 키 자체가 payload 에 없다', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
       snapshot: null,
       categoryIds: [],
@@ -182,13 +176,13 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
 
     // `origin: undefined` 로도 통과하지 않도록 키 존재 자체를 본다 —
     // 단건 경로의 payload 는 이 스테이지 전후로 바이트 단위로 같아야 한다.
-    const [{ payload }] = outboxPublisher.saveEvent.mock.calls[0];
+    const [{ payload }] = productPublisher.enqueue.mock.calls[0];
     expect(Object.prototype.hasOwnProperty.call(payload, 'origin')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(payload, 'importSessionId')).toBe(false);
   });
 
   it('uses the caller-provided active changeReason instead of inferring rollback from previous active version', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
     const snapshot = {
       masterId: 'master-1',
@@ -225,7 +219,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       tx,
     );
 
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({
           versionId: 'version-2',
@@ -240,7 +234,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   });
 
   it('fails published/rollback events before enqueueing when the projection snapshot cannot be assembled', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockRejectedValue(new Error('snapshot unavailable'));
 
@@ -257,11 +251,11 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       ),
     ).rejects.toThrow('snapshot unavailable');
 
-    expect(outboxPublisher.saveEvent).not.toHaveBeenCalled();
+    expect(productPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('enqueues unpublished events without a snapshot, active version id, or category projection', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
 
     await (service as any)._emitActiveVersionChangedEvent(
@@ -279,7 +273,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     );
 
     expect(projectionSnapshotAssembler.assembleActiveVersionSnapshot).not.toHaveBeenCalled();
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({
           masterId: 'master-1',
@@ -299,7 +293,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   it('publishes a draft with validation, price cache, active transition, snapshot enqueue, and sellable recalculation in order', async () => {
     const {
       service,
-      outboxPublisher,
+      productPublisher,
       projectionSnapshotAssembler,
       pricingValidator,
       priceCacheService,
@@ -364,7 +358,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
         primaryCategoryId: null,
       };
     });
-    outboxPublisher.saveEvent.mockImplementation(async () => order.push('saveOutbox'));
+    productPublisher.enqueue.mockImplementation(async () => order.push('saveOutbox'));
     productSellableQuantity.recalculateAndPublishForVariants.mockImplementation(async () =>
       order.push('recalculateSellableQuantity'),
     );
@@ -385,7 +379,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       'saveOutbox',
       'recalculateSellableQuantity',
     ]);
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         payload: expect.objectContaining({
           changeReason: 'published',
@@ -562,7 +556,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   });
 
   it('updateRequiresMembership: active 버전의 구매 제약을 upsert 하고 이벤트를 1회 발행한다', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler, purchaseConstraints } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler, purchaseConstraints } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
       snapshot: { name: 'N' },
       categoryIds: [],
@@ -579,8 +573,8 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       { requiresMembership: true, lifetimeQuantityLimit: null },
       tx,
     );
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledTimes(1);
-    expect(outboxPublisher.saveEvent.mock.calls[0][0].payload.changeReason).toBe('published');
+    expect(productPublisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(productPublisher.enqueue.mock.calls[0][0].payload.changeReason).toBe('published');
   });
 
   it('updateRequiresMembership: 기존 lifetimeQuantityLimit 을 보존한다', async () => {
@@ -604,7 +598,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
   });
 
   it('updateExposurePolicy: 제공된 플래그만 set 하고 이벤트를 published로 1회 발행한다', async () => {
-    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const { service, productPublisher, projectionSnapshotAssembler } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
       snapshot: { name: 'N' },
       categoryIds: [],
@@ -631,8 +625,8 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       isMembershipOnly: false, // deprecated 컬럼 미러
     });
     expect(setArg.isOverseas).toBeUndefined(); // 미제공 플래그는 건드리지 않음
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledTimes(1);
-    const [event, txArg] = outboxPublisher.saveEvent.mock.calls[0];
+    expect(productPublisher.enqueue).toHaveBeenCalledTimes(1);
+    const [event, txArg] = productPublisher.enqueue.mock.calls[0];
     expect(event.payload.changeReason).toBe('published');
     expect(txArg).toBe(tx);
   });
@@ -642,15 +636,12 @@ describe('ProductVersionsService copy mappings', () => {
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
 
     return new ProductVersionsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       {} as any,
       {} as any,
       {} as any,
@@ -731,8 +722,7 @@ describe('ProductVersionsService productCode publish validation', () => {
   function makeService() {
     return new ProductVersionsService(
       {} as any,
-      { publishEvent: jest.fn() } as any,
-      { saveEvent: jest.fn() } as any,
+      { publishEvent: jest.fn(), enqueue: jest.fn() } as any,
       {} as any,
       {} as any,
       {} as any,
@@ -776,8 +766,7 @@ describe('ProductVersionsService digital asset-link publish guard', () => {
   function makeService(variantAssetLinkService: any) {
     return new ProductVersionsService(
       {} as any,
-      { publishEvent: jest.fn() } as any,
-      { saveEvent: jest.fn() } as any,
+      { publishEvent: jest.fn(), enqueue: jest.fn() } as any,
       {} as any,
       {} as any,
       {} as any,
@@ -857,15 +846,12 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
 
     return new ProductVersionsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       {} as any,
       {} as any,
       {} as any,
@@ -1063,7 +1049,6 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
   function makeBareService() {
     return new ProductVersionsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
-      {} as any,
       {} as any,
       {} as any,
       {} as any,

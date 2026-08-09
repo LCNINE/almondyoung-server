@@ -35,7 +35,8 @@ import { PricingValidatorService } from '../../../core/pricing/pricing-validator
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
-import { OutboxPublisher } from '@app/events';
+import { OutboxPublisher, StreamPublisher } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import { PRICING_SENTINEL } from './form-export.sheets';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
@@ -99,8 +100,19 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     const snapshotAssembler = new ProjectionSnapshotAssembler(versionLoader, optionLoader, tagLoader, priceCache);
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
+    // 카테고리 서비스는 이제 아웃박스가 아니라 publisher 를 받는다 (ADR-0029 §5) —
+    // `enqueue` 는 transport 를 쓰지 않으므로 전송 스텁으로 충분하다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
-    const categories = new ProductCategoriesService(dbService, snapshotAssembler, outbox);
+    const productPublisher = new StreamPublisher(
+      { send: async () => undefined },
+      PRODUCT_STREAM,
+      'core-integration-spec',
+      undefined,
+      undefined,
+      undefined,
+      outbox,
+    );
+    const categories = new ProductCategoriesService(dbService, snapshotAssembler, productPublisher);
     // 이 스위트는 필드명/가격 센티넬/이미지 키 등 리더 자체의 매핑을 검증하지, 품목 판매정책
     // 우선순위(그건 product-sku-mapping.service.spec.ts 와 form-export.snapshot.reader.spec.ts
     // 의 renderMaster 스위트 몫이다)를 검증하지 않는다. 실 ProductSkuMappingService 는

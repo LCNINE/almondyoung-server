@@ -357,7 +357,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **🔴 순서를 뒤집었다 — 나머지 3개 앱의 게이트는 관측성이 아니라 Task 6 이다.** 세 앱을 막는 UNVERIFIED 는 전부 같은 원인의 **4개 이벤트**다: `MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`. 넷 다 `OutboxPublisher.saveEvent` 로 적재돼 `publishRawEnvelope` 로 나간다. Task 6 의 "enqueue 시점 zod 검증"이 정확히 이 구멍이며, 들어가는 순간 넷 다 기계적으로 PROVEN 이 된다. 5-C 를 먼저 하면 payload 를 추측해야 하고, Task 6 을 먼저 하면 추측할 것이 남지 않는다. 게다가 Task 6 은 실패를 **발행자의 도메인 트랜잭션**에서 드러내므로 소비자 DLQ 에서 사후 발견하는 것보다 진단 위치가 낫다. **ADR-0029 §8 과 Follow-up 6 을 먼저 고쳤다.**
 
-**남은 5-C 대상은 3개가 아니라 4개다 (2026-08-09 게이트 리포트 실측).** `membership` 도 UNVERIFIED 5건으로 같은 처지인데 5-C 논의에서 빠져 있었다 — 6-A 후에 함께 판정한다. 반대로 **`notification`(UNVERIFIED 0 · PROVEN 21) 과 `wallet`(PROVEN 4) 은 이미 `켜도 안전`** 이다. 두 앱의 `validateOnConsume: false` 는 이 워크스트림 이전부터의 **의도**(notification 은 "HTTP 요청과 충돌 방지" 주석)이므로 그대로 두되, **Task 7 에서 정책을 `forApp` 으로 옮길 때 그 `false` 를 반드시 보존해야 한다** — 안 그러면 의도치 않게 켜진다.
+**남은 5-C 대상은 3개가 아니라 4개다 (2026-08-09 게이트 리포트 실측).** `membership` 도 UNVERIFIED 5건으로 같은 처지인데 5-C 논의에서 빠져 있었다 — 6-A 후에 함께 판정한다. **판정 완료: 원인이 달랐다** — 그 5건은 core 카탈로그의 `saveEvent` 가 아니라 wallet 이 자기 outbox 테이블에 직접 insert 하는 `invoice.*`/`mandate.rejected` 행이었다. 6-A 가 `enqueue` 와 `publishStoredEnvelope` 두 문을 다 달았기에 함께 풀렸다. 반대로 **`notification`(UNVERIFIED 0 · PROVEN 21) 과 `wallet`(PROVEN 4) 은 이미 `켜도 안전`** 이다. 두 앱의 `validateOnConsume: false` 는 이 워크스트림 이전부터의 **의도**(notification 은 "HTTP 요청과 충돌 방지" 주석)이므로 그대로 두되, **Task 7 에서 정책을 `forApp` 으로 옮길 때 그 `false` 를 반드시 보존해야 한다** — 안 그러면 의도치 않게 켜진다.
 
 - **core 를 켠 근거:** 4개 이벤트가 전부 `orders.events.v1` 이고 발행자 셋(channel-adapter order publisher 2벌 + 자체 outbox dispatcher)이 모두 `publishEvent` 를 지난다. `OrderRefundCreated` 는 발행자가 아예 없다. 우회 2곳 중 어느 것도 이 토픽에 닿지 않는다. core 는 **DLQ 가 관측되는 유일한 앱**이라(`dlq.metrics.ts:10`) 증명이 틀렸을 때 알아차릴 수 있는 유일한 앱이기도 하다.
 - **분석을 상시 불변식으로 바꿨다.** `--gate` 는 *검증을 켜 둔 앱*에 UNVERIFIED 가 생기면 exit 1 한다 — core 에 나중에 outbox 발행 이벤트 핸들러를 추가하면 CI 가 막는다. 게이트가 실제로 무는 것을 확인했다(search 를 일부러 `true` 로 바꿔 exit 1 재현 후 원복). 게이트는 자기 가정도 감시한다: `publishRawEnvelope` 호출 지점을 AST 로 세어 손으로 유지하는 우회 목록과 어긋나면 실패하며, **첫 실행에서 실제로 걸렸다** — grep 판본이 내가 방금 쓴 근거 주석 속 함수명을 세 번째 "호출자"로 집계했다. 그래서 AST 로 바꿨다.
@@ -373,8 +373,11 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 5-B   7개 앱 배선 일괄                         ✅ 완료
 5-C   core                                     ✅ 완료 — 정적 증명 · 관측 가능한 유일 앱
 ──────────────────────────────────────────────────────────────
-Task 6  outbox enqueue 시점 zod 검증            ← 여기가 나머지를 여는 열쇠
-5-C   analytics · search · channel-adapter     Task 6 후. 4개 이벤트가 자동으로 PROVEN 이 된다
+6-A   outbox enqueue 시점 zod 검증            ✅ 완료 — UNVERIFIED 14 → 0
+5-C   analytics · search · channel-adapter     남은 것은 `validateOnConsume` 한 줄을 뒤집는 결정뿐
+      (+ membership — 원인이 달랐으나 6-A 가 함께 풀었다)
+6-B   @InjectStreamPublisher → @InjectPublisher (26곳)
+6-C   outbox 5벌 회수 (Task 0 선행)
 ```
 
 **완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이며, `@OnEvent` 호출이 0건이다. `start-consumer.spec.ts` 의 "옛 배선" describe 를 삭제한다 (그게 초록이라는 사실이 라이브 결함의 증거였다). ⚠️ **삭제 시점은 5-B 배포 후다** — 배포 전까지 라이브는 여전히 옛 배선이라 그 describe 의 주장은 아직 참이다.
@@ -392,13 +395,21 @@ Task 6  outbox enqueue 시점 zod 검증            ← 여기가 나머지를 �
 
 그리고 **5-C 를 막고 있는 것은 6-A 하나뿐**이다. 6-B·6-C 를 기다릴 이유가 없다.
 
-### Task 6-A: enqueue 시점 zod 검증 (5-C 를 푸는 최소 변경)
+### Task 6-A: enqueue 시점 zod 검증 (5-C 를 푸는 최소 변경) — ✅ 완료 (2026-08-09)
 
-- [ ] `PublisherFor<S>` 에 `enqueue(eventName, {...}, tx)` 를 둔다 — `publish` 와 같은 타입 도출, 같은 검증. 다른 건 배달 방식뿐
-- [ ] **`enqueue` 시점에 zod 검증** — 잘못된 payload 가 poison row 가 되는 대신 도메인 트랜잭션을 실패시킨다
-- [ ] `publishRawEnvelope` 의 zod 우회 제거. 호출자는 정확히 **2곳** (2026-08-09 실측): `libs/events/src/outbox/outbox-dispatcher.service.ts:121` · `apps/wallet/src/messaging/outbox-dispatcher.service.ts:171`
-- [ ] Task 2 하네스로 "잘못된 payload → enqueue 실패" 를 증명하는 스펙. **대조군 필수** — 검증을 끄는 변이로 실패하는지 확인하지 않으면 초록불이 무엇을 뜻하는지 알 수 없다
-- [ ] `npm run audit:consume-validation` 이 analytics·search·channel-adapter 를 `켜기 전 사람 확인 필요` → `켜도 안전` 으로 바꾸는지 확인. **안 바뀌면 6-A 가 목적을 달성하지 못한 것이다**
+- [x] `PublisherFor<S>` 에 `enqueue(…, tx)` 를 둔다 — `publishEvent` 와 같은 타입 도출, 같은 검증. **인자 모양도 `publishEvent` 와 같게 했다**(`enqueue({ eventType, aggregateId, payload }, tx)`) — 원안의 `enqueue('Name', {…}, tx)` 를 쓰면 "다른 건 배달 방식뿐"이 문서에서만 참이 된다. 적재 대상은 `OutboxWriter` port 로 받는다(publisher 가 drizzle 을 알면 §7 seam 이 무너진다)
+- [x] **`enqueue` 시점에 zod 검증** — 잘못된 payload 가 poison row 가 되는 대신 도메인 트랜잭션을 실패시킨다
+- [x] `publishRawEnvelope` 의 zod 우회 제거 — **이름째 없애고** `publishStoredEnvelope`(검증함)로 대체. 호출자 2곳 모두 이주
+- [x] **`publishCommand` 에도 검증 추가 (계획에 없던 것).** 5-C 의 "발행 경로 전수 폐쇄" 논증이 세지 않은 **네 번째 경로**였다. 호출자는 ugc-service 1곳뿐이라 실해는 없었지만, 그 논증이 wallet 을 `켜도 안전`으로 판정한 근거에는 구멍이 있었다
+- [x] `OutboxPublisher.saveEvent` 삭제 — 호출부 5곳(core 카탈로그 4 · membership 1)을 `enqueue` 로 이주. 검증 없는 적재 API 를 남기면 새 호출자가 우회를 조용히 되살린다
+- [x] Task 2 하네스 스펙 `libs/events/src/outbox/enqueue-validation.spec.ts` (7건) — **대조군 포함**: `validateOnPublish: false` publisher 로 같은 payload 가 적재되고, 같은 poison envelope 가 발행되는 것을 나란히 둔다
+- [x] `npm run audit:consume-validation` 판정 — **UNVERIFIED 14 → 0.** analytics·search·channel-adapter 가 `켜기 전 사람 확인 필요` → `켜도 안전` 으로 바뀌었다. **membership(5건)도 함께 풀렸다 — 원인이 달랐다**: 그 5건은 `saveEvent` 가 아니라 wallet 이 자기 outbox 테이블에 직접 insert 하는 행에서 왔고, `enqueue` 문이 아니라 `publishStoredEnvelope` 문이 닫았다
+- [x] 게이트 재설계 — 우회 목록 대신 **우회가 다시 생기지 않는 것**을 지킨다(`transport.send` 호출 지점 · `sendMessage` 호출 메서드 · `validateOnPublish: false` 부재 · `publishRawEnvelope` 부재, 전부 AST). 변이 2종으로 exit 1 재현 확인
+- [x] 계약 구멍 1건 수정 — `CategoryChanged.ancestors` 가 payload 인터페이스에만 있고 스키마에 없어, 검증이 켜지면 **조용히 strip** 됐다(channel-adapter 의 Medusa 부모 카테고리 보장이 그 배열을 읽는다). optional 로 추가(additive). 회귀 네트는 "통과"가 아니라 **"손실 없이 통과"** 를 단언한다
+
+**게이트 실측:** `type-check` 164 = 기준선 · `audit:event-handlers` exit 0 · `audit:consume-validation --gate` exit 0 · jest 실패 suite **18 = 기준선**(집합 동일, 신규 0) · 10개 앱 `nest build` 전부 OK.
+
+**⚠️ 배포 전 결정 1건 (사람):** wallet 아웃박스에 **이 배포 시점에 PENDING 으로 남아 있는 행**은 `enqueue` 를 지나지 않았으므로 `publishStoredEnvelope` 에서 처음 검증을 만난다. 위반하면 발행되지 않고 백오프 후 `DEAD_LETTER` 로 남는다(옛 동작: 그대로 발행). 정적으로는 안전하다 — wallet 의 `invoice.*`/`mandate.rejected` payload 는 전부 계약 타입으로 빌드되고(`invoice-event.builder.ts`), `payment.intent.*`/`gateway.*` 스키마는 `catchall` 이라 확장 필드를 보존한다. 그래도 배포 직후 `outbox_events` 의 `DEAD_LETTER`/`FAILED` 증가와 `lastErrorCode` 를 한 번 본다.
 
 ### Task 6-B: `@InjectStreamPublisher` → `@InjectPublisher` (26곳)
 
@@ -438,7 +449,7 @@ Task 6  outbox enqueue 시점 zod 검증            ← 여기가 나머지를 �
 - [x] `grep -rn "@OnEvent(" apps --include=*.ts | grep -v spec` 결과가 0건 — 5-A
 - [x] `EventKeysOf` / `EventPayloadOf` 사용처가 0건이 아니다 — 5-A (87 핸들러)
 - [x] 인메모리 어댑터로 발행→소비 왕복이 테스트된다 — Task 2
-- [ ] outbox enqueue 가 zod 검증을 탄다 — Task 6
+- [x] outbox enqueue 가 zod 검증을 탄다 — Task 6-A
 - [x] `libs/events/src` 스펙 파일 수가 5개보다 많다 — 현재 11
 - [x] 컨트롤러를 `controllers: []` 에 등록하지 않으면 부팅이 실패한다 — Task 3 에서 구현, 5-B 로 7개 앱 전부에 실효
 - [ ] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164 유지. Task 6·7 후 최종 확인

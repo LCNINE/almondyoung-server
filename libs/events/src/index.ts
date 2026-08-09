@@ -59,6 +59,7 @@ export * from './bootstrap/topic-bootstrap.service';
 // Outbox Pattern
 export * from './outbox/outbox.schema';
 export * from './outbox/outbox.types';
+export * from './outbox/outbox-writer.port';
 export * from './outbox/outbox-publisher.service';
 export * from './outbox/outbox-dispatcher.service';
 
