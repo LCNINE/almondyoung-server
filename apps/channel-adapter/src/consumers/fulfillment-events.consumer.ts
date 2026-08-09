@@ -9,18 +9,14 @@
  */
 
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  FulfillmentShippedPayload,
-  FulfillmentCancelledPayload,
-  FulfillmentDeliveredPayload,
-  SalesOrderCancelledPayload,
-} from '@packages/event-contracts/streams';
-import { MessageEnvelope } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../schema';
 import type { ChannelAdapterSchema } from '../types';
+import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams/fulfillments.stream';
+import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -37,10 +33,10 @@ export class FulfillmentEventsConsumer {
    * V1 이벤트는 FO 전체 완료의 Medusa 호환 projection만 담당한다.
    * 실제 외부 채널 발송은 ShipmentShipped consumer가 소유한다.
    */
-  @OnEvent('fulfillments.events.v1', 'FulfillmentShipped')
+  @On(FULFILLMENT_STREAM, 'FulfillmentShipped')
   async handleFulfillmentShipped(
-    @EventPayload() payload: FulfillmentShippedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<FulfillmentShippedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_STREAM, 'FulfillmentShipped'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_STREAM, 'FulfillmentShipped'>,
   ) {
     this.logger.log(`🚚 [FulfillmentShipped] Received: fulfillmentId=${payload.fulfillmentId}`, {
       correlationId: envelope.correlationId,
@@ -78,10 +74,10 @@ export class FulfillmentEventsConsumer {
    * Core WMS에서 배송 완료가 확인되면 Medusa order metadata를 갱신합니다.
    * 네이버/쿠팡은 자체 배송 추적을 하므로 여기서는 Medusa projection만 처리합니다.
    */
-  @OnEvent('fulfillments.events.v1', 'FulfillmentDelivered')
+  @On(FULFILLMENT_STREAM, 'FulfillmentDelivered')
   async handleFulfillmentDelivered(
-    @EventPayload() payload: FulfillmentDeliveredPayload,
-    @EventEnvelope() envelope: MessageEnvelope<FulfillmentDeliveredPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_STREAM, 'FulfillmentDelivered'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_STREAM, 'FulfillmentDelivered'>,
   ) {
     this.logger.log(`📦 [FulfillmentDelivered] Received: fulfillmentId=${payload.fulfillmentId}`, {
       correlationId: envelope.correlationId,
@@ -120,10 +116,10 @@ export class FulfillmentEventsConsumer {
    * V1 fulfillment cancellation은 외부 채널 명령을 소유하지 않는다.
    * 주문 취소 projection은 SalesOrderCancelled의 단일 채널 경로가 담당한다.
    */
-  @OnEvent('fulfillments.events.v1', 'FulfillmentCancelled')
+  @On(FULFILLMENT_STREAM, 'FulfillmentCancelled')
   async handleFulfillmentCancelled(
-    @EventPayload() payload: FulfillmentCancelledPayload,
-    @EventEnvelope() envelope: MessageEnvelope<FulfillmentCancelledPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_STREAM, 'FulfillmentCancelled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_STREAM, 'FulfillmentCancelled'>,
   ) {
     this.logger.log(`❌ [FulfillmentCancelled] Received: fulfillmentId=${payload.fulfillmentId}`, {
       correlationId: envelope.correlationId,
@@ -155,10 +151,10 @@ export class FulfillmentEventsConsumer {
    *
    * 이벤트 발행 경로: Core sales-orders.service → outbox → core.orders.events.v1 (outbox dispatcher)
    */
-  @OnEvent('core.orders.events.v1', 'SalesOrderCancelled')
+  @On(CORE_ORDER_STREAM, 'SalesOrderCancelled')
   async handleCoreOrderCancelled(
-    @EventPayload() payload: SalesOrderCancelledPayload,
-    @EventEnvelope() envelope: MessageEnvelope,
+    @EventPayload() payload: EventPayloadOf<typeof CORE_ORDER_STREAM, 'SalesOrderCancelled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof CORE_ORDER_STREAM, 'SalesOrderCancelled'>,
   ): Promise<void> {
     const { orderId, cancellationScope } = payload;
     this.logger.log(`[SALES_ORDER_CANCELLED] Core 주문 취소 수신: orderId=${orderId}, scope=${cancellationScope}`, {

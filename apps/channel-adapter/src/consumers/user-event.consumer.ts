@@ -1,16 +1,12 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
-import { DomainEvent } from '@packages/event-contracts/types';
-import type {
-  Cafe24LinkedPayload,
-  Cafe24UnlinkedPayload,
-  UserEmailVerifiedPayload,
-} from '@packages/event-contracts/streams/user.stream';
 import { processedEvents, inboxEvents, cafe24MemberMappings } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
+import { USER_STREAM } from '@packages/event-contracts/streams/user.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * User Event Consumer
@@ -25,10 +21,10 @@ export class UserEventConsumer {
 
   constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
-  @OnEvent('users.events.v1', 'UserEmailVerified')
+  @On(USER_STREAM, 'UserEmailVerified')
   async onUserEmailVerified(
-    @EventEnvelope() envelope: DomainEvent<UserEmailVerifiedPayload>,
-    @EventPayload() payload: UserEmailVerifiedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserEmailVerified'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserEmailVerified'>,
   ): Promise<void> {
     const { userId } = payload;
     const idempotencyKey = envelope.messageId || `UserEmailVerified:${userId}`;
@@ -82,10 +78,10 @@ export class UserEventConsumer {
     }
   }
 
-  @OnEvent('users.events.v1', 'Cafe24Linked')
+  @On(USER_STREAM, 'Cafe24Linked')
   async onCafe24Linked(
-    @EventEnvelope() envelope: DomainEvent<Cafe24LinkedPayload>,
-    @EventPayload() payload: Cafe24LinkedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'Cafe24Linked'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'Cafe24Linked'>,
   ): Promise<void> {
     const { userId, cafe24MemberId, email } = payload;
     const idempotencyKey = envelope.messageId || `Cafe24Linked:${userId}:${cafe24MemberId}`;
@@ -147,10 +143,10 @@ export class UserEventConsumer {
     }
   }
 
-  @OnEvent('users.events.v1', 'Cafe24Unlinked')
+  @On(USER_STREAM, 'Cafe24Unlinked')
   async onCafe24Unlinked(
-    @EventEnvelope() envelope: DomainEvent<Cafe24UnlinkedPayload>,
-    @EventPayload() payload: Cafe24UnlinkedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'Cafe24Unlinked'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'Cafe24Unlinked'>,
   ): Promise<void> {
     const { userId, cafe24MemberId } = payload;
     const idempotencyKey = envelope.messageId || `Cafe24Unlinked:${userId}:${cafe24MemberId}`;

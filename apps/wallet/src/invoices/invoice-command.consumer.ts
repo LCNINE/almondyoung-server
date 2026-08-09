@@ -1,7 +1,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { CreateInvoicePayload, VoidInvoicePayload } from '@packages/event-contracts/streams/wallet-command.stream';
+import { CreateInvoicePayload, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DbService } from '@app/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ import { BillingMethodService } from '../billing/billing-method.service';
 import { InvoiceOutcomeService } from './invoice-outcome.service';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import { INVOICE_AGGREGATE_TYPE, InvoiceEventType, invoicePartitionKey } from './invoice-event.builder';
+import { EventPayloadOf } from '@packages/event-contracts/types';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_INTERVAL_HOURS = 72;
@@ -31,8 +32,8 @@ export class InvoiceCommandConsumer {
     private readonly invoiceOutcomeService: InvoiceOutcomeService,
   ) {}
 
-  @OnEvent('wallet.commands.v1', 'CreateInvoice')
-  async onCreateInvoice(@EventPayload() payload: CreateInvoicePayload) {
+  @On(WALLET_COMMAND_STREAM, 'CreateInvoice')
+  async onCreateInvoice(@EventPayload() payload: EventPayloadOf<typeof WALLET_COMMAND_STREAM, 'CreateInvoice'>) {
     this.logger.log(
       `[CreateInvoice] Received: subscriberRef=${payload.subscriberRef}, period=${payload.periodStart}~${payload.periodEnd}, key=${payload.idempotencyKey}`,
     );
@@ -160,8 +161,8 @@ export class InvoiceCommandConsumer {
     );
   }
 
-  @OnEvent('wallet.commands.v1', 'VoidInvoice')
-  async onVoidInvoice(@EventPayload() payload: VoidInvoicePayload) {
+  @On(WALLET_COMMAND_STREAM, 'VoidInvoice')
+  async onVoidInvoice(@EventPayload() payload: EventPayloadOf<typeof WALLET_COMMAND_STREAM, 'VoidInvoice'>) {
     // ATTEMPTING 은 출금이 이미 나갔을 수 있어 무효화하지 않는다(CMS 환불 불가) — 정산 결과가 반영된다.
     const voided = await this.dbService.db
       .update(invoices)

@@ -1,21 +1,16 @@
 import { Controller, Logger, NotFoundException, BadRequestException, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { OnEvent, EventPayload, EventEnvelope, RetryPolicy } from '@app/events';
+import { EventPayload, EventEnvelope, RetryPolicy, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import type {
-  OrderCreatedPayload,
-  OrderCancelledPayload,
-  OrderModifiedPayload,
-  OrderRefundCreatedPayload,
-} from '@packages/event-contracts';
-import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
+import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * Order 이벤트 컨슈머
@@ -66,11 +61,11 @@ export class OrderEventsConsumer {
     return false;
   }
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({ maxRetries: 5, backoff: 'exponential', initialDelayMs: 1000, maxDelayMs: 15000 })
   async handleOrderCreated(
-    @EventPayload() payload: OrderCreatedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<OrderCreatedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderCreated'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>,
   ) {
     this.logger.log(`[OrderCreated] Received: ${payload.orderId} from ${payload.salesChannel}`, {
       correlationId: envelope.correlationId,
@@ -120,11 +115,11 @@ export class OrderEventsConsumer {
     }
   }
 
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   @RetryPolicy({ nonRetryableErrors: [NotFoundException, BadRequestException] })
   async handleOrderCancelled(
-    @EventPayload() payload: OrderCancelledPayload,
-    @EventEnvelope() envelope: MessageEnvelope<OrderCancelledPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderCancelled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderCancelled'>,
   ) {
     this.logger.log(`[OrderCancelled] Received: orderId=${payload.orderId}, reason=${payload.reason}`, {
       correlationId: envelope.correlationId,
@@ -171,10 +166,10 @@ export class OrderEventsConsumer {
     }
   }
 
-  @OnEvent('orders.events.v1', 'OrderModified')
+  @On(ORDER_STREAM, 'OrderModified')
   async handleOrderModified(
-    @EventPayload() payload: OrderModifiedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<OrderModifiedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderModified'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderModified'>,
   ) {
     this.logger.log(`[OrderModified] Received: orderId=${payload.orderId}`, {
       correlationId: envelope.correlationId,
@@ -207,11 +202,11 @@ export class OrderEventsConsumer {
     }
   }
 
-  @OnEvent('orders.events.v1', 'OrderRefundCreated')
+  @On(ORDER_STREAM, 'OrderRefundCreated')
   @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderRefundCreated(
-    @EventPayload() payload: OrderRefundCreatedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<OrderRefundCreatedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderRefundCreated'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>,
   ) {
     this.logger.log(`[OrderRefundCreated] Received: orderId=${payload.orderId}, refundId=${payload.refundId}`, {
       correlationId: envelope.correlationId,

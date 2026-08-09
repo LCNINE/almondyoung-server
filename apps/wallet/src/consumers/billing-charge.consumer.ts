@@ -1,8 +1,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-command.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
+import { BillingChargePayload, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DbService } from '@app/db';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
@@ -20,6 +19,7 @@ import {
 } from '../messaging/gateway-event.builder';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import { PaymentProvider, ChargeResult } from '../providers/payment-provider.interface';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
@@ -38,10 +38,10 @@ export class BillingChargeConsumer {
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
-  @OnEvent('wallet.commands.v1', 'BillingCharge')
+  @On(WALLET_COMMAND_STREAM, 'BillingCharge')
   async onBillingCharge(
-    @EventEnvelope() envelope: DomainEvent<BillingChargePayload>,
-    @EventPayload() payload: BillingChargePayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof WALLET_COMMAND_STREAM, 'BillingCharge'>,
+    @EventPayload() payload: EventPayloadOf<typeof WALLET_COMMAND_STREAM, 'BillingCharge'>,
   ) {
     const correlationId = envelope.correlationId ?? `billing-charge:${payload.idempotencyKey}`;
 

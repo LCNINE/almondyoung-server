@@ -1,12 +1,12 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
-import { DomainEvent } from '@packages/event-contracts/types';
-import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import { processedEvents, inboxEvents } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
+import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * Membership Event Consumer
@@ -23,11 +23,11 @@ export class MembershipEventConsumer {
     this.logger.log('Membership Event Consumer 초기화 완료');
   }
 
-  @OnEvent('membership.events.v1', 'MembershipStatusChanged')
+  @On(MEMBERSHIP_STREAM, 'MembershipStatusChanged')
   async onMembershipStatusChanged(
     @EventEnvelope()
-    envelope: DomainEvent<MembershipStatusChangedPayload>,
-    @EventPayload() payload: MembershipStatusChangedPayload,
+    envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
   ): Promise<void> {
     const startTime = Date.now();
     const { userId, status } = payload;

@@ -1,13 +1,14 @@
 // PIM에서 publish/unpublish/rollback 이벤트가 발생하면 Inbox에 저장
 
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { DomainEvent } from '@packages/event-contracts/types';
+import { DomainEvent, EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 import {
   ProductMasterActiveVersionChangedPayload,
   ProductMasterDeletedPayload,
   ProductPublishOrigin,
+  PRODUCT_STREAM,
 } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
 import { processedEvents, inboxEvents } from '../schema';
@@ -15,7 +16,9 @@ import { and, eq, or } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
 import { createHash } from 'crypto';
 
-const PRODUCT_TOPIC = 'products.events.v1';
+// idempotencyKey · processed_events.source 에 쓰이는 토픽 문자열. 계약에서 읽는다 —
+// 생문자열로 두면 계약과 어긋나도 조용하다 (ADR-0029 §1).
+const PRODUCT_TOPIC = PRODUCT_STREAM.topic.topic;
 const ACTIVE_VERSION_CHANGED = 'ProductMasterActiveVersionChanged';
 const MASTER_DELETED = 'ProductMasterDeleted';
 
@@ -173,10 +176,10 @@ export class PimProductEventConsumer {
    * @param envelope 이벤트 메타데이터 (correlationId, timestamp 등)
    * @param payload 이벤트 페이로드
    */
-  @OnEvent('products.events.v1', 'ProductMasterActiveVersionChanged')
+  @On(PRODUCT_STREAM, 'ProductMasterActiveVersionChanged')
   async onProductMasterActiveVersionChanged(
-    @EventEnvelope() envelope: DomainEvent<ProductMasterActiveVersionChangedPayload>,
-    @EventPayload() payload: ProductMasterActiveVersionChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PRODUCT_STREAM, 'ProductMasterActiveVersionChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof PRODUCT_STREAM, 'ProductMasterActiveVersionChanged'>,
   ): Promise<void> {
     const startTime = Date.now();
     const { masterId, versionId, changeReason } = payload;
@@ -222,10 +225,10 @@ export class PimProductEventConsumer {
     }
   }
 
-  @OnEvent(PRODUCT_TOPIC, MASTER_DELETED)
+  @On(PRODUCT_STREAM, 'ProductMasterDeleted')
   async onProductMasterDeleted(
-    @EventEnvelope() envelope: DomainEvent<ProductMasterDeletedPayload>,
-    @EventPayload() payload: ProductMasterDeletedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PRODUCT_STREAM, 'ProductMasterDeleted'>,
+    @EventPayload() payload: EventPayloadOf<typeof PRODUCT_STREAM, 'ProductMasterDeleted'>,
   ): Promise<void> {
     const startTime = Date.now();
     const { masterId } = payload;

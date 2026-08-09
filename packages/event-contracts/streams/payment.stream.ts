@@ -380,6 +380,47 @@ export interface PaymentIntentEventPayload {
   subscriberRef?: string;
   subscriberType?: string;
   purpose?: string;
+  /**
+   * 인텐트의 자유형 metadata. 무통장 입금확인 경로(bank-transfer-admin.service.ts)가 통째로 실어 보내며,
+   * membership 은 `type === 'MEMBERSHIP_FEE'` 로 멤버십 결제를 식별한다.
+   */
+  metadata?: { type?: string; [key: string]: unknown } | null;
+  /** 실패/취소 경로에서 charge 결과로부터 승격되는 오류 정보 */
+  errorCode?: string;
+  errorMessage?: string;
+  [key: string]: unknown;
+}
+
+// ==========================================
+// gateway.* — wallet 이 charge/refund 단위로 발행하는 도트-표기 이벤트.
+// 발행측은 buildChargeEventPayload / buildRefundEventPayload (apps/wallet/src/messaging/gateway-event.builder.ts).
+// 소비: channel-adapter(gateway.charge.captured·gateway.refund.succeeded → Medusa 전달),
+//       membership(gateway.refund.succeeded → 구독 회수).
+// payment.intent.* 와 같은 이유로 확장 필드를 passthrough 로 보존한다.
+// ==========================================
+
+export interface GatewayChargeEventPayload {
+  chargeId: string;
+  intentId: string;
+  userId: string;
+  status: string;
+  operation: string;
+  amount: number;
+  currency: string;
+  providerTransactionId: string | null;
+  occurredAt: string;
+  [key: string]: unknown;
+}
+
+export interface GatewayRefundEventPayload {
+  refundId: string;
+  chargeId: string;
+  intentId: string;
+  userId: string;
+  status: string;
+  amount: number;
+  currency: string;
+  occurredAt: string;
   [key: string]: unknown;
 }
 
@@ -750,8 +791,42 @@ const PaymentIntentEventSchema = z
     subscriberRef: z.string().optional(),
     subscriberType: z.string().optional(),
     purpose: z.string().optional(),
+    metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+    errorCode: z.string().optional(),
+    errorMessage: z.string().optional(),
   })
   .catchall(z.unknown()) as unknown as z.ZodType<PaymentIntentEventPayload>;
+
+// gateway.charge.* / gateway.refund.* 공통 스키마.
+// 위 payment.intent.* 와 같은 이유로 관대하게 둔다 — 이 계열도 계약화 이전부터 라이브로 흐르고 있었고,
+// 계약 등록만으로 소비검증이 켜지면 그 순간이 DLQ 폭탄이 된다 (ADR-0029 §8·플랜 Task 5-C).
+// 검증을 조이는 결정은 앱별 이주(5-C)에서 payload 를 실제로 샘플링한 뒤에 한다.
+const GatewayChargeEventSchema = z
+  .object({
+    chargeId: z.string().optional(),
+    intentId: z.string().optional(),
+    userId: z.string().optional(),
+    status: z.string().optional(),
+    operation: z.string().optional(),
+    amount: z.number().optional(),
+    currency: z.string().optional(),
+    providerTransactionId: z.string().nullable().optional(),
+    occurredAt: z.string().optional(),
+  })
+  .catchall(z.unknown()) as unknown as z.ZodType<GatewayChargeEventPayload>;
+
+const GatewayRefundEventSchema = z
+  .object({
+    refundId: z.string().optional(),
+    chargeId: z.string().optional(),
+    intentId: z.string().optional(),
+    userId: z.string().optional(),
+    status: z.string().optional(),
+    amount: z.number().optional(),
+    currency: z.string().optional(),
+    occurredAt: z.string().optional(),
+  })
+  .catchall(z.unknown()) as unknown as z.ZodType<GatewayRefundEventPayload>;
 
 export const PAYMENT_STREAM = stream({
   topic: 'payments.events.v1',
@@ -868,6 +943,25 @@ export const PAYMENT_STREAM = stream({
     'payment.intent.awaiting_deposit': event<'payment.intent.awaiting_deposit', PaymentIntentEventPayload>(
       'payment.intent.awaiting_deposit',
       PaymentIntentEventSchema,
+    ),
+    // 무통장 환불 '신청'/'거절' — Medusa 주문의 refund_status marker 를 달고 해제한다.
+    'payment.intent.refund_requested': event<'payment.intent.refund_requested', PaymentIntentEventPayload>(
+      'payment.intent.refund_requested',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.refund_request_rejected': event<
+      'payment.intent.refund_request_rejected',
+      PaymentIntentEventPayload
+    >('payment.intent.refund_request_rejected', PaymentIntentEventSchema),
+
+    // --- Gateway Charge/Refund Events (wallet outbox dispatcher, 도트 표기) ---
+    'gateway.charge.captured': event<'gateway.charge.captured', GatewayChargeEventPayload>(
+      'gateway.charge.captured',
+      GatewayChargeEventSchema,
+    ),
+    'gateway.refund.succeeded': event<'gateway.refund.succeeded', GatewayRefundEventPayload>(
+      'gateway.refund.succeeded',
+      GatewayRefundEventSchema,
     ),
   },
 });

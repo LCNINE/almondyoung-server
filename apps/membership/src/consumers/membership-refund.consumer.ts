@@ -1,9 +1,11 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionContractReader } from '../services/subscription/subscription-contract.reader';
 import { RefundEventHandler } from '../services/refund-event-handler.service';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
+import { EventPayloadOf } from '@packages/event-contracts/types';
 
 interface RefundEventPayload {
   intentId?: string;
@@ -31,8 +33,8 @@ export class MembershipRefundConsumer {
     private readonly refundEventHandler: RefundEventHandler,
   ) {}
 
-  @OnEvent('payments.events.v1', 'gateway.refund.succeeded')
-  async onRefundSucceeded(@EventPayload() payload: RefundEventPayload) {
+  @On(PAYMENT_STREAM, 'gateway.refund.succeeded')
+  async onRefundSucceeded(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'gateway.refund.succeeded'>) {
     if (!payload.intentId) return;
 
     this.logger.log(`[MembershipRefund] 환불 성공 감지: intentId=${payload.intentId}`);

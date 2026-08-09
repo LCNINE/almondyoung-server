@@ -1,17 +1,9 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { EventEnvelope, EventPayload, OnEvent } from '@app/events';
+import { EventEnvelope, EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  FULFILLMENT_V2_STREAM,
-  FulfillmentProgressedPayload,
-  FulfillmentReopenedPayload,
-  SHIPMENT_STREAM,
-  ShipmentDeliveredPayload,
-  ShipmentDispatchRecalledPayload,
-  ShipmentShippedPayload,
-} from '@packages/event-contracts/streams';
-import { MessageEnvelope } from '@packages/event-contracts/types';
+import { FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import { MessageEnvelope, EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 import { inboxEvents } from '../schema';
 import type { ChannelAdapterSchema } from '../types';
 
@@ -22,10 +14,10 @@ export class ShipmentEventsConsumer {
 
   constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
-  @OnEvent('shipments.events.v1', 'ShipmentShipped')
+  @On(SHIPMENT_STREAM, 'ShipmentShipped')
   async handleShipmentShipped(
-    @EventPayload() payload: ShipmentShippedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<ShipmentShippedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof SHIPMENT_STREAM, 'ShipmentShipped'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof SHIPMENT_STREAM, 'ShipmentShipped'>,
   ): Promise<void> {
     const validated = SHIPMENT_STREAM.events.ShipmentShipped.schema!.parse(payload);
     await this.insertInbox(
@@ -38,10 +30,10 @@ export class ShipmentEventsConsumer {
     );
   }
 
-  @OnEvent('shipments.events.v1', 'ShipmentDelivered')
+  @On(SHIPMENT_STREAM, 'ShipmentDelivered')
   async handleShipmentDelivered(
-    @EventPayload() payload: ShipmentDeliveredPayload,
-    @EventEnvelope() envelope: MessageEnvelope<ShipmentDeliveredPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof SHIPMENT_STREAM, 'ShipmentDelivered'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof SHIPMENT_STREAM, 'ShipmentDelivered'>,
   ): Promise<void> {
     const validated = SHIPMENT_STREAM.events.ShipmentDelivered.schema!.parse(payload);
     await this.insertInbox(
@@ -54,10 +46,10 @@ export class ShipmentEventsConsumer {
     );
   }
 
-  @OnEvent('shipments.events.v1', 'ShipmentDispatchRecalled')
+  @On(SHIPMENT_STREAM, 'ShipmentDispatchRecalled')
   async handleShipmentDispatchRecalled(
-    @EventPayload() payload: ShipmentDispatchRecalledPayload,
-    @EventEnvelope() envelope: MessageEnvelope<ShipmentDispatchRecalledPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof SHIPMENT_STREAM, 'ShipmentDispatchRecalled'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof SHIPMENT_STREAM, 'ShipmentDispatchRecalled'>,
   ): Promise<void> {
     const validated = SHIPMENT_STREAM.events.ShipmentDispatchRecalled.schema!.parse(payload);
     await this.insertInbox(
@@ -70,10 +62,10 @@ export class ShipmentEventsConsumer {
     );
   }
 
-  @OnEvent('fulfillments.events.v2', 'FulfillmentProgressed')
+  @On(FULFILLMENT_V2_STREAM, 'FulfillmentProgressed')
   async handleFulfillmentProgressed(
-    @EventPayload() payload: FulfillmentProgressedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<FulfillmentProgressedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_V2_STREAM, 'FulfillmentProgressed'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_V2_STREAM, 'FulfillmentProgressed'>,
   ): Promise<void> {
     const validated = FULFILLMENT_V2_STREAM.events.FulfillmentProgressed.schema!.parse(payload);
     await this.insertInbox(
@@ -86,10 +78,10 @@ export class ShipmentEventsConsumer {
     );
   }
 
-  @OnEvent('fulfillments.events.v2', 'FulfillmentReopened')
+  @On(FULFILLMENT_V2_STREAM, 'FulfillmentReopened')
   async handleFulfillmentReopened(
-    @EventPayload() payload: FulfillmentReopenedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<FulfillmentReopenedPayload>,
+    @EventPayload() payload: EventPayloadOf<typeof FULFILLMENT_V2_STREAM, 'FulfillmentReopened'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof FULFILLMENT_V2_STREAM, 'FulfillmentReopened'>,
   ): Promise<void> {
     const validated = FULFILLMENT_V2_STREAM.events.FulfillmentReopened.schema!.parse(payload);
     await this.insertInbox(

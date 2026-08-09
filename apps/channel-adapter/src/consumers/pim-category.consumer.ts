@@ -1,14 +1,14 @@
 // PIM에서 카테고리 변경 이벤트가 발생하면 Inbox에 저장
 
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { DomainEvent } from '@packages/event-contracts/types';
-import { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
 import { processedEvents, inboxEvents } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
+import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * PIM Category Event Consumer
@@ -35,10 +35,10 @@ export class PimCategoryConsumer {
    * @param envelope 이벤트 메타데이터 (correlationId, timestamp 등)
    * @param payload 이벤트 페이로드
    */
-  @OnEvent('products.events.v1', 'CategoryChanged')
+  @On(PRODUCT_STREAM, 'CategoryChanged')
   async onCategoryChanged(
-    @EventEnvelope() envelope: DomainEvent<CategoryChangedPayload>,
-    @EventPayload() payload: CategoryChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PRODUCT_STREAM, 'CategoryChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof PRODUCT_STREAM, 'CategoryChanged'>,
   ): Promise<void> {
     const startTime = Date.now();
     const { categoryId, changeType } = payload;

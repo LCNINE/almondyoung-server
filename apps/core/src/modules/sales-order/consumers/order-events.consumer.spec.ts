@@ -9,7 +9,8 @@ import type {
   OrderModifiedPayload,
   OrderRefundCreatedPayload,
 } from '@packages/event-contracts';
-import type { MessageEnvelope } from '@packages/event-contracts/types';
+import type { EnvelopeOf } from '@packages/event-contracts/types';
+import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
 import 'reflect-metadata';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { RETRY_POLICY_METADATA } from '@app/events';
@@ -126,7 +127,7 @@ describe('OrderEventsConsumer', () => {
     };
   }
 
-  const envelope = { messageId: 'msg-1', correlationId: 'corr-1' } as MessageEnvelope<OrderCreatedPayload>;
+  const envelope = { messageId: 'msg-1', correlationId: 'corr-1' } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>;
 
   it('새 SO + status=confirmed → createFromEvent 호출, grant 호출, orderEvents insert', async () => {
     const mocks = makeMocks();
@@ -242,7 +243,7 @@ describe('OrderEventsConsumer', () => {
     const cancelledEnvelope = {
       messageId: 'cancel-msg-1',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderCancelledPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCancelled'>;
     mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'cancelled' } as any);
 
     await consumer.handleOrderCancelled(payload, cancelledEnvelope);
@@ -278,7 +279,7 @@ describe('OrderEventsConsumer', () => {
     const cancelledEnvelope = {
       messageId: 'cancel-msg-missing-1',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderCancelledPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCancelled'>;
     mocks.salesOrders.getOne.mockResolvedValue(undefined as any);
 
     await expect(consumer.handleOrderCancelled(payload, cancelledEnvelope)).rejects.toThrow(
@@ -325,7 +326,7 @@ describe('OrderEventsConsumer', () => {
     const modifiedEnvelope = {
       messageId: 'modified-msg-1',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderModifiedPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderModified'>;
     mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
 
     await consumer.handleOrderModified(payload, modifiedEnvelope);
@@ -356,7 +357,7 @@ describe('OrderEventsConsumer', () => {
     const refundEnvelope = {
       messageId: 'refund-msg-1',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>;
     mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
 
     await consumer.handleOrderRefundCreated(payload, refundEnvelope);
@@ -400,7 +401,7 @@ describe('OrderEventsConsumer', () => {
     const refundEnvelope = {
       messageId: 'refund-msg-REDELIVERED',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>;
     mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
     // 동일 (sourceId, relationName, targetExternalRef) 링크가 이전 전달에서 이미 기록돼 있음
     mocks.businessLinkRows.push({ id: 'existing-link-1' });
@@ -429,7 +430,7 @@ describe('OrderEventsConsumer', () => {
     const refundEnvelope = {
       messageId: 'refund-msg-missing-1',
       correlationId: 'corr-1',
-    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>;
     mocks.salesOrders.getOne.mockResolvedValue(undefined as any);
 
     await expect(consumer.handleOrderRefundCreated(payload, refundEnvelope)).rejects.toThrow(
