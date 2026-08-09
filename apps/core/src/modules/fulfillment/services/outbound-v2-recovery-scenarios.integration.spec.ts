@@ -14,7 +14,7 @@ import { LocationService } from '../../inventory/core/services/location.service'
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDb, makeDbService } from './__support__';
 import { BatchInventorySessionFaultInjector, BatchInventorySessionService } from './batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';

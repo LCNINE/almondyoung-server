@@ -5,7 +5,7 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { FULFILLMENT_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { OutboxService } from '../outbox/outbox.service';
+import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDbService } from './__support__';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';

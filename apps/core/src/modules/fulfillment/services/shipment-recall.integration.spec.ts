@@ -11,7 +11,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
 import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';

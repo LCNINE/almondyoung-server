@@ -10,7 +10,7 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
-import { OutboxService } from '../outbox/outbox.service';
+import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';

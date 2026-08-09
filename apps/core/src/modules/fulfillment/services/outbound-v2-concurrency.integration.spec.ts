@@ -14,7 +14,7 @@ import { LocationService } from '../../inventory/core/services/location.service'
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDbService, wireLogistics } from './__support__';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';

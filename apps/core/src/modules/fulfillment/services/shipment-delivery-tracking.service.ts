@@ -5,7 +5,7 @@ import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { ShipmentTrackingEventDto } from '../dto/shipment-tracking-event.dto';
 import { FULFILLMENT_EVENTS, fulfillmentDeliveredV1OutboxEvent, shipmentDeliveredOutboxEvent } from '../events';
-import { OutboxService } from '../outbox/outbox.service';
+import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 

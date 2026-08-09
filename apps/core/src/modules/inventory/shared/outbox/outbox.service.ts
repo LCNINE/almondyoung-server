@@ -3,6 +3,11 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
 
+// core 안에서 `wmsTables.outboxEvents` 에 적재하는 **유일한** 진입점이다.
+// 2026-08-09(ADR-0029 Task 0)까지는 `fulfillment/outbox/outbox.service.ts` 에 import 경로 한 줄만
+// 다른 사본이 하나 더 있었다. 두 사본은 같은 테이블에 썼으므로 갈라지면 조용히 어긋났을 것이다.
+// 회수 대상은 이 파일 하나다 — Task 6-C-2 가 여기를 `StreamPublisher.enqueue` 로 옮긴다.
+//
 // topic 과 idempotencyKey 는 필수다 — topicless V1 expand 호환 갈래는 Task 25 에서 제거됐고,
 // 새 topicless write 는 컴파일 단계에서 막힌다 (dispatcher 폴백 라우팅도 함께 제거됨).
 type OutboxEnqueueParams = {

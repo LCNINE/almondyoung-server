@@ -300,7 +300,28 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
 
 **core 에서 `idempotencyKey` 를 넘기는 호출이 254곳이다.** 컬럼 추가 없이 호출자를 공용으로 갈아끼우면 그 254곳의 중복 방어가 조용히 사라진다 — 이 ADR 이 내내 다룬 "무증상 소실"의 새 사례를 만드는 것이다.
 
-따라서 6-C 의 순서는 **(1) 공용을 core 와 기능 동등하게 만든다 → (2) 회수한다** 이고, 역순은 금지다. `nextAttemptAt` 은 컬럼이 아니라 **의미론 차이**임에 주의한다 — 공용 디스패처는 예약 재시도를 모른다. **결정: 공용에 넣는다** (2026-08-09). 안 넣으면 core 회수가 조용한 동작 변경이 된다 — 영구 실패 행이 5초마다 재시도되다 빠르게 FAILED 로 가고, 그 변화가 18개 파일 분량 이벤트에 한꺼번에 적용된다. 공용이 core 보다 약한 채로 회수하는 것은 이 ADR §5-1 의 전제("5벌이 생긴 이유는 공용이 모자라서")를 그대로 재생산하는 것이다. `nextAttemptAt` 은 core 에서 **lease 역할도 겸한다**(`outbox-dispatcher.service.ts:132` — 발행 중 프로세스가 죽으면 만료 후 attempts 증가 없이 재시도). 승격 시 그 성질까지 옮긴다.
+따라서 6-C 의 순서는 **(1) 공용을 core 와 기능 동등하게 만든다 → (2) 회수한다** 이고, 역순은 금지다. **결정: 공용에 넣는다** (2026-08-09). 안 넣으면 core 회수가 조용한 동작 변경이 된다 — 영구 실패 행이 5초마다 재시도되다 빠르게 FAILED 로 가고, 그 변화가 18개 파일 분량 이벤트에 한꺼번에 적용된다. 공용이 core 보다 약한 채로 회수하는 것은 이 ADR §5-1 의 전제("5벌이 생긴 이유는 공용이 모자라서")를 그대로 재생산하는 것이다. `nextAttemptAt` 은 core 에서 **lease 역할도 겸한다**(`outbox-dispatcher.service.ts:132` — 발행 중 프로세스가 죽으면 만료 후 attempts 증가 없이 재시도). 승격 시 그 성질까지 옮긴다.
+
+~~`nextAttemptAt` 은 컬럼이 아니라 **의미론 차이**임에 주의한다~~ — **정정 (2026-08-09, Task 6-C-1 실측).** 그 문장은 틀렸다. 공용 테이블에는 `next_attempt_at` 컬럼이 **아예 없었다**(`libs/events/src/outbox/outbox.schema.ts` 실측). 의미론 차이인 동시에 컬럼 차이이며, 따라서 승격의 마이그레이션 범위는 2컬럼이 아니라 **3컬럼**이다. 이 오기는 아래 "마이그레이션은 6개 앱 전부에 생긴다" 와 함께 6-C-1 의 실제 크기를 플랜보다 작게 보이게 하고 있었다.
+
+#### 이행 완료 (2026-08-09, Task 6-C-1) — 호출자 변경 0
+
+승격된 것은 컬럼 3개(`idempotency_key` · `partition_key` · `next_attempt_at`) + `unique(topic, event_type, idempotency_key)` + 디스패처의 예약 백오프(`10/30/60/300초`, core 와 같은 표)다. **`OutboxPublisher.write` 는 새 컬럼을 아직 채우지 않는다** — 그래서 이미 공용을 쓰는 두 앱(core catalog · membership)의 라이브 동작이 그대로다. 실제 값이 들어오는 것은 core 호출자를 회수하는 6-C-2 부터다.
+
+**lease 는 성질만 옮기고 인코딩은 옮기지 않았다 — 설계 변경이다.** core 는 `next_attempt_at` 한 컬럼에 "다음 시도 시각"과 "지금 발행 중"을 겹쳐 싣는다. 공용에는 이미 `status='PROCESSING'` + `processing_started_at` 기반 lease 가 **있었고**(스펙도 붙어 있다), 그것이 core 와 같은 성질(만료 후 `retryCount` 증가 없이 재시도)을 이미 제공한다. 즉 빠져 있던 것은 lease 가 아니라 **예약 백오프 하나**였다. 두 인코딩 중 core 쪽을 택하면:
+
+- 롤링 배포 중 **이중 발행 창이 열린다.** 옛 디스패처는 `next_attempt_at` 을 모르고 `status='PENDING'` 만 본다. lease 를 `status` 가 아니라 timestamp 로만 표현하면, 발행 중인 행이 옛 쪽에는 여전히 `PENDING` 으로 보인다. `PROCESSING` 은 두 판본 모두 존중하므로 그 창이 없다.
+- 한 컬럼에 두 역할을 겹치는 것은 이 레포에서 이미 버그의 출처였다(양식 생성 비동기 워크스트림의 `lease_until` — 점유와 재시도를 분리한 것이 수정이었다).
+
+그래서 **생명주기는 `status`, 일정은 `next_attempt_at`** 으로 나눠 두었고, ADR §1 의 "한 사실에 소유자 하나" 는 두 사실을 각각 한 곳에 두는 쪽으로 지킨다. 기능 동등성(백오프 · 크래시 시 attempts 미증가 · 증가 지점 단일)은 그대로 성립한다.
+
+**`next_attempt_at` 만 `timestamptz` 다 — 의도적이다.** 이 테이블에서 *DB 가 쓴 값*(`DEFAULT now()`)과 *앱이 쓴 값*(JS `Date`)을 **서로 비교**하는 컬럼은 이것뿐이다. `timestamp`(without tz) 면 앞은 세션 TZ, 뒤는 UTC 로 저장돼 그 차이만큼 백오프가 어긋나고, 세션 TZ 가 UTC 인 환경에서는 무증상이라 더 나쁘다. core 로컬 판본도 `withTimezone: true` 다.
+
+**마이그레이션은 6개 앱 전부에 생긴다 — 2개가 아니다.** 공용 디스패처가 실제로 도는 앱은 `enableOutbox: true` 인 core · membership 둘뿐이지만, `libs/events/src/outbox/outbox.schema.ts` 를 **schema 목록에 물고 있는 `drizzle.config.ts` 는 6개**다(analytics · channel-adapter · core · file-service · membership · wallet, 실측). 한 앱이라도 빠뜨리면 그 앱의 다음 무관한 `db:generate` 가 이 변경을 조용히 그 마이그레이션에 끼워 넣는다. expand phase 이므로 순서는 **`migrate → deploy`** 다([[0005-drizzle-migration-and-autodeploy]] §5 — contract 와 반대다).
+
+**기존 행을 막지 않는다는 가정은 실행으로 확인했다** (Postgres 16.14, 세션 TZ `Asia/Seoul`, 생성된 마이그레이션을 그대로 적용). 같은 `(topic, event_type)` 중복 행 3개가 있는 테이블에 unique 를 걸어도 성공했고, `pg_index.indnullsnotdistinct = f` 이며(= `NULLS DISTINCT`, PG15+ 기본값), 제약이 생긴 뒤에도 NULL 키 중복 삽입이 계속 통과하고, 실제 키가 들어오면 그때 비로소 거부된다. `next_attempt_at` 은 기존 행에 `now()` 로 백필돼 즉시 자격을 얻는다 = 옛 동작 그대로.
+
+**wallet 만 마이그레이션을 만들지 못했다 — 이 작업과 무관한 선행 결함이다.** `drizzle-kit generate` 가 `apps/wallet/drizzle/meta/` 의 **스냅샷 체인 분기**에서 멈춘다(`20260630052942` 와 `20260708064014` 가 같은 `prevId` 를 가리킨다). PR #501 의 rebase 산물이며 HEAD 에 그대로 있다. 게다가 최신 스냅샷에는 `cash_receipts` · `refund_requests` 가 **빠져 있다**(두 테이블의 마이그레이션은 journal 에 있고 적용됐는데도) — 즉 `prevId` 만 고쳐 generate 하면 이미 있는 테이블에 `CREATE TABLE` 을 내는 마이그레이션이 나온다. wallet 은 `enableOutbox` 가 아니라 이 조각에서 그 컬럼을 쓰지 않으므로 **6-C-1 의 정확성에는 영향이 없다.** 다만 **6-C-3 전에 반드시 복구해야 하고**, 그 전까지 wallet 의 스키마 변경 전체가 막혀 있다.
 
 ### 명시적으로 하지 않는 것
 
