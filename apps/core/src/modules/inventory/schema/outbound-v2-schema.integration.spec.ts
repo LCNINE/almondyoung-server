@@ -5,7 +5,7 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { INVENTORY_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, returnExchangeTables, wmsSchema, wmsTables } from './inventory.schema';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -2013,30 +2013,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         .from(outbox_events)
         .where(and(eq(outbox_events.aggregateId, f.shipment.id), eq(outbox_events.idempotencyKey, distinctKey)));
       expect(distinctRows).toHaveLength(1);
-    });
-  });
-
-  it('rejects an outbox row missing idempotency_key at the database boundary', async () => {
-    // Task 25 contract: topic/idempotency_key 는 NOT NULL — 옛 ck_outbox_routing_pair(both-null-or-both-set)는
-    // NOT NULL 로 대체됐다. topic 만 있고 key 없는 half-specified 행은 idempotency_key NOT NULL 로 막힌다.
-    await inRollbackTx(async (tx) => {
-      const f = await fixture(tx);
-      await expectViolation(
-        tx,
-        (sp) =>
-          // **옛 테이블**을 겨냥한 테스트다 — 그쪽 `idempotency_key` 는 NOT NULL 이고,
-          // 공용 테이블은 nullable 이다(6-C-1 이 그렇게 만들었다: 이미 적재된 행에 값이 없다).
-          // 6-C-4 로 옛 테이블이 사라질 때 이 테스트도 함께 사라진다.
-          sp.insert(wmsTables.outboxEvents).values({
-            topic: SHIPMENT_STREAM.topic.topic,
-            eventType: 'ShipmentShipped',
-            aggregateType: 'Shipment',
-            aggregateId: f.shipment.id,
-            partitionKey: f.shipment.id,
-            payload: {},
-          }),
-        'idempotency_key',
-      );
     });
   });
 });

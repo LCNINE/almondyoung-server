@@ -268,7 +268,12 @@ export const inboxEvents = pgTable(
     // 이벤트 식별
     eventType: varchar('event_type', { length: 100 }).notNull(), // 'ProductMasterActiveVersionChanged' 등
     idempotencyKey: varchar('idempotency_key', { length: 255 }),
-    aggregateType: varchar('aggregate_type', { length: 50 }).notNull().default('ChannelAdapter'),
+    // **기본값을 두지 않는다 (ADR-0029 Task 6-C-4).** 기본값이 `'ChannelAdapter'` 이던 시절
+    // 이 인자를 생략한 INSERT 는 곧 **아웃박스 적재**였고(옛 디스패처가 그 값으로 행을 골라
+    // 발행했다), 그래서 방향이 호출부에 안 보였다 — 6-C-3 이 회수 대상을 5곳으로 잘못 센 것도
+    // 그 때문이다. 디스패처가 사라진 지금 그 값으로 들어간 행은 아무도 읽지 않으므로, 생략을
+    // NOT NULL 로 실패시킨다. 현재 적재 8곳 전부 명시한다.
+    aggregateType: varchar('aggregate_type', { length: 50 }).notNull(),
     aggregateId: varchar('aggregate_id', { length: 255 }).notNull(), // 채널별 주문/상품 ID (varchar)
     partitionKey: varchar('partition_key', { length: 255 }).notNull(), // Kafka 파티션 키
 

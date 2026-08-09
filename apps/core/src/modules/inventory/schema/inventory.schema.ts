@@ -196,7 +196,6 @@ export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_ord
   'failed',
 ]);
 export const directShipStatusEnum = pgEnum('direct_ship_status', ['pending', 'forwarded', 'completed', 'canceled']);
-export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
 // FOI 기반 확장 enums
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking', 'multi_order']);
@@ -1705,42 +1704,6 @@ export const holidays = pgTable('holidays', {
 });
 
 /*───────────────────────────
- * OUTBOX (EVENT DISPATCH)
- *──────────────────────────*/
-export const outboxEvents = pgTable(
-  'outbox_events',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    // Task 25 contract: topic/idempotencyKey 필수. PR A 가 topicless write 를 컴파일 차단하고 fallback
-    // 라우팅을 제거했으며, 운영자 cleanup 이 legacy null-topic 행을 지웠다.
-    topic: varchar('topic', { length: 255 }).notNull(),
-    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
-    eventType: varchar('event_type', { length: 128 }).notNull(),
-    aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
-    aggregateId: uuid('aggregate_id').notNull(),
-    partitionKey: varchar('partition_key', { length: 128 }).notNull(),
-    payload: json('payload').notNull(),
-    status: outboxStatusEnum('status').notNull().default('pending'),
-    attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
-    publishedAt: timestamp('published_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
-    idxTopicStatusNext: index('idx_outbox_topic_status_next').on(t.topic, t.status, t.nextAttemptAt),
-    // 두 컬럼이 이제 NOT NULL 이라 partial WHERE 는 항상 참 → 일반 unique 로 단순화.
-    // ck_outbox_routing_pair(both-null-or-both-set)는 NOT NULL 로 대체돼 제거.
-    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency').on(
-      t.topic,
-      t.eventType,
-      t.idempotencyKey,
-    ),
-  }),
-);
-
-/*───────────────────────────
  * PURCHASE ORDERS
  *──────────────────────────*/
 export const purchaseOrders = pgTable('purchase_orders', {
@@ -2971,7 +2934,6 @@ export const wmsTables = {
   movementJobLines,
   movementWorkLogs,
   auditLogs,
-  outboxEvents,
   inventoryIdempotencyRequests,
 
   // Stocktaking
@@ -4233,9 +4195,6 @@ export type NewMovementWorkLog = InferInsertModel<typeof movementWorkLogs>;
 // Audit Types
 export type AuditLog = InferSelectModel<typeof auditLogs>;
 export type NewAuditLog = InferInsertModel<typeof auditLogs>;
-
-export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
-export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
 
 // Stocktaking Types
 export type StocktakingSession = InferSelectModel<typeof stocktakingSessions>;

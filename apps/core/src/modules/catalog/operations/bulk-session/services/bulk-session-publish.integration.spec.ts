@@ -18,6 +18,7 @@ import * as postgres from 'postgres';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { TestingModule } from '@nestjs/testing';
 import type { DbService } from '@app/db';
+import { outbox_events } from '@app/events';
 import {
   type PimSchema,
   pricingRules,
@@ -31,9 +32,9 @@ import {
 } from '../../../schema/catalog.schema';
 // 정리 전용 임포트. `publishVersion` 이 남기는 두 행 모두 catalog 쪽 CASCADE 가 닿지 않는다
 // (투영은 product_variants 에 FK 가 없고, 아웃박스는 애초에 FK 가 없다) — 4단계 스위트와
-// 같은 이유·같은 형태다.
+// 같은 이유·같은 형태다. 아웃박스는 공용 `event.outbox_events` 다 — 6-C-2 가 적재를 그리로
+// 옮겼고 6-C-4 가 옛 `public.outbox_events` 를 지웠다.
 import {
-  outboxEvents,
   productSellableQuantityProjections,
   salesVariantPolicies,
 } from '../../../../inventory/schema/inventory.schema';
@@ -257,7 +258,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
           // 증가한다. `aggregate_id` 로 **이 스위트가 만든 것만** 지운다(테이블을 비우지 않는다).
           const aggregateIds = [...new Set([...masterIds, ...variantIds])];
           if (aggregateIds.length > 0) {
-            await trx.delete(outboxEvents).where(inArray(outboxEvents.aggregateId, aggregateIds));
+            await trx.delete(outbox_events).where(inArray(outbox_events.aggregateId, aggregateIds));
           }
         });
       }

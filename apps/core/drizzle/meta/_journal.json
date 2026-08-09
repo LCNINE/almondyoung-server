@@ -442,6 +442,13 @@
       "when": 1786291952803,
       "tag": "20260809161232_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1786312411050,
+      "tag": "20260809215331_drop-legacy-core-outbox",
+      "breakpoints": true
     }
   ]
 }

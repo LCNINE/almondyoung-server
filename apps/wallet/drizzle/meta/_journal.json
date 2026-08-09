@@ -92,6 +92,13 @@
       "when": 1786291955488,
       "tag": "20260809161235_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786312671957,
+      "tag": "20260809215751_drop-legacy-wallet-outbox",
+      "breakpoints": true
     }
   ]
 }

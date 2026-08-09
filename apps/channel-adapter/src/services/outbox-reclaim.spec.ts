@@ -3,7 +3,7 @@
  *
  * 이 앱에는 `inbox_events` 테이블 하나가 **두 방향**을 겸하고 있었다. 수신 큐로 쓰는 행은
  * `InboxWorkerService` 가 처리하고, `aggregate_type = 'ChannelAdapter'` 인 행은
- * `OutboxDispatcherService` 가 Kafka 로 **발행**했다. 어느 쪽인지는 호출자가
+ * 앱 자체 아웃박스 디스패처(6-C-4 에서 삭제)가 Kafka 로 **발행**했다. 어느 쪽인지는 호출자가
  * `aggregateType` 인자를 **생략했는지**로 갈렸다 — 생략하면 컬럼 기본값이 발행 큐였다.
  *
  * 회수는 그 발행 8곳을 공용 `event.outbox_events`(=`StreamPublisher.enqueue`)로 옮긴다.

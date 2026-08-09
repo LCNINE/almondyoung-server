@@ -69,7 +69,6 @@ import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
 import { PendingOrderService } from './services/pending-order.service';
 import { InboxService } from './services/inbox.service';
-import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 import { PollingChangeHashService } from './services/polling-change-hash.service';
 import { ShipmentDispatchInboxWorker } from './services/shipment-dispatch-inbox.worker';
 
@@ -232,9 +231,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // 주문 이벤트 발행 서비스
     OrderEventPublisher,
 
-    // Inbox/Outbox 패턴 서비스
+    // Inbox 패턴 서비스 (발행은 공용 StreamPublisher.enqueue — ADR-0029 §5-1)
     InboxService,
-    OutboxDispatcherService,
     ShipmentDispatchInboxWorker,
 
     // 폴링 dedupe (외부 데이터 변경 감지)
