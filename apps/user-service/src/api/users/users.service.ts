@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   BadRequestException,
   HttpException,
@@ -8,7 +8,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
@@ -28,8 +28,8 @@ export class UsersService {
 
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;

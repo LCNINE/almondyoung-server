@@ -1,8 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   WALLET_COMMAND_STREAM,
-  type WalletCommandEvents,
   type BillingChargePayload,
   type CreateInvoicePayload,
   type VoidInvoicePayload,
@@ -13,8 +12,8 @@ export class WalletCommandPublisher {
   private readonly logger = new Logger(WalletCommandPublisher.name);
 
   constructor(
-    @InjectStreamPublisher(WALLET_COMMAND_STREAM.topic.topic)
-    private readonly publisher: StreamPublisher<WalletCommandEvents>,
+    @InjectPublisher(WALLET_COMMAND_STREAM)
+    private readonly publisher: PublisherFor<typeof WALLET_COMMAND_STREAM>,
   ) {}
 
   async publishBillingCharge(payload: Omit<BillingChargePayload, 'requestedAt'>): Promise<void> {

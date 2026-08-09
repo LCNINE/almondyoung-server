@@ -1,9 +1,9 @@
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { UserEvents } from '@packages/event-contracts/streams';
+import { USER_STREAM } from '@packages/event-contracts/streams';
 import {
   userServiceSchema,
   type UserServiceSchema,
@@ -31,8 +31,8 @@ export class AccountLinkingService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    @InjectStreamPublisher('users.events.v1')
-    private readonly eventPublisher: StreamPublisher<UserEvents>,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
 
   private getClient(tx?: DbTransaction) {

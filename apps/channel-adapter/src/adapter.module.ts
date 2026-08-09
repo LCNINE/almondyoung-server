@@ -8,11 +8,11 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
 import {
   EventsModule,
-  StreamPublisher,
   EventChainService,
   EventTrackingService,
   EventTraceApiModule,
   createKafkaConfigFromEnv,
+  getPublisherToken,
   EVENTS_CONSUMER_POLICY,
   type EventsConsumerPolicy,
 } from '@app/events';
@@ -271,30 +271,15 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
       useValue: { validation: { validateOnConsume: false } } satisfies EventsConsumerPolicy,
     },
 
-    // Kafka 환경변수 없을 때(로컬): NullEventPublisher로 DI 채우기
+    // Kafka 환경변수 없을 때(로컬): NullEventPublisher로 DI 채우기.
+    // 토큰 문자열을 손으로 적지 않는다 — 형식의 소유자는 `publisher-token.ts` 한 곳이며
+    // (ADR-0029 §4), 손으로 적은 사본은 형식이 바뀌어도 조용히 어긋난다. 계약 상수에서
+    // 도출하면 `forRoot({streams})` 목록과 이 목록이 같은 출처를 갖는다.
     ...(!process.env.KAFKA_BROKERS
-      ? [
-          {
-            provide: 'STREAM_PUBLISHER_channel-adapter.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_orders.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_core.orders.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_users.events.v1',
-            useClass: NullEventPublisher,
-          },
-          {
-            provide: 'STREAM_PUBLISHER_payments.events.v1',
-            useClass: NullEventPublisher,
-          },
-        ]
+      ? [CHANNEL_ADAPTER_STREAM, ORDER_STREAM, CORE_ORDER_STREAM, USER_STREAM, PAYMENT_STREAM].map((stream) => ({
+          provide: getPublisherToken(stream.topic.topic),
+          useClass: NullEventPublisher,
+        }))
       : []),
   ],
 })

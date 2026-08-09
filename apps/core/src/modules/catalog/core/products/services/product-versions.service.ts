@@ -1,8 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError, ConflictError } from '@app/shared';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts';
 import type { ProductPublishOrigin } from '@packages/event-contracts/streams/product.stream';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
@@ -64,8 +64,8 @@ export class ProductVersionsService {
 
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
-    @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
-    private readonly productPublisher: StreamPublisher<ProductEvents>,
+    @InjectPublisher(PRODUCT_STREAM)
+    private readonly productPublisher: PublisherFor<typeof PRODUCT_STREAM>,
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,

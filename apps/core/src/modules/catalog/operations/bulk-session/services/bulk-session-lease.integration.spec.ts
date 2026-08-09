@@ -5,8 +5,8 @@
 // 상시 debt 다. 같은 커밋이 `bulk-session-merge.integration.spec.ts` 에는 이 우회를 이미
 // 두었지만 이 파일에는 빠져 스위트가 module-not-found 로 통째로 죽어 있었다.
 //
-// 값이 필요한 곳은 클래스 정의 시점에 평가되는 `@InjectStreamPublisher(PRODUCT_STREAM.topic.topic)`
-// 데코레이터 인자뿐이다 — 이 스위트는 그 서비스들을 인스턴스화하지도 부르지도 않는다
+// 값이 필요한 곳은 클래스 정의 시점에 평가되는 `@InjectPublisher(PRODUCT_STREAM)` 데코레이터
+// 인자뿐이다(그 안에서 `stream.topic.topic` 만 읽는다) — 이 스위트는 그 서비스들을 인스턴스화하지도 부르지도 않는다
 // (`BulkSessionJobManager` 에 applier 로 `undefined as never` 를 넘긴다).
 jest.mock(
   '@packages/event-contracts',

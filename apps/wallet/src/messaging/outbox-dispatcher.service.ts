@@ -1,13 +1,11 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 import { WalletSchema, outboxEvents } from '../schema';
-import { StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { MessageEnvelope } from '@packages/event-contracts/types';
-import { EventsModule } from '@app/events';
-
-const PAYMENT_EVENTS_TOPIC = 'payments.events.v1';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 
 const DEFAULT_OUTBOX_DISPATCH_CRON = '*/5 * * * * *';
 const DEFAULT_OUTBOX_BATCH_SIZE = 100;
@@ -42,8 +40,8 @@ export class OutboxDispatcherService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     @Optional()
-    @Inject(EventsModule.getPublisherToken(PAYMENT_EVENTS_TOPIC))
-    private readonly publisher?: StreamPublisher,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher?: PublisherFor<typeof PAYMENT_STREAM>,
   ) {
     this.batchSize = this.readPositiveInt(process.env.WALLET_OUTBOX_BATCH_SIZE, DEFAULT_OUTBOX_BATCH_SIZE);
     this.maxAttempts = this.readPositiveInt(process.env.WALLET_OUTBOX_MAX_ATTEMPTS, DEFAULT_OUTBOX_MAX_ATTEMPTS);

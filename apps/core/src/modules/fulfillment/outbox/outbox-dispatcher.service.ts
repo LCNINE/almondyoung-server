@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import {
   FULFILLMENT_STREAM,
   FulfillmentEvents,
@@ -51,16 +51,16 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    @InjectStreamPublisher(FULFILLMENT_STREAM.topic.topic)
-    private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
-    @InjectStreamPublisher(INVENTORY_STREAM.topic.topic)
-    private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
-    @InjectStreamPublisher(CORE_ORDER_STREAM.topic.topic)
-    private readonly coreOrderPublisher: StreamPublisher<CoreOrderEvents>,
-    @InjectStreamPublisher(SHIPMENT_STREAM.topic.topic)
-    private readonly shipmentPublisher: StreamPublisher<ShipmentEvents>,
-    @InjectStreamPublisher(FULFILLMENT_V2_STREAM.topic.topic)
-    private readonly fulfillmentV2Publisher: StreamPublisher<FulfillmentV2Events>,
+    @InjectPublisher(FULFILLMENT_STREAM)
+    private readonly fulfillmentPublisher: PublisherFor<typeof FULFILLMENT_STREAM>,
+    @InjectPublisher(INVENTORY_STREAM)
+    private readonly inventoryPublisher: PublisherFor<typeof INVENTORY_STREAM>,
+    @InjectPublisher(CORE_ORDER_STREAM)
+    private readonly coreOrderPublisher: PublisherFor<typeof CORE_ORDER_STREAM>,
+    @InjectPublisher(SHIPMENT_STREAM)
+    private readonly shipmentPublisher: PublisherFor<typeof SHIPMENT_STREAM>,
+    @InjectPublisher(FULFILLMENT_V2_STREAM)
+    private readonly fulfillmentV2Publisher: PublisherFor<typeof FULFILLMENT_V2_STREAM>,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
