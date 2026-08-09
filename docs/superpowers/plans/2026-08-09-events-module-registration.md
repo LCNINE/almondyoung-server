@@ -272,13 +272,60 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 
 ### Task 5-B: 배선 켜기 (`startConsumer`) — 앱별
 
-- [ ] **선행 확인 1건.** 지금 핸들러가 throw 하면 실제로 어떻게 되는지(재전달 루프인지 Nest 가 삼키는지)를 Task 2 하네스로 재현해 확정한다. B 의 before/after 를 말할 수 있어야 한다
-- [ ] 각 앱: `main.ts` 를 `startConsumer(app, { groupId })` 로 교체 (streams 인자 제거)
-- [ ] **검증이 기본 ON 으로 넘어가는 앱은 이 PR 에서 `validateOnConsume: false` 를 명시**해 B 와 C 를 분리한다 (core · analytics · search · **channel-adapter**)
-- [ ] 그 앱 핸들러의 idempotency 확인 — 재시도가 처음으로 실재하게 된다
-- [ ] `nest build <app>` · `npm run type-check` 초록
+- [x] **선행 확인 1건.** 지금 핸들러가 throw 하면 실제로 어떻게 되는지(재전달 루프인지 Nest 가 삼키는지)를 Task 2 하네스로 재현해 확정한다. B 의 before/after 를 말할 수 있어야 한다
+- [x] 각 앱: `main.ts` 를 `startConsumer(app, { groupId })` 로 교체 (streams 인자 제거)
+- [x] **검증이 기본 ON 으로 넘어가는 앱은 이 PR 에서 `validateOnConsume: false` 를 명시**해 B 와 C 를 분리한다 (core · analytics · search · **channel-adapter**)
+- [x] 그 앱 핸들러의 idempotency 확인 — 재시도가 처음으로 실재하게 된다
+- [x] `nest build <app>` · `npm run type-check` 초록
 
 B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 가깝다.** `EventRetryInterceptor` 의 의미론은 "최종 실패 → DLQ 전송 후 에러 삼킴 → offset commit" 인데 지금은 그게 안 붙어 있어 독약 메시지에 탈출구가 없다.
+
+**완료 (2026-08-09).** 브랜치 `docs/plan-task5-split`. 7개 앱 전부 한 커밋에 — 플랜 Global Constraints 의 "Task 5a~5g 는 앱 간 순서 없음, 여러 앱을 한 배포에 묶어도 된다"에 따른다. 각 앱 이주는 서로를 참조하지 않으므로 배포는 여전히 앱 단위로 쪼갤 수 있다.
+
+**선행 확인 결과 — 옛 배선에서 핸들러 throw 는 재전달 루프가 아니라 "조용한 소실"이다.** 둘 중 하나일 거라 적어뒀는데 답은 후자였고, 그 편이 나쁘다. `libs/events/src/transport/handler-failure.spec.ts` 가 두 배선을 나란히 실행해 박아뒀다:
+
+| | 옛 배선 (`connectMicroservice(opts)`) | `startConsumer` |
+|---|---|---|
+| 핸들러 실행 횟수 | **1회** (재시도 없음) | `@RetryPolicy` 대로 (기본 1+3) |
+| DLQ | **0건** | 1건 (원본 토픽·에러 이름 보존) |
+| 에러의 최후 | **아무 데도 안 남는다** | 인터셉터가 삼킴 → offset commit |
+
+마지막 칸이 핵심이다. Nest 의 `Server.handleEvent` 는 핸들러가 Observable 을 돌려주면 `connectable(...).connect()` 로 **구독만 하고 기다리지 않으며**(`server.js:105–117`), 그 connector 는 구독자 없는 `Subject` 라 에러가 흘러들어와도 `hasError` 만 세워지고 보고되지 않는다 — rxjs 의 unhandled-error 경로조차 타지 않는다(별도 스크립트로 실행 확인: `uncaughtException`·`unhandledRejection` 둘 다 안 뜬다). 그 사이 `handleEvent` 는 이미 정상 resolve 했으므로 offset 은 전진한다. **즉 지금까지 실패한 소비는 로그 한 줄 없이 사라져 왔다.** 하네스에서만 `broker.deliveryFailures` 로 보이는데, 그건 인메모리 서버가 동기 배달 보장을 위해 그 Observable 을 기다리기 때문이고 **운영에는 그 관찰 창구가 없다.** 스펙 상단 주석에 그 비대칭을 적어뒀다.
+
+**부팅 거부 위험은 0으로 확인했다.** `startConsumer` 는 ① 레지스트리에 없는 토픽 ② 핸들러 0개 에서 부팅을 거부하므로, 이주가 곧 부팅 실패가 될 수 있다. 7개 앱의 `(등록된 컨트롤러 → @On → 토픽)` 집합을 정적으로 재현해 전수 확인했다 — 핸들러 0개인 앱 없음, 레지스트리 밖 토픽 없음.
+
+| 앱 | 핸들러 | 도출 토픽 |
+|---|---:|---:|
+| core | 4 | 1 |
+| notification | 22 | 3 |
+| membership | 10 | 1 |
+| wallet | 4 | 2 |
+| analytics | 10 | 3 |
+| search | 3 | 2 |
+| channel-adapter | 34 | **9** |
+
+- **플랜의 앱별 핸들러 수 표가 2건 낡았다** — analytics·membership 은 11 이 아니라 **10** 이다(합계 89 가 아니라 87). 87 은 5-A 가 이주한 수와 정확히 일치하고, `@On` 원시 grep 도 87 이다. `controllers:[]` 에 등록되지 않은 `@On` 핸들러는 **0개**임도 같이 확인했다(있었다면 그게 ADR 의 "가장 조용한 실수"의 실례였을 것).
+- **channel-adapter 의 도출 토픽이 9개다** — 옛 `forConsumer` 목록의 6개가 아니다. 빠져 있던 `users.events.v1` · `core.orders.events.v1` · `payments.events.v1` 이 바로 2026-08-08 리뷰가 "구독되지 않는다"고 오판한 그 세 개다. 도출은 처음부터 옳은 값을 낸다.
+
+**C 분리 — 4개 앱에 `validateOnConsume: false` 명시.** core·analytics·search 는 각자의 `forConsumerModule` 에 넣었다. **channel-adapter 는 선언할 자리 자체가 없었다** (`forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true`). `forConsumerModule` 을 새로 부르지 않았다 — 그 표면은 `streams` 를 필수로 받는데 그 목록이야말로 이 워크스트림이 지우는 중인 두 번째 진실이다. 필요한 건 정책 하나뿐이라 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록했다. Task 7 의 `forApp` 이 이 자리를 흡수한다. 이것으로 ADR Follow-up 8 (channel-adapter 소비 검증 구멍)은 "이주에 묶는다"로 결정됐다.
+
+**⚠️ idempotency 확인 결과 — notification 1개 앱만 재실행에 안전하지 않다.** 재시도가 처음으로 실재하게 되므로 87개 핸들러를 전수로 훑었다. 표면 grep 은 얕아서(가드가 컨슈머가 아니라 서비스에 있다) 서비스까지 따라 들어갔다.
+
+| 앱 | 재실행 안전 | 근거 |
+|---|---|---|
+| core (4) | ✅ | `checkAndRecordEvent(envelope.messageId)` 를 도메인 tx 안에서 — 중복이면 즉시 return |
+| channel-adapter (34) | ✅ | 핸들러는 `inbox_events` 단일 insert 만 한다. 외부 API 호출은 `InboxWorkerService` 소관이라 재시도 범위 밖 |
+| membership (10) | ✅ | billing/invoice 결과에 unique 마커 `(contract, intent, eventType)` → 충돌 시 skip. `voidByPaymentIntent` 는 `status === 'CANCELLED'` 가드 |
+| wallet (4) | ✅ | idempotency key |
+| analytics (10) | ✅ | fact 테이블 `onConflictDoNothing(messageId)`, dimension 은 upsert |
+| search (3) | ✅ | 문서 ID 고정 upsert / delete |
+| **notification (22)** | ⚠️ | **멱등 키 없음** |
+
+`NotificationDispatcherService.send` 는 `dto.channels` 를 루프 돌며 채널마다 `notifications` 행을 insert 하고 큐에 넣는다. 멱등 키가 없어, **채널 1이 성공한 뒤 채널 2에서 throw 하면 재시도가 루프를 처음부터 다시 돌아 채널 1이 다시 발송된다.** 다만 노출은 좁다 — 프로바이더 전송 실패는 `sendNotificationDirectly` 의 `catch` 가 삼키고 행을 FAILED 로만 바꾸므로 핸들러까지 올라오지 않는다. 실제로 throw 하는 건 DB/템플릿 조회 실패 정도다. 그 경우 옛 배선에서는 메시지가 통째로 소실됐고, 새 배선에서는 앞 채널이 최대 4회 중복될 수 있다. **고치지 않았다** — 5-B 의 항목은 "확인"이고, 수정은 dedup 키(+마이그레이션)를 요구해 이 PR 의 blast radius 를 바꾼다. ADR Follow-up 11 로 올렸다.
+
+- `start-consumer.spec.ts` 의 "옛 배선" describe 는 **아직 지우지 않았다.** Task 5 완료 기준은 grep 3종(`forConsumer` 0 · `@OnEvent` 0 · 7앱 이주)이 충족되면 지우라고 하고 지금 셋 다 충족이지만, 이 레포는 autodeploy 가 없어(ADR-0005 §4) **배포 전까지 라이브는 여전히 옛 배선**이다. 즉 그 describe 의 주장은 지금도 참이다. 삭제 시점을 "5-B 배포 후"로 못박는 주석으로 바꾸고 이름만 `현재 앱 배선` → `옛 앱 배선` 으로 고쳤다.
+- 검증: `npm run type-check` **164 — HEAD 기준선과 file:line:code 집합 완전 동일**(신규 0 · 소멸 0) · **10개 앱 전부 `nest build` 초록** · `libs/events`+계약 패키지 **18 suite / 157 tests 초록**(5-A 대비 +1 suite / +6 tests) · 전체 jest **실패 suite 18개 = 기준선과 동일**(통과 3019, 5-A 대비 +6) · AST 게이트 `npm run audit:event-handlers` exit 0 (87 핸들러 / `@OnEvent` 0) · 변경 파일 eslint **메시지 집합이 기준선과 완전 동일**(신규 0), 신규 스펙 파일은 clean.
+- **5-C 에 넘기는 사실:** 4개 앱의 `validateOnConsume: false` 는 **현상 유지 표식**이지 결정이 아니다. 지우는 순간 검증이 켜진다. notification·membership·wallet 의 `false` 는 원래부터 있던 것이며 5-C 에서도 해당 없음이다. 그리고 이제 4개 앱 전부 `EVENTS_CONSUMER_POLICY` 를 실제로 갖고 있으므로, 5-C 는 이 한 줄을 앱별로 뒤집는 작업이 된다.
 
 ### Task 5-C: 검증 켜기 — 앱별, 게이트
 
@@ -333,15 +380,15 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 ## 완료 기준 (워크스트림 전체)
 
-- [ ] `grep -rn "forConsumer(" apps --include=*.ts | grep -v spec` 결과가 0건
-- [ ] `grep -rn "@OnEvent(" apps --include=*.ts | grep -v spec` 결과가 0건
-- [ ] `EventKeysOf` / `EventPayloadOf` 사용처가 0건이 아니다
-- [ ] 인메모리 어댑터로 발행→소비 왕복이 테스트된다
-- [ ] outbox enqueue 가 zod 검증을 탄다
-- [ ] `libs/events/src` 스펙 파일 수가 5개보다 많다
-- [ ] 컨트롤러를 `controllers: []` 에 등록하지 않으면 부팅이 실패한다
-- [ ] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다
-- [ ] ADR-0029 의 Status 가 Accepted 로 갱신됐다
+- [x] `grep -rn "forConsumer(" apps --include=*.ts | grep -v spec` 결과가 0건 — 5-B
+- [x] `grep -rn "@OnEvent(" apps --include=*.ts | grep -v spec` 결과가 0건 — 5-A
+- [x] `EventKeysOf` / `EventPayloadOf` 사용처가 0건이 아니다 — 5-A (87 핸들러)
+- [x] 인메모리 어댑터로 발행→소비 왕복이 테스트된다 — Task 2
+- [ ] outbox enqueue 가 zod 검증을 탄다 — Task 6
+- [x] `libs/events/src` 스펙 파일 수가 5개보다 많다 — 현재 11
+- [x] 컨트롤러를 `controllers: []` 에 등록하지 않으면 부팅이 실패한다 — Task 3 에서 구현, 5-B 로 7개 앱 전부에 실효
+- [ ] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164 유지. Task 6·7 후 최종 확인
+- [x] ADR-0029 의 Status 가 Accepted 로 갱신됐다
 
 ---
 

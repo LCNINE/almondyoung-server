@@ -6,7 +6,6 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { GlobalExceptionFilter } from '@app/shared';
 import fastifyCookie from '@fastify/cookie';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { ORDER_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AnalyticsModule } from './analytics.module';
 
@@ -61,33 +60,15 @@ async function bootstrap() {
 
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
-    // NOTE: this `streams` list does NOT determine what we subscribe to — it is inert.
-    // forConsumer() builds `subscribe.topics` from it, but Nest's ServerKafka overrides
-    // that field: `bindEvents()` spreads `options.subscribe` and then sets
-    // `topics: [...this.messageHandlers.keys()]` after the spread
-    // (node_modules/@nestjs/microservices/server/server-kafka.js:92, v11.1.17). Since
-    // @On(STREAM, type) expands to EventPattern(topic) + metadata, the registered
-    // patterns ARE the topic strings, so the real subscription set comes from the @On
-    // decorators on controllers registered in analytics.module.ts.
-    //
-    // Concretely: PRODUCT_STREAM is absent from this array and products.events.v1 is
-    // still subscribed, because ProductEventsConsumer is in `controllers` and declares
-    // six @On(PRODUCT_STREAM, ...) handlers. (An earlier version of this comment
-    // claimed the opposite and was wrong — see docs/adr/0029.)
-    //
-    // The list that does carry weight is the one passed to forConsumerModule() in
-    // analytics.module.ts: it supplies the topic -> StreamConfig map used by
-    // SchemaValidationInterceptor, plus topic bootstrap. Load-bearing args here are
-    // groupId and kafka.
-    const consumerOptions = EventsModule.forConsumer({
-      streams: [ORDER_STREAM, MEMBERSHIP_STREAM],
+    // 구독 목록 인자가 없다 — 소비 집합은 `analytics.module.ts` 의 `controllers` 에
+    // 등록된 컨트롤러의 `@On` 데코레이터에서 도출된다 (ADR-0029 §3). 예전에 이 자리에
+    // 있던 `streams` 배열은 Nest 가 `subscribe.topics` 를 덮어쓰기 때문에 한 번도
+    // 효과를 낸 적이 없었고, 그 목록을 실제 구독으로 읽은 주석이 2026-08-08 아키텍처
+    // 리뷰의 오판을 낳았다. 이제 그 목록 자체가 없다.
+    await EventsModule.startConsumer(app, {
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
       kafka: kafkaConfig,
     });
-
-    app.connectMicroservice(consumerOptions);
-    await app.startAllMicroservices();
-    logger.log('Kafka consumer connected (orders.events.v1, membership.events.v1).');
   } else {
     logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
   }
