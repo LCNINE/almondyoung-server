@@ -1,31 +1,14 @@
 // apps/notification/src/dispatcher/handlers/wallet-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  PaymentAuthorizedPayload,
-  PaymentCapturedPayload,
-  PaymentFailedPayload,
-  PaymentCancelledPayload,
-  PaymentRefundRequestPayload,
-  PaymentRefundCompletedPayload,
-  RefundApprovedPayload,
-  RefundRejectedPayload,
-  RefundFailedPayload,
-  PointsEarnedPayload,
-  PointsRedeemedPayload,
-  PointsCancelledPayload,
-  PointsExpiredPayload,
-  TaxInvoiceIssuedPayload,
-  TaxInvoiceFailedPayload,
-  TaxInvoiceCancelledPayload,
-} from '@packages/event-contracts/streams';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDueDate } from '../../shared/utils/template-helpers';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * Payment Service 이벤트 컨슈머
@@ -74,10 +57,10 @@ export class WalletEventConsumer {
 
   // ===== Payment 이벤트 =====
 
-  @OnEvent('payments.events.v1', 'PaymentAuthorized')
+  @On(PAYMENT_STREAM, 'PaymentAuthorized')
   async onPaymentAuthorized(
-    @EventEnvelope() envelope: DomainEvent<PaymentAuthorizedPayload>,
-    @EventPayload() payload: PaymentAuthorizedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentAuthorized'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentAuthorized'>,
   ) {
     this.logger.log(
       `[Event] Received PaymentAuthorized: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
@@ -115,10 +98,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PaymentCaptured')
+  @On(PAYMENT_STREAM, 'PaymentCaptured')
   async onPaymentCaptured(
-    @EventEnvelope() envelope: DomainEvent<PaymentCapturedPayload>,
-    @EventPayload() payload: PaymentCapturedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentCaptured'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentCaptured'>,
   ) {
     this.logger.log(
       `[Event] Received PaymentCaptured: ${payload.paymentId} (correlationId: ${envelope.correlationId})`,
@@ -154,10 +137,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PaymentFailed')
+  @On(PAYMENT_STREAM, 'PaymentFailed')
   async onPaymentFailed(
-    @EventEnvelope() envelope: DomainEvent<PaymentFailedPayload>,
-    @EventPayload() payload: PaymentFailedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentFailed'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentFailed'>,
   ) {
     this.logger.log(`[Event] Received PaymentFailed: ${payload.intentId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -194,10 +177,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PaymentCancelled')
+  @On(PAYMENT_STREAM, 'PaymentCancelled')
   async onPaymentCancelled(
-    @EventEnvelope() envelope: DomainEvent<PaymentCancelledPayload>,
-    @EventPayload() payload: PaymentCancelledPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentCancelled'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentCancelled'>,
   ) {
     this.logger.log(
       `[Event] Received PaymentCancelled: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
@@ -237,10 +220,10 @@ export class WalletEventConsumer {
 
   // ===== Refund 이벤트 =====
 
-  @OnEvent('payments.events.v1', 'PaymentRefundRequest')
+  @On(PAYMENT_STREAM, 'PaymentRefundRequest')
   async onPaymentRefundRequest(
-    @EventEnvelope() envelope: DomainEvent<PaymentRefundRequestPayload>,
-    @EventPayload() payload: PaymentRefundRequestPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentRefundRequest'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentRefundRequest'>,
   ) {
     this.logger.log(
       `[Event] Received PaymentRefundRequest: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
@@ -276,10 +259,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PaymentRefundCompleted')
+  @On(PAYMENT_STREAM, 'PaymentRefundCompleted')
   async onPaymentRefundCompleted(
-    @EventEnvelope() envelope: DomainEvent<PaymentRefundCompletedPayload>,
-    @EventPayload() payload: PaymentRefundCompletedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PaymentRefundCompleted'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PaymentRefundCompleted'>,
   ) {
     this.logger.log(
       `[Event] Received PaymentRefundCompleted: ${payload.refundId} (correlationId: ${envelope.correlationId})`,
@@ -319,10 +302,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'RefundApproved')
+  @On(PAYMENT_STREAM, 'RefundApproved')
   async onRefundApproved(
-    @EventEnvelope() envelope: DomainEvent<RefundApprovedPayload>,
-    @EventPayload() payload: RefundApprovedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundApproved'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundApproved'>,
   ) {
     this.logger.log(`[Event] Received RefundApproved: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -358,10 +341,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'RefundRejected')
+  @On(PAYMENT_STREAM, 'RefundRejected')
   async onRefundRejected(
-    @EventEnvelope() envelope: DomainEvent<RefundRejectedPayload>,
-    @EventPayload() payload: RefundRejectedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundRejected'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundRejected'>,
   ) {
     this.logger.log(`[Event] Received RefundRejected: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -398,10 +381,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'RefundFailed')
+  @On(PAYMENT_STREAM, 'RefundFailed')
   async onRefundFailed(
-    @EventEnvelope() envelope: DomainEvent<RefundFailedPayload>,
-    @EventPayload() payload: RefundFailedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'RefundFailed'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'RefundFailed'>,
   ) {
     this.logger.log(`[Event] Received RefundFailed: ${payload.refundId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -441,10 +424,10 @@ export class WalletEventConsumer {
 
   // ===== Point 이벤트 =====
 
-  @OnEvent('payments.events.v1', 'PointsEarned')
+  @On(PAYMENT_STREAM, 'PointsEarned')
   async onPointsEarned(
-    @EventEnvelope() envelope: DomainEvent<PointsEarnedPayload>,
-    @EventPayload() payload: PointsEarnedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PointsEarned'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PointsEarned'>,
   ) {
     this.logger.log(`[Event] Received PointsEarned: ${payload.pointId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -478,10 +461,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PointsRedeemed')
+  @On(PAYMENT_STREAM, 'PointsRedeemed')
   async onPointsRedeemed(
-    @EventEnvelope() envelope: DomainEvent<PointsRedeemedPayload>,
-    @EventPayload() payload: PointsRedeemedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PointsRedeemed'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PointsRedeemed'>,
   ) {
     this.logger.log(`[Event] Received PointsRedeemed: ${payload.pointId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -515,10 +498,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PointsCancelled')
+  @On(PAYMENT_STREAM, 'PointsCancelled')
   async onPointsCancelled(
-    @EventEnvelope() envelope: DomainEvent<PointsCancelledPayload>,
-    @EventPayload() payload: PointsCancelledPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PointsCancelled'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PointsCancelled'>,
   ) {
     this.logger.log(`[Event] Received PointsCancelled: ${payload.pointId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -552,10 +535,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'PointsExpired')
+  @On(PAYMENT_STREAM, 'PointsExpired')
   async onPointsExpired(
-    @EventEnvelope() envelope: DomainEvent<PointsExpiredPayload>,
-    @EventPayload() payload: PointsExpiredPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'PointsExpired'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'PointsExpired'>,
   ) {
     this.logger.log(`[Event] Received PointsExpired: ${payload.pointId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -591,10 +574,10 @@ export class WalletEventConsumer {
 
   // ===== Tax Invoice 이벤트 =====
 
-  @OnEvent('payments.events.v1', 'TaxInvoiceIssued')
+  @On(PAYMENT_STREAM, 'TaxInvoiceIssued')
   async onTaxInvoiceIssued(
-    @EventEnvelope() envelope: DomainEvent<TaxInvoiceIssuedPayload>,
-    @EventPayload() payload: TaxInvoiceIssuedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'TaxInvoiceIssued'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'TaxInvoiceIssued'>,
   ) {
     this.logger.log(
       `[Event] Received TaxInvoiceIssued: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
@@ -633,10 +616,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'TaxInvoiceFailed')
+  @On(PAYMENT_STREAM, 'TaxInvoiceFailed')
   async onTaxInvoiceFailed(
-    @EventEnvelope() envelope: DomainEvent<TaxInvoiceFailedPayload>,
-    @EventPayload() payload: TaxInvoiceFailedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'TaxInvoiceFailed'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'TaxInvoiceFailed'>,
   ) {
     this.logger.log(
       `[Event] Received TaxInvoiceFailed: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
@@ -673,10 +656,10 @@ export class WalletEventConsumer {
     }
   }
 
-  @OnEvent('payments.events.v1', 'TaxInvoiceCancelled')
+  @On(PAYMENT_STREAM, 'TaxInvoiceCancelled')
   async onTaxInvoiceCancelled(
-    @EventEnvelope() envelope: DomainEvent<TaxInvoiceCancelledPayload>,
-    @EventPayload() payload: TaxInvoiceCancelledPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'TaxInvoiceCancelled'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'TaxInvoiceCancelled'>,
   ) {
     this.logger.log(
       `[Event] Received TaxInvoiceCancelled: ${payload.invoiceId} (correlationId: ${envelope.correlationId})`,
@@ -720,10 +703,10 @@ export class WalletEventConsumer {
    * 수신자(email)와 계좌 정보는 반드시 이벤트 payload 로 와야 한다 —
    * notification 에는 wallet intent 조회 경로가 없다.
    */
-  @OnEvent('payments.events.v1', 'payment.intent.awaiting_deposit')
+  @On(PAYMENT_STREAM, 'payment.intent.awaiting_deposit')
   async onIntentAwaitingDeposit(
-    @EventEnvelope() envelope: DomainEvent<Record<string, any>>,
-    @EventPayload() payload: Record<string, any>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'payment.intent.awaiting_deposit'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'payment.intent.awaiting_deposit'>,
   ) {
     this.logger.log(
       `[Event] Received IntentAwaitingDeposit: ${payload.intentId} (correlationId: ${envelope.correlationId})`,

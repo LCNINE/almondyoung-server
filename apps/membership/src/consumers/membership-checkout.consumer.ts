@@ -1,8 +1,10 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SubscriptionService } from '../services/subscription.service';
 import { ActiveSubscriptionExistsException } from '../shared/exceptions/subscription.exceptions';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
+import { EventPayloadOf } from '@packages/event-contracts/types';
 
 interface CapturedEventPayload {
   intentId: string;
@@ -25,8 +27,8 @@ export class MembershipCheckoutConsumer {
 
   constructor(private readonly subscriptionService: SubscriptionService) {}
 
-  @OnEvent('payments.events.v1', 'payment.intent.captured')
-  async onIntentCaptured(@EventPayload() payload: CapturedEventPayload) {
+  @On(PAYMENT_STREAM, 'payment.intent.captured')
+  async onIntentCaptured(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'payment.intent.captured'>) {
     if (payload.metadata?.type !== 'MEMBERSHIP_FEE') return;
 
     this.logger.log(`[MembershipCheckout] CAPTURED 멤버십 결제 감지: intentId=${payload.intentId}`);

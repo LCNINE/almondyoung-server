@@ -66,14 +66,14 @@ async function bootstrap() {
     // that field: `bindEvents()` spreads `options.subscribe` and then sets
     // `topics: [...this.messageHandlers.keys()]` after the spread
     // (node_modules/@nestjs/microservices/server/server-kafka.js:92, v11.1.17). Since
-    // @OnEvent(topic, type) is EventPattern(topic) + metadata, the registered patterns
-    // ARE the topic strings, so the real subscription set comes from the @OnEvent
+    // @On(STREAM, type) expands to EventPattern(topic) + metadata, the registered
+    // patterns ARE the topic strings, so the real subscription set comes from the @On
     // decorators on controllers registered in analytics.module.ts.
     //
     // Concretely: PRODUCT_STREAM is absent from this array and products.events.v1 is
     // still subscribed, because ProductEventsConsumer is in `controllers` and declares
-    // six @OnEvent('products.events.v1', ...) handlers. (An earlier version of this
-    // comment claimed the opposite and was wrong — see docs/adr/0029.)
+    // six @On(PRODUCT_STREAM, ...) handlers. (An earlier version of this comment
+    // claimed the opposite and was wrong — see docs/adr/0029.)
     //
     // The list that does carry weight is the one passed to forConsumerModule() in
     // analytics.module.ts: it supplies the topic -> StreamConfig map used by

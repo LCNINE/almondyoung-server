@@ -1,14 +1,14 @@
 // apps/notification/src/dispatcher/handlers/order-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { OrderCreatedPayload, OrderPaymentCompletedPayload } from '@packages/event-contracts/streams/orders.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
-import { formatAmount, formatOrderTotal } from '../../shared/utils/template-helpers';
+import { formatOrderTotal } from '../../shared/utils/template-helpers';
+import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * Order Service 이벤트 컨슈머
@@ -27,10 +27,10 @@ export class OrderEventConsumer {
     private readonly eventMappingService: EventMappingService,
   ) {}
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async onOrderCreated(
-    @EventEnvelope() envelope: DomainEvent<OrderCreatedPayload>,
-    @EventPayload() payload: OrderCreatedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderCreated'>,
   ) {
     this.logger.log(`[Event] Received OrderCreated: ${payload.orderId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -72,10 +72,10 @@ export class OrderEventConsumer {
     }
   }
 
-  @OnEvent('orders.events.v1', 'OrderPaymentCompleted')
+  @On(ORDER_STREAM, 'OrderPaymentCompleted')
   async onPaymentCompleted(
-    @EventEnvelope() envelope: DomainEvent<OrderPaymentCompletedPayload>,
-    @EventPayload() payload: OrderPaymentCompletedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderPaymentCompleted'>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderPaymentCompleted'>,
   ) {
     this.logger.log(
       `[Event] Received OrderPaymentCompleted: ${payload.orderId} (correlationId: ${envelope.correlationId})`,

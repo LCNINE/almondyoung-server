@@ -1,14 +1,9 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  InvoicePaidPayload,
-  InvoicePaymentFailedPayload,
-  InvoiceUncollectiblePayload,
-  InvoiceVoidedPayload,
-  MandateRejectedPayload,
-} from '@packages/event-contracts/streams/payment.stream';
 import { InvoiceOutcomeHandler } from '../services/billing/invoice-outcome.handler';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
+import { EventPayloadOf } from '@packages/event-contracts/types';
 
 /**
  * ADR-0027 §4-2. wallet 인보이스 결과 이벤트 컨슈머 — 인보이스 경로(billing_path=INVOICE)의
@@ -41,8 +36,8 @@ export class InvoiceResultConsumer {
     return true;
   }
 
-  @OnEvent('payments.events.v1', 'invoice.paid')
-  async onInvoicePaid(@EventPayload() payload: InvoicePaidPayload) {
+  @On(PAYMENT_STREAM, 'invoice.paid')
+  async onInvoicePaid(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'invoice.paid'>) {
     if (!this.isForMembership('invoice.paid', payload)) return;
     if (!payload.periodEnd) {
       this.logger.warn(`[InvoiceResult] invoice.paid 드롭: periodEnd 누락 (ref=${payload.subscriberRef})`);
@@ -61,8 +56,10 @@ export class InvoiceResultConsumer {
     );
   }
 
-  @OnEvent('payments.events.v1', 'invoice.payment_failed')
-  async onInvoicePaymentFailed(@EventPayload() payload: InvoicePaymentFailedPayload) {
+  @On(PAYMENT_STREAM, 'invoice.payment_failed')
+  async onInvoicePaymentFailed(
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'invoice.payment_failed'>,
+  ) {
     if (!this.isForMembership('invoice.payment_failed', payload)) return;
 
     this.logger.log(
@@ -78,8 +75,10 @@ export class InvoiceResultConsumer {
     );
   }
 
-  @OnEvent('payments.events.v1', 'invoice.uncollectible')
-  async onInvoiceUncollectible(@EventPayload() payload: InvoiceUncollectiblePayload) {
+  @On(PAYMENT_STREAM, 'invoice.uncollectible')
+  async onInvoiceUncollectible(
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'invoice.uncollectible'>,
+  ) {
     if (!this.isForMembership('invoice.uncollectible', payload)) return;
 
     this.logger.warn(
@@ -92,8 +91,8 @@ export class InvoiceResultConsumer {
     );
   }
 
-  @OnEvent('payments.events.v1', 'invoice.voided')
-  async onInvoiceVoided(@EventPayload() payload: InvoiceVoidedPayload) {
+  @On(PAYMENT_STREAM, 'invoice.voided')
+  async onInvoiceVoided(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'invoice.voided'>) {
     if (!this.isForMembership('invoice.voided', payload)) return;
 
     this.logger.warn(
@@ -102,8 +101,8 @@ export class InvoiceResultConsumer {
     await this.invoiceOutcomeHandler.handleVoided(payload.subscriberRef, payload.invoiceId, payload.reason ?? null);
   }
 
-  @OnEvent('payments.events.v1', 'mandate.rejected')
-  async onMandateRejected(@EventPayload() payload: MandateRejectedPayload) {
+  @On(PAYMENT_STREAM, 'mandate.rejected')
+  async onMandateRejected(@EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'mandate.rejected'>) {
     if (!this.isForMembership('mandate.rejected', payload)) return;
 
     this.logger.warn(

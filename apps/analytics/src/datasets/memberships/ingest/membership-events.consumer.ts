@@ -1,13 +1,13 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { EventPayload, EventEnvelope, OnEvent } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { analyticsSchema } from '../../../schema';
 import { MembershipFactsService } from '../facts/membership-facts.service';
 import { MembershipDimensionsService } from '../dimensions/membership-dimensions.service';
+import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -21,10 +21,10 @@ export class MembershipEventsConsumer {
     private readonly membershipDimensionsService: MembershipDimensionsService,
   ) {}
 
-  @OnEvent('membership.events.v1', 'MembershipStatusChanged')
+  @On(MEMBERSHIP_STREAM, 'MembershipStatusChanged')
   async onMembershipStatusChanged(
-    @EventEnvelope() envelope: DomainEvent<MembershipStatusChangedPayload>,
-    @EventPayload() payload: MembershipStatusChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof MEMBERSHIP_STREAM, 'MembershipStatusChanged'>,
   ) {
     this.logger.log(`MembershipStatusChanged received: ${payload.userId} → ${payload.status}`);
     await this.dbService.run(async (tx) => {

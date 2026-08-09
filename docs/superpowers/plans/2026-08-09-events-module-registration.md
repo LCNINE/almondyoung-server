@@ -245,12 +245,30 @@ Nest 는 수신 `value` 를 `KafkaParser.decode` 로 **JSON 파싱해서** 넘�
 
 ### Task 5-A: 데코레이터 일괄 이주 (위험 0)
 
-- [ ] **AST 게이트 스크립트를 먼저 만든다.** `@On(S,'A')` + `@EventPayload() p: EventPayloadOf<typeof S,'B'>` 는 컴파일된다 — 파라미터 데코레이터 순서가 4가지(envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10)이고 `strictFunctionTypes` 도 꺼져 있어 타입으로 막을 수 없다. 핸들러 87개를 사람 눈으로 맞추면 실수가 난다. 핸들러마다 `@On` 의 이벤트 키와 `EventPayloadOf<…, K>` 의 K 일치를 단언하고 불일치면 exit 1. **선례: `scripts/security/route-authz-audit.js`**
-- [ ] 게이트를 켠 채 7개 앱의 `@OnEvent` → `@On`, `@InjectStreamPublisher` → `@InjectPublisher`, payload/envelope 타입을 `EventPayloadOf` / `EnvelopeOf` 로 이주
-- [ ] `npm run type-check` 기준선(164) · 10개 앱 `nest build` 초록 · AST 게이트 exit 0
-- [ ] 스크립트는 이주 종료 후 버리거나 CI 게이트로 남긴다 (착수 시 결정)
+- [x] **AST 게이트 스크립트를 먼저 만든다.** `@On(S,'A')` + `@EventPayload() p: EventPayloadOf<typeof S,'B'>` 는 컴파일된다 — 파라미터 데코레이터 순서가 4가지(envelope-우선 45 · payload-우선 20 · payload-only 12 · envelope-only 10)이고 `strictFunctionTypes` 도 꺼져 있어 타입으로 막을 수 없다. 핸들러 87개를 사람 눈으로 맞추면 실수가 난다. 핸들러마다 `@On` 의 이벤트 키와 `EventPayloadOf<…, K>` 의 K 일치를 단언하고 불일치면 exit 1. **선례: `scripts/security/route-authz-audit.js`**
+- [x] 게이트를 켠 채 7개 앱의 `@OnEvent` → `@On`, ~~`@InjectStreamPublisher` → `@InjectPublisher`~~(아래 참조), payload/envelope 타입을 `EventPayloadOf` / `EnvelopeOf` 로 이주
+- [x] `npm run type-check` 기준선(164) · 10개 앱 `nest build` 초록 · AST 게이트 exit 0
+- [x] 스크립트는 이주 종료 후 버리거나 CI 게이트로 남긴다 (착수 시 결정) → **남긴다.** 아래 참조
 
 `main.ts` 는 건드리지 않는다. Task 4 가 두 표면 혼재를 실행으로 검증했으므로 앱 단위·파일 단위로 쪼개도 안전하다.
+
+**완료 (2026-08-09).** 브랜치 `docs/plan-task5-split`.
+
+- 게이트는 `scripts/events/event-handler-contract-audit.js`. **CI 게이트로 남긴다** — 이주가 끝나도 새 핸들러는 계속 추가되고, 이 게이트가 막는 불일치는 타입이 끝내 잡지 못하는 종류다. 검사는 5종: `LEGACY`(`@OnEvent` 잔량) · `UNDERIVED`(손수 단 payload/envelope 주석) · `STREAM_MISMATCH` · `EVENT_MISMATCH` · `WRONG_DERIVED_TYPE`(`@EventEnvelope` 에 `EventPayloadOf`). **5종 전부를 일부러 어긋뜨려 exit 1 을 확인했다** — 초록불이 무엇을 뜻하는지 모르는 게이트를 남기지 않기 위해서다.
+- 게이트는 **순수 구문 검사**다. `@On` 의 스트림·이벤트가 실재하는지는 검사하지 않는다 — `EventKeysOf` 가 컴파일에서, `@On` 의 런타임 가드가 부팅에서 이미 잡는다. 여기서 또 검사하면 계약 로딩이라는 두 번째 진실이 생긴다.
+- 87개 전량 이주. 파일 상수로 이벤트명을 쓰는 곳(`@OnEvent(PRODUCT_TOPIC, MASTER_DELETED)`)이 있어 게이트는 **같은 파일의 문자열 상수를 푼다**. 못 풀면 그 핸들러만 조용히 감사 밖으로 빠지는데, 그건 이 게이트가 없애려는 실패 모드 그 자체다.
+- `@InjectStreamPublisher` → `@InjectPublisher` 는 **하지 않았다.** 그건 소비가 아니라 발행 쪽 표면이고(21곳: core 7 · user-service 7 · channel-adapter 3 · membership 2 · ugc-service 2), 이 게이트가 검사하지 않는다. Task 6 이 발행 경로(`publish`/`enqueue` 통합)를 손대므로 거기서 같이 옮기는 편이 PR 경계가 깔끔하다. **워크스트림 완료 기준에는 그대로 남아 있다.**
+
+**🔴 이주가 계약의 구멍 두 종류를 드러냈다 — `@OnEvent` 로는 영원히 안 보이는 것들이다.**
+
+1. **계약에 없는 이벤트를 5개 핸들러가 구독하고 있었다.** `payment.intent.refund_requested` · `payment.intent.refund_request_rejected` · `gateway.charge.captured` · `gateway.refund.succeeded` (channel-adapter 4 + membership 1). 넷 다 `apps/wallet/src/messaging/gateway-event.builder.ts` 가 실제로 발행하는 라이브 이벤트인데 `PAYMENT_STREAM` 에 빠져 있었다. `deriveConsumerConfig` 는 **토픽** 단위로만 확인하므로 이걸 못 잡는다. `PAYMENT_STREAM` 에 추가했고, **스키마는 기존 `PaymentIntentEventSchema` 선례대로 관대하게(전 필드 optional + passthrough)** 뒀다 — 계약 등록만으로 소비검증이 켜지면 그게 곧 DLQ 폭탄이다. 검증을 조이는 결정은 5-C 몫.
+2. **`PaymentIntentEventPayload` 가 소비자가 실제로 읽는 필드를 빠뜨리고 있었다.** membership 이 `errorCode`/`errorMessage`(billing-result) 와 `metadata.type`(membership-checkout) 을 읽는데 계약에 없어 각자 로컬 인터페이스를 다시 선언해 두고 있었다. 발행측 실재를 확인하고(`direct-billing-charge.service.ts:214` · `invoice-executor.service.ts:489` · `bank-transfer-admin.service.ts:178`) 계약에 optional 로 추가했다.
+
+**부수 발견 — `gateway.refund.succeeded` 에는 `orderId` 가 없다.** channel-adapter 의 `forwardRefundToMedusa` 가 `payload.orderId` 로 channelOrderId 를 보강하는데, 그 경로만 payload 에 `orderId` 가 아예 없어 **예전부터 조회를 건너뛰고 있었다**(`Record<string, unknown>` 이라 `undefined` 가 조용히 통과). 동작은 그대로 두고 헬퍼 시그니처를 `coreOrderId?: string` 으로 좁혀 사실이 타입에 보이게 했다.
+
+- **스펙 3개가 부분 payload 를 넘기고 있었다** (membership billing-result · membership-checkout · membership-refund). 옛 로컬 인터페이스가 느슨해서 3필드 stub 이 통과했을 뿐이다. 계약 필수 필드를 채우는 팩토리를 각 스펙에 넣었다.
+- 검증: `npm run type-check` **164 — develop 기준선과 file:line:code 집합 완전 동일**(신규 0 · 소멸 0) · **10개 앱 전부 `nest build` 초록** · AST 게이트 exit 0 · `libs/events`+계약 패키지 **17 suite / 151 tests 초록** · 변경 파일 eslint **150 → 143 error**(신규 0, 감소는 미사용 파라미터 제거분) · 전체 jest 실패 suite 집합이 develop 과 동일.
+- **5-B 에 넘기는 사실:** `main.ts` 는 한 줄도 안 건드렸다. 7개 앱 전부 여전히 `forConsumer` + 하이브리드 `connectMicroservice` 를 쓰므로 **§8 의 라이브 구멍(검증·재시도·DLQ 미적용)은 그대로다.** 이 PR 은 동작 중립이다.
 
 ### Task 5-B: 배선 켜기 (`startConsumer`) — 앱별
 

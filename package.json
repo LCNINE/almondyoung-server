@@ -77,6 +77,7 @@
     "lint:admin-web": "cd apps/admin-web && npm run lint",
     "type-check": "tsc -p tsconfig.json --noEmit",
     "type-check:scoped": "tsc -p tsconfig.spec-scope.json --noEmit",
+    "audit:event-handlers": "node scripts/events/event-handler-contract-audit.js",
     "membership:backfill:last-payment-intent": "./scripts/with-ipv4.sh node apps/membership/scripts/backfill-last-payment-intent.js",
     "migrate:auth": "./scripts/with-ipv4.sh ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts",
     "migrate:backfill": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/backfill-v2.ts",

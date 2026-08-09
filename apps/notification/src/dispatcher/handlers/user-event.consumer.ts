@@ -1,17 +1,13 @@
 // apps/notification/src/dispatcher/handlers/user-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  UserVerificationPayload,
-  UserVerificationCodePayload,
-  UserPasswordChangedPayload,
-} from '@packages/event-contracts/streams/user.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { USER_STREAM } from '@packages/event-contracts/streams/user.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
  * User Service 이벤트 컨슈머
@@ -29,10 +25,10 @@ export class UserEventConsumer {
     private readonly eventMappingService: EventMappingService,
   ) {}
 
-  @OnEvent('users.events.v1', 'UserVerification')
+  @On(USER_STREAM, 'UserVerification')
   async onUserVerification(
-    @EventEnvelope() envelope: DomainEvent<UserVerificationPayload>,
-    @EventPayload() payload: UserVerificationPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserVerification'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserVerification'>,
   ) {
     this.logger.log(`[Event] Received UserVerification: ${payload.userId} (correlationId: ${envelope.correlationId})`);
     try {
@@ -67,10 +63,10 @@ export class UserEventConsumer {
     }
   }
 
-  @OnEvent('users.events.v1', 'UserVerificationCode')
+  @On(USER_STREAM, 'UserVerificationCode')
   async onUserVerificationCode(
-    @EventEnvelope() envelope: DomainEvent<UserVerificationCodePayload>,
-    @EventPayload() payload: UserVerificationCodePayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserVerificationCode'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserVerificationCode'>,
   ) {
     this.logger.log(
       `[Event] Received UserVerificationCode: ${payload.userId} (correlationId: ${envelope.correlationId})`,
@@ -104,10 +100,10 @@ export class UserEventConsumer {
     }
   }
 
-  @OnEvent('users.events.v1', 'UserPasswordChanged')
+  @On(USER_STREAM, 'UserPasswordChanged')
   async onUserPasswordChanged(
-    @EventEnvelope() envelope: DomainEvent<UserPasswordChangedPayload>,
-    @EventPayload() payload: UserPasswordChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserPasswordChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserPasswordChanged'>,
   ) {
     this.logger.log(
       `[Event] Received UserPasswordChanged: ${payload.userId} (correlationId: ${envelope.correlationId})`,
@@ -140,6 +136,4 @@ export class UserEventConsumer {
       throw error;
     }
   }
-
-
 }

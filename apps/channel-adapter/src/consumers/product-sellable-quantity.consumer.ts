@@ -1,12 +1,12 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventEnvelope, EventPayload } from '@app/events';
+import { EventEnvelope, EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import type { DomainEvent } from '@packages/event-contracts/types';
-import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import { DbService } from '@app/db';
 import { inboxEvents, processedEvents } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams/inventory.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -17,10 +17,10 @@ export class ProductSellableQuantityConsumer {
     this.logger.log('Product Sellable Quantity Consumer 초기화 완료');
   }
 
-  @OnEvent('inventory.events.v1', 'ProductSellableQuantityChanged')
+  @On(INVENTORY_STREAM, 'ProductSellableQuantityChanged')
   async onProductSellableQuantityChanged(
-    @EventEnvelope() envelope: DomainEvent<ProductSellableQuantityChangedPayload>,
-    @EventPayload() payload: ProductSellableQuantityChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof INVENTORY_STREAM, 'ProductSellableQuantityChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof INVENTORY_STREAM, 'ProductSellableQuantityChanged'>,
   ): Promise<void> {
     const startTime = Date.now();
     const idempotencyKey = `${payload.variantId}:${payload.calculatedAt}:ProductSellableQuantityChanged`;

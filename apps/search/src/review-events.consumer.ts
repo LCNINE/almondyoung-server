@@ -1,8 +1,8 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { EventEnvelope, EventPayload, OnEvent } from '@app/events';
+import { EventEnvelope, EventPayload, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { ProductReviewStatsChangedPayload } from '@packages/event-contracts/streams/ugc.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
+import { UGC_EVENT_STREAM } from '@packages/event-contracts/streams/ugc.stream';
+import { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
 import { ProductIndexService } from './product-index.service';
 
 @Controller()
@@ -12,10 +12,10 @@ export class ReviewEventsConsumer {
 
   constructor(private readonly productIndexService: ProductIndexService) {}
 
-  @OnEvent('ugc.events.v1', 'ProductReviewStatsChanged')
+  @On(UGC_EVENT_STREAM, 'ProductReviewStatsChanged')
   async onProductReviewStatsChanged(
-    @EventEnvelope() envelope: DomainEvent<ProductReviewStatsChangedPayload>,
-    @EventPayload() payload: ProductReviewStatsChangedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof UGC_EVENT_STREAM, 'ProductReviewStatsChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof UGC_EVENT_STREAM, 'ProductReviewStatsChanged'>,
   ): Promise<void> {
     this.logger.log(
       `ProductReviewStatsChanged: productId=${payload.productId} reviewCount=${payload.reviewCount} bayesianScore=${payload.bayesianReviewScore} (${envelope.messageId})`,

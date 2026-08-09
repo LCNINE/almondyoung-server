@@ -1,9 +1,9 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { EarnPointsRequestedPayload } from '@packages/event-contracts/streams/ugc.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { PointsAdminService } from '../admin/points-admin.service';
+import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams/ugc.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -12,10 +12,10 @@ export class UgcCommandConsumer {
 
   constructor(private readonly pointsAdminService: PointsAdminService) {}
 
-  @OnEvent('ugc.commands.v1', 'EarnPointsRequested')
+  @On(UGC_COMMAND_STREAM, 'EarnPointsRequested')
   async onEarnPointsRequested(
-    @EventEnvelope() envelope: DomainEvent<EarnPointsRequestedPayload>,
-    @EventPayload() payload: EarnPointsRequestedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof UGC_COMMAND_STREAM, 'EarnPointsRequested'>,
+    @EventPayload() payload: EventPayloadOf<typeof UGC_COMMAND_STREAM, 'EarnPointsRequested'>,
   ) {
     this.logger.log(
       `[Event] Received EarnPointsRequested: reviewId=${payload.reviewId}, userId=${payload.userId}, amount=${payload.amount} (correlationId: ${envelope.correlationId})`,

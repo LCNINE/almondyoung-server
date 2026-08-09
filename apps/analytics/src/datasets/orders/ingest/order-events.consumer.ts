@@ -1,13 +1,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { EventPayload, EventEnvelope, OnEvent } from '@app/events';
+import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  OrderCreatedPayload,
-  OrderCancelledPayload,
-  OrderRefundCreatedPayload,
-} from '@packages/event-contracts/streams/orders.stream';
-import { DomainEvent } from '@packages/event-contracts/types';
 import { OrderAggregatesService } from '../aggregates/order-aggregates.service';
 import { UserPurchaseAggregatesService } from '../aggregates/user-purchase-aggregates.service';
 import { ChannelAggregatesService } from '../aggregates/channel-aggregates.service';
@@ -17,6 +11,8 @@ import { OrderFactsService } from '../facts/order-facts.service';
 import { DbTx } from '../../../db.types';
 import { analyticsSchema } from '../../../schema';
 import { DbService } from '@app/db';
+import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -42,10 +38,10 @@ export class OrderEventsConsumer {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async onOrderCreated(
-    @EventEnvelope() envelope: DomainEvent<OrderCreatedPayload>,
-    @EventPayload() payload: OrderCreatedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderCreated'>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderCreated'>,
   ) {
     this.logger.log(`OrderCreated received: ${payload.orderId}`);
     await this.inTx(async (tx) => {
@@ -71,10 +67,10 @@ export class OrderEventsConsumer {
     this.logger.debug(`OrderCreated processed: ${payload.orderId} (${envelope.messageId})`);
   }
 
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   async onOrderCancelled(
-    @EventEnvelope() envelope: DomainEvent<OrderCancelledPayload>,
-    @EventPayload() payload: OrderCancelledPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderCancelled'>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderCancelled'>,
   ) {
     this.logger.log(`OrderCancelled received: ${payload.orderId}`);
     await this.inTx(async (tx) => {
@@ -97,10 +93,10 @@ export class OrderEventsConsumer {
     });
   }
 
-  @OnEvent('orders.events.v1', 'OrderRefundCreated')
+  @On(ORDER_STREAM, 'OrderRefundCreated')
   async onOrderRefundCreated(
-    @EventEnvelope() envelope: DomainEvent<OrderRefundCreatedPayload>,
-    @EventPayload() payload: OrderRefundCreatedPayload,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>,
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'OrderRefundCreated'>,
   ) {
     this.logger.log(`OrderRefundCreated received: ${payload.orderId}`);
     await this.inTx(async (tx) => {

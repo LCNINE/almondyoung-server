@@ -1,4 +1,23 @@
 import { MembershipRefundConsumer } from '../membership-refund.consumer';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
+import type { EventPayloadOf } from '@packages/event-contracts/types';
+
+type RefundSucceededPayload = EventPayloadOf<typeof PAYMENT_STREAM, 'gateway.refund.succeeded'>;
+
+/** 이 테스트가 보는 것은 intentId/amount 뿐이지만, 계약이 요구하는 공통 필드는 채운다. */
+function refundPayload(overrides: Partial<RefundSucceededPayload>): RefundSucceededPayload {
+  return {
+    refundId: 'r0',
+    chargeId: 'ch0',
+    intentId: 'intent_0',
+    userId: 'user-1',
+    status: 'SUCCEEDED',
+    amount: 0,
+    currency: 'KRW',
+    occurredAt: '2026-08-09T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 /**
  * 결제관리에서 건 환불 이벤트가 멤버십 계약에 어떻게 반영되는지.
@@ -29,7 +48,7 @@ describe('MembershipRefundConsumer', () => {
       eligibleRefundAmount: 4990,
     });
 
-    await consumer.onRefundSucceeded({ intentId: 'intent_1', amount: 4990, refundId: 'r1' });
+    await consumer.onRefundSucceeded(refundPayload({ intentId: 'intent_1', amount: 4990, refundId: 'r1' }));
 
     expect(refundEventHandler.handleRefundCompleted).toHaveBeenCalledWith(
       expect.objectContaining({ contractId: 'c1', amount: 4990 }),
@@ -45,7 +64,7 @@ describe('MembershipRefundConsumer', () => {
       eligibleRefundAmount: null,
     });
 
-    await consumer.onRefundSucceeded({ intentId: 'intent_1', amount: 1000, refundId: 'r1' });
+    await consumer.onRefundSucceeded(refundPayload({ intentId: 'intent_1', amount: 1000, refundId: 'r1' }));
 
     // 자격 회수 판단은 voidByPaymentIntent 가 (전액인지 보고) 따로 한다.
     expect(subscriptionService.voidByPaymentIntent).toHaveBeenCalledWith('intent_1', '결제 환불', 1000);
@@ -61,7 +80,7 @@ describe('MembershipRefundConsumer', () => {
       eligibleRefundAmount: 4990,
     });
 
-    await consumer.onRefundSucceeded({ intentId: 'intent_1', amount: 4990 });
+    await consumer.onRefundSucceeded(refundPayload({ intentId: 'intent_1', amount: 4990 }));
 
     expect(refundEventHandler.handleRefundCompleted).not.toHaveBeenCalled();
   });
