@@ -71,8 +71,12 @@ describe('EventsModule global retry interceptor registration', () => {
  * 영영 검사되지 않는다 — 이 워크스트림이 반복해서 만난 실패 모드가 정확히 그것이다
  * (선언과 실제가 갈라져도 아무 일이 안 일어남).
  *
- * `inject` 배열을 보는 이유는 컨테이너를 띄우려면 `DbService` 가 필요해서다. 여기서
- * 확인하는 것은 "아웃박스를 켠 앱에서만 writer 가 따라 들어간다"는 배선 자체다.
+ * **Task 6-C-2 로 주입 조건이 바뀌었다.** 그 전에는 *같은* `forRoot` 호출이 `enableOutbox`
+ * 여야 주입 목록에 들어갔는데, 아웃박스는 앱 하나에 테이블 하나이고 BC 별 `forRoot` 는 여럿이라
+ * 그 결합이 어긋났다(core: catalog 만 켰지만 적재는 6개 토픽이 한다). 이제 **항상 optional 로**
+ * 주입하고, 아무도 켜지 않은 앱에서는 `undefined` 가 들어와 `enqueue` 가 던진다. 그래서 대조군의
+ * 주장도 "주입 목록에 없다" 가 아니라 **"writer 가 없으면 던진다"** 로 옮겼다 — 후자가 실제로
+ * 지키려는 성질이고, 전자는 배선 방식이 바뀌면 뜻이 사라진다.
  */
 describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
   const kafka = { clientId: 'test-service', brokers: ['localhost:9092'] };
@@ -90,10 +94,15 @@ describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
     return found as unknown as PublisherProvider;
   }
 
+  /** `inject` 항목은 토큰이거나 `{ token, optional }` 이다 — 둘 다 이름으로 펴 준다. */
   const injectedNames = (provider: PublisherProvider) =>
-    provider.inject.map((token) => (typeof token === 'function' ? (token as { name: string }).name : String(token)));
+    provider.inject.map((entry) => {
+      const token = (entry as { token?: unknown }).token ?? entry;
+      if (typeof token === 'function') return (token as { name: string }).name;
+      return typeof token === 'symbol' ? token.toString() : String(token as string);
+    });
 
-  it('enableOutbox: true 면 publisher 가 OutboxPublisher 를 함께 주입받고 enqueue 가 그리로 쓴다', async () => {
+  it('publisher 가 OutboxPublisher 를 주입받고 enqueue 가 그리로 쓴다', async () => {
     const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka, enableOutbox: true }));
 
     expect(injectedNames(provider)).toContain('OutboxPublisher');
@@ -119,9 +128,31 @@ describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
     expect(rows).toHaveLength(1);
   });
 
-  it('대조군 — 아웃박스를 켜지 않으면 주입하지 않는다 (그 앱에서 enqueue 는 던진다)', () => {
+  it('대조군 — writer 가 없으면 enqueue 가 던진다 (아웃박스를 아무도 켜지 않은 앱)', async () => {
     const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka }));
 
-    expect(injectedNames(provider)).not.toContain('OutboxPublisher');
+    // 토큰은 optional 이라 목록에 남아 있다. 지켜야 할 성질은 목록의 모양이 아니라,
+    // writer 가 실제로 없을 때 **조용히 버리지 않고 던지는 것**이다.
+    const publisher = provider.useFactory({ send: jest.fn() }, undefined, undefined, undefined);
+
+    await expect(
+      publisher.enqueue(
+        {
+          eventType: 'UserEmailVerified',
+          aggregateId: 'user-1',
+          payload: { userId: 'user-1', email: 'user@example.com', name: '홍길동' },
+        },
+        {},
+      ),
+    ).rejects.toThrow('no outbox writer');
+  });
+
+  it('OutboxPublisher 토큰이 optional 로 주입된다 — 켠 곳이 어디든 앱 전체 publisher 가 쓴다', () => {
+    const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka }));
+    const entry = provider.inject.find(
+      (e) => (e as { token?: { name?: string } }).token?.name === 'OutboxPublisher',
+    ) as { optional?: boolean } | undefined;
+
+    expect(entry?.optional).toBe(true);
   });
 });

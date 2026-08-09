@@ -4,6 +4,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
 import {
@@ -13,7 +14,6 @@ import {
   productVariants,
 } from '../../../catalog/schema/catalog.schema';
 import { stockSummary, wmsTables } from '../../schema/inventory.schema';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import {
   calculateProductSellableQuantity,
   ProductSellableQuantityInput,
@@ -35,7 +35,8 @@ export class ProductSellableQuantityService {
   constructor(
     @InjectTypedDb<MergedSchema>()
     private readonly dbService: DbService<MergedSchema>,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(INVENTORY_STREAM)
+    private readonly inventory: PublisherFor<typeof INVENTORY_STREAM>,
   ) {}
 
   async getByVariantId(variantId: string, tx?: AnyTx): Promise<ProductSellableQuantityResult> {
@@ -346,19 +347,19 @@ export class ProductSellableQuantityService {
           return { projection, published: false };
         }
 
-        await this.outbox.enqueue(
+        await this.inventory.enqueue(
           {
-            topic: INVENTORY_STREAM.topic.topic,
             // 판매가능수량 변경은 variant 당 여러 번이 정당해 자연 멱등키가 없다 —
             // 호출마다 고유 키로 topicless 시절의 무중복 동작을 유지한다.
             idempotencyKey: `psq-changed:${projection.variantId}:${randomUUID()}`,
             eventType: 'ProductSellableQuantityChanged',
-            aggregateType: 'ProductSellableQuantity',
             aggregateId: projection.variantId,
+            // aggregateId 와 같은 값이지만 명시한다 — 이 스트림에는 파생 함수가 없고,
+            // 재고 이벤트는 `skuId` 로 파티션되므로 "기본값이 우연히 맞다" 에 기대지 않는다.
             partitionKey: projection.variantId,
             payload: toProductSellableQuantityChangedPayload(projection),
           },
-          trx as unknown as Parameters<OutboxService['enqueue']>[1],
+          trx,
         );
 
         return { projection, published: true };

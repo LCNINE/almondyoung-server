@@ -1,3 +1,5 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import * as postgres from 'postgres';
@@ -5,7 +7,6 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { FULFILLMENT_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDbService } from './__support__';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
@@ -126,7 +127,7 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
           qty: 1,
         })),
       );
-      await tx.insert(wmsTables.outboxEvents).values({
+      await tx.insert(outbox_events).values({
         topic: FULFILLMENT_STREAM.topic.topic,
         idempotencyKey: `${fulfillmentOrder.id}:fully-shipped`,
         eventType: 'FulfillmentShipped',
@@ -153,7 +154,8 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
     const dbService = makeDbService(db);
     const service = new ShipmentDeliveryTrackingService(
       dbService,
-      new OutboxService(dbService),
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       new ShipmentReservationService(
         dbService,
@@ -199,12 +201,9 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
 
       const shipmentDeliveredEvents = await db
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
-          and(
-            eq(wmsTables.outboxEvents.topic, SHIPMENT_STREAM.topic.topic),
-            eq(wmsTables.outboxEvents.eventType, 'ShipmentDelivered'),
-          ),
+          and(eq(outbox_events.topic, SHIPMENT_STREAM.topic.topic), eq(outbox_events.eventType, 'ShipmentDelivered')),
         );
       expect(shipmentDeliveredEvents.filter((row) => ids.shipments.some((s) => s.id === row.aggregateId))).toHaveLength(
         2,
@@ -212,17 +211,21 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
 
       const v1Delivered = await db
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            eq(wmsTables.outboxEvents.topic, FULFILLMENT_STREAM.topic.topic),
-            eq(wmsTables.outboxEvents.eventType, 'FulfillmentDelivered'),
-            eq(wmsTables.outboxEvents.aggregateId, ids.fulfillmentOrder.id),
+            eq(outbox_events.topic, FULFILLMENT_STREAM.topic.topic),
+            eq(outbox_events.eventType, 'FulfillmentDelivered'),
+            eq(outbox_events.aggregateId, ids.fulfillmentOrder.id),
           ),
         );
       expect(v1Delivered).toHaveLength(1);
       expect(v1Delivered[0].idempotencyKey).toBe(`${ids.fulfillmentOrder.id}:fully-delivered`);
-      expect((v1Delivered[0].payload as { deliveredAt: string }).deliveredAt).toBe(deliveredAt[1].toISOString());
+      // 공용 테이블의 `payload` 컬럼에는 envelope 전체가 실린다 — 도메인 payload 는 그 안이다
+      // (ADR-0029 §5-1, Task 6-C-2).
+      expect((v1Delivered[0].payload as { payload: { deliveredAt: string } }).payload.deliveredAt).toBe(
+        deliveredAt[1].toISOString(),
+      );
 
       const acceptedAttempts = await db
         .select({ id: wmsTables.dispatchAttempts.id, carrierAcceptedAt: wmsTables.dispatchAttempts.carrierAcceptedAt })
@@ -257,12 +260,12 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
 
       const finalV1Delivered = await db
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            eq(wmsTables.outboxEvents.topic, FULFILLMENT_STREAM.topic.topic),
-            eq(wmsTables.outboxEvents.eventType, 'FulfillmentDelivered'),
-            eq(wmsTables.outboxEvents.aggregateId, ids.fulfillmentOrder.id),
+            eq(outbox_events.topic, FULFILLMENT_STREAM.topic.topic),
+            eq(outbox_events.eventType, 'FulfillmentDelivered'),
+            eq(outbox_events.aggregateId, ids.fulfillmentOrder.id),
           ),
         );
       expect(finalV1Delivered).toHaveLength(1);
@@ -274,8 +277,8 @@ describeIfDb('ShipmentDeliveryTrackingService (PostgreSQL integration)', () => {
           .delete(wmsTables.shipmentTracking)
           .where(inArray(wmsTables.shipmentTracking.dispatchAttemptId, attemptIds));
         await tx
-          .delete(wmsTables.outboxEvents)
-          .where(inArray(wmsTables.outboxEvents.aggregateId, [...shipmentIds, ids.fulfillmentOrder.id]));
+          .delete(outbox_events)
+          .where(inArray(outbox_events.aggregateId, [...shipmentIds, ids.fulfillmentOrder.id]));
         await tx
           .delete(wmsTables.dispatchAttemptSources)
           .where(inArray(wmsTables.dispatchAttemptSources.dispatchAttemptId, attemptIds));

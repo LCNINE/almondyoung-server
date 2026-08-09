@@ -9,7 +9,13 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
-import { FulfillmentReopenedPayload, ShipmentDispatchRecalledPayload } from '@packages/event-contracts/streams';
+import {
+  FULFILLMENT_V2_STREAM,
+  FulfillmentReopenedPayload,
+  SHIPMENT_STREAM,
+  ShipmentDispatchRecalledPayload,
+} from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
@@ -23,7 +29,6 @@ import {
   ShipmentRecallResponseDto,
 } from '../dto/shipment-recall.dto';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -92,7 +97,10 @@ export class ShipmentRecallService {
     private readonly waybills: WaybillService,
     @Inject(InventoryCommandService) private readonly inventory: RecallInventoryPort,
     @Inject(ShipmentReservationService) private readonly reservations: RecallReservationPort,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(SHIPMENT_STREAM)
+    private readonly shipments: PublisherFor<typeof SHIPMENT_STREAM>,
+    @InjectPublisher(FULFILLMENT_V2_STREAM)
+    private readonly fulfillmentsV2: PublisherFor<typeof FULFILLMENT_V2_STREAM>,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
@@ -478,7 +486,7 @@ export class ShipmentRecallService {
       tx,
     );
 
-    await this.outbox.enqueue(
+    await this.shipments.enqueue(
       shipmentDispatchRecalledOutboxEvent({
         shipmentId: intent.shipmentId,
         dispatchAttemptId: intent.dispatchAttemptId,
@@ -496,7 +504,7 @@ export class ShipmentRecallService {
           `FO ${summary.fulfillmentOrderId} has no demand to reopen`,
         );
       }
-      await this.outbox.enqueue(
+      await this.fulfillmentsV2.enqueue(
         fulfillmentReopenedOutboxEvent({
           fulfillmentOrderId: summary.fulfillmentOrderId,
           salesOrderId: summary.salesOrderId,

@@ -1,3 +1,6 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import { FULFILLMENT_V2_STREAM, INVENTORY_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { eq, inArray, sql as drizzleSql } from 'drizzle-orm';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -8,10 +11,8 @@ import { LocationService } from '../../inventory/core/services/location.service'
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
 import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
 import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
@@ -73,7 +74,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     client = postgres(DATABASE_URL as string, { max: 6 });
     db = drizzle(client, { schema: wmsSchema });
     dbService = makeDbService(db);
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const eventStore = new StockEventStore(dbService, sellable);
     const inventory = new InventoryCommandService(
@@ -110,7 +111,8 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       waybills,
       inventory,
       reservations,
-      new FulfillmentOutboxService(dbService),
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       new AuditService(dbService),
       { assertV2MutationAllowed: jest.fn() } as never,
     );
@@ -334,9 +336,9 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     await db.transaction(async (tx) => {
       await tx.delete(wmsTables.auditLogs).where(eq(wmsTables.auditLogs.userId, fixture.actorId));
       await tx
-        .delete(wmsTables.outboxEvents)
+        .delete(outbox_events)
         .where(
-          inArray(wmsTables.outboxEvents.aggregateId, [
+          inArray(outbox_events.aggregateId, [
             fixture.operationId,
             fixture.shipment.id,
             fixture.fulfillmentOrder.id,
@@ -474,14 +476,14 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .where(eq(wmsTables.warehouses.id, fixture.warehouse.id));
     expect(Number(availability.qty)).toBe(0);
     const events = await db
-      .select({ eventType: wmsTables.outboxEvents.eventType })
-      .from(wmsTables.outboxEvents)
-      .where(eq(wmsTables.outboxEvents.aggregateId, fixture.shipment.id));
+      .select({ eventType: outbox_events.eventType })
+      .from(outbox_events)
+      .where(eq(outbox_events.aggregateId, fixture.shipment.id));
     expect(events).toEqual(expect.arrayContaining([{ eventType: 'ShipmentDispatchRecalled' }]));
     const fulfillmentEvents = await db
-      .select({ eventType: wmsTables.outboxEvents.eventType })
-      .from(wmsTables.outboxEvents)
-      .where(eq(wmsTables.outboxEvents.aggregateId, fixture.fulfillmentOrder.id));
+      .select({ eventType: outbox_events.eventType })
+      .from(outbox_events)
+      .where(eq(outbox_events.aggregateId, fixture.fulfillmentOrder.id));
     expect(fulfillmentEvents).toEqual(expect.arrayContaining([{ eventType: 'FulfillmentReopened' }]));
 
     // 멱등: 같은 Idempotency-Key 로 재보고하면 command 계층이 캐시된 completed 응답을 돌려주고 부작용을 중복하지 않는다.

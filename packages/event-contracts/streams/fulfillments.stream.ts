@@ -11,14 +11,7 @@ import { z } from 'zod';
 
 export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
 
-export type FulfillmentStatus =
-  | 'created'
-  | 'ready'
-  | 'labeled'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled'
-  | 'returned';
+export type FulfillmentStatus = 'created' | 'ready' | 'labeled' | 'shipped' | 'delivered' | 'cancelled' | 'returned';
 
 export type Carrier = 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
 
@@ -177,11 +170,13 @@ const FulfillmentCreatedSchema = z.object({
 const FulfillmentReadySchema = z.object({
   fulfillmentId: z.string().min(1),
   orderId: z.string().min(1),
-  readyItems: z.array(z.object({
-    fulfillmentItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    readyQty: z.number().int().positive(),
-  })),
+  readyItems: z.array(
+    z.object({
+      fulfillmentItemId: z.string().min(1),
+      skuId: z.string().min(1),
+      readyQty: z.number().int().positive(),
+    }),
+  ),
   readyAt: z.string().datetime(),
   readyBy: z.string().min(1),
 });
@@ -200,11 +195,13 @@ const FulfillmentShippedSchema = z.object({
   trackingInfo: TrackingInfoSchema,
   shippedAt: z.string().datetime(),
   estimatedDeliveryDate: z.string().datetime().optional(),
-  shippedItems: z.array(z.object({
-    fulfillmentItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    shippedQty: z.number().int().positive(),
-  })),
+  shippedItems: z.array(
+    z.object({
+      fulfillmentItemId: z.string().min(1),
+      skuId: z.string().min(1),
+      shippedQty: z.number().int().positive(),
+    }),
+  ),
 });
 
 const FulfillmentDeliveredSchema = z.object({
@@ -229,13 +226,36 @@ const FulfillmentReturnedSchema = z.object({
   fulfillmentId: z.string().min(1),
   orderId: z.string().min(1),
   returnId: z.string().min(1),
-  returnedItems: z.array(z.object({
-    fulfillmentItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    returnedQty: z.number().int().positive(),
-  })),
+  returnedItems: z.array(
+    z.object({
+      fulfillmentItemId: z.string().min(1),
+      skuId: z.string().min(1),
+      returnedQty: z.number().int().positive(),
+    }),
+  ),
   returnedAt: z.string().datetime(),
   returnReason: z.string().min(1),
+});
+
+/**
+ * core 주문 생성/수정 통지 (ADR-0029 §5-1, Task 6-C-2 에서 계약으로 올림).
+ *
+ * **이 둘은 이 토픽으로 이미 발행되고 있었는데 계약에 없었다.** `sales-orders.service.ts` 가
+ * topicless 시절의 dispatcher catch-all 목적지를 그대로 보존해 `fulfillments.events.v1` 로
+ * 실어 왔고, 계약에 없는 이름이라 `validatePayload` 가 "Event type not found in stream config"
+ * 를 warn 하고 **검증 없이** 통과시켰다 — Task 6-A 가 닫은 것과 같은 종류의 우회다. 아웃박스
+ * 적재를 공용 `enqueue` 로 회수하면서 계약에 올렸고, 그와 함께 zod 를 타게 됐다.
+ *
+ * 스키마는 실제로 실려 나가던 모양 그대로다(`{ orderId }` 하나). **소비자는 0곳**이다 —
+ * 이 토픽의 `@On` 은 channel-adapter 의 `FulfillmentShipped`/`Delivered`/`Cancelled` 셋뿐이다.
+ * 목적지 재검토는 소비자 분석이 필요한 별도 결정이라 여기서 하지 않는다.
+ */
+const OrderCreatedNoticeSchema = z.object({
+  orderId: z.string().min(1),
+});
+
+const OrderModifiedNoticeSchema = z.object({
+  orderId: z.string().min(1),
 });
 
 // ===== Stream Config (타입 안전 버전) =====
@@ -252,6 +272,8 @@ export const FULFILLMENT_STREAM = stream({
     FulfillmentDelivered: event('FulfillmentDelivered', FulfillmentDeliveredSchema),
     FulfillmentCancelled: event('FulfillmentCancelled', FulfillmentCancelledSchema),
     FulfillmentReturned: event('FulfillmentReturned', FulfillmentReturnedSchema),
+    ORDER_CREATED: event('ORDER_CREATED', OrderCreatedNoticeSchema),
+    ORDER_MODIFIED: event('ORDER_MODIFIED', OrderModifiedNoticeSchema),
   },
 });
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { InjectPublisher, PublisherFor } from '@app/events';
+import { InjectPublisher, OUTBOX_RETRY_DELAYS_SECONDS, PublisherFor } from '@app/events';
 import {
   FULFILLMENT_STREAM,
   FulfillmentEvents,
@@ -249,9 +249,13 @@ export class OutboxDispatcherService implements OnModuleInit {
     }
   }
 
+  /**
+   * 표는 **공용 상수 한 벌**이다 (ADR-0029 §5-1, Task 6-C-2). 드레인 기간에는 이 디스패처와
+   * 공용 디스패처가 함께 도는데, 표를 두 벌로 두면 한쪽만 바뀌는 순간이 조용하다 — 재시도
+   * 간격은 실패했을 때만 관측되고, 그때는 이미 다르게 동작한 뒤다.
+   */
   private calculateNextAttempt(attempts: number): Date {
-    const delays = [10, 30, 60, 300];
-    const delay = delays[Math.min(attempts - 1, delays.length - 1)];
+    const delay = OUTBOX_RETRY_DELAYS_SECONDS[Math.min(attempts - 1, OUTBOX_RETRY_DELAYS_SECONDS.length - 1)];
     return new Date(Date.now() + delay * 1000);
   }
 

@@ -1,10 +1,11 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { OutboxService as InventoryOutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { LocationService } from './location.service';
@@ -33,7 +34,7 @@ describeIfDb('InventoryCommandService.moveInternal 창고내 이동 보존 (DB i
         tx ? fn(tx) : db.transaction((t) => fn(t as unknown as DbTx)),
     } as unknown as DbService<typeof wmsSchema>;
 
-    const invOutbox = new InventoryOutboxService(dbService);
+    const invOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);

@@ -1,3 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -7,8 +15,6 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { DbService } from '@app/db';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
@@ -376,7 +382,7 @@ describeIfDb('Outbound V2 release scenarios', () => {
       ),
     );
     const controlled = new BatchControlledStockGuard();
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const inventory = new InventoryCommandService(
       dbService,
@@ -400,7 +406,9 @@ describeIfDb('Outbound V2 release scenarios', () => {
       shipmentReservations,
       waybills,
       new BarcodeService(dbService),
-      new FulfillmentOutboxService(dbService),
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );
@@ -936,9 +944,13 @@ describeIfDb('Outbound V2 release scenarios', () => {
       const dispatched = await preparePackingAndDispatch(tx, world, target.id);
       const [event] = await tx
         .select()
-        .from(wmsTables.outboxEvents)
-        .where(and(eq(wmsTables.outboxEvents.aggregateId, target.id), eq(wmsTables.outboxEvents.topic, ACTIVE_TOPIC)));
-      const routedOrders = (event.payload as { orders: Array<{ salesOrderId: string; salesChannel: string }> }).orders;
+        .from(outbox_events)
+        .where(and(eq(outbox_events.aggregateId, target.id), eq(outbox_events.topic, ACTIVE_TOPIC)));
+      // 공용 테이블의 `payload` 컬럼에는 envelope 전체가 실린다 — 도메인 payload 는 그 안이다
+      // (ADR-0029 §5-1, Task 6-C-2).
+      const routedOrders = (
+        event.payload as { payload: { orders: Array<{ salesOrderId: string; salesChannel: string }> } }
+      ).payload.orders;
       expect(routedOrders.map((order) => order.salesOrderId).sort()).toEqual(
         orders.map((order) => order.salesOrderId).sort(),
       );

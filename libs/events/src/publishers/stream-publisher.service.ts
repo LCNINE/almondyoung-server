@@ -40,6 +40,43 @@ export interface PublishEventParams<TEventKey extends string, TPayload> {
 }
 
 /**
+ * 아웃박스 적재 파라미터 (ADR-0029 §5-1, Task 6-C-2).
+ *
+ * `publishEvent` 의 파라미터에 **아웃박스 행에만 있는 두 사실**을 더한 것이다. 즉시 발행에는
+ * 없는 것들이라 `PublishEventParams` 를 넓히지 않고 여기서 확장한다 — 즉시 발행은 중복될
+ * 트랜잭션 경계가 없어 멱등 키를 실을 자리가 없고, 파티션 키는 그 자리에서 해석돼 전송에
+ * 쓰이고 사라진다.
+ */
+export type EnqueueEventParams<TEventKey extends string, TPayload> = PublishEventParams<TEventKey, TPayload> & {
+  /**
+   * 같은 사실의 두 번째 적재를 DB 제약이 막게 하는 키. **생략하면 중복 방어가 없다** —
+   * 없던 것이 생기지도, 있던 것이 사라지지도 않는다(옵셔널, additive).
+   */
+  idempotencyKey?: string;
+
+  /**
+   * 파티션 키를 호출자가 지정한다. 생략하면 스트림 파생(`streamConfig.partitionKey`) →
+   * `aggregateId` 순으로 해석한다.
+   *
+   * **왜 파생만으로 통일하지 않았는가 (2026-08-09 실측 근거).** ADR §1 의 원칙은 파생이지만,
+   * 파생의 단위는 *스트림*이고 실제 키는 *이벤트별*로 갈린다:
+   *
+   *  - `inventory.events.v1` — 재고 이벤트는 `skuId` 로, `ProductSellableQuantityChanged` 는
+   *    `variantId` 로 파티션된다. aggregateId 는 셋 다 다른 값(재고 이벤트 id / variantId)이다.
+   *  - `fulfillments.events.v1` — FO 완료 투영은 `salesOrderId ?? foId`, v1 배송 완료는
+   *    `fulfillmentId`, 주문 이벤트는 `orderId`.
+   *
+   * 스트림 하나에 파생 함수 하나(`(payload: any) => string`)로는 이 갈래를 페이로드 필드
+   * 유무로 넘겨짚지 않고는 표현할 수 없다. 그리고 파생으로 밀어붙이면 재고 이벤트가
+   * `skuId` 대신 재고이벤트 id 로 파티션돼 **SKU 단위 순서 보장이 조용히 사라진다** — 이
+   * ADR 이 내내 다룬 "무증상 소실"을 그대로 재생산하는 것이다. 그래서 파생을 기본으로 두되
+   * (파생 함수가 있는 `shipments.events.v1` · `fulfillments.events.v2` 는 그대로 파생을 쓴다)
+   * 명시 지정을 허용한다.
+   */
+  partitionKey?: string;
+};
+
+/**
  * 커맨드 발행 파라미터 (타입 안전 버전)
  */
 export interface PublishCommandParams<TCommandKey extends string, TPayload> {
@@ -129,7 +166,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
    * );
    */
   async enqueue<K extends keyof TEvents & string>(
-    params: PublishEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>,
+    params: EnqueueEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>,
     tx: DbTx,
   ): Promise<void> {
     if (!this.outboxWriter) {
@@ -141,12 +178,19 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
 
     const envelope = this.buildEventEnvelope(params);
 
+    // 파티션 키는 **적재 시점에 해석해서 행에 싣는다.** 디스패처에서 해석하면 그때의 스트림
+    // 설정이 적용되므로, 적재와 발행 사이에 파생 함수가 바뀌면 행이 조용히 다른 파티션으로
+    // 간다. 발행 시점에 이미 결정된 사실을 행이 그대로 들고 있는 편이 낫다.
+    const partitionKey = this.resolvePartitionKey(envelope.payload, params.aggregateId, params.partitionKey);
+
     await this.outboxWriter.write(
       {
         topic: this.streamConfig.topic.topic,
         aggregateType: this.streamConfig.aggregateType,
         aggregateId: params.aggregateId,
         eventType: String(params.eventType),
+        idempotencyKey: params.idempotencyKey,
+        partitionKey,
         envelope,
       },
       tx,
@@ -204,8 +248,15 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
     };
   }
 
-  private resolvePartitionKey(payload: unknown, aggregateId: string): string {
-    const partitionKey = this.streamConfig.partitionKey?.(payload as never) ?? aggregateId;
+  /**
+   * 우선순위: 호출자 지정 → 스트림 파생 → `aggregateId`.
+   *
+   * 세 갈래가 **같은 유효성 검사 한 곳**을 지나는 것이 요점이다. 호출자가 넘긴 빈 문자열이
+   * 검사를 건너뛰면 그 메시지는 Kafka 에서 라운드로빈으로 흩어지고, 순서가 필요했던 키일수록
+   * 증상이 늦게 나타난다.
+   */
+  private resolvePartitionKey(payload: unknown, aggregateId: string, explicit?: string): string {
+    const partitionKey = explicit ?? this.streamConfig.partitionKey?.(payload as never) ?? aggregateId;
     if (typeof partitionKey !== 'string' || partitionKey.length === 0) {
       throw new Error(`Stream ${this.streamConfig.topic.topic} resolved an invalid partition key`);
     }

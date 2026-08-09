@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import { and, eq, inArray, or, sql } from 'drizzle-orm';
+import { outbox_events } from '@app/events';
 import { wmsTables, DbTx } from '../../../inventory/schema/inventory.schema';
 import { InventoryCommandService } from '../../../inventory/core/services/inventory-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
@@ -168,21 +169,23 @@ export async function assertOutboundV2Checkpoint(tx: DbTx, checkpoint: OutboundV
         eq(wmsTables.stockReservations.status, 'confirmed'),
       ),
     );
+  // 적재 대상이 `event.outbox_events` 로 옮겨졌다 (ADR-0029 §5-1, Task 6-C-2).
   const [outbox] = checkpoint.outboxAggregateIds.length
     ? await tx
         .select({ count: sql<number>`count(*)::int` })
-        .from(wmsTables.outboxEvents)
-        .where(inArray(wmsTables.outboxEvents.aggregateId, checkpoint.outboxAggregateIds))
+        .from(outbox_events)
+        .where(inArray(outbox_events.aggregateId, checkpoint.outboxAggregateIds))
     : [{ count: 0 }];
   const [inventoryOutbox] = await tx
     .select({ count: sql<number>`count(*)::int` })
-    .from(wmsTables.outboxEvents)
-    .innerJoin(wmsTables.stockEvents, eq(wmsTables.stockEvents.id, wmsTables.outboxEvents.aggregateId))
+    .from(outbox_events)
+    // 공용 테이블의 `aggregate_id` 는 varchar 라 uuid 컬럼과 직접 비교하면 Postgres 가 거부한다.
+    .innerJoin(wmsTables.stockEvents, sql`${wmsTables.stockEvents.id}::text = ${outbox_events.aggregateId}`)
     .where(
       and(
-        eq(wmsTables.outboxEvents.topic, 'inventory.events.v1'),
-        eq(wmsTables.outboxEvents.eventType, 'StockShipped'),
-        eq(wmsTables.outboxEvents.aggregateType, 'Stock'),
+        eq(outbox_events.topic, 'inventory.events.v1'),
+        eq(outbox_events.eventType, 'StockShipped'),
+        eq(outbox_events.aggregateType, 'Stock'),
         eq(wmsTables.stockEvents.skuId, checkpoint.skuId),
         eq(wmsTables.stockEvents.transitionType, 'SHIP'),
         or(

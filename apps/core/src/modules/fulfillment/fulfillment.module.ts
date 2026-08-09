@@ -18,7 +18,6 @@ import { FulfillmentCommandModule } from './fulfillment-command.module';
 import { WaybillModule } from './waybill/waybill.module';
 
 // Outbox
-import { OutboxService } from '../inventory/shared/outbox/outbox.service';
 import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services
@@ -75,7 +74,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
       enableDLQ: true,
     }),
 
-    // DbService, OutboxService(core), ScheduleModule, StockEventService
+    // DbService, ScheduleModule, StockEventService
     CoreInventoryModule,
 
     // BarcodeService, ReservationLifecycleService, UnifiedReservationService, AuditService
@@ -117,7 +116,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
   ],
   providers: [
     // Outbox
-    OutboxService,
     OutboxDispatcherService,
 
     // Core fulfillment services

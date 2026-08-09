@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 /**
  * sync-stock 후속: 매칭된 SKU 의 sellable 프로젝션 재계산 + 이벤트 발행.
  *
@@ -22,7 +24,6 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { sql } from 'drizzle-orm';
 import { mergedSchema, MergedSchema } from '../../apps/core/src/platform/database/merged-schema';
-import { OutboxService } from '../../apps/core/src/modules/inventory/shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../apps/core/src/modules/inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
@@ -43,7 +44,7 @@ async function main() {
     _client: client,
     _db: drizzle(client, { schema: mergedSchema }),
   });
-  const outbox = new OutboxService(dbService as never);
+  const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService as never);
   const svc = new ProductSellableQuantityService(dbService, outbox);
 
   try {

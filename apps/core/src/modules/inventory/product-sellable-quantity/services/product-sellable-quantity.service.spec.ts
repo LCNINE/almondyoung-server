@@ -1,6 +1,7 @@
 import { DbService } from '@app/db';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
-import { OutboxService } from '../../shared/outbox/outbox.service';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
+import type { PublisherFor } from '@app/events';
 import { ProductSellableQuantityService } from './product-sellable-quantity.service';
 import { ProductSellableQuantityResult } from './product-sellable-quantity.calculator';
 
@@ -15,8 +16,12 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     isSellable: boolean;
     reason: string;
   };
+  // 회수 후 서비스가 받는 것은 스트림 publisher 다 (ADR-0029 §5-1, Task 6-C-2). 목의 타입을
+  // 그대로 좁혀 두면 `aggregateType`·`topic` 처럼 이제 **파생되는** 필드를 단언하려 할 때
+  // 컴파일이 막는다 — 그게 이 스펙이 옛 계약을 붙들지 않게 하는 장치다.
+  type InventoryPublisher = PublisherFor<typeof INVENTORY_STREAM>;
   type OutboxMock = {
-    enqueue: jest.Mock<ReturnType<OutboxService['enqueue']>, Parameters<OutboxService['enqueue']>>;
+    enqueue: jest.Mock<ReturnType<InventoryPublisher['enqueue']>, Parameters<InventoryPublisher['enqueue']>>;
   };
 
   const projection: ProductSellableQuantityResult = {
@@ -124,7 +129,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
   function makeOutbox(): OutboxMock {
     return {
       enqueue: jest
-        .fn<ReturnType<OutboxService['enqueue']>, Parameters<OutboxService['enqueue']>>()
+        .fn<ReturnType<InventoryPublisher['enqueue']>, Parameters<InventoryPublisher['enqueue']>>()
         .mockResolvedValue(undefined),
     };
   }
@@ -141,7 +146,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
 
   function makeService(outbox: OutboxMock) {
     const db = makeDbService();
-    const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
+    const service = new ProductSellableQuantityService(db, outbox as unknown as InventoryPublisher);
     const getByVariantId = jest.spyOn(service, 'getByVariantId').mockResolvedValue(projection);
     return { service, getByVariantId };
   }
@@ -159,7 +164,6 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     const [params, enqueueTx] = outbox.enqueue.mock.calls[0];
     expect(enqueueTx).toBe(tx);
     expect(params.eventType).toBe('ProductSellableQuantityChanged');
-    expect(params.aggregateType).toBe('ProductSellableQuantity');
     expect(params.aggregateId).toBe(projection.variantId);
     expect(params.partitionKey).toBe(projection.variantId);
     expect(params.payload).toMatchObject({
@@ -173,7 +177,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
   it('sales variant policy override가 있으면 매칭이 없어도 수동 품절 projection을 publish한다', async () => {
     const outbox = makeOutbox();
     const db = makeDbService();
-    const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
+    const service = new ProductSellableQuantityService(db, outbox as unknown as InventoryPublisher);
     const { tx, inserted } = makePolicyCalculationTx();
 
     const result = await service.recalculateAndPublishForVariant(projection.variantId, tx);
@@ -208,7 +212,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
   it('masterId가 없으면(죽은 버전 매칭) projection만 저장하고 publish하지 않는다', async () => {
     const outbox = makeOutbox();
     const db = makeDbService();
-    const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
+    const service = new ProductSellableQuantityService(db, outbox as unknown as InventoryPublisher);
     jest.spyOn(service, 'getByVariantId').mockResolvedValue({
       ...projection,
       masterId: null,

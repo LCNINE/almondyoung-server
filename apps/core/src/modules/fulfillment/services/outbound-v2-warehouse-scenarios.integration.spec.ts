@@ -1,3 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
@@ -10,11 +18,9 @@ import { InventoryCommandService } from '../../inventory/core/services/inventory
 import { LocationService } from '../../inventory/core/services/location.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AggregateThenSortPickingStrategy } from '../picking/aggregate-then-sort.strategy';
 import { DiscretePickingStrategy } from '../picking/discrete-picking.strategy';
 import { PickToTotePickingStrategy } from '../picking/pick-to-tote.strategy';
@@ -187,7 +193,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
     const picking = new PickingProcessService(dbService, registry);
 
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const eventStore = new StockEventStore(dbService, sellable, controlled);
     const inventory = new InventoryCommandService(
@@ -234,7 +240,9 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       shipmentReservations,
       waybills,
       new BarcodeService(dbService),
-      new FulfillmentOutboxService(dbService),
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );
@@ -523,15 +531,15 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       : [];
     const outbox = await tx
       .select({
-        topic: wmsTables.outboxEvents.topic,
-        eventType: wmsTables.outboxEvents.eventType,
-        aggregateType: wmsTables.outboxEvents.aggregateType,
-        aggregateId: wmsTables.outboxEvents.aggregateId,
-        idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+        topic: outbox_events.topic,
+        eventType: outbox_events.eventType,
+        aggregateType: outbox_events.aggregateType,
+        aggregateId: outbox_events.aggregateId,
+        idempotencyKey: outbox_events.idempotencyKey,
       })
-      .from(wmsTables.outboxEvents)
+      .from(outbox_events)
       .where(
-        inArray(wmsTables.outboxEvents.aggregateId, [
+        inArray(outbox_events.aggregateId, [
           ...shipmentIds,
           ...world.shipments.map((member) => member.fulfillmentOrder.id),
           ...shipStockEvents.map((event) => event.id),
@@ -932,8 +940,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         .where(eq(wmsTables.stockEvents.id, sources[0].stockEventId!));
       const events = await tx
         .select()
-        .from(wmsTables.outboxEvents)
-        .where(eq(wmsTables.outboxEvents.aggregateId, world.shipments[1].shipment.id));
+        .from(outbox_events)
+        .where(eq(outbox_events.aggregateId, world.shipments[1].shipment.id));
       const [settledSession] = await tx
         .select()
         .from(wmsTables.batchInventorySessions)

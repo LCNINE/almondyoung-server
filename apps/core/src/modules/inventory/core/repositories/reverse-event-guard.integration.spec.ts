@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { ConflictException } from '@nestjs/common';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -7,7 +9,6 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from './stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { LocationService } from '../services/location.service';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 /**
@@ -39,7 +40,7 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
       run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
         tx ? fn(tx) : db.transaction((inner) => fn(inner as unknown as DbTx)),
     } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);

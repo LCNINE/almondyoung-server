@@ -6,11 +6,16 @@ import { LocationService } from '../../../inventory/core/services/location.servi
 import { StockEventStore } from '../../../inventory/core/repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { DbTx, wmsSchema } from '../../../inventory/schema/inventory.schema';
-import { OutboxService as InventoryOutboxService } from '../../../inventory/shared/outbox/outbox.service';
+import { outboxPublisherFor } from '../../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../../inventory/shared/outbox/outbox.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
 import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
@@ -48,14 +53,16 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
   const audit = new AuditService(dbService);
   const controlled = new BatchControlledStockGuard();
   const sessions = new BatchInventorySessionService(dbService, controlled, audit);
-  const invOutbox = new InventoryOutboxService(dbService);
-  const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
-  const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
+  const inventoryPublisher = outboxPublisherFor(INVENTORY_STREAM, dbService);
+  const shipmentPublisher = outboxPublisherFor(SHIPMENT_STREAM, dbService);
+  const fulfillmentV2Publisher = outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService);
+  const fulfillmentV1Publisher = outboxPublisherFor(FULFILLMENT_STREAM, dbService);
+  const sellable = new ProductSellableQuantityService(dbService as never, inventoryPublisher);
   const eventStore = new StockEventStore(dbService, sellable, controlled);
   const inventory = new InventoryCommandService(
     dbService,
     eventStore,
-    invOutbox,
+    inventoryPublisher,
     new LocationService(dbService),
     controlled,
   );
@@ -111,7 +118,9 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
     shipmentReservations,
     waybills,
     barcodes,
-    fulfillmentOutbox,
+    shipmentPublisher,
+    fulfillmentV2Publisher,
+    fulfillmentV1Publisher,
     audit,
     workflowGate,
   );

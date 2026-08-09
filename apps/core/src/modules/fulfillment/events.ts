@@ -45,10 +45,19 @@ export type FulfillmentEvent = (typeof FULFILLMENT_EVENTS)[keyof typeof FULFILLM
 export type ShipmentEvent = (typeof SHIPMENT_EVENTS)[keyof typeof SHIPMENT_EVENTS];
 export type FulfillmentV2Event = (typeof FULFILLMENT_V2_EVENTS)[keyof typeof FULFILLMENT_V2_EVENTS];
 
-export interface FulfillmentOutboxEvent<TPayload> {
-  topic: string;
-  eventType: string;
-  aggregateType: 'Shipment' | 'FulfillmentOrder' | 'Fulfillment';
+/**
+ * 아웃박스 적재 인자 (ADR-0029 §5-1, Task 6-C-2).
+ *
+ * **`topic` 과 `aggregateType` 이 빠졌다 — 파생되기 때문이다.** 회수 전에는 이 레코드가 두
+ * 필드를 직접 들고 있었고, 그 값이 스트림 설정과 어긋나도 아무도 몰랐다(실제로 몇 곳이
+ * 어긋나 있었다: `'fulfillment'` vs `Fulfillment`, `'order'` 등). 이제 `publisher.enqueue`
+ * 가 `streamConfig` 에서 가져오므로 그 두 사실의 소유자가 하나다.
+ *
+ * `eventType` 이 `TEventKey` 로 좁혀져 있는 것도 같은 이유다 — 계약에 없는 이름은 컴파일
+ * 단계에서 막힌다. 빌더의 남은 책임은 **멱등 키 규약**과 **파티션 키**, 그리고 적재 전 파싱이다.
+ */
+export interface FulfillmentOutboxEvent<TEventKey extends string, TPayload> {
+  eventType: TEventKey;
   aggregateId: string;
   partitionKey: string;
   idempotencyKey: string;
@@ -61,12 +70,10 @@ export interface FulfillmentOutboxEvent<TPayload> {
  */
 export function shipmentShippedOutboxEvent(
   payload: ShipmentShippedPayload,
-): FulfillmentOutboxEvent<ShipmentShippedPayload> {
+): FulfillmentOutboxEvent<'ShipmentShipped', ShipmentShippedPayload> {
   const validPayload = SHIPMENT_STREAM.events.ShipmentShipped.schema!.parse(payload);
   return {
-    topic: SHIPMENT_STREAM.topic.topic,
     eventType: SHIPMENT_EVENTS.SHIPPED,
-    aggregateType: 'Shipment',
     aggregateId: validPayload.shipmentId,
     partitionKey: validPayload.shipmentId,
     idempotencyKey: validPayload.dispatchAttemptId,
@@ -77,12 +84,10 @@ export function shipmentShippedOutboxEvent(
 /** One progress fact per dispatch attempt and affected fulfillment order. */
 export function fulfillmentProgressedOutboxEvent(
   payload: FulfillmentProgressedPayload,
-): FulfillmentOutboxEvent<FulfillmentProgressedPayload> {
+): FulfillmentOutboxEvent<'FulfillmentProgressed', FulfillmentProgressedPayload> {
   const validPayload = FULFILLMENT_V2_STREAM.events.FulfillmentProgressed.schema!.parse(payload);
   return {
-    topic: FULFILLMENT_V2_STREAM.topic.topic,
     eventType: FULFILLMENT_V2_EVENTS.PROGRESSED,
-    aggregateType: 'FulfillmentOrder',
     aggregateId: validPayload.fulfillmentOrderId,
     partitionKey: validPayload.fulfillmentOrderId,
     idempotencyKey: `${validPayload.dispatchAttemptId}:${validPayload.fulfillmentOrderId}`,
@@ -92,12 +97,10 @@ export function fulfillmentProgressedOutboxEvent(
 
 export function shipmentDispatchRecalledOutboxEvent(
   payload: ShipmentDispatchRecalledPayload,
-): FulfillmentOutboxEvent<ShipmentDispatchRecalledPayload> {
+): FulfillmentOutboxEvent<'ShipmentDispatchRecalled', ShipmentDispatchRecalledPayload> {
   const validPayload = SHIPMENT_STREAM.events.ShipmentDispatchRecalled.schema!.parse(payload);
   return {
-    topic: SHIPMENT_STREAM.topic.topic,
     eventType: SHIPMENT_EVENTS.DISPATCH_RECALLED,
-    aggregateType: 'Shipment',
     aggregateId: validPayload.shipmentId,
     partitionKey: validPayload.shipmentId,
     idempotencyKey: validPayload.recallOperationId,
@@ -107,12 +110,10 @@ export function shipmentDispatchRecalledOutboxEvent(
 
 export function fulfillmentReopenedOutboxEvent(
   payload: FulfillmentReopenedPayload,
-): FulfillmentOutboxEvent<FulfillmentReopenedPayload> {
+): FulfillmentOutboxEvent<'FulfillmentReopened', FulfillmentReopenedPayload> {
   const validPayload = FULFILLMENT_V2_STREAM.events.FulfillmentReopened.schema!.parse(payload);
   return {
-    topic: FULFILLMENT_V2_STREAM.topic.topic,
     eventType: FULFILLMENT_V2_EVENTS.REOPENED,
-    aggregateType: 'FulfillmentOrder',
     aggregateId: validPayload.fulfillmentOrderId,
     partitionKey: validPayload.fulfillmentOrderId,
     idempotencyKey: `${validPayload.recallOperationId}:${validPayload.fulfillmentOrderId}`,
@@ -127,12 +128,10 @@ export function fulfillmentReopenedOutboxEvent(
 export function fulfillmentShippedV1OutboxEvent(
   payload: FulfillmentShippedPayload,
   completion: FulfillmentV1CompletionSummary,
-): FulfillmentOutboxEvent<FulfillmentShippedPayload> {
+): FulfillmentOutboxEvent<'FulfillmentShipped', FulfillmentShippedPayload> {
   const validPayload = createFulfillmentShippedV1Projection(payload, completion);
   return {
-    topic: FULFILLMENT_STREAM.topic.topic,
     eventType: FULFILLMENT_EVENTS.SHIPPED,
-    aggregateType: 'Fulfillment',
     aggregateId: completion.fulfillmentOrderId,
     partitionKey: completion.fulfillmentOrderId,
     idempotencyKey: `${completion.fulfillmentOrderId}:fully-shipped`,
@@ -143,12 +142,10 @@ export function fulfillmentShippedV1OutboxEvent(
 /** A carrier may send several delivered webhooks, but an attempt is delivered only once logically. */
 export function shipmentDeliveredOutboxEvent(
   payload: ShipmentDeliveredPayload,
-): FulfillmentOutboxEvent<ShipmentDeliveredPayload> {
+): FulfillmentOutboxEvent<'ShipmentDelivered', ShipmentDeliveredPayload> {
   const validPayload = SHIPMENT_STREAM.events.ShipmentDelivered.schema!.parse(payload);
   return {
-    topic: SHIPMENT_STREAM.topic.topic,
     eventType: SHIPMENT_EVENTS.DELIVERED,
-    aggregateType: 'Shipment',
     aggregateId: validPayload.shipmentId,
     partitionKey: validPayload.shipmentId,
     idempotencyKey: validPayload.dispatchAttemptId,
@@ -159,12 +156,10 @@ export function shipmentDeliveredOutboxEvent(
 /** V1 delivery is emitted only by the attempt that completes delivery evidence for the FO. */
 export function fulfillmentDeliveredV1OutboxEvent(
   payload: FulfillmentDeliveredPayload,
-): FulfillmentOutboxEvent<FulfillmentDeliveredPayload> {
+): FulfillmentOutboxEvent<'FulfillmentDelivered', FulfillmentDeliveredPayload> {
   const validPayload = FULFILLMENT_STREAM.events.FulfillmentDelivered.schema!.parse(payload);
   return {
-    topic: FULFILLMENT_STREAM.topic.topic,
     eventType: FULFILLMENT_EVENTS.DELIVERED,
-    aggregateType: 'Fulfillment',
     aggregateId: validPayload.fulfillmentId,
     partitionKey: validPayload.fulfillmentId,
     idempotencyKey: `${validPayload.fulfillmentId}:fully-delivered`,

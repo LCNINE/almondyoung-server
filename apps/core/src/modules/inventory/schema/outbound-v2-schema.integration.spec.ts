@@ -1,11 +1,12 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import { INVENTORY_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, returnExchangeTables, wmsSchema, wmsTables } from './inventory.schema';
-import { OutboxService } from '../shared/outbox/outbox.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -1971,49 +1972,46 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         run: <T>(fn: (inner: DbTx) => Promise<T>, inner?: DbTx) =>
           inner ? fn(inner) : db.transaction((transaction) => fn(transaction as unknown as DbTx)),
       } as unknown as DbService<typeof wmsSchema>;
-      const fulfillmentOutbox = new OutboxService(dbService);
-      const inventoryOutbox = new OutboxService(dbService);
-      const idempotencyKey = `attempt-${randomUUID()}`;
+      const publisherA = outboxPublisherFor(INVENTORY_STREAM, dbService);
+      const publisherB = outboxPublisherFor(INVENTORY_STREAM, dbService);
+      const idempotencyKey = `stock-event:${randomUUID()}`;
       const routed = {
-        topic: SHIPMENT_STREAM.topic.topic,
         idempotencyKey,
-        eventType: 'ShipmentShipped',
-        aggregateType: 'Shipment',
+        eventType: 'StockShipped',
         aggregateId: f.shipment.id,
         partitionKey: f.shipment.id,
-        payload: { shipmentId: f.shipment.id },
+        payload: {
+          stockEventId: f.shipment.id,
+          skuId: f.sku.id,
+          skuCode: 'dedup-probe',
+          quantity: 1,
+          warehouseId: f.warehouse.id,
+          locationId: f.warehouse.id,
+          outboundType: 'ORDER',
+          shippedAt: new Date().toISOString(),
+        },
       } as const;
 
-      const first = await fulfillmentOutbox.enqueue(routed, tx);
-      const duplicate = await inventoryOutbox.enqueue(routed, tx);
-      expect(duplicate?.id).toBe(first?.id);
+      // **서로 다른 인스턴스**로 두 번 적재한다 — 애플리케이션 쪽 기억이 아니라 DB 제약이
+      // 막는다는 것이 이 테스트의 주장이다. 두 번째 호출은 던지지 않고 조용히 수렴해야 한다
+      // (던지면 호출자의 도메인 트랜잭션이 통째로 롤백된다).
+      await publisherA.enqueue(routed, tx);
+      await expect(publisherB.enqueue(routed, tx)).resolves.toBeUndefined();
 
-      // topicless(V1 expand 호환) 쓰기는 Task 25 에서 타입으로 금지됐다 — 여기서 증명할 수 있는
-      // 보완 성질은 "dedup 은 키 단위" 라는 것: 다른 키는 독립 행으로 남는다.
-      const distinctKey = `attempt-${randomUUID()}`;
-      const second = await fulfillmentOutbox.enqueue({ ...routed, idempotencyKey: distinctKey }, tx);
-      expect(second?.id).not.toBe(first?.id);
+      const distinctKey = `stock-event:${randomUUID()}`;
+      await publisherA.enqueue({ ...routed, idempotencyKey: distinctKey }, tx);
 
       const rows = await tx
-        .select()
-        .from(wmsTables.outboxEvents)
-        .where(
-          and(
-            eq(wmsTables.outboxEvents.aggregateId, f.shipment.id),
-            eq(wmsTables.outboxEvents.idempotencyKey, idempotencyKey),
-          ),
-        );
+        .select({ id: outbox_events.id })
+        .from(outbox_events)
+        .where(and(eq(outbox_events.aggregateId, f.shipment.id), eq(outbox_events.idempotencyKey, idempotencyKey)));
       expect(rows).toHaveLength(1);
 
+      // dedup 은 키 단위다 — 다른 키는 독립 행으로 남는다.
       const distinctRows = await tx
-        .select()
-        .from(wmsTables.outboxEvents)
-        .where(
-          and(
-            eq(wmsTables.outboxEvents.aggregateId, f.shipment.id),
-            eq(wmsTables.outboxEvents.idempotencyKey, distinctKey),
-          ),
-        );
+        .select({ id: outbox_events.id })
+        .from(outbox_events)
+        .where(and(eq(outbox_events.aggregateId, f.shipment.id), eq(outbox_events.idempotencyKey, distinctKey)));
       expect(distinctRows).toHaveLength(1);
     });
   });
@@ -2026,6 +2024,9 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       await expectViolation(
         tx,
         (sp) =>
+          // **옛 테이블**을 겨냥한 테스트다 — 그쪽 `idempotency_key` 는 NOT NULL 이고,
+          // 공용 테이블은 nullable 이다(6-C-1 이 그렇게 만들었다: 이미 적재된 행에 값이 없다).
+          // 6-C-4 로 옛 테이블이 사라질 때 이 테스트도 함께 사라진다.
           sp.insert(wmsTables.outboxEvents).values({
             topic: SHIPMENT_STREAM.topic.topic,
             eventType: 'ShipmentShipped',

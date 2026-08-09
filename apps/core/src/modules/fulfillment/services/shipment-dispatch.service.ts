@@ -9,11 +9,15 @@ import {
 import { DbService, InjectTypedDb } from '@app/db';
 import { isScopeAuthorizationDecision, ScopeAuthorizationDecision } from '@app/authorization';
 import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
   FulfillmentProgressedPayload,
   FulfillmentShippedPayload,
+  SHIPMENT_STREAM,
   ShipmentEventOrder,
   ShipmentShippedPayload,
 } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { and, asc, eq, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -25,7 +29,6 @@ import {
   fulfillmentShippedV1OutboxEvent,
   shipmentShippedOutboxEvent,
 } from '../events';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -158,7 +161,12 @@ export class ShipmentDispatchService {
     private readonly shipmentReservations: ShipmentReservationService,
     private readonly waybills: WaybillService,
     private readonly barcode: BarcodeService,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(SHIPMENT_STREAM)
+    private readonly shipments: PublisherFor<typeof SHIPMENT_STREAM>,
+    @InjectPublisher(FULFILLMENT_V2_STREAM)
+    private readonly fulfillmentsV2: PublisherFor<typeof FULFILLMENT_V2_STREAM>,
+    @InjectPublisher(FULFILLMENT_STREAM)
+    private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
@@ -1194,7 +1202,7 @@ export class ShipmentDispatchService {
       invoice: { invoiceId: waybill.id, carrier: waybill.carrier, trackingNo: waybill.trackingNo },
       orders,
     };
-    await this.outbox.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
+    await this.shipments.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
 
     for (const summary of summaries) {
       const progressed: FulfillmentProgressedPayload = {
@@ -1206,7 +1214,7 @@ export class ShipmentDispatchService {
         canceledQty: summary.canceledQty,
         outstandingQty: summary.outstandingQty,
       };
-      await this.outbox.enqueue(fulfillmentProgressedOutboxEvent(progressed), tx);
+      await this.fulfillmentsV2.enqueue(fulfillmentProgressedOutboxEvent(progressed), tx);
 
       const eventLine = lines.find((line) => line.fulfillmentOrderId === summary.fulfillmentOrderId);
       if (summary.fullyShipped && summary.salesOrderId && eventLine) {
@@ -1222,7 +1230,7 @@ export class ShipmentDispatchService {
             shippedQty: item.shippedQty,
           })),
         };
-        await this.outbox.enqueue(
+        await this.fulfillmentsV1.enqueue(
           fulfillmentShippedV1OutboxEvent(v1Payload, { ...summary, salesOrderId: summary.salesOrderId }),
           tx,
         );

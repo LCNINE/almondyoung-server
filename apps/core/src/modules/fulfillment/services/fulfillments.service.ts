@@ -10,7 +10,6 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { FULFILLMENT_EVENTS } from '../events';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
@@ -21,6 +20,8 @@ import {
   FulfillmentDeliveredPayload,
   FulfillmentCancelledPayload,
 } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
@@ -71,7 +72,8 @@ export class FulfillmentsService {
     private readonly db: DbService<typeof wmsSchema>,
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly productSkuMapping: ProductSkuMappingService,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(FULFILLMENT_STREAM)
+    private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly workflowGate: FulfillmentWorkflowGate,
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
     @Optional() private readonly fulfillmentProgress?: FulfillmentProgressService,
@@ -667,13 +669,11 @@ export class FulfillmentsService {
         estimatedDeliveryDate: undefined,
         shippedItems: items.map((item) => ({ fulfillmentItemId: item.id, skuId: item.skuId, shippedQty: item.qty })),
       };
-      await this.outbox.enqueue(
+      await this.fulfillmentsV1.enqueue(
         {
-          topic: FULFILLMENT_STREAM.topic.topic,
           // FO 당 전량출고 완료 이벤트는 논리적으로 한 번 — dispatch 경로의 v1 완료 투영과 같은 키 규약.
           idempotencyKey: `${id}:fully-shipped`,
           eventType: FULFILLMENT_EVENTS.SHIPPED,
-          aggregateType: 'fulfillment',
           aggregateId: id,
           partitionKey: fo.salesOrderId ?? id,
           payload: shippedPayload,
@@ -735,13 +735,11 @@ export class FulfillmentsService {
         deliveredAt: now.toISOString(),
       };
 
-      await this.outbox.enqueue(
+      await this.fulfillmentsV1.enqueue(
         {
-          topic: FULFILLMENT_STREAM.topic.topic,
           // FO 당 전량배송 완료 이벤트는 논리적으로 한 번 — tracking 경로의 v1 완료 투영과 같은 키 규약.
           idempotencyKey: `${id}:fully-delivered`,
           eventType: FULFILLMENT_EVENTS.DELIVERED,
-          aggregateType: 'fulfillment',
           aggregateId: id,
           partitionKey: fo.salesOrderId ?? id,
           payload: deliveredPayload,
@@ -790,12 +788,10 @@ export class FulfillmentsService {
         cancelledAt: new Date().toISOString(),
       };
 
-      await this.outbox.enqueue(
+      await this.fulfillmentsV1.enqueue(
         {
-          topic: FULFILLMENT_STREAM.topic.topic,
           idempotencyKey: `${id}:cancelled`,
           eventType: FULFILLMENT_EVENTS.CANCELLED,
-          aggregateType: 'fulfillment',
           aggregateId: id,
           partitionKey: fo.salesOrderId ?? id,
           payload: cancelledPayload,
@@ -845,9 +841,21 @@ export class FulfillmentsService {
     return reasons;
   }
 
+  /**
+   * FO 하나의 아웃박스 행 (admin-web 의 이력 탭이 읽는 진단 엔드포인트).
+   *
+   * **드레인 기간에는 두 테이블을 모두 읽는다** (ADR-0029 §5-1, Task 6-C-2). 적재는 이제
+   * `event.outbox_events` 로 가지만 옛 `public.outbox_events` 에는 아직 미발행 행이 남아 있고,
+   * 새 테이블만 읽으면 이 배포 이전 FO 의 이력이 통째로 빈 화면이 된다. 옛 갈래 제거는 6-C-4 다.
+   *
+   * 응답 모양은 그대로 유지한다 — admin-web 이 소문자 `status`('failed'/'pending')와 `attempts`
+   * 를 읽는다. 공용 테이블은 대문자 status 와 `retry_count` 를 쓰므로 여기서 옛 어휘로 되돌린다.
+   * `updated_at` 컬럼은 공용 테이블에 없어 *마지막으로 알려진 변화 시각*으로 채운다.
+   */
   async getOutboxEvents(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    return db
+
+    const legacyRows = await db
       .select({
         id: wmsTables.outboxEvents.id,
         eventType: wmsTables.outboxEvents.eventType,
@@ -861,6 +869,33 @@ export class FulfillmentsService {
       .from(wmsTables.outboxEvents)
       .where(and(eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'), eq(wmsTables.outboxEvents.aggregateId, id)))
       .orderBy(desc(wmsTables.outboxEvents.createdAt));
+
+    const sharedRows = await db
+      .select({
+        id: outbox_events.id,
+        eventType: outbox_events.eventType,
+        status: outbox_events.status,
+        attempts: outbox_events.retryCount,
+        nextAttemptAt: outbox_events.nextAttemptAt,
+        publishedAt: outbox_events.publishedAt,
+        createdAt: outbox_events.createdAt,
+        failedAt: outbox_events.failedAt,
+      })
+      .from(outbox_events)
+      .where(and(eq(outbox_events.aggregateType, FULFILLMENT_STREAM.aggregateType), eq(outbox_events.aggregateId, id)));
+
+    const normalized = sharedRows.map((row) => ({
+      id: String(row.id),
+      eventType: row.eventType,
+      status: row.status.toLowerCase(),
+      attempts: row.attempts,
+      nextAttemptAt: row.nextAttemptAt,
+      publishedAt: row.publishedAt,
+      createdAt: row.createdAt,
+      updatedAt: row.publishedAt ?? row.failedAt ?? row.createdAt,
+    }));
+
+    return [...legacyRows, ...normalized].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getOne(id: string, tx?: DbTx) {

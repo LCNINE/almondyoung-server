@@ -33,7 +33,6 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { PoliciesService } from './policies.service';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
@@ -42,6 +41,7 @@ import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlo
 import { LibraryService } from '../../library/services/library.service';
 import { randomUUID } from 'crypto';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
@@ -184,7 +184,10 @@ export class SalesOrdersService {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly db: DbService<typeof wmsSchema>,
     private readonly policies: PoliciesService,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(FULFILLMENT_STREAM)
+    private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
+    @InjectPublisher(CORE_ORDER_STREAM)
+    private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
@@ -225,14 +228,12 @@ export class SalesOrdersService {
           })
           .returning();
 
-        await this.outbox.enqueue(
+        await this.fulfillmentsV1.enqueue(
           {
             // 역사적 폴백 목적지 보존: topicless 시절 dispatcher catch-all 이 이 이벤트를
             // fulfillments.events.v1 로 실어 왔다. 재라우팅은 컨슈머 분석이 필요한 별도 결정.
-            topic: FULFILLMENT_STREAM.topic.topic,
             idempotencyKey: `order-created:${order.id}`,
             eventType: ORDER_EVENTS.CREATED,
-            aggregateType: 'order',
             aggregateId: order.id,
             partitionKey: order.id,
             payload: { orderId: order.id },
@@ -333,14 +334,12 @@ export class SalesOrdersService {
           .set({ ...updateData, updatedAt: new Date() })
           .where(eq(wmsTables.salesOrders.id, id));
 
-        await this.outbox.enqueue(
+        await this.fulfillmentsV1.enqueue(
           {
             // 역사적 폴백 목적지 보존 (위 ORDER_CREATED 참조). 수정 이벤트는 주문당 여러 번이
             // 정당하므로 자연 멱등키가 없다 — 호출마다 고유 키로 topicless 시절의 무중복 동작 유지.
-            topic: FULFILLMENT_STREAM.topic.topic,
             idempotencyKey: `order-modified:${id}:${randomUUID()}`,
             eventType: ORDER_EVENTS.MODIFIED,
-            aggregateType: 'order',
             aggregateId: id,
             partitionKey: id,
             payload: { orderId: id },
@@ -627,12 +626,10 @@ export class SalesOrdersService {
 
       const updated = await this.getOne(id, trx);
 
-      await this.outbox.enqueue(
+      await this.coreOrders.enqueue(
         {
-          topic: CORE_ORDER_STREAM.topic.topic,
           idempotencyKey: `so-cancelled:${cancellation.id}`,
           eventType: 'SalesOrderCancelled',
-          aggregateType: 'Order',
           aggregateId: id,
           partitionKey: id,
           payload: {
@@ -946,10 +943,7 @@ export class SalesOrdersService {
       // ── 키워드 검색 ──
       if (params.keyword && params.keyword.trim()) {
         const kw = `%${params.keyword.trim()}%`;
-        const orderNoCond = or(
-          ilike(S.salesOrders.channelOrderId, kw),
-          sql`${S.salesOrders.id}::text ILIKE ${kw}`,
-        )!;
+        const orderNoCond = or(ilike(S.salesOrders.channelOrderId, kw), sql`${S.salesOrders.id}::text ILIKE ${kw}`)!;
         const receiverCond = or(
           sql`${S.salesOrders.shippingAddress}->>'recipientName' ILIKE ${kw}`,
           ilike(S.salesOrders.customerName, kw),
@@ -1014,10 +1008,7 @@ export class SalesOrdersService {
       }
 
       const orderIds = orders.map((o) => o.id);
-      const lines = await trx
-        .select()
-        .from(S.salesOrderLines)
-        .where(inArray(S.salesOrderLines.salesOrderId, orderIds));
+      const lines = await trx.select().from(S.salesOrderLines).where(inArray(S.salesOrderLines.salesOrderId, orderIds));
 
       const linesByOrderId = new Map<string, typeof lines>();
       for (const line of lines) {
@@ -1396,12 +1387,10 @@ export class SalesOrdersService {
 
     await this.linkCancellationEffects(salesOrderId, cancellation.id, 'partial', effects, occurredAt, trx);
 
-    await this.outbox.enqueue(
+    await this.coreOrders.enqueue(
       {
-        topic: CORE_ORDER_STREAM.topic.topic,
         idempotencyKey: `so-cancelled:${cancellation.id}`,
         eventType: 'SalesOrderCancelled',
-        aggregateType: 'Order',
         aggregateId: salesOrderId,
         partitionKey: salesOrderId,
         payload: {
@@ -1732,12 +1721,10 @@ export class SalesOrdersService {
       occurredAt,
       tx,
     );
-    await this.outbox.enqueue(
+    await this.coreOrders.enqueue(
       {
-        topic: CORE_ORDER_STREAM.topic.topic,
         idempotencyKey: `so-cancelled:${cancellation.id}`,
         eventType: 'SalesOrderCancelled',
-        aggregateType: 'Order',
         aggregateId: salesOrderId,
         partitionKey: salesOrderId,
         payload: {

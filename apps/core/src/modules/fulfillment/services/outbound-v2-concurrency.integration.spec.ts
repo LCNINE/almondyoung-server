@@ -1,3 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { ConflictException, ForbiddenException } from '@nestjs/common';
@@ -13,8 +21,6 @@ import { StockEventStore } from '../../inventory/core/repositories/stock-event.s
 import { LocationService } from '../../inventory/core/services/location.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDbService, wireLogistics } from './__support__';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -338,8 +344,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
   function dispatchService(database: Database): ShipmentDispatchService {
     const dbService = makeDbService(database);
     const workflow = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' }));
-    const inventoryOutbox = new InventoryOutboxService(dbService);
-    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const controlled = new BatchControlledStockGuard();
     const inventory = new InventoryCommandService(
@@ -378,7 +383,9 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       reservations,
       waybills,
       new BarcodeService(dbService),
-      fulfillmentOutbox,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );
@@ -386,7 +393,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
 
   function recallService(database: Database, grantRecallScope = true): ShipmentRecallService {
     const dbService = makeDbService(database);
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const inventory = new InventoryCommandService(
       dbService,
@@ -423,7 +430,8 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       waybills,
       inventory,
       reservations,
-      new FulfillmentOutboxService(dbService),
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       new AuditService(dbService),
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
     );
@@ -697,7 +705,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           .where(inArray(wmsTables.fulfillmentCommandRequests.idempotencyKey, [...commandKeys]));
       await tx.delete(wmsTables.auditLogs).where(eq(wmsTables.auditLogs.userId, fixture.actorId));
       const aggregateIds = [fixture.shipment.id, fixture.fulfillmentOrder.id, ...allEventIds];
-      await tx.delete(wmsTables.outboxEvents).where(inArray(wmsTables.outboxEvents.aggregateId, aggregateIds));
+      await tx.delete(outbox_events).where(inArray(outbox_events.aggregateId, aggregateIds));
       await tx.delete(wmsTables.shipmentTracking).where(eq(wmsTables.shipmentTracking.shipmentId, fixture.shipment.id));
       if (operationIds.length) {
         await tx
@@ -1015,9 +1023,9 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       });
       const dispatchOutbox = await db
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
-          inArray(wmsTables.outboxEvents.aggregateId, [
+          inArray(outbox_events.aggregateId, [
             fixture.shipment.id,
             fixture.fulfillmentOrder.id,
             sources[0].stockEventId!,
@@ -1163,8 +1171,8 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       expect(recalledLine).toMatchObject({ qty: 2, reservedQty: 2, inspectedQty: 0 });
       const recallOutbox = await db
         .select()
-        .from(wmsTables.outboxEvents)
-        .where(eq(wmsTables.outboxEvents.aggregateId, fixture.shipment.id));
+        .from(outbox_events)
+        .where(eq(outbox_events.aggregateId, fixture.shipment.id));
       expect(recallOutbox.filter((event) => event.eventType === 'ShipmentDispatchRecalled')).toHaveLength(1);
       const [afterRecall] = await observer<{ on_hand: number; reserved: number; available: number }[]>`
         SELECT

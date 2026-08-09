@@ -17,6 +17,7 @@ function makeService(scopes: Set<string> = new Set([FULFILLMENT_SCOPE.DISPATCH_R
     reservations as never,
     {} as never,
     {} as never,
+    {} as never,
     workflowGate as never,
   );
   return { service, commands, authorization, reservations, workflowGate };

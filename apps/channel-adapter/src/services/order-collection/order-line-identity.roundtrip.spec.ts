@@ -149,6 +149,7 @@ describe('external order-line identity real component round trip', () => {
       coreDb as never,
       policies as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
       {} as never,
