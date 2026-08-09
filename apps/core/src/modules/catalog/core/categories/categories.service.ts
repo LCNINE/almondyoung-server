@@ -36,7 +36,7 @@ import {
 import { ProjectionSnapshotAssembler } from '../products/assemblers/projection-snapshot.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
-import { OutboxPublisher } from '@app/events';
+import { InjectPublisher, type PublisherFor } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import type {
   CategoryChangedPayload,
@@ -54,7 +54,8 @@ export class ProductCategoriesService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,
-    private readonly outboxPublisher: OutboxPublisher,
+    @InjectPublisher(PRODUCT_STREAM)
+    private readonly productPublisher: PublisherFor<typeof PRODUCT_STREAM>,
   ) {}
 
   private getClient(tx?: DbTransaction): DbClient {
@@ -896,16 +897,7 @@ export class ProductCategoriesService {
       ancestors: snapshot ? await this.buildAncestorSnapshots(snapshot, tx) : undefined,
     };
 
-    await this.outboxPublisher.saveEvent(
-      {
-        topic: PRODUCT_STREAM.topic.topic,
-        eventType: 'CategoryChanged',
-        aggregateType: PRODUCT_STREAM.aggregateType,
-        aggregateId: categoryId,
-        payload,
-      },
-      tx,
-    );
+    await this.productPublisher.enqueue({ eventType: 'CategoryChanged', aggregateId: categoryId, payload }, tx);
   }
 
   /**
@@ -951,11 +943,9 @@ export class ProductCategoriesService {
         continue;
       }
 
-      await this.outboxPublisher.saveEvent(
+      await this.productPublisher.enqueue(
         {
-          topic: PRODUCT_STREAM.topic.topic,
           eventType: 'ProductMasterActiveVersionChanged',
-          aggregateType: PRODUCT_STREAM.aggregateType,
           aggregateId: masterId,
           payload: {
             masterId,

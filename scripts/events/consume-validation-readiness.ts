@@ -6,29 +6,29 @@
  *
  * 플랜 Task 5-C 는 "인바운드 payload 가 실제로 zod 스키마를 만족하는지 **먼저** 확인"하라고 하고
  * 그 방법으로 "스테이징 샘플링 또는 5-B 상태에서 로그 관찰"을 제시한다. **둘 다 지금 불가능하다** —
- * AWS `dev` stage 는 폐기됐고, 5-B(배선 이주)는 커밋됐을 뿐 배포되지 않아 라이브는 여전히 옛 배선이라
- * 검증 인터셉터가 붙지 않는다(§8). 관찰할 로그 자체가 생기지 않는다.
+ * AWS `dev` stage 는 폐기됐고, 배선 이주가 배포되기 전에는 검증 인터셉터가 붙지 않아 관찰할 로그
+ * 자체가 생기지 않는다. 대신 **발행 경로를 전수로 닫아** 같은 결론에 도달한다.
  *
- * 대신 **발행 경로를 전수로 닫아** 같은 결론에 도달한다. 논증은 세 걸음이다:
+ * ## 불변식 (Task 6-A 이후)
  *
- * 1. Kafka 로 나가는 모든 경로는 `StreamPublisher` 를 지난다 (ADR-0029 §7, Task 2 에서 확립).
- * 2. `StreamPublisher` 의 발행 진입점은 **둘뿐**이다:
- *    - `publishEvent`  → `validateOnPublish` 로 zod 검증. 게다가 envelope 에 싣는 것은 원본이 아니라
- *      **zod 가 파싱한 결과**(`payload: validatedPayload`, `stream-publisher.service.ts:123`)다.
- *      즉 나가는 payload 는 스키마의 출력 그 자체라, 같은 스키마로 다시 검증하면 반드시 통과한다.
- *    - `publishRawEnvelope` → zod 우회.
- * 3. 따라서 **`publishRawEnvelope` 가 실어 나를 수 있는 (토픽, 이벤트) 만이 위험하다.**
- *    그 호출자는 레포 전체에 **2곳**뿐이다 (아래 BYPASS_PATHS).
+ * **Kafka 로 나가는 모든 payload 는 zod 파싱을 통과한 값이다.** 근거는 세 걸음이고 전부 AST 로 센다:
  *
- * `validateOnPublish` 를 `false` 로 끄는 곳은 레포에 하나도 없다(실측). 발행·소비가 같은
- * `StreamConfig` 객체를 공유하는 것도 확인했다 — 모든 `forRoot({streams})` 가 계약 패키지의
- * 정규 export 를 그대로 넘긴다. 그래서 스키마가 양쪽에서 갈라질 수 없다.
+ * 1. 프로덕션 코드에서 `kafkajs` 를 직접 잡는 곳은 없다 → 모든 전송은 `EventTransport.send` 를 지난다.
+ * 2. `transport.send` 호출 지점은 아래 `SEND_PATHS` 가 전부다.
+ * 3. 그중 `StreamPublisher.sendMessage` 를 지나는 것은 검증된 진입점 셋뿐이다
+ *    (`publishEvent` · `publishCommand` · `publishStoredEnvelope`). 셋 다 envelope 에 싣는 것이
+ *    원본이 아니라 **zod 가 파싱한 결과**다. 파싱은 멱등이므로 같은 스키마의 소비 검증을 반드시
+ *    통과한다.
+ *
+ * Task 6-A 이전에는 `publishRawEnvelope` 가 3번의 예외였다 — 아웃박스가 zod 를 우회하는 유일한
+ * 경로였고, 그래서 아웃박스로 나가는 4개 이벤트가 UNVERIFIED 로 남아 세 앱을 막고 있었다.
+ * 이제 적재(`enqueue`)와 발행(`publishStoredEnvelope`) 양쪽에 문이 있고 우회는 없다.
  *
  * ## 판정
  *
  *   SAFE       스키마 없음, 또는 빈 객체까지 통과하는 관대한 스키마 → 켜도 동작이 안 바뀐다
- *   PROVEN     필수 필드가 있으나 우회 경로가 이 (토픽,이벤트) 에 닿지 않는다 → 발행 시 이미 검증됨
- *   UNVERIFIED 필수 필드 + 우회 경로가 닿는다 → 사람이 payload 를 봐야 한다
+ *   PROVEN     필수 필드가 있고, 우회 경로가 이 (토픽,이벤트) 에 닿지 않는다 → 발행 시 이미 검증됨
+ *   UNVERIFIED 필수 필드 + 검증되지 않는 발행 경로가 닿는다 → 사람이 payload 를 봐야 한다
  *
  * `UNVERIFIED` 가 0인 앱은 검증을 켜도 안전하다는 정적 증명을 가진 것이다.
  *
@@ -36,17 +36,23 @@
  *
  * - **토픽에 남아 있는 옛 메시지.** 발행 코드가 지금 옳아도 계약 이전에 쌓인 메시지는 모양이 다를 수
  *   있다. 이 논증은 "앞으로 발행될 것"만 덮는다. retention 을 넘긴 뒤에야 완결된다.
+ *   `DLQHandler.reprocessDLQ`(관리자 수동 재처리)가 이 한계와 같은 성질이라 아래에서 면제된다 —
+ *   그 토픽에 이미 있던 메시지를 되돌려 보낼 뿐 새 모양을 만들지 않는다.
  * - **레포 밖 발행자.** Medusa 등 다른 프로세스가 같은 토픽에 쓰면 이 논증 밖이다. 현재 확인된
  *   외부 발행자는 없다.
- * - `BYPASS_PATHS` 는 **손으로 유지하는 목록이다.** 그래서 `--gate` 가 `publishRawEnvelope` 호출
- *   지점을 실제로 세어 이 목록과 어긋나면 실패한다 — 목록이 조용히 낡는 것을 막는다.
+ * - `SEND_PATHS` 는 **손으로 유지하는 목록이다.** 그래서 `--gate` 가 실제 호출 지점을 세어 이
+ *   목록과 어긋나면 실패한다 — 목록이 조용히 낡는 것을 막는다.
  *
  * ## `--gate` 가 막는 것
  *
- * 1. **검증을 켜 둔 앱에 UNVERIFIED 이벤트가 생기는 것.** 5-C 로 켠 앱에 나중에 누가 outbox 발행
- *    이벤트의 핸들러를 추가하면, 이 판정이 조용히 뒤집히는 대신 CI 가 막는다. 5-C 의 분석을
- *    일회성 결론이 아니라 **상시 불변식**으로 바꾸는 것이 이 게이트의 목적이다.
- * 2. 위의 `BYPASS_PATHS` 낡음.
+ * 1. **검증을 켜 둔 앱에 UNVERIFIED 이벤트가 생기는 것.** 5-C 의 분석을 일회성 결론이 아니라
+ *    **상시 불변식**으로 바꾸는 것이 이 게이트의 목적이다.
+ * 2. **발행 경로가 늘어나는 것.** `transport.send` 호출 지점이 `SEND_PATHS` 와 다르거나,
+ *    `StreamPublisher.sendMessage` 를 부르는 메서드가 검증된 셋 밖으로 늘어나면 실패한다.
+ *    새 발행 경로는 반드시 사람이 검증 여부를 판단하고 이 목록에 적어야 한다.
+ * 3. **`validateOnPublish: false`.** 위 불변식은 이 스위치가 켜져 있다는 데 전적으로 기댄다.
+ *    끄는 순간 증명 전체가 무너지므로 레포 어디에도 있어선 안 된다.
+ * 4. **`publishRawEnvelope` 부활.** 6-A 가 지운 이름이다. 되살아나면 우회도 되살아난다.
  *
  * 사용법:
  *   npm run audit:consume-validation
@@ -65,33 +71,37 @@ import type { StreamConfig } from '../../packages/event-contracts/types/stream-c
 const REPO = path.resolve(__dirname, '..', '..');
 
 /**
- * zod 를 우회해 Kafka 에 도달할 수 있는 경로. `publishRawEnvelope` 의 호출자와 1:1 대응한다.
+ * `EventTransport.send` 호출 지점 전부. 손으로 유지하고 `--gate` 가 AST 로 대조한다.
  *
- * 각 항목은 "이 dispatcher 가 어느 토픽에 무엇을 실을 수 있는가" 를 적는다. 그 답은 dispatcher 가
- * 어떤 publisher 를 들고 있고 어떤 행을 읽는가로 정해진다.
+ * `validated: true` 인 항목은 그 경로로 나가는 payload 가 zod 파싱을 통과한 값임을 뜻한다.
+ * `validated: false` 인 항목이 하나라도 생기면 그 경로가 실어 나를 수 있는 (토픽, 이벤트) 가
+ * UNVERIFIED 가 되고, `resolve` 로 그 집합을 계산하는 코드를 여기에 붙여야 한다.
  */
-const BYPASS_PATHS = [
+const SEND_PATHS: Array<{ site: string; what: string; validated: boolean }> = [
   {
-    dispatcher: 'libs/events/src/outbox/outbox-dispatcher.service.ts:121',
-    /** publisherMap 이 행의 `topic` 컬럼으로 조회되므로, 실릴 수 있는 것은 `saveEvent` 가 쓴 (topic,eventType) 뿐이다. */
-    writers: 'OutboxPublisher.saveEvent',
-    resolve: 'saveEvent-call-sites' as const,
+    site: 'libs/events/src/publishers/stream-publisher.service.ts',
+    what: 'StreamPublisher.sendMessage — 검증된 진입점 셋만 부른다 (아래 VALIDATED_SEND_ENTRYPOINTS)',
+    validated: true,
   },
   {
-    dispatcher: 'apps/wallet/src/messaging/outbox-dispatcher.service.ts:171',
-    /**
-     * publisher 가 `PAYMENT_EVENTS_TOPIC` 하나로 고정 주입된다(:45) — 즉 실리는 토픽은
-     * `payments.events.v1` 하나다. 실릴 수 있는 **이벤트명**은 wallet 이 자기 `outbox_events` 에
-     * 넣는 것뿐이고, 그 이름은 전부 `*EventType` const 맵에서 온다 (`GatewayEventType` ·
-     * `InvoiceEventType`). 그 맵들의 값 전체를 우회 집합으로 잡는다 — 실제 insert 지점을 일일이
-     * 따라가면 헬퍼 함수를 거치는 갈래에서 놓칠 수 있고, 놓치면 위험한 쪽(PROVEN 오판)으로 틀린다.
-     * 과대추정은 안전한 방향이다.
-     */
-    writers: 'wallet outbox_events 직접 insert',
-    resolve: 'wallet-event-consts' as const,
-    topic: 'payments.events.v1',
+    site: 'libs/events/src/dlq/dlq-handler.service.ts',
+    what: 'DLQHandler.sendToDLQ — DLQ 토픽으로만 나간다. 계약 토픽이 아니므로 소비 검증 대상이 아니다',
+    validated: true,
+  },
+  {
+    site: 'libs/events/src/dlq/dlq-handler.service.ts',
+    what:
+      'DLQHandler.reprocessDLQ — 관리자 수동 재처리. 원본 토픽으로 되돌려 보내지만 ' +
+      '**그 토픽에 이미 있던 메시지**뿐이라 새 모양을 만들지 않는다 (위 "한계" 의 옛 메시지와 같은 성질)',
+    validated: true,
   },
 ];
+
+/**
+ * `StreamPublisher.sendMessage` 를 부르는 메서드 — 전부 zod 파싱 결과를 싣는다.
+ * 여기 없는 메서드가 `sendMessage` 를 부르면 게이트가 실패한다. 그것이 새 우회의 모양이다.
+ */
+const VALIDATED_SEND_ENTRYPOINTS = ['publishEvent', 'publishCommand', 'publishStoredEnvelope'].sort();
 
 /**
  * 앱의 `validateOnConsume` 선언을 **소스에서 도출한다.** 목록으로 들고 있지 않는 이유는
@@ -197,19 +207,12 @@ function propOf(obj: ts.ObjectLiteralExpression, name: string): ts.Expression | 
   return undefined;
 }
 
-interface SaveEventSite {
-  where: string;
-  topic?: string;
-  event?: string;
-}
-
-function scanFile(rel: string): { consumers: Consumer[]; saveEvents: SaveEventSite[] } {
+function scanFile(rel: string): { consumers: Consumer[] } {
   const abs = path.join(REPO, rel);
   const source = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true);
   const consts = collectStringConsts(source);
   const app = rel.split('/')[1];
   const consumers: Consumer[] = [];
-  const saveEvents: SaveEventSite[] = [];
   const lineOf = (n: ts.Node) => source.getLineAndCharacterOfPosition(n.getStart()).line + 1;
 
   const visit = (node: ts.Node) => {
@@ -232,23 +235,11 @@ function scanFile(rel: string): { consumers: Consumer[]; saveEvents: SaveEventSi
       }
     }
 
-    // 우회 경로 1의 writer: `outboxPublisher.saveEvent({ topic, eventType, … }, tx)`
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const arg0 = node.arguments[0];
-      if (node.expression.name.getText() === 'saveEvent' && arg0 && ts.isObjectLiteralExpression(arg0)) {
-        saveEvents.push({
-          where: `${rel}:${lineOf(node)}`,
-          topic: resolveTopicExpression(propOf(arg0, 'topic'), consts),
-          event: resolveString(propOf(arg0, 'eventType'), consts),
-        });
-      }
-    }
-
     ts.forEachChild(node, visit);
   };
 
   visit(source);
-  return { consumers, saveEvents };
+  return { consumers };
 }
 
 // ─── 스키마 분류 ────────────────────────────────────────────────────────────
@@ -287,66 +278,70 @@ function grepFiles(pattern: string, scope: string): string[] {
   }
 }
 
-/**
- * wallet 이 자기 outbox 에 실을 수 있는 이벤트명 전부.
- *
- * `apps/wallet/src` 안의 `const *EventType = { … } as const` 값들과, `eventType:` 자리에 직접 쓰인
- * 문자열 리터럴을 모은다. 과대추정 방향으로만 틀리게 설계했다 — 빠뜨리면 PROVEN 오판이 되고,
- * 더 넣으면 UNVERIFIED 가 늘 뿐이다.
- */
-function walletOutboxEventTypes(): Set<string> {
-  const found = new Set<string>();
-  for (const rel of grepFiles('EventType|eventType:', 'apps/wallet/src')) {
-    const abs = path.join(REPO, rel);
-    const source = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true);
-    const consts = collectStringConsts(source);
-
-    const visit = (node: ts.Node) => {
-      // const XxxEventType = { KEY: 'value' } as const
-      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && /EventType$/.test(node.name.text)) {
-        let init = node.initializer;
-        while (init && ts.isAsExpression(init)) init = init.expression;
-        if (init && ts.isObjectLiteralExpression(init)) {
-          for (const p of init.properties) {
-            if (ts.isPropertyAssignment(p) && ts.isStringLiteral(p.initializer)) found.add(p.initializer.text);
-          }
-        }
-      }
-      // eventType: 'literal'
-      if (ts.isPropertyAssignment(node) && node.name.getText() === 'eventType') {
-        const v = resolveString(node.initializer, consts);
-        if (v) found.add(v);
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-  }
-  return found;
+/** AST 로 파일을 훑는 공통 헬퍼. */
+function eachNode(rel: string, fn: (node: ts.Node, line: () => number) => void): void {
+  const abs = path.join(REPO, rel);
+  const source = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true);
+  const visit = (node: ts.Node) => {
+    fn(node, () => source.getLineAndCharacterOfPosition(node.getStart()).line + 1);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
 }
 
-/**
- * `publishRawEnvelope` **호출** 지점 — BYPASS_PATHS 가 낡았는지 확인하는 근거.
- *
- * grep 이 아니라 AST 로 센다. 이 이름은 설명 주석에도 자주 등장하고(이 스크립트를 설명하는
- * 주석까지 포함해서), 실제로 grep 판본이 `sales-order.module.ts` 의 근거 주석을 세 번째
- * "호출자"로 집계해 거짓 경보를 냈다. 세는 대상이 호출이면 호출만 세야 한다.
- */
-function findRawEnvelopeCallers(): string[] {
+/** 이름으로 메서드 호출 지점을 센다. grep 이 아니라 AST — 이름은 주석에도 자주 등장한다. */
+function findMethodCalls(name: string, scope: string): string[] {
   const hits: string[] = [];
-  for (const rel of grepFiles('publishRawEnvelope', 'apps libs')) {
-    const abs = path.join(REPO, rel);
-    const source = ts.createSourceFile(abs, fs.readFileSync(abs, 'utf8'), ts.ScriptTarget.Latest, true);
-    const visit = (node: ts.Node) => {
+  for (const rel of grepFiles(name, scope)) {
+    eachNode(rel, (node, line) => {
       if (
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
-        node.expression.name.getText() === 'publishRawEnvelope'
+        node.expression.name.getText() === name
       ) {
-        hits.push(`${rel}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
+        hits.push(`${rel}:${line()}`);
       }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
+    });
+  }
+  return hits.sort();
+}
+
+/**
+ * `StreamPublisher.sendMessage` 를 부르는 **메서드 이름** 집합.
+ *
+ * 새 발행 진입점이 생기면 여기 나타난다. 그 메서드가 검증을 하는지는 사람만 판단할 수 있으므로,
+ * 게이트는 판단을 요구할 뿐 대신 내리지 않는다.
+ */
+function findSendMessageCallers(): string[] {
+  const rel = 'libs/events/src/publishers/stream-publisher.service.ts';
+  const names = new Set<string>();
+  eachNode(rel, (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.getText() === 'sendMessage'
+    ) {
+      let cur: ts.Node | undefined = node;
+      while (cur && !ts.isMethodDeclaration(cur)) cur = cur.parent;
+      if (cur && ts.isMethodDeclaration(cur)) names.add(cur.name.getText());
+    }
+  });
+  return [...names].sort();
+}
+
+/** `validateOnPublish: false` — 위 불변식 전체가 이 스위치에 기댄다. */
+function findValidateOnPublishOff(): string[] {
+  const hits: string[] = [];
+  for (const rel of grepFiles('validateOnPublish', 'apps libs packages')) {
+    eachNode(rel, (node, line) => {
+      if (
+        ts.isPropertyAssignment(node) &&
+        node.name.getText() === 'validateOnPublish' &&
+        node.initializer.kind === ts.SyntaxKind.FalseKeyword
+      ) {
+        hits.push(`${rel}:${line()}`);
+      }
+    });
   }
   return hits.sort();
 }
@@ -357,30 +352,16 @@ function main() {
   const gate = argv.includes('--gate');
   const only = argv.filter((a) => !a.startsWith('--'));
 
-  const files = [...new Set([...grepFiles('@On\\(', 'apps'), ...grepFiles('saveEvent\\(', 'apps')])];
+  const files = grepFiles('@On\\(', 'apps');
   const consumers: Consumer[] = [];
-  const saveEvents: SaveEventSite[] = [];
   for (const rel of files) {
-    const r = scanFile(rel);
-    consumers.push(...r.consumers);
-    saveEvents.push(...r.saveEvents);
+    consumers.push(...scanFile(rel).consumers);
   }
 
-  // 우회 가능한 (토픽, 이벤트) 집합을 만든다.
+  // 검증되지 않는 발행 경로가 실어 나를 수 있는 (토픽, 이벤트). Task 6-A 이후 그런 경로는 없다 —
+  // `SEND_PATHS` 에 `validated: false` 항목이 다시 생기면 여기에 그 집합을 계산하는 코드를 붙인다.
   const bypassPairs = new Map<string, string[]>(); // "topic|event" → 근거
-  for (const p of BYPASS_PATHS) {
-    const add = (topic: string, event: string, why: string) => {
-      const key = `${topic}|${event}`;
-      bypassPairs.set(key, [...(bypassPairs.get(key) ?? []), why]);
-    };
-    if (p.resolve === 'wallet-event-consts') {
-      for (const event of walletOutboxEventTypes()) add(p.topic, event, `${p.writers} → ${p.dispatcher}`);
-    } else {
-      for (const s of saveEvents) {
-        if (s.topic && s.event) add(s.topic, s.event, `${p.writers} ${s.where}`);
-      }
-    }
-  }
+  const unvalidatedSendPaths = SEND_PATHS.filter((p) => !p.validated);
 
   interface Row {
     app: string;
@@ -436,10 +417,10 @@ function main() {
       reason = '빈 객체까지 통과하는 관대한 스키마 → 켜도 동작 불변';
     } else if (bypass.length > 0) {
       verdict = 'UNVERIFIED';
-      reason = `필수 필드 + zod 우회 발행 경로 ${bypass.length}건이 이 이벤트에 닿는다`;
+      reason = `필수 필드 + 검증되지 않는 발행 경로 ${bypass.length}건이 이 이벤트에 닿는다`;
     } else {
       verdict = 'PROVEN';
-      reason = '필수 필드가 있으나 우회 경로가 닿지 않는다 → publishEvent 가 zod 파싱 결과를 실어 보낸다';
+      reason = '필수 필드가 있으나 검증되지 않는 발행 경로가 없다 → 나가는 payload 는 zod 파싱 결과다';
     }
 
     rows.push({
@@ -477,21 +458,49 @@ function main() {
     };
   });
 
-  // BYPASS_PATHS 가 실제 호출자와 어긋났는지 — 손으로 유지하는 목록이 조용히 낡는 것을 막는다.
-  const callers = findRawEnvelopeCallers();
-  const staleBypassList = callers.length !== BYPASS_PATHS.length;
+  // ── 발행 경로 무결성 ─────────────────────────────────────────────────────
+  // 손으로 유지하는 SEND_PATHS 가 실제 코드와 어긋나면 위 불변식의 근거가 사라진다.
+  const transportSends = findMethodCalls('send', 'libs/events/src').filter((h) => !h.includes('.spec.'));
+  const sendMessageCallers = findSendMessageCallers();
+  const validateOff = findValidateOnPublishOff();
+  const rawEnvelopeCallers = findMethodCalls('publishRawEnvelope', 'apps libs');
+
+  const integrity: string[] = [];
+  if (transportSends.length !== SEND_PATHS.length) {
+    integrity.push(
+      `transport.send 호출이 ${transportSends.length}곳인데 SEND_PATHS 는 ${SEND_PATHS.length}곳을 가정한다 — ` +
+        `목록이 낡았다: ${transportSends.join(', ')}`,
+    );
+  }
+  if (sendMessageCallers.join('|') !== VALIDATED_SEND_ENTRYPOINTS.join('|')) {
+    integrity.push(
+      `StreamPublisher.sendMessage 를 부르는 메서드가 [${sendMessageCallers.join(', ')}] 인데 ` +
+        `검증된 진입점은 [${VALIDATED_SEND_ENTRYPOINTS.join(', ')}] 이다 — 새 발행 경로의 검증 여부를 사람이 판단해야 한다`,
+    );
+  }
+  if (validateOff.length > 0) {
+    integrity.push(`validateOnPublish: false 가 있다 (${validateOff.join(', ')}) — 이 증명 전체가 무너진다`);
+  }
+  if (rawEnvelopeCallers.length > 0) {
+    integrity.push(`publishRawEnvelope 가 되살아났다 (${rawEnvelopeCallers.join(', ')}) — zod 우회가 함께 돌아온다`);
+  }
+  if (unvalidatedSendPaths.length > 0) {
+    integrity.push(
+      `SEND_PATHS 에 검증되지 않는 경로가 있다 (${unvalidatedSendPaths.map((p) => p.what).join('; ')}) — ` +
+        'bypassPairs 계산을 다시 붙여야 한다',
+    );
+  }
 
   if (asJson) {
-    console.log(JSON.stringify({ summary, rows, bypassPaths: BYPASS_PATHS, rawEnvelopeCallers: callers }, null, 2));
+    console.log(
+      JSON.stringify({ summary, rows, sendPaths: SEND_PATHS, transportSends, sendMessageCallers, integrity }, null, 2),
+    );
   } else {
-    console.log('소비 검증 준비도 (validateOnConsume 를 켜도 되는가) — ADR-0029 §8 / 플랜 Task 5-C\n');
-    console.log(`zod 우회 경로: publishRawEnvelope 호출자 ${callers.length}곳`);
-    for (const c of callers) console.log(`  ${c}`);
-    if (staleBypassList) {
-      console.log(
-        `\n⚠️  BYPASS_PATHS 는 ${BYPASS_PATHS.length}곳을 가정하는데 실제는 ${callers.length}곳이다 — 목록이 낡았다.`,
-      );
-    }
+    console.log('소비 검증 준비도 (validateOnConsume 를 켜도 되는가) — ADR-0029 §8 / 플랜 Task 5-C·6-A\n');
+    console.log(`발행 경로 (transport.send 호출 ${transportSends.length}곳):`);
+    for (const p of SEND_PATHS) console.log(`  ${p.validated ? '✅' : '⚠️ '} ${p.site} — ${p.what}`);
+    console.log(`검증된 발행 진입점: ${sendMessageCallers.join(', ')}`);
+    for (const problem of integrity) console.log(`\n⚠️  ${problem}`);
 
     console.log('\n앱                검증  이벤트  핸들러   SAFE  PROVEN  UNVERIFIED   판정');
     for (const s of summary) {
@@ -516,7 +525,7 @@ function main() {
       console.log(`\n${r.app}  ${r.topic}  ${r.event}  (핸들러 ${r.handlers})`);
       console.log(`  ${r.reason}`);
       if (r.required.length) console.log(`  필수: ${r.required.join(', ')}`);
-      for (const b of r.bypass) console.log(`  우회: ${b}`);
+      for (const b of r.bypass) console.log(`  경로: ${b}`);
     }
 
     const proven = rows.filter((r) => r.verdict === 'PROVEN');
@@ -535,13 +544,14 @@ function main() {
           .join(', ') || '없음'
       }`,
     );
-    if (violations.length === 0 && !staleBypassList) console.log('위반 없음.');
+    if (violations.length === 0 && integrity.length === 0) console.log('위반 없음.');
     for (const v of violations) {
       console.log(`🔴 ${v.app}: validateOnConsume=true (${v.policyAt}) 인데 UNVERIFIED ${v.UNVERIFIED}건`);
     }
+    for (const problem of integrity) console.log(`🔴 ${problem}`);
   }
 
-  process.exit(gate && (staleBypassList || violations.length > 0) ? 1 : 0);
+  process.exit(gate && (integrity.length > 0 || violations.length > 0) ? 1 : 0);
 }
 
 main();

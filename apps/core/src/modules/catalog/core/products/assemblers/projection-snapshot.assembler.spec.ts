@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import { ProjectionSnapshotAssembler } from './projection-snapshot.assembler';
 
 type CategoryFixture = {
@@ -316,5 +317,42 @@ describe('ProjectionSnapshotAssembler', () => {
     await expect(assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any)).rejects.toThrow(
       'Multiple primary categories',
     );
+  });
+
+  /**
+   * 이 조립 결과는 `ProductMasterActiveVersionChanged` 의 payload 로 들어가고, ADR-0029 §5 이후
+   * **적재 시점에 zod 파싱을 탄다.** 그 전까지 이 스키마는 런타임에서 한 번도 실행된 적이 없었다 —
+   * 이 이벤트의 발행자는 아웃박스뿐이었고 아웃박스에는 검증이 없었기 때문이다.
+   *
+   * 그래서 두 가지를 함께 본다:
+   * - **통과하는가** — 통과하지 못하면 상품 게시 트랜잭션이 통째로 실패한다.
+   * - **손실이 없는가** — zod object 는 미선언 키를 조용히 떼어내므로, 통과만 봐서는
+   *   소비자가 쓰던 필드가 사라진 것을 알 수 없다. 이 워크스트림이 없애려는 무증상 실패다.
+   */
+  it('조립 결과는 ProductMasterActiveVersionChanged 계약을 손실 없이 통과한다', async () => {
+    const { assembler } = makeAssembler({
+      categories: [category({ id: 'cat-lip', isPrimary: true, thumbnailFileId: 'file-category' })],
+      variants: [{ id: 'variant-active', status: 'active', variantName: 'Red', isDefault: true, optionValueIds: [] }],
+      images: [{ id: 'image-1', fileId: 'file-primary', isPrimary: true, sortOrder: 1 }],
+    });
+
+    const assembly = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+    // product-versions.service.ts `_emitActiveVersionChangedEvent` 가 만드는 payload 그대로
+    const payload = {
+      masterId: 'master-1',
+      versionId: 'version-1',
+      name: assembly.snapshot.name,
+      previousActiveVersionId: null,
+      categoryIds: assembly.categoryIds,
+      primaryCategoryId: assembly.primaryCategoryId,
+      changeReason: 'published' as const,
+      changedAt: new Date('2026-08-09T00:00:00.000Z').toISOString(),
+      snapshot: assembly.snapshot,
+    };
+
+    const parsed = PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse(payload);
+
+    expect(parsed).toEqual(payload);
   });
 });

@@ -9,7 +9,7 @@
 jest.mock(
   '@packages/event-contracts',
   () => ({
-    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product' },
+    PRODUCT_STREAM: { topic: { topic: 'products.events.v1' }, aggregateType: 'Product', events: {} },
   }),
   { virtual: true },
 );
@@ -21,7 +21,8 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { OutboxPublisher } from '@app/events';
+import { OutboxPublisher, StreamPublisher } from '@app/events';
+import { PRODUCT_STREAM } from '@packages/event-contracts';
 import { DbTransaction } from '../../../catalog.types';
 import {
   catalogSchema,
@@ -143,8 +144,19 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     const snapshotAssembler = new ProjectionSnapshotAssembler(versionLoader, optionLoader, tagLoader, priceCache);
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
+    // 카테고리 서비스는 이제 아웃박스가 아니라 publisher 를 받는다 (ADR-0029 §5) —
+    // `enqueue` 는 transport 를 쓰지 않으므로 전송 스텁으로 충분하다.
     const outbox = new OutboxPublisher(dbService as unknown as DbService);
-    categories = new ProductCategoriesService(dbService, snapshotAssembler, outbox);
+    const productPublisher = new StreamPublisher(
+      { send: async () => undefined },
+      PRODUCT_STREAM,
+      'core-integration-spec',
+      undefined,
+      undefined,
+      undefined,
+      outbox,
+    );
+    categories = new ProductCategoriesService(dbService, snapshotAssembler, productPublisher);
     // 이 스위트는 §F1(브랜드/셀러 병합) 회귀 잠금이지 품목 판매정책 프리필 검증이 아니다
     // — 실 ProductSkuMappingService 는 inventory BC 의 무거운 의존성 그래프(SharedModule
     // 등)를 끌고 오므로, 여기서는 빈 배치 응답 스텁만 채운다. base/current 양쪽 renderMaster

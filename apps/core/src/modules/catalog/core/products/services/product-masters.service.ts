@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { ConflictError } from '@app/shared';
-import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
+import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
   ProductMaster,
@@ -110,7 +110,6 @@ export class ProductMastersService {
 
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
-    private readonly outboxPublisher: OutboxPublisher,
 
     @Inject(forwardRef(() => ProductVersionsService))
     private readonly productVersionsService: ProductVersionsService,
@@ -1013,11 +1012,9 @@ export class ProductMastersService {
    * Emit ProductMasterDeleted event
    */
   private async _emitMasterDeletedEvent(masterId: string, tx: DbTransaction): Promise<void> {
-    await this.outboxPublisher.saveEvent(
+    await this.productPublisher.enqueue(
       {
-        topic: PRODUCT_STREAM.topic.topic,
         eventType: 'ProductMasterDeleted',
-        aggregateType: PRODUCT_STREAM.aggregateType,
         aggregateId: masterId,
         payload: {
           masterId,

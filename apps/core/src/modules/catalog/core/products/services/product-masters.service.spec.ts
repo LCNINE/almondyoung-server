@@ -18,9 +18,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
     const productSellableQuantity = {
       recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
@@ -29,7 +27,6 @@ describe('ProductMastersService Medusa projection outbox events', () => {
     const service = new ProductMastersService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       {} as any,
       {} as any,
       {} as any,
@@ -38,7 +35,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
       null,
     );
 
-    return { service, productPublisher, outboxPublisher, productSellableQuantity };
+    return { service, productPublisher, productSellableQuantity };
   }
 
   it('passes the delete transaction to the ProductMasterDeleted outbox enqueue', async () => {
@@ -82,16 +79,15 @@ describe('ProductMastersService Medusa projection outbox events', () => {
   });
 
   it('enqueues ProductMasterDeleted through the transactional outbox and does not publish directly to Kafka', async () => {
-    const { service, productPublisher, outboxPublisher } = makeService();
+    const { service, productPublisher } = makeService();
     const tx = {} as any;
 
     await (service as any)._emitMasterDeletedEvent('master-1', tx);
 
-    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+    // 토픽·aggregateType 은 계약에서 도출되므로 호출부에 없다 (ADR-0029 §5)
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        topic: 'products.events.v1',
         eventType: 'ProductMasterDeleted',
-        aggregateType: 'Product',
         aggregateId: 'master-1',
         payload: expect.objectContaining({
           masterId: 'master-1',
@@ -126,9 +122,7 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
     const productSellableQuantity = {
       recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
@@ -137,7 +131,6 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
     return new ProductMastersService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       {} as any,
       {} as any,
       {} as any,
@@ -277,9 +270,7 @@ describe('ProductMastersService.createMaster ownership', () => {
   function makeService() {
     const productPublisher = {
       publishEvent: jest.fn().mockResolvedValue(undefined),
-    };
-    const outboxPublisher = {
-      saveEvent: jest.fn().mockResolvedValue(undefined),
+      enqueue: jest.fn().mockResolvedValue(undefined),
     };
     const productSellableQuantity = {
       recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
@@ -288,7 +279,6 @@ describe('ProductMastersService.createMaster ownership', () => {
     const service = new ProductMastersService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
-      outboxPublisher as any,
       {} as any,
       {} as any,
       {} as any,
@@ -297,7 +287,7 @@ describe('ProductMastersService.createMaster ownership', () => {
       null,
     );
 
-    return { service, productPublisher, outboxPublisher, productSellableQuantity };
+    return { service, productPublisher, productSellableQuantity };
   }
 
   it('records the creating user as draft owner and creator on the initial version', async () => {

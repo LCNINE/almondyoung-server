@@ -15,14 +15,3 @@ export interface OutboxConfig {
   processingTimeoutMs?: number; // 기본값: 300000 (5분)
   cleanupDays?: number; // 기본값: 7
 }
-
-export interface SaveEventParams {
-  topic: string;
-  eventType: string;
-  aggregateType: string;
-  aggregateId: string;
-  payload: any;
-  correlationId?: string;
-  causationId?: string;
-  metadata?: Record<string, unknown>;
-}

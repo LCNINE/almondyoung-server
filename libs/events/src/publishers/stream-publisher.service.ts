@@ -14,6 +14,8 @@ import { validateSchemaOrThrow, logValidationError, isZodSchema } from '../valid
 import { EventChainService } from '../tracking/event-chain.service';
 import { EventTrackingService } from '../tracking/event-tracking.service';
 import { EventTransport } from '../transport/transport.port';
+import type { OutboxWriter } from '../outbox/outbox-writer.port';
+import type { DbTx } from '../outbox/outbox.types';
 
 export interface CausedByResource {
   resourceType: string;
@@ -64,6 +66,11 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
     validationOptions?: SchemaValidationOptions,
     private readonly eventChainService?: EventChainService,
     private readonly eventTrackingService?: EventTrackingService,
+    /**
+     * 아웃박스 적재 대상 (ADR-0029 §5). 없으면 `enqueue` 가 던진다 — 이 앱이 아웃박스를
+     * 켜지 않았다는 뜻이고, 조용히 이벤트를 버리는 것보다 부팅/호출 시점에 드러나는 편이 낫다.
+     */
+    private readonly outboxWriter?: OutboxWriter,
   ) {
     this.logger = new Logger(`StreamPublisher:${streamConfig.topic.topic}`);
     this.validationOptions = {
@@ -87,6 +94,79 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       causedBy?: CausedByResource;
     },
   ): Promise<void> {
+    const envelope = this.buildEventEnvelope(params);
+
+    const partitionKey = this.resolvePartitionKey(envelope.payload, params.aggregateId);
+    await this.sendMessage(envelope, partitionKey);
+
+    // causedBy가 있으면 CAUSE 링크 기록
+    if (params.causedBy && this.eventTrackingService) {
+      await this.eventTrackingService
+        .trackCause({
+          eventId: envelope.messageId,
+          chainId: envelope.chainId as string,
+          eventType: envelope.messageType,
+          ...params.causedBy,
+        })
+        .catch((err) => this.logger.warn('Failed to track cause', err?.message));
+    }
+  }
+
+  /**
+   * 트랜잭셔널 아웃박스 적재 (ADR-0029 §5)
+   *
+   * `publishEvent` 와 **같은 파라미터·같은 타입 도출·같은 검증**이고, 다른 것은 배달 방식뿐이다.
+   * 즉시 Kafka 로 보내는 대신 호출자의 트랜잭션에 행으로 남기고, 디스패처가 커밋 이후에 발행한다.
+   *
+   * 검증이 여기서 일어나는 것이 이 메서드의 요점이다. 잘못된 payload 는 아웃박스에 poison row 로
+   * 남아 나중에 소비자 DLQ 에서 발견되는 대신, **호출자의 도메인 트랜잭션을 그 자리에서 실패시킨다.**
+   * 진단 위치가 원인에 붙어 있다.
+   *
+   * @example
+   * await this.products.enqueue(
+   *   { eventType: 'ProductMasterDeleted', aggregateId: masterId, payload: { masterId, deletedAt } },
+   *   tx,
+   * );
+   */
+  async enqueue<K extends keyof TEvents & string>(
+    params: PublishEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>,
+    tx: DbTx,
+  ): Promise<void> {
+    if (!this.outboxWriter) {
+      throw new Error(
+        `Stream ${this.streamConfig.topic.topic} has no outbox writer — ` +
+          'EventsModule.forRoot({ enableOutbox: true }) 가 필요하다.',
+      );
+    }
+
+    const envelope = this.buildEventEnvelope(params);
+
+    await this.outboxWriter.write(
+      {
+        topic: this.streamConfig.topic.topic,
+        aggregateType: this.streamConfig.aggregateType,
+        aggregateId: params.aggregateId,
+        eventType: String(params.eventType),
+        envelope,
+      },
+      tx,
+    );
+
+    this.logger.debug(`📥 event enqueued: ${envelope.messageType}`, {
+      messageId: envelope.messageId,
+      aggregateId: params.aggregateId,
+    });
+  }
+
+  /**
+   * Envelope 조립 + 검증 — `publishEvent` 와 `enqueue` 의 공통부.
+   *
+   * 싣는 것은 원본이 아니라 **zod 가 파싱한 결과**다. 파싱은 멱등이므로 이 envelope 는 같은
+   * 스키마의 소비 검증을 반드시 통과한다 (ADR-0029 §8 "검증 스위치(C)").
+   */
+  private buildEventEnvelope<K extends keyof TEvents & string>(
+    params: PublishEventParams<K, TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never>,
+  ): DomainEvent<TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> {
     const messageId = generateMessageId();
     const now = new Date();
 
@@ -99,8 +179,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
     // chainId: CLS에서 읽거나 새 UUID v7 생성
     const chainId = this.eventChainService?.getChainId() ?? v7();
 
-    // Envelope 생성
-    const envelope: DomainEvent<TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> = {
+    return {
       messageId,
       messageType: String(params.eventType),
       messageVersion: 1,
@@ -123,24 +202,14 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       payload: validatedPayload,
       metadata: params.metadata,
     };
+  }
 
-    const partitionKey = this.streamConfig.partitionKey?.(validatedPayload) ?? params.aggregateId;
+  private resolvePartitionKey(payload: unknown, aggregateId: string): string {
+    const partitionKey = this.streamConfig.partitionKey?.(payload as never) ?? aggregateId;
     if (typeof partitionKey !== 'string' || partitionKey.length === 0) {
       throw new Error(`Stream ${this.streamConfig.topic.topic} resolved an invalid partition key`);
     }
-    await this.sendMessage(envelope, partitionKey);
-
-    // causedBy가 있으면 CAUSE 링크 기록
-    if (params.causedBy && this.eventTrackingService) {
-      await this.eventTrackingService
-        .trackCause({
-          eventId: envelope.messageId,
-          chainId,
-          eventType: envelope.messageType,
-          ...params.causedBy,
-        })
-        .catch((err) => this.logger.warn('Failed to track cause', err?.message));
-    }
+    return partitionKey;
   }
 
   /**
@@ -175,6 +244,13 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
     const messageId = generateMessageId();
     const now = new Date();
 
+    // 이벤트와 같은 검증을 탄다. 이 줄이 없던 동안 커맨드는 zod 를 우회하는 세 번째 경로였다
+    // (ADR-0029 §8 "검증 스위치(C)" 의 전수 폐쇄 논증이 놓쳤던 자리).
+    let validatedPayload = params.payload;
+    if (this.validationOptions.validateOnPublish) {
+      validatedPayload = this.validatePayload(String(params.commandType), params.payload);
+    }
+
     const envelope: DomainCommand<TEvents[K] extends EventType<any, infer TPayload> ? TPayload : never> = {
       messageId,
       messageType: String(params.commandType),
@@ -192,7 +268,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
         aggregateId: params.aggregateId,
       },
 
-      payload: params.payload,
+      payload: validatedPayload,
       metadata: params.metadata,
 
       expiresAt: params.expiresIn ? new Date(Date.now() + params.expiresIn).toISOString() : undefined,
@@ -239,12 +315,26 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
   }
 
   /**
-   * Raw MessageEnvelope 발행 (Outbox 패턴용)
+   * 아웃박스에 저장된 envelope 발행 (ADR-0029 §5)
    *
-   * Outbox에 저장된 envelope를 그대로 Kafka로 발행
+   * 옛 이름은 `publishRawEnvelope` 였고 zod 를 우회했다 — 그것이 이 레포에서 검증되지 않는
+   * 유일한 발행 경로였고, 소비 검증을 앱별로 켤 수 없게 만든 원인이었다(§8 "검증 스위치(C)").
+   *
+   * 이제 검증한다. `enqueue` 가 이미 적재 시점에 걸렀으므로 정상 경로에서는 두 번째 통과이고
+   * 비용은 파싱 한 번이다. 이 문이 실제로 무는 것은 **enqueue 를 지나지 않은 행**이다:
+   * 이 변경 이전에 적재돼 아직 PENDING 인 행, 그리고 테이블에 직접 insert 하는 앱 자체 판본
+   * (wallet). 그 행들이 남아 있는 한 "Kafka 로 나간 것은 검증을 통과한 값"이 조건부가 된다.
+   *
+   * 실패하면 던진다 — 디스패처가 그 행을 실패로 기록하고 재시도/DLQ 정책에 태운다. 조용히
+   * 넘기면 아웃박스가 검증을 무력화하는 우회로로 되돌아간다.
    */
-  async publishRawEnvelope(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
-    await this.sendMessage(envelope, partitionKey);
+  async publishStoredEnvelope(envelope: MessageEnvelope, partitionKey: string): Promise<void> {
+    let payload = envelope.payload;
+    if (this.validationOptions.validateOnPublish) {
+      payload = this.validatePayload(envelope.messageType, envelope.payload);
+    }
+
+    await this.sendMessage({ ...envelope, payload }, partitionKey);
   }
 
   /**
