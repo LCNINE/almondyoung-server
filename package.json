@@ -80,6 +80,8 @@
     "audit:event-handlers": "node scripts/events/event-handler-contract-audit.js",
     "audit:event-publishers": "node scripts/events/publisher-contract-audit.js",
     "audit:consume-validation": "tsx scripts/events/consume-validation-readiness.ts",
+    "events:marker-backfill": "tsx scripts/events/outbox-marker-backfill.ts",
+    "events:marker-backfill:verify": "bash scripts/events/outbox-marker-backfill.verify.sh",
     "membership:backfill:last-payment-intent": "./scripts/with-ipv4.sh node apps/membership/scripts/backfill-last-payment-intent.js",
     "migrate:auth": "./scripts/with-ipv4.sh ts-node -r tsconfig-paths/register libs/authorization/scripts/migrate-auth-schema.ts",
     "migrate:backfill": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/backfill-v2.ts",
