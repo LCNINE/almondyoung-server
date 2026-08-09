@@ -329,28 +329,59 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 ### Task 5-C: 검증 켜기 — 앱별, 게이트
 
-- [ ] notification · membership · wallet 은 **해당 없음** — 명시 `false` 가 정상 상태다. 5-A + 5-B 로 종결
-- [ ] 나머지 4개 앱: 인바운드 payload 가 실제로 zod 스키마를 만족하는지 **먼저** 확인 (스테이징 샘플링 또는 5-B 상태에서 로그 관찰)
-- [ ] core 를 먼저 켜고 DLQ 대시보드로 관찰한다 — **유일하게 관측 가능한 앱**
-- [ ] core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지, 로그 기반으로 갈지 결정한다
-- [ ] `validateOnConsume` 명시를 걷어내거나 `true` 로 전환
+- [x] notification · membership · wallet 은 **해당 없음** — 명시 `false` 가 정상 상태다. 5-A + 5-B 로 종결
+- [x] 나머지 4개 앱: 인바운드 payload 가 실제로 zod 스키마를 만족하는지 **먼저** 확인 ~~(스테이징 샘플링 또는 5-B 상태에서 로그 관찰)~~ → **둘 다 불가능해 발행 경로 전수 폐쇄로 대체.** 아래 참조
+- [x] core 를 먼저 켜고 ~~DLQ 대시보드로 관찰한다~~ → **켰다.** 관찰은 배포 후 사람 몫 (아래 배포 체크리스트)
+- [x] core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지, 로그 기반으로 갈지 결정한다 → **둘 다 아니다. 게이트는 Task 6 이다** (아래)
+- [x] `validateOnConsume` 명시를 걷어내거나 `true` 로 전환 → core 만 `true`. 나머지 3개는 Task 6 뒤로
 
-### 권장 순서
+**완료 (2026-08-09).** 브랜치 `docs/plan-task5-split`.
+
+**샘플링이 불가능해서 정적 증명으로 갈아탔다.** 이 항목이 지시한 두 방법이 지금 둘 다 존재하지 않는다 — AWS `dev` stage 는 폐기됐고, 5-B 는 배포 전이라 검증 인터셉터가 아직 안 붙어 관찰할 로그가 생기지 않는다. 플랜대로면 5-C 가 배포를 기다리고 배포는 5-C 를 기다리는 순환이 된다. 대신 **발행 경로를 전수로 닫았다** (ADR-0029 §8 "검증 스위치(C)" 절이 정본):
+
+1. 프로덕션 코드에서 `kafkajs` 를 직접 잡는 곳 **0곳** → 모든 발행이 `StreamPublisher` 를 지난다.
+2. `publishEvent` 는 envelope 에 **zod 파싱 결과**를 싣는다(`stream-publisher.service.ts:123`). 파싱은 멱등이므로 그 경로로 나간 payload 는 소비 검증을 **반드시** 통과한다. `validateOnPublish: false` 인 곳은 레포에 없다.
+3. 남는 것은 `publishRawEnvelope` 뿐이고 호출자는 **2곳**이다 (공용 outbox · wallet outbox). core·channel-adapter 의 자체 outbox dispatcher 는 `publishEvent` 를 부르므로 우회가 아니다 — 이 구분이 판정을 크게 바꿨다(초기 분석은 "모든 outbox = 우회"로 잡아 UNVERIFIED 를 36건으로 과대집계했다).
+
+도구는 `scripts/events/consume-validation-readiness.ts` (`npm run audit:consume-validation`). 스키마 강도는 zod 내부를 읽지 않고 **실행해서**(`safeParse({})`) 분류한다.
+
+| 앱 | 이벤트 | SAFE | PROVEN | UNVERIFIED | 결과 |
+|---|---:|---:|---:|---:|---|
+| **core** | 4 | 0 | **4** | **0** | ✅ **켰다** |
+| notification | 22 | 1 | 21 | 0 | 해당 없음 |
+| wallet | 4 | 0 | 4 | 0 | 해당 없음 |
+| analytics | 10 | 0 | 7 | **3** | ⏸ Task 6 뒤 |
+| search | 3 | 0 | 1 | **2** | ⏸ Task 6 뒤 |
+| channel-adapter | 34 | 11 | 19 | **4** | ⏸ Task 6 뒤 |
+| membership | 10 | 5 | 0 | 5 | 해당 없음 |
+
+**🔴 순서를 뒤집었다 — 나머지 3개 앱의 게이트는 관측성이 아니라 Task 6 이다.** 세 앱을 막는 UNVERIFIED 는 전부 같은 원인의 **4개 이벤트**다: `MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`. 넷 다 `OutboxPublisher.saveEvent` 로 적재돼 `publishRawEnvelope` 로 나간다. Task 6 의 "enqueue 시점 zod 검증"이 정확히 이 구멍이며, 들어가는 순간 넷 다 기계적으로 PROVEN 이 된다. 5-C 를 먼저 하면 payload 를 추측해야 하고, Task 6 을 먼저 하면 추측할 것이 남지 않는다. 게다가 Task 6 은 실패를 **발행자의 도메인 트랜잭션**에서 드러내므로 소비자 DLQ 에서 사후 발견하는 것보다 진단 위치가 낫다. **ADR-0029 §8 과 Follow-up 6 을 먼저 고쳤다.**
+
+- **core 를 켠 근거:** 4개 이벤트가 전부 `orders.events.v1` 이고 발행자 셋(channel-adapter order publisher 2벌 + 자체 outbox dispatcher)이 모두 `publishEvent` 를 지난다. `OrderRefundCreated` 는 발행자가 아예 없다. 우회 2곳 중 어느 것도 이 토픽에 닿지 않는다. core 는 **DLQ 가 관측되는 유일한 앱**이라(`dlq.metrics.ts:10`) 증명이 틀렸을 때 알아차릴 수 있는 유일한 앱이기도 하다.
+- **분석을 상시 불변식으로 바꿨다.** `--gate` 는 *검증을 켜 둔 앱*에 UNVERIFIED 가 생기면 exit 1 한다 — core 에 나중에 outbox 발행 이벤트 핸들러를 추가하면 CI 가 막는다. 게이트가 실제로 무는 것을 확인했다(search 를 일부러 `true` 로 바꿔 exit 1 재현 후 원복). 게이트는 자기 가정도 감시한다: `publishRawEnvelope` 호출 지점을 AST 로 세어 손으로 유지하는 우회 목록과 어긋나면 실패하며, **첫 실행에서 실제로 걸렸다** — grep 판본이 내가 방금 쓴 근거 주석 속 함수명을 세 번째 "호출자"로 집계했다. 그래서 AST 로 바꿨다.
+- **켜는 비용이 낮다는 것도 실행으로 고정했다.** `SchemaValidationError` 는 `nonRetryableErrors` 에 강제 편입되므로(`event-retry.interceptor.ts:91`) 위반 메시지는 백오프 없이 즉시 DLQ 로 가고 offset 이 전진한다 — 재시도 폭풍으로 파티션이 막히지 않는다. `libs/events/src/transport/consume-validation.spec.ts` 가 이것과 멱등성을 함께 고정하며, 재시도 억제는 **대조군**(스키마와 무관한 에러는 같은 `@RetryPolicy` 로 4회 실행)과 나란히 두었다 — 대조군이 없으면 `maxRetries` 를 0으로 바꿔도 초록이라 아무것도 증명하지 못한다. 검증을 끄는 변이를 넣어 6개 중 3개가 실패하는 것도 확인했다.
+- **부수 정정:** channel-adapter 를 "외부 유래 payload 라 가장 위험"이라고 적어온 서술은 소비 측에는 맞지 않는다. 외부 payload 는 HTTP 로 들어와 이 앱이 *발행측*에서 정규화하므로, 소비하는 34개는 전부 내부 발행이다(프로덕션 `kafkajs` 직접 사용 0곳으로 확인). 남은 위험은 외부성이 아니라 outbox 우회다.
+
+**⚠️ 배포 후 사람이 할 것 (core):** 배포 시점에 core 는 **배선(B)과 검증(C)이 같이 켜진다** — 5-B 도 아직 미배포이기 때문이다. `events_dlq_messages_total{topic="orders.events.v1"}` 을 확인한다. 0 이 아니면 계약 이전에 토픽에 쌓인 옛 메시지이거나(이 증명이 덮지 않는 유일한 구멍) 증명이 틀린 것이며, 되돌리기는 그 한 줄을 `false` 로 바꾸는 것이다.
+
+### 권장 순서 (2026-08-09 갱신)
 
 ```
-5-A   데코레이터 일괄 (7앱)                    위험 0 · AST 게이트
-5-B   notification · membership · wallet       C 가 no-op → 여기서 종결
-5-B   core  →  5-C core                        관측 가능한 유일한 앱. 여기서 C 를 배운다
-5-B+C search → analytics                       작다. core 가 패턴을 증명한 뒤
-5-B   channel-adapter (validateOnConsume:false 명시)
-5-C   channel-adapter                          payload 샘플링 후, 마지막
+5-A   데코레이터 일괄 (7앱)                    ✅ 완료 · 위험 0 · AST 게이트
+5-B   7개 앱 배선 일괄                         ✅ 완료
+5-C   core                                     ✅ 완료 — 정적 증명 · 관측 가능한 유일 앱
+──────────────────────────────────────────────────────────────
+Task 6  outbox enqueue 시점 zod 검증            ← 여기가 나머지를 여는 열쇠
+5-C   analytics · search · channel-adapter     Task 6 후. 4개 이벤트가 자동으로 PROVEN 이 된다
 ```
 
-**완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이며, `@OnEvent` 호출이 0건이다. `start-consumer.spec.ts` 의 "옛 배선" describe 를 삭제한다 (그게 초록이라는 사실이 라이브 결함의 증거였다).
+**완료 기준:** 7개 앱 전부 `startConsumer` 를 쓰고, `forConsumer` 호출이 0건이며, `@OnEvent` 호출이 0건이다. `start-consumer.spec.ts` 의 "옛 배선" describe 를 삭제한다 (그게 초록이라는 사실이 라이브 결함의 증거였다). ⚠️ **삭제 시점은 5-B 배포 후다** — 배포 전까지 라이브는 여전히 옛 배선이라 그 describe 의 주장은 아직 참이다.
 
 ---
 
 ## Task 6: 발행 경로 통합 + outbox 회수
+
+> ⚠️ **이 태스크가 5-C 의 나머지 3개 앱을 막고 있다** (2026-08-09, ADR-0029 Follow-up 6). analytics·search·channel-adapter 에서 검증을 못 켜는 원인은 관측성이 아니라 `saveEvent`→`publishRawEnvelope` 의 zod 우회다. 아래 "enqueue 시점 zod 검증"이 들어가면 막고 있던 4개 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`)가 기계적으로 PROVEN 이 된다. **완료 후 `npm run audit:consume-validation` 이 그 세 앱을 `켜도 안전` 으로 바꾸는지 확인하고, 그 시점에 5-C 를 마저 끝낸다.**
 
 - [ ] `PublisherFor<S>` 에 `publish(eventName, {...})` 와 `enqueue(eventName, {...}, tx)` 를 함께 둔다
 - [ ] **`enqueue` 시점에 zod 검증** — 잘못된 payload 가 poison row 가 되는 대신 도메인 트랜잭션을 실패시킨다
