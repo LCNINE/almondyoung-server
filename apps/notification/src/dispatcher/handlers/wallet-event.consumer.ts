@@ -723,6 +723,15 @@ export class WalletEventConsumer {
         return;
       }
 
+      // `userId` 는 계약상 **선택**이다 (2026-08-09 정정). 스키마는 처음부터 optional 이었고,
+      // 인텐트 생성 전 실패처럼 값이 없는 발행 경로가 실재한다 — 인터페이스만 필수라고 적혀
+      // 있어서 이 자리가 `undefined` 를 그대로 DTO 에 실을 수 있었다. 이 경로(무통장 발급)는
+      // 인텐트가 이미 있어 값이 오지만, 없으면 수신자를 알 수 없으므로 보내지 않는다.
+      if (!payload.userId) {
+        this.logger.warn(`Skipping BANK_TRANSFER_ISSUED: no userId (intent ${payload.intentId})`);
+        return;
+      }
+
       const eventMapping = await this.eventMappingService.getEventMapping('BANK_TRANSFER_ISSUED');
       if (!eventMapping || !eventMapping.isActive) {
         this.logger.warn(`Event mapping for BANK_TRANSFER_ISSUED not found or inactive.`);

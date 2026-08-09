@@ -10,7 +10,6 @@ import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
 import {
-  GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
   subscriberExtraFromMetadata,
@@ -176,7 +175,6 @@ export class CmsSettlementPollerService {
           triggeredByType: 'SYSTEM',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_AUTHORIZED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: withdrawal.intentId,
             payload: buildPaymentIntentEventPayload({
               intentId: withdrawal.intentId,
@@ -279,7 +277,6 @@ export class CmsSettlementPollerService {
           triggeredByType: 'SYSTEM',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_FAILED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: withdrawal.intentId,
             payload: buildPaymentIntentEventPayload({
               intentId: withdrawal.intentId,

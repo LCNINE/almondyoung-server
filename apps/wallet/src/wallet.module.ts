@@ -16,6 +16,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { WALLET_OUTBOX_CONFIG } from './messaging/wallet-outbox.config';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
 import { validateWalletEnv } from './config/env';
 import { WALLET_JWT_AUTH_KEY } from './wallet-auth.decorator';
@@ -381,6 +382,11 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     ScheduleModule.forRoot(),
     EventsModule.forRoot({
       streams: [PAYMENT_STREAM],
+      // 공용 아웃박스를 켠다 (ADR-0029 §5-1, Task 6-C-3). `OutboxPublisher`(적재기)와
+      // `OutboxDispatcher`(발행기)가 등록되고, `PAYMENT_STREAM` 이 위 목록에 있으므로
+      // 디스패처의 publisherMap 이 회수 대상 토픽을 처음부터 안다.
+      enableOutbox: true,
+      outbox: WALLET_OUTBOX_CONFIG,
     }),
     EventsModule.forConsumerModule({
       streams: [UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM],

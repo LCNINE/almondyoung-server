@@ -78,6 +78,18 @@ export const outbox_events = eventSchema.table(
     topicIdx: index('outbox_topic_idx').on(table.topic),
     // 디스패처의 acquire 조건과 같은 모양 — status + next_attempt_at
     statusNextAttemptIdx: index('outbox_status_next_attempt_idx').on(table.status, table.nextAttemptAt),
+    /**
+     * 파티션 순서 보장(`OutboxConfig.strictPartitionOrdering`)의 상관 서브쿼리를 받는 인덱스
+     * (Task 6-C-3). 그 술어는 후보 행마다 "같은 partition_key 의 더 이른 미발행 행"을 찾으므로,
+     * 이 인덱스가 없으면 아웃박스가 밀린 순간 스캔량이 `배치 × 백로그` 로 커진다 — 정확히
+     * 장애 중에 나빠지는 모양이다. wallet 로컬 판본이 같은 목적의
+     * `idx_outbox_events_partition_created_at` 를 갖고 있었고, 회수하면서 함께 옮긴다.
+     *
+     * 순서 보장을 켜지 않은 앱(core · membership · analytics · file-service · channel-adapter)
+     * 에서는 쓰이지 않는다. 그래도 스키마가 한 벌이라 6개 앱 전부에 생성된다 — 쓰기 비용은
+     * 인덱스 하나분이고, 앱마다 다른 스키마를 두는 쪽이 훨씬 비싸다.
+     */
+    partitionCreatedIdx: index('outbox_partition_created_idx').on(table.partitionKey, table.createdAt),
     // 이름에 `event_` 를 넣은 이유: core DB 에는 `public.outbox_events` 에 같은 목적의
     // `uq_outbox_topic_event_idempotency` 가 이미 있다. 스키마가 달라 충돌하지는 않지만,
     // 6-C-4 로 옛 테이블이 사라지기 전까지 한 DB 안에 같은 이름이 둘 보이는 것을 피한다.

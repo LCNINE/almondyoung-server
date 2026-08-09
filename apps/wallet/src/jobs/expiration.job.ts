@@ -6,7 +6,6 @@ import { WalletSchema, paymentIntents } from '../schema';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { ChargeReleaseService } from '../payment-intents/charge-release.service';
 import {
-  GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
   subscriberExtraFromMetadata,
@@ -15,12 +14,7 @@ import {
 const DEFAULT_EXPIRATION_CRON = '*/10 * * * *';
 const DEFAULT_EXPIRATION_BATCH_SIZE = 100;
 
-export const EXPIRABLE_INTENT_STATUSES = [
-  'CREATED',
-  'PROCESSING',
-  'REQUIRES_ACTION',
-  'AWAITING_DEPOSIT',
-] as const;
+export const EXPIRABLE_INTENT_STATUSES = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AWAITING_DEPOSIT'] as const;
 
 @Injectable()
 export class ExpirationJob {
@@ -98,7 +92,6 @@ export class ExpirationJob {
           reasonMessage: 'Payment intent expired',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_CANCELED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,

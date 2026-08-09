@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbService } from '@app/db';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
@@ -11,13 +13,7 @@ import {
   paymentIntentOrderDiscounts,
 } from '../schema';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
-import { outboxEvents } from '../schema';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { CreatePaymentIntentDto, ConfirmPaymentIntentDto, TossApproveDto } from './dto';
 import { calculatePricing } from './intent-pricing';
 import { ConfirmService } from './confirm.service';
@@ -54,6 +50,8 @@ export class PaymentIntentsService {
     private readonly abandonService: AbandonService,
     private readonly tossApproveService: TossApproveService,
     private readonly deferredApprovalService: DeferredApprovalService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   async create(dto: CreatePaymentIntentDto): Promise<typeof paymentIntents.$inferSelect> {
@@ -156,10 +154,9 @@ export class PaymentIntentsService {
       }
 
       // Write outbox event
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: GatewayEventType.INTENT_CREATED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: intent.id,
           payload: buildPaymentIntentEventPayload({
             intentId: intent.id,
@@ -172,7 +169,8 @@ export class PaymentIntentsService {
               medusa_session_id: intent.metadata?.medusa_session_id,
             },
           }),
-        }),
+        },
+        tx,
       );
 
       return intent;
@@ -217,7 +215,9 @@ export class PaymentIntentsService {
     const [charge] = await this.dbService.db
       .select({ responsePayload: charges.responsePayload })
       .from(charges)
-      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'REQUIRES_ACTION')))
+      .where(
+        and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'REQUIRES_ACTION')),
+      )
       .orderBy(desc(charges.createdAt))
       .limit(1);
 

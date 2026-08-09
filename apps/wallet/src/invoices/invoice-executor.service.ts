@@ -4,7 +4,14 @@ import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
 import { and, count, desc, eq, inArray, lt, lte } from 'drizzle-orm';
 import { addMinutes, addHours, addDays, subHours } from 'date-fns';
-import { WalletSchema, invoices, paymentIntents, paymentStateTransitions, cmsWithdrawals, InvoiceStatus } from '../schema';
+import {
+  WalletSchema,
+  invoices,
+  paymentIntents,
+  paymentStateTransitions,
+  cmsWithdrawals,
+  InvoiceStatus,
+} from '../schema';
 import { Invoice, BillingMethod, PaymentIntent } from '../types';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
@@ -14,11 +21,7 @@ import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { ChargeResult, PaymentProvider } from '../providers/payment-provider.interface';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { InvoiceOutcomeService } from './invoice-outcome.service';
 
 /** 스캔 대상 상태 — Phase 1 CHECK 가 이 상태들의 next_attempt_at NOT NULL 을 강제한다. */
@@ -407,7 +410,6 @@ export class InvoiceExecutorService {
               reasonCode: 'AUTHORIZE_SUCCEEDED',
               outboxEvent: {
                 eventType: GatewayEventType.INTENT_AUTHORIZED,
-                aggregateType: GATEWAY_AGGREGATE_TYPE,
                 aggregateId: intentId,
                 payload: buildPaymentIntentEventPayload({
                   intentId,
@@ -477,7 +479,6 @@ export class InvoiceExecutorService {
               reasonMessage: result.errorMessage ?? 'Invoice charge authorization failed',
               outboxEvent: {
                 eventType: GatewayEventType.INTENT_FAILED,
-                aggregateType: GATEWAY_AGGREGATE_TYPE,
                 aggregateId: intentId,
                 payload: buildPaymentIntentEventPayload({
                   intentId,

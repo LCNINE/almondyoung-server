@@ -1,0 +1,1 @@
+CREATE INDEX "outbox_partition_created_idx" ON "event"."outbox_events" USING btree ("partition_key","created_at");

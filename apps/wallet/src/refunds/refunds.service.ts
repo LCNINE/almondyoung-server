@@ -9,7 +9,7 @@ import { PaymentMethodsService } from '../payment-methods/payment-methods.servic
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor } from '../providers/provider-descriptors';
-import { GATEWAY_AGGREGATE_TYPE, GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildRefundEventPayload } from '../messaging/gateway-event.builder';
 import { CreateRefundDto } from './dto';
 
 @Injectable()
@@ -161,7 +161,6 @@ export class RefundsService {
             reasonCode: 'REFUND_SUCCEEDED',
             outboxEvent: {
               eventType: GatewayEventType.REFUND_SUCCEEDED,
-              aggregateType: GATEWAY_AGGREGATE_TYPE,
               aggregateId: refund.id,
               payload: buildRefundEventPayload({
                 refundId: refund.id,
@@ -420,7 +419,6 @@ export class RefundsService {
           reasonCode: 'MANUAL_CONFIRM',
           outboxEvent: {
             eventType: GatewayEventType.REFUND_SUCCEEDED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: refundId,
             payload: buildRefundEventPayload({
               refundId,

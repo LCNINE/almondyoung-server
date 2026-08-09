@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EventPayloadOf, InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { addHours } from 'date-fns';
-import { WalletSchema, invoices, outboxEvents, billingAgreements, billingMethods, InvoiceStatus } from '../schema';
+import { WalletSchema, invoices, billingAgreements, billingMethods, InvoiceStatus } from '../schema';
 import { Invoice, DbTx } from '../types';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
 import {
-  INVOICE_AGGREGATE_TYPE,
   InvoiceEventType,
   buildInvoicePaidPayload,
   buildInvoicePaymentFailedPayload,
@@ -27,7 +27,11 @@ const NON_TERMINAL_STATUSES: InvoiceStatus[] = ['DRAFT', 'OPEN', 'MANDATE_PENDIN
 export class InvoiceOutcomeService {
   private readonly logger = new Logger(InvoiceOutcomeService.name);
 
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
+  ) {}
 
   /** 출금(승인) 성공 → PAID + invoice.paid. */
   async markPaid(invoiceId: string, intentId: string): Promise<void> {
@@ -47,14 +51,14 @@ export class InvoiceOutcomeService {
         })
         .where(eq(invoices.id, invoiceId));
 
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: InvoiceEventType.PAID,
-          aggregateType: INVOICE_AGGREGATE_TYPE,
           aggregateId: invoice.id,
           partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
           payload: { ...buildInvoicePaidPayload(invoice, intentId) },
-        }),
+        },
+        tx,
       );
 
       this.logger.log(`Invoice ${invoiceId} PAID (intentId=${intentId})`);
@@ -91,14 +95,14 @@ export class InvoiceOutcomeService {
           })
           .where(eq(invoices.id, invoiceId));
 
-        await tx.insert(outboxEvents).values(
-          buildOutboxInsertValues({
+        await this.publisher.enqueue(
+          {
             eventType: InvoiceEventType.VOIDED,
-            aggregateType: INVOICE_AGGREGATE_TYPE,
             aggregateId: invoice.id,
             partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
             payload: { ...buildInvoiceVoidedPayload(invoice, { reason, canceledIntentId: intentId }) },
-          }),
+          },
+          tx,
         );
 
         this.logger.warn(`Invoice ${invoiceId} VOID — 집행 중 취소 요청된 인보이스의 정산 실패 (reason=${reason})`);
@@ -133,14 +137,14 @@ export class InvoiceOutcomeService {
           })
           .where(eq(invoices.id, invoiceId));
 
-        await tx.insert(outboxEvents).values(
-          buildOutboxInsertValues({
+        await this.publisher.enqueue(
+          {
             eventType: InvoiceEventType.UNCOLLECTIBLE,
-            aggregateType: INVOICE_AGGREGATE_TYPE,
             aggregateId: invoice.id,
             partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
             payload: { ...buildInvoiceUncollectiblePayload(invoice, { intentId, errorCode, errorMessage }) },
-          }),
+          },
+          tx,
         );
 
         this.logger.warn(
@@ -155,10 +159,9 @@ export class InvoiceOutcomeService {
         .set({ status: 'PAST_DUE', attemptCount, nextAttemptAt, updatedAt: new Date(), metadata: failureMeta })
         .where(eq(invoices.id, invoiceId));
 
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: InvoiceEventType.PAYMENT_FAILED,
-          aggregateType: INVOICE_AGGREGATE_TYPE,
           aggregateId: invoice.id,
           partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
           payload: {
@@ -170,7 +173,8 @@ export class InvoiceOutcomeService {
               errorMessage,
             }),
           },
-        }),
+        },
+        tx,
       );
 
       this.logger.warn(
@@ -275,14 +279,14 @@ export class InvoiceOutcomeService {
       })
       .where(eq(invoices.id, invoice.id));
 
-    await tx.insert(outboxEvents).values(
-      buildOutboxInsertValues({
+    await this.publisher.enqueue(
+      {
         eventType: InvoiceEventType.MANDATE_REJECTED,
-        aggregateType: INVOICE_AGGREGATE_TYPE,
         aggregateId: invoice.id,
         partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
         payload: { ...buildMandateRejectedPayload(invoice, { reasonCode, reason }) },
-      }),
+      },
+      tx,
     );
 
     this.logger.warn(`Invoice ${invoice.id} MANDATE_REJECTED (reasonCode=${reasonCode})`);
@@ -308,14 +312,14 @@ export class InvoiceOutcomeService {
         })
         .where(eq(invoices.id, invoiceId));
 
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: InvoiceEventType.VOIDED,
-          aggregateType: INVOICE_AGGREGATE_TYPE,
           aggregateId: invoice.id,
           partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
           payload: { ...buildInvoiceVoidedPayload(invoice, { reason: 'EXPLICIT_INTENT_CANCEL', canceledIntentId }) },
-        }),
+        },
+        tx,
       );
 
       this.logger.warn(`Invoice ${invoiceId} VOID — explicit intent cancel (intentId=${canceledIntentId})`);
@@ -328,59 +332,72 @@ export class InvoiceOutcomeService {
    */
   async reEmitTerminalEvent(invoice: Invoice): Promise<void> {
     const meta = invoice.metadata;
-    let eventType: string;
-    let payload: Record<string, unknown>;
+
+    /**
+     * 이벤트 키를 **리터럴로** 받아 payload 타입을 계약에서 도출한다 (Task 6-C-3).
+     *
+     * 전에는 `let eventType: string` / `let payload: Record<string, unknown>` 에 담아 스위치
+     * 밖에서 한 번 적재했다. 그 모양이면 어느 case 가 어느 payload 를 만드는지 타입이 모른다 —
+     * `invoice.paid` 에 void payload 를 담아도 컴파일됐다. 여기서 갈라 두면 case 마다 K 가
+     * 리터럴이라 `enqueue<K>` 가 짝을 검사한다.
+     */
+    const emit = <K extends keyof typeof PAYMENT_STREAM.events>(
+      eventType: K,
+      payload: EventPayloadOf<typeof PAYMENT_STREAM, K>,
+    ) =>
+      this.publisher.enqueue(
+        {
+          eventType,
+          aggregateId: invoice.id,
+          partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
+          payload,
+        },
+        this.dbService.db,
+      );
 
     switch (invoice.status) {
       case 'PAID':
-        eventType = InvoiceEventType.PAID;
-        payload = { ...buildInvoicePaidPayload(invoice, (meta.lastPaidIntentId as string | undefined) ?? '') };
+        await emit(
+          InvoiceEventType.PAID,
+          buildInvoicePaidPayload(invoice, (meta.lastPaidIntentId as string | undefined) ?? ''),
+        );
         break;
       case 'UNCOLLECTIBLE':
-        eventType = InvoiceEventType.UNCOLLECTIBLE;
-        payload = {
-          ...buildInvoiceUncollectiblePayload(invoice, {
+        await emit(
+          InvoiceEventType.UNCOLLECTIBLE,
+          buildInvoiceUncollectiblePayload(invoice, {
             intentId: (meta.lastFailedIntentId as string | null | undefined) ?? null,
             errorCode: (meta.lastErrorCode as string | null | undefined) ?? null,
             errorMessage: (meta.lastErrorMessage as string | null | undefined) ?? null,
           }),
-        };
+        );
         break;
       case 'MANDATE_REJECTED':
-        eventType = InvoiceEventType.MANDATE_REJECTED;
-        payload = {
-          ...buildMandateRejectedPayload(invoice, {
+        await emit(
+          InvoiceEventType.MANDATE_REJECTED,
+          buildMandateRejectedPayload(invoice, {
             reasonCode: (meta.lastErrorCode as string | null | undefined) ?? null,
             reason: (meta.lastErrorMessage as string | null | undefined) ?? null,
           }),
-        };
+        );
         break;
       case 'VOID':
         // subscriber(membership)가 주도한 void 는 계약이 이미 CANCELLED 라 스케줄러가 재발행하지
         // 않는다 — 여기 도달하는 VOID 는 명시 intent 취소로 종결됐는데 subscriber 가 아직 결과를
         // 못 받아 고착된 케이스뿐이므로 invoice.voided 를 재발행해 폐루프를 닫는다.
-        eventType = InvoiceEventType.VOIDED;
-        payload = {
-          ...buildInvoiceVoidedPayload(invoice, {
+        await emit(
+          InvoiceEventType.VOIDED,
+          buildInvoiceVoidedPayload(invoice, {
             reason: (meta.voidReason as string | null | undefined) ?? null,
             canceledIntentId: (meta.canceledIntentId as string | null | undefined) ?? null,
           }),
-        };
+        );
         break;
       default:
         return; // 비터미널 — 재발행할 결과 없음
     }
 
-    await this.dbService.db.insert(outboxEvents).values(
-      buildOutboxInsertValues({
-        eventType,
-        aggregateType: INVOICE_AGGREGATE_TYPE,
-        aggregateId: invoice.id,
-        partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
-        payload: { ...payload },
-      }),
-    );
-    this.logger.log(`Invoice ${invoice.id} terminal event re-emitted (${eventType}) — 결과 유실 자가치유`);
+    this.logger.log(`Invoice ${invoice.id} terminal event re-emitted (${invoice.status}) — 결과 유실 자가치유`);
   }
 
   /** 비터미널 인보이스를 행잠금으로 확보. 터미널이면 null (멱등 no-op). */

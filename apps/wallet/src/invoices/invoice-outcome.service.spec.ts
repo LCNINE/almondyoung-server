@@ -21,8 +21,13 @@ const baseInvoice = {
   metadata: {},
 };
 
+/**
+ * 적재는 이제 공용 아웃박스(`StreamPublisher.enqueue`)로 간다 (Task 6-C-3). 전에는 mock 한
+ * `tx.insert().values()` 로 행을 관찰했는데, 그 관찰점은 wallet 로컬 테이블에만 있었다.
+ * 이제 publisher 를 mock 해 **적재 파라미터**(이벤트 키·payload·파티션 키)를 본다 — 나가는
+ * 계약에 더 가깝다.
+ */
 function makeService(lockedInvoice: Record<string, unknown> | null) {
-  const inserted: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];
   const tx = {
     select: jest.fn().mockReturnThis(),
@@ -35,21 +40,25 @@ function makeService(lockedInvoice: Record<string, unknown> | null) {
       return tx;
     }),
     insert: jest.fn().mockReturnThis(),
-    values: jest.fn().mockImplementation((v: Record<string, unknown>) => {
-      inserted.push(v);
-      return Promise.resolve();
-    }),
+    values: jest.fn().mockResolvedValue(undefined),
   };
   const db = {
     transaction: jest.fn().mockImplementation((fn: (t: unknown) => unknown) => Promise.resolve(fn(tx))),
   };
-  const service = new InvoiceOutcomeService({ db } as never);
-  return { service, tx, inserted, updates };
+  const enqueued: Record<string, unknown>[] = [];
+  const publisher = {
+    enqueue: jest.fn().mockImplementation((params: Record<string, unknown>) => {
+      enqueued.push(params);
+      return Promise.resolve();
+    }),
+  };
+  const service = new InvoiceOutcomeService({ db } as never, publisher as never);
+  return { service, tx, enqueued, updates, publisher };
 }
 
 describe('InvoiceOutcomeService.registerAttemptFailure', () => {
   it('재시도 여지가 있으면 PAST_DUE + attempt+1 + invoice.payment_failed 발행', async () => {
-    const { service, updates, inserted } = makeService({ ...baseInvoice, attemptCount: 0 });
+    const { service, updates, enqueued } = makeService({ ...baseInvoice, attemptCount: 0 });
 
     await service.registerAttemptFailure('inv-1', 'intent-1', 'Q999', '잔액부족');
 
@@ -57,14 +66,14 @@ describe('InvoiceOutcomeService.registerAttemptFailure', () => {
     expect(update.status).toBe('PAST_DUE');
     expect(update.attemptCount).toBe(1);
     expect(update.nextAttemptAt).toBeInstanceOf(Date);
-    expect(inserted[0].eventType).toBe('invoice.payment_failed');
-    const payload = inserted[0].payload as Record<string, unknown>;
+    expect(enqueued[0].eventType).toBe('invoice.payment_failed');
+    const payload = enqueued[0].payload as Record<string, unknown>;
     expect(payload.attemptCount).toBe(1);
     expect(payload.subscriberRef).toBe('contract-1');
   });
 
   it('마지막 시도 실패면 UNCOLLECTIBLE(터미널) + invoice.uncollectible 발행', async () => {
-    const { service, updates, inserted } = makeService({ ...baseInvoice, attemptCount: 2, maxAttempts: 3 });
+    const { service, updates, enqueued } = makeService({ ...baseInvoice, attemptCount: 2, maxAttempts: 3 });
 
     await service.registerAttemptFailure('inv-1', 'intent-3', 'Q999', '잔액부족');
 
@@ -73,7 +82,7 @@ describe('InvoiceOutcomeService.registerAttemptFailure', () => {
     expect(update.attemptCount).toBe(3);
     expect(update.finalizedAt).toBeInstanceOf(Date);
     expect(update.nextAttemptAt).toBeNull();
-    expect(inserted[0].eventType).toBe('invoice.uncollectible');
+    expect(enqueued[0].eventType).toBe('invoice.uncollectible');
   });
 
   it('같은 intent 의 실패가 두 경로로 도착해도 attempt 는 한 번만 집계', async () => {
@@ -90,16 +99,16 @@ describe('InvoiceOutcomeService.registerAttemptFailure', () => {
   });
 
   it('터미널 인보이스에는 no-op (재전달 멱등)', async () => {
-    const { service, updates, inserted } = makeService(null);
+    const { service, updates, enqueued } = makeService(null);
 
     await service.registerAttemptFailure('inv-1', 'intent-1', 'Q999', '잔액부족');
 
     expect(updates).toHaveLength(0);
-    expect(inserted).toHaveLength(0);
+    expect(enqueued).toHaveLength(0);
   });
 
   it('void 요청된 인보이스(집행 중 취소)의 정산 실패는 재시도 대신 VOID 로 종결', async () => {
-    const { service, updates, inserted } = makeService({
+    const { service, updates, enqueued } = makeService({
       ...baseInvoice,
       attemptCount: 0,
       metadata: { voidRequested: true, voidReason: 'SUBSCRIPTION_CANCELLED' },
@@ -113,22 +122,22 @@ describe('InvoiceOutcomeService.registerAttemptFailure', () => {
     expect(update.nextAttemptAt).toBeNull();
     // 더닝(PAST_DUE) 재시도로 이어지지 않아야 한다 — 해지된 구독 재출금 방지
     expect(update.attemptCount).toBeUndefined();
-    expect(inserted[0].eventType).toBe('invoice.voided');
-    const payload = inserted[0].payload as Record<string, unknown>;
+    expect(enqueued[0].eventType).toBe('invoice.voided');
+    const payload = enqueued[0].payload as Record<string, unknown>;
     expect(payload.reason).toBe('SUBSCRIPTION_CANCELLED');
   });
 });
 
 describe('InvoiceOutcomeService.markPaid', () => {
   it('PAID(터미널) 전이 + invoice.paid 발행', async () => {
-    const { service, updates, inserted } = makeService({ ...baseInvoice });
+    const { service, updates, enqueued } = makeService({ ...baseInvoice });
 
     await service.markPaid('inv-1', 'intent-1');
 
     expect(updates[0].status).toBe('PAID');
     expect(updates[0].nextAttemptAt).toBeNull();
-    expect(inserted[0].eventType).toBe('invoice.paid');
-    const payload = inserted[0].payload as Record<string, unknown>;
+    expect(enqueued[0].eventType).toBe('invoice.paid');
+    const payload = enqueued[0].payload as Record<string, unknown>;
     expect(payload.intentId).toBe('intent-1');
     expect(payload.periodEnd).toBe('2026-08-07');
   });
@@ -142,13 +151,13 @@ describe('InvoiceOutcomeService.markPaid', () => {
 
 describe('InvoiceOutcomeService.rejectMandate', () => {
   it('MANDATE_REJECTED(터미널) 전이 + mandate.rejected 발행(선적용 회수 트리거)', async () => {
-    const { service, updates, inserted } = makeService({ ...baseInvoice, status: 'MANDATE_PENDING' });
+    const { service, updates, enqueued } = makeService({ ...baseInvoice, status: 'MANDATE_PENDING' });
 
     await service.rejectMandate('inv-1', 'Q201', '생년월일/사업자번호 불일치');
 
     expect(updates[0].status).toBe('MANDATE_REJECTED');
-    expect(inserted[0].eventType).toBe('mandate.rejected');
-    const payload = inserted[0].payload as Record<string, unknown>;
+    expect(enqueued[0].eventType).toBe('mandate.rejected');
+    const payload = enqueued[0].payload as Record<string, unknown>;
     expect(payload.reasonCode).toBe('Q201');
     expect(payload.billingMethodId).toBe('method-1');
     expect(payload.subscriberRef).toBe('contract-1');

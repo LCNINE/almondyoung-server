@@ -4,7 +4,6 @@ import { eq, sql } from 'drizzle-orm';
 import {
   WalletSchema,
   charges,
-  outboxEvents,
   paymentIntents,
   paymentStateTransitions,
   refunds,
@@ -14,20 +13,18 @@ import {
   PaymentStateTriggerType,
   RefundStatus,
 } from '../../schema';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx } from '../../types';
 import { inTx } from '../../database/tx.util';
 import { assertTransitionAllowed } from './state-transition.rules';
-import { buildOutboxInsertValues } from '../../messaging/outbox-event.util';
+import {
+  WalletOutboxAppendInput,
+  isGatewayRefundAppend,
+  isPaymentIntentAppend,
+} from '../../messaging/wallet-outbox.types';
 
 type TransitionTargetStatus = PaymentIntentStatus | ChargeStatus | RefundStatus;
-
-interface OutboxAppendInput {
-  eventType: string;
-  aggregateType: string;
-  aggregateId: string;
-  partitionKey?: string;
-  payload: Record<string, unknown>;
-}
 
 interface TransitionContext {
   reasonCode?: string;
@@ -37,7 +34,7 @@ interface TransitionContext {
   correlationId: string;
   causationId?: string;
   payload?: Record<string, unknown>;
-  outboxEvent?: OutboxAppendInput;
+  outboxEvent?: WalletOutboxAppendInput;
   expectedVersion?: number;
 }
 
@@ -49,7 +46,11 @@ interface TransitionResult<TStatus extends TransitionTargetStatus> {
 
 @Injectable()
 export class StateTransitionService {
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
+  ) {}
 
   async transitionIntent(
     intentId: string,
@@ -191,11 +192,45 @@ export class StateTransitionService {
     });
   }
 
+  /**
+   * 상태 전이와 **같은 트랜잭션**에 아웃박스 행을 남긴다 (ADR-0029 §5-1, Task 6-C-3).
+   *
+   * 적재 대상이 wallet 자체 `public.outbox_events` 에서 공용 `event.outbox_events` 로 바뀌었다.
+   * 눈에 보이는 차이는 **검증 시점**이다 — 전에는 `buildOutboxInsertValues` 가 문자열 필드
+   * 유무만 확인하고 행을 넣었고, 계약 위반은 발행 시점(`publishStoredEnvelope`)에야 드러나
+   * poison row 로 남았다. 이제 `enqueue` 가 zod 를 먼저 태우므로 위반이 **이 트랜잭션을**
+   * 실패시킨다 — 진단 위치가 원인에 붙는다.
+   *
+   * 계열마다 payload 타입이 달라 분기한다. `payment.intent.*` 9종과 `gateway.refund.*` 2종은
+   * 각각 계열 안에서 payload 타입이 하나라, 계열만 좁히면 `enqueue<K>` 의 도출이 캐스팅 없이
+   * 통과한다.
+   */
   private async appendOutboxIfNeeded(context: TransitionContext, tx: DbTx): Promise<void> {
-    if (!context.outboxEvent) {
+    const event = context.outboxEvent;
+    if (!event) {
       return;
     }
-    await tx.insert(outboxEvents).values(buildOutboxInsertValues(context.outboxEvent));
+
+    const common = {
+      aggregateId: event.aggregateId,
+      partitionKey: event.partitionKey ?? event.aggregateId,
+      ...(event.idempotencyKey ? { idempotencyKey: event.idempotencyKey } : {}),
+    };
+
+    if (isPaymentIntentAppend(event)) {
+      await this.publisher.enqueue({ eventType: event.eventType, payload: event.payload, ...common }, tx);
+      return;
+    }
+
+    if (isGatewayRefundAppend(event)) {
+      await this.publisher.enqueue({ eventType: event.eventType, payload: event.payload, ...common }, tx);
+      return;
+    }
+
+    // 유니온이 두 계열뿐이라 여기 도달할 수 없다. 계열이 늘면 `never` 가 컴파일에서 걸린다 —
+    // 조용히 이벤트를 버리는 분기를 남기지 않기 위한 소진 검사다.
+    const unreachable: never = event;
+    throw new Error(`Unhandled wallet outbox event: ${JSON.stringify(unreachable)}`);
   }
 
   private async lockIntent(

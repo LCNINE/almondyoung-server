@@ -8,11 +8,7 @@ import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { ChargePlan, ChargeSlot } from './charge-plan';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
@@ -213,9 +209,7 @@ export class ConfirmService {
     // 9. Set intent.paymentMethodId and transition to PROCESSING
     // 현금영수증 신청이 있으면 metadata 에 저장 — 무통장 입금확인(confirmDeposit) 완료 시 자동 발급에 사용.
     const intentPaymentMethodId = plan.primary.paymentMethodId;
-    const nextMetadata = dto.cashReceipt
-      ? { ...(intent.metadata ?? {}), cashReceipt: dto.cashReceipt }
-      : undefined;
+    const nextMetadata = dto.cashReceipt ? { ...(intent.metadata ?? {}), cashReceipt: dto.cashReceipt } : undefined;
     await tx
       .update(paymentIntents)
       .set({
@@ -292,7 +286,6 @@ export class ConfirmService {
         reasonCode: 'ZERO_AMOUNT_CAPTURED',
         outboxEvent: {
           eventType: GatewayEventType.INTENT_CAPTURED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: intentId,
           payload: buildPaymentIntentEventPayload({
             intentId,
@@ -527,7 +520,6 @@ export class ConfirmService {
             reasonCode: 'AWAITING_DEPOSIT',
             outboxEvent: {
               eventType: GatewayEventType.INTENT_AWAITING_DEPOSIT,
-              aggregateType: GATEWAY_AGGREGATE_TYPE,
               aggregateId: intentId,
               payload: buildPaymentIntentEventPayload({
                 intentId,
@@ -622,7 +614,6 @@ export class ConfirmService {
           reasonCode: 'AUTHORIZE_SUCCEEDED',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_AUTHORIZED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intentId,
             payload: buildPaymentIntentEventPayload({
               intentId,

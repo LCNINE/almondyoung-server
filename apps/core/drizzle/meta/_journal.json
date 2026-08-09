@@ -435,6 +435,13 @@
       "when": 1786275100991,
       "tag": "20260809113140_promote-shared-outbox-idempotency-partition-backoff",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1786291952803,
+      "tag": "20260809161232_outbox-partition-created-index",
+      "breakpoints": true
     }
   ]
 }
