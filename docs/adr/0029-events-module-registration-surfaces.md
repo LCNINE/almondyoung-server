@@ -204,6 +204,40 @@ microservice.setIsInitHookCalled(true);
 
 `Server.handleEvent` 는 핸들러가 Observable 을 돌려주면 `connectable(...).connect()` 로 구독만 하고 기다리지 않으며(`server.js:105–117`), 그 connector 는 구독자 없는 `Subject` 라 에러가 들어와도 보고되지 않는다(rxjs 의 unhandled-error 경로조차 타지 않음 — 실행 확인). `handleEvent` 는 그 사이 정상 resolve 했으므로 offset 은 전진한다. **즉 지금까지 실패한 소비는 로그 한 줄 없이 사라져 왔다.** §8 이 "가장 치명적인 실수가 가장 조용하다"고 한 것의 네 번째 실례이며, 배선 스위치가 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽**이라는 근거이기도 하다.
 
+#### 검증 스위치(C)는 샘플링이 아니라 발행 경로를 닫아서 판정한다 (2026-08-09)
+
+세 스위치 중 C 만 남았을 때, 플랜은 그 게이트를 "인바운드 payload 를 스테이징에서 샘플링하거나 5-B 배포 후 로그로 관찰"로 적어 두었다. **그 두 방법은 지금 둘 다 존재하지 않는다** — AWS `dev` stage 는 폐기됐고, 5-B 가 배포되기 전에는 검증 인터셉터 자체가 안 붙어 관찰할 로그가 생기지 않는다. 즉 플랜대로면 5-C 는 배포가 선행돼야 하고, 배포는 5-C 의 결과를 기다린다 — 순환이다.
+
+**샘플링을 발행 경로의 전수 폐쇄로 대체한다.** 논증은 세 걸음이고 전부 이 레포에서 실측된다:
+
+1. Kafka 로 나가는 모든 경로는 `StreamPublisher` 를 지난다 (§7). 프로덕션 코드에서 `kafkajs` 를 직접 잡는 곳은 **0곳**이다(스펙 3개 제외, 실측).
+2. `StreamPublisher` 의 발행 진입점은 둘뿐이다. `publishEvent` 는 `validateOnPublish` 로 검증하며 — 이 값을 `false` 로 끄는 곳은 레포에 **하나도 없다** — 게다가 envelope 에 싣는 것이 원본이 아니라 **zod 가 파싱한 결과**다(`stream-publisher.service.ts:123`). 파싱은 멱등이므로 **`publishEvent` 로 나간 payload 는 같은 스키마의 소비 검증을 반드시 통과한다.** 나머지 하나인 `publishRawEnvelope` 는 zod 를 우회한다.
+3. 따라서 위험한 것은 `publishRawEnvelope` 가 실어 나를 수 있는 (토픽, 이벤트) 뿐이고, **그 호출자는 레포 전체에 2곳**이다: `libs/events` 공용 outbox dispatcher 와 wallet outbox dispatcher. (core·channel-adapter 의 자체 outbox dispatcher 는 `publishEvent` 를 부르므로 우회가 아니다 — 이 구분이 판정을 크게 바꾼다.)
+
+이 판정은 `scripts/events/consume-validation-readiness.ts` (`npm run audit:consume-validation`) 가 수행한다. 스키마 분류는 zod 내부(`_def`)를 들여다보지 않고 **실행해서**(`safeParse({})`) 한다 — 빈 객체를 통과시키는 관대한 스키마는 켜도 동작이 안 바뀐다.
+
+실측 결과 (2026-08-09):
+
+| 앱 | 이벤트 | SAFE | PROVEN | UNVERIFIED | 판정 |
+|---|---:|---:|---:|---:|---|
+| **core** | 4 | 0 | **4** | **0** | ✅ 켠다 |
+| notification | 22 | 1 | 21 | 0 | (해당 없음 — 명시 `false` 유지) |
+| wallet | 4 | 0 | 4 | 0 | (해당 없음) |
+| analytics | 10 | 0 | 7 | **3** | ⏸ Task 6 뒤로 |
+| search | 3 | 0 | 1 | **2** | ⏸ Task 6 뒤로 |
+| channel-adapter | 34 | 11 | 19 | **4** | ⏸ Task 6 뒤로 |
+| membership | 10 | 5 | 0 | 5 | (해당 없음) |
+
+**core 를 켠다.** 4개 이벤트가 전부 `orders.events.v1` 이고 그 토픽의 발행자는 셋 다 `publishEvent` 를 지난다(`OrderRefundCreated` 는 발행자가 아예 없다). 우회 경로 2곳 중 어느 것도 이 토픽에 닿지 않는다. core 는 동시에 **DLQ 가 관측되는 유일한 앱**이므로(`dlq.metrics.ts:10`), 증명이 틀렸을 때 알아차릴 수 있는 유일한 앱이기도 하다.
+
+**나머지 3개 앱의 게이트는 관측성이 아니라 Task 6 이다 — 플랜의 순서를 뒤집는다.** 이 앱들을 막는 UNVERIFIED 는 전부 같은 원인의 4개 이벤트다: `MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`. 넷 다 `OutboxPublisher.saveEvent` 로 적재돼 `publishRawEnvelope` 로 나간다. **Task 6 의 "enqueue 시점 zod 검증"이 정확히 이 구멍을 메우며, 그 순간 넷 다 기계적으로 PROVEN 이 된다.** 즉 5-C 를 먼저 하면 payload 를 추측해야 하고, Task 6 을 먼저 하면 추측할 것이 남지 않는다. 게다가 Task 6 은 실패를 **발행자의 도메인 트랜잭션**에서 드러내므로, 소비자 DLQ 에서 사후에 발견하는 것보다 진단 위치가 낫다.
+
+그래서 **5-C 는 core 에서 끝내고, 나머지 3개 앱은 Task 6 의 후속으로 옮긴다.** 플랜의 "core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지 결정한다"는 항목은 사라지지 않지만 긴급성이 낮아진다 — Task 6 이후에는 켤 때 증명이 있고, 관측은 증명이 틀렸을 경우의 대비책이 된다.
+
+**이 분석은 일회성 결론이 아니라 상시 불변식이 된다.** `--gate` 는 *검증을 켜 둔 앱*에 UNVERIFIED 이벤트가 생기면 exit 1 한다. core 에 나중에 outbox 발행 이벤트의 핸들러를 추가하면 CI 가 막는다 — 이 워크스트림이 반복해서 만난 "판정이 조용히 낡는" 실패 모드를 그 자리에서 닫는 것이다. 게이트가 실제로 무는 것은 확인했다(search 를 일부러 `true` 로 바꿔 exit 1 재현). 게이트는 자기 자신의 가정도 감시한다 — `publishRawEnvelope` 호출 지점을 AST 로 세어 손으로 유지하는 우회 목록과 어긋나면 실패한다. (첫 실행에서 이 검사가 실제로 걸렸다: grep 판본이 근거 주석 속 함수명을 세 번째 "호출자"로 집계했다. 그래서 AST 로 바꿨다.)
+
+**켜는 비용은 낮다 — 스키마 위반은 재시도하지 않는다.** `EventRetryInterceptor` 가 `SchemaValidationError` 를 `nonRetryableErrors` 에 강제로 넣으므로(`event-retry.interceptor.ts:91`) 위반 메시지는 백오프 없이 즉시 DLQ 로 가고 offset 이 전진한다. 검증을 켜는 것이 파티션을 막는 재시도 폭풍을 부르지 않는다는 뜻이다. 이 사실과 위 2번의 멱등성은 `libs/events/src/transport/consume-validation.spec.ts` 가 실행으로 고정한다 — 재시도 억제는 **대조군**(스키마와 무관한 에러는 같은 `@RetryPolicy` 로 4회 실행됨)과 나란히 두어야 `maxRetries` 설정 탓이 아님이 드러나므로 둘을 함께 넣었다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.
@@ -263,10 +297,14 @@ microservice.setIsInitHookCalled(true);
 
    부팅 거부(§3)가 이주를 깨지 않는지 전수로 확인했다: 7개 앱의 `(등록된 컨트롤러 → @On → 토픽)` 집합에 핸들러 0개인 앱도, 레지스트리 밖 토픽도 없다. 실측 핸들러는 **87개**(ADR Consequences 표의 89 는 이주 전 `@OnEvent` 기준 수치이며 analytics·membership 이 각 1 많다). `controllers:[]` 에 등록되지 않은 `@On` 핸들러는 0개다. **channel-adapter 의 도출 토픽은 9개** — 옛 `forConsumer` 목록의 6개가 아니며, 빠져 있던 셋이 정확히 이 ADR Context 의 오판 대상(`PAYMENT_STREAM`·`USER_STREAM`·`CORE_ORDER_STREAM`)이다. 도출은 처음부터 옳은 값을 낸다.
 
+   **검증 스위치(C) — core 만 켰다 (2026-08-09).** `apps/core/.../sales-order.module.ts` 가 `validateOnConsume: true`. 근거는 샘플링이 아니라 발행 경로 전수 폐쇄이며 상세는 위 §8 의 "검증 스위치(C)" 절에 있다. **나머지 3개 앱(analytics·search·channel-adapter)은 6번(outbox enqueue 검증) 뒤로 미뤘다** — 막는 원인이 관측성이 아니라 outbox 의 zod 우회라, 6번이 그것을 메우면 추측 없이 켤 수 있다. notification·membership·wallet 은 원래부터 해당 없음이다. 판정과 회귀 방지는 `npm run audit:consume-validation -- --gate` 가 맡는다.
+
    **앱별 데코레이터 이주 완료 (2026-08-09).** 7개 앱 · 소비 핸들러 **87개 전량**이 `@On` + `EventPayloadOf`/`EnvelopeOf` 로 옮겨졌고 `@OnEvent` 호출은 0건이다. `main.ts` 는 손대지 않았으므로 **이 단계는 동작 중립**이다 — §8 의 라이브 구멍은 배선 이주(플랜 Task 5-B) 전까지 그대로 남는다. 이주 중 계약의 구멍 두 종류가 드러났다(위 §4 의 "`@On` 은 계약에 없는 이벤트를 소비할 수 없다" 참조). 회귀 방지는 `scripts/events/event-handler-contract-audit.js` (`npm run audit:event-handlers`) 가 맡는다 — `@On` 의 이벤트 키와 payload/envelope 도출 키의 불일치는 타입이 끝내 잡지 못하므로, 이 게이트는 이주 종료 후에도 남긴다. **`@InjectStreamPublisher` → `@InjectPublisher` 는 아직 0건**(21곳): 발행 쪽 표면이라 Follow-up 6 에서 발행 경로를 통합할 때 함께 옮긴다.
 
    **전반부(데코레이터 도입) 완료 (2026-08-09).** `@On` · `@InjectPublisher` · `PublisherFor` · `EnvelopeOf` 가 옛 표면과 **병행**으로 존재한다. `@On` 은 `@OnEvent` 과 **바이트 단위로 같은 메타데이터**를 남기고(스펙이 메타데이터 키 집합과 값을 전수 비교한다), `@InjectPublisher` 는 `EventsModule.getPublisherToken` 과 같은 토큰을 만든다 — 토큰 형식은 `publishers/publisher-token.ts` 한 곳으로 모았다. 따라서 한 앱 안에서 두 표면을 섞어 써도 되고, 앱 이주는 파일 단위로 쪼갤 수 있다. 앱 이주(후반부)는 아직 0개다. 위 §4 의 두 가지 이행 차이도 참조.
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
+
+   ⚠️ **이 항목이 5-C 의 나머지 3개 앱을 막고 있다 (2026-08-09, 위 §8 의 C 스위치 절).** analytics·search·channel-adapter 를 켜지 못하는 원인은 관측성이 아니라 `saveEvent`→`publishRawEnvelope` 의 zod 우회이며, 여기서 enqueue 시점 검증을 넣는 순간 막고 있던 4개 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` · `ProductMasterDeleted` · `CategoryChanged`)가 기계적으로 PROVEN 이 된다. 즉 **의존 방향이 플랜과 반대다** — 5-C 가 6번을 기다린다. 진행 후 `npm run audit:consume-validation` 이 그 세 앱을 `켜도 안전` 으로 바꾸는지 확인하면 되고, 그것이 이 항목의 완료 신호 중 하나다.
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
 8. ~~channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.~~ **결정: 이주에 묶었다 (2026-08-09).** 다만 배선 이주 시점에 **검증을 켜지는 않았다.** `forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true` 라, 아무 조치 없이 `startConsumer` 로 옮기면 이 앱만 배선과 검증이 **선택이 아니라 누락으로** 동시에 켜진다. 외부 채널 유래 payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록하고 `validateOnConsume: false` 를 명시했다. `forConsumerModule` 을 새로 부르지 않은 이유는 그 표면이 `streams` 를 필수로 받기 때문이다 — 그 목록이야말로 §2·§3 이 지우는 중인 두 번째 진실이라, 정책 하나를 얻자고 그것을 되살릴 수 없다. Task 7 의 `forApp` 이 이 자리를 흡수한다. 검증을 실제로 켜는 것은 payload 샘플링 후(플랜 Task 5-C).
 9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정).

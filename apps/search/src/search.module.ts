@@ -35,10 +35,16 @@ import { SearchKeywordService } from './search-keyword.service';
             groupId: process.env.KAFKA_GROUP_ID || 'search-indexer',
             kafka: createKafkaConfigFromEnv()!,
             enableAutoDLQ: true,
-            // ⚠️ 현상 유지다 — 이 앱은 소비 경로에 스키마 검증이 붙은 적이 없다
-            // (ADR-0029 §8). startConsumer 로 이주하면 인터셉터가 처음 붙으므로,
-            // 명시하지 않으면 기본값 `true` 가 배선 이주에 묻어 함께 켜진다.
-            // 검증 활성화는 payload 샘플링 후 별도 결정 (플랜 Task 5-C).
+            // ⚠️ 아직 끈다. core 는 5-C 에서 켰지만 이 앱은 못 켠다 (ADR-0029 §8).
+            //
+            // 막는 것은 딱 2개 이벤트다 — `ProductMasterActiveVersionChanged` ·
+            // `ProductMasterDeleted`. 둘 다 core 카탈로그가 `OutboxPublisher.saveEvent` 로
+            // 발행하는데, 그 경로는 `publishRawEnvelope` 로 zod 를 우회한다. 즉 이 토픽에
+            // 스키마를 안 지키는 payload 가 올라올 수 있는지 정적으로 증명되지 않는다.
+            //
+            // **이걸 여는 것은 Task 6 이다** (enqueue 시점 zod 검증). 그게 들어가면 두 이벤트가
+            // 자동으로 PROVEN 이 되어 이 줄을 뒤집을 수 있다. 그 전에 켜는 것은 추측이다.
+            // 현황: `npm run audit:consume-validation -- search`
             validation: { validateOnConsume: false },
           }),
         ]

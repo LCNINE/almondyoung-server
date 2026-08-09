@@ -255,6 +255,18 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // `forConsumerModule` 을 부르지 않는 이유: 그 표면은 `streams` 를 필수로 받는데,
     // 그 목록이야말로 이 워크스트림이 없애는 중인 두 번째 진실이다. 필요한 것은
     // 정책 하나뿐이므로 정책만 등록한다. Task 7 의 `forApp` 이 이 자리를 흡수한다.
+    //
+    // 5-C 현황: core 는 켰지만 이 앱은 아직 끈다. 34개 핸들러 중 30개는 안전하고
+    // (11 = 관대한 스키마 · 19 = 발행 시 검증됨), 막는 것은 4개 이벤트다 —
+    // `MembershipStatusChanged` · `ProductMasterActiveVersionChanged` ·
+    // `ProductMasterDeleted` · `CategoryChanged`. 넷 다 `OutboxPublisher.saveEvent` 로
+    // 발행돼 `publishRawEnvelope` 로 zod 를 우회한다. **여는 것은 Task 6** (enqueue 시점
+    // 검증) 이며, 그때 넷 다 자동으로 PROVEN 이 된다.
+    //
+    // 이 앱은 외부 채널 유래 payload 라 가장 위험한 앱이라고 적어왔는데, 실측은 조금 다르다 —
+    // 외부 payload 는 HTTP 로 들어와 이 앱이 *발행측*에서 정규화하므로, 소비하는 34개는
+    // 전부 내부 발행이다. 남은 위험은 외부성이 아니라 위 outbox 우회다.
+    // 현황: `npm run audit:consume-validation -- channel-adapter`
     {
       provide: EVENTS_CONSUMER_POLICY,
       useValue: { validation: { validateOnConsume: false } } satisfies EventsConsumerPolicy,
