@@ -7,7 +7,7 @@ import { CreateInvoicePayload, WALLET_COMMAND_STREAM } from '@packages/event-con
 import { DbService } from '@app/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { WalletSchema, invoices, outboxEvents } from '../schema';
+import { WalletSchema, invoices } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { InvoiceOutcomeService } from './invoice-outcome.service';
@@ -129,17 +129,16 @@ export class InvoiceCommandConsumer {
     reasonCode: string,
     reason: string,
   ): Promise<void> {
-    // **두 테이블을 다 본다 — 그리고 JSON 경로가 서로 다르다** (ADR-0029 §5-1, Task 6-C-3).
-    //
-    // 옛 로컬 테이블의 `payload` 컬럼에는 **도메인 payload** 가 실렸으므로 멱등키가
-    // `payload ->> 'idempotencyKey'` 에 있다. 공용 테이블의 같은 컬럼에는 **envelope 전체**가
-    // 실리므로 그 경로는 항상 NULL 이고, 그대로 옮겼다면 이 dedupe 는 조용히 **아무것도 막지
-    // 못하게** 됐을 것이다 — 커맨드가 재전달될 때마다 mandate.rejected 가 다시 나간다.
-    //
-    // 새 테이블에서는 JSON 을 뒤지지 않는다. 6-C-1 이 만든 `idempotency_key` **컬럼**이 있고,
-    // 아래 `enqueue` 가 그 값을 싣는다 — 조회가 인덱스를 타고, 같은 사실의 두 번째 적재는
+    // JSON 을 뒤지지 않는다. 6-C-1 이 만든 `idempotency_key` **컬럼**이 있고, 아래 `enqueue`
+    // 가 그 값을 싣는다 — 조회가 인덱스를 타고, 같은 사실의 두 번째 적재는
     // `unique(topic, event_type, idempotency_key)` 가 DB 에서 막는다. 이 SELECT 는 그 위의
     // 조기 반환일 뿐이고, 경합에서 진 쪽은 제약이 흡수한다.
+    //
+    // **6-C-4 가 옛 갈래를 지웠다.** 옛 로컬 테이블은 `payload` 에 도메인 payload 를 실어
+    // 멱등키가 `payload ->> 'idempotencyKey'` 에 있었다(공용은 envelope 전체라 그 경로가
+    // 항상 NULL 이다 — 그대로 옮겼다면 이 dedupe 가 조용히 무력화됐을 자리다). 배포 이전에
+    // 발행된 mandate.rejected 의 키는 `scripts/events/outbox-marker-backfill.ts` 가 그 JSON
+    // 경로에서 **컬럼으로 끌어올려** 옮겼다.
     const [existing] = await this.dbService.db
       .select({ id: sharedOutboxEvents.id })
       .from(sharedOutboxEvents)
@@ -150,20 +149,7 @@ export class InvoiceCommandConsumer {
         ),
       )
       .limit(1);
-    // 옛 테이블 조회는 6-C-4 에서 지운다. 배포 이전에 발행된 mandate.rejected 는 여기에만 있다.
-    const [legacyExisting] = existing
-      ? [undefined]
-      : await this.dbService.db
-          .select({ id: outboxEvents.id })
-          .from(outboxEvents)
-          .where(
-            and(
-              eq(outboxEvents.eventType, InvoiceEventType.MANDATE_REJECTED),
-              sql`${outboxEvents.payload} ->> 'idempotencyKey' = ${payload.idempotencyKey}`,
-            ),
-          )
-          .limit(1);
-    if (existing || legacyExisting) {
+    if (existing) {
       this.logger.log(`[CreateInvoice] mandate.rejected already emitted (key=${payload.idempotencyKey}) — skip`);
       return;
     }

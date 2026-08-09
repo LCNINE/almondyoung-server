@@ -7,9 +7,9 @@ import { ChannelAdapterSchema } from '../types';
 type DbTx = Parameters<Parameters<DbService<typeof channelAdapterSchema>['db']['transaction']>[0]>[0];
 
 /**
- * `inbox_events` 에서 **발행 큐**를 뜻하던 집계 종류. `OutboxDispatcherService` 의 select
- * 조건과 같은 값이며, 6-C-4 로 그 디스패처가 사라질 때까지만 옛 행을 드레인한다.
- * 새 행은 공용 `event.outbox_events` 로 간다.
+ * `inbox_events` 에서 **발행 큐**를 뜻하던 집계 종류. 그 값을 고르던 앱 자체 디스패처는
+ * 6-C-4 에서 삭제됐다 — 즉 이 값으로 들어간 행은 이제 **아무도 읽지 않는다**. 아래
+ * `enqueue` 의 거부가 그 블랙홀을 막는 유일한 방어선이다.
  */
 const OUTBOX_AGGREGATE_TYPE = 'ChannelAdapter';
 
@@ -27,9 +27,10 @@ const OUTBOX_AGGREGATE_TYPE = 'ChannelAdapter';
  *
  * **이제 정말로 inbox 전용이다 (ADR-0029 §5-1, Task 6-C-3).** 그 전까지 이 서비스는 두
  * 방향을 겸했다 — `aggregateType` 을 넘기지 않은 호출은 컬럼 기본값 `'ChannelAdapter'` 로
- * 떨어졌고, `OutboxDispatcherService` 가 정확히 그 값으로 행을 골라 Kafka 로 **발행**했다.
+ * 떨어졌고, 앱 자체 아웃박스 디스패처가 정확히 그 값으로 행을 골라 Kafka 로 **발행**했다.
  * 즉 같은 메서드가 수신 큐에도 발행 큐에도 넣었고, 어느 쪽인지는 **인자를 생략했는지**로
- * 갈렸다. 발행 8곳은 공용 `StreamPublisher.enqueue` 로 옮겼다.
+ * 갈렸다. 발행 8곳은 공용 `StreamPublisher.enqueue` 로 옮겼고, 6-C-4 가 그 디스패처와
+ * 컬럼 기본값을 함께 지웠다 — 이제 생략은 NOT NULL 로 실패한다.
  */
 @Injectable()
 export class InboxService {
@@ -70,10 +71,9 @@ export class InboxService {
     tx?: DbTx,
   ): Promise<void> {
     if (params.aggregateType === OUTBOX_AGGREGATE_TYPE) {
-      // 이 값으로 들어간 행은 수신 큐가 아니라 **발행 큐**였다 — 옛
-      // `OutboxDispatcherService` 가 정확히 이 값으로 행을 골라 Kafka 로 보냈다.
-      // 6-C-4 가 그 디스패처를 지우면 같은 행은 아무도 읽지 않는 블랙홀이 된다.
-      // 지금 막지 않으면 그 회귀는 **아무 로그도 남기지 않는다.**
+      // 이 값으로 들어간 행은 수신 큐가 아니라 **발행 큐**였다 — 옛 디스패처가 정확히 이
+      // 값으로 행을 골라 Kafka 로 보냈다. 6-C-4 가 그 디스패처를 지웠으므로 같은 행은
+      // 이제 아무도 읽지 않는 블랙홀이다. 막지 않으면 그 회귀는 **아무 로그도 남기지 않는다.**
       throw new Error(
         `InboxService.enqueue 는 아웃박스 행을 만들지 않는다 (aggregateType='${OUTBOX_AGGREGATE_TYPE}'). ` +
           '발행은 StreamPublisher.enqueue 로 한다 — ADR-0029 §5-1, Task 6-C-3.',

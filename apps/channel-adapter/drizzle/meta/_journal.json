@@ -43,6 +43,13 @@
       "when": 1786291954341,
       "tag": "20260809161234_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786312672407,
+      "tag": "20260809215752_drop-inbox-aggregate-type-default",
+      "breakpoints": true
     }
   ]
 }

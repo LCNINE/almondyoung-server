@@ -18,7 +18,6 @@ import { FulfillmentCommandModule } from './fulfillment-command.module';
 import { WaybillModule } from './waybill/waybill.module';
 
 // Outbox
-import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services
 import { FulfillmentsService } from './services/fulfillments.service';
@@ -66,7 +65,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
 
 @Module({
   imports: [
-    // FULFILLMENT_STREAM Kafka producer (OutboxDispatcherService가 발행)
+    // FULFILLMENT_STREAM Kafka producer (공용 OutboxDispatcher 가 발행 — ADR-0029 §5-1)
     // INVENTORY_STREAM publisher는 InventoryModule이 전역으로 등록
     EventsModule.forRoot({
       streams: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM],
@@ -115,9 +114,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallOperationController,
   ],
   providers: [
-    // Outbox
-    OutboxDispatcherService,
-
     // Core fulfillment services
     FulfillmentsService,
     FulfillmentOrderCreationBacklogWorker,

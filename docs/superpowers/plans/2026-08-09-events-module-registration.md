@@ -19,7 +19,7 @@
 - 설계를 바꿔야 하면 **ADR 을 먼저 고치고** 플랜을 맞춘다
 
 ### 검증 게이트 — 전부 기준선과 대조
-- `npm run type-check` → **163** (6-C-2 가 164 → 163 으로 낮췄다. file:line:code 집합까지 대조할 것)
+- `npm run type-check` → **162** (6-C-4 가 163 → 162 로 낮췄다 — 옛 테이블을 겨냥한 테스트 1건 삭제. file:line:code 집합까지 대조할 것)
 - `npm run audit:event-handlers` · `audit:event-publishers` · `audit:consume-validation --gate` → 전부 exit 0
 - 전체 jest 실패 suite **18 = 기준선** (개수가 아니라 **집합**이 같아야 한다)
 - 10개 앱 `nest build`
@@ -546,14 +546,47 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **배포:** #596 → (migrate) → #597·#598 → (migrate: 파티션 인덱스 6개 앱) → deploy. `CREATE INDEX` 는 CONCURRENTLY 가 아니다 — 아웃박스는 작은 테이블이지만 백로그가 크면 조용한 시간대를 고른다.
 
-#### 6-C-4: contract — 옛 테이블·디스패처 삭제
+#### 6-C-4: contract — 옛 테이블·디스패처 삭제 — ✅ 구현 완료 (2026-08-10), **커밋 2개 · 배포 미완**
 
-- [ ] **6-C-2·3 이 전부 배포되고 옛 테이블이 빈 뒤에만.** outbox 행은 5초 주기로 비는 휘발성 데이터라 드레인이 짧다
-- [ ] 앱별로 쪼개지 않는다 — 한 번에 지우는 게 상태 수가 적다
+- [x] **6-C-2·3 이 전부 배포되고 옛 테이블이 빈 뒤에만.** ~~outbox 행은 5초 주기로 비는 휘발성 데이터라 드레인이 짧다~~ → **드레인만으로는 부족했다. 아래 참조.**
+- [x] 앱별로 쪼개지 않는다 — 한 번에 지우는 게 상태 수가 적다
 
-**행 이관은 없지만 드레인은 있다.** 앱마다 DB 가 달라 테이블을 옮길 일은 없다. 다만 옛 테이블에 남은 미발행 행은 옛 디스패처가 비워야 하므로, 6-C-4 는 그때까지 기다린다.
+**드레인 판정 기준을 "행 0개" 로 두지 않았다.** 기준은 **각 앱 옛 디스패처의 acquire 술어를 만족하는 행이 0** 이다 — 술어를 못 만족하면 그 디스패처는 no-op 이므로 지워도 동작이 안 바뀐다. 이것이 삭제가 요구하는 정확한 조건이고, "전체 행 0" 은 도달 불가다(계약을 만족한 적 없는 행이 재시도 소진 후 종말 상태로 굳는다 — 그 행들은 Kafka 로 나간 적이 없으므로 의식적으로 버린다).
 
-각 조각의 공통 게이트: `npm run type-check` **163**(6-C-2 가 164 → 163 으로 하나 고쳤다) · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`. 아웃박스를 만지는 조각은 여기에 **실 Postgres 통합**을 더한다: `npm run test:core:integration:local -- outbox`.
+| 앱 | 옛 저장소 | acquire 술어 | 드레인 조건 |
+|---|---|---|---|
+| core | `public.outbox_events` | `status='pending'` (+워크플로 게이트 필터) | `pending = 0` |
+| wallet | `public.outbox_events` | `status='PENDING'` + 파티션 순서 | `PENDING/PROCESSING = 0` |
+| channel-adapter | `inbox_events`(`aggregate_type='ChannelAdapter'`) | `status='pending'` | 해당 행 `pending = 0` |
+
+**도달 가능하다** — 세 디스패처 다 재시도 소진(core 5 · wallet 10 · CA 5) 후 종말 상태로 옮긴다. core 게이트가 `maintenance` 면 fulfillment 행이 영영 안 뽑혀 도달 불가가 되지만, 라이브는 `v2` 다(`deployments/lcnine/services/infra/services.ts:349`). 판정 SQL 은 세션 산출물로 사용자에게 전달했다.
+
+**🔴 플랜이 놓친 것 — 드레인과 시계가 다른 것이 있다. 선행 커밋이 생겼다.**
+
+6-C-2·3 이 남긴 이중 읽기 3곳은 **큐가 아니라 "이 사실이 이미 기록됐는가"를 행의 존재로 판정**한다. 즉 DROP 은 큐가 아니라 **판정 근거**를 지운다. 드레인이 끝나도 이 표지들은 `published` 로 굳은 채 계속 읽힌다.
+
+| 표지 | 읽는 곳 | 잃으면 |
+|---|---|---|
+| `FulfillmentShipped`/`<foId>:fully-shipped` | `hasFullyShippedProjection` | 배포 이전 출고분의 **배송완료 이벤트가 안 나간다.** 노출 창 = 출고→배송 리드타임(며칠) |
+| `payment.intent.failed`/`aggregate_id` | `BillingChargeConsumer` | 커맨드 재전달 시 같은 실패 **중복 발행** |
+| `mandate.rejected`/payload 멱등키 | `InvoiceCommandConsumer` | 같은 mandate.rejected **중복 발행** |
+
+그래서 순서가 **백필 → 6-C-4 배포 → DROP** 이 된다. 백필은 drizzle 마이그레이션이 아니라 **일회성 ops 스크립트**로 넣었다(`scripts/events/outbox-marker-backfill.ts`) — 데이터 전용 마이그레이션은 저널·스냅샷을 손으로 엮어야 하고, 그게 정확히 wallet 체인을 부순 종류의 취약함이다. 표지는 `status='PUBLISHED'` 로 넣어 공용 디스패처가 재발행하지 않는다.
+
+**실측이 태스크 지시와 어긋난 것 2건.**
+
+1. **channel-adapter 에는 옛 테이블이 없다.** 아웃박스가 `inbox_events` 의 `aggregate_type='ChannelAdapter'` 행이었고 그 테이블은 인바운드로 계속 산다 — DROP 대상이 아니다. 대신 **컬럼 기본값을 지웠다**: 그 기본값이 "인자 생략 = 아웃박스 적재" 함정의 본체였고(6-C-3 이 5곳으로 오산한 원인), 디스패처가 없는 지금 그 값의 행은 블랙홀이다. 적재 8곳 전부 명시함을 확인 후 제거.
+2. **플랜의 게이트 숫자 2개가 낡았다.** 발행 주입은 41 이 아니라 **45**(→ 삭제 후 37, 디스패처 3개의 주입 8개와 정확히 일치). 실 Postgres 아웃박스 통합은 10 suite/63 tests 가 아니라 **11/67**(→ 9/58, 삭제한 core 스펙 2개 = 9 tests).
+
+**곁가지로 고친 것:** catalog 통합 스펙 3개의 아웃박스 정리가 6-C-2 이후 **옛 테이블을 지우고 있었다** = 실행마다 공용 테이블에 행이 쌓이고 있었다. 공용으로 재지정했다.
+
+**게이트 실측:** `type-check` **162** = 163 − 1(삭제한 옛 테이블 겨냥 테스트), 신규 0 · `audit:event-handlers` exit 0 (87) · `audit:event-publishers` exit 0 (45 → 37) · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선(집합 완전 동일)** · 10개 앱 `nest build` OK · 변경 파일 eslint 신규 0 · 실 Postgres 아웃박스 통합 **9 suite / 58 tests 통과**.
+
+**대조군:** 백필 검증(`outbox-marker-backfill.verify.sh`, 20 단언)은 스크래치 DB 2개를 `pg_dump` 실 DDL 로 세우고 대조군 4종(다른 멱등키 모양·다른 토픽·다른 event_type·멱등키 없는 행)이 **옮겨지지 않는 것**과 멱등성을 단언한다. 표지 필터를 제거하는 변이로 대조군이 빨간불이 되는 것을 확인한 뒤 `cp` 백업 + `sha1sum -c` 로 원복했다. `DROP TABLE "outbox_events"` 가 스키마 비한정이라, 두 테이블이 다 있는 스크래치 DB 에 실제 적용해 `public` 만 지워지고 `event.outbox_events` 와 그 행이 남는 것을 확인했다.
+
+**⚠️ 배포 절차 (사람):** ① 드레인 판정 SQL 로 세 앱 `blocking_rows = 0` 확인 → ② `npm run events:marker-backfill -- --app core --execute` / `--app wallet --execute`(각 앱 DB 의 `DATABASE_URL` 로, dry-run 먼저) → ③ **deploy**(코드에서 옛 테이블 참조 제거) → ④ **migrate**(DROP). ③④ 순서를 뒤집으면 옛 task 가 사라진 테이블을 만난다.
+
+각 조각의 공통 게이트: `npm run type-check` **162**(6-C-2 가 164 → 163, 6-C-4 가 163 → 162) · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`. 아웃박스를 만지는 조각은 여기에 **실 Postgres 통합**을 더한다: `npm run test:core:integration:local -- outbox`(6-C-4 후 9 suite / 58 tests).
 
 **완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다 (JSDoc 예시 제외).
 
@@ -581,7 +614,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 - [x] outbox enqueue 가 zod 검증을 탄다 — Task 6-A
 - [x] `libs/events/src` 스펙 파일 수가 5개보다 많다 — 현재 11
 - [x] 컨트롤러를 `controllers: []` 에 등록하지 않으면 부팅이 실패한다 — Task 3 에서 구현, 5-B 로 7개 앱 전부에 실효
-- [ ] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164 유지. Task 6·7 후 최종 확인
+- [x] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164, 6-C-2 가 163, 6-C-4 가 162. **신규 오류 0 유지.** Task 7 후 최종 재확인
 - [x] ADR-0029 의 Status 가 Accepted 로 갱신됐다
 
 ---

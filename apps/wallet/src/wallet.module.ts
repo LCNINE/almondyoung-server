@@ -89,7 +89,6 @@ import { RecurringBillingAdminService } from './admin/recurring-billing-admin.se
 import { RecurringBillingAdminController } from './admin/recurring-billing-admin.controller';
 
 // Messaging + Jobs
-import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { ExpirationJob } from './jobs/expiration.job';
 import { TossActionExpirationJob } from './jobs/toss-action-expiration.job';
 import { PointsExpirationJob } from './jobs/points-expiration.job';
@@ -540,7 +539,6 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     TossWebhookRepository,
 
     // Messaging + Jobs
-    OutboxDispatcherService,
     ExpirationJob,
     TossActionExpirationJob,
     PointsExpirationJob,

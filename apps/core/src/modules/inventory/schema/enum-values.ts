@@ -33,7 +33,6 @@ import {
   taskPriorityEnum,
   fulfillmentStatusEnum,
   fulfillmentModeEnum,
-  outboxStatusEnum,
   pickingMethodEnum,
   batchStatusEnum,
   auditEventTypeEnum,
@@ -141,9 +140,6 @@ export type FulfillmentStatusEnum = (typeof fulfillmentStatusValues)[number];
 
 export const fulfillmentModeValues = fulfillmentModeEnum.enumValues;
 export type FulfillmentModeEnum = (typeof fulfillmentModeValues)[number];
-
-export const outboxStatusValues = outboxStatusEnum.enumValues;
-export type OutboxStatusEnum = (typeof outboxStatusValues)[number];
 
 export const pickingMethodValues = pickingMethodEnum.enumValues;
 export type PickingMethodEnum = (typeof pickingMethodValues)[number];

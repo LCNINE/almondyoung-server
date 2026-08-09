@@ -844,9 +844,9 @@ export class FulfillmentsService {
   /**
    * FO 하나의 아웃박스 행 (admin-web 의 이력 탭이 읽는 진단 엔드포인트).
    *
-   * **드레인 기간에는 두 테이블을 모두 읽는다** (ADR-0029 §5-1, Task 6-C-2). 적재는 이제
-   * `event.outbox_events` 로 가지만 옛 `public.outbox_events` 에는 아직 미발행 행이 남아 있고,
-   * 새 테이블만 읽으면 이 배포 이전 FO 의 이력이 통째로 빈 화면이 된다. 옛 갈래 제거는 6-C-4 다.
+   * **6-C-4 가 옛 갈래를 지웠다.** 이 배포 이전에 만들어진 FO 의 이력 탭은 비어 보인다 —
+   * 진단용 표시일 뿐이고 도메인 판정에 쓰이지 않으므로 백필 대상이 아니었다(표지 백필은
+   * `hasFullyShippedProjection` 이 읽는 `:fully-shipped` 행만 옮긴다).
    *
    * 응답 모양은 그대로 유지한다 — admin-web 이 소문자 `status`('failed'/'pending')와 `attempts`
    * 를 읽는다. 공용 테이블은 대문자 status 와 `retry_count` 를 쓰므로 여기서 옛 어휘로 되돌린다.
@@ -854,21 +854,6 @@ export class FulfillmentsService {
    */
   async getOutboxEvents(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-
-    const legacyRows = await db
-      .select({
-        id: wmsTables.outboxEvents.id,
-        eventType: wmsTables.outboxEvents.eventType,
-        status: wmsTables.outboxEvents.status,
-        attempts: wmsTables.outboxEvents.attempts,
-        nextAttemptAt: wmsTables.outboxEvents.nextAttemptAt,
-        publishedAt: wmsTables.outboxEvents.publishedAt,
-        createdAt: wmsTables.outboxEvents.createdAt,
-        updatedAt: wmsTables.outboxEvents.updatedAt,
-      })
-      .from(wmsTables.outboxEvents)
-      .where(and(eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'), eq(wmsTables.outboxEvents.aggregateId, id)))
-      .orderBy(desc(wmsTables.outboxEvents.createdAt));
 
     const sharedRows = await db
       .select({
@@ -884,18 +869,18 @@ export class FulfillmentsService {
       .from(outbox_events)
       .where(and(eq(outbox_events.aggregateType, FULFILLMENT_STREAM.aggregateType), eq(outbox_events.aggregateId, id)));
 
-    const normalized = sharedRows.map((row) => ({
-      id: String(row.id),
-      eventType: row.eventType,
-      status: row.status.toLowerCase(),
-      attempts: row.attempts,
-      nextAttemptAt: row.nextAttemptAt,
-      publishedAt: row.publishedAt,
-      createdAt: row.createdAt,
-      updatedAt: row.publishedAt ?? row.failedAt ?? row.createdAt,
-    }));
-
-    return [...legacyRows, ...normalized].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return sharedRows
+      .map((row) => ({
+        id: String(row.id),
+        eventType: row.eventType,
+        status: row.status.toLowerCase(),
+        attempts: row.attempts,
+        nextAttemptAt: row.nextAttemptAt,
+        publishedAt: row.publishedAt,
+        createdAt: row.createdAt,
+        updatedAt: row.publishedAt ?? row.failedAt ?? row.createdAt,
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   async getOne(id: string, tx?: DbTx) {

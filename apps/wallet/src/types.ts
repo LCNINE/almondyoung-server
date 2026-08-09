@@ -9,7 +9,6 @@ import {
   cmsAgreements,
   cmsMembers,
   cmsWithdrawals,
-  outboxEvents,
   paymentIntentItemDiscounts,
   paymentIntentItems,
   paymentIntentOrderDiscounts,
@@ -82,10 +81,6 @@ export type UpdateCashReceipt = Partial<Omit<NewCashReceipt, 'id' | 'createdAt' 
 
 export type PaymentStateTransition = InferSelectModel<typeof paymentStateTransitions>;
 export type NewPaymentStateTransition = InferInsertModel<typeof paymentStateTransitions>;
-
-export type OutboxEvent = InferSelectModel<typeof outboxEvents>;
-export type NewOutboxEvent = InferInsertModel<typeof outboxEvents>;
-export type UpdateOutboxEvent = Partial<Omit<NewOutboxEvent, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type ProviderWebhookReceipt = InferSelectModel<typeof providerWebhookReceipts>;
 export type NewProviderWebhookReceipt = InferInsertModel<typeof providerWebhookReceipts>;

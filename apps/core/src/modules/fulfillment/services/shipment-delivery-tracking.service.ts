@@ -399,10 +399,11 @@ export class ShipmentDeliveryTrackingService {
    * "이 FO 가 전량 출고됐는가" 를 **아웃박스 행의 존재**로 판정한다 — v1 완료 투영은 FO 당
    * 한 번이고, 그 행의 멱등 키(`${foId}:fully-shipped`)가 그 사실의 유일한 기록이다.
    *
-   * **드레인 기간에는 두 테이블을 모두 본다** (ADR-0029 §5-1, Task 6-C-2). 이 판정만큼은
-   * 새 테이블만 보면 롤링 배포의 몇 분짜리 창이 아니라 **며칠치**가 깨진다 — 출고와 배송
-   * 완료 사이에는 리드타임이 있어서, 배포 이전에 출고된 FO 는 전부 옛 테이블에만 행이 있고
-   * 그 FO 들의 배송 완료 웹훅은 배포 이후에 온다. 옛 갈래 제거는 6-C-4 몫이다.
+   * **6-C-4 가 옛 갈래를 지웠다.** 배포 이전에 출고된 FO 의 표지는 옛
+   * `public.outbox_events` 에만 있었으므로, 테이블을 지우기 전에
+   * `scripts/events/outbox-marker-backfill.ts` 가 그 표지들을 이 테이블로 옮겼다 —
+   * 그 백필이 이 메서드가 옛 테이블 없이도 참을 말할 수 있는 근거다. 백필을 건너뛰고
+   * 배포하면 리드타임(며칠)만큼의 FO 가 배송완료 이벤트를 잃는다.
    */
   private async hasFullyShippedProjection(fulfillmentOrderId: string, tx: DbTx): Promise<boolean> {
     const idempotencyKey = `${fulfillmentOrderId}:fully-shipped`;
@@ -418,20 +419,7 @@ export class ShipmentDeliveryTrackingService {
         ),
       )
       .limit(1);
-    if (shared) return true;
-
-    const [legacy] = await tx
-      .select({ id: wmsTables.outboxEvents.id })
-      .from(wmsTables.outboxEvents)
-      .where(
-        and(
-          eq(wmsTables.outboxEvents.topic, FULFILLMENT_STREAM.topic.topic),
-          eq(wmsTables.outboxEvents.eventType, FULFILLMENT_EVENTS.SHIPPED),
-          eq(wmsTables.outboxEvents.idempotencyKey, idempotencyKey),
-        ),
-      )
-      .limit(1);
-    return Boolean(legacy);
+    return Boolean(shared);
   }
 
   private async v1DeliveryTimestamp(fulfillmentOrderId: string, tx: DbTx): Promise<Date | null> {

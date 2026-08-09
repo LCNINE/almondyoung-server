@@ -22,6 +22,7 @@ import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { TestingModule } from '@nestjs/testing';
 import type { DbService } from '@app/db';
+import { outbox_events } from '@app/events';
 import {
   type PimSchema,
   pricingRules,
@@ -35,10 +36,9 @@ import {
 } from '../../../schema/catalog.schema';
 // 정리 전용 임포트. `publishVersion` 이 남기는 두 행 모두 catalog 쪽 CASCADE 가 닿지 않는다
 // (투영은 product_variants 에 FK 가 없고, 아웃박스는 애초에 FK 가 없다) — 이 스위트가 만든
-// 행이므로 이 스위트가 치운다. `outboxEvents` 는 `public.outbox_events` 다: libs/events 의
-// `event.outbox_events` 와 이름만 같은 **다른 테이블**이고, `OutboxPublisher.saveEvent` /
-// `OutboxService.enqueue` 가 실제로 쓰는 쪽이 이것이다.
-import { outboxEvents, productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
+// 행이므로 이 스위트가 치운다. 적재 대상은 공용 `event.outbox_events` 다 — 6-C-2 가 catalog
+// 호출자를 그리로 회수했고 6-C-4 가 옛 `public.outbox_events` 를 지웠다.
+import { productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
 import type { DbTransaction } from '../../../catalog.types';
 import type { BulkBaseSnapshot, BulkItemInput, BulkItemPayload, FlatFields, PrefillRow } from './bulk-session.types';
 
@@ -265,7 +265,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
         // `aggregate_id` 로 **이 스위트가 만든 것만** 지운다(테이블을 비우지 않는다).
         const aggregateIds = [...new Set([...masterIds, ...variantIds])];
         if (aggregateIds.length > 0) {
-          await trx.delete(outboxEvents).where(inArray(outboxEvents.aggregateId, aggregateIds));
+          await trx.delete(outbox_events).where(inArray(outbox_events.aggregateId, aggregateIds));
         }
       });
     }

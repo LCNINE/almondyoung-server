@@ -2,12 +2,13 @@
  * Order lifecycle event types that the channel-adapter collects into `inbox_events` and
  * publishes to `orders.events.v1` for the WMS to consume.
  *
- * This single list is the contract shared by the two services that split the `inbox_events`
- * table:
+ * This list used to be the contract between the two services that split the `inbox_events`
+ * table. The publishing half is gone (ADR-0029 Task 6-C-4): these event types now reach
+ * `orders.events.v1` through the shared `StreamPublisher.enqueue` /
+ * `event.outbox_events` path, not through a channel-adapter-local dispatcher.
  *
- * - `OutboxDispatcherService` publishes these event types to `orders.events.v1`.
- * - `InboxWorkerService` EXCLUDES these event types from its own polling, so it never marks
- *   them published before the dispatcher reaches Kafka.
+ * - `InboxWorkerService` EXCLUDES these event types from its own polling. That exclusion is
+ *   what this constant still drives — the worker must not touch rows it does not own.
  *
  * Keep both behaviours driven by this one constant. If the two lists ever drift, an order
  * event type that is in neither would be swallowed by `InboxWorkerService` (its `default`

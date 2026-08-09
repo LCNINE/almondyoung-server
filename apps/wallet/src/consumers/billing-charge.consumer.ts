@@ -7,7 +7,7 @@ import { BillingChargePayload, WALLET_COMMAND_STREAM } from '@packages/event-con
 import { DbService } from '@app/db';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
-import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
+import { WalletSchema, paymentIntents, IntentPurpose } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -123,12 +123,12 @@ export class BillingChargeConsumer {
         case 'FAILED': {
           // 4xx 경로는 이미 outbox에 FAILED 이벤트가 기록됨.
           // 5xx 경로는 outbox 이벤트가 없을 수 있으므로 존재 여부를 확인 후 없을 때만 재발행.
-          // **두 테이블을 다 본다** (ADR-0029 §5-1, Task 6-C-3 expand 창).
           //
-          // 새 적재는 공용 `event.outbox_events` 로 가지만, 배포 이전에 기록된 FAILED 이벤트는
-          // 옛 `public.outbox_events` 에만 있다. 새 테이블만 보면 그 인텐트들이 "이벤트 없음"
-          // 으로 보여 **재발행**된다 — 구독자(membership)가 같은 실패를 두 번 받는다.
-          // 옛 테이블 조회는 6-C-4 에서 지운다.
+          // **6-C-4 가 옛 갈래를 지웠다.** 배포 이전에 기록된 FAILED 이벤트는 옛
+          // `public.outbox_events` 에만 있었으므로, 테이블을 지우기 전에
+          // `scripts/events/outbox-marker-backfill.ts` 가 인텐트당 한 행씩 이 테이블로
+          // 옮겼다 — 그 백필이 없으면 그 인텐트들이 "이벤트 없음" 으로 보여 **재발행**되고
+          // 구독자(membership)가 같은 실패를 두 번 받는다.
           const [existingFailedEvent] = await this.dbService.db
             .select({ id: sharedOutboxEvents.id })
             .from(sharedOutboxEvents)
@@ -139,20 +139,8 @@ export class BillingChargeConsumer {
               ),
             )
             .limit(1);
-          const [legacyFailedEvent] = existingFailedEvent
-            ? [undefined]
-            : await this.dbService.db
-                .select({ id: outboxEvents.id })
-                .from(outboxEvents)
-                .where(
-                  and(
-                    eq(outboxEvents.aggregateId, existingId),
-                    eq(outboxEvents.eventType, GatewayEventType.INTENT_FAILED),
-                  ),
-                )
-                .limit(1);
 
-          if (existingFailedEvent || legacyFailedEvent) {
+          if (existingFailedEvent) {
             this.logger.log(`[BillingCharge] FAILED intent with existing outbox event (intentId=${existingId}), skip`);
             return;
           }

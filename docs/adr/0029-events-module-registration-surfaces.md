@@ -352,6 +352,10 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
 
 **옛 아웃박스를 읽는 코드가 둘 있었다 — 그중 하나는 이동만으로는 깨진다.** `shipment-delivery-tracking.service.ts` 의 `v1DeliveryTimestamp` 는 `${foId}:fully-shipped` **행의 존재**로 "FO 가 전량 출고됐는가"를 판정한다. 새 코드가 새 테이블만 읽으면, **배포 이전에 출고돼 배포 이후에 배송 완료되는 모든 FO** 가 그 행을 찾지 못해 v1 `FulfillmentDelivered` 를 잃는다 — 롤링 배포의 몇 분짜리 창이 아니라 며칠치 재고(출고→배송 리드타임) 전체다. expand 기간에는 **두 테이블을 모두 읽는다**. 옛 갈래 제거는 6-C-4 몫이다.
 
+**6-C-4 실행 결과 (2026-08-10): 이동만이 아니라 이 판정 자체가 문제였다.** 옛 갈래를 지우려면 드레인만으로 부족하다 — 이 행들은 **큐가 아니라 존재 표지**라서, 미발행 행이 다 빠진 뒤에도 `published` 로 굳은 채 계속 읽힌다. 드레인 완료와 표지 수명은 시계가 다르다. 같은 성질의 읽기가 wallet 에도 둘 있었다(`payment.intent.failed` dedupe · `mandate.rejected` dedupe). 그래서 6-C-4 는 **표지 백필을 선행 단계로 추가**했다(`scripts/events/outbox-marker-backfill.ts`): 세 술어가 찾는 행만 골라 `status='PUBLISHED'` 로 공용 테이블에 옮긴다(그 상태라 공용 디스패처가 재발행하지 않는다). 배포 순서가 **백필 → deploy → migrate(DROP)** 로 한 단계 길어졌다.
+
+**교훈:** "옛 테이블을 비운 뒤 지운다"는 울타리는 그 테이블이 **큐일 때만** 충분하다. 같은 테이블을 존재 판정에 쓰는 읽기가 하나라도 있으면 드레인은 그것을 보호하지 못한다. 회수(6-C-2·3)에서 "옛 아웃박스를 *읽는* 코드"를 셀 때, **읽기의 목적이 소비인지 판정인지**까지 갈라 적어야 한다.
+
 **6. 파티션 순서 보장은 opt-in 으로 공용에 옮긴다 (2026-08-09, 6-C-3).** wallet 로컬 디스패처의 acquire 술어에는 공용에 없는 조건이 하나 더 있었다 — 같은 `partition_key` 의 **더 이른 미발행 행**이 있으면 뒤 행을 고르지 않는다. 없으면 `payment.intent.created` 가 재시도를 도는 동안 `payment.intent.captured` 가 먼저 도착할 수 있고, 파티션 키를 인텐트/구독자로 잡아 둔 이유가 바로 그 순서다. 결정 4 와 같은 논리로 **회수는 재시도 의미론 말고 아무것도 바꾸지 않아야** 하므로 옮긴다.
 
 다만 `OutboxDispatchGate` 와 달리 port 가 아니라 **설정 플래그**(`OutboxConfig.strictPartitionOrdering`, 기본 `false`)다. 게이트는 앱마다 *다른 서술자*를 돌려주는 자리라 port 가 맞지만, 이것은 켜고 끄는 한 비트이고 앱이 돌려줄 지식이 없다. 기본값이 `false` 인 이유는 대가가 있기 때문이다 — head-of-line blocking. 한 행이 재시도를 소진할 때까지 그 파티션이 막히므로, **순서가 필요한 앱이 스스로 고를 성질**이지 공용 기본값이 아니다. 현재 켠 앱은 wallet 하나다.
@@ -364,7 +368,7 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
 
 1. **`PaymentIntentEventPayload` 의 필수 필드 4개가 거짓이었다.** `userId` · `status` · `payableAmount` · `currency` 를 필수로 적어 뒀지만 `PaymentIntentEventSchema` 는 처음부터 전부 `.optional()` 이었고 — 즉 **런타임 계약은 이미 선택이었다** — 실제로 두 발행 경로가 그 값 없이 내보낸다: 인텐트 **생성 전** 실패(`billing-charge.consumer.ts`, 인텐트가 아직 없다)와 `payment.intent.refund_requested`/`…_request_rejected`(소비자는 intentId 만 읽는다). **인터페이스를 스키마에 맞췄고 발행되는 내용은 바꾸지 않았다** — additive 규칙의 예외가 아니라, 문서가 런타임을 따라간 것이다. 소비 파급은 1곳(notification 무통장 안내)이었고 `userId` 부재 시 발송하지 않는 가드를 넣었다.
 2. **`gateway.refund.failed` 는 계약에 없다.** `GatewayEventType` 상수에는 있지만 계약에도 없고 적재하는 곳도 없다. 계열 이름 목록을 `satisfies readonly (keyof typeof PAYMENT_STREAM.events)[]` 로 좁혀 두었더니 컴파일에서 걸렸다.
-3. 🔴 **`gateway.charge.*` 는 발행자가 레포 전체에 0곳인데 channel-adapter 가 `gateway.charge.captured` 를 구독한다.** `buildChargeEventPayload` 는 프로덕션 호출자가 없다. 플랜 5-A 가 이 넷을 "wallet 이 실제로 발행하는 라이브 이벤트"로 적고 계약에 올렸는데, `gateway.refund.succeeded` 는 맞고 **`gateway.charge.captured` 는 틀렸다.** 고아 소비자를 지울지 발행을 되살릴지는 계약 결정이라 6-C-3 범위 밖으로 두었다 — **6-C-4 또는 Task 7 에서 판정한다.**
+3. 🔴 **`gateway.charge.*` 는 발행자가 레포 전체에 0곳인데 channel-adapter 가 `gateway.charge.captured` 를 구독한다.** `buildChargeEventPayload` 는 프로덕션 호출자가 없다. 플랜 5-A 가 이 넷을 "wallet 이 실제로 발행하는 라이브 이벤트"로 적고 계약에 올렸는데, `gateway.refund.succeeded` 는 맞고 **`gateway.charge.captured` 는 틀렸다.** 고아 소비자를 지울지 발행을 되살릴지는 계약 결정이라 6-C-3 범위 밖으로 두었다 — **6-C-4 도 판정하지 않았다(2026-08-10): 그 조각은 아웃박스 저장소 삭제에 한정했고, 이것은 계약을 정하는 결정이라 성격이 다르다. Task 7 로 넘긴다.** 여전히 미해결이다.
 
 ### 명시적으로 하지 않는 것
 

@@ -75,10 +75,11 @@ export class PaymentEventsConsumer {
     await this.forwardToMedusa(envelope);
   }
 
-  // ─── Wallet outbox dispatcher 타입 (payment.intent.* / gateway.*) ──────────
-  // Wallet OutboxDispatcherService 는 envelope.messageType 에 outbox eventType
-  // (dot-notation)을 그대로 싣는다. EventTypeGuard 가 messageType 단위로 필터링하므로
-  // 타입별 핸들러가 없으면 조용히 버려져 Medusa projection 이 끊긴다 (#407).
+  // ─── Wallet 아웃박스 타입 (payment.intent.* / gateway.*) ──────────
+  // wallet 은 envelope.messageType 에 outbox eventType(dot-notation)을 그대로 싣는다.
+  // EventTypeGuard 가 messageType 단위로 필터링하므로 타입별 핸들러가 없으면 조용히
+  // 버려져 Medusa projection 이 끊긴다 (#407). 발행 주체는 이제 공용 OutboxDispatcher 다
+  // (ADR-0029 Task 6-C-3 이 wallet 로컬 디스패처를 회수, 6-C-4 가 삭제).
 
   @On(PAYMENT_STREAM, 'payment.intent.created')
   async handleIntentCreated(@EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'payment.intent.created'>) {

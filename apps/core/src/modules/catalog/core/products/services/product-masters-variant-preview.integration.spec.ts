@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import { eq, inArray } from 'drizzle-orm';
 import type { TestingModule } from '@nestjs/testing';
 import type { DbService } from '@app/db';
+import { outbox_events } from '@app/events';
 import {
   type PimSchema,
   pricingRules,
@@ -23,7 +24,8 @@ import {
   productVariants,
   variantOptionValues,
 } from '../../../schema/catalog.schema';
-import { outboxEvents, productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
+// 아웃박스는 공용 `event.outbox_events` 다 (6-C-2 회수, 6-C-4 가 옛 테이블 삭제).
+import { productSellableQuantityProjections } from '../../../../inventory/schema/inventory.schema';
 
 /**
  * 목록 API 의 품목 미리보기를 실 Postgres + 실 Nest DI 로 구동한다. 검증 대상이 SQL 자체(윈도우
@@ -142,7 +144,7 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
         }
         const aggregateIds = [...new Set([...masterIds, ...variantIds])];
         if (aggregateIds.length > 0) {
-          await trx.delete(outboxEvents).where(inArray(outboxEvents.aggregateId, aggregateIds));
+          await trx.delete(outbox_events).where(inArray(outbox_events.aggregateId, aggregateIds));
         }
       });
     }

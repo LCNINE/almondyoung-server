@@ -5,7 +5,7 @@
  * WMS OrderEventsConsumer가 이 이벤트를 구독하여 Sales Order를 생성합니다.
  *
  * 적재 대상은 `event.outbox_events`(공용)다. 옛 경로는 `inbox_events` 에 `aggregate_type =
- * 'ChannelAdapter'` 행을 쓰고 앱 자체 `OutboxDispatcherService` 가 그것을 발행했는데, 그
+ * 'ChannelAdapter'` 행을 쓰고 앱 자체 아웃박스 디스패처가 그것을 발행했는데(6-C-4 에서 삭제), 그
  * 경로에는 **적재 시점 검증이 없었다** — 계약 위반 payload 가 poison row 로 남아 재시도를
  * 소진했다. `enqueue` 는 zod 를 먼저 태우므로 위반이 호출자의 도메인 트랜잭션에서 드러난다.
  */

@@ -28,7 +28,7 @@
 | `point_events` + `point_event_details` | 포인트 원장 (적립/차감/취소의 진실 원천) |
 | `point_holds` + `point_hold_details` | 포인트 홀드(예약) — lot별 할당 추적 |
 | `payment_state_transitions` | 모든 상태 전이 감사 로그 |
-| `outbox_events` | 미발행 이벤트 큐 |
+| `event.outbox_events` | 미발행 이벤트 큐 (공용 `@app/events` 소유) |
 | `provider_webhook_receipts` | PG 웹훅 수신 중복 방지 |
 | `idempotency_keys` | 요청 멱등성 키 |
 
@@ -55,11 +55,20 @@
 - `point_holds`는 authorize 시 예약, capture 시 REDEEM 이벤트로 확정
 - 사용 가능 잔액 = 확정 잔액 - AUTHORIZED 상태의 홀드 합계
 
-### Outbox Pattern (자체 구현)
-- `@app/events`의 outbox와 별도로, wallet 자체 `outbox_events` 테이블 사용
-- `OutboxDispatcherService`가 크론으로 PENDING 이벤트를 폴링하여 Kafka 발행
-- 지수 백오프(base 5s, max 300s, max 10회) + Dead Letter 지원
-- `messageId`로 중복 발행 방지
+### Outbox Pattern (공용 `@app/events`)
+**자체 구현은 없다** — ADR-0029 Task 6-C-3 이 공용으로 회수했고 6-C-4 가 옛
+`public.outbox_events` 와 로컬 디스패처를 삭제했다. 적재는 `StreamPublisher.enqueue`,
+발행은 공용 `OutboxDispatcher` 가 한다. 적재 대상 테이블은 `event.outbox_events` 다.
+
+- **적재 시점에 zod 검증**을 탄다(6-A) — 계약 위반 payload 는 poison row 가 되는 대신
+  도메인 트랜잭션을 실패시킨다
+- 앱별 레버는 `messaging/wallet-outbox.config.ts` 의 `OutboxConfig` 하나로 모았다:
+  배치 크기 · 소진 임계(10회) · PROCESSING 타임아웃
+- **`strictPartitionOrdering: true` 는 wallet 만 켠다.** 같은 `partition_key` 의 더 이른
+  미발행 행이 있으면 뒤 행을 고르지 않는다 — 인텐트/구독자 단위 순서가 그 파티션 키를
+  잡아 둔 이유다. head-of-line blocking 이 따라오므로 기본값이 아니다
+- 백오프는 공용 고정표(10/30/60/300초). 지수 백오프는 회수와 함께 사라졌다
+- 중복 방어는 `messageId` 가 아니라 `unique(topic, event_type, idempotency_key)` 다
 
 ### State Machine
 `StateTransitionService`가 합법적 상태 전이만 허용하고, 모든 전이를 `payment_state_transitions`에 기록한다.
@@ -91,7 +100,7 @@
 |------|------|------|
 | 토스페이먼츠 | HTTP API | 결제 승인, 취소, 환불 |
 | 나이스페이 | HTTP API | 결제 승인, 취소, 환불 |
-| Kafka | Outbox → Producer | 결제 상태 이벤트 발행 (`payment.intent.*`, `gateway.charge.*`, `gateway.refund.*`) |
+| Kafka | 공용 Outbox → Producer | 결제 상태 이벤트 발행 (`payment.intent.*`, `gateway.refund.succeeded`). ⚠️ `gateway.charge.*` 는 **발행자가 레포 전체에 0곳**인데 channel-adapter 가 `gateway.charge.captured` 를 구독한다 — 미해결(ADR-0029 Task 6-C-3 실측) |
 | `medusa` (옵션) | HTTP Webhook (`WALLET_MEDUSA_WEBHOOK_URL`) | 결제 인텐트 상태 변경 알림 |
 
 ## 스키마 구조 요약
@@ -116,7 +125,6 @@
 ├─ point_holds (userId, intentId, legId, amount, status: AUTHORIZED|CAPTURED|CANCELLED)
 │   └─ point_hold_details (holdId ↔ earnedEventDetailId, lot별 할당량)
 │
-├─ outbox_events (eventType, payload, status, attempts, 지수 백오프)
 ├─ provider_webhook_receipts (providerType, providerEventId — 웹훅 중복 방지)
 └─ idempotency_keys (requestHash, status, responseCode, responseBody)
 

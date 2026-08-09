@@ -79,14 +79,6 @@ export const paymentStateTriggerTypeEnum = pgEnum('payment_state_trigger_type', 
   'COMMAND',
 ]);
 
-export const outboxStatusEnum = pgEnum('wallet_outbox_status', [
-  'PENDING',
-  'PROCESSING',
-  'PUBLISHED',
-  'FAILED',
-  'DEAD_LETTER',
-]);
-
 export const providerWebhookReceiptStatusEnum = pgEnum('provider_webhook_receipt_status', [
   'RECEIVED',
   'PROCESSED',
@@ -544,34 +536,6 @@ export const paymentStateTransitions = pgTable(
   ],
 );
 
-export const outboxEvents = pgTable(
-  'outbox_events',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    messageId: varchar('message_id', { length: 64 }).notNull(),
-    eventType: varchar('event_type', { length: 128 }).notNull(),
-    aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
-    aggregateId: uuid('aggregate_id').notNull(),
-    partitionKey: varchar('partition_key', { length: 128 }).notNull(),
-    payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
-    status: outboxStatusEnum('status').notNull().default('PENDING'),
-    attempts: integer('attempts').notNull().default(0),
-    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
-    publishedAt: timestamp('published_at', { withTimezone: true }),
-    lastErrorCode: varchar('last_error_code', { length: 128 }),
-    lastErrorMessage: text('last_error_message'),
-    deadLetteredAt: timestamp('dead_lettered_at', { withTimezone: true }),
-    deadLetterReason: text('dead_letter_reason'),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    uniqueIndex('uq_outbox_events_message_id').on(table.messageId),
-    index('idx_outbox_events_status_next_attempt_at').on(table.status, table.nextAttemptAt),
-    index('idx_outbox_events_partition_created_at').on(table.partitionKey, table.createdAt),
-  ],
-);
-
 export const providerWebhookReceipts = pgTable(
   'provider_webhook_receipts',
   {
@@ -996,7 +960,6 @@ export type CashReceiptType = (typeof cashReceiptTypeEnum.enumValues)[number];
 export type CashReceiptStatus = (typeof cashReceiptStatusEnum.enumValues)[number];
 export type PaymentStateEntityType = (typeof paymentStateEntityTypeEnum.enumValues)[number];
 export type PaymentStateTriggerType = (typeof paymentStateTriggerTypeEnum.enumValues)[number];
-export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
 export type PointEventType = (typeof pointEventTypeEnum.enumValues)[number];
 export type PointHoldStatus = (typeof pointHoldStatusEnum.enumValues)[number];
 export type PaymentIntentItemType = (typeof paymentIntentItemTypeEnum.enumValues)[number];
@@ -1028,7 +991,6 @@ export const walletSchema = {
   refundRequests,
   cashReceipts,
   paymentStateTransitions,
-  outboxEvents,
   providerWebhookReceipts,
   pointEvents,
   pointEventDetails,
