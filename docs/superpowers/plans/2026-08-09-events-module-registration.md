@@ -391,7 +391,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 **Task 5 완료 후 실측(2026-08-09)이 이 태스크를 세 조각으로 갈랐다.** 원안은 한 PR 을 가정했으나 두 사실이 그걸 막는다:
 
 - `@InjectStreamPublisher` 는 **21곳**이다 — core 7 · user-service 7 · channel-adapter 3 · membership 2 · ugc-service 2. (2026-08-09 에 한 번 "26곳"으로 정정했다가 되돌렸다. 그 26 은 `libs/events` 의 JSDoc 예시 3건과 import 문을 걸러내지 못한 grep 이었다 — **플랜의 원래 숫자 21 이 맞다.**) 중요한 것은 수가 아니라 분포다: **`user-service`(7)·`ugc-service`(2) 는 이 워크스트림이 한 번도 건드리지 않은 앱**이고, Task 5 의 이주 대상(소비 7앱)과 집합이 다르다.
-- outbox 5벌은 **서로 다른 테이블**에 쓴다 (`outbox_events` / `wmsTables.outboxEvents` / wallet 자체 스키마). 회수는 리팩터가 아니라 **앱 간 데이터 마이그레이션**이다.
+- outbox 5벌은 **서로 다른 데이터베이스**에 쓴다 — `libs/events` 는 `eventSchema.table('outbox_events')`, core 는 `inventory.schema.ts` 의 `outboxEvents`, wallet 은 `apps/wallet/src/schema.ts` 의 `outboxEvents`. 앱마다 자기 DB 를 가지므로 **테이블을 하나로 합칠 수 없고 합칠 필요도 없다.**
 
 그리고 **5-C 를 막고 있는 것은 6-A 하나뿐**이다. 6-B·6-C 를 기다릴 이유가 없다.
 
@@ -438,8 +438,8 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 - [ ] **선행: Task 0** — core 의 `outbox.service.ts` 2벌(fulfillment · inventory/shared, import 경로만 다름)을 먼저 합친다. 안 하면 같은 회수를 두 번 한다
 - [ ] 공용 outbox 스키마에 `idempotencyKey` · `partitionKey` 추가 (core 판본과 기능 동등하게) — **이게 5벌이 생긴 원인이다.** 공용이 부족해서 각자 만든 것이지 우회한 게 아니다
 - [ ] 앱 자체 판본을 하나씩 회수 — core · wallet · channel-adapter
-- [ ] **마이그레이션은 expand phase 이므로 `migrate → deploy` 순서** (CLAUDE.md 의 phase 별 순서 주의 — contract phase 와 반대다)
-- [ ] 테이블이 다르므로 **기존 미발행 행의 이관 전략을 먼저 정한다** (dual-write 후 드레인 / 옛 dispatcher 를 큐가 빌 때까지 유지 / 그 외)
+- [ ] **마이그레이션이 생긴다면 컬럼 정합용 per-app additive 뿐이다.** expand phase 이므로 `migrate → deploy` 순서 (CLAUDE.md 의 phase 별 순서 주의 — contract phase 와 반대다)
+- [ ] **행 이관은 없다.** 앱마다 DB 가 달라 테이블이 그 자리에 남는다. 옛 dispatcher 를 드레인할 필요도 없다 — 같은 테이블을 새 구현이 계속 읽으면 된다
 
 각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
 
