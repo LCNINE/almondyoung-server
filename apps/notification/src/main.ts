@@ -4,7 +4,6 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { Logger } from 'nestjs-pino';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
@@ -95,17 +94,12 @@ async function bootstrap() {
       done();
     });
 
-  // Kafka Consumer 연결
-  const consumerOptions = EventsModule.forConsumer({
-    streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
+  // Kafka Consumer 연결 — 구독 목록 인자가 없다. 소비 집합은 컨트롤러의 `@On`
+  // 데코레이터에서 도출되고, 도출된 토픽은 startConsumer 가 로그로 찍는다 (ADR-0029 §3).
+  await EventsModule.startConsumer(app, {
     groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
     kafka: createKafkaConfigFromEnv()!,
   });
-
-  app.connectMicroservice(consumerOptions);
-  await app.startAllMicroservices();
-
-  console.log('🚀 Kafka Consumer 연결 완료 (USER_STREAM, ORDER_STREAM, PAYMENT_STREAM 구독)');
 
   const port = process.env.PORT ?? 5001;
   await app.listen(port, '0.0.0.0');

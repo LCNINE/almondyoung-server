@@ -1,6 +1,6 @@
 // apps/notification/src/dispatcher/handlers/user-event.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { EventPayload, EventEnvelope, On } from '@app/events';
+import { EventPayload, EventEnvelope, On, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { NotificationDispatcherService } from '../services/notification-dispatcher.service';
 import { EventMappingService } from '../../shared/services/event-mapping.service';
@@ -17,6 +17,11 @@ import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
  */
 @Controller()
 @UseInterceptors(EventTypeGuard)
+// 재시도 금지 — NotificationDispatcherService.send 는 채널마다 notifications 행을 INSERT 하고
+// 큐에 적재하므로, 루프 중간에 throw 하면 재시도가 앞 채널을 재발송한다(고객이 보는 중복).
+// maxRetries:0 은 시도 횟수를 지금과 동일하게 1회로 유지하면서, 실패를 조용한 소실이 아니라
+// DLQ 로 보이게 한다 — 오늘보다 순수 개선이다. 멱등 키 도입은 ADR-0029 Follow-up 11.
+@RetryPolicy({ maxRetries: 0 })
 export class UserEventConsumer {
   private readonly logger = new Logger(UserEventConsumer.name);
 

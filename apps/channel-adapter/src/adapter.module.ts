@@ -13,6 +13,8 @@ import {
   EventTrackingService,
   EventTraceApiModule,
   createKafkaConfigFromEnv,
+  EVENTS_CONSUMER_POLICY,
+  type EventsConsumerPolicy,
 } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
@@ -240,6 +242,23 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // Event Chain Tracking (환경 무관하게 항상 등록)
     EventChainService,
     EventTrackingService,
+
+    // 소비 정책 (ADR-0029 §1 — 정책은 도출 불가한 사실이라 선언이 맞다).
+    //
+    // 이 앱만 `forConsumerModule` 을 부르지 않아 정책 선언 자리가 없었고, 그래서
+    // `EVENTS_CONSUMER_POLICY` 토큰이 컨테이너에 없었다. 그 상태로 startConsumer 로
+    // 이주하면 `buildConsumerInterceptors` 의 optionalGet 이 undefined 를 받아
+    // 기본값 `validateOnConsume: true` 가 먹는다 — **선택이 아니라 누락으로** 배선
+    // 이주와 검증 활성화가 한 배포에 같이 켜지는 것이다. 외부 채널에서 들어오는
+    // payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 명시한다.
+    //
+    // `forConsumerModule` 을 부르지 않는 이유: 그 표면은 `streams` 를 필수로 받는데,
+    // 그 목록이야말로 이 워크스트림이 없애는 중인 두 번째 진실이다. 필요한 것은
+    // 정책 하나뿐이므로 정책만 등록한다. Task 7 의 `forApp` 이 이 자리를 흡수한다.
+    {
+      provide: EVENTS_CONSUMER_POLICY,
+      useValue: { validation: { validateOnConsume: false } } satisfies EventsConsumerPolicy,
+    },
 
     // Kafka 환경변수 없을 때(로컬): NullEventPublisher로 DI 채우기
     ...(!process.env.KAFKA_BROKERS

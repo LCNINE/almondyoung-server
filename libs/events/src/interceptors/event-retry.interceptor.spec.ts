@@ -56,9 +56,31 @@ function makeKafkaContext(overrides: Partial<KafkaMessage> = {}, heartbeat = jes
   return { ctx, heartbeat };
 }
 
+/**
+ * 클래스 레벨 @RetryPolicy 픽스처 — 핸들러에는 데코레이터가 없다.
+ * notification 의 22개 핸들러가 이 모양을 쓴다(핸들러마다 반복하면 새 핸들러에서 조용히 누락됨).
+ */
+@RetryPolicy({ maxRetries: 0 })
+class ClassPolicyConsumer {
+  async handleBare() {}
+
+  /** 핸들러 선언이 클래스 선언을 덮는지 확인하는 대상 */
+  @RetryPolicy({ maxRetries: 2, backoff: 'fixed', initialDelayMs: 1, maxDelayMs: 1 })
+  async handleOverride() {}
+}
+
+/** 대조군 — 클래스에도 핸들러에도 정책이 없다. 없으면 위 테스트가 무엇을 증명하는지 알 수 없다. */
+class NoPolicyConsumer {
+  async handleBare() {}
+}
+
 /** RpcContextCreator가 만드는 형태 그대로: (args, class, handler) + setType('rpc') */
-function makeRpcContext(handler: (...args: unknown[]) => unknown, kafkaCtx: KafkaContext) {
-  const host = new ExecutionContextHost([{}, kafkaCtx], TestConsumer, handler as (...args: unknown[]) => unknown);
+function makeRpcContext(
+  handler: (...args: unknown[]) => unknown,
+  kafkaCtx: KafkaContext,
+  cls: new (...args: never[]) => unknown = TestConsumer,
+) {
+  const host = new ExecutionContextHost([{}, kafkaCtx], cls, handler as (...args: unknown[]) => unknown);
   host.setType('rpc');
   return host;
 }
@@ -76,11 +98,58 @@ describe('EventRetryInterceptor', () => {
     interceptor = new EventRetryInterceptor(new Reflector(), dlq as unknown as DLQHandler);
   });
 
-  async function run(handler: (...args: unknown[]) => unknown, next: CallHandler, kafkaCtx: KafkaContext) {
-    return lastValueFrom(interceptor.intercept(makeRpcContext(handler, kafkaCtx), next), {
+  async function run(
+    handler: (...args: unknown[]) => unknown,
+    next: CallHandler,
+    kafkaCtx: KafkaContext,
+    cls?: new (...args: never[]) => unknown,
+  ) {
+    return lastValueFrom(interceptor.intercept(makeRpcContext(handler, kafkaCtx, cls), next), {
       defaultValue: undefined,
     });
   }
+
+  describe('클래스 레벨 @RetryPolicy (notification 재시도 가드의 기반)', () => {
+    /** 세 테스트가 같은 impl 을 쓴다 — 1회 실패 후 성공. 결과 차이는 오직 정책 출처에서 온다. */
+    const failOnceThenSucceed = () => jest.fn().mockRejectedValueOnce(new TransientError('once')).mockResolvedValue('ok');
+
+    it('대조군: 정책이 없으면 기본값으로 재시도한다 (호출 2회, DLQ 0)', async () => {
+      const { ctx } = makeKafkaContext();
+      const impl = failOnceThenSucceed();
+
+      await expect(run(NoPolicyConsumer.prototype.handleBare, nextFrom(impl), ctx, NoPolicyConsumer)).resolves.toBe(
+        'ok',
+      );
+
+      expect(impl).toHaveBeenCalledTimes(2);
+      expect(dlq.sendToDLQ).not.toHaveBeenCalled();
+    });
+
+    it('클래스 레벨 maxRetries:0 → 핸들러에 데코레이터가 없어도 재시도하지 않고 DLQ (호출 1회)', async () => {
+      const { ctx } = makeKafkaContext();
+      const impl = failOnceThenSucceed();
+
+      await expect(
+        run(ClassPolicyConsumer.prototype.handleBare, nextFrom(impl), ctx, ClassPolicyConsumer),
+      ).resolves.toBeUndefined();
+
+      // 대조군과 impl 이 동일한데 호출이 1회 — 클래스 데코레이터가 재시도를 막았다는 뜻
+      expect(impl).toHaveBeenCalledTimes(1);
+      expect(dlq.sendToDLQ).toHaveBeenCalledTimes(1);
+    });
+
+    it('핸들러 선언이 클래스 선언을 덮는다 (maxRetries:2 → 재시도 후 성공, DLQ 0)', async () => {
+      const { ctx } = makeKafkaContext();
+      const impl = failOnceThenSucceed();
+
+      await expect(
+        run(ClassPolicyConsumer.prototype.handleOverride, nextFrom(impl), ctx, ClassPolicyConsumer),
+      ).resolves.toBe('ok');
+
+      expect(impl).toHaveBeenCalledTimes(2);
+      expect(dlq.sendToDLQ).not.toHaveBeenCalled();
+    });
+  });
 
   it('nonRetryable 에러 → 재시도 없이 즉시 DLQ, 에러 미전파(offset commit 등가)', async () => {
     const { ctx } = makeKafkaContext();

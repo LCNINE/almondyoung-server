@@ -41,6 +41,11 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
       streams: [ORDER_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
       enableAutoDLQ: true,
+      // ⚠️ 현상 유지다 — 이 앱은 소비 경로에 스키마 검증이 붙은 적이 없다
+      // (ADR-0029 §8). startConsumer 로 이주하면 인터셉터가 처음 붙으므로,
+      // 명시하지 않으면 기본값 `true` 가 배선 이주에 묻어 함께 켜진다.
+      // 검증 활성화는 payload 샘플링 후 별도 결정 (플랜 Task 5-C).
+      validation: { validateOnConsume: false },
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'analytics',

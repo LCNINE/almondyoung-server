@@ -192,6 +192,18 @@ microservice.setIsInitHookCalled(true);
 
 **이행 결과: 앱 이주(§Follow-up 5)는 동작 중립이 아니다.** `startConsumer` 로 옮기는 순간 그 앱에서 스키마 검증·재시도·DLQ 가 **처음으로 켜진다.** 지금까지 검증 없이 소비해 온 인바운드 payload 가 스키마를 만족하지 않으면 이주 자체가 DLQ 폭탄이 된다. channel-adapter 에만 붙어 있던 경고가 **7개 앱 전부**로 확대된다.
 
+**세 스위치를 분리해서 켠다 (2026-08-09, 배선 이주 시점의 이행 결정).** 위 문단이 뭉뚱그린 "처음으로 켜진다"는 실은 성질이 다른 두 가지다. 배선(재시도·DLQ)은 켜는 편이 이득이고, 검증은 라이브 payload 를 모르는 채 켜면 사고다. 그래서 배선 이주 PR 에서 **검증이 기본값으로 넘어가는 앱은 `validateOnConsume: false` 를 명시**해 둘을 갈랐다 — 검증을 켜는 것은 payload 를 샘플링한 뒤 앱별로 내리는 별도 결정이다. 명시하지 않으면 `DEFAULT_SCHEMA_VALIDATION_OPTIONS` 의 `true` 가 먹어 **선택이 아니라 누락으로** 두 스위치가 같이 켜진다.
+
+**배선 스위치의 before/after 가 실행으로 확정됐다** (`libs/events/src/transport/handler-failure.spec.ts`). 옛 배선에서 핸들러가 throw 하면 무슨 일이 일어나는지가 이 ADR 안에서도 불명확했는데 — 재전달 루프인지 Nest 가 삼키는지 — 답은 **둘 다 아니고 "조용한 소실"** 이었다:
+
+| | 옛 배선 (`connectMicroservice(opts)`) | `startConsumer` |
+|---|---|---|
+| 핸들러 실행 | 1회 (재시도 없음) | `@RetryPolicy` 대로 |
+| DLQ | 0건 | 1건 |
+| 에러의 최후 | **아무 데도 안 남는다** | 삼킴 → offset commit |
+
+`Server.handleEvent` 는 핸들러가 Observable 을 돌려주면 `connectable(...).connect()` 로 구독만 하고 기다리지 않으며(`server.js:105–117`), 그 connector 는 구독자 없는 `Subject` 라 에러가 들어와도 보고되지 않는다(rxjs 의 unhandled-error 경로조차 타지 않음 — 실행 확인). `handleEvent` 는 그 사이 정상 resolve 했으므로 offset 은 전진한다. **즉 지금까지 실패한 소비는 로그 한 줄 없이 사라져 왔다.** §8 이 "가장 치명적인 실수가 가장 조용하다"고 한 것의 네 번째 실례이며, 배선 스위치가 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽**이라는 근거이기도 하다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.
@@ -247,14 +259,25 @@ microservice.setIsInitHookCalled(true);
 4. ~~`startConsumer(app)` 도입 + `forConsumer` 의 `streams` deprecated. 앱 수정 없이 동작해야 한다.~~ **완료 (2026-08-09).** 소비 집합은 `@OnEvent` 데코레이터에서 도출되고, 레지스트리에 없는 토픽·핸들러 0개는 부팅을 거부한다. 도출 과정에서 §8 과 아래 10번을 발견했다.
 5. `@On` / `@InjectPublisher` 를 기존 데코레이터와 병행 도입, 앱별 이주 (7개 앱 = 7 PR). ⚠️ **§8 에 따라 이주는 동작 중립이 아니다** — 그 앱에서 스키마 검증·재시도·DLQ 가 처음으로 켜진다.
 
+   **배선 이주 완료 (2026-08-09).** 7개 앱 `main.ts` 가 전부 `startConsumer(app, { groupId })` 로 옮겨졌다 — `forConsumer` 호출 **0건**, `@OnEvent` 호출 **0건**. 이로써 §8 의 라이브 구멍(재시도·DLQ·chain 미적용)이 **코드상으로는** 닫혔다. 라이브에서 닫히는 시점은 배포다(아래 10번). 검증 스위치는 함께 켜지 않았다 — core·analytics·search·channel-adapter 에 `validateOnConsume: false` 를 명시해 분리했고, 그 한 줄을 뒤집는 것이 남은 작업이다(플랜 Task 5-C).
+
+   부팅 거부(§3)가 이주를 깨지 않는지 전수로 확인했다: 7개 앱의 `(등록된 컨트롤러 → @On → 토픽)` 집합에 핸들러 0개인 앱도, 레지스트리 밖 토픽도 없다. 실측 핸들러는 **87개**(ADR Consequences 표의 89 는 이주 전 `@OnEvent` 기준 수치이며 analytics·membership 이 각 1 많다). `controllers:[]` 에 등록되지 않은 `@On` 핸들러는 0개다. **channel-adapter 의 도출 토픽은 9개** — 옛 `forConsumer` 목록의 6개가 아니며, 빠져 있던 셋이 정확히 이 ADR Context 의 오판 대상(`PAYMENT_STREAM`·`USER_STREAM`·`CORE_ORDER_STREAM`)이다. 도출은 처음부터 옳은 값을 낸다.
+
    **앱별 데코레이터 이주 완료 (2026-08-09).** 7개 앱 · 소비 핸들러 **87개 전량**이 `@On` + `EventPayloadOf`/`EnvelopeOf` 로 옮겨졌고 `@OnEvent` 호출은 0건이다. `main.ts` 는 손대지 않았으므로 **이 단계는 동작 중립**이다 — §8 의 라이브 구멍은 배선 이주(플랜 Task 5-B) 전까지 그대로 남는다. 이주 중 계약의 구멍 두 종류가 드러났다(위 §4 의 "`@On` 은 계약에 없는 이벤트를 소비할 수 없다" 참조). 회귀 방지는 `scripts/events/event-handler-contract-audit.js` (`npm run audit:event-handlers`) 가 맡는다 — `@On` 의 이벤트 키와 payload/envelope 도출 키의 불일치는 타입이 끝내 잡지 못하므로, 이 게이트는 이주 종료 후에도 남긴다. **`@InjectStreamPublisher` → `@InjectPublisher` 는 아직 0건**(21곳): 발행 쪽 표면이라 Follow-up 6 에서 발행 경로를 통합할 때 함께 옮긴다.
 
    **전반부(데코레이터 도입) 완료 (2026-08-09).** `@On` · `@InjectPublisher` · `PublisherFor` · `EnvelopeOf` 가 옛 표면과 **병행**으로 존재한다. `@On` 은 `@OnEvent` 과 **바이트 단위로 같은 메타데이터**를 남기고(스펙이 메타데이터 키 집합과 값을 전수 비교한다), `@InjectPublisher` 는 `EventsModule.getPublisherToken` 과 같은 토큰을 만든다 — 토큰 형식은 `publishers/publisher-token.ts` 한 곳으로 모았다. 따라서 한 앱 안에서 두 표면을 섞어 써도 되고, 앱 이주는 파일 단위로 쪼갤 수 있다. 앱 이주(후반부)는 아직 0개다. 위 §4 의 두 가지 이행 차이도 참조.
 6. 공용 outbox 에 `idempotencyKey`·`partitionKey`·enqueue 시점 검증 추가 후 앱 자체 판본 5벌 회수. **core 의 두 벌은 import 경로만 다른 동일 파일이므로 이 작업과 무관하게 지금 하나로 합칠 수 있다.**
 7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
-8. channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.
+8. ~~channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.~~ **결정: 이주에 묶었다 (2026-08-09).** 다만 배선 이주 시점에 **검증을 켜지는 않았다.** `forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true` 라, 아무 조치 없이 `startConsumer` 로 옮기면 이 앱만 배선과 검증이 **선택이 아니라 누락으로** 동시에 켜진다. 외부 채널 유래 payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록하고 `validateOnConsume: false` 를 명시했다. `forConsumerModule` 을 새로 부르지 않은 이유는 그 표면이 `streams` 를 필수로 받기 때문이다 — 그 목록이야말로 §2·§3 이 지우는 중인 두 번째 진실이라, 정책 하나를 얻자고 그것을 되살릴 수 없다. Task 7 의 `forApp` 이 이 자리를 흡수한다. 검증을 실제로 켜는 것은 payload 샘플링 후(플랜 Task 5-C).
 9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정).
  `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/ClsInterceptor 가 없어 `EventChainService.setChainId` 가 "No CLS context available" 로 던지고, `ChainContextInterceptor` 의 `catch {}` 가 그것을 삼킨다. 결과적으로 **소비 측 `chainId`/`eventId` 전파가 전 앱에서 죽어 있다.** 3번의 파싱 버그와 원인이 다르므로 별도 수정이 필요하다 — 이 워크스트림에 묶을지 독립 처리할지 결정한다. 회귀 감지는 `round-trip.spec.ts` 의 `it.failing` 이 맡는다. (그 인터셉터 자체가 하이브리드 앱에서 붙지 않는다는 §8 이 겹친다 — 두 원인이 독립적으로 존재한다.)
-10. 🔴 **라이브 구멍: 7개 소비 앱 전부에서 스키마 검증·재시도·DLQ·chain 인터셉터가 적용되지 않고 있다** (2026-08-09 발견, §8). `startConsumer` 는 이 구멍이 없는 새 배선을 제공하지만, **앱들이 이주하기 전까지 라이브 상태는 그대로다.** 옛 표면(`forConsumer`)에 같은 배선을 소급 적용하는 것은 의도적으로 하지 않았다 — 7개 앱에서 검증·DLQ 가 한 배포에 동시에 켜지며, 지금까지 검증 없이 통과하던 인바운드 payload 가 있다면 그 배포가 DLQ 폭탄이 된다. 대신 앱별 이주(5번)에서 하나씩, 관찰 가능한 단위로 켠다. **이 항목이 닫히는 시점은 마지막 앱이 이주한 때다.**
+10. 🔴 **라이브 구멍: 7개 소비 앱 전부에서 스키마 검증·재시도·DLQ·chain 인터셉터가 적용되지 않고 있다** (2026-08-09 발견, §8). `startConsumer` 는 이 구멍이 없는 새 배선을 제공하지만, **앱들이 이주하기 전까지 라이브 상태는 그대로다.** 옛 표면(`forConsumer`)에 같은 배선을 소급 적용하는 것은 의도적으로 하지 않았다 — 7개 앱에서 검증·DLQ 가 한 배포에 동시에 켜지며, 지금까지 검증 없이 통과하던 인바운드 payload 가 있다면 그 배포가 DLQ 폭탄이 된다. 대신 앱별 이주(5번)에서 하나씩, 관찰 가능한 단위로 켠다.
+
+    **코드상으로는 닫혔다 (2026-08-09) — 라이브에서는 아직이다.** 7개 앱이 모두 `startConsumer` 로 이주했으나 이 레포는 autodeploy 가 없어([[0005-drizzle-migration-and-autodeploy]] §4) 누군가 `sst deploy` 를 부르기 전까지 라이브는 옛 배선이다. **이 항목이 닫히는 시점은 마지막 앱이 배포된 때다.** 그때 `start-consumer.spec.ts` 의 "옛 앱 배선" describe 도 함께 지운다 — 그 전까지는 아직 살아 있는 결함의 유일한 실행 가능한 기록이다. 배포는 앱 간 순서가 없다(각 앱 이주가 그 앱에만 영향을 준다). 배포 후 켜지는 것은 **재시도·DLQ·chain 뿐이고 스키마 검증은 아니다** — 8번·5번 참조.
+11. ⚠️ **notification 의 소비 핸들러는 재실행에 안전하지 않다** (2026-08-09 발견, 미수정). 배선 이주로 재시도가 처음 실재하게 되면서 87개 핸들러의 멱등성을 전수 확인했고, 6개 앱은 안전했다(core = `messageId` 마커 / channel-adapter = `inbox_events` 단일 insert / membership = unique 마커 + 상태 가드 / wallet = idempotency key / analytics = `onConflictDoNothing(messageId)` + upsert / search = 고정 ID upsert). **notification 만 멱등 키가 없다.** `NotificationDispatcherService.send` 는 `dto.channels` 를 루프 돌며 채널마다 행을 insert 하고 큐에 넣으므로, 채널 1 성공 후 채널 2 에서 throw 하면 재시도가 루프를 처음부터 다시 돌아 **채널 1 이 다시 발송된다.** 노출은 좁다 — 프로바이더 전송 실패는 `sendNotificationDirectly` 의 `catch` 가 삼켜 핸들러까지 올라오지 않고, 실제로 throw 하는 건 DB·템플릿 조회 실패 정도다. 그 경우 옛 배선에서는 메시지가 통째로 소실됐고 새 배선에서는 앞 채널이 최대 4회 중복될 수 있다. **결정 (2026-08-09, 5-B PR 에 포함): (b) `@RetryPolicy({ maxRetries: 0 })`.**
+
+"소실 ↔ 중복" 교환으로 제시했으나 **교환이 아니었다.** `maxRetries: 0` 은 시도 횟수를 옛 배선과 동일한 1회로 유지하므로 중복 위험이 0 이고, 동시에 실패가 조용한 소실이 아니라 **DLQ 로 관측된다.** 두 축 모두에서 옛 배선보다 나쁘지 않고 한 축에서 낫다 — 저울에 올릴 사안이 아니었다. (a) dedup 키는 재시도의 이점을 실제로 얻고 싶어질 때 별건으로 다룬다.
+
+부수 변경: 정책 조회를 `reflector.get(META, handler)` → `getAllAndOverride(META, [handler, class])` 로 바꿔 **클래스 레벨 선언을 허용**했다(핸들러 선언이 여전히 우선). 이유는 편의가 아니라 누락 방지다 — 핸들러만 본다면 notification 의 22개 핸들러에 데코레이터를 22번 반복해야 하고, **새 핸들러가 추가될 때 조용히 기본 재시도로 돌아간다.** `@DisableDLQ` 도 같은 이유로 함께 바꿨다(한쪽만 클래스 레벨을 지원하면 그 자체가 함정이다).
 
 실행 계획은 [`docs/superpowers/plans/2026-08-09-events-module-registration.md`](../superpowers/plans/2026-08-09-events-module-registration.md).

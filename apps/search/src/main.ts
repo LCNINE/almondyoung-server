@@ -3,7 +3,6 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
-import { PRODUCT_STREAM, UGC_EVENT_STREAM } from '@packages/event-contracts';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SearchModule } from './search.module';
 
@@ -20,14 +19,12 @@ async function bootstrap() {
 
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
-    const consumerOptions = EventsModule.forConsumer({
-      streams: [PRODUCT_STREAM, UGC_EVENT_STREAM],
+    // 구독 목록 인자가 없다 — 소비 집합은 컨트롤러의 `@On` 에서 도출된다 (ADR-0029 §3).
+    // 도출된 토픽은 startConsumer 가 로그로 찍으므로 여기서 손으로 나열하지 않는다.
+    await EventsModule.startConsumer(app, {
       groupId: process.env.KAFKA_GROUP_ID || 'search-indexer',
       kafka: kafkaConfig,
     });
-    app.connectMicroservice(consumerOptions);
-    await app.startAllMicroservices();
-    logger.log('Kafka consumer connected (products.events.v1, ugc.events.v1).');
   } else {
     logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
   }

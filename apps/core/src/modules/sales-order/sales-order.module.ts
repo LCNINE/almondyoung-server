@@ -31,6 +31,13 @@ import { WalletRefundClient } from './services/wallet-refund.client';
       streams: [ORDER_STREAM],
       groupId: 'almondyoung-order-consumer',
       enableAutoDLQ: true,
+      // ⚠️ 이 `false` 는 **현상 유지**이지 새 결정이 아니다. 이 앱은 하이브리드
+      // connectMicroservice 때문에 소비 경로에 스키마 검증이 붙은 적이 없다
+      // (ADR-0029 §8). main.ts 가 startConsumer 로 옮겨가면서 인터셉터가 처음으로
+      // 붙으므로, 명시하지 않으면 기본값 `true` 가 먹어 배선 이주와 검증 활성화가
+      // 한 배포에 같이 켜진다. 검증을 켜는 것은 인바운드 payload 를 샘플링한 뒤
+      // 별도로 내리는 결정이다 (플랜 Task 5-C).
+      validation: { validateOnConsume: false },
     }),
 
     // OutboxService (Sales Order 이벤트 발행용)

@@ -226,13 +226,19 @@ describe('startConsumer — 부팅 거부', () => {
 });
 
 /**
- * 옛 배선의 현재 상태를 실행 가능한 형태로 남긴다 (ADR-0029 §8).
+ * 옛 배선의 상태를 실행 가능한 형태로 남긴다 (ADR-0029 §8).
  *
  * 이 describe 가 **초록이라는 사실 자체가 라이브 결함의 증거**다 — 스키마를 위반한
- * 메시지가 검증을 통과해 핸들러까지 간다. 7개 소비 앱이 지금 이 상태다.
- * 앱들이 `startConsumer` 로 이주하면 이 스펙은 삭제된다.
+ * 메시지가 검증을 통과해 핸들러까지 간다.
+ *
+ * **삭제 시점: Task 5-B 가 배포된 뒤.** 코드상으로는 7개 앱이 모두 `startConsumer` 로
+ * 이주했지만(`forConsumer` 호출 0건), 이 레포는 autodeploy 가 없어(ADR-0005 §4) 누군가
+ * `sst deploy` 를 부르기 전까지 **라이브는 여전히 이 배선**이다. 즉 위 문장은 지금도
+ * 참이다. 배포가 끝나 라이브에서 옛 배선이 사라지면 이 describe 는 그때 지운다 —
+ * 그 전에 지우면 아직 살아 있는 결함의 유일한 실행 가능한 기록이 없어진다.
+ * (`forConsumer` 자체의 제거는 Task 7.)
  */
-describe('현재 앱 배선 (forConsumer + connectMicroservice) — 소비 인터셉터가 붙지 않는다', () => {
+describe('옛 앱 배선 (forConsumer + connectMicroservice) — 소비 인터셉터가 붙지 않는다', () => {
   it('스키마 위반 메시지가 검증 없이 핸들러까지 도달한다', async () => {
     const broker = new InMemoryBroker();
     const moduleRef = await buildModule([CartConsumer], broker);
