@@ -9,7 +9,6 @@ import fastifyMultipart from '@fastify/multipart';
 import { Logger } from 'nestjs-pino';
 import { WalletModule } from './wallet.module';
 import { EventsModule } from '@app/events';
-import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams';
 
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -70,13 +69,6 @@ async function bootstrap() {
   });
   app.useLogger(app.get(Logger));
 
-  app.connectMicroservice(
-    EventsModule.forConsumer({
-      streams: [UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM],
-      groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
-    }),
-  );
-
   const isDev = process.env.NODE_ENV !== 'production';
   const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGINS);
 
@@ -128,7 +120,12 @@ async function bootstrap() {
     });
 
   const port = Number(process.env.PORT ?? 3000);
-  await app.startAllMicroservices();
+  // Kafka 컨슈머 연결 — 구독 목록 인자가 없다. 소비 집합은 컨트롤러의 `@On` 에서
+  // 도출된다 (ADR-0029 §3). connect 와 start 를 한 호출이 겸하므로, 예전에 파일
+  // 위아래로 흩어져 있던 두 호출이 여기 한 줄로 모였다.
+  await EventsModule.startConsumer(app, {
+    groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
+  });
   await app.listen(port, '0.0.0.0');
 }
 

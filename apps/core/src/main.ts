@@ -7,7 +7,6 @@ import fastifyMultipart from '@fastify/multipart';
 import { Logger } from 'nestjs-pino';
 import { EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
-import { ORDER_STREAM } from '@packages/event-contracts';
 import { AppModule } from './app.module';
 import { createGlobalValidationPipe } from './platform/http/validation-pipe';
 
@@ -80,13 +79,10 @@ async function bootstrap() {
       done();
     });
 
-  // Phase 5+: Kafka consumer 연결
-  const consumerOptions = EventsModule.forConsumer({
-    streams: [ORDER_STREAM],
-    groupId: 'almondyoung-order-consumer',
-  });
-  app.connectMicroservice(consumerOptions);
-  await app.startAllMicroservices();
+  // Kafka consumer 연결 — 구독 목록 인자가 없다. 소비 집합은 컨트롤러의 `@On`
+  // 데코레이터에서 도출되고, 소비 인터셉터(재시도·DLQ·스키마 검증)도 여기서
+  // 마이크로서비스 스코프로 붙는다 (ADR-0029 §3·§8).
+  await EventsModule.startConsumer(app, { groupId: 'almondyoung-order-consumer' });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
