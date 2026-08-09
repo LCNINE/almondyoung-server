@@ -298,20 +298,23 @@ async function main(): Promise<void> {
 
   // 명시 URL(로컬·스크래치)이 있으면 그대로 쓰고 sst 재진입을 건너뛴다. 없으면 `db:migrate`
   // 와 같은 경로로 간다 — `sst shell` 안에서 Resource 자격증명 + 앱별 논리 DB 이름.
+  //
+  // ⚠️ SST 경로에서 `buildDatabaseUrl` 을 쓰면 안 된다 — 그건 **drizzle-kit 전용** URL 이고
+  // `uselibpqcompat` 이 붙어 있어 postgres.js 로 붙으면 서버가 startup 파라미터로 받아
+  // 거부한다. `createServiceConnection` 이 같은 자격증명에서 postgres.js 모양으로 만든다.
   const explicitUrl = typeof args.get('url') === 'string' ? (args.get('url') as string) : process.env.DATABASE_URL;
 
-  let databaseUrl: string;
+  let sql: Sql;
   if (explicitUrl) {
-    databaseUrl = explicitUrl;
+    sql = postgres(explicitUrl, { max: 1, prepare: false });
   } else {
     const stage = typeof args.get('stage') === 'string' ? (args.get('stage') as string) : undefined;
     const deployment = typeof args.get('deployment') === 'string' ? (args.get('deployment') as string) : undefined;
     await ensureInsideSstShell({ stage, deployment });
-    const { buildDatabaseUrl } = await import('../seeding/lib/db-connection');
-    databaseUrl = buildDatabaseUrl(APP_DATABASE[app]);
+    const { createServiceConnection } = await import('../seeding/lib/db-connection');
+    sql = createServiceConnection(APP_DATABASE[app], { max: 1, prepare: false });
   }
 
-  const sql = postgres(databaseUrl, { max: 1, prepare: false });
   try {
     if (!(await legacyTableExists(sql))) {
       console.log(
