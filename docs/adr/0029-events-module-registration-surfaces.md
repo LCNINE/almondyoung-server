@@ -275,6 +275,33 @@ microservice.setIsInitHookCalled(true);
 
 **켜는 비용은 낮다 — 스키마 위반은 재시도하지 않는다.** `EventRetryInterceptor` 가 `SchemaValidationError` 를 `nonRetryableErrors` 에 강제로 넣으므로(`event-retry.interceptor.ts:91`) 위반 메시지는 백오프 없이 즉시 DLQ 로 가고 offset 이 전진한다. 검증을 켜는 것이 파티션을 막는 재시도 폭풍을 부르지 않는다는 뜻이다. 이 사실과 위 2번의 멱등성은 `libs/events/src/transport/consume-validation.spec.ts` 가 실행으로 고정한다 — 재시도 억제는 **대조군**(스키마와 무관한 에러는 같은 `@RetryPolicy` 로 4회 실행됨)과 나란히 두어야 `maxRetries` 설정 탓이 아님이 드러나므로 둘을 함께 넣었다.
 
+### 5-1. outbox 는 `libs/events` 가 스키마까지 소유하고 각 앱 DB 의 `event` 스키마에서 돈다
+
+*(2026-08-09 결정. Task 6-C 착수 전 필요한 결정이라 여기 못박는다.)*
+
+Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸다. 결정한다 — **(B) 수렴**이다.
+
+- **(A) 기각 — 서술자 파라미터화.** `libs/events` 가 구현만 소유하고 각 앱이 자기 테이블을 서술자로 선언. 마이그레이션이 0 이지만 한 구현이 N 가지 테이블 모양을 떠받쳐야 하고, 컬럼명·타입 차이가 서술자로 새어 나온다. 이 ADR §1 의 원칙("두 벌은 어긋난다")을 outbox 층에서 그대로 재생산한다.
+- **(B) 채택 — `event.outbox_events` 로 수렴.** `libs/events` 가 구현과 스키마를 **둘 다** 소유한다. 각 앱은 **자기 DB 의** `event.outbox_events` 를 쓴다(`pgSchema('event')`). 테이블 모양이 하나이므로 서술자 추상화 자체가 필요 없다.
+
+**이미 절반 깔려 있다.** `event` 스키마는 analytics · channel-adapter · core · membership · file-service · wallet 의 baseline 마이그레이션에 이미 들어 있고, core 의 `merged-schema.ts` 에는 `// Phase 6+: ...EventsModule.outboxSchema,` 가 주석으로 남아 있다 — 원래 설계 의도가 (B) 였다는 흔적이다. core catalog 와 membership 은 이미 `enableOutbox: true` 로 공용 테이블에 적재 중이다.
+
+**행 이관은 없다. 드레인이다.** 앱마다 DB 가 다르므로 테이블을 옮길 일이 없고, outbox 행은 디스패처가 5초 주기로 비우는 휘발성 데이터다. expand 단계에서 새 코드가 `event.outbox_events` 에 쓰기 시작하고, 옛 디스패처는 옛 테이블이 빌 때까지 계속 돌린다. contract 단계에서 옛 테이블과 디스패처를 지운다.
+
+#### 선행 조건 — 공용 판본이 core 판본보다 약하다
+
+5벌이 생긴 이유는 우회가 아니라 **공용이 모자랐기 때문**이고, 그 격차가 지금도 그대로다:
+
+| | 공용 `event.outbox_events` | core 로컬 `outboxEvents` |
+|---|---|---|
+| 멱등 | 없음 | `idempotencyKey` + **`unique(topic, eventType, idempotencyKey)`** |
+| 파티션 키 | 없음 | `partitionKey` |
+| 재시도 | `retryCount` (즉시 폴링) | `attempts` + **`nextAttemptAt`** (예약 백오프) |
+
+**core 에서 `idempotencyKey` 를 넘기는 호출이 254곳이다.** 컬럼 추가 없이 호출자를 공용으로 갈아끼우면 그 254곳의 중복 방어가 조용히 사라진다 — 이 ADR 이 내내 다룬 "무증상 소실"의 새 사례를 만드는 것이다.
+
+따라서 6-C 의 순서는 **(1) 공용을 core 와 기능 동등하게 만든다 → (2) 회수한다** 이고, 역순은 금지다. `nextAttemptAt` 은 컬럼이 아니라 **의미론 차이**임에 주의한다 — 공용 디스패처는 예약 재시도를 모른다. 공용에 그 능력을 넣든지, 넣지 않기로 하고 그 손실을 명시하든지 **택일해서 기록**한다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.
