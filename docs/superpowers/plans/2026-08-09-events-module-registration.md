@@ -447,14 +447,20 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 "공용에 컬럼 추가"가 아니라 **승격**이다. core 디스패처는 공용보다 두 세대 앞서 있다 — `outbox-dispatcher.service.ts:132` 가 `nextAttemptAt` 을 lease 로 쓰고(발행 중 죽으면 만료 후 재시도), `:127` 이 attempts 증가 지점을 하나로 모으고, `:252` 가 지수 백오프를 계산한다. 공용은 `status='PENDING' AND retryCount < max` 로 5초마다 즉시 재시도할 뿐이다.
 
-- [ ] **Task 0 을 여기 접는다** — core 의 `outbox.service.ts` 2벌(fulfillment · inventory/shared, import 경로만 다름)을 먼저 하나로. 6-C-2 가 어차피 그 파일들을 건드린다
-- [ ] 공용 스키마에 `idempotencyKey` + **`unique(topic, eventType, idempotencyKey)`** · `partitionKey` 추가. 앱별 additive 마이그레이션, expand phase 이므로 **`migrate → deploy`**
-- [ ] 공용 디스패처에 **예약 백오프(`nextAttemptAt`)와 lease 를 넣는다** (ADR §5-1 결정). 안 넣으면 6-C-2 가 조용한 동작 변경이 된다
-- [ ] 호출자는 하나도 고치지 않는다. 이 조각이 끝나도 라이브 동작은 그대로다
+- [x] **Task 0 을 여기 접었다** — `apps/core/.../fulfillment/outbox/outbox.service.ts` 를 삭제하고 `inventory/shared/outbox/outbox.service.ts` 하나로 모았다(import 경로만 다른 동일 파일이었다). 호출부 14곳 재지정. 회수 대상이 1개 파일로 줄어 6-C-2 가 그만큼 작아진다
+- [x] 공용 스키마에 `idempotencyKey` + **`unique(topic, eventType, idempotencyKey)`** · `partitionKey` **· `nextAttemptAt`** 추가 — **컬럼은 2개가 아니라 3개다.** ADR 이 "`nextAttemptAt` 은 컬럼이 아니라 의미론 차이" 라고 적어 둔 것은 틀렸고(공용 테이블에 그 컬럼이 아예 없었다) 정정했다
+- [x] 공용 디스패처에 **예약 백오프**(`10/30/60/300초` — core 와 같은 표)를 넣었다. **lease 는 성질만 옮기고 인코딩은 옮기지 않았다** — 공용에는 이미 `PROCESSING` 기반 lease 가 있었고, 그것을 지우고 core 처럼 `next_attempt_at` 한 컬럼에 겹치면 롤링 배포 중 이중 발행 창이 열린다. 근거는 ADR §5-1 "이행 완료" 절
+- [x] 호출자는 하나도 고치지 않았다. `OutboxPublisher.write` 도 새 컬럼을 채우지 않으므로 core catalog · membership 의 라이브 동작이 그대로다
+
+**마이그레이션 실측: 5개 앱 생성 · 1개 앱 차단.** 공용 디스패처가 도는 앱은 core · membership 둘뿐이지만 `outbox.schema.ts` 를 물고 있는 `drizzle.config.ts` 는 **6개**다 — analytics · channel-adapter · core · file-service · membership · wallet. 그중 **wallet 만 실패**했다: `drizzle-kit generate` 가 `meta/` 의 스냅샷 체인 분기(PR #501 rebase 산물, HEAD 에 그대로)에서 멈춘다. 최신 스냅샷에 `cash_receipts`·`refund_requests` 가 빠져 있어 `prevId` 만 고쳐도 이미 있는 테이블에 `CREATE TABLE` 을 내므로 손대지 않았다. **wallet 은 이 조각에서 그 컬럼을 쓰지 않아 정확성에 영향이 없으나, 6-C-3 전에 복구가 선행돼야 한다.**
+
+**부수 실측 2건.** file-service 의 `event.outbox_events` 는 2026-06-07 의 `processing_started_at` 마이그레이션을 받지 못한 상태였다 — 이번 마이그레이션이 함께 따라잡는다(그래서 이 앱만 7문). channel-adapter 는 `chk_channel_dispatch_identity_shape` 의 **공백만 다른** DROP+ADD 를 함께 뱉어서 제거했다(두 스냅샷의 제약 문자열을 비교해 공백 차이임을 확인). 라이브 테이블에 불필요한 ACCESS EXCLUSIVE 잠금을 걸 이유가 없다.
+
+**게이트 실측:** `type-check` **164 = 기준선** · `audit:event-handlers` / `audit:event-publishers` / `audit:consume-validation --gate` 전부 exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build` OK. 새 스펙 `libs/events/src/outbox/outbox-backoff-lease.spec.ts` 12건. **대조군을 두 겹으로 뒀다** — (1) 스펙 안에 승격 전 acquire 조건을 넣어 같은 단언이 그것을 통과시키지 않음을 상시 고정, (2) 실파일 변이 3종(백오프 술어 제거 · 백오프를 즉시로 · lease 회수가 `retryCount` 를 소모)으로 각각 빨간불을 재현한 뒤 `cp` 백업에서 sha1 대조로 원복(`git checkout --` 는 미커밋 작업분을 날리므로 쓰지 않는다). `unique` 가 기존 행을 막지 않는다는 가정은 Postgres 16.14 에 생성된 마이그레이션을 그대로 적용해 확인했다(`indnullsnotdistinct = f`).
 
 #### 6-C-2: core 회수 (단독)
 
-- [ ] fulfillment 11 · inventory 6 · sales-order 1 = **18파일**. `wmsTables.outboxEvents` → 공용
+- [ ] fulfillment 11 · inventory 6 · sales-order 1 = ~~18파일~~ → **17파일** (Task 0 이 `fulfillment/outbox/outbox.service.ts` 를 지웠다). `wmsTables.outboxEvents` → 공용. 재측정: `{ grep -rl 'wmsTables.outboxEvents'; grep -rl "shared/outbox/outbox.service'"; } | grep -v spec | sort -u`
 - [ ] **유일하게 재시도 의미론이 바뀌는 조각**이다. 6-C-1 이 백오프를 넣었는지 먼저 확인한다
 - [ ] expand — 새 코드는 `event.outbox_events` 에 쓰고 **옛 디스패처는 그대로 둔다**(옛 테이블을 비워야 하므로)
 

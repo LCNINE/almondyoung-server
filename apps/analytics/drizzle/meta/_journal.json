@@ -22,6 +22,13 @@
       "when": 1785481080636,
       "tag": "20260731065800_add-statistics-aggregates",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786275101385,
+      "tag": "20260809113141_promote-shared-outbox-idempotency-partition-backoff",
+      "breakpoints": true
     }
   ]
 }

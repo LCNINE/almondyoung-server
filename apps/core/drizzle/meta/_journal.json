@@ -428,6 +428,13 @@
       "when": 1786065454996,
       "tag": "20260807011734_add-ai-prompt-presets",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1786275100991,
+      "tag": "20260809113140_promote-shared-outbox-idempotency-partition-backoff",
+      "breakpoints": true
     }
   ]
 }

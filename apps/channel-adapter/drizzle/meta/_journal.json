@@ -29,6 +29,13 @@
       "when": 1784001736580,
       "tag": "20260714040216_flawless_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786275101800,
+      "tag": "20260809113141_promote-shared-outbox-idempotency-partition-backoff",
+      "breakpoints": true
     }
   ]
 }

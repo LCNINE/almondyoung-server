@@ -10,7 +10,7 @@ import { OutboxService as InventoryOutboxService } from '../../../inventory/shar
 import { AuditService } from '../../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../../inventory/shared/outbox/outbox.service';
 import { BatchInventorySessionService } from '../batch-inventory-session.service';
 import { FulfillmentCommandService } from '../fulfillment-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';

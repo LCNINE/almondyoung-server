@@ -18,7 +18,7 @@ import { FulfillmentCommandModule } from './fulfillment-command.module';
 import { WaybillModule } from './waybill/waybill.module';
 
 // Outbox
-import { OutboxService } from './outbox/outbox.service';
+import { OutboxService } from '../inventory/shared/outbox/outbox.service';
 import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services

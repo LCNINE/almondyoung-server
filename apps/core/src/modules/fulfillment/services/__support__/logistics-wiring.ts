@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { wmsSchema, DbTx } from '../../../inventory/schema/inventory.schema';
 
 import { OutboxService as InventoryOutboxService } from '../../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../../inventory/shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../../../inventory/core/repositories/stock-event.store';
 import { LocationService } from '../../../inventory/core/services/location.service';

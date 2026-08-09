@@ -8,7 +8,7 @@ import { BatchControlledStockGuard } from '../../inventory/core/services/batch-c
 import { DbService } from '@app/db';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';

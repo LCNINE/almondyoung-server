@@ -25,7 +25,7 @@ import {
   fulfillmentShippedV1OutboxEvent,
   shipmentShippedOutboxEvent,
 } from '../events';
-import { OutboxService } from '../outbox/outbox.service';
+import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';

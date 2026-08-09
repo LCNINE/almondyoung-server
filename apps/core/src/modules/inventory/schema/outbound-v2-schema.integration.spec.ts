@@ -5,8 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, returnExchangeTables, wmsSchema, wmsTables } from './inventory.schema';
-import { OutboxService as FulfillmentOutboxService } from '../../fulfillment/outbox/outbox.service';
-import { OutboxService as InventoryOutboxService } from '../shared/outbox/outbox.service';
+import { OutboxService } from '../shared/outbox/outbox.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -1961,7 +1960,10 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
     });
   });
 
-  it('deduplicates same-key outbox rows across both writers and keeps distinct keys independent', async () => {
+  // 옛 이름은 "across both writers" 였다 — fulfillment · inventory 두 벌의 `OutboxService` 가
+  // 같은 테이블에 쓰는 것을 확인하던 테스트다. ADR-0029 Task 0 이 두 벌을 하나로 합쳤으므로
+  // 남은 성질은 "dedup 은 인스턴스가 아니라 DB unique 제약이 보장한다" 는 것이다.
+  it('deduplicates same-key outbox rows across writer instances and keeps distinct keys independent', async () => {
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
       const dbService = {
@@ -1969,8 +1971,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         run: <T>(fn: (inner: DbTx) => Promise<T>, inner?: DbTx) =>
           inner ? fn(inner) : db.transaction((transaction) => fn(transaction as unknown as DbTx)),
       } as unknown as DbService<typeof wmsSchema>;
-      const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
-      const inventoryOutbox = new InventoryOutboxService(dbService);
+      const fulfillmentOutbox = new OutboxService(dbService);
+      const inventoryOutbox = new OutboxService(dbService);
       const idempotencyKey = `attempt-${randomUUID()}`;
       const routed = {
         topic: SHIPMENT_STREAM.topic.topic,

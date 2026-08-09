@@ -23,7 +23,7 @@ import {
   ShipmentRecallResponseDto,
 } from '../dto/shipment-recall.dto';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
-import { OutboxService } from '../outbox/outbox.service';
+import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { WaybillService } from '../waybill/waybill.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';

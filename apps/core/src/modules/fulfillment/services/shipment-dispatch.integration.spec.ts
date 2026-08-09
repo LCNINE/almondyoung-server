@@ -17,7 +17,7 @@ import { OutboxService as InventoryOutboxService } from '../../inventory/shared/
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { inRollbackTx, makeDb, makeDbService } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
