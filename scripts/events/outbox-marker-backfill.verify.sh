@@ -6,8 +6,10 @@
 # `DISTINCT ON`, `ON CONFLICT`, NULL 이 unique 를 통과하는 것. 목 DB 로는 그 술어가 무엇을
 # 거르는지 보이지 않는다(6-C-2·3 이 같은 이유로 실 PG 통합을 게이트에 넣었다).
 #
-# 로컬 compose postgres(5432) 에 **스크래치 DB 2개**를 만들고, 두 테이블 DDL 을 실 DB 에서
-# `pg_dump` 로 복사해 온다. 손으로 다시 적으면 운영과 다른 것을 테스트하게 된다.
+# 로컬 compose postgres(5432) 에 **스크래치 DB 2개**를 만든다. 공용 `event.outbox_events` 는
+# 살아남으므로 실 DB 에서 `pg_dump` 로 떠 오고, **옛 테이블은 인라인 스냅샷**이다 — 이 하네스가
+# 검증하는 마이그레이션이 바로 그 테이블을 지우기 때문에 실 DB 를 원본으로 삼으면 한 번
+# 적용된 뒤 하네스가 영영 못 돈다(실제로 그렇게 깨져서 바꿨다).
 #
 # 사용법:  bash scripts/events/outbox-marker-backfill.verify.sh
 #          LOCAL_PG=postgresql://... bash scripts/events/outbox-marker-backfill.verify.sh
@@ -30,19 +32,21 @@ assert() { # name expected actual
   if [ "$2" = "$3" ]; then echo "  ok   $1 = $3"; else echo "  FAIL $1: expected $2, got $3"; FAIL=1; fi
 }
 
-# 실 DB 에서 테이블 DDL 을 그대로 떠 온다. 공용 `event.outbox_events` 는 libs/events 한 파일이
-# 6개 앱에 동일 생성하므로 core 의 적용본이 그 판본이다.
-seed_scratch() { # $1=scratch db  $2=legacy source db  $3=legacy enum name
-  local scr="$1" src="$2" enum="$3"
+# 공용 `event.outbox_events` 는 libs/events 한 파일이 6개 앱에 동일 생성하므로 core 의
+# 적용본이 그 판본이다.
+seed_scratch() { # $1=scratch db  $2=옛 테이블 DDL(인라인 스냅샷)
+  local scr="$1" legacy_ddl="$2"
   psql -d postgres -Atqc "DROP DATABASE IF EXISTS $scr" >/dev/null 2>&1
   psql -d postgres -Atqc "CREATE DATABASE $scr" >/dev/null
   psql -d "$scr" -qc "CREATE SCHEMA IF NOT EXISTS event;" >/dev/null
 
-  psql -d "$src" -Atqc "SELECT 'CREATE TYPE public.$enum AS ENUM (' || string_agg(quote_literal(enumlabel), ',' ORDER BY enumsortorder) || ');' FROM pg_enum e JOIN pg_type t ON t.oid=e.enumtypid WHERE t.typname='$enum';" > "$TMP/enum.sql"
-  psql -d "$scr" -qf "$TMP/enum.sql" >/dev/null 2>&1
+  # 옛 테이블 DDL 은 **인라인 스냅샷**이다. pg_dump 로 실 DB 에서 떠 오고 싶지만, 이 하네스가
+  # 검증하는 바로 그 마이그레이션이 그 테이블을 지운다 — 한 번 적용되고 나면 원본이 사라져
+  # 하네스가 영영 못 돈다(실제로 로컬 core 에서 그렇게 깨졌다). 아래는 삭제 직전 실 DB 를
+  # `pg_dump` 한 것을 그대로 옮긴 것이고, 같은 커밋이 지우는 `schema.ts` 정의와 대응한다.
+  printf '%s\n' "$legacy_ddl" | psql -d "$scr" -q >/dev/null 2>&1
 
-  pg_dump -d "$src" --schema-only -t 'public.outbox_events' 2>/dev/null | grep -v '^--' > "$TMP/legacy.sql"
-  psql -d "$scr" -qf "$TMP/legacy.sql" >/dev/null 2>&1
+  # 공용 테이블은 살아남으므로 실 DB 에서 그대로 뜬다 — 이쪽은 스냅샷이 낡을 위험이 없다.
   pg_dump -d core --schema-only -t 'event.outbox_events' 2>/dev/null | grep -v '^--' > "$TMP/shared.sql"
   psql -d "$scr" -qf "$TMP/shared.sql" >/dev/null 2>&1
 
@@ -50,6 +54,53 @@ seed_scratch() { # $1=scratch db  $2=legacy source db  $3=legacy enum name
   ok=$(psql -d "$scr" -Atqc "SELECT (to_regclass('public.outbox_events') IS NOT NULL AND to_regclass('event.outbox_events') IS NOT NULL)")
   if [ "$ok" != "t" ]; then echo "  FAIL 스크래치 DB 준비 실패: $scr"; FAIL=1; return 1; fi
 }
+
+# ── 삭제 직전 실 DB 의 pg_dump 스냅샷 (ADR-0029 Task 6-C-4) ───────────────────
+read -r -d '' CORE_LEGACY_DDL <<'DDL'
+CREATE TYPE public.outbox_status AS ENUM ('pending','published','failed');
+CREATE TABLE public.outbox_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+    event_type character varying(128) NOT NULL,
+    aggregate_type character varying(64) NOT NULL,
+    aggregate_id uuid NOT NULL,
+    partition_key character varying(128) NOT NULL,
+    payload json NOT NULL,
+    status public.outbox_status DEFAULT 'pending'::public.outbox_status NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    published_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    topic character varying(255) NOT NULL,
+    idempotency_key character varying(255) NOT NULL
+);
+CREATE UNIQUE INDEX uq_outbox_topic_event_idempotency
+    ON public.outbox_events (topic, event_type, idempotency_key);
+DDL
+
+read -r -d '' WALLET_LEGACY_DDL <<'DDL'
+CREATE TYPE public.wallet_outbox_status AS ENUM ('PENDING','PROCESSING','PUBLISHED','FAILED','DEAD_LETTER');
+CREATE TABLE public.outbox_events (
+    id uuid DEFAULT gen_random_uuid() NOT NULL PRIMARY KEY,
+    message_id character varying(64) NOT NULL,
+    event_type character varying(128) NOT NULL,
+    aggregate_type character varying(64) NOT NULL,
+    aggregate_id uuid NOT NULL,
+    partition_key character varying(128) NOT NULL,
+    payload jsonb NOT NULL,
+    status public.wallet_outbox_status DEFAULT 'PENDING'::public.wallet_outbox_status NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone,
+    published_at timestamp with time zone,
+    last_error_code character varying(128),
+    last_error_message text,
+    dead_lettered_at timestamp with time zone,
+    dead_letter_reason text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+CREATE UNIQUE INDEX uq_outbox_events_message_id ON public.outbox_events (message_id);
+DDL
 
 run() { # $1=scratch  $2=app  $3..=flags
   local scr="$1" app="$2"; shift 2
@@ -59,7 +110,7 @@ run() { # $1=scratch  $2=app  $3..=flags
 # ══════════════════════ core ══════════════════════
 echo "══ core"
 SCR_CORE=obmb_verify_core
-seed_scratch "$SCR_CORE" core outbox_status || exit 1
+seed_scratch "$SCR_CORE" "$CORE_LEGACY_DDL" || exit 1
 QC() { psql -d "$SCR_CORE" -Atqc "$1"; }
 
 QC "TRUNCATE public.outbox_events; TRUNCATE event.outbox_events;" >/dev/null
@@ -98,7 +149,7 @@ assert "표지 3건 전부 공용 술어로 조회됨" 3 "$(QC "SELECT count(*) 
 # ══════════════════════ wallet ══════════════════════
 echo "══ wallet"
 SCR_W=obmb_verify_wallet
-seed_scratch "$SCR_W" wallet wallet_outbox_status || exit 1
+seed_scratch "$SCR_W" "$WALLET_LEGACY_DDL" || exit 1
 QW() { psql -d "$SCR_W" -Atqc "$1"; }
 
 QW "TRUNCATE public.outbox_events; TRUNCATE event.outbox_events;" >/dev/null
