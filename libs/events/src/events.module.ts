@@ -23,6 +23,7 @@ import {
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
+import { getPublisherToken } from './publishers/publisher-token';
 import { DLQHandler } from './dlq/dlq-handler.service';
 import { SchemaValidationInterceptor } from './interceptors/schema-validation.interceptor';
 import { ChainContextInterceptor } from './interceptors/chain-context.interceptor';
@@ -561,7 +562,7 @@ export class EventsModule {
    * private readonly orderPublisher: StreamPublisher<OrderEvents>
    */
   static getPublisherToken(topicName: string): string {
-    return `STREAM_PUBLISHER_${topicName}`;
+    return getPublisherToken(topicName);
   }
 
   /**
