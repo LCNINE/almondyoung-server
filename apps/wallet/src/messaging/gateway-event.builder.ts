@@ -1,4 +1,15 @@
+import type {
+  GatewayChargeEventPayload,
+  GatewayRefundEventPayload,
+  PaymentIntentEventPayload,
+} from '@packages/event-contracts/streams';
 import { PaymentIntentStatus, ChargeStatus, RefundStatus } from '../schema';
+
+// 반환 타입은 계약(PAYMENT_STREAM)이 소유한다 (ADR-0029 §5-1, Task 6-C-3).
+// 전에는 셋 다 `Record<string, unknown>` 이었고, 그래서 `StreamPublisher.enqueue` 의 타입 도출이
+// 이 payload 들을 받아 줄 수 없었다 — 필수 필드가 있는지 타입이 말하지 않기 때문이다. 세 함수 다
+// 원래부터 계약의 필수 필드를 전부 채우고 있었으므로 이 좁힘은 실동작을 바꾸지 않고, 앞으로
+// 필드가 빠지면 컴파일에서 걸린다. `extra` 스프레드는 각 계약의 인덱스 시그니처가 받는다.
 
 // ─── Payment Intent Events ────────────────────────────────────────────────────
 
@@ -12,7 +23,7 @@ export interface PaymentIntentEventInput {
   extra?: Record<string, unknown>;
 }
 
-export function buildPaymentIntentEventPayload(input: PaymentIntentEventInput): Record<string, unknown> {
+export function buildPaymentIntentEventPayload(input: PaymentIntentEventInput): PaymentIntentEventPayload {
   return {
     intentId: input.intentId,
     userId: input.userId,
@@ -39,7 +50,7 @@ export interface ChargeEventInput {
   extra?: Record<string, unknown>;
 }
 
-export function buildChargeEventPayload(input: ChargeEventInput): Record<string, unknown> {
+export function buildChargeEventPayload(input: ChargeEventInput): GatewayChargeEventPayload {
   return {
     chargeId: input.chargeId,
     intentId: input.intentId,
@@ -68,7 +79,7 @@ export interface RefundEventInput {
   extra?: Record<string, unknown>;
 }
 
-export function buildRefundEventPayload(input: RefundEventInput): Record<string, unknown> {
+export function buildRefundEventPayload(input: RefundEventInput): GatewayRefundEventPayload {
   return {
     refundId: input.refundId,
     chargeId: input.chargeId,

@@ -3,7 +3,6 @@ import { PaymentIntent } from '../types';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { ChargeReleaseService } from './charge-release.service';
 import {
-  GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
   subscriberExtraFromMetadata,
@@ -29,7 +28,6 @@ export class CancelService {
       reasonCode: 'USER_CANCELED',
       outboxEvent: {
         eventType: GatewayEventType.INTENT_CANCELED,
-        aggregateType: GATEWAY_AGGREGATE_TYPE,
         aggregateId: intent.id,
         payload: buildPaymentIntentEventPayload({
           intentId: intent.id,

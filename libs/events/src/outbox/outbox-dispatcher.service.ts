@@ -6,7 +6,7 @@ import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
-import { eq, inArray, and, lt, lte, or, isNull, not, ilike, type SQL } from 'drizzle-orm';
+import { eq, inArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
 
 /**
  * 실패 후 다음 시도까지의 대기(초). core 로컬 판본
@@ -87,6 +87,7 @@ export class OutboxDispatcher {
       maxRetries: config?.maxRetries ?? 5,
       processingTimeoutMs: config?.processingTimeoutMs ?? 300_000,
       cleanupDays: config?.cleanupDays ?? 7,
+      strictPartitionOrdering: config?.strictPartitionOrdering ?? false,
     };
   }
 
@@ -139,6 +140,8 @@ export class OutboxDispatcher {
             // 보류는 **선택 단계**에서 건다 (Task 6-C-2). 고른 뒤 걸러내면 lease 를 잡아 놓고
             // 버리는 꼴이라, 보류된 행이 `PROCESSING` 에 갇혔다가 timeout 으로 회수된다.
             this.pauseCondition(),
+            // 파티션 순서 보장도 같은 이유로 선택 단계에서 건다 (Task 6-C-3).
+            this.partitionOrderCondition(),
           ),
         )
         .orderBy(outbox_events.createdAt)
@@ -183,6 +186,34 @@ export class OutboxDispatcher {
 
     const matched = clauses.length === 1 ? clauses[0] : or(...clauses);
     return matched ? not(matched) : undefined;
+  }
+
+  /**
+   * 같은 파티션의 **더 이른 미발행 행**이 있으면 후보에서 뺀다
+   * (`strictPartitionOrdering`, Task 6-C-3). 꺼져 있으면 `undefined` — `and()` 가 무시하므로
+   * 조건 자체가 사라진다 = 이 옵션이 생기기 전 동작.
+   *
+   * `(created_at, id)` 를 사전식으로 비교하는 것이 요점이다. `created_at` 만 보면 같은
+   * 밀리초에 적재된 두 행이 서로를 막아 **파티션이 영구히 정지**한다 — 한 트랜잭션에서 두
+   * 이벤트를 적재하면 실제로 같은 타임스탬프가 나온다. `id` 가 그 동률을 깬다.
+   *
+   * `PUBLISHED`/`FAILED` 는 막지 않는다. 최종 실패한 행이 뒤를 영원히 막으면 그 파티션은
+   * 사람이 손대기 전까지 죽는데, 그건 순서 보장이 아니라 가용성 사고다. (wallet 로컬 판본도
+   * `('PENDING','PROCESSING')` 만 봤다 — 같은 선택이다.)
+   */
+  private partitionOrderCondition(): SQL | undefined {
+    if (!this.config.strictPartitionOrdering) return undefined;
+
+    return sql`not exists (
+      select 1
+      from ${outbox_events} previous
+      where previous.partition_key = ${outbox_events.partitionKey}
+        and previous.status in ('PENDING', 'PROCESSING')
+        and (
+          previous.created_at < ${outbox_events.createdAt}
+          or (previous.created_at = ${outbox_events.createdAt} and previous.id < ${outbox_events.id})
+        )
+    )`;
   }
 
   /**

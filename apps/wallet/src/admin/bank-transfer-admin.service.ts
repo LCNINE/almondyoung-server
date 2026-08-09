@@ -6,11 +6,7 @@ import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema
 import { ChargesService } from '../charges/charges.service';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { PendingBankTransferResponseDto } from './dto/pending-bank-transfer.dto';
 
 @Injectable()
@@ -164,7 +160,6 @@ export class BankTransferAdminService {
           reasonCode: 'BANK_TRANSFER_CONFIRMED',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_CAPTURED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,

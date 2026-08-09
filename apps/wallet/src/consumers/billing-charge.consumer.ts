@@ -1,5 +1,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { EventPayload, EventEnvelope, On } from '@app/events';
+import { EventPayload, EventEnvelope, InjectPublisher, On, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { outbox_events as sharedOutboxEvents } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { BillingChargePayload, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DbService } from '@app/db';
@@ -12,12 +14,7 @@ import { ProviderRegistry } from '../providers/provider.registry';
 import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { PaymentProvider, ChargeResult } from '../providers/payment-provider.interface';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
@@ -36,6 +33,8 @@ export class BillingChargeConsumer {
     private readonly chargesService: ChargesService,
     private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   @On(WALLET_COMMAND_STREAM, 'BillingCharge')
@@ -124,15 +123,36 @@ export class BillingChargeConsumer {
         case 'FAILED': {
           // 4xx 경로는 이미 outbox에 FAILED 이벤트가 기록됨.
           // 5xx 경로는 outbox 이벤트가 없을 수 있으므로 존재 여부를 확인 후 없을 때만 재발행.
+          // **두 테이블을 다 본다** (ADR-0029 §5-1, Task 6-C-3 expand 창).
+          //
+          // 새 적재는 공용 `event.outbox_events` 로 가지만, 배포 이전에 기록된 FAILED 이벤트는
+          // 옛 `public.outbox_events` 에만 있다. 새 테이블만 보면 그 인텐트들이 "이벤트 없음"
+          // 으로 보여 **재발행**된다 — 구독자(membership)가 같은 실패를 두 번 받는다.
+          // 옛 테이블 조회는 6-C-4 에서 지운다.
           const [existingFailedEvent] = await this.dbService.db
-            .select({ id: outboxEvents.id })
-            .from(outboxEvents)
+            .select({ id: sharedOutboxEvents.id })
+            .from(sharedOutboxEvents)
             .where(
-              and(eq(outboxEvents.aggregateId, existingId), eq(outboxEvents.eventType, GatewayEventType.INTENT_FAILED)),
+              and(
+                eq(sharedOutboxEvents.aggregateId, existingId),
+                eq(sharedOutboxEvents.eventType, GatewayEventType.INTENT_FAILED),
+              ),
             )
             .limit(1);
+          const [legacyFailedEvent] = existingFailedEvent
+            ? [undefined]
+            : await this.dbService.db
+                .select({ id: outboxEvents.id })
+                .from(outboxEvents)
+                .where(
+                  and(
+                    eq(outboxEvents.aggregateId, existingId),
+                    eq(outboxEvents.eventType, GatewayEventType.INTENT_FAILED),
+                  ),
+                )
+                .limit(1);
 
-          if (existingFailedEvent) {
+          if (existingFailedEvent || legacyFailedEvent) {
             this.logger.log(`[BillingCharge] FAILED intent with existing outbox event (intentId=${existingId}), skip`);
             return;
           }
@@ -169,7 +189,6 @@ export class BillingChargeConsumer {
             reasonMessage: `Intent stuck in ${existingStatus} state for > 15 minutes`,
             outboxEvent: {
               eventType: GatewayEventType.INTENT_FAILED,
-              aggregateType: GATEWAY_AGGREGATE_TYPE,
               aggregateId: existingId,
               payload: buildPaymentIntentEventPayload({
                 intentId: existingId,
@@ -243,10 +262,9 @@ export class BillingChargeConsumer {
         if (!created) throw new Error('PAYMENT_INTENT_INSERT_FAILED');
 
         // Outbox: intent.created
-        await tx.insert(outboxEvents).values(
-          buildOutboxInsertValues({
+        await this.publisher.enqueue(
+          {
             eventType: GatewayEventType.INTENT_CREATED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: created.id,
             payload: buildPaymentIntentEventPayload({
               intentId: created.id,
@@ -261,7 +279,8 @@ export class BillingChargeConsumer {
                 subscriberType: payload.subscriberType,
               },
             }),
-          }),
+          },
+          tx,
         );
 
         return created;
@@ -380,7 +399,6 @@ export class BillingChargeConsumer {
               reasonCode: 'AUTHORIZE_SUCCEEDED',
               outboxEvent: {
                 eventType: GatewayEventType.INTENT_AUTHORIZED,
-                aggregateType: GATEWAY_AGGREGATE_TYPE,
                 aggregateId: intentId,
                 payload: buildPaymentIntentEventPayload({
                   intentId,
@@ -465,7 +483,6 @@ export class BillingChargeConsumer {
               reasonMessage: result.errorMessage ?? 'Billing charge authorization failed',
               outboxEvent: {
                 eventType: GatewayEventType.INTENT_FAILED,
-                aggregateType: GATEWAY_AGGREGATE_TYPE,
                 aggregateId: intentId,
                 payload: buildPaymentIntentEventPayload({
                   intentId,
@@ -514,10 +531,9 @@ export class BillingChargeConsumer {
   ): Promise<void> {
     const now = new Date().toISOString();
     try {
-      await this.dbService.db.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: GatewayEventType.INTENT_FAILED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           // aggregate_id 는 uuid 컬럼이라 intent 가 없을 땐 문자열 키를 넣을 수 없다(22P02).
           // 합성 UUID 를 쓰되, 구독자 라우팅/멱등은 partitionKey 와 payload.intentId 로 처리한다.
           aggregateId: intentId ?? randomUUID(),
@@ -535,7 +551,8 @@ export class BillingChargeConsumer {
             errorMessage,
             occurredAt: now,
           },
-        }),
+        },
+        this.dbService.db,
       );
     } catch (err) {
       this.logger.error(`[BillingCharge] Failed to emit failure event: ${err}`);

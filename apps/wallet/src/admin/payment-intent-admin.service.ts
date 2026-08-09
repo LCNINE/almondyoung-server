@@ -3,11 +3,7 @@ import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import {
   PaymentIntentStatus,
   WalletSchema,
@@ -200,7 +196,7 @@ export class PaymentIntentAdminService {
       providerTransactionId:
         c.providerTransactionId ??
         (typeof (c.responsePayload as { paymentKey?: unknown } | null)?.paymentKey === 'string'
-          ? ((c.responsePayload as { paymentKey: string }).paymentKey)
+          ? (c.responsePayload as { paymentKey: string }).paymentKey
           : null),
       errorCode: c.errorCode ?? null,
       errorMessage: c.errorMessage ?? null,
@@ -454,15 +450,17 @@ export class PaymentIntentAdminService {
     }));
   }
 
-  async resolvePartiallyCapture(
-    intentId: string,
-    action: 'CAPTURED' | 'CANCELED',
-    reason?: string,
-  ): Promise<void> {
+  async resolvePartiallyCapture(intentId: string, action: 'CAPTURED' | 'CANCELED', reason?: string): Promise<void> {
     const db = this.dbService.db;
 
     const [intent] = await db
-      .select({ id: paymentIntents.id, status: paymentIntents.status, userId: paymentIntents.userId, payableAmount: paymentIntents.payableAmount, currency: paymentIntents.currency })
+      .select({
+        id: paymentIntents.id,
+        status: paymentIntents.status,
+        userId: paymentIntents.userId,
+        payableAmount: paymentIntents.payableAmount,
+        currency: paymentIntents.currency,
+      })
       .from(paymentIntents)
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
@@ -490,7 +488,6 @@ export class PaymentIntentAdminService {
         triggeredByType: 'ADMIN',
         outboxEvent: {
           eventType,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: intentId,
           payload: buildPaymentIntentEventPayload({
             intentId,

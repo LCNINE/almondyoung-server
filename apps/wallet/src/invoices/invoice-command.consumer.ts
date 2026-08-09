@@ -1,5 +1,7 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { EventPayload, On } from '@app/events';
+import { EventPayload, InjectPublisher, On, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
+import { outbox_events as sharedOutboxEvents } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { CreateInvoicePayload, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DbService } from '@app/db';
@@ -9,8 +11,7 @@ import { WalletSchema, invoices, outboxEvents } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { InvoiceOutcomeService } from './invoice-outcome.service';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
-import { INVOICE_AGGREGATE_TYPE, InvoiceEventType, invoicePartitionKey } from './invoice-event.builder';
+import { InvoiceEventType, invoicePartitionKey } from './invoice-event.builder';
 import { EventPayloadOf } from '@packages/event-contracts/types';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -30,6 +31,8 @@ export class InvoiceCommandConsumer {
     private readonly billingAgreementService: BillingAgreementService,
     private readonly billingMethodService: BillingMethodService,
     private readonly invoiceOutcomeService: InvoiceOutcomeService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   @On(WALLET_COMMAND_STREAM, 'CreateInvoice')
@@ -126,27 +129,51 @@ export class InvoiceCommandConsumer {
     reasonCode: string,
     reason: string,
   ): Promise<void> {
+    // **두 테이블을 다 본다 — 그리고 JSON 경로가 서로 다르다** (ADR-0029 §5-1, Task 6-C-3).
+    //
+    // 옛 로컬 테이블의 `payload` 컬럼에는 **도메인 payload** 가 실렸으므로 멱등키가
+    // `payload ->> 'idempotencyKey'` 에 있다. 공용 테이블의 같은 컬럼에는 **envelope 전체**가
+    // 실리므로 그 경로는 항상 NULL 이고, 그대로 옮겼다면 이 dedupe 는 조용히 **아무것도 막지
+    // 못하게** 됐을 것이다 — 커맨드가 재전달될 때마다 mandate.rejected 가 다시 나간다.
+    //
+    // 새 테이블에서는 JSON 을 뒤지지 않는다. 6-C-1 이 만든 `idempotency_key` **컬럼**이 있고,
+    // 아래 `enqueue` 가 그 값을 싣는다 — 조회가 인덱스를 타고, 같은 사실의 두 번째 적재는
+    // `unique(topic, event_type, idempotency_key)` 가 DB 에서 막는다. 이 SELECT 는 그 위의
+    // 조기 반환일 뿐이고, 경합에서 진 쪽은 제약이 흡수한다.
     const [existing] = await this.dbService.db
-      .select({ id: outboxEvents.id })
-      .from(outboxEvents)
+      .select({ id: sharedOutboxEvents.id })
+      .from(sharedOutboxEvents)
       .where(
         and(
-          eq(outboxEvents.eventType, InvoiceEventType.MANDATE_REJECTED),
-          sql`${outboxEvents.payload} ->> 'idempotencyKey' = ${payload.idempotencyKey}`,
+          eq(sharedOutboxEvents.eventType, InvoiceEventType.MANDATE_REJECTED),
+          eq(sharedOutboxEvents.idempotencyKey, payload.idempotencyKey),
         ),
       )
       .limit(1);
-    if (existing) {
+    // 옛 테이블 조회는 6-C-4 에서 지운다. 배포 이전에 발행된 mandate.rejected 는 여기에만 있다.
+    const [legacyExisting] = existing
+      ? [undefined]
+      : await this.dbService.db
+          .select({ id: outboxEvents.id })
+          .from(outboxEvents)
+          .where(
+            and(
+              eq(outboxEvents.eventType, InvoiceEventType.MANDATE_REJECTED),
+              sql`${outboxEvents.payload} ->> 'idempotencyKey' = ${payload.idempotencyKey}`,
+            ),
+          )
+          .limit(1);
+    if (existing || legacyExisting) {
       this.logger.log(`[CreateInvoice] mandate.rejected already emitted (key=${payload.idempotencyKey}) — skip`);
       return;
     }
 
-    await this.dbService.db.insert(outboxEvents).values(
-      buildOutboxInsertValues({
+    await this.publisher.enqueue(
+      {
         eventType: InvoiceEventType.MANDATE_REJECTED,
-        aggregateType: INVOICE_AGGREGATE_TYPE,
         aggregateId: randomUUID(),
         partitionKey: invoicePartitionKey(payload.subscriberType, payload.subscriberRef),
+        idempotencyKey: payload.idempotencyKey,
         payload: {
           invoiceId: null,
           idempotencyKey: payload.idempotencyKey,
@@ -157,7 +184,8 @@ export class InvoiceCommandConsumer {
           reason,
           occurredAt: new Date().toISOString(),
         },
-      }),
+      },
+      this.dbService.db,
     );
   }
 

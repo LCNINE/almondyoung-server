@@ -78,6 +78,20 @@
       "when": 1783558100288,
       "tag": "20260709004820_one-live-intent-per-invoice",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786289811963,
+      "tag": "20260809153651_promote-shared-outbox-idempotency-partition-backoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786291955488,
+      "tag": "20260809161235_outbox-partition-created-index",
+      "breakpoints": true
     }
   ]
 }

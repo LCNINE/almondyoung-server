@@ -1,19 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
 import { sql } from 'drizzle-orm';
-import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
+import { WalletSchema, paymentIntents, IntentPurpose } from '../schema';
 import { BillingMethodService } from './billing-method.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
 export interface DirectChargeResult {
@@ -32,6 +29,8 @@ export class DirectBillingChargeService {
     private readonly chargesService: ChargesService,
     private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   async charge(params: {
@@ -112,10 +111,9 @@ export class DirectBillingChargeService {
 
       if (!inserted) throw new Error('PAYMENT_INTENT_INSERT_FAILED');
 
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: GatewayEventType.INTENT_CREATED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: inserted.id,
           payload: buildPaymentIntentEventPayload({
             intentId: inserted.id,
@@ -125,7 +123,8 @@ export class DirectBillingChargeService {
             currency: params.currency.toUpperCase(),
             occurredAt: now,
           }),
-        }),
+        },
+        tx,
       );
 
       return inserted;
@@ -202,7 +201,6 @@ export class DirectBillingChargeService {
             reasonMessage: result.errorMessage,
             outboxEvent: {
               eventType: GatewayEventType.INTENT_FAILED,
-              aggregateType: GATEWAY_AGGREGATE_TYPE,
               aggregateId: intent.id,
               payload: buildPaymentIntentEventPayload({
                 intentId: intent.id,
@@ -237,7 +235,6 @@ export class DirectBillingChargeService {
           reasonCode: 'AUTHORIZE_SUCCEEDED',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_AUTHORIZED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,

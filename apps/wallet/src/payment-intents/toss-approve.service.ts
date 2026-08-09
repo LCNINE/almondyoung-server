@@ -6,11 +6,7 @@ import { Charge, PaymentIntent } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from './auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 import { TossApiClient } from '../providers/toss/toss-api.client';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
@@ -165,7 +161,6 @@ export class TossApproveService {
           reasonCode: 'AUTHORIZE_SUCCEEDED',
           outboxEvent: {
             eventType: GatewayEventType.INTENT_AUTHORIZED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,

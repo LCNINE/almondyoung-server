@@ -371,10 +371,27 @@ export interface InvoiceVoidedPayload {
 
 export interface PaymentIntentEventPayload {
   intentId: string;
-  userId: string;
-  status: string;
-  payableAmount: number;
-  currency: string;
+  /**
+   * **인텐트가 있을 때만 있다** (2026-08-09 정정, Task 6-C-3).
+   *
+   * 이 넷은 원래 필수로 적혀 있었지만 `PaymentIntentEventSchema` 는 처음부터 전부
+   * `.optional()` 이었고 — 즉 런타임 계약은 이미 선택이었다 — 실제로 두 발행 경로가 이 값
+   * 없이 내보내고 있었다:
+   *
+   *  - `billing-charge.consumer.ts` 의 인텐트 **생성 전** 실패(agreement/method 부재).
+   *    인텐트가 아직 없으므로 userId·status·payableAmount 가 존재하지 않는다.
+   *  - `refund-requests.service.ts` 의 `payment.intent.refund_requested` /
+   *    `…_request_rejected`. 소비자(channel-adapter)는 Medusa 마커를 달기 위해 intentId 만
+   *    읽는다.
+   *
+   * 아웃박스를 공용 `enqueue` 로 회수하면서 타입이 처음으로 발행 지점에 걸렸고, 그때 이
+   * 불일치가 드러났다. **발행되는 내용은 바꾸지 않았다** — 인터페이스가 스키마를 따라간
+   * 것이다.
+   */
+  userId?: string;
+  status?: string;
+  payableAmount?: number;
+  currency?: string;
   occurredAt: string;
   /** 정기결제 청구 인텐트의 구독 라우팅(intent.metadata 에서 승격) — 구독과 무관하면 없음 */
   subscriberRef?: string;

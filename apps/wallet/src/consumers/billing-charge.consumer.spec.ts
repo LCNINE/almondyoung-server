@@ -7,6 +7,8 @@ import { ChargesService } from '../charges/charges.service';
 import { AutoCaptureService } from '../payment-intents/auto-capture.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { DbService } from '@app/db';
+import { getPublisherToken } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 
@@ -53,6 +55,7 @@ describe('BillingChargeConsumer', () => {
   let autoCaptureService: jest.Mocked<AutoCaptureService>;
   let stateTransitionService: jest.Mocked<StateTransitionService>;
   let dbService: { db: { transaction: jest.Mock; insert: jest.Mock; select: jest.Mock } };
+  let outboxPublisher: { enqueue: jest.Mock };
 
   let mockProvider: {
     providerType: string;
@@ -98,6 +101,8 @@ describe('BillingChargeConsumer', () => {
         }),
       }),
     };
+
+    outboxPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
     dbService = {
       db: {
@@ -171,6 +176,12 @@ describe('BillingChargeConsumer', () => {
           useValue: {
             transitionIntent: jest.fn(),
           },
+        },
+        // 아웃박스 적재는 공용 publisher 로 간다 (Task 6-C-3). 토큰은 계약에서 도출한다 —
+        // 문자열을 손으로 적으면 형식이 바뀔 때 조용히 어긋난다(ADR-0029 §4).
+        {
+          provide: getPublisherToken(PAYMENT_STREAM.topic.topic),
+          useValue: outboxPublisher,
         },
       ],
     }).compile();
@@ -392,6 +403,7 @@ describe('BillingChargeConsumer', () => {
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
     expect(dbService.db.insert).not.toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('기존 PENDING_SETTLEMENT intent → idempotent skip', async () => {
@@ -406,6 +418,7 @@ describe('BillingChargeConsumer', () => {
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
     expect(dbService.db.insert).not.toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('기존 FAILED intent (5xx) + outbox 이벤트 없음 → FAILED 이벤트 재발행', async () => {
@@ -421,7 +434,12 @@ describe('BillingChargeConsumer', () => {
     await consumer.onBillingCharge(createMockEnvelope(payload), payload);
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
-    expect(dbService.db.insert).toHaveBeenCalled(); // emitFailedEvent
+    // 재발행은 공용 아웃박스로 간다 (Task 6-C-3). 옛 단언은 `db.insert` 가 불렸는지만 봤는데,
+    // 그 호출은 결제수단 생성 등 다른 이유로도 일어난다 — 이벤트 키까지 확인한다.
+    expect(outboxPublisher.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'payment.intent.failed' }),
+      expect.anything(),
+    );
   });
 
   it('기존 FAILED intent (4xx) + outbox 이벤트 있음 → skip (재발행 없음)', async () => {
@@ -438,6 +456,7 @@ describe('BillingChargeConsumer', () => {
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
     expect(dbService.db.insert).not.toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('기존 CREATED intent (15분 경과 stuck) → FAILED 전이 + outbox 기록', async () => {
@@ -465,6 +484,7 @@ describe('BillingChargeConsumer', () => {
     );
     // db.insert는 호출되지 않아야 함 (transition이 outbox를 책임짐)
     expect(dbService.db.insert).not.toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('기존 CREATED intent (방금 생성, concurrent delivery) → 조용히 skip', async () => {
@@ -480,6 +500,7 @@ describe('BillingChargeConsumer', () => {
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
     expect(dbService.db.insert).not.toHaveBeenCalled(); // FAILED 이벤트 발행 없음
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   it('기존 CANCELED intent → 명시 skip (authorize/insert 없음)', async () => {
@@ -494,6 +515,7 @@ describe('BillingChargeConsumer', () => {
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
     expect(dbService.db.insert).not.toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).not.toHaveBeenCalled();
   });
 
   // ─── Billing agreement not found ───────────────────────────────────────
@@ -509,7 +531,10 @@ describe('BillingChargeConsumer', () => {
     expect(mockProvider.authorize).not.toHaveBeenCalled();
 
     // Should emit failure event via outbox
-    expect(dbService.db.insert).toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'payment.intent.failed' }),
+      expect.anything(),
+    );
   });
 
   // ─── Billing method inactive ───────────────────────────────────────────
@@ -546,7 +571,10 @@ describe('BillingChargeConsumer', () => {
     await consumer.onBillingCharge(createMockEnvelope(payload), payload);
 
     expect(mockProvider.authorize).not.toHaveBeenCalled();
-    expect(dbService.db.insert).toHaveBeenCalled();
+    expect(outboxPublisher.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'payment.intent.failed' }),
+      expect.anything(),
+    );
   });
 
   // ─── Provider 4xx failure → immediate FAILED, no retry ─────────────────

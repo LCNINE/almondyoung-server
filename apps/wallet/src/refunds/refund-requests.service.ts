@@ -1,20 +1,15 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, desc, eq, count, inArray } from 'drizzle-orm';
-import { WalletSchema, outboxEvents, paymentIntents, paymentMethods, refundRequests } from '../schema';
+import { WalletSchema, paymentIntents, paymentMethods, refundRequests } from '../schema';
 import { RefundRequest } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { RefundsService } from './refunds.service';
 import { CoreDigitalGuardClient } from './core-digital-guard.client';
-import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
-import { GATEWAY_AGGREGATE_TYPE, GatewayEventType } from '../messaging/gateway-event.builder';
+import { GatewayEventType } from '../messaging/gateway-event.builder';
 
 type CreateRefundRequestInput = {
   bankCode: string;
@@ -36,6 +31,8 @@ export class RefundRequestsService {
     private readonly chargesService: ChargesService,
     private readonly refundsService: RefundsService,
     private readonly coreDigitalGuard: CoreDigitalGuardClient,
+    @InjectPublisher(PAYMENT_STREAM)
+    private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
 
   /** 고객이 무통장(가상계좌) 주문에 대해 환불 요청을 제출한다. 실제 환불은 관리자 승인 시 실행. */
@@ -108,13 +105,13 @@ export class RefundRequestsService {
           })
           .returning();
         const row = rows[0]!;
-        await tx.insert(outboxEvents).values(
-          buildOutboxInsertValues({
+        await this.publisher.enqueue(
+          {
             eventType: GatewayEventType.INTENT_REFUND_REQUESTED,
-            aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intentId,
             payload: { intentId, refundRequestId: row.id, occurredAt: new Date().toISOString() },
-          }),
+          },
+          tx,
         );
         return row;
       });
@@ -212,16 +209,22 @@ export class RefundRequestsService {
     const updated = await this.dbService.db.transaction(async (tx) => {
       const rows = await tx
         .update(refundRequests)
-        .set({ status: 'REJECTED', processedBy: adminId, processedAt: new Date(), adminNote: adminNote ?? null, updatedAt: new Date() })
+        .set({
+          status: 'REJECTED',
+          processedBy: adminId,
+          processedAt: new Date(),
+          adminNote: adminNote ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(refundRequests.id, id))
         .returning();
-      await tx.insert(outboxEvents).values(
-        buildOutboxInsertValues({
+      await this.publisher.enqueue(
+        {
           eventType: GatewayEventType.INTENT_REFUND_REQUEST_REJECTED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: req.intentId,
           payload: { intentId: req.intentId, refundRequestId: id, occurredAt: new Date().toISOString() },
-        }),
+        },
+        tx,
       );
       return rows[0]!;
     });

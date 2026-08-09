@@ -513,10 +513,38 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **새 스펙 4개 / 27건.** `libs/events/src/outbox/outbox-idempotency.integration.spec.ts`(7, **실 Postgres**) · `libs/events/src/outbox/outbox-dispatch-routing.spec.ts`(10) · `apps/core/.../outbox/outbox-backoff-parity.spec.ts`(3) · `apps/core/.../outbox/fulfillment-dispatch-gate.spec.ts`(3, + events.spec 2건 추가). 멱등 스펙은 **대조군을 실행으로 두 겹** 뒀다 — (1) `LIKE ... INCLUDING DEFAULTS` 로 만든 **제약 없는 쌍둥이 테이블**에 같은 `ON CONFLICT DO NOTHING` 문을 넣어 두 행이 남는 것, (2) `pg_index.indnullsnotdistinct` 와 제약 컬럼 3개를 카탈로그에서 직접 읽는 것. 그리고 `onConflictDoNothing()` 을 제거하는 **실파일 변이로 2건이 빨간불**이 되는 것을 확인한 뒤 `cp` 백업 + `sha1sum -c` 로 원복했다(`git checkout --` 는 미커밋 작업분을 날리므로 쓰지 않는다).
 
-#### 6-C-3: wallet + channel-adapter 회수
+#### 6-C-3: wallet + channel-adapter 회수 — ✅ 완료 (2026-08-09), **PR 3개로 갈렸다**
 
-- [ ] 둘 다 작고 서로 무관해 한 PR 로 묶는다. wallet 이 예상 밖으로 커지면 그때 쪼갠다
-- [ ] 6-C-2 와 같은 expand 규칙 — 옛 디스패처 유지
+- [x] ~~둘 다 작고 서로 무관해 한 PR 로 묶는다~~ → **wallet 이 예상 밖으로 커져 쪼갰다** (이 항목이 예고한 그대로). #596 wallet 마이그레이션 · #597 channel-adapter · #598 wallet
+- [x] 6-C-2 와 같은 expand 규칙 — 옛 디스패처 유지
+
+**선행: #596 — 6-C-1 이 건너뛴 wallet 마이그레이션.** #593 이 스냅샷 체인을 복구해 `db:generate:wallet` 이 돈다. 생성된 SQL 은 membership 판본과 **byte-identical**(diff 확인)이고 잡음이 없었다. 코드 변경 0.
+
+**세 함정 판정 (앱마다 답이 다르다).**
+
+| | channel-adapter | wallet |
+|---|---|---|
+| (a) publisherMap → `No publisher found` | **없음** — forRoot 가 하나뿐이고 그 streams 가 대상 토픽을 담는다 | **없음** — 같은 이유 |
+| (b) payload = envelope vs 도메인 | **없음** — 옛 payload 를 읽는 코드가 없다 | **있음** — dedupe 가 `payload ->> 'idempotencyKey'` 를 읽는다 |
+| (c) 옛 아웃박스를 *읽는* 코드 | **0곳** | **2곳** |
+
+`enableOutbox` 가 **두 앱 다 꺼져 있었다** — 켜는 것이 이 조각의 전제다(안 켜면 `OutboxPublisher` 가 없어 `enqueue` 가 던진다). 옆 효과로 `EventsModule` 이 `ScheduleModule.forRoot()` 를 한 번 더 부르는데, 두 앱 다 이미 부르고 있다. Nest 가 같은 동적 모듈을 **dedupe** 해 크론이 두 벌 등록되지 않는 것을 임시 스펙으로 실행 확인했다(core 에 이미 같은 조합이 라이브인 것과 일치).
+
+**channel-adapter (#597) — 회수 대상이 5곳이 아니라 8곳이었다.** 이 앱의 아웃박스는 별도 테이블이 아니라 `inbox_events` 의 `aggregate_type='ChannelAdapter'` 행이고, 그 값은 **컬럼 기본값**이다. 즉 `InboxService.enqueue` 에 `aggregateType` 을 *생략한* 호출이 곧 아웃박스 적재였다 — 문자열 grep 은 명시한 5곳만 찾는다. 생략한 3곳이 `CHANNEL_ADAPTER_STREAM` 갈래 전부이므로, 디스패처의 그 분기는 죽은 코드가 아니었다. `InboxService` 는 이제 `aggregateType` 을 필수로 받고 `'ChannelAdapter'` 를 **거부**한다 — 6-C-4 가 옛 디스패처를 지우면 그 값으로 들어간 행은 아무도 읽지 않는 블랙홀이 되는데, 막지 않으면 그 회귀가 로그 한 줄 안 남긴다. `partitionKey` 를 8곳 전부 명시했다(두 스트림 다 파생 함수가 없어 생략하면 채널 단위 순서가 사라진다). `NullEventPublisher` 는 **삭제** — 문자열 토큰 뒤의 오리-타이핑 스텁이라 `enqueue` 부재가 컴파일에 안 잡히는 DI 거짓말이었고, no-op 으로 때우면 `wms_order_mappings` 만 남아 그 주문이 영영 재발행되지 않는다. 대신 진짜 `StreamPublisher` + no-op 전송으로 세웠다.
+
+**wallet (#598) — 적재 15곳 · 읽기 2곳 · 공용에 없는 순서 보장 1개.** 옛 디스패처의 acquire 술어에 "같은 `partition_key` 의 더 이른 미발행 행이 있으면 고르지 않는다"가 있었다. `OutboxConfig.strictPartitionOrdering`(기본 `false`)으로 공용에 넣고 **wallet 만 켠다** — head-of-line blocking 이 따라오므로 앱이 고를 성질이지 기본값이 아니다. `(created_at, id)` 사전식 비교가 핵심이다: `created_at` 만 보면 한 트랜잭션에서 적재된 두 행이 서로를 막아 **파티션이 영구 정지**한다. 이 술어를 받는 인덱스(`outbox_partition_created_idx`)가 **마이그레이션 1건 × 6개 앱**으로 따라온다.
+
+**재시도 의미론은 wallet 에서 하나 바뀐다** — 6-C-2 가 "유일하게 바뀌는 조각"이라고 적은 것은 core 기준이었고 wallet 은 표가 달랐다. 소진 임계(10회)·배치·타임아웃은 `OutboxConfig` 로 보존했고, **백오프 표만** 지수(5s 배증)에서 공용 고정표(10/30/60/300)로 바뀐다. 표를 wallet 만 다르게 두려면 공용 상수를 설정으로 열어야 하는데 그러면 "표는 한 벌"이 무너진다. `DEAD_LETTER` 상태는 공용에 없다(두 상태를 나눠 쓰는 코드가 없었고 사유는 `error_message` 에 남는다).
+
+**🔴 계약이 실제와 어긋난 것 3건 — 컴파일과 `satisfies` 가 잡았다.**
+
+1. **`PaymentIntentEventPayload` 의 필수 필드 4개가 거짓이었다.** zod 스키마는 처음부터 전부 `.optional()` 인데 인터페이스만 `userId`·`status`·`payableAmount`·`currency` 를 필수로 적었고, 실제로 두 경로가 그 값 없이 발행한다(인텐트 **생성 전** 실패 · 환불 신청/거절). 인터페이스를 스키마에 맞췄고 **발행 내용은 안 바꿨다.** 소비 파급 1곳(notification 무통장 안내)에 `userId` 부재 가드를 넣었다.
+2. **`gateway.refund.failed` 는 계약에 없다.** `GatewayEventType` 상수에만 있고 적재하는 곳도 없다.
+3. **`gateway.charge.*` 는 발행자가 레포 전체에 0곳이다.** 그런데 channel-adapter 가 `gateway.charge.captured` 를 구독한다(핸들러 1개). 5-A 가 "wallet 이 실제로 발행하는 라이브 이벤트"로 적은 넷 중 이 하나는 **틀렸다.** 범위 밖이라 고치지 않았다 — 계약을 정하는 결정이 먼저다. **6-C-4 또는 Task 7 에서 판정할 것.**
+
+**게이트 실측:** `type-check` **163 = 기준선**(집합 완전 동일, 줄번호만 이동) · `audit:event-handlers` exit 0 (87) · `audit:event-publishers` exit 0 (**주입 34 → 38 → 41**) · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선(집합 완전 동일)**, 통과 374 · 10개 앱 `nest build` OK · 변경 파일 eslint **신규 0** · **실 Postgres 통합 10 suite / 63 tests 전부 통과**(`test:core:integration:local -- outbox`) · 변이 7종으로 빨간불 재현 후 `cp` + `sha1sum -c` 복구(`git checkout --` 는 쓰지 않는다).
+
+**배포:** #596 → (migrate) → #597·#598 → (migrate: 파티션 인덱스 6개 앱) → deploy. `CREATE INDEX` 는 CONCURRENTLY 가 아니다 — 아웃박스는 작은 테이블이지만 백로그가 크면 조용한 시간대를 고른다.
 
 #### 6-C-4: contract — 옛 테이블·디스패처 삭제
 
@@ -525,7 +553,7 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **행 이관은 없지만 드레인은 있다.** 앱마다 DB 가 달라 테이블을 옮길 일은 없다. 다만 옛 테이블에 남은 미발행 행은 옛 디스패처가 비워야 하므로, 6-C-4 는 그때까지 기다린다.
 
-각 조각의 공통 게이트: `npm run type-check` **164** · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`.
+각 조각의 공통 게이트: `npm run type-check` **163**(6-C-2 가 164 → 163 으로 하나 고쳤다) · `audit:event-handlers` exit 0 · `audit:event-publishers` exit 0 · `audit:consume-validation --gate` exit 0 · 전체 jest 실패 suite **18 = 기준선** · 10개 앱 `nest build`. 아웃박스를 만지는 조각은 여기에 **실 Postgres 통합**을 더한다: `npm run test:core:integration:local -- outbox`.
 
 **완료 기준:** outbox 경로가 검증되고, `wmsTables.outboxEvents`/`outbox_events` 에 쓰는 코드가 공용 인터페이스 하나를 지나며, `@InjectStreamPublisher` 사용처가 0건이다 (JSDoc 예시 제외).
 

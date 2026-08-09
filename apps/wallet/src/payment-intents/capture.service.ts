@@ -7,11 +7,7 @@ import { PaymentMethodsService } from '../payment-methods/payment-methods.servic
 import { ChargesService } from '../charges/charges.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
-import {
-  GATEWAY_AGGREGATE_TYPE,
-  GatewayEventType,
-  buildPaymentIntentEventPayload,
-} from '../messaging/gateway-event.builder';
+import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
 
 @Injectable()
 export class CaptureService {
@@ -70,7 +66,6 @@ export class CaptureService {
         reasonCode: 'CAPTURE_SUCCEEDED',
         outboxEvent: {
           eventType: GatewayEventType.INTENT_CAPTURED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: intentId,
           payload: buildPaymentIntentEventPayload({
             intentId,
@@ -97,7 +92,6 @@ export class CaptureService {
         reasonMessage: `${succeededCount}/${totalCount} charges captured successfully. Manual resolution required.`,
         outboxEvent: {
           eventType: 'payment.intent.partially_captured',
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
           aggregateId: intentId,
           payload: buildPaymentIntentEventPayload({
             intentId,
