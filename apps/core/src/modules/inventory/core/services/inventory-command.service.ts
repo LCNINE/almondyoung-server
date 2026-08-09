@@ -1,9 +1,9 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
 import { eq, and, gt, asc } from 'drizzle-orm';
 import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
@@ -17,7 +17,8 @@ export class InventoryCommandService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly eventStore: StockEventStore,
-    private readonly outboxService: OutboxService,
+    @InjectPublisher(INVENTORY_STREAM)
+    private readonly inventory: PublisherFor<typeof INVENTORY_STREAM>,
     private readonly locationService: LocationService,
     private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
@@ -96,29 +97,8 @@ export class InventoryCommandService {
         throw new BadRequestException('Failed to create stock event');
       }
 
-      // 4. Outbox에 이벤트 추가
-      await this.outboxService.enqueue(
-        {
-          topic: INVENTORY_STREAM.topic.topic,
-          idempotencyKey: `stock-event:${event.id}`,
-          eventType: 'StockReceived',
-          aggregateType: 'Stock',
-          aggregateId: event.id,
-          partitionKey: input.skuId,
-          payload: {
-            skuCode: sku.name,
-            skuId: input.skuId,
-            warehouseId: input.toWarehouseId,
-            locationId: input.toLocationId,
-            quantity: input.quantity,
-            afterQuantity: afterQuantity,
-            reason: input.reason,
-            journalId: input.journalId,
-            occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-          },
-        },
-        trx,
-      );
+      // 4. Outbox 적재 없음 — 계약을 만족한 적이 없어 Kafka 로 나간 적도 없다
+      //    (ADR-0029 §5-1, Task 6-C-2). 아래 `ship()` 의 같은 주석 참조.
 
       this.logger.log(`RECEIVE: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 
@@ -196,50 +176,37 @@ export class InventoryCommandService {
         throw new BadRequestException('Failed to create stock event');
       }
 
-      // 4. Outbox에 이벤트 추가 ✅
-      const outboxEvent = {
-        topic: INVENTORY_STREAM.topic.topic,
-        idempotencyKey: `stock-event:${event.id}`,
-        eventType: 'StockShipped',
-        aggregateType: 'Stock',
-        aggregateId: event.id,
-        partitionKey: input.skuId,
-        payload: {
-          skuCode: sku.name,
-          skuId: input.skuId,
-          warehouseId: input.warehouseId,
-          locationId: input.locationId,
-          quantity: input.quantity,
-          afterQuantity: afterQuantity,
-          reason: input.reason,
-          journalId: input.journalId,
-          occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-        },
-      };
-      await (input.batchSessionDispatch
-        ? this.outboxService.enqueue(
-            {
-              eventType: 'StockShipped',
-              aggregateType: 'Stock',
-              aggregateId: event.id,
-              partitionKey: input.skuId,
-              topic: INVENTORY_STREAM.topic.topic,
-              idempotencyKey: `stock-event:${event.id}`,
-              payload: {
-                stockEventId: event.id,
-                skuId: event.skuId,
-                skuCode: sku.name,
-                quantity: event.quantity,
-                warehouseId: event.fromWarehouseId!,
-                locationId: event.fromLocationId!,
-                outboundType: 'ORDER',
-                shippedAt: event.occurredAt.toISOString(),
-                reason: event.reason ?? undefined,
-              },
+      // 4. Outbox 적재 — **배치 출고 경로만이다** (ADR-0029 §5-1, Task 6-C-2).
+      //
+      // 비-batch 갈래도 예전에는 `StockShipped` 를 적재했으나, 그 payload 는 계약
+      // (`StockShippedSchema`)을 만족한 적이 없다 — `stockEventId`·`outboundType`·`shippedAt`
+      // 이 없고 대신 `afterQuantity`·`journalId`·`occurredAt` 을 실었다. 발행 경로는 zod 를
+      // 타므로 그 행들은 적재 → 재시도 5회 → `failed` 로 끝났다. **Kafka 로 나간 적이 없고
+      // 소비자도 0곳**이라(이 스트림의 유일한 소비자는 `ProductSellableQuantityChanged`),
+      // 적재를 멈추는 것의 관측 가능한 변화는 poison 행이 더 이상 쌓이지 않는 것뿐이다.
+      // 되살릴 때는 payload 를 계약에 맞춰 채우는 것이 아니라 **계약을 먼저 정한다**.
+      if (input.batchSessionDispatch) {
+        await this.inventory.enqueue(
+          {
+            eventType: 'StockShipped',
+            aggregateId: event.id,
+            partitionKey: input.skuId,
+            idempotencyKey: `stock-event:${event.id}`,
+            payload: {
+              stockEventId: event.id,
+              skuId: event.skuId,
+              skuCode: sku.name,
+              quantity: event.quantity,
+              warehouseId: event.fromWarehouseId!,
+              locationId: event.fromLocationId!,
+              outboundType: 'ORDER',
+              shippedAt: event.occurredAt.toISOString(),
+              reason: event.reason ?? undefined,
             },
-            trx,
-          )
-        : this.outboxService.enqueue(outboxEvent, trx));
+          },
+          trx,
+        );
+      }
 
       this.logger.log(`SHIP: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 
@@ -490,29 +457,7 @@ export class InventoryCommandService {
         throw new BadRequestException('Failed to create stock event');
       }
 
-      // 4. Outbox에 이벤트 추가 ✅
-      await this.outboxService.enqueue(
-        {
-          topic: INVENTORY_STREAM.topic.topic,
-          idempotencyKey: `stock-event:${event.id}`,
-          eventType: 'StockAdjusted',
-          aggregateType: 'Stock',
-          aggregateId: event.id,
-          partitionKey: input.skuId,
-          payload: {
-            skuCode: sku.name, // SKU 이름
-            skuId: input.skuId, // SKU ID
-            warehouseId: input.warehouseId,
-            locationId: effectiveLocationId,
-            quantity: input.quantity, // 조정량
-            deltaQuantity: input.quantity, // 변동량 (양수)
-            afterQuantity: afterQuantity, // 조정 후 재고
-            reason: input.reason,
-            occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-          },
-        },
-        trx,
-      );
+      // 4. Outbox 적재 없음 — 같은 이유다 (위 `ship()` 주석 참조).
 
       this.logger.log(`ADJUST_UP: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 
@@ -641,29 +586,7 @@ export class InventoryCommandService {
         throw new BadRequestException('Failed to create stock event');
       }
 
-      // 4. Outbox에 이벤트 추가 ✅
-      await this.outboxService.enqueue(
-        {
-          topic: INVENTORY_STREAM.topic.topic,
-          idempotencyKey: `stock-event:${event.id}`,
-          eventType: 'StockAdjusted',
-          aggregateType: 'Stock',
-          aggregateId: event.id,
-          partitionKey: input.skuId,
-          payload: {
-            skuCode: sku.name,
-            skuId: input.skuId,
-            warehouseId: input.warehouseId,
-            locationId: effectiveLocationId,
-            quantity: input.quantity,
-            deltaQuantity: -input.quantity, // 변동량 (음수)
-            afterQuantity: afterQuantity,
-            reason: input.reason,
-            occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-          },
-        },
-        trx,
-      );
+      // 4. Outbox 적재 없음 — 같은 이유다 (위 `ship()` 주석 참조).
 
       this.logger.log(`ADJUST_DOWN: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 

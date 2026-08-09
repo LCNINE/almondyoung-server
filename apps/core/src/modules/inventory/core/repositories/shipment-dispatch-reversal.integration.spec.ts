@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { eq, inArray, sql as drizzleSql } from 'drizzle-orm';
@@ -5,7 +7,6 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from './stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -32,7 +33,7 @@ describeIfDb('shipment dispatch stock reversal (PostgreSQL integration)', () => 
       run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
         tx ? fn(tx) : db.transaction((inner) => fn(inner as unknown as DbTx)),
     } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     recalculateSellable = jest.spyOn(sellable, 'recalculateAndPublishForSku');
     eventStore = new StockEventStore(dbService, sellable);

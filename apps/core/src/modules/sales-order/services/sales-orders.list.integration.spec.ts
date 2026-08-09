@@ -12,7 +12,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 // list() 는 this.db.run(fn, tx) 만 쓰므로 나머지 의존성은 미사용 → 빈 목으로 충분.
 function makeService(db: PostgresJsDatabase<typeof wmsSchema>): SalesOrdersService {
   const noop = {} as never;
-  return new SalesOrdersService(makeDbService(db), noop, noop, noop, noop, noop, noop);
+  return new SalesOrdersService(makeDbService(db), noop, noop, noop, noop, noop, noop, noop);
 }
 
 async function insertOrder(

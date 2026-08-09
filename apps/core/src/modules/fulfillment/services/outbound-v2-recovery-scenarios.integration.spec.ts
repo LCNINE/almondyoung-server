@@ -1,3 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
@@ -13,8 +21,6 @@ import { StockEventStore } from '../../inventory/core/repositories/stock-event.s
 import { LocationService } from '../../inventory/core/services/location.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { makeDb, makeDbService } from './__support__';
 import { BatchInventorySessionFaultInjector, BatchInventorySessionService } from './batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './batch-session-recovery.service';
@@ -66,7 +72,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const audit = new AuditService(dbService);
     const sessions = new BatchInventorySessionService(dbService, guard, audit, faultInjector);
     const recovery = new BatchSessionRecoveryService(dbService, audit, guard);
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const inventory = new InventoryCommandService(
       dbService,
@@ -104,8 +110,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
   function dispatchService(tx: DbTx): ShipmentDispatchService {
     const dbService = ambientDbService(tx);
     const workflow = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' }));
-    const inventoryOutbox = new InventoryOutboxService(dbService);
-    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const guard = new BatchControlledStockGuard();
     const inventory = new InventoryCommandService(
@@ -144,7 +149,9 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       reservations,
       waybills,
       new BarcodeService(dbService),
-      fulfillmentOutbox,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );
@@ -351,10 +358,10 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
   async function releaseOutboxCardinality(tx: DbTx): Promise<Record<string, number>> {
     const topics = ['inventory.events.v1', 'fulfillments.events.v1', 'fulfillments.events.v2', 'shipments.events.v1'];
     const rows = await tx
-      .select({ topic: wmsTables.outboxEvents.topic, count: sql<number>`count(*)::int` })
-      .from(wmsTables.outboxEvents)
-      .where(inArray(wmsTables.outboxEvents.topic, topics))
-      .groupBy(wmsTables.outboxEvents.topic);
+      .select({ topic: outbox_events.topic, count: sql<number>`count(*)::int` })
+      .from(outbox_events)
+      .where(inArray(outbox_events.topic, topics))
+      .groupBy(outbox_events.topic);
     return Object.fromEntries(
       topics.map((topic) => [topic, Number(rows.find((row) => row.topic === topic)?.count ?? 0)]),
     );
@@ -680,15 +687,15 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       const first = await dispatch.inspectionScan(fixture.shipment.id, input);
       const outboxAfterFirst = await tx
         .select({
-          id: wmsTables.outboxEvents.id,
-          topic: wmsTables.outboxEvents.topic,
-          eventType: wmsTables.outboxEvents.eventType,
-          aggregateType: wmsTables.outboxEvents.aggregateType,
-          aggregateId: wmsTables.outboxEvents.aggregateId,
-          key: wmsTables.outboxEvents.idempotencyKey,
+          id: outbox_events.id,
+          topic: outbox_events.topic,
+          eventType: outbox_events.eventType,
+          aggregateType: outbox_events.aggregateType,
+          aggregateId: outbox_events.aggregateId,
+          key: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
-        .where(inArray(wmsTables.outboxEvents.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]));
+        .from(outbox_events)
+        .where(inArray(outbox_events.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]));
       const replay = await dispatch.inspectionScan(fixture.shipment.id, input);
       const attempts = await tx
         .select()
@@ -704,15 +711,15 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         .where(eq(wmsTables.stockEvents.id, sources[0].stockEventId!));
       const outboxAfterReplay = await tx
         .select({
-          id: wmsTables.outboxEvents.id,
-          topic: wmsTables.outboxEvents.topic,
-          eventType: wmsTables.outboxEvents.eventType,
-          aggregateType: wmsTables.outboxEvents.aggregateType,
-          aggregateId: wmsTables.outboxEvents.aggregateId,
-          key: wmsTables.outboxEvents.idempotencyKey,
+          id: outbox_events.id,
+          topic: outbox_events.topic,
+          eventType: outbox_events.eventType,
+          aggregateType: outbox_events.aggregateType,
+          aggregateId: outbox_events.aggregateId,
+          key: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
-        .where(inArray(wmsTables.outboxEvents.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]));
+        .from(outbox_events)
+        .where(inArray(outbox_events.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]));
       const [item] = await tx
         .select()
         .from(wmsTables.fulfillmentOrderItems)
@@ -742,8 +749,8 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         );
       const inventoryOutbox = await tx
         .select()
-        .from(wmsTables.outboxEvents)
-        .where(eq(wmsTables.outboxEvents.aggregateId, sources[0].stockEventId!));
+        .from(outbox_events)
+        .where(eq(outbox_events.aggregateId, sources[0].stockEventId!));
 
       expect(first).toMatchObject({ status: 'shipped', attemptNo: 1 });
       expect(replay).toEqual(first);

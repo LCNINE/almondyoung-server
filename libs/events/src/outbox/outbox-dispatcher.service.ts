@@ -5,7 +5,8 @@ import type { MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
-import { eq, inArray, and, lt, lte, or, isNull } from 'drizzle-orm';
+import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
+import { eq, inArray, and, lt, lte, or, isNull, not, ilike, type SQL } from 'drizzle-orm';
 
 /**
  * 실패 후 다음 시도까지의 대기(초). core 로컬 판본
@@ -60,6 +61,24 @@ export class OutboxDispatcher {
     private readonly dbService: DbService,
     publisherMap: Map<string, StreamPublisher>,
     config?: OutboxConfig,
+    /**
+     * 이 모듈이 등록하지 않은 토픽의 publisher 를 **파생 조회**하는 자리 (Task 6-C-2).
+     *
+     * 그 전까지 발행 가능한 토픽은 `enableOutbox` 를 켠 `forRoot` 호출의 `streams` 로
+     * *선언*됐다. 그런데 아웃박스는 앱 하나에 테이블 하나이고 BC 별 `forRoot` 는 여럿이라,
+     * 그 선언은 "이 앱이 적재하는 토픽 집합" 과 어긋난다 — core 가 그렇다: 아웃박스를 켠
+     * 것은 catalog(`PRODUCT_STREAM`) 하나인데 적재는 5개 토픽이 더 한다. 어긋나면 조용하지
+     * 않고 `No publisher found for topic` 으로 재시도를 소진한다.
+     *
+     * 선언을 늘리는 대신 파생한다 — ADR-0029 §1·§3 이 소비 집합에 적용한 것과 같은 원칙이다.
+     * publisher 는 `@Global()` 모듈이 `getPublisherToken(topic)` 으로 등록하므로, 행이 들고
+     * 있는 topic 이 곧 조회 키다.
+     */
+    private readonly resolvePublisher?: (topic: string) => StreamPublisher | undefined,
+    /**
+     * 발행을 일시 보류할 행을 고르는 게이트 (선택). 없으면 보류 없음 = 이 인자가 생기기 전 동작.
+     */
+    private readonly dispatchGate?: OutboxDispatchGate,
   ) {
     this.publisherMap = publisherMap;
     this.config = {
@@ -117,6 +136,9 @@ export class OutboxDispatcher {
             lt(outbox_events.retryCount, this.config.maxRetries),
             // 예약 백오프 (ADR-0029 §5-1). 이 조건이 없으면 실패한 행이 5초마다 즉시 재시도된다.
             lte(outbox_events.nextAttemptAt, now),
+            // 보류는 **선택 단계**에서 건다 (Task 6-C-2). 고른 뒤 걸러내면 lease 를 잡아 놓고
+            // 버리는 꼴이라, 보류된 행이 `PROCESSING` 에 갇혔다가 timeout 으로 회수된다.
+            this.pauseCondition(),
           ),
         )
         .orderBy(outbox_events.createdAt)
@@ -138,6 +160,29 @@ export class OutboxDispatcher {
 
       return result;
     });
+  }
+
+  /**
+   * 게이트가 보류를 원하면 그 행들을 **제외**하는 조건을 만든다. 보류가 없으면 `undefined` —
+   * drizzle 의 `and()` 가 undefined 를 무시하므로 조건 자체가 사라진다.
+   */
+  private pauseCondition(): SQL | undefined {
+    const paused = this.dispatchGate?.pausedRows();
+    if (!paused) return undefined;
+
+    const clauses: SQL[] = [];
+    if (paused.topics?.length) {
+      clauses.push(inArray(outbox_events.topic, paused.topics));
+    }
+    for (const prefix of paused.eventTypePrefixes ?? []) {
+      // `ilike` 로 대소문자를 무시한다 — core 로컬 필터가 `LOWER(event_type) LIKE 'fulfillment%'`
+      // 였고, 이벤트 이름의 대소문자 표기가 적재 지점마다 갈려 있었다.
+      clauses.push(ilike(outbox_events.eventType, `${prefix}%`));
+    }
+    if (clauses.length === 0) return undefined;
+
+    const matched = clauses.length === 1 ? clauses[0] : or(...clauses);
+    return matched ? not(matched) : undefined;
   }
 
   /**
@@ -174,9 +219,22 @@ export class OutboxDispatcher {
     }
   }
 
+  /**
+   * 토픽 → publisher. 이 모듈이 등록한 스트림을 먼저 보고, 없으면 앱 컨테이너에서 파생 조회한다.
+   * 찾은 것은 map 에 넣어 다음 폴링부터 조회를 건너뛴다.
+   */
+  private publisherFor(topic: string): StreamPublisher | undefined {
+    const known = this.publisherMap.get(topic);
+    if (known) return known;
+
+    const resolved = this.resolvePublisher?.(topic);
+    if (resolved) this.publisherMap.set(topic, resolved);
+    return resolved;
+  }
+
   private async processEvent(event: AcquiredOutboxRow) {
     try {
-      const publisher = this.publisherMap.get(event.topic);
+      const publisher = this.publisherFor(event.topic);
 
       if (!publisher) {
         throw new Error(`No publisher found for topic: ${event.topic}`);

@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { randomUUID } from 'crypto';
@@ -7,7 +9,6 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { UnifiedReservationService } from './unified-reservation.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService } from '../outbox/outbox.service';
 
 /**
  * reserveStock 의 (sku, warehouse) advisory 락이 TOCTOU 를 직렬화하는지 확인 —
@@ -36,7 +37,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
   function makeService(database: PostgresJsDatabase<typeof wmsSchema>) {
     const run = <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => (tx ? fn(tx) : database.transaction(fn));
     const dbService = { db: database, run } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     return new UnifiedReservationService(dbService, sellable);
   }

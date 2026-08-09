@@ -50,9 +50,7 @@ const shipmentPayload = {
 describe('Task 18 fulfillment outbox event contracts', () => {
   it('builds ShipmentShipped with shipment partitioning and attempt idempotency', () => {
     expect(shipmentShippedOutboxEvent(shipmentPayload)).toEqual({
-      topic: SHIPMENT_STREAM.topic.topic,
       eventType: 'ShipmentShipped',
-      aggregateType: 'Shipment',
       aggregateId: shipmentId,
       partitionKey: shipmentId,
       idempotencyKey: attemptId,
@@ -72,9 +70,7 @@ describe('Task 18 fulfillment outbox event contracts', () => {
     };
 
     expect(fulfillmentProgressedOutboxEvent(payload)).toEqual({
-      topic: FULFILLMENT_V2_STREAM.topic.topic,
       eventType: 'FulfillmentProgressed',
-      aggregateType: 'FulfillmentOrder',
       aggregateId: fulfillmentOrderId,
       partitionKey: fulfillmentOrderId,
       idempotencyKey: `${attemptId}:${fulfillmentOrderId}`,
@@ -101,9 +97,7 @@ describe('Task 18 fulfillment outbox event contracts', () => {
         outstandingQty: 0,
       }),
     ).toEqual({
-      topic: FULFILLMENT_STREAM.topic.topic,
       eventType: 'FulfillmentShipped',
-      aggregateType: 'Fulfillment',
       aggregateId: fulfillmentOrderId,
       partitionKey: fulfillmentOrderId,
       idempotencyKey: `${fulfillmentOrderId}:fully-shipped`,
@@ -160,9 +154,7 @@ describe('Task 18 fulfillment outbox event contracts', () => {
       deliveredAt,
     };
     expect(shipmentDeliveredOutboxEvent(shipmentDelivered)).toEqual({
-      topic: SHIPMENT_STREAM.topic.topic,
       eventType: 'ShipmentDelivered',
-      aggregateType: 'Shipment',
       aggregateId: shipmentId,
       partitionKey: shipmentId,
       idempotencyKey: attemptId,
@@ -176,13 +168,34 @@ describe('Task 18 fulfillment outbox event contracts', () => {
       deliveredAt,
     };
     expect(fulfillmentDeliveredV1OutboxEvent(fulfillmentDelivered)).toEqual({
-      topic: FULFILLMENT_STREAM.topic.topic,
       eventType: 'FulfillmentDelivered',
-      aggregateType: 'Fulfillment',
       aggregateId: fulfillmentOrderId,
       partitionKey: fulfillmentOrderId,
       idempotencyKey: `${fulfillmentOrderId}:fully-delivered`,
       payload: fulfillmentDelivered,
     });
+  });
+
+  /**
+   * `topic` 과 `aggregateType` 은 Task 6-C-2 에서 빌더가 아니라 **스트림에서 파생**된다
+   * (ADR-0029 §5-1). 위 단언에서 두 키를 지우기만 하면 그 사실이 커버리지에서 사라지므로,
+   * 파생의 출처가 옛 리터럴과 같은 값인지를 여기서 고정한다. 옛 값은 `'fulfillment'` 처럼
+   * 스트림과 대소문자가 어긋난 곳도 있었는데, 그 어긋남을 아무도 관찰하지 않았던 것이
+   * 이 필드를 파생으로 옮긴 이유다.
+   */
+  it('회수 후 topic·aggregateType 의 출처는 스트림 하나다', () => {
+    expect(SHIPMENT_STREAM.topic.topic).toBe('shipments.events.v1');
+    expect(SHIPMENT_STREAM.aggregateType).toBe('Shipment');
+    expect(FULFILLMENT_V2_STREAM.topic.topic).toBe('fulfillments.events.v2');
+    expect(FULFILLMENT_V2_STREAM.aggregateType).toBe('FulfillmentOrder');
+    expect(FULFILLMENT_STREAM.topic.topic).toBe('fulfillments.events.v1');
+    expect(FULFILLMENT_STREAM.aggregateType).toBe('Fulfillment');
+  });
+
+  it('빌더는 두 필드를 더 이상 들고 있지 않다 — 있으면 파생과 갈라질 수 있다', () => {
+    const built: Record<string, unknown> = { ...shipmentShippedOutboxEvent(shipmentPayload) };
+    expect(Object.keys(built).sort()).toEqual(
+      ['aggregateId', 'eventType', 'idempotencyKey', 'partitionKey', 'payload'].sort(),
+    );
   });
 });

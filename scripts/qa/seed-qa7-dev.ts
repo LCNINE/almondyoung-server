@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 /**
  * QA7 (docs/qa/e2e-commerce-qa-guide.md #7) 1·2단계 사전준비 — dev 스테이지 전용.
  *
@@ -17,7 +19,6 @@ import { Resource } from 'sst';
 
 import { mergedSchema } from '../../apps/core/src/platform/database/merged-schema';
 import { wmsTables, DbTx } from '../../apps/core/src/modules/inventory/schema/inventory.schema';
-import { OutboxService } from '../../apps/core/src/modules/inventory/shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../apps/core/src/modules/inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../../apps/core/src/modules/inventory/core/repositories/stock-event.store';
 import { InventoryCommandService } from '../../apps/core/src/modules/inventory/core/services/inventory-command.service';
@@ -54,7 +55,7 @@ async function main() {
 
   // 통합 테스트와 동일한 수동 와이어링 — DbService 모양({ db })만 맞추면 된다
   const dbService = { db } as never;
-  const outbox = new OutboxService(dbService);
+  const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
   const sellable = new ProductSellableQuantityService(dbService, outbox);
   const eventStore = new StockEventStore(dbService, sellable);
   const location = new LocationService(dbService);

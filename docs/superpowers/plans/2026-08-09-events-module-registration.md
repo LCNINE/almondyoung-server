@@ -460,9 +460,29 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 #### 6-C-2: core 회수 (단독)
 
-- [ ] fulfillment 11 · inventory 6 · sales-order 1 = ~~18파일~~ → **17파일** (Task 0 이 `fulfillment/outbox/outbox.service.ts` 를 지웠다). `wmsTables.outboxEvents` → 공용. 재측정: `{ grep -rl 'wmsTables.outboxEvents'; grep -rl "shared/outbox/outbox.service'"; } | grep -v spec | sort -u`
-- [ ] **유일하게 재시도 의미론이 바뀌는 조각**이다. 6-C-1 이 백오프를 넣었는지 먼저 확인한다
-- [ ] expand — 새 코드는 `event.outbox_events` 에 쓰고 **옛 디스패처는 그대로 둔다**(옛 테이블을 비워야 하므로)
+- [x] fulfillment 11 · inventory 6 · sales-order 1 = ~~18파일~~ → **17파일** (Task 0 이 `fulfillment/outbox/outbox.service.ts` 를 지웠다). `wmsTables.outboxEvents` → 공용. 재측정: `{ grep -rl 'wmsTables.outboxEvents'; grep -rl "shared/outbox/outbox.service'"; } | grep -v spec | sort -u`
+- [x] **유일하게 재시도 의미론이 바뀌는 조각**이다. 6-C-1 이 백오프를 넣었는지 먼저 확인한다
+- [x] expand — 새 코드는 `event.outbox_events` 에 쓰고 **옛 디스패처는 그대로 둔다**(옛 테이블을 비워야 하므로)
+
+**착수 전 확인한 것 — 백오프 표는 같다.** 공용 `OUTBOX_RETRY_DELAYS_SECONDS = [10, 30, 60, 300]`, core 로컬 `calculateNextAttempt` 의 `delays = [10, 30, 60, 300]`, 최종 실패 임계도 둘 다 5. 즉 이 조각은 **표를 바꾸지 않고 인코딩만 바꾼다**(core: `next_attempt_at` 한 컬럼이 예약과 lease 를 겸함 → 공용: `status`+`processing_started_at` 이 lease, `next_attempt_at` 이 예약). 표가 한 벌만 남도록 **core 로컬 디스패처가 공용 상수를 import 하게** 바꿨다 — 드레인 기간 동안 두 디스패처가 같이 도는데 표가 두 벌이면 갈라질 수 있고, 갈라지는 순간은 조용하다.
+
+**실측이 플랜과 어긋난 것 4건.**
+
+1. **17파일 중 5개는 테스트 지원 파일이다** — `__support__/logistics-fixtures.ts` · `__support__/logistics-wiring.ts` · `__support__/outbound-v2-outbox.ts` · `__support__/simple-outbound-wiring.ts` · `__fixtures__/inbound-harness.ts`. `grep -v spec` 가 `.spec.ts` 만 거르기 때문에 프로덕션으로 세어졌다. 프로덕션은 **12파일**(서비스 7 · 모듈 3 · 옛 디스패처 1 · 옛 적재기 1)이다.
+2. **호출 21곳이다 — 254 가 아니다.** ADR §5-1 의 "idempotencyKey 를 넘기는 호출이 254곳" 은 실측과 어긋난다. `OutboxService.enqueue` 호출은 프로덕션 21곳(+빌더 7종)뿐이다. 254 는 아마 spec 을 포함한 문자열 grep 이었다. **결론은 바뀌지 않는다** — 21곳이든 254곳이든 컬럼 없이 회수하면 중복 방어가 사라진다.
+3. **`enableOutbox` 를 켠 모듈이 아웃박스 토픽 집합을 결정하고 있었다.** core 는 catalog 만 켜서 디스패처가 `PRODUCT_STREAM` 하나만 안다 — 회수 대상 5개 토픽은 `No publisher found for topic` 이 됐을 것이다. ADR §5-1 에 결정 3 으로 적었다(파생 조회).
+4. **옛 아웃박스를 *읽는* 프로덕션 코드가 2곳 있었다.** 플랜은 적재만 셌다. 하나(`v1DeliveryTimestamp`)는 이동만 하면 **며칠치 배송 완료 이벤트를 잃는다** — ADR §5-1 에 근거를 적고 expand 기간 이중 읽기로 처리했다.
+
+**계획에 없던 판단 2건.**
+
+1. **재고 이벤트 3종(`StockReceived`·`StockShipped`(비-batch)·`StockAdjusted`)의 적재를 중단했다 — 사람이 결정.** 셋 다 payload 가 자기 계약 스키마를 만족한 적이 없어(`stockEventId`·`outboundType`/`inboundType`/`adjustmentType`·`shippedAt` 부재) 옛 디스패처의 `publishEvent` 가 zod 에서 던졌고, **Kafka 로 나간 적이 없다**(로컬 DB 실측: `StockAdjusted` 240행이 attempts 1~2 에 멈춰 있음). 공용 `enqueue` 는 적재 시점에 검증하므로 그대로 옮기면 `receive`/`ship`/`adjust` 트랜잭션이 터진다. 대안(계약에 맞춰 payload 를 채움)은 없는 enum 값을 지어내야 하고 3종이 처음으로 발행되기 시작한다. 소비자가 0곳이라(이 스트림의 유일한 소비자는 `ProductSellableQuantityChanged`) **관측 가능한 동작 변화가 0**인 중단을 택했다. 배치 출고 경로의 `StockShipped` 는 계약을 만족하므로 그대로 회수했다.
+2. **`ORDER_CREATED`·`ORDER_MODIFIED` 를 `FULFILLMENT_STREAM` 계약에 추가**(additive). 이미 그 토픽으로 발행되던 이벤트인데 계약에 없어 검증을 우회하고 있었다. 근거는 ADR §5-1 결정 5.
+
+**게이트 실측 (2026-08-09):** `type-check` **163** = 기준선 164 − 1 (회수가 고친 것 1건: PSQ 스펙의 `mockResolvedValue(undefined)` 가 이제 `Promise<void>` 에 맞는다) · 신규 오류 0 · `audit:event-handlers` exit 0 (87 핸들러) · `audit:event-publishers` exit 0 (**주입 지점 22 → 34**) · `audit:consume-validation --gate` exit 0 · 전체 jest **실패 suite 18 = 기준선(집합 완전 동일)**, 통과 370 → 373 · 10개 앱 `nest build` OK · 변경 63파일 eslint **신규 메시지 0**(230 → 229, 기준선 대비 감소).
+
+**실 DB 통합 대조 (로컬 compose `core`):** 아웃박스를 만지는 스펙 29개 중 **23 통과 / 6 실패**이고, 그 6개는 **HEAD 에서도 같은 테스트가 같은 이유로 실패한다**(`git stash` 로 대조 확인 — bulk-session-draft · reverse-event-guard · inventory-command.adjust · ledger-reconciliation · unified-reservation ×2). 회수 도중 4개 suite 가 실제로 깨졌다가 고쳐졌다: 스펙이 옛 테이블을 읽고 있었고(98곳), 공용 테이블의 `payload` 컬럼에는 **envelope 전체**가 실린다(옛 테이블은 도메인 payload 만 실었다).
+
+**새 스펙 4개 / 27건.** `libs/events/src/outbox/outbox-idempotency.integration.spec.ts`(7, **실 Postgres**) · `libs/events/src/outbox/outbox-dispatch-routing.spec.ts`(10) · `apps/core/.../outbox/outbox-backoff-parity.spec.ts`(3) · `apps/core/.../outbox/fulfillment-dispatch-gate.spec.ts`(3, + events.spec 2건 추가). 멱등 스펙은 **대조군을 실행으로 두 겹** 뒀다 — (1) `LIKE ... INCLUDING DEFAULTS` 로 만든 **제약 없는 쌍둥이 테이블**에 같은 `ON CONFLICT DO NOTHING` 문을 넣어 두 행이 남는 것, (2) `pg_index.indnullsnotdistinct` 와 제약 컬럼 3개를 카탈로그에서 직접 읽는 것. 그리고 `onConflictDoNothing()` 을 제거하는 **실파일 변이로 2건이 빨간불**이 되는 것을 확인한 뒤 `cp` 백업 + `sha1sum -c` 로 원복했다(`git checkout --` 는 미커밋 작업분을 날리므로 쓰지 않는다).
 
 #### 6-C-3: wallet + channel-adapter 회수
 

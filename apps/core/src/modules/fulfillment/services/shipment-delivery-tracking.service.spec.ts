@@ -68,6 +68,7 @@ function makeHarness(selectResults: unknown[][], insertResults: unknown[][] = [[
   const service = new ShipmentDeliveryTrackingService(
     db as never,
     outbox as never,
+    outbox as never,
     workflowGate as never,
     shipmentReservations as never,
   );

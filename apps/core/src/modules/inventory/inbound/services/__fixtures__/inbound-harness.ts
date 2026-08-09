@@ -8,7 +8,8 @@ import { InventoryCommandService } from '../../../core/services/inventory-comman
 import { InventoryIdempotencyService } from '../../../core/services/inventory-idempotency.service';
 import { BatchControlledStockGuard } from '../../../core/services/batch-controlled-stock.guard';
 import { ProductSellableQuantityService } from '../../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../../shared/outbox/outbox.service';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
+import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
 
@@ -40,7 +41,7 @@ function dbServiceFor(database: Database): DbService<typeof wmsSchema> {
 function buildWiring(database: Database) {
   const dbService = dbServiceFor(database);
   const guard = new BatchControlledStockGuard();
-  const outbox = new InventoryOutboxService(dbService);
+  const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
   const sellable = new ProductSellableQuantityService(dbService as never, outbox);
   const eventStore = new StockEventStore(dbService, sellable, guard);
   const location = new LocationService(dbService);

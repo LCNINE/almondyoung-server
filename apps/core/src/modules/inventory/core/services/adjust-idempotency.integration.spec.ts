@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
@@ -8,7 +10,6 @@ import { InventoryController } from '../controllers/inventory.controller';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 import { StockEventStore } from '../repositories/stock-event.store';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { StockEventService } from './stock-event.service';
@@ -30,7 +31,7 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
       db,
       run: async (fn: (t: DbTx) => Promise<unknown>, t?: DbTx) => (t ? fn(t) : db.transaction(fn)),
     } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);

@@ -323,6 +323,35 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
 
 **wallet 만 마이그레이션을 만들지 못했다 — 이 작업과 무관한 선행 결함이다.** `drizzle-kit generate` 가 `apps/wallet/drizzle/meta/` 의 **스냅샷 체인 분기**에서 멈춘다(`20260630052942` 와 `20260708064014` 가 같은 `prevId` 를 가리킨다). PR #501 의 rebase 산물이며 HEAD 에 그대로 있다. 게다가 최신 스냅샷에는 `cash_receipts` · `refund_requests` 가 **빠져 있다**(두 테이블의 마이그레이션은 journal 에 있고 적용됐는데도) — 즉 `prevId` 만 고쳐 generate 하면 이미 있는 테이블에 `CREATE TABLE` 을 내는 마이그레이션이 나온다. wallet 은 `enableOutbox` 가 아니라 이 조각에서 그 컬럼을 쓰지 않으므로 **6-C-1 의 정확성에는 영향이 없다.** 다만 **6-C-3 전에 반드시 복구해야 하고**, 그 전까지 wallet 의 스키마 변경 전체가 막혀 있다.
 
+#### core 회수 (2026-08-09, Task 6-C-2) — 설계 결정 5건
+
+6-C-1 은 **컬럼**을 승격했고 인터페이스는 열지 않았다. 6-C-2 가 그 seam 을 열면서 ADR 이 정하지 않았던 다섯 가지를 정했다. 앞의 넷은 실측이 강제했고, 다섯째는 계약 구멍이었다.
+
+**1. `partitionKey` 는 파생을 기본으로 두되 호출자 지정을 허용한다.** 공용 publisher 는 `streamConfig.partitionKey?.(payload) ?? aggregateId` 로 도출하고 core 로컬은 호출자가 넘겨서, 둘 중 하나를 골라야 했다. 파생이 §1 의 원칙이지만 **파생의 단위는 스트림이고 실제 키는 이벤트별로 갈린다**(실측):
+
+| 토픽 | 이벤트 | partitionKey | aggregateId |
+|---|---|---|---|
+| `inventory.events.v1` | `Stock*` | `skuId` | 재고이벤트 id |
+| `inventory.events.v1` | `ProductSellableQuantityChanged` | `variantId` | `variantId` |
+| `fulfillments.events.v1` | `Fulfillment*`(FO 완료) | `salesOrderId ?? foId` | `foId` |
+| `fulfillments.events.v1` | `ORDER_*` | `orderId` | `orderId` |
+
+`(payload: any) => string` 하나로는 이 갈래를 페이로드 필드 유무로 넘겨짚지 않고서는 표현할 수 없다. 그리고 파생으로 밀어붙이면 재고 이벤트가 `skuId` 가 아니라 재고이벤트 id 로 파티션돼 **SKU 단위 순서 보장이 조용히 사라진다** — 이 ADR 이 내내 다룬 무증상 소실의 새 사례다. 그래서 우선순위를 **호출자 지정 → 스트림 파생 → `aggregateId`** 로 두고, 파생 함수가 있는 두 스트림(`shipments.events.v1` · `fulfillments.events.v2`)은 그대로 파생을 쓴다. 해석은 **적재 시점**에 끝내 행에 싣는다 — 디스패처에서 해석하면 적재와 발행 사이에 파생 함수가 바뀔 때 행이 조용히 다른 파티션으로 간다.
+
+**2. 멱등의 주체는 코드가 아니라 DB 제약이고, 충돌은 던지지 않는다.** `OutboxPublisher.write` 가 `onConflictDoNothing()` 을 붙인다. 던지면 **호출자의 도메인 트랜잭션 전체가 롤백**되므로, 이미 기록된 사실을 다시 적재하려 했다는 이유로 재고 이동이나 출고가 되돌아간다. core 로컬 판본이 회수 전까지 하던 것과 같은 선택이다.
+
+**3. 디스패치 가능한 토픽은 선언이 아니라 파생이다.** publisherMap 은 `enableOutbox` 를 켠 `forRoot` 호출의 `streams` 로 만들어졌는데, 아웃박스는 **앱 하나에 테이블 하나**이고 BC 별 `forRoot` 는 여럿이라 그 선언은 "이 앱이 적재하는 토픽 집합"과 어긋난다. core 가 그렇다 — 아웃박스를 켠 것은 catalog(`PRODUCT_STREAM`) 하나인데 적재하는 토픽은 6개다. 선언을 늘리는 대신 `ModuleRef` 로 `getPublisherToken(topic)` 을 조회한다: 행이 들고 있는 topic 이 곧 조회 키다. §3 이 소비 집합에 적용한 원칙을 발행 쪽에 같이 적용한 것이다. 같은 이유로 `OutboxPublisher` 는 이제 **항상 optional 로** 주입된다 — 모듈이 `@Global()` 이라 어느 한 곳이 켜면 앱 전체 publisher 가 `enqueue` 를 쓸 수 있고, 아무도 켜지 않은 앱에서는 그대로 던진다.
+
+**4. 발행 보류(maintenance)는 port 로 옮긴다 — 이 조각에서 바뀌어도 되는 것은 재시도 의미론뿐이다.** core 로컬 디스패처는 `FULFILLMENT_WORKFLOW_MODE=maintenance` 동안 fulfillment·shipment 계열 행을 **선택하지 않았다**(적재는 계속되고 발행만 멈춘다). 회수하면서 빠뜨리면 정비 중에 이벤트가 나가기 시작한다. `OutboxDispatchGate` port 로 옮겼고, 앱은 **서술자**(보류할 topic / event_type 접두사)만 돌려준다 — drizzle `SQL` 을 돌려주게 하면 앱이 다시 아웃박스 테이블을 알아야 하고, 그게 §5-1 (B) 가 `libs/events` 로 모은 지식이다. 보류는 **선택 단계**에 건다: 고른 뒤 걸러내면 lease 를 잡아 놓고 버려 행이 `PROCESSING` 에 갇힌다.
+
+**5. `ORDER_CREATED` · `ORDER_MODIFIED` 를 `FULFILLMENT_STREAM` 계약에 추가한다 (additive).** 두 이벤트는 `fulfillments.events.v1` 로 **이미 발행되고 있었는데 계약에 없었다** — `validatePayload` 가 "Event type not found in stream config" 를 warn 하고 그대로 통과시키는, 6-A 가 닫은 것과 같은 종류의 우회다. `enqueue<K extends keyof TEvents>` 는 계약에 없는 이름을 컴파일 단계에서 막으므로 회수하려면 계약에 올려야 하고, 올리면 검증도 따라온다. 스키마는 실제로 실려 나가던 모양 그대로(`{ orderId: string }`)다. **소비자는 0곳이다**(실측: `fulfillments.events.v1` 의 `@On` 은 channel-adapter 의 `FulfillmentShipped`/`Delivered`/`Cancelled` 셋뿐) — 즉 이 둘은 발행되지만 아무도 읽지 않는다. 라우팅 재검토는 이 조각의 일이 아니라 별도 결정이다.
+
+**재고 이벤트 3종은 회수 대신 적재를 중단했다 (사람 결정, 2026-08-09).** `StockReceived` · `StockShipped`(비-batch) · `StockAdjusted` 의 payload 는 자기 계약 스키마를 만족한 적이 없다 — `stockEventId` · `inboundType`/`outboundType`/`adjustmentType` · `receivedAt`/`shippedAt`/`adjustedAt` 이 없고, 대신 `afterQuantity` · `journalId` · `occurredAt` 을 실었다. 발행 경로는 zod 를 타므로(`validateOnPublish` 기본 true) 옛 디스패처가 그 행마다 던졌고, 재시도 5회 뒤 `failed` 로 끝났다 — **Kafka 로 나간 적이 없다.** 공용 `enqueue` 는 적재 시점에 검증하므로 그대로 옮기면 `receive`/`ship`/`adjust` 트랜잭션이 터진다. 계약에 맞춰 채우는 대안은 없는 enum 값을 지어내야 하고, 3종이 처음으로 발행되기 시작한다. **소비자가 0곳**이라(이 스트림의 유일한 소비자는 `ProductSellableQuantityChanged`) 적재 중단은 관측 가능한 동작 변화가 없고, 사라지는 것은 매번 쌓이던 poison 행뿐이다. 되살릴 때는 payload 를 맞추는 것이 아니라 **계약을 먼저 정한다.** 배치 출고 경로의 `StockShipped` 는 계약을 만족하므로 그대로 회수했다.
+
+**공용 테이블의 `payload` 컬럼에는 envelope 전체가 실린다 — 옛 core 테이블은 도메인 payload 만 실었다.** 그래서 옛 디스패처는 `publishEvent` 로 envelope 를 다시 조립했고, 공용 디스패처는 `publishStoredEnvelope` 로 그대로 보낸다. 행을 읽어 payload 를 단언하던 스펙들이 이 차이로 깨졌다(회수 중 실제로 4개 suite 가 빨간불이 됐다).
+
+**옛 아웃박스를 읽는 코드가 둘 있었다 — 그중 하나는 이동만으로는 깨진다.** `shipment-delivery-tracking.service.ts` 의 `v1DeliveryTimestamp` 는 `${foId}:fully-shipped` **행의 존재**로 "FO 가 전량 출고됐는가"를 판정한다. 새 코드가 새 테이블만 읽으면, **배포 이전에 출고돼 배포 이후에 배송 완료되는 모든 FO** 가 그 행을 찾지 못해 v1 `FulfillmentDelivered` 를 잃는다 — 롤링 배포의 몇 분짜리 창이 아니라 며칠치 재고(출고→배송 리드타임) 전체다. expand 기간에는 **두 테이블을 모두 읽는다**. 옛 갈래 제거는 6-C-4 몫이다.
+
 ### 명시적으로 하지 않는 것
 
 - **두 리스트를 부팅 시 대조(reconcile)하는 안은 기각한다.** 어긋남을 시끄럽게 만들 뿐 중복은 그대로 남는다. 중복을 없애는 파생이 우월하다.

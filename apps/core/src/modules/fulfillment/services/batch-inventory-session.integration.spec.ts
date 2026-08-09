@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -8,7 +10,6 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { acquireStockAvailabilityLock } from '../../inventory/shared/locks/stock-availability-lock';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { LocationService } from '../../inventory/core/services/location.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
@@ -59,7 +60,7 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     const audit = new AuditService(dbService);
     const sessions = new BatchInventorySessionService(dbService, guard, audit, faultInjector);
     const recovery = new BatchSessionRecoveryService(dbService, audit, guard);
-    const outbox = new InventoryOutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     const eventStore = new StockEventStore(dbService, sellable, guard);
     const command = new InventoryCommandService(dbService, eventStore, outbox, new LocationService(dbService), guard);

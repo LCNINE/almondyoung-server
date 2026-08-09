@@ -1,3 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,11 +21,9 @@ import { LocationService } from '../../inventory/core/services/location.service'
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { inRollbackTx, makeDb, makeDbService } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
@@ -57,8 +63,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
 
   function serviceFor(dbService: DbService<typeof wmsSchema>) {
     const workflow = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' }));
-    const inventoryOutbox = new InventoryOutboxService(dbService);
-    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const controlled = new BatchControlledStockGuard();
     const eventStore = new StockEventStore(dbService, sellable, controlled);
@@ -99,7 +104,9 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       shipmentReservations,
       waybills,
       new BarcodeService(dbService),
-      fulfillmentOutbox,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );
@@ -447,7 +454,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       }
       await tx.delete(wmsTables.auditLogs).where(eq(wmsTables.auditLogs.userId, fixture.actorId));
       const outboxAggregateIds = [fixture.shipment.id, fixture.fulfillmentOrder.id, ...stockEventIds];
-      await tx.delete(wmsTables.outboxEvents).where(inArray(wmsTables.outboxEvents.aggregateId, outboxAggregateIds));
+      await tx.delete(outbox_events).where(inArray(outbox_events.aggregateId, outboxAggregateIds));
 
       if (attemptIds.length > 0) {
         await tx
@@ -702,15 +709,11 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
       const events = await tx
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            inArray(wmsTables.outboxEvents.topic, [
-              'shipments.events.v1',
-              'fulfillments.events.v2',
-              'fulfillments.events.v1',
-            ]),
-            inArray(wmsTables.outboxEvents.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
+            inArray(outbox_events.topic, ['shipments.events.v1', 'fulfillments.events.v2', 'fulfillments.events.v1']),
+            inArray(outbox_events.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
           ),
         );
 
@@ -877,19 +880,15 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       const first = await service.inspectionScan(fixture.shipment.id, input);
       const outboxAfterFirst = await tx
         .select({
-          id: wmsTables.outboxEvents.id,
-          topic: wmsTables.outboxEvents.topic,
-          idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+          id: outbox_events.id,
+          topic: outbox_events.topic,
+          idempotencyKey: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            inArray(wmsTables.outboxEvents.topic, [
-              'shipments.events.v1',
-              'fulfillments.events.v2',
-              'fulfillments.events.v1',
-            ]),
-            inArray(wmsTables.outboxEvents.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
+            inArray(outbox_events.topic, ['shipments.events.v1', 'fulfillments.events.v2', 'fulfillments.events.v1']),
+            inArray(outbox_events.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
           ),
         );
       const replay = await service.inspectionScan(fixture.shipment.id, input);
@@ -903,19 +902,15 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.stockEvents.transitionType, 'SHIP'));
       const outboxAfterReplay = await tx
         .select({
-          id: wmsTables.outboxEvents.id,
-          topic: wmsTables.outboxEvents.topic,
-          idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+          id: outbox_events.id,
+          topic: outbox_events.topic,
+          idempotencyKey: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            inArray(wmsTables.outboxEvents.topic, [
-              'shipments.events.v1',
-              'fulfillments.events.v2',
-              'fulfillments.events.v1',
-            ]),
-            inArray(wmsTables.outboxEvents.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
+            inArray(outbox_events.topic, ['shipments.events.v1', 'fulfillments.events.v2', 'fulfillments.events.v1']),
+            inArray(outbox_events.aggregateId, [fixture.shipment.id, fixture.fulfillmentOrder.id]),
           ),
         );
 
@@ -996,12 +991,12 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .where(eq(wmsTables.stockEvents.id, sources[0].stockEventId!));
       const outbox = await db
         .select({
-          topic: wmsTables.outboxEvents.topic,
-          idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+          topic: outbox_events.topic,
+          idempotencyKey: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
-          inArray(wmsTables.outboxEvents.aggregateId, [
+          inArray(outbox_events.aggregateId, [
             fixture.shipment.id,
             fixture.fulfillmentOrder.id,
             sources[0].stockEventId!,
@@ -1100,14 +1095,10 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
             and(eq(wmsTables.stockEvents.skuId, fixture.sku.id), eq(wmsTables.stockEvents.transitionType, 'SHIP')),
           );
         const outbox = await db
-          .select({ id: wmsTables.outboxEvents.id })
-          .from(wmsTables.outboxEvents)
+          .select({ id: outbox_events.id })
+          .from(outbox_events)
           .where(
-            inArray(wmsTables.outboxEvents.partitionKey, [
-              fixture.shipment.id,
-              fixture.fulfillmentOrder.id,
-              fixture.sku.id,
-            ]),
+            inArray(outbox_events.partitionKey, [fixture.shipment.id, fixture.fulfillmentOrder.id, fixture.sku.id]),
           );
         const commands = await db
           .select({ id: wmsTables.fulfillmentCommandRequests.id })
@@ -1205,11 +1196,11 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       });
       let v1 = await tx
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            eq(wmsTables.outboxEvents.topic, 'fulfillments.events.v1'),
-            eq(wmsTables.outboxEvents.idempotencyKey, `${first.fulfillmentOrder.id}:fully-shipped`),
+            eq(outbox_events.topic, 'fulfillments.events.v1'),
+            eq(outbox_events.idempotencyKey, `${first.fulfillmentOrder.id}:fully-shipped`),
           ),
         );
       expect(v1).toHaveLength(0);
@@ -1222,11 +1213,11 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       });
       v1 = await tx
         .select()
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            eq(wmsTables.outboxEvents.topic, 'fulfillments.events.v1'),
-            eq(wmsTables.outboxEvents.idempotencyKey, `${first.fulfillmentOrder.id}:fully-shipped`),
+            eq(outbox_events.topic, 'fulfillments.events.v1'),
+            eq(outbox_events.idempotencyKey, `${first.fulfillmentOrder.id}:fully-shipped`),
           ),
         );
       expect(v1).toHaveLength(1);

@@ -3,8 +3,8 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { wmsSchema, DbTx } from '../../../inventory/schema/inventory.schema';
 
-import { OutboxService as InventoryOutboxService } from '../../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../../../inventory/shared/outbox/outbox.service';
+import { outboxPublisherFor } from '../../outbox/__support__/outbox-publisher.factory';
+import { FULFILLMENT_STREAM, INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../../../inventory/core/repositories/stock-event.store';
 import { LocationService } from '../../../inventory/core/services/location.service';
@@ -42,8 +42,8 @@ export function makeDbService(db: PostgresJsDatabase<typeof wmsSchema>): DbServi
 }
 
 export interface Wired {
-  invOutbox: InventoryOutboxService;
-  fulfillmentOutbox: FulfillmentOutboxService;
+  inventoryPublisher: ReturnType<typeof outboxPublisherFor<typeof INVENTORY_STREAM.events>>;
+  fulfillmentV1Publisher: ReturnType<typeof outboxPublisherFor<typeof FULFILLMENT_STREAM.events>>;
   sellable: ProductSellableQuantityService;
   eventStore: StockEventStore;
   location: LocationService;
@@ -65,12 +65,12 @@ export function wireLogistics(
   dbService: DbService<typeof wmsSchema>,
   workflowMode: FulfillmentWorkflowMode = 'v2',
 ): Wired {
-  const invOutbox = new InventoryOutboxService(dbService);
-  const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
-  const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
+  const inventoryPublisher = outboxPublisherFor(INVENTORY_STREAM, dbService);
+  const fulfillmentV1Publisher = outboxPublisherFor(FULFILLMENT_STREAM, dbService);
+  const sellable = new ProductSellableQuantityService(dbService as never, inventoryPublisher);
   const eventStore = new StockEventStore(dbService, sellable);
   const location = new LocationService(dbService);
-  const command = new InventoryCommandService(dbService, eventStore, invOutbox, location);
+  const command = new InventoryCommandService(dbService, eventStore, inventoryPublisher, location);
   const unified = new UnifiedReservationService(dbService, sellable);
   const lifecycle = new ReservationLifecycleService(dbService, unified);
   // 로컬 컨벤션(.env.wms.example)과 동일한 epoch cutover — "모든 주문이 커토버 이후" 를 참으로 만든다.
@@ -93,7 +93,7 @@ export function wireLogistics(
     dbService,
     lifecycle,
     productSkuMapping,
-    fulfillmentOutbox,
+    fulfillmentV1Publisher,
     workflowGate,
     shipmentReservations,
     progress,
@@ -102,8 +102,8 @@ export function wireLogistics(
   const picking = new PickingProcessService(dbService);
 
   return {
-    invOutbox,
-    fulfillmentOutbox,
+    inventoryPublisher,
+    fulfillmentV1Publisher,
     sellable,
     eventStore,
     location,

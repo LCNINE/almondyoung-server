@@ -12,7 +12,7 @@ import {
   NestMicroservice,
   Transport,
 } from '@nestjs/microservices';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
@@ -31,6 +31,7 @@ import { OutboxConfig } from './outbox/outbox.types';
 import { OutboxPublisher } from './outbox/outbox-publisher.service';
 import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
 import { OutboxWriter } from './outbox/outbox-writer.port';
+import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-dispatch-gate.port';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
@@ -171,7 +172,13 @@ export class EventsModule {
           outboxWriter,
         );
       },
-      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService, ...(enableOutbox ? [OutboxPublisher] : [])],
+      // `OutboxPublisher` 는 **항상 optional 로** 주입한다 (Task 6-C-2). 그 전에는 같은
+      // `forRoot` 호출이 `enableOutbox: true` 여야만 주입 목록에 들어갔는데, 아웃박스는 앱 하나에
+      // 테이블 하나이고 BC 별 `forRoot` 는 여럿이라 그 결합이 어긋난다 — core 는 catalog 만
+      // 아웃박스를 켰지만 inventory·fulfillment·sales-order 의 publisher 도 `enqueue` 를 쓴다.
+      // 이 모듈은 `@Global()` 이라 어느 한 곳이 켜면 provider 는 앱 전체에서 보인다. 아무도 켜지
+      // 않은 앱에서는 그대로 `undefined` 이고 `enqueue` 가 던진다 = 이 변경 전과 같다.
+      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService, { token: OutboxPublisher, optional: true }],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
@@ -219,6 +226,8 @@ export class EventsModule {
               transport: EventTransport,
               eventChainService: EventChainService,
               eventTrackingService: EventTrackingService,
+              moduleRef: ModuleRef,
+              dispatchGate?: OutboxDispatchGate,
             ) => {
               // topic -> StreamPublisher 매핑 생성
               const publisherMap = new Map<string, StreamPublisher>();
@@ -234,9 +243,28 @@ export class EventsModule {
                 publisherMap.set(stream.topic.topic, publisher);
               });
 
-              return new OutboxDispatcher(dbService, publisherMap, options.outbox);
+              // 이 모듈이 등록하지 않은 토픽은 앱 컨테이너에서 파생 조회한다 (Task 6-C-2).
+              // `strict: false` 라야 다른 `forRoot` 인스턴스가 등록한 publisher 까지 보인다.
+              const resolvePublisher = (topic: string): StreamPublisher | undefined => {
+                try {
+                  return moduleRef.get<StreamPublisher>(EventsModule.getPublisherToken(topic), { strict: false });
+                } catch {
+                  // 그 토픽의 publisher 를 아무도 등록하지 않았다 = 설정 오류. 호출부가
+                  // `No publisher found for topic` 으로 바꿔 실패로 기록한다.
+                  return undefined;
+                }
+              };
+
+              return new OutboxDispatcher(dbService, publisherMap, options.outbox, resolvePublisher, dispatchGate);
             },
-            inject: [DbService, EVENT_TRANSPORT, EventChainService, EventTrackingService],
+            inject: [
+              DbService,
+              EVENT_TRANSPORT,
+              EventChainService,
+              EventTrackingService,
+              ModuleRef,
+              { token: OUTBOX_DISPATCH_GATE, optional: true },
+            ],
           },
         ]
       : [];

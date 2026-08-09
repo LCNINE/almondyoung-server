@@ -1,10 +1,11 @@
+import { outbox_events } from '@app/events';
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { randomUUID } from 'crypto';
 import { and, eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { LocationService } from './location.service';
@@ -37,7 +38,7 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
         tx ? fn(tx) : db.transaction((inner) => fn(inner as unknown as DbTx)),
     } as unknown as DbService<typeof wmsSchema>;
     guard = new BatchControlledStockGuard();
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     recalculateSellable = jest.spyOn(sellable, 'recalculateAndPublishForSku');
     eventStore = new StockEventStore(dbService, sellable, guard);
@@ -366,16 +367,16 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
         .where(eq(wmsTables.dispatchAttemptSources.id, fixture.dispatchSource.id));
       expect(linked.stockEventId).toBe(first.eventId);
       const outboxRows = await tx
-        .select({ id: wmsTables.outboxEvents.id, payload: wmsTables.outboxEvents.payload })
-        .from(wmsTables.outboxEvents)
-        .where(
-          and(
-            eq(wmsTables.outboxEvents.eventType, 'StockShipped'),
-            eq(wmsTables.outboxEvents.aggregateId, first.eventId),
-          ),
-        );
+        .select({ id: outbox_events.id, payload: outbox_events.payload })
+        .from(outbox_events)
+        .where(and(eq(outbox_events.eventType, 'StockShipped'), eq(outbox_events.aggregateId, first.eventId)));
       expect(outboxRows).toHaveLength(1);
-      expect(INVENTORY_STREAM.events.StockShipped.schema!.parse(outboxRows[0].payload)).toEqual(outboxRows[0].payload);
+      // 공용 테이블의 `payload` 컬럼에는 **envelope 전체**가 실린다 (ADR-0029 §5-1, Task 6-C-2).
+      // 옛 core 테이블은 도메인 payload 만 실었고, 그래서 옛 디스패처는 `publishEvent` 로
+      // envelope 를 다시 조립했다. 공용 디스패처는 `publishStoredEnvelope` 로 그대로 보낸다.
+      const envelope = outboxRows[0].payload as { messageType: string; payload: unknown };
+      expect(envelope.messageType).toBe('StockShipped');
+      expect(INVENTORY_STREAM.events.StockShipped.schema!.parse(envelope.payload)).toEqual(envelope.payload);
 
       await expectConflictCode(
         tx.transaction((inner) =>

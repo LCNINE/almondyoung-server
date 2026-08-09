@@ -1,11 +1,12 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
-import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { outbox_events } from '@app/events';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { ShipmentTrackingEventDto } from '../dto/shipment-tracking-event.dto';
 import { FULFILLMENT_EVENTS, fulfillmentDeliveredV1OutboxEvent, shipmentDeliveredOutboxEvent } from '../events';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
@@ -25,7 +26,10 @@ class RecallTrackingLockOrderRetry extends Error {}
 export class ShipmentDeliveryTrackingService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly outbox: OutboxService,
+    @InjectPublisher(SHIPMENT_STREAM)
+    private readonly shipments: PublisherFor<typeof SHIPMENT_STREAM>,
+    @InjectPublisher(FULFILLMENT_STREAM)
+    private readonly fulfillmentsV1: PublisherFor<typeof FULFILLMENT_STREAM>,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly shipmentReservations: ShipmentReservationService,
   ) {}
@@ -331,7 +335,7 @@ export class ShipmentDeliveryTrackingService {
     deliveredAt: Date,
     tx: DbTx,
   ): Promise<void> {
-    await this.outbox.enqueue(
+    await this.shipments.enqueue(
       shipmentDeliveredOutboxEvent({
         shipmentId: attempt.shipmentId,
         dispatchAttemptId: attempt.id,
@@ -379,7 +383,7 @@ export class ShipmentDeliveryTrackingService {
         .limit(1);
       if (!identity?.salesOrderId) continue;
 
-      await this.outbox.enqueue(
+      await this.fulfillmentsV1.enqueue(
         fulfillmentDeliveredV1OutboxEvent({
           fulfillmentId: fulfillmentOrderId,
           orderId: identity.salesOrderId,
@@ -391,19 +395,47 @@ export class ShipmentDeliveryTrackingService {
     }
   }
 
-  private async v1DeliveryTimestamp(fulfillmentOrderId: string, tx: DbTx): Promise<Date | null> {
-    const [fullShippedProjection] = await tx
+  /**
+   * "이 FO 가 전량 출고됐는가" 를 **아웃박스 행의 존재**로 판정한다 — v1 완료 투영은 FO 당
+   * 한 번이고, 그 행의 멱등 키(`${foId}:fully-shipped`)가 그 사실의 유일한 기록이다.
+   *
+   * **드레인 기간에는 두 테이블을 모두 본다** (ADR-0029 §5-1, Task 6-C-2). 이 판정만큼은
+   * 새 테이블만 보면 롤링 배포의 몇 분짜리 창이 아니라 **며칠치**가 깨진다 — 출고와 배송
+   * 완료 사이에는 리드타임이 있어서, 배포 이전에 출고된 FO 는 전부 옛 테이블에만 행이 있고
+   * 그 FO 들의 배송 완료 웹훅은 배포 이후에 온다. 옛 갈래 제거는 6-C-4 몫이다.
+   */
+  private async hasFullyShippedProjection(fulfillmentOrderId: string, tx: DbTx): Promise<boolean> {
+    const idempotencyKey = `${fulfillmentOrderId}:fully-shipped`;
+
+    const [shared] = await tx
+      .select({ id: outbox_events.id })
+      .from(outbox_events)
+      .where(
+        and(
+          eq(outbox_events.topic, FULFILLMENT_STREAM.topic.topic),
+          eq(outbox_events.eventType, FULFILLMENT_EVENTS.SHIPPED),
+          eq(outbox_events.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    if (shared) return true;
+
+    const [legacy] = await tx
       .select({ id: wmsTables.outboxEvents.id })
       .from(wmsTables.outboxEvents)
       .where(
         and(
           eq(wmsTables.outboxEvents.topic, FULFILLMENT_STREAM.topic.topic),
           eq(wmsTables.outboxEvents.eventType, FULFILLMENT_EVENTS.SHIPPED),
-          eq(wmsTables.outboxEvents.idempotencyKey, `${fulfillmentOrderId}:fully-shipped`),
+          eq(wmsTables.outboxEvents.idempotencyKey, idempotencyKey),
         ),
       )
       .limit(1);
-    if (!fullShippedProjection) return null;
+    return Boolean(legacy);
+  }
+
+  private async v1DeliveryTimestamp(fulfillmentOrderId: string, tx: DbTx): Promise<Date | null> {
+    if (!(await this.hasFullyShippedProjection(fulfillmentOrderId, tx))) return null;
 
     const attempts = await tx
       .selectDistinct({

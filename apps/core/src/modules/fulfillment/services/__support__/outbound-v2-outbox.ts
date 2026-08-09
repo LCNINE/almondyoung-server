@@ -1,5 +1,6 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { wmsTables, DbTx } from '../../../inventory/schema/inventory.schema';
+import { outbox_events } from '@app/events';
 
 /**
  * The world fields the topology assertion reads. Structural on purpose: each scenario
@@ -58,18 +59,18 @@ export async function expectExactOutboxTopology(
   const inventoryRows = shipEvents.length
     ? await tx
         .select({
-          topic: wmsTables.outboxEvents.topic,
-          eventType: wmsTables.outboxEvents.eventType,
-          aggregateType: wmsTables.outboxEvents.aggregateType,
-          aggregateId: wmsTables.outboxEvents.aggregateId,
-          idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+          topic: outbox_events.topic,
+          eventType: outbox_events.eventType,
+          aggregateType: outbox_events.aggregateType,
+          aggregateId: outbox_events.aggregateId,
+          idempotencyKey: outbox_events.idempotencyKey,
         })
-        .from(wmsTables.outboxEvents)
+        .from(outbox_events)
         .where(
           and(
-            eq(wmsTables.outboxEvents.topic, 'inventory.events.v1'),
+            eq(outbox_events.topic, 'inventory.events.v1'),
             inArray(
-              wmsTables.outboxEvents.aggregateId,
+              outbox_events.aggregateId,
               shipEvents.map((event) => event.id),
             ),
           ),
@@ -167,13 +168,13 @@ export async function expectExactOutboxTopology(
   }
   const fulfillmentRows = await tx
     .select({
-      topic: wmsTables.outboxEvents.topic,
-      eventType: wmsTables.outboxEvents.eventType,
-      aggregateType: wmsTables.outboxEvents.aggregateType,
-      aggregateId: wmsTables.outboxEvents.aggregateId,
-      idempotencyKey: wmsTables.outboxEvents.idempotencyKey,
+      topic: outbox_events.topic,
+      eventType: outbox_events.eventType,
+      aggregateType: outbox_events.aggregateType,
+      aggregateId: outbox_events.aggregateId,
+      idempotencyKey: outbox_events.idempotencyKey,
     })
-    .from(wmsTables.outboxEvents)
-    .where(inArray(wmsTables.outboxEvents.aggregateId, world.outboxAggregateIds));
+    .from(outbox_events)
+    .where(inArray(outbox_events.aggregateId, world.outboxAggregateIds));
   expect(fulfillmentRows.map(encode).sort()).toEqual(expectedRows.map(encode).sort());
 }

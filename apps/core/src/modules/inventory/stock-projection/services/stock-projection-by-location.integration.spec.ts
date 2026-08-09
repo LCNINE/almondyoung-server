@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql as dsql } from 'drizzle-orm';
@@ -7,7 +9,6 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockProjectionReader } from './stock-projection.reader';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -29,7 +30,7 @@ beforeAll(() => {
     db,
     run: async (fn: (t: DbTx) => Promise<unknown>, t?: DbTx) => (t ? fn(t) : db.transaction(fn)),
   } as unknown as DbService<typeof wmsSchema>;
-  const outbox = new OutboxService(dbService);
+  const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
   const sellable = new ProductSellableQuantityService(dbService as never, outbox);
   const eventStore = new StockEventStore(dbService, sellable);
   reader = new StockProjectionReader(dbService, eventStore);

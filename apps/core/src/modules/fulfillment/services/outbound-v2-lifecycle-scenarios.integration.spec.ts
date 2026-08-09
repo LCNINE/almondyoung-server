@@ -1,3 +1,10 @@
+import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
+import {
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
@@ -10,11 +17,9 @@ import { InventoryCommandService } from '../../inventory/core/services/inventory
 import { LocationService } from '../../inventory/core/services/location.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { OutboxService as FulfillmentOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import {
   assertOutboundV2Checkpoint,
   expectExactOutboxTopology,
@@ -112,7 +117,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     const audit = new AuditService(dbService);
     const authorization = { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never;
     const controlled = new BatchControlledStockGuard();
-    const inventoryOutbox = new InventoryOutboxService(dbService);
+    const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const inventory = new InventoryCommandService(
       dbService,
@@ -145,7 +150,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       }),
     };
     const sessions = new BatchInventorySessionService(dbService, controlled, audit);
-    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
     // 플랜3: dispatch(assertDispatchable/markUsed)·recall(getActiveWaybill/voidForRecall) 둘 다 실제
     // WaybillService 를 소비한다. registry/machine 은 이 경로들에서 실행되지 않지만(carrier HTTP 없음) 구조적
     // 의존이므로 empty registry + issue machine 으로 배선한다(waybill.manager.integration.spec.ts 패턴).
@@ -168,7 +172,8 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       waybills,
       inventory,
       reservations,
-      fulfillmentOutbox,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       audit,
       workflow,
     );
@@ -181,7 +186,9 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       reservations,
       waybills,
       new BarcodeService(dbService),
-      fulfillmentOutbox,
+      outboxPublisherFor(SHIPMENT_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
+      outboxPublisherFor(FULFILLMENT_STREAM, dbService),
       audit,
       workflow,
     );

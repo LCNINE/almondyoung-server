@@ -172,7 +172,13 @@ function makeService() {
     markUsed: jest.fn().mockResolvedValue(undefined),
   };
   const barcode = { parseBarcode: jest.fn() };
-  const outbox = { enqueue: jest.fn().mockResolvedValue({}) };
+  // publisher 를 스트림별로 나눠 둔다 (ADR-0029 §5-1, Task 6-C-2). 회수 전에는 하나의 목에
+  // 세 자리를 모두 넘기고 행의 `topic` 리터럴로 목적지를 확인했는데, 그 필드는 이제 스트림에서
+  // 파생된다. **어느 publisher 가 불렸는가**로 확인하는 편이 더 강하다 — 빌더가 적은 문자열이
+  // 아니라 실제 배선을 본다.
+  const shipmentOutbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const fulfillmentV2Outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const fulfillmentV1Outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const service = new ShipmentDispatchService(
@@ -183,11 +189,25 @@ function makeService() {
     shipmentReservations as any,
     waybills as any,
     barcode as any,
-    outbox as any,
+    shipmentOutbox as any,
+    fulfillmentV2Outbox as any,
+    fulfillmentV1Outbox as any,
     audit as any,
     workflowGate as any,
   );
-  return { service, tx, commands, inventory, sessions, shipmentReservations, waybills, outbox, audit };
+  return {
+    service,
+    tx,
+    commands,
+    inventory,
+    sessions,
+    shipmentReservations,
+    waybills,
+    shipmentOutbox,
+    fulfillmentV2Outbox,
+    fulfillmentV1Outbox,
+    audit,
+  };
 }
 
 describe('ShipmentDispatchService', () => {
@@ -281,7 +301,7 @@ describe('ShipmentDispatchService', () => {
   });
 
   it('emits internal shipment progress without fabricating an external order or v1 completion', async () => {
-    const { service, outbox } = makeService();
+    const { service, shipmentOutbox, fulfillmentV2Outbox, fulfillmentV1Outbox } = makeService();
     const locked = aggregate();
 
     await (service as any).emitDispatchEvents(
@@ -304,15 +324,24 @@ describe('ShipmentDispatchService', () => {
       {} as any,
     );
 
-    expect(outbox.enqueue.mock.calls.map(([event]: any[]) => [event.topic, event.payload.orders])).toEqual([
-      ['shipments.events.v1', []],
-      ['fulfillments.events.v2', undefined],
-    ]);
-    expect(outbox.enqueue).toHaveBeenCalledTimes(2);
+    expect(shipmentOutbox.enqueue.mock.calls.map(([event]: any[]) => event.payload.orders)).toEqual([[]]);
+    expect(fulfillmentV2Outbox.enqueue.mock.calls.map(([event]: any[]) => event.payload.orders)).toEqual([undefined]);
+    // v1 완료 투영은 나가지 않는다 — 외부 주문을 지어내지 않는다는 것이 이 테스트의 주장이다.
+    expect(fulfillmentV1Outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it('redispatches a recalled shipment with attempt 2, a new waybill, exact stock sources and typed outbox', async () => {
-    const { service, inventory, sessions, shipmentReservations, waybills, outbox, audit } = makeService();
+    const {
+      service,
+      inventory,
+      sessions,
+      shipmentReservations,
+      waybills,
+      shipmentOutbox,
+      fulfillmentV2Outbox,
+      fulfillmentV1Outbox,
+      audit,
+    } = makeService();
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2, forced: true, lineVersion: 2 })] });
     const recipientHash = locked.waybill.recipientHash;
 
@@ -411,10 +440,14 @@ describe('ShipmentDispatchService', () => {
       tx,
     );
     expect(shipmentReservations.finalizeDispatchConsumption).toHaveBeenCalledWith(IDS.shipment, [IDS.sku], tx);
-    expect(outbox.enqueue.mock.calls.map(([event]: any[]) => [event.topic, event.idempotencyKey])).toEqual([
-      ['shipments.events.v1', result.dispatchAttemptId],
-      ['fulfillments.events.v2', `${result.dispatchAttemptId}:${IDS.fo}`],
-      ['fulfillments.events.v1', `${IDS.fo}:fully-shipped`],
+    expect(shipmentOutbox.enqueue.mock.calls.map(([event]: any[]) => event.idempotencyKey)).toEqual([
+      result.dispatchAttemptId,
+    ]);
+    expect(fulfillmentV2Outbox.enqueue.mock.calls.map(([event]: any[]) => event.idempotencyKey)).toEqual([
+      `${result.dispatchAttemptId}:${IDS.fo}`,
+    ]);
+    expect(fulfillmentV1Outbox.enqueue.mock.calls.map(([event]: any[]) => event.idempotencyKey)).toEqual([
+      `${IDS.fo}:fully-shipped`,
     ]);
     expect(audit.logUserActionRequired).toHaveBeenCalledWith(
       'shipment.dispatch.force',

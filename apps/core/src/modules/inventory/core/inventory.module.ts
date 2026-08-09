@@ -33,7 +33,6 @@ import { BatchControlledStockGuard } from './services/batch-controlled-stock.gua
 import { StockEventStore } from './repositories/stock-event.store';
 
 // Outbox (temporary — moves to Fulfillment BC in Phase 6)
-import { OutboxService } from '../shared/outbox/outbox.service';
 
 @Module({
   imports: [ScheduleModule.forRoot(), SharedModule, ProductSellableQuantityModule],
@@ -64,7 +63,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     TransferService,
     HolderService,
     BatchControlledStockGuard,
-    OutboxService,
   ],
   exports: [
     StockEventService,
@@ -80,7 +78,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     HolderService,
     BatchControlledStockGuard,
     InventoryIdempotencyService,
-    OutboxService,
   ],
 })
 export class CoreInventoryModule {}

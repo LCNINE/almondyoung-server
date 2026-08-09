@@ -1,7 +1,14 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { SalesOrdersService } from './sales-orders.service';
-import { ORDER_STREAM, SHIPMENT_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams';
+import {
+  CORE_ORDER_STREAM,
+  FULFILLMENT_STREAM,
+  ORDER_STREAM,
+  SHIPMENT_STREAM,
+  type OrderCreatedPayload,
+} from '@packages/event-contracts/streams';
+import type { PublisherFor } from '@app/events';
 
 describe('SalesOrdersService external order-line identity', () => {
   const salesOrderId = '11111111-1111-4111-8111-111111111111';
@@ -85,7 +92,8 @@ describe('SalesOrdersService external order-line identity', () => {
     const service = new SalesOrdersService(
       db as any,
       policies as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
       {} as any,
       {} as any,
@@ -385,7 +393,8 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
     const service = new SalesOrdersService(
       db as any,
       {} as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       reservationLifecycle as any,
       {} as any,
       {} as any,
@@ -563,7 +572,8 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     const service = new SalesOrdersService(
       db as any,
       {} as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
       {} as any,
       {} as any,
@@ -825,7 +835,8 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     const service = new SalesOrdersService(
       db as any,
       {} as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
       {} as any,
       productSellableQuantity as any,
@@ -1787,7 +1798,16 @@ describe('SalesOrdersService business links', () => {
       db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
       run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
     };
-    const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new SalesOrdersService(
+      db as any,
+      {} as any,
+      {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
 
     return { service, state, tx };
   }
@@ -2002,7 +2022,8 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
     const service = new SalesOrdersService(
       db as any,
       {} as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       reservationLifecycle as any,
       {} as any,
       {} as any,
@@ -2086,7 +2107,8 @@ describe('SalesOrdersService.confirm() state guard', () => {
     const service = new SalesOrdersService(
       db as any,
       {} as any,
-      outbox as any,
+      outbox as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      outbox as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
       {} as any,
       {} as any,
       {} as any,
@@ -2157,7 +2179,16 @@ describe('SalesOrdersService.confirm() state guard', () => {
       db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) },
       run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
     };
-    const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const service = new SalesOrdersService(
+      db as any,
+      {} as any,
+      {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
     const { NotFoundException } = await import('@nestjs/common');
     await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);
   });
@@ -2215,7 +2246,16 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
       return b;
     }
     const db = { db: { select: () => builder() } };
-    return new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    return new SalesOrdersService(
+      db as any,
+      {} as any,
+      {} as unknown as PublisherFor<typeof FULFILLMENT_STREAM>,
+      {} as unknown as PublisherFor<typeof CORE_ORDER_STREAM>,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
   }
 
   it('outboundComplete 는 FO 출고행 수이며 dead SO.status 합(processing/shipped/delivered)과 무관하다', async () => {

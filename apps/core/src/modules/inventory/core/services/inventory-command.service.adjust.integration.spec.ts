@@ -1,3 +1,5 @@
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { BadRequestException } from '@nestjs/common';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
@@ -8,7 +10,6 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 import { StockEventStore } from '../repositories/stock-event.store';
-import { OutboxService } from '../../shared/outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 /**
@@ -36,7 +37,7 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
     db = drizzle(sql, { schema: wmsSchema });
 
     const dbService = { db } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
+    const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
