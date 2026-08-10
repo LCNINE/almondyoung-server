@@ -41,18 +41,21 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
       streams: [ORDER_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
       enableAutoDLQ: true,
-      // ⚠️ 아직 끈다 — 그러나 **막는 이유는 사라졌다** (ADR-0029 §5, 플랜 Task 6-A).
+      // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10).
       //
       // 이 앱을 막던 3개 이벤트(`MembershipStatusChanged` ·
       // `ProductMasterActiveVersionChanged` · `ProductMasterDeleted`)는 아웃박스로 나가면서
       // zod 를 우회했다. 6-A 가 적재(`enqueue`)와 발행(`publishStoredEnvelope`) 양쪽에 문을
       // 달아 그 우회를 없앴고, 셋 다 PROVEN 이 됐다 — 10/10 이 검증된 발행 경로만 탄다.
       //
-      // 남은 것은 **이 한 줄을 뒤집는 결정**뿐이고 그건 5-C 의 마지막 조각이다. 이 앱은 DLQ 를
-      // 스크레이프하지 않으므로(`dlq.metrics.ts:10`) 켠 뒤 증명이 틀렸을 때 알아차릴 수단이
-      // core 뿐이라는 점을 감안해 결정한다.
+      // 이 앱은 DLQ 메트릭이 스크레이프되지 않는다(`dlq.metrics.ts:10` — Alloy 는 Core 만).
+      // 관측은 로그로 간다: 검증 실패는 `SchemaValidationInterceptor` 가 error 로,
+      // DLQ 전송은 `DLQHandler` 가 warn 으로 찍고, 둘 다 OTLP 로그로 Loki 까지 간다.
+      // 이 앱의 로그가 실제로 Loki 에 닿는지·구조화 필드가 남는지는 별도 PR 에서 확인·수정했다.
+      //
+      // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
       // 현황: `npm run audit:consume-validation -- analytics`
-      validation: { validateOnConsume: false },
+      validation: { validateOnConsume: true },
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'analytics',
