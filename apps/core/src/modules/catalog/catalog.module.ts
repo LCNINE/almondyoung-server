@@ -10,6 +10,7 @@ import { PricingModule } from './core/pricing/pricing.module';
 import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
 import { NoticesModule } from './core/notices/notices.module';
+import { SitePopupsModule } from './core/site-popups/site-popups.module';
 import { AiPromptsModule } from './core/ai-prompts/ai-prompts.module';
 
 // Operations modules
@@ -38,6 +39,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     TagsModule,
     BannersModule,
     NoticesModule,
+    SitePopupsModule,
     AiPromptsModule,
     // Operations
     ApprovalModule,
@@ -56,6 +58,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     TagsModule,
     BannersModule,
     NoticesModule,
+    SitePopupsModule,
     AiPromptsModule,
   ],
 })

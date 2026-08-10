@@ -991,6 +991,71 @@ export const notices = pgTable(
   ],
 );
 
+// ===== SITE POPUPS (스토어프론트 팝업 공지) =====
+//
+// 게시판 공지(notices)와는 수명주기가 다르다 — notices 는 영구 아카이브, 팝업은
+// 기간 한정 노출 + 디바이스별 크기 + "다시 보지 않기" 규칙을 갖는다. 그래서 별도 테이블로
+// 두고, 팝업에서 게시판 공지로 넘어가고 싶을 때만 noticeId 로 느슨하게 연결한다.
+export const sitePopups = pgTable(
+  'site_popups',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    title: varchar('title', { length: 255 }).notNull(),
+
+    // 'rich_text' — content(HTML) 를 본문으로 렌더 / 'image' — 업로드 이미지를 본문으로 렌더
+    contentType: varchar('content_type', { length: 20 }).notNull().default('rich_text'),
+    content: text('content'),
+    pcImageFileId: uuid('pc_image_file_id'),
+    mobileImageFileId: uuid('mobile_image_file_id'),
+    imageAlt: varchar('image_alt', { length: 255 }),
+
+    linkUrl: text('link_url'),
+    noticeId: uuid('notice_id').references(() => notices.id, { onDelete: 'set null' }),
+
+    // 관리자가 지정하는 노출 크기(px). height 가 null 이면 내용/이미지 비율대로 자동.
+    pcWidth: integer('pc_width'),
+    pcHeight: integer('pc_height'),
+    mobileWidth: integer('mobile_width'),
+    mobileHeight: integer('mobile_height'),
+
+    // 'main' — 메인 페이지만 / 'all' — 쇼핑몰 전체 / 'paths' — placementPaths prefix 매칭.
+    // 어느 값이든 결제·로그인 화면에는 뜨지 않는다 (스토어프론트가 해당 레이아웃에 팝업을 걸지 않음).
+    placement: varchar('placement', { length: 20 }).notNull().default('main'),
+    placementPaths: jsonb('placement_paths').$type<string[]>().notNull().default([]),
+
+    // 'all' | 'guest' | 'member' | 'membership'
+    audience: varchar('audience', { length: 20 }).notNull().default('all'),
+
+    // 'none' — 다시 보지 않기 버튼 없음 / 'today' — 오늘 자정까지 / 'days' — dismissDays 일
+    dismissMode: varchar('dismiss_mode', { length: 10 }).notNull().default('today'),
+    dismissDays: integer('dismiss_days'),
+    // 관리자가 "숨김 초기화" 를 누르면 증가한다. 브라우저 숨김 키에 섞여 들어가므로
+    // 값이 오르면 이미 닫은 사람에게도 다시 노출된다.
+    dismissVersion: integer('dismiss_version').notNull().default(1),
+
+    displayStartAt: timestamp('display_start_at'),
+    displayEndAt: timestamp('display_end_at'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_site_popups_active').on(table.isActive),
+    index('idx_site_popups_display_period').on(table.displayStartAt, table.displayEndAt),
+    index('idx_site_popups_deleted_at').on(table.deletedAt),
+    index('idx_site_popups_sort').on(table.sortOrder, table.createdAt),
+  ],
+);
+
 // ===== PRODUCT FORM EXPORTS (일괄 세션 1단계 — 양식 생성 잡) =====
 
 export const productFormExportStatusEnum = pgEnum('product_form_export_status', [
@@ -1308,6 +1373,7 @@ export const catalogSchema = {
   bannerGroups,
   banners,
   notices,
+  sitePopups,
   productFormExports,
   productFormExportItems,
   productBulkSessions,

@@ -34,6 +34,7 @@ import {
   bannerGroups,
   banners,
   notices,
+  sitePopups,
   type PimSchema,
 } from './schema/catalog.schema';
 
@@ -455,6 +456,11 @@ export type UpdateBanner = Partial<Omit<NewBanner, 'id' | 'createdAt' | 'updated
 export type Notice = InferSelectModel<typeof notices>;
 export type NewNotice = InferInsertModel<typeof notices>;
 export type UpdateNotice = Partial<Omit<NewNotice, 'id' | 'createdAt' | 'updatedAt'>>;
+
+// ===== SITE POPUPS 타입 =====
+export type SitePopup = InferSelectModel<typeof sitePopups>;
+export type NewSitePopup = InferInsertModel<typeof sitePopups>;
+export type UpdateSitePopup = Partial<Omit<NewSitePopup, 'id' | 'createdAt' | 'updatedAt'>>;
 
 // ===== VERSION MANAGEMENT DTO =====
 

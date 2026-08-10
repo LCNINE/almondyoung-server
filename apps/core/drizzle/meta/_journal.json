@@ -449,6 +449,13 @@
       "when": 1786312411050,
       "tag": "20260809215331_drop-legacy-core-outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1786336249171,
+      "tag": "20260810043049_add-site-popups",
+      "breakpoints": true
     }
   ]
 }
