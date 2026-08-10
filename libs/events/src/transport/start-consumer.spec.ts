@@ -13,11 +13,11 @@
 
 import { Controller, Injectable, INestApplication, OnModuleInit, UseInterceptors } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { getDLQTopicName } from '@packages/event-contracts/types';
+import { event, getDLQTopicName, stream } from '@packages/event-contracts/types';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
-import { EventPayload, OnEvent } from '../consumers/decorators';
+import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { EVENT_TRANSPORT } from './transport.port';
@@ -26,6 +26,14 @@ import { InMemoryTransport } from './in-memory.transport';
 import { InMemoryServer } from './in-memory.server';
 
 const TOPIC = CART_STREAM.topic.topic;
+
+/** 레지스트리에 없는 스트림 — 부팅 거부를 재현하는 데만 쓴다 */
+const GHOST_STREAM = stream({
+  topic: 'nobody.declared.this.v1',
+  partitions: 1,
+  aggregateType: 'Ghost',
+  events: { Whatever: event<'Whatever', Record<string, never>>('Whatever') },
+});
 
 interface HandlerCall {
   handler: string;
@@ -45,12 +53,12 @@ class InitCounter implements OnModuleInit {
 @Controller()
 @UseInterceptors(EventTypeGuard)
 class CartConsumer {
-  @OnEvent('carts.events.v1', 'CartCreated')
+  @On(CART_STREAM, 'CartCreated')
   onCreated(@EventPayload() payload: unknown): void {
     calls.push({ handler: 'onCreated', payload });
   }
 
-  @OnEvent('carts.events.v1', 'CartUpdated')
+  @On(CART_STREAM, 'CartUpdated')
   onUpdated(@EventPayload() payload: unknown): void {
     calls.push({ handler: 'onUpdated', payload });
   }
@@ -58,7 +66,7 @@ class CartConsumer {
 
 @Controller()
 class GhostConsumer {
-  @OnEvent('nobody.declared.this.v1', 'Whatever')
+  @On(GHOST_STREAM, 'Whatever')
   onGhost(): void {}
 }
 
@@ -78,10 +86,9 @@ async function buildModule(controllers: unknown[], broker: InMemoryBroker): Prom
 
   return Test.createTestingModule({
     imports: [
-      EventsModule.forRoot({ streams: [CART_STREAM], serviceName: 'start-consumer-spec', kafka }),
-      // ⚠️ streams 를 넘기지만 startConsumer 는 이것을 쓰지 않는다 — 검증 맵은 도출된다.
-      // 여기서 살아남는 것은 정책(validation)과 DLQ 설정뿐이다.
-      EventsModule.forConsumerModule({ streams: [], groupId: 'spec-consumer', kafka }),
+      // 발행 능력만 선언한다. 소비 스트림·groupId 를 넘길 자리가 애초에 없다 —
+      // 토픽은 `@On` 에서 도출되고 groupId 는 `startConsumer` 가 받는다 (ADR-0029 §3).
+      EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'start-consumer-spec', kafka }),
     ],
     // as 정당화: Nest 의 `controllers` 는 `Type<any>[]` 를 받고, 이 헬퍼는 테스트마다
     // 다른 컨트롤러 묶음을 받기 위해 unknown[] 로 선언돼 있다.
@@ -159,8 +166,11 @@ describe('startConsumer — 소비 집합 도출', () => {
    *
    * 앱들이 쓰던 `app.connectMicroservice(opts)` 는 마이크로서비스에 **빈
    * ApplicationConfig** 를 주므로 `APP_INTERCEPTOR` 로 등록한 스키마 검증·재시도·DLQ
-   * 인터셉터가 소비 경로에 하나도 붙지 않는다. 아래 `현재 앱 배선` describe 가 그
-   * 상태를 실행 가능한 형태로 박아둔다. `startConsumer` 는 그것을 고친다.
+   * 인터셉터가 소비 경로에 하나도 붙지 않았다. `startConsumer` 는 그것을 고친다.
+   *
+   * 옛 배선을 실행 가능한 형태로 박아뒀던 `옛 앱 배선` describe 는 Task 7 에서 지웠다 —
+   * 5-B 가 라이브에 배포돼 그 주장(“라이브는 여전히 옛 배선”)이 더는 참이 아니고,
+   * `forConsumer` 자체도 사라졌다.
    */
   it('스키마를 위반한 인바운드 메시지는 핸들러에 닿지 않고 DLQ 로 분류된다', async () => {
     await broker.inject(TOPIC, {
@@ -200,7 +210,7 @@ describe('startConsumer — 부팅 거부', () => {
     moduleInitCount = 0;
   });
 
-  it('@OnEvent 핸들러가 하나도 없으면 부팅을 거부한다', async () => {
+  it('@On 핸들러가 하나도 없으면 부팅을 거부한다', async () => {
     const broker = new InMemoryBroker();
     const moduleRef = await buildModule([], broker);
     const app = moduleRef.createNestApplication({ logger: false });
@@ -220,50 +230,6 @@ describe('startConsumer — 부팅 거부', () => {
     await expect(
       EventsModule.startConsumer(app, { groupId: 'spec-consumer', kafka, strategy: new InMemoryServer(broker) }),
     ).rejects.toThrow(/nobody\.declared\.this\.v1.*GhostConsumer\.onGhost/s);
-
-    await app.close();
-  });
-});
-
-/**
- * 옛 배선의 상태를 실행 가능한 형태로 남긴다 (ADR-0029 §8).
- *
- * 이 describe 가 **초록이라는 사실 자체가 라이브 결함의 증거**다 — 스키마를 위반한
- * 메시지가 검증을 통과해 핸들러까지 간다.
- *
- * **삭제 시점: Task 5-B 가 배포된 뒤.** 코드상으로는 7개 앱이 모두 `startConsumer` 로
- * 이주했지만(`forConsumer` 호출 0건), 이 레포는 autodeploy 가 없어(ADR-0005 §4) 누군가
- * `sst deploy` 를 부르기 전까지 **라이브는 여전히 이 배선**이다. 즉 위 문장은 지금도
- * 참이다. 배포가 끝나 라이브에서 옛 배선이 사라지면 이 describe 는 그때 지운다 —
- * 그 전에 지우면 아직 살아 있는 결함의 유일한 실행 가능한 기록이 없어진다.
- * (`forConsumer` 자체의 제거는 Task 7.)
- */
-describe('옛 앱 배선 (forConsumer + connectMicroservice) — 소비 인터셉터가 붙지 않는다', () => {
-  it('스키마 위반 메시지가 검증 없이 핸들러까지 도달한다', async () => {
-    const broker = new InMemoryBroker();
-    const moduleRef = await buildModule([CartConsumer], broker);
-    const app = moduleRef.createNestApplication({ logger: false });
-
-    // 앱들이 실제로 하는 그대로 — 두 번째 인자 없음
-    app.connectMicroservice({ strategy: new InMemoryServer(broker) });
-    await app.startAllMicroservices();
-    await app.init();
-
-    calls.length = 0;
-    await broker.inject(TOPIC, {
-      messageId: 'msg-bad-legacy',
-      messageType: 'CartCreated',
-      messageVersion: 1,
-      messageKind: 'event',
-      correlationId: 'corr-bad-legacy',
-      timestamp: new Date().toISOString(),
-      occurredAt: new Date().toISOString(),
-      source: { service: 'other-service', aggregateType: 'Cart', aggregateId: 'cart-9' },
-      payload: { id: 'cart-9' },
-    });
-
-    expect(calls).toHaveLength(1); // ← 검증되지 않은 채 도착했다
-    expect(broker.envelopesOn(getDLQTopicName(TOPIC))).toHaveLength(0);
 
     await app.close();
   });

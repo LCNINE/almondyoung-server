@@ -39,7 +39,7 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
       scopes: ALL_SCOPES,
       roleMappings: ALL_ROLE_MAPPINGS,
     }),
-    // EventsModule.forRoot은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
+    // EventsModule.forApp 은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
 
     CatalogModule,
     InventoryModule,

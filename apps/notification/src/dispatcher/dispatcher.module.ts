@@ -3,7 +3,6 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bull';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
-import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { SharedModule } from '../shared/shared.module';
 
 import { ProviderModule } from '../provider/provider.module';
@@ -22,11 +21,11 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
     DbModule,
     ProviderModule,
     SharedModule,
-    EventsModule.forConsumerModule({
-      streams: [USER_STREAM, ORDER_STREAM, PAYMENT_STREAM],
-      groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
-      enableAutoDLQ: true,
-      validation: {
+    // 소비만 하는 앱이다 — `publishes` 가 없다. 구독 토픽은 `@On` 에서 도출되고
+    // (`startConsumer`), groupId 는 `main.ts` 가 준다. 옛 `forConsumerModule` 은 그 둘을
+    // 여기서도 받았지만 어느 쪽도 쓰지 않았다 (ADR-0029 §1).
+    EventsModule.forApp({
+      policy: {
         validateOnConsume: false, // HTTP 요청과 충돌 방지를 위해 비활성화
       },
     }),

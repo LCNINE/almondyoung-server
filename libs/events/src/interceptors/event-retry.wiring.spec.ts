@@ -12,10 +12,27 @@ import { KafkaContext, Server, CustomTransportStrategy } from '@nestjs/microserv
 import type { Consumer, KafkaMessage, Producer } from '@nestjs/microservices/external/kafka.interface';
 import { Test } from '@nestjs/testing';
 import { isObservable, lastValueFrom } from 'rxjs';
-import { OnEvent, EventPayload } from '../consumers/decorators';
+import { event, stream } from '@packages/event-contracts/types';
+import { On, EventPayload } from '../consumers/decorators';
 import { RetryPolicy } from '../retry/retry-policy.decorator';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { EventRetryInterceptor } from './event-retry.interceptor';
+
+// 스펙 전용 계약. `@On` 은 토픽·이벤트명을 계약에서 읽으므로 생문자열을 쓸 수 없다.
+// `streams/index.ts` 밖이라 STREAM_REGISTRY 에도 들어가지 않는다.
+const WIRING_TEST_STREAM = stream({
+  topic: 'wiring.test.v1',
+  partitions: 1,
+  aggregateType: 'Wiring',
+  events: { WiringTested: event<'WiringTested', { poison: boolean }>('WiringTested') },
+});
+
+const WIRING_RETRY_STREAM = stream({
+  topic: 'wiring.retry.v1',
+  partitions: 1,
+  aggregateType: 'Wiring',
+  events: { WiringRetried: event<'WiringRetried', { poison: boolean }>('WiringRetried') },
+});
 
 /** 핸들러 바인딩만 캡처하는 transport — 브로커 불필요 */
 class CapturingServer extends Server implements CustomTransportStrategy {
@@ -34,7 +51,7 @@ const retryHandlerCalls: unknown[] = [];
 
 @Controller()
 class WiringTestConsumer {
-  @OnEvent('wiring.test.v1', 'WiringTested')
+  @On(WIRING_TEST_STREAM, 'WiringTested')
   @RetryPolicy({
     maxRetries: 1,
     backoff: 'fixed',
@@ -47,7 +64,7 @@ class WiringTestConsumer {
     return Promise.reject(new NotFoundException('so not found'));
   }
 
-  @OnEvent('wiring.retry.v1', 'WiringRetried')
+  @On(WIRING_RETRY_STREAM, 'WiringRetried')
   @RetryPolicy({ maxRetries: 1, backoff: 'fixed', initialDelayMs: 1, maxDelayMs: 1 })
   handleWiringRetried(@EventPayload() payload: { poison: boolean }): Promise<void> {
     retryHandlerCalls.push(payload);

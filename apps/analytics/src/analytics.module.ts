@@ -5,7 +5,6 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
 import { AuthorizationModule } from '@app/authorization';
-import { ORDER_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts';
 import { AnalyticsController } from './features/analytics-api/analytics.controller';
 import { AnalyticsService } from './features/analytics-api/analytics.service';
 import { OrderEventsConsumer } from './datasets/orders/ingest/order-events.consumer';
@@ -37,10 +36,8 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
       },
       schema: analyticsSchema,
     }),
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
-      groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
-      enableAutoDLQ: true,
+    // 소비만 하는 앱이다 — `publishes` 가 없다. 구독 토픽은 `@On` 에서 도출된다.
+    EventsModule.forApp({
       // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10).
       //
       // 이 앱을 막던 3개 이벤트(`MembershipStatusChanged` ·
@@ -55,7 +52,7 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
       //
       // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
       // 현황: `npm run audit:consume-validation -- analytics`
-      validation: { validateOnConsume: true },
+      policy: { validateOnConsume: true },
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'analytics',

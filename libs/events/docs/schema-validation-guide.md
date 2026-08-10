@@ -73,8 +73,8 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [ORDER_STREAM],
+    EventsModule.forApp({
+      publishes: [ORDER_STREAM],
       serviceName: 'wms-order',
       validation: {
         validateOnPublish: true,     // 발행 시 검증 (기본값: true)
@@ -91,13 +91,13 @@ export class OrderModule {}
 ```typescript
 // apps/wms/src/order/services/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { ORDER_STREAM, OrderEvents, OrderCreatedPayload } from '@app/shared/streams/orders.stream';
 
 @Injectable()
 export class OrderService {
   constructor(
-    @InjectStreamPublisher('orders.events.v1')
+    @InjectPublisher(ORDER_STREAM)
     private readonly orderPublisher: StreamPublisher<OrderEvents>,
   ) {}
 
@@ -148,15 +148,13 @@ export class OrderService {
 // apps/channel-adapter/src/app.module.ts
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'channel-adapter-consumers',
-      enableAutoDLQ: true,  // 자동 DLQ 처리
-      validation: {
+    EventsModule.forApp({
+      enableDLQ: true, // 자동 DLQ 처리
+      // 검증 맵은 구독 스트림에서 도출된다 — 스트림 목록을 여기 적지 않는다.
+      policy: {
         validateOnConsume: true,      // 수신 시 검증 (기본값: true)
         throwOnValidationError: true, // 검증 실패 시 에러 (기본값: true)
       },
@@ -171,14 +169,14 @@ export class AppModule {}
 ```typescript
 // apps/channel-adapter/src/consumers/order-events.consumer.ts
 import { Controller, Logger } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { On, EventPayload } from '@app/events';
 import { OrderCreatedPayload } from '@app/shared/streams/orders.stream';
 
 @Controller()
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
     // ✅ 이 시점에 payload는 이미 스키마 검증 완료!
     // ✅ 타입 안전성 보장됨
@@ -218,10 +216,8 @@ export class OrderEventsConsumer {
 ### 검증 옵션 커스터마이즈
 
 ```typescript
-EventsModule.forConsumerModule({
-  streams: [ORDER_STREAM],
-  groupId: 'my-consumer',
-  validation: {
+EventsModule.forApp({
+  policy: {
     validateOnConsume: true,      // 수신 시 검증 활성화
     throwOnValidationError: false, // 검증 실패해도 에러 안던짐 (경고만)
   },

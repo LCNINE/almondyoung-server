@@ -33,7 +33,8 @@ import { event, getDLQTopicName, stream, SchemaValidationError } from '@packages
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
-import { EventPayload, OnEvent } from '../consumers/decorators';
+import { EventPayload, On } from '../consumers/decorators';
+import { buildConsumerInterceptors } from '../consumers/consumer-interceptors';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { EVENT_TRANSPORT } from '../transport/transport.port';
@@ -73,7 +74,7 @@ const received: unknown[] = [];
 @Controller()
 @UseInterceptors(EventTypeGuard)
 class OutboxHarnessConsumer {
-  @OnEvent('outbox.events.v1', 'StockMoved')
+  @On(OUTBOX_STREAM, 'StockMoved')
   onMoved(@EventPayload() payload: { sku: string; quantity: number }): void {
     received.push(payload);
   }
@@ -98,11 +99,9 @@ describe('아웃박스 enqueue 시점 스키마 검증', () => {
 
     const moduleRef = await Test.createTestingModule({
       imports: [
-        EventsModule.forConsumerModule({
-          streams: [OUTBOX_STREAM],
-          groupId: 'outbox-harness-consumer',
+        EventsModule.forApp({
           kafka,
-          validation: { validateOnConsume: true },
+          policy: { validateOnConsume: true },
         }),
       ],
       controllers: [OutboxHarnessConsumer],
@@ -112,6 +111,14 @@ describe('아웃박스 enqueue 시점 스키마 검증', () => {
       .compile();
 
     app = moduleRef.createNestMicroservice({ strategy: new InMemoryServer(broker), logger: false });
+    // 소비 인터셉터는 운영과 **같은 팩토리**로 만들어 얹는다 (ADR-0029 §8).
+    // `startConsumer` 를 부르지 않는 이유는 하나뿐이다 — 그것은 계약 레지스트리에 없는
+    // 토픽의 구독을 거부하는데, 이 하네스는 일부러 레지스트리 밖의 전용 계약을 쓴다.
+    // 그래서 도출 대신 스트림을 손으로 주되, 인터셉터 구성 자체는 `buildConsumerInterceptors`
+    // 한 곳에서 가져온다. 옛 `forConsumerModule` 의 `APP_INTERCEPTOR` 등록에 기대던 코드였는데,
+    // 그 등록은 **운영 하이브리드 앱에서는 소비 경로에 닿은 적이 없다** — 즉 이 하네스는
+    // 여태 운영과 다른 배선을 검증하고 있었다.
+    app.useGlobalInterceptors(...buildConsumerInterceptors(app, [OUTBOX_STREAM]));
     await app.listen();
   });
 

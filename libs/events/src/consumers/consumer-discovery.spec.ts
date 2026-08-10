@@ -7,17 +7,29 @@
 
 import { Controller, Injectable } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { event, stream } from '@packages/event-contracts/types';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
-import { OnEvent } from './decorators';
+import { On } from './decorators';
 import { deriveConsumerConfig, discoverEventHandlers, type DiscoveredEventHandler } from './consumer-discovery';
+
+/**
+ * 레지스트리에 **없는** 스트림. `streams/index.ts` 가 export 하지 않으므로
+ * `STREAM_REGISTRY` 에 들어가지 않고, 그래서 도출이 이것을 거부해야 한다.
+ */
+const GHOST_STREAM = stream({
+  topic: 'nobody.declared.this.v1',
+  partitions: 1,
+  aggregateType: 'Ghost',
+  events: { Whatever: event<'Whatever', Record<string, never>>('Whatever') },
+});
 
 @Controller()
 class CartConsumer {
-  @OnEvent('carts.events.v1', 'CartCreated')
+  @On(CART_STREAM, 'CartCreated')
   onCreated(): void {}
 
-  @OnEvent('carts.events.v1', 'CartUpdated')
+  @On(CART_STREAM, 'CartUpdated')
   onUpdated(): void {}
 
   /** 이벤트 핸들러가 아닌 메서드는 도출에 잡히면 안 된다 */
@@ -26,13 +38,13 @@ class CartConsumer {
 
 @Controller()
 class OrderConsumer {
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   onOrderCreated(): void {}
 }
 
 /** 상속받은 핸들러도 구독된다 — Nest 의 MetadataScanner 가 프로토타입 체인을 탄다 */
 class BaseConsumer {
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   onInherited(): void {}
 }
 
@@ -41,24 +53,24 @@ class DerivedConsumer extends BaseConsumer {}
 
 @Controller()
 class UnregisteredTopicConsumer {
-  @OnEvent('nobody.declared.this.v1', 'Whatever')
+  @On(GHOST_STREAM, 'Whatever')
   onGhost(): void {}
 }
 
 /**
- * provider 에 붙인 `@OnEvent` 는 지금도 아무 일도 하지 않는다 —
+ * provider 에 붙인 `@On` 은 지금도 아무 일도 하지 않는다 —
  * Nest 의 `setupListeners` 가 `module.controllers` 만 순회하기 때문이다.
  * 도출도 같은 규칙을 따라야 한다. 안 그러면 "구독한다고 도출됐는데 실제로는
  * 안 오는" 토픽이 생겨, 이 ADR 이 없애려는 어긋남을 우리 손으로 다시 만든다.
  */
 @Injectable()
 class NotAController {
-  @OnEvent('carts.events.v1', 'CartCreated')
+  @On(CART_STREAM, 'CartCreated')
   onCreated(): void {}
 }
 
 describe('discoverEventHandlers', () => {
-  it('컨트롤러의 @OnEvent 에서 (topic, eventType) 집합을 도출한다', async () => {
+  it('컨트롤러의 @On 에서 (topic, eventType) 집합을 도출한다', async () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [CartConsumer, OrderConsumer],
     }).compile();
@@ -93,7 +105,7 @@ describe('discoverEventHandlers', () => {
     ]);
   });
 
-  it('provider 의 @OnEvent 는 도출하지 않는다 — Nest 도 바인딩하지 않는다', async () => {
+  it('provider 의 @On 은 도출하지 않는다 — Nest 도 바인딩하지 않는다', async () => {
     const moduleRef = await Test.createTestingModule({ providers: [NotAController] }).compile();
 
     expect(discoverEventHandlers(moduleRef)).toEqual([]);

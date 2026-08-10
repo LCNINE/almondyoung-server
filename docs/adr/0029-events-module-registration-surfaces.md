@@ -61,7 +61,7 @@ async bindEvents(consumer) {
 ```ts
 // app.module.ts — 이 앱이 가진 "능력"만 선언
 EventsModule.forApp({
-  service: 'channel-adapter',
+  serviceName: 'channel-adapter',
   kafka: kafkaFromEnv(),
   publishes: [ORDER_STREAM, CHANNEL_ADAPTER_STREAM],
   policy: { validateOnConsume: true },
@@ -74,6 +74,12 @@ await EventsModule.startConsumer(app, { groupId });
 `startConsumer` 는 컨테이너를 갖고 있으므로 `DiscoveryService` 로 `@On` 메타데이터를 훑어 `(topic, eventType)` 집합을 얻고, 거기서 **구독 토픽 · 검증 스키마 맵 · 토픽 부트스트랩 목록을 전부 파생**한다. 계약 레지스트리에 없는 토픽을 구독하려 하면 부팅을 거부한다.
 
 이를 위해 `packages/event-contracts` 에 `topic → StreamConfig` 레지스트리를 추가한다. `streams/index.ts` 가 이미 전 스트림을 export 하므로 순수 추가이며 위험이 없다.
+
+**이행 시 위 스케치에서 세 가지가 달라졌다 (2026-08-10, Follow-up 7).**
+
+- **`service` 가 아니라 `serviceName` 이다.** 옛 `forRoot` 의 이름을 그대로 뒀다 — 이 필드는 뜻이 모호했던 적이 없고(`streams` 와 달리), 바꾸면 순수 churn 이다. 이름을 고친 것은 **뜻이 세 갈래였던 `streams` 하나**다.
+- **정책이 한 필드가 아니라 두 필드다** — `validation`(발행)과 `policy`(소비). 옛 두 표면이 `validation: SchemaValidationOptions` 라는 **같은 이름·같은 타입으로 다른 뜻**을 받던 것이 §1 이 지적한 문제의 절반이었다. 각각 `Pick<…>` 으로 좁혀 반대쪽 플래그를 쓰면 컴파일 에러가 되게 했다.
+- **`policy` 는 앱 전체에 하나이고, 둘 이상 선언하면 부팅을 거부한다.** `forApp` 은 BC 별로 여러 번 불릴 수 있어(core 4번) 실제로 일어날 수 있는 실수인데, `optionalGet` 은 경고 없이 하나만 돌려주고 어느 것이 이기는지는 모듈 등록 순서에 달렸다 — §3 의 다른 두 부팅 거부와 같은 종류의 무증상 결함이다. `assertSinglePolicyDeclaration` 이 막는다.
 
 ### 4. 계약을 타입 seam 으로 끌어올린다
 
@@ -464,13 +470,23 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
    **`@InjectStreamPublisher` → `@InjectPublisher` 완료 (2026-08-09, Task 6-B)** — 사용처 0건, 주입 지점 22곳 전부 도출. 상세는 위 5번의 "발행 쪽 이주 완료" 참조.
 
    남은 것은 이 항목의 다른 절반이다: `idempotencyKey`·`partitionKey` 추가와 5벌 회수(Task 6-C, 데이터 마이그레이션 성격). 6-A 에서 `OutboxPublisher.saveEvent` 는 삭제했고 공용 outbox 의 유일한 진입점은 `OutboxWriter.write` 다 — 6-C 의 회수 대상은 그 port 뒤로 들어온다.
-7. 옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.
-8. ~~channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.~~ **결정: 이주에 묶었다 (2026-08-09).** 다만 배선 이주 시점에 **검증을 켜지는 않았다.** `forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true` 라, 아무 조치 없이 `startConsumer` 로 옮기면 이 앱만 배선과 검증이 **선택이 아니라 누락으로** 동시에 켜진다. 외부 채널 유래 payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록하고 `validateOnConsume: false` 를 명시했다. `forConsumerModule` 을 새로 부르지 않은 이유는 그 표면이 `streams` 를 필수로 받기 때문이다 — 그 목록이야말로 §2·§3 이 지우는 중인 두 번째 진실이라, 정책 하나를 얻자고 그것을 되살릴 수 없다. Task 7 의 `forApp` 이 이 자리를 흡수한다. 검증을 실제로 켜는 것은 payload 샘플링 후(플랜 Task 5-C).
+7. ~~옛 표면(`forRoot`/`forConsumerModule`/`forConsumer`) 제거 — contract phase.~~ **완료 (2026-08-10, Task 7).** 등록 표면이 `forApp` + `startConsumer` 둘뿐이다.
+
+   - **삭제:** `forConsumer`(전송 설정을 `startConsumer` 안으로 인라인) · `forConsumerModule` · `@OnEvent` · `@InjectStreamPublisher`(+ 단축 export). 앱 사용처는 5-A·6-B 로 이미 0건이었고, 남아 있던 `libs/events` 스펙 7개를 `@On` 으로 이주했다.
+   - **`forRoot` → `forApp` 개명 + `streams` → `publishes`.** 표면이 하나로 줄었으니 이름이 뜻을 말해야 한다 — 세 표면이 같은 이름으로 각각 다른 뜻을 받던 것이 Context 의 첫 관측이다. 위 §3 의 "이행 시 세 가지가 달라졌다" 참조.
+   - **정책 이전이 선행이다.** `forConsumerModule` 을 먼저 걷어내면 `EVENTS_CONSUMER_POLICY` 가 사라지고 notification·membership·wallet 의 `validateOnConsume: false` 가 기본값 `true` 로 **조용히 뒤집힌다.** 6개 앱의 `forConsumerModule({validation})` 과 channel-adapter 의 수기 provider 를 먼저 `forApp({policy})` 로 옮긴 뒤 삭제했다. 7개 앱의 값은 전부 보존됐다(감사가 재확인: 검증 ON 5앱 = analytics·channel-adapter·core·membership·search).
+   - **`forConsumerModule` 의 `APP_INTERCEPTOR` 등록(SchemaValidation·ChainContext)은 되살리지 않았다.** 하이브리드 앱에서 그 등록은 소비 경로에 닿은 적이 없고(§8), 셋 다 `context.getType() === 'http'` 에서 즉시 통과하므로 HTTP 동작도 바뀌지 않는다. 되살릴 수도 없다 — `SchemaValidationInterceptor` 는 소비 스트림 목록을 요구하는데 그건 §3 이 지운 두 번째 진실이다.
+   - **부수 실측: `forConsumerModule` 의 `groupId`·`sessionTimeout`·`heartbeatInterval`·`maxPollInterval`·`autoCommit` 은 한 번도 읽히지 않았다.** 6개 앱이 `groupId` 를 모듈과 `main.ts` 에 두 번 적고 있었고 효력이 있는 것은 `main.ts` 쪽뿐이었다 — §1 이 말하는 "두 벌" 의 또 다른 실례이며, 표면과 함께 사라졌다.
+   - **`start-consumer.spec.ts` 의 "옛 앱 배선" describe 를 삭제했다.** 5-B 가 라이브에 배포돼 그 주장("라이브는 여전히 옛 배선")이 더는 참이 아니다 — 아래 10번이 이것으로 닫힌다.
+   - **하네스 스펙 3개가 옛 `APP_INTERCEPTOR` 등록에 기대고 있었음이 드러났다.** `round-trip` · `consume-validation` · `enqueue-validation` 은 `createNestMicroservice` 로 도는데, 그 경로에서는 `APP_INTERCEPTOR` 가 **적용된다** — 즉 이 하네스들은 운영(하이브리드 `connectMicroservice`)과 다른 배선을 검증하고 있었다. 이제 셋 다 운영과 같은 팩토리(`buildConsumerInterceptors`)를 명시적으로 얹는다. `startConsumer` 를 부르지 않는 이유는 하나뿐이다 — 그것은 레지스트리 밖 토픽을 거부하는데 이 하네스들은 일부러 레지스트리 밖의 전용 계약을 쓴다.
+8. ~~channel-adapter 가 `forConsumerModule` 을 호출하지 않는 현재 상태는 이 ADR 이 시행되기 전까지 남는 실재 구멍이다 — 소비 측 zod 검증이 없다. 4번 이전에 단독으로 메울지, 이주에 묶을지 결정한다.~~ **결정: 이주에 묶었다 (2026-08-09).** 다만 배선 이주 시점에 **검증을 켜지는 않았다.** `forConsumerModule` 미호출 → `EVENTS_CONSUMER_POLICY` 토큰 부재 → `optionalGet` 이 undefined → 기본값 `true` 라, 아무 조치 없이 `startConsumer` 로 옮기면 이 앱만 배선과 검증이 **선택이 아니라 누락으로** 동시에 켜진다. 외부 채널 유래 payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 `adapter.module.ts` 의 providers 에 `EVENTS_CONSUMER_POLICY` 를 직접 등록하고 `validateOnConsume: false` 를 명시했다. `forConsumerModule` 을 새로 부르지 않은 이유는 그 표면이 `streams` 를 필수로 받기 때문이다 — 그 목록이야말로 §2·§3 이 지우는 중인 두 번째 진실이라, 정책 하나를 얻자고 그것을 되살릴 수 없다. Task 7 의 `forApp` 이 이 자리를 흡수한다 — **완료 (2026-08-10)**: 이제 이 앱도 `forApp({ policy })` 로 선언한다. 검증을 실제로 켜는 것은 payload 샘플링 후(플랜 Task 5-C).
 9. **소비 경로 CLS 컨텍스트 부재** (2026-08-09 발견, 미수정).
  `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에 ClsGuard/ClsInterceptor 가 없어 `EventChainService.setChainId` 가 "No CLS context available" 로 던지고, `ChainContextInterceptor` 의 `catch {}` 가 그것을 삼킨다. 결과적으로 **소비 측 `chainId`/`eventId` 전파가 전 앱에서 죽어 있다.** 3번의 파싱 버그와 원인이 다르므로 별도 수정이 필요하다 — 이 워크스트림에 묶을지 독립 처리할지 결정한다. 회귀 감지는 `round-trip.spec.ts` 의 `it.failing` 이 맡는다. (그 인터셉터 자체가 하이브리드 앱에서 붙지 않는다는 §8 이 겹친다 — 두 원인이 독립적으로 존재한다.)
 10. 🔴 **라이브 구멍: 7개 소비 앱 전부에서 스키마 검증·재시도·DLQ·chain 인터셉터가 적용되지 않고 있다** (2026-08-09 발견, §8). `startConsumer` 는 이 구멍이 없는 새 배선을 제공하지만, **앱들이 이주하기 전까지 라이브 상태는 그대로다.** 옛 표면(`forConsumer`)에 같은 배선을 소급 적용하는 것은 의도적으로 하지 않았다 — 7개 앱에서 검증·DLQ 가 한 배포에 동시에 켜지며, 지금까지 검증 없이 통과하던 인바운드 payload 가 있다면 그 배포가 DLQ 폭탄이 된다. 대신 앱별 이주(5번)에서 하나씩, 관찰 가능한 단위로 켠다.
 
-    **코드상으로는 닫혔다 (2026-08-09) — 라이브에서는 아직이다.** 7개 앱이 모두 `startConsumer` 로 이주했으나 이 레포는 autodeploy 가 없어([[0005-drizzle-migration-and-autodeploy]] §4) 누군가 `sst deploy` 를 부르기 전까지 라이브는 옛 배선이다. **이 항목이 닫히는 시점은 마지막 앱이 배포된 때다.** 그때 `start-consumer.spec.ts` 의 "옛 앱 배선" describe 도 함께 지운다 — 그 전까지는 아직 살아 있는 결함의 유일한 실행 가능한 기록이다. 배포는 앱 간 순서가 없다(각 앱 이주가 그 앱에만 영향을 준다). 배포 후 켜지는 것은 **재시도·DLQ·chain 뿐이고 스키마 검증은 아니다** — 8번·5번 참조.
+    **닫혔다 (2026-08-10).** 7개 앱 전부 배포 완료. `start-consumer.spec.ts` 의 "옛 앱 배선" describe 는 Task 7 에서 삭제했다.
+
+    이하 착수 당시 기록(보존): **코드상으로는 닫혔다 (2026-08-09) — 라이브에서는 아직이다.** 7개 앱이 모두 `startConsumer` 로 이주했으나 이 레포는 autodeploy 가 없어([[0005-drizzle-migration-and-autodeploy]] §4) 누군가 `sst deploy` 를 부르기 전까지 라이브는 옛 배선이다. **이 항목이 닫히는 시점은 마지막 앱이 배포된 때다.** 그때 `start-consumer.spec.ts` 의 "옛 앱 배선" describe 도 함께 지운다 — 그 전까지는 아직 살아 있는 결함의 유일한 실행 가능한 기록이다. 배포는 앱 간 순서가 없다(각 앱 이주가 그 앱에만 영향을 준다). 배포 후 켜지는 것은 **재시도·DLQ·chain 뿐이고 스키마 검증은 아니다** — 8번·5번 참조.
 11. ⚠️ **notification 의 소비 핸들러는 재실행에 안전하지 않다** (2026-08-09 발견, 미수정). 배선 이주로 재시도가 처음 실재하게 되면서 87개 핸들러의 멱등성을 전수 확인했고, 6개 앱은 안전했다(core = `messageId` 마커 / channel-adapter = `inbox_events` 단일 insert / membership = unique 마커 + 상태 가드 / wallet = idempotency key / analytics = `onConflictDoNothing(messageId)` + upsert / search = 고정 ID upsert). **notification 만 멱등 키가 없다.** `NotificationDispatcherService.send` 는 `dto.channels` 를 루프 돌며 채널마다 행을 insert 하고 큐에 넣으므로, 채널 1 성공 후 채널 2 에서 throw 하면 재시도가 루프를 처음부터 다시 돌아 **채널 1 이 다시 발송된다.** 노출은 좁다 — 프로바이더 전송 실패는 `sendNotificationDirectly` 의 `catch` 가 삼켜 핸들러까지 올라오지 않고, 실제로 throw 하는 건 DB·템플릿 조회 실패 정도다. 그 경우 옛 배선에서는 메시지가 통째로 소실됐고 새 배선에서는 앞 채널이 최대 4회 중복될 수 있다. **결정 (2026-08-09, 5-B PR 에 포함): (b) `@RetryPolicy({ maxRetries: 0 })`.**
 
 "소실 ↔ 중복" 교환으로 제시했으나 **교환이 아니었다.** `maxRetries: 0` 은 시도 횟수를 옛 배선과 동일한 1회로 유지하므로 중복 위험이 0 이고, 동시에 실패가 조용한 소실이 아니라 **DLQ 로 관측된다.** 두 축 모두에서 옛 배선보다 나쁘지 않고 한 축에서 낫다 — 저울에 올릴 사안이 아니었다. (a) dedup 키는 재시도의 이점을 실제로 얻고 싶어질 때 별건으로 다룬다.

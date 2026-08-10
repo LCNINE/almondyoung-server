@@ -4,7 +4,7 @@
  * Stream 기반 이벤트 시스템을 위한 NestJS 모듈
  */
 
-import { DynamicModule, Global, INestApplication, Inject, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
+import { DynamicModule, Global, INestApplication, Module, OnApplicationShutdown, Logger } from '@nestjs/common';
 import {
   ClientKafka,
   ClientsModule,
@@ -17,8 +17,6 @@ import { ClsModule } from 'nestjs-cls';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
 import { DLQHandler } from './dlq/dlq-handler.service';
-import { SchemaValidationInterceptor } from './interceptors/schema-validation.interceptor';
-import { ChainContextInterceptor } from './interceptors/chain-context.interceptor';
 import { EventRetryInterceptor } from './interceptors/event-retry.interceptor';
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
 import { EventChainService } from './tracking/event-chain.service';
@@ -53,58 +51,49 @@ const eventTransportProvider = {
 };
 
 /**
- * EventsModule 설정 옵션 (Publisher용)
+ * `forApp()` 설정 옵션 — 이 앱이 가진 **능력**만 선언한다 (ADR-0029 §3)
+ *
+ * **소비 스트림은 여기 없다.** 그건 `@On` 데코레이터에서 도출된다 (`startConsumer`).
+ * 선언은 코드에서 도출할 수 없는 사실에만 둔다는 §1 원칙의 결과다.
  */
-export interface EventsModuleOptions {
-  streams: StreamConfig[]; // 여러 stream 지원
+export interface EventsAppOptions {
+  /**
+   * 이 프로세스가 **발행**하는 스트림. 스트림당 `StreamPublisher` provider 가 하나
+   * 등록되고 토픽이 부트스트랩된다. 소비만 하는 앱은 생략한다.
+   *
+   * 옛 이름은 `streams` 였다. 세 표면이 같은 이름으로 각각 다른 뜻(발행 능력 · 검증
+   * 맵 · 무의미한 subscribe 목록)을 받던 것이 ADR-0029 Context 의 첫 번째 관측이다.
+   */
+  publishes?: StreamConfig[];
   kafka?: KafkaConfig; // 선택: 없으면 환경변수에서 생성
   serviceName?: string; // 선택: 기본값은 환경변수 SERVICE_NAME
   enableDLQ?: boolean; // DLQ 활성화 (기본: true)
-  validation?: SchemaValidationOptions; // 스키마 검증 옵션
+
+  /**
+   * **발행** 검증 정책 — 이 호출이 등록하는 publisher 에만 적용된다.
+   *
+   * 소비 정책과 타입이 갈려 있다. 옛 `forRoot`/`forConsumerModule` 은 둘 다
+   * `validation: SchemaValidationOptions` 를 받아 이름이 같고 뜻이 달랐다.
+   */
+  validation?: Pick<SchemaValidationOptions, 'validateOnPublish' | 'throwOnValidationError'>;
+
+  /**
+   * **소비** 검증 정책 — 앱 전체에 하나.
+   *
+   * `startConsumer` 가 마이크로서비스 스코프 인터셉터를 만들 때 읽는다 (ADR-0029 §8).
+   * 여러 `forApp` 호출이 선언하면 어느 것이 이기는지 알 수 없으므로 **부팅을 거부**한다
+   * (`assertSinglePolicyDeclaration`).
+   */
+  policy?: Pick<SchemaValidationOptions, 'validateOnConsume' | 'throwOnValidationError'>;
+
   enableOutbox?: boolean; // Outbox 패턴 활성화 (기본: false)
   outbox?: OutboxConfig; // Outbox 설정
 }
 
 /**
- * Consumer 설정 옵션
- */
-export interface ConsumerModuleOptions {
-  streams: StreamConfig[]; // 여러 stream 구독 지원
-  groupId: string;
-  kafka?: KafkaConfig; // 선택: 없으면 환경변수에서 생성
-
-  // Consumer 세부 설정
-  sessionTimeout?: number; // ms (기본: 30000)
-  heartbeatInterval?: number; // ms (기본: 3000)
-  maxPollInterval?: number; // ms (기본: 300000)
-  autoCommit?: boolean; // 기본: false
-
-  // DLQ 및 재시도 설정
-  enableAutoDLQ?: boolean; // 자동 DLQ 처리 활성화 (기본: true)
-
-  // 스키마 검증 설정
-  validation?: SchemaValidationOptions; // 스키마 검증 옵션
-}
-
-/**
- * `forConsumer()` 전송 설정 (deprecated 경로)
- *
- * `streams` 만 빠져 있다 — Nest 가 `subscribe.topics` 를 덮어쓰므로 무의미했다.
- * 아래 `forConsumer` 의 JSDoc 참조.
- */
-export interface ConsumerTransportOptions extends Omit<ConsumerModuleOptions, 'streams'> {
-  /**
-   * @deprecated 무시된다. Nest 의 `ServerKafka.bindEvents()` 가 `subscribe.topics` 를
-   * 등록된 `@OnEvent` 패턴으로 덮어쓰기 때문에 이 목록은 한 번도 효과를 낸 적이 없다
-   * (ADR-0029 Context). 필드는 기존 호출부 호환을 위해 남겨두었다.
-   */
-  streams?: StreamConfig[];
-}
-
-/**
  * `startConsumer()` 옵션 (ADR-0029 §3)
  *
- * **구독 목록이 없다.** 소비 집합은 `@OnEvent` 데코레이터에서 도출된다.
+ * **구독 목록이 없다.** 소비 집합은 `@On` 데코레이터에서 도출된다.
  * 여기 남는 것은 코드에서 도출할 수 없는 사실 — 전송 설정뿐이다.
  */
 export interface StartConsumerOptions {
@@ -133,28 +122,35 @@ export interface StartConsumerOptions {
 @Module({})
 export class EventsModule {
   /**
-   * Publisher 모듈 설정 (모든 서비스)
+   * 앱 등록 — 발행 능력 · 정책 · 인프라 (ADR-0029 §3)
    *
-   * - Kafka ClientsModule 등록
-   * - 각 Stream별 StreamPublisher 제공
+   * 등록 표면은 이것과 `startConsumer` 둘뿐이다. 옛 `forRoot`(발행) ·
+   * `forConsumerModule`(소비 인프라) · `forConsumer`(전송) 세 벌은 Task 7 에서
+   * 사라졌다 — 셋이 같은 이름·같은 타입의 `streams` 를 받고 각각 다른 뜻이었다.
+   *
+   * BC 별로 여러 번 불러도 된다(core 가 그렇게 쓴다). 다만 `policy` 는 앱 전체에
+   * 하나이므로 **한 호출에서만** 선언한다 — 둘 이상이면 `startConsumer` 가 거부한다.
    *
    * @example
-   * EventsModule.forRoot({
-   *   streams: [ORDER_STREAM, INVENTORY_STREAM],
+   * EventsModule.forApp({
+   *   publishes: [ORDER_STREAM, INVENTORY_STREAM],
+   *   serviceName: 'core',
+   *   policy: { validateOnConsume: true },
    * })
    */
-  static forRoot(options: EventsModuleOptions): DynamicModule {
+  static forApp(options: EventsAppOptions = {}): DynamicModule {
     // Kafka 설정 (환경변수 또는 명시적)
     const kafka = options.kafka || this.createKafkaConfigFromEnv();
     const serviceName = options.serviceName || process.env.SERVICE_NAME || 'unknown-service';
     const enableDLQ = options.enableDLQ ?? true;
+    const publishes = options.publishes ?? [];
 
     // 아웃박스를 켠 앱에서만 `enqueue` 가 동작한다 — publisher 가 적재 대상을 알아야 하기
     // 때문이다(ADR-0029 §5). 켜지 않은 앱에서 `enqueue` 를 부르면 던진다.
     const enableOutbox = options.enableOutbox ?? false;
 
     // 각 stream별 StreamPublisher 제공자 생성
-    const publisherProviders = options.streams.map((stream) => ({
+    const publisherProviders = publishes.map((stream) => ({
       provide: this.getPublisherToken(stream.topic.topic),
       useFactory: (
         transport: EventTransport,
@@ -198,7 +194,7 @@ export class EventsModule {
     const topicBootstrapProvider = {
       provide: bootstrapToken,
       useFactory: async () => {
-        await bootstrapKafkaTopics({ kafka, streams: options.streams, includeDLQ: enableDLQ });
+        await bootstrapKafkaTopics({ kafka, streams: publishes, includeDLQ: enableDLQ });
         return true;
       },
     };
@@ -231,7 +227,7 @@ export class EventsModule {
             ) => {
               // topic -> StreamPublisher 매핑 생성
               const publisherMap = new Map<string, StreamPublisher>();
-              options.streams.forEach((stream) => {
+              publishes.forEach((stream) => {
                 const publisher = new StreamPublisher(
                   transport,
                   stream,
@@ -282,6 +278,15 @@ export class EventsModule {
       useClass: EventRetryInterceptor,
     };
 
+    // 앱이 선언한 소비 검증 정책. `startConsumer` 가 읽어 마이크로서비스 스코프
+    // 인터셉터를 만들 때 쓴다 (ADR-0029 §8) — 정책은 도출 불가한 사실이라 선언이 맞고,
+    // 스트림 목록만 도출로 대체된다. 선언하지 않으면 provider 자체가 없고
+    // `buildConsumerInterceptors` 의 `optionalGet` 이 기본값(`validateOnConsume: true`)
+    // 으로 떨어진다.
+    const consumerPolicyProviders = options.policy
+      ? [{ provide: EVENTS_CONSUMER_POLICY, useValue: { validation: options.policy } }]
+      : [];
+
     const providers = [
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       eventTransportProvider, // Kafka 로 나가는 유일한 통로
@@ -289,6 +294,7 @@ export class EventsModule {
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,
       ...trackingProviders,
+      ...consumerPolicyProviders, // startConsumer 가 읽는 소비 정책
       shutdownProvider, // Graceful shutdown 항상 등록
       topicBootstrapProvider, // MSK Serverless 등 auto-create 불가 환경 대응
     ];
@@ -328,192 +334,16 @@ export class EventsModule {
   }
 
   /**
-   * Consumer 모듈 등록 (자동 DLQ 처리 포함)
-   *
-   * main.ts가 아닌 AppModule에서 사용
-   *
-   * @example
-   * @Module({
-   *   imports: [
-   *     EventsModule.forConsumer({
-   *       streams: [ORDER_STREAM],
-   *       groupId: 'order-consumer',
-   *       enableAutoDLQ: true,
-   *     }),
-   *   ],
-   * })
-   * export class AppModule {}
-   */
-  static forConsumerModule(options: ConsumerModuleOptions): DynamicModule {
-    const kafka = options.kafka || this.createKafkaConfigFromEnv();
-    const enableAutoDLQ = options.enableAutoDLQ ?? true;
-
-    // DLQ Handler 제공자
-    const dlqProvider = enableAutoDLQ
-      ? {
-          provide: DLQHandler,
-          useFactory: (transport: EventTransport) => {
-            return new DLQHandler(transport);
-          },
-          inject: [EVENT_TRANSPORT],
-        }
-      : null;
-
-    // 재시도/분류/DLQ/offset commit — 반드시 최외곽(다른 인터셉터보다 먼저 등록)이어야
-    // SchemaValidationError 등 안쪽 인터셉터의 에러도 분류망에 잡힌다.
-    const retryInterceptorProvider = {
-      provide: APP_INTERCEPTOR,
-      useClass: EventRetryInterceptor,
-    };
-
-    // Schema Validation Interceptor 제공자
-    const interceptorProvider = {
-      provide: APP_INTERCEPTOR,
-      useFactory: (reflector: any) => {
-        return new SchemaValidationInterceptor(reflector, options.streams, options.validation);
-      },
-      inject: ['Reflector'],
-    };
-
-    const bootstrapToken = Symbol('TOPIC_BOOTSTRAP_CONSUMER');
-    const topicBootstrapProvider = {
-      provide: bootstrapToken,
-      useFactory: async () => {
-        await bootstrapKafkaTopics({ kafka, streams: options.streams, includeDLQ: enableAutoDLQ });
-        return true;
-      },
-    };
-
-    // Graceful Shutdown — bootstrap 의존으로 강제 resolve.
-    const shutdownProvider = {
-      provide: GracefulShutdownService,
-      useFactory: (kafkaClient: any, _bootstrap: unknown) => {
-        return new GracefulShutdownService(kafkaClient);
-      },
-      inject: ['KAFKA_CLIENT', bootstrapToken],
-    };
-
-    const chainInterceptorProvider = {
-      provide: APP_INTERCEPTOR,
-      useClass: ChainContextInterceptor,
-    };
-
-    // 앱이 선언한 검증 정책. `startConsumer` 가 읽어 마이크로서비스 스코프 인터셉터를
-    // 만들 때 쓴다 (ADR-0029 §8) — 정책은 도출 불가한 사실이라 선언이 맞고, 스트림
-    // 목록만 도출로 대체된다.
-    const consumerPolicyProvider = {
-      provide: EVENTS_CONSUMER_POLICY,
-      useValue: { validation: options.validation },
-    };
-
-    const providers = [
-      eventTransportProvider, // Kafka 로 나가는 유일한 통로
-      ...(dlqProvider ? [dlqProvider] : []),
-      retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
-      interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
-      chainInterceptorProvider, // chain context 전파 인터셉터
-      consumerPolicyProvider, // startConsumer 가 읽는 소비 정책
-      shutdownProvider, // Graceful shutdown 항상 등록
-      topicBootstrapProvider, // MSK Serverless 등 auto-create 불가 환경 대응
-      { provide: EventChainService, useClass: EventChainService },
-      { provide: EventTrackingService, useClass: EventTrackingService },
-      { provide: EventTraceReader, useClass: EventTraceReader },
-    ];
-
-    return {
-      module: EventsModule,
-      global: true,
-      imports: [
-        ClsModule.forRoot({ global: true, middleware: { mount: false } }),
-        ClientsModule.register([
-          {
-            name: 'KAFKA_CLIENT',
-            transport: Transport.KAFKA,
-            options: {
-              producerOnlyMode: true,
-              client: {
-                clientId: kafka.clientId,
-                brokers: kafka.brokers,
-                ssl: kafka.ssl,
-                sasl: kafka.sasl,
-                retry: kafka.retry,
-              },
-            },
-          },
-        ]),
-      ],
-      providers,
-      exports: providers.filter((p) => p.provide !== APP_INTERCEPTOR).map((p) => p.provide),
-    };
-  }
-
-  /**
-   * Consumer 전송 설정 반환 (main.ts에서 connectMicroservice()에 사용)
-   *
-   * @deprecated `startConsumer(app, { groupId })` 를 쓴다. 두 가지 이유다 (ADR-0029):
-   *
-   * 1. **`streams` 인자가 무효다.** Nest 의 `ServerKafka.bindEvents()` 가
-   *    `subscribe.topics` 를 등록된 `@OnEvent` 패턴으로 덮어쓴다. 이 목록은 한 번도
-   *    구독에 영향을 준 적이 없으며, 그럼에도 "여기 없으면 메시지가 안 온다"는 틀린
-   *    모델이 주석으로 자라 2026-08-08 아키텍처 리뷰의 오판을 낳았다.
-   * 2. **이 경로로 붙인 마이크로서비스에는 소비 인터셉터가 적용되지 않는다.**
-   *    호출부가 `app.connectMicroservice(opts)` 를 두 번째 인자 없이 부르면 Nest 가
-   *    빈 `ApplicationConfig` 를 만들어, `APP_INTERCEPTOR` 로 등록한 스키마 검증·재시도·
-   *    DLQ 인터셉터가 전부 무력화된다 (ADR-0029 §8). `startConsumer` 는 그 배선을 한다.
-   *
-   * @example
-   * const consumerOptions = EventsModule.forConsumer({ groupId: 'events-test-consumer' });
-   * app.connectMicroservice(consumerOptions);
-   * await app.startAllMicroservices();
-   */
-  static forConsumer(options: ConsumerTransportOptions): {
-    transport: Transport.KAFKA;
-    options: any;
-  } {
-    // Kafka 설정 (환경변수 또는 명시적)
-    const kafka = options.kafka || this.createKafkaConfigFromEnv();
-
-    // subscribe.topics 를 만들지 않는다 — Nest 가 어차피 덮어쓴다. 만들어 두면
-    // "이 목록이 구독을 결정한다"는 틀린 모델이 다시 자란다.
-    return {
-      transport: Transport.KAFKA,
-      options: {
-        client: {
-          clientId: kafka.clientId,
-          brokers: kafka.brokers,
-          ssl: kafka.ssl,
-          sasl: kafka.sasl,
-          retry: kafka.retry,
-        },
-        consumer: {
-          groupId: options.groupId,
-          sessionTimeout: options.sessionTimeout || 30000,
-          heartbeatInterval: options.heartbeatInterval || 3000,
-          maxPollInterval: options.maxPollInterval || 300000,
-          allowAutoTopicCreation: false,
-        },
-        subscribe: {
-          fromBeginning: false,
-        },
-        run: {
-          autoCommit: options.autoCommit ?? false,
-          autoCommitInterval: 5000,
-          autoCommitThreshold: 100,
-        },
-      },
-    };
-  }
-
-  /**
    * 소비를 시작한다 — 구독 목록 인자 없음 (ADR-0029 §3)
    *
-   * 컨테이너를 훑어 `@OnEvent` 핸들러를 찾고, 거기서 **구독 토픽 · 검증 스키마 맵 ·
+   * 컨테이너를 훑어 `@On` 핸들러를 찾고, 거기서 **구독 토픽 · 검증 스키마 맵 ·
    * 토픽 부트스트랩 목록을 전부 파생**한다. 선언과 실제가 어긋날 자리가 없다.
    *
-   * 두 가지를 부팅에서 거부한다 — 둘 다 지금까지 완전 무증상이던 실수다:
+   * 세 가지를 부팅에서 거부한다 — 전부 지금까지 완전 무증상이던 실수다:
    * - 계약 레지스트리에 없는 토픽 구독
-   * - `@OnEvent` 핸들러 0개 (컨트롤러를 `controllers: []` 에 등록하지 않은 경우.
+   * - `@On` 핸들러 0개 (컨트롤러를 `controllers: []` 에 등록하지 않은 경우.
    *   Nest 는 이때 `subscribe` 자체를 건너뛰므로 로그조차 남지 않는다)
+   * - `forApp({ policy })` 를 두 곳 이상에서 선언 (어느 것이 이기는지 알 수 없다)
    *
    * 그리고 소비 인터셉터(재시도·DLQ·스키마 검증·chain)를 **마이크로서비스 스코프**로
    * 붙인다. 하이브리드 앱에서 `APP_INTERCEPTOR` 가 소비 경로에 닿지 않기 때문이며,
@@ -537,16 +367,38 @@ export class EventsModule {
       await bootstrapKafkaTopics({ kafka, streams: derived.streams, includeDLQ: enableAutoDLQ });
     }
 
-    const microserviceOptions = options.strategy
+    // subscribe.topics 를 만들지 않는다 — Nest 의 `ServerKafka.bindEvents()` 가
+    // 등록된 `@On` 패턴으로 어차피 덮어쓴다(`server-kafka.js:92`). 만들어 두면
+    // "이 목록이 구독을 결정한다"는 틀린 모델이 다시 자란다 (ADR-0029 §2).
+    const microserviceOptions:
+      | { strategy: CustomTransportStrategy }
+      | { transport: Transport.KAFKA; options: unknown } = options.strategy
       ? { strategy: options.strategy }
-      : this.forConsumer({
-          groupId: options.groupId,
-          kafka,
-          sessionTimeout: options.sessionTimeout,
-          heartbeatInterval: options.heartbeatInterval,
-          maxPollInterval: options.maxPollInterval,
-          autoCommit: options.autoCommit,
-        });
+      : {
+          transport: Transport.KAFKA,
+          options: {
+            client: {
+              clientId: kafka.clientId,
+              brokers: kafka.brokers,
+              ssl: kafka.ssl,
+              sasl: kafka.sasl,
+              retry: kafka.retry,
+            },
+            consumer: {
+              groupId: options.groupId,
+              sessionTimeout: options.sessionTimeout || 30000,
+              heartbeatInterval: options.heartbeatInterval || 3000,
+              maxPollInterval: options.maxPollInterval || 300000,
+              allowAutoTopicCreation: false,
+            },
+            subscribe: { fromBeginning: false },
+            run: {
+              autoCommit: options.autoCommit ?? false,
+              autoCommitInterval: 5000,
+              autoCommitThreshold: 100,
+            },
+          },
+        };
 
     // deferInitialization 없이 부르면 Nest 가 즉시 리스너를 바인딩해버려
     // useGlobalInterceptors 가 늦는다. 미룬 뒤 인터셉터를 얹고, 비-defer 경로가
@@ -602,24 +454,6 @@ export class EventsModule {
   }
 
   /**
-   * Publisher 주입 데코레이터
-   *
-   * @deprecated 토픽 문자열과 이벤트 타입 제네릭 두 사실을 따로 적게 한다. 계약에서
-   * 도출하는 `@InjectPublisher(STREAM)` + `PublisherFor<typeof STREAM>` 을 쓰라 —
-   * 같은 토큰을 만들므로 동작은 같다 (ADR-0029 §4). 앱 사용처는 Task 6-B 로 전부
-   * 이주해 0건이며, 이 표면 자체는 Task 7(contract phase)에서 삭제한다.
-   *
-   * @example
-   * constructor(
-   *   @InjectPublisher(ORDER_STREAM)
-   *   private readonly orderPublisher: PublisherFor<typeof ORDER_STREAM>
-   * ) {}
-   */
-  static InjectStreamPublisher(topicName: string) {
-    return Inject(this.getPublisherToken(topicName));
-  }
-
-  /**
    * Outbox 스키마 export (앱에서 병합할 수 있도록)
    *
    * @example
@@ -639,10 +473,3 @@ export class EventsModule {
     return trackingSchema;
   }
 }
-
-/**
- * Publisher 주입 데코레이터 (단축)
- *
- * @deprecated `@InjectPublisher(STREAM)` 을 쓰라 — 위 `EventsModule.InjectStreamPublisher` 참조.
- */
-export const InjectStreamPublisher = EventsModule.InjectStreamPublisher.bind(EventsModule);

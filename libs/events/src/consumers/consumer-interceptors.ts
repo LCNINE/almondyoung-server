@@ -1,7 +1,7 @@
 /**
  * 소비 경로 인터셉터 배선 (ADR-0029 §8)
  *
- * 이 인터셉터들은 `forRoot`/`forConsumerModule` 에서 `APP_INTERCEPTOR` 로도 등록되지만,
+ * `EventRetryInterceptor` 는 `forApp` 에서 `APP_INTERCEPTOR` 로도 등록되지만,
  * **하이브리드 앱에서는 그 등록이 소비 경로에 닿지 않는다.** `app.connectMicroservice(opts)`
  * 를 두 번째 인자 없이 부르면 Nest 가 마이크로서비스에 **새 `ApplicationConfig`** 를
  * 만들어 주기 때문이다 (`nest-application.js:128`). 그래서 `startConsumer` 는 마이크로서비스
@@ -13,7 +13,7 @@
  */
 
 import type { INestApplicationContext, NestInterceptor, Type } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
+import { ModulesContainer, Reflector } from '@nestjs/core';
 import type { SchemaValidationOptions, StreamConfig } from '@packages/event-contracts/types';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { ChainContextInterceptor } from '../interceptors/chain-context.interceptor';
@@ -46,16 +46,46 @@ function optionalGet<T>(app: INestApplicationContext, token: Type<T> | string): 
 }
 
 /**
+ * 소비 정책이 두 곳 이상에서 선언됐으면 부팅을 거부한다.
+ *
+ * `forApp` 은 BC 별로 여러 번 불릴 수 있고(core 는 4번), 그중 둘이 `policy` 를 선언하면
+ * `optionalGet` 은 **아무 경고 없이 하나만** 돌려준다. 어느 것이 이기는지는 모듈 등록
+ * 순서에 달렸고, 두 선언이 `validateOnConsume` 에서 갈리면 그 순간 검증이 켜지거나
+ * 꺼진다 — 증상 없는 결함이다. 그래서 세어서 거부한다.
+ *
+ * 0개는 정상이다(기본값 `validateOnConsume: true` 로 떨어진다).
+ */
+export function assertSinglePolicyDeclaration(app: INestApplicationContext): void {
+  const container = app.get(ModulesContainer, { strict: false });
+  const declarations: unknown[] = [];
+
+  for (const module of container.values()) {
+    const wrapper = module.providers.get(EVENTS_CONSUMER_POLICY);
+    if (wrapper) declarations.push(wrapper.instance ?? wrapper.metatype);
+  }
+
+  if (declarations.length > 1) {
+    throw new Error(
+      `startConsumer(): 소비 정책(EVENTS_CONSUMER_POLICY)이 ${declarations.length}곳에서 선언됐다 — ` +
+        '`forApp({ policy })` 는 앱 전체에 하나여야 한다. 어느 선언이 이기는지는 모듈 등록 ' +
+        '순서에 달려 있어 조용히 갈린다.\n' +
+        declarations.map((declaration) => `  - ${JSON.stringify(declaration)}`).join('\n'),
+    );
+  }
+}
+
+/**
  * 마이크로서비스 스코프 전역 인터셉터를 만든다.
  *
  * **배열 순서 = 래핑 순서.** 재시도·분류·DLQ 가 최외곽이어야 안쪽에서 나온
  * `SchemaValidationError` 도 분류망에 걸린다 (`events.module.ts` 의 APP_INTERCEPTOR
  * 등록 순서와 같은 이유·같은 순서).
  *
- * @param streams `@OnEvent` 에서 **도출된** 스트림 목록 — 검증 스키마 맵이 된다
+ * @param streams `@On` 에서 **도출된** 스트림 목록 — 검증 스키마 맵이 된다
  */
 export function buildConsumerInterceptors(app: INestApplicationContext, streams: StreamConfig[]): NestInterceptor[] {
   const reflector = app.get(Reflector, { strict: false });
+  assertSinglePolicyDeclaration(app);
   const policy = optionalGet<EventsConsumerPolicy>(app, EVENTS_CONSUMER_POLICY);
 
   const interceptors: NestInterceptor[] = [

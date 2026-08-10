@@ -1,7 +1,7 @@
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
 import { buildCarrierGatewayRegistry, buildHanjinConfig } from './carrier/hanjin/carrier-gateway.factory';
 
-// FulfillmentModule 은 EventsModule.forConsumerModule(SalesOrderModule 경유)을 정적으로 물고 있어, import 만
+// FulfillmentModule 은 EventsModule.forApp(SalesOrderModule 경유)을 정적으로 물고 있어, import 만
 // 해도 KAFKA_BROKERS 연결을 시도한다(실측: 로컬에 브로커가 없으면 재시도를 반복하며 멈추지 않는다 — Task 12
 // 조사 결과, hang 재현 확인). 그래서 WaybillModule/WaybillService 는 정적 import 로 파일 최상단에 두지 않고
 // it() 안에서 동적 import 로만 불러온다 — DATABASE_URL 이 없어 describeIfDb 가 skip 되는 기본 테스트런에서는

@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { ORDER_STREAM } from '@packages/event-contracts';
 
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
@@ -25,12 +24,14 @@ import { WalletRefundClient } from './services/wallet-refund.client';
 
 @Module({
   imports: [
-    // ORDER_STREAM Kafka consumer (group: almondyoung-order-consumer)
-    // WMS는 wms-consumer 그룹을 유지하므로 동일 이벤트를 독립적으로 소비
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'almondyoung-order-consumer',
-      enableAutoDLQ: true,
+    // core 의 **소비 정책** 선언 자리 (ADR-0029 §1·§3). 이 앱의 컨슈머는 전부 이 BC 에
+    // 있다 — `OrderEventsConsumer` 하나. 구독 토픽·groupId 는 여기 없다: 토픽은 `@On` 에서
+    // 도출되고(`startConsumer`), groupId 는 `main.ts` 가 준다. 옛 `forConsumerModule` 은
+    // 둘 다 받았지만 **어느 쪽도 쓰지 않았다** — 도출 불가한 사실만 남긴 결과가 이 한 줄이다.
+    //
+    // 정책은 앱 전체에 하나다. core 는 `forApp` 을 4번 부르는데(inventory · fulfillment ·
+    // catalog · 여기) `policy` 를 선언하는 곳은 여기뿐이며, 둘 이상이면 부팅이 거부된다.
+    EventsModule.forApp({
       // 소비 스키마 검증 ON (ADR-0029 §8, 플랜 Task 5-C — 이 앱이 첫 번째다).
       //
       // 근거는 샘플링이 아니라 **발행 경로를 전수로 닫은 정적 증명**이다. 이 앱이 구독하는
@@ -44,7 +45,7 @@ import { WalletRefundClient } from './services/wallet-refund.client';
       // 이 논증은 `npm run audit:consume-validation -- --gate` 가 상시 재검증한다 — 검증을
       // 켜 둔 앱에 우회 경로가 닿는 이벤트가 새로 생기면 게이트가 exit 1 로 막는다.
       // 남은 노출은 계약 이전에 토픽에 쌓인 옛 메시지뿐이며, 그건 정적으로 알 수 없다.
-      validation: { validateOnConsume: true },
+      policy: { validateOnConsume: true },
     }),
 
     // OutboxService (Sales Order 이벤트 발행용)
@@ -64,8 +65,23 @@ import { WalletRefundClient } from './services/wallet-refund.client';
 
     ProductSellableQuantityModule,
   ],
-  controllers: [SalesOrdersController, SalesOrderAmendmentsController, StoreSalesOrdersController, StoreSalesOrderReturnExchangeController, AdminReturnExchangeController, OrderEventsConsumer],
-  providers: [SalesOrdersService, SalesOrderAmendmentsService, SalesOrderQueryService, PoliciesService, StoreSalesOrdersService, StoreReturnExchangeService, WalletRefundClient],
+  controllers: [
+    SalesOrdersController,
+    SalesOrderAmendmentsController,
+    StoreSalesOrdersController,
+    StoreSalesOrderReturnExchangeController,
+    AdminReturnExchangeController,
+    OrderEventsConsumer,
+  ],
+  providers: [
+    SalesOrdersService,
+    SalesOrderAmendmentsService,
+    SalesOrderQueryService,
+    PoliciesService,
+    StoreSalesOrdersService,
+    StoreReturnExchangeService,
+    WalletRefundClient,
+  ],
   exports: [
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
     SalesOrderAmendmentsService,

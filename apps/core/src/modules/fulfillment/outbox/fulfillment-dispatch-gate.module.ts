@@ -39,7 +39,7 @@ export class FulfillmentOutboxDispatchGate implements OutboxDispatchGate {
 }
 
 /**
- * `@Global()` 인 이유: 공용 디스패처는 아웃박스를 켠 `EventsModule.forRoot` 안에서 만들어지는데
+ * `@Global()` 인 이유: 공용 디스패처는 아웃박스를 켠 `EventsModule.forApp` 안에서 만들어지는데
  * (core 에서는 catalog), 이 게이트는 fulfillment 의 정책이다. 두 모듈은 서로를 import 하지
  * 않으므로 토큰이 전역이어야 optional 주입이 닿는다. `FulfillmentWorkflowGate` 를 여기서도
  * 제공하는 것은 env 파생 무상태 객체라 인스턴스가 둘이어도 같은 답을 내기 때문이다.

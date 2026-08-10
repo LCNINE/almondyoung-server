@@ -13,7 +13,7 @@
          ▼                                 ▼
 ┌────────────────────┐        ┌──────────────────────┐
 │  Event Consumer    │        │  EventController    │
-│  (@OnEvent)        │        │  (HTTP /trigger)     │
+│  (@On)             │        │  (HTTP /trigger)     │
 └────────┬───────────┘        └──────────┬───────────┘
          │                               │
          │                               │
@@ -75,8 +75,8 @@
 
 ### 플로우:
 1. **이벤트 수신**: `UserEventConsumer`, `OrderEventConsumer`, `WalletEventConsumer`
-   - `@OnEvent('stream', 'eventType')` 데코레이터로 이벤트 수신
-   - 예: `@OnEvent('users.events.v1', 'UserVerification')`
+   - `@On(STREAM, 'EventName')` 데코레이터로 이벤트 수신
+   - 예: `@On(USER_STREAM, 'UserVerification')`
 
 2. **이벤트 매핑 조회**: `EventMappingService.getEventMapping(eventKey)`
    - `notification_events` 테이블에서 매핑 정보 조회

@@ -83,8 +83,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       },
       schema: userServiceSchema,
     }),
-    EventsModule.forRoot({
-      streams: [USER_STREAM],
+    EventsModule.forApp({
+      publishes: [USER_STREAM],
       serviceName: 'user-service',
       kafka: createKafkaConfigFromEnv()!,
       validation: {

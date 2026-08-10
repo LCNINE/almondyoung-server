@@ -1,12 +1,12 @@
 /**
  * 발행 → 소비 왕복 하네스 (ADR-0029 §7, 플랜 Task 2)
  *
- * 브로커 없이 한 프로세스 안에서 `StreamPublisher.publishEvent` 부터 `@OnEvent`
+ * 브로커 없이 한 프로세스 안에서 `StreamPublisher.publishEvent` 부터 `@On`
  * 핸들러 호출까지를 검증한다. **Nest 파이프라인은 실물이다** — `EventsModule` 을
  * 실제로 import 하고, 인터셉터·가드·파라미터 데코레이터·DI 가 모두 살아 있으며,
  * 바뀐 것은 `EVENT_TRANSPORT` 바인딩과 소비 전략뿐이다.
  *
- * 이 하네스가 없던 동안 `forConsumer({streams})` 가 무효라는 사실이 아무 테스트에도
+ * 이 하네스가 없던 동안 옛 `forConsumer({streams})` 가 무효라는 사실이 아무 테스트에도
  * 걸리지 않았고, 그래서 2026-08-08 아키텍처 리뷰가 오판했다.
  */
 
@@ -16,7 +16,8 @@ import { z } from 'zod';
 import { event, getDLQTopicName, stream } from '@packages/event-contracts/types';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
-import { EventPayload, OnEvent } from '../consumers/decorators';
+import { EventPayload, On } from '../consumers/decorators';
+import { buildConsumerInterceptors } from '../consumers/consumer-interceptors';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { EventChainService } from '../tracking/event-chain.service';
@@ -73,17 +74,17 @@ class HarnessConsumer {
   // 생성자 주입이 하네스에서도 살아 있어야 한다 — 클로저 기반 핸들러였다면 잃었을 것
   constructor(private readonly chain: EventChainService) {}
 
-  @OnEvent('harness.events.v1', 'OrderCreated')
+  @On(HARNESS_STREAM, 'OrderCreated')
   onCreated(@EventPayload() payload: OrderCreatedPayload): void {
     calls.push({ handler: 'onCreated', payload, chainId: this.chain.getChainId() });
   }
 
-  @OnEvent('harness.events.v1', 'OrderCancelled')
+  @On(HARNESS_STREAM, 'OrderCancelled')
   onCancelled(@EventPayload() payload: unknown): void {
     calls.push({ handler: 'onCancelled', payload });
   }
 
-  @OnEvent('harness.events.v1', 'OrderShipped')
+  @On(HARNESS_STREAM, 'OrderShipped')
   onShipped(@EventPayload() payload: unknown): void {
     calls.push({ handler: 'onShipped', payload });
   }
@@ -92,7 +93,7 @@ class HarnessConsumer {
 @Controller()
 @UseInterceptors(EventTypeGuard)
 class StrictConsumer {
-  @OnEvent('harness.strict.v1', 'StrictEvent')
+  @On(STRICT_STREAM, 'StrictEvent')
   onStrict(@EventPayload() payload: unknown): void {
     calls.push({ handler: 'onStrict', payload });
   }
@@ -112,14 +113,7 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
     const kafka = { clientId: 'harness', brokers: ['unused:9092'] };
 
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        EventsModule.forRoot({ streams: [HARNESS_STREAM, STRICT_STREAM], serviceName: 'harness', kafka }),
-        EventsModule.forConsumerModule({
-          streams: [HARNESS_STREAM, STRICT_STREAM],
-          groupId: 'harness-consumer',
-          kafka,
-        }),
-      ],
+      imports: [EventsModule.forApp({ publishes: [HARNESS_STREAM, STRICT_STREAM], serviceName: 'harness', kafka })],
       controllers: [HarnessConsumer, StrictConsumer],
     })
       // 유일한 교체 지점 — 나머지 배선은 운영과 같다
@@ -131,6 +125,14 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
       strategy: new InMemoryServer(broker),
       logger: false,
     });
+    // 소비 인터셉터는 운영과 **같은 팩토리**로 만들어 얹는다 (ADR-0029 §8).
+    // `startConsumer` 를 부르지 않는 이유는 하나뿐이다 — 그것은 계약 레지스트리에 없는
+    // 토픽의 구독을 거부하는데, 이 하네스는 일부러 레지스트리 밖의 전용 계약을 쓴다.
+    // 그래서 도출 대신 스트림을 손으로 주되, 인터셉터 구성 자체는 `buildConsumerInterceptors`
+    // 한 곳에서 가져온다. 옛 `forConsumerModule` 의 `APP_INTERCEPTOR` 등록에 기대던 코드였는데,
+    // 그 등록은 **운영 하이브리드 앱에서는 소비 경로에 닿은 적이 없다** — 즉 이 하네스는
+    // 여태 운영과 다른 배선을 검증하고 있었다.
+    app.useGlobalInterceptors(...buildConsumerInterceptors(app, [HARNESS_STREAM, STRICT_STREAM]));
     await app.listen();
 
     publisher = app.get(EventsModule.getPublisherToken(HARNESS_STREAM.topic.topic));
@@ -145,7 +147,7 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
     broker.reset();
   });
 
-  it('publishEvent 가 @OnEvent 핸들러까지 도달하고 payload 가 보존된다', async () => {
+  it('publishEvent 가 @On 핸들러까지 도달하고 payload 가 보존된다', async () => {
     await publisher.publishEvent({
       eventType: 'OrderCreated',
       aggregateId: 'order-1',

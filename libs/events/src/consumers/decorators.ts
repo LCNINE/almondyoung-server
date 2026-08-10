@@ -50,46 +50,16 @@ export function StreamEventHandler(
 }
 
 /**
- * 특정 이벤트 타입만 처리하는 핸들러 (권장)
- *
- * 내부적으로 messageType 필터링을 자동으로 처리
- *
- * @example
- * @Controller()
- * export class OrderEventsConsumer {
- *   @OnEvent('orders.events.v1', 'OrderCreated')
- *   async onOrderCreated(
- *     @EventEnvelope() envelope: DomainEvent<OrderCreatedPayload>,
- *     @EventPayload() payload: OrderCreatedPayload,
- *     @EventContext() ctx: KafkaContext,
- *   ) {
- *     console.log('Order created:', payload.orderId);
- *   }
- *
- *   @OnEvent('orders.events.v1', 'OrderCancelled')
- *   async onOrderCancelled(
- *     @EventPayload() payload: OrderCancelledPayload
- *   ) {
- *     console.log('Order cancelled:', payload.orderId);
- *   }
- * }
- */
-export function OnEvent(topic: string, eventType: string) {
-  return applyDecorators(EventPattern(topic), SetMetadata(EVENT_TYPE_FILTER, eventType));
-}
-
-/**
  * 계약에서 토픽·이벤트명을 도출하는 핸들러 데코레이터 (ADR-0029 §4)
  *
- * `@OnEvent('products.events.v1', 'ProductMasterDeleted')` 는 **두 개의 생문자열**이다.
- * 토픽은 계약이 이미 알고 있고(`STREAM.topic.topic`), 이벤트명은 계약이 가진 키 집합에
- * 속해야 한다. `@On` 은 토픽을 계약에서 읽고 이벤트명을 `EventKeysOf` 로 좁혀,
- * 오타가 **컴파일 에러**가 되게 한다.
+ * 옛 표면 `@OnEvent('products.events.v1', 'ProductMasterDeleted')` 는 **두 개의 생문자열**
+ * 이었다. 토픽은 계약이 이미 알고 있고(`STREAM.topic.topic`), 이벤트명은 계약이 가진 키
+ * 집합에 속해야 한다. `@On` 은 토픽을 계약에서 읽고 이벤트명을 `EventKeysOf` 로 좁혀,
+ * 오타가 **컴파일 에러**가 되게 한다. (`@OnEvent` 는 Task 7 에서 삭제됐다.)
  *
- * 런타임 동작은 `@OnEvent` 과 **완전히 같다** — `EventPattern(topic)` +
+ * 남기는 런타임 메타데이터는 Nest 네이티브 그대로다 — `EventPattern(topic)` +
  * `SetMetadata(EVENT_TYPE_FILTER, eventName)`. 따라서 `EventTypeGuard` · 소비 집합
- * 도출(`consumer-discovery.ts`) · Nest 의 바인딩이 전부 그대로 동작하며, 두 데코레이터를
- * 한 앱에서 섞어 써도 된다 (앱별 이주 중에는 실제로 섞인다).
+ * 도출(`consumer-discovery.ts`) · Nest 의 바인딩이 전부 그대로 동작한다.
  *
  * @example
  * @Controller()
@@ -124,7 +94,7 @@ export function On<S extends StreamConfig<StreamEventTypes>, K extends EventKeys
     );
   }
 
-  return OnEvent(topic, eventName);
+  return applyDecorators(EventPattern(topic), SetMetadata(EVENT_TYPE_FILTER, eventName));
 }
 
 /**

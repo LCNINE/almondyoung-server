@@ -3,22 +3,26 @@
  *
  * 증명해야 할 것이 둘이다:
  *
- * 1. **런타임이 옛 표면과 같다.** `@On` 은 `@OnEvent` 과 동일한 메타데이터를 남기고,
- *    `@InjectPublisher` 는 `@InjectStreamPublisher` 와 동일한 토큰을 만든다. 그래야
- *    앱별 이주(Task 5) 중 한 앱 안에서 두 표면이 섞여도 안전하다. 이건 Task 2 하네스로
- *    실제 발행→소비 왕복을 돌려서 확인한다 — 메타데이터만 비교하면 "같아 보인다"에서 끝난다.
+ * 1. **런타임이 Nest 네이티브 등록과 같다.** `@On` 은 `EventPattern` + `SetMetadata` 가
+ *    남기는 것과 똑같은 메타데이터를 남기고, `@InjectPublisher` 는 `getPublisherToken`
+ *    한 곳에서 나온 토큰을 만든다. 이건 Task 2 하네스로 실제 발행→소비 왕복을 돌려서
+ *    확인한다 — 메타데이터만 비교하면 "같아 보인다"에서 끝난다.
+ *    (옛 표면 `@OnEvent`/`@InjectStreamPublisher` 는 Task 7 에서 삭제됐다. 대조군은
+ *    그 자리에 Nest 네이티브 데코레이터를 직접 세운다 — 우리 헬퍼를 거치지 않으므로
+ *    옛 표면과 비교하던 것보다 오히려 강한 대조군이다.)
  * 2. **타입이 계약에서 도출된다.** 잘못된 이벤트명·payload 는 컴파일 에러다.
  *    타입 단계 단언은 `@ts-expect-error` 로 하며, 그 검사는 `npm run type-check` 가 강제한다
  *    (불필요한 `@ts-expect-error` 는 그 자체가 에러라 단언이 썩으면 바로 드러난다).
  */
 
-import { Controller, INestMicroservice, Injectable, UseInterceptors } from '@nestjs/common';
+import { Controller, INestMicroservice, Injectable, SetMetadata, UseInterceptors } from '@nestjs/common';
+import { EventPattern } from '@nestjs/microservices';
 import { Test } from '@nestjs/testing';
 import { z } from 'zod';
 import { event, stream } from '@packages/event-contracts/types';
 import type { EnvelopeOf, EventPayloadOf } from '@packages/event-contracts/types';
 import { EventsModule } from '../events.module';
-import { EventEnvelope, EventPayload, On, OnEvent } from './decorators';
+import { EVENT_TYPE_FILTER, EventEnvelope, EventPayload, On } from './decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { InjectPublisher, PublisherFor } from '../publishers/inject-publisher';
 import { getPublisherToken } from '../publishers/publisher-token';
@@ -124,10 +128,7 @@ describe('@On / @InjectPublisher — 계약에서 도출하는 등록 표면', (
     const kafka = { clientId: 'typed-harness', brokers: ['unused:9092'] };
 
     const moduleRef = await Test.createTestingModule({
-      imports: [
-        EventsModule.forRoot({ streams: [TYPED_STREAM], serviceName: 'typed-harness', kafka }),
-        EventsModule.forConsumerModule({ streams: [TYPED_STREAM], groupId: 'typed-harness-consumer', kafka }),
-      ],
+      imports: [EventsModule.forApp({ publishes: [TYPED_STREAM], serviceName: 'typed-harness', kafka })],
       controllers: [TypedConsumer],
       providers: [TypedOrderService],
     })
@@ -180,14 +181,17 @@ describe('@On / @InjectPublisher — 계약에서 도출하는 등록 표면', (
       expect(calls[0].payload).toEqual({ orderId: 'order-2', reason: 'out-of-stock' });
     });
 
-    it('@On 이 남기는 메타데이터가 @OnEvent 과 완전히 같다', () => {
+    it('@On 이 남기는 메타데이터가 Nest 네이티브 등록과 완전히 같다', () => {
       class ViaOn {
         @On(TYPED_STREAM, 'OrderCreated')
         handle(): void {}
       }
 
-      class ViaOnEvent {
-        @OnEvent('harness.typed.v1', 'OrderCreated')
+      // 대조군은 우리 헬퍼가 아니라 Nest 자신의 데코레이터다. Nest 가 바인딩할 때 보는
+      // 것은 이 메타데이터이므로, 여기가 갈라지면 구독이 조용히 사라진다.
+      class ViaNative {
+        @EventPattern('harness.typed.v1')
+        @SetMetadata(EVENT_TYPE_FILTER, 'OrderCreated')
         handle(): void {}
       }
 
@@ -196,21 +200,21 @@ describe('@On / @InjectPublisher — 계약에서 도출하는 등록 표면', (
       const handlerOf = (proto: object): object => Reflect.get(proto, 'handle') as object;
 
       const onHandler = handlerOf(ViaOn.prototype);
-      const onEventHandler = handlerOf(ViaOnEvent.prototype);
+      const nativeHandler = handlerOf(ViaNative.prototype);
 
       const onKeys = Reflect.getMetadataKeys(onHandler).sort();
-      const onEventKeys = Reflect.getMetadataKeys(onEventHandler).sort();
+      const nativeKeys = Reflect.getMetadataKeys(nativeHandler).sort();
 
       // 키 집합이 같아야 한다 — 하나라도 빠지면 Nest 의 바인딩이나 EventTypeGuard 가 갈라진다
-      expect(onKeys).toEqual(onEventKeys);
+      expect(onKeys).toEqual(nativeKeys);
       expect(onKeys.length).toBeGreaterThan(0);
 
       for (const key of onKeys) {
-        expect(Reflect.getMetadata(key, onHandler)).toEqual(Reflect.getMetadata(key, onEventHandler));
+        expect(Reflect.getMetadata(key, onHandler)).toEqual(Reflect.getMetadata(key, nativeHandler));
       }
     });
 
-    it('@InjectPublisher 의 토큰이 @InjectStreamPublisher 와 같다', () => {
+    it('토큰 생성이 한 곳이다 — @InjectPublisher 와 EventsModule.getPublisherToken 이 같은 문자열', () => {
       expect(getPublisherToken(TYPED_STREAM.topic.topic)).toBe(
         EventsModule.getPublisherToken(TYPED_STREAM.topic.topic),
       );

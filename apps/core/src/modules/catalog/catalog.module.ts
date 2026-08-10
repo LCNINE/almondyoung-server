@@ -24,8 +24,8 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [PRODUCT_STREAM],
+    EventsModule.forApp({
+      publishes: [PRODUCT_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
       enableOutbox: true,

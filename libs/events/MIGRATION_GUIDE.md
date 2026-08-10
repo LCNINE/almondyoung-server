@@ -100,8 +100,8 @@ const combinedSchema = {
       },
       schema: combinedSchema,  // 병합된 스키마 사용
     }),
-    EventsModule.forRoot({
-      streams: [ORDER_STREAM],
+    EventsModule.forApp({
+      publishes: [ORDER_STREAM],
       serviceName: 'wms',
       enableOutbox: true,  // Outbox 활성화
     }),
@@ -139,7 +139,7 @@ npm run db:push:wms
 
 - [ ] `drizzle.config.ts`에 outbox 스키마 경로 추가
 - [ ] `AppModule`에서 `EventsModule.outboxSchema` 병합
-- [ ] `EventsModule.forRoot({ enableOutbox: true })` 설정
+- [ ] `EventsModule.forApp({ enableOutbox: true })` 설정
 - [ ] `npm run db:generate:<app>` 실행
 - [ ] `npm run db:push:<app>` 실행 (또는 마이그레이션 적용)
 - [ ] DB에 `event.outbox_events` 테이블 생성 확인

@@ -85,10 +85,7 @@ async function buildModule(broker: InMemoryBroker): Promise<TestingModule> {
   process.env.KAFKA_BOOTSTRAP_TOPICS = 'false';
 
   return Test.createTestingModule({
-    imports: [
-      EventsModule.forRoot({ streams: [CART_STREAM], serviceName: 'handler-failure-spec', kafka }),
-      EventsModule.forConsumerModule({ streams: [], groupId: 'spec-consumer', kafka }),
-    ],
+    imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'handler-failure-spec', kafka })],
     controllers: [ExplodingConsumer],
   })
     .overrideProvider(EVENT_TRANSPORT)

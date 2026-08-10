@@ -1,5 +1,5 @@
 /**
- * #510 회귀 가드: SearchModule 이 EventsModule.forConsumerModule 을 통해
+ * #510 회귀 가드: SearchModule 이 EventsModule.forApp 을 통해
  * 전역 EventRetryInterceptor(재시도/DLQ/offset commit)를 실제로 등록하는지 봉인한다.
  *
  * SearchModule 의 imports 는 process.env.KAFKA_BROKERS 조건부(channel-adapter 판례)이므로
