@@ -1,8 +1,8 @@
 import { getBaseURL } from "@lib/utils/env"
 import { Metadata } from "next"
+import { Suspense } from "react"
 import { MainHeader } from "../../../components/layout/header/main-header"
-import { NoticePopup } from "@/components/layout/notice-popup"
-import { getMyProfile } from "@/lib/api/users/profile"
+import { SitePopupHost } from "@/components/layout/site-popup/site-popup-host"
 import { siteConfig } from "@/lib/config/site"
 
 export const metadata: Metadata = {
@@ -13,13 +13,20 @@ export const metadata: Metadata = {
   },
 }
 
-export default async function MainLayout(props: { children: React.ReactNode }) {
-  const user = await getMyProfile().catch(() => null)
+export default async function MainLayout(props: {
+  children: React.ReactNode
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await props.params
+
   return (
     <div className="flex min-h-screen flex-col">
       <MainHeader />
       {props.children}
-      <NoticePopup isLoggedIn={!!user} />
+      {/* 팝업 조회가 페이지 본문 렌더를 막지 않도록 분리한다. */}
+      <Suspense fallback={null}>
+        <SitePopupHost countryCode={countryCode} />
+      </Suspense>
     </div>
   )
 }

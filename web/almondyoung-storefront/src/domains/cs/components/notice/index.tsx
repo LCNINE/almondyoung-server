@@ -13,6 +13,7 @@ import type { NoticeBadge, NoticeCategory } from "@/lib/types/dto/notice"
 import type { NoticeCategoryFilter, NoticeItem } from "@/lib/types/ui/notice"
 
 const CATEGORY_QUERY_KEY = "notice-category"
+const NOTICE_QUERY_KEY = "noticeId"
 
 const BADGE_STYLE: Record<NoticeBadge, string> = {
   important: "bg-red-500 text-white",
@@ -143,7 +144,10 @@ export function Notice() {
   const [selectedCategory, setSelectedCategory] =
     useState<NoticeCategoryFilter>(initialCategory)
   const [notices, setNotices] = useState<NoticeItem[]>([])
-  const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(null)
+  // 팝업의 "자세히 보기" 등 외부 링크가 특정 공지를 바로 열 수 있게 한다.
+  const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(
+    searchParams.get(NOTICE_QUERY_KEY)
+  )
   const [hasError, setHasError] = useState(false)
   const [isPending, startTransition] = useTransition()
 
