@@ -7,6 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import {
+  compressImageForUpload,
+  formatBytes,
+  MAX_UPLOAD_BYTES,
+} from '@/lib/utils/image-compress';
 
 type Props = {
   label: string;
@@ -40,6 +45,8 @@ export function ImageUploadField({
   previewShape = 'square',
 }: Props) {
   const [uploading, setUploading] = useState(false);
+  /** 자동으로 줄여서 올렸을 때 무슨 일이 있었는지 알려준다. */
+  const [compressNote, setCompressNote] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const src = resolvePublicFileUrl(value);
@@ -53,9 +60,27 @@ export function ImageUploadField({
     }
 
     setUploading(true);
+    setCompressNote(null);
     try {
-      const res = await uploadFileToFileService(file, { contextId, isPublic: true });
+      const { file: upload, compressed, originalBytes } = await compressImageForUpload(file);
+
+      // 줄이고도 상한을 넘으면 프록시가 413 으로 끊는다. 개발자용 상태코드 대신
+      // 무엇을 해야 하는지 알려준다.
+      if (upload.size > MAX_UPLOAD_BYTES) {
+        toast.error(
+          `이미지가 너무 큽니다 (${formatBytes(upload.size)}). ${formatBytes(MAX_UPLOAD_BYTES)} 이하로 줄여서 올려주세요.`,
+        );
+        return;
+      }
+
+      const res = await uploadFileToFileService(upload, { contextId, isPublic: true });
       onChange(res.id);
+
+      if (compressed) {
+        setCompressNote(
+          `용량이 커서 ${formatBytes(originalBytes)} → ${formatBytes(upload.size)} 로 줄여서 올렸습니다.`,
+        );
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : '이미지 업로드에 실패했습니다.');
     } finally {
@@ -73,6 +98,9 @@ export function ImageUploadField({
       {description && (
         <p className="text-muted-foreground text-xs">{description}</p>
       )}
+      <p className="text-muted-foreground text-xs">
+        {formatBytes(MAX_UPLOAD_BYTES)}까지 올릴 수 있고, 더 큰 이미지는 자동으로 줄여서 올립니다.
+      </p>
       <div className="flex items-start gap-3">
         <div
           className={`bg-muted relative shrink-0 overflow-hidden rounded-md border ${
@@ -127,6 +155,8 @@ export function ImageUploadField({
           )}
         </div>
       </div>
+
+      {compressNote && <p className="text-muted-foreground text-xs">{compressNote}</p>}
     </div>
   );
 }
