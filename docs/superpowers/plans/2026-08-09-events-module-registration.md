@@ -362,8 +362,8 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 - [x] notification · membership · wallet 은 **해당 없음** — 명시 `false` 가 정상 상태다. 5-A + 5-B 로 종결
 - [x] 나머지 4개 앱: 인바운드 payload 가 실제로 zod 스키마를 만족하는지 **먼저** 확인 ~~(스테이징 샘플링 또는 5-B 상태에서 로그 관찰)~~ → **둘 다 불가능해 발행 경로 전수 폐쇄로 대체.** 아래 참조
 - [x] core 를 먼저 켜고 ~~DLQ 대시보드로 관찰한다~~ → **켰다.** 관찰은 배포 후 사람 몫 (아래 배포 체크리스트)
-- [x] core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지, 로그 기반으로 갈지 결정한다 → **둘 다 아니다. 게이트는 Task 6 이다** (아래)
-- [x] `validateOnConsume` 명시를 걷어내거나 `true` 로 전환 → core 만 `true`. 나머지 3개는 Task 6 뒤로
+- [x] core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지, 로그 기반으로 갈지 결정한다 → 게이트는 Task 6 이었고(아래), 6-A 후 남은 결정은 **로그**다 — 근거와 그 결정이 요구한 수정은 아래 `Task 5-C(나머지 4앱)` 절
+- [x] `validateOnConsume` 명시를 걷어내거나 `true` 로 전환 → core 먼저, 나머지 4개(analytics·search·membership·channel-adapter)는 6-A 뒤에 앱별 PR 로. **전부 명시 `true` 를 남긴다** — 기본값에 기대면 결정이 소스에서 사라지고 감사의 `policyAt` 도 실제 줄을 못 가리킨다
 
 **완료 (2026-08-09).** 브랜치 `docs/plan-task5-split`.
 
@@ -396,6 +396,83 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 
 **⚠️ 배포 후 사람이 할 것 (core):** 배포 시점에 core 는 **배선(B)과 검증(C)이 같이 켜진다** — 5-B 도 아직 미배포이기 때문이다. `events_dlq_messages_total{topic="orders.events.v1"}` 을 확인한다. 0 이 아니면 계약 이전에 토픽에 쌓인 옛 메시지이거나(이 증명이 덮지 않는 유일한 구멍) 증명이 틀린 것이며, 되돌리기는 그 한 줄을 `false` 로 바꾸는 것이다.
 
+### Task 5-C(나머지 4앱): analytics · search · membership · channel-adapter — ✅ 완료 (2026-08-10), **PR 5개**
+
+`validateOnConsume` 한 줄씩 뒤집는 일이다. 앱 하나 = PR 하나: #605 search · #606 analytics ·
+#607 membership · #608 channel-adapter. **notification · wallet 은 건드리지 않았다** — 그
+`false` 는 이 워크스트림 이전부터의 의도다.
+
+**대상이 3개가 아니라 4개인 이유(membership).** 5-B 는 membership 의 `false` 를 "원래부터
+있던 것" 으로 묶었지만 `git log -L` 로 보면 #501 이 `forConsumerModule` 을 처음 붙이며 같이
+들어온 값이고 근거 주석이 없다. notification 의 `false` 에는 있다(`HTTP 요청과 충돌 방지`).
+그 차이가 membership 을 대상으로, notification·wallet 을 비대상으로 가른다.
+
+**게이트 실측 — 5개 앱 전부 `✅ 켜짐 · 전부 검증됨`, UNVERIFIED 0.**
+
+| 앱 | 이벤트 | SAFE | PROVEN | 비고 |
+|---|---:|---:|---:|---|
+| search | 3 | 0 | 3 | 가장 작다 — 먼저 배포하기 좋다 |
+| analytics | 10 | 0 | 10 | **SAFE 0** — 검증이 실제로 검사하는 앱 |
+| membership | 10 | 5 | 5 | 막던 원인이 달랐다(wallet 직접 insert) |
+| channel-adapter | 34 | 11 | 23 | blast radius 최대 — 마지막에 둔다 |
+
+**🔴 관측 결정: 로그로 간다 — 그런데 그 로그가 진단에 쓸 수 없는 상태였다 (PR #604).**
+
+플랜은 "관측을 넓힐지 로그로 갈지 첫 앱 착수 시 정하라"고 했다. Prometheus 를 넓히는 쪽은
+범위를 넘는다 — 대상 4개 중 3개는 `/metrics` 컨트롤러가 없고, 넷 다 `ServicesBundleA/B` 의
+Fargate 태스크 2개에 supervisor 로 묶여 있어 앱별 스크레이프는 Alloy 설정 + SST env +
+ALB 노출까지 인프라를 건드린다. 로그 쪽은 배선이 이미 살아 있다(`startTelemetry` → OTLP
+로그 → Alloy → Loki, `service_name` 라벨). 가짜 OTLP 수신기로 실행 확인했고 엔드포인트 없는
+대조군이 아무것도 보내지 않는 것도 확인했다.
+
+**그런데 `logger.error('메시지', { topic, messageId, errors })` 의 두 번째 인자가 통째로
+버려지고 있었다.** Nest 의 `Logger` 가 context 를 마지막 인자로 덧붙이므로 nestjs-pino 는
+마지막을 context 로 쓰고 나머지를 pino 의 보간 인자로 넘기는데, 메시지에 `%s` 가 없으면 pino 는
+출력하지 않는다. stdout 에도 Loki 에도 없다. 즉 이 상태로 켜면 "analytics 에서 OrderCreated
+검증이 실패했다"까지는 보이고 **어느 필드가 왜 틀렸는지는 못 본다.** #604 가 libs/events 의
+그 모양 23곳을 `{ msg, ...필드 }` 로 옮기고, 옛 모양이 다시 자라지 않게 AST 로 막는다.
+**#604 를 5-C 4개 PR 보다 먼저 배포하는 편이 좋다.**
+
+**게이트가 무엇을 안 지키는지도 알아냈다.** `publishStoredEnvelope` 의 zod 파싱을 실제로
+제거하는 변이를 넣었는데 `audit:consume-validation --gate` 는 **초록이었다** — 감사는
+`VALIDATED_SEND_ENTRYPOINTS` 라는 *이름 목록*과 호출 그래프의 모양을 볼 뿐, 그 진입점이
+정말 검증하는지는 보지 않는다. 그 가정을 지키는 것은 6-A 가 남긴
+`outbox/enqueue-validation.spec.ts` 다(같은 변이로 빨간불 확인). **감사는 모양을, 스펙은
+내용을 지킨다 — 둘 다 있어야 5-C 의 증명이 선다.**
+
+**새 스펙 `consumers/consumer-policy-wiring.spec.ts` (3건, #608).** 정책 선언 자리가 둘인데
+(`forConsumerModule({validation})` 4앱 / 모듈 providers 의 `EVENTS_CONSUMER_POLICY`
+channel-adapter 1앱) 뒤의 모양은 5-B 이후 어느 스펙도 덮지 않았다. 배선이 끊기면
+`optionalGet` 이 기본값 `true` 로 떨어져 **5-C 이후에는 원하던 값과 같아지므로 증상이 없다.**
+그래서 `false` 대조군이 필수다 — 그것만이 provider 를 실제로 읽었음을 증명한다.
+
+**게이트 실측:** 4개 앱을 모두 적용한 합집합에 대해 `type-check` **162 = 기준선** · 10개 앱
+`nest build` OK · 전체 jest **실패 suite 18 = 기준선(집합 완전 동일)** · 감사 3종 exit 0.
+PR 별로도 type-check 162 · 해당 앱 build · 감사 3종 · 해당 앱 jest 를 따로 돌렸다.
+#604 는 위에 더해 전체 jest 통과 373 → 374(신규 스펙 1 suite / 4 tests).
+
+**⚠️ 배포 (사람) — 앱별 스테이징은 배포가 아니라 머지로만 된다.** 넷 다 `lcnine-services`
+한 배포이고, analytics·channel-adapter·membership 은 **같은 Fargate 태스크**(ServicesBundleA)
+이며 search 는 ServicesBundleB 다. `sst deploy` 는 번들 전체를 새로 띄우므로 "analytics 만
+배포" 는 불가능하다. 한 번에 하나씩 켜고 싶으면 **PR 하나 머지 → 배포 → 관찰 → 다음 머지**
+순으로 간다. 권장 순서는 #604 → #605(search) → #606(analytics) → #607(membership) →
+#608(channel-adapter). 마이그레이션·시크릿·env·계약 변경은 전부 0.
+
+배포 후 볼 것 (Loki):
+
+```
+{service_name=~"analytics|search|membership|channel-adapter"} | json | msg =~ ".*Consumer schema validation failed.*"
+{service_name=~"analytics|search|membership|channel-adapter"} | json | msg =~ ".*CRITICAL: Failed to send message to DLQ.*"
+```
+
+둘째 줄이 더 중요하다 — DLQ 전송 실패는 **offset 미커밋 → 무한 재전달**로 가는 유일한 치명
+경로다. 검증 실패 자체는 `SchemaValidationError` 가 `nonRetryableErrors` 에 강제 편입되므로
+백오프 없이 즉시 DLQ 로 가고 offset 이 전진한다(재시도 폭풍 없음).
+
+**이 증명이 덮지 않는 유일한 구멍은 여전히 "토픽에 남아 있는 옛 메시지"다.** 다만 컨슈머
+그룹이 계속 돌고 있어 오프셋이 이미 전진해 있으므로, 그 구멍은 오프셋 리셋이나 새 그룹에서만
+문다.
+
 ### 권장 순서 (2026-08-09 갱신)
 
 ```
@@ -404,8 +481,8 @@ B 는 위험을 더하는 게 아니라 **없던 탈출구를 만드는 쪽에 �
 5-C   core                                     ✅ 완료 — 정적 증명 · 관측 가능한 유일 앱
 ──────────────────────────────────────────────────────────────
 6-A   outbox enqueue 시점 zod 검증            ✅ 완료 — UNVERIFIED 14 → 0
-5-C   analytics · search · channel-adapter     남은 것은 `validateOnConsume` 한 줄을 뒤집는 결정뿐
-      (+ membership — 원인이 달랐으나 6-A 가 함께 풀었다)
+5-C   analytics · search · membership          ✅ 완료 (2026-08-10) — PR #605~#608
+      · channel-adapter                        관측 선행 = PR #604 (진단 로그 구조화)
 6-B   @InjectStreamPublisher → @InjectPublisher (21곳)   ✅ 완료 — 실측 22곳(raw 토큰 1)
 6-C   outbox 5벌 회수 (Task 0 선행)
 ```
