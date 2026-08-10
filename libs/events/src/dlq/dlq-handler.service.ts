@@ -104,7 +104,8 @@ export class DLQHandler {
         },
       });
 
-      this.logger.warn(`📤 Message sent to DLQ: ${params.originalMessage.messageType}`, {
+      this.logger.warn({
+        msg: `📤 Message sent to DLQ: ${params.originalMessage.messageType}`,
         dlqTopic,
         dlqMessageId,
         originalMessageId: params.originalMessage.messageId,
@@ -127,7 +128,8 @@ export class DLQHandler {
         consumer: params.context.consumer,
       });
 
-      this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
+      this.logger.error({
+        msg: `❌ CRITICAL: Failed to send message to DLQ`,
         originalTopic: params.originalTopic,
         dlqTopic,
         error: error instanceof Error ? error.message : String(error),
@@ -182,7 +184,8 @@ export class DLQHandler {
         },
       });
 
-      this.logger.log(`✅ DLQ message reprocessed: ${dlqMessage.dlqMessageId}`, {
+      this.logger.log({
+        msg: `✅ DLQ message reprocessed: ${dlqMessage.dlqMessageId}`,
         originalTopic: dlqMessage.originalTopic,
         messageType: dlqMessage.originalMessage.messageType,
         aggregateId: dlqMessage.originalMessage.source.aggregateId,
@@ -191,7 +194,8 @@ export class DLQHandler {
       // TODO: DB 상태 업데이트
       // await this.markAsReprocessed(dlqMessage.dlqMessageId);
     } catch (error) {
-      this.logger.error(`❌ Failed to reprocess DLQ message: ${dlqMessage.dlqMessageId}`, {
+      this.logger.error({
+        msg: `❌ Failed to reprocess DLQ message: ${dlqMessage.dlqMessageId}`,
         error: error instanceof Error ? error.message : String(error),
       });
 
@@ -300,9 +304,7 @@ export class DLQHandler {
    * });
    */
   async resolveDLQ(params: { dlqMessageId: string; reason: string }): Promise<void> {
-    this.logger.log(`DLQ message resolved: ${params.dlqMessageId}`, {
-      reason: params.reason,
-    });
+    this.logger.log({ msg: `DLQ message resolved: ${params.dlqMessageId}`, reason: params.reason });
 
     // TODO: DB 업데이트
     // await this.markAsResolved(params.dlqMessageId, params.reason);

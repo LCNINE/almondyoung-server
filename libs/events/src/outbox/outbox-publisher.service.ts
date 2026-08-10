@@ -52,7 +52,8 @@ export class OutboxPublisher implements OutboxWriter {
       })
       .onConflictDoNothing();
 
-    this.logger.debug(`Outbox event saved: ${record.eventType}`, {
+    this.logger.debug({
+      msg: `Outbox event saved: ${record.eventType}`,
       topic: record.topic,
       aggregateId: record.aggregateId,
     });
