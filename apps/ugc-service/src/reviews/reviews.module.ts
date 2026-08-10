@@ -12,12 +12,18 @@ import { ReviewStatsPublisher } from './services/review-stats-publisher.service'
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [UGC_COMMAND_STREAM, UGC_EVENT_STREAM],
+    EventsModule.forApp({
+      publishes: [UGC_COMMAND_STREAM, UGC_EVENT_STREAM],
       serviceName: 'ugc-service',
     }),
   ],
   controllers: [ReviewEligibilityController, ReviewsController, RewardPolicyController],
-  providers: [ReviewEligibilityService, ReviewsService, ReviewRewardPolicyService, ReviewRewardPublisher, ReviewStatsPublisher],
+  providers: [
+    ReviewEligibilityService,
+    ReviewsService,
+    ReviewRewardPolicyService,
+    ReviewRewardPublisher,
+    ReviewStatsPublisher,
+  ],
 })
 export class ReviewsModule {}

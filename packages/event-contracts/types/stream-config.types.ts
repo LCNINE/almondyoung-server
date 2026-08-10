@@ -94,7 +94,7 @@ export interface StreamConfig<TEvents extends StreamEventTypes = StreamEventType
   /** Resolve the Kafka message key from a validated event payload. */
   partitionKey?: (payload: any) => string;
 
-  // Consumer 설정 (선택, forConsumer()에서 사용)
+  // Consumer 설정 (선택)
   consumer?: ConsumerConfig;
 }
 

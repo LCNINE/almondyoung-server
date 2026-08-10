@@ -172,7 +172,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
     if (!this.outboxWriter) {
       throw new Error(
         `Stream ${this.streamConfig.topic.topic} has no outbox writer — ` +
-          'EventsModule.forRoot({ enableOutbox: true }) 가 필요하다.',
+          'EventsModule.forApp({ enableOutbox: true }) 가 필요하다.',
       );
     }
 

@@ -17,20 +17,18 @@ describe('EventsModule Kafka client configuration', () => {
   const kafka = { clientId: 'test-service', brokers: ['localhost:9092'] };
 
   it('uses producer-only ClientKafka for publishers', () => {
-    const moduleRef = EventsModule.forRoot({
-      streams: [USER_STREAM],
+    const moduleRef = EventsModule.forApp({
+      publishes: [USER_STREAM],
       kafka,
     });
 
     expect(getKafkaClientOptions(moduleRef)?.producerOnlyMode).toBe(true);
   });
 
-  it('uses producer-only ClientKafka for consumer-side DLQ publishing', () => {
-    const moduleRef = EventsModule.forConsumerModule({
-      streams: [USER_STREAM],
-      groupId: 'test-consumer',
-      kafka,
-    });
+  it('소비만 하는 앱(publishes 없음)도 DLQ 발행용 producer-only 클라이언트를 얻는다', () => {
+    // 옛 `forConsumerModule` 이 하던 일이다. 소비 앱도 DLQ 로 **발행**하므로
+    // KAFKA_CLIENT 가 필요하고, 소비 자체는 `startConsumer` 의 ServerKafka 가 따로 한다.
+    const moduleRef = EventsModule.forApp({ kafka });
 
     expect(getKafkaClientOptions(moduleRef)?.producerOnlyMode).toBe(true);
   });
@@ -48,19 +46,25 @@ describe('EventsModule global retry interceptor registration', () => {
     );
   }
 
-  it('forRoot: EventRetryInterceptor가 최외곽(첫 번째) 전역 인터셉터다', () => {
-    const moduleRef = EventsModule.forRoot({ streams: [USER_STREAM], kafka });
+  it('forApp: EventRetryInterceptor가 최외곽(첫 번째) 전역 인터셉터다', () => {
+    const moduleRef = EventsModule.forApp({ publishes: [USER_STREAM], kafka });
     const interceptors = appInterceptorsOf(moduleRef);
-    // forRoot는 producer 전용이라 SchemaValidation/ChainContext 인터셉터가 등록되지 않는다
-    // (그건 forConsumerModule 소관) — 여기서는 retry가 유일한 첫 항목이면 충분하다.
     expect(interceptors.length).toBeGreaterThanOrEqual(1);
     expect(interceptors[0].useClass).toBe(EventRetryInterceptor);
   });
 
-  it('forConsumerModule: EventRetryInterceptor가 최외곽(첫 번째) 전역 인터셉터다', () => {
-    const moduleRef = EventsModule.forConsumerModule({ streams: [USER_STREAM], groupId: 'test-consumer', kafka });
+  /**
+   * 소비 경로의 인터셉터는 `APP_INTERCEPTOR` 가 아니라 **마이크로서비스 스코프**로
+   * 붙는다 (`startConsumer` → `buildConsumerInterceptors`, ADR-0029 §8). 옛
+   * `forConsumerModule` 은 SchemaValidation·ChainContext 를 `APP_INTERCEPTOR` 로도
+   * 등록했지만 하이브리드 앱에서 그 등록은 소비 경로에 닿은 적이 없다. Task 7 에서
+   * 걷어냈고, 이 단언이 다시 자라지 않게 막는다.
+   */
+  it('forApp 은 소비 인터셉터를 APP_INTERCEPTOR 로 등록하지 않는다', () => {
+    const moduleRef = EventsModule.forApp({ publishes: [USER_STREAM], kafka, policy: { validateOnConsume: true } });
     const interceptors = appInterceptorsOf(moduleRef);
-    expect(interceptors.length).toBeGreaterThanOrEqual(2);
+
+    expect(interceptors).toHaveLength(1);
     expect(interceptors[0].useClass).toBe(EventRetryInterceptor);
   });
 });
@@ -71,8 +75,8 @@ describe('EventsModule global retry interceptor registration', () => {
  * 영영 검사되지 않는다 — 이 워크스트림이 반복해서 만난 실패 모드가 정확히 그것이다
  * (선언과 실제가 갈라져도 아무 일이 안 일어남).
  *
- * **Task 6-C-2 로 주입 조건이 바뀌었다.** 그 전에는 *같은* `forRoot` 호출이 `enableOutbox`
- * 여야 주입 목록에 들어갔는데, 아웃박스는 앱 하나에 테이블 하나이고 BC 별 `forRoot` 는 여럿이라
+ * **Task 6-C-2 로 주입 조건이 바뀌었다.** 그 전에는 *같은* `forApp` 호출이 `enableOutbox`
+ * 여야 주입 목록에 들어갔는데, 아웃박스는 앱 하나에 테이블 하나이고 BC 별 `forApp` 은 여럿이라
  * 그 결합이 어긋났다(core: catalog 만 켰지만 적재는 6개 토픽이 한다). 이제 **항상 optional 로**
  * 주입하고, 아무도 켜지 않은 앱에서는 `undefined` 가 들어와 `enqueue` 가 던진다. 그래서 대조군의
  * 주장도 "주입 목록에 없다" 가 아니라 **"writer 가 없으면 던진다"** 로 옮겼다 — 후자가 실제로
@@ -81,7 +85,7 @@ describe('EventsModule global retry interceptor registration', () => {
 describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
   const kafka = { clientId: 'test-service', brokers: ['localhost:9092'] };
 
-  /** `forRoot` 가 만드는 publisher provider 의 모양. DynamicModule 은 이보다 넓게 타이핑돼 있다. */
+  /** `forApp` 이 만드는 publisher provider 의 모양. DynamicModule 은 이보다 넓게 타이핑돼 있다. */
   interface PublisherProvider {
     provide: string;
     inject: Array<string | symbol | { name?: string }>;
@@ -103,7 +107,7 @@ describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
     });
 
   it('publisher 가 OutboxPublisher 를 주입받고 enqueue 가 그리로 쓴다', async () => {
-    const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka, enableOutbox: true }));
+    const provider = publisherProviderOf(EventsModule.forApp({ publishes: [USER_STREAM], kafka, enableOutbox: true }));
 
     expect(injectedNames(provider)).toContain('OutboxPublisher');
 
@@ -129,7 +133,7 @@ describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
   });
 
   it('대조군 — writer 가 없으면 enqueue 가 던진다 (아웃박스를 아무도 켜지 않은 앱)', async () => {
-    const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka }));
+    const provider = publisherProviderOf(EventsModule.forApp({ publishes: [USER_STREAM], kafka }));
 
     // 토큰은 optional 이라 목록에 남아 있다. 지켜야 할 성질은 목록의 모양이 아니라,
     // writer 가 실제로 없을 때 **조용히 버리지 않고 던지는 것**이다.
@@ -148,7 +152,7 @@ describe('EventsModule outbox writer 배선 (ADR-0029 §5)', () => {
   });
 
   it('OutboxPublisher 토큰이 optional 로 주입된다 — 켠 곳이 어디든 앱 전체 publisher 가 쓴다', () => {
-    const provider = publisherProviderOf(EventsModule.forRoot({ streams: [USER_STREAM], kafka }));
+    const provider = publisherProviderOf(EventsModule.forApp({ publishes: [USER_STREAM], kafka }));
     const entry = provider.inject.find(
       (e) => (e as { token?: { name?: string } }).token?.name === 'OutboxPublisher',
     ) as { optional?: boolean } | undefined;

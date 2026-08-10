@@ -13,11 +13,9 @@ import {
   EventTraceApiModule,
   createKafkaConfigFromEnv,
   getPublisherToken,
-  EVENTS_CONSUMER_POLICY,
   OutboxPublisher,
   StreamPublisher,
   type EventTransport,
-  type EventsConsumerPolicy,
   type StreamConfig,
 } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
@@ -113,7 +111,7 @@ const DISCARDING_TRANSPORT: EventTransport = { send: () => Promise.resolve() };
  *
  * `StreamConfig[]` 로 **명시 표기**한다. 이종 스트림 배열을 그냥 `.map` 하면 원소 타입이
  * 유니온으로 넓어져 `new StreamPublisher(...)` 의 제네릭 추론이 첫 원소에 고정되고 나머지가
- * 거부된다. `EventsModule.forRoot({ streams })` 도 같은 표기를 받는다.
+ * 거부된다. `EventsModule.forApp({ publishes })` 도 같은 표기를 받는다.
  */
 const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
   CHANNEL_ADAPTER_STREAM,
@@ -150,8 +148,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // Kafka 환경변수가 있으면 실제 EventsModule 활성화 (로컬 개발 환경 제외)
     ...(process.env.KAFKA_BROKERS
       ? [
-          EventsModule.forRoot({
-            streams: [
+          EventsModule.forApp({
+            publishes: [
               CHANNEL_ADAPTER_STREAM,
               ORDER_STREAM,
               CORE_ORDER_STREAM,
@@ -176,6 +174,28 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
               validateOnPublish: true,
               throwOnValidationError: true,
             },
+            // 소비 정책 (ADR-0029 §1 — 정책은 도출 불가한 사실이라 선언이 맞다).
+            //
+            // Task 7 이전에는 이 앱만 선언 자리가 없어(`forConsumerModule` 미호출) providers
+            // 배열에 `EVENTS_CONSUMER_POLICY` 를 손으로 등록하고 있었다. 그 자리를 `forApp`
+            // 이 흡수했다 — `forConsumerModule` 을 피한 이유였던 필수 `streams` 인자가
+            // 사라졌기 때문이다.
+            //
+            // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10). 이 앱을 막던 4개
+            // 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` ·
+            // `ProductMasterDeleted` · `CategoryChanged`)는 아웃박스로 나가며 zod 를 우회했는데,
+            // 6-A 가 적재·발행 양쪽에 문을 달아 그 우회를 없앴다. 34개가 전부 SAFE(11) 또는
+            // PROVEN(23) 이다.
+            //
+            // 소비하는 34개는 전부 내부 발행이다 — 외부 payload 는 HTTP 로 들어와 이 앱이
+            // *발행측*에서 정규화한다. 남은 위험은 외부성이 아니라 outbox 우회였고 닫혔다.
+            //
+            // 앱 중 blast radius 가 가장 크다 — 핸들러 34개 · 도출 토픽 9개. DLQ 메트릭은
+            // 스크레이프되지 않으므로(`dlq.metrics.ts:10`) 관측은 로그다.
+            //
+            // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
+            // 현황: `npm run audit:consume-validation -- channel-adapter`
+            policy: { validateOnConsume: true },
           }),
         ]
       : []),
@@ -274,39 +294,6 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     EventChainService,
     EventTrackingService,
 
-    // 소비 정책 (ADR-0029 §1 — 정책은 도출 불가한 사실이라 선언이 맞다).
-    //
-    // 이 앱만 `forConsumerModule` 을 부르지 않아 정책 선언 자리가 없었고, 그래서
-    // `EVENTS_CONSUMER_POLICY` 토큰이 컨테이너에 없었다. 그 상태로 startConsumer 로
-    // 이주하면 `buildConsumerInterceptors` 의 optionalGet 이 undefined 를 받아
-    // 기본값 `validateOnConsume: true` 가 먹는다 — **선택이 아니라 누락으로** 배선
-    // 이주와 검증 활성화가 한 배포에 같이 켜지는 것이다. 외부 채널에서 들어오는
-    // payload 라 그 조합이 가장 위험한 앱이기도 하다. 그래서 명시한다.
-    //
-    // `forConsumerModule` 을 부르지 않는 이유: 그 표면은 `streams` 를 필수로 받는데,
-    // 그 목록이야말로 이 워크스트림이 없애는 중인 두 번째 진실이다. 필요한 것은
-    // 정책 하나뿐이므로 정책만 등록한다. Task 7 의 `forApp` 이 이 자리를 흡수한다.
-    //
-    // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10). 이 앱을 막던 4개
-    // 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` ·
-    // `ProductMasterDeleted` · `CategoryChanged`)는 아웃박스로 나가며 zod 를 우회했는데,
-    // 6-A 가 적재·발행 양쪽에 문을 달아 그 우회를 없앴다. 34개가 전부 SAFE(11) 또는
-    // PROVEN(23) 이다.
-    //
-    // 이 앱은 외부 채널 유래 payload 라 가장 위험한 앱이라고 적어왔는데, 실측은 조금 다르다 —
-    // 외부 payload 는 HTTP 로 들어와 이 앱이 *발행측*에서 정규화하므로, 소비하는 34개는
-    // 전부 내부 발행이다. 남은 위험은 외부성이 아니라 위 outbox 우회였고 그건 닫혔다.
-    //
-    // 4개 앱 중 blast radius 가 가장 크다 — 핸들러 34개 · 도출 토픽 9개. DLQ 메트릭은
-    // 스크레이프되지 않으므로(`dlq.metrics.ts:10`) 관측은 로그다.
-    //
-    // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
-    // 현황: `npm run audit:consume-validation -- channel-adapter`
-    {
-      provide: EVENTS_CONSUMER_POLICY,
-      useValue: { validation: { validateOnConsume: true } } satisfies EventsConsumerPolicy,
-    },
-
     // Kafka 환경변수 없을 때(로컬): publisher DI 를 채운다.
     //
     // **`NullEventPublisher` 를 여기서 없앴다 (Task 6-C-3).** 그 클래스는 `publishEvent` /
@@ -329,7 +316,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           { provide: OutboxPublisher, useClass: OutboxPublisher },
           // 토큰 문자열을 손으로 적지 않는다 — 형식의 소유자는 `publisher-token.ts` 한 곳이며
           // (ADR-0029 §4), 손으로 적은 사본은 형식이 바뀌어도 조용히 어긋난다. 계약 상수에서
-          // 도출하면 `forRoot({streams})` 목록과 이 목록이 같은 출처를 갖는다.
+          // 도출하면 `forApp({publishes})` 목록과 이 목록이 같은 출처를 갖는다.
           ...NO_KAFKA_PUBLISHER_STREAMS.map((stream) => ({
             provide: getPublisherToken(stream.topic.topic),
             useFactory: (outboxWriter: OutboxPublisher) =>

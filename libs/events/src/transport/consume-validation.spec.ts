@@ -27,7 +27,8 @@ import { z } from 'zod';
 import { event, getDLQTopicName, stream } from '@packages/event-contracts/types';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
-import { EventPayload, OnEvent } from '../consumers/decorators';
+import { EventPayload, On } from '../consumers/decorators';
+import { buildConsumerInterceptors } from '../consumers/consumer-interceptors';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { RetryPolicy } from '../retry/retry-policy.decorator';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
@@ -64,7 +65,7 @@ class ValidatedConsumer {
    * `maxRetries` 가 아니라 `SchemaValidationError` 의 non-retryable 분류에서 온 것이다.
    * 대기 시간이 실제로 들어가지 않는지도 이 설정이 드러낸다 — 재시도가 돌면 백오프로 느려진다.
    */
-  @OnEvent('validated.events.v1', 'OrderPlaced')
+  @On(VALIDATED_STREAM, 'OrderPlaced')
   @RetryPolicy({ maxRetries: 3, initialDelayMs: 1 })
   onPlaced(@EventPayload() payload: { orderId: string; amount: number }): void {
     attempts.push(payload);
@@ -86,13 +87,12 @@ describe('소비 스키마 검증 ON (validateOnConsume: true)', () => {
 
     const moduleRef = await Test.createTestingModule({
       imports: [
-        EventsModule.forRoot({ streams: [VALIDATED_STREAM], serviceName: 'validation-harness', kafka }),
-        EventsModule.forConsumerModule({
-          streams: [VALIDATED_STREAM],
-          groupId: 'validation-harness-consumer',
+        EventsModule.forApp({
+          publishes: [VALIDATED_STREAM],
+          serviceName: 'validation-harness',
           kafka,
           // 이 스펙의 전제 — 5-C 가 앱에서 뒤집는 바로 그 한 줄이다
-          validation: { validateOnConsume: true },
+          policy: { validateOnConsume: true },
         }),
       ],
       controllers: [ValidatedConsumer],
@@ -102,6 +102,14 @@ describe('소비 스키마 검증 ON (validateOnConsume: true)', () => {
       .compile();
 
     app = moduleRef.createNestMicroservice({ strategy: new InMemoryServer(broker), logger: false });
+    // 소비 인터셉터는 운영과 **같은 팩토리**로 만들어 얹는다 (ADR-0029 §8).
+    // `startConsumer` 를 부르지 않는 이유는 하나뿐이다 — 그것은 계약 레지스트리에 없는
+    // 토픽의 구독을 거부하는데, 이 하네스는 일부러 레지스트리 밖의 전용 계약을 쓴다.
+    // 그래서 도출 대신 스트림을 손으로 주되, 인터셉터 구성 자체는 `buildConsumerInterceptors`
+    // 한 곳에서 가져온다. 옛 `forConsumerModule` 의 `APP_INTERCEPTOR` 등록에 기대던 코드였는데,
+    // 그 등록은 **운영 하이브리드 앱에서는 소비 경로에 닿은 적이 없다** — 즉 이 하네스는
+    // 여태 운영과 다른 배선을 검증하고 있었다.
+    app.useGlobalInterceptors(...buildConsumerInterceptors(app, [VALIDATED_STREAM]));
     await app.listen();
     publisher = app.get(EventsModule.getPublisherToken(VALIDATED_STREAM.topic.topic));
   });

@@ -26,7 +26,7 @@ import { ShipmentPlanningService } from '../services/shipment-planning.service';
  *
  * Deriving the order requires reading `fulfillment.module.ts` WITHOUT importing/executing it: importing
  * it (statically or dynamically, `require` or `import()` — evaluation happens either way) pulls in
- * `SalesOrderModule`, which calls `EventsModule.forConsumerModule(...)` at class-decoration time; that
+ * `SalesOrderModule`, which calls `EventsModule.forApp(...)` at class-decoration time; that
  * throws synchronously (`Cannot read properties of null (reading 'clientId')`) in any process without
  * `KAFKA_BROKERS` set, and is the same hazard `waybill.module.spec.ts` already documents and works
  * around for `WaybillModule`. So instead of `Reflect.getMetadata('controllers', FulfillmentModule)` on

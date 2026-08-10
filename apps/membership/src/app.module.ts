@@ -93,19 +93,16 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       },
       schema: membershipSchema,
     }),
-    EventsModule.forRoot({
-      streams: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM],
+    // 발행 능력 + 소비 정책을 한 자리에서 선언한다. 옛 `forRoot`+`forConsumerModule`
+    // 두 벌에서 합쳤다 — 소비 스트림 목록(`[PAYMENT_STREAM]`)과 groupId 는 쓰이지 않던
+    // 선언이라 함께 사라졌다 (ADR-0029 §1·§3).
+    EventsModule.forApp({
+      publishes: [MEMBERSHIP_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM],
       serviceName: 'membership',
       enableDLQ: true,
       // 트랜잭셔널 아웃박스: 신규 구독 생성 시 MembershipStatusChanged 를 엔타이틀먼트와
       // 같은 트랜잭션에 기록하고, 디스패처가 재시도하며 Kafka 로 발행 — 실시간 발행 유실 방지.
       enableOutbox: true,
-    }),
-    // 컨슈머 인프라(DLQ) — poison message 가 파티션을 재전달 루프로 정체시키지 않게 한다.
-    EventsModule.forConsumerModule({
-      streams: [PAYMENT_STREAM],
-      groupId: process.env.KAFKA_GROUP_ID || 'membership-consumer',
-      enableAutoDLQ: true,
       // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10).
       //
       // 여기 `false` 는 이 앱의 의도가 아니라 #501 이 `forConsumerModule` 을 처음 붙이며 같이
@@ -120,7 +117,7 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       //
       // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
       // 현황: `npm run audit:consume-validation -- membership`
-      validation: { validateOnConsume: true },
+      policy: { validateOnConsume: true },
     }),
     EventTraceApiModule,
   ],

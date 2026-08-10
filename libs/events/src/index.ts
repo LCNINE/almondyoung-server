@@ -23,8 +23,8 @@ export * from './transport/in-memory.server';
 
 // Publisher
 export * from './publishers/stream-publisher.service';
-// 계약에서 도출하는 주입 표면 (ADR-0029 §4). 앱 사용처는 Task 6-B 로 전부 이주했고
-// 옛 @InjectStreamPublisher 는 Task 7 에서 삭제한다. 회귀 방지: npm run audit:event-publishers
+// 계약에서 도출하는 유일한 주입 표면 (ADR-0029 §4). 옛 `@InjectStreamPublisher` 는
+// Task 7 에서 삭제됐다. 회귀 방지: npm run audit:event-publishers
 export * from './publishers/publisher-token';
 export * from './publishers/inject-publisher';
 
@@ -48,7 +48,7 @@ export * from './retry/retry-policy.decorator';
 export * from './validation/schema-validation.util';
 export * from './interceptors/schema-validation.interceptor';
 
-// Retry Interceptor (전역 APP_INTERCEPTOR — EventsModule forRoot/forConsumerModule 자동 등록)
+// Retry Interceptor (EventsModule.forApp 이 APP_INTERCEPTOR 로, startConsumer 가 마이크로서비스 스코프로 등록)
 export * from './interceptors/event-retry.interceptor';
 
 // Graceful Shutdown

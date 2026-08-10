@@ -67,8 +67,8 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
   imports: [
     // FULFILLMENT_STREAM Kafka producer (공용 OutboxDispatcher 가 발행 — ADR-0029 §5-1)
     // INVENTORY_STREAM publisher는 InventoryModule이 전역으로 등록
-    EventsModule.forRoot({
-      streams: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM],
+    EventsModule.forApp({
+      publishes: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
     }),

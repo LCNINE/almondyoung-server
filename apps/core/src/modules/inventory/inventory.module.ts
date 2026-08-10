@@ -15,8 +15,8 @@ import { ProductSellableQuantityModule } from './product-sellable-quantity/produ
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [INVENTORY_STREAM],
+    EventsModule.forApp({
+      publishes: [INVENTORY_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
     }),

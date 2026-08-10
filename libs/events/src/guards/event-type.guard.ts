@@ -1,7 +1,7 @@
 /**
  * Event Type Filter Interceptor
  *
- * @OnEvent 데코레이터의 eventType 필터링을 처리
+ * @On 데코레이터의 eventType 필터링을 처리
  * Guard 대신 Interceptor를 사용하여 조용히 필터링 (에러 없이)
  */
 
@@ -17,7 +17,7 @@ export class EventTypeGuard implements NestInterceptor {
   constructor(private reflector: Reflector) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    // @OnEvent에서 설정한 eventType 메타데이터 가져오기
+    // @On에서 설정한 eventType 메타데이터 가져오기
     const expectedEventType = this.reflector.get<string>(EVENT_TYPE_FILTER, context.getHandler());
 
     // eventType이 설정되지 않았으면 필터링 없이 통과

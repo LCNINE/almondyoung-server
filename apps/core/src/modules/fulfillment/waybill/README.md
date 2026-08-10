@@ -124,7 +124,7 @@ CI 아님 — 사람이 dev key 를 손에 쥐고 직접 실행하는 스크립�
    검증되지 않았다. 원인은 두 가지 모두 `WaybillModule` 자체와 무관한 선행 이슈: (a) `FulfillmentModule` →
    `SalesOrderModule` 이 `@packages/event-contracts` 를 bare specifier 로 import 하는데 루트 jest
    `moduleNameMapper` 는 subpath 폼(`^@packages/event-contracts/(.*)$`)만 매핑해 bare import 가 Jest 아래서
-   해석되지 않는다. (b) 그 매핑을 임시로 고쳐도 `SalesOrderModule` 의 `EventsModule.forConsumerModule(...)`
+   해석되지 않는다. (b) 그 매핑을 임시로 고쳐도 `SalesOrderModule` 의 `EventsModule.forApp(...)`
    정적 Kafka 부트스트랩이 `KAFKA_BROKERS` 없이는 크래시하고, 더미 브로커를 주면 연결을 무한 재시도하며
    행(hang)한다. 대신 `nest build core` 전체 그래프 컴파일 성공 + 수동 의존성 감사(Task 12 리포트 참고)로
    간접 검증했다. `WaybillModule` 배선 자체를 의심할 근거는 없지만, 실제 `moduleRef.get()` 해석을 목격한 적은

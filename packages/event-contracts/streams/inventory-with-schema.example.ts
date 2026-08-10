@@ -139,7 +139,7 @@ await stockPublisher.publishEvent({
 // Consumer (수신 시 자동 검증)
 @Controller()
 export class InventoryEventsConsumer {
-  @OnEvent('inventory.events.v1', 'StockReceived')
+  @On(INVENTORY_STREAM_WITH_SCHEMA, 'StockReceived')
   async handleStockReceived(@EventPayload() payload: StockReceivedPayload) {
     // 이 시점에 payload는 이미 스키마 검증이 완료됨
     // ✅ 타입 안전성 보장
@@ -147,4 +147,3 @@ export class InventoryEventsConsumer {
   }
 }
 */
-

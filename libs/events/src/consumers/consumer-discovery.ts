@@ -1,7 +1,7 @@
 /**
  * 소비 집합 도출 (ADR-0029 §1·§3)
  *
- * 이 프로세스가 무엇을 소비하는지는 **선언하지 않는다** — `@OnEvent` 데코레이터가
+ * 이 프로세스가 무엇을 소비하는지는 **선언하지 않는다** — `@On` 데코레이터가
  * 이미 authoritative 하기 때문이다. Nest 의 `ServerKafka.bindEvents()` 는
  * `subscribe.topics` 를 `[...this.messageHandlers.keys()]` 로 덮어쓰므로
  * (`server-kafka.js:92`), 실제 구독 집합은 컨테이너 안의 데코레이터가 결정한다.
@@ -23,9 +23,9 @@ import { EVENT_TYPE_FILTER } from './decorators';
 
 /** 컨테이너에서 발견된 이벤트 핸들러 하나. */
 export interface DiscoveredEventHandler {
-  /** `@OnEvent` 의 첫 인자 = Kafka 토픽 = Nest 의 등록 패턴 */
+  /** `@On` 이 계약에서 읽은 토픽 = Nest 의 등록 패턴 */
   topic: string;
-  /** `@OnEvent` 의 두 번째 인자. 토픽 전체를 받는 핸들러면 undefined */
+  /** `@On` 의 두 번째 인자. 토픽 전체를 받는 핸들러면 undefined */
   eventType?: string;
   controller: string;
   methodName: string;
@@ -59,7 +59,7 @@ function controllerPrototype(wrapper: InstanceWrapper): object | undefined {
  * 컨테이너의 모든 컨트롤러에서 이벤트 핸들러를 훑는다.
  *
  * 컨트롤러만 본다 — Nest 도 그렇다 (`microservices-module.js` 의 `setupListeners` 는
- * `module.controllers` 만 순회한다). provider 에 `@OnEvent` 를 달면 지금도 아무 일이
+ * `module.controllers` 만 순회한다). provider 에 `@On` 을 달면 지금도 아무 일이
  * 일어나지 않으며, 여기서도 발견되지 않는다.
  */
 export function discoverEventHandlers(app: INestApplicationContext): DiscoveredEventHandler[] {
@@ -85,7 +85,7 @@ export function discoverEventHandlers(app: INestApplicationContext): DiscoveredE
         if (typeof pattern !== 'string' || pattern.length === 0) {
           throw new Error(
             `startConsumer(): ${controller}.${definition.methodKey} 의 이벤트 패턴이 토픽 문자열이 아니다 ` +
-              `(${JSON.stringify(pattern)}). @OnEvent 는 첫 인자로 토픽 문자열을 받는다.`,
+              `(${JSON.stringify(pattern)}). @On 은 계약에서 토픽 문자열을 읽는다.`,
           );
         }
 
@@ -112,7 +112,7 @@ export function discoverEventHandlers(app: INestApplicationContext): DiscoveredE
 export function deriveConsumerConfig(handlers: DiscoveredEventHandler[]): DerivedConsumerConfig {
   if (handlers.length === 0) {
     throw new Error(
-      'startConsumer(): @OnEvent 핸들러가 하나도 발견되지 않았다. ' +
+      'startConsumer(): @On 핸들러가 하나도 발견되지 않았다. ' +
         '컨슈머 컨트롤러를 모듈의 `controllers: []` 에 등록했는지 확인하라 — ' +
         '등록 누락은 이 시스템에서 가장 조용한 실수였다 (ADR-0029).',
     );
