@@ -287,19 +287,24 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // 그 목록이야말로 이 워크스트림이 없애는 중인 두 번째 진실이다. 필요한 것은
     // 정책 하나뿐이므로 정책만 등록한다. Task 7 의 `forApp` 이 이 자리를 흡수한다.
     //
-    // 5-C 현황: 아직 끄지만 **막는 이유는 사라졌다** (플랜 Task 6-A). 이 앱을 막던 4개
+    // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10). 이 앱을 막던 4개
     // 이벤트(`MembershipStatusChanged` · `ProductMasterActiveVersionChanged` ·
     // `ProductMasterDeleted` · `CategoryChanged`)는 아웃박스로 나가며 zod 를 우회했는데,
     // 6-A 가 적재·발행 양쪽에 문을 달아 그 우회를 없앴다. 34개가 전부 SAFE(11) 또는
-    // PROVEN(23) 이다. 남은 것은 이 한 줄을 뒤집는 결정뿐이며 그건 5-C 의 마지막 조각이다.
+    // PROVEN(23) 이다.
     //
     // 이 앱은 외부 채널 유래 payload 라 가장 위험한 앱이라고 적어왔는데, 실측은 조금 다르다 —
     // 외부 payload 는 HTTP 로 들어와 이 앱이 *발행측*에서 정규화하므로, 소비하는 34개는
-    // 전부 내부 발행이다. 남은 위험은 외부성이 아니라 위 outbox 우회다.
+    // 전부 내부 발행이다. 남은 위험은 외부성이 아니라 위 outbox 우회였고 그건 닫혔다.
+    //
+    // 4개 앱 중 blast radius 가 가장 크다 — 핸들러 34개 · 도출 토픽 9개. DLQ 메트릭은
+    // 스크레이프되지 않으므로(`dlq.metrics.ts:10`) 관측은 로그다.
+    //
+    // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
     // 현황: `npm run audit:consume-validation -- channel-adapter`
     {
       provide: EVENTS_CONSUMER_POLICY,
-      useValue: { validation: { validateOnConsume: false } } satisfies EventsConsumerPolicy,
+      useValue: { validation: { validateOnConsume: true } } satisfies EventsConsumerPolicy,
     },
 
     // Kafka 환경변수 없을 때(로컬): publisher DI 를 채운다.
