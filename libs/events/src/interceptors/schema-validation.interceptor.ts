@@ -69,7 +69,7 @@ export class SchemaValidationInterceptor implements NestInterceptor {
       const eventConfig = streamConfig.events[eventType];
 
       if (!eventConfig) {
-        this.logger.warn(`Event type not found in stream config: ${eventType}`, { topic });
+        this.logger.warn({ msg: `Event type not found in stream config: ${eventType}`, topic });
         return next.handle();
       }
 
@@ -84,13 +84,15 @@ export class SchemaValidationInterceptor implements NestInterceptor {
       try {
         validateSchemaOrThrow(schema, envelope.payload, `${topic}.${eventType} (consumer)`);
 
-        this.logger.debug(`✅ Consumer schema validation passed: ${eventType}`, {
+        this.logger.debug({
+          msg: `✅ Consumer schema validation passed: ${eventType}`,
           topic,
           messageId: envelope.messageId,
         });
       } catch (error) {
         if (error instanceof SchemaValidationError) {
-          this.logger.error(`❌ Consumer schema validation failed: ${eventType}`, {
+          this.logger.error({
+            msg: `❌ Consumer schema validation failed: ${eventType}`,
             topic,
             messageId: envelope.messageId,
             errors: formatValidationErrors(error.errors),
@@ -112,7 +114,8 @@ export class SchemaValidationInterceptor implements NestInterceptor {
         throw error;
       }
 
-      this.logger.error(`Schema validation interceptor error`, {
+      this.logger.error({
+        msg: `Schema validation interceptor error`,
         error: error instanceof Error ? error.message : String(error),
         topic,
       });

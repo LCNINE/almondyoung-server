@@ -199,11 +199,16 @@ describe('EventRetryInterceptor', () => {
   it('backoff가 escalate 한다 (exponential: 2ms → 4ms)', async () => {
     const { ctx } = makeKafkaContext();
     const impl = jest.fn().mockRejectedValue(new TransientError('db down'));
-    const warnSpy = jest.spyOn((interceptor as unknown as { logger: { warn: (msg: string) => void } }).logger, 'warn');
+    const warnSpy = jest.spyOn(
+      (interceptor as unknown as { logger: { warn: (arg: { msg: string }) => void } }).logger,
+      'warn',
+    );
 
     await run(TestConsumer.prototype.handleExponential, nextFrom(impl), ctx);
 
-    const delays = warnSpy.mock.calls.map(([msg]) => /Retrying in (\d+)ms/.exec(String(msg))?.[1]).filter(Boolean);
+    // 진단 로그는 `{ msg, ...필드 }` 로 찍는다 — 문자열+객체 모양은 nestjs-pino 가 객체를
+    // 통째로 버린다 (`observability/log-shape.spec.ts` 참조).
+    const delays = warnSpy.mock.calls.map(([arg]) => /Retrying in (\d+)ms/.exec(String(arg?.msg))?.[1]).filter(Boolean);
     expect(delays).toEqual(['2', '4']);
   });
 

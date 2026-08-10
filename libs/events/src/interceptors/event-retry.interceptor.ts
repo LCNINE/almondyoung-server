@@ -125,7 +125,8 @@ export class EventRetryInterceptor implements NestInterceptor {
         const retriesSoFar = retryContext.attemptNumber - 1; // 초기 시도 제외한 재시도 횟수
 
         if (retryContext.attemptNumber === 1) {
-          this.logger.error(`Event handler failed: ${handlerName}`, {
+          this.logger.error({
+            msg: `Event handler failed: ${handlerName}`,
             error: failure.message,
             stack: failure.stack,
             errorType: failure.name,
@@ -147,7 +148,8 @@ export class EventRetryInterceptor implements NestInterceptor {
           retryPolicy.initialDelayMs,
           retryPolicy.maxDelayMs,
         );
-        this.logger.warn(`Retrying in ${delay}ms... (attempt ${nextRetryNumber}/${retryPolicy.maxRetries})`, {
+        this.logger.warn({
+          msg: `Retrying in ${delay}ms... (attempt ${nextRetryNumber}/${retryPolicy.maxRetries})`,
           handler: handlerName,
           topic: kafkaContext.getTopic(),
         });
@@ -168,17 +170,18 @@ export class EventRetryInterceptor implements NestInterceptor {
     const retries = retryContext.attemptNumber - 1;
 
     if (disableDLQ) {
-      this.logger.warn(`DLQ disabled for handler: ${handlerName}. Discarding message.`, { topic, offset });
+      this.logger.warn({ msg: `DLQ disabled for handler: ${handlerName}. Discarding message.`, topic, offset });
       return;
     }
     if (!this.dlqHandler) {
-      this.logger.error(`DLQHandler not available. Cannot send message to DLQ.`, { handler: handlerName, topic });
+      this.logger.error({ msg: `DLQHandler not available. Cannot send message to DLQ.`, handler: handlerName, topic });
       return;
     }
 
     await this.sendToDLQ(kafkaContext, error, handlerName, retryContext, this.dlqHandler);
 
-    this.logger.error(`❌ Handler failed after ${retries} retries: ${handlerName}`, {
+    this.logger.error({
+      msg: `❌ Handler failed after ${retries} retries: ${handlerName}`,
       error: error.message,
       topic,
       partition: kafkaContext.getPartition(),
@@ -215,13 +218,15 @@ export class EventRetryInterceptor implements NestInterceptor {
         },
       });
 
-      this.logger.log(`📤 Message sent to DLQ after ${retryContext.attemptHistory.length} failed attempts`, {
+      this.logger.log({
+        msg: `📤 Message sent to DLQ after ${retryContext.attemptHistory.length} failed attempts`,
         topic,
         messageType: envelope.messageType,
         aggregateId: envelope.source?.aggregateId,
       });
     } catch (dlqError) {
-      this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
+      this.logger.error({
+        msg: `❌ CRITICAL: Failed to send message to DLQ`,
         originalError: error.message,
         dlqError: dlqError instanceof Error ? dlqError.message : String(dlqError),
         topic,

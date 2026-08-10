@@ -33,7 +33,8 @@ export function validateSchema<T>(schema: ZodSchema<T>, data: unknown): Validati
       };
     }
   } catch (error) {
-    logger.error('Schema validation threw unexpected error', {
+    logger.error({
+      msg: 'Schema validation threw unexpected error',
       error: error instanceof Error ? error.message : String(error),
     });
 
@@ -84,10 +85,16 @@ export function formatValidationErrors(errors: z.ZodIssue[]): string {
 }
 
 /**
- * 스키마 검증 에러 로깅
+ * 스키마 검증 에러 로깅.
+ *
+ * ⚠️ **호출자가 0곳이다.** 그 상태를 유지할 것 — `payload` 를 통째로 싣기 때문이다. 로그 필드는
+ * 이제 Loki 까지 나가므로(아래 log-shape 스펙 참조) 이 함수를 배선하는 순간 이벤트 payload 전문이
+ * 로그 백엔드에 적재된다. 이 레포는 계약 payload 에 이메일·주소를 담는 이벤트가 있다.
+ * 진단이 필요하면 `formatValidationErrors`(경로+사유만) 를 쓴다.
  */
 export function logValidationError(context: string, errors: z.ZodIssue[], payload: unknown): void {
-  logger.error(`❌ ${context}`, {
+  logger.error({
+    msg: `❌ ${context}`,
     errors: formatValidationErrors(errors),
     payload: JSON.stringify(payload, null, 2),
   });

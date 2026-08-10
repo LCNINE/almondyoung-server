@@ -196,7 +196,8 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       tx,
     );
 
-    this.logger.debug(`📥 event enqueued: ${envelope.messageType}`, {
+    this.logger.debug({
+      msg: `📥 event enqueued: ${envelope.messageType}`,
       messageId: envelope.messageId,
       aggregateId: params.aggregateId,
     });
@@ -350,13 +351,15 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
         },
       });
 
-      this.logger.debug(`📤 ${envelope.messageKind} published: ${envelope.messageType}`, {
+      this.logger.debug({
+        msg: `📤 ${envelope.messageKind} published: ${envelope.messageType}`,
         messageId: envelope.messageId,
         aggregateId: envelope.source.aggregateId,
         correlationId: envelope.correlationId,
       });
     } catch (error) {
-      this.logger.error(`❌ Failed to publish ${envelope.messageKind}: ${envelope.messageType}`, {
+      this.logger.error({
+        msg: `❌ Failed to publish ${envelope.messageKind}: ${envelope.messageType}`,
         error: error instanceof Error ? error.message : String(error),
         messageId: envelope.messageId,
         aggregateId: envelope.source.aggregateId,

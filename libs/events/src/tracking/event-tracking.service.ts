@@ -72,7 +72,8 @@ export class EventTrackingService {
     const eventId = this.eventChainService.getEventId();
 
     if (!chainId || !eventId) {
-      this.logger.warn('trackEffect called without CLS chain context - skipping', {
+      this.logger.warn({
+        msg: 'trackEffect called without CLS chain context - skipping',
         resourceType: params.resourceType,
         resourceId: params.resourceId,
       });
