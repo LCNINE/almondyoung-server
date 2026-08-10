@@ -25,6 +25,26 @@ export function matchesPath(popup: SitePopup, path: string): boolean {
   )
 }
 
+/**
+ * 지금 이 경로에서 띄울 팝업 목록.
+ *
+ * `closedIds` 는 이번 방문에서 그냥 닫기만 누른 팝업이다. 레이아웃은 페이지를 옮겨도
+ * 유지되므로, 경로가 바뀔 때마다 목록을 다시 만들면 방금 닫은 팝업이 되살아난다 —
+ * "다시 보지 않기" 를 누르지 않았다는 이유로 이동할 때마다 다시 뜨면 못 쓴다.
+ */
+export function selectVisiblePopups(
+  popups: SitePopup[],
+  path: string,
+  closedIds: ReadonlySet<string>
+): SitePopup[] {
+  return popups.filter(
+    (popup) =>
+      !closedIds.has(popup.id) &&
+      matchesPath(popup, path) &&
+      !isPopupDismissed(popup)
+  )
+}
+
 /** 숨김 키에 버전을 섞어, 관리자가 숨김을 초기화하면 이미 닫은 사람에게도 다시 뜬다. */
 function dismissKey(popup: SitePopup): string {
   return `${DISMISS_KEY_PREFIX}${popup.id}:v${popup.dismissVersion}`

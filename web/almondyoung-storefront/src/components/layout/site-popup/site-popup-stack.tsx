@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 
@@ -18,9 +18,8 @@ import { sanitizeNoticeHtml } from "@/lib/utils/sanitize-html"
 import {
   dismissPopup,
   isExternalLink,
-  isPopupDismissed,
-  matchesPath,
   resolvePopupSize,
+  selectVisiblePopups,
   stripCountryCode,
 } from "./site-popup.helpers"
 
@@ -43,9 +42,10 @@ export function SitePopupStack({ popups, countryCode }: Props) {
   const isDesktop = useIsDesktop()
   const path = stripCountryCode(pathname, countryCode)
 
-  const candidates = useMemo(
-    () => popups.filter((popup) => matchesPath(popup, path)),
-    [popups, path]
+  // 이번 방문에서 닫은 팝업. 레이아웃이 페이지 이동에도 살아있으므로 여기 모아두지
+  // 않으면 경로가 바뀔 때마다 방금 닫은 팝업이 다시 뜬다.
+  const [closedIds, setClosedIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>()
   )
 
   // localStorage 는 서버에 없다. 첫 렌더는 아무것도 띄우지 않고, 마운트 후
@@ -53,13 +53,14 @@ export function SitePopupStack({ popups, countryCode }: Props) {
   const [queue, setQueue] = useState<SitePopup[]>([])
 
   useEffect(() => {
-    setQueue(candidates.filter((popup) => !isPopupDismissed(popup)))
-  }, [candidates])
+    setQueue(selectVisiblePopups(popups, path, closedIds))
+  }, [popups, path, closedIds])
 
   const current = queue[0]
   if (!current) return null
 
-  const closeCurrent = () => setQueue((prev) => prev.slice(1))
+  const closeCurrent = () =>
+    setClosedIds((prev) => new Set(prev).add(current.id))
 
   const handleDismiss = () => {
     dismissPopup(current)

@@ -1,4 +1,6 @@
-import { isEmptyHtml } from '@/components/common/rich-text-editor';
+// 배럴(index.tsx)이 아니라 잎 모듈에서 가져온다 — 배럴은 tiptap 에디터를 함께 끌고 와서
+// 이 순수 폼 모델을 브라우저 밖(스펙)에서 불러올 수 없게 만든다.
+import { isEmptyHtml } from '@/components/common/rich-text-editor/is-empty-html';
 import { localInputToIso } from '@/lib/utils/datetime';
 import type {
   CreateSitePopupDto,

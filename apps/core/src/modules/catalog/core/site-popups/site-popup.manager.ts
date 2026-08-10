@@ -22,6 +22,10 @@ type ResolvedPopup = {
   mobileImageFileId: string | null;
   linkUrl: string | null;
   noticeId: string | null;
+  pcWidth: number | null;
+  pcHeight: number | null;
+  mobileWidth: number | null;
+  mobileHeight: number | null;
   placement: SitePopupPlacement;
   placementPaths: string[];
   audience: SitePopupAudience;
@@ -47,6 +51,10 @@ export class SitePopupManager {
         mobileImageFileId: dto.mobileImageFileId ?? null,
         linkUrl: dto.linkUrl ?? null,
         noticeId: dto.noticeId ?? null,
+        pcWidth: dto.pcWidth ?? null,
+        pcHeight: dto.pcHeight ?? null,
+        mobileWidth: dto.mobileWidth ?? null,
+        mobileHeight: dto.mobileHeight ?? null,
         placement: dto.placement ?? 'main',
         placementPaths: normalizePaths(dto.placementPaths ?? []),
         audience: dto.audience ?? 'all',
@@ -96,6 +104,10 @@ export class SitePopupManager {
         mobileImageFileId: pick(dto, 'mobileImageFileId', existing.mobileImageFileId),
         linkUrl: pick(dto, 'linkUrl', existing.linkUrl),
         noticeId: pick(dto, 'noticeId', existing.noticeId),
+        pcWidth: pick(dto, 'pcWidth', existing.pcWidth),
+        pcHeight: pick(dto, 'pcHeight', existing.pcHeight),
+        mobileWidth: pick(dto, 'mobileWidth', existing.mobileWidth),
+        mobileHeight: pick(dto, 'mobileHeight', existing.mobileHeight),
         placement: dto.placement ?? (existing.placement as SitePopupPlacement),
         placementPaths: normalizePaths(dto.placementPaths ?? existing.placementPaths ?? []),
         audience: dto.audience ?? (existing.audience as SitePopupAudience),
@@ -227,9 +239,13 @@ function normalizePaths(paths: string[]): string[] {
   return [...new Set(trimmed)];
 }
 
-/** 태그만 남은 에디터 출력(<p></p> 등)을 빈 본문으로 본다. */
+/**
+ * 태그만 남은 에디터 출력(<p></p> 등)을 빈 본문으로 본다.
+ * 이미지만 넣은 본문은 유효하다 — 어드민 에디터도 같은 기준으로 판정한다.
+ */
 function isBlankHtml(html: string | null): boolean {
   if (!html) return true;
+  if (html.includes('<img')) return false;
   const withoutTags = html
     .replace(/<br\s*\/?>/gi, '')
     .replace(/<[^>]*>/g, '')
