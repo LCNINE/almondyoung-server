@@ -13,7 +13,7 @@ type Props = {
   /** file-service fileId. 비어 있으면 미선택 상태 */
   value: string | null | undefined;
   onChange: (fileId: string | null) => void;
-  /** file_contexts 시드의 컨텍스트 ID (예: site-popup-image) */
+  /** file_contexts 시드의 컨텍스트 ID (예: banner-image) */
   contextId: string;
   description?: string;
   required?: boolean;
