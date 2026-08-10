@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 import { getTranslations } from "next-intl/server"
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { CsHeader } from "@/domains/cs/components/cs-header"
@@ -71,6 +72,10 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
       <CsHeader />
 
       <div className="max-w-3xl mx-auto bg-white">
+        <div className="px-4 pt-4">
+          <SiteBreadcrumb items={[{ label: "고객센터" }]} />
+        </div>
+
         <Suspense fallback={<CsTabsLoading />}>
           <CsTabs>
             <CsTabPanel value="faq">

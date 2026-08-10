@@ -1,5 +1,6 @@
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("policies.guide")
@@ -11,6 +12,7 @@ export default async function GuidePage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
+      <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
       <h1 className="mb-8 text-2xl font-bold">{t("title")}</h1>
 
       <div className="space-y-8">

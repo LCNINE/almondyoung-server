@@ -35,8 +35,7 @@ export function CategoryTemplate({
 
   return (
     <div className="container mx-auto">
-      {/* 브레드크럼 (하위 카테고리에서만 표시) */}
-      {category?.parent_category && <CategoryBreadcrumb category={category} />}
+      {category && <CategoryBreadcrumb category={category} />}
 
       {/* 카테고리 제목 */}
       {category && <h1 className="mb-6 text-2xl font-bold">{category.name}</h1>}

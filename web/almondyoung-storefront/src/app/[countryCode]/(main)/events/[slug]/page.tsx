@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { getCouponEvent, type CouponEventCoupon, type CouponEventResult } from "@/lib/api/medusa/store"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import {
@@ -60,6 +61,11 @@ export default async function CouponEventPage({ params }: PageProps) {
 
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-8">
+      <SiteBreadcrumb
+        className="mb-4"
+        items={[{ label: "이벤트" }, { label: event.title }]}
+      />
+
       {event.banner_image_url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img

@@ -1,21 +1,7 @@
 import React from "react"
+import { BackButton } from "@/components/shared/back-button"
 
 // --- 아이콘 Placeholder ---
-const BackIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-)
 type AddressCardProps = {
   addressInfo: {
     name: string
@@ -76,7 +62,13 @@ const AddressCard = ({ addressInfo }: AddressCardProps) => {
   )
 }
 
-function SelectAddressPage() {
+async function SelectAddressPage({
+  params,
+}: {
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await params
+
   // 실제 앱에서는 API로부터 이 주소 목록 데이터를 받아옵니다.
   const addresses = [
     {
@@ -110,9 +102,7 @@ function SelectAddressPage() {
     <main className="min-h-screen w-full bg-white font-sans">
       {/* --- 페이지 헤더 --- */}
       <header className="flex items-center border-b p-4">
-        <button aria-label="뒤로 가기">
-          <BackIcon />
-        </button>
+        <BackButton fallbackHref={`/${countryCode}/checkout`} />
         <div className="flex-grow text-center">
           <h1 className="text-lg font-bold">주문 / 결제</h1>
         </div>

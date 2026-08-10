@@ -1,3 +1,4 @@
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { SearchPageSkeleton } from "@/components/skeletons/page-skeletons"
 import { SearchContainer } from "domains/search/search"
 import { Suspense } from "react"
@@ -24,6 +25,7 @@ export default async function SearchPage({
   const { q = "" } = await searchParams
   return (
     <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
+      <SiteBreadcrumb className="mb-4" items={[{ label: "검색" }]} />
       <Suspense key={q} fallback={<SearchPageSkeleton />}>
         <SearchContainer params={params} searchParams={searchParams} />
       </Suspense>

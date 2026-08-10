@@ -1,9 +1,8 @@
 "use client"
 
 import { cn } from "@lib/utils"
-import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import { ArrowLeft } from "lucide-react"
-import { useRouter, usePathname, useParams } from "next/navigation"
+import { BackButton } from "@/components/shared/back-button"
+import { usePathname, useParams } from "next/navigation"
 import { useState, useEffect } from "react"
 
 interface MobileBackHeaderProps {
@@ -62,7 +61,6 @@ export function MobileBackHeader({
   back = true,
   fallbackHref,
 }: MobileBackHeaderProps) {
-  const router = useRouter()
   const pathname = usePathname()
   const params = useParams() as { countryCode?: string }
   const countryCode = params?.countryCode || "kr"
@@ -83,18 +81,6 @@ export function MobileBackHeader({
     setDynamicTitle(getPageTitleFromPath(pathname))
   }, [pathname, title])
 
-  const handleBack = () => {
-    if (
-      (document.referrer &&
-        new URL(document.referrer).origin === window.location.origin) ||
-      window.history.length > 1
-    ) {
-      router.back()
-    } else {
-      router.push(finalFallback)
-    }
-  }
-
   return (
     <header
       className={cn(
@@ -103,15 +89,11 @@ export function MobileBackHeader({
       )}
     >
       {back ? (
-        <CustomButton
-          variant="ghost"
-          onClick={handleBack}
-          className="cursor-pointer hover:bg-transparent! hover:text-black"
-          size={"icon"}
-          aria-label="뒤로가기"
-        >
-          <ArrowLeft className="h-6 w-6" />
-        </CustomButton>
+        <BackButton
+          fallbackHref={finalFallback}
+          className="h-9 w-9 cursor-pointer hover:bg-transparent"
+          iconClassName="h-6 w-6"
+        />
       ) : (
         <div className="w-6" />
       )}

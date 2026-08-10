@@ -18,6 +18,9 @@ import { getRegion } from "@lib/api/medusa/regions"
 import { Metadata } from "next"
 import { notFound } from "next/navigation"
 
+const PRODUCT_DETAIL_FIELDS =
+  "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,*categories,*categories.parent_category,*categories.parent_category.parent_category"
+
 type Props = {
   params: Promise<{ countryCode: string; handle: string }>
   searchParams: Promise<{ v_id?: string }>
@@ -83,7 +86,7 @@ export default async function Page(props: Props) {
   const [pricedProduct, customer] = await Promise.all([
     listProducts({
       countryCode: params.countryCode,
-      queryParams: { handle: params.handle },
+      queryParams: { handle: params.handle, fields: PRODUCT_DETAIL_FIELDS },
     }).then(({ response }) => response.products[0]),
     retrieveCustomer(),
   ])

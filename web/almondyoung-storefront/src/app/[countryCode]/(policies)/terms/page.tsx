@@ -1,5 +1,6 @@
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { agreements } from "@/lib/data/agreements"
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -16,6 +17,7 @@ export default async function TermsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
+      <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
       <h1 className="mb-8 text-2xl font-bold">{t("title")}</h1>
 
       {termsOfService?.content && (

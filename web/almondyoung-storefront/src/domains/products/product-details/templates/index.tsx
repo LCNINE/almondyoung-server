@@ -14,6 +14,7 @@ import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
+import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
 import ProductPreviewPrice from "../components/product-preview-price"
@@ -49,6 +50,8 @@ export async function ProductTemplate({
   return (
     <div className="min-h-screen bg-white pt-6">
       <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+        <ProductBreadcrumb product={product} />
+
         <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">

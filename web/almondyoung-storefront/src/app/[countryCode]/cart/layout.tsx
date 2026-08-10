@@ -9,7 +9,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
 }
 
-export default async function CartLayout(props: { children: React.ReactNode }) {
+export default async function CartLayout(props: {
+  children: React.ReactNode
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await props.params
   const t = await getTranslations("cart.header")
 
   return (
@@ -21,7 +25,7 @@ export default async function CartLayout(props: { children: React.ReactNode }) {
 
       {/* 모바일 헤더 */}
       <div className="md:hidden">
-        <MobileBackHeader title={t("title")} />
+        <MobileBackHeader title={t("title")} fallbackHref={`/${countryCode}`} />
       </div>
 
       <div className="container mx-auto pt-16 md:max-w-[1360px] md:px-[40px] md:py-8 md:pt-8">

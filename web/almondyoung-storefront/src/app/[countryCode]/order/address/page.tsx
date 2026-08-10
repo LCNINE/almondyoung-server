@@ -1,21 +1,7 @@
 import React from "react"
+import { BackButton } from "@/components/shared/back-button"
 //   /store/customers/me/addresses 메두사 배송지 등록 api
 // --- 아이콘 Placeholder (lucide-react 등 라이브러리로 대체) ---
-const BackIcon = () => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    width="24"
-    height="24"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <polyline points="15 18 9 12 15 6"></polyline>
-  </svg>
-)
 const UserIcon = () => (
   <svg
     xmlns="http://www.w3.org/2000/svg"
@@ -110,14 +96,18 @@ const ChevronRightIcon = () => (
   </svg>
 )
 
-function AddAddressPage() {
+async function AddAddressPage({
+  params,
+}: {
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await params
+
   return (
     <main className="min-h-screen w-full bg-white font-sans">
       {/* --- 페이지 헤더 --- */}
       <header className="flex items-center border-b p-4">
-        <button aria-label="뒤로 가기">
-          <BackIcon />
-        </button>
+        <BackButton fallbackHref={`/${countryCode}/order/address/list`} />
         <div className="flex-grow text-center">
           <h1 className="text-lg font-bold">주문 / 결제</h1>
         </div>

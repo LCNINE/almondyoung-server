@@ -13,6 +13,8 @@ export type GlobalHeaderConfig = {
   showMobileSubBackHeader?: boolean
   /** 모바일 서브 헤더 제목 */
   mobileSubBackHeaderTitle?: string
+  /** 히스토리가 없을 때 이동할 모바일 서브 헤더 fallback */
+  mobileSubBackHeaderFallbackHref?: string
 }
 
 interface WithHeaderLayoutProps {
@@ -23,9 +25,9 @@ interface WithHeaderLayoutProps {
 export function WithHeaderLayout({ children, config }: WithHeaderLayoutProps) {
   const {
     showDesktopHeader = true,
-    showMobileHeader = false,
     showMobileSubBackHeader = false,
     mobileSubBackHeaderTitle = "",
+    mobileSubBackHeaderFallbackHref,
   } = config || {}
 
   return (
@@ -40,7 +42,10 @@ export function WithHeaderLayout({ children, config }: WithHeaderLayoutProps) {
       {showMobileSubBackHeader && (
         <>
           <div className="block md:hidden">
-            <MobileSubBackHeader title={mobileSubBackHeaderTitle} />
+            <MobileSubBackHeader
+              title={mobileSubBackHeaderTitle}
+              fallbackHref={mobileSubBackHeaderFallbackHref}
+            />
           </div>
           {/* 모바일에서 fixed 헤더 높이만큼 여백 */}
           <div className="h-12 md:hidden" />

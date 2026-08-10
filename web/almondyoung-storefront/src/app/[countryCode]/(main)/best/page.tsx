@@ -1,4 +1,5 @@
 import { ErrorBoundary } from "@/components/shared/error-boundary"
+import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { MainSectionSkeleton } from "@/components/skeletons/page-skeletons"
 import { HomeSection } from "@/domains/home/components/shared/home-section"
 import { CategoryBestProductsWrapper } from "@/domains/home/template/best-categories"
@@ -17,6 +18,10 @@ export default async function BestPage({
 
   return (
     <div className="w-full">
+      <div className="container mx-auto max-w-[1360px] px-4 pt-6 md:px-[40px]">
+        <SiteBreadcrumb items={[{ label: "베스트" }]} />
+      </div>
+
       {/* 관심 카테고리 베스트 — 설문 선택값이 있을 때만 */}
       {selectedKeys.length > 0 && (
         <HomeSection>
