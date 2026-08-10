@@ -106,7 +106,21 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       streams: [PAYMENT_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'membership-consumer',
       enableAutoDLQ: true,
-      validation: { validateOnConsume: false },
+      // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10).
+      //
+      // 여기 `false` 는 이 앱의 의도가 아니라 #501 이 `forConsumerModule` 을 처음 붙이며 같이
+      // 들어온 값이었다(근거 주석 없음 — notification 의 "HTTP 요청과 충돌 방지" 같은 판단이
+      // 아니다). 5-C 논의에서 한동안 빠져 있었던 것도 그래서다.
+      //
+      // 이 앱을 막던 UNVERIFIED 5건은 원인이 달랐다 — core 카탈로그의 `saveEvent` 가 아니라
+      // wallet 이 자기 아웃박스에 직접 insert 하던 `invoice.*`/`mandate.rejected` 행이었고,
+      // 6-A 의 `publishStoredEnvelope` 문이 닫았다. 지금 10/10 (SAFE 5 · PROVEN 5).
+      //
+      // DLQ 메트릭은 스크레이프되지 않는다(`dlq.metrics.ts:10`) — 관측은 로그다.
+      //
+      // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
+      // 현황: `npm run audit:consume-validation -- membership`
+      validation: { validateOnConsume: true },
     }),
     EventTraceApiModule,
   ],
