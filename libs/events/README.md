@@ -109,12 +109,12 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forRoot({
+    EventsModule.forApp({
       kafka: createKafkaConfigFromEnv({
         KAFKA_CLIENT_ID: 'wms-order-publisher',
         KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
       }),
-      streams: [ORDER_STREAM],
+      publishes: [ORDER_STREAM],
       serviceName: 'wms-order',
     }),
   ],
@@ -127,14 +127,14 @@ export class OrderModule {}
 ```typescript
 // apps/wms/src/order/services/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import { ORDER_STREAM, OrderEvents } from '@app/shared/streams/orders.stream';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Injectable()
 export class OrderService {
   constructor(
-    @InjectStreamPublisher('orders.events.v1')
-    private readonly orderPublisher: StreamPublisher<OrderEvents>,
+    @InjectPublisher(ORDER_STREAM)
+    private readonly orderPublisher: PublisherFor<typeof ORDER_STREAM>,
   ) {}
 
   async createOrder(dto: CreateOrderDto) {
@@ -183,19 +183,16 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 async function bootstrap() {
   const app = await NestFactory.create(AdapterModule);
 
-  // Kafka Consumer 연결
-  const consumerOptions = EventsModule.forConsumer({
+  // Kafka Consumer 연결 — **구독 목록 인자가 없다.**
+  // 소비 집합은 컨트롤러의 `@On` 에서 도출된다 (ADR-0029 §3).
+  await EventsModule.startConsumer(app, {
     kafka: createKafkaConfigFromEnv({
       KAFKA_CLIENT_ID: 'channel-adapter-consumer',
       KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
     }),
-    streams: [ORDER_STREAM],
     groupId: 'channel-adapter-consumers',
   });
 
-  app.connectMicroservice(consumerOptions);
-
-  await app.startAllMicroservices();
   await app.listen(3003);
 }
 bootstrap();
@@ -209,7 +206,7 @@ bootstrap();
 // apps/channel-adapter/src/consumers/order-events.consumer.ts
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { 
-  OnEvent, 
+  On, 
   EventPayload, 
   EventMetadata,
   EventTypeGuard,  // ← 이벤트 타입 필터링 (필수!)
@@ -222,7 +219,7 @@ import { OrderCreatedPayload, OrderCancelledPayload } from '@app/shared/streams/
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({ maxAttempts: 3, backoff: 'exponential' })  // ← 재시도 정책
   async handleOrderCreated(
     @EventPayload() payload: OrderCreatedPayload,
@@ -236,7 +233,7 @@ export class OrderEventsConsumer {
     await this.syncOrderToChannels(payload);
   }
 
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   async handleOrderCancelled(
     @EventPayload() payload: OrderCancelledPayload,
   ) {
@@ -305,13 +302,11 @@ await this.orderPublisher.publishCommand({
 ### 자동 DLQ 처리 (권장) ⭐
 
 ```typescript
-// 1. Consumer Module에서 자동 DLQ 활성화
+// 1. 앱 모듈에서 DLQ 활성화 (기본값이라 생략해도 된다)
 @Module({
   imports: [
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'order-consumer',
-      enableAutoDLQ: true,  // 자동 DLQ 처리 (기본값: true)
+    EventsModule.forApp({
+      enableDLQ: true,  // 자동 DLQ 처리 (기본값: true)
     }),
   ],
 })
@@ -320,7 +315,7 @@ export class AppModule {}
 // 2. 핸들러에서 try-catch 불필요!
 @Controller()
 export class OrderEventsConsumer {
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
     // 에러 발생 시:
     // 1. 자동으로 3번 재시도 (exponential backoff)
@@ -328,7 +323,7 @@ export class OrderEventsConsumer {
     await this.processOrder(payload);
   }
 
-  @OnEvent('orders.events.v1', 'OrderUpdated')
+  @On(ORDER_STREAM, 'OrderUpdated')
   @RetryPolicy({ maxRetries: 5, backoff: 'exponential' })
   async handleOrderUpdated(@EventPayload() payload: OrderUpdatedPayload) {
     // 핸들러별 재시도 정책 커스터마이즈
@@ -364,8 +359,8 @@ export const ORDER_STREAM: StreamConfig<OrderEvents> = {
 };
 
 // 2. Publisher (발행 시 자동 검증)
-EventsModule.forRoot({
-  streams: [ORDER_STREAM],
+EventsModule.forApp({
+  publishes: [ORDER_STREAM],
   validation: { validateOnPublish: true },  // 기본값: true
 });
 
@@ -375,13 +370,15 @@ await publisher.publishEvent({
   payload: { orderId: 'invalid-uuid', ... },  // ❌ 검증 실패 → SchemaValidationError
 });
 
-// 3. Consumer (수신 시 자동 검증)
-EventsModule.forConsumerModule({
-  streams: [ORDER_STREAM],
-  validation: { validateOnConsume: true },  // 기본값: true
+// 3. Consumer (수신 시 자동 검증) — 같은 forApp 호출에 얹는다.
+//    `validation` 은 발행측, `policy` 는 소비측이고 타입이 갈려 있다.
+//    소비 정책은 앱 전체에 하나다 — 둘 이상 선언하면 부팅이 거부된다.
+EventsModule.forApp({
+  publishes: [ORDER_STREAM],
+  policy: { validateOnConsume: true },  // 기본값: true
 });
 
-@OnEvent('orders.events.v1', 'OrderCreated')
+@On(ORDER_STREAM, 'OrderCreated')
 async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
   // ✅ 이 시점에 payload는 이미 스키마 검증 완료!
   // ✅ 타입 안전성 + 런타임 검증 보장
@@ -401,8 +398,8 @@ app.enableShutdownHooks();  // ✅ 필수!
 await app.listen(3000);
 
 // 2. EventsModule 사용 시 자동으로 활성화됨!
-EventsModule.forRoot({
-  streams: [ORDER_STREAM],
+EventsModule.forApp({
+  publishes: [ORDER_STREAM],
 });
 
 // 애플리케이션 종료 시:
@@ -430,7 +427,7 @@ import { DLQHandler, DisableDLQ } from '@app/events';
 export class MyConsumer {
   constructor(private readonly dlqHandler: DLQHandler) {}
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @DisableDLQ()  // 자동 DLQ 비활성화
   async handleOrderCreated(@EventEnvelope() envelope: DomainEvent) {
     try {
@@ -461,11 +458,11 @@ export class MyConsumer {
 libs/events/src/
 ├── envelope.types.ts              # MessageEnvelope, DomainEvent, DomainCommand
 ├── stream-config.types.ts         # StreamConfig, KafkaConfig (Zod schema 지원)
-├── events.module.ts               # EventsModule (forRoot, forConsumer, forConsumerModule)
+├── events.module.ts               # EventsModule (forApp, startConsumer)
 ├── publishers/
 │   └── stream-publisher.service.ts# 스키마 검증 포함
 ├── consumers/
-│   └── decorators.ts              # @OnEvent, @EventPayload, etc.
+│   └── decorators.ts              # @On, @EventPayload, etc.
 ├── dlq/
 │   ├── dlq.types.ts
 │   └── dlq-handler.service.ts
@@ -560,7 +557,7 @@ users.events.v1
 ## 🎯 Best Practices
 
 1. **Shutdown Hooks 활성화**: `app.enableShutdownHooks()` 필수 호출 (main.ts)
-2. **자동 DLQ 활성화**: `forConsumerModule()`로 자동 DLQ 처리 활성화 (권장)
+2. **자동 DLQ 활성화**: `forApp()` 이 기본으로 켠다 (`enableDLQ`, 기본 true)
 3. **스키마 검증 적용**: 중요한 이벤트에 Zod 스키마 추가 (런타임 검증)
 4. **Aggregate ID 기반 파티셔닝**: 같은 Order의 이벤트는 같은 파티션으로 → 순서 보장
 5. **Idempotency**: `messageId`로 중복 처리 방지 (핸들러는 멱등해야 함)
@@ -576,7 +573,7 @@ users.events.v1
 ### Consumer가 메시지를 받지 못할 때
 ```typescript
 // main.ts에서 connectMicroservice() 확인
-app.connectMicroservice(EventsModule.forConsumer({...}));
+await EventsModule.startConsumer(app, { groupId });
 await app.startAllMicroservices();  // 이거 필수!
 ```
 

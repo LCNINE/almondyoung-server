@@ -312,7 +312,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // 처리하던 것보다 정직하다.
     ...(!process.env.KAFKA_BROKERS
       ? [
-          // 적재기. `EventsModule.forRoot` 가 없는 분기라 여기서 직접 등록한다.
+          // 적재기. `EventsModule.forApp` 이 없는 분기라 여기서 직접 등록한다.
           { provide: OutboxPublisher, useClass: OutboxPublisher },
           // 토큰 문자열을 손으로 적지 않는다 — 형식의 소유자는 `publisher-token.ts` 한 곳이며
           // (ADR-0029 §4), 손으로 적은 사본은 형식이 바뀌어도 조용히 어긋난다. 계약 상수에서

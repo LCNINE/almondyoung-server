@@ -20,7 +20,7 @@ jest.mock(
 // 일어난다.
 //
 // 필요한 건 DB 뿐이고 Kafka 브로커는 필요 없다: CatalogModule 이 정적으로 문
-// EventsModule.forRoot({enableOutbox:true}) 는 `providers` 배열에 "토픽을 만드는" async
+// EventsModule.forApp({enableOutbox:true}) 는 `providers` 배열에 "토픽을 만드는" async
 // useFactory 를 등록해두지만(일반 provider 라 constructor DI 범주 안 — `.compile()` 이
 // resolve 함), bootstrapKafkaTopics()(libs/events/src/bootstrap/topic-bootstrap.service.ts)
 // 는 KAFKA_BOOTSTRAP_TOPICS=false 면 admin.connect() 조차 시도하지 않고 곧장 리턴한다.
@@ -37,7 +37,7 @@ describeIfDb('BulkSessionModule DI', () => {
 
   it('CatalogModule 안에서 FormExportService/FormExportSnapshotReader 를 해석한다', async () => {
     process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? 'bulk-session-module-spec-test-secret';
-    // CatalogModule 이 EventsModule.forRoot({enableOutbox:true}) 를 정적으로 물고 있어
+    // CatalogModule 이 EventsModule.forApp({enableOutbox:true}) 를 정적으로 물고 있어
     // 없으면 kafkajs 설정 생성 자체가 던진다 — 실제 브로커에 붙지는 않으므로 값 자체는
     // 아무 host:port 나 상관없다.
     process.env.KAFKA_BROKERS = process.env.KAFKA_BROKERS ?? 'localhost:9092';

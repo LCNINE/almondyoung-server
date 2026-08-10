@@ -25,10 +25,10 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'your-service-consumers',
-      enableAutoDLQ: true,  // 자동 DLQ 처리 활성화 (기본값: true)
+    EventsModule.forApp({
+      enableDLQ: true,  // 자동 DLQ 처리 활성화 (기본값: true)
+      // 구독 스트림·groupId 는 여기 없다 — 토픽은 `@On` 에서 도출되고
+      // groupId 는 main.ts 의 `startConsumer` 가 준다 (ADR-0029 §3).
     }),
   ],
 })
@@ -47,14 +47,8 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Kafka Consumer 연결
-  const consumerOptions = EventsModule.forConsumer({
-    streams: [ORDER_STREAM],
-    groupId: 'your-service-consumers',
-  });
-
-  app.connectMicroservice(consumerOptions);
-  await app.startAllMicroservices();
+  // Kafka Consumer 연결 — 구독 목록 인자 없음
+  await EventsModule.startConsumer(app, { groupId: 'your-service-consumers' });
 
   await app.listen(3000);
 }
@@ -65,14 +59,14 @@ bootstrap();
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { On, EventPayload } from '@app/events';
 import { OrderCreatedPayload } from '@app/shared/streams/orders.stream';
 
 @Controller()
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
     // 에러가 발생하면:
     // 1. 자동으로 3번 재시도 (exponential backoff)
@@ -96,11 +90,11 @@ export class OrderEventsConsumer {
 
 ```typescript
 import { Controller } from '@nestjs/common';
-import { OnEvent, EventPayload, RetryPolicy } from '@app/events';
+import { On, EventPayload, RetryPolicy } from '@app/events';
 
 @Controller()
 export class OrderEventsConsumer {
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({
     maxRetries: 5,              // 5번 재시도
     backoff: 'exponential',     // 지수 백오프 (1s, 2s, 4s, 8s, 16s)
@@ -111,7 +105,7 @@ export class OrderEventsConsumer {
     await this.processOrder(payload);
   }
 
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   @RetryPolicy({
     maxRetries: 3,
     backoff: 'linear',          // 선형 백오프 (1s, 2s, 3s)
@@ -152,7 +146,7 @@ class FatalError extends Error {}
 @Controller()
 export class OrderEventsConsumer {
   // 특정 에러만 재시도
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({
     maxRetries: 5,
     retryableErrors: [NetworkError, TimeoutError],  // 이 에러들만 재시도
@@ -163,7 +157,7 @@ export class OrderEventsConsumer {
   }
 
   // 특정 에러는 재시도 안 함
-  @OnEvent('orders.events.v1', 'OrderUpdated')
+  @On(ORDER_STREAM, 'OrderUpdated')
   @RetryPolicy({
     maxRetries: 3,
     nonRetryableErrors: [ValidationError, FatalError],  // 이 에러들은 재시도 안함
@@ -178,11 +172,11 @@ export class OrderEventsConsumer {
 ### 7. DLQ 비활성화 (중요하지 않은 이벤트)
 
 ```typescript
-import { OnEvent, EventPayload, DisableDLQ } from '@app/events';
+import { On, EventPayload, DisableDLQ } from '@app/events';
 
 @Controller()
 export class AnalyticsEventsConsumer {
-  @OnEvent('analytics.events.v1', 'PageView')
+  @On(ANALYTICS_STREAM, 'PageView')
   @DisableDLQ()  // 실패해도 DLQ에 보내지 않음 (버림)
   async handlePageView(@EventPayload() payload: PageViewPayload) {
     // 중요하지 않은 이벤트는 실패해도 괜찮음
@@ -195,13 +189,13 @@ export class AnalyticsEventsConsumer {
 
 ```typescript
 import { Controller, Logger } from '@nestjs/common';
-import { OnEvent, EventEnvelope, DisableDLQ, DLQHandler } from '@app/events';
+import { On, EventEnvelope, DisableDLQ, DLQHandler } from '@app/events';
 
 @Controller()
 export class CustomDLQConsumer {
   constructor(private readonly dlqHandler: DLQHandler) {}
 
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @DisableDLQ()  // 자동 DLQ 비활성화
   async handleOrderCreated(@EventEnvelope() envelope: DomainEvent) {
     try {
@@ -290,7 +284,7 @@ export class CustomDLQConsumer {
 
 ### Before (수동 DLQ 처리)
 ```typescript
-@OnEvent('orders.events.v1', 'OrderCreated')
+@On(ORDER_STREAM, 'OrderCreated')
 async handleOrderCreated(@EventEnvelope() envelope: DomainEvent) {
   try {
     await this.processOrder(envelope.payload);
@@ -308,7 +302,7 @@ async handleOrderCreated(@EventEnvelope() envelope: DomainEvent) {
 
 ### After (자동 DLQ 처리)
 ```typescript
-@OnEvent('orders.events.v1', 'OrderCreated')
+@On(ORDER_STREAM, 'OrderCreated')
 async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
   // try-catch 불필요!
   await this.processOrder(payload);

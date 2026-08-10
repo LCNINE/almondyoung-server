@@ -1,3 +1,10 @@
+> ⚠️ **이 문서는 특정 시점의 평가 기록이다 — 현재 API 설명이 아니다.**
+> 여기 나오는 `@OnEvent` · `InjectStreamPublisher` · `forConsumer` 는 ADR-0029
+> Task 7(2026-08-10)에서 삭제됐고 각각 `@On` · `@InjectPublisher` ·
+> `startConsumer` 로 대체됐다. 본문은 당시의 관찰을 남기기 위해 그대로 둔다.
+> 현재 표면은 [`../README.md`](../README.md) 와
+> [`docs/adr/0029-events-module-registration-surfaces.md`](../../../docs/adr/0029-events-module-registration-surfaces.md) 를 보라.
+
 ● 현재 공용 이벤트 모듈 평가
 
   ✅ 강점

@@ -25,7 +25,7 @@
  *   node scripts/events/event-handler-contract-audit.js                  # 전체 앱
  *   node scripts/events/event-handler-contract-audit.js core membership  # 특정 앱
  *   node scripts/events/event-handler-contract-audit.js --json           # 기계 판독용
- *   node scripts/events/event-handler-contract-audit.js --allow-legacy   # 이주 중: @OnEvent 잔량 허용
+ *   node scripts/events/event-handler-contract-audit.js --allow-legacy   # @OnEvent 잔량 허용 (이제 쓸 일 없다)
  *
  * 종료 코드: 발견이 하나라도 있으면 1.
  */
@@ -131,7 +131,10 @@ function scanFile(rel) {
             code: 'LEGACY',
             where,
             method,
-            detail: '@OnEvent 은 토픽·이벤트명이 생문자열이다. @On(STREAM, "Event") 로 이주하라 (ADR-0029 §4).',
+            detail:
+              '@OnEvent 은 토픽·이벤트명이 생문자열이다. @On(STREAM, "Event") 로 이주하라 (ADR-0029 §4). ' +
+              '이 표면은 Task 7 에서 삭제됐으므로 여기 걸린다면 @nestjs/event-emitter 의 동명 데코레이터를 ' +
+              '잘못 import 한 것이다 — 그건 Kafka 소비와 아무 상관이 없고 핸들러가 영영 실행되지 않는다.',
           });
         } else {
           const streamArg = handler.args[0];

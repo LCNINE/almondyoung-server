@@ -42,8 +42,8 @@ import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [ORDER_STREAM],
+    EventsModule.forApp({
+      publishes: [ORDER_STREAM],
       serviceName: 'wms-order',
     }),
     // ✅ GracefulShutdownService가 자동으로 등록됨!
@@ -58,15 +58,12 @@ export class OrderModule {}
 // apps/channel-adapter/src/app.module.ts
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { ORDER_STREAM } from '@app/shared/streams/orders.stream';
 
 @Module({
   imports: [
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'channel-adapter-consumers',
-    }),
+    EventsModule.forApp(),
     // ✅ GracefulShutdownService가 자동으로 등록됨!
+    // (groupId 는 main.ts 의 `startConsumer` 가 준다)
   ],
 })
 export class AppModule {}

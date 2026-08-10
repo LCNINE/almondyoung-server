@@ -41,7 +41,7 @@
 ```typescript
 @Controller()
 export class MyConsumer {  // ❌ EventTypeGuard 없음
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async handleOrderCreated(...) {}
 }
 ```
@@ -51,7 +51,7 @@ export class MyConsumer {  // ❌ EventTypeGuard 없음
 @Controller()
 @UseInterceptors(EventTypeGuard)  // ✅ 추가!
 export class MyConsumer {
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   async handleOrderCreated(...) {}
 }
 ```
@@ -119,7 +119,7 @@ import { NestFactory } from '@nestjs/core';
 
 **문제:**
 ```typescript
-@OnEvent('orders.events.v1', 'OrderCreated')
+@On(ORDER_STREAM, 'OrderCreated')
 async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
   // 에러 발생 → Offset commit 실패 → 무한 재처리
   await this.processOrder(payload);  // 여기서 에러!
@@ -128,7 +128,7 @@ async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
 
 **해결:**
 ```typescript
-@OnEvent('orders.events.v1', 'OrderCreated')
+@On(ORDER_STREAM, 'OrderCreated')
 @RetryPolicy({ maxAttempts: 3, backoff: 'exponential' })  // ✅ 재시도 정책 추가
 async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
   try {
@@ -143,10 +143,8 @@ async handleOrderCreated(@EventPayload() payload: OrderCreatedPayload) {
 
 그리고 Module에서:
 ```typescript
-EventsModule.forConsumerModule({
-  streams: [ORDER_STREAM],
-  groupId: 'my-consumer',
-  enableAutoDLQ: true,  // ✅ 자동 DLQ 활성화
+EventsModule.forApp({
+  enableDLQ: true,  // ✅ 자동 DLQ 활성화 (기본값: true)
 })
 ```
 

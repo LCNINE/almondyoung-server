@@ -140,7 +140,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
   const createdSessionIds = new Set<string>();
 
   beforeAll(async () => {
-    // CatalogModule 이 EventsModule.forRoot({enableOutbox:true}) 를 정적으로 물고 있어 없으면
+    // CatalogModule 이 EventsModule.forApp({enableOutbox:true}) 를 정적으로 물고 있어 없으면
     // kafkajs 설정 생성 자체가 던진다 — 실제 브로커에 붙지는 않으므로 값은 아무 host:port 나
     // 상관없다(bulk-session.module.spec.ts:39-49 와 같은 이유·같은 값).
     process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? 'bulk-session-draft-spec-test-secret';

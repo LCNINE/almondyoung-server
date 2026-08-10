@@ -24,7 +24,7 @@
  * 무방비 쓰기를 105건으로 과소집계했다가 실제 207건이었다).
  *
  * 이 게이트는 **순수 구문 검사**다. 스트림 상수가 실재하는지, 그 스트림이 앱의
- * `forRoot({streams})` 에 들어 있는지는 검사하지 않는다 — 앞의 것은 컴파일이, 뒤의 것은
+ * `forApp({publishes})` 에 들어 있는지는 검사하지 않는다 — 앞의 것은 컴파일이, 뒤의 것은
  * 부팅 시 DI 실패가 이미 시끄럽게 잡는다(ADR-0029 Consequences 표). 여기서 또 검사하면
  * 계약 로딩이라는 두 번째 진실이 생긴다.
  *
@@ -135,7 +135,8 @@ function scanFile(rel) {
           method,
           detail:
             '@InjectStreamPublisher 는 토픽 문자열과 이벤트 타입 제네릭을 따로 적게 한다. ' +
-            '@InjectPublisher(STREAM) + PublisherFor<typeof STREAM> 으로 이주하라 (ADR-0029 §4).',
+            '@InjectPublisher(STREAM) + PublisherFor<typeof STREAM> 으로 이주하라 (ADR-0029 §4). ' +
+            '이 표면은 Task 7 에서 삭제됐으므로 지금 걸린다면 되살아난 것이다.',
         });
       }
 

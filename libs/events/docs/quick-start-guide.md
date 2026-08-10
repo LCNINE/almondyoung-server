@@ -106,8 +106,8 @@ import { ORDER_STREAM } from '@app/shared/streams';
 
 @Module({
   imports: [
-    EventsModule.forRoot({
-      streams: [ORDER_STREAM],
+    EventsModule.forApp({
+      publishes: [ORDER_STREAM],
       serviceName: process.env.SERVICE_NAME || 'my-service',
       // kafka 옵션은 생략 가능 (환경변수에서 자동 생성)
       validation: {
@@ -126,14 +126,14 @@ export class AppModule {}
 ```typescript
 // apps/my-service/src/orders/order.service.ts
 import { Injectable } from '@nestjs/common';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
-import { ORDER_STREAM, OrderEvents } from '@app/shared/streams';
+import { InjectPublisher, PublisherFor } from '@app/events';
+import { ORDER_STREAM } from '@app/shared/streams';
 
 @Injectable()
 export class OrderService {
   constructor(
-    @InjectStreamPublisher('orders.events.v1')
-    private readonly orderPublisher: StreamPublisher<OrderEvents>,
+    @InjectPublisher(ORDER_STREAM)
+    private readonly orderPublisher: PublisherFor<typeof ORDER_STREAM>,
   ) {}
 
   async createOrder(dto: CreateOrderDto) {
@@ -165,24 +165,23 @@ export class OrderService {
 
 ## 3. Consumer 설정 (이벤트 수신)
 
-### 방법 A: forConsumerModule() - 자동 DLQ 처리 (권장)
+**구독 목록을 어디에도 적지 않는다.** 소비 집합은 컨트롤러의 `@On` 데코레이터에서
+도출된다 (ADR-0029 §3). 선언이 필요한 것은 코드에서 도출할 수 없는 것 — 정책과
+전송 설정뿐이다.
 
-**Module 설정:**
+**1) 모듈에 정책 선언** (기본값으로 충분하면 생략 가능)
 
 ```typescript
 // apps/my-service/src/app.module.ts
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { ORDER_STREAM } from '@app/shared/streams';
 
 @Module({
   imports: [
-    EventsModule.forConsumerModule({
-      streams: [ORDER_STREAM],
-      groupId: 'my-service-orders-consumer',
-      enableAutoDLQ: true,  // 자동 DLQ 처리
-      validation: {
-        validateOnConsume: true,  // 수신 시 스키마 검증
+    EventsModule.forApp({
+      enableDLQ: true, // 자동 DLQ 처리 (기본값: true)
+      policy: {
+        validateOnConsume: true, // 수신 시 스키마 검증 (기본값: true)
       },
     }),
   ],
@@ -191,29 +190,23 @@ import { ORDER_STREAM } from '@app/shared/streams';
 export class AppModule {}
 ```
 
-### 방법 B: forConsumer() - main.ts에서 수동 연결
+`policy` 는 **앱 전체에 하나**다. `forApp` 을 BC 별로 여러 번 부르더라도 정책을
+선언하는 호출은 하나여야 하며, 둘 이상이면 부팅이 거부된다 — 어느 선언이 이기는지는
+모듈 등록 순서에 달려 있어 조용히 갈리기 때문이다.
 
-**main.ts:**
+**2) main.ts 에서 소비 시작**
 
 ```typescript
 // apps/my-service/src/main.ts
 import { NestFactory } from '@nestjs/core';
-import { MicroserviceOptions } from '@nestjs/microservices';
 import { AppModule } from './app.module';
 import { EventsModule } from '@app/events';
-import { ORDER_STREAM } from '@app/shared/streams';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Kafka Microservice 연결
-  const kafkaConfig = EventsModule.forConsumer({
-    streams: [ORDER_STREAM],
-    groupId: 'my-service-orders-consumer',
-  });
-
-  app.connectMicroservice<MicroserviceOptions>(kafkaConfig);
-  await app.startAllMicroservices();
+  // 구독 목록 인자가 없다. 도출된 토픽은 startConsumer 가 로그로 찍는다.
+  await EventsModule.startConsumer(app, { groupId: 'my-service-orders-consumer' });
 
   await app.listen(3000);
 }
@@ -221,13 +214,17 @@ async function bootstrap() {
 bootstrap();
 ```
 
+`startConsumer` 는 세 가지를 부팅에서 거부한다 — 전부 지금까지 무증상이던 실수다:
+계약 레지스트리에 없는 토픽 구독 · `@On` 핸들러 0개(컨슈머 컨트롤러를
+`controllers: []` 에 등록하지 않은 경우) · 정책 중복 선언.
+
 ### Consumer 구현
 
 ```typescript
 // apps/my-service/src/orders/order.consumer.ts
 import { Controller, UseInterceptors } from '@nestjs/common';
 import {
-  OnEvent,
+  On,
   EventPayload,
   EventEnvelope,
   EventMetadata,
@@ -245,7 +242,7 @@ export class OrderConsumer {
   /**
    * OrderCreated 이벤트 처리
    */
-  @OnEvent('orders.events.v1', 'OrderCreated')
+  @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({ maxAttempts: 3, backoff: 'exponential' })  // 재시도 정책
   async handleOrderCreated(
     @EventPayload() payload: OrderCreatedPayload,
@@ -263,7 +260,7 @@ export class OrderConsumer {
   /**
    * OrderCancelled 이벤트 처리
    */
-  @OnEvent('orders.events.v1', 'OrderCancelled')
+  @On(ORDER_STREAM, 'OrderCancelled')
   @RetryPolicy({ maxAttempts: 3 })
   async handleOrderCancelled(
     @EventPayload() payload: OrderCancelledPayload,
@@ -282,7 +279,7 @@ export class OrderConsumer {
 ## 4. 이벤트 타입 필터링
 
 `@UseInterceptors(EventTypeGuard)`를 사용하면:
-- `@OnEvent`에 지정한 이벤트 타입만 처리
+- `@On`에 지정한 이벤트 타입만 처리
 - 다른 이벤트는 조용히 무시 (에러 없이)
 - Offset commit 정상 처리
 
@@ -371,10 +368,10 @@ curl -X POST http://localhost:3100/test/create \
 - [ ] 토픽 생성 (main + dlq)
 - [ ] Stream 정의 (payload 타입 + 스키마)
 - [ ] 환경 변수 설정 (.env 파일)
-- [ ] Publisher 설정 (EventsModule.forRoot)
-- [ ] Consumer 설정 (forConsumerModule 또는 forConsumer)
+- [ ] Publisher 설정 (`EventsModule.forApp({ publishes })`)
+- [ ] Consumer 설정 (`main.ts` 의 `startConsumer`)
 - [ ] Consumer에 `@UseInterceptors(EventTypeGuard)` 추가
-- [ ] 이벤트 핸들러에 `@OnEvent` 데코레이터
+- [ ] 이벤트 핸들러에 `@On` 데코레이터
 - [ ] 재시도 정책 설정 (`@RetryPolicy`)
 
 ---

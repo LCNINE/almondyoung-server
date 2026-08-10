@@ -669,16 +669,52 @@ PR 별로도 type-check 162 · 해당 앱 build · 감사 3종 · 해당 앱 jes
 
 ---
 
-## Task 7: 옛 표면 제거 (contract phase)
+## Task 7: 옛 표면 제거 (contract phase) — ✅ 완료 (2026-08-10)
 
-**Task 5 가 전부 끝나고 배포가 완료된 뒤에만 착수한다.**
+**Task 5 가 전부 끝나고 배포가 완료된 뒤에만 착수한다.** 선행조건 충족 확인 후 착수했다.
 
-- [ ] `forConsumer` 삭제
-- [ ] `forConsumerModule` 을 `forApp` 으로 흡수하거나 삭제
-- [ ] `@OnEvent` / `@InjectStreamPublisher` 삭제
-- [ ] `npm run type-check` 초록 · 전 앱 `nest build` 초록 · 커밋 · 푸시
+- [x] `forConsumer` 삭제 — 전송 설정을 `startConsumer` 안으로 인라인
+- [x] `forConsumerModule` 을 `forApp` 으로 흡수
+- [x] `@OnEvent` / `@InjectStreamPublisher` 삭제
+- [x] `npm run type-check` 초록 · 전 앱 `nest build` 초록 · 커밋 · 푸시
 
 **완료 기준:** 등록 표면이 `forApp` + `startConsumer` 둘뿐이다.
+
+**완료 (2026-08-10).** 브랜치 `feat/events-drop-legacy-surfaces`.
+
+**`forRoot` 는 삭제가 아니라 개명이다 — `forApp`.** 태스크 지시의 삭제 목록에 `forRoot` 가 없는데 완료 기준은 "표면이 `forApp` + `startConsumer` 둘뿐"이다. 둘을 동시에 만족하는 읽기는 개명 하나뿐이고, ADR §3 의 스케치도 그 형태다. `streams` → `publishes` 로 인자도 바꿨다 — 세 표면이 같은 이름으로 각각 다른 뜻(발행 능력 · 검증 맵 · 무의미한 subscribe 목록)을 받던 것이 ADR Context 의 첫 관측이므로, 표면이 하나로 줄면 이름이 뜻을 말해야 한다.
+
+**정책을 먼저 옮겼다 (지시대로).** 6개 앱의 `forConsumerModule({validation})` 과 channel-adapter 의 수기 `EVENTS_CONSUMER_POLICY` provider 를 `forApp({policy})` 로 이전한 뒤 표면을 지웠다. 순서를 뒤집으면 notification·membership·wallet 의 `validateOnConsume: false` 가 기본값 `true` 로 조용히 뒤집힌다. 감사가 사후 확인했다 — 검증 ON 5앱(analytics·channel-adapter·core·membership·search)으로 기준선과 동일.
+
+**정책 필드는 발행/소비로 갈랐다.** `validation`(발행, `Pick<…,'validateOnPublish'|'throwOnValidationError'>`) · `policy`(소비, `Pick<…,'validateOnConsume'|'throwOnValidationError'>`). 옛 두 표면이 `validation: SchemaValidationOptions` 라는 **같은 이름·같은 타입으로 다른 뜻**을 받던 것이 ADR §1 이 지적한 문제의 절반이고, 한 표면으로 합치면서 그 모호함을 물려받을 이유가 없다. 이제 반대쪽 플래그를 쓰면 컴파일 에러다.
+
+**새 부팅 거부 1건 — 정책 중복 선언.** `forApp` 은 BC 별로 여러 번 불릴 수 있고(core 4번: inventory·fulfillment·catalog·sales-order) 그중 둘이 `policy` 를 선언하면 `optionalGet` 이 경고 없이 하나만 돌려준다. 어느 것이 이기는지는 모듈 등록 순서에 달렸고 두 선언이 갈리면 검증이 조용히 켜지거나 꺼진다 — §3 의 기존 두 거부(레지스트리 밖 토픽 · 핸들러 0개)와 같은 종류다. `assertSinglePolicyDeclaration` 이 `ModulesContainer` 를 훑어 센다.
+
+**🔴 하네스 스펙 3개가 운영과 다른 배선을 검증하고 있었다 (이 태스크가 드러냄).**
+
+`round-trip` · `consume-validation` · `enqueue-validation` 은 `createNestMicroservice` 로 도는데, **그 경로에서는 `APP_INTERCEPTOR` 가 적용된다.** 운영 7개 앱은 하이브리드 `connectMicroservice` 라 적용되지 않는다(§8). 즉 이 셋은 `forConsumerModule` 이 달아 주던 `APP_INTERCEPTOR` 로 검증·DLQ 를 얻고 있었고, **라이브에는 없던 배선을 초록으로 증명하고 있었다** — ADR §8 이 고발한 그 모양 그대로다. `forConsumerModule` 삭제로 5개 테스트가 빨간불이 되면서 드러났다. 셋 다 운영과 같은 팩토리 `buildConsumerInterceptors(app, streams)` 를 명시적으로 얹도록 고쳤다. `startConsumer` 를 쓰지 않는 이유는 하나뿐이다 — 그것은 레지스트리 밖 토픽을 거부하는데 이 하네스들은 일부러 레지스트리 밖 전용 계약을 쓴다(`start-consumer.spec.ts` 만 실제 `CART_STREAM` 을 쓴다).
+
+**부수 실측 — `forConsumerModule` 의 인자 5개가 한 번도 읽히지 않았다.** `groupId`·`sessionTimeout`·`heartbeatInterval`·`maxPollInterval`·`autoCommit`. 6개 앱이 `groupId` 를 모듈과 `main.ts` 에 두 번 적고 있었고 효력이 있는 것은 `main.ts` 쪽뿐이었다(값은 다행히 전부 일치). ADR §1 의 "두 벌" 의 또 다른 실례이며 표면과 함께 사라졌다.
+
+**`APP_INTERCEPTOR` 의 SchemaValidation·ChainContext 는 되살리지 않았다.** 되살릴 수도 없다 — `SchemaValidationInterceptor` 생성자가 소비 스트림 목록을 요구하는데 그건 이 워크스트림이 지운 두 번째 진실이다. 운영 영향 0(하이브리드에서 닿지 않았고, 셋 다 `context.getType() === 'http'` 에서 즉시 통과한다). `EventRetryInterceptor` 의 `APP_INTERCEPTOR` 등록은 옛 `forRoot` 그대로 남겼다.
+
+**문서를 함께 고쳤다.** `libs/events/README.md` + `docs/*.md` 7개 + `MIGRATION_GUIDE.md` + `apps/notification/docs/EVENT_FLOW_ANALYSIS.md`. 삭제된 API 를 가르치는 문서를 남기는 것은 ADR Context 가 고발한 "틀린 모델이 체크인돼 있다" 의 더 나쁜 판본이다. **`docs/first-look.md` 만 본문을 두고 경고 헤더를 달았다** — 특정 시점의 평가 기록이라 고치면 기록이 아니라 거짓이 된다.
+
+**대조군 (변이 5종, 전부 빨간불 재현 후 `cp` 백업 + `sha1sum -c` 로 원복 — `git checkout --` 는 쓰지 않았다):**
+
+| 변이 | 빨간불 |
+|---|---|
+| 가드 임계값 `> 1` → `> 2` | 중복 선언 2건이 통과 → 2 tests |
+| `buildConsumerInterceptors` 의 가드 호출 삭제(배선만 끊음) | 1 test |
+| `forApp` 이 `policy` 없이도 provider 등록 | 대조군 1 test |
+| `forApp` 이 인터셉터를 `APP_INTERCEPTOR` 로 추가 등록 | 1 test |
+| `@On` 이 `EVENT_TYPE_FILTER` 를 안 남김 | 3 tests |
+
+두 번째 변이가 특히 필요했다 — 가드 함수를 직접 부르는 테스트 3개만으로는 **그것이 부팅 경로에 꽂혀 있다는 것**을 증명하지 못한다. 호출 한 줄을 지워도 셋 다 초록이었다.
+
+**게이트 실측:** `npm run type-check` **162 = 기준선**(file+code 집합 완전 동일, 신규 0) · `audit:event-handlers` exit 0 (87 핸들러 / `@OnEvent` 0) · `audit:event-publishers` exit 0 (37 주입 / 옛 표면 0) · `audit:consume-validation --gate` exit 0 (검증 ON 5앱 = 기준선) · 10개 앱 `nest build` OK · 전체 jest **실패 suite 18 = 기준선(집합 완전 동일)**, 통과 3079 → 3083(+4 = 신규 5 − 삭제 1) · 변경 파일 eslint **신규 0**(60 → 52).
+
+**배포:** 마이그레이션 0 · 시크릿 0 · env 0 · 계약 변경 0. 앱 간 순서 없음 — 동작 중립이라 한 배포에 묶어도 된다.
 
 ---
 
@@ -691,7 +727,8 @@ PR 별로도 type-check 162 · 해당 앱 build · 감사 3종 · 해당 앱 jes
 - [x] outbox enqueue 가 zod 검증을 탄다 — Task 6-A
 - [x] `libs/events/src` 스펙 파일 수가 5개보다 많다 — 현재 11
 - [x] 컨트롤러를 `controllers: []` 에 등록하지 않으면 부팅이 실패한다 — Task 3 에서 구현, 5-B 로 7개 앱 전부에 실효
-- [x] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164, 6-C-2 가 163, 6-C-4 가 162. **신규 오류 0 유지.** Task 7 후 최종 재확인
+- [x] `npm run type-check` 가 이 워크스트림으로 새 오류를 만들지 않았다 — 5-B 까지 164, 6-C-2 가 163, 6-C-4 가 162. **신규 오류 0 유지.** Task 7 후 최종 재확인 완료 (162)
+- [x] 등록 표면이 `forApp` + `startConsumer` 둘뿐이다 — Task 7
 - [x] ADR-0029 의 Status 가 Accepted 로 갱신됐다
 
 ---

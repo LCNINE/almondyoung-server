@@ -35,7 +35,7 @@ npm run migrate:event
 
 ### AppModule 설정
 
-CLS가 동작하려면 앱 최상위 모듈에 `ClsModule.forRoot()`를 등록해야 합니다. `EventsModule.forRoot()`나 `EventsModule.forConsumerModule()`을 사용하면 **자동으로 포함**되므로 별도 등록은 필요 없습니다.
+CLS가 동작하려면 앱 최상위 모듈에 `ClsModule.forRoot()`를 등록해야 합니다. `EventsModule.forApp()`을 사용하면 **자동으로 포함**되므로 별도 등록은 필요 없습니다.
 
 직접 등록이 필요한 경우:
 
