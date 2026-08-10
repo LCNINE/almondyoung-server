@@ -700,6 +700,106 @@ export interface NoticeDto {
   updatedAt: string;
 }
 
+// ===== 팝업 공지 (site_popups) =====
+
+export const SITE_POPUP_CONTENT_TYPES = ['rich_text', 'image'] as const;
+export type SitePopupContentType = (typeof SITE_POPUP_CONTENT_TYPES)[number];
+
+export const SITE_POPUP_PLACEMENTS = ['main', 'all', 'paths'] as const;
+export type SitePopupPlacement = (typeof SITE_POPUP_PLACEMENTS)[number];
+
+export const SITE_POPUP_AUDIENCES = ['all', 'guest', 'member', 'membership'] as const;
+export type SitePopupAudience = (typeof SITE_POPUP_AUDIENCES)[number];
+
+export const SITE_POPUP_DISMISS_MODES = ['none', 'today', 'days'] as const;
+export type SitePopupDismissMode = (typeof SITE_POPUP_DISMISS_MODES)[number];
+
+export interface SitePopupDto {
+  id: string;
+  title: string;
+  contentType: SitePopupContentType;
+  content: string | null;
+  pcImageFileId: string | null;
+  mobileImageFileId: string | null;
+  imageAlt: string | null;
+  linkUrl: string | null;
+  noticeId: string | null;
+  pcWidth: number | null;
+  pcHeight: number | null;
+  mobileWidth: number | null;
+  mobileHeight: number | null;
+  placement: SitePopupPlacement;
+  placementPaths: string[];
+  audience: SitePopupAudience;
+  dismissMode: SitePopupDismissMode;
+  dismissDays: number | null;
+  dismissVersion: number;
+  displayStartAt: string | null;
+  displayEndAt: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSitePopupDto {
+  title: string;
+  contentType?: SitePopupContentType;
+  content?: string;
+  pcImageFileId?: string;
+  mobileImageFileId?: string;
+  imageAlt?: string;
+  linkUrl?: string;
+  noticeId?: string;
+  pcWidth?: number;
+  pcHeight?: number;
+  mobileWidth?: number;
+  mobileHeight?: number;
+  placement?: SitePopupPlacement;
+  placementPaths?: string[];
+  audience?: SitePopupAudience;
+  dismissMode?: SitePopupDismissMode;
+  dismissDays?: number;
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** null 을 보내면 값을 비우고, 필드를 생략하면 기존 값을 유지한다. */
+export interface UpdateSitePopupDto {
+  title?: string;
+  contentType?: SitePopupContentType;
+  content?: string | null;
+  pcImageFileId?: string | null;
+  mobileImageFileId?: string | null;
+  imageAlt?: string | null;
+  linkUrl?: string | null;
+  noticeId?: string | null;
+  pcWidth?: number | null;
+  pcHeight?: number | null;
+  mobileWidth?: number | null;
+  mobileHeight?: number | null;
+  placement?: SitePopupPlacement;
+  placementPaths?: string[];
+  audience?: SitePopupAudience;
+  dismissMode?: SitePopupDismissMode;
+  dismissDays?: number | null;
+  displayStartAt?: string | null;
+  displayEndAt?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface SitePopupListQuery {
+  includeInactive?: boolean;
+  isActive?: boolean;
+  placement?: SitePopupPlacement;
+  audience?: SitePopupAudience;
+  q?: string;
+}
+
 export interface NoticeListQuery {
   category?: string;
   includeInactive?: boolean;

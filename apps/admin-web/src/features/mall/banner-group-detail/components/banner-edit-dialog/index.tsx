@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ImageUploadField } from '@/components/common/image-upload-field';
+import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useUpdateBanner } from '@/lib/services/products';
 import type { BannerDto, UpdateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
@@ -102,23 +104,27 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
             />
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="be-pcImageFileId">PC 이미지 파일 ID</Label>
-            <Input
-              id="be-pcImageFileId"
-              value={form.pcImageFileId ?? ''}
-              onChange={set('pcImageFileId')}
-            />
-          </div>
+          <ImageUploadField
+            label="PC 이미지"
+            required
+            previewShape="wide"
+            contextId={BANNER_IMAGE_CONTEXT_ID}
+            value={form.pcImageFileId}
+            onChange={(fileId) =>
+              setForm((prev) => ({ ...prev, pcImageFileId: fileId ?? undefined }))
+            }
+          />
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="be-mobileImageFileId">모바일 이미지 파일 ID</Label>
-            <Input
-              id="be-mobileImageFileId"
-              value={form.mobileImageFileId ?? ''}
-              onChange={set('mobileImageFileId')}
-            />
-          </div>
+          <ImageUploadField
+            label="모바일 이미지"
+            required
+            previewShape="wide"
+            contextId={BANNER_IMAGE_CONTEXT_ID}
+            value={form.mobileImageFileId}
+            onChange={(fileId) =>
+              setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
+            }
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">

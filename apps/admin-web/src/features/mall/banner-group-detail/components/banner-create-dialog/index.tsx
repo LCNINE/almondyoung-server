@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { ImageUploadField } from '@/components/common/image-upload-field';
+import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useCreateBanner } from '@/lib/services/products';
 import type { CreateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
@@ -42,6 +44,11 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
   const handleSubmit = async () => {
     if (!form.title?.trim()) {
       toast.error('제목을 입력해 주세요.');
+      return;
+    }
+    // 두 이미지 모두 서버에서 필수다 — 없이 보내면 저장 시점에 실패한다.
+    if (!form.pcImageFileId || !form.mobileImageFileId) {
+      toast.error('PC / 모바일 이미지를 모두 업로드해 주세요.');
       return;
     }
     try {
@@ -91,25 +98,27 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             />
           </div>
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-pcImageFileId">PC 이미지 파일 ID</Label>
-            <Input
-              id="b-pcImageFileId"
-              placeholder="파일 서비스에서 업로드 후 ID 입력"
-              value={form.pcImageFileId ?? ''}
-              onChange={set('pcImageFileId')}
-            />
-          </div>
+          <ImageUploadField
+            label="PC 이미지"
+            required
+            previewShape="wide"
+            contextId={BANNER_IMAGE_CONTEXT_ID}
+            value={form.pcImageFileId}
+            onChange={(fileId) =>
+              setForm((prev) => ({ ...prev, pcImageFileId: fileId ?? undefined }))
+            }
+          />
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="b-mobileImageFileId">모바일 이미지 파일 ID</Label>
-            <Input
-              id="b-mobileImageFileId"
-              placeholder="파일 서비스에서 업로드 후 ID 입력"
-              value={form.mobileImageFileId ?? ''}
-              onChange={set('mobileImageFileId')}
-            />
-          </div>
+          <ImageUploadField
+            label="모바일 이미지"
+            required
+            previewShape="wide"
+            contextId={BANNER_IMAGE_CONTEXT_ID}
+            value={form.mobileImageFileId}
+            onChange={(fileId) =>
+              setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
+            }
+          />
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">

@@ -484,7 +484,7 @@ export const mainMenus: MainMenu[] = [
             title: '배너 그룹',
             path: '/mall/banner-groups',
           },
-          // { id: 'popups', title: '팝업' },
+          { id: 'popups', title: '팝업', path: '/mall/popups' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },

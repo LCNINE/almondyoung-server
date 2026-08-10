@@ -26,6 +26,8 @@ export type FileSignedUrlResponse = {
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
 export const CATEGORY_IMAGE_CONTEXT_ID = 'category-image';
+export const BANNER_IMAGE_CONTEXT_ID = 'banner-image';
+export const SITE_POPUP_IMAGE_CONTEXT_ID = 'site-popup-image';
 export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {

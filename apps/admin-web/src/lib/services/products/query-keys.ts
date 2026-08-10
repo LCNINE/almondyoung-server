@@ -108,6 +108,11 @@ export const productQueryKeys = {
     [...productQueryKeys.notices, 'list', query] as const,
   notice: (id: string) => [...productQueryKeys.notices, id] as const,
 
+  sitePopups: ['site-popups'] as const,
+  sitePopupsList: <T extends object>(query: T) =>
+    [...productQueryKeys.sitePopups, 'list', query] as const,
+  sitePopup: (id: string) => [...productQueryKeys.sitePopups, id] as const,
+
   // 태그 그룹 관련
   tagGroups: ['tag-groups'] as const,
   tagGroupsList: (query: object) =>

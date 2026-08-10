@@ -28,6 +28,7 @@ import type {
   MasterChannelProductsResponseDto,
   MergedChannelProductDto,
   NoticeListQuery,
+  SitePopupListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import type {
@@ -629,6 +630,25 @@ export const useNotice = (id: string) => {
   return useQuery({
     queryKey: productQueryKeys.notice(id),
     queryFn: () => products.notices.get(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 팝업 공지 관련 쿼리 =====
+
+export const useSitePopups = (query?: SitePopupListQuery) => {
+  return useQuery({
+    queryKey: productQueryKeys.sitePopupsList(query ?? {}),
+    queryFn: () => products.sitePopups.list(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useSitePopup = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.sitePopup(id),
+    queryFn: () => products.sitePopups.get(id),
     enabled: !!id,
     staleTime: 2 * 60 * 1000,
   });

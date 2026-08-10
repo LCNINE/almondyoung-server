@@ -28,6 +28,8 @@ import type {
   UpdateBannerDto,
   CreateNoticeDto,
   UpdateNoticeDto,
+  CreateSitePopupDto,
+  UpdateSitePopupDto,
   CreateTagGroupDto,
   UpdateTagGroupDto,
   CreateTagValueDto,
@@ -1034,6 +1036,51 @@ export const useDeleteNotice = () => {
       products.notices.remove(id, deletedBy),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
+    },
+  });
+};
+
+// ===== 팝업 공지 뮤테이션 =====
+
+export const useCreateSitePopup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateSitePopupDto) => products.sitePopups.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
+    },
+  });
+};
+
+export const useUpdateSitePopup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateSitePopupDto }) =>
+      products.sitePopups.update(id, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopup(variables.id) });
+    },
+  });
+};
+
+export const useResetSitePopupDismissals = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.sitePopups.resetDismissals(id),
+    onSuccess: (_, id) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopup(id) });
+    },
+  });
+};
+
+export const useDeleteSitePopup = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.sitePopups.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
     },
   });
 };
