@@ -35,14 +35,18 @@ import { SearchKeywordService } from './search-keyword.service';
             groupId: process.env.KAFKA_GROUP_ID || 'search-indexer',
             kafka: createKafkaConfigFromEnv()!,
             enableAutoDLQ: true,
-            // ⚠️ 아직 끈다 — 그러나 **막는 이유는 사라졌다** (ADR-0029 §5, 플랜 Task 6-A).
+            // 소비 스키마 검증 ON (플랜 Task 5-C, 2026-08-10).
             //
             // 이 앱을 막던 2개 이벤트(`ProductMasterActiveVersionChanged` ·
             // `ProductMasterDeleted`)는 core 카탈로그가 아웃박스로 내보내며 zod 를 우회했다.
             // 6-A 가 적재·발행 양쪽에 문을 달아 그 우회를 없앴고 둘 다 PROVEN 이 됐다.
-            // 남은 것은 이 한 줄을 뒤집는 결정뿐이며 그건 5-C 의 마지막 조각이다.
+            //
+            // DLQ 메트릭은 스크레이프되지 않는다(`dlq.metrics.ts:10`) — 관측은 로그다.
+            // 검증 실패는 `SchemaValidationInterceptor` 가 error 로 찍고 OTLP 로 Loki 에 간다.
+            //
+            // 되돌리기는 이 한 줄을 `false` 로 바꾸는 것이다.
             // 현황: `npm run audit:consume-validation -- search`
-            validation: { validateOnConsume: false },
+            validation: { validateOnConsume: true },
           }),
         ]
       : []),
