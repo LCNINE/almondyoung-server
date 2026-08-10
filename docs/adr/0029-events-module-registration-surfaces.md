@@ -251,6 +251,12 @@ microservice.setIsInitHookCalled(true);
 
 그래서 **5-C 는 core 에서 끝내고, 나머지 3개 앱은 Task 6 의 후속으로 옮긴다.** 플랜의 "core 밖으로 나가기 전에 DLQ 관측 범위를 넓힐지 결정한다"는 항목은 사라지지 않지만 긴급성이 낮아진다 — Task 6 이후에는 켤 때 증명이 있고, 관측은 증명이 틀렸을 경우의 대비책이 된다.
 
+**관측 결정 — 로그다. Prometheus 를 넓히지 않는다 (2026-08-10).** 플랜이 "core 밖으로 나가기 전에 결정하라"고 남긴 항목의 답이다. 스크레이프를 넓히는 쪽은 이 결정의 범위를 넘는다 — 대상 4개 앱 중 3개는 `/metrics` 컨트롤러가 없고, 넷 다 `ServicesBundleA/B` 의 Fargate 태스크 2개에 supervisor 로 묶여 있어 앱별 타깃을 세우려면 Alloy 설정 · SST env · ALB 노출까지 인프라를 건드려야 한다. 로그 쪽은 배선이 이미 있다: 네 앱 전부 `startTelemetry` → OTLP 로그 → Alloy → Grafana Loki 이고 `service_name` 으로 갈린다(가짜 OTLP 수신기로 실행 확인, 엔드포인트 없는 대조군은 무전송).
+
+**그 결정이 드러낸 것: 진단 로그가 필드를 잃고 있었다.** `logger.error('메시지', { topic, messageId, errors })` 의 두 번째 인자는 nestjs-pino 를 지나며 **통째로 버려진다** — Nest 의 `Logger` 가 context 를 마지막 인자로 덧붙이므로 `Logger.call` 은 마지막을 context 로 쓰고 나머지를 pino 의 보간 인자로 넘기는데, 메시지에 `%s` 가 없으면 pino 가 출력하지 않는다. 즉 검증을 켜도 "어느 앱의 어느 이벤트가 실패했는가"까지만 보이고 **어느 필드가 왜 틀렸는지는 안 보인다.** `libs/events` 의 그 모양 23곳을 `{ msg, ...필드 }` 로 옮겼고, 옛 모양이 다시 자라지 않게 AST 스펙으로 막았다(`observability/log-shape.spec.ts`). **이 수정은 5-C 앱별 PR 보다 먼저 배포한다** — 안 그러면 켠 뒤 진단이 없다.
+
+**감사가 무엇을 안 지키는지 (2026-08-10).** `publishStoredEnvelope` 의 zod 파싱을 실제로 제거하는 변이를 넣었는데 `audit:consume-validation --gate` 는 초록이었다. 감사는 `VALIDATED_SEND_ENTRYPOINTS` 라는 **이름 목록**과 호출 그래프의 모양을 보지, 그 진입점이 정말 검증하는지는 보지 않는다. 그 가정을 지키는 것은 6-A 가 남긴 `outbox/enqueue-validation.spec.ts` 다(같은 변이로 빨간불 확인). **감사는 모양을, 스펙은 내용을 지킨다** — 이 절의 증명은 둘 다 있어야 선다.
+
 **Task 6-A 이후 이 표는 전부 뒤집혔다 (2026-08-09).** 적재·발행 양쪽 문이 생겨 zod 우회 경로가 0이 되면서 **UNVERIFIED 14건이 0건**이 됐다 — 7개 앱 전부 `켜도 안전` 이다(core 는 이미 켜져 있다).
 
 | 앱 | 이벤트 | SAFE | PROVEN | UNVERIFIED | 판정 |
@@ -431,6 +437,14 @@ Task 6-C 의 "outbox 5벌 회수" 가 두 가지로 읽혀서 코드가 갈렸�
    부팅 거부(§3)가 이주를 깨지 않는지 전수로 확인했다: 7개 앱의 `(등록된 컨트롤러 → @On → 토픽)` 집합에 핸들러 0개인 앱도, 레지스트리 밖 토픽도 없다. 실측 핸들러는 **87개**(ADR Consequences 표의 89 는 이주 전 `@OnEvent` 기준 수치이며 analytics·membership 이 각 1 많다). `controllers:[]` 에 등록되지 않은 `@On` 핸들러는 0개다. **channel-adapter 의 도출 토픽은 9개** — 옛 `forConsumer` 목록의 6개가 아니며, 빠져 있던 셋이 정확히 이 ADR Context 의 오판 대상(`PAYMENT_STREAM`·`USER_STREAM`·`CORE_ORDER_STREAM`)이다. 도출은 처음부터 옳은 값을 낸다.
 
    **검증 스위치(C) — core 만 켰다 (2026-08-09).** `apps/core/.../sales-order.module.ts` 가 `validateOnConsume: true`. 근거는 샘플링이 아니라 발행 경로 전수 폐쇄이며 상세는 위 §8 의 "검증 스위치(C)" 절에 있다. **나머지 3개 앱(analytics·search·channel-adapter)은 6번(outbox enqueue 검증) 뒤로 미뤘다** — 막는 원인이 관측성이 아니라 outbox 의 zod 우회라, 6번이 그것을 메우면 추측 없이 켤 수 있다. notification·membership·wallet 은 원래부터 해당 없음이다. 판정과 회귀 방지는 `npm run audit:consume-validation -- --gate` 가 맡는다.
+
+   **검증 스위치(C) 완료 — 5개 앱이 켜져 있다 (2026-08-10).** core 에 이어 **analytics · search · membership · channel-adapter** 를 앱 하나 = PR 하나로 뒤집었다. **notification · wallet 은 켜지 않는다** — 그 `false` 는 이 워크스트림 이전부터의 의도이며(notification 은 `HTTP 요청과 충돌 방지` 주석), Follow-up 7 에서 정책을 `forApp` 으로 옮길 때 **반드시 보존해야 한다.**
+
+   **membership 의 재분류가 위 문장을 바꿨다.** 이 Follow-up 은 membership 을 "원래부터 해당 없음" 으로 적었지만 틀렸다 — `git log -L` 로 보면 그 `false` 는 #501 이 `forConsumerModule` 을 처음 붙이며 같이 들어온 값이고 근거 주석이 없다. 판단의 흔적이 있는 것은 notification·wallet 뿐이다.
+
+   **채택한 형태는 명시 `true` 다** (선언을 걷어내고 기본값에 기대지 않는다). 기본값에 기대면 결정이 소스에서 사라지고, 감사의 `policyAt` 도 실제 줄을 가리키지 못한다. 그리고 이 대칭이 없으면 §8 이 경고한 "선택이 아니라 누락으로 켜짐" 과 구별되지 않는다.
+
+   **channel-adapter 의 정책 선언 모양에 스펙이 없었다.** 이 앱만 `forConsumerModule` 이 아니라 모듈 providers 의 `EVENTS_CONSUMER_POLICY` 로 선언하는데(그 표면이 `streams` 를 필수로 받기 때문 — §1 이 지우는 중인 두 번째 진실), 그 경로는 어느 스펙도 덮지 않았다. 배선이 끊기면 `optionalGet` 이 기본값 `true` 로 떨어져 **검증을 켠 뒤에는 원하던 값과 같아지므로 증상이 없다.** `consumers/consumer-policy-wiring.spec.ts` 가 `false` 대조군과 함께 고정한다 — provider 를 실제로 읽었음을 증명하는 것은 그 대조군뿐이다.
 
    **앱별 데코레이터 이주 완료 (2026-08-09).** 7개 앱 · 소비 핸들러 **87개 전량**이 `@On` + `EventPayloadOf`/`EnvelopeOf` 로 옮겨졌고 `@OnEvent` 호출은 0건이다. `main.ts` 는 손대지 않았으므로 **이 단계는 동작 중립**이다 — §8 의 라이브 구멍은 배선 이주(플랜 Task 5-B) 전까지 그대로 남는다. 이주 중 계약의 구멍 두 종류가 드러났다(위 §4 의 "`@On` 은 계약에 없는 이벤트를 소비할 수 없다" 참조). 회귀 방지는 `scripts/events/event-handler-contract-audit.js` (`npm run audit:event-handlers`) 가 맡는다 — `@On` 의 이벤트 키와 payload/envelope 도출 키의 불일치는 타입이 끝내 잡지 못하므로, 이 게이트는 이주 종료 후에도 남긴다.
 
