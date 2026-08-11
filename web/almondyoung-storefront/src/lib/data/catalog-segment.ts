@@ -22,7 +22,9 @@ export const buildCatalogRequest = (
   isMember: boolean,
   segmentSecret: string | undefined
 ): CatalogRequestShape => {
-  if (!authHeaders) {
+  // 멤버십 회원이 아니면 로그인 여부와 무관하게 응답이 같다. 헤더를 비워 비로그인과
+  // 같은 캐시 항목을 쓰게 한다.
+  if (!authHeaders || !isMember) {
     return { headers: {}, isPersonalized: false }
   }
 
@@ -32,7 +34,7 @@ export const buildCatalogRequest = (
 
   return {
     headers: {
-      [CATALOG_SEGMENT_HEADER]: isMember ? "mem" : "reg",
+      [CATALOG_SEGMENT_HEADER]: "mem",
       [CATALOG_SEGMENT_KEY_HEADER]: segmentSecret,
     },
     isPersonalized: false,
