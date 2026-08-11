@@ -3,6 +3,7 @@ import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 import { createWebLogger } from "@packages/web-observability"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
+import { CATEGORY_TREE_TAG } from "@lib/data/catalog-cache"
 
 export const dynamic = "force-dynamic"
 
@@ -90,6 +91,10 @@ export async function POST(request: NextRequest) {
   // (카테고리 페이지 수는 적어 비용이 작다. route group `(main)` 은 패턴에 포함되지 않는다)
   revalidatePath("/[countryCode]/category/[...segments]", "page")
   revalidated.push("/[countryCode]/category/[...segments]")
+
+  // 카테고리 트리는 상품 변경으로도 내용이 달라지므로(소속 카테고리 이동 등) 함께 걷어낸다.
+  revalidateTag(CATEGORY_TREE_TAG)
+  revalidated.push(`tag:${CATEGORY_TREE_TAG}`)
 
   // 호출자가 명시한 태그(예: `category-thumbnail-{medusaCategoryId}`)를 무효화.
   // 사용자별 접미사가 붙지 않는 태그만 유효하다 — Medusa SDK 캐시 태그엔 쓸 수 없다.
