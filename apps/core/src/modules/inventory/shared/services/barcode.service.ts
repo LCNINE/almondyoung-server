@@ -1,7 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { and, eq } from 'drizzle-orm';
+import { wmsSchema, DbTx } from '../../schema/inventory.schema';
 import * as bwipjs from 'bwip-js';
 
 export interface BarcodeParseResult {
