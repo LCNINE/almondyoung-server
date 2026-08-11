@@ -21,7 +21,21 @@
 - 스키마 export 이름: `wmsTables` / `wmsSchema` / `DbTx` — `apps/core/src/modules/inventory/schema/inventory.schema.ts` 에서 import. (`inventoryTables` / `inventorySchema` 는 같은 객체의 별칭이다: `:4257-4258`)
 - 가용재고 정본 정의(CLAUDE.md, ADR-0001): **가용재고 = ON_HAND 원장 합 − confirmed 예약 합**. 다른 항을 추가하지 않는다.
 - 통합 테스트는 `DATABASE_URL` 이 있을 때만 실행한다(`const describeIfDb = DATABASE_URL ? describe : describe.skip`). 스펙 골격은 `apps/core/src/modules/inventory/core/services/transfer.service.integration.spec.ts:1-60` 을 그대로 따른다.
-- **통합 테스트 실행은 반드시 레포 러너로 한다** — `npm run test:core:integration:local -- <좁히는-패턴>`. `scripts/local/test-core-integration-local.sh` 가 compose postgres(5432, 논리 DB `core`) 기동 → core 마이그레이션 → `jest --runInBand` 를 한 번에 한다. `DATABASE_URL` 을 손으로 잡거나 별도 컨테이너를 띄우지 말 것. 레시피: `docs/local-dev.md:186-206`.
+- **통합 테스트 실행은 반드시 레포 러너로 한다** — `scripts/local/test-core-integration-local.sh` 가 compose postgres(5432, 논리 DB `core`) 기동 → core 마이그레이션 → `jest --runInBand` 를 한 번에 한다. `DATABASE_URL` 을 손으로 잡거나 별도 컨테이너를 띄우지 말 것. 레시피: `docs/local-dev.md:186-206`.
+- 🔴 **워크트리에서는 `COMPOSE_PROJECT_NAME=almondyoung-server` 를 반드시 붙인다:**
+  ```bash
+  COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <좁히는-패턴>
+  ```
+  붙이지 않으면 `docker compose` 가 **워크트리 디렉터리명으로 별도 프로젝트**를 만들어 5432 에 두 번째 postgres 를 띄우려다 `port is already allocated` 로 실패한다. 실패 후 찌꺼기 네트워크/볼륨이 남으면 `docker compose -p <워크트리명> down -v` 로 정리한다.
+- 🔴 **예약 행(`stock_reservations`)은 손으로 INSERT 하지 않는다.** `shipment_line_id` 가 **NOT NULL + FK → `shipment_lines`** 라(`inventory.schema.ts:1445-1447`, Task 25 계약), 유효한 예약 하나를 만들려면 `fulfillment_orders → fulfillment_order_items → shipments → shipment_lines` 4단 체인이 필요하다. 대신 **기존 픽스처를 쓴다**:
+  ```typescript
+  import { seedPickableShipment } from '../../../fulfillment/services/__support__/logistics-fixtures';
+  const fx = await seedPickableShipment(trx, 10);
+  // fx: { skuId, warehouseId, locationId, shipmentLineId, qty, ... }
+  // 이미 심어진 것: ON_HAND stock_ledgers qty=10  +  confirmed stock_reservations quantity=10
+  ```
+  수량 조합이 필요하면 시드 후 `UPDATE` 로 조정한다(예약 4로 낮추기, `status='released'` 로 바꾸기, `DEFECTIVE` 원장 행 추가 등). inventory 스펙이 fulfillment `__support__` 를 import 하는 선례는 이미 여럿 있다(`transfer.service.integration.spec.ts:1` 등).
+- ⚠️ **사전 존재 실패 1건**: `apps/core/src/modules/inventory/core/services/ledger-reconciliation.integration.spec.ts` 의 `reconcileReservations 는 예약>ON_HAND grain 을 잡는다` 케이스가 `shipment_line_id` 누락으로 **develop 에서 이미 실패한다**(7건 중 1건). 이 계획이 만든 것이 아니다. Task 6 에서 같은 픽스처로 고친다.
 - ⚠️ **패턴을 반드시 좁힌다.** 패턴 없이 돌리면 `*.integration.spec.ts` 전체가 매칭되어 membership/wallet 등 다른 논리 DB 를 기대하는 스펙까지 걸려 실패한다.
 - ⚠️ **워크트리 경로가 `--testPathPattern` 을 오염시킨다.** 경로 부분일치이므로 브랜치/워크트리 이름에 든 단어가 패턴과 겹치면 의도보다 훨씬 많은 스펙이 잡힌다. 범위를 확실히 하려면 `--runTestsByPath` 로 파일을 직접 지정한다.
 - 커밋 메시지는 한국어 본문 + conventional prefix (레포 관행: `fix:`, `feat:`, `docs:`).
@@ -226,13 +240,15 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { eq } from 'drizzle-orm';
+import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
+import { seedPickableShipment } from '../../../fulfillment/services/__support__/logistics-fixtures';
 import { readWarehouseAvailability } from './warehouse-availability';
 
 /**
  * 가용재고 정본 판독의 실 DB 검증. rollback 전용 트랜잭션.
  *
- * 실행: npm run test:core:integration:local -- warehouse-availability.integration
+ * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- warehouse-availability.integration
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -263,31 +279,31 @@ describeIfDb('readWarehouseAvailability (DB integration, rollback-only)', () => 
       });
   };
 
-  /** ON_HAND 원장 1행 + confirmed 예약 1행을 심고 (skuId, warehouseId) 를 돌려준다. */
+  /**
+   * ON_HAND 원장 + confirmed 예약을 심고 grain 을 돌려준다.
+   *
+   * 예약을 손으로 INSERT 하지 않는 이유: `stock_reservations.shipment_line_id` 가
+   * NOT NULL + FK → `shipment_lines` 라(Task 25 계약) 유효한 예약 하나에
+   * fulfillment_orders → items → shipments → shipment_lines 4단 체인이 필요하다.
+   * `seedPickableShipment` 이 그 체인 + ON_HAND 원장 + confirmed 예약을 한 번에 만든다.
+   */
   const seed = async (
     trx: DbTx,
     opts: { onHand: number; reserved: number },
-  ): Promise<{ skuId: string; warehouseId: string }> => {
-    const skuId = randomUUID();
-    const warehouseId = randomUUID();
-
-    await trx.execute(sql`
-      INSERT INTO warehouses (id, name, code) VALUES (${warehouseId}, ${'IT-WH'}, ${`IT-${warehouseId.slice(0, 8)}`})
-    `);
-    await trx.execute(sql`
-      INSERT INTO skus (id, name, code) VALUES (${skuId}, ${'IT-SKU'}, ${`IT-${skuId.slice(0, 8)}`})
-    `);
-    await trx.execute(sql`
-      INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-      VALUES (${skuId}, ${warehouseId}, 'ON_HAND', ${opts.onHand})
-    `);
-    if (opts.reserved > 0) {
-      await trx.execute(sql`
-        INSERT INTO stock_reservations (sku_id, warehouse_id, quantity, status, target_type)
-        VALUES (${skuId}, ${warehouseId}, ${opts.reserved}, 'confirmed', 'SHIPMENT_LINE')
-      `);
+  ): Promise<{ skuId: string; warehouseId: string; locationId: string }> => {
+    const fx = await seedPickableShipment(trx, opts.onHand);
+    // 픽스처는 예약 = ON_HAND 로 심는다. 원하는 예약 수량으로 낮추거나(0 이면 삭제) 맞춘다.
+    if (opts.reserved === 0) {
+      await trx
+        .delete(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+    } else if (opts.reserved !== opts.onHand) {
+      await trx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: opts.reserved })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
     }
-    return { skuId, warehouseId };
+    return { skuId: fx.skuId, warehouseId: fx.warehouseId, locationId: fx.locationId };
   };
 
   it('ON_HAND 합 − confirmed 예약 합을 반환한다', async () => {
@@ -308,9 +324,10 @@ describeIfDb('readWarehouseAvailability (DB integration, rollback-only)', () => 
   it('released 예약은 차감하지 않는다', async () => {
     await inRollback(async (trx) => {
       const { skuId, warehouseId } = await seed(trx, { onHand: 10, reserved: 4 });
-      await trx.execute(sql`
-        UPDATE stock_reservations SET status = 'released' WHERE sku_id = ${skuId}
-      `);
+      await trx
+        .update(wmsTables.stockReservations)
+        .set({ status: 'released' })
+        .where(eq(wmsTables.stockReservations.skuId, skuId));
       const result = await readWarehouseAvailability(trx, skuId, warehouseId);
       expect(result.available).toBe(10);
     });
@@ -318,11 +335,14 @@ describeIfDb('readWarehouseAvailability (DB integration, rollback-only)', () => 
 
   it('ON_HAND 가 아닌 원장 상태는 합산하지 않는다', async () => {
     await inRollback(async (trx) => {
-      const { skuId, warehouseId } = await seed(trx, { onHand: 10, reserved: 0 });
-      await trx.execute(sql`
-        INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-        VALUES (${skuId}, ${warehouseId}, 'DEFECTIVE', ${99})
-      `);
+      const { skuId, warehouseId, locationId } = await seed(trx, { onHand: 10, reserved: 0 });
+      await trx.insert(wmsTables.stockLedgers).values({
+        skuId,
+        warehouseId,
+        locationId,
+        stockState: 'DEFECTIVE',
+        qty: 99,
+      });
       const result = await readWarehouseAvailability(trx, skuId, warehouseId);
       expect(result.onHand).toBe(10);
     });
@@ -330,15 +350,16 @@ describeIfDb('readWarehouseAvailability (DB integration, rollback-only)', () => 
 });
 ```
 
-> **주의:** `seed()` 의 `INSERT` 컬럼 목록은 스키마와 정확히 맞아야 한다. 실행 전
-> `apps/core/src/modules/inventory/schema/inventory.schema.ts` 에서 `warehouses`, `skus`,
-> `stockLedgers`, `stockReservations` 의 **NOT NULL 이고 기본값 없는 컬럼**을 확인하고
-> 빠진 것이 있으면 INSERT 에 추가한다. Step 6 이 이걸 즉시 드러낸다.
+> **주의:** `seedPickableShipment` 의 반환 필드 이름을 실제 시그니처에서 확인하고 맞춘다
+> (`apps/core/src/modules/fulfillment/services/__support__/logistics-fixtures.ts` 의
+> `PickableShipmentFixture`). 픽스처가 만드는 것: warehouse · holder · deliveryProfile · sku ·
+> location · **ON_HAND `stock_ledgers` qty** · **confirmed `stock_reservations` quantity** ·
+> batch · work item · waybill. 전부 rollback 트랜잭션 안이라 DB 에 남지 않는다.
 
 - [ ] **Step 6: 통합 테스트를 돌린다**
 
 ```bash
-npm run test:core:integration:local -- warehouse-availability.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- warehouse-availability.integration
 ```
 
 러너가 compose postgres 기동과 마이그레이션까지 처리한다.
@@ -479,7 +500,7 @@ npx jest --testPathPattern="reservation-invariant" --runInBand
 Expected: PASS
 
 ```bash
-npm run test:core:integration:local -- unified-reservation.service.(lock|lifecycle).integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- unified-reservation.service.(lock|lifecycle).integration
 ```
 
 Expected: PASS — 예약 생애주기·락 통합 스펙이 불변식 경로를 실제로 태운다.
@@ -511,7 +532,7 @@ git commit -m "refactor(inventory): 예약 불변식 판독을 availability 모�
 새 테스트를 쓰지 않는다. `unified-reservation.service.lifecycle.integration.spec.ts` 와 `.lock.integration.spec.ts` 가 이미 이 경로를 태운다. 먼저 초록인지 확인한다:
 
 ```bash
-npm run test:core:integration:local -- unified-reservation.service..*.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- unified-reservation.service..*.integration
 ```
 
 Expected: PASS. **여기서 실패하면 Task 3 을 진행하지 않는다** — 기준선이 없으면 위임의 안전성을 증명할 수 없다.
@@ -547,7 +568,7 @@ import { readWarehouseAvailability } from '../availability/warehouse-availabilit
 - [ ] **Step 3: 통합 테스트를 다시 돌린다**
 
 ```bash
-npm run test:core:integration:local -- unified-reservation.service..*.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- unified-reservation.service..*.integration
 ```
 
 Expected: PASS — Step 1 과 동일한 결과
@@ -651,7 +672,7 @@ import { readWarehouseAvailability } from './warehouse-availability';
  * stock_journals 를 써서 이동이 끝나도 줄지 않았다. 그 항을 제거한 뒤,
  * 아무도 다시 넣지 못하게 이 테스트가 막는다.
  *
- * 실행: npm run test:core:integration:local -- <이 파일의 패턴>
+ * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <이 파일의 패턴>
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -764,7 +785,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
 - [ ] **Step 2: 첫 번째 테스트가 실패하는지 확인한다**
 
 ```bash
-npm run test:core:integration:local -- view-parity.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- view-parity.integration
 ```
 
 Expected: 첫 테스트 FAIL — `expect(fromView).toBe(10)` 이 `6` 을 받는다 (10 − 0 − 4). 두 번째 테스트는 PASS.
@@ -815,7 +836,7 @@ CREATE VIEW stock_summary_view AS
 - [ ] **Step 5: 마이그레이션을 적용하고 테스트를 다시 돌린다**
 
 ```bash
-npm run test:core:integration:local -- view-parity.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- view-parity.integration
 ```
 
 러너가 jest 전에 `drizzle-kit migrate` 를 돌리므로 새 마이그레이션이 자동 적용된다.
@@ -829,7 +850,7 @@ Expected: PASS (2 tests)
 - [ ] **Step 6: 뷰를 읽는 다른 경로의 회귀를 확인한다**
 
 ```bash
-npm run test:core:integration:local -- (product-sellable-quantity|logistics|fulfillment).*integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- (product-sellable-quantity|logistics|fulfillment).*integration
 ```
 
 Expected: PASS. 실패가 나면 **`transit_out` 을 되돌리지 말고** 실패 내용을 보고한다 — 어떤 스펙이 옛 산식을 전제하고 있었다는 뜻이고, 그 전제 자체가 검토 대상이다.
@@ -888,7 +909,7 @@ import { LedgerReconciliationService } from '../../core/services/ledger-reconcil
  * CTE 는 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 함수로 대체할 수 없다.
  * 따라서 중복 자체는 남기고, 두 산식이 갈라지는 것만 이 테스트가 막는다.
  *
- * 실행: npm run test:core:integration:local -- <이 파일의 패턴>
+ * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <이 파일의 패턴>
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -1006,7 +1027,7 @@ describeIfDb('야간 대사 CTE ↔ availability 모듈 등가 (DB integration)'
 - [ ] **Step 2: 테스트를 돌린다**
 
 ```bash
-npm run test:core:integration:local -- reconciliation-parity.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- reconciliation-parity.integration
 ```
 
 Expected: PASS (2 tests). 생성자 대역이 안 맞으면 Step 1 주의사항대로 고치고 다시 돌린다.
@@ -1054,7 +1075,7 @@ Expected: PASS
 - [ ] **Step 2: 전체 통합 테스트**
 
 ```bash
-npm run test:core:integration:local -- apps/core/src/modules/(inventory|fulfillment).*integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- apps/core/src/modules/(inventory|fulfillment).*integration
 ```
 
 Expected: PASS
