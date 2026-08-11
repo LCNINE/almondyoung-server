@@ -49,6 +49,13 @@ export function setup(infra: SharedInfra) {
     withDecryption: true,
   }).value;
 
+  // membership 갱신 사전 고지 크론이 user-service /users/internal/contacts 를 부를 때 쓰는 키.
+  // SoT 는 auth 앱의 UserServiceInternalKey 시크릿 — 여기서 값을 따로 세팅하지 않는다.
+  const idpUserServiceInternalKey = aws.ssm.getParameterOutput({
+    name: `/lcnine-auth/${$app.stage}/user-service-internal-key`,
+    withDecryption: true,
+  }).value;
+
   // storefront가 미인증 보호경로 redirect 대상으로 쓰는 auth-web origin.
   const idpAuthWebUrl = aws.ssm.getParameterOutput({
     name: `/lcnine-auth/${$app.stage}/auth-web-url`,
@@ -245,6 +252,9 @@ export function setup(infra: SharedInfra) {
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    // 갱신 사전 고지 크론이 수신자 이메일을 조회하는 경로.
+    USER_SERVICE_URL: idpUserServiceUrl,
+    USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
     DATABASE_URL: dbUrl('notification'),
@@ -263,6 +273,8 @@ export function setup(infra: SharedInfra) {
     RESEND_FROM: `noreply@mail.${baseDomain}`,
     RESEND_FROM_NAME: '아몬드영',
     RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+    // 멤버십 갱신 고지 메일의 "멤버십 관리 · 해지하기" 링크 기준 도메인.
+    STOREFRONT_URL: storefrontUrl,
   });
   const ugcEnv = withPrefix('UGC', {
     DATABASE_URL: dbUrl('ugc'),

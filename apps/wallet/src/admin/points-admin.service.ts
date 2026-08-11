@@ -40,6 +40,11 @@ export interface TopPointUser {
   balance: number;
 }
 
+export interface UpcomingPointExpiry {
+  amount: number;
+  expiresAt: Date | null;
+}
+
 @Injectable()
 export class PointsAdminService {
   private readonly logger = new Logger(PointsAdminService.name);
@@ -63,6 +68,57 @@ export class PointsAdminService {
     const reserved = Number(reservedRows[0]?.amount ?? 0);
 
     return { confirmed, reserved, available: confirmed - reserved };
+  }
+
+  async getUpcomingExpiry(userId: string): Promise<UpcomingPointExpiry> {
+    const db = this.dbService.db;
+    const none: UpcomingPointExpiry = { amount: 0, expiresAt: null };
+
+    const cancelled = db
+      .select({
+        originalEventId: pointEvents.originalEventId,
+        total: sql<number>`coalesce(sum(abs(${pointEvents.amount})), 0)`.as('cancelled_total'),
+      })
+      .from(pointEvents)
+      .where(and(eq(pointEvents.userId, userId), eq(pointEvents.eventType, 'EARN_CANCEL')))
+      .groupBy(pointEvents.originalEventId)
+      .as('cancelled');
+
+    const expiryDay = sql<string>`date_trunc('day', ${pointEvents.expiresAt})`;
+
+    const rows = await db
+      .select({
+        expiresAt: expiryDay,
+        remaining: sql<number>`coalesce(sum(${pointEvents.amount} - coalesce(${cancelled.total}, 0)), 0)`,
+      })
+      .from(pointEvents)
+      .leftJoin(cancelled, eq(cancelled.originalEventId, pointEvents.id))
+      .where(
+        and(
+          eq(pointEvents.userId, userId),
+          eq(pointEvents.eventType, 'EARN'),
+          isNotNull(pointEvents.expiresAt),
+          gte(pointEvents.expiresAt, new Date()),
+        ),
+      )
+      .groupBy(expiryDay)
+      .orderBy(expiryDay)
+      .limit(1);
+
+    const nearest = rows[0];
+    if (!nearest) return none;
+
+    const remaining = Number(nearest.remaining);
+    if (remaining <= 0) return none;
+
+    // ponytail: 소멸 잡(processExpiredPoints)과 동일하게 현재 잔액으로만 상한을 둔다.
+    // lot FIFO 소진은 양쪽 다 반영하지 않으므로 안내 금액과 실제 소멸액이 일치한다.
+    // 잡이 lot 단위로 정확해지면 여기도 같이 lot 잔량 기준으로 바꿀 것.
+    const { confirmed } = await this.getBalance(userId);
+    const amount = Math.min(remaining, confirmed);
+    if (amount <= 0) return none;
+
+    return { amount, expiresAt: new Date(nearest.expiresAt) };
   }
 
   async getRecentEvents(userId: string, limit = 20): Promise<PointsEventRow[]> {

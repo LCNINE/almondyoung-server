@@ -16,11 +16,37 @@
     "closeAria": "Close"
   },
   "cta": {
-    "mobileAgreement": "I have reviewed the order details and consent to the use of my information.",
-    "pcAgreement": "I have reviewed the terms and order details and consent to the use of my information.",
+    "mobileAgreement": "Agree to all required items above to continue to payment.",
+    "pcAgreement": "Agree to all required items above to continue to payment.",
     "processing": "Processing...",
     "pay": "Pay now",
     "payWithAmount": "Pay {amount}"
+  },
+  "consent": {
+    "title": "Order consent",
+    "required": "Please agree to all required consent items.",
+    "allAgree": "I agree to all required items below",
+    "purchaseTerms": "[Required] I have reviewed the order details and purchase conditions, and agree to the Terms of Service",
+    "personalInfo": "[Required] I consent to the collection and use of personal data for order and delivery",
+    "viewFull": "View full text",
+    "personalInfoTable": {
+      "purposeLabel": "Purpose",
+      "purpose": "Order and payment processing, delivery, returns/exchanges/refunds, and related customer support",
+      "itemsLabel": "Data collected",
+      "items": "Purchaser and recipient name, contact number, delivery address, delivery memo, order and payment history",
+      "retentionLabel": "Retention",
+      "retention": "Until account withdrawal. Records of contracts, order withdrawal and payment are kept 5 years, and consumer complaint or dispute records 3 years, as required by Korean e-commerce law"
+    },
+    "personalInfoRefusal": "You may refuse consent, but the order cannot be delivered and payment cannot proceed without it.",
+    "customsNotice": "Your cart contains overseas items, so the personal customs clearance code you entered is provided to the Korea Customs Service and the customs broker for clearance, as required by the Customs Act.",
+    "withdrawal": {
+      "title": "Order withdrawal (cancellation)",
+      "period": "Deadline: within 7 days of receiving the item (within 3 months of receipt and 30 days of discovery if the item differs from its description or the contract)",
+      "method": "How to request: apply from My Page > Orders, or contact customer service (1877-7184, hello@lcnine.kr).",
+      "shippingFee": "Return shipping: paid by the customer for a change of mind (round trip); paid by us for defective or incorrectly shipped items.",
+      "restriction": "Limits: withdrawal may be restricted for items that are used, damaged, no longer resellable due to elapsed time, or for digital content already opened.",
+      "viewGuide": "See full returns and exchanges guide"
+    }
   },
   "shipping": {
     "title": "Shipping address",

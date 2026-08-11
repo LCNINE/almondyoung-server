@@ -15,6 +15,7 @@ import { useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMemo, useState } from "react"
 import { PointHistoryDateSheet } from "./date-sheet"
+import { getDefaultRange } from "./default-range"
 
 type FilterMode = "month" | "range"
 
@@ -26,6 +27,7 @@ interface FilterView {
   dateTo: string
   label: string
   isAtCurrentMonth: boolean
+  isDefault: boolean
 }
 
 function parseDateSafe(value: string | null): Date | null {
@@ -36,7 +38,8 @@ function parseDateSafe(value: string | null): Date | null {
 
 function deriveView(
   params: URLSearchParams,
-  formatYearMonth: (year: number, month: number) => string
+  formatYearMonth: (year: number, month: number) => string,
+  defaultRangeLabel: string
 ): FilterView {
   const now = new Date()
   const currentMonthStart = startOfMonth(now)
@@ -53,6 +56,7 @@ function deriveView(
       dateTo: endOfDay(toDate).toISOString(),
       label: `${format(fromDate, "yyyy.MM.dd")} - ${format(toDate, "yyyy.MM.dd")}`,
       isAtCurrentMonth: false,
+      isDefault: false,
     }
   }
 
@@ -63,18 +67,32 @@ function deriveView(
     Number.isFinite(monthNum) &&
     monthNum >= 1 &&
     monthNum <= 12
-  const year = hasValidMonth ? yearNum : now.getFullYear()
-  const month = hasValidMonth ? monthNum : now.getMonth() + 1
-  const monthStart = startOfMonth(new Date(year, month - 1, 1))
+
+  if (!hasValidMonth) {
+    const { from, to } = getDefaultRange(now)
+    return {
+      mode: "range",
+      year: from.getFullYear(),
+      month: from.getMonth() + 1,
+      dateFrom: startOfDay(from).toISOString(),
+      dateTo: endOfDay(to).toISOString(),
+      label: defaultRangeLabel,
+      isAtCurrentMonth: false,
+      isDefault: true,
+    }
+  }
+
+  const monthStart = startOfMonth(new Date(yearNum, monthNum - 1, 1))
 
   return {
     mode: "month",
-    year,
-    month,
+    year: yearNum,
+    month: monthNum,
     dateFrom: monthStart.toISOString(),
     dateTo: endOfMonth(monthStart).toISOString(),
-    label: formatYearMonth(year, month),
+    label: formatYearMonth(yearNum, monthNum),
     isAtCurrentMonth: monthStart.getTime() >= currentMonthStart.getTime(),
+    isDefault: false,
   }
 }
 
@@ -87,13 +105,16 @@ export function PointHistoryFilterBar() {
     t("yearMonthFormat", { year, month })
   const [sheetOpen, setSheetOpen] = useState(false)
 
+  const defaultRangeLabel = t("dateSheet.last6Months")
+
   const view = useMemo(
     () =>
       deriveView(
         new URLSearchParams(searchParams.toString()),
-        formatYearMonth
+        formatYearMonth,
+        defaultRangeLabel
       ),
-    [searchParams, formatYearMonth]
+    [searchParams, formatYearMonth, defaultRangeLabel]
   )
 
   const pushParams = (mutate: (params: URLSearchParams) => void) => {
@@ -152,18 +173,25 @@ export function PointHistoryFilterBar() {
       <div className="border-gray-10 flex items-center justify-between gap-2 rounded-xl border bg-white px-3 py-2">
         {isRangeMode ? (
           <div className="flex flex-1 items-center gap-2 px-2">
-            <CalendarRange className="text-primary size-4 shrink-0" />
+            <CalendarRange
+              className={cn(
+                "size-4 shrink-0",
+                view.isDefault ? "text-gray-40" : "text-primary"
+              )}
+            />
             <span className="text-gray-90 truncate text-sm font-semibold tabular-nums">
               {view.label}
             </span>
-            <button
-              type="button"
-              onClick={handleClearRange}
-              className="text-gray-40 hover:text-gray-70 ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-colors"
-              aria-label={t("filterClear")}
-            >
-              <X className="size-4" />
-            </button>
+            {!view.isDefault && (
+              <button
+                type="button"
+                onClick={handleClearRange}
+                className="text-gray-40 hover:text-gray-70 ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-colors"
+                aria-label={t("filterClear")}
+              >
+                <X className="size-4" />
+              </button>
+            )}
           </div>
         ) : (
           <div className="flex flex-1 items-center justify-center gap-1">
@@ -200,7 +228,7 @@ export function PointHistoryFilterBar() {
           aria-label={t("selectPeriod")}
           className={cn(
             "text-gray-70 hover:bg-gray-5 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
-            isRangeMode && "text-primary"
+            isRangeMode && !view.isDefault && "text-primary"
           )}
         >
           <CalendarRange className="size-5" />

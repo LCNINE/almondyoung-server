@@ -12,6 +12,7 @@ import { EventController } from './controllers/event.controller';
 import { UserEventConsumer } from './handlers/user-event.consumer';
 import { OrderEventConsumer } from './handlers/order-event.consumer';
 import { WalletEventConsumer } from './handlers/wallet-event.consumer';
+import { MembershipEventConsumer } from './handlers/membership-event.consumer';
 // Redis가 있을 때만 NotificationProcessorModule import
 // TypeScript에서는 조건부 import가 어려우므로, 런타임에 에러가 발생할 수 있습니다.
 // 대신 NotificationProcessorModule 내부에서 Redis 체크를 수행합니다.
@@ -36,7 +37,14 @@ import { WalletEventConsumer } from './handlers/wallet-event.consumer';
     // NotificationDispatcherService에서 직접 발송하도록 처리합니다.
     // ...(process.env.REDIS_HOST ? [NotificationProcessorModule] : []),
   ],
-  controllers: [NotificationController, EventController, UserEventConsumer, OrderEventConsumer, WalletEventConsumer],
+  controllers: [
+    NotificationController,
+    EventController,
+    UserEventConsumer,
+    OrderEventConsumer,
+    WalletEventConsumer,
+    MembershipEventConsumer,
+  ],
   providers: [NotificationDispatcherService],
   exports: [NotificationDispatcherService],
 })

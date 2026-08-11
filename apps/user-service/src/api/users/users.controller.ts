@@ -1,8 +1,21 @@
 import { RequireScopes, JwtPayload } from '@app/authorization';
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Patch, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
+import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
+import { InternalContactsRequestDto } from './dto/internal-contacts.request.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
@@ -152,6 +165,24 @@ export class UsersController {
   async updateMyProfile(@CurrentUser() user: JwtPayload, @Body() updateUserDto: UpdateUserDto) {
     await this.usersService.updateMyProfile(user.id, updateUserDto);
     return;
+  }
+
+  // ===== Internal Endpoints (서버 간 호출 전용) =====
+
+  @ApiOperation({
+    summary: '[Internal] userId 묶음으로 알림 발송용 연락처 조회',
+    description:
+      '크론성 알림(멤버십 갱신 사전 고지 등)이 userId 만 들고 이메일을 얻기 위한 경로. ' +
+      'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @Post('internal/contacts')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @HttpCode(HttpStatus.OK)
+  async getInternalContacts(
+    @Body() body: InternalContactsRequestDto,
+  ): Promise<{ userId: string; email: string; username: string }[]> {
+    return this.usersService.findContactsByIds(body.userIds);
   }
 
   // `GET /users/:id` 는 제거됐다. 유일한 호출자였던 storefront 가입 콜백이 사라졌고,

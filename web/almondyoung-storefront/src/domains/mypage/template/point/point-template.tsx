@@ -1,9 +1,16 @@
 import { PointBalanceCard } from "@/domains/mypage/components/point/balance-card"
+import { getDefaultRange } from "@/domains/mypage/components/point/history/default-range"
 import { PointHistoryFilterBar } from "@/domains/mypage/components/point/history/filter-bar"
 import { PointHistoryItem } from "@/domains/mypage/components/point/history/item"
 import { PointHistoryPagination } from "@/domains/mypage/components/point/history/pagination"
-import { getPointBalance, getPointHistory } from "@/lib/api/wallet"
+import {
+  getPointBalance,
+  getPointExpiring,
+  getPointHistory,
+} from "@/lib/api/wallet"
 import type { PointsEventRow } from "@/lib/types/ui/wallet"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { AlertCircle } from "lucide-react"
 import {
   endOfDay,
   endOfMonth,
@@ -42,7 +49,6 @@ function resolveDateRange({
     }
   }
 
-  const now = new Date()
   const yearNum = Number(year)
   const monthNum = Number(month)
   const validMonth =
@@ -50,14 +56,22 @@ function resolveDateRange({
     Number.isFinite(monthNum) &&
     monthNum >= 1 &&
     monthNum <= 12
-  const y = validMonth ? yearNum : now.getFullYear()
-  const m = validMonth ? monthNum : now.getMonth() + 1
-  const monthStart = startOfMonth(new Date(y, m - 1, 1))
+  if (!validMonth) {
+    const { from: defaultFrom, to: defaultTo } = getDefaultRange()
+    return {
+      dateFrom: defaultFrom.toISOString(),
+      dateTo: endOfDay(defaultTo).toISOString(),
+    }
+  }
+
+  const monthStart = startOfMonth(new Date(yearNum, monthNum - 1, 1))
   return {
     dateFrom: monthStart.toISOString(),
     dateTo: endOfMonth(monthStart).toISOString(),
   }
 }
+
+const POLICY_ITEMS = ["expiry", "refund", "abuse", "withdrawal"] as const
 
 export async function PointTemplate({
   page = 1,
@@ -70,12 +84,13 @@ export async function PointTemplate({
   const currentPage = Math.max(1, Math.floor(page) || 1)
   const { dateFrom, dateTo } = resolveDateRange({ year, month, from, to })
 
-  const [balance, pointHistory] = await Promise.all([
+  const [balance, expiring, pointHistory] = await Promise.all([
     getPointBalance().catch(() => ({
       confirmed: 0,
       reserved: 0,
       available: 0,
     })),
+    getPointExpiring().catch(() => ({ amount: 0, expiresAt: null })),
     getPointHistory({
       page: currentPage,
       limit: PAGE_SIZE,
@@ -93,6 +108,24 @@ export async function PointTemplate({
   return (
     <section className="mx-auto w-full max-w-3xl px-4 py-6 md:px-6 md:py-10">
       <PointBalanceCard balance={balance} />
+
+      {expiring.expiresAt && expiring.amount > 0 && (
+        <div
+          role="status"
+          className="mt-4 flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3"
+        >
+          <AlertCircle className="text-primary mt-0.5 size-4 shrink-0" />
+          <p className="text-gray-90 text-sm leading-relaxed">
+            {t.rich("expiring.notice", {
+              amount: expiring.amount,
+              date: formatDate(expiring.expiresAt, DATE_FORMATS.KO_DOT),
+              strong: (chunks) => (
+                <span className="text-primary font-bold">{chunks}</span>
+              ),
+            })}
+          </p>
+        </div>
+      )}
 
       <header className="mt-8 mb-4 flex items-end justify-between gap-4 md:mt-10">
         <h2 className="text-gray-90 text-xl font-bold md:text-2xl">
@@ -135,6 +168,20 @@ export async function PointTemplate({
           )}
         </>
       )}
+
+      <aside className="border-gray-10 mt-8 rounded-xl border bg-gray-50 p-4 md:mt-10 md:p-5">
+        <h3 className="text-gray-90 text-sm font-semibold">
+          {t("policy.title")}
+        </h3>
+        <p className="text-gray-60 mt-2 text-xs leading-relaxed">
+          {t("policy.intro")}
+        </p>
+        <ul className="text-gray-60 mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed">
+          {POLICY_ITEMS.map((key) => (
+            <li key={key}>{t(`policy.${key}`)}</li>
+          ))}
+        </ul>
+      </aside>
     </section>
   )
 }

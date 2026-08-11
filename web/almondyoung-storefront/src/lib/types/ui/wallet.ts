@@ -4,6 +4,7 @@ import type {
   CashReceiptDto,
   PointsBalanceDto,
   PointsEventRowDto,
+  PointsExpiringDto,
   TaxInvoiceDto,
 } from "../dto/wallet"
 
@@ -33,3 +34,5 @@ export interface CashReceiptType extends CashReceiptDto {}
 export interface PointsBalance extends PointsBalanceDto {}
 
 export interface PointsEventRow extends PointsEventRowDto {}
+
+export interface PointsExpiring extends PointsExpiringDto {}

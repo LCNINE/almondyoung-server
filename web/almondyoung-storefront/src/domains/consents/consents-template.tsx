@@ -38,12 +38,13 @@ export function ConsentsTemplate({ redirectTo }: { redirectTo: string }) {
 
   // 전체 동의
   const allChecked = Object.values(consents).every((v) => v === true)
+  // thirdPartySharing 은 선택이다 — 배송·결제는 위탁(개인정보보호법 §26)이라
+  // 동의 대상이 아니고, 남은 이벤트·프로모션 제공은 필수로 강제할 수 없다(§22⑤).
   const allRequiredChecked =
     consents.isOver14 &&
     consents.termsOfService &&
     consents.electronicTransaction &&
-    consents.privacyPolicy &&
-    consents.thirdPartySharing
+    consents.privacyPolicy
 
   const handleAllCheck = (checked: boolean) => {
     setConsents({

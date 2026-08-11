@@ -4,6 +4,10 @@ import { Banknote, Clock, Coins, Info } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CustomsCodeSection } from "@/domains/checkout/components/sections/customs-code"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
+import {
+  OrderConsentSection,
+  type OrderConsentState,
+} from "@/domains/checkout/components/sections/order-consent"
 import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
@@ -87,6 +91,7 @@ export default function CheckoutTemplate({
   const tProcess = useTranslations("checkout.process")
   const tCustoms = useTranslations("checkout.customsCode")
   const tNotice = useTranslations("checkout.paymentNotice")
+  const tConsent = useTranslations("checkout.consent")
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -176,6 +181,12 @@ export default function CheckoutTemplate({
   )
   const [customsCodeError, setCustomsCodeError] = useState<string | null>(null)
 
+  const [consent, setConsent] = useState<OrderConsentState>({
+    purchaseTerms: false,
+    personalInfo: false,
+  })
+  const consentGiven = consent.purchaseTerms && consent.personalInfo
+
   const handleCustomsCodeChange = useCallback((value: string) => {
     setPersonalCustomsCode(value)
     setCustomsCodeError((prev) => (prev ? null : prev))
@@ -203,6 +214,9 @@ export default function CheckoutTemplate({
     if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
       setCustomsCodeError(tCustoms("error"))
       return toast.error(tCustoms("error"))
+    }
+    if (!consentGiven) {
+      return toast.error(tConsent("required"))
     }
     processPayment()
   }
@@ -395,6 +409,11 @@ export default function CheckoutTemplate({
             onCouponApplied={() => router.refresh()}
           />
           <PaymentTotalSection totals={cartTotals} />
+          <OrderConsentSection
+            value={consent}
+            onChange={setConsent}
+            hasOverseasItem={hasOverseasItem}
+          />
 
           {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
           <Card className="mb-8 shadow-none">
@@ -450,8 +469,13 @@ export default function CheckoutTemplate({
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
+        disabled={!consentGiven}
       />
-      <MobileCTA onPayment={handlePayment} loading={loading} />
+      <MobileCTA
+        onPayment={handlePayment}
+        loading={loading}
+        disabled={!consentGiven}
+      />
     </main>
   )
 }

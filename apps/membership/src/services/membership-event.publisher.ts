@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectPublisher, PublisherFor, type DbTx } from '@app/events';
-import { MEMBERSHIP_STREAM, type MembershipStatusChangedPayload } from '@packages/event-contracts/streams';
+import {
+  MEMBERSHIP_STREAM,
+  type MembershipRenewalUpcomingPayload,
+  type MembershipStatusChangedPayload,
+} from '@packages/event-contracts/streams';
 
 @Injectable()
 export class MembershipEventPublisher {
@@ -28,5 +32,13 @@ export class MembershipEventPublisher {
    */
   async saveStatusChanged(payload: MembershipStatusChangedPayload, tx: DbTx): Promise<void> {
     await this.publisher.enqueue({ eventType: 'MembershipStatusChanged', aggregateId: payload.userId, payload }, tx);
+  }
+
+  /**
+   * 갱신 사전 고지를 주어진 트랜잭션의 아웃박스에 기록한다.
+   * 고지 마커(contract event)와 같은 tx 로 커밋돼야 "마커만 남고 메일은 안 감"이 생기지 않는다.
+   */
+  async saveRenewalUpcoming(payload: MembershipRenewalUpcomingPayload, tx: DbTx): Promise<void> {
+    await this.publisher.enqueue({ eventType: 'MembershipRenewalUpcoming', aggregateId: payload.userId, payload }, tx);
   }
 }

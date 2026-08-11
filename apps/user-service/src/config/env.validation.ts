@@ -66,6 +66,10 @@ export const userServiceEnvSchema = z.object({
   CAFE24_CLIENT_SECRET: z.string().optional(),
   CAFE24_TOKEN_URL: z.string().url().optional(),
 
+  // 서버 간(internal) 호출 인증 키 (membership 갱신 사전 고지 크론 → /users/internal/contacts).
+  // 미설정이면 internal 라우트가 fail-closed 로 전부 거부된다.
+  USER_SERVICE_INTERNAL_KEY: z.string().optional(),
+
   // OAuth IdP (Authorization Code + PKCE for cross-domain SSO)
   // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 oauth_clients 테이블이 SoT.
   // Shared secret for auth-web → user-service /oauth/internal/issue-code

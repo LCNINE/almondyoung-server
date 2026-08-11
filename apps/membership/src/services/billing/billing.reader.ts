@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, lt, notInArray, isNull, isNotNull, not, exists } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, isNull, isNotNull, not, exists, sql } from 'drizzle-orm';
 import { subDays, parseISO, format } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
@@ -15,6 +15,19 @@ export interface DueContract {
   billingRetryCount: number;
   /** ADR-0027 dual-path: 'CHARGE'(레거시) | 'INVOICE'(선적용 인보이스) */
   billingPath: string;
+}
+
+/** 갱신 고지를 이미 보냈다는 마커의 contract event type. 재발송 차단에 쓴다. */
+export const RENEWAL_NOTICE_EVENT_TYPE = 'RENEWAL_NOTICE_SENT';
+
+export interface RenewalNoticeTarget {
+  contractId: string;
+  userId: string;
+  nextBillingDate: string | null;
+  amount: number;
+  durationDays: number;
+  tierCode: string;
+  currentPeriodEnd: string;
 }
 
 export interface DunningItem {
@@ -86,6 +99,62 @@ export class BillingReader {
                 .select()
                 .from(schema.membershipDunningQueue)
                 .where(eq(schema.membershipDunningQueue.contractId, schema.subscriptionContracts.id)),
+            ),
+          ),
+        ),
+      );
+  }
+
+  /**
+   * 갱신 사전 고지 대상 계약 조회 (결제 예정일 = date 인 계약).
+   *
+   * findDueContracts 와 조건이 겹치지만 목적이 다르다 — 여기서는 청구가 아니라 고지라
+   * billingInProgress·dunning 여부를 보지 않고, 대신 해지 예약분(recurringCancelledAt)을 뺀다.
+   * 해지 예약된 계약은 그날 청구되지 않으므로 "갱신됩니다" 안내가 거짓이 된다.
+   *
+   * 이미 이 결제일에 대해 고지한 계약은 subscription_contract_events 마커로 제외한다.
+   */
+  async findContractsForRenewalNotice(date: string): Promise<RenewalNoticeTarget[]> {
+    return this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        userId: schema.subscriptionContracts.userId,
+        nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+        amount: schema.plan.price,
+        durationDays: schema.plan.durationDays,
+        tierCode: schema.tiers.code,
+        currentPeriodEnd: schema.subscriptionEntitlement.endsAt,
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(schema.plan, eq(schema.plan.id, schema.subscriptionContracts.planId))
+      .innerJoin(schema.tiers, eq(schema.tiers.id, schema.plan.tierId))
+      .innerJoin(
+        schema.subscriptionEntitlement,
+        and(
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.subscriptionContracts.isVoided, false),
+          eq(schema.subscriptionContracts.autoRenewal, true),
+          isNull(schema.subscriptionContracts.recurringCancelledAt),
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
+          isNull(schema.subscriptionEntitlement.pausedAt),
+          eq(schema.subscriptionContracts.nextBillingDate, date),
+          not(
+            exists(
+              this.dbService.db
+                .select()
+                .from(schema.subscriptionContractEvents)
+                .where(
+                  and(
+                    eq(schema.subscriptionContractEvents.contractId, schema.subscriptionContracts.id),
+                    eq(schema.subscriptionContractEvents.eventType, RENEWAL_NOTICE_EVENT_TYPE),
+                    eq(sql`${schema.subscriptionContractEvents.metadata}->>'nextBillingDate'`, date),
+                  ),
+                ),
             ),
           ),
         ),

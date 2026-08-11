@@ -103,6 +103,17 @@
       "endDate": "End date",
       "reset": "Reset",
       "apply": "Apply"
+    },
+    "expiring": {
+      "notice": "<strong>{amount, number} P</strong> will expire on <strong>{date}</strong>. Please use them before then."
+    },
+    "policy": {
+      "title": "About point expiration",
+      "intro": "Unless a validity period was stated when the points were granted, earned points have no expiration date and remain available until you close your account. Points may be deducted or forfeited in the following cases.",
+      "expiry": "Points granted through an event or promotion expire at the end of the validity period, when such a period was stated at the time they were granted.",
+      "refund": "If an order paid with points is cancelled or refunded, the points spent are returned and the points earned on that order are reclaimed.",
+      "abuse": "Points earned by improper means may be reclaimed.",
+      "withdrawal": "Any remaining points are forfeited immediately when you close your account and are not restored if you sign up again."
     }
   },
   "wishlist": {

@@ -34,6 +34,9 @@ export function setup(infra: IdpInfra) {
   // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 user-service `oauth_clients` 테이블이 SoT.
   // env JSON(OAUTH_CLIENTS / OAUTH_ALLOWED_CLIENTS)과 시연용 bypass 플래그는 제거됨.
   const oauthInternalSecret = new sst.Secret('OauthInternalSecret');
+  // 서버 간(internal) 라우트 인증 키 (services 앱의 membership → /users/internal/contacts).
+  // 값은 아래 SSM SecureString 으로 services 앱에 넘어간다 — 양쪽에 따로 넣지 않는다.
+  const userServiceInternalKey = new sst.Secret('UserServiceInternalKey');
   // RS256 access token 서명용 PEM keypair. 미설정 시 user-service 부팅이 실패하므로
   // 신규 stage 부트스트랩 시 반드시 set 해야 한다. user-service env.validation 은 raw PEM /
   // base64-encoded PEM 둘 다 받지만, transport 안전을 위해 base64 방식을 권장한다.
@@ -132,6 +135,7 @@ export function setup(infra: IdpInfra) {
       AWS_REGION: 'ap-northeast-2',
       AWS_S3_BUCKET: 'almondyoung',
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,
+      USER_SERVICE_INTERNAL_KEY: userServiceInternalKey.value,
       // RS256 OAuth access token 서명. JWKS 도 같은 public key 로 노출됨(/.well-known/jwks.json).
       // KID 회전 시엔 새 keypair set + KID 변경 후 배포 → 충분한 expose 기간 후 구 키 제거.
       OAUTH_JWT_PRIVATE_KEY: oauthJwtPrivateKey.value,
@@ -198,6 +202,14 @@ export function setup(infra: IdpInfra) {
     name: `/lcnine-auth/${$app.stage}/auth-secret`,
     type: 'SecureString',
     value: authSecret.value,
+  });
+
+  // services 앱의 membership 크론이 /users/internal/contacts 를 호출할 때 쓰는 키.
+  // 한쪽에서만 회전하면 갱신 고지가 401 로 조용히 멈추므로 값을 한 곳(auth)에서만 관리한다.
+  new aws.ssm.Parameter('IdpUserServiceInternalKey', {
+    name: `/lcnine-auth/${$app.stage}/user-service-internal-key`,
+    type: 'SecureString',
+    value: userServiceInternalKey.value,
   });
 
   new aws.ssm.Parameter('IdpIssuerUrl', {

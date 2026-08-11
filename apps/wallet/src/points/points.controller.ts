@@ -6,6 +6,7 @@ import {
   PointsAdminService,
   PointsBalance,
   PointsEventRow,
+  UpcomingPointExpiry,
 } from '../admin/points-admin.service';
 import { AuthenticatedRequest } from '../wallet.module';
 import { PointsHistoryQueryDto } from './dto/points-history-query.dto';
@@ -23,6 +24,16 @@ export class PointsController {
       throw new UnauthorizedException('JWT authentication required');
     }
     return this.pointsAdminService.getBalance(req.jwtUserId);
+  }
+
+  @Get('expiring')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: "Get current user's nearest upcoming points expiry (JWT cookie auth)" })
+  async getMyUpcomingExpiry(@Req() req: AuthenticatedRequest): Promise<UpcomingPointExpiry> {
+    if (!req.jwtUserId) {
+      throw new UnauthorizedException('JWT authentication required');
+    }
+    return this.pointsAdminService.getUpcomingExpiry(req.jwtUserId);
   }
 
   @Get('history')

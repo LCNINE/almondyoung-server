@@ -150,6 +150,25 @@ export class UsersService {
     }
   }
 
+  /**
+   * userId 묶음 → 알림 발송용 연락처. 서버 간(internal) 호출 전용이다.
+   *
+   * 탈퇴(deletedAt) 계정은 제외한다 — 법정 고지라도 탈퇴자에겐 보내지 않는다.
+   * 못 찾은 userId 는 조용히 빠진다(호출자가 개수 차이로 판단).
+   */
+  async findContactsByIds(userIds: string[]): Promise<{ userId: string; email: string; username: string }[]> {
+    if (userIds.length === 0) return [];
+    const rows = await this.dbService.db
+      .select({
+        userId: schema.users.id,
+        email: schema.users.email,
+        username: schema.users.username,
+      })
+      .from(schema.users)
+      .where(and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt)));
+    return rows;
+  }
+
   // 이메일 가입 가능 여부 확인 (중복 여부만 boolean 으로 반환, PII 미노출)
   // 회원가입 폼의 사전 중복 체크용. 가입 시점 중복 검증과 동일하게 findUserByEmail 을 재사용한다.
   async isEmailAvailable(email: string, tx?: DbTransaction): Promise<boolean> {

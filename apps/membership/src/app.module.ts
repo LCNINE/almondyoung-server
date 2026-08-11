@@ -63,6 +63,8 @@ import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
 import { MembershipEventPublisher } from './services/membership-event.publisher';
+import { RenewalNoticeService } from './services/renewal-notice/renewal-notice.service';
+import { UserContactClient } from './services/renewal-notice/user-contact.client';
 import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.service';
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
@@ -158,6 +160,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     SubscriptionCancellationService,
     EntitlementService,
     SavingsService,
+    // 자동갱신 결제 사전 고지 (전자상거래법 계속거래 고지)
+    RenewalNoticeService,
+    UserContactClient,
 
     // Implementation Layer (Readers & Managers)
     EntitlementReader,

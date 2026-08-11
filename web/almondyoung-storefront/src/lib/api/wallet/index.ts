@@ -20,6 +20,7 @@ import type {
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
+  PointsExpiringDto,
   RegisterCmsWithAgreementResponseDto,
   TaxInvoiceData,
   TaxInvoiceDto,
@@ -739,6 +740,17 @@ export async function getPointHistory(params?: {
  */
 export async function getPointBalance(): Promise<PointsBalanceDto> {
   return await api<PointsBalanceDto>("wallet", "/v1/points/balance", {
+    method: "GET",
+    cache: "no-store",
+    withAuth: true,
+  })
+}
+
+/**
+ * 가장 가까운 소멸 예정 포인트 조회
+ */
+export async function getPointExpiring(): Promise<PointsExpiringDto> {
+  return await api<PointsExpiringDto>("wallet", "/v1/points/expiring", {
     method: "GET",
     cache: "no-store",
     withAuth: true,

@@ -13,6 +13,9 @@ export const membershipEnvSchema = z
     WALLET_API_KEY: z.string().min(1).optional(),
     // 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
     MEMBERSHIP_INTERNAL_KEY: z.string().min(1).optional(),
+    // 갱신 사전 고지 크론이 수신자 이메일을 얻는 경로 (membership → user-service internal).
+    USER_SERVICE_URL: z.string().url().optional(),
+    USER_SERVICE_INTERNAL_KEY: z.string().min(1).optional(),
     // 'true' 면 신규 정기 가입이 인보이스(선적용) 경로를 탄다(기존 계약은 billing_path 고정).
     MEMBERSHIP_INVOICE_BILLING_ENABLED: z.enum(['true', 'false']).optional(),
     // Auth — dual-mode: AUTH_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC), 둘 중 하나 필수.
@@ -33,6 +36,11 @@ export const membershipEnvSchema = z
   .refine((data) => data.NODE_ENV !== 'production' || !!data.MEMBERSHIP_INTERNAL_KEY, {
     message: 'MEMBERSHIP_INTERNAL_KEY is required in production',
     path: ['MEMBERSHIP_INTERNAL_KEY'],
+  })
+  // 갱신 사전 고지는 법정 고지라 조용히 안 나가면 안 된다 — 설정 누락은 부팅에서 잡는다.
+  .refine((data) => data.NODE_ENV !== 'production' || (!!data.USER_SERVICE_URL && !!data.USER_SERVICE_INTERNAL_KEY), {
+    message: 'USER_SERVICE_URL and USER_SERVICE_INTERNAL_KEY are required in production',
+    path: ['USER_SERVICE_URL'],
   });
 
 export type MembershipEnvConfig = z.infer<typeof membershipEnvSchema>;

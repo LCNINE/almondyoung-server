@@ -13,9 +13,11 @@
   "business": {
     "companyAndCeo": "Company: LCNINE Co., Ltd. | CEO: Harry KWON",
     "bizNo": "Business Registration No.: 467-86-01638",
-    "mailOrderNo": "Mail-Order Sales Reg. No.: 2019-Seoul Yeongdeungpo-1446",
+    "mailOrderNo": "Mail-Order Sales Reg. No.: 2026-부천원미-0744",
     "phone": "Phone: 1877-7184",
     "address": "Address: 4F LCNINE, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do 14521, Korea",
+    "email": "Email: hello@lcnine.kr",
+    "hosting": "Hosting Provider: Amazon Web Services, Inc.",
     "medicalTarget": "Training target: Medical professionals | Other training target: Medical professionals",
     "medicalInstitution": "Medical institution: Heartwell Clinic",
     "medicalAddress": "Institution address: 201-202, Theleave Sejong Tower, 126 Achasan-ro, Seongdong-gu, Seoul",
@@ -24,8 +26,10 @@
     "privacyOfficer": "Privacy Officer: Harry KWON (CEO) / 1877-7184, hello@lcnine.kr",
     "mobileCompany": "LCNINE Co., Ltd. | CEO: Harry KWON",
     "mobileBizNo": "Business Reg. No.: 467-86-01638",
-    "mobileMailOrderNo": "Mail-Order Reg. No.: 2019-Seoul Yeongdeungpo-1446",
+    "mobileMailOrderNo": "Mail-Order Reg. No.: 2026-부천원미-0744",
     "mobilePhone": "Phone: 1877-7184",
-    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do"
+    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do",
+    "mobileEmail": "Email: hello@lcnine.kr",
+    "mobileHosting": "Hosting Provider: Amazon Web Services, Inc."
   }
 }

@@ -214,6 +214,12 @@ export type PointsBalanceDto = {
   available: number
 }
 
+/** 가장 가까운 소멸 예정 포인트 (소멸 예정이 없으면 amount 0 / expiresAt null) */
+export type PointsExpiringDto = {
+  amount: number
+  expiresAt: string | null
+}
+
 /** 포인트 이벤트(내역) */
 export type PointsEventRowDto = {
   id: string

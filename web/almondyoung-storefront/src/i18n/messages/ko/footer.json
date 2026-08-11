@@ -13,9 +13,11 @@
   "business": {
     "companyAndCeo": "회사 : 주식회사 엘씨나인 | 대표이사 : 권흥철",
     "bizNo": "사업자 등록번호 : 467-86-01638",
-    "mailOrderNo": "통신판매업 신고 : 2019-서울영등포-1446",
+    "mailOrderNo": "통신판매업 신고 : 2026-부천원미-0744",
     "phone": "전화 : 1877-7184",
     "address": "주소 : [14521] 경기도 부천시 평천로832번길 42 (도당동) 4층 엘씨나인",
+    "email": "이메일 : hello@lcnine.kr",
+    "hosting": "호스팅 서비스 제공자 : Amazon Web Services, Inc.",
     "medicalTarget": "교육대상 : 의료인 | 기타교육대상 : 의료인",
     "medicalInstitution": "의료기관 : 하트웰의원",
     "medicalAddress": "의료기관 소재지 : 서울특별시 성동구 아차산로 126 더리브 세종타워 201,202호",
@@ -24,8 +26,10 @@
     "privacyOfficer": "개인정보보호책임자 : 권흥철 (대표이사) / 1877-7184, hello@lcnine.kr",
     "mobileCompany": "주식회사 엘씨나인 | 대표이사: 권흥철",
     "mobileBizNo": "사업자등록번호: 467-86-01638",
-    "mobileMailOrderNo": "통신판매업신고: 2019-서울영등포-1446",
+    "mobileMailOrderNo": "통신판매업신고: 2026-부천원미-0744",
     "mobilePhone": "전화: 1877-7184",
-    "mobileAddress": "경기도 부천시 평천로832번길 42 (도당동) 4층"
+    "mobileAddress": "경기도 부천시 평천로832번길 42 (도당동) 4층",
+    "mobileEmail": "이메일: hello@lcnine.kr",
+    "mobileHosting": "호스팅 서비스 제공자: Amazon Web Services, Inc."
   }
 }

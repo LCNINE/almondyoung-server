@@ -17,9 +17,11 @@ export const MobileCTA = ({
   const t = useTranslations("checkout.cta")
   return (
     <footer className="mt-6 px-4 pb-6 lg:hidden">
-      <p className="mb-2 text-center text-[11px] text-gray-600">
-        {t("mobileAgreement")}
-      </p>
+      {disabled && (
+        <p className="mb-2 text-center text-[11px] text-gray-600">
+          {t("mobileAgreement")}
+        </p>
+      )}
       <button
         onClick={onPayment}
         disabled={loading || disabled}
@@ -49,7 +51,9 @@ export const PCFixedCTA = ({
     <div className="fixed right-0 bottom-0 left-0 z-99 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] lg:block">
       <div className="container mx-auto max-w-[1360px] px-[40px] py-4">
         <div className="flex items-center justify-between">
-          <p className="text-base text-gray-600">{t("pcAgreement")}</p>
+          <p className="text-base text-gray-600">
+            {disabled ? t("pcAgreement") : ""}
+          </p>
           <Button
             onClick={onPayment}
             disabled={loading || disabled}
