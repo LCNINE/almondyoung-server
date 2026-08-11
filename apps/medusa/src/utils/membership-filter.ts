@@ -1,5 +1,6 @@
 import type { AuthenticatedMedusaRequest } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { CATALOG_SEGMENT_STATE } from '../api/store/products/middlewares/catalog-segment';
 
 export type ProductMetadata = {
   hideMembershipPriceForNonMembers?: boolean | string;
@@ -195,6 +196,15 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
   const customerId = req.auth_context?.actor_id;
+
+  // 신뢰된 세그먼트가 실린 카탈로그 조회는 고객 조회 없이 그 판정을 쓴다.
+  const segmentState = (req as unknown as Record<symbol, unknown>)[CATALOG_SEGMENT_STATE];
+  if (typeof segmentState === 'boolean') {
+    return {
+      customerId,
+      isMember: segmentState,
+    };
+  }
 
   if (!customerId || !membershipGroupId) {
     return {

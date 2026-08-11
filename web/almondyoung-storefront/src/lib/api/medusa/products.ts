@@ -3,6 +3,7 @@
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders } from "@lib/data/cookies"
 import { buildCatalogCacheOptions } from "@lib/data/catalog-cache"
+import { buildCatalogRequestForVisitor } from "@lib/data/catalog-request"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
@@ -85,7 +86,7 @@ export const listProducts = async ({
     }
   }
 
-  const authHeaders = await getAuthHeaders()
+  const catalogRequest = await buildCatalogRequestForVisitor()
 
   // handle 조회엔 방문자 무관 태그를 더해 재고/가격 변경 시 revalidateTag 로 무효화한다.
   // 검색·카테고리는 handle 을 배열로 넘기므로 각각에 태그를 건다.
@@ -104,8 +105,8 @@ export const listProducts = async ({
             "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
-        headers: { ...authHeaders },
-        ...buildCatalogCacheOptions(!!authHeaders, tags),
+        headers: catalogRequest.headers,
+        ...buildCatalogCacheOptions(catalogRequest.isPersonalized, tags),
       }
     )
     .then(({ products, count }) => {
@@ -173,7 +174,7 @@ export const listProductsSorted = async ({
     }
   }
 
-  const authHeaders = await getAuthHeaders()
+  const catalogRequest = await buildCatalogRequestForVisitor()
 
   // 쿼리 파라미터 구성
   const query: Record<string, string | string[]> = {
@@ -199,8 +200,10 @@ export const listProductsSorted = async ({
     }>(`/store/products-sorted`, {
       method: "GET",
       query,
-      headers: { ...authHeaders },
-      ...buildCatalogCacheOptions(!!authHeaders, [PRODUCT_LIST_TAG]),
+      headers: catalogRequest.headers,
+      ...buildCatalogCacheOptions(catalogRequest.isPersonalized, [
+        PRODUCT_LIST_TAG,
+      ]),
     })
     .then(({ products, count }) => {
       const nextPage = count > offset + limit ? pageParam + 1 : null
