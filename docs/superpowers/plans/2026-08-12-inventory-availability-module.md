@@ -535,7 +535,17 @@ git commit -m "refactor(inventory): 예약 불변식 판독을 availability 모�
 COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- unified-reservation.service..*.integration
 ```
 
-Expected: PASS. **여기서 실패하면 Task 3 을 진행하지 않는다** — 기준선이 없으면 위임의 안전성을 증명할 수 없다.
+🔴 **실측: 이 두 스펙은 develop 시점부터 이미 RED 다** (2026-08-12 확인). 원인은 이 계획과 무관:
+- `…lifecycle.integration` → 비-`SHIPMENT_LINE` 예약을 만드는데 `stock_reservations.shipment_line_id` 가 NOT NULL (Task 25 계약 이후 구조적으로 불가능해진 경로를 테스트 중)
+- `…lock.integration` → `locations` 의 `ck_locations_type` 체크 제약 위반 (별개 원인)
+
+따라서 "초록이어야 진행" 게이트는 성립하지 않는다. 대신 **위임 전후 동등성**을 기준으로 삼는다:
+
+1. 위임 전 두 스펙을 돌려 **실패 메시지와 실패 케이스 수를 기록**한다.
+2. 위임 후 다시 돌려 **같은 케이스가 같은 메시지로 실패하는지** 확인한다.
+3. 실패 양상이 달라지면 위임이 무언가를 바꾼 것이다 — 멈추고 보고한다.
+
+⛔ **`git stash` 를 쓰지 말 것.** stash 스택은 이 머신의 다른 워크트리와 공유된다. 전후 비교가 필요하면 임시 WIP 커밋을 쓰고 끝나면 `git reset --soft` 로 되돌린다.
 
 - [ ] **Step 2: private 메서드를 위임으로 교체한다**
 
@@ -571,7 +581,7 @@ import { readWarehouseAvailability } from '../availability/warehouse-availabilit
 COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- unified-reservation.service..*.integration
 ```
 
-Expected: PASS — Step 1 과 동일한 결과
+Expected: **Step 1 에서 기록한 것과 동일한 실패 양상** (같은 케이스, 같은 메시지). 새로 깨지거나 새로 통과하는 케이스가 있으면 위임이 동작을 바꾼 것이므로 보고한다.
 
 - [ ] **Step 4: 커밋**
 
