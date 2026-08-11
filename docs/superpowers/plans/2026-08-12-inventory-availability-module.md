@@ -670,7 +670,9 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { eq } from 'drizzle-orm';
+import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
+import { seedPickableShipment } from '../../../fulfillment/services/__support__/logistics-fixtures';
 import { readWarehouseAvailability } from './warehouse-availability';
 
 /**
@@ -723,35 +725,48 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
 
   it('이전 예정(pending 창고간 inbound plan)이 있어도 뷰와 모듈이 일치한다', async () => {
     await inRollback(async (trx) => {
-      const skuId = randomUUID();
-      const sourceWarehouseId = randomUUID();
-      const destWarehouseId = randomUUID();
-      const planId = randomUUID();
+      // 기반: ON_HAND 10 + confirmed 예약 10 → 예약을 지워 ON_HAND 10 / 예약 0 으로 만든다.
+      const fx = await seedPickableShipment(trx, 10);
+      await trx
+        .delete(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
 
-      await trx.execute(sql`
-        INSERT INTO warehouses (id, name, code)
-        VALUES (${sourceWarehouseId}, ${'IT-SRC'}, ${`IT-S-${sourceWarehouseId.slice(0, 6)}`}),
-               (${destWarehouseId}, ${'IT-DST'}, ${`IT-D-${destWarehouseId.slice(0, 6)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO skus (id, name, code) VALUES (${skuId}, ${'IT-SKU'}, ${`IT-${skuId.slice(0, 8)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-        VALUES (${skuId}, ${sourceWarehouseId}, 'ON_HAND', ${10})
-      `);
-      // 출발 창고 → 도착 창고 이전 예정 4개 (이것이 옛 transit_out 항을 만들던 데이터)
-      await trx.execute(sql`
-        INSERT INTO inbound_plans (id, warehouse_id, destination_warehouse_id, requires_transfer)
-        VALUES (${planId}, ${sourceWarehouseId}, ${destWarehouseId}, true)
-      `);
-      await trx.execute(sql`
-        INSERT INTO inbound_plan_items (plan_id, sku_id, expected_qty, received_qty, status)
-        VALUES (${planId}, ${skuId}, ${4}, ${0}, 'pending')
-      `);
+      // 도착 창고 + 발주(=inbound_plans.linkedPurchaseOrderId 가 NOT NULL FK 라 필요)
+      const [destWarehouse] = await trx
+        .insert(wmsTables.warehouses)
+        .values({ name: `it-dest-${randomUUID().slice(0, 8)}` })
+        .returning();
+      const [po] = await trx
+        .insert(wmsTables.purchaseOrders)
+        .values({
+          type: 'domestic',
+          sourceWarehouseId: fx.warehouseId,
+          destinationWarehouseId: destWarehouse.id,
+          requiresTransfer: true,
+        })
+        .returning();
 
-      const fromModule = await readWarehouseAvailability(trx, skuId, sourceWarehouseId);
-      const fromView = await readView(trx, skuId, sourceWarehouseId);
+      // 출발 창고 → 도착 창고 이전 예정 4개. 이 행이 옛 transit_out 항을 만들던 데이터다.
+      const [plan] = await trx
+        .insert(wmsTables.inboundPlans)
+        .values({
+          warehouseId: fx.warehouseId,
+          destinationWarehouseId: destWarehouse.id,
+          linkedPurchaseOrderId: po.id,
+          requiresTransfer: true,
+          status: 'pending',
+        })
+        .returning();
+      await trx.insert(wmsTables.inboundPlanItems).values({
+        planId: plan.id,
+        skuId: fx.skuId,
+        expectedQty: 4,
+        receivedQty: 0,
+        status: 'pending',
+      });
+
+      const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
+      const fromView = await readView(trx, fx.skuId, fx.warehouseId);
 
       expect(fromModule.available).toBe(10);
       expect(fromView).toBe(10); // 이전 예정은 가용에서 빼지 않는다
@@ -760,27 +775,15 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
 
   it('예약이 있으면 뷰와 모듈이 같은 값을 낸다', async () => {
     await inRollback(async (trx) => {
-      const skuId = randomUUID();
-      const warehouseId = randomUUID();
+      // 기반: ON_HAND 10 + confirmed 예약 10 → 예약을 3 으로 낮춘다.
+      const fx = await seedPickableShipment(trx, 10);
+      await trx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 3 })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
 
-      await trx.execute(sql`
-        INSERT INTO warehouses (id, name, code)
-        VALUES (${warehouseId}, ${'IT-WH'}, ${`IT-${warehouseId.slice(0, 8)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO skus (id, name, code) VALUES (${skuId}, ${'IT-SKU'}, ${`IT-${skuId.slice(0, 8)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-        VALUES (${skuId}, ${warehouseId}, 'ON_HAND', ${10})
-      `);
-      await trx.execute(sql`
-        INSERT INTO stock_reservations (sku_id, warehouse_id, quantity, status, target_type)
-        VALUES (${skuId}, ${warehouseId}, ${3}, 'confirmed', 'SHIPMENT_LINE')
-      `);
-
-      const fromModule = await readWarehouseAvailability(trx, skuId, warehouseId);
-      const fromView = await readView(trx, skuId, warehouseId);
+      const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
+      const fromView = await readView(trx, fx.skuId, fx.warehouseId);
 
       expect(fromView).toBe(fromModule.available);
       expect(fromView).toBe(7);
@@ -789,8 +792,13 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
 });
 ```
 
-> `inbound_plans` / `inbound_plan_items` 의 INSERT 컬럼도 Task 1 Step 5 와 같은 방식으로
-> 스키마의 NOT NULL 컬럼을 확인해 보완한다.
+> **실측 확인된 제약 (2026-08-12):**
+> - `inbound_plans.linked_purchase_order_id` 는 **NOT NULL + FK → `purchase_orders`** 라 발주 행이 먼저 필요하다.
+> - `purchase_orders` 의 필수 컬럼은 `type`(enum `po_type`: `domestic` | `foreign`), `source_warehouse_id`, `destination_warehouse_id` 뿐이다. 그 위로 더 올라가는 FK 체인은 없다.
+> - `inbound_status` enum: `pending` | `applied` | `receiving` | `confirmed`.
+>
+> 실행 전 `PickableShipmentFixture` 의 반환 필드 이름을 실제 시그니처에서 다시 확인하고 맞춘다
+> (`apps/core/src/modules/fulfillment/services/__support__/logistics-fixtures.ts:250`).
 
 - [ ] **Step 2: 첫 번째 테스트가 실패하는지 확인한다**
 
