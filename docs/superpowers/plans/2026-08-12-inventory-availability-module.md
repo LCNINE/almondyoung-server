@@ -61,7 +61,7 @@
 2. `transit_out` 은 `inbound_plan_items` 를 읽는데, 실제 창고간이동은 `stock_journals`(`sourceType: 'warehouse_transfer'`)를 쓴다. `transfer.service.ts` 에 `inboundPlan` 이라는 단어가 **0회** 등장한다 — 두 시스템은 연결돼 있지 않다. 따라서 이동이 실행돼도 `transit_out` 은 줄지 않고 **영구히** 차감된 채 남는다.
 3. `IN_TRANSFER` 원장 상태는 `transferShip`/`transferReceive` 가 **한 트랜잭션 안**에서 실행되므로 잔량이 남지 않는다(`stock-event.service.ts:117-156`, 통합 스펙 `transfer.service.integration.spec.ts:18` 이 "IN_TRANSFER 잔량 0"을 성공 기준으로 명시). 즉 원장에 "운송 중"이라는 기간이 없다.
 
-**오버셀 위험 없음 (중요) — 그러나 논증은 "표시만 바뀐다"가 아니다.** 예약 승인은 `unified-reservation.service.ts:81` → `getAvailableStock`(`:250`, Task 3 이후 `readWarehouseAvailability` 로 위임)이 판정하며 **애초에 `transit_out` 을 보지 않는다.** 여기서 안전하다고 결론 내는 근거는 "예약 승인이 뷰를 안 본다"가 아니라 **"뷰가 이제 예약 문턱과 같은 값이 됐다"** 는 것이다 — 뷰는 이전에는 문턱보다 낮았고(팔 수 있는 걸 못 팔던 상태), 이제 문턱과 일치한다. 문턱을 넘기는 방향의 변화가 아니므로 오버셀은 나지 않는다.
+**오버셀 위험 없음 (중요) — 그러나 논증은 "표시만 바뀐다"가 아니다.** 예약 승인은 `unified-reservation.service.ts:82` → `getAvailableStock`(`:250`, Task 3 이후 `readWarehouseAvailability` 로 위임)이 판정하며 **애초에 `transit_out` 을 보지 않는다.** 여기서 안전하다고 결론 내는 근거는 "예약 승인이 뷰를 안 본다"가 아니라 **"뷰가 이제 예약 문턱과 같은 값이 됐다"** 는 것이다 — 뷰는 이전에는 문턱보다 낮았고(팔 수 있는 걸 못 팔던 상태), 이제 문턱과 일치한다. 문턱을 넘기는 방향의 변화가 아니므로 오버셀은 나지 않는다.
 
 이 뷰 값을 소비하는 것은 storefront 표시만이 아니다. **`product-sellable-quantity` 투영이 `psq_` prefix inventory item 으로 Medusa 에 밀리고**(`apps/channel-adapter/src/adapters/medusa/medusa.client.ts`, `apps/medusa/src/utils/medusa-inventory-projection.ts`), Medusa 는 `manage_inventory=true` 로 그 수량을 실제 판매 가능 재고로 잡아 예약분을 차감한다(`product-sellable-quantity.calculator.ts:158` 주석: *"Medusa 가 manage_inventory=true 로 잡고 예약분을 차감해…"*). 즉 `transit_out` 제거는 storefront 에 **더 큰 숫자를 보여주는 것**이 아니라 **더 많이 팔 수 있게 만드는 것**이다 — 결론(오버셀 무위험)은 유효하지만 그 이유는 "뷰가 예약 문턱과 같아졌다"이지 "표시만 바뀐다"가 아니다.
 
