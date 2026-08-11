@@ -467,6 +467,9 @@ apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
 
 # git worktrees (superpowers isolated workspaces)
 .worktrees/
+# Claude Code 의 EnterWorktree 는 여기에 만든다 — 무시하지 않으면 메인 체크아웃의
+# git status 에 워크트리 전체가 untracked 로 뜨고, 실수로 커밋되거나 지워질 수 있다.
+.claude/worktrees/
 
 # UI E2E 산출물 (playwright)
 web/almondyoung-storefront/test-results/
