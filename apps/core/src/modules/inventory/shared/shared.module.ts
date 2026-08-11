@@ -5,7 +5,6 @@ import { TransactionService } from './services/transaction.service';
 import { AuditService } from './services/audit.service';
 import { MetricsService } from './services/metrics.service';
 import { HealthService } from './services/health.service';
-// import { StockAvailabilityService } from './services/stock-availability.service';
 import { UnifiedReservationService } from './services/unified-reservation.service';
 import { ReservationLifecycleService } from './services/reservation-lifecycle.service';
 import { MetricsController } from './controllers/metrics.controller';
@@ -23,7 +22,6 @@ import { ProductSellableQuantityModule } from '../product-sellable-quantity/prod
     AuditService,
     MetricsService,
     HealthService,
-    // StockAvailabilityService,
     UnifiedReservationService,
     ReservationLifecycleService,
   ],
@@ -34,7 +32,6 @@ import { ProductSellableQuantityModule } from '../product-sellable-quantity/prod
     AuditService,
     MetricsService,
     HealthService,
-    // StockAvailabilityService,
     UnifiedReservationService,
     ReservationLifecycleService,
   ],

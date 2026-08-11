@@ -148,7 +148,10 @@ export class LedgerReconciliationService {
 
   /**
    * (sku,warehouse) 예약 불변식 대사 — ON_HAND 원장 합 < confirmed 예약 합 grain 만 반환.
-   * raw 합 직접 집계(뷰 availableQty 의 transit_out 반영 금지 → 거짓 경보 방지).
+   *
+   * 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 판독인 availability 모듈로 대체하지 않는다.
+   * 두 산식이 같은 결론을 내는지는 ledger-reconciliation.integration.spec.ts 의
+   * "모듈이 음수 가용을 보는 grain 을 대사도 같은 수치로 잡는다" 가 고정한다.
    */
   async reconcileReservations(
     filter?: { warehouseId?: string; skuId?: string },

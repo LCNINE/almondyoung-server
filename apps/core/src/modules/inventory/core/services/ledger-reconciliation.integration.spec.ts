@@ -11,6 +11,8 @@ import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { LedgerReconciliationService } from './ledger-reconciliation.service';
+import { seedPickableShipment } from '../../../fulfillment/services/__support__/logistics-fixtures';
+import { readWarehouseAvailability } from '../../shared/availability/warehouse-availability';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -170,19 +172,58 @@ describeIfDb('ledger reconciliation (DB integration, rollback-only)', () => {
 
   it('reconcileReservations 는 예약>ON_HAND grain 을 잡는다', async () => {
     await inRollbackTx(async (tx) => {
-      // fixture: ON_HAND 4, confirmed 예약 10 → shortfall 6
-      const s = await seed(tx, 4);
-      await tx.insert(wmsTables.stockReservations).values({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: randomUUID(),
-        skuId: s.sku.id,
-        warehouseId: s.wh.id,
-        quantity: 10,
-        status: 'confirmed',
-      });
-      const report = await recon.reconcileReservations({ skuId: s.sku.id, warehouseId: s.wh.id }, tx);
+      // 픽스처: ON_HAND 4 + confirmed 예약 4 → 예약을 10 으로 올려 shortfall 6 을 만든다.
+      // 예약을 손으로 INSERT 하지 않는 이유: shipment_line_id 가 NOT NULL + FK → shipment_lines
+      // 라(Task 25 계약) 유효한 예약 하나에 FO → FOI → shipment → shipment_line 체인이 필요하다.
+      const fx = await seedPickableShipment(tx, 4);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 10 })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
       expect(report.totalDriftGrains).toBe(1);
       expect(report.drifts[0].shortfall).toBe(6);
+    });
+  });
+
+  // ── availability 모듈과의 등가 고정 ──────────────────────────────
+  // reconcileReservations 의 CTE 는 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 판독인
+  // availability 모듈로 대체할 수 없다. 중복 자체는 남기고, 두 산식이 조용히 갈라지는 것만 막는다.
+
+  it('모듈이 음수 가용을 보는 grain 을 대사도 같은 수치로 잡는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const fx = await seedPickableShipment(tx, 2);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 5 })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+
+      const fromModule = await readWarehouseAvailability(tx, fx.skuId, fx.warehouseId);
+      expect(fromModule.available).toBe(-3);
+
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
+      expect(report.totalDriftGrains).toBe(1);
+      expect(report.drifts[0]).toMatchObject({
+        skuId: fx.skuId,
+        warehouseId: fx.warehouseId,
+        onHandQty: fromModule.onHand,
+        reservedQty: fromModule.reserved,
+        shortfall: -fromModule.available,
+      });
+    });
+  });
+
+  it('모듈 가용이 정확히 0 이면 대사는 아무것도 잡지 않는다', async () => {
+    await inRollbackTx(async (tx) => {
+      // 픽스처 기본값이 ON_HAND = 예약 = 5 → 가용 0 (경계값)
+      const fx = await seedPickableShipment(tx, 5);
+
+      const fromModule = await readWarehouseAvailability(tx, fx.skuId, fx.warehouseId);
+      expect(fromModule.available).toBe(0);
+
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
+      expect(report.totalDriftGrains).toBe(0);
     });
   });
 });

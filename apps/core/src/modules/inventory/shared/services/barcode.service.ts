@@ -1,20 +1,12 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { and, eq } from 'drizzle-orm';
+import { wmsSchema, DbTx } from '../../schema/inventory.schema';
 import * as bwipjs from 'bwip-js';
 
 export interface BarcodeParseResult {
   type: 'sku' | 'location' | 'fulfillment_order' | 'fulfillment_order_item' | 'unknown';
   id: string;
   data?: any;
-}
-
-export interface SkuScanResult {
-  skuId: string;
-  skuName: string;
-  availableQty: number;
-  locationCode?: string;
 }
 
 @Injectable()
@@ -71,53 +63,6 @@ export class BarcodeService {
       type: 'unknown',
       id: trimmed,
     };
-  }
-
-  async scanSku(barcode: string, warehouseId: string, tx?: DbTx): Promise<SkuScanResult> {
-    return this.dbService.run(async (trx) => {
-      const parsed = this.parseBarcode(barcode);
-
-      let skuId: string;
-      if (parsed.type === 'sku') {
-        skuId = parsed.id;
-      } else if (parsed.type === 'unknown') {
-        // UUID인 경우 SKU ID로 간주
-        skuId = parsed.id;
-      } else {
-        throw new BadRequestException(`Invalid SKU barcode: ${barcode}`);
-      }
-
-      const sku = await trx.query.skus.findFirst({
-        where: eq(wmsTables.skus.id, skuId),
-      });
-
-      if (!sku) {
-        throw new BadRequestException(`SKU not found: ${skuId}`);
-      }
-
-      // stocks 테이블 대신 stockLedgers에서 ON_HAND 상태 재고 조회
-      const stockLedgers = await trx.query.stockLedgers.findMany({
-        where: and(
-          eq(wmsTables.stockLedgers.skuId, skuId),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      });
-
-      const availableQty = stockLedgers.reduce((sum, ledger) => sum + ledger.qty, 0);
-
-      // TODO: Get location from location service
-      const locationCode = undefined;
-
-      this.logger.log(`SKU scanned: ${sku.name} (${availableQty} available)`);
-
-      return {
-        skuId: sku.id,
-        skuName: sku.name,
-        availableQty,
-        locationCode,
-      };
-    }, tx);
   }
 
   generateSkuBarcode(skuId: string): string {
