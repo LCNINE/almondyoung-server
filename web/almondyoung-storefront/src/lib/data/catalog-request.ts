@@ -1,7 +1,8 @@
 import "server-only"
 import { cache } from "react"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { isMembershipGroup } from "@lib/utils/membership-group"
 import { getAuthHeaders } from "./cookies"
-import { getIsMembershipCustomer } from "./membership"
 import { buildCatalogRequest, type CatalogRequestShape } from "./catalog-segment"
 
 /**
@@ -11,15 +12,24 @@ import { buildCatalogRequest, type CatalogRequestShape } from "./catalog-segment
 export const buildCatalogRequestForVisitor = cache(
   async (): Promise<CatalogRequestShape> => {
     const authHeaders = await getAuthHeaders()
+    const secret = process.env.CATALOG_SEGMENT_SECRET
 
     if (!authHeaders) {
-      return buildCatalogRequest(null, false, process.env.CATALOG_SEGMENT_SECRET)
+      return buildCatalogRequest(null, false, secret)
+    }
+
+    // 토큰이 있는데 고객 조회가 비면 멤버십 여부를 알 수 없는 상태다. 이때 비회원으로
+    // 넘기면 회원에게 비회원가가 보인다. 판정이 안 되면 토큰을 그대로 실어 Medusa 가
+    // 정하게 하고 캐시하지 않는다.
+    const customer = await retrieveCustomer().catch(() => null)
+    if (!customer) {
+      return buildCatalogRequest(authHeaders, false, undefined)
     }
 
     return buildCatalogRequest(
       authHeaders,
-      await getIsMembershipCustomer(),
-      process.env.CATALOG_SEGMENT_SECRET
+      isMembershipGroup(customer.groups),
+      secret
     )
   }
 )
