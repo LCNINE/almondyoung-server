@@ -37,7 +37,7 @@ import type {
   BillingMethodDto,
   CmsBillingMethodStatusDto,
 } from "@lib/types/dto/wallet"
-import { Calendar, Check, Clock, CreditCard, Gift } from "lucide-react"
+import { Calendar, Check, Clock, CreditCard, Gift, Info } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import React, { useEffect, useMemo, useState, useTransition } from "react"
 import { useTranslations } from "next-intl"
@@ -707,6 +707,20 @@ export function MembershipForm({
               </div>
             )}
 
+            {/* 청약철회 제한 고지 — 접이식 밖에 항상 노출 */}
+            <div className="flex items-start gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              <Info className="mt-0.5 size-4 shrink-0" />
+              <p>
+                결제 후 7일 이내라도{" "}
+                <span className="font-medium text-gray-800">
+                  멤버십가로 상품을 구매하시면 청약철회가 제한
+                </span>
+                됩니다.
+                {subscriptionType === "yearly" &&
+                  " 연간 플랜은 중도 해지 시 이용한 기간을 정산해 남은 금액을 환불합니다."}
+              </p>
+            </div>
+
             {/* 결제/환불 안내 (접이식) */}
             <details className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-500">
               <summary className="cursor-pointer font-medium text-gray-600 select-none">
@@ -720,20 +734,17 @@ export function MembershipForm({
                       갱신됩니다.
                     </li>
                     <li>
-                      가입 즉시 이용이 시작되며,{" "}
-                      <span className="font-medium text-gray-700">
-                        이용 시작 후 환불은 불가
-                      </span>
-                      합니다.
-                    </li>
-                    <li>
-                      다음 결제일 전에 해지하면 이후 결제는 청구되지 않으며, 이미
-                      결제한 기간은 종료일까지 그대로 이용하실 수 있습니다.
-                    </li>
-                    <li>
                       결제 후 7일 이내이고 멤버십 혜택(멤버십가 구매·웰컴딜 등)을
-                      한 번도 사용하지 않은 경우에는 청약철회로 결제액 전액을
-                      환불받을 수 있습니다(즉시 이용 종료).
+                      한 번도 사용하지 않은 경우,{" "}
+                      <span className="font-medium text-gray-700">
+                        청약철회로 결제액 전액을 환불
+                      </span>
+                      받으실 수 있습니다(즉시 이용 종료).
+                    </li>
+                    <li>
+                      그 외의 경우 이미 결제한 기간은 종료일까지 그대로 이용하시고
+                      다음 결제일부터 청구되지 않습니다. 이번 주기 요금은 이용한
+                      기간에 대한 대가이므로 환불되지 않습니다.
                     </li>
                     <li>
                       서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
@@ -745,7 +756,11 @@ export function MembershipForm({
                     <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
                     <li>
                       결제 후 7일 이내이고 멤버십 혜택을 한 번도 사용하지 않은
-                      경우에는 청약철회로 결제액 전액을 환불받을 수 있습니다.
+                      경우,{" "}
+                      <span className="font-medium text-gray-700">
+                        청약철회로 결제액 전액을 환불
+                      </span>
+                      받으실 수 있습니다.
                     </li>
                     <li>
                       연간 플랜은 12개월 이용을 전제로 2개월분을 할인한
@@ -769,15 +784,17 @@ export function MembershipForm({
                   <>
                     <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
                     <li>
-                      결제 즉시 이용이 시작되며,{" "}
+                      결제 후 7일 이내이고 멤버십 혜택을 한 번도 사용하지 않은
+                      경우,{" "}
                       <span className="font-medium text-gray-700">
-                        이용 시작 후 환불은 불가
+                        청약철회로 결제액 전액을 환불
                       </span>
-                      합니다.
+                      받으실 수 있습니다.
                     </li>
                     <li>
-                      결제 후 7일 이내이고 멤버십 혜택을 한 번도 사용하지 않은
-                      경우에는 청약철회로 결제액 전액을 환불받을 수 있습니다.
+                      그 외의 경우 결제한 기간의 종료일까지 이용하실 수 있으며,
+                      해당 기간 요금은 이용한 기간에 대한 대가이므로 환불되지
+                      않습니다.
                     </li>
                     <li>
                       서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
@@ -1082,8 +1099,9 @@ function TermsAndConditions({
               가능합니다.
             </li>
             <li>
-              철회 이후 결제된 금액은 환불되지 않으며, 해당 월의 서비스는
-              정상적으로 유지됩니다.
+              철회하시면 다음 결제부터 출금이 중단되며, 이미 결제한 기간의
+              서비스는 종료일까지 정상적으로 유지됩니다. 이미 결제한 금액의
+              환급은 아래 「환불 정책」에 따릅니다.
             </li>
           </ul>
         </div>
@@ -1125,23 +1143,46 @@ function TermsAndConditions({
         </p>
 
         <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
-          제 2조 환불 불가 정책
+          제 2조 청약철회 및 중도해지 환급
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
-            본 서비스는 구독형 서비스로, 서비스 제공이 개시된 이후에는 환불이
-            불가능합니다.
+            회원은 결제일부터 7일 이내에 청약을 철회할 수 있으며, 이 경우 회사는
+            결제금액 전액을 환급합니다. 다만 해당 결제 주기에 멤버십
+            혜택(멤버십가 구매, 웰컴딜 등)을 이용하신 사실이 있는 경우에는
+            그러하지 아니합니다.
           </li>
           <li>
-            서비스 장애, 기술적 오류 등으로 정상 이용이 어려운 경우, 이용하지
-            못한 기간에 대해 예외적으로 환불이 검토될 수 있습니다.
+            연간 플랜 회원은 기간 중 언제든지 해지할 수 있으며, 회사는
+            결제금액에서 이용한 기간에 해당하는 금액과 회원이 실제로 적용받은
+            멤버십 할인 총액을 공제한 잔액을 환급합니다.
+            <ul className="mt-1.5 list-[circle] space-y-1.5 pl-5 marker:text-[#b0b3ba]">
+              <li>
+                이용한 기간은 30일을 1개월로 하여 계산하며, 시작일이 포함된 달도
+                1개월로 봅니다.
+              </li>
+              <li>
+                이용한 기간에 해당하는 금액은 월간 플랜 정가(
+                {monthlyPrice.toLocaleString()}원)에 이용 개월 수를 곱하여
+                산정합니다.
+              </li>
+              <li>일시정지 기간은 이용한 기간에서 제외합니다.</li>
+              <li>
+                정산 결과 환급액이 0원 이하인 경우 환급은 발생하지 않으며, 남은
+                기간까지 계속 이용하실 수 있습니다.
+              </li>
+            </ul>
           </li>
-          {isRecurring && (
-            <li>
-              정기결제는 매월 자동 갱신되며, 회원이 해지를 요청하지 않는 한 갱신된
-              결제 건에 대해 환불이 제공되지 않습니다.
-            </li>
-          )}
+          <li>
+            월간 플랜 회원이 제1항의 기간이 지난 뒤 해지하는 경우, 해당 결제
+            주기의 종료일까지 서비스를 이용하실 수 있고 다음 주기부터 청구되지
+            않습니다. 이미 결제한 주기의 요금은 이용한 기간에 대한 대가이므로
+            환급되지 않습니다.
+          </li>
+          <li>
+            서비스 장애, 기술적 오류 등 회사의 사유로 정상 이용이 어려웠던
+            경우에는 이용하지 못한 기간에 대해 별도로 환급합니다.
+          </li>
         </ul>
 
         <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
@@ -1151,8 +1192,12 @@ function TermsAndConditions({
           {isRecurring ? (
             <>
               <li>
-                회원은 언제든지 구독을 해지할 수 있으며, 해지 요청은 다음 결제일
-                전에 완료되어야 합니다.
+                회원은 언제든지 구독을 해지할 수 있습니다. 다음 결제일 전에
+                해지하시면 다음 주기부터 청구되지 않습니다.
+              </li>
+              <li>
+                해지하셔도 이미 결제한 기간은 종료일까지 그대로 이용하실 수
+                있으며, 환급은 제2조에 따릅니다.
               </li>
               <li>
                 해지 요청이 이루어지지 않은 경우, 서비스는 자동으로 갱신되며
@@ -1178,10 +1223,13 @@ function TermsAndConditions({
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
-            회원은 구독 결제를 진행함으로써 본 약관에 동의한 것으로 간주됩니다.
+            본 약관은 회원이 결제 화면에서 내용을 확인하고 동의한 때에 효력이
+            발생합니다.
           </li>
           <li>
-            회원은 결제 전 환불 불가 정책을 충분히 숙지할 책임이 있습니다.
+            회사는 본 약관을 결제 화면과 마이페이지에서 상시 확인할 수 있도록
+            제공하며, 회원에게 불리하게 변경하는 경우 최소 30일 전에 사전
+            고지합니다.
           </li>
         </ul>
       </div>

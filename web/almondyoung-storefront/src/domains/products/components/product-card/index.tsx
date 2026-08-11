@@ -111,7 +111,7 @@ export default function ProductCard({
   countryCode?: string
   isWishlisted?: boolean
 }) {
-  const { cheapestPrice } = getProductPrice({
+  const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
   })
   const tCard = useTranslations("productCard")
@@ -154,7 +154,7 @@ export default function ProductCard({
   return (
     <LocalizedClientLink
       href={`/products/${product.handle}`}
-      className="group cursor-pointer"
+      className="cursor-pointer group"
     >
       <div>
         <div className="relative">
@@ -219,7 +219,7 @@ export default function ProductCard({
               <ProductPrice
                 price={cheapestPrice}
                 membershipPrice={
-                  product.variants?.[0]?.metadata?.membershipPrice as number
+                  cheapestVariant?.metadata?.membershipPrice as number
                 }
                 isMembership={isMembership}
                 isMembershipOnly={isMembershipOnly}

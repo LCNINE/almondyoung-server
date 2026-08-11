@@ -101,22 +101,16 @@ export function getProductPrice({
     throw new Error("No product provided")
   }
 
-  const cheapestPrice = () => {
-    if (!product || !product.variants?.length) {
-      return null
-    }
-
-    const cheapestVariant: any = product.variants
-      .filter((v: any) => !!v.calculated_price)
-      .sort((a: any, b: any) => {
-        return (
-          a.calculated_price.calculated_amount -
-          b.calculated_price.calculated_amount
-        )
-      })[0]
-
-    return getPricesForVariant(cheapestVariant)
-  }
+  const cheapestVariant: any = product.variants?.length
+    ? product.variants
+        .filter((v: any) => !!v.calculated_price)
+        .sort((a: any, b: any) => {
+          return (
+            a.calculated_price.calculated_amount -
+            b.calculated_price.calculated_amount
+          )
+        })[0]
+    : null
 
   const variantPrice = () => {
     if (!product || !variantId) {
@@ -136,7 +130,8 @@ export function getProductPrice({
 
   return {
     product,
-    cheapestPrice: cheapestPrice(),
+    cheapestPrice: cheapestVariant ? getPricesForVariant(cheapestVariant) : null,
+    cheapestVariant,
     variantPrice: variantPrice(),
   }
 }

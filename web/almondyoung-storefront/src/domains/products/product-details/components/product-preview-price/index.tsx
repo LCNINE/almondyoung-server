@@ -20,14 +20,14 @@ interface Props {
 
 export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const t = useTranslations("productDetail.price")
-  const { cheapestPrice } = getProductPrice({ product })
+  const { cheapestPrice, cheapestVariant } = getProductPrice({ product })
 
   if (!cheapestPrice) return null
 
   // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
   const isMembershipOnly = getIsMembershipOnly(product)
 
-  const membershipPrice = product.variants?.[0]?.metadata?.membershipPrice as
+  const membershipPrice = cheapestVariant?.metadata?.membershipPrice as
     | number
     | undefined
 
