@@ -61,7 +61,11 @@
 2. `transit_out` 은 `inbound_plan_items` 를 읽는데, 실제 창고간이동은 `stock_journals`(`sourceType: 'warehouse_transfer'`)를 쓴다. `transfer.service.ts` 에 `inboundPlan` 이라는 단어가 **0회** 등장한다 — 두 시스템은 연결돼 있지 않다. 따라서 이동이 실행돼도 `transit_out` 은 줄지 않고 **영구히** 차감된 채 남는다.
 3. `IN_TRANSFER` 원장 상태는 `transferShip`/`transferReceive` 가 **한 트랜잭션 안**에서 실행되므로 잔량이 남지 않는다(`stock-event.service.ts:117-156`, 통합 스펙 `transfer.service.integration.spec.ts:18` 이 "IN_TRANSFER 잔량 0"을 성공 기준으로 명시). 즉 원장에 "운송 중"이라는 기간이 없다.
 
-**오버셀 위험 없음 (중요):** 예약 승인은 `unified-reservation.service.ts:81` → `getAvailableStock`(`:249`)이 판정하며 **애초에 `transit_out` 을 보지 않는다.** 뷰에서 `transit_out` 을 빼는 것은 예약 승인 문턱을 전혀 건드리지 않고, storefront 표시를 예약 seam 이 실제로 허용하는 값과 일치시킬 뿐이다.
+**오버셀 위험 없음 (중요) — 그러나 논증은 "표시만 바뀐다"가 아니다.** 예약 승인은 `unified-reservation.service.ts:81` → `getAvailableStock`(`:250`, Task 3 이후 `readWarehouseAvailability` 로 위임)이 판정하며 **애초에 `transit_out` 을 보지 않는다.** 여기서 안전하다고 결론 내는 근거는 "예약 승인이 뷰를 안 본다"가 아니라 **"뷰가 이제 예약 문턱과 같은 값이 됐다"** 는 것이다 — 뷰는 이전에는 문턱보다 낮았고(팔 수 있는 걸 못 팔던 상태), 이제 문턱과 일치한다. 문턱을 넘기는 방향의 변화가 아니므로 오버셀은 나지 않는다.
+
+이 뷰 값을 소비하는 것은 storefront 표시만이 아니다. **`product-sellable-quantity` 투영이 `psq_` prefix inventory item 으로 Medusa 에 밀리고**(`apps/channel-adapter/src/adapters/medusa/medusa.client.ts`, `apps/medusa/src/utils/medusa-inventory-projection.ts`), Medusa 는 `manage_inventory=true` 로 그 수량을 실제 판매 가능 재고로 잡아 예약분을 차감한다(`product-sellable-quantity.calculator.ts:158` 주석: *"Medusa 가 manage_inventory=true 로 잡고 예약분을 차감해…"*). 즉 `transit_out` 제거는 storefront 에 **더 큰 숫자를 보여주는 것**이 아니라 **더 많이 팔 수 있게 만드는 것**이다 — 결론(오버셀 무위험)은 유효하지만 그 이유는 "뷰가 예약 문턱과 같아졌다"이지 "표시만 바뀐다"가 아니다.
+
+그리고 그 차이가 운영 결과를 바꾼다: pending 창고간 이전 계획 수량이 이제 **판매 가능**해진다. 그 수량이 팔리면 이전(transfer) 실행이 `inventory-command.service.ts:325`(`transferShip`) 의 `assertReservationInvariant` 에서 **409 로 막힌다.** 조용한 오버셀이 아니라 **이전 작업 실패**로 표면화된다 — 이건 이 계획이 "범위 밖"으로 명시해 둔 창고간이동 custody 모델 부재의 증상이며, 그 판단 자체는 타당하지만 운영자가 예상하지 못하면 이 변경의 회귀로 오진할 수 있다.
 
 ### 선행 시도의 흔적
 
@@ -1105,6 +1109,14 @@ Expected: `warehouse-availability.ts` 와 `ledger-reconciliation.service.ts` 두
 
 **마이그레이션 1건** (Task 5). `apps/core/drizzle/<ts>_drop-transit-out-from-available-qty.sql`.
 
+**소비자 전수 (뷰 `available_qty` 를 읽는 곳):**
+
+- `product-sellable-quantity` 투영 — Medusa `psq_` prefix inventory item 을 통해 **실제 판매 가능 여부**를 게이트한다(표시가 아니라 판매 차단 지점, 위 배경 절 참조).
+- `fulfillment-order-reservation-retry.worker.ts:84` — 재시도 후보 선정(`available_qty > 0`).
+- `purchase-order.service.ts:822` — 발주 제안 부족분 계산.
+- `apps/core/src/modules/inventory/stock-projection/services/stock-projection.reader.ts` — admin 재고 화면. `:102` 품절 필터(`quantityState === 'out_of_stock'` → `availableQty <= 0`), `:134, :165, :206, :284, :291` 목록/SKU 합계/창고별 상세의 "가용 수량" 표시. 배포 후 **pending 창고간 이전이 있던 SKU 가 품절 필터에서 빠질 수 있다** — 결함이 아니라 의도된 값 변화다.
+- `apps/core/src/modules/fulfillment/services/__support__/logistics-assertions.ts:45` (`availableFromView`) — 테스트 하니스. 파일 자체 주석대로 "뷰 산술 회귀 + transit_out=0 전제"만 검증하는 보조 판독이며 진짜 drift 검출은 별도 담당.
+
 **순서: `migrate → deploy`.**
 
 - 뷰의 **컬럼 목록은 그대로**이므로 옛 task 가 새 뷰를 만나도 깨지지 않는다 (`available_qty` 값만 커진다). expand phase 규칙(CLAUDE.md: "expand 는 migrate → deploy")이 적용된다.
@@ -1118,12 +1130,32 @@ npm run db:migrate -- --stage live --deployment lcnine-services --yes
 
 그 다음 `sst deploy`.
 
+**`DROP VIEW` 잠금 완화 (운영 적용 시 선택할 수 있는 것 — 아래는 권고이지 이미 로컬에 적용된 마이그레이션 SQL 파일을 바꾸라는 뜻이 아니다):**
+
+- `stock_summary_view` 는 `skus CROSS JOIN warehouses` 다. `purchase-order.service.ts:822`(발주 제안 전수 스캔)와 `stock-projection.reader.ts`(목록 count)처럼 필터 없이 뷰를 훑는 질의가 진행 중일 때 `DROP VIEW` 는 ACCESS EXCLUSIVE 락을 기다리며 블록하고, 뒤이어 들어오는 모든 뷰 질의가 그 뒤에 줄을 선다.
+- **저트래픽 시간대에 적용**하기를 권한다.
+- 마이그레이션 문(`DROP VIEW` / `CREATE VIEW`) 앞에 `SET LOCAL lock_timeout = '5s';` 를 붙이는 선택지가 있다 — 5초 안에 락을 못 얻으면 그 문만 에러로 실패한다. 마이그레이션은 파일 단위 트랜잭션이라 **부분 적용이 없으므로** 실패하면 그냥 재실행하면 된다(뷰가 여전히 옛 정의로 남아 있을 뿐, 중간 상태로 깨지지 않는다).
+
+**배포 전 실측 (영향 SKU 수 상한을 미리 잰다):**
+
+```sql
+SELECT count(DISTINCT ipi.sku_id)
+  FROM inbound_plan_items ipi
+  JOIN inbound_plans ip ON ip.id = ipi.plan_id
+ WHERE ipi.status = 'pending'
+   AND ip.requires_transfer
+   AND ip.warehouse_id <> ip.destination_warehouse_id;
+```
+
+0 이면 이 변경의 라이브 영향은 사실상 없다는 뜻이고, 크면 아래 관측 항목 5번(이전 실행 409)을 실제로 기다려야 한다.
+
 **배포 후 관측 항목:**
 
-1. **판매가능수량 상승.** `transit_out > 0` 이던 SKU 의 storefront 노출 수량이 오른다. 상승분 = 그 SKU 의 pending 창고간 inbound plan 잔량. 이건 의도된 변화다.
-2. **오버셀 없음 확인.** 예약 승인은 `unified-reservation` 이 자체 산식으로 하며 transit_out 을 본 적이 없다. 배포 후 `ledger-reconciliation` 야간 대사(`0 3 * * *`)의 `totalDriftGrains` 가 0 을 유지하는지 확인한다. 올라가면 이 전제가 틀린 것이므로 즉시 보고.
+1. **판매가능수량 상승.** `transit_out > 0` 이던 SKU 의 판매 가능 수량이 오른다(storefront 노출뿐 아니라 Medusa 실제 판매 게이트가 오른다 — 위 소비자 전수 참조). 상승분 = 그 SKU 의 pending 창고간 inbound plan 잔량. 이건 의도된 변화다.
+2. **오버셀 없음 확인.** 예약 승인은 `unified-reservation` 이 자체 산식으로 하며 transit_out 을 본 적이 없다 — 새 뷰 값은 그 문턱과 같아졌을 뿐 넘기지 않는다. 배포 후 `ledger-reconciliation` 야간 대사(`0 3 * * *`)의 `totalDriftGrains` 가 0 을 유지하는지 확인한다. 올라가면 이 전제가 틀린 것이므로 즉시 보고.
 3. **예약 재시도 워커.** `fulfillment-order-reservation-retry.worker.ts:84` 가 `available_qty > 0` 로 후보를 고른다. 후보 수가 늘 수 있다 — 정상이다(전에는 transit_out 때문에 부당하게 탈락하던 라인들).
 4. **발주 제안.** `purchase-order.service.ts:822` 의 `available_qty < 10` 조건에 걸리는 SKU 가 준다 — 정상이다(전에는 부풀려진 부족분이었다).
+5. **창고간 이전 실행 409 증가.** pending 이전 계획 수량이 판매돼 나가면 그 물량의 실제 `transferShip` 실행이 `inventory-command.service.ts:325` 의 `assertReservationInvariant` 에서 409 로 막힐 수 있다. **이건 새 결함이 아니라 위 오버셀 무위험 논증에서 이미 예상된 증상이다** — 창고간이동 custody 모델 부재(이 계획의 "범위 밖")가 이제 관측 가능해진 것뿐이다. 배포 전 실측 쿼리 결과가 0 이 아니었다면 이 항목을 특히 주시한다.
 
 **롤백:** 뷰를 되돌리는 역마이그레이션은 만들지 않는다. 문제가 생기면 원인을 먼저 규명한다 — `transit_out` 복원은 위 4가지 결함을 되살리는 것이라 롤백이 아니라 회귀다.
 
@@ -1135,3 +1167,8 @@ npm run db:migrate -- --stage live --deployment lcnine-services --yes
 2. **custody 오버레이의 창고 grain 확장.** 숏피킹으로 예약이 해제되고 custody 가 `RETURN_PENDING` 인 구간에 "예약은 되지만 피킹 때 409" 인 틈이 있다. Task 1 의 모듈이 이 오버레이가 들어갈 자리다.
 3. **갇힌 batch 세션 탐지.** `recovery_required` 세션의 체류 시간을 보는 크론이 없다. 야간 대사의 `SESSION_CONSERVATION` 은 수량 보존만 보고 체류 시간을 보지 않아, 완벽히 보존된 채 영원히 열린 세션은 통과한다.
 4. **`new BatchControlledStockGuard()` 기본 인자 제거** (3곳). 프로바이더 등록 누락이 조용히 통과하는 구조.
+5. **사전 존재 RED 통합 스펙 5 suite 정리.** 3계열: (a) `shipment_line_id` NOT NULL 누락 — `unified-reservation.service.lifecycle.integration`, `reverse-event-guard.integration` (b) `locations` 의 `ck_locations_type` 위반 — `unified-reservation.service.lock.integration`, `stocktaking-uniques.integration` (c) 스펙 하니스의 `DbService` 대역에 `run` 없음(`{ db } as unknown as DbService`) — `inventory-command.service.adjust.integration`. **(a) 계열은 Task 25 계약 이후 구조적으로 불가능해진 경로를 테스트 중이라 "고침"이 아니라 "폐기 또는 재작성" 판단이 필요하다.** 이 5건이 닫히면 `reserveStock` 의 예약 문턱 동작을 초록 실행으로 재확인할 수 있다.
+6. **`projected_available_qty` 파리티 미고정.** `inventory.schema.ts:994` 가 `on_hand − reserved + inbound_pending` 으로 정본 산식을 뷰 안에서 다시 유도하는데 어떤 테스트도 고정하지 않는다 — 이 브랜치가 없애려던 바로 그 실패 양상이다. `view-parity.integration.spec.ts` 에 `projected === available + inboundPending` 단언 한 줄.
+7. **파리티 스펙의 분기 탐지 폭.** `view-parity` 픽스처에 `DEFECTIVE`/`IN_TRANSFER` 원장 행이 없어, 누군가 모듈에 `DEFECTIVE` 를 더해도 초록으로 통과한다.
+8. **죽은 산식 변형 1벌 잔존 (계획의 "6벌" 인벤토리 누락분).** `apps/core/src/modules/inventory/core/rules/stock-update.rules.ts`(153줄) + `stock-rule.types.ts`(48줄)는 import 하는 파일이 0곳(`stock-rule.types.ts` 는 같은 디렉터리의 `stock-update.rules.ts` 자체 import 1건뿐)인데 내용은 `RECEIVE/SHIP/MOVE/ADJUST_UP/ADJUST_DOWN` 마다 `availableQty: '+'` 를 쓰는 **옛 `stocks` 테이블식 가용재고 변이 모델**이다. Task 4 가 지운 `scanSku` 와 같은 부류(잘못된 산식이 되살아날 씨앗).
+9. **`transfer_pending_qty` 오배선.** `stock-projection.reader.ts:212` 가 이 값을 `returnPendingQuantity`(회송 예정)라는 다른 이름으로 내보낸다(사전 존재 오배선). 이전 예정 정보가 이제 가용수량에 녹아 있지도, 제대로 표시되지도 않는다.
