@@ -2,10 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders } from "@lib/data/cookies"
-import {
-  getMembershipAwareCacheTags,
-  getMembershipSegmentHeader,
-} from "@lib/data/membership-cache-tags"
+import { buildCatalogCacheOptions } from "@lib/data/catalog-cache"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
@@ -88,21 +85,11 @@ export const listProducts = async ({
     }
   }
 
-  const headers = {
-    ...(await getAuthHeaders()),
-    ...(await getMembershipSegmentHeader()),
-  }
+  const authHeaders = await getAuthHeaders()
 
-  // 목록 태그는 멤버십/로그인 상태별로 분리(회원/비회원 캐시 격리).
-  // handle 조회 시엔 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
+  // handle 조회엔 방문자 무관 태그를 더해 재고/가격 변경 시 revalidateTag 로 무효화한다.
   // 검색·카테고리는 handle 을 배열로 넘기므로 각각에 태그를 건다.
-  const listTags = await getMembershipAwareCacheTags("products")
-  const handleTag = toProductHandleTags(queryParams?.handle)
-  const tags = [...listTags, ...handleTag, PRODUCT_LIST_TAG]
-  const next = {
-    ...(tags.length ? { tags } : {}),
-    revalidate: 3600,
-  }
+  const tags = [...toProductHandleTags(queryParams?.handle), PRODUCT_LIST_TAG]
 
   return sdk.client
     .fetch<{ products: HttpTypes.StoreProduct[]; count: number }>(
@@ -117,8 +104,8 @@ export const listProducts = async ({
             "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
-        headers,
-        next,
+        headers: { ...authHeaders },
+        ...buildCatalogCacheOptions(!!authHeaders, tags),
       }
     )
     .then(({ products, count }) => {
@@ -186,17 +173,7 @@ export const listProductsSorted = async ({
     }
   }
 
-  const headers = {
-    ...(await getAuthHeaders()),
-    ...(await getMembershipSegmentHeader()),
-  }
-
-  const listTags = await getMembershipAwareCacheTags("products")
-  const tags = [...listTags, PRODUCT_LIST_TAG]
-  const next = {
-    tags,
-    revalidate: 3600,
-  }
+  const authHeaders = await getAuthHeaders()
 
   // 쿼리 파라미터 구성
   const query: Record<string, string | string[]> = {
@@ -222,8 +199,8 @@ export const listProductsSorted = async ({
     }>(`/store/products-sorted`, {
       method: "GET",
       query,
-      headers,
-      next,
+      headers: { ...authHeaders },
+      ...buildCatalogCacheOptions(!!authHeaders, [PRODUCT_LIST_TAG]),
     })
     .then(({ products, count }) => {
       const nextPage = count > offset + limit ? pageParam + 1 : null
