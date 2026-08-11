@@ -23,7 +23,8 @@
   "privacy": {
     "title": "Privacy Policy",
     "collection": "Collection & Use of Personal Information",
-    "thirdParty": "Sharing Personal Information with Third Parties"
+    "thirdParty": "Sharing Personal Information with Third Parties",
+    "effectiveDate": "Effective date: {date}"
   },
   "guide": {
     "title": "Guide",

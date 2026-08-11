@@ -1,7 +1,10 @@
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
-import { agreements } from "@/lib/data/agreements"
+import {
+  PrivacyPolicy,
+  PRIVACY_POLICY_EFFECTIVE_DATE,
+} from "@/domains/consents/components/privacy-policy"
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("policies.privacy")
@@ -10,33 +13,16 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function PrivacyPage() {
   const t = await getTranslations("policies.privacy")
-  const privacyPolicy = agreements.find((a) => a.id === "privacyPolicy")
-  const thirdPartySharing = agreements.find(
-    (a) => a.id === "thirdPartySharing"
-  )
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
       <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
-      <h1 className="mb-8 text-2xl font-bold">{t("title")}</h1>
+      <h1 className="mb-2 text-2xl font-bold">{t("title")}</h1>
+      <p className="text-muted-foreground mb-8 text-sm">
+        {t("effectiveDate", { date: PRIVACY_POLICY_EFFECTIVE_DATE })}
+      </p>
 
-      {privacyPolicy?.content && (
-        <section className="mb-12">
-          <h2 className="mb-4 text-lg font-semibold">{t("collection")}</h2>
-          <div className="text-muted-foreground whitespace-pre-line text-sm leading-relaxed">
-            {privacyPolicy.content}
-          </div>
-        </section>
-      )}
-
-      {thirdPartySharing?.content && (
-        <section>
-          <h2 className="mb-4 text-lg font-semibold">{t("thirdParty")}</h2>
-          <div className="text-muted-foreground whitespace-pre-line text-sm leading-relaxed">
-            {thirdPartySharing.content}
-          </div>
-        </section>
-      )}
+      <PrivacyPolicy />
     </div>
   )
 }

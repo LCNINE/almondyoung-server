@@ -23,7 +23,8 @@
   "privacy": {
     "title": "プライバシーポリシー",
     "collection": "個人情報の収集および利用",
-    "thirdParty": "個人情報の第三者提供"
+    "thirdParty": "個人情報の第三者提供",
+    "effectiveDate": "施行日: {date}"
   },
   "guide": {
     "title": "ご利用ガイド",
