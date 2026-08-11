@@ -979,7 +979,11 @@ export const stockSummary = pgView('stock_summary_view', {
 
         -- 예약 상태
         COALESCE(reserved.qty, 0) as reserved_qty,
-        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) - COALESCE(transit_out.qty, 0) as available_qty,
+        -- 가용재고 = ON_HAND 합 − confirmed 예약 합 (ADR-0001).
+        -- transit_out 을 다시 빼지 말 것: 출발 창고에서만 빠지고 도착 창고에 더해지지 않아
+        -- 사내 이동만으로 전사 판매가능수량이 줄고, inbound_plan_items 기반이라 실제 이동
+        -- (stock_journals)이 끝나도 줄지 않는다. 등가성은 view-parity.integration.spec.ts 가 고정한다.
+        COALESCE(on_hand.qty, 0) - COALESCE(reserved.qty, 0) as available_qty,
 
         -- 예정 상태
         COALESCE(inbound_pending.qty, 0) as inbound_pending_qty,

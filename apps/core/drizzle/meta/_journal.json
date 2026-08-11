@@ -456,6 +456,13 @@
       "when": 1786336249171,
       "tag": "20260810043049_add-site-popups",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1786484870311,
+      "tag": "20260811214750_drop-transit-out-from-available-qty",
+      "breakpoints": true
     }
   ]
 }
