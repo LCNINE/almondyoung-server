@@ -16,7 +16,9 @@
   "terms": {
     "title": "利用規約",
     "almondTerms": "アーモンドヨン 利用規約",
-    "electronicTransaction": "電子金融取引 利用規約"
+    "electronicTransaction": "電子金融取引 利用規約",
+    "membershipRecurring": "メンバーシップ 定期決済 利用規約",
+    "membershipOneTime": "メンバーシップ 一回払い 利用規約"
   },
   "privacy": {
     "title": "プライバシーポリシー",

@@ -2,6 +2,8 @@ import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { agreements } from "@/lib/data/agreements"
+import { getPlans } from "@lib/api/membership"
+import { TermsAndConditions } from "@/domains/membership/components/terms-and-conditions"
 
 export async function generateMetadata(): Promise<Metadata> {
   const t = await getTranslations("policies.terms")
@@ -14,6 +16,11 @@ export default async function TermsPage() {
   const electronicTransaction = agreements.find(
     (a) => a.id === "electronicTransaction"
   )
+
+  // 플랜 조회가 실패해도 약관 전문은 노출한다 — 금액만 빠진다.
+  const plans = await getPlans().catch(() => [])
+  const monthlyPrice = plans.find((p) => p.plan.durationDays === 30)?.plan.price
+  const yearlyPrice = plans.find((p) => p.plan.durationDays === 365)?.plan.price
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -30,7 +37,7 @@ export default async function TermsPage() {
       )}
 
       {electronicTransaction?.content && (
-        <section>
+        <section className="mb-12">
           <h2 className="mb-4 text-lg font-semibold">
             {t("electronicTransaction")}
           </h2>
@@ -39,6 +46,26 @@ export default async function TermsPage() {
           </div>
         </section>
       )}
+
+      <section className="mb-12">
+        <h2 className="mb-4 text-lg font-semibold">
+          {t("membershipRecurring")}
+        </h2>
+        <TermsAndConditions
+          monthlyPrice={monthlyPrice}
+          yearlyPrice={yearlyPrice}
+          billingMode="recurring"
+        />
+      </section>
+
+      <section>
+        <h2 className="mb-4 text-lg font-semibold">{t("membershipOneTime")}</h2>
+        <TermsAndConditions
+          monthlyPrice={monthlyPrice}
+          yearlyPrice={yearlyPrice}
+          billingMode="one_time"
+        />
+      </section>
     </div>
   )
 }

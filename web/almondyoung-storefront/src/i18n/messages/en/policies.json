@@ -16,7 +16,9 @@
   "terms": {
     "title": "Terms of Service",
     "almondTerms": "Almondyoung Terms of Service",
-    "electronicTransaction": "Electronic Financial Transaction Terms"
+    "electronicTransaction": "Electronic Financial Transaction Terms",
+    "membershipRecurring": "Membership Recurring Payment Terms",
+    "membershipOneTime": "Membership One-Time Payment Terms"
   },
   "privacy": {
     "title": "Privacy Policy",
