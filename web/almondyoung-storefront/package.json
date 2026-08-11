@@ -15,7 +15,8 @@
     "analyze": "ANALYZE=true next build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e:membership-cancel": "./e2e/membership-cancel/run.sh"
+    "test:e2e:membership-cancel": "./e2e/membership-cancel/run.sh",
+    "test:e2e:product-price-cache": "./e2e/product-price-cache/run.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
