@@ -895,112 +895,91 @@ transfer_pending_qty 표시 컬럼은 유지(ADR-0005 §5 destructive 회피)."
 
 ---
 
-## Task 6: 야간 대사 CTE 를 등가 테스트로 고정
+## Task 6: 야간 대사를 등가 테스트로 고정하고, 같은 파일의 깨진 테스트를 고친다
 
-`ledger-reconciliation.reconcileReservations` 의 CTE 는 전 카탈로그 집합 스캔이라 (sku, warehouse) 단위 스칼라 함수로 대체할 수 없다. 중복은 남기되, **조용히 갈라지는 것은 막는다.**
+`ledger-reconciliation.reconcileReservations` 의 CTE 는 전 카탈로그 집합 스캔이라 (sku, warehouse) 단위 스칼라 함수로 대체할 수 없다. 중복은 남기되 **조용히 갈라지는 것은 막는다.**
+
+**별도 스펙 파일을 만들지 않는다.** `ledger-reconciliation.integration.spec.ts` 에 이미 하니스(rollback tx · `seed()` · `recon` 인스턴스)가 있고, 그 파일에 **사전 존재 실패 1건**도 있다. 한 파일에서 둘 다 처리하는 것이 하니스 중복을 만들지 않는 길이다.
 
 **Files:**
-- Modify: `apps/core/src/modules/inventory/core/services/ledger-reconciliation.service.ts:150-151` (주석)
-- Create: `apps/core/src/modules/inventory/shared/availability/reconciliation-parity.integration.spec.ts`
+- Modify: `apps/core/src/modules/inventory/core/services/ledger-reconciliation.integration.spec.ts`
+- Modify: `apps/core/src/modules/inventory/core/services/ledger-reconciliation.service.ts:149-152` (낡은 주석)
 
 **Interfaces:**
-- Consumes: `readWarehouseAvailability` (Task 1), `LedgerReconciliationService.reconcileReservations`
+- Consumes: `readWarehouseAvailability` (Task 1), 기존 스펙의 `seed()` · `inRollbackTx()` · `recon`
 - Produces: 없음
 
-- [ ] **Step 1: 등가 테스트를 쓴다**
+### 배경 — 이 파일의 사전 존재 실패
 
-Create `apps/core/src/modules/inventory/shared/availability/reconciliation-parity.integration.spec.ts`:
+`reconcileReservations 는 예약>ON_HAND grain 을 잡는다` 케이스가 **develop 시점부터 실패한다**(7건 중 1건). 원인은 `stock_reservations` 를 손으로 INSERT 하면서 `shipment_line_id` 를 빠뜨린 것 — 그 컬럼은 **NOT NULL + FK → `shipment_lines`** 다(`inventory.schema.ts:1445-1447`, Task 25 계약).
+
+이 계획이 만든 실패가 아니다. 다만 같은 파일에 등가 테스트를 추가하는 김에 같은 픽스처로 고친다.
+
+- [ ] **Step 1: 사전 존재 실패를 재현한다**
+
+```bash
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- ledger-reconciliation.integration
+```
+
+Expected: **7건 중 1건 실패.** 실패 메시지에 `insert into "stock_reservations"` 와 `shipment_line_id` 가 보여야 한다. 그 출력을 보고서에 남긴다.
+
+다른 양상으로 실패하면 전제가 바뀐 것이므로 멈추고 보고한다.
+
+- [ ] **Step 2: 깨진 테스트를 픽스처로 고친다**
+
+`ledger-reconciliation.integration.spec.ts` 의 `reconcileReservations 는 예약>ON_HAND grain 을 잡는다` 케이스를 다음으로 교체한다. 기존 `seed()` 는 원장만 만들므로, 예약은 `seedPickableShipment` 로 만든다:
 
 ```typescript
-import * as postgres from 'postgres';
-import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { sql } from 'drizzle-orm';
-import { randomUUID } from 'crypto';
-import { DbService } from '@app/db';
-import { wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { readWarehouseAvailability } from './warehouse-availability';
-import { LedgerReconciliationService } from '../../core/services/ledger-reconciliation.service';
+  it('reconcileReservations 는 예약>ON_HAND grain 을 잡는다', async () => {
+    await inRollbackTx(async (tx) => {
+      // 픽스처: ON_HAND 4 + confirmed 예약 4 → 예약을 10 으로 올려 shortfall 6 을 만든다.
+      // 예약을 손으로 INSERT 하지 않는 이유: shipment_line_id 가 NOT NULL + FK → shipment_lines
+      // 라(Task 25 계약) 유효한 예약 하나에 FO → FOI → shipment → shipment_line 체인이 필요하다.
+      const fx = await seedPickableShipment(tx, 4);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 10 })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
 
-/**
- * 야간 대사의 CTE 와 availability 모듈이 같은 결론을 내는지 고정한다.
- *
- * CTE 는 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 함수로 대체할 수 없다.
- * 따라서 중복 자체는 남기고, 두 산식이 갈라지는 것만 이 테스트가 막는다.
- *
- * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <이 파일의 패턴>
- */
-const DATABASE_URL = process.env.DATABASE_URL;
-const describeIfDb = DATABASE_URL ? describe : describe.skip;
-class Rollback extends Error {}
-
-describeIfDb('야간 대사 CTE ↔ availability 모듈 등가 (DB integration)', () => {
-  jest.setTimeout(120_000);
-  let client: postgres.Sql;
-  let db: PostgresJsDatabase<typeof wmsSchema>;
-
-  beforeAll(() => {
-    client = postgres(DATABASE_URL as string, { max: 1 });
-    db = drizzle(client, { schema: wmsSchema });
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
+      expect(report.totalDriftGrains).toBe(1);
+      expect(report.drifts[0].shortfall).toBe(6);
+    });
   });
+```
 
-  afterAll(async () => {
-    await client.end();
-  });
+파일 상단 import 에 다음을 추가한다 (이미 있으면 중복 추가하지 않는다):
 
-  const inRollback = async (fn: (trx: DbTx) => Promise<void>) => {
-    await db
-      .transaction(async (t) => {
-        await fn(t as unknown as DbTx);
-        throw new Rollback();
-      })
-      .catch((e) => {
-        if (!(e instanceof Rollback)) throw e;
-      });
-  };
+```typescript
+import { eq } from 'drizzle-orm';
+import { seedPickableShipment } from '../../../fulfillment/services/__support__/logistics-fixtures';
+```
 
-  const buildService = (trx: DbTx): LedgerReconciliationService => {
-    // ADR-0025 단일 러너 최소 대역: spec 은 항상 rollback tx 를 전파한다.
-    const dbService = {
-      db,
-      run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
-    } as unknown as DbService<typeof wmsSchema>;
-    return new LedgerReconciliationService(dbService, { setReservationDrift: () => undefined } as never);
-  };
+- [ ] **Step 3: 등가 테스트 2건을 같은 파일에 추가한다**
 
-  const seedOverReserved = async (trx: DbTx): Promise<{ skuId: string; warehouseId: string }> => {
-    const skuId = randomUUID();
-    const warehouseId = randomUUID();
-    await trx.execute(sql`
-      INSERT INTO warehouses (id, name, code)
-      VALUES (${warehouseId}, ${'IT-WH'}, ${`IT-${warehouseId.slice(0, 8)}`})
-    `);
-    await trx.execute(sql`
-      INSERT INTO skus (id, name, code) VALUES (${skuId}, ${'IT-SKU'}, ${`IT-${skuId.slice(0, 8)}`})
-    `);
-    await trx.execute(sql`
-      INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-      VALUES (${skuId}, ${warehouseId}, 'ON_HAND', ${2})
-    `);
-    await trx.execute(sql`
-      INSERT INTO stock_reservations (sku_id, warehouse_id, quantity, status, target_type)
-      VALUES (${skuId}, ${warehouseId}, ${5}, 'confirmed', 'SHIPMENT_LINE')
-    `);
-    return { skuId, warehouseId };
-  };
+같은 `describe` 블록 안, Step 2 로 고친 케이스 바로 뒤에 넣는다:
 
-  it('모듈이 음수 가용을 보는 grain 을 대사도 drift 로 잡는다', async () => {
-    await inRollback(async (trx) => {
-      const { skuId, warehouseId } = await seedOverReserved(trx);
+```typescript
+  // ── availability 모듈과의 등가 고정 ──────────────────────────────
+  // reconcileReservations 의 CTE 는 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 판독인
+  // availability 모듈로 대체할 수 없다. 중복 자체는 남기고, 두 산식이 조용히 갈라지는 것만 막는다.
 
-      const fromModule = await readWarehouseAvailability(trx, skuId, warehouseId);
+  it('모듈이 음수 가용을 보는 grain 을 대사도 같은 수치로 잡는다', async () => {
+    await inRollbackTx(async (tx) => {
+      const fx = await seedPickableShipment(tx, 2);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 5 })
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+
+      const fromModule = await readWarehouseAvailability(tx, fx.skuId, fx.warehouseId);
       expect(fromModule.available).toBe(-3);
 
-      const report = await buildService(trx).reconcileReservations({ skuId, warehouseId }, trx);
-
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
       expect(report.totalDriftGrains).toBe(1);
       expect(report.drifts[0]).toMatchObject({
-        skuId,
-        warehouseId,
+        skuId: fx.skuId,
+        warehouseId: fx.warehouseId,
         onHandQty: fromModule.onHand,
         reservedQty: fromModule.reserved,
         shortfall: -fromModule.available,
@@ -1008,77 +987,79 @@ describeIfDb('야간 대사 CTE ↔ availability 모듈 등가 (DB integration)'
     });
   });
 
-  it('모듈 가용이 0 이상이면 대사는 아무것도 잡지 않는다', async () => {
-    await inRollback(async (trx) => {
-      const skuId = randomUUID();
-      const warehouseId = randomUUID();
-      await trx.execute(sql`
-        INSERT INTO warehouses (id, name, code)
-        VALUES (${warehouseId}, ${'IT-WH'}, ${`IT-${warehouseId.slice(0, 8)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO skus (id, name, code) VALUES (${skuId}, ${'IT-SKU'}, ${`IT-${skuId.slice(0, 8)}`})
-      `);
-      await trx.execute(sql`
-        INSERT INTO stock_ledgers (sku_id, warehouse_id, stock_state, qty)
-        VALUES (${skuId}, ${warehouseId}, 'ON_HAND', ${5})
-      `);
-      await trx.execute(sql`
-        INSERT INTO stock_reservations (sku_id, warehouse_id, quantity, status, target_type)
-        VALUES (${skuId}, ${warehouseId}, ${5}, 'confirmed', 'SHIPMENT_LINE')
-      `);
+  it('모듈 가용이 정확히 0 이면 대사는 아무것도 잡지 않는다', async () => {
+    await inRollbackTx(async (tx) => {
+      // 픽스처 기본값이 ON_HAND = 예약 = 5 → 가용 0 (경계값)
+      const fx = await seedPickableShipment(tx, 5);
 
-      const fromModule = await readWarehouseAvailability(trx, skuId, warehouseId);
+      const fromModule = await readWarehouseAvailability(tx, fx.skuId, fx.warehouseId);
       expect(fromModule.available).toBe(0);
 
-      const report = await buildService(trx).reconcileReservations({ skuId, warehouseId }, trx);
+      const report = await recon.reconcileReservations({ skuId: fx.skuId, warehouseId: fx.warehouseId }, tx);
       expect(report.totalDriftGrains).toBe(0);
     });
   });
-});
 ```
 
-> `LedgerReconciliationService` 의 생성자 인자 개수·순서를 실제 파일에서 확인하고
-> `buildService` 를 맞춘다. 메트릭 대역의 메서드 이름도 실제 것으로 바꾼다
-> (`ledger-reconciliation.service.ts` 의 `this.metrics.` 호출을 보고 결정).
+파일 상단 import 에 추가한다:
 
-- [ ] **Step 2: 테스트를 돌린다**
+```typescript
+import { readWarehouseAvailability } from '../../shared/availability/warehouse-availability';
+```
+
+> **주의:** `recon` 인스턴스와 `inRollbackTx` 는 이 파일에 이미 있는 것을 쓴다. **새 하니스를 만들지 마라.**
+> 기존 메트릭 대역이 `setLedgerDrift` 만 가지고 있어 `scheduledReconcile` 경로에서는 부족할 수 있으나,
+> 이 테스트들은 `reconcileReservations` 를 직접 부르므로 메트릭을 건드리지 않는다.
+
+- [ ] **Step 4: 세 테스트가 전부 통과하는지 확인한다**
 
 ```bash
-COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- reconciliation-parity.integration
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- ledger-reconciliation.integration
 ```
 
-Expected: PASS (2 tests). 생성자 대역이 안 맞으면 Step 1 주의사항대로 고치고 다시 돌린다.
+Expected: **9건 전부 통과** (기존 6건 + 고친 1건 + 새 2건). 사전 존재 실패가 사라져야 한다.
 
-- [ ] **Step 3: 낡은 주석을 갱신한다**
+- [ ] **Step 5: 낡은 주석을 갱신한다**
 
-`ledger-reconciliation.service.ts:150-151` 의 주석을 바꾼다:
+`ledger-reconciliation.service.ts:149-152` 의 주석에서 `transit_out` 을 근거로 든 문장을 지운다 — Task 5 가 뷰에서 그 항을 제거해 근거가 사라졌다:
 
 ```typescript
   /**
    * (sku,warehouse) 예약 불변식 대사 — ON_HAND 원장 합 < confirmed 예약 합 grain 만 반환.
    *
-   * 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 판독인 availability 모듈로
-   * 대체하지 않는다. 두 산식이 같은 결론을 내는지는
-   * shared/availability/reconciliation-parity.integration.spec.ts 가 고정한다.
+   * 전 카탈로그 집합 스캔이라 (sku,warehouse) 스칼라 판독인 availability 모듈로 대체하지 않는다.
+   * 두 산식이 같은 결론을 내는지는 ledger-reconciliation.integration.spec.ts 의
+   * "모듈이 음수 가용을 보는 grain 을 대사도 같은 수치로 잡는다" 가 고정한다.
    */
 ```
 
-기존의 *"raw 합 직접 집계(뷰 availableQty 의 transit_out 반영 금지 → 거짓 경보 방지)"* 는 Task 5 로 근거가 사라졌으므로 지운다.
+기존의 *"raw 합 직접 집계(뷰 availableQty 의 transit_out 반영 금지 → 거짓 경보 방지)"* 문장을 제거한다.
 
-- [ ] **Step 4: 커밋**
+- [ ] **Step 6: 검증 3종**
 
 ```bash
 npx nest build core
-git add apps/core/src/modules/inventory/core/services/ledger-reconciliation.service.ts \
-        apps/core/src/modules/inventory/shared/availability/reconciliation-parity.integration.spec.ts
-git commit -m "test(inventory): 야간 대사 CTE 와 availability 모듈의 등가를 고정
+npm run type-check
+npx eslint apps/core/src/modules/inventory/core/services/ledger-reconciliation.integration.spec.ts apps/core/src/modules/inventory/core/services/ledger-reconciliation.service.ts
+```
+
+Expected: 빌드 성공 / `type-check` 162 이하 / eslint 새 에러 0 (사전 존재 에러가 있으면 건드리지 말고 개수만 보고).
+
+- [ ] **Step 7: 커밋**
+
+```bash
+git add apps/core/src/modules/inventory/core/services/ledger-reconciliation.integration.spec.ts \
+        apps/core/src/modules/inventory/core/services/ledger-reconciliation.service.ts
+git commit -m "test(inventory): 야간 대사와 availability 모듈의 등가를 고정하고 깨진 예약 테스트 수정
 
 집합 스캔이라 스칼라 모듈로 대체 불가 — 중복은 남기되 조용한 분기를 막는다.
+
+같은 파일의 사전 존재 실패도 함께 수정: 예약을 손으로 INSERT 하며 shipment_line_id
+(NOT NULL + FK, Task 25 계약)를 빠뜨려 develop 부터 RED 였다. seedPickableShipment 로 교체.
+
 transit_out 회피를 근거로 들던 낡은 주석 제거(Task 5 로 근거 소멸)."
 ```
 
----
 
 ## 마무리: 전체 검증
 
