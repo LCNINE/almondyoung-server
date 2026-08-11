@@ -1,9 +1,10 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, sum, sql } from 'drizzle-orm';
+import { eq, and, sum } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
+import { readWarehouseAvailability } from '../availability/warehouse-availability';
 
 export interface ReserveStockDto {
   // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
@@ -249,16 +250,9 @@ export class UnifiedReservationService {
   private async getAvailableStock(skuId: string, warehouseId: string, tx?: DbTx): Promise<number> {
     const db = tx ?? this.db.db;
 
-    // 단일 스냅샷: on_hand 와 reserved 를 한 statement 로 계산 → READ COMMITTED 에서 SHIP 소진 등
-    // 비-락 경로가 두 읽기 사이 커밋될 때의 torn read(초과예약) 차단.
-    const rows = (await db.execute(sql`
-      SELECT
-        COALESCE((SELECT SUM(qty) FROM stock_ledgers
-                   WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND stock_state = 'ON_HAND'), 0)
-        - COALESCE((SELECT SUM(quantity) FROM stock_reservations
-                     WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND status = 'confirmed'), 0)
-          AS available
-    `)) as unknown as { available: number | string }[];
-    return Number(rows[0]?.available ?? 0);
+    // 기존 시그니처 유지를 위한 좁히기 — 이 메서드의 tx 전파 형태 변경은 별건(ADR-0025).
+    // 산식·단일 statement 원자성은 availability 모듈이 소유한다.
+    const { available } = await readWarehouseAvailability(db as DbTx, skuId, warehouseId);
+    return available;
   }
 }
