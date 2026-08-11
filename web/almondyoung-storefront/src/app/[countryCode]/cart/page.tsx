@@ -3,6 +3,7 @@ import CartTemplate from "@/domains/cart/templates"
 import {
   ensureCorrectShippingMethod,
   findUnavailableLineItems,
+  refreshCartPricesDuringRender,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
 import { recoverCustomerCart } from "@/lib/api/medusa/customer"
@@ -17,6 +18,11 @@ export default async function Cart({
   params: Promise<{ countryCode: string }>
 }) {
   const { countryCode } = await params
+
+  // 멤버십 가입/해지로 달라진 가격을 카트에 반영한다. 카트를 읽기 전에, 배송수단 정합보다 먼저,
+  // 이 요청 안에서 순차로 돌린다. 예전에는 이걸 클라이언트에서 걸고 router.refresh 로 다시
+  // 그렸는데, 그 재계산이 다음 렌더의 배송수단 교체와 겹쳐 같은 카트를 동시에 고쳤다.
+  await refreshCartPricesDuringRender()
 
   // 무통장입금 주문 선생성 시 원본 장바구니 아이템은 Medusa 서버사이드에서 제거됨.
   // 그 정리는 storefront 의 carts 캐시 태그를 무효화하지 못하므로, 이미 force-dynamic 인 카트
@@ -44,9 +50,13 @@ export default async function Cart({
     return <EmptyCartView showHeader={false} bgColor="bg-muted" />
   }
 
-  // draft/미게시(판매중단)된 상품을 직접 감지한다. (배송수단 throw 에 의존하지 않음)
-  const { variantIds: unavailableVariantIds, availableByVariantId } =
-    await findUnavailableLineItems(cart, countryCode)
+  // draft/미게시(판매중단)된 상품과 옵션만 사라진 라인을 직접 감지한다.
+  // (배송수단 throw 에 의존하지 않음)
+  const {
+    variantIds: unavailableVariantIds,
+    optionGoneVariantIds,
+    availableByVariantId,
+  } = await findUnavailableLineItems(cart, countryCode)
 
   // 배송 옵션 자동 설정. draft 상품이 있으면 throw 할 수 있으나, 그대로 두면
   // 장바구니까지 500 으로 깨져 상품을 삭제할 화면조차 못 본다. 잡아서 원본 카트를
@@ -64,6 +74,7 @@ export default async function Cart({
     <CartTemplate
       cart={cart}
       unavailableVariantIds={unavailableVariantIds}
+      optionGoneVariantIds={optionGoneVariantIds}
       availableByVariantId={availableByVariantId}
     />
   )

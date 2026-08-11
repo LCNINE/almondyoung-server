@@ -26,6 +26,7 @@ type ItemsProps = {
   onSelectItem: (itemId: string, checked: boolean) => void
   /** 판매중단(draft/미게시)으로 결제를 막는 variant id 집합 */
   unavailableVariantIds?: Set<string>
+  optionGoneVariantIds?: Set<string>
   /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
   availableByVariantId?: Record<string, number>
 }
@@ -37,6 +38,7 @@ export default function Items({
   onSelectAll,
   onSelectItem,
   unavailableVariantIds,
+  optionGoneVariantIds,
   availableByVariantId,
 }: ItemsProps) {
   const [isPending, startTransition] = useTransition()
@@ -44,6 +46,12 @@ export default function Items({
 
   const isItemUnavailable = (item: HttpTypes.StoreCartLineItem) =>
     !!item.variant_id && !!unavailableVariantIds?.has(item.variant_id)
+
+  // 상품이 통째로 내려간 것과 그 옵션만 없어진 것은 고객이 취할 행동이 달라 구분해 안내한다.
+  const unavailableReasonOf = (item: HttpTypes.StoreCartLineItem) =>
+    item.variant_id && optionGoneVariantIds?.has(item.variant_id)
+      ? ("option" as const)
+      : ("product" as const)
 
   const maxQuantityOf = (item: HttpTypes.StoreCartLineItem) =>
     item.variant_id ? availableByVariantId?.[item.variant_id] : undefined
@@ -99,6 +107,7 @@ export default function Items({
               <Item
                 item={item}
                 isUnavailable={isItemUnavailable(item)}
+                unavailableReason={unavailableReasonOf(item)}
                 maxQuantity={maxQuantityOf(item)}
               >
                 <Item.Mobile />
@@ -140,6 +149,7 @@ export default function Items({
                 onSelectChange={(checked) => onSelectItem(item.id, checked)}
                 selectDisabled={isPending}
                 isUnavailable={isItemUnavailable(item)}
+                unavailableReason={unavailableReasonOf(item)}
                 maxQuantity={maxQuantityOf(item)}
               >
                 <Item.Desktop />

@@ -2,6 +2,10 @@
 
 import { toCheckoutErrorCode } from "@/lib/api/medusa/checkout-error-code"
 import {
+  isTransientCartConflictError,
+  withCartConflictRetry,
+} from "@/lib/api/medusa/cart-conflict"
+import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
   shippingMethodsMatchOptions,
@@ -120,11 +124,15 @@ async function ensureShippingMethod(
     return
   }
 
-  await sdk.client.fetch(`/store/carts/${cartId}/shipping-methods/bulk`, {
-    method: "POST",
-    body: { option_ids: standardOptions.map((option) => option.id) },
-    headers,
-  })
+  const assign = () =>
+    sdk.client.fetch(`/store/carts/${cartId}/shipping-methods/bulk`, {
+      method: "POST",
+      body: { option_ids: standardOptions.map((option) => option.id) },
+      headers,
+    })
+
+  // 같은 카트를 만지는 다른 요청과 겹쳤을 뿐이면 한 번 더 시도한다.
+  await withCartConflictRetry(assign)
   logger.info("storefront.checkout.shipping_method.assigned", {
     attributes: {
       cart_id: cartId,
@@ -387,7 +395,19 @@ export async function processPaymentCallback(
         // 서버 capture 웹훅(handleCaptureProjection → completeCartWorkflow)이 이 카트를 동시에
         // 완료하면, 완료된 카트에 addShippingMethod 가 throw 한다. try 밖이면 이 throw 가 바깥
         // catch 로 새어나가 결제·주문이 정상인데도 '실패페이지' 가 떴다(주문은 웹훅이 이미 생성).
-        await ensureShippingMethod(targetCartId, headers)
+        //
+        // 재시도까지 했는데도 경합이면 완료 자체를 포기하지 않는다. 배송수단이 실제로
+        // 없으면 바로 아래 complete 가 제 이유로 막고, 다른 요청이 이미 붙여놨다면 통과한다.
+        // 여기서 던지면 결제는 승인됐는데 화면만 실패로 보인다.
+        try {
+          await ensureShippingMethod(targetCartId, headers)
+        } catch (shippingErr) {
+          if (!isTransientCartConflictError(shippingErr)) throw shippingErr
+          logger.warn("storefront.checkout.shipping_method.conflict_ignored", {
+            error: shippingErr,
+            attributes: { intent_id: intentId, target_cart_id: targetCartId },
+          })
+        }
         cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
       } catch (completeErr) {
         // 동시 호출 레이스 / 중복 콜백: 다른 호출(웹훅 포함)이 먼저 완료시킨 경우 주문은 이미 생성됐다.

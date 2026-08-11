@@ -113,6 +113,33 @@ export function buildAvailabilityMap(
 }
 
 /**
+ * 상품은 그대로 노출되는데 그 variant 만 사라진 라인인지 판단한다.
+ *
+ * variant 가 없으면 Medusa 의 카트 재계산이 `Variants ... do not exist` 로 거부해, 그 라인을
+ * 뺄 때까지 결제도 수량 변경도 막힌다. 그런데 라인아이템에 붙어오는 variant 는 이 경우 그냥
+ * 비어 있어서 품절 판정(isVariantSoldOut)으로는 안 잡히고, 상품은 멀쩡히 게시 중이라
+ * 미게시 판정으로도 안 잡힌다. 화면상 정상인 상품을 담은 채 결제에서만 계속 실패한다.
+ *
+ * 판정 조건을 좁게 잡는다. 그 상품이 조회 결과에 있고, **그 상품의 variant 목록을 실제로
+ * 받아왔을 때만** 없어졌다고 본다. 상품 조회가 실패하거나 응답에 variant 가 안 실려오면
+ * 멀쩡한 라인이 전부 구매 불가로 찍혀 결제를 통째로 막는다 — 못 잡는 쪽보다 나쁘다.
+ * (조회 실패는 미게시 판정이 이미 잡는다.)
+ */
+export function isLineItemVariantGone(
+  item: { product_id?: string | null; variant_id?: string | null },
+  publishedProductIds: Set<string>,
+  variantIdsByProductId: Map<string, Set<string>>
+): boolean {
+  if (!item.variant_id || !item.product_id) return false
+  if (!publishedProductIds.has(item.product_id)) return false
+
+  const knownVariantIds = variantIdsByProductId.get(item.product_id)
+  if (!knownVariantIds?.size) return false
+
+  return !knownVariantIds.has(item.variant_id)
+}
+
+/**
  * variant 가 재고 기준으로 품절인지 판단한다.
  * 상품 상세의 `isInStock`/`hasStock` 과 동일 기준 — 재고관리를 켜고(manage_inventory),
  * 백오더 불가(allow_backorder=false)이며, 가용 재고가 0 이하이면 품절.
@@ -125,4 +152,119 @@ export function isVariantSoldOut(variant?: VariantStock | null): boolean {
   if (!variant.manage_inventory) return false
   if (variant.allow_backorder) return false
   return (variant.inventory_quantity ?? 0) <= 0
+}
+
+type ClassifiableVariant = VariantStock & { id?: string | null }
+
+export type ClassifiableLineItem = {
+  product_id?: string | null
+  variant_id?: string | null
+  quantity?: number | null
+  product_title?: string | null
+  title?: string | null
+  variant?: ClassifiableVariant | null
+}
+
+export type ClassifiableProduct = {
+  id?: string | null
+  variants?: ClassifiableVariant[] | null
+}
+
+export type CartLineItemClassification = {
+  /** 결제를 막아야 하는 라인의 variant id */
+  variantIds: string[]
+  productNames: string[]
+  /**
+   * 그중 상품은 계속 팔리는데 그 옵션만 없어진 라인. 고객이 취할 행동이 달라서
+   * (다른 옵션으로 다시 담으면 된다) 상품 자체의 판매중단과 구분해 안내한다.
+   */
+  optionGoneVariantIds: string[]
+  /** 팔긴 하지만 담은 수량을 못 채우는 라인 */
+  insufficientVariantIds: string[]
+  insufficientNames: string[]
+  availableByVariantId: Record<string, number>
+}
+
+/**
+ * 카트 라인을 구매 가능/불가로 가른다. `products` 는 재고가 계산된 조회 결과
+ * (`/store/products`) 로, 미게시·삭제 상품은 애초에 들어있지 않다.
+ */
+export function classifyCartLineItems(
+  items: ClassifiableLineItem[],
+  products: ClassifiableProduct[]
+): CartLineItemClassification {
+  const publishedProductIds = new Set(
+    products.map((product) => product.id).filter((id): id is string => !!id)
+  )
+  // variant_id → 재고가 계산된 variant. 카트 라인아이템 variant 는 inventory_quantity 가 비어있으므로 사용하지 않는다.
+  const variantById = new Map<string, ClassifiableVariant>()
+  // 상품별 variant 목록. 응답에 variant 가 안 실려온 상품과 진짜로 variant 가 사라진 상품을
+  // 구분하려면 상품 단위로 봐야 한다.
+  const variantIdsByProductId = new Map<string, Set<string>>()
+  for (const product of products) {
+    const ids = new Set<string>()
+    for (const variant of product.variants ?? []) {
+      if (variant.id) {
+        variantById.set(variant.id, variant)
+        ids.add(variant.id)
+      }
+    }
+    if (product.id) variantIdsByProductId.set(product.id, ids)
+  }
+
+  // 판매중단(미게시) 이거나, variant 가 사라졌거나, 재고 기준 품절(수동 품절 포함)이면
+  // 구매 불가로 본다.
+  const unavailableItems = items.filter((item) => {
+    if (item.product_id && !publishedProductIds.has(item.product_id)) {
+      return true
+    }
+    if (isLineItemVariantGone(item, publishedProductIds, variantIdsByProductId)) {
+      return true
+    }
+    // 재고가 계산된 variant 로 판정. 조회 실패 시에만 카트 라인아이템 variant 로 폴백.
+    const variant =
+      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
+      item.variant
+    return isVariantSoldOut(variant)
+  })
+
+  // 품절은 아니지만 담은 수량이 가용 재고를 넘어선 라인 (담은 뒤 재고가 줄어든 경우).
+  const unavailableSet = new Set(unavailableItems)
+  // 재고가 계산된 variant 로만 판정한다. 카트 라인아이템 variant 는 inventory_quantity 가 비어 있어
+  // 폴백으로 쓰면 전 라인이 재고 0 으로 읽혀 멀쩡한 결제까지 막는다.
+  const insufficientItems = items.filter((item) => {
+    if (unavailableSet.has(item)) return false
+    const variant = item.variant_id ? variantById.get(item.variant_id) : undefined
+    return isVariantQuantityUnavailable(variant, item.quantity)
+  })
+
+  const toVariantIds = (list: ClassifiableLineItem[]) =>
+    Array.from(
+      new Set(
+        list
+          .map((item) => item.variant_id)
+          .filter((id): id is string => Boolean(id))
+      )
+    )
+  const toNames = (list: ClassifiableLineItem[]) =>
+    Array.from(
+      new Set(
+        list
+          .map((item) => item.product_title || item.title || "")
+          .filter(Boolean)
+      )
+    )
+
+  const optionGoneItems = unavailableItems.filter((item) =>
+    isLineItemVariantGone(item, publishedProductIds, variantIdsByProductId)
+  )
+
+  return {
+    variantIds: toVariantIds(unavailableItems),
+    productNames: toNames(unavailableItems),
+    optionGoneVariantIds: toVariantIds(optionGoneItems),
+    insufficientVariantIds: toVariantIds(insufficientItems),
+    insufficientNames: toNames(insufficientItems),
+    availableByVariantId: buildAvailabilityMap(items, variantById),
+  }
 }

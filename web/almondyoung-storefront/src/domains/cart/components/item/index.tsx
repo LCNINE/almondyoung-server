@@ -24,6 +24,18 @@ import Image from "next/image"
 import { cloneElement, ReactElement, useState, useTransition } from "react"
 import { toast } from "sonner"
 
+/**
+ * 구매 불가 사유. 상품이 통째로 내려간 것(`product`)과 그 옵션만 없어진 것(`option`)은
+ * 고객이 할 수 있는 일이 다르다 — 후자는 다른 옵션으로 다시 담으면 된다.
+ */
+type UnavailableReason = "product" | "option"
+
+const unavailableBadgeKey = (reason?: UnavailableReason) =>
+  reason === "option" ? "optionGoneBadge" : "soldOutBadge"
+
+const unavailableHintKey = (reason?: UnavailableReason) =>
+  reason === "option" ? "optionGoneHint" : "soldOutHint"
+
 type ItemProps = {
   item: HttpTypes.StoreCartLineItem
   children: ReactElement
@@ -32,6 +44,8 @@ type ItemProps = {
   selectDisabled?: boolean
   /** 판매중단(draft/미게시)으로 결제를 막는 상품이면 true */
   isUnavailable?: boolean
+  /** 상품이 통째로 내려갔는지, 그 옵션만 없어졌는지 */
+  unavailableReason?: UnavailableReason
   /** 남은 재고. 없으면(재고 미추적/백오더) 수량 상한이 없다는 뜻 */
   maxQuantity?: number
 }
@@ -52,6 +66,7 @@ type ItemChildProps = {
   onSelectChange?: (checked: boolean) => void
   selectDisabled?: boolean
   isUnavailable?: boolean
+  unavailableReason?: UnavailableReason
   maxQuantity?: number
 }
 
@@ -68,6 +83,7 @@ function Item({
   onSelectChange,
   selectDisabled,
   isUnavailable,
+  unavailableReason,
   maxQuantity,
 }: ItemProps) {
   const t = useTranslations("cart.items")
@@ -159,6 +175,7 @@ function Item({
     onSelectChange,
     selectDisabled,
     isUnavailable,
+    unavailableReason,
     maxQuantity,
   } as ItemChildProps)
 }
@@ -180,6 +197,7 @@ function DesktopItem({
   onSelectChange,
   selectDisabled,
   isUnavailable,
+  unavailableReason,
   maxQuantity,
 }: DesktopItemProps) {
   const t = useTranslations("cart.items")
@@ -266,7 +284,7 @@ function DesktopItem({
       <TableCell className="text-left">
         {isUnavailable && (
           <p className="mb-1 text-xs font-semibold text-red-600">
-            {t("soldOutBadge")}
+            {t(unavailableBadgeKey(unavailableReason))}
           </p>
         )}
         <p className="text-sm font-medium" data-testid="product-title">
@@ -280,7 +298,9 @@ function DesktopItem({
           </p>
         )}
         {isUnavailable && (
-          <p className="mt-1 text-xs text-red-600">{t("soldOutHint")}</p>
+          <p className="mt-1 text-xs text-red-600">
+            {t(unavailableHintKey(unavailableReason))}
+          </p>
         )}
       </TableCell>
 
@@ -450,6 +470,7 @@ function MobileItem({
   changeQuantity,
   handleDelete,
   isUnavailable,
+  unavailableReason,
   maxQuantity,
 }: MobileItemProps) {
   const t = useTranslations("cart.items")
@@ -522,7 +543,7 @@ function MobileItem({
           <div className="flex-1">
             {isUnavailable && (
               <p className="mb-0.5 text-xs font-semibold text-red-600">
-                {t("soldOutBadge")}
+                {t(unavailableBadgeKey(unavailableReason))}
               </p>
             )}
             <p className="line-clamp-2 text-sm leading-snug font-medium">
@@ -536,7 +557,9 @@ function MobileItem({
               </p>
             )}
             {isUnavailable && (
-              <p className="mt-0.5 text-xs text-red-600">{t("soldOutHint")}</p>
+              <p className="mt-0.5 text-xs text-red-600">
+                {t(unavailableHintKey(unavailableReason))}
+              </p>
             )}
           </div>
           <Button
