@@ -14,10 +14,20 @@ interface MainLayoutProps {
   children: React.ReactNode;
 }
 
+// 이 경로들에 들어가면 사이드바가 자동으로 접힌다 (경로 완전일치 — 하위 상세 페이지는 제외)
+const COLLAPSED_SIDEBAR_PATHS = ['/mall/products-list'];
+
 export function MainLayout({ children }: MainLayoutProps) {
   const pathname = usePathname();
   const [activeMenu, setActiveMenu] = useState('company');
   const [activeItem, setActiveItem] = useState<string | undefined>();
+
+  const shouldCollapseSidebar = COLLAPSED_SIDEBAR_PATHS.includes(pathname);
+  const [sidebarOpen, setSidebarOpen] = useState(!shouldCollapseSidebar);
+
+  useEffect(() => {
+    setSidebarOpen(!shouldCollapseSidebar);
+  }, [shouldCollapseSidebar]);
 
   useEffect(() => {
     const { menuId, itemId } = getActiveMenuAndItem(pathname);
@@ -57,7 +67,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   }
 
   return (
-    <SidebarProvider defaultOpen={true}>
+    <SidebarProvider open={sidebarOpen} onOpenChange={setSidebarOpen}>
       <div className="hidden lg:flex ">
         <AppSidebar
           activeMenu={activeMenu}

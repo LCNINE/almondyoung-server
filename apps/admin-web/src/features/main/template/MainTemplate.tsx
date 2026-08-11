@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard';
+import { useBusinessLicenses } from '@/lib/services/business-licenses';
 import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useAllUserCount } from '@/lib/services/users';
@@ -19,6 +20,7 @@ import {
   Boxes,
   CheckCircle,
   ChevronRight,
+  FileCheck,
   Headphones,
   Package,
   RotateCcw,
@@ -57,6 +59,11 @@ export default function MainTemplate() {
   const { data: qnaData, isLoading: isQnaLoading } = useQuestions({ limit: 1, status: 'active' });
   const { data: bankTransfers, isLoading: isBankTransfersLoading } = usePendingBankTransfers(1, 1);
   const { data: refundRequests, isLoading: isRefundRequestsLoading } = useRefundRequests(1, 1);
+  // limit 은 건수(total)만 쓰지만 user-service 가 최소 10 을 요구한다 (BusinessLicenseQueryDto @Min(10))
+  const { data: businessLicenses, isLoading: isBusinessLicensesLoading } = useBusinessLicenses({
+    limit: 10,
+    status: 'under_review',
+  });
   const { data: recentOrdersData, isLoading: isOrdersLoading } = useSalesOrders({ limit: 5 });
 
   const stats = [
@@ -118,6 +125,16 @@ export default function MainTemplate() {
       path: '/payments/refund-requests',
       highlight: (v: number) => v > 0,
     },
+    {
+      label: '사업자 심사 대기',
+      value: businessLicenses?.total,
+      isLoading: isBusinessLicensesLoading,
+      icon: FileCheck,
+      iconBg: 'bg-teal-50',
+      iconColor: 'text-teal-600',
+      path: '/cs/business-licenses?status=under_review',
+      highlight: (v: number) => v > 0,
+    },
   ];
 
   const recentOrders = recentOrdersData?.data ?? [];
@@ -135,7 +152,7 @@ export default function MainTemplate() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
           const isHighlighted = stat.value != null && stat.highlight?.(stat.value);
