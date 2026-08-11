@@ -79,8 +79,8 @@ export function HomePageSkeleton() {
   return (
     <div className="min-h-screen bg-white">
       <div className="w-full">
-        <div className="px-4 pt-4 pb-4 md:pb-[87px]">
-          <Skeleton className="h-[350px] w-full rounded-2xl md:h-[540px]" />
+        <div className="w-full pb-4 md:pb-[87px]">
+          <Skeleton className="aspect-2/1 w-full rounded-none md:aspect-3/1" />
         </div>
         <section className="w-full border-t border-gray-200 py-8 lg:py-12">
           <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
