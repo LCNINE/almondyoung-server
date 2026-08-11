@@ -35,9 +35,11 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     notFound()
   }
 
+  // fields 를 Page 와 똑같이 맞춰야 같은 캐시 항목을 공유한다. 다르면 같은 상품을
+  // Medusa 에서 두 번 받아온다.
   const product = await listProducts({
     countryCode: params.countryCode,
-    queryParams: { handle },
+    queryParams: { handle, fields: PRODUCT_DETAIL_FIELDS },
   }).then(({ response }) => response.products[0])
 
   if (!product) {

@@ -7,6 +7,7 @@ import {
   serializeAppContext,
 } from "@/lib/app-context/parse"
 import { getBackendBaseUrl } from "@/lib/config/backend"
+import { CATEGORY_TREE_TAG } from "@/lib/data/catalog-cache"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -186,10 +187,13 @@ const STORE_LOOKUPS = {
   category: {
     path: "/store/product-categories",
     key: "product_categories",
+    // `/api/revalidate` 가 쓰는 태그와 같은 이름이어야 무효화가 여기까지 닿는다.
+    tag: () => CATEGORY_TREE_TAG,
   },
   products: {
     path: "/store/products",
     key: "products",
+    tag: (handle: string) => `product-${handle}`,
   },
 } as const
 
@@ -228,10 +232,18 @@ async function resolveStorefrontNotFound(
     url.searchParams.set("fields", "id")
     url.searchParams.set("limit", "1")
 
+    // 존재 확인은 렌더마다 나가던 왕복이었다. knownHandles 와 같은 수명으로 캐시해
+    // 람다 인스턴스를 넘어 공유한다. 새로 발행된 상품은 `/api/revalidate` 가
+    // `product-{handle}` 로 걷어내므로 5분을 기다리지 않는다.
     const res = await fetch(url, {
       headers: PUBLISHABLE_API_KEY
         ? { "x-publishable-api-key": PUBLISHABLE_API_KEY }
         : {},
+      cache: "force-cache",
+      next: {
+        revalidate: KNOWN_HANDLE_TTL_MS / 1000,
+        tags: [lookup.tag(handle)],
+      },
     })
     if (!res.ok) return
 
