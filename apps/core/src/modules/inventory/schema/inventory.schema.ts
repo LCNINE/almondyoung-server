@@ -1151,18 +1151,23 @@ export const stockSummary = pgView('stock_summary_view', {
         GROUP BY sku_id, warehouse_id
     ) reserved ON s.id = reserved.sku_id AND w.id = reserved.warehouse_id
     LEFT JOIN (
-        SELECT ipi.sku_id, ip.destination_warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
-        FROM inbound_plan_items ipi
-        INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
-        WHERE ipi.status = 'pending'
-        GROUP BY ipi.sku_id, ip.destination_warehouse_id
-    ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.destination_warehouse_id
-    LEFT JOIN (
+        -- 그 창고에 실제로 입고될 예정 수량. destination_warehouse_id 로 집계하면
+        -- source/destination 두 계획이 같은 창고에 잡혀 이중 계상된다.
         SELECT ipi.sku_id, ip.warehouse_id, SUM(ipi.expected_qty - ipi.received_qty) as qty
         FROM inbound_plan_items ipi
         INNER JOIN inbound_plans ip ON ipi.plan_id = ip.id
-        WHERE ipi.status = 'pending' AND ip.requires_transfer = true AND ip.warehouse_id != ip.destination_warehouse_id
+        WHERE ipi.status = 'pending'
         GROUP BY ipi.sku_id, ip.warehouse_id
+    ) inbound_pending ON s.id = inbound_pending.sku_id AND w.id = inbound_pending.warehouse_id
+    LEFT JOIN (
+        -- 미도착 이동 잔량. 도착 창고 기준이다 — 옛 정의는 inbound_plan_items 를 읽어
+        -- 출발 창고에 붙였고, 실제 이동 경로를 추적하지 못했다.
+        SELECT tol.sku_id, tord.to_warehouse_id AS warehouse_id,
+               SUM(tol.shipped_qty - tol.received_qty - tol.lost_qty) as qty
+        FROM transfer_order_lines tol
+        INNER JOIN transfer_orders tord ON tord.id = tol.transfer_order_id
+        WHERE (tol.shipped_qty - tol.received_qty - tol.lost_qty) > 0
+        GROUP BY tol.sku_id, tord.to_warehouse_id
     ) transit_out ON s.id = transit_out.sku_id AND w.id = transit_out.warehouse_id
 `);
 

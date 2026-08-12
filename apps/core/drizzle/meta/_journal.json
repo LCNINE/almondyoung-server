@@ -505,6 +505,13 @@
       "when": 1786532259001,
       "tag": "20260812105738_add-transfer-orders",
       "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1786537926293,
+      "tag": "20260812123206_fix-inbound-pending-warehouse-key",
+      "breakpoints": true
     }
   ]
 }

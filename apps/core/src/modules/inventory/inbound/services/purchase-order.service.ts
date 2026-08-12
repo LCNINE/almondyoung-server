@@ -289,9 +289,11 @@ export class PurchaseOrderService {
     const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
 
     if (requiresTransfer) {
-      // 🔥 핵심: 이중 계획 생성 (해외 발주)
-
-      // 1. Source Plan 생성 (중국 창고)
+      // 해외 발주: 공급사 → 출발 창고 입고 계획만 만든다.
+      // 출발 창고 → 최종 목적지 이동은 별도 문서(transfer_orders)가 소유한다.
+      // 예전에는 destination plan 을 함께 만들었는데, 두 계획이 모두
+      // destination_warehouse_id 로 집계돼 입고예정이 2배로 잡혔고, destination plan
+      // 수령이 무조건 RECEIVE 라 도착 창고에 재고를 만들면서 출발 창고를 깎지 않았다.
       const [sourcePlan] = await tx
         .insert(wmsTables.inboundPlans)
         .values({
@@ -299,28 +301,12 @@ export class PurchaseOrderService {
           planType: 'source',
           linkedPurchaseOrderId: poId,
           destinationWarehouseId: destinationWarehouseId, // 하위 호환성
-          requiresTransfer: true, // 하위 호환성
+          requiresTransfer: true, // 이동 지시서 초안 자동 생성의 조건이기도 하다
           expectedDate: purchaseOrder.expectedArrival,
           status: 'pending',
         })
         .returning();
 
-      // 2. Destination Plan 생성 (부천 창고)
-      const [destinationPlan] = await tx
-        .insert(wmsTables.inboundPlans)
-        .values({
-          warehouseId: destinationWarehouseId,
-          planType: 'destination',
-          parentPlanId: sourcePlan.id,
-          linkedPurchaseOrderId: poId,
-          destinationWarehouseId: destinationWarehouseId, // 하위 호환성
-          requiresTransfer: false, // destination은 이동 불필요
-          expectedDate: null, // 이동 완료 후 설정
-          status: 'pending',
-        })
-        .returning();
-
-      // 3. 동일한 아이템을 양쪽 계획에 추가
       const poLines = await tx
         .select({
           skuId: wmsTables.purchaseOrderLines.skuId,
@@ -329,27 +315,17 @@ export class PurchaseOrderService {
         .from(wmsTables.purchaseOrderLines)
         .where(eq(wmsTables.purchaseOrderLines.poId, poId));
 
-      const sourceItems = poLines.map((line) => ({
-        planId: sourcePlan.id,
-        skuId: line.skuId,
-        expectedQty: line.quantity,
-        receivedQty: 0,
-        status: 'pending' as const,
-      }));
-
-      const destinationItems = poLines.map((line) => ({
-        planId: destinationPlan.id,
-        skuId: line.skuId,
-        expectedQty: line.quantity,
-        receivedQty: 0,
-        status: 'pending' as const,
-      }));
-
-      await tx.insert(wmsTables.inboundPlanItems).values([...sourceItems, ...destinationItems]);
-
-      this.logger.log(
-        `Created dual inbound plans: source=${sourcePlan.id}, destination=${destinationPlan.id} for PO ${poId}`,
+      await tx.insert(wmsTables.inboundPlanItems).values(
+        poLines.map((line) => ({
+          planId: sourcePlan.id,
+          skuId: line.skuId,
+          expectedQty: line.quantity,
+          receivedQty: 0,
+          status: 'pending' as const,
+        })),
       );
+
+      this.logger.log(`Created source inbound plan ${sourcePlan.id} for cross-warehouse PO ${poId}`);
     } else {
       // 국내 발주는 기존 로직 유지 (destination plan만 생성)
       const [plan] = await tx

@@ -16,6 +16,9 @@ import { readWarehouseAvailability } from './warehouse-availability';
  * stock_journals 를 써서 이동이 끝나도 줄지 않았다. 그 항을 제거한 뒤,
  * 아무도 다시 넣지 못하게 이 테스트가 막는다.
  *
+ * transit_out 은 이제 `transfer_order_lines` 의 미도착 잔량을 도착 창고 기준으로 읽는다.
+ * 픽스처가 그 행을 심는 이유는 변별력이다 — 0 을 다시 빼는 회귀는 no-op 이라 통과한다.
+ *
  * `projected_available_qty` 도 함께 고정한다 — 뷰가 정본 산식을 한 줄 아래에서
  * 다시 유도하는 자리라, available 만 지키면 같은 실패가 projected 로 재발한다.
  *
@@ -54,19 +57,22 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
     available: number;
     projected: number;
     inboundPending: number;
+    transferPending: number;
     defective: number;
     inTransfer: number;
   }
 
   const readViewRow = async (trx: DbTx, skuId: string, warehouseId: string): Promise<ViewRow> => {
     const rows = (await trx.execute(sql`
-      SELECT available_qty, projected_available_qty, inbound_pending_qty, defective_qty, in_transfer_qty
+      SELECT available_qty, projected_available_qty, inbound_pending_qty, transfer_pending_qty,
+             defective_qty, in_transfer_qty
         FROM stock_summary_view
        WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId}
     `)) as unknown as {
       available_qty: number | string;
       projected_available_qty: number | string;
       inbound_pending_qty: number | string;
+      transfer_pending_qty: number | string;
       defective_qty: number | string;
       in_transfer_qty: number | string;
     }[];
@@ -74,6 +80,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       available: Number(rows[0]?.available_qty ?? 0),
       projected: Number(rows[0]?.projected_available_qty ?? 0),
       inboundPending: Number(rows[0]?.inbound_pending_qty ?? 0),
+      transferPending: Number(rows[0]?.transfer_pending_qty ?? 0),
       defective: Number(rows[0]?.defective_qty ?? 0),
       inTransfer: Number(rows[0]?.in_transfer_qty ?? 0),
     };
@@ -81,6 +88,8 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
 
   const DEFECTIVE_QTY = 5;
   const IN_TRANSFER_QTY = 3;
+  /** 떠났지만 아직 도착하지 않은 이동 수량 — transit_out 항을 0 이 아니게 만드는 값. */
+  const TRANSIT_QTY = 3;
 
   /**
    * ON_HAND 가 아닌 원장 상태를 같은 (sku, warehouse, location) 에 심는다.
@@ -123,7 +132,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
     expect(row.projected).toBe(row.available + row.inboundPending);
   };
 
-  it('이전 예정(pending 창고간 inbound plan)이 있어도 출발·도착 창고 모두 뷰와 모듈이 일치한다', async () => {
+  it('미도착 이동(shipped 이동 지시서)이 있어도 출발·도착 창고 모두 뷰와 모듈이 일치한다', async () => {
     await inRollback(async (trx) => {
       // 기반: ON_HAND 10 + confirmed 예약 10 → 예약을 지워 ON_HAND 10 / 예약 0 으로 만든다.
       const fx = await seedPickableShipment(trx, 10);
@@ -147,11 +156,13 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         })
         .returning();
 
-      // 출발 창고 → 도착 창고 이전 예정 4개. 이 행이 옛 transit_out 항을 만들던 데이터다.
+      // 출발 창고 입고 예정 4개. inbound_pending 은 "그 창고에 실제로 입고될 예정"이라
+      // 계획의 warehouse_id(=출발 창고) 에 붙는다.
       const [plan] = await trx
         .insert(wmsTables.inboundPlans)
         .values({
           warehouseId: fx.warehouseId,
+          planType: 'source',
           destinationWarehouseId: destWarehouse.id,
           linkedPurchaseOrderId: po.id,
           requiresTransfer: true,
@@ -166,26 +177,47 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         status: 'pending',
       });
 
-      // 출발 창고: ON_HAND 10 / 예약 0 / 이전 예정 4(transit_out) / 입고 예정 0
+      // 떠났지만 아직 도착하지 않은 이동 3개. 이 행이 transit_out 항을 만드는 데이터다 —
+      // 이게 없으면 "transit 을 다시 빼는" 회귀가 0 을 빼는 no-op 이 돼 초록으로 통과한다.
+      const [transferOrder] = await trx
+        .insert(wmsTables.transferOrders)
+        .values({
+          fromWarehouseId: fx.warehouseId,
+          toWarehouseId: destWarehouse.id,
+          status: 'shipped',
+          shippedAt: new Date(),
+        })
+        .returning();
+      await trx.insert(wmsTables.transferOrderLines).values({
+        transferOrderId: transferOrder.id,
+        skuId: fx.skuId,
+        fromLocationId: fx.locationId,
+        plannedQty: TRANSIT_QTY,
+        shippedQty: TRANSIT_QTY,
+      });
+
+      // 출발 창고: ON_HAND 10 / 예약 0 / 입고 예정 4 / 미도착 이동 0(도착 창고 기준이므로)
       const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
       const source = await readViewRow(trx, fx.skuId, fx.warehouseId);
 
       expect(fromModule.available).toBe(10);
-      expect(source.available).toBe(10); // 이전 예정은 가용에서 빼지 않는다
-      expect(source.inboundPending).toBe(0);
-      expect(source.projected).toBe(10); // projected 로도 transit_out 이 새지 않는다
+      expect(source.available).toBe(10);
+      expect(source.inboundPending).toBe(4);
+      // `+ inbound_pending` 항은 여기서만 검증된다 — 도착 창고 쪽은 0 이라 그 항이 있으나 없으나 통과한다.
+      expect(source.projected).toBe(14);
+      expect(source.transferPending).toBe(0);
       expectProjectedDerivesFromAvailable(source);
       expectNonOnHandSeeded(source); // DEFECTIVE/IN_TRANSFER 가 있어도 위 값들은 그대로다
 
-      // 도착 창고: 재고 0 / 입고 예정 4. `+ inbound_pending` 항은 여기서만 검증된다 —
-      // 출발 창고 쪽은 inbound_pending 이 0 이라 그 항이 있으나 없으나 통과한다.
+      // 도착 창고: 재고 0 / 미도착 이동 3. 미도착 이동은 가용에서도 전망에서도 빼지 않는다.
       const destModule = await readWarehouseAvailability(trx, fx.skuId, destWarehouse.id);
       const dest = await readViewRow(trx, fx.skuId, destWarehouse.id);
 
+      expect(dest.transferPending).toBe(TRANSIT_QTY); // 심은 행이 실제로 뷰에 보인다
       expect(destModule.available).toBe(0);
       expect(dest.available).toBe(0);
-      expect(dest.inboundPending).toBe(4);
-      expect(dest.projected).toBe(4);
+      expect(dest.inboundPending).toBe(0);
+      expect(dest.projected).toBe(0);
       expectProjectedDerivesFromAvailable(dest);
     });
   });
