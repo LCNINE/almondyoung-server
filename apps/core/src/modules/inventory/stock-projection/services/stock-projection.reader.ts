@@ -209,7 +209,6 @@ export class StockProjectionReader {
             outboundPendingQuantity: summary.onOrderQty,
             movingQuantity: summary.inTransferQty,
             defectiveQuantity: summary.defectiveQty,
-            returnPendingQuantity: summary.transferPendingQty,
             lastUpdated: summary.lastCalculatedAt,
           }
         : null,
