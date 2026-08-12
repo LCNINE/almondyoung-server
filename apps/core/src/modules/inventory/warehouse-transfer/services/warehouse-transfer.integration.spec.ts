@@ -2,6 +2,7 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
+import { BadRequestError } from '@app/shared';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import {
   makeDb,
@@ -242,6 +243,29 @@ describeIfDb('이동 지시서 도메인 (DB integration)', () => {
       );
       expect(await readOrderStatus(trx, transferOrderId)).toBe('closed');
       expect(await mineOnly(transferOrderId)).toHaveLength(0);
+    });
+  });
+
+  it('생성 시 같은 (skuId, fromLocationId) 가 두 번 들어오면 400 으로 거절한다', async () => {
+    await inRollback(async (trx) => {
+      const { from, to, skuId } = await seedTwoWarehousesWithStock(trx, 10);
+      const svc = buildService(trx);
+
+      // 막지 않으면 uq_transfer_order_lines_sku 위반이 DrizzleQueryError 로 새어
+      // 입력 오류가 500 이 된다. 같은 파일의 receive 는 이미 400 으로 잡는다.
+      await expect(
+        svc.createOrder(
+          {
+            fromWarehouseId: from.warehouseId,
+            toWarehouseId: to.warehouseId,
+            lines: [
+              { skuId, fromLocationId: from.locationId, quantity: 3 },
+              { skuId, fromLocationId: from.locationId, quantity: 2 },
+            ],
+          },
+          trx,
+        ),
+      ).rejects.toThrow(BadRequestError);
     });
   });
 

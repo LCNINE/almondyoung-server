@@ -45,8 +45,18 @@ export class WarehouseTransferManager {
       if (input.fromWarehouseId === input.toWarehouseId) {
         throw new BadRequestError('창고 간 이동만 지시서로 만든다 — 창고 내 이동은 movement job 을 쓴다');
       }
+      // 같은 (skuId, fromLocationId) 가 두 번 들어오면 uq_transfer_order_lines_sku 가
+      // DrizzleQueryError 로 새어 입력 오류가 500 이 된다. receive 가 같은 종류의 중복을
+      // 앞단에서 400 으로 잡으므로(아래 seenLineIds) 생성도 같은 규칙을 쓴다 — 한 파일
+      // 안에서 두 규칙이 갈리는 게 더 나쁘다.
+      const seenLineKeys = new Set<string>();
       for (const line of input.lines) {
         if (line.quantity <= 0) throw new BadRequestError('quantity must be positive');
+        const key = `${line.skuId}:${line.fromLocationId}`;
+        if (seenLineKeys.has(key)) {
+          throw new BadRequestError(`Duplicate transfer line (skuId, fromLocationId): ${key}`);
+        }
+        seenLineKeys.add(key);
       }
 
       const [order] = await trx
