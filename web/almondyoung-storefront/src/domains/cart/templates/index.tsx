@@ -18,6 +18,7 @@ type Props = {
   unavailableVariantIds?: string[]
   /** 그중 상품은 그대로인데 옵션만 없어진 variant id 목록 */
   optionGoneVariantIds?: string[]
+  soldOutVariantIds?: string[]
   /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
   availableByVariantId?: Record<string, number>
 }
@@ -26,6 +27,7 @@ export default function CartTemplate({
   cart,
   unavailableVariantIds = [],
   optionGoneVariantIds = [],
+  soldOutVariantIds = [],
   availableByVariantId,
 }: Props) {
   const router = useRouter()
@@ -41,6 +43,11 @@ export default function CartTemplate({
   const optionGoneVariantIdSet = useMemo(
     () => new Set(optionGoneVariantIds),
     [optionGoneVariantIds]
+  )
+
+  const soldOutVariantIdSet = useMemo(
+    () => new Set(soldOutVariantIds),
+    [soldOutVariantIds]
   )
 
   const cartItems = cart?.items
@@ -186,6 +193,7 @@ export default function CartTemplate({
                 onSelectItem={handleSelectItem}
                 unavailableVariantIds={unavailableVariantIdSet}
                 optionGoneVariantIds={optionGoneVariantIdSet}
+                soldOutVariantIds={soldOutVariantIdSet}
                 availableByVariantId={availableByVariantId}
               />
             </CardContent>

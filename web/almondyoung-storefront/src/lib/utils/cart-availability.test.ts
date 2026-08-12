@@ -8,6 +8,7 @@ import {
   isLineItemVariantGone,
   isVariantQuantityUnavailable,
   isVariantSoldOut,
+  resolveStockNotice,
 } from "./cart-availability"
 
 const tracked = { manage_inventory: true, allow_backorder: false }
@@ -26,7 +27,11 @@ describe("getAvailableQuantity", () => {
       getAvailableQuantity({ manage_inventory: false, inventory_quantity: 0 })
     ).toBeNull()
     expect(
-      getAvailableQuantity({ ...tracked, allow_backorder: true, inventory_quantity: 0 })
+      getAvailableQuantity({
+        ...tracked,
+        allow_backorder: true,
+        inventory_quantity: 0,
+      })
     ).toBeNull()
   })
 
@@ -40,27 +45,41 @@ describe("getAvailableQuantity", () => {
 // 장바구니에 담긴 수량까지 합쳐 넘긴 경우는 고객이 취할 행동이 달라 구분해서 안내해야 한다.
 describe("describeStockShortage", () => {
   it("요청 수량이 남은 재고보다 많으면 수량을 알려줄 수 있다", () => {
-    expect(describeStockShortage({ available: 2, quantity: 5 })).toBe("exceeds-stock")
+    expect(describeStockShortage({ available: 2, quantity: 5 })).toBe(
+      "exceeds-stock"
+    )
   })
 
   it("재고 안에서 요청했는데도 실패하면 장바구니 합산 초과로 본다", () => {
-    expect(describeStockShortage({ available: 5, quantity: 2 })).toBe("cart-sum")
-    expect(describeStockShortage({ available: 5, quantity: 5 })).toBe("cart-sum")
+    expect(describeStockShortage({ available: 5, quantity: 2 })).toBe(
+      "cart-sum"
+    )
+    expect(describeStockShortage({ available: 5, quantity: 5 })).toBe(
+      "cart-sum"
+    )
   })
 
   it("재고 0 은 품절로 구분한다 — 수량 안내로 가면 '0개 이하로 담아주세요' 가 된다", () => {
-    expect(describeStockShortage({ available: 0, quantity: 1 })).toBe("sold-out")
-    expect(describeStockShortage({ available: 0, quantity: 9 })).toBe("sold-out")
+    expect(describeStockShortage({ available: 0, quantity: 1 })).toBe(
+      "sold-out"
+    )
+    expect(describeStockShortage({ available: 0, quantity: 9 })).toBe(
+      "sold-out"
+    )
   })
 
   it("남은 재고를 모르는 화면은 수량 없는 일반 안내로 떨어진다", () => {
     expect(describeStockShortage({})).toBe("unknown")
-    expect(describeStockShortage({ available: null, quantity: 3 })).toBe("unknown")
+    expect(describeStockShortage({ available: null, quantity: 3 })).toBe(
+      "unknown"
+    )
   })
 
   it("수량을 안 넘기면 1개 담기로 본다", () => {
     expect(describeStockShortage({ available: 1 })).toBe("cart-sum")
-    expect(describeStockShortage({ available: 1, quantity: 2 })).toBe("exceeds-stock")
+    expect(describeStockShortage({ available: 1, quantity: 2 })).toBe(
+      "exceeds-stock"
+    )
   })
 })
 
@@ -71,13 +90,17 @@ describe("isInsufficientInventoryError", () => {
         new Error("Some variant does not have the required inventory")
       )
     ).toBe(true)
-    expect(isInsufficientInventoryError("Variant does not have the required inventory")).toBe(
-      true
-    )
+    expect(
+      isInsufficientInventoryError(
+        "Variant does not have the required inventory"
+      )
+    ).toBe(true)
   })
 
   it("다른 에러는 재고부족으로 오인하지 않는다", () => {
-    expect(isInsufficientInventoryError(new Error("Cart not found"))).toBe(false)
+    expect(isInsufficientInventoryError(new Error("Cart not found"))).toBe(
+      false
+    )
     expect(isInsufficientInventoryError(undefined)).toBe(false)
   })
 })
@@ -99,7 +122,10 @@ describe("buildAvailabilityMap", () => {
   })
 
   it("상품 조회에 없던 variant 는 상한을 두지 않는다 (조회 실패로 구매를 막지 않는다)", () => {
-    const map = buildAvailabilityMap([{ variant_id: "variant_missing" }], fetched)
+    const map = buildAvailabilityMap(
+      [{ variant_id: "variant_missing" }],
+      fetched
+    )
     expect(map).toEqual({})
     expect(map.variant_missing).toBeUndefined()
   })
@@ -113,7 +139,9 @@ describe("buildAvailabilityMap", () => {
   })
 
   it("variant_id 가 없는 라인은 건너뛴다", () => {
-    expect(buildAvailabilityMap([{ variant_id: null }, {}], fetched)).toEqual({})
+    expect(buildAvailabilityMap([{ variant_id: null }, {}], fetched)).toEqual(
+      {}
+    )
   })
 })
 
@@ -121,11 +149,15 @@ describe("buildAvailabilityMap", () => {
 // "담은 수량 > 가용재고" 를 통과시켰고, 그대로 결제로 가면 cart.complete 의 재고예약이 실패했다.
 describe("isVariantQuantityUnavailable", () => {
   it("담은 수량이 가용재고를 넘으면 불가로 본다", () => {
-    expect(isVariantQuantityUnavailable({ ...tracked, inventory_quantity: 1 }, 2)).toBe(true)
+    expect(
+      isVariantQuantityUnavailable({ ...tracked, inventory_quantity: 1 }, 2)
+    ).toBe(true)
   })
 
   it("가용재고와 같은 수량은 구매 가능하다", () => {
-    expect(isVariantQuantityUnavailable({ ...tracked, inventory_quantity: 2 }, 2)).toBe(false)
+    expect(
+      isVariantQuantityUnavailable({ ...tracked, inventory_quantity: 2 }, 2)
+    ).toBe(false)
   })
 
   it("품절(재고 0)은 기존 판정과 겹친다", () => {
@@ -136,11 +168,18 @@ describe("isVariantQuantityUnavailable", () => {
 
   it("재고관리를 안 하거나 백오더 허용이면 수량 제한이 없다", () => {
     expect(
-      isVariantQuantityUnavailable({ manage_inventory: false, inventory_quantity: 0 }, 10)
+      isVariantQuantityUnavailable(
+        { manage_inventory: false, inventory_quantity: 0 },
+        10
+      )
     ).toBe(false)
     expect(
       isVariantQuantityUnavailable(
-        { manage_inventory: true, allow_backorder: true, inventory_quantity: 0 },
+        {
+          manage_inventory: true,
+          allow_backorder: true,
+          inventory_quantity: 0,
+        },
         10
       )
     ).toBe(false)
@@ -198,10 +237,18 @@ describe("isLineItemVariantGone", () => {
 
   it("id 를 모르는 라인은 판정하지 않는다", () => {
     expect(
-      isLineItemVariantGone({ product_id: "prod_1" }, published, variantsOf(["v"]))
+      isLineItemVariantGone(
+        { product_id: "prod_1" },
+        published,
+        variantsOf(["v"])
+      )
     ).toBe(false)
     expect(
-      isLineItemVariantGone({ variant_id: "variant_gone" }, published, variantsOf(["v"]))
+      isLineItemVariantGone(
+        { variant_id: "variant_gone" },
+        published,
+        variantsOf(["v"])
+      )
     ).toBe(false)
   })
 })
@@ -368,5 +415,62 @@ describe("classifyCartLineItems — 구매 불가 사유 구분", () => {
 
     expect(result.variantIds).toEqual(["variant_out"])
     expect(result.optionGoneVariantIds).toEqual([])
+  })
+})
+
+describe("resolveStockNotice", () => {
+  it("상한을 모르면 아무 안내도 하지 않는다", () => {
+    expect(resolveStockNotice(3, undefined)).toBeNull()
+  })
+
+  it("품절 라인은 구매 불가로 따로 잡히므로 여기서는 안내하지 않는다", () => {
+    expect(resolveStockNotice(2, 0)).toBeNull()
+  })
+
+  it("담긴 수량이 재고를 넘으면 남은 수량과 함께 안내한다", () => {
+    expect(resolveStockNotice(10, 5)).toEqual({ kind: "overStock", max: 5 })
+  })
+
+  it("담긴 수량이 재고와 같으면 상한에 닿았다고만 알린다", () => {
+    expect(resolveStockNotice(5, 5)).toEqual({ kind: "atLimit", max: 5 })
+  })
+
+  it("여유가 있으면 아무 안내도 하지 않는다", () => {
+    expect(resolveStockNotice(2, 5)).toBeNull()
+  })
+})
+
+describe("classifyCartLineItems — 품절과 판매중단 구분", () => {
+  it("재고 0 인 라인은 품절로 따로 표시된다", () => {
+    const result = classifyCartLineItems(
+      [{ product_id: "prod_1", variant_id: "var_1", quantity: 1 }],
+      [
+        {
+          id: "prod_1",
+          variants: [
+            {
+              id: "var_1",
+              manage_inventory: true,
+              allow_backorder: false,
+              inventory_quantity: 0,
+            },
+          ],
+        },
+      ]
+    )
+
+    expect(result.variantIds).toContain("var_1")
+    expect(result.soldOutVariantIds).toEqual(["var_1"])
+    expect(result.optionGoneVariantIds).toEqual([])
+  })
+
+  it("미게시 상품은 품절이 아니라 판매중단으로 남는다", () => {
+    const result = classifyCartLineItems(
+      [{ product_id: "prod_gone", variant_id: "var_2", quantity: 1 }],
+      []
+    )
+
+    expect(result.variantIds).toContain("var_2")
+    expect(result.soldOutVariantIds).toEqual([])
   })
 })

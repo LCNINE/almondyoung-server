@@ -27,6 +27,7 @@ type ItemsProps = {
   /** 판매중단(draft/미게시)으로 결제를 막는 variant id 집합 */
   unavailableVariantIds?: Set<string>
   optionGoneVariantIds?: Set<string>
+  soldOutVariantIds?: Set<string>
   /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
   availableByVariantId?: Record<string, number>
 }
@@ -39,6 +40,7 @@ export default function Items({
   onSelectItem,
   unavailableVariantIds,
   optionGoneVariantIds,
+  soldOutVariantIds,
   availableByVariantId,
 }: ItemsProps) {
   const [isPending, startTransition] = useTransition()
@@ -47,11 +49,13 @@ export default function Items({
   const isItemUnavailable = (item: HttpTypes.StoreCartLineItem) =>
     !!item.variant_id && !!unavailableVariantIds?.has(item.variant_id)
 
-  // 상품이 통째로 내려간 것과 그 옵션만 없어진 것은 고객이 취할 행동이 달라 구분해 안내한다.
-  const unavailableReasonOf = (item: HttpTypes.StoreCartLineItem) =>
-    item.variant_id && optionGoneVariantIds?.has(item.variant_id)
-      ? ("option" as const)
-      : ("product" as const)
+  // 판매중단 · 옵션 삭제 · 품절은 고객이 취할 행동과 문구가 달라 구분해 안내한다.
+  const unavailableReasonOf = (item: HttpTypes.StoreCartLineItem) => {
+    if (!item.variant_id) return "product" as const
+    if (optionGoneVariantIds?.has(item.variant_id)) return "option" as const
+    if (soldOutVariantIds?.has(item.variant_id)) return "soldOut" as const
+    return "product" as const
+  }
 
   const maxQuantityOf = (item: HttpTypes.StoreCartLineItem) =>
     item.variant_id ? availableByVariantId?.[item.variant_id] : undefined
@@ -135,7 +139,9 @@ export default function Items({
               <TableHead className="hidden w-20 xl:table-cell">
                 {t("tableUnitPrice")}
               </TableHead>
-              <TableHead className="w-20 text-right">{t("tableTotal")}</TableHead>
+              <TableHead className="w-20 text-right">
+                {t("tableTotal")}
+              </TableHead>
               <TableHead className="w-10 pr-0"></TableHead>
             </TableRow>
           </TableHeader>

@@ -14,7 +14,10 @@ import { Input } from "@/components/ui/input"
 import { TableCell, TableRow } from "@/components/ui/table"
 import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
 import { cn } from "@/lib/utils"
-import { isInsufficientInventoryError } from "@/lib/utils/cart-availability"
+import {
+  isInsufficientInventoryError,
+  resolveStockNotice,
+} from "@/lib/utils/cart-availability"
 import { resolveQuantityChange } from "@/lib/utils/cart-quantity"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { formatPrice } from "@/lib/utils/price-utils"
@@ -29,13 +32,21 @@ import { toast } from "sonner"
  * 구매 불가 사유. 상품이 통째로 내려간 것(`product`)과 그 옵션만 없어진 것(`option`)은
  * 고객이 할 수 있는 일이 다르다 — 후자는 다른 옵션으로 다시 담으면 된다.
  */
-type UnavailableReason = "product" | "option"
+type UnavailableReason = "product" | "option" | "soldOut"
 
 const unavailableBadgeKey = (reason?: UnavailableReason) =>
-  reason === "option" ? "optionGoneBadge" : "soldOutBadge"
+  reason === "option"
+    ? "optionGoneBadge"
+    : reason === "soldOut"
+      ? "outOfStockBadge"
+      : "soldOutBadge"
 
 const unavailableHintKey = (reason?: UnavailableReason) =>
-  reason === "option" ? "optionGoneHint" : "soldOutHint"
+  reason === "option"
+    ? "optionGoneHint"
+    : reason === "soldOut"
+      ? "outOfStockHint"
+      : "soldOutHint"
 
 type ItemProps = {
   item: HttpTypes.StoreCartLineItem
@@ -238,11 +249,10 @@ function DesktopItem({
     }
   }
 
-  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
-  const atStockLimit =
-    maxQuantity !== undefined &&
-    maxQuantity > 0 &&
-    (item?.quantity ?? 0) >= maxQuantity
+  // 판매중단 라인은 이미 별도 배지가 있으므로 재고 안내를 겹쳐 띄우지 않는다.
+  const stockNotice = isUnavailable
+    ? null
+    : resolveStockNotice(item?.quantity ?? 0, maxQuantity)
 
   return (
     <TableRow className="w-full" data-testid="product-row">
@@ -275,7 +285,9 @@ function DesktopItem({
             />
           ) : (
             <div className="bg-muted flex aspect-square w-full items-center justify-center rounded-md">
-              <span className="text-muted-foreground text-xs">{t("noImage")}</span>
+              <span className="text-muted-foreground text-xs">
+                {t("noImage")}
+              </span>
             </div>
           )}
         </LocalizedClientLink>
@@ -286,6 +298,11 @@ function DesktopItem({
         {isUnavailable && (
           <p className="mb-1 text-xs font-semibold text-red-600">
             {t(unavailableBadgeKey(unavailableReason))}
+          </p>
+        )}
+        {stockNotice?.kind === "overStock" && (
+          <p className="mb-1 text-xs font-semibold text-red-600">
+            {t("overStockBadge")}
           </p>
         )}
         <p className="text-sm font-medium" data-testid="product-title">
@@ -301,6 +318,11 @@ function DesktopItem({
         {isUnavailable && (
           <p className="mt-1 text-xs text-red-600">
             {t(unavailableHintKey(unavailableReason))}
+          </p>
+        )}
+        {stockNotice?.kind === "overStock" && (
+          <p className="mt-1 text-xs text-red-600">
+            {t("overStockHint", { max: stockNotice.max })}
           </p>
         )}
       </TableCell>
@@ -343,9 +365,9 @@ function DesktopItem({
               <Plus className="h-4 w-4" />
             </Button>
           </div>
-          {atStockLimit && (
+          {stockNotice?.kind === "atLimit" && (
             <p className="text-muted-foreground mt-1 text-xs">
-              {t("quantityMaxHint", { max: maxQuantity })}
+              {t("quantityMaxHint", { max: stockNotice.max })}
             </p>
           )}
 
@@ -396,14 +418,18 @@ function DesktopItem({
             {(discountPercentage ?? 0) > 0 && (
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground text-xs line-through">
-                  {formatPrice(compareAtUnitPrice!)}{tCart("won")}
+                  {formatPrice(compareAtUnitPrice!)}
+                  {tCart("won")}
                 </span>
                 <span className="text-destructive text-xs font-medium">
                   {discountPercentage}%
                 </span>
               </div>
             )}
-            <span className="text-sm">{formatPrice(unitPrice ?? 0)}{tCart("won")}</span>
+            <span className="text-sm">
+              {formatPrice(unitPrice ?? 0)}
+              {tCart("won")}
+            </span>
           </div>
         </TableCell>
       )}
@@ -419,14 +445,16 @@ function DesktopItem({
             <span className="flex gap-x-1">
               <span className="text-muted-foreground">{item.quantity}x</span>
               <span className="text-sm">
-                {formatPrice(unitPrice ?? 0)}{tCart("won")}
+                {formatPrice(unitPrice ?? 0)}
+                {tCart("won")}
               </span>
             </span>
           )}
           {(discountPercentage ?? 0) > 0 && (
             <div className="flex items-center gap-1">
               <span className="text-muted-foreground text-xs line-through">
-                {formatPrice(compareAtTotalPrice ?? 0)}{tCart("won")}
+                {formatPrice(compareAtTotalPrice ?? 0)}
+                {tCart("won")}
               </span>
               <span className="text-destructive text-xs font-medium">
                 {discountPercentage}%
@@ -434,7 +462,8 @@ function DesktopItem({
             </div>
           )}
           <span className="text-sm font-medium">
-            {formatPrice(totalPrice ?? 0)}{tCart("won")}
+            {formatPrice(totalPrice ?? 0)}
+            {tCart("won")}
           </span>
         </div>
       </TableCell>
@@ -500,11 +529,10 @@ function MobileItem({
     }
   }
 
-  // 재고 0(품절)은 이미 품절 배지가 알려주므로 "최대 0개" 힌트는 띄우지 않는다.
-  const atStockLimit =
-    maxQuantity !== undefined &&
-    maxQuantity > 0 &&
-    (item?.quantity ?? 0) >= maxQuantity
+  // 판매중단 라인은 이미 별도 배지가 있으므로 재고 안내를 겹쳐 띄우지 않는다.
+  const stockNotice = isUnavailable
+    ? null
+    : resolveStockNotice(item?.quantity ?? 0, maxQuantity)
 
   return (
     <div className="flex gap-3 border-b py-4">
@@ -523,7 +551,9 @@ function MobileItem({
           />
         ) : (
           <div className="bg-muted flex h-[72px] w-[72px] items-center justify-center rounded-md">
-            <span className="text-muted-foreground text-xs">{t("noImage")}</span>
+            <span className="text-muted-foreground text-xs">
+              {t("noImage")}
+            </span>
           </div>
         )}
       </LocalizedClientLink>
@@ -536,6 +566,11 @@ function MobileItem({
             {isUnavailable && (
               <p className="mb-0.5 text-xs font-semibold text-red-600">
                 {t(unavailableBadgeKey(unavailableReason))}
+              </p>
+            )}
+            {stockNotice?.kind === "overStock" && (
+              <p className="mb-0.5 text-xs font-semibold text-red-600">
+                {t("overStockBadge")}
               </p>
             )}
             <p className="line-clamp-2 text-sm leading-snug font-medium">
@@ -551,6 +586,11 @@ function MobileItem({
             {isUnavailable && (
               <p className="mt-0.5 text-xs text-red-600">
                 {t(unavailableHintKey(unavailableReason))}
+              </p>
+            )}
+            {stockNotice?.kind === "overStock" && (
+              <p className="mt-0.5 text-xs text-red-600">
+                {t("overStockHint", { max: stockNotice.max })}
               </p>
             )}
           </div>
@@ -604,9 +644,9 @@ function MobileItem({
             >
               <Plus className="h-4 w-4" />
             </Button>
-            {atStockLimit && (
+            {stockNotice?.kind === "atLimit" && (
               <span className="text-muted-foreground ml-2 text-xs">
-                {t("quantityMaxHint", { max: maxQuantity })}
+                {t("quantityMaxHint", { max: stockNotice.max })}
               </span>
             )}
           </div>
@@ -648,7 +688,8 @@ function MobileItem({
               </span>
             )}
             <span className="text-sm font-semibold">
-              {formatPrice(totalPrice ?? 0)}{tCart("won")}
+              {formatPrice(totalPrice ?? 0)}
+              {tCart("won")}
             </span>
           </div>
         </div>
