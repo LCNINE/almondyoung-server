@@ -1,10 +1,14 @@
 import type { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { ListToolbar } from "@/domains/shop-trade/components/list-toolbar"
 import { ListingCard } from "@/domains/shop-trade/components/listing-card"
 import { Pagination } from "@/domains/shop-trade/components/pagination"
-import type { ShopTradeListParams } from "@/domains/shop-trade/build-list-href"
+import {
+  hasActiveFilter,
+  type ShopTradeListParams,
+} from "@/domains/shop-trade/build-list-href"
 import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
 import {
   SHOP_LISTING_BUSINESS_TYPES,
@@ -139,9 +143,19 @@ export default async function ShopTradePage({ searchParams }: PageProps) {
       )}
 
       {!failed && listings.length === 0 && (
-        <p className="text-muted-foreground py-16 text-center text-sm">
-          {t("empty")}
-        </p>
+        <div className="py-16 text-center">
+          <p className="text-muted-foreground text-sm">
+            {hasActiveFilter(listParams) ? t("emptyFiltered") : t("empty")}
+          </p>
+          {hasActiveFilter(listParams) && (
+            <LocalizedClientLink
+              href="/shop-trade"
+              className="border-border text-foreground hover:bg-muted mt-4 inline-block rounded-lg border px-4 py-2 text-sm transition-colors"
+            >
+              {t("filterReset")}
+            </LocalizedClientLink>
+          )}
+        </div>
       )}
 
       <ul

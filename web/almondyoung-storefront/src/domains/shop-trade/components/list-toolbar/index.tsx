@@ -8,7 +8,11 @@ import {
   SHOP_TRADE_KEY_MONEY_BANDS,
 } from "@/lib/types/ui/shop-listing"
 import { cn } from "@/lib/utils"
-import { buildListHref, type ShopTradeListParams } from "../../build-list-href"
+import {
+  buildListHref,
+  hasActiveFilter,
+  type ShopTradeListParams,
+} from "../../build-list-href"
 import { FilterSelect } from "../filter-select"
 import { PerPageSelect } from "../per-page-select"
 
@@ -21,8 +25,7 @@ export async function ListToolbar({
 }) {
   const t = await getTranslations("shopTrade")
 
-  const hasFilter =
-    params.region || params.businessType || params.dealType || params.keyMoney
+  const hasFilter = hasActiveFilter(params)
 
   const viewButton = (active: boolean) =>
     cn(

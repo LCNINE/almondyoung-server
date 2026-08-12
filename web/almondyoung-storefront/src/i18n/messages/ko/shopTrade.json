@@ -31,6 +31,7 @@
   "dealLabel": "거래",
   "businessLabel": "업종",
   "areaLabel": "평수",
+  "emptyFiltered": "조건에 맞는 매물이 없습니다. 필터를 바꿔보세요.",
   "businessTypes": {
     "nail": "네일",
     "lash": "속눈썹",

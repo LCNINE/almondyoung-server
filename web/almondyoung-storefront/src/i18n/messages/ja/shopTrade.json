@@ -31,6 +31,7 @@
   "dealLabel": "取引",
   "businessLabel": "業種",
   "areaLabel": "広さ",
+  "emptyFiltered": "条件に合う物件がありません。フィルターを変えてみてください。",
   "businessTypes": {
     "nail": "ネイル",
     "lash": "まつげ",

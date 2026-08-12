@@ -36,3 +36,10 @@ export function buildListHref(
   const query = params.toString()
   return query ? `/shop-trade?${query}` : "/shop-trade"
 }
+
+/** 필터가 하나라도 걸려 있는지 — 빈 결과 문구를 가르는 판정이라 한 곳에서만 정의한다 */
+export function hasActiveFilter(params: ShopTradeListParams): boolean {
+  return Boolean(
+    params.region || params.businessType || params.dealType || params.keyMoney
+  )
+}
