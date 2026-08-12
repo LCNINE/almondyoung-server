@@ -491,6 +491,13 @@
       "when": 1786529949938,
       "tag": "20260812101909_add-warehouse-is-sellable",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1786530894793,
+      "tag": "20260812103454_add-transit-out-location-role",
+      "breakpoints": true
     }
   ]
 }

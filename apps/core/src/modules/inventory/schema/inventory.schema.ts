@@ -132,6 +132,7 @@ export const systemLocationRoleEnum = pgEnum('system_location_role', [
   'inbound_default',
   'return_default',
   'outbound_rework',
+  'transit_out',
 ]);
 
 // 주문 관련 enum 추가

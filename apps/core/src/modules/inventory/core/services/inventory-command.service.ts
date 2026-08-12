@@ -323,6 +323,17 @@ export class InventoryCommandService {
     const exec = async (trx: DbTx) => {
       await acquireStockAvailabilityLock(trx, input.skuId, input.fromWarehouseId);
       await assertReservationInvariant(trx, input.skuId, input.fromWarehouseId, input.quantity);
+
+      // 떠난 재고는 출발 선반이 아니라 운송중존에 둔다. stock_ledgers.location_id 가
+      // NOT NULL 이라 어딘가에는 매달려야 하고, 출발 선반에 두면 적치·재고조사가 틀어진다.
+      await this.locationService.ensureSystemLocations(input.fromWarehouseId, trx);
+      const transitZone = await this.locationService.getSystemLocationByRole(
+        input.fromWarehouseId,
+        'transit_out',
+        trx,
+      );
+      if (!transitZone) throw new BadRequestException('운송중존이 존재하지 않습니다.');
+
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
@@ -330,7 +341,7 @@ export class InventoryCommandService {
           fromLocationId: input.fromLocationId,
           fromState: 'ON_HAND',
           toWarehouseId: input.fromWarehouseId,
-          toLocationId: input.fromLocationId,
+          toLocationId: transitZone.id,
           toState: 'IN_TRANSFER',
           transitionType: 'MOVE',
           quantity: input.quantity,

@@ -27,6 +27,7 @@ export const SYSTEM_LOCATION_ROLES = {
   INBOUND_DEFAULT: 'inbound_default',
   RETURN_DEFAULT: 'return_default',
   OUTBOUND_REWORK: 'outbound_rework',
+  TRANSIT_OUT: 'transit_out',
 } as const;
 
 export const SYSTEM_LOCATION_DEFAULTS: Record<string, { code: string; displayName: string }> = {
@@ -41,5 +42,12 @@ export const SYSTEM_LOCATION_DEFAULTS: Record<string, { code: string; displayNam
   [SYSTEM_LOCATION_ROLES.OUTBOUND_REWORK]: {
     code: 'zone-outbound-rework',
     displayName: '출고 재작업존',
+  },
+  // 창고간 이동으로 창고를 떠난 재고가 도착 확인 전까지 머무는 존.
+  // stock_ledgers.location_id 가 NOT NULL 이라 IN_TRANSFER 잔량도 어딘가 매달려야 하는데,
+  // 출발 선반에 두면 떠난 선반이 안 비어 보여 적치·재고조사가 틀어진다.
+  [SYSTEM_LOCATION_ROLES.TRANSIT_OUT]: {
+    code: 'zone-transit-out',
+    displayName: '운송중존',
   },
 };
