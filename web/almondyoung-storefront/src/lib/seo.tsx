@@ -1,6 +1,11 @@
 import { siteConfig } from "./config/site"
 import { OpenGraph, SEOTags } from "./types/common/seo"
 
+// 색인 불필요한 페이지(장바구니·마이페이지·결제 등)용. robots.txt 로 크롤을 막으면
+// 크롤러가 이 지시를 읽을 수 없어 URL 만 색인된 채 남는다 — 반드시 크롤은 열어두고
+// 이 태그로 뺀다. follow 는 켜둬야 링크된 상품 페이지로 크롤이 흘러간다.
+export const NOINDEX = { index: false, follow: true } as const
+
 // SEO 기본값 상수
 const DEFAULT_SEO = {
   locale: "ko_KR",
@@ -66,8 +71,9 @@ export const getSEOTags = ({
     keywords: keywords || [siteConfig.appName],
     applicationName: siteConfig.appName,
     metadataBase: new URL(baseUrl),
-    openGraph: createOpenGraphMetadata(openGraph),
-    twitter: createTwitterMetadata(openGraph),
+    // 페이지가 openGraph.description 을 따로 안 주면 페이지 description 을 물려받는다
+    openGraph: createOpenGraphMetadata({ description, ...openGraph }),
+    twitter: createTwitterMetadata({ description, ...openGraph }),
     ...(canonicalUrlRelative && {
       alternates: { canonical: canonicalUrlRelative },
     }),

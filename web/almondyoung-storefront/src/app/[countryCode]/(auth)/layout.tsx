@@ -1,11 +1,10 @@
-import { siteConfig } from "@/lib/config/site"
-import { getSEOTags } from "@lib/seo"
+import { NOINDEX, getSEOTags } from "@lib/seo"
 import { Toaster } from "sonner"
 
 export const metadata = getSEOTags({
-  title: `${siteConfig.appName}`,
+  title: "로그인",
   openGraph: {},
-  extraTags: {},
+  extraTags: { robots: NOINDEX },
 })
 
 export default async function AuthLayout({

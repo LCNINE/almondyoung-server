@@ -1,5 +1,9 @@
 import React from "react"
 import { BackButton } from "@/components/shared/back-button"
+import type { Metadata } from "next"
+import { NOINDEX } from "@lib/seo"
+
+export const metadata: Metadata = { robots: NOINDEX }
 //   /store/customers/me/addresses 메두사 배송지 등록 api
 // --- 아이콘 Placeholder (lucide-react 등 라이브러리로 대체) ---
 const UserIcon = () => (

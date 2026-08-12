@@ -1,5 +1,9 @@
 import React from "react"
 import { BackButton } from "@/components/shared/back-button"
+import type { Metadata } from "next"
+import { NOINDEX } from "@lib/seo"
+
+export const metadata: Metadata = { robots: NOINDEX }
 
 // --- 아이콘 Placeholder ---
 type AddressCardProps = {

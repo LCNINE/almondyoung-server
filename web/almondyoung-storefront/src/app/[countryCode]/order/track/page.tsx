@@ -3,6 +3,10 @@ import React, { useRef, useState } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
+import type { Metadata } from "next"
+import { NOINDEX } from "@lib/seo"
+
+export const metadata: Metadata = { robots: NOINDEX }
 
 // Zod 스키마 정의
 const trackingFormSchema = z.object({

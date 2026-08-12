@@ -1,7 +1,6 @@
 import { Suspense } from "react"
 import { getTranslations } from "next-intl/server"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
-import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { CsHeader } from "@/domains/cs/components/cs-header"
 import { CsTabs, CsTabPanel } from "@/domains/cs/components/cs-tabs"
@@ -14,7 +13,7 @@ import { listProducts } from "@/lib/api/medusa/products"
 export async function generateMetadata() {
   const t = await getTranslations("cs")
   return getSEOTags({
-    title: `${t("metaTitle")} | ${siteConfig.appName}`,
+    title: t("metaTitle"),
     openGraph: {},
     extraTags: {},
   })
@@ -22,8 +21,8 @@ export async function generateMetadata() {
 
 function CsTabsLoading() {
   return (
-    <div className="flex items-center justify-center w-full h-12 border-b border-gray-200">
-      <div className="w-24 h-4 bg-gray-200 rounded animate-pulse" />
+    <div className="flex h-12 w-full items-center justify-center border-b border-gray-200">
+      <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
     </div>
   )
 }
@@ -71,7 +70,7 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
     <div className="min-h-screen bg-white">
       <CsHeader />
 
-      <div className="max-w-3xl mx-auto bg-white">
+      <div className="mx-auto max-w-3xl bg-white">
         <div className="px-4 pt-4">
           <SiteBreadcrumb items={[{ label: "고객센터" }]} />
         </div>

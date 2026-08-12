@@ -86,7 +86,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticEntries: MetadataRoute.Sitemap = [
     entry("", "daily", 1),
     entry("/best", "weekly", 0.8),
-    entry("/new", "weekly", 0.8),
+    // /new 는 "준비 중" 문구뿐이라 제외 (page.tsx 에서도 noindex)
     entry("/cs", "weekly", 0.5),
     entry("/shop-trade", "weekly", 0.7),
   ]

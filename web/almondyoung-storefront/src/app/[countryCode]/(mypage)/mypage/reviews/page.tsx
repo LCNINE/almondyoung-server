@@ -1,6 +1,5 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { ReviewsTemplate } from "@/components/reviews/manage/template"
-import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
 import { getTranslations } from "next-intl/server"
@@ -8,7 +7,7 @@ import { getTranslations } from "next-intl/server"
 export async function generateMetadata() {
   const t = await getTranslations("mypage.menu")
   return getSEOTags({
-    title: `${siteConfig.appName} | ${t("reviewShort")}`,
+    title: t("reviewShort"),
     openGraph: {},
     extraTags: {},
   })

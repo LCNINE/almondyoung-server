@@ -4,9 +4,11 @@ import { getTranslations } from "next-intl/server"
 import { MainHeader } from "@/components/layout/header/main-header"
 import { MobileBackHeader } from "@/components/layout/header/m-back-header"
 import { getBaseURL } from "@lib/utils/env"
+import { NOINDEX } from "@lib/seo"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
+  robots: NOINDEX,
 }
 
 export default async function CartLayout(props: {

@@ -7,9 +7,11 @@ import { siteConfig } from "@/lib/config/site"
 
 export const metadata: Metadata = {
   metadataBase: new URL(getBaseURL()),
+  // 브랜드명은 루트 레이아웃의 template(`%s | 아몬드영`)이 붙여준다. 여기서 또 넣으면
+  // `아몬드영 | … | 아몬드영` 이 된다.
   title: {
-    default: `${siteConfig.appName} | 최저가 미용재료 MRO 쇼핑몰`,
-    template: "%s | 아몬드영",
+    default: "최저가 미용재료 MRO 쇼핑몰",
+    template: `%s | ${siteConfig.appName}`,
   },
 }
 

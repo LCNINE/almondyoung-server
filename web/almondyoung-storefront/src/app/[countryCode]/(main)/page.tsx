@@ -3,7 +3,6 @@ import { SurveyPromptBanner } from "@/components/survey-prompt-banner"
 // import { Cafe24LinkBanner } from "@/components/cafe24-link-banner"
 // import { Cafe24LinkPopup } from "@/components/layout/cafe24-link-popup"
 import { getMyProfile } from "@/lib/api/users/profile"
-import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
 import { shouldShowSurvey } from "@/lib/utils/should-show-survey"
 import { getTranslations } from "next-intl/server"
@@ -18,7 +17,11 @@ export async function generateMetadata({
   const { countryCode } = await params
 
   return getSEOTags({
-    title: `${siteConfig.appName} | 최저가 미용재료 MRO 쇼핑몰`,
+    title: "최저가 미용재료 MRO 쇼핑몰",
+    // 슬로건만 넣으면 구글이 설명으로 안 쓰고 본문(설문 프롬프트 등)을 긁어간다.
+    // 취급 품목이 들어간 문장이어야 검색결과 스니펫으로 채택된다.
+    description:
+      "속눈썹펌·속눈썹연장·반영구·네일아트·타투·피부미용·헤어·왁싱 재료를 도매가로. 미용 전문가와 샵 원장님을 위한 미용재료 MRO 쇼핑몰 아몬드영입니다.",
     openGraph: {},
     canonicalUrlRelative: `/${countryCode}`,
     extraTags: {},

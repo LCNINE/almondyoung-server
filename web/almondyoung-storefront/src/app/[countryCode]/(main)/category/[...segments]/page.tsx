@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import { CategoryTemplate } from "@/domains/category/templates"
-import { siteConfig } from "@/lib/config/site"
 import { getCategoryByHandleCached } from "@/lib/data/category"
 
 export const dynamic = "force-dynamic"
@@ -34,7 +33,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: category.name,
     description,
     openGraph: {
-      title: `${category.name} | ${siteConfig.appName}`,
+      title: category.name,
       description,
     },
     alternates: {

@@ -11,6 +11,7 @@ import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { isVariantSoldOut } from "@/lib/utils/cart-availability"
 import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
@@ -47,7 +48,11 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
   // Core PIM 의 SEO 입력값은 발행 시 Medusa product.metadata 로 넘어온다
   // (apps/medusa/src/scripts/lib/transformer.ts). 비어 있으면 상품명으로 폴백.
   const seo = product.metadata as
-    | { seoTitle?: string; seoDescription?: string; seoKeywords?: string | string[] }
+    | {
+        seoTitle?: string
+        seoDescription?: string
+        seoKeywords?: string | string[]
+      }
     | null
     | undefined
   const title = seo?.seoTitle || product.title
@@ -125,14 +130,37 @@ export default async function Page(props: Props) {
     addToRecentViews(pricedProduct.id).catch(() => {})
   }
 
-  // 검색결과 별점(rich snippet) + AI 파싱용 구조화 데이터.
+  const viewPrice = getProductPrice({ product: pricedProduct }).cheapestPrice
+
+  // 검색결과 별점·가격(rich snippet) + AI 파싱용 구조화 데이터.
   // 리뷰 0개면 aggregateRating 을 빼서 빈 별점 패널티를 피한다.
+  const productUrl = `https://${siteConfig.domainName}/${params.countryCode}/products/${params.handle}`
+  const inStock = (pricedProduct.variants ?? []).some(
+    (v) => !isVariantSoldOut(v)
+  )
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: pricedProduct.title,
-    ...(pricedProduct.thumbnail ? { image: [pricedProduct.thumbnail] } : {}),
-    url: `https://${siteConfig.domainName}/${params.countryCode}/products/${params.handle}`,
+    // thumbnail 은 fileId 문자열이라 그대로 넣으면 URL 이 아니어서 무시된다
+    ...(pricedProduct.thumbnail
+      ? { image: [getThumbnailUrl(pricedProduct.thumbnail)] }
+      : {}),
+    url: productUrl,
+    // offers 가 없으면 구글은 가격·재고 리치결과를 붙이지 않는다.
+    ...(viewPrice
+      ? {
+          offers: {
+            "@type": "Offer",
+            price: viewPrice.calculated_price_number,
+            priceCurrency: viewPrice.currency_code.toUpperCase(),
+            availability: inStock
+              ? "https://schema.org/InStock"
+              : "https://schema.org/OutOfStock",
+            url: productUrl,
+          },
+        }
+      : {}),
     ...(ratingSummary && ratingSummary.totalCount > 0
       ? {
           aggregateRating: {
@@ -143,8 +171,6 @@ export default async function Page(props: Props) {
         }
       : {}),
   }
-
-  const viewPrice = getProductPrice({ product: pricedProduct }).cheapestPrice
 
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">

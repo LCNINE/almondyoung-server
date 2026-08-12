@@ -1,5 +1,5 @@
 import ProtectedRoute from "@components/protected-route"
-import { getSEOTags } from "@lib/seo"
+import { NOINDEX, getSEOTags } from "@lib/seo"
 import { getTranslations } from "next-intl/server"
 import Script from "next/script"
 
@@ -8,7 +8,7 @@ export async function generateMetadata() {
   return getSEOTags({
     title: t("mypage"),
     openGraph: {},
-    extraTags: {},
+    extraTags: { robots: NOINDEX },
   })
 }
 

@@ -1,10 +1,9 @@
-import { siteConfig } from "@/lib/config/site"
-import { getSEOTags } from "@/lib/seo"
+import { NOINDEX, getSEOTags } from "@/lib/seo"
 
 export const metadata = getSEOTags({
-  title: `샵 설문조사 | ${siteConfig.appName}`,
+  title: "샵 설문조사",
   openGraph: {},
-  extraTags: {},
+  extraTags: { robots: NOINDEX },
 })
 
 export default function ShopSurveyLayout({

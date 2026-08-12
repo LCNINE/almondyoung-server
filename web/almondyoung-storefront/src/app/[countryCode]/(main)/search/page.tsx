@@ -2,6 +2,10 @@ import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { SearchPageSkeleton } from "@/components/skeletons/page-skeletons"
 import { SearchContainer } from "domains/search/search"
 import { Suspense } from "react"
+import type { Metadata } from "next"
+import { NOINDEX } from "@lib/seo"
+
+export const metadata: Metadata = { robots: NOINDEX }
 
 interface SearchPageProps {
   params: Promise<{
