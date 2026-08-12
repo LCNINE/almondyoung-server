@@ -38,7 +38,11 @@
     "quantityMaxError": "재고가 {max}개 남았어요. {max}개 이하로 담아주세요.",
     "quantityStockError": "재고가 부족해 수량을 변경할 수 없어요. 잠시 후 다시 시도해 주세요.",
     "quantityMaxHint": "최대 {max}개",
-    "quantitySoldOut": "품절된 상품이라 수량을 늘릴 수 없어요."
+    "quantitySoldOut": "품절된 상품이라 수량을 늘릴 수 없어요.",
+    "outOfStockBadge": "품절",
+    "outOfStockHint": "품절된 상품이에요. 결제하려면 빼주세요.",
+    "overStockBadge": "재고 부족",
+    "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요."
   },
   "summary": {
     "title": "주문 예상 금액",

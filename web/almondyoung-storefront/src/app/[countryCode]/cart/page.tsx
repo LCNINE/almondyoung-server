@@ -55,6 +55,7 @@ export default async function Cart({
   const {
     variantIds: unavailableVariantIds,
     optionGoneVariantIds,
+    soldOutVariantIds,
     availableByVariantId,
   } = await findUnavailableLineItems(cart, countryCode)
 
@@ -75,6 +76,7 @@ export default async function Cart({
       cart={cart}
       unavailableVariantIds={unavailableVariantIds}
       optionGoneVariantIds={optionGoneVariantIds}
+      soldOutVariantIds={soldOutVariantIds}
       availableByVariantId={availableByVariantId}
     />
   )

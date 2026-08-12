@@ -20,11 +20,7 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
-import {
-  recoverCustomerCart,
-  retrieveCustomer,
-  transferCart,
-} from "./customer"
+import { recoverCustomerCart, retrieveCustomer, transferCart } from "./customer"
 import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
@@ -107,8 +103,7 @@ export async function retrieveCart(
       if (error?.response?.status === 404) {
         try {
           await removeCartId()
-        } catch {
-        }
+        } catch {}
       }
       return null
     })
@@ -143,6 +138,7 @@ export async function findUnavailableLineItems(
     variantIds: [],
     productNames: [],
     optionGoneVariantIds: [],
+    soldOutVariantIds: [],
     insufficientVariantIds: [],
     insufficientNames: [],
     availableByVariantId: {},
@@ -1427,7 +1423,10 @@ export async function ensureCorrectShippingMethod(
     shippingMethods
   )
 
-  if (shippingMethods.length > 0 && (!alreadyCorrect || options?.refreshAmounts)) {
+  if (
+    shippingMethods.length > 0 &&
+    (!alreadyCorrect || options?.refreshAmounts)
+  ) {
     const updatedCart = await setCartShippingMethods(
       cart.id,
       shippingMethods.map((option) => option.id)

@@ -179,6 +179,8 @@ export type CartLineItemClassification = {
    * (다른 옵션으로 다시 담으면 된다) 상품 자체의 판매중단과 구분해 안내한다.
    */
   optionGoneVariantIds: string[]
+  /** 그중 재고가 0 이라 품절인 라인. 판매중단과 문구가 달라야 한다. */
+  soldOutVariantIds: string[]
   /** 팔긴 하지만 담은 수량을 못 채우는 라인 */
   insufficientVariantIds: string[]
   insufficientNames: string[]
@@ -218,7 +220,9 @@ export function classifyCartLineItems(
     if (item.product_id && !publishedProductIds.has(item.product_id)) {
       return true
     }
-    if (isLineItemVariantGone(item, publishedProductIds, variantIdsByProductId)) {
+    if (
+      isLineItemVariantGone(item, publishedProductIds, variantIdsByProductId)
+    ) {
       return true
     }
     // 재고가 계산된 variant 로 판정. 조회 실패 시에만 카트 라인아이템 variant 로 폴백.
@@ -234,7 +238,9 @@ export function classifyCartLineItems(
   // 폴백으로 쓰면 전 라인이 재고 0 으로 읽혀 멀쩡한 결제까지 막는다.
   const insufficientItems = items.filter((item) => {
     if (unavailableSet.has(item)) return false
-    const variant = item.variant_id ? variantById.get(item.variant_id) : undefined
+    const variant = item.variant_id
+      ? variantById.get(item.variant_id)
+      : undefined
     return isVariantQuantityUnavailable(variant, item.quantity)
   })
 
@@ -255,6 +261,13 @@ export function classifyCartLineItems(
       )
     )
 
+  const soldOutItems = unavailableItems.filter((item) => {
+    const variant =
+      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
+      item.variant
+    return isVariantSoldOut(variant)
+  })
+
   const optionGoneItems = unavailableItems.filter((item) =>
     isLineItemVariantGone(item, publishedProductIds, variantIdsByProductId)
   )
@@ -263,8 +276,44 @@ export function classifyCartLineItems(
     variantIds: toVariantIds(unavailableItems),
     productNames: toNames(unavailableItems),
     optionGoneVariantIds: toVariantIds(optionGoneItems),
+    soldOutVariantIds: toVariantIds(soldOutItems),
     insufficientVariantIds: toVariantIds(insufficientItems),
     insufficientNames: toNames(insufficientItems),
     availableByVariantId: buildAvailabilityMap(items, variantById),
+  }
+}
+
+/**
+ * 장바구니 한 줄에 띄울 재고 안내. 판매중단·품절처럼 라인을 빼야 하는 상태는
+ * classifyCartLineItems 가 구매 불가로 잡아 별도 배지가 맡는다. 여기서는 "팔리긴 하는데
+ * 지금 담긴 수량으로는 결제가 안 되는" 상태만 구분한다.
+ *
+ * 결제 직전에 재고가 확인되므로(주문 생성 전 차단), 고객이 장바구니에서 미리 알고
+ * 수량을 줄일 수 있어야 한다.
+ */
+export type StockNotice =
+  | { kind: "overStock"; max: number }
+  | { kind: "atLimit"; max: number }
+  | null
+
+export function resolveStockNotice(
+  quantity: number,
+  maxQuantity?: number
+): StockNotice {
+  if (maxQuantity === undefined) return null
+
+  switch (describeStockShortage({ available: maxQuantity, quantity })) {
+    case "unknown":
+      return null
+    case "sold-out":
+      // 품절 라인은 classifyCartLineItems 가 구매 불가로 따로 잡아 안내한다.
+      return null
+    case "exceeds-stock":
+      return { kind: "overStock", max: maxQuantity }
+    case "cart-sum":
+      // 아직 결제는 되지만 더 담을 수는 없는 상태.
+      return quantity >= maxQuantity
+        ? { kind: "atLimit", max: maxQuantity }
+        : null
   }
 }

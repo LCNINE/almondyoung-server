@@ -38,7 +38,11 @@
     "quantityMaxError": "Only {max} left in stock. Please choose {max} or fewer.",
     "quantityStockError": "Not enough stock to update the quantity. Please try again shortly.",
     "quantityMaxHint": "Max {max}",
-    "quantitySoldOut": "This item is sold out, so the quantity cannot be increased."
+    "quantitySoldOut": "This item is sold out, so the quantity cannot be increased.",
+    "outOfStockBadge": "Sold out",
+    "outOfStockHint": "This item is sold out. Remove it to continue to checkout.",
+    "overStockBadge": "Not enough stock",
+    "overStockHint": "Only {max} left in stock. Please lower the quantity to {max} or fewer."
   },
   "summary": {
     "title": "Order summary",
