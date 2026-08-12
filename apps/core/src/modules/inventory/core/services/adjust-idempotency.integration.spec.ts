@@ -37,7 +37,7 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
     const location = new LocationService(dbService);
     const command = new InventoryCommandService(dbService, eventStore, outbox, location);
     const unifiedReservation = new UnifiedReservationService(dbService, sellable);
-    const stockEvent = new StockEventService(dbService, eventStore, command, unifiedReservation);
+    const stockEvent = new StockEventService(dbService, eventStore, command, unifiedReservation, location);
     const safety = new SafetyStockService(dbService);
     controller = new InventoryController(stockEvent, safety, command);
   });
