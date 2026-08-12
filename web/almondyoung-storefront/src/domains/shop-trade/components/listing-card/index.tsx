@@ -82,7 +82,7 @@ export async function ListingCard({
           <p className="text-muted-foreground text-xs">{tags.join(" · ")}</p>
         )}
 
-        <h2 className="text-foreground mt-0.5 line-clamp-2 text-sm font-medium sm:text-base">
+        <h2 className="text-foreground mt-0.5 line-clamp-1 text-sm font-medium sm:text-base">
           {listing.title}
         </h2>
 
