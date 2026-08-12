@@ -11,10 +11,12 @@ import {
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
 import {
-  buildAvailabilityMap,
-  isVariantQuantityUnavailable,
-  isVariantSoldOut,
+  classifyCartLineItems,
+  type CartLineItemClassification,
 } from "@lib/utils/cart-availability"
+import { withCartConflictRetry } from "./cart-conflict"
+import { getIsMembershipCustomer } from "@lib/data/membership"
+import { createRefreshThrottle } from "@lib/utils/refresh-throttle"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -129,13 +131,7 @@ export async function retrieveCart(
 export async function findUnavailableLineItems(
   cart: HttpTypes.StoreCart,
   countryCode: string
-): Promise<{
-  variantIds: string[]
-  productNames: string[]
-  insufficientVariantIds: string[]
-  insufficientNames: string[]
-  availableByVariantId: Record<string, number>
-}> {
+): Promise<CartLineItemClassification> {
   const items = cart.items ?? []
   const productIds = Array.from(
     new Set(
@@ -145,9 +141,10 @@ export async function findUnavailableLineItems(
     )
   )
 
-  const empty = {
+  const empty: CartLineItemClassification = {
     variantIds: [],
     productNames: [],
+    optionGoneVariantIds: [],
     insufficientVariantIds: [],
     insufficientNames: [],
     availableByVariantId: {},
@@ -184,63 +181,7 @@ export async function findUnavailableLineItems(
     })
     .catch(() => ({ products: [] as HttpTypes.StoreProduct[] }))
 
-  const publishedProductIds = new Set(products.map((product) => product.id))
-  // variant_id → 재고가 계산된 variant. 카트 라인아이템 variant 는 inventory_quantity 가 비어있으므로 사용하지 않는다.
-  const variantById = new Map<string, HttpTypes.StoreProductVariant>()
-  for (const product of products) {
-    for (const variant of product.variants ?? []) {
-      if (variant.id) {
-        variantById.set(variant.id, variant)
-      }
-    }
-  }
-
-  // 판매중단(미게시) 이거나, 재고 기준 품절(수동 품절 포함)이면 구매 불가로 본다.
-  const unavailableItems = items.filter((item) => {
-    if (item.product_id && !publishedProductIds.has(item.product_id)) {
-      return true
-    }
-    // 재고가 계산된 variant 로 판정. 조회 실패 시에만 카트 라인아이템 variant 로 폴백.
-    const variant =
-      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
-      item.variant
-    return isVariantSoldOut(variant)
-  })
-
-  // 품절은 아니지만 담은 수량이 가용 재고를 넘어선 라인 (담은 뒤 재고가 줄어든 경우).
-  const unavailableSet = new Set(unavailableItems)
-  // 재고가 계산된 variant 로만 판정한다. 카트 라인아이템 variant 는 inventory_quantity 가 비어 있어
-  // 폴백으로 쓰면 전 라인이 재고 0 으로 읽혀 멀쩡한 결제까지 막는다.
-  const insufficientItems = items.filter((item) => {
-    if (unavailableSet.has(item)) return false
-    const variant = item.variant_id ? variantById.get(item.variant_id) : undefined
-    return isVariantQuantityUnavailable(variant, item.quantity)
-  })
-
-  const toVariantIds = (list: typeof items) =>
-    Array.from(
-      new Set(
-        list
-          .map((item) => item.variant_id)
-          .filter((id): id is string => Boolean(id))
-      )
-    )
-  const toNames = (list: typeof items) =>
-    Array.from(
-      new Set(
-        list
-          .map((item) => item.product_title || item.title || "")
-          .filter(Boolean)
-      )
-    )
-
-  return {
-    variantIds: toVariantIds(unavailableItems),
-    productNames: toNames(unavailableItems),
-    insufficientVariantIds: toVariantIds(insufficientItems),
-    insufficientNames: toNames(insufficientItems),
-    availableByVariantId: buildAvailabilityMap(items, variantById),
-  }
+  return classifyCartLineItems(items, products)
 }
 
 export async function getOrSetCart(countryCode: string) {
@@ -1354,18 +1295,22 @@ export const setCartShippingMethods = async (
     ...(await getAuthHeaders()),
   }
 
-  return sdk.client
-    .fetch<{ cart: HttpTypes.StoreCart }>(
-      `/store/carts/${cartId}/shipping-methods/bulk`,
-      {
-        method: "POST",
-        body: { option_ids: optionIds },
-        query: { fields: DEFAULT_CART_FIELDS },
-        headers,
-      }
-    )
-    .then(({ cart }) => cart)
-    .catch(medusaError)
+  const post = () =>
+    sdk.client
+      .fetch<{ cart: HttpTypes.StoreCart }>(
+        `/store/carts/${cartId}/shipping-methods/bulk`,
+        {
+          method: "POST",
+          body: { option_ids: optionIds },
+          query: { fields: DEFAULT_CART_FIELDS },
+          headers,
+        }
+      )
+      .then(({ cart }) => cart)
+
+  // 같은 카트를 만지는 다른 요청과 겹쳤을 뿐이면 한 번 더 건다.
+  // 그냥 던지면 장바구니·체크아웃이 통째로 500 이 된다.
+  return withCartConflictRetry(post).catch(medusaError)
 }
 
 export const addCartShippingMethodDuringRender = async (
@@ -1552,11 +1497,20 @@ export type CartRefreshResult = {
   hasMembershipGroup: boolean | null
 }
 
-// 카트 가격 재계산 + 캐시 무효화
-export async function refreshCartPrices(): Promise<CartRefreshResult> {
-  try {
-    const headers = (await getAuthHeaders()) ?? undefined
+const EMPTY_REFRESH_RESULT: CartRefreshResult = {
+  refreshed: false,
+  hasMembershipGroup: null,
+}
 
+async function requestCartPriceRefresh(): Promise<CartRefreshResult> {
+  const headers = await getAuthHeaders()
+
+  // 비로그인은 이 엔드포인트가 401 만 돌려준다. 부르지 않는다.
+  if (!headers) {
+    return EMPTY_REFRESH_RESULT
+  }
+
+  try {
     const result = await sdk.client.fetch<{
       refreshed: boolean
       hasMembershipGroup?: boolean | null
@@ -1568,11 +1522,52 @@ export async function refreshCartPrices(): Promise<CartRefreshResult> {
     }
   } catch (error) {
     console.error("[refreshCartPrices] 실패:", error)
-    return { refreshed: false, hasMembershipGroup: null }
+    return EMPTY_REFRESH_RESULT
+  }
+}
+
+// 카트 가격 재계산 + 캐시 무효화
+export async function refreshCartPrices(): Promise<CartRefreshResult> {
+  try {
+    return await requestCartPriceRefresh()
   } finally {
     const cartCacheTag = await getCacheTag("carts")
     if (cartCacheTag) {
       revalidateTag(cartCacheTag)
     }
   }
+}
+
+/**
+ * 이 재계산이 필요한 건 멤버십 상태가 바뀌었을 때다. 그 상태가 그대로면 다시 부를 이유가 없어
+ * (카트 id, 멤버십 여부) 별로 최근에 한 번 돌렸는지 기억해 건너뛴다.
+ *
+ * 렌더 중에는 쿠키를 쓸 수 없어 프로세스 메모리에 둔다. 인스턴스가 바뀌면 한 번 더 돌 뿐이고,
+ * 멤버십이 바뀌면 키가 달라져 즉시 다시 돈다. 관리자가 가격을 직접 고친 경우만 최대 TTL 만큼
+ * 늦게 반영된다.
+ */
+const PRICE_REFRESH_TTL_MS = 10 * 60 * 1000
+const priceRefreshThrottle = createRefreshThrottle(PRICE_REFRESH_TTL_MS)
+
+/**
+ * 렌더 중에 부를 수 있는 가격 재계산. revalidateTag 는 부르지 않는다 (렌더 도중 호출은 금지).
+ *
+ * 카트를 읽기 **전에** 순차로 돌리는 용도다. 예전처럼 클라이언트에서 재계산을 걸고
+ * router.refresh 로 다시 그리면, 그 재계산과 다음 렌더의 배송수단 정합이 같은 카트를 동시에
+ * 고쳐 경합이 났다. 다만 이 호출이 카트 조회 앞을 막고 서기 때문에, 매 렌더마다 돌리면
+ * 그대로 TTFB 가 된다. 필요할 때만 돌린다.
+ */
+export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult> {
+  const headers = await getAuthHeaders()
+  if (!headers) return EMPTY_REFRESH_RESULT
+
+  const cartId = await getCartId()
+  if (!cartId) return EMPTY_REFRESH_RESULT
+
+  const isMember = await getIsMembershipCustomer()
+  if (!priceRefreshThrottle.take(`${cartId}:${isMember ? "mem" : "reg"}`)) {
+    return EMPTY_REFRESH_RESULT
+  }
+
+  return requestCartPriceRefresh()
 }

@@ -33,6 +33,8 @@
     "confirm": "Confirm",
     "soldOutBadge": "Unavailable",
     "soldOutHint": "This item is no longer available. Remove it to continue to checkout.",
+    "optionGoneBadge": "Option unavailable",
+    "optionGoneHint": "The selected option is no longer sold. Remove it and add another option instead.",
     "quantityMaxError": "Only {max} left in stock. Please choose {max} or fewer.",
     "quantityStockError": "Not enough stock to update the quantity. Please try again shortly.",
     "quantityMaxHint": "Max {max}",

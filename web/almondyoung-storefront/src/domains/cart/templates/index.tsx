@@ -2,10 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
-import {
-  createCheckoutCartFromLineItems,
-  refreshCartPrices,
-} from "@/lib/api/medusa/cart"
+import { createCheckoutCartFromLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
@@ -19,6 +16,8 @@ type Props = {
   cart: HttpTypes.StoreCart | null
   /** 판매중단(draft/미게시)으로 결제를 막는 variant id 목록 */
   unavailableVariantIds?: string[]
+  /** 그중 상품은 그대로인데 옵션만 없어진 variant id 목록 */
+  optionGoneVariantIds?: string[]
   /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
   availableByVariantId?: Record<string, number>
 }
@@ -26,6 +25,7 @@ type Props = {
 export default function CartTemplate({
   cart,
   unavailableVariantIds = [],
+  optionGoneVariantIds = [],
   availableByVariantId,
 }: Props) {
   const router = useRouter()
@@ -36,6 +36,11 @@ export default function CartTemplate({
   const unavailableVariantIdSet = useMemo(
     () => new Set(unavailableVariantIds),
     [unavailableVariantIds]
+  )
+
+  const optionGoneVariantIdSet = useMemo(
+    () => new Set(optionGoneVariantIds),
+    [optionGoneVariantIds]
   )
 
   const cartItems = cart?.items
@@ -151,12 +156,6 @@ export default function CartTemplate({
     unavailableVariantIdSet,
   ])
 
-  useEffect(() => {
-    refreshCartPrices()
-      .then(() => router.refresh())
-      .catch(() => {})
-  }, [])
-
   // 아이템이 변경되면 (삭제 등) 선택 상태 동기화
   useEffect(() => {
     const itemIds = new Set(sortedItems.map((item) => item.id))
@@ -186,6 +185,7 @@ export default function CartTemplate({
                 onSelectAll={handleSelectAll}
                 onSelectItem={handleSelectItem}
                 unavailableVariantIds={unavailableVariantIdSet}
+                optionGoneVariantIds={optionGoneVariantIdSet}
                 availableByVariantId={availableByVariantId}
               />
             </CardContent>

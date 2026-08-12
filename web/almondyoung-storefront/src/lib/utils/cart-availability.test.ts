@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   buildAvailabilityMap,
+  classifyCartLineItems,
   describeStockShortage,
   getAvailableQuantity,
   isInsufficientInventoryError,
+  isLineItemVariantGone,
   isVariantQuantityUnavailable,
   isVariantSoldOut,
 } from "./cart-availability"
@@ -147,5 +149,224 @@ describe("isVariantQuantityUnavailable", () => {
   it("variant 정보가 없으면 막지 않는다 (조회 실패로 구매를 막지 않기 위함)", () => {
     expect(isVariantQuantityUnavailable(undefined, 3)).toBe(false)
     expect(isVariantQuantityUnavailable(null, 3)).toBe(false)
+  })
+})
+
+describe("isLineItemVariantGone", () => {
+  const published = new Set(["prod_1"])
+  const variantsOf = (ids: string[]) => new Map([["prod_1", new Set(ids)]])
+
+  it("상품은 게시 중인데 variant 만 없어진 라인을 잡는다", () => {
+    expect(
+      isLineItemVariantGone(
+        { product_id: "prod_1", variant_id: "variant_gone" },
+        published,
+        variantsOf(["variant_alive"])
+      )
+    ).toBe(true)
+  })
+
+  it("살아있는 variant 는 잡지 않는다", () => {
+    expect(
+      isLineItemVariantGone(
+        { product_id: "prod_1", variant_id: "variant_alive" },
+        published,
+        variantsOf(["variant_alive"])
+      )
+    ).toBe(false)
+  })
+
+  it("상품 조회가 통째로 실패하면 판정하지 않는다 (미게시 판정이 맡는다)", () => {
+    expect(
+      isLineItemVariantGone(
+        { product_id: "prod_1", variant_id: "variant_gone" },
+        new Set(),
+        new Map()
+      )
+    ).toBe(false)
+  })
+
+  it("응답에 variant 가 안 실려왔으면 판정하지 않는다 — 멀쩡한 카트를 막는 게 더 나쁘다", () => {
+    expect(
+      isLineItemVariantGone(
+        { product_id: "prod_1", variant_id: "variant_gone" },
+        published,
+        variantsOf([])
+      )
+    ).toBe(false)
+  })
+
+  it("id 를 모르는 라인은 판정하지 않는다", () => {
+    expect(
+      isLineItemVariantGone({ product_id: "prod_1" }, published, variantsOf(["v"]))
+    ).toBe(false)
+    expect(
+      isLineItemVariantGone({ variant_id: "variant_gone" }, published, variantsOf(["v"]))
+    ).toBe(false)
+  })
+})
+
+describe("classifyCartLineItems", () => {
+  const inStock = {
+    id: "variant_ok",
+    manage_inventory: true,
+    allow_backorder: false,
+    inventory_quantity: 5,
+  }
+
+  it("상품은 게시 중인데 variant 만 삭제된 라인을 결제 차단 대상으로 넘긴다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_1",
+          variant_id: "variant_deleted",
+          quantity: 1,
+          product_title: "사라진 옵션 상품",
+          variant: null,
+        },
+      ],
+      [{ id: "prod_1", variants: [inStock] }]
+    )
+
+    expect(result.variantIds).toEqual(["variant_deleted"])
+    expect(result.productNames).toEqual(["사라진 옵션 상품"])
+  })
+
+  it("멀쩡한 라인은 통과시킨다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_1",
+          variant_id: "variant_ok",
+          quantity: 2,
+          product_title: "정상 상품",
+        },
+      ],
+      [{ id: "prod_1", variants: [inStock] }]
+    )
+
+    expect(result.variantIds).toEqual([])
+    expect(result.insufficientVariantIds).toEqual([])
+    expect(result.availableByVariantId).toEqual({ variant_ok: 5 })
+  })
+
+  it("상품 조회가 통째로 비면 라인을 전부 막되 variant 판정을 이중으로 세지 않는다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_1",
+          variant_id: "variant_deleted",
+          quantity: 1,
+          product_title: "조회 실패",
+        },
+      ],
+      []
+    )
+
+    expect(result.variantIds).toEqual(["variant_deleted"])
+  })
+
+  it("담은 수량이 남은 재고를 넘으면 부족 목록으로 간다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_1",
+          variant_id: "variant_ok",
+          quantity: 9,
+          product_title: "재고보다 많이 담음",
+        },
+      ],
+      [{ id: "prod_1", variants: [inStock] }]
+    )
+
+    expect(result.variantIds).toEqual([])
+    expect(result.insufficientVariantIds).toEqual(["variant_ok"])
+    expect(result.insufficientNames).toEqual(["재고보다 많이 담음"])
+  })
+
+  it("품절 라인은 부족이 아니라 구매 불가로 분류한다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_1",
+          variant_id: "variant_out",
+          quantity: 1,
+          product_title: "품절",
+        },
+      ],
+      [
+        {
+          id: "prod_1",
+          variants: [
+            {
+              id: "variant_out",
+              manage_inventory: true,
+              allow_backorder: false,
+              inventory_quantity: 0,
+            },
+          ],
+        },
+      ]
+    )
+
+    expect(result.variantIds).toEqual(["variant_out"])
+    expect(result.insufficientVariantIds).toEqual([])
+  })
+})
+
+describe("classifyCartLineItems — 구매 불가 사유 구분", () => {
+  it("옵션만 없어진 라인은 상품 판매중단과 따로 표시한다", () => {
+    const result = classifyCartLineItems(
+      [
+        {
+          product_id: "prod_live",
+          variant_id: "variant_gone",
+          quantity: 1,
+          product_title: "판매중인 상품",
+        },
+        {
+          product_id: "prod_dead",
+          variant_id: "variant_dead",
+          quantity: 1,
+          product_title: "내려간 상품",
+        },
+      ],
+      [{ id: "prod_live", variants: [{ id: "variant_other" }] }]
+    )
+
+    expect(result.variantIds.sort()).toEqual(["variant_dead", "variant_gone"])
+    expect(result.optionGoneVariantIds).toEqual(["variant_gone"])
+  })
+
+  it("상품은 왔는데 variant 목록이 비어 있으면 구매를 막지 않는다", () => {
+    const result = classifyCartLineItems(
+      [{ product_id: "prod_1", variant_id: "variant_x", quantity: 1 }],
+      [{ id: "prod_1", variants: [] }]
+    )
+
+    expect(result.variantIds).toEqual([])
+    expect(result.optionGoneVariantIds).toEqual([])
+  })
+
+  it("품절은 옵션 소멸이 아니다", () => {
+    const result = classifyCartLineItems(
+      [{ product_id: "prod_1", variant_id: "variant_out", quantity: 1 }],
+      [
+        {
+          id: "prod_1",
+          variants: [
+            {
+              id: "variant_out",
+              manage_inventory: true,
+              allow_backorder: false,
+              inventory_quantity: 0,
+            },
+          ],
+        },
+      ]
+    )
+
+    expect(result.variantIds).toEqual(["variant_out"])
+    expect(result.optionGoneVariantIds).toEqual([])
   })
 })
