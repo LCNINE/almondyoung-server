@@ -351,7 +351,15 @@
     "retry": "Try again",
     "goBack": "Back to previous page",
     "shippingMethodMissing": "Shipping details changed, so the order could not be completed. Please return to your cart and try again.",
-    "shippingMethodNone": "No shipping method was set. Please return to your cart and try again."
+    "shippingMethodNone": "No shipping method was set. Please return to your cart and try again.",
+    "insufficientInventory": "The item ran out of stock during payment, so the payment did not go through.",
+    "variantUnavailable": "An item in your cart is no longer sold, so the payment did not go through.",
+    "stock": {
+      "notCharged": "You were not charged and no order was created.",
+      "goToCart": "Go to cart",
+      "whatToDoQuantity": "In your cart, lower the quantity of the item that is short on stock and try again.",
+      "whatToDoUnavailable": "Remove the item from your cart and try again."
+    }
   },
   "callback": {
     "paymentFailed": "Payment failed.",

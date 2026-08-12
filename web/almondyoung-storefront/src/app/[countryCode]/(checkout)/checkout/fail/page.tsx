@@ -3,13 +3,23 @@ import { useSearchParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CHECKOUT_ERROR_CODES } from "@/lib/api/medusa/checkout-error-code"
 
 // 코드가 잡히는 에러는 Medusa 영문 원문 대신 안내 문구를 보여준다.
 const MESSAGE_KEY_BY_CODE: Record<string, string> = {
   [CHECKOUT_ERROR_CODES.shippingMethodMissing]: "shippingMethodMissing",
   [CHECKOUT_ERROR_CODES.shippingMethodNone]: "shippingMethodNone",
+  [CHECKOUT_ERROR_CODES.insufficientInventory]: "insufficientInventory",
+  [CHECKOUT_ERROR_CODES.variantUnavailable]: "variantUnavailable",
 }
+
+// 재고 때문에 막힌 경우엔 결제도 주문도 성립하지 않았다는 사실과, 장바구니에서
+// 무엇을 고쳐야 하는지를 같이 알려준다. 카드 한도 같은 일반 원인 목록은 이때 방해만 된다.
+const STOCK_ERROR_CODES: string[] = [
+  CHECKOUT_ERROR_CODES.insufficientInventory,
+  CHECKOUT_ERROR_CODES.variantUnavailable,
+]
 
 export default function CheckoutFailPage() {
   const t = useTranslations("checkout.fail")
@@ -39,6 +49,8 @@ export default function CheckoutFailPage() {
     router.back()
   }
 
+  const isStockError = STOCK_ERROR_CODES.includes(errorInfo?.code ?? "")
+
   if (!errorInfo) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#f8f8f8]">
@@ -66,28 +78,51 @@ export default function CheckoutFailPage() {
           </span>
         </p>
 
-        <div className="mb-8 space-y-4">
-          <div className="bg-gray-10 rounded-lg p-4">
-            <h3 className="mb-2 text-sm font-medium text-gray-900">
-              {t("commonCausesTitle")}
-            </h3>
-            <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
-              <li>{t("causes.limitExceeded")}</li>
-              <li>{t("causes.cardError")}</li>
-              <li>{t("causes.lowBalance")}</li>
-              <li>{t("causes.userCancel")}</li>
-              <li>{t("causes.networkError")}</li>
-            </ul>
+        {isStockError ? (
+          <div className="mb-8 rounded-lg bg-gray-50 p-4">
+            <p className="text-sm text-gray-700">{t("stock.notCharged")}</p>
+            <p className="mt-2 text-sm text-gray-700">
+              {t(
+                errorInfo.code === CHECKOUT_ERROR_CODES.variantUnavailable
+                  ? "stock.whatToDoUnavailable"
+                  : "stock.whatToDoQuantity"
+              )}
+            </p>
           </div>
-        </div>
+        ) : (
+          <div className="mb-8 space-y-4">
+            <div className="bg-gray-10 rounded-lg p-4">
+              <h3 className="mb-2 text-sm font-medium text-gray-900">
+                {t("commonCausesTitle")}
+              </h3>
+              <ul className="list-inside list-disc space-y-1 text-sm text-gray-600">
+                <li>{t("causes.limitExceeded")}</li>
+                <li>{t("causes.cardError")}</li>
+                <li>{t("causes.lowBalance")}</li>
+                <li>{t("causes.userCancel")}</li>
+                <li>{t("causes.networkError")}</li>
+              </ul>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-3">
-          <button
-            onClick={handleRetry}
-            className="w-full rounded-lg bg-[#ff6600] py-3 font-medium text-white transition-colors hover:bg-[#e14d00]"
-          >
-            {t("retry")}
-          </button>
+          {isStockError && (
+            <LocalizedClientLink
+              href="/cart"
+              className="block w-full rounded-lg bg-[#ff6600] py-3 text-center font-medium text-white transition-colors hover:bg-[#e14d00]"
+            >
+              {t("stock.goToCart")}
+            </LocalizedClientLink>
+          )}
+          {!isStockError && (
+            <button
+              onClick={handleRetry}
+              className="w-full rounded-lg bg-[#ff6600] py-3 font-medium text-white transition-colors hover:bg-[#e14d00]"
+            >
+              {t("retry")}
+            </button>
+          )}
           <button
             onClick={handleGoBack}
             className="w-full rounded-lg bg-gray-200 py-3 font-medium text-gray-700 transition-colors hover:bg-gray-300"
