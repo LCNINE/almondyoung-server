@@ -1,4 +1,4 @@
-import { Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import type { ExecArgs, IPricingModuleService } from '@medusajs/framework/types';
 
 /** 고객 그룹으로 가격을 가르는 price list 룰의 attribute. */
@@ -58,6 +58,43 @@ export const findPriceListGuardViolations = async (
   return violations;
 };
 
+export type DirectPriceRuleViolation = {
+  groupId: string;
+  ruleCount: number;
+};
+
+type KnexLike = {
+  raw(sql: string, bindings: string[]): Promise<{ rows?: Array<{ group_id: string; rule_count: string | number }> }>;
+};
+
+/**
+ * price list 를 안 거치는 두 번째 경로도 본다: price 에 직접 단 `customer.groups.id` rule.
+ *
+ * pricing 모듈은 price list rule 과 별개로 price 자체의 rule(`price_rule`)도 컨텍스트와
+ * 대조하므로(`@medusajs/pricing` repositories/pricing.js 의 pr_stats LATERAL join),
+ * 여기로도 그룹별 가격이 갈린다. pricing 모듈 API 의 rule 필터엔 attribute 가 없어
+ * 테이블을 직접 읽는다.
+ */
+export const findDirectPriceRuleViolations = async (
+  knex: KnexLike,
+  membershipGroupId: string,
+): Promise<DirectPriceRuleViolation[]> => {
+  const result = await knex.raw(
+    `SELECT pr.value AS group_id, COUNT(*) AS rule_count
+       FROM price_rule pr
+      WHERE pr.attribute = ?
+        AND pr.deleted_at IS NULL
+        AND pr.value <> ?
+      GROUP BY pr.value`,
+    [CUSTOMER_GROUP_ATTRIBUTE, membershipGroupId],
+  );
+
+  return (result.rows ?? []).map((row) => ({
+    groupId: row.group_id,
+    ruleCount: Number(row.rule_count),
+  }));
+};
+
 export default async function catalogPriceListGuard({ container }: ExecArgs) {
   const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
 
@@ -67,16 +104,29 @@ export default async function catalogPriceListGuard({ container }: ExecArgs) {
   }
 
   const pricingModule = container.resolve<IPricingModuleService>(Modules.PRICING);
-  const violations = await findPriceListGuardViolations(pricingModule, membershipGroupId);
+  const knex = container.resolve<KnexLike>(ContainerRegistrationKeys.PG_CONNECTION);
 
-  if (violations.length === 0) {
-    console.log('[catalog-price-list-guard] 고객 그룹 룰이 걸린 price list 는 멤버십뿐이다.');
+  const violations = await findPriceListGuardViolations(pricingModule, membershipGroupId);
+  const directViolations = await findDirectPriceRuleViolations(knex, membershipGroupId);
+
+  if (violations.length === 0 && directViolations.length === 0) {
+    console.log('[catalog-price-list-guard] 고객 그룹으로 가격을 가르는 건 멤버십뿐이다.');
     return;
   }
 
-  console.error(
-    `[catalog-price-list-guard] 멤버십 외 고객 그룹 룰이 걸린 price list ${violations.length}건 — ` +
-      '카탈로그 캐시가 회원/비회원 두 벌 전제로 서 있어 해당 그룹은 잘못된 가격을 볼 수 있다.',
-    violations,
-  );
+  if (violations.length > 0) {
+    console.error(
+      `[catalog-price-list-guard] 멤버십 외 고객 그룹 룰이 걸린 price list ${violations.length}건 — ` +
+        '카탈로그 캐시가 회원/비회원 두 벌 전제로 서 있어 해당 그룹은 잘못된 가격을 볼 수 있다.',
+      violations,
+    );
+  }
+
+  if (directViolations.length > 0) {
+    console.error(
+      `[catalog-price-list-guard] price list 없이 고객 그룹 룰이 직접 걸린 가격 ${directViolations.length}개 그룹 — ` +
+        '같은 이유로 해당 그룹은 잘못된 가격을 볼 수 있다.',
+      directViolations,
+    );
+  }
 }
