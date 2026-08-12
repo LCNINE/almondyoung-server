@@ -7,6 +7,7 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
 } from '@nestjs/common';
@@ -20,6 +21,13 @@ import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
+
+// skuIds 는 쉼표 구분 문자열도 받아서 데코레이터 파이프를 걸 수 없다 — 분해한 뒤
+// 원소마다 같은 파이프를 태워 warehouseId 와 판정 기준을 하나로 유지한다.
+// class-validator 의 isUUID 를 쓰지 않는 이유: 그쪽은 RFC-4122 version/variant 니블까지
+// 보므로 기본 창고 id(`00000000-0000-0000-0000-000000000001`) 같은 Postgres 가 받는
+// UUID 를 거부한다. ParseUUIDPipe 의 기본값('all')은 Postgres 와 같은 범위를 받는다.
+const SKU_ID_PIPE = new ParseUUIDPipe();
 
 @ApiTags('Inventory')
 @Controller('inventory')
@@ -107,14 +115,18 @@ export class StockProjectionController {
   @ApiQuery({ name: 'skuIds', required: true, description: 'SKU ID 목록 (쉼표 구분 또는 반복 파라미터)' })
   @ApiResponse({ status: 200, type: InboundPipelineResponseDto })
   async getInboundPipeline(
-    @Query('warehouseId') warehouseId: string,
+    // UUID 형식은 파이프에서 막는다 — 그냥 통과시키면 Postgres 가 22P02 로 터져
+    // 입력 오류가 500 이 된다. 파이프는 값이 없을 때도 400 을 낸다.
+    @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
     @Query('skuIds') skuIds?: string | string[],
   ): Promise<InboundPipelineResponseDto> {
-    if (!warehouseId) throw new BadRequestException('warehouseId is required');
     const ids = (Array.isArray(skuIds) ? skuIds : (skuIds ?? '').split(','))
       .map((id) => id.trim())
       .filter((id) => id.length > 0);
     if (ids.length === 0) throw new BadRequestException('skuIds is required');
+    for (const id of ids) {
+      await SKU_ID_PIPE.transform(id, { type: 'query', data: 'skuIds' });
+    }
 
     return this.stockProjection.getInboundPipeline({ skuIds: ids, toWarehouseId: warehouseId });
   }
