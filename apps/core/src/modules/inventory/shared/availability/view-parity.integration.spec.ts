@@ -54,23 +54,64 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
     available: number;
     projected: number;
     inboundPending: number;
+    defective: number;
+    inTransfer: number;
   }
 
   const readViewRow = async (trx: DbTx, skuId: string, warehouseId: string): Promise<ViewRow> => {
     const rows = (await trx.execute(sql`
-      SELECT available_qty, projected_available_qty, inbound_pending_qty
+      SELECT available_qty, projected_available_qty, inbound_pending_qty, defective_qty, in_transfer_qty
         FROM stock_summary_view
        WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId}
     `)) as unknown as {
       available_qty: number | string;
       projected_available_qty: number | string;
       inbound_pending_qty: number | string;
+      defective_qty: number | string;
+      in_transfer_qty: number | string;
     }[];
     return {
       available: Number(rows[0]?.available_qty ?? 0),
       projected: Number(rows[0]?.projected_available_qty ?? 0),
       inboundPending: Number(rows[0]?.inbound_pending_qty ?? 0),
+      defective: Number(rows[0]?.defective_qty ?? 0),
+      inTransfer: Number(rows[0]?.in_transfer_qty ?? 0),
     };
+  };
+
+  const DEFECTIVE_QTY = 5;
+  const IN_TRANSFER_QTY = 3;
+
+  /**
+   * ON_HAND 가 아닌 원장 상태를 같은 (sku, warehouse, location) 에 심는다.
+   *
+   * 이 행들이 없으면 가용 산식에 DEFECTIVE/IN_TRANSFER 를 섞는 변경이 이 스펙을
+   * 초록으로 통과한다 — 두 상태의 합이 0 이라 오염된 산식과 정본 산식이 같은 값을 낸다.
+   * 원장 PK 가 (sku, warehouse, location, stock_state) 라 같은 로케이션에 공존한다.
+   */
+  const seedNonOnHandLedgers = async (trx: DbTx, fx: { skuId: string; warehouseId: string; locationId: string }) => {
+    await trx.insert(wmsTables.stockLedgers).values([
+      {
+        skuId: fx.skuId,
+        warehouseId: fx.warehouseId,
+        locationId: fx.locationId,
+        stockState: 'DEFECTIVE',
+        qty: DEFECTIVE_QTY,
+      },
+      {
+        skuId: fx.skuId,
+        warehouseId: fx.warehouseId,
+        locationId: fx.locationId,
+        stockState: 'IN_TRANSFER',
+        qty: IN_TRANSFER_QTY,
+      },
+    ]);
+  };
+
+  /** 심은 행이 실제로 뷰에 보이는지 — 시딩이 조용히 no-op 이면 변별력이 되돌아간다. */
+  const expectNonOnHandSeeded = (row: ViewRow) => {
+    expect(row.defective).toBe(DEFECTIVE_QTY);
+    expect(row.inTransfer).toBe(IN_TRANSFER_QTY);
   };
 
   /**
@@ -89,6 +130,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       await trx
         .delete(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+      await seedNonOnHandLedgers(trx, fx);
 
       // 도착 창고 + 발주(=inbound_plans.linkedPurchaseOrderId 가 NOT NULL FK 라 필요)
       const [destWarehouse] = await trx
@@ -133,6 +175,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       expect(source.inboundPending).toBe(0);
       expect(source.projected).toBe(10); // projected 로도 transit_out 이 새지 않는다
       expectProjectedDerivesFromAvailable(source);
+      expectNonOnHandSeeded(source); // DEFECTIVE/IN_TRANSFER 가 있어도 위 값들은 그대로다
 
       // 도착 창고: 재고 0 / 입고 예정 4. `+ inbound_pending` 항은 여기서만 검증된다 —
       // 출발 창고 쪽은 inbound_pending 이 0 이라 그 항이 있으나 없으나 통과한다.
@@ -155,6 +198,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         .update(wmsTables.stockReservations)
         .set({ quantity: 3 })
         .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
+      await seedNonOnHandLedgers(trx, fx);
 
       const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
       const fromView = await readViewRow(trx, fx.skuId, fx.warehouseId);
@@ -163,6 +207,7 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       expect(fromView.available).toBe(7);
       expect(fromView.projected).toBe(7);
       expectProjectedDerivesFromAvailable(fromView);
+      expectNonOnHandSeeded(fromView);
     });
   });
 });
