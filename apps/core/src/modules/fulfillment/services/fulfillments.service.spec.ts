@@ -170,7 +170,9 @@ describe('FulfillmentsService', () => {
   ) {
     const state: FakeState = {
       salesOrders: [{ id: salesOrderId, status: options.salesOrderStatus ?? 'confirmed' }],
-      warehouses: options.warehouses ?? [{ id: warehouseId }],
+      // isSellable 은 명시한다 — assertWarehouseSellable 이 falsy 를 비판매로 읽어
+      // 필드를 빠뜨린 더블은 출고 생성 전부가 BadRequestError 로 죽는다.
+      warehouses: options.warehouses ?? [{ id: warehouseId, isSellable: true }],
       salesOrderLines: options.lines ?? [
         {
           id: salesOrderLineId,
