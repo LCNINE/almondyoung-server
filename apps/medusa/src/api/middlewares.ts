@@ -1,4 +1,5 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
+import { createCartLockAwareErrorHandler } from './cart-lock-conflict';
 import { validateAndTransformQuery } from '@medusajs/framework';
 import { adminRouteMiddlewares } from './admin/middlewares';
 import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
@@ -32,6 +33,8 @@ const timingMiddleware = (req: any, res: any, next: any) => {
 };
 
 export default defineMiddlewares({
+  // 카트 락 경합을 500 unknown 대신 409 로 내보낸다. 나머지 에러 처리는 기본 핸들러 그대로.
+  errorHandler: createCartLockAwareErrorHandler(),
   routes: [
     // 모든 요청에 타이밍 미들웨어 적용
     {
