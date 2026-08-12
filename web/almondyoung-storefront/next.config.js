@@ -99,6 +99,10 @@ const nextConfig = {
     // 원본(S3)이 Cache-Control 을 안 붙여서 최적화 이미지가 기본값 60초로 나갔다. 60초마다
     // CDN 에서 빠져 매번 이미지 최적화 람다가 원본을 다시 받아 다시 인코딩했다.
     // 파일 URL 은 업로드마다 새 UUID 라 같은 URL 의 내용이 바뀌지 않는다.
+    //
+    // 주의: 이 값은 /public 자산에도 같이 걸린다. 로고처럼 URL 이 배포 간 고정인 파일은
+    // 내용을 바꿔도 최대 이 기간만큼 옛 이미지가 남는다. 브랜드 자산을 교체할 때는
+    // 파일명을 바꾸거나 src 에 버전 쿼리(`?v=2`)를 붙여 URL 을 갈아야 한다.
     minimumCacheTTL: 60 * 60 * 24 * 31,
     remotePatterns: [
       ...(normalizedBackendDomain
