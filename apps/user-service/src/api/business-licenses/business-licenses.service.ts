@@ -1,6 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
 import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
@@ -20,6 +21,11 @@ const NTS_STATUS_URL = 'https://api.odcloud.kr/api/nts-businessman/v1/status';
 // 국세청 진위확인 — 사업자번호 + 대표자명 + 개업일자 조합이 실제 등록 정보와 맞는지 확인한다.
 // 상태조회는 대표자명을 아예 보지 않으므로, 대표자명 검증은 이 경로로만 가능하다.
 const NTS_VALIDATE_URL = 'https://api.odcloud.kr/api/nts-businessman/v1/validate';
+
+// odcloud 가 5xx(503/504)를 자주 뱉는다. 한 번 실패를 최종 실패로 취급하면 정상 신청이 통째로
+// under_review 로 쌓인다 (2026-08-06~12 직접입력 18건 중 16건이 이 경로로 막혔다).
+const NTS_MAX_ATTEMPTS = 3;
+const NTS_TIMEOUT_MS = 10_000;
 
 /**
  * 사업자등록번호 가운데 2자리가 법인 구분자다 (81~88: 영리/비영리 법인).
@@ -180,13 +186,7 @@ export class BusinessLicensesService {
     }
 
     try {
-      const { data } = await firstValueFrom(
-        this.httpService.post<NtsStatusResponse>(
-          NTS_STATUS_URL,
-          { b_no: [businessNumber] },
-          { params: { serviceKey }, headers: { 'Content-Type': 'application/json' } },
-        ),
-      );
+      const data = await this.postNts<NtsStatusResponse>(NTS_STATUS_URL, { b_no: [businessNumber] }, serviceKey);
 
       const row = data?.data?.[0];
       if (data?.status_code !== 'OK' || !row) {
@@ -200,6 +200,27 @@ export class BusinessLicensesService {
         checkedAt,
         error: error instanceof Error ? error.message : 'request_failed',
       };
+    }
+  }
+
+  /** 5xx 는 재시도로 흡수한다. 4xx(키 오류·잘못된 요청)는 재시도해도 같으므로 즉시 던진다. */
+  private async postNts<T>(url: string, body: unknown, serviceKey: string): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const { data } = await firstValueFrom(
+          this.httpService.post<T>(url, body, {
+            params: { serviceKey },
+            headers: { 'Content-Type': 'application/json' },
+            timeout: NTS_TIMEOUT_MS,
+          }),
+        );
+        return data;
+      } catch (error) {
+        const status = (error as AxiosError).response?.status;
+        const retriable = status === undefined || status >= 500;
+        if (!retriable || attempt >= NTS_MAX_ATTEMPTS) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
     }
   }
 
@@ -252,12 +273,10 @@ export class BusinessLicensesService {
     }
 
     try {
-      const { data } = await firstValueFrom(
-        this.httpService.post<NtsValidateResponse>(
-          NTS_VALIDATE_URL,
-          { businesses: [{ b_no: businessNumber, p_nm: representativeName, start_dt: startDate }] },
-          { params: { serviceKey }, headers: { 'Content-Type': 'application/json' } },
-        ),
+      const data = await this.postNts<NtsValidateResponse>(
+        NTS_VALIDATE_URL,
+        { businesses: [{ b_no: businessNumber, p_nm: representativeName, start_dt: startDate }] },
+        serviceKey,
       );
 
       const row = data?.data?.[0];

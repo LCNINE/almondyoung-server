@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useEffect } from 'react';
+import { Suspense, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
@@ -34,7 +34,6 @@ import {
   BusinessLicenseStatus,
   BUSINESS_LICENSE_STATUS_LABELS,
 } from '@/lib/types/dto/business-licenses';
-import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
 import {
   ExternalLink,
   FileIcon,
@@ -52,45 +51,17 @@ function statusVariant(
   return 'destructive';
 }
 
-function extractFileIdFromFileUrl(fileUrl: string): string | null {
-  const match = fileUrl.match(
-    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i
-  );
-  return match?.[0] ?? null;
-}
-
 function BusinessLicenseDetailContent({ id }: { id: string }) {
   const { data } = useBusinessLicense(id);
   const updateMutation = useUpdateBusinessLicense(id);
 
   const [rejectComment, setRejectComment] = useState(data.reviewComment ?? '');
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
-  const [loadingSignedUrl, setLoadingSignedUrl] = useState(false);
   const [fileModalOpen, setFileModalOpen] = useState(false);
   const [isImageFile, setIsImageFile] = useState(true);
 
-  useEffect(() => {
-    if (!data.fileUrl) return;
-
-    const loadSignedUrl = async () => {
-      setLoadingSignedUrl(true);
-      try {
-        const fileId = extractFileIdFromFileUrl(data.fileUrl!);
-        if (!fileId) {
-          setSignedUrl(data.fileUrl!);
-          return;
-        }
-        const { signedUrl } = await getFileSignedUrlFromFileService(fileId);
-        setSignedUrl(signedUrl);
-      } catch {
-        toast.error('파일 URL 생성 중 오류가 발생했습니다.');
-      } finally {
-        setLoadingSignedUrl(false);
-      }
-    };
-
-    loadSignedUrl();
-  }, [data.fileUrl]);
+  // 사업자등록증은 user-service 가 S3 에 직접 올린다 (key: business/{userId}/{uuid}.ext).
+  // file-service 의 uploads 레코드가 없어 signed URL 조회는 항상 404 다 — 저장된 URL 을 그대로 쓴다.
+  const signedUrl = data.fileUrl;
 
   const handleStatusUpdate = async (
     status: BusinessLicenseStatus,
@@ -168,12 +139,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
       {data.fileUrl && (
         <section className="p-4 space-y-2">
           <h3 className="text-sm font-medium text-gray-500">사업자등록증</h3>
-          {loadingSignedUrl ? (
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <Spinner className="w-4 h-4" />
-              <span>파일 불러오는 중...</span>
-            </div>
-          ) : signedUrl ? (
+          {signedUrl ? (
             isImageFile ? (
               <button
                 type="button"
