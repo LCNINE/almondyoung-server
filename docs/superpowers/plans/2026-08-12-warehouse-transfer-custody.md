@@ -1877,6 +1877,19 @@ git add apps/core/src/modules/inventory/inbound/services/purchase-order.service.
 git commit -m "fix(inventory): 발주는 source plan 만 만들고 입고예정 집계를 실제 입고 창고 기준으로"
 ```
 
+> **⛔ Step 9~12 는 실행 중 제거됐다 (2026-08-12, 인간 판정).**
+>
+> 구현 후 리뷰가 Important 2건을 냈고 둘 다 이 계획서가 시킨 코드가 원인이었다:
+> (1) 초안 라인의 `from_location` 이 입고 기본존으로 고정되는데 정상 적치(`putawayFromOrigin`)가 그 존을 비워 `ship` 이 실패한다. Task 6 의 API 에 라인 편집·삭제·취소가 없어 복구 경로가 없다.
+> (2) 조회 조건이 `(출발창고, 도착창고, draft)` 뿐이라 사람이 만든 초안에 무관한 입고분이 끼어들고, `ship` 은 전량 선적이라 운영자가 안 넣은 물량이 나간다.
+>
+> 이 기능은 스펙상 **보강**이지 핵심 장치가 아니다 — MD 중복발주 방어는 Task 8 의 파이프라인이 ②(출발 창고 ON_HAND)를 직접 노출해 그대로 유지된다. 그래서 고치는 대신 제거했고(`ed66d240b`), `inbound.service.ts` 훅도 함께 빠졌다. 필요해지면 라인 편집/취소 API 와 함께 별건으로 설계할 것.
+>
+> Step 1~8 과 `apps/core/scripts/import-inbound-plans.ts` 수정은 유지된다.
+
+<details>
+<summary>제거된 Step 9~12 (기록용)</summary>
+
 - [ ] **Step 9: 초안 자동 생성의 실패하는 스펙 작성**
 
 destination plan 을 없앤 자리를 이동 지시서 초안이 대신한다. 이게 없으면 파이프라인 ②(출발 창고 대기)가 길어져 MD 가 중복 발주할 창이 넓어진다.
@@ -2052,6 +2065,8 @@ npx nest build core
 git add apps/core/src/modules/inventory
 git commit -m "feat(inventory): 출발 창고 입고 시 이동 지시서 초안 자동 생성"
 ```
+
+</details>
 
 ---
 
