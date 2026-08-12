@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
@@ -7,6 +18,7 @@ import { GetStockQueryDto } from '../dto/get-stock-query.dto';
 import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/stock-summary-list.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
+import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
 
 @ApiTags('Inventory')
@@ -81,6 +93,28 @@ export class StockProjectionController {
   @ApiResponse({ status: 200, type: LocationContentsDto })
   async getLocationContents(@Param('locationId') locationId: string): Promise<LocationContentsDto> {
     return this.stockProjection.getLocationContents(locationId);
+  }
+
+  @Get('/stocks/inbound-pipeline')
+  @ApiOperation({
+    summary: '공급 파이프라인 조회 (발주 잔량 · 이동 대기 · 이동 중)',
+    description:
+      '판매 창고 관점에서 언제 몇 개가 들어오는지를 3단계로 냅니다. ①발주 잔량(비판매 창고 입고 예정) ②이동 대기(비판매 창고 보유, 미선적) ③이동 중(선적 후 미도착). ②는 판매가능수량에도 입고예정에도 잡히지 않는 구간이라 빼면 중복 발주가 납니다.',
+  })
+  @ApiQuery({ name: 'warehouseId', required: true, description: '도착(판매) 창고 ID' })
+  @ApiQuery({ name: 'skuIds', required: true, description: 'SKU ID 목록 (쉼표 구분 또는 반복 파라미터)' })
+  @ApiResponse({ status: 200, type: InboundPipelineResponseDto })
+  async getInboundPipeline(
+    @Query('warehouseId') warehouseId: string,
+    @Query('skuIds') skuIds?: string | string[],
+  ): Promise<InboundPipelineResponseDto> {
+    if (!warehouseId) throw new BadRequestException('warehouseId is required');
+    const ids = (Array.isArray(skuIds) ? skuIds : (skuIds ?? '').split(','))
+      .map((id) => id.trim())
+      .filter((id) => id.length > 0);
+    if (ids.length === 0) throw new BadRequestException('skuIds is required');
+
+    return this.stockProjection.getInboundPipeline({ skuIds: ids, toWarehouseId: warehouseId });
   }
 
   @Get('/stocks/history')
