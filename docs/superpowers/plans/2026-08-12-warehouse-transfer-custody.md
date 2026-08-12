@@ -24,7 +24,21 @@
 - **⚠️ 워크트리 경로가 `--testPathPattern` 을 오염시킨다.** 이 워크트리 경로에 `transfer` 가 들어 있어(`.claude/worktrees/feat+warehouse-transfer-custody`), `-- "transfer.*integration"` 같은 패턴이 **모든** 통합 스펙에 매칭돼 전량 실행이 된다(`--runInBand` 라 수십 분). 패턴은 반드시 **파일명 토큰으로 앵커**를 잡는다: `-- "(warehouse-transfer|transfer-receive|transfer-ship-location)\.integration"`. 이 레포에서 두 번째로 겪는 함정이다.
 - **전량 실행 시에는 반드시 core 로 좁힌다**: `npm run test:core:integration:local -- "apps/core.*integration"`. 러너의 기본 패턴은 `integration` 이라 `apps/medusa/integration-tests/**` 같은 **core 밖 suite 까지 끌어온다**(그쪽은 `@medusajs/test-utils` 미설치로 항상 실패한다). 좁히지 않으면 "새 실패 없음"을 판정할 수 없다.
 - **DB 제약 위반을 단언할 때 `.rejects.toThrow(/제약이름/)` 은 항상 실패한다.** drizzle-orm 이 postgres 에러를 `DrizzleQueryError` 로 감싸 실제 메시지가 `.cause.message` 에 들어간다. `err.cause` 를 따라 내려가며 매칭하는 헬퍼를 쓴다 — 선례는 `outbound-v2-schema.integration.spec.ts:40-75`(5단계 순회)와 `transfer-orders-schema.integration.spec.ts:20-30`(1단계). **`catch` 로 받아 아무 에러나 통과시키는 헬퍼를 만들지 말 것** — 그러면 제약이 사라져도 초록이라 스펙이 아무것도 지키지 못한다.
-- **`npm run type-check` 실측 기준선은 161** (2026-08-12 이 브랜치에서 실측). 이보다 늘면 이번 변경이 원인이다.
+- **`npm run type-check` 실측 기준선은 159** (2026-08-13 최종 실측. 계획 초안의 161 은 낡았다 — 최종 대응에서 `warehouse.manager.spec.ts` 의 사전 존재 TS2502 하나를 같이 없앴고, 새로 추가한 스펙은 오류를 만들지 않았다). 이보다 늘면 이번 변경이 원인이다.
+- **단위 스펙 기준선** (2026-08-13 최종 대응에서 실측):
+
+  ```bash
+  npx jest --testPathPattern "apps/core/src" --testPathIgnorePatterns integration
+  ```
+
+  결과: `Test Suites: 3 failed, 2 skipped, 171 passed, 174 of 176 total` / `Tests: 20 failed, 4 skipped, 1716 passed, 1740 total`.
+
+  develop 부터 RED 인 3 suite 만 빨강이며, 이 3개는 이번 작업의 회귀가 아니다:
+  - `apps/core/src/app.controller.spec.ts`
+  - `apps/core/src/modules/product-matching/services/product-sku-mapping.service.spec.ts` (`trx.select is not a function`)
+  - `apps/core/src/modules/sales-order/services/partial-cancellation-refund-calculator.spec.ts`
+
+  ⚠️ **이 기준선이 계획 초안에 없었던 것이 실제로 사고를 냈다.** type-check 와 통합 스펙만 기준선을 잡아둔 탓에, Task 1·2 가 상수(`supportedPickingStrategies`)·시스템 로케이션 개수(3→4)·`is_sellable` 게이트를 바꾸면서 기존 단위 스펙 3 suite 를 RED 로 만든 것을 브랜치 마지막까지 아무도 못 봤다. **태스크마다 이 명령을 돌린다.**
 - **develop 부터 RED 인 core 통합 스펙 8 suite 가 있다.** 이 8개의 실패는 이번 작업의 회귀가 아니다 — 새 실패로 오인하지 말 것. (2026-08-12 실측: `Test Suites: 8 failed, 57 passed, 65 total` / `Tests: 14 failed, 4 todo, 365 passed`)
 
   inventory 계열 5건:
@@ -2555,9 +2569,41 @@ git commit -m "chore(inventory): 옛 destination 입고 계획 마감 (contract)
 
 ## 배포 순서
 
-1. **Task 1~10 을 하나의 PR 로.** 마이그레이션이 전부 additive 이므로 **`migrate → deploy`**(expand 순서). contract 의 `deploy → migrate` 와 반대다 — 혼동하면 새 코드가 옛 스키마를 만난다.
-2. 배포 후 확인: `product_sellable_quantity` 값이 변하지 않아야 한다(중국 ON_HAND 가 0이므로). 변했다면 필터가 판매 창고까지 걸러낸 것이므로 즉시 조사한다.
-3. **한 번의 deploy 가 끝난 뒤** Task 11 을 별도 PR 로.
+1. **Task 1~10 을 하나의 PR 로.** 마이그레이션 4건이 전부 additive 이므로 **`migrate → deploy`**(expand 순서). contract 의 `deploy → migrate` 와 반대다 — 혼동하면 새 코드가 옛 스키마를 만난다.
+
+   ```
+   20260812101909_add-warehouse-is-sellable
+   20260812103454_add-transit-out-location-role
+   20260812105738_add-transfer-orders
+   20260812123206_fix-inbound-pending-warehouse-key
+   ```
+
+2. **⚠️ 순서를 어기면 "새 컬럼이 안 보인다"가 아니라 "core 가 안 뜬다".**
+   `WarehouseManager.ensureDefaultsExist()` 는 부팅 시 **모든** 창고에 `LocationService.ensureSystemLocations` 를 부르고, 실패를 삼키지 않고 rethrow 한다(`warehouse.manager.ts` 의 catch 블록 — "필수 system location 이 없는 창고로 서비스를 시작하지 않는다"가 의도). 새 코드는 `system_role='transit_out'` 로우를 insert 하므로, enum 값 마이그레이션(`20260812103454`)이 먼저 적용되지 않은 DB 를 만나면 insert 가 터지고 **부팅이 크래시 루프에 빠진다.** 롤포워드(마이그레이션을 마저 적용)나 롤백(옛 태스크로 되돌리기) 중 하나가 필요하다.
+
+3. **배포 후 확인 — DB 를 직접 읽는다.** (옛 기준이던 "`product_sellable_quantity` 값이 변하지 않아야 한다"는 **변별력이 0 이라 폐기했다**. 중국 창고 ON_HAND 가 0이므로 필터가 정상일 때와 필터가 통째로 no-op 일 때 **똑같이 통과한다** — 즉 이 기능의 핵심이 죽어도 초록이다.)
+
+   ```sql
+   -- ① 중국 창고가 비판매로 수렴됐는가. 이 행이 true 로 남아 있으면
+   --    inSellableWarehouse() 가 모든 창고를 매칭해 판매 게이트와
+   --    공급 파이프라인 ①② 필터가 통째로 no-op 이다.
+   SELECT id, name, type, is_sellable FROM warehouses ORDER BY name;
+   -- 기대: 해외 메인 창고(00000000-0000-0000-0000-000000000002) → is_sellable = false
+   --       나머지(부천 등) → true
+
+   -- ② 운송중존이 모든 창고에 깔렸는가. 없으면 그 창고발 선적이
+   --    getSystemLocationByRole 에서 터진다.
+   SELECT count(*) FROM locations WHERE system_role = 'transit_out' AND is_active;
+   SELECT count(*) FROM warehouses;
+   -- 기대: 두 값이 같다
+   ```
+
+   ①은 `ensureDefaultsExist` 가 **부팅 때** 수렴시킨다(컬럼 기본값이 `true` 라 기존 행은 자동으로 안 바뀐다). 그래서 이 확인은 **core 태스크가 새 이미지로 완전히 교체된 뒤**에 한다.
+
+4. **이 PR 은 휴면 상태로 배포된다 — `transfer_orders` 가 비어 있는 것은 버그가 아니다.**
+   `transfer_orders` 에 행이 생길 **프로덕션 경로가 아직 없다**: 입고 시 초안 자동 생성은 되돌렸고(Task 7 의 revert), admin-web 화면은 후속이다. **현재 라이브의 정본 이동 UI 는 여전히 옛 경로 `POST /inventory/transfers`** 이며 그 경로는 이 PR 이후에도 그대로 산다(ship/receive 가 한 트랜잭션이라 custody 구간이 없는 그 경로다). 새 모듈이 실제로 쓰이기 시작하는 조건은 (a) admin-web 이 `POST /inventory/warehouse-transfers` 로 이전 (b) 운영자가 이동 지시서를 쓰기 시작 — **둘 다 이 PR 밖이다.** 이걸 적어두지 않으면 다음 사람이 빈 `transfer_orders` 를 배선 사고로 오진한다.
+
+5. **한 번의 deploy 가 끝난 뒤** Task 11 을 별도 PR 로.
 
 ## 알려진 잔여
 
