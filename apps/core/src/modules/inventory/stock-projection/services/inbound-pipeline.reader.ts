@@ -31,6 +31,11 @@ interface QtyWithEta {
  * 예정일이 없는 단계는 숨기지 않고 null 로 낸다 — 숨기면 그 구간이 다시 사각지대가 된다.
  *
  * ②와 ③은 겹치지 않는다: 선적된 물량은 이미 IN_TRANSFER 로 옮겨져 ON_HAND 에서 빠졌다.
+ *
+ * 알려진 범위 한계: `toWarehouseId` 로 좁혀지는 것은 ③뿐이다. ①②는 비판매 창고 전체의 합이라
+ * 판매 창고가 하나(부천)일 때만 "이 창고의 예정 물량" 과 같다. 둘 이상이 되면 같은 수량이 모든
+ * 판매 창고에 중복 표시된다 — ①은 계획의 destination_warehouse_id 로 좁힐 여지가 있지만, ②는
+ * 이동 지시서가 생기기 전 구간이라 목적지 링크 자체가 없어 구조적으로 좁힐 수 없다.
  */
 @Injectable()
 export class InboundPipelineReader {
@@ -79,7 +84,8 @@ export class InboundPipelineReader {
         and(
           eq(items.status, 'pending'),
           // 입고될 창고 기준이다 — 최종 목적지(destination_warehouse_id)로 집계하면
-          // Task 7 이 닫은 이중 계상이 되살아난다.
+          // Task 7 이 닫은 이중 계상이 되살아난다. 판매 창고로 바로 들어오는 국내 발주
+          // (planType='destination')는 ①이 아니다 — 그건 이미 입고예정에 잡힌다.
           not(inSellableWarehouse(plans.warehouseId)),
           inArray(items.skuId, skuIds),
         ),

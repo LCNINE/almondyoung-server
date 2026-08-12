@@ -195,13 +195,33 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         eta: new Date('2026-08-20'),
       });
 
+      // 여기부터가 "비판매 창고만 센다" 는 술어의 하중이다. 이 두 줄이 없으면 ①②에서
+      // is_sellable 조건을 통째로 지워도 스펙이 초록으로 통과한다.
+      //
+      // (a) 부천 자신의 진열 재고 111. ②에 섞이면 이미 선반에 있는 물량이 "들어올 물량"
+      //     으로 재계상돼 MD 가 정반대 방향으로 잘못 판단한다.
+      await receiveStock(w.command, trx, {
+        skuId,
+        warehouseId: dest.warehouseId,
+        locationId: dest.locationId,
+        quantity: 111,
+      });
+      // (b) 부천으로 바로 들어오는 국내 발주 77 (예정일 8/15 — ①에 섞이면 수량과
+      //     예정일이 함께 틀어진다). 이건 "아직 중국에도 안 들어온 발주" 가 아니다.
+      await seedPendingSourcePlan(trx, {
+        skuId,
+        warehouseId: dest.warehouseId,
+        qty: 77,
+        expectedDate: new Date('2026-08-15'),
+      });
+
       const [row] = await buildReader(trx).read(trx, { skuIds: [skuId], toWarehouseId: dest.warehouseId });
 
       expect(row.skuId).toBe(skuId);
-      expect(row.onOrderQty).toBe(300);
-      expect(row.onOrderEta).toEqual(new Date('2026-09-01'));
+      expect(row.onOrderQty).toBe(300); // 판매 창고로 들어오는 77 은 ①이 아니다
+      expect(row.onOrderEta).toEqual(new Date('2026-09-01')); // 8/15 가 아니다
       // ②와 ③은 겹치지 않는다 — 선적분은 이미 ON_HAND 에서 빠졌다.
-      expect(row.awaitingTransferQty).toBe(200);
+      expect(row.awaitingTransferQty).toBe(200); // 부천 진열 111 은 ②가 아니다
       expect(row.inTransitQty).toBe(50);
       expect(row.inTransitEta).toEqual(new Date('2026-08-20'));
     });
