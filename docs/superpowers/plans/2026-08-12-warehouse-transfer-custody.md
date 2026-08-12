@@ -13,6 +13,8 @@
 ## Global Constraints
 
 - **레이어**: Controller → Service(2~3줄 포트) → Reader/Manager → Repository. Service 는 `HttpException`·drizzle-orm 을 import 하지 않는다. 도메인 예외는 `@app/shared` 의 `NotFoundError`/`BadRequestError`/`ConflictError`.
+- **예외 타입의 경계 (2026-08-12 결정)**: 위 규칙은 **이번에 새로 만드는 코드**에 적용한다 — `warehouse-transfer` 모듈, `sellable-warehouses.ts`, 새 Reader/Manager/Service. **기존 파일은 그 파일의 스타일을 따른다**: `inventory-command.service.ts`·`inbound.service.ts`·`fulfillments.service.ts` 등 core 구현 계층은 파일 전체가 Nest 예외(`BadRequestException`/`ConflictException`)를 쓰므로 그대로 쓴다. 한 파일 안에 두 스타일이 섞이는 것이 더 나쁘고, 상태코드 매핑을 `GlobalExceptionFilter` 로 옮기는 것은 이번 작업 범위 밖의 회귀 위험이다. **리뷰어는 기존 파일의 Nest 예외를 위반으로 잡지 않는다.**
+- **사전 존재 위반은 범위 밖**: `transfer.service.ts:135` 의 `trx.query.movementJobLines.findMany` 는 `db.query.*` 금지 규칙 위반이지만 **이번 변경이 만든 것이 아니다.** Task 10 이 같은 파일을 수정하더라도 이 호출은 건드리지 않으며, 리뷰어는 Task 10 의 결함으로 잡지 않는다.
 - **트랜잭션**: `this.dbService.run(async (trx) => {...}, tx)` 단일 러너만 쓴다. per-class `inTx` 헬퍼·`asTx(tx as unknown)` 캐스팅 금지. public 메서드는 `tx?: DbTx` 를 마지막 인자로, private 헬퍼는 `tx: DbTx` 필수.
 - **쿼리**: `db.query.*`·`with` 관계·`any`/`as` 캐스팅 금지. `trx.select().from().innerJoin().where()` 형태만. DB 주입은 `@InjectTypedDb<typeof wmsSchema>()`.
 - **DTO**: `@ApiProperty({ type: 'object' })` 금지 — 중첩 DTO 는 별도 클래스로.
