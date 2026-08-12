@@ -16,7 +16,8 @@ export const WAREHOUSE_CONSTANTS = {
     name: '해외 메인 창고',
     location: '중국',
     type: 'overseas' as const,
-    supportedPickingStrategies: ['discrete'] as const,
+    // 비판매 창고다. 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
+    supportedPickingStrategies: [] as const,
   },
 } as const;
 

@@ -484,6 +484,13 @@
       "when": 1786517721789,
       "tag": "20260812065521_add-shop-listing-deal-fields",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1786529949938,
+      "tag": "20260812101909_add-warehouse-is-sellable",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "warehouses" ADD COLUMN "is_sellable" boolean DEFAULT true NOT NULL;

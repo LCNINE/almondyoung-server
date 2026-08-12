@@ -726,6 +726,9 @@ export const warehouses = pgTable('warehouses', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 128 }).notNull(),
   type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
+  // 판매 대상 창고인가. 성격(type)과 정책(판매성)은 다른 축이다 — 반품 창고를 팔지는
+  // 별개 결정이고 지금 우연히 겹칠 뿐이다. 판정은 sellable-warehouses.ts 한 곳에서만 한다.
+  isSellable: boolean('is_sellable').notNull().default(true),
   location: varchar('location', { length: 256 }),
   // TODO(outbound-v2-contract Task 25): require explicit configuration; null means V2 planning must reject.
   supportedPickingStrategies: pickingStrategyEnum('supported_picking_strategies').array(),
