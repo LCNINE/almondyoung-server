@@ -1,15 +1,13 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderStatus } from '../dto/purchase-order.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
-import { InboundService } from './inbound.service';
-import { makeInboundService } from './__fixtures__/inbound-harness';
 
 /**
  * 해외 발주(출발 창고 ≠ 최종 목적지)가 입고 계획을 하나만 만드는지 고정한다.
@@ -55,10 +53,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
   function buildPurchaseOrderService(trx: DbTx): PurchaseOrderService {
     const dbService = boundDbService(trx);
     return new PurchaseOrderService(dbService, new TransactionService(dbService));
-  }
-
-  function buildInboundService(): InboundService {
-    return makeInboundService(db);
   }
 
   interface CrossWarehousePoFixture {
@@ -131,35 +125,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     );
   }
 
-  /**
-   * source plan 아이템에 대해 실제 수령을 건다 — `InboundService.receiveFromPlan` 이
-   * 예정 누계를 갱신하는 그 경로다. 훅은 그 갱신 직후에 걸리므로 이 경로를 지나야
-   * 초안 지시서 스펙이 의미를 갖는다.
-   */
-  async function receiveAgainstSourcePlan(
-    trx: DbTx,
-    input: { poId: string; skuId: string; quantity: number },
-  ): Promise<void> {
-    const [item] = await trx
-      .select({ id: wmsTables.inboundPlanItems.id })
-      .from(wmsTables.inboundPlanItems)
-      .innerJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlans.id, wmsTables.inboundPlanItems.planId))
-      .where(
-        and(
-          eq(wmsTables.inboundPlans.linkedPurchaseOrderId, input.poId),
-          eq(wmsTables.inboundPlans.planType, 'source'),
-          eq(wmsTables.inboundPlanItems.skuId, input.skuId),
-        ),
-      )
-      .limit(1);
-    if (!item) throw new Error('source plan item not found — 계획 생성이 기대와 다르다');
-
-    await buildInboundService().receiveFromPlan(
-      { planItemId: item.id, quantity: input.quantity, idempotencyKey: randomUUID() },
-      trx,
-    );
-  }
-
   it('창고간 이동이 필요한 발주도 입고 계획을 하나만 만든다', async () => {
     await inRollback(async (trx) => {
       const { poId, sourceWarehouseId, destinationWarehouseId } = await seedCrossWarehousePurchaseOrder(trx);
@@ -200,49 +165,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       // 옛 집계 키(destination_warehouse_id)에서는 여기가 20 이었다 — source/destination
       // 두 계획이 같은 창고에 잡혀 발주 수량의 2배가 됐다.
       expect(await readInboundPending(destinationWarehouseId)).toBe(0);
-    });
-  });
-
-  it('창고간 이동이 필요한 source plan 을 수령하면 draft 이동 지시서가 생긴다', async () => {
-    await inRollback(async (trx) => {
-      const ctx = await seedCrossWarehousePurchaseOrder(trx);
-      await confirmPurchaseOrder(trx, ctx.poId);
-      await receiveAgainstSourcePlan(trx, { poId: ctx.poId, skuId: ctx.skuId, quantity: ctx.quantity });
-
-      const orders = await trx
-        .select({
-          id: wmsTables.transferOrders.id,
-          status: wmsTables.transferOrders.status,
-          fromWarehouseId: wmsTables.transferOrders.fromWarehouseId,
-          toWarehouseId: wmsTables.transferOrders.toWarehouseId,
-        })
-        .from(wmsTables.transferOrders)
-        .where(eq(wmsTables.transferOrders.fromWarehouseId, ctx.sourceWarehouseId));
-
-      expect(orders).toHaveLength(1);
-      expect(orders[0].status).toBe('draft');
-      expect(orders[0].toWarehouseId).toBe(ctx.destinationWarehouseId);
-    });
-  });
-
-  it('두 번 나눠 수령해도 초안 지시서는 하나이고 수량이 누적된다', async () => {
-    await inRollback(async (trx) => {
-      const ctx = await seedCrossWarehousePurchaseOrder(trx);
-      await confirmPurchaseOrder(trx, ctx.poId);
-      await receiveAgainstSourcePlan(trx, { poId: ctx.poId, skuId: ctx.skuId, quantity: 4 });
-      await receiveAgainstSourcePlan(trx, { poId: ctx.poId, skuId: ctx.skuId, quantity: 6 });
-
-      const lines = await trx
-        .select({ plannedQty: wmsTables.transferOrderLines.plannedQty })
-        .from(wmsTables.transferOrderLines)
-        .innerJoin(
-          wmsTables.transferOrders,
-          eq(wmsTables.transferOrders.id, wmsTables.transferOrderLines.transferOrderId),
-        )
-        .where(eq(wmsTables.transferOrders.fromWarehouseId, ctx.sourceWarehouseId));
-
-      expect(lines).toHaveLength(1);
-      expect(lines[0].plannedQty).toBe(ctx.quantity);
     });
   });
 });

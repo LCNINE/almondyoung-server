@@ -8,7 +8,6 @@ import {
   wireLogistics,
 } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
-import { TransferDraftService } from '../../../apps/core/src/modules/inventory/warehouse-transfer/services/transfer-draft.service';
 import { SkuCatalogService } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { SkuCatalogReader } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.reader';
 import { SkuCatalogManager } from '../../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
@@ -98,10 +97,9 @@ async function main(): Promise<void> {
     const dbService = makeDbService(db);
     const wired = wireLogistics(dbService, 'v2');
 
-    // InboundService 는 Nest DI 없이도 손으로 조립 가능한 정도(협력자 대부분이 dbService 하나만
+    // InboundService 는 Nest DI 없이도 손으로 조립 가능한 정도(협력자 5개, 전부 dbService 하나만
     // 필요)라 여기서 직접 생성한다 — wireLogistics 가 이미 command/location/eventStore 를 만들어
-    // 두었으니 SkuCatalogService·InventoryIdempotencyService·TransferDraftService 만 추가로
-    // 조립하면 된다.
+    // 두었으니 SkuCatalogService·InventoryIdempotencyService 만 추가로 조립하면 된다.
     const skuCatalogReader = new SkuCatalogReader(dbService);
     const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
     const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
@@ -113,7 +111,6 @@ async function main(): Promise<void> {
       wired.location,
       wired.eventStore,
       idempotency,
-      new TransferDraftService(),
     );
 
     // ShipmentPlanningService 는 wireLogistics 의 Wired 밖이라 (다른 BC 조합에서는 안 쓰이는
