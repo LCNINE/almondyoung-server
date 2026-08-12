@@ -7,20 +7,44 @@
  * (2초 대기 후 포기)도 같은 경합의 다른 얼굴이다.
  *
  * 둘 다 카트 상태가 잘못된 게 아니라 타이밍 문제라서, 다시 읽고 한 번 더 시도하면 풀린다.
+ *
+ * 판정은 상태 코드를 먼저 본다. Medusa 의 에러 핸들러는 MedusaError 가 아닌 예외의 메시지를
+ * "An unknown error occurred." 로 통째로 갈아버려서, 락 실패처럼 평범한 Error 로 던져지는
+ * 경우엔 원문이 클라이언트까지 오지 않는다. 문구 매칭만으로는 잡을 수 없다.
  */
-const TRANSIENT_CART_CONFLICT_PATTERNS = [
-  /failed to acquire lock/i,
-  /shipping ?method with id .*not found/i,
-]
+
+/** Medusa 가 경합을 conflict 로 알려줄 때. 재시도해도 된다고 스펙이 보장하는 자리다. */
+const CONFLICT_STATUS = 409
+
+/**
+ * 락이 풀린 사이 다른 요청이 배송수단을 갈아치워 사라진 id 를 참조한 경우. 이건 MedusaError
+ * (NOT_FOUND) 라 원문이 그대로 온다. 실제 문구는 `ShippingMethod with id: casm_x was not found`
+ * 처럼 id 뒤에 콜론이 붙는다.
+ */
+const STALE_SHIPPING_METHOD_PATTERN =
+  /shipping ?method with id[:\s].*not found/i
+
+/** 락 자체를 못 잡은 경우. Medusa 가 메시지를 갈지 않고 넘겨줄 때만 잡힌다. */
+const LOCK_PATTERN = /failed to acquire lock/i
+
+const readStatus = (error: unknown): number | undefined => {
+  const status = (error as { status?: unknown })?.status
+  return typeof status === "number" ? status : undefined
+}
+
+const readMessage = (error: unknown): string =>
+  typeof error === "string"
+    ? error
+    : ((error as { message?: string })?.message ?? "")
 
 export function isTransientCartConflictError(error: unknown): boolean {
-  const message =
-    typeof error === "string"
-      ? error
-      : ((error as { message?: string })?.message ?? "")
+  if (readStatus(error) === CONFLICT_STATUS) {
+    return true
+  }
 
-  return TRANSIENT_CART_CONFLICT_PATTERNS.some((pattern) =>
-    pattern.test(message)
+  const message = readMessage(error)
+  return (
+    LOCK_PATTERN.test(message) || STALE_SHIPPING_METHOD_PATTERN.test(message)
   )
 }
 

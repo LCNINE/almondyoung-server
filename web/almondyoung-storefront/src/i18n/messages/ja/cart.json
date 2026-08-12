@@ -42,7 +42,8 @@
     "outOfStockBadge": "品切れ",
     "outOfStockHint": "品切れの商品です。決済を進めるには削除してください。",
     "overStockBadge": "在庫不足",
-    "overStockHint": "在庫が残り{max}個です。{max}個以下に調整してください。"
+    "overStockHint": "在庫が残り{max}個です。{max}個以下に調整してください。",
+    "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。"
   },
   "summary": {
     "title": "ご注文金額",

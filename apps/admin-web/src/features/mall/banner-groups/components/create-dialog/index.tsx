@@ -15,6 +15,14 @@ import { Switch } from '@/components/ui/switch';
 import { useCreateBannerGroup } from '@/lib/services/products';
 import type { CreateBannerGroupDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { formatRatio } from '../../../banner-group-detail/banner-image-guide';
+import {
+  BANNER_GROUP_PRESETS,
+  MOBILE_VIEWPORT,
+  PC_VIEWPORT,
+  matchPreset,
+  renderedHeight,
+} from '../../banner-group-presets';
 
 type Props = {
   open: boolean;
@@ -114,9 +122,54 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
             />
           </div>
 
+          <div className="grid gap-1.5">
+            <Label>규격 프리셋</Label>
+            <div className="flex flex-wrap gap-2">
+              {BANNER_GROUP_PRESETS.map((preset) => (
+                <Button
+                  key={preset.label}
+                  type="button"
+                  variant={
+                    matchPreset(form)?.label === preset.label ? 'default' : 'outline'
+                  }
+                  size="sm"
+                  title={preset.hint}
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      pcWidth: preset.pcWidth,
+                      pcHeight: preset.pcHeight,
+                      mobileWidth: preset.mobileWidth,
+                      mobileHeight: preset.mobileHeight,
+                    }))
+                  }
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-muted-foreground text-xs">
+              {matchPreset(form)?.hint ??
+                '자리에 맞는 프리셋을 고르면 아래 사이즈가 채워집니다'}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              입력하는 숫자는 <strong className="font-medium">비율</strong>입니다 —
+              1920×480 은 &ldquo;4:1 로 그려라&rdquo;는 뜻이고, 실제 높이는 화면 폭에
+              따라 정해집니다 ({PC_VIEWPORT}px 화면이면 360px).
+            </p>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">
-              <Label>PC 사이즈 (px)</Label>
+              <Label>
+                PC 비율
+                {form.pcWidth && form.pcHeight ? (
+                  <span className="text-muted-foreground ml-1 font-normal">
+                    {formatRatio(form.pcWidth, form.pcHeight)} → 실제{' '}
+                    {renderedHeight(form.pcWidth, form.pcHeight, PC_VIEWPORT)}px
+                  </span>
+                ) : null}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   type="number"
@@ -133,7 +186,20 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
               </div>
             </div>
             <div className="grid gap-1.5">
-              <Label>모바일 사이즈 (px)</Label>
+              <Label>
+                모바일 비율
+                {form.mobileWidth && form.mobileHeight ? (
+                  <span className="text-muted-foreground ml-1 font-normal">
+                    {formatRatio(form.mobileWidth, form.mobileHeight)} → 실제{' '}
+                    {renderedHeight(
+                      form.mobileWidth,
+                      form.mobileHeight,
+                      MOBILE_VIEWPORT,
+                    )}
+                    px
+                  </span>
+                ) : null}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   type="number"

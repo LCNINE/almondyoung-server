@@ -2,6 +2,7 @@
 
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
+import { Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DateCell } from '@/components/table/table-cells/common';
@@ -12,6 +13,7 @@ const columnHelper = createColumnHelper<BannerDto>();
 type RowActions = {
   onEdit: (row: BannerDto) => void;
   onDelete: (row: BannerDto) => void;
+  onPreview: (row: BannerDto) => void;
 };
 
 export const useBannersTableColumns = (actions: RowActions) => {
@@ -74,6 +76,14 @@ export const useBannersTableColumns = (actions: RowActions) => {
         header: '관리',
         cell: ({ row }) => (
           <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => actions.onPreview(row.original)}
+            >
+              <Eye className="mr-1 h-3.5 w-3.5" />
+              미리보기
+            </Button>
             <Button variant="outline" size="sm" onClick={() => actions.onEdit(row.original)}>
               편집
             </Button>

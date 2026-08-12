@@ -15,6 +15,8 @@ import {
   type CartLineItemClassification,
 } from "@lib/utils/cart-availability"
 import { withCartConflictRetry } from "./cart-conflict"
+import { getIsMembershipCustomer } from "@lib/data/membership"
+import { createRefreshThrottle } from "@lib/utils/refresh-throttle"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -1536,12 +1538,35 @@ export async function refreshCartPrices(): Promise<CartRefreshResult> {
 }
 
 /**
+ * 이 재계산이 필요한 건 멤버십 상태가 바뀌었을 때다. 그 상태가 그대로면 다시 부를 이유가 없어
+ * (카트 id, 멤버십 여부) 별로 최근에 한 번 돌렸는지 기억해 건너뛴다.
+ *
+ * 렌더 중에는 쿠키를 쓸 수 없어 프로세스 메모리에 둔다. 인스턴스가 바뀌면 한 번 더 돌 뿐이고,
+ * 멤버십이 바뀌면 키가 달라져 즉시 다시 돈다. 관리자가 가격을 직접 고친 경우만 최대 TTL 만큼
+ * 늦게 반영된다.
+ */
+const PRICE_REFRESH_TTL_MS = 10 * 60 * 1000
+const priceRefreshThrottle = createRefreshThrottle(PRICE_REFRESH_TTL_MS)
+
+/**
  * 렌더 중에 부를 수 있는 가격 재계산. revalidateTag 는 부르지 않는다 (렌더 도중 호출은 금지).
  *
  * 카트를 읽기 **전에** 순차로 돌리는 용도다. 예전처럼 클라이언트에서 재계산을 걸고
  * router.refresh 로 다시 그리면, 그 재계산과 다음 렌더의 배송수단 정합이 같은 카트를 동시에
- * 고쳐 경합이 났다.
+ * 고쳐 경합이 났다. 다만 이 호출이 카트 조회 앞을 막고 서기 때문에, 매 렌더마다 돌리면
+ * 그대로 TTFB 가 된다. 필요할 때만 돌린다.
  */
 export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult> {
+  const headers = await getAuthHeaders()
+  if (!headers) return EMPTY_REFRESH_RESULT
+
+  const cartId = await getCartId()
+  if (!cartId) return EMPTY_REFRESH_RESULT
+
+  const isMember = await getIsMembershipCustomer()
+  if (!priceRefreshThrottle.take(`${cartId}:${isMember ? "mem" : "reg"}`)) {
+    return EMPTY_REFRESH_RESULT
+  }
+
   return requestCartPriceRefresh()
 }

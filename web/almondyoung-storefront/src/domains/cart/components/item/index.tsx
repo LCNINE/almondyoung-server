@@ -18,6 +18,7 @@ import {
   isInsufficientInventoryError,
   resolveStockNotice,
 } from "@/lib/utils/cart-availability"
+import { resolveQuantityChange } from "@/lib/utils/cart-quantity"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { HttpTypes } from "@medusajs/types"
@@ -71,7 +72,7 @@ type ItemChildProps = {
   totalPrice: number
   discountPercentage: number
   compareAtTotalPrice: number
-  changeQuantity: (quantity: number) => void
+  changeQuantity: (quantity: number) => boolean
   handleDelete: () => Promise<void>
   selected?: boolean
   onSelectChange?: (checked: boolean) => void
@@ -102,32 +103,41 @@ function Item({
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const changeQuantity = (quantity: number) => {
-    if (quantity < 1) return
-
+  /** 요청을 서버로 보냈으면 true. 상한/품절로 막았으면 false (다이얼로그를 닫지 않기 위해). */
+  const changeQuantity = (quantity: number): boolean => {
     // 남은 재고를 넘기면 서버에 보내기 전에 남은 수량을 알려준다. 그대로 보내면 Medusa 가
     // 영문 재고부족 에러(`Some variant does not have the required inventory`)를 던지고,
     // 그게 그대로 토스트에 떠서 고객이 무슨 상황인지 알 수 없었다.
-    //
-    // 단 '줄이는' 방향은 막지 않는다. 담은 뒤 재고가 줄어 이미 상한을 넘긴 라인(예: 담긴 5개,
-    // 재고 3개)에서 4개로 낮추는 것까지 막으면 고객이 수량을 조정할 방법이 없어진다.
-    const isIncrease = quantity > item.quantity
-    if (maxQuantity !== undefined && quantity > maxQuantity && isIncrease) {
+    const change = resolveQuantityChange({
+      requested: quantity,
+      current: item.quantity,
+      maxQuantity,
+    })
+
+    if (change.type === "reject") {
+      if (change.reason === "belowMin") return false
+
       // 재고 0 은 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
       const message =
-        maxQuantity <= 0
+        change.reason === "soldOut"
           ? t("quantitySoldOut")
-          : t("quantityMaxError", { max: maxQuantity })
+          : t("quantityMaxError", { max: change.max })
       toast.error(message)
       setError(message)
-      return
+      return false
     }
 
     setError(null)
 
+    // 상한을 넘긴 라인에서 줄이는 요청은 상한까지 내려간다. 바뀐 수량을 알려주지 않으면
+    // "-" 를 눌렀는데 숫자가 여러 칸 떨어진 것처럼 보인다.
+    if (change.clampedToMax) {
+      toast.info(t("quantityAdjustedToMax", { max: change.quantity }))
+    }
+
     startTransition(async () => {
       try {
-        await updateLineItem({ lineId: item.id, quantity })
+        await updateLineItem({ lineId: item.id, quantity: change.quantity })
       } catch (err) {
         const raw = err instanceof Error ? err.message : ""
         // 재고 정보가 방금 바뀌어 상한 검사를 통과했는데도 실패한 경우. 백엔드가 한글로 던진
@@ -144,6 +154,8 @@ function Item({
         setError(message)
       }
     })
+
+    return true
   }
 
   const handleDelete = async () => {
@@ -230,22 +242,11 @@ function DesktopItem({
       return toast.error(t("quantityMinError"))
     }
 
-    // 상한을 넘기면 다이얼로그를 닫지 않고 남은 수량을 알려준다(고객이 바로 고쳐 넣을 수 있게).
-    // changeQuantity 와 같은 규칙으로 '줄이는' 방향은 통과시킨다.
-    if (
-      maxQuantity !== undefined &&
-      num > maxQuantity &&
-      num > (item?.quantity ?? 0)
-    ) {
-      return toast.error(
-        maxQuantity <= 0
-          ? t("quantitySoldOut")
-          : t("quantityMaxError", { max: maxQuantity })
-      )
+    // 상한 판정과 안내는 changeQuantity 가 한다. 막힌 경우엔 다이얼로그를 닫지 않아
+    // 고객이 바로 고쳐 넣을 수 있게 한다.
+    if (changeQuantity?.(num)) {
+      setIsModalOpen(false)
     }
-
-    await changeQuantity?.(num)
-    setIsModalOpen(false)
   }
 
   // 판매중단 라인은 이미 별도 배지가 있으므로 재고 안내를 겹쳐 띄우지 않는다.
@@ -521,20 +522,11 @@ function MobileItem({
       return toast.error(t("quantityMinError"))
     }
 
-    if (
-      maxQuantity !== undefined &&
-      num > maxQuantity &&
-      num > (item?.quantity ?? 0)
-    ) {
-      return toast.error(
-        maxQuantity <= 0
-          ? t("quantitySoldOut")
-          : t("quantityMaxError", { max: maxQuantity })
-      )
+    // 상한 판정과 안내는 changeQuantity 가 한다. 막힌 경우엔 다이얼로그를 닫지 않아
+    // 고객이 바로 고쳐 넣을 수 있게 한다.
+    if (changeQuantity?.(num)) {
+      setIsModalOpen(false)
     }
-
-    await changeQuantity?.(num)
-    setIsModalOpen(false)
   }
 
   // 판매중단 라인은 이미 별도 배지가 있으므로 재고 안내를 겹쳐 띄우지 않는다.

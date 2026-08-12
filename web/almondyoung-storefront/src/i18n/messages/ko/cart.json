@@ -42,7 +42,8 @@
     "outOfStockBadge": "품절",
     "outOfStockHint": "품절된 상품이에요. 결제하려면 빼주세요.",
     "overStockBadge": "재고 부족",
-    "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요."
+    "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요.",
+    "quantityAdjustedToMax": "재고가 {max}개라 {max}개로 맞췄어요."
   },
   "summary": {
     "title": "주문 예상 금액",
