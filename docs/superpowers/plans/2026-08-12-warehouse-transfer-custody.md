@@ -19,8 +19,21 @@
 - **스키마**: 모든 테이블 정의는 `apps/core/src/modules/inventory/schema/inventory.schema.ts` 한 파일. snake_case 컬럼 / camelCase TS export. 새 테이블은 `wmsTables` 객체에 반드시 추가한다(누락 시 `wmsSchema` 에 안 들어가 `trx` 타입에서 안 보인다).
 - **마이그레이션**: `npm run db:generate:core -- --name <kebab-description>`. 생성된 SQL 을 반드시 눈으로 검토한다. `schema.ts` + `drizzle/<timestamp>_*.sql` + `drizzle/meta/` 를 **한 커밋**에 넣는다.
 - **통합 테스트 실행**: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <패턴>`. 러너가 compose postgres(5432) 기동 → 마이그레이션 적용 → jest 를 순서대로 한다. 워크트리에서 `COMPOSE_PROJECT_NAME` 을 빼면 5432 포트 충돌로 죽는다.
-- **`npm run type-check` 실측 기준선은 161** — 이보다 늘면 이번 변경이 원인이다.
-- **develop 부터 RED 인 통합 스펙 5 suite 가 있다**(`unified-reservation.service.lifecycle`, `reverse-event-guard`, `unified-reservation.service.lock`, `stocktaking-uniques`, `inventory-command.service.adjust`). 이 5개의 실패는 이번 작업의 회귀가 아니다 — 새 실패로 오인하지 말 것.
+- **전량 실행 시에는 반드시 core 로 좁힌다**: `npm run test:core:integration:local -- "apps/core.*integration"`. 러너의 기본 패턴은 `integration` 이라 `apps/medusa/integration-tests/**` 같은 **core 밖 suite 까지 끌어온다**(그쪽은 `@medusajs/test-utils` 미설치로 항상 실패한다). 좁히지 않으면 "새 실패 없음"을 판정할 수 없다.
+- **`npm run type-check` 실측 기준선은 161** (2026-08-12 이 브랜치에서 실측). 이보다 늘면 이번 변경이 원인이다.
+- **develop 부터 RED 인 core 통합 스펙 8 suite 가 있다.** 이 8개의 실패는 이번 작업의 회귀가 아니다 — 새 실패로 오인하지 말 것. (2026-08-12 실측: `Test Suites: 8 failed, 57 passed, 65 total` / `Tests: 14 failed, 4 todo, 365 passed`)
+
+  inventory 계열 5건:
+  - `unified-reservation.service.lifecycle.integration`
+  - `reverse-event-guard.integration`
+  - `unified-reservation.service.lock.integration`
+  - `stocktaking-uniques.integration`
+  - `inventory-command.service.adjust.integration`
+
+  catalog 계열 3건 (이번 작업 범위 밖):
+  - `product-masters-variant-preview.integration`
+  - `bulk-session-draft.integration`
+  - `bulk-session-publish.integration`
 - **테스트가 산출물일 때는 RED 를 먼저 볼 수 없다.** 그런 태스크에는 "프로덕션 코드를 일부러 깨뜨려 빨강을 관측하고 되돌린다"는 단계가 명시돼 있다. 건너뛰지 말 것 — 이 절차 없이 통과한 스펙은 변별력이 증명되지 않은 스펙이다.
 
 ---
@@ -275,7 +288,7 @@ DEFAULT_OVERSEAS_WAREHOUSE: {
 
 ```bash
 npm run type-check
-COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "apps/core.*integration"
 ```
 
 기대: type-check 오류 **161 이하**. 통합 스펙은 Global Constraints 에 적힌 사전 RED 5 suite 외에 새 실패가 없어야 한다.
@@ -2449,7 +2462,7 @@ grep -rn "returnPendingQuantity\|transferPending" apps/ --include=*.ts
 ```bash
 npx nest build core
 npm run type-check
-COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local
+COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- "apps/core.*integration"
 ```
 
 기대: 빌드 성공, type-check 161 이하, 사전 RED 5 suite 외 새 실패 없음.
