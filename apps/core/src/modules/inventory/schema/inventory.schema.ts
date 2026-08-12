@@ -55,6 +55,13 @@ export const transitionTypeEnum = pgEnum('transition_type', [
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
+export const transferOrderStatusEnum = pgEnum('transfer_order_status', [
+  'draft', // 선적 전
+  'shipped', // 전량 출발
+  'partially_received', // 일부 도착
+  'closed', // shipped = received + lost (미도착 잔량 0)
+]);
+
 // DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'pending'(컬럼 default이나 실 insert는 항상 'confirmed')·'active'. 라이브: confirmed/released.
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
@@ -444,6 +451,124 @@ export const movementWorkLogs = pgTable(
   },
   (t) => ({
     idxMovementWorkTime: index('idx_movement_work_time').on(t.timestamp),
+  }),
+);
+
+export const transferOrders = pgTable(
+  'transfer_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fromWarehouseId: uuid('from_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    toWarehouseId: uuid('to_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: transferOrderStatusEnum('status').notNull().default('draft'),
+    // 도착 예정일은 문서 단위다 — 같은 배에 실리므로 라인별로 나눌 이유가 없다.
+    eta: timestamp('eta', { mode: 'date' }),
+    etaUpdatedAt: timestamp('eta_updated_at', { withTimezone: true }),
+    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+    actorId: uuid('actor_id'),
+    memo: varchar('memo', { length: 255 }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxTransferOrdersStatus: index('idx_transfer_orders_status').on(t.status, t.createdAt),
+    idxTransferOrdersRoute: index('idx_transfer_orders_route').on(t.fromWarehouseId, t.toWarehouseId),
+    // 창고 간 이동 전용 문서다. 창고 내 이동은 movement_jobs 가 소유한다.
+    ckTransferOrdersCrossWarehouse: check(
+      'ck_transfer_orders_cross_warehouse',
+      sql`${t.fromWarehouseId} <> ${t.toWarehouseId}`,
+    ),
+  }),
+);
+
+export const transferOrderLines = pgTable(
+  'transfer_order_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    transferOrderId: uuid('transfer_order_id')
+      .references(() => transferOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    fromLocationId: uuid('from_location_id')
+      .references(() => locations.id, { onDelete: 'restrict' })
+      .notNull(),
+    plannedQty: integer('planned_qty').notNull(),
+    shippedQty: integer('shipped_qty').notNull().default(0),
+    receivedQty: integer('received_qty').notNull().default(0),
+    lostQty: integer('lost_qty').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqTransferOrderLineSku: unique('uq_transfer_order_lines_sku').on(t.transferOrderId, t.skuId, t.fromLocationId),
+    idxTransferOrderLinesOrder: index('idx_transfer_order_lines_order').on(t.transferOrderId),
+    ckTransferOrderLineQty: check(
+      'ck_transfer_order_lines_qty',
+      sql`${t.plannedQty} > 0 AND ${t.shippedQty} >= 0 AND ${t.receivedQty} >= 0 AND ${t.lostQty} >= 0`,
+    ),
+    // 선적량을 넘겨 수령/분실할 수 없다. batch_inventory_sessions 의
+    // settled + returned + shortage <= handed_in 과 같은 형태 — 애플리케이션
+    // 검증만으로는 샌다는 것을 이미 배웠다.
+    ckTransferOrderLineSettlement: check(
+      'ck_transfer_order_lines_settlement',
+      sql`${t.receivedQty} + ${t.lostQty} <= ${t.shippedQty}`,
+    ),
+    ckTransferOrderLineShipped: check('ck_transfer_order_lines_shipped', sql`${t.shippedQty} <= ${t.plannedQty}`),
+  }),
+);
+
+export const transferOrderReceipts = pgTable(
+  'transfer_order_receipts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    transferOrderId: uuid('transfer_order_id')
+      .references(() => transferOrders.id, { onDelete: 'restrict' })
+      .notNull(),
+    journalId: uuid('journal_id').references(() => stockJournals.id, { onDelete: 'set null' }),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+    actorId: uuid('actor_id'),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxTransferOrderReceiptsOrder: index('idx_transfer_order_receipts_order').on(t.transferOrderId, t.receivedAt),
+  }),
+);
+
+export const transferOrderReceiptLines = pgTable(
+  'transfer_order_receipt_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    receiptId: uuid('receipt_id')
+      .references(() => transferOrderReceipts.id, { onDelete: 'cascade' })
+      .notNull(),
+    transferOrderLineId: uuid('transfer_order_line_id')
+      .references(() => transferOrderLines.id, { onDelete: 'restrict' })
+      .notNull(),
+    toLocationId: uuid('to_location_id')
+      .references(() => locations.id, { onDelete: 'restrict' })
+      .notNull(),
+    receivedQty: integer('received_qty').notNull().default(0),
+    lostQty: integer('lost_qty').notNull().default(0),
+    receiveEventId: uuid('receive_event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+    lostEventId: uuid('lost_event_id').references(() => stockEvents.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxTransferOrderReceiptLinesReceipt: index('idx_transfer_order_receipt_lines_receipt').on(t.receiptId),
+    ckTransferOrderReceiptLineQty: check(
+      'ck_transfer_order_receipt_lines_qty',
+      sql`${t.receivedQty} >= 0 AND ${t.lostQty} >= 0 AND (${t.receivedQty} + ${t.lostQty}) > 0`,
+    ),
   }),
 );
 
@@ -2941,6 +3066,10 @@ export const wmsTables = {
   movementJobs,
   movementJobLines,
   movementWorkLogs,
+  transferOrders,
+  transferOrderLines,
+  transferOrderReceipts,
+  transferOrderReceiptLines,
   auditLogs,
   inventoryIdempotencyRequests,
 
