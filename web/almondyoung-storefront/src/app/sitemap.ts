@@ -1,3 +1,4 @@
+import { listPublicShopListings } from "@/lib/api/pim/shop-listings"
 import { sdk } from "@/lib/config/medusa"
 import { siteConfig } from "@/lib/config/site"
 import { MetadataRoute } from "next"
@@ -60,9 +61,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = `https://${siteConfig.domainName}`
   const now = new Date()
 
-  const [productHandles, categoryHandles] = await Promise.all([
+  const [productHandles, categoryHandles, shopTradeSlugs] = await Promise.all([
     getProductHandles().catch(() => [] as string[]),
     getCategoryHandles().catch(() => [] as string[]),
+    listPublicShopListings()
+      .then((listings) => listings.map((l) => l.slug))
+      .catch(() => [] as string[]),
   ])
 
   const uniqueCategories = Array.from(new Set(categoryHandles))
@@ -84,11 +88,16 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     entry("/best", "weekly", 0.8),
     entry("/new", "weekly", 0.8),
     entry("/cs", "weekly", 0.5),
+    entry("/shop-trade", "weekly", 0.7),
   ]
 
   return [
     ...staticEntries,
     ...uniqueCategories.map((h) => entry(`/category/${h}`, "weekly", 0.7)),
     ...uniqueProducts.map((h) => entry(`/products/${h}`, "weekly", 0.6)),
+    // 한글 slug 는 퍼센트 인코딩해야 sitemap 규격에 맞고 상세 페이지 canonical 과도 일치한다
+    ...shopTradeSlugs.map((s) =>
+      entry(`/shop-trade/${encodeURIComponent(s)}`, "weekly", 0.6)
+    ),
   ]
 }

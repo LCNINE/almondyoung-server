@@ -13,7 +13,7 @@ import { usePathname } from "next/navigation"
 import { useRef, useState } from "react"
 
 // 별도 디자인 항목으로 좌측 하단에 분리 노출할 대분류 handle.
-// "브랜드관"은 카테고리(cafe24-cat-728, 이름 '브랜드')로 이동, "샵매매"는 기능 준비 중.
+// "브랜드관"은 카테고리(cafe24-cat-728, 이름 '브랜드')로 이동, "샵매매"는 자체 게시판(/shop-trade)으로 이동.
 const BRAND_CATEGORY_HANDLE = "cafe24-cat-728"
 
 // 메가메뉴 목록에서 아예 숨길 대분류 handle.
@@ -141,14 +141,17 @@ export function MegaMenu({ categories }: MegaMenuProps) {
         <div className="my-2 border-t border-gray-100" />
         <ul>
           <li>
-            {/* 샵매매: 기능 준비 중 → 이동 없음 */}
-            <span className="flex h-[28px] cursor-default items-center gap-2 pr-3 pl-4 text-[12px] leading-none text-gray-400">
-              <span className="h-4 w-4 shrink-0" />
-              <span className="flex-1 truncate">{t("shopTrade")}</span>
-              <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-400">
-                {t("comingSoon")}
-              </span>
-            </span>
+            <NavigationMenuLink asChild>
+              <LocalizedClientLink
+                prefetch={false}
+                href="/shop-trade"
+                className="hover:text-primary flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
+              >
+                <span className="h-4 w-4 shrink-0" />
+                <span className="flex-1 truncate">{t("shopTrade")}</span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-gray-300" />
+              </LocalizedClientLink>
+            </NavigationMenuLink>
           </li>
           <li>
             <NavigationMenuLink asChild>
