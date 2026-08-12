@@ -16,6 +16,9 @@ import { readWarehouseAvailability } from './warehouse-availability';
  * stock_journals 를 써서 이동이 끝나도 줄지 않았다. 그 항을 제거한 뒤,
  * 아무도 다시 넣지 못하게 이 테스트가 막는다.
  *
+ * `projected_available_qty` 도 함께 고정한다 — 뷰가 정본 산식을 한 줄 아래에서
+ * 다시 유도하는 자리라, available 만 지키면 같은 실패가 projected 로 재발한다.
+ *
  * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <이 파일의 패턴>
  */
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -47,15 +50,39 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
       });
   };
 
-  const readView = async (trx: DbTx, skuId: string, warehouseId: string): Promise<number> => {
+  interface ViewRow {
+    available: number;
+    projected: number;
+    inboundPending: number;
+  }
+
+  const readViewRow = async (trx: DbTx, skuId: string, warehouseId: string): Promise<ViewRow> => {
     const rows = (await trx.execute(sql`
-      SELECT available_qty FROM stock_summary_view
+      SELECT available_qty, projected_available_qty, inbound_pending_qty
+        FROM stock_summary_view
        WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId}
-    `)) as unknown as { available_qty: number | string }[];
-    return Number(rows[0]?.available_qty ?? 0);
+    `)) as unknown as {
+      available_qty: number | string;
+      projected_available_qty: number | string;
+      inbound_pending_qty: number | string;
+    }[];
+    return {
+      available: Number(rows[0]?.available_qty ?? 0),
+      projected: Number(rows[0]?.projected_available_qty ?? 0),
+      inboundPending: Number(rows[0]?.inbound_pending_qty ?? 0),
+    };
   };
 
-  it('이전 예정(pending 창고간 inbound plan)이 있어도 뷰와 모듈이 일치한다', async () => {
+  /**
+   * `projected_available_qty` 는 뷰 안에서 정본 산식을 다시 유도한다
+   * (`on_hand − reserved + inbound_pending`). 그 재유도가 `available_qty` 와
+   * 갈라지지 않게 고정한다 — 예컨대 projected 에만 transit_out 을 다시 빼는 변경을 잡는다.
+   */
+  const expectProjectedDerivesFromAvailable = (row: ViewRow) => {
+    expect(row.projected).toBe(row.available + row.inboundPending);
+  };
+
+  it('이전 예정(pending 창고간 inbound plan)이 있어도 출발·도착 창고 모두 뷰와 모듈이 일치한다', async () => {
     await inRollback(async (trx) => {
       // 기반: ON_HAND 10 + confirmed 예약 10 → 예약을 지워 ON_HAND 10 / 예약 0 으로 만든다.
       const fx = await seedPickableShipment(trx, 10);
@@ -97,11 +124,26 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         status: 'pending',
       });
 
+      // 출발 창고: ON_HAND 10 / 예약 0 / 이전 예정 4(transit_out) / 입고 예정 0
       const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
-      const fromView = await readView(trx, fx.skuId, fx.warehouseId);
+      const source = await readViewRow(trx, fx.skuId, fx.warehouseId);
 
       expect(fromModule.available).toBe(10);
-      expect(fromView).toBe(10); // 이전 예정은 가용에서 빼지 않는다
+      expect(source.available).toBe(10); // 이전 예정은 가용에서 빼지 않는다
+      expect(source.inboundPending).toBe(0);
+      expect(source.projected).toBe(10); // projected 로도 transit_out 이 새지 않는다
+      expectProjectedDerivesFromAvailable(source);
+
+      // 도착 창고: 재고 0 / 입고 예정 4. `+ inbound_pending` 항은 여기서만 검증된다 —
+      // 출발 창고 쪽은 inbound_pending 이 0 이라 그 항이 있으나 없으나 통과한다.
+      const destModule = await readWarehouseAvailability(trx, fx.skuId, destWarehouse.id);
+      const dest = await readViewRow(trx, fx.skuId, destWarehouse.id);
+
+      expect(destModule.available).toBe(0);
+      expect(dest.available).toBe(0);
+      expect(dest.inboundPending).toBe(4);
+      expect(dest.projected).toBe(4);
+      expectProjectedDerivesFromAvailable(dest);
     });
   });
 
@@ -115,10 +157,12 @@ describeIfDb('stock_summary_view ↔ availability 모듈 등가 (DB integration)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fx.shipmentLineId));
 
       const fromModule = await readWarehouseAvailability(trx, fx.skuId, fx.warehouseId);
-      const fromView = await readView(trx, fx.skuId, fx.warehouseId);
+      const fromView = await readViewRow(trx, fx.skuId, fx.warehouseId);
 
-      expect(fromView).toBe(fromModule.available);
-      expect(fromView).toBe(7);
+      expect(fromView.available).toBe(fromModule.available);
+      expect(fromView.available).toBe(7);
+      expect(fromView.projected).toBe(7);
+      expectProjectedDerivesFromAvailable(fromView);
     });
   });
 });
