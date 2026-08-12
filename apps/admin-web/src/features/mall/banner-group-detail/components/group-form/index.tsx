@@ -8,6 +8,14 @@ import { Switch } from '@/components/ui/switch';
 import { useUpdateBannerGroup } from '@/lib/services/products';
 import type { BannerGroupDto, UpdateBannerGroupDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { formatRatio } from '../../banner-image-guide';
+import {
+  BANNER_GROUP_PRESETS,
+  MOBILE_VIEWPORT,
+  PC_VIEWPORT,
+  matchPreset,
+  renderedHeight,
+} from '../../../banner-groups/banner-group-presets';
 
 type Props = {
   group: BannerGroupDto;
@@ -89,9 +97,57 @@ export function GroupForm({ group }: Props) {
           />
         </div>
 
+        <div className="grid gap-1.5">
+          <Label>규격 프리셋</Label>
+          <div className="flex flex-wrap gap-2">
+            {BANNER_GROUP_PRESETS.map((preset) => (
+              <Button
+                key={preset.label}
+                type="button"
+                variant={matchPreset(form)?.label === preset.label ? 'default' : 'outline'}
+                size="sm"
+                title={preset.hint}
+                onClick={() =>
+                  setForm((prev) => ({
+                    ...prev,
+                    pcWidth: preset.pcWidth,
+                    pcHeight: preset.pcHeight,
+                    mobileWidth: preset.mobileWidth,
+                    mobileHeight: preset.mobileHeight,
+                  }))
+                }
+              >
+                {preset.label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            입력하는 숫자는 <strong className="font-medium">비율</strong>입니다 —
+            1920×480 은 &ldquo;4:1 로 그려라&rdquo;는 뜻이고, 실제 높이는 화면 폭에 따라
+            정해집니다 ({PC_VIEWPORT}px 화면이면 360px).
+          </p>
+          <p className="text-muted-foreground text-xs">
+            프리셋은 아래 입력칸만 채웁니다 —{' '}
+            <strong className="font-medium">저장해야</strong> 미리보기와
+            스토어프론트에 반영됩니다.
+          </p>
+          <p className="text-muted-foreground text-xs">
+            ⚠️ 규격을 바꾸면 기존 배너 이미지가 새 비율로 잘려 보입니다. 저장한 뒤
+            소속 배너를 미리보기로 확인하세요.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div className="grid gap-1.5">
-            <Label>PC 사이즈 (px)</Label>
+            <Label>
+              PC 비율
+              {form.pcWidth && form.pcHeight ? (
+                <span className="text-muted-foreground ml-1 font-normal">
+                  {formatRatio(form.pcWidth, form.pcHeight)} → 실제{' '}
+                  {renderedHeight(form.pcWidth, form.pcHeight, PC_VIEWPORT)}px 높이
+                </span>
+              ) : null}
+            </Label>
             <div className="flex gap-2">
               <Input
                 type="number"
@@ -108,7 +164,16 @@ export function GroupForm({ group }: Props) {
             </div>
           </div>
           <div className="grid gap-1.5">
-            <Label>모바일 사이즈 (px)</Label>
+            <Label>
+              모바일 비율
+              {form.mobileWidth && form.mobileHeight ? (
+                <span className="text-muted-foreground ml-1 font-normal">
+                  {formatRatio(form.mobileWidth, form.mobileHeight)} → 실제{' '}
+                  {renderedHeight(form.mobileWidth, form.mobileHeight, MOBILE_VIEWPORT)}px
+                  높이
+                </span>
+              ) : null}
+            </Label>
             <div className="flex gap-2">
               <Input
                 type="number"

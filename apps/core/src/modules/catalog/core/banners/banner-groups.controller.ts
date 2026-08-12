@@ -41,11 +41,14 @@ export class BannerGroupsController {
   @Get('by-code/:code')
   @ApiOperation({
     summary: '배너 그룹 조회 (코드)',
-    description: '코드로 배너 그룹과 활성화된 배너 목록을 조회합니다. 프론트엔드에서 사용됩니다.',
+    description:
+      '코드로 배너 그룹과 활성화된 배너 목록을 조회합니다. 프론트엔드 노출용이라 ' +
+      '비활성 그룹은 404 로 응답합니다 — 그룹을 끄면 안의 활성 배너도 노출되지 않습니다. ' +
+      '어드민 편집은 id 조회(GET /banner-groups/:id)를 사용하세요.',
   })
   @ApiParam({ name: 'code', description: '배너 그룹 코드', example: 'AY2312' })
   @ApiResponse({ status: 200, description: '배너 그룹 조회 성공', type: BannerGroupWithBannersResponseDto })
-  @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없음' })
+  @ApiResponse({ status: 404, description: '배너 그룹을 찾을 수 없거나 비활성 상태' })
   async getBannerGroupByCode(@Param('code') code: string): Promise<BannerGroupWithBannersResponseDto> {
     return this.bannersService.getBannerGroupByCode(code);
   }

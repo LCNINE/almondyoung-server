@@ -8,15 +8,18 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
+import { Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { ImageUploadField } from '@/components/common/image-upload-field';
 import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
-import { useCreateBanner } from '@/lib/services/products';
+import { useBannerGroup, useCreateBanner } from '@/lib/services/products';
 import type { CreateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { bannerImageGuide } from '../../banner-image-guide';
+import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 type Props = {
   open: boolean;
@@ -30,6 +33,22 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
     isActive: true,
   });
   const createMutation = useCreateBanner();
+  const { data: group } = useBannerGroup(groupId);
+
+  const pcSlot =
+    group?.pcWidth && group?.pcHeight
+      ? { width: group.pcWidth, height: group.pcHeight }
+      : null;
+  const mobileSlot =
+    group?.mobileWidth && group?.mobileHeight
+      ? { width: group.mobileWidth, height: group.mobileHeight }
+      : null;
+
+  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight);
+  const mobileGuide = bannerImageGuide(group?.mobileWidth, group?.mobileHeight);
+
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const canPreview = !!(form.pcImageFileId || form.mobileImageFileId);
 
   const set =
     (key: keyof typeof form) =>
@@ -62,7 +81,7 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>배너 추가</DialogTitle>
         </DialogHeader>
@@ -102,6 +121,17 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             label="PC 이미지"
             required
             previewShape="wide"
+            slotRatio={pcSlot}
+            targetViewportWidth={1440}
+            description={
+              pcGuide && (
+                <>
+                  {pcGuide.spec}
+                  <br />
+                  {pcGuide.tip}
+                </>
+              )
+            }
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.pcImageFileId}
             onChange={(fileId) =>
@@ -113,6 +143,18 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             label="모바일 이미지"
             required
             previewShape="wide"
+            slotRatio={mobileSlot}
+            previewMaxWidth={390}
+            targetViewportWidth={390}
+            description={
+              mobileGuide && (
+                <>
+                  {mobileGuide.spec}
+                  <br />
+                  {mobileGuide.tip}
+                </>
+              )
+            }
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.mobileImageFileId}
             onChange={(fileId) =>
@@ -169,6 +211,15 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
         </div>
 
         <DialogFooter>
+          <Button
+            variant="outline"
+            className="mr-auto"
+            disabled={!canPreview}
+            onClick={() => setPreviewOpen(true)}
+          >
+            <Eye className="mr-1 h-4 w-4" />
+            화면 미리보기
+          </Button>
           <Button variant="outline" onClick={handleClose}>
             취소
           </Button>
@@ -177,6 +228,16 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <BannerPreviewDialog
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        title={form.title || '새 배너'}
+        pcImageFileId={form.pcImageFileId}
+        mobileImageFileId={form.mobileImageFileId}
+        pcSlot={pcSlot}
+        mobileSlot={mobileSlot}
+      />
     </Dialog>
   );
 }

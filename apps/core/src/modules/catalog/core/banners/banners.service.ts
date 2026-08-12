@@ -63,12 +63,21 @@ export class BannersService {
     }, tx);
   }
 
+  /**
+   * 코드로 배너 그룹을 조회한다 — 스토어프론트 노출용, 비활성 그룹배너 안뱉음
+   */
   async getBannerGroupByCode(code: string, tx?: DbTransaction): Promise<BannerGroupWithBannersResponseDto> {
     return this.db.run(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
-        .where(and(eq(pimSchema.bannerGroups.code, code), isNull(pimSchema.bannerGroups.deletedAt)))
+        .where(
+          and(
+            eq(pimSchema.bannerGroups.code, code),
+            isNull(pimSchema.bannerGroups.deletedAt),
+            eq(pimSchema.bannerGroups.isActive, true),
+          ),
+        )
         .limit(1);
 
       if (!group) {

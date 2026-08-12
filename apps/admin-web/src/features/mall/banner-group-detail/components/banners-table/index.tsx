@@ -4,13 +4,14 @@ import { useState } from 'react';
 import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useBannersTableColumns } from '@/hooks/table/columns/use-banners-table-columns';
-import { useBannersByGroup, useDeleteBanner } from '@/lib/services/products';
+import { useBannerGroup, useBannersByGroup, useDeleteBanner } from '@/lib/services/products';
 import type { BannerDto } from '@/lib/types/dto/products';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { BannerCreateDialog } from '../banner-create-dialog';
 import { BannerEditDialog } from '../banner-edit-dialog';
 import { BannerDeleteDialog } from '../banner-delete-dialog';
+import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 const PAGE_SIZE = 20;
 
@@ -20,15 +21,18 @@ type Props = {
 
 export function BannersTable({ groupId }: Props) {
   const { data, isLoading, isFetching } = useBannersByGroup(groupId);
+  const { data: group } = useBannerGroup(groupId);
   const deleteMutation = useDeleteBanner();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BannerDto | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BannerDto | null>(null);
+  const [previewTarget, setPreviewTarget] = useState<BannerDto | null>(null);
 
   const columns = useBannersTableColumns({
     onEdit: setEditTarget,
     onDelete: setDeleteTarget,
+    onPreview: setPreviewTarget,
   });
 
   const rows = data ?? [];
@@ -82,6 +86,26 @@ export function BannersTable({ groupId }: Props) {
         onOpenChange={(open) => {
           if (!open) setEditTarget(null);
         }}
+      />
+
+      <BannerPreviewDialog
+        open={!!previewTarget}
+        onOpenChange={(open) => {
+          if (!open) setPreviewTarget(null);
+        }}
+        title={previewTarget?.title ?? ''}
+        pcImageFileId={previewTarget?.pcImageFileId}
+        mobileImageFileId={previewTarget?.mobileImageFileId}
+        pcSlot={
+          group?.pcWidth && group?.pcHeight
+            ? { width: group.pcWidth, height: group.pcHeight }
+            : null
+        }
+        mobileSlot={
+          group?.mobileWidth && group?.mobileHeight
+            ? { width: group.mobileWidth, height: group.mobileHeight }
+            : null
+        }
       />
 
       <BannerDeleteDialog
