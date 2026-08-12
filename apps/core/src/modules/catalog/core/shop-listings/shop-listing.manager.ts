@@ -1,0 +1,142 @@
+import { Injectable } from '@nestjs/common';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
+import { DbService, InjectDb } from '@app/db';
+import { and, eq, isNull } from 'drizzle-orm';
+import { type PimSchema, pimSchema } from '../../schema/catalog.schema';
+import { DbTransaction } from '../../catalog.types';
+import { ShopListingEntity, ShopListingInsert } from '../../schema/catalog.schema.types';
+import { CreateShopListingDto, UpdateShopListingDto } from './dto';
+import { ShopListingReader } from './shop-listing.reader';
+
+@Injectable()
+export class ShopListingManager {
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly reader: ShopListingReader,
+  ) {}
+
+  async create(dto: CreateShopListingDto, actorId?: string, tx?: DbTransaction): Promise<ShopListingEntity> {
+    return this.db.run(async (trx) => {
+      const slug = await this.resolveSlug(dto.slug || dto.title, null, trx);
+
+      assertContent(dto.content);
+
+      const values: ShopListingInsert = {
+        slug,
+        title: dto.title.trim(),
+        content: dto.content,
+        region: dto.region,
+        businessType: dto.businessType,
+        dealType: dto.dealType,
+        areaPyeong: dto.areaPyeong ?? null,
+        deposit: dto.deposit ?? null,
+        monthlyRent: dto.monthlyRent ?? null,
+        keyMoney: dto.keyMoney ?? null,
+        thumbnailFileId: dto.thumbnailFileId,
+        isActive: dto.isActive ?? true,
+        createdBy: actorId,
+        updatedBy: actorId,
+      };
+
+      const [created] = await trx.insert(pimSchema.shopListings).values(values).returning();
+
+      return created;
+    }, tx);
+  }
+
+  async update(
+    id: string,
+    dto: UpdateShopListingDto,
+    actorId?: string,
+    tx?: DbTransaction,
+  ): Promise<ShopListingEntity> {
+    return this.db.run(async (trx) => {
+      const current = await this.reader.findById(id, trx);
+
+      if (dto.content !== undefined) {
+        assertContent(dto.content);
+      }
+
+      const slug = dto.slug === undefined ? current.slug : await this.resolveSlug(dto.slug, id, trx);
+
+      const [updated] = await trx
+        .update(pimSchema.shopListings)
+        .set({
+          slug,
+          title: dto.title?.trim() ?? current.title,
+          content: dto.content ?? current.content,
+          region: dto.region ?? current.region,
+          businessType: dto.businessType ?? current.businessType,
+          dealType: dto.dealType ?? current.dealType,
+          areaPyeong: dto.areaPyeong === undefined ? current.areaPyeong : dto.areaPyeong,
+          deposit: dto.deposit === undefined ? current.deposit : dto.deposit,
+          monthlyRent: dto.monthlyRent === undefined ? current.monthlyRent : dto.monthlyRent,
+          keyMoney: dto.keyMoney === undefined ? current.keyMoney : dto.keyMoney,
+          thumbnailFileId: dto.thumbnailFileId ?? current.thumbnailFileId,
+          isActive: dto.isActive ?? current.isActive,
+          updatedAt: new Date(),
+          updatedBy: actorId,
+        })
+        .where(and(eq(pimSchema.shopListings.id, id), isNull(pimSchema.shopListings.deletedAt)))
+        .returning();
+
+      if (!updated) {
+        throw new NotFoundError(`Shop listing not found: ${id}`);
+      }
+
+      return updated;
+    }, tx);
+  }
+
+  async softDelete(id: string, actorId?: string, tx?: DbTransaction): Promise<void> {
+    return this.db.run(async (trx) => {
+      const now = new Date();
+
+      const [deleted] = await trx
+        .update(pimSchema.shopListings)
+        .set({ deletedAt: now, deletedBy: actorId, updatedAt: now })
+        .where(and(eq(pimSchema.shopListings.id, id), isNull(pimSchema.shopListings.deletedAt)))
+        .returning();
+
+      if (!deleted) {
+        throw new NotFoundError(`Shop listing not found: ${id}`);
+      }
+    }, tx);
+  }
+
+  private async resolveSlug(raw: string, excludeId: string | null, tx: DbTransaction): Promise<string> {
+    const base = slugify(raw);
+
+    if (!base) {
+      throw new BadRequestError('주소를 만들 수 없습니다. 제목에 한글이나 영문을 넣어주세요.');
+    }
+
+    for (let suffix = 0; suffix < 100; suffix += 1) {
+      const candidate = suffix === 0 ? base : `${base}-${suffix + 1}`;
+
+      if (!(await this.reader.slugTaken(candidate, excludeId, tx))) {
+        return candidate;
+      }
+    }
+
+    throw new ConflictError(`같은 주소가 너무 많습니다: ${base}`);
+  }
+}
+
+// 한글 완성형은 코드포인트로 escape 한다 — 리터럴로 쓰면 겉보기 같은 CJK 문자가 섞여 한글이 통째로 지워진다.
+const SLUG_STRIP = new RegExp('[^a-z0-9\\uAC00-\\uD7A3]+', 'g');
+
+export function slugify(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(SLUG_STRIP, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 100);
+}
+
+function assertContent(content: string): void {
+  if (!content.replace(/<[^>]*>/g, '').trim() && !/<img\b/i.test(content)) {
+    throw new BadRequestError('본문을 입력해주세요.');
+  }
+}

@@ -11,6 +11,7 @@ import { TagsModule } from './core/tags/tags.module';
 import { BannersModule } from './core/banners/banners.module';
 import { NoticesModule } from './core/notices/notices.module';
 import { SitePopupsModule } from './core/site-popups/site-popups.module';
+import { ShopListingsModule } from './core/shop-listings/shop-listings.module';
 import { AiPromptsModule } from './core/ai-prompts/ai-prompts.module';
 
 // Operations modules
@@ -40,6 +41,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     BannersModule,
     NoticesModule,
     SitePopupsModule,
+    ShopListingsModule,
     AiPromptsModule,
     // Operations
     ApprovalModule,
@@ -59,6 +61,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     BannersModule,
     NoticesModule,
     SitePopupsModule,
+    ShopListingsModule,
     AiPromptsModule,
   ],
 })

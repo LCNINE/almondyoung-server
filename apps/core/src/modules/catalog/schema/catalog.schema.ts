@@ -1056,6 +1056,49 @@ export const sitePopups = pgTable(
   ],
 );
 
+// ===== SHOP LISTINGS (샵매매) =====
+export const shopListings = pgTable(
+  'shop_listings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    slug: varchar('slug', { length: 120 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    content: text('content').notNull(),
+    region: varchar('region', { length: 20 }),
+    businessType: varchar('business_type', { length: 20 }),
+    dealType: varchar('deal_type', { length: 20 }),
+    /** 전용 평수 */
+    areaPyeong: integer('area_pyeong'),
+    /** 아래 금액 3종은 모두 원 단위. null 이면 "협의" 로 표시한다. */
+    deposit: bigint('deposit', { mode: 'number' }),
+    monthlyRent: bigint('monthly_rent', { mode: 'number' }),
+    keyMoney: bigint('key_money', { mode: 'number' }),
+    thumbnailFileId: uuid('thumbnail_file_id'),
+    isActive: boolean('is_active').notNull().default(true),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    uniqueIndex('unique_shop_listing_slug')
+      .on(table.slug)
+      .where(sql`${table.deletedAt} is null`),
+    index('idx_shop_listings_active').on(table.isActive),
+    index('idx_shop_listings_region').on(table.region),
+    index('idx_shop_listings_business_type').on(table.businessType),
+    index('idx_shop_listings_deal_type').on(table.dealType),
+    index('idx_shop_listings_deleted_at').on(table.deletedAt),
+    index('idx_shop_listings_created_at').on(table.createdAt),
+  ],
+);
+
 // ===== PRODUCT FORM EXPORTS (일괄 세션 1단계 — 양식 생성 잡) =====
 
 export const productFormExportStatusEnum = pgEnum('product_form_export_status', [
@@ -1374,6 +1417,7 @@ export const catalogSchema = {
   banners,
   notices,
   sitePopups,
+  shopListings,
   productFormExports,
   productFormExportItems,
   productBulkSessions,
