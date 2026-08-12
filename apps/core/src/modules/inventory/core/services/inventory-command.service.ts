@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { InjectTypedDb, DbService } from '@app/db';
@@ -6,7 +6,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
 import { LocationService } from './location.service';
 import { eq, and, gt, asc } from 'drizzle-orm';
-import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import { acquireStockAvailabilityLock, acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 
@@ -323,6 +323,17 @@ export class InventoryCommandService {
     const exec = async (trx: DbTx) => {
       await acquireStockAvailabilityLock(trx, input.skuId, input.fromWarehouseId);
       await assertReservationInvariant(trx, input.skuId, input.fromWarehouseId, input.quantity);
+
+      // 떠난 재고는 출발 선반이 아니라 운송중존에 둔다. stock_ledgers.location_id 가
+      // NOT NULL 이라 어딘가에는 매달려야 하고, 출발 선반에 두면 적치·재고조사가 틀어진다.
+      await this.locationService.ensureSystemLocations(input.fromWarehouseId, trx);
+      const transitZone = await this.locationService.getSystemLocationByRole(
+        input.fromWarehouseId,
+        'transit_out',
+        trx,
+      );
+      if (!transitZone) throw new BadRequestException('운송중존이 존재하지 않습니다.');
+
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
@@ -330,7 +341,7 @@ export class InventoryCommandService {
           fromLocationId: input.fromLocationId,
           fromState: 'ON_HAND',
           toWarehouseId: input.fromWarehouseId,
-          toLocationId: input.fromLocationId,
+          toLocationId: transitZone.id,
           toState: 'IN_TRANSFER',
           transitionType: 'MOVE',
           quantity: input.quantity,
@@ -361,6 +372,38 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      // ship 과 다른 트랜잭션이므로 자체 락이 필요하다. 도착 창고를 함께 잠가
+      // 같은 SKU 의 도착 처리끼리 직렬화한다. 정렬 순서는 교차 데드락 방지용이다.
+      await acquireStockAvailabilityLocks(trx, [
+        { skuId: input.skuId, warehouseId: input.fromWarehouseId },
+        { skuId: input.skuId, warehouseId: input.toWarehouseId },
+      ]);
+
+      const [transit] = await trx
+        .select({ qty: wmsTables.stockLedgers.qty })
+        .from(wmsTables.stockLedgers)
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, input.skuId),
+            eq(wmsTables.stockLedgers.warehouseId, input.fromWarehouseId),
+            eq(wmsTables.stockLedgers.locationId, input.fromLocationId),
+            eq(wmsTables.stockLedgers.stockState, 'IN_TRANSFER'),
+          ),
+        )
+        .for('update')
+        .limit(1);
+
+      const inTransit = transit?.qty ?? 0;
+      if (input.quantity > inTransit) {
+        throw new ConflictException({
+          code: 'TRANSFER_RECEIVE_EXCEEDS_IN_TRANSIT',
+          message: 'Receiving more than the outstanding in-transit quantity',
+          skuId: input.skuId,
+          requestedQty: input.quantity,
+          inTransitQty: inTransit,
+        });
+      }
+
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
@@ -371,6 +414,44 @@ export class InventoryCommandService {
           toLocationId: input.toLocationId,
           toState: 'ON_HAND',
           transitionType: 'MOVE',
+          quantity: input.quantity,
+          occurredAt: input.occurredAt ?? new Date(),
+          idempotencyKey: input.idempotencyKey,
+          reason: input.reason,
+        },
+        trx,
+      );
+      return { eventId: event?.id ?? null };
+    };
+    return this.dbService.run(exec, tx);
+  }
+
+  /** 운송 중 분실 — IN_TRANSFER 잔량을 소진시킨다. 어느 창고에도 더하지 않는다. */
+  async scrapInTransit(
+    input: {
+      skuId: string;
+      warehouseId: string;
+      locationId: string;
+      quantity: number;
+      occurredAt?: Date;
+      idempotencyKey?: string;
+      reason?: string;
+    },
+    tx?: DbTx,
+  ) {
+    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    const exec = async (trx: DbTx) => {
+      await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+      const event = await this.eventStore.createEvent(
+        {
+          skuId: input.skuId,
+          fromWarehouseId: input.warehouseId,
+          fromLocationId: input.locationId,
+          fromState: 'IN_TRANSFER',
+          toWarehouseId: null,
+          toLocationId: null,
+          toState: null,
+          transitionType: 'SCRAP',
           quantity: input.quantity,
           occurredAt: input.occurredAt ?? new Date(),
           idempotencyKey: input.idempotencyKey,

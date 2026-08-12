@@ -4,7 +4,7 @@ import { SYSTEM_LOCATION_DEFAULTS, SYSTEM_LOCATION_ROLES } from '../constants/wa
 import { LocationService } from './location.service';
 
 describe('LocationService system locations', () => {
-  it('bootstraps all three required roles with conflict-safe inserts', async () => {
+  it('bootstraps all four required roles with conflict-safe inserts', async () => {
     const inserted: Array<Record<string, unknown>> = [];
     const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS);
     let selectedRole = 0;
@@ -35,14 +35,23 @@ describe('LocationService system locations', () => {
 
     await new LocationService(dbService).ensureSystemLocations('warehouse-1');
 
-    expect(inserted).toHaveLength(3);
+    expect(inserted).toHaveLength(4);
     expect(inserted.map((row) => row.systemRole)).toEqual([
       SYSTEM_LOCATION_ROLES.INBOUND_DEFAULT,
       SYSTEM_LOCATION_ROLES.RETURN_DEFAULT,
       SYSTEM_LOCATION_ROLES.OUTBOUND_REWORK,
+      SYSTEM_LOCATION_ROLES.TRANSIT_OUT,
     ]);
     expect(inserted[2]).toMatchObject({
       code: 'zone-outbound-rework',
+      isSystem: true,
+      isActive: true,
+      locationType: 'zone',
+    });
+    // 운송중존이 없으면 창고간 이동의 선적이 IN_TRANSFER 를 매달 곳을 못 찾아
+    // getSystemLocationByRole 에서 터진다 — 모든 창고에 있어야 한다.
+    expect(inserted[3]).toMatchObject({
+      code: 'zone-transit-out',
       isSystem: true,
       isActive: true,
       locationType: 'zone',

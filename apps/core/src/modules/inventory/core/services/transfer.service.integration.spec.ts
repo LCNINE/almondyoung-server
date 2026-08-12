@@ -52,14 +52,14 @@ describeIfDb('TransferService inter-warehouse 무손실 (DB integration, rollbac
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
     command = new InventoryCommandService(dbService, eventStore, invOutbox, location);
-    // transferBetweenWarehouses 는 command.transferShip/Receive 만 사용 —
-    // unifiedReservation·allocationStrategy 미사용이라 대역 불요(undefined 밴드).
+    // transferBetweenWarehouses 는 command.transferShip/Receive 와 운송중존 조회에
+    // location 을 쓴다 — unifiedReservation 만 미사용이라 그 자리만 대역(undefined 밴드).
     const stockEventService = new StockEventService(
       dbService,
       eventStore,
       command,
       undefined as never,
-      undefined as never,
+      location,
     );
     transfer = new TransferService(dbService, stockEventService, command);
   });

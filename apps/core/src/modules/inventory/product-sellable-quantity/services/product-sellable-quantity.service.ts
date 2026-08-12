@@ -14,6 +14,7 @@ import {
   productVariants,
 } from '../../../catalog/schema/catalog.schema';
 import { stockSummary, wmsTables } from '../../schema/inventory.schema';
+import { inSellableWarehouse } from '../../shared/availability/sellable-warehouses';
 import {
   calculateProductSellableQuantity,
   ProductSellableQuantityInput,
@@ -139,7 +140,9 @@ export class ProductSellableQuantityService {
                   availableQuantity: sql<number>`COALESCE(SUM(GREATEST(${stockSummary.availableQty}, 0)), 0)::int`,
                 })
                 .from(stockSummary)
-                .where(inArray(stockSummary.skuId, skuIds))
+                // 비판매 창고(해외 등) 재고는 실판매 게이트에 들어가면 안 된다 — 판정은
+                // sellable-warehouses.ts 가 소유한다.
+                .where(and(inArray(stockSummary.skuId, skuIds), inSellableWarehouse(stockSummary.warehouseId)))
                 .groupBy(stockSummary.skuId)
             : [];
 

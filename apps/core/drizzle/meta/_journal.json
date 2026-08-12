@@ -484,6 +484,34 @@
       "when": 1786517721789,
       "tag": "20260812065521_add-shop-listing-deal-fields",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1786529949938,
+      "tag": "20260812101909_add-warehouse-is-sellable",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1786530894793,
+      "tag": "20260812103454_add-transit-out-location-role",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1786532259001,
+      "tag": "20260812105738_add-transfer-orders",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1786537926293,
+      "tag": "20260812123206_fix-inbound-pending-warehouse-key",
+      "breakpoints": true
     }
   ]
 }

@@ -13,6 +13,7 @@ import { FULFILLMENT_EVENTS } from '../events';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
+import { assertWarehouseSellable } from '../../inventory/shared/availability/sellable-warehouses';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import {
   FULFILLMENT_STREAM,
@@ -328,19 +329,15 @@ export class FulfillmentsService {
     return skuRows.length !== new Set(skuIds).size || skuRows.some((row) => row.stockType !== 'drop_shipped');
   }
 
-  private async validateWarehouseExists(warehouseId: string | undefined, trx: DbTx) {
+  private async validateWarehouseExists(warehouseId: string | undefined, trx: DbTx): Promise<void> {
     if (!warehouseId) {
       return;
     }
 
-    const [warehouse] = await trx
-      .select()
-      .from(wmsTables.warehouses)
-      .where(eq(wmsTables.warehouses.id, warehouseId))
-      .limit(1);
-    if (!warehouse) {
-      throw new BadRequestException(`Warehouse ${warehouseId} not found`);
-    }
+    // 비판매 창고(해외 등)로는 출고를 지시할 수 없다. 예약은 호출자가 창고를 지정하는
+    // 구조라, 이 지점을 막으면 비판매 창고에 예약이 걸릴 경로가 없다. 없는 창고에도
+    // 던지므로 기존 존재 검증을 겸한다.
+    await assertWarehouseSellable(trx, warehouseId);
   }
 
   private async createFulfillmentOrderFromItems(
