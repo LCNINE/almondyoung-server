@@ -16,6 +16,7 @@ import { SkuCatalogReader } from '../../sku-catalog/services/sku-catalog.reader'
 import { SkuCatalogManager } from '../../sku-catalog/services/sku-catalog.manager';
 import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.service';
 import { InboundService } from '../../inbound/services/inbound.service';
+import { TransferDraftService } from '../../warehouse-transfer/services/transfer-draft.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -44,7 +45,15 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
     const skuManager = new SkuCatalogManager(dbService, skuReader);
     const skuCatalog = new SkuCatalogService(skuReader, skuManager);
     idempotency = new InventoryIdempotencyService(dbService);
-    inbound = new InboundService(dbService, skuCatalog, command, location, eventStore, idempotency);
+    inbound = new InboundService(
+      dbService,
+      skuCatalog,
+      command,
+      location,
+      eventStore,
+      idempotency,
+      new TransferDraftService(),
+    );
   });
   afterAll(async () => {
     await sql.end();

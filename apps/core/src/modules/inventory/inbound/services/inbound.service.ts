@@ -9,6 +9,7 @@ import { InventoryCommandService } from '../../core/services/inventory-command.s
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import { TransferDraftService } from '../../warehouse-transfer/services/transfer-draft.service';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 import {
   CancelInboundDto,
@@ -34,6 +35,7 @@ export class InboundService {
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
     private readonly idempotency: InventoryIdempotencyService,
+    private readonly transferDraft: TransferDraftService,
   ) {}
 
   private get db() {
@@ -794,6 +796,14 @@ export class InboundService {
         .update(wmsTables.inboundPlanItems)
         .set({ receivedQty: newReceived, status: newStatus })
         .where(eq(wmsTables.inboundPlanItems.id, item.id));
+
+      // 출발 창고에 들어온 물량은 최종 목적지로 옮겨야 한다. 초안을 자동으로 만들어
+      // "출발 창고 대기" 구간을 짧게 유지한다 — 이 구간이 길면 MD 가 재고 0/입고예정 0 으로
+      // 보고 중복 발주한다. 확정(선적)은 사람이 한다.
+      await this.transferDraft.upsertDraftForReceivedPlanItem(
+        { planId: item.planId, skuId: item.skuId, receivedQty: dto.quantity, toLocationId: effectiveLocationId },
+        tx,
+      );
 
       await tx
         .update(wmsTables.inboundReceipts)

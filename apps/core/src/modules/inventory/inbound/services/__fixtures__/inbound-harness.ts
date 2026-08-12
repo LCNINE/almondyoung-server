@@ -10,6 +10,7 @@ import { BatchControlledStockGuard } from '../../../core/services/batch-controll
 import { ProductSellableQuantityService } from '../../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
+import { TransferDraftService } from '../../../warehouse-transfer/services/transfer-draft.service';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
 
@@ -53,12 +54,13 @@ function buildWiring(database: Database) {
     findById: (skuId: string, tx?: DbTx) =>
       (tx ?? database).query.skus.findFirst({ where: eq(wmsTables.skus.id, skuId) }),
   };
-  return { dbService, guard, outbox, sellable, eventStore, location, command, idempotency, skuCatalog };
+  const transferDraft = new TransferDraftService();
+  return { dbService, guard, outbox, sellable, eventStore, location, command, idempotency, skuCatalog, transferDraft };
 }
 
 export function makeInboundService(database: Database): InboundService {
-  const { dbService, skuCatalog, command, location, eventStore, idempotency } = buildWiring(database);
-  return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency);
+  const { dbService, skuCatalog, command, location, eventStore, idempotency, transferDraft } = buildWiring(database);
+  return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency, transferDraft);
 }
 
 export function makeInboundPutawayReader(database: Database): InboundPutawayReader {

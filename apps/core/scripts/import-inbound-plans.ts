@@ -3,7 +3,7 @@
  *
  * core 모델상 입고예정은 발주(purchase_order)의 산물이라 PO 를 동반 생성한다
  * (inbound_plans.linked_purchase_order_id 가 NOT NULL FK). 중국 공급처 = 해외라
- * source(중국)+destination(부천) 2-plan 으로 들어간다.
+ * source(중국) plan 하나만 들어간다 — 부천행 이동은 transfer_orders 가 소유한다.
  * values 정답 레퍼런스: purchase-order.service.ts createInboundPlanFromPO.
  *
  * 실행 (sst tunnel 필요):
@@ -153,7 +153,9 @@ async function main() {
           .insert(wmsTables.purchaseOrderLines)
           .values(fresh.map((i) => ({ poId: po.id, skuId: i.skuId, quantity: i.qty, unitPrice: null })));
 
-        // 3) 해외 2-plan (source: 예정일 / destination: 이동완료 후라 null, parent=source)
+        // 3) source plan 만 (중국 입고). 부천행 이동은 transfer_orders 가 소유한다 —
+        //    예전에는 destination plan 을 짝으로 만들었는데, 두 계획이 모두
+        //    destination_warehouse_id 로 집계돼 부천 입고예정이 2배로 잡혔다.
         const [sourcePlan] = await tx
           .insert(wmsTables.inboundPlans)
           .values({
@@ -166,25 +168,18 @@ async function main() {
             status: 'pending',
           })
           .returning();
-        const [destPlan] = await tx
-          .insert(wmsTables.inboundPlans)
-          .values({
-            warehouseId: DST_WAREHOUSE,
-            planType: 'destination',
-            parentPlanId: sourcePlan.id,
-            linkedPurchaseOrderId: po.id,
-            destinationWarehouseId: DST_WAREHOUSE,
-            requiresTransfer: false,
-            expectedDate: null,
-            status: 'pending',
-          })
-          .returning();
-        planCount += 2;
+        planCount += 1;
 
-        const mkItems = (planId: string) =>
-          fresh.map((i) => ({ planId, skuId: i.skuId, expectedQty: i.qty, receivedQty: 0, status: 'pending' as const }));
-        await tx.insert(wmsTables.inboundPlanItems).values([...mkItems(sourcePlan.id), ...mkItems(destPlan.id)]);
-        itemCount += fresh.length * 2;
+        await tx.insert(wmsTables.inboundPlanItems).values(
+          fresh.map((i) => ({
+            planId: sourcePlan.id,
+            skuId: i.skuId,
+            expectedQty: i.qty,
+            receivedQty: 0,
+            status: 'pending' as const,
+          })),
+        );
+        itemCount += fresh.length;
       }
 
       if (!apply) throw new RollbackSignal();
