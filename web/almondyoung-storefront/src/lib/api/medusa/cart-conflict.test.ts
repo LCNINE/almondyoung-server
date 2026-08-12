@@ -5,6 +5,16 @@ import {
   withCartConflictRetry,
 } from "./cart-conflict"
 
+/** js-sdk 가 던지는 FetchError 와 같은 모양. 상태 코드가 판정의 1차 근거다. */
+class FetchErrorLike extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+  }
+}
+
 describe("isTransientCartConflictError", () => {
   it("락을 못 잡은 경우", () => {
     expect(
@@ -14,10 +24,25 @@ describe("isTransientCartConflictError", () => {
     ).toBe(true)
   })
 
+  it("경합을 conflict 로 알려주면 재시도한다", () => {
+    expect(
+      isTransientCartConflictError(
+        new FetchErrorLike(
+          "The request conflicted with another request. You may retry the request with the provided Idempotency-Key.",
+          409
+        )
+      )
+    ).toBe(true)
+  })
+
+  // Medusa 실제 응답 문구. id 뒤에 콜론이 붙고 was 가 들어간다.
   it("방금 지워진 배송수단을 붙들고 있는 경우", () => {
     expect(
       isTransientCartConflictError(
-        new Error('ShippingMethod with id "casm_01JABCDEF" not found')
+        new FetchErrorLike(
+          "ShippingMethod with id: casm_01JABCDEF was not found",
+          404
+        )
       )
     ).toBe(true)
   })
@@ -46,6 +71,16 @@ describe("isTransientCartConflictError", () => {
     ).toBe(false)
   })
 
+  // 락 실패는 MedusaError 가 아니라 평범한 Error 라, Medusa 가 메시지를 통째로 갈아버린다.
+  // 원문이 안 오므로 문구로는 잡을 수 없다 — Medusa 가 conflict 로 내려줘야 재시도가 걸린다.
+  it("메시지가 지워진 500 은 경합으로 단정하지 않는다", () => {
+    expect(
+      isTransientCartConflictError(
+        new FetchErrorLike("An unknown error occurred.", 500)
+      )
+    ).toBe(false)
+  })
+
   it("에러가 아니거나 메시지가 없으면 false", () => {
     expect(isTransientCartConflictError(null)).toBe(false)
     expect(isTransientCartConflictError(undefined)).toBe(false)
@@ -59,7 +94,10 @@ describe("withCartConflictRetry", () => {
     const run = async () => {
       calls += 1
       if (calls === 1) {
-        throw new Error('ShippingMethod with id "casm_1" not found')
+        throw new FetchErrorLike(
+          "ShippingMethod with id: casm_1 was not found",
+          404
+        )
       }
       return "ok"
     }
