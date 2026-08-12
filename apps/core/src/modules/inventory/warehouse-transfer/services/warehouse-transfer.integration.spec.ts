@@ -193,6 +193,10 @@ describeIfDb('이동 지시서 도메인 (DB integration)', () => {
     await inRollback(async (trx) => {
       const { from, to, skuId } = await seedTwoWarehousesWithStock(trx, 10);
       const svc = buildService(trx);
+      const reader = buildReader(trx);
+      const mineOnly = async (transferOrderId: string) =>
+        (await reader.findOutstanding(trx)).filter((o) => o.transferOrderId === transferOrderId);
+
       const { transferOrderId } = await svc.createOrder(
         {
           fromWarehouseId: from.warehouseId,
@@ -203,12 +207,80 @@ describeIfDb('이동 지시서 도메인 (DB integration)', () => {
       );
       await svc.ship({ transferOrderId, idempotencyKey: 'ship-1' }, trx);
 
-      const outstanding = await buildReader(trx).findOutstanding(trx);
-      const mine = outstanding.filter((o) => o.transferOrderId === transferOrderId);
-      expect(mine).toHaveLength(1);
-      expect(mine[0].outstandingQty).toBe(6);
-      expect(mine[0].skuId).toBe(skuId);
-      expect(mine[0].toWarehouseId).toBe(to.warehouseId);
+      const shipped = await mineOnly(transferOrderId);
+      expect(shipped).toHaveLength(1);
+      expect(shipped[0].outstandingQty).toBe(6);
+      expect(shipped[0].skuId).toBe(skuId);
+      expect(shipped[0].toWarehouseId).toBe(to.warehouseId);
+
+      // 여기부터가 뺄셈의 변별력이다 — 선적 직후만 보면 outstanding 을 shipped_qty 로
+      // 잘못 구현해도 통과한다.
+      const lineId = await readFirstLineId(trx, transferOrderId);
+      await svc.receive(
+        {
+          transferOrderId,
+          idempotencyKey: 'rcv-1',
+          toLocationId: to.locationId,
+          lines: [{ transferOrderLineId: lineId, receivedQty: 3, lostQty: 1 }],
+        },
+        trx,
+      );
+      const partial = await mineOnly(transferOrderId);
+      expect(partial).toHaveLength(1);
+      expect(partial[0].outstandingQty).toBe(2); // 6 − 3 − 1
+
+      // 마감되면 행 자체가 사라진다.
+      await svc.receive(
+        {
+          transferOrderId,
+          idempotencyKey: 'rcv-2',
+          toLocationId: to.locationId,
+          lines: [{ transferOrderLineId: lineId, receivedQty: 2, lostQty: 0 }],
+        },
+        trx,
+      );
+      expect(await readOrderStatus(trx, transferOrderId)).toBe('closed');
+      expect(await mineOnly(transferOrderId)).toHaveLength(0);
+    });
+  });
+
+  it('한 회차에 같은 라인이 두 번 들어오면 거절한다', async () => {
+    await inRollback(async (trx) => {
+      const { from, to, skuId } = await seedTwoWarehousesWithStock(trx, 10);
+      const svc = buildService(trx);
+      const { transferOrderId } = await svc.createOrder(
+        {
+          fromWarehouseId: from.warehouseId,
+          toWarehouseId: to.warehouseId,
+          lines: [{ skuId, fromLocationId: from.locationId, quantity: 6 }],
+        },
+        trx,
+      );
+      await svc.ship({ transferOrderId, idempotencyKey: 'ship-1' }, trx);
+      const lineId = await readFirstLineId(trx, transferOrderId);
+
+      // 막지 않으면 두 항목의 원장 멱등키가 같아 두 번째 이동이 조용히 흡수되고,
+      // 문서만 6 을 정산해 지시서가 closed 로 마감된다 — 재고 2 가 운송중존에
+      // 영구 방치되고 findOutstanding 에도 안 잡힌다.
+      await expect(
+        svc.receive(
+          {
+            transferOrderId,
+            idempotencyKey: 'rcv-dup',
+            toLocationId: to.locationId,
+            lines: [
+              { transferOrderLineId: lineId, receivedQty: 4, lostQty: 0 },
+              { transferOrderLineId: lineId, receivedQty: 2, lostQty: 0 },
+            ],
+          },
+          trx,
+        ),
+      ).rejects.toThrow(/Duplicate transfer order line/);
+
+      // 아무것도 움직이지 않았다.
+      expect(await readInTransit(trx, skuId, from.warehouseId)).toBe(6);
+      expect(await readOnHand(trx, skuId, to.warehouseId)).toBe(0);
+      expect(await readOrderStatus(trx, transferOrderId)).toBe('shipped');
     });
   });
 });
