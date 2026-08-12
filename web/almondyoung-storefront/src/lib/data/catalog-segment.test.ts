@@ -1,65 +1,82 @@
 import { describe, expect, it } from "vitest"
 import {
+  CATALOG_SEGMENT_ECHO_FIELD,
   CATALOG_SEGMENT_HEADER,
   CATALOG_SEGMENT_KEY_HEADER,
-  buildCatalogRequest,
+  CatalogSegmentMismatchError,
+  assertSegmentApplied,
+  buildSegmentHeaders,
+  readAppliedSegment,
 } from "./catalog-segment"
 
-const auth = { authorization: "Bearer jwt-for-one-person" }
-
-describe("buildCatalogRequest", () => {
-  it("비로그인은 헤더 없이 캐시한다", () => {
-    expect(buildCatalogRequest(null, false, "secret")).toEqual({
-      headers: {},
-      isPersonalized: false,
-    })
-  })
-
-  it("멤버십 회원은 개인 토큰 대신 세그먼트를 보낸다", () => {
-    const request = buildCatalogRequest(auth, true, "secret")
-
-    expect(request.headers).toEqual({
+describe("buildSegmentHeaders", () => {
+  it("세그먼트와 시크릿을 싣고 개인 토큰은 싣지 않는다", () => {
+    expect(buildSegmentHeaders("mem", "secret")).toEqual({
       [CATALOG_SEGMENT_HEADER]: "mem",
       [CATALOG_SEGMENT_KEY_HEADER]: "secret",
     })
-    expect(request.headers).not.toHaveProperty("authorization")
-    expect(request.isPersonalized).toBe(false)
   })
 
-  it("로그인했어도 멤버십이 아니면 비로그인과 같은 항목을 쓴다", () => {
-    const loggedIn = buildCatalogRequest(auth, false, "secret")
-    const anonymous = buildCatalogRequest(null, false, "secret")
-
-    expect(loggedIn).toEqual(anonymous)
-    expect(loggedIn.headers).toEqual({})
-    expect(loggedIn.isPersonalized).toBe(false)
+  it("서로 다른 회원이라도 같은 헤더를 쓴다", () => {
+    expect(buildSegmentHeaders("mem", "s")).toEqual(buildSegmentHeaders("mem", "s"))
   })
 
-  it("멤버십이 아니면 시크릿 없이도 캐시한다", () => {
-    expect(buildCatalogRequest(auth, false, undefined)).toEqual({
-      headers: {},
-      isPersonalized: false,
-    })
+  it("회원과 비회원은 헤더가 갈린다", () => {
+    expect(buildSegmentHeaders("mem", "s")).not.toEqual(
+      buildSegmentHeaders("reg", "s")
+    )
+  })
+})
+
+describe("readAppliedSegment", () => {
+  it("응답에 실린 적용 세그먼트를 읽는다", () => {
+    expect(readAppliedSegment({ [CATALOG_SEGMENT_ECHO_FIELD]: "mem" })).toBe("mem")
+    expect(readAppliedSegment({ [CATALOG_SEGMENT_ECHO_FIELD]: "reg" })).toBe("reg")
   })
 
-  it("멤버십 회원과 비회원은 캐시 항목이 갈린다", () => {
-    const member = buildCatalogRequest(auth, true, "secret")
-    const regular = buildCatalogRequest(auth, false, "secret")
+  it("에코가 없거나 모르는 값이면 null", () => {
+    expect(readAppliedSegment({ products: [] })).toBeNull()
+    expect(readAppliedSegment({ [CATALOG_SEGMENT_ECHO_FIELD]: "vip" })).toBeNull()
+    expect(readAppliedSegment(null)).toBeNull()
+    expect(readAppliedSegment("mem")).toBeNull()
+  })
+})
 
-    expect(member.headers).not.toEqual(regular.headers)
+describe("assertSegmentApplied", () => {
+  it("주장과 적용이 같으면 통과한다", () => {
+    expect(() =>
+      assertSegmentApplied("mem", { [CATALOG_SEGMENT_ECHO_FIELD]: "mem" })
+    ).not.toThrow()
   })
 
-  it("서로 다른 멤버십 회원은 같은 헤더를 쓴다", () => {
-    const one = buildCatalogRequest({ authorization: "Bearer a" }, true, "s")
-    const two = buildCatalogRequest({ authorization: "Bearer b" }, true, "s")
-
-    expect(one.headers).toEqual(two.headers)
+  it("에코가 없으면 적용된 게 아니라 실패한다", () => {
+    // 세그먼트 미들웨어가 안 붙은 라우트나 옛 버전 Medusa 가 이 경우다.
+    expect(() => assertSegmentApplied("mem", { products: [] })).toThrow(
+      CatalogSegmentMismatchError
+    )
   })
 
-  it("멤버십 회원인데 시크릿이 없으면 토큰을 쓰고 캐시하지 않는다", () => {
-    const request = buildCatalogRequest(auth, true, undefined)
+  it("mem 을 주장했는데 reg 가 적용되면 실패한다", () => {
+    // 그룹 id 누락으로 회원 표시만 서고 가격은 비회원가인 반쪽 응답이 이 경로로 걸린다.
+    expect(() =>
+      assertSegmentApplied("mem", { [CATALOG_SEGMENT_ECHO_FIELD]: "reg" })
+    ).toThrow(CatalogSegmentMismatchError)
+  })
 
-    expect(request.headers).toEqual(auth)
-    expect(request.isPersonalized).toBe(true)
+  it("reg 도 검증한다 — 비회원 응답이라고 넘겨짚지 않는다", () => {
+    expect(() => assertSegmentApplied("reg", { products: [] })).toThrow(
+      CatalogSegmentMismatchError
+    )
+  })
+
+  it("진짜 장애와 구분되게 전용 타입으로 던진다", () => {
+    try {
+      assertSegmentApplied("mem", { [CATALOG_SEGMENT_ECHO_FIELD]: "reg" })
+      expect.unreachable()
+    } catch (error) {
+      expect(error).toBeInstanceOf(CatalogSegmentMismatchError)
+      expect((error as CatalogSegmentMismatchError).claimed).toBe("mem")
+      expect((error as CatalogSegmentMismatchError).applied).toBe("reg")
+    }
   })
 })
