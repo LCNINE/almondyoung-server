@@ -200,6 +200,23 @@ describe("fetchCatalog — 에코 검증", () => {
     expect(result.products).toEqual(["회원가"])
   })
 
+  it("Medusa 가 세그먼트를 400 으로 거절하면 토큰으로 폴백한다", async () => {
+    // 배포 시차·시크릿 교체로 양쪽 시크릿이 어긋난 구간. 폴백하지 않으면 카탈로그를
+    // 그리는 페이지가 통째로 깨진다.
+    visitorMock.mockResolvedValue(memberVisitor)
+    const rejected = Object.assign(new Error("Invalid catalog segment key"), {
+      status: 400,
+    })
+    fetchMock
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce({ products: ["회원가"] })
+
+    const result = await fetchCatalog<{ products: string[] }>(request)
+
+    expect(result.products).toEqual(["회원가"])
+    expect(readHeaders(fetchMock.mock.calls[1])).toHaveProperty("authorization")
+  })
+
   it("진짜 장애는 폴백하지 않고 그대로 올린다", async () => {
     visitorMock.mockResolvedValue(memberVisitor)
     fetchMock.mockRejectedValue(new Error("Medusa 500"))

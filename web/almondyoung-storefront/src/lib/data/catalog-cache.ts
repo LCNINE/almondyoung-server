@@ -120,6 +120,21 @@ const dedupe = (key: string, run: () => Promise<unknown>): Promise<unknown> => {
   return promise
 }
 
+/**
+ * Medusa 가 세그먼트 주장 자체를 거절했는가.
+ *
+ * 두 가지다. 에코가 어긋난 경우, 그리고 400 인 경우 — Medusa 는 시크릿이 안 맞거나 토큰과
+ * 세그먼트를 같이 받으면 400 으로 막는다. 배포 시차나 시크릿 교체로 양쪽 값이 어긋난 구간이
+ * 여기 걸린다. 둘 다 "세그먼트만 못 쓴다"는 뜻이라 토큰으로 다시 받으면 정상 응답이 나오므로,
+ * 페이지를 깨뜨리지 않고 폴백한다. 5xx 같은 진짜 장애는 폴백해봐야 똑같이 실패한다.
+ */
+const isSegmentRejected = (error: unknown): boolean => {
+  if (error instanceof CatalogSegmentMismatchError) return true
+
+  const status = (error as { status?: unknown } | null)?.status
+  return status === 400
+}
+
 const runPersonalFetch = (
   request: CatalogRequest,
   authHeaders: { authorization: string } | null
@@ -163,12 +178,16 @@ export const fetchCatalog = async <T>(request: CatalogRequest): Promise<T> => {
       getCachedFetcher(request.tags)(descriptor)
     )) as T
   } catch (error) {
-    if (error instanceof CatalogSegmentMismatchError) {
+    if (isSegmentRejected(error)) {
       // 설정이 어긋난 구간(배포 시차, 시크릿 교체, 그룹 id 누락)이다. 조용히 비회원가를
-      // 회원 칸에 넣는 대신 토큰으로 정확한 응답을 받는다.
+      // 회원 칸에 넣거나 페이지를 깨뜨리는 대신 토큰으로 정확한 응답을 받는다.
+      const detail =
+        error instanceof CatalogSegmentMismatchError
+          ? { claimed: error.claimed, applied: error.applied }
+          : { rejectedWith: 400 }
+
       console.error("[catalog] 세그먼트 적용 실패 — 토큰으로 폴백", {
-        claimed: error.claimed,
-        applied: error.applied,
+        ...detail,
         path: request.path,
       })
       return personal()
