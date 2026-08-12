@@ -38,7 +38,8 @@
     "quantityMaxError": "在庫が残り{max}個です。{max}個以下でお選びください。",
     "quantityStockError": "在庫が不足しているため数量を変更できません。しばらくしてからお試しください。",
     "quantityMaxHint": "最大{max}個",
-    "quantitySoldOut": "品切れのため数量を増やせません。"
+    "quantitySoldOut": "品切れのため数量を増やせません。",
+    "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。"
   },
   "summary": {
     "title": "ご注文金額",
