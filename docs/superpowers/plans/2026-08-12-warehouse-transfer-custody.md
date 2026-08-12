@@ -2434,6 +2434,18 @@ git commit -m "feat(inventory): 창고간 이동 체류 감시 크론"
 
 ## Task 10: 죽은 경로 삭제
 
+> **⚠️ Step 3 만 수행됐다. Step 2·4·5 는 후속으로 연기됐다 (2026-08-13, 인간 판정).**
+>
+> **이 태스크의 전제가 틀렸다.** 착수 전 실측의 `stock_journals WHERE source_type='warehouse_transfer'` = 0 은 "옛 경로가 죽었다"는 뜻이 아니라 **"실행까지 성공한 적이 없다"**는 뜻이었다. 생성(create)과 실행(execute)은 별개 호출이다.
+>
+> Step 1 호출자 전수에서 admin-web `features/inventory/transfers/components/create-transfer-dialog/index.tsx` 가 출발·도착 창고 ID 를 각각 자유 입력받아(같은 창고 제한 없음) `POST /inventory/transfers` 로 보내고 있고, `/inventory/transfers` 메뉴로 도달 가능한 라이브 화면임이 확인됐다. Step 2 를 적용하면 그 화면의 실행 단계가 400 으로 깨진다.
+>
+> **연기된 것**: 창고간 분기 제거(Step 2), 컨트롤러 문구 정리(Step 4), `transfer.service.integration` 의 창고간 케이스를 "거절된다" 계약으로 갱신.
+> **선행 조건**: admin-web 이 새 경로(`/inventory/warehouse-transfers`)로 이전되거나, 최소한 같은 창고 제한이 걸린 뒤 배포될 것.
+> **수행된 것**: Step 3 — `stock-projection.reader.ts` 의 `transfer_pending_qty → returnPendingQuantity` 오배선 제거(소비자 0건 확인).
+>
+> 그 결과 **창고 간 이동 경로가 두 벌 공존한다.** 옛 경로로 한 이동은 한 트랜잭션에서 끝나 custody 모델(이동 지시서·ETA·미완결 감시)을 건너뛴다. 데이터를 깨뜨리지는 않으나 이 작업이 없애려던 "두 벌" 상태 그 자체다.
+
 실측상 `warehouse_transfer` 저널이 0건이라 기존 창고간 경로는 프로덕션 실행 이력이 없다. 두 벌이 남으면 다음 사람이 어느 쪽이 정본인지 모른다.
 
 **Files:**
