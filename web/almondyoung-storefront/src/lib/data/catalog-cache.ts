@@ -44,6 +44,21 @@ const readSegmentSecret = (): string | undefined => {
 }
 
 /**
+ * 시크릿이 없으면 모든 방문자가 캐시 없는 개인 조회로 떨어진다. 화면은 멀쩡해서 티가 안 나고
+ * 카탈로그 캐시만 통째로 사라지므로, 프로세스당 한 번은 남긴다. (Medusa 쪽도 그룹 id 가 비면
+ * 같은 이유로 로그를 남긴다.) 값은 찍지 않는다.
+ */
+let warnedMissingSecret = false
+
+const warnMissingSecretOnce = (): void => {
+  if (warnedMissingSecret) return
+  warnedMissingSecret = true
+  console.warn(
+    "[catalog] CATALOG_SEGMENT_SECRET 가 비어 카탈로그 공유 캐시를 쓰지 않는다 — 모든 조회가 개인 토큰으로 나간다."
+  )
+}
+
+/**
  * 캐시되는 실제 조회. **모듈 최상위 함수여야 한다** — `unstable_cache` 는 인자와 함수 소스는
  * 키에 넣지만 클로저로 잡은 변수는 넣지 않는다. 요청마다 달라지는 값을 클로저로 잡으면
  * 첫 방문자의 응답이 그 키에 굳어 다른 사람에게 나간다.
@@ -83,17 +98,37 @@ const cachedFetchersByTag = new Map<
   (descriptor: CatalogCacheDescriptor) => Promise<unknown>
 >()
 
+/**
+ * 이 Map 은 순수한 메모이제이션이라 잘라내도 캐시가 날아가지 않는다 — 항목의 키는
+ * `runSegmentFetch` 소스 + keyParts + 인자로 정해지고 셋 다 결정적이라, 함수를 다시 만들어도
+ * 같은 항목을 도로 가리킨다. 그런데 태그엔 상품 handle 이 들어가고 위시리스트·최근 본 상품처럼
+ * handle 을 **배열로** 넘기는 호출부가 있어서, 조합 수를 사용자 데이터가 정한다. 상한이 없으면
+ * 오래 뜬 서버에서 계속 자란다. 잘라내는 비용이 사실상 없으니 작게 잡는다.
+ */
+const MAX_CACHED_FETCHERS = 256
+
 const getCachedFetcher = (tags: string[]) => {
   const tagKey = [...tags].sort().join("|")
 
   const existing = cachedFetchersByTag.get(tagKey)
-  if (existing) return existing
+  if (existing) {
+    // Map 은 삽입 순서를 지키므로, 다시 넣어 최근 것으로 만든다.
+    cachedFetchersByTag.delete(tagKey)
+    cachedFetchersByTag.set(tagKey, existing)
+    return existing
+  }
 
   const fetcher = unstable_cache(runSegmentFetch, ["catalog", tagKey], {
     tags,
     revalidate: CATALOG_REVALIDATE_SECONDS,
   })
   cachedFetchersByTag.set(tagKey, fetcher)
+
+  while (cachedFetchersByTag.size > MAX_CACHED_FETCHERS) {
+    const oldest = cachedFetchersByTag.keys().next()
+    if (oldest.done) break
+    cachedFetchersByTag.delete(oldest.value)
+  }
 
   return fetcher
 }
@@ -164,7 +199,12 @@ export const fetchCatalog = async <T>(request: CatalogRequest): Promise<T> => {
     ) as Promise<T>
 
   // 시크릿이 없으면 세그먼트를 신뢰시킬 수 없다. 캐시를 포기하고 토큰으로 간다.
-  if (visitor.state === "unknown" || !secret) {
+  if (!secret) {
+    warnMissingSecretOnce()
+    return personal()
+  }
+
+  if (visitor.state === "unknown") {
     return personal()
   }
 

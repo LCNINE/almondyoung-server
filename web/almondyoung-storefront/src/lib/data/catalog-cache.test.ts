@@ -7,12 +7,16 @@ vi.mock("server-only", () => ({}))
 // 직렬화해 키를 만들므로, 여기서 모은 값이 곧 키에 들어가는 값이다.
 const cacheCalls: Array<{ keyParts: string[]; options: unknown; args: unknown[] }> = []
 
+/** `unstable_cache` 를 부른 순간(=캐시 함수를 새로 만든 순간)의 keyParts. */
+const cacheFactoryKeys: string[][] = []
+
 vi.mock("next/cache", () => ({
   unstable_cache: (
     fn: (...args: unknown[]) => Promise<unknown>,
     keyParts: string[],
     options: unknown
   ) => {
+    cacheFactoryKeys.push(keyParts)
     return (...args: unknown[]) => {
       cacheCalls.push({ keyParts, options, args })
       return fn(...args)
@@ -66,6 +70,7 @@ const readHeaders = (call: unknown[]): Record<string, string> =>
 
 beforeEach(() => {
   cacheCalls.length = 0
+  cacheFactoryKeys.length = 0
   fetchMock.mockReset()
   visitorMock.mockReset()
   startNewRender()
@@ -141,6 +146,30 @@ describe("fetchCatalog — 캐시 키", () => {
 
     expect(cacheCalls[0].keyParts).not.toEqual(cacheCalls[1].keyParts)
   })
+
+  it("태그 조합이 아무리 많아도 캐시 함수를 무한히 쌓아두지 않는다", async () => {
+    visitorMock.mockResolvedValue(memberVisitor)
+    fetchMock.mockResolvedValue({ [CATALOG_SEGMENT_ECHO_FIELD]: "mem" })
+
+    // 위시리스트·최근 본 상품은 handle 을 배열로 넘겨 사람마다 다른 태그 조합을 만든다.
+    // 상한이 없으면 이 조합 수만큼 캐시 함수가 프로세스에 그대로 남는다.
+    const first = { ...request, tags: ["products", "product-0"] }
+    await fetchCatalog(first)
+
+    for (let i = 1; i <= 300; i++) {
+      startNewRender()
+      await fetchCatalog({ ...request, tags: ["products", `product-${i}`] })
+    }
+
+    // 잘려나갔으므로 같은 태그로 다시 부르면 캐시 함수를 새로 만든다.
+    startNewRender()
+    const before = cacheFactoryKeys.length
+    await fetchCatalog(first)
+    expect(cacheFactoryKeys.length).toBe(before + 1)
+
+    // 새로 만들어도 keyParts 가 같으니 같은 캐시 항목을 도로 가리킨다(캐시는 안 날아간다).
+    expect(cacheFactoryKeys.at(-1)).toEqual(cacheFactoryKeys[0])
+  })
 })
 
 describe("fetchCatalog — 모름 상태", () => {
@@ -164,11 +193,20 @@ describe("fetchCatalog — 모름 상태", () => {
     delete process.env.CATALOG_SEGMENT_SECRET
     visitorMock.mockResolvedValue(memberVisitor)
     fetchMock.mockResolvedValue({ products: [] })
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
 
+    await fetchCatalog(request)
+    startNewRender()
     await fetchCatalog(request)
 
     expect(cacheCalls).toHaveLength(0)
     expect(readHeaders(fetchMock.mock.calls[0])).toHaveProperty("authorization")
+
+    // 화면은 멀쩡하고 캐시만 통째로 사라지는 상태라 로그가 없으면 알아챌 방법이 없다.
+    // 다만 조회마다 찍으면 로그를 덮으므로 프로세스당 한 번이다.
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain("CATALOG_SEGMENT_SECRET")
+    warn.mockRestore()
   })
 })
 
