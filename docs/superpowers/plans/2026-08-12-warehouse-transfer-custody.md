@@ -22,6 +22,7 @@
 - **마이그레이션**: `npm run db:generate:core -- --name <kebab-description>`. 생성된 SQL 을 반드시 눈으로 검토한다. `schema.ts` + `drizzle/<timestamp>_*.sql` + `drizzle/meta/` 를 **한 커밋**에 넣는다.
 - **통합 테스트 실행**: `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <패턴>`. 러너가 compose postgres(5432) 기동 → 마이그레이션 적용 → jest 를 순서대로 한다. 워크트리에서 `COMPOSE_PROJECT_NAME` 을 빼면 5432 포트 충돌로 죽는다.
 - **전량 실행 시에는 반드시 core 로 좁힌다**: `npm run test:core:integration:local -- "apps/core.*integration"`. 러너의 기본 패턴은 `integration` 이라 `apps/medusa/integration-tests/**` 같은 **core 밖 suite 까지 끌어온다**(그쪽은 `@medusajs/test-utils` 미설치로 항상 실패한다). 좁히지 않으면 "새 실패 없음"을 판정할 수 없다.
+- **DB 제약 위반을 단언할 때 `.rejects.toThrow(/제약이름/)` 은 항상 실패한다.** drizzle-orm 이 postgres 에러를 `DrizzleQueryError` 로 감싸 실제 메시지가 `.cause.message` 에 들어간다. `err.cause` 를 따라 내려가며 매칭하는 헬퍼를 쓴다 — 선례는 `outbound-v2-schema.integration.spec.ts:40-75`(5단계 순회)와 `transfer-orders-schema.integration.spec.ts:20-30`(1단계). **`catch` 로 받아 아무 에러나 통과시키는 헬퍼를 만들지 말 것** — 그러면 제약이 사라져도 초록이라 스펙이 아무것도 지키지 못한다.
 - **`npm run type-check` 실측 기준선은 161** (2026-08-12 이 브랜치에서 실측). 이보다 늘면 이번 변경이 원인이다.
 - **develop 부터 RED 인 core 통합 스펙 8 suite 가 있다.** 이 8개의 실패는 이번 작업의 회귀가 아니다 — 새 실패로 오인하지 말 것. (2026-08-12 실측: `Test Suites: 8 failed, 57 passed, 65 total` / `Tests: 14 failed, 4 todo, 365 passed`)
 
