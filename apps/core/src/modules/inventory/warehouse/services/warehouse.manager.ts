@@ -99,10 +99,28 @@ export class WarehouseManager {
               type: data.type,
               location: data.location,
               supportedPickingStrategies: [...data.supportedPickingStrategies],
+              isSellable: data.isSellable,
             });
             await this.locationService.ensureSystemLocations(data.id, trx);
           });
           this.logger.log(`기본 창고 생성: ${data.name}`);
+        } else if (existing.isSellable !== data.isSellable) {
+          // is_sellable "한 컬럼만" 수렴시킨다. 컬럼은 DEFAULT true 로 깔렸으므로
+          // 이미 존재하는 해외 창고 행은 이 수렴이 없으면 영원히 판매 창고로 남고,
+          // inSellableWarehouse() 가 모든 창고를 매칭해 판매 게이트와 공급 파이프라인
+          // 필터가 통째로 no-op 이 된다.
+          //
+          // ⚠️ supported_picking_strategies 는 절대 여기서 덮어쓰지 않는다 — 그 컬럼은
+          // UpdateWarehouseDto 를 통해 admin-web 창고 설정 화면에서 운영자가 바꾸는
+          // 운영 설정이라, 부팅마다 상수로 되돌리면 재시작할 때마다 설정이 사라진다.
+          // 이 구분(코드가 소유하는 컬럼 vs 운영자가 소유하는 컬럼)이 핵심이다.
+          await this.dbService.run(async (trx) => {
+            await trx
+              .update(wmsTables.warehouses)
+              .set({ isSellable: data.isSellable, updatedAt: new Date() })
+              .where(eq(wmsTables.warehouses.id, data.id));
+          });
+          this.logger.log(`기본 창고 판매 여부 수렴: ${data.name} → is_sellable=${data.isSellable}`);
         }
       }
 

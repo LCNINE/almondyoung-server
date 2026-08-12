@@ -10,6 +10,8 @@ export const WAREHOUSE_CONSTANTS = {
     // 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
     // discrete(개별 피킹)만 켠다 — 토탈·멀티오더는 창고 설정 화면에서 명시적으로.
     supportedPickingStrategies: ['discrete'] as const,
+    // 판매 창고다. 이 창고의 재고만 storefront 판매가능수량에 들어가고 출고를 지시할 수 있다.
+    isSellable: true,
   },
   DEFAULT_OVERSEAS_WAREHOUSE: {
     id: '00000000-0000-0000-0000-000000000002',
@@ -18,6 +20,10 @@ export const WAREHOUSE_CONSTANTS = {
     type: 'overseas' as const,
     // 비판매 창고다. 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
     supportedPickingStrategies: [] as const,
+    // 비판매 창고. 컬럼 기본값이 true 라서 이 값을 명시하지 않으면 이미 존재하는
+    // 라이브 중국 창고 행이 영원히 판매 창고로 남고, inSellableWarehouse() 가
+    // 모든 창고를 매칭해 판매 게이트와 공급 파이프라인 필터가 통째로 no-op 이 된다.
+    isSellable: false,
   },
 } as const;
 
