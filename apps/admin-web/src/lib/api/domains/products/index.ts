@@ -6,6 +6,7 @@ import { auditClient } from './audit.client';
 import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
 import { noticesClient } from './notices.client';
+import { shopListingsClient } from './shop-listings.client';
 import { sitePopupsClient } from './site-popups.client';
 import { bulkClient } from './bulk.client';
 import { bulkSessionClient } from './bulk-session.client';
@@ -28,6 +29,7 @@ export const products = {
   bannerGroups: bannerGroupsClient,
   banners: bannersClient,
   notices: noticesClient,
+  shopListings: shopListingsClient,
   sitePopups: sitePopupsClient,
   tags: tagsClient,
   pricing: pricingClient,
@@ -47,6 +49,7 @@ export { channelProductsClient } from './channel-products.client';
 export { bannerGroupsClient } from './banner-groups.client';
 export { bannersClient } from './banners.client';
 export { noticesClient } from './notices.client';
+export { shopListingsClient } from './shop-listings.client';
 export { sitePopupsClient } from './site-popups.client';
 export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';

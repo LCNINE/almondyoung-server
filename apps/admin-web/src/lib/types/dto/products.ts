@@ -809,6 +809,144 @@ export interface NoticeListQuery {
   q?: string;
 }
 
+// ===== 샵매매 관련 =====
+
+export const SHOP_LISTING_REGIONS = [
+  'seoul',
+  'gyeonggi',
+  'incheon',
+  'busan',
+  'daegu',
+  'gwangju',
+  'daejeon',
+  'ulsan',
+  'sejong',
+  'gangwon',
+  'chungbuk',
+  'chungnam',
+  'jeonbuk',
+  'jeonnam',
+  'gyeongbuk',
+  'gyeongnam',
+  'jeju',
+] as const;
+
+export type ShopListingRegion = (typeof SHOP_LISTING_REGIONS)[number];
+
+export const SHOP_LISTING_BUSINESS_TYPES = [
+  'nail',
+  'lash',
+  'semi-permanent',
+  'skincare',
+  'hair',
+  'waxing',
+  'tattoo',
+  'etc',
+] as const;
+
+export type ShopListingBusinessType =
+  (typeof SHOP_LISTING_BUSINESS_TYPES)[number];
+
+export const SHOP_LISTING_BUSINESS_TYPE_LABELS: Record<
+  ShopListingBusinessType,
+  string
+> = {
+  nail: '네일',
+  lash: '속눈썹',
+  'semi-permanent': '반영구',
+  skincare: '피부관리',
+  hair: '헤어',
+  waxing: '왁싱',
+  tattoo: '타투',
+  etc: '기타',
+};
+
+export const SHOP_LISTING_DEAL_TYPES = ['transfer', 'lease'] as const;
+
+export type ShopListingDealType = (typeof SHOP_LISTING_DEAL_TYPES)[number];
+
+export const SHOP_LISTING_DEAL_TYPE_LABELS: Record<ShopListingDealType, string> =
+  {
+    transfer: '양도',
+    lease: '임대',
+  };
+
+export const SHOP_LISTING_REGION_LABELS: Record<ShopListingRegion, string> = {
+  seoul: '서울',
+  gyeonggi: '경기',
+  incheon: '인천',
+  busan: '부산',
+  daegu: '대구',
+  gwangju: '광주',
+  daejeon: '대전',
+  ulsan: '울산',
+  sejong: '세종',
+  gangwon: '강원',
+  chungbuk: '충북',
+  chungnam: '충남',
+  jeonbuk: '전북',
+  jeonnam: '전남',
+  gyeongbuk: '경북',
+  gyeongnam: '경남',
+  jeju: '제주',
+};
+
+export interface ShopListingDto {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  region: ShopListingRegion | null;
+  businessType: ShopListingBusinessType | null;
+  dealType: ShopListingDealType | null;
+  areaPyeong: number | null;
+  deposit: number | null;
+  monthlyRent: number | null;
+  keyMoney: number | null;
+  thumbnailFileId: string | null;
+  isActive: boolean;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateShopListingDto {
+  /** 비워두면 제목에서 자동 생성된다. */
+  slug?: string;
+  title: string;
+  content: string;
+  region: ShopListingRegion;
+  businessType: ShopListingBusinessType;
+  dealType: ShopListingDealType;
+  areaPyeong?: number | null;
+  deposit?: number | null;
+  monthlyRent?: number | null;
+  keyMoney?: number | null;
+  thumbnailFileId: string;
+  isActive?: boolean;
+}
+
+export interface UpdateShopListingDto {
+  slug?: string;
+  title?: string;
+  content?: string;
+  region?: ShopListingRegion;
+  businessType?: ShopListingBusinessType;
+  dealType?: ShopListingDealType;
+  areaPyeong?: number | null;
+  deposit?: number | null;
+  monthlyRent?: number | null;
+  keyMoney?: number | null;
+  thumbnailFileId?: string;
+  isActive?: boolean;
+}
+
+export interface ShopListingListQuery {
+  includeInactive?: boolean;
+  isActive?: boolean;
+  q?: string;
+}
+
 // ===== 태그 그룹 관련 =====
 
 export interface CreateTagGroupDto {

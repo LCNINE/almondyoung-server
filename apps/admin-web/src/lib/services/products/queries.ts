@@ -28,6 +28,7 @@ import type {
   MasterChannelProductsResponseDto,
   MergedChannelProductDto,
   NoticeListQuery,
+  ShopListingListQuery,
   SitePopupListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
@@ -630,6 +631,25 @@ export const useNotice = (id: string) => {
   return useQuery({
     queryKey: productQueryKeys.notice(id),
     queryFn: () => products.notices.get(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 샵매매 관련 쿼리 =====
+
+export const useShopListings = (query?: ShopListingListQuery) => {
+  return useQuery({
+    queryKey: productQueryKeys.shopListingsList(query ?? {}),
+    queryFn: () => products.shopListings.list(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+export const useShopListing = (id: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.shopListing(id),
+    queryFn: () => products.shopListings.get(id),
     enabled: !!id,
     staleTime: 2 * 60 * 1000,
   });
