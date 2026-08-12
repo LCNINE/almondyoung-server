@@ -14,10 +14,17 @@ import { resolveCatalogVisitor } from "./catalog-request"
 export const CATEGORY_TREE_TAG = "categories"
 
 /**
- * 카탈로그 캐시의 시간 만료 한도. 가격·판매중단·품절 전환은 channel-adapter 가
- * `/api/revalidate` 로 즉시 걷어내므로, 시간 만료는 그 훅이 유실됐을 때의 백스톱이다.
+ * 카탈로그 캐시의 시간 만료 한도. 상품 동기화·판매중단·품절 전환은 channel-adapter 가
+ * `/api/revalidate` 로 즉시 걷어내지만, 이 시간 만료가 백스톱 이상인 경로가 둘 있다:
+ *
+ * - 그 훅은 실패를 삼키고 재시도하지 않는다 (`storefront-revalidate.service.ts` — 5초
+ *   타임아웃, 실패 시 warn 로그 후 종료). 유실되면 시간 만료가 유일한 반영 경로다.
+ * - `/api/revalidate` 를 부르는 곳은 channel-adapter 뿐이라, Medusa 쪽에서만 일어나는
+ *   변경(price list 편집 = 멤버십가 수정)은 훅 자체가 없다. 역시 시간 만료로만 반영된다.
+ *
+ * 그래서 길게 잡으면 멤버십가 수정이 그만큼 늦게 노출된다. 종전 값(1시간)을 유지한다.
  */
-export const CATALOG_REVALIDATE_SECONDS = 60 * 60 * 24
+export const CATALOG_REVALIDATE_SECONDS = 60 * 60
 
 /** 직렬화 가능한 쿼리. 그대로 캐시 키에 들어가므로 JSON 으로 표현되는 값만 담는다. */
 export type CatalogQuery = Record<string, unknown>
@@ -226,7 +233,10 @@ export const fetchCatalog = async <T>(request: CatalogRequest): Promise<T> => {
           ? { claimed: error.claimed, applied: error.applied }
           : { rejectedWith: 400 }
 
-      console.error("[catalog] 세그먼트 적용 실패 — 토큰으로 폴백", {
+      // 400 은 세그먼트 거절이 아닐 수도 있다(잘못된 쿼리 등) — 그 경우 재시도도 같은
+      // 400 으로 실패하고, 이 로그가 두 경우를 겸한다. 구분자를 Medusa 에 두지 않는 건
+      // 의도다: 코드 기준으로 좁히면 옛 Medusa 가 떠 있는 배포 시차 구간에 폴백이 안 걸린다.
+      console.error("[catalog] 세그먼트 경로 실패(에코 불일치 또는 400) — 토큰으로 폴백", {
         ...detail,
         path: request.path,
       })
