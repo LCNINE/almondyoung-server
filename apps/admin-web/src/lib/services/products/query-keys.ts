@@ -108,6 +108,11 @@ export const productQueryKeys = {
     [...productQueryKeys.notices, 'list', query] as const,
   notice: (id: string) => [...productQueryKeys.notices, id] as const,
 
+  shopListings: ['shop-listings'] as const,
+  shopListingsList: <T extends object>(query: T) =>
+    [...productQueryKeys.shopListings, 'list', query] as const,
+  shopListing: (id: string) => [...productQueryKeys.shopListings, id] as const,
+
   sitePopups: ['site-popups'] as const,
   sitePopupsList: <T extends object>(query: T) =>
     [...productQueryKeys.sitePopups, 'list', query] as const,

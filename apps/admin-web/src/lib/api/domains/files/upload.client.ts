@@ -30,6 +30,7 @@ export const BANNER_IMAGE_CONTEXT_ID = 'banner-image';
 // 팝업은 공지 계열이라 공지 본문 이미지 컨텍스트를 그대로 쓴다. 정책(공개/이미지/10MB)이
 // 같은데 전용 컨텍스트를 새로 만들면 시드가 밀린 환경에서 업로드가 404 로 죽는다.
 export const SITE_POPUP_IMAGE_CONTEXT_ID = 'notice-content-image';
+export const SHOP_LISTING_IMAGE_CONTEXT_ID = 'notice-content-image';
 export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {

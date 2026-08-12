@@ -27,6 +27,8 @@ import type {
   CreateBannerDto,
   UpdateBannerDto,
   CreateNoticeDto,
+  CreateShopListingDto,
+  UpdateShopListingDto,
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
@@ -1036,6 +1038,40 @@ export const useDeleteNotice = () => {
       products.notices.remove(id, deletedBy),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
+    },
+  });
+};
+
+// ===== 샵매매 뮤테이션 =====
+
+export const useCreateShopListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateShopListingDto) => products.shopListings.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
+    },
+  });
+};
+
+export const useUpdateShopListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateShopListingDto }) =>
+      products.shopListings.update(id, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListing(variables.id) });
+    },
+  });
+};
+
+export const useDeleteShopListing = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.shopListings.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.shopListings });
     },
   });
 };

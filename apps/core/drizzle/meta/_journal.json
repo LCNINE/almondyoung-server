@@ -463,6 +463,27 @@
       "when": 1786484870311,
       "tag": "20260811214750_drop-transit-out-from-available-qty",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1786511942575,
+      "tag": "20260812051902_add-shop-listings",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1786515909916,
+      "tag": "20260812062509_add-shop-listing-region",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1786517721789,
+      "tag": "20260812065521_add-shop-listing-deal-fields",
+      "breakpoints": true
     }
   ]
 }

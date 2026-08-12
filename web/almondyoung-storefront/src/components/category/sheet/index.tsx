@@ -11,9 +11,10 @@ import {
 import { useScrollSpy } from "@/hooks/use-scroll-spy"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { StoreProductCategoryTree } from "@/lib/types/medusa-category"
-import { AlertCircle } from "lucide-react"
+import { AlertCircle, ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CategorySection } from "./category-section"
 import { SidebarTabs } from "./sidebar-tabs"
 
@@ -27,6 +28,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
   const [categories, setCategories] = useState<StoreProductCategoryTree[]>([])
   const [isError, setIsError] = useState(false)
   const t = useTranslations("categorySheet")
+  const tCategories = useTranslations("categories")
 
   const scrollRef = useRef<HTMLElement>(null)
   const sectionIds = useMemo(() => categories.map((c) => c.id), [categories])
@@ -71,6 +73,16 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
           </SheetTitle>
           <SheetDescription className="sr-only">{t("title")}</SheetDescription>
         </SheetHeader>
+
+        {/* 샵매매는 Medusa 카테고리가 아니라 자체 게시판이라 아래 목록에 안 섞인다 */}
+        <LocalizedClientLink
+          href="/shop-trade"
+          onClick={closeSheet}
+          className="flex items-center justify-between border-b border-gray-100 px-5 py-3.5 text-[14px] font-medium text-[#333] transition-colors active:bg-gray-50"
+        >
+          {tCategories("shop-trade")}
+          <ChevronRight className="h-4 w-4 shrink-0 text-gray-300" />
+        </LocalizedClientLink>
 
         {isError ? (
           <div className="flex flex-1 flex-col items-center justify-center text-center">

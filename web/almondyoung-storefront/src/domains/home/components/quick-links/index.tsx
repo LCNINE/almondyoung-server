@@ -1,4 +1,5 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
+import { ScrollRow } from "@/components/shared/scroll-row"
 import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
 import { listRootCategoriesCached } from "@/lib/data/category"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
@@ -31,6 +32,7 @@ const CATEGORY_ICON_URLS: Record<string, string> = {
   waxing: `${CATEGORY_ICON_BASE_URL}/waxing.png?v=${CATEGORY_ICON_VERSION}`,
   nomond: `${CATEGORY_ICON_BASE_URL}/nomond.png?v=${CATEGORY_ICON_VERSION}`,
   "shop-meal": `${CATEGORY_ICON_BASE_URL}/shop-meal.png?v=${CATEGORY_ICON_VERSION}`,
+  "shop-trade": `${CATEGORY_ICON_BASE_URL}/shop-trade.png?v=${CATEGORY_ICON_VERSION}`,
 }
 
 type QuickLink = {
@@ -56,6 +58,7 @@ export async function HomeQuickLinks({
   variant?: "home" | "desktopHeader"
 }) {
   const tCategories = await getTranslations("categories")
+  const tQuickLinks = await getTranslations("header.quickLinks")
   const interestKeys = await getInterestCategoryKeys()
   const interestKeySet = new Set(interestKeys)
   let dropdownCategories: StoreProductCategoryTree[] = []
@@ -97,16 +100,20 @@ export async function HomeQuickLinks({
     },
   ]
 
-  const categoryLinks: CategoryQuickLink[] = orderedCategories.map(
-    (category) => {
-      return {
-        key: category.key,
-        label: tCategories(category.key),
-        href: `/category/${category.handle}`,
-        imageUrl: CATEGORY_ICON_URLS[category.key] ?? null,
-      }
-    }
-  )
+  const categoryLinks: CategoryQuickLink[] = [
+    ...orderedCategories.map((category) => ({
+      key: category.key,
+      label: tCategories(category.key),
+      href: `/category/${category.handle}`,
+      imageUrl: CATEGORY_ICON_URLS[category.key] ?? null,
+    })),
+    {
+      key: "shop-trade",
+      label: tCategories("shop-trade"),
+      href: "/shop-trade",
+      imageUrl: CATEGORY_ICON_URLS["shop-trade"] ?? null,
+    },
+  ]
   const isDesktopHeader = variant === "desktopHeader"
   const mobileItems: MobileQuickLinkItem[] = [
     ...externalLinks,
@@ -147,11 +154,13 @@ export async function HomeQuickLinks({
   // 데스크톱 헤더
   if (isDesktopHeader) {
     return (
-      <nav
-        aria-label="추천 바로가기"
-        className="scrollbar-hide grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible px-0.5"
-      >
-        {linkItems}
+      <nav aria-label={tQuickLinks("ariaLabel")}>
+        <ScrollRow
+          labels={{ prev: tQuickLinks("prev"), next: tQuickLinks("next") }}
+          className="grid auto-cols-max grid-flow-col items-center gap-5 px-0.5"
+        >
+          {linkItems}
+        </ScrollRow>
       </nav>
     )
   }
@@ -163,8 +172,8 @@ export async function HomeQuickLinks({
           <MobileQuickLinks items={mobileItems} />
 
           <nav
-            aria-label="추천 바로가기"
-            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
+            aria-label={tQuickLinks("ariaLabel")}
+            className="scrollbar-hide hidden overflow-x-auto px-0.5 xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(14,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
           >
             <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
               <CategoryDropdown

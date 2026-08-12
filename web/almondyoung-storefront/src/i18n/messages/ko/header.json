@@ -12,8 +12,12 @@
     "trigger": "카테고리",
     "shopTrade": "샵매매",
     "brandHall": "브랜드관",
-    "comingSoon": "준비중",
     "viewAll": "전체 보기",
     "viewMore": "더보기"
+  },
+  "quickLinks": {
+    "ariaLabel": "추천 바로가기",
+    "prev": "이전 항목 보기",
+    "next": "다음 항목 보기"
   }
 }

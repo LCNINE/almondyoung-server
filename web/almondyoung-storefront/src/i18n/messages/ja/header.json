@@ -12,8 +12,12 @@
     "trigger": "カテゴリ",
     "shopTrade": "ショップ売買",
     "brandHall": "ブランド館",
-    "comingSoon": "準備中",
     "viewAll": "すべて見る",
     "viewMore": "もっと見る"
+  },
+  "quickLinks": {
+    "ariaLabel": "おすすめショートカット",
+    "prev": "前の項目",
+    "next": "次の項目"
   }
 }
