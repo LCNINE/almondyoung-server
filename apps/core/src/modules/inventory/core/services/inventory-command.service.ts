@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { InjectTypedDb, DbService } from '@app/db';
@@ -6,7 +6,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
 import { LocationService } from './location.service';
 import { eq, and, gt, asc } from 'drizzle-orm';
-import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import { acquireStockAvailabilityLock, acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 
@@ -372,6 +372,38 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      // ship 과 다른 트랜잭션이므로 자체 락이 필요하다. 도착 창고를 함께 잠가
+      // 같은 SKU 의 도착 처리끼리 직렬화한다. 정렬 순서는 교차 데드락 방지용이다.
+      await acquireStockAvailabilityLocks(trx, [
+        { skuId: input.skuId, warehouseId: input.fromWarehouseId },
+        { skuId: input.skuId, warehouseId: input.toWarehouseId },
+      ]);
+
+      const [transit] = await trx
+        .select({ qty: wmsTables.stockLedgers.qty })
+        .from(wmsTables.stockLedgers)
+        .where(
+          and(
+            eq(wmsTables.stockLedgers.skuId, input.skuId),
+            eq(wmsTables.stockLedgers.warehouseId, input.fromWarehouseId),
+            eq(wmsTables.stockLedgers.locationId, input.fromLocationId),
+            eq(wmsTables.stockLedgers.stockState, 'IN_TRANSFER'),
+          ),
+        )
+        .for('update')
+        .limit(1);
+
+      const inTransit = transit?.qty ?? 0;
+      if (input.quantity > inTransit) {
+        throw new ConflictException({
+          code: 'TRANSFER_RECEIVE_EXCEEDS_IN_TRANSIT',
+          message: 'Receiving more than the outstanding in-transit quantity',
+          skuId: input.skuId,
+          requestedQty: input.quantity,
+          inTransitQty: inTransit,
+        });
+      }
+
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
