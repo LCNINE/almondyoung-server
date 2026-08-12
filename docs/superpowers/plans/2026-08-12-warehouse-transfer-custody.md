@@ -2610,3 +2610,45 @@ git commit -m "chore(inventory): 옛 destination 입고 계획 마감 (contract)
 - 프론트(storefront·admin-web) 노출은 이 계획 밖이다. `GET /…/inbound-pipeline` 이 core API 로 열리지만, storefront 는 Medusa 를 통해 상품을 읽으므로 Medusa 투영이 한 겹 더 필요하다.
 - 중국 창고 ON_HAND 가 0이라 파이프라인 ②·③은 실데이터로 검증할 수 없다. 통합 스펙이 유일한 방어선이며, 그래서 Task 8 Step 5(변별력 증명)를 건너뛰면 안 된다.
 - 출고작업 custody 의 창고 grain 확장(#618 후속 2번, 숏피킹 구간의 "예약은 되나 피킹 때 409" 틈)은 별건으로 남는다.
+
+---
+
+# 잔여 항목 (실행 종료 시점 정리, 2026-08-13)
+
+이 브랜치의 태스크별 리뷰와 최종 전체 리뷰에서 나온 이월 항목이다. 최종 리뷰가 각각을 **머지 전 / 배포 전 / 후속 가능** 으로 분류했고, 머지 전·배포 전 항목은 최종 수정 웨이브(`eb34736cb`~`d0b8ae858`)에서 전부 닫혔다. 아래는 **후속으로 남은 것**이다.
+
+## A. 구조적 한계 (후속 티켓 권장)
+
+1. **파이프라인 ①②가 대상 창고로 좁혀지지 않는다.** ①은 source plan 의 `destination_warehouse_id` 로 좁힐 여지가 있으나, ②는 이동 지시서 이전 구간이라 목적지 링크가 없어 **구조적으로 불가**(스키마·도메인 변경 선행). 판매 창고가 하나(부천)인 동안 무해하며 Swagger·리더 주석에 전제를 명시했다. **선행 조건: 두 번째 판매 창고가 생기는 시점.** 그때 조용히 틀린 수치가 나온다.
+2. **창고 간 이동 경로가 두 벌 공존한다.** 옛 경로(`POST /inventory/transfers` 의 창고간 분기)로 한 이동은 한 트랜잭션에서 끝나 custody 모델(지시서·ETA·미완결 감시)을 건너뛴다. admin-web `create-transfer-dialog` 가 그것을 쓰고 있어 이번에 못 지웠다. **선행 조건: admin-web 이 `/inventory/warehouse-transfers` 로 이전.** 그 뒤 Task 10 의 Step 2·4·5 를 수행한다.
+3. **`stock_events.journal_id` 가 null.** `transferShip`/`transferReceive`/`scrapInTransit` 이 `journalId` 를 받지 않아 저널이 문서 레벨에만 매달린다. 원장→문서 역추적 불가이고, `ship`/`receive` 가 만든 `stock_journals` 행이 이벤트 0개를 가리키는 빈 저널이 된다. 또한 새 경로와 옛 경로가 `source_type = 'warehouse_transfer'` 를 **공유**해 저널 출처가 모호하다(`warehouse_transfer_ship` 등으로 분리 권장). 위 2번과 묶어 처리할 것.
+4. **커스텀 창고는 `is_sellable` 기본값 `true` 로 태어난다.** `create-warehouse.dto` 에 `isSellable` 이 없고 부팅 수렴은 기본 창고 2개에만 걸린다. 비판매 창고가 둘 이상 필요해지면 이 경로가 구멍이 된다.
+5. **인가 세분화 부재.** 새 쓰기 라우트 4개에 `@RequireScopes`/`ScopeGuard` 가 없다. 전역 `JwtAuthGuard` + `AdminRealmGuard` 로 인증·관리자 realm 은 막히고, 형제 컨트롤러(`transfer`·`movement`·`stock-projection`)도 모두 동일하다. #551 이 소유.
+
+## B. 이월된 minor
+
+- `inventory-command.service.ts` 의 `if (!transitZone) throw` 는 도달 불가(`getSystemLocationByRole` 이 자체 `NotFoundException`).
+- `expectConstraintViolation` 이 `.cause` 를 1단계만 순회(선례 `outbound-v2-schema.integration.spec.ts:59` 는 5단계).
+- `transfer_order_receipt_lines` 는 `received_qty`/`lost_qty` 기본값이 둘 다 0 인데 check 는 합이 0보다 클 것을 요구 — 기본값 의존 insert 는 즉시 실패.
+- `transferReceive` 의 새 409 검사와 `StockEventStore` 의 400 가드가 같은 불변식을 이중 방어(하위 가드가 이 경로에선 도달 불가).
+- 동시성 시나리오(두 `transferReceive` 경합) 테스트 없음 — 순차 케이스만 덮음.
+- `updateEta` 에 상태 가드 없음(`closed` 지시서도 ETA 수정 가능), `@ApiResponse` 없음.
+- `transfer_order_lines.version` 이 `receive` 에서만 증가하고 `ship` 에선 안 함(아무도 안 읽음).
+- journal insert 결과를 `?? null` 로 삼킴(다른 insert 는 단언).
+- `findOutstanding` 이 무필터·무페이지네이션 전체 스캔. 열린 라인만 도므로 현재는 무해 — **성능 트리거: 열린 라인 1,000건**.
+- 이동 지시서에 **취소·삭제 API 가 없다.** `createOrder` 에 멱등키도 없어 초안 중복 시 청소 경로가 없다.
+- `ship` 이 전 라인 전량 all-or-nothing 이라 한 라인이 부족하면 전체 롤백되고 어느 라인인지 알 수 없다 — 에러에 skuId/lineId 를 실을 것.
+- 파이프라인의 `toWarehouseId` 가 SQL 에 안 나가고 JS 비교로만 쓰임 / `skuIds` 길이 상한 없음 / `earliest()` 변별력 없음(ETA 두 개짜리 케이스 필요) / `@ApiPropertyOptional` 대신 `@ApiProperty({ nullable: true })` 가 정확 / 요청 `skuIds` 중복 제거·미존재 id 처리 미검증.
+- `read(tx, input)`·`findOutstanding(tx)` 가 `tx` 를 필수 첫 인자로 받음 — CLAUDE.md 규약(`tx?` 마지막) 편차.
+- 체류 감시의 임계일·ETA 경계 비교연산자가 정확 경계값에서 미테스트.
+- 컨트롤러 단위 스펙 없음(레포 관행 혼재 — inventory 컨트롤러 19개 중 5개만 보유).
+- `stock-projection.controller.spec.ts` 의 `warehouseId` 파이프 검사가 **생성자 이름만** 본다. 누가 `new ParseUUIDPipe({ version: '4' })` 로 바꾸면 스펙은 초록인 채 기본 창고 id 조회가 400 이 된다(니블 회귀는 `skuIds` 경로에서만 고정). 실제로 막으려면 e2e 가 필요.
+
+## C. 계획서가 실행 중 틀린 것 (기록)
+
+같은 실수를 다음 계획에서 반복하지 않기 위해 남긴다. 네 건 모두 리뷰가 잡았다.
+
+1. **raw SQL + `as unknown as` 캐스팅을 지시했다** — CLAUDE.md 가 `innerJoin` 형태를 명시 요구하고 `as` 를 금지한다. 근거로 든 `warehouse-availability.ts` 의 raw SQL 은 torn read 방지라는 이유가 있었으나 대상 쿼리엔 없었다.
+2. **초안 자동 생성이 적치 후 선적 불가가 되는 설계였다** — 라인의 `from_location` 을 입고 기본존에 고정했는데 정상 적치가 그 존을 비운다. 라인 편집·취소 API 도 없어 복구 경로가 없었다. 기능째 제거했다.
+3. **Task 10 의 전제가 틀렸다** — `warehouse_transfer` 저널 0건은 "경로가 죽었다"가 아니라 "실행까지 성공한 적 없다"였다. 생성과 실행은 별개 호출이다.
+4. **단위 스펙 기준선을 안 잡았다** — type-check 와 통합 스펙만 기준선을 잡아, 이 브랜치가 만든 단위 스펙 3 suite 의 RED 가 최종 리뷰까지 발견되지 않았다. 그리고 배포 후 검증("psq 값이 안 변한다")이 **변별력 0** 이었다 — 필터가 정상일 때와 no-op 일 때 같은 관측을 낸다.
