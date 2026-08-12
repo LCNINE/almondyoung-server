@@ -10,7 +10,11 @@
 export type QuantityChange =
   | { type: "apply"; quantity: number; clampedToMax: boolean }
   | { type: "reject"; reason: "belowMin" }
-  | { type: "reject"; reason: "soldOut" }
+  /**
+   * 품절이면 줄이는 요청도 서버가 거절한다. 다만 고객이 방금 무엇을 눌렀는지에 따라 할 말이
+   * 달라서(늘리려 했나 / 줄이려 했나) 방향을 같이 돌려준다.
+   */
+  | { type: "reject"; reason: "soldOut"; isIncrease: boolean }
   /** 안내 문구에 남은 수량을 넣어야 하므로 상한을 같이 돌려준다. */
   | { type: "reject"; reason: "exceedsMax"; max: number }
 
@@ -37,7 +41,7 @@ export function resolveQuantityChange({
   }
 
   if (maxQuantity <= 0) {
-    return { type: "reject", reason: "soldOut" }
+    return { type: "reject", reason: "soldOut", isIncrease: requested > current }
   }
 
   if (requested <= maxQuantity) {

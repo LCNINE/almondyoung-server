@@ -117,10 +117,14 @@ function Item({
     if (change.type === "reject") {
       if (change.reason === "belowMin") return false
 
-      // 재고 0 은 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다.
+      // 재고 0 은 "0개 이하로 담아주세요" 가 되어버리므로 품절 문구를 쓴다. 품절 라인은
+      // 줄이는 것도 서버가 거절하므로, 줄이려던 고객에게는 "늘릴 수 없다" 가 아니라
+      // 빼달라고 말해야 한다.
       const message =
         change.reason === "soldOut"
-          ? t("quantitySoldOut")
+          ? change.isIncrease
+            ? t("quantitySoldOut")
+            : t("outOfStockHint")
           : t("quantityMaxError", { max: change.max })
       toast.error(message)
       setError(message)

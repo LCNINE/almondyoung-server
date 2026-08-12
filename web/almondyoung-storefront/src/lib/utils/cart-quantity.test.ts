@@ -41,7 +41,14 @@ describe("resolveQuantityChange", () => {
   it("품절이면 줄이는 요청도 보내지 않는다", () => {
     expect(
       resolveQuantityChange({ requested: 4, current: 5, maxQuantity: 0 })
-    ).toEqual({ type: "reject", reason: "soldOut" })
+    ).toEqual({ type: "reject", reason: "soldOut", isIncrease: false })
+  })
+
+  // 품절 라인에서 "-" 를 눌렀는데 "늘릴 수 없어요" 가 뜨면 고객이 뭘 해야 할지 알 수 없다.
+  it("품절 거절은 늘리려던 것인지 줄이려던 것인지 구분해 돌려준다", () => {
+    expect(
+      resolveQuantityChange({ requested: 6, current: 5, maxQuantity: 0 })
+    ).toEqual({ type: "reject", reason: "soldOut", isIncrease: true })
   })
 
   it("1개 미만은 보내지 않는다", () => {
