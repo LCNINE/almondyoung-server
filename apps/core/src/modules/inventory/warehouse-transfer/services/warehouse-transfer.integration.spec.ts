@@ -65,7 +65,8 @@ describeIfDb('이동 지시서 도메인 (DB integration)', () => {
   }
 
   function buildService(trx: DbTx): WarehouseTransferService {
-    return new WarehouseTransferService(buildManager(trx));
+    const dbService = boundDbService(trx);
+    return new WarehouseTransferService(buildManager(trx), new WarehouseTransferReader(dbService), dbService);
   }
 
   function buildReader(trx: DbTx): WarehouseTransferReader {
