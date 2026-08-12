@@ -426,6 +426,44 @@ export class InventoryCommandService {
     return this.dbService.run(exec, tx);
   }
 
+  /** 운송 중 분실 — IN_TRANSFER 잔량을 소진시킨다. 어느 창고에도 더하지 않는다. */
+  async scrapInTransit(
+    input: {
+      skuId: string;
+      warehouseId: string;
+      locationId: string;
+      quantity: number;
+      occurredAt?: Date;
+      idempotencyKey?: string;
+      reason?: string;
+    },
+    tx?: DbTx,
+  ) {
+    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    const exec = async (trx: DbTx) => {
+      await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+      const event = await this.eventStore.createEvent(
+        {
+          skuId: input.skuId,
+          fromWarehouseId: input.warehouseId,
+          fromLocationId: input.locationId,
+          fromState: 'IN_TRANSFER',
+          toWarehouseId: null,
+          toLocationId: null,
+          toState: null,
+          transitionType: 'SCRAP',
+          quantity: input.quantity,
+          occurredAt: input.occurredAt ?? new Date(),
+          idempotencyKey: input.idempotencyKey,
+          reason: input.reason,
+        },
+        trx,
+      );
+      return { eventId: event?.id ?? null };
+    };
+    return this.dbService.run(exec, tx);
+  }
+
   async adjustUp(
     input: {
       skuId: string;
