@@ -144,9 +144,27 @@ PR #624 의 교훈을 적용한다 — `view-parity.integration.spec.ts` 는 픽
 ## 배포
 
 - 새 테이블·컬럼은 전부 additive → **expand 단계이므로 `migrate → deploy`** 순서다(contract 의 `deploy → migrate` 와 반대이므로 혼동하지 말 것).
-- destination plan 폐지는 기존 데이터가 있으면 contract 단계로 분리해야 한다. 물류팀이 WMS 를 아직 쓰지 않으므로 데이터가 0 일 가능성이 높지만 **배포 전 실측으로 확인한다.**
+- **destination plan 폐지는 contract 단계다** — 실측 결과 기존 행이 135건 존재한다(아래).
 
-### 착수 전 실측 (미실행)
+### 착수 전 실측 (2026-08-12 실행 완료)
+
+**결과**
+
+| 쿼리 | 결과 | 의미 |
+|---|---|---|
+| 창고별 원장 재고 | `부천 물류창고 / ON_HAND / 6,604행 / 459,237개` — **그 외 0** | 중국 창고에 원장 재고가 없다 |
+| 이중 입고 계획 | `destination pending 135` · `source pending 135` | 이중 계획이 라이브에서 쓰이고 있다 |
+| `warehouse_transfer` 저널 | `0` | `transferShip` 경로는 실행된 적이 없다 |
+
+**설계에 미치는 영향**
+
+1. **판매성 축 변경의 라이브 영향은 0이다.** 중국 창고에 ON_HAND 가 없으므로 `is_sellable` 필터를 켜도 지금 팔리는 수량이 줄지 않는다. 오버셀·품절 사고 없이 배포할 수 있다. 다만 미래 방어가 목적이므로 여전히 필요하다.
+2. **`inbound_pending_qty` 이중 계상이 지금 라이브에서 발생 중이다.** source·destination 각각 135건이 모두 `destination_warehouse_id = 부천`으로 집계되어 부천 입고예정이 2배로 잡히고 `projected_available_qty` 까지 부풀려져 있다. 판매 게이트(`available_qty`)에는 영향이 없으므로 오버셀은 아니지만, 발주·계획 판단이 틀린 수치를 보고 있다.
+   - 한 가지 후보: `inbound_pending` 의 집계 키를 `ip.destination_warehouse_id` → `ip.warehouse_id`(실제 입고될 창고)로 바꾸면 각 계획이 자기 창고에서 한 번만 잡혀 이중 계상이 사라지고, ①(중국 입고 예정)과 부천 입고 예정이 자연히 갈린다. `projected_available_qty` 의 의미가 함께 바뀌므로 구현 계획에서 소비자를 전수하고 결정한다.
+3. **`transferShip`/`transferReceive` 경로는 프로덕션 실행 0회다.** 재작성 자유도가 높고 데이터 마이그레이션 대상이 없다. `movement_jobs` 의 `isInterWarehouse` 분기도 미사용이므로 이관이 아니라 삭제에 가깝다.
+4. **첫 이동을 시연하려면 중국 입고가 선행되어야 한다.** 현재 중국 ON_HAND 가 0 이고 source plan 135건이 pending 이므로 파이프라인 상태는 ① 뿐이다 — ②·③ 은 실데이터로 검증할 수 없고 통합 스펙으로만 고정된다.
+
+### 실측 쿼리
 
 ```sql
 -- 창고별 원장 재고 — 중국이 실제로 원장 재고를 드는가
