@@ -33,7 +33,7 @@ export class TransferStagnationMonitor {
     private readonly reader: WarehouseTransferReader,
   ) {}
 
-  @Cron('0 4 * * *')
+  @Cron('0 4 * * *', { name: 'transfer-stagnation-monitor', timeZone: 'Asia/Seoul' })
   async report(): Promise<void> {
     const outstanding = await this.dbService.run((trx) => this.reader.findOutstanding(trx));
     const stagnant = findStagnant(new Date(), outstanding, TransferStagnationMonitor.THRESHOLD_DAYS);
