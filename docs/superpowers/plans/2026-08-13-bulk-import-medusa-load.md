@@ -326,14 +326,14 @@ EOF
 `storefront-revalidate.service.spec.ts` 에 추가:
 
 ```typescript
-  it('여러 handle 을 한 번의 요청으로 보낸다', async () => {
+  it('첫 handle 만 handle 로 보내고 나머지는 태그로 보낸다', async () => {
     await new StorefrontRevalidateService().revalidateProducts(['m1', 'm2', 'm3']);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0];
     expect(JSON.parse(init.body)).toEqual({
-      tags: ['product-m1', 'pim-detail-m1', 'product-m2', 'pim-detail-m2', 'product-m3', 'pim-detail-m3'],
-      paths: [],
+      handle: 'm1',
+      tags: ['pim-detail-m1', 'product-m2', 'pim-detail-m2', 'product-m3', 'pim-detail-m3'],
     });
   });
 
@@ -344,7 +344,14 @@ EOF
   });
 ```
 
-**설계 근거:** 다건 경로는 `handle` 필드를 쓰지 않고 `tags` 만 쓴다. 라우트(`route.ts:73-86`)는 `handle` 이 있을 때만 `PRODUCT_LIST_TAG` 전역 무효화와 국가별 `revalidatePath` 를 도는데, 그건 호출 1회당 1번이면 충분하고 handle 마다 반복할 필요가 없다. 대신 `product-{handle}` 태그를 직접 실어 개별 상품 캐시를 정확히 지운다. 전역 목록 태그는 아래 Step 4 에서 flush 당 1회만 친다.
+**설계 근거 — `handle` 을 하나만 싣는다.** 라우트(`route.ts:73-86`)는 `body.handle` 이 있을 때만 `revalidateTag(PRODUCT_LIST_TAG)` 를 친다. 목록 캐시 태그는 방문자별(`${tag}-${_medusa_cache_id}`)이라 백엔드가 개별 지목을 못 하고 이 전역 태그가 유일한 경로다.
+
+- `handle` 을 **아예 안 보내면** 전역 목록 태그가 영영 안 지워져 **새 상품이 목록에 최대 1시간 안 뜬다.** 이건 회귀다
+- `handle` 을 **상품마다 보내면** 전역 무효화가 상품 수만큼 일어나 지금 문제를 그대로 재현한다
+
+그래서 배치의 첫 handle 하나만 `handle` 로 싣는다 — 전역 목록 태그와 카테고리 경로가 **배치당 정확히 1회** 돌고, 나머지 상품은 `product-{handle}` 태그로 정확히 지운다. `product-m1` 은 라우트가 `handle` 로부터 직접 치므로 태그 배열에서 뺀다. `pim-detail-m1` 은 라우트가 자동으로 안 치므로 넣는다.
+
+`PRODUCT_LIST_TAG` 의 값(`"products"`)을 channel-adapter 에 복사해 오지 않는 이유도 이것이다 — storefront 가 상수를 바꾸면 조용히 깨진다.
 
 - [ ] **Step 2: 실패를 확인한다**
 
@@ -359,15 +366,23 @@ Expected: FAIL — `revalidateProducts is not a function`
   /**
    * 여러 상품을 한 번에 무효화한다. 대량등록처럼 상품이 연달아 바뀔 때 쓴다.
    *
-   * 단건 `revalidateProduct` 와 달리 `handle` 필드를 쓰지 않는다 — 라우트는 handle 이
-   * 있으면 전역 목록 태그와 국가별 경로를 도는데, 그건 배치당 1회면 족하다.
-   * 개별 상품 캐시는 `product-{handle}` 태그로 정확히 지운다.
+   * 첫 handle 만 `handle` 로 싣는다. 라우트는 `handle` 이 있을 때만 전역 목록 태그
+   * (PRODUCT_LIST_TAG)와 국가별 경로를 도는데, 그건 배치당 1회면 족하고 상품마다
+   * 반복하면 캐시가 데워질 틈이 없어진다 — 그게 지금 고치려는 문제다.
+   * 반대로 아예 안 실으면 목록 캐시가 영영 안 지워져 새 상품이 목록에 안 뜬다.
+   *
+   * 나머지 상품은 `product-{handle}` 태그로 정확히 지운다.
    */
   async revalidateProducts(handles: string[]): Promise<void> {
     if (handles.length === 0) return;
 
-    const tags = handles.flatMap((h) => [`product-${h}`, `pim-detail-${h}`]);
-    await this.post({ tags, paths: [] }, `batch=${handles.length}`);
+    const [first, ...rest] = handles;
+    const tags = [
+      // product-{first} 는 라우트가 handle 로부터 직접 친다. pim-detail 은 안 친다.
+      `pim-detail-${first}`,
+      ...rest.flatMap((h) => [`product-${h}`, `pim-detail-${h}`]),
+    ];
+    await this.post({ handle: first, tags }, `batch=${handles.length}`);
   }
 ```
 
