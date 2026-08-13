@@ -3,7 +3,13 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
+import { outboxPublisherFor } from '../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { InventoryCommandService } from '../../core/services/inventory-command.service';
+import { LocationService } from '../../core/services/location.service';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { StockEventStore } from '../../core/repositories/stock-event.store';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -46,7 +52,7 @@ describeIfDb('stocktaking uniques (DB integration, rollback-only)', () => {
       .returning();
     const [location] = await tx
       .insert(wmsTables.locations)
-      .values({ warehouseId: warehouse.id, code: `IT-LOC-${randomUUID().slice(0, 8)}` })
+      .values({ warehouseId: warehouse.id, code: `IT-LOC-${randomUUID().slice(0, 8)}`, locationType: 'standard' })
       .returning();
     const [session] = await tx
       .insert(wmsTables.stocktakingSessions)
@@ -103,7 +109,14 @@ describeIfDb('stocktaking uniques (DB integration, rollback-only)', () => {
         run: async (fn: (t: DbTx) => Promise<unknown>, t?: DbTx) => (t ? fn(t) : db.transaction(fn)),
       } as unknown as DbService<typeof wmsSchema>;
       const { StocktakingService } = await import('./stocktaking.service');
-      const svc = new StocktakingService(dbService);
+      // StocktakingService 가 InventoryCommandService 를 생성자로 받게 바뀌었다.
+      // 형제 스펙(stocktaking-scan-location 등)과 동일한 조립.
+      const outbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
+      const sellable = new ProductSellableQuantityService(dbService as never, outbox);
+      const eventStore = new StockEventStore(dbService, sellable);
+      const location = new LocationService(dbService);
+      const command = new InventoryCommandService(dbService, eventStore, outbox, location);
+      const svc = new StocktakingService(dbService, command);
       await svc.scanLocation({ sessionId: f.session.id, locationBarcode: f.location.code }, tx);
       await svc.scanLocation({ sessionId: f.session.id, locationBarcode: f.location.code }, tx);
       const lines = await tx
