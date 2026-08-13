@@ -638,11 +638,11 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   });
   jest
     .spyOn(strategy as any, 'lockAndAssertPickerClaim')
-    .mockImplementation(async (workItemId) => state.workItems[workItemId]);
-  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId) => state.workItems[workItemId]);
+    .mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
+  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
   jest
     .spyOn(strategy as any, 'loadShipmentAllocations')
-    .mockImplementation(async (_planId, shipmentId) => state.allocationsForShipment(shipmentId));
+    .mockImplementation(async (_planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId));
   jest.spyOn(strategy as any, 'databaseNow').mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
 
   return {
