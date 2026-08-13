@@ -11,6 +11,18 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 class Rollback extends Error {}
 
+/**
+ * postgres.js 업스트림 타입 결함 우회.
+ *
+ * `TransactionSql` 이 `Omit<Sql<TTypes>, …>` 로 정의돼 있는데, Omit 은 인터페이스의
+ * **호출 시그니처를 지운다**. 그래서 `begin()` 콜백이 넘겨주는 핸들은 타입상
+ * 태그드 템플릿(`tx\`SELECT …\``)으로 쓸 수 없다 — 런타임에는 멀쩡히 동작한다.
+ *
+ * 이 파일은 레포에서 유일하게 `begin()` 안에서 태그드 템플릿을 쓰는 곳이라
+ * 여기서 한 번만 좁힌다. 업스트림이 고쳐지면 이 헬퍼를 지우면 된다.
+ */
+const taggable = (tx: postgres.TransactionSql): postgres.Sql => tx as unknown as postgres.Sql;
+
 describeIfDb('fulfillment-invariant (PostgreSQL locks and read-only reconciliation)', () => {
   jest.setTimeout(120_000);
 
@@ -130,7 +142,8 @@ describeIfDb('fulfillment-invariant (PostgreSQL locks and read-only reconciliati
       await locked;
       let lockError: unknown;
       try {
-        await contenderClient.begin(async (contender) => {
+        await contenderClient.begin(async (tx) => {
+      const contender = taggable(tx);
           await contender`SET LOCAL lock_timeout = '100ms'`;
           await contender`UPDATE fulfillment_order_items SET updated_at = now() WHERE id = ${f.item.id}`;
         });
@@ -187,7 +200,8 @@ describeIfDb('fulfillment-invariant (PostgreSQL locks and read-only reconciliati
       lineLocked = resolve;
     });
 
-    const mover = contenderClient.begin(async (contender) => {
+    const mover = contenderClient.begin(async (tx) => {
+      const contender = taggable(tx);
       await contender`SELECT id FROM shipment_lines WHERE id = ${f.line.id} FOR UPDATE`;
       lineLocked();
       await moveAllowed;

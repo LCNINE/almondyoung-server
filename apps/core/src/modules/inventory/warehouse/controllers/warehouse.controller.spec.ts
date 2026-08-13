@@ -4,8 +4,13 @@ import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { WarehouseController } from './warehouse.controller';
 
 describe('WarehouseController authorization contract', () => {
-  const handlerFor = (name: string): unknown =>
-    Object.getOwnPropertyDescriptor(WarehouseController.prototype, name)?.value;
+  // Reflect.getMetadata 의 target 은 Object 를 요구한다. 여기서 한 번만 좁히고,
+  // 핸들러가 없으면 즉시 던진다 — 이름이 바뀌면 조용히 통과하는 대신 터져야 한다.
+  const handlerFor = (name: string): object => {
+    const handler = Object.getOwnPropertyDescriptor(WarehouseController.prototype, name)?.value;
+    if (!handler) throw new Error(`WarehouseController.${name} 핸들러가 없다 — 개명됐거나 삭제됐다`);
+    return handler;
+  };
 
   const WRITE_HANDLERS = ['create', 'update', 'remove'];
   const READ_HANDLERS = ['findAll', 'findOne', 'getStockSummary'];

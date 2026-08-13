@@ -326,14 +326,16 @@ class AggregateHarnessState {
     return this.balances.filter((balance) => balance.shipmentLineId === lineId && balance.qty > 0);
   }
 
-  cartBalances(cartId = IDS.cart): CustodyBalance[] {
+  // IDS 가 Object.freeze 라 기본값만 두면 파라미터가 'CART-001' 리터럴로 좁혀진다.
+  // otherCart 등 다른 카트도 넘어오므로 string 으로 명시한다.
+  cartBalances(cartId: string = IDS.cart): CustodyBalance[] {
     const prefix = `bulk-cart:${IDS.batch}:${cartId}:`;
     return this.balances.filter(
       (balance) => balance.custodyType === 'BULK_CART' && balance.custodyRef?.startsWith(prefix) && balance.qty > 0,
     );
   }
 
-  cartRef(ownerId: string, cartId = IDS.cart): string {
+  cartRef(ownerId: string, cartId: string = IDS.cart): string {
     return `bulk-cart:${IDS.batch}:${cartId}:${ownerId}`;
   }
 
