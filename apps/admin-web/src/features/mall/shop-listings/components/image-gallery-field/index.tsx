@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState, type ChangeEvent, type DragEvent } from 'react';
-import Image from 'next/image';
 import { ImagePlus, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -194,12 +193,12 @@ export function ImageGalleryField({
                   dragFrom === index && 'opacity-40'
                 )}
               >
-                <Image
+                {/* file-service 프록시 경유 이미지라 next/image 를 쓰면 엑박이 된다 */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
                   src={resolvePublicFileUrl(fileId) ?? ''}
                   alt=""
-                  fill
-                  sizes="160px"
-                  className="object-cover"
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
                 <span
                   className={cn(

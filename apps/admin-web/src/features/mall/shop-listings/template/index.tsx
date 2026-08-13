@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -95,12 +94,12 @@ export default function ShopListingsTemplate() {
             >
               <div className="bg-muted relative h-20 w-28 shrink-0 overflow-hidden rounded">
                 {thumbnailUrl ? (
-                  <Image
+                  // file-service 프록시 경유 이미지라 next/image 를 쓰면 엑박이 된다
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
                     src={thumbnailUrl}
                     alt=""
-                    fill
-                    sizes="112px"
-                    className="object-cover"
+                    className="absolute inset-0 h-full w-full object-cover"
                   />
                 ) : (
                   <div className="text-muted-foreground flex h-full items-center justify-center">
