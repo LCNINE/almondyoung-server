@@ -84,15 +84,26 @@ npx jest --silent 2>&1 | tail -5
 
 ---
 
-## Task 1: 루트 jest 수집 범위에서 프론트 앱 제외
+## Task 1: 프론트 spec 2건의 모듈 해석을 고친다
+
+> **실행 중 정정 (2026-08-13).** 최초 계획은 "프론트 앱을 루트 jest 수집에서 통째로 제외" 였다. 실행 직전 실측에서 **루트가 수집하는 프론트 spec 은 70건이고 그중 68건이 정상 통과 중**임이 드러났다. 통째 제외는 실패 2건을 없애는 대신 통과 68건의 커버리지를 버리는 거래다. 채택하지 않는다.
+>
+> 두 실패는 각각 한 줄짜리 결함이었다:
+> - `wallet-web/proxy.spec.ts`: `@packages/web-observability` 가 루트 jest `moduleNameMapper` 에 없음. 패키지는 `packages/web-observability` 에 실재한다 — 매핑 누락일 뿐
+> - `admin-web/queries.spec.ts`: `jest.mock('@tanstack/react-query', …)` 에 `{ virtual: true }` 가 빠짐. **같은 파일의 다른 mock 3개는 전부 `{ virtual: true }` 를 붙이고 있다** — 작성자가 첫 mock 에만 빠뜨린 것
+>
+> 부수 소득: `npm run test:admin-web` 도 64/65 → 65/65 로 같이 초록이 된다.
 
 **Files:**
-- Modify: `package.json` (jest 설정 블록, `test:*` 스크립트)
+- Modify: `package.json` (jest `moduleNameMapper`)
+- Modify: `apps/admin-web/src/lib/services/products/queries.spec.ts:5-8`
 
 **Interfaces:**
-- Produces: 루트 `npx jest` 는 백엔드(apps 중 nest 앱 · libs · packages · scripts)만 수집한다. 프론트는 전용 스크립트로만 돈다.
+- Produces: 루트 `npx jest` 가 프론트 spec 70건을 전부 해석하고 통과시킨다.
 
-**근본원인:** 루트 jest `roots` 에 `<rootDir>/apps/` 가 통째로 들어있어 `apps/admin-web` · `apps/wallet-web` 의 spec 까지 수집된다. 그런데 이 두 앱의 의존성은 각자의 `node_modules` 에 있고 그건 `modulePathIgnorePatterns` 로 무시된다. 수집은 하는데 해석은 못 하는 모순.
+**근본원인:** 루트 jest `roots` 에 `<rootDir>/apps/` 가 통째로 들어있어 프론트 spec 까지 수집되는데, 두 spec 만 해석에 필요한 배선이 빠져 있었다. 구조적 모순이 아니라 개별 누락이다.
+
+> ⚠️ **함정 기록.** 통째 제외를 시도했다면 `testPathIgnorePatterns` 에 `<rootDir>/apps/admin-web/` 를 넣어도 **안 걸렸을 것**이다. 이 저장소의 워크트리 경로에 `+` 가 들어가는데(`chore+verification-gates-green`) 그게 정규식 수량자로 해석돼 리터럴 `+` 를 못 만난다. jest 의 `testPathIgnorePatterns` 는 정규식이므로 `<rootDir>` 치환 결과에 정규식 메타문자가 섞이면 조용히 실패한다. 앞으로 이 필드에는 `/apps/admin-web/` 처럼 `<rootDir>` 없는 부분일치 패턴을 쓸 것.
 
 - [ ] **Step 1: 현재 실패 2건을 재현해 근거를 남긴다**
 
@@ -102,34 +113,47 @@ npx jest --silent apps/admin-web/src/lib/services/products/queries.spec.ts apps/
 
 기대 출력: 2 suite 실패. `Cannot find module '@tanstack/react-query'` 와 `Cannot find module '@packages/web-observability'`.
 
-- [ ] **Step 2: 루트 jest `testPathIgnorePatterns` 에 프론트 앱을 추가한다**
+- [ ] **Step 2: `@packages/web-observability` 매핑을 추가한다**
 
-`package.json` 의 `jest.testPathIgnorePatterns` 배열을 다음으로 교체:
-
-```json
-"testPathIgnorePatterns": [
-  "/node_modules/",
-  "/e2e/membership-cancel/",
-  "<rootDir>/apps/admin-web/",
-  "<rootDir>/apps/wallet-web/"
-]
-```
-
-- [ ] **Step 3: wallet-web 전용 테스트 스크립트를 추가한다**
-
-`apps/admin-web` 에는 이미 `test:admin-web` 이 있으나 `apps/wallet-web` 에는 없다. `package.json` scripts 에 `test:admin-web` 바로 아래로 추가:
+`package.json` 의 `jest.moduleNameMapper` 에서 `@packages/product-description` 줄 바로 아래에 추가:
 
 ```json
-"test:wallet-web": "jest --roots ./apps/wallet-web --transform '{\"^.+\\\\.(t|j)sx?$\":[\"ts-jest\",{\"tsconfig\":\"apps/wallet-web/tsconfig.json\"}]}'",
+"^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
 ```
 
-- [ ] **Step 4: 루트 실행에서 두 spec 이 더 이상 수집되지 않음을 확인한다**
+- [ ] **Step 3: admin-web 스펙의 react-query mock 을 virtual 로 만든다**
+
+`apps/admin-web/src/lib/services/products/queries.spec.ts` 의 첫 mock 을 교체:
+
+```typescript
+// admin-web 의존성은 apps/admin-web/node_modules 에 있고 그건 루트 jest 의
+// modulePathIgnorePatterns 로 무시된다. 이 파일의 다른 mock 들처럼 virtual 로
+// 등록해야 해석 단계에서 안 터진다.
+jest.mock(
+  '@tanstack/react-query',
+  () => ({
+    useQuery: jest.fn(),
+    useSuspenseQuery: jest.fn(() => ({ data: null })),
+  }),
+  { virtual: true }
+);
+```
+
+- [ ] **Step 4: 두 spec 이 통과하는지 확인한다**
 
 ```bash
-npx jest --listTests 2>&1 | grep -cE "admin-web|wallet-web"
+npx jest --silent apps/admin-web/src/lib/services/products/queries.spec.ts apps/wallet-web/app/api/payment-intents/
 ```
 
-기대 출력: `0`
+기대: `Test Suites: 2 passed`
+
+전용 실행도 같이 초록이 됐는지 확인:
+
+```bash
+npm run test:admin-web --silent 2>&1 | tail -5
+```
+
+기대: `Test Suites: 65 passed, 65 total` (기준선 64 passed / 1 failed)
 
 - [ ] **Step 5: 전체 jest 를 돌려 실패가 22 → 20 으로 줄었음을 확인한다**
 
