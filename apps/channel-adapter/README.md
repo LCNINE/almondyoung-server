@@ -137,8 +137,9 @@ GET /adapter/coupang/query/ordersheet-by-orderid/{orderId}
 curl -X GET "http://localhost:3003/adapter/coupang/ordersheet/642538971006401429" \
   -H "Content-Type: application/json"
 
-# 테스트 스크립트 사용
-npx tsx test-coupang-single.ts 642538971006401429
+# (참고) test-coupang-single.ts 는 2026-08-13 에 scripts/legacy/ 로 이관됐고
+# 현재 실행 불가다 — import 경로가 어댑터 재배치를 못 따라왔다.
+# scripts/legacy/README.md 참조. 지금은 위 cURL 을 쓴다.
 ```
 
 #### 2. orderId 기준 조회
@@ -148,8 +149,8 @@ npx tsx test-coupang-single.ts 642538971006401429
 curl -X GET "http://localhost:3003/adapter/coupang/ordersheet/by-orderid/500000596" \
   -H "Content-Type: application/json"
 
-# 테스트 스크립트 사용 (orderId 버전)
-npx tsx test-coupang-single-orderid.ts 500000596
+# (참고) test-coupang-single-orderid.ts 는 레포에 존재하지 않는다.
+# 위 cURL 을 쓴다.
 ```
 
 ### 응답 예시
@@ -314,14 +315,10 @@ npm run test:e2e channel-adater
 # 네이버 스마트스토어 테스트
 node test-naver-sync.ts
 
-# 쿠팡 테스트
-node test-coupang-sync.ts
-
-# 쿠팡 발주서 단건 조회 테스트
-npx tsx test-coupang-single.ts <shipmentBoxId>
-
-# 오케스트레이션 테스트
-node test-orchestration.ts
+# ⚠️ 아래 수동 점검 스크립트 4종(test-coupang-sync / test-coupang-single /
+# test-orchestration / test-naver-sync)은 2026-08-13 에 scripts/legacy/ 로
+# 이관됐다. import 경로가 어댑터 재배치를 못 따라와 전부 실행 불가이며
+# 연결됐던 npm 명령도 함께 제거했다. scripts/legacy/README.md 참조.
 ```
 
 ## 🔍 트러블슈팅
