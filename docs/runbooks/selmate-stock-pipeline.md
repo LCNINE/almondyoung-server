@@ -757,6 +757,71 @@ FROM inbox_events WHERE event_type='ProductSellableQuantityChanged' GROUP BY sta
 SELECT count(*) FROM inbox_events WHERE published_at >= now() - interval '5 minutes';
 ```
 
+### ⚠️ 대량 상품등록과 겹치면 재고가 뒤로 밀린다 (2026-08-13)
+
+상품 대량등록(`origin='bulk_import'`)이 있던 날 재고동기화를 돌리면 **재고 이벤트가 상품 발행을 굶긴다.**
+워커의 claim 정렬(`inbox-worker.service.ts:267`)이
+
+```sql
+ORDER BY (bulkEventTypesSql OR bulkOriginsSql), created_at ASC
+```
+
+인데, `BULK_EVENT_TYPES = ['ProductSellableQuantityChanged']` 와 `BULK_ORIGINS = ['bulk_import']` 라
+**재고 이벤트도 대량등록 상품 이벤트도 둘 다 `true`** 가 된다. 우선순위가 같아지면 남는 기준은
+`created_at ASC` 뿐이라 **그냥 오래된 순**이고, 밤새 쌓인 재고 이벤트가 먼저 다 나가야 상품이 생긴다.
+
+`ProductSellableQuantityChanged` 만 후순위일 거라고 읽으면 안 된다 — `bulk_import` 상품 이벤트도 같은 칸이다.
+
+**증상**: 재고동기화 후 `Medusa product not found for … masterId=…` 가 대량으로 failed 에 쌓인다.
+신규 등록 상품의 **재고 이벤트가 Medusa 상품 생성보다 먼저 처리**돼서다. 원인은 코드/매칭이 아니라 **순서**다.
+(2026-08-13: `AY-` 신규 2,280 master 등록과 겹쳐 failed 1,343건 발생)
+
+**대응 — 재고 이벤트를 유예해 상품 발행에 처리량을 몰아준다.** 삭제가 아니라 `next_attempt_at` 만 민다.
+워커가 `next_attempt_at <= NOW()` 로 거르므로(`:263`) 유예분은 안 보이고, 시각이 지나면 자동 복귀한다.
+
+```sql
+-- 유예 (비파괴, 3시간 뒤 자동 복귀)
+UPDATE inbox_events SET next_attempt_at = now() + interval '3 hours'
+WHERE status='pending' AND event_type='ProductSellableQuantityChanged';
+
+-- 앞당겨 되돌리기
+UPDATE inbox_events SET next_attempt_at = now()
+WHERE status='pending' AND event_type='ProductSellableQuantityChanged';
+```
+
+2026-08-13 실측: 유예 전 상품 이벤트가 시간당 ~102건(재고와 2:1로 뺏김) → 유예 후 전체 처리량(~350건/시)
+독점. 상품 생성 완료 예상이 **7시간 → 2시간**. 재고 총 소요는 7.9→8.3시간으로 **30분만 손해**다.
+
+### ⚠️ failed 는 `recalc-sellable` 로 못 되살린다 — inbox 행을 직접 깨워야 한다
+
+`ProductSellableQuantityService`(`product-sellable-quantity.service.ts:311`)가
+
+```ts
+if (previous && !hasProductSellableQuantityProjectionChanged(projection, previous)) {
+  return { projection, published: false };
+}
+```
+
+라 **강제 발행 옵션이 없다.** 실패한 이벤트도 Core 프로젝션은 이미 최신값으로 갱신돼 있으므로,
+`recalc-sellable` 을 다시 돌리면 전부 **"변동없음" 으로 스킵**된다 — 아무것도 안 고쳐진다.
+`VARIANT_IDS` 로 찍어줘도 같다.
+
+게다가 inbox 재시도는 `attempts=5` 에서 끝난다(`:680`). **한 번 failed 로 떨어지면 스스로 절대 안 돌아온다.**
+
+```sql
+-- 되살리기. ★ Medusa 상품이 실제로 생긴 뒤에 돌릴 것 (아니면 attempts 만 또 소진)
+UPDATE inbox_events
+SET status='pending', attempts=0, next_attempt_at=now(), error_message=NULL, failed_at=NULL
+WHERE status='failed' AND event_type='ProductSellableQuantityChanged';
+```
+
+`created_at ASC` 로 처리되므로 되살려도 순서는 안 꼬인다. 되살리기 전 **Medusa 에 상품이 있는지 먼저 확인**한다:
+
+```sql
+-- core: 대상 master, medusa: handle 로 존재 확인 (handle = Core masterId)
+SELECT count(*) FROM product WHERE handle = ANY(string_to_array('<masterId 목록>', ','));
+```
+
 ### ⚠️ 동시성을 올리면 느려진다
 
 `INBOX_MAX_CONCURRENT_HANDLERS`(deployments/lcnine/services/infra/services.ts)를 올리고 싶어지는데,
@@ -830,6 +895,11 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 - "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ** (clear-reservations → A-1→A-2→A-3, A-3 까지 반드시 같이). Ⓐ-0 제외 목록은 스크립트가 자동 적용
 - "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
+- **"`Medusa product not found` 가 잔뜩 떴어" / "재고동기화 했는데 며칠째 반영이 안 돼"** → 「반영이 늦을 때」의
+  **대량 상품등록 절** — 신규 등록 상품의 재고 이벤트가 Medusa 상품 생성보다 먼저 처리된 **순서 문제**다.
+  코드·매칭을 파기 전에 `inbox_events` 의 `metadata->>'origin'` 과 pending 구성부터 본다.
+  조치는 재고 이벤트 **유예**(`next_attempt_at`) → 상품 생성 완료 확인 → **failed 되살리기**.
+  ⚠️ `recalc-sellable` 로는 안 고쳐진다 (변동없음 스킵)
 - **"○○ 는 재고 있는데 왜 품절/일시품절이야?"** → **Ⓑ dry-run 이 1번**. `🧮 reserved 카운터 어긋남` 이 0칸이 아니면
   거기서 끝이다 (Ⓐ·매칭·플래그 파볼 필요 없음). 순서: Ⓑ dry-run → 복구 handle 목록 뽑기 → `--apply` → revalidate.
   0칸이면 그때 ②-C 진단표(Core판정)로 내려간다
