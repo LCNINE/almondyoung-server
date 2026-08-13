@@ -2,10 +2,17 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { useVersionDetailSuspense } from './queries';
 
-jest.mock('@tanstack/react-query', () => ({
-  useQuery: jest.fn(),
-  useSuspenseQuery: jest.fn(() => ({ data: null })),
-}));
+// admin-web 의존성은 apps/admin-web/node_modules 에 있고 그건 루트 jest 의
+// modulePathIgnorePatterns 로 무시된다. 이 파일의 다른 mock 들처럼 virtual 로
+// 등록해야 해석 단계에서 안 터진다.
+jest.mock(
+  '@tanstack/react-query',
+  () => ({
+    useQuery: jest.fn(),
+    useSuspenseQuery: jest.fn(() => ({ data: null })),
+  }),
+  { virtual: true }
+);
 
 jest.mock(
   '@/lib/api/domains',

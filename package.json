@@ -356,6 +356,7 @@
       "^@packages/event-contracts/(.*)$": "<rootDir>/packages/event-contracts/$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
       "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
+      "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
       "^apps/(.*)$": "<rootDir>/apps/$1",
       "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1"
     },
