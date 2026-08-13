@@ -1,5 +1,6 @@
 {
   "//exclude": "이 tsconfig 는 백엔드(apps/libs/packages/scripts) 전용 타입 게이트다. 자체 tsconfig 와 게이트를 가진 프론트엔드·네이티브·인프라 트리는 여기서 검사하지 않는다 — 잘못된 컴파일러 옵션(예: jsx 미설정)으로 검사하면 신호가 아니라 잡음 17k 건이 나온다.",
+  "//exclude-archive": "아래 두 항목은 프론트엔드가 아니라 *아카이브* 다. scripts/medusa-db-migration 은 자체 package.json·tsconfig·lockfile 을 가진 별도 서브프로젝트이고, channel-adapter/scripts/legacy 는 README 가 '사용 불가'로 명시한 Phase5 백필 v1 보관본이다. 돌릴 수 없는 코드의 타입을 맞추는 건 게이트 신호가 아니라 잡음이므로 검사 대상에서 뺀다. 되살릴 일이 생기면 이 줄부터 지울 것.",
   "exclude": [
     "apps/wallet-web",
     "apps/admin-web",
@@ -9,7 +10,9 @@
     "deployments",
     ".sst",
     "node_modules",
-    "dist"
+    "dist",
+    "scripts/medusa-db-migration",
+    "apps/channel-adapter/scripts/legacy"
   ],
   "compilerOptions": {
     "module": "commonjs",
