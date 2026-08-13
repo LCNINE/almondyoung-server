@@ -359,14 +359,15 @@
       "^apps/(.*)$": "<rootDir>/apps/$1",
       "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1"
     },
+    "//modulePathIgnorePatterns": "정규식 필드다. <rootDir> 치환 결과에 정규식 메타문자가 섞이면 패턴이 조용히 안 걸린다 — 이 저장소의 워크트리는 .claude/worktrees/feat+foo 꼴이라 '+' 가 수량자로 해석돼 실제로 그렇게 됐다(apps/medusa spec 22개가 루트 실행에 딸려 들어와 실패 17건). <rootDir> 없는 부분일치 패턴으로 쓴다.",
     "modulePathIgnorePatterns": [
-      "<rootDir>/apps/medusa",
-      "<rootDir>/apps/admin-web/.next",
-      "<rootDir>/apps/admin-web/.open-next",
-      "<rootDir>/apps/admin-web/node_modules",
-      "<rootDir>/apps/wallet-web/.next",
-      "<rootDir>/apps/wallet-web/.open-next",
-      "<rootDir>/apps/wallet-web/node_modules"
+      "/apps/medusa/",
+      "/apps/admin-web/\\.next",
+      "/apps/admin-web/\\.open-next",
+      "/apps/admin-web/node_modules",
+      "/apps/wallet-web/\\.next",
+      "/apps/wallet-web/\\.open-next",
+      "/apps/wallet-web/node_modules"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
