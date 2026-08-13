@@ -36,6 +36,13 @@ function createFakePimDb(purchaseConstraintRows: unknown[] = []): FakePimDb {
   const db = jest.fn(async (strings: TemplateStringsArray) => {
     const sql = strings.join(' ');
 
+    // queryMasters 의 targetMasterIds 조건부 필터는 조회가 아니라 *SQL 조각*으로
+    // 들어온다 — targetMasterIds 가 없으면 빈 태그드 템플릿(pimDb``)이다.
+    // 아래 throw 는 남겨 둔다: 그게 다음번 쿼리 드리프트를 잡아주는 안전망이다.
+    if (sql.trim() === '' || sql.includes('AND pm.id = ANY')) {
+      return [];
+    }
+
     if (sql.includes('FROM product_masters pm')) {
       return masterRows;
     }
