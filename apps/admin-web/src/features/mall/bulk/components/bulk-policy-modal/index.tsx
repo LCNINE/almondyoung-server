@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { TriangleAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { useBulkUpdatePolicy } from '@/lib/services/products';
 import type { BulkUpdateFailureDto } from '@/lib/types/dto/products';
@@ -39,6 +41,13 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   selectedIds: string[];
   selectedItems: SelectedProductSnapshot[];
+  /**
+   * 선택이 지금 화면의 필터와 다른 조건에서 담긴 것이면 그 경고 문구.
+   * BulkActionModal 과 같은 이유로 여기서도 보여준다 — 아래 "현재: 켜짐 n · 꺼짐 n"
+   * 집계는 그 선택을 근거로 세므로, 선택 자체가 낡았다면 그 수도 낡았다.
+   * 막지는 않는다(경고만).
+   */
+  staleWarning?: string | null;
   onSuccess: () => void;
 }
 
@@ -71,6 +80,7 @@ export function BulkPolicyModal({
   onOpenChange,
   selectedIds,
   selectedItems,
+  staleWarning,
   onSuccess,
 }: Props) {
   const [choices, setChoices] = useState<PolicyChoices>(INITIAL);
@@ -136,6 +146,16 @@ export function BulkPolicyModal({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {staleWarning && (
+            <Alert variant="destructive" className="border-destructive">
+              <TriangleAlert />
+              <AlertTitle>필터가 바뀐 뒤에도 남은 선택입니다</AlertTitle>
+              <AlertDescription>
+                {staleWarning} 아래 건수를 꼭 확인하세요.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <p className="text-sm text-muted-foreground">
             선택된 <strong>{selectedIds.length}개</strong> 상품에 적용됩니다.
             변경할 항목만 체크하고 켜기/끄기를 선택하세요.
@@ -204,7 +224,8 @@ export function BulkPolicyModal({
           <Button
             onClick={handleConfirm}
             disabled={
-              bulkPolicy.isPending || !hasAnyChange(choices, shippingGroupChoice)
+              bulkPolicy.isPending ||
+              !hasAnyChange(choices, shippingGroupChoice)
             }
           >
             {bulkPolicy.isPending ? '처리 중...' : '확인'}

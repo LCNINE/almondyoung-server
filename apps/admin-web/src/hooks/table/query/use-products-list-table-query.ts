@@ -1,13 +1,18 @@
 import type { MastersQuery } from '@/lib/types/dto/products';
 import { useQueryParams } from '../../use-query-params';
 import { parseDateRangeParam } from './date-range-param';
+import {
+  parsePageSize,
+  DEFAULT_PAGE_SIZE,
+} from '@/features/mall/products-list/components/table/products-list-page-size-model';
 
 type UseProductsListTableQueryProps = {
+  /** URL 에 size 가 없을 때 쓰는 기본값. URL 값이 있으면 그게 이긴다. */
   pageSize?: number;
 };
 
 export const useProductsListTableQuery = ({
-  pageSize = 20,
+  pageSize: fallbackPageSize = DEFAULT_PAGE_SIZE,
 }: UseProductsListTableQueryProps = {}) => {
   const queryObject = useQueryParams([
     'page',
@@ -24,6 +29,7 @@ export const useProductsListTableQuery = ({
     'sort',
     'order',
     'stock',
+    'size',
   ]);
 
   const {
@@ -41,9 +47,12 @@ export const useProductsListTableQuery = ({
     sort,
     order,
     stock,
+    size,
   } = queryObject;
 
   const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
+
+  const pageSize = size ? parsePageSize(size) : fallbackPageSize;
 
   const searchParams: MastersQuery = {
     limit: pageSize,
@@ -89,5 +98,5 @@ export const useProductsListTableQuery = ({
         : undefined,
   };
 
-  return { searchParams, raw: queryObject };
+  return { searchParams, pageSize, raw: queryObject };
 };

@@ -6,6 +6,7 @@ import type {
   CreateMasterDto,
   CreateMasterResponseDto,
   MasterDto,
+  MasterSelectionResponseDto,
   MasterSummaryListResponseDto,
   MastersQuery,
   MastersResponseDto,
@@ -65,6 +66,20 @@ export const mastersClient = {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/masters?${buildQueryString(
         query as Record<string, unknown>
+      )}`
+    );
+    return response.data;
+  },
+
+  /**
+   * 필터에 걸린 상품 전량의 id + 정책 플래그.
+   * page/limit 은 서버가 무시하므로 보내지 않는다.
+   */
+  getSelection: async (query: MastersQuery = {}): Promise<MasterSelectionResponseDto> => {
+    const { page: _page, limit: _limit, ...filters } = query;
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/selection?${buildQueryString(
+        filters as Record<string, unknown>
       )}`
     );
     return response.data;

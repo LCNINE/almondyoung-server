@@ -48,6 +48,7 @@ import {
 } from '../../../schema/catalog.schema';
 import { eq, and, or, ilike, count, asc, desc, gte, lte, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { keywordMatch } from '../../../common/keyword-match';
+import { MAX_BULK_PRODUCTS } from '../../../operations/bulk/dto/bulk-operations.dto';
 import { ProductVersionsService } from './product-versions.service';
 import { resolveMasterSort } from './product-masters-sort.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
@@ -100,6 +101,37 @@ type MasterListMode =
   | 'active' // active 버전만
   | 'active-or-inactive' // active 우선, 없으면 최신 inactive
   | 'all'; // active 우선 → 최신 inactive → 최신 draft (draft만 있는 신규 상품 포함)
+
+export type MasterListFilters = {
+  mode?: MasterListMode;
+  categoryId?: string;
+  brand?: string;
+  name?: string;
+  page?: number;
+  limit?: number;
+  deleted?: boolean;
+  ids?: string[];
+  status?: 'active' | 'inactive' | 'draft';
+  productType?: 'regular_sale' | 'limited_edition';
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  createdBy?: string;
+  supplierId?: string | string[];
+  createdFrom?: string;
+  createdTo?: string;
+  sort?: 'createdAt' | 'name' | 'updatedAt';
+  order?: 'asc' | 'desc';
+  // 품절 상태 필터. soldOutState 는 후처리 계산이라 SQL 페이징과 함께 걸 수 없어
+  // 별도 경로로 처리한다. all=필터 없음.
+  stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
+};
+
+/** 필터에 걸린 상품 1건. 목록의 집계는 없고, 일괄 작업에 필요한 id + 정책 플래그만 담는다. */
+export type MasterSelectionItem = {
+  masterId: string;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
+};
 
 @Injectable()
 export class ProductMastersService {
@@ -304,28 +336,7 @@ export class ProductMastersService {
   }
 
   async getMasters(
-    filters?: {
-      mode?: MasterListMode;
-      categoryId?: string;
-      brand?: string;
-      name?: string;
-      page?: number;
-      limit?: number;
-      deleted?: boolean;
-      ids?: string[];
-      status?: 'active' | 'inactive' | 'draft';
-      productType?: 'regular_sale' | 'limited_edition';
-      approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
-      createdBy?: string;
-      supplierId?: string | string[];
-      createdFrom?: string;
-      createdTo?: string;
-      sort?: 'createdAt' | 'name' | 'updatedAt';
-      order?: 'asc' | 'desc';
-      // 품절 상태 필터. soldOutState 는 후처리 계산이라 SQL 페이징과 함께 걸 수 없어
-      // 별도 경로로 처리한다(아래 stockFilter 블록). all=필터 없음.
-      stock?: 'all' | 'in_stock' | 'partial' | 'sold_out';
-    },
+    filters?: MasterListFilters,
     tx?: DbTransaction,
   ): Promise<{
     data: {
@@ -350,156 +361,10 @@ export class ProductMastersService {
       const limit = returnAll ? 99999 : Math.min(filters?.limit ?? 15, 100);
       const offset = (page - 1) * limit;
 
-      const mode = filters?.mode ?? 'active';
-      const deleted = filters?.deleted ?? false;
-      const stockFilter = filters?.stock && filters.stock !== 'all' ? filters.stock : undefined;
-
-      // ===== 모드별 버전 선택 서브쿼리 =====
-      // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
-      // - active-or-inactive: master당 active 우선 → 최신 inactive 1개를 ROW_NUMBER로 선택.
-      // - all: active 우선 → 최신 inactive → 최신 draft. draft만 있는 신규 상품도 목록에 나온다.
-      const rankedVersionStatuses: ('active' | 'inactive' | 'draft')[] =
-        mode === 'all' ? ['active', 'inactive', 'draft'] : ['active', 'inactive'];
-      const rankedVersionsSubquery =
-        mode === 'active'
-          ? null
-          : trx
-              .select({
-                masterId: productMasterVersions.masterId,
-                versionId: productMasterVersions.id,
-                status: productMasterVersions.status,
-                createdAt: productMasterVersions.createdAt,
-                rn: sql<number>`
-                  ROW_NUMBER() OVER (
-                    PARTITION BY ${productMasterVersions.masterId}
-                    ORDER BY
-                      CASE
-                        WHEN ${productMasterVersions.status} = 'active' THEN 0
-                        WHEN ${productMasterVersions.status} = 'inactive' THEN 1
-                        ELSE 2
-                      END,
-                      ${productMasterVersions.createdAt} DESC
-                  )
-                `.as('rn'),
-              })
-              .from(productMasterVersions)
-              .where(
-                and(
-                  inArray(productMasterVersions.status, rankedVersionStatuses),
-                  isNull(productMasterVersions.deletedAt),
-                ),
-              )
-              .as('ranked_versions');
-
-      // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 (Recursive CTE) =====
-      let categoryIds: string[] | undefined;
-
-      if (filters?.categoryId) {
-        // Recursive CTE로 카테고리 트리 조회
-        const categoryTreeResult = await trx.execute<{ id: string }>(sql`
-          WITH RECURSIVE category_tree AS (
-            -- Base: 선택된 카테고리
-            SELECT id
-            FROM ${productCategories}
-            WHERE id = ${filters.categoryId}
-
-            UNION ALL
-
-            -- Recursive: 자식 카테고리들
-            SELECT pc.id
-            FROM ${productCategories} pc
-            INNER JOIN category_tree ct ON pc.parent_id = ct.id
-          )
-          SELECT id FROM category_tree
-        `);
-
-        categoryIds = categoryTreeResult.map((row) => row.id);
-      }
-
-      // ===== 공통 where 조건 빌드 =====
-      const whereConditions: any[] = [];
-
-      // soft delete 필터
-      if (!deleted) {
-        whereConditions.push(isNull(productMasters.deletedAt));
-      }
-
-      // brand 필터
-      if (filters?.brand) {
-        whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
-      }
-
-      // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
-      if (filters?.name) {
-        const match = keywordMatch(filters.name, [productMasterVersions.name, productMasterVersions.productCode]);
-        if (match) whereConditions.push(match);
-      }
-
-      // ids 필터 (배치 조회용)
-      if (filters?.ids && filters.ids.length > 0) {
-        whereConditions.push(inArray(productMasters.id, filters.ids));
-      }
-
-      // 상품 유형 필터
-      if (filters?.productType) {
-        whereConditions.push(eq(productMasterVersions.productType, filters.productType));
-      }
-
-      if (filters?.status) {
-        whereConditions.push(eq(productMasterVersions.status, filters.status));
-      }
-
-      // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
-      // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
-      // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
-      if (filters?.approvalStatus) {
-        whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
-      }
-
-      // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
-      if (filters?.createdBy) {
-        whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
-      }
-
-      // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
-      // 'unassigned' 는 공급처 미지정(IS NULL) 을 뜻한다. UUID 와 섞어 보낼 수 있다.
-      const supplierIds = typeof filters?.supplierId === 'string' ? [filters.supplierId] : (filters?.supplierId ?? []);
-      if (supplierIds.length > 0) {
-        const includeUnassigned = supplierIds.includes(UNASSIGNED_SUPPLIER);
-        const concreteIds = supplierIds.filter((id) => id !== UNASSIGNED_SUPPLIER);
-        const supplierConditions = [
-          ...(concreteIds.length > 0 ? [inArray(productMasterVersions.supplierId, concreteIds)] : []),
-          ...(includeUnassigned ? [isNull(productMasterVersions.supplierId)] : []),
-        ];
-        // or() 는 인자가 1개면 그대로 통과하므로 단일 조건도 안전하다.
-        whereConditions.push(supplierConditions.length === 1 ? supplierConditions[0] : or(...supplierConditions));
-      }
-
-      // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준
-      if (filters?.createdFrom) {
-        whereConditions.push(gte(productMasters.createdAt, new Date(filters.createdFrom)));
-      }
-      if (filters?.createdTo) {
-        whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
-      }
-
-      // 품절 필터는 읽기모델(product_sellable_quantity_projections)을 SQL 조건으로 사용한다.
-      // 이전처럼 전체 상품을 앱 메모리로 가져와 실시간 계산한 뒤 slice 하면 상품 수에 비례해 느려지고
-      // DB count/limit/offset도 무력화된다.
-      if (stockFilter) {
-        whereConditions.push(this.buildStockFilterCondition(stockFilter));
-      }
-
-      // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
-      if (mode === 'active') {
-        whereConditions.push(eq(productMasterVersions.status, 'active'));
-        whereConditions.push(isNull(productMasterVersions.deletedAt));
-      } else {
-        whereConditions.push(eq(rankedVersionsSubquery!.rn, 1));
-      }
-
-      // ===== 최종 where 절 빌드 =====
-      const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+      const { mode, rankedVersionsSubquery, categoryIds, whereClause } = await this.buildMasterListScope(
+        trx,
+        filters ?? {},
+      );
 
       // ===== COUNT 쿼리 =====
       // Drizzle 빌더는 mutable이므로 count/data를 별개 인스턴스로 만든다.
@@ -651,6 +516,257 @@ export class ProductMastersService {
         limit,
       };
     }, tx);
+  }
+
+  /**
+   * 필터에 걸린 상품 전량의 id + 정책 플래그. 목록의 집계(미리보기·가격·품절)는 전부 건너뛴다.
+   *
+   * 정책 플래그를 함께 싣는 이유: 화면의 일괄 정책 변경 모달이 선택 항목의 플래그를 세어
+   * "몇 건이 바뀝니다"를 보여준다. id 만 주면 그 수가 전부 false 로 잡혀 틀린 수를 보고한다.
+   * 세 플래그는 이미 조인된 product_master_versions 의 컬럼이라 쿼리가 늘지 않는다.
+   *
+   * page/limit 은 무시한다 — 다만 **상한+1 행에서 끊는다**(아래 SELECTION_ROW_LIMIT).
+   * 상한 초과를 알아채는 데 필요한 만큼만 읽고 그 이상은 메모리에 올리지 않기 위해서다.
+   * 그래서 초과 상황의 total 은 "정확한 전체 건수"가 아니라 "상한+1"이다 — 호출부는
+   * 그 수를 표시용으로 쓰지 말고 상한 초과 판정에만 써야 한다(컨트롤러가 400 으로 끊는다).
+   */
+  async getMasterSelection(
+    filters: MasterListFilters,
+    tx?: DbTransaction,
+  ): Promise<{ items: MasterSelectionItem[]; total: number }> {
+    return this.db.run(async (trx) => {
+      const { mode, rankedVersionsSubquery, categoryIds, whereClause } = await this.buildMasterListScope(trx, filters);
+
+      const projection = {
+        masterId: productMasters.id,
+        hideMembershipPriceForNonMembers: productMasterVersions.hideMembershipPriceForNonMembers,
+        isVisibleToMembersOnly: productMasterVersions.isVisibleToMembersOnly,
+        isOverseas: productMasterVersions.isOverseas,
+      };
+
+      // COUNT/DATA 쿼리와 같은 형태의 세 번째 형제. Drizzle 빌더는 mutable 이라
+      // 조인 체인은 여기서 새로 짓는다.
+      //
+      // DISTINCT ON (product_masters.id): 아래 LIMIT 이 **마스터 수**를 세게 만드는 장치다.
+      // 카테고리 이너 조인은 같은 마스터 행을 여러 벌 만들 수 있어(팬아웃), 원시 행에
+      // LIMIT 을 걸면 5001행이 마스터 2600개로 줄어드는 일이 생긴다 — 상한을 넘겼는데도
+      // 안 넘긴 것처럼 보이고 선택은 조용히 잘린다. DISTINCT ON 을 먼저 걸면 LIMIT 이
+      // 세는 단위가 마스터가 된다. (투영 컬럼은 전부 마스터/버전 쪽이라 팬아웃으로 생긴
+      // 중복 행은 값이 완전히 같고, 어느 행이 남든 결과가 같다.)
+      const baseQuery =
+        mode === 'active'
+          ? trx
+              .selectDistinctOn([productMasters.id], projection)
+              .from(productMasters)
+              .innerJoin(productMasterVersions, eq(productMasters.id, productMasterVersions.masterId))
+          : trx
+              .selectDistinctOn([productMasters.id], projection)
+              .from(productMasters)
+              .innerJoin(rankedVersionsSubquery!, eq(productMasters.id, rankedVersionsSubquery!.masterId))
+              .innerJoin(productMasterVersions, eq(rankedVersionsSubquery!.versionId, productMasterVersions.id));
+
+      const withCategory =
+        categoryIds && categoryIds.length > 0
+          ? baseQuery.innerJoin(
+              productMasterCategories,
+              and(
+                eq(productMasterCategories.masterId, productMasters.id),
+                eq(productMasterCategories.versionId, productMasterVersions.id),
+                inArray(productMasterCategories.categoryId, categoryIds),
+              ),
+            )
+          : baseQuery;
+
+      // 상한을 넘겼다는 걸 알아채는 데 필요한 최소 행수. 넘겼으면 컨트롤러가 400 으로
+      // 끊으므로 그 이상은 읽어봐야 버려진다 — 상한 초과 호출이 전량을 메모리에 올리지
+      // 않게 하는 게 이 LIMIT 의 전부다.
+      const limited = (whereClause ? withCategory.where(whereClause) : withCategory).limit(MAX_BULK_PRODUCTS + 1);
+      const rows = await limited;
+
+      // 한 버전이 categoryIds 안의 카테고리 여러 개에 매핑돼 있으면 위 이너 조인이 같은
+      // 마스터 행을 여러 벌 만든다(팬아웃). 목록(getMasters)의 COUNT/DATA 도 같은 이유로
+      // 부풀지만 그건 물려받은 동작이라 여기서 고치지 않는다 — 반면 **선택 결과는
+      // 벌크 액션의 대상 목록이자 5000건 상한의 판정 근거**라서, 상한은 distinct 마스터
+      // 수로 세야 맞다. 중복이 섞이면 실제 4000개인 선택이 상한에 걸려 거부된다.
+      // 위 DISTINCT ON 이 이미 마스터당 한 행을 보장하지만, 이 루프는 그 보장이 깨진
+      // 데이터(한 마스터에 active 버전이 둘 이상)에서도 결과가 성립하게 남겨 둔다.
+      // 첫 등장 순서는 유지한다.
+      const seen = new Set<string>();
+      const items: MasterSelectionItem[] = [];
+      for (const row of rows) {
+        if (seen.has(row.masterId)) continue;
+        seen.add(row.masterId);
+        items.push(row);
+      }
+
+      // total 을 별도 COUNT 쿼리로 다시 세지 않는다 — 상한 이하면 전량을 손에 쥐고 있어
+      // items.length 가 정의상 같은 값이고(중복 제거 **후**의 수), 쿼리가 하나 줄어든다.
+      // 상한을 넘었으면 items.length 는 MAX_BULK_PRODUCTS + 1 에서 멈추는데, 그 값이면
+      // 컨트롤러의 `total > MAX_BULK_PRODUCTS` 가 그대로 걸린다.
+      return { items, total: items.length };
+    }, tx);
+  }
+
+  /**
+   * 목록 조회와 선택 조회가 공유하는 "어떤 상품이 걸리는가" 스코프.
+   *
+   * 두 경로가 같은 필터를 보게 만드는 게 이 메서드의 존재 이유다 — 갈라지면
+   * 화면에 안 보이는 상품이 일괄 수정 대상에 섞인다.
+   * 등가성은 product-masters-selection.integration.spec.ts 가 지킨다.
+   */
+  private async buildMasterListScope(trx: DbTransaction, filters: MasterListFilters) {
+    const mode = filters.mode ?? 'active';
+    const deleted = filters.deleted ?? false;
+    const stockFilter = filters.stock && filters.stock !== 'all' ? filters.stock : undefined;
+
+    // ===== 모드별 버전 선택 서브쿼리 =====
+    // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
+    // - active-or-inactive: master당 active 우선 → 최신 inactive 1개를 ROW_NUMBER로 선택.
+    // - all: active 우선 → 최신 inactive → 최신 draft. draft만 있는 신규 상품도 목록에 나온다.
+    const rankedVersionStatuses: ('active' | 'inactive' | 'draft')[] =
+      mode === 'all' ? ['active', 'inactive', 'draft'] : ['active', 'inactive'];
+    const rankedVersionsSubquery =
+      mode === 'active'
+        ? null
+        : trx
+            .select({
+              masterId: productMasterVersions.masterId,
+              versionId: productMasterVersions.id,
+              status: productMasterVersions.status,
+              createdAt: productMasterVersions.createdAt,
+              rn: sql<number>`
+                  ROW_NUMBER() OVER (
+                    PARTITION BY ${productMasterVersions.masterId}
+                    ORDER BY
+                      CASE
+                        WHEN ${productMasterVersions.status} = 'active' THEN 0
+                        WHEN ${productMasterVersions.status} = 'inactive' THEN 1
+                        ELSE 2
+                      END,
+                      ${productMasterVersions.createdAt} DESC
+                  )
+                `.as('rn'),
+            })
+            .from(productMasterVersions)
+            .where(
+              and(
+                inArray(productMasterVersions.status, rankedVersionStatuses),
+                isNull(productMasterVersions.deletedAt),
+              ),
+            )
+            .as('ranked_versions');
+
+    // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 (Recursive CTE) =====
+    let categoryIds: string[] | undefined;
+
+    if (filters.categoryId) {
+      // Recursive CTE로 카테고리 트리 조회
+      const categoryTreeResult = await trx.execute<{ id: string }>(sql`
+          WITH RECURSIVE category_tree AS (
+            -- Base: 선택된 카테고리
+            SELECT id
+            FROM ${productCategories}
+            WHERE id = ${filters.categoryId}
+
+            UNION ALL
+
+            -- Recursive: 자식 카테고리들
+            SELECT pc.id
+            FROM ${productCategories} pc
+            INNER JOIN category_tree ct ON pc.parent_id = ct.id
+          )
+          SELECT id FROM category_tree
+        `);
+
+      categoryIds = categoryTreeResult.map((row) => row.id);
+    }
+
+    // ===== 공통 where 조건 빌드 =====
+    const whereConditions: any[] = [];
+
+    // soft delete 필터
+    if (!deleted) {
+      whereConditions.push(isNull(productMasters.deletedAt));
+    }
+
+    // brand 필터
+    if (filters.brand) {
+      whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
+    }
+
+    // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자·공백 무시, 토큰 AND)
+    if (filters.name) {
+      const match = keywordMatch(filters.name, [productMasterVersions.name, productMasterVersions.productCode]);
+      if (match) whereConditions.push(match);
+    }
+
+    // ids 필터 (배치 조회용)
+    if (filters.ids && filters.ids.length > 0) {
+      whereConditions.push(inArray(productMasters.id, filters.ids));
+    }
+
+    // 상품 유형 필터
+    if (filters.productType) {
+      whereConditions.push(eq(productMasterVersions.productType, filters.productType));
+    }
+
+    if (filters.status) {
+      whereConditions.push(eq(productMasterVersions.status, filters.status));
+    }
+
+    // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
+    // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
+    // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
+    if (filters.approvalStatus) {
+      whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+    }
+
+    // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.
+    if (filters.createdBy) {
+      whereConditions.push(eq(productMasters.createdBy, filters.createdBy));
+    }
+
+    // 공급처는 다중 선택 가능 — 콤마 목록으로 들어오면 OR 로 묶는다.
+    // 'unassigned' 는 공급처 미지정(IS NULL) 을 뜻한다. UUID 와 섞어 보낼 수 있다.
+    const supplierIds = typeof filters.supplierId === 'string' ? [filters.supplierId] : (filters.supplierId ?? []);
+    if (supplierIds.length > 0) {
+      const includeUnassigned = supplierIds.includes(UNASSIGNED_SUPPLIER);
+      const concreteIds = supplierIds.filter((id) => id !== UNASSIGNED_SUPPLIER);
+      const supplierConditions = [
+        ...(concreteIds.length > 0 ? [inArray(productMasterVersions.supplierId, concreteIds)] : []),
+        ...(includeUnassigned ? [isNull(productMasterVersions.supplierId)] : []),
+      ];
+      // or() 는 인자가 1개면 그대로 통과하므로 단일 조건도 안전하다.
+      whereConditions.push(supplierConditions.length === 1 ? supplierConditions[0] : or(...supplierConditions));
+    }
+
+    // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준
+    if (filters.createdFrom) {
+      whereConditions.push(gte(productMasters.createdAt, new Date(filters.createdFrom)));
+    }
+    if (filters.createdTo) {
+      whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
+    }
+
+    // 품절 필터는 읽기모델(product_sellable_quantity_projections)을 SQL 조건으로 사용한다.
+    // 이전처럼 전체 상품을 앱 메모리로 가져와 실시간 계산한 뒤 slice 하면 상품 수에 비례해 느려지고
+    // DB count/limit/offset도 무력화된다.
+    if (stockFilter) {
+      whereConditions.push(this.buildStockFilterCondition(stockFilter));
+    }
+
+    // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
+    if (mode === 'active') {
+      whereConditions.push(eq(productMasterVersions.status, 'active'));
+      whereConditions.push(isNull(productMasterVersions.deletedAt));
+    } else {
+      whereConditions.push(eq(rankedVersionsSubquery!.rn, 1));
+    }
+
+    // ===== 최종 where 절 빌드 =====
+    const whereClause = whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+    return { mode, rankedVersionsSubquery, categoryIds, whereClause };
   }
 
   /** 이름은 수동 지정값 우선, 없으면 옵션값 표시명을 옵션그룹 순서대로 잇는다(상세 화면과 같은 규칙). */

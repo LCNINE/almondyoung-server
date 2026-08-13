@@ -15,12 +15,16 @@ const PAGE_SIZE = 20;
 export function BulkTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
 
-  const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
+  // 훅은 URL 의 size 를 우선한다 — fetch 하는 수(limit)와 그리는 수(페이지네이션/스켈레톤)가
+  // 갈리지 않도록 지역 상수 대신 훅이 정한 pageSize 를 그대로 쓴다.
+  const { searchParams: query, pageSize } = useProductsListTableQuery({
+    pageSize: PAGE_SIZE,
+  });
   const { data, isLoading, isFetching } = useMastersSummary(query);
   const columns = useProductsListTableColumns({
     totalCount: data?.total ?? 0,
     pageIndex: (query.page ?? 1) - 1,
-    pageSize: PAGE_SIZE,
+    pageSize,
   });
   const filters = useProductsListTableFilters();
 
@@ -28,7 +32,7 @@ export function BulkTable() {
     data: data?.data ?? [],
     columns,
     count: data?.total,
-    pageSize: PAGE_SIZE,
+    pageSize,
     getRowId: (row) => row.masterId,
     enableRowSelection: true,
   });
@@ -48,19 +52,39 @@ export function BulkTable() {
           <span className="text-sm text-muted-foreground">
             {selectedIds.length}개 선택됨
           </span>
-          <Button size="sm" variant="outline" onClick={() => setModalAction('status')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('status')}
+          >
             상태 변경
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setModalAction('approvalStatus')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('approvalStatus')}
+          >
             승인 상태 변경
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setModalAction('price')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('price')}
+          >
             가격 변경
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setModalAction('brand')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('brand')}
+          >
             브랜드 변경
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setModalAction('restore')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('restore')}
+          >
             복원
           </Button>
           <Button
@@ -85,7 +109,7 @@ export function BulkTable() {
         isLoading={isLoading}
         isFetching={isFetching}
         count={data?.total ?? 0}
-        pageSize={PAGE_SIZE}
+        pageSize={pageSize}
         filters={filters}
         search
         noRecords={{ message: '상품 데이터가 없습니다.' }}

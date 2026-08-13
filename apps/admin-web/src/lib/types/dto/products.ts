@@ -162,6 +162,19 @@ export interface MastersResponseDto {
   hasPrev: boolean;
 }
 
+/** GET /masters/selection — 필터에 걸린 상품 전량. 이름·썸네일은 없다. */
+export interface MasterSelectionItemDto {
+  masterId: string;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
+}
+
+export interface MasterSelectionResponseDto {
+  items: MasterSelectionItemDto[];
+  total: number;
+}
+
 // ===== 마스터 목록 요약 응답 (GET /masters - ProductSummaryDto) =====
 // 백엔드 ProductSummaryDto 와 1:1 대응. 목록 API 가 실제로 반환하는 모양이다.
 

@@ -34,6 +34,7 @@ import {
   UNASSIGNED_SUPPLIER,
   type Classification,
 } from './products-list-filter-model';
+import { buildSearchParams } from './products-list-search-params';
 
 const ALL = 'all';
 
@@ -74,6 +75,7 @@ type FilterState = {
   createdBy: string;
   classification: Classification;
   q: string;
+  brand: string;
 };
 
 export function ProductsListFilterBox() {
@@ -123,7 +125,9 @@ export function ProductsListFilterBox() {
   );
 
   const [filters, setFilters] = useState<FilterState>(() => {
-    const range = parseDateRangeParam(searchParams.get('createdAt') ?? undefined);
+    const range = parseDateRangeParam(
+      searchParams.get('createdAt') ?? undefined
+    );
     return {
       datePreset: (searchParams.get('datePreset') as DatePreset) ?? 'all',
       dateFrom: range.from ?? '',
@@ -137,6 +141,7 @@ export function ProductsListFilterBox() {
         searchParams.get('stock')
       ),
       q: searchParams.get('q') ?? '',
+      brand: searchParams.get('brand') ?? '',
     };
   });
 
@@ -144,19 +149,6 @@ export function ProductsListFilterBox() {
     setFilters((prev) => ({ ...prev, ...next }));
 
   const handleSearch = () => {
-    const params = new URLSearchParams();
-    params.set('page', '1');
-
-    if (filters.q.trim()) params.set('q', filters.q.trim());
-    if (filters.categoryId !== ALL) params.set('categoryId', filters.categoryId);
-    if (filters.supplierIds.length > 0)
-      params.set('supplierId', filters.supplierIds.join(','));
-    if (filters.createdBy !== ALL) params.set('createdBy', filters.createdBy);
-
-    const { status, stock } = classificationToParams(filters.classification);
-    if (status) params.set('status', status);
-    if (stock) params.set('stock', stock);
-
     let from = filters.dateFrom;
     let to = filters.dateTo;
     if (filters.datePreset !== 'all' && filters.datePreset !== 'custom') {
@@ -166,22 +158,33 @@ export function ProductsListFilterBox() {
         to = range.to;
       }
     }
-    if (from || to) {
-      params.set(
-        'createdAt',
-        JSON.stringify({
-          ...(from ? { $gte: from } : {}),
-          ...(to ? { $lte: to } : {}),
-        })
-      );
-    }
-    if (filters.datePreset !== 'all') params.set('datePreset', filters.datePreset);
 
-    // 정렬은 필터와 독립이므로 검색해도 유지한다.
-    const sort = searchParams.get('sort');
-    const order = searchParams.get('order');
-    if (sort) params.set('sort', sort);
-    if (order) params.set('order', order);
+    const { status, stock } = classificationToParams(filters.classification);
+
+    const params = buildSearchParams(
+      {
+        q: filters.q,
+        brand: filters.brand,
+        categoryId: filters.categoryId === ALL ? '' : filters.categoryId,
+        supplierIds: filters.supplierIds,
+        createdBy: filters.createdBy === ALL ? '' : filters.createdBy,
+        status,
+        stock,
+        createdAt:
+          from || to
+            ? JSON.stringify({
+                ...(from ? { $gte: from } : {}),
+                ...(to ? { $lte: to } : {}),
+              })
+            : undefined,
+        datePreset: filters.datePreset,
+      },
+      {
+        size: searchParams.get('size'),
+        sort: searchParams.get('sort'),
+        order: searchParams.get('order'),
+      }
+    );
 
     router.replace(`${pathname}?${params.toString()}`);
   };
@@ -196,8 +199,15 @@ export function ProductsListFilterBox() {
       createdBy: ALL,
       classification: 'all',
       q: '',
+      brand: '',
     });
-    router.replace(pathname);
+    // 값을 문자열로 이어붙이면 URL 에서 읽은 size 안의 '&' 가 그대로 살아나
+    // 초기화로 지웠어야 할 파라미터가 되돌아온다. URLSearchParams 가 인코딩하게 둔다.
+    const params = new URLSearchParams();
+    const size = searchParams.get('size');
+    if (size) params.set('size', size);
+    const query = params.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname);
   };
 
   return (
@@ -274,7 +284,9 @@ export function ProductsListFilterBox() {
           <FilterChip
             key={option.value}
             active={filters.supplierIds.includes(option.value)}
-            onClick={() => patch({ supplierIds: toggle(filters.supplierIds, option.value) })}
+            onClick={() =>
+              patch({ supplierIds: toggle(filters.supplierIds, option.value) })
+            }
           >
             {option.label}
           </FilterChip>
@@ -300,6 +312,16 @@ export function ProductsListFilterBox() {
             placeholder="상품명 / 품번코드 검색"
             value={filters.q}
             onChange={(e) => patch({ q: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+          />
+        </div>
+        {/* 서버가 부분 일치(ilike)로 받는다 — '정관' 만 쳐도 '정관장' 이 걸린다. */}
+        <div className="w-56">
+          <FormInput
+            className="bg-white"
+            placeholder="브랜드"
+            value={filters.brand}
+            onChange={(e) => patch({ brand: e.target.value })}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           />
         </div>

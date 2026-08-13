@@ -47,6 +47,7 @@ import type {
   BulkDeleteDto,
   BulkRestoreDto,
   BulkUpdatePolicyDto,
+  MastersQuery,
 } from '@/lib/types/dto/products';
 import type {
   BulkUpdateProductVariantDto,
@@ -1118,5 +1119,15 @@ export const useDeleteSitePopup = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.sitePopups });
     },
+  });
+};
+
+/**
+ * 필터 결과 전체 선택. 버튼을 누른 순간에만 도는 일회성 조회라 useQuery 가 아니라
+ * useMutation 이다 — useQuery 로 두면 필터가 바뀔 때마다 최대 5000건을 미리 당겨온다.
+ */
+export const useMasterSelection = () => {
+  return useMutation({
+    mutationFn: (query: MastersQuery) => products.masters.getSelection(query),
   });
 };

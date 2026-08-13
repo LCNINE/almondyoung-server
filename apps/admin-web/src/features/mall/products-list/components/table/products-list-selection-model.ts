@@ -1,4 +1,12 @@
 import type { RowSelectionState } from '@tanstack/react-table';
+import type { MasterSelectionItemDto } from '@/lib/types/dto/products';
+
+/**
+ * 선택 목록을 그리는 모든 곳(선택 목록 모달, 일괄 액션 확인 모달)이 공유하는 렌더 상한.
+ * 두 목록 다 가상화가 없고 항목마다 노드를 만든다 — 전체 선택으로 5000건이 들어오면
+ * 상한 없이는 탭이 멎는다. 넘는 만큼은 건수로만 알린다.
+ */
+export const SELECTION_PREVIEW_LIMIT = 200;
 
 export type SelectedProductSnapshot = {
   masterId: string;
@@ -11,14 +19,14 @@ export type SelectedProductSnapshot = {
 
 /** 유지되는 선택 상태(rowSelection)에서 선택된 masterId 만 뽑는다. */
 export function selectedIdsFromRowSelection(
-  rowSelection: RowSelectionState,
+  rowSelection: RowSelectionState
 ): string[] {
   return Object.keys(rowSelection).filter((id) => rowSelection[id]);
 }
 
 function snapshotsEqual(
   a: SelectedProductSnapshot,
-  b: SelectedProductSnapshot,
+  b: SelectedProductSnapshot
 ): boolean {
   return (
     a.masterId === b.masterId &&
@@ -32,7 +40,7 @@ function snapshotsEqual(
 
 function snapshotMapsEqual(
   a: Record<string, SelectedProductSnapshot>,
-  b: Record<string, SelectedProductSnapshot>,
+  b: Record<string, SelectedProductSnapshot>
 ): boolean {
   const aKeys = Object.keys(a);
   if (aKeys.length !== Object.keys(b).length) return false;
@@ -49,14 +57,13 @@ function snapshotMapsEqual(
 export function reconcileSelectedSnapshots(
   prev: Record<string, SelectedProductSnapshot>,
   rowSelection: RowSelectionState,
-  currentRows: SelectedProductSnapshot[],
+  currentRows: SelectedProductSnapshot[]
 ): { changed: boolean; next: Record<string, SelectedProductSnapshot> } {
   const byId = new Map(currentRows.map((r) => [r.masterId, r]));
   const next: Record<string, SelectedProductSnapshot> = {};
 
   for (const id of selectedIdsFromRowSelection(rowSelection)) {
-    next[id] =
-      byId.get(id) ??
+    next[id] = byId.get(id) ??
       prev[id] ?? {
         masterId: id,
         name: id,
@@ -68,4 +75,32 @@ export function reconcileSelectedSnapshots(
   }
 
   return { changed: !snapshotMapsEqual(prev, next), next };
+}
+
+/**
+ * 전체 선택 응답을 테이블 선택 상태 + 스냅샷으로 바꾼다.
+ *
+ * 이름·썸네일이 비어 있는 건 의도다 — 서버가 주지 않고, 그래야 선택 목록 모달이
+ * 5000행을 이미지째 그리려 들지 않는다. 정책 플래그는 실제 값이라야 한다.
+ */
+export function selectionFromItems(items: MasterSelectionItemDto[]): {
+  rowSelection: RowSelectionState;
+  snapshots: Record<string, SelectedProductSnapshot>;
+} {
+  const rowSelection: RowSelectionState = {};
+  const snapshots: Record<string, SelectedProductSnapshot> = {};
+
+  for (const item of items) {
+    rowSelection[item.masterId] = true;
+    snapshots[item.masterId] = {
+      masterId: item.masterId,
+      name: '',
+      thumbnail: null,
+      hideMembershipPriceForNonMembers: item.hideMembershipPriceForNonMembers,
+      isVisibleToMembersOnly: item.isVisibleToMembersOnly,
+      isOverseas: item.isOverseas,
+    };
+  }
+
+  return { rowSelection, snapshots };
 }

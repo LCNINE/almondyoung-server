@@ -12,6 +12,7 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { Public, User } from '@app/authorization';
+import { BadRequestError } from '@app/shared';
 import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
@@ -28,6 +29,8 @@ import { PaginatedResponseDto } from '../../../common/dto';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
 import { ProductMasterMapper } from '../mappers';
 import { ListProductMastersQueryDto } from '../dto/list-product-masters-query.dto';
+import { MasterSelectionResponseDto } from '../dto/master-selection-response.dto';
+import { MAX_BULK_PRODUCTS } from '../../../operations/bulk/dto/bulk-operations.dto';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -229,6 +232,48 @@ export class ProductMastersController {
       page: result.page,
       limit: result.limit,
     };
+  }
+
+  @Get('selection')
+  @ApiOperation({
+    summary: '필터 결과 전체 선택 목록',
+    description: `
+      GET /masters 와 **완전히 같은 필터**로, 걸린 상품 전량의 id 와 정책 플래그를 반환합니다.
+      page/limit 은 무시하고 언제나 전량을 줍니다.
+
+      일괄 수정 대상을 화면에서 한 번에 고르기 위한 용도이며, 결과가 ${MAX_BULK_PRODUCTS}건을
+      넘으면 400 입니다.
+    `,
+  })
+  @ApiResponse({ status: 200, description: '조회 성공', type: MasterSelectionResponseDto })
+  @ApiResponse({ status: 400, description: `결과가 ${MAX_BULK_PRODUCTS}건을 초과` })
+  async getMasterSelection(@Query() query: ListProductMastersQueryDto): Promise<MasterSelectionResponseDto> {
+    const keyword = (query.q ?? query.name)?.trim() || undefined;
+
+    const { items, total } = await this.productMastersService.getMasterSelection({
+      categoryId: query.categoryId,
+      brand: query.brand,
+      name: keyword,
+      mode:
+        query.mode ??
+        (query.status === 'inactive' ? 'active-or-inactive' : query.status === 'draft' ? 'all' : undefined),
+      status: query.status,
+      productType: query.productType,
+      approvalStatus: query.approvalStatus,
+      createdBy: query.createdBy,
+      supplierId: query.supplierId,
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
+      stock: query.stock,
+      deleted: query.deleted ?? false,
+      ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
+    });
+
+    if (total > MAX_BULK_PRODUCTS) {
+      throw new BadRequestError('선택 가능한 범위를 넘었습니다. 필터를 좁혀주세요.');
+    }
+
+    return { items, total };
   }
 
   @Get('deleted')

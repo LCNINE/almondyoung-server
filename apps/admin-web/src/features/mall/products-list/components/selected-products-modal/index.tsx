@@ -11,7 +11,10 @@ import { Button } from '@/components/ui/button';
 import { X, ImageOff } from 'lucide-react';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
-import type { SelectedProductSnapshot } from '../table/products-list-selection-model';
+import {
+  SELECTION_PREVIEW_LIMIT,
+  type SelectedProductSnapshot,
+} from '../table/products-list-selection-model';
 
 type Props = {
   items: SelectedProductSnapshot[];
@@ -26,6 +29,9 @@ export function SelectedProductsModal({
   onRemove,
   onClearAll,
 }: Props) {
+  const shown = items.slice(0, SELECTION_PREVIEW_LIMIT);
+  const hidden = items.length - shown.length;
+
   return (
     <Dialog>
       <DialogTrigger asChild>
@@ -39,10 +45,10 @@ export function SelectedProductsModal({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>선택한 상품 {items.length}개</DialogTitle>
+          <DialogTitle>선택한 상품 {count}개</DialogTitle>
         </DialogHeader>
         <ul className="space-y-1 overflow-y-auto max-h-[60vh]">
-          {items.map((item) => {
+          {shown.map((item) => {
             const src = resolvePublicFileUrl(item.thumbnail);
             return (
               <li
@@ -63,9 +69,11 @@ export function SelectedProductsModal({
                   )}
                 </div>
                 <div className="flex flex-col flex-1 min-w-0 gap-0.5">
-                  <span className="text-sm truncate" title={item.name}>
-                    {item.name}
-                  </span>
+                  {item.name && (
+                    <span className="text-sm truncate" title={item.name}>
+                      {item.name}
+                    </span>
+                  )}
                   <ShortId value={item.masterId} />
                 </div>
                 <Button
@@ -81,6 +89,11 @@ export function SelectedProductsModal({
             );
           })}
         </ul>
+        {hidden > 0 && (
+          <p className="pt-2 text-sm text-center text-muted-foreground">
+            이 외 {hidden.toLocaleString()}건은 목록에 표시하지 않습니다.
+          </p>
+        )}
         <div className="flex justify-end pt-2 border-t">
           <Button
             size="sm"
