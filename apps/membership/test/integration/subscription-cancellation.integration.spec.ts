@@ -568,7 +568,7 @@ describeIfDb('Subscription Cancellation Integration Tests', () => {
     it('✅ 첫 구독 시 무료 체험 적용 (7일)', async () => {
       const newUserId = 'trial-test-user-' + Date.now();
 
-      const result = await subscriptionService.createSubscription(newUserId, testPlanId);
+      const result = await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
 
       // 이벤트 확인
       const events = await contractEventManager.getContractEvents(result.contractId);
@@ -594,13 +594,13 @@ describeIfDb('Subscription Cancellation Integration Tests', () => {
       const newUserId = 'trial-test-user-' + Date.now();
 
       // 1. 첫 구독
-      await subscriptionService.createSubscription(newUserId, testPlanId);
+      await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
 
       // 2. 취소
       await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD', reasonText: '체험 후 결정' });
 
       // 3. 재구독
-      const secondResult = await subscriptionService.createSubscription(newUserId, testPlanId);
+      const secondResult = await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
 
       // 이벤트 확인
       const events = await contractEventManager.getContractEvents(secondResult.contractId);
@@ -626,15 +626,15 @@ describeIfDb('Subscription Cancellation Integration Tests', () => {
       const newUserId = 'trial-test-user-' + Date.now();
 
       // 1차: 구독 → 취소
-      await subscriptionService.createSubscription(newUserId, testPlanId);
+      await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
       await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
 
       // 2차: 재구독 → 취소
-      await subscriptionService.createSubscription(newUserId, testPlanId);
+      await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
       await cancellationService.cancelSubscription(newUserId, 'test@example.com', { reasonCode: 'TRIAL_PERIOD' });
 
       // 3차: 재구독
-      const thirdResult = await subscriptionService.createSubscription(newUserId, testPlanId);
+      const thirdResult = await subscriptionService.createSubscription(newUserId, testPlanId, 'test@example.com');
 
       const events = await contractEventManager.getContractEvents(thirdResult.contractId);
       const createdEvent = events.find((e) => e.eventType === 'CREATED');

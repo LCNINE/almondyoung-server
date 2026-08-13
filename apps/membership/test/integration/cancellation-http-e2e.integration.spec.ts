@@ -93,7 +93,8 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
     module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
-        DbModule.forRoot({ config: { connectionString: process.env.DATABASE_URL }, schema: membershipSchema }),
+        // DATABASE_URL 은 위 describeIfDb 가이드에서 이미 확인된다 — 타입만 좁힌다.
+        DbModule.forRoot({ config: { connectionString: process.env.DATABASE_URL ?? '' }, schema: membershipSchema }),
         // 앱과 동일한 스코프 선언 — 부팅 시 auth.scopes / auth.role_scope_mapping 이 정합화된다.
         AuthorizationModule.forRoot({
           microserviceName: 'membership',
@@ -207,7 +208,12 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
     await db.db.delete(schema.eventBatches);
   }
 
-  async function givenSubscription(params: { plan?: 'monthly' | 'annual'; daysSincePeriodStart: number }) {
+  async function givenSubscription(params: {
+    plan?: 'monthly' | 'annual';
+    daysSincePeriodStart: number;
+    /** false 면 이번 주기 결제 사실을 심지 않는다 (청약철회 7일 창 판정용). */
+    hasPayment?: boolean;
+  }) {
     const userId = `user_${Math.random().toString(36).slice(2, 10)}`;
     const isAnnual = params.plan === 'annual';
     const durationDays = isAnnual ? 365 : 30;

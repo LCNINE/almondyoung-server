@@ -25,6 +25,9 @@ describe('RefundPolicyService', () => {
       periodEndsAt: addDays(now, 29),
       pausedDaysAccrued: 0,
       hasPayment: true,
+      // 미수금 대기 여부. 계약상 필수인데 기본 픽스처가 안 채우고 있었다 —
+      // 청약철회 창 판정(274·284행)의 입력이라 기본값은 '아님'.
+      awaitingCollection: false,
       autoRefundSupported: true,
       requiresReceiveAccount: false,
       refundableAmount: null,
