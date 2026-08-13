@@ -1,3 +1,4 @@
+import { ProductReviewStatsChangedPayload } from '@packages/event-contracts/streams/ugc.stream';
 import { Test, TestingModule } from '@nestjs/testing';
 import { ReviewEventsConsumer } from './review-events.consumer';
 import { ProductIndexService } from './product-index.service';
@@ -13,15 +14,9 @@ function makeEnvelope(payload: object) {
   } as any;
 }
 
-function makePayload(overrides: Partial<{
-  productId: string;
-  reviewCount: number;
-  ratingSum: number;
-  averageRating: number;
-  bayesianReviewScore: number;
-  ratingDistribution: object;
-  changedAt: string;
-}> = {}) {
+// 계약(ugc.stream)을 그대로 쓴다. 로컬로 shape 을 다시 적으면
+// ratingDistribution: object 처럼 헐거워져 계약 변경을 못 잡는다.
+function makePayload(overrides: Partial<ProductReviewStatsChangedPayload> = {}): ProductReviewStatsChangedPayload {
   return {
     productId: PRODUCT_ID,
     reviewCount: 10,

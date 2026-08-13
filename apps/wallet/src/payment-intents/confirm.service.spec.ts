@@ -132,7 +132,7 @@ describe('ConfirmService', () => {
       stalePointsCharge: null,
     });
 
-    await service.confirm('intent-1', { paymentMethodId: null, pointsToApply: undefined }, 'corr-1');
+    await service.confirm('intent-1', { paymentMethodId: undefined, pointsToApply: undefined }, 'corr-1');
 
     expect(chargesService.create).not.toHaveBeenCalled();
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
@@ -168,7 +168,7 @@ describe('ConfirmService', () => {
     });
 
     await expect(
-      service.confirm('intent-1', { paymentMethodId: null, pointsToApply: 1000 }, 'corr-1'),
+      service.confirm('intent-1', { paymentMethodId: undefined, pointsToApply: 1000 }, 'corr-1'),
     ).rejects.toMatchObject({
       response: expect.objectContaining({ error: 'POINTS_NOT_APPLICABLE_TO_ZERO_AMOUNT' }),
     });
@@ -180,7 +180,7 @@ describe('ConfirmService', () => {
       stalePointsCharge: null,
     });
 
-    await service.confirm('intent-1', { paymentMethodId: null, pointsToApply: undefined }, 'corr-1');
+    await service.confirm('intent-1', { paymentMethodId: undefined, pointsToApply: undefined }, 'corr-1');
 
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledTimes(1);
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
@@ -201,7 +201,7 @@ describe('ConfirmService', () => {
       stalePointsCharge: null,
     });
 
-    await service.confirm('intent-1', { paymentMethodId: null, pointsToApply: undefined }, 'corr-1');
+    await service.confirm('intent-1', { paymentMethodId: undefined, pointsToApply: undefined }, 'corr-1');
 
     expect(chargesService.create).not.toHaveBeenCalled();
     expect(stateTransitionService.transitionIntent).not.toHaveBeenCalled();
