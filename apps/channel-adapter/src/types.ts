@@ -770,4 +770,8 @@ export interface PimActiveVersionChangedEvent {
   changeReason: 'published' | 'rollback' | 'unpublished';
   changedAt: string;
   snapshot?: PimProductSnapshot | null;
+  // core 가 발행 시 실어 보내는 출처. 단건 게시에는 키 자체가 없다
+  // (apps/core/.../product-versions.service.ts:1043).
+  origin?: string;
+  importSessionId?: string;
 }

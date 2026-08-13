@@ -305,3 +305,20 @@ describe('PimMedusaSyncService 카테고리 조상 처리', () => {
     ]);
   });
 });
+
+import { isBulkOrigin } from './pim-medusa-sync.service';
+
+describe('isBulkOrigin', () => {
+  it('bulk_import 를 대량으로 판정한다', () => {
+    expect(isBulkOrigin('bulk_import')).toBe(true);
+  });
+
+  it('출처가 없으면 단건으로 판정한다', () => {
+    expect(isBulkOrigin(undefined)).toBe(false);
+    expect(isBulkOrigin('')).toBe(false);
+  });
+
+  it('모르는 출처는 단건으로 판정한다 — 안전한 쪽이 즉시 반영이다', () => {
+    expect(isBulkOrigin('admin_ui')).toBe(false);
+  });
+});

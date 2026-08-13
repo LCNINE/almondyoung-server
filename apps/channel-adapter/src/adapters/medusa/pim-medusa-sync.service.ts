@@ -14,6 +14,17 @@ import type {
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 
+/**
+ * 대량 출처 목록. inbox-worker 의 BULK_ORIGINS 와 같은 값이지만, 그쪽은 metadata 를 읽는
+ * SQL 레인 판정이고 이쪽은 payload 를 읽는 핸들러 분기라 의도적으로 따로 둔다.
+ * 모르는 값은 단건으로 본다 — 즉시 반영이 안전한 기본값이다.
+ */
+const BULK_SYNC_ORIGINS: readonly string[] = ['bulk_import'];
+
+export function isBulkOrigin(origin?: string): boolean {
+  return !!origin && BULK_SYNC_ORIGINS.includes(origin);
+}
+
 export interface SyncResult {
   success: boolean;
   masterId: string;
@@ -296,7 +307,10 @@ export class PimMedusaSyncService {
   // }
 
   // 스냅샷 기반 동기화 (Phase 2 - PIM API 호출 없음)
-  async syncFromSnapshot(snapshot: PimProductSnapshot, options?: { skipCategorySync?: boolean }): Promise<SyncResult> {
+  async syncFromSnapshot(
+    snapshot: PimProductSnapshot,
+    options?: { skipCategorySync?: boolean; isBulk?: boolean },
+  ): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
@@ -452,6 +466,8 @@ export class PimMedusaSyncService {
 
     this.logger.log(`📨 PIM Event: ${masterId} (${changeReason}) - versionId: ${versionId ?? 'none'}`);
 
+    const isBulk = isBulkOrigin(event.origin);
+
     switch (changeReason) {
       case 'published':
       case 'rollback':
@@ -464,7 +480,7 @@ export class PimMedusaSyncService {
           this.logger.error(error.message);
           throw error;
         }
-        await this.syncFromSnapshot(snapshot);
+        await this.syncFromSnapshot(snapshot, { isBulk });
         break;
 
       case 'unpublished':
