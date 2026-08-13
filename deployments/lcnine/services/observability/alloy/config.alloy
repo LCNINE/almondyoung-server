@@ -20,13 +20,54 @@ otelcol.receiver.otlp "apps" {
 
 otelcol.processor.batch "traces" {
 	output {
-		traces = [otelcol.exporter.otlp.grafanacloud_tempo.input]
+		traces = [otelcol.processor.transform.redact.input]
 	}
 }
 
 otelcol.processor.batch "logs" {
 	output {
-		logs = [otelcol.exporter.otlphttp.grafanacloud_loki.input]
+		logs = [otelcol.processor.transform.redact.input]
+	}
+}
+
+// 2 차 방어선. 앱 레벨(Medusa instrumentation.ts) 이 주 방어선이고 이것은 그물이다.
+// Next.js 앱들은 VPC 밖 Lambda 라 Alloy 를 거치지 않으므로 여기서 덮이지 않는다.
+//
+// 로그 규칙은 앱 레벨과 **의도적으로 다르다.** Alloy 는 NestJS 서비스 전체에 대해
+// 유일한 방어선이다 — 그 서비스들은 앱 레벨 redaction 이 없다. 그래서 로그는 body 뿐
+// 아니라 최상위(top-level) attribute 의 문자열 값 전체를 스캔한다. 이는 앱 레벨(재귀
+// 스크럽)과 동등하지 않다 — nested map/array 형태의 attribute 값은 이 OTTL 규칙이
+// 문자열 형태로만 매칭하므로 스크럽되지 않은 채 통과한다. 그래도
+// `exception.message`/`exception.stacktrace` 두 키만 훑던 옛 규칙보다는 커버리지가
+// 훨씬 넓다 — Alloy 가 유일한 방어선인 서비스에 대해 좁은 두 키 한정 규칙은 구멍이었다.
+//
+// span 규칙은 앱 레벨과 같다:
+//   1. 점 없는 attribute 키 삭제 — OTel semconv 는 전부 점 네임스페이스이고,
+//      Medusa 가 스프레드한 원시 HTTP 헤더명은 점이 없다.
+//   2. OTel 헤더 캡처 semconv 삭제 — http.request.header.*, http.response.header.*
+//      는 원시 헤더 값을 담도록 설계돼 점이 있어도 명시적으로 차단한다.
+//   3. 접속 문자열의 비밀번호 마스킹 — 이미 마스킹된 값에 다시 적용해도 결과가 같다.
+otelcol.processor.transform "redact" {
+	trace_statements {
+		context = "span"
+		statements = [
+			`delete_matching_keys(attributes, "^[^.]+$")`,
+			`delete_matching_keys(attributes, "^http\\.(request|response)\\.header\\.")`,
+			`replace_pattern(attributes["db.connection_string"], "://([^:/?#\\s@]*):([^\\s/?#]*)@", "://${1}:[REDACTED]@")`,
+		]
+	}
+
+	log_statements {
+		context = "log"
+		statements = [
+			`replace_pattern(body, "://([^:/?#\\s@]*):([^\\s/?#]*)@", "://${1}:[REDACTED]@")`,
+			`replace_all_patterns(attributes, "value", "://([^:/?#\\s@]*):([^\\s/?#]*)@", "://${1}:[REDACTED]@")`,
+		]
+	}
+
+	output {
+		traces = [otelcol.exporter.otlp.grafanacloud_tempo.input]
+		logs   = [otelcol.exporter.otlphttp.grafanacloud_loki.input]
 	}
 }
 

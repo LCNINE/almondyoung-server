@@ -1,0 +1,55 @@
+name: Medusa unit tests
+
+# 루트 검증 게이트(verification-gates.yml)는 apps/medusa 를 덮지 않는다.
+# tsconfig.json 의 exclude 에 apps/medusa 가 있어 type-check 가 보지 않고,
+# 루트 jest 는 modulePathIgnorePatterns 로 /apps/medusa/ 를 제외한다.
+#
+# Medusa 는 자체 package-lock 과 jest 설정을 가진 별도 트리라 설치가 무겁다.
+# 매 PR 에 붙이면 관계없는 변경까지 느려지므로 paths 필터로 Medusa 변경 시에만 돈다.
+#
+# 주의: 이 워크플로는 npm ci / package-lock.json 으로 설치한다. 프로덕션 배포(Dockerfile)는
+# `yarn --frozen-lockfile` / yarn.lock 을 쓴다 — 두 lockfile 이 항상 같은 트리를 고정한다는
+# 보장이 없으므로, 이 CI 가 초록이어도 실제 배포되는 의존성 트리를 검증한 것은 아니다.
+
+on:
+  pull_request:
+    paths:
+      - 'apps/medusa/**'
+      - '.github/workflows/medusa-unit-tests.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'apps/medusa/**'
+
+concurrency:
+  group: medusa-unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/medusa/package-lock.json
+
+      - name: Install (medusa)
+        working-directory: apps/medusa
+        run: npm ci
+
+      - name: Type-check instrumentation.ts
+        # apps/medusa/instrumentation.ts 는 tsconfig.json 의 include(src/**/*, ../../packages/**/*)
+        # 밖이라 nest build 도 이 워크플로의 유닛 테스트(swc, transpile-only)도 타입을 보지 않는다.
+        # tsconfig.json 의 include 자체를 넓히면 medusa build 산출물이 달라질 수 있어 건드리지
+        # 않고, instrumentation.ts 만 root 로 삼는 별도 tsconfig.instrumentation.json 을 쓴다.
+        working-directory: apps/medusa
+        run: npx tsc --noEmit --project tsconfig.instrumentation.json
+
+      - name: Unit tests
+        working-directory: apps/medusa
+        run: npm run test:unit

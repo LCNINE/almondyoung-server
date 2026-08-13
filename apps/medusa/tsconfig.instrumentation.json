@@ -1,0 +1,14 @@
+{
+  // 이 파일은 `instrumentation.ts` 하나만을 위한 CI 전용 tsconfig 다. `apps/medusa/instrumentation.ts`
+  // 는 저장소 루트(모노레포)가 아니라 앱 루트에 있는데, `tsconfig.json` 의 `include`(`src/**/*`,
+  // `../../packages/**/*`)가 이 파일을 포함하지 않아 `nest build`/일반 `tsc` 어느 쪽도 타입을
+  // 검사하지 않는다. `tsconfig.json` 의 `include` 를 직접 넓히면 `medusa build` 산출물(어떤
+  // 파일이 컴파일 대상인지)이 달라질 수 있어 손대지 않는다 — 대신 같은 compilerOptions 를
+  // extends 로 물려받는 별도 파일로 `instrumentation.ts` 만 추가 포함시킨다.
+  "extends": "./tsconfig.json",
+  // `instrumentation.ts` 하나만 root 로 둔다 — tsc 는 이 파일이 실제로 import 하는 것만
+  // 타입 검사 대상에 끌어온다 (registerOtel, 두 redaction 래퍼와 그 의존성). `src/**/*` 를
+  // 같이 넣으면 이 파일과 무관한 기존 admin/스펙 트리의 사전 존재 에러까지 섞여
+  // "instrumentation.ts 가 깨졌다"는 신호가 무의미해진다.
+  "include": ["instrumentation.ts"]
+}
