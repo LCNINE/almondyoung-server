@@ -1,5 +1,4 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { AdapterModule } from './src/adapter.module';
 import { ChannelAdapterService } from './src/services/channel-adapter.service';
 import { SyncStatusService } from './src/services/sync-status.service';
 import { StockEventConsumer } from './src/consumers/stock-event.consumer';
@@ -27,8 +26,14 @@ import { eq, and } from 'drizzle-orm';
  * 1. adapter-mock 서버 실행: `cd ../adapter-mock && node src/simple-server.js`
  * 2. PostgreSQL DB 실행
  * 3. 환경변수 설정: NAVER_USE_MOCK_SERVER=true
+ *
+ * 실행: `npm run test:coupang:integration`
  */
-describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
+// 위 사전 준비가 없으면 반드시 실패한다. 저장소의 REQUIRE_*_DB=1 컨벤션
+// (test:channel-dispatch:integration 등)에 맞춰 명시 옵트인일 때만 돈다.
+const describeIntegration = process.env.REQUIRE_COUPANG_INTEGRATION === '1' ? describe : describe.skip;
+
+describeIntegration('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
   let app: TestingModule;
   let channelAdapterService: ChannelAdapterService;
   let syncStatusService: SyncStatusService;
@@ -51,6 +56,11 @@ describe('🎯 Coupang Channel Adapter 실환경 통합 테스트', () => {
     process.env.ADAPTER_REQUIRED_CHANNELS = 'coupang';
 
     // 🏗 실제 AdapterModule 전체 로드 (Mock 없음)
+    // adapter.module 은 import 시점에 ConfigModule.forRoot 의 env 검증을 돌린다.
+    // 정적 import 로 두면 아래 옵트인 가드와 무관하게 *파일 로드만으로* 죽는다
+    // (describe.skip 은 import 를 막지 못한다). 위에서 env 를 세팅한 뒤 lazy 로드한다.
+    const { AdapterModule } = require('./src/adapter.module') as typeof import('./src/adapter.module');
+
     app = await Test.createTestingModule({
       imports: [AdapterModule], // 실제 모듈 그대로 import
     }).compile();
