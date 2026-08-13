@@ -24,6 +24,7 @@ import { DbService } from '@app/db';
 import { catalogSchema, type PimSchema } from '../../../schema/catalog.schema';
 import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES } from './bulk-session-job.manager';
 import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
+import { BulkDuplicateNameChecker } from './bulk-duplicate-name.checker';
 import { buildFormWorkbook } from './form-export.workbook';
 import type { PrefillRow, PrefillWorkbookData } from './form-export.types';
 
@@ -150,6 +151,7 @@ function makeWorkerLike(client: postgres.Sql) {
     undefined as never,
     new ConfigService(config),
     new BulkVariantCodeChecker(dbService),
+    new BulkDuplicateNameChecker(dbService),
     // (Task 8) 조합키 해석기·판매정책 서비스는 발행 슬라이스에서만 불린다 — 이 스위트는
     // 그 슬라이스를 부르지 않으므로 위 applier·versions 와 같은 이유로 비워 둔다.
     undefined as never,
@@ -180,6 +182,11 @@ describeIfDb('일괄 세션 lease 소유권·취소 (DB 통합)', () => {
     await admin.unsafe(`CREATE TABLE product_bulk_sessions (LIKE public.product_bulk_sessions INCLUDING ALL)`);
     await admin.unsafe(`CREATE TABLE product_bulk_items (LIKE public.product_bulk_items INCLUDING ALL)`);
     await admin.unsafe(`CREATE TABLE product_bulk_images (LIKE public.product_bulk_images INCLUDING ALL)`);
+    // 검증 슬라이스의 마감 분기가 부르는 상품명 중복 검사(이슈 #630)가 이 둘을 읽는다 —
+    // 이 스위트의 픽스처는 전부 `kind='create'` 라 그 검사가 **항상** 돈다. 빈 채로 두는
+    // 것이 이 스위트의 의미다(중복 없음 = 아무 행도 invalid 로 바뀌지 않는다).
+    await admin.unsafe(`CREATE TABLE product_masters (LIKE public.product_masters INCLUDING ALL)`);
+    await admin.unsafe(`CREATE TABLE product_master_versions (LIKE public.product_master_versions INCLUDING ALL)`);
 
     clientA = connect(DATABASE_URL as string, schemaName);
     clientB = connect(DATABASE_URL as string, schemaName);

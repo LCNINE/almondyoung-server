@@ -18,6 +18,7 @@ import { BulkImageCleaner } from './services/bulk-image.cleaner';
 import { BulkDraftApplier } from './services/bulk-draft.applier';
 import { BulkSessionComboResolver } from './services/bulk-session.combos';
 import { BulkVariantCodeChecker } from './services/bulk-variant-code.checker';
+import { BulkDuplicateNameChecker } from './services/bulk-duplicate-name.checker';
 import { BulkSessionCleaner } from './services/bulk-session.cleaner';
 import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
@@ -61,6 +62,8 @@ import { ProductMatchingModule } from '../../../product-matching/product-matchin
 // 중복 사전검사다(Task 11). 크론이 아니라 BulkSessionJobManager 가 생성자 DI 로 직접
 // 물기 때문에, 등록을 빠뜨리면 (다른 provider 들처럼 조용히 무해한 게 아니라) 부팅 자체가
 // UnknownDependenciesException 으로 죽는다.
+// BulkDuplicateNameChecker 는 같은 자리에서 도는 신규 행 상품명 중복 사전검사다(이슈 #630) —
+// 등록 누락 시 부팅이 죽는 것도 같다.
 @Module({
   imports: [ProductsModule, PricingModule, CategoriesModule, ProductMatchingModule],
   controllers: [FormExportController, BulkSessionController],
@@ -82,6 +85,7 @@ import { ProductMatchingModule } from '../../../product-matching/product-matchin
     BulkDraftApplier,
     BulkSessionComboResolver,
     BulkVariantCodeChecker,
+    BulkDuplicateNameChecker,
     BulkSessionCleaner,
   ],
   exports: [FormExportService],

@@ -38,6 +38,7 @@ import { computeChanges, detectConflicts } from './bulk-session.diff';
 import { toConflictDecisionMap } from './bulk-session.reader';
 import { BulkDraftApplier } from './bulk-draft.applier';
 import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
+import { BulkDuplicateNameChecker } from './bulk-duplicate-name.checker';
 import { BulkSessionComboResolver } from './bulk-session.combos';
 import { buildOptionAdd } from './bulk-draft.options';
 import { applyPolicyDecisions, extractVariantPolicies } from './bulk-session.policy';
@@ -193,6 +194,7 @@ export class BulkSessionJobManager {
     private readonly versions: ProductVersionsService,
     private readonly config: ConfigService,
     private readonly variantCodes: BulkVariantCodeChecker,
+    private readonly duplicateNames: BulkDuplicateNameChecker,
     // (Task 8) 발행이 품목 판매정책을 적용하는 데 쓰는 둘. 정책은 상품 버전에 담기지 않으므로
     // (설계 스펙 §2) 발행 레인이 "조합키 → variantId" 를 직접 풀어 정책 서비스에 넘긴다.
     private readonly combos: BulkSessionComboResolver,
@@ -549,6 +551,12 @@ export class BulkSessionJobManager {
       const flagged = await this.variantCodes.checkSession(sessionId);
       if (flagged > 0) {
         this.logger.log(`품목코드 중복으로 ${flagged}건을 invalid 로 표시했다 (session=${sessionId})`);
+      }
+      // 신규 행 상품명 중복(이슈 #630). 품목코드 검사 한 뒤 두 문구가 한 행에 순서대로
+      // 쌓인다 — 순서가 뒤집혀도 결과는 같지만, 사람이 읽는 문구 순서를 코드 순서가 정한다.
+      const duplicateNames = await this.duplicateNames.checkSession(sessionId);
+      if (duplicateNames > 0) {
+        this.logger.log(`상품명 중복으로 ${duplicateNames}건을 invalid 로 표시했다 (session=${sessionId})`);
       }
       await this.finishValidating(sessionId, leaseToken);
       return;

@@ -58,6 +58,7 @@ import { FormExportSnapshotReader } from './form-export.snapshot.reader';
 import { buildFormWorkbook } from './form-export.workbook';
 import { BulkSessionJobManager } from './bulk-session-job.manager';
 import { BulkVariantCodeChecker } from './bulk-variant-code.checker';
+import { BulkDuplicateNameChecker } from './bulk-duplicate-name.checker';
 import type { PrefillRow, PrefillWorkbookData } from './form-export.types';
 
 /**
@@ -195,6 +196,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
       undefined as never,
       new ConfigService({ PRODUCT_BULK_LEASE_MS: '30000', PRODUCT_BULK_VALIDATE_SLICE: '50' }),
       new BulkVariantCodeChecker(dbService),
+      new BulkDuplicateNameChecker(dbService),
       // (Task 8) 조합키 해석기·판매정책 서비스는 발행 슬라이스 전용이다 — 이 스위트는 그
       // 슬라이스를 부르지 않으므로 위 applier·versions 와 같은 이유로 비워 둔다.
       undefined as never,

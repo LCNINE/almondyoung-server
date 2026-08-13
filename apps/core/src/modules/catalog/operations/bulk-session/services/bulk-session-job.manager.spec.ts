@@ -217,6 +217,8 @@ interface HarnessOpts {
   publishActiveVersionError?: Error;
   /** `BulkVariantCodeChecker.checkSession` 의 반환값(새로 invalid 로 표시한 행 수). 기본 0. */
   variantCodeFlagged?: number;
+  /** `BulkDuplicateNameChecker.checkSession` 의 반환값. 기본 0. */
+  duplicateNamesFlagged?: number;
   /** (Task 8) `resolveExisting`(수정 행)이 돌려줄 조합키 → variantId. 기본은 빈 맵
    *  (= 아무 조합도 안 풀린다 — 해석 실패 경로가 그 기본값을 그대로 쓴다). */
   comboMap?: Map<string, string>;
@@ -349,6 +351,14 @@ function makeHarness(opts: HarnessOpts = {}) {
   });
   const variantCodes = { checkSession };
 
+  // 같은 마감 분기가 상품명 중복 검사도 부른다(이슈 #630). variantCode 검사와 같은 이유로
+  // 반환값만 흉내내고 `ops` 마커를 남긴다.
+  const checkDuplicateNames = jest.fn(() => {
+    ops.push({ kind: 'call', fn: 'checkDuplicateNames' });
+    return Promise.resolve(opts.duplicateNamesFlagged ?? 0);
+  });
+  const duplicateNames = { checkSession: checkDuplicateNames };
+
   // (Task 8) 발행 슬라이스의 정책 적용 경로가 쓰는 둘. `updateVariantStockPolicy` 도 `ops` 에
   // 마커를 남긴다 — "정책 적용이 publishVersion **뒤**인가"는 두 호출의 상대 위치로만 관측된다.
   // 인자 타입을 명시한다 — `mock.calls[0]` 을 구조분해해 `plan` 을 검사하려면 튜플이 필요하다
@@ -381,6 +391,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     versions as never,
     config as never,
     variantCodes as never,
+    duplicateNames as never,
     combos as never,
     skuMapping as never,
   );
