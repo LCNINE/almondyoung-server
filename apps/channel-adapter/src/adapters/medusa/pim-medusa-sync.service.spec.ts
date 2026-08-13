@@ -220,6 +220,33 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     ]);
     expect(calls).toEqual(['remove', 'add']);
   });
+
+  it('신규 생성 상품이면 remove 를 건너뛰고 add 만 한다', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 34000, tieredPrices: [] }],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { skipRemove: true });
+
+    expect(medusaClient.removeProductFromPriceList).not.toHaveBeenCalled();
+    expect(medusaClient.addPricesToPriceList).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['add']);
+  });
+
+  it('기존 상품이면 지금까지대로 remove 후 add 한다', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 34000, tieredPrices: [] }],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { skipRemove: false });
+
+    expect(medusaClient.removeProductFromPriceList).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['remove', 'add']);
+  });
 });
 
 describe('PimMedusaSyncService 카테고리 조상 처리', () => {

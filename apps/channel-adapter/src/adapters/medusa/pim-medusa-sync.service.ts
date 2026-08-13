@@ -400,7 +400,11 @@ export class PimMedusaSyncService {
 
       this.logger.log(`Sync completed: ${masterId} → Medusa ${product.id} (${action})`);
 
-      await this.syncPriceLists(snapshot, product.id, product.variants);
+      await this.syncPriceLists(snapshot, product.id, product.variants, {
+        // 신규 생성 상품은 price list 에 항목이 있을 수 없다. remove 는 상품당 3.30초로
+        // 상품 생성(2.86초)보다 비싼 호출이라 건너뛰는 값어치가 크다.
+        skipRemove: action === 'created',
+      });
 
       await this.mappingRepo.recordSuccess(masterId, {
         pimVersionId: versionId,
@@ -583,7 +587,8 @@ export class PimMedusaSyncService {
   private async syncPriceLists(
     snapshot: PimProductSnapshot,
     medusaProductId: string,
-    medusaVariants?: MedusaProduct['variants'],
+    medusaVariants: MedusaProduct['variants'] | undefined,
+    opts: { skipRemove?: boolean } = {},
   ): Promise<void> {
     if (!medusaVariants || medusaVariants.length === 0) return;
 
@@ -633,7 +638,10 @@ export class PimMedusaSyncService {
       // otherwise re-sync accumulates duplicate rows and a stale-lower price wins (Medusa applies
       // the lowest). Remove→add briefly leaves the product without a membership price; that only
       // ever falls back to the higher base price, so it never undercharges.
-      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      // 신규 생성 상품은 지울 항목이 없으므로 skipRemove 로 건너뛴다.
+      if (!opts.skipRemove) {
+        await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      }
       await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
     }
 
@@ -646,7 +654,9 @@ export class PimMedusaSyncService {
         status: 'active',
       });
       // Replace, not append (same rationale as the membership list above).
-      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      if (!opts.skipRemove) {
+        await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      }
       await this.medusaClient.addPricesToPriceList(listId, prices);
     }
   }
