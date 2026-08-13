@@ -1,8 +1,11 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { CashReceiptsService } from './cash-receipts.service';
 
-const INTENT_ID = 'intent-001';
-const CHARGE_ID = 'charge-001';
+// 구현의 findIntentOrThrow / listByIntent 가 UUID_RE 로 형식을 먼저 검사한다.
+// 비-UUID 를 쓰면 모든 가드 테스트가 본론에 닿기 전에 NOT_FOUND 로 튕긴다.
+// 재현 가능하도록 랜덤 생성 대신 고정 리터럴을 쓴다.
+const INTENT_ID = '11111111-1111-4111-8111-111111111111';
+const CHARGE_ID = '22222222-2222-4222-8222-222222222222';
 const PM_ID = 'pm-001';
 const USER_ID = 'user-001';
 
@@ -22,7 +25,7 @@ function makeCharge(overrides: Partial<{ amount: number }> = {}) {
 
 function makeReceipt(overrides: Partial<{ amount: number; canceledAmount: number; status: string }> = {}) {
   return {
-    id: 'cr-001',
+    id: '33333333-3333-4333-8333-333333333333',
     chargeId: CHARGE_ID,
     intentId: INTENT_ID,
     amount: overrides.amount ?? 10000,
