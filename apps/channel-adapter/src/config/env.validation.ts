@@ -55,6 +55,7 @@ export const channelAdapterEnvSchema = z.object({
   INBOX_PROCESSING_LEASE_MS: z.coerce.number().int().positive().optional(),
   INBOX_SHUTDOWN_DRAIN_MS: z.coerce.number().int().nonnegative().optional(),
   INBOX_MAX_RETRIES: z.coerce.number().int().positive().optional(),
+  DEFERRED_REVALIDATE_FLUSH_MS: z.coerce.number().int().positive().optional(),
 
   // Firebase Membership Sync
   ALMOND_AUTH_URL: z.string().url().optional(),
