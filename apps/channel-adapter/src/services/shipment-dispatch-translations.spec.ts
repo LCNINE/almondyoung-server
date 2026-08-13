@@ -14,7 +14,9 @@ describe('shipment dispatch provider translations', () => {
       orderId: 'naver-order-1',
       items: [{ orderItemId: '100000001', quantity: 1 }],
       tracking: { companyCode: 'HANJIN', number: 'TRACK-1' },
-      dispatchedAt: '2026-07-14T00:00:00.000Z',
+      // 구현이 배송일을 "30일 전 ~ 현재" 로 검증한다. 절대 날짜를 박으면
+      // 벽시계가 창을 벗어나는 순간 스펙이 저절로 빨개진다 (실제로 그랬다).
+      dispatchedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     });
 
     expect(result.success).toBe(true);
