@@ -243,6 +243,7 @@ export function setup(infra: SharedInfra) {
     INBOX_HANDLER_START_INTERVAL_MS: '3000',
     INBOX_PROCESSING_LEASE_MS: '900000',
     INBOX_SHUTDOWN_DRAIN_MS: '25000',
+    DEFERRED_REVALIDATE_FLUSH_MS: '60000',
   });
   const membershipEnv = withPrefix('MEMBERSHIP', {
     DATABASE_URL: dbUrl('membership'),

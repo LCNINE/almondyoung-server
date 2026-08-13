@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MedusaClient } from './medusa.client';
 import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
 import { StorefrontRevalidateService } from './storefront-revalidate.service';
+import { DeferredRevalidateService } from './deferred-revalidate.service';
 import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to-medusa.transformer';
 import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
@@ -43,6 +44,7 @@ export class PimMedusaSyncService {
     private readonly medusaClient: MedusaClient,
     private readonly mappingRepo: PimMedusaMappingRepository,
     private readonly storefrontRevalidate: StorefrontRevalidateService,
+    private readonly deferredRevalidate: DeferredRevalidateService,
   ) {}
 
   // PIMCLIENT: This method is disabled because it calls PIM API (this.pimClient.getCategory)
@@ -312,6 +314,7 @@ export class PimMedusaSyncService {
     options?: { skipCategorySync?: boolean; isBulk?: boolean },
   ): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
+    const startedAt = Date.now();
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
 
@@ -414,8 +417,17 @@ export class PimMedusaSyncService {
         action,
       });
 
-      // 상품 변경을 스토어프론트 캐시에 즉시 반영 (best-effort)
-      await this.storefrontRevalidate.revalidateProduct(medusaPayload.handle);
+      // 대량등록은 상품마다 무효화하면 전역 목록 태그를 상품 수만큼 지우게 된다.
+      // 버퍼에 모았다가 주기마다 한 번만 친다. 단건은 지금까지대로 즉시 반영.
+      if (options?.isBulk) {
+        this.deferredRevalidate.enqueue(medusaPayload.handle);
+      } else {
+        await this.storefrontRevalidate.revalidateProduct(medusaPayload.handle);
+      }
+
+      // 핸들러 종료 표지. 'Sync completed'(:387) 는 price list 와 revalidate 앞이라
+      // 종료 시점이 아니다 — 전후 성능 비교가 이 로그에 걸린다.
+      this.logger.log(`Sync finished: ${masterId} (${Date.now() - startedAt}ms)`);
 
       return {
         success: true,

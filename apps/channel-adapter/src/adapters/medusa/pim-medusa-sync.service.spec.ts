@@ -30,10 +30,12 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -106,10 +108,12 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -174,10 +178,12 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     };
     const mappingRepo = { findByPimMasterId: jest.fn(), update: jest.fn() };
     const storefrontRevalidate = { revalidateProduct: jest.fn() };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
     return { service, medusaClient, calls };
   }

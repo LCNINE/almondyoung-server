@@ -34,4 +34,21 @@ describe('StorefrontRevalidateService', () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('첫 handle 만 handle 로 보내고 나머지는 태그로 보낸다', async () => {
+    await new StorefrontRevalidateService().revalidateProducts(['m1', 'm2', 'm3']);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      handle: 'm1',
+      tags: ['pim-detail-m1', 'product-m2', 'pim-detail-m2', 'product-m3', 'pim-detail-m3'],
+    });
+  });
+
+  it('handle 이 없으면 호출하지 않는다', async () => {
+    await new StorefrontRevalidateService().revalidateProducts([]);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
