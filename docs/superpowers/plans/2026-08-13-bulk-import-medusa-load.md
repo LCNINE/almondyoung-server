@@ -22,7 +22,7 @@ A1 을 먼저 넣고 A2 는 뒤로 뺀다. A2 없이 A1+B+C 만 해도 상품당
 ## Global Constraints
 
 - 레이어 규칙: Controller → Service → Reader/Manager → Repository. Service 는 `HttpException`·drizzle·Express 타입을 import 하지 않는다. 도메인 예외는 `@app/shared` 의 `NotFoundError`/`BadRequestError`/`ConflictError` 를 던진다
-- `any` / `as` 캐스팅 금지 (문서화된 정당화와 팀 승인 없이는)
+- `any` / `as` 캐스팅 금지 (문서화된 정당화와 팀 승인 없이는). **프로덕션 코드에만 적용된다** — 테스트는 기존 스펙 파일의 관례(`medusaClient as any`, `(service as any).syncPriceLists(...)`, `service['logger']`)를 따른다. 이 판정은 2026-08-13 사람이 내렸다
 - Nullable 정규화: `string ?? ''`, `number ?? 0`, `date ?? undefined`
 - 트랜잭션은 `dbService.run(fn, tx)` 단일 러너를 쓴다. 클래스별 `inTx` 헬퍼를 새로 만들지 않는다
 - **테스트 실행은 반드시 `npx jest --runTestsByPath <파일경로>` 로 한다.** 이 워크트리 경로에 `+` 가 들어 있어(`.claude/worktrees/feat+bulk-import-medusa-load`) 일반 `jest <path>` 의 정규식 매칭이 오염된다
