@@ -139,6 +139,42 @@ npm run lint      # ESLint with auto-fix
 npm run format    # Prettier
 ```
 
+### 검증 게이트
+
+```bash
+npm run type-check   # tsc --noEmit, spec 포함. 에러 0 이 기준선이다
+npx jest             # 전체 유닛 테스트. 실패 0 이 기준선이다
+```
+
+두 명령 모두 **0 이 정상**이다. PR 에서 `.github/workflows/verification-gates.yml`
+이 자동으로 돌며 차단한다. "develop 도 원래 깨져 있으니 괜찮다"는 식으로 기준선을
+비교하는 절차는 더 이상 필요 없다 — 빨간 건 이 PR 이 만든 것이다.
+
+**왜 빌드만으로는 부족한가:** `nest build` 는 `tsconfig.build.json` 이
+`**/*spec.ts` 를 제외하므로 spec 타입 에러를 못 잡는다. `jest` 도
+`tsconfig.jest.json` 의 `isolatedModules: true` 때문에 ts-jest 가 transpile-only 로
+동작해 타입을 아예 검사하지 않는다. **spec 의 타입을 지키는 건 `type-check` 뿐이다.**
+
+**jest 설정의 무시 패턴은 정규식이다.** `modulePathIgnorePatterns` /
+`testPathIgnorePatterns` 에 `<rootDir>` 를 쓰면 치환 결과에 정규식 메타문자가 섞일 수
+있다 — 이 저장소의 워크트리는 `.claude/worktrees/feat+foo` 꼴이라 `+` 가 수량자로
+해석돼 패턴이 **조용히 안 걸렸다** (워크트리에서 jest 를 돌리면 `apps/medusa` spec 이
+딸려 들어와 실패가 17건 늘었다). `<rootDir>` 없는 부분일치 패턴으로 쓸 것.
+
+프론트·통합·외부환경 테스트는 별도 명령이다:
+
+```bash
+npm run test:admin-web            # admin-web 전용
+npm run test:user-service         # user-service 전용 config
+npm run test:membership           # itdoc (전용 config)
+npm run test:coupang:integration  # 실 DB + adapter-mock 필요
+npm run test:core:integration:local
+```
+
+DB 를 요구하는 통합 스펙은 `describeIfDb` / `REQUIRE_*_DB=1` 가드로 기본 실행에서
+자동 skip 된다. 새 통합 스펙도 이 컨벤션을 따를 것 — 가드 없이 두면 기본 게이트가
+빨개진다.
+
 ## Architecture
 
 ### Layer Architecture (All Services)
