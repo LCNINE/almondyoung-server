@@ -43,7 +43,11 @@ export class DeferredRevalidateService implements OnModuleInit, OnModuleDestroy 
       clearInterval(this.timer);
       this.timer = null;
     }
-    // 정상 종료(배포 등)에서는 남은 버퍼를 흘려보낸다.
+    // 이 앱은 app.enableShutdownHooks() 를 호출하지 않는다 (main.ts) — 즉 onModuleDestroy 는
+    // app.close() 가 실제로 불릴 때만 실행된다 (지금은 테스트뿐). ECS 배포로 인한 task
+    // replacement 는 SIGTERM 을 프로세스에 보낼 뿐 app.close() 를 거치지 않으므로, 그 경로에서는
+    // 여기 도달하지 못하고 버퍼가 유실된다. 최악의 경우도 flush 주기 1회분의
+    // pim-detail-{handle} 무효화가 늦어지는 것뿐이며, 1시간 캐시 TTL 로 자연 치유된다.
     await this.flush();
   }
 
@@ -59,8 +63,11 @@ export class DeferredRevalidateService implements OnModuleInit, OnModuleDestroy 
     this.pending.clear();
 
     try {
+      // revalidateProducts()(→ StorefrontRevalidateService.post())는 모든 에러를 삼킨다.
+      // 즉 이 catch 는 프로덕션에서 사실상 도달하지 않고, 아래 로그는 "성공"이 아니라
+      // "시도했다"만 의미한다 — 배포 후 재측정은 이 로그를 그렇게 읽어야 한다.
       await this.storefrontRevalidate.revalidateProducts(handles);
-      this.logger.log(`Deferred revalidate flushed: ${handles.length} handles`);
+      this.logger.log(`Deferred revalidate dispatched: ${handles.length} handles`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`Deferred revalidate flush failed (${handles.length} handles): ${message}`);

@@ -55,4 +55,31 @@ describe('DeferredRevalidateService', () => {
 
     expect(revalidate.revalidateProducts).not.toHaveBeenCalled();
   });
+
+  describe('onModuleInit 타이머', () => {
+    let timerService: DeferredRevalidateService;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      timerService = new DeferredRevalidateService(revalidate as unknown as StorefrontRevalidateService, {
+        get: () => 5000,
+      } as never);
+    });
+
+    afterEach(async () => {
+      // pending 이 이미 비었으므로 onModuleDestroy 의 flush() 는 no-op — 타이머만 정리한다.
+      await timerService.onModuleDestroy();
+      jest.useRealTimers();
+    });
+
+    it('설정된 주기마다 자동으로 flush 한다 — config 파싱된 숫자값을 그대로 쓴다', async () => {
+      timerService.onModuleInit();
+      timerService.enqueue('m1');
+
+      jest.advanceTimersByTime(5000);
+      await Promise.resolve();
+
+      expect(revalidate.revalidateProducts).toHaveBeenCalledWith(['m1']);
+    });
+  });
 });

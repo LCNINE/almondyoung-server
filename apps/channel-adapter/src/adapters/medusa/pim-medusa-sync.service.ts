@@ -448,6 +448,10 @@ export class PimMedusaSyncService {
         this.logger.error('Failed to record failure', recordError);
       }
 
+      // 성공 경로의 'Sync finished'(:430)와 짝을 이루는 실패 경로 표지. 재측정 로그가
+      // 실패 건을 빠뜨리면 느린 실패가 평균에서 빠져 낙관적으로 왜곡된다.
+      this.logger.log(`Sync finished (failed): ${masterId} (${Date.now() - startedAt}ms)`);
+
       throw error;
     }
   }
