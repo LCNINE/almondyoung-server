@@ -1,4 +1,4 @@
-import type { DynamicModule } from '@nestjs/common';
+import type { ClassProvider, DynamicModule } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { EventsModule } from './events.module';
@@ -37,12 +37,15 @@ describe('EventsModule Kafka client configuration', () => {
 describe('EventsModule global retry interceptor registration', () => {
   const kafka = { clientId: 'test-service', brokers: ['localhost:9092'] };
 
-  function appInterceptorsOf(dynamicModule: DynamicModule) {
+  // 술어 타입은 파라미터 타입(Provider)에 대입 가능해야 한다. 임의 객체 리터럴로
+  // 좁히면 그 조건이 깨지고 useClass 접근도 막힌다 — Nest 의 ClassProvider 를 쓴다.
+  function appInterceptorsOf(dynamicModule: DynamicModule): ClassProvider[] {
     return (dynamicModule.providers ?? []).filter(
-      (provider): provider is { provide: unknown; useClass?: unknown } =>
+      (provider): provider is ClassProvider =>
         typeof provider === 'object' &&
         provider !== null &&
-        (provider as { provide?: unknown }).provide === APP_INTERCEPTOR,
+        'provide' in provider &&
+        (provider as ClassProvider).provide === APP_INTERCEPTOR,
     );
   }
 

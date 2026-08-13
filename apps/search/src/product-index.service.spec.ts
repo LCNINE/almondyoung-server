@@ -137,6 +137,8 @@ describe('ProductIndexService.upsertProduct', () => {
       min_membership_price: null,
       max_membership_price: null,
       status: 'active',
+      // 회원 전용 노출 플래그. 색인 문서 계약의 필수 필드이고 검색 필터가 이걸 본다.
+      is_visible_to_members_only: false,
       changed_at: '2026-06-08T00:00:00.000Z',
       updated_at: '2026-06-08T00:00:00.000Z',
     };
