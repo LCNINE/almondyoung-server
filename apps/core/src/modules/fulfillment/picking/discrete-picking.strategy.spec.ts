@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { ConflictException } from '@nestjs/common';
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
-import { PickingScanResult, ScanPickingInput } from './picking-strategy.interface';
+import { DiscreteScanPickingInput, PickingScanResult } from './picking-strategy.interface';
 
 const IDS = Object.freeze({
   actor: '11111111-1111-4111-8111-111111111111',
@@ -52,7 +52,7 @@ class SelectResult<T> implements PromiseLike<T[]> {
   }
 }
 
-function scanInput(overrides: Partial<ScanPickingInput> = {}): ScanPickingInput {
+function scanInput(overrides: Partial<DiscreteScanPickingInput> = {}): DiscreteScanPickingInput {
   return {
     batchId: IDS.batch,
     planId: IDS.plan,
