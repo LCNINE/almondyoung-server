@@ -30,6 +30,10 @@ jest.mock(
 // KAFKA_CLIENT/GracefulShutdownService 는 이 플래그와 무관하게 평소대로 constructor DI 로
 // 생성되므로, 우리가 증명하려는 것(ProductVersionReadLoader 4종 의존성이 실제로
 // resolve 되는지)은 그대로 검증된다 — 스킵되는 건 순수 네트워크 호출 하나뿐이다.
+// import 가 하나도 없으면 TS 가 이 파일을 모듈이 아닌 *전역 스크립트*로 본다.
+// 그러면 describeIfDb 같은 top-level const 가 전역에 새어 다른 스펙과 충돌한다.
+export {};
+
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
 describeIfDb('BulkSessionModule DI', () => {
