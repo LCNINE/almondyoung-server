@@ -17,17 +17,14 @@ import type {
   IntentDto,
   IssuedCashReceiptDto,
   MyInvoiceDto,
-  OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
   PointsExpiringDto,
-  RegisterCmsWithAgreementResponseDto,
   TaxInvoiceData,
   TaxInvoiceDto,
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
-import { isValidPayerNumber } from "@lib/utils/payer-number"
 
 const DEFAULT_BNPL_PROFILE_COOKIE = "wallet_default_bnpl_profile_id"
 
@@ -57,19 +54,6 @@ export interface PinErrorResponse {
     maxFailureCount?: number
   }
 }
-
-type BnplActionState =
-  | (OnboardHmsBnplResponse & { success: true })
-  | { success: false; message: string }
-
-const getFormString = (formData: FormData, key: string) => {
-  const value = formData.get(key)
-  return typeof value === "string" ? value.trim() : ""
-}
-
-const CMS_BANK_CODE_PATTERN = /^\d{3}$/
-const CMS_PAYER_NUMBER_PATTERN = /^(\d{6}|\d{10})$/
-const CMS_PHONE_PATTERN = /^\d{8,20}$/
 
 const mapBillingMethodToBnplProfile = (
   method: BillingMethodDto,
@@ -328,103 +312,6 @@ export async function setDefaultPaymentProfile(
     path: "/",
     maxAge: 60 * 60 * 24 * 365,
   })
-}
-
-// ==========================================
-// BNPL 관련 API
-// ==========================================
-
-export async function onboardHmsBnpl(
-  _prevState: BnplActionState | null,
-  formData: FormData
-): Promise<BnplActionState> {
-  try {
-    const paymentCompany = getFormString(formData, "paymentCompany")
-    const payerName = getFormString(formData, "payerName")
-    const payerNumber = getFormString(formData, "payerNumber").replace(
-      /\D/g,
-      ""
-    )
-    const paymentNumber = getFormString(formData, "paymentNumber")
-    const phone = getFormString(formData, "phone").replace(/\D/g, "")
-    const file = formData.get("file") as File | null
-
-    if (
-      !paymentCompany ||
-      !payerName ||
-      !payerNumber ||
-      !paymentNumber ||
-      !phone
-    ) {
-      return {
-        success: false,
-        message: "계좌 등록에 필요한 정보가 부족합니다.",
-      }
-    }
-
-    if (
-      !CMS_BANK_CODE_PATTERN.test(paymentCompany) ||
-      !CMS_PAYER_NUMBER_PATTERN.test(payerNumber) ||
-      !CMS_PHONE_PATTERN.test(phone)
-    ) {
-      return {
-        success: false,
-        message: "계좌 등록 정보 형식이 올바르지 않습니다.",
-      }
-    }
-
-    if (!isValidPayerNumber(payerNumber)) {
-      return {
-        success: false,
-        message:
-          "생년월일 또는 사업자등록번호가 올바르지 않습니다. 다시 확인해주세요.",
-      }
-    }
-
-    if (!file) {
-      return {
-        success: false,
-        message: "전자서명 파일이 필요합니다.",
-      }
-    }
-
-    // multipart/form-data로 회원등록 + 동의자료 업로드를 Wallet이 원자적으로 처리
-    const body = new FormData()
-    body.append("paymentCompany", paymentCompany)
-    body.append("payerName", payerName)
-    body.append("payerNumber", payerNumber)
-    body.append("paymentNumber", paymentNumber)
-    body.append("phone", phone)
-    body.append("file", file)
-
-    const result = await api<RegisterCmsWithAgreementResponseDto>(
-      "wallet",
-      "/v1/billing-methods/cms/register-with-agreement",
-      {
-        method: "POST",
-        body,
-        withAuth: true,
-        timeout: 30000,
-      }
-    )
-
-    await setDefaultPaymentProfile(result.id)
-
-    return {
-      success: true,
-      profileId: result.id,
-      memberId: result.id,
-      agreementUploadFailed: result.agreementUploadFailed,
-    }
-  } catch (error) {
-    return {
-      success: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "정기결제 신청에 실패했습니다.",
-    }
-  }
 }
 
 /**

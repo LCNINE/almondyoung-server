@@ -11,6 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CreditCard, AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react';
 import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
+import { AccountHolderType, PayerNumberField } from '@/components/payer-number-field';
 import { isValidPayerNumber } from '@/lib/payer-number';
 import { buildReturnUrl } from '@/lib/return-url';
 
@@ -37,6 +38,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
 
   const [paymentCompany, setPaymentCompany] = useState('');
   const [payerName, setPayerName] = useState('');
+  const [holderType, setHolderType] = useState<AccountHolderType>('personal');
   const [payerNumber, setPayerNumber] = useState('');
   const [paymentNumber, setPaymentNumber] = useState('');
   const [phone, setPhone] = useState('');
@@ -57,7 +59,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
     setError(null);
     // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
     if (!isValidPayerNumber(payerNumber)) {
-      setError('생년월일(개인 6자리) 또는 사업자등록번호(법인 10자리)를 정확히 입력해주세요.');
+      setError(
+        holderType === 'personal'
+          ? '예금주 생년월일 6자리(YYMMDD)를 정확히 입력해주세요.'
+          : '사업자등록번호 10자리를 정확히 입력해주세요.',
+      );
       return;
     }
     setConsentPersonalInfo(false);
@@ -380,19 +386,12 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="payerNumber" className="text-xs text-muted-foreground">
-                  생년월일 (개인 6자리) 또는 사업자번호 (법인 10자리)
-                </Label>
-                <Input
-                  id="payerNumber"
-                  placeholder="개인: YYMMDD · 법인: 사업자번호"
-                  value={payerNumber}
-                  onChange={(e) => setPayerNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  inputMode="numeric"
-                  required
-                />
-              </div>
+              <PayerNumberField
+                holderType={holderType}
+                onHolderTypeChange={setHolderType}
+                value={payerNumber}
+                onChange={setPayerNumber}
+              />
 
               {/* §5-1 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
