@@ -5,7 +5,8 @@ import { TypedDatabase, DbService } from '@app/db';
 import { MetricsService } from './metrics.service';
 import { ConfigService } from '@nestjs/config';
 
-interface HealthCheckResult {
+// 컨트롤러의 공개 반환 타입에 나타나므로 export 해야 한다 (declaration emit 검사, TS4053).
+export interface HealthCheckResult {
   status: 'healthy' | 'unhealthy';
   timestamp: string;
   uptime: number;

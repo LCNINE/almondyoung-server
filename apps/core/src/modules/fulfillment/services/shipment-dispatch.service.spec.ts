@@ -345,7 +345,8 @@ describe('ShipmentDispatchService', () => {
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2, forced: true, lineVersion: 2 })] });
     const recipientHash = locked.waybill.recipientHash;
 
-    const queryRows = [
+    // 행 모양이 쿼리마다 달라 union 이 된다. 명시하지 않으면 Query<T> 가 첫 멤버로 T 를 고정한다.
+    const queryRows: Record<string, unknown>[][] = [
       [{ shipmentLineId: IDS.line, sourceLocationId: IDS.source, qty: 2 }],
       [
         {
@@ -534,7 +535,8 @@ describe('ShipmentDispatchService', () => {
   ])('rejects target-line custody with $caseName before creating a dispatch attempt', async ({ extraBalance }) => {
     const { service, inventory } = makeService();
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2 })] });
-    const queryRows = [
+    // 행 모양이 쿼리마다 달라 union 이 된다. 명시하지 않으면 Query<T> 가 첫 멤버로 T 를 고정한다.
+    const queryRows: Record<string, unknown>[][] = [
       [{ shipmentLineId: IDS.line, sourceLocationId: IDS.source, qty: 2 }],
       [
         {

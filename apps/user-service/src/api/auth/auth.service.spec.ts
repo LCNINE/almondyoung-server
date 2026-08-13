@@ -53,6 +53,7 @@ describe('AuthService - signUp', () => {
     thirdPartySharing: false,
     marketingConsent: false,
     birthday: '19900101',
+    phoneNumber: '+821012345678',
   };
 
   beforeEach(async () => {
@@ -121,6 +122,12 @@ describe('AuthService - signUp', () => {
     });
   });
 
+  // ⚠️ 이 스펙은 2026-02-02 커밋 63573e574 ("회원가입 시 이메일/아이디/닉네임 중복
+  // 체크 로직 간소화 및 불필요한 코드 제거", -55줄) 이후로 계속 빨갰다. 그 커밋이
+  // "미인증 이메일 재가입" 흐름과 302 리다이렉트를 통째로 걷어냈는데 스펙만 남았다.
+  // 지금 signUp 은 리다이렉트하지 않고 { userId, signupToken, message } 를 반환하며,
+  // 이미 가입된 이메일은 인증 여부와 무관하게 무조건 거절한다.
+
   describe('새 유저 회원가입', () => {
     beforeEach(() => {
       usersService.findUserByEmail.mockResolvedValue(null);
@@ -128,17 +135,21 @@ describe('AuthService - signUp', () => {
       usersService.findUserByNickname.mockResolvedValue(null);
     });
 
-    it('회원가입 성공 시 /callback/signup으로 리다이렉트해야 한다', async () => {
-      await service.signUp(baseSignUpDto, mockReply);
+    it('가입에 성공하면 userId·signupToken·성공 메시지를 반환한다', async () => {
+      const result = await service.signUp(baseSignUpDto, mockReply);
 
-      expect(mockReply.status).toHaveBeenCalledWith(302);
-      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/'));
+      expect(result).toEqual({
+        userId: 'new-user-id',
+        signupToken: undefined, // jwtService.signAsync 목이 값을 안 돌려준다
+        message: '회원가입 성공',
+      });
     });
 
-    it('redirect_to 파라미터가 있으면 해당 경로로 리다이렉트해야 한다', async () => {
+    it('리다이렉트하지 않는다 — 호출자가 signupToken 을 교환한다', async () => {
       await service.signUp(baseSignUpDto, mockReply, '/mypage');
 
-      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/mypage'));
+      expect(mockReply.status).not.toHaveBeenCalled();
+      expect(mockRedirect).not.toHaveBeenCalled();
     });
 
     it('비밀번호를 bcrypt로 해싱해야 한다', async () => {
@@ -147,14 +158,35 @@ describe('AuthService - signUp', () => {
       expect(bcrypt.hash).toHaveBeenCalledWith('password123', 10);
     });
 
-    it('유저 프로필에 생년월일을 업데이트해야 한다', async () => {
+    it('유저 프로필에 생년월일과 휴대폰 번호를 업데이트해야 한다', async () => {
       await service.signUp(baseSignUpDto, mockReply);
 
       expect(usersService.updateMyProfile).toHaveBeenCalledWith(
         'new-user-id',
-        { birthDate: '19900101' },
+        { birthDate: '19900101', phoneNumber: '+821012345678' },
         expect.anything(),
       );
+    });
+  });
+
+  describe('중복 거절', () => {
+    beforeEach(() => {
+      usersService.findUserByEmail.mockResolvedValue(null);
+      usersService.findUserByLoginId.mockResolvedValue(null);
+      usersService.findUserByNickname.mockResolvedValue(null);
+    });
+
+    it('이미 가입된 이메일이면 ConflictException 을 던진다', async () => {
+      usersService.findUserByEmail.mockResolvedValue({ id: 'other-user-id' } as any);
+
+      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
+      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
+    });
+
+    it('이메일 인증 여부와 무관하게 거절한다 (미인증 재가입 흐름은 없다)', async () => {
+      usersService.findUserByEmail.mockResolvedValue({ id: 'other-user-id', isEmailVerified: false } as any);
+
+      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
     });
 
     it('이미 존재하는 loginId면 ConflictException을 던져야 한다', async () => {
@@ -170,117 +202,13 @@ describe('AuthService - signUp', () => {
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 존재하는 닉네임입니다.');
     });
-  });
 
-  describe('기존 유저 (미인증 이메일) 재가입', () => {
-    const existingUser = {
-      id: 'existing-user-id',
-      email: 'test@example.com',
-      isEmailVerified: false,
-    };
+    it('이메일 중복이 loginId·닉네임 중복보다 먼저 판정된다', async () => {
+      usersService.findUserByEmail.mockResolvedValue({ id: 'a' } as any);
+      usersService.findUserByLoginId.mockResolvedValue({ id: 'b' } as any);
+      usersService.findUserByNickname.mockResolvedValue({ id: 'c' } as any);
 
-    beforeEach(() => {
-      usersService.findUserByEmail.mockResolvedValue(existingUser as any);
-      usersService.findUserByLoginId.mockResolvedValue(null);
-      usersService.findUserByNickname.mockResolvedValue(null);
-
-      // update 체이닝 mock 재설정
-      mockClient.update.mockReturnValue({ set: mockSet });
-      mockSet.mockReturnValue({ where: mockWhere });
-      mockWhere.mockResolvedValue(undefined);
-    });
-
-    it('유저 정보를 업데이트한 후 /callback/signup으로 리다이렉트해야 한다', async () => {
-      await service.signUp(baseSignUpDto, mockReply);
-
-      // users 테이블 업데이트 확인
-      expect(mockClient.update).toHaveBeenCalled();
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          email: 'test@example.com',
-          username: '테스트',
-          nickname: '테스트닉',
-          loginId: 'testuser',
-          password: 'hashed_password',
-          isEmailVerified: false,
-        }),
-      );
-
-      // 리다이렉트 확인
-      expect(mockReply.status).toHaveBeenCalledWith(302);
-      expect(mockRedirect).toHaveBeenCalledWith(expect.stringContaining('/callback/signup?redirect_to=/'));
-    });
-
-    it('프로필 생년월일을 업데이트해야 한다', async () => {
-      await service.signUp(baseSignUpDto, mockReply);
-
-      expect(usersService.updateMyProfile).toHaveBeenCalledWith(
-        'existing-user-id',
-        { birthDate: '19900101' },
-        expect.anything(),
-      );
-    });
-
-    it('동의 항목을 업데이트해야 한다', async () => {
-      await service.signUp(baseSignUpDto, mockReply);
-
-      // update가 consents에 대해서도 호출되었는지 확인
-      // 두 번째 update 호출이 consents 업데이트
-      expect(mockSet).toHaveBeenCalledWith(
-        expect.objectContaining({
-          isOver14: true,
-          termsOfService: true,
-          electronicTransaction: true,
-          privacyPolicy: true,
-          thirdPartySharing: false,
-          marketingConsent: false,
-        }),
-      );
-    });
-
-    it('다른 유저가 같은 loginId를 사용 중이면 ConflictException을 던져야 한다', async () => {
-      usersService.findUserByLoginId.mockResolvedValue({ id: 'another-user-id' } as any);
-
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 존재하는 아이디입니다.');
-    });
-
-    it('본인이 같은 loginId를 사용 중이면 통과해야 한다', async () => {
-      usersService.findUserByLoginId.mockResolvedValue({ id: 'existing-user-id' } as any);
-
-      await service.signUp(baseSignUpDto, mockReply);
-
-      expect(mockReply.status).toHaveBeenCalledWith(302);
-    });
-
-    it('다른 유저가 같은 닉네임을 사용 중이면 ConflictException을 던져야 한다', async () => {
-      usersService.findUserByNickname.mockResolvedValue({ id: 'another-user-id' } as any);
-
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 존재하는 닉네임입니다.');
-    });
-
-    it('본인이 같은 닉네임을 사용 중이면 통과해야 한다', async () => {
-      usersService.findUserByNickname.mockResolvedValue({ id: 'existing-user-id' } as any);
-
-      await service.signUp(baseSignUpDto, mockReply);
-
-      expect(mockReply.status).toHaveBeenCalledWith(302);
-    });
-  });
-
-  describe('기존 유저 (인증 완료된 이메일)', () => {
-    it('이미 인증된 이메일이면 ConflictException을 던져야 한다', async () => {
-      usersService.findUserByEmail.mockResolvedValue({
-        id: 'existing-user-id',
-        email: 'test@example.com',
-        isEmailVerified: true,
-      } as any);
-
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
-      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(
-        '이미 가입된 이메일입니다. 로그인을 시도해주세요.',
-      );
+      await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
     });
   });
 

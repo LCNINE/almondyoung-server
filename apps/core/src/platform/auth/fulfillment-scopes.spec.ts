@@ -27,7 +27,9 @@ describe('fulfillment authorization contract', () => {
   });
 
   it('denies an unknown role, a missing mapping and a missing required scope', async () => {
-    let requiredScope = FULFILLMENT_SCOPE.WAREHOUSE_OPERATE;
+    // 초기값만 주면 리터럴 타입으로 좁혀져 아래에서 다른 스코프를 못 넣는다.
+    let requiredScope: (typeof FULFILLMENT_SCOPE)[keyof typeof FULFILLMENT_SCOPE] =
+      FULFILLMENT_SCOPE.WAREHOUSE_OPERATE;
     const reflector = {
       getAllAndOverride: jest.fn(() => [requiredScope]),
     };

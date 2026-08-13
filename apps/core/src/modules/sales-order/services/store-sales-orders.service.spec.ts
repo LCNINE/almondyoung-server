@@ -207,7 +207,8 @@ describe('StoreSalesOrdersService', () => {
 
     it('Wallet이 FAILED 반환 시 refundStatus=failed (취소는 유지)', async () => {
       const { service } = makeContext({
-        walletOutcome: { kind: 'failed', errorCode: 'TOSS_ERROR', errorMessage: 'PG 오류' },
+        // determinate: PG 응답으로 최종 실패가 확정됐는지. 확정 실패라 true.
+        walletOutcome: { kind: 'failed', errorCode: 'TOSS_ERROR', errorMessage: 'PG 오류', determinate: true },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(result.refundStatus).toBe('failed');

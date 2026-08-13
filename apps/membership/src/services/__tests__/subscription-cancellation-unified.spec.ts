@@ -255,6 +255,10 @@ describe('SubscriptionCancellationService', () => {
         cancelType: 'IMMEDIATE_REFUND',
       });
 
+      // 결과가 판별 유니온이 됐다. refundAmount 는 즉시취소 쪽에만 있으므로 먼저 좁힌다.
+      if (result.type !== 'IMMEDIATE_CANCELLATION') {
+        throw new Error(`즉시환불 취소를 요청했는데 결과가 ${result.type} 이다`);
+      }
       expect(result.refundAmount).toBe(49900 - 3 * 4990);
       expect(mockPaymentClientService.refundByIntent).toHaveBeenCalledWith(
         'intent_001',

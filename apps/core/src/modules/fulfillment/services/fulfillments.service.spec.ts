@@ -31,6 +31,8 @@ describe('FulfillmentsService', () => {
     limit: (count: number) => QueryRows<T>;
     offset: (count: number) => QueryRows<T>;
     orderBy: (...args: unknown[]) => QueryRows<T>;
+    /** SELECT … FOR UPDATE — 구현이 붙이면서 목에도 필요해졌다. */
+    for: (...args: unknown[]) => QueryRows<T>;
   };
 
   function rows<T>(value: T[]): QueryRows<T> {

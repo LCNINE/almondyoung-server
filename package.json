@@ -65,6 +65,7 @@
     "fulfillment:v2:verify": "tsx scripts/fulfillment-v2/verify.ts",
     "test:fulfillment-v2-cutover:integration": "REQUIRE_FULFILLMENT_V2_DB=1 jest --runInBand scripts/fulfillment-v2/cleanup.integration.spec.ts",
     "test:channel-dispatch:integration": "REQUIRE_CHANNEL_DISPATCH_DB=1 jest --runInBand apps/channel-adapter/src/services/shipment-dispatch-persistence.integration.spec.ts",
+    "test:coupang:integration": "REQUIRE_COUPANG_INTEGRATION=1 jest --runInBand apps/channel-adapter/coupang-integration.spec.ts",
     "test:inbox-claim-order:integration": "REQUIRE_INBOX_CLAIM_ORDER_DB=1 jest --runInBand apps/channel-adapter/src/adapters/medusa/inbox-claim-order.integration.spec.ts",
     "test:variant-preview:integration": "REQUIRE_VARIANT_PREVIEW_DB=1 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/variant_preview_scratch jest --runInBand --forceExit apps/core/src/modules/catalog/core/products/services/product-masters-variant-preview.integration.spec.ts",
     "test:form-export:integration": "REQUIRE_FORM_EXPORT_DB=1 dotenv -e apps/core/.env -- jest --testPathPattern=form-export.*integration",
@@ -155,7 +156,6 @@
     "test:api:report": "npm run test:api -- --reporters cli,htmlextra --reporter-htmlextra-export test-results/api-test-report.html",
     "test:api:setup": "./postman/generate-test-files.sh",
     "test:bnpl:itdoc": "jest --testPathPattern=bnpl-api.itdoc.spec.ts --verbose",
-    "test:coupang:sync": "ts-node apps/channel-adapter/test-coupang-sync.ts",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/core/test/jest-e2e.json",
@@ -170,13 +170,7 @@
     "test:membership:itdoc": "npm run test:membership",
     "test:membership:verbose": "jest --config ./apps/membership/test/jest-e2e.json --verbose",
     "test:membership:watch": "jest --config ./apps/membership/test/jest-e2e.json --watch",
-    "test:naver-sync": "ts-node apps/channel-adapter/test-naver-sync.ts",
-    "test:naver-sync:token": "ts-node apps/channel-adapter/test-naver-sync.ts token",
     "test:naver-token": "ts-node apps/channel-adapter/test-naver-token.ts",
-    "test:orchestration": "ts-node apps/channel-adapter/test-orchestration.ts",
-    "test:orchestration:command": "ts-node apps/channel-adapter/test-orchestration.ts command",
-    "test:orchestration:poll": "ts-node apps/channel-adapter/test-orchestration.ts poll",
-    "test:orchestration:webhook": "ts-node apps/channel-adapter/test-orchestration.ts webhook",
     "test:payment": "jest --testPathPattern=payment.*spec.ts",
     "test:payment:hms": "jest --testPathPattern=payment.*spec.ts --testNamePattern=\"HMS\"",
     "test:payment:integration": "jest --testPathPattern=payment-flow.integration.spec.ts",
@@ -356,21 +350,23 @@
       "^@packages/event-contracts/(.*)$": "<rootDir>/packages/event-contracts/$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
       "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1",
+      "^@packages/web-observability(|/.*)$": "<rootDir>/packages/web-observability$1",
       "^apps/(.*)$": "<rootDir>/apps/$1",
       "^@/(.*)$": "<rootDir>/apps/admin-web/src/$1"
     },
     "modulePathIgnorePatterns": [
-      "<rootDir>/apps/medusa",
-      "<rootDir>/apps/admin-web/.next",
-      "<rootDir>/apps/admin-web/.open-next",
-      "<rootDir>/apps/admin-web/node_modules",
-      "<rootDir>/apps/wallet-web/.next",
-      "<rootDir>/apps/wallet-web/.open-next",
-      "<rootDir>/apps/wallet-web/node_modules"
+      "/apps/medusa/",
+      "/apps/admin-web/\\.next",
+      "/apps/admin-web/\\.open-next",
+      "/apps/admin-web/node_modules",
+      "/apps/wallet-web/\\.next",
+      "/apps/wallet-web/\\.open-next",
+      "/apps/wallet-web/node_modules"
     ],
     "testPathIgnorePatterns": [
       "/node_modules/",
-      "/e2e/membership-cancel/"
+      "/e2e/membership-cancel/",
+      "/apps/membership/test/membership-api\\.itdoc\\.spec\\.ts$"
     ],
     "rootDir": ".",
     "roots": [

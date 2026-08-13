@@ -431,3 +431,91 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
     qty,
   };
 }
+
+/**
+ * 이미 만들어 둔 (sku, warehouse) 에 대해 **예약을 걸 수 있는 최소 shipment line** 만 심는다.
+ *
+ * `stock_reservations.shipment_line_id` 가 NOT NULL 이 되고 `target_type` 이
+ * `'SHIPMENT_LINE'` 로 좁혀지면서(Task 25 contract), "sku·warehouse 만 만들고 예약을
+ * 꽂던" 재고 쪽 통합 스펙들이 컴파일조차 안 되게 됐다. 그 스펙들은 피킹/배치까지
+ * 필요하지 않으므로 `seedPickableShipment`(피킹 가능 상태 전부)를 쓰면 과하다 —
+ * 그쪽은 confirmed 예약까지 심어서 가용 재고 전제 자체가 달라진다.
+ *
+ * 여기서는 sales order → fulfillment order → shipment → shipment line 체인만 만들고
+ * **예약은 만들지 않는다**. 예약은 각 스펙이 자기 시나리오대로 건다.
+ */
+export async function seedShipmentLineFor(
+  tx: DbTx,
+  params: { skuId: string; warehouseId: string; qty: number },
+): Promise<string> {
+  const suffix = randomUUID();
+  const [salesOrder] = await tx
+    .insert(wmsTables.salesOrders)
+    .values({
+      channelOrderId: `resv-order-${suffix}`,
+      salesChannel: 'medusa',
+      shippingAddress: {},
+      orderDate: new Date(),
+    })
+    .returning();
+  const [salesOrderLine] = await tx
+    .insert(wmsTables.salesOrderLines)
+    .values({
+      salesOrderId: salesOrder.id,
+      variantId: randomUUID(),
+      productName: 'Reservation fixture product',
+      quantity: params.qty,
+      channelOrderItemId: `resv-item-${suffix}`,
+      channelProductId: `resv-product-${suffix}`,
+    })
+    .returning();
+  const [fulfillmentOrder] = await tx
+    .insert(wmsTables.fulfillmentOrders)
+    .values({
+      salesOrderId: salesOrder.id,
+      warehouseId: params.warehouseId,
+      status: 'processing',
+      totalQty: params.qty,
+    })
+    .returning();
+  const [item] = await tx
+    .insert(wmsTables.fulfillmentOrderItems)
+    .values({
+      fulfillmentOrderId: fulfillmentOrder.id,
+      salesOrderId: salesOrder.id,
+      salesOrderLineId: salesOrderLine.id,
+      skuId: params.skuId,
+      qty: params.qty,
+      reservedQty: params.qty,
+      status: 'processing',
+    })
+    .returning();
+  const [shipment] = await tx
+    .insert(wmsTables.shipments)
+    .values({
+      warehouseId: params.warehouseId,
+      status: 'planned',
+      // assertRecipientComplete 가 요구하는 다섯 필드.
+      recipientSnapshot: {
+        recipientName: 'Reservation Fixture',
+        phone: '010-0000-0000',
+        postalCode: '06236',
+        roadAddress: 'Teheran-ro 1',
+        detailAddress: '1F',
+      },
+      plannedAt: new Date(),
+    })
+    .returning();
+  const [line] = await tx
+    .insert(wmsTables.shipmentLines)
+    .values({
+      shipmentId: shipment.id,
+      fulfillmentOrderItemId: item.id,
+      skuId: params.skuId,
+      qty: params.qty,
+      reservedQty: params.qty,
+      inspectedQty: 0,
+    })
+    .returning();
+  return line.id;
+}

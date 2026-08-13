@@ -11,6 +11,7 @@ import { InventoryCommandService } from './inventory-command.service';
 import { LocationService } from './location.service';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { seedShipmentLineFor } from '../../../fulfillment/services/__support__/logistics-fixtures';
 
 /**
  * adjustUp/adjustDown 위치 미지정(관리자 재고 조정 다이얼로그) 경로 통합 테스트 —
@@ -143,9 +144,16 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
     await inRollbackTx(async (tx) => {
       const { warehouse, sku } = await createFixture(tx);
       await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 10 }, tx);
+      // 예약은 shipment line 단위다 — 예약을 걸 수 있는 최소 라인을 먼저 심는다.
+      const shipmentLineId = await seedShipmentLineFor(tx, {
+        skuId: sku.id,
+        warehouseId: warehouse.id,
+        qty: 6,
+      });
       await tx.insert(wmsTables.stockReservations).values({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: randomUUID(),
+        targetType: 'SHIPMENT_LINE',
+        targetId: shipmentLineId,
+        shipmentLineId: shipmentLineId,
         skuId: sku.id,
         warehouseId: warehouse.id,
         quantity: 6,
@@ -165,9 +173,16 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
     await inRollbackTx(async (tx) => {
       const { warehouse, sku } = await createFixture(tx);
       await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 10 }, tx);
+      // 예약은 shipment line 단위다 — 예약을 걸 수 있는 최소 라인을 먼저 심는다.
+      const shipmentLineId = await seedShipmentLineFor(tx, {
+        skuId: sku.id,
+        warehouseId: warehouse.id,
+        qty: 10,
+      });
       await tx.insert(wmsTables.stockReservations).values({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: randomUUID(),
+        targetType: 'SHIPMENT_LINE',
+        targetId: shipmentLineId,
+        shipmentLineId: shipmentLineId,
         skuId: sku.id,
         warehouseId: warehouse.id,
         quantity: 10,

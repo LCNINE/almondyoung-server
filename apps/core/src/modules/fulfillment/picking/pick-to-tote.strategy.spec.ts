@@ -1065,11 +1065,11 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
   jest.spyOn(strategy as any, 'acquireToteLock').mockResolvedValue(undefined);
   jest
     .spyOn(strategy as any, 'lockAndAssertPickerClaim')
-    .mockImplementation(async (workItemId) => state.workItems[workItemId]);
-  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId) => state.workItems[workItemId]);
+    .mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
+  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
   jest
     .spyOn(strategy as any, 'loadShipmentAllocations')
-    .mockImplementation(async (_planId, shipmentId) => state.allocationsForShipment(shipmentId));
+    .mockImplementation(async (_planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId));
   jest
     .spyOn(strategy as any, 'loadToteByBarcode')
     .mockImplementation(async () =>

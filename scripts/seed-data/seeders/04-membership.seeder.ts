@@ -1,7 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { InferInsertModel, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import * as membershipSchema from '../../../apps/membership/drizzle/schema';
+import * as membershipSchema from '../../../apps/membership/src/shared/schemas/entities/schema';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
 

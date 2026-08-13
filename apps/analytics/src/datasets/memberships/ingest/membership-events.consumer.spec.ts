@@ -58,6 +58,7 @@ describe('MembershipEventsConsumer.onMembershipStatusChanged', () => {
       userId: 'user-1',
       status: 'ACTIVE',
       tierId: 'tier-1',
+      contractId: null,
       occurredAt: new Date('2026-07-01T00:00:00.000Z'),
     });
 
@@ -73,6 +74,7 @@ describe('MembershipEventsConsumer.onMembershipStatusChanged', () => {
       userId: 'user-1',
       status: 'ACTIVE',
       tierId: 'tier-1',
+      contractId: 'contract-1',
       occurredAt: new Date('2026-07-01T00:00:00.000Z'),
     };
     const { consumer, tx, membershipFactsService, membershipDimensionsService } = makeConsumer(result);

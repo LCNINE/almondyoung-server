@@ -1,4 +1,5 @@
 import { outbox_events } from '@app/events';
+import { AddressDto } from '../dto/address.dto';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
 import {
   FULFILLMENT_STREAM,
@@ -635,7 +636,8 @@ describeIfDb('Outbound V2 release scenarios', () => {
     tx: DbTx,
     world: ScenarioWorld,
     sources: ScenarioItem[],
-    recipient: Record<string, unknown> = {
+    // consolidate 가 AddressDto 를 요구한다. Record 로 두면 필수 필드 누락을 못 잡는다.
+    recipient: AddressDto = {
       recipientName: 'New recipient',
       phone: '010-9999-9999',
       postalCode: '01234',

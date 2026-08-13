@@ -22,6 +22,8 @@ import { syncWithRetry } from './lib/error-classifier';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
+import type { StorefrontRevalidateService } from '../src/adapters/medusa/storefront-revalidate.service';
+import type { DeferredRevalidateService } from '../src/adapters/medusa/deferred-revalidate.service';
 import type { PimProductSnapshot } from '../src/types';
 import { eq, and } from 'drizzle-orm';
 
@@ -94,7 +96,16 @@ async function main() {
   const sessionService = new MigrationSessionService(channelDb);
   const medusaClient = new MedusaClient(configService);
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
-  const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
+  // 서비스가 storefront 재검증 협력자 2개를 추가로 받게 바뀌었다. 재시도 스크립트는
+  // Medusa 반영만 다시 밀어 넣는 배치라 storefront 무효화까지 태우지 않는다 — no-op 으로 둔다.
+  const noopStorefrontRevalidate = { revalidateProduct: async () => undefined } as unknown as StorefrontRevalidateService;
+  const noopDeferredRevalidate = { enqueue: () => undefined } as unknown as DeferredRevalidateService;
+  const syncService = new PimMedusaSyncService(
+    medusaClient,
+    mappingRepo,
+    noopStorefrontRevalidate,
+    noopDeferredRevalidate,
+  );
 
   try {
     // Query failures

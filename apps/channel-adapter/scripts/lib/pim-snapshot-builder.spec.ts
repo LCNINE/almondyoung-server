@@ -33,8 +33,15 @@ const variantRows = [
 ];
 
 function createFakePimDb(purchaseConstraintRows: unknown[] = []): FakePimDb {
-  const db = jest.fn(async (strings: TemplateStringsArray) => {
+  const query = jest.fn(async (strings: TemplateStringsArray, ..._values: unknown[]): Promise<unknown[]> => {
     const sql = strings.join(' ');
+
+    // queryMasters 의 targetMasterIds 조건부 필터는 조회가 아니라 *SQL 조각*으로
+    // 들어온다 — targetMasterIds 가 없으면 빈 태그드 템플릿(pimDb``)이다.
+    // 아래 throw 는 남겨 둔다: 그게 다음번 쿼리 드리프트를 잡아주는 안전망이다.
+    if (sql.trim() === '' || sql.includes('AND pm.id = ANY')) {
+      return [];
+    }
 
     if (sql.includes('FROM product_masters pm')) {
       return masterRows;
@@ -57,10 +64,11 @@ function createFakePimDb(purchaseConstraintRows: unknown[] = []): FakePimDb {
     }
 
     throw new Error(`Unexpected query: ${sql}`);
-  }) as FakePimDb;
+  });
 
-  db.end = jest.fn();
-  return db;
+  // 호출 시그니처와 end 를 한 번에 갖춘 객체를 만든 뒤 좁힌다.
+  // jest.fn() 결과에 나중에 end 를 붙이면 캐스트 시점에 형태가 안 맞는다.
+  return Object.assign(query, { end: jest.fn() }) as unknown as FakePimDb;
 }
 
 describe('PimSnapshotBuilder', () => {

@@ -10,6 +10,7 @@ import { StockEventStore } from './stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { LocationService } from '../services/location.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { seedShipmentLineFor } from '../../../fulfillment/services/__support__/logistics-fixtures';
 
 /**
  * reverseEvent 락·가드(작업 10b) 통합 테스트 — rollback 전용 (adjust 통합 스펙과 동일 패턴).
@@ -76,10 +77,15 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
     return { warehouse, sku };
   }
 
+  // 예약은 이제 shipment line 단위다 (target_type='SHIPMENT_LINE', shipment_line_id NOT NULL).
+  // 이 스펙이 보는 건 "예약이 있으면 역분개가 409" 하나뿐이라, 예약을 걸 수 있는
+  // 최소 라인만 심고 그 위에 confirmed 예약을 만든다.
   async function reserve(tx: DbTx, skuId: string, warehouseId: string, quantity: number) {
+    const shipmentLineId = await seedShipmentLineFor(tx, { skuId, warehouseId, qty: quantity });
     await tx.insert(wmsTables.stockReservations).values({
-      targetType: 'FULFILLMENT_ORDER',
-      targetId: randomUUID(),
+      targetType: 'SHIPMENT_LINE',
+      targetId: shipmentLineId,
+      shipmentLineId,
       skuId,
       warehouseId,
       quantity,

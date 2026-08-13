@@ -973,7 +973,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         }),
       ]);
       await waitForLockWaiters(applicationPrefix, 2);
-      releaseBlocker();
+      releaseBlocker?.();
       await blocker;
       const results = await race;
 

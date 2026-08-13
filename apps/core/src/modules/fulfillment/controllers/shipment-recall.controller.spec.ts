@@ -24,7 +24,7 @@ describe('ShipmentRecallController', () => {
       roles: ['logistics_manager'],
     });
 
-    const reportHandler: unknown = Object.getOwnPropertyDescriptor(ShipmentRecallController.prototype, 'report')?.value;
+    const reportHandler: object = Object.getOwnPropertyDescriptor(ShipmentRecallController.prototype, 'report')?.value;
     expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, reportHandler)).toEqual([FULFILLMENT_SCOPE.DISPATCH_RECALL]);
     expect(Reflect.getMetadata(HTTP_CODE_METADATA, reportHandler)).toBe(202);
     expect(recall.report).toHaveBeenCalledWith(shipmentId, attemptId, dto, 'recall-key', {
@@ -56,7 +56,7 @@ describe('ShipmentRecallController', () => {
 
     await controller.get('44444444-4444-4444-8444-444444444444');
 
-    const getHandler: unknown = Object.getOwnPropertyDescriptor(
+    const getHandler: object = Object.getOwnPropertyDescriptor(
       ShipmentRecallOperationController.prototype,
       'get',
     )?.value;

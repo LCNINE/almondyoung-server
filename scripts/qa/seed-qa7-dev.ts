@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { outboxPublisherFor } from '../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 /**
@@ -27,6 +28,7 @@ import { SkuCatalogReader } from '../../apps/core/src/modules/inventory/sku-cata
 import { SkuCatalogManager } from '../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.manager';
 import { SkuCatalogService } from '../../apps/core/src/modules/inventory/sku-catalog/services/sku-catalog.service';
 import { InboundService } from '../../apps/core/src/modules/inventory/inbound/services/inbound.service';
+import { InventoryIdempotencyService } from '../../apps/core/src/modules/inventory/core/services/inventory-idempotency.service';
 
 // scripts/seeding/constants/uuids.ts 의 WAREHOUSE_BUCHEON_DOMESTIC
 const WAREHOUSE_BUCHEON = '019d0001-0001-7000-a000-000000000001';
@@ -47,7 +49,14 @@ async function main() {
   }
   console.log(`stage=${stage} app=${Resource.App.name}`);
 
-  const dbRes = Resource.Db as { username: string; password: string; host: string; port: number };
+  // SST 리소스 이름은 배포마다 달라 생성 타입에 Db 가 없을 수 있다
+  // (scripts/seeding/lib/db-connection.ts 와 같은 사정).
+  const dbRes = (Resource as unknown as Record<string, unknown>).Db as {
+    username: string;
+    password: string;
+    host: string;
+    port: number;
+  };
   const url = `postgresql://${dbRes.username}:${encodeURIComponent(dbRes.password)}@${dbRes.host}:${dbRes.port}/core?sslmode=require`;
 
   const sql = postgres(url, { max: 1 });
@@ -63,7 +72,9 @@ async function main() {
   const reader = new SkuCatalogReader(dbService);
   const manager = new SkuCatalogManager(dbService, reader);
   const skuCatalog = new SkuCatalogService(reader, manager);
-  const inbound = new InboundService(dbService, skuCatalog, command, location, eventStore);
+  // InboundService 가 요청 멱등 래퍼를 추가로 받게 바뀌었다.
+  const idempotency = new InventoryIdempotencyService(dbService);
+  const inbound = new InboundService(dbService, skuCatalog, command, location, eventStore, idempotency);
 
   try {
     const [warehouse] = await db
@@ -111,7 +122,13 @@ async function main() {
       const created = await db.transaction(async (tx: DbTx) => {
         const sku = await skuCatalog.create({ name: spec.name, stockType: 'physical' } as never, tx);
         await inbound.simpleInbound(
-          { warehouseId: WAREHOUSE_BUCHEON, items: [{ skuId: sku.id, quantity: spec.qty, memo: spec.memo }] },
+          {
+            warehouseId: WAREHOUSE_BUCHEON,
+            items: [{ skuId: sku.id, quantity: spec.qty, memo: spec.memo }],
+            // 요청 멱등 키가 필수가 됐다. 시드는 SKU 하나당 한 번만 도는 배치라
+            // 실행마다 새 키면 충분하다.
+            idempotencyKey: randomUUID(),
+          },
           tx,
         );
         return sku;

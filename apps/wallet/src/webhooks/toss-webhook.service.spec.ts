@@ -5,11 +5,13 @@ import { TossWebhookBodyDto } from './dto';
 const CHARGE_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ORDER_ID = 'aaaaaaaabbbbccccddddeeeeeeeeeeee';
 
-const depositWebhook = (): TossWebhookBodyDto =>
-  ({
-    eventType: 'PAYMENT_STATUS_CHANGED',
-    data: { orderId: ORDER_ID, status: 'DONE', paymentKey: 'pk_1', totalAmount: 12790 },
-  }) as TossWebhookBodyDto;
+const depositWebhook = (): TossWebhookBodyDto => ({
+  eventType: 'PAYMENT_STATUS_CHANGED',
+  // 계약이 createdAt 을 요구한다. 이 스펙은 시각을 보지 않지만 캐스트로 덮으면
+  // 다음 계약 변경도 못 잡으므로 채워 둔다.
+  createdAt: '2026-08-13T00:00:00.000Z',
+  data: { orderId: ORDER_ID, status: 'DONE', paymentKey: 'pk_1', totalAmount: 12790 },
+});
 
 function buildService(chargeStatus: string) {
   const updateStatus = jest.fn().mockResolvedValue(undefined);

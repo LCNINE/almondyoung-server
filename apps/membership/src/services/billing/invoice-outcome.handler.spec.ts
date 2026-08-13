@@ -43,8 +43,19 @@ function makeHandler(opts: {
   };
   const contractEventManager = { addEvent: jest.fn().mockResolvedValue(undefined) };
   const publisher = { publishStatusChanged: jest.fn().mockResolvedValue(undefined) };
-  const handler = new InvoiceOutcomeHandler({ db } as never, contractEventManager as never, publisher as never);
-  return { handler, tx, updates, contractEventManager, publisher };
+  // 핸들러가 PaymentClientService 를 생성자로 받게 바뀌었다. 이 스펙은 결제 호출을
+  // 검증하지 않으므로 호출 여부만 관찰 가능한 목으로 채운다.
+  const paymentClient = {
+    refundByIntent: jest.fn().mockResolvedValue({ status: 'SUCCEEDED', refundedAmount: 0 }),
+    revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
+  };
+  const handler = new InvoiceOutcomeHandler(
+    { db } as never,
+    contractEventManager as never,
+    publisher as never,
+    paymentClient as never,
+  );
+  return { handler, tx, updates, contractEventManager, publisher, paymentClient };
 }
 
 const activeContract = { userId: 'u1', status: 'ACTIVE', autoRenewal: true, billingPath: 'INVOICE' };

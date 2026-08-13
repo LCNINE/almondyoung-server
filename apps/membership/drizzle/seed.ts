@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { format, addDays, subDays } from 'date-fns';
@@ -69,9 +70,9 @@ async function seed() {
     console.log('📋 플랜 생성 중...');
     const planId = await createPlans(tierId);
 
-    // 4. 테스트 사용자들 생성
-    console.log('👥 테스트 사용자 생성 중...');
-    const userIds = await createTestUsers();
+    // 4. 테스트 사용자 ID 수집 (계정 자체는 user-service SoT — 여기선 참조만)
+    console.log('👥 테스트 사용자 ID 수집 중...');
+    const userIds = collectTestUserIds();
 
     // 5. 구독 계약 생성
     console.log('📄 구독 계약 생성 중...');
@@ -121,8 +122,7 @@ async function cleanupExistingTestData() {
   // 구독 계약 정리
   await db.delete(schema.subscriptionContracts);
 
-  // 사용자 정리
-  await db.delete(schema.users);
+  // 사용자는 membership 소유가 아니다 (user-service SoT) — 여기서 지우지 않는다.
 
   // 플랜 정리
   await db.delete(schema.plan);
@@ -163,22 +163,14 @@ async function createPlans(tierId: string): Promise<string> {
   return plan.id;
 }
 
-async function createTestUsers(): Promise<string[]> {
-  const userIds: string[] = [];
-
-  for (const scenario of TEST_SCENARIOS) {
-    const [user] = await db
-      .insert(schema.users)
-      .values({
-        id: scenario.userId,
-      })
-      .returning();
-
-    userIds.push(user.id);
-    console.log(`   ✓ 사용자 생성: ${scenario.name} (ID: ${user.id})`);
-  }
-
-  return userIds;
+// membership 은 더 이상 users 테이블을 소유하지 않는다 — 계정은 user-service SoT 이고
+// subscription_contracts.user_id 는 FK 없는 varchar 다. 그래서 여기서는 만들 게 없고
+// 시나리오가 들고 있는 userId 를 그대로 쓴다.
+function collectTestUserIds(): string[] {
+  return TEST_SCENARIOS.map((scenario) => {
+    console.log(`   ✓ 사용자 참조: ${scenario.name} (ID: ${scenario.userId})`);
+    return scenario.userId;
+  });
 }
 
 async function createSubscriptionContracts(userIds: string[], planId: string) {
@@ -189,6 +181,9 @@ async function createSubscriptionContracts(userIds: string[], planId: string) {
     await db.insert(schema.subscriptionContracts).values({
       userId,
       planId,
+      // billingDate 는 30일 주기의 기준점이라 NOT NULL 이다. 시드에서는 첫 결제일을
+      // 시나리오의 다음 결제일과 같게 둔다.
+      billingDate: scenario.nextBillingDate,
       nextBillingDate: scenario.nextBillingDate,
       leadDays: 0,
       isVoided: false,
@@ -231,7 +226,9 @@ async function createDunningQueue() {
     const [contract] = await db
       .select()
       .from(schema.subscriptionContracts)
-      .where(schema.subscriptionContracts.userId === scenario.userId);
+      // `===` 는 컬럼 객체와 문자열을 비교해 항상 false 인 boolean 을 where 에 넘겼다.
+      // drizzle 조건은 eq() 로 만들어야 한다.
+      .where(eq(schema.subscriptionContracts.userId, scenario.userId));
 
     if (contract) {
       const nextRetryAt = addDays(new Date(), 1); // 내일 재시도

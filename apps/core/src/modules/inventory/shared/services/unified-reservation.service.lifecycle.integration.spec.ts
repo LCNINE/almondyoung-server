@@ -11,6 +11,7 @@ import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { LocationService } from '../../core/services/location.service';
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { UnifiedReservationService } from './unified-reservation.service';
+import { seedShipmentLineFor } from '../../../fulfillment/services/__support__/logistics-fixtures';
 
 /**
  * 예약 생명주기(reserve→release) 원복 통합 검증. rollback 전용 트랜잭션.
@@ -83,8 +84,17 @@ describeIfDb('UnifiedReservationService reserve→release 원복 (DB integration
     await inRollbackTx(async (tx) => {
       const { wh, sku, loc } = await seedStock(tx, 100);
 
+      // V2 예약은 shipment line 단위다 — 예약 대상 라인을 먼저 심는다.
+      const shipmentLineId = await seedShipmentLineFor(tx, { skuId: sku.id, warehouseId: wh.id, qty: 40 });
       const res = await reservation.reserveStock(
-        { targetType: 'FULFILLMENT_ORDER', targetId: randomUUID(), skuId: sku.id, warehouseId: wh.id, quantity: 40 },
+        {
+          targetType: 'SHIPMENT_LINE',
+          targetId: shipmentLineId,
+          shipmentLineId,
+          skuId: sku.id,
+          warehouseId: wh.id,
+          quantity: 40,
+        },
         tx,
       );
       expect(await reservation.getTotalReservedQuantity(sku.id, wh.id, tx)).toBe(40);

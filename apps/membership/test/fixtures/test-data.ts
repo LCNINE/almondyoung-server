@@ -126,6 +126,8 @@ export const resumeSubscriptionRequestData = (): ResumeSubscriptionRequest => ({
  * 구독 취소 요청 데이터
  */
 export const cancelSubscriptionRequestData = (): CancelSubscriptionRequest => ({
+  // reasonCode 가 필수가 됐다 — 자유 서술 reason 만으로는 사유 집계가 안 된다.
+  reasonCode: 'NO_LONGER_NEEDED',
   reason: 'E2E Test Cancel',
 });
 

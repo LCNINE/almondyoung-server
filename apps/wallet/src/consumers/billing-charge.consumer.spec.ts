@@ -60,6 +60,8 @@ describe('BillingChargeConsumer', () => {
   let mockProvider: {
     providerType: string;
     autoCapture: boolean;
+    // PaymentProvider 가 요구하는 필드다. 빠지면 provider 로 못 넘긴다.
+    actionMode: 'interactive' | 'offline-wait';
     authorize: jest.Mock;
     capture: jest.Mock;
     cancel: jest.Mock;
@@ -73,6 +75,7 @@ describe('BillingChargeConsumer', () => {
     mockProvider = {
       providerType: 'TOSS_BILLING',
       autoCapture: true,
+      actionMode: 'interactive',
       authorize: jest.fn(),
       capture: jest.fn(),
       cancel: jest.fn(),

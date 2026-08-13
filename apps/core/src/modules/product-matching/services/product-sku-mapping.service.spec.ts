@@ -27,6 +27,20 @@ function createSelectMock(resultsByTable: Map<unknown, unknown[]>) {
   });
 }
 
+// getByVariant 는 links 를 trx.query.productVariantSkuLinks.findMany 가 아니라
+// trx.select().from().leftJoin().where() 로 읽도록 바뀌었다 (SKU 이름/코드를 함께
+// 내리기 위해). links 배열이 테스트 도중 재할당되므로 스냅샷이 아니라 getter 로 읽는다.
+function createLinkSelectMock(getLinks: () => unknown[]) {
+  return jest.fn(() => {
+    const query = {
+      from: jest.fn(() => query),
+      leftJoin: jest.fn(() => query),
+      where: jest.fn(() => createThenableResult(getLinks())),
+    };
+    return query;
+  });
+}
+
 function createService(dbService: any, productSellableQuantity: any, fulfillmentBacklog?: any) {
   return new ProductSkuMappingService(
     dbService as any,
@@ -172,6 +186,7 @@ describe('ProductSkuMappingService', () => {
           findMany: jest.fn().mockImplementation(async () => links),
         },
       },
+      select: createLinkSelectMock(() => links),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, unknown>) => {
           updates.push({ table, set });
@@ -287,6 +302,7 @@ describe('ProductSkuMappingService', () => {
           findMany: jest.fn().mockImplementation(async () => links),
         },
       },
+      select: createLinkSelectMock(() => links),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, unknown>) => {
           updates.push({ table, set });
@@ -400,6 +416,7 @@ describe('ProductSkuMappingService', () => {
           findMany: jest.fn().mockImplementation(async () => links),
         },
       },
+      select: createLinkSelectMock(() => links),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, unknown>) => {
           updates.push({ table, set });

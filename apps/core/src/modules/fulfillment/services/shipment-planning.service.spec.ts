@@ -61,7 +61,11 @@ describe('ShipmentPlanningService command boundary', () => {
 
     expect(canonicalFulfillmentRequestHash(firstRequest)).toBe(canonicalFulfillmentRequestHash(secondRequest));
     expect(
-      (firstRequest as { moves: Array<{ shipmentLineId: string }> }).moves.map((move) => move.shipmentLineId),
+      // split() 의 반환에는 moves 가 없다(operationId/source/target). 해시 입력으로
+      // 쓰이는 정규화 결과에서 라인 순서를 보려는 의도라 unknown 을 거쳐 좁힌다.
+      (firstRequest as unknown as { moves: Array<{ shipmentLineId: string }> }).moves.map(
+        (move) => move.shipmentLineId,
+      ),
     ).toEqual([firstLineId, secondLineId]);
   });
 
