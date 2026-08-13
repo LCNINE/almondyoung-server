@@ -13,16 +13,17 @@ describe('calculatePartialCancellationRefund', () => {
     cancelledLines: [{ salesOrderLineId: 'line1', quantity: 1 }],
   };
 
-  // ── 환불 금액 계산 (autoRefundable은 항상 false — 수동 검토 필수) ──────────────
+  // ── 환불 금액 계산 (manualRequired는 항상 true — 수동 검토 필수) ──────────────
+  // refundEstimateAmount 는 비례 배분 *추정값*이지 실제 환불액이 아니다.
 
   it('단일 라인 부분 취소 — 비중 환불 금액 계산 후 manual_pending', () => {
     const result = calculatePartialCancellationRefund(baseInput);
     // totalLineValue = 30000, cancelledLineValue = 10000
     // productSubtotal = 30000 - 3000 = 27000
     // ratio = 1/3, grossRefund = round(9000) = 9000
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('PARTIAL_CANCEL_MANUAL_REVIEW');
-    expect(result.refundAmount).toBe(9000);
+    expect(result.refundEstimateAmount).toBe(9000);
     expect(result.breakdown.shippingRefund).toBe(0);
   });
 
@@ -36,8 +37,8 @@ describe('calculatePartialCancellationRefund', () => {
     });
     // cancelledLineValue = 10000 + 10000 = 20000
     // ratio = 20000/30000, grossRefund = round(2/3 * 27000) = 18000
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(18000);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(18000);
   });
 
   it('부분 수량 취소 (3개 중 2개)', () => {
@@ -55,8 +56,8 @@ describe('calculatePartialCancellationRefund', () => {
     // totalLineValue = 50000, cancelledLineValue = 20000
     // productSubtotal = 50000, ratio = 0.4
     // grossRefund = round(0.4 * 50000) = 20000
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(20000);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(20000);
   });
 
   it('배송비 없는 주문 — 무료배송', () => {
@@ -67,8 +68,8 @@ describe('calculatePartialCancellationRefund', () => {
     });
     // productSubtotal = 30000
     // ratio = 1/3, grossRefund = round(10000) = 10000
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(10000);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(10000);
   });
 
   it('주문 레벨 할인이 비중으로 배분됨 (금액 참고용)', () => {
@@ -87,8 +88,8 @@ describe('calculatePartialCancellationRefund', () => {
     // totalLineValue = 30000, cancelledLineValue = 10000
     // productSubtotal = 24000, ratio = 1/3
     // grossRefund = round(1/3 * 24000) = round(8000) = 8000
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(8000);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(8000);
   });
 
   it('모든 수량 취소 — 배송비 제외한 전액 (참고용)', () => {
@@ -101,8 +102,8 @@ describe('calculatePartialCancellationRefund', () => {
     });
     // ratio = 1.0, productSubtotal = 27000
     // 배송비(3000)는 환불 안 함
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(27000);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(27000);
     expect(result.breakdown.shippingRefund).toBe(0);
   });
 
@@ -118,39 +119,39 @@ describe('calculatePartialCancellationRefund', () => {
     // totalLineValue = 3000, cancelledLineValue = 1000
     // ratio = 1/3, productSubtotal = 10000
     // grossRefund = round(10000/3) = round(3333.33) = 3333
-    expect(result.autoRefundable).toBe(false);
-    expect(result.refundAmount).toBe(3333);
+    expect(result.manualRequired).toBe(true);
+    expect(result.refundEstimateAmount).toBe(3333);
   });
 
   // ── manual_pending 케이스 ──────────────────────────────────────────────────
 
   it('채널 주문(naver) — CHANNEL_ORDER', () => {
     const result = calculatePartialCancellationRefund({ ...baseInput, salesChannel: 'naver' });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('CHANNEL_ORDER');
   });
 
   it('채널 주문(coupang) — CHANNEL_ORDER', () => {
     const result = calculatePartialCancellationRefund({ ...baseInput, salesChannel: 'coupang' });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('CHANNEL_ORDER');
   });
 
   it('walletIntentId 없음 — NO_WALLET_INTENT', () => {
     const result = calculatePartialCancellationRefund({ ...baseInput, walletIntentId: null });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('NO_WALLET_INTENT');
   });
 
   it('totalAmount null — NO_ORDER_TOTAL', () => {
     const result = calculatePartialCancellationRefund({ ...baseInput, totalAmount: null });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('NO_ORDER_TOTAL');
   });
 
   it('totalAmount 0 — NO_ORDER_TOTAL', () => {
     const result = calculatePartialCancellationRefund({ ...baseInput, totalAmount: 0 });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('NO_ORDER_TOTAL');
   });
 
@@ -162,7 +163,7 @@ describe('calculatePartialCancellationRefund', () => {
         { id: 'line2', quantity: 1, unitPrice: 10000 },
       ],
     });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('NO_LINE_PRICING');
   });
 
@@ -179,9 +180,9 @@ describe('calculatePartialCancellationRefund', () => {
     // cancelledLineValue = 10000, totalLineValue = 2*10000 + 1*0 = 20000
     // productSubtotal = 27000, ratio = 10000/20000 = 0.5
     // grossRefund = round(0.5 * 27000) = 13500
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('PARTIAL_CANCEL_MANUAL_REVIEW');
-    expect(result.refundAmount).toBe(13500);
+    expect(result.refundEstimateAmount).toBe(13500);
   });
 
   it('전액 할인으로 상품 소계 0 — ZERO_REFUND_AMOUNT', () => {
@@ -190,7 +191,7 @@ describe('calculatePartialCancellationRefund', () => {
       totalAmount: 3000, // 배송비만 결제, 상품 전액 무료
       shippingFee: 3000,
     });
-    expect(result.autoRefundable).toBe(false);
+    expect(result.manualRequired).toBe(true);
     expect(result.manualReason).toBe('ZERO_REFUND_AMOUNT');
   });
 
@@ -202,7 +203,7 @@ describe('calculatePartialCancellationRefund', () => {
     expect(result.breakdown.totalLineValue).toBe(30000);
     expect(result.breakdown.productSubtotal).toBe(27000);
     expect(result.breakdown.shippingRefund).toBe(0);
-    expect(result.breakdown.grossRefund).toBe(result.refundAmount);
+    expect(result.breakdown.grossRefund).toBe(result.refundEstimateAmount);
     expect(result.breakdown.ratio).toBeCloseTo(1 / 3);
   });
 
