@@ -746,7 +746,7 @@ describe('MedusaClient product sellable inventory projection', () => {
     });
 
     expect(batchVariants).toHaveBeenCalledWith('prod_1', {
-      update: [{ id: 'variant_medusa_1', manage_inventory: false }],
+      update: [{ id: 'variant_medusa_1', manage_inventory: false, allow_backorder: false }],
     });
     expect(upsertProjectionInventoryLevel).toHaveBeenCalledWith('iitem_projection', 0);
   });
@@ -847,7 +847,7 @@ describe('MedusaClient product sellable inventory projection', () => {
     });
 
     expect(batchVariants).toHaveBeenCalledWith('prod_1', {
-      update: [{ id: 'variant_medusa_1', manage_inventory: true }],
+      update: [{ id: 'variant_medusa_1', manage_inventory: true, allow_backorder: false }],
     });
     expect(upsertProjectionInventoryLevel).toHaveBeenCalledWith('iitem_projection', 7);
   });
