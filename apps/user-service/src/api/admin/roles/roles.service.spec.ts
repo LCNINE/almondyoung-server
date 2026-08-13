@@ -1,4 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { RolesManager } from './roles.manager';
+import { RolesReader } from './roles.reader';
 import { RolesService } from './roles.service';
 
 describe('RolesService', () => {
@@ -6,7 +8,11 @@ describe('RolesService', () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [RolesService],
+      providers: [
+        RolesService,
+        { provide: RolesReader, useValue: {} },
+        { provide: RolesManager, useValue: {} },
+      ],
     }).compile();
 
     service = module.get<RolesService>(RolesService);
