@@ -1,5 +1,6 @@
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
+import type { PimProductSnapshot } from '../../types';
 
 describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
   const payload: ProductSellableQuantityChangedPayload = {
@@ -93,6 +94,68 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
       }),
     ).rejects.toThrow('ProductSellableQuantityChanged missing masterId for variant pim-var-1');
     expect(medusaClient.applyProductSellableQuantityProjection).not.toHaveBeenCalled();
+  });
+});
+
+describe('PimMedusaSyncService.syncFromSnapshot 의 revalidate 분기', () => {
+  const snapshot: PimProductSnapshot = {
+    masterId: 'master-1',
+    versionId: 'version-1',
+    version: 1,
+    name: 'Test Product',
+    variants: [
+      {
+        id: 'pim-var-1',
+        isDefault: true,
+        status: 'active',
+        basePrice: 10000,
+      },
+    ],
+    status: 'active',
+  };
+
+  function createService() {
+    const medusaClient = {
+      ensureProductType: jest.fn().mockResolvedValue('ptype_1'),
+      getDefaultSalesChannel: jest.fn().mockResolvedValue('sc_1'),
+      getShippingProfileIdForGroup: jest.fn().mockResolvedValue('ship_1'),
+      upsertProduct: jest.fn().mockResolvedValue({
+        product: { id: 'prod_1', variants: [] },
+        action: 'created',
+      }),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue(null),
+      recordSuccess: jest.fn().mockResolvedValue(undefined),
+    };
+    const storefrontRevalidate = { revalidateProduct: jest.fn().mockResolvedValue(undefined) };
+    const deferredRevalidate = { enqueue: jest.fn() };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+      deferredRevalidate as any,
+    );
+
+    return { service, storefrontRevalidate, deferredRevalidate };
+  }
+
+  it('대량등록(isBulk=true)이면 buffer 에 쌓고 즉시 revalidate 하지 않는다', async () => {
+    const { service, storefrontRevalidate, deferredRevalidate } = createService();
+
+    await service.syncFromSnapshot(snapshot, { skipCategorySync: true, isBulk: true });
+
+    expect(deferredRevalidate.enqueue).toHaveBeenCalledWith('master-1');
+    expect(storefrontRevalidate.revalidateProduct).not.toHaveBeenCalled();
+  });
+
+  it('단건 동기화(isBulk 없음)면 즉시 revalidate 하고 buffer 에 쌓지 않는다', async () => {
+    const { service, storefrontRevalidate, deferredRevalidate } = createService();
+
+    await service.syncFromSnapshot(snapshot, { skipCategorySync: true });
+
+    expect(storefrontRevalidate.revalidateProduct).toHaveBeenCalledWith('master-1');
+    expect(deferredRevalidate.enqueue).not.toHaveBeenCalled();
   });
 });
 
