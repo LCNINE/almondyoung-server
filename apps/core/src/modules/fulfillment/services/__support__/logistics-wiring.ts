@@ -85,7 +85,11 @@ export function wireLogistics(
   const policies = new PoliciesService(dbService);
   const availability = new AvailabilityService(dbService);
   const backlog = new FulfillmentOrderCreationBacklogService(dbService, workflowGate);
-  const productSkuMapping = new ProductSkuMappingService(dbService, sellable, backlog);
+  // ProductSkuMappingService 는 catalog+inventory 를 걸치는 cross-BC seam 이라
+  // DbService<MergedSchema> 를 요구한다(CLAUDE.md). 이 헬퍼가 받는 건 wms 스키마 하나지만
+  // 런타임 객체는 같은 커넥션이고 스키마는 타입에만 나타난다 — 바로 위 sellable 과 같은
+  // 이유로 여기서 한 번만 좁힌다.
+  const productSkuMapping = new ProductSkuMappingService(dbService as never, sellable, backlog);
   const progress = new FulfillmentProgressService();
   const invariant = new FulfillmentInvariantService();
   const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);

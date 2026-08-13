@@ -36,6 +36,12 @@ async function addSecondSimpleOutboundLine(
     .from(wmsTables.fulfillmentOrderItems)
     .where(eq(wmsTables.fulfillmentOrderItems.id, existingLine.fulfillmentOrderItemId))
     .limit(1);
+  // fulfillment_order_items.sales_order_id 는 nullable 이지만 sales_order_lines 는
+  // NOT NULL 이다. 픽스처가 만든 항목이라 항상 있어야 하고, 없으면 픽스처가 깨진 것이다.
+  const existingSalesOrderId = existingItem.salesOrderId;
+  if (!existingSalesOrderId) {
+    throw new Error('픽스처의 fulfillment_order_item 에 sales_order_id 가 없다');
+  }
   const [shipment] = await tx
     .select({ shippingProfileId: wmsTables.shipments.shippingProfileId })
     .from(wmsTables.shipments)
@@ -67,7 +73,7 @@ async function addSecondSimpleOutboundLine(
   const [salesOrderLine] = await tx
     .insert(wmsTables.salesOrderLines)
     .values({
-      salesOrderId: existingItem.salesOrderId,
+      salesOrderId: existingSalesOrderId,
       variantId: randomUUID(),
       productName: 'Simple product (second line)',
       quantity: qty,
@@ -79,7 +85,7 @@ async function addSecondSimpleOutboundLine(
     .insert(wmsTables.fulfillmentOrderItems)
     .values({
       fulfillmentOrderId: existingItem.fulfillmentOrderId,
-      salesOrderId: existingItem.salesOrderId,
+      salesOrderId: existingSalesOrderId,
       salesOrderLineId: salesOrderLine.id,
       skuId: sku.id,
       qty,

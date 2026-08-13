@@ -9,6 +9,7 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { UnifiedReservationService } from './unified-reservation.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { seedShipmentLineFor } from '../../../fulfillment/services/__support__/logistics-fixtures';
 
 /**
  * reserveStock 의 (sku, warehouse) advisory 락이 TOCTOU 를 직렬화하는지 확인 —
@@ -72,18 +73,30 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
       .insert(wmsTables.stockLedgers)
       .values({ skuId: sku.id, warehouseId: wh.id, locationId: loc.id, stockState: 'ON_HAND', qty: 10 });
 
+    // V2 예약은 shipment line 단위다. 같은 재고를 노리는 *서로 다른 주문 라인* 두 개가
+    // 경합하는 상황이라야 이 테스트가 원래 보려던 것(sku+warehouse advisory 락이
+    // TOCTOU 를 직렬화한다)이 그대로 재현된다. 픽스처는 커밋돼야 하므로 트랜잭션으로 감싼다.
+    const [lineA, lineB] = await db.transaction(async (tx) =>
+      Promise.all([
+        seedShipmentLineFor(tx, { skuId: sku.id, warehouseId: wh.id, qty: 10 }),
+        seedShipmentLineFor(tx, { skuId: sku.id, warehouseId: wh.id, qty: 10 }),
+      ]),
+    );
+
     const svc = makeService(db);
     const results = await Promise.allSettled([
       svc.reserveStock({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: randomUUID(),
+        targetType: 'SHIPMENT_LINE',
+        targetId: lineA,
+        shipmentLineId: lineA,
         skuId: sku.id,
         warehouseId: wh.id,
         quantity: 10,
       }),
       svc.reserveStock({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: randomUUID(),
+        targetType: 'SHIPMENT_LINE',
+        targetId: lineB,
+        shipmentLineId: lineB,
         skuId: sku.id,
         warehouseId: wh.id,
         quantity: 10,

@@ -240,8 +240,8 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         warehouseId,
         pickingMethod: 'total_picking',
         status: 'picking',
-        totalItems: 2,
-        totalQty: 10,
+        // totalItems / totalQty 는 outbound_batches 에서 사라진 컬럼이다
+        // (집계는 work item 쪽에서 센다).
       })
       .returning();
     const [workA, workB] = await tx
