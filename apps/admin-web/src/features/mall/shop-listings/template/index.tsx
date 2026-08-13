@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { SimplePagination } from '@/components/simple-pagination';
 import { useDeleteShopListing, useShopListings } from '@/lib/services/products';
 import {
   SHOP_LISTING_REGION_LABELS,
@@ -24,12 +25,22 @@ import {
 } from '@/lib/types/dto/products';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 
+const PER_PAGE = 20;
+
 export default function ShopListingsTemplate() {
   const { data, isLoading } = useShopListings({ includeInactive: true });
   const deleteMutation = useDeleteShopListing();
   const [deleteTarget, setDeleteTarget] = useState<ShopListingDto | null>(null);
+  const [page, setPage] = useState(1);
 
   const listings = data ?? [];
+  // 수백 건을 넘어가면 서버에 page/limit 을 넣을 것.
+  const totalPages = Math.max(1, Math.ceil(listings.length / PER_PAGE));
+  const currentPage = Math.min(page, totalPages);
+  const pageItems = listings.slice(
+    (currentPage - 1) * PER_PAGE,
+    currentPage * PER_PAGE
+  );
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -74,7 +85,7 @@ export default function ShopListingsTemplate() {
       )}
 
       <ul className="grid gap-3">
-        {listings.map((listing) => {
+        {pageItems.map((listing) => {
           const thumbnailUrl = resolvePublicFileUrl(listing.thumbnailFileId);
 
           return (
@@ -107,7 +118,7 @@ export default function ShopListingsTemplate() {
                     </Badge>
                   )}
                   <Badge variant={listing.isActive ? 'default' : 'secondary'}>
-                    {listing.isActive ? '보임' : '숨김'}
+                    {listing.isActive ? '노출중' : '숨김'}
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-1 truncate text-xs">
@@ -132,6 +143,14 @@ export default function ShopListingsTemplate() {
           );
         })}
       </ul>
+
+      {totalPages > 1 && (
+        <SimplePagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setPage}
+        />
+      )}
 
       <AlertDialog
         open={!!deleteTarget}

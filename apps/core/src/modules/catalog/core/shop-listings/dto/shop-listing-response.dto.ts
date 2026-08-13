@@ -37,6 +37,9 @@ export class ShopListingResponseDto {
   @ApiProperty({ description: '대표 이미지 fileId', required: false, nullable: true })
   thumbnailFileId: string | null;
 
+  @ApiProperty({ description: '샵 사진 갤러리 fileId 목록 (배열 순서 = 노출 순서)', type: [String] })
+  images: string[];
+
   @ApiProperty({ description: '노출 여부' })
   isActive: boolean;
 

@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import {
   SHOP_LISTING_BUSINESS_TYPES,
   SHOP_LISTING_DEAL_TYPES,
@@ -75,6 +86,16 @@ export class CreateShopListingDto {
   @ApiProperty({ description: '대표 이미지 fileId (목록 카드 · 공유 OG 이미지로 쓰이므로 필수)' })
   @IsUUID()
   thumbnailFileId: string;
+
+  @ApiProperty({
+    description: '샵 사진 갤러리 fileId 목록. 배열 순서가 그대로 노출 순서다.',
+    required: false,
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  images?: string[];
 
   @ApiProperty({ description: '노출 여부', default: true })
   @IsOptional()

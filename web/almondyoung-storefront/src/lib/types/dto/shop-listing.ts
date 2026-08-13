@@ -51,6 +51,8 @@ export interface ShopListingResponseDto {
   monthlyRent: number | null
   keyMoney: number | null
   thumbnailFileId: string | null
+  /** 샵 사진 갤러리 fileId 목록. 배열 순서가 곧 노출 순서 */
+  images: string[]
   isActive: boolean
   deletedAt: string | null
   createdAt: string

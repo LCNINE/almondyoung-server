@@ -1,5 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import {
   SHOP_LISTING_BUSINESS_TYPES,
   SHOP_LISTING_DEAL_TYPES,
@@ -74,6 +85,16 @@ export class UpdateShopListingDto {
   @IsOptional()
   @IsUUID()
   thumbnailFileId?: string;
+
+  @ApiProperty({
+    description: '샵 사진 갤러리 fileId 목록. 보낸 배열로 통째로 교체한다.',
+    required: false,
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  images?: string[];
 
   @ApiProperty({ description: '노출 여부', required: false })
   @IsOptional()

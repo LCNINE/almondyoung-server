@@ -17,7 +17,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ImageUploadField } from '@/components/common/image-upload-field';
 import {
   RichTextEditor,
   isEmptyHtml,
@@ -43,6 +42,7 @@ import { useInViewport } from '@/lib/hooks/use-in-viewport';
 import { shouldShowFloatingCollapse } from '@/features/mall/products-detail/components/description/product-description-floating-collapse';
 import { cn } from '@/lib/utils';
 import { MoneyInput } from '../money-input';
+import { ImageGalleryField } from '../image-gallery-field';
 
 type Props = {
   listing?: ShopListingDto;
@@ -62,9 +62,9 @@ export function ShopListingForm({ listing }: Props) {
 
   const [title, setTitle] = useState(listing?.title ?? '');
   const [content, setContent] = useState(listing?.content ?? '');
-  const [thumbnailFileId, setThumbnailFileId] = useState<string | null>(
-    listing?.thumbnailFileId ?? null
-  );
+  const [images, setImages] = useState<string[]>(listing?.images ?? []);
+  // 대표 사진은 따로 고르지 않는다 — 갤러리 맨 앞 사진이 곧 대표다.
+  const thumbnailFileId = images[0] ?? null;
   const [region, setRegion] = useState<ShopListingRegion | ''>(
     listing?.region ?? ''
   );
@@ -118,7 +118,7 @@ export function ShopListingForm({ listing }: Props) {
       JSON.stringify([
         title,
         content,
-        thumbnailFileId,
+        images,
         region,
         businessType,
         dealType,
@@ -131,7 +131,7 @@ export function ShopListingForm({ listing }: Props) {
     [
       title,
       content,
-      thumbnailFileId,
+      images,
       region,
       businessType,
       dealType,
@@ -192,9 +192,9 @@ export function ShopListingForm({ listing }: Props) {
       toast.error('업종을 선택해 주세요.');
       return;
     }
-    if (!thumbnailFileId) {
+    if (images.length === 0) {
       focusField('thumbnail');
-      toast.error('대표 사진을 올려 주세요.');
+      toast.error('샵 사진을 한 장 이상 올려 주세요.');
       return;
     }
     if (isEmptyHtml(content)) {
@@ -216,6 +216,7 @@ export function ShopListingForm({ listing }: Props) {
       monthlyRent: toWon(monthlyRent),
       keyMoney: toWon(keyMoney),
       thumbnailFileId,
+      images,
       isActive,
     };
 
@@ -239,11 +240,13 @@ export function ShopListingForm({ listing }: Props) {
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-background border-border sticky top-14 z-20 -mt-4 flex items-center justify-between gap-3 border-b py-3 lg:top-16">
-        <div className="min-w-0">
+        {/* 안내 문구가 나타날 때 헤더 높이가 변해 본문이 밀리지 않도록 자리를 미리 잡아둔다 */}
+        <div className={cn('min-w-0', listing && 'min-h-[46px]')}>
           <h1 className="truncate text-xl font-bold">
             {listing ? '샵매매 글 수정' : '샵매매 새 글'}
           </h1>
-          {isDirty && (
+          {/* 새 글은 아직 저장된 원본이 없어 "변경사항"이 성립하지 않는다 — 수정 화면에서만 알린다 */}
+          {listing && isDirty && (
             <p className="text-muted-foreground text-xs">
               저장하지 않은 변경사항이 있어요
             </p>
@@ -300,7 +303,9 @@ export function ShopListingForm({ listing }: Props) {
                       if (invalid === 'content') setInvalid(null);
                     }}
                     imageContextId={SHOP_LISTING_IMAGE_CONTEXT_ID}
-                    placeholder="카페 글을 그대로 붙여넣으세요. 금액과 평수는 아래 칸에 따로 넣습니다."
+                    placeholder="본문을 작성해주세요."
+                    // 사진은 위 「샵 사진」 한 곳에서만 관리한다
+                    allowImages={false}
                   />
                 </div>
 
@@ -399,7 +404,7 @@ export function ShopListingForm({ listing }: Props) {
         <div className="flex flex-col gap-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">노출</CardTitle>
+              <CardTitle className="text-base">쇼핑몰 노출</CardTitle>
             </CardHeader>
             <CardContent className="flex items-center gap-3">
               <Switch
@@ -409,7 +414,7 @@ export function ShopListingForm({ listing }: Props) {
                 disabled={isPending}
               />
               <Label htmlFor="isActive" className="font-normal">
-                {isActive ? '보임' : '숨김'}
+                {isActive ? '노출중' : '숨김'}
               </Label>
             </CardContent>
           </Card>
@@ -472,25 +477,20 @@ export function ShopListingForm({ listing }: Props) {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                대표 사진 <span className="text-destructive">*</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="pt-6">
               <div
                 ref={thumbnailRef}
                 className={cn(invalid === 'thumbnail' && invalidBox)}
               >
-                <ImageUploadField
-                  label=""
-                  value={thumbnailFileId}
-                  onChange={(fileId) => {
-                    setThumbnailFileId(fileId);
-                    if (invalid === 'thumbnail') setInvalid(null);
+                <ImageGalleryField
+                  value={images}
+                  onChange={(next) => {
+                    setImages(next);
+                    if (invalid === 'thumbnail' && next.length > 0) {
+                      setInvalid(null);
+                    }
                   }}
                   contextId={SHOP_LISTING_IMAGE_CONTEXT_ID}
-                  slotRatio={{ width: 4, height: 3 }}
                   disabled={isPending}
                 />
               </div>

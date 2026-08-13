@@ -1,0 +1,1 @@
+ALTER TABLE "shop_listings" ADD COLUMN "images" jsonb;

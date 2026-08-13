@@ -1076,6 +1076,8 @@ export const shopListings = pgTable(
     monthlyRent: bigint('monthly_rent', { mode: 'number' }),
     keyMoney: bigint('key_money', { mode: 'number' }),
     thumbnailFileId: uuid('thumbnail_file_id'),
+    /** 샵 사진 갤러리. file-service fileId 배열이고 순서가 곧 노출 순서다. */
+    images: jsonb('images').$type<string[]>(),
     isActive: boolean('is_active').notNull().default(true),
 
     deletedAt: timestamp('deleted_at'),

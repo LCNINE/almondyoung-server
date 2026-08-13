@@ -512,6 +512,13 @@
       "when": 1786537926293,
       "tag": "20260812123206_fix-inbound-pending-warehouse-key",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1786603129653,
+      "tag": "20260813063849_add-shop-listing-images",
+      "breakpoints": true
     }
   ]
 }

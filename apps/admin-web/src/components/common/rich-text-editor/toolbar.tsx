@@ -21,9 +21,16 @@ type Props = {
   editor: Editor;
   onImageClick: () => void;
   imageUploading: boolean;
+  /** 끄면 이미지 버튼 자체를 숨긴다 (사진 전용 필드가 따로 있는 화면) */
+  allowImages?: boolean;
 };
 
-export function EditorToolbar({ editor, onImageClick, imageUploading }: Props) {
+export function EditorToolbar({
+  editor,
+  onImageClick,
+  imageUploading,
+  allowImages = true,
+}: Props) {
   const handleLink = () => {
     const prev = editor.getAttributes('link').href as string | undefined;
     const url = window.prompt('링크 URL을 입력하세요.', prev ?? 'https://');
@@ -131,19 +138,24 @@ export function EditorToolbar({ editor, onImageClick, imageUploading }: Props) {
         <Link2Off />
       </Button>
 
-      <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+      {allowImages && (
+        <>
+          <span className="mx-1 h-5 w-px bg-border" aria-hidden />
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 min-w-8 px-1.5"
-        disabled={imageUploading}
-        onClick={onImageClick}
-        aria-label="이미지 업로드"
-      >
-        {imageUploading ? <Loader2 className="animate-spin" /> : <ImageIcon />}
-      </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 min-w-8 px-1.5"
+            disabled={imageUploading}
+            onClick={onImageClick}
+            aria-label="이미지 업로드"
+            title="이미지 올리기 (여러 장 선택 가능 · 끌어다 놓기도 됩니다)"
+          >
+            {imageUploading ? <Loader2 className="animate-spin" /> : <ImageIcon />}
+          </Button>
+        </>
+      )}
     </div>
   );
 }

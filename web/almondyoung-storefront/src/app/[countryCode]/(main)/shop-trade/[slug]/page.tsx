@@ -5,6 +5,7 @@ import { getTranslations } from "next-intl/server"
 import { ChevronLeft } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
+import { ListingGallery } from "@/domains/shop-trade/components/listing-gallery"
 import { RelatedListings } from "@/domains/shop-trade/components/related-listings"
 import { ShareButton } from "@/domains/shop-trade/components/share-button"
 import { formatKoreanMoney } from "@/domains/shop-trade/format-money"
@@ -115,17 +116,22 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
         <ShareButton title={listing.title} />
       </div>
 
-      {thumbnailUrl && (
-        <div className="bg-muted relative mt-6 aspect-[4/3] w-full overflow-hidden rounded-xl">
-          <Image
-            src={thumbnailUrl}
-            alt={listing.title}
-            fill
-            sizes="(min-width: 800px) 800px, 100vw"
-            priority
-            className="object-cover"
-          />
-        </div>
+      {/* 갤러리를 등록했으면 슬라이드로, 아니면 예전처럼 대표 사진 한 장만 */}
+      {listing.images.length > 0 ? (
+        <ListingGallery images={listing.images} alt={listing.title} />
+      ) : (
+        thumbnailUrl && (
+          <div className="bg-muted relative mt-6 aspect-[4/3] w-full overflow-hidden rounded-xl">
+            <Image
+              src={thumbnailUrl}
+              alt={listing.title}
+              fill
+              sizes="(min-width: 800px) 800px, 100vw"
+              priority
+              className="object-cover"
+            />
+          </div>
+        )
       )}
 
       <dl className="border-border mt-6 grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border p-4 sm:grid-cols-3">

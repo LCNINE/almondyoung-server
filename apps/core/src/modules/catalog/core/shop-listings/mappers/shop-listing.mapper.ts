@@ -17,6 +17,7 @@ export class ShopListingMapper {
       monthlyRent: entity.monthlyRent,
       keyMoney: entity.keyMoney,
       thumbnailFileId: entity.thumbnailFileId,
+      images: entity.images ?? [],
       isActive: entity.isActive,
       deletedAt: DateMapper.toNullableString(entity.deletedAt),
       createdAt: DateMapper.toNotNullString(entity.createdAt),
