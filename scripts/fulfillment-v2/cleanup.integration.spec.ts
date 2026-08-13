@@ -32,6 +32,8 @@ type Fixture = {
     fulfillmentOrderId: string;
     fulfillmentOrderItemId: string;
     shipmentId: string;
+    /** audit 이후 삭제 드리프트를 재현할 때 지울 행. createFixture 가 이미 만들고 있었다. */
+    auditLogId: string;
   };
 };
 

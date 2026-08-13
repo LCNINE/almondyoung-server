@@ -33,7 +33,8 @@ describe('OutboxDispatcher stale processing recovery', () => {
     const tx = {
       select: jest.fn(() => makeSelectReturning([])),
     };
-    const transaction = jest.fn(async (callback: (tx: typeof tx) => Promise<unknown>) => callback(tx));
+    // 콜백 파라미터를 tx 로 두면 그 이름이 typeof tx 를 가려 자기참조가 된다.
+    const transaction = jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>) => callback(tx));
 
     const dispatcher = new OutboxDispatcher({ db: { update: rootUpdate, transaction } } as any, new Map(), {
       processingTimeoutMs: 60_000,
