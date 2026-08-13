@@ -103,6 +103,7 @@ export default function ProductCard({
   overlay,
   countryCode = "kr",
   isWishlisted = false,
+  onClick,
 }: {
   product: HttpTypes.StoreProduct
   isMembership: boolean
@@ -110,6 +111,7 @@ export default function ProductCard({
   overlay?: React.ReactNode
   countryCode?: string
   isWishlisted?: boolean
+  onClick?: () => void
 }) {
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
@@ -155,6 +157,7 @@ export default function ProductCard({
     <LocalizedClientLink
       href={`/products/${product.handle}`}
       className="cursor-pointer group"
+      onClick={onClick}
     >
       <div>
         <div className="relative">

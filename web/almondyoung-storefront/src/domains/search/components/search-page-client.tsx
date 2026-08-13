@@ -1,7 +1,10 @@
 "use client"
 
 import ProductCard from "@/domains/products/components/product-card"
+import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
+import { getProductPrice } from "@/lib/utils/get-product-price"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
+import type { HttpTypes } from "@medusajs/types"
 import CustomDropdown from "@components/dropdown"
 import { SearchHistory } from "@components/search/search-history"
 import { SharedPagination } from "@/components/shared/pagination"
@@ -52,6 +55,29 @@ export function SearchPageClient({
 
   const hasKeyword = keyword.length > 0
   const hasResults = items.length > 0
+
+  const handleProductSelect = (
+    product: HttpTypes.StoreProduct,
+    index: number
+  ) => {
+    const { cheapestPrice } = getProductPrice({ product })
+
+    trackEvent("select_item", {
+      item_list_id: "search_results",
+      item_list_name: "Search Results",
+      search_term: keyword,
+      currency: toGaCurrency(cheapestPrice?.currency_code),
+      items: [
+        {
+          item_id: product.id,
+          item_name: product.title,
+          price: cheapestPrice?.calculated_price_number ?? 0,
+          quantity: 1,
+          index: (currentPage - 1) * pagination.size + index,
+        },
+      ],
+    })
+  }
 
   const handleSortChange = (sortId: string) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -148,7 +174,7 @@ export function SearchPageClient({
 
       <section className="mb-8">
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-          {items.map((product) => (
+          {items.map((product, index) => (
             <ProductCard
               key={product.id}
               product={product}
@@ -156,6 +182,7 @@ export function SearchPageClient({
               isMembershipOnly={getIsMembershipOnly(product)}
               countryCode={countryCode}
               isWishlisted={wishlistIds.includes(product.id ?? "")}
+              onClick={() => handleProductSelect(product, index)}
             />
           ))}
         </div>

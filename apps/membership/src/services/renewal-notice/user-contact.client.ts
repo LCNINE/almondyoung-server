@@ -39,14 +39,15 @@ export class UserContactClient {
 
     for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
       const chunk = userIds.slice(i, i + CHUNK_SIZE);
+      // user-service 는 전역 ResponseInterceptor 로 모든 응답을 { success, data } 로 감싼다.
       const { data } = await firstValueFrom(
-        this.httpService.post<UserContact[]>(
+        this.httpService.post<{ data: UserContact[] }>(
           `${baseUrl}/users/internal/contacts`,
           { userIds: chunk },
           { headers: { Authorization: `Bearer ${key}` } },
         ),
       );
-      for (const contact of data) {
+      for (const contact of data.data) {
         result.set(contact.userId, contact);
       }
     }
