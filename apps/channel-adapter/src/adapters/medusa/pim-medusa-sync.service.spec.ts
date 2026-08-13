@@ -1,5 +1,6 @@
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
+import type { PimProductSnapshot } from '../../types';
 
 describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
   const payload: ProductSellableQuantityChangedPayload = {
@@ -30,10 +31,12 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -94,6 +97,68 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
   });
 });
 
+describe('PimMedusaSyncService.syncFromSnapshot 의 revalidate 분기', () => {
+  const snapshot: PimProductSnapshot = {
+    masterId: 'master-1',
+    versionId: 'version-1',
+    version: 1,
+    name: 'Test Product',
+    variants: [
+      {
+        id: 'pim-var-1',
+        isDefault: true,
+        status: 'active',
+        basePrice: 10000,
+      },
+    ],
+    status: 'active',
+  };
+
+  function createService() {
+    const medusaClient = {
+      ensureProductType: jest.fn().mockResolvedValue('ptype_1'),
+      getDefaultSalesChannel: jest.fn().mockResolvedValue('sc_1'),
+      getShippingProfileIdForGroup: jest.fn().mockResolvedValue('ship_1'),
+      upsertProduct: jest.fn().mockResolvedValue({
+        product: { id: 'prod_1', variants: [] },
+        action: 'created',
+      }),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue(null),
+      recordSuccess: jest.fn().mockResolvedValue(undefined),
+    };
+    const storefrontRevalidate = { revalidateProduct: jest.fn().mockResolvedValue(undefined) };
+    const deferredRevalidate = { enqueue: jest.fn() };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+      deferredRevalidate as any,
+    );
+
+    return { service, storefrontRevalidate, deferredRevalidate };
+  }
+
+  it('대량등록(isBulk=true)이면 buffer 에 쌓고 즉시 revalidate 하지 않는다', async () => {
+    const { service, storefrontRevalidate, deferredRevalidate } = createService();
+
+    await service.syncFromSnapshot(snapshot, { skipCategorySync: true, isBulk: true });
+
+    expect(deferredRevalidate.enqueue).toHaveBeenCalledWith('master-1');
+    expect(storefrontRevalidate.revalidateProduct).not.toHaveBeenCalled();
+  });
+
+  it('단건 동기화(isBulk 없음)면 즉시 revalidate 하고 buffer 에 쌓지 않는다', async () => {
+    const { service, storefrontRevalidate, deferredRevalidate } = createService();
+
+    await service.syncFromSnapshot(snapshot, { skipCategorySync: true });
+
+    expect(storefrontRevalidate.revalidateProduct).toHaveBeenCalledWith('master-1');
+    expect(deferredRevalidate.enqueue).not.toHaveBeenCalled();
+  });
+});
+
 describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
   function createService(mapping?: { medusaProductId?: string | null } | null) {
     const medusaClient = {
@@ -106,10 +171,12 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
     const storefrontRevalidate = {
       revalidateProduct: jest.fn().mockResolvedValue(undefined),
     };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -174,10 +241,12 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     };
     const mappingRepo = { findByPimMasterId: jest.fn(), update: jest.fn() };
     const storefrontRevalidate = { revalidateProduct: jest.fn() };
+    const deferredRevalidate = { enqueue: jest.fn() };
     const service = new PimMedusaSyncService(
       medusaClient as any,
       mappingRepo as any,
       storefrontRevalidate as any,
+      deferredRevalidate as any,
     );
     return { service, medusaClient, calls };
   }
@@ -218,6 +287,33 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
     expect(medusaClient.addPricesToPriceList).toHaveBeenCalledWith(tierListId, [
       { amount: 9000, currency_code: 'krw', variant_id: 'variant_m1', min_quantity: 5 },
     ]);
+    expect(calls).toEqual(['remove', 'add']);
+  });
+
+  it('신규 생성 상품이면 remove 를 건너뛰고 add 만 한다', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 34000, tieredPrices: [] }],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { skipRemove: true });
+
+    expect(medusaClient.removeProductFromPriceList).not.toHaveBeenCalled();
+    expect(medusaClient.addPricesToPriceList).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(['add']);
+  });
+
+  it('기존 상품이면 지금까지대로 remove 후 add 한다', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 34000, tieredPrices: [] }],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { skipRemove: false });
+
+    expect(medusaClient.removeProductFromPriceList).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['remove', 'add']);
   });
 });
@@ -303,5 +399,22 @@ describe('PimMedusaSyncService 카테고리 조상 처리', () => {
       ['root', false],
       ['child', false],
     ]);
+  });
+});
+
+import { isBulkOrigin } from './pim-medusa-sync.service';
+
+describe('isBulkOrigin', () => {
+  it('bulk_import 를 대량으로 판정한다', () => {
+    expect(isBulkOrigin('bulk_import')).toBe(true);
+  });
+
+  it('출처가 없으면 단건으로 판정한다', () => {
+    expect(isBulkOrigin(undefined)).toBe(false);
+    expect(isBulkOrigin('')).toBe(false);
+  });
+
+  it('모르는 출처는 단건으로 판정한다 — 안전한 쪽이 즉시 반영이다', () => {
+    expect(isBulkOrigin('admin_ui')).toBe(false);
   });
 });

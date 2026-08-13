@@ -76,6 +76,7 @@ import { ShipmentDispatchInboxWorker } from './services/shipment-dispatch-inbox.
 import { MedusaClient } from './adapters/medusa/medusa.client';
 import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service';
 import { StorefrontRevalidateService } from './adapters/medusa/storefront-revalidate.service';
+import { DeferredRevalidateService } from './adapters/medusa/deferred-revalidate.service';
 import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
@@ -270,6 +271,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     ProductSellableQuantityConsumer,
     MembershipEventConsumer,
     PimMedusaMappingRepository,
+    DeferredRevalidateService,
     InboxWorkerService,
 
     // 주문 수집 (Provider 패턴)

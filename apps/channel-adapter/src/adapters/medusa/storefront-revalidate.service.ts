@@ -26,6 +26,28 @@ export class StorefrontRevalidateService {
   }
 
   /**
+   * 여러 상품을 한 번에 무효화한다. 대량등록처럼 상품이 연달아 바뀔 때 쓴다.
+   *
+   * 첫 handle 만 `handle` 로 싣는다. 라우트는 `handle` 이 있을 때만 전역 목록 태그
+   * (PRODUCT_LIST_TAG)와 국가별 경로를 도는데, 그건 배치당 1회면 족하고 상품마다
+   * 반복하면 캐시가 데워질 틈이 없어진다 — 그게 지금 고치려는 문제다.
+   * 반대로 아예 안 실으면 목록 캐시가 영영 안 지워져 새 상품이 목록에 안 뜬다.
+   *
+   * 나머지 상품은 `product-{handle}` 태그로 정확히 지운다.
+   */
+  async revalidateProducts(handles: string[]): Promise<void> {
+    if (handles.length === 0) return;
+
+    const [first, ...rest] = handles;
+    const tags = [
+      // product-{first} 는 라우트가 handle 로부터 직접 친다. pim-detail 은 안 친다.
+      `pim-detail-${first}`,
+      ...rest.flatMap((h) => [`product-${h}`, `pim-detail-${h}`]),
+    ];
+    await this.post({ handle: first, tags }, `batch=${handles.length}`);
+  }
+
+  /**
    * 카테고리 변경(이미지·이름·정렬) 후 호출한다.
    *
    * 카테고리 트리 자체는 스토어프론트가 `cache: "no-store"` 로 읽으므로 무효화가 필요 없지만,

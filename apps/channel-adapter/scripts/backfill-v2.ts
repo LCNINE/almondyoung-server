@@ -33,6 +33,7 @@ import { MigrationSessionService } from './lib/migration-session.service';
 import { syncWithRetry, classifyError } from './lib/error-classifier';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 import { StorefrontRevalidateService } from '../src/adapters/medusa/storefront-revalidate.service';
+import { DeferredRevalidateService } from '../src/adapters/medusa/deferred-revalidate.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
 
@@ -189,10 +190,14 @@ async function main() {
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
   // StorefrontRevalidateService 는 무인자 생성(환경변수 없으면 no-op). 생성자 3번째 인자 누락으로
   // backfill-v2 가 깨져 있던 것을 함께 보정한다.
+  // 4번째 인자 DeferredRevalidateService 도 마찬가지로 무인자에 가까운 구성으로 채운다 —
+  // 이 스크립트는 isBulk 를 세팅하지 않으므로 실제로 dereference 되지 않는다.
+  const revalidateSvc = new StorefrontRevalidateService();
   const syncService = new PimMedusaSyncService(
     medusaClient,
     mappingRepo,
-    new StorefrontRevalidateService(),
+    revalidateSvc,
+    new DeferredRevalidateService(revalidateSvc, new ConfigService()),
   );
 
   // 카테고리/태그/타입/세일즈채널 캐시를 미리 채워 product 당 list/verify HTTP 호출을

@@ -4,6 +4,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MedusaClient } from './medusa.client';
 import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
 import { StorefrontRevalidateService } from './storefront-revalidate.service';
+import { DeferredRevalidateService } from './deferred-revalidate.service';
 import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to-medusa.transformer';
 import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
@@ -13,6 +14,17 @@ import type {
   ProductMasterDeletedPayload,
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
+
+/**
+ * 대량 출처 목록. inbox-worker 의 BULK_ORIGINS 와 같은 값이지만, 그쪽은 metadata 를 읽는
+ * SQL 레인 판정이고 이쪽은 payload 를 읽는 핸들러 분기라 의도적으로 따로 둔다.
+ * 모르는 값은 단건으로 본다 — 즉시 반영이 안전한 기본값이다.
+ */
+const BULK_SYNC_ORIGINS: readonly string[] = ['bulk_import'];
+
+export function isBulkOrigin(origin?: string): boolean {
+  return !!origin && BULK_SYNC_ORIGINS.includes(origin);
+}
 
 export interface SyncResult {
   success: boolean;
@@ -32,6 +44,7 @@ export class PimMedusaSyncService {
     private readonly medusaClient: MedusaClient,
     private readonly mappingRepo: PimMedusaMappingRepository,
     private readonly storefrontRevalidate: StorefrontRevalidateService,
+    private readonly deferredRevalidate: DeferredRevalidateService,
   ) {}
 
   // PIMCLIENT: This method is disabled because it calls PIM API (this.pimClient.getCategory)
@@ -296,8 +309,12 @@ export class PimMedusaSyncService {
   // }
 
   // 스냅샷 기반 동기화 (Phase 2 - PIM API 호출 없음)
-  async syncFromSnapshot(snapshot: PimProductSnapshot, options?: { skipCategorySync?: boolean }): Promise<SyncResult> {
+  async syncFromSnapshot(
+    snapshot: PimProductSnapshot,
+    options?: { skipCategorySync?: boolean; isBulk?: boolean },
+  ): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
+    const startedAt = Date.now();
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
 
@@ -386,7 +403,11 @@ export class PimMedusaSyncService {
 
       this.logger.log(`Sync completed: ${masterId} → Medusa ${product.id} (${action})`);
 
-      await this.syncPriceLists(snapshot, product.id, product.variants);
+      await this.syncPriceLists(snapshot, product.id, product.variants, {
+        // 신규 생성 상품은 price list 에 항목이 있을 수 없다. remove 는 상품당 3.30초로
+        // 상품 생성(2.86초)보다 비싼 호출이라 건너뛰는 값어치가 크다.
+        skipRemove: action === 'created',
+      });
 
       await this.mappingRepo.recordSuccess(masterId, {
         pimVersionId: versionId,
@@ -396,8 +417,17 @@ export class PimMedusaSyncService {
         action,
       });
 
-      // 상품 변경을 스토어프론트 캐시에 즉시 반영 (best-effort)
-      await this.storefrontRevalidate.revalidateProduct(medusaPayload.handle);
+      // 대량등록은 상품마다 무효화하면 전역 목록 태그를 상품 수만큼 지우게 된다.
+      // 버퍼에 모았다가 주기마다 한 번만 친다. 단건은 지금까지대로 즉시 반영.
+      if (options?.isBulk) {
+        this.deferredRevalidate.enqueue(medusaPayload.handle);
+      } else {
+        await this.storefrontRevalidate.revalidateProduct(medusaPayload.handle);
+      }
+
+      // 핸들러 종료 표지. 'Sync completed'(:387) 는 price list 와 revalidate 앞이라
+      // 종료 시점이 아니다 — 전후 성능 비교가 이 로그에 걸린다.
+      this.logger.log(`Sync finished: ${masterId} (${Date.now() - startedAt}ms)`);
 
       return {
         success: true,
@@ -417,6 +447,10 @@ export class PimMedusaSyncService {
       } catch (recordError) {
         this.logger.error('Failed to record failure', recordError);
       }
+
+      // 성공 경로의 'Sync finished'(:430)와 짝을 이루는 실패 경로 표지. 재측정 로그가
+      // 실패 건을 빠뜨리면 느린 실패가 평균에서 빠져 낙관적으로 왜곡된다.
+      this.logger.log(`Sync finished (failed): ${masterId} (${Date.now() - startedAt}ms)`);
 
       throw error;
     }
@@ -452,6 +486,8 @@ export class PimMedusaSyncService {
 
     this.logger.log(`📨 PIM Event: ${masterId} (${changeReason}) - versionId: ${versionId ?? 'none'}`);
 
+    const isBulk = isBulkOrigin(event.origin);
+
     switch (changeReason) {
       case 'published':
       case 'rollback':
@@ -464,7 +500,7 @@ export class PimMedusaSyncService {
           this.logger.error(error.message);
           throw error;
         }
-        await this.syncFromSnapshot(snapshot);
+        await this.syncFromSnapshot(snapshot, { isBulk });
         break;
 
       case 'unpublished':
@@ -567,7 +603,8 @@ export class PimMedusaSyncService {
   private async syncPriceLists(
     snapshot: PimProductSnapshot,
     medusaProductId: string,
-    medusaVariants?: MedusaProduct['variants'],
+    medusaVariants: MedusaProduct['variants'] | undefined,
+    opts: { skipRemove?: boolean } = {},
   ): Promise<void> {
     if (!medusaVariants || medusaVariants.length === 0) return;
 
@@ -617,7 +654,10 @@ export class PimMedusaSyncService {
       // otherwise re-sync accumulates duplicate rows and a stale-lower price wins (Medusa applies
       // the lowest). Remove→add briefly leaves the product without a membership price; that only
       // ever falls back to the higher base price, so it never undercharges.
-      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      // 신규 생성 상품은 지울 항목이 없으므로 skipRemove 로 건너뛴다.
+      if (!opts.skipRemove) {
+        await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      }
       await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
     }
 
@@ -630,7 +670,9 @@ export class PimMedusaSyncService {
         status: 'active',
       });
       // Replace, not append (same rationale as the membership list above).
-      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      if (!opts.skipRemove) {
+        await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+      }
       await this.medusaClient.addPricesToPriceList(listId, prices);
     }
   }
