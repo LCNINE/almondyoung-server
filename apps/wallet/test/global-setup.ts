@@ -27,13 +27,13 @@ tsConfigPaths.register({
 // 이제 import 가능
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import { AppModule } from '../src/app.module';
+import { WalletModule } from '../src/wallet.module';
 import type { App } from 'supertest/types';
 
 // 4. globalSetup 함수 정의
 export default async function globalSetup(): Promise<void> {
   const moduleFixture: TestingModule = await Test.createTestingModule({
-    imports: [AppModule],
+    imports: [WalletModule],
   }).compile();
 
   const app: INestApplication = moduleFixture.createNestApplication();
