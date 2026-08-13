@@ -1,6 +1,6 @@
 // apps/channel-adapter/src/services/pim-medusa-sync/pim-to-medusa.transformer.spec.ts
 import { transformPimToMedusa, validatePimSnapshot } from './pim-to-medusa.transformer';
-import type { PimProductSnapshot } from '../../types';
+import type { PimProductSnapshot } from '../../../types';
 
 describe('PimToMedusaTransformer', () => {
   const mockSnapshot: PimProductSnapshot = {

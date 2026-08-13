@@ -12,7 +12,9 @@ function makePromiseTerminal<T>(rows: T[]) {
 }
 
 function makeCacheTx(callbacks: { onConflictDoUpdate: jest.Mock; onConflictDoNothing: jest.Mock }) {
-  const rowsForTable = (table: unknown) => {
+  // 테이블마다 행 모양이 달라 반환이 union 이 된다. 명시하지 않으면
+  // makePromiseTerminal<T> 가 첫 멤버로 T 를 고정해 나머지를 거부한다.
+  const rowsForTable = (table: unknown): Record<string, unknown>[] => {
     if (table === productMasterVersions) return [{ id: 'version-1' }];
     if (table === productMasterVariants) return [{ variantId: 'variant-1' }];
     return [];

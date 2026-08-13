@@ -38,8 +38,9 @@ type AssemblerFixtures = {
   variantOptionValuesByVariant?: Record<string, Array<Record<string, unknown>>>;
 };
 
+// overrides 가 id 를 필수로 요구하므로(...overrides 가 뒤에 있어 어차피 덮어쓴다)
+// 여기서 id 를 따로 적으면 중복이다.
 const category = (overrides: Partial<CategoryFixture> & Pick<CategoryFixture, 'id'>): CategoryFixture => ({
-  id: overrides.id,
   name: 'Lip',
   slug: 'lip',
   path: '/makeup/lip',
