@@ -532,7 +532,8 @@ describe('MedusaClient.listOrders', () => {
       expect.objectContaining({
         method: 'GET',
         query: expect.objectContaining({
-          updated_at: { gt: '2026-05-26T00:00:00.000Z' },
+          // Medusa v2 는 `$gt` 만 해석한다. `gt` 로 보내면 에러 없이 무시하고 전체를 돌려준다.
+          updated_at: { $gt: '2026-05-26T00:00:00.000Z' },
         }),
       }),
     );

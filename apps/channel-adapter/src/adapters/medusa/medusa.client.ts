@@ -1752,8 +1752,12 @@ export class MedusaClient {
    * 결제 완료된 Medusa 주문 목록 조회 (증분 처리)
    *
    * - payment_status 기반으로 Payment Accepted 상태(authorized/captured)만 클라이언트 필터링
-   * - updated_at[gt]: since (신규 + 변경 주문 모두 포함하는 증분 처리)
+   * - updated_at[$gt]: since (신규 + 변경 주문 모두 포함하는 증분 처리)
    * - line_items.variant.metadata, line_items.variant.product.metadata 포함
+   *
+   * ⚠️ 연산자는 `$gt` 다 — `gt` 로 보내면 Medusa v2 가 **에러 없이 무시**하고 전체를 돌려준다.
+   * 2026-08-14 까지 `gt` 로 나가고 있었고, 그래서 5분마다 전 주문(2,534건)을 26페이지로
+   * 훑으며 Medusa CPU 를 5분당 1분씩(약 20%) 태우고 있었다. 주문이 늘수록 악화된다.
    */
   async listOrders(params: { since?: Date | null; limit?: number }): Promise<MedusaOrder[]> {
     const limit = params.limit ?? 100;
@@ -1768,7 +1772,7 @@ export class MedusaClient {
       };
 
       if (params.since) {
-        query['updated_at'] = { gt: params.since.toISOString() };
+        query['updated_at'] = { $gt: params.since.toISOString() };
       }
 
       const result = await this.sdk.client.fetch<{ orders: MedusaOrder[]; count: number }>('/admin/orders', {
