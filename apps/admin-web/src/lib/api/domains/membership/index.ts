@@ -146,6 +146,8 @@ export interface AdminMemberDetail {
   } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
+  /** 실제로 멤버십 자격을 보유했던 일수의 합. 만료 뒤 흐른 시간은 포함하지 않는다. */
+  membershipUsageDays: number;
 }
 
 export interface BillingEventItem {
@@ -160,6 +162,19 @@ export interface BillingEventItem {
   createdAt: string;
 }
 
+/** 이벤트 종류마다 채워지는 키가 다르다. 로그를 문장으로 풀어쓰는 데 쓴다. */
+export interface ContractEventMetadata {
+  days?: number;
+  reason?: string | null;
+  newEndsAt?: string | null;
+  previousEndsAt?: string | null;
+  amount?: number;
+  refundType?: string | null;
+  refundAmount?: number;
+  isForced?: boolean;
+  billingMode?: string;
+}
+
 export interface ContractEventItem {
   id: number;
   contractId: string;
@@ -167,6 +182,7 @@ export interface ContractEventItem {
   userId: string;
   causedBy: string;
   causedByUserId: string | null;
+  metadata?: ContractEventMetadata;
   createdAt: string;
 }
 

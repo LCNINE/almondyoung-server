@@ -149,6 +149,8 @@ export interface AdminMemberDetail {
   refundReceiveAccount: { bank: string; accountNumber: string; holderName: string } | null;
   pauseCount: number;
   firstContractCreatedAt: string;
+  /** 실제로 멤버십 자격을 보유했던 일수의 합. 만료 뒤 흐른 시간은 포함하지 않는다. */
+  membershipUsageDays: number;
 }
 
 export interface BillingEventItem {
@@ -163,6 +165,22 @@ export interface BillingEventItem {
   createdAt: string;
 }
 
+/**
+ * 이벤트 종류마다 채워지는 키가 다르다. 화면이 "며칠 지급했는지 / 왜 해지했는지" 를 문장으로
+ * 풀어쓰려면 이 값이 필요하다 — 이게 없으면 로그가 영문 상수 나열로만 보인다.
+ */
+export interface ContractEventMetadata {
+  days?: number;
+  reason?: string | null;
+  newEndsAt?: string | null;
+  previousEndsAt?: string | null;
+  amount?: number;
+  refundType?: string | null;
+  refundAmount?: number;
+  isForced?: boolean;
+  billingMode?: string;
+}
+
 export interface ContractEventItem {
   id: number;
   contractId: string;
@@ -170,6 +188,7 @@ export interface ContractEventItem {
   userId: string;
   causedBy: string;
   causedByUserId: string | null;
+  metadata: ContractEventMetadata;
   createdAt: string;
 }
 
@@ -564,11 +583,6 @@ export class AdminMembersReader {
   }
 
   async findDetailByUserId(userId: string): Promise<AdminMemberDetail | null> {
-    const entitlementConditions = and(
-      eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
-      eq(schema.subscriptionEntitlement.isCurrent, true),
-    );
-
     const rows = await this.dbService.db
       .select({
         contractId: schema.subscriptionContracts.id,
@@ -591,14 +605,10 @@ export class AdminMembersReader {
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
         tierPriority: schema.tiers.priorityLevel,
-        startsAt: schema.subscriptionEntitlement.startsAt,
-        endsAt: schema.subscriptionEntitlement.endsAt,
-        pausedAt: schema.subscriptionEntitlement.pausedAt,
       })
       .from(schema.subscriptionContracts)
       .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
       .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
-      .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
       .where(eq(schema.subscriptionContracts.userId, userId))
       .orderBy(desc(schema.subscriptionContracts.createdAt))
       .limit(1);
@@ -606,6 +616,41 @@ export class AdminMembersReader {
     if (!rows.length) return null;
 
     const r = rows[0];
+
+    // isCurrent 만 보면 만료·해지 회원은 이용 종료일이 통째로 사라진다(화면에 '-').
+    // 현재 자격을 우선하되, 없으면 마지막 자격을 쓴다.
+    const entitlementRows = await this.dbService.db
+      .select({
+        startsAt: schema.subscriptionEntitlement.startsAt,
+        // 조기 종료된 자격은 closed_at 이 실제 종료일이다. 미종료면 least 가 ends_at 을 그대로 준다.
+        endsAt: sql<string>`least(${schema.subscriptionEntitlement.endsAt}, ${schema.subscriptionEntitlement.closedAt}::date)`,
+        pausedAt: schema.subscriptionEntitlement.pausedAt,
+      })
+      .from(schema.subscriptionEntitlement)
+      .where(eq(schema.subscriptionEntitlement.userId, userId))
+      // 정렬도 실효 종료일 기준이어야 한다 — 원본 ends_at 으로 정렬하면 조기 종료된 이상치(2108년 등)가
+      // 마지막 자격 자리를 차지해 화면에 엉뚱한 날짜가 뜬다.
+      .orderBy(
+        desc(schema.subscriptionEntitlement.isCurrent),
+        desc(sql`least(${schema.subscriptionEntitlement.endsAt}, ${schema.subscriptionEntitlement.closedAt}::date)`),
+      )
+      .limit(1);
+    const entitlement = entitlementRows[0] ?? { startsAt: null, endsAt: null, pausedAt: null };
+
+    // 실제로 자격을 보유했던 일수. 갱신·재지급마다 새 자격 행이 생기고 구간이 서로 겹치므로
+    // 단순 합은 과대계상된다(340일 같은 값이 나온다) — range_agg 로 병합한 뒤 센다.
+    // 종료 경계는 ends_at, 조기 종료(closed_at), 오늘 중 가장 이른 날.
+    // ponytail: 일시정지 구간은 차감하지 않는다. 정확히 빼려면 pause_events 재생이 필요하다.
+    const usageRows = await this.dbService.db.execute<{ days: number }>(sql`
+      select coalesce(sum(upper(r) - lower(r)), 0)::int as days
+      from unnest((
+        select range_agg(daterange(e.starts_at, least(e.ends_at, coalesce(e.closed_at::date, 'infinity'::date), current_date)))
+        from subscription_entitlement e
+        where e.user_id = ${userId}
+          and least(e.ends_at, coalesce(e.closed_at::date, 'infinity'::date), current_date) > e.starts_at
+      )) as r
+    `);
+    const membershipUsageDays = Number(usageRows[0]?.days ?? 0);
 
     const pauseCountResult = await this.dbService.db
       .select({ count: count() })
@@ -623,7 +668,7 @@ export class AdminMembersReader {
     const firstContractCreatedAt = firstContractResult[0]?.createdAt?.toISOString() ?? r.createdAt.toISOString();
 
     let computedStatus = r.contractStatus;
-    if (r.contractStatus === 'ACTIVE' && r.pausedAt !== null) {
+    if (r.contractStatus === 'ACTIVE' && entitlement.pausedAt !== null) {
       computedStatus = 'PAUSED';
     }
 
@@ -659,10 +704,10 @@ export class AdminMembersReader {
       planDurationDays: r.planDurationDays,
       billingDate: r.billingDate,
       nextBillingDate: r.nextBillingDate,
-      startsAt: r.startsAt,
-      endsAt: r.endsAt,
-      isPaused: r.pausedAt !== null,
-      pausedAt: r.pausedAt ? r.pausedAt.toISOString() : null,
+      startsAt: entitlement.startsAt,
+      endsAt: entitlement.endsAt,
+      isPaused: entitlement.pausedAt !== null,
+      pausedAt: entitlement.pausedAt ? entitlement.pausedAt.toISOString() : null,
       createdAt: r.createdAt.toISOString(),
       cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
       autoRenewal: r.autoRenewal,
@@ -680,6 +725,7 @@ export class AdminMembersReader {
       refundReceiveAccount,
       pauseCount,
       firstContractCreatedAt,
+      membershipUsageDays,
     };
   }
 
@@ -762,6 +808,7 @@ export class AdminMembersReader {
       userId: schema.subscriptionContractEvents.userId,
       causedBy: schema.subscriptionContractEvents.causedBy,
       causedByUserId: schema.subscriptionContractEvents.causedByUserId,
+      metadata: schema.subscriptionContractEvents.metadata,
       createdAt: schema.subscriptionContractEvents.createdAt,
     };
   }
@@ -787,9 +834,14 @@ export class AdminMembersReader {
     userId: string;
     causedBy: string;
     causedByUserId: string | null;
+    metadata: unknown;
     createdAt: Date;
   }): ContractEventItem {
-    return { ...r, createdAt: r.createdAt.toISOString() };
+    return {
+      ...r,
+      metadata: (r.metadata ?? {}) as ContractEventMetadata,
+      createdAt: r.createdAt.toISOString(),
+    };
   }
 
   async findContractPaymentRef(contractId: string): Promise<{ lastPaymentIntentId: string | null } | null> {

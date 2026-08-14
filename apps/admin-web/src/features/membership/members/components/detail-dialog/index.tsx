@@ -56,9 +56,10 @@ import { useUserNames } from '@/hooks/use-user-names';
 import { formatDate, formatDateTime } from '@/lib/utils/date';
 import {
   getRemainingDays,
-  getMembershipUsageDays,
   getBillingEventLabel,
   getMembershipStatus,
+  describeContractEvent,
+  getCausedByLabel,
 } from '@/lib/utils/membership';
 
 interface MembershipMemberDetailDialogProps {
@@ -1428,35 +1429,48 @@ function LogTab({ userId }: { userId: string }) {
               </TableCell>
             </TableRow>
           ) : (
-            events.map((ev) => (
-              <TableRow key={ev.id}>
-                <TableCell className="text-xs">
-                  {formatDateTime(ev.createdAt)}
-                </TableCell>
-                <TableCell className="text-sm">{ev.eventType}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {ev.causedByUserId ? (
-                    operatorNames[ev.causedByUserId] ? (
-                      <span className="flex items-center gap-1">
-                        <span>{operatorNames[ev.causedByUserId].loginId}</span>
-                        {operatorNames[ev.causedByUserId].roles[0] && (
-                          <Badge
-                            variant="outline"
-                            className="h-4 px-1 py-0 text-xs"
-                          >
-                            {operatorNames[ev.causedByUserId].roles[0]}
-                          </Badge>
-                        )}
-                      </span>
+            events.map((ev) => {
+              const { label, variant, detail } = describeContractEvent(
+                ev.eventType,
+                ev.metadata
+              );
+              return (
+                <TableRow key={ev.id}>
+                  <TableCell className="align-top text-xs whitespace-nowrap">
+                    {formatDateTime(ev.createdAt)}
+                  </TableCell>
+                  <TableCell className="align-top">
+                    <Badge variant={variant}>{label}</Badge>
+                    {detail && (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {detail}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell className="align-top text-xs text-muted-foreground">
+                    {ev.causedByUserId ? (
+                      operatorNames[ev.causedByUserId] ? (
+                        <span className="flex items-center gap-1">
+                          <span>{operatorNames[ev.causedByUserId].loginId}</span>
+                          {operatorNames[ev.causedByUserId].roles[0] && (
+                            <Badge
+                              variant="outline"
+                              className="h-4 px-1 py-0 text-xs"
+                            >
+                              {operatorNames[ev.causedByUserId].roles[0]}
+                            </Badge>
+                          )}
+                        </span>
+                      ) : (
+                        ev.causedByUserId
+                      )
                     ) : (
-                      ev.causedByUserId
-                    )
-                  ) : (
-                    ev.causedBy
-                  )}
-                </TableCell>
-              </TableRow>
-            ))
+                      getCausedByLabel(ev.causedBy)
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })
           )}
         </TableBody>
       </Table>
@@ -1522,11 +1536,7 @@ export function MembershipDetailPanel({
           />
           <Field
             label="멤버십 이용일"
-            value={
-              detail.firstContractCreatedAt
-                ? getMembershipUsageDays(detail.firstContractCreatedAt)
-                : '-'
-            }
+            value={`${detail.membershipUsageDays ?? 0}일`}
           />
         </CardContent>
       </Card>
