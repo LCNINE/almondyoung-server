@@ -79,10 +79,13 @@ export async function uploadRichTextImage(
 
 export async function getFileSignedUrlFromFileService(
   fileId: string,
-  expiresIn = 300
+  expiresIn = 300,
+  { forceDownload = false }: { forceDownload?: boolean } = {}
 ): Promise<FileSignedUrlResponse> {
   const res = await fetchWithRefresh(
-    `/api/proxy/file/files/${encodeURIComponent(fileId)}/download?expiresIn=${expiresIn}`,
+    `/api/proxy/file/files/${encodeURIComponent(fileId)}/download?expiresIn=${expiresIn}${
+      forceDownload ? '&download=true' : ''
+    }`,
     {
       method: 'GET',
       credentials: 'include',

@@ -14,6 +14,7 @@ describe('FileAccess', () => {
   const ownerUser: JwtPayload = { userId: 'owner-1', email: 'o@x', roles: [] };
   const otherUser: JwtPayload = { userId: 'other-1', email: 'oo@x', roles: [] };
   const masterUser: JwtPayload = { userId: 'master-1', email: 'm@x', roles: ['master'] };
+  const adminUser: JwtPayload = { userId: 'admin-1', email: 'a@x', roles: ['admin'] };
   // Service-to-service 위임 토큰 (예: core 의 FileServiceClient): roles 없이 scopes 만.
   const serviceTokenUser: JwtPayload = { userId: 'core-library-service', email: '', roles: [], scopes: ['master'] };
 
@@ -95,6 +96,16 @@ describe('FileAccess', () => {
     it('throws ForbiddenError when private file requested by non-owner non-master', async () => {
       repo.findById.mockResolvedValue(baseFile);
       await expect(fileAccess.loadReadable('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it('returns digital asset file to admin (non-owner, non-master)', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'digital-asset-file' } as Upload);
+      await expect(fileAccess.loadReadable('file-1', adminUser)).resolves.toMatchObject({ id: 'file-1' });
+    });
+
+    it('still hides other private contexts from admin', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'business-license' } as Upload);
+      await expect(fileAccess.loadReadable('file-1', adminUser)).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
 

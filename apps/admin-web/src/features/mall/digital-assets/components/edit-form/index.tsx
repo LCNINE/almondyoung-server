@@ -34,7 +34,8 @@ import type {
   DigitalAssetFileVersionDto,
   UpdateDigitalAssetDto,
 } from '@/lib/types/dto/library';
-import { FileUp } from 'lucide-react';
+import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
+import { Download, FileUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { DigitalAssetFileUploadDialog } from '../file-upload-dialog';
 
@@ -51,6 +52,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
   const [newFileId, setNewFileId] = useState('');
   const [newReleaseNote, setNewReleaseNote] = useState('');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [pendingRollback, setPendingRollback] =
     useState<DigitalAssetFileVersionDto | null>(null);
 
@@ -90,6 +92,22 @@ export function DigitalAssetEditForm({ assetId }: Props) {
       setPendingRollback(null);
     } catch {
       toast.error('되돌리기에 실패했습니다.');
+    }
+  };
+
+  const handleDownload = async (version: DigitalAssetFileVersionDto) => {
+    setDownloadingId(version.id);
+    try {
+      const { signedUrl } = await getFileSignedUrlFromFileService(
+        version.fileId,
+        300,
+        { forceDownload: true }
+      );
+      window.location.href = signedUrl;
+    } catch {
+      toast.error('다운로드 링크 생성에 실패했습니다.');
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -240,7 +258,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
               <TableHead>파일 ID</TableHead>
               <TableHead>릴리즈 노트</TableHead>
               <TableHead className="w-48">릴리즈 시각</TableHead>
-              <TableHead className="w-32 text-right">액션</TableHead>
+              <TableHead className="w-64 text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,16 +294,27 @@ export function DigitalAssetEditForm({ assetId }: Props) {
                       {new Date(v.releasedAt).toLocaleString()}
                     </TableCell>
                     <TableCell className="text-right">
-                      {!isCurrent && (
+                      <div className="flex justify-end gap-2">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setPendingRollback(v)}
-                          disabled={rollbackMutation.isPending}
+                          onClick={() => void handleDownload(v)}
+                          disabled={downloadingId === v.id}
                         >
-                          이 버전으로 되돌리기
+                          <Download data-icon="inline-start" />
+                          다운로드
                         </Button>
-                      )}
+                        {!isCurrent && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setPendingRollback(v)}
+                            disabled={rollbackMutation.isPending}
+                          >
+                            이 버전으로 되돌리기
+                          </Button>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );

@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, ForbiddenError } from '@app/shared';
-import { AuthorizationService } from '@app/authorization';
+import { AuthorizationService, STAFF_ROLES } from '@app/authorization';
 import { FileRepository } from '../shared/repositories/file.repository';
+import { DIGITAL_ASSET_FILE_CONTEXT_ID } from '../database/default-file-contexts';
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
 
@@ -9,6 +10,11 @@ export interface DeleteResult {
   success: boolean;
   message: string;
 }
+
+// 직원(admin/master)이 소유자가 아니어도 읽을 수 있는 컨텍스트.
+// 어드민에서 등록한 디지털 상품 파일을 검수하려면 필요하다. 고객 업로드물
+// (사업자등록증 등)은 여기 넣지 말 것 — 읽기 권한이 곧 개인정보 열람이다.
+const STAFF_READABLE_CONTEXT_IDS: readonly string[] = [DIGITAL_ASSET_FILE_CONTEXT_ID];
 
 @Injectable()
 export class FileAccess {
@@ -26,6 +32,9 @@ export class FileAccess {
       return file;
     }
     if (await this.isMasterOrOwner(file, user)) {
+      return file;
+    }
+    if (this.isStaff(user) && STAFF_READABLE_CONTEXT_IDS.includes(file.contextId)) {
       return file;
     }
     throw new ForbiddenError('You do not have permission to access this file');
@@ -49,6 +58,10 @@ export class FileAccess {
     }
     await this.repo.softDelete(fileId);
     return { success: true, message: 'File deleted successfully' };
+  }
+
+  private isStaff(user: JwtPayload): boolean {
+    return (user.roles ?? []).some((role) => STAFF_ROLES.includes(role));
   }
 
   private async isMasterOrOwner(file: Upload, user: JwtPayload): Promise<boolean> {
