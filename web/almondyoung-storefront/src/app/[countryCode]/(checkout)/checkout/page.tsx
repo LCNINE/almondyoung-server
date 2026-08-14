@@ -6,7 +6,10 @@ import {
 } from "@/lib/api/medusa/cart"
 import { isUnavailableVariantError } from "@/lib/utils/cart-availability"
 import UnavailableItemsNotice from "domains/checkout/components/unavailable-items-notice"
-import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import {
+  recoverCustomerCart,
+  retrieveCustomer,
+} from "@/lib/api/medusa/customer"
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { ShippingInfo } from "@/lib/types/ui/cart"
@@ -14,7 +17,9 @@ import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 import ProtectedRoute from "@components/protected-route"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
 import { getTranslations } from "next-intl/server"
-import { notFound } from "next/navigation"
+
+const CHECKOUT_CART_FIELDS =
+  "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.metadata, +items.product.shipping_profile.id, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code"
 
 export default async function CheckoutPage({
   params,
@@ -42,15 +47,27 @@ async function CheckoutManager({
 }) {
   let cart = (await retrieveCart(
     cartId,
-    "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.metadata, +items.product.shipping_profile.id, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
+    CHECKOUT_CART_FIELDS,
     "no-store"
   )) as CartResponseDto["cart"]
 
+  // 쿠키의 카트 id 가 없거나(다른 브라우저/앱 웹뷰) 가리키는 카트가 완료·삭제됐어도, 로그인
+  // 상태면 고객의 미완료 카트를 customer_id 로 찾는다. 카트 페이지가 이미 하는 복구를
+  // 여기서도 해야 '장바구니는 보이는데 결제 누르면 404' 가 안 난다.
   if (!cart) {
-    return notFound()
+    const recovered = await recoverCustomerCart().catch(() => null)
+    if (recovered?.id) {
+      cart = (await retrieveCart(
+        recovered.id,
+        CHECKOUT_CART_FIELDS,
+        "no-store"
+      ).catch(() => null)) as CartResponseDto["cart"]
+    }
   }
 
-  if (!cart.items?.length) {
+  // 비로그인 게스트는 쿠키가 유일한 단서라 복구할 수 없다. 그래도 '카트가 없는' 것이지
+  // '페이지가 없는' 게 아니므로 404 대신 빈 장바구니를 보여준다.
+  if (!cart || !cart.items?.length) {
     return (
       <ProtectedRoute>
         <EmptyCartView />
