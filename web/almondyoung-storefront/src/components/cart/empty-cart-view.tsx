@@ -36,7 +36,7 @@ export function EmptyCartView({
           </p>
 
           <LocalizedClientLink
-            href={"/category/beseuteu"}
+            href={"/category/cafe24-cat-499"}
             className="rounded-xl bg-[#ff6600] px-10 py-4 text-center text-[15px] font-semibold text-white transition-all hover:bg-[#e14d00] sm:w-auto sm:text-[17px]"
           >
             {t("shopNow")}
