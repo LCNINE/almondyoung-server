@@ -15,6 +15,10 @@ import { getRegion, retrieveRegion } from "./regions"
  * handle 로 조회할 때 붙일 방문자 무관 캐시 태그.
  * `/api/revalidate` 가 `product-{handle}` 로 무효화하므로 문자열/배열 모두 태그를 걸어야 한다.
  */
+// regionId 만 넘기는 호출부(홈 섹션 등)는 getRegion 이 일시 실패하면 undefined 를 넘긴다.
+// 그때 throw 하면 섹션이 통째로 깨지므로 기본 지역으로 폴백해 재조회한다.
+const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
+
 const toProductHandleTags = (handle: unknown): string[] => {
   if (typeof handle === "string") return [`product-${handle}`]
   if (Array.isArray(handle)) {
@@ -66,7 +70,7 @@ export const listProducts = async ({
   queryParams?: HttpTypes.FindParams & HttpTypes.StoreProductListParams
 }> => {
   if (!countryCode && !regionId) {
-    throw new Error("Country code or region ID is required")
+    countryCode = DEFAULT_REGION
   }
 
   const limit = queryParams?.limit || 12
@@ -165,7 +169,7 @@ export const listProductsSorted = async ({
   nextPage: number | null
 }> => {
   if (!countryCode && !regionId) {
-    throw new Error("Country code or region ID is required")
+    countryCode = DEFAULT_REGION
   }
 
   const _pageParam = Math.max(pageParam, 1)

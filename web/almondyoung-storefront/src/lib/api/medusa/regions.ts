@@ -59,7 +59,8 @@ export const getRegion = async (countryCode: string) => {
       : regionMap.get("us")
 
     return region
-  } catch (e: any) {
+  } catch (e: unknown) {
+    console.error(`getRegion failed (countryCode=${countryCode}):`, e)
     return null
   }
 }
