@@ -240,7 +240,9 @@ sed -n '99p;954p;1167p' apps/core/src/modules/fulfillment/picking/discrete-picki
 | `assertWorkItemIdentity` | 1433-1437 (5) | 1628-1632 (5) | 1844-1848 (5) |
 | **합계** | **958** | **916** | **958** |
 
-† `assertWarehouseConfiguration` 은 옮기지 않고 삭제 (§3.5).
+† `assertWarehouseConfiguration` 은 **PR 1 에서는 다른 것들과 똑같이 옮기고, PR 2 에서 삭제한다** (§3.5). PR 1 을 순수 리팩터로 유지하기 위해서다 — 삭제는 행동 변경이라 PR 1 에 섞으면 "통합 스펙 무변경 통과" 라는 이 리팩터의 유일한 행동 동일성 증거가 오염된다.
+>
+> *(2026-08-15 정정: 이 각주는 원래 "옮기지 않고 삭제" 라고 적혀 있어 §3.5 와 모순됐다. PR 1 구현자가 보수적으로 해석해 옮긴 뒤 PR 2 로 미뤘고 그게 옳다. 현재 위치는 `plan/picking-plan.locks.ts:407`.)*
 
 **정본은 `discrete` 를 쓴다.** `aggregate` 의 `plannedResult()` 추출(§2.2)은 정본에 흡수하고, `aggregate` 만 다른 `errorMessage`(4줄 vs 7줄) · `assertActivePlanSession`(39 vs 36) · `loadShipmentAllocations`(27 vs 25) · `invalidateDraftPlan`(23 vs 28)은 **옮기기 전에 3벌 diff 를 눈으로 확인하고 정본을 명시적으로 고른다.** 이 4개는 diff 가 0이 아니므로 기계적 복사 대상이 아니다.
 
@@ -267,12 +269,17 @@ sed -n '99p;954p;1167p' apps/core/src/modules/fulfillment/picking/discrete-picki
 
 커밋 2~5 사이에는 **초록 지점이 없다** — 함수를 옮기는 순간 interface 도 34개 mock 도 같이 깨진다. 중간 초록을 만들려면 코드를 두 번 옮겨야 하고 그게 더 위험하다. **초록 판정은 PR 단위로 한다.**
 
-### PR 2 — 행동 변경 (커밋 2개, 각각 독립 revert 가능)
+### PR 2 — 행동 변경 (커밋 3개, 각각 독립 revert 가능)
+
+**base 는 `develop` 이며, PR 1 이 머지된 뒤에 딴다.** PR 2 의 두 대상은 모두 PR 1 이 만든 `plan/` 파일 안에 있어 PR 1 없이는 시작할 수 없다. 저장소가 squash-merge 관행이므로 stacked 브랜치로 만들면 머지 후 rebase 충돌 여지가 크다 — PR 2 가 작으니(삭제 2건) 기다리는 편이 싸다.
 
 | # | 커밋 | 성격 |
 |---|---|---|
-| 1 | `requestedStrategy` 제거 (DTO · 불일치 검증 · 관련 통합 스펙 2건) | **API 계약 변경** — 실호출자 0으로 측정됐으나 미지의 외부 호출자 가능성 |
+| 0 | **선행: "전략 미설정 창고에서 plan 거부" 통합 케이스 추가** | 테스트 추가 — 커밋 2 의 안전망 |
+| 1 | `requestedStrategy` 제거 (interface 필드 · `picking-process.service.ts` 불일치 검증 · `picking-v2.controller.ts` · 관련 스펙) | **API 계약 변경** — 실호출자 0으로 측정됐으나 미지의 외부 호출자 가능성 |
 | 2 | `assertWarehouseConfiguration` 삭제 (§3.5) | **행동 변경** — 실행 미확인 |
+
+**커밋 0 은 선택이 아니라 필수다.** 2026-08-15 실측 결과 이 케이스는 **존재하지 않는다** — 기존 통합 스펙은 전부 `supportedPickingStrategies` 를 *설정해서 켜는* 쪽이고, `outbound-batch-orchestrator.integration.spec.ts:337,352` 는 배치 생성 단계이지 plan 단계가 아니다. 즉 지금 `assertWarehouseConfiguration` 을 지우면 **무엇이 깨지는지 알려줄 테스트가 없다.**
 
 3개 PR 로 나누어 배포를 끼우지 않는다. CLAUDE.md 의 expand-contract 규율은 destructive schema 변경에 대한 것이고, 이번은 마이그레이션 0건 · 이벤트 계약 변경 0건이다.
 
