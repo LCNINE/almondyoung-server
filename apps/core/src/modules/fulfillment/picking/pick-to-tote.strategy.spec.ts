@@ -20,7 +20,6 @@ import {
 import { planPicking, startPicking } from './plan/picking-plan';
 import {
   assertPlanningEligibility,
-  assertWarehouseConfiguration,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
@@ -1101,7 +1100,6 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     workItems: Object.values(state.workItems),
   };
   jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
-  jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
   jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
   jest.mocked(lockSourceCapacities).mockResolvedValue([
     {
