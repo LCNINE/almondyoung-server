@@ -653,7 +653,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       batchId,
       shipmentIds: [member.shipment.id],
       actorId: worker.id,
-      requestedStrategy: 'discrete',
       idempotencyKey: `discrete-plan-${randomUUID()}`,
     });
     expect(plan.state).toBe('planned');
@@ -1271,30 +1270,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     });
   });
 
-  it('refuses a strategy that contradicts the batch picking method', async () => {
-    await inRollbackTx(db, async (tx) => {
-      // 창고는 두 전략을 모두 지원하지만 배치는 individual 이다.
-      const world = await seedWorld(tx, [2], ['discrete', 'aggregate_then_sort']);
-      await seedRegisteredWaybills(tx, world);
-      const services = makeServices(tx);
-      const manager = { id: randomUUID(), roles: ['master'] };
-      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
-      const { batch } = await createBatchWithShipments(services, world, manager);
-
-      await expect(
-        services.picking.plan({
-          batchId: batch.batchId,
-          shipmentIds: [world.shipments[0].shipment.id],
-          actorId: worker.id,
-          idempotencyKey: `mismatch-plan-${randomUUID()}`,
-          requestedStrategy: 'aggregate_then_sort',
-        }),
-      ).rejects.toMatchObject({
-        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
-      });
-    });
-  });
-
   // ADR-0030 §3.5: 창고가 해당 전략을 켰는지 확인하는 검사의 소유자는
   // `PickingStrategyRegistry.resolveForWarehouse` 다 — plan 도 start 도 계획 층에 들어가기 전에
   // 이걸 먼저 통과해야 한다. 아래 세 케이스는 그 한 벌만으로 plan/replan/start 세 지점이 모두
@@ -1474,25 +1449,24 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const { batch } = await createBatchWithShipments(services, world, manager);
       const shipmentIds = [world.shipments[0].shipment.id];
 
-      await services.picking.plan({
+      const first = await services.picking.plan({
         batchId: batch.batchId,
         shipmentIds,
         actorId: worker.id,
         idempotencyKey: `replan-first-${randomUUID()}`,
       });
+      expect(first.state).toBe('planned');
 
-      // 재plan 도 같은 경로를 타므로 배치 방식과 어긋나는 전략은 여전히 막힌다.
-      await expect(
-        services.picking.plan({
-          batchId: batch.batchId,
-          shipmentIds,
-          actorId: worker.id,
-          idempotencyKey: `replan-second-${randomUUID()}`,
-          requestedStrategy: 'aggregate_then_sort',
-        }),
-      ).rejects.toMatchObject({
-        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
+      // 창고가 aggregate_then_sort 도 지원하지만 배치는 individual 이므로 재plan 도 discrete 로 파생된다.
+      const second = await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds,
+        actorId: worker.id,
+        idempotencyKey: `replan-second-${randomUUID()}`,
       });
+      expect(second.state).toBe('planned');
+      if (second.state !== 'planned') throw new Error(second.reason);
+      expect(second.strategy).toBe('discrete');
     });
   });
 });

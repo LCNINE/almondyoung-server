@@ -5,7 +5,6 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
-  IsOptional,
   IsString,
   IsUUID,
   Matches,
@@ -16,11 +15,6 @@ import {
 const PHYSICAL_CART_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 export class PlanPickingV2Dto {
-  /** @deprecated 배치의 pickingMethod 에서 파생된다. 보내면 일치 검증만 한다. */
-  @IsOptional()
-  @IsIn(['discrete', 'aggregate_then_sort', 'pick_to_tote'])
-  strategy?: 'discrete' | 'aggregate_then_sort' | 'pick_to_tote';
-
   @IsUUID()
   batchId: string;
 

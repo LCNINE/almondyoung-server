@@ -172,11 +172,7 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
       completePick: jest.fn(),
     };
     const controller = new PickingCommandV2Controller(picking as never);
-    await controller.plan(
-      { strategy: 'discrete', batchId: ids.batchId, shipmentIds: [ids.shipmentId] },
-      'plan-key',
-      actor,
-    );
+    await controller.plan({ batchId: ids.batchId, shipmentIds: [ids.shipmentId] }, 'plan-key', actor);
     await controller.start({ batchId: ids.batchId, planId: ids.planId }, 'start-key', actor);
     await controller.scan({ ...ids, quantity: 2, expectedLeaseVersion: 1 }, 'scan-key', actor);
     await controller.handoff(
@@ -211,7 +207,6 @@ describe('PickingCommandV2Controller generic strategy contract', () => {
       shipmentIds: [ids.shipmentId],
       actorId: 'worker-1',
       idempotencyKey: 'plan-key',
-      requestedStrategy: 'discrete',
     });
     expect(picking.scan).toHaveBeenCalledWith(
       expect.objectContaining({

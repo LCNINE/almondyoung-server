@@ -107,13 +107,6 @@ export class PickingProcessService {
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${input.batchId} not found`);
       const derived = STRATEGY_BY_PICKING_METHOD[batch.pickingMethod];
-      if (input.requestedStrategy && input.requestedStrategy !== derived) {
-        throw new ConflictException({
-          code: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH',
-          error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH',
-          message: `Batch ${input.batchId} is ${batch.pickingMethod}; strategy ${input.requestedStrategy} is not allowed`,
-        });
-      }
       // 창고 허용 검사는 유지한다. 반환된 전략 객체는 버린다 — 계획 층은 전략에 의존하지 않는다.
       await this.requiredRegistry().resolveForWarehouse(derived, batch.warehouseId, trx);
       return planPicking(this.planDeps, derived, input, trx);
