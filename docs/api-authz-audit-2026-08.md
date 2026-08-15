@@ -188,7 +188,7 @@ AST 로 판정할 수 없다. **초록불을 "IDOR 없음"으로 읽지 말 것.
   때문에 `iss` 클레임 없는 HS256 토큰은 **issuer/audience 검증을 통째로 건너뛴다**. 레거시 Medusa
   토큰 호환이 의도. IdP·Medusa·core·wallet·file-service 가 `AUTH_SECRET` 하나를 공유하므로 한
   서비스에서 시크릿이 새면 전 서비스 위조가 된다.
-  - **`apps/file-service/src/access/file-access.ts:58-60`** — 같은 신뢰구조의 다른 사례.
+  - **`apps/file-service/src/access/file-access.ts:75-76`** — 같은 신뢰구조의 다른 사례.
     `scopes: ['master']` 만 든 서비스 위임 토큰은 `isMasterOrOwner()` 의 파일 소유권 검사를
     전량 통과한다. IDOR 은 아니다(정상 우회 경로다) — 다만 `master` 역할/스코프를 실을 수 있는
     토큰이 새면 전 사용자 파일이 열린다. 같은 서비스의

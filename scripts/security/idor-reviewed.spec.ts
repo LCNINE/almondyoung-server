@@ -183,21 +183,21 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service DELETE /files/:fileId': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:55',
+    evidence: 'apps/file-service/src/access/file-access.ts:68',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:42) -> isMasterOrOwner(file, user) at file-access.ts:47 gates the softDelete call on the same file.uploadedBy === user.userId check; repo.softDelete(id) itself (file.repository.ts:44-55) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check.',
+    note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:51) -> isMasterOrOwner(file, user) at file-access.ts:56 gates the softDelete call on the same file.uploadedBy === user.userId check; repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the STAFF_READABLE_CONTEXT_IDS path added in 235197151 — that path lives in loadReadable only.',
   },
   'file-service GET /files/:fileId/download': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:55',
+    evidence: 'apps/file-service/src/access/file-access.ts:68',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:20) -> isMasterOrOwner (file-access.ts:54-64) compares file.uploadedBy against caller's own userId before returning the row; non-owner/non-public/non-master throws ForbiddenError.",
+    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:26) -> isMasterOrOwner (file-access.ts:67-77) compares file.uploadedBy against caller's own userId before returning the row. 235197151 added a fourth allow path at file-access.ts:37 — a STAFF_ROLES caller may read any file whose contextId is in STAFF_READABLE_CONTEXT_IDS (digital-asset only). That is an intentional role-based grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
   },
   'file-service GET /files/:fileId/metadata': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:55',
+    evidence: 'apps/file-service/src/access/file-access.ts:68',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isMasterOrOwner ownership check as the download route.',
+    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isMasterOrOwner ownership check as the download route, and the same STAFF_READABLE_CONTEXT_IDS allow path at file-access.ts:37.',
   },
   'file-service POST /files/batch-upload': {
     verdict: 'N/A',
