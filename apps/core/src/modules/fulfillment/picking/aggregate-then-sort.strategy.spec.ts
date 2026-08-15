@@ -48,6 +48,28 @@ jest.mock('./plan/picking-plan.queries', () => ({
   lockAndAssertPickerClaim: jest.fn(),
 }));
 
+const PLAN_LAYER_MOCKS = [
+  assertPlanningEligibility,
+  assertWarehouseConfiguration,
+  lockAggregate,
+  lockSourceCapacities,
+  planStalenessReason,
+  assertActivePlanSession,
+  assertPlanMembers,
+  databaseNow,
+  loadPositiveShipmentCustody,
+  loadShipmentAllocations,
+  loadWorkItem,
+  lockAndAssertPickerClaim,
+];
+
+// 모듈 mock 은 파일 전역이라 develop 의 `jest.spyOn(new Strategy(), …)` 과 달리 테스트 간에
+// 살아남는다. 각 테스트가 필요한 것만 명시적으로 stub 하도록 매번 초기화한다 — 안 하면
+// 다음 테스트가 앞 테스트의 값을 조용히 물려받아 통과해버린다.
+beforeEach(() => {
+  for (const fn of PLAN_LAYER_MOCKS) jest.mocked(fn).mockReset();
+});
+
 const IDS = Object.freeze({
   ...PICKING_CONTRACT_IDS,
   otherActor: 'worker-2',

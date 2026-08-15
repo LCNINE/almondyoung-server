@@ -252,6 +252,13 @@ const PLAN_LAYER_MOCKS = {
   lockAndAssertPickerClaim,
 };
 
+beforeEach(() => {
+  // 모듈 mock 은 파일 전역이라 develop 의 `jest.spyOn(new Strategy(), …)` 과 달리 테스트 간에
+  // 살아남는다. 각 테스트가 필요한 것만 명시적으로 stub 하도록 매번 초기화한다 — 안 하면
+  // 다음 테스트가 앞 테스트의 값을 조용히 물려받아 통과해버린다.
+  for (const fn of Object.values(PLAN_LAYER_MOCKS)) jest.mocked(fn).mockReset();
+});
+
 function planSpy<T>(name: keyof typeof PLAN_LAYER_MOCKS, value: T) {
   return jest
     .mocked(PLAN_LAYER_MOCKS[name] as unknown as (...args: unknown[]) => Promise<unknown>)
