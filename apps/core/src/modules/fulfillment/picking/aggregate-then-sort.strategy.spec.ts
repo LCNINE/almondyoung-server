@@ -15,6 +15,38 @@ import {
   HandoffPickingInput,
   UnpickShipmentInput,
 } from './picking-strategy.interface';
+import { planPicking, startPicking } from './plan/picking-plan';
+import {
+  assertPlanningEligibility,
+  assertWarehouseConfiguration,
+  lockAggregate,
+  lockSourceCapacities,
+  planStalenessReason,
+} from './plan/picking-plan.locks';
+import {
+  assertActivePlanSession,
+  assertPlanMembers,
+  databaseNow,
+  loadPositiveShipmentCustody,
+  loadShipmentAllocations,
+  loadWorkItem,
+  lockAndAssertPickerClaim,
+} from './plan/picking-plan.queries';
+import { PickingPlanDeps } from './plan/picking-plan.types';
+
+// 계획 층은 전략 밖의 공유 구현이고 자체 스펙이 있다. 여기서는 custody 를 결정적으로
+// 돌리기 위한 만족된 선행조건으로만 stub 한다.
+jest.mock('./plan/picking-plan.locks');
+jest.mock('./plan/picking-plan.queries', () => ({
+  ...jest.requireActual('./plan/picking-plan.queries'),
+  assertActivePlanSession: jest.fn(),
+  assertPlanMembers: jest.fn(),
+  databaseNow: jest.fn(),
+  loadPositiveShipmentCustody: jest.fn(),
+  loadShipmentAllocations: jest.fn(),
+  loadWorkItem: jest.fn(),
+  lockAndAssertPickerClaim: jest.fn(),
+}));
 
 const IDS = Object.freeze({
   ...PICKING_CONTRACT_IDS,
@@ -378,6 +410,7 @@ class AggregateHarnessState {
 
 interface AggregateHarness {
   strategy: AggregateThenSortPickingStrategy;
+  planDeps: PickingPlanDeps;
   state: AggregateHarnessState;
   sessions: { startSession: jest.Mock; moveCustody: jest.Mock };
   controlledStock: { getAvailability: jest.Mock; writeStockLedger: jest.Mock };
@@ -420,16 +453,15 @@ function createHarness(): AggregateHarness {
   };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = AggregateThenSortPickingStrategy as any;
-  const strategy: AggregateThenSortPickingStrategy = new Strategy(
-    {},
+  const strategy: AggregateThenSortPickingStrategy = new Strategy(commands, workflowGate, sessions, batches);
+  const planDeps = {
     commands,
     workflowGate,
-    {},
     sessions,
+    invariant: {},
     controlledStock,
-    invoices,
-    batches,
-  );
+    waybills: invoices,
+  } as unknown as PickingPlanDeps;
   const aggregate = {
     batch: { id: IDS.batch, warehouseId: 'warehouse-1' },
     shipments: [
@@ -442,15 +474,15 @@ function createHarness(): AggregateHarness {
     ],
     workItems: Object.values(state.workItems),
   };
-  jest.spyOn(strategy as any, 'lockAggregate').mockResolvedValue(aggregate);
-  jest.spyOn(strategy as any, 'assertWarehouseConfiguration').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanningEligibility').mockResolvedValue(undefined);
+  jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
+  jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
+  jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
   jest
-    .spyOn(strategy as any, 'lockSourceCapacities')
+    .mocked(lockSourceCapacities)
     .mockResolvedValue([{ skuId: IDS.sku, sourceLocationId: IDS.source, stockVersion: 7, remainingQty: 5 }]);
-  jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
-  jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanMembers').mockResolvedValue(undefined);
+  jest.mocked(planStalenessReason).mockResolvedValue(null);
+  jest.mocked(assertActivePlanSession).mockResolvedValue(undefined);
+  jest.mocked(assertPlanMembers).mockResolvedValue(undefined);
   jest.spyOn(strategy as any, 'acquireCartLock').mockResolvedValue(undefined);
   jest
     .spyOn(strategy as any, 'assertCartOwnedBy')
@@ -465,9 +497,9 @@ function createHarness(): AggregateHarness {
       }
     });
   jest
-    .spyOn(strategy as any, 'lockAndAssertPickerClaim')
+    .mocked(lockAndAssertPickerClaim)
     .mockImplementation(
-      async (workItemId: string, _batchId: string, shipmentId: string, actorId: string, version: number) => {
+      async (_trx, workItemId: string, _batchId: string, shipmentId: string, actorId: string, version: number) => {
         const item = state.workItems[workItemId];
         if (
           !item ||
@@ -478,15 +510,15 @@ function createHarness(): AggregateHarness {
         ) {
           throw new ConflictException({ code: 'PICKING_STALE_CLAIM', message: 'stale picker claim' });
         }
-        return item;
+        return item as never;
       },
     );
   jest
     .spyOn(strategy as any, 'loadLineAllocations')
     .mockImplementation(async (_planId: string, lineId: string) => state.allocationsForLine(lineId));
   jest
-    .spyOn(strategy as any, 'loadShipmentAllocations')
-    .mockImplementation(async (_planId: string, shipmentId: string) =>
+    .mocked(loadShipmentAllocations)
+    .mockImplementation(async (_trx, _planId: string, shipmentId: string) =>
       state.allocations
         .filter((allocation) => allocation.shipmentId === shipmentId)
         .flatMap((allocation) => state.allocationsForLine(allocation.shipmentLineId)),
@@ -509,15 +541,13 @@ function createHarness(): AggregateHarness {
     .mockImplementation(async (cartId: string) =>
       state.cartBalances(cartId).map((balance) => ({ ...balance, sessionId: IDS.session, batchId: IDS.batch })),
     );
+  jest.mocked(loadPositiveShipmentCustody).mockImplementation(async (_trx, _sessionId: string, shipmentId: string) => {
+    const lineId = shipmentId === IDS.shipmentA ? IDS.lineA : IDS.lineB;
+    return state.assignedBalances(lineId).map((balance) => ({ ...balance }));
+  });
   jest
-    .spyOn(strategy as any, 'loadPositiveShipmentCustody')
-    .mockImplementation(async (_sessionId: string, shipmentId: string) => {
-      const lineId = shipmentId === IDS.shipmentA ? IDS.lineA : IDS.lineB;
-      return state.assignedBalances(lineId).map((balance) => ({ ...balance }));
-    });
-  jest
-    .spyOn(strategy as any, 'loadWorkItem')
-    .mockImplementation(async (workItemId: string) => ({ ...state.workItems[workItemId] }));
+    .mocked(loadWorkItem)
+    .mockImplementation(async (_trx, workItemId: string) => ({ ...state.workItems[workItemId] }) as never);
   jest
     .spyOn(strategy as any, 'assertAggregateAssignedCustody')
     .mockImplementation(async (_sessionId: string, shipmentId: string, workItemId: string, ownerId: string) => {
@@ -534,19 +564,19 @@ function createHarness(): AggregateHarness {
       }
       return balances;
     });
-  jest.spyOn(strategy as any, 'databaseNow').mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
+  jest.mocked(databaseNow).mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
 
-  return { strategy, state, sessions, controlledStock, invoices, batches };
+  return { strategy, planDeps, state, sessions, controlledStock, invoices, batches };
 }
 
 async function planAndStart(harness: AggregateHarness): Promise<void> {
-  await harness.strategy.plan({
+  await planPicking(harness.planDeps, 'aggregate_then_sort', {
     batchId: IDS.batch,
     shipmentIds: [IDS.shipmentB, IDS.shipmentA],
     actorId: IDS.actor,
     idempotencyKey: 'plan',
   });
-  await harness.strategy.start({
+  await startPicking(harness.planDeps, 'aggregate_then_sort', {
     batchId: IDS.batch,
     planId: IDS.plan,
     actorId: IDS.actor,
@@ -825,7 +855,7 @@ describe('AggregateThenSortPickingStrategy focused custody behavior', () => {
 function createProductionAggregateFixture(): PickingStrategyContractFixture {
   const harness = createHarness();
   let shipmentARetired = false;
-  (harness.strategy as any).assertPlanMembers.mockImplementation(async (_planId: string, shipmentIds: string[]) => {
+  jest.mocked(assertPlanMembers).mockImplementation(async (_trx, _planId: string, shipmentIds: string[]) => {
     if (shipmentARetired && shipmentIds.includes(IDS.shipmentA)) {
       throw new ConflictException({
         code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
@@ -835,6 +865,20 @@ function createProductionAggregateFixture(): PickingStrategyContractFixture {
   });
   return {
     strategy: harness.strategy,
+    plan: () =>
+      planPicking(harness.planDeps, 'aggregate_then_sort', {
+        batchId: IDS.batch,
+        shipmentIds: [IDS.shipmentB, IDS.shipmentA],
+        actorId: IDS.actor,
+        idempotencyKey: 'plan-key',
+      }),
+    start: () =>
+      startPicking(harness.planDeps, 'aggregate_then_sort', {
+        batchId: IDS.batch,
+        planId: IDS.plan,
+        actorId: IDS.actor,
+        idempotencyKey: 'start-key',
+      }),
     pickShipmentA: async () => {
       const collect = bulkInput({ idempotencyKey: 'contract-bulk' });
       await harness.strategy.scan(collect);

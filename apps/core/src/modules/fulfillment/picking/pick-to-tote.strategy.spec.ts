@@ -17,6 +17,38 @@ import {
   ToteScanPickingInput,
   UnpickShipmentInput,
 } from './picking-strategy.interface';
+import { planPicking, startPicking } from './plan/picking-plan';
+import {
+  assertPlanningEligibility,
+  assertWarehouseConfiguration,
+  lockAggregate,
+  lockSourceCapacities,
+  planStalenessReason,
+} from './plan/picking-plan.locks';
+import {
+  assertActivePlanSession,
+  assertPlanMembers,
+  databaseNow,
+  loadPositiveShipmentCustody,
+  loadShipmentAllocations,
+  loadWorkItem,
+  lockAndAssertPickerClaim,
+} from './plan/picking-plan.queries';
+import { PickingPlanDeps } from './plan/picking-plan.types';
+
+// 계획 층은 전략 밖의 공유 구현이고 자체 스펙이 있다. 여기서는 tote custody 를 결정적으로
+// 돌리기 위한 만족된 선행조건으로만 stub 한다.
+jest.mock('./plan/picking-plan.locks');
+jest.mock('./plan/picking-plan.queries', () => ({
+  ...jest.requireActual('./plan/picking-plan.queries'),
+  assertActivePlanSession: jest.fn(),
+  assertPlanMembers: jest.fn(),
+  databaseNow: jest.fn(),
+  loadPositiveShipmentCustody: jest.fn(),
+  loadShipmentAllocations: jest.fn(),
+  loadWorkItem: jest.fn(),
+  lockAndAssertPickerClaim: jest.fn(),
+}));
 
 const IDS = Object.freeze({
   actor: '11111111-1111-4111-8111-111111111111',
@@ -195,22 +227,35 @@ function makeService(options: { selects?: unknown[][]; inserts?: unknown[][]; up
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
   const Strategy = PickToTotePickingStrategy as any;
   const service: PickToTotePickingStrategy = new Strategy(
-    {},
     commands,
     { assertV2MutationAllowed: jest.fn() },
-    {},
     sessions,
-    {},
-    {},
     batches,
     audit,
   );
-  jest.spyOn(service as any, 'assertPlanMembers').mockResolvedValue(undefined);
+  jest.mocked(assertPlanMembers).mockResolvedValue(undefined);
   return { service, commands, sessions, batches, audit, tx, insertBuilders, updateBuilders };
 }
 
 function spy<T>(service: PickToTotePickingStrategy, name: string, value: T) {
   return jest.spyOn(service as any, name).mockResolvedValue(value);
+}
+
+/** Same shape as `spy`, for the plan-layer functions the strategy now imports instead of owning. */
+const PLAN_LAYER_MOCKS = {
+  assertActivePlanSession,
+  assertPlanMembers,
+  databaseNow,
+  loadPositiveShipmentCustody,
+  loadShipmentAllocations,
+  loadWorkItem,
+  lockAndAssertPickerClaim,
+};
+
+function planSpy<T>(name: keyof typeof PLAN_LAYER_MOCKS, value: T) {
+  return jest
+    .mocked(PLAN_LAYER_MOCKS[name] as unknown as (...args: unknown[]) => Promise<unknown>)
+    .mockResolvedValue(value as unknown);
 }
 
 describe('PickToTotePickingStrategy', () => {
@@ -251,8 +296,8 @@ describe('PickToTotePickingStrategy', () => {
 
   it('prevents one active tote assignment from crossing shipments before insert', async () => {
     const { service, tx } = makeService();
-    spy(service, 'lockAndAssertPickerClaim', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('lockAndAssertPickerClaim', workItem());
+    planSpy('assertActivePlanSession', undefined);
     spy(service, 'acquireToteLock', undefined);
     spy(service, 'loadToteForBatch', tote());
     spy(service, 'loadActiveToteAssignments', [assignment({ shipmentId: IDS.targetShipment })]);
@@ -265,8 +310,8 @@ describe('PickToTotePickingStrategy', () => {
 
   it('serializes concurrent reuse of one barcode into one assignment and one deterministic conflict', async () => {
     const { service, commands } = makeService();
-    spy(service, 'lockAndAssertPickerClaim', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('lockAndAssertPickerClaim', workItem());
+    planSpy('assertActivePlanSession', undefined);
     let activeAssignment: ReturnType<typeof assignment> | undefined;
     let lockTail: Promise<void> = Promise.resolve();
     jest.spyOn(service as any, 'acquireToteLock').mockImplementation(async (_barcode: string, localTx: any) => {
@@ -326,8 +371,8 @@ describe('PickToTotePickingStrategy', () => {
     const { service, sessions } = makeService({
       selects: [[{ shipmentId: IDS.shipment, skuId: IDS.sku }], [{ qty: 3 }], [{ qty: 1 }]],
     });
-    spy(service, 'lockAndAssertPickerClaim', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('lockAndAssertPickerClaim', workItem());
+    planSpy('assertActivePlanSession', undefined);
     spy(service, 'acquireToteLock', undefined);
     spy(service, 'loadToteForBatch', tote());
     spy(service, 'requireActiveToteAssignment', assignment());
@@ -356,8 +401,8 @@ describe('PickToTotePickingStrategy', () => {
 
   it('rejects a cross-shipment tote scan before source mutation', async () => {
     const { service, sessions, tx } = makeService();
-    spy(service, 'lockAndAssertPickerClaim', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('lockAndAssertPickerClaim', workItem());
+    planSpy('assertActivePlanSession', undefined);
     spy(service, 'acquireToteLock', undefined);
     spy(service, 'loadToteForBatch', tote());
     jest
@@ -381,13 +426,13 @@ describe('PickToTotePickingStrategy', () => {
       ],
       updates: [[{ id: IDS.workItem }]],
     });
-    spy(service, 'lockAndAssertPickerClaim', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
-    spy(service, 'loadShipmentAllocations', [
+    planSpy('lockAndAssertPickerClaim', workItem());
+    planSpy('assertActivePlanSession', undefined);
+    planSpy('loadShipmentAllocations', [
       { shipmentLineId: IDS.shipmentLine, skuId: IDS.sku, sourceLocationId: IDS.source, qty: 3 },
     ]);
     spy(service, 'loadActiveShipmentToteRefs', new Set([`tote:${IDS.toteA}`, `tote:${IDS.toteB}`]));
-    spy(service, 'databaseNow', new Date('2026-07-15T00:10:00.000Z'));
+    planSpy('databaseNow', new Date('2026-07-15T00:10:00.000Z'));
     const input: CompletePickInput = {
       batchId: IDS.batch,
       planId: IDS.plan,
@@ -488,16 +533,16 @@ describe('PickToTotePickingStrategy', () => {
       leaseVersion: 3,
     });
     const packingHarness = makeService();
-    spy(packingHarness.service, 'loadWorkItem', packing);
-    spy(packingHarness.service, 'databaseNow', new Date('2026-07-15T00:10:00.000Z'));
+    planSpy('loadWorkItem', packing);
+    planSpy('databaseNow', new Date('2026-07-15T00:10:00.000Z'));
     await expect(
       (packingHarness.service as any).assertToteMutationAuthority(packingInput, {}),
     ).resolves.toBeUndefined();
 
     const completed = workItem({ status: 'completed', leaseExpiresAt: null, leaseVersion: 4 });
     const completedHarness = makeService();
-    spy(completedHarness.service, 'loadWorkItem', completed);
-    spy(completedHarness.service, 'databaseNow', new Date('2026-07-15T00:10:00.000Z'));
+    planSpy('loadWorkItem', completed);
+    planSpy('databaseNow', new Date('2026-07-15T00:10:00.000Z'));
     await expect(
       (completedHarness.service as any).assertToteMutationAuthority(assignmentInput({ expectedLeaseVersion: 4 }), {}),
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'TOTE_RELEASE_FORBIDDEN' }) });
@@ -530,7 +575,7 @@ describe('PickToTotePickingStrategy', () => {
       ]),
     );
     spy(service, 'assertActiveWorkItemLease', undefined);
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('assertActivePlanSession', undefined);
     spy(service, 'acquireToteLock', undefined);
     spy(service, 'loadToteForBatch', tote());
     spy(service, 'requireActiveToteAssignment', assignment());
@@ -570,9 +615,9 @@ describe('PickToTotePickingStrategy', () => {
       ]),
     );
     spy(service, 'assertActiveWorkItemLease', undefined);
-    spy(service, 'assertActivePlanSession', undefined);
+    jest.mocked(assertActivePlanSession).mockResolvedValue(undefined);
     jest
-      .spyOn(service as any, 'assertPlanMembers')
+      .mocked(assertPlanMembers)
       .mockRejectedValue(new ConflictException({ code: 'PICKING_SHIPMENT_NOT_IN_PLAN', message: 'outside plan' }));
 
     await expect(
@@ -606,7 +651,7 @@ describe('PickToTotePickingStrategy', () => {
       ]),
     );
     spy(service, 'assertActiveWorkItemLease', undefined);
-    spy(service, 'assertActivePlanSession', undefined);
+    planSpy('assertActivePlanSession', undefined);
     spy(service, 'acquireToteLock', undefined);
     spy(service, 'loadToteForBatch', tote());
     spy(service, 'requireActiveToteAssignment', assignment());
@@ -626,10 +671,10 @@ describe('PickToTotePickingStrategy', () => {
 
   it('hands the picker claim off without moving physical tote custody', async () => {
     const { service, batches, sessions } = makeService();
-    jest.spyOn(service as any, 'loadWorkItem').mockResolvedValue(workItem());
-    jest.spyOn(service as any, 'loadPositiveShipmentCustody').mockResolvedValue([]);
+    jest.mocked(loadWorkItem).mockResolvedValue(workItem() as never);
+    jest.mocked(loadPositiveShipmentCustody).mockResolvedValue([]);
     spy(service, 'assertExclusiveToteCustody', undefined);
-    spy(service, 'assertActivePlanSession', undefined);
+    jest.mocked(assertActivePlanSession).mockResolvedValue(undefined);
     batches.handoff.mockResolvedValue({
       workItem: workItem({ pickerId: IDS.otherActor, leaseVersion: 2 }),
     });
@@ -667,14 +712,14 @@ describe('PickToTotePickingStrategy', () => {
       ],
       updates: [[{ id: IDS.workItem }]],
     });
-    spy(service, 'loadWorkItem', workItem());
-    spy(service, 'assertActivePlanSession', undefined);
-    spy(service, 'loadShipmentAllocations', [
+    planSpy('loadWorkItem', workItem());
+    planSpy('assertActivePlanSession', undefined);
+    planSpy('loadShipmentAllocations', [
       { shipmentLineId: IDS.shipmentLine, skuId: IDS.sku, sourceLocationId: IDS.source, qty: 2 },
     ]);
     spy(service, 'loadActiveShipmentToteRefs', new Set([`tote:${IDS.toteA}`]));
     spy(service, 'releaseEmptyShipmentTotes', undefined);
-    spy(service, 'databaseNow', new Date('2026-07-15T00:10:00.000Z'));
+    planSpy('databaseNow', new Date('2026-07-15T00:10:00.000Z'));
     const input: UnpickShipmentInput = {
       batchId: IDS.batch,
       planId: IDS.plan,
@@ -1008,17 +1053,24 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
   const controlledStock = { getAvailability: jest.fn(), writeStockLedger: jest.fn() };
   const invoices = { assertDispatchableInvoice: jest.fn(), issue: jest.fn(), void: jest.fn() };
   const Strategy = PickToTotePickingStrategy as any;
+  const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const strategy: PickToTotePickingStrategy = new Strategy(
-    {},
     commands,
-    { assertV2MutationAllowed: jest.fn() },
-    {},
+    workflowGate,
     sessions,
-    controlledStock,
-    invoices,
     { handoff: jest.fn() },
-    { logUserActionRequired: jest.fn() },
+    {
+      logUserActionRequired: jest.fn(),
+    },
   );
+  const planDeps = {
+    commands,
+    workflowGate,
+    sessions,
+    invariant: {},
+    controlledStock,
+    waybills: invoices,
+  } as unknown as PickingPlanDeps;
   const aggregate = {
     batch: { id: PICKING_CONTRACT_IDS.batch, warehouseId: 'warehouse-1' },
     shipments: [
@@ -1041,10 +1093,10 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
     ],
     workItems: Object.values(state.workItems),
   };
-  jest.spyOn(strategy as any, 'lockAggregate').mockResolvedValue(aggregate);
-  jest.spyOn(strategy as any, 'assertWarehouseConfiguration').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanningEligibility').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'lockSourceCapacities').mockResolvedValue([
+  jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
+  jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
+  jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
+  jest.mocked(lockSourceCapacities).mockResolvedValue([
     {
       skuId: PICKING_CONTRACT_IDS.sku,
       sourceLocationId: PICKING_CONTRACT_IDS.source,
@@ -1052,9 +1104,9 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
       remainingQty: 5,
     },
   ]);
-  jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
-  jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanMembers').mockImplementation(async (_planId, shipmentIds: string[]) => {
+  jest.mocked(planStalenessReason).mockResolvedValue(null);
+  jest.mocked(assertActivePlanSession).mockResolvedValue(undefined);
+  jest.mocked(assertPlanMembers).mockImplementation(async (_trx, _planId, shipmentIds: string[]) => {
     if (shipmentARetired && shipmentIds.includes(PICKING_CONTRACT_IDS.shipmentA)) {
       throw new ConflictException({
         code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
@@ -1064,12 +1116,16 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
   });
   jest.spyOn(strategy as any, 'acquireToteLock').mockResolvedValue(undefined);
   jest
-    .spyOn(strategy as any, 'lockAndAssertPickerClaim')
-    .mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
-  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
+    .mocked(lockAndAssertPickerClaim)
+    .mockImplementation(async (_trx, workItemId: string) => state.workItems[workItemId] as never);
   jest
-    .spyOn(strategy as any, 'loadShipmentAllocations')
-    .mockImplementation(async (_planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId));
+    .mocked(loadWorkItem)
+    .mockImplementation(async (_trx, workItemId: string) => state.workItems[workItemId] as never);
+  jest
+    .mocked(loadShipmentAllocations)
+    .mockImplementation(
+      async (_trx, _planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId) as never,
+    );
   jest
     .spyOn(strategy as any, 'loadToteByBarcode')
     .mockImplementation(async () =>
@@ -1091,10 +1147,24 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
   jest.spyOn(strategy as any, 'releaseEmptyShipmentTotes').mockImplementation(async () => {
     state.assigned = false;
   });
-  jest.spyOn(strategy as any, 'databaseNow').mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
+  jest.mocked(databaseNow).mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
 
   return {
     strategy,
+    plan: () =>
+      planPicking(planDeps, 'pick_to_tote', {
+        batchId: PICKING_CONTRACT_IDS.batch,
+        shipmentIds: [PICKING_CONTRACT_IDS.shipmentB, PICKING_CONTRACT_IDS.shipmentA],
+        actorId: PICKING_CONTRACT_IDS.actor,
+        idempotencyKey: 'plan-key',
+      }),
+    start: () =>
+      startPicking(planDeps, 'pick_to_tote', {
+        batchId: PICKING_CONTRACT_IDS.batch,
+        planId: PICKING_CONTRACT_IDS.plan,
+        actorId: PICKING_CONTRACT_IDS.actor,
+        idempotencyKey: 'start-key',
+      }),
     pickShipmentA: async () => {
       await strategy.registerTote({
         warehouseId: 'warehouse-1',

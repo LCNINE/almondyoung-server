@@ -9,6 +9,36 @@ import {
   UnpickShipmentInput,
 } from './picking-strategy.interface';
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
+import { planPicking, startPicking } from './plan/picking-plan';
+import {
+  assertPlanningEligibility,
+  assertWarehouseConfiguration,
+  lockAggregate,
+  lockSourceCapacities,
+  planStalenessReason,
+} from './plan/picking-plan.locks';
+import {
+  assertActivePlanSession,
+  assertPlanMembers,
+  databaseNow,
+  loadShipmentAllocations,
+  loadWorkItem,
+  lockAndAssertPickerClaim,
+} from './plan/picking-plan.queries';
+import { PickingPlanDeps } from './plan/picking-plan.types';
+
+// The plan layer is a shared implementation with its own spec. Here it is stubbed so the custody
+// contract runs against a deterministic model instead of a database.
+jest.mock('./plan/picking-plan.locks');
+jest.mock('./plan/picking-plan.queries', () => ({
+  ...jest.requireActual('./plan/picking-plan.queries'),
+  assertActivePlanSession: jest.fn(),
+  assertPlanMembers: jest.fn(),
+  databaseNow: jest.fn(),
+  loadShipmentAllocations: jest.fn(),
+  loadWorkItem: jest.fn(),
+  lockAndAssertPickerClaim: jest.fn(),
+}));
 
 export const PICKING_CONTRACT_IDS = Object.freeze({
   actor: 'worker-1',
@@ -59,6 +89,12 @@ export interface PickingContractSnapshot {
 
 export interface PickingStrategyContractFixture {
   strategy: PickingStrategy;
+  /**
+   * Planning is no longer part of the strategy contract — it is one shared implementation with its
+   * own spec (`plan/picking-plan.spec.ts`). These two remain only as custody-test setup.
+   */
+  plan(): Promise<unknown>;
+  start(): Promise<unknown>;
   pickShipmentA(): Promise<{ first: unknown; replay: unknown }>;
   retireShipmentA(): void;
   attemptRetiredShipmentA(): Promise<unknown>;
@@ -135,41 +171,13 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
       fixture = createFixture();
     });
 
-    it('creates exact source allocations without overcommitting a shared source', async () => {
-      const result = await fixture.strategy.plan(planInput());
-      const snapshot = fixture.snapshot();
-
-      expect(result).toMatchObject({
-        strategy: fixture.strategy.capabilities.name,
-        batchId: PICKING_CONTRACT_IDS.batch,
-        shipmentIds: [PICKING_CONTRACT_IDS.shipmentA, PICKING_CONTRACT_IDS.shipmentB],
-        allocationCount: 2,
-        totalQty: 5,
-      });
-      expect(snapshot.allocations).toEqual([
-        {
-          shipmentId: PICKING_CONTRACT_IDS.shipmentA,
-          shipmentLineId: PICKING_CONTRACT_IDS.lineA,
-          skuId: PICKING_CONTRACT_IDS.sku,
-          sourceLocationId: PICKING_CONTRACT_IDS.source,
-          quantity: 2,
-          sourceStockVersion: 7,
-        },
-        {
-          shipmentId: PICKING_CONTRACT_IDS.shipmentB,
-          shipmentLineId: PICKING_CONTRACT_IDS.lineB,
-          skuId: PICKING_CONTRACT_IDS.sku,
-          sourceLocationId: PICKING_CONTRACT_IDS.source,
-          quantity: 3,
-          sourceStockVersion: 7,
-        },
-      ]);
-      expect(snapshot.allocations.reduce((sum, allocation) => sum + allocation.quantity, 0)).toBe(5);
-    });
+    // 「공유 소스를 초과 배정하지 않고 정확한 소스 할당을 만든다」는 계획 층 계약이라
+    // plan/picking-plan.spec.ts 로 이사했다. 전략 3벌에 대해 같은 코드를 3번 검증할
+    // 대상 자체가 사라졌다 (ADR-0030).
 
     it('keeps scans idempotent and conserves handed-in custody', async () => {
-      await fixture.strategy.plan(planInput());
-      await fixture.strategy.start(startInput());
+      await fixture.plan();
+      await fixture.start();
 
       const { first, replay } = await fixture.pickShipmentA();
       const snapshot = fixture.snapshot();
@@ -182,8 +190,8 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
     });
 
     it('emits the common inspection-ready shape only after exact shipment picking', async () => {
-      await fixture.strategy.plan(planInput());
-      await fixture.strategy.start(startInput());
+      await fixture.plan();
+      await fixture.start();
       await fixture.pickShipmentA();
 
       const result = await fixture.strategy.completePick(completeInput());
@@ -212,8 +220,8 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
     });
 
     it('unpick returns only the selected shipment to pooled source custody', async () => {
-      await fixture.strategy.plan(planInput());
-      await fixture.strategy.start(startInput());
+      await fixture.plan();
+      await fixture.start();
       await fixture.pickShipmentA();
       await fixture.strategy.completePick(completeInput());
 
@@ -235,8 +243,8 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
     });
 
     it('rejects scans for a retired member while the sibling work item stays active', async () => {
-      await fixture.strategy.plan(planInput());
-      await fixture.strategy.start(startInput());
+      await fixture.plan();
+      await fixture.start();
       fixture.retireShipmentA();
 
       await expect(fixture.attemptRetiredShipmentA()).rejects.toMatchObject({
@@ -251,8 +259,8 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
     });
 
     it('does not cross the economic inventory, reservation, invoice, progress, or event boundaries', async () => {
-      await fixture.strategy.plan(planInput());
-      await fixture.strategy.start(startInput());
+      await fixture.plan();
+      await fixture.start();
       await fixture.pickShipmentA();
       await fixture.strategy.completePick(completeInput());
       await fixture.strategy.unpickShipment(unpickInput());
@@ -582,16 +590,15 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   };
   const batches = { handoff: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const strategy: DiscretePickingStrategy = new Strategy(
-    {},
+  const strategy: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, batches);
+  const planDeps = {
     commands,
     workflowGate,
-    {},
     sessions,
+    invariant: {},
     controlledStock,
-    invoices,
-    batches,
-  );
+    waybills: invoices,
+  } as unknown as PickingPlanDeps;
 
   const aggregate = {
     batch: { id: PICKING_CONTRACT_IDS.batch, warehouseId: 'warehouse-1' },
@@ -615,10 +622,10 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
     ],
     workItems: Object.values(state.workItems),
   };
-  jest.spyOn(strategy as any, 'lockAggregate').mockResolvedValue(aggregate);
-  jest.spyOn(strategy as any, 'assertWarehouseConfiguration').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanningEligibility').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'lockSourceCapacities').mockImplementation(async () => [
+  jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
+  jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
+  jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
+  jest.mocked(lockSourceCapacities).mockResolvedValue([
     {
       skuId: PICKING_CONTRACT_IDS.sku,
       sourceLocationId: PICKING_CONTRACT_IDS.source,
@@ -626,9 +633,9 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
       remainingQty: 5,
     },
   ]);
-  jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
-  jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanMembers').mockImplementation(async (_planId, shipmentIds: string[]) => {
+  jest.mocked(planStalenessReason).mockResolvedValue(null);
+  jest.mocked(assertActivePlanSession).mockResolvedValue(undefined);
+  jest.mocked(assertPlanMembers).mockImplementation(async (_trx, _planId, shipmentIds: string[]) => {
     if (shipmentARetired && shipmentIds.includes(PICKING_CONTRACT_IDS.shipmentA)) {
       throw new ConflictException({
         code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
@@ -637,16 +644,22 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
     }
   });
   jest
-    .spyOn(strategy as any, 'lockAndAssertPickerClaim')
-    .mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
-  jest.spyOn(strategy as any, 'loadWorkItem').mockImplementation(async (workItemId: string) => state.workItems[workItemId]);
+    .mocked(lockAndAssertPickerClaim)
+    .mockImplementation(async (_trx, workItemId: string) => state.workItems[workItemId] as never);
   jest
-    .spyOn(strategy as any, 'loadShipmentAllocations')
-    .mockImplementation(async (_planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId));
-  jest.spyOn(strategy as any, 'databaseNow').mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
+    .mocked(loadWorkItem)
+    .mockImplementation(async (_trx, workItemId: string) => state.workItems[workItemId] as never);
+  jest
+    .mocked(loadShipmentAllocations)
+    .mockImplementation(
+      async (_trx, _planId: string, shipmentId: string) => state.allocationsForShipment(shipmentId) as never,
+    );
+  jest.mocked(databaseNow).mockResolvedValue(new Date('2026-07-15T00:10:00.000Z'));
 
   return {
     strategy,
+    plan: () => planPicking(planDeps, strategy.capabilities.name, planInput()),
+    start: () => startPicking(planDeps, strategy.capabilities.name, startInput()),
     pickShipmentA: async () => {
       const input = scanInput('A', 2, 'scan-a');
       const first = await strategy.scan(input);

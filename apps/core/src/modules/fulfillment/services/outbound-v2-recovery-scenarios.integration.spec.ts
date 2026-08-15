@@ -87,16 +87,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
     const batches = new OutboundBatchOrchestrator(dbService, commands, invariant, {} as never, audit, workflow, {
       get: jest.fn(() => ({ resumePending: jest.fn() })),
     } as never);
-    const picking = new DiscretePickingStrategy(
-      dbService,
-      commands,
-      workflow,
-      invariant,
-      sessions,
-      guard,
-      {} as never,
-      batches,
-    );
+    const picking = new DiscretePickingStrategy(commands, workflow, sessions, batches);
     return { dbService, guard, audit, sessions, recovery, inventory, batches, picking };
   }
 
