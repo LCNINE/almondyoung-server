@@ -7,6 +7,7 @@ import {
   SHIPMENT_STREAM,
 } from '@packages/event-contracts/streams';
 import { randomUUID } from 'crypto';
+import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -25,6 +26,7 @@ import { AggregateThenSortPickingStrategy } from '../picking/aggregate-then-sort
 import { DiscretePickingStrategy } from '../picking/discrete-picking.strategy';
 import { PickToTotePickingStrategy } from '../picking/pick-to-tote.strategy';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
+import type { PickingStrategyName } from '../picking/picking-strategy.interface';
 import { inRollbackTx, makeDb, seedHolder, seedSku, seedWarehouseWithZone } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
@@ -651,7 +653,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       batchId,
       shipmentIds: [member.shipment.id],
       actorId: worker.id,
-      requestedStrategy: 'discrete',
       idempotencyKey: `discrete-plan-${randomUUID()}`,
     });
     expect(plan.state).toBe('planned');
@@ -1269,27 +1270,146 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     });
   });
 
-  it('refuses a strategy that contradicts the batch picking method', async () => {
+  // ADR-0030 §3.5: 창고가 해당 전략을 켰는지 확인하는 검사의 소유자는
+  // `PickingStrategyRegistry.resolveForWarehouse` 다 — plan 도 start 도 계획 층에 들어가기 전에
+  // 이걸 먼저 통과해야 한다. 아래 세 케이스는 그 한 벌만으로 plan/replan/start 세 지점이 모두
+  // 막히는지를 실 DB 로 고정한다. 단언을 registry 쪽 메시지에 맞춘 것은 의도적이다 — 검사가
+  // registry 밖으로 새어 나가거나 사라지면 여기서 깨진다.
+  //
+  // 배치 생성 자체가 창고 지원 여부를 게이트하므로(`OUTBOUND_BATCH_METHOD_NOT_SUPPORTED`), 미설정 창고는
+  // 배치를 만든 뒤 설정을 회수해서 만든다 — 운영에서 창고 설정이 바뀌면 실제로 이 상태가 된다.
+  async function revokeWarehouseStrategies(tx: DbTx, warehouseId: string, remaining: PickingStrategyName[]) {
+    await tx
+      .update(wmsTables.warehouses)
+      .set({ supportedPickingStrategies: remaining })
+      .where(eq(wmsTables.warehouses.id, warehouseId));
+  }
+
+  // `expect.stringContaining` 은 any 를 돌려줘 toMatchObject 안에 넣으면 lint 가 막는다. 잡아서
+  // 좁히면 클래스와 메시지를 둘 다 타입 안전하게 고정할 수 있다.
+  async function expectConflict(promise: Promise<unknown>, messagePart: string) {
+    let caught: unknown;
+    try {
+      await promise;
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    if (!(caught instanceof ConflictException)) throw new Error('expected a ConflictException');
+    expect(caught.message).toContain(messagePart);
+  }
+
+  it('refuses to plan on a warehouse whose picking strategy configuration was emptied', async () => {
     await inRollbackTx(db, async (tx) => {
-      // 창고는 두 전략을 모두 지원하지만 배치는 individual 이다.
-      const world = await seedWorld(tx, [2], ['discrete', 'aggregate_then_sort']);
+      const world = await seedWorld(tx, [2], ['discrete']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+      await revokeWarehouseStrategies(tx, world.warehouseId, []);
+
+      await expectConflict(
+        services.picking.plan({
+          batchId: batch.batchId,
+          shipmentIds: [world.shipments[0].shipment.id],
+          actorId: worker.id,
+          idempotencyKey: `unconfigured-plan-${randomUUID()}`,
+        }),
+        'has no picking strategy configuration',
+      );
+
+      // 거부는 어떤 계획 행도 남기지 않는다.
+      const plans = await tx
+        .select({ id: wmsTables.pickingPlans.id })
+        .from(wmsTables.pickingPlans)
+        .where(eq(wmsTables.pickingPlans.batchId, batch.batchId));
+      expect(plans).toHaveLength(0);
+    });
+  });
+
+  it('refuses to replan an existing draft after the batch strategy is disabled for the warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, [2], ['discrete']);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
+      const manager = { id: randomUUID(), roles: ['master'] };
+      const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
+      const { batch } = await createBatchWithShipments(services, world, manager);
+      const shipmentIds = [world.shipments[0].shipment.id];
+
+      const first = await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds,
+        actorId: worker.id,
+        idempotencyKey: `revoked-replan-first-${randomUUID()}`,
+      });
+      expect(first.state).toBe('planned');
+
+      // 창고는 여전히 설정돼 있지만 배치가 요구하는 discrete 만 빠졌다.
+      await revokeWarehouseStrategies(tx, world.warehouseId, ['pick_to_tote']);
+
+      await expectConflict(
+        services.picking.plan({
+          batchId: batch.batchId,
+          shipmentIds,
+          actorId: worker.id,
+          idempotencyKey: `revoked-replan-second-${randomUUID()}`,
+        }),
+        'is not enabled for warehouse',
+      );
+
+      // 기존 draft 는 무효화되지 않고 그대로 남는다 — 거부는 draft 경로에 닿기 전에 일어난다.
+      if (first.state !== 'planned') throw new Error(first.reason);
+      const [stored] = await tx
+        .select({ status: wmsTables.pickingPlans.status })
+        .from(wmsTables.pickingPlans)
+        .where(eq(wmsTables.pickingPlans.id, first.planId));
+      expect(stored.status).toBe('draft');
+    });
+  });
+
+  it('refuses to start a planned batch after the strategy is disabled for the warehouse', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const world = await seedWorld(tx, [2], ['discrete']);
       await seedRegisteredWaybills(tx, world);
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
       const { batch } = await createBatchWithShipments(services, world, manager);
 
-      await expect(
-        services.picking.plan({
-          batchId: batch.batchId,
-          shipmentIds: [world.shipments[0].shipment.id],
-          actorId: worker.id,
-          idempotencyKey: `mismatch-plan-${randomUUID()}`,
-          requestedStrategy: 'aggregate_then_sort',
-        }),
-      ).rejects.toMatchObject({
-        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
+      const planned = await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds: [world.shipments[0].shipment.id],
+        actorId: worker.id,
+        idempotencyKey: `revoked-start-plan-${randomUUID()}`,
       });
+      expect(planned.state).toBe('planned');
+      if (planned.state !== 'planned') throw new Error(planned.reason);
+
+      await revokeWarehouseStrategies(tx, world.warehouseId, ['pick_to_tote']);
+
+      await expectConflict(
+        services.picking.start({
+          batchId: batch.batchId,
+          planId: planned.planId,
+          actorId: worker.id,
+          idempotencyKey: `revoked-start-${randomUUID()}`,
+        }),
+        'is not enabled for warehouse',
+      );
+
+      // 세션도 만들어지지 않고 계획은 draft 로 남는다.
+      const sessions = await tx
+        .select({ id: wmsTables.batchInventorySessions.id })
+        .from(wmsTables.batchInventorySessions)
+        .where(eq(wmsTables.batchInventorySessions.batchId, batch.batchId));
+      expect(sessions).toHaveLength(0);
+      const [stored] = await tx
+        .select({ status: wmsTables.pickingPlans.status })
+        .from(wmsTables.pickingPlans)
+        .where(eq(wmsTables.pickingPlans.id, planned.planId));
+      expect(stored.status).toBe('draft');
     });
   });
 
@@ -1329,25 +1449,24 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       const { batch } = await createBatchWithShipments(services, world, manager);
       const shipmentIds = [world.shipments[0].shipment.id];
 
-      await services.picking.plan({
+      const first = await services.picking.plan({
         batchId: batch.batchId,
         shipmentIds,
         actorId: worker.id,
         idempotencyKey: `replan-first-${randomUUID()}`,
       });
+      expect(first.state).toBe('planned');
 
-      // 재plan 도 같은 경로를 타므로 배치 방식과 어긋나는 전략은 여전히 막힌다.
-      await expect(
-        services.picking.plan({
-          batchId: batch.batchId,
-          shipmentIds,
-          actorId: worker.id,
-          idempotencyKey: `replan-second-${randomUUID()}`,
-          requestedStrategy: 'aggregate_then_sort',
-        }),
-      ).rejects.toMatchObject({
-        response: { error: 'PICKING_STRATEGY_BATCH_METHOD_MISMATCH' },
+      // 창고가 aggregate_then_sort 도 지원하지만 배치는 individual 이므로 재plan 도 discrete 로 파생된다.
+      const second = await services.picking.plan({
+        batchId: batch.batchId,
+        shipmentIds,
+        actorId: worker.id,
+        idempotencyKey: `replan-second-${randomUUID()}`,
       });
+      expect(second.state).toBe('planned');
+      if (second.state !== 'planned') throw new Error(second.reason);
+      expect(second.strategy).toBe('discrete');
     });
   });
 });

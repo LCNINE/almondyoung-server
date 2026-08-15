@@ -11,7 +11,6 @@ import {
 import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
 import {
   assertPlanningEligibility,
-  assertWarehouseConfiguration,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
@@ -141,7 +140,6 @@ export async function planPicking(
         }
         let staleReason: string | null = null;
         try {
-          await assertWarehouseConfiguration(trx, aggregate.batch.warehouseId, strategyName);
           await assertPlanningEligibility(trx, deps.waybills, aggregate, storedShipmentIds);
           staleReason = await planStalenessReason(trx, deps.controlledStock, openPlan.id, aggregate, strategyName);
         } catch (error) {
@@ -180,7 +178,6 @@ export async function planPicking(
         return { response, resourceType: 'picking_plan', resourceId: openPlan.id };
       }
 
-      await assertWarehouseConfiguration(trx, aggregate.batch.warehouseId, strategyName);
       await assertPlanningEligibility(trx, deps.waybills, aggregate, shipmentIds);
 
       const capacities = await lockSourceCapacities(trx, deps.controlledStock, aggregate);
@@ -317,7 +314,6 @@ export async function startPicking(
       let invalidationReason: string | null = null;
       try {
         const aggregate = await lockAggregate(trx, deps.invariant, input.batchId, shipmentIds);
-        await assertWarehouseConfiguration(trx, aggregate.batch.warehouseId, strategyName);
         await assertPlanningEligibility(trx, deps.waybills, aggregate, shipmentIds);
         invalidationReason = await planStalenessReason(
           trx,

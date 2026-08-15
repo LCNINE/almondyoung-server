@@ -398,27 +398,3 @@ export async function planStalenessReason(
   }
   return null;
 }
-
-/**
- * Second warehouse check, reached only after `PickingStrategyRegistry.resolveForWarehouse` has
- * already made the same assertion with a different error code. ADR-0030 §3.5 retires this in a
- * separate, independently revertable commit because it is a behaviour change, not a pure move.
- */
-export async function assertWarehouseConfiguration(
-  trx: DbTx,
-  warehouseId: string,
-  strategyName: PickingStrategyName,
-): Promise<void> {
-  const [warehouse] = await trx
-    .select({ supportedPickingStrategies: wmsTables.warehouses.supportedPickingStrategies })
-    .from(wmsTables.warehouses)
-    .where(eq(wmsTables.warehouses.id, warehouseId))
-    .limit(1);
-  if (!warehouse) throw new NotFoundException(`Warehouse ${warehouseId} not found`);
-  if (!warehouse.supportedPickingStrategies?.includes(strategyName)) {
-    throw conflict(
-      'PICKING_STRATEGY_NOT_CONFIGURED',
-      `Warehouse ${warehouseId} does not explicitly enable ${strategyName}`,
-    );
-  }
-}

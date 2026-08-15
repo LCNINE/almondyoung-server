@@ -5,7 +5,6 @@ import { planPicking } from './picking-plan';
 import { conflict, errorMessage, isPlanValidationError } from './picking-plan.errors';
 import {
   assertPlanningEligibility,
-  assertWarehouseConfiguration,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
@@ -332,7 +331,6 @@ describe('picking plan layer — layer 1 pure functions', () => {
 describe('planPicking', () => {
   beforeEach(() => {
     jest.mocked(lockAggregate).mockResolvedValue(LOCKED_AGGREGATE as never);
-    jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
     jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
     jest.mocked(planStalenessReason).mockResolvedValue(null);
     jest

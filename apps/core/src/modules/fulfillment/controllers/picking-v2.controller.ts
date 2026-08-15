@@ -105,7 +105,6 @@ export class PickingCommandV2Controller {
       shipmentIds: dto.shipmentIds,
       actorId: this.actor(user).id,
       idempotencyKey: this.idempotencyKey(idempotencyKey),
-      requestedStrategy: dto.strategy,
     });
   }
 

@@ -12,7 +12,6 @@ import { DiscretePickingStrategy } from './discrete-picking.strategy';
 import { planPicking, startPicking } from './plan/picking-plan';
 import {
   assertPlanningEligibility,
-  assertWarehouseConfiguration,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
@@ -42,7 +41,6 @@ jest.mock('./plan/picking-plan.queries', () => ({
 
 const PLAN_LAYER_MOCKS = [
   assertPlanningEligibility,
-  assertWarehouseConfiguration,
   lockAggregate,
   lockSourceCapacities,
   planStalenessReason,
@@ -644,7 +642,6 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
     workItems: Object.values(state.workItems),
   };
   jest.mocked(lockAggregate).mockResolvedValue(aggregate as never);
-  jest.mocked(assertWarehouseConfiguration).mockResolvedValue(undefined);
   jest.mocked(assertPlanningEligibility).mockResolvedValue(undefined);
   jest.mocked(lockSourceCapacities).mockResolvedValue([
     {
