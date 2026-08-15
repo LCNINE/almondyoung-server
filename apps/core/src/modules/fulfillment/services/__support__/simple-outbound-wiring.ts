@@ -98,17 +98,17 @@ export function assembleSimpleOutbound(tx: DbTx): SimpleOutboundService {
     workflowGate,
     moduleRef,
   );
-  const discrete = new DiscretePickingStrategy(
+  const discrete = new DiscretePickingStrategy(commands, workflowGate, sessions, batches);
+  const picking = new PickingProcessService(
     dbService,
     commands,
     workflowGate,
-    invariant,
     sessions,
+    invariant,
     controlled,
     waybills,
-    batches,
+    new PickingStrategyRegistry(dbService, [discrete]),
   );
-  const picking = new PickingProcessService(dbService, new PickingStrategyRegistry(dbService, [discrete]));
   const barcodes = new BarcodeService(dbService);
   const dispatch = new ShipmentDispatchService(
     dbService,

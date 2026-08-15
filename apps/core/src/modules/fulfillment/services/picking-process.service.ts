@@ -5,6 +5,14 @@ import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
 import { STRATEGY_BY_PICKING_METHOD } from '../picking/picking-method.contract';
+import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
+import { BatchInventorySessionService } from './batch-inventory-session.service';
+import { FulfillmentCommandService } from './fulfillment-command.service';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { WaybillService } from '../waybill/waybill.service';
+import { planPicking, startPicking } from '../picking/plan/picking-plan';
+import { PickingPlanDeps } from '../picking/plan/picking-plan.types';
 import {
   AggregateCartHandoffInput,
   AggregateCartHandoffResult,
@@ -67,8 +75,25 @@ function isPickToToteStrategy(strategy: PickingStrategy): strategy is PickToTote
 export class PickingProcessService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly commands: FulfillmentCommandService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
+    private readonly sessions: BatchInventorySessionService,
+    private readonly invariant: FulfillmentInvariantService,
+    private readonly controlledStock: BatchControlledStockGuard,
+    private readonly waybills: WaybillService,
     @Optional() private readonly strategyRegistry?: PickingStrategyRegistry,
   ) {}
+
+  private get planDeps(): PickingPlanDeps {
+    return {
+      commands: this.commands,
+      workflowGate: this.workflowGate,
+      sessions: this.sessions,
+      invariant: this.invariant,
+      controlledStock: this.controlledStock,
+      waybills: this.waybills,
+    };
+  }
 
   async plan(input: PlanPickingInput, tx?: DbTx) {
     return this.dbService.run(async (trx) => {
@@ -89,13 +114,18 @@ export class PickingProcessService {
           message: `Batch ${input.batchId} is ${batch.pickingMethod}; strategy ${input.requestedStrategy} is not allowed`,
         });
       }
-      const strategy = await this.requiredRegistry().resolveForWarehouse(derived, batch.warehouseId, trx);
-      return strategy.plan(input, trx);
+      // 창고 허용 검사는 유지한다. 반환된 전략 객체는 버린다 — 계획 층은 전략에 의존하지 않는다.
+      await this.requiredRegistry().resolveForWarehouse(derived, batch.warehouseId, trx);
+      return planPicking(this.planDeps, derived, input, trx);
     }, tx);
   }
 
   async start(input: StartPickingInput, tx?: DbTx) {
-    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.start(input, trx), tx);
+    return this.dbService.run(async (trx) => {
+      const identity = await this.loadPlanIdentity(input.batchId, input.planId, trx);
+      await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
+      return startPicking(this.planDeps, identity.strategy, input, trx);
+    }, tx);
   }
 
   async scan(input: ScanPickingInput, tx?: DbTx) {
@@ -195,6 +225,28 @@ export class PickingProcessService {
     );
   }
 
+  /** Plan -> batch -> warehouse identity, shared by `start` and every custody operation. */
+  private async loadPlanIdentity(batchId: string, planId: string, trx: DbTx) {
+    const [identity] = await trx
+      .select({
+        batchId: wmsTables.pickingPlans.batchId,
+        strategy: wmsTables.pickingPlans.strategy,
+        warehouseId: wmsTables.outboundBatches.warehouseId,
+      })
+      .from(wmsTables.pickingPlans)
+      .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, wmsTables.pickingPlans.batchId))
+      .where(eq(wmsTables.pickingPlans.id, planId))
+      .limit(1);
+    if (!identity) throw new NotFoundException(`Picking plan ${planId} not found`);
+    if (identity.batchId !== batchId) {
+      throw new ConflictException({
+        code: 'PICKING_PLAN_BATCH_MISMATCH',
+        message: `Picking plan ${planId} does not belong to batch ${batchId}`,
+      });
+    }
+    return identity;
+  }
+
   private withPlanStrategy<T>(
     batchId: string,
     planId: string,
@@ -202,23 +254,7 @@ export class PickingProcessService {
     tx?: DbTx,
   ): Promise<T> {
     return this.dbService.run(async (trx) => {
-      const [identity] = await trx
-        .select({
-          batchId: wmsTables.pickingPlans.batchId,
-          strategy: wmsTables.pickingPlans.strategy,
-          warehouseId: wmsTables.outboundBatches.warehouseId,
-        })
-        .from(wmsTables.pickingPlans)
-        .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, wmsTables.pickingPlans.batchId))
-        .where(eq(wmsTables.pickingPlans.id, planId))
-        .limit(1);
-      if (!identity) throw new NotFoundException(`Picking plan ${planId} not found`);
-      if (identity.batchId !== batchId) {
-        throw new ConflictException({
-          code: 'PICKING_PLAN_BATCH_MISMATCH',
-          message: `Picking plan ${planId} does not belong to batch ${batchId}`,
-        });
-      }
+      const identity = await this.loadPlanIdentity(batchId, planId, trx);
       const strategy = await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
       return execute(strategy, trx);
     }, tx);
