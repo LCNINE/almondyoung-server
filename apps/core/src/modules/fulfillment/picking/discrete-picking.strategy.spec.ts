@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
-import { ConflictException } from '@nestjs/common';
 import { DiscretePickingStrategy } from './discrete-picking.strategy';
 import { DiscreteScanPickingInput, PickingScanResult } from './picking-strategy.interface';
+import { assertPlanMembers } from './plan/picking-plan.queries';
+
+// Plan membership is a plan-layer query with its own spec; here it is a satisfied precondition.
+// Everything else in the plan layer stays real so the `tx.select` call-order assertions below
+// keep measuring the scan path itself.
+jest.mock('./plan/picking-plan.queries', () => ({
+  ...jest.requireActual('./plan/picking-plan.queries'),
+  assertPlanMembers: jest.fn(),
+}));
 
 const IDS = Object.freeze({
   actor: '11111111-1111-4111-8111-111111111111',
@@ -125,8 +133,8 @@ function makeService(selectRows: unknown[][] = []) {
   const sessions = { moveCustody: jest.fn().mockResolvedValue({}) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
-  const service: DiscretePickingStrategy = new Strategy({}, commands, workflowGate, {}, sessions, {}, {}, {});
-  jest.spyOn(service as any, 'assertPlanMembers').mockResolvedValue(undefined);
+  const service: DiscretePickingStrategy = new Strategy(commands, workflowGate, sessions, {});
+  jest.mocked(assertPlanMembers).mockResolvedValue(undefined);
   return { service, commands, sessions, workflowGate, tx };
 }
 
@@ -144,44 +152,7 @@ describe('DiscretePickingStrategy', () => {
     expect(Object.isFrozen(service.capabilities)).toBe(true);
   });
 
-  it('does not invalidate an existing draft when caller shipment membership differs', async () => {
-    const { service, tx } = makeService([[{ id: IDS.plan, status: 'draft' }], [{ shipmentId: IDS.otherActor }]]);
-
-    await expect(
-      service.plan({
-        batchId: IDS.batch,
-        shipmentIds: [IDS.shipment],
-        actorId: IDS.actor,
-        idempotencyKey: 'mismatched-plan-members',
-      }),
-    ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'PICKING_PLAN_REQUEST_MEMBERSHIP_MISMATCH' }),
-    });
-    expect(tx.update).not.toHaveBeenCalled();
-  });
-
-  it('commits a stored-member draft validation failure as an invalidated result', async () => {
-    const { service, tx } = makeService([[{ id: IDS.plan, status: 'draft' }], [{ shipmentId: IDS.shipment }]]);
-    jest
-      .spyOn(service as unknown as { lockAggregate: (...args: unknown[]) => Promise<unknown> }, 'lockAggregate')
-      .mockRejectedValue(new ConflictException({ code: 'PICKING_SOURCE_STALE', message: 'source stale' }));
-
-    await expect(
-      service.plan({
-        batchId: IDS.batch,
-        shipmentIds: [IDS.shipment],
-        actorId: IDS.actor,
-        idempotencyKey: 'invalidate-stale-plan',
-      }),
-    ).resolves.toEqual({
-      state: 'invalidated',
-      operationId: 'command-request-1',
-      planId: IDS.plan,
-      batchId: IDS.batch,
-      reason: 'source stale',
-    });
-    expect(tx.update).toHaveBeenCalledTimes(1);
-  });
+  // 계획 층(plan/start)은 더 이상 전략의 것이 아니다 — plan/picking-plan.spec.ts 로 이사했다.
 
   it('lets the command replay envelope return before claim validation or custody mutation', async () => {
     const stored: PickingScanResult = {

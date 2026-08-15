@@ -121,5 +121,4 @@ describe('outbound V2 authorization matrix', () => {
     );
     await expect(guard.canActivate(contextFor(forcedDispatch).context)).resolves.toBe(false);
   });
-
 });

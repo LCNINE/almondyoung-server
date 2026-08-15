@@ -159,39 +159,20 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       workflow,
       moduleRef as never,
     );
-    const aggregate = new AggregateThenSortPickingStrategy(
-      dbService,
-      commands,
-      workflow,
-      invariant,
-      sessions,
-      controlled,
-      waybills,
-      batches,
-    );
-    const discrete = new DiscretePickingStrategy(
-      dbService,
-      commands,
-      workflow,
-      invariant,
-      sessions,
-      controlled,
-      waybills,
-      batches,
-    );
-    const tote = new PickToTotePickingStrategy(
-      dbService,
-      commands,
-      workflow,
-      invariant,
-      sessions,
-      controlled,
-      waybills,
-      batches,
-      audit,
-    );
+    const aggregate = new AggregateThenSortPickingStrategy(commands, workflow, sessions, batches);
+    const discrete = new DiscretePickingStrategy(commands, workflow, sessions, batches);
+    const tote = new PickToTotePickingStrategy(commands, workflow, sessions, batches, audit);
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
-    const picking = new PickingProcessService(dbService, registry);
+    const picking = new PickingProcessService(
+      dbService,
+      commands,
+      workflow,
+      sessions,
+      invariant,
+      controlled,
+      waybills,
+      registry,
+    );
 
     const inventoryOutbox = outboxPublisherFor(INVENTORY_STREAM, dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);

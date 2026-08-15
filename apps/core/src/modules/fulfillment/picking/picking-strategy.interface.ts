@@ -344,11 +344,14 @@ export interface UnpickShipmentResult {
   returnedToSourceQty: number;
 }
 
+/**
+ * A picking strategy owns only what differs per method: custody movement and its scans.
+ * Planning (`plan` / `start`) is strategy-agnostic and lives in `plan/picking-plan.ts` — measured
+ * diff across the three strategies was 0~4 lines, all of them the strategy name (ADR-0030).
+ */
 export interface PickingStrategy {
   readonly capabilities: PickingStrategyCapabilities;
 
-  plan(input: PlanPickingInput, tx?: DbTx): Promise<PickingPlanResult>;
-  start(input: StartPickingInput, tx?: DbTx): Promise<PickingStartResult>;
   scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult>;
   handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult>;
   completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput>;

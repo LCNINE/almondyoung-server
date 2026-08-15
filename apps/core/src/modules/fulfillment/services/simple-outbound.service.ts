@@ -577,9 +577,10 @@ export class SimpleOutboundService {
     tx: DbTx,
   ): Promise<string> {
     // 락 없는 fast-path 조회일 뿐이다 — 동시성 보장은 여기가 아니라 아래
-    // `this.picking.plan()` 안의 `DiscretePickingStrategy.plan()`(SELECT … FOR UPDATE +
-    // idempotent commands.execute)이 진다. 이 쿼리는 이미 있는 plan 을 재사용해 중복
-    // plan() 호출을 피하는 최적화일 뿐, race 를 막는 가드로 취급하지 말 것.
+    // `this.picking.plan()` 이 부르는 `plan/picking-plan.ts` 의 `planPicking()`
+    // (SELECT … FOR UPDATE + idempotent commands.execute)이 진다. 이 쿼리는 이미 있는
+    // plan 을 재사용해 중복 plan() 호출을 피하는 최적화일 뿐, race 를 막는 가드로
+    // 취급하지 말 것.
     const [existing] = await tx
       .select({ id: wmsTables.pickingPlans.id })
       .from(wmsTables.pickingPlans)

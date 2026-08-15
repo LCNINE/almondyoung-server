@@ -18,7 +18,6 @@ import { FulfillmentsService } from '../fulfillments.service';
 import { FulfillmentOrderReservationRetryWorker } from '../fulfillment-order-reservation-retry.worker';
 import { FulfillmentWorkflowGate, type FulfillmentWorkflowMode } from '../fulfillment-workflow-gate.service';
 import { ConfigService } from '@nestjs/config';
-import { PickingProcessService } from '../picking-process.service';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
@@ -58,7 +57,6 @@ export interface Wired {
   fulfillments: FulfillmentsService;
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
-  picking: PickingProcessService;
 }
 
 export function wireLogistics(
@@ -103,7 +101,6 @@ export function wireLogistics(
     progress,
   );
   const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, workflowGate, shipmentReservations);
-  const picking = new PickingProcessService(dbService);
 
   return {
     inventoryPublisher,
@@ -122,7 +119,6 @@ export function wireLogistics(
     fulfillments,
     shipmentReservations,
     retryWorker,
-    picking,
   };
 }
 
