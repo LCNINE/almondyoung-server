@@ -83,10 +83,31 @@
 ### 판매 채널 (Sales Channel)
 - 정의: 고객 주문을 수집하는 판매 접점이며, Core 는 판매 채널을 자기 내부 모델로 직접 신뢰하지 않고 channel-adapter 를 통해 번역된 주문만 받는다.
 - **Medusa 는 자사몰 판매 채널이다.** Naver/Coupang 과 소유 구조는 다르지만 Core 관점에서는 같은 외부 주문 출처로 취급한다.
+- **채널을 "퍼스트파티/서드파티" 같은 등급으로 나누지 않는다.** Medusa 가 다른 것은 소유 구조가 아니라 [[채널 능력]]이다 — 자사몰이라도 카페24 였다면 네이버와 같은 능력 벡터였을 것이다. 자세한 결정은 ADR-0031.
 - **Medusa order id 는 채널 주문 ID다.** Core 의 `sales_orders.id` 와 같은 정체성이 아니며, Core 에서는 `(salesChannel, channelOrderId)` 로 참조한다.
 - 판매채널은 Core/관련 백엔드 SoT 의 projection 을 보유한다. 상품, 가격, 판매가능수량 등은 SoT 에서 계산되어 channel-adapter 를 통해 판매채널에 반영된다.
 - Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
-- _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기.
+- _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기, 채널을 퍼스트파티/서드파티 등급으로 가르기.
+
+### 채널 능력 (Channel Capability) *(결정됨 — ADR-0031, 구현 진행 중)*
+- 정의: 한 판매 채널에 대해 우리가 무엇을 할 수 있는지를 축별로 적은 벡터. 채널의 **종류**가 갖는 불변 사실이며, 계정이나 운영 상태가 아니다.
+- 거처는 channel-adapter 의 **코드 상수**(`CHANNEL_CAPABILITIES`, 기존 `CHANNEL_FULFILLMENT_CAPABILITIES` 의 승격형)이고 키는 `SalesChannel` 이다. DB 가 아닌 이유는 exhaustive `Record` 가 채널 추가 시 결정 누락을 컴파일 타임에 요구하기 때문이다.
+- 나가는 쓰기(상품·재고·출고)는 `route: projection | adapter | manual | none` 로 표현한다. **`none` 은 "그 채널엔 그 개념이 없다"(비대상), `manual` 은 "해야 하는데 자동화가 없다"(사람이 하고 운영 큐에 남는다).** 둘을 섞지 않는다 — 섞으면 미구현이 비대상으로 위장한다.
+- `manual` 은 반드시 durable 한 운영 큐에 남아야 한다. 준거 사례는 출고의 `channel_dispatch_operations.status='manual_adjustment_required'` 다.
+- 성질 두 축: `productOwnership`(채널상품 내용을 누가 만드는가: `ours`/`theirs`), `lineIdentity`(채널이 우리 식별자를 보관하는가: `embedded`/`mapped`).
+- **외부 연동이 없는 채널은 판별 유니온으로 가른다.** `fulfillment` 는 모든 채널이 갖고, 나머지 축은 `integration: 'api'` 인 채널만 갖는다. `3pl` 은 `integration: 'none'` — 전화주문 등 수기 채널이라 channel-adapter 를 거치지 않고 Core 에 직접 주문이 만들어진다.
+- **값이 하나뿐인 것은 아직 축이 아니다.** 주문 수집 방식과 판매가능수량은 채널 간에 갈리지 않으므로 축으로 만들지 않는다.
+- 채널의 **활성화**(지금 켤 것인가)는 능력이 아니다. `sales_channels.is_active` 가 갖는 운영 결정이다.
+- _Avoid_: 능력 표에 활성화 플래그 넣기, `none` 대신 `manual` 로 뭉뚱그리기, 채널 이름으로 직접 분기하기.
+
+### 채널상품 (Channel Product) · 채널 리스팅 (Channel Listing)
+- **채널상품**: 판매 채널에 실제로 등록되어 고객이 사는 판매 단위. Medusa product/variant, 네이버 상품, 쿠팡 상품이 각각 채널상품이다.
+- **채널상품의 *내용*(이름·이미지·상세·가격) SoT 는 채널 능력에 따라 갈린다.** `productOwnership='ours'`(Medusa)면 Core 의 projection 이고, `'theirs'`(네이버·쿠팡)면 **채널이 SoT** 다. 후자에서 채널 상품명이 판매상품명과 달라도 drift 가 아니라 정상이다.
+- **채널 리스팅**: 채널상품 ↔ 판매상품 variant 의 매핑. 스키마는 `channel_variant_listings` (`salesChannelId + channelItemId` unique), 운영 화면은 `/mall/channel-listings`.
+- **매핑의 정본은 채널 능력과 무관하게 항상 Core 다.** `lineIdentity='embedded'` 채널도 리스팅 row 를 갖는다 — row 는 *선언*(우리가 무엇을 올렸는지), 채널의 metadata 는 *관측*이다. 주문 라인 식별의 fast path 는 metadata 가 이기고, 불일치는 운영 화면에 드러낸다.
+- 리스팅은 `product_variants.id` 를 고정하므로 variant CoW 를 따라가지 못한다. publish 가 [[재고 매칭]] 승계와 같은 자리에서 리스팅도 승계하며, **옵션 조합이 달라 승계하지 못하면 리스팅을 끊고 미매핑으로 남긴다** — 매칭과 같은 규칙이다.
+- `channel_products`(master ↔ channel 오버라이드)는 채널 리스팅과 개념이 겹치는 **폐기 대상**이다. 읽기 경로는 하드코딩된 빈 배열이고, 유일한 쓰기 호출자는 계약 불일치로 항상 실패하며 그 실패가 의도적으로 삼켜진다. 새로 쓰지 않는다.
+- _Avoid_: 채널상품을 판매상품과 같은 정체성으로 보기, 매핑을 채널마다 다른 곳에 두기, `channel_products` 를 새 기능의 저장소로 쓰기.
 
 ### 판매채널 Projection Snapshot
 - 정의: active 판매상품 version 을 판매채널이 자기 상품 projection 으로 반영할 수 있도록 Core Catalog 가 publish/rollback 시점에 전달하는 상품 상태 스냅샷.
@@ -102,6 +123,7 @@
 ### 채널주문 (Channel Order)
 - 정의: Medusa/Naver/Coupang 같은 판매 채널이 자기 주문 모델과 ID 체계로 보유하는 원천 주문.
 - 채널주문은 Core 판매주문의 live projection 대상이 아니다. Payment Accepted 시점에 channel-adapter 가 채널주문을 Core 판매주문 처리 계약으로 번역한다.
+- **번역 시 금액은 채널 값을, 상품명은 Core 값을 싣는다.** `productOwnership='theirs'` 채널의 판매가는 채널이 SoT 이므로 `unitPrice` 가 Core 계산가와 달라도 정상이며, 그 차이를 delta 로 기록하지 않는다(정산은 별도 도메인이다 — [[주문정정]] 이 아니다). 반대로 상품명은 창고·CS 화면이 채널마다 갈리지 않도록 [[채널 리스팅]] 으로 해석한 Core 판매상품명을 쓴다. 채널 원문은 격리 스냅샷에 통째로 남으므로 주문 라인 계약에 채널 상품명 필드를 더하지 않는다.
 - _Avoid_: 채널주문과 Core 판매주문을 같은 주문 row 의 두 표현으로 보기.
 
 ### Payment Accepted — 채널 주문 수락 기준
@@ -209,6 +231,7 @@
 - 정의: 채널 주문 라인이 Core 판매상품 variant 로 식별되지 않아 판매주문 라인으로 번역할 수 없는 운영 예외.
 - Medusa 주문 라인에 `pimVariantId` 가 없으면 SKU 매칭 없음이 아니라 채널 상품 식별 실패다. 보통 Core Catalog 를 통하지 않고 Medusa 관리자에서 직접 만든 상품이 주문된 경우다.
 - 채널 상품 식별 실패 주문은 정상 판매주문으로 조용히 생성하지 않는다. 운영자가 확인할 수 있도록 격리되어야 한다.
+- **격리 큐는 채널 능력과 무관하게 하나다.** Medusa 의 식별 실패(metadata·리스팅 둘 다 없음)와 네이버·쿠팡의 미매핑([[채널 리스팅]] 없음)은 같은 운영 문제이므로 같은 큐·같은 화면에서 해소한다. 해소 수단도 하나다 — 리스팅을 만들면 격리된 주문이 재처리된다.
 - _Avoid_: SKU 매칭 없음과 혼동하기, 유료 주문을 silent skip 하기.
 
 ### SKU Group — 재고상품의 느슨한 묶음
