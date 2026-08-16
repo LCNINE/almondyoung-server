@@ -468,7 +468,12 @@ export class ShipmentDispatchInboxWorker {
       type: 'dispatch.ship',
       idempotencyKey: operation.providerIdempotencyKey,
       orderId: operation.externalOrderId,
-      items: order.lines.map((line) => ({ orderItemId: line.channelOrderItemId, quantity: line.qty })),
+      items: order.lines.map((line) => ({
+        orderItemId: line.channelOrderItemId,
+        // 어댑터가 무엇에 키를 걸지는 채널이 정한다 — 여기서 고르지 않고 둘 다 넘긴다.
+        ...(line.channelProductId ? { channelProductId: line.channelProductId } : {}),
+        quantity: line.qty,
+      })),
       tracking: { companyCode: shipped.invoice.carrier, number: shipped.invoice.trackingNo },
       dispatchedAt: shipped.dispatchedAt,
     };
@@ -507,7 +512,20 @@ export class ShipmentDispatchInboxWorker {
     order: ShipmentEventOrder,
   ): string | null {
     if (channel !== 'naver' && channel !== 'coupang') return null;
-    const ids = [externalOrderId, ...order.lines.map((line) => line.channelOrderItemId)];
+
+    // 채널마다 발송 API 가 키를 거는 식별자가 다르다 — 네이버는 주문 라인(`productOrderId`),
+    // 쿠팡은 리스팅(`vendorItemId`). 그래서 무엇을 검사해야 하는지도 갈린다.
+    const lineIds =
+      channel === 'coupang'
+        ? order.lines.map((line) => line.channelProductId)
+        : order.lines.map((line) => line.channelOrderItemId);
+
+    // 없는 식별자는 재시도로 생기지 않는다 — 실패가 아니라 운영자가 볼 수동 작업이다.
+    if (lineIds.some((id) => !id)) {
+      return 'coupang dispatch is missing a channel listing identifier (vendorItemId).';
+    }
+
+    const ids = [externalOrderId, ...lineIds.filter((id): id is string => Boolean(id))];
     if (ids.some((id) => !/^\d+$/.test(id))) {
       return `${channel} dispatch has an invalid external order or order-item identifier.`;
     }

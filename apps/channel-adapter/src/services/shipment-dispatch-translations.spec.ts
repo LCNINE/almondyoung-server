@@ -88,7 +88,9 @@ describe('shipment dispatch provider translations', () => {
     const result = await adapter.executeCommand({
       type: 'dispatch.ship',
       orderId: '9001',
-      items: [{ orderItemId: '3002', quantity: 1 }],
+      // 쿠팡 송장 API 는 vendorItemId 에 키를 건다. 두 값을 일부러 다르게 두어 어댑터가
+      // 주문 라인 식별자가 아니라 리스팅 식별자를 쓴다는 것을 증명한다.
+      items: [{ orderItemId: '4002', channelProductId: '3002', quantity: 1 }],
       tracking: { companyCode: 'HANJIN', number: 'TRACK-2' },
     });
 
@@ -154,7 +156,7 @@ describe('shipment dispatch provider translations', () => {
       adapter.reconcileCommand({
         type: 'dispatch.ship',
         orderId: '9001',
-        items: [{ orderItemId: '3002', quantity: 1 }],
+        items: [{ orderItemId: '4002', channelProductId: '3002', quantity: 1 }],
         tracking: { companyCode: 'HANJIN', number: 'TRACK-2' },
       }),
     ).resolves.toEqual(expect.objectContaining({ applied: true }));

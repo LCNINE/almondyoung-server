@@ -260,7 +260,14 @@ export class CoupangAdapter implements ChannelAdapter {
     if (!/^\d+$/.test(command.orderId)) return { applied: false };
 
     const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(command.orderId);
-    const requestedVendorItemIds = new Set(command.items.map((item) => item.orderItemId));
+    // 발송과 같은 키를 본다 — `vendorItemId`(리스팅 식별자)다. `orderItemId` 로 비교하면 값의
+    // 종류가 달라 영원히 "미적용" 이 나오고, 재시도가 무한히 실패한다.
+    const requestedVendorItemIds = new Set(
+      command.items.flatMap((item) => (item.channelProductId ? [item.channelProductId] : [])),
+    );
+    if (requestedVendorItemIds.size !== command.items.length) {
+      return { applied: false };
+    }
     const matchedVendorItemIds = new Set<string>();
 
     for (const orderSheet of response.data ?? []) {
@@ -559,7 +566,7 @@ export class CoupangAdapter implements ChannelAdapter {
   private async executeDispatchShip(command: {
     type: 'dispatch.ship';
     orderId: string;
-    items?: Array<{ orderItemId: string; quantity: number }>;
+    items?: Array<{ orderItemId: string; channelProductId?: string; quantity: number }>;
     tracking: { companyCode: string; number: string };
     dispatchedAt?: string;
   }): Promise<SyncResult> {
@@ -628,7 +635,7 @@ export class CoupangAdapter implements ChannelAdapter {
   private async executeReturnApprove(command: {
     type: 'return.approve';
     claimId: string;
-    items?: Array<{ orderItemId: string; quantity: number }>;
+    items?: Array<{ orderItemId: string; channelProductId?: string; quantity: number }>;
   }): Promise<SyncResult> {
     try {
       console.log('✅ 쿠팡 반품 승인 실행:', command);
@@ -1442,7 +1449,7 @@ export class CoupangAdapter implements ChannelAdapter {
   private async translateOrderToInvoiceDtos(
     orderId: string,
     tracking: { companyCode: string; number: string },
-    items?: Array<{ orderItemId: string; quantity: number }>,
+    items?: Array<{ orderItemId: string; channelProductId?: string; quantity: number }>,
   ): Promise<any[]> {
     if (!/^\d+$/.test(orderId)) {
       throw new Error(`쿠팡 외부 orderId가 필요합니다: ${orderId}`);
@@ -1451,33 +1458,38 @@ export class CoupangAdapter implements ChannelAdapter {
       throw new Error('쿠팡 발송에는 channelOrderItemId가 한 개 이상 필요합니다');
     }
 
-    const requestedItemIds = new Set(
-      items.map(({ orderItemId }) => {
-        if (!/^\d+$/.test(orderItemId)) {
-          throw new Error(`쿠팡 외부 orderItemId가 필요합니다: ${orderItemId}`);
+    // 쿠팡 송장 업로드 DTO 는 `vendorItemId`(= 리스팅 식별자)에 키를 건다. 주문 라인 식별자
+    // (`orderItemId`)가 아니다 — 두 값은 다르고, 수집은 둘을 올바로 분리해 저장한다.
+    const requestedVendorItemIds = new Set(
+      items.map(({ orderItemId, channelProductId }) => {
+        if (!channelProductId) {
+          throw new Error(`쿠팡 발송에는 리스팅 식별자(vendorItemId)가 필요합니다: orderItemId=${orderItemId}`);
         }
-        return Number(orderItemId);
+        if (!/^\d+$/.test(channelProductId)) {
+          throw new Error(`쿠팡 vendorItemId 는 숫자여야 합니다: ${channelProductId}`);
+        }
+        return Number(channelProductId);
       }),
     );
     const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
     const matched = response.data.flatMap((orderSheet) =>
       orderSheet.orderItems
-        .filter((item) => requestedItemIds.has(item.vendorItemId))
+        .filter((item) => requestedVendorItemIds.has(item.vendorItemId))
         .map((item) => ({
           shipmentBoxId: orderSheet.shipmentBoxId,
           orderId: orderSheet.orderId,
           vendorItemId: item.vendorItemId,
           deliveryCompanyCode: this.mapDeliveryCompanyCode(tracking.companyCode),
           invoiceNumber: tracking.number,
-          splitShipping: orderSheet.orderItems.length !== requestedItemIds.size,
+          splitShipping: orderSheet.orderItems.length !== requestedVendorItemIds.size,
           preSplitShipped: false,
         })),
     );
 
-    if (matched.length !== requestedItemIds.size) {
+    if (matched.length !== requestedVendorItemIds.size) {
       const matchedIds = new Set(matched.map(({ vendorItemId }) => vendorItemId));
-      const missing = [...requestedItemIds].filter((itemId) => !matchedIds.has(itemId));
-      throw new Error(`쿠팡 주문 ${orderId}에서 orderItemId를 찾을 수 없습니다: ${missing.join(',')}`);
+      const missing = [...requestedVendorItemIds].filter((itemId) => !matchedIds.has(itemId));
+      throw new Error(`쿠팡 주문 ${orderId}에서 vendorItemId를 찾을 수 없습니다: ${missing.join(',')}`);
     }
 
     return matched;

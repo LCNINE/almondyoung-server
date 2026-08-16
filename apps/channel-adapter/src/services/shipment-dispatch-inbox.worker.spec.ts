@@ -41,6 +41,9 @@ function makeOrder(
         fulfillmentOrderItemId: '99999999-9999-4999-8999-999999999999',
         salesOrderLineId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         channelOrderItemId: salesChannel === 'coupang' ? '3001' : '100000001',
+        // 리스팅 식별자. 쿠팡 발송 API 는 이 값(vendorItemId)에 키를 걸고, 네이버는 위
+        // channelOrderItemId(productOrderId)에 건다.
+        channelProductId: salesChannel === 'coupang' ? '8001' : '200000001',
         skuId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
         qty: 1,
         isPartialQuantity: false,
@@ -113,7 +116,13 @@ describe('ShipmentDispatchInboxWorker routing', () => {
       expect.objectContaining({
         idempotencyKey: `shipment:${SHIPPED.dispatchAttemptId}:${naverOrder.salesOrderId}:dispatch`,
         orderId: naverOrder.channelOrderId,
-        items: [{ orderItemId: naverOrder.lines[0].channelOrderItemId, quantity: 1 }],
+        items: [
+          {
+            orderItemId: naverOrder.lines[0].channelOrderItemId,
+            channelProductId: naverOrder.lines[0].channelProductId,
+            quantity: 1,
+          },
+        ],
       }),
     );
     expect(coupangExecute).toHaveBeenCalledTimes(1);
@@ -121,7 +130,14 @@ describe('ShipmentDispatchInboxWorker routing', () => {
       expect.objectContaining({
         idempotencyKey: `shipment:${SHIPPED.dispatchAttemptId}:${coupangOrder.salesOrderId}:dispatch`,
         orderId: coupangOrder.channelOrderId,
-        items: [{ orderItemId: coupangOrder.lines[0].channelOrderItemId, quantity: 1 }],
+        // 두 식별자를 함께 싣는다 — 어댑터가 무엇에 키를 걸지는 채널이 정한다.
+        items: [
+          {
+            orderItemId: coupangOrder.lines[0].channelOrderItemId,
+            channelProductId: coupangOrder.lines[0].channelProductId,
+            quantity: 1,
+          },
+        ],
       }),
     );
   });
@@ -326,6 +342,33 @@ describe('ShipmentDispatchInboxWorker routing', () => {
 
     expect(result).toEqual(expect.objectContaining({ manual: true, reason: expect.stringContaining('invalid') }));
     expect(factory.getAdapter).not.toHaveBeenCalled();
+  });
+
+  it('쿠팡 발송에 리스팅 식별자가 없으면 provider 호출 전에 수동 작업으로 남긴다', async () => {
+    // 쿠팡 송장 API 는 vendorItemId(= channelProductId)에 키를 건다. 없는 식별자는 재시도로
+    // 생기지 않으므로 실패가 아니라 운영자가 볼 수동 작업이다.
+    const { worker, factory } = makeWorker();
+    const base = makeOrder('coupang');
+    const order = { ...base, lines: [{ ...base.lines[0], channelProductId: undefined }] };
+
+    const result = await (worker as any).executeOperation(makeOperation(order));
+
+    expect(result).toEqual(
+      expect.objectContaining({ manual: true, reason: expect.stringContaining('listing identifier') }),
+    );
+    expect(factory.getAdapter).not.toHaveBeenCalled();
+  });
+
+  it('네이버 발송은 리스팅 식별자가 없어도 주문 라인 식별자만으로 진행한다', async () => {
+    // 네이버는 productOrderId(= channelOrderItemId)에 키를 걸므로 리스팅 식별자가 필요 없다.
+    const { worker, naverExecute } = makeWorker();
+    const base = makeOrder('naver');
+    const order = { ...base, lines: [{ ...base.lines[0], channelProductId: undefined }] };
+
+    const result = await (worker as any).executeOperation(makeOperation(order));
+
+    expect(result).toEqual(expect.objectContaining({ manual: false }));
+    expect(naverExecute).toHaveBeenCalledTimes(1);
   });
 
   it('fails a provider result instead of recording a false success', async () => {

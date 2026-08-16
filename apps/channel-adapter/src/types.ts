@@ -404,7 +404,17 @@ export type ChannelCommand =
       /** Stable request identity persisted before any provider call. */
       idempotencyKey?: string;
       orderId: string;
-      items?: Array<{ orderItemId: string; quantity: number }>;
+      /**
+       * 라인마다 **두 식별자를 함께** 싣는다. 채널의 발송 API 가 무엇에 키를 거는지가 서로 다르기
+       * 때문이다 — 네이버는 주문 라인(`productOrderId` = `orderItemId`)에, 쿠팡은 리스팅
+       * (`vendorItemId` = `channelProductId`)에 건다.
+       *
+       * 하나만 실으면 한쪽 채널은 반드시 틀린 값을 받는다. 실제로 쿠팡 발송은 `orderItemId` 값을
+       * `vendorItemId` 필드에서 찾고 있었다 (수집은 둘을 올바로 분리해 저장하고 있었으므로 매칭이
+       * 성립할 수 없었다). 두 값은 Core `sales_order_lines` 와 `ShipmentShipped` 페이로드에 이미
+       * 모두 존재하며, 여기까지 오는 길에서만 버려지고 있었다.
+       */
+      items?: Array<{ orderItemId: string; channelProductId?: string; quantity: number }>;
       tracking: { companyCode: string; number: string };
       dispatchedAt?: string;
     }

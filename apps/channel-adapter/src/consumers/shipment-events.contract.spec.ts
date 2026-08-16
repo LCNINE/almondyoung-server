@@ -32,6 +32,8 @@ function order(
         salesOrderLineId:
           channel === 'naver' ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
         channelOrderItemId,
+        // 쿠팡 발송이 키를 거는 리스팅 식별자(vendorItemId).
+        channelProductId: channel === 'coupang' ? '8001' : '200000001',
         skuId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         qty: 1,
         isPartialQuantity: false,
