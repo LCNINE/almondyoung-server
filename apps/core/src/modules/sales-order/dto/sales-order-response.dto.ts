@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SALES_CHANNELS } from '@packages/event-contracts/streams';
 
 export class SalesOrderLineResponseDto {
   @ApiProperty({ description: '주문 라인 ID' })
@@ -112,7 +113,7 @@ export class SalesOrderResponseDto {
   @ApiProperty({ description: '채널별 주문 ID' })
   channelOrderId: string;
 
-  @ApiProperty({ description: '판매 채널', enum: ['medusa', 'naver', 'coupang', '3pl'] })
+  @ApiProperty({ description: '판매 채널', enum: SALES_CHANNELS })
   salesChannel: string;
 
   @ApiProperty({ description: 'Wallet 결제 인텐트 ID (결제 상세 연결용)', nullable: true })

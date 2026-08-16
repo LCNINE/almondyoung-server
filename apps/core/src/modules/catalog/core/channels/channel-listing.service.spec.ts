@@ -84,9 +84,8 @@ describe('ChannelListingService.isExternalMarketplaceSite', () => {
     expect((service as any).isExternalMarketplaceSite('naver')).toBe(true);
     expect((service as any).isExternalMarketplaceSite('coupang')).toBe(true);
   });
-  it('medusa/phone_order/other 는 외부 마켓플레이스가 아니다', () => {
+  it('medusa/3pl 은 외부 마켓플레이스가 아니다', () => {
     expect((service as any).isExternalMarketplaceSite('medusa')).toBe(false);
-    expect((service as any).isExternalMarketplaceSite('phone_order')).toBe(false);
-    expect((service as any).isExternalMarketplaceSite('other')).toBe(false);
+    expect((service as any).isExternalMarketplaceSite('3pl')).toBe(false);
   });
 });

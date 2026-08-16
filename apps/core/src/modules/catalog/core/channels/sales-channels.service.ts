@@ -6,6 +6,8 @@ import { type PimSchema, salesChannels, channelProducts, channelCategories } fro
 import { eq, and, or, like, ilike, count, asc, desc, sql, SQL } from 'drizzle-orm';
 import { ChannelCategoryEntity, SalesChannelEntity, SalesChannelInsert } from '../../schema/catalog.schema.types';
 import { SalesChannelWithCategory } from './mappers/sales-channel.mapper';
+// 행 타입 `SalesChannel`(catalog.types)과 이름이 겹치므로 어휘 상수만 가져온다.
+import { SALES_CHANNELS } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class SalesChannelsService {
@@ -325,8 +327,9 @@ export class SalesChannelsService {
         break;
 
       default:
-        if (!['medusa', 'naver', 'coupang', 'phone_order', 'other'].includes(site)) {
-          errors.push(`Unsupported channel type: ${site}. Supported types are: medusa, coupang, smartstore`);
+        // 어휘 정본은 `SALES_CHANNELS` 하나다 (ADR-0031 결정 7) — DTO 와 같은 배열을 본다.
+        if (!(SALES_CHANNELS as readonly string[]).includes(site)) {
+          errors.push(`Unsupported channel type: ${site}. Supported types are: ${SALES_CHANNELS.join(', ')}`);
         }
     }
 

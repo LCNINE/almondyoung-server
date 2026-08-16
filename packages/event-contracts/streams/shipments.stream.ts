@@ -7,12 +7,13 @@
 
 import { z } from 'zod';
 import { event, stream } from '../types';
+import { SALES_CHANNELS } from './orders.stream';
 
 const NonEmptyIdSchema = z.string().trim().min(1);
 const CoreUuidSchema = z.string().uuid();
 const PositiveQuantitySchema = z.number().int().positive();
 const AttemptNoSchema = z.number().int().positive();
-const SalesChannelSchema = z.enum(['medusa', 'naver', 'coupang', '3pl']);
+const SalesChannelSchema = z.enum(SALES_CHANNELS);
 const ShipmentCarrierSchema = z.enum(['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 
 const ShipmentInvoiceSchema = z

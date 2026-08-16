@@ -519,6 +519,13 @@
       "when": 1786603129653,
       "tag": "20260813063849_add-shop-listing-images",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1786911037402,
+      "tag": "20260816201037_align-sales-channel-site-vocabulary",
+      "breakpoints": true
     }
   ]
 }

@@ -46,7 +46,13 @@ export interface ShippingAddress {
   personalCustomsCode?: string;
 }
 
-export type SalesChannel = 'medusa' | 'naver' | 'coupang' | '3pl';
+/**
+ * 채널 어휘의 정본 (ADR-0031 결정 7). 타입·zod·런타임 검증이 전부 이 배열에서 파생되므로,
+ * 채널을 늘릴 자리는 여기 하나다.
+ */
+export const SALES_CHANNELS = ['medusa', 'naver', 'coupang', '3pl'] as const;
+
+export type SalesChannel = (typeof SALES_CHANNELS)[number];
 
 export type OrderStatus = 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'timeout';
 
@@ -190,7 +196,7 @@ export interface OrderMergedPayload {
 
 // ===== Zod 스키마 정의 =====
 
-const SalesChannelSchema = z.enum(['medusa', 'naver', 'coupang', '3pl']);
+const SalesChannelSchema = z.enum(SALES_CHANNELS);
 const OrderStatusSchema = z.enum([
   'pending',
   'confirmed',

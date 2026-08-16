@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { SALES_CHANNELS } from '@packages/event-contracts/streams';
 import { ChannelCategoryDto } from '../channel-categories';
 
 export class SalesChannelDto {
@@ -13,8 +14,8 @@ export class SalesChannelDto {
   type: string;
 
   @ApiProperty({
-    description: '판매처 사이트',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
+    description: '판매처 사이트. 어휘 정본은 `SalesChannel` 이다 (ADR-0031 결정 7)',
+    enum: SALES_CHANNELS,
   })
   site: string;
 
