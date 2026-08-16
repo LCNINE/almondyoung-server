@@ -20,14 +20,12 @@ import {
 } from '@app/events';
 import { NaverSmartstoreAdapter } from './adapters/naver/naver-smartstore.adapter';
 import { CoupangAdapter } from './adapters/coupang/coupang.adapter';
-import { OrderEventPublisher } from './services/order-event.publisher';
 
 import { ChannelAdapterFactory } from './adapters/channel-adapter.factory';
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
 import { HealthController } from './controllers/health.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
-import { ChannelAdapterService } from './services/channel-adapter.service';
 import { DbModule } from '@app/db';
 import {
   CHANNEL_ADAPTER_STREAM,
@@ -61,11 +59,7 @@ import { NaverAuthService } from './adapters/naver/clients/naver-auth.client';
 import { ConfigModule } from '@nestjs/config';
 import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
-import { ChannelSyncManager } from './services/channel-sync.manager';
-import { ChannelCommandManager } from './services/channel-command.manager';
-import { PendingOrderRepository } from './services/pending-order.repository';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
-import { PendingOrderService } from './services/pending-order.service';
 import { InboxService } from './services/inbox.service';
 import { PollingChangeHashService } from './services/polling-change-hash.service';
 import { ShipmentDispatchInboxWorker } from './services/shipment-dispatch-inbox.worker';
@@ -224,8 +218,6 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     // 이 서비스도 공용 ALB 와일드카드로 인터넷에 노출돼 있는데 인증이 전혀 없었다.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: AdminRealmGuard },
-
-    ChannelAdapterService,
     SyncStatusService,
     ChannelAdapterFactory,
     NaverSmartstoreAdapter,
@@ -242,18 +234,13 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
 
     // 🆕 리팩토링된 레이어 클래스들
     ChannelDataReader,
-    ChannelSyncManager,
-    ChannelCommandManager,
-    PendingOrderRepository,
 
     // PIM 매핑 조회 클라이언트
     ChannelListingClient,
 
     // 계류 주문 서비스
-    PendingOrderService,
 
     // 주문 이벤트 발행 서비스
-    OrderEventPublisher,
 
     // Inbox 패턴 서비스 (발행은 공용 StreamPublisher.enqueue — ADR-0029 §5-1)
     InboxService,

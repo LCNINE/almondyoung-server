@@ -7,7 +7,7 @@ describe('shipment dispatch provider translations', () => {
       data: { successProductOrderIds: ['100000001'], failProductOrderInfos: [] },
       traceId: 'trace-1',
     });
-    const adapter = new NaverSmartstoreAdapter({ dispatchOrders } as any, {} as any, {} as any, {} as any, {} as any);
+    const adapter = new NaverSmartstoreAdapter({ dispatchOrders } as any, {} as any, {} as any);
 
     const result = await adapter.executeCommand({
       type: 'dispatch.ship',
@@ -31,7 +31,7 @@ describe('shipment dispatch provider translations', () => {
 
   it('rejects a Naver dispatch without external line IDs before a provider call', async () => {
     const dispatchOrders = jest.fn();
-    const adapter = new NaverSmartstoreAdapter({ dispatchOrders } as any, {} as any, {} as any, {} as any, {} as any);
+    const adapter = new NaverSmartstoreAdapter({ dispatchOrders } as any, {} as any, {} as any);
 
     const result = await adapter.executeCommand({
       type: 'dispatch.ship',
@@ -52,7 +52,7 @@ describe('shipment dispatch provider translations', () => {
         },
       ],
     });
-    const adapter = new NaverSmartstoreAdapter({ getOrderDetails } as any, {} as any, {} as any, {} as any, {} as any);
+    const adapter = new NaverSmartstoreAdapter({ getOrderDetails } as any, {} as any, {} as any);
 
     await expect(
       adapter.reconcileCommand({
@@ -79,8 +79,6 @@ describe('shipment dispatch provider translations', () => {
     });
     const adapter = new CoupangAdapter(
       { getSingleOrderSheetByOrderId, uploadInvoices } as any,
-      {} as any,
-      {} as any,
       {} as any,
       {} as any,
     );
@@ -117,8 +115,6 @@ describe('shipment dispatch provider translations', () => {
       { getSingleOrderSheetByOrderId, uploadInvoices } as any,
       {} as any,
       {} as any,
-      {} as any,
-      {} as any,
     );
 
     const result = await adapter.executeCommand({
@@ -146,8 +142,6 @@ describe('shipment dispatch provider translations', () => {
     });
     const adapter = new CoupangAdapter(
       { getSingleOrderSheetByOrderId } as any,
-      {} as any,
-      {} as any,
       {} as any,
       {} as any,
     );

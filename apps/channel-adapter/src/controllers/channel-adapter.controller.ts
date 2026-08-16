@@ -1,23 +1,25 @@
-import { Controller, Get, Post, Body, Query, Param, Delete, BadRequestException, UsePipes } from '@nestjs/common';
+import { Controller, Get, Query, Param, BadRequestException, UsePipes } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { ChannelType } from '../adapters/channel-adapter.factory';
-import { DataType, ChannelCommand, ChannelQuery, SyncToChannelPayload, OrderQuery } from '../types';
-import { ChannelAdapterService } from '../services/channel-adapter.service';
-import {
-  PollResponseDto,
-  SyncResponseDto,
-  CommandResponseDto,
-  ExchangeRequestsQueryDto,
-  ExchangeRequestsResponseDto,
-  SyncToChannelPayloadSchema,
-} from '../zods/controller/adapter.zod';
+import { ChannelQuery, OrderQuery } from '../types';
+import { ChannelDataReader } from '../services/channel-data.reader';
+import { ExchangeRequestsQueryDto, ExchangeRequestsResponseDto } from '../zods/controller/adapter.zod';
 
 @ApiTags('Channel Adapter')
 @Controller('adapter')
 @UsePipes(ZodValidationPipe)
+/**
+ * 네이버·쿠팡 **조회 전용** 창구.
+ *
+ * 수집 경로(`GET /adapter/poll`, `POST /adapter/sync/*`)와 채널 mutation 경로
+ * (`POST /adapter/command/*`, `POST /adapter/sync-to/*`)는 제거됐다. 수집의 canonical 경로는
+ * `OrderPollerOrchestrator` 이고(ADR-0013), mutation 은 `channel_dispatch_operations` 에
+ * 기록·멱등키와 함께 남는 출고 경로가 유일한 진입점이어야 한다 — 옛 명령 표면은 그 기록을
+ * 남기지 않는 두 번째 진입점이었다.
+ */
 export class ChannelAdapterController {
-  constructor(private readonly channelAdapterService: ChannelAdapterService) {}
+  constructor(private readonly channelReader: ChannelDataReader) {}
 
   // ═══════════════════════════════════════════════════════════════
   // 기본 API
@@ -40,105 +42,6 @@ export class ChannelAdapterController {
   // 데이터 동기화 API
   // ═══════════════════════════════════════════════════════════════
 
-  @Get('poll')
-  @ApiOperation({ summary: '채널 데이터 폴링' })
-  @ApiQuery({
-    name: 'channel',
-    enum: ['naver_smartstore', 'coupang'],
-    description: 'Medusa 주문 수집은 내부 OrderPollerOrchestrator 경로를 사용합니다.',
-  })
-  @ApiQuery({
-    name: 'type',
-    enum: ['orders', 'order_status', 'claims', 'inventory', 'products'],
-  })
-  @ApiResponse({ status: 200, description: '폴링 성공', type: PollResponseDto })
-  async poll(@Query('channel') channel: ChannelType, @Query('type') dataType: DataType): Promise<PollResponseDto> {
-    this.ensureLegacyAdapterChannel(channel);
-
-    const result = await this.channelAdapterService.poll(channel, dataType);
-    return {
-      success: true,
-      channel,
-      dataType,
-      count: result?.length || 0,
-      data: result,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Post('sync/:channel/:dataType')
-  @ApiOperation({ summary: '데이터 동기화' })
-  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
-  @ApiResponse({
-    status: 201,
-    description: '동기화 완료',
-    type: SyncResponseDto,
-  })
-  async syncData(
-    @Param('channel') channel: ChannelType,
-    @Param('dataType') dataType: DataType,
-  ): Promise<SyncResponseDto> {
-    this.ensureLegacyAdapterChannel(channel);
-
-    await this.channelAdapterService.poll(channel, dataType);
-    return {
-      success: true,
-      message: `${channel} 채널의 ${dataType} 데이터 동기화 완료`,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  @Post('sync-to/:channel')
-  @ApiOperation({ summary: '내부 데이터를 외부 채널로 동기화' })
-  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
-  @ApiResponse({
-    status: 201,
-    description: '동기화 완료',
-    type: SyncResponseDto,
-  })
-  async syncToChannel(
-    @Param('channel') channel: ChannelType,
-    @Body(new ZodValidationPipe(SyncToChannelPayloadSchema))
-    payload: SyncToChannelPayload,
-  ): Promise<SyncResponseDto> {
-    this.ensureLegacyAdapterChannel(channel);
-
-    await this.channelAdapterService.syncToChannel(channel, payload);
-    return {
-      success: true,
-      message: `${channel} 채널에 ${payload.dataType} 데이터 동기화 완료`,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // 명령 실행 API
-  // ═══════════════════════════════════════════════════════════════
-
-  @Post('command/:channel')
-  @ApiOperation({ summary: '채널별 명령 실행' })
-  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
-  @ApiResponse({
-    status: 200,
-    description: '명령 실행 완료',
-    type: CommandResponseDto,
-  })
-  async executeCommand(
-    @Param('channel') channel: ChannelType,
-    @Body() cmd: ChannelCommand,
-  ): Promise<CommandResponseDto> {
-    this.ensureLegacyAdapterChannel(channel);
-
-    const result = await this.channelAdapterService.command(channel, cmd);
-    return {
-      success: true,
-      commandType: cmd.type,
-      result,
-      message: `${channel} 채널에 ${cmd.type} 명령 실행 완료`,
-      timestamp: new Date().toISOString(),
-    };
-  }
-
   // ═══════════════════════════════════════════════════════════════
   // 조회 API
   // ═══════════════════════════════════════════════════════════════
@@ -155,7 +58,7 @@ export class ChannelAdapterController {
     this.ensureLegacyAdapterChannel(channel);
 
     const query: OrderQuery = this.mapQueryTypeToOrderQuery(queryType, identifier);
-    const orders = await this.channelAdapterService.findOrders(channel, query);
+    const orders = await this.channelReader.findOrders(channel, query);
 
     return {
       success: true,
@@ -204,7 +107,7 @@ export class ChannelAdapterController {
       sizePerPage: pageSize ? parseInt(pageSize) : 10,
     };
 
-    const result = await this.channelAdapterService.query(channel, channelQuery);
+    const result = await this.channelReader.executeQuery(channel, channelQuery);
 
     return {
       success: true,

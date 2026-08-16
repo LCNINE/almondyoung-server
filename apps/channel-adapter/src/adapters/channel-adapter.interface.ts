@@ -10,19 +10,12 @@ import { ChannelCommand, ChannelQuery } from '../types';
  *
  * 각 채널(네이버, 쿠팡 등)은 이 인터페이스를 구현하여
  * 채널별 특수한 API 호출 방식을 내부 표준 형식으로 적응(adapt)시킵니다.
+ *
+ * **주문 수집은 이 인터페이스가 하지 않는다.** 수집의 canonical 경로는
+ * `OrderPollerOrchestrator` + `ChannelOrderSource` 다 (ADR-0013 / ADR-0031). 여기 남은 것은
+ * 출고·클레임 명령(`executeCommand`)과 운영자 조회(`executeQuery` / `findOrders`) 뿐이다.
  */
 export interface ChannelAdapter {
-  /**
-   * 외부 이벤트를 내부 표준 이벤트로 변환 (웹훅 없이도, 폴링 결과를 이 함수에 태워도 됨)
-   */
-  processIncomingEvent(event: any): Promise<InternalOrderEvent[]>;
-
-  /**
-   * 외부 채널에서 데이터를 수집 (폴링)
-   * 예: 네이버 last-changed-statuses → product-orders/query로 상세 조회
-   */
-  syncFromChannel(dataType: DataType): Promise<InternalOrderEvent[]>;
-
   /**
    * 내부 데이터를 외부 채널로 동기화 (상태 지향)
    * 예: PIM 상품 정보 변경 → 네이버 상품 업데이트, WMS 재고 변경 → 네이버 재고 업데이트

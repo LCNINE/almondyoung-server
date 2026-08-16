@@ -16,8 +16,6 @@ function naverAdapter(): NaverSmartstoreAdapter {
     {} as unknown as ConstructorParameters<typeof NaverSmartstoreAdapter>[0],
     {} as unknown as ConstructorParameters<typeof NaverSmartstoreAdapter>[1],
     {} as unknown as ConstructorParameters<typeof NaverSmartstoreAdapter>[2],
-    {} as unknown as ConstructorParameters<typeof NaverSmartstoreAdapter>[3],
-    {} as unknown as ConstructorParameters<typeof NaverSmartstoreAdapter>[4],
   );
 }
 
@@ -26,8 +24,6 @@ function coupangAdapter(): CoupangAdapter {
     {} as unknown as ConstructorParameters<typeof CoupangAdapter>[0],
     {} as unknown as ConstructorParameters<typeof CoupangAdapter>[1],
     {} as unknown as ConstructorParameters<typeof CoupangAdapter>[2],
-    {} as unknown as ConstructorParameters<typeof CoupangAdapter>[3],
-    {} as unknown as ConstructorParameters<typeof CoupangAdapter>[4],
   );
 }
 

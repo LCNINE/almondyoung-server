@@ -19,9 +19,6 @@ import type { PublisherFor } from '@app/events';
 import { CHANNEL_ADAPTER_STREAM } from '@packages/event-contracts/streams';
 import type { channelAdapterSchema } from '../types';
 import { InboxService } from './inbox.service';
-import { ChannelCommandManager } from './channel-command.manager';
-import { ChannelSyncManager } from './channel-sync.manager';
-import type { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
 
 type EnqueueCall = [
   { eventType: string; aggregateId: string; partitionKey?: string; payload: Record<string, unknown> },
@@ -72,61 +69,6 @@ describe('channel-adapter 아웃박스 회수', () => {
       );
 
       expect(values).toHaveBeenCalledWith(expect.objectContaining({ aggregateType: 'Category', status: 'pending' }));
-    });
-  });
-
-  describe('CHANNEL_ADAPTER_STREAM 적재', () => {
-    it('CommandExecuted 를 채널명 파티션으로 적재한다', async () => {
-      const outbox = makeOutbox();
-      const db = { db: { insert: jest.fn() } };
-      const adapter = {
-        executeCommand: jest.fn().mockResolvedValue({ success: true, processedCount: 2, failedCount: 0 }),
-      };
-      const factory = { getAdapter: jest.fn().mockReturnValue(adapter) };
-
-      const manager = new ChannelCommandManager(
-        factory as unknown as ChannelAdapterFactory,
-        db as unknown as DbService<typeof channelAdapterSchema>,
-        outbox as unknown as PublisherFor<typeof CHANNEL_ADAPTER_STREAM>,
-      );
-
-      await manager.execute('naver_smartstore', { type: 'SHIP', orderId: 'order-9' } as never);
-
-      const [params, writer] = outbox.enqueue.mock.calls[0];
-      expect(params.eventType).toBe('CommandExecuted');
-      // 옛 경로는 행의 `partition_key` 컬럼(= 채널명)을 Kafka 키로 썼다. 생략하면
-      // aggregateId(`naver_smartstore-order-9`)로 떨어져 파티션이 주문마다 흩어진다.
-      expect(params.partitionKey).toBe('naver_smartstore');
-      // 도메인 쓰기와 묶을 트랜잭션이 없는 경로다 — 커넥션에 직접 쓴다(옛 경로도 그랬다).
-      expect(writer).toBe(db.db);
-      // 계약을 실제로 만족하는지는 스키마에 물어본다. `enqueue` 는 적재 시점에 zod 를
-      // 태우므로, 여기서 통과하지 못하는 payload 는 프로덕션에서 도메인 트랜잭션을 깬다.
-      expect(CHANNEL_ADAPTER_STREAM.events.CommandExecuted.schema!.parse(params.payload)).toEqual(params.payload);
-    });
-
-    it('InventorySyncCompleted 를 채널명 파티션으로 적재한다', async () => {
-      const outbox = makeOutbox();
-      const values = jest.fn().mockResolvedValue(undefined);
-      const db = { db: { insert: jest.fn().mockReturnValue({ values }) } };
-
-      const manager = new ChannelSyncManager(
-        db as unknown as DbService<typeof channelAdapterSchema>,
-        outbox as unknown as PublisherFor<typeof CHANNEL_ADAPTER_STREAM>,
-        {} as unknown as ChannelAdapterFactory,
-      );
-
-      await manager.logOutboundSync(
-        'coupang',
-        { dataType: 'inventory', payload: { productId: 'prod-1', stockQuantity: 7, isOptionProduct: false } } as never,
-        { success: true } as never,
-      );
-
-      const [params] = outbox.enqueue.mock.calls[0];
-      expect(params.eventType).toBe('InventorySyncCompleted');
-      expect(params.partitionKey).toBe('coupang');
-      expect(CHANNEL_ADAPTER_STREAM.events.InventorySyncCompleted.schema!.parse(params.payload)).toEqual(
-        params.payload,
-      );
     });
   });
 });

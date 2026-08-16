@@ -13,8 +13,6 @@ import { z } from 'zod';
 // API 클라이언트 Import (리팩토링된 파일)
 
 // import { NaverAuthService } from '../apis/naver-auth.service'; // 제거
-import { OrderEventPublisher } from '../../services/order-event.publisher';
-import { PendingOrderService } from '../../services/pending-order.service';
 
 // 신규 Zod 스키마 Import
 import {
@@ -196,68 +194,7 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     private readonly naverOrderClient: NaverOrderClient,
     private readonly naverClaimClient: NaverClaimClient,
     private readonly naverProductClient: NaverProductClient,
-    private readonly orderEventPublisher: OrderEventPublisher,
-    private readonly pendingOrderService: PendingOrderService,
   ) {}
-
-  async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
-    // 네이버 웹훅이 있는 경우 payload -> InternalOrderEvent로 변환
-    return this.transformToInternal(event, 'orders');
-  }
-
-  /**
-   * 🔄 수신(Inbound) 동기화: 네이버에서 변경된 주문 정보를 가져와 내부 표준 이벤트로 변환
-   */
-  async syncFromChannel(dataType: DataType): Promise<InternalOrderEvent[]> {
-    if (dataType !== 'orders') {
-      this.logger.warn(`지원하지 않는 dataType: ${dataType}. 'orders'만 지원됩니다.`);
-      return [];
-    }
-
-    try {
-      // 1. 인증 토큰 획득 (제거) - NaverOrderClient가 내부 처리
-      // 2. 조회 시작 시점 설정 (지난 24시간)
-      const lastChangedFrom = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-
-      this.logger.log(`📡 네이버 주문 상태 변경 내역 조회 시작 (${lastChangedFrom} 이후)`);
-
-      // 3. 최근 변경된 주문 상태 목록 조회 (naverOrderClient 사용)
-      const statusResponse = await this.naverOrderClient.getLastChangedStatuses(lastChangedFrom);
-
-      const statusChanges = statusResponse.data?.lastChangeStatuses || [];
-      this.logger.log(`📋 변경된 주문 상태 ${statusChanges.length}건 조회됨`);
-
-      if (statusChanges.length === 0) {
-        this.logger.log('📭 변경된 주문이 없습니다.');
-        return [];
-      }
-
-      // 4. productOrderId 목록 추출
-      const productOrderIds = statusChanges.map((status) => status.productOrderId);
-
-      // 5. 상세 주문 정보 조회 (naverOrderClient 사용)
-      this.logger.log(`🔍 상세 주문 정보 조회 대상: ${productOrderIds.length}건`);
-      const detailsResponse = await this.naverOrderClient.getOrderDetails(productOrderIds);
-
-      const orderDetails: NaverProductOrderDetailsResponse['data'] = detailsResponse.data || [];
-      this.logger.log(`✅ 상세 주문 정보 ${orderDetails.length}건 조회 완료`);
-
-      // 6. 네이버 형식을 내부 표준 이벤트 형식으로 변환 (진정한 어댑터 역할)
-      const internalEvents = this.transformProductInfosToInternalEvents(
-        orderDetails as any, // ProductOrderInfo 타입 사용
-      );
-
-      this.logger.log(`🎯 내부 이벤트 변환 완료: ${internalEvents.length}건`);
-
-      // 7. 주문 이벤트 발행 (WMS로 전달)
-      await this.publishOrderEvents(internalEvents);
-
-      return internalEvents;
-    } catch (error) {
-      this.logger.error('❌ 네이버 주문 동기화 실패:', error.response?.data || error.message);
-      throw new Error(`네이버 주문 동기화 실패: ${error.message}`);
-    }
-  }
 
   /**
    * 🔄 송신(Outbound) 동기화: 내부 시스템의 변경사항을 네이버 스마트스토어로 전송
@@ -267,18 +204,13 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
       // 토큰 획득 로직 제거 (ProductClient가 내부 처리)
 
       switch (payload.dataType) {
-        case 'products': {
-          const productData = payload.payload;
-          console.log(`📦 네이버 상품 정보 동기화: ${productData.name} (${productData.id})`);
-          const naverProductData = this.transformInternalProductToNaver(productData);
-          // TODO: await this.naverProductClient.updateProduct(naverProductData);
-          console.log(`✅ 네이버 상품 정보 동기화 완료: ${productData.id}`);
+        case 'products':
+          // 네이버 상품 생성/수정은 하지 않는다 — 채널상품 내용의 SoT 가 채널이다 (ADR-0031 결정 3).
           return {
-            success: true,
-            processedCount: 1,
-            data: { productId: productData.id, syncType: 'product_update' },
+            success: false,
+            errors: [{ message: '네이버 상품 동기화는 지원하지 않습니다 (productProjection: none).' }],
+            failedCount: 1,
           };
-        }
 
         case 'inventory': {
           const inventoryData = payload.payload;
@@ -836,27 +768,6 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     return statusMap[naverStatus] || naverStatus;
   }
 
-  async transformToExternal(internalData: any, dataType: DataType): Promise<any> {
-    this.logger.warn('transformToExternal은 deprecated됩니다. syncToChannel을 사용하세요.');
-    return {};
-  }
-
-  /**
-   * 내부 상품 데이터를 네이버 API 형식으로 변환
-   */
-  private transformInternalProductToNaver(productData: any): any {
-    // 실제 네이버 상품 API 스펙에 맞게 변환
-    return {
-      productId: productData.id,
-      productName: productData.name,
-      salePrice: productData.price,
-      // ...
-    };
-  }
-
-  /**
-   * 내부 재고 데이터를 네이버 단일 상품 API 형식으로 변환
-   */
   private transformToNaverSaleStatusBody(inventoryData: InternalInventoryData): ChangeSaleStatusBody {
     // naver.product.zod.ts의 ChangeSaleStatusBodySchema 사용
     return ChangeSaleStatusBodySchema.parse({
@@ -945,60 +856,6 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     } catch (error) {
       this.logger.error(`❌ [네이버] 주문 조회 실패 (${query.by}=${query.id}):`, error.message);
       return [];
-    }
-  }
-
-  /**
-   * 주문 이벤트 발행
-   *
-   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
-   * - PAID/PENDING 상태: OrderCreated 이벤트 발행 (매핑 자동 조회, 미매핑 시 계류)
-   * - CANCELLED 상태: OrderCancelled 이벤트 발행
-   */
-  private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
-    let publishedCount = 0;
-    let pendingCount = 0;
-
-    for (const event of events) {
-      try {
-        switch (event.status) {
-          case 'PENDING_PAYMENT':
-          case 'PAID':
-            // 새로운 주문 - 매핑 조회 후 OrderCreated 발행 또는 계류
-            const result = await this.orderEventPublisher.publishOrderConfirmed('naver_smartstore', event);
-
-            if (result.published) {
-              publishedCount++;
-            } else if (result.unmappedItems && result.unmappedItems.length > 0) {
-              // 미매핑 항목 → 계류 처리
-              await this.pendingOrderService.savePendingOrder('naver_smartstore', event, result.unmappedItems);
-              pendingCount++;
-            }
-            break;
-
-          case 'CANCELLED':
-            // 취소된 주문 - OrderCancelled 발행
-            await this.orderEventPublisher.publishOrderCancelled(
-              'naver_smartstore',
-              event,
-              event.reason ?? 'CUSTOMER_REQUEST',
-            );
-            publishedCount++;
-            break;
-
-          default:
-            this.logger.debug(`📋 [네이버] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`);
-        }
-      } catch (error) {
-        this.logger.error(
-          `❌ [네이버] 주문 이벤트 발행 실패: ${event.externalOrderId}`,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-
-    if (publishedCount > 0 || pendingCount > 0) {
-      this.logger.log(`📤 [네이버] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`);
     }
   }
 }

@@ -11,8 +11,6 @@ import {
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
-import { OrderEventPublisher } from '../../services/order-event.publisher';
-import { PendingOrderService } from '../../services/pending-order.service';
 
 /**
  * 쿠팡 채널 어댑터
@@ -28,76 +26,7 @@ export class CoupangAdapter implements ChannelAdapter {
     private readonly coupangOrderClient: CoupangOrderClient,
     private readonly coupangReturnClient: CoupangReturnClient,
     private readonly coupangExchangeClient: CoupangExchangeClient,
-    private readonly orderEventPublisher: OrderEventPublisher,
-    private readonly pendingOrderService: PendingOrderService,
   ) {}
-
-  async processIncomingEvent(event: any): Promise<InternalOrderEvent[]> {
-    // 쿠팡 웹훅이 있는 경우 payload -> InternalOrderEvent로 변환
-    return this.transformToInternal(event, 'orders');
-  }
-
-  async syncFromChannel(dataType: DataType): Promise<InternalOrderEvent[]> {
-    if (dataType !== 'orders') {
-      console.log(`Skipping unsupported dataType: ${dataType}`);
-      return [];
-    }
-
-    try {
-      // 1. API 서비스를 통한 조회 (환경변수 체크는 API 서비스에서 처리)
-
-      // 2. 조회 기간 설정 (현재는 24시간 전으로 설정)
-      // TODO: 실제 구현에서는 Redis나 DB에서 마지막 동기화 시각을 관리해야 함
-      const now = new Date();
-      const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-      const createdAtFrom = `${yesterday.toISOString().split('T')[0]}+09:00`;
-      const createdAtTo = `${now.toISOString().split('T')[0]}+09:00`;
-
-      console.log(`📡 쿠팡 발주서 목록 조회 시작 (${createdAtFrom} ~ ${createdAtTo})`);
-
-      // 3. 날짜 범위 검증
-      if (!validateCoupangDateRange(createdAtFrom, createdAtTo)) {
-        throw new Error('조회 기간이 31일을 초과할 수 없습니다');
-      }
-
-      // 4. 모든 상태의 발주서를 조회 (상태별로 분리 조회) - API 서비스 사용
-      const statuses = ['ACCEPT', 'INSTRUCT', 'DEPARTURE', 'DELIVERING', 'FINAL_DELIVERY'] as const;
-      const allOrderSheets: CoupangOrderSheet[] = [];
-
-      for (const status of statuses) {
-        console.log(`📋 ${status} 상태 발주서 조회 중...`);
-
-        const orderSheets = await this.coupangOrderClient.getAllOrderSheetsByStatus(createdAtFrom, createdAtTo, status);
-
-        allOrderSheets.push(...orderSheets);
-        console.log(`✅ ${status} 상태: ${orderSheets.length}건 조회됨`);
-      }
-
-      console.log(`📊 총 ${allOrderSheets.length}건의 발주서 조회 완료`);
-
-      if (allOrderSheets.length === 0) {
-        return [];
-      }
-
-      // 5. 쿠팡 발주서를 InternalOrderEvent로 변환
-      const events = this.transformCoupangOrderSheetsToInternal(allOrderSheets, dataType);
-
-      // 6. 디버깅을 위한 첫 번째 발주서 출력
-      if (allOrderSheets.length > 0) {
-        console.log('🔍 첫 번째 발주서 원본 데이터:');
-        console.log(JSON.stringify(allOrderSheets[0], null, 2));
-      }
-
-      // 7. 주문 이벤트 발행 (WMS로 전달)
-      await this.publishOrderEvents(events);
-
-      return events;
-    } catch (error) {
-      console.error('❌ 쿠팡 발주서 동기화 실패:', error);
-      throw new Error(`쿠팡 발주서 동기화 실패: ${error.message}`);
-    }
-  }
 
   /**
    * 🔍 쿠팡 발주서 단건 조회 (shipmentBoxId 기준) - findOrders에서 사용
@@ -127,66 +56,20 @@ export class CoupangAdapter implements ChannelAdapter {
     }
   }
 
+  /**
+   * 쿠팡은 상품 생성/수정도 재고 반영도 하지 않는다.
+   *
+   * 상품은 채널상품 내용의 SoT 가 채널이라서(ADR-0031 결정 3) `productProjection: none` 이고,
+   * 재고는 API 는 있으나 우리가 구현하지 않아 `inventory: manual`(운영자가 WING 에서 직접)이다.
+   * 전에는 두 경우 모두 아무 일도 하지 않고 `success: true` 를 돌려주는 stub 이었다 — 거짓
+   * 성공은 `none`/`manual` 구분을 무의미하게 만들므로 명시적 실패로 바꿨다.
+   */
   async syncToChannel(payload: SyncToChannelPayload): Promise<SyncResult> {
-    try {
-      switch (payload.dataType) {
-        case 'products': {
-          const productData = payload.payload;
-          console.log(`📦 쿠팡 상품 정보 동기화: ${productData.name} (${productData.id})`);
-
-          // TODO: 쿠팡 상품 업데이트 API 구현
-          return {
-            success: true,
-            processedCount: 1,
-            data: { productId: productData.id, syncType: 'product_update' },
-          };
-        }
-
-        case 'inventory': {
-          const inventoryData = payload.payload;
-          console.log(`📦 쿠팡 재고 정보 동기화: ${inventoryData.productId} (${inventoryData.stockQuantity}개)`);
-
-          // TODO: 쿠팡 재고 업데이트 API 구현
-          return {
-            success: true,
-            processedCount: 1,
-            data: {
-              productId: inventoryData.productId,
-              syncType: 'inventory_update',
-            },
-          };
-        }
-
-        case 'order_status': {
-          const orderStatusData = payload.payload;
-          console.log(`📦 쿠팡 주문 상태 동기화: ${orderStatusData.orderId} → ${orderStatusData.status}`);
-
-          // TODO: 쿠팡 주문 상태 업데이트 API 구현
-          return {
-            success: true,
-            processedCount: 1,
-            data: {
-              orderId: orderStatusData.orderId,
-              syncType: 'order_status_update',
-            },
-          };
-        }
-
-        default: {
-          const _exhaustiveCheck: never = payload;
-          return {
-            success: false,
-            errors: [{ message: '지원하지 않는 데이터 타입' }],
-          };
-        }
-      }
-    } catch (error) {
-      return {
-        success: false,
-        errors: [{ message: `쿠팡 동기화 실패: ${error.message}` }],
-        failedCount: 1,
-      };
-    }
+    return {
+      success: false,
+      errors: [{ message: `쿠팡 ${payload.dataType} 동기화는 지원하지 않습니다.` }],
+      failedCount: 1,
+    };
   }
 
   async executeCommand(command: ChannelCommand): Promise<SyncResult> {
@@ -1685,56 +1568,5 @@ export class CoupangAdapter implements ChannelAdapter {
         coupangResponse,
       },
     };
-  }
-
-  /**
-   * 주문 이벤트 발행
-   *
-   * 동기화된 주문들에 대해 상태에 따라 적절한 이벤트를 발행합니다.
-   * - ACCEPT 상태: OrderCreated 이벤트 발행 (매핑 자동 조회, 미매핑 시 계류)
-   * - CANCELLED 상태: OrderCancelled 이벤트 발행
-   */
-  private async publishOrderEvents(events: InternalOrderEvent[]): Promise<void> {
-    let publishedCount = 0;
-    let pendingCount = 0;
-
-    for (const event of events) {
-      try {
-        switch (event.status) {
-          case 'PENDING':
-          case 'PAID':
-          case 'PROCESSING':
-            // 새로운 주문 - 매핑 조회 후 OrderCreated 발행 또는 계류
-            const result = await this.orderEventPublisher.publishOrderConfirmed('coupang', event);
-
-            if (result.published) {
-              publishedCount++;
-            } else if (result.unmappedItems && result.unmappedItems.length > 0) {
-              // 미매핑 항목 → 계류 처리
-              await this.pendingOrderService.savePendingOrder('coupang', event, result.unmappedItems);
-              pendingCount++;
-            }
-            break;
-
-          case 'CANCELLED':
-            // 취소된 주문 - OrderCancelled 발행
-            await this.orderEventPublisher.publishOrderCancelled('coupang', event, event.reason ?? 'CUSTOMER_REQUEST');
-            publishedCount++;
-            break;
-
-          default:
-            this.logger.debug(`📋 [쿠팡] 이벤트 발행 스킵 (status=${event.status}): ${event.externalOrderId}`);
-        }
-      } catch (error) {
-        this.logger.error(
-          `❌ [쿠팡] 주문 이벤트 발행 실패: ${event.externalOrderId}`,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    }
-
-    if (publishedCount > 0 || pendingCount > 0) {
-      this.logger.log(`📤 [쿠팡] 주문 이벤트 처리 완료: ${publishedCount}건 발행, ${pendingCount}건 계류`);
-    }
   }
 }
