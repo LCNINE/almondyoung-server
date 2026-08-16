@@ -94,7 +94,10 @@ import { InternalMembershipController } from './controllers/internal-membership.
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
-import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
+import { MedusaOrderSource } from './services/order-collection/medusa-order.source';
+import { ChannelOrderTranslator } from './services/order-collection/channel-order.translator';
+import { ChannelLineIdentityResolver } from './services/order-collection/channel-line-identity.resolver';
+import { createOrderProvider } from './services/order-collection/translating-order.provider';
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 
@@ -274,12 +277,17 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     DeferredRevalidateService,
     InboxWorkerService,
 
-    // 주문 수집 (Provider 패턴)
-    MedusaOrderProvider,
+    // 주문 수집 (ADR-0031: source 는 채널 원어, 번역·식별·격리는 공용)
+    ChannelLineIdentityResolver,
+    ChannelOrderTranslator,
+    MedusaOrderSource,
     {
       provide: CHANNEL_ORDER_PROVIDER,
-      useFactory: (provider: MedusaOrderProvider) => [provider],
-      inject: [MedusaOrderProvider],
+      // 채널이 늘면 source 를 하나 더 만들어 이 배열에 더한다. 번역기는 공유한다.
+      useFactory: (translator: ChannelOrderTranslator, medusa: MedusaOrderSource) => [
+        createOrderProvider(medusa, translator),
+      ],
+      inject: [ChannelOrderTranslator, MedusaOrderSource],
     },
     OrderPollerOrchestrator,
     OrderCollectionFailureService,

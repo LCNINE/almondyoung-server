@@ -3,7 +3,10 @@ jest.mock('../../adapters/medusa/medusa.client', () => ({
 }));
 
 import { ORDER_STREAM, SHIPMENT_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams';
-import { MedusaOrderProvider } from './medusa-order.provider';
+import { MedusaOrderSource } from './medusa-order.source';
+import { ChannelOrderTranslator } from './channel-order.translator';
+import { ChannelLineIdentityResolver } from './channel-line-identity.resolver';
+import { createOrderProvider } from './translating-order.provider';
 import { OrderPollerOrchestrator } from './order-poller.orchestrator';
 import { SalesOrdersService } from '../../../../core/src/modules/sales-order/services/sales-orders.service';
 import { wmsTables } from '../../../../core/src/modules/inventory/schema/inventory.schema';
@@ -13,7 +16,8 @@ describe('external order-line identity real component round trip', () => {
     const rawOrderItemId = 'item_medusa_1';
     const rawChannelProductId = 'variant_medusa_1';
     const skuId = '11111111-1111-4111-8111-111111111111';
-    const provider = new MedusaOrderProvider({
+    const provider = createOrderProvider(
+      new MedusaOrderSource({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_medusa_1',
@@ -47,7 +51,15 @@ describe('external order-line identity real component round trip', () => {
           },
         },
       ]),
-    } as never);
+      } as never),
+      new ChannelOrderTranslator(
+        new ChannelLineIdentityResolver({
+          lookupByChannelCode: () => {
+            throw new Error('Medusa 수집은 채널 리스팅 조회를 타면 안 된다 (lineIdentity=embedded)');
+          },
+        } as never),
+      ),
+    );
 
     const inboxEvents: Array<{ payload: OrderCreatedPayload }> = [];
     const inboxService = {

@@ -2,13 +2,34 @@ jest.mock('../../adapters/medusa/medusa.client', () => ({
   MedusaClient: class MedusaClient {},
 }));
 
-import { MedusaOrderProvider } from './medusa-order.provider';
 import { CHANNEL_PRODUCT_IDENTIFICATION_FAILED } from './channel-order-provider.interface';
 import { ORDER_STREAM } from '@packages/event-contracts/streams';
 
-describe('MedusaOrderProvider', () => {
+import { MedusaOrderSource } from './medusa-order.source';
+import { ChannelOrderTranslator } from './channel-order.translator';
+import { ChannelLineIdentityResolver } from './channel-line-identity.resolver';
+import { createOrderProvider } from './translating-order.provider';
+
+/**
+ * Medusa 는 `lineIdentity: 'embedded'` 라 채널 리스팅 조회를 타지 않는다. 조회 클라이언트를
+ * "부르면 터지는" 스텁으로 두어 그 사실 자체를 검증한다 — 수집 경로가 Core 를 부르기 시작하면
+ * 이 스펙들이 먼저 깨진다.
+ */
+const listingClientThatMustNotBeCalled = {
+  lookupByChannelCode: () => {
+    throw new Error('Medusa 수집은 채널 리스팅 조회를 타면 안 된다 (lineIdentity=embedded)');
+  },
+} as never;
+
+const makeProvider = (client: unknown) =>
+  createOrderProvider(
+    new MedusaOrderSource(client as never),
+    new ChannelOrderTranslator(new ChannelLineIdentityResolver(listingClientThatMustNotBeCalled)),
+  );
+
+describe('Medusa order collection (source + translator)', () => {
   it('builds a Payment Accepted order candidate from an authorized Medusa order', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_auth_1',
@@ -71,7 +92,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('does not manufacture a Medusa channelProductId from the line item ID', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_without_variant_id',
@@ -111,7 +132,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('수집 시 라인의 fulfillmentKind/requiresShipping 을 보존한다 (디지털 라인은 requiresShipping=false)', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_mixed_1',
@@ -178,7 +199,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('line item requires_shipping 이 있으면 product metadata 보다 fulfillmentKind 판별에 우선한다', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_physical_snapshot_1',
@@ -266,7 +287,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('무통장 입금대기(awaiting_deposit + authorized) 주문은 수집(OrderCreated)에서 제외한다', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest
         .fn()
         .mockResolvedValue([
@@ -282,7 +303,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('환불 신청(refund_status=requested) 주문은 승인 전이라 수집(OrderCreated)에서 제외한다', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         // 입금까지 완료(captured)됐어도 고객이 환불을 신청한 상태면 출고하면 안 됨
         bankTransferOrder({ payment_status: 'captured', metadata: { refund_status: 'requested' } }),
@@ -297,7 +318,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('입금 확인 후(captured)에는 awaiting_deposit metadata 가 남아있어도 수집한다', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         // confirmed metadata 갱신이 실패해 awaiting_deposit 가 남았더라도, captured 면 수집
         bankTransferOrder({ payment_status: 'captured', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
@@ -311,7 +332,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('builds an OrderCreated payload that passes stream validation when optional address details are blank', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_blank_address_1',
@@ -401,7 +422,7 @@ describe('MedusaOrderProvider', () => {
         address_2: '101',
       },
     };
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([rawOrder]),
     } as any);
 
@@ -463,7 +484,7 @@ describe('MedusaOrderProvider', () => {
         address_2: '101',
       },
     };
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([rawOrder]),
     } as any);
 
@@ -481,7 +502,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('extracts cancellation and refund lifecycle events without requiring an order candidate', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_lifecycle_1',
@@ -545,7 +566,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('marks a canceled order ineligible for creation even when payment is still captured', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_canceled_captured',
@@ -613,7 +634,7 @@ describe('MedusaOrderProvider', () => {
         },
       ],
     };
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValueOnce([withoutRefund]).mockResolvedValueOnce([withRefund]),
     } as any);
 
@@ -639,7 +660,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('keeps refunded snapshots as ineligible order candidates without synthesizing refund events', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_refunded_without_rows',
@@ -675,7 +696,7 @@ describe('MedusaOrderProvider', () => {
   // 주문 확인 메일의 수신자는 이 필드 하나에만 의존한다. notification 서비스에는
   // customerId → email 조회 경로가 없어서, 여기서 빠지면 메일이 조용히 전부 실패한다.
   it('carries the Medusa order email into the OrderCreated payload', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_email_1',
@@ -716,7 +737,7 @@ describe('MedusaOrderProvider', () => {
   });
 
   it('carries the Medusa display_id as displayOrderNo (알림에 #2332 로 표기)', async () => {
-    const provider = new MedusaOrderProvider({
+    const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
         {
           id: 'order_display_1',

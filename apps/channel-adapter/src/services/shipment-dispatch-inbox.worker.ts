@@ -14,7 +14,7 @@ import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
 import { MedusaClient } from '../adapters/medusa/medusa.client';
 import { channelDispatchOperations, inboxEvents } from '../schema';
 import type { ChannelAdapterSchema, ChannelCommand, ChannelDispatchOperation } from '../types';
-import { getChannelFulfillmentCapabilities, ShipmentSalesChannel } from './channel-fulfillment-capabilities';
+import { getChannelFulfillmentCapabilities, ShipmentSalesChannel } from './channel-capabilities';
 import { withMedusaOrderProjectionLock } from './medusa-order-projection-lock';
 
 const OUTBOUND_INBOX_EVENT_TYPES = [
@@ -455,6 +455,12 @@ export class ShipmentDispatchInboxWorker {
         }),
       );
       return { manual: false, result: { projected: true } };
+    }
+
+    // `none` = 그 채널엔 자동 발송처리라는 개념이 없다 (ADR-0031). 조용히 성공으로 접지 않고
+    // 운영 큐에 남긴다 — 상자는 실제로 나갔는데 채널이 그 사실을 모르는 상태이기 때문이다.
+    if (capabilities.route.kind === 'none') {
+      return { manual: true, reason: `${channel} has no outbound dispatch integration.` };
     }
 
     const adapter = this.channelAdapterFactory.getAdapter(capabilities.route.adapter);

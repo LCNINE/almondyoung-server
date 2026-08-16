@@ -27,7 +27,7 @@ import type {
 import {
   getChannelFulfillmentCapabilities,
   type ShipmentSalesChannel,
-} from '../../services/channel-fulfillment-capabilities';
+} from '../../services/channel-capabilities';
 import { withMedusaOrderProjectionLock } from '../../services/medusa-order-projection-lock';
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
