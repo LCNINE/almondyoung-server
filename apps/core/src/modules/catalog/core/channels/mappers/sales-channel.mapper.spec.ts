@@ -23,7 +23,7 @@ describe('SalesChannelMapper', () => {
       createdAt: new Date('2026-08-17T00:00:00.000Z'),
       updatedAt: new Date('2026-08-17T00:00:00.000Z'),
       ...overrides,
-    } as SalesChannelWithCategory;
+    };
   }
 
   it('응답에 credentials 를 싣지 않는다', () => {
