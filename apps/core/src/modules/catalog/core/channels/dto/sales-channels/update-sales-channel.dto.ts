@@ -56,10 +56,6 @@ export class UpdateSalesChannelDto {
   @IsOptional()
   @IsUrl()
   apiEndpoint?: string;
-
-  @ApiProperty({ description: '인증 정보', required: false })
-  @IsOptional()
-  credentials?: Record<string, any>;
 }
 
 export class SetChannelActiveDto {

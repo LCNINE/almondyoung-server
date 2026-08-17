@@ -40,7 +40,6 @@ export class SalesChannelsService {
         config: data.config || null,
         isActive: data.isActive !== false,
         apiEndpoint: data.apiEndpoint || null,
-        credentials: data.credentials || null,
       };
 
       const result = await tx.insert(salesChannels).values(channelData).returning();
@@ -309,18 +308,6 @@ export class SalesChannelsService {
       case 'medusa':
         if (config && !config.baseUrl) {
           errors.push('Medusa channel requires baseUrl in config');
-        }
-        break;
-
-      case 'coupang':
-        if (config && (!config.accessKey || !config.secretKey)) {
-          errors.push('Coupang channel requires accessKey and secretKey in config');
-        }
-        break;
-
-      case 'naver':
-        if (config && (!config.clientId || !config.clientSecret)) {
-          errors.push('SmartStore channel requires clientId and clientSecret in config');
         }
         break;
 
