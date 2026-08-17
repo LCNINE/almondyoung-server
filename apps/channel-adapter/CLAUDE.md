@@ -168,5 +168,9 @@ channelAdapterSchema
 ## 6. 로컬 개발 주의사항
 
 - `KAFKA_BROKERS` 환경변수가 없으면 `NullEventPublisher`로 대체되어 이벤트 발행이 no-op이 된다.
-- `ACTIVE_CHANNELS` 환경변수는 제거됐다. 채널 활성화는 Core 의 `sales_channels.is_active` 가 갖는다 (ADR-0031).
+- `ACTIVE_CHANNELS` 환경변수는 제거됐다. 채널 활성화는 Core 의 `sales_channels.is_active` 가 갖기로 **결정**됐다 (ADR-0031).
+  🔴 **다만 그 결정을 집행하는 코드가 아직 없다 (#654, 2026-08-18 확인).** `salesChannels.isActive` 를 읽는 곳은
+  Core 의 어드민 목록 필터 하나뿐(`sales-channels.service.ts:110`)이고, `OrderPollerOrchestrator.poll()` 은
+  채널 활성 여부를 보지 않는다. **채널을 비활성화해도 수집이 멈추지 않는다.** 그리고 `ACTIVE_CHANNELS` 는
+  `config/env.validation.ts:39` 에 선언만 남아 있다(소비자 0) — #654 에서 함께 걷어낸다.
 - Medusa 관련 동기화는 `MEDUSA_BACKEND_URL`, `MEDUSA_ADMIN_EMAIL`, `MEDUSA_ADMIN_PASSWORD` 환경변수 필요.
