@@ -80,7 +80,6 @@ describe('ProductReadAssembler shared loader integration', () => {
       }),
     );
     expect(detail.variants[0]).not.toHaveProperty('optionValueIds');
-    expect(detail.channelProducts).toEqual([]);
     expect(detail.tagValues).toEqual([]);
     expect(detail.priceSummary).toEqual({ minBasePrice: 10000 });
     expect(detail.purchaseConstraint).toEqual({

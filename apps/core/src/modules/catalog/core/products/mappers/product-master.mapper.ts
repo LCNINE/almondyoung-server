@@ -7,7 +7,6 @@ import {
   ProductOptionValueEntity,
   ProductVariantEntity,
   SalesChannelEntity,
-  ChannelProductEntity,
 } from '../../../schema/catalog.schema.types';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 import { ProductMasterWithVersion } from '../../../catalog.types';

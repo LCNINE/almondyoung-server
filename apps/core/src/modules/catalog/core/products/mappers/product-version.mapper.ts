@@ -56,7 +56,6 @@ export interface ProductVersionDetailResponseDto {
   categories: ProductDetailCategory[];
   optionGroups: any[];
   variants: any[];
-  channelProducts: any[];
   tagValues?: any[];
   priceSummary?: ProductDetailDto['priceSummary'];
   purchaseConstraint?: ProductDetailDto['purchaseConstraint'];
@@ -115,7 +114,6 @@ export class ProductVersionMapper {
       categories: detail.categories,
       optionGroups: detail.optionGroups,
       variants: detail.variants,
-      channelProducts: detail.channelProducts,
       tagValues: detail.tagValues,
       priceSummary: detail.priceSummary,
       purchaseConstraint: detail.purchaseConstraint ?? null,

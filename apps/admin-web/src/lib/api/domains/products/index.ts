@@ -11,7 +11,6 @@ import { sitePopupsClient } from './site-popups.client';
 import { bulkClient } from './bulk.client';
 import { bulkSessionClient } from './bulk-session.client';
 import { categoriesClient } from './categories.client';
-import { channelProductsClient } from './channel-products.client';
 import { channelsClient } from './channels.client';
 import { formExportClient } from './form-export.client';
 import { mastersClient } from './masters.client';
@@ -25,7 +24,6 @@ export const products = {
   masters: mastersClient,
   variants: variantsClient,
   channels: channelsClient,
-  channelProducts: channelProductsClient,
   bannerGroups: bannerGroupsClient,
   banners: bannersClient,
   notices: noticesClient,
@@ -45,7 +43,6 @@ export { categoriesClient } from './categories.client';
 export { mastersClient } from './masters.client';
 export { variantsClient } from './variants.client';
 export { channelsClient } from './channels.client';
-export { channelProductsClient } from './channel-products.client';
 export { bannerGroupsClient } from './banner-groups.client';
 export { bannersClient } from './banners.client';
 export { noticesClient } from './notices.client';

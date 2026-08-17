@@ -6,8 +6,6 @@ import type {
   MasterDto,
   VariantDto,
   ChannelDto,
-  ChannelProductDto,
-  MatchingTableRowDto,
   ProductStatus,
   ChannelType,
   PricingStrategy,
@@ -19,23 +17,6 @@ export const transformCategory = (dto: CategoryDto) => dto;
 export const transformMaster = (dto: MasterDto) => dto;
 export const transformVariant = (dto: VariantDto) => dto;
 export const transformChannel = (dto: ChannelDto) => dto;
-export const transformChannelProduct = (dto: ChannelProductDto) => dto;
-
-// ===== 상태 변환 함수들 =====
-
-/**
- * 제품 상태를 한국어로 변환
- */
-export const getProductStatusLabel = (status: ProductStatus): string => {
-  const statusMap: Record<ProductStatus, string> = {
-    active: '활성',
-    inactive: '비활성',
-    draft: '초안',
-    archived: '보관됨',
-  };
-  return statusMap[status] || status;
-};
-
 /**
  * 제품 상태 색상 반환
  */
@@ -127,39 +108,6 @@ export const getMatchingTableStatusColor = (status: string): string => {
     no_product: 'text-red-600 bg-red-100',
   };
   return colorMap[status] || 'text-gray-600 bg-gray-100';
-};
-
-/**
- * 매칭 테이블 행을 테이블용 데이터로 변환
- */
-export const transformMatchingTableRow = (row: MatchingTableRowDto) => {
-  return {
-    id: row.id,
-    channelName: row.channelProduct.channel?.name || '알 수 없음',
-    channelType: row.channelProduct.channel?.type || 'unknown',
-    channelProductName: row.channelProduct.name || '상품명 없음',
-    variantName: row.variant?.name || '매칭 재고상품 없음',
-    matchedSku: row.matchedSku,
-    orderInfo: row.orderInfo,
-    matchingStatus: row.matchingStatus,
-    actions: row.actions,
-    // 추가 변환된 필드들
-    channelTypeLabel: row.channelProduct.channel?.type
-      ? getChannelTypeLabel(row.channelProduct.channel.type)
-      : '알 수 없음',
-    channelTypeColor: row.channelProduct.channel?.type
-      ? getChannelTypeColor(row.channelProduct.channel.type)
-      : 'text-gray-600 bg-gray-100',
-    matchingStatusLabel: getMatchingTableStatusLabel(row.matchingStatus),
-    matchingStatusColor: getMatchingTableStatusColor(row.matchingStatus),
-  };
-};
-
-/**
- * 매칭 테이블 데이터를 테이블용 데이터로 변환
- */
-export const transformMatchingTableData = (rows: MatchingTableRowDto[]) => {
-  return rows.map(transformMatchingTableRow);
 };
 
 // ===== 채널별 변환 함수들 =====
@@ -314,22 +262,6 @@ export const getVariantSearchText = (variant: VariantDto): string => {
     variant.name,
     variant.sku,
     formatOptionKey(variant.optionKey || {}),
-  ].filter(Boolean);
-
-  return parts.join(' ').toLowerCase();
-};
-
-/**
- * 채널 제품을 검색용 텍스트로 변환
- */
-export const getChannelProductSearchText = (
-  channelProduct: ChannelProductDto
-): string => {
-  const parts = [
-    channelProduct.name,
-    channelProduct.description,
-    channelProduct.channel?.name,
-    channelProduct.master?.name,
   ].filter(Boolean);
 
   return parts.join(' ').toLowerCase();

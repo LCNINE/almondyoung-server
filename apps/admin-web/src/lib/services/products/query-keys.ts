@@ -74,21 +74,6 @@ export const productQueryKeys = {
   channelsByType: (type: string) =>
     [...productQueryKeys.channels, 'type', type] as const,
 
-  // 채널별 제품 관련
-  channelProducts: ['channel-products'] as const,
-  channelProductsByMaster: (masterId: string) =>
-    [...productQueryKeys.channelProducts, 'master', masterId] as const,
-  channelProductsByChannel: (channelId: string, query: Record<string, any>) =>
-    [...productQueryKeys.channelProducts, 'channel', channelId, query] as const,
-  channelProduct: (id: string) =>
-    [...productQueryKeys.channelProducts, id] as const,
-  mergedChannelProduct: (masterId: string, channelId: string) =>
-    [
-      ...productQueryKeys.channelProducts,
-      'merged',
-      masterId,
-      channelId,
-    ] as const,
 
   // 배너 그룹 관련
   bannerGroups: ['banner-groups'] as const,

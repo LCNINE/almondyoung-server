@@ -15,7 +15,6 @@ import {
   useResolveMatching,
   useUpsertVariantMatching,
 } from '@/lib/services/matching';
-import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkuSearch } from '@/lib/services/inventory';
 import {
   Dialog,
@@ -78,7 +77,6 @@ export function InventoryMatchingDialog({
   const resolveMatching = useResolveMatching();
   const upsertVariantMatching = useUpsertVariantMatching();
   const changeMatchingStrategy = useChangeMatchingStrategy();
-  const createChannelProduct = useCreateChannelProduct();
   const createInventoryMatching = useCreateInventoryMatching();
 
   const [activeTab, setActiveTab] = useState<'auto' | 'manual' | 'none'>(
@@ -261,7 +259,6 @@ export function InventoryMatchingDialog({
   }, [variant?.id, master?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSaving =
-    createChannelProduct.isPending ||
     resolveMatching.isPending ||
     upsertVariantMatching.isPending ||
     changeMatchingStrategy.isPending ||

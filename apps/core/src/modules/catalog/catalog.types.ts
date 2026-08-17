@@ -20,7 +20,6 @@ import {
   variantOptionValues,
   channelCategories,
   salesChannels,
-  channelProducts,
   channelVariantListings,
   pricingRules,
   productVariantPriceCache,
@@ -198,11 +197,6 @@ export type SalesChannel = InferSelectModel<typeof salesChannels>;
 export type NewSalesChannel = InferInsertModel<typeof salesChannels>;
 export type UpdateSalesChannel = Partial<Omit<NewSalesChannel, 'id' | 'createdAt' | 'updatedAt'>>;
 
-// ===== CHANNEL PRODUCTS 타입 =====
-export type ChannelProduct = InferSelectModel<typeof channelProducts>;
-export type NewChannelProduct = InferInsertModel<typeof channelProducts>;
-export type UpdateChannelProduct = Partial<Omit<NewChannelProduct, 'id' | 'createdAt' | 'updatedAt'>>;
-
 // ===== CHANNEL VARIANT LISTINGS 타입 (채널 상품 ↔ Variant 매핑) =====
 export type ChannelVariantListing = InferSelectModel<typeof channelVariantListings>;
 export type NewChannelVariantListing = InferInsertModel<typeof channelVariantListings>;
@@ -326,9 +320,6 @@ export interface ProductDetailDto extends ProductMasterVersion {
   categories: ProductDetailCategory[];
   optionGroups: OptionGroupReadModel[];
   variants: VariantReadModel[];
-  channelProducts: (ChannelProduct & {
-    channel: SalesChannel;
-  })[];
   tagValues?: TagReadModel[];
   priceSummary?: PriceSummary | null;
   purchaseConstraint?: PurchaseConstraintReadModel | null;
@@ -340,15 +331,6 @@ export interface VariantWithPriceDto extends ProductVariant {
   versionId: string;
   price: number;
   optionValues: ProductOptionValue[];
-}
-
-// Channel Product 생성 DTO
-export interface CreateChannelProductDto {
-  masterId: string;
-  channelId: string;
-  name?: string; // 상품명 오버라이드
-  isActive?: boolean;
-  channelSpecificData?: Record<string, any>;
 }
 
 // NOTE: PricePreviewDto removed. Use PricingCalculatorService instead.

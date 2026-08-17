@@ -20,7 +20,6 @@ function detailFixture(overrides: Partial<ProductDetailDto> = {}): ProductDetail
     categories: [],
     optionGroups: [],
     variants: [],
-    channelProducts: [],
     ...overrides,
   } as unknown as ProductDetailDto;
 }
@@ -78,7 +77,6 @@ describe('ProductVersionMapper', () => {
       ],
       optionGroups: [],
       variants: [],
-      channelProducts: [],
       purchaseConstraint: {
         id: 'constraint-1',
         requiresMembership: true,
