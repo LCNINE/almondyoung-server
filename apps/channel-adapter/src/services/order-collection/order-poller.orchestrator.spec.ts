@@ -600,6 +600,89 @@ describe('OrderPollerOrchestrator', () => {
     expect(provider.fetchOrders).toHaveBeenCalledWith(new Date('2026-05-26T01:08:00.000Z'));
   });
 
+  // #599: 이중 크론(또는 5분보다 오래 걸린 폴)이 겹치면 두 폴이 같은 옛 해시를 읽고 **둘 다**
+  // 트랜잭션에 진입해 같은 사실을 두 번 발행했다. 두 이벤트는 messageId 가 달라 core 의
+  // `checkAndRecordEvent` 멱등 가드가 잡지 못한다. 라이브에서 08-10 이후 8건 실측됐다.
+  it('emits a lifecycle event once when two concurrent polls observe the same stale hash', async () => {
+    const db = makeDb();
+    db.mappings.set('medusa:medusa_order_1', {
+      salesChannel: 'medusa',
+      channelOrderId: 'medusa_order_1',
+      wmsOrderId: '11111111-1111-4111-8111-111111111111',
+    });
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [],
+        lifecycleEvents: [makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await Promise.all([orchestrator.poll(), orchestrator.poll()]);
+
+    const cancellations = outbox.enqueue.mock.calls.filter(
+      ([event]: [{ eventType: string }, unknown]) => event.eventType === 'OrderCancelled',
+    );
+    expect(cancellations).toHaveLength(1);
+  });
+
+  // #599: 변경 격리 경로도 해시 확인이 트랜잭션 밖이라 같은 레이스를 갖는다.
+  it('quarantines a collected-order modification once when two concurrent polls observe the same stale hash', async () => {
+    const db = makeDb();
+    db.mappings.set('medusa:medusa_order_1', {
+      salesChannel: 'medusa',
+      channelOrderId: 'medusa_order_1',
+      wmsOrderId: '11111111-1111-4111-8111-111111111111',
+    });
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [
+          makeOrder('2026-05-26T01:10:00.000Z', {
+            totalAmount: 12000,
+            eligibleForOrderCreation: false,
+          }),
+        ],
+        failures: [],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await Promise.all([orchestrator.poll(), orchestrator.poll()]);
+
+    const quarantines = failures.recordFailure.mock.calls.filter(
+      ([, failure]: [string, OrderCollectionFailureItem]) =>
+        failure.reason === COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+    );
+    expect(quarantines).toHaveLength(1);
+  });
+
   it('uses the mapping insert as the OrderCreated idempotency gate', async () => {
     const db = makeDb({ conflictOnInsert: true });
     const provider: ChannelOrderProvider = {
@@ -1209,6 +1292,15 @@ function makeHashService() {
     }),
     upsert: jest.fn(async (source: string, resourceType: string, resourceId: string, hash: string) => {
       hashes.set(key(source, resourceType, resourceId), hash);
+    }),
+    // 조건부 갱신(CAS) 의 목. **검사와 기록 사이에 await 가 없다** — 그것이 요점이다.
+    // JS 는 단일 스레드라 await 없는 구간은 원자적이고, 이것이 Postgres 의
+    // `INSERT … ON CONFLICT DO UPDATE … WHERE hash <> excluded.hash RETURNING` 과 같은 성질이다.
+    claimChanged: jest.fn(async (source: string, resourceType: string, resourceId: string, hash: string) => {
+      const k = key(source, resourceType, resourceId);
+      if (hashes.get(k) === hash) return false;
+      hashes.set(k, hash);
+      return true;
     }),
   };
 }
