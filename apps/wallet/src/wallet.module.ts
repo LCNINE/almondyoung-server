@@ -10,7 +10,7 @@ import { AUTH_CONFIG, AuthenticationService, JwtAccessStrategy, JwtAuthGuard } f
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { DbModule } from '@app/db';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
@@ -378,7 +378,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: walletSchema,
     }),
-    ScheduleModule.forRoot(),
+    SCHEDULE_ROOT,
     // 발행 능력 + 소비 정책을 한 자리에서. 옛 `forRoot`+`forConsumerModule` 두 벌에서
     // 합쳤다 — 소비 스트림 목록과 groupId 는 쓰이지 않던 선언이라 사라졌다 (ADR-0029 §1).
     EventsModule.forApp({

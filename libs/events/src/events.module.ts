@@ -33,7 +33,7 @@ import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-d
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { DbService } from '@app/db';
 import { EVENT_TRANSPORT, EventTransport } from './transport/transport.port';
 import { KafkaTransport } from './transport/kafka.transport';
@@ -303,7 +303,7 @@ export class EventsModule {
       module: EventsModule,
       imports: [
         ClsModule.forRoot({ global: true, middleware: { mount: false } }),
-        ...(enableOutbox ? [ScheduleModule.forRoot()] : []),
+        ...(enableOutbox ? [SCHEDULE_ROOT] : []),
         ClientsModule.register([
           {
             name: 'KAFKA_CLIENT',

@@ -4,7 +4,7 @@ import { AdminRealmGuard, AuthorizationModule, JwtAuthGuard } from '@app/authori
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { ClsModule } from 'nestjs-cls';
 import {
   EventsModule,
@@ -127,7 +127,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       isGlobal: true,
       validate: validateChannelAdapterEnv,
     }),
-    ScheduleModule.forRoot(), // ← Cron 활성화
+    SCHEDULE_ROOT, // ← Cron 활성화
     HttpModule,
     DbModule.forRoot({
       config: {

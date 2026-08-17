@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { SharedModule } from '../shared/shared.module';
 import { ProductSellableQuantityModule } from '../product-sellable-quantity/product-sellable-quantity.module';
 
@@ -35,7 +35,7 @@ import { StockEventStore } from './repositories/stock-event.store';
 // Outbox (temporary — moves to Fulfillment BC in Phase 6)
 
 @Module({
-  imports: [ScheduleModule.forRoot(), SharedModule, ProductSellableQuantityModule],
+  imports: [SCHEDULE_ROOT, SharedModule, ProductSellableQuantityModule],
   controllers: [
     InventoryController,
     LocationController,
