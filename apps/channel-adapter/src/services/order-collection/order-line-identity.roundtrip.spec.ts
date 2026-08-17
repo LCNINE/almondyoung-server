@@ -89,7 +89,12 @@ describe('external order-line identity real component round trip', () => {
       db: {
         select: () => ({
           from: () => ({
-            where: () => ({ limit: () => Promise.resolve(Array.from(mappings.values()).slice(0, 1)) }),
+            // `await where()` 는 배치 매핑 조회다(#647). thenable 이 아니면 이 스펙이 실패
+            // 항목을 하나라도 내는 순간 `rows.map is not a function` 으로 죽는다.
+            where: () =>
+              Object.assign(Promise.resolve(Array.from(mappings.values())), {
+                limit: () => Promise.resolve(Array.from(mappings.values()).slice(0, 1)),
+              }),
           }),
         }),
         transaction: async (fn: (tx: unknown) => Promise<unknown>) =>

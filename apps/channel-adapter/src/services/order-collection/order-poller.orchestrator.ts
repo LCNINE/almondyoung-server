@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
@@ -9,6 +9,7 @@ import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
 import {
   CHANNEL_ORDER_PROVIDER,
+  CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
   ChannelOrderProvider,
   COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
   OrderCollectionFailureItem,
@@ -22,6 +23,8 @@ import { OrderCollectionFailureService } from './order-collection-failure.servic
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
 const POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE = 'order_lifecycle';
 const WATERMARK_LOOKBACK_MS = 2 * 60 * 1000;
+/** 건너뛴 주문 id 를 로그에 싣되 한 줄이 무한정 길어지지 않게 자른다. */
+const SKIPPED_LOG_SAMPLE_SIZE = 20;
 
 type OrderedPollItem =
   | { kind: 'order'; item: OrderFetchItem }
@@ -75,9 +78,17 @@ export class OrderPollerOrchestrator {
           return this.pollItemPriority(a.kind) - this.pollItemPriority(b.kind);
         });
 
+        // 이미 수집된 주문의 식별 실패는 격리 대상이 아니다 (#647). 폴링당 한 번만 조회한다.
+        const collectedOrders = await this.findCollectedOrders(
+          provider.channel,
+          failures.map((failure) => failure.externalOrderId),
+        );
+
         let emitted = 0;
         let dedupedUnchanged = 0;
         let quarantined = 0;
+        let skippedAlreadyCollected = 0;
+        const skippedExternalOrderIds: string[] = [];
         let lifecycleRecorded = 0;
         let watermark: Date | null = null;
         // An unrecorded lifecycle observation (no Core mapping yet) for an order that is still
@@ -91,9 +102,17 @@ export class OrderPollerOrchestrator {
         // terminal snapshots can't stall the poller forever.
         let watermarkHeldAt: Date | null = null;
 
-        // Orders quarantined this poll have no mapping yet but are still on track to be collected
-        // via replay; their lifecycle observations are transient, not terminal.
-        const quarantinedExternalOrderIds = new Set(failures.map((failure) => failure.externalOrderId));
+        // 이 폴링에서 실제로 격리된 주문들. 매핑이 없고 replay 로 수집될 예정이므로 그
+        // lifecycle 관측은 종결이 아니라 일시적이다.
+        // 건너뛸 항목은 제외한다. 사실 이 filter 는 현재 불변식상 no-op 이다 — 매핑이 있으면
+        // `processLifecycleItem` 이 같은 술어로 매핑을 찾아 `recorded: true` 를 내므로 아래
+        // `has()` 분기에 애초에 도달하지 않는다. 그래도 남겨둔다: 두 조회의 술어가 갈리는 날
+        // 이 filter 가 없으면 기수집 주문 때문에 워터마크가 묶인다.
+        const quarantinedExternalOrderIds = new Set(
+          failures
+            .filter((failure) => !this.isAlreadyCollectedIdentificationFailure(failure, collectedOrders))
+            .map((failure) => failure.externalOrderId),
+        );
 
         const advanceWatermark = (sourceUpdatedAt: string) => {
           const itemTimestamp = this.toValidDate(sourceUpdatedAt);
@@ -115,6 +134,23 @@ export class OrderPollerOrchestrator {
 
         for (const orderedItem of orderedItems) {
           if (orderedItem.kind === 'failure') {
+            if (this.isAlreadyCollectedIdentificationFailure(orderedItem.item, collectedOrders)) {
+              // 만들 주문이 이미 있다. 변경 여부는 계산할 수 없다 — 라인을 식별하지 못하면
+              // 변경 해시의 입력이 빈 식별자로 채워져 의미 없는 값이 된다.
+              //
+              // 옛 코드가 남긴 격리가 열려 있으면 여기서 닫는다. 그러지 않으면 이 주문은
+              // 앞으로 계속 건너뛰어지므로 그 행을 닫아줄 경로가 영영 없다 — 일회성 스크립트가
+              // 놓친 행(배포와 스크립트 실행 사이에 생긴 행 등)이 고아로 남는다.
+              await this.closeOpenQuarantineAsCollected(
+                provider.channel,
+                orderedItem.item.externalOrderId,
+                collectedOrders.get(orderedItem.item.externalOrderId),
+              );
+              skippedAlreadyCollected++;
+              skippedExternalOrderIds.push(orderedItem.item.externalOrderId);
+              advanceWatermark(orderedItem.item.sourceUpdatedAt);
+              continue;
+            }
             await this.orderCollectionFailureService.recordFailure(provider.channel, orderedItem.item);
             quarantined++;
             advanceWatermark(orderedItem.item.sourceUpdatedAt);
@@ -150,6 +186,19 @@ export class OrderPollerOrchestrator {
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
         }
 
+        if (skippedAlreadyCollected > 0) {
+          // 기대되는 정상 상태다 — 사라진 Medusa variant 를 가진 기수집 주문이 재폴링되면 매번
+          // 발생한다. warn 으로 올리면 바로 아래 진짜 격리 warn 이 묻힌다.
+          //
+          // 건너뛴 항목은 행을 남기지 않으므로 **이 로그가 유일한 흔적**이다. 그래서 개수만이
+          // 아니라 주문 id 를 싣는다(상한을 둔다).
+          const sample = skippedExternalOrderIds.slice(0, SKIPPED_LOG_SAMPLE_SIZE);
+          const suffix = skippedExternalOrderIds.length > sample.length ? ', …' : '';
+          this.logger.log(
+            `[${provider.channel}] Skipped ${skippedAlreadyCollected} identification failures for orders already collected into Core (#647): ${sample.join(', ')}${suffix}`,
+          );
+        }
+
         if (quarantined > 0) {
           this.logger.warn(
             `[${provider.channel}] Quarantined ${quarantined} order collection failures due to missing PIM identity metadata`,
@@ -163,7 +212,7 @@ export class OrderPollerOrchestrator {
         });
 
         this.logger.log(
-          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined})`,
+          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined}, skippedAlreadyCollected: ${skippedAlreadyCollected})`,
         );
       } catch (error) {
         await this.syncStatusService.recordSyncFailure(channelType, 'orders', {
@@ -180,6 +229,7 @@ export class OrderPollerOrchestrator {
       | 'already_processed'
       | 'still_quarantined'
       | 'closed_terminal'
+      | 'closed_already_collected'
       | 'not_found_or_not_payment_accepted'
       | 'not_replayable';
     failureId: string;
@@ -219,6 +269,28 @@ export class OrderPollerOrchestrator {
     }
 
     if (fetched.kind === 'failure') {
+      // 이미 Core 에 있는 주문이면 replay 로 할 일이 없다. 다시 격리하면 status 가
+      // `quarantined` 로 되돌아가(`recordFailure` 의 onConflictDoUpdate) 운영자가 같은 자리를
+      // 영원히 맴돈다 — 실측된 117건이 정확히 그 상태였다 (#647).
+      const collected = await this.findCollectedOrders(provider.channel, [failure.externalOrderId]);
+      const wmsOrderId = collected.get(failure.externalOrderId);
+      if (wmsOrderId) {
+        // 문구는 **관측한 사실만** 말한다. 여기서 아는 것은 "지금 매핑이 있다" 뿐이고,
+        // "격리보다 먼저 있었다" 는 아니다 — 진짜 격리가 나중에 해소된 행도 이 경로로 온다.
+        await this.orderCollectionFailureService.closeAsAlreadyCollected(
+          failure.id,
+          `Closed on replay: order ${failure.externalOrderId} already has a Core sales order (${wmsOrderId}), so there is nothing to collect`,
+          wmsOrderId,
+        );
+        return {
+          status: 'closed_already_collected',
+          failureId,
+          externalOrderId: failure.externalOrderId,
+          emitted: 0,
+          dedupedUnchanged: 0,
+        };
+      }
+
       await this.orderCollectionFailureService.recordFailure(provider.channel, fetched.failure);
       return {
         status: 'still_quarantined',
@@ -503,6 +575,29 @@ export class OrderPollerOrchestrator {
    * order went terminal before its mapping gap was fixed — it can never be collected, so close the
    * quarantine to record the terminal outcome and stop a replay from getting stuck on it.
    */
+  /**
+   * 이미 수집된 주문에 열려 있는 격리가 있으면 닫는다 (#647).
+   *
+   * `resolveOrphanedQuarantine`(terminal lifecycle 로 닫는 쪽)과 짝을 이룬다. 이쪽이 없으면
+   * 수정 배포 이후 그 주문은 계속 건너뛰어지므로 옛 행을 닫아줄 경로가 사라진다.
+   */
+  private async closeOpenQuarantineAsCollected(
+    channel: string,
+    externalOrderId: string,
+    wmsOrderId: string | undefined,
+  ): Promise<void> {
+    const open = await this.orderCollectionFailureService.findOpenByExternalOrderId(channel, externalOrderId);
+    if (!open) {
+      return;
+    }
+    await this.orderCollectionFailureService.closeAsAlreadyCollected(
+      open.id,
+      `Closed on poll: order ${externalOrderId} already has a Core sales order, so this quarantine is not actionable`,
+      wmsOrderId,
+    );
+    this.logger.log(`[${channel}] Closed stale quarantine for already-collected order ${externalOrderId}`);
+  }
+
   private async resolveOrphanedQuarantine(channel: string, item: OrderLifecycleEventItem): Promise<void> {
     const open = await this.orderCollectionFailureService.findOpenByExternalOrderId(channel, item.externalOrderId);
     if (!open) {
@@ -515,6 +610,41 @@ export class OrderPollerOrchestrator {
     this.logger.warn(
       `[${channel}] Closed orphaned quarantine for ${item.externalOrderId} after ${item.eventType}; order is no longer collectable`,
     );
+  }
+
+  /**
+   * 주어진 채널 주문 ID 중 **이미 Core 판매주문이 만들어진** 것들을 돌려준다 (#647).
+   *
+   * 왜 필요한가: 폴러는 `updated_at > 워터마크` 로 묻기 때문에 이미 수집한 주문도 바뀌면 다시 온다.
+   * 그때 라인 식별에 실패하면 — Medusa 는 주문 라인에 상품 정보를 비정규화해 두므로 원본 variant 가
+   * 사라지면 평면 필드만 남고 식별자는 증발한다 — 번역기는 그 사실만 알고 격리 후보로 올린다.
+   * 번역기는 DB 를 볼 수 없으므로 "이미 수집했나" 는 여기서만 답할 수 있다.
+   */
+  private async findCollectedOrders(channel: string, externalOrderIds: string[]): Promise<Map<string, string>> {
+    if (externalOrderIds.length === 0) {
+      return new Map();
+    }
+
+    const rows = await this.db.db
+      .select({ channelOrderId: wmsOrderMappings.channelOrderId, wmsOrderId: wmsOrderMappings.wmsOrderId })
+      .from(wmsOrderMappings)
+      .where(
+        and(eq(wmsOrderMappings.salesChannel, channel), inArray(wmsOrderMappings.channelOrderId, externalOrderIds)),
+      );
+
+    return new Map(rows.map((row) => [row.channelOrderId, row.wmsOrderId]));
+  }
+
+  /**
+   * 이 격리 후보가 "이미 수집됨" 으로 건너뛸 대상인지. **사유를 함께 본다** — 식별 실패만
+   * 이 규칙의 대상이다. `collected_order_modification_not_accepted` 는 정의상 항상 매핑을
+   * 갖고 있으므로, 사유를 안 보면 그 격리 레인 전체가 조용히 죽는다.
+   */
+  private isAlreadyCollectedIdentificationFailure(
+    item: OrderCollectionFailureItem,
+    collected: Map<string, string>,
+  ): boolean {
+    return item.reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED && collected.has(item.externalOrderId);
   }
 
   private applyWatermarkLookback(since: Date | null): Date | null {
