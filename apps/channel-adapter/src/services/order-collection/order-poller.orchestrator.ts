@@ -3,7 +3,11 @@ import { Cron } from '@nestjs/schedule';
 import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
+import {
+  ORDER_STREAM,
+  OrderCancelledPayload,
+  OrderRefundCreatedPayload,
+} from '@packages/event-contracts/streams';
 import { SyncStatusService } from '../sync-status.service';
 import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
@@ -534,11 +538,19 @@ export class OrderPollerOrchestrator {
         metadata: { partitionKey: provider.channel },
       };
 
+      // 채널 키 (#656). `wmsOrderId` 는 여기서 만든 id 라 **core 의 `sales_orders.id` 가 아니다** —
+      // core 는 SO 를 만들 때 자체 PK 를 새로 발급한다. 이 두 필드가 없으면 core 가 SO 를 찾지
+      // 못해 취소/환불이 전량 NotFound 로 DLQ 에 쌓인다. `OrderCreated` 가 쓰는 축과 같다.
+      const channelKey = {
+        salesChannel: provider.channel,
+        externalOrderId: item.externalOrderId,
+      };
+
       if (item.eventType === 'OrderCancelled') {
-        const cancelled: OrderCancelledPayload = { orderId: wmsOrderId, ...item.payload };
+        const cancelled: OrderCancelledPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
         await this.ordersPublisher.enqueue({ eventType: 'OrderCancelled', payload: cancelled, ...common }, tx);
       } else {
-        const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...item.payload };
+        const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
         await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
       }
 

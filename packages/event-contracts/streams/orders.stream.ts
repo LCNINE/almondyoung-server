@@ -116,7 +116,15 @@ export interface OrderModifiedPayload {
  * 주문 취소 이벤트
  */
 export interface OrderCancelledPayload {
+  /**
+   * 발행자가 아는 주문 식별자. **채널 수집 경로에서는 core 의 `sales_orders.id` 가 아니다** —
+   * channel-adapter 가 만든 id 이고 core 는 SO 를 만들 때 자체 PK 를 새로 발급한다 (#656).
+   * 아래 채널 키가 있으면 그쪽이 정본이고, 이 값은 옛 메시지 폴백용으로만 남는다.
+   */
   orderId: string;
+  /** 채널 키 (#656). `OrderCreated` 와 같은 축이며, 소비자는 이 둘로 SO 를 찾는다. */
+  salesChannel?: SalesChannel;
+  externalOrderId?: string;
   reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
@@ -169,7 +177,11 @@ export interface OrderReturnRequestedPayload {
  * 환불 생성 이벤트
  */
 export interface OrderRefundCreatedPayload {
+  /** `OrderCancelledPayload.orderId` 와 같은 주의사항 — 채널 키가 정본이다 (#656). */
   orderId: string;
+  /** 채널 키 (#656). */
+  salesChannel?: SalesChannel;
+  externalOrderId?: string;
   refundId: string;
   paymentId: string;
 
@@ -266,6 +278,9 @@ const OrderModifiedSchema = z.object({
 
 const OrderCancelledSchema = z.object({
   orderId: z.string().min(1),
+  // 채널 키 (#656) — optional 이라 이 필드를 모르는 옛 소비자도 계속 통과한다.
+  salesChannel: SalesChannelSchema.optional(),
+  externalOrderId: z.string().min(1).optional(),
   reason: z.enum(['CUSTOMER_REQUEST', 'OUT_OF_STOCK', 'PAYMENT_FAILED', 'ADMIN_CANCEL', 'TIMEOUT']),
   reasonDetail: z.string().optional(),
   cancelledBy: z.string().min(1),
@@ -311,6 +326,9 @@ const OrderReturnRequestedSchema = z.object({
 
 const OrderRefundCreatedSchema = z.object({
   orderId: z.string().min(1),
+  // 채널 키 (#656).
+  salesChannel: SalesChannelSchema.optional(),
+  externalOrderId: z.string().min(1).optional(),
   refundId: z.string().min(1),
   paymentId: z.string().min(1),
   amount: z.number().nonnegative(),

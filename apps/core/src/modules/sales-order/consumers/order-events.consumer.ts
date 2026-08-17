@@ -9,7 +9,7 @@ import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlo
 import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
-import { ORDER_STREAM } from '@packages/event-contracts/streams/orders.stream';
+import { ORDER_STREAM, SalesChannel } from '@packages/event-contracts/streams/orders.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 /**
@@ -59,6 +59,35 @@ export class OrderEventsConsumer {
     });
 
     return false;
+  }
+
+  /**
+   * lifecycle 이벤트(`OrderCancelled`/`OrderRefundCreated`)가 가리키는 판매주문의 **core PK** 를 찾는다 (#656).
+   *
+   * `payload.orderId` 를 PK 로 조회하면 안 된다. 채널 수집 경로에서 그 값은 channel-adapter 가
+   * 만든 id 이고, core 는 `handleOrderCreated` 에서 SO 를 만들 때 `defaultRandom()` PK 를 새로
+   * 발급한다 — **두 id 공간이 겹치지 않는다.** 그래서 PK 조회는 구조적으로 항상 실패했고,
+   * 라이브에서 lifecycle 이벤트가 전량 NotFound 로 DLQ 에 쌓였다.
+   *
+   * `handleOrderCreated` 가 이미 쓰는 채널 키(`salesChannel` + `externalOrderId`)가 정본이다.
+   * 채널 키가 없는 **옛 메시지**(계약에 필드가 생기기 전 발행분, DLQ 재처리분 포함)는 종전대로
+   * PK 로 찾는다 — 자체 발행 주문처럼 두 id 가 같은 경우가 여기 해당한다.
+   */
+  private async resolveSalesOrderId(
+    payload: { orderId: string; salesChannel?: SalesChannel; externalOrderId?: string },
+    tx: DbTx,
+  ): Promise<string | null> {
+    if (payload.salesChannel && payload.externalOrderId) {
+      const byChannelKey = await this.salesOrdersService.findByChannelOrderId(
+        payload.salesChannel,
+        payload.externalOrderId,
+        tx,
+      );
+      return byChannelKey?.id ?? null;
+    }
+
+    const byPrimaryKey = await this.salesOrdersService.getOne(payload.orderId, tx);
+    return byPrimaryKey?.id ?? null;
   }
 
   @On(ORDER_STREAM, 'OrderCreated')
@@ -127,14 +156,14 @@ export class OrderEventsConsumer {
 
     try {
       await this.dbService.run(async (tx) => {
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
+        const salesOrderId = await this.resolveSalesOrderId(payload, tx);
+        if (!salesOrderId) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
         }
 
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
-          payload.orderId,
+          salesOrderId,
           'ORDER_CANCELLED',
           payload,
           tx,
@@ -142,7 +171,7 @@ export class OrderEventsConsumer {
         if (alreadyProcessed) return;
 
         await this.salesOrdersService.cancel(
-          payload.orderId,
+          salesOrderId,
           {
             reasonCode: payload.reason,
             reasonDetail: payload.reasonDetail,
@@ -158,7 +187,7 @@ export class OrderEventsConsumer {
           tx,
         );
 
-        this.logger.log(`[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`);
+        this.logger.log(`[OrderCancelled] Cancelled sales order: ${salesOrderId}, reason: ${payload.reason}`);
       });
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);
@@ -214,14 +243,14 @@ export class OrderEventsConsumer {
 
     try {
       await this.dbService.run(async (tx) => {
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
+        const salesOrderId = await this.resolveSalesOrderId(payload, tx);
+        if (!salesOrderId) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderRefundCreated`);
         }
 
         const alreadyProcessed = await this.checkAndRecordEvent(
           envelope.messageId,
-          payload.orderId,
+          salesOrderId,
           'ORDER_REFUND_CREATED',
           payload,
           tx,
@@ -235,7 +264,7 @@ export class OrderEventsConsumer {
           .where(
             and(
               eq(wmsTables.businessLinks.sourceType, 'sales_order'),
-              eq(wmsTables.businessLinks.sourceId, payload.orderId),
+              eq(wmsTables.businessLinks.sourceId, salesOrderId),
               eq(wmsTables.businessLinks.relationName, 'order_lifecycle_refund_collected'),
               eq(wmsTables.businessLinks.targetExternalRef, refundExternalRef),
             ),
@@ -250,7 +279,7 @@ export class OrderEventsConsumer {
 
         await tx.insert(wmsTables.businessLinks).values({
           sourceType: 'sales_order',
-          sourceId: payload.orderId,
+          sourceId: salesOrderId,
           sourceExternalRef: null,
           targetType: 'wallet_refund',
           targetId: null,
@@ -268,7 +297,7 @@ export class OrderEventsConsumer {
           occurredAt: new Date(payload.createdAt),
         });
 
-        this.logger.log(`[OrderRefundCreated] Linked refund ${payload.refundId} to sales order ${payload.orderId}`);
+        this.logger.log(`[OrderRefundCreated] Linked refund ${payload.refundId} to sales order ${salesOrderId}`);
       });
     } catch (error) {
       this.logger.error(`[OrderRefundCreated] Failed to process: ${payload.orderId}`, error.stack);

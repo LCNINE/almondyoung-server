@@ -640,6 +640,56 @@ describe('OrderPollerOrchestrator', () => {
     expect(cancellations).toHaveLength(1);
   });
 
+  // #656: `payload.orderId` 는 여기서 만든 id 라 core 의 `sales_orders.id` 가 아니다. core 가 SO 를
+  // 찾을 수 있게 `OrderCreated` 와 같은 채널 키를 lifecycle 이벤트에도 실어야 한다.
+  it('carries the channel key on lifecycle events so Core can resolve the sales order', async () => {
+    const db = makeDb();
+    db.mappings.set('medusa:medusa_order_1', {
+      salesChannel: 'medusa',
+      channelOrderId: 'medusa_order_1',
+      wmsOrderId: '11111111-1111-4111-8111-111111111111',
+    });
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [],
+        lifecycleEvents: [
+          makeLifecycleEvent('OrderCancelled', 'cancelled', '2026-05-26T01:00:00.000Z'),
+          makeLifecycleEvent('OrderRefundCreated', 'refund:ref_1', '2026-05-26T01:05:00.000Z'),
+        ],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    for (const eventType of ['OrderCancelled', 'OrderRefundCreated']) {
+      expect(outbox.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType,
+          payload: expect.objectContaining({
+            salesChannel: 'medusa',
+            externalOrderId: 'medusa_order_1',
+          }),
+        }),
+        expect.anything(),
+      );
+    }
+  });
+
   // #599: 변경 격리 경로도 해시 확인이 트랜잭션 밖이라 같은 레이스를 갖는다.
   it('quarantines a collected-order modification once when two concurrent polls observe the same stale hash', async () => {
     const db = makeDb();
@@ -965,7 +1015,7 @@ describe('OrderPollerOrchestrator', () => {
   it('closes the quarantine as already-collected when replaying a failure whose order is already in Core', async () => {
     const db = makeDb({ collected: ['medusa_order_1'] });
     const provider = {
-      channel: 'medusa',
+      channel: 'medusa' as const,
       fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
       fetchOrder: jest.fn().mockResolvedValue({
         kind: 'failure',
@@ -1009,7 +1059,7 @@ describe('OrderPollerOrchestrator', () => {
   it('closes the quarantine as terminal when a replayed snapshot is no longer eligible for collection', async () => {
     const db = makeDb();
     const provider = {
-      channel: 'medusa',
+      channel: 'medusa' as const,
       fetchOrders: jest.fn(),
       fetchOrder: jest.fn().mockResolvedValue({
         kind: 'order',
