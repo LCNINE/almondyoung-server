@@ -429,20 +429,22 @@ export class OrderPollerOrchestrator {
     // 이미 Core로 넘긴 Medusa 주문 변경은 자동 반영하지 않는다.
     // 무의미한 updated_at bump는 hash로 거르고, 실제 변경은 운영 예외로 격리한다.
     const newHash = this.pollingHashService.computeHash(item.changes);
-    const storedHash = await this.pollingHashService.getStoredHash(
-      provider.channel,
-      POLLING_RESOURCE_TYPE_ORDER,
-      item.externalOrderId,
-    );
-    if (storedHash === newHash) {
-      return {
-        emitted: 0,
-        dedupedUnchanged: 1,
-        wmsOrderId: mapping[0].wmsOrderId,
-      };
-    }
 
-    await this.db.db.transaction(async (tx) => {
+    // lifecycle 경로와 같은 이유로 확인과 기록이 한 트랜잭션·한 문장이다 (#599).
+    const claimed = await this.db.db.transaction(async (tx) => {
+      // 격리 저장보다 **먼저** 선점한다. 같은 트랜잭션이므로 격리가 실패하면 선점도 함께
+      // 롤백되고, 다음 폴링이 다시 시도한다 — 옛 코드의 "성공 후에만 갱신" 성질이 그대로다.
+      const won = await this.pollingHashService.claimChanged(
+        provider.channel,
+        POLLING_RESOURCE_TYPE_ORDER,
+        item.externalOrderId,
+        newHash,
+        tx,
+      );
+      if (!won) {
+        return false;
+      }
+
       await this.orderCollectionFailureService.recordFailure(
         provider.channel,
         {
@@ -461,19 +463,13 @@ export class OrderPollerOrchestrator {
         tx,
       );
 
-      // 격리 저장 성공 후에만 갱신 — 도중 실패 시 다음 폴링에서 재시도되도록
-      await this.pollingHashService.upsert(
-        provider.channel,
-        POLLING_RESOURCE_TYPE_ORDER,
-        item.externalOrderId,
-        newHash,
-        tx,
-      );
+      // 해시 기록은 `claimChanged` 가 이미 같은 트랜잭션에서 끝냈다.
+      return true;
     });
 
     return {
       emitted: 0,
-      dedupedUnchanged: 0,
+      dedupedUnchanged: claimed ? 0 : 1,
       wmsOrderId: mapping[0].wmsOrderId,
     };
   }
@@ -513,24 +509,22 @@ export class OrderPollerOrchestrator {
       payload,
       rawEvent: item.rawEvent,
     });
-    const storedHash = await this.pollingHashService.getStoredHash(
-      provider.channel,
-      POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE,
-      lifecycleResourceId,
-    );
-
-    if (storedHash === newHash) {
-      return {
-        emitted: 0,
-        dedupedUnchanged: 1,
-        recorded: true,
-        wmsOrderId: mapping[0].wmsOrderId,
-      };
-    }
-
     const wmsOrderId = mapping[0].wmsOrderId;
 
-    await this.db.db.transaction(async (tx) => {
+    // 해시 확인이 **트랜잭션 안**이고, 검사와 기록이 한 문장이다 (#599). 밖에서 읽고 안에서
+    // 쓰면 겹쳐 도는 두 폴이 같은 옛 해시를 보고 둘 다 발행한다 — 라이브에서 실제로 발생했다.
+    const claimed = await this.db.db.transaction(async (tx) => {
+      const won = await this.pollingHashService.claimChanged(
+        provider.channel,
+        POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE,
+        lifecycleResourceId,
+        newHash,
+        tx,
+      );
+      if (!won) {
+        return false;
+      }
+
       // 이벤트 키마다 payload 타입이 다르므로 **분기해서** 적재한다. `OrderLifecycleEventItem`
       // 이 판별 유니온이라 각 가지에서 `item.payload` 가 알아서 좁혀진다 — 캐스팅이 없다.
       // metadata 를 `{ partitionKey }` 로 두는 근거는 `enqueueOrderCreated` 와 같다.
@@ -548,20 +542,24 @@ export class OrderPollerOrchestrator {
         await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
       }
 
-      await this.pollingHashService.upsert(
-        provider.channel,
-        POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE,
-        lifecycleResourceId,
-        newHash,
-        tx,
-      );
+      // 해시 기록은 `claimChanged` 가 이미 같은 트랜잭션에서 끝냈다 — 여기서 또 쓰지 않는다.
+      return true;
     });
+
+    if (!claimed) {
+      return {
+        emitted: 0,
+        dedupedUnchanged: 1,
+        recorded: true,
+        wmsOrderId,
+      };
+    }
 
     return {
       emitted: 1,
       dedupedUnchanged: 0,
       recorded: true,
-      wmsOrderId: mapping[0].wmsOrderId,
+      wmsOrderId,
     };
   }
 
