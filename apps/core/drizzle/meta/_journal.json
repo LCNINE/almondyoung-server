@@ -526,6 +526,13 @@
       "when": 1786911037402,
       "tag": "20260816201037_align-sales-channel-site-vocabulary",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1786945622779,
+      "tag": "20260817054702_drop-channel-products",
+      "breakpoints": true
     }
   ]
 }
