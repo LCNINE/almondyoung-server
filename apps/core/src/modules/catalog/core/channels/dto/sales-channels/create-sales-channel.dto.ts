@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum, IsBoolean, IsUrl, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { SALES_CHANNELS, SalesChannel } from '@packages/event-contracts/streams';
 
 export class CreateSalesChannelDto {
   @ApiProperty({
@@ -13,11 +14,11 @@ export class CreateSalesChannelDto {
   type?: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
 
   @ApiProperty({
-    description: '판매처 사이트 (필수)',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
+    description: '판매처 사이트 (필수). 어휘 정본은 `SalesChannel` 이다 (ADR-0031 결정 7)',
+    enum: SALES_CHANNELS,
   })
-  @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
-  site: string;
+  @IsEnum(SALES_CHANNELS)
+  site: SalesChannel;
 
   @ApiProperty({ description: '판매처 분류 ID', required: false })
   @IsOptional()

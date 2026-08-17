@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsBoolean, IsUrl, IsEnum, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { SALES_CHANNELS, SalesChannel } from '@packages/event-contracts/streams';
 
 export class UpdateSalesChannelDto {
   @ApiProperty({
@@ -12,13 +13,13 @@ export class UpdateSalesChannelDto {
   type?: 'ONLINE' | 'OFFLINE' | 'MARKETPLACE' | 'MOBILE_APP' | 'SOCIAL_COMMERCE';
 
   @ApiProperty({
-    description: '판매처 사이트',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
+    description: '판매처 사이트. 어휘 정본은 `SalesChannel` 이다 (ADR-0031 결정 7)',
+    enum: SALES_CHANNELS,
     required: false,
   })
   @IsOptional()
-  @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
-  site?: string;
+  @IsEnum(SALES_CHANNELS)
+  site?: SalesChannel;
 
   @ApiProperty({ description: '판매처 분류 ID', required: false })
   @IsOptional()
@@ -69,11 +70,11 @@ export class SetChannelActiveDto {
 
 export class ValidateChannelConfigDto {
   @ApiProperty({
-    description: '채널 사이트 종류',
-    enum: ['medusa', 'naver', 'coupang', 'phone_order', 'other'],
+    description: '채널 사이트 종류. 어휘 정본은 `SalesChannel` 이다 (ADR-0031 결정 7)',
+    enum: SALES_CHANNELS,
   })
-  @IsEnum(['medusa', 'naver', 'coupang', 'phone_order', 'other'])
-  site: 'medusa' | 'naver' | 'coupang' | 'phone_order' | 'other';
+  @IsEnum(SALES_CHANNELS)
+  site: SalesChannel;
 
   @ApiProperty({ description: '검증할 채널 설정 데이터', required: false })
   @IsOptional()
