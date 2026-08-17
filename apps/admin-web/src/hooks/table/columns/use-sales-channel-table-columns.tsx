@@ -3,7 +3,7 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import type { ChannelDto } from '@/lib/types/dto/products';
-import { SalesChannelMark, type SalesChannelType } from '@/components/common/sales-channel-mark';
+import { siteLabel } from '@/lib/api/domains/sales-channel/vocabulary';
 import { Button } from '@/components/ui/button';
 
 const columnHelper = createColumnHelper<ChannelDto>();
@@ -11,56 +11,28 @@ const columnHelper = createColumnHelper<ChannelDto>();
 type UseSalesChannelTableColumnsProps = {
   onEdit: (channel: ChannelDto) => void;
   onDelete: (channel: ChannelDto) => void;
-  onApiKeyEdit: (channel: ChannelDto) => void;
 };
 
 export function useSalesChannelTableColumns({
   onEdit,
   onDelete,
-  onApiKeyEdit,
 }: UseSalesChannelTableColumnsProps) {
   return useMemo(
     () => [
-      columnHelper.accessor('type', {
-        header: '채널 타입',
+      columnHelper.accessor('site', {
+        header: '판매처',
         cell: ({ getValue }) => (
-          <SalesChannelMark channel={getValue() as SalesChannelType} size="sm" />
+          <span className="text-sm font-medium">{siteLabel(getValue())}</span>
+        ),
+      }),
+      columnHelper.accessor('type', {
+        header: '채널 형태',
+        cell: ({ getValue }) => (
+          <span className="text-sm text-gray-600">{getValue() || '-'}</span>
         ),
       }),
       columnHelper.accessor('name', {
         header: '판매처명',
-      }),
-      columnHelper.display({
-        id: 'loginId',
-        header: '로그인 아이디 (shop ID)',
-        cell: ({ row }) => {
-          const cfg = (row.original.config ?? {}) as Record<string, unknown>;
-          return <span className="text-sm">{(cfg.loginId as string) || '-'}</span>;
-        },
-      }),
-      columnHelper.display({
-        id: 'password',
-        header: '비밀번호 / OTP',
-        cell: ({ row }) => {
-          const cfg = (row.original.config ?? {}) as Record<string, unknown>;
-          const pw = Boolean(cfg.password) ? '••••••••' : '-';
-          const otp = Boolean(cfg.hasOtp) ? ' / OTP' : '';
-          return <span className="text-sm">{`${pw}${otp}`}</span>;
-        },
-      }),
-      columnHelper.display({
-        id: 'apiKey',
-        header: 'API 인증키',
-        cell: ({ row }) => (
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-orange-300 text-orange-600 hover:bg-orange-50"
-            onClick={() => onApiKeyEdit(row.original)}
-          >
-            API 인증키 수정
-          </Button>
-        ),
       }),
       columnHelper.display({
         id: 'actions',
@@ -87,6 +59,6 @@ export function useSalesChannelTableColumns({
         ),
       }),
     ],
-    [onEdit, onDelete, onApiKeyEdit]
+    [onEdit, onDelete]
   );
 }

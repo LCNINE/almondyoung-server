@@ -40,7 +40,6 @@ export class SalesChannelsService {
         config: data.config || null,
         isActive: data.isActive !== false,
         apiEndpoint: data.apiEndpoint || null,
-        credentials: data.credentials || null,
       };
 
       const result = await tx.insert(salesChannels).values(channelData).returning();
@@ -89,6 +88,7 @@ export class SalesChannelsService {
     filters?: {
       isActive?: boolean;
       type?: string;
+      site?: string;
       search?: string;
       page?: number;
       limit?: number;
@@ -111,6 +111,9 @@ export class SalesChannelsService {
       }
       if (filters?.type) {
         whereConditions.push(eq(salesChannels.type, filters.type));
+      }
+      if (filters?.site) {
+        whereConditions.push(eq(salesChannels.site, filters.site));
       }
       if (filters?.search) {
         whereConditions.push(ilike(salesChannels.name, `%${filters.search}%`));
@@ -244,51 +247,6 @@ export class SalesChannelsService {
     }, tx);
   }
 
-  //   async getChannelByType(type: string, tx?: DbTransaction): Promise<SalesChannelWithCategory | null> {
-  //     if (!type) {
-  //       throw new Error('Channel type is required');
-  //     }
-
-  //     const client = this.getClient(tx);
-
-  //     const result = await client
-  //       .select({
-  //         id: salesChannels.id,
-  //         type: salesChannels.type,
-  //         site: salesChannels.site,
-  //         categoryId: salesChannels.categoryId,
-  //         name: salesChannels.name,
-  //         description: salesChannels.description,
-  //         config: salesChannels.config,
-  //         isActive: salesChannels.isActive,
-  //         apiEndpoint: salesChannels.apiEndpoint,
-  //         credentials: salesChannels.credentials,
-  //         createdAt: salesChannels.createdAt,
-  //         updatedAt: salesChannels.updatedAt,
-  //         category: {
-  //           id: channelCategories.id,
-  //           name: channelCategories.name,
-  //           description: channelCategories.description,
-  //           displayOrder: channelCategories.displayOrder,
-  //           createdAt: channelCategories.createdAt,
-  //           updatedAt: channelCategories.updatedAt,
-  //         },
-  //       })
-  //       .from(salesChannels)
-  //       .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
-  //       .where(eq(salesChannels.type, type));
-
-  //     if (result.length === 0) {
-  //       return null;
-  //     }
-
-  //     const channel = result[0];
-  //     return {
-  //       ...channel,
-  //       category: channel.category ? channel.category.id : null,
-  //     };
-  //   }
-
   async validateChannelConfig(
     site: string,
     config: any,
@@ -309,18 +267,6 @@ export class SalesChannelsService {
       case 'medusa':
         if (config && !config.baseUrl) {
           errors.push('Medusa channel requires baseUrl in config');
-        }
-        break;
-
-      case 'coupang':
-        if (config && (!config.accessKey || !config.secretKey)) {
-          errors.push('Coupang channel requires accessKey and secretKey in config');
-        }
-        break;
-
-      case 'naver':
-        if (config && (!config.clientId || !config.clientSecret)) {
-          errors.push('SmartStore channel requires clientId and clientSecret in config');
         }
         break;
 

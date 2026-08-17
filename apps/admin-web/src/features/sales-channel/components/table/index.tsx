@@ -1,20 +1,15 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import {
-  useChannels,
-  useDeleteChannel,
-  useSalesChannelSites,
-} from '@/lib/api/domains/sales-channel';
+import { useChannels, useDeleteChannel } from '@/lib/api/domains/sales-channel';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useSalesChannelTableColumns } from '@/hooks/table/columns/use-sales-channel-table-columns';
 import { useSalesChannelTableQuery } from '@/hooks/table/query/use-sales-channel-table-query';
 import { DataTable } from '@/components/data-table';
 import type { ChannelDto } from '@/lib/types/dto/products';
 import { SalesChannelFilters } from '../filter-box';
-import { ApiKeyDialog } from '../api-key-dialog';
 
 const PAGE_SIZE = 20;
 
@@ -23,8 +18,6 @@ type SalesChannelTableProps = {
 };
 
 export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
-  const [apiKeyTarget, setApiKeyTarget] = useState<ChannelDto | null>(null);
-
   const router = useRouter();
   const pathname = usePathname();
   const rawSearchParams = useSearchParams();
@@ -38,8 +31,6 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     isFetching,
     error,
   } = useChannels(query);
-  const { data: sites = [], isLoading: sitesLoading } =
-    useSalesChannelSites('all');
   const deleteChannel = useDeleteChannel();
 
   const channels = channelsResponse?.data ?? [];
@@ -78,7 +69,6 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     onDelete: (channel) => {
       void handleDelete(channel);
     },
-    onApiKeyEdit: setApiKeyTarget,
   });
 
   const { table } = useDataTable({
@@ -93,15 +83,14 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     <div>
       <div className="border-b p-4">
         <SalesChannelFilters
-          sites={sites}
-          filters={{ type: raw.type, search: raw.search }}
+          filters={{ site: raw.site, search: raw.search }}
           onFilterChange={handleFilterChange}
         />
       </div>
 
       <DataTable
         table={table}
-        isLoading={isLoading || sitesLoading}
+        isLoading={isLoading}
         isFetching={isFetching}
         count={channelsResponse?.total ?? 0}
         pageSize={PAGE_SIZE}
@@ -113,13 +102,6 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
           데이터를 불러오는데 실패했습니다. 다시 시도해주세요.
         </p>
       )}
-
-      <ApiKeyDialog
-        open={!!apiKeyTarget}
-        onOpenChange={(o) => !o && setApiKeyTarget(null)}
-        channel={apiKeyTarget}
-        onSuccess={() => toast.success('API 키가 수정되었습니다.')}
-      />
     </div>
   );
 }

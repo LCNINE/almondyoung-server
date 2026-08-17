@@ -30,10 +30,12 @@ describe('SalesChannelsService.validateChannelConfig', () => {
     expect(result.isValid).toBe(false);
   });
 
-  // 어휘 정렬이 채널별 config 요구사항 검사를 덮어쓰지 않았는지 확인한다.
-  it('naver 는 clientId/clientSecret 을 요구한다', async () => {
-    const result = await service.validateChannelConfig('naver', { clientId: 'x' });
-    expect(result.isValid).toBe(false);
-    expect(result.errors).toContainEqual(expect.stringContaining('clientId'));
+  // #650: 채널 인증의 정본은 SST Secret / env 다. `config` 에 키를 넣어도 아무도 안 읽으므로
+  // "넣으라"는 신호를 주는 검사 자체를 걷어냈다. 검사가 되살아나면 이 스펙이 잡는다.
+  it.each(['naver', 'coupang'])('%s 의 config 에서 인증 키를 요구하지 않는다', async (site) => {
+    const result = await service.validateChannelConfig(site, {});
+
+    expect(result.isValid).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 });
