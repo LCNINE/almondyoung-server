@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -20,20 +20,18 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
+import { useCreateChannel, useUpdateChannel } from '@/lib/api/domains/sales-channel';
 import {
-  useSalesChannelSites,
-  useCreateChannel,
-  useUpdateChannel,
-} from '@/lib/api/domains/sales-channel';
+  SALES_CHANNEL_SITE_OPTIONS,
+  CHANNEL_TYPE_OPTIONS,
+  siteLabel,
+} from '@/lib/api/domains/sales-channel/vocabulary';
+import {
+  buildCreatePayload,
+  buildUpdatePayload,
+  type SalesChannelFormState,
+} from '../../form-payload';
 import type { ChannelDto as SalesChannel } from '@/lib/types/dto/products';
-
-type UiSite = {
-  id: string;
-  type: string;
-  name: string;
-  icon?: string;
-  isActive?: boolean;
-};
 
 interface SalesChannelFormProps {
   open: boolean;
@@ -49,7 +47,8 @@ export function SalesChannelForm({
   editingChannel,
 }: SalesChannelFormProps) {
   const [addressSearchOpen, setAddressSearchOpen] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SalesChannelFormState>({
+    site: '',
     type: '',
     name: '',
     // 부가(모두 apiConfig로 감쌈)
@@ -66,24 +65,17 @@ export function SalesChannelForm({
     isActive: true,
   });
 
-  // 채널 타입 목록(프런트 전용)
-  const { data: sites = [], isLoading: sitesLoading } =
-    useSalesChannelSites('all');
-
   // 뮤테이션
   const createChannel = useCreateChannel();
   const updateChannel = useUpdateChannel();
 
-  const selectedType = useMemo(
-    () => formData.type || (editingChannel?.type ?? ''),
-    [formData.type, editingChannel]
-  );
-  const isSmartstore = selectedType === 'naver_smartstore';
-  const isCoupang = selectedType === 'coupang';
+  const isNaver = formData.site === 'naver';
+  const isCoupang = formData.site === 'coupang';
 
   // 폼 초기화
   const resetForm = () => {
     setFormData({
+      site: '',
       type: '',
       name: '',
       memo: '',
@@ -103,6 +95,7 @@ export function SalesChannelForm({
     if (editingChannel) {
       const cfg = (editingChannel.config || {}) as Record<string, unknown>;
       setFormData({
+        site: editingChannel.site || '',
         type: editingChannel.type || '',
         name: editingChannel.name || '',
         memo: (cfg.memo as string) || '',
@@ -144,56 +137,16 @@ export function SalesChannelForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const type = selectedType;
-    if (!type || !formData.name) return;
-
-    const shipper:
-      | {
-          name: string;
-          phone: string;
-          zipcode: string;
-          address: string;
-        }
-      | undefined =
-      formData.shipperName ||
-      formData.shipperPhone ||
-      formData.shipperZip ||
-      formData.shipperAddress
-        ? {
-            name: formData.shipperName,
-            phone: formData.shipperPhone,
-            zipcode: formData.shipperZip,
-            address: formData.shipperAddress,
-          }
-        : undefined;
-
-    const apiConfig = {
-      memo: formData.memo || undefined,
-      feeRate: formData.feeRate ? Number(formData.feeRate) : undefined,
-      smartstoreUrl: isSmartstore
-        ? formData.smartstoreUrl || undefined
-        : undefined,
-      companyCode: isCoupang ? formData.companyCode || undefined : undefined,
-      shipper,
-    };
-
     try {
       if (editingChannel) {
         await updateChannel.mutateAsync({
           id: editingChannel.id,
-          data: {
-            type,
-            name: formData.name,
-            isActive: formData.isActive,
-            config: apiConfig,
-          },
+          data: buildUpdatePayload(formData),
         });
       } else {
-        await createChannel.mutateAsync({
-          type,
-          name: formData.name,
-          config: apiConfig,
-        });
+        const payload = buildCreatePayload(formData);
+        if (!payload) return;
+        await createChannel.mutateAsync(payload);
       }
       onSuccess();
     } catch {
@@ -201,8 +154,7 @@ export function SalesChannelForm({
     }
   };
 
-  const isLoading =
-    sitesLoading || createChannel.isPending || updateChannel.isPending;
+  const isLoading = createChannel.isPending || updateChannel.isPending;
 
   return (
     <>
@@ -250,25 +202,56 @@ export function SalesChannelForm({
                   />
                 </div>
 
-                {/* 채널 타입 선택 */}
+                {/* 채널 정체 — sales_channels.site. 만든 뒤에는 바꿀 수 없다. */}
                 <div className="flex items-center gap-4">
                   <Label className="text-gray-900 min-w-[100px] flex items-center gap-1">
                     <span className="text-red-500">■</span>
-                    채널 타입
+                    판매처
                   </Label>
+                  {editingChannel ? (
+                    <div className="flex-1 text-sm text-gray-700">
+                      {siteLabel(formData.site)}
+                      <span className="ml-2 text-xs text-gray-500">
+                        (등록 후에는 변경할 수 없습니다)
+                      </span>
+                    </div>
+                  ) : (
+                    <Select
+                      value={formData.site}
+                      onValueChange={(v) =>
+                        setFormData((p) => ({ ...p, site: v }))
+                      }
+                    >
+                      <SelectTrigger className="flex-1 bg-white border-gray-300">
+                        <SelectValue placeholder="판매처를 선택하세요" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white">
+                        {SALES_CHANNEL_SITE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+
+                {/* 채널 형태 — sales_channels.type */}
+                <div className="flex items-center gap-4">
+                  <Label className="text-gray-900 min-w-[100px]">채널 형태</Label>
                   <Select
-                    value={selectedType}
+                    value={formData.type}
                     onValueChange={(v) =>
                       setFormData((p) => ({ ...p, type: v }))
                     }
                   >
                     <SelectTrigger className="flex-1 bg-white border-gray-300">
-                      <SelectValue placeholder="채널 타입을 선택하세요" />
+                      <SelectValue placeholder="온라인" />
                     </SelectTrigger>
                     <SelectContent className="bg-white">
-                      {(sites as UiSite[]).map((s) => (
-                        <SelectItem key={s.type} value={s.type}>
-                          {s.name}
+                      {CHANNEL_TYPE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -289,14 +272,14 @@ export function SalesChannelForm({
             </div>
 
             {/* 사이트별 추가(타입별 추가) */}
-            {(isSmartstore || isCoupang) && (
+            {(isNaver || isCoupang) && (
               <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
                 <h3 className="text-lg font-medium text-gray-900">
                   타입별 추가 정보
                 </h3>
 
                 <div className="grid grid-cols-1 gap-4">
-                  {isSmartstore && (
+                  {isNaver && (
                     <div className="flex items-center gap-4">
                       <Label className="text-gray-900 min-w-[100px]">
                         스마트스토어 URL
@@ -446,7 +429,7 @@ export function SalesChannelForm({
               </Button>
               <Button
                 type="submit"
-                disabled={isLoading || !selectedType || !formData.name}
+                disabled={isLoading || (!editingChannel && !formData.site) || !formData.name}
               >
                 {isLoading ? '처리 중...' : editingChannel ? '수정' : '등록'}
               </Button>

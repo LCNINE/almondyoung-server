@@ -2,6 +2,7 @@
 // PIM API 스펙 기반 상품 관련 DTO 타입 정의
 
 import type { UUID } from './common';
+import type { SalesChannelSite, ChannelFormType } from '@/lib/api/domains/sales-channel/vocabulary';
 
 // ===== 공통 타입 =====
 export type ProductStatus = 'active' | 'inactive' | 'draft' | 'archived';
@@ -334,7 +335,10 @@ export interface VariantPriceDto {
 // ===== 판매 채널 관련 =====
 
 export interface CreateChannelDto {
-  type: ChannelType;
+  /** 채널 정체. `sales_channels.site` — 어휘 정본은 서버의 `SALES_CHANNELS` 다 */
+  site: SalesChannelSite;
+  /** 채널 형태. `sales_channels.type` — 생략하면 서버가 'ONLINE' 을 넣는다 */
+  type?: ChannelFormType;
   name: string;
   description?: string;
   config?: Record<string, any>;
@@ -342,7 +346,8 @@ export interface CreateChannelDto {
 }
 
 export interface UpdateChannelDto {
-  type?: ChannelType;
+  site?: SalesChannelSite;
+  type?: ChannelFormType;
   name?: string;
   description?: string;
   config?: Record<string, any>;
@@ -352,6 +357,7 @@ export interface UpdateChannelDto {
 export interface ChannelDto {
   id: string;
   type: ChannelType;
+  site: string;
   name: string;
   description?: string;
   config?: Record<string, any>;
