@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
@@ -88,7 +88,7 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
     }),
     HttpModule,
-    ScheduleModule.forRoot(),
+    SCHEDULE_ROOT,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || '',

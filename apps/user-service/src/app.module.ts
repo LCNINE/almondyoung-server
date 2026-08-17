@@ -7,7 +7,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { ScheduleModule } from '@nestjs/schedule';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { config } from 'dotenv';
 import { existsSync } from 'fs';
@@ -120,7 +120,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       },
     }),
 
-    ScheduleModule.forRoot(),
+    SCHEDULE_ROOT,
     AuthorizationModule.forRoot({
       microserviceName: 'user-service',
       scopes: [
