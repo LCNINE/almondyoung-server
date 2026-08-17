@@ -98,17 +98,18 @@ develop `21da4557a` 까지 머지·푸시·배포·**라이브 검증 완료**. 
 
 ## 7. 미해결 질문
 
-- **`collected_order_modification_not_accepted` 1,514건의 정체.** 행 하나 = 주문 하나다
-  (`onConflictDoUpdate` on `(channel, externalOrderId, reason)`). 수집된 2,568건의 약 59%다.
-  08-14 이후 끊겼다. **가설: 해시 입력 모양이 바뀐 배포에 의한 일회성 버스트**(예: `OrderItem` 에
-  `fulfillmentKind`/`requiresShipping` 추가). 확인 쿼리:
-  ```sql
-  SELECT date_trunc('day', created_at) AS d, reason, count(*)
-  FROM order_collection_failures GROUP BY 1,2 ORDER BY 1 DESC LIMIT 20;
-  ```
-  특정 하루에 몰려 있으면 버스트, 매일 조금씩이면 진짜 CS 변경이다.
-- **`channel_product_identification_failed` 117건의 처리 여부.** 이 사유는 **Core 판매주문이
-  아예 안 만들어진 것**이라 실무적으로 더 급하다. 이미 수동 처리됐는지 확인 필요.
+> **✅ 아래 두 질문(1,514건 / 117건)은 2026-08-17 에 해소됐다.** 근거는
+> `2026-08-17-order-collection-false-quarantine-analysis.md`, 조치 항목은 **#647**.
+> 아래 서술은 당시 가설이며 **둘 다 실측으로 기각됐다** — 남겨두는 것은 기록 목적이다.
+
+- ~~**`collected_order_modification_not_accepted` 1,514건의 정체.**~~ **기각.** 일회성 버스트가
+  아니라 07-09~08-14 두 달에 걸친 상시 발생이었다(스파이크 다수: 08-05 283, 08-11 225).
+  100% 가 core mapping 을 갖는 것은 이 사유에선 **정상**이다. 08-14 이후 끊긴 이유는 미규명.
+- ~~**`channel_product_identification_failed` 117건의 처리 여부.**~~ **기각. 주문 유실 0건.**
+  117건 **전부** 격리보다 먼저(중앙값 23일 전) 이미 Core 판매주문이 만들어져 있었다. "Core
+  판매주문이 아예 안 만들어진 것"이라는 위 서술은 격리 *시점*에는 맞지만, 그 주문들은 이미
+  수집된 뒤 재폴링에서 **가짜로 격리된 것**이다. 원인은 검사 순서 — 식별 게이트가 dedup 앞에
+  있다 (#647).
 - **조회 표면의 최종 처분.** `/adapter/:channel/query/*` 를 남겼다(부작용 없음 + 개통 전 유용).
   네이버가 붙은 뒤에도 필요한지 재검토.
 - **`3pl` 채널 실사용 0건.** admin-web 이 `phone_order → 3pl` 매핑을 갖고 있는데 주문이 없다.
