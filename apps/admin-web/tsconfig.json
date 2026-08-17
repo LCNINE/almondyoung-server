@@ -23,7 +23,9 @@
       "@packages/web-observability": ["../../packages/web-observability"],
       "@packages/web-observability/*": ["../../packages/web-observability/*"],
       "@packages/product-description": ["../../packages/product-description"],
-      "@packages/product-description/*": ["../../packages/product-description/*"]
+      "@packages/product-description/*": ["../../packages/product-description/*"],
+      "@packages/event-contracts": ["../../packages/event-contracts"],
+      "@packages/event-contracts/*": ["../../packages/event-contracts/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
