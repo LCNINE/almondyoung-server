@@ -11,30 +11,21 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Search } from 'lucide-react';
+import { SALES_CHANNEL_SITE_OPTIONS } from '@/lib/api/domains/sales-channel/vocabulary';
 
-type UiSite = {
-  id: string;
-  type: string;
-  name: string;
-  icon?: string;
-  isActive?: boolean;
-};
-
-type FilterState = { type?: string; search?: string };
+type FilterState = { site?: string; search?: string };
 
 interface SalesChannelFiltersProps {
-  sites: UiSite[];
   filters: FilterState;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
 }
 
 export function SalesChannelFilters({
-  sites,
   filters,
   onFilterChange,
 }: SalesChannelFiltersProps) {
-  const handleTypeChange = (value: string) => {
-    onFilterChange({ type: value === 'all' ? undefined : value });
+  const handleSiteChange = (value: string) => {
+    onFilterChange({ site: value === 'all' ? undefined : value });
   };
 
   const handleSearchChange = (value: string) => {
@@ -42,23 +33,23 @@ export function SalesChannelFilters({
   };
 
   const clearFilters = () => {
-    onFilterChange({ type: undefined, search: undefined });
+    onFilterChange({ site: undefined, search: undefined });
   };
 
   return (
     <div className="flex flex-wrap items-center gap-4">
-      {/* 채널 타입 필터 */}
+      {/* 판매처 필터 */}
       <div className="flex items-center space-x-2">
-        <label className="text-sm font-medium text-gray-700">채널 타입:</label>
-        <Select value={filters.type || 'all'} onValueChange={handleTypeChange}>
+        <label className="text-sm font-medium text-gray-700">판매처:</label>
+        <Select value={filters.site || 'all'} onValueChange={handleSiteChange}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="전체" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">전체</SelectItem>
-            {sites.map((site) => (
-              <SelectItem key={site.type} value={site.type}>
-                {site.name}
+            {SALES_CHANNEL_SITE_OPTIONS.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
               </SelectItem>
             ))}
           </SelectContent>

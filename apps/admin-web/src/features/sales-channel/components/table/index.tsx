@@ -3,11 +3,7 @@
 import { useCallback } from 'react';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import {
-  useChannels,
-  useDeleteChannel,
-  useSalesChannelSites,
-} from '@/lib/api/domains/sales-channel';
+import { useChannels, useDeleteChannel } from '@/lib/api/domains/sales-channel';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useSalesChannelTableColumns } from '@/hooks/table/columns/use-sales-channel-table-columns';
 import { useSalesChannelTableQuery } from '@/hooks/table/query/use-sales-channel-table-query';
@@ -35,8 +31,6 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     isFetching,
     error,
   } = useChannels(query);
-  const { data: sites = [], isLoading: sitesLoading } =
-    useSalesChannelSites('all');
   const deleteChannel = useDeleteChannel();
 
   const channels = channelsResponse?.data ?? [];
@@ -89,15 +83,14 @@ export function SalesChannelTable({ onEdit }: SalesChannelTableProps) {
     <div>
       <div className="border-b p-4">
         <SalesChannelFilters
-          sites={sites}
-          filters={{ type: raw.type, search: raw.search }}
+          filters={{ site: raw.site, search: raw.search }}
           onFilterChange={handleFilterChange}
         />
       </div>
 
       <DataTable
         table={table}
-        isLoading={isLoading || sitesLoading}
+        isLoading={isLoading}
         isFetching={isFetching}
         count={channelsResponse?.total ?? 0}
         pageSize={PAGE_SIZE}

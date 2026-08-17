@@ -371,6 +371,7 @@ export interface ChannelsQuery {
   page?: number;
   search?: string;
   type?: ChannelType;
+  site?: string;
   isActive?: boolean;
 }
 

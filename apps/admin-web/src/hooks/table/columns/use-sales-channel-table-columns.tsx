@@ -3,7 +3,7 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import type { ChannelDto } from '@/lib/types/dto/products';
-import { SalesChannelMark, type SalesChannelType } from '@/components/common/sales-channel-mark';
+import { siteLabel } from '@/lib/api/domains/sales-channel/vocabulary';
 import { Button } from '@/components/ui/button';
 
 const columnHelper = createColumnHelper<ChannelDto>();
@@ -19,10 +19,16 @@ export function useSalesChannelTableColumns({
 }: UseSalesChannelTableColumnsProps) {
   return useMemo(
     () => [
-      columnHelper.accessor('type', {
-        header: '채널 타입',
+      columnHelper.accessor('site', {
+        header: '판매처',
         cell: ({ getValue }) => (
-          <SalesChannelMark channel={getValue() as SalesChannelType} size="sm" />
+          <span className="text-sm font-medium">{siteLabel(getValue() as string)}</span>
+        ),
+      }),
+      columnHelper.accessor('type', {
+        header: '채널 형태',
+        cell: ({ getValue }) => (
+          <span className="text-sm text-gray-600">{(getValue() as string) || '-'}</span>
         ),
       }),
       columnHelper.accessor('name', {

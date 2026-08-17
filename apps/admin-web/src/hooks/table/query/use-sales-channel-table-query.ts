@@ -8,14 +8,14 @@ type UseSalesChannelTableQueryProps = {
 export const useSalesChannelTableQuery = ({
   pageSize = 20,
 }: UseSalesChannelTableQueryProps = {}) => {
-  const queryObject = useQueryParams(['page', 'type', 'search']);
+  const queryObject = useQueryParams(['page', 'site', 'search']);
 
-  const { page, type, search } = queryObject;
+  const { page, site, search } = queryObject;
 
   const searchParams: ChannelsQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
-    type: type || undefined,
+    site: site || undefined,
     search: search || undefined,
   };
 
