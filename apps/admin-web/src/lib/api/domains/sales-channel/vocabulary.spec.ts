@@ -35,7 +35,13 @@ describe('판매채널 site 어휘', () => {
     expect(siteLabel('unknown_site')).toBe('unknown_site');
   });
 
-  it('채널 형태 어휘는 서버 DTO 의 @IsEnum 배열과 같다', () => {
+  // `type` 축은 site 축과 달리 자동 가드가 없다 — 서버가 이 어휘를 세 DTO 파일에
+  // `@IsEnum(['ONLINE', 'OFFLINE', 'MARKETPLACE', 'MOBILE_APP', 'SOCIAL_COMMERCE'])` 리터럴로만
+  // 갖고 있고 (create-sales-channel.dto.ts:13, update-sales-channel.dto.ts:12,
+  // sales-channel-response.dto.ts:11), import 할 공유 정본이 없기 때문이다. 아래는 그저
+  // 이 프런트 목록을 손으로 고정한 스냅샷이다 — 실수로 로컬에서 값이 바뀌는 것만 잡는다.
+  // 서버 쪽 목록이 바뀌면 이 파일도 사람이 손으로 맞춰야 한다.
+  it('채널 형태 어휘가 이 목록에서 벗어나지 않는다', () => {
     expect(CHANNEL_TYPE_OPTIONS.map((o) => o.value)).toEqual([
       'ONLINE',
       'OFFLINE',

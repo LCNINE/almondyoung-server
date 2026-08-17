@@ -21,12 +21,20 @@ export const SALES_CHANNEL_SITE_LABELS: Record<SalesChannelSite, string> = {
 export const SALES_CHANNEL_SITE_OPTIONS: ReadonlyArray<{
   value: SalesChannelSite;
   label: string;
-}> = (Object.keys(SALES_CHANNEL_SITE_LABELS) as SalesChannelSite[]).map((value) => ({
+}> = (
+  // as: Object.keys widens to string[] even though SALES_CHANNEL_SITE_LABELS is typed as
+  // Record<SalesChannelSite, string> — every key of that record is a SalesChannelSite by
+  // construction, so narrowing back is safe.
+  Object.keys(SALES_CHANNEL_SITE_LABELS) as SalesChannelSite[]
+).map((value) => ({
   value,
   label: SALES_CHANNEL_SITE_LABELS[value],
 }));
 
 export function siteLabel(site: string): string {
+  // as: lookup-with-fallback — an unrecognized `site` string simply misses the record (fine,
+  // `?? site` returns the raw value below) rather than producing a wrong result, so the cast
+  // does not hide a type error.
   return SALES_CHANNEL_SITE_LABELS[site as SalesChannelSite] ?? site;
 }
 
