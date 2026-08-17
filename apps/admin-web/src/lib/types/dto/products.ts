@@ -7,8 +7,6 @@ import type { SalesChannelSite, ChannelFormType } from '@/lib/api/domains/sales-
 // ===== 공통 타입 =====
 export type ProductStatus = 'active' | 'inactive' | 'draft' | 'archived';
 export type ChannelType = string;
-// 필요하면 UI 레벨에서만 선택지 상수로 제한
-export const KNOWN_CHANNEL_TYPES = ['medusa', 'coupang', 'smartstore'] as const;
 export type PricingStrategy = 'option_based' | 'variant_based';
 
 // ===== 카테고리 관련 =====

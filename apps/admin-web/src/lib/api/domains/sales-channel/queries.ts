@@ -10,7 +10,6 @@ export const channelQueryKeys = {
     ['channels', 'list', query] as const,
   detail: (id: string) => ['channels', id] as const,
   active: () => ['channels', 'active'] as const,
-  byType: (type: string) => ['channels', 'type', type] as const,
 };
 
 export const useChannels = (query: ChannelsQuery = {}) =>

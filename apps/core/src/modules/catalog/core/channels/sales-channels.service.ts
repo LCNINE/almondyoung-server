@@ -247,51 +247,6 @@ export class SalesChannelsService {
     }, tx);
   }
 
-  //   async getChannelByType(type: string, tx?: DbTransaction): Promise<SalesChannelWithCategory | null> {
-  //     if (!type) {
-  //       throw new Error('Channel type is required');
-  //     }
-
-  //     const client = this.getClient(tx);
-
-  //     const result = await client
-  //       .select({
-  //         id: salesChannels.id,
-  //         type: salesChannels.type,
-  //         site: salesChannels.site,
-  //         categoryId: salesChannels.categoryId,
-  //         name: salesChannels.name,
-  //         description: salesChannels.description,
-  //         config: salesChannels.config,
-  //         isActive: salesChannels.isActive,
-  //         apiEndpoint: salesChannels.apiEndpoint,
-  //         credentials: salesChannels.credentials,
-  //         createdAt: salesChannels.createdAt,
-  //         updatedAt: salesChannels.updatedAt,
-  //         category: {
-  //           id: channelCategories.id,
-  //           name: channelCategories.name,
-  //           description: channelCategories.description,
-  //           displayOrder: channelCategories.displayOrder,
-  //           createdAt: channelCategories.createdAt,
-  //           updatedAt: channelCategories.updatedAt,
-  //         },
-  //       })
-  //       .from(salesChannels)
-  //       .leftJoin(channelCategories, eq(salesChannels.categoryId, channelCategories.id))
-  //       .where(eq(salesChannels.type, type));
-
-  //     if (result.length === 0) {
-  //       return null;
-  //     }
-
-  //     const channel = result[0];
-  //     return {
-  //       ...channel,
-  //       category: channel.category ? channel.category.id : null,
-  //     };
-  //   }
-
   async validateChannelConfig(
     site: string,
     config: any,

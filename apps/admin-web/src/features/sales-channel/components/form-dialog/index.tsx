@@ -259,15 +259,17 @@ export function SalesChannelForm({
                 </div>
 
                 {/* 활성화(수정시에만 의미있음) */}
-                <div className="flex items-center gap-4">
-                  <Label className="text-gray-900 min-w-[100px]">활성화</Label>
-                  <Switch
-                    checked={formData.isActive}
-                    onCheckedChange={(checked) =>
-                      setFormData((p) => ({ ...p, isActive: checked }))
-                    }
-                  />
-                </div>
+                {editingChannel && (
+                  <div className="flex items-center gap-4">
+                    <Label className="text-gray-900 min-w-[100px]">활성화</Label>
+                    <Switch
+                      checked={formData.isActive}
+                      onCheckedChange={(checked) =>
+                        setFormData((p) => ({ ...p, isActive: checked }))
+                      }
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

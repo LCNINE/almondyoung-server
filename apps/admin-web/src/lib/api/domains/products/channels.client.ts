@@ -69,13 +69,6 @@ export const channelsClient = {
     return response.data;
   },
 
-  getByType: async (type: string): Promise<ChannelDto[]> => {
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/channels?${buildQueryString({ type, limit: 1000 })}`
-    );
-    return Array.isArray(response.data) ? response.data : (response.data?.data ?? []);
-  },
-
   validateConfig: async (
     dto: ValidateChannelConfigDto
   ): Promise<ChannelValidationResponseDto> => {
