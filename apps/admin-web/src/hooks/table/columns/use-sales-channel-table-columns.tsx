@@ -22,13 +22,13 @@ export function useSalesChannelTableColumns({
       columnHelper.accessor('site', {
         header: '판매처',
         cell: ({ getValue }) => (
-          <span className="text-sm font-medium">{siteLabel(getValue() as string)}</span>
+          <span className="text-sm font-medium">{siteLabel(getValue())}</span>
         ),
       }),
       columnHelper.accessor('type', {
         header: '채널 형태',
         cell: ({ getValue }) => (
-          <span className="text-sm text-gray-600">{(getValue() as string) || '-'}</span>
+          <span className="text-sm text-gray-600">{getValue() || '-'}</span>
         ),
       }),
       columnHelper.accessor('name', {
