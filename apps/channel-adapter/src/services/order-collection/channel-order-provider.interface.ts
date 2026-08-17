@@ -3,6 +3,7 @@ import {
   OrderCreatedPayload,
   OrderRefundCreatedPayload,
   OrderItem,
+  SalesChannel,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
 
@@ -79,6 +80,8 @@ export interface ReplayableChannelOrderProvider extends ChannelOrderProvider {
 }
 
 export interface ChannelOrderProvider {
-  readonly channel: string;
+  // 유일한 구현(`TranslatingOrderProvider`)과 `ChannelOrderSource` 가 이미 `SalesChannel` 이다.
+  // 여기만 `string` 이라 호출부가 캐스팅을 강요당했다 (#656).
+  readonly channel: SalesChannel;
   fetchOrders(since: Date | null): Promise<FetchOrdersResult>;
 }

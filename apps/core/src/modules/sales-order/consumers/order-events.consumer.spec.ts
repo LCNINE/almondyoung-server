@@ -266,6 +266,68 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.library.revokeOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
+  // #656: 채널이 보내는 `orderId` 는 channel-adapter 가 만든 id 이고 core 의 `sales_orders.id` 는
+  // `defaultRandom()` PK 라 **서로 다른 id 공간**이다. PK 로 찾으면 구조적으로 절대 안 맞는다 —
+  // 라이브에서 lifecycle 이벤트 26건이 전부 NotFound 로 DLQ 갔다. `handleOrderCreated` 가 쓰는
+  // 채널 키(salesChannel + externalOrderId)로 찾아야 한다.
+  it('OrderCancelled 는 채널 키가 실려 있으면 그것으로 SO 를 찾고 해석된 id 로 취소한다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'adapter-generated-uuid',
+      salesChannel: 'medusa',
+      externalOrderId: 'medusa_order_1',
+      reason: 'ADMIN_CANCEL',
+      cancelledBy: 'medusa',
+      cancelledAt: new Date().toISOString(),
+      refundRequired: false,
+    } as OrderCancelledPayload;
+    const cancelledEnvelope = {
+      messageId: 'cancel-msg-key-1',
+      correlationId: 'corr-1',
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderCancelled'>;
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-real-1' } as any);
+
+    await consumer.handleOrderCancelled(payload, cancelledEnvelope);
+
+    expect(mocks.salesOrders.findByChannelOrderId).toHaveBeenCalledWith('medusa', 'medusa_order_1', mocks.fakeTx);
+    expect(mocks.salesOrders.cancel).toHaveBeenCalledWith('so-real-1', expect.anything(), mocks.fakeTx);
+    // 멱등 기록도 해석된 id 로 남아야 한다 (orderEvents.orderId 는 SO 를 가리킨다).
+    expect(mocks.txInserts).toEqual([
+      expect.objectContaining({ values: expect.objectContaining({ orderId: 'so-real-1' }) }),
+    ]);
+  });
+
+  it('OrderRefundCreated 는 채널 키로 찾은 SO id 로 환불 링크를 남긴다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'adapter-generated-uuid',
+      salesChannel: 'medusa',
+      externalOrderId: 'medusa_order_1',
+      refundId: 'ref_1',
+      paymentId: 'pay_1',
+      amount: 10000,
+      currency: 'KRW',
+      reason: 'customer_request',
+      createdBy: 'medusa',
+      createdAt: new Date().toISOString(),
+    } as OrderRefundCreatedPayload;
+    const refundEnvelope = {
+      messageId: 'refund-msg-key-1',
+      correlationId: 'corr-1',
+    } as EnvelopeOf<typeof ORDER_STREAM, 'OrderRefundCreated'>;
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-real-1' } as any);
+
+    await consumer.handleOrderRefundCreated(payload, refundEnvelope);
+
+    expect(mocks.salesOrders.findByChannelOrderId).toHaveBeenCalledWith('medusa', 'medusa_order_1', mocks.fakeTx);
+    expect(mocks.txInserts).toEqual([
+      expect.objectContaining({ values: expect.objectContaining({ orderId: 'so-real-1' }) }),
+      expect.objectContaining({ values: expect.objectContaining({ sourceId: 'so-real-1' }) }),
+    ]);
+  });
+
   it('OrderCancelled 대상 SalesOrder 가 없으면 throw 로 실패를 표면화한다 (필터가 non-retryable 로 분류 → 즉시 DLQ)', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
