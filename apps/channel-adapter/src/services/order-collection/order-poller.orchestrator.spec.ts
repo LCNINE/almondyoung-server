@@ -748,6 +748,106 @@ describe('OrderPollerOrchestrator', () => {
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:00:00.000Z'));
   });
 
+  // 옛 코드가 남긴 격리는 코드 수정만으로 사라지지 않는다. 그 주문은 앞으로 계속
+  // 건너뛰어지므로, 여기서 닫지 않으면 그 행을 닫아줄 경로가 영영 없다.
+  it('closes a stale open quarantine when it skips an already-collected order', async () => {
+    const db = makeDb({ collected: ['medusa_order_1'] });
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+    failures.findOpenByExternalOrderId.mockResolvedValue({ id: 'stale_failure_1' });
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith(
+      'stale_failure_1',
+      expect.any(String),
+      'wms_medusa_order_1',
+    );
+  });
+
+  // 배치 조회가 존재하는 이유가 바로 이 경우다 — 한 폴링에 두 종류가 섞여 온다.
+  it('separates already-collected failures from genuine ones within a single poll', async () => {
+    const db = makeDb({ collected: ['medusa_order_1'] });
+    const genuine = { ...makeFailure('2026-05-26T01:00:00.000Z'), externalOrderId: 'medusa_order_2' };
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z'), genuine],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
+    expect(failures.recordFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({ externalOrderId: 'medusa_order_2' }),
+    );
+  });
+
+  // 사유를 안 보면 `collected_order_modification_not_accepted` 는 정의상 항상 매핑을 갖고
+  // 있으므로 그 격리 레인 전체가 조용히 죽는다.
+  it('does not skip a collected-order-modification failure just because a mapping exists', async () => {
+    const db = makeDb({ collected: ['medusa_order_1'] });
+    const modification = {
+      ...makeFailure('2026-05-26T01:00:00.000Z'),
+      reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+    };
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [modification] }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
+  });
+
   // 매핑이 없는 진짜 미수집 주문은 그대로 격리돼야 한다 — 위 수정이 격리 자체를 죽이면 안 된다.
   it('still quarantines an identification failure for an order that was never collected', async () => {
     const db = makeDb();
@@ -813,7 +913,12 @@ describe('OrderPollerOrchestrator', () => {
     const result = await orchestrator.replayFailure('failure_1');
 
     expect(result?.status).toBe('closed_already_collected');
-    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith('failure_1', expect.any(String));
+    // wmsOrderId 를 함께 싣는다 — 닫은 근거다. 없으면 나중에 감사할 때 매핑 조인을 다시 돌려야 한다.
+    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith(
+      'failure_1',
+      expect.any(String),
+      'wms_medusa_order_1',
+    );
     // 다시 격리하면 status 가 quarantined 로 되돌아가 운영자가 같은 자리를 맴돈다.
     expect(failures.recordFailure).not.toHaveBeenCalled();
   });
@@ -1136,13 +1241,17 @@ function makeFailureService() {
 
 function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = {}) {
   const mappings = new Map<string, any>();
-  for (const channelOrderId of options.collected ?? []) {
-    mappings.set(`medusa:${channelOrderId}`, {
-      salesChannel: 'medusa',
-      channelOrderId,
-      wmsOrderId: `wms_${channelOrderId}`,
-    });
-  }
+  // 이 폴링 이전에 이미 존재하던 매핑. **배치 조회에만** 보인다.
+  //
+  // 왜 분리하는가: 이 목은 drizzle SQL 객체를 들여다볼 수 없어 술어를 흉내낼 수 없고,
+  // 단건 조회(`.limit(1)`)는 어떤 id 를 물었든 첫 행을 돌려준다. 시드 행을 같은 통에 넣으면
+  // `collected: ['A']` 를 심은 테스트가 주문 B 를 처리할 때 B 가 A 의 매핑을 얻어, 틀린
+  // 동작이 초록으로 통과한다. 배치 조회 결과는 호출부가 id 로 다시 거르므로 안전하다.
+  const preexisting = (options.collected ?? []).map((channelOrderId) => ({
+    salesChannel: 'medusa',
+    channelOrderId,
+    wmsOrderId: `wms_${channelOrderId}`,
+  }));
   const latestMapping = async () => Array.from(mappings.values()).slice(0, 1);
   const insert = () => ({
     values: (value: any) => ({
@@ -1163,9 +1272,10 @@ function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = 
     db: {
       select: () => ({
         from: () => ({
-          // `.limit()` 은 단건 매핑 조회, `await where()` 는 배치 매핑 조회다.
+          // `.limit()` = 단건 매핑 조회(이 폴링에서 만들어진 것만),
+          // `await where()` = 배치 매핑 조회(시드 포함).
           where: () =>
-            Object.assign(Promise.resolve(Array.from(mappings.values())), {
+            Object.assign(Promise.resolve([...preexisting, ...Array.from(mappings.values())]), {
               limit: latestMapping,
             }),
         }),

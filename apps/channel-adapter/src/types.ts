@@ -64,7 +64,7 @@ export type OrderCollectionFailureStatus =
   | 'quarantined'
   | 'replayed'
   | 'closed_lifecycle'
-  /** 격리 당시 이미 Core 판매주문이 있었다 — 조치 대상이 아니다 (#647). */
+  /** 그 주문이 이미 Core 판매주문을 갖고 있다 — 수집할 것이 남아있지 않다 (#647). */
   | 'closed_already_collected';
 
 // INBOX EVENTS 타입 (Kafka 이벤트 수신 처리)
