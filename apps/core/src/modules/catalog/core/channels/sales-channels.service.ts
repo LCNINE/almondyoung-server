@@ -88,6 +88,7 @@ export class SalesChannelsService {
     filters?: {
       isActive?: boolean;
       type?: string;
+      site?: string;
       search?: string;
       page?: number;
       limit?: number;
@@ -110,6 +111,9 @@ export class SalesChannelsService {
       }
       if (filters?.type) {
         whereConditions.push(eq(salesChannels.type, filters.type));
+      }
+      if (filters?.site) {
+        whereConditions.push(eq(salesChannels.site, filters.site));
       }
       if (filters?.search) {
         whereConditions.push(ilike(salesChannels.name, `%${filters.search}%`));

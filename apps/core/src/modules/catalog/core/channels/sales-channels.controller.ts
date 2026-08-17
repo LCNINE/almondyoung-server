@@ -52,16 +52,19 @@ export class SalesChannelsController {
   })
   @ApiQuery({ name: 'isActive', required: false, type: String, description: '활성 상태 필터 (true/false)' })
   @ApiQuery({ name: 'type', required: false, type: String, description: '채널 타입 필터' })
+  @ApiQuery({ name: 'site', required: false, type: String, description: '채널 정체 (medusa | naver | coupang | 3pl)' })
   @ApiQuery({ name: 'search', required: false, type: String, description: '검색 키워드' })
   @ApiQuery({ name: 'page', required: false, type: String, description: '페이지 번호' })
   @ApiQuery({ name: 'limit', required: false, type: String, description: '페이지 당 아이템 수' })
   @ApiOkResponsePaginated(SalesChannelDto, { description: '판매 채널 목록 조회 성공' })
   async getChannels(
-    @Query() query: { isActive?: string; type?: string; search?: string; page?: string; limit?: string },
+    @Query()
+    query: { isActive?: string; type?: string; site?: string; search?: string; page?: string; limit?: string },
   ): Promise<PaginatedResponseDto<SalesChannelDto>> {
     const filters = {
       isActive: query.isActive ? query.isActive === 'true' : undefined,
       type: query.type,
+      site: query.site,
       search: query.search,
       page: query.page ? parseInt(query.page) : undefined,
       limit: query.limit ? parseInt(query.limit) : undefined,
