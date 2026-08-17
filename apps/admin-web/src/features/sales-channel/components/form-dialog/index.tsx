@@ -52,14 +52,6 @@ export function SalesChannelForm({
   const [formData, setFormData] = useState({
     type: '',
     name: '',
-    // 로그인/보안
-    loginId: '',
-    password: '',
-    hasOtp: false,
-    // 키류
-    apiKey: '',
-    accessKey: '',
-    secretKey: '',
     // 부가(모두 apiConfig로 감쌈)
     memo: '',
     feeRate: '',
@@ -94,12 +86,6 @@ export function SalesChannelForm({
     setFormData({
       type: '',
       name: '',
-      loginId: '',
-      password: '',
-      hasOtp: false,
-      apiKey: '',
-      accessKey: '',
-      secretKey: '',
       memo: '',
       feeRate: '',
       smartstoreUrl: '',
@@ -119,12 +105,6 @@ export function SalesChannelForm({
       setFormData({
         type: editingChannel.type || '',
         name: editingChannel.name || '',
-        loginId: (cfg.loginId as string) || '',
-        password: (cfg.password as string) || '',
-        hasOtp: Boolean(cfg.hasOtp),
-        apiKey: (cfg.apiKey as string) || (cfg.accessKey as string) || '',
-        accessKey: (cfg.accessKey as string) || '',
-        secretKey: (cfg.secretKey as string) || '',
         memo: (cfg.memo as string) || '',
         feeRate:
           cfg.feeRate != null
@@ -187,19 +167,7 @@ export function SalesChannelForm({
           }
         : undefined;
 
-    const keyPayload = isCoupang
-      ? {
-          accessKey: formData.accessKey || formData.apiKey || undefined,
-          secretKey: formData.secretKey || undefined,
-        }
-      : isSmartstore
-        ? { apiKey: formData.apiKey || undefined }
-        : { apiKey: formData.apiKey || undefined };
-
     const apiConfig = {
-      loginId: formData.loginId || undefined,
-      password: formData.password || undefined,
-      hasOtp: formData.hasOtp,
       memo: formData.memo || undefined,
       feeRate: formData.feeRate ? Number(formData.feeRate) : undefined,
       smartstoreUrl: isSmartstore
@@ -207,7 +175,6 @@ export function SalesChannelForm({
         : undefined,
       companyCode: isCoupang ? formData.companyCode || undefined : undefined,
       shipper,
-      ...keyPayload,
     };
 
     try {
@@ -318,113 +285,6 @@ export function SalesChannelForm({
                     }
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* 로그인 정보 */}
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium text-gray-900">로그인 정보</h3>
-
-              <div className="grid grid-cols-1 gap-4">
-                <div className="flex items-center gap-4">
-                  <Label className="text-gray-900 min-w-[100px]">
-                    로그인 ID
-                  </Label>
-                  <Input
-                    value={formData.loginId}
-                    onChange={(e) =>
-                      setFormData((p) => ({ ...p, loginId: e.target.value }))
-                    }
-                    placeholder="로그인 ID"
-                    className="flex-1 bg-white border-gray-300"
-                  />
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <Label className="text-gray-900 min-w-[100px]">
-                    비밀번호
-                  </Label>
-                  <Input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) =>
-                      setFormData((p) => ({ ...p, password: e.target.value }))
-                    }
-                    placeholder="비밀번호"
-                    className="flex-1 bg-white border-gray-300"
-                  />
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <Label className="text-gray-900 min-w-[100px]">
-                    OTP 사용
-                  </Label>
-                  <Switch
-                    checked={formData.hasOtp}
-                    onCheckedChange={(checked) =>
-                      setFormData((p) => ({ ...p, hasOtp: checked }))
-                    }
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* API 키 정보 */}
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-              <h3 className="text-lg font-medium text-gray-900">API 키 정보</h3>
-
-              <div className="grid grid-cols-1 gap-4">
-                {isCoupang ? (
-                  <>
-                    <div className="flex items-center gap-4">
-                      <Label className="text-gray-900 min-w-[100px]">
-                        Access Key
-                      </Label>
-                      <Input
-                        value={formData.accessKey}
-                        onChange={(e) =>
-                          setFormData((p) => ({
-                            ...p,
-                            accessKey: e.target.value,
-                          }))
-                        }
-                        placeholder="쿠팡 Access Key"
-                        className="flex-1 bg-white border-gray-300"
-                      />
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Label className="text-gray-900 min-w-[100px]">
-                        Secret Key
-                      </Label>
-                      <Input
-                        type="password"
-                        value={formData.secretKey}
-                        onChange={(e) =>
-                          setFormData((p) => ({
-                            ...p,
-                            secretKey: e.target.value,
-                          }))
-                        }
-                        placeholder="쿠팡 Secret Key"
-                        className="flex-1 bg-white border-gray-300"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex items-center gap-4">
-                    <Label className="text-gray-900 min-w-[100px]">
-                      API Key
-                    </Label>
-                    <Input
-                      value={formData.apiKey}
-                      onChange={(e) =>
-                        setFormData((p) => ({ ...p, apiKey: e.target.value }))
-                      }
-                      placeholder="API Key"
-                      className="flex-1 bg-white border-gray-300"
-                    />
-                  </div>
-                )}
               </div>
             </div>
 
