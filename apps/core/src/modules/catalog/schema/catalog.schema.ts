@@ -574,38 +574,6 @@ export const salesChannels = pgTable(
   ],
 );
 
-// ===== 9. CHANNEL PRODUCTS =====
-export const channelProducts = pgTable(
-  'channel_products',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    masterId: uuid('master_id')
-      .notNull()
-      .references(() => productMasters.id, { onDelete: 'cascade' }),
-    channelId: uuid('channel_id')
-      .notNull()
-      .references(() => salesChannels.id, { onDelete: 'cascade' }),
-
-    // 오버라이드 가능한 필드들 (판매 여부, 상품명만)
-    name: varchar('name', { length: 255 }), // 상품명 오버라이드
-    isActive: boolean('is_active').default(true).notNull(), // 판매 여부
-
-    // 채널별 특수 설정
-    channelSpecificData: jsonb('channel_specific_data').$type<Record<string, any>>(),
-
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-    updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_channel_products_master').on(table.masterId),
-    index('idx_channel_products_channel').on(table.channelId),
-    index('idx_channel_products_active').on(table.isActive),
-    uniqueIndex('unique_master_channel').on(table.masterId, table.channelId),
-  ],
-);
-
 // ===== 10. PRICING RULES (규칙 기반 가격 정책) =====
 export const pricingRuleLayerEnum = pgEnum('pricing_rule_layer', ['base_price', 'membership_price', 'tiered_price']);
 export const pricingRuleScopeTypeEnum = pgEnum('pricing_rule_scope_type', ['all_variants', 'with_option', 'variants']);
@@ -1404,7 +1372,6 @@ export const catalogSchema = {
   variantOptionValues,
   channelCategories,
   salesChannels,
-  channelProducts,
   channelVariantListings,
   pricingRules,
   productVariantPriceCache,
@@ -1443,7 +1410,6 @@ export const productMastersRelations = relations(productMasters, ({ many }) => (
   productMasterOptionGroups: many(productMasterOptionGroups),
   productMasterVariants: many(productMasterVariants),
   productMasterPricingRules: many(productMasterPricingRules),
-  channelProducts: many(channelProducts),
   productImages: many(productImages),
   productTagValues: many(productTagValues),
 }));
@@ -1479,19 +1445,7 @@ export const salesChannelsRelations = relations(salesChannels, ({ one, many }) =
     fields: [salesChannels.categoryId],
     references: [channelCategories.id],
   }),
-  channelProducts: many(channelProducts),
   channelListings: many(channelVariantListings),
-}));
-
-export const channelProductsRelations = relations(channelProducts, ({ one }) => ({
-  master: one(productMasters, {
-    fields: [channelProducts.masterId],
-    references: [productMasters.id],
-  }),
-  channel: one(salesChannels, {
-    fields: [channelProducts.channelId],
-    references: [salesChannels.id],
-  }),
 }));
 
 export const tagGroupsRelations = relations(tagGroups, ({ many }) => ({
