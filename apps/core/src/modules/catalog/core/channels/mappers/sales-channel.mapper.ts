@@ -28,7 +28,6 @@ export class SalesChannelMapper {
       config: entity.config ?? {},
       isActive: entity.isActive,
       apiEndpoint: entity.apiEndpoint,
-      credentials: entity.credentials ?? {},
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
     };

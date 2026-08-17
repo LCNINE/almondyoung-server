@@ -56,9 +56,6 @@ export class SalesChannelDto {
   @ApiProperty({ description: 'API 엔드포인트 URL', nullable: true })
   apiEndpoint: string | null;
 
-  @ApiProperty({ description: '인증 정보' })
-  credentials: Record<string, any>;
-
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
 
