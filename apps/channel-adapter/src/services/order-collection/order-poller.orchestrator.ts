@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
@@ -75,9 +75,16 @@ export class OrderPollerOrchestrator {
           return this.pollItemPriority(a.kind) - this.pollItemPriority(b.kind);
         });
 
+        // 이미 수집된 주문의 식별 실패는 격리 대상이 아니다 (#647). 폴링당 한 번만 조회한다.
+        const alreadyCollectedIds = await this.findCollectedOrderIds(
+          provider.channel,
+          failures.map((failure) => failure.externalOrderId),
+        );
+
         let emitted = 0;
         let dedupedUnchanged = 0;
         let quarantined = 0;
+        let skippedAlreadyCollected = 0;
         let lifecycleRecorded = 0;
         let watermark: Date | null = null;
         // An unrecorded lifecycle observation (no Core mapping yet) for an order that is still
@@ -93,7 +100,11 @@ export class OrderPollerOrchestrator {
 
         // Orders quarantined this poll have no mapping yet but are still on track to be collected
         // via replay; their lifecycle observations are transient, not terminal.
-        const quarantinedExternalOrderIds = new Set(failures.map((failure) => failure.externalOrderId));
+        const quarantinedExternalOrderIds = new Set(
+          failures
+            .filter((failure) => !alreadyCollectedIds.has(failure.externalOrderId))
+            .map((failure) => failure.externalOrderId),
+        );
 
         const advanceWatermark = (sourceUpdatedAt: string) => {
           const itemTimestamp = this.toValidDate(sourceUpdatedAt);
@@ -115,6 +126,14 @@ export class OrderPollerOrchestrator {
 
         for (const orderedItem of orderedItems) {
           if (orderedItem.kind === 'failure') {
+            if (alreadyCollectedIds.has(orderedItem.item.externalOrderId)) {
+              // 만들 주문이 이미 있다. 변경 여부는 계산할 수 없다 — 라인을 식별하지 못하면
+              // 변경 해시의 입력이 빈 식별자로 채워져 의미 없는 값이 된다. 조용히 넘기되
+              // 세어서 로그로 남긴다.
+              skippedAlreadyCollected++;
+              advanceWatermark(orderedItem.item.sourceUpdatedAt);
+              continue;
+            }
             await this.orderCollectionFailureService.recordFailure(provider.channel, orderedItem.item);
             quarantined++;
             advanceWatermark(orderedItem.item.sourceUpdatedAt);
@@ -150,6 +169,12 @@ export class OrderPollerOrchestrator {
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
         }
 
+        if (skippedAlreadyCollected > 0) {
+          this.logger.warn(
+            `[${provider.channel}] Skipped ${skippedAlreadyCollected} identification failures for orders already collected into Core (#647)`,
+          );
+        }
+
         if (quarantined > 0) {
           this.logger.warn(
             `[${provider.channel}] Quarantined ${quarantined} order collection failures due to missing PIM identity metadata`,
@@ -163,7 +188,7 @@ export class OrderPollerOrchestrator {
         });
 
         this.logger.log(
-          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined})`,
+          `[${provider.channel}] Polled ${orders.length} order candidates (emitted: ${emitted}, lifecycle: ${lifecycleRecorded}, deduped: ${dedupedUnchanged}, quarantined: ${quarantined}, skippedAlreadyCollected: ${skippedAlreadyCollected})`,
         );
       } catch (error) {
         await this.syncStatusService.recordSyncFailure(channelType, 'orders', {
@@ -180,6 +205,7 @@ export class OrderPollerOrchestrator {
       | 'already_processed'
       | 'still_quarantined'
       | 'closed_terminal'
+      | 'closed_already_collected'
       | 'not_found_or_not_payment_accepted'
       | 'not_replayable';
     failureId: string;
@@ -219,6 +245,24 @@ export class OrderPollerOrchestrator {
     }
 
     if (fetched.kind === 'failure') {
+      // 이미 Core 에 있는 주문이면 replay 로 할 일이 없다. 다시 격리하면 status 가
+      // `quarantined` 로 되돌아가(`recordFailure` 의 onConflictDoUpdate) 운영자가 같은 자리를
+      // 영원히 맴돈다 — 실측된 117건이 정확히 그 상태였다 (#647).
+      const collected = await this.findCollectedOrderIds(provider.channel, [failure.externalOrderId]);
+      if (collected.has(failure.externalOrderId)) {
+        await this.orderCollectionFailureService.closeAsAlreadyCollected(
+          failure.id,
+          `Closed on replay: order ${failure.externalOrderId} was already collected into Core before it was quarantined`,
+        );
+        return {
+          status: 'closed_already_collected',
+          failureId,
+          externalOrderId: failure.externalOrderId,
+          emitted: 0,
+          dedupedUnchanged: 0,
+        };
+      }
+
       await this.orderCollectionFailureService.recordFailure(provider.channel, fetched.failure);
       return {
         status: 'still_quarantined',
@@ -515,6 +559,29 @@ export class OrderPollerOrchestrator {
     this.logger.warn(
       `[${channel}] Closed orphaned quarantine for ${item.externalOrderId} after ${item.eventType}; order is no longer collectable`,
     );
+  }
+
+  /**
+   * 주어진 채널 주문 ID 중 **이미 Core 판매주문이 만들어진** 것들을 돌려준다 (#647).
+   *
+   * 왜 필요한가: 폴러는 `updated_at > 워터마크` 로 묻기 때문에 이미 수집한 주문도 바뀌면 다시 온다.
+   * 그때 라인 식별에 실패하면 — Medusa 는 주문 라인에 상품 정보를 비정규화해 두므로 원본 variant 가
+   * 사라지면 평면 필드만 남고 식별자는 증발한다 — 번역기는 그 사실만 알고 격리 후보로 올린다.
+   * 번역기는 DB 를 볼 수 없으므로 "이미 수집했나" 는 여기서만 답할 수 있다.
+   */
+  private async findCollectedOrderIds(channel: string, externalOrderIds: string[]): Promise<Set<string>> {
+    if (externalOrderIds.length === 0) {
+      return new Set();
+    }
+
+    const rows = await this.db.db
+      .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+      .from(wmsOrderMappings)
+      .where(
+        and(eq(wmsOrderMappings.salesChannel, channel), inArray(wmsOrderMappings.channelOrderId, externalOrderIds)),
+      );
+
+    return new Set(rows.map((row) => row.channelOrderId));
   }
 
   private applyWatermarkLookback(since: Date | null): Date | null {

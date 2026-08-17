@@ -231,8 +231,10 @@ export const orderCollectionFailures = pgTable(
     sourceUpdatedAt: timestamp('source_updated_at').notNull(),
 
     status: varchar('status', { length: 30 }).notNull().default('quarantined'),
-    // 'quarantined' | 'replayed' | 'closed_lifecycle'
+    // 'quarantined' | 'replayed' | 'closed_lifecycle' | 'closed_already_collected'
     // closed_lifecycle: order went terminal (canceled/refunded) before its mapping gap was fixed.
+    // closed_already_collected: the order was already in Core when it was quarantined — a false
+    //   positive from re-polling, never actionable (#647).
     replayedAt: timestamp('replayed_at'),
     replayedWmsOrderId: uuid('replayed_wms_order_id'),
     errorMessage: text('error_message'),

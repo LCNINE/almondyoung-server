@@ -714,6 +714,110 @@ describe('OrderPollerOrchestrator', () => {
     expect(syncStatus.lastSyncAt()).toBeNull();
   });
 
+  // #647. 이미 Core 로 넘어간 주문이 재폴링에서 식별에 실패하는 일은 흔하다 — Medusa 는 주문
+  // 라인에 상품 정보를 비정규화해 두므로, 원본 variant 가 사라지면 평면 필드만 남고 식별자는
+  // 증발한다. 그 주문은 만들 것이 없으므로 격리 대상이 아니다. 격리하면 운영 큐가 조치 불가능한
+  // 거짓 경보로 찬다 (실측 117건 전부가 이 경우였다).
+  it('does not quarantine an identification failure for an order that is already collected', async () => {
+    const db = makeDb({ collected: ['medusa_order_1'] });
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+    // 건너뛴 항목도 워터마크는 밀어야 한다. 안 그러면 같은 주문을 영원히 다시 집는다.
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:00:00.000Z'));
+  });
+
+  // 매핑이 없는 진짜 미수집 주문은 그대로 격리돼야 한다 — 위 수정이 격리 자체를 죽이면 안 된다.
+  it('still quarantines an identification failure for an order that was never collected', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
+  });
+
+  // #647. replay 는 같은 early-return 에 다시 걸려 `still_quarantined` 를 영원히 반환했다.
+  // 운영자가 버튼을 눌러도 아무 설명 없이 같은 상태로 돌아온다. 이미 수집된 주문이면 닫아야 한다.
+  it('closes the quarantine as already-collected when replaying a failure whose order is already in Core', async () => {
+    const db = makeDb({ collected: ['medusa_order_1'] });
+    const provider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
+      fetchOrder: jest.fn().mockResolvedValue({
+        kind: 'failure',
+        failure: makeFailure('2026-05-26T01:00:00.000Z'),
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+    failures.findById.mockResolvedValue({
+      id: 'failure_1',
+      channel: 'medusa',
+      externalOrderId: 'medusa_order_1',
+      reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+      status: 'quarantined',
+    });
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider as any],
+      syncStatus as any,
+      outbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    const result = await orchestrator.replayFailure('failure_1');
+
+    expect(result?.status).toBe('closed_already_collected');
+    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith('failure_1', expect.any(String));
+    // 다시 격리하면 status 가 quarantined 로 되돌아가 운영자가 같은 자리를 맴돈다.
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+  });
+
   it('closes the quarantine as terminal when a replayed snapshot is no longer eligible for collection', async () => {
     const db = makeDb();
     const provider = {
@@ -1026,11 +1130,19 @@ function makeFailureService() {
     markReplayed: jest.fn(),
     findOpenByExternalOrderId: jest.fn().mockResolvedValue(null),
     closeAsTerminalLifecycle: jest.fn().mockResolvedValue(undefined),
+    closeAsAlreadyCollected: jest.fn().mockResolvedValue(undefined),
   };
 }
 
-function makeDb(options: { conflictOnInsert?: boolean } = {}) {
+function makeDb(options: { conflictOnInsert?: boolean; collected?: string[] } = {}) {
   const mappings = new Map<string, any>();
+  for (const channelOrderId of options.collected ?? []) {
+    mappings.set(`medusa:${channelOrderId}`, {
+      salesChannel: 'medusa',
+      channelOrderId,
+      wmsOrderId: `wms_${channelOrderId}`,
+    });
+  }
   const latestMapping = async () => Array.from(mappings.values()).slice(0, 1);
   const insert = () => ({
     values: (value: any) => ({
@@ -1051,9 +1163,11 @@ function makeDb(options: { conflictOnInsert?: boolean } = {}) {
     db: {
       select: () => ({
         from: () => ({
-          where: () => ({
-            limit: latestMapping,
-          }),
+          // `.limit()` 은 단건 매핑 조회, `await where()` 는 배치 매핑 조회다.
+          where: () =>
+            Object.assign(Promise.resolve(Array.from(mappings.values())), {
+              limit: latestMapping,
+            }),
         }),
       }),
       transaction: async (fn: (tx: unknown) => Promise<unknown>) => {

@@ -138,6 +138,24 @@ export class OrderCollectionFailureService {
    * 격리된 주문이 수집되기 전에 terminal lifecycle(취소/환불 → 수집 불가)에 도달했을 때 호출.
    * replay 로는 결코 수집될 수 없으므로 격리를 닫아 고아 상태로 남지 않게 한다.
    */
+  /**
+   * 격리 당시 이미 Core 판매주문이 존재했을 때 호출 (#647).
+   *
+   * 이 격리는 조치 대상이 아니다 — 만들 주문이 이미 있으므로 replay 로 할 일이 없고,
+   * replay 는 같은 식별 실패에 다시 걸려 `still_quarantined` 만 반환한다. 열어두면 운영자가
+   * 조치 불가능한 항목을 붙들게 되므로 닫는다.
+   */
+  async closeAsAlreadyCollected(id: string, reason: string): Promise<void> {
+    await this.db.db
+      .update(orderCollectionFailures)
+      .set({
+        status: 'closed_already_collected',
+        errorMessage: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(orderCollectionFailures.id, id));
+  }
+
   async closeAsTerminalLifecycle(id: string, reason: string): Promise<void> {
     await this.db.db
       .update(orderCollectionFailures)
