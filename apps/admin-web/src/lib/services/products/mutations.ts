@@ -18,10 +18,6 @@ import type {
   MoveCategoryDto,
   UpdateMasterDto,
   UpdatePricingStrategyDto,
-  CreateChannelProductDto,
-  UpdateChannelProductDto,
-  UpdateChannelProductNameDto,
-  UpdateChannelProductStatusDto,
   CreateBannerGroupDto,
   UpdateBannerGroupDto,
   CreateBannerDto,
@@ -334,109 +330,6 @@ export const useUpdatePricingStrategy = () => {
 };
 
 // ===== 채널별 제품 관련 뮤테이션 =====
-
-/**
- * 채널별 제품 생성
- */
-export const useCreateChannelProduct = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (data: CreateChannelProductDto) =>
-      products.channelProducts.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProducts,
-      });
-    },
-  });
-};
-
-/**
- * 채널별 제품 수정
- */
-export const useUpdateChannelProduct = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateChannelProductDto }) =>
-      products.channelProducts.update(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProducts,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProduct(variables.id),
-      });
-    },
-  });
-};
-
-/**
- * 채널별 제품 삭제
- */
-export const useDeleteChannelProduct = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id: string) => products.channelProducts.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProducts,
-      });
-    },
-  });
-};
-
-/**
- * 제품명 덮어쓰기
- */
-export const useUpdateChannelProductName = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: UpdateChannelProductNameDto;
-    }) => products.channelProducts.updateName(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProducts,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProduct(variables.id),
-      });
-    },
-  });
-};
-
-/**
- * 채널별 제품 상태 설정
- */
-export const useUpdateChannelProductStatus = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({
-      id,
-      data,
-    }: {
-      id: string;
-      data: UpdateChannelProductStatusDto;
-    }) => products.channelProducts.updateStatus(id, data),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProducts,
-      });
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.channelProduct(variables.id),
-      });
-    },
-  });
-};
 
 // ===== 배너 그룹 뮤테이션 =====
 

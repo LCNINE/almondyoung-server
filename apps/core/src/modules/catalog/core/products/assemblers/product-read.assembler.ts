@@ -26,7 +26,6 @@ type ProductReadAssemblerInclude = {
   tags?: boolean;
   categories?: boolean;
   priceSummary?: boolean;
-  channelProducts?: boolean;
 };
 
 type ProductReadAssemblerOptions = {
@@ -60,7 +59,6 @@ export class ProductReadAssembler {
         tags: true,
         categories: true,
         priceSummary: true,
-        channelProducts: true,
         ...options?.include,
       };
 
@@ -138,8 +136,6 @@ export class ProductReadAssembler {
           ? ((await this.priceCacheService.getPriceSummariesByVersionIds([versionId], tx)).get(versionId) ?? null)
           : null;
 
-      const channelProducts: ProductDetailDto['channelProducts'] = [];
-
       return {
         ...version,
         thumbnail,
@@ -147,7 +143,6 @@ export class ProductReadAssembler {
         categories,
         optionGroups,
         variants: variantsWithOptions,
-        channelProducts,
         tagValues: tags,
         priceSummary,
         purchaseConstraint,

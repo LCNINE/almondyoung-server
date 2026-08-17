@@ -217,16 +217,14 @@ export class SalesChannelsService {
       if (!existing) {
         throw new NotFoundError(`Channel not found: ${channelId}`);
       }
-      const relatedProducts = await tx
-        .select({ count: count() })
-        .from(channelProducts)
-        .where(eq(channelProducts.channelId, channelId));
-
-      if (relatedProducts[0].count > 0) {
-        throw new ConflictError(
-          `Cannot delete channel with existing products. Found ${relatedProducts[0].count} related products.`,
-        );
-      }
+      // 옛 `channel_products` 행을 세던 삭제 가드는 제거됐다 (ADR-0031 결정 5, #638).
+      //
+      // 동작은 그대로다 — 그 테이블은 프로덕션에서 0행이라 가드가 발동한 적이 없다. 가드를
+      // 정본인 `channel_variant_listings` 로 옮겨 다는 것은 **없던 409 를 새로 만드는 일**이라
+      // 삭제 PR 의 범위 밖으로 뒀다.
+      //
+      // ⚠️ 그래서 채널 삭제는 지금 그 채널의 리스팅을 조용히 함께 지운다
+      // (`channel_variant_listings.sales_channel_id` 가 `onDelete: 'cascade'`).
       const deleteResult = await tx.delete(salesChannels).where(eq(salesChannels.id, channelId)).returning();
 
       if (deleteResult.length === 0) {

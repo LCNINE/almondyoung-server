@@ -29,7 +29,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderLineDto } from '@/lib/types/dto/orders';
 import { useResolveMatching } from '@/lib/services/matching';
-import { useCreateChannelProduct } from '@/lib/services/products';
 import { useSkuSearch } from '@/lib/services/inventory';
 import { useDebounced } from '@/hooks/use-debounced';
 import { Search, Trash2, Link2, X, Loader2 } from 'lucide-react';
@@ -60,7 +59,6 @@ export function ProductRegistrationDialog({
   line,
 }: ProductRegistrationDialogProps) {
   const resolveMatching = useResolveMatching();
-  const createChannelProduct = useCreateChannelProduct();
 
   const [productName, setProductName] = useState('');
   const [useOrderName, setUseOrderName] = useState(true);
@@ -102,7 +100,7 @@ export function ProductRegistrationDialog({
     setLinkingIndex(null);
   }, [line]);
 
-  const isSaving = createChannelProduct.isPending || resolveMatching.isPending;
+  const isSaving = resolveMatching.isPending;
 
   /** 옵션 조작 */
   const addOption = () =>
@@ -157,35 +155,9 @@ export function ProductRegistrationDialog({
     }
 
     try {
-      // 1) 채널상품 생성 (스키마가 유동적일 수 있어 안전한 필드만 전송)
-      //    CreateChannelProductDto의 상세를 몰라도, 대부분 서버에서 무시 가능한 확장 필드로 설계되어 있음.
-      const channelProductDto: any = {
-        channelId: line.salesChannel || salesChannel || 'other',
-        externalProductCode: line.channelOrderId ?? '',
-        name: productName,
-        useOrderName,
-        basePrice: Number(salesPrice) || 0,
-        // 옵션
-        options: options.map((o) => ({
-          name: o.name,
-          price: o.price,
-          status: o.status === '판매' ? 'active' : 'inactive',
-          quantityPerUnit: o.quantity,
-          linkedSkuId: o.skuId,
-        })),
-        _meta: {
-          from: 'external-matching-dialog',
-          orderId: line.salesOrderId,
-        },
-      };
-      try {
-        await createChannelProduct.mutateAsync(channelProductDto);
-      } catch (e) {
-        // 채널상품 생성 실패해도 매칭만 우선 진행 가능하도록 경고 후 진행
-        console.warn('채널상품 생성 실패(무시하고 매칭 진행):', e);
-      }
-
-      // 2) 재고 매칭 저장
+      // 재고 매칭 저장 — 이 다이얼로그가 실제로 해내는 유일한 일이다.
+      // 옛 `channel_products` 생성 호출은 제거됐다 (ADR-0031 결정 5, #638): masterId 를 보내지
+      // 않고 channelId 자리에 채널 *이름* 을 넣어 항상 400 이었고, 그 실패를 삼키고 있었다.
       const skuMappings = options
         .filter((o) => o.skuId)
         .map((o) => ({ skuId: o.skuId as string, quantity: o.quantity || 1 }));

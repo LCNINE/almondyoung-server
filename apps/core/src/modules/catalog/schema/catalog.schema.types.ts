@@ -21,7 +21,6 @@ import {
   variantOptionValues,
   channelCategories,
   salesChannels,
-  channelProducts,
   channelVariantListings,
   pricingRules,
   productVariantPriceCache,
@@ -82,9 +81,6 @@ export type ChannelCategoryInsert = typeof channelCategories.$inferInsert;
 
 export type SalesChannelEntity = typeof salesChannels.$inferSelect;
 export type SalesChannelInsert = typeof salesChannels.$inferInsert;
-
-export type ChannelProductEntity = typeof channelProducts.$inferSelect;
-export type ChannelProductInsert = typeof channelProducts.$inferInsert;
 
 export type ChannelVariantListingEntity = typeof channelVariantListings.$inferSelect;
 export type ChannelVariantListingInsert = typeof channelVariantListings.$inferInsert;

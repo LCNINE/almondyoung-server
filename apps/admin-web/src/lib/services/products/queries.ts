@@ -22,11 +22,6 @@ import type {
   VariantsResponseDto,
   VariantPriceDto,
   ActiveChannelsResponseDto,
-  ChannelProductDto,
-  ChannelProductsQuery,
-  ChannelProductsResponseDto,
-  MasterChannelProductsResponseDto,
-  MergedChannelProductDto,
   NoticeListQuery,
   ShopListingListQuery,
   SitePopupListQuery,
@@ -321,62 +316,6 @@ export const useActiveChannels = () => {
 };
 
 // ===== 채널별 제품 관련 쿼리 =====
-
-/**
- * 마스터별 채널 제품 조회
- */
-export const useChannelProductsByMaster = (masterId: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.channelProductsByMaster(masterId),
-    queryFn: () => products.channelProducts.getByMaster(masterId),
-    enabled: !!masterId,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-/**
- * 채널별 제품 조회
- */
-export const useChannelProductsByChannel = (query: ChannelProductsQuery) => {
-  return useQuery({
-    queryKey: productQueryKeys.channelProductsByChannel(query.channelId, query),
-    queryFn: () =>
-      products.channelProducts.getByChannel(query.channelId, query),
-    enabled: !!query.channelId,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-/**
- * 채널 제품 상세 조회
- */
-export const useChannelProduct = (id: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.channelProduct(id),
-    queryFn: () => products.channelProducts.get(id),
-    enabled: !!id,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
-
-/**
- * 병합된 채널 제품 조회
- */
-export const useMergedChannelProduct = (
-  masterId: string,
-  channelId: string
-) => {
-  return useQuery({
-    queryKey: productQueryKeys.mergedChannelProduct(masterId, channelId),
-    queryFn: () => products.channelProducts.getMerged(masterId, channelId),
-    enabled: !!masterId && !!channelId,
-    staleTime: 30 * 1000,
-    gcTime: 5 * 60 * 1000,
-  });
-};
 
 // ===== 이름 변경 대응 별칭 (구 코드 호환성) =====
 

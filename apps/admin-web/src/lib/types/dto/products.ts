@@ -103,7 +103,7 @@ export interface UpdateMasterDto {
 /**
  * @deprecated 백엔드 `ProductMasterDto` 응답과 어긋남.
  * `basePrice`, `pricingStrategy`, `tags`, `categories`, `variants`,
- * `channelProducts`, `specifications` 는 백엔드 응답에 존재하지 않음 (phantom 필드).
+ * `specifications` 는 백엔드 응답에 존재하지 않음 (phantom 필드).
  * 신규 코드는 `ProductMasterDetail` (lib/services/products/products-detail.types.ts) 사용.
  * 전체 정합 정비는 별도 PR — 기존 7+ 곳 consumer 동시 수정 필요.
  */
@@ -122,7 +122,6 @@ export interface MasterDto {
   createdAt: string;
   updatedAt: string;
   variants?: VariantDto[];
-  channelProducts?: ChannelProductDto[];
 }
 
 export interface MastersQuery {
@@ -359,7 +358,6 @@ export interface ChannelDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  channelProducts?: ChannelProductDto[];
 }
 
 export interface ChannelsQuery {
@@ -396,127 +394,6 @@ export interface ValidateChannelConfigDto {
 export interface ChannelValidationResponseDto {
   isValid: boolean;
   errors: string[];
-}
-
-// ===== 채널별 제품 관련 =====
-
-export interface CreateChannelProductDto {
-  masterId: string;
-  channelId: string;
-  name?: string;
-  description?: string;
-  price?: number;
-  isActive?: boolean;
-  channelSpecificData?: Record<string, string>;
-  images?: string[];
-  specifications?: Record<string, string>;
-}
-
-export interface UpdateChannelProductDto {
-  name?: string;
-  description?: string;
-  price?: number;
-  isActive?: boolean;
-  channelSpecificData?: Record<string, string>;
-  images?: string[];
-  specifications?: Record<string, string>;
-}
-
-export interface ChannelProductDto {
-  id: string;
-  masterId: string;
-  master?: MasterDto;
-  channelId: string;
-  channel?: ChannelDto;
-  name?: string;
-  description?: string;
-  price?: number;
-  isActive: boolean;
-  channelSpecificData?: Record<string, string>;
-  images?: string[];
-  specifications?: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface ChannelProductsQuery {
-  channelId: string;
-  limit?: number;
-  page?: number;
-  search?: string;
-  isActive?: boolean;
-}
-
-export interface ChannelProductsResponseDto {
-  data: ChannelProductDto[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
-}
-
-export interface MasterChannelProductsResponseDto {
-  channelProducts: ChannelProductDto[];
-}
-
-export interface MergedChannelProductDto {
-  master: MasterDto;
-  channelProduct: ChannelProductDto;
-  mergedData: {
-    name: string;
-    description?: string;
-    price: number;
-    images: string[];
-    specifications: Record<string, string>;
-    isActive: boolean;
-  };
-}
-
-export interface UpdateChannelProductNameDto {
-  name: string;
-}
-
-export interface UpdateChannelProductStatusDto {
-  isActive: boolean;
-}
-
-// ===== 매칭 테이블용 특별 타입 =====
-
-export interface MatchingTableRowDto {
-  id: string;
-  channelProduct: ChannelProductDto;
-  variant?: VariantDto;
-  matchedSku?: {
-    skuId: string;
-    quantity: number;
-    barcode?: string;
-  };
-  orderInfo?: {
-    quantity: number;
-    salesAmount: number;
-    recipient: string;
-    orderDate: string;
-  };
-  matchingStatus: 'matched' | 'unmatched' | 'no_product';
-  actions: {
-    canMatch: boolean;
-    canRematch: boolean;
-    canEdit: boolean;
-    canDelete: boolean;
-    canCreate: boolean;
-  };
-}
-
-export interface MatchingTableResponseDto {
-  data: MatchingTableRowDto[];
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
 }
 
 // ===== 기존 호환성 타입 (점진적 마이그레이션용) =====

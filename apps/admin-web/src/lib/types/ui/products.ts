@@ -71,15 +71,3 @@ export interface Channel {
 }
 
 // 채널 상품 UI 타입
-export interface ChannelProductUI {
-  id: string;
-  channelId: string;
-  productId: string;
-  channelSku: string;
-  channelName: string;
-  channelPrice: number;
-  channelStatus: string;
-  syncedAt?: Date;
-  createdAt: Date;
-  updatedAt: Date;
-}
