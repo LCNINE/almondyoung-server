@@ -30,6 +30,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -74,6 +75,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -128,6 +130,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -176,6 +179,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -246,6 +250,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -300,6 +305,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -341,6 +347,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -383,6 +390,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -422,6 +430,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -484,6 +493,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -536,6 +546,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -565,6 +576,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -593,6 +605,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -630,6 +643,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await Promise.all([orchestrator.poll(), orchestrator.poll()]);
@@ -672,6 +686,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -722,6 +737,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await Promise.all([orchestrator.poll(), orchestrator.poll()]);
@@ -751,6 +767,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -788,6 +805,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -836,6 +854,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -872,6 +891,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -905,6 +925,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -939,6 +960,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -974,6 +996,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -1003,6 +1026,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -1041,6 +1065,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     const result = await orchestrator.replayFailure('failure_1');
@@ -1093,6 +1118,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     const result = await orchestrator.replayFailure('failure_1');
@@ -1177,6 +1203,7 @@ describe('OrderPollerOrchestrator', () => {
       hashes as any,
       failures as any,
       db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
     );
 
     await orchestrator.poll();
@@ -1192,6 +1219,153 @@ describe('OrderPollerOrchestrator', () => {
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:08:00.000Z'));
   });
 });
+
+/**
+ * 채널 활성 게이트 (#654).
+ *
+ * ADR-0031 이 "활성화는 `sales_channels.is_active` 가 갖는다" 고 정했지만 그 자리를 물려받은
+ * 코드가 없어, 채널을 비활성화해도 수집이 계속 돌았다. 여기서 막는다.
+ *
+ * 가장 중요한 불변식은 **건너뛴 채널의 워터마크가 전진하지 않는 것**이다. 전진해버리면 꺼둔
+ * 기간의 주문을 영구히 잃는다 — 다시 켰을 때 그 구간을 되짚지 않기 때문이다.
+ */
+describe('OrderPollerOrchestrator — 채널 활성 게이트 (#654)', () => {
+  it('비활성 채널의 주문을 가져오지 않는다', async () => {
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient([]) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(provider.fetchOrders).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('건너뛴 채널의 워터마크를 전진시키지 않는다 — 꺼둔 기간의 주문을 잃지 않기 위한 핵심 불변식', async () => {
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
+    };
+    const before = new Date('2026-05-26T00:00:00.000Z');
+    const syncStatus = makeSyncStatus(before);
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient([]) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncStart).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
+    expect(syncStatus.lastSyncAt()).toEqual(before);
+  });
+
+  it('한 채널이 비활성이어도 활성 채널은 정상 수집한다', async () => {
+    const active: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
+    };
+    const inactive: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [active, inactive],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa']) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(active.fetchOrders).toHaveBeenCalledTimes(1);
+    expect(inactive.fetchOrders).not.toHaveBeenCalled();
+    expect(outbox.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('활성 목록 조회가 실패하면 어떤 채널도 폴링하지 않는다 (fail-closed)', async () => {
+    // 건너뛰기는 무손실이다(워터마크가 안 움직인다). 반대로 열어두면 "끈 채널이 계속 도는"
+    // 상태가 되는데, 그게 이 이슈가 없애려는 상태 그 자체다.
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
+    };
+    const before = new Date('2026-05-26T00:00:00.000Z');
+    const syncStatus = makeSyncStatus(before);
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(new Error('core unreachable')) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(provider.fetchOrders).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncStart).not.toHaveBeenCalled();
+    expect(syncStatus.lastSyncAt()).toEqual(before);
+  });
+
+  it('활성 목록을 폴링당 한 번만 조회한다', async () => {
+    const providers: ChannelOrderProvider[] = [
+      { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }) },
+      { channel: 'naver', fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }) },
+    ];
+    const client = makeSalesChannelClient(['medusa', 'naver']);
+
+    const orchestrator = new OrderPollerOrchestrator(
+      providers,
+      makeSyncStatus() as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      client as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(client.getActiveSites).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** 활성 사이트 목록을 주는 Core 클라이언트의 목. Error 를 주면 조회 실패를 흉내낸다. */
+function makeSalesChannelClient(sitesOrError: string[] | Error) {
+  return {
+    getActiveSites: jest.fn().mockImplementation(async () => {
+      if (sitesOrError instanceof Error) throw sitesOrError;
+      return sitesOrError;
+    }),
+  };
+}
 
 function makeOrder(
   sourceUpdatedAt: string,

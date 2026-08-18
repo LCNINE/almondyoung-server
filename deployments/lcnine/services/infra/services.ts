@@ -71,6 +71,11 @@ export function setup(infra: SharedInfra) {
   // UGC — 서버 간(internal) 라우트 인증 키 (medusa 구매확정 → ugc 리뷰자격 등록)
   const ugcInternalKey = new sst.Secret('UgcInternalKey');
 
+  // Core — 서버 간(internal) 라우트 인증 키 (channel-adapter 수집 게이트 → core /internal/channels/*)
+  // 아래 Core 와 channelAdapterEnv **양쪽**에 같은 값이 들어가야 한다. 한쪽만 배포되면 401 이고,
+  // 수집 게이트는 fail-closed 라 주문 수집이 멈춘다 (#654).
+  const coreInternalKey = new sst.Secret('CoreInternalKey');
+
   // Notification
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
@@ -223,6 +228,8 @@ export function setup(infra: SharedInfra) {
     OIDC_ISSUER_URL: idpUserServiceUrl,
     CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
+    // core 의 내부 라우트를 부를 때 싣는 키 (수집 게이트가 활성 판매채널을 조회한다 — #654).
+    CORE_INTERNAL_KEY: coreInternalKey.value,
     MEDUSA_API_KEY: medusaApiKey.value,
     MEDUSA_API_URL: url('medusa'),
     MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
@@ -371,6 +378,9 @@ export function setup(infra: SharedInfra) {
       JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 서버 간 내부 라우트(`/internal/*`)를 여는 공유 키. 사람 JWT 가 없는 호출자(channel-adapter)가
+      // 이 값을 Authorization 헤더로 보낸다. 미설정이면 InternalKeyGuard 가 전부 거부한다.
+      CORE_INTERNAL_KEY: coreInternalKey.value,
       // 고객 주문 취소 후 Wallet 자동 환불 연결
       WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,

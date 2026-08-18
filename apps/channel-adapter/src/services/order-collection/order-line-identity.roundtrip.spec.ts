@@ -119,6 +119,8 @@ describe('external order-line identity real component round trip', () => {
       pollingHashService as never,
       orderCollectionFailureService as never,
       channelDb as never,
+      // 이 스펙의 관심사는 라인 식별 왕복이라 채널은 활성으로 둔다 (게이트는 #654 스펙에서 다룬다).
+      { getActiveSites: async () => [provider.channel] } as never,
     );
 
     await orchestrator.poll();

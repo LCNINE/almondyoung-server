@@ -76,6 +76,7 @@ Task 6-C-4 에서 제거됐다** — 발행은 전부 공용 아웃박스(`event
 ### 3-5. Order Collection (Provider 패턴)
 ```
 OrderPollerOrchestrator (@Cron 5분)
+  → 채널 활성 게이트 (core /internal/channels/active-sites, 비활성이면 건너뜀 — #654)
   → ChannelOrderSource   (채널 원어 스냅샷)
   → ChannelOrderTranslator (식별 해석 · 격리 판단 · Core 계약 조립)
   → 공용 아웃박스 (event.outbox_events)
@@ -141,6 +142,7 @@ Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
 | AlmondAuth (Firebase) | `AlmondAuthClient` | 멤버십 상태 조회 |
 | user-service | `UserServiceClient` | 사용자 정보 조회 |
 | PIM (channel-listing) | `ChannelListingClient` | 채널 리스팅 매핑 조회 |
+| Core (내부 라우트) | `SalesChannelClient` | 활성 판매채널 `site` 목록 조회 (수집 게이트, `CORE_INTERNAL_KEY` 필요) |
 
 ## 5. 스키마 구조
 
@@ -168,9 +170,13 @@ channelAdapterSchema
 ## 6. 로컬 개발 주의사항
 
 - `KAFKA_BROKERS` 환경변수가 없으면 `NullEventPublisher`로 대체되어 이벤트 발행이 no-op이 된다.
-- `ACTIVE_CHANNELS` 환경변수는 제거됐다. 채널 활성화는 Core 의 `sales_channels.is_active` 가 갖기로 **결정**됐다 (ADR-0031).
-  🔴 **다만 그 결정을 집행하는 코드가 아직 없다 (#654, 2026-08-18 확인).** `salesChannels.isActive` 를 읽는 곳은
-  Core 의 어드민 목록 필터 하나뿐(`sales-channels.service.ts:110`)이고, `OrderPollerOrchestrator.poll()` 은
-  채널 활성 여부를 보지 않는다. **채널을 비활성화해도 수집이 멈추지 않는다.** 그리고 `ACTIVE_CHANNELS` 는
-  `config/env.validation.ts:39` 에 선언만 남아 있다(소비자 0) — #654 에서 함께 걷어낸다.
+- `ACTIVE_CHANNELS` 환경변수는 제거됐다 (죽은 형제 `ADAPTER_REQUIRED_CHANNELS`·`REQUIRED_CHANNELS` 도 함께).
+  채널 활성화는 Core 의 `sales_channels.is_active` 가 갖는다 (ADR-0031), 그리고 **#654 에서 집행 지점이 생겼다**:
+  `OrderPollerOrchestrator.poll()` 이 주기마다 core `/internal/channels/active-sites` 를 조회해 비활성 채널을
+  건너뛴다. 건너뛰기는 `recordSyncStart` **앞에서** 일어나므로 워터마크가 전진하지 않는다 — 다시 켜면 꺼둔
+  기간의 주문을 그대로 따라잡는다.
+  - `CORE_INTERNAL_KEY` 가 필요하다. 미설정이거나 core 가 응답하지 않으면 게이트는 **fail-closed** — 그 주기의
+    모든 채널을 건너뛴다(무손실이지만 수집은 멈춘다). 증상은 error 로그와 `sync_statuses.updated_at` 정체다.
+  - 리스팅 조회(`channel-listing.service.ts`)에는 활성 조건을 **넣지 않았다**. 넣으면 비활성 채널의 기존 주문이
+    식별 실패로 격리된다 — #647 과 같은 함정이다. "끄기"는 *안 가져온다* 이지 *가져와서 격리한다* 가 아니다.
 - Medusa 관련 동기화는 `MEDUSA_BACKEND_URL`, `MEDUSA_ADMIN_EMAIL`, `MEDUSA_ADMIN_PASSWORD` 환경변수 필요.

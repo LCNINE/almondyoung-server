@@ -169,6 +169,26 @@ export class SalesChannelsService {
     }, tx);
   }
 
+  /**
+   * 활성 판매채널의 `site` 목록 (중복 제거).
+   *
+   * `getActiveChannels()` 를 재사용하지 않는다 — 그쪽은 `limit || 20` 으로 페이지네이션되므로
+   * 활성 채널이 20개를 넘으면 목록이 **조용히 잘린다**. 이 목록은 channel-adapter 의 수집
+   * 게이트(#654) 판정에 쓰이고, 잘린 사이트는 "비활성"으로 읽혀 그 채널 수집이 통째로
+   * 멈춘다. 게이트 입력에는 페이지네이션을 두지 않는다.
+   */
+  async getActiveChannelSites(tx?: DbTransaction): Promise<string[]> {
+    return this.db.run(async (tx) => {
+      const rows = await tx
+        .selectDistinct({ site: salesChannels.site })
+        .from(salesChannels)
+        .where(eq(salesChannels.isActive, true))
+        .orderBy(asc(salesChannels.site));
+
+      return rows.map((row) => row.site);
+    }, tx);
+  }
+
   async updateChannel(
     channelId: string,
     data: UpdateSalesChannel,

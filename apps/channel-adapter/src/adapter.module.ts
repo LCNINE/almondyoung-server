@@ -60,6 +60,7 @@ import { ConfigModule } from '@nestjs/config';
 import { validateChannelAdapterEnv } from './config/env.validation';
 import { ChannelDataReader } from './services/channel-data.reader';
 import { ChannelListingClient } from './services/clients/channel-listing.client';
+import { SalesChannelClient } from './services/clients/sales-channel.client';
 import { InboxService } from './services/inbox.service';
 import { PollingChangeHashService } from './services/polling-change-hash.service';
 import { ShipmentDispatchInboxWorker } from './services/shipment-dispatch-inbox.worker';
@@ -237,6 +238,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
 
     // PIM 매핑 조회 클라이언트
     ChannelListingClient,
+    SalesChannelClient,
 
     // 계류 주문 서비스
 
