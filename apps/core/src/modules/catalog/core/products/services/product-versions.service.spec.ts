@@ -334,6 +334,9 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     priceCacheService.cachePricesForVersion.mockImplementation(async () => order.push('cachePrices'));
     (service as any)._reconcileMatchingsAfterPublish = jest.fn(async () => order.push('reconcileMatchings'));
     (service as any)._reconcileAssetLinksAfterPublish = jest.fn(async () => order.push('reconcileAssetLinks'));
+    (service as any)._reconcileChannelListingsAfterPublish = jest.fn(async () =>
+      order.push('reconcileChannelListings'),
+    );
     (service as any)._publishVariantChangeEvents = jest.fn(async () => order.push('publishVariantChanges'));
     (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockImplementation(async () => {
@@ -374,6 +377,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       'activateTarget',
       'reconcileMatchings',
       'reconcileAssetLinks',
+      'reconcileChannelListings',
       'publishVariantChanges',
       'assembleSnapshot',
       'saveOutbox',
@@ -407,6 +411,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     service.validateProductCodeUniqueness = jest.fn().mockResolvedValue(undefined) as any;
     (service as any)._reconcileMatchingsAfterPublish = jest.fn().mockResolvedValue(undefined);
     (service as any)._reconcileAssetLinksAfterPublish = jest.fn().mockResolvedValue(undefined);
+    (service as any)._reconcileChannelListingsAfterPublish = jest.fn().mockResolvedValue(undefined);
     (service as any)._validateDigitalAssetLinks = jest.fn().mockResolvedValue(undefined);
     (service as any)._publishVariantChangeEvents = jest.fn().mockResolvedValue(undefined);
     (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
@@ -482,6 +487,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'validateProductCodeUniqueness').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_reconcileMatchingsAfterPublish').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_reconcileAssetLinksAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileChannelListingsAfterPublish').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_validateDigitalAssetLinks').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_publishVariantChangeEvents').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_emitActiveVersionChangedEvent').mockResolvedValue(undefined);
@@ -514,6 +520,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
     for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
                      '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_reconcileChannelListingsAfterPublish',
                      '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
                      '_emitActiveVersionChangedEvent'])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
@@ -543,6 +550,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
     for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
                      '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_reconcileChannelListingsAfterPublish',
                      '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
                      '_emitActiveVersionChangedEvent'])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
@@ -1097,5 +1105,50 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
     expect(result.page).toBe(2);
     expect(result.limit).toBe(10);
     expect(result.data).toEqual(rows);
+  });
+});
+
+describe('_planChannelListingReconciliation (#652)', () => {
+  // publish 로 CoW 가 일어나면 리스팅이 옛 variant 를 가리킨 채 남는다.
+  // 옵션값 조합이 같은 twin 으로 재지정하고, twin 이 없으면 리스팅을 끈다.
+  // 순수 판정 함수라 DI 가 필요 없다 — prototype 만 빌려 부른다.
+  const service = Object.create(ProductVersionsService.prototype) as any;
+  const plan = (prev: any[], next: any[], listings: any[]) =>
+    service._planChannelListingReconciliation(prev, next, listings);
+
+  it('옵션 조합이 같은 twin 이 새 버전에 있으면 그 variant 로 재지정한다', () => {
+    const result = plan(
+      [{ variantId: 'v-old', optionValueIds: ['red', 'L'] }],
+      [{ variantId: 'v-new', optionValueIds: ['L', 'red'] }],
+      [{ id: 'l-1', variantId: 'v-old' }],
+    );
+    expect(result).toEqual({ repoints: [{ listingId: 'l-1', newVariantId: 'v-new' }], deactivations: [] });
+  });
+
+  it('옵션 조합이 같은 twin 이 없으면 리스팅을 비활성화한다', () => {
+    const result = plan(
+      [{ variantId: 'v-old', optionValueIds: ['red'] }],
+      [{ variantId: 'v-other', optionValueIds: ['blue'] }],
+      [{ id: 'l-1', variantId: 'v-old' }],
+    );
+    expect(result).toEqual({ repoints: [], deactivations: ['l-1'] });
+  });
+
+  it('CoW 가 없어 variant 행이 그대로면 아무것도 하지 않는다', () => {
+    const result = plan(
+      [{ variantId: 'v-1', optionValueIds: ['red'] }],
+      [{ variantId: 'v-1', optionValueIds: ['red'] }],
+      [{ id: 'l-1', variantId: 'v-1' }],
+    );
+    expect(result).toEqual({ repoints: [], deactivations: [] });
+  });
+
+  it('옵션 없는 기본 품목(조합 빈 배열)도 twin 으로 재지정한다', () => {
+    const result = plan(
+      [{ variantId: 'v-old', optionValueIds: [] }],
+      [{ variantId: 'v-new', optionValueIds: [] }],
+      [{ id: 'l-1', variantId: 'v-old' }],
+    );
+    expect(result).toEqual({ repoints: [{ listingId: 'l-1', newVariantId: 'v-new' }], deactivations: [] });
   });
 });

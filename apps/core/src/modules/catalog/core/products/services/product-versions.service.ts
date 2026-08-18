@@ -23,6 +23,7 @@ import {
   productMasterCategories,
   productMasterVersions,
   productMasterOptionGroups,
+  channelVariantListings,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
@@ -56,6 +57,24 @@ import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unma
 export interface PublishVersionOptions {
   origin?: ProductPublishOrigin;
   importSessionId?: string;
+}
+
+/** variant 한 벌과 그 옵션값 조합 — twin 짝 찾기의 입력. */
+interface VariantOptionCombo {
+  variantId: string;
+  optionValueIds: string[];
+}
+
+/** 승계 판정 대상 채널 리스팅 (#652). */
+interface ReconcilableListing {
+  id: string;
+  variantId: string;
+}
+
+/** 리스팅 승계 판정 결과 (#652). */
+interface ChannelListingReconciliationPlan {
+  repoints: Array<{ listingId: string; newVariantId: string }>;
+  deactivations: string[];
 }
 
 @Injectable()
@@ -326,6 +345,11 @@ export class ProductVersionsService {
 
       // Library 의 variant↔asset 매칭도 같은 패턴으로 인계 (옵션 조합 일치 시)
       await this._reconcileAssetLinksAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
+
+      // 채널 리스팅은 옛 variant 를 *가리키는* 쪽이라 방향만 반대다 — twin 으로 재지정한다.
+      // 아래 recalculateAndPublishForVariants 가 새·옛 버전 variant 를 모두 다시 계산하므로
+      // 리스팅 변경분 가용재고는 그 호출이 흡수한다 (별도 recalc 불필요).
+      await this._reconcileChannelListingsAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
 
       // 디지털 publish 가드 — reconcile 로 인계된 링크까지 반영하도록 그 뒤에 검증(throw 시 tx 롤백).
       await this._validateDigitalAssetLinks(version, tx);
@@ -704,6 +728,111 @@ export class ProductVersionsService {
         `Asset link reconciliation: inherited ${inheritedCount}/${unmatched.length} variant asset matchings from version ${previousActiveVersionId} to ${newVersionId}`,
       );
     }
+  }
+
+  /**
+   * publish 후 채널 리스팅을 새 버전의 twin variant 로 재지정한다 (#652, ADR-0031 결정 4).
+   *
+   * 앞의 두 reconciler 와 방향이 반대다. 매칭·에셋은 "새 variant 가 비었으면 옛 twin 에서
+   * 상속"이지만, 리스팅은 행이 옛 variant 를 **가리키고** 있으므로 그 포인터를 옮긴다.
+   * `uq_channel_variant_listing` 이 `(sales_channel_id, channel_item_id)` 에 걸린 unique 라
+   * "새 행 INSERT + 옛 행 비활성" 은 제약 위반이다 — 기존 행 UPDATE 만 가능하다.
+   */
+  private async _reconcileChannelListingsAfterPublish(
+    newVersionId: string,
+    previousActiveVersionId: string | null,
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!previousActiveVersionId) return;
+
+    const previousVariants = await this._getVersionVariantsWithOptionValues(previousActiveVersionId, tx);
+    if (previousVariants.length === 0) return;
+
+    const activeListings = await tx
+      .select({ id: channelVariantListings.id, variantId: channelVariantListings.variantId })
+      .from(channelVariantListings)
+      .where(
+        and(
+          inArray(
+            channelVariantListings.variantId,
+            previousVariants.map((v) => v.variantId),
+          ),
+          eq(channelVariantListings.isActive, true),
+        ),
+      );
+    // 이미 꺼진 리스팅은 손대지 않는다 — 되살리는 건 별개 결정이다.
+    if (activeListings.length === 0) return;
+
+    const newVariants = await this._getVersionVariantsWithOptionValues(newVersionId, tx);
+    const { repoints, deactivations } = this._planChannelListingReconciliation(
+      previousVariants,
+      newVariants,
+      activeListings,
+    );
+
+    for (const { listingId, newVariantId } of repoints) {
+      await tx
+        .update(channelVariantListings)
+        .set({ variantId: newVariantId, updatedAt: new Date() })
+        .where(eq(channelVariantListings.id, listingId));
+    }
+
+    if (deactivations.length > 0) {
+      await tx
+        .update(channelVariantListings)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(inArray(channelVariantListings.id, deactivations));
+    }
+
+    if (repoints.length > 0 || deactivations.length > 0) {
+      this.logger.log(
+        `Channel listing reconciliation: repointed ${repoints.length}, deactivated ${deactivations.length} ` +
+          `listings from version ${previousActiveVersionId} to ${newVersionId}`,
+      );
+    }
+  }
+
+  /**
+   * 리스팅 승계 판정 (#652) — 순수 함수.
+   *
+   * CoW 로 variant 행이 갈리면 `channel_variant_listings` 는 옛 행을 가리킨 채 남고,
+   * 조회 조인이 variant 를 고정하므로 **옛 버전 값이 조용히 반환된다**(격리도 로그도 없다).
+   * 옵션값 조합이 같은 twin 으로 재지정하고, twin 이 없으면 리스팅을 끈다 — 끄면 이후
+   * 그 채널 주문이 미식별 격리로 가서 최소한 눈에 보인다.
+   */
+  private _planChannelListingReconciliation(
+    previousVariants: VariantOptionCombo[],
+    newVariants: VariantOptionCombo[],
+    listings: ReconcilableListing[],
+  ): ChannelListingReconciliationPlan {
+    const newVariantIds = new Set(newVariants.map((v) => v.variantId));
+
+    const newVariantIdByComboKey = new Map<string, string>();
+    for (const nv of newVariants) {
+      newVariantIdByComboKey.set(this._comboKey(nv.optionValueIds), nv.variantId);
+    }
+
+    const previousByVariantId = new Map(previousVariants.map((pv) => [pv.variantId, pv]));
+
+    const repoints: Array<{ listingId: string; newVariantId: string }> = [];
+    const deactivations: string[] = [];
+
+    for (const listing of listings) {
+      // 새 버전이 같은 variant 행을 그대로 쓰면 CoW 가 없었던 것 — 손댈 이유가 없다.
+      if (newVariantIds.has(listing.variantId)) continue;
+
+      const previous = previousByVariantId.get(listing.variantId);
+      if (!previous) continue;
+
+      const twinVariantId = newVariantIdByComboKey.get(this._comboKey(previous.optionValueIds));
+      if (twinVariantId) {
+        repoints.push({ listingId: listing.id, newVariantId: twinVariantId });
+      } else {
+        deactivations.push(listing.id);
+      }
+    }
+
+    return { repoints, deactivations };
   }
 
   private async _getVersionVariantsWithOptionValues(

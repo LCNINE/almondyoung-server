@@ -133,6 +133,31 @@ export class ChannelListingService {
   }
 
   /**
+   * 리스팅 대상 variant 가 active 버전에 매달려 있는지 확인한다.
+   *
+   * draft 에만 매달린 variant 에 리스팅을 걸면, 그 draft 를 버릴 때
+   * `deleteDraftVersion` → `_cleanupOrphanedVariantsAfterDeletion` 이 variant 를 지우고
+   * `channel_variant_listings.variant_id` 의 `onDelete: 'cascade'` 로 **리스팅이 조용히 사라진다.**
+   * 생성 시점에 막는 게 유일하게 확실한 방어다 (#652).
+   */
+  private async assertVariantIsPublished(variantId: string, tx?: DbTransaction): Promise<void> {
+    const client = this.getClient(tx);
+
+    const [mapping] = await client
+      .select({ id: productMasterVariants.id })
+      .from(productMasterVariants)
+      .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
+      .limit(1);
+
+    if (!mapping) {
+      throw new BadRequestError(
+        `아직 publish 되지 않은 품목에는 채널 매핑을 걸 수 없습니다. 상품을 publish 한 뒤 다시 시도하세요: ${variantId}`,
+      );
+    }
+  }
+
+  /**
    * 새 채널 매핑 생성
    */
   async createListing(dto: CreateChannelListingDto, tx?: DbTransaction): Promise<ChannelVariantListing> {
@@ -148,6 +173,8 @@ export class ChannelListingService {
     if (variant.length === 0) {
       throw new NotFoundError(`Variant not found: ${dto.variantId}`);
     }
+
+    await this.assertVariantIsPublished(dto.variantId, tx);
 
     // Channel 존재 확인
     const channel = await client
@@ -294,6 +321,7 @@ export class ChannelListingService {
     if (!existing) {
       return;
     }
+    await this.assertVariantIsPublished(existing.variantId, tx);
     await this.assertDigitalAllowedForChannel(existing.variantId, existing.salesChannelId, tx);
 
     const [updated] = await client

@@ -24,10 +24,11 @@ function makeService(results: any[]) {
 const baseDto = { variantId: 'var-1', salesChannelId: 'ch-1', channelItemId: 'item-1' } as any;
 
 describe('ChannelListingService createListing — 외부채널 디지털 차단', () => {
-  // 큐 순서: variant존재 → channel존재 → (assert)channel site → (assert)isDigitalVariant → insert
+  // 큐 순서: variant존재 → activeVersion매핑 → channel존재 → (assert)channel site → (assert)isDigitalVariant → insert
   it('외부채널(naver) + 디지털 variant 는 listing 을 차단한다', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
+      [{ id: 'pmv-1' }],
       [{ id: 'ch-1' }],
       [{ site: 'naver' }],
       [{ fulfillmentKind: 'digital' }],
@@ -38,6 +39,7 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
   it('외부채널(coupang) + 물리 variant 는 listing 을 허용한다', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
+      [{ id: 'pmv-1' }],
       [{ id: 'ch-1' }],
       [{ site: 'coupang' }],
       [{ fulfillmentKind: 'physical' }],
@@ -49,6 +51,7 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
   it('medusa(자사몰) 채널은 디지털이어도 listing 을 허용한다 (외부채널 아님 → digital 조회 skip)', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
+      [{ id: 'pmv-1' }],
       [{ id: 'ch-1' }],
       [{ site: 'medusa' }],
       [{ id: 'listing-2', variantId: 'var-1' }],
@@ -58,10 +61,11 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
 });
 
 describe('ChannelListingService activateListing — 외부채널 디지털 재활성 차단', () => {
-  // 큐 순서: getListingById → (assert)channel site → (assert)isDigitalVariant → update
+  // 큐 순서: getListingById → activeVersion매핑 → (assert)channel site → (assert)isDigitalVariant → update
   it('비활성 외부채널(naver) 디지털 listing 재활성을 차단한다', async () => {
     const service = makeService([
       [{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }],
+      [{ id: 'pmv-1' }],
       [{ site: 'naver' }],
       [{ fulfillmentKind: 'digital' }],
     ]);
@@ -71,6 +75,7 @@ describe('ChannelListingService activateListing — 외부채널 디지털 재�
   it('medusa 채널 listing 은 재활성을 허용한다', async () => {
     const service = makeService([
       [{ id: 'l-2', variantId: 'var-1', salesChannelId: 'ch-1' }],
+      [{ id: 'pmv-1' }],
       [{ site: 'medusa' }],
       [{ id: 'l-2', variantId: 'var-1' }],
     ]);
@@ -87,5 +92,21 @@ describe('ChannelListingService.isExternalMarketplaceSite', () => {
   it('medusa/3pl 은 외부 마켓플레이스가 아니다', () => {
     expect((service as any).isExternalMarketplaceSite('medusa')).toBe(false);
     expect((service as any).isExternalMarketplaceSite('3pl')).toBe(false);
+  });
+});
+
+describe('ChannelListingService — publish 되지 않은 품목 리스팅 차단 (#652)', () => {
+  // draft 에만 매달린 variant 에 리스팅을 걸면, 그 draft 를 버릴 때 variant 가 삭제되고
+  // channel_variant_listings.variant_id 의 cascade 로 리스팅이 조용히 사라진다.
+  it('createListing: active 버전에 매달리지 않은 variant 는 거부한다', async () => {
+    // 큐: variant존재 → activeVersion 매핑(없음)
+    const service = makeService([[{ id: 'var-1' }], []]);
+    await expect(service.createListing(baseDto)).rejects.toThrow('publish');
+  });
+
+  it('activateListing: active 버전에 매달리지 않은 variant 는 재활성을 거부한다', async () => {
+    // 큐: getListingById → activeVersion 매핑(없음)
+    const service = makeService([[{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }], []]);
+    await expect(service.activateListing('l-1')).rejects.toThrow('publish');
   });
 });
