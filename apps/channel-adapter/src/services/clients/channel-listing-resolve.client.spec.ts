@@ -69,7 +69,17 @@ describe('ChannelListingClient.resolveByChannelCode (#674)', () => {
   });
 
   it('404 가 아닌 오류는 삼키지 않는다', async () => {
-    const get = jest.fn().mockReturnValue(throwError(() => ({ response: { status: 500 }, message: 'boom' })));
+    const get = jest
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ response: { status: 500 }, message: 'boom' })));
     await expect(clientWith(get).resolveByChannelCode('naver', 'item-1')).rejects.toBeDefined();
+    expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('found=true 인데 listing 이 없으면 Core 응답 오류로 던진다', async () => {
+    const get = jest.fn().mockReturnValue(of({ status: 200, data: { found: true } }));
+    await expect(clientWith(get).resolveByChannelCode('naver', 'item-1')).rejects.toThrow(
+      /Core.*resolve.*found=true.*listing/,
+    );
   });
 });

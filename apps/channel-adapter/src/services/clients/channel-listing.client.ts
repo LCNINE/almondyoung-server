@@ -97,7 +97,13 @@ export class ChannelListingClient {
       );
 
       const body = response.data;
-      if (body?.found && body.listing) {
+      if (body?.found) {
+        if (!body.listing) {
+          throw new Error(
+            `Core /resolve 응답이 found=true 인데 listing 이 없다 (${channelCode}/${channelItemId}). ` +
+              `Core 버그인지 배포 타이밍 오류인지 확인해라.`,
+          );
+        }
         return { found: true, listing: body.listing };
       }
       return { found: false, cause: toListingResolutionCause(body?.cause) };
