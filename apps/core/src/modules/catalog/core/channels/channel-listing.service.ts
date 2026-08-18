@@ -13,6 +13,7 @@ import {
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { isExternalMarketplaceSite } from './marketplace-site';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -139,22 +140,33 @@ export class ChannelListingService {
    * `deleteDraftVersion` → `_cleanupOrphanedVariantsAfterDeletion` 이 variant 를 지우고
    * `channel_variant_listings.variant_id` 의 `onDelete: 'cascade'` 로 **리스팅이 조용히 사라진다.**
    * 생성 시점에 막는 게 유일하게 확실한 방어다 (#652).
+   *
+   * 거부 사유가 둘이라 메시지를 나눈다 — 복구 방법이 다르기 때문이다.
+   * 낡은 매핑은 활성화도 재생성도(`uq_channel_variant_listing`) 막히므로 삭제 후 재등록이 유일한 길이다.
    */
   private async assertVariantIsPublished(variantId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    const [mapping] = await client
-      .select({ id: productMasterVariants.id })
+    const versions = await client
+      .select({ status: productMasterVersions.status })
       .from(productMasterVariants)
       .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
-      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
-      .limit(1);
+      .where(eq(productMasterVariants.variantId, variantId));
 
-    if (!mapping) {
+    if (versions.some((v) => v.status === 'active')) return;
+
+    // 한 번도 활성이었던 적 없는 품목 — publish 하면 풀린다.
+    if (versions.every((v) => v.status === 'draft')) {
       throw new BadRequestError(
         `아직 publish 되지 않은 품목에는 채널 매핑을 걸 수 없습니다. 상품을 publish 한 뒤 다시 시도하세요: ${variantId}`,
       );
     }
+
+    // 활성이었다가 재발행으로 교체된 품목 — publish 해도 이 매핑은 안 살아난다.
+    throw new BadRequestError(
+      `상품이 다시 발행되면서 품목이 교체돼 낡은 채널 매핑입니다. ` +
+        `이 매핑을 삭제한 뒤 현재 품목으로 다시 등록하세요: ${variantId}`,
+    );
   }
 
   /**
@@ -382,16 +394,11 @@ export class ChannelListingService {
       .from(salesChannels)
       .where(eq(salesChannels.id, salesChannelId))
       .limit(1);
-    if (ch && this.isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
+    if (ch && isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
       throw new BadRequestError(
         `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
       );
     }
-  }
-
-  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
-  private isExternalMarketplaceSite(site: string): boolean {
-    return site === 'naver' || site === 'coupang';
   }
 
   /** variant 의 active 버전이 디지털(fulfillmentKind='digital')인지. */

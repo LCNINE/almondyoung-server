@@ -1,4 +1,5 @@
 import { ChannelListingService } from './channel-listing.service';
+import { isExternalMarketplaceSite } from './marketplace-site';
 
 // drizzle 쿼리 체인 mock: select()/insert()/update() 호출마다 큐의 다음 결과를 반환하는 thenable.
 function makeClient(results: any[]) {
@@ -28,7 +29,7 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
   it('외부채널(naver) + 디지털 variant 는 listing 을 차단한다', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
-      [{ id: 'pmv-1' }],
+      [{ status: 'active' }],
       [{ id: 'ch-1' }],
       [{ site: 'naver' }],
       [{ fulfillmentKind: 'digital' }],
@@ -39,7 +40,7 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
   it('외부채널(coupang) + 물리 variant 는 listing 을 허용한다', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
-      [{ id: 'pmv-1' }],
+      [{ status: 'active' }],
       [{ id: 'ch-1' }],
       [{ site: 'coupang' }],
       [{ fulfillmentKind: 'physical' }],
@@ -51,7 +52,7 @@ describe('ChannelListingService createListing — 외부채널 디지털 차단'
   it('medusa(자사몰) 채널은 디지털이어도 listing 을 허용한다 (외부채널 아님 → digital 조회 skip)', async () => {
     const service = makeService([
       [{ id: 'var-1' }],
-      [{ id: 'pmv-1' }],
+      [{ status: 'active' }],
       [{ id: 'ch-1' }],
       [{ site: 'medusa' }],
       [{ id: 'listing-2', variantId: 'var-1' }],
@@ -65,7 +66,7 @@ describe('ChannelListingService activateListing — 외부채널 디지털 재�
   it('비활성 외부채널(naver) 디지털 listing 재활성을 차단한다', async () => {
     const service = makeService([
       [{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }],
-      [{ id: 'pmv-1' }],
+      [{ status: 'active' }],
       [{ site: 'naver' }],
       [{ fulfillmentKind: 'digital' }],
     ]);
@@ -75,7 +76,7 @@ describe('ChannelListingService activateListing — 외부채널 디지털 재�
   it('medusa 채널 listing 은 재활성을 허용한다', async () => {
     const service = makeService([
       [{ id: 'l-2', variantId: 'var-1', salesChannelId: 'ch-1' }],
-      [{ id: 'pmv-1' }],
+      [{ status: 'active' }],
       [{ site: 'medusa' }],
       [{ id: 'l-2', variantId: 'var-1' }],
     ]);
@@ -83,15 +84,14 @@ describe('ChannelListingService activateListing — 외부채널 디지털 재�
   });
 });
 
-describe('ChannelListingService.isExternalMarketplaceSite', () => {
-  const service = makeService([]);
+describe('isExternalMarketplaceSite', () => {
   it('naver/coupang 는 외부 마켓플레이스', () => {
-    expect((service as any).isExternalMarketplaceSite('naver')).toBe(true);
-    expect((service as any).isExternalMarketplaceSite('coupang')).toBe(true);
+    expect(isExternalMarketplaceSite('naver')).toBe(true);
+    expect(isExternalMarketplaceSite('coupang')).toBe(true);
   });
   it('medusa/3pl 은 외부 마켓플레이스가 아니다', () => {
-    expect((service as any).isExternalMarketplaceSite('medusa')).toBe(false);
-    expect((service as any).isExternalMarketplaceSite('3pl')).toBe(false);
+    expect(isExternalMarketplaceSite('medusa')).toBe(false);
+    expect(isExternalMarketplaceSite('3pl')).toBe(false);
   });
 });
 
@@ -108,5 +108,20 @@ describe('ChannelListingService — publish 되지 않은 품목 리스팅 차�
     // 큐: getListingById → activeVersion 매핑(없음)
     const service = makeService([[{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }], []]);
     await expect(service.activateListing('l-1')).rejects.toThrow('publish');
+  });
+
+  // publish 로 품목이 교체된 낡은 매핑은 "미publish" 와 원인도 복구법도 다르다.
+  // 그 매핑은 활성화도 재생성도(uq_channel_variant_listing) 막히므로 삭제 후 재등록이 유일한 길이다.
+  it('createListing: 버전 매핑은 있으나 active 가 없으면 낡은 매핑이라고 알린다', async () => {
+    const service = makeService([[{ id: 'var-1' }], [{ status: 'inactive' }]]);
+    await expect(service.createListing(baseDto)).rejects.toThrow('삭제');
+  });
+
+  it('activateListing: 낡은 매핑은 삭제 후 재등록을 안내한다', async () => {
+    const service = makeService([
+      [{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }],
+      [{ status: 'inactive' }],
+    ]);
+    await expect(service.activateListing('l-1')).rejects.toThrow('삭제');
   });
 });
