@@ -16,6 +16,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
     currency_code,
     original_item_subtotal,
     shipping,
+    shippingBreakdown,
     membershipDiscount,
     totalDiscount,
     finalTotal,
@@ -53,6 +54,17 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
               {formatAmount(shipping)}
             </PriceRow.Value>
           </PriceRow>
+
+          {(shippingBreakdown?.length ?? 0) > 1 &&
+            shippingBreakdown!.map((method) => (
+              <div
+                key={method.id}
+                className="flex items-center justify-between pl-3 text-[11px] text-gray-400 lg:text-xs"
+              >
+                <span>{method.name}</span>
+                <span>{formatAmount(method.amount)}</span>
+              </div>
+            ))}
 
           {membershipDiscount > 0 && (
             <PriceRow>

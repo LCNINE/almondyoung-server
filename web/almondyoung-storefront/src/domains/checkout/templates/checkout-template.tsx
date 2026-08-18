@@ -118,6 +118,16 @@ export default function CheckoutTemplate({
     // 배송 불필요(디지털 단독)면 배송비 0
     const effectiveShipping = requiresShipping ? shipping.amount : 0
 
+    // 배송비 그룹이 2개 이상이면 배송 방법도 그룹당 1개씩 붙는다. 합계만 보여주면
+    // 어느 상품 몫인지 알 수 없으니 그룹별 금액을 같이 내려보낸다.
+    const shippingBreakdown = requiresShipping
+      ? (cart.shipping_methods ?? []).map((method) => ({
+          id: method.id,
+          name: method.name ?? "",
+          amount: method.amount ?? 0,
+        }))
+      : []
+
     const totalDiscount = discount_subtotal
     // 최종 결제금액은 Medusa 권위값(total: 배송비/세금 포함)을 그대로 사용한다.
     // 디지털 단독 카트는 배송메서드가 없어 total에 배송비가 포함되지 않는다(buildPaymentItems도 동일하게 배송 제외).
@@ -128,6 +138,7 @@ export default function CheckoutTemplate({
       item_subtotal,
       original_item_subtotal,
       shipping: effectiveShipping,
+      shippingBreakdown,
       discount_subtotal,
       membershipDiscount,
       pointsUsed: 0,
@@ -396,6 +407,7 @@ export default function CheckoutTemplate({
           <OrderProductsSection
             products={cartItems}
             shipping={requiresShipping ? shipping.amount : 0}
+            shippingMethods={cartTotals.shippingBreakdown}
           />
           <DiscountSection
             cartId={cart.id}

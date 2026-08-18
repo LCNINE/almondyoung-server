@@ -177,6 +177,7 @@
     "optionDefault": "기본",
     "optionLine": "{value} | {quantity}개",
     "shippingFee": "배송비 {amount}원",
+    "shippingFeeLine": "{name} {amount}원",
     "amountWon": "{amount}원"
   },
   "discount": {
