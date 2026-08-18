@@ -48,6 +48,11 @@ import { ProductSellableQuantityService } from '../../../../inventory/product-se
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, count } from 'drizzle-orm';
 import { isExternalMarketplaceSite } from '../../channels/marketplace-site';
+import {
+  comboKey,
+  planChannelListingReconciliation,
+  type VariantOptionCombo,
+} from './channel-listing-reconciliation';
 import { keywordMatch } from '../../../common/keyword-match';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
@@ -59,42 +64,6 @@ import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unma
 export interface PublishVersionOptions {
   origin?: ProductPublishOrigin;
   importSessionId?: string;
-}
-
-/** variant 한 벌과 그 옵션값 조합 — twin 짝 찾기의 입력. */
-export interface VariantOptionCombo {
-  variantId: string;
-  optionValueIds: string[];
-}
-
-/** 승계 판정 대상 채널 리스팅 (#652). */
-export interface ReconcilableListing {
-  id: string;
-  variantId: string;
-  /** 네이버·쿠팡 등 외부 마켓플레이스인가 — 디지털 상품은 여기 실릴 수 없다. */
-  isExternalMarketplace: boolean;
-  isActive: boolean;
-}
-
-/**
- * 리스팅 승계 판정 결과 (#652).
- *
- * 재지정과 비활성은 **배타적이지 않다** — 디지털 전환으로 끄는 리스팅도 짝이 있으면 같이
- * 옮겨 둬야 나중에 되살릴 수 있다. 죽은 variant 를 가리킨 채 꺼진 행은 재활성도
- * 재등록도(`uq_channel_variant_listing`) 막혀 삭제 말고는 길이 없다.
- */
-export interface ChannelListingReconciliationPlan {
-  updates: Array<{ listingId: string; newVariantId: string | null; deactivate: boolean }>;
-}
-
-/** 스펙이 private 판정 함수를 타입을 지운 채 부르지 않도록 노출하는 표면. */
-export interface PlanChannelListings {
-  _planChannelListingReconciliation(
-    candidateVariants: VariantOptionCombo[],
-    newVariants: VariantOptionCombo[],
-    listings: ReconcilableListing[],
-    newVersionIsDigital: boolean,
-  ): ChannelListingReconciliationPlan;
 }
 
 @Injectable()
@@ -509,7 +478,7 @@ export class ProductVersionsService {
 
     const prevByComboKey = new Map<string, { variantId: string }>();
     for (const pv of prevVariants) {
-      prevByComboKey.set(this._comboKey(pv.optionValueIds), { variantId: pv.variantId });
+      prevByComboKey.set(comboKey(pv.optionValueIds), { variantId: pv.variantId });
     }
 
     // 판매정책은 버전에 담기지 않지만(설계 의도), CoW 로 variantId 가 갈리면 "같은 상품의
@@ -542,7 +511,7 @@ export class ProductVersionsService {
     let inheritedPolicyCount = 0;
     for (const nv of newVariants) {
       if (hasPolicy.has(nv.variantId)) continue;
-      const twin = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      const twin = prevByComboKey.get(comboKey(nv.optionValueIds));
       if (!twin) continue;
 
       const prevPolicy = prevPoliciesByVariantId.get(twin.variantId);
@@ -606,7 +575,7 @@ export class ProductVersionsService {
 
     let inheritedCount = 0;
     for (const nv of unmatched) {
-      const twin = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      const twin = prevByComboKey.get(comboKey(nv.optionValueIds));
       if (!twin) continue;
 
       const prevMatching = prevMatchingsByVariantId.get(twin.variantId);
@@ -736,12 +705,12 @@ export class ProductVersionsService {
 
     const prevByComboKey = new Map<string, string>();
     for (const pv of prevVariants) {
-      prevByComboKey.set(this._comboKey(pv.optionValueIds), pv.variantId);
+      prevByComboKey.set(comboKey(pv.optionValueIds), pv.variantId);
     }
 
     const plan: Array<{ newVariantId: string; previousVariantId: string }> = [];
     for (const nv of unmatched) {
-      const twinVariantId = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      const twinVariantId = prevByComboKey.get(comboKey(nv.optionValueIds));
       if (!twinVariantId) continue;
       plan.push({ newVariantId: nv.variantId, previousVariantId: twinVariantId });
     }
@@ -777,13 +746,10 @@ export class ProductVersionsService {
     newVersionIsDigital: boolean,
     tx: DbTransaction,
   ): Promise<void> {
-    const newVariants = await this._getVersionVariantsWithOptionValues(newVersionId, tx);
-    // 형제 reconciler 와 같은 가드. 없으면 품목 0개짜리 버전을 publish 하는 순간
-    // 그 master 의 채널 매핑이 "짝 없음" 으로 전량 꺼진다.
-    if (newVariants.length === 0) return;
-
-    const candidateVariants = await this._getMasterVariantsWithOptionValues(masterId, tx);
-    if (candidateVariants.length === 0) return;
+    // 리스팅 존재 확인을 맨 앞에 둔다 — 대부분의 publish 는 채널 매핑이 없어 여기서 끝난다
+    // (일괄 세션은 한 트랜잭션에서 수백 건을 publish 한다).
+    const candidateVariantIds = await this._getMasterVariantIds(masterId, tx);
+    if (candidateVariantIds.length === 0) return;
 
     const listings = await tx
       .select({
@@ -794,15 +760,17 @@ export class ProductVersionsService {
       })
       .from(channelVariantListings)
       .innerJoin(salesChannels, eq(salesChannels.id, channelVariantListings.salesChannelId))
-      .where(
-        inArray(
-          channelVariantListings.variantId,
-          candidateVariants.map((c) => c.variantId),
-        ),
-      );
+      .where(inArray(channelVariantListings.variantId, candidateVariantIds));
     if (listings.length === 0) return;
 
-    const { updates } = this._planChannelListingReconciliation(
+    const newVariants = await this._getVersionVariantsWithOptionValues(newVersionId, tx);
+    // 형제 reconciler 와 같은 가드. 없으면 품목 0개짜리 버전을 publish 하는 순간
+    // 그 master 의 채널 매핑이 "짝 없음" 으로 전량 꺼진다.
+    if (newVariants.length === 0) return;
+
+    const candidateVariants = await this._attachOptionValues(candidateVariantIds, tx);
+
+    const { updates } = planChannelListingReconciliation(
       candidateVariants,
       newVariants,
       listings.map((l) => ({
@@ -851,67 +819,6 @@ export class ProductVersionsService {
     }
   }
 
-  /**
-   * 리스팅 승계 판정 (#652) — 순수 함수.
-   *
-   * 리스팅 한 건에 대해 독립된 두 결정을 내린다.
-   * - **어디를 가리켜야 하나**: CoW 로 variant 가 갈렸으면 옵션값 조합이 같은 twin.
-   * - **꺼야 하나**: 짝이 없거나, 조합이 모호하거나(같은 조합이 둘 이상 — 주문이 흘러갈 곳을
-   *   임의로 고를 수 없다), 새 버전이 디지털인데 외부 마켓플레이스 리스팅일 때
-   *   (`createListing` 이 거부하는 상태를 승계로 만들 수는 없다).
-   *
-   * 디지털 판정은 **CoW 여부와 무관**하다 — `fulfillmentKind` 만 바꿔 publish 하면 품목이
-   * 복제되지 않으므로, 제자리 variant 의 리스팅도 검사해야 한다.
-   */
-  private _planChannelListingReconciliation(
-    candidateVariants: VariantOptionCombo[],
-    newVariants: VariantOptionCombo[],
-    listings: ReconcilableListing[],
-    newVersionIsDigital: boolean,
-  ): ChannelListingReconciliationPlan {
-    const newVariantIds = new Set(newVariants.map((v) => v.variantId));
-
-    // 같은 조합이 둘 이상이면 null 로 표시해 "짝 없음" 과 같게 취급한다.
-    const newVariantIdByComboKey = new Map<string, string | null>();
-    for (const nv of newVariants) {
-      const key = this._comboKey(nv.optionValueIds);
-      newVariantIdByComboKey.set(key, newVariantIdByComboKey.has(key) ? null : nv.variantId);
-    }
-
-    const listingsByVariantId = new Map<string, ReconcilableListing[]>();
-    for (const listing of listings) {
-      const bucket = listingsByVariantId.get(listing.variantId);
-      if (bucket) bucket.push(listing);
-      else listingsByVariantId.set(listing.variantId, [listing]);
-    }
-
-    const updates: ChannelListingReconciliationPlan['updates'] = [];
-
-    for (const candidate of candidateVariants) {
-      const affected = listingsByVariantId.get(candidate.variantId);
-      if (!affected) continue;
-
-      // 새 버전이 같은 variant 행을 그대로 쓰면 CoW 가 없었던 것 — 옮길 곳이 없다.
-      const isStale = !newVariantIds.has(candidate.variantId);
-      const twinVariantId = isStale
-        ? (newVariantIdByComboKey.get(this._comboKey(candidate.optionValueIds)) ?? null)
-        : null;
-
-      for (const listing of affected) {
-        const blockedByDigital = newVersionIsDigital && listing.isExternalMarketplace;
-        const deactivate = listing.isActive && (blockedByDigital || (isStale && !twinVariantId));
-        const newVariantId = isStale ? twinVariantId : null;
-
-        // 이미 꺼진 리스팅을 다시 끄지 않고, 옮길 곳도 없으면 건드릴 이유가 없다.
-        if (!deactivate && !newVariantId) continue;
-
-        updates.push({ listingId: listing.id, newVariantId, deactivate });
-      }
-    }
-
-    return { updates };
-  }
-
   private async _getVersionVariantsWithOptionValues(
     versionId: string,
     tx: DbTransaction,
@@ -930,22 +837,16 @@ export class ProductVersionsService {
   }
 
   /**
-   * master 에 매달린 **모든 버전**의 variant. 리스팅 승계(#652)가 쓰는 축이다 —
+   * master 에 매달린 **모든 버전**의 variant id. 리스팅 승계(#652)가 쓰는 축이다 —
    * 활성 버전이 없는 master 도 있어서 버전 단위로는 옛 variant 를 못 찾는다.
    */
-  private async _getMasterVariantsWithOptionValues(
-    masterId: string,
-    tx: DbTransaction,
-  ): Promise<VariantOptionCombo[]> {
+  private async _getMasterVariantIds(masterId: string, tx: DbTransaction): Promise<string[]> {
     const rows = await tx
       .selectDistinct({ variantId: productMasterVariants.variantId })
       .from(productMasterVariants)
       .where(eq(productMasterVariants.masterId, masterId));
 
-    return this._attachOptionValues(
-      rows.map((r) => r.variantId),
-      tx,
-    );
+    return rows.map((r) => r.variantId);
   }
 
   private async _attachOptionValues(variantIds: string[], tx: DbTransaction): Promise<VariantOptionCombo[]> {
@@ -967,9 +868,6 @@ export class ProductVersionsService {
     return variantIds.map((id) => ({ variantId: id, optionValueIds: byVariant.get(id) ?? [] }));
   }
 
-  private _comboKey(optionValueIds: string[]): string {
-    return [...optionValueIds].sort().join('|');
-  }
 
   /**
    * 멤버십가 공개 제한 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.

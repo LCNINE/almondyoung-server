@@ -6,13 +6,13 @@ jest.mock(
   { virtual: true },
 );
 
+import { ProductVersionsService } from './product-versions.service';
 import {
-  ProductVersionsService,
+  planChannelListingReconciliation,
   type VariantOptionCombo,
   type ReconcilableListing,
   type ChannelListingReconciliationPlan,
-  type PlanChannelListings,
-} from './product-versions.service';
+} from './channel-listing-reconciliation';
 import type { DbTransaction } from '../../../catalog.types';
 import {
   productMasterOptionGroups,
@@ -1114,21 +1114,14 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
   });
 });
 
-describe('_planChannelListingReconciliation (#652)', () => {
-  const service = Object.create(ProductVersionsService.prototype) as ProductVersionsService;
-  // private 판정 함수를 스펙에서 부르되 시그니처는 그대로 검사받는다 (`as any` 로 지우지 않는다).
+describe('planChannelListingReconciliation (#652)', () => {
   const plan = (
     candidates: VariantOptionCombo[],
     next: VariantOptionCombo[],
     listings: ReconcilableListing[],
     isDigital = false,
   ): ChannelListingReconciliationPlan =>
-    (service as unknown as PlanChannelListings)._planChannelListingReconciliation(
-      candidates,
-      next,
-      listings,
-      isDigital,
-    );
+    planChannelListingReconciliation(candidates, next, listings, isDigital);
   const combo = (variantId: string, ...optionValueIds: string[]): VariantOptionCombo => ({
     variantId,
     optionValueIds,
@@ -1248,23 +1241,34 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
     return service;
   };
 
+  // 큐 순서: master variant id → 리스팅 → 새 버전 variant id → 새 버전 옵션값 → 후보 옵션값
+  it('채널 매핑이 없으면 두 쿼리로 끝낸다', async () => {
+    const { tx, updates } = makeTx([[{ variantId: 'v-1' }], []]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
+    expect(updates).toEqual([]);
+  });
+
   it('새 버전에 품목이 하나도 없으면 리스팅을 건드리지 않는다', async () => {
     // 빈 버전 publish 가 그 master 의 채널 매핑을 통째로 꺼버리는 사고를 막는 가드.
-    const { tx, updates } = makeTx([[]]);
+    const { tx, updates } = makeTx([
+      [{ variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
+      [],
+    ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
     expect(updates).toEqual([]);
   });
 
   it('활성 버전이 없던 master 여도(판매중지 후 재개통) 옛 variant 리스팅을 승계한다', async () => {
     const { tx, updates } = makeTx([
+      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
       [{ variantId: 'v-new' }],
       [{ variantId: 'v-new', optionValueId: 'red' }],
-      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
       [
         { variantId: 'v-new', optionValueId: 'red' },
         { variantId: 'v-old', optionValueId: 'red' },
       ],
-      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
     ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
     expect(updates).toEqual([{ variantId: 'v-new', updatedAt: expect.any(Date) }]);
@@ -1272,14 +1276,14 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
 
   it('짝이 없으면 리스팅을 비활성으로 UPDATE 한다', async () => {
     const { tx, updates } = makeTx([
+      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
       [{ variantId: 'v-new' }],
       [{ variantId: 'v-new', optionValueId: 'blue' }],
-      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
       [
         { variantId: 'v-new', optionValueId: 'blue' },
         { variantId: 'v-old', optionValueId: 'red' },
       ],
-      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
     ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
     expect(updates).toEqual([{ isActive: false, updatedAt: expect.any(Date) }]);
@@ -1288,14 +1292,14 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
   it('CoW 가 없어도 디지털 전환이면 외부 마켓 리스팅을 한 문장으로 끈다', async () => {
     const { tx, updates, wheres } = makeTx([
       [{ variantId: 'v-1' }],
-      [{ variantId: 'v-1', optionValueId: 'red' }],
-      [{ variantId: 'v-1' }],
-      [{ variantId: 'v-1', optionValueId: 'red' }],
       [
         { id: 'l-1', variantId: 'v-1', isActive: true, site: 'naver' },
         { id: 'l-2', variantId: 'v-1', isActive: true, site: 'coupang' },
         { id: 'l-3', variantId: 'v-1', isActive: true, site: 'medusa' },
       ],
+      [{ variantId: 'v-1' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
     ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', true, tx);
     // 외부 둘만, 판정이 같으므로 UPDATE 는 한 번으로 묶인다. 자사몰은 손대지 않는다.

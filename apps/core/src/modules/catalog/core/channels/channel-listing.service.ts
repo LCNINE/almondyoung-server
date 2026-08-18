@@ -15,22 +15,7 @@ import { eq, and, desc, sql, isNull } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { isExternalMarketplaceSite } from './marketplace-site';
-
-/**
- * 리스팅 조회가 요구하는 "지금 팔리는 버전" 술어 (#666).
- *
- * 이게 없으면 조회 조인이 낡은 버전을 통해서도 성립해 **null 대신 옛 값이 반환된다** —
- * 격리도 로그도 없이 옛 판매정책·옛 SKU 스냅샷으로 채널 주문이 처리된다(#652 의 증상).
- * publish 승계(reconciler)는 publish 라는 사건에만 반응하므로, 그 사건을 안 거치고 낡는
- * 경로(#663 승인 우회 · #664 판매중지 · #665 레이스 · hardDelete)는 이 술어만이 막는다.
- *
- * soft delete 는 `status` 를 그대로 두고 `deletedAt` 만 세우므로 둘 다 봐야 한다.
- */
-const ACTIVE_VERSION_PREDICATES = [
-  eq(productMasterVersions.status, 'active'),
-  isNull(productMasterVersions.deletedAt),
-  isNull(productMasters.deletedAt),
-];
+import { buildChannelListingLookupQuery } from './channel-listing-lookup.query';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -75,78 +60,28 @@ export class ChannelListingService {
     channelItemId: string,
     tx?: DbTransaction,
   ): Promise<LookupVariantResult | null> {
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({
-        masterId: productMasterVariants.masterId,
-        versionId: productMasterVariants.versionId,
-        productName: productMasterVersions.name,
-        variantId: channelVariantListings.variantId,
-        variantCode: productVariants.variantCode,
-        variantName: productVariants.variantName,
-        isActive: channelVariantListings.isActive,
-      })
-      .from(channelVariantListings)
-      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
-      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
-      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .innerJoin(productMasters, eq(productMasters.id, productMasterVariants.masterId))
-      .where(
-        and(
-          eq(channelVariantListings.salesChannelId, salesChannelId),
-          eq(channelVariantListings.channelItemId, channelItemId),
-          eq(channelVariantListings.isActive, true),
-          ...ACTIVE_VERSION_PREDICATES,
-        ),
-      )
-      // 활성 버전만 남으므로 상태 분기 정렬은 필요 없다. 한 variant 가 두 master 에
-      // 매달린 이상 상태(bulk import 의 phantom masterId)에서도 결과를 고정하려고 정렬은 남긴다.
-      .orderBy(desc(productMasterVersions.version), desc(productMasterVersions.createdAt))
-      .limit(1);
-
+    const result = await buildChannelListingLookupQuery(
+      this.getClient(tx),
+      channelItemId,
+      eq(channelVariantListings.salesChannelId, salesChannelId),
+    );
     return result[0] ?? null;
   }
 
   /**
-   * 채널 코드(site)로 Variant 조회 (편의 메서드)
+   * 채널 코드(site)로 Variant 조회. **주문 수집이 실제로 타는 경로다**
+   * (ChannelLineIdentityResolver → lookupByChannelCode).
    */
   async lookupVariantByChannelCode(
     channelCode: string,
     channelItemId: string,
     tx?: DbTransaction,
   ): Promise<LookupVariantResult | null> {
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({
-        masterId: productMasterVariants.masterId,
-        versionId: productMasterVariants.versionId,
-        productName: productMasterVersions.name,
-        variantId: channelVariantListings.variantId,
-        variantCode: productVariants.variantCode,
-        variantName: productVariants.variantName,
-        isActive: channelVariantListings.isActive,
-      })
-      .from(channelVariantListings)
-      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
-      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
-      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .innerJoin(productMasters, eq(productMasters.id, productMasterVariants.masterId))
-      .innerJoin(salesChannels, eq(channelVariantListings.salesChannelId, salesChannels.id))
-      .where(
-        and(
-          eq(salesChannels.site, channelCode),
-          eq(channelVariantListings.channelItemId, channelItemId),
-          eq(channelVariantListings.isActive, true),
-          ...ACTIVE_VERSION_PREDICATES,
-        ),
-      )
-      // 활성 버전만 남으므로 상태 분기 정렬은 필요 없다. 한 variant 가 두 master 에
-      // 매달린 이상 상태(bulk import 의 phantom masterId)에서도 결과를 고정하려고 정렬은 남긴다.
-      .orderBy(desc(productMasterVersions.version), desc(productMasterVersions.createdAt))
-      .limit(1);
-
+    const result = await buildChannelListingLookupQuery(
+      this.getClient(tx),
+      channelItemId,
+      eq(salesChannels.site, channelCode),
+    );
     return result[0] ?? null;
   }
 
@@ -170,7 +105,7 @@ export class ChannelListingService {
       .select({ status: productMasterVersions.status })
       .from(productMasterVariants)
       .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
-      .innerJoin(productMasters, eq(productMasters.id, productMasterVariants.masterId))
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
       .where(
         and(
           eq(productMasterVariants.variantId, variantId),
@@ -443,7 +378,17 @@ export class ChannelListingService {
       .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
       .from(productMasterVariants)
       .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+      // 조회 술어와 같은 기준으로 본다 — soft delete 는 status 를 그대로 두므로
+      // 상태만 보면 삭제된 상품의 fulfillmentKind 로 디지털 여부를 판정하게 된다.
+      .where(
+        and(
+          eq(productMasterVariants.variantId, variantId),
+          eq(productMasterVersions.status, 'active'),
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
+        ),
+      )
       .limit(1);
     return row?.fulfillmentKind === 'digital';
   }

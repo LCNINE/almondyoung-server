@@ -108,9 +108,10 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
     await tx.insert(productVariants).values({ id: variantId, isDefault: true });
     await tx.insert(productMasterVariants).values({ masterId, variantId, versionId: version.id });
 
+    const site = `spec-${masterId.slice(0, 8)}`;
     const [channel] = await tx
       .insert(salesChannels)
-      .values({ site: `spec-${masterId.slice(0, 8)}`, name: '스펙 채널' })
+      .values({ site, name: '스펙 채널' })
       .returning({ id: salesChannels.id });
 
     await tx.insert(channelVariantListings).values({
@@ -120,7 +121,7 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
       isActive: opts.listingActive ?? true,
     });
 
-    return { salesChannelId: channel.id, channelItemId, variantId };
+    return { salesChannelId: channel.id, site, channelItemId, variantId };
   }
 
   it('활성 버전에 매달린 품목은 그대로 조회된다', async () => {
@@ -172,5 +173,35 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
       return service.lookupVariant(salesChannelId, channelItemId, tx);
     });
     expect(result).toBeNull();
+  });
+
+  // 주문 수집이 실제로 타는 진입점은 이쪽이다
+  // (ChannelLineIdentityResolver → lookupByChannelCode → 컨트롤러 → lookupVariantByChannelCode).
+  // 두 진입점이 같은 빌더를 쓰지만, 채널 선택 술어와 salesChannels 조인은 여기만의 것이다.
+  describe('채널 코드(site) 진입점 — 주문 수집 실사용 경로', () => {
+    it('활성 버전에 매달린 품목은 그대로 조회된다', async () => {
+      const found = await inRollbackTx(async (tx) => {
+        const { site, channelItemId, variantId } = await seedListing(tx);
+        const result = await service.lookupVariantByChannelCode(site, channelItemId, tx);
+        return { result, variantId };
+      });
+      expect(found.result?.variantId).toBe(found.variantId);
+    });
+
+    it('비활성 버전에만 매달린 품목은 조회되지 않는다', async () => {
+      const result = await inRollbackTx(async (tx) => {
+        const { site, channelItemId } = await seedListing(tx, { status: 'inactive' });
+        return service.lookupVariantByChannelCode(site, channelItemId, tx);
+      });
+      expect(result).toBeNull();
+    });
+
+    it('soft delete 된 마스터의 품목은 조회되지 않는다', async () => {
+      const result = await inRollbackTx(async (tx) => {
+        const { site, channelItemId } = await seedListing(tx, { masterDeleted: true });
+        return service.lookupVariantByChannelCode(site, channelItemId, tx);
+      });
+      expect(result).toBeNull();
+    });
   });
 });
