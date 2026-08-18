@@ -5,12 +5,13 @@ import { ChannelVariantListing, NewChannelVariantListing, DbTransaction, DbClien
 import {
   type PimSchema,
   channelVariantListings,
+  productMasters,
   productMasterVariants,
   productMasterVersions,
   productVariants,
   salesChannels,
 } from '../../schema/catalog.schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { isExternalMarketplaceSite } from './marketplace-site';
@@ -147,13 +148,31 @@ export class ChannelListingService {
   private async assertVariantIsPublished(variantId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
+    // soft delete 는 status 를 그대로 두고 deletedAt 만 세운다 — 상태만 보면 삭제된 상품이
+    // 통과한다. ProductSellableQuantityService 가 쓰는 술어와 같은 모양으로 걸러낸다.
     const versions = await client
       .select({ status: productMasterVersions.status })
       .from(productMasterVariants)
       .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
-      .where(eq(productMasterVariants.variantId, variantId));
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVariants.masterId))
+      .where(
+        and(
+          eq(productMasterVariants.variantId, variantId),
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
+        ),
+      );
 
     if (versions.some((v) => v.status === 'active')) return;
+
+    // 어떤 버전에도 안 매달린 품목 — hardDelete 가 버전을 지우면 이 상태가 된다.
+    // publish 할 방법이 없으므로 "publish 하세요" 로 안내하면 막다른 길이다.
+    if (versions.length === 0) {
+      throw new BadRequestError(
+        `이 품목은 어떤 상품 버전에도 속하지 않습니다(삭제된 상품이거나 정리되지 않은 잔여 품목). ` +
+          `현재 판매 중인 상품의 품목을 선택하세요: ${variantId}`,
+      );
+    }
 
     // 한 번도 활성이었던 적 없는 품목 — publish 하면 풀린다.
     if (versions.every((v) => v.status === 'draft')) {

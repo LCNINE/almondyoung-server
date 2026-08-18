@@ -62,23 +62,39 @@ export interface PublishVersionOptions {
 }
 
 /** variant 한 벌과 그 옵션값 조합 — twin 짝 찾기의 입력. */
-interface VariantOptionCombo {
+export interface VariantOptionCombo {
   variantId: string;
   optionValueIds: string[];
 }
 
 /** 승계 판정 대상 채널 리스팅 (#652). */
-interface ReconcilableListing {
+export interface ReconcilableListing {
   id: string;
   variantId: string;
   /** 네이버·쿠팡 등 외부 마켓플레이스인가 — 디지털 상품은 여기 실릴 수 없다. */
   isExternalMarketplace: boolean;
+  isActive: boolean;
 }
 
-/** 리스팅 승계 판정 결과 (#652). */
-interface ChannelListingReconciliationPlan {
-  repoints: Array<{ listingId: string; newVariantId: string }>;
-  deactivations: string[];
+/**
+ * 리스팅 승계 판정 결과 (#652).
+ *
+ * 재지정과 비활성은 **배타적이지 않다** — 디지털 전환으로 끄는 리스팅도 짝이 있으면 같이
+ * 옮겨 둬야 나중에 되살릴 수 있다. 죽은 variant 를 가리킨 채 꺼진 행은 재활성도
+ * 재등록도(`uq_channel_variant_listing`) 막혀 삭제 말고는 길이 없다.
+ */
+export interface ChannelListingReconciliationPlan {
+  updates: Array<{ listingId: string; newVariantId: string | null; deactivate: boolean }>;
+}
+
+/** 스펙이 private 판정 함수를 타입을 지운 채 부르지 않도록 노출하는 표면. */
+export interface PlanChannelListings {
+  _planChannelListingReconciliation(
+    candidateVariants: VariantOptionCombo[],
+    newVariants: VariantOptionCombo[],
+    listings: ReconcilableListing[],
+    newVersionIsDigital: boolean,
+  ): ChannelListingReconciliationPlan;
 }
 
 @Injectable()
@@ -351,8 +367,9 @@ export class ProductVersionsService {
       await this._reconcileAssetLinksAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
 
       // 채널 리스팅은 옛 variant 를 *가리키는* 쪽이라 방향만 반대다 — twin 으로 재지정한다.
-      // 아래 recalculateAndPublishForVariants 가 새·옛 버전 variant 를 모두 다시 계산하므로
-      // 리스팅 변경분 가용재고는 그 호출이 흡수한다 (별도 recalc 불필요).
+      // 가용재고 재계산은 부르지 않는다: ProductSellableQuantityService 는 활성 버전과 매칭만
+      // 보고 channel_variant_listings 를 읽지 않으므로 리스팅 변경은 투영에 영향이 없다.
+      // (createListing 등이 recalc 를 부르는 건 방어적 관습이지 이 투영의 요구가 아니다.)
       await this._reconcileChannelListingsAfterPublish(
         version.masterId,
         version.id,
@@ -750,6 +767,9 @@ export class ProductVersionsService {
    * 축이 "이전 활성 버전" 이 아니라 **이 master 의 모든 버전** 인 것도 앞의 둘과 다르다.
    * `unpublishMaster` 로 판매중지한 뒤 드래프트를 고쳐 다시 publish 하는 경로에는 이전 활성
    * 버전이 아예 없지만(CoW 는 "다른 어떤 버전과 공유" 면 발동한다) 리스팅은 그대로 낡는다.
+   *
+   * 꺼진 리스팅도 조회 대상이다 — 되살리지는 않지만 포인터는 옮겨 둔다. 죽은 variant 를
+   * 가리킨 채 꺼져 있으면 재활성도 재등록도 막혀 삭제 말고는 복구 경로가 없다.
    */
   private async _reconcileChannelListingsAfterPublish(
     masterId: string,
@@ -763,63 +783,70 @@ export class ProductVersionsService {
     if (newVariants.length === 0) return;
 
     const candidateVariants = await this._getMasterVariantsWithOptionValues(masterId, tx);
-    const newVariantIds = new Set(newVariants.map((v) => v.variantId));
-    const staleVariantIds = candidateVariants
-      .filter((c) => !newVariantIds.has(c.variantId))
-      .map((c) => c.variantId);
-    if (staleVariantIds.length === 0) return;
+    if (candidateVariants.length === 0) return;
 
-    const activeListings = await tx
+    const listings = await tx
       .select({
         id: channelVariantListings.id,
         variantId: channelVariantListings.variantId,
+        isActive: channelVariantListings.isActive,
         site: salesChannels.site,
       })
       .from(channelVariantListings)
       .innerJoin(salesChannels, eq(salesChannels.id, channelVariantListings.salesChannelId))
       .where(
-        and(inArray(channelVariantListings.variantId, staleVariantIds), eq(channelVariantListings.isActive, true)),
+        inArray(
+          channelVariantListings.variantId,
+          candidateVariants.map((c) => c.variantId),
+        ),
       );
-    // 이미 꺼진 리스팅은 손대지 않는다 — 되살리는 건 별개 결정이다.
-    if (activeListings.length === 0) return;
+    if (listings.length === 0) return;
 
-    const { repoints, deactivations } = this._planChannelListingReconciliation(
+    const { updates } = this._planChannelListingReconciliation(
       candidateVariants,
       newVariants,
-      activeListings.map((l) => ({
+      listings.map((l) => ({
         id: l.id,
         variantId: l.variantId,
+        isActive: l.isActive,
         isExternalMarketplace: isExternalMarketplaceSite(l.site),
       })),
       newVersionIsDigital,
     );
+    if (updates.length === 0) return;
 
-    // 목적지가 같은 리스팅끼리 묶어 UPDATE 수를 목적지 수로 줄인다.
-    const listingIdsByTarget = new Map<string, string[]>();
-    for (const { listingId, newVariantId } of repoints) {
-      const bucket = listingIdsByTarget.get(newVariantId);
-      if (bucket) bucket.push(listingId);
-      else listingIdsByTarget.set(newVariantId, [listingId]);
+    // 같은 (목적지, 비활성여부) 끼리 묶어 UPDATE 수를 조합 수로 줄인다.
+    const grouped = new Map<string, { newVariantId: string | null; deactivate: boolean; listingIds: string[] }>();
+    for (const u of updates) {
+      const key = `${u.newVariantId ?? ''}|${u.deactivate}`;
+      const bucket = grouped.get(key);
+      if (bucket) bucket.listingIds.push(u.listingId);
+      else grouped.set(key, { newVariantId: u.newVariantId, deactivate: u.deactivate, listingIds: [u.listingId] });
     }
 
-    for (const [newVariantId, listingIds] of listingIdsByTarget) {
+    for (const g of grouped.values()) {
       await tx
         .update(channelVariantListings)
-        .set({ variantId: newVariantId, updatedAt: new Date() })
-        .where(inArray(channelVariantListings.id, listingIds));
+        .set({
+          ...(g.newVariantId ? { variantId: g.newVariantId } : {}),
+          ...(g.deactivate ? { isActive: false } : {}),
+          updatedAt: new Date(),
+        })
+        .where(inArray(channelVariantListings.id, g.listingIds));
     }
 
-    if (deactivations.length > 0) {
-      await tx
-        .update(channelVariantListings)
-        .set({ isActive: false, updatedAt: new Date() })
-        .where(inArray(channelVariantListings.id, deactivations));
+    const deactivated = updates.filter((u) => u.deactivate).map((u) => u.listingId);
+    const repointed = updates.filter((u) => u.newVariantId).length;
+    if (deactivated.length > 0) {
+      // 비활성은 사실상 비가역이다(재활성·재등록 모두 막힘) — 어느 행이었는지 남겨야 복구가 가능하다.
+      this.logger.warn(
+        `Channel listing reconciliation deactivated ${deactivated.length} listing(s) on master ${masterId} ` +
+          `at version ${newVersionId}: ${deactivated.join(', ')}`,
+      );
     }
-
-    if (repoints.length > 0 || deactivations.length > 0) {
+    if (repointed > 0) {
       this.logger.log(
-        `Channel listing reconciliation: repointed ${repoints.length}, deactivated ${deactivations.length} ` +
-          `listings on master ${masterId} to version ${newVersionId}`,
+        `Channel listing reconciliation: repointed ${repointed} listing(s) on master ${masterId} to version ${newVersionId}`,
       );
     }
   }
@@ -827,15 +854,14 @@ export class ProductVersionsService {
   /**
    * 리스팅 승계 판정 (#652) — 순수 함수.
    *
-   * CoW 로 variant 행이 갈리면 `channel_variant_listings` 는 옛 행을 가리킨 채 남고,
-   * 조회 조인이 variant 를 고정하므로 **옛 버전 값이 조용히 반환된다**(격리도 로그도 없다).
-   * 옵션값 조합이 같은 twin 으로 재지정하고, 없으면 리스팅을 끈다 — 끄면 이후 그 채널
-   * 주문이 미식별 격리로 가서 최소한 눈에 보인다.
+   * 리스팅 한 건에 대해 독립된 두 결정을 내린다.
+   * - **어디를 가리켜야 하나**: CoW 로 variant 가 갈렸으면 옵션값 조합이 같은 twin.
+   * - **꺼야 하나**: 짝이 없거나, 조합이 모호하거나(같은 조합이 둘 이상 — 주문이 흘러갈 곳을
+   *   임의로 고를 수 없다), 새 버전이 디지털인데 외부 마켓플레이스 리스팅일 때
+   *   (`createListing` 이 거부하는 상태를 승계로 만들 수는 없다).
    *
-   * 끄는 쪽으로 기우는 두 경우가 더 있다:
-   * - **조합이 모호할 때**(새 버전에 같은 조합이 둘 이상) — 주문이 흘러갈 곳을 임의로 고를 수 없다.
-   * - **새 버전이 디지털인데 외부 마켓플레이스 리스팅일 때** — `createListing` 이 거부하는
-   *   상태를 승계로 만들 수는 없다 (비로그인 주문이라 디지털 소유권을 줄 대상이 없다).
+   * 디지털 판정은 **CoW 여부와 무관**하다 — `fulfillmentKind` 만 바꿔 publish 하면 품목이
+   * 복제되지 않으므로, 제자리 variant 의 리스팅도 검사해야 한다.
    */
   private _planChannelListingReconciliation(
     candidateVariants: VariantOptionCombo[],
@@ -859,37 +885,41 @@ export class ProductVersionsService {
       else listingsByVariantId.set(listing.variantId, [listing]);
     }
 
-    const repoints: Array<{ listingId: string; newVariantId: string }> = [];
-    const deactivations: string[] = [];
+    const updates: ChannelListingReconciliationPlan['updates'] = [];
 
     for (const candidate of candidateVariants) {
-      // 새 버전이 같은 variant 행을 그대로 쓰면 CoW 가 없었던 것 — 손댈 이유가 없다.
-      if (newVariantIds.has(candidate.variantId)) continue;
-
       const affected = listingsByVariantId.get(candidate.variantId);
       if (!affected) continue;
 
-      const twinVariantId = newVariantIdByComboKey.get(this._comboKey(candidate.optionValueIds));
+      // 새 버전이 같은 variant 행을 그대로 쓰면 CoW 가 없었던 것 — 옮길 곳이 없다.
+      const isStale = !newVariantIds.has(candidate.variantId);
+      const twinVariantId = isStale
+        ? (newVariantIdByComboKey.get(this._comboKey(candidate.optionValueIds)) ?? null)
+        : null;
 
       for (const listing of affected) {
         const blockedByDigital = newVersionIsDigital && listing.isExternalMarketplace;
-        if (twinVariantId && !blockedByDigital) {
-          repoints.push({ listingId: listing.id, newVariantId: twinVariantId });
-        } else {
-          deactivations.push(listing.id);
-        }
+        const deactivate = listing.isActive && (blockedByDigital || (isStale && !twinVariantId));
+        const newVariantId = isStale ? twinVariantId : null;
+
+        // 이미 꺼진 리스팅을 다시 끄지 않고, 옮길 곳도 없으면 건드릴 이유가 없다.
+        if (!deactivate && !newVariantId) continue;
+
+        updates.push({ listingId: listing.id, newVariantId, deactivate });
       }
     }
 
-    return { repoints, deactivations };
+    return { updates };
   }
 
   private async _getVersionVariantsWithOptionValues(
     versionId: string,
     tx: DbTransaction,
   ): Promise<VariantOptionCombo[]> {
+    // DISTINCT 필수 — unique 는 (masterId, variantId, versionId) 라 같은 (variantId, versionId)
+    // 가 두 masterId 로 매달릴 수 있다. 중복이 들어오면 조합 맵이 "모호" 로 오판한다.
     const rows = await tx
-      .select({ variantId: productMasterVariants.variantId })
+      .selectDistinct({ variantId: productMasterVariants.variantId })
       .from(productMasterVariants)
       .where(eq(productMasterVariants.versionId, versionId));
 

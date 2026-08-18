@@ -6,7 +6,13 @@ jest.mock(
   { virtual: true },
 );
 
-import { ProductVersionsService } from './product-versions.service';
+import {
+  ProductVersionsService,
+  type VariantOptionCombo,
+  type ReconcilableListing,
+  type ChannelListingReconciliationPlan,
+  type PlanChannelListings,
+} from './product-versions.service';
 import type { DbTransaction } from '../../../catalog.types';
 import {
   productMasterOptionGroups,
@@ -1109,98 +1115,99 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
 });
 
 describe('_planChannelListingReconciliation (#652)', () => {
-  // publish 로 CoW 가 일어나면 리스팅이 옛 variant 를 가리킨 채 남는다.
-  // 옵션값 조합이 같은 twin 으로 재지정하고, twin 이 없으면 리스팅을 끈다.
-  // 순수 판정 함수라 DI 가 필요 없다 — prototype 만 빌려 부른다.
-  const service = Object.create(ProductVersionsService.prototype) as any;
-  const plan = (candidates: any[], next: any[], listings: any[], isDigital = false) =>
-    service._planChannelListingReconciliation(candidates, next, listings, isDigital);
-  const listing = (id: string, variantId: string, isExternalMarketplace = true) => ({
-    id,
+  const service = Object.create(ProductVersionsService.prototype) as ProductVersionsService;
+  // private 판정 함수를 스펙에서 부르되 시그니처는 그대로 검사받는다 (`as any` 로 지우지 않는다).
+  const plan = (
+    candidates: VariantOptionCombo[],
+    next: VariantOptionCombo[],
+    listings: ReconcilableListing[],
+    isDigital = false,
+  ): ChannelListingReconciliationPlan =>
+    (service as unknown as PlanChannelListings)._planChannelListingReconciliation(
+      candidates,
+      next,
+      listings,
+      isDigital,
+    );
+  const combo = (variantId: string, ...optionValueIds: string[]): VariantOptionCombo => ({
     variantId,
-    isExternalMarketplace,
+    optionValueIds,
   });
+  const listing = (
+    id: string,
+    variantId: string,
+    { external = true, isActive = true } = {},
+  ): ReconcilableListing => ({ id, variantId, isExternalMarketplace: external, isActive });
 
   it('옵션 조합이 같은 twin 이 새 버전에 있으면 그 variant 로 재지정한다', () => {
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red', 'L'] }],
-      [{ variantId: 'v-new', optionValueIds: ['L', 'red'] }],
-      [listing('l-1', 'v-old')],
-    );
-    expect(result).toEqual({ repoints: [{ listingId: 'l-1', newVariantId: 'v-new' }], deactivations: [] });
+    expect(plan([combo('v-old', 'red', 'L')], [combo('v-new', 'L', 'red')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }],
+    });
   });
 
-  it('옵션 조합이 같은 twin 이 없으면 리스팅을 비활성화한다', () => {
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red'] }],
-      [{ variantId: 'v-other', optionValueIds: ['blue'] }],
-      [listing('l-1', 'v-old')],
-    );
-    expect(result).toEqual({ repoints: [], deactivations: ['l-1'] });
+  it('짝이 없으면 리스팅을 끈다', () => {
+    expect(plan([combo('v-old', 'red')], [combo('v-other', 'blue')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: null, deactivate: true }],
+    });
   });
 
-  it('CoW 가 없어 variant 행이 새 버전에도 그대로 있으면 아무것도 하지 않는다', () => {
-    const result = plan(
-      [{ variantId: 'v-1', optionValueIds: ['red'] }],
-      [{ variantId: 'v-1', optionValueIds: ['red'] }],
-      [listing('l-1', 'v-1')],
-    );
-    expect(result).toEqual({ repoints: [], deactivations: [] });
+  it('이미 꺼진 리스팅은 짝이 없어도 다시 끄지 않는다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-other', 'blue')], [listing('l-1', 'v-old', { isActive: false })]),
+    ).toEqual({ updates: [] });
+  });
+
+  it('이미 꺼진 리스팅도 짝이 있으면 포인터만 옮긴다 (되살리지는 않는다)', () => {
+    // 재지정해 두지 않으면 그 행은 죽은 variant 를 가리킨 채 남아 재활성도 재등록도 막힌다.
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-1', 'v-old', { isActive: false })]),
+    ).toEqual({ updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }] });
+  });
+
+  it('CoW 가 없어 variant 행이 새 버전에도 그대로면 아무것도 하지 않는다', () => {
+    expect(plan([combo('v-1', 'red')], [combo('v-1', 'red')], [listing('l-1', 'v-1')])).toEqual({ updates: [] });
   });
 
   it('옵션 없는 기본 품목(조합 빈 배열)도 twin 으로 재지정한다', () => {
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: [] }],
-      [{ variantId: 'v-new', optionValueIds: [] }],
-      [listing('l-1', 'v-old')],
-    );
-    expect(result).toEqual({ repoints: [{ listingId: 'l-1', newVariantId: 'v-new' }], deactivations: [] });
+    expect(plan([combo('v-old')], [combo('v-new')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }],
+    });
   });
 
   it('새 버전에 같은 옵션 조합이 둘이면 모호하므로 재지정하지 않고 끈다', () => {
-    // 어느 쪽으로 보내도 임의 선택이 된다 — 주문이 흘러갈 곳을 주사위로 정할 수는 없다.
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red'] }],
-      [
-        { variantId: 'v-new-a', optionValueIds: ['red'] },
-        { variantId: 'v-new-b', optionValueIds: ['red'] },
-      ],
-      [listing('l-1', 'v-old')],
-    );
-    expect(result).toEqual({ repoints: [], deactivations: ['l-1'] });
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-a', 'red'), combo('v-b', 'red')], [listing('l-1', 'v-old')]),
+    ).toEqual({ updates: [{ listingId: 'l-1', newVariantId: null, deactivate: true }] });
   });
 
-  it('새 버전이 디지털이면 외부 마켓플레이스 리스팅은 twin 이 있어도 끈다', () => {
-    // createListing/activateListing 이 거부하는 상태(네이버×디지털)를 승계로 만들 수는 없다.
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red'] }],
-      [{ variantId: 'v-new', optionValueIds: ['red'] }],
-      [listing('l-naver', 'v-old', true)],
-      true,
-    );
-    expect(result).toEqual({ repoints: [], deactivations: ['l-naver'] });
+  it('새 버전이 디지털이면 외부 마켓 리스팅은 끄되 twin 으로 옮겨 복구 가능하게 남긴다', () => {
+    expect(plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-naver', 'v-old')], true)).toEqual({
+      updates: [{ listingId: 'l-naver', newVariantId: 'v-new', deactivate: true }],
+    });
   });
 
-  it('새 버전이 디지털이어도 자사몰 리스팅은 twin 으로 재지정한다', () => {
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red'] }],
-      [{ variantId: 'v-new', optionValueIds: ['red'] }],
-      [listing('l-medusa', 'v-old', false)],
-      true,
-    );
-    expect(result).toEqual({ repoints: [{ listingId: 'l-medusa', newVariantId: 'v-new' }], deactivations: [] });
+  it('CoW 가 없어도 새 버전이 디지털이면 외부 마켓 리스팅을 끈다', () => {
+    // fulfillmentKind 만 바꿔 publish 하면 품목이 복제되지 않는다 — 그래도 막아야 한다.
+    expect(plan([combo('v-1', 'red')], [combo('v-1', 'red')], [listing('l-naver', 'v-1')], true)).toEqual({
+      updates: [{ listingId: 'l-naver', newVariantId: null, deactivate: true }],
+    });
+  });
+
+  it('새 버전이 디지털이어도 자사몰 리스팅은 twin 으로 재지정만 한다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-medusa', 'v-old', { external: false })], true),
+    ).toEqual({ updates: [{ listingId: 'l-medusa', newVariantId: 'v-new', deactivate: false }] });
   });
 
   it('한 variant 에 리스팅이 여럿이면 전부 같은 판정을 받는다', () => {
-    const result = plan(
-      [{ variantId: 'v-old', optionValueIds: ['red'] }],
-      [{ variantId: 'v-new', optionValueIds: ['red'] }],
-      [listing('l-1', 'v-old'), listing('l-2', 'v-old')],
-    );
-    expect(result.repoints).toEqual([
-      { listingId: 'l-1', newVariantId: 'v-new' },
-      { listingId: 'l-2', newVariantId: 'v-new' },
-    ]);
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-1', 'v-old'), listing('l-2', 'v-old')]),
+    ).toEqual({
+      updates: [
+        { listingId: 'l-1', newVariantId: 'v-new', deactivate: false },
+        { listingId: 'l-2', newVariantId: 'v-new', deactivate: false },
+      ],
+    });
   });
 });
 
@@ -1209,6 +1216,7 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
   function makeTx(results: any[]) {
     let i = 0;
     const updates: any[] = [];
+    const wheres: any[] = [];
     const chain = () => {
       const result = results[i++];
       const c: any = {};
@@ -1222,11 +1230,16 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
       update: () => ({
         set: (v: any) => {
           updates.push(v);
-          return { where: () => Promise.resolve(undefined) };
+          return {
+            where: (predicate: any) => {
+              wheres.push(predicate);
+              return Promise.resolve(undefined);
+            },
+          };
         },
       }),
     };
-    return { tx, updates };
+    return { tx, updates, wheres };
   }
 
   const makeSvc = () => {
@@ -1251,7 +1264,7 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
         { variantId: 'v-new', optionValueId: 'red' },
         { variantId: 'v-old', optionValueId: 'red' },
       ],
-      [{ id: 'l-1', variantId: 'v-old', site: 'naver' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
     ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
     expect(updates).toEqual([{ variantId: 'v-new', updatedAt: expect.any(Date) }]);
@@ -1266,9 +1279,27 @@ describe('_reconcileChannelListingsAfterPublish (#652)', () => {
         { variantId: 'v-new', optionValueId: 'blue' },
         { variantId: 'v-old', optionValueId: 'red' },
       ],
-      [{ id: 'l-1', variantId: 'v-old', site: 'naver' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
     ]);
     await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
     expect(updates).toEqual([{ isActive: false, updatedAt: expect.any(Date) }]);
+  });
+
+  it('CoW 가 없어도 디지털 전환이면 외부 마켓 리스팅을 한 문장으로 끈다', async () => {
+    const { tx, updates, wheres } = makeTx([
+      [{ variantId: 'v-1' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
+      [{ variantId: 'v-1' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
+      [
+        { id: 'l-1', variantId: 'v-1', isActive: true, site: 'naver' },
+        { id: 'l-2', variantId: 'v-1', isActive: true, site: 'coupang' },
+        { id: 'l-3', variantId: 'v-1', isActive: true, site: 'medusa' },
+      ],
+    ]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', true, tx);
+    // 외부 둘만, 판정이 같으므로 UPDATE 는 한 번으로 묶인다. 자사몰은 손대지 않는다.
+    expect(updates).toEqual([{ isActive: false, updatedAt: expect.any(Date) }]);
+    expect(wheres).toHaveLength(1);
   });
 });

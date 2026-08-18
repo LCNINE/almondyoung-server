@@ -98,15 +98,21 @@ describe('isExternalMarketplaceSite', () => {
 describe('ChannelListingService — publish 되지 않은 품목 리스팅 차단 (#652)', () => {
   // draft 에만 매달린 variant 에 리스팅을 걸면, 그 draft 를 버릴 때 variant 가 삭제되고
   // channel_variant_listings.variant_id 의 cascade 로 리스팅이 조용히 사라진다.
-  it('createListing: active 버전에 매달리지 않은 variant 는 거부한다', async () => {
-    // 큐: variant존재 → activeVersion 매핑(없음)
-    const service = makeService([[{ id: 'var-1' }], []]);
+  it('createListing: draft 에만 매달린 variant 는 거부한다', async () => {
+    // 큐: variant존재 → 버전 상태들(draft 뿐)
+    const service = makeService([[{ id: 'var-1' }], [{ status: 'draft' }]]);
     await expect(service.createListing(baseDto)).rejects.toThrow('publish');
   });
 
-  it('activateListing: active 버전에 매달리지 않은 variant 는 재활성을 거부한다', async () => {
-    // 큐: getListingById → activeVersion 매핑(없음)
-    const service = makeService([[{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }], []]);
+  // hardDelete 가 버전 행을 지우면 매핑만 사라지고 variant 는 남는다(라이브에 4건 실재).
+  // 그 품목은 publish 할 방법이 없으므로 "publish 하세요" 안내는 막다른 길이다.
+  it('createListing: 어떤 버전에도 안 매달린 고아 variant 는 그 사실을 알린다', async () => {
+    const service = makeService([[{ id: 'var-1' }], []]);
+    await expect(service.createListing(baseDto)).rejects.toThrow('속하지');
+  });
+
+  it('activateListing: draft 에만 매달린 variant 는 재활성을 거부한다', async () => {
+    const service = makeService([[{ id: 'l-1', variantId: 'var-1', salesChannelId: 'ch-1' }], [{ status: 'draft' }]]);
     await expect(service.activateListing('l-1')).rejects.toThrow('publish');
   });
 
