@@ -1,5 +1,5 @@
 import {
-  DEFAULT_SHIPPING_GROUP_CODE,
+  resolveShippingGroupCodeFromMetadata,
   type ShippingGroup,
 } from "../../../lib/api/medusa/shipping-group-types"
 import { itemRequiresShipping } from "../../../lib/api/medusa/shipping-method-policy"
@@ -24,10 +24,7 @@ export type FreeShippingProgressEntry = {
 }
 
 export function resolveShippingGroupCode(item: FreeShippingLineItem): string {
-  const code = item.product?.metadata?.shippingGroupCode
-  return typeof code === "string" && code.trim().length > 0
-    ? code.trim()
-    : DEFAULT_SHIPPING_GROUP_CODE
+  return resolveShippingGroupCodeFromMetadata(item.product?.metadata)
 }
 
 /**

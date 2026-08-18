@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { FreeShippingProgress } from "@/domains/cart/components/free-shipping-progress"
+import { ShippingGroupNotice } from "@/domains/cart/components/shipping-group-notice"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
@@ -12,11 +13,14 @@ import { useTranslations } from "next-intl"
 interface OrderProductsSectionProps {
   products: StoreCart["items"]
   shipping: number
+  /** 카트에 붙은 배송 방법(배송비 그룹당 1개). 2개 이상이면 합계 위에 그룹별 금액을 나눠 보여준다. */
+  shippingMethods?: { id: string; name?: string | null; amount?: number | null }[]
 }
 
 export const OrderProductsSection = ({
   products,
   shipping,
+  shippingMethods,
 }: OrderProductsSectionProps) => {
   const t = useTranslations("checkout.orderProducts")
 
@@ -61,6 +65,21 @@ export const OrderProductsSection = ({
         {requiresShipping && (
           <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
             <FreeShippingProgress className="mb-3" items={products} />
+            {(shippingMethods?.length ?? 0) > 1 && (
+              <div className="mb-1 space-y-0.5">
+                {shippingMethods!.map((method) => (
+                  <p
+                    key={method.id}
+                    className="text-right text-[11px] text-gray-400 lg:text-xs"
+                  >
+                    {t("shippingFeeLine", {
+                      name: method.name ?? "",
+                      amount: formatPrice(method.amount ?? 0),
+                    })}
+                  </p>
+                ))}
+              </div>
+            )}
             <p className="text-right text-[12px] text-gray-600 lg:text-sm">
               {t("shippingFee", { amount: formatPrice(shipping) })}
             </p>
@@ -96,9 +115,10 @@ function ProductItem({
             className="pointer-events-none rounded-[2px] object-cover select-none lg:rounded-[5px]"
           />
         </div>
-        <p className="flex-1 text-[12px] text-gray-900 lg:text-sm">
-          {productTitle}
-        </p>
+        <div className="flex-1">
+          <p className="text-[12px] text-gray-900 lg:text-sm">{productTitle}</p>
+          <ShippingGroupNotice item={item} className="mt-0.5" />
+        </div>
       </div>
       <div className="mt-3">
         <div className="flex items-center justify-between rounded-[2px] bg-[#F5F5F5]/50 px-2 py-2 lg:px-3 lg:py-2.5">

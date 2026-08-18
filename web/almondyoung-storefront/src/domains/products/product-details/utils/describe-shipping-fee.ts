@@ -1,5 +1,5 @@
 import {
-  DEFAULT_SHIPPING_GROUP_CODE,
+  resolveShippingGroupCodeFromMetadata,
   type ShippingGroup,
   type ShippingGroupDelivery,
 } from "../../../../lib/api/medusa/shipping-group-types"
@@ -21,11 +21,7 @@ export function describeShippingFee(
   productMetadata: Record<string, unknown> | null | undefined,
   groups: ShippingGroup[] | null | undefined
 ): ShippingFeeDescription {
-  const rawCode = productMetadata?.shippingGroupCode
-  const code =
-    typeof rawCode === "string" && rawCode.trim().length > 0
-      ? rawCode.trim()
-      : DEFAULT_SHIPPING_GROUP_CODE
+  const code = resolveShippingGroupCodeFromMetadata(productMetadata)
 
   const group = (groups ?? []).find((candidate) => candidate.code === code)
   if (!group) return { kind: "unknown" }
@@ -54,10 +50,6 @@ export function findShippingGroupDelivery(
   productMetadata: Record<string, unknown> | null | undefined,
   groups: ShippingGroup[] | null | undefined
 ): ShippingGroupDelivery | null {
-  const rawCode = productMetadata?.shippingGroupCode
-  const code =
-    typeof rawCode === "string" && rawCode.trim().length > 0
-      ? rawCode.trim()
-      : DEFAULT_SHIPPING_GROUP_CODE
+  const code = resolveShippingGroupCodeFromMetadata(productMetadata)
   return (groups ?? []).find((group) => group.code === code)?.delivery ?? null
 }

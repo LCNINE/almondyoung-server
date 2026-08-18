@@ -18,6 +18,7 @@ import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
 import ProductPreviewPrice from "../components/product-preview-price"
+import { ProductShippingNotice } from "../components/product-shipping-notice"
 import { SectionTabPanel } from "../components/section-nav"
 import { ProductSummary } from "../components/product-summary"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
@@ -74,6 +75,7 @@ export async function ProductTemplate({
                   hasMembership={isMembershipGroup(customer?.groups)}
                   product={product}
                 />
+                <ProductShippingNotice product={product} />
               </ProductSummary>
             </div>
 

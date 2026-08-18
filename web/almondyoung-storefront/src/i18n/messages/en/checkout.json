@@ -177,6 +177,7 @@
     "optionDefault": "Default",
     "optionLine": "{value} | {quantity} pcs",
     "shippingFee": "Shipping {amount} KRW",
+    "shippingFeeLine": "{name} {amount} KRW",
     "amountWon": "{amount} KRW"
   },
   "discount": {

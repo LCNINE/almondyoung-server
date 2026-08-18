@@ -177,6 +177,7 @@
     "optionDefault": "基本",
     "optionLine": "{value} | {quantity}点",
     "shippingFee": "送料 {amount}ウォン",
+    "shippingFeeLine": "{name} {amount}ウォン",
     "amountWon": "{amount}ウォン"
   },
   "discount": {

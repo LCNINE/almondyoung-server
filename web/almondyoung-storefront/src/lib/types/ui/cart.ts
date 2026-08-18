@@ -29,6 +29,8 @@ interface CartTotals {
   item_subtotal: number
   original_item_subtotal: number
   shipping: number
+  /** 배송비 그룹당 1개인 배송 방법별 금액. 2개 이상일 때만 배송비 아래에 나눠 보여준다. */
+  shippingBreakdown?: { id: string; name: string; amount: number }[]
   discount_subtotal: number
   membershipDiscount: number
   pointsUsed: number

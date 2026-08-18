@@ -33,3 +33,16 @@ export type ShippingGroup = {
 }
 
 export const DEFAULT_SHIPPING_GROUP_CODE = "default"
+
+/**
+ * metadata(`shippingGroupCode`)에서 배송비 그룹 코드를 읽는다. 상품 상세·장바구니·주문서가
+ * 전부 이 판정을 거쳐야 화면마다 다른 그룹으로 읽는 사고가 안 난다.
+ */
+export function resolveShippingGroupCodeFromMetadata(
+  metadata: Record<string, unknown> | null | undefined
+): string {
+  const raw = metadata?.shippingGroupCode
+  return typeof raw === "string" && raw.trim().length > 0
+    ? raw.trim()
+    : DEFAULT_SHIPPING_GROUP_CODE
+}
