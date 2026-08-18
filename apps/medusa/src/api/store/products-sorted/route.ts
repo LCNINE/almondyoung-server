@@ -6,6 +6,7 @@ import {
   resolveMemberState,
   type MembershipProduct,
 } from '../../../utils/membership-filter';
+import { buildPricingContext } from '../../utils/pricing-context';
 
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'review_count';
 type SortOrder = 'asc' | 'desc';
@@ -68,9 +69,19 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       return res.json({ products: [], count: 0 });
     }
 
-    // pricing context 구성
+    // pricing context 구성. 이 라우트엔 코어 setPricingContext 가 안 붙으므로 그게 채워주는
+    // 값(region_id + currency_code)을 직접 깔고, 세그먼트가 채운 고객 그룹이 그 위를 덮게 한다.
+    //
+    // region_id 가 빠지면 pricing 모듈이 가격을 제대로 좁히지 못해 고객그룹 룰이 걸린
+    // 멤버십 price list 가 **비회원에게도 적용된다** (로컬에서 재현: region_id 없으면
+    // 익명·비회원까지 멤버십가, 넣으면 정가). 고객 키는 일부러 넣지 않는다 — 익명 요청과
+    // 컨텍스트가 완전히 같아야 Medusa 쿼리 캐시에 같은 응답이 두 벌 잡히지 않는다.
+    const regionId = typeof req.query.region_id === 'string' ? req.query.region_id : undefined;
     const context: Record<string, unknown> = {};
-    const pricingContext = (req as any).pricingContext ?? { currency_code: currencyCode };
+    const pricingContext = buildPricingContext(req, {
+      currency_code: currencyCode,
+      ...(regionId ? { region_id: regionId } : {}),
+    });
     if (isPresent(pricingContext)) {
       context['variants'] = {
         calculated_price: QueryContext(pricingContext),

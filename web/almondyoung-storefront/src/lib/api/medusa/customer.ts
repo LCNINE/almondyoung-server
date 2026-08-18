@@ -18,8 +18,7 @@ import { handleMedusaAuthError } from "./auth-utils"
  * 한 번의 렌더 안에서 고객 조회가 몇 번 일어나든 Medusa 왕복은 한 번만 나가게 한다.
  *
  * 홈만 해도 welcome-deals / best-categories / showcase-categories /
- * interest-products-list 가 각각 부르고, 여기에 listProducts 마다 불리는
- * getMembershipAwareCacheTags 까지 겹쳐 같은 응답을 여러 번 받아오고 있었다.
+ * interest-products-list 가 각각 불러 같은 응답을 여러 번 받아오고 있었다.
  * `cache: "no-store"` 라 Next 의 fetch 중복 제거도 걸리지 않는다.
  *
  * 수명은 요청 하나의 렌더 패스이며 요청 간에는 공유되지 않는다. 따라서 로그인·

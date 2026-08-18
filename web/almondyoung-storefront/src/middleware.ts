@@ -66,7 +66,7 @@ const regionMapCache = {
   regionMapUpdated: Date.now(),
 }
 
-async function getRegionMap(cacheId: string) {
+async function getRegionMap() {
   const { regionMap, regionMapUpdated } = regionMapCache
 
   if (!MEDUSA_BASE_URL) {
@@ -82,15 +82,12 @@ async function getRegionMap(cacheId: string) {
   ) {
     try {
       // Fetch regions from Medusa. We can't use the JS client here because middleware is running on Edge and the client needs a Node environment.
+      // 미들웨어에선 Next 의 fetch 캐시가 동작하지 않는다(위 resolveStorefrontNotFound 주석 참고).
+      // 재조회 주기는 위의 regionMapCache 가 1시간으로 들고 있다.
       const { regions } = await fetch(`${MEDUSA_BASE_URL}/store/regions`, {
         headers: {
           "x-publishable-api-key": PUBLISHABLE_API_KEY!,
         },
-        next: {
-          revalidate: 3600,
-          tags: [`regions-${cacheId}`],
-        },
-        cache: "force-cache",
       }).then(async (response) => {
         const json = await response.json()
         if (!response.ok) {
@@ -228,6 +225,10 @@ async function resolveStorefrontNotFound(
     url.searchParams.set("fields", "id")
     url.searchParams.set("limit", "1")
 
+    // Next 의 fetch 캐시(`cache`/`next.tags`)는 렌더링 경로에서만 동작하고 미들웨어에는
+    // 붙지 않는다. revalidateTag 도 여기까진 닿지 않는다. 그래서 캐시 옵션을 걸어봐야
+    // 아무 일도 일어나지 않으므로 걸지 않는다 — 존재 확인의 반복 왕복은 위의
+    // knownHandles(인스턴스 메모리, 5분)가 줄인다.
     const res = await fetch(url, {
       headers: PUBLISHABLE_API_KEY
         ? { "x-publishable-api-key": PUBLISHABLE_API_KEY }
@@ -287,7 +288,7 @@ export async function middleware(request: NextRequest) {
 
   let cacheId = cacheIdCookie?.value || crypto.randomUUID()
 
-  const regionMap = await getRegionMap(cacheId)
+  const regionMap = await getRegionMap()
   const countryCode = regionMap && (await getCountryCode(request, regionMap))
 
   const urlHasCountryCode =

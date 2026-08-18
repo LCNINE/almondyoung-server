@@ -110,6 +110,9 @@ export function setup(infra: SharedInfra) {
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
   const storefrontRevalidateSecret = new sst.Secret('StorefrontRevalidateSecret');
+  // 카탈로그 조회의 멤버십 판정을 개인 토큰 대신 세그먼트 헤더로 주고받는 키.
+  // storefront 서버에서만 실려 나가며, 없으면 양쪽 다 기존 토큰 기반으로 되돌아간다.
+  const catalogSegmentSecret = new sst.Secret('CatalogSegmentSecret');
 
   // Grafana Cloud
   const grafanaCloudApiToken = new sst.Secret('GrafanaCloudApiToken');
@@ -528,6 +531,7 @@ export function setup(infra: SharedInfra) {
       // IdP 스택의 AUTH_SECRET과 동일한 값을 주입.
       AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
+      CATALOG_SEGMENT_SECRET: catalogSegmentSecret.value,
       // CORS
       STORE_CORS: [
         // 컷오버 후 storefront 정식 origin = apex(almondyoung.com). www 는 apex 로 301.
@@ -725,6 +729,7 @@ export function setup(infra: SharedInfra) {
       USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+      CATALOG_SEGMENT_SECRET: catalogSegmentSecret.value,
       // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
       AUTH_WEB_ORIGIN: idpAuthWebUrl,
       USER_SERVICE_URL: idpUserServiceUrl,

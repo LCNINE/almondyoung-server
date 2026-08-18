@@ -3,6 +3,7 @@ import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 import { createWebLogger } from "@packages/web-observability"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
+import { CATEGORY_TREE_TAG } from "@lib/data/catalog-cache"
 
 export const dynamic = "force-dynamic"
 
@@ -38,10 +39,10 @@ async function getCountryCodes(): Promise<string[]> {
  * 상품/재고가 백엔드(Core → channel-adapter → Medusa)에서 바뀌면 channel-adapter 가
  * 이 라우트를 호출해 해당 상품의 스토어프론트 페이지 캐시를 즉시 무효화한다.
  *
- * 목록 fetch 의 캐시 태그는 `${tag}-${_medusa_cache_id}` 형태로 **방문자별** 이라
- * (middleware 가 방문자마다 randomUUID 발급) 백엔드가 지목할 수 없다. 그래서 모든 목록이
- * 방문자 무관 태그(`PRODUCT_LIST_TAG`)를 함께 달고, 여기서 그 태그를 쳐서 전역 무효화한다.
- * 상세 페이지는 `product-{handle}` 태그와 경로로 추가 무효화한다.
+ * 카탈로그 조회는 방문자별로 태그를 쪼개지 않는다 — 응답은 (세그먼트, region, 쿼리)의
+ * 함수이고 그 값들은 캐시 키에 들어간다(`lib/data/catalog-cache.ts`). 대신 모든 조회가
+ * 방문자 무관 태그(`PRODUCT_LIST_TAG`)를 함께 달아, 여기서 그 태그를 쳐서 회원/비회원 캐시를
+ * 한 번에 걷어낸다. 상세 페이지는 `product-{handle}` 태그와 경로로 추가 무효화한다.
  */
 export async function POST(request: NextRequest) {
   const secret = request.headers.get("x-revalidate-secret")
@@ -90,6 +91,13 @@ export async function POST(request: NextRequest) {
   // (카테고리 페이지 수는 적어 비용이 작다. route group `(main)` 은 패턴에 포함되지 않는다)
   revalidatePath("/[countryCode]/category/[...segments]", "page")
   revalidated.push("/[countryCode]/category/[...segments]")
+
+  // 카테고리 트리를 호출마다 걷어낸다. 카테고리 편집 경로(revalidateCategory)는 썸네일
+  // 태그만 지목하고 트리 태그는 안 보내므로, 이 무조건 무효화가 카테고리 편집을 트리에
+  // 반영하는 유일한 경로다. 상품 변경 호출에도 같이 걷히는 비용은 감수한다 — 트리 조회는
+  // 한 번의 fetch 라 재적재가 싸다.
+  revalidateTag(CATEGORY_TREE_TAG)
+  revalidated.push(`tag:${CATEGORY_TREE_TAG}`)
 
   // 호출자가 명시한 태그(예: `category-thumbnail-{medusaCategoryId}`)를 무효화.
   // 사용자별 접미사가 붙지 않는 태그만 유효하다 — Medusa SDK 캐시 태그엔 쓸 수 없다.

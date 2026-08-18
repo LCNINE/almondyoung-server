@@ -10,8 +10,7 @@ import { cache } from "react"
  * 호출부마다 새 리터럴이라 매번 미스가 나고 캐시가 사실상 없는 것과 같아진다.
  * 아래 두 함수가 인자를 문자열로 정규화하거나 아예 받지 않는 건 그 때문이다.
  *
- * 요청 범위 캐시라 관리자가 카테고리를 바꾸면 다음 요청부터 곧바로 반영된다
- * (시간 기반 revalidate 를 걸지 않는 이유).
+ * 요청 범위 캐시다. 요청 간 캐시는 fetch 쪽 `CATEGORY_TREE_TAG` 가 담당한다.
  */
 
 const getCategoryByHandleKeyed = cache(async (key: string) =>

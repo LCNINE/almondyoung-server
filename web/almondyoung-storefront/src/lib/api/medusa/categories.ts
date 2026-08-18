@@ -1,6 +1,10 @@
 "use server"
 
 import { getIsMembershipCustomer } from "@/lib/data/membership"
+import {
+  CATALOG_REVALIDATE_SECONDS,
+  CATEGORY_TREE_TAG,
+} from "@/lib/data/catalog-cache"
 import { sdk } from "@/lib/config/medusa"
 import {
   filterInactiveCategories,
@@ -40,7 +44,11 @@ export const listCategories = async (query?: Record<string, any>) => {
           limit,
           ...query,
         },
-        cache: "no-store",
+        // 응답 자체는 방문자와 무관하다 — 비활성/회원전용 필터링은 아래 then 에서 한다.
+        next: {
+          tags: [CATEGORY_TREE_TAG],
+          revalidate: CATALOG_REVALIDATE_SECONDS,
+        },
       }
     )
     .then(async ({ product_categories }) => {
@@ -69,7 +77,10 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
           include_descendants_tree: true,
           handle,
         },
-        cache: "no-store",
+        next: {
+          tags: [CATEGORY_TREE_TAG],
+          revalidate: CATALOG_REVALIDATE_SECONDS,
+        },
       }
     )
     .then(async ({ product_categories }) => {

@@ -50,9 +50,9 @@ export class StorefrontRevalidateService {
   /**
    * 카테고리 변경(이미지·이름·정렬) 후 호출한다.
    *
-   * 카테고리 트리 자체는 스토어프론트가 `cache: "no-store"` 로 읽으므로 무효화가 필요 없지만,
-   * metadata.thumbnail 이 비었을 때 쓰는 PIM search 폴백은 `category-thumbnail-{medusaId}`
-   * 태그로 1시간 캐싱된다. 그 태그를 비워야 이미지 변경이 즉시 반영된다.
+   * 카테고리 트리는 스토어프론트가 `categories` 태그로 캐싱하며, `/api/revalidate` 가
+   * 호출마다 그 태그를 함께 걷어낸다. metadata.thumbnail 이 비었을 때 쓰는 PIM search
+   * 폴백은 `category-thumbnail-{medusaId}` 태그라 여기서 따로 지목해야 한다.
    */
   async revalidateCategory(medusaCategoryId?: string): Promise<void> {
     const tags = medusaCategoryId ? [`category-thumbnail-${medusaCategoryId}`] : [];

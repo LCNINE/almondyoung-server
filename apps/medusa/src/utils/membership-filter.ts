@@ -1,5 +1,9 @@
 import type { AuthenticatedMedusaRequest } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import {
+  getAppliedCatalogSegment,
+  type CatalogSegment,
+} from '../api/store/products/middlewares/catalog-segment';
 
 export type ProductMetadata = {
   hideMembershipPriceForNonMembers?: boolean | string;
@@ -27,6 +31,8 @@ export type MembershipProduct = {
 export type MemberState = {
   customerId?: string;
   isMember: boolean;
+  /** 신뢰된 세그먼트로 판정했을 때만 채워진다. 응답 에코의 근거. */
+  appliedSegment?: CatalogSegment;
 };
 
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -195,6 +201,16 @@ export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promi
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
   const customerId = req.auth_context?.actor_id;
+
+  // 적용이 끝난 세그먼트가 있으면 고객 조회 없이 그 판정을 쓴다.
+  const appliedSegment = getAppliedCatalogSegment(req);
+  if (appliedSegment) {
+    return {
+      customerId,
+      isMember: appliedSegment === 'mem',
+      appliedSegment,
+    };
+  }
 
   if (!customerId || !membershipGroupId) {
     return {

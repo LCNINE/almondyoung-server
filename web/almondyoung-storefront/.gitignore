@@ -61,3 +61,5 @@ dump.rdb
 .env*.local
 
 .claude
+# E2E 전용 빌드/캐시 디렉터리
+.next-e2e*

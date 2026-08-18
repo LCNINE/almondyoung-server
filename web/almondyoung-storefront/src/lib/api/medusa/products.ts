@@ -2,10 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders } from "@lib/data/cookies"
-import {
-  getMembershipAwareCacheTags,
-  getMembershipSegmentHeader,
-} from "@lib/data/membership-cache-tags"
+import { fetchCatalog } from "@lib/data/catalog-cache"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
@@ -92,51 +89,33 @@ export const listProducts = async ({
     }
   }
 
-  const headers = {
-    ...(await getAuthHeaders()),
-    ...(await getMembershipSegmentHeader()),
-  }
-
-  // 목록 태그는 멤버십/로그인 상태별로 분리(회원/비회원 캐시 격리).
-  // handle 조회 시엔 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
+  // handle 조회엔 방문자 무관 태그를 더해 재고/가격 변경 시 revalidateTag 로 무효화한다.
   // 검색·카테고리는 handle 을 배열로 넘기므로 각각에 태그를 건다.
-  const listTags = await getMembershipAwareCacheTags("products")
-  const handleTag = toProductHandleTags(queryParams?.handle)
-  const tags = [...listTags, ...handleTag, PRODUCT_LIST_TAG]
-  const next = {
-    ...(tags.length ? { tags } : {}),
-    revalidate: 3600,
+  const tags = [...toProductHandleTags(queryParams?.handle), PRODUCT_LIST_TAG]
+
+  const { products, count } = await fetchCatalog<{
+    products: HttpTypes.StoreProduct[]
+    count: number
+  }>({
+    path: "/store/products",
+    query: {
+      limit,
+      offset,
+      region_id: region?.id,
+      fields:
+        "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
+      ...queryParams,
+    },
+    tags,
+  })
+
+  const nextPage = count > offset + limit ? pageParam + 1 : null
+
+  return {
+    response: { products, count },
+    nextPage,
+    queryParams,
   }
-
-  return sdk.client
-    .fetch<{ products: HttpTypes.StoreProduct[]; count: number }>(
-      `/store/products`,
-      {
-        method: "GET",
-        query: {
-          limit,
-          offset,
-          region_id: region?.id,
-          fields:
-            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
-          ...queryParams,
-        },
-        headers,
-        next,
-      }
-    )
-    .then(({ products, count }) => {
-      const nextPage = count > offset + limit ? pageParam + 1 : null
-
-      return {
-        response: {
-          products,
-          count,
-        },
-        nextPage: nextPage,
-        queryParams,
-      }
-    })
 }
 
 /**
@@ -190,18 +169,6 @@ export const listProductsSorted = async ({
     }
   }
 
-  const headers = {
-    ...(await getAuthHeaders()),
-    ...(await getMembershipSegmentHeader()),
-  }
-
-  const listTags = await getMembershipAwareCacheTags("products")
-  const tags = [...listTags, PRODUCT_LIST_TAG]
-  const next = {
-    tags,
-    revalidate: 3600,
-  }
-
   // 쿼리 파라미터 구성
   const query: Record<string, string | string[]> = {
     sort_by: sortBy,
@@ -209,6 +176,10 @@ export const listProductsSorted = async ({
     limit: String(limit),
     offset: String(offset),
     currency_code: region.currency_code,
+    // region_id 가 빠지면 Medusa 쪽 가격 계산이 좁혀지지 않아 멤버십 price list 가
+    // 비회원에게도 적용된다. 표준 /store/products 는 코어 미들웨어가 채우지만 이 라우트는
+    // 직접 넘겨야 한다.
+    region_id: region.id,
   }
 
   if (categoryId) {
@@ -219,25 +190,19 @@ export const listProductsSorted = async ({
     query.collection_id = collectionId
   }
 
-  return sdk.client
-    .fetch<{
-      products: HttpTypes.StoreProduct[]
-      count: number
-    }>(`/store/products-sorted`, {
-      method: "GET",
-      query,
-      headers,
-      next,
-    })
-    .then(({ products, count }) => {
-      const nextPage = count > offset + limit ? pageParam + 1 : null
+  const { products, count } = await fetchCatalog<{
+    products: HttpTypes.StoreProduct[]
+    count: number
+  }>({
+    path: "/store/products-sorted",
+    query,
+    tags: [PRODUCT_LIST_TAG],
+  })
 
-      return {
-        response: {
-          products,
-          count,
-        },
-        nextPage,
-      }
-    })
+  const nextPage = count > offset + limit ? pageParam + 1 : null
+
+  return {
+    response: { products, count },
+    nextPage,
+  }
 }

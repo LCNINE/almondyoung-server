@@ -6,6 +6,7 @@ import {
   transformStoreProductsPayload,
   type MembershipProduct,
 } from '../../../../utils/membership-filter';
+import { CATALOG_SEGMENT_ECHO_FIELD } from './catalog-segment';
 
 /**
  * 멤버십가 표시 정책 응답 미들웨어
@@ -23,7 +24,7 @@ export const membershipPriceVisibilityMiddleware = async (
   res: MedusaResponse,
   next: MedusaNextFunction,
 ) => {
-  const { isMember } = await resolveMemberState(req);
+  const { isMember, appliedSegment } = await resolveMemberState(req);
 
   const originalJson = res.json.bind(res);
   res.json = (body: unknown) => {
@@ -37,7 +38,15 @@ export const membershipPriceVisibilityMiddleware = async (
       return originalJson({ type: 'not_found', message: 'Product not found' });
     }
 
-    return originalJson(transformStoreProductsPayload(body, isMember));
+    const payload = transformStoreProductsPayload(body, isMember);
+
+    // 적용이 끝난 세그먼트만 에코한다. 에코는 주장의 반복이 아니라 적용의 증명이라,
+    // 스토어프론트는 이 값이 자기 주장과 다르면 응답을 캐시하지 않고 토큰으로 되받는다.
+    if (appliedSegment && isRecord(payload)) {
+      return originalJson({ ...payload, [CATALOG_SEGMENT_ECHO_FIELD]: appliedSegment });
+    }
+
+    return originalJson(payload);
   };
 
   next();

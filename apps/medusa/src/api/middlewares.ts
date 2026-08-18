@@ -7,11 +7,15 @@ import { StoreGetOrdersListParams } from './store/orders-list/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
 import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
 import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
+import { catalogSegmentPricingMiddleware } from './store/products/middlewares/catalog-segment';
 
 // 멤버십가 표시 정책: 비회원 응답에서 멤버십가 metadata만 제거한다 (상품 숨김 아님).
 // authenticate(allowUnauthenticated)로 로그인 고객의 auth_context를 채운 뒤 멤버 여부를 판별한다.
+// catalogSegmentPricingMiddleware 는 코어 setPricingContext 뒤에 돌아야 고객 그룹을
+// 갈아끼울 수 있다 — 코어 미들웨어가 앱 미들웨어보다 먼저 등록되므로 순서가 보장된다.
 const membershipPriceVisibilityMiddlewares = [
   authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+  catalogSegmentPricingMiddleware,
   membershipPriceVisibilityMiddleware,
 ];
 
