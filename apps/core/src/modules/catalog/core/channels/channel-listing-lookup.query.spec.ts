@@ -24,8 +24,7 @@ describe('채널 리스팅 조회 쿼리의 술어 계약 (#666)', () => {
     await connection.end({ timeout: 0 });
   });
 
-  const sqlOf = () =>
-    buildChannelListingLookupQuery(client, 'item-1', eq(salesChannels.site, 'naver')).toSQL().sql;
+  const sqlOf = () => buildChannelListingLookupQuery(client, 'item-1', eq(salesChannels.site, 'naver')).toSQL().sql;
 
   it('활성 버전만 통과시킨다', () => {
     expect(sqlOf()).toContain('"product_master_versions"."status" = ');
@@ -41,10 +40,21 @@ describe('채널 리스팅 조회 쿼리의 술어 계약 (#666)', () => {
     expect(sqlOf()).toContain('"channel_variant_listings"."is_active" = ');
   });
 
+  it('판매중지된 품목을 배제한다', () => {
+    // `product_variants.status` 는 가용재고 계산이 판매 게이트로 쓰는 값이다
+    // (product-sellable-quantity.calculator.ts). 조회가 이걸 안 보면 가용재고 0/판매불가인
+    // 품목으로 채널 주문이 정상 수집돼 판매주문이 생성된다 (#670).
+    expect(sqlOf()).toContain('"product_variants"."status" = ');
+  });
+
+  it('비활성 판매채널을 배제한다', () => {
+    // 조회는 리스팅의 is_active 만 봤고 채널 자체의 is_active 는 안 봤다. 지금은 폴러 게이트
+    // (#654/#660)가 수집을 먼저 막아 도달 경로가 없지만, 조회 자체는 열려 있었다 (#670 곁가지).
+    expect(sqlOf()).toContain('"sales_channels"."is_active" = ');
+  });
+
   it('마스터를 버전의 master_id 로 앵커한다', () => {
     // product_master_variants.master_id 는 버전의 것과 같다는 DB 제약이 없다.
-    expect(sqlOf()).toContain(
-      '"product_masters" on "product_masters"."id" = "product_master_versions"."master_id"',
-    );
+    expect(sqlOf()).toContain('"product_masters" on "product_masters"."id" = "product_master_versions"."master_id"');
   });
 });

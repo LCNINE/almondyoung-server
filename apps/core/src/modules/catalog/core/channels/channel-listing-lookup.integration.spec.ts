@@ -84,6 +84,8 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
       versionDeleted?: boolean;
       masterDeleted?: boolean;
       listingActive?: boolean;
+      variantStatus?: 'active' | 'inactive';
+      channelActive?: boolean;
     } = {},
   ) {
     const masterId = randomUUID();
@@ -105,13 +107,13 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
       })
       .returning({ id: productMasterVersions.id });
 
-    await tx.insert(productVariants).values({ id: variantId, isDefault: true });
+    await tx.insert(productVariants).values({ id: variantId, isDefault: true, status: opts.variantStatus ?? 'active' });
     await tx.insert(productMasterVariants).values({ masterId, variantId, versionId: version.id });
 
     const site = `spec-${masterId.slice(0, 8)}`;
     const [channel] = await tx
       .insert(salesChannels)
-      .values({ site, name: '스펙 채널' })
+      .values({ site, name: '스펙 채널', isActive: opts.channelActive ?? true })
       .returning({ id: salesChannels.id });
 
     await tx.insert(channelVariantListings).values({
@@ -167,6 +169,24 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
     expect(result).toBeNull();
   });
 
+  it('판매중지된 품목은 활성 버전이어도 조회되지 않는다', async () => {
+    // "블랙 L 사이즈만 판매중지" 는 실재하는 운영 동작이고, 가용재고는 이미 이 값을 판매
+    // 게이트로 쓴다. 조회만 안 봐서 가용 0 인데 주문은 수집되는 틈이 있었다 (#670).
+    const result = await inRollbackTx(async (tx) => {
+      const { salesChannelId, channelItemId } = await seedListing(tx, { variantStatus: 'inactive' });
+      return service.lookupVariant(salesChannelId, channelItemId, tx);
+    });
+    expect(result).toBeNull();
+  });
+
+  it('비활성 판매채널의 매핑은 조회되지 않는다', async () => {
+    const result = await inRollbackTx(async (tx) => {
+      const { salesChannelId, channelItemId } = await seedListing(tx, { channelActive: false });
+      return service.lookupVariant(salesChannelId, channelItemId, tx);
+    });
+    expect(result).toBeNull();
+  });
+
   it('꺼진 리스팅은 활성 버전이어도 조회되지 않는다', async () => {
     const result = await inRollbackTx(async (tx) => {
       const { salesChannelId, channelItemId } = await seedListing(tx, { listingActive: false });
@@ -199,6 +219,22 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
     it('soft delete 된 마스터의 품목은 조회되지 않는다', async () => {
       const result = await inRollbackTx(async (tx) => {
         const { site, channelItemId } = await seedListing(tx, { masterDeleted: true });
+        return service.lookupVariantByChannelCode(site, channelItemId, tx);
+      });
+      expect(result).toBeNull();
+    });
+
+    it('판매중지된 품목은 조회되지 않는다', async () => {
+      const result = await inRollbackTx(async (tx) => {
+        const { site, channelItemId } = await seedListing(tx, { variantStatus: 'inactive' });
+        return service.lookupVariantByChannelCode(site, channelItemId, tx);
+      });
+      expect(result).toBeNull();
+    });
+
+    it('비활성 판매채널의 매핑은 조회되지 않는다', async () => {
+      const result = await inRollbackTx(async (tx) => {
+        const { site, channelItemId } = await seedListing(tx, { channelActive: false });
         return service.lookupVariantByChannelCode(site, channelItemId, tx);
       });
       expect(result).toBeNull();
