@@ -36,12 +36,14 @@ function makeSnapshot(overrides: Partial<ChannelOrderSnapshot> = {}): ChannelOrd
   };
 }
 
-function makeTranslator(lookupResult: unknown) {
-  const lookupByChannelCode = jest.fn().mockResolvedValue(lookupResult);
+function makeTranslator(listing: unknown) {
+  const resolveByChannelCode = jest
+    .fn()
+    .mockResolvedValue(listing ? { found: true, listing } : { found: false, cause: 'listing_not_found' });
   const translator = new ChannelOrderTranslator(
-    new ChannelLineIdentityResolver({ lookupByChannelCode } as never),
+    new ChannelLineIdentityResolver({ resolveByChannelCode } as never),
   );
-  return { translator, lookupByChannelCode };
+  return { translator, resolveByChannelCode };
 }
 
 const LISTING = {
@@ -56,11 +58,11 @@ const LISTING = {
 
 describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () => {
   it('채널 리스팅으로 라인 정체성을 해석하고 Core 판매상품명을 싣는다', async () => {
-    const { translator, lookupByChannelCode } = makeTranslator(LISTING);
+    const { translator, resolveByChannelCode } = makeTranslator(LISTING);
 
     const { outcome } = await translator.translate('naver', makeSnapshot());
 
-    expect(lookupByChannelCode).toHaveBeenCalledWith('naver', 'naver-product-1');
+    expect(resolveByChannelCode).toHaveBeenCalledWith('naver', 'naver-product-1');
     expect(outcome.kind).toBe('order');
     if (outcome.kind !== 'order') throw new Error('unreachable');
 
@@ -97,6 +99,51 @@ describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () =
       affectedLineIds: ['naver-product-order-1'],
       rawOrder: { source: 'naver' },
     });
+    // resolver 가 준 사유(#674)가 라인 ID 와 정확히 짝지어 실려야 한다 — 순서가 바뀌거나
+    // 필드가 뒤바뀌면(lineId↔cause) 여기서 잡힌다.
+    expect(outcome.failure.affectedLines).toEqual([{ lineId: 'naver-product-order-1', cause: 'listing_not_found' }]);
+  });
+
+  it('여러 라인 중 일부만 미식별이면 그 라인의 사유만, Core 가 준 값 그대로 싣는다', async () => {
+    // 기본값(listing_not_found)만으로는 "항상 같은 값을 하드코딩" 하는 버그를 못 잡으므로
+    // resolveByChannelCode 가 라인별로 다른 결과를 주도록 직접 구성한다 (#674 리뷰 지적).
+    const resolveByChannelCode = jest.fn((_channel: string, lookupId: string) => {
+      if (lookupId === 'naver-product-1') {
+        return Promise.resolve({ found: true, listing: LISTING });
+      }
+      return Promise.resolve({ found: false, cause: 'variant_inactive' });
+    });
+    const translator = new ChannelOrderTranslator(
+      new ChannelLineIdentityResolver({ resolveByChannelCode } as never),
+    );
+
+    const { outcome } = await translator.translate(
+      'naver',
+      makeSnapshot({
+        lines: [
+          {
+            channelOrderItemId: 'naver-product-order-1',
+            channelProductId: 'naver-product-1',
+            productName: '식별되는 상품',
+            quantity: 2,
+            unitPrice: 5000,
+          },
+          {
+            channelOrderItemId: 'naver-product-order-2',
+            channelProductId: 'naver-product-2',
+            productName: '비활성 옵션',
+            quantity: 1,
+            unitPrice: 3000,
+          },
+        ],
+      }),
+    );
+
+    expect(outcome.kind).toBe('failure');
+    if (outcome.kind !== 'failure') throw new Error('unreachable');
+    // 식별된 첫 라인은 빠지고, 미식별인 두 번째 라인만 — Core 가 준 cause 그대로 — 남아야 한다.
+    expect(outcome.failure.affectedLineIds).toEqual(['naver-product-order-2']);
+    expect(outcome.failure.affectedLines).toEqual([{ lineId: 'naver-product-order-2', cause: 'variant_inactive' }]);
   });
 
   it('이미 종결된 스냅샷은 매핑이 없어도 격리하지 않는다 — 판매주문을 만들지 않기 때문', async () => {

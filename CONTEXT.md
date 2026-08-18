@@ -231,7 +231,8 @@
 - 정의: 채널 주문 라인이 Core 판매상품 variant 로 식별되지 않아 판매주문 라인으로 번역할 수 없는 운영 예외.
 - Medusa 주문 라인에 `pimVariantId` 가 없으면 SKU 매칭 없음이 아니라 채널 상품 식별 실패다. 보통 Core Catalog 를 통하지 않고 Medusa 관리자에서 직접 만든 상품이 주문된 경우다.
 - 채널 상품 식별 실패 주문은 정상 판매주문으로 조용히 생성하지 않는다. 운영자가 확인할 수 있도록 격리되어야 한다.
-- **격리 큐는 채널 능력과 무관하게 하나다.** Medusa 의 식별 실패(metadata·리스팅 둘 다 없음)와 네이버·쿠팡의 미매핑([[채널 리스팅]] 없음)은 같은 운영 문제이므로 같은 큐·같은 화면에서 해소한다. 해소 수단도 하나다 — 리스팅을 만들면 격리된 주문이 재처리된다.
+- **격리 큐는 채널 능력과 무관하게 하나다.** Medusa 의 식별 실패(metadata·리스팅 둘 다 없음)와 네이버·쿠팡의 미매핑([[채널 리스팅]] 없음)은 같은 운영 문제이므로 같은 큐·같은 화면에서 해소한다.
+- **해소 수단은 하나가 아니다.** 리스팅 조회가 버전·품목·채널 세 축을 보므로(#670) 조치가 갈린다 — 격리 행의 `affected_lines[].cause` 가 라인마다 무엇을 해야 하는지 말한다: `listing_not_found`→리스팅 생성 · `listing_inactive`→리스팅 활성화 · `channel_inactive`→채널 활성화 · `variant_inactive`→품목 활성화 · `no_active_version`→publish · `product_deleted`→다른 상품으로 재매핑 · `no_embedded_ids`→Core 를 통해 상품 재생성 · `no_lookup_key`→채널 데이터 확인 · `unknown`→판정 불가. 어휘 정본은 `@packages/domain-types` 다 (#674).
 - _Avoid_: SKU 매칭 없음과 혼동하기, 유료 주문을 silent skip 하기.
 
 ### SKU Group — 재고상품의 느슨한 묶음

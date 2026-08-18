@@ -17,6 +17,7 @@ import {
 
 import { sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid'; // uuid v7 지원 라이브러리 사용
+import type { AffectedLine } from '@packages/domain-types';
 
 export const eventLogs = pgTable(
   'event_logs',
@@ -227,6 +228,12 @@ export const orderCollectionFailures = pgTable(
     externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
     reason: varchar('reason', { length: 100 }).notNull(),
     affectedLineIds: jsonb('affected_line_ids').$type<string[]>().notNull(),
+    /**
+     * 라인별 실패 사유 (#674). nullable 이다 — 옛 행과
+     * `collected_order_modification_not_accepted` 행은 사유를 모르는 게 사실이므로
+     * 지어내지 않는다. `affected_line_ids` 는 두 사유가 함께 쓰므로 그대로 둔다(rename 아님).
+     */
+    affectedLines: jsonb('affected_lines').$type<AffectedLine[]>(),
     rawOrder: jsonb('raw_order').$type<Record<string, unknown>>().notNull(),
     sourceUpdatedAt: timestamp('source_updated_at').notNull(),
 

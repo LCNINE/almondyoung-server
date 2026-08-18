@@ -24,6 +24,7 @@ export class OrderCollectionFailureService {
       externalOrderId: failure.externalOrderId,
       reason: failure.reason,
       affectedLineIds: failure.affectedLineIds,
+      affectedLines: failure.affectedLines ?? null,
       rawOrder: failure.rawOrder,
       sourceUpdatedAt: parseTimestamp(failure.sourceUpdatedAt),
       status: 'quarantined',
@@ -45,6 +46,7 @@ export class OrderCollectionFailureService {
           ],
           set: {
             affectedLineIds: values.affectedLineIds,
+            affectedLines: values.affectedLines,
             rawOrder: values.rawOrder,
             sourceUpdatedAt: values.sourceUpdatedAt,
             status: 'quarantined',

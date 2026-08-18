@@ -11,11 +11,13 @@ import {
   productVariants,
   salesChannels,
 } from '../../schema/catalog.schema';
-import { eq, and, desc, sql, isNull } from 'drizzle-orm';
+import { SQL, eq, and, desc, sql, isNull } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { isExternalMarketplaceSite } from './marketplace-site';
 import { buildChannelListingLookupQuery } from './channel-listing-lookup.query';
+import type { ListingResolutionCause } from '@packages/domain-types';
+import { buildChannelListingDiagnosisQuery, causeFromDiagnosisRow } from './channel-listing-diagnosis.query';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -26,6 +28,13 @@ export interface LookupVariantResult {
   variantName: string | null;
   isActive: boolean;
 }
+
+/**
+ * 해석 결과 (#674). 미스도 **본문을 가진 값**이다 — 옛 `/lookup` 의 `null`/204 와 다르다.
+ */
+export type ListingResolveResult =
+  | { found: true; listing: LookupVariantResult }
+  | { found: false; cause: ListingResolutionCause };
 
 export type ChannelListingWithChannel = ChannelVariantListingEntity & {
   channel: SalesChannelEntity;
@@ -83,6 +92,52 @@ export class ChannelListingService {
       eq(salesChannels.site, channelCode),
     );
     return result[0] ?? null;
+  }
+
+  /**
+   * 판매채널 ID 진입점의 해석 (#674).
+   */
+  async resolveVariant(
+    salesChannelId: string,
+    channelItemId: string,
+    tx?: DbTransaction,
+  ): Promise<ListingResolveResult> {
+    return this.resolveWith(eq(channelVariantListings.salesChannelId, salesChannelId), channelItemId, tx);
+  }
+
+  /**
+   * 채널 코드(site) 진입점의 해석. **주문 수집이 실제로 타는 경로다.**
+   */
+  async resolveVariantByChannelCode(
+    channelCode: string,
+    channelItemId: string,
+    tx?: DbTransaction,
+  ): Promise<ListingResolveResult> {
+    return this.resolveWith(eq(salesChannels.site, channelCode), channelItemId, tx);
+  }
+
+  /**
+   * 진단은 **미스 경로에서만** 돈다 — 성공 경로의 비용은 그대로다.
+   *
+   * 조회와 진단은 한 스냅샷이 아니라 별개의 두 문이다. 그 사이에 상태가 고쳐지면(예:
+   * 매핑을 막 살렸는데 그 순간 사이에 조회가 지나갔다면) 진단 술어가 전부 통과해
+   * `causeFromDiagnosisRow` 가 `unknown` 을 낸다. 사고가 아니라 정직한 답이다 — 디버깅하다
+   * 여기서 원인을 찾으려 하지 말 것.
+   */
+  private async resolveWith(
+    channelPredicate: SQL,
+    channelItemId: string,
+    tx?: DbTransaction,
+  ): Promise<ListingResolveResult> {
+    const client = this.getClient(tx);
+
+    const found = await buildChannelListingLookupQuery(client, channelItemId, channelPredicate);
+    if (found[0]) {
+      return { found: true, listing: found[0] };
+    }
+
+    const diagnosis = await buildChannelListingDiagnosisQuery(client, channelItemId, channelPredicate);
+    return { found: false, cause: causeFromDiagnosisRow(diagnosis[0]) };
   }
 
   /**

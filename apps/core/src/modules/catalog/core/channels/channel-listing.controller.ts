@@ -20,6 +20,7 @@ import {
   ChannelListingDto,
   ChannelListingWithChannelDto,
   LookupChannelListingResponseDto,
+  ResolveChannelListingResponseDto,
 } from './dto';
 import { ChannelListingMapper } from './mappers';
 
@@ -77,6 +78,39 @@ export class ChannelListingController {
       return this.channelListingService.lookupVariant(salesChannelId, channelItemId);
     }
     return this.channelListingService.lookupVariantByChannelCode(channelCode!, channelItemId);
+  }
+
+  @Get('resolve')
+  @Public()
+  @ApiOperation({
+    summary: '채널 상품 ID로 Variant 해석 (사유 포함)',
+    description:
+      '`/lookup` 과 같은 조회에 **실패 사유**를 붙여 돌려준다. 미스도 204 가 아니라 200 이며 ' +
+      '`{ found: false, cause }` 본문을 갖는다. `/lookup` 은 미스가 204 라 같은 경로를 200 으로 ' +
+      '바꾸면 옛 클라이언트가 본문을 매핑으로 오독한다 — 그래서 경로를 나눴다 (#674).',
+  })
+  @ApiQuery({ name: 'salesChannelId', required: false, description: '판매 채널 ID (UUID)' })
+  @ApiQuery({ name: 'channelCode', required: false, description: '채널 코드 (site). salesChannelId 대신 사용 가능' })
+  @ApiQuery({ name: 'channelItemId', required: true, description: '채널에서의 상품 ID' })
+  @ApiResponse({ status: 200, description: '해석 결과 (성공·실패 모두)', type: ResolveChannelListingResponseDto })
+  @ApiResponse({ status: 400, description: '잘못된 요청' })
+  async resolve(
+    @Query('salesChannelId') salesChannelId?: string,
+    @Query('channelCode') channelCode?: string,
+    @Query('channelItemId') channelItemId?: string,
+  ): Promise<ResolveChannelListingResponseDto> {
+    if (!channelItemId) {
+      throw new BadRequestException('channelItemId is required');
+    }
+    if (!salesChannelId && !channelCode) {
+      throw new BadRequestException('Either salesChannelId or channelCode is required');
+    }
+
+    const result = salesChannelId
+      ? await this.channelListingService.resolveVariant(salesChannelId, channelItemId)
+      : await this.channelListingService.resolveVariantByChannelCode(channelCode!, channelItemId);
+
+    return result.found ? { found: true, listing: result.listing } : { found: false, cause: result.cause };
   }
 
   @Post()
