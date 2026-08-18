@@ -30,8 +30,15 @@ export interface ChannelListingDiagnosisRow {
  * 2. **버전 사슬은 LEFT JOIN 이다.** `product_master_variants` 행이 없는 품목(어떤 버전에도
  *    안 매달린 상태)이 inner join 에서 0행을 내 역시 `listing_not_found` 로 오진한다.
  *
- * 한 품목이 여러 버전에 매달릴 수 있으므로 조회와 같은 정렬로 하나를 고정한다. 어느 행을
- * 골라도 사유가 성립한다 — 성립하지 않는 행이 하나라도 있었다면 애초에 조회가 맞았을 것이다.
+ * 한 variant 가 여러 버전에 매달린 이상 상태(bulk import 의 phantom masterId, #666)에서는
+ * 조회와 같은 정렬(`version desc, createdAt desc`)로 고른 단 한 행만 보고 판정한다. 그래서
+ * `product_deleted` 와 `no_active_version` 경계에서는 — 예를 들어 고른 행이 삭제 안 된
+ * draft 이고 링크된 다른 버전이 soft delete 된 상태라면 — 어느 행이 뽑히느냐에 따라
+ * 보고되는 사유가 달라질 수 있다.
+ *
+ * 그래도 조회와 다른 정렬을 쓰지 않는다. 다르게 고르면 진단이 **조회가 후보로 삼지도 않은
+ * 행**을 설명하게 되어 더 나쁘다. 사유는 운영자에게 주는 힌트일 뿐 자동 처리가 소비하지
+ * 않으므로, 이 경계에서의 오차는 격리 자체(조회가 0행을 낸다는 사실)를 망가뜨리지 않는다.
  */
 export function buildChannelListingDiagnosisQuery(client: DbClient, channelItemId: string, channelPredicate: SQL) {
   return client
