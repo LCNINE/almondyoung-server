@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { LISTING_RESOLUTION_CAUSES, type ListingResolutionCause } from '@packages/domain-types';
 
 export class LookupChannelListingResponseDto {
   @ApiProperty({ description: 'PIM Master ID' })
@@ -104,4 +105,23 @@ export class ChannelListingListResponseDto {
 
   @ApiProperty({ description: '전체 개수' })
   total: number;
+}
+
+export class ResolveChannelListingResponseDto {
+  @ApiProperty({ description: '매핑 해석 성공 여부' })
+  found: boolean;
+
+  @ApiProperty({
+    description: '해석된 매핑 (found=true 일 때만)',
+    required: false,
+    type: LookupChannelListingResponseDto,
+  })
+  listing?: LookupChannelListingResponseDto;
+
+  @ApiProperty({
+    description: '해석 실패 사유 (found=false 일 때만). 어휘 정본은 @packages/domain-types',
+    required: false,
+    enum: LISTING_RESOLUTION_CAUSES,
+  })
+  cause?: ListingResolutionCause;
 }
