@@ -533,6 +533,13 @@
       "when": 1786945622779,
       "tag": "20260817054702_drop-channel-products",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1787054669562,
+      "tag": "20260818120429_unique-sales-channel-site",
+      "breakpoints": true
     }
   ]
 }

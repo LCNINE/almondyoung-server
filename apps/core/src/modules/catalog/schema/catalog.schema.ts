@@ -548,6 +548,15 @@ export const channelCategories = pgTable(
 );
 
 // ===== 8. SALES CHANNELS =====
+
+/**
+ * `sales_channels.site` 유일 인덱스의 이름 (#668 항목 1).
+ *
+ * 이름을 상수로 공유한다 — 위반을 409 로 옮기는 쪽(`sales-channel-site-conflict.ts`)이
+ * 문자열로 대조하기 때문에, 인덱스만 개명하면 매칭이 조용히 끊겨 409 가 500 으로 되돌아간다.
+ */
+export const SALES_CHANNEL_SITE_UNIQUE_INDEX = 'uq_sales_channels_site';
+
 export const salesChannels = pgTable(
   'sales_channels',
   {
@@ -568,7 +577,11 @@ export const salesChannels = pgTable(
   },
   (table) => [
     index('idx_sales_channels_type').on(table.type),
-    index('idx_sales_channels_site').on(table.site),
+    // site 는 채널의 정체이자 조회 키다 — 주문 수집이 `lookupVariantByChannelCode(site, …)`
+    // 로 들어오고, 크레덴셜(env)·워터마크(`sync_status.channel_id`)·주문 매핑
+    // (`wms_order_mappings.sales_channel`)이 전부 이 문자열 한 벌로 키잉돼 있다. 같은 site
+    // 행이 둘이면 A 채널 주문이 B 채널 매핑의 variant 로 해석된다 (#668 항목 1).
+    uniqueIndex(SALES_CHANNEL_SITE_UNIQUE_INDEX).on(table.site),
     index('idx_sales_channels_category').on(table.categoryId),
     index('idx_sales_channels_active').on(table.isActive),
   ],
