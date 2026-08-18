@@ -64,6 +64,11 @@
     "checkout": "구매하기",
     "checkoutWithCount": "총 {count}개 상품 구매하기"
   },
+  "shippingGroup": {
+    "flat": "{group} 배송비 {amount}원 별도",
+    "perQuantity": "{group} 배송비 개당 {amount}원 별도",
+    "conditionalFree": "{group} 배송비 {amount}원 별도 · {threshold}원 이상 무료"
+  },
   "freeShipping": {
     "reached": "무료배송 혜택이 적용됩니다!",
     "remaining": "{amount}원 더 담으면 무료배송",

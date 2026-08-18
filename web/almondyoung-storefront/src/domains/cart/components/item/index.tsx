@@ -28,6 +28,8 @@ import Image from "next/image"
 import { cloneElement, ReactElement, useState, useTransition } from "react"
 import { toast } from "sonner"
 
+import { ShippingGroupNotice } from "../shipping-group-notice"
+
 /**
  * 구매 불가 사유. 상품이 통째로 내려간 것(`product`)과 그 옵션만 없어진 것(`option`)은
  * 고객이 할 수 있는 일이 다르다 — 후자는 다른 옵션으로 다시 담으면 된다.
@@ -319,6 +321,7 @@ function DesktopItem({
               .join(" / ")}
           </p>
         )}
+        <ShippingGroupNotice item={item} className="mt-1" />
         {isUnavailable && (
           <p className="mt-1 text-xs text-red-600">
             {t(unavailableHintKey(unavailableReason))}
@@ -587,6 +590,7 @@ function MobileItem({
                   .join(" / ")}
               </p>
             )}
+            <ShippingGroupNotice item={item} className="mt-0.5" />
             {isUnavailable && (
               <p className="mt-0.5 text-xs text-red-600">
                 {t(unavailableHintKey(unavailableReason))}

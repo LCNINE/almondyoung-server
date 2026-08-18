@@ -64,6 +64,11 @@
     "checkout": "購入する",
     "checkoutWithCount": "合計{count}点を購入する"
   },
+  "shippingGroup": {
+    "flat": "{group} 送料{amount}ウォン別途",
+    "perQuantity": "{group} 送料1点あたり{amount}ウォン別途",
+    "conditionalFree": "{group} 送料{amount}ウォン別途 · {threshold}ウォン以上で無料"
+  },
   "freeShipping": {
     "reached": "送料無料が適用されます!",
     "remaining": "あと{amount}ウォンで送料無料",
