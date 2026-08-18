@@ -57,6 +57,22 @@ describe('ChannelListingClient.resolveByChannelCode (#674)', () => {
     expect(get.mock.calls[1][0]).toContain('/channel-listings/lookup');
   });
 
+  it('/resolve 가 401 이어도 /lookup 으로 폴백한다 — 옛 Core 는 :id 라우트가 인증을 요구한다', async () => {
+    // 옛 Core 는 `/channel-listings/resolve` 라우트가 없어 `@Get(':id')` 가 id="resolve" 로
+    // 가로챈다. 그 핸들러는 @Public() 이 아니라서 미인증 요청은 401 로 거절된다 (#674 회귀).
+    const get = jest
+      .fn()
+      .mockReturnValueOnce(throwError(() => ({ response: { status: 401 } })))
+      .mockReturnValueOnce(of({ status: 200, data: listing }));
+
+    const result = await clientWith(get).resolveByChannelCode('naver', 'item-1');
+
+    expect(result).toEqual({ found: true, listing });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get.mock.calls[0][0]).toContain('/channel-listings/resolve');
+    expect(get.mock.calls[1][0]).toContain('/channel-listings/lookup');
+  });
+
   it('폴백에서 매핑이 없으면 사유를 지어내지 않고 unknown 이다', async () => {
     const get = jest
       .fn()

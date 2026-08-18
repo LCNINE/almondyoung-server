@@ -83,6 +83,10 @@ describe('채널 리스팅 진단 쿼리 (#674)', () => {
       expect(causeFromDiagnosisRow({ ...healthy, masterDeletedAt: new Date() })).toBe('product_deleted');
     });
 
+    it('soft delete 된 버전도 product_deleted', () => {
+      expect(causeFromDiagnosisRow({ ...healthy, versionDeletedAt: new Date() })).toBe('product_deleted');
+    });
+
     it('활성 아닌 버전은 no_active_version', () => {
       expect(causeFromDiagnosisRow({ ...healthy, versionStatus: 'draft' })).toBe('no_active_version');
     });

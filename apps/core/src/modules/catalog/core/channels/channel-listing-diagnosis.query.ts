@@ -1,4 +1,4 @@
-import { SQL, and, desc, eq, isNotNull } from 'drizzle-orm';
+import { SQL, and, desc, eq, sql } from 'drizzle-orm';
 import type { ListingResolutionCause } from '@packages/domain-types';
 import {
   channelVariantListings,
@@ -49,7 +49,9 @@ export function buildChannelListingDiagnosisQuery(client: DbClient, channelItemI
       versionStatus: productMasterVersions.status,
       versionDeletedAt: productMasterVersions.deletedAt,
       masterDeletedAt: productMasters.deletedAt,
-      hasVersionLink: isNotNull(productMasterVariants.versionId),
+      // isNotNull() 은 SQL<unknown> 을 내 drizzle 이 boolean 을 못 잡는다 — 타입 있는 표현식으로
+      // 직접 써서 서비스단 `as` 캐스팅 없이 boolean 이 추론되게 한다 (CLAUDE.md: `as` 금지).
+      hasVersionLink: sql<boolean>`${productMasterVariants.versionId} is not null`,
     })
     .from(channelVariantListings)
     .innerJoin(salesChannels, eq(salesChannels.id, channelVariantListings.salesChannelId))

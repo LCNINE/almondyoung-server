@@ -17,11 +17,7 @@ import { ProductSellableQuantityService } from '../../../inventory/product-sella
 import { isExternalMarketplaceSite } from './marketplace-site';
 import { buildChannelListingLookupQuery } from './channel-listing-lookup.query';
 import type { ListingResolutionCause } from '@packages/domain-types';
-import {
-  ChannelListingDiagnosisRow,
-  buildChannelListingDiagnosisQuery,
-  causeFromDiagnosisRow,
-} from './channel-listing-diagnosis.query';
+import { buildChannelListingDiagnosisQuery, causeFromDiagnosisRow } from './channel-listing-diagnosis.query';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -122,6 +118,11 @@ export class ChannelListingService {
 
   /**
    * 진단은 **미스 경로에서만** 돈다 — 성공 경로의 비용은 그대로다.
+   *
+   * 조회와 진단은 한 스냅샷이 아니라 별개의 두 문이다. 그 사이에 상태가 고쳐지면(예:
+   * 매핑을 막 살렸는데 그 순간 사이에 조회가 지나갔다면) 진단 술어가 전부 통과해
+   * `causeFromDiagnosisRow` 가 `unknown` 을 낸다. 사고가 아니라 정직한 답이다 — 디버깅하다
+   * 여기서 원인을 찾으려 하지 말 것.
    */
   private async resolveWith(
     channelPredicate: SQL,
@@ -136,7 +137,7 @@ export class ChannelListingService {
     }
 
     const diagnosis = await buildChannelListingDiagnosisQuery(client, channelItemId, channelPredicate);
-    return { found: false, cause: causeFromDiagnosisRow(diagnosis[0] as ChannelListingDiagnosisRow | undefined) };
+    return { found: false, cause: causeFromDiagnosisRow(diagnosis[0]) };
   }
 
   /**

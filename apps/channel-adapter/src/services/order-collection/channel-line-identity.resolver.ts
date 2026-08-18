@@ -41,6 +41,10 @@ export class ChannelLineIdentityResolver {
   async resolve(channel: SalesChannel, line: ChannelOrderLineSnapshot): Promise<LineResolution> {
     const capabilities = getChannelCapabilities(channel);
     if (!capabilities || capabilities.integration !== 'api') {
+      // `unknown` 은 어휘를 확장하지 않고 쓰는 의도적 선택이다. `ListingResolutionCause` 는
+      // Core catalog 상태(리스팅/상품/버전/품목)를 설명하는 어휘이지 어댑터 설정 오류를
+      // 설명하는 어휘가 아니다 — 능력 표 누락은 그 범주 밖의 운영 설정 문제다. 원인은
+      // 바로 위 warn 로그가 이미 시끄럽게 알리므로, 여기서 새 cause 를 만들 필요가 없다.
       this.logger.warn(`No order-collection capability registered for channel ${channel}`);
       return { identified: false, cause: 'unknown' };
     }

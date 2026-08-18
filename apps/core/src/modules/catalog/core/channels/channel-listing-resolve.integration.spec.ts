@@ -187,6 +187,14 @@ describeIfDb('리스팅 해석 실패 사유 (실 Postgres)', () => {
     expect(result).toEqual({ found: false, cause: 'product_deleted' });
   });
 
+  it('soft delete 된 버전도 product_deleted', async () => {
+    const result = await inRollbackTx(async (tx) => {
+      const { site, channelItemId } = await seed(tx, { versionDeleted: true });
+      return service.resolveVariantByChannelCode(site, channelItemId, tx);
+    });
+    expect(result).toEqual({ found: false, cause: 'product_deleted' });
+  });
+
   it('삭제와 판매중지가 겹치면 product_deleted 가 이긴다', async () => {
     const result = await inRollbackTx(async (tx) => {
       const { site, channelItemId } = await seed(tx, { masterDeleted: true, variantStatus: 'inactive' });

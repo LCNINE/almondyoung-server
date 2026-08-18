@@ -81,8 +81,12 @@ export class ChannelListingClient {
   /**
    * 채널 코드 + 채널 상품 ID 로 Variant 를 **사유와 함께** 해석한다 (#674).
    *
-   * Core 가 아직 `/resolve` 를 모르면(배포 순서가 뒤집혔거나 롤백됐으면) 404 가 온다. 그때
+   * Core 가 아직 `/resolve` 를 모르면(배포 순서가 뒤집혔거나 롤백됐으면) 두 가지 응답이 올 수
+   * 있다. 라우트 자체가 없으면 404. 하지만 옛 Core 의 `@Get(':id')` 가 `id="resolve"` 로
+   * 이 요청을 가로채면 — 그 핸들러는 `@Public()` 이 아니고 `JwtAuthGuard` 가 전역 등록돼 있어
+   * 미인증 요청은 **401** 로 거절된다. 그래서 두 상태 코드 모두 "구버전 Core" 신호로 보고
    * 옛 `/lookup` 으로 폴백한다 — 사유를 얻으려다 수집을 통째로 멈추는 건 명백한 퇴행이다.
+   * (새 Core 의 `/resolve` 는 `@Public()` 이므로 401 을 낼 수 없다 — 모호하지 않다.)
    * 폴백 경로에서는 사유를 알 길이 없으므로 지어내지 않고 `unknown` 이다.
    *
    * 폴백 제거는 Core 배포가 안정된 뒤 후속 PR.
@@ -108,12 +112,15 @@ export class ChannelListingClient {
       }
       return { found: false, cause: toListingResolutionCause(body?.cause) };
     } catch (error: any) {
-      if (error.response?.status !== 404) {
+      const status = error.response?.status;
+      if (status !== 404 && status !== 401) {
         this.logger.error(`❌ 채널 매핑 해석 실패: ${channelCode}/${channelItemId}`, error.message);
         throw error;
       }
 
-      this.logger.warn(`/resolve 가 없어 /lookup 으로 폴백한다 (Core 가 구버전): ${channelCode}/${channelItemId}`);
+      this.logger.warn(
+        `/resolve 가 없어 /lookup 으로 폴백한다 (Core 가 구버전, status=${status}): ${channelCode}/${channelItemId}`,
+      );
       const listing = await this.lookupByChannelCode(channelCode, channelItemId);
       return listing ? { found: true, listing } : { found: false, cause: 'unknown' };
     }

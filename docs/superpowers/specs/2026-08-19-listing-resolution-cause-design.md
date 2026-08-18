@@ -135,7 +135,7 @@ affectedLines: jsonb('affected_lines').$type<{ lineId: string; cause: ListingRes
 
 ### 4.3 롤아웃 폴백
 
-`ChannelListingClient` 가 `/resolve` 를 부르고 **404 면 `/lookup` 으로 폴백**한다 (미스 → `cause: 'unknown'`). Core 를 롤백해도 어댑터가 안 깨진다. 폴백 제거는 후속 PR.
+`ChannelListingClient` 가 `/resolve` 를 부르고 **401 또는 404 면 `/lookup` 으로 폴백**한다 (미스 → `cause: 'unknown'`). 404 는 라우트 자체가 없는 옛 Core, 401 은 옛 Core 의 `@Get(':id')` 가 `id="resolve"` 로 이 요청을 가로챈 경우다 — 그 핸들러는 `@Public()` 이 아니라 전역 `JwtAuthGuard` 가 미인증 요청을 401 로 거절한다 (새 `/resolve` 는 `@Public()` 이므로 401 을 낼 수 없어 모호하지 않다). 두 상태 코드 모두를 폴백 트리거로 다루지 않으면 롤백 시나리오에서 401 이 그대로 던져져 `Promise.all` 이 reject 되고 그 채널의 폴링이 통째로 멎는다 (#674 회귀, 수정됨). Core 를 롤백해도 어댑터가 안 깨진다. 폴백 제거는 후속 PR.
 
 ### 4.4 운영 표면
 
@@ -154,7 +154,7 @@ CONTEXT.md line 234 의 *"해소 수단도 하나다 — 리스팅을 만들면 
 | Core 계약 스펙 (`.toSQL()`, DB 불필요) | 진단 쿼리가 LEFT JOIN 이고 sellable 술어를 안 건다 |
 | Core 통합 (실 Postgres) | Core 산출 사유 6종 각각 → 기대 cause. 우선순위 겹침 2건 |
 | 어댑터 유닛 | resolver 유니온 · translator 수집 · `recordFailure` 사유 flip 시 **행이 하나로 유지** |
-| 어댑터 유닛 | `/resolve` 404 → `/lookup` 폴백 → `unknown` |
+| 어댑터 유닛 | `/resolve` 401 또는 404 → `/lookup` 폴백 → `unknown` |
 
 게이트: `npm run type-check` 0 · `npx jest --maxWorkers=2` 실패 0 · `npm run test:core:integration:local`.
 
@@ -166,7 +166,7 @@ CONTEXT.md line 234 의 *"해소 수단도 하나다 — 리스팅을 만들면 
 3) channel-adapter deploy    (/resolve 사용 + 컬럼 기록)
 ```
 
-2·3 이 뒤집혀도 §4.3 폴백이 받는다. **1 은 3 보다 반드시 앞.**
+2·3 이 뒤집혀도 §4.3 폴백(401·404 모두)이 받는다. **1 은 3 보다 반드시 앞.**
 
 라이브 영향: 없다. 네이버·쿠팡 리스팅이 0행이고 Medusa 는 `embedded` 라 이 조회를 타지 않는다. 실효는 #643 개통 시점.
 
