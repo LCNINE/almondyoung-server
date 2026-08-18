@@ -50,6 +50,13 @@
       "when": 1786312672407,
       "tag": "20260809215752_drop-inbox-aggregate-type-default",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787072982896,
+      "tag": "20260818170942_add-affected-lines",
+      "breakpoints": true
     }
   ]
 }
