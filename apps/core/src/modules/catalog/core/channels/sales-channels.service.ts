@@ -1,17 +1,35 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError, BadRequestError } from '@app/shared';
+import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { SalesChannel, NewSalesChannel, UpdateSalesChannel, DbTransaction } from '../../catalog.types';
 import { type PimSchema, salesChannels, channelCategories } from '../../schema/catalog.schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, SQL } from 'drizzle-orm';
 import { ChannelCategoryEntity, SalesChannelEntity, SalesChannelInsert } from '../../schema/catalog.schema.types';
 import { SalesChannelWithCategory } from './mappers/sales-channel.mapper';
+import { isSalesChannelSiteConflict } from './sales-channel-site-conflict';
 // 행 타입 `SalesChannel`(catalog.types)과 이름이 겹치므로 어휘 상수만 가져온다.
 import { SALES_CHANNELS } from '@packages/event-contracts/streams';
 
 @Injectable()
 export class SalesChannelsService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+
+  /**
+   * `sales_channels.site` 유일 인덱스 위반을 409 로 옮긴다 (#668 항목 1).
+   *
+   * 사전 SELECT 로 막지 않는다 — 동시 생성 두 건이 나란히 통과하므로 방어가 안 되고, 진짜
+   * 방어선은 DB 인덱스 하나다. 여기서는 그 위반이 500 으로 새어나가지 않게만 한다.
+   */
+  private async rejectSiteConflict<T>(write: () => Promise<T>, site?: string | null): Promise<T> {
+    try {
+      return await write();
+    } catch (error) {
+      if (isSalesChannelSiteConflict(error)) {
+        throw new ConflictError(`이미 site='${site ?? ''}' 인 판매채널이 있습니다. 채널당 site 는 하나입니다.`);
+      }
+      throw error;
+    }
+  }
 
   async createChannel(data: NewSalesChannel, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
     if (!data.site || !data.name) {
@@ -42,7 +60,10 @@ export class SalesChannelsService {
         apiEndpoint: data.apiEndpoint || null,
       };
 
-      const result = await tx.insert(salesChannels).values(channelData).returning();
+      const result = await this.rejectSiteConflict(
+        () => tx.insert(salesChannels).values(channelData).returning(),
+        data.site,
+      );
 
       if (result.length === 0) {
         throw new Error('Failed to create sales channel');
@@ -215,7 +236,10 @@ export class SalesChannelsService {
         updatedAt: new Date(),
       };
 
-      const result = await tx.update(salesChannels).set(updateData).where(eq(salesChannels.id, channelId)).returning();
+      const result = await this.rejectSiteConflict(
+        () => tx.update(salesChannels).set(updateData).where(eq(salesChannels.id, channelId)).returning(),
+        data.site,
+      );
 
       if (result.length === 0) {
         throw new Error(`Failed to update channel: ${channelId}`);
