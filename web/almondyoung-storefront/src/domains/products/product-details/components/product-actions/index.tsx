@@ -32,6 +32,7 @@ import {
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
+import { ProductShippingNotice } from "../product-shipping-notice"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
@@ -429,6 +430,7 @@ export default function ProductActions({
             hasMembership={isMembershipGroup(customer?.groups)}
             product={product}
           />
+          <ProductShippingNotice product={product} className="pb-2" />
 
           <Separator />
 
