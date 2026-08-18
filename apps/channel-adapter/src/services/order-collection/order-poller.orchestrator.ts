@@ -3,11 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import {
-  ORDER_STREAM,
-  OrderCancelledPayload,
-  OrderRefundCreatedPayload,
-} from '@packages/event-contracts/streams';
+import { ORDER_STREAM, OrderCancelledPayload, OrderRefundCreatedPayload } from '@packages/event-contracts/streams';
 import { SyncStatusService } from '../sync-status.service';
 import { PollingChangeHashService } from '../polling-change-hash.service';
 import { ChannelType } from '../../adapters/channel-adapter.factory';
@@ -23,6 +19,7 @@ import {
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 import { OrderCollectionFailureService } from './order-collection-failure.service';
+import { SalesChannelClient } from '../clients/sales-channel.client';
 
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
 const POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE = 'order_lifecycle';
@@ -57,12 +54,37 @@ export class OrderPollerOrchestrator {
     private readonly pollingHashService: PollingChangeHashService,
     private readonly orderCollectionFailureService: OrderCollectionFailureService,
     private readonly db: DbService<typeof channelAdapterSchema>,
+    private readonly salesChannelClient: SalesChannelClient,
   ) {}
 
   @Cron('*/5 * * * *')
   async poll(): Promise<void> {
+    // 캐시하지 않는다. 주기가 5분이고 provider 는 한 자릿수라 호출 비용이 무시할 만한 데다,
+    // 캐시를 두면 "껐는데 왜 아직 도나" 라는 혼란 지점이 생긴다. 즉시 들어야 킬스위치다.
+    let activeSites: Set<string>;
+    try {
+      activeSites = new Set(await this.salesChannelClient.getActiveSites());
+    } catch (error) {
+      // fail-closed. 건너뛰기는 무손실이다 — 아래 루프에 들어가지 않으므로 워터마크가 그대로고,
+      // core 가 복구되면 그 구간을 그대로 따라잡는다. 반대로 열어두면 "끈 채널이 계속 도는"
+      // 상태가 되는데 그게 이 게이트가 없애려는 상태 그 자체다.
+      this.logger.error(
+        `활성 판매채널 조회에 실패해 이번 주기의 모든 채널을 건너뛴다 (워터마크 불변): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+
     for (const provider of this.providers) {
       const channelType = provider.channel as ChannelType;
+
+      // 비활성 채널은 **아무것도 하기 전에** 빠진다. recordSyncStart 아래로 내려가면 워터마크가
+      // 전진해 꺼둔 기간의 주문을 영구히 잃는다.
+      if (!activeSites.has(provider.channel)) {
+        this.logger.log(`채널 ${provider.channel} 은 비활성(sales_channels.is_active=false)이라 이번 주기를 건너뛴다.`);
+        continue;
+      }
 
       try {
         const syncStatus = await this.syncStatusService.getSyncStatus(channelType, 'orders');

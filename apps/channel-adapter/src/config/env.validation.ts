@@ -36,9 +36,8 @@ export const channelAdapterEnvSchema = z.object({
   COUPANG_USE_MOCK_SERVER: z.string().optional(),
 
   // Channel Management
-  ACTIVE_CHANNELS: z.string().optional(),
-  ADAPTER_REQUIRED_CHANNELS: z.string().optional(),
-  REQUIRED_CHANNELS: z.string().optional(),
+  // ACTIVE_CHANNELS / ADAPTER_REQUIRED_CHANNELS / REQUIRED_CHANNELS 는 소비자 0곳인 채로 선언만
+  // 남아 있어 #654 에서 제거했다. 채널 활성화는 Core 의 `sales_channels.is_active` 가 갖는다 (ADR-0031).
   ADAPTER_MOCK_BASE_URL: z.string().url().optional(),
 
   // WMS Integration
@@ -61,6 +60,9 @@ export const channelAdapterEnvSchema = z.object({
   ALMOND_AUTH_URL: z.string().url().optional(),
   USER_SERVICE_URL: z.string().url().optional(),
   CHANNEL_ADAPTER_INTERNAL_KEY: z.string().optional(),
+  // core 의 서버 간 내부 라우트를 부를 때 싣는 키. 없으면 수집 게이트가 활성 판매채널을 조회하지
+  // 못하고, 게이트는 fail-closed 라 폴링이 통째로 멈춘다 (#654).
+  CORE_INTERNAL_KEY: z.string().optional(),
 });
 
 export type ChannelAdapterEnvConfig = z.infer<typeof channelAdapterEnvSchema>;

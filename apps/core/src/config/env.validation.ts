@@ -21,6 +21,11 @@ export const almondyoungEnvSchema = z
     JWT_ISSUER: z.string().optional(),
     JWT_AUDIENCE: z.string().optional(),
 
+    // 서버 간 내부 라우트(`@InternalOnly()`)를 여는 공유 키. 사람 JWT 가 없는 호출자용이다.
+    // required 로 두지 않는다 — 시크릿을 세팅하기 전 배포에서 core 전체가 부팅 실패하면
+    // 게이트 하나 때문에 서비스가 죽는다. 미설정이면 InternalKeyGuard 가 해당 라우트만 닫는다.
+    CORE_INTERNAL_KEY: z.string().optional(),
+
     // Kafka
     KAFKA_CLIENT_ID_PREFIX: z.string().optional(),
     KAFKA_BROKERS: z.string().min(1),

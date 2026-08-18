@@ -381,8 +381,10 @@ interface DLQMessage {
 ### 필수 환경변수
 
 ```bash
-# 필수 채널 목록 (쉼표로 구분)
-ADAPTER_REQUIRED_CHANNELS=coupang,naver_smartstore
+# 채널 활성화는 환경변수가 아니라 Core 의 `sales_channels.is_active` 가 갖는다 (ADR-0031).
+# 수집 게이트가 폴링마다 core `/internal/channels/active-sites` 를 조회한다 (#654).
+# 그 호출에 쓰는 내부 키 — 없으면 게이트가 fail-closed 라 수집이 멈춘다.
+CORE_INTERNAL_KEY=<CoreInternalKey 시크릿과 같은 값>
 
 # DLQ 임계치 설정
 DLQ_THRESHOLD_PER_HOUR=10
