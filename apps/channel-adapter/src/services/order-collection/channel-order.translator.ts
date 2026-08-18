@@ -34,17 +34,18 @@ export class ChannelOrderTranslator {
     const eligibleForOrderCreation = snapshot.paymentState === 'accepted';
     const lifecycle = this.buildLifecycleItems(snapshot);
 
-    const identities = await Promise.all(
+    const resolutions = await Promise.all(
       snapshot.lines.map((line) => this.identityResolver.resolve(channel, line)),
     );
 
     // 유료 주문 라인이 미식별이면 조용히 넘기지 않고 격리한다 (CONTEXT §채널 상품 식별 실패).
     // 이미 종결된 스냅샷(취소/환불 관측)은 판매주문을 만들지 않으므로 식별을 요구하지 않는다.
-    const unidentifiedLineIds = snapshot.lines
-      .filter((_, index) => identities[index] === null)
-      .map((line) => line.channelOrderItemId);
+    const unidentified = snapshot.lines.flatMap((line, index) => {
+      const resolution = resolutions[index];
+      return resolution.identified ? [] : [{ lineId: line.channelOrderItemId, cause: resolution.cause }];
+    });
 
-    if (eligibleForOrderCreation && unidentifiedLineIds.length > 0) {
+    if (eligibleForOrderCreation && unidentified.length > 0) {
       return {
         outcome: {
           kind: 'failure',
@@ -52,7 +53,8 @@ export class ChannelOrderTranslator {
             externalOrderId: snapshot.externalOrderId,
             sourceUpdatedAt: snapshot.sourceUpdatedAt,
             reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
-            affectedLineIds: unidentifiedLineIds,
+            affectedLineIds: unidentified.map((line) => line.lineId),
+            affectedLines: unidentified,
             rawOrder: snapshot.raw,
           } satisfies OrderCollectionFailureItem,
         },
@@ -60,7 +62,10 @@ export class ChannelOrderTranslator {
       };
     }
 
-    const items = snapshot.lines.map((line, index) => this.buildOrderItem(line, identities[index]));
+    const items = snapshot.lines.map((line, index) => {
+      const resolution = resolutions[index];
+      return this.buildOrderItem(line, resolution.identified ? resolution.identity : null);
+    });
 
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),

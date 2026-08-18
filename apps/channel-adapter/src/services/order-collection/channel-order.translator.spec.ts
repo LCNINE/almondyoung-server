@@ -36,12 +36,14 @@ function makeSnapshot(overrides: Partial<ChannelOrderSnapshot> = {}): ChannelOrd
   };
 }
 
-function makeTranslator(lookupResult: unknown) {
-  const lookupByChannelCode = jest.fn().mockResolvedValue(lookupResult);
+function makeTranslator(listing: unknown) {
+  const resolveByChannelCode = jest
+    .fn()
+    .mockResolvedValue(listing ? { found: true, listing } : { found: false, cause: 'listing_not_found' });
   const translator = new ChannelOrderTranslator(
-    new ChannelLineIdentityResolver({ lookupByChannelCode } as never),
+    new ChannelLineIdentityResolver({ resolveByChannelCode } as never),
   );
-  return { translator, lookupByChannelCode };
+  return { translator, resolveByChannelCode };
 }
 
 const LISTING = {
@@ -56,11 +58,11 @@ const LISTING = {
 
 describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () => {
   it('채널 리스팅으로 라인 정체성을 해석하고 Core 판매상품명을 싣는다', async () => {
-    const { translator, lookupByChannelCode } = makeTranslator(LISTING);
+    const { translator, resolveByChannelCode } = makeTranslator(LISTING);
 
     const { outcome } = await translator.translate('naver', makeSnapshot());
 
-    expect(lookupByChannelCode).toHaveBeenCalledWith('naver', 'naver-product-1');
+    expect(resolveByChannelCode).toHaveBeenCalledWith('naver', 'naver-product-1');
     expect(outcome.kind).toBe('order');
     if (outcome.kind !== 'order') throw new Error('unreachable');
 

@@ -6,6 +6,7 @@ import {
   SalesChannel,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
+import type { AffectedLine } from '@packages/domain-types';
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
 export const CHANNEL_PRODUCT_IDENTIFICATION_FAILED = 'channel_product_identification_failed' as const;
@@ -20,6 +21,15 @@ export interface OrderCollectionFailureItem {
   sourceUpdatedAt: string;
   reason: OrderCollectionFailureReason;
   affectedLineIds: string[];
+  /**
+   * 라인별 실패 사유 (#674). `channel_product_identification_failed` 에서만 채워진다 —
+   * `collected_order_modification_not_accepted` 는 식별 문제가 아니라 사유가 없다.
+   *
+   * `reason` 을 쪼개지 않고 여기 담는 이유: 사유는 **라인 단위**인데 `reason` 은 주문당 한
+   * 칸이라, 거기 넣으면 라인이 여럿일 때 나머지 사유가 유실된다. 또 `reason` 은
+   * `uq_order_collection_failure` 의 일부라 값이 바뀌면 같은 주문에 행이 하나 더 생긴다.
+   */
+  affectedLines?: AffectedLine[];
   rawOrder: Record<string, unknown>;
 }
 
