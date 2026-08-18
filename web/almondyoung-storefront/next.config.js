@@ -16,6 +16,10 @@ const normalizedBackendDomain = backendDomain
  * @type {import('next').NextConfig}
  */
 const nextConfig = {
+  // 빌드/캐시 디렉터리. E2E 는 이걸 갈아끼워 개발 중인 dev 서버의 `.next` 와 캐시를 섞지 않는다.
+  // unstable_cache 항목은 `.next/cache` 에 남아 서버를 재시작해도 살아남기 때문에, 캐시를
+  // 비운 상태에서 확인해야 하는 시나리오는 디렉터리 자체를 분리해야 한다.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   transpilePackages: ["@packages/web-observability"],
   // jsdom 은 번들에 넣으면 parse5 → entities 서브패스 해석이 깨진다. 런타임 require 로 남긴다.
