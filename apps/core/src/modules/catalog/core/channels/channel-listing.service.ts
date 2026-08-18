@@ -5,14 +5,17 @@ import { ChannelVariantListing, NewChannelVariantListing, DbTransaction, DbClien
 import {
   type PimSchema,
   channelVariantListings,
+  productMasters,
   productMasterVariants,
   productMasterVersions,
   productVariants,
   salesChannels,
 } from '../../schema/catalog.schema';
-import { eq, and, desc, sql } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { isExternalMarketplaceSite } from './marketplace-site';
+import { buildChannelListingLookupQuery } from './channel-listing-lookup.query';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -57,79 +60,83 @@ export class ChannelListingService {
     channelItemId: string,
     tx?: DbTransaction,
   ): Promise<LookupVariantResult | null> {
-    const client = this.getClient(tx);
-
-    const result = await client
-      .select({
-        masterId: productMasterVariants.masterId,
-        versionId: productMasterVariants.versionId,
-        productName: productMasterVersions.name,
-        variantId: channelVariantListings.variantId,
-        variantCode: productVariants.variantCode,
-        variantName: productVariants.variantName,
-        isActive: channelVariantListings.isActive,
-      })
-      .from(channelVariantListings)
-      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
-      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
-      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .where(
-        and(
-          eq(channelVariantListings.salesChannelId, salesChannelId),
-          eq(channelVariantListings.channelItemId, channelItemId),
-          eq(channelVariantListings.isActive, true),
-        ),
-      )
-      .orderBy(
-        sql`CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END`,
-        desc(productMasterVersions.version),
-        desc(productMasterVersions.createdAt),
-      )
-      .limit(1);
-
+    const result = await buildChannelListingLookupQuery(
+      this.getClient(tx),
+      channelItemId,
+      eq(channelVariantListings.salesChannelId, salesChannelId),
+    );
     return result[0] ?? null;
   }
 
   /**
-   * 채널 코드(site)로 Variant 조회 (편의 메서드)
+   * 채널 코드(site)로 Variant 조회. **주문 수집이 실제로 타는 경로다**
+   * (ChannelLineIdentityResolver → lookupByChannelCode).
    */
   async lookupVariantByChannelCode(
     channelCode: string,
     channelItemId: string,
     tx?: DbTransaction,
   ): Promise<LookupVariantResult | null> {
+    const result = await buildChannelListingLookupQuery(
+      this.getClient(tx),
+      channelItemId,
+      eq(salesChannels.site, channelCode),
+    );
+    return result[0] ?? null;
+  }
+
+  /**
+   * 리스팅 대상 variant 가 active 버전에 매달려 있는지 확인한다.
+   *
+   * draft 에만 매달린 variant 에 리스팅을 걸면, 그 draft 를 버릴 때
+   * `deleteDraftVersion` → `_cleanupOrphanedVariantsAfterDeletion` 이 variant 를 지우고
+   * `channel_variant_listings.variant_id` 의 `onDelete: 'cascade'` 로 **리스팅이 조용히 사라진다.**
+   * 생성 시점에 막는 게 유일하게 확실한 방어다 (#652).
+   *
+   * 거부 사유가 둘이라 메시지를 나눈다 — 복구 방법이 다르기 때문이다.
+   * 낡은 매핑은 활성화도 재생성도(`uq_channel_variant_listing`) 막히므로 삭제 후 재등록이 유일한 길이다.
+   */
+  private async assertVariantIsPublished(variantId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    const result = await client
-      .select({
-        masterId: productMasterVariants.masterId,
-        versionId: productMasterVariants.versionId,
-        productName: productMasterVersions.name,
-        variantId: channelVariantListings.variantId,
-        variantCode: productVariants.variantCode,
-        variantName: productVariants.variantName,
-        isActive: channelVariantListings.isActive,
-      })
-      .from(channelVariantListings)
-      .innerJoin(productVariants, eq(channelVariantListings.variantId, productVariants.id))
-      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
-      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .innerJoin(salesChannels, eq(channelVariantListings.salesChannelId, salesChannels.id))
+    // soft delete 는 status 를 그대로 두고 deletedAt 만 세운다 — 상태만 보면 삭제된 상품이
+    // 통과한다. ProductSellableQuantityService 가 쓰는 술어와 같은 모양으로 걸러낸다.
+    const versions = await client
+      .select({ status: productMasterVersions.status })
+      .from(productMasterVariants)
+      .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
       .where(
         and(
-          eq(salesChannels.site, channelCode),
-          eq(channelVariantListings.channelItemId, channelItemId),
-          eq(channelVariantListings.isActive, true),
+          eq(productMasterVariants.variantId, variantId),
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
         ),
-      )
-      .orderBy(
-        sql`CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END`,
-        desc(productMasterVersions.version),
-        desc(productMasterVersions.createdAt),
-      )
-      .limit(1);
+      );
 
-    return result[0] ?? null;
+    if (versions.some((v) => v.status === 'active')) return;
+
+    // 어떤 버전에도 안 매달린 품목 — hardDelete 가 버전을 지우면 이 상태가 된다.
+    // publish 할 방법이 없으므로 "publish 하세요" 로 안내하면 막다른 길이다.
+    if (versions.length === 0) {
+      throw new BadRequestError(
+        `이 품목은 어떤 상품 버전에도 속하지 않습니다(삭제된 상품이거나 정리되지 않은 잔여 품목). ` +
+          `현재 판매 중인 상품의 품목을 선택하세요: ${variantId}`,
+      );
+    }
+
+    // 한 번도 활성이었던 적 없는 품목 — publish 하면 풀린다.
+    if (versions.every((v) => v.status === 'draft')) {
+      throw new BadRequestError(
+        `아직 publish 되지 않은 품목에는 채널 매핑을 걸 수 없습니다. 상품을 publish 한 뒤 다시 시도하세요: ${variantId}`,
+      );
+    }
+
+    // 활성이었다가 재발행으로 교체된 품목 — publish 해도 이 매핑은 안 살아난다.
+    throw new BadRequestError(
+      `상품이 다시 발행되면서 품목이 교체돼 낡은 채널 매핑입니다. ` +
+        `이 매핑을 삭제한 뒤 현재 품목으로 다시 등록하세요: ${variantId}`,
+    );
   }
 
   /**
@@ -148,6 +155,8 @@ export class ChannelListingService {
     if (variant.length === 0) {
       throw new NotFoundError(`Variant not found: ${dto.variantId}`);
     }
+
+    await this.assertVariantIsPublished(dto.variantId, tx);
 
     // Channel 존재 확인
     const channel = await client
@@ -294,6 +303,7 @@ export class ChannelListingService {
     if (!existing) {
       return;
     }
+    await this.assertVariantIsPublished(existing.variantId, tx);
     await this.assertDigitalAllowedForChannel(existing.variantId, existing.salesChannelId, tx);
 
     const [updated] = await client
@@ -354,16 +364,11 @@ export class ChannelListingService {
       .from(salesChannels)
       .where(eq(salesChannels.id, salesChannelId))
       .limit(1);
-    if (ch && this.isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
+    if (ch && isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
       throw new BadRequestError(
         `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
       );
     }
-  }
-
-  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
-  private isExternalMarketplaceSite(site: string): boolean {
-    return site === 'naver' || site === 'coupang';
   }
 
   /** variant 의 active 버전이 디지털(fulfillmentKind='digital')인지. */
@@ -373,7 +378,17 @@ export class ChannelListingService {
       .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
       .from(productMasterVariants)
       .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+      // 조회 술어와 같은 기준으로 본다 — soft delete 는 status 를 그대로 두므로
+      // 상태만 보면 삭제된 상품의 fulfillmentKind 로 디지털 여부를 판정하게 된다.
+      .where(
+        and(
+          eq(productMasterVariants.variantId, variantId),
+          eq(productMasterVersions.status, 'active'),
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
+        ),
+      )
       .limit(1);
     return row?.fulfillmentKind === 'digital';
   }

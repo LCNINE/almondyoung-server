@@ -7,6 +7,12 @@ jest.mock(
 );
 
 import { ProductVersionsService } from './product-versions.service';
+import {
+  planChannelListingReconciliation,
+  type VariantOptionCombo,
+  type ReconcilableListing,
+  type ChannelListingReconciliationPlan,
+} from './channel-listing-reconciliation';
 import type { DbTransaction } from '../../../catalog.types';
 import {
   productMasterOptionGroups,
@@ -334,6 +340,9 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     priceCacheService.cachePricesForVersion.mockImplementation(async () => order.push('cachePrices'));
     (service as any)._reconcileMatchingsAfterPublish = jest.fn(async () => order.push('reconcileMatchings'));
     (service as any)._reconcileAssetLinksAfterPublish = jest.fn(async () => order.push('reconcileAssetLinks'));
+    (service as any)._reconcileChannelListingsAfterPublish = jest.fn(async () =>
+      order.push('reconcileChannelListings'),
+    );
     (service as any)._publishVariantChangeEvents = jest.fn(async () => order.push('publishVariantChanges'));
     (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockImplementation(async () => {
@@ -374,6 +383,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       'activateTarget',
       'reconcileMatchings',
       'reconcileAssetLinks',
+      'reconcileChannelListings',
       'publishVariantChanges',
       'assembleSnapshot',
       'saveOutbox',
@@ -407,6 +417,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     service.validateProductCodeUniqueness = jest.fn().mockResolvedValue(undefined) as any;
     (service as any)._reconcileMatchingsAfterPublish = jest.fn().mockResolvedValue(undefined);
     (service as any)._reconcileAssetLinksAfterPublish = jest.fn().mockResolvedValue(undefined);
+    (service as any)._reconcileChannelListingsAfterPublish = jest.fn().mockResolvedValue(undefined);
     (service as any)._validateDigitalAssetLinks = jest.fn().mockResolvedValue(undefined);
     (service as any)._publishVariantChangeEvents = jest.fn().mockResolvedValue(undefined);
     (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
@@ -482,6 +493,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'validateProductCodeUniqueness').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_reconcileMatchingsAfterPublish').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_reconcileAssetLinksAfterPublish').mockResolvedValue(undefined);
+    jest.spyOn(service as any, '_reconcileChannelListingsAfterPublish').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_validateDigitalAssetLinks').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_publishVariantChangeEvents').mockResolvedValue(undefined);
     jest.spyOn(service as any, '_emitActiveVersionChangedEvent').mockResolvedValue(undefined);
@@ -514,6 +526,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
     for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
                      '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_reconcileChannelListingsAfterPublish',
                      '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
                      '_emitActiveVersionChangedEvent'])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
@@ -543,6 +556,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue(null);
     for (const m of ['_validateVariantCodeUniqueness', 'validateProductCodeUniqueness',
                      '_reconcileMatchingsAfterPublish', '_reconcileAssetLinksAfterPublish',
+                     '_reconcileChannelListingsAfterPublish',
                      '_validateDigitalAssetLinks', '_publishVariantChangeEvents',
                      '_emitActiveVersionChangedEvent'])
       jest.spyOn(service as any, m).mockResolvedValue(undefined);
@@ -1097,5 +1111,199 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
     expect(result.page).toBe(2);
     expect(result.limit).toBe(10);
     expect(result.data).toEqual(rows);
+  });
+});
+
+describe('planChannelListingReconciliation (#652)', () => {
+  const plan = (
+    candidates: VariantOptionCombo[],
+    next: VariantOptionCombo[],
+    listings: ReconcilableListing[],
+    isDigital = false,
+  ): ChannelListingReconciliationPlan =>
+    planChannelListingReconciliation(candidates, next, listings, isDigital);
+  const combo = (variantId: string, ...optionValueIds: string[]): VariantOptionCombo => ({
+    variantId,
+    optionValueIds,
+  });
+  const listing = (
+    id: string,
+    variantId: string,
+    { external = true, isActive = true } = {},
+  ): ReconcilableListing => ({ id, variantId, isExternalMarketplace: external, isActive });
+
+  it('옵션 조합이 같은 twin 이 새 버전에 있으면 그 variant 로 재지정한다', () => {
+    expect(plan([combo('v-old', 'red', 'L')], [combo('v-new', 'L', 'red')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }],
+    });
+  });
+
+  it('짝이 없으면 리스팅을 끈다', () => {
+    expect(plan([combo('v-old', 'red')], [combo('v-other', 'blue')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: null, deactivate: true }],
+    });
+  });
+
+  it('이미 꺼진 리스팅은 짝이 없어도 다시 끄지 않는다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-other', 'blue')], [listing('l-1', 'v-old', { isActive: false })]),
+    ).toEqual({ updates: [] });
+  });
+
+  it('이미 꺼진 리스팅도 짝이 있으면 포인터만 옮긴다 (되살리지는 않는다)', () => {
+    // 재지정해 두지 않으면 그 행은 죽은 variant 를 가리킨 채 남아 재활성도 재등록도 막힌다.
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-1', 'v-old', { isActive: false })]),
+    ).toEqual({ updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }] });
+  });
+
+  it('CoW 가 없어 variant 행이 새 버전에도 그대로면 아무것도 하지 않는다', () => {
+    expect(plan([combo('v-1', 'red')], [combo('v-1', 'red')], [listing('l-1', 'v-1')])).toEqual({ updates: [] });
+  });
+
+  it('옵션 없는 기본 품목(조합 빈 배열)도 twin 으로 재지정한다', () => {
+    expect(plan([combo('v-old')], [combo('v-new')], [listing('l-1', 'v-old')])).toEqual({
+      updates: [{ listingId: 'l-1', newVariantId: 'v-new', deactivate: false }],
+    });
+  });
+
+  it('새 버전에 같은 옵션 조합이 둘이면 모호하므로 재지정하지 않고 끈다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-a', 'red'), combo('v-b', 'red')], [listing('l-1', 'v-old')]),
+    ).toEqual({ updates: [{ listingId: 'l-1', newVariantId: null, deactivate: true }] });
+  });
+
+  it('새 버전이 디지털이면 외부 마켓 리스팅은 끄되 twin 으로 옮겨 복구 가능하게 남긴다', () => {
+    expect(plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-naver', 'v-old')], true)).toEqual({
+      updates: [{ listingId: 'l-naver', newVariantId: 'v-new', deactivate: true }],
+    });
+  });
+
+  it('CoW 가 없어도 새 버전이 디지털이면 외부 마켓 리스팅을 끈다', () => {
+    // fulfillmentKind 만 바꿔 publish 하면 품목이 복제되지 않는다 — 그래도 막아야 한다.
+    expect(plan([combo('v-1', 'red')], [combo('v-1', 'red')], [listing('l-naver', 'v-1')], true)).toEqual({
+      updates: [{ listingId: 'l-naver', newVariantId: null, deactivate: true }],
+    });
+  });
+
+  it('새 버전이 디지털이어도 자사몰 리스팅은 twin 으로 재지정만 한다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-medusa', 'v-old', { external: false })], true),
+    ).toEqual({ updates: [{ listingId: 'l-medusa', newVariantId: 'v-new', deactivate: false }] });
+  });
+
+  it('한 variant 에 리스팅이 여럿이면 전부 같은 판정을 받는다', () => {
+    expect(
+      plan([combo('v-old', 'red')], [combo('v-new', 'red')], [listing('l-1', 'v-old'), listing('l-2', 'v-old')]),
+    ).toEqual({
+      updates: [
+        { listingId: 'l-1', newVariantId: 'v-new', deactivate: false },
+        { listingId: 'l-2', newVariantId: 'v-new', deactivate: false },
+      ],
+    });
+  });
+});
+
+describe('_reconcileChannelListingsAfterPublish (#652)', () => {
+  // drizzle 체인 mock: select 호출마다 큐의 다음 결과, update 는 set() 인자를 기록.
+  function makeTx(results: any[]) {
+    let i = 0;
+    const updates: any[] = [];
+    const wheres: any[] = [];
+    const chain = () => {
+      const result = results[i++];
+      const c: any = {};
+      for (const m of ['from', 'innerJoin', 'where', 'limit', 'orderBy']) c[m] = () => c;
+      c.then = (res: any, rej: any) => Promise.resolve(result).then(res, rej);
+      return c;
+    };
+    const tx: any = {
+      select: () => chain(),
+      selectDistinct: () => chain(),
+      update: () => ({
+        set: (v: any) => {
+          updates.push(v);
+          return {
+            where: (predicate: any) => {
+              wheres.push(predicate);
+              return Promise.resolve(undefined);
+            },
+          };
+        },
+      }),
+    };
+    return { tx, updates, wheres };
+  }
+
+  const makeSvc = () => {
+    const service = Object.create(ProductVersionsService.prototype) as any;
+    service.logger = { log: jest.fn(), debug: jest.fn(), warn: jest.fn() };
+    return service;
+  };
+
+  // 큐 순서: master variant id → 리스팅 → 새 버전 variant id → 새 버전 옵션값 → 후보 옵션값
+  it('채널 매핑이 없으면 두 쿼리로 끝낸다', async () => {
+    const { tx, updates } = makeTx([[{ variantId: 'v-1' }], []]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
+    expect(updates).toEqual([]);
+  });
+
+  it('새 버전에 품목이 하나도 없으면 리스팅을 건드리지 않는다', async () => {
+    // 빈 버전 publish 가 그 master 의 채널 매핑을 통째로 꺼버리는 사고를 막는 가드.
+    const { tx, updates } = makeTx([
+      [{ variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
+      [],
+    ]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
+    expect(updates).toEqual([]);
+  });
+
+  it('활성 버전이 없던 master 여도(판매중지 후 재개통) 옛 variant 리스팅을 승계한다', async () => {
+    const { tx, updates } = makeTx([
+      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
+      [{ variantId: 'v-new' }],
+      [{ variantId: 'v-new', optionValueId: 'red' }],
+      [
+        { variantId: 'v-new', optionValueId: 'red' },
+        { variantId: 'v-old', optionValueId: 'red' },
+      ],
+    ]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
+    expect(updates).toEqual([{ variantId: 'v-new', updatedAt: expect.any(Date) }]);
+  });
+
+  it('짝이 없으면 리스팅을 비활성으로 UPDATE 한다', async () => {
+    const { tx, updates } = makeTx([
+      [{ variantId: 'v-new' }, { variantId: 'v-old' }],
+      [{ id: 'l-1', variantId: 'v-old', isActive: true, site: 'naver' }],
+      [{ variantId: 'v-new' }],
+      [{ variantId: 'v-new', optionValueId: 'blue' }],
+      [
+        { variantId: 'v-new', optionValueId: 'blue' },
+        { variantId: 'v-old', optionValueId: 'red' },
+      ],
+    ]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', false, tx);
+    expect(updates).toEqual([{ isActive: false, updatedAt: expect.any(Date) }]);
+  });
+
+  it('CoW 가 없어도 디지털 전환이면 외부 마켓 리스팅을 한 문장으로 끈다', async () => {
+    const { tx, updates, wheres } = makeTx([
+      [{ variantId: 'v-1' }],
+      [
+        { id: 'l-1', variantId: 'v-1', isActive: true, site: 'naver' },
+        { id: 'l-2', variantId: 'v-1', isActive: true, site: 'coupang' },
+        { id: 'l-3', variantId: 'v-1', isActive: true, site: 'medusa' },
+      ],
+      [{ variantId: 'v-1' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
+      [{ variantId: 'v-1', optionValueId: 'red' }],
+    ]);
+    await makeSvc()._reconcileChannelListingsAfterPublish('master-1', 'version-2', true, tx);
+    // 외부 둘만, 판정이 같으므로 UPDATE 는 한 번으로 묶인다. 자사몰은 손대지 않는다.
+    expect(updates).toEqual([{ isActive: false, updatedAt: expect.any(Date) }]);
+    expect(wheres).toHaveLength(1);
   });
 });
