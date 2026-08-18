@@ -85,6 +85,34 @@ describe("resolveShippingGroupNotice", () => {
     ).toBeNull()
   })
 
+  it("그룹 설명이 있으면 넘겨주고, 공백뿐이면 뺀다", () => {
+    const withDescription: ShippingGroup[] = [
+      {
+        code: "needle",
+        name: "결 카트리지 니들",
+        policy: { type: "flat", baseFee: 3000 },
+        description: "다른 출고지에서 개별 배송됩니다.",
+      },
+      {
+        code: "bulky",
+        name: "대형",
+        policy: { type: "per_quantity", baseFee: 5000 },
+        description: "  ",
+      },
+    ]
+    expect(
+      resolveShippingGroupNotice({ shippingGroupCode: "needle" }, withDescription)
+    ).toEqual({
+      key: "flat",
+      group: "결 카트리지 니들",
+      amount: 3000,
+      description: "다른 출고지에서 개별 배송됩니다.",
+    })
+    expect(
+      resolveShippingGroupNotice({ shippingGroupCode: "bulky" }, withDescription)
+    ).toEqual({ key: "perQuantity", group: "대형", amount: 5000 })
+  })
+
   it("코드가 문자열이 아니면 기본 그룹으로 보고 그리지 않는다", () => {
     expect(
       resolveShippingGroupNotice({ shippingGroupCode: 3000 }, GROUPS)

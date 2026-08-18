@@ -181,6 +181,8 @@ export async function provisionShippingGroup(container: MedusaContainer, group: 
     },
     areaTemplateCode: group.areaTemplateCode,
     delivery: group.delivery,
+    // JSON 병합 갱신이라 키를 빠뜨리면 옛 값이 남는다 — 지울 때도 빈 문자열로 항상 쓴다.
+    description: group.description ?? '',
   };
 
   const existingOptions = await fulfillmentModuleService.listShippingOptions({ shipping_profile_id: profile.id });
@@ -284,6 +286,7 @@ export async function listShippingGroups(container: MedusaContainer): Promise<Re
       policy: data.policy as ShippingFeePolicy,
       areaTemplateCode: data.areaTemplateCode,
       delivery: (data.delivery as ShippingGroupDelivery | undefined) ?? DEFAULT_SHIPPING_GROUP_DELIVERY,
+      description: typeof data.description === 'string' && data.description.trim() ? data.description : undefined,
       shippingProfileId: data.shippingProfileId,
       shippingOptionId: option.id,
     });

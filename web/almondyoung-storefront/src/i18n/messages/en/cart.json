@@ -67,7 +67,8 @@
   "shippingGroup": {
     "flat": "{group} shipping fee {amount} KRW applies separately",
     "perQuantity": "{group} shipping fee {amount} KRW per item applies separately",
-    "conditionalFree": "{group} shipping fee {amount} KRW applies separately · free over {threshold} KRW"
+    "conditionalFree": "{group} shipping fee {amount} KRW applies separately · free over {threshold} KRW",
+    "descriptionAria": "Shipping details"
   },
   "freeShipping": {
     "reached": "Free shipping applied!",

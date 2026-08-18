@@ -67,7 +67,8 @@
   "shippingGroup": {
     "flat": "{group} 배송비 {amount}원 별도",
     "perQuantity": "{group} 배송비 개당 {amount}원 별도",
-    "conditionalFree": "{group} 배송비 {amount}원 별도 · {threshold}원 이상 무료"
+    "conditionalFree": "{group} 배송비 {amount}원 별도 · {threshold}원 이상 무료",
+    "descriptionAria": "배송 안내 자세히 보기"
   },
   "freeShipping": {
     "reached": "무료배송 혜택이 적용됩니다!",

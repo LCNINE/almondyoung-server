@@ -5,8 +5,14 @@ import {
 } from "../api/medusa/shipping-group-types"
 
 export type ShippingGroupNoticeContent =
-  | { key: "flat" | "perQuantity"; group: string; amount: number }
-  | { key: "conditionalFree"; group: string; amount: number; threshold: number }
+  | { key: "flat" | "perQuantity"; group: string; amount: number; description?: string }
+  | {
+      key: "conditionalFree"
+      group: string
+      amount: number
+      threshold: number
+      description?: string
+    }
 
 /**
  * 개별 배송비 그룹 안내 문구의 재료. 상품 상세·장바구니·주문서가 같은 판정으로 같은 말을 하도록
@@ -26,17 +32,24 @@ export function resolveShippingGroupNotice(
   if (!group) return null
 
   const { policy } = group
+  const description = group.description?.trim() || undefined
   switch (policy.type) {
     case "flat":
-      return { key: "flat", group: group.name, amount: policy.baseFee }
+      return { key: "flat", group: group.name, amount: policy.baseFee, description }
     case "per_quantity":
-      return { key: "perQuantity", group: group.name, amount: policy.baseFee }
+      return {
+        key: "perQuantity",
+        group: group.name,
+        amount: policy.baseFee,
+        description,
+      }
     case "conditional_free":
       return {
         key: "conditionalFree",
         group: group.name,
         amount: policy.baseFee,
         threshold: policy.freeThreshold ?? 0,
+        description,
       }
     default:
       return null

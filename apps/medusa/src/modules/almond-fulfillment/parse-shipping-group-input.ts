@@ -53,7 +53,19 @@ function parseDelivery(raw: Record<string, unknown>): ShippingGroupDelivery {
   if (leadTimeMinDays > leadTimeMaxDays) {
     bad('배송기간은 시작일이 종료일보다 클 수 없습니다.');
   }
-  return { method, area, leadTimeMinDays, leadTimeMaxDays };
+  const carrier = String(raw.carrier ?? '').trim();
+  return { method, area, leadTimeMinDays, leadTimeMaxDays, carrier };
+}
+
+const MAX_DESCRIPTION_LENGTH = 500;
+
+function parseDescription(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  const description = String(value).trim();
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    bad(`description 은 ${MAX_DESCRIPTION_LENGTH}자 이내여야 합니다.`);
+  }
+  return description;
 }
 
 export function parseShippingGroupInput(body: unknown, codeFromPath?: string): ShippingGroup {
@@ -109,6 +121,7 @@ export function parseShippingGroupInput(body: unknown, codeFromPath?: string): S
     policy,
     areaTemplateCode,
     delivery: parseDelivery((input.delivery ?? {}) as Record<string, unknown>),
+    description: parseDescription(input.description),
   };
 }
 

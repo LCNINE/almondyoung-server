@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -69,6 +70,8 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
   const [deliveryArea, setDeliveryArea] = useState(DEFAULT_SHIPPING_GROUP_DELIVERY.area);
   const [leadTimeMinText, setLeadTimeMinText] = useState(String(DEFAULT_SHIPPING_GROUP_DELIVERY.leadTimeMinDays));
   const [leadTimeMaxText, setLeadTimeMaxText] = useState(String(DEFAULT_SHIPPING_GROUP_DELIVERY.leadTimeMaxDays));
+  const [description, setDescription] = useState('');
+  const [carrier, setCarrier] = useState('');
 
   const { data: areaTemplates } = useShippingAreaTemplates();
   const selectedTemplate = (areaTemplates ?? []).find((t) => t.code === areaTemplateCode);
@@ -85,6 +88,8 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
     setDeliveryArea(group?.delivery.area ?? DEFAULT_SHIPPING_GROUP_DELIVERY.area);
     setLeadTimeMinText(String(group?.delivery.leadTimeMinDays ?? DEFAULT_SHIPPING_GROUP_DELIVERY.leadTimeMinDays));
     setLeadTimeMaxText(String(group?.delivery.leadTimeMaxDays ?? DEFAULT_SHIPPING_GROUP_DELIVERY.leadTimeMaxDays));
+    setDescription(group?.description ?? '');
+    setCarrier(group?.delivery.carrier ?? '');
   }, [open, group]);
 
   const handleSubmit = async () => {
@@ -120,7 +125,9 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
         area: deliveryArea.trim() || DEFAULT_SHIPPING_GROUP_DELIVERY.area,
         leadTimeMinDays,
         leadTimeMaxDays,
+        carrier: carrier.trim(),
       },
+      description: description.trim(),
     };
 
     try {
@@ -286,6 +293,20 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
           </div>
 
           <div className="flex flex-col gap-2">
+            <Label htmlFor="shipping-group-carrier">택배사 (선택)</Label>
+            <Input
+              id="shipping-group-carrier"
+              value={carrier}
+              onChange={(event) => setCarrier(event.target.value)}
+              placeholder="한진택배"
+              disabled={pending}
+            />
+            <p className="text-xs text-muted-foreground">
+              상품 상세 배송 안내에 표시됩니다. 비워두면 기본 문구가 나옵니다.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
             <Label htmlFor="shipping-group-lead-min">배송기간</Label>
             <div className="flex items-center gap-2">
               <Input
@@ -307,6 +328,23 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
               />
               <span className="text-sm text-muted-foreground">일</span>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="shipping-group-description">고객 안내 문구 (선택)</Label>
+            <Textarea
+              id="shipping-group-description"
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="다른 출고지에서 개별 배송되는 상품이라 기본 배송과 분리되어 배송비가 별도로 부과됩니다."
+              maxLength={500}
+              rows={3}
+              disabled={pending}
+            />
+            <p className="text-xs text-muted-foreground">
+              스토어프론트의 개별 배송비 안내 옆 (?) 아이콘에 표시됩니다. 비워두면 아이콘이 나오지
+              않습니다.
+            </p>
           </div>
 
           {isDefaultGroup && (

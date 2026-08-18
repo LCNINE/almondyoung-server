@@ -119,7 +119,11 @@ export function ProductInfoAccordion({
                         })
                       : t("shippingDuration")}
                   </li>
-                  <li>{t("shippingCarrier")}</li>
+                  <li>
+                    {delivery?.carrier
+                      ? t("shippingCarrierValue", { carrier: delivery.carrier })
+                      : t("shippingCarrier")}
+                  </li>
                 </ul>
                 <p className="mt-4">{t("shippingNote1")}</p>
                 <p className="mt-4">{t("shippingNote2")}</p>

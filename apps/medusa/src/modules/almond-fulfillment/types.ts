@@ -38,6 +38,8 @@ export type ShippingGroupDelivery = {
   area: string;
   leadTimeMinDays: number;
   leadTimeMaxDays: number;
+  /** 택배사 이름 (한진택배 등). 비우면 스토어프론트가 기본 문구를 쓴다. */
+  carrier?: string;
 };
 
 export type ShippingGroup = {
@@ -47,6 +49,8 @@ export type ShippingGroup = {
   /** 지역별 배송비 템플릿 코드. 없으면 지역 추가비 없음. */
   areaTemplateCode?: string;
   delivery: ShippingGroupDelivery;
+  /** 고객 안내용 설명. 스토어프론트의 개별 배송비 안내 옆 (?) 툴팁에 그대로 표시된다. */
+  description?: string;
 };
 
 /** shipping_option.data 에 저장되는 형태. provider 가 calculatePrice 의 optionData 로 받는다. */
@@ -56,6 +60,7 @@ export type ShippingGroupOptionData = {
   policy: ShippingFeePolicy;
   areaTemplateCode?: string;
   delivery: ShippingGroupDelivery;
+  description?: string;
 };
 
 /**

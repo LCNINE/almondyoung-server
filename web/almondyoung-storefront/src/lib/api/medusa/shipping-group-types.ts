@@ -23,6 +23,8 @@ export type ShippingGroupDelivery = {
   area: string
   leadTimeMinDays: number
   leadTimeMaxDays: number
+  /** 택배사 이름. 비어 있으면 기본 문구(shippingCarrier)로 폴백한다. */
+  carrier?: string
 }
 
 export type ShippingGroup = {
@@ -30,6 +32,8 @@ export type ShippingGroup = {
   name: string
   policy: ShippingFeePolicy
   delivery?: ShippingGroupDelivery
+  /** 어드민이 넣은 고객 안내용 설명. 개별 배송비 안내 옆 (?) 툴팁에 그대로 표시된다. */
+  description?: string
 }
 
 export const DEFAULT_SHIPPING_GROUP_CODE = "default"

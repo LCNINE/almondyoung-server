@@ -39,6 +39,8 @@ export interface ShippingGroupDelivery {
   area: string;
   leadTimeMinDays: number;
   leadTimeMaxDays: number;
+  /** 택배사 이름 (한진택배 등). 비우면 스토어프론트가 기본 문구를 쓴다. */
+  carrier?: string;
 }
 
 export interface ShippingGroup {
@@ -47,6 +49,8 @@ export interface ShippingGroup {
   policy: ShippingFeePolicy;
   areaTemplateCode?: string;
   delivery: ShippingGroupDelivery;
+  /** 고객 안내용 설명. 스토어프론트 개별 배송비 안내의 (?) 툴팁에 표시된다. */
+  description?: string;
   shippingProfileId: string;
   shippingOptionId: string;
 }
@@ -57,6 +61,7 @@ export interface ShippingGroupPayload {
   policy: ShippingFeePolicy;
   areaTemplateCode?: string;
   delivery: ShippingGroupDelivery;
+  description?: string;
 }
 
 export interface ShippingAreaTemplate {

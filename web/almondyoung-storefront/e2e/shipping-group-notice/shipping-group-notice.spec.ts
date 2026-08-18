@@ -113,6 +113,30 @@ test.describe('상품 상세 — 담기 전에 개별 배송비를 알린다', (
     expect(await noticeLines(page).count()).toBe(0);
   });
 
+  test('그룹 설명이 있으면 (?) 툴팁으로 보여준다', async ({ page }) => {
+    await page.goto(`${BASE}/kr/products/e2e-ship-flat`, { waitUntil: 'networkidle' });
+    const trigger = page
+      .getByRole('button', { name: '배송 안내 자세히 보기' })
+      .locator('visible=true')
+      .first();
+    // 하이드레이션 전에 hover 하면 Radix 가 이벤트를 못 받는다. 열릴 때까지 hover 를 재시도한다.
+    await expect(async () => {
+      await page.mouse.move(0, 0);
+      await trigger.hover();
+      await expect(
+        page.getByText('다른 출고지에서 개별 배송되는 상품이라 기본 배송과 분리되어').first(),
+      ).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 60_000 });
+  });
+
+  test('설명이 없는 그룹에는 (?) 아이콘이 없다', async ({ page }) => {
+    await page.goto(`${BASE}/kr/products/e2e-ship-cond`, { waitUntil: 'domcontentloaded' });
+    await expect(visibleText(page, NOTICE.conditionalFree)).toBeVisible();
+    expect(
+      await page.getByRole('button', { name: '배송 안내 자세히 보기' }).count(),
+    ).toBe(0);
+  });
+
   test('배송 없는 디지털 상품에는 안 뜬다', async ({ page }) => {
     await page.goto(`${BASE}/kr/products/e2e-ship-digital`, { waitUntil: 'domcontentloaded' });
     await expect(visibleText(page, 'E2E 디지털 상품')).toBeVisible();

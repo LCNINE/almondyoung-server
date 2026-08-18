@@ -52,6 +52,7 @@
     "shippingFee": "Shipping fee: shown at checkout",
     "shippingDuration": "Duration: 2-3 days",
     "shippingCarrier": "Carrier: CJ Logistics",
+    "shippingCarrierValue": "Carrier: {carrier}",
     "shippingNote1": "Average delivery takes 1-2 days; please note delays may occur depending on the carrier.",
     "shippingNote2": "Jeju / remote island areas may take a bit longer.",
     "shippingNote3": "Jeju / remote island areas may require additional fees.",

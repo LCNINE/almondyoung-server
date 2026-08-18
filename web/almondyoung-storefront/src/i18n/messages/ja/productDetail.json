@@ -52,6 +52,7 @@
     "shippingFee": "配送料 : 注文画面でご確認ください",
     "shippingDuration": "配送期間 : 2日~3日",
     "shippingCarrier": "配送のご案内 : 配送会社はCJ大韓通運です。",
+    "shippingCarrierValue": "配送のご案内 : 配送会社は{carrier}です。",
     "shippingNote1": "平均的に1~2日程度かかりますが、配送会社の事情により変動する場合がありますので、ご了承ください。",
     "shippingNote2": "済州/島嶼山間地域は少しお時間がかかる場合があります。",
     "shippingNote3": "済州/島嶼山間地域は別途追加料金がかかる場合があります。",

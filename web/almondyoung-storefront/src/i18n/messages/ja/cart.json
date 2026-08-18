@@ -67,7 +67,8 @@
   "shippingGroup": {
     "flat": "{group} 送料{amount}ウォン別途",
     "perQuantity": "{group} 送料1点あたり{amount}ウォン別途",
-    "conditionalFree": "{group} 送料{amount}ウォン別途 · {threshold}ウォン以上で無料"
+    "conditionalFree": "{group} 送料{amount}ウォン別途 · {threshold}ウォン以上で無料",
+    "descriptionAria": "配送のご案内を見る"
   },
   "freeShipping": {
     "reached": "送料無料が適用されます!",

@@ -1,7 +1,7 @@
 /**
  * 개별 배송비 그룹 표시 E2E(web/almondyoung-storefront/e2e/shipping-group-notice) 시드.
  *
- * 멱등: 이미 있는 그룹/상품은 만들지 않는다. 로컬 전용 — 기본 시드(seed.ts, seed-shipping.ts)가
+ * 멱등: 그룹은 code 기준 upsert, 이미 있는 상품은 만들지 않는다. 로컬 전용 — 기본 시드(seed.ts, seed-shipping.ts)가
  * 먼저 돌아 region/판매채널/publishable key/기본 그룹이 있어야 한다.
  *
  * 실행: yarn medusa exec ./src/scripts/seed-e2e-shipping-notice.ts
@@ -10,7 +10,7 @@ import { ExecArgs } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, Modules, ProductStatus } from '@medusajs/framework/utils';
 import { createProductsWorkflow } from '@medusajs/medusa/core-flows';
 
-import { listShippingGroups, provisionShippingGroup } from '../modules/almond-fulfillment/provision-shipping-group';
+import { provisionShippingGroup } from '../modules/almond-fulfillment/provision-shipping-group';
 import { DEFAULT_AREA_TEMPLATE_CODE, DEFAULT_SHIPPING_GROUP_DELIVERY } from '../modules/almond-fulfillment/types';
 
 const E2E_GROUPS = [
@@ -18,6 +18,8 @@ const E2E_GROUPS = [
     code: 'e2e-flat',
     name: 'E2E개별플랫',
     policy: { type: 'flat' as const, baseFee: 3_000 },
+    description: '다른 출고지에서 개별 배송되는 상품이라 기본 배송과 분리되어 배송비가 별도 부과됩니다.',
+    delivery: { ...DEFAULT_SHIPPING_GROUP_DELIVERY, carrier: '한진택배' },
   },
   {
     code: 'e2e-perqty',
@@ -45,18 +47,14 @@ export default async function seedE2eShippingNotice({ container }: ExecArgs) {
   const productModuleService = container.resolve(Modules.PRODUCT);
   const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL);
 
-  const existingGroups = await listShippingGroups(container);
+  // provisionShippingGroup 은 code 기준 upsert 라 매번 불러도 안전하다.
+  // 건너뛰면 정책·설명을 바꿔도 기존 로컬 DB 에 반영되지 않는다.
   for (const group of E2E_GROUPS) {
-    if (existingGroups.some((candidate) => candidate.code === group.code)) {
-      logger.info(`[seed-e2e-shipping] 그룹 ${group.code} 이미 존재, 건너뜀.`);
-      continue;
-    }
     await provisionShippingGroup(container, {
-      ...group,
       areaTemplateCode: DEFAULT_AREA_TEMPLATE_CODE,
       delivery: DEFAULT_SHIPPING_GROUP_DELIVERY,
+      ...group,
     });
-    logger.info(`[seed-e2e-shipping] 그룹 ${group.code} 생성.`);
   }
 
   const [salesChannel] = await salesChannelModuleService.listSalesChannels({

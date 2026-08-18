@@ -14,6 +14,6 @@ export const GET = async (req: MedusaRequest, res: MedusaResponse) => {
   const groups = await listShippingGroups(req.scope);
 
   res.json({
-    shipping_groups: groups.map(({ code, name, policy, delivery }) => ({ code, name, policy, delivery })),
+    shipping_groups: groups.map(({ code, name, policy, delivery, description }) => ({ code, name, policy, delivery, description })),
   });
 };
