@@ -1,12 +1,16 @@
 import { DbService, InjectDb } from '@app/db';
+import { InjectPublisher, PublisherFor } from '@app/events';
 import { HttpService } from '@nestjs/axios';
-import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { AxiosError } from 'axios';
 import { ConfigService } from '@nestjs/config';
-import { and, eq } from 'drizzle-orm';
+import { USER_STREAM } from '@packages/event-contracts';
+import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
-import { BusinessLicense, businessLicenses, type UserServiceSchema } from '../../../database/drizzle/schema';
+import { BusinessLicense, businessLicenses, users, type UserServiceSchema } from '../../../database/drizzle/schema';
 import {
+  BusinessMetadata,
   CreateBusinessLicenseDto,
   FetchBusinessLicenseDto,
   NtsLookupResult,
@@ -27,6 +31,12 @@ const NTS_VALIDATE_URL = 'https://api.odcloud.kr/api/nts-businessman/v1/validate
 const NTS_MAX_ATTEMPTS = 3;
 const NTS_TIMEOUT_MS = 10_000;
 
+// 재검증 대상 기간. 이보다 오래 묵은 건은 장애가 아니라 다른 사유일 가능성이 커 사람이 본다.
+const REVALIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+// 에러 본문 보관 한도. 5xx 는 JSON 대신 게이트웨이 HTML 이 통째로 오기도 한다.
+const ERROR_BODY_MAX_CHARS = 1000;
+
 /**
  * 사업자등록번호 가운데 2자리가 법인 구분자다 (81~88: 영리/비영리 법인).
  *
@@ -36,6 +46,34 @@ const NTS_TIMEOUT_MS = 10_000;
 function isCorporateBusinessNumber(businessNumber: string): boolean {
   const middle = Number(businessNumber.slice(3, 5));
   return middle >= 81 && middle <= 88;
+}
+
+/**
+ * 실패한 국세청 호출에서 사후 분석에 쓸 흔적을 뽑는다.
+ *
+ * 이 호출은 예외를 위로 던지지 않고 metadata 로 흡수되므로 앱 로그에 아무것도 남지 않는다 —
+ * 여기서 담는 값이 곧 로그다. 상태코드만 남기던 시절엔 "라이브에서만 5xx" 라는 사실 외에
+ * 더 팔 재료가 없었다.
+ */
+function describeNtsFailure(error: unknown): { error: string; errorStatus?: number; errorBody?: string } {
+  const response = (error as AxiosError<unknown>).response;
+
+  return {
+    error: error instanceof Error ? error.message : 'request_failed',
+    errorStatus: response?.status,
+    errorBody: stringifyErrorBody(response?.data),
+  };
+}
+
+function stringifyErrorBody(body: unknown): string | undefined {
+  if (body === undefined || body === null) return undefined;
+
+  try {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
+    return text.length > ERROR_BODY_MAX_CHARS ? `${text.slice(0, ERROR_BODY_MAX_CHARS)}…` : text;
+  } catch {
+    return undefined;
+  }
 }
 
 interface NtsStatusRow {
@@ -66,12 +104,78 @@ interface NtsValidateResponse {
 
 @Injectable()
 export class BusinessLicensesService {
+  private readonly logger = new Logger(BusinessLicensesService.name);
+
   constructor(
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @InjectPublisher(USER_STREAM)
+    private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
   ) {}
+
+  /**
+   * 국세청 조회 실패(`lookup_failed`)로 심사중에 갇힌 신청을 다시 확인한다.
+   *
+   * odcloud 5xx 는 요청 단위로 랜덤이라 즉시 3회 재시도로는 못 뚫는 구간이 있다. 그 구간에
+   * 걸린 정상 사업자가 사람 손을 기다리며 쌓이는 걸 막는 게 목적이다. 판정 기준은 신규 등록과
+   * 같고(`deriveStatus`), 여전히 조회가 안 되면 손대지 않고 다음 사이클로 넘긴다.
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async revalidateFailedLookups(): Promise<void> {
+    const since = new Date(Date.now() - REVALIDATE_WINDOW_MS);
+
+    const rows = await this.dbService.db
+      .select({
+        id: businessLicenses.id,
+        userId: businessLicenses.userId,
+        metadata: businessLicenses.metadata,
+        email: users.email,
+        username: users.username,
+      })
+      .from(businessLicenses)
+      .innerJoin(users, eq(users.id, businessLicenses.userId))
+      .where(
+        and(
+          eq(businessLicenses.status, 'under_review'),
+          isNull(businessLicenses.fileUrl),
+          isNull(businessLicenses.deletedAt),
+          gte(businessLicenses.createdAt, since),
+          sql`${businessLicenses.metadata}->'ntsValidate'->>'status' = 'lookup_failed'`,
+        ),
+      );
+
+    for (const row of rows) {
+      // jsonb 컬럼이라 타입이 unknown 으로 내려온다. 우리가 쓴 모양이므로 여기서 좁힌다.
+      const requested = (row.metadata as BusinessMetadata | null)?.ntsValidate?.requested;
+      // 입력값을 남기기 전에 접수된 건 — 개업일자가 없어 재검증이 불가능하다. 사람이 봐야 한다.
+      if (!requested) continue;
+
+      const verification = await this.verifyWithNts(
+        requested.businessNumber,
+        requested.representativeName,
+        requested.startDate,
+      );
+      if (verification.status === 'lookup_failed') continue;
+
+      const status = this.deriveStatus(verification);
+      await this.dbService.db
+        .update(businessLicenses)
+        .set({ status, metadata: { ntsValidate: verification }, updatedAt: new Date() })
+        .where(eq(businessLicenses.id, row.id));
+
+      this.logger.log(`사업자 재검증: ${row.id} → ${status}`);
+
+      if (status === 'approved') {
+        await this.eventPublisher.publishEvent({
+          eventType: 'BusinessLicenseApproved',
+          aggregateId: row.userId,
+          payload: { userId: row.userId, email: row.email, name: row.username },
+        });
+      }
+    }
+  }
 
   async createBusinessLicense(userId: string, data: CreateBusinessLicenseDto): Promise<void> {
     try {
@@ -109,11 +213,7 @@ export class BusinessLicensesService {
 
       this.assertNotCorporate(data.businessNumber!);
 
-      const verification = await this.verifyWithNts(
-        data.businessNumber!,
-        data.representativeName!,
-        data.startDate!,
-      );
+      const verification = await this.verifyWithNts(data.businessNumber!, data.representativeName!, data.startDate!);
 
       await this.dbService.db.insert(businessLicenses).values({
         userId,
@@ -195,11 +295,7 @@ export class BusinessLicensesService {
 
       return { result: this.mapBusinessStatus(row.b_stt_cd), checkedAt, raw: row };
     } catch (error) {
-      return {
-        result: 'lookup_failed',
-        checkedAt,
-        error: error instanceof Error ? error.message : 'request_failed',
-      };
+      return { result: 'lookup_failed', checkedAt, ...describeNtsFailure(error) };
     }
   }
 
@@ -216,9 +312,16 @@ export class BusinessLicensesService {
         );
         return data;
       } catch (error) {
-        const status = (error as AxiosError).response?.status;
-        const retriable = status === undefined || status >= 500;
-        if (!retriable || attempt >= NTS_MAX_ATTEMPTS) throw error;
+        const { errorStatus, errorBody } = describeNtsFailure(error);
+        const retriable = errorStatus === undefined || errorStatus >= 500;
+        const giveUp = !retriable || attempt >= NTS_MAX_ATTEMPTS;
+
+        this.logger.warn(
+          `국세청 호출 실패 ${url} attempt=${attempt}/${NTS_MAX_ATTEMPTS} status=${errorStatus ?? 'none'} ` +
+            `giveUp=${giveUp} body=${errorBody ?? 'none'}`,
+        );
+
+        if (giveUp) throw error;
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
       }
     }
@@ -246,8 +349,7 @@ export class BusinessLicensesService {
     if (!isCorporateBusinessNumber(businessNumber)) return;
 
     throw new BusinessLicenseException({
-      message:
-        '법인사업자는 자동 인증을 지원하지 않습니다. 사업자등록증·명함 등 증빙 서류를 첨부해 등록해주세요.',
+      message: '법인사업자는 자동 인증을 지원하지 않습니다. 사업자등록증·명함 등 증빙 서류를 첨부해 등록해주세요.',
       errorCode: 'BUSINESS_LICENSE_CORPORATE_REQUIRES_FILE',
       httpStatus: HttpStatus.BAD_REQUEST,
     });
@@ -261,6 +363,15 @@ export class BusinessLicensesService {
    * 승인하지 않고 under_review 로 보내 사람이 보게 한다 (실패를 통과로 취급하지 않는다).
    */
   private async verifyWithNts(
+    businessNumber: string,
+    representativeName: string,
+    startDate: string,
+  ): Promise<NtsValidateResult> {
+    const result = await this.runNtsValidate(businessNumber, representativeName, startDate);
+    return { ...result, requested: { businessNumber, representativeName, startDate } };
+  }
+
+  private async runNtsValidate(
     businessNumber: string,
     representativeName: string,
     startDate: string,
@@ -304,12 +415,7 @@ export class BusinessLicensesService {
 
       return { valid: true, status, checkedAt, raw: row };
     } catch (error) {
-      return {
-        valid: false,
-        status: 'lookup_failed',
-        checkedAt,
-        error: error instanceof Error ? error.message : 'request_failed',
-      };
+      return { valid: false, status: 'lookup_failed', checkedAt, ...describeNtsFailure(error) };
     }
   }
 
