@@ -5,12 +5,36 @@ interface BrandCheckCategory {
   parent_category?: { handle?: string | null } | null
 }
 
+interface BrandTreeNode {
+  id: string
+  handle: string
+  category_children?: BrandTreeNode[] | null
+}
+
 /**
- * "브랜드" 루트 카테고리의 직계 자식(=브랜드 카테고리)인지 판정한다.
- * 새 플래그 없이 부모가 브랜드 루트인지로만 본다.
- *
- * - brandRootId: 요청 캐시된 루트 트리에서 찾은 브랜드 루트의 Medusa id (없으면 null)
- * - parent_category 가 응답에 실려 있으면 handle 로도 판정한다 (id 조회 실패 대비)
+ * "브랜드" 루트 카테고리의 자손(자식·손자 이하 전부) id 집합.
+ * 브랜드관이 중간 그룹(래쉬브랜드관…)을 갖는 트리로 재편돼도 브랜드형 헤더
+ * 판정이 깨지지 않도록, 직계 자식이 아니라 자손 전체를 모은다.
+ */
+export function collectBrandDescendantIds(
+  rootCategories: BrandTreeNode[],
+  brandRootHandle: string = BRAND_CATEGORY_HANDLE
+): Set<string> {
+  const brandRoot = rootCategories.find((c) => c.handle === brandRootHandle)
+  const ids = new Set<string>()
+  const walk = (nodes: BrandTreeNode[] | null | undefined) => {
+    for (const n of nodes ?? []) {
+      ids.add(n.id)
+      walk(n.category_children)
+    }
+  }
+  walk(brandRoot?.category_children)
+  return ids
+}
+
+/**
+ * 부모가 브랜드 루트인 직계 자식 판정. 루트 트리 조회가 실패했을 때의 폴백 —
+ * 응답에 실린 parent_category / parent_category_id 만으로 판정한다.
  */
 export function isBrandChildCategory(
   category: BrandCheckCategory,

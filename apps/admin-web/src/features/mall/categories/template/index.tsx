@@ -78,13 +78,22 @@ export default function MallCategoriesTemplate() {
   const selectedId =
     mode.kind === 'selected' ? mode.id : null;
 
-  // 브랜드관(BRAND_ROOT_SLUG) 직계 자식을 편집/생성 중이면 브랜드 안내를 띄운다.
+  // 브랜드관(BRAND_ROOT_SLUG) 자손을 편집/생성 중이면 브랜드 안내를 띄운다.
+  // 브랜드관 아래에 중간 그룹(래쉬브랜드관 등)이 생겨도 손자 브랜드까지 커버되도록
+  // 직계 자식이 아니라 자손 전체를 본다.
   const isBrandCategory = useMemo(() => {
     const brandRoot = viewTree.find((n) => n.slug === BRAND_ROOT_SLUG);
     if (!brandRoot) return false;
-    if (mode.kind === 'selected')
-      return brandRoot.children.some((c) => c.id === mode.id);
-    if (mode.kind === 'create') return mode.parentId === brandRoot.id;
+    const targetId =
+      mode.kind === 'selected' ? mode.id : mode.kind === 'create' ? mode.parentId : null;
+    if (!targetId) return false;
+    if (mode.kind === 'create' && targetId === brandRoot.id) return true;
+    const stack = [...brandRoot.children];
+    while (stack.length) {
+      const node = stack.pop()!;
+      if (node.id === targetId) return true;
+      stack.push(...node.children);
+    }
     return false;
   }, [viewTree, mode]);
 

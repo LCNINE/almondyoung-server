@@ -2,13 +2,17 @@ import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
 import { listRootCategoriesCached } from "@/lib/data/category"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { BrandHeader } from "../brand-header"
-import { isBrandChildCategory } from "../../utils/brand-category"
+import {
+  collectBrandDescendantIds,
+  isBrandChildCategory,
+} from "../../utils/brand-category"
 
 /**
- * 카테고리 페이지 상단 헤딩. 브랜드 카테고리("브랜드" 루트의 자식)면 브랜드형
+ * 카테고리 페이지 상단 헤딩. 브랜드관("브랜드" 루트)의 자손이면 브랜드형
  * 헤더(로고·이름·소개)로, 아니면 기존과 동일한 h1 로 렌더링한다.
+ * 자손 판정이라 브랜드관 아래에 중간 그룹이 생겨도 그대로 동작한다.
  *
- * 브랜드 루트 id 는 헤더 메가메뉴가 같은 요청에서 이미 캐시한
+ * 브랜드관 트리는 헤더 메가메뉴가 같은 요청에서 이미 캐시한
  * listRootCategoriesCached 에서 얻으므로 Medusa 왕복이 늘지 않는다.
  */
 export async function CategoryPageHeading({
@@ -16,16 +20,18 @@ export async function CategoryPageHeading({
 }: {
   category: StoreProductCategoryTree
 }) {
-  let brandRootId: string | null = null
+  let isBrand = false
   try {
     const roots = await listRootCategoriesCached()
-    brandRootId =
-      roots.find((c) => c.handle === BRAND_CATEGORY_HANDLE)?.id ?? null
+    isBrand = collectBrandDescendantIds(roots, BRAND_CATEGORY_HANDLE).has(
+      category.id
+    )
   } catch {
-    // 루트 트리 조회 실패 → 일반 헤딩으로 폴백 (카테고리 페이지 자체는 유지)
+    // 루트 트리 조회 실패 → 응답에 실린 부모 정보만으로 폴백 판정
+    isBrand = isBrandChildCategory(category, null)
   }
 
-  if (isBrandChildCategory(category, brandRootId)) {
+  if (isBrand) {
     return <BrandHeader category={category} />
   }
 

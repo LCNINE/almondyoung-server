@@ -19,13 +19,13 @@ export function BrandHeader({ category }: BrandHeaderProps) {
   return (
     <div className="mb-6 flex items-center gap-4 md:gap-5">
       {thumbnail && (
-        <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border border-border bg-white md:h-20 md:w-20">
+        <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-border bg-white md:h-20 md:w-20">
           <Image
             src={getThumbnailUrl(thumbnail)}
             alt={category.name}
             fill
             sizes="(min-width: 768px) 80px, 64px"
-            className="object-contain p-2"
+            className="object-contain"
           />
         </span>
       )}
