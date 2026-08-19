@@ -41,7 +41,6 @@ describe('ListProductMastersQueryDto', () => {
       mode: 'all',
       status: 'inactive',
       productType: 'limited_edition',
-      approvalStatus: 'pending',
       createdFrom: '2026-01-01',
       createdTo: '2026-01-31',
       sort: 'name',
@@ -54,12 +53,13 @@ describe('ListProductMastersQueryDto', () => {
     const dto = toDto({
       status: 'deleted',
       productType: 'nonsense',
+      // 승인 상태 축은 #663 으로 제거됨 — 미선언 필드라 더 이상 검증 에러를 만들지 않아야 한다
       approvalStatus: 'bogus',
       sort: 'price',
       order: 'up',
     });
     const errors = await validate(dto);
     const props = errors.map((e) => e.property).sort();
-    expect(props).toEqual(['approvalStatus', 'order', 'productType', 'sort', 'status']);
+    expect(props).toEqual(['order', 'productType', 'sort', 'status']);
   });
 });

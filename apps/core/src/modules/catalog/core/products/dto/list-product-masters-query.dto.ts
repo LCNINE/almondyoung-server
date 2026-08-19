@@ -36,10 +36,6 @@ export class ListProductMastersQueryDto {
   @IsIn(['regular_sale', 'limited_edition'])
   productType?: 'regular_sale' | 'limited_edition';
 
-  @IsOptional()
-  @IsIn(['draft', 'pending', 'approved', 'rejected'])
-  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
-
   /** 상품을 등록한 사용자 UUID. product_masters.createdBy 기준 */
   @IsOptional() @IsUUID() createdBy?: string;
 

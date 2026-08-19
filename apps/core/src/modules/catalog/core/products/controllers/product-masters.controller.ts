@@ -150,13 +150,6 @@ export class ProductMastersController {
     description: '상품 유형',
   })
   @ApiQuery({
-    name: 'approvalStatus',
-    required: false,
-    enum: ['draft', 'pending', 'approved', 'rejected'],
-    description:
-      "승인 상태. mode='active'(기본)에선 승인된 active 버전만 조회되므로 draft/pending/rejected 필터는 mode='all'과 함께 사용.",
-  })
-  @ApiQuery({
     name: 'createdBy',
     required: false,
     type: String,
@@ -212,7 +205,6 @@ export class ProductMastersController {
         (query.status === 'inactive' ? 'active-or-inactive' : query.status === 'draft' ? 'all' : undefined),
       status: query.status,
       productType: query.productType,
-      approvalStatus: query.approvalStatus,
       createdBy: query.createdBy,
       supplierId: query.supplierId,
       createdFrom: query.createdFrom,
@@ -259,7 +251,6 @@ export class ProductMastersController {
         (query.status === 'inactive' ? 'active-or-inactive' : query.status === 'draft' ? 'all' : undefined),
       status: query.status,
       productType: query.productType,
-      approvalStatus: query.approvalStatus,
       createdBy: query.createdBy,
       supplierId: query.supplierId,
       createdFrom: query.createdFrom,
