@@ -33,6 +33,10 @@ export class CategoryMapper {
       productCount: entity.productCount,
       thumbnail: entity.imageUrl, // DB의 imageUrl을 API의 thumbnail로 매핑
       isVisibleToMembersOnly: entity.displaySettings?.isVisibleToMembersOnly ?? false,
+      // 미지정(undefined)과 명시적 false 를 구분해 내려준다 — 미지정이면 소비자가
+      // 폴백 추정(로고/리프)을 쓰고, false 는 "그룹" 명시다. ?? false 로 뭉개면
+      // 기존 브랜드가 저장 한 번에 그룹으로 오판된다.
+      isBrand: entity.displaySettings?.isBrand,
     };
   }
 

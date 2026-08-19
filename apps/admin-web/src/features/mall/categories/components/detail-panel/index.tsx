@@ -29,8 +29,10 @@ import type { SelectionMode } from '../../hooks/use-category-selection';
 
 interface Props {
   mode: SelectionMode;
-  /** 브랜드관 직계 자식(=브랜드) 편집/생성 중 — 스토어프론트 노출 안내를 띄운다 */
+  /** 브랜드관 자손 편집/생성 중 — 스토어프론트 노출 안내와 브랜드 스위치를 띄운다 */
   isBrandCategory?: boolean;
+  /** 선택된 노드에 자식이 있는가 — 브랜드 스위치 기본값 추정(리프면 브랜드)에 사용 */
+  selectedHasChildren?: boolean;
   onAfterCreate: (newId: string) => void;
   onAfterDelete: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -44,6 +46,7 @@ interface FormState {
   sortOrder: number;
   isActive: boolean;
   isVisibleToMembersOnly: boolean;
+  isBrand: boolean;
   imageUrl: string; // file-service fileId (없으면 '')
 }
 
@@ -54,12 +57,14 @@ const EMPTY: FormState = {
   sortOrder: 0,
   isActive: true,
   isVisibleToMembersOnly: false,
+  isBrand: false,
   imageUrl: '',
 };
 
 export function CategoryDetailPanel({
   mode,
   isBrandCategory = false,
+  selectedHasChildren = false,
   onAfterCreate,
   onDirtyChange,
   onRequestDelete,
@@ -80,6 +85,7 @@ export function CategoryDetailPanel({
       key={mode.id}
       categoryId={mode.id}
       isBrandCategory={isBrandCategory}
+      hasChildren={selectedHasChildren}
       onDirtyChange={onDirtyChange}
       onRequestDelete={onRequestDelete}
     />
@@ -106,7 +112,10 @@ function CreateForm({
   onAfterCreate: (id: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [form, setForm] = useState<FormState>(EMPTY);
+  // 브랜드관 아래에 새로 만드는 카테고리는 대부분 브랜드라 기본 켬.
+  const [form, setForm] = useState<FormState>(
+    isBrandCategory ? { ...EMPTY, isBrand: true } : EMPTY,
+  );
   const create = useCreateCategory();
   const dirty =
     form.name.trim().length > 0 ||
@@ -128,6 +137,7 @@ function CreateForm({
         parentId,
         sortOrder: form.sortOrder,
         imageUrl: form.imageUrl || undefined,
+        ...(isBrandCategory && { isBrand: form.isBrand }),
       });
       toast.success('카테고리가 생성되었습니다.');
       onDirtyChange(false);
@@ -162,11 +172,13 @@ function CreateForm({
 function EditForm({
   categoryId,
   isBrandCategory,
+  hasChildren,
   onDirtyChange,
   onRequestDelete,
 }: {
   categoryId: string;
   isBrandCategory: boolean;
+  hasChildren: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onRequestDelete: (id: string) => void;
 }) {
@@ -183,10 +195,14 @@ function EditForm({
             sortOrder: detail.data.sortOrder ?? 0,
             isActive: detail.data.isActive,
             isVisibleToMembersOnly: detail.data.isVisibleToMembersOnly ?? false,
+            // 플래그 미지정 카테고리는 스토어프론트 폴백 추정(로고 있거나 리프면 브랜드)과
+            // 같은 값을 기본으로 보여준다 — 스위치가 실제 노출 동작과 일치하도록.
+            isBrand:
+              detail.data.isBrand ?? (!!detail.data.thumbnail || !hasChildren),
             imageUrl: detail.data.thumbnail ?? '',
           }
         : EMPTY,
-    [detail.data]
+    [detail.data, hasChildren]
   );
 
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -200,6 +216,7 @@ function EditForm({
       form.sortOrder !== initial.sortOrder ||
       form.isActive !== initial.isActive ||
       form.isVisibleToMembersOnly !== initial.isVisibleToMembersOnly ||
+      form.isBrand !== initial.isBrand ||
       form.imageUrl !== initial.imageUrl,
     [form, initial]
   );
@@ -221,6 +238,7 @@ function EditForm({
           sortOrder: form.sortOrder,
           isActive: form.isActive,
           isVisibleToMembersOnly: form.isVisibleToMembersOnly,
+          ...(isBrandCategory && { isBrand: form.isBrand }),
           imageUrl: form.imageUrl, // 빈 문자열이면 이미지 제거
         },
       });
@@ -349,13 +367,32 @@ function FormFields({
     <div className="space-y-4">
       {isBrandCategory && (
         <div className="p-3 space-y-1 text-xs border rounded-md bg-muted/30">
-          <p className="font-medium text-foreground">브랜드 카테고리</p>
+          <p className="font-medium text-foreground">브랜드관 하위 카테고리</p>
           <p className="text-muted-foreground">
-            브랜드관 하위 카테고리는 스토어프론트 메인 페이지의 브랜드
-            섹션에도 노출됩니다. 여기 올린 대표 이미지가 브랜드 로고로, 정렬
-            순서가 노출 순서로, 설명이 브랜드 페이지 상단 소개 문구로
+            브랜드로 지정한 카테고리는 스토어프론트 메인 페이지의 브랜드
+            섹션에 타일로 노출됩니다. 여기 올린 대표 이미지가 브랜드 로고로,
+            정렬 순서가 노출 순서로, 설명이 브랜드 페이지 상단 소개 문구로
             사용됩니다.
           </p>
+        </div>
+      )}
+
+      {isBrandCategory && (
+        <div className="flex items-center justify-between p-3 border rounded-md">
+          <div>
+            <Label htmlFor="cat-is-brand" className="text-sm">
+              브랜드 카테고리
+            </Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              켜면 메인 브랜드 섹션에 타일로 노출됩니다. 끄면 그룹(중간
+              분류)으로 취급되어 이 안의 브랜드들이 대신 노출됩니다.
+            </p>
+          </div>
+          <Switch
+            id="cat-is-brand"
+            checked={value.isBrand}
+            onCheckedChange={(v) => set('isBrand', v)}
+          />
         </div>
       )}
 

@@ -65,7 +65,7 @@ export class ProductCategoriesService {
   // 기본 CRUD
   async createCategory(data: CreateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
-      const { tagGroupLinks, ...categoryData } = data;
+      const { tagGroupLinks, isBrand, ...categoryData } = data;
 
       // parentId가 있으면 부모 카테고리 조회하여 level/path 계산
       let level = 0;
@@ -92,6 +92,8 @@ export class ProductCategoriesService {
         ...categoryData,
         slug: categoryData.slug ?? Math.random().toString(36).slice(2, 8),
         level,
+        // 브랜드 여부는 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
+        ...(isBrand !== undefined && { displaySettings: { isBrand } }),
       };
 
       try {
@@ -137,12 +139,12 @@ export class ProductCategoriesService {
 
   async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
-      const { tagGroupLinks, isVisibleToMembersOnly, ...categoryData } = data;
+      const { tagGroupLinks, isVisibleToMembersOnly, isBrand, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
 
-      // 멤버십 전용 노출은 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
+      // 멤버십 전용 노출·브랜드 여부는 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
       let displaySettings: CategoryDisplaySettings | undefined;
-      if (isVisibleToMembersOnly !== undefined) {
+      if (isVisibleToMembersOnly !== undefined || isBrand !== undefined) {
         const [current] = await client
           .select({ displaySettings: pimSchema.productCategories.displaySettings })
           .from(pimSchema.productCategories)
@@ -154,7 +156,8 @@ export class ProductCategoriesService {
 
         displaySettings = {
           ...(current.displaySettings as CategoryDisplaySettings),
-          isVisibleToMembersOnly,
+          ...(isVisibleToMembersOnly !== undefined && { isVisibleToMembersOnly }),
+          ...(isBrand !== undefined && { isBrand }),
         };
       }
 

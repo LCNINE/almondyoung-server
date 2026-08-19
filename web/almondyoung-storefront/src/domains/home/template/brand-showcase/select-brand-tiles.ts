@@ -2,10 +2,13 @@
 // 입력은 루트 카테고리 트리(listRootCategoriesCached 결과) — 이미 rank 정렬·비활성/회원전용
 // 필터가 끝난 상태라 여기서는 브랜드 루트를 찾아 모양을 정리하기만 한다.
 //
-// 브랜드관 트리는 두 모양을 지원한다:
-//   flat:    브랜드관 → 브랜드들                    (그룹 탭 없음)
-//   grouped: 브랜드관 → 중간 그룹(래쉬브랜드관…) → 브랜드들 (그룹별 탭)
-// 혼합 상태(그룹과 브랜드가 섞임)면 직계 브랜드들을 맨 앞의 무명 그룹으로 묶는다.
+// 그룹/브랜드 판정:
+//   1순위: 관리자에서 지정한 브랜드 플래그(metadata.isBrand, core displaySettings 동기화).
+//          true 면 브랜드(자식이 있어도 타일로 멈춤), false 면 그룹(안으로 재귀).
+//   폴백(플래그 미지정, 기존 데이터): 로고가 있거나 리프면 브랜드, 로고 없이 자식만
+//          있으면 그룹. 그룹 속 그룹도 깊이 제한 없이 동작.
+// 탭은 브랜드관 직계 그룹 단위로 만들고, 각 탭에는 그 그룹 아래 전 깊이의 브랜드가 모인다.
+// 직계 브랜드는 맨 앞의 무명 그룹("전체" 탭)으로 묶는다.
 
 export interface BrandTileCategory {
   id: string
@@ -22,15 +25,54 @@ export interface BrandTile<T extends BrandTileCategory> {
 }
 
 export interface BrandGroup<T extends BrandTileCategory> {
-  /** 무명 그룹(flat/혼합의 직계 브랜드 묶음)이면 null */
+  /** 무명 그룹(직계 브랜드 묶음)이면 null */
   category: T | null
   brands: BrandTile<T>[]
 }
 
 export interface BrandTileSelection<T extends BrandTileCategory> {
   groups: BrandGroup<T>[]
-  /** 그룹이 2개 이상이거나 이름 있는 그룹이 있어 탭 UI 가 필요한가 */
+  /** 이름 있는 그룹이 있어 탭 UI 가 필요한가 */
   hasGroups: boolean
+}
+
+function hasOwnThumbnail(category: BrandTileCategory): boolean {
+  const metadata = category.metadata as
+    | { thumbnail?: unknown; imageUrl?: unknown; image_url?: unknown; image?: unknown }
+    | null
+    | undefined
+  const image =
+    metadata?.thumbnail ??
+    metadata?.imageUrl ??
+    metadata?.image_url ??
+    metadata?.image
+  return typeof image === "string" && image.length > 0
+}
+
+function isBrandNode(category: BrandTileCategory): boolean {
+  const isBrand = (category.metadata as { isBrand?: unknown } | null | undefined)
+    ?.isBrand
+  if (typeof isBrand === "boolean") return isBrand
+  const children = category.category_children ?? []
+  return hasOwnThumbnail(category) || children.length === 0
+}
+
+function collectBrands<T extends BrandTileCategory>(
+  nodes: T[],
+  parentPath: string[],
+  out: BrandTile<T>[]
+): void {
+  for (const node of nodes) {
+    if (isBrandNode(node)) {
+      out.push({ category: node, handlePath: [...parentPath, node.handle] })
+    } else {
+      collectBrands(
+        (node.category_children ?? []) as T[],
+        [...parentPath, node.handle],
+        out
+      )
+    }
+  }
 }
 
 export function selectBrandTiles<T extends BrandTileCategory>(
@@ -45,20 +87,19 @@ export function selectBrandTiles<T extends BrandTileCategory>(
   const groups: BrandGroup<T>[] = []
 
   for (const child of children) {
-    const grandChildren = (child.category_children ?? []) as T[]
-    if (grandChildren.length > 0) {
-      groups.push({
-        category: child,
-        brands: grandChildren.slice(0, maxTilesPerGroup).map((brand) => ({
-          category: brand,
-          handlePath: [brandRootHandle, child.handle, brand.handle],
-        })),
-      })
-    } else {
+    if (isBrandNode(child)) {
       directBrands.push({
         category: child,
         handlePath: [brandRootHandle, child.handle],
       })
+    } else {
+      const brands: BrandTile<T>[] = []
+      collectBrands(
+        (child.category_children ?? []) as T[],
+        [brandRootHandle, child.handle],
+        brands
+      )
+      groups.push({ category: child, brands: brands.slice(0, maxTilesPerGroup) })
     }
   }
 

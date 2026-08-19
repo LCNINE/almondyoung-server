@@ -86,6 +86,15 @@ export class UpdateCategoryDto {
   isVisibleToMembersOnly?: boolean;
 
   @ApiProperty({
+    description: '브랜드 카테고리 여부 (브랜드관 트리에서 그룹과 브랜드를 구분)',
+    required: false,
+    example: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  isBrand?: boolean;
+
+  @ApiProperty({
     description: '태그 그룹 연결 목록',
     type: [CategoryTagGroupLinkDto],
     required: false,

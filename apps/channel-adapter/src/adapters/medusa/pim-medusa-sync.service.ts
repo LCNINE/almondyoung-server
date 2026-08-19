@@ -715,6 +715,7 @@ export class PimMedusaSyncService {
           visibility: ancestor.visibility,
           showOnMainCategory: ancestor.displaySettings?.showOnMainCategory ?? false,
           isVisibleToMembersOnly: ancestorMembersOnly,
+          isBrand: ancestor.displaySettings?.isBrand,
           thumbnail: ancestor.thumbnail ?? undefined,
           sortOrder: ancestor.sortOrder,
           description: ancestor.description,
@@ -733,6 +734,7 @@ export class PimMedusaSyncService {
         showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
         isVisibleToMembersOnly:
           category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
+        isBrand: category.displaySettings?.isBrand,
         thumbnail: category.thumbnail ?? undefined,
         sortOrder: category.sortOrder,
         description: category.description,

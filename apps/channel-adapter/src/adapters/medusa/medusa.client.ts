@@ -620,6 +620,8 @@ export class MedusaClient {
       visibility: boolean;
       showOnMainCategory: boolean;
       isVisibleToMembersOnly?: boolean;
+      /** 브랜드관 트리에서 그룹과 브랜드 구분. 호출자가 값을 준 경우에만 반영. */
+      isBrand?: boolean;
       thumbnail?: string;
       sortOrder?: number;
       /** 호출자가 값을 준 경우에만 반영. null 은 "비우기". 상품 동기화 경로에는 없다. */
@@ -656,6 +658,9 @@ export class MedusaClient {
       // false 로 덮어써 버린다.
       ...(categorySnapshot.isVisibleToMembersOnly !== undefined && {
         isVisibleToMembersOnly: categorySnapshot.isVisibleToMembersOnly,
+      }),
+      ...(categorySnapshot.isBrand !== undefined && {
+        isBrand: categorySnapshot.isBrand,
       }),
     };
 

@@ -18,6 +18,8 @@ export interface CreateCategoryDto {
   imageUrl?: string;
   parentId?: string | null;
   sortOrder?: number;
+  /** 브랜드 카테고리 여부 (브랜드관 트리에서 그룹과 브랜드 구분) */
+  isBrand?: boolean;
 }
 
 export interface UpdateCategoryDto {
@@ -28,6 +30,8 @@ export interface UpdateCategoryDto {
   sortOrder?: number;
   isActive?: boolean;
   isVisibleToMembersOnly?: boolean;
+  /** 브랜드 카테고리 여부 (브랜드관 트리에서 그룹과 브랜드 구분) */
+  isBrand?: boolean;
 }
 
 export interface CategoryDto {
@@ -43,6 +47,8 @@ export interface CategoryDto {
   thumbnail?: string | null;
   /** 멤버십 회원에게만 노출하는 카테고리 여부 */
   isVisibleToMembersOnly?: boolean;
+  /** 브랜드 카테고리 여부. 미지정(undefined)이면 소비자가 로고/리프 추정으로 폴백 */
+  isBrand?: boolean;
   createdAt: string;
   updatedAt: string;
   children?: CategoryDto[];
