@@ -15,7 +15,6 @@ import { ShopListingsModule } from './core/shop-listings/shop-listings.module';
 import { AiPromptsModule } from './core/ai-prompts/ai-prompts.module';
 
 // Operations modules
-import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
 import { ProductExportModule } from './operations/export/product-export.module';
 import { AuditModule } from './operations/audit/audit.module';
@@ -44,7 +43,6 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     ShopListingsModule,
     AiPromptsModule,
     // Operations
-    ApprovalModule,
     BulkModule,
     ProductExportModule,
     AuditModule,
