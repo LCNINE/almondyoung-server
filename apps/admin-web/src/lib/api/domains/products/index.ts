@@ -1,7 +1,6 @@
 // src/lib/api/domains/products/index.ts
 // Products 도메인 통합 클라이언트
 
-import { approvalClient } from './approval.client';
 import { auditClient } from './audit.client';
 import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
@@ -36,7 +35,6 @@ export const products = {
   bulkSession: bulkSessionClient,
   formExport: formExportClient,
   audit: auditClient,
-  approval: approvalClient,
 };
 
 export { categoriesClient } from './categories.client';
@@ -55,4 +53,3 @@ export { bulkClient } from './bulk.client';
 export { bulkSessionClient } from './bulk-session.client';
 export { formExportClient } from './form-export.client';
 export { auditClient } from './audit.client';
-export { approvalClient } from './approval.client';

@@ -244,7 +244,7 @@ export const mainMenus: MainMenu[] = [
       { id: 'product-display', title: '진열' },
       { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
       { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
-      { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
+      { id: 'product-audit', title: '감사 이력', path: '/mall/audit' },
       {
         id: 'digital-assets',
         title: '디지털 자산',

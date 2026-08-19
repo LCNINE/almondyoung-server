@@ -201,8 +201,10 @@ export const productMasterVersions = pgTable(
     salesStartDate: timestamp('sales_start_date'),
     salesEndDate: timestamp('sales_end_date'),
 
-    // Approval Workflow
-    approvalStatus: ProductMasterVersionApprovalStatusEnum('approval_status').notNull().default('draft'), // 'draft', 'pending', 'approved', 'rejected'
+    // Approval Workflow — 승인 워크플로는 #663 으로 제거됨(2026-08).
+    // 이 컬럼들을 읽거나 쓰는 코드는 없다. publishVersion 도 approvalStatus 를 갱신하지 않으므로
+    // 실데이터는 사실상 'draft' 한 종류다. DROP 은 ADR-0005 §5 contract phase 라 별도 판단.
+    approvalStatus: ProductMasterVersionApprovalStatusEnum('approval_status').notNull().default('draft'),
     approvedAt: timestamp('approved_at'),
     approvedBy: uuid('approved_by'),
     rejectionReason: text('rejection_reason'),
@@ -660,6 +662,9 @@ export const productImages = pgTable(
 );
 
 // ===== 13. PRODUCT APPROVAL HISTORY =====
+// 승인 워크플로는 #663 으로 제거됨(2026-08). 이 테이블에 쓰는 코드는 없다.
+// 상품 변경 이력 화면(/mall/audit)은 이 테이블이 아니라 product_audit_log 를 쓴다.
+// DROP 은 ADR-0005 §5 contract phase 라 별도 판단.
 export const productApprovalHistory = pgTable(
   'product_approval_history',
   {

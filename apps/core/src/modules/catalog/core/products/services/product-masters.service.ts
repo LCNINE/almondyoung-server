@@ -113,7 +113,6 @@ export type MasterListFilters = {
   ids?: string[];
   status?: 'active' | 'inactive' | 'draft';
   productType?: 'regular_sale' | 'limited_edition';
-  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
   createdBy?: string;
   supplierId?: string | string[];
   createdFrom?: string;
@@ -712,13 +711,6 @@ export class ProductMastersService {
 
     if (filters.status) {
       whereConditions.push(eq(productMasterVersions.status, filters.status));
-    }
-
-    // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
-    // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
-    // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
-    if (filters.approvalStatus) {
-      whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
     }
 
     // 등록자 필터 — 등록일과 같은 기준(product_masters)이라 버전 수정자와 섞이지 않는다.

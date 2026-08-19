@@ -28,7 +28,6 @@ export class ProductMapper {
       seoTitle: version.seoTitle,
       seoDescription: version.seoDescription,
       seoKeywords: version.seoKeywords,
-      approvalStatus: version.approvalStatus,
       productType: version.productType,
       productCode: version.productCode,
       isWholesaleOnly: version.isWholesaleOnly ?? false,

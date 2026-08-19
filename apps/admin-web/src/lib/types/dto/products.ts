@@ -134,7 +134,6 @@ export interface MastersQuery {
   /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 / all: draft만 있는 상품 포함 */
   mode?: 'active' | 'active-or-inactive' | 'all';
   productType?: 'regular_sale' | 'limited_edition';
-  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
   /** 등록자 UUID(user-service users.id). product_masters.createdBy 기준 */
   createdBy?: string;
   /** 공급처 UUID(suppliers.id). product_master_versions.supplierId 기준 */
@@ -1126,7 +1125,6 @@ export interface UpdateChannelCategoryDto {
 export interface BulkUpdateDto {
   productIds: string[];
   status?: 'active' | 'inactive';
-  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
   basePrice?: number;
   brand?: string;
   seller?: string;
@@ -1187,35 +1185,6 @@ export interface AuditLogItemDto {
 export interface ProductAuditHistoryItemDto extends AuditLogItemDto {
   changes?: Record<string, { old: unknown; new: unknown }> | null;
 }
-
-// ===== 승인 관련 =====
-
-export interface PendingApprovalDto {
-  id: string;
-  name: string;
-  approvalStatus: string;
-  submittedAt?: string;
-  submittedBy?: string;
-}
-
-export interface ApprovalHistoryItemDto {
-  id: string;
-  productId: string;
-  action: 'submit' | 'approve' | 'reject';
-  actorId: string;
-  comment?: string;
-  reason?: string;
-  createdAt: string;
-}
-
-export interface ApproveProductDto {
-  comment?: string;
-}
-
-export interface RejectProductDto {
-  reason: string;
-}
-
 
 // ===== 엑셀 내보내기 =====
 

@@ -3536,7 +3536,7 @@ GET /api/pim/products/export?productIds=id1,id2,id3
 
 ### 대시보드 메트릭 조회
 
-제품 통계 정보를 조회합니다. 전체 제품 수, 오늘 등록 제품 수, 상태별/승인상태별 제품 수 등을 포함합니다.
+제품 통계 정보를 조회합니다. 전체 제품 수, 오늘 등록 제품 수, 상태별 제품 수 등을 포함합니다. (승인상태별 집계는 승인 워크플로가 #663 으로 제거되며 함께 빠졌다)
 
 **요청**
 
@@ -3554,11 +3554,6 @@ GET /dashboard/metrics
     "active": 800,
     "inactive": 150,
     "draft": 50
-  },
-  "byApprovalStatus": {
-    "approved": 900,
-    "pending": 80,
-    "rejected": 20
   }
 }
 ```

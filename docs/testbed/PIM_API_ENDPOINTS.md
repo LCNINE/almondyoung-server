@@ -192,15 +192,8 @@
 | GET | `/dashboard/sales-trends` | 매출 트렌드 조회 |
 
 ## 14. Product Approval (제품 승인)
-**Base Path:** `/masters`
 
-| Method | Path | Name |
-|--------|------|------|
-| POST | `/masters/:id/submit-approval` | 제품 승인 요청 |
-| POST | `/masters/:id/approve` | 제품 승인 |
-| POST | `/masters/:id/reject` | 제품 거부 |
-| GET | `/masters/pending-approval` | 승인 대기 중인 제품 목록 |
-| GET | `/masters/:id/approval-history` | 제품 승인 이력 |
+> 승인 워크플로 라우트는 #663 으로 전량 제거됨(2026-08). 이 섹션에 있던 5개 엔드포인트(`submit-approval`, `approve`, `reject`, `pending-approval`, `approval-history`)는 더 이상 존재하지 않는다.
 
 ## 15. Product CSV (CSV 임포트/엑스포트)
 **Base Path:** `/products/csv`
@@ -244,7 +237,6 @@
   - 태그 관리
   - 배너 관리
   - 검색 및 대시보드
-  - 승인 워크플로우
   - CSV 임포트/엑스포트
   - 일괄 작업
   - 감사 로그

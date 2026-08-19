@@ -37,7 +37,6 @@ describe('ProductMastersController', () => {
       mode: undefined,
       status: undefined,
       productType: undefined,
-      approvalStatus: undefined,
       createdFrom: undefined,
       createdTo: undefined,
       sort: undefined,
@@ -46,6 +45,10 @@ describe('ProductMastersController', () => {
       deleted: false,
       ids: undefined,
     });
+    // jest.fn() 의 mock.calls 는 any 라 인덱싱이 unsafe 로 잡힌다. 이 단언은 키 부재를
+    // 확인하는 게 목적이라 값 타입이 필요 없다.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(productMastersService.getMasters.mock.calls[0][0]).not.toHaveProperty('approvalStatus');
   });
 
   it('forwards the new filter and sort fields to the service', async () => {
@@ -54,7 +57,6 @@ describe('ProductMastersController', () => {
     await controller.getMasters({
       productType: 'limited_edition',
       status: 'inactive',
-      approvalStatus: 'pending',
       createdFrom: '2026-01-01',
       createdTo: '2026-01-31',
       sort: 'name',
@@ -68,7 +70,6 @@ describe('ProductMastersController', () => {
         productType: 'limited_edition',
         mode: 'active-or-inactive',
         status: 'inactive',
-        approvalStatus: 'pending',
         createdFrom: '2026-01-01',
         createdTo: '2026-01-31',
         sort: 'name',
@@ -77,6 +78,10 @@ describe('ProductMastersController', () => {
         ids: ['id-1', 'id-2'],
       }),
     );
+    // jest.fn() 의 mock.calls 는 any 라 인덱싱이 unsafe 로 잡힌다. 이 단언은 키 부재를
+    // 확인하는 게 목적이라 값 타입이 필요 없다.
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(productMastersService.getMasters.mock.calls[0][0]).not.toHaveProperty('approvalStatus');
   });
 
   it('falls back to the name alias when q is absent', async () => {
