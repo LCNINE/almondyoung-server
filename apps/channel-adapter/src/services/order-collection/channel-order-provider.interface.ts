@@ -79,6 +79,14 @@ export interface FetchOrdersResult {
   orders: OrderFetchItem[];
   failures: OrderCollectionFailureItem[];
   lifecycleEvents?: OrderLifecycleEventItem[];
+  /**
+   * 이번 폴이 **끝까지 훑은 닫힌 조회 창**의 끝 (`WindowedChannelOrderSource`).
+   *
+   * 항목이 하나도 없을 때만 쓰인다 — 그때 워터마크를 여기까지 전진시키지 않으면 같은 닫힌 창을
+   * 영원히 다시 묻는다. 열린 질의를 쓰는 source(Medusa)는 이 필드를 내지 않으며, 그 경로의
+   * 워터마크 계산은 이 필드가 없던 때와 완전히 같다.
+   */
+  completedWindowEnd?: Date | null;
 }
 
 export type OrderFetchOutcome =

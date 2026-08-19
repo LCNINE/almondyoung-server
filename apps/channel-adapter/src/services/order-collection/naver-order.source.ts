@@ -7,6 +7,8 @@ import {
   ChannelPaymentState,
   LifecycleObservation,
   ReplayableChannelOrderSource,
+  WindowedChannelOrderSource,
+  WindowedFetchResult,
 } from './channel-order-source.interface';
 import { NaverProductOrderInfo, parseNaverProductOrderInfo } from './naver-order-fields';
 
@@ -20,7 +22,23 @@ const MAX_PAGES = 20;
 const MAX_LISTED_MISMATCHED_IDS = 20;
 
 const ACCEPTED_STATUSES = new Set(['PAYED', 'DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED']);
-const TERMINAL_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED']);
+/**
+ * **계약에서 빠지는 라인** — 이 상태의 라인은 판매주문 `items` 에 싣지 않고, 실판매 금액에서도
+ * 빼며, 전 라인이 이 상태면 주문 전체가 `terminal` 이다.
+ *
+ * `RETURNED`/`EXCHANGED` 가 여기 있고 아래 취소 관측 집합에는 **없다**는 것이 요점이다.
+ */
+const OUT_OF_CONTRACT_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED']);
+/**
+ * **취소 관측을 내는 라인**. 반품/교환은 여기 들어가지 않는다.
+ *
+ * 🔴 왜 나눴나: 반품/교환은 이미 **출고가 끝난 뒤**의 생애주기다. 그것을 `OrderCancelled` 로
+ * 내보내면 Core 의 출고 증거 가드(`sales-orders.service.ts` 의 shipped/completed FO 검사)가
+ * `BadRequestException` 을 던지고, 그것은 non-retryable 이라 DLQ 로 직행한다 — 신호는 사라지고
+ * 운영자가 볼 행도 남지 않는다. 반품/교환 생애주기는 이 브랜치가 의도적으로 모델링하지 않는다
+ * (설계 §9 판정 4: "취소 포함, 환불 제외" — 클레임 19종 해석은 별건).
+ */
+const CANCELLATION_OBSERVED_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYMENT']);
 /**
  * 취소 요청 중에도 productOrderStatus 는 PAYED 다 — 그대로 두면 출고로 흘러간다.
  * `ADMIN_CANCELING` 은 판매자(관리자)가 취소를 개시한 경로다 (FIX 6) — 고객 신청과 상태 축은
@@ -29,14 +47,29 @@ const TERMINAL_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNE
 const CANCEL_IN_FLIGHT_CLAIMS = new Set(['CANCEL_REQUEST', 'CANCELING', 'ADMIN_CANCELING']);
 
 @Injectable()
-export class NaverOrderSource implements ReplayableChannelOrderSource {
+export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedChannelOrderSource {
   readonly channel: SalesChannel = 'naver';
   private readonly logger = new Logger(NaverOrderSource.name);
 
   constructor(private readonly client: NaverOrderClient) {}
 
   async fetchOrders(since: Date | null): Promise<ChannelOrderSnapshot[]> {
-    const changedAtByOrderId = await this.collectChangedOrderIds(since);
+    const { snapshots } = await this.fetchOrdersInWindow(since);
+    return snapshots;
+  }
+
+  /**
+   * `fetchOrders` 와 같은 일을 하되 **끝까지 훑은 닫힌 창의 끝**을 함께 돌려준다.
+   *
+   * 🔴 이게 없으면 조용한 24시간이 수집을 영구히 정지시킨다: 닫힌 창 `[since, since+24h]` 에
+   * 변경이 하나도 없으면 항목이 0건 → 오케스트레이터 워터마크 `null` → `recordSyncComplete` 가
+   * `lastSyncAt` 을 건드리지 않음 → 다음 주기가 **같은 닫힌 창**을 다시 묻는다. 영원히.
+   *
+   * 반환값은 상태로 들고 있지 않고 그 자리에서 함께 넘긴다 — 겹쳐 도는 두 폴이 인스턴스
+   * 필드를 서로 덮어쓰는 경합을 만들지 않기 위함이다.
+   */
+  async fetchOrdersInWindow(since: Date | null): Promise<WindowedFetchResult> {
+    const { changedAtByOrderId, completedWindowEnd } = await this.collectChangedOrderIds(since);
     const snapshots: ChannelOrderSnapshot[] = [];
     let failedCount = 0;
     for (const [orderId, changedAt] of changedAtByOrderId) {
@@ -60,7 +93,11 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
         `[naver] 이번 주기 ${changedAtByOrderId.size}건 중 ${failedCount}건 수집 실패 — 개별 사유는 위 로그 참고.`,
       );
     }
-    return snapshots;
+    // 🔴 실패한 주문이 하나라도 있으면 창을 다 봤다고 말하지 않는다. 그 창의 주문이 **전부**
+    // 실패했다면 스냅샷이 0건이라 오케스트레이터가 "변경 없음" 갈래로 들어가는데, 거기서
+    // 창의 끝까지 워터마크를 밀면 실패한 주문들이 조회 범위 밖으로 빠져 영영 사라진다 —
+    // FIX G 가 없애려던 손실 모드가 다른 문으로 되돌아온다.
+    return { snapshots, completedWindowEnd: failedCount > 0 ? null : completedWindowEnd };
   }
 
   /**
@@ -75,10 +112,22 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
     // 형제 라인을 복원한다. 변경 피드는 바뀐 라인만 주므로 이걸 건너뛰면 라인이 빠진 주문이 생긴다.
     const idsResponse = await this.client.getProductOrderIdsByOrderId(externalOrderId);
     const productOrderIds = idsResponse.data ?? [];
-    if (productOrderIds.length === 0) return null;
+    if (productOrderIds.length === 0) {
+      // 🔴 조용히 `null` 을 내면 그 주문은 **영영 사라진다**: 같은 폴의 다른 항목들이 워터마크를
+      // 이 주문 너머로 밀어버리므로 다음 주기의 조회 창에 다시 들어오지 못한다. 변경 피드가
+      // 준 주문번호에 상품주문이 하나도 없다는 것은 정상 응답이 아니므로 시끄럽게 실패시킨다 —
+      // `fetchOrders` 의 주문 단위 try/catch 가 다른 주문처럼 잡아 건너뛰고, 워터마크는
+      // 그 주문 시각 아래에 머문 채 다음 주기가 다시 시도한다(무손실).
+      this.logger.warn(`[naver] 주문 ${externalOrderId} 의 상품주문 id 목록이 비어 있다 — 수집을 실패로 처리한다.`);
+      throw new Error(`네이버 상품주문 id 목록이 비었다: 주문 ${externalOrderId}`);
+    }
 
     const detailsResponse = await this.client.getOrderDetails(productOrderIds);
-    const infos = (detailsResponse.data ?? []).map((raw) => parseNaverProductOrderInfo(raw));
+    // 🔴 채널 원본을 그대로 들고 간다. 격리 행의 `raw_order` 는 shadow 점검에서 **네이버의 실제
+    // 필드명을 확정하는 유일한 창**이라(설계 §7), 여기에 파싱 결과를 넣으면 우리가 이미 안다고
+    // 가정한 이름만 되비치고 확정이 불가능해진다.
+    const rawProductOrders = detailsResponse.data ?? [];
+    const infos = rawProductOrders.map((raw) => parseNaverProductOrderInfo(raw));
 
     // 문서가 "식별자 단위로 일부만 조회 실패할 수 있다" 고 경고한다. 조용히 빠지면 §6.1 이
     // 막으려던 사고가 그대로 난다. 신원(집합 포함) 검사만으로는 한쪽만 막는다 — 응답이
@@ -103,7 +152,7 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
       );
     }
 
-    return this.buildSnapshot(externalOrderId, infos, sourceUpdatedAt);
+    return this.buildSnapshot(externalOrderId, infos, rawProductOrders, sourceUpdatedAt);
   }
 
   /** 불일치 메시지에 나열할 id 목록을 상한으로 자른다 — 병적인 응답이 메시지를 무한정 늘리지 못하게. */
@@ -116,8 +165,16 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
   /**
    * `more` 를 따라 창 전체를 훑고, **주문번호 → 그 주문의 최신 변경 시각**을 모은다.
    * 한 주문의 여러 라인이 바뀌었으면 가장 늦은 시각을 취한다 — 워터마크의 근거다.
+   *
+   * 창을 **끝까지** 훑었고 그 창이 닫혀 있었으면(`lastChangedTo` 를 명시했으면) 창의 끝을 함께
+   * 돌려준다. 항목이 0건일 때 워터마크를 여기까지 밀어야 조용한 24시간에 갇히지 않는다.
+   * 창이 `now` 에서 끝났다면(열린 창) `null` — 그 창은 시간과 함께 자라므로 영구 정지가 아니고,
+   * 성급히 밀면 경계 근처 변경을 잃는다. 페이징이 `MAX_PAGES` 에서 잘렸을 때도 `null` 이다:
+   * 창을 끝까지 못 봤으므로 다 봤다고 말할 수 없다.
    */
-  private async collectChangedOrderIds(since: Date | null): Promise<Map<string, string>> {
+  private async collectChangedOrderIds(
+    since: Date | null,
+  ): Promise<{ changedAtByOrderId: Map<string, string>; completedWindowEnd: Date | null }> {
     const now = new Date();
     const from = since ?? new Date(now.getTime() - FIRST_RUN_LOOKBACK_MS);
     // 창을 앞으로 점프시키지 않는다 — 그러면 그 사이 주문이 영영 조회 범위 밖으로 빠진다.
@@ -143,30 +200,32 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
       }
 
       const more = response.data?.more;
-      if (!more) return changedAtByOrderId;
+      if (!more) {
+        return { changedAtByOrderId, completedWindowEnd: explicitTo ? windowEnd : null };
+      }
       lastChangedFrom = more.moreFrom;
       moreSequence = more.moreSequence;
     }
 
     this.logger.warn(`[naver] 변경 피드 페이징이 ${MAX_PAGES}쪽에서 끊겼다 — 다음 주기가 이어받는다.`);
-    return changedAtByOrderId;
+    return { changedAtByOrderId, completedWindowEnd: null };
   }
 
   private buildSnapshot(
     externalOrderId: string,
     infos: NaverProductOrderInfo[],
+    rawProductOrders: unknown[],
     sourceUpdatedAt: string,
   ): ChannelOrderSnapshot {
     const lines = infos.map((info) => this.buildLine(info));
-    const cancelled = infos.filter((info) => TERMINAL_STATUSES.has(info.productOrderStatus));
-    const live = infos.filter((info) => !TERMINAL_STATUSES.has(info.productOrderStatus));
-    const allCancelled = cancelled.length === infos.length;
+    const live = infos.filter((info) => !OUT_OF_CONTRACT_STATUSES.has(info.productOrderStatus));
+    const allOutOfContract = live.length === 0;
     this.warnIfShippingAddressesDiffer(externalOrderId, infos);
 
     return {
       externalOrderId,
       sourceUpdatedAt,
-      paymentState: this.resolvePaymentState(infos, allCancelled),
+      paymentState: this.resolvePaymentState(live, allOutOfContract),
       customerId: null,
       lines,
       amounts: {
@@ -178,11 +237,15 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
         shipping: live.reduce((sum, info) => sum + info.shippingFee, 0),
         discount: 0,
         currency: 'KRW',
+        // 🔴 해시 전용 총액 — **전 라인** 기준이라 취소로 움직이지 않는다. `total` 을 해시에
+        // 쓰면 라인 하나 취소가 곧 "수집 후 변경" 으로 읽혀 replay 가 거부하는 격리가 쌓인다.
+        allLinesTotal: infos.reduce((sum, info) => sum + info.lineTotal, 0),
       },
       shippingAddress: infos[0].shippingAddress,
       createdAt: infos[0].paymentDate ?? sourceUpdatedAt,
-      lifecycle: this.buildLifecycle(infos, cancelled, allCancelled, sourceUpdatedAt),
-      raw: { externalOrderId, productOrders: infos },
+      lifecycle: this.buildLifecycle(infos, sourceUpdatedAt),
+      // 채널 원본 그대로. 파싱 결과를 넣으면 shadow 점검이 필드명을 확정할 수 없다 (설계 §7).
+      raw: { externalOrderId, productOrders: rawProductOrders },
     };
   }
 
@@ -209,14 +272,16 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
       productName: info.productName,
       quantity: info.quantity,
       unitPrice: info.unitPrice,
-      ...(TERMINAL_STATUSES.has(info.productOrderStatus) ? { cancelled: true } : {}),
+      // 반품/교환도 "계약에서 빠진 라인" 이라는 점은 취소와 같다 — 표시는 같은 플래그로 한다.
+      // 다른 것은 **취소 관측을 내느냐**이고, 그 갈래는 `buildLifecycle` 이 가른다.
+      ...(OUT_OF_CONTRACT_STATUSES.has(info.productOrderStatus) ? { cancelled: true } : {}),
     };
   }
 
-  private resolvePaymentState(infos: NaverProductOrderInfo[], allCancelled: boolean): ChannelPaymentState {
-    if (allCancelled) return 'terminal';
+  /** `live` 는 계약에 남은 라인만. 전 라인이 빠졌으면 `terminal`. */
+  private resolvePaymentState(live: NaverProductOrderInfo[], allOutOfContract: boolean): ChannelPaymentState {
+    if (allOutOfContract) return 'terminal';
 
-    const live = infos.filter((info) => !TERMINAL_STATUSES.has(info.productOrderStatus));
     // 고객이 취소를 원하는 주문을 출고 파이프라인에 태우지 않는다 (Medusa 의 refund-requested 방어와 대칭).
     if (live.some((info) => info.claimStatus && CANCEL_IN_FLIGHT_CLAIMS.has(info.claimStatus))) return 'pending';
     if (live.every((info) => ACCEPTED_STATUSES.has(info.productOrderStatus))) return 'accepted';
@@ -226,15 +291,15 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
   /**
    * **전 라인 취소는 full 1건, 일부 취소는 라인마다 partial 1건.**
    * Core 는 `lines` 유무로 전체/부분을 가르고, 부분취소가 누적돼 전량이 돼도 주문을 닫지 않는다.
+   *
+   * 반품/교환(`RETURNED`/`EXCHANGED`)은 여기서 **관측을 내지 않는다** — 출고 후 생애주기라
+   * `OrderCancelled` 로 보내면 Core 의 출고 증거 가드에 막혀 DLQ 로 사라진다.
    */
-  private buildLifecycle(
-    infos: NaverProductOrderInfo[],
-    cancelled: NaverProductOrderInfo[],
-    allCancelled: boolean,
-    cancelledAt: string,
-  ): LifecycleObservation[] {
+  private buildLifecycle(infos: NaverProductOrderInfo[], cancelledAt: string): LifecycleObservation[] {
+    const cancelled = infos.filter((info) => CANCELLATION_OBSERVED_STATUSES.has(info.productOrderStatus));
     if (cancelled.length === 0) return [];
 
+    const allCancelled = cancelled.length === infos.length;
     if (allCancelled) {
       return [
         {
@@ -252,7 +317,16 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
       ];
     }
 
-    return cancelled.map((info) => ({
+    // 계약(`OrderCancelledSchema.cancelledLines[].quantity`)이 **양수**를 요구한다. 파서는
+    // 0 도 통과시키므로(수량 0 라인이 실재한다는 보고는 없지만 스키마상 가능) 여기서 거른다 —
+    // 안 거르면 zod 검증에서 터져 그 관측이 통째로 사라진다.
+    const emittable = cancelled.filter((info) => info.quantity > 0);
+    const skipped = cancelled.length - emittable.length;
+    if (skipped > 0) {
+      this.logger.warn(`[naver] 수량이 양수가 아닌 취소 라인 ${skipped}건은 취소 관측에서 제외한다 (계약 위반 방지).`);
+    }
+
+    return emittable.map((info) => ({
       eventType: 'OrderCancelled' as const,
       eventKey: `cancelled:${info.productOrderId}`,
       payload: {
