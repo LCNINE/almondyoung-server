@@ -3,16 +3,19 @@
   font-family: "SB Aggro";
   src: url("/fonts/SBAggroL.otf") format("opentype");
   font-weight: 300;
+  font-display: swap;
 }
 @font-face {
   font-family: "SB Aggro";
   src: url("/fonts/SBAggroM.otf") format("opentype");
   font-weight: 400;
+  font-display: swap;
 }
 @font-face {
   font-family: "SB Aggro";
   src: url("/fonts/SBAggroB.otf") format("opentype");
   font-weight: 700;
+  font-display: swap;
 }
 
 @font-face {
@@ -21,6 +24,7 @@
     url("/fonts/Pretendard-Regular.woff2") format("woff2"),
     url("/fonts/Pretendard-Regular.woff") format("woff");
   font-weight: 400;
+  font-display: swap;
 }
 @font-face {
   font-family: "Pretendard";
@@ -28,6 +32,7 @@
     url("/fonts/Pretendard-Bold.woff2") format("woff2"),
     url("/fonts/Pretendard-Bold.woff") format("woff");
   font-weight: 700;
+  font-display: swap;
 }
 
 @theme inline {
