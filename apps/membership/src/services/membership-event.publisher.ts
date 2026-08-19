@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectPublisher, PublisherFor, type DbTx } from '@app/events';
 import {
   MEMBERSHIP_STREAM,
+  type MembershipExpiryUpcomingPayload,
   type MembershipRenewalUpcomingPayload,
   type MembershipStatusChangedPayload,
 } from '@packages/event-contracts/streams';
@@ -40,5 +41,9 @@ export class MembershipEventPublisher {
    */
   async saveRenewalUpcoming(payload: MembershipRenewalUpcomingPayload, tx: DbTx): Promise<void> {
     await this.publisher.enqueue({ eventType: 'MembershipRenewalUpcoming', aggregateId: payload.userId, payload }, tx);
+  }
+
+  async saveExpiryUpcoming(payload: MembershipExpiryUpcomingPayload, tx: DbTx): Promise<void> {
+    await this.publisher.enqueue({ eventType: 'MembershipExpiryUpcoming', aggregateId: payload.userId, payload }, tx);
   }
 }

@@ -65,6 +65,27 @@ export interface MembershipRenewalUpcomingPayload {
   occurredAt: string; // ISO 8601
 }
 
+/**
+ * 만료 사전 고지 — 자동갱신이 예정돼 있지 않은 이용권이 곧 끝난다는 안내.
+ *
+ * 1회 결제, 정기결제 해지 예약, 관리자 부여를 모두 포함한다. 자동갱신되는 계약은
+ * MembershipRenewalUpcoming 이 담당하므로 두 고지가 같은 사람에게 겹치지 않는다.
+ * 계약 없이 부여된 이용권도 있어 contractId 는 선택이다.
+ */
+export interface MembershipExpiryUpcomingPayload {
+  userId: string;
+  email: string;
+  userName: string;
+  /** 고지 대상 이용권 */
+  entitlementId: string;
+  planName: string;
+  /** 이용 종료일 (YYYY-MM-DD) */
+  expiresAt: string;
+  /** 고지 시점과 종료일 사이 일수 (기본 7) */
+  noticeDaysBefore: number;
+  occurredAt: string; // ISO 8601
+}
+
 // ===== Zod 스키마 정의 =====
 
 const MembershipStatusChangedSchema = z.object({
@@ -97,6 +118,17 @@ const MembershipRenewalUpcomingSchema = z.object({
   occurredAt: z.string().datetime(),
 });
 
+const MembershipExpiryUpcomingSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  userName: z.string().min(1),
+  entitlementId: z.string().min(1),
+  planName: z.string().min(1),
+  expiresAt: z.string().min(1),
+  noticeDaysBefore: z.number().int().positive(),
+  occurredAt: z.string().datetime(),
+});
+
 // ===== Stream Config =====
 
 export const MEMBERSHIP_STREAM = stream({
@@ -111,6 +143,10 @@ export const MEMBERSHIP_STREAM = stream({
     MembershipRenewalUpcoming: event<'MembershipRenewalUpcoming', MembershipRenewalUpcomingPayload>(
       'MembershipRenewalUpcoming',
       MembershipRenewalUpcomingSchema,
+    ),
+    MembershipExpiryUpcoming: event<'MembershipExpiryUpcoming', MembershipExpiryUpcomingPayload>(
+      'MembershipExpiryUpcoming',
+      MembershipExpiryUpcomingSchema,
     ),
   },
 });

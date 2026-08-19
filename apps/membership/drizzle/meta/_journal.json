@@ -71,6 +71,13 @@
       "when": 1786291953489,
       "tag": "20260809161233_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787113211368,
+      "tag": "20260819042011_add-expiry-notice-sent-at",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_entitlement" ADD COLUMN "expiry_notice_sent_at" timestamp with time zone;

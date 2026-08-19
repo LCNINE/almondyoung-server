@@ -135,6 +135,54 @@ const RENEWAL_NOTICE_EVENT = {
   priority: 'HIGH',
 };
 
+/**
+ * 만료 사전 안내. 자동갱신이 예정돼 있지 않은 이용권(1회 결제·해지 예약·관리자 부여)이 대상이다.
+ * 갱신 고지와 달리 결제가 예정돼 있지 않으므로 금액·결제수단을 넣지 않는다.
+ */
+const EXPIRY_NOTICE_TEMPLATE = {
+  templateId: FIXED_UUIDS.TEMPLATE_MEMBERSHIP_EXPIRY_UPCOMING,
+  templateKey: 'MEMBERSHIP_EXPIRY_UPCOMING',
+  name: '멤버십 만료 사전 안내',
+  category: 'TRANSACTIONAL',
+  contents: {
+    EMAIL: {
+      subject: '[아몬드영] {{formatDate expiresAt}} 멤버십 이용이 종료됩니다',
+      body: [
+        '<p>{{userName}}님, 안녕하세요.</p>',
+        '<p>이용 중인 <strong>{{planName}}</strong>의 이용 기간이 <strong>{{formatDate expiresAt}}</strong>에 종료됩니다.',
+        ' 종료 {{noticeDaysBefore}}일 전에 미리 안내드립니다.</p>',
+        '<table>',
+        '<tr><th>이용 종료일</th><td>{{formatDate expiresAt}}</td></tr>',
+        '</table>',
+        '<p>종료일 이후에는 멤버십 전용가와 혜택이 적용되지 않습니다.',
+        ' 계속 이용하시려면 아래에서 멤버십을 다시 신청해 주세요.</p>',
+        '<p><a href="{{manageUrl}}">멤버십 관리하기</a></p>',
+        '<p>문의: <a href="https://pf.kakao.com/_xaxgxazs">카카오톡 채널 아몬드영</a> · 고객센터 1877-7184</p>',
+      ].join('\n'),
+    },
+  },
+  variablesSchema: {
+    userName: { type: 'string', required: true },
+    planName: { type: 'string', required: true },
+    expiresAt: { type: 'string', required: true },
+    noticeDaysBefore: { type: 'number', required: true },
+    manageUrl: { type: 'string', required: true },
+  },
+};
+
+const EXPIRY_NOTICE_EVENT = {
+  eventKey: 'MEMBERSHIP_EXPIRY_UPCOMING',
+  name: '멤버십 만료 사전 안내',
+  description: '이용 종료일 N일 전 만료 사전 안내 (자동갱신 대상 제외)',
+  templateKey: EXPIRY_NOTICE_TEMPLATE.templateKey,
+  category: 'TRANSACTIONAL',
+  defaultChannels: ['EMAIL'],
+  priority: 'HIGH',
+};
+
+const NOTICE_TEMPLATES = [RENEWAL_NOTICE_TEMPLATE, EXPIRY_NOTICE_TEMPLATE];
+const NOTICE_EVENTS = [RENEWAL_NOTICE_EVENT, EXPIRY_NOTICE_EVENT];
+
 const PROVIDER_IDS = [
   FIXED_UUIDS.PROVIDER_FCM_PUSH,
   FIXED_UUIDS.PROVIDER_RESEND_EMAIL,
@@ -165,10 +213,14 @@ export class NotificationSeedStep extends SeedStep {
 
     const existingTemplates = await this.findExistingIds(
       'templates',
-      [RENEWAL_NOTICE_TEMPLATE.templateId],
+      NOTICE_TEMPLATES.map((t) => t.templateId),
       'template_id',
     );
-    const existingEvents = await this.findExistingKeys('notification_events', [RENEWAL_NOTICE_EVENT.eventKey], 'event_key');
+    const existingEvents = await this.findExistingKeys(
+      'notification_events',
+      NOTICE_EVENTS.map((e) => e.eventKey),
+      'event_key',
+    );
 
     const items = [
       {
@@ -180,17 +232,17 @@ export class NotificationSeedStep extends SeedStep {
       },
       {
         entity: 'templates',
-        expected: 1,
+        expected: NOTICE_TEMPLATES.length,
         existing: existingTemplates.size,
-        missing: 1 - existingTemplates.size,
-        missingDetails: existingTemplates.size === 0 ? [RENEWAL_NOTICE_TEMPLATE.name] : [],
+        missing: NOTICE_TEMPLATES.length - existingTemplates.size,
+        missingDetails: NOTICE_TEMPLATES.filter((t) => !existingTemplates.has(t.templateId)).map((t) => t.name),
       },
       {
         entity: 'notification_events',
-        expected: 1,
+        expected: NOTICE_EVENTS.length,
         existing: existingEvents.size,
-        missing: 1 - existingEvents.size,
-        missingDetails: existingEvents.size === 0 ? [RENEWAL_NOTICE_EVENT.eventKey] : [],
+        missing: NOTICE_EVENTS.length - existingEvents.size,
+        missingDetails: NOTICE_EVENTS.filter((e) => !existingEvents.has(e.eventKey)).map((e) => e.eventKey),
       },
     ];
 
@@ -229,38 +281,42 @@ export class NotificationSeedStep extends SeedStep {
       }
 
       this.logger.step(2, 3, 'Inserting notification templates');
-      await this.db.execute(sql`
-        INSERT INTO templates (template_id, template_key, name, category, contents, variables_schema, is_active)
-        VALUES (
-          ${RENEWAL_NOTICE_TEMPLATE.templateId},
-          ${RENEWAL_NOTICE_TEMPLATE.templateKey},
-          ${RENEWAL_NOTICE_TEMPLATE.name},
-          ${RENEWAL_NOTICE_TEMPLATE.category}::notification_category,
-          ${JSON.stringify(RENEWAL_NOTICE_TEMPLATE.contents)},
-          ${JSON.stringify(RENEWAL_NOTICE_TEMPLATE.variablesSchema)},
-          ${true}
-        )
-        ON CONFLICT (template_id) DO NOTHING
-      `);
+      for (const template of NOTICE_TEMPLATES) {
+        await this.db.execute(sql`
+          INSERT INTO templates (template_id, template_key, name, category, contents, variables_schema, is_active)
+          VALUES (
+            ${template.templateId},
+            ${template.templateKey},
+            ${template.name},
+            ${template.category}::notification_category,
+            ${JSON.stringify(template.contents)},
+            ${JSON.stringify(template.variablesSchema)},
+            ${true}
+          )
+          ON CONFLICT (template_id) DO NOTHING
+        `);
+      }
 
       this.logger.step(3, 3, 'Inserting notification event mappings');
-      await this.db.execute(sql`
-        INSERT INTO notification_events (event_key, name, description, template_key, category, default_channels, priority, is_active)
-        VALUES (
-          ${RENEWAL_NOTICE_EVENT.eventKey},
-          ${RENEWAL_NOTICE_EVENT.name},
-          ${RENEWAL_NOTICE_EVENT.description},
-          ${RENEWAL_NOTICE_EVENT.templateKey},
-          ${RENEWAL_NOTICE_EVENT.category}::notification_category,
-          ${JSON.stringify(RENEWAL_NOTICE_EVENT.defaultChannels)},
-          ${RENEWAL_NOTICE_EVENT.priority}::notification_priority,
-          ${true}
-        )
-        ON CONFLICT (event_key) DO NOTHING
-      `);
+      for (const event of NOTICE_EVENTS) {
+        await this.db.execute(sql`
+          INSERT INTO notification_events (event_key, name, description, template_key, category, default_channels, priority, is_active)
+          VALUES (
+            ${event.eventKey},
+            ${event.name},
+            ${event.description},
+            ${event.templateKey},
+            ${event.category}::notification_category,
+            ${JSON.stringify(event.defaultChannels)},
+            ${event.priority}::notification_priority,
+            ${true}
+          )
+          ON CONFLICT (event_key) DO NOTHING
+        `);
+      }
 
       this.logger.success('Notification seeding completed');
-      return { service: 'Notification', success: true, itemsApplied: providers.length + 2, duration: Date.now() - start };
+      return { service: 'Notification', success: true, itemsApplied: providers.length + NOTICE_TEMPLATES.length + NOTICE_EVENTS.length, duration: Date.now() - start };
     } catch (error: any) {
       this.logger.error('Notification seeding failed', error);
       return { service: 'Notification', success: false, itemsApplied: 0, duration: Date.now() - start, error: error.message };

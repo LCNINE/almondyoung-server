@@ -180,6 +180,11 @@ export const subscriptionEntitlement = pgTable('subscription_entitlement', {
   sourceBatchId: uuid('source_batch_id').references(() => eventBatches.id),
   closedBatchId: uuid('closed_batch_id').references(() => eventBatches.id),
   pausedAt: timestamp('paused_at', { withTimezone: true }),
+  /**
+   * 만료 사전 고지를 보낸 시각. 자동갱신이 없는 이용권은 계약이 아예 없을 수 있어
+   * (관리자 부여 등) 갱신 고지처럼 subscription_contract_events 에 마커를 남길 수 없다.
+   */
+  expiryNoticeSentAt: timestamp('expiry_notice_sent_at', { withTimezone: true }),
 });
 
 /**

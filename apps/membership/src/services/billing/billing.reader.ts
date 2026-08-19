@@ -20,6 +20,13 @@ export interface DueContract {
 /** 갱신 고지를 이미 보냈다는 마커의 contract event type. 재발송 차단에 쓴다. */
 export const RENEWAL_NOTICE_EVENT_TYPE = 'RENEWAL_NOTICE_SENT';
 
+export interface ExpiryNoticeTarget {
+  entitlementId: string;
+  userId: string;
+  /** 이용 종료일 (YYYY-MM-DD) */
+  endsAt: string;
+}
+
 export interface RenewalNoticeTarget {
   contractId: string;
   userId: string;
@@ -114,6 +121,47 @@ export class BillingReader {
    *
    * 이미 이 결제일에 대해 고지한 계약은 subscription_contract_events 마커로 제외한다.
    */
+  /**
+   * 만료 사전 고지 대상 이용권.
+   *
+   * 자동갱신이 예정된 계약을 가진 사람은 findContractsForRenewalNotice 가 결제일 기준으로
+   * 이미 고지하므로 여기서 제외한다 — 두 메일이 같은 사람에게 겹치면 안 된다. 남는 대상은
+   * 1회 결제, 해지 예약(autoRenewal=false), 관리자 부여(계약 자체가 없음)다.
+   */
+  async findEntitlementsForExpiryNotice(date: string): Promise<ExpiryNoticeTarget[]> {
+    return this.dbService.db
+      .select({
+        entitlementId: schema.subscriptionEntitlement.id,
+        userId: schema.subscriptionEntitlement.userId,
+        endsAt: schema.subscriptionEntitlement.endsAt,
+      })
+      .from(schema.subscriptionEntitlement)
+      .where(
+        and(
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+          isNull(schema.subscriptionEntitlement.pausedAt),
+          isNull(schema.subscriptionEntitlement.expiryNoticeSentAt),
+          eq(schema.subscriptionEntitlement.endsAt, date),
+          not(
+            exists(
+              this.dbService.db
+                .select()
+                .from(schema.subscriptionContracts)
+                .where(
+                  and(
+                    eq(schema.subscriptionContracts.userId, schema.subscriptionEntitlement.userId),
+                    eq(schema.subscriptionContracts.isVoided, false),
+                    eq(schema.subscriptionContracts.autoRenewal, true),
+                    isNull(schema.subscriptionContracts.recurringCancelledAt),
+                    notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
+                  ),
+                ),
+            ),
+          ),
+        ),
+      );
+  }
+
   async findContractsForRenewalNotice(date: string): Promise<RenewalNoticeTarget[]> {
     return this.dbService.db
       .select({
