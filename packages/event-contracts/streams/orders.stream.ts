@@ -133,6 +133,14 @@ export interface OrderCancelledPayload {
   refundRequired: boolean;
   refundAmount?: number;
 
+  /**
+   * 부분 취소 범위 (네이버 개통). **생략 = 전체 취소** 이며, 이는 Core 의
+   * `CancelSalesOrderDto.lines` 유무 규칙과 같은 축이다 (`sales-orders.service.ts:440`).
+   * 값은 채널이 소유한 라인 식별자이고, Core 가 `sales_order_lines.channel_order_item_id`
+   * 로 자기 PK 를 찾는다. 선택 필드라 이 필드를 모르는 옛 메시지도 계속 통과한다.
+   */
+  cancelledLines?: Array<{ channelOrderItemId: string; quantity: number }>;
+
   // 재고 복원 정보
   stockRestorationResults?: Array<{
     orderItemId: string;
@@ -287,6 +295,15 @@ const OrderCancelledSchema = z.object({
   cancelledAt: z.string().datetime(),
   refundRequired: z.boolean(),
   refundAmount: z.number().nonnegative().optional(),
+  cancelledLines: z
+    .array(
+      z.object({
+        channelOrderItemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .optional(),
   stockRestorationResults: z
     .array(
       z.object({

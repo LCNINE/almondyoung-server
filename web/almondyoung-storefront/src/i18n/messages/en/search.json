@@ -52,5 +52,10 @@
     "prevPage": "Previous page",
     "nextPage": "Next page",
     "pageAria": "Page {page}"
+  },
+  "brandBanner": {
+    "title": "{name} Brand Hall",
+    "hint": "Browse all {name} products in the official brand hall",
+    "cta": "Explore brand products"
   }
 }

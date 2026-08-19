@@ -9,7 +9,7 @@ import { z } from 'zod';
  */
 export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
-    timestamp: z.string().datetime(),
+    timestamp: z.string().datetime({ offset: true }),
     traceId: z.string(),
     data: dataSchema,
   });
@@ -20,7 +20,7 @@ export function createNaverApiResponseSchema<T extends z.ZodTypeAny>(dataSchema:
  */
 export function createNaverApiResponseSchemaOptional<T extends z.ZodTypeAny>(dataSchema: T) {
   return z.object({
-    timestamp: z.string().datetime(),
+    timestamp: z.string().datetime({ offset: true }),
     traceId: z.string(),
     data: dataSchema.optional(),
   });
@@ -218,6 +218,24 @@ export const ProductOrderStatusSchema = z.enum([
   'CANCELED_BY_NOPAYMENT',
 ]);
 export type ProductOrderStatus = z.infer<typeof ProductOrderStatusSchema>;
+
+/**
+ * 최종 변경 구분 (변경 피드 전용).
+ *
+ * **`productOrderStatus` 와 다른 축이다.** 발송 완료 시 `productOrderStatus` 는 `DELIVERING`,
+ * `lastChangedType` 이 `DISPATCHED` 다. 옛 `mapNaverStatusToInternal` 이 둘을 한 표에 섞었다.
+ */
+export const LastChangedTypeSchema = z.enum([
+  'PAY_WAITING',
+  'PAYED',
+  'DISPATCHED',
+  'CANCEL_REQUESTED',
+  'CLAIM_REQUESTED',
+  'CLAIM_REJECTED',
+  'CLAIM_COMPLETED',
+  'PURCHASE_DECIDED',
+]);
+export type LastChangedType = z.infer<typeof LastChangedTypeSchema>;
 
 /**
  * 클레임 상태 코드

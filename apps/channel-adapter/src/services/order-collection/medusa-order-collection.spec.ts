@@ -89,6 +89,16 @@ describe('Medusa order collection (source + translator)', () => {
     expect(ORDER_STREAM.events.OrderCreated.schema!.parse(result.orders[0].createPayload)).toEqual(
       result.orders[0].createPayload,
     );
+    // 해시 입력 불변식 (#643 FIX C/D): Medusa 는 취소 라인 개념이 없어 `changes` 의 세 값이
+    // `createPayload` 의 세 값과 같다. 이것이 깨지면 배포 직후 한 주기의 Medusa 주문이 전부
+    // `collected_order_modification_not_accepted` 로 격리되고, 그 사유는 replay 가 거부한다.
+    expect(result.orders[0].changes).toEqual({
+      items: result.orders[0].createPayload.items,
+      shippingAddress: result.orders[0].createPayload.shippingAddress,
+      totalAmount: result.orders[0].createPayload.totalAmount,
+    });
+    // 닫힌 창 계약도 타지 않는다 — 워터마크 계산이 예전 그대로여야 한다 (FIX F).
+    expect(result.completedWindowEnd).toBeUndefined();
   });
 
   it('does not manufacture a Medusa channelProductId from the line item ID', async () => {

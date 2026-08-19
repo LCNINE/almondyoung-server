@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ChevronRight, Folder, FileText } from 'lucide-react';
 import { type MenuItem } from '@/lib/utils/menu';
 import { Badge } from '@/components/ui/badge';
+import { QuarantineMenuBadge } from './quarantine-menu-badge';
 import { IconComponent } from '@/lib/utils/icons';
 import {
   Collapsible,
@@ -76,7 +77,10 @@ export function SidebarMenuItemRecursive({
                 </span>
                 <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90 group-data-[collapsible=icon]:hidden" />
                 {isComingSoon && (
-                  <Badge variant="secondary" className="ml-auto text-xs group-data-[collapsible=icon]:hidden">
+                  <Badge
+                    variant="secondary"
+                    className="ml-auto text-xs group-data-[collapsible=icon]:hidden"
+                  >
                     준비중
                   </Badge>
                 )}
@@ -119,10 +123,14 @@ export function SidebarMenuItemRecursive({
                 {item.title}
               </span>
               {isComingSoon && (
-                <Badge variant="secondary" className="ml-auto text-xs group-data-[collapsible=icon]:hidden">
+                <Badge
+                  variant="secondary"
+                  className="ml-auto text-xs group-data-[collapsible=icon]:hidden"
+                >
                   준비중
                 </Badge>
               )}
+              {item.hasQuarantineBadge && <QuarantineMenuBadge />}
             </Link>
           </SidebarMenuButton>
         ) : (
@@ -138,10 +146,14 @@ export function SidebarMenuItemRecursive({
               {item.title}
             </span>
             {isComingSoon && (
-              <Badge variant="secondary" className="ml-auto text-xs group-data-[collapsible=icon]:hidden">
+              <Badge
+                variant="secondary"
+                className="ml-auto text-xs group-data-[collapsible=icon]:hidden"
+              >
                 준비중
               </Badge>
             )}
+            {item.hasQuarantineBadge && <QuarantineMenuBadge />}
           </SidebarMenuButton>
         )}
       </SidebarMenuItem>

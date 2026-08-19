@@ -49,5 +49,12 @@
     "close": "닫기",
     "processing": "처리 중...",
     "logoAlt": "아몬드영 로고"
+  },
+  "brands": {
+    "title": "브랜드관",
+    "ariaLabel": "브랜드 목록",
+    "prev": "이전 브랜드 보기",
+    "next": "다음 브랜드 보기",
+    "all": "전체"
   }
 }

@@ -7,6 +7,7 @@ import {
   ProductOrderStatusSchema,
   ClaimStatusSchema,
   PlaceOrderStatusTypeSchema,
+  LastChangedTypeSchema,
 } from './naver-core.zod';
 
 // =================================================================
@@ -136,17 +137,18 @@ export type QueryProductOrdersParams = z.infer<typeof QueryProductOrdersParamsSc
  * (from naver-api.zod.ts)
  */
 const NaverLastChangedStatusesDataSchema = z.object({
+  count: z.number().int().nonnegative(),
   lastChangeStatuses: z.array(
     z.object({
       orderId: z.string(),
       productOrderId: z.string(),
-      lastChangedType: z.string(),
-      paymentDate: z.iso.datetime(),
-      lastChangedDate: z.iso.datetime(),
+      lastChangedType: LastChangedTypeSchema,
+      paymentDate: z.string().optional(),
+      lastChangedDate: z.string(),
       productOrderStatus: ProductOrderStatusSchema,
       claimType: z.string().optional(), // TODO: Enum화 가능
       claimStatus: ClaimStatusSchema.optional(),
-      receiverAddressChanged: z.boolean(),
+      receiverAddressChanged: z.boolean().optional(),
     }),
   ),
   more: z

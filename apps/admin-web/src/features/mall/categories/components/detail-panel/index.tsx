@@ -29,6 +29,10 @@ import type { SelectionMode } from '../../hooks/use-category-selection';
 
 interface Props {
   mode: SelectionMode;
+  /** 브랜드관 자손 편집/생성 중 — 스토어프론트 노출 안내와 브랜드 스위치를 띄운다 */
+  isBrandCategory?: boolean;
+  /** 선택된 노드에 자식이 있는가 — 브랜드 스위치 기본값 추정(리프면 브랜드)에 사용 */
+  selectedHasChildren?: boolean;
   onAfterCreate: (newId: string) => void;
   onAfterDelete: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -42,6 +46,7 @@ interface FormState {
   sortOrder: number;
   isActive: boolean;
   isVisibleToMembersOnly: boolean;
+  isBrand: boolean;
   imageUrl: string; // file-service fileId (없으면 '')
 }
 
@@ -52,11 +57,14 @@ const EMPTY: FormState = {
   sortOrder: 0,
   isActive: true,
   isVisibleToMembersOnly: false,
+  isBrand: false,
   imageUrl: '',
 };
 
 export function CategoryDetailPanel({
   mode,
+  isBrandCategory = false,
+  selectedHasChildren = false,
   onAfterCreate,
   onDirtyChange,
   onRequestDelete,
@@ -66,6 +74,7 @@ export function CategoryDetailPanel({
     return (
       <CreateForm
         parentId={mode.parentId}
+        isBrandCategory={isBrandCategory}
         onAfterCreate={onAfterCreate}
         onDirtyChange={onDirtyChange}
       />
@@ -75,6 +84,8 @@ export function CategoryDetailPanel({
     <EditForm
       key={mode.id}
       categoryId={mode.id}
+      isBrandCategory={isBrandCategory}
+      hasChildren={selectedHasChildren}
       onDirtyChange={onDirtyChange}
       onRequestDelete={onRequestDelete}
     />
@@ -92,14 +103,19 @@ function EmptyState() {
 
 function CreateForm({
   parentId,
+  isBrandCategory,
   onAfterCreate,
   onDirtyChange,
 }: {
   parentId: string | null;
+  isBrandCategory: boolean;
   onAfterCreate: (id: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const [form, setForm] = useState<FormState>(EMPTY);
+  // 브랜드관 아래에 새로 만드는 카테고리는 대부분 브랜드라 기본 켬.
+  const [form, setForm] = useState<FormState>(
+    isBrandCategory ? { ...EMPTY, isBrand: true } : EMPTY,
+  );
   const create = useCreateCategory();
   const dirty =
     form.name.trim().length > 0 ||
@@ -121,6 +137,7 @@ function CreateForm({
         parentId,
         sortOrder: form.sortOrder,
         imageUrl: form.imageUrl || undefined,
+        ...(isBrandCategory && { isBrand: form.isBrand }),
       });
       toast.success('카테고리가 생성되었습니다.');
       onDirtyChange(false);
@@ -142,17 +159,26 @@ function CreateForm({
         </Button>
       }
     >
-      <FormFields value={form} onChange={setForm} disableActiveToggle />
+      <FormFields
+        value={form}
+        onChange={setForm}
+        disableActiveToggle
+        isBrandCategory={isBrandCategory}
+      />
     </FormShell>
   );
 }
 
 function EditForm({
   categoryId,
+  isBrandCategory,
+  hasChildren,
   onDirtyChange,
   onRequestDelete,
 }: {
   categoryId: string;
+  isBrandCategory: boolean;
+  hasChildren: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onRequestDelete: (id: string) => void;
 }) {
@@ -169,10 +195,14 @@ function EditForm({
             sortOrder: detail.data.sortOrder ?? 0,
             isActive: detail.data.isActive,
             isVisibleToMembersOnly: detail.data.isVisibleToMembersOnly ?? false,
+            // 플래그 미지정 카테고리는 스토어프론트 폴백 추정(로고 있거나 리프면 브랜드)과
+            // 같은 값을 기본으로 보여준다 — 스위치가 실제 노출 동작과 일치하도록.
+            isBrand:
+              detail.data.isBrand ?? (!!detail.data.thumbnail || !hasChildren),
             imageUrl: detail.data.thumbnail ?? '',
           }
         : EMPTY,
-    [detail.data]
+    [detail.data, hasChildren]
   );
 
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -186,6 +216,7 @@ function EditForm({
       form.sortOrder !== initial.sortOrder ||
       form.isActive !== initial.isActive ||
       form.isVisibleToMembersOnly !== initial.isVisibleToMembersOnly ||
+      form.isBrand !== initial.isBrand ||
       form.imageUrl !== initial.imageUrl,
     [form, initial]
   );
@@ -207,6 +238,7 @@ function EditForm({
           sortOrder: form.sortOrder,
           isActive: form.isActive,
           isVisibleToMembersOnly: form.isVisibleToMembersOnly,
+          ...(isBrandCategory && { isBrand: form.isBrand }),
           imageUrl: form.imageUrl, // 빈 문자열이면 이미지 제거
         },
       });
@@ -265,7 +297,11 @@ function EditForm({
         </div>
       }
     >
-      <FormFields value={form} onChange={setForm} />
+      <FormFields
+        value={form}
+        onChange={setForm}
+        isBrandCategory={isBrandCategory}
+      />
 
       <div className="p-3 space-y-2 text-sm border rounded-md bg-muted/30">
         <div className="flex items-center justify-between">
@@ -317,19 +353,56 @@ function FormFields({
   value,
   onChange,
   disableActiveToggle,
+  isBrandCategory = false,
 }: {
   value: FormState;
   onChange: (next: FormState) => void;
   disableActiveToggle?: boolean;
+  isBrandCategory?: boolean;
 }) {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     onChange({ ...value, [k]: v });
 
   return (
     <div className="space-y-4">
+      {isBrandCategory && (
+        <div className="p-3 space-y-1 text-xs border rounded-md bg-muted/30">
+          <p className="font-medium text-foreground">브랜드관 하위 카테고리</p>
+          <p className="text-muted-foreground">
+            브랜드로 지정한 카테고리는 스토어프론트 메인 페이지의 브랜드
+            섹션에 타일로 노출됩니다. 여기 올린 대표 이미지가 브랜드 로고로,
+            정렬 순서가 노출 순서로, 설명이 브랜드 페이지 상단 소개 문구로
+            사용됩니다.
+          </p>
+        </div>
+      )}
+
+      {isBrandCategory && (
+        <div className="flex items-center justify-between p-3 border rounded-md">
+          <div>
+            <Label htmlFor="cat-is-brand" className="text-sm">
+              브랜드 카테고리
+            </Label>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              켜면 브랜드 하나로 노출: 홈 브랜드 섹션과 브랜드관 페이지에 로고
+              타일로 나오고, 클릭하면 로고·소개가 붙은 브랜드 페이지로
+              이동합니다. 끄면 브랜드를 묶는 폴더(예: 래쉬브랜드관)로 노출:
+              홈에서는 탭 이름이 되고, 브랜드관 페이지에서는 섹션 제목 아래에
+              하위 브랜드들의 로고 타일이 나열됩니다.
+            </p>
+          </div>
+          <Switch
+            id="cat-is-brand"
+            checked={value.isBrand}
+            onCheckedChange={(v) => set('isBrand', v)}
+          />
+        </div>
+      )}
+
       <CategoryImageField
         value={value.imageUrl}
         onChange={(v) => set('imageUrl', v)}
+        isBrandCategory={isBrandCategory}
       />
 
       <div className="space-y-1.5">
@@ -359,8 +432,17 @@ function FormFields({
           value={value.description}
           onChange={(e) => set('description', e.target.value)}
           rows={3}
-          placeholder="관리용 메모 또는 노출용 설명 (선택)"
+          placeholder={
+            isBrandCategory
+              ? '브랜드 소개 문구 — 브랜드 페이지 상단에 노출됩니다 (선택)'
+              : '관리용 메모 또는 노출용 설명 (선택)'
+          }
         />
+        {isBrandCategory && (
+          <p className="text-xs text-muted-foreground">
+            고객에게 보이는 문구입니다. 1~2문장으로 짧게 적어주세요.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -372,7 +454,9 @@ function FormFields({
           onChange={(e) => set('sortOrder', Number(e.target.value) || 0)}
         />
         <p className="text-xs text-muted-foreground">
-          동일 부모 내 정렬은 좌측 트리에서 드래그로 변경할 수 있습니다.
+          {isBrandCategory
+            ? '메인 페이지 브랜드 섹션과 브랜드관의 노출 순서입니다. 동일 부모 내 정렬은 좌측 트리에서 드래그로도 변경할 수 있습니다.'
+            : '동일 부모 내 정렬은 좌측 트리에서 드래그로 변경할 수 있습니다.'}
         </p>
       </div>
 
@@ -426,9 +510,11 @@ function categoryImageSrc(value: string): string | null {
 function CategoryImageField({
   value,
   onChange,
+  isBrandCategory = false,
 }: {
   value: string;
   onChange: (fileId: string) => void;
+  isBrandCategory?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -454,7 +540,7 @@ function CategoryImageField({
 
   return (
     <div className="space-y-1.5">
-      <Label>대표 이미지</Label>
+      <Label>{isBrandCategory ? '브랜드 로고' : '대표 이미지'}</Label>
       <div className="flex items-start gap-3">
         <div className="relative w-20 h-20 overflow-hidden border rounded-md shrink-0 bg-muted">
           {src ? (
@@ -509,8 +595,9 @@ function CategoryImageField({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        고객 카테고리 화면에 노출되는 대표 이미지입니다. (권장: 정사각형, 10MB
-        이하)
+        {isBrandCategory
+          ? '메인 페이지 브랜드 섹션과 브랜드 페이지 상단에 로고로 노출됩니다. 권장: 정사각형(1:1), 최소 200×200px, 흰색·투명 배경, 10MB 이하. 정사각형 타일에 그대로 담기므로 정사각 로고가 가장 좋습니다.'
+          : '고객 카테고리 화면에 노출되는 대표 이미지입니다. (권장: 정사각형, 10MB 이하)'}
       </p>
     </div>
   );

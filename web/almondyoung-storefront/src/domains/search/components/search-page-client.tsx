@@ -24,6 +24,8 @@ interface SearchPageClientProps {
   countryCode: string
   regionId?: string
   wishlistIds?: string[]
+  /** 검색어가 브랜드관 브랜드와 매칭될 때 최상단에 띄우는 카드 (서버에서 렌더) */
+  brandBanner?: React.ReactNode
 }
 
 export function SearchPageClient({
@@ -32,6 +34,7 @@ export function SearchPageClient({
   isMembership,
   countryCode,
   wishlistIds = [],
+  brandBanner = null,
 }: SearchPageClientProps) {
   const router = useRouter()
   const t = useTranslations("search.result")
@@ -115,12 +118,16 @@ export function SearchPageClient({
 
   if (!hasResults) {
     return (
-      <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
+      <div className="flex flex-col">
+        {brandBanner}
+        <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
+      </div>
     )
   }
 
   return (
     <div className="flex flex-col">
+      {brandBanner}
       <div className="mb-6">
         <h1 className="mb-2 text-xl font-bold text-gray-900 md:text-2xl">
           <span className="text-olive-600">{t("title", { keyword })}</span>

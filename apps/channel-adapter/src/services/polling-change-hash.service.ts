@@ -88,6 +88,53 @@ export class PollingChangeHashService {
     return rows.length > 0;
   }
 
+  /**
+   * **처음 본 자원일 때만** 선점한다 — 내용 해시를 비교하지 않는다 (#643).
+   *
+   * `claimChanged` 는 "내용이 바뀌었나" 를 묻는다. 그것이 맞는 질문인 자원(주문 스냅샷)도 있지만,
+   * **관측(observation)** 은 다르다. 관측의 정체성은 채널이 준 안정 키(`eventKey`)이고, 그 키가
+   * 같으면 payload 가 흔들려도 **같은 사건**이다. 네이버 부분취소가 그 반례였다: 형제 라인이
+   * 바뀔 때마다 `cancelledAt` 이 따라 움직여 해시가 달라지고, 같은 취소가 매 주기 재발행돼
+   * Core 에서 `remaining = 0` → `BadRequestException` → DLQ 로 쌓였다.
+   *
+   * `resourceId` 에 이미 `eventKey` 가 들어 있으므로, 여기서는 **행의 존재 자체**가 "이 관측은
+   * 이미 셌다" 는 사실이다:
+   *
+   * ```sql
+   * INSERT … ON CONFLICT (source, resource_type, resource_id) DO NOTHING RETURNING resource_id
+   * ```
+   *
+   * - 행이 없으면 INSERT 성공 → 반환 행 있음 → 선점
+   * - 행이 있으면 DO NOTHING → 반환 행 없음 → 이미 처리된 사실
+   *
+   * 동시 실행에서 뒤늦은 쪽은 유니크 인덱스의 행 잠금에서 대기하다 커밋 후 충돌을 보고 물러난다.
+   * 정확히 한 쪽만 선점한다 — `claimChanged` 와 같은 성질이다.
+   *
+   * `hash` 는 **판단에 쓰이지 않고 기록으로만 남는다**. 그래서 기존 행의 해시 값도 건드리지
+   * 않으며, 이미 관측된 자원의 저장 바이트가 이 변경으로 달라지지 않는다.
+   *
+   * 호출자는 **반드시 발행과 같은 트랜잭션**에서 부를 것.
+   */
+  async claimFirstSeen(
+    source: string,
+    resourceType: string,
+    resourceId: string,
+    hash: string,
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const now = new Date();
+    const exec = (trx: DbTx | DbService<typeof channelAdapterSchema>['db']) =>
+      trx
+        .insert(pollingChangeHashes)
+        .values({ source, resourceType, resourceId, hash, lastSeenAt: now })
+        .onConflictDoNothing({
+          target: [pollingChangeHashes.source, pollingChangeHashes.resourceType, pollingChangeHashes.resourceId],
+        })
+        .returning({ resourceId: pollingChangeHashes.resourceId });
+    const rows = await exec(tx ?? this.db.db);
+    return rows.length > 0;
+  }
+
   async upsert(source: string, resourceType: string, resourceId: string, hash: string, tx?: DbTx): Promise<void> {
     const now = new Date();
     const exec = (trx: DbTx | DbService<typeof channelAdapterSchema>['db']) =>

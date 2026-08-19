@@ -164,17 +164,31 @@ export class NaverOrderClient extends NaverBaseClient {
   // =================================================================
 
   /**
-   * 지정된 기간 내에 변경된 상품 주문 내역을 조회합니다.
-   * @param lastChangedFrom 조회 시작 시각 (ISO 8601 형식)
-   * @returns API 응답 데이터
+   * 지정한 창에서 변경된 상품 주문을 조회한다.
+   *
+   * `lastChangedTo` 를 생략하면 네이버가 **`lastChangedFrom` + 24시간**을 자동 적용한다.
+   * 즉 24시간은 "허용 과거" 가 아니라 **한 번에 볼 수 있는 창의 길이**다.
+   *
+   * 응답은 `limitCount` (최대·기본 300) 에서 잘리고, 남은 항목이 있으면 `data.more` 가 실린다.
+   * 이어받으려면 `more.moreFrom` 을 새 `lastChangedFrom` 으로, `more.moreSequence` 를
+   * `moreSequence` 로 **함께** 넘겨야 같은 일시의 항목이 중복되지 않는다.
    */
-  async getLastChangedStatuses(lastChangedFrom: string): Promise<NaverLastChangedStatusResponse> {
-    const token = await this.authService.getAccessToken(); // 🔑 인증 서비스 사용
+  async getLastChangedStatuses(params: {
+    lastChangedFrom: string;
+    lastChangedTo?: string;
+    moreSequence?: string;
+  }): Promise<NaverLastChangedStatusResponse> {
+    const token = await this.authService.getAccessToken();
     const url = `${this.apiBaseUrl}/pay-order/seller/product-orders/last-changed-statuses`;
     const response = await firstValueFrom(
       this.http.get<NaverLastChangedStatusResponse>(url, {
         headers: { Authorization: `Bearer ${token}` },
-        params: { lastChangedFrom, limitCount: 300 },
+        params: {
+          lastChangedFrom: params.lastChangedFrom,
+          ...(params.lastChangedTo ? { lastChangedTo: params.lastChangedTo } : {}),
+          ...(params.moreSequence ? { moreSequence: params.moreSequence } : {}),
+          limitCount: 300,
+        },
       }),
     );
     return response.data;

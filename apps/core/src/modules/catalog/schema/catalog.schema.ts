@@ -26,6 +26,8 @@ export type CategoryDisplaySettings = {
   showOnMainCategory?: boolean;
   /** 멤버십 회원에게만 노출하는 카테고리 (비가입자에겐 네비게이션·카테고리 페이지 모두 비노출) */
   isVisibleToMembersOnly?: boolean;
+  /** 브랜드 카테고리 여부. 브랜드관 트리에서 그룹(중간 분류)과 브랜드를 구분한다 */
+  isBrand?: boolean;
   pcAndMobile?: boolean;
   mobileOnly?: boolean;
   productDisplayOrder?: 'asc' | 'desc';

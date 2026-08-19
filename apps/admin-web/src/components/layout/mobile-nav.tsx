@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { cn } from '@/lib/utils/ui';
 import { mainMenus, type MainMenu, type MenuItem } from '@/lib/utils/menu';
+import { QuarantineMenuBadge } from './quarantine-menu-badge';
 
 const iconMap: Record<string, React.ElementType> = {
   Users,
@@ -61,19 +62,23 @@ function NavSection({
         onClick={() => item.path && !item.isComingSoon && onNavigate(item.path)}
         disabled={!item.path || item.isComingSoon}
         className={cn(
-          'w-full text-left px-3 py-2 text-sm rounded-md transition-colors',
+          'w-full flex items-center gap-1.5 text-left px-3 py-2 text-sm rounded-md transition-colors',
           depth === 2 && 'pl-6',
           depth === 3 && 'pl-9',
           isActive
             ? 'bg-blue-50 text-blue-600 font-medium'
             : 'text-gray-700 hover:bg-gray-100',
-          (!item.path || item.isComingSoon) && 'opacity-40 cursor-not-allowed hover:bg-transparent',
+          (!item.path || item.isComingSoon) &&
+            'opacity-40 cursor-not-allowed hover:bg-transparent'
         )}
       >
-        {item.title}
-        {item.isComingSoon && (
-          <span className="ml-1.5 text-xs text-gray-400">(준비중)</span>
-        )}
+        <span>
+          {item.title}
+          {item.isComingSoon && (
+            <span className="ml-1.5 text-xs text-gray-400">(준비중)</span>
+          )}
+        </span>
+        {item.hasQuarantineBadge && <QuarantineMenuBadge />}
       </button>
     );
   }
@@ -86,14 +91,14 @@ function NavSection({
           'w-full flex items-center justify-between px-3 py-2 text-sm rounded-md transition-colors',
           depth === 2 && 'pl-6',
           depth === 3 && 'pl-9',
-          'text-gray-500 font-medium hover:bg-gray-50',
+          'text-gray-500 font-medium hover:bg-gray-50'
         )}
       >
         <span>{item.title}</span>
         <ChevronDown
           className={cn(
             'w-3.5 h-3.5 transition-transform shrink-0',
-            expanded && 'rotate-180',
+            expanded && 'rotate-180'
           )}
         />
       </button>
@@ -134,13 +139,18 @@ function TopMenuSection({
         onClick={() => setExpanded((v) => !v)}
         className={cn(
           'w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold transition-colors',
-          isActive ? 'text-blue-600 bg-blue-50/60' : 'text-gray-800 hover:bg-gray-50',
+          isActive
+            ? 'text-blue-600 bg-blue-50/60'
+            : 'text-gray-800 hover:bg-gray-50'
         )}
       >
         {Icon && <Icon className="w-4 h-4 shrink-0" />}
         <span className="flex-1 text-left">{menu.title}</span>
         <ChevronDown
-          className={cn('w-4 h-4 transition-transform shrink-0', expanded && 'rotate-180')}
+          className={cn(
+            'w-4 h-4 transition-transform shrink-0',
+            expanded && 'rotate-180'
+          )}
         />
       </button>
       {expanded && (
@@ -160,7 +170,11 @@ function TopMenuSection({
   );
 }
 
-export function MobileNav({ activeMenu, activeItem, onMenuChange }: MobileNavProps) {
+export function MobileNav({
+  activeMenu,
+  activeItem,
+  onMenuChange,
+}: MobileNavProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -186,7 +200,9 @@ export function MobileNav({ activeMenu, activeItem, onMenuChange }: MobileNavPro
         <SheetContent side="left" className="w-72 p-0 flex flex-col">
           <SheetTitle className="sr-only">네비게이션 메뉴</SheetTitle>
           <div className="px-4 py-4 border-b border-gray-100">
-            <span className="text-lg font-bold text-blue-600 tracking-tight">LCNINE</span>
+            <span className="text-lg font-bold text-blue-600 tracking-tight">
+              LCNINE
+            </span>
           </div>
           <nav className="flex-1 overflow-y-auto">
             {mainMenus.map((menu) => (
