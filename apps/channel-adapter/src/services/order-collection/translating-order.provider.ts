@@ -5,6 +5,7 @@ import {
   ChannelOrderSnapshot,
   ReplayableChannelOrderSource,
   isReplayableSource,
+  isWindowedSource,
 } from './channel-order-source.interface';
 import {
   ChannelOrderProvider,
@@ -34,7 +35,11 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
   }
 
   async fetchOrders(since: Date | null): Promise<FetchOrdersResult> {
-    const snapshots = await this.source.fetchOrders(since);
+    // 닫힌 창을 쓰는 source 만 창의 끝을 보고한다. 열린 질의(Medusa)는 이 갈래를 타지 않으므로
+    // `completedWindowEnd` 가 `undefined` 로 남고, 오케스트레이터의 워터마크 계산이 전과 같다.
+    const { snapshots, completedWindowEnd } = isWindowedSource(this.source)
+      ? await this.source.fetchOrdersInWindow(since)
+      : { snapshots: await this.source.fetchOrders(since), completedWindowEnd: undefined };
 
     const orders: OrderFetchItem[] = [];
     const failures: OrderCollectionFailureItem[] = [];
@@ -50,7 +55,12 @@ export class TranslatingOrderProvider implements ChannelOrderProvider {
       }
     }
 
-    return { orders, failures, lifecycleEvents };
+    return {
+      orders,
+      failures,
+      lifecycleEvents,
+      ...(completedWindowEnd !== undefined ? { completedWindowEnd } : {}),
+    };
   }
 
   protected async translateOne(snapshot: ChannelOrderSnapshot): Promise<OrderFetchOutcome> {

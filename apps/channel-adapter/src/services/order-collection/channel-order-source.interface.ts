@@ -45,6 +45,12 @@ export interface ChannelOrderLineSnapshot {
   unitPrice: number;
   fulfillmentKind?: 'physical' | 'digital';
   requiresShipping?: boolean;
+  /**
+   * 채널에서 이미 취소된 라인. **스냅샷에서 빼지 않고 표시만 한다** — 빼면 변경 해시가 달라져
+   * 부분취소가 `collected_order_modification_not_accepted` 로 오격리되고, 그 사유는 replay 가
+   * 거부한다 (`order-poller.orchestrator.ts:271`).
+   */
+  cancelled?: boolean;
 }
 
 interface LifecycleObservationBase {
@@ -77,6 +83,7 @@ export interface ChannelOrderSnapshot {
   walletIntentId?: string;
   lines: ChannelOrderLineSnapshot[];
   amounts: {
+    /** **계약 총액** — 살아있는 라인만. Core `OrderCreated.totalAmount` 가 이 값이다. */
     total: number;
     subtotal: number;
     shipping: number;
@@ -84,6 +91,18 @@ export interface ChannelOrderSnapshot {
     /** 포인트는 할인이 아니라 결제수단이라 `total` 에 포함돼 있다. */
     points?: number;
     currency: string;
+    /**
+     * **해시 총액** — 취소된 라인까지 포함한 전 라인 합계. 계약 총액과 목적이 다르다.
+     *
+     * `changes.totalAmount` 는 `polling_change_hashes` 의 입력이라 **취소로 값이 움직이면
+     * 안 된다** — 움직이면 부분취소가 `collected_order_modification_not_accepted` 로 오격리되고
+     * 그 사유는 replay 가 거부한다(`order-poller.orchestrator.ts` 의 `not_replayable`).
+     * `total` 은 반대로 취소분을 빼야 Core 합계가 부풀지 않는다. 그래서 두 값을 나눈다.
+     *
+     * **선택 필드인 것이 요점이다.** Medusa 는 `cancelled` 라인 개념이 없어 이 값을 세팅하지
+     * 않고, translator 가 `total` 로 폴백하므로 Medusa 의 해시 입력이 바이트 단위로 그대로다.
+     */
+    allLinesTotal?: number;
   };
   shippingAddress: ShippingAddress;
   createdAt: string;
@@ -104,4 +123,32 @@ export interface ReplayableChannelOrderSource extends ChannelOrderSource {
 
 export function isReplayableSource(source: ChannelOrderSource): source is ReplayableChannelOrderSource {
   return typeof (source as ReplayableChannelOrderSource).fetchOrder === 'function';
+}
+
+/**
+ * **닫힌 조회 창**을 쓰는 source. 워터마크가 항목 없이도 전진할 수 있게 창의 끝을 함께 보고한다.
+ *
+ * 왜 필요한가: 네이버 변경 피드는 `[since, since+24h]` 로 창이 닫힌다. 그 창 안에 아무 변경도
+ * 없으면 항목이 0건이고, 오케스트레이터의 워터마크는 `null` 로 남는다. `sync-status.service.ts`
+ * 의 `recordSyncComplete` 는 `watermark === null` 이면 `lastSyncAt` 을 **갱신하지 않으므로**
+ * 다음 주기가 같은 닫힌 창을 다시 묻는다 — 조용한 24시간이 수집을 영구히 정지시킨다.
+ *
+ * 창이 `now` 에서 끝났다면(아직 열려 있다면) `null` 을 보고한다. 그 경우는 창이 시간과 함께
+ * 자라므로 영구 정지가 아니고, 성급히 전진시키면 경계 근처 변경을 잃는다.
+ *
+ * Medusa 는 `since` 이후 전부를 훑는 열린 질의라 이 계약을 구현하지 않는다 — 즉 이 필드는
+ * Medusa 경로에 존재하지 않고, 오케스트레이터도 그 경로에서는 예전 그대로 동작한다.
+ */
+export interface WindowedFetchResult {
+  snapshots: ChannelOrderSnapshot[];
+  /** 방금 **끝까지 훑은** 닫힌 창의 끝. 창이 열려 있거나 페이징이 잘렸으면 `null`. */
+  completedWindowEnd: Date | null;
+}
+
+export interface WindowedChannelOrderSource extends ChannelOrderSource {
+  fetchOrdersInWindow(since: Date | null): Promise<WindowedFetchResult>;
+}
+
+export function isWindowedSource(source: ChannelOrderSource): source is WindowedChannelOrderSource {
+  return typeof (source as WindowedChannelOrderSource).fetchOrdersInWindow === 'function';
 }

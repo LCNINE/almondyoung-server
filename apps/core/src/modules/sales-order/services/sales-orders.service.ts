@@ -784,6 +784,41 @@ export class SalesOrdersService {
     });
   }
 
+  /**
+   * 채널이 소유한 라인 식별자 → 우리 `sales_order_lines.id`.
+   *
+   * `(salesOrderId, channelOrderItemId)` 부분 unique 인덱스가 있으므로
+   * (`inventory.schema.ts:1343`) 주문 안에서 단건 확정이다.
+   */
+  async findLineIdsByChannelOrderItemIds(
+    salesOrderId: string,
+    channelOrderItemIds: string[],
+    tx?: DbTx,
+  ): Promise<Map<string, string>> {
+    if (channelOrderItemIds.length === 0) return new Map();
+
+    return this.db.run(async (trx) => {
+      const rows = await trx
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(
+          and(
+            eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId),
+            inArray(wmsTables.salesOrderLines.channelOrderItemId, channelOrderItemIds),
+          ),
+        );
+
+      return new Map(
+        rows
+          .filter((row): row is { id: string; channelOrderItemId: string } => row.channelOrderItemId !== null)
+          .map((row) => [row.channelOrderItemId, row.id]),
+      );
+    }, tx);
+  }
+
   async list(params: SalesOrderFilterDto, tx?: DbTx) {
     return this.db.run(async (trx) => {
       const S = wmsTables;

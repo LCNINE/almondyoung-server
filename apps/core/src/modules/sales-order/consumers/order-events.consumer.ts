@@ -90,6 +90,58 @@ export class OrderEventsConsumer {
     return byPrimaryKey?.id ?? null;
   }
 
+  /**
+   * 채널 라인 범위를 Core 라인 범위로 옮긴다.
+   *
+   * **없으면 `undefined` 를 돌려준다** — Core 는 `lines` 유무로 전체/부분을 가르므로
+   * 빈 배열을 넘기면 `BadRequestException` 이 된다 (`sales-orders.service.ts:436`).
+   *
+   * **해석되지 않는 라인은 skip 하지 throw 하지 않는다.** 판매주문의 계약은 수락(accept) 이후
+   * 불변이라, 그 주문에 라인이 없다는 것은 애초 수락된 적이 없다는 뜻이다 — 취소할 대상 자체가
+   * 없다. 대표 사례: 최초 수집 시점에 이미 취소된 라인은 번역기가 `items` 에서 빼버려 Core 가
+   * 그 라인을 만든 적이 없는데, source 는 그 라인을 지목하는 부분취소 관측을 그대로 낸다.
+   * 여기서 NotFound 로 throw 하면 non-retryable 이라 즉시 DLQ 로 가고, 재시도해도 영원히
+   * 같은 결과다 — 조용히 넘기는 것이 맞다.
+   *
+   * `cancelledLines` 가 있는데 **단 하나도 해석되지 않으면** `null` 을 돌려준다 — 이걸
+   * `undefined`(= 필드 자체가 없어 전체취소) 로 착각하면 안 되므로 구분한다. 호출부는 `null` 을
+   * "취소할 것이 없는 no-op" 으로 다뤄야 하고, 이때 전체취소로 대체 처리해서는 안 된다.
+   */
+  private async resolveCancelledLines(
+    salesOrderId: string,
+    cancelledLines: Array<{ channelOrderItemId: string; quantity: number }> | undefined,
+    tx: DbTx,
+  ): Promise<Array<{ salesOrderLineId: string; quantity: number }> | undefined | null> {
+    if (!cancelledLines || cancelledLines.length === 0) return undefined;
+
+    const channelOrderItemIds = cancelledLines.map((line) => line.channelOrderItemId);
+    const idByChannelItem = await this.salesOrdersService.findLineIdsByChannelOrderItemIds(
+      salesOrderId,
+      channelOrderItemIds,
+      tx,
+    );
+
+    const resolvedLines: Array<{ salesOrderLineId: string; quantity: number }> = [];
+    const unresolved: string[] = [];
+    for (const line of cancelledLines) {
+      const salesOrderLineId = idByChannelItem.get(line.channelOrderItemId);
+      if (!salesOrderLineId) {
+        unresolved.push(line.channelOrderItemId);
+        continue;
+      }
+      resolvedLines.push({ salesOrderLineId, quantity: line.quantity });
+    }
+
+    if (unresolved.length > 0) {
+      this.logger.warn(
+        `[OrderCancelled] Skipping unresolved cancelled lines for salesOrder=${salesOrderId}: ${unresolved.join(', ')}`,
+      );
+    }
+
+    if (resolvedLines.length === 0) return null;
+    return resolvedLines;
+  }
+
   @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({ maxRetries: 5, backoff: 'exponential', initialDelayMs: 1000, maxDelayMs: 15000 })
   async handleOrderCreated(
@@ -170,6 +222,14 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
+        const lines = await this.resolveCancelledLines(salesOrderId, payload.cancelledLines, tx);
+        if (lines === null) {
+          this.logger.log(
+            `[OrderCancelled] No resolvable cancelled lines for salesOrder=${salesOrderId}, skipping as no-op`,
+          );
+          return;
+        }
+
         await this.salesOrdersService.cancel(
           salesOrderId,
           {
@@ -177,6 +237,7 @@ export class OrderEventsConsumer {
             reasonDetail: payload.reasonDetail,
             cancelledBy: payload.cancelledBy,
             occurredAt: payload.cancelledAt,
+            ...(lines ? { lines } : {}),
             metadata: {
               refundRequired: payload.refundRequired,
               refundAmount: payload.refundAmount,

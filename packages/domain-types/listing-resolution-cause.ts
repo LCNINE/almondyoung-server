@@ -48,4 +48,10 @@ export function toListingResolutionCause(value: unknown): ListingResolutionCause
 export interface AffectedLine {
   lineId: string;
   cause: ListingResolutionCause;
+  /**
+   * 해석에 **실제로 쓴** 조회 키. 운영 화면의 "채널상품ID" 프리필이 이 값을 쓴다.
+   * 원본(`raw_order`)을 프런트가 파싱하지 않게 하려는 것이고, 그 덕에 "운영자가 등록하는 값"과
+   * "수집이 조회한 값"이 구조적으로 같아진다. 옛 행에는 없으므로 선택 필드다.
+   */
+  channelProductId?: string;
 }
