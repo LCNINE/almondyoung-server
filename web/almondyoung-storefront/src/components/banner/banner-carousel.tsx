@@ -63,14 +63,14 @@ export function HeroBannerCarousel({
     api?.scrollNext()
   }, [api])
 
-  const BannerImage = ({ banner }: { banner: Banner }) => (
+  const BannerImage = ({ banner, eager }: { banner: Banner; eager: boolean }) => (
     <>
       {/* PC 이미지 - md(768px) 이상에서만 표시 */}
       <Image
         src={getThumbnailUrl(banner.pcImageFileId)}
         alt={banner.title}
         fill
-        priority
+        priority={eager}
         sizes="(max-width: 767px) 0px, 100vw"
         className="hidden object-cover md:block"
       />
@@ -79,7 +79,7 @@ export function HeroBannerCarousel({
         src={getThumbnailUrl(banner.mobileImageFileId)}
         alt={banner.title}
         fill
-        priority
+        priority={eager}
         sizes="(max-width: 767px) 100vw, 0px"
         className="block object-cover md:hidden"
       />
@@ -108,7 +108,7 @@ export function HeroBannerCarousel({
         className="w-full"
       >
         <CarouselContent className="ml-0">
-          {banners.map((banner) => (
+          {banners.map((banner, index) => (
             <CarouselItem key={banner.id} className="pl-0">
               <div
                 className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
@@ -132,10 +132,10 @@ export function HeroBannerCarousel({
                         : undefined
                     }
                   >
-                    <BannerImage banner={banner} />
+                    <BannerImage banner={banner} eager={index === 0} />
                   </Link>
                 ) : (
-                  <BannerImage banner={banner} />
+                  <BannerImage banner={banner} eager={index === 0} />
                 )}
               </div>
             </CarouselItem>
