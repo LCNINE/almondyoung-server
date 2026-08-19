@@ -862,45 +862,6 @@ export const useBulkUpdatePolicy = () => {
   });
 };
 
-// ===== 승인 =====
-
-export const useSubmitApproval = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (masterId: string) => products.approval.submitApproval(masterId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
-    },
-  });
-};
-
-export const useApprove = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ masterId, comment }: { masterId: string; comment?: string }) =>
-      products.approval.approve(masterId, comment),
-    onSuccess: (_, { masterId }) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.approvalHistory(masterId) });
-    },
-  });
-};
-
-export const useReject = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ masterId, reason }: { masterId: string; reason: string }) =>
-      products.approval.reject(masterId, reason),
-    onSuccess: (_, { masterId }) => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.pendingApprovals });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.approvalHistory(masterId) });
-    },
-  });
-};
-
 // ===== 공지사항 뮤테이션 =====
 
 export const useCreateNotice = () => {

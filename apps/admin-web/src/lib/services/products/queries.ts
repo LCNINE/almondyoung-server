@@ -537,25 +537,6 @@ export const useProductAuditHistory = (masterId: string) => {
   });
 };
 
-// ===== 승인 =====
-
-export const usePendingApprovals = () => {
-  return useQuery({
-    queryKey: productQueryKeys.pendingApprovals,
-    queryFn: () => products.approval.getPending(),
-    staleTime: 30 * 1000,
-  });
-};
-
-export const useApprovalHistory = (masterId: string) => {
-  return useQuery({
-    queryKey: productQueryKeys.approvalHistory(masterId),
-    queryFn: () => products.approval.getApprovalHistory(masterId),
-    enabled: !!masterId,
-    staleTime: 30 * 1000,
-  });
-};
-
 // ===== 공지사항 관련 쿼리 =====
 
 export const useNotices = (query?: NoticeListQuery) => {

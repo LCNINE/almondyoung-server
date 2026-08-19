@@ -1188,35 +1188,6 @@ export interface ProductAuditHistoryItemDto extends AuditLogItemDto {
   changes?: Record<string, { old: unknown; new: unknown }> | null;
 }
 
-// ===== 승인 관련 =====
-
-export interface PendingApprovalDto {
-  id: string;
-  name: string;
-  approvalStatus: string;
-  submittedAt?: string;
-  submittedBy?: string;
-}
-
-export interface ApprovalHistoryItemDto {
-  id: string;
-  productId: string;
-  action: 'submit' | 'approve' | 'reject';
-  actorId: string;
-  comment?: string;
-  reason?: string;
-  createdAt: string;
-}
-
-export interface ApproveProductDto {
-  comment?: string;
-}
-
-export interface RejectProductDto {
-  reason: string;
-}
-
-
 // ===== 엑셀 내보내기 =====
 
 export interface ExportColumnDto {

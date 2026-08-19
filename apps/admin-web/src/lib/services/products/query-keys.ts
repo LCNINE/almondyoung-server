@@ -153,11 +153,6 @@ export const productQueryKeys = {
     ['audit', 'by-action', action, limit] as const,
   auditProduct: (masterId: string) => ['audit', 'product', masterId] as const,
 
-  // 승인 관련
-  pendingApprovals: ['approval', 'pending'] as const,
-  approvalHistory: (masterId: string) =>
-    ['approval', 'history', masterId] as const,
-
   // 프리필 양식(대량등록 재출력) 관련
   formExports: ['product-forms'] as const,
   formExport: (exportId: string) =>
