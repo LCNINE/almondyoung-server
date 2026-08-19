@@ -65,3 +65,39 @@ describe('ORDER_STREAM external line identity', () => {
     expect(() => schema.parse(payload([item]))).toThrow();
   });
 });
+
+describe('OrderCancelled 계약', () => {
+  const schema = ORDER_STREAM.events.OrderCancelled.schema!;
+
+  const base = {
+    orderId: 'ord_1',
+    reason: 'CUSTOMER_REQUEST' as const,
+    cancelledBy: 'naver',
+    cancelledAt: '2026-08-19T00:00:00.000Z',
+    refundRequired: true,
+  };
+
+  it('cancelledLines 없이도 통과한다 (전체 취소)', () => {
+    expect(schema.safeParse(base).success).toBe(true);
+  });
+
+  it('cancelledLines 가 있으면 통과한다 (부분 취소)', () => {
+    const result = schema.safeParse({
+      ...base,
+      cancelledLines: [{ channelOrderItemId: '2026081900001', quantity: 2 }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('빈 배열은 거부한다 — 전체 취소는 필드를 생략해서 표현한다', () => {
+    expect(schema.safeParse({ ...base, cancelledLines: [] }).success).toBe(false);
+  });
+
+  it('수량 0 이하를 거부한다', () => {
+    const result = schema.safeParse({
+      ...base,
+      cancelledLines: [{ channelOrderItemId: '2026081900001', quantity: 0 }],
+    });
+    expect(result.success).toBe(false);
+  });
+});
