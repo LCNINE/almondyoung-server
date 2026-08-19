@@ -1,4 +1,9 @@
-import { actionForCause, canReplay, replayResultMessage } from './guidance';
+import {
+  actionForCause,
+  canReplay,
+  reasonLabel,
+  replayResultMessage,
+} from './guidance';
 
 describe('actionForCause', () => {
   it('리스팅이 없으면 매핑 생성으로 안내한다', () => {
@@ -45,17 +50,47 @@ describe('canReplay', () => {
 });
 
 describe('replayResultMessage', () => {
-  it('여섯 가지 결과를 모두 사람 말로 옮긴다', () => {
+  it('일곱 가지 결과를 모두 사람 말로 옮긴다 (OrderPollerOrchestrator.replayFailure 의 전체 어휘)', () => {
     const statuses = [
       'replayed',
       'already_processed',
       'still_quarantined',
       'closed_terminal',
       'closed_already_collected',
+      'not_found_or_not_payment_accepted',
       'not_replayable',
     ] as const;
     for (const status of statuses) {
       expect(replayResultMessage(status).length).toBeGreaterThan(0);
     }
+  });
+
+  it('채널에서 주문을 찾지 못하거나 결제완료가 아니면 그 사실을 그대로 말한다', () => {
+    const message = replayResultMessage('not_found_or_not_payment_accepted');
+    expect(message).toContain('찾을 수 없');
+  });
+
+  it('모르는 값이 와도 폴백 문구를 준다', () => {
+    expect(replayResultMessage('some_unknown_status')).toBe(
+      '알 수 없는 결과입니다.'
+    );
+  });
+});
+
+describe('reasonLabel', () => {
+  it('식별 실패 사유를 사람 말로 옮긴다', () => {
+    expect(reasonLabel('channel_product_identification_failed')).toBe(
+      '채널상품 식별 실패'
+    );
+  });
+
+  it('수집 후 변경 사유를 사람 말로 옮긴다', () => {
+    expect(reasonLabel('collected_order_modification_not_accepted')).toBe(
+      '수집 후 변경(재처리 불가)'
+    );
+  });
+
+  it('모르는 값은 원본을 그대로 보여준다', () => {
+    expect(reasonLabel('weird_new_reason')).toBe('weird_new_reason');
   });
 });

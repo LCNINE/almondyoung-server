@@ -9,6 +9,12 @@ export interface MenuItem {
   isComingSoon?: boolean;
   path?: string;
   requireRole?: string[];
+  /**
+   * 미매핑 주문(채널 수집 실패 격리) 건수를 메뉴 라벨 옆에 배지로 그린다.
+   * 실제 카운트 조회는 렌더 컴포넌트(header.tsx/mobile-nav.tsx)의 몫이다 —
+   * 이 파일은 순수 데이터이고 훅을 가질 수 없다.
+   */
+  hasQuarantineBadge?: boolean;
 }
 
 export interface MainMenu {
@@ -235,6 +241,7 @@ export const mainMenus: MainMenu[] = [
         id: 'channel-listings',
         title: '채널 노출 관리',
         path: '/mall/channel-listings',
+        hasQuarantineBadge: true,
       },
       {
         id: 'channel-categories',

@@ -16,6 +16,7 @@ export type ReplayStatus =
   | 'still_quarantined'
   | 'closed_terminal'
   | 'closed_already_collected'
+  | 'not_found_or_not_payment_accepted'
   | 'not_replayable';
 
 export interface CauseGuidance {
@@ -96,6 +97,8 @@ const REPLAY_MESSAGES: Record<ReplayStatus, string> = {
   closed_terminal:
     '채널에서 취소·환불되어 더 이상 수집할 수 없습니다. 격리를 닫았습니다.',
   closed_already_collected: '이미 판매주문이 있어 격리를 닫았습니다.',
+  not_found_or_not_payment_accepted:
+    '채널에서 주문을 찾을 수 없거나 결제완료 상태가 아닙니다. 수집할 것이 없습니다.',
   not_replayable:
     '수집 후 변경 건이라 재처리할 수 없습니다. CS/주문정정으로 처리하세요.',
 };
@@ -106,4 +109,18 @@ const REPLAY_MESSAGES: Record<ReplayStatus, string> = {
  */
 export function replayResultMessage(status: string): string {
   return REPLAY_MESSAGES[status as ReplayStatus] ?? '알 수 없는 결과입니다.';
+}
+
+const REASON_LABELS: Record<QuarantineReason, string> = {
+  channel_product_identification_failed: '채널상품 식별 실패',
+  collected_order_modification_not_accepted: '수집 후 변경(재처리 불가)',
+};
+
+/**
+ * 격리 목록의 "사유" 컬럼 표시용 라벨. 서버 코드값을 그대로 렌더하면 운영자가 못 읽으므로
+ * 여기서 옮긴다 — `replayResultMessage` 와 같은 이유로 `string` 을 그대로 받고 모르는 값은
+ * 원본을 그대로 보여준다(격리를 조사할 단서를 잃지 않기 위함).
+ */
+export function reasonLabel(reason: string): string {
+  return REASON_LABELS[reason as QuarantineReason] ?? reason;
 }
