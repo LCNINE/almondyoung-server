@@ -1,7 +1,11 @@
-import DOMPurify from 'isomorphic-dompurify';
+import sanitize from 'sanitize-html';
 
 // 공지 본문 HTML 을 안전하게 정제한다. 어드민 보기 화면에서도 dangerouslySetInnerHTML 을
 // 쓰므로 멀티 관리자 환경의 stored XSS 에 대비해 sanitize 한다. (storefront 와 동일 정책)
+//
+// DOMPurify(isomorphic-dompurify) 는 서버에서 jsdom 을 요구하는데, jsdom 의 하위 의존성이
+// ESM 으로 올라갈 때마다 Lambda(CJS) 런타임이 ERR_REQUIRE_ESM 으로 죽는다. sanitize-html 은
+// htmlparser2 기반이라 DOM 구현이 필요 없다.
 const ALLOWED_TAGS = [
   'p',
   'br',
@@ -34,20 +38,18 @@ const ALLOWED_ATTR = [
   'height',
 ];
 
-// 외부 링크에 rel/target 강제 (모듈 로드 시 1회 등록 — DOMPurify 싱글톤)
-DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName === 'A' && node.hasAttribute('href')) {
-    node.setAttribute('target', '_blank');
-    node.setAttribute('rel', 'noopener noreferrer');
-  }
-});
-
 export function sanitizeNoticeHtml(html: string): string {
-  // ALLOWED_URI_REGEXP 는 지정하지 않는다 — 커스텀 정규식을 주면 DOMPurify 가 width 같은
-  // 비-URI 숫자 속성값까지 그 정규식으로 검사해 제거한다(width="154" 가 사라지는 원인).
-  // DOMPurify 기본값이 이미 javascript:/vbscript: 등 위험 스킴을 차단한다.
-  return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS,
-    ALLOWED_ATTR,
+  return sanitize(html, {
+    allowedTags: ALLOWED_TAGS,
+    allowedAttributes: { '*': ALLOWED_ATTR },
+    allowedSchemes: ['http', 'https', 'mailto', 'tel'],
+    allowedSchemesByTag: { img: ['http', 'https', 'data'] },
+    // 외부 링크에 rel/target 강제
+    transformTags: {
+      a: sanitize.simpleTransform('a', {
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      }),
+    },
   });
 }

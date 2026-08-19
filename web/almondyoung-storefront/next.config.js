@@ -22,8 +22,6 @@ const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || ".next",
   reactStrictMode: true,
   transpilePackages: ["@packages/web-observability"],
-  // jsdom 은 번들에 넣으면 parse5 → entities 서브패스 해석이 깨진다. 런타임 require 로 남긴다.
-  serverExternalPackages: ["isomorphic-dompurify", "jsdom"],
   experimental: {
     // 동적 페이지의 라우터 캐시 유효 시간 (초)
     // 뒤로 가기 시 loading.tsx 깜빡임 방지
@@ -54,9 +52,12 @@ const nextConfig = {
   },
 
   webpack(config) {
+    // 루트 밖의 @packages/* 가 이 앱의 node_modules 를 찾을 수 있게 폴백으로 더한다.
+    // 앞에 두면 안 된다 — 최상위 node_modules 가 중첩 버전을 가려서, 하위 의존성이
+    // 서브패스 export 를 쓰는 패키지(htmlparser2 → entities/decode)가 해석에 실패한다.
     config.resolve.modules = [
-      path.resolve(__dirname, "node_modules"),
       ...(config.resolve.modules || ["node_modules"]),
+      path.resolve(__dirname, "node_modules"),
     ]
 
     // SVG를 React 컴포넌트로 import할 수 있도록 설정
