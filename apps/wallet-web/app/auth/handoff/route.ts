@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { exchangeHandoffForTokens } from '@/lib/auth/oidc-client';
-import { writeSessionCookies } from '@/lib/auth/session-cookies';
+import { writeCheckoutHandoffCookies, writeSessionCookies } from '@/lib/auth/session-cookies';
 
 /**
  * storefront → wallet-web 결제 진입 핸드오프 착지점.
@@ -35,6 +35,57 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const response = NextResponse.redirect(new URL(redirectTo, origin));
   writeSessionCookies(response.cookies, tokens);
   return response;
+}
+
+/**
+ * 체크아웃 핸드오프 착지점 (POST).
+ *
+ * storefront 브릿지(`/{cc}/checkout`)가 자동제출 폼으로 보낸다. GET 과 달리 medusa 고객 토큰과
+ * 카트 id 를 같이 받아야 하는데, 이 둘을 쿼리스트링에 실으면 브라우저 히스토리·서버 액세스 로그·
+ * Referer 에 남는다. 폼 본문으로 받으면 그 노출이 없다.
+ *
+ * `medusa_jwt` 는 여기서 검증하지 않는다 — wallet-web 은 Medusa 의 서명키를 모르고, 알 필요도
+ * 없다. Bearer 로 그대로 전달하면 Medusa 가 검증하고 위조면 401 을 준다. 세션 발급 권한 자체는
+ * `h`(120초 1회용, confidential client 시크릿이 있어야 교환 가능)가 통제한다.
+ */
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const origin = request.nextUrl.origin;
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return ensureFallback(origin, CHECKOUT_PATH);
+  }
+
+  const handoffToken = readField(form, 'h');
+  if (!handoffToken) {
+    return ensureFallback(origin, CHECKOUT_PATH);
+  }
+
+  let tokens;
+  try {
+    tokens = await exchangeHandoffForTokens(handoffToken);
+  } catch {
+    return ensureFallback(origin, CHECKOUT_PATH);
+  }
+
+  // 303: 이 응답 이후 히스토리에 남는 것은 GET 이다. 뒤로가기·새로고침이 POST 를 재제출하지 않는다.
+  const response = NextResponse.redirect(new URL(CHECKOUT_PATH, origin), 303);
+  writeSessionCookies(response.cookies, tokens);
+  writeCheckoutHandoffCookies(response.cookies, {
+    medusaJwt: readField(form, 'medusa_jwt'),
+    cartId: readField(form, 'cart_id'),
+    region: readField(form, 'region') || 'kr',
+  });
+  return response;
+}
+
+const CHECKOUT_PATH = '/checkout';
+
+function readField(form: FormData, name: string): string {
+  const value = form.get(name);
+  return typeof value === 'string' ? value : '';
 }
 
 function ensureFallback(origin: string, redirectTo: string): NextResponse {
