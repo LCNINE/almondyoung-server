@@ -44,7 +44,14 @@ export class ChannelOrderTranslator {
     const unidentified = snapshot.lines.flatMap((line, index) => {
       if (line.cancelled) return [];
       const resolution = resolutions[index];
-      return resolution.identified ? [] : [{ lineId: line.channelOrderItemId, cause: resolution.cause }];
+      if (resolution.identified) return [];
+      return [
+        {
+          lineId: line.channelOrderItemId,
+          cause: resolution.cause,
+          ...(line.channelProductId ? { channelProductId: line.channelProductId } : {}),
+        },
+      ];
     });
 
     if (eligibleForOrderCreation && unidentified.length > 0) {

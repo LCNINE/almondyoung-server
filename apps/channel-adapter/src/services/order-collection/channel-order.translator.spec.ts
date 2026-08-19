@@ -101,7 +101,34 @@ describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () =
     });
     // resolver 가 준 사유(#674)가 라인 ID 와 정확히 짝지어 실려야 한다 — 순서가 바뀌거나
     // 필드가 뒤바뀌면(lineId↔cause) 여기서 잡힌다.
-    expect(outcome.failure.affectedLines).toEqual([{ lineId: 'naver-product-order-1', cause: 'listing_not_found' }]);
+    expect(outcome.failure.affectedLines).toEqual([
+      { lineId: 'naver-product-order-1', cause: 'listing_not_found', channelProductId: 'naver-product-1' },
+    ]);
+  });
+
+  it('격리 행에 해석에 쓴 채널상품ID 를 함께 남긴다 — 화면 프리필의 정본이다', async () => {
+    const { translator } = makeTranslator(null);
+
+    const { outcome } = await translator.translate(
+      'naver',
+      makeSnapshot({
+        lines: [
+          {
+            channelOrderItemId: 'po-1',
+            channelProductId: '13700000002',
+            productName: '미매핑 상품',
+            quantity: 1,
+            unitPrice: 5000,
+          },
+        ],
+      }),
+    );
+
+    expect(outcome.kind).toBe('failure');
+    if (outcome.kind !== 'failure') return;
+    expect(outcome.failure.affectedLines).toEqual([
+      { lineId: 'po-1', cause: 'listing_not_found', channelProductId: '13700000002' },
+    ]);
   });
 
   it('여러 라인 중 일부만 미식별이면 그 라인의 사유만, Core 가 준 값 그대로 싣는다', async () => {
@@ -143,7 +170,9 @@ describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () =
     if (outcome.kind !== 'failure') throw new Error('unreachable');
     // 식별된 첫 라인은 빠지고, 미식별인 두 번째 라인만 — Core 가 준 cause 그대로 — 남아야 한다.
     expect(outcome.failure.affectedLineIds).toEqual(['naver-product-order-2']);
-    expect(outcome.failure.affectedLines).toEqual([{ lineId: 'naver-product-order-2', cause: 'variant_inactive' }]);
+    expect(outcome.failure.affectedLines).toEqual([
+      { lineId: 'naver-product-order-2', cause: 'variant_inactive', channelProductId: 'naver-product-2' },
+    ]);
   });
 
   it('이미 종결된 스냅샷은 매핑이 없어도 격리하지 않는다 — 판매주문을 만들지 않기 때문', async () => {
