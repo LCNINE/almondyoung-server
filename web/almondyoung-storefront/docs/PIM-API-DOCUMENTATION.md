@@ -536,13 +536,22 @@ userId: 작업자 ID
 ```json
 {
   "totalProducts": 1234,
-  "todayRegistered": 12,
-  "byStatus": {
-    "active": 800,
-    "draft": 200,
-    "inactive": 234
-  },
-  "byApprovalStatus": {...}
+  "createdToday": 12,
+  "outOfStock": 0,
+  "byStatus": [
+    {
+      "status": "active",
+      "count": 800
+    },
+    {
+      "status": "draft",
+      "count": 200
+    },
+    {
+      "status": "inactive",
+      "count": 234
+    }
+  ]
 }
 ```
 
