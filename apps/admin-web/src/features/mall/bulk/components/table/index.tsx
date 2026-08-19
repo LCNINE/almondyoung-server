@@ -62,13 +62,6 @@ export function BulkTable() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setModalAction('approvalStatus')}
-          >
-            승인 상태 변경
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
             onClick={() => setModalAction('price')}
           >
             가격 변경

@@ -33,7 +33,6 @@ import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id
 
 export type BulkActionType =
   | 'status'
-  | 'approvalStatus'
   | 'price'
   | 'brand'
   | 'delete'
@@ -65,7 +64,6 @@ export function BulkActionModal({
   onSuccess,
 }: Props) {
   const [status, setStatus] = useState('');
-  const [approvalStatus, setApprovalStatus] = useState('');
   const [basePrice, setBasePrice] = useState('');
   const [brand, setBrand] = useState('');
   const [failedItems, setFailedItems] = useState<BulkUpdateFailureDto[]>([]);
@@ -87,8 +85,6 @@ export function BulkActionModal({
     switch (action) {
       case 'status':
         return '판매 상태 일괄 변경';
-      case 'approvalStatus':
-        return '승인 상태 일괄 변경';
       case 'price':
         return '판매가 일괄 변경';
       case 'brand':
@@ -117,15 +113,6 @@ export function BulkActionModal({
           productIds: selectedIds,
           ...(action === 'status' && status
             ? { status: status as 'active' | 'inactive' }
-            : {}),
-          ...(action === 'approvalStatus' && approvalStatus
-            ? {
-                approvalStatus: approvalStatus as
-                  | 'draft'
-                  | 'pending'
-                  | 'approved'
-                  | 'rejected',
-              }
             : {}),
           ...(action === 'price' && basePrice
             ? { basePrice: Number(basePrice) }
@@ -202,23 +189,6 @@ export function BulkActionModal({
           )}
 
           <BulkFailureList items={failedItems} />
-
-          {action === 'approvalStatus' && (
-            <div className="space-y-2">
-              <Label>승인 상태</Label>
-              <Select value={approvalStatus} onValueChange={setApprovalStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="승인 상태 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft">임시저장</SelectItem>
-                  <SelectItem value="pending">승인 대기</SelectItem>
-                  <SelectItem value="approved">승인됨</SelectItem>
-                  <SelectItem value="rejected">거부됨</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           {action === 'price' && (
             <div className="space-y-2">

@@ -22,7 +22,6 @@ export const useProductsListTableQuery = ({
     'status',
     'mode',
     'productType',
-    'approvalStatus',
     'createdAt',
     'createdBy',
     'supplierId',
@@ -40,7 +39,6 @@ export const useProductsListTableQuery = ({
     status,
     mode,
     productType,
-    approvalStatus,
     createdAt,
     createdBy,
     supplierId,
@@ -75,13 +73,6 @@ export const useProductsListTableQuery = ({
     productType:
       productType === 'regular_sale' || productType === 'limited_edition'
         ? productType
-        : undefined,
-    approvalStatus:
-      approvalStatus === 'draft' ||
-      approvalStatus === 'pending' ||
-      approvalStatus === 'approved' ||
-      approvalStatus === 'rejected'
-        ? approvalStatus
         : undefined,
     createdBy: createdBy || undefined,
     supplierId: supplierId || undefined,

@@ -69,17 +69,6 @@ export function useProductsListTableFilters(): Filter[] {
       ],
     },
     {
-      key: 'approvalStatus',
-      label: '승인 상태',
-      type: 'select',
-      options: [
-        { label: '임시저장', value: 'draft' },
-        { label: '승인대기', value: 'pending' },
-        { label: '승인완료', value: 'approved' },
-        { label: '반려', value: 'rejected' },
-      ],
-    },
-    {
       key: 'createdAt',
       label: '등록일',
       type: 'date',
