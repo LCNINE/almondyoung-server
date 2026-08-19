@@ -11,6 +11,7 @@ import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { MembershipServiceClient } from '../../services/membership-service.client';
 import { EventChainService, generateMessageId } from '@app/events';
+import { SlowRetryInboxError } from './slow-retry.error';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type {
   CategoryChangedPayload,
@@ -104,6 +105,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly processingLeaseMs: number;
   private readonly shutdownDrainMs: number;
   private readonly maxRetries: number;
+  private readonly slowMaxRetries: number;
   private readonly handlerTimeoutMs: number;
 
   constructor(
@@ -122,6 +124,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     this.processingLeaseMs = this.readPositiveIntConfig('INBOX_PROCESSING_LEASE_MS', 15 * 60 * 1000);
     this.shutdownDrainMs = this.readNonNegativeIntConfig('INBOX_SHUTDOWN_DRAIN_MS', 25000);
     this.maxRetries = this.readPositiveIntConfig('INBOX_MAX_RETRIES', 5);
+    this.slowMaxRetries = this.readPositiveIntConfig('INBOX_SLOW_MAX_RETRIES', 30);
     this.handlerTimeoutMs = this.readPositiveIntConfig('INBOX_HANDLER_TIMEOUT_MS', INBOX_HANDLER_TIMEOUT_MS);
   }
 
@@ -330,7 +333,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       // doProcessInboxEvent 는 자체 catch 로 handleFailure 를 부르므로, 여기 도달하는 것은
       // 타임아웃(또는 그 catch 밖에서 터진 예외)뿐이다. 슬롯을 놓아주고 재시도로 넘긴다.
-      await this.handleFailure(event, this.getErrorMessage(error));
+      await this.handleFailure(event, error);
     }
   }
 
@@ -443,8 +446,8 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           const customer = await this.medusaClient.findCustomerByAlmondUserId(userPayload.userId);
           if (!customer) {
             // Medusa customer는 첫 storefront 로그인 시 생성됨 → 이메일 인증 직후엔 없을 수 있음.
-            // 에러를 throw해 inbox가 재시도하도록 한다 (maxRetries 초과 시 failed 상태로 남음).
-            throw new Error(
+            // 장기 스케줄로 재시도해 첫 로그인을 기다린다 (한도 초과 시 failed 상태로 남음).
+            throw new SlowRetryInboxError(
               `[UserEmailVerified] No Medusa customer found for userId=${userPayload.userId}; will retry`,
             );
           }
@@ -640,7 +643,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`Failed to process inbox event: ${eventId}`, this.getErrorStack(error));
 
       // 실패 처리 (재시도 로직)
-      await this.handleFailure(event, this.getErrorMessage(error));
+      await this.handleFailure(event, error);
     }
   }
 
@@ -661,11 +664,19 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
-  private async handleFailure(event: InboxEventRecord, errorMessage: string): Promise<void> {
+  //
+  // SlowRetryInboxError 는 "선행 조건 미충족"(예: Medusa 고객이 첫 로그인 전이라 미존재)이라
+  // 기본 스케줄(지수백오프 수 회, 약 1분)로는 절대 성공할 수 없다. 이 타입만 재시도 한도를
+  // 늘리고 백오프를 1시간으로 캡해 하루 가까이 기다린다 — 그 사이 고객이 로그인하면 성공하고,
+  // 끝내 실패하면 02:30 전체 정합화 크론이 백스톱이다.
+  private async handleFailure(event: InboxEventRecord, error: unknown): Promise<void> {
     const eventId = event.id;
+    const errorMessage = this.getErrorMessage(error);
     const attempts = Number.isInteger(event.attempts) && event.attempts > 0 ? event.attempts : 1;
+    const slowRetry = error instanceof SlowRetryInboxError;
+    const retryLimit = slowRetry ? this.slowMaxRetries : this.maxRetries;
 
-    if (attempts >= this.maxRetries) {
+    if (attempts >= retryLimit) {
       // 최대 재시도 횟수 초과 → failed (DLQ)
       const applied = await this.applyFailureUpdate(eventId, attempts, {
         status: 'failed',
@@ -677,7 +688,10 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
       this.logger.error(`Inbox event failed permanently: ${eventId}`);
     } else {
-      const nextAttemptAt = new Date(Date.now() + Math.pow(2, attempts) * 1000);
+      const backoffMs = slowRetry
+        ? Math.min(Math.pow(2, attempts) * 1000, 60 * 60 * 1000)
+        : Math.pow(2, attempts) * 1000;
+      const nextAttemptAt = new Date(Date.now() + backoffMs);
 
       const applied = await this.applyFailureUpdate(eventId, attempts, {
         status: 'pending',

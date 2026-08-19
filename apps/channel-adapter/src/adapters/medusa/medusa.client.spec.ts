@@ -961,7 +961,7 @@ describe('MedusaClient.addCustomerToGroup', () => {
   it('skips the add when the customer already belongs to the group so links cannot pile up', async () => {
     const { client, batchCustomerGroups } = makeClient([{ id: GROUP }]);
 
-    await client.addCustomerToGroup('cus_1', GROUP);
+    await expect(client.addCustomerToGroup('cus_1', GROUP)).resolves.toBe('already');
 
     expect(batchCustomerGroups).not.toHaveBeenCalled();
   });
@@ -969,9 +969,44 @@ describe('MedusaClient.addCustomerToGroup', () => {
   it('adds the customer when not yet in the group', async () => {
     const { client, batchCustomerGroups } = makeClient([{ id: 'cusgroup_other' }]);
 
-    await client.addCustomerToGroup('cus_1', GROUP);
+    await expect(client.addCustomerToGroup('cus_1', GROUP)).resolves.toBe('added');
 
     expect(batchCustomerGroups).toHaveBeenCalledWith('cus_1', { add: [GROUP] });
+  });
+});
+
+describe('MedusaClient.refreshCustomerCartPrices', () => {
+  function makeRefreshClient() {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).apiUrl = 'http://medusa.local';
+    (client as any).apiKey = 'sk_test';
+    (client as any).logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+    return client;
+  }
+
+  const originalFetch = global.fetch;
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('2xx 응답이면 정상 완료한다', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as any;
+
+    await expect(makeRefreshClient().refreshCustomerCartPrices('cus_1')).resolves.toBeUndefined();
+  });
+
+  // 그룹은 바뀌었는데 카트 가격만 안 바뀐 상태가 조용히 남으면 안 된다 — 호출부(inbox 재시도)가
+  // 실패를 알 수 있게 throw 가 계약이다.
+  it('비 2xx 응답이면 throw 한다', async () => {
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 500 }) as any;
+
+    await expect(makeRefreshClient().refreshCustomerCartPrices('cus_1')).rejects.toThrow(/status=500/);
+  });
+
+  it('네트워크 실패도 throw 한다', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) as any;
+
+    await expect(makeRefreshClient().refreshCustomerCartPrices('cus_1')).rejects.toThrow(/ECONNREFUSED/);
   });
 });
 

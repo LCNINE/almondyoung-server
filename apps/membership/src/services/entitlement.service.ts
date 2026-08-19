@@ -100,19 +100,8 @@ export class EntitlementService {
    * 관리자 직접 지급 (일수 + 메모)
    */
   async grantByDays(userId: string, days: number, memo: string | null, adminId: string) {
+    // MembershipStatusChanged 발행은 manager 가 지급 트랜잭션 안에서 아웃박스에 기록한다.
     const result = await this.manager.grantByDays(userId, days, memo, adminId);
-    this.membershipEventPublisher
-      .publishStatusChanged({
-        userId,
-        status: 'ACTIVE',
-        occurredAt: new Date().toISOString(),
-        contractId: result.contractId,
-        planId: result.planId,
-        tierId: result.tierId,
-      })
-      .catch((err: Error) =>
-        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
-      );
     return result.entitlement;
   }
 

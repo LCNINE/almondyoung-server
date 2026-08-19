@@ -3,6 +3,7 @@ import type { MembershipStatusChangedPayload } from '@packages/event-contracts/s
 import { MedusaClient } from './medusa.client';
 import { EventTrackingService } from '@app/events';
 import { MembershipServiceClient } from '../../services/membership-service.client';
+import { SlowRetryInboxError } from './slow-retry.error';
 import type { SyncResult } from '../../types';
 
 @Injectable()
@@ -15,10 +16,14 @@ export class MembershipMedusaSyncService {
     private readonly membershipServiceClient: MembershipServiceClient,
   ) { }
 
-  /** 그룹 변경 후 카트 가격 재계산 트리거.즉시 리턴됨. */
-  private refreshCartPricesAfterGroupChange(customerId: string, userId: string): void {
-    this.medusaClient.refreshCustomerCartPrices(customerId);
-    this.logger.log(`Cart price refresh triggered (fire-and-forget) for customerId=${customerId}, userId=${userId}`);
+  /**
+   * 그룹 변경 후 카트 가격 재계산. 실패는 전파한다 — 이벤트가 실패로 남아 inbox 가 재시도해야
+   * "그룹은 바뀌었는데 가격은 그대로" 인 창이 조용히 닫히지 않는 일이 없다. 재시도 시
+   * addCustomerToGroup 은 이미 소속이면 no-op 이라 그룹 쪽 중복 부작용은 없다.
+   */
+  private async refreshCartPricesAfterGroupChange(customerId: string, userId: string): Promise<void> {
+    await this.medusaClient.refreshCustomerCartPrices(customerId);
+    this.logger.log(`Cart prices refreshed for customerId=${customerId}, userId=${userId}`);
   }
 
   /**
@@ -95,8 +100,10 @@ export class MembershipMedusaSyncService {
 
       if (!customer) {
         const hint = email ? `email=${email}` : `almond_user_id=${userId}`;
-        this.logger.warn(`Medusa customer not found (${hint}), will retry`);
-        throw new Error(`Medusa customer not found (userId=${userId})`);
+        // 고객 미존재는 대개 "부여가 첫 로그인보다 앞선" 순서 문제 — 첫 로그인 때 생성되므로
+        // 장기 재시도로 기다린다.
+        this.logger.warn(`Medusa customer not found (${hint}), will retry on slow schedule`);
+        throw new SlowRetryInboxError(`Medusa customer not found (userId=${userId})`);
       }
 
       const addStatuses = new Set(['ACTIVE', 'RESUMED']);
@@ -104,7 +111,7 @@ export class MembershipMedusaSyncService {
 
       if (addStatuses.has(status)) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
-        this.refreshCartPricesAfterGroupChange(customer.id, userId);
+        await this.refreshCartPricesAfterGroupChange(customer.id, userId);
         // ACTIVE 전환 시 membership_activated 트리거 쿠폰 자동 발급.
         // await해서 실패 시 membership inbox event가 재시도되도록 함.
         if (status === 'ACTIVE') {
@@ -140,7 +147,7 @@ export class MembershipMedusaSyncService {
         }
 
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
-        this.refreshCartPricesAfterGroupChange(customer.id, userId);
+        await this.refreshCartPricesAfterGroupChange(customer.id, userId);
         await this.eventTrackingService
           .trackEffect({
             resourceType: 'MedusaCustomer',
@@ -198,13 +205,14 @@ export class MembershipMedusaSyncService {
    * handleMembershipStatusChanged 의 ACTIVE 경로를 재사용하지 않는 이유:
    * 그 경로는 issuePromotionsByTrigger('membership_activated') 로 쿠폰을 발급한다.
    * 전체 회원을 매일 도는 정합화에서 그걸 부르면 매일 전원 재발급 사고가 난다.
-   * 따라서 여기서는 순수하게 "그룹 소속만" 보장한다(쿠폰·카트refresh 없음).
+   * 따라서 여기서는 그룹 소속 보장 + **누락을 실제로 고친 회원에 한해** 카트 가격 재계산만 한다.
+   * 이미 소속인 대다수 회원에게는 아무 호출도 나가지 않는다.
    * almond_user_id 로만 조회하므로 metadata 가 옳게 박힌 회원(대다수)을 커버한다 —
    * metadata 드리프트 케이스는 이메일 fallback 이 필요해 실시간 이벤트 경로가 담당한다.
    *
-   * @returns 'added' 신규 추가 | 'no_customer' 고객 미발견 | 'skipped' 그룹ID 미설정
+   * @returns 'added' 신규 추가 | 'already' 이미 소속 | 'no_customer' 고객 미발견 | 'skipped' 그룹ID 미설정
    */
-  async ensureInMembershipGroup(userId: string): Promise<'added' | 'no_customer' | 'skipped'> {
+  async ensureInMembershipGroup(userId: string): Promise<'added' | 'already' | 'no_customer' | 'skipped'> {
     const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
     if (!membershipGroupId) {
       this.logger.warn('MEDUSA_MEMBERSHIP_GROUP_ID is not set. Skipping reconcile.');
@@ -214,8 +222,15 @@ export class MembershipMedusaSyncService {
     const customer = await this.medusaClient.findCustomerByAlmondUserId(userId);
     if (!customer) return 'no_customer';
 
-    // addCustomerToGroup 은 이미 소속이면 no-op (중복 link 행 방지 내장).
-    await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
-    return 'added';
+    const outcome = await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
+    if (outcome === 'added') {
+      // 그룹만 고치고 카트를 두면 "그룹 복구 전에 담은 라인은 비회원가" 가 그대로 남는다(#677).
+      // 실패는 삼킨다 — 그룹 보장은 이미 끝났고, 카트는 고객이 카트 페이지를 열면 렌더 백스톱
+      // (그룹 소속이 스로틀 키에 들어감)이 다시 고친다.
+      await this.medusaClient
+        .refreshCustomerCartPrices(customer.id)
+        .catch((e) => this.logger.warn(`정합화 후 카트 재계산 실패 (userId=${userId}): ${e?.message}`));
+    }
+    return outcome;
   }
 }

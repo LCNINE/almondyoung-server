@@ -1,4 +1,5 @@
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
+import { SlowRetryInboxError } from './slow-retry.error';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 
 describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
@@ -123,24 +124,27 @@ describe('MembershipMedusaSyncService.handleMembershipStatusChanged', () => {
     expect(result.success).toBe(true);
   });
 
-  it('어느 경로로도 고객을 못 찾으면 throw 해서 inbox 가 재시도하게 한다', async () => {
+  it('어느 경로로도 고객을 못 찾으면 SlowRetryInboxError 를 던져 장기 재시도로 넘긴다', async () => {
     const { service } = createService({ byAlmondUserId: null, byEmail: null });
 
     await expect(
       service.handleMembershipStatusChanged(event('nobody@example.com')),
-    ).rejects.toThrow(/Medusa customer not found/);
+    ).rejects.toThrow(SlowRetryInboxError);
   });
 });
 
 describe('MembershipMedusaSyncService.ensureInMembershipGroup', () => {
   const GROUP_ID = 'cusgroup_test';
 
-  function createService(byAlmondUserId: { id: string; email: string } | null) {
+  function createService(
+    byAlmondUserId: { id: string; email: string } | null,
+    addOutcome: 'added' | 'already' = 'added',
+  ) {
     const medusaClient = {
       findCustomerByAlmondUserId: jest.fn().mockResolvedValue(byAlmondUserId),
-      addCustomerToGroup: jest.fn().mockResolvedValue(undefined),
+      addCustomerToGroup: jest.fn().mockResolvedValue(addOutcome),
       issuePromotionsByTrigger: jest.fn().mockResolvedValue(undefined),
-      refreshCustomerCartPrices: jest.fn(),
+      refreshCustomerCartPrices: jest.fn().mockResolvedValue(undefined),
     };
     const eventTracking = { trackEffect: jest.fn().mockResolvedValue(undefined) };
     const membershipServiceClient = { getActiveUserIds: jest.fn().mockResolvedValue([]) };
@@ -156,22 +160,34 @@ describe('MembershipMedusaSyncService.ensureInMembershipGroup', () => {
     process.env.MEDUSA_MEMBERSHIP_GROUP_ID = GROUP_ID;
   });
 
-  it('almond_user_id 매칭 고객을 그룹에 추가하고 added 를 반환한다', async () => {
+  it('almond_user_id 매칭 고객을 그룹에 추가하고 added 를 반환하며 카트를 재계산한다', async () => {
     const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
 
     const result = await service.ensureInMembershipGroup('user-1');
 
     expect(result).toBe('added');
     expect(medusaClient.addCustomerToGroup).toHaveBeenCalledWith('cus_1', GROUP_ID);
+    expect(medusaClient.refreshCustomerCartPrices).toHaveBeenCalledWith('cus_1');
   });
 
-  it('정합화는 쿠폰 발급/카트 refresh 를 부르지 않는다 (매일 전원 재발급 사고 방지)', async () => {
-    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
+  it('이미 소속이면 already 를 반환하고 쿠폰 발급/카트 refresh 를 부르지 않는다 (매일 전원 호출 방지)', async () => {
+    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' }, 'already');
 
-    await service.ensureInMembershipGroup('user-1');
+    const result = await service.ensureInMembershipGroup('user-1');
 
+    expect(result).toBe('already');
     expect(medusaClient.issuePromotionsByTrigger).not.toHaveBeenCalled();
     expect(medusaClient.refreshCustomerCartPrices).not.toHaveBeenCalled();
+  });
+
+  it('정합화는 어떤 경우에도 쿠폰을 발급하지 않고, 카트 재계산 실패는 삼킨다', async () => {
+    const { service, medusaClient } = createService({ id: 'cus_1', email: 'a@example.com' });
+    medusaClient.refreshCustomerCartPrices.mockRejectedValue(new Error('refresh down'));
+
+    const result = await service.ensureInMembershipGroup('user-1');
+
+    expect(result).toBe('added');
+    expect(medusaClient.issuePromotionsByTrigger).not.toHaveBeenCalled();
   });
 
   it('고객을 못 찾으면 no_customer 를 반환하고 그룹 추가를 시도하지 않는다', async () => {

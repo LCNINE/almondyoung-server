@@ -5,6 +5,7 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, inArray, desc } from 'drizzle-orm';
 import { addDays } from 'date-fns';
 import { DrizzleTransaction } from '../../shared/schemas/types';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 
 type Entitlement = typeof schema.subscriptionEntitlement.$inferSelect;
 
@@ -19,7 +20,10 @@ type Entitlement = typeof schema.subscriptionEntitlement.$inferSelect;
  */
 @Injectable()
 export class EntitlementManager {
-  constructor(private readonly dbService: DbService<typeof membershipSchema>) {}
+  constructor(
+    private readonly dbService: DbService<typeof membershipSchema>,
+    private readonly membershipEventPublisher: MembershipEventPublisher,
+  ) {}
 
   /**
    * 권한 생성 (기존 권한 자동 종료)
@@ -229,6 +233,20 @@ export class EntitlementManager {
         causedBy: 'ADMIN',
         causedByUserId: adminId,
       });
+
+      // 지급은 이 트랜잭션으로 최종 확정이므로 그룹 동기화 이벤트를 같은 tx 의 아웃박스에
+      // 원자적으로 기록한다 (신규가입 one_time 경로와 동일한 이유).
+      await this.membershipEventPublisher.saveStatusChanged(
+        {
+          userId,
+          status: 'ACTIVE',
+          occurredAt: today.toISOString(),
+          contractId: newContract.id,
+          planId,
+          tierId,
+        },
+        tx,
+      );
 
       return { entitlement: newEntitlement, contractId: newContract.id, planId, tierId };
     });

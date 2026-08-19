@@ -77,12 +77,14 @@ export class MembershipDailySyncService {
       this.logger.log(`정합화 대상 활성회원=${activeUserIds.length}명`);
 
       let added = 0;
+      let already = 0;
       let noCustomer = 0;
       let failed = 0;
       for (const userId of activeUserIds) {
         try {
           const result = await this.membershipMedusaSyncService.ensureInMembershipGroup(userId);
           if (result === 'added') added += 1;
+          else if (result === 'already') already += 1;
           else if (result === 'no_customer') noCustomer += 1;
         } catch (err) {
           failed += 1;
@@ -93,7 +95,7 @@ export class MembershipDailySyncService {
 
       this.logger.log(
         `전체 활성회원 그룹 정합화 완료: 대상 ${activeUserIds.length}명 ` +
-          `(그룹보장 ${added} / 고객없음 ${noCustomer} / 실패 ${failed})`,
+          `(신규추가 ${added} / 이미소속 ${already} / 고객없음 ${noCustomer} / 실패 ${failed})`,
       );
     } catch (error) {
       this.logger.error('전체 활성회원 그룹 정합화 크론 실패', error?.stack);
