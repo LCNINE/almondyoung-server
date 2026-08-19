@@ -1,0 +1,376 @@
+{
+  "metaTitle": "注文・決済",
+  "logoAlt": "アーモンドロゴ",
+  "logoAltAlmondyoung": "アーモンドヤング",
+  "paymentNotice": {
+    "title": "お支払い前にご確認ください",
+    "bankTransfer": "銀行振込でお支払いの場合は、画面下の[決済する]ボタンを押してください。次の画面で支払い方法を選べるので、そこで「銀行振込」をお選びください。",
+    "bankTransferDelay": "銀行振込は、ご入金後の自動確認まで最大10分ほどかかる場合があります。確認され次第、配送を開始します。",
+    "points": "貯まったポイントも、[決済する]を押した次の画面ですぐにご利用いただけます。"
+  },
+  "header": {
+    "title": "注文・決済",
+    "breadcrumbCurrent": "注文・決済",
+    "breadcrumbDone": "完了",
+    "mobileTitle": "注文書作成",
+    "closeAria": "閉じる"
+  },
+  "cta": {
+    "mobileAgreement": "上記の必須同意項目にすべて同意すると決済に進めます。",
+    "pcAgreement": "上記の必須同意項目にすべて同意すると決済に進めます。",
+    "processing": "処理中...",
+    "pay": "決済する",
+    "payWithAmount": "{amount} 決済する"
+  },
+  "consent": {
+    "title": "注文の同意",
+    "required": "必須の同意項目にすべて同意してください。",
+    "allAgree": "以下の必須項目にすべて同意します",
+    "purchaseTerms": "[必須] 注文内容と購入条件を確認し、利用規約に同意します",
+    "personalInfo": "[必須] 注文・配送のための個人情報の収集・利用に同意します",
+    "viewFull": "全文を見る",
+    "personalInfoTable": {
+      "purposeLabel": "利用目的",
+      "purpose": "商品の注文・決済、配送、返品・交換・返金の処理および関連するお客様対応",
+      "itemsLabel": "収集項目",
+      "items": "注文者・受取人の氏名、連絡先、配送先住所、配送メモ、注文・決済履歴",
+      "retentionLabel": "保有期間",
+      "retention": "退会時まで。ただし契約・申込撤回および代金決済に関する記録は電子商取引法により5年、消費者の苦情・紛争処理に関する記録は3年間保管します"
+    },
+    "personalInfoRefusal": "同意を拒否する権利がありますが、拒否された場合は注文・配送ができず決済を進められません。",
+    "customsNotice": "海外直送商品が含まれているため、入力された個人通関固有符号は関税法に基づき通関目的で関税庁および通関代行会社に提供されます。",
+    "withdrawal": {
+      "title": "申込撤回（キャンセル）のご案内",
+      "period": "撤回期限：商品受領後7日以内（表示・広告と異なる、または契約内容と異なる履行の場合は受領後3か月以内、その事実を知った日から30日以内）",
+      "method": "申請方法：マイページ > 注文履歴からお申し込みいただくか、カスタマーセンター（1877-7184、hello@lcnine.kr）へご連絡ください。",
+      "shippingFee": "返品送料：お客様都合の場合はお客様負担（往復送料）、商品不良・誤配送の場合は当社負担です。",
+      "restriction": "撤回の制限：使用・毀損された商品、時間の経過により再販売が困難な商品、開封済みのデジタルコンテンツは申込撤回が制限される場合があります。",
+      "viewGuide": "交換・返品案内を詳しく見る"
+    }
+  },
+  "shipping": {
+    "title": "配送先",
+    "defaultBadge": "基本配送先",
+    "contact": "連絡先",
+    "postalCode": "郵便番号",
+    "address1": "基本住所",
+    "address2": "詳細住所",
+    "change": "変更",
+    "empty": {
+      "title": "配送先情報がありません",
+      "description": "配送先を登録してください。",
+      "savedAddress": "保存済みの配送先",
+      "addNew": "新しい配送先を追加"
+    },
+    "memo": {
+      "legend": "配送メモ",
+      "selectAria": "配送メモ選択",
+      "placeholder": "配送メモを選択してください",
+      "options": {
+        "door": "玄関前に置いてください",
+        "security": "守衛室に預けてください",
+        "parcelBox": "宅配ボックスに入れてください",
+        "direct": "直接受け取ります",
+        "other": "その他(直接入力)"
+      },
+      "entrance": {
+        "heading": "共同玄関の暗証番号",
+        "hasEntrance": "共同玄関の暗証番号があります",
+        "passwordPlaceholder": "例: #1234",
+        "noEntrance": "暗証番号なしで入れます",
+        "notice": "共同玄関の暗証番号は配送のためにのみ利用され、配送完了後に削除されます。"
+      },
+      "customPlaceholder": "配送時のご要望を入力してください",
+      "customAria": "配送メモ直接入力"
+    },
+    "selector": {
+      "title": "配送先選択",
+      "loading": "読み込み中...",
+      "emptySaved": "保存された配送先がありません。",
+      "selectDone": "選択完了",
+      "changing": "変更中...",
+      "cancel": "キャンセル",
+      "addNew": "新しい配送先を追加",
+      "edit": "編集",
+      "setDefault": "基本配送先に設定",
+      "delete": "削除",
+      "deleteDialog": {
+        "title": "配送先削除",
+        "description": "この配送先を削除しますか? 削除した配送先は復元できません。",
+        "cancel": "キャンセル",
+        "confirm": "削除"
+      },
+      "toasts": {
+        "changed": "配送先を変更しました。",
+        "changeFailed": "配送先の変更に失敗しました。",
+        "defaultSet": "基本配送先に設定しました。",
+        "defaultSetFailed": "基本配送先の設定に失敗しました。",
+        "deleted": "配送先を削除しました。",
+        "deleteFailed": "配送先の削除に失敗しました。"
+      }
+    },
+    "form": {
+      "title": {
+        "create": "配送先を登録",
+        "edit": "配送先を編集"
+      },
+      "submit": {
+        "create": "保存",
+        "edit": "修正"
+      },
+      "submitting": {
+        "create": "保存中...",
+        "edit": "修正中..."
+      },
+      "cancel": "キャンセル",
+      "search": "住所検索",
+      "fields": {
+        "addressName": "配送先名(任意)(例: 自宅、会社)",
+        "name": "受取人氏名",
+        "firstName": "名",
+        "lastName": "姓",
+        "phone": "電話番号",
+        "postalCode": "郵便番号",
+        "address1": "町名・番地",
+        "address2": "建物名・部屋番号(任意)",
+        "city": "市区町村",
+        "province": "都道府県"
+      },
+      "errors": {
+        "name": "受取人氏名を入力してください",
+        "firstName": "名を入力してください",
+        "lastName": "姓を入力してください",
+        "phoneRequired": "電話番号を入力してください",
+        "phoneInvalid": "正しい電話番号を入力してください",
+        "postalCode": "郵便番号を入力してください",
+        "address1": "町名・番地を入力してください",
+        "city": "市区町村を入力してください",
+        "province": "都道府県を入力してください"
+      },
+      "saveAsDefault": {
+        "create": "基本配送先として保存",
+        "edit": "基本配送先に設定"
+      },
+      "toasts": {
+        "created": "配送先を登録しました。",
+        "createdDefault": "基本配送先として登録しました。",
+        "createFailed": "配送先の登録に失敗しました。",
+        "updated": "配送先を修正しました。",
+        "updateFailed": "配送先の修正に失敗しました。",
+        "saveFailed": "配送先の保存に失敗しました。もう一度お試しください。",
+        "postcodeLoading": "郵便番号検索サービスを読み込んでいます。しばらくしてからもう一度お試しください。"
+      }
+    }
+  },
+  "customsCode": {
+    "title": "個人通関固有符号",
+    "label": "個人通関固有符号",
+    "placeholder": "例: P123456789012",
+    "notice": "海外直送商品は通関のために個人通関固有符号が必要です。",
+    "lookupLink": "通関固有符号の照会・発行",
+    "error": "正しい個人通関固有符号を入力してください。(英字1文字 + 数字12桁)"
+  },
+  "orderProducts": {
+    "title": "注文商品",
+    "empty": "注文商品がありません。",
+    "optionBadge": "オプション",
+    "optionDefault": "基本",
+    "optionLine": "{value} | {quantity}点",
+    "shippingFee": "送料 {amount}ウォン",
+    "shippingFeeLine": "{name} {amount}ウォン",
+    "amountWon": "{amount}ウォン"
+  },
+  "discount": {
+    "title": "割引・付加決済",
+    "totalLabel": "総割引金額",
+    "zero": "0ウォン",
+    "amountMinusWon": "-{amount}ウォン",
+    "couponLabel": "クーポン",
+    "notApplicable": "適用条件を満たしていません",
+    "available": "利用可能",
+    "availableCount": "利用可能 ({count})",
+    "percentDiscount": "{value}% 割引",
+    "amountDiscount": "{amount}ウォン 割引",
+    "applying": "クーポン適用中...",
+    "noCoupons": "利用可能なクーポンがありません",
+    "selectPlaceholder": "クーポンを選択してください ({count})",
+    "removeAria": "クーポン削除",
+    "membershipDiscount": "メンバーシップ割引",
+    "couponDiscount": "クーポン割引",
+    "directInput": {
+      "tabLabel": "コードを入力",
+      "placeholder": "クーポンコードを入力してください",
+      "checkButton": "確認",
+      "checking": "確認中...",
+      "applyButton": "適用",
+      "applying": "適用中...",
+      "claimButton": "受け取る",
+      "claiming": "処理中...",
+      "confirmed": "確認済みクーポン",
+      "confirmHint": "実際の割引はカートの条件によって異なる場合があります。",
+      "claimableHint": "受け取り後すぐに適用されます。",
+      "expiresAt": "{date} まで有効",
+      "discountSuffix": " 割引",
+      "alreadyApplied": "すでに適用済みのクーポンです。",
+      "errors": {
+        "COUPON_NOT_FOUND": "存在しないクーポンコードです。",
+        "COUPON_INACTIVE": "現在ご利用いただけないクーポンです。",
+        "COUPON_EXPIRED": "有効期限が切れたクーポンです。",
+        "COUPON_NOT_STARTED": "まだご利用期間ではありません。",
+        "COUPON_GROUP_RESTRICTED": "このクーポンは対象のお客様のみご利用いただけます。",
+        "COUPON_NOT_ASSIGNED": "発行済みのお客様のみご利用いただけます。",
+        "LOGIN_REQUIRED": "ログイン後にご確認いただけます。",
+        "UNKNOWN": "ご利用いただけないクーポンです。"
+      }
+    },
+    "toasts": {
+      "couponApplyFailed": "クーポンの適用に失敗しました。しばらくしてから再度お試しください。",
+      "couponLimitExceeded": "このクーポンの1人あたりの使用上限に達しました。",
+      "couponNotAssigned": "このクーポンは発行済みのお客様のみご利用いただけます。",
+      "couponRemoveFailed": "クーポンの削除に失敗しました。しばらくしてから再度お試しください。",
+      "claimAndApplyFailed": "クーポンの発行に失敗しました。しばらくしてから再度お試しください。",
+      "claimSuccessApplyFailed": "クーポンは発行されましたが、現在のカートに適用できませんでした。クーポン一覧でご確認のうえご利用ください。"
+    }
+  },
+  "paymentTotal": {
+    "title": "決済情報",
+    "itemAmount": "商品金額",
+    "shipping": "送料",
+    "free": "無料",
+    "membershipDiscount": "メンバーシップ割引",
+    "discount": "割引",
+    "couponEtc": "(クーポン・その他)",
+    "totalAmount": "注文金額合計"
+  },
+  "mobileSummary": {
+    "title": "注文概要",
+    "itemAmount": "注文商品",
+    "shipping": "送料",
+    "free": "無料",
+    "discountSubsidies": "割引・付加決済",
+    "membership": "メンバーシップ",
+    "totalAmount": "注文金額合計"
+  },
+  "detailSidebar": {
+    "title": "決済詳細",
+    "itemAmount": "商品金額",
+    "shipping": "送料",
+    "free": "無料",
+    "membershipDiscount": "メンバーシップ割引",
+    "discount": "割引",
+    "total": "お支払い合計"
+  },
+  "process": {
+    "shippingFallback": "配送",
+    "productFallback": "商品",
+    "orderNameSingle": "アーモンドヤング - {title}",
+    "orderNameMultiple": "アーモンドヤング - {title} 他 {count}点",
+    "errorPrefix": "エラー:",
+    "toasts": {
+      "setShipping": "配送先を設定してください。",
+      "selectMemo": "配送メモを選択してください。",
+      "enterEntrancePw": "共同玄関の暗証番号を入力してください。",
+      "noItems": "決済する商品がありません。カートに戻って商品を選択してください。",
+      "paymentInitFailed": "決済セッションの初期化に失敗しました。",
+      "unknownError": "不明なエラー"
+    },
+    "unavailableItems": {
+      "title": "ご注文できない商品があります",
+      "description": "以下の商品は販売が終了したため、決済を進められません。カートから該当商品を削除してから再度お試しください。",
+      "fallbackName": "一部の商品",
+      "goToCart": "カートへ移動"
+    }
+  },
+  "membership": {
+    "headerTitle": "メンバーシップ決済",
+    "missingPlanTitle": "メンバーシッププラン情報がありません。",
+    "missingPlanDesc": "メンバーシップ申込ページからもう一度お試しください。",
+    "planNotFoundTitle": "メンバーシッププランが見つかりません。",
+    "planNotFoundDesc": "別のプランでもう一度お試しください。",
+    "fallbackPlanName": "メンバーシップ",
+    "planSectionTitle": "メンバーシッププラン",
+    "selectedPlanLabel": "選択したプラン",
+    "priceWon": "{amount}ウォン",
+    "noticeTitle": "決済のご案内",
+    "oneTimeHeader": "📌 1回決済(自動決済なし)",
+    "oneTimeNoAutoPay": "1回決済で、自動決済は行われません。",
+    "bankTransferDelay": "銀行振込を選択された場合、入金確認まで最大10分ほどかかる場合があります。",
+    "immediateNoRefundPrefix": "決済直後に利用が開始され、",
+    "immediateNoRefundEmphasis": "利用開始後の返金は不可",
+    "immediateNoRefundSuffix": "です。",
+    "paidPeriodAccess": "決済した期間中、サービスをご利用いただけます。",
+    "refundPolicyTitle": "[返金ポリシー]",
+    "refund1": "· 単純な変心による返金はできません。",
+    "refund2": "· サービス障害、技術的な不具合等により正常に利用できない場合、利用できなかった期間について一部返金が行われる場合があります。",
+    "refund3": "· 返金の可否および金額は社内ポリシーに従って算定されます。",
+    "agree": "決済および返金ポリシーを確認し、同意します。",
+    "toasts": {
+      "agreeRequired": "決済および返金ポリシーに同意してください。",
+      "loginRequired": "ログインが必要です。",
+      "paymentRequestFailed": "決済リクエストに失敗しました。"
+    }
+  },
+  "success": {
+    "completedHighlight": "注文完了",
+    "completedSuffix": "しました。",
+    "noOrder": {
+      "completed": "注文が正常に完了しました。",
+      "detailsInMypage": "注文の詳細はマイページからご確認いただけます。",
+      "orderListBtn": "注文履歴を見る"
+    },
+    "orderNumberLabel": "注文番号",
+    "orderItemsCount": "注文商品 {count}件",
+    "orderDetailsFallback": "注文商品の詳細はこちらに表示されます。",
+    "orderDetailBtn": "注文詳細を見る",
+    "quantityLabel": "数量: {quantity}",
+    "priceFormat": "{amount}ウォン",
+    "mainImageAlt": "注文商品の代表画像",
+    "fallbackName": "—",
+    "sr": {
+      "recipient": "受取人",
+      "contact": "連絡先",
+      "address": "配送先住所"
+    },
+    "review": {
+      "ratingTitle": "ご購入体験はいかがでしたか?"
+    },
+    "downloadBtn": "デジタル商品をダウンロード"
+  },
+  "fail": {
+    "loading": "エラー情報を読み込み中...",
+    "title": "決済失敗",
+    "description": "決済処理中に問題が発生しました。",
+    "unknownError": "不明なエラーが発生しました。",
+    "commonCausesTitle": "よくあるエラーの原因",
+    "causes": {
+      "limitExceeded": "決済限度額超過",
+      "cardError": "カード情報エラー",
+      "lowBalance": "残高不足",
+      "userCancel": "ユーザーによる決済キャンセル",
+      "networkError": "ネットワークエラー"
+    },
+    "retry": "再試行する",
+    "goBack": "前のページに戻る",
+    "shippingMethodMissing": "配送料の情報が変更されたため、注文を完了できませんでした。カートに戻ってもう一度お試しください。",
+    "shippingMethodNone": "配送方法が設定されていません。カートに戻ってもう一度お試しください。",
+    "insufficientInventory": "決済中に在庫が不足したため、決済は行われませんでした。",
+    "variantUnavailable": "カートの商品が販売終了となったため、決済は行われませんでした。",
+    "stock": {
+      "notCharged": "料金は請求されておらず、注文も作成されていません。",
+      "goToCart": "カートを確認する",
+      "whatToDoQuantity": "カートで在庫が不足している商品の数量を減らしてから、再度お試しください。",
+      "whatToDoUnavailable": "カートから該当商品を削除してから、再度お試しください。"
+    }
+  },
+  "callback": {
+    "paymentFailed": "決済に失敗しました。",
+    "missingParams": "決済情報がありません。",
+    "callbackError": "決済処理中にエラーが発生しました。",
+    "membershipFailFallback": "メンバーシップ加入処理失敗",
+    "membershipCallbackError": "メンバーシップ決済処理中にエラーが発生しました。",
+    "processingTitle": "決済処理中",
+    "processingDesc": "決済を処理しています...",
+    "waitLine1": "しばらくお待ちください。",
+    "waitLine2": "ページを閉じたり再読み込みしないでください。"
+  }
+}

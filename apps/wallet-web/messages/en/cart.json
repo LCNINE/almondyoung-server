@@ -1,0 +1,85 @@
+{
+  "emptyTitle": "Your cart is empty",
+  "emptyDescription": "Add the products you want to your cart.",
+  "shopNow": "Continue shopping",
+  "notFound": {
+    "metaTitle": "Cart not found",
+    "metaDescription": "The cart you requested could not be found",
+    "title": "Cart not found",
+    "description": "The cart you requested does not exist or has expired.",
+    "backHome": "Continue shopping"
+  },
+  "header": {
+    "title": "Cart",
+    "stepCheckout": "Checkout",
+    "stepDone": "Done"
+  },
+  "items": {
+    "tableProduct": "Product",
+    "tableQuantity": "Quantity",
+    "tableUnitPrice": "Unit price",
+    "tableTotal": "Total",
+    "deleteSelected": "Delete selected",
+    "deleteSelectedCount": "Delete selected ({count})",
+    "deleteSelectedSuccess": "{count} item(s) deleted.",
+    "deleteSelectedError": "Failed to delete. Please try again.",
+    "deleteAria": "Delete",
+    "noImage": "No image",
+    "quantityUpdateFail": "Failed to update quantity",
+    "deleteItemError": "A temporary error occurred. Please try again later.",
+    "quantityMinError": "Quantity must be at least 1.",
+    "quantityDialogTitle": "Enter quantity",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "soldOutBadge": "Unavailable",
+    "soldOutHint": "This item is no longer available. Remove it to continue to checkout.",
+    "optionGoneBadge": "Option unavailable",
+    "optionGoneHint": "The selected option is no longer sold. Remove it and add another option instead.",
+    "quantityMaxError": "Only {max} left in stock. Please choose {max} or fewer.",
+    "quantityStockError": "Not enough stock to update the quantity. Please try again shortly.",
+    "quantityMaxHint": "Max {max}",
+    "quantitySoldOut": "This item is sold out, so the quantity cannot be increased.",
+    "outOfStockBadge": "Sold out",
+    "outOfStockHint": "This item is sold out. Remove it to continue to checkout.",
+    "overStockBadge": "Not enough stock",
+    "overStockHint": "Only {max} left in stock. Please lower the quantity to {max} or fewer.",
+    "quantityAdjustedToMax": "Only {max} left in stock, so the quantity was set to {max}."
+  },
+  "summary": {
+    "title": "Order summary",
+    "subtotal": "Subtotal",
+    "membershipDiscount": "Membership discount",
+    "couponDiscount": "Coupon / Promotion",
+    "shipping": "Shipping",
+    "totalPayment": "Total",
+    "selectItems": "Please select items to purchase.",
+    "checkout": "Checkout",
+    "checkoutWithCount": "Checkout ({count} items)",
+    "checkoutFailed": "Failed to proceed to checkout. Please try again.",
+    "itemsUnavailable": "‘{items}’ is currently unavailable. Please remove it from your cart and try again."
+  },
+  "mobileBar": {
+    "discountTotal": "{amount} KRW off",
+    "selectItems": "Please select items",
+    "checkout": "Checkout",
+    "checkoutWithCount": "Checkout ({count} items)"
+  },
+  "shippingGroup": {
+    "flat": "{group} shipping fee {amount} KRW applies separately",
+    "perQuantity": "{group} shipping fee {amount} KRW per item applies separately",
+    "conditionalFree": "{group} shipping fee {amount} KRW applies separately · free over {threshold} KRW",
+    "descriptionAria": "Shipping details"
+  },
+  "freeShipping": {
+    "reached": "Free shipping applied!",
+    "remaining": "Add {amount} KRW more for free shipping",
+    "reachedInGroup": "Free shipping applied for {group}!",
+    "remainingInGroup": "Add {amount} KRW more in {group} for free shipping"
+  },
+  "priceError": {
+    "message": "Couldn't load the amount",
+    "refresh": "Refresh",
+    "inquiry": "Contact us"
+  },
+  "won": "KRW"
+}

@@ -16,6 +16,7 @@ import type { ShippingInfo } from "@/lib/types/ui/cart"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 import ProtectedRoute from "@components/protected-route"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
+import CheckoutHandoffBridge from "./checkout-handoff-bridge"
 import { getTranslations } from "next-intl/server"
 
 const CHECKOUT_CART_FIELDS =
@@ -26,14 +27,23 @@ export default async function CheckoutPage({
   searchParams,
 }: {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ cartId?: string }>
+  searchParams: Promise<{ cartId?: string; legacy?: string }>
 }) {
   const { countryCode } = await params
-  const { cartId } = await searchParams
+  const { cartId, legacy } = await searchParams
+
+  // 체크아웃 화면은 wallet-web 으로 옮겼다. 이 페이지는 카트를 확인하고 넘겨주는 브릿지로만 남는다.
+  // 플래그가 켜져 있지 않거나 ?legacy=1 (CS 탈출구)이면 기존 체크아웃이 그대로 뜬다.
+  const onWallet =
+    process.env.NEXT_PUBLIC_CHECKOUT_ON_WALLET === "true" && legacy !== "1"
 
   return (
     <ProtectedRoute>
-      <CheckoutManager cartId={cartId} countryCode={countryCode} />
+      {onWallet ? (
+        <CheckoutHandoffBridge cartId={cartId} countryCode={countryCode} />
+      ) : (
+        <CheckoutManager cartId={cartId} countryCode={countryCode} />
+      )}
     </ProtectedRoute>
   )
 }

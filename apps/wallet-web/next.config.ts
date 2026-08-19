@@ -1,4 +1,5 @@
 import type { NextConfig } from 'next';
+import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 
 const nextConfig: NextConfig = {
@@ -15,4 +16,6 @@ const nextConfig: NextConfig = {
   transpilePackages: ['@packages/web-observability'],
 };
 
-export default nextConfig;
+// storefront 에서 이식한 체크아웃 UI 가 next-intl 로 다국어를 쓴다. URL 에 locale 세그먼트가
+// 없으므로 routing 없이 request config 만 붙인다.
+export default createNextIntlPlugin('./i18n/request.ts')(nextConfig);

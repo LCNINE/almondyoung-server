@@ -1,0 +1,314 @@
+"use server"
+
+import { sdk } from "@/checkout-ui/lib/config/medusa"
+import { StoreCustomerWithGroupsResDto } from "@/checkout-ui/lib/types/dto/medusa"
+import medusaError from "@/checkout-ui/lib/utils/medusa-error"
+import { HttpTypes } from "@medusajs/types"
+import { revalidateTag } from "@/checkout-ui/lib/cache"
+import { cache } from "react"
+import {
+  getAuthHeaders,
+  getCacheTag,
+  getCartId,
+  setCartId,
+} from "../../data/cookies"
+import { handleMedusaAuthError } from "./auth-utils"
+
+/**
+ * 한 번의 렌더 안에서 고객 조회가 몇 번 일어나든 Medusa 왕복은 한 번만 나가게 한다.
+ *
+ * 홈만 해도 welcome-deals / best-categories / showcase-categories /
+ * interest-products-list 가 각각 부르고, 여기에 listProducts 마다 불리는
+ * getMembershipAwareCacheTags 까지 겹쳐 같은 응답을 여러 번 받아오고 있었다.
+ * `cache: "no-store"` 라 Next 의 fetch 중복 제거도 걸리지 않는다.
+ *
+ * 수명은 요청 하나의 렌더 패스이며 요청 간에는 공유되지 않는다. 따라서 로그인·
+ * 멤버십 상태 변경이 다음 요청에 반영되는 시점은 이전과 동일하다.
+ */
+const retrieveCustomerOnce = cache(
+  async (): Promise<StoreCustomerWithGroupsResDto | null> => {
+    const authHeaders = await getAuthHeaders()
+
+    if (!authHeaders) return null
+
+    const headers = {
+      ...authHeaders,
+    }
+
+    return await sdk.client
+      .fetch<{ customer: StoreCustomerWithGroupsResDto }>(
+        `/store/customers/me`,
+        {
+          method: "GET",
+          // groups 필드는 백엔드에서 기본적으로 넣어주기 때문에 따로 요청하면안됌
+          // query: { fields: "*groups" },
+          headers,
+          cache: "no-store",
+        }
+      )
+      .then(({ customer }) => customer)
+      .catch(() => null)
+  }
+)
+
+// "use server" 파일은 async 함수만 export 할 수 있어 cache() 결과를 직접 내보내지
+// 못한다. 얇은 async 래퍼로 감싸 호출부 17곳을 그대로 두고 메모이제이션만 얹는다.
+export const retrieveCustomer =
+  async (): Promise<StoreCustomerWithGroupsResDto | null> =>
+    retrieveCustomerOnce()
+
+export const getCustomerAddresses = async (): Promise<
+  HttpTypes.StoreCustomerAddress[] | null
+> => {
+  const authHeaders = await getAuthHeaders()
+
+  if (!authHeaders) return null
+
+  const headers = {
+    ...authHeaders,
+  }
+
+  return await sdk.store.customer
+    .listAddress({}, headers)
+    .then(({ addresses }) => addresses)
+    .catch(async (error) => {
+      await handleMedusaAuthError(error)
+      console.error("getCustomerAddresses error:", error)
+      return null
+    })
+}
+
+export const updateCustomer = async (body: HttpTypes.StoreUpdateCustomer) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const updateRes = await sdk.store.customer
+    .update(body, {}, headers)
+    .then(({ customer }) => customer)
+    .catch(medusaError)
+
+  const cacheTag = await getCacheTag("customers")
+  revalidateTag(cacheTag)
+
+  return updateRes
+}
+
+export async function transferCart() {
+  const cartId = await getCartId()
+
+  if (!cartId) {
+    return
+  }
+
+  const headers = await getAuthHeaders()
+
+  await sdk.store.cart.transferCart(cartId, {}, { ...headers })
+
+  const cartCacheTag = await getCacheTag("carts")
+  revalidateTag(cartCacheTag)
+}
+
+export async function recoverCustomerCart(): Promise<HttpTypes.StoreCart | null> {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  if (!headers.authorization) {
+    return null
+  }
+
+  const cart = await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart | null }>(`/store/customers/me/cart`, {
+      method: "GET",
+      headers,
+      cache: "no-store",
+    })
+    .then(({ cart }) => cart)
+    .catch((error) => {
+      console.error("recoverCustomerCart error:", error)
+      return null
+    })
+
+  // 완료(주문 전환)된 카트는 절대 복구하지 않는다. 백엔드가 completed_at IS NULL 로 필터링하지만,
+  // Medusa query.graph 의 null 필터가 환경/버전에 따라 안 걸려 '방금 완료된(=가장 최근) 카트'가
+  // 내려올 수 있다. 그걸 복구하면 getOrSetCart 가 완료 카트를 반환 → addToCart 가 'already completed'
+  // 로 실패한다(무통장 주문 직후 장바구니 안 담김 장애). 클라이언트에서 안전망으로 한 번 더 막는다.
+  if (!cart?.id || cart.completed_at) {
+    return null
+  }
+
+  //  카트 페이지가 명시 id 로 다시 조회해 표시할 수 있게 한다.
+  try {
+    await setCartId(cart.id)
+    const cartCacheTag = await getCacheTag("carts")
+    revalidateTag(cartCacheTag)
+  } catch {
+    // Server Action/Route Handler 밖(페이지 렌더)에서 호출되면 쿠키 쓰기 불가 — 무시하고 카트만 반환
+  }
+
+  return cart
+}
+
+export const addCustomerAddress = async (
+  currentState: Record<string, unknown>,
+  formData: FormData
+): Promise<any> => {
+  const isDefaultBilling = (currentState.isDefaultBilling as boolean) || false
+  const isDefaultShipping = (currentState.isDefaultShipping as boolean) || false
+
+  const address = {
+    first_name: formData.get("first_name") as string,
+    last_name: formData.get("last_name") as string,
+    company: formData.get("company") as string,
+    address_1: formData.get("address_1") as string,
+    address_2: formData.get("address_2") as string,
+    city: formData.get("city") as string,
+    postal_code: formData.get("postal_code") as string,
+    province: formData.get("province") as string,
+    country_code: formData.get("country_code") as string,
+    phone: formData.get("phone") as string,
+    is_default_billing: isDefaultBilling,
+    is_default_shipping: isDefaultShipping,
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .createAddress(address, {}, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const createCustomerShippingAddress = async (
+  address: HttpTypes.StoreCreateCustomerAddress
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return await sdk.store.customer
+    .createAddress(
+      {
+        ...address,
+        is_default_shipping: address.is_default_shipping ?? true,
+      },
+      {},
+      headers
+    )
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const deleteCustomerAddress = async (
+  addressId: string
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .deleteAddress(addressId, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
+      return { success: false, error: err.toString() }
+    })
+}
+
+/**
+ * 고객 주문 목록 조회
+ */
+export const getCustomerOrders = async (params?: {
+  limit?: number
+  offset?: number
+}): Promise<{ orders: HttpTypes.StoreOrder[]; count: number } | null> => {
+  const authHeaders = await getAuthHeaders()
+
+  if (!authHeaders) return null
+
+  const headers = {
+    ...authHeaders,
+  }
+
+  try {
+    const response = await sdk.store.order.list(
+      {
+        limit: params?.limit ?? 10,
+        offset: params?.offset ?? 0,
+        fields:
+          "*items,*items.variant,*items.variant.product,*shipping_address,*billing_address",
+      },
+      headers
+    )
+
+    return {
+      orders: response.orders,
+      count: response.count ?? 0,
+    }
+  } catch (error) {
+    console.error("주문 목록 조회 실패:", error)
+    return null
+  }
+}
+
+export const setDefaultShippingAddress = async (
+  addressId: string
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .updateAddress(addressId, { is_default_shipping: true }, {}, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
+      return { success: false, error: err.toString() }
+    })
+}
+
+export const updateCustomerShippingAddress = async (
+  addressId: string,
+  address: HttpTypes.StoreUpdateCustomerAddress
+): Promise<{ success: boolean; error: string | null }> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.store.customer
+    .updateAddress(addressId, address, {}, headers)
+    .then(async () => {
+      const customerCacheTag = await getCacheTag("customers")
+      revalidateTag(customerCacheTag)
+      return { success: true, error: null }
+    })
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
+      return { success: false, error: err.toString() }
+    })
+}

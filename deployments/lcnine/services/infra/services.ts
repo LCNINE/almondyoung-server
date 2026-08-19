@@ -795,8 +795,16 @@ export function setup(infra: SharedInfra) {
       // wallet-web 을 추가할 필요가 없다 — 브라우저 호출이 섞이면 CORS 에러로 바로 드러난다.
       MEDUSA_URL: url('medusa'),
       MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
+      NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       // 결제 완료 후 주문 성공 페이지로 복귀할 storefront origin.
       STOREFRONT_ORIGIN: storefrontUrl,
+      // storefront 에서 이식한 체크아웃 코드(checkout-ui/)가 그대로 참조하는 값들.
+      // 상품 썸네일(file-service URL 조립)과 멤버십 그룹 판정에 쓰인다.
+      NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
+      BACKEND_DOMAIN: backendRootDomain,
+      NEXT_PUBLIC_USE_RAILWAY_BACKEND: 'true',
+      USE_RAILWAY_BACKEND: 'true',
+      NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // 세션 쿠키는 host-only (admin-web 패턴). 다른 RP 와의 세션 공유는 IdP 레벨에서만
       // 일어나며 (auth-web hub 의 parent-domain idp 쿠키), wallet-web 은 자체 도메인에만 토큰을 박는다.
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.

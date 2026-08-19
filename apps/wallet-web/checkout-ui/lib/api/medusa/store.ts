@@ -1,0 +1,207 @@
+"use server"
+
+import { sdk } from "@/checkout-ui/lib/config/medusa"
+import { getAuthHeaders, getCacheTag } from "@/checkout-ui/lib/data/cookies"
+import { HttpApiError, ApiAuthError } from "@/checkout-ui/lib/api/api-error"
+import medusaError from "@/checkout-ui/lib/utils/medusa-error"
+import { HttpTypes } from "@medusajs/types"
+import { revalidateTag } from "@/checkout-ui/lib/cache"
+
+let cachedSalesChannelId: string | null | undefined
+
+export const getDefaultSalesChannelId = async () => {
+  if (cachedSalesChannelId !== undefined) {
+    return cachedSalesChannelId
+  }
+
+  const envId =
+    process.env.NEXT_PUBLIC_MEDUSA_SALES_CHANNEL_ID ||
+    process.env.MEDUSA_SALES_CHANNEL_ID
+
+  if (envId) {
+    cachedSalesChannelId = envId
+    return cachedSalesChannelId
+  }
+
+  try {
+    const response = await sdk.client.fetch<{
+      store?: { default_sales_channel_id?: string | null }
+    }>("/store/store", {
+      method: "GET",
+      cache: "force-cache",
+    })
+
+    cachedSalesChannelId = response?.store?.default_sales_channel_id ?? null
+    return cachedSalesChannelId
+  } catch (error) {
+    cachedSalesChannelId = null
+    return cachedSalesChannelId
+  }
+}
+
+export const addPromotionToCart = async (
+  cartId: string,
+  promoCodes: string[]
+) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${cartId}/promotions`, {
+      method: "POST",
+      headers: {
+        ...headers,
+        "x-publishable-api-key":
+          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+      },
+      body: { promo_codes: promoCodes },
+    })
+    .then(async ({ cart }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+      return cart
+    })
+    .catch(throwCouponError)
+}
+
+/**
+ * Medusa JS SDK의 FetchError는 응답 body의 code/type를 버리고 message/status만 보존한다.
+ * 그래서 백엔드 미들웨어가 message에 머신 토큰(COUPON_NOT_ASSIGNED 등)을 싣고,
+ * 여기서 status/토큰을 digest로 변환해 discount.tsx가 로케일별 문구로 분기하게 한다.
+ */
+function throwCouponError(error: any): never {
+  // 401 → 토큰 복구 플로우(error.tsx) 트리거
+  if (error?.status === 401) {
+    throw new ApiAuthError()
+  }
+  const token: string | undefined = error?.code ?? error?.message
+  if (token === "COUPON_LIMIT_EXCEEDED") {
+    const e = new HttpApiError("COUPON_LIMIT_EXCEEDED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_LIMIT_EXCEEDED"
+    throw e
+  }
+  if (token === "COUPON_NOT_ASSIGNED") {
+    const e = new HttpApiError("COUPON_NOT_ASSIGNED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_NOT_ASSIGNED"
+    throw e
+  }
+  medusaError(error)
+}
+
+export const removePromotionFromCart = async (
+  cartId: string,
+  promoCodes: string[]
+) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return await sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${cartId}/promotions`, {
+      method: "DELETE",
+      headers: {
+        ...headers,
+        "x-publishable-api-key":
+          process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+      },
+      body: { promo_codes: promoCodes },
+    })
+    .then(async ({ cart }) => {
+      const cartCacheTag = await getCacheTag("carts")
+      revalidateTag(cartCacheTag)
+      return cart
+    })
+    .catch(throwCouponError)
+}
+
+export type CouponPreviewResult = {
+  valid: boolean
+  claimable?: boolean
+  reason?: string
+  message?: string
+  is_assigned?: boolean
+  promotion?: {
+    id: string
+    code: string
+    visibility: string
+    discount: {
+      type: string
+      value: number
+      target_type: string
+      currency_code?: string
+    } | null
+    expires_at: string | null
+    promotion_id_to_claim?: string
+  }
+}
+
+export const previewCouponCode = async (
+  code: string
+): Promise<CouponPreviewResult> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  return sdk.client.fetch<CouponPreviewResult>(
+    `/store/coupons/preview?code=${encodeURIComponent(code.trim().toUpperCase())}`,
+    { method: "GET", headers }
+  )
+}
+
+export const claimCoupon = async (promotionId: string): Promise<void> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  if (!("authorization" in headers)) {
+    const e = new HttpApiError("로그인이 필요합니다.", 401, "UNAUTHORIZED")
+    e.digest = "UNAUTHORIZED"
+    throw e
+  }
+  await sdk.client
+    .fetch<unknown>(`/store/customers/me/promotions/${promotionId}/claim`, {
+      method: "POST",
+      headers,
+    })
+    // 헤더는 있으나 토큰 만료된 401 도 UNAUTHORIZED digest 로 던져 토큰 복구 플로우를 태운다.
+    .catch(throwCouponError)
+}
+
+export type CouponEventCoupon = {
+  promotion_id: string
+  code: string
+  discount: {
+    type: string
+    value: number
+    target_type: string
+    currency_code?: string
+  } | null
+  expires_at: string | null
+  state: { kind: "claimable" | "claimed" | "usable" | "blocked"; reason?: string }
+}
+
+export type CouponEventResult = {
+  event: {
+    slug: string
+    title: string
+    description: string | null
+    banner_image_url: string | null
+    starts_at: string | null
+    ends_at: string | null
+    active: boolean
+  }
+  coupons: CouponEventCoupon[]
+}
+
+/** 쿠폰 이벤트(배너용 쿠폰 묶음) 조회. 인증 선택 — 로그인 시 발급 상태 반영. */
+export const getCouponEvent = async (slug: string): Promise<CouponEventResult> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  return sdk.client.fetch<CouponEventResult>(
+    `/store/events/${encodeURIComponent(slug)}`,
+    { method: "GET", headers, cache: "no-store" }
+  )
+}
