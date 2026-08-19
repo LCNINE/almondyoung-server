@@ -727,6 +727,9 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_BASE_URL: storefrontUrl,
       NEXT_PUBLIC_DEFAULT_REGION: 'kr',
       NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
+      // 체크아웃 화면을 wallet-web 으로 넘기는 단일 스위치. 'true' 가 아니면 기존 체크아웃이 그대로 뜬다.
+      // 문제 시 이 값만 되돌려 재배포하면 즉시 롤백된다.
+      NEXT_PUBLIC_CHECKOUT_ON_WALLET: 'false',
       NEXT_PUBLIC_MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
@@ -787,6 +790,13 @@ export function setup(infra: SharedInfra) {
       OIDC_REDIRECT_URI: $interpolate`${url('wallet-web')}/auth/callback`,
       OIDC_POST_LOGOUT_REDIRECT_URI: url('wallet-web'),
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
+      // 체크아웃 화면이 wallet-web 으로 옮겨오면서 Medusa Store API 를 직접 부른다.
+      // 호출은 전부 서버사이드(lib/medusa.ts 가 'server-only')라 Medusa STORE_CORS 에
+      // wallet-web 을 추가할 필요가 없다 — 브라우저 호출이 섞이면 CORS 에러로 바로 드러난다.
+      MEDUSA_URL: url('medusa'),
+      MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
+      // 결제 완료 후 주문 성공 페이지로 복귀할 storefront origin.
+      STOREFRONT_ORIGIN: storefrontUrl,
       // 세션 쿠키는 host-only (admin-web 패턴). 다른 RP 와의 세션 공유는 IdP 레벨에서만
       // 일어나며 (auth-web hub 의 parent-domain idp 쿠키), wallet-web 은 자체 도메인에만 토큰을 박는다.
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.

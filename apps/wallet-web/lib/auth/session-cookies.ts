@@ -14,7 +14,18 @@ const REFRESH_TOKEN = 'wallet_rt';
 const ID_TOKEN = 'wallet_it';
 const STATE_COOKIE = 'wallet_oidc_state';
 
+// 체크아웃 핸드오프로 storefront 에서 넘어온 값들. 같은 `wallet_` 프리픽스 규칙을 따른다 —
+// 특히 medusa 토큰은 storefront 가 `_medusa_jwt` 라는 이름으로 host-only 발급하므로
+// 이름을 그대로 쓰면 안 된다(위 주석의 충돌 사고와 같은 유형).
+const MEDUSA_JWT = 'wallet_mjwt';
+const CHECKOUT_CART = 'wallet_ckcart';
+const CHECKOUT_REGION = 'wallet_ckregion';
+
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 14; // 2 weeks
+
+// 체크아웃 작성(5~10분) + 토스 왕복(~3분) 을 덮되, Medusa 고객 토큰이 두 도메인에 오래
+// 복제돼 있지 않도록 짧게 끊는다. 만료되면 storefront 브릿지로 되돌아가 재핸드오프한다.
+const CHECKOUT_MAX_AGE = 30 * 60;
 
 const PROD = process.env.NODE_ENV === 'production';
 
@@ -78,6 +89,47 @@ export function writeSessionCookies(jar: Jar, tokens: TokenSet): void {
   }
 }
 
+export interface CheckoutHandoffValues {
+  /** storefront 의 `_medusa_jwt` 원문. wallet-web 은 검증하지 않고 Medusa 로 Bearer 전달만 한다. */
+  medusaJwt: string;
+  cartId: string;
+  region: string;
+}
+
+/**
+ * 체크아웃 핸드오프 값 저장. SameSite 는 반드시 Lax 여야 한다(commonOptions) — 토스 결제창에서
+ * /checkout/toss-complete 로 크로스사이트 top-level 내비게이션이 돌아오는데, Strict 면 이 쿠키가
+ * 실리지 않아 승인 직후 주문 확정이 자격증명 없이 실패한다.
+ */
+export function writeCheckoutHandoffCookies(jar: Jar, values: CheckoutHandoffValues): void {
+  const opts = { ...commonOptions(), maxAge: CHECKOUT_MAX_AGE };
+  jar.set(MEDUSA_JWT, values.medusaJwt, opts);
+  jar.set(CHECKOUT_CART, values.cartId, opts);
+  jar.set(CHECKOUT_REGION, values.region, opts);
+}
+
+export function clearCheckoutHandoffCookiesOn(jar: Jar): void {
+  const opts = { ...commonOptions(), maxAge: 0 };
+  jar.set(MEDUSA_JWT, '', opts);
+  jar.set(CHECKOUT_CART, '', opts);
+  jar.set(CHECKOUT_REGION, '', opts);
+}
+
+export async function getMedusaJwt(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(MEDUSA_JWT)?.value ?? null;
+}
+
+export async function getCheckoutCartId(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(CHECKOUT_CART)?.value ?? null;
+}
+
+export async function getCheckoutRegion(): Promise<string | null> {
+  const jar = await cookies();
+  return jar.get(CHECKOUT_REGION)?.value ?? null;
+}
+
 export async function clearSessionCookies(): Promise<void> {
   const jar = await cookies();
   clearSessionCookiesOn(jar);
@@ -88,6 +140,7 @@ export function clearSessionCookiesOn(jar: Jar): void {
   jar.set(ACCESS_TOKEN, '', opts);
   jar.set(REFRESH_TOKEN, '', opts);
   jar.set(ID_TOKEN, '', opts);
+  clearCheckoutHandoffCookiesOn(jar);
 }
 
 export async function getAccessToken(): Promise<string | null> {
@@ -160,4 +213,7 @@ export const SESSION_COOKIE_NAMES = {
   REFRESH_TOKEN,
   ID_TOKEN,
   STATE_COOKIE,
+  MEDUSA_JWT,
+  CHECKOUT_CART,
+  CHECKOUT_REGION,
 } as const;
