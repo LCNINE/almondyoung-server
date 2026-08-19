@@ -16,6 +16,8 @@ const FIRST_RUN_LOOKBACK_MS = 60 * 60 * 1000;
 const MAX_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** 무한 페이징 방어. 한 창 × 300건이면 6000건으로, 우리 주문량에서 도달할 수 없다. */
 const MAX_PAGES = 20;
+/** 상세 조회 불일치 메시지에 나열할 id 개수 상한. 병적인 응답이 메시지를 무한정 늘리지 못하게 막는다. */
+const MAX_LISTED_MISMATCHED_IDS = 20;
 
 const ACCEPTED_STATUSES = new Set(['PAYED', 'DELIVERING', 'DELIVERED', 'PURCHASE_DECIDED']);
 const TERMINAL_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYMENT', 'RETURNED', 'EXCHANGED']);
@@ -79,18 +81,36 @@ export class NaverOrderSource implements ReplayableChannelOrderSource {
     const infos = (detailsResponse.data ?? []).map((raw) => parseNaverProductOrderInfo(raw));
 
     // 문서가 "식별자 단위로 일부만 조회 실패할 수 있다" 고 경고한다. 조용히 빠지면 §6.1 이
-    // 막으려던 사고가 그대로 난다. 개수만 비교하면 응답에 요청하지 않은 id 가 섞여 개수가
-    // 우연히 맞아떨어지는 경우를 놓친다 — 요청한 id 전체가 실제로 응답에 있는지 신원으로
-    // 확인한다 (FIX 5).
+    // 막으려던 사고가 그대로 난다. 신원(집합 포함) 검사만으로는 한쪽만 막는다 — 응답이
+    // 요청보다 많아서(요청 전부 + 엉뚱한 id 하나 더) 상위집합이 되는 경우는 "요청 id 가
+    // 다 있다" 는 조건을 그대로 통과해 엉뚱한 라인이 주문에 섞여 들어간다. 그래서 개수
+    // 일치까지 **같이** 요구한다 — 응답은 요청 집합과 정확히 같아야 한다 (FIX 5 재보강).
+    const requestedProductOrderIds = new Set(productOrderIds);
     const returnedProductOrderIds = new Set(infos.map((info) => info.productOrderId));
-    const hasMissingProductOrderId = productOrderIds.some((id) => !returnedProductOrderIds.has(id));
-    if (hasMissingProductOrderId) {
+    const missingProductOrderIds = productOrderIds.filter((id) => !returnedProductOrderIds.has(id));
+    const unexpectedProductOrderIds = infos
+      .map((info) => info.productOrderId)
+      .filter((id) => !requestedProductOrderIds.has(id));
+    const hasCountMismatch = infos.length !== productOrderIds.length;
+
+    if (missingProductOrderIds.length > 0 || unexpectedProductOrderIds.length > 0 || hasCountMismatch) {
+      const missingPart =
+        missingProductOrderIds.length > 0 ? `, 누락 [${this.formatIdSample(missingProductOrderIds)}]` : '';
+      const unexpectedPart =
+        unexpectedProductOrderIds.length > 0 ? `, 예상외 [${this.formatIdSample(unexpectedProductOrderIds)}]` : '';
       throw new Error(
-        `네이버 상세 조회 누락: 주문 ${externalOrderId} 요청 ${productOrderIds.length}건, 응답 ${infos.length}건`,
+        `네이버 상세 조회 누락: 주문 ${externalOrderId} 요청 ${productOrderIds.length}건, 응답 ${infos.length}건${missingPart}${unexpectedPart}`,
       );
     }
 
     return this.buildSnapshot(externalOrderId, infos, sourceUpdatedAt);
+  }
+
+  /** 불일치 메시지에 나열할 id 목록을 상한으로 자른다 — 병적인 응답이 메시지를 무한정 늘리지 못하게. */
+  private formatIdSample(ids: string[]): string {
+    if (ids.length <= MAX_LISTED_MISMATCHED_IDS) return ids.join(', ');
+    const shown = ids.slice(0, MAX_LISTED_MISMATCHED_IDS).join(', ');
+    return `${shown} 외 ${ids.length - MAX_LISTED_MISMATCHED_IDS}건`;
   }
 
   /**

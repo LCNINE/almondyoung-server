@@ -63,14 +63,29 @@ describe('NaverOrderSource', () => {
     await expect(source.fetchOrder('ord-1')).rejects.toThrow(/누락/);
   });
 
-  it('상세 응답 개수는 맞아도 요청하지 않은 productOrderId 가 섞여 있으면 throw 한다 (개수 대신 신원을 본다, FIX 5)', async () => {
+  // 개수는 요청과 같지만(2건) 요청한 po-2 자리에 엉뚱한 po-9 가 대신 왔다 — 결손 쪽(po-2 없음)
+  // 만으로도 throw 는 되지만, 이 케이스는 "신원 불일치" 를 대표하기보다 결손의 한 변형이다.
+  // 개수는 같은데 응답이 요청보다 **많아지는**(초과분) 케이스는 별도 테스트가 따로 막는다.
+  it('상세 응답 개수는 맞아도 요청한 id 대신 엉뚱한 id 가 왔으면(결손+치환) throw 하고 누락/예상외 id 를 메시지에 남긴다', async () => {
     client.getProductOrderIdsByOrderId.mockResolvedValue({ data: ['po-1', 'po-2'] });
     // 개수는 요청과 같은 2건이지만, 요청한 po-2 대신 엉뚱한 po-9 가 섞여 있다.
     client.getOrderDetails.mockResolvedValue({
       data: [detail('po-1', 'ord-1'), detail('po-9', 'ord-1')],
     });
 
-    await expect(source.fetchOrder('ord-1')).rejects.toThrow(/누락/);
+    await expect(source.fetchOrder('ord-1')).rejects.toThrow(/누락.*\[po-2\].*예상외.*\[po-9\]/s);
+  });
+
+  // FIX 5 재보강: 신원(집합 포함) 검사만으로는 "요청한 id 가 응답에 다 있는가" 밖에 못 본다 —
+  // 응답이 요청 전부 + 엉뚱한 id 하나(상위집합)여도 그 조건은 그대로 통과해, 요청하지 않은
+  // 라인이 주문에 섞여 들어간다. 개수 비교를 다시 더해야 이 방향도 막힌다.
+  it('상세 응답이 요청한 id 를 전부 포함하면서 엉뚱한 id 까지 더 얹혀 오면(초과분) throw 한다', async () => {
+    client.getProductOrderIdsByOrderId.mockResolvedValue({ data: ['po-1', 'po-2'] });
+    client.getOrderDetails.mockResolvedValue({
+      data: [detail('po-1', 'ord-1'), detail('po-2', 'ord-1'), detail('po-9', 'ord-1')],
+    });
+
+    await expect(source.fetchOrder('ord-1')).rejects.toThrow(/누락.*예상외.*\[po-9\]/s);
   });
 
   it('세 주문 중 하나의 상세가 깨져도 나머지는 계속 수집하고 throw 하지 않는다 (한 주문 실패가 주기 전체를 막지 않는다, FIX 2)', async () => {
