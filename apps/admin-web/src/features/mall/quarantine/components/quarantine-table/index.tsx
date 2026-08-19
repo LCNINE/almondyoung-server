@@ -31,6 +31,17 @@ export function QuarantineTable() {
   return (
     <>
       <div className="px-4 pb-4">
+        {/* 한 판의 상한에 닿았다 — 잘린 목록을 전부인 것처럼 보여주면, 안 보이는 주문의 출고가
+            멈춘 채 방치된다(lazy 매핑 전략의 급소). 잘렸다는 사실 자체를 표 위에 올린다. */}
+        {data?.truncated && (
+          <p
+            role="status"
+            className="mb-3 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+          >
+            상위 {data.limit}건만 표시했습니다. 이 목록이 전부가 아닙니다 — 먼저 보이는 건들을
+            해소한 뒤 다시 불러오세요.
+          </p>
+        )}
         <Table>
           <TableHeader>
             <TableRow>

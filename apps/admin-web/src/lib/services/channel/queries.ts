@@ -5,24 +5,27 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { channelQueryKeys } from './query-keys';
-import { orderCollectionFailuresClient } from '@/lib/api/domains/channel/order-collection-failures.client';
+import {
+  QUARANTINE_LIST_LIMIT,
+  orderCollectionFailuresClient,
+} from '@/lib/api/domains/channel/order-collection-failures.client';
 
+/**
+ * 격리 목록. 반환값은 `{ count, data, limit, truncated }` — 표와 배지가 같은 판을 공유한다.
+ *
+ * `limit` 을 명시해 보낸다: 서버 기본값 50 을 그대로 쓰면 개통 직후 수백 건이 격리되는 구간에서
+ * 말없이 앞의 50건만 보인다. 상한에 닿으면 `truncated` 가 서고, 화면이 그 사실을 그린다.
+ */
 export function useQuarantinedFailures(
-  params: { channel?: string; status?: string } = {}
+  params: { channel?: string; status?: string; limit?: number } = {}
 ) {
-  const query = { status: 'quarantined', ...params };
+  const query = { status: 'quarantined', limit: QUARANTINE_LIST_LIMIT, ...params };
   return useQuery({
     queryKey: channelQueryKeys.failuresList(query),
     queryFn: () => orderCollectionFailuresClient.list(query),
   });
 }
 
-export function useFailureDetail(id: string | null) {
-  return useQuery({
-    queryKey: channelQueryKeys.failure(id ?? ''),
-    // non-null assertion: `enabled` 이 id 를 가드하므로 queryFn 은 id 가 있을 때만 호출된다.
-    // 이 codebase 의 동일 패턴(useGetCampaign/useGetCoupon/useCouponEvent)이 전부 이 방식이다.
-    queryFn: () => orderCollectionFailuresClient.get(id!),
-    enabled: Boolean(id),
-  });
-}
+// `useFailureDetail` 은 삭제했다. 호출부가 한 곳도 없었고(상세 다이얼로그는 목록 행을 그대로
+// 받는다), 목록과 같은 이중 unwrap 버그를 안고 있어 되살아나면 같은 사고를 다시 낸다.
+// 상세 단건 조회가 필요해지면 `orderCollectionFailuresClient.get` 위에 새로 쓰면 된다.

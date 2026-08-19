@@ -37,7 +37,9 @@ export function QuarantineDetailDialog({ failure, onClose }: Props) {
     if (!failure) return;
     try {
       const result = await replay.mutateAsync(failure.id);
-      toast(replayResultMessage(result.status));
+      // 응답 모양이 예상과 다르면 `result` 가 null 이다 — 그때도 문구는 나가야 한다
+      // (`replayResultMessage` 가 모르는 값에 폴백을 준다).
+      toast(replayResultMessage(result?.status ?? ''));
       onClose();
     } catch {
       toast.error('재처리 요청에 실패했습니다. 잠시 후 다시 시도하세요.');

@@ -8,10 +8,14 @@
 
 import { Badge } from '@/components/ui/badge';
 import { useQuarantinedFailures } from '@/lib/services/channel/queries';
+import { formatQuarantineCount } from '@/lib/api/domains/channel/order-collection-failures.client';
 
 export function QuarantineMenuBadge() {
   const { data, isLoading } = useQuarantinedFailures();
   const count = data?.count ?? 0;
+  // 한 판의 상한에 닿았으면 "200" 이 아니라 "200+" 로 적는다 — 배지가 상한을 실제 건수처럼
+  // 보여주면 운영자가 큐를 다 봤다고 오해한다.
+  const label = data ? formatQuarantineCount(data) : String(count);
 
   if (isLoading || count === 0) return null;
 
@@ -19,9 +23,9 @@ export function QuarantineMenuBadge() {
     <Badge
       variant="destructive"
       className="ml-auto text-xs group-data-[collapsible=icon]:hidden"
-      aria-label={`격리 ${count}건`}
+      aria-label={`격리 ${label}건`}
     >
-      {count}
+      {label}
     </Badge>
   );
 }
