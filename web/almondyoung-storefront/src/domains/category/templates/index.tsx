@@ -5,7 +5,7 @@ import { CategoryBreadcrumb } from "../components/breadcrumb"
 import { CategoryPageHeading } from "../components/page-heading"
 import RefinementList from "../components/refinement-list"
 import type { SortOptions } from "../components/refinement-list/sort-products"
-import { SubCategoryNav } from "../components/sub-category-nav"
+import { CategorySubNav } from "../components/category-sub-nav"
 import CategoryProducts from "./category-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
@@ -67,8 +67,8 @@ export function CategoryTemplate({
               </div>
             }
           >
-            <SubCategoryNav
-              categories={category!.category_children!}
+            <CategorySubNav
+              category={category!}
               parentHandle={segments?.join("/")}
             />
           </Suspense>

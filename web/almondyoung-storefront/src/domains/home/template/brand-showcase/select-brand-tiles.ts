@@ -49,6 +49,11 @@ function hasOwnThumbnail(category: BrandTileCategory): boolean {
   return typeof image === "string" && image.length > 0
 }
 
+/** 이 노드가 브랜드 타일인가(그룹 아님). 카테고리 페이지의 디렉토리 분기에서도 쓴다. */
+export function isBrandTileNode(category: BrandTileCategory): boolean {
+  return isBrandNode(category)
+}
+
 function isBrandNode(category: BrandTileCategory): boolean {
   const isBrand = (category.metadata as { isBrand?: unknown } | null | undefined)
     ?.isBrand
