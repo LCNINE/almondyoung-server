@@ -12,6 +12,18 @@ import { ClaimStatusSchema, ProductOrderStatusSchema } from '../../zods/naver/na
  *
  * `looseObject` 인 것이 요점이다: 모르는 필드는 통과시키고, **우리가 의존하는 필드가 없으면
  * throw** 한다. 삼키면 라인이 조용히 빠진 주문이 Core 로 들어간다.
+ *
+ * **Load-bearing 필드** (누락 시 throw):
+ * - `orderId` — 주문 식별 (필수)
+ * - `productOrderId` — 상품주문 식별 (필수)
+ * - `productOrderStatus` — 주문 상태 (필수)
+ * - `quantity` — 수량 (필수, 기본값 1 은 언더십핑 위험)
+ * - `unitPrice` — 단가 (필수, 누락 시 매출 0 으로 조용히 기록되어 회복 불가)
+ *
+ * **Display/Fallback 필드** (누락 가능):
+ * - `productName`, `shippingAddress` — 기본값으로 표시 목적 달성
+ * - `totalPaymentAmount` — `unitPrice * quantity` 로 유도 가능
+ * - `deliveryFeeAmount` — 누락 시 배송료 0 (수량 부문 아님)
  */
 const OrderSchema = z.looseObject({
   orderId: z.string().min(1),
@@ -34,8 +46,8 @@ const ProductOrderSchema = z.looseObject({
   claimStatus: ClaimStatusSchema.optional(),
   productId: z.union([z.string(), z.number()]).optional(),
   productName: z.string().optional(),
-  quantity: z.number().int().nonnegative().optional(),
-  unitPrice: z.number().nonnegative().optional(),
+  quantity: z.number().int().nonnegative(),
+  unitPrice: z.number().nonnegative(),
   totalPaymentAmount: z.number().nonnegative().optional(),
   deliveryFeeAmount: z.number().nonnegative().optional(),
   shippingAddress: ShippingAddressSchema.optional(),
@@ -66,8 +78,6 @@ export function parseNaverProductOrderInfo(raw: unknown): NaverProductOrderInfo 
   const parsed = ProductOrderInfoSchema.parse(raw);
   const { order, productOrder } = parsed;
   const address = productOrder.shippingAddress;
-  const quantity = productOrder.quantity ?? 1;
-  const unitPrice = productOrder.unitPrice ?? 0;
 
   return {
     orderId: order.orderId,
@@ -76,9 +86,9 @@ export function parseNaverProductOrderInfo(raw: unknown): NaverProductOrderInfo 
     ...(productOrder.claimStatus ? { claimStatus: productOrder.claimStatus } : {}),
     ...(productOrder.productId != null ? { channelProductId: String(productOrder.productId) } : {}),
     productName: productOrder.productName ?? productOrder.productOrderId,
-    quantity,
-    unitPrice,
-    lineTotal: productOrder.totalPaymentAmount ?? unitPrice * quantity,
+    quantity: productOrder.quantity,
+    unitPrice: productOrder.unitPrice,
+    lineTotal: productOrder.totalPaymentAmount ?? productOrder.unitPrice * productOrder.quantity,
     shippingFee: productOrder.deliveryFeeAmount ?? 0,
     ...(order.paymentDate ? { paymentDate: order.paymentDate } : {}),
     shippingAddress: {

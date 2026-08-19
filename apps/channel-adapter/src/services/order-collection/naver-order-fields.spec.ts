@@ -42,4 +42,8 @@ describe('parseNaverProductOrderInfo', () => {
   it('필수 식별자가 없으면 throw 한다 — 조용히 넘기지 않는다', () => {
     expect(() => parseNaverProductOrderInfo({ ...raw, productOrder: { ...raw.productOrder, productOrderId: undefined } })).toThrow();
   });
+
+  it('unitPrice 누락 시 throw 한다 — 매출이 0 으로 조용히 기록되는 회복 불가 사태를 방지한다', () => {
+    expect(() => parseNaverProductOrderInfo({ ...raw, productOrder: { ...raw.productOrder, unitPrice: undefined } })).toThrow();
+  });
 });
