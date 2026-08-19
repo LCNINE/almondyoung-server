@@ -798,6 +798,9 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       // 결제 완료 후 주문 성공 페이지로 복귀할 storefront origin.
       STOREFRONT_ORIGIN: storefrontUrl,
+      // 약관·개인정보 문서 링크(클라이언트 렌더)용. 문서는 storefront 에만 두고 새 탭으로 띄운다 —
+      // wallet-web 으로 복사하면 법무 문구가 두 곳에 중복된다.
+      NEXT_PUBLIC_STOREFRONT_ORIGIN: storefrontUrl,
       // storefront 에서 이식한 체크아웃 코드(checkout-ui/)가 그대로 참조하는 값들.
       // 상품 썸네일(file-service URL 조립)과 멤버십 그룹 판정에 쓰인다.
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,

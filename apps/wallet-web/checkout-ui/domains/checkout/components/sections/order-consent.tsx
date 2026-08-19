@@ -29,7 +29,14 @@ export function OrderConsentSection({
 }: OrderConsentSectionProps) {
   const t = useTranslations("checkout.consent")
   const params = useParams()
-  const countryCode = (params.countryCode as string) ?? "kr"
+  // wallet-web 은 URL 에 국가코드가 없다(체크아웃 경로는 /checkout 하나뿐). 핸드오프로 받은
+  // region 을 쓰고, 약관/개인정보 문서는 storefront 에만 있으므로 절대 URL 로 새 탭에 띄운다.
+  // 문서를 wallet-web 으로 복사하면 법무 문구가 두 곳에 중복돼 한쪽만 고치는 사고가 난다.
+  const countryCode =
+    (params.countryCode as string) ??
+    (process.env.NEXT_PUBLIC_CHECKOUT_REGION as string) ??
+    "kr"
+  const docOrigin = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? ""
   const allChecked = value.purchaseTerms && value.personalInfo
 
   const linkClass =
@@ -79,7 +86,7 @@ export function OrderConsentSection({
               {t("purchaseTerms")}
             </Label>
             <Link
-              href={`/${countryCode}/terms`}
+              href={`${docOrigin}/${countryCode}/terms`}
               target="_blank"
               rel="noopener noreferrer"
               className={linkClass}
@@ -103,7 +110,7 @@ export function OrderConsentSection({
               {t("personalInfo")}
             </Label>
             <Link
-              href={`/${countryCode}/privacy`}
+              href={`${docOrigin}/${countryCode}/privacy`}
               target="_blank"
               rel="noopener noreferrer"
               className={linkClass}
@@ -157,7 +164,7 @@ export function OrderConsentSection({
             <li>{t("withdrawal.restriction")}</li>
           </ul>
           <Link
-            href={`/${countryCode}/guide`}
+            href={`${docOrigin}/${countryCode}/guide`}
             target="_blank"
             rel="noopener noreferrer"
             className={`${linkClass} mt-2 inline-block`}
