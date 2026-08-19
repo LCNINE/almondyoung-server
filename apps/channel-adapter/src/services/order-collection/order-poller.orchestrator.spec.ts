@@ -1355,6 +1355,226 @@ describe('OrderPollerOrchestrator — 채널 활성 게이트 (#654)', () => {
 
     expect(client.getActiveSites).toHaveBeenCalledTimes(1);
   });
+
+  // FIX D: 최초 수집 때 저장하는 해시는 `createPayload` 에서 세 값을 다시 조립해 만들었다.
+  // 그것은 "createPayload.items 와 changes.items 가 항상 같다" 는 가정이었고, 취소된 라인이
+  // 이미 있는 주문에서 깨진다 — 계약에는 살아있는 라인만, 해시에는 전 라인이 들어가기 때문.
+  // 그러면 두 번째 폴링이 구조적으로 다른 입력을 보고 오격리한다.
+  it('최초 수집 때 이미 취소된 라인이 있어도 두 번째 폴링이 오격리하지 않는다 (FIX D)', async () => {
+    const db = makeDb();
+    const order = makeOrderWithCancelledLine('2026-05-26T01:00:00.000Z');
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest
+        .fn()
+        .mockResolvedValueOnce({ orders: [order], failures: [] })
+        .mockResolvedValueOnce({ orders: [makeOrderWithCancelledLine('2026-05-26T01:10:00.000Z')], failures: [] }),
+    };
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      makeSyncStatus() as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      failures as any,
+      db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+  });
+
+  // 같은 FIX D 의 Medusa 쪽 대칭 근거: Medusa 는 취소 라인이 없어 두 입력이 같은 값이므로
+  // 저장되는 해시가 바이트 단위로 바뀌지 않는다. 그 사실을 직접 못 박는다.
+  it('Medusa 주문에서는 createPayload 유래 해시와 changes 유래 해시가 같은 값이다 (FIX D 무영향 근거)', async () => {
+    const db = makeDb();
+    const item = makeOrder('2026-05-26T01:00:00.000Z');
+    const hashes = makeHashService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [{ channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue({ orders: [item], failures: [] }) }],
+      makeSyncStatus() as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      hashes as any,
+      makeFailureService() as any,
+      db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+
+    const legacyInput = {
+      items: item.createPayload.items,
+      shippingAddress: item.createPayload.shippingAddress,
+      totalAmount: item.createPayload.totalAmount,
+    };
+    expect(hashes.stored('medusa', 'order', 'medusa_order_1')).toBe(hashes.computeHash(legacyInput));
+  });
+
+  // FIX E: 관측의 정체성은 payload 가 아니라 `eventKey` 다. 네이버 부분취소는 형제 라인이 바뀔
+  // 때마다 `cancelledAt` 이 따라 움직여, payload 해시로 판정하면 같은 취소가 매 주기 재발행되고
+  // Core 는 `remaining = 0` 으로 BadRequestException → DLQ 를 만든다.
+  it('payload 가 흔들려도 같은 eventKey 의 관측은 한 번만 발행한다 (FIX E)', async () => {
+    const db = makeDb();
+    db.mappings.set('naver:medusa_order_1', {
+      salesChannel: 'naver',
+      channelOrderId: 'medusa_order_1',
+      wmsOrderId: '11111111-1111-4111-8111-111111111111',
+    });
+    const first = makeLifecycleEvent('OrderCancelled', 'cancelled:po-1', '2026-05-26T01:00:00.000Z');
+    // 형제 라인이 바뀌어 sourceUpdatedAt(=cancelledAt) 만 움직인 같은 취소.
+    const second = makeLifecycleEvent('OrderCancelled', 'cancelled:po-1', '2026-05-26T01:05:00.000Z');
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest
+        .fn()
+        .mockResolvedValueOnce({ orders: [], failures: [], lifecycleEvents: [first] })
+        .mockResolvedValueOnce({ orders: [], failures: [], lifecycleEvents: [second] }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    const cancellations = outbox.enqueue.mock.calls.filter(
+      ([event]: [{ eventType: string }, unknown]) => event.eventType === 'OrderCancelled',
+    );
+    expect(cancellations).toHaveLength(1);
+  });
+
+  it('eventKey 가 다르면 별개의 관측으로 각각 발행한다 (FIX E — 라인 단위 취소가 뭉개지지 않는다)', async () => {
+    const db = makeDb();
+    db.mappings.set('naver:medusa_order_1', {
+      salesChannel: 'naver',
+      channelOrderId: 'medusa_order_1',
+      wmsOrderId: '11111111-1111-4111-8111-111111111111',
+    });
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [],
+        lifecycleEvents: [
+          makeLifecycleEvent('OrderCancelled', 'cancelled:po-1', '2026-05-26T01:00:00.000Z'),
+          makeLifecycleEvent('OrderCancelled', 'cancelled:po-2', '2026-05-26T01:00:00.000Z'),
+        ],
+      }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      db as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(
+      outbox.enqueue.mock.calls.filter(([event]: [{ eventType: string }, unknown]) => event.eventType === 'OrderCancelled'),
+    ).toHaveLength(2);
+  });
+
+  // FIX F: 닫힌 창(`[since, since+24h]`)에 변경이 하나도 없으면 워터마크가 `null` 로 남고
+  // `recordSyncComplete` 가 `lastSyncAt` 을 건드리지 않는다 — 다음 주기가 같은 창을 다시 묻는다.
+  // 조용한 24시간 하나가 수집을 영구히 정지시킨다.
+  it('변경 0건이어도 완료한 닫힌 창의 끝까지 워터마크를 전진시킨다 (FIX F)', async () => {
+    const windowEnd = new Date('2026-05-27T00:00:00.000Z');
+    const syncStatus = makeSyncStatus(new Date('2026-05-26T00:00:00.000Z'));
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [],
+        lifecycleEvents: [],
+        completedWindowEnd: windowEnd,
+      }),
+    };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    expect(syncStatus.lastSyncAt()).toEqual(windowEnd);
+    // 두 번째 폴은 같은 닫힌 창이 아니라 그 뒤에서 다시 시작해야 한다 (2분 되감기 포함).
+    expect(provider.fetchOrders).toHaveBeenLastCalledWith(new Date('2026-05-26T23:58:00.000Z'));
+  });
+
+  it('창의 끝을 보고하지 않는 source(Medusa)는 변경 0건에서 워터마크가 그대로다 (FIX F 무영향 근거)', async () => {
+    const before = new Date('2026-05-26T00:00:00.000Z');
+    const syncStatus = makeSyncStatus(before);
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
+    };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.lastSyncAt()).toEqual(before);
+  });
+
+  it('항목이 있으면 창의 끝이 아니라 항목의 시각이 워터마크다 (FIX F 가 항목 경로를 건드리지 않는다)', async () => {
+    const syncStatus = makeSyncStatus(new Date('2026-05-26T00:00:00.000Z'));
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [makeOrder('2026-05-26T01:00:00.000Z')],
+        failures: [],
+        completedWindowEnd: new Date('2026-05-27T00:00:00.000Z'),
+      }),
+    };
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa', 'naver']) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-05-26T01:00:00.000Z'));
+  });
 });
 
 /** 활성 사이트 목록을 주는 Core 클라이언트의 목. Error 를 주면 조회 실패를 흉내낸다. */
@@ -1415,6 +1635,62 @@ function makeOrder(
       items: [item],
       shippingAddress,
       totalAmount,
+    },
+    modifiedAt: sourceUpdatedAt,
+  };
+}
+
+/**
+ * 최초 수집 시점에 **이미 취소된 라인이 있는** 주문 (네이버 부분취소). 계약(`createPayload.items`)
+ * 에는 살아있는 라인만, 해시 입력(`changes.items`)에는 전 라인이 들어간다 — 두 값이 다르다는
+ * 것이 요점이고, 그 차이를 무시한 채 `createPayload` 로 최초 해시를 만들면 다음 폴링이
+ * 오격리한다. 총액도 마찬가지로 계약은 실판매분, 해시는 전 라인이다.
+ */
+function makeOrderWithCancelledLine(sourceUpdatedAt: string): OrderFetchItem {
+  const shippingAddress = {
+    recipientName: 'Jane Kim',
+    phone: '010-0000-0000',
+    postalCode: '12345',
+    roadAddress: 'Seoul',
+    detailAddress: '101',
+  };
+  const live = {
+    orderItemId: 'po-1',
+    skuId: 'pim_variant_1',
+    masterId: 'master_1',
+    versionId: 'version_1',
+    variantId: 'pim_variant_1',
+    productName: 'Product',
+    channelProductId: 'naver_product_1',
+    quantity: 1,
+    unitPrice: 10000,
+    totalPrice: 10000,
+  };
+  const cancelled = { ...live, orderItemId: 'po-2', quantity: 1, unitPrice: 3000, totalPrice: 3000 };
+
+  return {
+    externalOrderId: 'medusa_order_1',
+    sourceUpdatedAt,
+    eligibleForOrderCreation: true,
+    createPayload: {
+      orderId: '11111111-1111-4111-8111-111111111111',
+      externalOrderId: 'medusa_order_1',
+      salesChannel: 'naver',
+      customerId: null,
+      items: [live],
+      totalAmount: 10000,
+      subtotalAmount: 10000,
+      shippingAmount: 0,
+      discountAmount: 0,
+      currency: 'KRW',
+      shippingAddress,
+      status: 'confirmed',
+      createdAt: '2026-05-26T00:00:00.000Z',
+    },
+    changes: {
+      items: [live, cancelled],
+      shippingAddress,
+      totalAmount: 13000,
     },
     modifiedAt: sourceUpdatedAt,
   };
@@ -1526,6 +1802,16 @@ function makeHashService() {
       hashes.set(k, hash);
       return true;
     }),
+    // 처음 본 자원일 때만 선점하는 목 (`INSERT … ON CONFLICT DO NOTHING RETURNING`).
+    // 위와 마찬가지로 **검사와 기록 사이에 await 가 없다** — 그것이 원자성의 근거다.
+    claimFirstSeen: jest.fn(async (source: string, resourceType: string, resourceId: string, hash: string) => {
+      const k = key(source, resourceType, resourceId);
+      if (hashes.has(k)) return false;
+      hashes.set(k, hash);
+      return true;
+    }),
+    stored: (source: string, resourceType: string, resourceId: string) =>
+      hashes.get(key(source, resourceType, resourceId)) ?? null,
   };
 }
 

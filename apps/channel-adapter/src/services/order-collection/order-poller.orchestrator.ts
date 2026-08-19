@@ -93,7 +93,7 @@ export class OrderPollerOrchestrator {
         await this.syncStatusService.recordSyncStart(channelType, 'orders');
 
         const startTime = Date.now();
-        const { orders, failures, lifecycleEvents = [] } = await provider.fetchOrders(since);
+        const { orders, failures, lifecycleEvents = [], completedWindowEnd } = await provider.fetchOrders(since);
         const orderedItems: OrderedPollItem[] = [
           ...orders.map((item) => ({ kind: 'order' as const, item })),
           ...failures.map((item) => ({ kind: 'failure' as const, item })),
@@ -210,6 +210,21 @@ export class OrderPollerOrchestrator {
           emitted += result.emitted;
           dedupedUnchanged += result.dedupedUnchanged;
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
+        }
+
+        // 🔴 조용한 창은 워터마크를 영원히 묶는다. 닫힌 조회 창(`[since, since+24h]`)을 쓰는
+        // source 는 그 창에 변경이 하나도 없으면 항목 0건을 낸다 — 그러면 워터마크가 `null` 로
+        // 남고 `recordSyncComplete` 는 `lastSyncAt` 을 건드리지 않으므로 다음 주기가 **같은 닫힌
+        // 창**을 다시 묻는다. 조용한 24시간 하나가 수집을 영구히 정지시키는 것이다.
+        //
+        // 항목이 하나라도 있었으면 그 항목들의 시각이 워터마크의 근거이므로 여기 오지 않는다.
+        // 즉 이 갈래는 "아무것도 없었다" 는 사실만 다루며, 그때 `watermarkHeldAt` 도 정의상 없다.
+        // 열린 질의를 쓰는 source(Medusa)는 `completedWindowEnd` 를 내지 않으므로 무영향이다.
+        if (orderedItems.length === 0 && completedWindowEnd) {
+          watermark = completedWindowEnd;
+          this.logger.log(
+            `[${provider.channel}] 변경 0건 — 완료한 조회 창 끝(${completedWindowEnd.toISOString()})으로 워터마크를 전진시킨다.`,
+          );
         }
 
         if (skippedAlreadyCollected > 0) {
@@ -430,16 +445,21 @@ export class OrderPollerOrchestrator {
 
         // 첫 폴링 직후의 후속 폴링이 동일 페이로드로 OrderModified를 오발행하지 않도록
         // 생성 시점의 변경-기준 콘텐츠 해시를 함께 기록해둔다.
-        const initialChangeContent = {
-          items: payload.items,
-          shippingAddress: payload.shippingAddress,
-          totalAmount: payload.totalAmount,
-        };
+        //
+        // 🔴 입력은 **`item.changes` 그 자체**여야 한다. 예전엔 `createPayload` 에서 같은 세 값을
+        // 다시 조립했는데, 그것은 두 값이 항상 같다는 가정 위에 서 있었다. 취소된 라인이 있는
+        // 주문에서 그 가정이 깨진다 — `createPayload.items` 는 살아있는 라인만, `changes.items`
+        // 는 전 라인이라 최초 수집 때 이미 취소된 라인이 있으면 저장 해시와 다음 폴링의 해시가
+        // 구조적으로 어긋나, 그 주문은 두 번째 폴링에서 `collected_order_modification_not_accepted`
+        // 로 오격리된다(그 사유는 replay 가 거부한다).
+        //
+        // Medusa 는 취소 라인 개념이 없어 두 값이 같은 항목·같은 주소·같은 총액이고,
+        // `computeHash` 의 직렬화가 키를 정렬하므로 **저장되는 해시가 바이트 단위로 동일**하다.
         await this.pollingHashService.upsert(
           provider.channel,
           POLLING_RESOURCE_TYPE_ORDER,
           payload.externalOrderId ?? payload.orderId,
-          this.pollingHashService.computeHash(initialChangeContent),
+          this.pollingHashService.computeHash(item.changes),
           tx,
         );
         return true;
@@ -529,6 +549,15 @@ export class OrderPollerOrchestrator {
       orderId: mapping[0].wmsOrderId,
       ...item.payload,
     };
+    // 🔴 관측의 정체성은 **`eventKey`** 다 (`LifecycleObservation.eventKey`: "같은 관측을 두 번
+    // 세지 않기 위한 채널 내 안정 키"). 그래서 자원 키에 그 값을 넣고, 중복 판정도 payload 가
+    // 아니라 **이 자원이 처음인가**로 한다. payload 로 판정하면 네이버 부분취소처럼 형제 라인이
+    // 바뀔 때마다 `cancelledAt` 이 따라 움직이는 관측이 매 주기 재발행되고, Core 는 이미 취소된
+    // 라인에 `remaining = 0` 으로 `BadRequestException` 을 던져 DLQ 에 쌓인다.
+    //
+    // Medusa 의 키(`cancelled`, `refund:<id>`)는 이미 안정적이라 payload 도 키마다 고정이었다 —
+    // 즉 "해시가 바뀌면 재발행" 과 "처음이면 발행" 이 Medusa 에서는 같은 판정을 낸다. 해시 값
+    // 자체도 계속 같은 입력으로 계산해 기록하므로 기존 행의 저장 바이트가 달라지지 않는다.
     const lifecycleResourceId = `${item.externalOrderId}:${item.eventKey}`;
     const newHash = this.pollingHashService.computeHash({
       eventType: item.eventType,
@@ -537,10 +566,10 @@ export class OrderPollerOrchestrator {
     });
     const wmsOrderId = mapping[0].wmsOrderId;
 
-    // 해시 확인이 **트랜잭션 안**이고, 검사와 기록이 한 문장이다 (#599). 밖에서 읽고 안에서
-    // 쓰면 겹쳐 도는 두 폴이 같은 옛 해시를 보고 둘 다 발행한다 — 라이브에서 실제로 발생했다.
+    // 선점이 **트랜잭션 안**이고, 검사와 기록이 한 문장이다 (#599). 밖에서 읽고 안에서
+    // 쓰면 겹쳐 도는 두 폴이 같은 옛 상태를 보고 둘 다 발행한다 — 라이브에서 실제로 발생했다.
     const claimed = await this.db.db.transaction(async (tx) => {
-      const won = await this.pollingHashService.claimChanged(
+      const won = await this.pollingHashService.claimFirstSeen(
         provider.channel,
         POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE,
         lifecycleResourceId,
@@ -576,7 +605,7 @@ export class OrderPollerOrchestrator {
         await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
       }
 
-      // 해시 기록은 `claimChanged` 가 이미 같은 트랜잭션에서 끝냈다 — 여기서 또 쓰지 않는다.
+      // 기록은 `claimFirstSeen` 이 이미 같은 트랜잭션에서 끝냈다 — 여기서 또 쓰지 않는다.
       return true;
     });
 

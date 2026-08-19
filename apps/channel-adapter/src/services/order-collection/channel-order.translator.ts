@@ -110,7 +110,12 @@ export class ChannelOrderTranslator {
       changes: {
         items: changeItems,
         shippingAddress: snapshot.shippingAddress,
-        totalAmount: snapshot.amounts.total,
+        // 취소가 modification 을 유발하지 않으려면 **금액도** 취소에 흔들리면 안 된다.
+        // `items` 만 전 라인으로 두고 총액을 계약 총액(살아있는 라인 합)으로 두면, 라인 하나가
+        // 취소되는 순간 해시가 바뀌어 `collected_order_modification_not_accepted` 로 오격리되고
+        // 그 사유는 replay 가 거부한다. `allLinesTotal` 을 내지 않는 source(Medusa)는 `total`
+        // 로 폴백하므로 해시 입력이 바이트 단위로 예전과 같다.
+        totalAmount: snapshot.amounts.allLinesTotal ?? snapshot.amounts.total,
       },
       modifiedAt: snapshot.sourceUpdatedAt,
     };
