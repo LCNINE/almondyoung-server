@@ -15,10 +15,6 @@ export class BulkUpdateDto {
   status?: string;
 
   @IsOptional()
-  @IsEnum(['draft', 'pending', 'approved', 'rejected'])
-  approvalStatus?: string;
-
-  @IsOptional()
   @IsInt()
   @Min(0)
   basePrice?: number;

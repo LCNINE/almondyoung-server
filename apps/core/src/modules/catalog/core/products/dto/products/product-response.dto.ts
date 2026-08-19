@@ -62,9 +62,6 @@ export class ProductDto {
   @ApiProperty({ description: 'SEO 키워드', type: [String], nullable: true })
   seoKeywords: string[] | null;
 
-  @ApiProperty({ description: '승인 상태' })
-  approvalStatus: string;
-
   @ApiProperty({ description: '제품 타입' })
   productType: string;
 

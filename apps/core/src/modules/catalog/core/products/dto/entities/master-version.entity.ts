@@ -106,9 +106,6 @@ export class ProductVersionDto {
   @ApiProperty({ description: '판매 종료일', nullable: true })
   salesEndDate: Date | null;
 
-  @ApiProperty({ description: '승인 상태', enum: ['draft', 'pending', 'approved', 'rejected'] })
-  approvalStatus: 'draft' | 'pending' | 'approved' | 'rejected';
-
   @ApiProperty({ description: '승인 일시', nullable: true })
   approvedAt: Date | null;
 

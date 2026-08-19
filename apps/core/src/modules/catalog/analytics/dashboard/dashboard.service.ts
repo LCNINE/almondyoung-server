@@ -3,13 +3,7 @@ import { eq, and, gte, lte, sql, isNull } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { pimSchema, productMasterVersions } from '../../schema/catalog.schema';
-import {
-  DashboardMetricsResponseDto,
-  StatusBreakdownDto,
-  ApprovalBreakdownDto,
-  TopProductItemDto,
-  SalesTrendResponseDto,
-} from './dto';
+import { DashboardMetricsResponseDto, StatusBreakdownDto, TopProductItemDto, SalesTrendResponseDto } from './dto';
 
 @Injectable()
 export class DashboardService {
@@ -27,7 +21,6 @@ export class DashboardService {
    * - 전체 제품 수
    * - 오늘 등록된 제품 수
    * - 상태별 제품 수
-   * - 승인 상태별 제품 수
    * - 재고 부족 제품 수 (향후 WMS 연동)
    */
   async getMetrics(): Promise<DashboardMetricsResponseDto> {
@@ -50,17 +43,7 @@ export class DashboardService {
       .where(and(isNull(productMasterVersions.deletedAt), eq(productMasterVersions.status, 'active')))
       .groupBy(productMasterVersions.status);
 
-    // 3. 승인 상태별 제품 수
-    const productsByApproval = await this.db
-      .select({
-        approvalStatus: productMasterVersions.approvalStatus,
-        count: sql<number>`count(*)`,
-      })
-      .from(productMasterVersions)
-      .where(and(isNull(productMasterVersions.deletedAt), eq(productMasterVersions.status, 'active')))
-      .groupBy(productMasterVersions.approvalStatus);
-
-    // 4. 오늘 등록된 제품 수
+    // 3. 오늘 등록된 제품 수
     const [{ createdToday }] = await this.db
       .select({ createdToday: sql<number>`count(*)` })
       .from(productMasterVersions)
@@ -72,7 +55,7 @@ export class DashboardService {
         ),
       );
 
-    // 5. 재고 부족 제품 수 (향후 WMS 연동 시 구현)
+    // 4. 재고 부족 제품 수 (향후 WMS 연동 시 구현)
     // TODO: WMS 서비스와 연동하여 실제 재고 데이터 가져오기
     const outOfStock = 0;
 
@@ -82,17 +65,11 @@ export class DashboardService {
       count: Number(s.count),
     }));
 
-    const byApproval: ApprovalBreakdownDto[] = productsByApproval.map((a) => ({
-      approvalStatus: a.approvalStatus || 'unknown',
-      count: Number(a.count),
-    }));
-
     return {
       totalProducts: Number(totalProducts),
       createdToday: Number(createdToday),
       outOfStock,
       byStatus,
-      byApproval,
     };
   }
 
@@ -110,7 +87,6 @@ export class DashboardService {
         name: productMasterVersions.name,
         brand: productMasterVersions.brand,
         status: productMasterVersions.status,
-        approvalStatus: productMasterVersions.approvalStatus,
         createdAt: productMasterVersions.createdAt,
       })
       .from(productMasterVersions)
@@ -129,7 +105,6 @@ export class DashboardService {
       name: p.name,
       brand: p.brand,
       status: p.status || 'unknown',
-      approvalStatus: p.approvalStatus || 'unknown',
       createdAt: p.createdAt || new Date(),
     }));
   }

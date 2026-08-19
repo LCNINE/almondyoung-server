@@ -89,7 +89,6 @@ export class ProductBulkService {
     };
 
     if (dto.status) updateData.status = dto.status;
-    if (dto.approvalStatus) updateData.approvalStatus = dto.approvalStatus;
     if (dto.brand) updateData.brand = dto.brand;
     if (dto.seller) updateData.seller = dto.seller;
 
@@ -120,7 +119,6 @@ export class ProductBulkService {
     const extraData: any = {
       updatedBy: userId,
     };
-    if (dto.approvalStatus) extraData.approvalStatus = dto.approvalStatus;
     if (dto.brand) extraData.brand = dto.brand;
     if (dto.seller) extraData.seller = dto.seller;
 

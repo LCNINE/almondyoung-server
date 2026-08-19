@@ -18,22 +18,6 @@ export class StatusBreakdownDto {
   count: number;
 }
 
-// ===== Approval Breakdown DTO =====
-export class ApprovalBreakdownDto {
-  @ApiProperty({
-    description: '승인 상태 (draft/pending/approved/rejected)',
-    example: 'approved',
-  })
-  approvalStatus: string;
-
-  @ApiProperty({
-    description: '해당 승인 상태의 제품 수',
-    example: 120,
-    minimum: 0,
-  })
-  count: number;
-}
-
 // ===== Dashboard Metrics Response DTO =====
 export class DashboardMetricsResponseDto {
   @ApiProperty({
@@ -62,12 +46,6 @@ export class DashboardMetricsResponseDto {
     type: [StatusBreakdownDto],
   })
   byStatus: StatusBreakdownDto[];
-
-  @ApiProperty({
-    description: '승인 상태별 제품 수',
-    type: [ApprovalBreakdownDto],
-  })
-  byApproval: ApprovalBreakdownDto[];
 }
 
 // ===== Top Product Item DTO =====
@@ -97,12 +75,6 @@ export class TopProductItemDto {
     example: 'active',
   })
   status: string;
-
-  @ApiProperty({
-    description: '승인 상태',
-    example: 'approved',
-  })
-  approvalStatus: string;
 
   @ApiProperty({
     description: '등록일',
