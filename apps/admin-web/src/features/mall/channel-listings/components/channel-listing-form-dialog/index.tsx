@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import {
+  useActiveChannels,
   useCreateChannelListing,
   useUpdateChannelListing,
 } from '@/lib/services/products';
-import { siteLabel } from '@/lib/api/domains/sales-channel/vocabulary';
+import {
+  resolveActiveChannelId,
+  channelResolutionMessage,
+} from './resolve-channel-id';
 import type {
   ChannelListingDto,
   CreateChannelListingDto,
@@ -49,9 +53,24 @@ export function ChannelListingFormDialog({
 }: Props) {
   const createMutation = useCreateChannelListing();
   const updateMutation = useUpdateChannelListing();
+  const activeChannelsQuery = useActiveChannels();
 
   const isEdit = !!listing;
   const variantIdKnown = !!variantId;
+
+  const channelResolution = resolveActiveChannelId(
+    defaultChannelCode,
+    activeChannelsQuery.data,
+    activeChannelsQuery.isLoading
+  );
+  const channelHint = channelResolutionMessage(
+    channelResolution,
+    defaultChannelCode
+  );
+  const resolvedSalesChannelId =
+    channelResolution.status === 'resolved'
+      ? channelResolution.salesChannelId
+      : null;
 
   const [form, setForm] = useState<CreateChannelListingDto>({
     variantId: variantId ?? '',
@@ -62,6 +81,9 @@ export function ChannelListingFormDialog({
     channelPrice: undefined,
     channelProductUrl: '',
   });
+
+  // salesChannelId 를 운영자가 직접 고쳤으면 뒤늦게 해석이 끝나도 덮어쓰지 않는다.
+  const salesChannelIdTouchedRef = useRef(false);
 
   useEffect(() => {
     if (listing) {
@@ -75,6 +97,7 @@ export function ChannelListingFormDialog({
         channelProductUrl: listing.channelProductUrl ?? '',
       });
     } else {
+      salesChannelIdTouchedRef.current = false;
       setForm({
         variantId: variantId ?? '',
         salesChannelId: '',
@@ -87,10 +110,20 @@ export function ChannelListingFormDialog({
     }
   }, [listing, variantId, defaultChannelItemId]);
 
+  // 채널 목록 조회가 폼이 이미 열린 뒤에 끝나는 경우(캐시 미스)를 위한 뒤늦은 프리필.
+  useEffect(() => {
+    if (isEdit || !resolvedSalesChannelId || salesChannelIdTouchedRef.current)
+      return;
+    setForm((prev) => ({ ...prev, salesChannelId: resolvedSalesChannelId }));
+  }, [isEdit, resolvedSalesChannelId]);
+
   const update = (
     key: keyof CreateChannelListingDto,
     value: string | number | undefined
-  ) => setForm((prev) => ({ ...prev, [key]: value }));
+  ) => {
+    if (key === 'salesChannelId') salesChannelIdTouchedRef.current = true;
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSubmit = async () => {
     if (!isEdit && !form.variantId.trim()) {
@@ -159,10 +192,15 @@ export function ChannelListingFormDialog({
           {!isEdit && (
             <div className="space-y-1">
               <Label>판매 채널 ID</Label>
-              {defaultChannelCode && (
-                <p className="text-xs text-muted-foreground">
-                  채널: {siteLabel(defaultChannelCode)} ({defaultChannelCode}) —
-                  해당 판매채널의 UUID를 입력하세요.
+              {channelHint && (
+                <p
+                  className={
+                    channelResolution.status === 'unresolved'
+                      ? 'text-xs text-amber-600'
+                      : 'text-xs text-muted-foreground'
+                  }
+                >
+                  {channelHint}
                 </p>
               )}
               <Input

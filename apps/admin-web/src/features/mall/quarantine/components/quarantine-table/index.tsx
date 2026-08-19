@@ -19,7 +19,9 @@ import { QuarantineDetailDialog } from '../quarantine-detail-dialog';
 import type { OrderCollectionFailureDto } from '@/lib/api/domains/channel/order-collection-failures.client';
 
 export function QuarantineTable() {
-  const { data, isLoading, isFetching } = useQuarantinedFailures();
+  // isFetching 은 뺀다 — 배경 재조회마다 스켈레톤을 다시 씌우면 운영자가 읽던 행 위로
+  // "불러오는 중…" 이 매번 깜빡인다. 최초 로딩(isLoading)에만 스켈레톤을 보여준다.
+  const { data, isLoading } = useQuarantinedFailures();
   const [selected, setSelected] = useState<OrderCollectionFailureDto | null>(
     null
   );
@@ -41,7 +43,7 @@ export function QuarantineTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading || isFetching ? (
+            {isLoading ? (
               <TableRow>
                 <TableCell
                   colSpan={6}

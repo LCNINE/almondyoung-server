@@ -11,8 +11,10 @@ export interface MenuItem {
   requireRole?: string[];
   /**
    * 미매핑 주문(채널 수집 실패 격리) 건수를 메뉴 라벨 옆에 배지로 그린다.
-   * 실제 카운트 조회는 렌더 컴포넌트(header.tsx/mobile-nav.tsx)의 몫이다 —
-   * 이 파일은 순수 데이터이고 훅을 가질 수 없다.
+   * 실제 카운트 조회는 렌더 컴포넌트(sidebar-menu-item.tsx의 데스크톱 사이드바,
+   * mobile-nav.tsx의 모바일 시트 내비)의 `<QuarantineMenuBadge />` 가 담당한다 —
+   * 이 파일은 순수 데이터이고 훅을 가질 수 없다. header.tsx 의 상단 호버 드롭다운은
+   * 의도적으로 범위 밖이다(사이드바가 이미 같은 신호를 보여준다).
    */
   hasQuarantineBadge?: boolean;
 }
