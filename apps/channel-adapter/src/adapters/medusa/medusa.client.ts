@@ -2259,7 +2259,7 @@ export class MedusaClient {
     }
   }
 
-  async addCustomerToGroup(customerId: string, groupId: string): Promise<void> {
+  async addCustomerToGroup(customerId: string, groupId: string): Promise<'added' | 'already'> {
     try {
       // 이미 소속된 고객을 다시 add 해도 Medusa 는 거부하지 않고 link 행을 하나 더 만든다
       // (customer_group_customer 에 (customer_id, customer_group_id) 유니크 제약이 없음).
@@ -2268,13 +2268,14 @@ export class MedusaClient {
       const { customer } = await this.sdk.admin.customer.retrieve(customerId, { fields: 'id,*groups' });
       if (customer?.groups?.some((group) => group.id === groupId)) {
         this.logger.debug(`Customer ${customerId} already in group ${groupId}, skipping add`);
-        return;
+        return 'already';
       }
 
       await this.sdk.admin.customer.batchCustomerGroups(customerId, {
         add: [groupId],
       });
       this.logger.log(`Added customer ${customerId} to group ${groupId}`);
+      return 'added';
     } catch (error) {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to add customer ${customerId} to group ${groupId}: ${fetchError.message}`);
@@ -2356,25 +2357,33 @@ export class MedusaClient {
   }
 
   /**
-   * 카트 가격 재계산 (fire-and-forget).
-   * 카트는 아이템 추가 시점 가격이 lock-in되므로, 멤버십 그룹 변경 후 수동 갱신 필요.
-   * 반드시 addCustomerToGroup/removeCustomerFromGroup 완료 후 호출할 것.
+   * 카트 가격 재계산. 카트는 아이템 추가 시점 가격이 lock-in되므로, 멤버십 그룹 변경 후 수동
+   * 갱신 필요. 반드시 addCustomerToGroup/removeCustomerFromGroup 완료 후 호출할 것.
+   *
+   * 실패는 throw 한다 — "그룹은 바뀌었는데 카트 가격은 그대로" 인 상태가 조용히 남지 않도록,
+   * 재시도 여부는 호출부가 정한다 (inbox 이벤트 경로는 전파해 재시도, 크론은 로그만).
    */
   async refreshCustomerCartPrices(customerId: string): Promise<void> {
     // sdk.client.fetch()가 커스텀 라우트에 admin 인증 헤더를 제대로 안 넘겨서
     // 네이티브 fetch로 직접 호출
     const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
     const url = `${this.apiUrl}/admin/customers/${customerId}/refresh-cart-prices`;
-    fetch(url, {
-      method: 'POST',
-      headers: {
-        Authorization: `Basic ${encodedKey}`,
-        'Content-Type': 'application/json',
-      },
-    })
-      .then((res) => this.logger.log(`Refreshed cart prices for customer ${customerId} (status=${res.status})`))
-      .catch((error) => {
-        this.logger.warn(`Failed to refresh cart prices for customer ${customerId}: ${error?.message}`);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${encodedKey}`,
+          'Content-Type': 'application/json',
+        },
       });
+      if (!res.ok) {
+        throw new Error(`status=${res.status}`);
+      }
+      this.logger.log(`Refreshed cart prices for customer ${customerId} (status=${res.status})`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Failed to refresh cart prices for customer ${customerId}: ${message}`);
+      throw new Error(`Medusa refreshCustomerCartPrices failed (customerId=${customerId}): ${message}`);
+    }
   }
 }

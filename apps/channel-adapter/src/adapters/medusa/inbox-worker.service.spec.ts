@@ -1,6 +1,7 @@
 import { InboxWorkerService, INBOX_HANDLER_TIMEOUT_MS } from './inbox-worker.service';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { SlowRetryInboxError } from './slow-retry.error';
 
 function collectValues(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || value === undefined) return [];
@@ -782,5 +783,137 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
     );
     expect(updates).toContainEqual(expect.objectContaining({ status: 'published' }));
     expect(updates).not.toContainEqual(expect.objectContaining({ status: 'pending' }));
+  });
+});
+
+describe('InboxWorkerService — 실제 sync 서비스 경유 SlowRetryInboxError 전파', () => {
+  // 유닛에서 직접 던지는 게 아니라, 실제 MembershipMedusaSyncService 의 catch/rethrow 와
+  // 워커의 runWithChain·타임아웃 래퍼를 모두 지나서도 instanceof 판정이 참인지 확인한다.
+  it('고객 미존재가 실제 처리 경로를 지나 기본 한도(5회) 너머에서도 pending 으로 남는다', async () => {
+    const { MembershipMedusaSyncService } = require('./membership-medusa-sync.service');
+    const prevGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = 'group-1';
+    try {
+      const dbMock = createDbMock([]);
+      const medusaClient = {
+        findCustomerByAlmondUserId: jest.fn().mockResolvedValue(null),
+        findCustomerByEmail: jest.fn().mockResolvedValue(null),
+      };
+      const realSyncService = new MembershipMedusaSyncService(
+        medusaClient as any,
+        { trackEffect: jest.fn().mockResolvedValue(undefined) } as any,
+        { getActiveUserIds: jest.fn().mockResolvedValue([]) } as any,
+      );
+      const configService = { get: jest.fn(() => undefined) };
+      const service = new InboxWorkerService(
+        { db: dbMock.db } as any,
+        {} as any,
+        realSyncService,
+        {} as any,
+        medusaClient as any,
+        {} as any,
+        {} as any,
+        configService as any,
+        { runWithChain: jest.fn((_c: string, _e: string, fn: () => Promise<void>) => fn()) } as any,
+      );
+
+      await (service as any).processInboxEvent({
+        id: 'ev-slow-1',
+        eventType: 'MembershipStatusChanged',
+        aggregateId: 'user-1',
+        payload: { userId: 'user-1', email: 'user-1@example.com', status: 'ACTIVE' },
+        attempts: 10,
+        metadata: {},
+      });
+
+      expect(medusaClient.findCustomerByAlmondUserId).toHaveBeenCalledWith('user-1');
+      expect(dbMock.updates).toContainEqual(expect.objectContaining({ status: 'pending' }));
+      expect(dbMock.updates).not.toContainEqual(expect.objectContaining({ status: 'failed' }));
+    } finally {
+      if (prevGroupId === undefined) delete process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+      else process.env.MEDUSA_MEMBERSHIP_GROUP_ID = prevGroupId;
+    }
+  });
+});
+
+describe('InboxWorkerService handleFailure — SlowRetryInboxError 장기 재시도', () => {
+  function createFailureDbMock() {
+    const applied: { attempts: number; status: string; nextAttemptAt?: Date }[] = [];
+    const update = jest.fn(() => ({
+      set: jest.fn((values: { attempts: number; status: string; nextAttemptAt?: Date }) => ({
+        where: jest.fn(() => ({
+          returning: jest.fn(async () => {
+            applied.push(values);
+            return [{ id: 'ev-1' }];
+          }),
+        })),
+      })),
+    }));
+    return { db: { update }, applied };
+  }
+
+  function createService(dbMock: { db: unknown }) {
+    const configService = { get: jest.fn(() => undefined) };
+    return new (InboxWorkerService as any)(
+      { db: dbMock.db },
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      configService,
+      { runWithChain: jest.fn() },
+    );
+  }
+
+  const event = (attempts: number) => ({
+    id: 'ev-1',
+    eventType: 'MembershipStatusChanged',
+    aggregateId: 'agg-1',
+    payload: {},
+    attempts,
+    metadata: {},
+  });
+
+  it('일반 에러는 기본 한도(5회)에서 failed 로 종료한다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+
+    await (service as any).handleFailure(event(5), new Error('boom'));
+
+    expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'failed' })]);
+  });
+
+  it('SlowRetryInboxError 는 기본 한도를 넘겨도 재시도를 계속 잡는다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+
+    await (service as any).handleFailure(event(5), new SlowRetryInboxError('customer not yet created'));
+
+    expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'pending' })]);
+  });
+
+  it('SlowRetryInboxError 백오프는 1시간으로 캡된다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+    const before = Date.now();
+
+    await (service as any).handleFailure(event(20), new SlowRetryInboxError('customer not yet created'));
+
+    const [{ status, nextAttemptAt }] = dbMock.applied;
+    expect(status).toBe('pending');
+    const delayMs = (nextAttemptAt as Date).getTime() - before;
+    expect(delayMs).toBeGreaterThan(55 * 60 * 1000);
+    expect(delayMs).toBeLessThanOrEqual(60 * 60 * 1000 + 1000);
+  });
+
+  it('SlowRetryInboxError 도 확장 한도(30회)에 도달하면 failed 로 종료한다', async () => {
+    const dbMock = createFailureDbMock();
+    const service = createService(dbMock);
+
+    await (service as any).handleFailure(event(30), new SlowRetryInboxError('customer not yet created'));
+
+    expect(dbMock.applied).toEqual([expect.objectContaining({ status: 'failed' })]);
   });
 });

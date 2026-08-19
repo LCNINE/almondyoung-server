@@ -70,7 +70,7 @@ export class FirebaseMembershipSyncService {
     try {
       if (active) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
-        this.medusaClient.refreshCustomerCartPrices(customer.id);
+        await this.medusaClient.refreshCustomerCartPrices(customer.id);
         this.logger.log(`멤버십 그룹 추가 + 카트 갱신 트리거: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`);
         await this.eventTrackingService
           .trackEffect({
@@ -83,7 +83,7 @@ export class FirebaseMembershipSyncService {
           .catch((e) => this.logger.warn(`trackEffect 실패: ${e?.message}`));
       } else {
         await this.medusaClient.removeCustomerFromGroup(customer.id, membershipGroupId);
-        this.medusaClient.refreshCustomerCartPrices(customer.id);
+        await this.medusaClient.refreshCustomerCartPrices(customer.id);
         this.logger.log(`멤버십 그룹 제거 + 카트 갱신 트리거: customerId=${customer.id}, cafe24MemberId=${cafe24MemberId}`);
         await this.eventTrackingService
           .trackEffect({
