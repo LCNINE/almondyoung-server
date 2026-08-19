@@ -90,6 +90,38 @@ export class OrderEventsConsumer {
     return byPrimaryKey?.id ?? null;
   }
 
+  /**
+   * 채널 라인 범위를 Core 라인 범위로 옮긴다.
+   *
+   * **없으면 `undefined` 를 돌려준다** — Core 는 `lines` 유무로 전체/부분을 가르므로
+   * 빈 배열을 넘기면 `BadRequestException` 이 된다 (`sales-orders.service.ts:436`).
+   */
+  private async resolveCancelledLines(
+    salesOrderId: string,
+    cancelledLines: Array<{ channelOrderItemId: string; quantity: number }> | undefined,
+    tx: DbTx,
+  ): Promise<Array<{ salesOrderLineId: string; quantity: number }> | undefined> {
+    if (!cancelledLines || cancelledLines.length === 0) return undefined;
+
+    const channelOrderItemIds = cancelledLines.map((line) => line.channelOrderItemId);
+    const idByChannelItem = await this.salesOrdersService.findLineIdsByChannelOrderItemIds(
+      salesOrderId,
+      channelOrderItemIds,
+      tx,
+    );
+
+    return cancelledLines.map((line) => {
+      const salesOrderLineId = idByChannelItem.get(line.channelOrderItemId);
+      if (!salesOrderLineId) {
+        // 재시도해도 결과가 같다. NotFound 는 이 핸들러의 nonRetryableErrors 라 DLQ 로 간다.
+        throw new NotFoundException(
+          `Sales order line not found for channelOrderItemId=${line.channelOrderItemId} (salesOrder=${salesOrderId})`,
+        );
+      }
+      return { salesOrderLineId, quantity: line.quantity };
+    });
+  }
+
   @On(ORDER_STREAM, 'OrderCreated')
   @RetryPolicy({ maxRetries: 5, backoff: 'exponential', initialDelayMs: 1000, maxDelayMs: 15000 })
   async handleOrderCreated(
@@ -170,6 +202,8 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
+        const lines = await this.resolveCancelledLines(salesOrderId, payload.cancelledLines, tx);
+
         await this.salesOrdersService.cancel(
           salesOrderId,
           {
@@ -177,6 +211,7 @@ export class OrderEventsConsumer {
             reasonDetail: payload.reasonDetail,
             cancelledBy: payload.cancelledBy,
             occurredAt: payload.cancelledAt,
+            ...(lines ? { lines } : {}),
             metadata: {
               refundRequired: payload.refundRequired,
               refundAmount: payload.refundAmount,
