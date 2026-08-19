@@ -74,9 +74,24 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
     )
     .then(async ({ product_categories }) => {
       const category = product_categories[0]
+      if (!category) return undefined
+
+      const isMember = await getIsMembershipCustomer()
       // 회원전용 카테고리는 URL 직접 접근도 막는다(호출부에서 notFound 처리).
-      if (isMembersOnlyBranch(category) && !(await getIsMembershipCustomer())) {
+      if (isMembersOnlyBranch(category) && !isMember) {
         return undefined
+      }
+
+      // 자식 트리도 목록과 같은 기준으로 거른다 — 안 거르면 하위 카테고리 내비와
+      // 상품 목록(자손 id 합산)에 비활성·회원전용 자식이 그대로 새어 나온다.
+      if (category.category_children?.length) {
+        const children = filterInactiveCategories(category.category_children)
+        return {
+          ...category,
+          category_children: isMember
+            ? children
+            : filterMembersOnlyCategories(children),
+        }
       }
       return category
     })

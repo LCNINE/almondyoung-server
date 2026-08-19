@@ -1,4 +1,11 @@
+import { SearchBrandBanner } from "../components/search-brand-banner"
 import { SearchPageClient } from "../components/search-page-client"
+import { matchBrandForQuery } from "../utils/match-brand"
+import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
+import { selectBrandTiles } from "@/domains/home/template/brand-showcase/select-brand-tiles"
+import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
+import { listRootCategoriesCached } from "@/lib/data/category"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { searchProducts } from "@lib/api/pim/search"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
@@ -135,9 +142,38 @@ export async function SearchContainer({
     }
   }
 
+  // 검색어가 브랜드관 브랜드와 매칭되면 결과 최상단에 브랜드 카드를 띄운다.
+  // listRootCategoriesCached 는 비활성·회원전용 필터가 끝난 트리라(헤더와 공유, 요청당 1회)
+  // 회원전용 브랜드 카드는 멤버십 회원에게만 뜬다.
+  let brandBanner: React.ReactNode = null
+  if (keyword) {
+    try {
+      const roots = await listRootCategoriesCached()
+      const { groups } = selectBrandTiles(roots, BRAND_CATEGORY_HANDLE, Infinity)
+      const brands = groups.flatMap((g) => g.brands)
+      const hit = matchBrandForQuery(
+        brands.map((b) => ({ name: b.category.name, tile: b })),
+        keyword
+      )
+      if (hit) {
+        const thumbnail = getCategoryThumbnail(hit.tile.category)
+        brandBanner = (
+          <SearchBrandBanner
+            name={hit.tile.category.name}
+            href={`/category/${hit.tile.handlePath.join("/")}`}
+            thumbnailUrl={thumbnail ? getThumbnailUrl(thumbnail) : null}
+          />
+        )
+      }
+    } catch (error) {
+      console.error("[SearchContainer] 브랜드 배너 매칭 실패:", error)
+    }
+  }
+
   return (
     <SearchPageClient
       keyword={keyword}
+      brandBanner={brandBanner}
       searchResult={searchResult}
       countryCode={countryCode}
       regionId={region?.id}

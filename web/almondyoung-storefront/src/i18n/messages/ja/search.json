@@ -52,5 +52,10 @@
     "prevPage": "前のページ",
     "nextPage": "次のページ",
     "pageAria": "{page} ページ"
+  },
+  "brandBanner": {
+    "title": "{name} ブランド館",
+    "hint": "公式ブランド館で{name}の商品をすべてご覧いただけます",
+    "cta": "ブランド商品をもっと見る"
   }
 }
