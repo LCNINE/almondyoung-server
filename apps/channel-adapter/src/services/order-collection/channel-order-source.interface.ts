@@ -45,6 +45,12 @@ export interface ChannelOrderLineSnapshot {
   unitPrice: number;
   fulfillmentKind?: 'physical' | 'digital';
   requiresShipping?: boolean;
+  /**
+   * 채널에서 이미 취소된 라인. **스냅샷에서 빼지 않고 표시만 한다** — 빼면 변경 해시가 달라져
+   * 부분취소가 `collected_order_modification_not_accepted` 로 오격리되고, 그 사유는 replay 가
+   * 거부한다 (`order-poller.orchestrator.ts:271`).
+   */
+  cancelled?: boolean;
 }
 
 interface LifecycleObservationBase {

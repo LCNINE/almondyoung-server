@@ -40,7 +40,9 @@ export class ChannelOrderTranslator {
 
     // 유료 주문 라인이 미식별이면 조용히 넘기지 않고 격리한다 (CONTEXT §채널 상품 식별 실패).
     // 이미 종결된 스냅샷(취소/환불 관측)은 판매주문을 만들지 않으므로 식별을 요구하지 않는다.
+    // 취소된 라인은 판매주문을 만들지 않으므로 식별을 요구하지 않는다.
     const unidentified = snapshot.lines.flatMap((line, index) => {
+      if (line.cancelled) return [];
       const resolution = resolutions[index];
       return resolution.identified ? [] : [{ lineId: line.channelOrderItemId, cause: resolution.cause }];
     });
@@ -62,10 +64,16 @@ export class ChannelOrderTranslator {
       };
     }
 
-    const items = snapshot.lines.map((line, index) => {
+    const allItems = snapshot.lines.map((line, index) => {
       const resolution = resolutions[index];
-      return this.buildOrderItem(line, resolution.identified ? resolution.identity : null);
+      return {
+        item: this.buildOrderItem(line, resolution.identified ? resolution.identity : null),
+        cancelled: line.cancelled === true,
+      };
     });
+    // 계약에는 살아있는 라인만 넣는다. 해시는 전 라인으로 계산해 취소가 modification 으로 세지지 않게 한다.
+    const items = allItems.filter((entry) => !entry.cancelled).map((entry) => entry.item);
+    const changeItems = allItems.map((entry) => entry.item);
 
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),
@@ -93,7 +101,7 @@ export class ChannelOrderTranslator {
       eligibleForOrderCreation,
       createPayload,
       changes: {
-        items,
+        items: changeItems,
         shippingAddress: snapshot.shippingAddress,
         totalAmount: snapshot.amounts.total,
       },

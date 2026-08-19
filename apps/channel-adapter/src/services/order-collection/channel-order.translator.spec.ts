@@ -211,6 +211,80 @@ describe('ChannelOrderTranslator — lineIdentity: mapped (naver/coupang)', () =
   });
 });
 
+describe('ChannelOrderTranslator — 취소된 라인', () => {
+  /**
+   * 네이버는 한 주문의 일부 상품주문만 취소되는 일이 흔하다. 취소된 라인을 스냅샷에서 빼버리면
+   * 변경 해시(`changes.items`)가 달라져 부분취소가 `collected_order_modification_not_accepted`
+   * 로 오격리된다 — 그 사유는 replay 가 거부한다. 그래서 취소 라인은 계약(`createPayload.items`)
+   * 에서만 빠지고 해시 입력(`changes.items`)에는 남아야 한다.
+   */
+  it('취소된 라인은 판매주문 계약에서 빠지지만 변경 해시에는 남는다', async () => {
+    const { translator } = makeTranslator(LISTING);
+
+    const { outcome } = await translator.translate(
+      'naver',
+      makeSnapshot({
+        lines: [
+          {
+            channelOrderItemId: 'po-1',
+            channelProductId: 'naver-product-1',
+            productName: '살아있는 라인',
+            quantity: 1,
+            unitPrice: 5000,
+          },
+          {
+            channelOrderItemId: 'po-2',
+            channelProductId: 'naver-product-2',
+            productName: '취소된 라인',
+            quantity: 1,
+            unitPrice: 3000,
+            cancelled: true,
+          },
+        ],
+      }),
+    );
+
+    expect(outcome.kind).toBe('order');
+    if (outcome.kind !== 'order') return;
+    expect(outcome.order.createPayload.items.map((i) => i.orderItemId)).toEqual(['po-1']);
+    expect(outcome.order.changes.items.map((i) => i.orderItemId)).toEqual(['po-1', 'po-2']);
+  });
+
+  it('취소된 라인의 미식별은 격리를 부르지 않는다', async () => {
+    const { translator, resolveByChannelCode } = makeTranslator(LISTING);
+    resolveByChannelCode.mockImplementation(async (_channelCode: string, channelItemId: string) =>
+      channelItemId === 'naver-product-2'
+        ? { found: false, cause: 'listing_not_found' }
+        : { found: true, listing: LISTING },
+    );
+
+    const { outcome } = await translator.translate(
+      'naver',
+      makeSnapshot({
+        lines: [
+          {
+            channelOrderItemId: 'po-1',
+            channelProductId: 'naver-product-1',
+            productName: '살아있는 라인',
+            quantity: 1,
+            unitPrice: 5000,
+          },
+          {
+            channelOrderItemId: 'po-2',
+            channelProductId: 'naver-product-2',
+            productName: '취소된 라인',
+            quantity: 1,
+            unitPrice: 3000,
+            cancelled: true,
+          },
+        ],
+      }),
+    );
+
+    expect(outcome.kind).toBe('order');
+  });
+});
+
 describe('ChannelOrderTranslator — 변경 해시 입력의 모양', () => {
   /**
    * `OrderFetchItem.changes` 는 저장된 `polling_change_hashes` 의 입력이다. 여기에 채널 원어를
