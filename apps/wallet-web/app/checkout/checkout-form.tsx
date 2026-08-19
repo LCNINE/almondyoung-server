@@ -4,9 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { Banknote, Clock, Info } from 'lucide-react';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { CustomsCodeSection } from '@/checkout-ui/domains/checkout/components/sections/customs-code';
 import { DiscountSection } from '@/checkout-ui/domains/checkout/components/sections/discount';
 import {
@@ -83,7 +81,6 @@ export function CheckoutForm({
   const tProcess = useTranslations('checkout.process');
   const tCustoms = useTranslations('checkout.customsCode');
   const tConsent = useTranslations('checkout.consent');
-  const tNotice = useTranslations('checkout.notice');
 
   const cartItems = useMemo(() => cart?.items ?? [], [cart]);
   const requiresShipping = useMemo(() => cartRequiresShipping(cartItems), [cartItems]);
@@ -452,26 +449,6 @@ export function CheckoutForm({
 
           <OrderConsentSection value={consent} onChange={setConsent} hasOverseasItem={hasOverseasItem} />
 
-          <Card className="mb-8 shadow-none">
-            <CardHeader className="flex-row items-center gap-2 p-4 pb-3 space-y-0 lg:p-6 lg:pb-4">
-              <Info className="size-5 shrink-0 text-primary" />
-              <CardTitle className="text-base font-bold lg:text-lg">{tNotice('title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0 space-y-3 lg:p-6 lg:pt-0">
-              <div className="flex items-start gap-2.5">
-                <Banknote className="mt-0.5 size-5 shrink-0 text-primary" />
-                <p className="text-sm leading-relaxed text-muted-foreground lg:text-[15px]">
-                  {tNotice('bankTransfer')}
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Clock className="mt-0.5 size-5 shrink-0 text-primary" />
-                <p className="text-sm leading-relaxed text-muted-foreground lg:text-[15px]">
-                  {tNotice('bankTransferDelay')}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
 
