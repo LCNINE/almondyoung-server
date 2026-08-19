@@ -12,6 +12,10 @@ export interface NtsLookupResult {
   checkedAt: string;
   raw?: Record<string, unknown>;
   error?: string;
+  /** 실패 응답의 HTTP 상태. 응답 자체가 없으면(타임아웃 등) 비어 있다 */
+  errorStatus?: number;
+  /** 실패 응답의 본문. 라이브에서만 나는 5xx 의 정체를 사후에 볼 수 있는 유일한 흔적이다 */
+  errorBody?: string;
 }
 
 /**
@@ -24,6 +28,8 @@ export interface NtsLookupResult {
 export interface NtsValidateResult {
   /** 세 값의 조합이 국세청 기록과 일치하는가 */
   valid: boolean;
+  /** 신청자가 낸 입력값. 조회 실패로 raw 가 없을 때도 재검증할 수 있도록 우리가 직접 남긴다 */
+  requested?: { businessNumber: string; representativeName: string; startDate: string };
   /** 일치하지 않을 때 국세청이 준 사유 */
   invalidReason?: string;
   /** 진위확인과 함께 돌아오는 납세자 상태 (계속/휴업/폐업 등) */
@@ -31,6 +37,8 @@ export interface NtsValidateResult {
   checkedAt: string;
   raw?: Record<string, unknown>;
   error?: string;
+  errorStatus?: number;
+  errorBody?: string;
 }
 
 export interface BusinessMetadata {
