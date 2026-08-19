@@ -622,6 +622,8 @@ export class MedusaClient {
       isVisibleToMembersOnly?: boolean;
       thumbnail?: string;
       sortOrder?: number;
+      /** 호출자가 값을 준 경우에만 반영. null 은 "비우기". 상품 동기화 경로에는 없다. */
+      description?: string | null;
     },
     options?: { requireParent?: boolean; refreshFields?: boolean },
   ): Promise<string> {
@@ -721,6 +723,9 @@ export class MedusaClient {
         is_active: isActive,
         ...parentUpdate,
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+        ...(categorySnapshot.description !== undefined && {
+          description: categorySnapshot.description ?? '',
+        }),
         metadata: {
           ...(verified.metadata || existing.metadata || {}),
           ...pimMetadata,
@@ -747,6 +752,9 @@ export class MedusaClient {
       is_active: isActive,
       parent_category_id: parentMedusaId,
       ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+      ...(categorySnapshot.description !== undefined && {
+        description: categorySnapshot.description ?? '',
+      }),
       metadata: {
         ...pimMetadata,
       },

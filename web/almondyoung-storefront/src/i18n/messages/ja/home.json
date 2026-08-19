@@ -49,5 +49,11 @@
     "close": "閉じる",
     "processing": "処理中...",
     "logoAlt": "アモンドヤン ロゴ"
+  },
+  "brands": {
+    "title": "ブランド館",
+    "ariaLabel": "ブランド一覧",
+    "prev": "前のブランド",
+    "next": "次のブランド"
   }
 }

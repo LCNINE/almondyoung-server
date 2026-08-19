@@ -3,6 +3,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { NavigationMenuLink } from "@/components/ui/navigation-menu"
 import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
+import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
@@ -12,9 +13,8 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useRef, useState } from "react"
 
-// 별도 디자인 항목으로 좌측 하단에 분리 노출할 대분류 handle.
-// "브랜드관"은 카테고리(cafe24-cat-728, 이름 '브랜드')로 이동, "샵매매"는 자체 게시판(/shop-trade)으로 이동.
-const BRAND_CATEGORY_HANDLE = "cafe24-cat-728"
+// 브랜드관(BRAND_CATEGORY_HANDLE)은 목록에서 빼고 좌측 하단 별도 항목으로 분리 노출.
+// "샵매매"는 자체 게시판(/shop-trade)으로 이동.
 
 // 메가메뉴 목록에서 아예 숨길 대분류 handle.
 // - cafe24-cat-82(베스트) / cafe24-cat-498(100원 웰컴딜): 프로모성 → 목록 슬림화 위해 숨김.

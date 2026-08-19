@@ -29,6 +29,8 @@ import type { SelectionMode } from '../../hooks/use-category-selection';
 
 interface Props {
   mode: SelectionMode;
+  /** 브랜드관 직계 자식(=브랜드) 편집/생성 중 — 스토어프론트 노출 안내를 띄운다 */
+  isBrandCategory?: boolean;
   onAfterCreate: (newId: string) => void;
   onAfterDelete: () => void;
   onDirtyChange: (dirty: boolean) => void;
@@ -57,6 +59,7 @@ const EMPTY: FormState = {
 
 export function CategoryDetailPanel({
   mode,
+  isBrandCategory = false,
   onAfterCreate,
   onDirtyChange,
   onRequestDelete,
@@ -66,6 +69,7 @@ export function CategoryDetailPanel({
     return (
       <CreateForm
         parentId={mode.parentId}
+        isBrandCategory={isBrandCategory}
         onAfterCreate={onAfterCreate}
         onDirtyChange={onDirtyChange}
       />
@@ -75,6 +79,7 @@ export function CategoryDetailPanel({
     <EditForm
       key={mode.id}
       categoryId={mode.id}
+      isBrandCategory={isBrandCategory}
       onDirtyChange={onDirtyChange}
       onRequestDelete={onRequestDelete}
     />
@@ -92,10 +97,12 @@ function EmptyState() {
 
 function CreateForm({
   parentId,
+  isBrandCategory,
   onAfterCreate,
   onDirtyChange,
 }: {
   parentId: string | null;
+  isBrandCategory: boolean;
   onAfterCreate: (id: string) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
@@ -142,17 +149,24 @@ function CreateForm({
         </Button>
       }
     >
-      <FormFields value={form} onChange={setForm} disableActiveToggle />
+      <FormFields
+        value={form}
+        onChange={setForm}
+        disableActiveToggle
+        isBrandCategory={isBrandCategory}
+      />
     </FormShell>
   );
 }
 
 function EditForm({
   categoryId,
+  isBrandCategory,
   onDirtyChange,
   onRequestDelete,
 }: {
   categoryId: string;
+  isBrandCategory: boolean;
   onDirtyChange: (dirty: boolean) => void;
   onRequestDelete: (id: string) => void;
 }) {
@@ -265,7 +279,11 @@ function EditForm({
         </div>
       }
     >
-      <FormFields value={form} onChange={setForm} />
+      <FormFields
+        value={form}
+        onChange={setForm}
+        isBrandCategory={isBrandCategory}
+      />
 
       <div className="p-3 space-y-2 text-sm border rounded-md bg-muted/30">
         <div className="flex items-center justify-between">
@@ -317,19 +335,34 @@ function FormFields({
   value,
   onChange,
   disableActiveToggle,
+  isBrandCategory = false,
 }: {
   value: FormState;
   onChange: (next: FormState) => void;
   disableActiveToggle?: boolean;
+  isBrandCategory?: boolean;
 }) {
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     onChange({ ...value, [k]: v });
 
   return (
     <div className="space-y-4">
+      {isBrandCategory && (
+        <div className="p-3 space-y-1 text-xs border rounded-md bg-muted/30">
+          <p className="font-medium text-foreground">브랜드 카테고리</p>
+          <p className="text-muted-foreground">
+            브랜드관 하위 카테고리는 스토어프론트 메인 페이지의 브랜드
+            섹션에도 노출됩니다. 여기 올린 대표 이미지가 브랜드 로고로, 정렬
+            순서가 노출 순서로, 설명이 브랜드 페이지 상단 소개 문구로
+            사용됩니다.
+          </p>
+        </div>
+      )}
+
       <CategoryImageField
         value={value.imageUrl}
         onChange={(v) => set('imageUrl', v)}
+        isBrandCategory={isBrandCategory}
       />
 
       <div className="space-y-1.5">
@@ -359,8 +392,17 @@ function FormFields({
           value={value.description}
           onChange={(e) => set('description', e.target.value)}
           rows={3}
-          placeholder="관리용 메모 또는 노출용 설명 (선택)"
+          placeholder={
+            isBrandCategory
+              ? '브랜드 소개 문구 — 브랜드 페이지 상단에 노출됩니다 (선택)'
+              : '관리용 메모 또는 노출용 설명 (선택)'
+          }
         />
+        {isBrandCategory && (
+          <p className="text-xs text-muted-foreground">
+            고객에게 보이는 문구입니다. 1~2문장으로 짧게 적어주세요.
+          </p>
+        )}
       </div>
 
       <div className="space-y-1.5">
@@ -372,7 +414,9 @@ function FormFields({
           onChange={(e) => set('sortOrder', Number(e.target.value) || 0)}
         />
         <p className="text-xs text-muted-foreground">
-          동일 부모 내 정렬은 좌측 트리에서 드래그로 변경할 수 있습니다.
+          {isBrandCategory
+            ? '메인 페이지 브랜드 섹션과 브랜드관의 노출 순서입니다. 동일 부모 내 정렬은 좌측 트리에서 드래그로도 변경할 수 있습니다.'
+            : '동일 부모 내 정렬은 좌측 트리에서 드래그로 변경할 수 있습니다.'}
         </p>
       </div>
 
@@ -426,9 +470,11 @@ function categoryImageSrc(value: string): string | null {
 function CategoryImageField({
   value,
   onChange,
+  isBrandCategory = false,
 }: {
   value: string;
   onChange: (fileId: string) => void;
+  isBrandCategory?: boolean;
 }) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -454,7 +500,7 @@ function CategoryImageField({
 
   return (
     <div className="space-y-1.5">
-      <Label>대표 이미지</Label>
+      <Label>{isBrandCategory ? '브랜드 로고' : '대표 이미지'}</Label>
       <div className="flex items-start gap-3">
         <div className="relative w-20 h-20 overflow-hidden border rounded-md shrink-0 bg-muted">
           {src ? (
@@ -509,8 +555,9 @@ function CategoryImageField({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">
-        고객 카테고리 화면에 노출되는 대표 이미지입니다. (권장: 정사각형, 10MB
-        이하)
+        {isBrandCategory
+          ? '메인 페이지 브랜드 섹션과 브랜드 페이지 상단에 로고로 노출됩니다. 권장: 정사각형(1:1), 최소 200×200px, 흰색·투명 배경, 10MB 이하. 원형 안에 담기므로 여백이 있는 로고가 좋습니다.'
+          : '고객 카테고리 화면에 노출되는 대표 이미지입니다. (권장: 정사각형, 10MB 이하)'}
       </p>
     </div>
   );

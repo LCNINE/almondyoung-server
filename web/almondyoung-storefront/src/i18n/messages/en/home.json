@@ -49,5 +49,11 @@
     "close": "Close",
     "processing": "Processing...",
     "logoAlt": "Almondyoung logo"
+  },
+  "brands": {
+    "title": "Brand Hall",
+    "ariaLabel": "Brand list",
+    "prev": "Previous brands",
+    "next": "More brands"
   }
 }

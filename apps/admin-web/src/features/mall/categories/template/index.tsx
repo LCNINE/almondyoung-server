@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCategoryTree } from '@/lib/services/products/queries';
+import { BRAND_ROOT_SLUG } from '../constants';
 import { useCategorySelection } from '../hooks/use-category-selection';
 import { usePendingTreeChanges } from '../hooks/use-pending-tree-changes';
 import { buildPendingTree } from '../tree-state';
@@ -77,6 +78,16 @@ export default function MallCategoriesTemplate() {
   const selectedId =
     mode.kind === 'selected' ? mode.id : null;
 
+  // 브랜드관(BRAND_ROOT_SLUG) 직계 자식을 편집/생성 중이면 브랜드 안내를 띄운다.
+  const isBrandCategory = useMemo(() => {
+    const brandRoot = viewTree.find((n) => n.slug === BRAND_ROOT_SLUG);
+    if (!brandRoot) return false;
+    if (mode.kind === 'selected')
+      return brandRoot.children.some((c) => c.id === mode.id);
+    if (mode.kind === 'create') return mode.parentId === brandRoot.id;
+    return false;
+  }, [viewTree, mode]);
+
   return (
     <div className="flex h-[calc(100vh-120px)] min-h-[600px] overflow-hidden rounded-md border bg-background">
       <div className="w-[360px] shrink-0">
@@ -95,6 +106,7 @@ export default function MallCategoriesTemplate() {
       <div className="flex-1 overflow-hidden">
         <CategoryDetailPanel
           mode={mode}
+          isBrandCategory={isBrandCategory}
           onAfterCreate={(id) => {
             setFormDirty(false);
             select(id);

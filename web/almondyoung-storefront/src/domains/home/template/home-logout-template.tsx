@@ -4,6 +4,7 @@ import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
 import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
+import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { InterestCategoriesSlot } from "./interest-categories"
 import {
@@ -148,6 +149,20 @@ export async function HomeLogoutTemplate({
           </Suspense>
         </ErrorBoundary>
       </HomeSection>
+
+      {/* 브랜드별 탐색 (브랜드관 카테고리 자식들) — 실패·빈 목록이면 섹션 띠까지 통째로 빠진다.
+          HomeSection 을 컴포넌트 안에 둔 이유: 밖에 두면 브랜드 0개일 때 빈 보더 띠가 남는다. */}
+      <ErrorBoundary fallback={null}>
+        <Suspense
+          fallback={
+            <HomeSection>
+              <MainSectionSkeleton />
+            </HomeSection>
+          }
+        >
+          <BrandShowcaseWrapper />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* 카테고리별 제품 섹션  */}
       <HomeSection>

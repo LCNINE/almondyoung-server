@@ -2,6 +2,7 @@ import { Suspense } from "react"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { CategoryBreadcrumb } from "../components/breadcrumb"
+import { CategoryPageHeading } from "../components/page-heading"
 import RefinementList from "../components/refinement-list"
 import type { SortOptions } from "../components/refinement-list/sort-products"
 import { SubCategoryNav } from "../components/sub-category-nav"
@@ -37,8 +38,16 @@ export function CategoryTemplate({
     <div className="container mx-auto">
       {category && <CategoryBreadcrumb category={category} />}
 
-      {/* 카테고리 제목 */}
-      {category && <h1 className="mb-6 text-2xl font-bold">{category.name}</h1>}
+      {/* 카테고리 제목 — 브랜드 카테고리면 로고·소개가 붙은 브랜드형 헤더로 */}
+      {category && (
+        <Suspense
+          fallback={
+            <h1 className="mb-6 text-2xl font-bold">{category.name}</h1>
+          }
+        >
+          <CategoryPageHeading category={category} />
+        </Suspense>
+      )}
 
       {/* 하위 카테고리 썸네일 */}
       {hasChildren && (

@@ -717,6 +717,7 @@ export class PimMedusaSyncService {
           isVisibleToMembersOnly: ancestorMembersOnly,
           thumbnail: ancestor.thumbnail ?? undefined,
           sortOrder: ancestor.sortOrder,
+          description: ancestor.description,
         }, { refreshFields: true });
       }
 
@@ -734,6 +735,7 @@ export class PimMedusaSyncService {
           category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
         thumbnail: category.thumbnail ?? undefined,
         sortOrder: category.sortOrder,
+        description: category.description,
       }, { requireParent: true, refreshFields: true });
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
