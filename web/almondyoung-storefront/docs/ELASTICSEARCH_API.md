@@ -94,6 +94,8 @@ Elasticsearch를 사용하여 상품을 검색합니다. 키워드 검색, 필�
 
 ### ProductSearchItemDto
 
+> `approval_status` 필드는 승인 워크플로가 #663 으로 제거되며 함께 빠졌다.
+
 ```typescript
 {
   master_id: string;           // Master ID
@@ -104,7 +106,6 @@ Elasticsearch를 사용하여 상품을 검색합니다. 키워드 검색, 필�
   product_code: string | null; // 상품 코드
   brand: string | null;        // 브랜드
   status: string;              // 상품 상태
-  approval_status: string | null; // 승인 상태
   price: number | null;        // 가격
   category_id: string | null; // 카테고리 ID
   category_name: string | null; // 카테고리 이름
@@ -301,7 +302,6 @@ GET /products/search?keyword=노트북&page=1&limit=20
       "product_code": "NB-001",
       "brand": "삼성",
       "status": "active",
-      "approval_status": "approved",
       "price": 1500000,
       "category_id": "cat-uuid",
       "category_name": "전자제품",

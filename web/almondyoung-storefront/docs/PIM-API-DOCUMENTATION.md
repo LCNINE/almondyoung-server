@@ -494,17 +494,7 @@ userId: 작업자 ID
 
 ### 16. Product Approval API
 
-**Base Path:** `/masters`
-
-#### 엔드포인트
-
-| Method | Path                            | 설명                     |
-| ------ | ------------------------------- | ------------------------ |
-| `POST` | `/masters/:id/submit-approval`  | 제품 승인 요청           |
-| `POST` | `/masters/:id/approve`          | 제품 승인                |
-| `POST` | `/masters/:id/reject`           | 제품 거부                |
-| `GET`  | `/masters/pending-approval`     | 승인 대기 중인 제품 목록 |
-| `GET`  | `/masters/:id/approval-history` | 제품 승인 이력           |
+> 승인 워크플로 라우트는 #663 으로 전량 제거됨(2026-08). 이 섹션에 있던 5개 엔드포인트(`submit-approval`, `approve`, `reject`, `pending-approval`, `approval-history`)는 더 이상 존재하지 않는다.
 
 ---
 

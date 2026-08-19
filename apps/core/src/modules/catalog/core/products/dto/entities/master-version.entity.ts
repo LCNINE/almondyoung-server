@@ -106,6 +106,10 @@ export class ProductVersionDto {
   @ApiProperty({ description: '판매 종료일', nullable: true })
   salesEndDate: Date | null;
 
+  // 승인 워크플로는 #663 으로 제거됨(2026-08). 이 필드들을 쓰는 코드는 없다.
+  // product-masters.service.ts 가 조회한 버전 row 를 통째로 스프레드해 primaryVersion 에
+  // 담기 때문에(1332, 1343행) 응답엔 여전히 실린다 — 그래서 선언은 그대로 두는 게 정확하다.
+  // 제거는 컬럼 DROP(ADR-0005 §5 contract phase)과 묶어서 별도로 판단.
   @ApiProperty({ description: '승인 일시', nullable: true })
   approvedAt: Date | null;
 
