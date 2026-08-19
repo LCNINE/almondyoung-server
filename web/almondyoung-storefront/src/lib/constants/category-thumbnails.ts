@@ -323,7 +323,7 @@ export const CATEGORY_FALLBACK_THUMBNAILS: Record<string, string> = {
   pcat_01KT8J11MQW7PVYNPTZNN5GZW4: "019df008-4884-75a7-b05e-973956fa58a3",
   // 분무기 (cafe24-cat-493)
   pcat_01KT8J11D8HRVPD32N6PG5DWEH: "019df02b-7357-75ca-8860-0301631c8590",
-  // 노몬드 (cafe24-cat-495)
+  // 노몬드 (b9og25)
   pcat_01KT8J0ZPDR31T56CD8FZMN5ES: "019df04d-3e77-7d21-96f7-f42db807ae09",
   // 묶고 더블로 가 (cafe24-cat-497)
   pcat_01KT8J0ZB53M35ZBX381H85DTM: "019df04d-accb-75fa-801b-76e19f08fcc0",

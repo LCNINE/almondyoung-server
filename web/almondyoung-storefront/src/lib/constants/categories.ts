@@ -54,7 +54,7 @@ export const FIXED_CATEGORIES = [
     key: "nomond",
     id: "pcat_01KT8J0ZPDR31T56CD8FZMN5ES",
     name: "노몬드",
-    handle: "cafe24-cat-495",
+    handle: "b9og25",
   },
   {
     key: "shop-meal",

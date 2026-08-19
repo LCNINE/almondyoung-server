@@ -23,7 +23,7 @@ const PB_PINS: Record<string, string> = {
   // 반영구 / 노몬드 엠보 & 수지 니들
   "cafe24-cat-261": "cf49c165-0da7-4a18-9719-f0d38b8c312f",
   // 노몬드 / 노몬드 긴 마이크로 브러쉬 100p
-  "cafe24-cat-495": "bb8f3bba-b0ee-4af7-a40a-3be63ac4f3f3",
+  "b9og25": "bb8f3bba-b0ee-4af7-a40a-3be63ac4f3f3",
 }
 
 // 0-based. 최소 보장 자리 — 이보다 아래면 2등 자리로 끌어올리고, 이미 더 위면 그대로 둔다.
