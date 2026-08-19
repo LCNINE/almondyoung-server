@@ -25,7 +25,9 @@
       "@packages/product-description": ["../../packages/product-description"],
       "@packages/product-description/*": ["../../packages/product-description/*"],
       "@packages/event-contracts": ["../../packages/event-contracts"],
-      "@packages/event-contracts/*": ["../../packages/event-contracts/*"]
+      "@packages/event-contracts/*": ["../../packages/event-contracts/*"],
+      "@packages/domain-types": ["../../packages/domain-types"],
+      "@packages/domain-types/*": ["../../packages/domain-types/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
