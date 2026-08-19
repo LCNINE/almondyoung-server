@@ -90,6 +90,7 @@ import { OrderCollectionFailuresController } from './controllers/order-collectio
 import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderSource } from './services/order-collection/medusa-order.source';
+import { NaverOrderSource } from './services/order-collection/naver-order.source';
 import { ChannelOrderTranslator } from './services/order-collection/channel-order.translator';
 import { ChannelLineIdentityResolver } from './services/order-collection/channel-line-identity.resolver';
 import { createOrderProvider } from './services/order-collection/translating-order.provider';
@@ -270,13 +271,15 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     ChannelLineIdentityResolver,
     ChannelOrderTranslator,
     MedusaOrderSource,
+    NaverOrderSource,
     {
       provide: CHANNEL_ORDER_PROVIDER,
       // 채널이 늘면 source 를 하나 더 만들어 이 배열에 더한다. 번역기는 공유한다.
-      useFactory: (translator: ChannelOrderTranslator, medusa: MedusaOrderSource) => [
+      useFactory: (translator: ChannelOrderTranslator, medusa: MedusaOrderSource, naver: NaverOrderSource) => [
         createOrderProvider(medusa, translator),
+        createOrderProvider(naver, translator),
       ],
-      inject: [ChannelOrderTranslator, MedusaOrderSource],
+      inject: [ChannelOrderTranslator, MedusaOrderSource, NaverOrderSource],
     },
     OrderPollerOrchestrator,
     OrderCollectionFailureService,
