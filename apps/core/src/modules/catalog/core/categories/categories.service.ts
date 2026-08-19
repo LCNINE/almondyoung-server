@@ -572,6 +572,7 @@ export class ProductCategoriesService {
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
             eq(pimSchema.productMasterVersions.status, 'active'),
+            isNull(pimSchema.productMasterVersions.deletedAt),
           ),
         );
 
@@ -648,6 +649,7 @@ export class ProductCategoriesService {
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
             eq(pimSchema.productMasterVersions.status, 'active'),
+            isNull(pimSchema.productMasterVersions.deletedAt),
           ),
         );
 
@@ -991,6 +993,7 @@ export class ProductCategoriesService {
         and(
           eq(pimSchema.productMasterCategories.categoryId, categoryId),
           eq(pimSchema.productMasterVersions.status, 'active'),
+          isNull(pimSchema.productMasterVersions.deletedAt),
         ),
       );
   }

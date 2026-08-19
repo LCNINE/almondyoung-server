@@ -83,9 +83,12 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
    * drizzle 쿼리 빌더를 순서대로 소비하는 최소 목.
    * select 호출 순서대로 `results` 를 하나씩 돌려준다 (innerJoin 유무 무관).
    */
-  function makeTx(results: unknown[][]) {
+  function makeTx(results: unknown[][], conditions: unknown[] = []) {
     const queue = [...results];
-    const take = () => Promise.resolve(queue.shift() ?? []);
+    const take = (condition?: unknown) => {
+      conditions.push(condition);
+      return Promise.resolve(queue.shift() ?? []);
+    };
     const whereable = () => ({ where: take });
     const tx = {
       select: jest.fn(() => ({
@@ -200,6 +203,29 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
     const events = productEvents(productPublisher);
     expect(events).toHaveLength(1);
     expect(events[0][0].aggregateId).toBe('m1');
+  });
+
+  // 삭제된 버전은 status 가 'active' 인 채로 deletedAt 만 찍힌다. 이 가드가 빠지면
+  // 카테고리 삭제가 이미 삭제된 상품을 published 로 되살린다.
+  it.each([
+    ['deleteCategory', (s: any) => s.deleteCategory('cat-1'), [[{ id: 'cat-1' }], [], [], []]],
+    ['moveProductsToCategory', (s: any) => s.moveProductsToCategory(['v1'], 'cat-2'), [[{ id: 'cat-2' }], []]],
+    ['addProductsToCategory', (s: any) => s.addProductsToCategory(['v1'], 'cat-2'), [[{ id: 'cat-2' }], []]],
+  ])('%s: 삭제된 버전을 제외하고 조회한다', async (_name, call, results) => {
+    const conditions: unknown[] = [];
+    const tx = makeTx(results as unknown[][], conditions);
+    const { service } = makeService(tx);
+
+    await call(service).catch(() => undefined);
+
+    const mentionsDeletedAt = (node: any): boolean => {
+      if (!node || typeof node !== 'object') return false;
+      if (node.name === 'deleted_at') return true;
+      const children = Array.isArray(node) ? node : (node.queryChunks ?? []);
+      return Array.isArray(children) && children.some(mentionsDeletedAt);
+    };
+
+    expect(conditions.some(mentionsDeletedAt)).toBe(true);
   });
 
   it('스냅샷 조립이 실패해도 카테고리 작업은 성공하고 해당 상품만 건너뛴다', async () => {
