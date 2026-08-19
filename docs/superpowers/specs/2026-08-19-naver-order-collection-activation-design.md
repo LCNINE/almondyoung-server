@@ -28,6 +28,23 @@ ADR-0031 이 수집 경로를 `OrderPollerOrchestrator → ChannelOrderSource �
 | 라인의 채널 좌표도 이미 있다 | `inventory.schema.ts:1324,1343` (`channel_order_item_id` + 부분 unique), `channel-order.translator.ts:116` | 채널 라인 ID → `salesOrderLineId` 해석이 단건 확정이다 |
 | 옛 `/adapter` REST 는 읽기 전용이다 | `channel-adapter.controller.ts` 의 `queryOrders` 는 `channelReader.findOrders` 만 부른다 | 이중 수집 위험 없음 |
 
+### 2.1 커머스API 문서에서 확정한 제약
+
+`/home/pauseb/문서/naver_llms.txt` 인덱스와 그것이 가리키는 endpoint·위키 문서에서 확정한 것들이다.
+
+| 제약 | 출처 | 영향 |
+|---|---|---|
+| 변경 피드의 조회 창은 `lastChangedFrom` + 24시간 (`lastChangedTo` 생략 시 자동) | last-changed-statuses 문서 | 워터마크를 앞으로 clamp 하면 **데이터 손실**. 창을 이동시켜야 한다 (§6.6) |
+| `limitCount` 는 300 캡, 초과분은 `more{moreFrom,moreSequence}` 로 이어받는다 | 같은 문서 | 현재 클라이언트는 `more` 를 읽지 않아 **조용히 잘린다** (§6.6.1) |
+| 상세 조회는 식별자 단위로 일부만 실패할 수 있다 | product-orders/query 문서 | 요청/응답 개수 비교가 필수 (§6.7) |
+| `productOrderStatus` 와 `lastChangedType` 은 **다른 축**이다 | 주문 상태 변경 흐름도 | `DISPATCHED` 는 후자의 값 — 초안의 처방이 틀렸다 (§6.2) |
+| 취소 요청 중에도 `productOrderStatus` 는 `PAYED` 다 | 같은 문서, 분기 C | 취소 요청 중 주문이 출고로 흘러가는 것을 막아야 한다 (§6.2) |
+| 판매자관리코드는 고유성을 보장하지 않는다 | 스마트스토어 상품 가이드 | 식별자 후보에서 제외 (§6.5) |
+| 원상품번호와 채널상품번호는 숫자가 겹칠 수 있다 | 같은 문서 | 리스팅 키를 한 종류로 고정해야 한다 (§6.5) |
+| `productOrder`·`order`·`cancel` 의 하위 구조는 문서에 없다 (OAS 참조, OAS 는 비공개 경로) | 각 endpoint 문서 | **shadow 가 필드명 확정 단계로 승격** (§7) |
+
+`llms.txt` 인덱스는 2026-08-19 기준 원본과 동일함을 확인했다(`diff` 일치).
+
 ## 3. 전략
 
 **운영 전략은 lazy 매핑이다** (사용자 결정). 사전 전량 매핑을 하지 않고, 미매핑 주문이 들어올 때마다 그 자리에서 등록한다.
@@ -112,11 +129,22 @@ CONTEXT.md:130 의 "결제 실패 위험을 벗어난 상태" 를 네이버에 �
 
 | 네이버 `productOrderStatus` | `ChannelPaymentState` |
 |---|---|
-| `PAYED` `DISPATCHED` `DELIVERING` `DELIVERED` `PURCHASE_DECIDED` | `accepted` |
+| `PAYED` `DELIVERING` `DELIVERED` `PURCHASE_DECIDED` | `accepted` |
 | `PAYMENT_WAITING` | `pending` |
-| `CANCELED` `CANCELED_BY_NOPAYMENT` `RETURNED` | `terminal` |
+| `CANCELED` `CANCELED_BY_NOPAYMENT` `RETURNED` `EXCHANGED` | `terminal` |
 
-`ProductOrderStatusSchema` 에 **`DISPATCHED` 를 추가**한다.
+🔴 **`DISPATCHED` 를 `ProductOrderStatusSchema` 에 추가하면 안 된다** (초안의 오류).
+`DISPATCHED` 는 `productOrderStatus` 값이 아니라 **`lastChangedType` 값**이다 (상태 흐름도 §용어).
+두 축이 다르다 — 발송 완료 시 `productOrderStatus` 는 `DELIVERING` 이고 `lastChangedType` 이 `DISPATCHED` 다.
+옛 `mapNaverStatusToInternal`(`naver-smartstore.adapter.ts:756`)이 둘을 한 표에 섞은 것이 오해의 출처다.
+
+대신 **`lastChangedType` enum 을 새로 정의**한다 (변경 피드 응답용):
+`PAY_WAITING` `PAYED` `DISPATCHED` `CANCEL_REQUESTED` `CLAIM_REQUESTED` `CLAIM_REJECTED` `CLAIM_COMPLETED` `PURCHASE_DECIDED`.
+
+**취소 요청 중은 `accepted` 로 보지 않는다.** `claimStatus` 가 `CANCEL_REQUEST` 또는 `CANCELING` 이면
+`productOrderStatus` 는 아직 `PAYED` 다 (상태 흐름도 분기 C). 그대로 두면 고객이 취소를 원하는 주문이
+출고 파이프라인에 올라간다. `MedusaOrderSource.resolvePaymentState` 의 `isRefundRequested` 방어와 대칭으로
+이 경우 `pending` 으로 낮춘다. 이미 수집된 주문에는 영향이 없고, 첫 수집을 막는 것이 목적이다.
 
 ### 6.3 취소 관측
 
@@ -142,21 +170,53 @@ Medusa 는 `cancelled` 를 쓰지 않아 값이 그대로다. 즉 기존 해시 
 ### 6.5 라인 조립
 
 - `channelOrderItemId` = `productOrderId` — 발송처리 명령이 되돌려받는 값.
-- `channelProductId` = **옵션 단위 식별자 우선, 없으면 상품 식별자.** 정본 값은 §7 shadow 로 확정하고,
+- `channelProductId` = **옵션 단위 식별자 우선, 없으면 채널상품번호.** 정본 값은 §7 shadow 로 확정하고,
   그때까지 후보를 상수 하나로 격리해 둔다. 운영자가 실제로 등록하는 값과 같아야 한다.
+  상품 가이드에서 확정된 제약 둘이 후보를 좁힌다:
+  - 🔴 **판매자관리코드는 식별자로 쓸 수 없다.** 문서가 명시한다 — *"여러 상품에 동일한 판매자관리코드를
+    입력할 수 있으며 스마트스토어 상품번호와 달리 식별자로서의 고유성을 보장하지 않습니다."*
+    ADR-0031 이 네이버를 `embedded` 가 아니라 `mapped` 로 둔 선택이 이 사실로 뒷받침된다.
+  - 🔴 **원상품번호(`originProductNo`)와 채널상품번호(`channelProductNo`)는 숫자가 겹칠 수 있다.**
+    문서가 "서로 다른 상품을 가리킨다" 고 못 박는다. `channel_variant_listings` 는
+    `(salesChannelId, channelItemId)` unique 이므로 두 종류를 섞어 저장하면 충돌한다 —
+    **주문에 실리는 한 종류로 고정**하고 그 종류를 화면 프리필과 공유한다.
 - `productName` · `quantity` · `unitPrice` 는 채널 값을 싣는다 (금액은 채널이 SoT — CONTEXT.md:126).
 - `customerId` 는 `null` 고정. 네이버 구매자는 user-service 계정이 아니고, 이메일 링크는 오결합 위험 대비 이득이 없다.
 
-### 6.6 워터마크
+### 6.6 워터마크와 조회 창
 
 - `since=null`(최초) → `now - 1h`. 과거를 소급하면 이미 수기 처리된 주문이 중복 유입된다.
-- `since` 가 24시간보다 오래됐으면 `now - 24h` 로 clamp. 네이버 변경조회는 장기 구간을 거부한다.
+- 🔴 **초안의 "`now-24h` 로 clamp" 는 틀렸다 — 데이터 손실이다.** 변경 피드는 `lastChangedTo` 를 생략하면
+  **`lastChangedFrom` + 24시간**이 자동 적용된다. 즉 24시간은 "얼마나 과거까지 허용되는가" 가 아니라
+  **한 번에 볼 수 있는 창의 길이**다. 워터마크를 앞으로 점프시키면 그 사이 주문이 영영 조회 범위 밖으로 빠진다.
+- 올바른 처리: **창을 `[since, min(since + 24h, now)]` 로 잡고 워터마크가 걸어서 따라잡게 한다.**
+  폴러가 오래 죽어 있었어도 5분마다 24시간씩 전진하므로 자동 복구된다.
+
+### 6.6.1 `more` 페이징은 선택이 아니다
+
+`limitCount` 는 **300 에서 캡**되고, 남은 항목이 있으면 응답에 `more { moreFrom, moreSequence }` 가 실린다.
+**지금 클라이언트는 `limitCount: 300` 을 하드코딩하고 `more` 를 읽지 않는다**(`naver-order.client.ts:171-181`) —
+한 창에 300건이 넘으면 **조용히 잘린다**. source 가 `more` 를 따라 루프를 돌아야 한다.
+같은 일시에 묶인 항목을 중복 없이 이어받으려면 `moreFrom` 과 `moreSequence` 를 **함께** 넘겨야 한다.
 
 ### 6.7 zod 전략과 실패 정책
 
 상세 스키마를 새로 쓴다. 저장소는 zod 4 이므로 `z.looseObject` 로 **우리가 읽는 필드만 검증하고 나머지는 통과**시킨다.
 
-문서 기반이라 필드명이 틀릴 수 있는데, 방어선은 **parse 실패를 삼키지 않는 것**이다.
+**필드명은 문서로 확정할 수 없다.** 커머스API 의 `llms/*.md` 문서는 `productOrder`·`order`·`cancel` 의
+하위 구조를 "생략 (상세는 OAS 참조)" 로 처리하고, OAS 자체는 공개 경로에서 받을 수 없었다.
+따라서 **§7 shadow 가 필드명 확정 단계로 승격된다** — 초안처럼 "문서로 쓰고 shadow 로 검증" 이 아니라
+"뼈대만 문서로 쓰고 shadow 에서 필드를 확정" 이다.
+
+문서에서 새어 나온 확정 사실 하나: `productOrder.shippingAddress` 는 존재하며
+`pickupLocationType`(`FRONT_OF_DOOR` `MANAGEMENT_OFFICE` `DIRECT_RECEIVE` `OTHER`)와
+`entryMethod`(`LOBBY_PW` `MANAGEMENT_OFFICE` `FREE` `OTHER`)를 갖는다 (query endpoint 의 enum 카탈로그).
+
+**응답 누락을 검증한다.** 문서가 "한 요청에서 식별자 단위로 일부만 조회 실패할 수 있으므로 응답 길이와
+요청 길이를 비교해 누락 여부를 확인" 하라고 명시한다. 요청한 `productOrderIds` 수와 응답 수가 다르면
+그 주기를 실패로 처리한다 — 조용히 빠진 라인으로 주문을 조립하면 §6.1 이 막으려던 사고가 다시 난다.
+
+방어선은 **parse 실패를 삼키지 않는 것**이다.
 throw 하면 `recordSyncFailure` 가 남고 **워터마크가 그대로**라 5분 뒤 재시도된다 (무손실).
 격리 사유 union 을 늘리지 않는다 — 격리는 식별 실패의 어휘이지 파싱 실패의 어휘가 아니다.
 
@@ -167,7 +227,9 @@ throw 하면 `recordSyncFailure` 가 남고 **워터마크가 그대로**라 5�
 
 ## 7. shadow 점검 (개통 전 1회, 10분)
 
-**목적**: 문서 기반 zod 를 실 응답으로 검증하고 `channelProductId` 정본 값을 확정한다.
+**목적**: **응답 필드명을 확정하고** `channelProductId` 정본 값을 정한다.
+초안은 이 단계를 "검증" 으로 뒀지만, 커머스API 문서가 중첩 구조를 생략하므로(§6.7)
+이 단계 없이는 스키마를 완성할 수 없다. **선택이 아니라 필수 경로다.**
 
 1. 배포 전 `sales_channels` 의 naver 행을 **`is_active=false`** 로 내린다.
 2. Core(§5) → channel-adapter(§6) 순으로 배포.
@@ -175,7 +237,11 @@ throw 하면 `recordSyncFailure` 가 남고 **워터마크가 그대로**라 5�
 4. 확인:
    - `sync_statuses` naver/orders 행의 `last_sync_at` · `error` — parse 실패가 여기 남는다.
    - `order_collection_failures where channel='naver'` — 행이 생겼는가, `affected_lines[].cause` 가 전부 `listing_not_found` 인가.
-   - 그 행의 **`raw_order`** 로 필드명·옵션 식별자 확인 → `channelProductId` 확정.
+   - 그 행의 **`raw_order`** 를 떠서 확정한다:
+     ① `productOrder` 의 상품 식별자 필드명과 값의 종류(원상품번호인가 채널상품번호인가)
+     ② 옵션 상품이라면 옵션 단위 식별자 필드가 있는가 — 없으면 매핑 grain 이 상품 단위로 내려가고,
+        그때는 한 리스팅에 variant 가 여럿 붙는 문제를 어떻게 다룰지 별도 판단이 필요하다
+     ③ 금액·수량·배송지 필드명 ④ `claimStatus`/`claimType` 이 실리는 자리
    - `wms_order_mappings where sales_channel='naver'` 가 **0행**인가 (리스팅 0행이므로 판매주문은 안 생겨야 정상).
 
 넷 중 하나라도 어긋나면 §6 으로 돌아가 고치고 다시 shadow.
@@ -250,6 +316,8 @@ lazy 매핑 전략이면 운영자가 큐를 놓치는 순간 그 주문의 출�
 - 🔴 **취소된 라인을 스냅샷에서 빼면 오격리 + 이중 처리** (§6.4).
 - 🔴 **`OrderFetchItem.changes` 에 네이버 원어를 넣지 말 것.** 해시 입력이라 모양이 바뀌면 한 주기 주문이 전부
   `collected_order_modification_not_accepted` 로 격리되고 그 사유는 replay 가 거부한다.
+- 🔴 **워터마크를 `now-24h` 로 clamp 하지 말 것** — 24시간은 창 길이지 허용 과거가 아니다 (§6.6).
+- 🔴 **`more` 를 무시하면 한 창 300건 초과분이 조용히 사라진다** (§6.6.1).
 - ⚠️ shadow 와 개통 사이 24시간 (§7).
 - ⚠️ `sync_statuses.last_sync_at` 은 하트비트가 아니다. 폴링이 아무것도 못 잡으면 갱신되지 않는다 — 살아있는지는 `updated_at` 으로 본다.
 - ⚠️ 증분 수집은 워터마크에서 2분 되감아 조회한다. 중복은 `wms_order_mappings` + change hash 가 흡수한다.
