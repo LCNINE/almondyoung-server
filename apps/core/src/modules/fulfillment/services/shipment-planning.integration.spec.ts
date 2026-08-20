@@ -210,6 +210,15 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
   it('revises only the entrance password without touching the recipient snapshot or manifest version', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 3, 3);
+      // 해외직구 주문은 sales-order AddressDto 의 personalCustomsCode 까지 스냅샷에
+      // 실어 온다 (recipientSnapshot 은 salesOrder.shippingAddress 의 그대로 복사본).
+      // fulfillment AddressDto 는 그 키를 모르므로, 비번만 고칠 때 스냅샷을 되보내면
+      // whitelist 가 통관부호를 떨어뜨린다. 스냅샷 미전송이 그걸 막는 유일한 방법이다.
+      const customsSnapshot = { ...COMPLETE_RECIPIENT, personalCustomsCode: 'P123456789' };
+      await tx
+        .update(wmsTables.shipments)
+        .set({ recipientSnapshot: customsSnapshot })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
 
       await planning.reviseRecipient(
         fixture.shipment.id,
@@ -230,7 +239,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       // 비번은 recipient_snapshot 밖의 크리덴셜이다. 스냅샷과 manifestVersion 은 합배송
       // 호환성·송장 멱등성(waybill.recipientHash)의 입력이므로 함께 움직이면 안 된다.
       expect(after.entrancePassword).toBe('#9999');
-      expect(after.recipientSnapshot).toEqual(fixture.shipment.recipientSnapshot);
+      expect(after.recipientSnapshot).toEqual(customsSnapshot);
       expect(after.manifestVersion).toBe(fixture.shipment.manifestVersion);
     });
   });

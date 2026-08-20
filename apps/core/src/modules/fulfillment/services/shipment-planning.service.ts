@@ -121,7 +121,10 @@ function sameJson(left: unknown, right: unknown): boolean {
     if (!value || typeof value !== 'object') return typeof value === 'string' ? value.trim() : value;
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .filter(([, entry]) => entry !== undefined)
+        // null 과 undefined 를 같게 본다. @IsOptional() 은 null 을 통과시키므로 저장된
+        // 스냅샷에 `deliveryNote: null` 이 남아 있을 수 있는데, 그걸 "키 없음"과 다르게
+        // 읽으면 주소를 안 고친 정정에서도 manifestVersion 이 올라간다.
+        .filter(([, entry]) => entry !== undefined && entry !== null)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, entry]) => [key, normalize(entry)]),
     );

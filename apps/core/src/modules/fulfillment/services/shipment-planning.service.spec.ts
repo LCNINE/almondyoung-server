@@ -1,5 +1,5 @@
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
-import { SplitShipmentDto } from '../dto/shipment-planning.dto';
+import { ReviseShipmentRecipientDto, SplitShipmentDto } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
 import {
@@ -163,11 +163,38 @@ describe('resolveRecipientRevision', () => {
     expect(outcome.passwordChanged).toBe(true);
   });
 
-  it('스냅샷을 그대로 다시 보내면서 비번만 바꿔도 manifestVersion 은 오르지 않는다', () => {
-    const outcome = resolveRecipientRevision(current, {
-      recipientSnapshot: { ...RECIPIENT },
-      entrancePassword: '#9999',
-    });
+  it('통관부호가 실린 스냅샷도 비번만 정정하면 손대지 않는다', () => {
+    // shipments.recipientSnapshot 은 salesOrder.shippingAddress 를 그대로 복사한 값이라
+    // sales-order AddressDto 의 personalCustomsCode 까지 실려 있을 수 있다. fulfillment
+    // AddressDto 는 그 키를 모른다 — 그래서 정정 커맨드는 "안 보내기"로 지킨다.
+    const outcome = resolveRecipientRevision(
+      { ...current, recipientSnapshot: { ...RECIPIENT, personalCustomsCode: 'P123456789' } },
+      { entrancePassword: '#9999' },
+    );
+
+    expect(outcome.update).toEqual({ entrancePassword: '#9999' });
+    expect(outcome.snapshotChanged).toBe(false);
+  });
+
+  it('7키 스냅샷 위에 6키 스냅샷을 되보내면 통관부호가 지워지고 manifestVersion 이 오른다', () => {
+    // 이래서 admin-web 은 비번만 고칠 때 recipientSnapshot 을 아예 보내지 않는다.
+    // 서버 whitelist:true 가 personalCustomsCode 를 떨어뜨리므로 되보내기로는 못 지킨다.
+    const outcome = resolveRecipientRevision(
+      { ...current, recipientSnapshot: { ...RECIPIENT, personalCustomsCode: 'P123456789' } },
+      { recipientSnapshot: { ...RECIPIENT }, entrancePassword: '#9999' },
+    );
+
+    expect(outcome.snapshotChanged).toBe(true);
+    expect(outcome.update.manifestVersion).toBe(4);
+  });
+
+  it('저장된 deliveryNote 가 null 이어도 같은 스냅샷으로 본다', () => {
+    // @IsOptional() 은 null 을 통과시키므로 스냅샷에 null 이 저장돼 있을 수 있다.
+    // 그걸 "다른 값"으로 읽으면 주소를 안 고친 정정에서도 manifestVersion 이 오른다.
+    const outcome = resolveRecipientRevision(
+      { ...current, recipientSnapshot: { ...RECIPIENT, deliveryNote: null } },
+      { recipientSnapshot: { ...RECIPIENT }, entrancePassword: '#9999' },
+    );
 
     expect(outcome.update).toEqual({ entrancePassword: '#9999' });
     expect(outcome.snapshotChanged).toBe(false);
@@ -209,5 +236,51 @@ describe('resolveRecipientRevision', () => {
   it('비번이 없던 shipment 에 비번을 채울 수 있다', () => {
     const outcome = resolveRecipientRevision({ ...current, entrancePassword: null }, { entrancePassword: '#9999' });
     expect(outcome.update).toEqual({ entrancePassword: '#9999' });
+  });
+});
+
+/**
+ * admin-web 이 비번만 고칠 때 보내는 body 를 core 가 실제로 받는지 본다. 배포와 동일한
+ * 전역 파이프(whitelist:true)를 쓰므로 main.ts 가 회귀하면 여기서 걸린다.
+ */
+describe('ReviseShipmentRecipientDto 경계', () => {
+  const pipe = createGlobalValidationPipe();
+  const meta = { type: 'body' as const, metatype: ReviseShipmentRecipientDto };
+  const RECIPIENT = {
+    recipientName: '홍길동',
+    phone: '010-0000-0000',
+    postalCode: '01234',
+    roadAddress: '서울 테스트로 1',
+    detailAddress: '101동 1001호',
+  };
+
+  it('recipientSnapshot 없이 비번만 담긴 body 를 통과시킨다', async () => {
+    const dto = (await pipe.transform(
+      { expectedManifestVersion: 3, entrancePassword: '#9999', reason: '고객 요청' },
+      meta,
+    )) as ReviseShipmentRecipientDto;
+
+    expect(dto.entrancePassword).toBe('#9999');
+    expect(dto.recipientSnapshot).toBeUndefined();
+  });
+
+  it('whitelist 가 personalCustomsCode 를 스냅샷에서 떨어뜨린다 — 되보내기로는 통관부호를 못 지킨다', async () => {
+    const dto = (await pipe.transform(
+      {
+        expectedManifestVersion: 3,
+        reason: '주소 정정',
+        recipientSnapshot: { ...RECIPIENT, personalCustomsCode: 'P123456789' },
+      },
+      meta,
+    )) as ReviseShipmentRecipientDto;
+
+    expect(dto.recipientSnapshot).toBeDefined();
+    expect('personalCustomsCode' in (dto.recipientSnapshot ?? {})).toBe(false);
+  });
+
+  it('비번은 문자열이어야 한다', async () => {
+    await expect(
+      pipe.transform({ expectedManifestVersion: 3, reason: '고객 요청', entrancePassword: 1234 }, meta),
+    ).rejects.toThrow();
   });
 });

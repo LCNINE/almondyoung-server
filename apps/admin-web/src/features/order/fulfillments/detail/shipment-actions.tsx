@@ -253,6 +253,7 @@ export function ShipmentActions({
           reason,
           csCaseId,
           note,
+          currentSnapshot: shipment.recipientSnapshot,
         });
         const run: () => Promise<void> = async () => {
           registerPending(idempotencyKey, ACTION_TITLE[action], run);
@@ -466,21 +467,28 @@ export function ShipmentActions({
 
           {action === 'recipient' && (
             <div className="grid grid-cols-2 gap-3">
-              {RECIPIENT_FIELDS.map(({ key, label, placeholder }) => (
-                <div
-                  key={key}
-                  className={`space-y-1.5 ${key.includes('Address') ? 'col-span-2' : ''}`}
-                >
-                  <Label>{label}</Label>
-                  <Input
-                    value={recipient[key]}
-                    placeholder={placeholder}
-                    onChange={(event) =>
-                      setRecipient({ ...recipient, [key]: event.target.value })
-                    }
-                  />
-                </div>
-              ))}
+              {RECIPIENT_FIELDS.map(
+                ({ key, label, placeholder, type, autoComplete }) => (
+                  <div
+                    key={key}
+                    className={`space-y-1.5 ${key.includes('Address') ? 'col-span-2' : ''}`}
+                  >
+                    <Label>{label}</Label>
+                    <Input
+                      value={recipient[key]}
+                      placeholder={placeholder}
+                      type={type}
+                      autoComplete={autoComplete}
+                      onChange={(event) =>
+                        setRecipient({
+                          ...recipient,
+                          [key]: event.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                )
+              )}
             </div>
           )}
 

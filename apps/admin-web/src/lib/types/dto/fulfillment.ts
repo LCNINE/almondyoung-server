@@ -751,10 +751,15 @@ export interface SplitShipmentRequest extends ShipmentCommandReason {
 
 export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
-  recipientSnapshot: FulfillmentShippingAddress;
+  /**
+   * 배송지를 실제로 고칠 때만 보낸다. 이 폼이 아는 6개 키가 스냅샷 전부가 아니기 때문에
+   * (sales-order 는 `personalCustomsCode` 까지 넣는다) 안 바뀐 주소를 되보내면 통관부호가
+   * 지워지고 manifestVersion 이 올라간다. 생략하면 core 가 스냅샷을 그대로 둔다.
+   */
+  recipientSnapshot?: FulfillmentShippingAddress;
   /**
    * 공동현관 출입 비밀번호. recipientSnapshot 밖의 크리덴셜이라 이것만 바뀌면 core 는
-   * 스냅샷도 manifestVersion 도 건드리지 않는다. 비워 보내면 기존 값을 그대로 둔다.
+   * 스냅샷도 manifestVersion 도 건드리지 않는다. 생략하면 기존 값을 그대로 둔다.
    */
   entrancePassword?: string;
 }
