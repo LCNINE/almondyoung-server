@@ -398,3 +398,36 @@ describe('ChannelOrderTranslator — 변경 해시 입력의 모양', () => {
     expect(outcome.order.changes.totalAmount).toBe(8000);
   });
 });
+
+describe('ChannelOrderTranslator — 공동현관 비밀번호', () => {
+  it('스냅샷의 entrancePassword 를 createPayload 로 옮긴다', async () => {
+    const { translator } = makeTranslator(LISTING);
+
+    const { outcome } = await translator.translate('naver', makeSnapshot({ entrancePassword: '#1234' }));
+    if (outcome.kind !== 'order') throw new Error('unreachable');
+
+    expect(outcome.order.createPayload.entrancePassword).toBe('#1234');
+  });
+
+  it('스냅샷에 entrancePassword 가 없으면 payload 에 그 키 자체가 없다', async () => {
+    const { translator } = makeTranslator(LISTING);
+
+    const { outcome } = await translator.translate('naver', makeSnapshot());
+    if (outcome.kind !== 'order') throw new Error('unreachable');
+
+    expect('entrancePassword' in outcome.order.createPayload).toBe(false);
+  });
+
+  /**
+   * `changes` 는 `polling_change_hashes` 의 입력이다. 비번은 모디피케이션 감지 입력이 아니므로
+   * 해시 모양에 섞이면 안 된다 — 섞이면 배포 직후 비번 유무가 바뀔 때마다 오격리 위험이 생긴다.
+   */
+  it('entrancePassword 는 changes 해시 입력에는 실리지 않는다', async () => {
+    const { translator } = makeTranslator(LISTING);
+
+    const { outcome } = await translator.translate('naver', makeSnapshot({ entrancePassword: '#1234' }));
+    if (outcome.kind !== 'order') throw new Error('unreachable');
+
+    expect('entrancePassword' in outcome.order.changes).toBe(false);
+  });
+});

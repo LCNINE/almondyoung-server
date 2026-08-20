@@ -105,6 +105,13 @@ export interface ChannelOrderSnapshot {
     allLinesTotal?: number;
   };
   shippingAddress: ShippingAddress;
+  /**
+   * 공동현관 비밀번호. `shippingAddress` 의 멤버가 아니라 **의도적으로 형제 필드**다 — 주소
+   * 스냅샷은 downstream(`sales_orders.shipping_address` / `shipments.recipient_snapshot`)에
+   * jsonb 로 영구 복사되고 합배송 그룹핑 키에도 쓰인다. 비번이 그 안에 섞이면 같이 영구
+   * 저장되고 그룹핑 키를 오염시키므로 별도 슬롯으로 흘려보낸다.
+   */
+  entrancePassword?: string;
   createdAt: string;
   lifecycle: LifecycleObservation[];
   /** 격리 시 운영자가 볼 채널 원본. */
