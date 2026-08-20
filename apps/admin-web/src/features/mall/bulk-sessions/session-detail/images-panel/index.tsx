@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
-import { useBulkSessionImages } from '@/lib/services/products/bulk-session';
+import { useBulkSessionRequiredImages } from '@/lib/services/products/bulk-session';
 import type {
   BulkImageUsage,
   BulkSessionProgress,
@@ -17,17 +17,10 @@ import { Dropzone } from './dropzone';
 import { useImageUploader } from './use-image-uploader';
 
 /**
- * 요구 목록 조회 상한. 서버 라우트가 실제로 허용하는 최댓값과 같다
- * (bulk-session.controller.ts 의 `parseImageLimit` 이 1000 으로 clamp 한다).
- *
- * 그래도 한 세션이 이 값을 넘는 필수 이미지를 요구할 수 있다 — reader 는 세션당
- * 최대 10,000행까지 받는다(bulk-session.reader.ts). 1000 을 넘는 나머지는 여기서
- * 페이지네이션하지 않고, 대신 `isTruncated` 로 잘렸음을 화면에 드러낸다: 매칭이
- * 로드된 페이지 안에서만 벌어지므로, 잘린 상태에서 "요구 목록에 없어 건너뛴 파일"
- * 이라고 단정하면 실제로는 다음 페이지에 있는(즉 필요한) 파일까지 "불필요"라고
- * 거짓 안내하게 된다.
+ * 목록에 그리는 행 수 상한. 매칭은 전량 rows 로 하므로 표시만 줄인다 — 세션이
+ * 1만 행(파싱 상한)을 요구할 수 있고, 그걸 다 그리면 화면이 무거워진다.
  */
-const REQUIRED_PAGE_SIZE = 1000;
+const DISPLAY_LIMIT = 500;
 
 const USAGE_LABEL: Record<BulkImageUsage, string> = {
   main: '메인',
@@ -42,12 +35,7 @@ export function ImagesPanel({
   sessionId: string;
   progress: BulkSessionProgress;
 }) {
-  const imagesQuery = useBulkSessionImages(sessionId, {
-    onlyRequired: true,
-    status: 'awaiting_upload',
-    page: 1,
-    limit: REQUIRED_PAGE_SIZE,
-  });
+  const imagesQuery = useBulkSessionRequiredImages(sessionId);
   const { state, run, retryFailed } = useImageUploader(sessionId);
 
   // 업로드 중 이탈해도 이미 올라간 것은 서버에 남는다 — 남은 것만 다시 떨구면 된다.
@@ -78,7 +66,8 @@ export function ImagesPanel({
   }
 
   async function handleFiles(files: File[]) {
-    const rows = imagesQuery.data?.data ?? [];
+    // 전량 rows 를 그대로 넘긴다 — required·awaiting 거름은 matchFilesToImageRows 가 한다.
+    const rows = imagesQuery.data?.rows ?? [];
     notifyIfDrafting(await run(files, rows));
   }
 
@@ -92,11 +81,10 @@ export function ImagesPanel({
     requiredTotal > 0
       ? Math.round((requiredResolved / requiredTotal) * 100)
       : 0;
-  const rows = imagesQuery.data?.data ?? [];
-  // total 은 (필수 + 미업로드) 행의 전체 개수다 — 그게 REQUIRED_PAGE_SIZE 를 넘으면
-  // 이번 페이지가 목록 전체가 아니다. 매칭도 이 페이지 안에서만 벌어지므로, 잘렸을 땐
-  // "요구 목록에 없다"는 판정 자체를 못 믿는다.
-  const isTruncated = (imagesQuery.data?.total ?? 0) > rows.length;
+  const awaiting = (imagesQuery.data?.rows ?? []).filter(
+    (row) => row.status === 'awaiting_upload'
+  );
+  const visible = awaiting.slice(0, DISPLAY_LIMIT);
 
   return (
     <div className="flex flex-col gap-4">
@@ -110,20 +98,13 @@ export function ImagesPanel({
         <Progress value={gatePercent} className="mt-3" />
       </div>
 
-      {isTruncated && (
-        <div className="rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm text-amber-900 dark:text-amber-200">
-          목록이 너무 커서 아래 {rows.length}건만 불러왔습니다(전체{' '}
-          {imagesQuery.data?.total ?? 0}건). 나머지는 이 화면에 보이지 않을 뿐
-          여전히 필요한 파일입니다 — 아래 목록에 없다고 해서 그 파일을
-          건너뛰어도 되는 것은 아닙니다.
-        </div>
-      )}
-
       <Dropzone
         onFiles={(files) => {
           void handleFiles(files);
         }}
-        disabled={state.running}
+        // 목록이 아직 없으면 매칭 근거가 없어 전부 "요구 목록에 없다"로 오판한다 —
+        // 로드 중·실패 상태에서는 받지 않는다(아래 목록 카드가 상태를 보여준다).
+        disabled={state.running || !imagesQuery.data}
       />
 
       {state.running && (
@@ -136,16 +117,8 @@ export function ImagesPanel({
       {state.unmatchedFiles.length > 0 && (
         <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
           <p className="font-medium text-foreground">
-            {isTruncated
-              ? `요구 목록에서 확인하지 못한 파일 ${state.unmatchedFiles.length}건`
-              : `요구 목록에 없어 건너뛴 파일 ${state.unmatchedFiles.length}건`}
+            요구 목록에 없어 건너뛴 파일 {state.unmatchedFiles.length}건
           </p>
-          {isTruncated && (
-            <p className="mt-1">
-              목록이 잘려 있어 이 파일들이 실제로 불필요한지 확인할 수 없습니다.
-              필요 없는 파일인지 다시 확인해 주세요.
-            </p>
-          )}
           <ul className="mt-1 list-disc pl-5">
             {state.unmatchedFiles.map((name) => (
               <li key={name}>{name}</li>
@@ -196,14 +169,14 @@ export function ImagesPanel({
             목록을 불러오지 못했습니다.
           </p>
         )}
-        {imagesQuery.data && rows.length === 0 && (
+        {imagesQuery.data && awaiting.length === 0 && (
           <p className="p-3 text-sm text-muted-foreground">
             필요한 이미지를 모두 받았습니다.
           </p>
         )}
-        {rows.length > 0 && (
+        {awaiting.length > 0 && (
           <ul className="divide-y text-sm">
-            {rows.map((row) => (
+            {visible.map((row) => (
               <li
                 key={`${row.imageKey} ${row.usage}`}
                 className="flex items-center justify-between px-3 py-2"
@@ -215,6 +188,12 @@ export function ImagesPanel({
               </li>
             ))}
           </ul>
+        )}
+        {awaiting.length > visible.length && (
+          <p className="border-t px-3 py-2 text-sm text-muted-foreground">
+            …외 {awaiting.length - visible.length}건. 파일을 떨구면 목록에 없는
+            것까지 전부 매칭됩니다.
+          </p>
         )}
       </div>
     </div>

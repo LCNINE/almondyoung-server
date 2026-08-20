@@ -4,7 +4,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { products } from '@/lib/api/domains';
 import type {
-  BulkImageStatus,
   BulkItemStatus,
   BulkPublishStatus,
   BulkSessionItem,
@@ -15,6 +14,7 @@ import type {
 import {
   bulkSessionListRefetchInterval,
   bulkSessionRefetchInterval,
+  collectAllRequiredImages,
 } from './bulk-session-model';
 import { productQueryKeys } from './query-keys';
 
@@ -101,18 +101,20 @@ export function useBulkSessionUndecidedCount(id: string, enabled: boolean) {
   });
 }
 
-export function useBulkSessionImages(
-  id: string,
-  query: {
-    status?: BulkImageStatus;
-    onlyRequired?: boolean;
-    page: number;
-    limit: number;
-  }
-) {
+/**
+ * 요구 이미지 행 **전량** 조회 — 이미지 패널의 매칭 근거다. 페이지를 끝까지 도는 이유와
+ * status 필터를 요청에 걸지 않는 이유는 `collectAllRequiredImages` 독스트링에 있다.
+ */
+export function useBulkSessionRequiredImages(id: string) {
   return useQuery({
-    queryKey: productQueryKeys.bulkSessionImages(id, query),
-    queryFn: () => products.bulkSession.getImages(id, query),
+    queryKey: productQueryKeys.bulkSessionImages(id, {
+      onlyRequired: true,
+      scope: 'all',
+    }),
+    queryFn: () =>
+      collectAllRequiredImages((page, limit) =>
+        products.bulkSession.getImages(id, { onlyRequired: true, page, limit })
+      ),
   });
 }
 

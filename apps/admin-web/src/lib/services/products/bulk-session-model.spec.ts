@@ -10,6 +10,8 @@ import {
   bulkSessionRefetchInterval,
   canApprove,
   chunkResolutions,
+  collectAllRequiredImages,
+  IMAGE_PAGE_LIMIT,
   computeDraftingProgress,
   computePublishProgress,
   getBulkSessionView,
@@ -282,11 +284,100 @@ describe('matchFilesToImageRows', () => {
     );
   });
 
+  it('1,000행 너머의 요구에도 매칭된다 — 전량 rows 가 들어온다는 전제다', () => {
+    const rows = Array.from({ length: 1500 }, (_, i) =>
+      imageRow({ imageKey: `IMG-${i}`, sourceValue: `${i}.jpg` })
+    );
+    const result = matchFilesToImageRows([{ name: '1499.jpg' }], rows);
+    expect(result.tasks.map((t) => t.imageKey)).toEqual(['IMG-1499']);
+    expect(result.unmatchedFiles).toEqual([]);
+  });
+
   it('required=false 인 행은 요구가 아니다 — invalid 행만 참조하던 이미지다', () => {
     const rows = [imageRow({ required: false })];
     expect(matchFilesToImageRows([{ name: 'front.jpg' }], rows).tasks).toEqual(
       []
     );
+  });
+});
+
+describe('collectAllRequiredImages', () => {
+  const makeRows = (count: number, offset = 0): BulkSessionImage[] =>
+    Array.from({ length: count }, (_, i) =>
+      imageRow({ imageKey: `IMG-${offset + i}`, sourceValue: `${offset + i}.jpg` })
+    );
+
+  function pagedFetcher(all: BulkSessionImage[]) {
+    const calls: number[] = [];
+    const fetchPage = (page: number, limit: number) => {
+      calls.push(page);
+      const data = all.slice((page - 1) * limit, page * limit);
+      return Promise.resolve({
+        data,
+        total: all.length,
+        page,
+        limit,
+        requiredTotal: all.length,
+        requiredResolved: 0,
+      });
+    };
+    return { fetchPage, calls };
+  }
+
+  it('한 페이지를 넘는 목록은 끝까지 돌아 전량을 모은다', async () => {
+    const all = makeRows(IMAGE_PAGE_LIMIT * 2 + 500);
+    const { fetchPage, calls } = pagedFetcher(all);
+    const snapshot = await collectAllRequiredImages(fetchPage);
+    expect(calls).toEqual([1, 2, 3]);
+    expect(snapshot.rows).toHaveLength(all.length);
+    expect(snapshot.rows[all.length - 1].imageKey).toBe(
+      `IMG-${all.length - 1}`
+    );
+  });
+
+  it('한 페이지로 끝나면 한 번만 부른다', async () => {
+    const { fetchPage, calls } = pagedFetcher(makeRows(3));
+    const snapshot = await collectAllRequiredImages(fetchPage);
+    expect(calls).toEqual([1]);
+    expect(snapshot.rows).toHaveLength(3);
+  });
+
+  it('빈 목록도 한 번만 부르고 끝난다', async () => {
+    const { fetchPage, calls } = pagedFetcher([]);
+    const snapshot = await collectAllRequiredImages(fetchPage);
+    expect(calls).toEqual([1]);
+    expect(snapshot.rows).toEqual([]);
+  });
+
+  it('요약 카운트는 마지막 응답의 것을 쓴다', async () => {
+    let call = 0;
+    const snapshot = await collectAllRequiredImages((page, limit) => {
+      call += 1;
+      return Promise.resolve({
+        data: call === 1 ? makeRows(limit) : makeRows(1, limit),
+        total: limit + 1,
+        page,
+        limit,
+        requiredTotal: limit + 1,
+        requiredResolved: call === 1 ? 0 : 7,
+      });
+    });
+    expect(snapshot.requiredResolved).toBe(7);
+  });
+
+  it('서버가 빈 페이지를 돌려줘 전량을 못 채우면 조용히 넘기지 않고 던진다', async () => {
+    await expect(
+      collectAllRequiredImages((page, limit) =>
+        Promise.resolve({
+          data: page === 1 ? makeRows(limit) : [],
+          total: limit + 100,
+          page,
+          limit,
+          requiredTotal: limit + 100,
+          requiredResolved: 0,
+        })
+      )
+    ).rejects.toThrow('끝까지 불러오지 못했습니다');
   });
 });
 

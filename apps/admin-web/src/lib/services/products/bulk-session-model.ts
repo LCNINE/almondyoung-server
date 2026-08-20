@@ -6,6 +6,7 @@
 
 import type {
   BulkSessionImage,
+  BulkSessionImageList,
   BulkSessionPhase,
   BulkSessionProgress,
   PurgeDraftsResult,
@@ -200,6 +201,55 @@ export function matchFilesToImageRows<F extends NamedFile>(
     .map((f) => f.name);
 
   return { tasks, unmatchedFiles, missing, duplicateNames };
+}
+
+/**
+ * 이미지 목록 한 페이지의 최대 크기. 서버 라우트가 실제로 허용하는 최댓값과 같다
+ * (bulk-session.controller.ts 의 `parseImageLimit` 이 1000 으로 clamp 한다).
+ * 더 크게 보내도 서버가 조용히 잘라 돌려주므로, 전량이 필요하면 페이지를 끝까지
+ * 돌아야 한다(`collectAllRequiredImages`).
+ */
+export const IMAGE_PAGE_LIMIT = 1000;
+
+export interface RequiredImagesSnapshot {
+  /** 세션이 요구하는(required) 이미지 행 전량 — 상태 무관. */
+  rows: BulkSessionImage[];
+  requiredTotal: number;
+  requiredResolved: number;
+}
+
+/**
+ * 요구 이미지 행을 **전량** 모은다 — 매칭이 로드된 페이지 안에서만 벌어지므로, 일부만
+ * 있으면 뒷 페이지에 있는(즉 필요한) 파일까지 "요구 목록에 없다"고 거짓 안내하게 된다.
+ * `fetchAllInvalidItems`(bulk-session.ts)와 같은 이유·같은 순회다.
+ *
+ * **status 필터는 요청에 걸지 않는다.** 업로드가 진행되면 행이 `awaiting_upload` 에서
+ * 빠져나가 필터 걸린 목록의 페이지 경계가 순회 도중 움직인다(앞 페이지로 밀려 들어온
+ * 행을 건너뛴다). 해석 통보는 행을 지우지 않고 status/fileId 만 바꾸므로
+ * (bulk-image.manager.ts), 필터 없는 행 집합과 정렬(imageKey, usage)은 순회 내내
+ * 불변이다. awaiting 여부는 받은 뒤 클라이언트에서 거른다.
+ *
+ * 순회를 끝까지 못 돌면(서버 응답 불일치) 조용히 일부만 돌려주지 않고 던진다 —
+ * 부분 목록으로 매칭하면 위의 거짓 안내가 그대로 재현된다.
+ */
+export async function collectAllRequiredImages(
+  fetchPage: (page: number, limit: number) => Promise<BulkSessionImageList>
+): Promise<RequiredImagesSnapshot> {
+  const rows: BulkSessionImage[] = [];
+  let last: BulkSessionImageList;
+  for (let page = 1; ; page += 1) {
+    last = await fetchPage(page, IMAGE_PAGE_LIMIT);
+    rows.push(...last.data);
+    if (rows.length >= last.total || last.data.length === 0) break;
+  }
+  if (rows.length < last.total) {
+    throw new Error('요구 이미지 목록을 끝까지 불러오지 못했습니다.');
+  }
+  return {
+    rows,
+    requiredTotal: last.requiredTotal,
+    requiredResolved: last.requiredResolved,
+  };
 }
 
 export function chunkResolutions(
