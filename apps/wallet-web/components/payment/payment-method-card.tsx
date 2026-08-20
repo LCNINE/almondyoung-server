@@ -1,7 +1,6 @@
 'use client';
 
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+import { SectionCard } from '@/checkout-ui/domains/checkout/components/shared/section-card';
 import { ChevronRight, CreditCard } from 'lucide-react';
 import type { AvailablePaymentMethod, PaymentMethod } from '@/lib/wallet-api';
 import { getMethodIcon, getRegionLabel } from './utils';
@@ -28,14 +27,8 @@ export function PaymentMethodCard({
   const regionLabel = getRegionLabel(region);
 
   return (
-    <Card className="border shadow-sm border-border/60">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <span className="text-sm font-semibold">결제 수단 선택</span>
-          <Badge variant="secondary" className="text-xs">
-            {methods.length}
-          </Badge>
-        </div>
+    <SectionCard title="결제 수단">
+      <>
         {methods.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <CreditCard className="w-8 h-8 text-muted-foreground/50" />
@@ -57,9 +50,7 @@ export function PaymentMethodCard({
                   onClick={() => onSelect(m.id)}
                   className={[
                     'w-full flex items-center gap-3 rounded-lg border px-4 py-3.5 text-left transition-colors',
-                    isSelected
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                      : 'border-border bg-background hover:bg-accent/50',
+                    isSelected ? 'border-primary bg-background' : 'border-border bg-background hover:bg-accent/50',
                   ].join(' ')}
                 >
                   {/* 커스텀 라디오 점 */}
@@ -92,7 +83,7 @@ export function PaymentMethodCard({
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </>
+    </SectionCard>
   );
 }

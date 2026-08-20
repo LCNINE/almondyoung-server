@@ -6,9 +6,15 @@ export interface CashReceiptState {
   /** 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용) */
   method: CashReceiptMethod;
   number: string;
+  saveForNextTime: boolean;
 }
 
-export const EMPTY_CASH_RECEIPT: CashReceiptState = { evidenceType: 'NONE', method: 'PHONE', number: '' };
+export const EMPTY_CASH_RECEIPT: CashReceiptState = {
+  evidenceType: 'NONE',
+  method: 'PHONE',
+  number: '',
+  saveForNextTime: false,
+};
 
 export interface CashReceiptPayload {
   type: '소득공제' | '지출증빙';
@@ -43,9 +49,47 @@ export function buildCashReceipt(state: CashReceiptState, userBizNumber: string)
     return {
       ok: true,
       cashReceipt: { type: '지출증빙', customerIdentityNumber: digits },
-      offerSaveBizNumber: !userBizNumber,
+      offerSaveBizNumber: !userBizNumber && state.saveForNextTime,
     };
   }
 
   return { ok: true, offerSaveBizNumber: false };
+}
+
+const PREFERENCE_KEY = 'cash-receipt-preference';
+
+export interface CashReceiptPreference {
+  evidenceType: Exclude<EvidenceType, 'NONE'>;
+  method: CashReceiptMethod;
+  number: string;
+}
+
+export function readCashReceiptPreference(): CashReceiptPreference | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(PREFERENCE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CashReceiptPreference>;
+    if (!parsed.number || !parsed.evidenceType || !parsed.method) return null;
+    return { evidenceType: parsed.evidenceType, method: parsed.method, number: parsed.number };
+  } catch {
+    return null;
+  }
+}
+
+export function saveCashReceiptPreference(state: CashReceiptState): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (state.evidenceType === 'NONE' || !state.saveForNextTime) {
+      window.localStorage.removeItem(PREFERENCE_KEY);
+      return;
+    }
+    const preference: CashReceiptPreference = {
+      evidenceType: state.evidenceType,
+      method: state.method,
+      number: state.number.replace(/[^0-9]/g, ''),
+    };
+    window.localStorage.setItem(PREFERENCE_KEY, JSON.stringify(preference));
+  } catch {
+  }
 }

@@ -36,6 +36,7 @@ import {
   CashReceiptCard,
   EMPTY_CASH_RECEIPT,
   buildCashReceipt,
+  saveCashReceiptPreference,
   type CashReceiptState,
 } from '@/components/payment/cash-receipt-card';
 import { BankTransferPending } from '@/components/payment/bank-transfer-pending';
@@ -103,8 +104,7 @@ export function PayForm({
   const availablePoints = pointsAllowedInRegion ? pointsBalance.available : 0;
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>(externalMethods[0]?.id ?? '');
-  const [usePoints, setUsePoints] = useState(false);
-  const [pointsAmount, setPointsAmount] = useState(0);
+  const [pointsUsed, setPointsUsed] = useState(0);
   const [tossSubMethod, setTossSubMethod] = useState<TossSubMethod>('CARD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -155,15 +155,10 @@ export function PayForm({
   // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 멤버십은 적립 혜택 대상이 아니다.
   const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
-  const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
-
-  function handleTogglePoints(checked: boolean) {
-    setUsePoints(checked);
-    setPointsAmount(checked ? maxPoints : 0);
-  }
+  const remainingAmount = intent.payableAmount - pointsUsed;
 
   async function handleConfirm() {
-    const pts = usePoints ? pointsAmount : 0;
+    const pts = pointsUsed;
     const remaining = intent.payableAmount - pts;
     if (remaining > 0 && !selectedMethodId) {
       setError('결제 수단을 선택해주세요.');
@@ -179,11 +174,8 @@ export function PayForm({
       }
       cashReceipt = built.cashReceipt;
       // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
-      if (
-        built.offerSaveBizNumber &&
-        cashReceipt &&
-        window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')
-      ) {
+      saveCashReceiptPreference(cashReceiptState);
+      if (built.offerSaveBizNumber && cashReceipt) {
         void saveMyBusinessNumber(cashReceipt.customerIdentityNumber);
       }
     }
@@ -358,12 +350,8 @@ export function PayForm({
               <PointsCard
                 availablePoints={availablePoints}
                 maxPoints={maxPoints}
-                usePoints={usePoints}
-                pointsAmount={pointsAmount}
-                remainingAmount={remainingAmount}
-                currency={intent.currency}
-                onToggle={handleTogglePoints}
-                onAmountChange={setPointsAmount}
+                pointsAmount={pointsUsed}
+                onAmountChange={setPointsUsed}
               />
             )}
 

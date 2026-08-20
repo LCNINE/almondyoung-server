@@ -12,12 +12,16 @@ import {
 } from "@/checkout-ui/components/ui/select"
 import { cn } from "@/checkout-ui/lib/utils"
 import { useTranslations } from "next-intl"
+import { useEffect, useRef } from "react"
 import { SHIPPING_MEMO_OPTIONS } from "../constants"
 import type { ShippingMemo } from "../types"
+import type { ShippingMemoError } from "../utils"
 
 interface ShippingMemoSelectorProps {
   shippingMemo: ShippingMemo
   onShippingMemoChange: (memo: ShippingMemo) => void
+  error?: ShippingMemoError | null
+  errorAttempt?: number
 }
 
 /**
@@ -26,15 +30,35 @@ interface ShippingMemoSelectorProps {
 export function ShippingMemoSelector({
   shippingMemo,
   onShippingMemoChange,
+  error,
+  errorAttempt = 0,
 }: ShippingMemoSelectorProps) {
   const t = useTranslations("checkout.shipping.memo")
+  const tError = useTranslations("checkout.process.toasts")
   const { type, custom, hasEntrance, entrancePassword } = shippingMemo
+  const customInputRef = useRef<HTMLInputElement>(null)
+  const entranceInputRef = useRef<HTMLInputElement>(null)
+  const selectTriggerRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!error) return
+    const target =
+      error === "enterCustomMemo"
+        ? customInputRef.current
+        : error === "enterEntrancePw"
+          ? entranceInputRef.current
+          : selectTriggerRef.current
+    target?.focus()
+  }, [error, errorAttempt])
+
+  const focusCustomInput = useRef(false)
 
   const updateMemo = (updates: Partial<ShippingMemo>) => {
     onShippingMemoChange({ ...shippingMemo, ...updates })
   }
 
   const handleTypeChange = (value: string) => {
+    focusCustomInput.current = value === "other"
     updateMemo({
       type: value,
       custom: value === "other" ? custom : "",
@@ -51,15 +75,24 @@ export function ShippingMemoSelector({
       {/* 메모 타입 선택 */}
       <Select value={type} onValueChange={handleTypeChange}>
         <SelectTrigger
+          ref={selectTriggerRef}
+          aria-invalid={error === "selectMemo"}
           className={cn(
             "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[13px] text-gray-700 lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
-            !type && "text-gray-400"
+            !type && "text-gray-400",
+            error === "selectMemo" && "border-red-500"
           )}
           aria-label={t("selectAria")}
         >
           <SelectValue placeholder={t("placeholder")} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          onCloseAutoFocus={(event) => {
+            if (!focusCustomInput.current) return
+            focusCustomInput.current = false
+            event.preventDefault()
+          }}
+        >
           {SHIPPING_MEMO_OPTIONS.map((option) => (
             <SelectItem
               key={option.value}
@@ -72,11 +105,15 @@ export function ShippingMemoSelector({
         </SelectContent>
       </Select>
 
+      {error === "selectMemo" && <FieldError message={tError(error)} />}
+
       {/* 문 앞 선택 시: 공동현관 옵션 */}
       {type === "door" && (
         <EntranceSection
           hasEntrance={hasEntrance}
           entrancePassword={entrancePassword}
+          inputRef={entranceInputRef}
+          error={error === "enterEntrancePw" ? tError("enterEntrancePw") : null}
           onHasEntranceChange={(checked) =>
             updateMemo({
               hasEntrance: checked,
@@ -92,6 +129,8 @@ export function ShippingMemoSelector({
         <CustomMemoInput
           value={custom}
           onChange={(value) => updateMemo({ custom: value })}
+          inputRef={customInputRef}
+          error={error === "enterCustomMemo" ? tError("enterCustomMemo") : null}
         />
       )}
     </fieldset>
@@ -106,11 +145,15 @@ function EntranceSection({
   entrancePassword,
   onHasEntranceChange,
   onPasswordChange,
+  inputRef,
+  error,
 }: {
   hasEntrance: boolean
   entrancePassword: string
   onHasEntranceChange: (checked: boolean) => void
   onPasswordChange: (value: string) => void
+  inputRef?: React.RefObject<HTMLInputElement | null>
+  error?: string | null
 }) {
   const t = useTranslations("checkout.shipping.memo.entrance")
   return (
@@ -137,15 +180,23 @@ function EntranceSection({
           </div>
 
           {hasEntrance && (
-            <Input
-              id="entrance-password"
-              type="text"
-              value={entrancePassword}
-              onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder={t("passwordPlaceholder")}
-              maxLength={20}
-              className="bg-background ml-6 h-auto w-[calc(100%-24px)] rounded border border-gray-300 px-3 py-2.5 text-[13px] placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm"
-            />
+            <div className="ml-6 w-[calc(100%-24px)]">
+              <Input
+                id="entrance-password"
+                ref={inputRef}
+                type="text"
+                value={entrancePassword}
+                onChange={(e) => onPasswordChange(e.target.value)}
+                placeholder={t("passwordPlaceholder")}
+                maxLength={20}
+                aria-invalid={!!error}
+                className={cn(
+                  "bg-background h-auto w-full rounded border border-gray-300 px-3 py-2.5 text-[13px] placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+                  error && "border-red-500"
+                )}
+              />
+              {error && <FieldError message={error} />}
+            </div>
           )}
         </div>
 
@@ -174,25 +225,46 @@ function EntranceSection({
 function CustomMemoInput({
   value,
   onChange,
+  inputRef,
+  error,
 }: {
   value: string
   onChange: (value: string) => void
+  inputRef?: React.RefObject<HTMLInputElement | null>
+  error?: string | null
 }) {
   const t = useTranslations("checkout.shipping.memo")
   return (
-    <div className="relative">
-      <Input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={t("customPlaceholder")}
-        maxLength={50}
-        className="h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm"
-        aria-label={t("customAria")}
-      />
-      <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 lg:text-xs">
-        {value.length}/50
-      </span>
+    <div>
+      <div className="relative">
+        <Input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={t("customPlaceholder")}
+          maxLength={50}
+          autoFocus
+          aria-invalid={!!error}
+          className={cn(
+            "h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+            error && "border-red-500"
+          )}
+          aria-label={t("customAria")}
+        />
+        <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 lg:text-xs">
+          {value.length}/50
+        </span>
+      </div>
+      {error && <FieldError message={error} />}
     </div>
+  )
+}
+
+function FieldError({ message }: { message: string }) {
+  return (
+    <p role="alert" className="mt-1.5 text-[12px] text-red-600">
+      {message}
+    </p>
   )
 }

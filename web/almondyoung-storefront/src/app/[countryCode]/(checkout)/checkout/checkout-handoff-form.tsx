@@ -23,6 +23,8 @@ interface Props {
  * 토큰과 카트 id 를 쿼리스트링이 아니라 **폼 본문**으로 넘긴다. URL 로 보내면 브라우저 히스토리·
  * 서버 액세스 로그·Referer 에 고객 자격증명이 그대로 남는다.
  */
+const HANDOFF_FLAG = "checkout-handoff-submitted"
+
 export default function CheckoutHandoffForm({
   action,
   handoffToken,
@@ -38,17 +40,19 @@ export default function CheckoutHandoffForm({
   useEffect(() => {
     if (submittedRef.current) return
 
-    // wallet-web 에서 뒤로가기로 여기 되돌아온 경우. 그대로 재제출하면 사용자는 뒤로 갈 수
-    // 없는 상태에 갇힌다(브릿지 ↔ 결제창 왕복). 장바구니로 내보낸다.
+    // wallet-web 에서 뒤로가기로 돌아온 경우만 장바구니로 내보낸다.
+    // nav.type 은 document 단위라 클라이언트 라우팅으로는 갱신되지 않아 플래그를 같이 본다.
     const [nav] = performance.getEntriesByType(
       "navigation"
     ) as PerformanceNavigationTiming[]
-    if (nav?.type === "back_forward") {
+    if (nav?.type === "back_forward" && sessionStorage.getItem(HANDOFF_FLAG)) {
+      sessionStorage.removeItem(HANDOFF_FLAG)
       router.replace(`/${countryCode}/cart`)
       return
     }
 
     submittedRef.current = true
+    sessionStorage.setItem(HANDOFF_FLAG, "1")
     // 결제창은 다른 도메인이라 GA 세션이 끊긴다. 넘어가기 전에 발사한다.
     // (체크아웃 진입 = 결제수단 화면 진입이 된 뒤라 add_payment_info 도 같이 보낸다.)
     trackEventOnce(`ga4_begin_checkout_${cartId}`, "begin_checkout", gaEcommerce)

@@ -37,7 +37,10 @@ describe('buildCashReceipt', () => {
 
   describe('지출증빙', () => {
     it('사업자번호 10자리만 허용한다', () => {
-      const result = buildCashReceipt(state({ evidenceType: 'CASH_EXPENSE', number: '123-45-67890' }), '');
+      const result = buildCashReceipt(
+        state({ evidenceType: 'CASH_EXPENSE', number: '123-45-67890', saveForNextTime: true }),
+        '',
+      );
       expect(result).toEqual({
         ok: true,
         cashReceipt: { type: '지출증빙', customerIdentityNumber: '1234567890' },
@@ -46,8 +49,16 @@ describe('buildCashReceipt', () => {
       expect(buildCashReceipt(state({ evidenceType: 'CASH_EXPENSE', number: '12345678901' }), '').ok).toBe(false);
     });
 
-    it('이미 저장된 사업자번호가 있으면 저장 제안을 하지 않는다', () => {
-      const result = buildCashReceipt(state({ evidenceType: 'CASH_EXPENSE', number: '1234567890' }), '9999999999');
+    it('저장 체크를 하지 않으면 저장하지 않는다', () => {
+      const result = buildCashReceipt(state({ evidenceType: 'CASH_EXPENSE', number: '1234567890' }), '');
+      expect(result).toMatchObject({ ok: true, offerSaveBizNumber: false });
+    });
+
+    it('이미 저장된 사업자번호가 있으면 체크했어도 저장하지 않는다', () => {
+      const result = buildCashReceipt(
+        state({ evidenceType: 'CASH_EXPENSE', number: '1234567890', saveForNextTime: true }),
+        '9999999999',
+      );
       expect(result).toMatchObject({ ok: true, offerSaveBizNumber: false });
     });
   });

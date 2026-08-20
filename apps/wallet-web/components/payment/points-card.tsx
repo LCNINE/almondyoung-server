@@ -1,30 +1,15 @@
 'use client';
 
-import { Card, CardContent } from '@/components/ui/card';
-import { Coins } from 'lucide-react';
-import { formatAmount } from './utils';
+import { SectionCard } from '@/checkout-ui/domains/checkout/components/shared/section-card';
 
 interface Props {
   availablePoints: number;
   maxPoints: number;
-  usePoints: boolean;
   pointsAmount: number;
-  remainingAmount: number;
-  currency: string;
-  onToggle: (checked: boolean) => void;
   onAmountChange: (amount: number) => void;
 }
 
-export function PointsCard({
-  availablePoints,
-  maxPoints,
-  usePoints,
-  pointsAmount,
-  remainingAmount,
-  currency,
-  onToggle,
-  onAmountChange,
-}: Props) {
+export function PointsCard({ availablePoints, maxPoints, pointsAmount, onAmountChange }: Props) {
   function handleRawChange(raw: string) {
     const parsed = parseInt(raw, 10);
     if (isNaN(parsed) || parsed < 0) {
@@ -35,60 +20,44 @@ export function PointsCard({
   }
 
   return (
-    <Card className="border shadow-sm border-border/60">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between mb-4">
+    <SectionCard
+      title="포인트 보유"
+      headerRight={
+        <span className="text-[15px] font-bold text-gray-900 lg:text-lg">
+          {(availablePoints - pointsAmount).toLocaleString('ko-KR')}P
+        </span>
+      }
+    >
+      {availablePoints === 0 ? (
+        <p className="text-[13px] text-gray-400 lg:text-sm">보유 포인트 없음</p>
+      ) : (
+        <>
           <div className="flex items-center gap-2">
-            <Coins className="w-4 h-4 text-muted-foreground" />
-            <span className="text-sm font-semibold">포인트 사용</span>
-          </div>
-          <span className="text-sm text-muted-foreground">보유: {availablePoints.toLocaleString('ko-KR')}P</span>
-        </div>
-
-        {availablePoints === 0 ? (
-          <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
-        ) : (
-          <div className="space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer">
+            <div className="relative min-w-0 flex-1">
               <input
-                type="checkbox"
-                checked={usePoints}
-                onChange={(e) => onToggle(e.target.checked)}
-                className="w-4 h-4 rounded border-border"
+                type="number"
+                min={0}
+                max={maxPoints}
+                value={pointsAmount === 0 ? '' : pointsAmount}
+                placeholder="0"
+                onChange={(e) => handleRawChange(e.target.value)}
+                aria-label="사용할 포인트"
+                className="h-11 w-full rounded-md border border-gray-300 bg-white pr-8 pl-3 text-right text-[15px] tabular-nums outline-none focus:border-gray-500 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
               />
-              <span className="text-sm">포인트 사용하기</span>
-            </label>
-
-            {usePoints && (
-              <div className="space-y-2 pl-7">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={maxPoints}
-                    value={pointsAmount}
-                    onChange={(e) => handleRawChange(e.target.value)}
-                    className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                  />
-                  <span className="text-sm text-muted-foreground">P</span>
-                  <button
-                    type="button"
-                    onClick={() => onAmountChange(maxPoints)}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    전액 사용
-                  </button>
-                </div>
-                {remainingAmount > 0 ? (
-                  <p className="text-xs text-muted-foreground">{formatAmount(remainingAmount, currency)} 추가 결제</p>
-                ) : (
-                  <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
-                )}
-              </div>
+              <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[13px] text-gray-500">P</span>
+            </div>
+            {maxPoints > 0 && (
+              <button
+                type="button"
+                onClick={() => onAmountChange(maxPoints)}
+                className="h-11 shrink-0 rounded-md bg-gray-100 px-4 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-200"
+              >
+                전액 사용
+              </button>
             )}
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </>
+      )}
+    </SectionCard>
   );
 }

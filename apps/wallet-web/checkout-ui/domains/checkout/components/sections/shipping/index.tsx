@@ -5,13 +5,14 @@ import { useTranslations } from "next-intl"
 import { useCallback, useMemo, useState } from "react"
 import { ShippingAddressModal } from "../../../../../components/address"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
+import { SectionCard } from "../../shared/section-card"
 import {
   AddressDisplay,
   EmptyAddressState,
-  ShippingMemoSelector,
+  ShippingMemoDialog,
 } from "./components"
 import type { EditAddressState, ShippingSectionProps } from "./types"
-import { formatAddress, isValidAddress } from "./utils"
+import { formatAddress, formatShippingMemo, isValidAddress } from "./utils"
 
 export const ShippingSection = ({
   cartId,
@@ -21,8 +22,10 @@ export const ShippingSection = ({
   onShippingMemoChange,
 }: ShippingSectionProps) => {
   const t = useTranslations("checkout.shipping")
+  const tMemo = useTranslations("checkout.shipping.memo")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSelectorOpen, setIsSelectorOpen] = useState(false)
+  const [isMemoOpen, setIsMemoOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"create" | "edit">("create")
   const [editAddressState, setEditAddressState] =
     useState<EditAddressState | null>(null)
@@ -80,47 +83,63 @@ export const ShippingSection = ({
     }
   }, [])
 
-  const renderContent = () => {
-    if (!isValid) {
-      return (
-        <EmptyAddressState
-          onSelectSaved={() => setIsSelectorOpen(true)}
-          onAddNew={handleAddNewAddress}
-        />
-      )
-    }
-
-    return (
-      <>
-        <AddressDisplay
-          addressName={addressName}
-          name={name}
-          phone={phone}
-          postalCode={postalCode}
-          address1={address1}
-          address2={address2}
-          fullAddress={fullAddress}
-          onChangeClick={() => setIsSelectorOpen(true)}
-        />
-        <ShippingMemoSelector
-          shippingMemo={shippingMemo}
-          onShippingMemoChange={onShippingMemoChange}
-        />
-      </>
-    )
-  }
+  const memoSummary = formatShippingMemo(shippingMemo, tMemo)
 
   return (
-    <section aria-labelledby="shipping-heading" className="mb-8">
-      <h2
-        id="shipping-heading"
-        className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
-      >
+    <section aria-labelledby="shipping-heading" className="mb-8 space-y-3">
+      <h2 id="shipping-heading" className="sr-only">
         {t("title")}
       </h2>
-      <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] lg:rounded-[10px] lg:px-10 lg:py-8">
-        {renderContent()}
-      </div>
+
+      {!isValid ? (
+        <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] lg:rounded-[10px] lg:px-10 lg:py-8">
+          <EmptyAddressState
+            onSelectSaved={() => setIsSelectorOpen(true)}
+            onAddNew={handleAddNewAddress}
+          />
+        </div>
+      ) : (
+        <>
+          <SectionCard
+            title={t("title")}
+            subtitle={addressName || name}
+            action={{
+              label: t("changeAddress"),
+              onClick: () => setIsSelectorOpen(true),
+            }}
+          >
+            <AddressDisplay
+              phone={phone}
+              postalCode={postalCode}
+              address1={address1}
+              address2={address2}
+              fullAddress={fullAddress}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title={tMemo("title")}
+            action={{ label: t("change"), onClick: () => setIsMemoOpen(true) }}
+          >
+            <p
+              className={
+                memoSummary
+                  ? "text-[13px] text-gray-800 lg:text-[15px]"
+                  : "text-[13px] text-gray-400 lg:text-[15px]"
+              }
+            >
+              {memoSummary || tMemo("empty")}
+            </p>
+          </SectionCard>
+
+          <ShippingMemoDialog
+            open={isMemoOpen}
+            onOpenChange={setIsMemoOpen}
+            shippingMemo={shippingMemo}
+            onSubmit={onShippingMemoChange}
+          />
+        </>
+      )}
 
       <ShippingAddressSelectorModal
         cartId={cartId}

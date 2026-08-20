@@ -1,17 +1,19 @@
-"use client"
+'use client';
 
-import { PriceRow } from "@/checkout-ui/domains/checkout/components/shared/price-row"
-import { CheckoutMembershipTagIcon } from "@/checkout-ui/icons/membership-tag-icon"
-import type { CartTotals } from "@/checkout-ui/lib/types/ui/cart"
-import { convertToLocale } from "@/checkout-ui/lib/utils/price-utils"
-import { useTranslations } from "next-intl"
+import { PriceRow } from '@/checkout-ui/domains/checkout/components/shared/price-row';
+import { CheckoutMembershipTagIcon } from '@/checkout-ui/icons/membership-tag-icon';
+import type { CartTotals } from '@/checkout-ui/lib/types/ui/cart';
+import { convertToLocale } from '@/checkout-ui/lib/utils/price-utils';
+import { useTranslations } from 'next-intl';
+
+export const PAYMENT_TOTAL_ANCHOR_ID = 'payment-total';
 
 interface PaymentTotalSectionProps {
-  totals: CartTotals
+  totals: CartTotals;
 }
 
 export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
-  const t = useTranslations("checkout.paymentTotal")
+  const t = useTranslations('checkout.paymentTotal');
   const {
     currency_code,
     original_item_subtotal,
@@ -20,21 +22,18 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
     membershipDiscount,
     totalDiscount,
     finalTotal,
-  } = totals
+  } = totals;
 
-  const formatAmount = (amount: number) =>
-    convertToLocale({ amount, currency_code, maximumFractionDigits: 0 })
+  const formatAmount = (amount: number) => convertToLocale({ amount, currency_code, maximumFractionDigits: 0 });
 
   return (
-    <section className="mb-8">
-      <h2 className="mb-3 text-base font-bold text-gray-900 lg:text-xl">
-        {t("title")}
-      </h2>
+    <section id={PAYMENT_TOTAL_ANCHOR_ID} className="mb-8">
+      <h2 className="mb-3 text-base font-bold text-gray-900 lg:text-xl">{t('title')}</h2>
 
       <div className="overflow-hidden rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
         <div className="space-y-3 p-4 lg:p-6">
           <PriceRow>
-            <PriceRow.Label size="sm">{t("itemAmount")}</PriceRow.Label>
+            <PriceRow.Label size="sm">{t('itemAmount')}</PriceRow.Label>
             <PriceRow.Value
               className="text-[13px] lg:text-sm"
               data-testid="cart-subtotal"
@@ -45,12 +44,8 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
           </PriceRow>
 
           <PriceRow>
-            <PriceRow.Label size="sm">{t("shipping")}</PriceRow.Label>
-            <PriceRow.Value
-              className="text-[13px] lg:text-sm"
-              data-testid="cart-shipping"
-              data-value={shipping}
-            >
+            <PriceRow.Label size="sm">{t('shipping')}</PriceRow.Label>
+            <PriceRow.Value className="text-[13px] lg:text-sm" data-testid="cart-shipping" data-value={shipping}>
               {formatAmount(shipping)}
             </PriceRow.Value>
           </PriceRow>
@@ -68,14 +63,9 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
 
           {membershipDiscount > 0 && (
             <PriceRow>
-              <PriceRow.Label
-                size="xs"
-                tone="membership"
-                weight="medium"
-                className="flex items-center gap-1"
-              >
+              <PriceRow.Label size="xs" tone="membership" weight="medium" className="flex items-center gap-1">
                 <CheckoutMembershipTagIcon />
-                {t("membershipDiscount")}
+                {t('membershipDiscount')}
               </PriceRow.Label>
               <PriceRow.Value
                 tone="discount"
@@ -90,14 +80,9 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
 
           {totalDiscount > 0 && (
             <PriceRow>
-              <PriceRow.Label
-                size="sm"
-                className="inline-flex items-baseline gap-1"
-              >
-                {t("discount")}
-                <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">
-                  {t("couponEtc")}
-                </span>
+              <PriceRow.Label size="sm" className="inline-flex items-baseline gap-1">
+                {t('discount')}
+                <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">{t('couponEtc')}</span>
               </PriceRow.Label>
               <PriceRow.Value
                 tone="discount"
@@ -110,21 +95,15 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
             </PriceRow>
           )}
         </div>
-        <PriceRow highlight="beige">
+        <PriceRow highlight="total">
           <PriceRow.Label size="base" weight="semibold">
-            {t("totalAmount")}
+            {t('totalAmount')}
           </PriceRow.Label>
-          <PriceRow.Value
-            size="lg"
-            weight="bold"
-            tone="discount"
-            data-testid="cart-total"
-            data-value={finalTotal}
-          >
+          <PriceRow.Value size="lg" weight="bold" tone="discount" data-testid="cart-total" data-value={finalTotal}>
             {formatAmount(finalTotal)}
           </PriceRow.Value>
         </PriceRow>
       </div>
     </section>
-  )
-}
+  );
+};

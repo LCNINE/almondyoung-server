@@ -7,10 +7,11 @@ import { useTranslations } from "next-intl"
 export const PCHeader = () => {
   const t = useTranslations("checkout.header")
   const tCheckout = useTranslations("checkout")
+  const storefrontOrigin = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? "/"
   return (
     <div className="hidden w-full border-b border-gray-200 bg-white lg:block">
       <div className="relative container mx-auto flex max-w-[1360px] items-center justify-between px-[40px] py-5">
-        <Link href="/" className="shrink-0">
+        <Link href={storefrontOrigin} className="shrink-0">
           <Image
             src="/images/almond-logo-black.png"
             alt={tCheckout("logoAltAlmondyoung")}
@@ -51,15 +52,27 @@ export const PCHeader = () => {
 export const MobileHeader = ({ onClose }: { onClose: () => void }) => {
   const t = useTranslations("checkout.header")
   return (
-    <header className="mb-6 flex items-center justify-between pt-6 lg:hidden">
-      <h1 className="text-lg font-bold text-gray-900">{t("mobileTitle")}</h1>
+    <header className="relative mb-6 flex items-center justify-center pt-6 lg:hidden">
       <button
         aria-label={t("closeAria")}
-        className="text-xl text-gray-500"
+        className="absolute left-0 flex h-8 w-8 items-center justify-center text-gray-900"
         onClick={onClose}
       >
-        ✕
+        <svg
+          className="h-6 w-6"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M15 19l-7-7 7-7"
+          />
+        </svg>
       </button>
+      <h1 className="text-lg font-bold text-gray-900">{t("mobileTitle")}</h1>
     </header>
   )
 }

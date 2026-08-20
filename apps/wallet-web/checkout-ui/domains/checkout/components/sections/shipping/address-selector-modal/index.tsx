@@ -16,20 +16,13 @@ import {
 } from "@/checkout-ui/components/ui/alert-dialog"
 import { Button } from "@/checkout-ui/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/checkout-ui/components/ui/dialog"
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/checkout-ui/components/ui/drawer"
-import { useMediaQuery } from "@/checkout-ui/hooks/use-media-query"
+  FullScreenDialog,
+  FullScreenDialogBody,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogHeader,
+  FullScreenDialogTitle,
+} from "@/checkout-ui/components/ui/full-screen-dialog"
 import { updateCart } from "@/checkout-ui/lib/api/medusa/cart"
 import {
   deleteCustomerAddress,
@@ -55,7 +48,6 @@ export function ShippingAddressSelectorModal({
 }: ShippingAddressSelectorProps) {
   const t = useTranslations("checkout.shipping.selector")
   const router = useRouter()
-  const isDesktop = useMediaQuery("(min-width: 768px)")
   const [addresses, setAddresses] = useState<HttpTypes.StoreCustomerAddress[]>(
     []
   )
@@ -214,7 +206,7 @@ export function ShippingAddressSelectorModal({
     }
 
     return (
-      <div className="max-h-[400px] space-y-2 overflow-y-auto">
+      <div className="space-y-2">
         {addresses.map((address) => (
           <AddressCard
             key={address.id}
@@ -265,63 +257,28 @@ export function ShippingAddressSelectorModal({
     </AlertDialog>
   )
 
-  if (isDesktop) {
-    return (
-      <>
-        <Dialog open={open} onOpenChange={onOpenChange}>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>{t("title")}</DialogTitle>
-            </DialogHeader>
-            <div className="py-4">{content}</div>
-            <div className="flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                disabled={isSubmitting}
-              >
-                {t("cancel")}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleSelect}
-                disabled={isSelectDisabled}
-              >
-                {isSubmitting ? t("changing") : t("selectDone")}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-        {deleteConfirmDialog}
-      </>
-    )
-  }
-
   return (
     <>
-      <Drawer open={open} onOpenChange={onOpenChange}>
-        <DrawerContent>
-          <DrawerHeader className="text-left">
-            <DrawerTitle>{t("title")}</DrawerTitle>
-          </DrawerHeader>
-          <div className="px-4">{content}</div>
-          <DrawerFooter className="pt-4">
+      <FullScreenDialog open={open} onOpenChange={onOpenChange}>
+        <FullScreenDialogContent className="lg:inset-x-auto lg:top-1/2 lg:left-1/2 lg:h-auto lg:max-h-[80dvh] lg:w-[560px] lg:-translate-x-1/2 lg:-translate-y-1/2">
+          <FullScreenDialogHeader closeLabel={t("cancel")}>
+            <FullScreenDialogTitle>{t("title")}</FullScreenDialogTitle>
+          </FullScreenDialogHeader>
+
+          <FullScreenDialogBody>{content}</FullScreenDialogBody>
+
+          <FullScreenDialogFooter>
             <Button
               type="button"
               onClick={handleSelect}
               disabled={isSelectDisabled}
+              className="h-12 w-full rounded bg-[#ff6600] text-[15px] font-bold text-white hover:bg-[#ff6600]/90"
             >
               {isSubmitting ? t("changing") : t("selectDone")}
             </Button>
-            <DrawerClose asChild>
-              <Button variant="outline" disabled={isSubmitting}>
-                {t("cancel")}
-              </Button>
-            </DrawerClose>
-          </DrawerFooter>
-        </DrawerContent>
-      </Drawer>
+          </FullScreenDialogFooter>
+        </FullScreenDialogContent>
+      </FullScreenDialog>
       {deleteConfirmDialog}
     </>
   )

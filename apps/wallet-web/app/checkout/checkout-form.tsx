@@ -7,15 +7,13 @@ import { toast } from 'sonner';
 
 import { CustomsCodeSection } from '@/checkout-ui/domains/checkout/components/sections/customs-code';
 import { DiscountSection } from '@/checkout-ui/domains/checkout/components/sections/discount';
-import {
-  OrderConsentSection,
-  type OrderConsentState,
-} from '@/checkout-ui/domains/checkout/components/sections/order-consent';
+import { OrderConsentSection } from '@/checkout-ui/domains/checkout/components/sections/order-consent';
 import { OrderProductsSection } from '@/checkout-ui/domains/checkout/components/sections/order-products-shipping';
 import { PaymentTotalSection } from '@/checkout-ui/domains/checkout/components/sections/payment-total';
 import { ShippingSection } from '@/checkout-ui/domains/checkout/components/sections/shipping';
 import type { ShippingMemo } from '@/checkout-ui/domains/checkout/components/sections/shipping/types';
 import {
+  findShippingMemoError,
   isSameShippingMemo,
   readShippingMemo,
 } from '@/checkout-ui/domains/checkout/components/sections/shipping/utils';
@@ -38,7 +36,12 @@ import { PointsCard } from '@/components/payment/points-card';
 import { PaymentMethodCard } from '@/components/payment/payment-method-card';
 import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
 import { CashReceiptCard } from '@/components/payment/cash-receipt-card';
-import { buildCashReceipt, EMPTY_CASH_RECEIPT, type CashReceiptState } from '@/components/payment/cash-receipt';
+import {
+  buildCashReceipt,
+  EMPTY_CASH_RECEIPT,
+  saveCashReceiptPreference,
+  type CashReceiptState,
+} from '@/components/payment/cash-receipt';
 import { BankTransferPending } from '@/components/payment/bank-transfer-pending';
 import { isBankTransferPendingAction, type BankTransferPendingAction } from '@/components/payment/utils';
 import { saveMyBusinessNumber } from '@/lib/wallet-api';
@@ -80,7 +83,6 @@ export function CheckoutForm({
   const router = useRouter();
   const tProcess = useTranslations('checkout.process');
   const tCustoms = useTranslations('checkout.customsCode');
-  const tConsent = useTranslations('checkout.consent');
 
   const cartItems = useMemo(() => cart?.items ?? [], [cart]);
   const requiresShipping = useMemo(() => cartRequiresShipping(cartItems), [cartItems]);
@@ -97,9 +99,6 @@ export function CheckoutForm({
     setPersonalCustomsCode(value);
     setCustomsCodeError(null);
   }, []);
-
-  const [consent, setConsent] = useState<OrderConsentState>({ purchaseTerms: false, personalInfo: false });
-  const consentGiven = consent.purchaseTerms && consent.personalInfo;
 
   // ── 결제수단 (기존 /pay 화면에서 합류) ──
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((m) => [m.code, m])) : null;
@@ -162,16 +161,9 @@ export function CheckoutForm({
 
   // 포인트는 리전이 허용할 때만.
   const availablePoints = isAvailableInRegion('POINTS') ? pointsBalance.available : 0;
-  const [usePoints, setUsePoints] = useState(false);
-  const [pointsAmount, setPointsAmount] = useState(0);
+  const [pointsUsed, setPointsUsed] = useState(0);
   const maxPoints = Math.min(availablePoints, cartTotals.finalTotal);
-  const pointsUsed = usePoints ? pointsAmount : 0;
   const remainingAmount = cartTotals.finalTotal - pointsUsed;
-
-  function handleTogglePoints(checked: boolean) {
-    setUsePoints(checked);
-    setPointsAmount(checked ? maxPoints : 0);
-  }
 
   const [loading, setLoading] = useState(false);
 
@@ -203,22 +195,15 @@ export function CheckoutForm({
         toast.error(tProcess('toasts.enterAddress'));
         return false;
       }
-      if (!shippingMemo.type) {
-        toast.error(tProcess('toasts.selectMemo'));
-        return false;
-      }
-      if (shippingMemo.type === 'door' && shippingMemo.hasEntrance && !shippingMemo.entrancePassword.trim()) {
-        toast.error(tProcess('toasts.enterEntrancePw'));
+      const memoError = findShippingMemoError(shippingMemo);
+      if (memoError) {
+        toast.error(tProcess(`toasts.${memoError}`));
         return false;
       }
     }
     if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
       setCustomsCodeError(tCustoms('error'));
       toast.error(tCustoms('error'));
-      return false;
-    }
-    if (!consentGiven) {
-      toast.error(tConsent('required'));
       return false;
     }
     if (remainingAmount > 0 && !selectedMethodId) {
@@ -241,11 +226,8 @@ export function CheckoutForm({
         return;
       }
       cashReceipt = built.cashReceipt;
-      if (
-        built.offerSaveBizNumber &&
-        cashReceipt &&
-        window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')
-      ) {
+      saveCashReceiptPreference(cashReceiptState);
+      if (built.offerSaveBizNumber && cashReceipt) {
         void saveMyBusinessNumber(cashReceipt.customerIdentityNumber);
       }
     }
@@ -336,6 +318,11 @@ export function CheckoutForm({
         redirectToWalletLogin();
         return;
       }
+      if (isUserCanceledPayment(err)) {
+        toast('결제를 취소했어요.');
+        setLoading(false);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : tProcess('toasts.unknownError'));
       setLoading(false);
     }
@@ -400,18 +387,16 @@ export function CheckoutForm({
           />
 
           {/* 여기부터가 기존 /pay 화면에서 합류한 부분 — 도메인을 한 번 더 건널 필요가 없어졌다. */}
-          {remainingAmount > 0 && (
-            <div className="mb-4">
-              <PaymentMethodCard
-                methods={externalMethods}
-                availableMethodMap={availableMethodMap}
-                regionFilterApplied={Array.isArray(availableMethods)}
-                region={countryCode}
-                selectedMethodId={selectedMethodId}
-                onSelect={setSelectedMethodId}
-              />
-            </div>
-          )}
+          <div className="mb-4">
+            <PaymentMethodCard
+              methods={externalMethods}
+              availableMethodMap={availableMethodMap}
+              regionFilterApplied={Array.isArray(availableMethods)}
+              region={countryCode}
+              selectedMethodId={selectedMethodId}
+              onSelect={setSelectedMethodId}
+            />
+          </div>
 
           {remainingAmount > 0 && isTossSelected && (
             <div className="mb-4">
@@ -430,31 +415,38 @@ export function CheckoutForm({
             </div>
           )}
 
-          {availablePoints > 0 && (
+          {maxPoints > 0 && (
             <div className="mb-4">
               <PointsCard
                 availablePoints={availablePoints}
                 maxPoints={maxPoints}
-                usePoints={usePoints}
-                pointsAmount={pointsAmount}
-                remainingAmount={remainingAmount}
-                currency={cart.currency_code ?? 'KRW'}
-                onToggle={handleTogglePoints}
-                onAmountChange={setPointsAmount}
+                pointsAmount={pointsUsed}
+                onAmountChange={setPointsUsed}
               />
             </div>
           )}
 
           <PaymentTotalSection totals={totalsWithPoints} />
 
-          <OrderConsentSection value={consent} onChange={setConsent} hasOverseasItem={hasOverseasItem} />
+          <OrderConsentSection />
 
         </div>
       </div>
 
-      <PCFixedCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} disabled={!consentGiven} />
-      <MobileCTA loading={loading} onPayment={handlePayment} disabled={!consentGiven} />
+      <PCFixedCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />
+      <MobileCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />
     </main>
+  );
+}
+
+const TOSS_USER_CANCEL_CODES = new Set(['PAY_PROCESS_CANCELED', 'USER_CANCEL']);
+
+function isUserCanceledPayment(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    TOSS_USER_CANCEL_CODES.has(String((err as { code: unknown }).code))
   );
 }
 
