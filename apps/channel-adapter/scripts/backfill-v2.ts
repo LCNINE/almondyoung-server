@@ -33,6 +33,7 @@ import { MigrationSessionService } from './lib/migration-session.service';
 import { syncWithRetry, classifyError } from './lib/error-classifier';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
 import { StorefrontRevalidateService } from '../src/adapters/medusa/storefront-revalidate.service';
+import { CategoryEnsureMemoService } from '../src/adapters/medusa/category-ensure-memo.service';
 import { DeferredRevalidateService } from '../src/adapters/medusa/deferred-revalidate.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
@@ -198,6 +199,7 @@ async function main() {
     mappingRepo,
     revalidateSvc,
     new DeferredRevalidateService(revalidateSvc, new ConfigService()),
+    new CategoryEnsureMemoService(new ConfigService()),
   );
 
   // 카테고리/태그/타입/세일즈채널 캐시를 미리 채워 product 당 list/verify HTTP 호출을

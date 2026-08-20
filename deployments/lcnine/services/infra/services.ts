@@ -251,6 +251,8 @@ export function setup(infra: SharedInfra) {
     INBOX_PROCESSING_LEASE_MS: '900000',
     INBOX_SHUTDOWN_DRAIN_MS: '25000',
     DEFERRED_REVALIDATE_FLUSH_MS: '60000',
+    // 조상 재보장 메모의 항목 상한. 0 으로 두면 메모를 끈다 (킬스위치).
+    CATEGORY_ANCESTOR_MEMO_MAX_ENTRIES: '5000',
   });
   const membershipEnv = withPrefix('MEMBERSHIP', {
     DATABASE_URL: dbUrl('membership'),

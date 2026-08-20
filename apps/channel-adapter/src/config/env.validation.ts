@@ -56,6 +56,8 @@ export const channelAdapterEnvSchema = z.object({
   INBOX_MAX_RETRIES: z.coerce.number().int().positive().optional(),
   INBOX_SLOW_MAX_RETRIES: z.coerce.number().int().positive().optional(),
   DEFERRED_REVALIDATE_FLUSH_MS: z.coerce.number().int().min(1000).optional(),
+  // 0 이면 조상 재보장 메모를 끈다 (킬스위치).
+  CATEGORY_ANCESTOR_MEMO_MAX_ENTRIES: z.coerce.number().int().nonnegative().optional(),
 
   // Firebase Membership Sync
   ALMOND_AUTH_URL: z.string().url().optional(),

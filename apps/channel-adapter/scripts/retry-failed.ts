@@ -24,6 +24,7 @@ import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
 import type { StorefrontRevalidateService } from '../src/adapters/medusa/storefront-revalidate.service';
 import type { DeferredRevalidateService } from '../src/adapters/medusa/deferred-revalidate.service';
+import { CategoryEnsureMemoService } from '../src/adapters/medusa/category-ensure-memo.service';
 import type { PimProductSnapshot } from '../src/types';
 import { eq, and } from 'drizzle-orm';
 
@@ -105,6 +106,7 @@ async function main() {
     mappingRepo,
     noopStorefrontRevalidate,
     noopDeferredRevalidate,
+    new CategoryEnsureMemoService(configService),
   );
 
   try {
