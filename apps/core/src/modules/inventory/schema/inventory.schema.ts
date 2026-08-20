@@ -1277,6 +1277,12 @@ export const salesOrders = pgTable(
     // 메모
     memo: text('memo'), // 메모
 
+    // 공동현관 출입 비밀번호 — 크리덴셜이므로 shipping_address 스냅샷에 넣지 않는다.
+    // core 가 SoT. 송장 발행 경로와 운영자 정정 API 에서만 읽는다.
+    // 배송 완료 시 즉시 파기하며, 미배송 잔류분은 expires_at 기준 배치가 청소한다.
+    entrancePassword: text('entrance_password'),
+    entrancePasswordExpiresAt: timestamp('entrance_password_expires_at', { withTimezone: true }),
+
     // 결제 연동
     // Wallet 서비스의 payment intent ID. Medusa 채널 주문의 경우 결제 세션 생성 시 설정.
     // 취소 시 자동 환불 workflow에서 사용. 비-Medusa 채널 또는 레거시 주문은 NULL.
@@ -1637,6 +1643,9 @@ export const shipments = pgTable(
     // TODO(outbound-v2-contract Task 25): require profile/recipient for planned V2 shipments.
     shippingProfileId: uuid('shipping_profile_id').references(() => deliveryProfiles.id, { onDelete: 'restrict' }),
     recipientSnapshot: jsonb('recipient_snapshot'),
+    // 송장 조립 시점에만 읽어 message 에 합성한다. recipient_snapshot 에 넣지 않는 이유는
+    // 합배송 그룹핑 키(canonicalConsolidationRecipient)를 크리덴셜로 오염시키지 않기 위해서다.
+    entrancePassword: text('entrance_password'),
     manifestVersion: integer('manifest_version').notNull().default(1),
     reservationVersion: integer('reservation_version').notNull().default(1),
     openedBy: uuid('opened_by'),
