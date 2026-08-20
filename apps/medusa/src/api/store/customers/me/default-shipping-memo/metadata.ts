@@ -21,12 +21,16 @@ export interface DefaultShippingMemoInput {
   has_entrance?: boolean;
 }
 
-export interface DefaultShippingMemoMetadata {
+// `interface` 가 아니라 `type` 이어야 한다 — TypeScript 는 type alias 에만 암묵적 인덱스
+// 시그니처를 부여하므로, interface 로 두면 Medusa 의 `metadata: Record<string, unknown>` 에
+// 대입할 수 없다(TS2322). 루트 type-check 는 apps/medusa 를 제외하므로 이 오류는
+// `medusa build` 에서야 드러난다.
+export type DefaultShippingMemoMetadata = {
   default_shipping_memo_type: string;
   default_shipping_memo_custom: string;
   default_entrance_password: string;
   default_has_entrance: boolean;
-}
+};
 
 export function buildDefaultShippingMemoMetadata(
   input: DefaultShippingMemoInput,
