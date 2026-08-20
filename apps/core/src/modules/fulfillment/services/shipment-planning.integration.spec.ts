@@ -207,6 +207,62 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('revises only the entrance password without touching the recipient snapshot or manifest version', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 3, 3);
+
+      await planning.reviseRecipient(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          entrancePassword: '#9999',
+          reason: '고객 요청',
+        },
+        `entrance-password-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [after] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      // 비번은 recipient_snapshot 밖의 크리덴셜이다. 스냅샷과 manifestVersion 은 합배송
+      // 호환성·송장 멱등성(waybill.recipientHash)의 입력이므로 함께 움직이면 안 된다.
+      expect(after.entrancePassword).toBe('#9999');
+      expect(after.recipientSnapshot).toEqual(fixture.shipment.recipientSnapshot);
+      expect(after.manifestVersion).toBe(fixture.shipment.manifestVersion);
+    });
+  });
+
+  it('bumps the manifest version when the recipient snapshot changes alongside the entrance password', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 3, 3);
+      const moved = { ...COMPLETE_RECIPIENT, detailAddress: '202' };
+
+      await planning.reviseRecipient(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          recipientSnapshot: moved,
+          entrancePassword: '#9999',
+          reason: '주소 정정',
+        },
+        `recipient-and-password-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [after] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      expect(after.entrancePassword).toBe('#9999');
+      expect(after.recipientSnapshot).toEqual(moved);
+      expect(after.manifestVersion).toBe(fixture.shipment.manifestVersion + 1);
+    });
+  });
+
   it('stores a durable cancellation intent when a Planned shipment must reopen', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 3, 3);

@@ -41,6 +41,12 @@ import type {
   FulfillmentOperationStatus,
   ShipmentAdminDetail,
 } from '@/lib/types/dto/fulfillment';
+import {
+  buildRecipientRevisionPayload,
+  missingRecipientFields,
+  RECIPIENT_FIELDS,
+  type RecipientForm,
+} from './recipient-revision';
 
 type Action = 'split' | 'recipient' | 'plan' | 'cancel' | 'recall';
 
@@ -50,15 +56,6 @@ type RetryState = {
   actionLabel: string;
   idempotencyKey: string;
   run: () => Promise<void>;
-};
-
-type Recipient = {
-  recipientName: string;
-  phone: string;
-  postalCode: string;
-  roadAddress: string;
-  detailAddress: string;
-  deliveryNote: string;
 };
 
 const ACTION_TITLE: Record<Action, string> = {
@@ -76,10 +73,10 @@ const RECALL_REASONS = [
   ['package_recovered', '패키지 회수'],
 ] as const;
 
-function blankRecipient(snapshot: unknown): Recipient {
+function blankRecipient(snapshot: unknown): RecipientForm {
   const value =
     snapshot && typeof snapshot === 'object'
-      ? (snapshot as Partial<Recipient>)
+      ? (snapshot as Partial<RecipientForm>)
       : {};
   return {
     recipientName: value.recipientName ?? '',
@@ -88,6 +85,8 @@ function blankRecipient(snapshot: unknown): Recipient {
     roadAddress: value.roadAddress ?? '',
     detailAddress: value.detailAddress ?? '',
     deliveryNote: value.deliveryNote ?? '',
+    // 비번은 스냅샷에 없다(크리덴셜이라 응답에 실리지 않는다). 빈 값은 "안 건드림"이다.
+    entrancePassword: '',
   };
 }
 
@@ -115,7 +114,7 @@ export function ShipmentActions({
   const [reason, setReason] = useState('');
   const [csCaseId, setCsCaseId] = useState('');
   const [note, setNote] = useState('');
-  const [recipient, setRecipient] = useState<Recipient>(() =>
+  const [recipient, setRecipient] = useState<RecipientForm>(() =>
     blankRecipient(shipment.recipientSnapshot)
   );
   const [attemptId, setAttemptId] = useState('');
@@ -245,25 +244,16 @@ export function ShipmentActions({
         return;
       }
       if (action === 'recipient') {
-        if (
-          !reason.trim() ||
-          Object.entries(recipient).some(
-            ([key, value]) => key !== 'deliveryNote' && !value.trim()
-          )
-        ) {
+        if (!reason.trim() || missingRecipientFields(recipient).length > 0) {
           toast.error('수령인 필수 정보와 변경 사유를 모두 입력하세요.');
           return;
         }
-        const data = {
+        const data = buildRecipientRevisionPayload(recipient, {
           expectedManifestVersion: shipment.manifestVersion,
-          recipientSnapshot: {
-            ...recipient,
-            ...(recipient.deliveryNote ? {} : { deliveryNote: undefined }),
-          },
-          reason: reason.trim(),
-          ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
-          ...(note.trim() ? { note: note.trim() } : {}),
-        };
+          reason,
+          csCaseId,
+          note,
+        });
         const run: () => Promise<void> = async () => {
           registerPending(idempotencyKey, ACTION_TITLE[action], run);
           const result = await reviseRecipient.mutateAsync({
@@ -476,16 +466,7 @@ export function ShipmentActions({
 
           {action === 'recipient' && (
             <div className="grid grid-cols-2 gap-3">
-              {(
-                [
-                  ['recipientName', '수령인'],
-                  ['phone', '전화번호'],
-                  ['postalCode', '우편번호'],
-                  ['roadAddress', '도로명 주소'],
-                  ['detailAddress', '상세 주소'],
-                  ['deliveryNote', '배송 메모'],
-                ] as const
-              ).map(([key, label]) => (
+              {RECIPIENT_FIELDS.map(({ key, label, placeholder }) => (
                 <div
                   key={key}
                   className={`space-y-1.5 ${key.includes('Address') ? 'col-span-2' : ''}`}
@@ -493,6 +474,7 @@ export function ShipmentActions({
                   <Label>{label}</Label>
                   <Input
                     value={recipient[key]}
+                    placeholder={placeholder}
                     onChange={(event) =>
                       setRecipient({ ...recipient, [key]: event.target.value })
                     }

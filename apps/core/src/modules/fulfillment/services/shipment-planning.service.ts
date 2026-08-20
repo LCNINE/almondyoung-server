@@ -115,6 +115,63 @@ export function confirmedReservationReleaseForCancellation(
   return Math.max(0, cancelQty - (lineQty - confirmedQty));
 }
 
+function sameJson(left: unknown, right: unknown): boolean {
+  const normalize = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(normalize);
+    if (!value || typeof value !== 'object') return typeof value === 'string' ? value.trim() : value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, entry]) => entry !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, normalize(entry)]),
+    );
+  };
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
+}
+
+type RecipientRevisionUpdate = {
+  recipientSnapshot?: (typeof wmsTables.shipments.$inferInsert)['recipientSnapshot'];
+  manifestVersion?: number;
+  entrancePassword?: string;
+};
+
+export type RecipientRevisionOutcome = {
+  update: RecipientRevisionUpdate;
+  snapshotChanged: boolean;
+  passwordChanged: boolean;
+};
+
+/**
+ * 수령인 정정 요청을 shipments update 패치로 바꾼다.
+ *
+ * 공동현관 비번은 recipient_snapshot 밖에 사는 크리덴셜이지 배송 지시가 아니다.
+ * 그래서 비번만 정정하면 recipientSnapshot 도 manifestVersion 도 패치에 담지
+ * 않는다 — 그 둘은 합배송 호환성(canonicalConsolidationRecipient)과 송장 멱등성
+ * (waybill.recipientHash / manifestVersion)의 입력이라, 주소가 그대로인데 값이
+ * 움직이면 이미 발행된 멀쩡한 송장이 stale 로 무효화된다.
+ *
+ * 빈 패치는 "바뀐 게 없다"는 뜻이며 호출자가 거절한다. 공백뿐인 비번은 정정으로
+ * 치지 않는다(빈 값으로 지우는 경로는 이 커맨드의 범위 밖이다).
+ */
+export function resolveRecipientRevision(
+  current: { recipientSnapshot: unknown; manifestVersion: number; entrancePassword: string | null },
+  requested: { recipientSnapshot?: unknown; entrancePassword?: string },
+): RecipientRevisionOutcome {
+  const update: RecipientRevisionUpdate = {};
+  const snapshotChanged =
+    requested.recipientSnapshot !== undefined && !sameJson(current.recipientSnapshot, requested.recipientSnapshot);
+  if (snapshotChanged) {
+    update.recipientSnapshot = requested.recipientSnapshot;
+    update.manifestVersion = current.manifestVersion + 1;
+  }
+
+  const nextPassword = requested.entrancePassword?.trim() ?? '';
+  const passwordChanged = nextPassword !== '' && nextPassword !== current.entrancePassword;
+  if (passwordChanged) update.entrancePassword = nextPassword;
+
+  return { update, snapshotChanged, passwordChanged };
+}
+
 @Injectable()
 export class ShipmentPlanningService {
   constructor(
@@ -468,11 +525,22 @@ export class ShipmentPlanningService {
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
         await this.assertNoActiveWaybill(shipmentId, tx);
 
-        if (this.sameJson(aggregate.shipment.recipientSnapshot, dto.recipientSnapshot)) {
-          throw new BadRequestException('Recipient snapshot is unchanged');
+        const revision = resolveRecipientRevision(
+          {
+            recipientSnapshot: aggregate.shipment.recipientSnapshot,
+            manifestVersion: aggregate.shipment.manifestVersion,
+            entrancePassword: aggregate.shipment.entrancePassword,
+          },
+          dto,
+        );
+        if (!revision.snapshotChanged && !revision.passwordChanged) {
+          // 비번 값은 메시지에 싣지 않는다 — 크리덴셜이라 예외 본문·로그에 남으면 안 된다.
+          throw new BadRequestException('Recipient revision has no change');
         }
-        const orderRecipients = await this.loadOrderRecipientSnapshots(aggregate, tx);
-        const overridesOrder = orderRecipients.some((recipient) => !this.sameJson(recipient, dto.recipientSnapshot));
+        // 배송 지시를 실제로 덮어쓸 때만 override 스코프를 요구한다. 비번만 고치는
+        // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
+        const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(aggregate, tx) : [];
+        const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
         if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
 
         const before = this.snapshot(aggregate);
@@ -489,11 +557,7 @@ export class ShipmentPlanningService {
         );
         await tx
           .update(wmsTables.shipments)
-          .set({
-            recipientSnapshot: dto.recipientSnapshot,
-            manifestVersion: aggregate.shipment.manifestVersion + 1,
-            lastUpdated: new Date(),
-          })
+          .set({ ...revision.update, lastUpdated: new Date() })
           .where(eq(wmsTables.shipments.id, shipmentId));
         await this.invariant.assertFulfillmentOrders(aggregate.fulfillmentOrderIds, tx);
         const after = this.snapshot(await this.loadAggregate(shipmentId, tx));
@@ -501,6 +565,9 @@ export class ShipmentPlanningService {
         await this.auditCommand(tx, actor, 'shipment.revise_recipient', operation.id, dto.reason, {
           shipmentId,
           overridesOrder,
+          // 비번은 값이 아니라 "바뀌었다"는 사실만 남긴다. before/after 스냅샷에도
+          // entrancePassword 는 들어 있지 않다.
+          entrancePasswordRevised: revision.passwordChanged,
           before,
           after,
         });
@@ -1654,20 +1721,6 @@ export class ShipmentPlanningService {
     if (actor.roles.includes('master')) return;
     const scopes = await this.authorization.getScopesByRoles(actor.roles);
     if (!scopes.has(scope)) throw new ForbiddenException(`Missing required scope: ${scope}`);
-  }
-
-  private sameJson(left: unknown, right: unknown): boolean {
-    const normalize = (value: unknown): unknown => {
-      if (Array.isArray(value)) return value.map(normalize);
-      if (!value || typeof value !== 'object') return typeof value === 'string' ? value.trim() : value;
-      return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-          .filter(([, entry]) => entry !== undefined)
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([key, entry]) => [key, normalize(entry)]),
-      );
-    };
-    return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
   }
 
   private conflict(code: string, message: string): ConflictException {

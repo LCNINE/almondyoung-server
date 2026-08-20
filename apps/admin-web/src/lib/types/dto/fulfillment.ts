@@ -752,6 +752,11 @@ export interface SplitShipmentRequest extends ShipmentCommandReason {
 export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
   expectedManifestVersion: number;
   recipientSnapshot: FulfillmentShippingAddress;
+  /**
+   * 공동현관 출입 비밀번호. recipientSnapshot 밖의 크리덴셜이라 이것만 바뀌면 core 는
+   * 스냅샷도 manifestVersion 도 건드리지 않는다. 비워 보내면 기존 값을 그대로 둔다.
+   */
+  entrancePassword?: string;
 }
 
 export interface PlanShipmentRequest {

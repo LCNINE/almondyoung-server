@@ -62,9 +62,19 @@ export class ReviseShipmentRecipientDto extends ShipmentCommandReasonDto {
   @Min(1)
   expectedManifestVersion: number;
 
+  @ApiProperty({ description: '수령 정보 스냅샷. 비번만 정정할 때는 생략한다', required: false })
   @ValidateNested()
   @Type(() => AddressDto)
-  recipientSnapshot: AddressDto;
+  @IsOptional()
+  recipientSnapshot?: AddressDto;
+
+  // 공동현관 비번은 recipient_snapshot 밖의 크리덴셜이다. 이것만 정정하면 스냅샷도
+  // manifestVersion 도 움직이지 않는다 — 둘은 합배송 그룹핑·송장 멱등성의 입력이라
+  // 배송 지시가 그대로인데 올라가면 멀쩡한 송장이 stale 로 무효화된다.
+  @ApiProperty({ description: '공동현관 출입 비밀번호 (송장 발행 전용). 공백이면 정정하지 않는다', required: false })
+  @IsString()
+  @IsOptional()
+  entrancePassword?: string;
 }
 
 export class PlanShipmentDto {
