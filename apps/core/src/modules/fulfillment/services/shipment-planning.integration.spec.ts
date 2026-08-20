@@ -174,6 +174,73 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('carries the entrance password onto the split target — a split box faces the same door', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ entrancePassword: '#1234' })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+
+      const result = await planning.split(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'separate backorder',
+          moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+        },
+        `split-entrance-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [target] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, result.target.shipmentId));
+      // 안 물려주면 이 상자의 송장에만 현관 정보가 빠진 채 나가고 기사가 문을 못 연다.
+      expect(target.entrancePassword).toBe('#1234');
+    });
+  });
+
+  it('leaves the cancellation tombstone without an entrance password', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ entrancePassword: '#1234' })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const [second] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: fixture.shipment.id,
+          fulfillmentOrderItemId: fixture.item.id,
+          skuId: fixture.skuId,
+          qty: 2,
+        })
+        .returning();
+
+      await planning.cancelOutstanding(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'cancel one line only',
+          lines: [{ shipmentLineId: second.id, expectedLineVersion: second.lineVersion, qty: 2 }],
+        },
+        `cancel-entrance-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [tombstone] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(and(eq(wmsTables.shipments.warehouseId, fixture.warehouseId), eq(wmsTables.shipments.status, 'canceled')));
+      // 묘비는 송장을 발행하지 않는다 — 비번을 실으면 배송 완료 파기가 못 닿는 사본만 는다.
+      expect(tombstone?.entrancePassword ?? null).toBeNull();
+    });
+  });
+
   it('cancels an unreserved remainder before releasing confirmed reservations', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);

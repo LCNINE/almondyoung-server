@@ -431,6 +431,10 @@ export class ShipmentPlanningService {
             status: 'draft',
             shippingProfileId: aggregate.shipment.shippingProfileId,
             recipientSnapshot: aggregate.shipment.recipientSnapshot,
+            // 분할된 상자도 같은 문 앞에 선다 — 비번을 안 물려주면 이 상자의 송장에만
+            // 현관 정보가 빠진 채 나가고 기사가 문을 못 연다. 주소를 복사하면서 비번을
+            // 빠뜨리는 것이 정확히 그 사고다.
+            entrancePassword: aggregate.shipment.entrancePassword,
             manifestVersion: 1,
             reservationVersion: 1,
             openedBy: actor.id,
@@ -1127,6 +1131,9 @@ export class ShipmentPlanningService {
     const cancelWholeShipment = totalShipmentQty === totalCanceledQty;
     let tombstone: ShipmentRow | undefined;
     if (!cancelWholeShipment && selected.some(({ request, line }) => request.qty === line.qty)) {
+      // 취소 묘비 상자는 **의도적으로 비번을 안 받는다.** 이 상자는 송장을 발행하지 않고
+      // 배송되지도 않으므로 비번을 실을 이유가 없고, 실으면 배송 완료 파기가 영영 도달하지
+      // 않는 사본이 하나 더 생긴다(백스톱 배치만 남는다).
       [tombstone] = await tx
         .insert(wmsTables.shipments)
         .values({

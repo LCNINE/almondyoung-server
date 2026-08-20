@@ -14,6 +14,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { selectEntrancePasswordForMerge } from './entrance-password.selection';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -43,6 +44,8 @@ type ShipmentLineRow = typeof wmsTables.shipmentLines.$inferSelect & {
   customerName: string | null;
   customerPhone: string | null;
   orderRecipientSnapshot: unknown;
+  /** 합배송 대상 상자가 실을 비번을 고를 때의 순서 기준(`selectEntrancePasswordForMerge`). */
+  orderDate: Date | null;
 };
 
 type ShipmentAggregate = {
@@ -560,6 +563,16 @@ export class ConsolidationService {
         status: 'draft',
         shippingProfileId,
         recipientSnapshot,
+        // 합배송 대상 상자가 원본들의 비번을 이어받는다. 안 이어받으면 묶인 순간 현관 정보가
+        // 사라져 이 한 장의 송장으로 나가는 모든 주문이 문 앞에서 막힌다. 값이 갈리면
+        // 최신 주문을 실은 상자가 이긴다 — 고객이 중간에 비번을 바꾼 것으로 해석한다.
+        entrancePassword: selectEntrancePasswordForMerge(
+          aggregates.map((aggregate) => ({
+            entrancePassword: aggregate.shipment.entrancePassword,
+            createdAt: aggregate.shipment.createdAt,
+            orderDates: aggregate.lines.map((line) => line.orderDate),
+          })),
+        ),
         manifestVersion: 1,
         reservationVersion: 1,
         openedBy: actor.id,
@@ -773,6 +786,9 @@ export class ConsolidationService {
         customerName: wmsTables.salesOrders.customerName,
         customerPhone: wmsTables.salesOrders.customerPhone,
         orderRecipientSnapshot: wmsTables.salesOrders.shippingAddress,
+        // 비번 **값**은 여기서 읽지 않는다 — 상자 사본이 이미 그 상자의 정본이고,
+        // 라인 행은 감사 스냅샷에 가까이 사는 자료라 크리덴셜을 태울 자리가 아니다.
+        orderDate: wmsTables.salesOrders.orderDate,
       })
       .from(wmsTables.shipmentLines)
       .innerJoin(
