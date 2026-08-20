@@ -1,5 +1,7 @@
 import {
   ENTRANCE_PASSWORD_CANDIDATE_SQL,
+  ENTRANCE_PASSWORD_CART_CANDIDATE_SQL,
+  ENTRANCE_PASSWORD_CART_COUNT_SQL,
   ENTRANCE_PASSWORD_COUNT_SQL,
   ENTRANCE_PASSWORD_METADATA_KEY,
   ENTRANCE_PASSWORD_TTL_DAYS,
@@ -8,7 +10,7 @@ import {
   buildEntrancePasswordPurgeUpdates,
   chunk,
   entrancePasswordCutoff,
-  expiredEntrancePasswordOrderIds,
+  expiredEntrancePasswordRowIds,
   isEntrancePasswordExpired,
   parseEntrancePasswordPurgeArgs,
 } from '../entrance-password-purge';
@@ -46,10 +48,10 @@ describe('entrance password purge helpers', () => {
     });
   });
 
-  describe('expiredEntrancePasswordOrderIds', () => {
+  describe('expiredEntrancePasswordRowIds', () => {
     it('만료된 주문 id 만, 입력 순서를 유지해 돌려준다', () => {
       expect(
-        expiredEntrancePasswordOrderIds(
+        expiredEntrancePasswordRowIds(
           [
             { id: 'order_old', created_at: new Date('2026-06-17T00:00:00.000Z') },
             { id: 'order_fresh', created_at: new Date('2026-08-20T00:00:00.000Z') },
@@ -61,7 +63,7 @@ describe('entrance password purge helpers', () => {
     });
 
     it('후보가 없으면 빈 배열이다 (두 번째 실행에서 아무 것도 하지 않게 한다)', () => {
-      expect(expiredEntrancePasswordOrderIds([], NOW)).toEqual([]);
+      expect(expiredEntrancePasswordRowIds([], NOW)).toEqual([]);
     });
   });
 
@@ -88,28 +90,58 @@ describe('entrance password purge helpers', () => {
 
   describe('값 유출 방지', () => {
     it('후보 조회는 id 와 created_at 만 가져온다 — 비번 값은 프로세스에 들어오지 않는다', () => {
-      const projection = projectionOf(ENTRANCE_PASSWORD_CANDIDATE_SQL);
-      expect(projection).not.toContain('metadata');
-      expect(projection).not.toContain(ENTRANCE_PASSWORD_METADATA_KEY);
-      expect(
-        projection
-          .split(',')
-          .map((column) => column.trim())
-          .filter(Boolean),
-      ).toEqual(['id', 'created_at']);
+      for (const sql of [ENTRANCE_PASSWORD_CANDIDATE_SQL, ENTRANCE_PASSWORD_CART_CANDIDATE_SQL]) {
+        const projection = projectionOf(sql);
+        expect(projection).not.toContain('metadata');
+        expect(projection).not.toContain(ENTRANCE_PASSWORD_METADATA_KEY);
+        expect(
+          projection
+            .split(',')
+            .map((column) => column.trim())
+            .filter(Boolean),
+        ).toEqual(['id', 'created_at']);
+      }
     });
 
     it('건수 조회도 값을 가져오지 않는다', () => {
-      const projection = projectionOf(ENTRANCE_PASSWORD_COUNT_SQL);
-      expect(projection).not.toContain('metadata');
-      expect(projection).toContain('count(*)');
+      for (const sql of [ENTRANCE_PASSWORD_COUNT_SQL, ENTRANCE_PASSWORD_CART_COUNT_SQL]) {
+        const projection = projectionOf(sql);
+        expect(projection).not.toContain('metadata');
+        expect(projection).toContain('count(*)');
+      }
     });
 
-    it('두 SQL 모두 이미 비워진 주문을 후보에서 뺀다 (재실행 시 0건)', () => {
-      for (const sql of [ENTRANCE_PASSWORD_CANDIDATE_SQL, ENTRANCE_PASSWORD_COUNT_SQL]) {
+    it('네 SQL 모두 이미 비워진 행을 후보에서 뺀다 (재실행 시 0건)', () => {
+      for (const sql of [
+        ENTRANCE_PASSWORD_CANDIDATE_SQL,
+        ENTRANCE_PASSWORD_COUNT_SQL,
+        ENTRANCE_PASSWORD_CART_CANDIDATE_SQL,
+        ENTRANCE_PASSWORD_CART_COUNT_SQL,
+      ]) {
         expect(sql).toContain(`nullif(metadata->>'${ENTRANCE_PASSWORD_METADATA_KEY}', '') is not null`);
         expect(sql).toContain('deleted_at is null');
       }
+    });
+  });
+
+  /**
+   * 카트도 통과점이다 — 체크아웃이 `cart.metadata.entrance_password` 를 먼저 쓰고
+   * `complete-cart` 가 그걸 주문으로 복사한다. 주문만 파기하면 모든 주문의 비번이 카트에
+   * 영구 쌍둥이로 남고, 메모 단계까지 갔다가 버려진 카트에도 그대로 남는다.
+   */
+  describe('카트 통과점', () => {
+    it('카트 SQL 은 cart 테이블을 본다 — 주문 SQL 과 테이블만 다르다', () => {
+      expect(ENTRANCE_PASSWORD_CART_CANDIDATE_SQL).toContain('from cart');
+      expect(ENTRANCE_PASSWORD_CART_COUNT_SQL).toContain('from cart');
+      expect(ENTRANCE_PASSWORD_CART_CANDIDATE_SQL.replace(/from cart/, 'from "order"')).toBe(
+        ENTRANCE_PASSWORD_CANDIDATE_SQL,
+      );
+      expect(ENTRANCE_PASSWORD_CART_COUNT_SQL.replace(/from cart/, 'from "order"')).toBe(ENTRANCE_PASSWORD_COUNT_SQL);
+    });
+
+    it('카트 후보 조회도 오래된 것부터 뽑고 배치 상한을 받는다', () => {
+      expect(ENTRANCE_PASSWORD_CART_CANDIDATE_SQL).toContain('order by created_at asc');
+      expect(ENTRANCE_PASSWORD_CART_CANDIDATE_SQL).toContain('limit ?');
     });
   });
 

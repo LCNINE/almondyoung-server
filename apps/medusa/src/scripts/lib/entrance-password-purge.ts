@@ -45,19 +45,21 @@ export const PURGE_ALL_CONFIRM_TOKEN = 'purge-all-entrance-passwords';
  * 쓰이고 프로세스 메모리로 올라오지 않으므로, 로그·에러 메시지·스택에 실릴 경로가 아예 없다.
  * 여기에 `metadata` 를 추가하지 말 것(유닛 테스트가 막는다).
  *
- * `nullif(...) is not null` 술어는 두 번째 방어선이자 **멱등성의 근거**다. 이미 비워진 주문은
+ * `nullif(...) is not null` 술어는 두 번째 방어선이자 **멱등성의 근거**다. 이미 비워진 행은
  * 후보가 아니므로 같은 스크립트를 몇 번 돌려도 두 번째부터는 0건이다.
  *
- * `order by created_at asc` — 오래된 것부터. 배치 상한이 걸려도 만료된 주문이 굶지 않는다.
+ * `order by created_at asc` — 오래된 것부터. 배치 상한이 걸려도 만료된 행이 굶지 않는다.
  */
-export const ENTRANCE_PASSWORD_CANDIDATE_SQL = `
+function candidateSql(table: string): string {
+  return `
   select id, created_at
-  from "order"
+  from ${table}
   where deleted_at is null
     and nullif(metadata->>'${ENTRANCE_PASSWORD_METADATA_KEY}', '') is not null
   order by created_at asc
   limit ?
 `;
+}
 
 /**
  * 건수 조회 — 전체와 "보관 상한 초과분"을 한 번에 센다.
@@ -65,14 +67,33 @@ export const ENTRANCE_PASSWORD_CANDIDATE_SQL = `
  * 일회성 스크립트의 dry run 이 파괴 범위를 정확히 보여주기 위한 것이다. 건수만 나오고
  * 값은 나오지 않는다.
  */
-export const ENTRANCE_PASSWORD_COUNT_SQL = `
+function countSql(table: string): string {
+  return `
   select
     count(*)::int as total,
     count(*) filter (where created_at <= ?)::int as expired
-  from "order"
+  from ${table}
   where deleted_at is null
     and nullif(metadata->>'${ENTRANCE_PASSWORD_METADATA_KEY}', '') is not null
 `;
+}
+
+export const ENTRANCE_PASSWORD_CANDIDATE_SQL = candidateSql('"order"');
+export const ENTRANCE_PASSWORD_COUNT_SQL = countSql('"order"');
+
+/**
+ * 카트도 **같은 통과점**이다.
+ *
+ * 체크아웃은 비번을 `cart.metadata.entrance_password` 에 먼저 쓰고, `complete-cart` 가
+ * 카트 metadata 를 주문으로 복사한다. 그래서 주문만 파기하면 (1) 모든 주문의 비번이 그
+ * 카트 행에 영구히 남고, (2) 메모 단계까지 갔다가 결제하지 않은 카트에는 만료 개념조차
+ * 붙지 않는다. 카트를 주문과 **같은 규칙·같은 시각**으로 지운다.
+ *
+ * 카트는 `"order"` 와 달리 예약어가 아니라 따옴표가 없다 — 그 한 글자 말고는 주문 SQL 과
+ * 동일하고, 그 동일성을 유닛 테스트가 고정한다.
+ */
+export const ENTRANCE_PASSWORD_CART_CANDIDATE_SQL = candidateSql('cart');
+export const ENTRANCE_PASSWORD_CART_COUNT_SQL = countSql('cart');
 
 /** 후보 행. **비번 값을 담는 필드가 없다** — 타입 수준에서도 값을 들고 다니지 않는다. */
 export type EntrancePasswordCandidate = {
@@ -102,8 +123,13 @@ export function isEntrancePasswordExpired(createdAt: Date | string, now: Date): 
   return created.getTime() <= entrancePasswordCutoff(now).getTime();
 }
 
-/** 후보 중 보관 상한을 넘긴 것들의 id. 입력 순서를 유지한다(오래된 것부터). */
-export function expiredEntrancePasswordOrderIds(rows: EntrancePasswordCandidate[], now: Date): string[] {
+/**
+ * 후보 중 보관 상한을 넘긴 것들의 id. 입력 순서를 유지한다(오래된 것부터).
+ *
+ * 주문과 카트가 같은 규칙을 쓰므로 행 종류를 구분하지 않는다 — 둘 다 비번의 통과점이고
+ * 보관 상한도 같다.
+ */
+export function expiredEntrancePasswordRowIds(rows: EntrancePasswordCandidate[], now: Date): string[] {
   return rows.filter((row) => isEntrancePasswordExpired(row.created_at, now)).map((row) => row.id);
 }
 

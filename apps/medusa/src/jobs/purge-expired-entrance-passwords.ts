@@ -2,7 +2,9 @@ import type { MedusaContainer } from '@medusajs/framework/types';
 import purgeExpiredEntrancePasswords from '../scripts/purge-expired-entrance-passwords';
 
 // 공동현관 비번은 Medusa 를 **통과**할 뿐이다 — core 가 받아 송장에 싣고 배송 완료 시 파기한다.
-// 여기 남은 사본은 보관 의무가 아니라 잔여물이므로 주문일 +14일에 키 자체를 지운다.
+// 여기 남은 사본은 보관 의무가 아니라 잔여물이므로 생성일 +14일에 키 자체를 지운다.
+// 대상은 **주문과 카트 둘 다**다 — 체크아웃이 카트에 먼저 쓰고 complete-cart 가 주문으로
+// 복사하므로, 주문만 지우면 같은 값이 카트 행에 영구히 남는다.
 // 동작은 `medusa exec ./src/scripts/purge-expired-entrance-passwords` 와 동일.
 //
 // 킬스위치를 두지 않았다. 이건 개인정보 파기를 이행하는 코드이고, env 하나로 조용히 꺼질 수
