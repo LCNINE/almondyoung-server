@@ -210,3 +210,57 @@ export function visibleNodeSequence(
   walk(pruned, 0, null);
   return out;
 }
+
+/** 키 입력이 만들어내는 동작. 훅은 이걸 받아 상태에 반영하기만 한다. */
+export type KeyboardMove = {
+  nextIndex?: number;
+  toggleExpandId?: string;
+  selectId?: string;
+};
+
+/**
+ * 트리에 포커스가 있을 때의 키 규칙.
+ *
+ * `Esc` 는 다루지 않는다 — Radix Dialog 가 자체 처리한다.
+ * "검색창에서 ↓" 도 여기 없다 — 검색 입력이 포커스를 0번으로 옮기는 별도 경로다.
+ */
+export function resolveKeyboardMove(
+  sequence: VisibleNode[],
+  currentIndex: number,
+  key: string
+): KeyboardMove | null {
+  if (sequence.length === 0) return null;
+  const lastIndex = sequence.length - 1;
+  const current: VisibleNode | undefined = sequence[currentIndex];
+
+  switch (key) {
+    case 'ArrowDown':
+      return { nextIndex: Math.min(currentIndex + 1, lastIndex) };
+    case 'ArrowUp':
+      return { nextIndex: Math.max(currentIndex - 1, 0) };
+    case 'Home':
+      return { nextIndex: 0 };
+    case 'End':
+      return { nextIndex: lastIndex };
+    case 'ArrowRight': {
+      if (!current || !current.hasChildren) return null;
+      if (!current.isExpanded) return { toggleExpandId: current.node.id };
+      return { nextIndex: Math.min(currentIndex + 1, lastIndex) };
+    }
+    case 'ArrowLeft': {
+      if (!current) return null;
+      if (current.hasChildren && current.isExpanded) {
+        return { toggleExpandId: current.node.id };
+      }
+      if (!current.parentId) return null;
+      const parentId = current.parentId;
+      const parentIndex = sequence.findIndex((entry) => entry.node.id === parentId);
+      return parentIndex >= 0 ? { nextIndex: parentIndex } : null;
+    }
+    case ' ':
+    case 'Enter':
+      return current ? { selectId: current.node.id } : null;
+    default:
+      return null;
+  }
+}

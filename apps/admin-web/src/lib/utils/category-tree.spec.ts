@@ -6,6 +6,7 @@ import {
   normalizeSearchTerm,
   orderedCategoryIds,
   pruneTree,
+  resolveKeyboardMove,
   visibleNodeSequence,
 } from './category-tree';
 import type { CategoryTreeNodeLike } from './category-tree';
@@ -215,5 +216,64 @@ describe('visibleNodeSequence', () => {
     const food = result.find((entry) => entry.node.id === 'food');
     expect(food?.hasChildren).toBe(false);
     expect(food?.isExpanded).toBe(false);
+  });
+});
+
+describe('resolveKeyboardMove', () => {
+  const pruned = pruneTree(tree, () => true);
+  // ['cosmetics', 'skincare', 'toner', 'cream-face', 'bodycare', 'food']
+  const sequence = visibleNodeSequence(pruned, new Set(['cosmetics', 'skincare']));
+
+  it('↓ 는 다음으로, ↑ 는 이전으로 간다', () => {
+    expect(resolveKeyboardMove(sequence, 0, 'ArrowDown')).toEqual({ nextIndex: 1 });
+    expect(resolveKeyboardMove(sequence, 2, 'ArrowUp')).toEqual({ nextIndex: 1 });
+  });
+
+  it('끝에서 더 가지 않는다', () => {
+    const last = sequence.length - 1;
+    expect(resolveKeyboardMove(sequence, last, 'ArrowDown')).toEqual({ nextIndex: last });
+    expect(resolveKeyboardMove(sequence, 0, 'ArrowUp')).toEqual({ nextIndex: 0 });
+  });
+
+  it('포커스가 없으면(-1) ↓ 가 첫 항목으로 간다', () => {
+    expect(resolveKeyboardMove(sequence, -1, 'ArrowDown')).toEqual({ nextIndex: 0 });
+  });
+
+  it('Home / End 로 양끝으로 간다', () => {
+    expect(resolveKeyboardMove(sequence, 3, 'Home')).toEqual({ nextIndex: 0 });
+    expect(resolveKeyboardMove(sequence, 0, 'End')).toEqual({
+      nextIndex: sequence.length - 1,
+    });
+  });
+
+  it('→ 는 접힌 노드를 펼치고, 이미 펼쳐졌으면 첫 자식으로 간다', () => {
+    const collapsed = visibleNodeSequence(pruned, new Set());
+    expect(resolveKeyboardMove(collapsed, 0, 'ArrowRight')).toEqual({
+      toggleExpandId: 'cosmetics',
+    });
+    expect(resolveKeyboardMove(sequence, 0, 'ArrowRight')).toEqual({ nextIndex: 1 });
+  });
+
+  it('← 는 펼친 노드를 접고, 이미 접혔으면 부모로 간다', () => {
+    expect(resolveKeyboardMove(sequence, 1, 'ArrowLeft')).toEqual({
+      toggleExpandId: 'skincare',
+    });
+    expect(resolveKeyboardMove(sequence, 2, 'ArrowLeft')).toEqual({ nextIndex: 1 });
+  });
+
+  it('자식 없는 노드의 → 와 루트의 ← 는 아무것도 하지 않는다', () => {
+    const foodIndex = sequence.findIndex((entry) => entry.node.id === 'food');
+    expect(resolveKeyboardMove(sequence, foodIndex, 'ArrowRight')).toBeNull();
+    expect(resolveKeyboardMove(sequence, foodIndex, 'ArrowLeft')).toBeNull();
+  });
+
+  it('Space 와 Enter 는 선택을 토글한다', () => {
+    expect(resolveKeyboardMove(sequence, 2, ' ')).toEqual({ selectId: 'toner' });
+    expect(resolveKeyboardMove(sequence, 2, 'Enter')).toEqual({ selectId: 'toner' });
+  });
+
+  it('모르는 키와 빈 목록은 null 이다', () => {
+    expect(resolveKeyboardMove(sequence, 0, 'Tab')).toBeNull();
+    expect(resolveKeyboardMove([], 0, 'ArrowDown')).toBeNull();
   });
 });
