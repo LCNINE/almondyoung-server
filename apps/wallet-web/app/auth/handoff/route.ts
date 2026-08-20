@@ -63,6 +63,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return ensureFallback(origin, CHECKOUT_PATH);
   }
 
+  // 카트 없이 세션만 발급하면 /checkout 이 다시 storefront 로 돌려보내 왕복만 늘어난다.
+  const cartId = readField(form, 'cart_id');
+  if (!cartId) {
+    return ensureFallback(origin, CHECKOUT_PATH);
+  }
+
   let tokens;
   try {
     tokens = await exchangeHandoffForTokens(handoffToken);
@@ -75,13 +81,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   writeSessionCookies(response.cookies, tokens);
   writeCheckoutHandoffCookies(response.cookies, {
     medusaJwt: readField(form, 'medusa_jwt'),
-    cartId: readField(form, 'cart_id'),
-    region: readField(form, 'region') || 'kr',
+    cartId,
+    region: normalizeRegion(readField(form, 'region')),
   });
   return response;
 }
 
 const CHECKOUT_PATH = '/checkout';
+
+/** region 은 이후 URL 경로 조립과 locale 결정에 쓰인다. 형식을 벗어나면 기본값으로 떨어뜨린다. */
+function normalizeRegion(value: string): string {
+  const region = value.trim().toLowerCase();
+  return /^[a-z]{2}$/.test(region) ? region : 'kr';
+}
 
 function readField(form: FormData, name: string): string {
   const value = form.get(name);
