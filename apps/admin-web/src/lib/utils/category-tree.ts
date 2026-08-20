@@ -53,3 +53,77 @@ export function matchesCategory(
   const path = normalizeSearchTerm(pathSegments.join('/'));
   return locators.every((locator) => path.includes(locator));
 }
+
+/** 전위 순회(pre-order DFS) 순서의 id 목록. 선택 정렬의 기준 순서다. */
+export function orderedCategoryIds(tree: CategoryTreeNodeLike[]): string[] {
+  const out: string[] = [];
+  const walk = (nodes: CategoryTreeNodeLike[]): void => {
+    for (const node of nodes) {
+      out.push(node.id);
+      if (node.children?.length) walk(node.children);
+    }
+  };
+  walk(tree);
+  return out;
+}
+
+export function collectAllIds(tree: CategoryTreeNodeLike[]): Set<string> {
+  return new Set(orderedCategoryIds(tree));
+}
+
+/**
+ * 검색 매치 노드와, 그 노드를 화면에 드러내기 위해 펼쳐야 할 조상들.
+ *
+ * `expandedIds` 에 매치 노드 자신은 넣지 않는다 — 자기를 펼칠 이유가 없다.
+ */
+export function collectSearchExpansion(
+  tree: CategoryTreeNodeLike[],
+  query: string
+): { matchedIds: Set<string>; expandedIds: Set<string> } {
+  const matchedIds = new Set<string>();
+  const expandedIds = new Set<string>();
+  if (normalizeSearchTerm(query).length === 0) return { matchedIds, expandedIds };
+
+  const walk = (
+    nodes: CategoryTreeNodeLike[],
+    pathSegments: string[],
+    ancestorIds: string[]
+  ): void => {
+    for (const node of nodes) {
+      const nextPath = [...pathSegments, node.name];
+      if (matchesCategory(node, nextPath, query)) {
+        matchedIds.add(node.id);
+        for (const ancestorId of ancestorIds) expandedIds.add(ancestorId);
+      }
+      if (node.children?.length) {
+        walk(node.children, nextPath, [...ancestorIds, node.id]);
+      }
+    }
+  };
+  walk(tree, [], []);
+  return { matchedIds, expandedIds };
+}
+
+/**
+ * 주어진 노드들의 조상 id 집합 (대상 자신은 제외).
+ * 모달이 열릴 때 "이미 선택된 카테고리"를 드러내는 초기 펼침값으로 쓴다.
+ */
+export function collectAncestorIds(
+  tree: CategoryTreeNodeLike[],
+  targetIds: Iterable<string>
+): Set<string> {
+  const targets = new Set(targetIds);
+  const out = new Set<string>();
+  if (targets.size === 0) return out;
+
+  const walk = (nodes: CategoryTreeNodeLike[], ancestorIds: string[]): void => {
+    for (const node of nodes) {
+      if (targets.has(node.id)) {
+        for (const ancestorId of ancestorIds) out.add(ancestorId);
+      }
+      if (node.children?.length) walk(node.children, [...ancestorIds, node.id]);
+    }
+  };
+  walk(tree, []);
+  return out;
+}
