@@ -230,6 +230,17 @@ export class ShipmentDeliveryTrackingService {
             // (지금은 취소가 draft/planned/recovery_required 상자만, 파기가
             // shipped/in_transit/delivered 상자만 다뤄 집합이 서로 겹치지 않지만,
             // 그건 이 순서를 지킬 때의 여유이지 순서를 바꿔도 되는 이유가 아니다.)
+            //
+            // `sales_orders` 를 잠그는 곳이 `SalesOrdersService` 뿐이라고 읽지 말 것 —
+            // `FulfillmentsService.createV2`(fulfillments.service.ts:119-123) 도
+            // `SELECT … FROM sales_orders … FOR UPDATE` 를 걸고 이어서 `shipments` 를 만진다.
+            // 그런데도 그쪽과는 고리가 닫히지 않는다. **FO 생성은 상자를 INSERT 만 하고
+            // 기존 상자 행을 잠그지 않기 때문이다** (이 서비스는 상자 행을 `FOR UPDATE` 로
+            // 잡는 `assertFulfillmentOrders` 를 아예 부르지 않고, INSERT 는 다른 트랜잭션의
+            // 행 잠금을 기다리지 않는다). 즉 FO 생성은 `sales_orders` 를 들고 상자를 기다리는
+            // 상태가 될 수 없고, 배송완료 경로(`shipments → sales_orders`)와 마주 볼 변이
+            // 없다. 이 서비스들 중 하나라도 기존 상자 행을 잠그기 시작하면 그때는 이 판단을
+            // 다시 해야 한다.
             await this.purgeEntrancePassword(attempt.shipmentId, trx);
             await this.emitDeliveredProjections(attempt, providerEventId, occurredAt, trx);
           }
