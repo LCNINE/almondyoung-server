@@ -328,7 +328,9 @@ describe('ProductCategoriesService 멤버십 전용 카테고리 지정', () => 
 });
 
 describe('ProductCategoriesService 조상/자손 이벤트', () => {
-  function makeService(rows: { descendants?: unknown[]; ancestors?: unknown[] } = {}) {
+  function makeService(
+    rows: { descendants?: unknown[]; ancestors?: unknown[]; currentDisplaySettings?: unknown } = {},
+  ) {
     const updated = {
       id: 'cat-2',
       name: '자식',
@@ -348,7 +350,10 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       updatedAt: new Date('2026-07-27T00:00:00.000Z'),
     };
     // select 순서: 현재 display_settings → 대상의 조상(parentId 체인) → 자손(BFS) → 자손의 조상
-    const queue: unknown[][] = [[{ displaySettings: {} }], rows.ancestors ?? []];
+    const queue: unknown[][] = [
+      [{ displaySettings: rows.currentDisplaySettings ?? {} }],
+      rows.ancestors ?? [],
+    ];
     const tx = {
       select: jest.fn(() => ({
         from: () => ({
@@ -402,6 +407,39 @@ describe('ProductCategoriesService 조상/자손 이벤트', () => {
       .map(([p]: [{ aggregateId: string }]) => p.aggregateId);
     expect(ids).toContain('cat-2');
     expect(ids).toContain('cat-3');
+  });
+
+  it('멤버십 전용 값이 그대로면 자손을 재발행하지 않는다', async () => {
+    const descendant = {
+      id: 'cat-3',
+      name: '손자',
+      slug: 'grand',
+      description: null,
+      parentId: 'cat-2',
+      level: 2,
+      path: 'cat-1/cat-2/cat-3',
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      imageUrl: null,
+      displaySettings: null,
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: new Date('2026-07-27T00:00:00.000Z'),
+      updatedAt: new Date('2026-07-27T00:00:00.000Z'),
+    };
+    const { service, productPublisher } = makeService({
+      descendants: [descendant],
+      currentDisplaySettings: { isVisibleToMembersOnly: true },
+    });
+
+    await service.updateCategory('cat-2', { isVisibleToMembersOnly: true } as any);
+
+    const ids = productPublisher.enqueue.mock.calls
+      .filter(([p]: [{ eventType: string }]) => p.eventType === 'CategoryChanged')
+      .map(([p]: [{ aggregateId: string }]) => p.aggregateId);
+    expect(ids).toContain('cat-2');
+    expect(ids).not.toContain('cat-3');
   });
 });
 

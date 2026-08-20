@@ -46,6 +46,24 @@ describe('StorefrontRevalidateService', () => {
     });
   });
 
+  it('카테고리 무효화 시 트리 태그를 항상 보낸다', async () => {
+    await new StorefrontRevalidateService().revalidateCategory('pcat_1');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({
+      tags: ['product-categories', 'category-thumbnail-pcat_1'],
+    });
+  });
+
+  it('카테고리 id 를 몰라도 트리 태그는 보낸다', async () => {
+    await new StorefrontRevalidateService().revalidateCategory();
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      tags: ['product-categories'],
+    });
+  });
+
   it('handle 이 없으면 호출하지 않는다', async () => {
     await new StorefrontRevalidateService().revalidateProducts([]);
 

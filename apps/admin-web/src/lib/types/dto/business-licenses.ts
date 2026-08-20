@@ -1,5 +1,23 @@
 export type BusinessLicenseStatus = 'under_review' | 'approved' | 'rejected';
 
+/** 신청 당시 국세청 진위확인 결과. user-service 가 metadata.ntsValidate 에 통째로 남긴다. */
+export interface BusinessLicenseNtsValidate {
+  valid: boolean;
+  status: string;
+  checkedAt?: string;
+  invalidReason?: string;
+  requested?: {
+    businessNumber: string;
+    representativeName: string;
+    /** 개업일자 yyyyMMdd. 컬럼이 없어 여기에만 남는다 */
+    startDate: string;
+  };
+}
+
+export interface BusinessLicenseMetadata {
+  ntsValidate?: BusinessLicenseNtsValidate;
+}
+
 export interface BusinessLicenseDto {
   id: string;
   userId: string;
@@ -12,7 +30,7 @@ export interface BusinessLicenseDto {
   reviewedAt?: string | null;
   verifiedAt?: string | null;
   fileUrl?: string | null;
-  metadata?: unknown;
+  metadata?: BusinessLicenseMetadata | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -50,7 +68,10 @@ export interface BusinessLicenseUpsertDto {
   status?: BusinessLicenseStatus;
 }
 
-export const BUSINESS_LICENSE_STATUS_LABELS: Record<BusinessLicenseStatus, string> = {
+export const BUSINESS_LICENSE_STATUS_LABELS: Record<
+  BusinessLicenseStatus,
+  string
+> = {
   under_review: '심사중',
   approved: '승인',
   rejected: '반려',

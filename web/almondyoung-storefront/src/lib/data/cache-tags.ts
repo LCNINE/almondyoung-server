@@ -4,3 +4,10 @@
  * `/api/revalidate` 가 전역으로 걷어낼 수 있게 한다.
  */
 export const PRODUCT_LIST_TAG = "products"
+
+/**
+ * 카테고리 트리(`/store/product-categories`) 조회의 공용 태그.
+ * 어드민에서 카테고리가 바뀌면 channel-adapter 가 `/api/revalidate` 로 이 태그를 쳐서
+ * 즉시 반영한다. 방문자별 접미사가 없어야 백엔드가 지목할 수 있다.
+ */
+export const CATEGORY_TREE_TAG = "product-categories"

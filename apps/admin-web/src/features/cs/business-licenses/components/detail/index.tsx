@@ -43,6 +43,12 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// 개업일자는 yyyyMMdd 로만 남는다.
+function formatStartDate(startDate?: string): string {
+  if (!startDate || startDate.length !== 8) return startDate || '-';
+  return `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}`;
+}
+
 function statusVariant(
   status: BusinessLicenseStatus
 ): 'default' | 'secondary' | 'destructive' {
@@ -54,6 +60,7 @@ function statusVariant(
 function BusinessLicenseDetailContent({ id }: { id: string }) {
   const { data } = useBusinessLicense(id);
   const updateMutation = useUpdateBusinessLicense(id);
+  const ntsValidate = data.metadata?.ntsValidate;
 
   const [rejectComment, setRejectComment] = useState(data.reviewComment ?? '');
   const [fileModalOpen, setFileModalOpen] = useState(false);
@@ -99,6 +106,30 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
       value: <span className="font-mono">{data.businessNumber ?? '-'}</span>,
     },
     { key: '대표자명', value: data.representativeName ?? '-' },
+    ...(ntsValidate
+      ? [
+          {
+            key: '개업일자',
+            value: formatStartDate(ntsValidate.requested?.startDate),
+          },
+          {
+            key: '국세청 검증',
+            value: ntsValidate.valid ? (
+              '일치'
+            ) : (
+              <span className="text-red-600">
+                {ntsValidate.invalidReason ?? ntsValidate.status}
+              </span>
+            ),
+          },
+          {
+            key: '검증 시각',
+            value: ntsValidate.checkedAt
+              ? new Date(ntsValidate.checkedAt).toLocaleString('ko-KR')
+              : '-',
+          },
+        ]
+      : []),
     {
       key: '상태',
       value: (
@@ -223,81 +254,85 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
           )}
 
           <div className="flex gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="destructive" size="sm" disabled={isUpdating}>
-                  <XCircle className="mr-1.5 h-4 w-4" />
-                  반려
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>반려 처리</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    반려 사유를 입력해주세요. 입력한 내용이 사용자에게
-                    전달됩니다.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
+            {data.status !== 'rejected' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm" disabled={isUpdating}>
+                    <XCircle className="mr-1.5 h-4 w-4" />
+                    반려
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>반려 처리</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      반려 사유를 입력해주세요. 입력한 내용이 사용자에게
+                      전달됩니다.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
 
-                <Textarea
-                  placeholder="반려 사유를 입력하세요..."
-                  value={rejectComment}
-                  onChange={(e) => setRejectComment(e.target.value)}
-                  rows={4}
-                />
+                  <Textarea
+                    placeholder="반려 사유를 입력하세요..."
+                    value={rejectComment}
+                    onChange={(e) => setRejectComment(e.target.value)}
+                    rows={4}
+                  />
 
-                <AlertDialogFooter>
-                  <AlertDialogCancel>취소</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={(e) => {
-                      if (!rejectComment) {
-                        const ok = window.confirm(
-                          '반려 사유 코멘트를 입력하지 않았습니다. 계속하시겠습니까?'
-                        );
-                        if (!ok) {
-                          e.preventDefault();
-                          return;
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>취소</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={(e) => {
+                        if (!rejectComment) {
+                          const ok = window.confirm(
+                            '반려 사유 코멘트를 입력하지 않았습니다. 계속하시겠습니까?'
+                          );
+                          if (!ok) {
+                            e.preventDefault();
+                            return;
+                          }
                         }
-                      }
-                      handleStatusUpdate('rejected', rejectComment);
-                    }}
-                  >
-                    반려 처리
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+                        handleStatusUpdate('rejected', rejectComment);
+                      }}
+                    >
+                      반려 처리
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
 
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="sm" disabled={isUpdating}>
-                  {isUpdating ? (
-                    <Spinner className="w-4 h-4" />
-                  ) : (
-                    <>
-                      <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                      승인
-                    </>
-                  )}
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>승인 처리</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    해당 사업자 인증 신청을 승인 처리합니다.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>취소</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={() => handleStatusUpdate('approved')}
-                  >
-                    승인 처리
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            {data.status !== 'approved' && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" disabled={isUpdating}>
+                    {isUpdating ? (
+                      <Spinner className="w-4 h-4" />
+                    ) : (
+                      <>
+                        <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                        승인
+                      </>
+                    )}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>승인 처리</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      해당 사업자 인증 신청을 승인 처리합니다.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>취소</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => handleStatusUpdate('approved')}
+                    >
+                      승인 처리
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
           </div>
         </div>
       </section>

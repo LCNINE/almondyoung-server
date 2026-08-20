@@ -144,6 +144,10 @@ export class ProductCategoriesService {
 
       // 멤버십 전용 노출·브랜드 여부는 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
       let displaySettings: CategoryDisplaySettings | undefined;
+      // 자손 재발행은 값이 실제로 바뀐 경우만. 어드민 폼은 토글을 건드리지 않아도
+      // 현재 값을 payload 에 실어 보내는데, undefined 만 보고 판단하면 저장 한 번에
+      // 자손 전체(수십~수백 건)가 큐로 쏟아진다.
+      let membersOnlyChanged = false;
       if (isVisibleToMembersOnly !== undefined || isBrand !== undefined) {
         const [current] = await client
           .select({ displaySettings: pimSchema.productCategories.displaySettings })
@@ -152,6 +156,11 @@ export class ProductCategoriesService {
 
         if (!current) {
           throw new NotFoundError(`Category not found: ${categoryId}`);
+        }
+
+        if (isVisibleToMembersOnly !== undefined) {
+          const previous = (current.displaySettings as CategoryDisplaySettings)?.isVisibleToMembersOnly === true;
+          membersOnlyChanged = previous !== isVisibleToMembersOnly;
         }
 
         displaySettings = {
@@ -183,7 +192,7 @@ export class ProductCategoriesService {
       const snapshot = this.buildCategorySnapshot(updatedCategory);
       await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-      if (isVisibleToMembersOnly !== undefined) {
+      if (membersOnlyChanged) {
         await this.publishDescendantsChanged(categoryId, client);
       }
 

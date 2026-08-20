@@ -2,6 +2,7 @@
 
 import { getIsMembershipCustomer } from "@/lib/data/membership"
 import { sdk } from "@/lib/config/medusa"
+import { CATEGORY_TREE_TAG } from "@lib/data/cache-tags"
 import {
   filterInactiveCategories,
   filterMembersOnlyCategories,
@@ -40,7 +41,7 @@ export const listCategories = async (query?: Record<string, any>) => {
           limit,
           ...query,
         },
-        cache: "no-store",
+        next: { tags: [CATEGORY_TREE_TAG], revalidate: 3600 },
       }
     )
     .then(async ({ product_categories }) => {
@@ -69,7 +70,7 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
           include_descendants_tree: true,
           handle,
         },
-        cache: "no-store",
+        next: { tags: [CATEGORY_TREE_TAG], revalidate: 3600 },
       }
     )
     .then(async ({ product_categories }) => {

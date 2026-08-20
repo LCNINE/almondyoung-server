@@ -13,6 +13,14 @@ export class StorefrontRevalidateService {
   private readonly url = process.env.STOREFRONT_REVALIDATE_URL;
   private readonly secret = process.env.STOREFRONT_REVALIDATE_SECRET;
 
+  constructor() {
+    if (!this.url || !this.secret) {
+      this.logger.warn(
+        'STOREFRONT_REVALIDATE_URL/SECRET 미설정 — 스토어프론트 캐시 무효화 비활성',
+      );
+    }
+  }
+
   /**
    * 상품 변경(가격·재고·상세설명) 후 호출한다.
    *
@@ -50,12 +58,16 @@ export class StorefrontRevalidateService {
   /**
    * 카테고리 변경(이미지·이름·정렬) 후 호출한다.
    *
-   * 카테고리 트리 자체는 스토어프론트가 `cache: "no-store"` 로 읽으므로 무효화가 필요 없지만,
+   * 카테고리 트리(`/store/product-categories`)는 스토어프론트가 `product-categories` 태그로
+   * 1시간 캐싱한다. 무캐시로 읽던 시절엔 페이지뷰마다 Medusa 를 쳐서 CPU 를 태웠다.
    * metadata.thumbnail 이 비었을 때 쓰는 PIM search 폴백은 `category-thumbnail-{medusaId}`
-   * 태그로 1시간 캐싱된다. 그 태그를 비워야 이미지 변경이 즉시 반영된다.
+   * 태그로 따로 캐싱되므로 둘 다 비워야 이름·정렬·이미지 변경이 즉시 반영된다.
    */
   async revalidateCategory(medusaCategoryId?: string): Promise<void> {
-    const tags = medusaCategoryId ? [`category-thumbnail-${medusaCategoryId}`] : [];
+    const tags = [
+      'product-categories',
+      ...(medusaCategoryId ? [`category-thumbnail-${medusaCategoryId}`] : []),
+    ];
     await this.post({ tags }, `category=${medusaCategoryId ?? 'all'}`);
   }
 
