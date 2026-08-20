@@ -98,6 +98,7 @@ export class ChannelOrderTranslator {
       ...(snapshot.amounts.points && snapshot.amounts.points > 0 ? { pointsAmount: snapshot.amounts.points } : {}),
       currency: snapshot.amounts.currency,
       shippingAddress: snapshot.shippingAddress,
+      ...(snapshot.entrancePassword ? { entrancePassword: snapshot.entrancePassword } : {}),
       status: 'confirmed',
       createdAt: snapshot.createdAt,
     };

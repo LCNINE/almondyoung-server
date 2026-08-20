@@ -105,6 +105,13 @@ export async function autoFillShipping(container: MedusaContainer, cart: CartDat
   }
 
   // === 2. 배송 메모 자동 채우기 ===
+  //
+  // ⚠️ 여기서 나르는 것은 배송메모 **유형**뿐이다 — `entrance_password` 는 절대 나르지 않는다.
+  // 고객이 이번 세션에서 다시 입력하지 않은 크리덴셜을 새 카트에 실어주면, 그 카트가 주문이 될
+  // 때 14일 보관 시계가 처음부터 다시 간다. 주문을 반복하는 고객의 비번은 그렇게 영원히
+  // 살아남고, 결제 화면이 약속한 "늦어도 주문일로부터 14일 이내 삭제"가 거짓이 된다.
+  // **보관 상한을 실제로 상한이게 만드는 지점이 바로 이 누락이다.** 고객 기본값 분기든 마지막
+  // 주문 폴백이든 마찬가지이며, 비번은 고객이 체크아웃에서 직접 입력할 때만 카트에 들어온다.
   if (needsMemo) {
     const customerMetadata = customerData?.metadata as CustomerMetadata | undefined;
     const defaultMemoType = customerMetadata?.default_shipping_memo_type;
@@ -115,7 +122,7 @@ export async function autoFillShipping(container: MedusaContainer, cart: CartDat
         ...(updates.metadata ?? {}),
         shipping_memo_type: defaultMemoType,
         shipping_memo_custom: customerMetadata?.default_shipping_memo_custom ?? '',
-        entrance_password: customerMetadata?.default_entrance_password ?? '',
+        // `default_entrance_password` 는 의도적으로 읽지 않는다 — 위 주석 참고.
         has_entrance: customerMetadata?.default_has_entrance ?? false,
       };
       needsUpdate = true;
@@ -135,7 +142,7 @@ export async function autoFillShipping(container: MedusaContainer, cart: CartDat
             ...(updates.metadata ?? {}),
             shipping_memo_type: latestOrderMemo,
             shipping_memo_custom: orders[0].metadata?.shipping_memo_custom ?? '',
-            entrance_password: orders[0].metadata?.entrance_password ?? '',
+            // 마지막 주문의 `entrance_password` 도 읽지 않는다 — 위 주석 참고.
             has_entrance: orders[0].metadata?.has_entrance ?? false,
           };
           needsUpdate = true;

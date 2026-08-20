@@ -33,6 +33,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { PoliciesService } from './policies.service';
+import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
@@ -205,6 +206,9 @@ export class SalesOrdersService {
 
     return this.db
       .run(async (trx) => {
+        // orderDate 는 아래 컬럼과 entrancePasswordExpiresAt 계산에 동일한 값을 써야 하므로
+        // 한 번만 계산해 공유한다. 만료 산식 자체는 entrance-password-expiry.ts 참고.
+        const orderDate = new Date(dto.orderDate ?? Date.now());
         const [order] = await trx
           .insert(wmsTables.salesOrders)
           .values({
@@ -222,7 +226,14 @@ export class SalesOrdersService {
             mergeGroupId: dto.mergeGroupId ?? null,
             isMerged: false,
             walletIntentId: dto.walletIntentId ?? null,
-            orderDate: new Date(dto.orderDate ?? Date.now()),
+            orderDate,
+            // 최초 insert 경로라 기존 값을 덮어쓸 걱정이 없다 (existing row 없음).
+            // 리플레이가 이 값을 지울 수 있는지는 여기가 아니라 OrderModified 소비 경로가
+            // 결정한다 — order-events.consumer.ts#handleOrderModified 참고 (구조적으로 no-op).
+            entrancePassword: dto.entrancePassword ?? null,
+            entrancePasswordExpiresAt: dto.entrancePassword
+              ? computeEntrancePasswordExpiry(orderDate.toISOString())
+              : null,
             confirmedAt: null,
             processedAt: null,
           })
@@ -1186,6 +1197,7 @@ export class SalesOrdersService {
         phone: payload.shippingAddress.phone,
       },
       shippingAddress: this.convertShippingAddress(payload.shippingAddress),
+      ...(payload.entrancePassword ? { entrancePassword: payload.entrancePassword } : {}),
       totalAmount: payload.totalAmount,
       shippingFee: payload.shippingAmount ?? 0,
       orderDate: payload.createdAt,

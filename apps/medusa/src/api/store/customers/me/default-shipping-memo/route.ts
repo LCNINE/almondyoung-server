@@ -1,11 +1,14 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { updateCustomersWorkflow } from '@medusajs/core-flows';
+import {
+  buildClearedDefaultShippingMemoMetadata,
+  buildDefaultShippingMemoMetadata,
+} from './metadata';
 
 interface UpdateDefaultShippingMemoBody {
   shipping_memo_type: string;
   shipping_memo_custom?: string;
-  entrance_password?: string;
   has_entrance?: boolean;
 }
 
@@ -16,7 +19,6 @@ interface UpdateDefaultShippingMemoBody {
  * Body:
  * - shipping_memo_type: string (필수) - 배송 메모 타입 (예: 'door', 'security', 'custom' 등)
  * - shipping_memo_custom?: string (선택) - 커스텀 메모 내용 (type이 'custom'인 경우 사용)
- * - entrance_password?: string (선택) - 공동출입문 비밀번호 (type이 'door'인 경우 사용)
  * - has_entrance?: boolean (선택) - 공동출입문 유무
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
@@ -28,7 +30,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     });
   }
 
-  const { shipping_memo_type, shipping_memo_custom, entrance_password, has_entrance } =
+  const { shipping_memo_type, shipping_memo_custom, has_entrance } =
     req.body as UpdateDefaultShippingMemoBody;
 
   if (!shipping_memo_type) {
@@ -37,41 +39,25 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     });
   }
 
-  const query = req.scope.resolve<any>(ContainerRegistrationKeys.QUERY);
-
   try {
-    // 기존 고객 정보 조회
-    const { data: customers } = await query.graph({
-      entity: 'customer',
-      fields: ['id', 'metadata'],
-      filters: { id: customerId },
+    // Medusa 가 metadata 를 병합하므로 바꿀 키만 보낸다. 기존 값을 읽어 되돌려보내면
+    // 그 사이 다른 요청이 쓴 값을 덮는 race 만 는다.
+    const metadata = buildDefaultShippingMemoMetadata({
+      shipping_memo_type,
+      shipping_memo_custom,
+      has_entrance,
     });
 
-    const existingMetadata = (customers?.[0]?.metadata as Record<string, unknown>) ?? {};
-
-    // metadata 업데이트 (기존 metadata 유지하면서 배송 메모 추가/수정)
     await updateCustomersWorkflow(req.scope).run({
-      input: {
-        selector: { id: customerId },
-        update: {
-          metadata: {
-            ...existingMetadata,
-            default_shipping_memo_type: shipping_memo_type,
-            default_shipping_memo_custom: shipping_memo_custom ?? '',
-            default_entrance_password: entrance_password ?? '',
-            default_has_entrance: has_entrance ?? false,
-          },
-        },
-      },
+      input: { selector: { id: customerId }, update: { metadata } },
     });
 
     return res.status(200).json({
       success: true,
       default_shipping_memo: {
         shipping_memo_type,
-        shipping_memo_custom: shipping_memo_custom ?? '',
-        entrance_password: entrance_password ?? '',
-        has_entrance: has_entrance ?? false,
+        shipping_memo_custom: metadata.default_shipping_memo_custom,
+        has_entrance: metadata.default_has_entrance,
       },
     });
   } catch (error) {
@@ -95,33 +81,13 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     });
   }
 
-  const query = req.scope.resolve<any>(ContainerRegistrationKeys.QUERY);
-
   try {
-    // 기존 고객 정보 조회
-    const { data: customers } = await query.graph({
-      entity: 'customer',
-      fields: ['id', 'metadata'],
-      filters: { id: customerId },
-    });
-
-    const existingMetadata = (customers?.[0]?.metadata as Record<string, unknown>) ?? {};
-
-    // 배송 메모 필드 제거
-    const {
-      default_shipping_memo_type,
-      default_shipping_memo_custom,
-      default_entrance_password,
-      default_has_entrance,
-      ...restMetadata
-    } = existingMetadata;
-
+    // 키를 뺀 객체를 보내는 방식은 동작하지 않는다 — Medusa 는 metadata 를 병합하므로
+    // "없는 키" 는 손대지 않는 것으로 해석되어 옛 값이 그대로 남는다. 빈 문자열이 삭제다.
     await updateCustomersWorkflow(req.scope).run({
       input: {
         selector: { id: customerId },
-        update: {
-          metadata: restMetadata,
-        },
+        update: { metadata: buildClearedDefaultShippingMemoMetadata() },
       },
     });
 
@@ -161,7 +127,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const metadata = (customers?.[0]?.metadata as Record<string, unknown>) ?? {};
     const shippingMemoType = metadata.default_shipping_memo_type as string | undefined;
     const shippingMemoCustom = metadata.default_shipping_memo_custom as string | undefined;
-    const entrancePassword = metadata.default_entrance_password as string | undefined;
     const hasEntrance = metadata.default_has_entrance as boolean | undefined;
 
     if (!shippingMemoType) {
@@ -174,7 +139,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       default_shipping_memo: {
         shipping_memo_type: shippingMemoType,
         shipping_memo_custom: shippingMemoCustom ?? '',
-        entrance_password: entrancePassword ?? '',
         has_entrance: hasEntrance ?? false,
       },
     });

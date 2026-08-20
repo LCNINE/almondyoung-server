@@ -101,6 +101,7 @@ describe('ShipmentDeliveryTrackingService', () => {
         [attempt],
         [{ status: 'shipped' }],
         [{ id: attemptId }],
+        [{ salesOrderId }],
         [{ fulfillmentOrderId }],
         [{ id: 'full-shipped-outbox' }],
         [
@@ -147,6 +148,8 @@ describe('ShipmentDeliveryTrackingService', () => {
         table: wmsTables.shipments,
         values: expect.objectContaining({ status: 'delivered', deliveredAt: new Date(occurredAt) }),
       },
+      { table: wmsTables.shipments, values: { entrancePassword: null } },
+      { table: wmsTables.salesOrders, values: { entrancePassword: null, entrancePasswordExpiresAt: null } },
     ]);
     expect(updates.some((update) => update.table === wmsTables.fulfillmentOrders)).toBe(false);
     expect(outbox.enqueue).toHaveBeenCalledTimes(2);
@@ -178,6 +181,7 @@ describe('ShipmentDeliveryTrackingService', () => {
         [attempt],
         [{ status: 'shipped' }],
         [{ id: attemptId }],
+        [{ salesOrderId }],
         [{ fulfillmentOrderId }],
         [{ id: 'full-shipped-outbox' }],
         [
@@ -373,6 +377,84 @@ describe('ShipmentDeliveryTrackingService', () => {
     expect(updates[0]).toEqual({
       table: wmsTables.dispatchAttempts,
       values: expect.objectContaining({ carrierAcceptedAt: new Date(earlierEvidence) }),
+    });
+  });
+
+  /**
+   * 공동현관 비번은 배송이 끝나면 존재 이유가 사라지는 크리덴셜이다 — 쇼핑몰이 고객에게
+   * "배송 완료 후 삭제됩니다" 라고 약속했고 개인정보처리방침이 "지체 없이 파기" 를 적었다.
+   * core 가 SoT 이므로 파기도 여기서 일어나야 한다.
+   */
+  describe('공동현관 비번 파기', () => {
+    it('이미 delivered 인 상자에 늦은 배송완료 증거가 또 와도 파기를 다시 시도한다(멱등)', async () => {
+      const { service, updates } = makeHarness(
+        [
+          [],
+          [{ shipmentId }],
+          [attempt],
+          // 상태 전이 UPDATE 는 'shipped'|'in_transit' 만 매치하므로 여기서 0행이다.
+          // 파기가 그 UPDATE 에 얹혀 있으면 이 경로에서 조용히 건너뛰어진다.
+          [{ status: 'delivered' }],
+          [{ id: attemptId }],
+          [{ salesOrderId }],
+          [],
+        ],
+        [[{ id: 'tracking-late-delivered' }]],
+      );
+
+      await service.recordProviderEvent(attemptId, {
+        providerEventId: 'provider-delivered-again',
+        status: 'delivered',
+        occurredAt,
+      });
+
+      expect(updates).toContainEqual({ table: wmsTables.shipments, values: { entrancePassword: null } });
+      expect(updates).toContainEqual({
+        table: wmsTables.salesOrders,
+        values: { entrancePassword: null, entrancePasswordExpiresAt: null },
+      });
+    });
+
+    it('상자를 이행하는 주문이 없으면 sales_orders 를 건드리지 않는다', async () => {
+      const { service, updates } = makeHarness(
+        [[], [{ shipmentId }], [attempt], [{ status: 'shipped' }], [{ id: attemptId }], [], []],
+        [[{ id: 'tracking-orphan' }]],
+      );
+
+      await service.recordProviderEvent(attemptId, {
+        providerEventId: 'provider-delivered-orphan',
+        status: 'delivered',
+        occurredAt,
+      });
+
+      expect(updates).toContainEqual({ table: wmsTables.shipments, values: { entrancePassword: null } });
+      expect(updates.some((update) => update.table === wmsTables.salesOrders)).toBe(false);
+    });
+
+    /**
+     * 두 전이를 **한 테스트 안에서** 비교한다. 나눠 두면 `in_transit` 쪽은 파기 코드를
+     * 통째로 지워도 통과하는 공허한 가드가 된다 — 실패할 수 없는 테스트는 커버리지처럼
+     * 읽히므로 없느니만 못하다. 양쪽을 같이 걸면 파기를 지웠을 때도(delivered 쪽),
+     * 전이 판정을 잘못 붙였을 때도(in_transit 쪽) 빨개진다.
+     */
+    it('delivered 에서만 파기한다 — in_transit 은 아직 배송 중이라 비번이 필요하다', async () => {
+      const purgedTables = async (status: 'in_transit' | 'delivered') => {
+        const { service, updates } = makeHarness(
+          [[], [{ shipmentId }], [attempt], [{ status: 'shipped' }], [{ id: attemptId }], [{ salesOrderId }], []],
+          [[{ id: `tracking-${status}` }]],
+        );
+        await service.recordProviderEvent(attemptId, {
+          providerEventId: `provider-${status}`,
+          status,
+          occurredAt,
+        });
+        return updates
+          .filter((update) => Object.prototype.hasOwnProperty.call(update.values, 'entrancePassword'))
+          .map((update) => update.table);
+      };
+
+      expect(await purgedTables('delivered')).toEqual([wmsTables.shipments, wmsTables.salesOrders]);
+      expect(await purgedTables('in_transit')).toEqual([]);
     });
   });
 });

@@ -282,6 +282,10 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
+        // 여기가 no-op 이라는 사실이 sales_orders.entrance_password 의 리플레이 안전성을 보장한다.
+        // 나중에 이 핸들러가 실제로 변경을 적용하게 된다면, OrderModified 페이로드에는
+        // entrancePassword 가 실리지 않으므로(계약상 changes 에 없음) "이벤트에 없음"을
+        // "지워라"로 해석하면 안 된다 — core 가 이 값의 SoT 이며, 정정은 운영자 경로로만 이뤄진다.
         this.logger.warn(
           `[OrderModified] Ignored post-acceptance contract mutation for sales order: ${payload.orderId}`,
         );

@@ -540,6 +540,13 @@
       "when": 1787054669562,
       "tag": "20260818120429_unique-sales-channel-site",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1787248835119,
+      "tag": "20260820180035_add-entrance-password-slots",
+      "breakpoints": true
     }
   ]
 }

@@ -101,3 +101,44 @@ describe('OrderCancelled 계약', () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe('OrderCreated 계약 — entrancePassword', () => {
+  const base = {
+    orderId: 'order_1',
+    salesChannel: 'medusa' as const,
+    customerId: null,
+    items: [],
+    totalAmount: 1000,
+    subtotalAmount: 1000,
+    shippingAmount: 0,
+    discountAmount: 0,
+    currency: 'KRW',
+    shippingAddress: {
+      recipientName: '홍길동',
+      phone: '01000000000',
+      postalCode: '00000',
+      roadAddress: '서울시 어딘가',
+      detailAddress: '101호',
+    },
+    status: 'pending' as const,
+    createdAt: '2026-08-21T00:00:00.000Z',
+  };
+
+  it('entrancePassword 를 실으면 파싱 결과에 남는다', () => {
+    const parsed = ORDER_STREAM.events.OrderCreated.schema!.parse({ ...base, entrancePassword: '#1234' });
+    expect(parsed.entrancePassword).toBe('#1234');
+  });
+
+  it('entrancePassword 는 선택 필드다 — 없어도 통과한다', () => {
+    expect(ORDER_STREAM.events.OrderCreated.schema!.safeParse(base).success).toBe(true);
+  });
+
+  it('배송지 스냅샷 안에는 비번 자리가 없다', () => {
+    const withNested = {
+      ...base,
+      shippingAddress: { ...base.shippingAddress, entrancePassword: '#1234' },
+    };
+    const parsed = ORDER_STREAM.events.OrderCreated.schema!.parse(withNested);
+    expect((parsed.shippingAddress as unknown as Record<string, unknown>).entrancePassword).toBeUndefined();
+  });
+});

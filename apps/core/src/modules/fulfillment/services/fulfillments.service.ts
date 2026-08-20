@@ -26,6 +26,7 @@ import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
+import { selectEntrancePassword } from './entrance-password.selection';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -273,6 +274,11 @@ export class FulfillmentsService {
           status: 'draft',
           shippingProfileId: compatibleProfileId ?? null,
           recipientSnapshot: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
+          entrancePassword: selectEntrancePassword(
+            salesOrder
+              ? [{ orderDate: salesOrder.orderDate, entrancePassword: salesOrder.entrancePassword }]
+              : [],
+          ),
         })
         .returning();
       const shipmentLines = await trx

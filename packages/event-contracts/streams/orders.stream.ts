@@ -91,6 +91,13 @@ export interface OrderCreatedPayload {
 
   shippingAddress: ShippingAddress;
 
+  /**
+   * 공동현관 출입 비밀번호. 크리덴셜이라 shippingAddress 스냅샷에 넣지 않는다 —
+   * 스냅샷은 sales_orders / shipments jsonb 로 영구 복사되고 합배송 그룹핑 키에도 쓰인다.
+   * core 가 SoT 이며 전용 컬럼에 만료와 함께 보관한다. Medusa 는 통과점.
+   */
+  entrancePassword?: string;
+
   status: OrderStatus;
   createdAt: string;
 }
@@ -268,6 +275,7 @@ const OrderCreatedSchema = z.object({
   pointsAmount: z.number().nonnegative().optional(),
   currency: z.string().min(1),
   shippingAddress: ShippingAddressSchema,
+  entrancePassword: z.string().optional(),
   status: OrderStatusSchema,
   createdAt: z.string().datetime(),
 });

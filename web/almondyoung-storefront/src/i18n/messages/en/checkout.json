@@ -78,7 +78,7 @@
         "hasEntrance": "There is a building entrance code",
         "passwordPlaceholder": "e.g. #1234",
         "noEntrance": "Entry without a code",
-        "notice": "The entrance code is used only for delivery and is deleted after delivery is complete."
+        "notice": "The entrance code is used only to deliver your order, destroyed upon delivery completion, and deleted no later than 14 days from the order date."
       },
       "customPlaceholder": "Enter delivery requests",
       "customAria": "Custom delivery memo"

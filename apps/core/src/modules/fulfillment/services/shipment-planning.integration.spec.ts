@@ -174,6 +174,73 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('carries the entrance password onto the split target — a split box faces the same door', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ entrancePassword: '#1234' })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+
+      const result = await planning.split(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'separate backorder',
+          moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+        },
+        `split-entrance-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [target] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, result.target.shipmentId));
+      // 안 물려주면 이 상자의 송장에만 현관 정보가 빠진 채 나가고 기사가 문을 못 연다.
+      expect(target.entrancePassword).toBe('#1234');
+    });
+  });
+
+  it('leaves the cancellation tombstone without an entrance password', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ entrancePassword: '#1234' })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const [second] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: fixture.shipment.id,
+          fulfillmentOrderItemId: fixture.item.id,
+          skuId: fixture.skuId,
+          qty: 2,
+        })
+        .returning();
+
+      await planning.cancelOutstanding(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'cancel one line only',
+          lines: [{ shipmentLineId: second.id, expectedLineVersion: second.lineVersion, qty: 2 }],
+        },
+        `cancel-entrance-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [tombstone] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(and(eq(wmsTables.shipments.warehouseId, fixture.warehouseId), eq(wmsTables.shipments.status, 'canceled')));
+      // 묘비는 송장을 발행하지 않는다 — 비번을 실으면 배송 완료 파기가 못 닿는 사본만 는다.
+      expect(tombstone?.entrancePassword ?? null).toBeNull();
+    });
+  });
+
   it('cancels an unreserved remainder before releasing confirmed reservations', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);
@@ -204,6 +271,71 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       expect(line).toMatchObject({ qty: 6, reservedQty: 6 });
       expect(reservation).toMatchObject({ quantity: 6, status: 'confirmed' });
       expect(item).toMatchObject({ qty: 10, canceledQty: 4, reservedQty: 6 });
+    });
+  });
+
+  it('revises only the entrance password without touching the recipient snapshot or manifest version', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 3, 3);
+      // 해외직구 주문은 sales-order AddressDto 의 personalCustomsCode 까지 스냅샷에
+      // 실어 온다 (recipientSnapshot 은 salesOrder.shippingAddress 의 그대로 복사본).
+      // fulfillment AddressDto 는 그 키를 모르므로, 비번만 고칠 때 스냅샷을 되보내면
+      // whitelist 가 통관부호를 떨어뜨린다. 스냅샷 미전송이 그걸 막는 유일한 방법이다.
+      const customsSnapshot = { ...COMPLETE_RECIPIENT, personalCustomsCode: 'P123456789' };
+      await tx
+        .update(wmsTables.shipments)
+        .set({ recipientSnapshot: customsSnapshot })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+
+      await planning.reviseRecipient(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          entrancePassword: '#9999',
+          reason: '고객 요청',
+        },
+        `entrance-password-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [after] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      // 비번은 recipient_snapshot 밖의 크리덴셜이다. 스냅샷과 manifestVersion 은 합배송
+      // 호환성·송장 멱등성(waybill.recipientHash)의 입력이므로 함께 움직이면 안 된다.
+      expect(after.entrancePassword).toBe('#9999');
+      expect(after.recipientSnapshot).toEqual(customsSnapshot);
+      expect(after.manifestVersion).toBe(fixture.shipment.manifestVersion);
+    });
+  });
+
+  it('bumps the manifest version when the recipient snapshot changes alongside the entrance password', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 3, 3);
+      const moved = { ...COMPLETE_RECIPIENT, detailAddress: '202' };
+
+      await planning.reviseRecipient(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          recipientSnapshot: moved,
+          entrancePassword: '#9999',
+          reason: '주소 정정',
+        },
+        `recipient-and-password-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const [after] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      expect(after.entrancePassword).toBe('#9999');
+      expect(after.recipientSnapshot).toEqual(moved);
+      expect(after.manifestVersion).toBe(fixture.shipment.manifestVersion + 1);
     });
   });
 

@@ -25,6 +25,8 @@ export interface IssueContext {
   manifestVersion: number;
   recipientSnapshot: unknown; // 원본(해시 대상)
   lines: ManifestLineLite[];
+  // 송장 조립 시점에만 message 에 합성한다(recipientSnapshot 밖 — 해시 대상 아님). shipments.entrance_password.
+  entrancePassword: string | null;
 }
 
 // WaybillManager.issueBatch 개별 결과. status 는 issueForShipment 가 반환한 WaybillRow.status(registered/failed 등)

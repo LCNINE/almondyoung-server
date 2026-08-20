@@ -71,6 +71,7 @@ export class WaybillManager {
             recipientSnapshot: ctx.recipientSnapshot,
             lines: ctx.lines,
             config: this.config,
+            entrancePassword: ctx.entrancePassword,
           });
           const row = await this.repo.insertPending(trx, {
             shipmentId,
@@ -92,6 +93,7 @@ export class WaybillManager {
           recipientSnapshot: ctx.recipientSnapshot,
           lines: ctx.lines,
           config: this.config,
+          entrancePassword: ctx.entrancePassword,
         });
         return { waybillId: r.waybillId, request };
       });

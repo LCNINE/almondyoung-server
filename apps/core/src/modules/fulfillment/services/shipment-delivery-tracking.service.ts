@@ -1,12 +1,13 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { FULFILLMENT_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { outbox_events } from '@app/events';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { ShipmentTrackingEventDto } from '../dto/shipment-tracking-event.dto';
 import { FULFILLMENT_EVENTS, fulfillmentDeliveredV1OutboxEvent, shipmentDeliveredOutboxEvent } from '../events';
+import { purgeTargetSalesOrderIds } from './entrance-password.purge';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
@@ -221,6 +222,26 @@ export class ShipmentDeliveryTrackingService {
                   inArray(wmsTables.shipments.status, ['shipped', 'in_transit']),
                 ),
               );
+            // ⚠️ 이 두 줄의 **순서는 임의가 아니다.** 파기는 `emitDeliveredProjections` 보다
+            // 먼저 와야 한다 — 그쪽이 `fulfillment_orders` 에 `FOR UPDATE` 를 건다.
+            // 파기를 뒤로 옮기면 배송완료 경로의 잠금 순서가 `FO → sales_orders` 가 되는데,
+            // 주문 취소 경로(`SalesOrdersService.cancelSalesOrder`)는 `sales_orders → FO`
+            // 순서로 잡는다. 두 순서가 맞물리면 진짜 교착 고리가 생긴다.
+            // (지금은 취소가 draft/planned/recovery_required 상자만, 파기가
+            // shipped/in_transit/delivered 상자만 다뤄 집합이 서로 겹치지 않지만,
+            // 그건 이 순서를 지킬 때의 여유이지 순서를 바꿔도 되는 이유가 아니다.)
+            //
+            // `sales_orders` 를 잠그는 곳이 `SalesOrdersService` 뿐이라고 읽지 말 것 —
+            // `FulfillmentsService.createV2`(fulfillments.service.ts:119-123) 도
+            // `SELECT … FROM sales_orders … FOR UPDATE` 를 걸고 이어서 `shipments` 를 만진다.
+            // 그런데도 그쪽과는 고리가 닫히지 않는다. **FO 생성은 상자를 INSERT 만 하고
+            // 기존 상자 행을 잠그지 않기 때문이다** (이 서비스는 상자 행을 `FOR UPDATE` 로
+            // 잡는 `assertFulfillmentOrders` 를 아예 부르지 않고, INSERT 는 다른 트랜잭션의
+            // 행 잠금을 기다리지 않는다). 즉 FO 생성은 `sales_orders` 를 들고 상자를 기다리는
+            // 상태가 될 수 없고, 배송완료 경로(`shipments → sales_orders`)와 마주 볼 변이
+            // 없다. 이 서비스들 중 하나라도 기존 상자 행을 잠그기 시작하면 그때는 이 판단을
+            // 다시 해야 한다.
+            await this.purgeEntrancePassword(attempt.shipmentId, trx);
             await this.emitDeliveredProjections(attempt, providerEventId, occurredAt, trx);
           }
 
@@ -327,6 +348,52 @@ export class ShipmentDeliveryTrackingService {
     if (!intent || typeof intent !== 'object' || Array.isArray(intent)) return null;
     const attemptId = (intent as Record<string, unknown>).dispatchAttemptId;
     return typeof attemptId === 'string' ? attemptId : null;
+  }
+
+  /**
+   * 배송이 끝난 순간 공동현관 비번을 파기한다.
+   *
+   * 쇼핑몰이 결제 화면에서 "배송 완료 후 삭제됩니다" 라고 약속했고 개인정보처리방침이
+   * "지체 없이 파기" 를 적었다. core 가 이 값의 SoT 이므로 약속을 지키는 코드도 여기 하나뿐이다.
+   * 상자 사본(`shipments.entrance_password`)과 주문 원본(`sales_orders.entrance_password`)이
+   * 둘 다 대상이다 — 한쪽만 지우면 남은 쪽이 그대로 크리덴셜이다.
+   *
+   * **상태 전이 UPDATE 에 얹지 않은 이유**: 그쪽은 `status IN ('shipped','in_transit')` 을
+   * 매치해야 하므로 이미 delivered 인 상자에 다른 provider 이벤트가 늦게 도착하면 0행이 되어
+   * 파기가 조용히 건너뛰어진다. 별도 문장으로 두면 몇 번을 다시 불러도 결과가 같다 —
+   * 이미 null 인 컬럼을 null 로 만드는 것은 아무 일도 아니다.
+   *
+   * `IS NOT NULL` 술어는 멱등성보다 **잠금 범위**를 위한 것이다. 비번이 없는 절대다수의
+   * 주문 행은 아예 잠기지 않으므로, 이 문장이 다른 트랜잭션과 만날 표면이 최소가 된다.
+   *
+   * 값 자체는 어디에도 남기지 않는다 — 로그도 예외 본문도 마찬가지다.
+   */
+  private async purgeEntrancePassword(shipmentId: string, tx: DbTx): Promise<void> {
+    await tx
+      .update(wmsTables.shipments)
+      .set({ entrancePassword: null })
+      .where(and(eq(wmsTables.shipments.id, shipmentId), isNotNull(wmsTables.shipments.entrancePassword)));
+
+    const carriedOrders = await tx
+      .selectDistinct({ salesOrderId: wmsTables.fulfillmentOrders.salesOrderId })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId));
+
+    const salesOrderIds = purgeTargetSalesOrderIds(carriedOrders);
+    if (salesOrderIds.length === 0) return;
+
+    await tx
+      .update(wmsTables.salesOrders)
+      .set({ entrancePassword: null, entrancePasswordExpiresAt: null })
+      .where(and(inArray(wmsTables.salesOrders.id, salesOrderIds), isNotNull(wmsTables.salesOrders.entrancePassword)));
   }
 
   private async emitDeliveredProjections(
