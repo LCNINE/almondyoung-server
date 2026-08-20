@@ -1,4 +1,4 @@
-import { buildDeliveryNote } from './shipping-memo-label';
+import { buildDeliveryNote, readEntrancePassword } from './shipping-memo-label';
 
 describe('buildDeliveryNote', () => {
   it('문앞 유형을 사람이 읽는 라벨로 바꾼다', () => {
@@ -32,5 +32,31 @@ describe('buildDeliveryNote', () => {
     });
     expect(note).toBe('문 앞에 놓아주세요');
     expect(note).not.toContain('1234');
+  });
+});
+
+describe('readEntrancePassword', () => {
+  it('문앞 + 공동현관 있음이면 비번을 준다', () => {
+    expect(
+      readEntrancePassword({ shipping_memo_type: 'door', has_entrance: true, entrance_password: '#1234' }),
+    ).toBe('#1234');
+  });
+
+  it('공동현관 없음이면 비번을 주지 않는다', () => {
+    expect(
+      readEntrancePassword({ shipping_memo_type: 'door', has_entrance: false, entrance_password: '#1234' }),
+    ).toBeUndefined();
+  });
+
+  it('문앞이 아니면 비번을 주지 않는다', () => {
+    expect(
+      readEntrancePassword({ shipping_memo_type: 'security', has_entrance: true, entrance_password: '#1234' }),
+    ).toBeUndefined();
+  });
+
+  it('비번 문자열이 비어 있으면 undefined 다', () => {
+    expect(
+      readEntrancePassword({ shipping_memo_type: 'door', has_entrance: true, entrance_password: '  ' }),
+    ).toBeUndefined();
   });
 });

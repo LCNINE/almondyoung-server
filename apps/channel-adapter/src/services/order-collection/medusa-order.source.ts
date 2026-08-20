@@ -9,7 +9,7 @@ import {
   LifecycleObservation,
   ReplayableChannelOrderSource,
 } from './channel-order-source.interface';
-import { buildDeliveryNote } from './shipping-memo-label';
+import { buildDeliveryNote, readEntrancePassword } from './shipping-memo-label';
 
 type MedusaLineItem = NonNullable<MedusaOrder['items']>[number];
 
@@ -55,6 +55,9 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
     }
 
     const sourceUpdatedAt = this.getSourceUpdatedAt(order);
+    const entrancePassword = readEntrancePassword(
+      order.metadata as Record<string, unknown> | null | undefined,
+    );
 
     return {
       externalOrderId: order.id,
@@ -74,6 +77,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
         currency: order.currency_code ?? 'KRW',
       },
       shippingAddress: this.buildShippingAddress(order),
+      ...(entrancePassword ? { entrancePassword } : {}),
       createdAt: order.created_at ?? new Date().toISOString(),
       lifecycle,
       raw: order as unknown as Record<string, unknown>,

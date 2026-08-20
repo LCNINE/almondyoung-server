@@ -25,3 +25,17 @@ export function buildDeliveryNote(
 
   return MEMO_LABELS[type];
 }
+
+/**
+ * 송장에 찍을 공동현관 비밀번호. 문앞 + 공동현관 있음일 때만 유효하다.
+ * 반환값은 크리덴셜이므로 로그·스냅샷에 남기지 말 것.
+ */
+export function readEntrancePassword(
+  metadata: Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (metadata?.shipping_memo_type !== 'door') return undefined;
+  if (metadata?.has_entrance !== true) return undefined;
+
+  const password = metadata?.entrance_password;
+  return typeof password === 'string' && password.trim() ? password.trim() : undefined;
+}
