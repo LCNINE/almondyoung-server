@@ -164,3 +164,49 @@ export function pruneTree(
   };
   return walk(tree, []);
 }
+
+/** 화면에 실제로 그려지는 행 하나. 렌더 순서이자 키보드 이동 순서다. */
+export type VisibleNode = {
+  node: CategoryTreeNodeLike;
+  pathSegments: string[];
+  matchedSelf: boolean;
+  depth: number;
+  hasChildren: boolean;
+  isExpanded: boolean;
+  parentId: string | null;
+};
+
+/**
+ * 가지친 트리 + 펼침 상태 → 화면에 보이는 순서 그대로의 평탄 배열.
+ *
+ * 뷰가 이 배열을 그리고 키보드가 이 배열의 인덱스로 움직인다. 둘이 같은
+ * 출처를 쓰므로 "보이는 것"과 "이동하는 것"이 어긋날 수 없다.
+ */
+export function visibleNodeSequence(
+  pruned: PrunedNode[],
+  expandedIds: ReadonlySet<string>
+): VisibleNode[] {
+  const out: VisibleNode[] = [];
+  const walk = (
+    entries: PrunedNode[],
+    depth: number,
+    parentId: string | null
+  ): void => {
+    for (const entry of entries) {
+      const hasChildren = entry.children.length > 0;
+      const isExpanded = hasChildren && expandedIds.has(entry.node.id);
+      out.push({
+        node: entry.node,
+        pathSegments: entry.pathSegments,
+        matchedSelf: entry.matchedSelf,
+        depth,
+        hasChildren,
+        isExpanded,
+        parentId,
+      });
+      if (isExpanded) walk(entry.children, depth + 1, entry.node.id);
+    }
+  };
+  walk(pruned, 0, null);
+  return out;
+}

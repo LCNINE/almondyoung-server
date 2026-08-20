@@ -6,6 +6,7 @@ import {
   normalizeSearchTerm,
   orderedCategoryIds,
   pruneTree,
+  visibleNodeSequence,
 } from './category-tree';
 import type { CategoryTreeNodeLike } from './category-tree';
 
@@ -174,5 +175,45 @@ describe('pruneTree', () => {
     const result = pruneTree(tree, () => true);
     expect(result).toHaveLength(2);
     expect(result[0].children[0].children).toHaveLength(2);
+  });
+});
+
+describe('visibleNodeSequence', () => {
+  const pruned = pruneTree(tree, () => true);
+
+  it('아무것도 안 펼치면 루트만 낸다', () => {
+    const result = visibleNodeSequence(pruned, new Set());
+    expect(result.map((entry) => entry.node.id)).toEqual(['cosmetics', 'food']);
+  });
+
+  it('펼친 노드의 자식을 전위 순회 순서로 끼워 넣는다', () => {
+    const result = visibleNodeSequence(pruned, new Set(['cosmetics']));
+    expect(result.map((entry) => entry.node.id)).toEqual([
+      'cosmetics',
+      'skincare',
+      'bodycare',
+      'food',
+    ]);
+  });
+
+  it('접힌 노드의 자식은 건너뛴다', () => {
+    const result = visibleNodeSequence(pruned, new Set(['cosmetics']));
+    expect(result.map((entry) => entry.node.id)).not.toContain('toner');
+  });
+
+  it('depth 와 parentId 를 채운다', () => {
+    const result = visibleNodeSequence(pruned, new Set(['cosmetics', 'skincare']));
+    const toner = result.find((entry) => entry.node.id === 'toner');
+    expect(toner?.depth).toBe(2);
+    expect(toner?.parentId).toBe('skincare');
+    expect(result[0].depth).toBe(0);
+    expect(result[0].parentId).toBeNull();
+  });
+
+  it('자식 없는 노드는 펼침 집합에 있어도 isExpanded 가 false 다', () => {
+    const result = visibleNodeSequence(pruned, new Set(['food']));
+    const food = result.find((entry) => entry.node.id === 'food');
+    expect(food?.hasChildren).toBe(false);
+    expect(food?.isExpanded).toBe(false);
   });
 });
