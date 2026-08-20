@@ -136,6 +136,30 @@ describe('EntrancePasswordCleaner.sweepOnce', () => {
 });
 
 /**
+ * 위 크론 마운트 테스트는 **자기 테스트 모듈**을 세운다 — 그래서 `SalesOrderModule` 에서
+ * 등록을 지워도 그쪽은 초록인 채로 남는다. 이 저장소가 여러 번 데인 모양이 정확히 이것이다
+ * ("테스트 초록 ≠ 배선 살아있음"). 그래서 **진짜 모듈의 provider 목록**을 따로 고정한다.
+ *
+ * DI 컨테이너를 컴파일하지 않고 `@Module` 메타데이터만 읽는다 — 등록 누락을 잡는 데는 그게
+ * 필요한 전부이고, 컨테이너를 세우면 DB·Kafka 가 딸려와 기본 게이트에서 못 돌린다.
+ */
+describe('SalesOrderModule 배선', () => {
+  it('EntrancePasswordCleaner 를 provider 로 등록한다 — 안 하면 파기 배치가 영영 안 돈다', async () => {
+    // 모듈 그래프가 로드되는 동안 EventsModule 이 kafkajs 설정을 만든다. 실제 브로커에는
+    // 붙지 않으므로 값은 아무거나 되고, 토픽 부트스트랩은 꺼 둔다.
+    process.env.KAFKA_BROKERS = process.env.KAFKA_BROKERS ?? 'localhost:9092';
+    process.env.KAFKA_BOOTSTRAP_TOPICS = process.env.KAFKA_BOOTSTRAP_TOPICS ?? 'false';
+
+    const { SalesOrderModule } = await import('../sales-order.module');
+    // 리플렉션은 본질적으로 `any` 를 돌려준다 — 캐스팅 대신 `unknown` 으로 받아 좁힌다.
+    const metadata: unknown = Reflect.getMetadata('providers', SalesOrderModule);
+    const providers = Array.isArray(metadata) ? metadata : [];
+
+    expect(providers).toContain(EntrancePasswordCleaner);
+  });
+});
+
+/**
  * `@Cron` 데코레이터는 그 자체로는 아무 것도 하지 않는다 — 클래스가 Nest 컨테이너의
  * provider 로 등록돼야 `ScheduleModule` 의 `ScheduleExplorer` 가 찾아 실제 cron job 으로
  * 마운트한다. 파기가 "코드에는 있는데 안 도는" 상태로 배포되는 것이 이 태스크의 가장 나쁜

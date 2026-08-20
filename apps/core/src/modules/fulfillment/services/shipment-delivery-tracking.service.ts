@@ -222,6 +222,14 @@ export class ShipmentDeliveryTrackingService {
                   inArray(wmsTables.shipments.status, ['shipped', 'in_transit']),
                 ),
               );
+            // ⚠️ 이 두 줄의 **순서는 임의가 아니다.** 파기는 `emitDeliveredProjections` 보다
+            // 먼저 와야 한다 — 그쪽이 `fulfillment_orders` 에 `FOR UPDATE` 를 건다.
+            // 파기를 뒤로 옮기면 배송완료 경로의 잠금 순서가 `FO → sales_orders` 가 되는데,
+            // 주문 취소 경로(`SalesOrdersService.cancelSalesOrder`)는 `sales_orders → FO`
+            // 순서로 잡는다. 두 순서가 맞물리면 진짜 교착 고리가 생긴다.
+            // (지금은 취소가 draft/planned/recovery_required 상자만, 파기가
+            // shipped/in_transit/delivered 상자만 다뤄 집합이 서로 겹치지 않지만,
+            // 그건 이 순서를 지킬 때의 여유이지 순서를 바꿔도 되는 이유가 아니다.)
             await this.purgeEntrancePassword(attempt.shipmentId, trx);
             await this.emitDeliveredProjections(attempt, providerEventId, occurredAt, trx);
           }
