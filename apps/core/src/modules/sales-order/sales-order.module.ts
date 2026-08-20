@@ -14,6 +14,7 @@ import { StoreSalesOrdersController } from './controllers/store-sales-orders.con
 import { StoreSalesOrderReturnExchangeController } from './controllers/store-return-exchange.controller';
 import { AdminReturnExchangeController } from './controllers/admin-return-exchange.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
+import { EntrancePasswordCleaner } from './services/entrance-password-cleaner';
 import { SalesOrdersService } from './services/sales-orders.service';
 import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
@@ -81,6 +82,13 @@ import { WalletRefundClient } from './services/wallet-refund.client';
     StoreSalesOrdersService,
     StoreReturnExchangeService,
     WalletRefundClient,
+
+    // 만료된 공동현관 비번 파기 배치. `ScheduleModule` 을 여기서 다시 import 하지 않는다 —
+    // 전역으로 이미 떠 있는 단 하나의 `SCHEDULE_ROOT`(CoreInventoryModule 이 import)의
+    // ScheduleExplorer 가 discovery 로 이 provider 의 `@Cron` 을 찾아 마운트한다.
+    // `ScheduleModule.forRoot()` 를 다시 부르면 Nest 11 이 모듈을 두 벌 만들어 이 앱의
+    // 모든 크론이 2회 등록된다 (#599).
+    EntrancePasswordCleaner,
   ],
   exports: [
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
