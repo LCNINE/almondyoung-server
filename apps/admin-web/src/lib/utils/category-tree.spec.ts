@@ -5,6 +5,7 @@ import {
   matchesCategory,
   normalizeSearchTerm,
   orderedCategoryIds,
+  pruneTree,
 } from './category-tree';
 import type { CategoryTreeNodeLike } from './category-tree';
 
@@ -122,5 +123,56 @@ describe('collectAncestorIds', () => {
 
   it('없는 id 는 조용히 무시한다', () => {
     expect(collectAncestorIds(tree, ['nope']).size).toBe(0);
+  });
+});
+
+describe('pruneTree', () => {
+  it('술어를 통과한 노드만 남긴다', () => {
+    const result = pruneTree(tree, (node) => node.id === 'food');
+    expect(result).toHaveLength(1);
+    expect(result[0].node.id).toBe('food');
+  });
+
+  it('자손이 통과하면 부모도 남되 matchedSelf 가 false 다', () => {
+    const result = pruneTree(tree, (node) => node.id === 'toner');
+    expect(result[0].node.id).toBe('cosmetics');
+    expect(result[0].matchedSelf).toBe(false);
+    expect(result[0].children[0].node.id).toBe('skincare');
+    expect(result[0].children[0].matchedSelf).toBe(false);
+    expect(result[0].children[0].children[0].node.id).toBe('toner');
+    expect(result[0].children[0].children[0].matchedSelf).toBe(true);
+  });
+
+  it('본인도 자손도 통과 못 하면 사라진다', () => {
+    const result = pruneTree(tree, (node) => node.id === 'toner');
+    expect(result[0].children.map((entry) => entry.node.id)).toEqual(['skincare']);
+  });
+
+  it('pathSegments 는 자기 이름까지 포함한다', () => {
+    const result = pruneTree(tree, (node) => node.id === 'toner');
+    expect(result[0].children[0].children[0].pathSegments).toEqual([
+      '화장품',
+      '스킨케어',
+      '토너',
+    ]);
+  });
+
+  it('비활성 부모 아래 활성 자식은 살아남는다', () => {
+    const inactiveParent: CategoryTreeNodeLike[] = [
+      node('p', '화장품', {
+        isActive: false,
+        children: [node('c', '스킨케어')],
+      }),
+    ];
+    const result = pruneTree(inactiveParent, (candidate) => candidate.isActive);
+    expect(result[0].node.id).toBe('p');
+    expect(result[0].matchedSelf).toBe(false);
+    expect(result[0].children[0].node.id).toBe('c');
+  });
+
+  it('항상 참인 술어는 원본 구조를 보존한다', () => {
+    const result = pruneTree(tree, () => true);
+    expect(result).toHaveLength(2);
+    expect(result[0].children[0].children).toHaveLength(2);
   });
 });

@@ -127,3 +127,40 @@ export function collectAncestorIds(
   walk(tree, []);
   return out;
 }
+
+/** 가지치기 결과 노드. `matchedSelf: false` = 자손 때문에 남은 구조 유지용. */
+export type PrunedNode = {
+  node: CategoryTreeNodeLike;
+  /** 조상 + 자기 이름 */
+  pathSegments: string[];
+  matchedSelf: boolean;
+  children: PrunedNode[];
+};
+
+/**
+ * 노드가 보인다 = 본인이 술어를 통과 OR 자손 중 통과하는 게 있다.
+ *
+ * 이 한 규칙이 검색과 비활성 필터를 함께 처리한다. 따로 적용하면
+ * `화장품(비활성) / 스킨케어(활성)` 에서 부모가 사라지며 활성 자식까지 증발한다.
+ */
+export function pruneTree(
+  tree: CategoryTreeNodeLike[],
+  predicate: (node: CategoryTreeNodeLike, pathSegments: string[]) => boolean
+): PrunedNode[] {
+  const walk = (
+    nodes: CategoryTreeNodeLike[],
+    pathSegments: string[]
+  ): PrunedNode[] => {
+    const out: PrunedNode[] = [];
+    for (const node of nodes) {
+      const nextPath = [...pathSegments, node.name];
+      const children = node.children?.length ? walk(node.children, nextPath) : [];
+      const matchedSelf = predicate(node, nextPath);
+      if (matchedSelf || children.length > 0) {
+        out.push({ node, pathSegments: nextPath, matchedSelf, children });
+      }
+    }
+    return out;
+  };
+  return walk(tree, []);
+}
