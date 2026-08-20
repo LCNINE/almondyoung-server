@@ -92,6 +92,16 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // 핸드오프 브릿지는 1회용 토큰이 실린 폼을 렌더한다. 캐시되면 뒤로가기·공유 캐시에
+        // 남는다. Referer 는 origin 까지만 보내 카트 경로가 외부 로그에 남지 않게 한다
+        // (no-referrer 로 완전히 끊으면 legacy 체크아웃의 PG 호출에 영향이 갈 수 있다).
+        source: "/:countryCode/checkout",
+        headers: [
+          { key: "Cache-Control", value: "no-store, must-revalidate" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      {
         source: "/firebase-messaging-sw.js",
         headers: [
           { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
