@@ -205,6 +205,9 @@ export class SalesOrdersService {
 
     return this.db
       .run(async (trx) => {
+        // 공동현관 비번 만료 규칙(Medusa 통과점 파기 시각과 맞춤): 주문일 +14일.
+        // orderDate 는 아래 컬럼과 동일한 값을 써야 하므로 한 번만 계산해 공유한다.
+        const orderDate = new Date(dto.orderDate ?? Date.now());
         const [order] = await trx
           .insert(wmsTables.salesOrders)
           .values({
@@ -222,7 +225,14 @@ export class SalesOrdersService {
             mergeGroupId: dto.mergeGroupId ?? null,
             isMerged: false,
             walletIntentId: dto.walletIntentId ?? null,
-            orderDate: new Date(dto.orderDate ?? Date.now()),
+            orderDate,
+            // 신규 insert 경로: 기존 행이 없으므로 existing=null 이 항상 성립해
+            // resolveEntrancePasswordUpdate 의 "덮어쓰지 않기" 분기를 타지 않는다.
+            // 여기선 규칙을 거치지 않고 직접 쓴다 — entrance-password.rules.ts 상단 주석 참고.
+            entrancePassword: dto.entrancePassword ?? null,
+            entrancePasswordExpiresAt: dto.entrancePassword
+              ? new Date(orderDate.getTime() + 14 * 24 * 60 * 60 * 1000)
+              : null,
             confirmedAt: null,
             processedAt: null,
           })
@@ -1186,6 +1196,7 @@ export class SalesOrdersService {
         phone: payload.shippingAddress.phone,
       },
       shippingAddress: this.convertShippingAddress(payload.shippingAddress),
+      ...(payload.entrancePassword ? { entrancePassword: payload.entrancePassword } : {}),
       totalAmount: payload.totalAmount,
       shippingFee: payload.shippingAmount ?? 0,
       orderDate: payload.createdAt,

@@ -98,6 +98,11 @@ export class CreateSalesOrderDto {
   @IsOptional()
   shippingAddressHash?: string;
 
+  @ApiProperty({ description: '공동현관 출입 비밀번호 (송장 발행 전용)', required: false })
+  @IsString()
+  @IsOptional()
+  entrancePassword?: string;
+
   @ApiProperty({ description: '총 주문 금액', required: false })
   @IsNumber()
   @IsOptional()
