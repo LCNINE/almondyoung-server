@@ -5,6 +5,7 @@ import { MedusaClient } from './medusa.client';
 import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
 import { StorefrontRevalidateService } from './storefront-revalidate.service';
 import { DeferredRevalidateService } from './deferred-revalidate.service';
+import { CategoryEnsureMemoService } from './category-ensure-memo.service';
 import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to-medusa.transformer';
 import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
@@ -45,6 +46,7 @@ export class PimMedusaSyncService {
     private readonly mappingRepo: PimMedusaMappingRepository,
     private readonly storefrontRevalidate: StorefrontRevalidateService,
     private readonly deferredRevalidate: DeferredRevalidateService,
+    private readonly categoryEnsureMemo: CategoryEnsureMemoService,
   ) {}
 
   // PIMCLIENT: This method is disabled because it calls PIM API (this.pimClient.getCategory)
@@ -702,10 +704,9 @@ export class PimMedusaSyncService {
       // 자손 이벤트가 조상을 자기 플래그(false)로 덮어써 상속이 풀린다.
       let ancestorMembersOnly = false;
       for (const ancestor of ancestors ?? []) {
-        ancestorMembersOnly =
-          ancestorMembersOnly || ancestor.displaySettings?.isVisibleToMembersOnly === true;
+        ancestorMembersOnly = ancestorMembersOnly || ancestor.displaySettings?.isVisibleToMembersOnly === true;
 
-        await this.medusaClient.ensureCategoryFromSnapshot({
+        const ancestorSnapshot = {
           id: ancestor.id,
           name: ancestor.name,
           slug: ancestor.slug,
@@ -719,26 +720,35 @@ export class PimMedusaSyncService {
           thumbnail: ancestor.thumbnail ?? undefined,
           sortOrder: ancestor.sortOrder,
           description: ancestor.description,
-        }, { refreshFields: true });
+        };
+
+        // 한 부모의 자손 96건이 한꺼번에 들어오면 그 부모를 똑같은 내용으로 96번 다시 쓴다.
+        // 내용이 바뀌었을 때만 실제로 보낸다 — 판정 대상은 여기서 조립한 스냅샷 그대로라
+        // 상속된 isVisibleToMembersOnly 변화도 그대로 잡힌다.
+        await this.categoryEnsureMemo.ensureOnce(ancestor.id, ancestorSnapshot, () =>
+          this.medusaClient.ensureCategoryFromSnapshot(ancestorSnapshot, { refreshFields: true }),
+        );
       }
 
       // Handle create/update/moved (all treated as upsert)
-      const medusaCategoryId = await this.medusaClient.ensureCategoryFromSnapshot({
-        id: category.id,
-        name: category.name,
-        slug: category.slug,
-        path: category.path,
-        parentId: category.parentId,
-        isActive: category.isActive,
-        visibility: category.visibility,
-        showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
-        isVisibleToMembersOnly:
-          category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
-        isBrand: category.displaySettings?.isBrand,
-        thumbnail: category.thumbnail ?? undefined,
-        sortOrder: category.sortOrder,
-        description: category.description,
-      }, { requireParent: true, refreshFields: true });
+      const medusaCategoryId = await this.medusaClient.ensureCategoryFromSnapshot(
+        {
+          id: category.id,
+          name: category.name,
+          slug: category.slug,
+          path: category.path,
+          parentId: category.parentId,
+          isActive: category.isActive,
+          visibility: category.visibility,
+          showOnMainCategory: category.displaySettings?.showOnMainCategory ?? false,
+          isVisibleToMembersOnly: category.displaySettings?.isVisibleToMembersOnly === true || ancestorMembersOnly,
+          isBrand: category.displaySettings?.isBrand,
+          thumbnail: category.thumbnail ?? undefined,
+          sortOrder: category.sortOrder,
+          description: category.description,
+        },
+        { requireParent: true, refreshFields: true },
+      );
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
 
@@ -760,6 +770,10 @@ export class PimMedusaSyncService {
    * Handle category deletion in Medusa
    */
   private async handleCategoryDelete(pimCategoryId: string): Promise<void> {
+    // 삭제는 메모 밖에서 Medusa 를 바꾸는 유일한 경로다 (softDeleteCategory).
+    // 지우지 않으면 이 카테고리가 다시 조상으로 등장할 때 보장을 건너뛴다.
+    this.categoryEnsureMemo.invalidate(pimCategoryId);
+
     try {
       // 생성 시 handle은 slug 우선(pimCategoryId는 fallback)이라, 삭제에서는
       // metadata.pimCategoryId + legacy handle 두 경로로 조회해야 한다.

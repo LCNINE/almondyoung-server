@@ -1,6 +1,7 @@
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { PimProductSnapshot } from '../../types';
+import { CategoryEnsureMemoService } from './category-ensure-memo.service';
 
 describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
   const payload: ProductSellableQuantityChangedPayload = {
@@ -37,6 +38,7 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
       mappingRepo as any,
       storefrontRevalidate as any,
       deferredRevalidate as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -135,6 +137,7 @@ describe('PimMedusaSyncService.syncFromSnapshot 의 revalidate 분기', () => {
       mappingRepo as any,
       storefrontRevalidate as any,
       deferredRevalidate as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
     );
 
     return { service, storefrontRevalidate, deferredRevalidate };
@@ -177,6 +180,7 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
       mappingRepo as any,
       storefrontRevalidate as any,
       deferredRevalidate as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
     );
 
     return { service, medusaClient, mappingRepo, storefrontRevalidate };
@@ -247,6 +251,7 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
       mappingRepo as any,
       storefrontRevalidate as any,
       deferredRevalidate as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
     );
     return { service, medusaClient, calls };
   }
@@ -327,6 +332,7 @@ describe('PimMedusaSyncService 카테고리 조상 처리', () => {
       medusaClient: { value: medusaClient },
       logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
       storefrontRevalidate: { value: { revalidateCategory: jest.fn() } },
+      categoryEnsureMemo: { value: new CategoryEnsureMemoService({ get: () => undefined } as never) },
     });
     return { service, ensureCategoryFromSnapshot };
   };
@@ -416,5 +422,125 @@ describe('isBulkOrigin', () => {
 
   it('모르는 출처는 단건으로 판정한다 — 안전한 쪽이 즉시 반영이다', () => {
     expect(isBulkOrigin('admin_ui')).toBe(false);
+  });
+});
+
+describe('PimMedusaSyncService.handleCategoryChanged — 조상 재보장 메모', () => {
+  const snapshot = (id: string, parentId: string | null, overrides: Record<string, unknown> = {}) =>
+    ({
+      id,
+      name: `name-${id}`,
+      slug: `slug-${id}`,
+      description: null,
+      parentId,
+      level: parentId ? 1 : 0,
+      path: id,
+      sortOrder: 0,
+      isActive: true,
+      visibility: true,
+      thumbnail: null,
+      displaySettings: {},
+      seoConfig: null,
+      templateConfig: null,
+      createdAt: '2026-08-14T00:00:00.000Z',
+      updatedAt: '2026-08-14T00:00:00.000Z',
+      ...overrides,
+    }) as any;
+
+  const changed = (categoryId: string, category: unknown, ancestors: unknown[]) =>
+    ({
+      categoryId,
+      changeType: 'updated',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      category,
+      ancestors,
+    }) as any;
+
+  function createService() {
+    const medusaClient = {
+      ensureCategoryFromSnapshot: jest.fn().mockResolvedValue('medusa-cat'),
+      findCategoryByPimRef: jest.fn().mockResolvedValue({ id: 'medusa-cat', handle: 'handle-p1' }),
+      softDeleteCategory: jest.fn().mockResolvedValue(undefined),
+      invalidateCategoryCacheByHandle: jest.fn(),
+    };
+    const storefrontRevalidate = { revalidateCategory: jest.fn().mockResolvedValue(undefined) };
+    const memo = new CategoryEnsureMemoService({ get: () => undefined } as never);
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      {} as any,
+      storefrontRevalidate as any,
+      { enqueue: jest.fn() } as any,
+      memo,
+    );
+
+    const ensuredIds = () =>
+      medusaClient.ensureCategoryFromSnapshot.mock.calls.map(([arg]: [{ id: string }]) => arg.id);
+
+    return { service, medusaClient, ensuredIds };
+  }
+
+  it('같은 조상 체인이 연달아 오면 조상은 한 번만 보장한다', async () => {
+    const { service, ensuredIds } = createService();
+    const parent = snapshot('p1', null);
+
+    await service.handleCategoryChanged(changed('c1', snapshot('c1', 'p1'), [parent]));
+    await service.handleCategoryChanged(changed('c2', snapshot('c2', 'p1'), [parent]));
+
+    expect(ensuredIds()).toEqual(['p1', 'c1', 'c2']);
+  });
+
+  it('조상 내용이 바뀌면 다시 보장한다', async () => {
+    const { service, ensuredIds } = createService();
+
+    await service.handleCategoryChanged(changed('c1', snapshot('c1', 'p1'), [snapshot('p1', null)]));
+    await service.handleCategoryChanged(
+      changed('c2', snapshot('c2', 'p1'), [snapshot('p1', null, { name: '이름 바뀜' })]),
+    );
+
+    expect(ensuredIds()).toEqual(['p1', 'c1', 'p1', 'c2']);
+  });
+
+  it('조상의 멤버십 전용 상속이 켜지면 내용이 달라지므로 다시 보장한다', async () => {
+    const { service, ensuredIds } = createService();
+
+    await service.handleCategoryChanged(changed('c1', snapshot('c1', 'p1'), [snapshot('p1', null)]));
+    await service.handleCategoryChanged(
+      changed('c2', snapshot('c2', 'p1'), [
+        snapshot('p1', null, { displaySettings: { isVisibleToMembersOnly: true } }),
+      ]),
+    );
+
+    expect(ensuredIds()).toEqual(['p1', 'c1', 'p1', 'c2']);
+  });
+
+  it('조상 자신은 그대로여도 그 위에서 멤버십 전용이 켜지면 다시 보장한다 — 판정은 누적된 값으로 한다', async () => {
+    const { service, ensuredIds } = createService();
+    const parent = snapshot('p1', 'g1');
+
+    await service.handleCategoryChanged(changed('c1', snapshot('c1', 'p1'), [snapshot('g1', null), parent]));
+    await service.handleCategoryChanged(
+      changed('c2', snapshot('c2', 'p1'), [
+        snapshot('g1', null, { displaySettings: { isVisibleToMembersOnly: true } }),
+        parent,
+      ]),
+    );
+
+    expect(ensuredIds()).toEqual(['g1', 'p1', 'c1', 'g1', 'p1', 'c2']);
+  });
+
+  it('삭제된 카테고리는 메모에서 지운다 — 다시 조상으로 오면 실제로 보장해야 한다', async () => {
+    const { service, ensuredIds } = createService();
+    const parent = snapshot('p1', null);
+
+    await service.handleCategoryChanged(changed('c1', snapshot('c1', 'p1'), [parent]));
+    await service.handleCategoryChanged({
+      categoryId: 'p1',
+      changeType: 'deleted',
+      timestamp: '2026-08-14T00:00:00.000Z',
+      category: null,
+    } as any);
+    await service.handleCategoryChanged(changed('c2', snapshot('c2', 'p1'), [parent]));
+
+    expect(ensuredIds()).toEqual(['p1', 'c1', 'p1', 'c2']);
   });
 });

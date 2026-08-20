@@ -72,6 +72,7 @@ import { MedusaClient } from './adapters/medusa/medusa.client';
 import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service';
 import { StorefrontRevalidateService } from './adapters/medusa/storefront-revalidate.service';
 import { DeferredRevalidateService } from './adapters/medusa/deferred-revalidate.service';
+import { CategoryEnsureMemoService } from './adapters/medusa/category-ensure-memo.service';
 import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
@@ -265,6 +266,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     MembershipEventConsumer,
     PimMedusaMappingRepository,
     DeferredRevalidateService,
+    CategoryEnsureMemoService,
     InboxWorkerService,
 
     // 주문 수집 (ADR-0031: source 는 채널 원어, 번역·식별·격리는 공용)
