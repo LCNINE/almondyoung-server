@@ -33,6 +33,7 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { PoliciesService } from './policies.service';
+import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
@@ -205,8 +206,8 @@ export class SalesOrdersService {
 
     return this.db
       .run(async (trx) => {
-        // 공동현관 비번 만료 규칙(Medusa 통과점 파기 시각과 맞춤): 주문일 +14일.
-        // orderDate 는 아래 컬럼과 동일한 값을 써야 하므로 한 번만 계산해 공유한다.
+        // orderDate 는 아래 컬럼과 entrancePasswordExpiresAt 계산에 동일한 값을 써야 하므로
+        // 한 번만 계산해 공유한다. 만료 산식 자체는 entrance-password-expiry.ts 참고.
         const orderDate = new Date(dto.orderDate ?? Date.now());
         const [order] = await trx
           .insert(wmsTables.salesOrders)
@@ -231,7 +232,7 @@ export class SalesOrdersService {
             // 결정한다 — order-events.consumer.ts#handleOrderModified 참고 (구조적으로 no-op).
             entrancePassword: dto.entrancePassword ?? null,
             entrancePasswordExpiresAt: dto.entrancePassword
-              ? new Date(orderDate.getTime() + 14 * 24 * 60 * 60 * 1000)
+              ? computeEntrancePasswordExpiry(orderDate.toISOString())
               : null,
             confirmedAt: null,
             processedAt: null,
