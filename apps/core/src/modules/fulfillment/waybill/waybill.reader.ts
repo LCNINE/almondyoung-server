@@ -58,6 +58,7 @@ export class WaybillReader {
       manifestVersion: shipment.manifestVersion,
       recipientSnapshot: shipment.recipientSnapshot,
       lines: rows.map((r) => ({ productName: r.productName ?? r.skuName ?? '', quantity: r.quantity, skuId: r.skuId })),
+      entrancePassword: shipment.entrancePassword,
     };
   }
 

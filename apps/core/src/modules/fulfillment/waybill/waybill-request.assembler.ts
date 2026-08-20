@@ -29,6 +29,17 @@ export interface AssembleInput {
   recipientSnapshot: unknown;
   lines: ManifestLineLite[];
   config: HanjinConfig;
+  /** 송장에만 싣고 저장하지 않는다. shipments.entrance_password 에서 온다. */
+  entrancePassword?: string | null;
+}
+
+/** 배송 메시지 = 메모 라벨 + 공동현관 비번. 합성 결과는 어디에도 저장하지 않는다. */
+function composeMessage(deliveryNote: string | undefined, entrancePassword: string | null | undefined) {
+  const parts = [deliveryNote, entrancePassword ? `공동현관 ${entrancePassword}` : undefined].filter(
+    (part): part is string => !!part,
+  );
+  if (parts.length === 0) return undefined;
+  return parts.length === 2 ? `${parts[0]} (${parts[1]})` : parts[0];
 }
 
 export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
@@ -44,7 +55,7 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       baseAddress: rc.roadAddress,
       detailAddress: rc.detailAddress,
       mobile: rc.phone, // 스냅샷은 phone 단일필드 → mobile 로(§조사4). tel 은 생략.
-      message: rc.deliveryNote,
+      message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
     sender: input.config.sender,
     items,

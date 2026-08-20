@@ -84,3 +84,50 @@ describe('assembleWaybillRequest', () => {
     expect(r.recipient.message).toBeUndefined();
   });
 });
+
+describe('assembleWaybillRequest — 공동현관 비번 합성', () => {
+  // 브리프 원문은 shipmentId: 'ship_1' 이었으나 deriveCustOrdNo 가 유효 uuid hex 를
+  // 요구해 항상 throw 한다(합성 로직과 무관하게 RED). 유효 uuid 로 교체.
+  const base = {
+    shipmentId: '11111111-1111-1111-1111-111111111111',
+    recipientSnapshot: {
+      recipientName: '홍길동',
+      phone: '01000000000',
+      postalCode: '00000',
+      roadAddress: '서울시 어딘가',
+      detailAddress: '101호',
+      deliveryNote: '문 앞에 놓아주세요',
+    },
+    // ManifestLineLite 는 skuId 를 요구한다(브리프 원문에는 없었음) — type-check 통과를 위해 추가.
+    lines: [{ productName: '상품', quantity: 1, skuId: 'sku_1' }],
+    config,
+  };
+
+  it('비번이 있으면 배송 메시지에 덧붙인다', () => {
+    const req = assembleWaybillRequest({ ...base, entrancePassword: '#1234' });
+    expect(req.recipient.message).toBe('문 앞에 놓아주세요 (공동현관 #1234)');
+  });
+
+  it('비번이 없으면 메모만 싣는다', () => {
+    const req = assembleWaybillRequest({ ...base, entrancePassword: null });
+    expect(req.recipient.message).toBe('문 앞에 놓아주세요');
+  });
+
+  it('메모 없이 비번만 있으면 비번만 싣는다', () => {
+    const req = assembleWaybillRequest({
+      ...base,
+      recipientSnapshot: { ...base.recipientSnapshot, deliveryNote: undefined },
+      entrancePassword: '#1234',
+    });
+    expect(req.recipient.message).toBe('공동현관 #1234');
+  });
+
+  it('둘 다 없으면 메시지가 비어 있다', () => {
+    const req = assembleWaybillRequest({
+      ...base,
+      recipientSnapshot: { ...base.recipientSnapshot, deliveryNote: undefined },
+      entrancePassword: null,
+    });
+    expect(req.recipient.message).toBeUndefined();
+  });
+});
