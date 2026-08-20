@@ -73,8 +73,8 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
               <PriceRow.Value
                 tone="discount"
                 className="text-[14px] lg:text-sm"
-                data-testid="cart-discount"
-                data-value={totalDiscount}
+                data-testid="cart-membership-discount"
+                data-value={membershipDiscount}
               >
                 - {formatAmount(membershipDiscount)}
               </PriceRow.Value>
