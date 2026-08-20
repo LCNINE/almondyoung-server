@@ -41,12 +41,12 @@ describe('expiredEntrancePasswordOrderIds', () => {
 });
 
 describe('expiredEntrancePasswordShipmentIds', () => {
-  it('상자 사본은 만들어진 시각에 같은 TTL 을 얹어 판정한다', () => {
+  it('주문일을 모르면 상자가 만들어진 시각에 같은 TTL 을 얹어 판정한다', () => {
     expect(
       expiredEntrancePasswordShipmentIds(
         [
-          { id: A, createdAt: new Date(NOW.getTime() - TTL_MS) },
-          { id: B, createdAt: new Date(NOW.getTime() - TTL_MS + 1) },
+          { id: A, createdAt: new Date(NOW.getTime() - TTL_MS), latestOrderDate: null },
+          { id: B, createdAt: new Date(NOW.getTime() - TTL_MS + 1), latestOrderDate: null },
         ],
         NOW,
       ),
@@ -54,7 +54,39 @@ describe('expiredEntrancePasswordShipmentIds', () => {
   });
 
   it('갓 만들어진 상자는 남는다', () => {
-    expect(expiredEntrancePasswordShipmentIds([{ id: A, createdAt: NOW }], NOW)).toEqual([]);
+    expect(expiredEntrancePasswordShipmentIds([{ id: A, createdAt: NOW, latestOrderDate: NOW }], NOW)).toEqual([]);
+  });
+
+  /**
+   * 쇼핑몰이 "늦어도 **주문일**로부터 14일 이내 삭제"를 약속했다. 상자 생성 시각만 보면
+   * 13일째 만들어진 상자가 27일째까지 비번을 들고 있게 되고(최악 주문 +28일), 그 약속이
+   * 코드에서 거짓이 된다. 상자의 시계는 주문의 시계를 넘지 못한다.
+   */
+  describe('주문 시계에 묶인다', () => {
+    it('상자가 늦게 만들어져도 주문일 +TTL 에 만료한다', () => {
+      const orderedAt = new Date(NOW.getTime() - TTL_MS); // 주문일 = 정확히 만료 경계
+      const boxCreatedAt = new Date(NOW.getTime() - 1 * 24 * 60 * 60 * 1000); // 상자는 어제
+      expect(
+        expiredEntrancePasswordShipmentIds([{ id: A, createdAt: boxCreatedAt, latestOrderDate: orderedAt }], NOW),
+      ).toEqual([A]);
+    });
+
+    it('경계 1ms 전에는 아직 안 지운다', () => {
+      const orderedAt = new Date(NOW.getTime() - TTL_MS + 1);
+      expect(
+        expiredEntrancePasswordShipmentIds([{ id: A, createdAt: NOW, latestOrderDate: orderedAt }], NOW),
+      ).toEqual([]);
+    });
+
+    it('상자 시계가 더 이르면 그쪽을 쓴다 — 둘 중 빠른 쪽이 상한이다', () => {
+      // 주문일이 상자 생성보다 늦는 일은 실제로는 없지만, 규칙은 min 이지 "주문일 우선"이 아니다.
+      expect(
+        expiredEntrancePasswordShipmentIds(
+          [{ id: A, createdAt: new Date(NOW.getTime() - TTL_MS), latestOrderDate: NOW }],
+          NOW,
+        ),
+      ).toEqual([A]);
+    });
   });
 });
 
@@ -68,7 +100,9 @@ function makeCleaner(selectResults: unknown[][], updateResults: unknown[][] = []
   const query = (rows: unknown[]) => {
     const builder: any = {
       from: jest.fn(() => builder),
+      leftJoin: jest.fn(() => builder),
       where: jest.fn(() => builder),
+      groupBy: jest.fn(() => builder),
       orderBy: jest.fn(() => builder),
       limit: jest.fn(() => builder),
       then: (resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) =>
@@ -103,7 +137,7 @@ describe('EntrancePasswordCleaner.sweepOnce', () => {
     const { cleaner, updates } = makeCleaner(
       [
         [{ id: A, entrancePasswordExpiresAt: new Date('2026-08-01T00:00:00.000Z') }],
-        [{ id: B, createdAt: new Date(NOW.getTime() - TTL_MS - 1) }],
+        [{ id: B, createdAt: new Date(NOW.getTime() - TTL_MS - 1), latestOrderDate: null }],
       ],
       [[{ id: B }], [{ id: A }]],
     );
@@ -119,7 +153,7 @@ describe('EntrancePasswordCleaner.sweepOnce', () => {
   it('만료가 안 지난 행만 있으면 UPDATE 를 아예 내지 않는다', async () => {
     const { cleaner, updates } = makeCleaner([
       [{ id: A, entrancePasswordExpiresAt: new Date('2026-09-01T00:00:00.000Z') }],
-      [{ id: B, createdAt: NOW }],
+      [{ id: B, createdAt: NOW, latestOrderDate: NOW }],
     ]);
 
     await expect(cleaner.sweepOnce(NOW)).resolves.toEqual({ orders: 0, shipments: 0 });

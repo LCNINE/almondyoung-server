@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, max } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { computeEntrancePasswordExpiry } from './entrance-password-expiry';
 
@@ -39,21 +39,38 @@ export function expiredEntrancePasswordOrderIds(
 }
 
 /**
- * 파기할 상자 사본을 고른다.
+ * 상자 사본의 만료 시각 = **둘 중 이른 쪽**.
  *
- * 상자에는 자체 만료 컬럼이 없다 — 사본이 만들어진 시각에 **주문과 같은 TTL** 을 얹어
- * 판정한다(`computeEntrancePasswordExpiry` 를 그대로 재사용하므로 14 라는 숫자가 여기 다시
- * 적히지 않는다).
+ *   min(상자 생성 + TTL, 주문일 + TTL)
  *
- * 주문을 거쳐 조인하지 않는 이유가 둘 있다. (1) 운영자 정정은 상자 사본만 바꾸므로 두 값이
- * 갈릴 수 있고, (2) 배송 완료 파기가 주문 쪽 만료 시각까지 비우므로 형제 상자가 남았을 때
- * 주문을 기준으로는 더 이상 아무 것도 판정할 수 없다. 각 행이 자기 시각을 들고 있어야
- * 어느 경우에도 파기가 도달한다.
+ * 상자에는 자체 만료 컬럼이 없다. 생성 시각만 보면 13일째 만들어진 상자가 27일째까지 비번을
+ * 들고 있게 되고(최악 주문 +28일), 결제 화면이 약속한 "늦어도 **주문일**로부터 14일 이내
+ * 삭제"가 코드에서 거짓이 된다. 상자의 시계는 주문의 시계를 넘지 못한다.
+ *
+ * 기준이 되는 주문일은 그 상자가 실은 주문 중 **가장 최근 것**이다. 상자에 실린 값 자체가
+ * "최신 주문이 이긴다" 규칙으로 골라진 것이므로(`selectEntrancePassword`), 그 값의 시계도
+ * 최신 주문의 것이다. (남는 틈: 최신 주문에 비번이 없어 더 옛 주문의 값이 실린 경우, 그
+ * 사본이 자기 주문 기준으로 며칠 더 산다. 합배송은 같은 수령인·같은 주소만 묶으므로 주문들이
+ * 시간상 가깝고, 주문 쪽 원본은 각자의 시계로 따로 파기된다.)
+ *
+ * 주문 쪽 `entrance_password_expires_at` 을 조인해 쓰지 않는 이유가 둘 있다. (1) 운영자
+ * 정정은 상자 사본만 바꾸고, (2) 배송 완료 파기가 주문 쪽 만료 시각을 null 로 비우므로 형제
+ * 상자가 남았을 때 그 컬럼으로는 아무 것도 판정할 수 없다. `order_date` 는 그 둘 어디에서도
+ * 지워지지 않는 불변 값이라 이 두 함정을 다 피한다.
  */
-export function expiredEntrancePasswordShipmentIds(rows: { id: string; createdAt: Date }[], now: Date): string[] {
-  return rows
-    .filter((row) => computeEntrancePasswordExpiry(row.createdAt.toISOString()).getTime() <= now.getTime())
-    .map((row) => row.id);
+export function entrancePasswordShipmentExpiry(row: { createdAt: Date; latestOrderDate: Date | null }): Date {
+  const byShipment = computeEntrancePasswordExpiry(row.createdAt.toISOString());
+  if (row.latestOrderDate === null) return byShipment;
+  const byOrder = computeEntrancePasswordExpiry(row.latestOrderDate.toISOString());
+  return byOrder.getTime() < byShipment.getTime() ? byOrder : byShipment;
+}
+
+/** 파기할 상자 사본을 고른다. 만료 경계는 포함이다(`<= now`). */
+export function expiredEntrancePasswordShipmentIds(
+  rows: { id: string; createdAt: Date; latestOrderDate: Date | null }[],
+  now: Date,
+): string[] {
+  return rows.filter((row) => entrancePasswordShipmentExpiry(row).getTime() <= now.getTime()).map((row) => row.id);
 }
 
 /**
@@ -123,10 +140,28 @@ export class EntrancePasswordCleaner {
         .orderBy(asc(wmsTables.salesOrders.entrancePasswordExpiresAt))
         .limit(ENTRANCE_PASSWORD_SWEEP_BATCH);
 
+      // 상자가 실은 주문의 **주문일**만 가져온다 — 주문 쪽 비번 값은 프로젝션에 없다.
+      // `leftJoin` 인 이유: 판매주문에 매달리지 않은 FO 에서 나온 상자도 후보에서 빠지면
+      // 안 된다(그런 상자는 주문일이 null 이고 상자 시계만으로 판정된다).
       const shipmentCandidates = await trx
-        .select({ id: wmsTables.shipments.id, createdAt: wmsTables.shipments.createdAt })
+        .select({
+          id: wmsTables.shipments.id,
+          createdAt: wmsTables.shipments.createdAt,
+          latestOrderDate: max(wmsTables.salesOrders.orderDate),
+        })
         .from(wmsTables.shipments)
+        .leftJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+        .leftJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .leftJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+        )
+        .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
         .where(isNotNull(wmsTables.shipments.entrancePassword))
+        .groupBy(wmsTables.shipments.id, wmsTables.shipments.createdAt)
         .orderBy(asc(wmsTables.shipments.createdAt))
         .limit(ENTRANCE_PASSWORD_SWEEP_BATCH);
 
