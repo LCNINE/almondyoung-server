@@ -28,8 +28,8 @@ export const PAYMENT_PROVIDER_DESCRIPTORS = {
   },
   TOSS: {
     code: 'TOSS',
-    displayName: '토스페이먼츠',
-    description: '카드/간편결제 (토스페이먼츠)',
+    displayName: '카드 간편결제',
+    description: '카드, 카카오페이, 네이버페이, 토스페이 등',
     defaultEnabled: true,
     defaultSortOrder: 20,
     kind: 'gateway',
@@ -39,7 +39,7 @@ export const PAYMENT_PROVIDER_DESCRIPTORS = {
   BANK_TRANSFER: {
     code: 'BANK_TRANSFER',
     displayName: '무통장입금',
-    description: '토스 가상계좌',
+    description: '발급된 가상계좌로 입금',
     defaultEnabled: true,
     defaultSortOrder: 30,
     kind: 'gateway',

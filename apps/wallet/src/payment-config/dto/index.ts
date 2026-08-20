@@ -169,7 +169,7 @@ export class RegionMethodMatrixResponseDto {
 
 export class AvailablePaymentMethodDto {
   @ApiProperty({ description: 'provider 코드', example: 'TOSS' }) code!: string;
-  @ApiProperty({ example: '토스페이먼츠' }) displayName!: string;
+  @ApiProperty({ example: '카드 간편결제' }) displayName!: string;
   @ApiProperty({ nullable: true, type: String }) description!: string | null;
   @ApiProperty() sortOrder!: number;
 }

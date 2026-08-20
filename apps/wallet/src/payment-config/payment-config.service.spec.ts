@@ -35,7 +35,7 @@ const TEST_DESCRIPTORS: PaymentProviderDescriptor[] = [
   },
   {
     code: 'TOSS',
-    displayName: '토스페이먼츠',
+    displayName: '카드 간편결제',
     description: '토스 descriptor',
     defaultEnabled: true,
     defaultSortOrder: 20,
@@ -95,7 +95,7 @@ describe('PaymentConfigService', () => {
       expect(Object.keys(byCode)).toEqual(['TOSS', 'POINTS', 'BANK_TRANSFER', 'CMS_BATCH', 'NICEPAY']);
       expect(byCode.POINTS.isEnabled).toBe(true);
       expect(byCode.POINTS.supportStatus).toBe('supported');
-      expect(byCode.TOSS.displayName).toBe('토스페이먼츠');
+      expect(byCode.TOSS.displayName).toBe('카드 간편결제');
       expect(byCode.TOSS.description).toBe('토스 descriptor');
       expect(byCode.TOSS.isEnabled).toBe(false);
       expect(byCode.TOSS.sortOrder).toBe(5);
@@ -310,7 +310,7 @@ describe('PaymentConfigService', () => {
       expect(result).toEqual([
         {
           code: 'TOSS',
-          displayName: '토스페이먼츠',
+          displayName: '카드 간편결제',
           description: '토스 descriptor',
           sortOrder: 20,
         },

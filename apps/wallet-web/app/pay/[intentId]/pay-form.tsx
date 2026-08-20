@@ -136,10 +136,9 @@ function isBankTransferPendingAction(value: unknown): value is BankTransferPendi
   return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
 }
 
-// 토스페이먼츠는 카드결제만 사용한다. (휴대폰/계좌이체/가상계좌 비노출)
-const TOSS_SUB_METHODS = [
-  { value: 'CARD' as const, label: '카드 / 간편결제', desc: '카드, 카카오페이, 네이버페이, 토스페이 등' },
-] as const;
+// PG(토스페이먼츠)에는 카드결제만 요청한다. (휴대폰/계좌이체/가상계좌 비노출)
+// 라벨은 상위 결제수단('카드 간편결제', provider-descriptors 정본)과 겹치지 않게 형제 수단 이름으로만 적는다.
+const TOSS_SUB_METHODS = [{ value: 'CARD' as const, label: '카드', desc: '신용·체크카드 및 간편결제' }] as const;
 type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
 
 export function PayForm({
