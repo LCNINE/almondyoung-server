@@ -226,9 +226,9 @@ export class SalesOrdersService {
             isMerged: false,
             walletIntentId: dto.walletIntentId ?? null,
             orderDate,
-            // 신규 insert 경로: 기존 행이 없으므로 existing=null 이 항상 성립해
-            // resolveEntrancePasswordUpdate 의 "덮어쓰지 않기" 분기를 타지 않는다.
-            // 여기선 규칙을 거치지 않고 직접 쓴다 — entrance-password.rules.ts 상단 주석 참고.
+            // 최초 insert 경로라 기존 값을 덮어쓸 걱정이 없다 (existing row 없음).
+            // 리플레이가 이 값을 지울 수 있는지는 여기가 아니라 OrderModified 소비 경로가
+            // 결정한다 — order-events.consumer.ts#handleOrderModified 참고 (구조적으로 no-op).
             entrancePassword: dto.entrancePassword ?? null,
             entrancePasswordExpiresAt: dto.entrancePassword
               ? new Date(orderDate.getTime() + 14 * 24 * 60 * 60 * 1000)
