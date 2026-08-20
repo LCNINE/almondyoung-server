@@ -1,5 +1,17 @@
 import { HttpApiError } from "@/checkout-ui/lib/api/api-error"
 
+function toMessage(data: unknown): string {
+  const raw =
+    typeof data === "string"
+      ? data
+      : typeof (data as { message?: unknown })?.message === "string"
+        ? (data as { message: string }).message
+        : ""
+
+  if (!raw) return "요청을 처리하지 못했어요."
+  return raw.charAt(0).toUpperCase() + raw.slice(1) + "."
+}
+
 export default function medusaError(error: any): never {
   if (error.response) {
     // The request was made and the server responded with a status code
@@ -10,17 +22,11 @@ export default function medusaError(error: any): never {
     console.error("Status code:", error.response.status)
     console.error("Headers:", error.response.headers)
 
-    // Extracting the error message from the response data
-    const message = error.response.data.message || error.response.data
-    console.log(
-      "🚀 [medusaError] message:",
-      message.charAt(0).toUpperCase() + message.slice(1) + ".",
-      error.response.status,
-      error.response.statusText,
-      error.data
-    )
+    // data 가 객체/배열로 오는 경우가 있어 문자열로 정규화한다 — charAt 이 터지면
+    // 원래 Medusa 에러가 통째로 가려진다.
+    const message = toMessage(error.response.data)
     throw new HttpApiError(
-      message.charAt(0).toUpperCase() + message.slice(1) + ".",
+      message,
       error.response.status,
       error.response.statusText,
       error.data

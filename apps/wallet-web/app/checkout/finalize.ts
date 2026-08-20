@@ -17,11 +17,16 @@ export type FinalizeResult =
  * 여기서 다시 구현할 것이 없다.
  */
 export async function finalizeOrder(intentId: string): Promise<FinalizeResult> {
+  const authHeaders = await getMedusaAuthHeaders();
+  // 비인증으로 부르면 Medusa 가 에러 없이 다른 권한 컨텍스트로 처리한다. 확정을 맡길 수 없다.
+  if (!authHeaders) {
+    return { type: 'error', message: '로그인이 만료되었어요. 다시 시도해주세요.' };
+  }
+
   try {
-    const headers = { ...(await getMedusaAuthHeaders()) };
     const res = (await medusa.client.fetch(`/store/payment-intents/${intentId}/complete`, {
       method: 'POST',
-      headers,
+      headers: authHeaders,
     })) as { type?: string; order?: { id?: string } };
 
     return { type: 'order', orderId: res?.order?.id };
@@ -37,7 +42,14 @@ export async function finalizeOrder(intentId: string): Promise<FinalizeResult> {
   }
 }
 
+const AWAITING_DEPOSIT_CODE = 'BANK_TRANSFER_AWAITING_DEPOSIT';
+
 function isAwaitingDepositError(error: unknown): boolean {
-  const raw = JSON.stringify(error ?? '');
-  return raw.includes('BANK_TRANSFER_AWAITING_DEPOSIT');
+  if (error instanceof Error && error.message.includes(AWAITING_DEPOSIT_CODE)) return true;
+  try {
+    return JSON.stringify(error ?? '').includes(AWAITING_DEPOSIT_CODE);
+  } catch {
+    // 순환참조가 있는 에러 객체 — 직렬화가 던진다. 미입금 판정만 포기하고 일반 에러로 넘긴다.
+    return false;
+  }
 }

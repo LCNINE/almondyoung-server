@@ -17,9 +17,8 @@ const BUSINESS_ROWS = [
   "email",
 ] as const
 
-export const CheckoutFooter = () => {
+export const CheckoutFooter = ({ countryCode }: { countryCode: string }) => {
   const t = useTranslations("checkout.footer")
-  const countryCode = (process.env.NEXT_PUBLIC_CHECKOUT_REGION as string) ?? "kr"
   const origin = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? ""
 
   return (

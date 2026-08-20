@@ -1,29 +1,25 @@
 "use client"
 
-import Link from "next/link"
+import Link, { type LinkProps } from "next/link"
 import { useParams } from "next/navigation"
 import React from "react"
 
+type Props = Omit<LinkProps, "href"> &
+  Omit<React.ComponentPropsWithoutRef<"a">, keyof LinkProps | "href"> & {
+    children?: React.ReactNode
+    href: string
+  }
+
 /**
- * 이 컴포넌트는 Next.js `<Link />`를 생성하여 현재 국가 코드를 URL에 유지합니다.
- * prop으로 명시적으로 전달할 필요 없이 사용할 수 있습니다.
+ * 현재 국가 코드를 URL 에 유지하는 `<Link />`.
  */
-const LocalizedClientLink = ({
-  children,
-  href,
-  ...props
-}: {
-  children?: React.ReactNode
-  href: string
-  className?: string
-  onClick?: () => void
-  passHref?: true
-  [x: string]: any
-}) => {
+const LocalizedClientLink = ({ children, href, ...props }: Props) => {
   const { countryCode } = useParams()
+  // 동적 세그먼트는 string[] 로도 올 수 있다. 그대로 넣으면 "a,b" 로 직렬화된다.
+  const region = Array.isArray(countryCode) ? countryCode[0] : countryCode
 
   return (
-    <Link href={`/${countryCode}${href}`} {...props}>
+    <Link href={region ? `/${region}${href}` : href} {...props}>
       {children}
     </Link>
   )

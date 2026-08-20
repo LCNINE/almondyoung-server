@@ -371,6 +371,7 @@ export function CheckoutForm({
               products={cartItems}
               shipping={requiresShipping ? shipping.amount : 0}
               shippingMethods={cartTotals.shippingBreakdown}
+              countryCode={countryCode}
             />
 
             <DiscountSection
@@ -439,7 +440,7 @@ export function CheckoutForm({
         </div>
       </div>
 
-      <CheckoutFooter />
+      <CheckoutFooter countryCode={countryCode} />
 
       <PCFixedCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />
       <MobileCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />

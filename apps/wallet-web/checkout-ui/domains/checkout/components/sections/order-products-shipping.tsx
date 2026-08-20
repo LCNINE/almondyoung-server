@@ -15,12 +15,15 @@ interface OrderProductsSectionProps {
   shipping: number
   /** 카트에 붙은 배송 방법(배송비 그룹당 1개). 2개 이상이면 합계 위에 그룹별 금액을 나눠 보여준다. */
   shippingMethods?: { id: string; name?: string | null; amount?: number | null }[]
+  /** 핸드오프로 받은 리전. 상품 링크를 만들 때 쓴다. */
+  countryCode: string
 }
 
 export const OrderProductsSection = ({
   products,
   shipping,
   shippingMethods,
+  countryCode,
 }: OrderProductsSectionProps) => {
   const t = useTranslations("checkout.orderProducts")
 
@@ -58,6 +61,7 @@ export const OrderProductsSection = ({
               key={item.id}
               item={item}
               showDivider={i < products.length - 1}
+              countryCode={countryCode}
             />
           ))}
         </div>
@@ -93,9 +97,11 @@ export const OrderProductsSection = ({
 function ProductItem({
   item,
   showDivider,
+  countryCode,
 }: {
   item: StoreCartLineItem
   showDivider: boolean
+  countryCode: string
 }) {
   const t = useTranslations("checkout.orderProducts")
   const { thumbnail, product_title, title, variant_title, subtitle, quantity } =
@@ -104,8 +110,6 @@ function ProductItem({
   const { total, originalTotal, hasReducedPrice } = calcItemPrice(item)
 
   const handle = item.product?.handle
-  const countryCode =
-    (process.env.NEXT_PUBLIC_CHECKOUT_REGION as string) ?? "kr"
   const storefrontOrigin = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? ""
   const productHref = handle
     ? `${storefrontOrigin}/${countryCode}/products/${handle}`

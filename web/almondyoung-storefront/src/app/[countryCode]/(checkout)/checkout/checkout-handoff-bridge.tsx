@@ -16,9 +16,12 @@ const BRIDGE_CART_FIELDS = "*items, +total, +currency_code"
 export default async function CheckoutHandoffBridge({
   cartId,
   countryCode,
+  walletWebUrl,
 }: {
   cartId?: string
   countryCode: string
+  /** wallet-web 착지 origin. 호출부가 존재를 확인하고 넘긴다. */
+  walletWebUrl: string
 }) {
   let cart = (await retrieveCart(
     cartId,
@@ -64,7 +67,7 @@ export default async function CheckoutHandoffBridge({
 
   return (
     <CheckoutHandoffForm
-      action={`${process.env.NEXT_PUBLIC_WALLET_WEB_URL}/auth/handoff`}
+      action={`${walletWebUrl}/auth/handoff`}
       handoffToken={handoffToken}
       medusaJwt={medusaJwt}
       cartId={cart.id}

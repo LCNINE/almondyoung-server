@@ -33,14 +33,23 @@ export default async function CheckoutPage({
   const { cartId, legacy } = await searchParams
 
   // 체크아웃 화면은 wallet-web 으로 옮겼다. 이 페이지는 카트를 확인하고 넘겨주는 브릿지로만 남는다.
-  // 플래그가 켜져 있지 않거나 ?legacy=1 (CS 탈출구)이면 기존 체크아웃이 그대로 뜬다.
+  // 플래그가 꺼져 있거나 ?legacy=1 (CS 탈출구)이면 기존 체크아웃이 그대로 뜬다.
+  // 착지 주소가 없으면 폼 action 이 "undefined/auth/handoff" 가 되어 토큰이 storefront 로
+  // 되돌아 날아간다. 주소가 비면 전환하지 않는다.
+  const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL
   const onWallet =
-    process.env.NEXT_PUBLIC_CHECKOUT_ON_WALLET === "true" && legacy !== "1"
+    process.env.NEXT_PUBLIC_CHECKOUT_ON_WALLET === "true" &&
+    !!walletWebUrl &&
+    legacy !== "1"
 
   return (
     <ProtectedRoute>
       {onWallet ? (
-        <CheckoutHandoffBridge cartId={cartId} countryCode={countryCode} />
+        <CheckoutHandoffBridge
+          cartId={cartId}
+          countryCode={countryCode}
+          walletWebUrl={walletWebUrl}
+        />
       ) : (
         <CheckoutManager cartId={cartId} countryCode={countryCode} />
       )}

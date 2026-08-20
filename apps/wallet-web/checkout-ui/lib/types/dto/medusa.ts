@@ -6,7 +6,7 @@ import type { HttpTypes } from "@medusajs/types"
 interface CustomerGroup {
   id: string
   name?: string | null
-  metadata?: Record<string, any> | null
+  metadata?: Record<string, unknown> | null
   created_by?: string | null
   created_at?: string | null
   updated_at?: string | null
