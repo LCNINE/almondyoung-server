@@ -9,7 +9,7 @@ interface Props {
   action: string
   /** user-service 가 발급한 120초 1회용 핸드오프 토큰. 발급 실패 시 빈 문자열. */
   handoffToken: string
-  /** storefront 의 `_medusa_jwt` 원문. wallet-web 이 Medusa Bearer 로 그대로 쓴다. */
+  /** `_medusa_jwt` 를 봉인한 값(60초, 카트 바인딩). wallet-web 이 서버에서 열어 쓴다. */
   medusaJwt: string
   cartId: string
   countryCode: string

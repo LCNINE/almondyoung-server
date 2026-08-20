@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { unsealMedusaToken } from '@/lib/auth/handoff-seal';
 import { exchangeHandoffForTokens } from '@/lib/auth/oidc-client';
 import { writeCheckoutHandoffCookies, writeSessionCookies } from '@/lib/auth/session-cookies';
 
@@ -44,8 +45,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  * 카트 id 를 같이 받아야 하는데, 이 둘을 쿼리스트링에 실으면 브라우저 히스토리·서버 액세스 로그·
  * Referer 에 남는다. 폼 본문으로 받으면 그 노출이 없다.
  *
- * `medusa_jwt` 는 여기서 검증하지 않는다 — wallet-web 은 Medusa 의 서명키를 모르고, 알 필요도
- * 없다. Bearer 로 그대로 전달하면 Medusa 가 검증하고 위조면 401 을 준다. 세션 발급 권한 자체는
+ * `medusa_jwt` 는 원문이 아니라 storefront 가 봉인한 값이다(60초, 카트 바인딩). 원문을 폼으로
+ * 보내면 30일짜리 로그인 세션이 DOM 에 그대로 노출된다. 여기서 열어 쿠키에 넣는다.
+ *
+ * 열린 토큰의 진위는 검증하지 않는다 — wallet-web 은 Medusa 서명키를 모르고 알 필요도 없다.
+ * Bearer 로 전달하면 Medusa 가 검증하고 위조면 401 이다. 세션 발급 권한 자체는
  * `h`(120초 1회용, confidential client 시크릿이 있어야 교환 가능)가 통제한다.
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
@@ -80,7 +84,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const response = NextResponse.redirect(new URL(CHECKOUT_PATH, origin), 303);
   writeSessionCookies(response.cookies, tokens);
   writeCheckoutHandoffCookies(response.cookies, {
-    medusaJwt: readField(form, 'medusa_jwt'),
+    // 봉투가 만료·위조·카트 불일치면 null. 토큰 없이 진행하면 /checkout 이 막고 재핸드오프한다.
+    medusaJwt: unsealMedusaToken(readField(form, 'medusa_jwt'), cartId) ?? '',
     cartId,
     region: normalizeRegion(readField(form, 'region')),
   });

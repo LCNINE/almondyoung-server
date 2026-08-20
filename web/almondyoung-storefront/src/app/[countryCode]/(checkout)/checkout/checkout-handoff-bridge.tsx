@@ -4,6 +4,7 @@ import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import { retrieveCart } from "@/lib/api/medusa/cart"
 import { recoverCustomerCart } from "@/lib/api/medusa/customer"
 import { mintPaymentHandoffToken } from "@/lib/api/users/auth/payment-handoff"
+import { sealMedusaToken } from "@/lib/utils/handoff-seal"
 import { toGaCurrency } from "@/lib/analytics/gtag"
 import type { CartResponseDto } from "@/lib/types/dto/medusa"
 
@@ -48,6 +49,10 @@ export default async function CheckoutHandoffBridge({
 
   const jar = await cookies()
   const medusaJwt = jar.get("_medusa_jwt")?.value ?? ""
+  // 원문 대신 봉투를 실는다 — 폼 hidden input 은 DOM/RSC payload 에 그대로 노출된다.
+  const sealedMedusaJwt = medusaJwt
+    ? sealMedusaToken(medusaJwt, cart.id)
+    : ""
 
   // 토큰 발급이 실패해도 폼은 보낸다 — wallet-web 이 `h` 없으면 /auth/ensure(refresh → silent SSO)
   // 로 떨어뜨린다. 여기서 막아 세우는 것보다 그쪽 폴백에 맡기는 편이 복구 확률이 높다.
@@ -69,7 +74,7 @@ export default async function CheckoutHandoffBridge({
     <CheckoutHandoffForm
       action={`${walletWebUrl}/auth/handoff`}
       handoffToken={handoffToken}
-      medusaJwt={medusaJwt}
+      medusaJwt={sealedMedusaJwt}
       cartId={cart.id}
       countryCode={countryCode}
       gaEcommerce={gaEcommerce}

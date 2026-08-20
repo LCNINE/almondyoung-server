@@ -40,6 +40,7 @@ export default async function CheckoutPage({
   const onWallet =
     process.env.NEXT_PUBLIC_CHECKOUT_ON_WALLET === "true" &&
     !!walletWebUrl &&
+    !!process.env.CHECKOUT_HANDOFF_SECRET &&
     legacy !== "1"
 
   return (
