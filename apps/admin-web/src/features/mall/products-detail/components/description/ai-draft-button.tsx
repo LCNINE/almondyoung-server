@@ -73,9 +73,11 @@ export function AiDraftButton({
       // 넘으므로 업로드 전에 줄인다 (자세한 배경은 shrink-image.ts).
       const uploads = await Promise.all(
         files.map(async (file) =>
+          // AI 입력용으로 이미 줄였으므로 webp 재변환을 태우지 않는다.
           uploadFileToFileService(await shrinkImageForAi(file), {
             contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
             isPublic: true,
+            compress: false,
           })
         )
       );

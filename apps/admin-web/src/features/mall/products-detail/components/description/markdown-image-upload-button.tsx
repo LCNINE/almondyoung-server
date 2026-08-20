@@ -8,7 +8,17 @@ import {
   PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
   uploadFileToFileService,
 } from '@/lib/api/domains/files/upload.client';
+import { type CompressOptions } from '@/lib/utils/image-compress';
 import { createProductImageDirective } from '@packages/product-description';
+
+/**
+ * 상세설명 이미지는 세로로 길어서 긴 변(=세로) 기준으로 줄이면 가로 해상도가
+ * 뭉개진다. 가로폭만 기준으로 줄인다(본문 노출 폭 대비 레티나 2x 여유).
+ */
+const DESCRIPTION_IMAGE_COMPRESS: CompressOptions = {
+  measure: 'width',
+  maxEdge: 1600,
+};
 
 type Props = {
   disabled?: boolean;
@@ -29,6 +39,7 @@ export function MarkdownImageUploadButton({ disabled, onInsert }: Props) {
       const upload = await uploadFileToFileService(file, {
         contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
         isPublic: true,
+        compress: DESCRIPTION_IMAGE_COMPRESS,
       });
       onInsert(createProductImageDirective({ fileId: upload.id, alt: file.name }));
       toast.success('상세설명 이미지가 업로드되었습니다.', { description: upload.id });

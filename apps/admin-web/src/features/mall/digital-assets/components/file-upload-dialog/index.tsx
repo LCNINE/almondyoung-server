@@ -62,9 +62,11 @@ export function DigitalAssetFileUploadDialog({
     setIsUploading(true);
     setError(null);
     try {
+      // 디지털 자산은 파일 자체가 상품이다 — 이미지여도 원본 그대로 보존한다.
       const upload = await uploadFileToFileService(file, {
         contextId: DIGITAL_ASSET_FILE_CONTEXT_ID,
         isPublic: false,
+        compress: false,
       });
       onUploaded(upload, file);
       toast.success('파일이 업로드되었습니다.', { description: upload.id });

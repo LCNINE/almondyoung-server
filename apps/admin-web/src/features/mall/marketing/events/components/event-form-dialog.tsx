@@ -107,8 +107,8 @@ export function EventFormDialog({ open, onOpenChange, eventId }: EventFormDialog
     try {
       const res = await uploadFileToFileService(file, { contextId: PRODUCT_IMAGE_CONTEXT_ID, isPublic: true });
       setBannerUrl(res.url);
-    } catch {
-      toast.error('배너 업로드에 실패했습니다.');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '배너 업로드에 실패했습니다.');
     } finally {
       setUploading(false);
     }

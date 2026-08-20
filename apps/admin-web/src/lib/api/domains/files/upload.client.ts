@@ -2,6 +2,13 @@
 
 import { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID } from '@packages/product-description';
 import { fetchWithRefresh } from '../../fetch-with-refresh';
+import {
+  MAX_UPLOAD_BYTES,
+  compressImageForUpload,
+  formatBytes,
+  isCompressible,
+  type CompressOptions,
+} from '@/lib/utils/image-compress';
 
 // file-service 업로드 클라이언트.
 // 주의: axios `client`(baseURL='/api') 대신 fetch 절대경로를 쓴다.
@@ -37,14 +44,34 @@ type UploadFileOptions = {
   contextId: string;
   isPublic?: boolean;
   metadata?: Record<string, unknown>;
+  /**
+   * 업로드 전 무손실 webp 변환. 기본은 변환한다 — 새 업로드 화면이 생겨도 여기서
+   * 자동으로 걸리게 하려는 것. 파일 자체가 상품이거나(디지털 자산) 호출부가 이미
+   * 변환을 마친 경우에만 false 로 끈다. 비이미지·GIF·SVG 는 옵션과 무관하게 원본
+   * 그대로 나간다.
+   */
+  compress?: CompressOptions | false;
 };
 
 export async function uploadFileToFileService(
   file: File,
-  { contextId, isPublic, metadata }: UploadFileOptions
+  { contextId, isPublic, metadata, compress }: UploadFileOptions
 ): Promise<FileUploadResponse> {
+  let toUpload = file;
+  if (compress !== false) {
+    ({ file: toUpload } = await compressImageForUpload(file, compress));
+
+    // 변환하고도 상한을 넘으면 프록시(Lambda)가 413 으로 끊는다. 상태코드 대신
+    // 무엇을 해야 하는지 알려준다. 호출부 catch 가 message 를 그대로 띄운다.
+    if (isCompressible(file.type) && toUpload.size > MAX_UPLOAD_BYTES) {
+      throw new Error(
+        `이미지가 너무 큽니다 (${formatBytes(toUpload.size)}). ${formatBytes(MAX_UPLOAD_BYTES)} 이하로 줄여서 올려주세요.`
+      );
+    }
+  }
+
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', toUpload);
   formData.append('contextId', contextId);
   if (isPublic !== undefined) {
     formData.append('isPublic', String(isPublic));

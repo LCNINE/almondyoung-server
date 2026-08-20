@@ -125,16 +125,18 @@ export function ImageUploadField({
         return;
       }
 
+      // 변환은 위에서 이미 했다 — 클라이언트 기본 변환을 다시 태우지 않는다.
       const res = await uploadFileToFileService(toUpload, {
         contextId,
         isPublic: true,
+        compress: false,
       });
       onChange(res.id);
       clearPending();
 
       if (compressed) {
         setCompressNote(
-          `용량이 커서 ${formatBytes(originalBytes)} → ${formatBytes(toUpload.size)} 로 줄여서 올렸습니다.`
+          `webp 로 변환해 ${formatBytes(originalBytes)} → ${formatBytes(toUpload.size)} 로 줄여서 올렸습니다.`
         );
       }
     } catch (e) {

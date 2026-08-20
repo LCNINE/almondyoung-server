@@ -65,9 +65,11 @@ export function ImageGalleryField({
           failed.push(`${file.name} (${formatBytes(toUpload.size)})`);
           continue;
         }
+        // 변환은 위에서 이미 했다 — 클라이언트 기본 변환을 다시 태우지 않는다.
         const { id } = await uploadFileToFileService(toUpload, {
           contextId,
           isPublic: true,
+          compress: false,
         });
         added.push(id);
       } catch {
