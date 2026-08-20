@@ -7,13 +7,12 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
-import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
-import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import {
-  compressImageForUpload,
-  formatBytes,
-  MAX_UPLOAD_BYTES,
-} from '@/lib/utils/image-compress';
+  IMAGE_CONTEXT_MAX_BYTES,
+  uploadFileToFileService,
+} from '@/lib/api/domains/files/upload.client';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { compressImageForUpload, formatBytes } from '@/lib/utils/image-compress';
 import { cropImageToArea, type CropArea } from '@/lib/utils/image-crop';
 
 type Props = {
@@ -116,11 +115,11 @@ export function ImageUploadField({
         originalBytes,
       } = await compressImageForUpload(file);
 
-      // 줄이고도 상한을 넘으면 프록시가 413 으로 끊는다. 개발자용 상태코드 대신
-      // 무엇을 해야 하는지 알려준다.
-      if (toUpload.size > MAX_UPLOAD_BYTES) {
+      // 줄이고도 서버 컨텍스트 상한을 넘으면 어차피 거부된다. 개발자용 상태코드
+      // 대신 무엇을 해야 하는지 알려준다.
+      if (toUpload.size > IMAGE_CONTEXT_MAX_BYTES) {
         toast.error(
-          `이미지가 너무 큽니다 (${formatBytes(toUpload.size)}). ${formatBytes(MAX_UPLOAD_BYTES)} 이하로 줄여서 올려주세요.`
+          `이미지가 너무 큽니다 (${formatBytes(toUpload.size)}). ${formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하로 줄여서 올려주세요.`
         );
         return;
       }
@@ -350,7 +349,7 @@ export function ImageUploadField({
           </>
         )}
         <span className="text-muted-foreground/70 ml-auto text-[11px]">
-          {formatBytes(MAX_UPLOAD_BYTES)} 이하
+          {formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하
         </span>
       </div>
 

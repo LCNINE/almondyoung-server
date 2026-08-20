@@ -28,6 +28,7 @@ export class StorageProviderRegistry {
           upload: this.s3Provider,
           delete: this.s3Provider,
           signedUrl: this.s3Provider,
+          directUpload: this.s3Provider,
           list: null,
           copy: null,
         };
@@ -38,6 +39,9 @@ export class StorageProviderRegistry {
           upload: this.localProvider,
           delete: this.localProvider,
           signedUrl: this.localProvider,
+          // 로컬 파일시스템은 브라우저의 직접 PUT 을 받아줄 수 없다 — 클라이언트는
+          // presign 404 를 받고 기존 프록시 업로드로 폴백한다
+          directUpload: null,
           list: null,
           copy: null,
         };

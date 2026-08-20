@@ -12,10 +12,10 @@ const EXPECTED_OPEN: string[] = [
 ];
 
 /**
- * IDOR 검사 대상 95건의 판정 명단. 2026-08 감사 P1 (`docs/api-authz-audit-2026-08.md`).
+ * IDOR 검사 대상 97건의 판정 명단. 2026-08 감사 P1 (`docs/api-authz-audit-2026-08.md`).
  *
  * 키는 `<app> <VERB> <route>` 다. app 을 빼면 search·analytics 의 `GET /health` 가 충돌해
- * 95건이 94개로 뭉개진다.
+ * 97건이 96개로 뭉개진다.
  *
  * ⚠️ 이 테스트가 막는 것은 **새 구멍**이지 **기존 방어의 퇴행**이 아니다.
  * 누군가 `eq(reviews.userId, userId)` 를 지워도 여기는 초록이다. IDOR 은 의미론이라
@@ -207,9 +207,21 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service POST /files/upload': {
     verdict: 'N/A',
-    evidence: 'apps/file-service/src/upload/upload.service.ts:91-106',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:83-98',
     predicate: '',
-    note: 'Pure creation route: uploadFile() always inserts a brand-new row (id: uuidv7(), uploadedBy: userId) via fileRepository.create(...); there is no client-supplied file/object id that resolves to an existing row owned by someone else. dto.contextId only looks up a shared file_contexts config entry (fileContextRepository.findById(contextId) in upload.service.ts:37), not a per-user object, so no IDOR target exists.',
+    note: 'Pure creation route: uploadFile() always inserts a brand-new row (id: uuidv7(), uploadedBy: userId) via fileRepository.create(...); there is no client-supplied file/object id that resolves to an existing row owned by someone else. dto.contextId only looks up a shared file_contexts config entry (fileContextRepository.findById via loadActiveContext, upload.service.ts:235-251), not a per-user object, so no IDOR target exists.',
+  },
+  'file-service POST /files/upload/confirm': {
+    verdict: 'SAFE',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:173',
+    predicate: 'if (file.uploadedBy !== userId) {',
+    note: 'UploadController.confirmUpload -> UploadService.confirmUpload(dto.fileId, user.userId). 바디의 fileId 가 기존 pending 행을 가리키는 client-supplied id 지만, 행을 읽자마자 file.uploadedBy 를 호출자 userId 와 대조해 다르면 ForbiddenError — 타인의 pending 업로드를 대신 activate 하거나 존재 여부를 활성화로 확인할 수 없다. upload.service.spec.ts 가 발급자 불일치 거부를 고정한다.',
+  },
+  'file-service POST /files/upload/presign': {
+    verdict: 'N/A',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:140-154',
+    predicate: '',
+    note: 'Pure creation route: presignUpload() always inserts a brand-new pending row (id: uuidv7(), uploadedBy: userId); POST /files/upload 과 같은 이유로 client-supplied id 가 기존 타인 소유 행으로 해석되는 경로가 없다. dto.contextId 는 공유 설정(file_contexts) 조회일 뿐이다.',
   },
   'membership GET /membership/benefits/current': {
     verdict: 'SAFE',
@@ -614,15 +626,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(95);
+    expect(targets).toHaveLength(97);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
-  // 95건이 94개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
+  // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(95);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(94);
+    expect(new Set(targets.map(keyOf)).size).toBe(97);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(96);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

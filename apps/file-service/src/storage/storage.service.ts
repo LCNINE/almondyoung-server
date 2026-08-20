@@ -6,6 +6,7 @@ import {
   DeleteRequest,
   SignedUrlRequest,
   SignedUrlResult,
+  StorageDirectUploadPort,
 } from './storage-provider.interface';
 
 @Injectable()
@@ -25,5 +26,10 @@ export class StorageService {
   async getSignedUrl(request: SignedUrlRequest): Promise<SignedUrlResult> {
     const provider = this.registry.getActive();
     return provider.signedUrl.getSignedUrl(request);
+  }
+
+  /** 활성 프로바이더가 직접 업로드를 지원하지 않으면 null */
+  getDirectUploadPort(): StorageDirectUploadPort | null {
+    return this.registry.getActive().directUpload ?? null;
   }
 }
