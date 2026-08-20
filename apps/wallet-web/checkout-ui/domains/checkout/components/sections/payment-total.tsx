@@ -35,7 +35,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
           <PriceRow>
             <PriceRow.Label size="sm">{t('itemAmount')}</PriceRow.Label>
             <PriceRow.Value
-              className="text-[13px] lg:text-sm"
+              className="text-[14px] lg:text-sm"
               data-testid="cart-subtotal"
               data-value={original_item_subtotal}
             >
@@ -45,21 +45,24 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
 
           <PriceRow>
             <PriceRow.Label size="sm">{t('shipping')}</PriceRow.Label>
-            <PriceRow.Value className="text-[13px] lg:text-sm" data-testid="cart-shipping" data-value={shipping}>
+            <PriceRow.Value className="text-[14px] lg:text-sm" data-testid="cart-shipping" data-value={shipping}>
               {formatAmount(shipping)}
             </PriceRow.Value>
           </PriceRow>
 
-          {(shippingBreakdown?.length ?? 0) > 1 &&
-            shippingBreakdown!.map((method) => (
-              <div
-                key={method.id}
-                className="flex items-center justify-between pl-3 text-[11px] text-gray-400 lg:text-xs"
-              >
-                <span>{method.name}</span>
-                <span>{formatAmount(method.amount)}</span>
-              </div>
-            ))}
+          {(shippingBreakdown?.length ?? 0) > 1 && (
+            <div className="space-y-2 border-l-4 border-[#edeff2] pl-[10px]">
+              {shippingBreakdown!.map((method) => (
+                <div
+                  key={method.id}
+                  className="flex items-center justify-between text-[13px] leading-[19px] text-[#767678] lg:text-[15px] lg:leading-[21px]"
+                >
+                  <span>{method.name}</span>
+                  <span>{formatAmount(method.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {membershipDiscount > 0 && (
             <PriceRow>
@@ -69,7 +72,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
               </PriceRow.Label>
               <PriceRow.Value
                 tone="discount"
-                className="text-[13px] lg:text-sm"
+                className="text-[14px] lg:text-sm"
                 data-testid="cart-discount"
                 data-value={totalDiscount}
               >
@@ -82,11 +85,11 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
             <PriceRow>
               <PriceRow.Label size="sm" className="inline-flex items-baseline gap-1">
                 {t('discount')}
-                <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">{t('couponEtc')}</span>
+                <span className="text-[11px] font-normal text-gray-400 lg:text-[11px]">{t('couponEtc')}</span>
               </PriceRow.Label>
               <PriceRow.Value
                 tone="discount"
-                className="text-[13px] lg:text-sm"
+                className="text-[14px] lg:text-sm"
                 data-testid="cart-discount"
                 data-value={totalDiscount}
               >
@@ -96,7 +99,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
           )}
         </div>
         <PriceRow highlight="total">
-          <PriceRow.Label size="base" weight="semibold">
+          <PriceRow.Label size="base" weight="bold">
             {t('totalAmount')}
           </PriceRow.Label>
           <PriceRow.Value size="lg" weight="bold" tone="discount" data-testid="cart-total" data-value={finalTotal}>

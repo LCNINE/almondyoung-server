@@ -76,7 +76,7 @@ export const MobileCTA = ({
           <span className="text-[15px] font-bold text-gray-900">{tTotal('totalAmount')}</span>
           <span className="flex items-baseline gap-1.5">
             {originalTotal > totals.finalTotal && (
-              <span className="text-[13px] text-gray-400 line-through">
+              <span className="text-[14px] text-gray-400 line-through">
                 {formatPrice(originalTotal)}
                 {tCart('won')}
               </span>
@@ -90,13 +90,12 @@ export const MobileCTA = ({
         <button onClick={onPayment} disabled={loading} className={payButtonClass}>
           {loading ? t('processing') : t('pay')}
         </button>
-        <p className="mt-2 text-center text-[11px] leading-relaxed text-gray-500">{tConsent('agreementNotice')}</p>
+        <p className="mt-2 text-center text-[12px] leading-relaxed text-gray-500">{tConsent('agreementNotice')}</p>
       </div>
     </>
   );
 };
 
-// PC 하단 고정 CTA
 export const PCFixedCTA = ({
   onPayment,
   loading,
@@ -108,16 +107,18 @@ export const PCFixedCTA = ({
 }) => {
   const t = useTranslations('checkout.cta');
   const tCart = useTranslations('cart');
+  const tConsent = useTranslations('checkout.consent');
   return (
-    <div className="fixed right-0 bottom-0 left-0 z-99 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] lg:block">
-      <div className="container mx-auto max-w-[1360px] px-[40px] py-4">
-        <div className="flex items-center justify-end">
+    <div className="fixed right-0 bottom-0 left-0 z-50 hidden border-t border-gray-200 bg-white shadow-[0_-4px_16px_-6px_rgba(0,0,0,0.15)] lg:block">
+      <div className="container mx-auto max-w-[1080px] px-0 py-4">
+        <div className="flex items-center justify-between gap-6">
+          <p className="text-[13px] text-[#767678]">{tConsent('agreementNotice')}</p>
           <Button
             onClick={onPayment}
             disabled={loading}
             size="lg"
             color="primary"
-            className="min-w-[403px] cursor-pointer rounded-[5px] bg-[#ff6600] px-4 py-[14px] text-[19px] font-bold text-white hover:bg-[#ff6600]/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-14 w-[375px] shrink-0 cursor-pointer rounded-md bg-[#ff6600] text-xl font-bold text-white shadow-[0_2px_4px_0_rgba(0,0,0,0.1)] hover:bg-[#ff6600]/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading
               ? t('processing')

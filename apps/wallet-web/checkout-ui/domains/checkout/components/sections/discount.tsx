@@ -206,7 +206,7 @@ export const DiscountSection = ({
                         return formatPromoLabel(promo)
                       })()}
                 </span>
-                <span className="text-[10px] text-gray-500 lg:text-xs">
+                <span className="text-[11px] text-gray-500 lg:text-xs">
                   ({selectedCoupon})
                 </span>
               </div>
@@ -298,7 +298,7 @@ const DiscountRow = ({
         <PriceRow.Label size="sm" weight="medium">
           {label}
         </PriceRow.Label>
-        <PriceRow.Value size="base" weight="semibold">
+        <PriceRow.Value size="base" weight="bold">
           {hasDiscount
             ? t("amountMinusWon", { amount: formatPrice(totalDiscount) })
             : t("zero")}

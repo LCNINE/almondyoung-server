@@ -21,7 +21,7 @@ export function TossSubMethodCard({ value, onChange }: Props) {
   return (
     <Card className="border shadow-sm border-border/60">
       <CardContent className="p-6">
-        <span className="block mb-4 text-sm font-semibold">결제 방식 선택</span>
+        <span className="block mb-4 text-sm font-bold">결제 방식 선택</span>
         <div className="space-y-2">
           {TOSS_SUB_METHODS.map(({ value: optionValue, label, desc }) => {
             const isSelected = value === optionValue;

@@ -10,6 +10,7 @@
   },
   "header": {
     "title": "Order / Payment",
+    "breadcrumbCart": "Cart",
     "breadcrumbCurrent": "Order / Payment",
     "breadcrumbDone": "Done",
     "mobileTitle": "Order / Payment",
@@ -365,5 +366,21 @@
     "processingDesc": "Processing your payment...",
     "waitLine1": "Please wait a moment.",
     "waitLine2": "Do not close or refresh the page."
+  },
+  "footer": {
+    "cs": "Customer center 1877-7184",
+    "terms": "Terms of Service",
+    "privacy": "Privacy Policy",
+    "guide": "Guide",
+    "businessInfo": "Almondyoung business information",
+    "copyright": "Copyright © Almondyoung. All rights reserved.",
+    "business": {
+      "companyAndCeo": "회사 : 주식회사 엘씨나인 | 대표이사 : 권흥철",
+      "bizNo": "사업자 등록번호 : 467-86-01638",
+      "mailOrderNo": "통신판매업 신고 : 2026-부천원미-0744",
+      "phone": "전화 : 1877-7184",
+      "address": "주소 : [14521] 경기도 부천시 평천로832번길 42 (도당동) 4층 엘씨나인",
+      "email": "이메일 : hello@lcnine.kr"
+    }
   }
 }

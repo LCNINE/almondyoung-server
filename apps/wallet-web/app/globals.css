@@ -61,7 +61,7 @@
   --primary-foreground: #ffffff;
   --secondary: #f3f4f5;
   --secondary-foreground: #1a1c20;
-  --muted: #f7f8f9;
+  --muted: #f3f5f7;
   --muted-foreground: #868b94;
   --accent: #f3f4f5;
   --accent-foreground: #1a1c20;
@@ -129,5 +129,16 @@
   }
   body {
     @apply bg-background text-foreground font-sans;
+    letter-spacing: -0.3px;
+  }
+  h1,
+  h2,
+  h3 {
+    letter-spacing: -0.5px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  summary {
+    cursor: pointer;
   }
 }

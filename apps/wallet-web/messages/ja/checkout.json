@@ -10,6 +10,7 @@
   },
   "header": {
     "title": "注文・決済",
+    "breadcrumbCart": "カート",
     "breadcrumbCurrent": "注文・決済",
     "breadcrumbDone": "完了",
     "mobileTitle": "注文・決済",
@@ -365,5 +366,21 @@
     "processingDesc": "決済を処理しています...",
     "waitLine1": "しばらくお待ちください。",
     "waitLine2": "ページを閉じたり再読み込みしないでください。"
+  },
+  "footer": {
+    "cs": "カスタマーセンター 1877-7184",
+    "terms": "利用規約",
+    "privacy": "個人情報処理方針",
+    "guide": "ご利用案内",
+    "businessInfo": "アモンドヨン 事業者情報",
+    "copyright": "Copyright © 아몬드영. All rights reserved.",
+    "business": {
+      "companyAndCeo": "회사 : 주식회사 엘씨나인 | 대표이사 : 권흥철",
+      "bizNo": "사업자 등록번호 : 467-86-01638",
+      "mailOrderNo": "통신판매업 신고 : 2026-부천원미-0744",
+      "phone": "전화 : 1877-7184",
+      "address": "주소 : [14521] 경기도 부천시 평천로832번길 42 (도당동) 4층 엘씨나인",
+      "email": "이메일 : hello@lcnine.kr"
+    }
   }
 }

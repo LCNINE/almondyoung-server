@@ -39,7 +39,7 @@ export function BankTransferPending({
                 <Landmark className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
+                <h1 className="text-lg font-bold">주문이 접수되었습니다</h1>
                 <p className="text-sm text-muted-foreground">
                   주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 입금 확인 후 배송이
                   진행됩니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있어요.
@@ -52,7 +52,7 @@ export function BankTransferPending({
             <dl className="space-y-3 text-sm">
               <div className="flex justify-between gap-4">
                 <dt className="text-muted-foreground">입금 금액</dt>
-                <dd className="font-semibold">
+                <dd className="font-bold">
                   {formatAmount(pending.amount ?? fallbackAmount, pending.currency ?? fallbackCurrency)}
                 </dd>
               </div>

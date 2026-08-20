@@ -107,7 +107,7 @@ export default async function CheckoutPage({ searchParams }: Props) {
     return (
       <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col justify-center px-4 py-16">
         <div className="p-5 border rounded-md border-destructive/30 bg-destructive/5">
-          <h1 className="text-base font-semibold">배송 옵션을 찾을 수 없습니다.</h1>
+          <h1 className="text-base font-bold">배송 옵션을 찾을 수 없습니다.</h1>
           <p className="mt-2 text-sm leading-6">
             배송이 필요한 상품에 적용 가능한 배송 수단이 없습니다. 고객센터로 문의해주세요.
           </p>

@@ -78,7 +78,7 @@ export function ShippingMemoSelector({
           ref={selectTriggerRef}
           aria-invalid={error === "selectMemo"}
           className={cn(
-            "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[13px] text-gray-700 lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+            "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[14px] text-gray-700 lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
             !type && "text-gray-400",
             error === "selectMemo" && "border-red-500"
           )}
@@ -97,7 +97,7 @@ export function ShippingMemoSelector({
             <SelectItem
               key={option.value}
               value={option.value}
-              className="cursor-pointer py-2.5 text-[13px] lg:text-sm"
+              className="cursor-pointer py-2.5 text-[14px] lg:text-sm"
             >
               {t(`options.${option.labelKey}`)}
             </SelectItem>
@@ -158,7 +158,7 @@ function EntranceSection({
   const t = useTranslations("checkout.shipping.memo.entrance")
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-      <h4 className="mb-3 text-[13px] font-semibold text-gray-900 lg:text-sm">
+      <h4 className="mb-3 text-[14px] font-bold text-gray-900 lg:text-sm">
         {t("heading")}
       </h4>
 
@@ -173,7 +173,7 @@ function EntranceSection({
             <RadioGroupItem value="yes" id="entrance-yes" />
             <Label
               htmlFor="entrance-yes"
-              className="cursor-pointer text-[13px] font-normal text-gray-700 lg:text-sm"
+              className="cursor-pointer text-[14px] font-normal text-gray-700 lg:text-sm"
             >
               {t("hasEntrance")}
             </Label>
@@ -191,7 +191,7 @@ function EntranceSection({
                 maxLength={20}
                 aria-invalid={!!error}
                 className={cn(
-                  "bg-background h-auto w-full rounded border border-gray-300 px-3 py-2.5 text-[13px] placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+                  "bg-background h-auto w-full rounded border border-gray-300 px-3 py-2.5 text-[14px] placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
                   error && "border-red-500"
                 )}
               />
@@ -205,14 +205,14 @@ function EntranceSection({
           <RadioGroupItem value="no" id="entrance-no" />
           <Label
             htmlFor="entrance-no"
-            className="cursor-pointer text-[13px] font-normal text-gray-700 lg:text-sm"
+            className="cursor-pointer text-[14px] font-normal text-gray-700 lg:text-sm"
           >
             {t("noEntrance")}
           </Label>
         </div>
       </RadioGroup>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-gray-500 lg:text-xs">
+      <p className="mt-3 text-[12px] leading-relaxed text-gray-500 lg:text-xs">
         {t("notice")}
       </p>
     </div>
@@ -247,12 +247,12 @@ function CustomMemoInput({
           autoFocus
           aria-invalid={!!error}
           className={cn(
-            "h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+            "h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[14px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
             error && "border-red-500"
           )}
           aria-label={t("customAria")}
         />
-        <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 lg:text-xs">
+        <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[12px] text-gray-400 lg:text-xs">
           {value.length}/50
         </span>
       </div>
@@ -263,7 +263,7 @@ function CustomMemoInput({
 
 function FieldError({ message }: { message: string }) {
   return (
-    <p role="alert" className="mt-1.5 text-[12px] text-red-600">
+    <p role="alert" className="mt-1.5 text-[13px] text-red-600">
       {message}
     </p>
   )

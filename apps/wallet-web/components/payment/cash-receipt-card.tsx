@@ -71,14 +71,14 @@ export function CashReceiptCard({ value, onChange, userPhone, userBizNumber }: P
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[15px] font-bold text-gray-900">{EVIDENCE_LABEL[requestedType]}</p>
-            <p className="mt-1 text-[13px] text-gray-600 lg:text-sm">
+            <p className="mt-1 text-[14px] text-gray-600 lg:text-sm">
               {summaryNumberLabel} {formatDigits(value.number, value.evidenceType)}
             </p>
           </div>
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="shrink-0 rounded border border-gray-300 px-3 py-1.5 text-[13px] font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            className="shrink-0 rounded border border-gray-300 px-3 py-1.5 text-[14px] font-medium text-gray-700 transition-colors hover:bg-gray-50"
           >
             변경
           </button>
@@ -123,7 +123,7 @@ export function CashReceiptCard({ value, onChange, userPhone, userBizNumber }: P
             onToggle={(checked) => onChange({ ...value, saveForNextTime: checked })}
           />
 
-          <p className="text-[11px] text-gray-500 lg:text-xs">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+          <p className="text-[12px] text-gray-500 lg:text-xs">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
         </div>
       )}
     </SectionCard>
@@ -172,7 +172,7 @@ function RadioPill({ label, checked, onSelect }: { label: string; checked: boole
       >
         {checked && <span className="h-2 w-2 rounded-full bg-[#ff6600]" />}
       </span>
-      <span className={`text-[13px] ${checked ? 'font-semibold text-gray-900' : 'text-gray-500'}`}>{label}</span>
+      <span className={`text-[14px] ${checked ? 'font-bold text-gray-900' : 'text-gray-500'}`}>{label}</span>
     </button>
   );
 }
@@ -187,7 +187,7 @@ function RadioLine({ label, checked, onSelect }: { label: string; checked: boole
       >
         {checked && <span className="h-2 w-2 rounded-full bg-[#ff6600]" />}
       </span>
-      <span className={`text-[14px] ${checked ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>{label}</span>
+      <span className={`text-[14px] ${checked ? 'font-bold text-gray-900' : 'text-gray-700'}`}>{label}</span>
     </button>
   );
 }
@@ -202,7 +202,7 @@ function SaveNextTimeCheckbox({ checked, onToggle }: { checked: boolean; onToggl
       >
         <Check className="h-3 w-3" strokeWidth={3} />
       </span>
-      <span className={`text-[13px] ${checked ? 'text-gray-900' : 'text-gray-500'}`}>다음에도 사용할게요</span>
+      <span className={`text-[14px] ${checked ? 'text-gray-900' : 'text-gray-500'}`}>다음에도 사용할게요</span>
     </button>
   );
 }

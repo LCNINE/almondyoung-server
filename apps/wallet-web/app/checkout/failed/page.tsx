@@ -24,7 +24,7 @@ export default async function CheckoutFailedPage({ searchParams }: Props) {
     <main className="flex items-center justify-center min-h-screen px-4 bg-muted/40">
       <div className="w-full max-w-md p-6 space-y-5 border shadow-sm rounded-xl bg-card border-border/60">
         <div className="space-y-2">
-          <h1 className="text-lg font-semibold">결제는 완료되었지만 주문 생성이 지연되고 있어요</h1>
+          <h1 className="text-lg font-bold">결제는 완료되었지만 주문 생성이 지연되고 있어요</h1>
           <p className="text-sm leading-relaxed text-muted-foreground">
             결제 금액이 이중으로 청구되지는 않아요. 아래 버튼으로 다시 시도하거나, 주문 내역에서 확인해 주세요.
           </p>

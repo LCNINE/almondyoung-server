@@ -70,7 +70,7 @@ export const OrderProductsSection = ({
                 {shippingMethods!.map((method) => (
                   <p
                     key={method.id}
-                    className="text-right text-[11px] text-gray-400 lg:text-xs"
+                    className="text-right text-[12px] text-gray-400 lg:text-xs"
                   >
                     {t("shippingFeeLine", {
                       name: method.name ?? "",
@@ -80,7 +80,7 @@ export const OrderProductsSection = ({
                 ))}
               </div>
             )}
-            <p className="text-right text-[12px] text-gray-600 lg:text-sm">
+            <p className="text-right text-[13px] text-gray-600 lg:text-sm">
               {t("shippingFee", { amount: formatPrice(shipping) })}
             </p>
           </div>
@@ -103,33 +103,56 @@ function ProductItem({
   const productTitle = product_title ?? title
   const { total, originalTotal, hasReducedPrice } = calcItemPrice(item)
 
+  const handle = item.product?.handle
+  const countryCode =
+    (process.env.NEXT_PUBLIC_CHECKOUT_REGION as string) ?? "kr"
+  const storefrontOrigin = process.env.NEXT_PUBLIC_STOREFRONT_ORIGIN ?? ""
+  const productHref = handle
+    ? `${storefrontOrigin}/${countryCode}/products/${handle}`
+    : null
+
+  const summary = (
+    <>
+      <div className="relative h-[52px] w-[52px] lg:h-[64px] lg:w-[64px]">
+        <Image
+          src={getThumbnailUrl(thumbnail ?? "")}
+          fill
+          alt={productTitle}
+          sizes="(max-width: 1024px) 52px, 64px"
+          className="pointer-events-none rounded-[2px] object-cover select-none lg:rounded-[5px]"
+        />
+      </div>
+      <div className="flex-1">
+        <p className="text-[13px] text-gray-900 lg:text-sm">{productTitle}</p>
+        <ShippingGroupNotice item={item} className="mt-0.5" />
+      </div>
+    </>
+  )
+
   return (
     <div className={showDivider ? "border-b border-gray-100 pb-4" : ""}>
-      <div className="flex items-start gap-3 lg:gap-4">
-        <div className="relative h-[52px] w-[52px] lg:h-[64px] lg:w-[64px]">
-          <Image
-            src={getThumbnailUrl(thumbnail ?? "")}
-            fill
-            alt={productTitle}
-            sizes="(max-width: 1024px) 52px, 64px"
-            className="pointer-events-none rounded-[2px] object-cover select-none lg:rounded-[5px]"
-          />
-        </div>
-        <div className="flex-1">
-          <p className="text-[12px] text-gray-900 lg:text-sm">{productTitle}</p>
-          <ShippingGroupNotice item={item} className="mt-0.5" />
-        </div>
-      </div>
+      {productHref ? (
+        <a
+          href={productHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-start gap-3 lg:gap-4"
+        >
+          {summary}
+        </a>
+      ) : (
+        <div className="flex items-start gap-3 lg:gap-4">{summary}</div>
+      )}
       <div className="mt-3">
         <div className="flex items-center justify-between rounded-[2px] bg-[#F5F5F5]/50 px-2 py-2 lg:px-3 lg:py-2.5">
           <div className="flex items-center gap-2">
             <Badge
               variant="outline"
-              className="rounded-[2px] border-gray-200 bg-white px-1 py-0 text-[11px] font-medium text-gray-600"
+              className="rounded-[2px] border-gray-200 bg-white px-1 py-0 text-[12px] font-medium text-gray-600"
             >
               {t("optionBadge")}
             </Badge>
-            <span className="text-[12px] text-gray-600 lg:text-sm">
+            <span className="text-[13px] text-gray-600 lg:text-sm">
               {t("optionLine", {
                 value: variant_title ?? subtitle ?? t("optionDefault"),
                 quantity,
@@ -162,11 +185,11 @@ function PriceDisplay({
   return (
     <div className="flex items-center gap-1.5 text-right">
       {hasDiscount && (
-        <span className="text-[12px] text-gray-400 line-through lg:text-sm">
+        <span className="text-[13px] text-gray-400 line-through lg:text-sm">
           {formatPrice(originalPrice)}
         </span>
       )}
-      <span className="text-[13px] font-medium text-gray-900 lg:text-base">
+      <span className="text-[14px] font-medium text-gray-900 lg:text-base">
         {t("amountWon", { amount: formatPrice(price) })}
       </span>
     </div>

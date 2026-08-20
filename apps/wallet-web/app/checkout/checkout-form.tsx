@@ -17,11 +17,9 @@ import {
   isSameShippingMemo,
   readShippingMemo,
 } from '@/checkout-ui/domains/checkout/components/sections/shipping/utils';
-import {
-  cartHasOverseasItem,
-  isValidPersonalCustomsCode,
-} from '@/checkout-ui/domains/checkout/utils/customs';
+import { cartHasOverseasItem, isValidPersonalCustomsCode } from '@/checkout-ui/domains/checkout/utils/customs';
 import { MobileCTA, PCFixedCTA } from '@/checkout-ui/domains/checkout/components/cta';
+import { CheckoutFooter } from '@/checkout-ui/domains/checkout/components/footer';
 import { MobileHeader, PCHeader } from '@/checkout-ui/domains/checkout/components/header';
 import { cartRequiresShipping } from '@/checkout-ui/lib/api/medusa/shipping-method-policy';
 import type { CartResponseDto } from '@/checkout-ui/lib/types/dto/medusa';
@@ -346,92 +344,102 @@ export function CheckoutForm({
     <main className="w-full min-h-screen bg-muted">
       <PCHeader />
 
-      <div className="container px-4 mx-auto lg:px-[40px] lg:py-8">
+      <div className="container mx-auto px-4 lg:px-[40px] lg:pt-6 lg:pb-10">
         <MobileHeader onClose={() => router.back()} />
 
-        <div className="mx-auto lg:max-w-[820px]">
-          {requiresShipping && (
-            <ShippingSection
+        <div className="lg:mx-auto lg:flex lg:max-w-[1080px] lg:items-start lg:gap-6">
+          <div className="lg:w-[681px] lg:shrink-0">
+            {requiresShipping && (
+              <ShippingSection
+                cartId={cartId}
+                shippingAddress={cart?.shipping_address || null}
+                addressName={cart?.metadata?.shipping_address_name as string | null}
+                shippingMemo={shippingMemo}
+                onShippingMemoChange={handleShippingMemoChange}
+              />
+            )}
+
+            {hasOverseasItem && (
+              <CustomsCodeSection
+                value={personalCustomsCode}
+                onChange={handleCustomsCodeChange}
+                error={customsCodeError}
+              />
+            )}
+
+            <OrderProductsSection
+              products={cartItems}
+              shipping={requiresShipping ? shipping.amount : 0}
+              shippingMethods={cartTotals.shippingBreakdown}
+            />
+
+            <DiscountSection
               cartId={cartId}
-              shippingAddress={cart?.shipping_address || null}
-              addressName={cart?.metadata?.shipping_address_name as string | null}
-              shippingMemo={shippingMemo}
-              onShippingMemoChange={handleShippingMemoChange}
+              isMembership={isMembership}
+              membershipDiscount={cartTotals.membershipDiscount}
+              itemSubtotal={cartTotals.item_subtotal}
+              cartDiscountTotal={cartTotals.discount_subtotal}
+              shipping={shipping}
+              promotions={promotions}
+              appliedPromotionCode={cart.promotions?.[0]?.code}
+              onCouponApplied={() => router.refresh()}
             />
-          )}
 
-          {hasOverseasItem && (
-            <CustomsCodeSection
-              value={personalCustomsCode}
-              onChange={handleCustomsCodeChange}
-              error={customsCodeError}
-            />
-          )}
+            {/* 여기부터가 기존 /pay 화면에서 합류한 부분 — 도메인을 한 번 더 건널 필요가 없어졌다. */}
+            <div className="mb-4">
+              <PaymentMethodCard
+                methods={externalMethods}
+                availableMethodMap={availableMethodMap}
+                regionFilterApplied={Array.isArray(availableMethods)}
+                region={countryCode}
+                selectedMethodId={selectedMethodId}
+                onSelect={setSelectedMethodId}
+              />
+            </div>
 
-          <OrderProductsSection
-            products={cartItems}
-            shipping={requiresShipping ? shipping.amount : 0}
-            shippingMethods={cartTotals.shippingBreakdown}
-          />
+            {remainingAmount > 0 && isTossSelected && (
+              <div className="mb-4">
+                <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
+              </div>
+            )}
 
-          <DiscountSection
-            cartId={cartId}
-            isMembership={isMembership}
-            membershipDiscount={cartTotals.membershipDiscount}
-            itemSubtotal={cartTotals.item_subtotal}
-            cartDiscountTotal={cartTotals.discount_subtotal}
-            shipping={shipping}
-            promotions={promotions}
-            appliedPromotionCode={cart.promotions?.[0]?.code}
-            onCouponApplied={() => router.refresh()}
-          />
+            {remainingAmount > 0 && isBankTransferSelected && (
+              <div className="mb-4">
+                <CashReceiptCard
+                  value={cashReceiptState}
+                  onChange={setCashReceiptState}
+                  userPhone={userPhone}
+                  userBizNumber={userBizNumber}
+                />
+              </div>
+            )}
 
-          {/* 여기부터가 기존 /pay 화면에서 합류한 부분 — 도메인을 한 번 더 건널 필요가 없어졌다. */}
-          <div className="mb-4">
-            <PaymentMethodCard
-              methods={externalMethods}
-              availableMethodMap={availableMethodMap}
-              regionFilterApplied={Array.isArray(availableMethods)}
-              region={countryCode}
-              selectedMethodId={selectedMethodId}
-              onSelect={setSelectedMethodId}
-            />
+            {maxPoints > 0 && (
+              <div className="mb-4">
+                <PointsCard
+                  availablePoints={availablePoints}
+                  maxPoints={maxPoints}
+                  pointsAmount={pointsUsed}
+                  onAmountChange={setPointsUsed}
+                />
+              </div>
+            )}
+            <div className="hidden lg:block">
+              <OrderConsentSection />
+            </div>
           </div>
 
-          {remainingAmount > 0 && isTossSelected && (
-            <div className="mb-4">
-              <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
+          <div className="lg:sticky lg:top-6 lg:w-[375px] lg:shrink-0">
+            <PaymentTotalSection totals={totalsWithPoints} />
+
+            <div className="lg:hidden">
+              <OrderConsentSection />
             </div>
-          )}
-
-          {remainingAmount > 0 && isBankTransferSelected && (
-            <div className="mb-4">
-              <CashReceiptCard
-                value={cashReceiptState}
-                onChange={setCashReceiptState}
-                userPhone={userPhone}
-                userBizNumber={userBizNumber}
-              />
-            </div>
-          )}
-
-          {maxPoints > 0 && (
-            <div className="mb-4">
-              <PointsCard
-                availablePoints={availablePoints}
-                maxPoints={maxPoints}
-                pointsAmount={pointsUsed}
-                onAmountChange={setPointsUsed}
-              />
-            </div>
-          )}
-
-          <PaymentTotalSection totals={totalsWithPoints} />
-
-          <OrderConsentSection />
-
+          </div>
         </div>
       </div>
+
+      <CheckoutFooter />
 
       <PCFixedCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />
       <MobileCTA totals={totalsWithPoints} loading={loading} onPayment={handlePayment} />

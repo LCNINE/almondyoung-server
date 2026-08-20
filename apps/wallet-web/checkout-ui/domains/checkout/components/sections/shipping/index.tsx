@@ -124,8 +124,8 @@ export const ShippingSection = ({
             <p
               className={
                 memoSummary
-                  ? "text-[13px] text-gray-800 lg:text-[15px]"
-                  : "text-[13px] text-gray-400 lg:text-[15px]"
+                  ? "text-[14px] text-gray-800 lg:text-[15px]"
+                  : "text-[14px] text-gray-400 lg:text-[15px]"
               }
             >
               {memoSummary || tMemo("empty")}

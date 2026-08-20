@@ -21,12 +21,12 @@ export function AddressDisplay({ phone, postalCode, address1, address2, fullAddr
   return (
     <div className="space-y-2">
       {isDefault && (
-        <span className="inline-block rounded-full border border-gray-300 px-2 py-[3px] text-[11px] text-gray-600">
+        <span className="inline-block rounded-full border border-gray-300 px-2 py-[3px] text-[12px] text-gray-600">
           {t('defaultBadge')}
         </span>
       )}
-      <p className="text-[13px] leading-relaxed text-gray-800 lg:text-[15px]">{addressLine || '-'}</p>
-      <p className="text-[13px] text-gray-600 lg:text-[15px]">
+      <p className="text-[14px] leading-relaxed text-gray-800 lg:text-[15px]">{addressLine || '-'}</p>
+      <p className="text-[14px] text-gray-600 lg:text-[15px]">
         {t('contact')} : {phone || '-'}
       </p>
     </div>

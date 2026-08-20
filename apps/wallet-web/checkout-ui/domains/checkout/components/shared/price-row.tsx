@@ -9,11 +9,11 @@ import {
 type Size = "xs" | "sm" | "base" | "lg"
 type LabelTone = "default" | "muted" | "sub" | "membership" | "accent"
 type ValueTone = "default" | "muted" | "membership" | "discount"
-type Weight = "normal" | "medium" | "semibold" | "bold"
+type Weight = "normal" | "medium" | "bold"
 type Highlight = "none" | "total"
 
 const sizeClass: Record<Size, string> = {
-  xs: "text-[10px] lg:text-xs",
+  xs: "text-[11px] lg:text-xs",
   sm: "text-xs lg:text-sm",
   base: "text-sm lg:text-base",
   lg: "text-base lg:text-lg",
@@ -22,7 +22,6 @@ const sizeClass: Record<Size, string> = {
 const weightClass: Record<Weight, string> = {
   normal: "font-normal",
   medium: "font-medium",
-  semibold: "font-semibold",
   bold: "font-bold",
 }
 
