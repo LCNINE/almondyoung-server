@@ -6,6 +6,8 @@ import {
   dismissInterestBanner7Days,
   updateInterestCategories,
 } from "@/domains/home/interest-categories-actions"
+import { cn } from "@/lib/utils"
+import { X } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
@@ -47,44 +49,79 @@ export function InterestSelectorBanner() {
   }
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-5 md:p-6">
-      <div className="space-y-1">
-        <h3 className="text-base font-semibold tracking-tight text-zinc-900 md:text-lg">
+    <section className="relative flex flex-col gap-5 text-center md:gap-7 lg:flex-row lg:items-center lg:gap-12 lg:text-left">
+      {/* 모바일 — 우상단 닫기 */}
+      <DismissButton
+        onClick={handleDismiss}
+        disabled={isPending}
+        label={t("dismiss")}
+        className="absolute top-0 right-0 lg:hidden"
+      />
+
+      <div className="shrink-0 space-y-1 lg:max-w-[280px]">
+        <h3 className="text-foreground text-base font-bold tracking-tight md:text-lg">
           {t("title")}
         </h3>
-        <p className="text-xs text-zinc-500 md:text-sm">
+        <p className="text-muted-foreground text-xs md:text-sm">
           {t("description")}
         </p>
       </div>
 
-      <InterestKeyChips
-        selectedKeys={selected}
-        onChange={setSelected}
-        disabled={isPending}
-        className="mt-4"
-      />
-
-      <div className="mt-5 flex items-center justify-between gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleDismiss}
+      <div className="flex flex-1 flex-col items-center gap-5 md:gap-7 lg:flex-row lg:justify-between lg:gap-6">
+        <InterestKeyChips
+          selectedKeys={selected}
+          onChange={setSelected}
           disabled={isPending}
-          className="text-xs text-zinc-500 hover:text-zinc-700"
-        >
-          {t("dismiss")}
-        </Button>
-        <CustomButton
-          type="button"
-          size="sm"
-          onClick={handleSave}
-          disabled={isPending || selected.length === 0}
-          className="rounded-full"
-        >
-          {isPending ? t("saving") : t("save")}
-        </CustomButton>
+          className="w-full justify-center lg:w-auto [&_button]:shadow-[1px_1px_0.5px_rgba(0,0,0,0.1)]"
+        />
+
+        <div className="flex w-full shrink-0 flex-col items-center gap-1 lg:w-auto lg:items-end">
+          {/* 데스크톱 — 저장 버튼 위 닫기 */}
+          <DismissButton
+            onClick={handleDismiss}
+            disabled={isPending}
+            label={t("dismiss")}
+            className="hidden lg:inline-flex"
+          />
+          <CustomButton
+            type="button"
+            onClick={handleSave}
+            disabled={isPending || selected.length === 0}
+            className="disabled:text-gray-30 h-[52px] w-full max-w-[320px] rounded-xl text-base font-bold disabled:bg-secondary disabled:opacity-100 lg:h-[48px] lg:w-auto lg:px-10"
+          >
+            {isPending ? t("saving") : t("save")}
+          </CustomButton>
+        </div>
       </div>
     </section>
+  )
+}
+
+function DismissButton({
+  onClick,
+  disabled,
+  label,
+  className,
+}: {
+  onClick: () => void
+  disabled: boolean
+  label: string
+  className?: string
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      className={cn(
+        "text-foreground/40 hover:text-foreground size-7 hover:bg-transparent",
+        className
+      )}
+    >
+      <X className="size-[18px]" />
+    </Button>
   )
 }

@@ -29,19 +29,21 @@ export async function InterestProductsList({
   const wishlist = customer ? await getWishlist().catch(() => []) : []
   const wishlistIds = new Set(wishlist.map((item) => item.productId))
 
-  const sections = (await Promise.all(
-    selectedKeys.map(async (key) => {
-      const cat = FIXED_CATEGORIES.find((c) => c.key === key)
-      if (!cat) return null
+  const sections = (
+    await Promise.all(
+      selectedKeys.map(async (key) => {
+        const cat = FIXED_CATEGORIES.find((c) => c.key === key)
+        if (!cat) return null
 
-      const products = await getBestProductsByCategory({
-        handle: cat.handle,
-        regionId: region?.id,
-        limit: 10,
+        const products = await getBestProductsByCategory({
+          handle: cat.handle,
+          regionId: region?.id,
+          limit: 10,
+        })
+        return { cat, products }
       })
-      return { cat, products }
-    })
-  )).filter((s): s is Section => s !== null)
+    )
+  ).filter((s): s is Section => s !== null)
 
   if (sections.length === 0) return null
 

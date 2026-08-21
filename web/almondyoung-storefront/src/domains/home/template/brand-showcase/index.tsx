@@ -47,7 +47,7 @@ export async function BrandShowcaseWrapper() {
   }))
 
   return (
-    <HomeSection>
+    <HomeSection className="lg:py-16">
       <Header className="mb-5">
         <Title>{t("title")}</Title>
         <MoreButton

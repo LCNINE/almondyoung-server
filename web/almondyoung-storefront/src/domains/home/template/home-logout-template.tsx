@@ -140,7 +140,7 @@ export async function HomeLogoutTemplate({
       </div>
 
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
-      <HomeSection>
+      <HomeSection background="muted" className="md:py-12 lg:py-16">
         <ErrorBoundary
           fallback={<div>관심 카테고리 섹션을 불러오지 못했어요.</div>}
         >
@@ -155,7 +155,7 @@ export async function HomeLogoutTemplate({
       <ErrorBoundary fallback={null}>
         <Suspense
           fallback={
-            <HomeSection>
+            <HomeSection className="lg:py-16">
               <MainSectionSkeleton />
             </HomeSection>
           }
