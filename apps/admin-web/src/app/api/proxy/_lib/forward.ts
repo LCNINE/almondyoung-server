@@ -15,6 +15,13 @@ export interface ForwardOptions {
   timeoutMs?: number;
   // Medusa 등 자체 인증을 쓰는 업스트림은 false 로 끈다. 기본값은 true.
   forwardAuthCookie?: boolean;
+  /**
+   * 업스트림의 3xx 를 따라가지 않고 브라우저에 그대로 넘긴다. 기본(follow)은
+   * 리다이렉트 대상 본문을 이 라우트(Lambda)가 통째로 나르는데, file-service 의
+   * /files/public/:id 처럼 S3 로 302 하는 응답은 큰 이미지에서 Lambda 응답 상한에
+   * 걸려 502 가 난다. 브라우저가 직접 따라가게 하면 크기 제한이 없다.
+   */
+  passThroughRedirects?: boolean;
 }
 
 export async function forwardRequest(
@@ -27,6 +34,7 @@ export async function forwardRequest(
     extraHeaders,
     timeoutMs = DEFAULT_TIMEOUT_MS,
     forwardAuthCookie = true,
+    passThroughRedirects = false,
   } = options;
 
   const targetPath = path.join('/');
@@ -77,6 +85,7 @@ export async function forwardRequest(
       headers,
       body: body ? body : undefined,
       signal: controller.signal,
+      redirect: passThroughRedirects ? 'manual' : 'follow',
     });
   } catch (error) {
     if (controller.signal.aborted) {
@@ -93,6 +102,14 @@ export async function forwardRequest(
   // 204 No Content는 body가 없어야 함
   if (upstream.status === 204) {
     return new NextResponse(null, { status: 204 });
+  }
+
+  const location = upstream.headers.get('Location');
+  if (passThroughRedirects && upstream.status >= 300 && upstream.status < 400 && location) {
+    return new NextResponse(null, {
+      status: upstream.status,
+      headers: { Location: location },
+    });
   }
 
   const data = await upstream.arrayBuffer();

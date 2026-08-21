@@ -7,7 +7,11 @@ type Params = { params: Promise<{ path: string[] }> };
 
 export async function GET(request: NextRequest, { params }: Params) {
   const { path } = await params;
-  return forwardRequest(request, FILE_SERVICE_URL, path);
+  // /files/public/:id 는 S3 로 302 한다 — 따라가서 본문을 나르면 큰 이미지가
+  // Lambda 응답 상한(502)에 걸리므로 브라우저가 직접 따라가게 넘긴다
+  return forwardRequest(request, FILE_SERVICE_URL, path, {
+    passThroughRedirects: true,
+  });
 }
 
 export async function POST(request: NextRequest, { params }: Params) {
