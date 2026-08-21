@@ -1,12 +1,13 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import Autoplay from "embla-carousel-autoplay"
 import Fade from "embla-carousel-fade"
 
+import { trackEvent } from "@/lib/analytics/gtag"
 import { Banner } from "@/lib/types/ui/pim"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { cn } from "@lib/utils"
@@ -16,6 +17,12 @@ import {
   CarouselItem,
   type CarouselApi,
 } from "@/components/ui/carousel"
+
+const promotionOf = (banner: Banner, index: number) => ({
+  promotion_id: banner.id,
+  promotion_name: banner.title,
+  creative_slot: `main_hero_${index + 1}`,
+})
 
 type BannerCarouselProps = {
   banners: Banner[]
@@ -48,6 +55,15 @@ export function HeroBannerCarousel({
     })
   }, [api])
 
+  const viewed = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const banner = banners[current]
+    if (!banner || viewed.current.has(banner.id)) return
+    viewed.current.add(banner.id)
+    trackEvent("view_promotion", promotionOf(banner, current))
+  }, [banners, current])
+
   const scrollTo = useCallback(
     (index: number) => {
       api?.scrollTo(index)
@@ -63,7 +79,13 @@ export function HeroBannerCarousel({
     api?.scrollNext()
   }, [api])
 
-  const BannerImage = ({ banner, eager }: { banner: Banner; eager: boolean }) => (
+  const BannerImage = ({
+    banner,
+    eager,
+  }: {
+    banner: Banner
+    eager: boolean
+  }) => (
     <>
       {/* PC 이미지 - md(768px) 이상에서만 표시 */}
       <Image
@@ -122,6 +144,9 @@ export function HeroBannerCarousel({
                 {banner.linkUrl ? (
                   <Link
                     href={banner.linkUrl}
+                    onClick={() =>
+                      trackEvent("select_promotion", promotionOf(banner, index))
+                    }
                     className="relative block h-full w-full"
                     target={
                       banner.linkUrl.startsWith("http") ? "_blank" : undefined

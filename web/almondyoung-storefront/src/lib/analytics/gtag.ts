@@ -39,3 +39,9 @@ export function trackEventOnce(
 export function toGaCurrency(currencyCode?: string | null) {
   return (currencyCode ?? "krw").toUpperCase()
 }
+
+export type GaPromotion = {
+  promotion_id: string
+  promotion_name: string
+  creative_slot?: string
+}

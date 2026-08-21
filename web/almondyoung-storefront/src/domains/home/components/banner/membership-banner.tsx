@@ -1,3 +1,4 @@
+import { PromotionTracker } from "@/components/analytics/promotion-tracker"
 import { getBannerGroupByCode } from "@/lib/api/pim/banner"
 import { BannerDto } from "@/lib/types/dto/pim"
 import type { BannerGroup } from "@/lib/types/ui/pim"
@@ -29,20 +30,28 @@ export default async function MembershipBanner({
   const banner = activeBanners[0]
 
   return (
-    <Banner
-      className={className}
-      href={banner.linkUrl}
-      pcSrc={banner.pcImageFileId}
-      mobileSrc={banner.mobileImageFileId}
-      alt={banner.title || "membership banner"}
-      hideOnMobile
-      dimensions={{
-        pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
-        mobile: {
-          width: bannerGroup.mobileWidth,
-          height: bannerGroup.mobileHeight,
-        },
+    <PromotionTracker
+      promotion={{
+        promotion_id: banner.id,
+        promotion_name: banner.title,
+        creative_slot: "membership_hero",
       }}
-    />
+    >
+      <Banner
+        className={className}
+        href={banner.linkUrl}
+        pcSrc={banner.pcImageFileId}
+        mobileSrc={banner.mobileImageFileId}
+        alt={banner.title || "membership banner"}
+        hideOnMobile
+        dimensions={{
+          pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
+          mobile: {
+            width: bannerGroup.mobileWidth,
+            height: bannerGroup.mobileHeight,
+          },
+        }}
+      />
+    </PromotionTracker>
   )
 }
