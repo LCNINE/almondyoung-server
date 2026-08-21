@@ -59,6 +59,11 @@ describe('matchesCategory', () => {
   it('빈 검색어는 매치가 아니다', () => {
     expect(matchesCategory(toner, ['토너'], '   ')).toBe(false);
   });
+
+  it('위치 한정이 이름 경로에 안 걸려도 설명 전체 부분일치면 매치한다 (관리 페이지 옛 동작 보존)', () => {
+    const skincare = node('sc', '스킨케어', { description: '바디 크림 전용 카테고리' });
+    expect(matchesCategory(skincare, ['뷰티', '스킨케어'], '바디 크림')).toBe(true);
+  });
 });
 
 const tree: CategoryTreeNodeLike[] = [

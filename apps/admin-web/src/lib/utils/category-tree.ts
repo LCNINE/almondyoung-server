@@ -30,6 +30,14 @@ export function normalizeSearchTerm(value: string): string {
  *
  * 마지막 토큰을 이름에 묶어두는 것이 폭발 방어선이다. 경로 전체를 그냥
  * 부분일치시키면 `화장품` 하나로 그 아래 수백 개가 전부 매치된다.
+ *
+ * 두 번째 절(OR)은 관리 페이지의 옛 지역 `matches()` 가 하던 "질의 전체를
+ * 이름·slug·설명에 그대로 부분일치"를 보존한다 — 위치 한정 개념이 없던
+ * 옛 규칙은 `description: "바디 크림 전용 카테고리"` 에 질의 `"바디 크림"` 이
+ * 매치했지만, 토큰 규칙만 쓰면 locator `바디` 가 이름 경로에 없어 불매치가
+ * 되어 결과가 줄어드는 회귀가 생긴다. 단일 토큰에서는 두 절이 동치이므로
+ * 이 OR 은 다중 토큰 질의에만 영향을 준다. 폭발 방어선도 유지된다 — 전체
+ * 질의 부분일치는 조상 경로가 아니라 노드 자신의 이름·slug·설명에서만 찾는다.
  */
 export function matchesCategory(
   node: CategoryTreeNodeLike,
@@ -42,16 +50,21 @@ export function matchesCategory(
     .filter((token) => token.length > 0);
   if (tokens.length === 0) return false;
 
-  const target = tokens[tokens.length - 1];
-  const locators = tokens.slice(0, -1);
-
   const haystacks = [node.name, node.slug, node.description]
     .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .map(normalizeSearchTerm);
-  if (!haystacks.some((haystack) => haystack.includes(target))) return false;
 
+  const target = tokens[tokens.length - 1];
+  const locators = tokens.slice(0, -1);
   const path = normalizeSearchTerm(pathSegments.join('/'));
-  return locators.every((locator) => path.includes(locator));
+  const matchesTokenRule =
+    haystacks.some((haystack) => haystack.includes(target)) &&
+    locators.every((locator) => path.includes(locator));
+
+  const fullQuery = normalizeSearchTerm(query);
+  const matchesFullQuery = haystacks.some((haystack) => haystack.includes(fullQuery));
+
+  return matchesTokenRule || matchesFullQuery;
 }
 
 /** 전위 순회(pre-order DFS) 순서의 id 목록. 선택 정렬의 기준 순서다. */

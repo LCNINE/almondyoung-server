@@ -19,8 +19,9 @@ interface Result {
  *
  * 매칭·순회 규칙은 `@/lib/utils/category-tree` 가 소유한다 — 상품 카테고리
  * 선택기와 같은 규칙을 쓰기 위해서다. 기존 지역 `matches()` 대비 haystack
- * (이름·slug·설명) 의 공백도 무시하므로 매치가 소폭 넓어진다(결과가 줄어드는
- * 방향의 회귀는 없다).
+ * (이름·slug·설명) 의 공백도 무시하므로 매치가 소폭 넓어진다. 축소 방향의
+ * 회귀는 없다 — `matchesCategory` 의 전체 질의 부분일치 절이 옛 `matches()`
+ * 의 "질의 전체를 이름·slug·설명에 그대로 부분일치" 동작을 그대로 보존한다.
  */
 export function useTreeExpansion(tree: CategoryNode[], search: string): Result {
   const [userExpanded, setUserExpanded] = useState<Set<string>>(new Set());
