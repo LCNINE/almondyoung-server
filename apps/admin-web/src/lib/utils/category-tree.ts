@@ -272,7 +272,11 @@ export function resolveKeyboardMove(
     }
     case ' ':
     case 'Enter':
-      return current ? { selectId: current.node.id } : null;
+      // 구조 유지용 노드(matchedSelf=false)는 선택 대상이 아니다 — 체크박스도
+      // 잠겨 있으므로 키보드로도 토글되면 안 된다.
+      return current && current.matchedSelf
+        ? { selectId: current.node.id }
+        : null;
     default:
       return null;
   }

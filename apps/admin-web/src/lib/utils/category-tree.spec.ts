@@ -277,6 +277,34 @@ describe('resolveKeyboardMove', () => {
     expect(resolveKeyboardMove(sequence, 2, 'Enter')).toEqual({ selectId: 'toner' });
   });
 
+  it('matchedSelf=false 인 구조 유지용 노드는 Space/Enter 로 선택되지 않는다', () => {
+    // 술어가 'toner' 만 통과시키므로 조상 'cosmetics'/'skincare' 는
+    // 자손 때문에 남지만 matchedSelf 는 false 다.
+    const structureOnlyPruned = pruneTree(tree, (candidate) => candidate.id === 'toner');
+    const structureOnlySequence = visibleNodeSequence(
+      structureOnlyPruned,
+      new Set(['cosmetics', 'skincare'])
+    );
+    const cosmeticsIndex = structureOnlySequence.findIndex(
+      (entry) => entry.node.id === 'cosmetics'
+    );
+    const skincareIndex = structureOnlySequence.findIndex(
+      (entry) => entry.node.id === 'skincare'
+    );
+    const tonerIndex = structureOnlySequence.findIndex((entry) => entry.node.id === 'toner');
+
+    expect(structureOnlySequence[cosmeticsIndex].matchedSelf).toBe(false);
+    expect(structureOnlySequence[skincareIndex].matchedSelf).toBe(false);
+    expect(resolveKeyboardMove(structureOnlySequence, cosmeticsIndex, ' ')).toBeNull();
+    expect(resolveKeyboardMove(structureOnlySequence, cosmeticsIndex, 'Enter')).toBeNull();
+    expect(resolveKeyboardMove(structureOnlySequence, skincareIndex, ' ')).toBeNull();
+
+    // 매치된 노드는 여전히 선택 가능하다.
+    expect(resolveKeyboardMove(structureOnlySequence, tonerIndex, 'Enter')).toEqual({
+      selectId: 'toner',
+    });
+  });
+
   it('모르는 키와 빈 목록은 null 이다', () => {
     expect(resolveKeyboardMove(sequence, 0, 'Tab')).toBeNull();
     expect(resolveKeyboardMove([], 0, 'ArrowDown')).toBeNull();

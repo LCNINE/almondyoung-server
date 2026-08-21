@@ -34,7 +34,10 @@ import {
   toggleCategorySelection,
   type CategorySelectionState,
 } from './category-selection-model';
-import { CategorySelectionTreeRow } from './category-selection-tree-node';
+import {
+  categoryTreeRowId,
+  CategorySelectionTreeRow,
+} from './category-selection-tree-node';
 
 export function ProductCategorySelectionModal({
   open,
@@ -109,6 +112,17 @@ export function ProductCategorySelectionModal({
     () => visibleNodeSequence(pruned, effectiveExpanded),
     [pruned, effectiveExpanded]
   );
+
+  // role="tree" 계약: 화살표로 포커스가 옮겨갈 때 그 행이 뷰포트 안에 있어야
+  // 키보드 내비게이션이 실제로 쓸 수 있다. 긴 목록에서는 스크롤이 필수다.
+  useEffect(() => {
+    if (focusIndex < 0) return;
+    const entry = sequence[focusIndex];
+    if (!entry) return;
+    const rowId = categoryTreeRowId(entry.node.id);
+    const row = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(rowId)}`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [focusIndex, sequence]);
 
   const toggleExpand = useCallback((id: string) => {
     setUserExpanded((prev) => {
@@ -217,19 +231,23 @@ export function ProductCategorySelectionModal({
                   role="tree"
                   tabIndex={0}
                   onKeyDown={handleTreeKeyDown}
+                  aria-activedescendant={
+                    focusIndex >= 0 && sequence[focusIndex]
+                      ? categoryTreeRowId(sequence[focusIndex].node.id)
+                      : undefined
+                  }
                   className="divide-y outline-none"
                 >
                   {sequence.map((entry, index) => (
                     <CategorySelectionTreeRow
                       key={entry.node.id}
                       entry={entry}
-                      // matchedSelf === false 는 "자손 때문에 남은 구조 유지용" 행이라
-                      // 대표 버튼이 뜨면 안 된다(Task 8 포인터). 검색어가 자기 자신은
-                      // 안 걸리고 자손만 걸리는 경우 이미 선택된 조상도 matchedSelf가
-                      // false가 될 수 있으므로 && 로 함께 묶어 그 조합을 막는다.
-                      isSelected={
-                        draftSelectedSet.has(entry.node.id) && entry.matchedSelf
-                      }
+                      // 체크박스는 selectable(=matchedSelf && !disabled) 로 이미
+                      // 잠겨 있다. isSelected 는 실제 선택 상태를 그대로 반영해야
+                      // "잠긴 채 체크됨" 이 정직하게 보인다 — 토글 자체(키보드
+                      // Space/Enter 는 resolveKeyboardMove, 대표 버튼은 disabled)는
+                      // 다른 층에서 막는다.
+                      isSelected={draftSelectedSet.has(entry.node.id)}
                       isPrimary={draft.primaryId === entry.node.id}
                       isMatched={matchedIds.has(entry.node.id)}
                       isFocused={focusIndex === index}

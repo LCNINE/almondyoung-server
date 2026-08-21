@@ -7,6 +7,14 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils/ui';
 import type { VisibleNode } from '@/lib/utils/category-tree';
 
+/**
+ * 트리 컨테이너의 `role="tree"` + `aria-activedescendant` 계약이 가리킬 안정적인
+ * id. 체크박스 id(`product-category-${id}`)와 겹치면 안 되므로 접두사를 분리한다.
+ */
+export function categoryTreeRowId(nodeId: string): string {
+  return `category-tree-row-${nodeId}`;
+}
+
 export function CategorySelectionTreeRow({
   entry,
   isSelected,
@@ -35,6 +43,7 @@ export function CategorySelectionTreeRow({
 
   return (
     <div
+      id={categoryTreeRowId(node.id)}
       role="treeitem"
       aria-selected={isSelected}
       aria-expanded={hasChildren ? isExpanded : undefined}
@@ -51,6 +60,7 @@ export function CategorySelectionTreeRow({
       {hasChildren ? (
         <button
           type="button"
+          tabIndex={-1}
           aria-label={isExpanded ? '접기' : '펼치기'}
           className="flex size-5 shrink-0 items-center justify-center rounded hover:bg-muted"
           onClick={() => onToggleExpand(node.id)}
@@ -68,6 +78,7 @@ export function CategorySelectionTreeRow({
 
       <Checkbox
         id={checkboxId}
+        tabIndex={-1}
         checked={isSelected}
         disabled={!selectable}
         onCheckedChange={() => onToggleSelect(node.id)}
@@ -97,8 +108,9 @@ export function CategorySelectionTreeRow({
           <Button
             type="button"
             size="sm"
+            tabIndex={-1}
             variant={isPrimary ? 'default' : 'outline'}
-            disabled={disabled}
+            disabled={disabled || !selectable}
             onClick={() => onSetPrimary(node.id)}
           >
             <Star data-icon="inline-start" />
