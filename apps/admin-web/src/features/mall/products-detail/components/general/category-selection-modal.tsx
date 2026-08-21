@@ -61,7 +61,9 @@ export function ProductCategorySelectionModal({
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [userExpanded, setUserExpanded] = useState<Set<string>>(new Set());
-  const [focusIndex, setFocusIndex] = useState(-1);
+  // 인덱스가 아니라 노드 id 로 포커스를 든다 — sequence 는 검색/토글/펼침마다
+  // 통째로 재계산되는 휘발성 배열이라 인덱스를 들면 무관한 행을 가리키게 된다.
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
   const [draft, setDraft] = useState<CategorySelectionState>({
     selectedIds,
     primaryId: primaryCategoryId,
@@ -74,7 +76,7 @@ export function ProductCategorySelectionModal({
     if (!open) return;
     setSearch('');
     setIncludeInactive(false);
-    setFocusIndex(-1);
+    setFocusedNodeId(null);
     setDraft({ selectedIds, primaryId: primaryCategoryId });
     setUserExpanded(collectAncestorIds(tree, selectedIds));
   }, [open, tree, selectedIds, primaryCategoryId]);
@@ -112,17 +114,23 @@ export function ProductCategorySelectionModal({
     () => visibleNodeSequence(pruned, effectiveExpanded),
     [pruned, effectiveExpanded]
   );
+  // resolveKeyboardMove 는 인덱스 기반 서명을 그대로 쓰므로, 호출 지점에서만
+  // id → index 로 파생한다. sequence 에 없는 id(예: 검색으로 걸러진 행)면 -1.
+  const focusIndex = useMemo(
+    () => sequence.findIndex((entry) => entry.node.id === focusedNodeId),
+    [sequence, focusedNodeId]
+  );
 
   // role="tree" 계약: 화살표로 포커스가 옮겨갈 때 그 행이 뷰포트 안에 있어야
-  // 키보드 내비게이션이 실제로 쓸 수 있다. 긴 목록에서는 스크롤이 필수다.
+  // 키보드 내비게이션이 실제로 쓸 수 있다. deps 를 focusedNodeId 로만 두는 게
+  // 핵심이다 — sequence 가 deps 에 있으면 검색/토글/펼침으로 목록이
+  // 재계산될 때마다 지금 위치의(사용자가 옮긴 적 없는) 행으로 스크롤이 튄다.
   useEffect(() => {
-    if (focusIndex < 0) return;
-    const entry = sequence[focusIndex];
-    if (!entry) return;
-    const rowId = categoryTreeRowId(entry.node.id);
+    if (!focusedNodeId) return;
+    const rowId = categoryTreeRowId(focusedNodeId);
     const row = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(rowId)}`);
     row?.scrollIntoView({ block: 'nearest' });
-  }, [focusIndex, sequence]);
+  }, [focusedNodeId]);
 
   const toggleExpand = useCallback((id: string) => {
     setUserExpanded((prev) => {
@@ -142,9 +150,13 @@ export function ProductCategorySelectionModal({
 
   const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const move = resolveKeyboardMove(sequence, focusIndex, event.key);
+    // 잠긴 행(matchedSelf=false)에서 Space 는 move=null 이라도 브라우저 기본
+    // 스크롤을 막아야 한다.
+    if (event.key === ' ') event.preventDefault();
     if (!move) return;
     event.preventDefault();
-    if (move.nextIndex !== undefined) setFocusIndex(move.nextIndex);
+    if (move.nextIndex !== undefined)
+      setFocusedNodeId(sequence[move.nextIndex]?.node.id ?? null);
     if (move.toggleExpandId) toggleExpand(move.toggleExpandId);
     if (move.selectId) toggleSelect(move.selectId);
   };
@@ -152,7 +164,7 @@ export function ProductCategorySelectionModal({
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'ArrowDown' || sequence.length === 0) return;
     event.preventDefault();
-    setFocusIndex(0);
+    setFocusedNodeId(sequence[0]?.node.id ?? null);
     listRef.current?.focus();
   };
 
@@ -229,6 +241,7 @@ export function ProductCategorySelectionModal({
                 <div
                   ref={listRef}
                   role="tree"
+                  aria-multiselectable
                   tabIndex={0}
                   onKeyDown={handleTreeKeyDown}
                   aria-activedescendant={
@@ -238,7 +251,7 @@ export function ProductCategorySelectionModal({
                   }
                   className="divide-y outline-none"
                 >
-                  {sequence.map((entry, index) => (
+                  {sequence.map((entry) => (
                     <CategorySelectionTreeRow
                       key={entry.node.id}
                       entry={entry}
@@ -250,13 +263,14 @@ export function ProductCategorySelectionModal({
                       isSelected={draftSelectedSet.has(entry.node.id)}
                       isPrimary={draft.primaryId === entry.node.id}
                       isMatched={matchedIds.has(entry.node.id)}
-                      isFocused={focusIndex === index}
+                      isFocused={entry.node.id === focusedNodeId}
                       disabled={busy}
                       onToggleExpand={toggleExpand}
                       onToggleSelect={toggleSelect}
                       onSetPrimary={(id) =>
                         setDraft((prev) => setPrimaryCategory(prev, id))
                       }
+                      onFocusRow={setFocusedNodeId}
                     />
                   ))}
                 </div>

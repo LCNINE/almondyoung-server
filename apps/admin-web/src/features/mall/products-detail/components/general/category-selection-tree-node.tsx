@@ -25,6 +25,7 @@ export function CategorySelectionTreeRow({
   onToggleExpand,
   onToggleSelect,
   onSetPrimary,
+  onFocusRow,
 }: {
   entry: VisibleNode;
   isSelected: boolean;
@@ -35,6 +36,7 @@ export function CategorySelectionTreeRow({
   onToggleExpand: (id: string) => void;
   onToggleSelect: (id: string) => void;
   onSetPrimary: (id: string) => void;
+  onFocusRow: (id: string) => void;
 }) {
   const { node, depth, hasChildren, isExpanded, matchedSelf } = entry;
   // 자손 때문에 남은 구조 유지용 노드는 스스로 선택될 수 없다.
@@ -47,7 +49,9 @@ export function CategorySelectionTreeRow({
       role="treeitem"
       aria-selected={isSelected}
       aria-expanded={hasChildren ? isExpanded : undefined}
+      aria-level={depth + 1}
       data-focused={isFocused ? 'true' : undefined}
+      onMouseDown={() => onFocusRow(node.id)}
       className={cn(
         'flex min-h-9 items-center gap-2 pr-3 text-sm',
         isSelected && 'bg-muted/60',
