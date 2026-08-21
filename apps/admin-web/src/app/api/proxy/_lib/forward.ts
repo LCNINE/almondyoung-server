@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+// `next/server` 는 **타입으로만** 가져온다. 값으로 가져오면 이 모듈이 런타임에 next 를
+// 요구하는데, CI 는 루트 `npm ci` 만 돌려 `apps/admin-web/node_modules` 를 깔지 않는다
+// → `forward.spec.ts` 가 `Cannot find module 'next/server'` 로 죽는다(로컬은 설치돼 있어 통과).
+// 반환은 웹 표준 `Response` 로 충분하다 — Next 의 응답 타입은 그 하위 타입이고 이 파일은
+// `Response` 에 없는 기능을 쓰지 않으며, App Router 라우트 핸들러는 `Response` 반환을 받는다.
+import type { NextRequest } from 'next/server';
 
 const FORWARDED_REQUEST_HEADERS = [
   'x-request-id',
@@ -29,7 +34,7 @@ export async function forwardRequest(
   targetBaseUrl: string,
   path: string[],
   options: ForwardOptions = {}
-): Promise<NextResponse> {
+): Promise<Response> {
   const {
     extraHeaders,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -89,9 +94,11 @@ export async function forwardRequest(
     });
   } catch (error) {
     if (controller.signal.aborted) {
-      return NextResponse.json(
-        { message: `Upstream request timed out after ${timeoutMs}ms` },
-        { status: 504 }
+      return new Response(
+        JSON.stringify({
+          message: `Upstream request timed out after ${timeoutMs}ms`,
+        }),
+        { status: 504, headers: { 'Content-Type': 'application/json' } }
       );
     }
     throw error;
@@ -101,12 +108,17 @@ export async function forwardRequest(
 
   // 204 No Content는 body가 없어야 함
   if (upstream.status === 204) {
-    return new NextResponse(null, { status: 204 });
+    return new Response(null, { status: 204 });
   }
 
   const location = upstream.headers.get('Location');
-  if (passThroughRedirects && upstream.status >= 300 && upstream.status < 400 && location) {
-    return new NextResponse(null, {
+  if (
+    passThroughRedirects &&
+    upstream.status >= 300 &&
+    upstream.status < 400 &&
+    location
+  ) {
+    return new Response(null, {
       status: upstream.status,
       headers: { Location: location },
     });
@@ -114,7 +126,7 @@ export async function forwardRequest(
 
   const data = await upstream.arrayBuffer();
 
-  return new NextResponse(data, {
+  return new Response(data, {
     status: upstream.status,
     headers: {
       'Content-Type':
