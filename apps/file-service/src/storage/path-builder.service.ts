@@ -16,14 +16,4 @@ export class PathBuilderService {
 
     return `${prefix}/${year}/${month}/${fileId}.${extension}`;
   }
-
-  getPendingPathPrefix(olderThanDate: Date): string {
-    const year = olderThanDate.getFullYear();
-    const month = String(olderThanDate.getMonth() + 1).padStart(2, '0');
-    return `temp/pending/${year}/${month}/`;
-  }
-
-  getUserPathPrefix(userId: string): string {
-    return `users/${userId}/`;
-  }
 }
