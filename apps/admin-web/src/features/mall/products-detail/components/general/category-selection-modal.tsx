@@ -1,10 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Search, Star } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Star, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -17,23 +16,33 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Spinner } from '@/components/ui/spinner';
-import { cn } from '@/lib/utils/ui';
-import type { SelectableCategory } from './basic-information-model';
-
-function sortCategoryIds(
-  ids: string[],
-  options: SelectableCategory[]
-): string[] {
-  const selected = new Set(ids);
-  return options
-    .filter((option) => selected.has(option.id))
-    .map((option) => option.id);
-}
+import { Switch } from '@/components/ui/switch';
+import {
+  collectAncestorIds,
+  collectAllIds,
+  collectSearchExpansion,
+  orderedCategoryIds,
+  pruneTree,
+  resolveKeyboardMove,
+  visibleNodeSequence,
+  type CategoryTreeNodeLike,
+} from '@/lib/utils/category-tree';
+import {
+  buildCategoryPathLabels,
+  createVisibilityPredicate,
+  setPrimaryCategory,
+  toggleCategorySelection,
+  type CategorySelectionState,
+} from './category-selection-model';
+import {
+  categoryTreeRowId,
+  CategorySelectionTreeRow,
+} from './category-selection-tree-node';
 
 export function ProductCategorySelectionModal({
   open,
   onOpenChange,
-  options,
+  tree,
   isLoading,
   selectedIds,
   primaryCategoryId,
@@ -42,7 +51,7 @@ export function ProductCategorySelectionModal({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  options: SelectableCategory[];
+  tree: CategoryTreeNodeLike[];
   isLoading: boolean;
   selectedIds: string[];
   primaryCategoryId: string | null;
@@ -50,66 +59,123 @@ export function ProductCategorySelectionModal({
   onApply: (categoryIds: string[], primaryCategoryId: string | null) => void;
 }) {
   const [search, setSearch] = useState('');
-  const [draftIds, setDraftIds] = useState<string[]>(selectedIds);
-  const [draftPrimaryId, setDraftPrimaryId] = useState<string | null>(
-    primaryCategoryId
-  );
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [userExpanded, setUserExpanded] = useState<Set<string>>(new Set());
+  // 인덱스가 아니라 노드 id 로 포커스를 든다 — sequence 는 검색/토글/펼침마다
+  // 통째로 재계산되는 휘발성 배열이라 인덱스를 들면 무관한 행을 가리키게 된다.
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<CategorySelectionState>({
+    selectedIds,
+    primaryId: primaryCategoryId,
+  });
+  const listRef = useRef<HTMLDivElement>(null);
 
+  // 열릴 때마다 초기화한다. 펼침은 "이미 선택된 것들의 조상"에서 시작해야
+  // 열자마자 무엇을 골라놨는지 트리에서 보인다.
   useEffect(() => {
-    if (open) {
-      setSearch('');
-      setDraftIds(selectedIds);
-      setDraftPrimaryId(primaryCategoryId);
-    }
-  }, [open, primaryCategoryId, selectedIds]);
+    if (!open) return;
+    setSearch('');
+    setIncludeInactive(false);
+    setFocusedNodeId(null);
+    setDraft({ selectedIds, primaryId: primaryCategoryId });
+    setUserExpanded(collectAncestorIds(tree, selectedIds));
+  }, [open, tree, selectedIds, primaryCategoryId]);
 
-  const selectedSet = useMemo(() => new Set(draftIds), [draftIds]);
-  const selectedOptions = useMemo(
-    () => options.filter((option) => selectedSet.has(option.id)),
-    [options, selectedSet]
+  const busy = disabled || isLoading;
+  const draftSelectedSet = useMemo(() => new Set(draft.selectedIds), [draft.selectedIds]);
+  const orderedIds = useMemo(() => orderedCategoryIds(tree), [tree]);
+  const pathLabels = useMemo(() => buildCategoryPathLabels(tree), [tree]);
+
+  const { matchedIds, expandedIds } = useMemo(
+    () => collectSearchExpansion(tree, search),
+    [tree, search]
   );
-  const applyDisabled = disabled || isLoading;
-  const filteredOptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter((option) =>
-      [option.name, option.slug, option.pathLabel].some((value) =>
-        value?.toLowerCase().includes(q)
-      )
-    );
-  }, [options, search]);
 
-  const handleSelect = (id: string, checked: boolean) => {
-    setDraftIds((current) => {
-      const next = checked
-        ? sortCategoryIds([...current, id], options)
-        : current.filter((categoryId) => categoryId !== id);
+  const pruned = useMemo(
+    () =>
+      pruneTree(
+        tree,
+        createVisibilityPredicate({
+          query: search,
+          includeInactive,
+          selectedIds: draftSelectedSet,
+        })
+      ),
+    [tree, search, includeInactive, draftSelectedSet]
+  );
 
-      setDraftPrimaryId((currentPrimary) => {
-        if (next.length === 0) return null;
-        if (currentPrimary && next.includes(currentPrimary))
-          return currentPrimary;
-        return next[0];
-      });
+  const effectiveExpanded = useMemo(() => {
+    const out = new Set(userExpanded);
+    for (const id of expandedIds) out.add(id);
+    return out;
+  }, [userExpanded, expandedIds]);
 
+  const sequence = useMemo(
+    () => visibleNodeSequence(pruned, effectiveExpanded),
+    [pruned, effectiveExpanded]
+  );
+  // resolveKeyboardMove 는 인덱스 기반 서명을 그대로 쓰므로, 호출 지점에서만
+  // id → index 로 파생한다. sequence 에 없는 id(예: 검색으로 걸러진 행)면 -1.
+  const focusIndex = useMemo(
+    () => sequence.findIndex((entry) => entry.node.id === focusedNodeId),
+    [sequence, focusedNodeId]
+  );
+
+  // role="tree" 계약: 화살표로 포커스가 옮겨갈 때 그 행이 뷰포트 안에 있어야
+  // 키보드 내비게이션이 실제로 쓸 수 있다. deps 를 focusedNodeId 로만 두는 게
+  // 핵심이다 — sequence 가 deps 에 있으면 검색/토글/펼침으로 목록이
+  // 재계산될 때마다 지금 위치의(사용자가 옮긴 적 없는) 행으로 스크롤이 튄다.
+  useEffect(() => {
+    if (!focusedNodeId) return;
+    const rowId = categoryTreeRowId(focusedNodeId);
+    const row = listRef.current?.querySelector<HTMLElement>(`#${CSS.escape(rowId)}`);
+    row?.scrollIntoView({ block: 'nearest' });
+  }, [focusedNodeId]);
+
+  const toggleExpand = useCallback((id: string) => {
+    setUserExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
+  }, []);
+
+  const toggleSelect = useCallback(
+    (id: string) => {
+      setDraft((prev) => toggleCategorySelection(prev, id, orderedIds));
+    },
+    [orderedIds]
+  );
+
+  const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const move = resolveKeyboardMove(sequence, focusIndex, event.key);
+    // 잠긴 행(matchedSelf=false)에서 Space 는 move=null 이라도 브라우저 기본
+    // 스크롤을 막아야 한다.
+    if (event.key === ' ') event.preventDefault();
+    if (!move) return;
+    event.preventDefault();
+    if (move.nextIndex !== undefined)
+      setFocusedNodeId(sequence[move.nextIndex]?.node.id ?? null);
+    if (move.toggleExpandId) toggleExpand(move.toggleExpandId);
+    if (move.selectId) toggleSelect(move.selectId);
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'ArrowDown' || sequence.length === 0) return;
+    event.preventDefault();
+    setFocusedNodeId(sequence[0]?.node.id ?? null);
+    listRef.current?.focus();
   };
 
   const handleApply = () => {
-    const categoryIds = sortCategoryIds(draftIds, options);
-    onApply(
-      categoryIds,
-      draftPrimaryId && categoryIds.includes(draftPrimaryId)
-        ? draftPrimaryId
-        : (categoryIds[0] ?? null)
-    );
+    onApply(draft.selectedIds, draft.primaryId);
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!flex max-h-[calc(100vh-2rem)] !max-w-4xl flex-col gap-0 p-0 sm:!max-w-4xl">
+      <DialogContent className="!flex h-[92vh] !max-w-[96vw] flex-col gap-0 p-0 sm:!max-w-[96vw]">
         <DialogHeader className="px-6 pt-6 pb-4">
           <DialogTitle>카테고리 선택</DialogTitle>
           <DialogDescription>
@@ -117,106 +183,151 @@ export function ProductCategorySelectionModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="border-y px-6 py-3">
-          <div className="relative">
+        <div className="flex items-center gap-3 border-y px-6 py-3">
+          <div className="relative flex-1">
             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="카테고리명, slug, 경로 검색"
+              onKeyDown={handleSearchKeyDown}
+              placeholder="카테고리명·slug·경로 검색 (예: 바디 크림)"
               className="pl-9"
-              disabled={applyDisabled}
+              disabled={busy}
             />
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Switch
+              id="category-include-inactive"
+              checked={includeInactive}
+              onCheckedChange={setIncludeInactive}
+              disabled={busy}
+            />
+            <Label htmlFor="category-include-inactive" className="text-sm">
+              비활성 포함
+            </Label>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => setUserExpanded(new Set())}
+          >
+            모두 접기
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={() => setUserExpanded(collectAllIds(tree))}
+          >
+            모두 펼치기
+          </Button>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 px-6 py-4 lg:grid-cols-[minmax(0,1fr)_280px]">
-          <ScrollArea className="h-[430px] rounded-md border">
-            {isLoading ? (
-              <div className="flex h-full min-h-[240px] items-center justify-center">
-                <Spinner />
-              </div>
-            ) : filteredOptions.length === 0 ? (
-              <div className="p-6 text-sm text-muted-foreground">
-                검색 결과가 없습니다.
-              </div>
-            ) : (
-              <div className="divide-y">
-                {filteredOptions.map((option) => {
-                  const checked = selectedSet.has(option.id);
-                  const checkboxId = `product-category-${option.id}`;
+        <div className="grid min-h-0 flex-1 gap-4 px-6 py-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-h-0 rounded-md border">
+            <ScrollArea className="h-full">
+              {isLoading ? (
+                <div className="flex min-h-[240px] items-center justify-center">
+                  <Spinner />
+                </div>
+              ) : sequence.length === 0 ? (
+                <div className="p-6 text-sm text-muted-foreground">
+                  조건에 맞는 카테고리가 없습니다.
+                </div>
+              ) : (
+                <div
+                  ref={listRef}
+                  role="tree"
+                  aria-multiselectable
+                  tabIndex={0}
+                  onKeyDown={handleTreeKeyDown}
+                  aria-activedescendant={
+                    focusIndex >= 0 && sequence[focusIndex]
+                      ? categoryTreeRowId(sequence[focusIndex].node.id)
+                      : undefined
+                  }
+                  className="divide-y outline-none"
+                >
+                  {sequence.map((entry) => (
+                    <CategorySelectionTreeRow
+                      key={entry.node.id}
+                      entry={entry}
+                      // 체크박스는 selectable(=matchedSelf && !disabled) 로 이미
+                      // 잠겨 있다. isSelected 는 실제 선택 상태를 그대로 반영해야
+                      // "잠긴 채 체크됨" 이 정직하게 보인다 — 토글 자체(키보드
+                      // Space/Enter 는 resolveKeyboardMove, 대표 버튼은 disabled)는
+                      // 다른 층에서 막는다.
+                      isSelected={draftSelectedSet.has(entry.node.id)}
+                      isPrimary={draft.primaryId === entry.node.id}
+                      isMatched={matchedIds.has(entry.node.id)}
+                      isFocused={entry.node.id === focusedNodeId}
+                      disabled={busy}
+                      onToggleExpand={toggleExpand}
+                      onToggleSelect={toggleSelect}
+                      onSetPrimary={(id) =>
+                        setDraft((prev) => setPrimaryCategory(prev, id))
+                      }
+                      onFocusRow={setFocusedNodeId}
+                    />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </div>
 
-                  return (
-                    <div
-                      key={option.id}
-                      className={cn(
-                        'flex min-h-12 items-center gap-3 px-3 py-2',
-                        checked && 'bg-muted/60'
-                      )}
-                    >
-                      <Checkbox
-                        id={checkboxId}
-                        checked={checked}
-                        disabled={applyDisabled}
-                        onCheckedChange={(nextChecked) =>
-                          handleSelect(option.id, nextChecked === true)
-                        }
-                      />
-                      <label
-                        htmlFor={checkboxId}
-                        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-sm"
-                        style={{ paddingLeft: `${option.depth * 16}px` }}
-                      >
-                        <span className="truncate">{option.pathLabel}</span>
-                        {!option.isActive && (
-                          <Badge variant="secondary">비활성</Badge>
-                        )}
-                      </label>
-                      {checked && (
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            draftPrimaryId === option.id ? 'default' : 'outline'
-                          }
-                          disabled={applyDisabled}
-                          onClick={() => setDraftPrimaryId(option.id)}
-                        >
-                          <Star data-icon="inline-start" />
-                          대표
-                        </Button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </ScrollArea>
-
-          <div className="flex min-h-[220px] flex-col gap-3 rounded-md border p-3">
+          <div className="flex min-h-0 flex-col gap-3 rounded-md border p-3">
             <div className="flex items-center justify-between gap-2">
               <Label>선택됨</Label>
               <span className="text-sm text-muted-foreground">
-                {selectedOptions.length}개
+                {draft.selectedIds.length}개
               </span>
             </div>
             <ScrollArea className="min-h-0 flex-1">
-              {selectedOptions.length === 0 ? (
+              {draft.selectedIds.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   선택된 카테고리가 없습니다.
                 </p>
               ) : (
                 <div className="flex flex-col gap-2 pr-2">
-                  {selectedOptions.map((option) => (
-                    <div
-                      key={option.id}
-                      className="rounded-md border px-3 py-2"
-                    >
+                  {draft.selectedIds.map((id) => (
+                    <div key={id} className="rounded-md border px-3 py-2">
                       <div className="flex items-center gap-2">
                         <p className="min-w-0 flex-1 truncate text-sm">
-                          {option.pathLabel}
+                          {pathLabels.get(id) ?? id}
                         </p>
-                        {draftPrimaryId === option.id && <Badge>대표</Badge>}
+                        {draft.primaryId === id && <Badge>대표</Badge>}
+                      </div>
+                      <div className="mt-2 flex justify-end gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={draft.primaryId === id ? 'default' : 'ghost'}
+                          disabled={busy}
+                          onClick={() =>
+                            setDraft((prev) => setPrimaryCategory(prev, id))
+                          }
+                        >
+                          <Star data-icon="inline-start" />
+                          대표
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-label="선택 해제"
+                          disabled={busy}
+                          onClick={() =>
+                            setDraft((prev) =>
+                              toggleCategorySelection(prev, id, orderedIds)
+                            )
+                          }
+                        >
+                          <X data-icon="inline-start" />
+                          제거
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -235,7 +346,7 @@ export function ProductCategorySelectionModal({
           >
             취소
           </Button>
-          <Button type="button" disabled={applyDisabled} onClick={handleApply}>
+          <Button type="button" disabled={busy} onClick={handleApply}>
             적용
           </Button>
         </DialogFooter>

@@ -480,7 +480,7 @@ function ProductBasicInformationEditDrawer({
       <ProductCategorySelectionModal
         open={categoryModalOpen}
         onOpenChange={setCategoryModalOpen}
-        options={categoryOptions}
+        tree={categoryTree?.categories ?? []}
         isLoading={categoriesLoading}
         selectedIds={values.categoryIds}
         primaryCategoryId={values.primaryCategoryId}

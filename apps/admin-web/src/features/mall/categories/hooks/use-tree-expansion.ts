@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useState } from 'react';
+import { collectAllIds, collectSearchExpansion } from '@/lib/utils/category-tree';
 import type { CategoryNode } from '../tree-state';
 
 interface Result {
@@ -11,64 +12,30 @@ interface Result {
   collapseAll: () => void;
 }
 
-function matches(node: CategoryNode, q: string): boolean {
-  const term = q.toLowerCase();
-  return (
-    node.name.toLowerCase().includes(term) ||
-    (node.slug?.toLowerCase().includes(term) ?? false) ||
-    (node.description?.toLowerCase().includes(term) ?? false)
-  );
-}
-
-function collectAncestorsOfMatches(
-  nodes: CategoryNode[],
-  q: string,
-  matched: Set<string>,
-  ancestors: Set<string>,
-  ancestorStack: string[] = [],
-): void {
-  for (const n of nodes) {
-    if (matches(n, q)) {
-      matched.add(n.id);
-      for (const a of ancestorStack) ancestors.add(a);
-    }
-    if (n.children.length) {
-      ancestorStack.push(n.id);
-      collectAncestorsOfMatches(n.children, q, matched, ancestors, ancestorStack);
-      ancestorStack.pop();
-    }
-  }
-}
-
-function collectAllIds(nodes: CategoryNode[], out: Set<string>): void {
-  for (const n of nodes) {
-    out.add(n.id);
-    if (n.children.length) collectAllIds(n.children, out);
-  }
-}
-
 /**
  * 트리 펼침 상태 관리. 검색어가 비어있을 때는 사용자가 직접 토글한 노드만
  * 펼쳐져 있고, 검색어가 있을 때는 매치 노드의 조상을 자동으로 추가 펼침한다
  * (사용자 토글은 그대로 유지하다가 검색어 비우면 자동 펼침만 사라짐).
+ *
+ * 매칭·순회 규칙은 `@/lib/utils/category-tree` 가 소유한다 — 상품 카테고리
+ * 선택기와 같은 규칙을 쓰기 위해서다. 기존 지역 `matches()` 대비 haystack
+ * (이름·slug·설명) 의 공백도 무시하므로 매치가 소폭 넓어진다. 축소 방향의
+ * 회귀는 없다 — `matchesCategory` 의 전체 질의 부분일치 절이 옛 `matches()`
+ * 의 "질의 전체를 이름·slug·설명에 그대로 부분일치" 동작을 그대로 보존한다.
  */
 export function useTreeExpansion(tree: CategoryNode[], search: string): Result {
   const [userExpanded, setUserExpanded] = useState<Set<string>>(new Set());
 
-  const { matchedIds, searchExpanded } = useMemo(() => {
-    const m = new Set<string>();
-    const e = new Set<string>();
-    if (search.trim()) {
-      collectAncestorsOfMatches(tree, search.trim(), m, e);
-    }
-    return { matchedIds: m, searchExpanded: e };
-  }, [tree, search]);
+  const { matchedIds, expandedIds } = useMemo(
+    () => collectSearchExpansion(tree, search),
+    [tree, search]
+  );
 
   const effectiveExpanded = useMemo(() => {
     const out = new Set(userExpanded);
-    for (const id of searchExpanded) out.add(id);
+    for (const id of expandedIds) out.add(id);
     return out;
-  }, [userExpanded, searchExpanded]);
+  }, [userExpanded, expandedIds]);
 
   const toggleExpand = useCallback((id: string) => {
     setUserExpanded((prev) => {
@@ -79,11 +46,7 @@ export function useTreeExpansion(tree: CategoryNode[], search: string): Result {
     });
   }, []);
 
-  const expandAll = useCallback(() => {
-    const all = new Set<string>();
-    collectAllIds(tree, all);
-    setUserExpanded(all);
-  }, [tree]);
+  const expandAll = useCallback(() => setUserExpanded(collectAllIds(tree)), [tree]);
 
   const collapseAll = useCallback(() => setUserExpanded(new Set()), []);
 
