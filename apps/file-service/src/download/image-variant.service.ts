@@ -121,6 +121,12 @@ export class ImageVariantService {
     }
     const original = Buffer.from(await response.arrayBuffer());
 
+    // 애니메이션(다중 프레임) webp 는 변환하면 첫 프레임만 남는다 — 원본으로 폴백
+    const sourceMeta = await sharp(original, { pages: -1 }).metadata();
+    if ((sourceMeta.pages ?? 1) > 1) {
+      return file.url;
+    }
+
     // rotate() 는 EXIF orientation 을 픽셀에 굽는다 — webp 파생본엔 EXIF 가 없어 필수
     let pipeline = sharp(original).rotate();
     if (variant.width !== undefined) {

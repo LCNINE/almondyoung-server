@@ -170,5 +170,31 @@ describe('ImageVariantService', () => {
       const pngFile = { ...jpegFile, mimeType: 'image/png' } as Upload;
       await expect(service.resolveUrl(pngFile, { format: 'webp' })).resolves.toBe(pngFile.url);
     });
+
+    it('falls back to the original url for animated (multi-frame) webp', async () => {
+      const frame = (color: number) =>
+        sharp({ create: { width: 60, height: 60, channels: 3, background: { r: color, g: 0, b: 0 } } })
+          .png()
+          .toBuffer();
+      const animated = await sharp([await frame(250), await frame(10)], { join: { animated: true } })
+        .webp()
+        .toBuffer();
+
+      fetchSpy.mockResolvedValueOnce({ ok: false, status: 403 } as Response).mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: () =>
+          Promise.resolve(animated.buffer.slice(animated.byteOffset, animated.byteOffset + animated.byteLength)),
+      } as unknown as Response);
+
+      const webpFile = {
+        ...jpegFile,
+        mimeType: 'image/webp',
+        filePath: 'products/images/2026/08/file-1.webp',
+        url: 'https://bucket.example/products/images/2026/08/file-1.webp',
+      } as Upload;
+
+      await expect(service.resolveUrl(webpFile, { format: 'webp', width: 320 })).resolves.toBe(webpFile.url);
+      expect(storageService.upload).not.toHaveBeenCalled();
+    });
   });
 });
