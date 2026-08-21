@@ -30,20 +30,18 @@ export async function MyPageTemplate({
   countryCode: string
   orderListParams: { page: number; period: string; q: string }
 }) {
-  const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
-    fetchMe(),
-    checkAdminScope(),
-    getPointBalance().catch(() => ({
-      available: 0,
-      confirmed: 0,
-      reserved: 0,
-    })),
-  ])
-
-  const [customer, cart] = await Promise.all([
-    withMypageTimeout(retrieveCustomer(), null),
-    withMypageTimeout(retrieveCart(undefined, undefined, "no-store"), null),
-  ])
+  const [currentUser, { isAdmin }, pointBalance, customer, cart] =
+    await Promise.all([
+      fetchMe(),
+      checkAdminScope(),
+      getPointBalance().catch(() => ({
+        available: 0,
+        confirmed: 0,
+        reserved: 0,
+      })),
+      withMypageTimeout(retrieveCustomer(), null),
+      withMypageTimeout(retrieveCart(undefined, undefined, "no-store"), null),
+    ])
   const cartWithCustomer = cart as
     | (typeof cart & { customer?: { groups?: CustomerGroupRef[] } })
     | null
@@ -54,9 +52,9 @@ export async function MyPageTemplate({
   return (
     <>
       {/* 모바일 콘텐츠 - lg 미만 */}
-      <div className="block bg-muted lg:hidden">
+      <div className="bg-muted block lg:hidden">
         {/* 프로필 영역 */}
-        <div className="px-6 pt-4 pb-5 space-y-3 bg-primary/90">
+        <div className="bg-primary/90 space-y-3 px-6 pt-4 pb-5">
           <MobileHeader
             userName={(currentUser as UserDetail)?.username}
             isMembership={isMembershipPricing}
@@ -70,19 +68,19 @@ export async function MyPageTemplate({
         </div>
 
         {/* 퀵메뉴 */}
-        <div className="px-6 py-4 bg-white">
+        <div className="bg-white px-6 py-4">
           <QuickLinks />
         </div>
 
         {/* 주문 내역 */}
-        <div className="px-6 py-5 mt-2 bg-white">
+        <div className="mt-2 bg-white px-6 py-5">
           <Suspense fallback={<ShippingStatusSkeleton />}>
             <ShippingStatusWrapper />
           </Suspense>
         </div>
 
         {/* 자주 쓰는 메뉴 */}
-        <div className="px-6 py-5 mt-2 bg-white">
+        <div className="mt-2 bg-white px-6 py-5">
           <FrequentMenu />
         </div>
       </div>
