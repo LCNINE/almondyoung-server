@@ -1,29 +1,10 @@
-import { SearchBrandBanner } from "../components/search-brand-banner"
-import { SearchPageClient } from "../components/search-page-client"
-import { matchBrandForQuery } from "../utils/match-brand"
-import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
-import { selectBrandTiles } from "@/domains/home/template/brand-showcase/select-brand-tiles"
-import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
-import { listRootCategoriesCached } from "@/lib/data/category"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { searchProducts } from "@lib/api/pim/search"
-import { listProducts } from "@lib/api/medusa/products"
-import { getRegion } from "@lib/api/medusa/regions"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
-import { filterProductsByMembershipVisibility } from "@/lib/utils/product-card"
+import { getRegion } from "@lib/api/medusa/regions"
 import { getWishlist } from "@lib/api/users/wishlist"
-import type { HttpTypes } from "@medusajs/types"
-
-export interface SearchProductResult {
-  items: HttpTypes.StoreProduct[]
-  pagination: {
-    page: number
-    size: number
-    total: number
-    totalPages: number
-  }
-}
+import { SearchPageClient } from "../components/search-page-client"
+import { resolveBrandBanner } from "../data/brand-banner"
+import { fetchSearchResults, type SearchSort } from "../data/search-results"
 
 interface SearchContainerProps {
   searchParams: Promise<{
@@ -40,135 +21,45 @@ interface SearchContainerProps {
   }>
 }
 
+const PAGE_SIZE = 20
+
 export async function SearchContainer({
   searchParams,
   params,
 }: SearchContainerProps) {
-  const { q, page, sort, categoryIds, brands, minPrice, maxPrice } =
-    await searchParams
-  const { countryCode } = await params
-  const region = await getRegion(countryCode)
+  const [
+    { q, page, sort, categoryIds, brands, minPrice, maxPrice },
+    { countryCode },
+  ] = await Promise.all([searchParams, params])
 
   const keyword = q?.trim() || ""
-  const size = 20
-  const pageParam = Math.max(1, parseInt(page ?? "1", 10) || 1)
 
-  const normalizedSort = normalizeSearchSort(sort)
-  const brandList = toQueryArray(brands)
-  const categoryIdList = toQueryArray(categoryIds)
+  const [region, customer] = await Promise.all([
+    getRegion(countryCode),
+    retrieveCustomer().catch(() => null),
+  ])
 
-  const customer = await retrieveCustomer().catch(() => null)
   const isMembership = !!customer?.groups?.some(
     (group) => group.id === getMembershipGroupIdFromEnv()
   )
 
-  // 로그인한 경우에만 위시리스트 조회
-  const wishlist = customer ? await getWishlist().catch(() => []) : []
-  const wishlistIds = wishlist.map((item) => item.productId)
-
-  let searchResult: SearchProductResult = {
-    items: [],
-    pagination: {
-      page: 1,
-      size: 20,
-      total: 0,
-      totalPages: 0,
-    },
-  }
-
-  if (keyword) {
-    try {
-      // 1. search 서비스 OpenSearch 검색으로 productId 목록 가져오기
-      // isMembership 을 전달해 비회원에겐 멤버십 전용 노출 상품을 소스에서 제외 →
-      // pagination.total/totalPages 가 실제 노출 개수와 일치.
-      const searchApiResult = await searchProducts({
-        q: keyword,
-        page: pageParam,
-        size,
-        sort: normalizedSort,
-        categoryIds: categoryIdList,
-        brands: brandList,
-        minPrice: minPrice ? parseInt(minPrice, 10) : undefined,
-        maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
-        includeMembersOnly: isMembership,
-      })
-
-      if ("data" in searchApiResult && searchApiResult.data) {
-        const searchData = searchApiResult.data
-
-        // 2. productId 목록 추출 (medusa에서 handle로 사용)
-        const masterIds = searchData.items.map((item) => item.productId)
-
-        let items: HttpTypes.StoreProduct[] = []
-
-        if (masterIds.length > 0) {
-          // 3. medusa에서 handle로 상품 조회
-          const medusaResult = await listProducts({
-            queryParams: {
-              handle: masterIds,
-              limit: masterIds.length,
-            },
-            regionId: region?.id,
-          })
-
-          // 4. 검색 순서대로 정렬 (검색 관련도 유지)
-          const orderMap = new Map(masterIds.map((id, idx) => [id, idx]))
-          items = [...medusaResult.response.products].sort((a, b) => {
-            const orderA = orderMap.get(a.handle ?? "") ?? Infinity
-            const orderB = orderMap.get(b.handle ?? "") ?? Infinity
-            return orderA - orderB
-          })
-        }
-
-        // 소스(search 서비스)에서 이미 멤버십 전용 노출을 제외하므로 total/totalPages 는 정확하다.
-        // 아래 JS 필터는 아직 재색인 안 된 문서(is_visible_to_members_only 필드 없음)에 대한 방어층.
-        const visibleItems = filterProductsByMembershipVisibility(
-          items,
-          isMembership
-        )
-
-        searchResult = {
-          items: visibleItems,
-          pagination: {
-            page: searchData.pagination.page,
-            size: searchData.pagination.size,
-            total: searchData.pagination.total,
-            totalPages: searchData.pagination.totalPages,
-          },
-        }
-      }
-    } catch (error) {
-      console.error("[SearchContainer] 검색 실패:", error)
-    }
-  }
-
-  // 검색어가 브랜드관 브랜드와 매칭되면 결과 최상단에 브랜드 카드를 띄운다.
-  // listRootCategoriesCached 는 비활성·회원전용 필터가 끝난 트리라(헤더와 공유, 요청당 1회)
-  // 회원전용 브랜드 카드는 멤버십 회원에게만 뜬다.
-  let brandBanner: React.ReactNode = null
-  if (keyword) {
-    try {
-      const roots = await listRootCategoriesCached()
-      const { groups } = selectBrandTiles(roots, BRAND_CATEGORY_HANDLE, Infinity)
-      const brands = groups.flatMap((g) => g.brands)
-      const hit = matchBrandForQuery(
-        brands.map((b) => ({ name: b.category.name, tile: b })),
-        keyword
-      )
-      if (hit) {
-        const thumbnail = getCategoryThumbnail(hit.tile.category)
-        brandBanner = (
-          <SearchBrandBanner
-            name={hit.tile.category.name}
-            href={`/category/${hit.tile.handlePath.join("/")}`}
-            thumbnailUrl={thumbnail ? getThumbnailUrl(thumbnail) : null}
-          />
-        )
-      }
-    } catch (error) {
-      console.error("[SearchContainer] 브랜드 배너 매칭 실패:", error)
-    }
-  }
+  const [wishlist, searchResult, brandBanner] = await Promise.all([
+    // 로그인한 경우에만 위시리스트 조회
+    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
+    fetchSearchResults({
+      keyword,
+      page: Math.max(1, parseInt(page ?? "1", 10) || 1),
+      size: PAGE_SIZE,
+      sort: normalizeSearchSort(sort),
+      categoryIds: toQueryArray(categoryIds),
+      brands: toQueryArray(brands),
+      minPrice: minPrice ? parseInt(minPrice, 10) : undefined,
+      maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
+      isMembership,
+      regionId: region?.id,
+    }),
+    resolveBrandBanner(keyword),
+  ])
 
   return (
     <SearchPageClient
@@ -179,7 +70,7 @@ export async function SearchContainer({
       regionId={region?.id}
       isMembership={isMembership}
       isLoggedIn={!!customer}
-      wishlistIds={wishlistIds}
+      wishlistIds={wishlist.map((item) => item.productId)}
     />
   )
 }
@@ -198,9 +89,7 @@ function toQueryArray(value?: string | string[]): string[] | undefined {
   return filtered.length > 0 ? filtered : undefined
 }
 
-function normalizeSearchSort(
-  value?: string | string[]
-): "relevance" | "newest" | "price_asc" | "price_desc" | "review" {
+function normalizeSearchSort(value?: string | string[]): SearchSort {
   const sortValue = Array.isArray(value) ? value[0] : value
   switch (sortValue) {
     case "newest":
