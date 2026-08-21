@@ -15,6 +15,8 @@ export interface UploadRequest {
   contentType: string;
   metadata?: Record<string, string>;
   isPublic?: boolean;
+  // 객체에 저장될 Cache-Control (예: 불변 파생본의 장기 캐시). 미지정 시 기존과 동일하게 없음.
+  cacheControl?: string;
 }
 
 export interface UploadResult {

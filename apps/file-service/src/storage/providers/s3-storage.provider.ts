@@ -90,6 +90,7 @@ export class S3StorageProvider
         Body: request.buffer,
         ContentType: request.contentType,
         Metadata: request.metadata,
+        ...(request.cacheControl ? { CacheControl: request.cacheControl } : {}),
       };
 
       if (isPublic) {

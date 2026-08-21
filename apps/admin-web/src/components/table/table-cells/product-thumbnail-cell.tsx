@@ -10,7 +10,7 @@ export function ProductThumbnailCell({
   thumbnail: string | null | undefined;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = resolvePublicFileUrl(thumbnail);
+  const src = resolvePublicFileUrl(thumbnail, { format: 'webp', width: 320 });
   const loadFailed = src !== null && failedSrc === src;
 
   if (!src || loadFailed) {

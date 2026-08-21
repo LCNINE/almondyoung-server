@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { StorageService } from '../storage/storage.service';
+import { ImageVariant, ImageVariantService } from './image-variant.service';
 import { FileAccess } from '../access/file-access';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
@@ -10,6 +11,7 @@ export class DownloadService {
   constructor(
     private readonly storageService: StorageService,
     private readonly fileAccess: FileAccess,
+    private readonly imageVariantService: ImageVariantService,
   ) {}
 
   async getSignedUrl(
@@ -70,8 +72,11 @@ export class DownloadService {
     return response;
   }
 
-  async resolvePublicUrl(fileId: string): Promise<string> {
+  async resolvePublicUrl(fileId: string, variant?: ImageVariant | null): Promise<string> {
     const file = await this.fileAccess.loadPublicServable(fileId);
-    return file.url;
+    if (!variant) {
+      return file.url;
+    }
+    return this.imageVariantService.resolveUrl(file, variant);
   }
 }

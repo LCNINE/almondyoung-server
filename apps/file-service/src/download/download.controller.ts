@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, 
 import { Public, User } from '@app/authorization';
 import { Response } from 'express';
 import { DownloadService } from './download.service';
+import { ImageVariantService } from './image-variant.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
@@ -22,7 +23,10 @@ import { JwtPayload } from '../shared/types/jwt-payload.interface';
 @ApiSecurity('cookie')
 @Controller('files')
 export class DownloadController {
-  constructor(private readonly downloadService: DownloadService) {}
+  constructor(
+    private readonly downloadService: DownloadService,
+    private readonly imageVariantService: ImageVariantService,
+  ) {}
 
   @Get(':fileId/download')
   @ApiOperation({ summary: 'Get signed URL for file download' })
@@ -71,11 +75,20 @@ export class DownloadController {
     description: 'Returns public file URL without authentication. Use in <img src="..." /> directly.',
   })
   @ApiParam({ name: 'fileId', description: 'File UUID' })
+  @ApiQuery({ name: 'format', description: 'Variant format (webp)', required: false })
+  @ApiQuery({ name: 'width', description: 'Variant width in px (whitelisted values only)', required: false })
   @ApiResponse({ status: 302, description: 'Redirects to S3 public URL' })
   @ApiResponse({ status: 404, description: 'File not found or not public' })
-  async servePublicFile(@Param('fileId', ParseUUIDPipe) fileId: string, @Res() res: Response) {
+  async servePublicFile(
+    @Param('fileId', ParseUUIDPipe) fileId: string,
+    @Res() res: Response,
+    @Query('format') format?: string,
+    @Query('width') width?: string,
+  ) {
+    // 파라미터 검증은 파일 조회보다 먼저 — 잘못된 파라미터는 아래 폴백을 타지 않고 400.
+    const variant = this.imageVariantService.parse(format, width);
     try {
-      const url = await this.downloadService.resolvePublicUrl(fileId);
+      const url = await this.downloadService.resolvePublicUrl(fileId, variant);
       return res.redirect(302, url);
     } catch (err) {
       // 로컬 개발 편의: 이 인스턴스에 없는 파일은 상위 file-service 로 넘긴다.
@@ -83,7 +96,10 @@ export class DownloadController {
       // PUBLIC_FILE_FALLBACK_BASE_URL 이 없으면 기존대로 404.
       const fallback = process.env.PUBLIC_FILE_FALLBACK_BASE_URL;
       if (!fallback) throw err;
-      return res.redirect(302, `${fallback.replace(/\/+$/, '')}/files/public/${fileId}`);
+      const query = variant
+        ? `?format=${variant.format}${variant.width !== undefined ? `&width=${variant.width}` : ''}`
+        : '';
+      return res.redirect(302, `${fallback.replace(/\/+$/, '')}/files/public/${fileId}${query}`);
     }
   }
 
