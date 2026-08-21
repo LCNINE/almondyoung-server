@@ -25,7 +25,7 @@ export function BrandHeader({ category }: BrandHeaderProps) {
             alt={category.name}
             fill
             sizes="(min-width: 768px) 80px, 64px"
-            className="object-contain"
+            className="object-cover"
           />
         </span>
       )}

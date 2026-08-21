@@ -32,7 +32,7 @@ export async function SearchBrandBanner({
             alt={name}
             fill
             sizes="56px"
-            className="object-contain"
+            className="object-cover"
           />
         ) : (
           <span className="px-1 text-center text-[10px] leading-tight font-bold text-muted-foreground">
