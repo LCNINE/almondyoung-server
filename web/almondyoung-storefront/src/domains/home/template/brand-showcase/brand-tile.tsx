@@ -20,17 +20,17 @@ export function BrandTile({ name, href, thumbnailUrl }: BrandTileProps) {
       href={href}
       className="flex w-[76px] flex-col items-center gap-2 transition-opacity hover:opacity-90 md:w-[92px]"
     >
-      <span className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-border bg-white">
+      <span className="border-border relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border bg-white">
         {thumbnailUrl ? (
           <Image
             src={thumbnailUrl}
             alt={name}
             fill
             sizes="(min-width: 768px) 92px, 76px"
-            className="object-contain"
+            className="object-cover"
           />
         ) : (
-          <span className="line-clamp-2 px-1.5 text-center text-[11px] leading-tight font-bold text-muted-foreground">
+          <span className="text-muted-foreground line-clamp-2 px-1.5 text-center text-[11px] leading-tight font-bold">
             {name}
           </span>
         )}
