@@ -14,6 +14,7 @@
 
 import type { INestApplicationContext, NestInterceptor, Type } from '@nestjs/common';
 import { ModulesContainer, Reflector } from '@nestjs/core';
+import { ClsInterceptor } from 'nestjs-cls';
 import type { SchemaValidationOptions, StreamConfig } from '@packages/event-contracts/types';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { ChainContextInterceptor } from '../interceptors/chain-context.interceptor';
@@ -89,6 +90,23 @@ export function buildConsumerInterceptors(app: INestApplicationContext, streams:
   const policy = optionalGet<EventsConsumerPolicy>(app, EVENTS_CONSUMER_POLICY);
 
   const interceptors: NestInterceptor[] = [
+    // **최외곽 — CLS 컨텍스트를 연다 (#612).** 소비 경로에는 ClsGuard/ClsInterceptor 가 없어
+    // CLS 가 아예 열리지 않았고, 그래서 `ChainContextInterceptor` 의 `setChainId` 가
+    // "No CLS context available" 로 던지며 그 안의 `catch` 에 삼켜졌다 — 완전 무증상이었다.
+    //
+    // 라이브러리 구현을 쓰는 이유: `cls.run(() => next.handle())` 은 **동작하지 않는다.**
+    // Observable 은 구독 시점에 실행되므로 핸들러가 도는 시점엔 `run` 콜백이 이미 반환된
+    // 뒤다. `ClsInterceptor` 는 `new Observable(sub => cls.runWith(store, () =>
+    // next.handle().subscribe(sub)))` 로 그 함정을 이미 풀어놨다.
+    //
+    // `ClsGuard` 는 대안이 아니다 — 그 구현은 `cls.enterWith()` 이고, 이는 컨텍스트를 현재
+    // async resource 의 남은 수명 전체에 눌러쓰므로 장수 컨슈머 루프에서 메시지 간 store 가
+    // 샐 수 있다.
+    //
+    // 최외곽인 이유: 재시도·DLQ·스키마 검증까지 전부 같은 사슬 컨텍스트 안에서 돌아야
+    // DLQ 로 나가는 메시지도 인바운드 사슬을 물고 나간다. 에러는 그대로 통과시키므로
+    // (`error: (err) => subscriber.error(err)`) 아래 재시도·분류망의 순서 의미는 그대로다.
+    new ClsInterceptor({ saveCtx: false, resolveProxyProviders: false }),
     new EventRetryInterceptor(reflector, optionalGet(app, DLQHandler)),
     new SchemaValidationInterceptor(reflector, streams, policy?.validation),
   ];

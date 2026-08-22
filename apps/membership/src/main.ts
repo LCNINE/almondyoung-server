@@ -8,7 +8,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
-import { EventsModule } from '@app/events';
+import { mountEventChainContext, EventsModule } from '@app/events';
 
 /**
  * 애플리케이션 부트스트랩 함수
@@ -26,6 +26,10 @@ async function bootstrap(): Promise<void> {
   const app = isDev
     ? await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { bufferLogs: true })
     : await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { bufferLogs: true });
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
   app.useLogger(app.get(Logger));
 
   // 쿠키 파서 등록 (Fastify)

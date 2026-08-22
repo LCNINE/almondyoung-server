@@ -12,6 +12,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { FILE_SIZE_LIMIT } from './constants/file.constants';
+import { mountEventChainContext } from '@app/events';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -22,6 +23,10 @@ async function bootstrap() {
     }),
     { bufferLogs: true },
   );
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
   app.useLogger(app.get(PinoLogger));
 
   const configService = app.get(ConfigService);
@@ -30,7 +35,10 @@ async function bootstrap() {
   const configuredCorsOrigins = process.env.CORS_ORIGIN_DOMAINS ?? process.env.CORS_ORIGIN_DOMAIN;
   const corsOrigins =
     process.env.NODE_ENV === 'production'
-      ? (configuredCorsOrigins?.split(',').map((origin) => origin.trim()).filter(Boolean) ?? [])
+      ? (configuredCorsOrigins
+          ?.split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean) ?? [])
       : ['http://localhost:8000', 'http://localhost:8001', 'https://almondyoung-storefront.vercel.app'];
 
   logger.log('CORS:', corsOrigins);

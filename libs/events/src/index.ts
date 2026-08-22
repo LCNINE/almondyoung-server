@@ -68,6 +68,9 @@ export * from './outbox/outbox-dispatcher.service';
 // Utilities
 export * from './utils/message-id.util';
 
+// HTTP 요청 스코프 CLS 컨텍스트 마운트 (#612) — 앱 `main.ts` 에서 한 번 부른다
+export { mountEventChainContext } from './http/mount-event-chain-context';
+
 // Chain Tracking
 export { EventChainService } from './tracking/event-chain.service';
 export { EventTrackingService, EVENT_TRACKING_SERVICE_NAME } from './tracking/event-tracking.service';
