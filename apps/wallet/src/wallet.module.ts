@@ -388,8 +388,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       // 디스패처의 publisherMap 이 회수 대상 토픽을 처음부터 안다.
       enableOutbox: true,
       outbox: WALLET_OUTBOX_CONFIG,
-      // 이 `false` 는 이 워크스트림 이전부터의 상태다 — 5-C 대상이 아니었다.
-      policy: { validateOnConsume: false },
+      policy: { validateOnConsume: true },
     }),
     EventTraceApiModule,
   ],

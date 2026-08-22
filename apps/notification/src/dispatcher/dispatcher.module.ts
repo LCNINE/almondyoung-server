@@ -27,7 +27,13 @@ import { MembershipEventConsumer } from './handlers/membership-event.consumer';
     // 여기서도 받았지만 어느 쪽도 쓰지 않았다 (ADR-0029 §1).
     EventsModule.forApp({
       policy: {
-        validateOnConsume: false, // HTTP 요청과 충돌 방지를 위해 비활성화
+        // HTTP 요청과 충돌하지 않는다. 이 앱은 하이브리드(Fastify + Kafka 소비자)라
+        // 2025-11 에 한 번 거기서 깨졌고(`e52e252ad8`) 그때 이 플래그를 꺼 둔 것인데,
+        // 그 고장은 이틀 뒤 `8bdfdb0686` 이 고쳤다. 지금 방어선은 두 겹이다 —
+        // `startConsumer` 가 인터셉터를 마이크로서비스 스코프로만 붙이고(ADR-0029 §8),
+        // 그 위에 `getType() === 'http'` 가드가 있다
+        // (`libs/events/src/interceptors/schema-validation.interceptor.spec.ts` 가 고정). #611
+        validateOnConsume: true,
       },
     }),
     // Redis가 있으면 NotificationProcessorModule import

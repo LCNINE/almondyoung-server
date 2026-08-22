@@ -9,6 +9,11 @@ name: Verification gates
 # 즉 spec 의 타입을 지키는 건 type-check 뿐이다.
 #
 # 초록을 되찾은 뒤 다시 썩지 않게 하는 게 목적이므로 flagging 이 아니라 *차단*이다.
+#
+# 소비 스키마 검증 게이트도 여기 붙는다. 이건 타입도 테스트도 못 잡는 종류다 —
+# `validateOnConsume` 을 켠 앱들이 안전한 근거는 "발행이 전부 zod 파싱을 지난다"는
+# 정적 증명이고, 그 증명은 발행 경로가 지금 모양일 때만 성립한다. 새 `transport.send`
+# 호출이 하나 생기면 증명이 조용히 무너지므로 사람이 기억해서 돌리는 대신 여기서 센다 (#611).
 
 on:
   pull_request:
@@ -42,3 +47,9 @@ jobs:
       # DB 를 요구하는 통합 스펙은 describeIfDb / REQUIRE_*_DB 가드로 자동 skip 된다.
       - name: Unit tests
         run: npx jest --ci --silent
+
+      # 발행 경로가 소비 검증의 전제를 깨지 않는지 AST 로 센다. 둘 중 하나면 exit 1 —
+      # transport.send 호출 지점이 SEND_PATHS 와 어긋나거나, 검증을 켠 앱에
+      # 계약 미검증(UNVERIFIED) 이벤트가 생긴 경우. DB·네트워크·env 를 쓰지 않는다.
+      - name: Consume validation gate
+        run: npm run audit:consume-validation -- --gate
