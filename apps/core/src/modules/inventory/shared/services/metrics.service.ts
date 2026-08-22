@@ -43,13 +43,6 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
-  private readonly availableStock = new Gauge({
-    name: 'wms_available_stock',
-    help: 'Available stock quantity by SKU and warehouse',
-    labelNames: ['sku_id', 'warehouse_id'],
-    registers: [register],
-  });
-
   // 시스템 메트릭
   private readonly errorCounter = new Counter({
     name: 'wms_errors_total',
@@ -189,13 +182,6 @@ export class MetricsService implements OnModuleInit {
   }
 
   /**
-   * 가용 재고 수량 업데이트
-   */
-  setAvailableStock(skuId: string, warehouseId: string, quantity: number) {
-    this.availableStock.set({ sku_id: skuId, warehouse_id: warehouseId }, quantity);
-  }
-
-  /**
    * 에러 메트릭 증가
    */
   incrementErrorCounter(module: string, errorType: string, severity: 'low' | 'medium' | 'high' | 'critical') {
@@ -224,33 +210,11 @@ export class MetricsService implements OnModuleInit {
   }
 
   /**
-   * 모든 메트릭 조회 (Prometheus 엔드포인트용)
-   */
-  async getMetrics(): Promise<string> {
-    return await register.metrics();
-  }
-
-  /**
    * 특정 메트릭 초기화 (테스트용)
    */
   reset() {
     register.resetMetrics();
     this.logger.warn('Metrics have been reset');
-  }
-
-  /**
-   * 비즈니스 메트릭 업데이트 (배치 작업용)
-   */
-  updateBusinessMetrics() {
-    try {
-      // 이 메소드는 주기적으로 호출되어 비즈니스 메트릭을 업데이트할 수 있습니다.
-      // 예: 총 주문 수, 평균 재고 회전율 등
-
-      this.logger.debug('Business metrics updated');
-    } catch (error) {
-      this.logger.error('Failed to update business metrics:', error);
-      this.incrementErrorCounter('metrics', 'business_update_failed', 'medium');
-    }
   }
 
   /**
@@ -288,36 +252,5 @@ export class MetricsService implements OnModuleInit {
     for (const [kind, count] of Object.entries(counts)) {
       this.fulfillmentInvariantViolationsGauge.set({ kind }, count);
     }
-  }
-
-  /**
-   * 커스텀 메트릭 생성
-   */
-  createCustomCounter(name: string, help: string, labelNames?: string[]) {
-    return new Counter({
-      name: `wms_${name}`,
-      help,
-      labelNames: labelNames || [],
-      registers: [register],
-    });
-  }
-
-  createCustomHistogram(name: string, help: string, labelNames?: string[], buckets?: number[]) {
-    return new Histogram({
-      name: `wms_${name}`,
-      help,
-      labelNames: labelNames || [],
-      buckets: buckets || [0.1, 0.5, 1, 2, 5, 10],
-      registers: [register],
-    });
-  }
-
-  createCustomGauge(name: string, help: string, labelNames?: string[]) {
-    return new Gauge({
-      name: `wms_${name}`,
-      help,
-      labelNames: labelNames || [],
-      registers: [register],
-    });
   }
 }
