@@ -259,6 +259,8 @@ microservice.setIsInitHookCalled(true);
 
 **관측 결정 — 로그다. Prometheus 를 넓히지 않는다 (2026-08-10).** 플랜이 "core 밖으로 나가기 전에 결정하라"고 남긴 항목의 답이다. 스크레이프를 넓히는 쪽은 이 결정의 범위를 넘는다 — 대상 4개 앱 중 3개는 `/metrics` 컨트롤러가 없고, 넷 다 `ServicesBundleA/B` 의 Fargate 태스크 2개에 supervisor 로 묶여 있어 앱별 타깃을 세우려면 Alloy 설정 · SST env · ALB 노출까지 인프라를 건드려야 한다. 로그 쪽은 배선이 이미 있다: 네 앱 전부 `startTelemetry` → OTLP 로그 → Alloy → Grafana Loki 이고 `service_name` 으로 갈린다(가짜 OTLP 수신기로 실행 확인, 엔드포인트 없는 대조군은 무전송).
 
+**이 결정은 뒤집혔다 (2026-08-23, `docs/superpowers/specs/2026-08-22-observability-metrics-endpoints-design.md`).** 위 문단이 스크레이프를 넓히지 않은 근거는 "앱별 타깃을 세우려면 Alloy 설정 · SST env · ALB 노출까지 인프라를 건드려야 한다"였는데, 그 전제가 실측으로 해소됐다 — 메트릭 서버를 앱의 ALB 포트가 아닌 별도 포트(`앱포트+10000`)에 띄우고 Alloy 스크레이프를 `discovery.dns` 로 바꾸는 방식은 ALB 노출이 구조적으로 불필요하고(포트가 애초에 인터넷 경로 밖) 태스크 정의·보안그룹 변경도 0건이다. 즉 인프라를 건드리는 부담 없이 9개 앱 전체에 `/metrics` 를 확장했다.
+
 **그 결정이 드러낸 것: 진단 로그가 필드를 잃고 있었다.** `logger.error('메시지', { topic, messageId, errors })` 의 두 번째 인자는 nestjs-pino 를 지나며 **통째로 버려진다** — Nest 의 `Logger` 가 context 를 마지막 인자로 덧붙이므로 `Logger.call` 은 마지막을 context 로 쓰고 나머지를 pino 의 보간 인자로 넘기는데, 메시지에 `%s` 가 없으면 pino 가 출력하지 않는다. 즉 검증을 켜도 "어느 앱의 어느 이벤트가 실패했는가"까지만 보이고 **어느 필드가 왜 틀렸는지는 안 보인다.** `libs/events` 의 그 모양 23곳을 `{ msg, ...필드 }` 로 옮겼고, 옛 모양이 다시 자라지 않게 AST 스펙으로 막았다(`observability/log-shape.spec.ts`). **이 수정은 5-C 앱별 PR 보다 먼저 배포한다** — 안 그러면 켠 뒤 진단이 없다.
 
 **감사가 무엇을 안 지키는지 (2026-08-10).** `publishStoredEnvelope` 의 zod 파싱을 실제로 제거하는 변이를 넣었는데 `audit:consume-validation --gate` 는 초록이었다. 감사는 `VALIDATED_SEND_ENTRYPOINTS` 라는 **이름 목록**과 호출 그래프의 모양을 보지, 그 진입점이 정말 검증하는지는 보지 않는다. 그 가정을 지키는 것은 6-A 가 남긴 `outbox/enqueue-validation.spec.ts` 다(같은 변이로 빨간불 확인). **감사는 모양을, 스펙은 내용을 지킨다** — 이 절의 증명은 둘 다 있어야 선다.

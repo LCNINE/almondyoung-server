@@ -7,8 +7,10 @@ import { Counter, register } from 'prom-client';
  * 카운터를 인스턴스 필드로 두면 두 번째 생성 시 prom-client 전역 register 중복 등록
  * 예외가 난다. 모듈 스코프 싱글턴이면 인스턴스 수와 무관하게 1회만 등록된다.
  *
- * 관측 커버리지: 전역 register 는 프로세스 단위이고 Alloy 는 Core /metrics 만 스크레이프하므로,
- * 실관측되는 것은 Core 프로세스의 DLQ 뿐이다(설계 스펙 §2 Core 우선 MVP).
+ * 관측 커버리지: 전역 register 는 프로세스 단위다. `@app/events` 를 쓰는 앱 9개가 각자
+ * `/metrics` 를 별도 포트(앱포트+10000)에 띄우고 Alloy 가 `discovery.dns` 로 9개 전부
+ * 스크레이프하므로(2026-08-23, `docs/superpowers/specs/2026-08-22-observability-metrics-endpoints-design.md`),
+ * Core 프로세스뿐 아니라 9개 앱 각각의 DLQ 가 독립적으로 관측된다. "Core 뿐"은 옛 서술이다.
  */
 
 /** DLQ 로 발행 성공한 메시지 누적 수 — 조용히 유실되던 케이스의 관측 지점. */

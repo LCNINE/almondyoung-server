@@ -13,7 +13,6 @@ export function setup(infra: SharedInfra) {
     domain,
     url,
     kafkaEnv,
-    serviceDiscoveryName,
     setOtelExporterOtlpEndpoint,
     createService,
     createBundleService,
@@ -167,7 +166,10 @@ export function setup(infra: SharedInfra) {
       GRAFANA_CLOUD_TEMPO_USERNAME: grafanaCloudTempoUsername.value,
       GRAFANA_CLOUD_LOKI_OTLP_ENDPOINT: grafanaCloudLokiOtlpEndpoint.value,
       GRAFANA_CLOUD_LOKI_USERNAME: grafanaCloudLokiUsername.value,
-      CORE_METRICS_TARGET: $interpolate`${serviceDiscoveryName('Core')}:3000`,
+      // Cloud Map DNS 접미사. 서비스 이름만 앞에 붙이면 완성된다 (config.alloy 가 조립).
+      // user-service 는 별도 SST 배포(lcnine-auth)지만 같은 네임스페이스에 등록돼 있어 닿는다.
+      METRICS_DNS_SUFFIX_SERVICES: $interpolate`${$app.stage}.${$app.name}.${vpc.nodes.cloudmapNamespace.name}`,
+      METRICS_DNS_SUFFIX_AUTH: $interpolate`${$app.stage}.lcnine-auth.${vpc.nodes.cloudmapNamespace.name}`,
     },
     transform: {
       service: (args: Record<string, any>) => {
