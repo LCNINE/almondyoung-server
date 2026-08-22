@@ -5,7 +5,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
 import { Logger } from 'nestjs-pino';
-import { EventsModule } from '@app/events';
+import { mountEventChainContext, EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
 import { AppModule } from './app.module';
 import { createGlobalValidationPipe } from './platform/http/validation-pipe';
@@ -17,6 +17,10 @@ async function bootstrap() {
     // 부팅 로그를 버퍼링했다가 pino 로거가 준비되면 flush — 초기 로그도 JSON+trace_id 로.
     { bufferLogs: true },
   );
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
 
   // nestjs-pino 를 Nest 의 기본 로거로 사용. trace_id 주입은 instrumentation-pino 가 처리.
   app.useLogger(app.get(Logger));

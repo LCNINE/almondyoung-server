@@ -221,8 +221,11 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       validatedPayload = this.validatePayload(String(params.eventType), params.payload);
     }
 
-    // chainId: CLS에서 읽거나 새 UUID v7 생성
-    const chainId = this.eventChainService?.getChainId() ?? v7();
+    // chainId: CLS 에서 읽고, 없으면 만들어 **CLS 에 심는다** (#612).
+    // 옛 `getChainId() ?? v7()` 은 심지 않았기 때문에 같은 컨텍스트의 두 발행이 서로 다른
+    // 사슬을 받았다 — 사슬이 컨슈머 경계에서만 끊긴 게 아니라 애초에 시작되지 않았다.
+    // `EventChainService` 가 없는 앱(주입 optional)에서는 이 발행 한 건짜리 사슬이 맞다.
+    const chainId = this.eventChainService?.ensureChainId() ?? v7();
 
     return {
       messageId,

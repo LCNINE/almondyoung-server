@@ -8,7 +8,7 @@ import fastifyCors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
 import { Logger } from 'nestjs-pino';
 import { WalletModule } from './wallet.module';
-import { EventsModule } from '@app/events';
+import { mountEventChainContext, EventsModule } from '@app/events';
 
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -67,6 +67,10 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(WalletModule, new FastifyAdapter(), {
     bufferLogs: true,
   });
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
   app.useLogger(app.get(Logger));
 
   const isDev = process.env.NODE_ENV !== 'production';

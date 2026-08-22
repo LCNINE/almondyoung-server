@@ -1,14 +1,20 @@
 import './tracing';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
+import { mountEventChainContext, EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SearchModule } from './search.module';
 
 async function bootstrap() {
   const logger = new Logger('SearchBootstrap');
-  const app = await NestFactory.create<NestFastifyApplication>(SearchModule, new FastifyAdapter(), { bufferLogs: true });
+  const app = await NestFactory.create<NestFastifyApplication>(SearchModule, new FastifyAdapter(), {
+    bufferLogs: true,
+  });
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
   app.useLogger(app.get(PinoLogger));
   app.useGlobalPipes(
     new ValidationPipe({

@@ -3,7 +3,7 @@ import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
+import { mountEventChainContext, EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { Logger } from 'nestjs-pino';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
@@ -16,6 +16,10 @@ async function bootstrap() {
     rawBody: true, // 웹훅 서명 검증용 raw body (req.rawBody: Buffer). 기존 body-parser verify 훅 대체.
     bufferLogs: true,
   });
+
+  // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
+  // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.
+  mountEventChainContext(app);
   app.useLogger(app.get(Logger));
 
   // admin-web 은 이 서비스를 자기 프록시(/api/proxy/notification/*)로 부르면서 토큰을

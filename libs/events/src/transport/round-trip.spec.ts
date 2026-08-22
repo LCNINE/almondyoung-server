@@ -10,8 +10,9 @@
  * 걸리지 않았고, 그래서 2026-08-08 아키텍처 리뷰가 오판했다.
  */
 
-import { Controller, INestMicroservice, UseInterceptors } from '@nestjs/common';
+import { Controller, INestMicroservice, Inject, UseInterceptors } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { ClsService } from 'nestjs-cls';
 import { z } from 'zod';
 import { event, getDLQTopicName, stream } from '@packages/event-contracts/types';
 import type { DLQMessage } from '../dlq/dlq.types';
@@ -44,6 +45,9 @@ const HARNESS_STREAM = stream({
     OrderCreated: event('OrderCreated', OrderCreatedSchema),
     OrderCancelled: event<'OrderCancelled', { orderId: string }>('OrderCancelled'),
     OrderShipped: event<'OrderShipped', { orderId: string }>('OrderShipped'),
+    // 컨슈머가 **소비하면서 발행하는** 경로 전용 (#612). 다른 이벤트에 이 역할을 겸하게
+    // 하면 기존 스펙의 `calls` 기대값이 함께 흔들린다.
+    OrderRefunded: event<'OrderRefunded', { orderId: string }>('OrderRefunded'),
   },
 });
 
@@ -72,7 +76,11 @@ const calls: HandlerCall[] = [];
 @UseInterceptors(EventTypeGuard)
 class HarnessConsumer {
   // 생성자 주입이 하네스에서도 살아 있어야 한다 — 클로저 기반 핸들러였다면 잃었을 것
-  constructor(private readonly chain: EventChainService) {}
+  constructor(
+    private readonly chain: EventChainService,
+    @Inject(EventsModule.getPublisherToken(HARNESS_STREAM.topic.topic))
+    private readonly publisher: StreamPublisher<typeof HARNESS_STREAM.events>,
+  ) {}
 
   @On(HARNESS_STREAM, 'OrderCreated')
   onCreated(@EventPayload() payload: OrderCreatedPayload): void {
@@ -86,7 +94,21 @@ class HarnessConsumer {
 
   @On(HARNESS_STREAM, 'OrderShipped')
   onShipped(@EventPayload() payload: unknown): void {
-    calls.push({ handler: 'onShipped', payload });
+    calls.push({ handler: 'onShipped', payload, chainId: this.chain.getChainId() });
+  }
+
+  /**
+   * 소비하면서 발행하는 핸들러 — #612 가 끊었던 바로 그 자리다.
+   * 운영에서는 `apps/wallet/src/consumers/billing-charge.consumer.ts` 가 같은 모양이다.
+   */
+  @On(HARNESS_STREAM, 'OrderRefunded')
+  async onRefunded(@EventPayload() payload: { orderId: string }): Promise<void> {
+    calls.push({ handler: 'onRefunded', payload, chainId: this.chain.getChainId() });
+    await this.publisher.publishEvent({
+      eventType: 'OrderShipped',
+      aggregateId: payload.orderId,
+      payload: { orderId: payload.orderId },
+    });
   }
 }
 
@@ -171,19 +193,13 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
   });
 
   /**
-   * ⚠️ 알려진 실재 결함 — 이 태스크 범위 밖이라 고치지 않고 실행 가능한 형태로 박아둔다.
+   * #612 의 완료 판정. 오래 `it.failing` 으로 박혀 있던 자리다 — 소비 경로에 CLS 컨텍스트를
+   * 여는 주체가 없어 `setChainId` 가 "No CLS context available" 로 던졌고, 그 예외를
+   * `ChainContextInterceptor` 의 `catch` 가 삼켜 **완전 무증상**이었다.
    *
-   * 소비 경로에서 `chainId` 가 CLS 로 전파되지 않는다. 원인은 파싱이 아니라
-   * (그건 `parseEnvelope` 로 고쳤다) **CLS 컨텍스트가 아예 열리지 않는 것**이다:
-   * `ClsModule.forRoot({ middleware: { mount: false } })` 이고 RPC 경로에
-   * ClsGuard/ClsInterceptor 가 없어 `setChainId` 가
-   * "No CLS context available" 로 던지며, `ChainContextInterceptor` 의
-   * `catch {}` 가 그것을 삼킨다 (2026-08-09 실측).
-   *
-   * `it.failing` 이므로 **지금은 통과**하고, 누군가 CLS 배선을 고치면 이 테스트가
-   * 실패해 "이제 고쳐졌으니 일반 `it` 으로 바꿔라"고 알린다.
+   * 이제 `buildConsumerInterceptors` 의 최외곽 `ClsInterceptor` 가 컨텍스트를 연다.
    */
-  it.failing('ChainContextInterceptor 가 envelope 의 chainId 를 CLS 로 전파한다', async () => {
+  it('ChainContextInterceptor 가 envelope 의 chainId 를 CLS 로 전파한다', async () => {
     await publisher.publishEvent({
       eventType: 'OrderCreated',
       aggregateId: 'order-3',
@@ -193,6 +209,80 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
     const published = broker.envelopesOn(HARNESS_STREAM.topic.topic);
     expect(calls[0].chainId).toBeDefined();
     expect(calls[0].chainId).toBe(published[0].chainId);
+  });
+
+  /**
+   * 소비 경로가 사슬을 **이어서 내보내는지** — #612 의 본체다.
+   *
+   * 인바운드 `OrderRefunded` 를 받은 핸들러가 그 안에서 `OrderShipped` 를 발행한다.
+   * 고쳐지기 전에는 발행부가 CLS 를 못 읽어 후속 이벤트가 새 사슬을 팠다.
+   */
+  it('컨슈머 안에서 발행한 후속 이벤트가 인바운드 chainId 를 이어받는다', async () => {
+    await publisher.publishEvent({
+      eventType: 'OrderRefunded',
+      aggregateId: 'order-refund-1',
+      payload: { orderId: 'order-refund-1' },
+    });
+
+    const published = broker.envelopesOn(HARNESS_STREAM.topic.topic);
+    const inbound = published.find((e) => e.messageType === 'OrderRefunded');
+    const outbound = published.find((e) => e.messageType === 'OrderShipped');
+
+    expect(inbound?.chainId).toBeDefined();
+    expect(outbound?.chainId).toBe(inbound?.chainId);
+
+    // 사슬은 다음 홉의 핸들러까지 이어진다 — envelope 뿐 아니라 CLS 도 같은 값이어야 한다
+    expect(calls.map((call) => call.handler)).toEqual(['onRefunded', 'onShipped']);
+    expect(calls[1].chainId).toBe(inbound?.chainId);
+  });
+
+  /**
+   * 발행부의 시딩 (#612). `getChainId() ?? v7()` 은 **심지 않았기 때문에** 한 컨텍스트
+   * 안의 두 발행이 서로 다른 사슬을 받았다 — 소비 경계에서만 끊긴 게 아니라 애초에
+   * 사슬이 시작되지 않았다는 뜻이다. HTTP 요청 하나가 이벤트 둘을 내보내는 경우가 이 모양이다.
+   */
+  it('한 CLS 컨텍스트 안의 두 발행은 같은 chainId 를 받는다', async () => {
+    const cls = app.get(ClsService);
+
+    await cls.run(async () => {
+      await publisher.publishEvent({
+        eventType: 'OrderCreated',
+        aggregateId: 'order-seed-1',
+        payload: { orderId: 'order-seed-1', amount: 100 },
+      });
+      await publisher.publishEvent({
+        eventType: 'OrderCreated',
+        aggregateId: 'order-seed-2',
+        payload: { orderId: 'order-seed-2', amount: 200 },
+      });
+    });
+
+    const published = broker.envelopesOn(HARNESS_STREAM.topic.topic);
+    expect(published).toHaveLength(2);
+    expect(published[0].chainId).toBeDefined();
+    expect(published[1].chainId).toBe(published[0].chainId);
+  });
+
+  /**
+   * 시딩의 경계 — CLS 컨텍스트가 없으면 심을 곳이 없다. 크론·부트스트랩 스크립트가 이쪽이다.
+   * **던지지 않는 것**이 핵심이다. `cls.set` 이 컨텍스트 없이 던지는 것이 #612 의 무증상
+   * 실패 경로였으므로, 그 예외를 발행 경로로 옮겨 심지 않았음을 여기서 고정한다.
+   */
+  it('CLS 컨텍스트 밖 발행은 던지지 않고 발행마다 새 사슬이 된다', async () => {
+    await publisher.publishEvent({
+      eventType: 'OrderCreated',
+      aggregateId: 'order-nocls-1',
+      payload: { orderId: 'order-nocls-1', amount: 100 },
+    });
+    await publisher.publishEvent({
+      eventType: 'OrderCreated',
+      aggregateId: 'order-nocls-2',
+      payload: { orderId: 'order-nocls-2', amount: 200 },
+    });
+
+    const published = broker.envelopesOn(HARNESS_STREAM.topic.topic);
+    expect(published[0].chainId).toBeDefined();
+    expect(published[1].chainId).not.toBe(published[0].chainId);
   });
 
   it('EventTypeGuard 가 같은 토픽의 다중 핸들러 중 messageType 이 맞는 하나만 실행한다', async () => {
