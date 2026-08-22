@@ -225,13 +225,23 @@ METRICS_DNS_SUFFIX_AUTH:     $interpolate`${$app.stage}.lcnine-auth.${vpc.nodes.
 
 ## 4. 배포
 
-순서: **앱 먼저, Alloy 나중.**
+**앱과 Alloy 는 분리 배포가 아니다.** `config.alloy` 는
+`deployments/lcnine/services/observability/alloy/Dockerfile` 이 이미지에 COPY 하고,
+Alloy 컨테이너는 `deployments/lcnine/services/infra/services.ts` 의
+`new sst.aws.Service('Observability', ...)` 로 떠 있어 Core·Wallet·번들과 **같은 SST 앱
+(lcnine-services)** 이다. 즉 `sst deploy` (lcnine-services) 한 번이 8개 앱과 Alloy 설정을
+**동시에** 롤링한다 — "1. 앱 배포 → 3. Alloy 설정 반영 배포"로 나눌 수 없다.
 
-1. `sst deploy` (lcnine-services) — 9개 중 8개 앱에 메트릭 포트가 뜬다.
+1. `sst deploy` (lcnine-services) — 8개 앱(core, wallet, analytics, channel-adapter,
+   membership, notification, search, ugc) 과 Alloy 설정이 함께 바뀐다.
 2. `sst deploy` (lcnine-auth) — user-service.
-3. Alloy 설정 반영 배포 — 스크레이프 시작.
 
-반대 순서면 Alloy 가 잠깐 타깃 실패(`up=0`)를 낸다. 무해하지만 순서를 지키면 그마저 없다.
+**롤링 중 수 분간 일부 job 이 `up=0` 인 것은 정상이다.** 새 Alloy 설정(코드)과 새 태스크
+IP(discovery.dns 대상)가 동시에 굴러가는 동안, 아직 내려가지 않은 옛 태스크나 아직 뜨지
+않은 새 태스크를 향한 스크레이프는 실패할 수 있다. 태스크 교체가 끝나면 저절로 사라진다.
+
+**user-service 는 1번과 별개로, 2번(lcnine-auth 배포)을 하기 전까지 계속 `up=0` 이다** —
+같은 배포가 아니므로 자동으로 따라가지 않는다.
 
 마이그레이션 없음. 시크릿 없음. 롤백은 배포 되돌리기로 충분하다.
 
@@ -249,12 +259,20 @@ count(up == 1) by (job)   # core, wallet, analytics, channel-adapter,
                           # membership, notification, search, ugc, user-service — 9개
 ```
 
+**`up==1` 을 앱 헬스로 읽으면 안 된다.** metrics 서버는 `tracing.ts` 에서 Nest 부팅 **전**에
+포트를 연다. 즉 Nest 가 DB 커넥션 대기 등으로 아직 요청을 못 받는 상태여도 `up=1` 이 나온다.
+`up` 은 "스크레이프가 성립한다"만 뜻하고, 앱이 실제로 트래픽을 처리하는지는 별도로 확인해야
+한다 (ALB 헬스체크·`/health` 등).
+
 ## 6. 검증 계획
 
 - **단위**: `metrics-server.spec.ts` — `/metrics` 가 200 + `register.contentType`, 그 외 경로 404,
   포트 파생 규칙(`PORT + 10000`, `METRICS_PORT` 우선), `unref()` 호출 여부.
-- **로컬 수동**: 앱 하나 기동 후 `curl -s localhost:13000/metrics | head` 에 `events_dlq_messages_total`
-  HELP 줄이 보이는지.
+- **로컬 수동**: `PORT=3000 npm run start:main:dev` 로 앱 기동 후 `curl -s localhost:13000/metrics | head`
+  에 `events_dlq_messages_total` HELP 줄이 보이는지. **`PORT` 를 명시해야 한다** — 각 앱은
+  `main.ts` 에서 `PORT` 미설정 시 자체 기본 포트로 폴백하는데, `resolveMetricsPort` 는 그 폴백을
+  모르고 `process.env.PORT` 만 본다. `PORT` 없이 로컬 기동하면 `METRICS_PORT` 도 없는 한
+  metrics 서버가 조용히 스킵된다(§3.2).
 - **게이트**: `npm run type-check` 0, `npx jest --maxWorkers=2` 실패 0.
 - **배포 후**: Grafana 에서 §5 쿼리로 job 9개 확인. 그리고 `curl https://core.almondyoung.com/metrics`
   가 404 가 되는지 (기존 컨트롤러 제거 확인).
@@ -268,6 +286,7 @@ count(up == 1) by (job)   # core, wallet, analytics, channel-adapter,
 | Alloy 이미지가 `:latest` — `discovery.dns` 동작이 버전에 좌우 | 배포 후 §5 쿼리로 즉시 확인. 버전 핀은 별도 이슈 |
 | 활성 시리즈 증가 (앱당 `collectDefaultMetrics` ~35) | Core 만 `collectDefaultMetrics` 를 켠 상태를 유지하고, 나머지 앱은 켜지 않는다. 필요해지면 개별 판단 |
 | `job` 라벨이 기존 `service_name` 과 어긋남 | §3.5 대로 `supervisor.mjs` 의 `otel` 값을 정본으로 삼는다 |
+| `instance` 라벨의 의미가 바뀐다 — 옛 static target 은 `instance="Core.live.lcnine-services.sst:3000"` 이었고, `discovery.dns` 는 A 레코드를 IP 로 펼치므로 이제 `instance="10.0.x.y:13000"` 이다. 기존 Grafana 패널·알림이 `instance=` 값으로 고정돼 있으면 배포 후 조용히 빈 그래프가 된다. 배포마다 태스크 IP 가 바뀌므로 매번 새 시리즈 세트가 생긴다 | 배포 전 기존 패널·알림 쿼리에서 `instance=` 하드코딩 여부를 확인하고, `job` 라벨 기준으로 바꿔 둘 것 |
 
 ## 8. 후속 이슈로 낼 것
 
