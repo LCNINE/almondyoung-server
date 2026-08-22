@@ -108,6 +108,9 @@ otelcol.auth.basic "grafanacloud_tempo" {
 //
 // 메트릭 포트 = 앱 포트 + 10000 (libs/shared/src/observability/metrics-server.ts).
 // 번들 태스크(ServicesBundleA/B)는 한 이름에 앱이 여러 개라 포트만 다른 블록을 앱 수만큼 둔다.
+//
+// scrape_interval: core 만 "30s" 다 — Core 메모리 스파이크(200MB → 440MB, 1분 내 OOM) 진단용
+// 임시값이라 다른 8개로 확대 적용할 근거가 없다. 나머지 8개는 "60s".
 
 discovery.dns "core" {
 	names = ["Core." + sys.env("METRICS_DNS_SUFFIX_SERVICES")]
@@ -116,11 +119,13 @@ discovery.dns "core" {
 }
 
 prometheus.scrape "core" {
-	targets         = discovery.dns.core.targets
-	job_name        = "core"
-	metrics_path    = "/metrics"
+	targets      = discovery.dns.core.targets
+	job_name     = "core"
+	metrics_path = "/metrics"
+	// 60s 로는 Core 의 메모리 스파이크(200MB → 440MB, 1분 내 OOM)가 한 점으로 뭉개져
+	// 힙에서 튀었는지 힙 밖(external)에서 튀었는지 구분이 안 된다. 원인 특정 후 60s 로 되돌릴 것.
 	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "wallet" {
@@ -133,8 +138,8 @@ prometheus.scrape "wallet" {
 	targets         = discovery.dns.wallet.targets
 	job_name        = "wallet"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "analytics" {
@@ -147,8 +152,8 @@ prometheus.scrape "analytics" {
 	targets         = discovery.dns.analytics.targets
 	job_name        = "analytics"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "channel_adapter" {
@@ -161,8 +166,8 @@ prometheus.scrape "channel_adapter" {
 	targets         = discovery.dns.channel_adapter.targets
 	job_name        = "channel-adapter"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "membership" {
@@ -175,8 +180,8 @@ prometheus.scrape "membership" {
 	targets         = discovery.dns.membership.targets
 	job_name        = "membership"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "notification" {
@@ -189,8 +194,8 @@ prometheus.scrape "notification" {
 	targets         = discovery.dns.notification.targets
 	job_name        = "notification"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "search" {
@@ -203,8 +208,8 @@ prometheus.scrape "search" {
 	targets         = discovery.dns.search.targets
 	job_name        = "search"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "ugc" {
@@ -217,8 +222,8 @@ prometheus.scrape "ugc" {
 	targets         = discovery.dns.ugc.targets
 	job_name        = "ugc"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
 discovery.dns "user_service" {
@@ -231,8 +236,26 @@ prometheus.scrape "user_service" {
 	targets         = discovery.dns.user_service.targets
 	job_name        = "user-service"
 	metrics_path    = "/metrics"
-	scrape_interval = "30s"
-	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
+}
+
+// 옛 스크레이프 설정이 target map 에 직접 찍던 두 라벨을 복원한다.
+// service_name 은 Tempo·Loki 의 같은 이름 라벨과 조인하는 데 쓰이고,
+// deployment_environment 는 stage 구분이다. 옛 설정에서 service_name 값은
+// 항상 job 과 같았으므로 여기서 job 을 복사한다.
+prometheus.relabel "service_labels" {
+	forward_to = [prometheus.remote_write.grafanacloud.receiver]
+
+	rule {
+		source_labels = ["job"]
+		target_label  = "service_name"
+	}
+
+	rule {
+		target_label = "deployment_environment"
+		replacement  = sys.env("SST_STAGE")
+	}
 }
 
 prometheus.remote_write "grafanacloud" {
