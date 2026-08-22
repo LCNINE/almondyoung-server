@@ -1,6 +1,16 @@
+import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Counter, Gauge, register } from 'prom-client';
 import { resolveMetricsPort, startMetricsServer } from './metrics-server';
+
+/** free TCP 포트 하나를 예약해 번호만 받고 즉시 반환한다 — 고정 포트를 spec 에 박지 않기 위함. */
+async function reserveFreePort(): Promise<number> {
+  const probe = createServer();
+  await new Promise<void>((r) => probe.listen(0, '127.0.0.1', r));
+  const { port } = probe.address() as AddressInfo;
+  await new Promise<void>((r) => probe.close(() => r()));
+  return port;
+}
 
 describe('resolveMetricsPort', () => {
   it('PORT 에 10000 을 더한다', () => {
@@ -26,6 +36,18 @@ describe('resolveMetricsPort', () => {
       resolveMetricsPort({ PORT: '3040', METRICS_PORT: 'nope' } as NodeJS.ProcessEnv),
     ).toBe(13040);
   });
+
+  it('METRICS_PORT="0" 은 거부되고 PORT 로 폴백한다 — Number(\'\')===0 회귀 방지', () => {
+    expect(
+      resolveMetricsPort({ PORT: '3040', METRICS_PORT: '0' } as NodeJS.ProcessEnv),
+    ).toBe(13040);
+  });
+
+  it('METRICS_PORT="" (빈 문자열) 도 거부되고 PORT 로 폴백한다', () => {
+    expect(
+      resolveMetricsPort({ PORT: '3040', METRICS_PORT: '' } as NodeJS.ProcessEnv),
+    ).toBe(13040);
+  });
 });
 
 describe('startMetricsServer', () => {
@@ -42,8 +64,9 @@ describe('startMetricsServer', () => {
       registers: [register],
     });
 
-    // METRICS_PORT=0 → OS 가 빈 포트를 준다. 테스트가 고정 포트를 잡지 않게 한다.
-    server = startMetricsServer({ METRICS_PORT: '0' } as NodeJS.ProcessEnv);
+    // METRICS_PORT="0" 은 이제 거부되므로(§1 고정) free port 를 미리 예약해 넘긴다.
+    const freePort = await reserveFreePort();
+    server = startMetricsServer({ METRICS_PORT: String(freePort) } as NodeJS.ProcessEnv);
     if (!server) throw new Error('server did not start');
     await new Promise<void>((resolve) => server!.once('listening', resolve));
     port = (server.address() as AddressInfo).port;
@@ -95,7 +118,8 @@ describe('startMetricsServer — register.metrics() 실패 분기', () => {
       },
     });
 
-    server = startMetricsServer({ METRICS_PORT: '0' } as NodeJS.ProcessEnv);
+    const freePort = await reserveFreePort();
+    server = startMetricsServer({ METRICS_PORT: String(freePort) } as NodeJS.ProcessEnv);
     if (!server) throw new Error('server did not start');
     await new Promise<void>((resolve) => server!.once('listening', resolve));
     port = (server.address() as AddressInfo).port;
@@ -106,8 +130,54 @@ describe('startMetricsServer — register.metrics() 실패 분기', () => {
     register.clear();
   });
 
-  it('메트릭 수집이 실패하면 500 을 준다', async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/metrics`);
-    expect(res.status).toBe(500);
+  it('메트릭 수집이 실패하면 500 을 주고 한 줄 로그를 남긴다', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+      expect(res.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+      const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+      expect(logged).toMatchObject({ level: 'error', msg: expect.any(String) });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+});
+
+describe('startMetricsServer — 포트 충돌 시 error 이벤트', () => {
+  let blocker: ReturnType<typeof createServer>;
+  let blockedPort: number;
+
+  beforeAll(async () => {
+    blocker = createServer();
+    await new Promise<void>((r) => blocker.listen(0, '0.0.0.0', r));
+    blockedPort = (blocker.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => blocker.close(() => resolve()));
+  });
+
+  it("이미 점유된 포트를 넘겨도 프로세스는 죽지 않고 'error' 가 로깅된다", async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    let server: ReturnType<typeof startMetricsServer>;
+    try {
+      server = startMetricsServer({ METRICS_PORT: String(blockedPort) } as NodeJS.ProcessEnv);
+      if (!server) throw new Error('server did not start');
+
+      await new Promise<void>((resolve) => server!.once('error', () => resolve()));
+
+      expect(errorSpy).toHaveBeenCalled();
+      const logged = JSON.parse(errorSpy.mock.calls[0][0] as string);
+      expect(logged).toMatchObject({
+        level: 'error',
+        code: 'EADDRINUSE',
+        port: blockedPort,
+      });
+      // 여기까지 온 것 자체가 uncaughtException 으로 프로세스가 죽지 않았다는 증거다.
+    } finally {
+      errorSpy.mockRestore();
+      server?.close();
+    }
   });
 });
