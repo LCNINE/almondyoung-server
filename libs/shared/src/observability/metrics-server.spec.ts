@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net';
-import { Counter, register } from 'prom-client';
+import { Counter, Gauge, register } from 'prom-client';
 import { resolveMetricsPort, startMetricsServer } from './metrics-server';
 
 describe('resolveMetricsPort', () => {
@@ -19,6 +19,12 @@ describe('resolveMetricsPort', () => {
 
   it('PORT 가 숫자가 아니면 undefined', () => {
     expect(resolveMetricsPort({ PORT: 'nope' } as NodeJS.ProcessEnv)).toBeUndefined();
+  });
+
+  it('METRICS_PORT 가 숫자가 아니면 미설정과 같이 취급해 PORT 로 폴백한다', () => {
+    expect(
+      resolveMetricsPort({ PORT: '3040', METRICS_PORT: 'nope' } as NodeJS.ProcessEnv),
+    ).toBe(13040);
   });
 });
 
@@ -69,5 +75,39 @@ describe('startMetricsServer', () => {
 
   it('PORT 도 METRICS_PORT 도 없으면 서버를 만들지 않는다', () => {
     expect(startMetricsServer({} as NodeJS.ProcessEnv)).toBeUndefined();
+  });
+});
+
+describe('startMetricsServer — register.metrics() 실패 분기', () => {
+  let server: ReturnType<typeof startMetricsServer>;
+  let port: number;
+
+  beforeAll(async () => {
+    // 이 서버는 자체 register 상태를 격리하기 위해 별도 describe 에서 돈다.
+    register.clear();
+    // collect 훅에서 throw 하는 Gauge를 등록해 register.metrics() 를 reject 시킨다.
+    new Gauge({
+      name: 'test_failing_collector',
+      help: 'collect 훅이 throw 하는 게이지 — register.metrics() 를 reject 시킨다',
+      registers: [register],
+      collect() {
+        throw new Error('collector boom');
+      },
+    });
+
+    server = startMetricsServer({ METRICS_PORT: '0' } as NodeJS.ProcessEnv);
+    if (!server) throw new Error('server did not start');
+    await new Promise<void>((resolve) => server!.once('listening', resolve));
+    port = (server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server?.close(() => resolve()));
+    register.clear();
+  });
+
+  it('메트릭 수집이 실패하면 500 을 준다', async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/metrics`);
+    expect(res.status).toBe(500);
   });
 });

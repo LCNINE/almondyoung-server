@@ -10,6 +10,8 @@ import { register } from 'prom-client';
  */
 export function resolveMetricsPort(env: NodeJS.ProcessEnv = process.env): number | undefined {
   const explicit = Number(env.METRICS_PORT);
+  // METRICS_PORT 파싱 불가 값(NaN)은 미설정과 동일하게 취급한다 — Nest 부팅 전에
+  // 도는 경로라 throw 하면 선택적 env 오타 하나가 전체 서비스를 불가로 만든다.
   if (Number.isInteger(explicit) && explicit >= 0) return explicit;
 
   const appPort = Number(env.PORT);
