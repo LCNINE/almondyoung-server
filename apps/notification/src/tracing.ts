@@ -2,5 +2,8 @@
 // 계측 대상 모듈보다 먼저 SDK 가 시작돼야 trace_id 주입/자동계측이 성립한다.
 // deep 경로로 import (배럴 @app/shared 우회) — 이유는 telemetry.ts 주석 참고.
 import { startTelemetry } from '@app/shared/observability/telemetry';
+import { startMetricsServer } from '@app/shared/observability/metrics-server';
 
 startTelemetry({ serviceName: 'notification' });
+// 트레이스·로그는 위에서 Alloy 로 push 하고, 메트릭은 아래 포트를 Alloy 가 pull 해 간다.
+startMetricsServer();
