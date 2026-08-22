@@ -12,6 +12,15 @@ export interface StartTelemetryOptions {
 }
 
 /**
+ * trace 에서 제외할 수신 요청. Alloy 가 30 초마다 긁는 `/metrics` 는 비즈니스 맥락이 없는
+ * 빈 root trace 만 만든다(9 앱 × 2 회/분 ≈ 26k span/일). 로그 파이프라인은 이미
+ * `logger.config.ts` 에서 같은 경로를 무시한다 — trace 쪽에 대칭 처리가 없던 것이다.
+ */
+export function shouldIgnoreIncomingRequest(url: string | undefined): boolean {
+  return (url ?? '').split('?')[0] === '/metrics';
+}
+
+/**
  * 모든 NestJS 서비스의 공용 OpenTelemetry 부트스트랩 (trace + log export).
  *
  * ★ 반드시 서비스 진입점에서 **가장 먼저** 호출한다. pino/http/pg 등 계측 대상 모듈이
@@ -62,6 +71,9 @@ export function startTelemetry(options: StartTelemetryOptions): void {
     instrumentations: [
       getNodeAutoInstrumentations({
         '@opentelemetry/instrumentation-fs': { enabled: false },
+        '@opentelemetry/instrumentation-http': {
+          ignoreIncomingRequestHook: (req) => shouldIgnoreIncomingRequest(req.url),
+        },
       }),
     ],
   });

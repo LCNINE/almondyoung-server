@@ -21,9 +21,10 @@ describe('metrics 서버 배선', () => {
       'utf8',
     );
 
-    expect(source).toContain('startMetricsServer');
     // 배럴(@app/shared)을 당기면 OTEL SDK 시작 전에 다른 모듈이 로드된다.
     expect(source).toContain("from '@app/shared/observability/metrics-server'");
     expect(source).not.toContain("from '@app/shared'");
+    // 실제 호출이 있어야 한다 (import만 있고 호출이 주석 처리된 경우를 잡음).
+    expect(source).toMatch(/^\s*startMetricsServer\(\);\s*$/m);
   });
 });
