@@ -130,7 +130,7 @@ export class TransferController {
    * 3. 창고 내 간편 이동
    */
   @Post('move-within-warehouse')
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고 내 간편 이동',
     description: '단일 SKU를 창고 내에서 다른 위치로 즉시 이동합니다.',
@@ -144,7 +144,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 요청',
   })
-  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async moveWithinWarehouse(@Body() dto: MoveWithinWarehouseDto): Promise<MoveWithinWarehouseResponseDto> {
     try {
       return await this.transferService.moveWithinWarehouse({

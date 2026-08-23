@@ -25,7 +25,7 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (70) ──────────────────────────────────────────
+  // ── inventory.operate (69) ──────────────────────────────────────────
   'GET /holders':                                            S.OPERATE,
   'GET /holders/:id':                                        S.OPERATE,
   'POST /inbound/cancel':                                    S.OPERATE,
@@ -33,9 +33,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /inbound/individual':                                S.OPERATE,
   'POST /inbound/lines/:lineId/memo':                        S.OPERATE,
   'GET /inbound/pending':                                    S.OPERATE,
-  'POST /inbound/plans':                                     S.OPERATE,
   'GET /inbound/plans/items':                                S.OPERATE,
-  'POST /inbound/plans/items':                               S.OPERATE,
   'POST /inbound/plans/receive':                             S.OPERATE,
   'POST /inbound/putaway':                                   S.OPERATE,
   'GET /inbound/putaway/pending':                            S.OPERATE,
@@ -75,6 +73,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/transfers':                                S.OPERATE,
   'GET /inventory/transfers/:id':                            S.OPERATE,
   'GET /inventory/transfers/:id/status':                     S.OPERATE,
+  'POST /inventory/transfers/move-within-warehouse':         S.OPERATE,
   'GET /inventory/warehouse-transfers/outstanding':          S.OPERATE,
   'GET /inventory/warehouses':                               S.OPERATE,
   'GET /inventory/warehouses/:id':                           S.OPERATE,
@@ -93,11 +92,11 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions':                              S.OPERATE,
   'GET /stocktaking/sessions/:id':                           S.OPERATE,
   'POST /stocktaking/sessions/:id/cancel':                   S.OPERATE,
-  'POST /stocktaking/sessions/:id/complete':                 S.OPERATE,
+  'POST /stocktaking/sessions/:id/generate-adjustments':     S.OPERATE,
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (56) ──────────────────────────────────────────
+  // ── inventory.manage (58) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -106,6 +105,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /holders':                                             S.MANAGE,
   'DELETE /holders/:id':                                       S.MANAGE,
   'PUT /holders/:id':                                          S.MANAGE,
+  'POST /inbound/plans':                                       S.MANAGE,
+  'POST /inbound/plans/items':                                 S.MANAGE,
   'POST /inventory/sku-groups':                                S.MANAGE,
   'DELETE /inventory/sku-groups/:id':                          S.MANAGE,
   'PUT /inventory/sku-groups/:id':                             S.MANAGE,
@@ -155,7 +156,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /suppliers/:id':                                        S.MANAGE,
   'PUT /suppliers/:id':                                        S.MANAGE,
 
-  // ── inventory.adjust (18) ──────────────────────────────────────────
+  // ── inventory.adjust (17) ──────────────────────────────────────────
   'DELETE /inventory/reservations/:id':                         S.ADJUST,
   'POST /inventory/reservations/reconcile':                     S.ADJUST,
   'POST /inventory/returns':                                    S.ADJUST,
@@ -168,12 +169,11 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /inventory/stocks/summary/:skuId/:warehouseId/rebuild': S.ADJUST,
   'POST /inventory/transfers':                                  S.ADJUST,
   'PATCH /inventory/transfers/:id/execute':                     S.ADJUST,
-  'POST /inventory/transfers/move-within-warehouse':            S.ADJUST,
   'POST /inventory/warehouse-transfers':                        S.ADJUST,
   'PATCH /inventory/warehouse-transfers/:id/eta':               S.ADJUST,
   'POST /inventory/warehouse-transfers/:id/receipts':           S.ADJUST,
   'POST /inventory/warehouse-transfers/:id/ship':               S.ADJUST,
-  'POST /stocktaking/sessions/:id/generate-adjustments':        S.ADJUST,
+  'POST /stocktaking/sessions/:id/complete':                    S.ADJUST,
 
   // ── inventory.warehouse.manage (3) ──────────────────────────────────────────
   'POST /inventory/warehouses':       S.WAREHOUSE_MANAGE,
@@ -209,12 +209,20 @@ interface DecoratorInfo {
   args: string[];
 }
 
-function collectControllerFiles(dir: string): string[] {
+/**
+ * 모든 `.ts` 를 넘긴다 — 파일 이름으로 컨트롤러를 고르지 않는다.
+ *
+ * #551 자체가 이름 판정의 산물이었다: `*.controller.ts` 글롭이 `inbound.controllers.ts`
+ * (복수형)를 놓쳤다. 여기서 다시 이름으로 거르면 같은 사각지대를 한 층 아래에 재현한다.
+ * 판정은 `collectRoutes` 가 한다 — `@Controller` 클래스가 없는 파일은 빈 배열을 돌려주므로
+ * 이름이 무엇이든 라우트 집합은 달라지지 않는다.
+ */
+function collectSourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
-    if (statSync(full).isDirectory()) out.push(...collectControllerFiles(full));
-    else if (/\.controllers?\.ts$/.test(entry) && !entry.endsWith('.spec.ts')) out.push(full);
+    if (statSync(full).isDirectory()) out.push(...collectSourceFiles(full));
+    else if (entry.endsWith('.ts') && !entry.endsWith('.spec.ts')) out.push(full);
   }
   return out;
 }
@@ -278,11 +286,14 @@ function resolveScope(route: Route): InventoryScope | null | undefined {
 }
 
 describe('core inventory: 라우트 스코프 배정 커버리지', () => {
-  const files = collectControllerFiles(INVENTORY_DIR);
-  const routes = files.flatMap(collectRoutes);
+  const scanned = collectSourceFiles(INVENTORY_DIR).map((file) => ({ file, routes: collectRoutes(file) }));
+  const routes = scanned.flatMap((entry) => entry.routes);
+  const filesWithRoutes = scanned.filter((entry) => entry.routes.length > 0);
 
+  // 하한은 "스캔한 .ts 개수" 가 아니라 **라우트가 실제로 나온 파일 수** 에 건다. 전자는
+  // 컨트롤러가 한 개도 안 잡혀도 통과하는 공허한 단언이 된다.
   it('컨트롤러 파일을 실제로 수집한다 (수집 실패로 인한 위양성 방지)', () => {
-    expect(files.length).toBeGreaterThanOrEqual(20);
+    expect(filesWithRoutes.length).toBeGreaterThanOrEqual(20);
   });
 
   it('표와 코드의 라우트 집합이 정확히 일치한다', () => {

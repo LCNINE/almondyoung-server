@@ -265,17 +265,17 @@ export class InboundController {
 
   // 예정 CRUD 및 연계
   @Post('plans')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '입고예정 생성' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createPlan(@Body() dto: CreateInboundPlanDto) {
     return this.inboundService.createInboundPlan(dto);
   }
 
   @Post('plans/items')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '입고예정 아이템 추가' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addPlanItems(@Body() dto: AddInboundPlanItemsDto) {
     return this.inboundService.addInboundPlanItems(dto);
   }

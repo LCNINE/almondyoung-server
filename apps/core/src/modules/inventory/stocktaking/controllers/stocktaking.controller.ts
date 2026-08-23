@@ -99,22 +99,22 @@ export class StocktakingController {
 
   @Post('sessions/:id/generate-adjustments')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.ADJUST)
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '조정 자동 생성 (Generate stock adjustments)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Adjustments generated' })
-  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async generateAdjustments(@Param('id') id: string, @Body() dto: GenerateAdjustmentsDto) {
     return this.stocktakingService.generateAdjustments(id, dto);
   }
 
   @Post('sessions/:id/complete')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 실사 완료 (Complete stocktaking session)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Session completed with summary' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async completeSession(@Param('id') id: string) {
     return this.stocktakingService.completeSession(id);
   }
