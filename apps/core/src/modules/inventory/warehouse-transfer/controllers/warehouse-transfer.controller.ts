@@ -38,8 +38,10 @@ export class WarehouseTransferController {
   }
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '이동 지시서 생성' })
   @ApiResponse({ status: 201, type: CreateTransferOrderResponseDto })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   create(@Body() dto: CreateTransferOrderDto): Promise<CreateTransferOrderResponseDto> {
     return this.service.createOrder({
       fromWarehouseId: dto.fromWarehouseId,
@@ -52,15 +54,19 @@ export class WarehouseTransferController {
   }
 
   @Post(':id/ship')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '선적 — 출발 창고 재고를 운송중으로' })
   @ApiResponse({ status: 201, type: ShipTransferOrderResponseDto })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   ship(@Param('id') id: string, @Body() dto: ShipTransferOrderDto): Promise<ShipTransferOrderResponseDto> {
     return this.service.ship({ transferOrderId: id, idempotencyKey: dto.idempotencyKey, actorId: dto.actorId });
   }
 
   @Post(':id/receipts')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '도착 회차 등록 — 부분 도착과 분실을 함께 정산' })
   @ApiResponse({ status: 201, type: ReceiveTransferResponseDto })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   receive(@Param('id') id: string, @Body() dto: ReceiveTransferDto): Promise<ReceiveTransferResponseDto> {
     return this.service.receive({
       transferOrderId: id,
@@ -72,7 +78,9 @@ export class WarehouseTransferController {
   }
 
   @Patch(':id/eta')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '도착 예정일 갱신 (선적 지연 등)' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async updateEta(@Param('id') id: string, @Body() dto: UpdateEtaDto): Promise<void> {
     await this.service.updateEta({ transferOrderId: id, eta: new Date(dto.eta) });
   }

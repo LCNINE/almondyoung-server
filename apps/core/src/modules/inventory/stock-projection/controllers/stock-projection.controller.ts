@@ -167,19 +167,23 @@ export class StockProjectionController {
 
   @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 현황 재구축 (이벤트 소싱으로부터)' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiResponse({ status: 204, description: '재고 현황이 성공적으로 재구축되었습니다.' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async rebuildStockSummary(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     await this.stockProjection.rebuildSummary(skuId, warehouseId);
   }
 
   @Delete('/stocks/events/:eventId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 이벤트 취소 (반대 이벤트 생성)' })
   @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
   @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async cancelStockEvent(@Param('eventId') eventId: string, @Body('reason') reason: string) {
     await this.stockProjection.cancelEvent(eventId, reason);
   }

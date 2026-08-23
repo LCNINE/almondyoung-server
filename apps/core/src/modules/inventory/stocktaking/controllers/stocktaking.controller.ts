@@ -99,9 +99,11 @@ export class StocktakingController {
 
   @Post('sessions/:id/generate-adjustments')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '조정 자동 생성 (Generate stock adjustments)' })
   @ApiParam({ name: 'id', description: 'Session ID' })
   @ApiResponse({ status: 200, description: 'Adjustments generated' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async generateAdjustments(@Param('id') id: string, @Body() dto: GenerateAdjustmentsDto) {
     return this.stocktakingService.generateAdjustments(id, dto);
   }

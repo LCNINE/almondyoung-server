@@ -42,6 +42,7 @@ export class TransferController {
    * 1. 창고 간/창고 내 이동 작업 생성
    */
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '이동 작업 생성',
     description: '창고 간 또는 창고 내 재고 이동 작업을 계획합니다. 실행은 별도로 수행합니다.',
@@ -55,6 +56,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 요청 (아이템 없음 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async createTransferJob(@Body() dto: CreateTransferJobDto): Promise<CreateTransferJobResponseDto> {
     try {
       const result = await this.transferService.createTransferJob({
@@ -82,6 +84,7 @@ export class TransferController {
    * 2. 이동 작업 실행
    */
   @Patch(':id/execute')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '이동 작업 실행',
     description: '생성된 이동 작업을 실행하여 실제 재고 이동을 수행합니다.',
@@ -104,6 +107,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 작업 (아이템 없음, 잘못된 위치 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async executeTransferJob(@Param('id') id: string): Promise<ExecuteTransferJobResponseDto> {
     try {
       return await this.transferService.executeTransferJob({ jobId: id });
@@ -126,6 +130,7 @@ export class TransferController {
    * 3. 창고 내 간편 이동
    */
   @Post('move-within-warehouse')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '창고 내 간편 이동',
     description: '단일 SKU를 창고 내에서 다른 위치로 즉시 이동합니다.',
@@ -139,6 +144,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 요청',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async moveWithinWarehouse(@Body() dto: MoveWithinWarehouseDto): Promise<MoveWithinWarehouseResponseDto> {
     try {
       return await this.transferService.moveWithinWarehouse({

@@ -34,6 +34,7 @@ export class ReservationController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 해제',
     description: '특정 예약을 해제하여 재고를 다시 할당 가능하게 만듭니다.',
@@ -51,6 +52,7 @@ export class ReservationController {
     status: 404,
     description: '예약을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async releaseReservation(@Param('id') id: string, @Body() dto?: ReleaseReservationDto): Promise<void> {
     try {
       await this.unifiedReservation.releaseReservation(id);
@@ -163,6 +165,7 @@ export class ReservationController {
    */
   @Post('reconcile')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 정합성 정리',
     description: 'terminal FO(shipped/completed/canceled)에 남은 confirmed 예약(좀비)을 탐지·해제합니다.',
@@ -178,6 +181,7 @@ export class ReservationController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async reconcileReservations(): Promise<{ healedFos: number; healedReservations: number }> {
     const result = await this.reconciliation.reconcileAndHeal();
     return { healedFos: result.healedFos, healedReservations: result.healedReservations };
