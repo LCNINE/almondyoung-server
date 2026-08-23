@@ -138,6 +138,7 @@ const devHelpersEnabled = process.env.NODE_ENV !== 'production' && process.env.E
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 import { BillingChargeConsumer } from './consumers/billing-charge.consumer';
+import { EventTraceController } from './admin/event-trace.controller';
 
 export { WALLET_JWT_AUTH_KEY, WalletJwtAuth } from './wallet-auth.decorator';
 
@@ -394,6 +395,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
   ],
   controllers: [
     HealthController,
+    EventTraceController,
     PaymentIntentsController,
     PaymentMethodsController,
     RefundsController,

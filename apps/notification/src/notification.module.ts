@@ -19,6 +19,7 @@ import { ProviderModule } from './provider/provider.module';
 import { TemplateModule } from './template/template.module';
 import { BulkModule } from './bulk/bulk.module';
 import { DeviceModule } from './device/device.module';
+import { EventTraceController } from './shared/controllers/event-trace.controller';
 
 @Module({
   imports: [
@@ -57,7 +58,7 @@ import { DeviceModule } from './device/device.module';
     BulkModule,
     DeviceModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, EventTraceController],
   providers: [
     // 이 서비스는 알림 템플릿/프로바이더 CRUD 와 실제 발송 테스트를 노출하는데, 공용 ALB 의
     // 와일드카드 도메인으로 인터넷에서 도달한다. 그동안 인증이 전혀 없었다.
