@@ -48,6 +48,17 @@ export interface TossVirtualAccountResponse {
   [key: string]: unknown;
 }
 
+export interface TossPaymentQueryResponse {
+  paymentKey: string;
+  orderId: string;
+  status: string; // WAITING_FOR_DEPOSIT | DONE | CANCELED | PARTIAL_CANCELED | ABORTED | EXPIRED ...
+  totalAmount: number;
+  // 발급 응답에만 값이 있고, 이후 조회에서는 보안상 null 로 돌아온다. 웹훅 secret 대조는
+  // 발급 시 charge 에 저장해 둔 값과 하며, 이 필드에 의존하지 않는다.
+  secret: string | null;
+  [key: string]: unknown;
+}
+
 export interface TossCashReceiptResponse {
   receiptKey: string;
   issueNumber: string;
@@ -165,6 +176,34 @@ export class TossApiClient {
     const body: Record<string, unknown> = {};
     if (amount !== undefined) body.amount = amount;
     return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body);
+  }
+
+  /**
+   * orderId(= 하이픈 뗀 chargeId)로 결제를 재조회한다. 웹훅 본문은 신뢰하지 않고 이 응답의
+   * status/totalAmount/paymentKey 를 authoritative 로 쓴다. paymentKey 가 아니라 orderId 로
+   * 조회하는 이유: 공격자가 본문 paymentKey 로 남의 결제를 우리 charge 에 갖다 붙이지 못하게 하기 위함.
+   */
+  async getPaymentByOrderId(orderId: string): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  private async get<T>(path: string): Promise<TossApiResult<T>> {
+    const url = `${this.baseUrl}${path}`;
+    this.logger.debug(`GET ${url}`);
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: `Basic ${this.auth}` },
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as T;
+      return { ok: true, data };
+    }
+
+    const error = await res.json().catch(() => ({ code: 'UNKNOWN', message: 'Unknown error' }));
+    this.logger.error(`Toss API error: ${res.status} ${this.stringifyError(error)}`);
+    return { ok: false, error: this.normalizeError(error), statusCode: res.status };
   }
 
   private async post<T>(
