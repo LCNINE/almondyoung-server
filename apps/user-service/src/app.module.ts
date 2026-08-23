@@ -34,6 +34,7 @@ import { validateUserServiceEnv } from './config/env.validation';
 import { HealthController } from './health.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
+import { EventTraceController } from './api/events/event-trace.controller';
 
 const userServiceSchema = { ...baseUserServiceSchema, ...authorizationSchema };
 
@@ -148,7 +149,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     BusinessLicensesModule,
     AdminModule,
   ],
-  controllers: [HealthController],
+  controllers: [HealthController, EventTraceController],
   providers: [
     {
       provide: APP_INTERCEPTOR,

@@ -97,6 +97,7 @@ import { ChannelLineIdentityResolver } from './services/order-collection/channel
 import { createOrderProvider } from './services/order-collection/translating-order.provider';
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
+import { EventTraceController } from './controllers/event-trace.controller';
 
 /**
  * `KAFKA_BROKERS` 가 없는 로컬 부팅에서 즉시 발행을 버리는 전송.
@@ -202,6 +203,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       : []),
   ],
   controllers: [
+    EventTraceController,
     HealthController,
     ChannelAdapterController,
     SyncStatusController,

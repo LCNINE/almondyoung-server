@@ -73,6 +73,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
 import { JwtAuthGuard, ScopeGuard } from '@app/authorization';
 import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
+import { EventTraceController } from './controllers/event-trace.controller';
 
 @Module({
   imports: [
@@ -125,6 +126,7 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     EventTraceApiModule,
   ],
   controllers: [
+    EventTraceController,
     BillingResultConsumer,
     InvoiceResultConsumer,
     MembershipCheckoutConsumer,

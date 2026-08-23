@@ -22,7 +22,6 @@ import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
 import { EventChainService } from './tracking/event-chain.service';
 import { EventTrackingService } from './tracking/event-tracking.service';
 import { EventTraceReader } from './tracking/event-trace.reader';
-import { EventTraceController } from './tracking/event-trace.controller';
 import { KafkaConfig, StreamConfig, StreamEventTypes, getDLQTopicName } from '@packages/event-contracts/types';
 import { SchemaValidationOptions } from '@packages/event-contracts/types';
 import { OutboxConfig } from './outbox/outbox.types';
