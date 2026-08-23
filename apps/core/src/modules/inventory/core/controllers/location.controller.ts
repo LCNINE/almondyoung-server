@@ -41,6 +41,7 @@ export class LocationController {
   constructor(private readonly locationService: LocationService) {}
 
   @Post('/warehouses/:warehouseId/columns')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 열(Column) 생성' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiBody({ type: CreateColumnDto })
@@ -53,6 +54,7 @@ export class LocationController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (중복된 열 이름 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createColumn(@Param('warehouseId') warehouseId: string, @Body() dto: CreateColumnDto) {
     this.logger.log(`Creating column ${dto.columnName} for warehouse ${warehouseId}`);
     return await this.locationService.createColumn(warehouseId, dto);
@@ -74,6 +76,7 @@ export class LocationController {
   }
 
   @Put('/columns/:columnId')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '열 정보 수정' })
   @ApiParam({ name: 'columnId', description: '열 ID' })
   @ApiBody({ type: UpdateColumnDto })
@@ -86,11 +89,13 @@ export class LocationController {
     status: HttpStatus.NOT_FOUND,
     description: '열을 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateColumn(@Param('columnId') columnId: string, @Body() dto: UpdateColumnDto) {
     return await this.locationService.updateColumn(columnId, dto);
   }
 
   @Post('/warehouses/:warehouseId/racks')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '새 랙 생성 (빈 자동생성 포함)',
     description: 'autoGenerateBins가 true이면 표준 빈들(A-01-01 형태)을 자동으로 생성합니다.',
@@ -106,6 +111,7 @@ export class LocationController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (중복된 랙, 열이 없음 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createRack(@Param('warehouseId') warehouseId: string, @Body() dto: CreateRackDto) {
     this.logger.log(`Creating rack ${dto.columnName}-${dto.rackNumber} for warehouse ${warehouseId}`);
     return await this.locationService.createRack(warehouseId, dto);
@@ -129,6 +135,7 @@ export class LocationController {
   }
 
   @Put('/racks/:rackId')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '랙 정보 수정' })
   @ApiParam({ name: 'rackId', description: '랙 ID' })
   @ApiBody({ type: UpdateRackDto })
@@ -141,11 +148,13 @@ export class LocationController {
     status: HttpStatus.NOT_FOUND,
     description: '랙을 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateRack(@Param('rackId') rackId: string, @Body() dto: UpdateRackDto) {
     return await this.locationService.updateRack(rackId, dto);
   }
 
   @Post('/warehouses/:warehouseId/zones')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '새 구역 로케이션 생성',
     description: '한글 이름이 포함된 경우 자동으로 zone-N 형태의 바코드 코드를 생성합니다.',
@@ -161,6 +170,7 @@ export class LocationController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (중복된 구역명 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createZoneLocation(@Param('warehouseId') warehouseId: string, @Body() dto: CreateZoneLocationDto) {
     this.logger.log(`Creating zone location "${dto.code}" for warehouse ${warehouseId}`);
     return await this.locationService.createZoneLocation(warehouseId, dto);
@@ -204,6 +214,7 @@ export class LocationController {
   }
 
   @Put('/:locationId')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '로케이션 정보 수정 (메타데이터만)' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiBody({ type: UpdateLocationDto })
@@ -216,11 +227,13 @@ export class LocationController {
     status: HttpStatus.NOT_FOUND,
     description: '로케이션을 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateLocation(@Param('locationId') locationId: string, @Body() dto: UpdateLocationDto) {
     return await this.locationService.updateLocation(locationId, dto);
   }
 
   @Post('/warehouses/:warehouseId/racks/custom-bins')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '기존 랙에 커스텀 빈 추가',
     description: '기존 랙에 "바닥", "상단" 등의 특수 빈을 추가합니다.',
@@ -236,6 +249,7 @@ export class LocationController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (랙이 없음, 중복된 빈 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addCustomBin(@Param('warehouseId') warehouseId: string, @Body() dto: AddCustomBinDto) {
     this.logger.log(`Adding custom bin "${dto.customBinName}" to rack ${dto.columnName}-${dto.rackNumber}`);
     return await this.locationService.addCustomBin(warehouseId, dto);

@@ -32,6 +32,7 @@ export class SkuGroupController {
   constructor(private readonly skuGroupService: SkuGroupService) {}
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 생성 (Create SKU group)' })
   @ApiResponse({
     status: 201,
@@ -39,6 +40,7 @@ export class SkuGroupController {
     type: SkuGroupResponseDto,
   })
   @ApiResponse({ status: 409, description: '그룹 코드가 이미 존재합니다. (Group code already exists)' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async create(@Body() dto: CreateSkuGroupDto): Promise<SkuGroupResponseDto> {
     return this.skuGroupService.create(dto);
   }
@@ -73,20 +75,24 @@ export class SkuGroupController {
   }
 
   @Put(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 수정' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹이 수정되었습니다.', type: SkuGroupResponseDto })
   @ApiResponse({ status: 404, description: '그룹을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async update(@Param('id') groupId: string, @Body() dto: UpdateSkuGroupDto): Promise<SkuGroupResponseDto> {
     return this.skuGroupService.update(groupId, dto);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 삭제' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 204, description: '그룹이 삭제되었습니다. 멤버 SKU들은 그룹에서 해제됩니다.' })
   @ApiResponse({ status: 404, description: '그룹을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async remove(@Param('id') groupId: string): Promise<void> {
     return this.skuGroupService.remove(groupId);
   }
@@ -103,28 +109,34 @@ export class SkuGroupController {
   }
 
   @Post(':id/members')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU를 그룹에 추가' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: 'SKU가 그룹에 추가되었습니다.' })
   @ApiResponse({ status: 404, description: 'SKU 또는 그룹을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addSku(@Param('id') groupId: string, @Body() dto: AddSkuToGroupDto) {
     return this.skuGroupService.addSku(groupId, dto);
   }
 
   @Post(':id/members/bulk')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '여러 SKU를 그룹에 일괄 추가' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '일괄 추가가 완료되었습니다.', type: BulkAddSkusResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async bulkAddSkus(@Param('id') groupId: string, @Body() dto: BulkAddSkusToGroupDto): Promise<BulkAddSkusResponseDto> {
     return this.skuGroupService.bulkAddSkus(groupId, dto);
   }
 
   @Delete('members/:skuId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU를 그룹에서 제거' })
   @ApiParam({ name: 'skuId', description: 'SKU ID to remove from group' })
   @ApiResponse({ status: 204, description: 'SKU가 그룹에서 제거되었습니다.' })
   @ApiResponse({ status: 404, description: 'SKU를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async removeSku(@Param('skuId') skuId: string): Promise<void> {
     await this.skuGroupService.removeSku(skuId);
   }

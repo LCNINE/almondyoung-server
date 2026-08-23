@@ -50,6 +50,7 @@ export class HolderController {
   }
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 생성' })
   @ApiBody({ type: CreateHolderDto })
   @ApiResponse({
@@ -61,12 +62,14 @@ export class HolderController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (중복된 이름 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createHolder(@Body() dto: CreateHolderDto): Promise<HolderDto> {
     this.logger.log(`Creating holder: ${dto.name}`);
     return await this.holderService.createHolder(dto);
   }
 
   @Put(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 수정' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiBody({ type: UpdateHolderDto })
@@ -83,12 +86,14 @@ export class HolderController {
     status: HttpStatus.BAD_REQUEST,
     description: '잘못된 요청 (중복된 이름 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateHolder(@Param('id') id: string, @Body() dto: UpdateHolderDto): Promise<HolderDto> {
     this.logger.log(`Updating holder: ${id}`);
     return await this.holderService.updateHolder(id, dto);
   }
 
   @Delete(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '재고소유 삭제' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiResponse({
@@ -109,6 +114,7 @@ export class HolderController {
     status: HttpStatus.BAD_REQUEST,
     description: '연결된 SKU 또는 주문이 있어 삭제할 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async deleteHolder(@Param('id') id: string): Promise<{ success: boolean }> {
     this.logger.log(`Deleting holder: ${id}`);
     return await this.holderService.deleteHolder(id);

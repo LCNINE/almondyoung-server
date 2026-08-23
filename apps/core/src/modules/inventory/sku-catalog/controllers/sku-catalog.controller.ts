@@ -31,8 +31,10 @@ export class SkuCatalogController {
   constructor(private readonly skus: SkuCatalogService) {}
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 SKU 생성' })
   @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async create(@Body() dto: CreateSkuDto): Promise<SkuResponseDto> {
     return this.skus.create(dto);
   }
@@ -115,30 +117,38 @@ export class SkuCatalogController {
   }
 
   @Put(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 수정' })
   @ApiResponse({ status: 200, description: 'SKU 수정 완료', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async update(@Param('id') id: string, @Body() dto: UpdateSkuDto): Promise<SkuResponseDto> {
     return this.skus.update(id, dto);
   }
 
   @Patch(':id/restore')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '삭제된 SKU 복구' })
   @ApiResponse({ status: 200, description: 'SKU 복구 완료', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async restore(@Param('id') id: string): Promise<SkuResponseDto> {
     return this.skus.restore(id);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 삭제 (soft delete)' })
   @ApiResponse({ status: 204, description: 'SKU 삭제 완료' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async delete(@Param('id') id: string): Promise<void> {
     return this.skus.delete(id);
   }
 
   @Post(':id/barcodes')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU에 바코드 추가' })
   @ApiResponse({ status: 201, description: '바코드 추가 완료', type: BarcodeDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addBarcode(@Param('id') id: string, @Body() dto: AddBarcodeDto): Promise<BarcodeDto> {
     const barcode = await this.skus.addBarcode(id, dto);
     return SkuBarcodeMapper.toDto(barcode);
@@ -146,8 +156,10 @@ export class SkuCatalogController {
 
   @Delete(':id/barcodes/:barcodeId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU에서 바코드 제거' })
   @ApiResponse({ status: 204, description: '바코드 제거 완료' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async removeBarcode(@Param('id') id: string, @Param('barcodeId') barcodeId: string): Promise<void> {
     return this.skus.removeBarcode(id, barcodeId);
   }

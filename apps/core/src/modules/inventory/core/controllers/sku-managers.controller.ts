@@ -14,6 +14,7 @@ export class SkuManagersController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
   @Post('managers')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 할당 (Assign managers to SKU)',
     description: 'Create or update manager assignments for a SKU',
@@ -25,6 +26,7 @@ export class SkuManagersController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'SKU not found' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async assignManagers(@Body() dto: CreateSkuManagersDto): Promise<SkuManagersResponseDto> {
     return this.skuManagersService.assignManagers(dto);
   }
@@ -48,6 +50,7 @@ export class SkuManagersController {
   }
 
   @Put(':skuId/managers')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 수정 (Update managers for SKU)',
     description: 'Update manager assignments for a SKU (partial update supported)',
@@ -60,6 +63,7 @@ export class SkuManagersController {
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 404, description: 'Managers not found' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateManagers(
     @Param('skuId') skuId: string,
     @Body() dto: UpdateSkuManagersDto,
@@ -69,6 +73,7 @@ export class SkuManagersController {
 
   @Delete(':skuId/managers')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 제거 (Remove all managers from SKU)',
     description: 'Remove all manager assignments from a SKU',
@@ -86,12 +91,14 @@ export class SkuManagersController {
     },
   })
   @ApiResponse({ status: 404, description: 'Managers not found' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async removeManagers(@Param('skuId') skuId: string): Promise<{ success: boolean; message: string }> {
     return this.skuManagersService.removeManagers(skuId);
   }
 
   @Delete(':skuId/managers/:role')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '특정 담당자 역할 제거 (Remove specific manager role)',
     description: 'Remove a specific manager role (designer, purchaseManager, or registrationManager)',
@@ -108,6 +115,7 @@ export class SkuManagersController {
     type: SkuManagersResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Managers not found' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async removeManagerRole(
     @Param('skuId') skuId: string,
     @Param('role') role: 'designer' | 'purchaseManager' | 'registrationManager',

@@ -1,5 +1,7 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { BarcodeService } from '../services/barcode.service';
 import {
   GenerateBarcodeImageDto,
@@ -11,11 +13,13 @@ import {
 
 @ApiTags('Barcode Generation')
 @Controller('barcode-generation')
+@UseGuards(ScopeGuard)
 export class BarcodeGenerationController {
   constructor(private readonly barcodeService: BarcodeService) {}
 
   @Post('custom')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '사용자 정의 바코드 이미지 생성 (Generate custom barcode image)',
     description: 'Generate a barcode image for any custom value with specified format',
@@ -29,6 +33,7 @@ export class BarcodeGenerationController {
     status: 400,
     description: 'Invalid barcode value or format',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async generateCustomBarcode(@Body() dto: GenerateBarcodeImageDto): Promise<BarcodeImageResponseDto> {
     return this.barcodeService.generateCustomBarcodeImage(dto.value, dto.format ?? 'CODE128', {
       scale: dto.scale,
@@ -39,6 +44,7 @@ export class BarcodeGenerationController {
 
   @Post('sku')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 바코드 이미지 생성 (Generate SKU barcode image)',
     description: 'Generate a barcode image for a SKU with format SKU-{uuid}',
@@ -52,12 +58,14 @@ export class BarcodeGenerationController {
     status: 400,
     description: 'Invalid SKU ID',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async generateSkuBarcode(@Body() dto: GenerateSkuBarcodeDto): Promise<BarcodeImageResponseDto> {
     return this.barcodeService.generateSkuBarcodeImage(dto.skuId, dto.format ?? 'CODE128');
   }
 
   @Post('location')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '로케이션 바코드 이미지 생성 (Generate location barcode image)',
     description: 'Generate a barcode image for a location with format LOC-{code}',
@@ -71,12 +79,14 @@ export class BarcodeGenerationController {
     status: 400,
     description: 'Invalid location code',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async generateLocationBarcode(@Body() dto: GenerateLocationBarcodeDto): Promise<BarcodeImageResponseDto> {
     return this.barcodeService.generateLocationBarcodeImage(dto.locationCode, dto.format ?? 'CODE128');
   }
 
   @Post('fulfillment-order')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '풀필먼트 오더 바코드 이미지 생성 (Generate FO barcode image)',
     description: 'Generate a barcode image for a fulfillment order with format FO-{uuid}',
@@ -90,6 +100,7 @@ export class BarcodeGenerationController {
     status: 400,
     description: 'Invalid fulfillment order ID',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async generateFulfillmentOrderBarcode(
     @Body() dto: GenerateFulfillmentOrderBarcodeDto,
   ): Promise<BarcodeImageResponseDto> {
@@ -98,6 +109,7 @@ export class BarcodeGenerationController {
 
   @Post('validate')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '바코드 포맷 검증 (Validate barcode format)',
     description: 'Validate if a value is compatible with a specific barcode format',
@@ -115,6 +127,7 @@ export class BarcodeGenerationController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async validateBarcode(@Body() body: { value: string; format: string }): Promise<{
     value: string;
     format: string;
