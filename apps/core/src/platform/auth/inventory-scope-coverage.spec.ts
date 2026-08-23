@@ -323,7 +323,9 @@ describe('core inventory: 라우트 스코프 배정 커버리지', () => {
       .sort();
 
     expect(unscoped).toEqual([
-      // 이미 @Public — 로드밸런서·ECS 헬스체크
+      // 로드밸런서·ECS 헬스체크. `/health`·`/health/live`·`/health/ready` 는 @Public 이라 인증
+      // 자체가 면제된다. `/health/detailed` 는 @Public 이 아니다 — AdminRealmGuard 가 admin/master
+      // 로 막는 진단용 엔드포인트라 나머지 셋보다 보호 수준이 높고, 아래 두 항목과 같은 계열이다.
       'GET /inventory/health',
       'GET /inventory/health/detailed',
       'GET /inventory/health/live',

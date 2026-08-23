@@ -95,12 +95,14 @@ AST 로 뽑은 `modules/inventory` 전체 라우트 154개(쓰기 88 · 읽기 6
 | `manage` | 56 | sku-catalog 6W, sku-group 6W, sku-managers 4W, locations 7W, holders 3W, barcode-generation 5W, suppliers 3W+2R, supplier-categories 3W+2R, purchase-orders 11W+4R |
 | `adjust` | 18 | `/inventory/stocks/adjust`·`entry-safe`·`summary/…/rebuild`·`events/:id/cancel`, `/stocktaking/sessions/:id/generate-adjustments`, transfers 3W, returns 4W, warehouse-transfers 4W, reservations 2W |
 | `warehouse.manage` | 3 | 기존 그대로 (`POST` / `PATCH :id` / `DELETE :id`) |
-| **무표시 유지** | 7 | `/inventory/health*` 4(이미 `@Public`), `/inventory/ledger-reconciliation` 2, `/inventory/product-sellable-quantities/variants/:variantId` 1 |
+| **무표시 유지** | 7 | `/inventory/health*` 4(3개는 `@Public`, `/health/detailed` 는 AdminRealmGuard 전용), `/inventory/ledger-reconciliation` 2, `/inventory/product-sellable-quantities/variants/:variantId` 1 |
 
 `warehouse.controller.ts` 의 읽기 3개는 무표시 → `operate` 로 이동한다. PDA 가
 `GET /inventory/warehouses` 를 읽기 때문이다.
 
-**무표시 7개의 근거**: health 는 이미 `@Public`. ledger-reconciliation 과
+**무표시 7개의 근거**: health 4개 중 3개(`/health`·`/health/live`·`/health/ready`)는 이미
+`@Public`이고, `/health/detailed`는 `@Public`이 아니라 `AdminRealmGuard`가 계속 지키는
+진단용 엔드포인트다. ledger-reconciliation 과
 product-sellable-quantities 는 진단·내부 조회 전용이고 **저장소 전체에서 HTTP 호출자가
 0건**이다(전수 grep). 표시를 붙이지 않으면 `AdminRealmGuard` 가 계속 `admin`/`master` 로
 지키므로, 이게 이들에게는 올바른 기본값이다.
