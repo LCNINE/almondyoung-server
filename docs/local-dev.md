@@ -138,12 +138,36 @@ npm run start:main:dev               # core :3100
   (라이브 배포도 같은 변수를 세팅하지만 마찬가지로 무시된다). 로컬/라이브를 그룹 이름으로 격리한다는
   발상은 성립하지 않는다 — 실질 방어선은 바로 위 `KAFKA_API_KEY/SECRET` 미설정 하나뿐이다.
 - **user-service 는 라이브를 쓴다.** core 가 `OIDC_ISSUER_URL` 로 JWKS 검증만 하므로 그대로 통과한다.
-  단 피킹·출고(fulfillment) 엔드포인트는 `logistics_worker`/`logistics_manager`/`master` 역할이 필요하다.
-  재고조회·실사·이동·입고(inventory 모듈)는 scope 게이트가 없어 로그인만 되면 동작한다.
-- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`
-  이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+  **역할은 라이브 계정이 가진 것 그대로**이므로, 어떤 역할로 로그인했는지가 곧 로컬에서 무엇이
+  되는지를 결정한다.
+- **inventory 엔드포인트에도 이제 scope 게이트가 있다** (#551 이 라우트 154개에 `@RequireScopes`
+  부착). "로그인만 되면 inventory 는 다 된다"는 예전 서술은 더 이상 사실이 아니다. 역할별 경계:
+
+  | 역할 | 되는 것 | 안 되는 것 |
+  |---|---|---|
+  | `logistics_worker` | 재고조회·입고확정·적치·실사 카운트·이동 (`inventory.operate`), 피킹·검수·출고 (`fulfillment.warehouse.operate`) | 재고조정·실사 차이 반영(`inventory.adjust`), 마스터데이터(`inventory.manage`), 강제출고(`fulfillment.dispatch.force`) |
+  | `logistics_manager` | 위 전부 + `adjust`/`manage`/`warehouse.manage` + 강제출고·recall·재개방 | `fulfillment.tracking.ingest` (택배사 전용) |
+  | `admin` | inventory 4개 전부 | **fulfillment 스코프 0개** — 피킹·출고는 못 한다 |
+  | `master` | 전부 (ScopeGuard 가 무조건 통과) | — |
+
+  ⚠️ **라이브 개발 계정이 `admin` 이면 `logistics_worker` 의 권한 구멍이 로컬에서 드러나지 않는다.**
+  현장 역할로 검증하려면 라이브 user-service 에 그 역할을 가진 계정이 필요하다.
+- **`npm run generate:token` 의 HS256 토큰은 curl 검증용이다.** 임의 역할로 발급할 수 있어 권한
+  경계를 확인하기 좋지만, **warehouse-app 에는 토큰 주입 경로가 없다**(`src/app/config.ts` 가 OIDC
+  로만 토큰을 얻는다). 앱 화면에서 역할을 바꿔 보려면 위처럼 라이브 계정이 필요하다.
+- 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`,
+  운송장번호 `DEV-WAYBILL-0001…` 이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+- **출고작업(단순출고)이 시드만으로 바로 열린다.** 주문 10건 중 planned 인 5건이 배치
+  `DEV-BATCH-0001` 에 묶이고 각각 `registered` 운송장을 갖는다 — 앱의 `출고작업` 큐가 비지 않고,
+  운송장번호를 스캔하면 그대로 단순출고가 시작된다. plan·session·피커 claim 은 시드가 만들지 않는다.
+  `SimpleOutboundService.prepare()` 가 `queued` work item 에서 직접 만드는 것이 실제 경로라, 미리
+  만들어두면 앱이 그 경로를 밟지 못한다.
+- **창고 피킹 방식**: 부천(판매 창고)만 `supported_picking_strategies = ['discrete']` 이고 중국
+  (비판매)은 빈 배열이다 — 라이브 `WAREHOUSE_CONSTANTS` 와 같은 구분. 이 컬럼이 비면
+  `picking-strategy.registry.ts` 의 `resolveForWarehouse` 가 409 를 던져 **출고 배치를 아예 만들 수
+  없다.** 시드는 멀쩡히 도는데 출고만 조용히 막히므로, 출고가 409 면 여기부터 본다.
 - **시드 로직을 바꾼 뒤 검증**: `npm run test:seed-dev-core:integration` 이 `scripts/local/seed-dev-core/`
-  전체(스코프·마스터데이터·재고·입고·주문·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
+  전체(스코프·마스터데이터·재고·입고·주문·출고대기·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
   두 번(기본 + `--bulk`) 부르므로 `--runInBand` 로 직렬 실행되고, 로컬 `dev_core` 를 실제로 drop/create 한다.
   테스트 완료 후 DB 는 `--bulk` 상태(SKU 320개, 로케이션 64개)로 남으므로, 기본 시드(SKU 20개, 로케이션 14개)로
   돌아가려면 `npm run dev:core:reset` 을 다시 한 번 실행한다.

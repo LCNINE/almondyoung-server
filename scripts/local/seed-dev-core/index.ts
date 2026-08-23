@@ -26,6 +26,7 @@ import { seedStock } from './stock';
 import { seedInbound } from './inbound';
 import { seedOrders } from './orders';
 import { planShipments } from './shipments';
+import { seedOutboundReady } from './outbound';
 import { seedBulk } from './bulk';
 
 /**
@@ -141,7 +142,8 @@ async function main(): Promise<void> {
       await seedStock(wired.command, tx);
       await seedInbound(inboundService, tx);
       const shipmentIds = await seedOrders(wired, tx);
-      await planShipments(planning, shipmentIds, tx);
+      const plannedShipmentIds = await planShipments(planning, shipmentIds, tx);
+      await seedOutboundReady(tx, plannedShipmentIds);
 
       if (bulk) {
         await seedBulk(tx);

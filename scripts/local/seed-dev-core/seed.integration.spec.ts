@@ -3,6 +3,9 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
+import { canonicalFulfillmentRequestHash } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-command.service';
+import { assembleSimpleOutbound } from '../../../apps/core/src/modules/fulfillment/services/__support__/simple-outbound-wiring';
+import { inRollbackTx } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
 const describeIfSeedDb = SEED_URL ? describe : describe.skip;
@@ -27,11 +30,11 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
-    // 정확히 9개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
+    // 정확히 12개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
     // 부팅 시 시딩되는 개수다(import 하지 않음: ALL_SCOPES 에서 스코프 하나가 빠지는 회귀는
-    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(1) + FULFILLMENT_SCOPES(8).
+    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(4) + FULFILLMENT_SCOPES(8).
     const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(scopeCountRows[0].n).toBe(9);
+    expect(scopeCountRows[0].n).toBe(12);
 
     const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
       SELECT rsm.role_name, s.key AS scope_key
@@ -50,8 +53,18 @@ describeIfSeedDb('dev_core 시드', () => {
     // 기대값은 apps/core/src/platform/auth/merged-scopes.ts 의 ALL_ROLE_MAPPINGS 를
     // import 하지 않고 여기 직접 적는다 — 검증 대상 상수를 그대로 가져와 비교하면 그 상수 자체가
     // 잘못됐을 때도 테스트가 통과해버려 회귀를 잡지 못한다.
-    expect(scopeKeysByRole.get('admin')).toEqual(['inventory.warehouse.manage']);
-    expect(scopeKeysByRole.get('logistics_worker')).toEqual(['fulfillment.warehouse.operate']);
+    // admin 은 inventory 전량을 받고 fulfillment 는 하나도 받지 않는다 — FULFILLMENT_ROLE_MAPPINGS
+    // 에 admin 항목이 아예 없기 때문이다. 이게 뒤집히면 어드민이 강제출고까지 얻게 된다.
+    expect(scopeKeysByRole.get('admin')).toEqual([
+      'inventory.adjust',
+      'inventory.manage',
+      'inventory.operate',
+      'inventory.warehouse.manage',
+    ]);
+    // logistics_worker 가 inventory 에서 operate 하나만 받는 건 의도다 — 현장 PDA 의 조회·입고확정·
+    // 적치·실사 카운트·이동은 작업자 행위지만, 수량을 직접 고치는 adjust 와 마스터데이터를 바꾸는
+    // manage 는 아니다. 그 결과 재고조정·실사 차이 반영은 logistics_manager 를 요구한다.
+    expect(scopeKeysByRole.get('logistics_worker')).toEqual(['fulfillment.warehouse.operate', 'inventory.operate']);
     expect(scopeKeysByRole.get('logistics_manager')).toEqual([
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.recall',
@@ -60,6 +73,9 @@ describeIfSeedDb('dev_core 시드', () => {
       'fulfillment.shipment.override_recipient',
       'fulfillment.shipment.reopen',
       'fulfillment.warehouse.operate',
+      'inventory.adjust',
+      'inventory.manage',
+      'inventory.operate',
       'inventory.warehouse.manage',
     ]);
   });
@@ -75,6 +91,12 @@ describeIfSeedDb('dev_core 시드', () => {
     const CHINA_WAREHOUSE_ID = '019d0001-0002-7000-a000-000000000002';
     expect(warehouses[0].id).toBe(BUCHEON_WAREHOUSE_ID);
     expect(warehouses[1].id).toBe(CHINA_WAREHOUSE_ID);
+
+    // 이 컬럼이 비면 picking-strategy.registry.ts 의 resolveForWarehouse 가 409 를 던져 출고
+    // 배치를 아예 만들 수 없다 — 시드는 되는데 출고만 조용히 막히는 상태가 된다. 값은 라이브
+    // WAREHOUSE_CONSTANTS 와 같은 구분이다: 국내(판매)창고만 discrete, 해외(비판매)는 빈 배열.
+    expect(warehouses[0].supportedPickingStrategies).toEqual(['discrete']);
+    expect(warehouses[1].supportedPickingStrategies).toEqual([]);
 
     const locations = await db.select().from(wmsTables.locations);
     expect(locations).toHaveLength(14); // 창고 2개 × 기본 존 4 + 부천 랙 6
@@ -505,6 +527,101 @@ describeIfSeedDb('dev_core 시드', () => {
       return acc;
     }, {});
     expect(byStatus).toEqual({ draft: 5, planned: 5 });
+  });
+
+  it('planned shipment 5건이 배치·work item·송장까지 출고 대기 상태로 들어간다', async () => {
+    const batches = await db.select().from(wmsTables.outboundBatches);
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+    expect(batch.batchNumber).toBe('DEV-BATCH-0001');
+    expect(batch.warehouseId).toBe('019d0001-0001-7000-a000-000000000001'); // 부천
+    expect(batch.status).toBe('created');
+    // individual 만 단순출고가 다룰 수 있다 — isSimpleOutboundSupportedMethod 가 여기서 파생되는
+    // 전략(discrete)을 보고 판정하고, 그 외 방식이면 SimpleOutboundService.prepare 가 409 를 던진다.
+    expect(batch.pickingMethod).toBe('individual');
+
+    const plannedShipments = await db
+      .select({ id: wmsTables.shipments.id, manifestVersion: wmsTables.shipments.manifestVersion })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.status, 'planned'));
+    expect(plannedShipments).toHaveLength(5);
+    const plannedIds = new Set(plannedShipments.map((s) => s.id));
+
+    const workItems = await db.select().from(wmsTables.outboundBatchWorkItems);
+    expect(workItems).toHaveLength(5);
+    expect(new Set(workItems.map((w) => w.shipmentId))).toEqual(plannedIds);
+    for (const workItem of workItems) {
+      expect(workItem.batchId).toBe(batch.id);
+      // queued 로 남겨야 한다. plan·session·피커 claim 은 SimpleOutboundService.prepare 가
+      // 만들므로, 시드가 미리 만들면 앱이 실제로 하는 일을 가로채 경로를 못 밟게 된다.
+      expect(workItem.status).toBe('queued');
+      expect(workItem.leaseVersion).toBe(0);
+      expect(workItem.pickerId).toBeNull();
+      expect(workItem.packerId).toBeNull();
+    }
+
+    const waybills = await db.select().from(wmsTables.waybills).orderBy(wmsTables.waybills.trackingNo);
+    expect(waybills).toHaveLength(5);
+    expect(waybills.map((w) => w.trackingNo)).toEqual([
+      'DEV-WAYBILL-0001',
+      'DEV-WAYBILL-0002',
+      'DEV-WAYBILL-0003',
+      'DEV-WAYBILL-0004',
+      'DEV-WAYBILL-0005',
+    ]);
+    expect(new Set(waybills.map((w) => w.shipmentId))).toEqual(plannedIds);
+
+    const manifestVersionByShipment = new Map(plannedShipments.map((s) => [s.id, s.manifestVersion]));
+    const snapshots = await db
+      .select({ id: wmsTables.shipments.id, recipientSnapshot: wmsTables.shipments.recipientSnapshot })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.status, 'planned'));
+    const snapshotByShipment = new Map(snapshots.map((s) => [s.id, s.recipientSnapshot]));
+
+    for (const waybill of waybills) {
+      // lockAggregate 는 active waybill 정확히 1건을 요구한다(registered 가 active). manual 이 아닌
+      // source 는 ck_waybills_manual_status 밖이고, pending 이면 단순출고가 SHIPMENT_INVOICE_NOT_READY.
+      expect(waybill.status).toBe('registered');
+      expect(waybill.source).toBe('manual');
+      expect(waybill.carrier).toBe('HANJIN');
+      expect(waybill.manifestVersion).toBe(manifestVersionByShipment.get(waybill.shipmentId));
+      // 해시가 shipment 의 recipientSnapshot 이 아닌 다른 값(예: salesOrder.shippingAddress)에서
+      // 나오면 출고 시점에야 어긋나 실패한다 — 여기서 잡는다.
+      expect(waybill.recipientHash).toBe(canonicalFulfillmentRequestHash(snapshotByShipment.get(waybill.shipmentId)));
+    }
+  });
+
+  // 위 테스트는 "행이 맞게 들어갔나"까지만 본다. 시드의 목적은 그게 아니라 **앱이 실제로 출고를
+  // 시작할 수 있는 상태**이므로, 여기서 SimpleOutboundService 를 실제로 돌려 그 상태를 증명한다.
+  // 롤백 tx 안에서 도니 시드 DB 는 그대로 남는다.
+  it('시드된 송장으로 단순출고를 실제로 시작할 수 있다', async () => {
+    const [waybill] = await db
+      .select({ shipmentId: wmsTables.waybills.shipmentId })
+      .from(wmsTables.waybills)
+      .where(eq(wmsTables.waybills.trackingNo, 'DEV-WAYBILL-0001'));
+    expect(waybill).toBeDefined();
+
+    await inRollbackTx(db, async (tx) => {
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: '019d0008-0001-7000-a000-000000000001', roles: ['logistics_worker'] };
+
+      const context = await service.prepare(waybill.shipmentId, actor, 'seed-smoke-0001', tx);
+
+      // prepare 가 만드는 셋 — 이게 시드가 일부러 만들지 않고 남겨둔 부분이다.
+      expect(context.planId).toBeTruthy();
+      expect(context.sessionId).toBeTruthy();
+      expect(context.batchId).toBeTruthy();
+
+      const [workItem] = await tx
+        .select({
+          status: wmsTables.outboundBatchWorkItems.status,
+          pickerId: wmsTables.outboundBatchWorkItems.pickerId,
+        })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, context.workItemId));
+      expect(workItem.status).toBe('picking');
+      expect(workItem.pickerId).toBe(actor.id);
+    });
   });
 });
 

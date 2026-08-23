@@ -10,8 +10,17 @@ import { SEED_IDS } from './constants';
  */
 export const SEED_ACTOR = { id: '019d0008-0001-7000-a000-000000000001', roles: ['master'] };
 
-/** 앞쪽 절반만 planned 로 올려 draft/planned 두 상태를 모두 남긴다. */
-export async function planShipments(planning: ShipmentPlanningService, shipmentIds: string[], tx: DbTx): Promise<void> {
+/**
+ * 앞쪽 절반만 planned 로 올려 draft/planned 두 상태를 모두 남긴다.
+ *
+ * planned 가 된 id 를 돌려주는 이유: 이어지는 `seedOutboundReady` 가 정확히 이 집합에만 배치·
+ * 운송장을 붙여야 하는데, 호출자가 같은 slice 를 다시 계산하면 두 곳이 갈라질 수 있다.
+ */
+export async function planShipments(
+  planning: ShipmentPlanningService,
+  shipmentIds: string[],
+  tx: DbTx,
+): Promise<string[]> {
   const target = shipmentIds.slice(0, Math.floor(shipmentIds.length / 2));
 
   for (const [index, shipmentId] of target.entries()) {
@@ -28,4 +37,6 @@ export async function planShipments(planning: ShipmentPlanningService, shipmentI
       tx,
     );
   }
+
+  return target;
 }

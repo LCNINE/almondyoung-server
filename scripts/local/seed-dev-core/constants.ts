@@ -19,6 +19,9 @@
  *   019d0008 — shipments.ts   SEED_ACTOR (시드 작업자 신원)
  *   019d0009 — bulk.ts        bulkLocationId (벌크 로케이션 50개)
  *   019d000a — bulk.ts        bulkSkuId (벌크 SKU 300개)
+ *   019d000b — outbound.ts    outboundBatchId (출고 배치 1개)
+ *   019d000c — outbound.ts    workItemId (배치 work item 5개)
+ *   019d000d — outbound.ts    waybillId (운송장 5개)
  */
 export const SEED_IDS = {
   warehouseBucheon: '019d0001-0001-7000-a000-000000000001',

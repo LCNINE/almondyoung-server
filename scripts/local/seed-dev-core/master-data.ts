@@ -4,8 +4,17 @@ import { SEED_IDS, SEED_RACK_LOCATIONS, SEED_SKUS } from './constants';
 /** 순수 마스터 데이터라 도메인 서비스를 경유하지 않는다 — 정합성이 걸린 전이가 없다. */
 export async function seedMasterData(tx: DbTx): Promise<void> {
   await tx.insert(wmsTables.warehouses).values([
-    { id: SEED_IDS.warehouseBucheon, name: '부천 물류창고', type: 'domestic' },
-    { id: SEED_IDS.warehouseChina, name: '중국 물류창고', type: 'overseas' },
+    // supportedPickingStrategies 를 비워두면 picking-strategy.registry.ts 의 resolveForWarehouse 가
+    // 409 를 던져 출고 배치를 아예 만들 수 없다 — 시드는 멀쩡히 도는데 출고만 조용히 막힌다.
+    // 구분은 라이브 WAREHOUSE_CONSTANTS 와 같다: 국내(판매) 창고만 discrete, 해외(비판매)는 빈 배열.
+    // 토탈피킹(aggregate_then_sort)·multi_order 는 의도적으로 끈 채 둔다.
+    {
+      id: SEED_IDS.warehouseBucheon,
+      name: '부천 물류창고',
+      type: 'domestic',
+      supportedPickingStrategies: ['discrete'],
+    },
+    { id: SEED_IDS.warehouseChina, name: '중국 물류창고', type: 'overseas', supportedPickingStrategies: [] },
   ]);
 
   await tx.insert(wmsTables.locations).values([
