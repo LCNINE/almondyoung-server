@@ -1,7 +1,9 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Min } from 'class-validator';
 import { ApiOperation, ApiParam, ApiProperty, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuGroupService } from '../services/sku-group.service';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/create-sku-group.dto';
 import { AddSkuToGroupDto, BulkAddSkusToGroupDto } from '../dto/manage-group-members.dto';
@@ -25,6 +27,7 @@ class UngroupedQueryDto {
 
 @ApiTags('SKU Groups')
 @Controller('inventory/sku-groups')
+@UseGuards(ScopeGuard)
 export class SkuGroupController {
   constructor(private readonly skuGroupService: SkuGroupService) {}
 
@@ -41,24 +44,30 @@ export class SkuGroupController {
   }
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 SKU 그룹 조회 (List all SKU groups)' })
   @ApiResponse({ status: 200, description: 'SKU 그룹 목록', type: [SkuGroupResponseDto] })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async list(): Promise<SkuGroupResponseDto[]> {
     return this.skuGroupService.list();
   }
 
   @Get('ungrouped')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹에 속하지 않은 SKU 조회 (Get ungrouped SKUs)' })
   @ApiResponse({ status: 200, description: '그룹 미지정 SKU 목록' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getUngroupedSkus(@Query() query: UngroupedQueryDto) {
     return this.skuGroupService.getUngroupedSkus(query.limit ?? 50, query.offset ?? 0);
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 그룹 상세 조회' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹 상세 정보', type: SkuGroupResponseDto })
   @ApiResponse({ status: 404, description: '그룹을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getById(@Param('id') groupId: string): Promise<SkuGroupResponseDto> {
     return this.skuGroupService.getById(groupId);
   }
@@ -83,10 +92,12 @@ export class SkuGroupController {
   }
 
   @Get(':id/members')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹의 모든 SKU 조회' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹 멤버 목록', type: SkuGroupMembersResponseDto })
   @ApiResponse({ status: 404, description: '그룹을 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getMembers(@Param('id') groupId: string): Promise<SkuGroupMembersResponseDto> {
     return this.skuGroupService.getMembers(groupId);
   }

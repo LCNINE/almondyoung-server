@@ -10,11 +10,11 @@ import { WarehouseService } from '../services/warehouse.service';
 
 @ApiTags('Inventory')
 @Controller('inventory/warehouses')
+@UseGuards(ScopeGuard)
 export class WarehouseController {
   constructor(private readonly warehouseService: WarehouseService) {}
 
   @Post()
-  @UseGuards(ScopeGuard)
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '새 창고 생성' })
   @ApiResponse({ status: 201, description: '창고가 생성되었습니다.', type: WarehouseDto })
@@ -25,30 +25,35 @@ export class WarehouseController {
   }
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 창고 목록 조회' })
   @ApiResponse({ status: 200, description: '창고 목록을 반환합니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async findAll(): Promise<WarehouseDto[]> {
     const warehouses = await this.warehouseService.findAll();
     return warehouses.map((w) => WarehouseMapper.toDto(w));
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 창고 조회' })
   @ApiResponse({ status: 200, description: '창고 정보를 반환합니다.' })
   @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async findOne(@Param('id') id: string) {
     return this.warehouseService.findOne(id);
   }
 
   @Get(':id/summary')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고별 재고 요약 조회' })
   @ApiResponse({ status: 200, description: '창고별 재고 요약을 반환합니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getStockSummary(@Param('id') id: string) {
     return this.warehouseService.getStockSummary(id);
   }
 
   @Patch(':id')
-  @UseGuards(ScopeGuard)
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 정보 수정' })
   @ApiResponse({ status: 200, description: '창고 정보가 수정되었습니다.', type: WarehouseDto })
@@ -63,7 +68,6 @@ export class WarehouseController {
   }
 
   @Delete(':id')
-  @UseGuards(ScopeGuard)
   @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 삭제' })
   @ApiResponse({ status: 200, description: '창고가 삭제되었습니다.' })

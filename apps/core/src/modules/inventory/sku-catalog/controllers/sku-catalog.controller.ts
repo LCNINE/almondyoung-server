@@ -1,5 +1,20 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuCatalogService } from '../services/sku-catalog.service';
 import { CreateSkuDto } from '../dto/create-sku.dto';
 import { UpdateSkuDto } from '../dto/update-sku.dto';
@@ -11,6 +26,7 @@ import { SkuBarcodeMapper } from '../mappers/sku.mapper';
 
 @ApiTags('Inventory')
 @Controller('inventory/skus')
+@UseGuards(ScopeGuard)
 export class SkuCatalogController {
   constructor(private readonly skus: SkuCatalogService) {}
 
@@ -22,6 +38,7 @@ export class SkuCatalogController {
   }
 
   @Get('deleted')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '삭제된 SKU 목록 조회' })
   @ApiResponse({
     status: 200,
@@ -36,11 +53,13 @@ export class SkuCatalogController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getDeleted(@Query() filters: DeletedSkuFiltersDto) {
     return this.skus.getDeleted(filters);
   }
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 검색' })
   @ApiQuery({ name: 'id', required: false })
   @ApiQuery({ name: 'code', required: false })
@@ -51,6 +70,7 @@ export class SkuCatalogController {
   @ApiQuery({ name: 'groupId', required: false })
   @ApiQuery({ name: 'holderId', required: false })
   @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async search(
     @Query('id') id?: string,
     @Query('code') code?: string,
@@ -65,6 +85,7 @@ export class SkuCatalogController {
   }
 
   @Get('search/advanced')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 고급 검색 (재고 필터링 포함)' })
   @ApiResponse({
     status: 200,
@@ -79,13 +100,16 @@ export class SkuCatalogController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async searchAdvanced(@Query() filters: AdvancedInventoryFiltersDto) {
     return this.skus.searchAdvanced(filters);
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 상세 조회' })
   @ApiResponse({ status: 200, description: 'SKU 상세 정보', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getById(@Param('id') id: string): Promise<SkuResponseDto> {
     return this.skus.getById(id);
   }

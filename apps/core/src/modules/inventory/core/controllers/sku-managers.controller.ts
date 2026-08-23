@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuManagersService } from '../services/sku-managers.service';
 import { CreateSkuManagersDto } from '../dto/sku-managers/create-sku-managers.dto';
 import { UpdateSkuManagersDto } from '../dto/sku-managers/update-sku-managers.dto';
@@ -7,6 +9,7 @@ import { SkuManagersResponseDto } from '../dto/sku-managers/sku-managers-respons
 
 @ApiTags('SKU Managers')
 @Controller('inventory/skus')
+@UseGuards(ScopeGuard)
 export class SkuManagersController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
@@ -27,6 +30,7 @@ export class SkuManagersController {
   }
 
   @Get(':skuId/managers')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'SKU 담당자 조회 (Get managers for SKU)',
     description: 'Get manager assignments for a specific SKU',
@@ -38,6 +42,7 @@ export class SkuManagersController {
     type: SkuManagersResponseDto,
   })
   @ApiResponse({ status: 404, description: 'Managers not found' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getManagers(@Param('skuId') skuId: string): Promise<SkuManagersResponseDto | null> {
     return this.skuManagersService.getManagersBySkuId(skuId);
   }
@@ -111,6 +116,7 @@ export class SkuManagersController {
   }
 
   @Get('managers/all')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '전체 담당자 할당 조회 (Get all manager assignments)',
     description: 'Get all SKU manager assignments',
@@ -120,6 +126,7 @@ export class SkuManagersController {
     description: 'All manager assignments retrieved successfully',
     type: [SkuManagersResponseDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getAllManagerAssignments(): Promise<SkuManagersResponseDto[]> {
     return this.skuManagersService.getAllManagerAssignments();
   }
@@ -127,10 +134,12 @@ export class SkuManagersController {
 
 @ApiTags('Manager SKU Assignments')
 @Controller('inventory/managers')
+@UseGuards(ScopeGuard)
 export class ManagerSkusController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
   @Get(':managerId/skus')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '담당자별 SKU 목록 조회 (Get SKUs by manager)',
     description: 'Get all SKUs managed by a specific manager (any role)',
@@ -154,6 +163,7 @@ export class ManagerSkusController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getSkusByManager(@Param('managerId') managerId: string): Promise<
     Array<{
       skuId: string;

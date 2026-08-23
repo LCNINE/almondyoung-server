@@ -10,8 +10,11 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { TransferService } from '../services/transfer.service';
 import { MovementJob } from '../../schema/inventory.schema';
 import {
@@ -31,6 +34,7 @@ import { TransferJobMapper, TransferJobLineMapper } from '../mappers/transfer.ma
 
 @ApiTags('Inventory - Transfers')
 @Controller('inventory/transfers')
+@UseGuards(ScopeGuard)
 export class TransferController {
   constructor(private readonly transferService: TransferService) {}
 
@@ -158,6 +162,7 @@ export class TransferController {
    * 4. 이동 작업 상세 조회
    */
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 상세 조회',
     description: '특정 이동 작업의 상세 정보와 라인 목록을 조회합니다.',
@@ -176,6 +181,7 @@ export class TransferController {
     status: 404,
     description: '이동 작업을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getTransferJob(@Param('id') id: string): Promise<TransferJobWithLinesDto> {
     try {
       const { lines, ...job } = await this.transferService.getTransferJob(id);
@@ -192,6 +198,7 @@ export class TransferController {
    * 5. 이동 작업 상태 조회
    */
   @Get(':id/status')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 상태 조회',
     description: '이동 작업의 실행 상태를 조회합니다 (pending/in_progress/completed).',
@@ -210,6 +217,7 @@ export class TransferController {
     status: 404,
     description: '이동 작업을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getTransferJobStatus(@Param('id') id: string): Promise<TransferJobStatusDto> {
     try {
       return await this.transferService.getTransferJobStatus(id);
@@ -225,6 +233,7 @@ export class TransferController {
    * 6. 이동 작업 목록 조회
    */
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 목록 조회',
     description: '이동 작업 목록을 필터링 및 페이징하여 조회합니다.',
@@ -252,6 +261,7 @@ export class TransferController {
     description: '이동 작업 목록',
     type: TransferJobListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listTransferJobs(
     @Query('warehouseId') warehouseId?: string,
     @Query('limit') limit?: number,

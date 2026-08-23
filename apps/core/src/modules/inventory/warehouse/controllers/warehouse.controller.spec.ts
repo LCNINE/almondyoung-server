@@ -22,18 +22,17 @@ describe('WarehouseController authorization contract', () => {
   });
 
   // RequireScopes 는 메타데이터일 뿐이라 ScopeGuard 가 없으면 아무것도 막지 못한다.
-  // 데코레이터 하나만 붙이고 끝내는 회귀를 이 어서션이 잡는다.
-  it.each(WRITE_HANDLERS)('binds ScopeGuard to %s so the metadata is actually enforced', (name) => {
-    expect(Reflect.getMetadata(GUARDS_METADATA, handlerFor(name))).toEqual([ScopeGuard]);
+  // 데코레이터 하나만 붙이고 끝내는 회귀를 이 어서션이 잡는다. #551 에서 가드가 클래스
+  // 레벨로 올라갔다 — inventory 컨트롤러 18개가 모두 같은 형태다.
+  it('binds ScopeGuard at the controller level so every scoped handler is enforced', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, WarehouseController)).toEqual([ScopeGuard]);
   });
 
-  // warehouse-app 이 GET /inventory/warehouses 로 창고를 고르는데 현장 토큰의 role 을
-  // 코드로 확인할 수 없다. 읽기를 닫으면 현장 PDA 가 창고 선택조차 못 한다.
-  it.each(READ_HANDLERS)('leaves %s open to any authenticated caller', (name) => {
-    const handler = handlerFor(name);
-    expect(handler).toBeDefined();
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, handler)).toBeUndefined();
-    expect(Reflect.getMetadata(GUARDS_METADATA, handler)).toBeUndefined();
+  // #546 은 읽기를 무표시로 뒀지만, 그건 열려 있던 게 아니라 AdminRealmGuard 가
+  // admin/master 로 막고 있던 것이다. warehouse-app 이 GET /inventory/warehouses 로 창고를
+  // 고르므로 #551 에서 읽기에 OPERATE 를 준다 — logistics_worker 가 통과하게 만드는 게 목적이다.
+  it.each(READ_HANDLERS)('opens %s to inventory.operate so the field PDA can read it', (name) => {
+    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, handlerFor(name))).toEqual([INVENTORY_SCOPE.OPERATE]);
   });
 
   it('does not put a class-level scope requirement on the controller', () => {

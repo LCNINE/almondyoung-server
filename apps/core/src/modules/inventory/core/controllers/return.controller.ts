@@ -10,8 +10,11 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReturnService } from '../services/return.service';
 import { CreateReturnDto, ReceiveReturnDto, InspectReturnDto, ProcessReturnDto } from '../dto/return/create-return.dto';
 import {
@@ -29,6 +32,7 @@ import { Return } from '../../schema/inventory.schema';
 
 @ApiTags('Inventory - Returns')
 @Controller('inventory/returns')
+@UseGuards(ScopeGuard)
 export class ReturnController {
   constructor(private readonly returnService: ReturnService) {}
 
@@ -209,6 +213,7 @@ export class ReturnController {
    * 반품 상세 조회
    */
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '반품 상세 조회',
     description: '특정 반품의 상세 정보와 반품 아이템 목록을 조회합니다.',
@@ -227,6 +232,7 @@ export class ReturnController {
     status: 404,
     description: '반품을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getReturn(@Param('id') id: string): Promise<ReturnDto> {
     const returnEntity = await this.returnService.getReturn(id);
     return ReturnMapper.toDto(returnEntity);
@@ -236,6 +242,7 @@ export class ReturnController {
    * 반품 목록 조회
    */
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '반품 목록 조회',
     description: '반품 목록을 필터링 및 페이징하여 조회합니다.',
@@ -245,6 +252,7 @@ export class ReturnController {
     description: '반품 목록',
     type: ReturnListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listReturns(@Query() filters: ReturnFiltersDto): Promise<ReturnListResponseDto> {
     const returns: Return[] = await this.returnService.listReturns({
       warehouseId: filters.warehouseId,

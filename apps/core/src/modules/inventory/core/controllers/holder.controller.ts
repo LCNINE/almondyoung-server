@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { HolderService } from '../services/holder.service';
 import { HolderQueryDto } from '../dto/holder/holder-query.dto';
 import { CreateHolderDto } from '../dto/holder/holder-create.dto';
@@ -8,24 +10,28 @@ import { HolderDto, HolderListResponseDto } from '../dto/holder/holder-response.
 
 @ApiTags('Holder Management')
 @Controller('holders')
+@UseGuards(ScopeGuard)
 export class HolderController {
   private readonly logger = new Logger(HolderController.name);
 
   constructor(private readonly holderService: HolderService) {}
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 목록/검색 조회' })
   @ApiResponse({
     status: HttpStatus.OK,
     description: '재고소유 목록이 성공적으로 조회되었습니다.',
     type: HolderListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listHolders(@Query() query: HolderQueryDto): Promise<HolderListResponseDto> {
     this.logger.log(`Listing holders with filters: ${JSON.stringify(query)}`);
     return await this.holderService.listHolders(query);
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고소유 단일 조회' })
   @ApiParam({ name: 'id', description: 'Holder ID' })
   @ApiResponse({
@@ -37,6 +43,7 @@ export class HolderController {
     status: HttpStatus.NOT_FOUND,
     description: '재고소유를 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getHolderById(@Param('id') id: string): Promise<HolderDto> {
     this.logger.log(`Getting holder by id: ${id}`);
     return await this.holderService.getHolderById(id);

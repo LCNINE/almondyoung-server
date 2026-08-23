@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, HttpStatus, Logger, UseGuards } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -9,6 +9,8 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { LocationService } from '../services/location.service';
 import {
   CreateColumnDto,
@@ -32,6 +34,7 @@ import { LocationMapper } from '../mappers/location.mapper';
 @ApiTags('Location Management')
 @ApiExtraModels(StandardLocationResponseDto, ZoneLocationResponseDto)
 @Controller('locations')
+@UseGuards(ScopeGuard)
 export class LocationController {
   private readonly logger = new Logger(LocationController.name);
 
@@ -56,6 +59,7 @@ export class LocationController {
   }
 
   @Get('/warehouses/:warehouseId/columns')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 열 조회' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiQuery({ name: 'isActive', required: false, type: 'boolean', description: '활성 상태 필터' })
@@ -64,6 +68,7 @@ export class LocationController {
     description: '열 목록이 성공적으로 조회되었습니다.',
     type: [LocationColumnResponseDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getColumns(@Param('warehouseId') warehouseId: string, @Query() query: ColumnQueryDto) {
     return await this.locationService.getColumns(warehouseId, query.isActive);
   }
@@ -107,6 +112,7 @@ export class LocationController {
   }
 
   @Get('/warehouses/:warehouseId/racks')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고의 모든 랙 조회' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiQuery({ name: 'columnName', required: false, description: '열 이름 필터' })
@@ -116,6 +122,7 @@ export class LocationController {
     description: '랙 목록이 성공적으로 조회되었습니다.',
     type: [LocationRackResponseDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getRacks(@Param('warehouseId') warehouseId: string, @Query() query: RackQueryDto) {
     const racks = await this.locationService.getRacks(warehouseId, query.columnName, query.isActive);
     return racks.map(LocationMapper.toLocationRackResponseDto);
@@ -160,6 +167,7 @@ export class LocationController {
   }
 
   @Get('/warehouses/:warehouseId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고의 모든 로케이션 조회 (페이징, 필터링, 검색)',
     description: '표준 로케이션과 구역 로케이션을 모두 조회할 수 있습니다.',
@@ -170,11 +178,13 @@ export class LocationController {
     description: '로케이션 목록이 성공적으로 조회되었습니다.',
     type: LocationListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getLocations(@Param('warehouseId') warehouseId: string, @Query() query: LocationQueryDto) {
     return await this.locationService.getLocations(warehouseId, query);
   }
 
   @Get('/:locationId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 로케이션 상세 조회' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiResponse({
@@ -188,6 +198,7 @@ export class LocationController {
     status: HttpStatus.NOT_FOUND,
     description: '로케이션을 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getLocationById(@Param('locationId') locationId: string) {
     return LocationMapper.toLocationResponseDto(await this.locationService.getLocationById(locationId));
   }

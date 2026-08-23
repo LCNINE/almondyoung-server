@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { WarehouseTransferService } from '../services/warehouse-transfer.service';
 import { CreateTransferOrderDto } from '../dto/create-transfer-order.dto';
 import { ReceiveTransferDto } from '../dto/receive-transfer.dto';
@@ -19,14 +21,17 @@ import {
  */
 @ApiTags('Inventory - Warehouse Transfers')
 @Controller('inventory/warehouse-transfers')
+@UseGuards(ScopeGuard)
 export class WarehouseTransferController {
   constructor(private readonly service: WarehouseTransferService) {}
 
   // outstanding 은 :id 보다 먼저 선언해야 한다 — Nest 는 선언 순서로 라우트를 매칭하므로
   // :id 가 먼저 오면 'outstanding' 이 id 파라미터로 흡수된다.
   @Get('outstanding')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '미도착 잔량 목록' })
   @ApiResponse({ status: 200, type: OutstandingTransferListDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async outstanding(): Promise<OutstandingTransferListDto> {
     const items = await this.service.findOutstanding();
     return { items };
