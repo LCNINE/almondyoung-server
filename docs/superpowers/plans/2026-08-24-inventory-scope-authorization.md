@@ -625,7 +625,7 @@ export class StocktakingController {
   async scanProduct(@Body() dto: ScanProductDto) {
 ```
 
-`@RequireScopes` 는 HTTP 메서드 데코레이터 **바로 아래**에 둔다. `@ApiResponse({ status: 403, ... })` 를 함께 추가한다 — #546 이 세운 형태다. 403 설명 문구는 스코프별로:
+`@RequireScopes` 는 라우트 데코레이터에 **인접**하게 둔다 — 바로 아래가 기본이고, `@HttpCode(...)` 처럼 이미 그 자리를 차지한 데코레이터가 있으면 그 다음 줄이다(실제 코드가 따르는 규칙이 이것이다. 예: `stocktaking.controller.ts` 의 `@Post` → `@HttpCode` → `@RequireScopes`). `@ApiResponse({ status: 403, ... })` 를 함께 추가한다 — #546 이 세운 형태다. 403 설명 문구는 스코프별로:
 
 | 스코프 | 403 설명 |
 |---|---|
@@ -1107,3 +1107,22 @@ git commit -m "docs(inventory): 설계 문서의 신규 스펙 수를 구현과 
 - **admin role 자체의 권한 축소.** admin-web 15개 화면의 `requireRole` 재배치 + 기존 admin 유저에게 `logistics_manager` 부여(DB). 별도 이슈.
 - **`logistics_*` 를 실제 PDA 운영자에게 부여하는 운영 작업.** 라이브 user-service DB 실측이 선행. 이 계획의 선행조건은 아니다 — 설계가 단조적으로 안전하므로 배포해도 깨지는 게 없다.
 - **#713 1단계 종료 처리.** #551 이 닫히면 1단계(#705 + #551)가 완료된다. #713 체크박스 갱신.
+
+## 실행 후 정정
+
+브랜치 전체 최종 리뷰에서 배정 5건이 틀린 것으로 확인돼 **구현 후** 고쳤다. 위 154행 배정표와 태스크별 라우트 목록은 *계획 당시의 기록*이라 그대로 둔다 — **최종 배정의 정본은 설계 문서**(`docs/superpowers/specs/2026-08-24-inventory-scope-authorization-design.md`)다.
+
+| 라우트 | 계획 | 최종 | 이유 |
+|---|---|---|---|
+| `POST /stocktaking/sessions/:id/complete` | `operate` | **`adjust`** | 원장에 실제로 쓰는 쪽이다 — `adjustUp`/`adjustDown` 호출, 하향은 `bypassReservationGuard: true` |
+| `POST /stocktaking/sessions/:id/generate-adjustments` | `adjust` | **`operate`** | 이름과 달리 영속 없는 dry-run 미리보기다 (`eventsPosted: 0`) |
+| `POST /inventory/transfers/move-within-warehouse` | `adjust` | **`operate`** | `POST /movement/move` 와 같은 능력(창고 내 로케이션 이동)이라 한쪽만 잠그면 아무것도 막지 못한다 |
+| `POST /inbound/plans` | `operate` | **`manage`** | 입고 계획 생성은 데스크 업무 — PDA 는 호출하지 않는다 |
+| `POST /inbound/plans/items` | `operate` | **`manage`** | 위와 같음 |
+
+앞의 둘은 **실사의 `adjust` 경계가 뒤집혀 있던 것**이다(쓰는 쪽이 `operate`, 읽는 쪽이 `adjust`). 최종 분포는 `operate` 69 / `manage` 58 / `adjust` 17 / `warehouse.manage` 3 / 무표시 7 = **154**.
+
+함께 고친 것:
+
+- **커버리지 스펙의 컨트롤러 수집이 파일 이름 판정을 그만뒀다.** `collectControllerFiles` 의 `/\.controllers?\.ts$/` 는 #551 을 만든 것과 같은 판정이었다. 이제 `modules/inventory` 아래 모든 `.ts` 를 훑고 `@Controller` 유무로 `collectRoutes` 가 판정한다. 라우트 집합은 동일하다(154행 집합 일치 테스트가 그 증거).
+- **"단조적으로 안전" 표현을 설계 문서에서 걷어냈다.** 그건 "기존 호출자에게 회귀 없음" 이지 "새 노출 없음" 이 아니다 — 부착이 `AdminRealmGuard` 의 바닥을 걷어내므로 배포 시점에 `logistics_worker` 보유자는 라우트 69개를 새로 얻는다. 위 §후속의 "설계가 단조적으로 안전하므로" 도 같은 이유로 무효다. 그래서 **라이브 role 보유자 실측이 배포 선행조건으로 승격**됐다(설계 문서 §마이그레이션·배포).
