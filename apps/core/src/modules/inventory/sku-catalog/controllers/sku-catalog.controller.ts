@@ -1,5 +1,20 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SkuCatalogService } from '../services/sku-catalog.service';
 import { CreateSkuDto } from '../dto/create-sku.dto';
 import { UpdateSkuDto } from '../dto/update-sku.dto';
@@ -11,17 +26,21 @@ import { SkuBarcodeMapper } from '../mappers/sku.mapper';
 
 @ApiTags('Inventory')
 @Controller('inventory/skus')
+@UseGuards(ScopeGuard)
 export class SkuCatalogController {
   constructor(private readonly skus: SkuCatalogService) {}
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '새 SKU 생성' })
   @ApiResponse({ status: 201, description: 'SKU가 성공적으로 생성되었습니다.', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async create(@Body() dto: CreateSkuDto): Promise<SkuResponseDto> {
     return this.skus.create(dto);
   }
 
   @Get('deleted')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '삭제된 SKU 목록 조회' })
   @ApiResponse({
     status: 200,
@@ -36,11 +55,13 @@ export class SkuCatalogController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getDeleted(@Query() filters: DeletedSkuFiltersDto) {
     return this.skus.getDeleted(filters);
   }
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 검색' })
   @ApiQuery({ name: 'id', required: false })
   @ApiQuery({ name: 'code', required: false })
@@ -51,6 +72,7 @@ export class SkuCatalogController {
   @ApiQuery({ name: 'groupId', required: false })
   @ApiQuery({ name: 'holderId', required: false })
   @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async search(
     @Query('id') id?: string,
     @Query('code') code?: string,
@@ -65,6 +87,7 @@ export class SkuCatalogController {
   }
 
   @Get('search/advanced')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 고급 검색 (재고 필터링 포함)' })
   @ApiResponse({
     status: 200,
@@ -79,42 +102,53 @@ export class SkuCatalogController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async searchAdvanced(@Query() filters: AdvancedInventoryFiltersDto) {
     return this.skus.searchAdvanced(filters);
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 상세 조회' })
   @ApiResponse({ status: 200, description: 'SKU 상세 정보', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getById(@Param('id') id: string): Promise<SkuResponseDto> {
     return this.skus.getById(id);
   }
 
   @Put(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 수정' })
   @ApiResponse({ status: 200, description: 'SKU 수정 완료', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async update(@Param('id') id: string, @Body() dto: UpdateSkuDto): Promise<SkuResponseDto> {
     return this.skus.update(id, dto);
   }
 
   @Patch(':id/restore')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '삭제된 SKU 복구' })
   @ApiResponse({ status: 200, description: 'SKU 복구 완료', type: SkuResponseDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async restore(@Param('id') id: string): Promise<SkuResponseDto> {
     return this.skus.restore(id);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 삭제 (soft delete)' })
   @ApiResponse({ status: 204, description: 'SKU 삭제 완료' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async delete(@Param('id') id: string): Promise<void> {
     return this.skus.delete(id);
   }
 
   @Post(':id/barcodes')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU에 바코드 추가' })
   @ApiResponse({ status: 201, description: '바코드 추가 완료', type: BarcodeDto })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addBarcode(@Param('id') id: string, @Body() dto: AddBarcodeDto): Promise<BarcodeDto> {
     const barcode = await this.skus.addBarcode(id, dto);
     return SkuBarcodeMapper.toDto(barcode);
@@ -122,8 +156,10 @@ export class SkuCatalogController {
 
   @Delete(':id/barcodes/:barcodeId')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU에서 바코드 제거' })
   @ApiResponse({ status: 204, description: '바코드 제거 완료' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async removeBarcode(@Param('id') id: string, @Param('barcodeId') barcodeId: string): Promise<void> {
     return this.skus.removeBarcode(id, barcodeId);
   }

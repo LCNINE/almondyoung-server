@@ -10,8 +10,11 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { TransferService } from '../services/transfer.service';
 import { MovementJob } from '../../schema/inventory.schema';
 import {
@@ -31,6 +34,7 @@ import { TransferJobMapper, TransferJobLineMapper } from '../mappers/transfer.ma
 
 @ApiTags('Inventory - Transfers')
 @Controller('inventory/transfers')
+@UseGuards(ScopeGuard)
 export class TransferController {
   constructor(private readonly transferService: TransferService) {}
 
@@ -38,6 +42,7 @@ export class TransferController {
    * 1. 창고 간/창고 내 이동 작업 생성
    */
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '이동 작업 생성',
     description: '창고 간 또는 창고 내 재고 이동 작업을 계획합니다. 실행은 별도로 수행합니다.',
@@ -51,6 +56,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 요청 (아이템 없음 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async createTransferJob(@Body() dto: CreateTransferJobDto): Promise<CreateTransferJobResponseDto> {
     try {
       const result = await this.transferService.createTransferJob({
@@ -78,6 +84,7 @@ export class TransferController {
    * 2. 이동 작업 실행
    */
   @Patch(':id/execute')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '이동 작업 실행',
     description: '생성된 이동 작업을 실행하여 실제 재고 이동을 수행합니다.',
@@ -100,6 +107,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 작업 (아이템 없음, 잘못된 위치 등)',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async executeTransferJob(@Param('id') id: string): Promise<ExecuteTransferJobResponseDto> {
     try {
       return await this.transferService.executeTransferJob({ jobId: id });
@@ -122,6 +130,7 @@ export class TransferController {
    * 3. 창고 내 간편 이동
    */
   @Post('move-within-warehouse')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고 내 간편 이동',
     description: '단일 SKU를 창고 내에서 다른 위치로 즉시 이동합니다.',
@@ -135,6 +144,7 @@ export class TransferController {
     status: 400,
     description: '잘못된 요청',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async moveWithinWarehouse(@Body() dto: MoveWithinWarehouseDto): Promise<MoveWithinWarehouseResponseDto> {
     try {
       return await this.transferService.moveWithinWarehouse({
@@ -158,6 +168,7 @@ export class TransferController {
    * 4. 이동 작업 상세 조회
    */
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 상세 조회',
     description: '특정 이동 작업의 상세 정보와 라인 목록을 조회합니다.',
@@ -176,6 +187,7 @@ export class TransferController {
     status: 404,
     description: '이동 작업을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getTransferJob(@Param('id') id: string): Promise<TransferJobWithLinesDto> {
     try {
       const { lines, ...job } = await this.transferService.getTransferJob(id);
@@ -192,6 +204,7 @@ export class TransferController {
    * 5. 이동 작업 상태 조회
    */
   @Get(':id/status')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 상태 조회',
     description: '이동 작업의 실행 상태를 조회합니다 (pending/in_progress/completed).',
@@ -210,6 +223,7 @@ export class TransferController {
     status: 404,
     description: '이동 작업을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getTransferJobStatus(@Param('id') id: string): Promise<TransferJobStatusDto> {
     try {
       return await this.transferService.getTransferJobStatus(id);
@@ -225,6 +239,7 @@ export class TransferController {
    * 6. 이동 작업 목록 조회
    */
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '이동 작업 목록 조회',
     description: '이동 작업 목록을 필터링 및 페이징하여 조회합니다.',
@@ -252,6 +267,7 @@ export class TransferController {
     description: '이동 작업 목록',
     type: TransferJobListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listTransferJobs(
     @Query('warehouseId') warehouseId?: string,
     @Query('limit') limit?: number,

@@ -10,8 +10,11 @@ import {
   HttpStatus,
   NotFoundException,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ReturnService } from '../services/return.service';
 import { CreateReturnDto, ReceiveReturnDto, InspectReturnDto, ProcessReturnDto } from '../dto/return/create-return.dto';
 import {
@@ -29,6 +32,7 @@ import { Return } from '../../schema/inventory.schema';
 
 @ApiTags('Inventory - Returns')
 @Controller('inventory/returns')
+@UseGuards(ScopeGuard)
 export class ReturnController {
   constructor(private readonly returnService: ReturnService) {}
 
@@ -36,6 +40,7 @@ export class ReturnController {
    * 1. 반품 요청 생성
    */
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '반품 요청 생성',
     description: '고객 반품 요청을 생성합니다. 반품 아이템 목록과 사유를 포함합니다.',
@@ -49,6 +54,7 @@ export class ReturnController {
     status: 400,
     description: '잘못된 요청',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async createReturn(@Body() dto: CreateReturnDto): Promise<CreateReturnResponseDto> {
     try {
       const { returnId, items } = await this.returnService.createReturnRequest({
@@ -74,6 +80,7 @@ export class ReturnController {
    * 2. 반품 상품 입고
    */
   @Patch(':id/receive')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '반품 상품 입고',
     description: '반품 요청된 상품을 물류센터에서 실제로 입고 처리합니다.',
@@ -96,6 +103,7 @@ export class ReturnController {
     status: 400,
     description: '잘못된 상태 또는 수량 초과',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async receiveReturn(@Param('id') id: string, @Body() dto: ReceiveReturnDto): Promise<ReceiveReturnResponseDto> {
     try {
       return await this.returnService.receiveReturn({
@@ -117,6 +125,7 @@ export class ReturnController {
    * 3. 품질 검사 (QC)
    */
   @Patch(':id/inspect')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '반품 품질 검사',
     description: '입고된 반품 상품에 대해 품질 검사를 수행합니다. 통과/실패 판정 및 사유를 기록합니다.',
@@ -139,6 +148,7 @@ export class ReturnController {
     status: 400,
     description: '잘못된 상태 또는 검사 수량 초과',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async inspectReturn(@Param('id') id: string, @Body() dto: InspectReturnDto): Promise<InspectReturnResponseDto> {
     try {
       return await this.returnService.inspectReturn({
@@ -162,6 +172,7 @@ export class ReturnController {
    * 4. 최종 처리 (재입고/폐기)
    */
   @Patch(':id/process')
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '반품 최종 처리',
     description: 'QC 검사 완료된 반품을 재입고 또는 폐기 처리합니다.',
@@ -184,6 +195,7 @@ export class ReturnController {
     status: 400,
     description: 'QC 미완료 또는 잘못된 처리 요청',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async processReturn(@Param('id') id: string, @Body() dto: ProcessReturnDto): Promise<ProcessReturnResponseDto> {
     try {
       return await this.returnService.processReturn({
@@ -209,6 +221,7 @@ export class ReturnController {
    * 반품 상세 조회
    */
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '반품 상세 조회',
     description: '특정 반품의 상세 정보와 반품 아이템 목록을 조회합니다.',
@@ -227,6 +240,7 @@ export class ReturnController {
     status: 404,
     description: '반품을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getReturn(@Param('id') id: string): Promise<ReturnDto> {
     const returnEntity = await this.returnService.getReturn(id);
     return ReturnMapper.toDto(returnEntity);
@@ -236,6 +250,7 @@ export class ReturnController {
    * 반품 목록 조회
    */
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '반품 목록 조회',
     description: '반품 목록을 필터링 및 페이징하여 조회합니다.',
@@ -245,6 +260,7 @@ export class ReturnController {
     description: '반품 목록',
     type: ReturnListResponseDto,
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listReturns(@Query() filters: ReturnFiltersDto): Promise<ReturnListResponseDto> {
     const returns: Return[] = await this.returnService.listReturns({
       warehouseId: filters.warehouseId,

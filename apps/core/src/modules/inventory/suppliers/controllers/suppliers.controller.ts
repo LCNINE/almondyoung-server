@@ -1,5 +1,19 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { SuppliersService } from '../services/suppliers.service';
 import {
   CreateSupplierDto,
@@ -12,10 +26,12 @@ import {
 
 @ApiTags('Suppliers')
 @Controller('suppliers')
+@UseGuards(ScopeGuard)
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get suppliers list or filter options' })
   @ApiQuery({
     name: 'type',
@@ -33,6 +49,7 @@ export class SuppliersController {
     status: 200,
     description: 'Returns suppliers list or filter options depending on query type',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getSuppliers(
     @Query('type') type?: string,
     @Query() filters?: SupplierFiltersDto,
@@ -45,6 +62,7 @@ export class SuppliersController {
   }
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get supplier by ID' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({
@@ -56,11 +74,13 @@ export class SuppliersController {
     status: 404,
     description: 'Supplier not found',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getSupplierById(@Param('id') id: string): Promise<SupplierResponseDto> {
     return this.suppliersService.getSupplierById(id);
   }
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Create new supplier' })
   @ApiResponse({
     status: 201,
@@ -71,11 +91,13 @@ export class SuppliersController {
     status: 400,
     description: 'Invalid input data',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createSupplier(@Body() createDto: CreateSupplierDto): Promise<SupplierResponseDto> {
     return this.suppliersService.createSupplier(createDto);
   }
 
   @Put(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Update supplier' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({
@@ -91,11 +113,13 @@ export class SuppliersController {
     status: 400,
     description: 'Invalid input data',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateSupplier(@Param('id') id: string, @Body() updateDto: UpdateSupplierDto): Promise<SupplierResponseDto> {
     return this.suppliersService.updateSupplier(id, updateDto);
   }
 
   @Delete(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Delete supplier' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({
@@ -106,6 +130,7 @@ export class SuppliersController {
     status: 404,
     description: 'Supplier not found',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSupplier(@Param('id') id: string): Promise<void> {
     return this.suppliersService.deleteSupplier(id);

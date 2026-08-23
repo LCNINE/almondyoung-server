@@ -6,7 +6,7 @@ describe('merged authorization contract', () => {
     expect(new Set(keys).size).toBe(keys.length);
     expect(keys).toContain('fulfillment.warehouse.operate');
     expect(keys).toContain('inventory.warehouse.manage');
-    expect(keys).toHaveLength(9);
+    expect(keys).toHaveLength(12); // fulfillment 8 + inventory 4
   });
 
   // ensureRoleScopeMappings 는 중복 roleName 을 만나면 던지고(authorization.service.ts:97),
@@ -24,11 +24,16 @@ describe('merged authorization contract', () => {
 
   it('keeps each role total — the merged list is authoritative, not additive', () => {
     const scopesFor = (roleName: string) =>
-      ALL_ROLE_MAPPINGS.find((mapping) => mapping.roleName === roleName)?.scopeKeys ?? [];
+      [...(ALL_ROLE_MAPPINGS.find((mapping) => mapping.roleName === roleName)?.scopeKeys ?? [])].sort();
 
-    expect(scopesFor('admin')).toEqual(['inventory.warehouse.manage']);
-    expect(scopesFor('logistics_worker')).toEqual(['fulfillment.warehouse.operate']);
-    expect([...scopesFor('logistics_manager')].sort()).toEqual([
+    expect(scopesFor('admin')).toEqual([
+      'inventory.adjust',
+      'inventory.manage',
+      'inventory.operate',
+      'inventory.warehouse.manage',
+    ]);
+    expect(scopesFor('logistics_worker')).toEqual(['fulfillment.warehouse.operate', 'inventory.operate']);
+    expect(scopesFor('logistics_manager')).toEqual([
       'fulfillment.dispatch.force',
       'fulfillment.dispatch.recall',
       'fulfillment.reservation.transfer',
@@ -36,6 +41,9 @@ describe('merged authorization contract', () => {
       'fulfillment.shipment.override_recipient',
       'fulfillment.shipment.reopen',
       'fulfillment.warehouse.operate',
+      'inventory.adjust',
+      'inventory.manage',
+      'inventory.operate',
       'inventory.warehouse.manage',
     ]);
   });

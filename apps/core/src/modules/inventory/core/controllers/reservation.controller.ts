@@ -10,8 +10,11 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
 import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
@@ -19,6 +22,7 @@ import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reserv
 
 @ApiTags('Inventory - Reservations')
 @Controller('inventory/reservations')
+@UseGuards(ScopeGuard)
 export class ReservationController {
   constructor(
     private readonly unifiedReservation: UnifiedReservationService,
@@ -30,6 +34,7 @@ export class ReservationController {
    */
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 해제',
     description: '특정 예약을 해제하여 재고를 다시 할당 가능하게 만듭니다.',
@@ -47,6 +52,7 @@ export class ReservationController {
     status: 404,
     description: '예약을 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async releaseReservation(@Param('id') id: string, @Body() dto?: ReleaseReservationDto): Promise<void> {
     try {
       await this.unifiedReservation.releaseReservation(id);
@@ -62,6 +68,7 @@ export class ReservationController {
    * 특정 Target의 예약 조회
    */
   @Get('by-target')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'Target별 예약 조회',
     description: 'FO가 예약한 모든 SKU 정보를 조회합니다.',
@@ -82,6 +89,7 @@ export class ReservationController {
     description: '예약 목록',
     type: [ReservationDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getReservationsByTarget(
     @Query('targetType') targetType: string,
     @Query('targetId') targetId: string,
@@ -95,6 +103,7 @@ export class ReservationController {
    * 특정 SKU의 예약 조회
    */
   @Get('by-sku/:skuId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'SKU별 예약 조회',
     description: '특정 SKU가 어떤 FO/Task에 예약되어 있는지 조회합니다.',
@@ -115,6 +124,7 @@ export class ReservationController {
     description: '예약 목록',
     type: [ReservationDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getReservationsBySku(
     @Param('skuId') skuId: string,
     @Query('warehouseId') warehouseId?: string,
@@ -128,6 +138,7 @@ export class ReservationController {
    * 창고별 예약 통계
    */
   @Get('summary/:warehouseId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고별 예약 통계',
     description: '특정 창고의 SKU별 예약 현황을 조회합니다.',
@@ -142,6 +153,7 @@ export class ReservationController {
     description: '예약 통계',
     type: [ReservationSummaryDto],
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getReservationSummary(@Param('warehouseId') warehouseId: string): Promise<ReservationSummaryDto[]> {
     const summary = await this.unifiedReservation.getReservationSummary(warehouseId);
 
@@ -153,6 +165,7 @@ export class ReservationController {
    */
   @Post('reconcile')
   @HttpCode(HttpStatus.OK)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({
     summary: '예약 정합성 정리',
     description: 'terminal FO(shipped/completed/canceled)에 남은 confirmed 예약(좀비)을 탐지·해제합니다.',
@@ -168,6 +181,7 @@ export class ReservationController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async reconcileReservations(): Promise<{ healedFos: number; healedReservations: number }> {
     const result = await this.reconciliation.reconcileAndHeal();
     return { healedFos: result.healedFos, healedReservations: result.healedReservations };

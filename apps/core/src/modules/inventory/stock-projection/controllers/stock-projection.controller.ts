@@ -10,8 +10,11 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '../../shared/dto';
 import { CurrentStockDto } from '../dto/current-stock.dto';
@@ -31,10 +34,12 @@ const SKU_ID_PIPE = new ParseUUIDPipe();
 
 @ApiTags('Inventory')
 @Controller('inventory')
+@UseGuards(ScopeGuard)
 export class StockProjectionController {
   constructor(private readonly stockProjection: StockProjectionService) {}
 
   @Get('/stocks')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '재고 현황 조회 (창고별 논리적 재고)',
     description:
@@ -43,11 +48,13 @@ export class StockProjectionController {
   @ApiQuery({ name: 'warehouseId', required: true, description: '창고 ID (필수)' })
   @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID 필터' })
   @ApiOkResponsePaginated(CurrentStockDto)
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getCurrentStock(@Query() query: GetStockQueryDto): Promise<PaginatedResponseDto<CurrentStockDto>> {
     return this.stockProjection.getCurrentStock(query);
   }
 
   @Get('/stocks/summary')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '재고 요약 목록 조회 (SKU × 창고)',
     description: 'SKU·창고별 재고 요약 목록을 조회합니다. 재고 움직임이 전혀 없는 SKU × 창고 조합은 제외됩니다.',
@@ -62,6 +69,7 @@ export class StockProjectionController {
     description: '운영 재고 상태 필터',
   })
   @ApiOkResponsePaginated(StockSummaryListItemDto)
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async listStockSummaries(
     @Query() query: GetStockSummaryListQueryDto,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
@@ -69,6 +77,7 @@ export class StockProjectionController {
   }
 
   @Get('/stocks/sku/:skuId/total')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 총 재고 조회 (모든 창고 합계)' })
   @ApiResponse({
     status: 200,
@@ -83,27 +92,33 @@ export class StockProjectionController {
       },
     },
   })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getTotalStockBySku(@Param('skuId') skuId: string) {
     return this.stockProjection.getTotalBySku(skuId);
   }
 
   @Get('/stocks/sku/:skuId/warehouse/:warehouseId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU별 특정 창고 재고 상세 조회' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getStockBySkuAndWarehouse(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     return this.stockProjection.getBySkuAndWarehouse(skuId, warehouseId);
   }
 
   @Get('/stocks/location/:locationId')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '로케이션 내용물 조회 (SKU·상태·수량)' })
   @ApiParam({ name: 'locationId', description: '로케이션 ID' })
   @ApiResponse({ status: 200, type: LocationContentsDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getLocationContents(@Param('locationId') locationId: string): Promise<LocationContentsDto> {
     return this.stockProjection.getLocationContents(locationId);
   }
 
   @Get('/stocks/inbound-pipeline')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '공급 파이프라인 조회 (발주 잔량 · 이동 대기 · 이동 중)',
     description:
@@ -114,6 +129,7 @@ export class StockProjectionController {
   @ApiQuery({ name: 'warehouseId', required: true, description: '도착(판매) 창고 ID' })
   @ApiQuery({ name: 'skuIds', required: true, description: 'SKU ID 목록 (쉼표 구분 또는 반복 파라미터)' })
   @ApiResponse({ status: 200, type: InboundPipelineResponseDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getInboundPipeline(
     // UUID 형식은 파이프에서 막는다 — 그냥 통과시키면 Postgres 가 22P02 로 터져
     // 입력 오류가 500 이 된다. 파이프는 값이 없을 때도 400 을 낸다.
@@ -132,12 +148,14 @@ export class StockProjectionController {
   }
 
   @Get('/stocks/history')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '재고 이벤트 이력 조회 (SKU, 창고, 기간 기준)' })
   @ApiQuery({ name: 'skuId', required: true, description: '조회할 SKU ID (UUID 형식)' })
   @ApiQuery({ name: 'warehouseId', required: false, description: '조회할 창고 ID (UUID 형식)' })
   @ApiQuery({ name: 'startDate', required: false, description: '조회 시작일 (YYYY-MM-DD)' })
   @ApiQuery({ name: 'endDate', required: false, description: '조회 종료일 (YYYY-MM-DD)' })
   @ApiResponse({ status: 200, description: '재고 이벤트 이력 목록을 반환합니다.' })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getStockHistory(
     @Query('skuId') skuId: string,
     @Query('warehouseId') warehouseId?: string,
@@ -149,27 +167,33 @@ export class StockProjectionController {
 
   @Post('/stocks/summary/:skuId/:warehouseId/rebuild')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 현황 재구축 (이벤트 소싱으로부터)' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
   @ApiResponse({ status: 204, description: '재고 현황이 성공적으로 재구축되었습니다.' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async rebuildStockSummary(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     await this.stockProjection.rebuildSummary(skuId, warehouseId);
   }
 
   @Delete('/stocks/events/:eventId/cancel')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @RequireScopes(INVENTORY_SCOPE.ADJUST)
   @ApiOperation({ summary: '재고 이벤트 취소 (반대 이벤트 생성)' })
   @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
   @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
+  @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async cancelStockEvent(@Param('eventId') eventId: string, @Body('reason') reason: string) {
     await this.stockProjection.cancelEvent(eventId, reason);
   }
 
   @Get('/skus/:id/stock-summary')
+  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 재고 요약 (창고별 + 합계)' })
   @ApiParam({ name: 'id', description: 'SKU ID' })
   @ApiResponse({ status: 200, type: SkuStockSummaryDto })
+  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async getSkuStockSummary(@Param('id') id: string): Promise<SkuStockSummaryDto> {
     return this.stockProjection.getSkuSummary(id);
   }
