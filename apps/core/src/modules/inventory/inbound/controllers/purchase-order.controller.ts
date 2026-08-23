@@ -1,6 +1,19 @@
-import { Controller, Post, Get, Put, Delete, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Put,
+  Delete,
+  Param,
+  Body,
+  Query,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import {
   CreatePurchaseOrderDto,
@@ -25,28 +38,33 @@ interface JwtPayload {
 
 @ApiTags('Purchase Orders')
 @Controller('purchase-orders')
+@UseGuards(ScopeGuard)
 export class PurchaseOrderController {
   constructor(private readonly purchaseOrderService: PurchaseOrderService) {}
 
   // ========== 발주 관리 ==========
 
   @Post()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 생성' })
   @ApiResponse({
     status: 201,
     description: '발주가 성공적으로 생성됨',
     type: 'object', // PurchaseOrderResponse type would be defined here
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createPurchaseOrder(@Body() createDto: CreatePurchaseOrderDto): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.createPurchaseOrder(createDto);
   }
 
   @Post('from-cart')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '장바구니에서 발주 생성' })
   @ApiResponse({
     status: 201,
     description: '장바구니 아이템들로부터 발주가 생성됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createPurchaseOrderFromCart(
     @Body() createDto: CreatePurchaseOrderFromCartDto,
     @User() user: JwtPayload,
@@ -55,6 +73,7 @@ export class PurchaseOrderController {
   }
 
   @Get()
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 목록 조회' })
   @ApiQuery({ name: 'status', enum: PurchaseOrderStatus, required: false })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
@@ -70,6 +89,7 @@ export class PurchaseOrderController {
     required: false,
     description: '오프셋 (기본: 0)',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getPurchaseOrders(
     @Query('status') status?: PurchaseOrderStatus,
     @Query('type') type?: PurchaseOrderType,
@@ -82,18 +102,22 @@ export class PurchaseOrderController {
   // ========== 발주대기리스트 (Cart) 관리 ==========
 
   @Post('cart')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에 아이템 추가' })
   @ApiResponse({
     status: 201,
     description: '아이템이 발주대기리스트에 추가됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addToCart(@Body() addDto: AddToCartDto, @User() user: JwtPayload): Promise<CartItemResponse> {
     return this.purchaseOrderService.addToCart(addDto, user.userId);
   }
 
   @Get('cart')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 조회' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getCartItems(
     @Query('type') type: PurchaseOrderType | undefined,
     @User() user: JwtPayload,
@@ -102,11 +126,13 @@ export class PurchaseOrderController {
   }
 
   @Put('cart/:itemId')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 아이템 수정' })
   @ApiResponse({
     status: 200,
     description: '아이템이 성공적으로 수정됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateCartItem(
     @Param('itemId') itemId: string,
     @Body() updateDto: UpdateCartItemDto,
@@ -116,23 +142,27 @@ export class PurchaseOrderController {
   }
 
   @Delete('cart/:itemId')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에서 아이템 제거' })
   @ApiResponse({
     status: 204,
     description: '아이템이 성공적으로 제거됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeFromCart(@Param('itemId') itemId: string, @User() user: JwtPayload): Promise<void> {
     return this.purchaseOrderService.removeFromCart(itemId, user.userId);
   }
 
   @Delete('cart')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 비우기' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   @ApiResponse({
     status: 204,
     description: '발주대기리스트가 성공적으로 비워짐',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async clearCart(@Query('type') type: PurchaseOrderType | undefined, @User() user: JwtPayload): Promise<void> {
     return this.purchaseOrderService.clearCart(type, user.userId);
@@ -141,6 +171,7 @@ export class PurchaseOrderController {
   // ========== 재주문 제안 ==========
 
   @Get('suggestions/reorder')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '재주문 제안 조회',
     description: '안전재고 미만으로 떨어진 상품들의 재주문 제안 목록을 조회합니다',
@@ -156,6 +187,7 @@ export class PurchaseOrderController {
     description: '재주문 제안 목록이 성공적으로 조회됨',
     type: [Object], // StockReorderSuggestion would be defined here
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getReorderSuggestions(@Query('warehouseId') warehouseId?: string): Promise<StockReorderSuggestion[]> {
     return this.purchaseOrderService.getReorderSuggestions(warehouseId);
   }
@@ -163,6 +195,7 @@ export class PurchaseOrderController {
   // ========== 발주 상세 조회 및 관리 (동적 라우트) ==========
 
   @Get(':id')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 상세 조회' })
   @ApiResponse({
     status: 200,
@@ -172,16 +205,19 @@ export class PurchaseOrderController {
     status: 404,
     description: '발주를 찾을 수 없음',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getPurchaseOrderById(@Param('id') id: string): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.getPurchaseOrderById(id);
   }
 
   @Put(':id/status')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 상태 업데이트' })
   @ApiResponse({
     status: 200,
     description: '발주 상태가 성공적으로 업데이트됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updatePurchaseOrderStatus(
     @Param('id') id: string,
     @Body() updateDto: UpdatePurchaseOrderStatusDto,
@@ -190,11 +226,13 @@ export class PurchaseOrderController {
   }
 
   @Put(':id/lines')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 수정 (created/confirmed 상태)' })
   @ApiResponse({
     status: 200,
     description: '발주 라인이 성공적으로 수정됨',
   })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updatePurchaseOrderLines(
     @Param('id') id: string,
     @Body() updateDto: UpdatePurchaseOrderLinesDto,
@@ -205,6 +243,7 @@ export class PurchaseOrderController {
   // ========== Audit Workflow ==========
 
   @Put(':id/submit-for-audit')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '검토 제출 (Submit PO for audit)' })
   @ApiParam({ name: 'id', description: 'Purchase Order ID' })
   @ApiResponse({
@@ -228,11 +267,13 @@ export class PurchaseOrderController {
     description: '잘못된 상태 (현재 상태가 draft가 아님)',
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async submitForAudit(@Param('id') id: string, @Body() dto: SubmitForAuditDto): Promise<any> {
     return this.purchaseOrderService.submitForAudit(id, dto);
   }
 
   @Put(':id/approve')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 승인 (Approve purchase order)' })
   @ApiParam({ name: 'id', description: 'Purchase Order ID' })
   @ApiResponse({
@@ -256,11 +297,13 @@ export class PurchaseOrderController {
     description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async approvePo(@Param('id') id: string, @Body() dto: ApprovePoDto): Promise<any> {
     return this.purchaseOrderService.approvePo(id, dto);
   }
 
   @Put(':id/reject')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 거부 (Reject purchase order)' })
   @ApiParam({ name: 'id', description: 'Purchase Order ID' })
   @ApiResponse({
@@ -288,6 +331,7 @@ export class PurchaseOrderController {
     description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async rejectPo(@Param('id') id: string, @Body() dto: RejectPoDto): Promise<any> {
     return this.purchaseOrderService.rejectPo(id, dto);
   }
