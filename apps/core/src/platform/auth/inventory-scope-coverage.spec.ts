@@ -313,4 +313,26 @@ describe('core inventory: 라우트 스코프 배정 커버리지', () => {
 
     expect(mismatches).toEqual([]);
   });
+
+  // 무표시는 "아직 안 붙인 것" 이 아니라 결론이다. 이 수가 늘어나면 누군가 스코프 부착을
+  // 건너뛰고 표에 null 을 적었다는 뜻이다 — 늘리려면 이 테스트를 고치면서 사유를 적어야 한다.
+  it('의도적 무표시는 정확히 7개이며 전부 진단·내부 조회 전용이다', () => {
+    const unscoped = Object.entries(ROUTE_SCOPES)
+      .filter(([, scope]) => scope === null)
+      .map(([key]) => key)
+      .sort();
+
+    expect(unscoped).toEqual([
+      // 이미 @Public — 로드밸런서·ECS 헬스체크
+      'GET /inventory/health',
+      'GET /inventory/health/detailed',
+      'GET /inventory/health/live',
+      'GET /inventory/health/ready',
+      // 원장 드리프트 탐지 전용 읽기. HTTP 호출자 0건 (저장소 전수 grep)
+      'GET /inventory/ledger-reconciliation',
+      'GET /inventory/ledger-reconciliation/reservations',
+      // 판매가능수량 조회. HTTP 호출자 0건 (저장소 전수 grep)
+      'GET /inventory/product-sellable-quantities/variants/:variantId',
+    ]);
+  });
 });
