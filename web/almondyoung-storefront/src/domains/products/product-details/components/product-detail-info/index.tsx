@@ -120,7 +120,10 @@ export function ProductDetailInfo({
           {description?.trim() ? (
             <section>
               <h4 className="sr-only">{t("detailSrTitle")}</h4>
-              <ProductDescriptionMarkdown markdown={description} />
+              <ProductDescriptionMarkdown
+                markdown={description}
+                imageAltFallback={productName}
+              />
             </section>
           ) : descriptionHtml ? (
             <section>

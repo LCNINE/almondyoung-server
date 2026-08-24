@@ -11,7 +11,10 @@ import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { toMetaDescription } from "@/lib/seo/meta-description"
+import {
+  markdownToMetaDescription,
+  toMetaDescription,
+} from "@/lib/seo/meta-description"
 import { isVariantSoldOut } from "@/lib/utils/cart-availability"
 import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
@@ -64,8 +67,10 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
     : null
 
   const title = seo?.seoTitle || product.title
+  // 상세 렌더링(product-detail-info)과 같은 우선순위: 마크다운 → 레거시 HTML
   const description =
     seo?.seoDescription ||
+    markdownToMetaDescription(pimDetail?.description) ||
     toMetaDescription(pimDetail?.descriptionHtml) ||
     product.title
 
@@ -123,17 +128,18 @@ export default async function Page(props: Props) {
     }
   }
 
-  // 캐시 프라이밍 — 자식 컴포넌트들이 사용할 데이터를 미리 fetch 시작
-  // React.cache()에 의해 동일 render 내 중복 호출은 이 Promise를 재사용
   const pimMasterId = pricedProduct.metadata?.pimMasterId as string
-  // 평점 요약은 구조화 데이터(JSON-LD)에도 쓰므로 await 한다. ProductTemplate 자식의
-  // 동일 호출은 React.cache() 로 재사용된다.
-  const ratingSummary = pimMasterId
-    ? await getRatingSummary(pimMasterId).catch(() => null)
-    : null
+  // 평점 요약과 PIM 상세는 구조화 데이터(JSON-LD)·첫 HTML 본문에 쓰므로 await 한다.
+  // getProductDetailByMasterId 는 React.cache() + 태그 캐시라 generateMetadata 와
+  // 합쳐 렌더당 1회만 나간다. ProductTemplate 자식의 동일 호출도 재사용된다.
+  const [ratingSummary, pimDetail] = pimMasterId
+    ? await Promise.all([
+        getRatingSummary(pimMasterId).catch(() => null),
+        getProductDetailByMasterId(pimMasterId).catch(() => null),
+      ])
+    : [null, null]
   if (pimMasterId) {
     getQnaSummary(pimMasterId).catch(() => {})
-    getProductDetailByMasterId(pimMasterId).catch(() => {})
   }
 
   // 로그인한 사용자만 최근 본 상품 기록
@@ -149,10 +155,16 @@ export default async function Page(props: Props) {
   const inStock = (pricedProduct.variants ?? []).some(
     (v) => !isVariantSoldOut(v)
   )
+  // meta description 과 같은 우선순위의 발췌 텍스트. 없으면 속성 자체를 뺀다.
+  const schemaDescription =
+    ((pricedProduct.metadata?.seoDescription as string) || "").trim() ||
+    markdownToMetaDescription(pimDetail?.description) ||
+    toMetaDescription(pimDetail?.descriptionHtml)
   const productSchema = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: pricedProduct.title,
+    ...(schemaDescription ? { description: schemaDescription } : {}),
     // thumbnail 은 fileId 문자열이라 그대로 넣으면 URL 이 아니어서 무시된다
     ...(pricedProduct.thumbnail
       ? { image: [getThumbnailUrl(pricedProduct.thumbnail)] }
@@ -200,6 +212,7 @@ export default async function Page(props: Props) {
         region={region}
         countryCode={params.countryCode}
         customer={customer as Customer | null}
+        pimDetail={pimDetail}
       />
     </div>
   )

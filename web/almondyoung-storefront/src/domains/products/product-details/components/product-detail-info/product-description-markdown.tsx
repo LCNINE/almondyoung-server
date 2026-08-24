@@ -13,7 +13,14 @@ const plugins = [
   remarkProductImageDirective(getThumbnailUrl),
 ]
 
-export function ProductDescriptionMarkdown({ markdown }: { markdown: string }) {
+export function ProductDescriptionMarkdown({
+  markdown,
+  imageAltFallback,
+}: {
+  markdown: string
+  /** 이미지 지시자에 alt 가 없을 때 쓸 대체 텍스트 (보통 상품명) */
+  imageAltFallback?: string
+}) {
   return (
     <div className="prose max-w-none">
       <ReactMarkdown
@@ -23,7 +30,7 @@ export function ProductDescriptionMarkdown({ markdown }: { markdown: string }) {
             typeof src === "string" && src ? (
               <Image
                 src={src}
-                alt={alt ?? ""}
+                alt={alt || imageAltFallback || ""}
                 className="h-auto w-full object-contain"
                 loading="lazy"
                 width={860}

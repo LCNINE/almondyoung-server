@@ -1,10 +1,8 @@
 import { QnaList } from "@/components/qna/qna-list"
 import { FEATURES } from "@/lib/config/features"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
-import {
-  ProductDetailInfoSkeleton,
-  ProductReviewSkeleton,
-} from "@/components/skeletons/product-detail-skeletons"
+import { ProductReviewSkeleton } from "@/components/skeletons/product-detail-skeletons"
+import type { ProductDetail } from "@/lib/types/ui/pim"
 import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
@@ -32,6 +30,7 @@ type ProductTemplateProps = {
   region: HttpTypes.StoreRegion
   countryCode: string
   customer: Customer | null
+  pimDetail: ProductDetail | null
 }
 
 export async function ProductTemplate({
@@ -39,6 +38,7 @@ export async function ProductTemplate({
   region,
   countryCode,
   customer,
+  pimDetail,
 }: ProductTemplateProps) {
   if (!product || !product.id) {
     return notFound()
@@ -88,12 +88,14 @@ export async function ProductTemplate({
             <SectionTabsWrapper
               productId={product.metadata?.pimMasterId as string}
             >
-              {/* 상품 상세정보 Tab Panel */}
+              {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
+                  Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
                 <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
-                  <Suspense fallback={<ProductDetailInfoSkeleton />}>
-                    <ProductDetailInfoWrapper pricedProduct={product} />
-                  </Suspense>
+                  <ProductDetailInfoWrapper
+                    pricedProduct={product}
+                    pimDetail={pimDetail}
+                  />
                 </ErrorBoundary>
 
                 <ProductInfoAccordion productMetadata={product.metadata} />
