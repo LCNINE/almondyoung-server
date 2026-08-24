@@ -1,3 +1,4 @@
+import { AuthorizationService } from '@app/authorization';
 import { Injectable } from '@nestjs/common';
 import { UsersService } from '../../users/users.service';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
@@ -15,6 +16,7 @@ export class RolesManager {
   constructor(
     private readonly repo: RolesRepository,
     private readonly usersService: UsersService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   async createRole(dto: CreateRoleDto): Promise<RoleResponseDto> {
@@ -52,13 +54,13 @@ export class RolesManager {
   async addScopeToRole(roleId: string, scopeKey: string): Promise<void> {
     const role = await this.repo.findById(roleId);
     if (!role) throw new RoleNotFoundException('역할을 찾을 수 없습니다.');
-    await this.repo.addScopeToRole(role.name, scopeKey);
+    await this.authorizationService.ensureScopeMapping(role.name, scopeKey);
   }
 
   async removeScopeFromRole(roleId: string, scopeKey: string): Promise<void> {
     const role = await this.repo.findById(roleId);
     if (!role) throw new RoleNotFoundException('역할을 찾을 수 없습니다.');
-    await this.repo.removeScopeFromRole(role.name, scopeKey);
+    await this.authorizationService.removeScopeMapping(role.name, scopeKey);
   }
 
   async getScopesForRole(roleId: string): Promise<string[]> {

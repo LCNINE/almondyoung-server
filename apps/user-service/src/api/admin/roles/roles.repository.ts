@@ -2,7 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { scopes as authScopes, roleScopeMapping as authRoleScopeMapping } from '@app/authorization';
 import { Injectable } from '@nestjs/common';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from './dto/roles.dto';
 
 @Injectable()
@@ -83,29 +83,31 @@ export class RolesRepository {
     });
   }
 
-  async addScopeToRole(roleName: string, scopeKey: string): Promise<void> {
-    const [scope] = await this.dbService.db
-      .select({ id: authScopes.id })
-      .from(authScopes)
-      .where(eq(authScopes.key, scopeKey));
-
-    if (!scope) throw new Error(`Scope '${scopeKey}' not found`);
-
-    await this.dbService.db.insert(authRoleScopeMapping).values({ roleName, scopeId: scope.id }).onConflictDoNothing();
-  }
-
-  async removeScopeFromRole(roleName: string, scopeKey: string): Promise<void> {
-    const [scope] = await this.dbService.db
-      .select({ id: authScopes.id })
-      .from(authScopes)
-      .where(eq(authScopes.key, scopeKey));
-
-    if (!scope) return;
-
-    await this.dbService.db
-      .delete(authRoleScopeMapping)
-      .where(and(eq(authRoleScopeMapping.roleName, roleName), eq(authRoleScopeMapping.scopeId, scope.id)));
-  }
+  // AuthorizationService.ensureScopeMapping / removeScopeMapping 으로 이관.
+  // 같은 SQL 이지만 그쪽은 invalidateCache() 까지 부른다.
+  // async addScopeToRole(roleName: string, scopeKey: string): Promise<void> {
+  //   const [scope] = await this.dbService.db
+  //     .select({ id: authScopes.id })
+  //     .from(authScopes)
+  //     .where(eq(authScopes.key, scopeKey));
+  //
+  //   if (!scope) throw new Error(`Scope '${scopeKey}' not found`);
+  //
+  //   await this.dbService.db.insert(authRoleScopeMapping).values({ roleName, scopeId: scope.id }).onConflictDoNothing();
+  // }
+  //
+  // async removeScopeFromRole(roleName: string, scopeKey: string): Promise<void> {
+  //   const [scope] = await this.dbService.db
+  //     .select({ id: authScopes.id })
+  //     .from(authScopes)
+  //     .where(eq(authScopes.key, scopeKey));
+  //
+  //   if (!scope) return;
+  //
+  //   await this.dbService.db
+  //     .delete(authRoleScopeMapping)
+  //     .where(and(eq(authRoleScopeMapping.roleName, roleName), eq(authRoleScopeMapping.scopeId, scope.id)));
+  // }
 
   async getScopesForRole(roleName: string): Promise<string[]> {
     const result = await this.dbService.db
