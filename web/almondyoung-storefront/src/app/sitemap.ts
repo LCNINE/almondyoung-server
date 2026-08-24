@@ -15,8 +15,10 @@ const PAGE_SIZE = 1000
 // ponytail: 6만개 상한(현재 ~1만). 넘으면 잘리므로 warn + generateSitemaps 로 분할할 것.
 const MAX_PAGES = 60
 
-async function getProductHandles(): Promise<string[]> {
-  const handles: string[] = []
+type SitemapItem = { handle: string; updatedAt?: string }
+
+async function getProductItems(): Promise<SitemapItem[]> {
+  const items: SitemapItem[] = []
   let offset = 0
 
   for (let i = 0; i < MAX_PAGES; i++) {
@@ -26,59 +28,72 @@ async function getProductHandles(): Promise<string[]> {
     // 그 URL 을 크롤러가 밟으면 page.tsx 는 notFound() 를 부르지만 loading.tsx 로
     // 200 shell 이 이미 flush 된 뒤라 상태코드를 못 바꿔 soft 404 가 된다.
     const { products, count } = await sdk.client.fetch<{
-      products: { handle?: string }[]
+      products: { handle?: string; updated_at?: string }[]
       count: number
     }>("/store/products", {
-      query: { limit: PAGE_SIZE, offset, fields: "handle,*metadata" },
+      query: {
+        limit: PAGE_SIZE,
+        offset,
+        fields: "handle,updated_at,*metadata",
+      },
     })
 
-    for (const p of products) if (p.handle) handles.push(p.handle)
+    for (const p of products) {
+      if (p.handle) items.push({ handle: p.handle, updatedAt: p.updated_at })
+    }
 
     offset += PAGE_SIZE
-    if (offset >= count) return handles
+    if (offset >= count) return items
   }
 
   console.warn(
     `[sitemap] 상품이 ${MAX_PAGES * PAGE_SIZE}개 상한에 도달해 일부 누락 — sitemap 분할 필요`
   )
-  return handles
+  return items
 }
 
-async function getCategoryHandles(): Promise<string[]> {
+async function getCategoryItems(): Promise<SitemapItem[]> {
   // /store/product-categories 는 전체 카테고리를 flat 으로 반환(현재 329개 < limit).
   const { product_categories } = await sdk.client.fetch<{
-    product_categories: { handle?: string }[]
+    product_categories: { handle?: string; updated_at?: string }[]
   }>("/store/product-categories", {
-    query: { limit: 1000, fields: "handle" },
+    query: { limit: 1000, fields: "handle,updated_at" },
   })
 
   return product_categories
-    .map((c) => c.handle)
-    .filter((h): h is string => Boolean(h))
+    .filter((c): c is { handle: string; updated_at?: string } =>
+      Boolean(c.handle)
+    )
+    .map((c) => ({ handle: c.handle, updatedAt: c.updated_at }))
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = `https://${siteConfig.domainName}`
   const now = new Date()
 
-  const [productHandles, categoryHandles, shopTradeSlugs] = await Promise.all([
-    getProductHandles().catch(() => [] as string[]),
-    getCategoryHandles().catch(() => [] as string[]),
+  const [products, categories, shopListings] = await Promise.all([
+    getProductItems().catch(() => [] as SitemapItem[]),
+    getCategoryItems().catch(() => [] as SitemapItem[]),
     listPublicShopListings()
-      .then((listings) => listings.map((l) => l.slug))
-      .catch(() => [] as string[]),
+      .then((listings) =>
+        listings.map((l) => ({ handle: l.slug, updatedAt: l.updatedAt }))
+      )
+      .catch(() => [] as SitemapItem[]),
   ])
 
-  const uniqueCategories = Array.from(new Set(categoryHandles))
-  const uniqueProducts = Array.from(new Set(productHandles))
+  // lastModified 는 항목별 실제 갱신 시각이어야 한다. 전부 빌드 시각으로 채우면
+  // 배포마다 1만 URL 이 "방금 바뀜" 이 되어 구글이 이 신호를 통째로 무시한다.
+  const dedupe = (items: SitemapItem[]) =>
+    Array.from(new Map(items.map((i) => [i.handle, i])).values())
 
   const entry = (
     path: string,
     changeFrequency: "daily" | "weekly",
-    priority: number
+    priority: number,
+    updatedAt?: string
   ) => ({
     url: `${base}/${REGION}${path}`,
-    lastModified: now,
+    lastModified: parseDate(updatedAt) ?? now,
     changeFrequency,
     priority,
   })
@@ -93,11 +108,26 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     ...staticEntries,
-    ...uniqueCategories.map((h) => entry(`/category/${h}`, "weekly", 0.7)),
-    ...uniqueProducts.map((h) => entry(`/products/${h}`, "weekly", 0.6)),
+    ...dedupe(categories).map((c) =>
+      entry(`/category/${c.handle}`, "weekly", 0.7, c.updatedAt)
+    ),
+    ...dedupe(products).map((p) =>
+      entry(`/products/${p.handle}`, "weekly", 0.6, p.updatedAt)
+    ),
     // 한글 slug 는 퍼센트 인코딩해야 sitemap 규격에 맞고 상세 페이지 canonical 과도 일치한다
-    ...shopTradeSlugs.map((s) =>
-      entry(`/shop-trade/${encodeURIComponent(s)}`, "weekly", 0.6)
+    ...dedupe(shopListings).map((l) =>
+      entry(
+        `/shop-trade/${encodeURIComponent(l.handle)}`,
+        "weekly",
+        0.6,
+        l.updatedAt
+      )
     ),
   ]
+}
+
+function parseDate(value?: string): Date | undefined {
+  if (!value) return undefined
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? undefined : date
 }
