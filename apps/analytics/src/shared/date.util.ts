@@ -30,3 +30,14 @@ export const SEOUL_TZ = 'Asia/Seoul';
 export function toSeoulDateOnly(value: Date): string {
   return formatInTimeZone(value, SEOUL_TZ, 'yyyy-MM-dd');
 }
+
+/**
+ * KST 달력 날짜(`YYYY-MM-DD`)의 자정 시각(instant).
+ *
+ * 일별 스냅샷의 기준 시점이다 — "그날 몇 명이었나"는 그날 KST 00:00 에 열려 있던 구간의
+ * 수로 정의한다. 한국은 현재 DST 가 없어 고정 오프셋 표기(+09:00)로 충분하며, IANA 역사
+ * 오프셋이 필요한 방향(과거 timestamp → 날짜 키)은 `toSeoulDateOnly` 가 담당한다.
+ */
+export function seoulDayStart(dateOnly: string): Date {
+  return new Date(`${dateOnly}T00:00:00+09:00`);
+}

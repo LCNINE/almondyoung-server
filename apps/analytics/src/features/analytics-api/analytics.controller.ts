@@ -32,16 +32,18 @@ export class AnalyticsController {
   }
 
   @Get('summary')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({
-    summary: 'Summary metrics',
-    description: 'Returns a minimal analytics summary.',
+    summary: '대시보드 요약',
+    description: '오늘/어제(KST) 매출·주문·객단가와 최근 스냅샷 기준 활성 멤버십 회원 수.',
   })
   @ApiResponse({
     status: 200,
     description: 'Summary metrics response.',
     type: AnalyticsSummaryDto,
   })
-  getSummary(): AnalyticsSummaryDto {
+  getSummary(): Promise<AnalyticsSummaryDto> {
     return this.analyticsService.getSummary();
   }
 

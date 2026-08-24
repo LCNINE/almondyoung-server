@@ -10,12 +10,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard';
 import { useBusinessLicenses } from '@/lib/services/business-licenses';
+import { useMembershipMembersSummary } from '@/lib/services/membership';
 import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useAllUserCount } from '@/lib/services/users';
 import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
 import type { SalesOrderStatus } from '@/lib/types/dto/orders';
 import {
+  BadgeCheck,
   Banknote,
   Boxes,
   CheckCircle,
@@ -65,6 +67,7 @@ export default function MainTemplate() {
     status: 'under_review',
   });
   const { data: recentOrdersData, isLoading: isOrdersLoading } = useSalesOrders({ limit: 5 });
+  const { data: membersSummary, isLoading: isMembersSummaryLoading } = useMembershipMembersSummary();
 
   const stats = [
     {
@@ -94,6 +97,16 @@ export default function MainTemplate() {
       iconBg: 'bg-green-50',
       iconColor: 'text-green-600',
       path: '/account/customer',
+    },
+    {
+      // 활성 = 목록 ACTIVE 필터와 같은 기준 (해지 예약 포함, 일시정지 제외)
+      label: '멤버십 회원',
+      value: membersSummary?.active,
+      isLoading: isMembersSummaryLoading,
+      icon: BadgeCheck,
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      path: '/membership/members?status=ACTIVE&page=1',
     },
     {
       label: '미답변 문의',

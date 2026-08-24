@@ -39,6 +39,12 @@ const MEDUSA_BASE_URL = isServer
   ? (process.env.MEDUSA_API_URL ?? 'http://localhost:9000')
   : '/proxy/medusa';
 
+// 로컬 기본 포트 3040 은 wallet 과 겹친다 (apps/analytics/src/main.ts 기본값).
+// 둘을 같이 띄우려면 한쪽의 PORT / *_SERVICE_URL 을 바꿔야 한다.
+const ANALYTICS_SERVICE_BASE_URL = isServer
+  ? (process.env.ANALYTICS_SERVICE_URL ?? 'http://localhost:3040')
+  : '/proxy/analytics';
+
 export {
   ALMONDYOUNG_API_BASE_URL,
   USER_SERVICE_BASE_URL,
@@ -49,4 +55,5 @@ export {
   UGC_SERVICE_BASE_URL,
   FILE_SERVICE_BASE_URL,
   MEDUSA_BASE_URL,
+  ANALYTICS_SERVICE_BASE_URL,
 };

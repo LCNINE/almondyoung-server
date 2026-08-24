@@ -146,6 +146,10 @@ export class AdminOperationsService {
     return this.adminMembersReader.findAllWithDetails(query);
   }
 
+  async getMembersSummary() {
+    return this.adminMembersReader.countMembersByStatus();
+  }
+
   async getMemberDetail(userId: string) {
     return this.adminMembersReader.findDetailByUserId(userId);
   }

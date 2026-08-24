@@ -4,6 +4,7 @@ export const membershipQueryKeys = {
   all: ['membership'] as const,
   members: () => [...membershipQueryKeys.all, 'members'] as const,
   memberList: (query: AdminMembersQuery) => [...membershipQueryKeys.members(), query] as const,
+  membersSummary: () => [...membershipQueryKeys.members(), 'summary'] as const,
   memberDetail: (userId: string) => [...membershipQueryKeys.all, 'memberDetail', userId] as const,
   billingEvents: (userId: string) =>
     [...membershipQueryKeys.all, 'billingEvents', userId] as const,
