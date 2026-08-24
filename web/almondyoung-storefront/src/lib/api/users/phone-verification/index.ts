@@ -2,10 +2,10 @@
 
 import { api, type ApiResponse } from "@lib/api/api"
 import { ApiNetworkError, HttpApiError } from "@lib/api/api-error"
-import { SendTwilioMessageDto, VerifyCodeDto } from "@lib/types/dto/users"
+import { SendVerificationCodeDto, VerifyCodeDto } from "@lib/types/dto/users"
 
-export const sendTwilioMessageApi = async (
-  data: SendTwilioMessageDto
+export const sendVerificationCodeApi = async (
+  data: SendVerificationCodeDto
 ): Promise<ApiResponse<{ success: boolean }>> => {
   try {
     await api<{ message: string }>("users", "/twilio/send-message", {

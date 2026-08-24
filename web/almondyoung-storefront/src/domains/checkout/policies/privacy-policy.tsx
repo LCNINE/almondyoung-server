@@ -70,7 +70,7 @@ const PROCESSORS = [
   },
   {
     name: "엔에이치엔클라우드 주식회사",
-    task: "카카오 알림톡 발송",
+    task: "카카오 알림톡 및 인증·안내 문자(SMS) 발송",
     retention: "위탁 계약 종료 시까지",
   },
   {
@@ -87,15 +87,6 @@ const OVERSEAS_TRANSFERS = [
     contact: "support@resend.com",
     items: "이메일 주소, 성명",
     purpose: "주문·배송·인증 등 서비스 안내 이메일 발송",
-    method: "서비스 이용 시점에 정보통신망을 통해 전송",
-    retention: "위탁 계약 종료 시 또는 회원 탈퇴 시까지",
-  },
-  {
-    company: "Twilio Inc.",
-    country: "미국",
-    contact: "privacy@twilio.com",
-    items: "휴대전화번호",
-    purpose: "인증번호 및 안내 문자(SMS) 발송, 휴대전화번호 유효성 확인",
     method: "서비스 이용 시점에 정보통신망을 통해 전송",
     retention: "위탁 계약 종료 시 또는 회원 탈퇴 시까지",
   },

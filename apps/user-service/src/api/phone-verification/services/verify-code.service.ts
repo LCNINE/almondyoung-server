@@ -35,7 +35,7 @@ export class VerifyCodeService {
     if (!verification) {
       throw new PhoneVerificationException({
         message: '유효한 인증 요청이 없습니다. 인증번호를 다시 요청해주세요',
-        errorCode: 'TWILIO_INVALID_CODE_EXCEPTION',
+        errorCode: 'NO_VALID_VERIFICATION',
         httpStatus: HttpStatus.BAD_REQUEST,
       });
     }
@@ -44,7 +44,7 @@ export class VerifyCodeService {
     if (verification.attempts >= verification.maxAttempts) {
       throw new PhoneVerificationException({
         message: '인증 시도 횟수를 초과했습니다',
-        errorCode: 'TWILIO_MAX_ATTEMPTS_EXCEPTION',
+        errorCode: 'MAX_ATTEMPTS_EXCEEDED',
         httpStatus: HttpStatus.BAD_REQUEST,
       });
     }

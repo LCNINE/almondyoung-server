@@ -9,7 +9,7 @@ import { useEffect, useState, useTransition } from "react"
 
 type Handlers = { onError?: (message: string) => void; onSuccess?: () => void }
 
-// useTwilio 의 이메일 버전. 내부 toast 없이 상태만 관리하고 UX 는 호출부(t()) 가 담당.
+// usePhoneVerification 의 이메일 버전. 내부 toast 없이 상태만 관리하고 UX 는 호출부(t()) 가 담당.
 // 401 은 api 클라이언트가 re-throw → transition 밖으로 전파되어 error.tsx 가 토큰 복구.
 export function useEmailOtp() {
   const [isCodeSendPending, startSend] = useTransition()

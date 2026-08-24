@@ -474,8 +474,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   // 외부 호출자가 임의 userId 로 callbackSignup 을 호출하는 우회는 차단된다.
   try {
     // 휴대폰 인증은 여기서만 검증한다. 클라이언트가 "인증됐다"고 보내는 플래그를 믿으면
-    // 폼을 직접 조작해 남의 번호로 가입할 수 있다. Twilio Verify 는 approve 된 코드를
-    // 재검증할 수 없으므로 스텝 UI 에서는 부르지 않고 이 지점 한 번만 부른다.
+    // 폼을 직접 조작해 남의 번호로 가입할 수 있다.
     await verifyPhoneCode({
       phoneNumber: normalizedPhoneNumber,
       code: getVerificationCode(formData),

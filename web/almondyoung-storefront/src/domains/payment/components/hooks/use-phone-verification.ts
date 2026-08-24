@@ -1,9 +1,9 @@
-import { sendTwilioMessageApi, verifyCodeApi } from "@lib/api/users/twilio"
-import type { SendTwilioMessageDto, VerifyCodeDto } from "@lib/types/dto/users"
+import { sendVerificationCodeApi, verifyCodeApi } from "@lib/api/users/phone-verification"
+import type { SendVerificationCodeDto, VerifyCodeDto } from "@lib/types/dto/users"
 import { useEffect, useState, useTransition } from "react"
 import { toast } from "sonner"
 
-export const useTwilio = () => {
+export const usePhoneVerification = () => {
   const [isCodeSendPending, startCodeSendTransition] = useTransition()
   const [isCodeVerifyPending, startCodeVerifyTransition] = useTransition()
   const [isCodeSent, setIsCodeSent] = useState(false) // 인증번호 발송 여부
@@ -21,9 +21,9 @@ export const useTwilio = () => {
   }, [isCodeSent, timer])
 
   // 인증번호 발송
-  const sendTwilioMessage = (data: SendTwilioMessageDto) => {
+  const sendVerificationCode = (data: SendVerificationCodeDto) => {
     startCodeSendTransition(async () => {
-      const result = await sendTwilioMessageApi(data)
+      const result = await sendVerificationCodeApi(data)
       if ("data" in result) {
         toast.success("인증번호가 발송되었습니다.")
         setIsCodeSent(true)
@@ -57,7 +57,7 @@ export const useTwilio = () => {
   }
 
   return {
-    sendTwilioMessage,
+    sendVerificationCode,
     isCodeSendPending,
     isCodeSent,
     verifyCode,
@@ -68,4 +68,4 @@ export const useTwilio = () => {
   }
 }
 
-export default useTwilio
+export default usePhoneVerification
