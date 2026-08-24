@@ -124,7 +124,7 @@ export class NotificationProcessor {
         providerMetadata.fcmDataVariables = metadata.fcmDataVariables;
       }
 
-      // Twilio SMS의 경우 일반 텍스트 치환 (추가 처리 불필요)
+      // SMS는 일반 텍스트 치환 (추가 처리 불필요)
 
       const result = await provider.send({
         to: contact,
@@ -148,7 +148,7 @@ export class NotificationProcessor {
         updateMetadata.requestId = requestId;
       }
 
-      // Twilio의 경우 messageSid를 metadata에 저장
+      // SMS는 발송 식별자를 metadata에 저장
       if (notification.channel === 'SMS' && result.messageId) {
         updateMetadata.messageSid = result.messageId;
       }

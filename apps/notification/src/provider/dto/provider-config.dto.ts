@@ -106,18 +106,18 @@ export class EmailProviderConfigDto extends BaseProviderConfigDto {
 // SMS Provider Configuration
 export class SmsProviderConfigDto extends BaseProviderConfigDto {
   @ApiPropertyOptional({
-    description: '계정 SID (Twilio용)',
+    description: '계정 SID',
     example: 'ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   })
   @IsString()
-  accountSid?: string; // For Twilio
+  accountSid?: string;
 
   @ApiPropertyOptional({
-    description: '인증 토큰 (Twilio용)',
+    description: '인증 토큰',
     example: 'your-auth-token',
   })
   @IsString()
-  authToken?: string; // For Twilio
+  authToken?: string;
 
   @ApiPropertyOptional({
     description: 'API 키 (기타 프로바이더용)',
@@ -143,12 +143,12 @@ export class SmsProviderConfigDto extends BaseProviderConfigDto {
   fromNumber: string;
 
   @ApiPropertyOptional({
-    description: '메시징 서비스 SID (Twilio용)',
+    description: '메시징 서비스 SID',
     example: 'MGxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
   })
   @IsString()
   @IsOptional()
-  messagingServiceSid?: string; // For Twilio
+  messagingServiceSid?: string;
 
   @ApiPropertyOptional({
     description: '배송 보고서 활성화 여부',

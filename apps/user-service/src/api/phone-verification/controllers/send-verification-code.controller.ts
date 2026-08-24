@@ -2,10 +2,10 @@ import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from 'apps/user-service/src/commons/decorator/public.decorator';
-import { SendVerificationCodeDto } from '../dto/twilio.dto';
-import { SendMessageService } from '../services/send-verify-code.service';
+import { SendVerificationCodeDto } from '../dto/phone-verification.dto';
+import { SendMessageService } from '../services/send-verification-code.service';
 
-@ApiTags('Twilio - 인증 메시지')
+@ApiTags('휴대폰 인증 - 인증번호 발송')
 @Controller('twilio/send-message')
 export class SendMessageController {
   constructor(private readonly sendMessageService: SendMessageService) {}

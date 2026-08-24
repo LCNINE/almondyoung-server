@@ -24,13 +24,6 @@ export const notificationEnvSchema = z.object({
   SENDGRID_FROM_EMAIL: z.string().email().optional(),
   SENDGRID_FROM_NAME: z.string().optional(),
 
-  // SMS Provider - Twilio
-  TWILIO_ACCOUNT_SID: z.string().optional(),
-  TWILIO_AUTH_TOKEN: z.string().optional(),
-  TWILIO_MESSAGING_SERVICE_SID: z.string().optional(),
-  TWILIO_FROM_NUMBER: z.string().optional(),
-  TWILIO_STATUS_CALLBACK_URL: z.string().url().optional(),
-
   // Kakao/Alimtalk Provider - NHN Cloud
   NHN_API_URL: z.string().url().optional(),
   NHN_APP_KEY: z.string().optional(),
@@ -38,6 +31,11 @@ export const notificationEnvSchema = z.object({
   NHN_SENDER_KEY: z.string().optional(),
   NHN_PLUS_FRIEND_ID: z.string().optional(),
   NHN_SMS_APP_KEY: z.string().optional(),
+  // NHN Cloud SMS(알림톡과 별개 상품이라 앱키·시크릿이 따로다). 셋이 다 있어야 SMS 프로바이더가
+  // 등록되고, 비어 있으면 SMS 채널이 비어 발송이 503 으로 멈춘다.
+  NHN_SMS_SECRET_KEY: z.string().optional(),
+  NHN_SMS_SEND_NO: z.string().optional(),
+  NHN_SMS_API_URL: z.string().url().optional(),
   NHN_WEBHOOK_SIGNATURE: z.string().optional(), // NHN KakaoTalk 웹훅 서명
   DEFAULT_SMS_NUMBER: z.string().optional(),
 

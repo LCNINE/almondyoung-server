@@ -1,13 +1,13 @@
 import { DbService, InjectDb } from '@app/db';
-import { HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { userServiceSchema, userServiceEnums, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
+import { HttpStatus, Injectable } from '@nestjs/common';
+import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, eq, gt } from 'drizzle-orm';
-import { Twilio } from 'twilio';
-import { SendVerificationCodeDto } from '../dto/twilio.dto';
-import { TwilioException } from '../exceptions/twilio.exceptions';
-import { LookupService } from './lookup.service';
+import { isKoreanMobileNumber } from 'apps/user-service/src/commons/utils/phone-number';
+import { SendVerificationCodeDto } from '../dto/phone-verification.dto';
+import { PhoneVerificationException } from '../exceptions/phone-verification.exceptions';
 import { ExpireExistingCodesService } from './expire-existing-codes';
+import { SmsSenderService } from './sms-sender.service';
 
 /**
  * 발송 제한은 **전화번호 기준**으로 센다.
@@ -23,13 +23,10 @@ const RESEND_LIMIT = 3;
 @Injectable()
 export class SendMessageService {
   constructor(
-    @Inject('TWILIO_PHONE_NUMBER') private readonly twilioPhoneNumber: string,
-    @Inject('TWILIO_CLIENT') private readonly twilio: Twilio,
-    @Inject('TWILIO_SERVICE_ID') private readonly twilioServiceId: string,
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
 
-    private readonly lookupService: LookupService,
     private readonly expireExistingCodesService: ExpireExistingCodesService,
+    private readonly smsSender: SmsSenderService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
@@ -54,16 +51,21 @@ export class SendMessageService {
         .limit(RESEND_LIMIT);
 
       if (recentSends.length >= RESEND_LIMIT) {
-        throw new TwilioException({
+        throw new PhoneVerificationException({
           message: '인증번호는 1분에 3회까지 요청할 수 있습니다. 잠시 후 다시 시도해주세요',
-          errorCode: 'TWILIO_RESEND_LIMIT_EXCEEDED',
+          errorCode: 'RESEND_LIMIT_EXCEEDED',
           httpStatus: HttpStatus.TOO_MANY_REQUESTS,
         });
       }
 
-      // 1. 번호 검증 및 국제 형식 변환
-      const lookupResult = await this.lookupService.lookup(sendVerificationCodeDto);
-      const validatedPhoneNumber = lookupResult.phoneNumber; // +82 형식
+      // 1. 번호 형식 검증. 존재하지 않는 번호는 발송 API 가 걸러낸다.
+      if (!isKoreanMobileNumber(phoneNumber)) {
+        throw new PhoneVerificationException({
+          message: '올바른 휴대폰 번호가 아닙니다',
+          errorCode: 'INVALID_PHONE_NUMBER',
+          httpStatus: HttpStatus.BAD_REQUEST,
+        });
+      }
 
       // 2. 기존 미검증 코드 만료 처리
       await this.expireExistingCodesService.expireExistingCodes(phoneNumber, trx);
@@ -79,14 +81,10 @@ export class SendMessageService {
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
       });
 
-      // 5. SMS 발송
+      // 5. SMS 발송 (notification 서비스에 위임)
       // Note: 외부 API 호출이 트랜잭션 내부에 있음
       // SMS 실패 시 DB도 함께 롤백됨
-      await this.twilio.messages.create({
-        to: validatedPhoneNumber,
-        from: this.twilioPhoneNumber,
-        body: `[아몬드영] 인증번호: ${code}`,
-      });
+      await this.smsSender.send(phoneNumber, `[아몬드영] 인증번호: ${code}`);
 
       return '인증번호가 발송되었습니다';
     }, tx);
