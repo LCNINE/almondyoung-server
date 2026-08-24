@@ -11,7 +11,14 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCreateSupplier, useUpdateSupplier, useSupplierCategories } from '@/lib/services/inventory';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useCreateSupplier, useUpdateSupplier, useSupplierCategories, useWarehouses } from '@/lib/services/inventory';
 import type { SupplierDto, CreateSupplierRequest } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
@@ -28,6 +35,7 @@ export function SupplierFormDialog({ open, onOpenChange, editRow }: Props) {
   const [form, setForm] = useState<CreateSupplierRequest>(EMPTY_FORM);
 
   const { data: categories } = useSupplierCategories();
+  const { data: warehouses } = useWarehouses();
   const createMutation = useCreateSupplier();
   const updateMutation = useUpdateSupplier();
 
@@ -188,6 +196,37 @@ export function SupplierFormDialog({ open, onOpenChange, editRow }: Props) {
               </div>
             </div>
           )}
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">구매 설정</p>
+            <div className="space-y-2">
+              <Label htmlFor="defaultWarehouseId">입고 창고</Label>
+              <Select
+                value={form.defaultWarehouseId ?? ''}
+                onValueChange={(value) =>
+                  setForm((prev) => ({ ...prev, defaultWarehouseId: value || undefined }))
+                }
+              >
+                <SelectTrigger id="defaultWarehouseId">
+                  <SelectValue placeholder="입고 창고 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(warehouses ?? []).map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {!form.defaultWarehouseId && (
+                // 저장은 되게 두되 결과를 그 자리에서 말한다 — 창고 화면의
+                // "⚠ 설정 없음 — 출고 배치 생성 불가" 와 같은 idiom.
+                <p className="text-destructive text-sm">
+                  ⚠ 입고 창고를 정하지 않으면 이 공급처로 발주를 만들 수 없습니다.
+                </p>
+              )}
+            </div>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="memo">메모</Label>

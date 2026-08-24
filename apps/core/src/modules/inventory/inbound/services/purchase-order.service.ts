@@ -377,8 +377,11 @@ export class PurchaseOrderService {
       throw new BadRequestException(`Supplier with ID ${supplierId} not found`);
     }
     if (!supplier.defaultWarehouseId) {
+      // MD 가 발주 화면에서 직접 읽는 문구다. 원시 UUID 와 영어로는 어디를 고쳐야
+      // 하는지 알 수 없다 — 라이브 공급사 전원이 이 값이 비어 있어 사실상 발주의
+      // 첫 관문이므로, 다음 행동을 문장에 담는다.
       throw new BadRequestException(
-        `Supplier ${supplierId} does not have a default warehouse configured. Please set a default warehouse for this supplier.`,
+        '이 공급처에 입고 창고가 지정되지 않아 발주를 만들 수 없습니다. 공급처 관리에서 입고 창고를 먼저 지정하세요.',
       );
     }
     return supplier.defaultWarehouseId;

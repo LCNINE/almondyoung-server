@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { DateCell } from '@/components/table/table-cells/common';
 import type { SupplierDto } from '@/lib/types/dto/inventory';
 import { Button } from '@/components/ui/button';
+import { useWarehouses } from '@/lib/services/inventory';
 
 const columnHelper = createColumnHelper<SupplierDto>();
 
@@ -13,6 +14,13 @@ type RowActions = {
 };
 
 export const useSuppliersTableColumns = (actions: RowActions) => {
+  // 공급사 행은 창고 id 만 들고 있어 이름을 붙이려면 창고 목록이 필요하다.
+  const { data: warehouses } = useWarehouses();
+  const warehouseNameById = useMemo(
+    () => new Map((warehouses ?? []).map((w) => [w.id, w.name])),
+    [warehouses],
+  );
+
   return useMemo(
     () => [
       columnHelper.accessor('name', {
@@ -47,6 +55,18 @@ export const useSuppliersTableColumns = (actions: RowActions) => {
           return <span className="text-sm">{a.address1}</span>;
         },
       }),
+      columnHelper.accessor('defaultWarehouseId', {
+        header: '입고 창고',
+        cell: ({ getValue }) => {
+          const id = getValue();
+          // 미지정이면 그 공급처로는 발주가 400 이다. 19곳 중 어디가 비었는지
+          // 목록에서 바로 보여야 사람이 채울 수 있다.
+          if (!id) {
+            return <span className="text-destructive text-xs">⚠ 미지정 — 발주 불가</span>;
+          }
+          return <span className="text-sm">{warehouseNameById.get(id) ?? id}</span>;
+        },
+      }),
       columnHelper.accessor('createdAt', {
         header: '등록일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
@@ -67,6 +87,8 @@ export const useSuppliersTableColumns = (actions: RowActions) => {
         ),
       }),
     ],
-    [actions]
+    // warehouseNameById 를 빼면 셀이 첫 렌더의 빈 map 을 잡은 채 굳어, 창고 목록이
+    // 도착해도 이름이 영원히 안 뜬다.
+    [actions, warehouseNameById]
   );
 };

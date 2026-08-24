@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { useDeleteSupplier } from '@/lib/services/inventory';
+import { useDeleteSupplier, useWarehouses } from '@/lib/services/inventory';
 import type { SupplierDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import { SupplierFormDialog } from '../supplier-form-dialog';
@@ -25,6 +25,7 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 }
 
 export function SupplierDetailDrawer({ row, open, onOpenChange }: Props) {
+  const { data: warehouses } = useWarehouses();
   const [editOpen, setEditOpen] = useState(false);
   const deleteMutation = useDeleteSupplier();
 
@@ -98,6 +99,15 @@ export function SupplierDetailDrawer({ row, open, onOpenChange }: Props) {
                 <InfoRow label="계좌번호" value={row.paymentInfo.bankAccountNo} />
                 <InfoRow label="예금주" value={row.paymentInfo.bankAccountHolder} />
                 <InfoRow label="결제방식" value={row.paymentInfo.paymentMethod} />
+                <InfoRow
+                  label="입고 창고"
+                  value={
+                    row.defaultWarehouseId
+                      ? ((warehouses ?? []).find((w) => w.id === row.defaultWarehouseId)?.name ??
+                        row.defaultWarehouseId)
+                      : '미지정 — 이 공급처로는 발주를 만들 수 없습니다'
+                  }
+                />
               </section>
             )}
 
