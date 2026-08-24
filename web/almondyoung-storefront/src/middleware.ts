@@ -261,9 +261,12 @@ export async function middleware(request: NextRequest) {
     request.nextUrl.searchParams
   )
   if (legacy) {
-    return NextResponse.rewrite(
-      new URL("/api/legacy-redirect", request.nextUrl.origin)
-    )
+    const url = new URL(request.url)
+    url.pathname = "/api/legacy-redirect"
+    url.search = ""
+    url.searchParams.set("kind", legacy.kind)
+    url.searchParams.set("value", legacy.value)
+    return NextResponse.rewrite(url)
   }
 
   const accessToken = request.cookies.get("accessToken")?.value
