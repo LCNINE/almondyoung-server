@@ -14,9 +14,11 @@ const HOLDER = '019d0001-0000-7000-a000-000000000001';
 const BUCHEON = '019d0001-0001-7000-a000-000000000001';
 const CHINA = '019d0001-0002-7000-a000-000000000002';
 
-const WAREHOUSES: [string, string, string][] = [
-  [BUCHEON, '부천 물류창고', 'domestic'],
-  [CHINA, '중국 물류창고', 'overseas'],
+// [id, name, type, isSellable] — is_sellable 은 컬럼 DEFAULT(false)에 맡기지 않고
+// 명시한다. 생략하면 부천까지 비판매로 깔려 판매가능수량이 전부 0 이 된다.
+const WAREHOUSES: [string, string, string, boolean][] = [
+  [BUCHEON, '부천 물류창고', 'domestic', true],
+  [CHINA, '중국 물류창고', 'overseas', false],
 ];
 // [id, warehouseId, code, displayName, isSystem, systemRole]
 const LOCATIONS: [string, string, string, string, boolean, string | null][] = [
@@ -40,7 +42,7 @@ async function main() {
   try {
     await sql`INSERT INTO holders (id,name,is_our_asset) VALUES (${HOLDER},${'기본 보유자'},${true}) ON CONFLICT (id) DO NOTHING`;
     for (const w of WAREHOUSES) {
-      await sql`INSERT INTO warehouses (id,name,type) VALUES (${w[0]},${w[1]},${w[2]}) ON CONFLICT (id) DO NOTHING`;
+      await sql`INSERT INTO warehouses (id,name,type,is_sellable) VALUES (${w[0]},${w[1]},${w[2]},${w[3]}) ON CONFLICT (id) DO NOTHING`;
     }
     for (const l of LOCATIONS) {
       await sql`

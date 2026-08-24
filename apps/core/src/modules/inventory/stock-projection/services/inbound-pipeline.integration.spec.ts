@@ -107,7 +107,8 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     const suffix = randomUUID().slice(0, 8);
     const [finalDestination] = await trx
       .insert(wmsTables.warehouses)
-      .values({ name: `it-po-dest-${suffix}` })
+      // 최종 도착지는 판매 창고(부천 역할)다 — 컬럼 DEFAULT 가 false 라 명시해야 한다.
+      .values({ name: `it-po-dest-${suffix}`, isSellable: true })
       .returning({ id: wmsTables.warehouses.id });
     const [supplier] = await trx
       .insert(wmsTables.suppliers)

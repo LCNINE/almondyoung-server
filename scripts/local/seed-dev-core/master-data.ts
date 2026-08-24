@@ -8,13 +8,22 @@ export async function seedMasterData(tx: DbTx): Promise<void> {
     // 409 를 던져 출고 배치를 아예 만들 수 없다 — 시드는 멀쩡히 도는데 출고만 조용히 막힌다.
     // 구분은 라이브 WAREHOUSE_CONSTANTS 와 같다: 국내(판매) 창고만 discrete, 해외(비판매)는 빈 배열.
     // 토탈피킹(aggregate_then_sort)·multi_order 는 의도적으로 끈 채 둔다.
+    // is_sellable 도 명시한다. 컬럼 DEFAULT 가 false(fail-closed)라 생략하면 부천까지
+    // 비판매 창고가 되어 로컬 storefront 가 전 상품 품절로 보인다.
     {
       id: SEED_IDS.warehouseBucheon,
       name: '부천 물류창고',
       type: 'domestic',
       supportedPickingStrategies: ['discrete'],
+      isSellable: true,
     },
-    { id: SEED_IDS.warehouseChina, name: '중국 물류창고', type: 'overseas', supportedPickingStrategies: [] },
+    {
+      id: SEED_IDS.warehouseChina,
+      name: '중국 물류창고',
+      type: 'overseas',
+      supportedPickingStrategies: [],
+      isSellable: false,
+    },
   ]);
 
   await tx.insert(wmsTables.locations).values([

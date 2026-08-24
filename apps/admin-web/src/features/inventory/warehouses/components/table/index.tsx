@@ -14,6 +14,7 @@ import { useWarehouses } from '@/lib/services/inventory';
 import type { WarehouseDto } from '@/lib/types/dto/inventory';
 import { methodsForStrategies, PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 import { PickingMethodDialog } from '../picking-method-dialog';
+import { SellableToggle } from '../sellable-toggle';
 
 const WAREHOUSE_TYPE_LABELS: Record<WarehouseDto['type'], string> = {
   domestic: '국내',
@@ -34,6 +35,7 @@ export function WarehousesTable() {
             <TableHead>이름</TableHead>
             <TableHead>타입</TableHead>
             <TableHead>위치</TableHead>
+            <TableHead>판매</TableHead>
             <TableHead>피킹 방식</TableHead>
             <TableHead className="w-24" />
           </TableRow>
@@ -41,12 +43,12 @@ export function WarehousesTable() {
         <TableBody>
           {isLoading && (
             <TableRow>
-              <TableCell colSpan={5}>불러오는 중...</TableCell>
+              <TableCell colSpan={6}>불러오는 중...</TableCell>
             </TableRow>
           )}
           {!isLoading && warehouses.length === 0 && (
             <TableRow>
-              <TableCell colSpan={5}>등록된 창고가 없습니다.</TableCell>
+              <TableCell colSpan={6}>등록된 창고가 없습니다.</TableCell>
             </TableRow>
           )}
           {warehouses.map((warehouse) => {
@@ -56,6 +58,15 @@ export function WarehousesTable() {
                 <TableCell className="font-medium">{warehouse.name}</TableCell>
                 <TableCell>{WAREHOUSE_TYPE_LABELS[warehouse.type] ?? warehouse.type}</TableCell>
                 <TableCell>{warehouse.location || '-'}</TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <SellableToggle warehouse={warehouse} />
+                    {!warehouse.isSellable && (
+                      // 스위치만으로는 "왜 이 창고 재고가 안 팔리지" 를 설명하지 못한다.
+                      <span className="text-muted-foreground text-xs">판매가능수량 제외</span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
                   {methods.length === 0 ? (
                     // 빈 값은 유효한 저장이면서 동시에 출고 정지를 뜻한다 — 화면에서 보여야 한다.

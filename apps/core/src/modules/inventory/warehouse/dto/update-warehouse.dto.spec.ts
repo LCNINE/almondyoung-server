@@ -69,3 +69,40 @@ describe('UpdateWarehouseDto', () => {
     });
   });
 });
+
+describe('UpdateWarehouseDto.isSellable', () => {
+  function dtoWithSellable(value: unknown): UpdateWarehouseDto {
+    const dto = new UpdateWarehouseDto();
+    // 잘못된 런타임 타입을 일부러 넣어 검증을 확인하는 테스트라 캐스팅이 필요하다
+    dto.isSellable = value as UpdateWarehouseDto['isSellable'];
+    return dto;
+  }
+
+  it('true 를 받는다', async () => {
+    await expect(validate(dtoWithSellable(true))).resolves.toHaveLength(0);
+  });
+
+  // false 는 "이 창고를 판매 대상에서 뺀다"는 유효한 의도다. 이걸 막으면 중국 창고를
+  // 비판매로 되돌릴 수단이 없어져 이번 변경의 목적 자체가 무너진다.
+  it('false 를 받는다', async () => {
+    await expect(validate(dtoWithSellable(false))).resolves.toHaveLength(0);
+  });
+
+  it('불린이 아닌 값을 거부한다', async () => {
+    const errors = await validate(dtoWithSellable('true'));
+    expect(errors).toHaveLength(1);
+    expect(errors[0].property).toBe('isSellable');
+  });
+
+  // supportedPickingStrategies 의 빈 배열과 같은 함정이다 — false 는 falsy 라
+  // whitelist 가 undefined 와 구분하지 못하고 잘라내면 끄는 수단이 조용히 사라진다.
+  it('false 가 전역 whitelist 를 통과해 살아남는다', async () => {
+    const pipe = createGlobalValidationPipe();
+    const transformed = (await pipe.transform(
+      { isSellable: false },
+      { type: 'body', metatype: UpdateWarehouseDto },
+    )) as UpdateWarehouseDto;
+
+    expect(transformed.isSellable).toBe(false);
+  });
+});

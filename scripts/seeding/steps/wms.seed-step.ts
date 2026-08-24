@@ -4,9 +4,11 @@ import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
 
 
+// is_sellable 은 컬럼 DEFAULT(false)에 맡기지 않고 명시한다 — 생략하면 새 환경의
+// 부천 창고가 비판매로 깔려 판매가능수량이 전부 0 이 된다.
 const WAREHOUSES = [
-  { id: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC, name: '부천 물류창고', type: 'domestic' },
-  { id: FIXED_UUIDS.WAREHOUSE_CHINA_OVERSEAS, name: '중국 물류창고', type: 'overseas' },
+  { id: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC, name: '부천 물류창고', type: 'domestic', isSellable: true },
+  { id: FIXED_UUIDS.WAREHOUSE_CHINA_OVERSEAS, name: '중국 물류창고', type: 'overseas', isSellable: false },
 ];
 
 const LOCATIONS = [
@@ -101,8 +103,8 @@ export class WmsSeedStep extends SeedStep {
       this.logger.step(1, 3, 'Inserting warehouses');
       for (const w of WAREHOUSES) {
         await this.db.execute(sql`
-          INSERT INTO warehouses (id, name, type)
-          VALUES (${w.id}, ${w.name}, ${w.type})
+          INSERT INTO warehouses (id, name, type, is_sellable)
+          VALUES (${w.id}, ${w.name}, ${w.type}, ${w.isSellable})
           ON CONFLICT (id) DO NOTHING
         `);
       }

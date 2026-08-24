@@ -12,7 +12,14 @@ export async function seedWarehouseWithZone(tx: DbTx): Promise<{ warehouseId: st
     .insert(wmsTables.warehouses)
     // 배치 생성이 창고 능력을 검사하므로 기본 창고는 discrete 를 지원해야 한다.
     // 다른 전략이 필요한 스펙은 이 값을 자기가 덮어쓴다(outbound-v2-warehouse-scenarios 등).
-    .values({ name: `it-wh-${randomUUID().slice(0, 8)}`, supportedPickingStrategies: ['discrete'] })
+    // is_sellable 도 명시한다 — 컬럼 DEFAULT 가 false(fail-closed)라 생략하면 픽스처 창고가
+    // 판매 게이트에서 빠져 inSellableWarehouse() 를 타는 스펙의 의미가 조용히 뒤집힌다.
+    // 비판매 창고가 필요한 스펙은 이 값을 자기가 false 로 덮어쓴다(inbound-pipeline 등).
+    .values({
+      name: `it-wh-${randomUUID().slice(0, 8)}`,
+      supportedPickingStrategies: ['discrete'],
+      isSellable: true,
+    })
     .returning();
   const [loc] = await tx
     .insert(wmsTables.locations)
@@ -275,7 +282,7 @@ export async function seedPickableShipment(tx: DbTx, qty = 2): Promise<PickableS
   const actorId = randomUUID();
   const [warehouse] = await tx
     .insert(wmsTables.warehouses)
-    .values({ name: `simple-warehouse-${suffix}`, supportedPickingStrategies: ['discrete'] })
+    .values({ name: `simple-warehouse-${suffix}`, supportedPickingStrategies: ['discrete'], isSellable: true })
     .returning();
   const [holder] = await tx
     .insert(wmsTables.holders)

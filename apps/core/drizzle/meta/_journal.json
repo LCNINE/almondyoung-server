@@ -547,6 +547,13 @@
       "when": 1787248835119,
       "tag": "20260820180035_add-entrance-password-slots",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1787533326436,
+      "tag": "20260824010206_flip-warehouse-is-sellable-default",
+      "breakpoints": true
     }
   ]
 }

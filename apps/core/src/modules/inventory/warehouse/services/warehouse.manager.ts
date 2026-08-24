@@ -38,18 +38,29 @@ export class WarehouseManager {
   }
 
   async update(id: string, dto: UpdateWarehouseDto, tx?: DbTx): Promise<Warehouse> {
-    const [updated] = await this.dbService.run(
-      async (trx) =>
-        trx
-          .update(wmsTables.warehouses)
-          .set({
-            ...dto,
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.warehouses.id, id))
-          .returning(),
-      tx,
-    );
+    const [updated] = await this.dbService.run(async (trx) => {
+      // 판매 창고를 0 개로 만드는 수정은 막는다. inSellableWarehouse() 가 공집합을
+      // 매칭하면 전 SKU 의 판매가능수량이 0 이 되고 그 상태가 그대로 Medusa 로
+      // 발행된다 — 되돌리기는 쉬워도 그사이 전 상품이 품절로 보인다.
+      // 켜는 방향(true)과 isSellable 을 건드리지 않는 수정은 이 판정과 무관하다.
+      if (dto.isSellable === false) {
+        const otherSellable = await this.reader.countSellableExcluding(id, trx);
+        if (otherSellable === 0) {
+          throw new ConflictError(
+            '마지막 판매 창고는 비판매로 바꿀 수 없습니다. 다른 창고를 먼저 판매 창고로 지정하세요.',
+          );
+        }
+      }
+
+      return trx
+        .update(wmsTables.warehouses)
+        .set({
+          ...dto,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.warehouses.id, id))
+        .returning();
+    }, tx);
 
     if (!updated) {
       throw new NotFoundError(`창고를 찾을 수 없습니다: ${id}`);
@@ -104,24 +115,16 @@ export class WarehouseManager {
             await this.locationService.ensureSystemLocations(data.id, trx);
           });
           this.logger.log(`기본 창고 생성: ${data.name}`);
-        } else if (existing.isSellable !== data.isSellable) {
-          // is_sellable "한 컬럼만" 수렴시킨다. 컬럼은 DEFAULT true 로 깔렸으므로
-          // 이미 존재하는 해외 창고 행은 이 수렴이 없으면 영원히 판매 창고로 남고,
-          // inSellableWarehouse() 가 모든 창고를 매칭해 판매 게이트와 공급 파이프라인
-          // 필터가 통째로 no-op 이 된다.
-          //
-          // ⚠️ supported_picking_strategies 는 절대 여기서 덮어쓰지 않는다 — 그 컬럼은
-          // UpdateWarehouseDto 를 통해 admin-web 창고 설정 화면에서 운영자가 바꾸는
-          // 운영 설정이라, 부팅마다 상수로 되돌리면 재시작할 때마다 설정이 사라진다.
-          // 이 구분(코드가 소유하는 컬럼 vs 운영자가 소유하는 컬럼)이 핵심이다.
-          await this.dbService.run(async (trx) => {
-            await trx
-              .update(wmsTables.warehouses)
-              .set({ isSellable: data.isSellable, updatedAt: new Date() })
-              .where(eq(wmsTables.warehouses.id, data.id));
-          });
-          this.logger.log(`기본 창고 판매 여부 수렴: ${data.name} → is_sellable=${data.isSellable}`);
         }
+        // 행이 이미 있으면 아무것도 하지 않는다 — insert-only 다.
+        //
+        // 예전에는 여기서 is_sellable 을 상수 값으로 수렴시켰다. 그건 "컬럼이
+        // DEFAULT true 로 깔려 이미 존재하는 해외 창고 행이 영원히 판매 창고로
+        // 남는다"는 일회성 백필을 부팅 수렴으로 구현한 것이었고, 그 임무는 끝났다.
+        // 이제 is_sellable 은 운영자가 창고 설정 화면에서 바꾸는 값이라
+        // (UpdateWarehouseDto.isSellable) 수렴을 남겨두면 컬럼에 주인이 둘이 되어
+        // 운영자가 끈 판매 창고가 다음 재시작에 조용히 되살아난다.
+        // supported_picking_strategies 를 수렴 대상에서 뺀 것과 같은 논리다.
       }
 
       // 기존 custom warehouse도 신규 system role이 추가된 배포 직후 바로 bootstrap한다.

@@ -854,7 +854,11 @@ export const warehouses = pgTable('warehouses', {
   type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
   // 판매 대상 창고인가. 성격(type)과 정책(판매성)은 다른 축이다 — 반품 창고를 팔지는
   // 별개 결정이고 지금 우연히 겹칠 뿐이다. 판정은 sellable-warehouses.ts 한 곳에서만 한다.
-  isSellable: boolean('is_sellable').notNull().default(true),
+  //
+  // DEFAULT 는 false 다 (fail-closed). true 로 두면 새로 만든 창고가 판매 창고로 태어나,
+  // 중국 창고를 만든 순간 아직 배 위에 있는 재고가 storefront 판매가능수량에 합산된다.
+  // 반대 방향의 사고(새 창고가 안 팔림)는 눈에 띄고 창고 설정 화면에서 바로 되돌린다.
+  isSellable: boolean('is_sellable').notNull().default(false),
   location: varchar('location', { length: 256 }),
   // TODO(outbound-v2-contract Task 25): require explicit configuration; null means V2 planning must reject.
   supportedPickingStrategies: pickingStrategyEnum('supported_picking_strategies').array(),

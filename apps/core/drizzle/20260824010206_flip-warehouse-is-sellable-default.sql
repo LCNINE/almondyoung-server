@@ -1,0 +1,1 @@
+ALTER TABLE "warehouses" ALTER COLUMN "is_sellable" SET DEFAULT false;
