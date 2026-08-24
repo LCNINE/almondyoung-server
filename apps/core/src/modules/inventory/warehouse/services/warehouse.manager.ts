@@ -39,16 +39,24 @@ export class WarehouseManager {
 
   async update(id: string, dto: UpdateWarehouseDto, tx?: DbTx): Promise<Warehouse> {
     const [updated] = await this.dbService.run(async (trx) => {
-      // 판매 창고를 0 개로 만드는 수정은 막는다. inSellableWarehouse() 가 공집합을
-      // 매칭하면 전 SKU 의 판매가능수량이 0 이 되고 그 상태가 그대로 Medusa 로
-      // 발행된다 — 되돌리기는 쉬워도 그사이 전 상품이 품절로 보인다.
-      // 켜는 방향(true)과 isSellable 을 건드리지 않는 수정은 이 판정과 무관하다.
-      if (dto.isSellable === false) {
+      // 판매 창고를 "정확히 하나" 로 유지한다. 두 방향 모두 같은 카운트로 판정한다.
+      //
+      // 0 개가 되면 inSellableWarehouse() 가 공집합을 매칭해 전 SKU 판매가능수량이 0 이
+      // 되고 그 상태가 Medusa 로 발행된다. 2 개가 되면 WarehouseReader.getDefaultId() 가
+      // 이행 오더를 어느 창고로 보낼지 정할 근거를 잃는다 — 그 모호함은 주문 처리
+      // 시점이 아니라 여기서 터져야 한다. 늦게 터지면 이미 오더가 쌓인 뒤다.
+      //
+      // 알려진 대가: 판매 창고를 다른 창고로 "옮기는" 조작이 막힌다(켜기도 끄기도
+      // 거부됨). 재고 전량을 옮기는 대사건이라 그때는 DB 로 직접 바꾼다 — 의도적 선택.
+      if (dto.isSellable !== undefined) {
         const otherSellable = await this.reader.countSellableExcluding(id, trx);
-        if (otherSellable === 0) {
+        if (dto.isSellable === false && otherSellable === 0) {
           throw new ConflictError(
             '마지막 판매 창고는 비판매로 바꿀 수 없습니다. 다른 창고를 먼저 판매 창고로 지정하세요.',
           );
+        }
+        if (dto.isSellable === true && otherSellable > 0) {
+          throw new ConflictError('판매 창고는 하나만 둘 수 있습니다. 기존 판매 창고를 먼저 해제하세요.');
         }
       }
 

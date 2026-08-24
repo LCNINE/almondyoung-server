@@ -1194,7 +1194,7 @@ export class ProductMatchingService {
       );
 
       if (skuData.inventoryManagement) {
-        const warehouseId = this.warehouseService.getDefaultId();
+        const warehouseId = await this.warehouseService.getDefaultId(trx);
         await this.stockEventService.createStockEntryBySkuId(
           {
             skuId: newSku.id,

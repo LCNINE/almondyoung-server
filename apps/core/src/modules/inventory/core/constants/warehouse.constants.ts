@@ -10,8 +10,11 @@ export const WAREHOUSE_CONSTANTS = {
     // 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
     // discrete(개별 피킹)만 켠다 — 토탈·멀티오더는 창고 설정 화면에서 명시적으로.
     supportedPickingStrategies: ['discrete'] as const,
-    // 판매 창고다. 이 창고의 재고만 storefront 판매가능수량에 들어가고 출고를 지시할 수 있다.
-    isSellable: true,
+    // 비판매다. 이 두 창고는 실운영 창고가 아니라 부팅이 만드는 껍데기이고, 실제 판매
+    // 창고(부천)는 시드가 만든다. 여기를 true 로 두면 신선한 환경이 부팅+시드 후 판매
+    // 창고 2개로 시작해, WarehouseReader.getDefaultId() 가 의존하는 "정확히 하나"
+    // 불변식이 처음부터 깨진다 — 둘 다 직접 INSERT 라 update 가드가 못 잡는 경로다.
+    isSellable: false,
   },
   DEFAULT_OVERSEAS_WAREHOUSE: {
     id: '00000000-0000-0000-0000-000000000002',

@@ -47,9 +47,17 @@ describe('WarehouseManager default warehouse seeding', () => {
   // supportedPickingStrategies 가 비면 그 창고는 출고 배치를 만들 수 없다
   // (outbound-batch-orchestrator.service.ts 의 게이트). 국내 창고는 discrete 로
   // 레거시 동등한 안전 기본값을 갖고, 토탈·멀티오더는 창고 설정 화면에서 켠다.
-  it('국내 기본 창고는 판매 창고이고 discrete 를 지원 전략으로 갖는다', () => {
+  it('국내 기본 창고는 discrete 를 지원 전략으로 갖는다', () => {
     expect(DOMESTIC.supportedPickingStrategies).toEqual(['discrete']);
-    expect(DOMESTIC.isSellable).toBe(true);
+  });
+
+  // 부팅이 만드는 두 창고는 실운영 창고가 아니라 껍데기다. 실제 판매 창고(부천)는
+  // 시드가 만든다. 여기서 하나라도 판매 창고면 신선한 환경이 부팅+시드 후 판매 창고
+  // 2개로 시작하고, getDefaultId() 가 의존하는 "정확히 하나" 불변식이 처음부터
+  // 깨진다 — 둘 다 직접 INSERT 라 update 가드가 잡을 수 없는 경로다.
+  it('부팅이 만드는 기본 창고 중 판매 창고는 없다', () => {
+    expect(DOMESTIC.isSellable).toBe(false);
+    expect(OVERSEAS.isSellable).toBe(false);
   });
 
   // 해외(중국) 창고는 비판매 창고다. 그래서 출고 배치 게이트가 막아야 하고,
@@ -77,7 +85,7 @@ describe('WarehouseManager default warehouse seeding', () => {
     expect(values.mock.calls[0][0]).toMatchObject({
       id: DOMESTIC.id,
       supportedPickingStrategies: ['discrete'],
-      isSellable: true,
+      isSellable: false,
     });
     expect(values.mock.calls[1][0]).toMatchObject({
       id: OVERSEAS.id,
@@ -190,12 +198,13 @@ describe('WarehouseManager.update 판매 창고 보존 가드', () => {
     expect(setPayloads[0]).toMatchObject({ isSellable: false });
   });
 
-  it('판매 창고로 켜는 요청은 카운트를 보지 않는다', async () => {
-    const { manager, countSellableExcluding, setPayloads } = makeManager(0);
+  // 켜는 방향도 같은 카운트를 보지만 판정이 반대다 — 여기서는 "다른 판매 창고가
+  // 있으면 거부"(유일성). 마지막-창고 판정에는 걸리지 않는다.
+  it('다른 판매 창고가 없으면 켜는 요청이 통과한다', async () => {
+    const { manager, setPayloads } = makeManager(0);
 
     await manager.update(TARGET, { isSellable: true });
 
-    expect(countSellableExcluding).not.toHaveBeenCalled();
     expect(setPayloads[0]).toMatchObject({ isSellable: true });
   });
 
@@ -228,5 +237,57 @@ describe('WarehouseManager.create', () => {
 
     expect(values).toHaveBeenCalledTimes(1);
     expect(values.mock.calls[0][0]).not.toHaveProperty('isSellable');
+  });
+});
+
+describe('WarehouseManager.update 판매 창고 유일성 가드', () => {
+  const TARGET = 'new-warehouse';
+
+  function makeManager(otherSellableCount: number) {
+    const setPayloads: Array<Record<string, unknown>> = [];
+    const returning = jest.fn().mockResolvedValue([{ id: TARGET, name: '새 창고' }]);
+    const trx = {
+      update: jest.fn(() => ({
+        set: jest.fn((payload: Record<string, unknown>) => {
+          setPayloads.push(payload);
+          return { where: jest.fn(() => ({ returning })) };
+        }),
+      })),
+    };
+    const dbService = { run: jest.fn((fn: (executor: typeof trx) => unknown) => fn(trx)) };
+    const countSellableExcluding = jest.fn().mockResolvedValue(otherSellableCount);
+    const manager = new WarehouseManager(
+      dbService as never,
+      { countSellableExcluding } as never,
+      { ensureSystemLocations: jest.fn() } as never,
+    );
+    return { manager, trx, setPayloads, countSellableExcluding };
+  }
+
+  // getDefaultId() 가 "판매 창고" 로 이행 오더의 목적지를 정하므로, 판매 창고가 둘이면
+  // 어느 쪽인지 정할 근거가 사라진다. 그 모호함을 주문 처리 시점이 아니라 설정 시점에
+  // 터뜨린다 — 늦게 터지면 이미 오더가 엉뚱한 창고로 쌓인 뒤다.
+  it('이미 판매 창고가 있으면 두 번째를 켜지 못한다', async () => {
+    const { manager, trx } = makeManager(1);
+
+    await expect(manager.update(TARGET, { isSellable: true })).rejects.toThrow(ConflictError);
+    expect(trx.update).not.toHaveBeenCalled();
+  });
+
+  it('판매 창고가 없으면 켤 수 있다', async () => {
+    const { manager, setPayloads } = makeManager(0);
+
+    await manager.update(TARGET, { isSellable: true });
+
+    expect(setPayloads[0]).toMatchObject({ isSellable: true });
+  });
+
+  it('isSellable 이 없는 수정은 유일성 가드를 타지 않는다', async () => {
+    const { manager, countSellableExcluding, setPayloads } = makeManager(1);
+
+    await manager.update(TARGET, { name: '이름만 변경' });
+
+    expect(countSellableExcluding).not.toHaveBeenCalled();
+    expect(setPayloads[0]).toMatchObject({ name: '이름만 변경' });
   });
 });

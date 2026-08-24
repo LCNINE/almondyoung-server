@@ -1,6 +1,5 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DbTx } from '../../schema/inventory.schema';
-import { WarehouseType } from '../../core/constants/warehouse.constants';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseReader } from './warehouse.reader';
@@ -29,12 +28,9 @@ export class WarehouseService implements OnModuleInit {
     return this.reader.getStockSummary(id);
   }
 
-  getDefaultId(): string {
-    return this.reader.getDefaultId();
-  }
-
-  getDefaultIdByType(type: WarehouseType): string {
-    return this.reader.getDefaultIdByType(type);
+  /** 판매 창고 id. 자세한 의미는 WarehouseReader.getDefaultId 참고. */
+  getDefaultId(tx?: DbTx): Promise<string> {
+    return this.reader.getDefaultId(tx);
   }
 
   create(dto: CreateWarehouseDto, tx?: DbTx) {

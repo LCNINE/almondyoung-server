@@ -111,10 +111,13 @@ export class FulfillmentOrderCreationBacklogWorker {
         return;
       }
 
+      // 같은 트랜잭션에서 읽는다 — 판매 창고 전환과 이 생성이 겹칠 때 서로 다른
+      // 스냅샷을 보고 엇갈리지 않게 한다.
+      const warehouseId = await this.warehouses.getDefaultId(tx);
       const fulfillmentOrder = await this.fulfillments.create(
         {
           salesOrderId: backlog.salesOrderId,
-          warehouseId: this.warehouses.getDefaultId(),
+          warehouseId,
           shippingAddress: salesOrder.shippingAddress as any,
         },
         tx,
