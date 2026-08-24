@@ -20,10 +20,10 @@ export default async function UnavailableItemsNotice({
   return (
     <main className="flex min-h-[100dvh] flex-col items-center justify-center px-6 py-16">
       <div className="flex w-full max-w-sm flex-col items-center">
-        <h1 className="text-center text-[22px] leading-snug font-semibold tracking-tight text-gray-900 break-keep sm:text-[26px]">
+        <h1 className="text-center text-[22px] leading-snug font-bold tracking-tight break-keep text-gray-900 sm:text-[26px]">
           {t("title")}
         </h1>
-        <p className="mt-3 text-center text-[15px] leading-relaxed text-gray-500 break-keep sm:text-base">
+        <p className="mt-3 text-center text-[15px] leading-relaxed break-keep text-gray-500 sm:text-base">
           {t("description")}
         </p>
 
@@ -32,7 +32,7 @@ export default async function UnavailableItemsNotice({
             {names.map((name, index) => (
               <li
                 key={index}
-                className="rounded-xl bg-gray-50 px-4 py-3 text-center text-sm font-medium text-gray-800 break-keep"
+                className="rounded-xl bg-gray-50 px-4 py-3 text-center text-sm font-medium break-keep text-gray-800"
               >
                 {name}
               </li>
@@ -42,7 +42,7 @@ export default async function UnavailableItemsNotice({
 
         <LocalizedClientLink
           href="/cart"
-          className="mt-8 w-full rounded-xl bg-[#ff6600] px-10 py-4 text-center text-[15px] font-semibold text-white transition-colors hover:bg-[#e14d00] sm:text-base"
+          className="mt-8 w-full rounded-xl bg-[#ff6600] px-10 py-4 text-center text-[15px] font-medium text-white transition-colors hover:bg-[#e14d00] sm:text-base"
         >
           {t("goToCart")}
         </LocalizedClientLink>

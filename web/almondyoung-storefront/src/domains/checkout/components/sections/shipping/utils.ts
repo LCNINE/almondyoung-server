@@ -1,4 +1,5 @@
 import { StoreCartAddress } from "@medusajs/types"
+import { SHIPPING_MEMO_OPTIONS } from "./constants"
 import type { FormattedAddress, ShippingMemo } from "./types"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import { buildAddressLine } from "@/lib/utils/address-line"
@@ -14,10 +15,7 @@ export const readShippingMemo = (
 })
 
 // 두 배송메모가 완전히 같은지 비교한다. 카트에 이미 같은 값이 있으면 결제 시 재저장을 건너뛰는 데 쓴다.
-export const isSameShippingMemo = (
-  a: ShippingMemo,
-  b: ShippingMemo
-): boolean =>
+export const isSameShippingMemo = (a: ShippingMemo, b: ShippingMemo): boolean =>
   a.type === b.type &&
   a.custom === b.custom &&
   a.hasEntrance === b.hasEntrance &&
@@ -65,4 +63,40 @@ export const formatAddress = (
   })
 
   return { name, phone, postalCode, address1, address2, fullAddress }
+}
+
+export const formatShippingMemo = (
+  memo: ShippingMemo,
+  t: (key: string) => string
+): string => {
+  if (!memo.type) return ""
+
+  if (memo.type === "other") return memo.custom.trim()
+
+  const option = SHIPPING_MEMO_OPTIONS.find((o) => o.value === memo.type)
+  if (!option) return ""
+
+  const label = t(`options.${option.labelKey}`)
+  if (memo.type !== "door") return label
+
+  const password = memo.entrancePassword.trim()
+  if (memo.hasEntrance && password) {
+    return `${label} (${t("entrance.heading")} ${password})`
+  }
+  return label
+}
+
+export type ShippingMemoError =
+  | "selectMemo"
+  | "enterEntrancePw"
+  | "enterCustomMemo"
+
+export const findShippingMemoError = (
+  memo: ShippingMemo
+): ShippingMemoError | null => {
+  if (!memo.type) return "selectMemo"
+  if (memo.type === "other" && !memo.custom.trim()) return "enterCustomMemo"
+  if (memo.type === "door" && memo.hasEntrance && !memo.entrancePassword.trim())
+    return "enterEntrancePw"
+  return null
 }

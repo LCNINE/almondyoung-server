@@ -55,9 +55,14 @@ export default function MembershipCheckoutTemplate({
 
   const attemptPayment = async () => {
     const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-    const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, "one_time")
+    const { intentId } = await createMembershipCheckoutIntent(
+      planId,
+      returnUrl,
+      "one_time"
+    )
     setPendingPaymentMode("membership", { planId, billingMode: "one_time" })
-    const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+    const walletWebUrl =
+      process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
     window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
   }
 
@@ -140,7 +145,9 @@ export default function MembershipCheckoutTemplate({
                   <p className="text-sm text-gray-500">
                     {t("selectedPlanLabel")}
                   </p>
-                  <p className="text-lg font-semibold text-gray-900">{planName}</p>
+                  <p className="text-lg font-semibold text-gray-900">
+                    {planName}
+                  </p>
                 </div>
                 <p className="text-xl font-bold text-[#ff6600]">
                   {t("priceWon", { amount: price.toLocaleString() })}
@@ -155,7 +162,9 @@ export default function MembershipCheckoutTemplate({
               </h2>
 
               <div className="space-y-2 text-sm text-gray-600">
-                <p className="font-medium text-gray-800">{t("oneTimeHeader")}</p>
+                <p className="font-medium text-gray-800">
+                  {t("oneTimeHeader")}
+                </p>
                 <ul className="ml-4 list-disc space-y-1 text-gray-600">
                   <li>{t("oneTimeNoAutoPay")}</li>
                   <li>{t("bankTransferDelay")}</li>
@@ -220,7 +229,12 @@ export default function MembershipCheckoutTemplate({
         totals={totals}
         disabled={!agreed}
       />
-      <MobileCTA onPayment={handlePayment} loading={loading} disabled={!agreed} />
+      <MobileCTA
+        onPayment={handlePayment}
+        loading={loading}
+        totals={totals}
+        disabled={!agreed}
+      />
     </main>
   )
 }

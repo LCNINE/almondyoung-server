@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   confirmPaymentIntent,
@@ -21,21 +21,26 @@ import type {
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { AlertCircle, Lock, RefreshCw, ShoppingBag } from 'lucide-react';
 import {
-  Lock,
-  CreditCard,
-  Smartphone,
-  Wallet,
-  AlertCircle,
-  ShoppingBag,
-  ChevronRight,
-  Coins,
-  RefreshCw,
-  Landmark,
-} from 'lucide-react';
+  buildStorefrontOrderListUrl,
+  formatAmount,
+  formatExpiry,
+  isBankTransferPendingAction,
+  type BankTransferPendingAction,
+} from '@/components/payment/utils';
+import { PointsCard } from '@/components/payment/points-card';
+import { PaymentMethodCard } from '@/components/payment/payment-method-card';
+import { TossSubMethodCard, type TossSubMethod } from '@/components/payment/toss-submethod-card';
+import {
+  CashReceiptCard,
+  EMPTY_CASH_RECEIPT,
+  buildCashReceipt,
+  saveCashReceiptPreference,
+  type CashReceiptState,
+} from '@/components/payment/cash-receipt-card';
+import { BankTransferPending } from '@/components/payment/bank-transfer-pending';
 
 interface Props {
   intent: PaymentIntent;
@@ -59,87 +64,12 @@ interface Props {
   depositAccount?: BankTransferDepositAccount | null;
 }
 
-interface BankTransferPendingAction {
-  type: 'BANK_TRANSFER_PENDING';
-  bankName?: string;
-  accountNumber?: string;
-  accountHolder?: string;
-  amount?: number;
-  currency?: string;
-}
-
-function getMethodIcon(type: string): ReactNode {
-  switch (type) {
-    case 'TOSS':
-      return <Smartphone className="w-5 h-5" />;
-    case 'CARD':
-      return <CreditCard className="w-5 h-5" />;
-    case 'BALANCE':
-      return <Wallet className="w-5 h-5" />;
-    case 'BANK_TRANSFER':
-      return <Landmark className="w-5 h-5" />;
-    default:
-      return <CreditCard className="w-5 h-5" />;
-  }
-}
-
-// region(countryCode)별 사람이 읽는 이름. 미정의 코드는 코드 그대로(대문자) 표시한다.
-const REGION_LABELS: Record<string, string> = {
-  kr: '대한민국',
-  jp: '일본',
-  us: '미국',
-};
-
-// 빈 결제수단 안내에서 "어느 지역으로 들어왔는지"를 명확히 보여주기 위한 라벨.
-// 예: jp → "일본(JP)", fr → "FR". region 이 없으면 null.
-function getRegionLabel(region?: string | null): string | null {
-  const code = region?.trim();
-  if (!code) return null;
-  const upper = code.toUpperCase();
-  const name = REGION_LABELS[code.toLowerCase()];
-  return name ? `${name}(${upper})` : upper;
-}
-
-function formatAmount(amount: number, currency: string): string {
-  if (currency === 'KRW') {
-    return `${amount.toLocaleString('ko-KR')}원`;
-  }
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
-}
-
 function buildPayPath(intentId: string, region?: string | null, extra?: Record<string, string>) {
   const params = new URLSearchParams(extra);
   if (region) params.set('region', region);
   const query = params.toString();
   return `/pay/${intentId}${query ? `?${query}` : ''}`;
 }
-
-/**
- * 무통장입금 대기 화면에서 storefront 주문내역으로 보내기 위한 URL 을 구성한다.
- * wallet-web 과 storefront 는 서로 다른 origin 이므로 intent.returnUrl(스토어프론트 origin 포함)에서
- * origin 을 가져오고 region(countryCode)으로 경로를 만든다. returnUrl 이 없으면 null.
- */
-function buildStorefrontOrderListUrl(returnUrl?: string | null, region?: string | null): string | null {
-  if (!returnUrl) return null;
-  try {
-    const url = new URL(returnUrl);
-    const firstSegment = url.pathname.split('/').filter(Boolean)[0];
-    const countryCode = (region?.trim() || firstSegment || 'kr').toLowerCase();
-    // 스토어프론트가 이 표시를 보고 주문이 아직 안 보이면 잠깐 자동 재조회한다(고객이 직접 새로고침하지 않도록).
-    return `${url.origin}/${countryCode}/mypage/order/list?justOrdered=1`;
-  } catch {
-    return null;
-  }
-}
-
-function isBankTransferPendingAction(value: unknown): value is BankTransferPendingAction {
-  return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
-}
-
-// PG(토스페이먼츠)에는 카드결제만 요청한다. (휴대폰/계좌이체/가상계좌 비노출)
-// 라벨은 상위 결제수단('카드 간편결제', provider-descriptors 정본)과 겹치지 않게 형제 수단 이름으로만 적는다.
-const TOSS_SUB_METHODS = [{ value: 'CARD' as const, label: '카드', desc: '신용·체크카드 및 간편결제' }] as const;
-type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
 
 export function PayForm({
   intent,
@@ -155,7 +85,6 @@ export function PayForm({
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
-  const regionLabel = getRegionLabel(region);
 
   // 멤버십(MEMBERSHIP_FEE)은 무통장(가상계좌) 결제만 허용한다 — 카드/간편결제 비노출.
   // 무통장은 자동갱신 불가라 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
@@ -176,8 +105,7 @@ export function PayForm({
   const availablePoints = pointsAllowedInRegion ? pointsBalance.available : 0;
 
   const [selectedMethodId, setSelectedMethodId] = useState<string>(externalMethods[0]?.id ?? '');
-  const [usePoints, setUsePoints] = useState(false);
-  const [pointsAmount, setPointsAmount] = useState(0);
+  const [pointsUsed, setPointsUsed] = useState(0);
   const [tossSubMethod, setTossSubMethod] = useState<TossSubMethod>('CARD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -195,32 +123,10 @@ export function PayForm({
       : null,
   );
   // 증빙 신청 (무통장입금 시) — 현금영수증만. 입금확인 완료 시 자동 발급.
-  const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE'>('NONE');
-  // 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용)
-  const [cashReceiptMethod, setCashReceiptMethod] = useState<'PHONE' | 'CARD'>('PHONE');
-  const [cashReceiptNumber, setCashReceiptNumber] = useState('');
+  const [cashReceiptState, setCashReceiptState] = useState<CashReceiptState>(EMPTY_CASH_RECEIPT);
 
   const userPhone = (businessInfo?.phoneNumber ?? '').replace(/[^0-9]/g, '');
   const userBizNumber = businessInfo?.businessNumber ?? '';
-
-  // 증빙 종류 선택 시 번호 prefill: 소득공제·휴대폰 → 사용자 휴대폰, 지출증빙 → 사업자번호.
-  function handleEvidenceChange(next: typeof evidenceType) {
-    setEvidenceType(next);
-    if (next === 'CASH_INCOME') {
-      setCashReceiptMethod('PHONE');
-      setCashReceiptNumber(userPhone);
-    } else if (next === 'CASH_EXPENSE') {
-      setCashReceiptNumber(userBizNumber);
-    } else {
-      setCashReceiptNumber('');
-    }
-  }
-
-  // 소득공제 발급방법 변경: 휴대폰 → 사용자 휴대폰 prefill, 현금영수증카드 → 비움(수동 입력).
-  function handleCashMethodChange(method: 'PHONE' | 'CARD') {
-    setCashReceiptMethod(method);
-    setCashReceiptNumber(method === 'PHONE' ? userPhone : '');
-  }
 
   // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
   // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
@@ -246,62 +152,52 @@ export function PayForm({
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
   const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
+  const methodExtrasRef = useRef<HTMLDivElement>(null);
+
+  const revealMethodExtras = () => {
+    setTimeout(() => {
+      const el = methodExtrasRef.current;
+      if (el?.childElementCount) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 0);
+  };
+
+  const handleSelectMethod = (id: string) => {
+    setSelectedMethodId(id);
+    revealMethodExtras();
+  };
+
+  // 증빙을 신청하면 입력 폼이 펼쳐지면서 고정 CTA 뒤로 밀린다. 같이 끌어올린다.
+  const handleCashReceiptChange = (next: CashReceiptState) => {
+    if (next.evidenceType !== cashReceiptState.evidenceType) revealMethodExtras();
+    setCashReceiptState(next);
+  };
+
   const isRecurring = intent.metadata?.billingMode === 'recurring';
   // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 멤버십은 적립 혜택 대상이 아니다.
   const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
-  const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
-
-  function handleTogglePoints(checked: boolean) {
-    setUsePoints(checked);
-    if (checked) {
-      setPointsAmount(maxPoints);
-    } else {
-      setPointsAmount(0);
-    }
-  }
-
-  function handlePointsAmountChange(raw: string) {
-    const parsed = parseInt(raw, 10);
-    if (isNaN(parsed) || parsed < 0) {
-      setPointsAmount(0);
-      return;
-    }
-    setPointsAmount(Math.min(parsed, maxPoints));
-  }
+  const remainingAmount = intent.payableAmount - pointsUsed;
 
   async function handleConfirm() {
-    const pts = usePoints ? pointsAmount : 0;
+    const pts = pointsUsed;
     const remaining = intent.payableAmount - pts;
     if (remaining > 0 && !selectedMethodId) {
       setError('결제 수단을 선택해주세요.');
       return;
     }
-    // 무통장 + 증빙 신청 검증 (현금영수증/세금계산서 택일)
-    let cashReceipt: { type: '소득공제' | '지출증빙'; customerIdentityNumber: string } | undefined;
+    // 무통장 + 증빙 신청 검증
+    let cashReceipt;
     if (isBankTransferSelected) {
-      if (evidenceType === 'CASH_INCOME') {
-        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
-        if (cashReceiptMethod === 'PHONE' && (digits.length < 10 || digits.length > 11)) {
-          setError('휴대폰번호를 정확히 입력해주세요.');
-          return;
-        }
-        if (cashReceiptMethod === 'CARD' && (digits.length < 13 || digits.length > 19)) {
-          setError('현금영수증 카드번호를 정확히 입력해주세요.');
-          return;
-        }
-        cashReceipt = { type: '소득공제', customerIdentityNumber: digits };
-      } else if (evidenceType === 'CASH_EXPENSE') {
-        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
-        if (digits.length !== 10) {
-          setError('사업자등록번호를 정확히 입력해주세요 (10자리).');
-          return;
-        }
-        cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
-        // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
-        if (!userBizNumber && window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')) {
-          void saveMyBusinessNumber(digits);
-        }
+      const built = buildCashReceipt(cashReceiptState, userBizNumber);
+      if (!built.ok) {
+        setError(built.error);
+        return;
+      }
+      cashReceipt = built.cashReceipt;
+      // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
+      saveCashReceiptPreference(cashReceiptState);
+      if (built.offerSaveBizNumber && cashReceipt) {
+        void saveMyBusinessNumber(cashReceipt.customerIdentityNumber);
       }
     }
     setLoading(true);
@@ -404,90 +300,14 @@ export function PayForm({
   const canConfirm = remainingAmount === 0 || !!selectedMethodId;
 
   if (bankTransferPending) {
-    const orderListUrl = buildStorefrontOrderListUrl(intent.returnUrl, region);
     return (
-      <div className="min-h-screen bg-muted/40">
-        <div className="border-b bg-card">
-          <div className="flex items-center justify-center gap-1.5 py-2.5">
-            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-          </div>
-        </div>
-
-        <div className="mx-auto flex min-h-[calc(100vh-41px)] max-w-md items-center px-4 py-8">
-          <Card className="w-full border shadow-sm border-border/60">
-            <CardContent className="p-6 space-y-5">
-              <div className="flex items-start gap-3">
-                <div className="flex items-center justify-center rounded-full h-11 w-11 shrink-0 bg-primary/10 text-primary">
-                  <Landmark className="w-5 h-5" />
-                </div>
-                <div className="space-y-1">
-                  <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
-                  <p className="text-sm text-muted-foreground">
-                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 입금 확인 후 배송이
-                    진행됩니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있어요.
-                  </p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <dl className="space-y-3 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">입금 금액</dt>
-                  <dd className="font-semibold">
-                    {formatAmount(
-                      bankTransferPending.amount ?? remainingAmount,
-                      bankTransferPending.currency ?? intent.currency,
-                    )}
-                  </dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">은행</dt>
-                  <dd className="font-medium text-right">{bankTransferPending.bankName || '-'}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">계좌번호</dt>
-                  <dd className="font-mono font-medium text-right">{bankTransferPending.accountNumber || '-'}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">예금주</dt>
-                  <dd className="font-medium text-right">{bankTransferPending.accountHolder || '-'}</dd>
-                </div>
-              </dl>
-
-              <Alert className="break-keep">
-                <AlertCircle className="w-4 h-4" />
-                <AlertDescription className="break-keep">
-                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
-                  <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
-                  자동으로 결제가 완료됩니다.
-                </AlertDescription>
-              </Alert>
-
-              <div className="p-3 space-y-1 text-xs rounded-md bg-muted/50 text-muted-foreground break-keep">
-                <p>· 입금 기한(7일) 내 미입금 시 주문은 자동 취소됩니다.</p>
-                <p>· 입금 후 취소·환불은 주문 내역에서 직접 신청하실 수 있으며, 영업일 기준 약 2일 소요됩니다.</p>
-              </div>
-
-              <div className="space-y-2">
-                {orderListUrl && (
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      window.location.href = orderListUrl;
-                    }}
-                  >
-                    주문 내역에서 확인
-                  </Button>
-                )}
-                <Button variant="outline" className="w-full" onClick={() => router.refresh()}>
-                  결제 상태 새로고침
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+      <BankTransferPending
+        pending={bankTransferPending}
+        fallbackAmount={remainingAmount}
+        fallbackCurrency={intent.currency}
+        orderListUrl={buildStorefrontOrderListUrl(intent.returnUrl, region)}
+        onRefresh={() => router.refresh()}
+      />
     );
   }
 
@@ -506,40 +326,57 @@ export function PayForm({
           {/* 좌측 패널: 주문 요약 */}
           <div className="w-full md:w-[380px] md:shrink-0">
             <Card className="border shadow-sm border-border/60">
-              <CardContent className="p-6 space-y-4">
-                <div className="flex items-center gap-2">
-                  <ShoppingBag className="w-4 h-4 text-muted-foreground" />
-                  <span className="font-mono text-sm text-muted-foreground">#{intent.id.slice(-8).toUpperCase()}</span>
+              <CardContent className="space-y-5 p-6">
+                <div className="space-y-2">
+                  {typeof intent.metadata?.orderName === 'string' && (
+                    <p className="text-[17px] leading-snug font-bold break-keep text-foreground">
+                      {intent.metadata.orderName}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ShoppingBag className="h-3.5 w-3.5" />
+                    <span>주문번호 {intent.id.slice(-8).toUpperCase()}</span>
+                  </div>
                 </div>
-                {typeof intent.metadata?.orderName === 'string' && (
-                  <p className="text-sm font-medium">{intent.metadata.orderName}</p>
-                )}
+
                 {isRecurring && (
                   <div className="flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
                     <RefreshCw className="w-3 h-3" />
                     정기결제 · 매월 자동갱신
                   </div>
                 )}
+
                 <Separator />
-                <div>
-                  <p className="mb-1 text-xs text-muted-foreground">결제 금액</p>
+
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">결제 금액</p>
                   {/* 포인트를 쓰면 실제 낼 돈은 총액이 아니다. 큰 숫자를 실결제액으로 두고
                       총액은 취소선으로 남긴다(무통장은 이 금액 그대로 입금해야 함). */}
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-3xl font-bold tracking-tight whitespace-nowrap text-foreground">
+                      {formatAmount(remainingAmount, intent.currency)}
+                    </span>
+                    {remainingAmount !== intent.payableAmount && (
+                      <span className="text-sm whitespace-nowrap line-through text-muted-foreground">
+                        {formatAmount(intent.payableAmount, intent.currency)}
+                      </span>
+                    )}
+                  </div>
                   {remainingAmount !== intent.payableAmount && (
-                    <p className="text-sm line-through text-muted-foreground">
-                      {formatAmount(intent.payableAmount, intent.currency)}
+                    <p className="text-xs font-medium text-primary">
+                      포인트 {formatAmount(intent.payableAmount - remainingAmount, intent.currency)} 사용
                     </p>
                   )}
-                  <p className="text-3xl font-bold">{formatAmount(remainingAmount, intent.currency)}</p>
                 </div>
-                {intent.expiresAt && (
-                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
-                    만료: {new Date(intent.expiresAt).toLocaleString('ko-KR')}
-                  </p>
-                )}
-                <div className="flex items-center gap-1.5 pt-1">
-                  <Lock className="w-3 h-3 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">SSL 암호화로 보호됩니다</span>
+
+                <div className="space-y-1.5 border-t border-border/60 pt-4 text-xs text-muted-foreground">
+                  {intent.expiresAt && (
+                    <p suppressHydrationWarning>{formatExpiry(intent.expiresAt)}까지 결제해주세요</p>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="h-3 w-3" />
+                    <span>SSL 암호화로 보호됩니다</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -547,263 +384,41 @@ export function PayForm({
 
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
-            {/* 포인트 사용 카드 */}
             {!isZeroAmount && !isMembership && (
-              <Card className="border shadow-sm border-border/60">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Coins className="w-4 h-4 text-muted-foreground" />
-                      <span className="text-sm font-semibold">포인트 사용</span>
-                    </div>
-                    <span className="text-sm text-muted-foreground">
-                      보유: {availablePoints.toLocaleString('ko-KR')}P
-                    </span>
-                  </div>
-
-                  {availablePoints === 0 ? (
-                    <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
-                  ) : (
-                    <div className="space-y-3">
-                      <label className="flex items-center gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={usePoints}
-                          onChange={(e) => handleTogglePoints(e.target.checked)}
-                          className="w-4 h-4 rounded border-border"
-                        />
-                        <span className="text-sm">포인트 사용하기</span>
-                      </label>
-
-                      {usePoints && (
-                        <div className="space-y-2 pl-7">
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min={0}
-                              max={maxPoints}
-                              value={pointsAmount}
-                              onChange={(e) => handlePointsAmountChange(e.target.value)}
-                              className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                            />
-                            <span className="text-sm text-muted-foreground">P</span>
-                            <button
-                              type="button"
-                              onClick={() => setPointsAmount(maxPoints)}
-                              className="text-xs text-primary hover:underline"
-                            >
-                              전액 사용
-                            </button>
-                          </div>
-                          {remainingAmount > 0 ? (
-                            <p className="text-xs text-muted-foreground">
-                              {formatAmount(remainingAmount, intent.currency)} 추가 결제
-                            </p>
-                          ) : (
-                            <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <PointsCard
+                availablePoints={availablePoints}
+                maxPoints={maxPoints}
+                pointsAmount={pointsUsed}
+                onAmountChange={setPointsUsed}
+              />
             )}
 
-            {/* 결제수단 선택 카드 (잔액이 있을 때만 표시) */}
+            {/* 결제수단 선택 (잔액이 있을 때만 표시) */}
             {remainingAmount > 0 && (
-              <Card className="border shadow-sm border-border/60">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-semibold">결제 수단 선택</span>
-                    <Badge variant="secondary" className="text-xs">
-                      {externalMethods.length}
-                    </Badge>
-                  </div>
-                  {externalMethods.length === 0 ? (
-                    <div className="flex flex-col items-center gap-2 py-8 text-center">
-                      <CreditCard className="w-8 h-8 text-muted-foreground/50" />
-                      <p className="text-sm text-muted-foreground">
-                        {Array.isArray(availableMethods)
-                          ? regionLabel
-                            ? `${regionLabel} 지역에서 사용 가능한 결제수단이 없습니다. 관리자에게 문의해주세요.`
-                            : '이 지역에서 사용 가능한 결제수단이 없습니다. 관리자에게 문의해주세요.'
-                          : '사용 가능한 결제 수단이 없습니다.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {externalMethods.map((m) => {
-                        const isSelected = selectedMethodId === m.id;
-                        return (
-                          <button
-                            key={m.id}
-                            onClick={() => setSelectedMethodId(m.id)}
-                            className={[
-                              'w-full flex items-center gap-3 rounded-lg border px-4 py-3.5 text-left transition-colors',
-                              isSelected
-                                ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                                : 'border-border bg-background hover:bg-accent/50',
-                            ].join(' ')}
-                          >
-                            {/* 커스텀 라디오 점 */}
-                            <div
-                              className={[
-                                'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                                isSelected ? 'border-primary' : 'border-muted-foreground/40',
-                              ].join(' ')}
-                            >
-                              {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                            </div>
-                            {/* 아이콘 박스 */}
-                            <div className="flex items-center justify-center rounded-md h-9 w-9 shrink-0 bg-muted text-muted-foreground">
-                              {getMethodIcon(m.type)}
-                            </div>
-                            <span className="flex-1">
-                              <span className="block text-sm font-medium">
-                                {availableMethodMap?.get(m.type)?.displayName || m.displayName || m.type}
-                              </span>
-                              {availableMethodMap?.get(m.type)?.description && (
-                                <span className="mt-0.5 block text-xs text-muted-foreground">
-                                  {availableMethodMap.get(m.type)?.description}
-                                </span>
-                              )}
-                            </span>
-                            {/* 선택 시 chevron */}
-                            {isSelected && <ChevronRight className="w-4 h-4 text-primary" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+              <PaymentMethodCard
+                methods={externalMethods}
+                availableMethodMap={availableMethodMap}
+                regionFilterApplied={Array.isArray(availableMethods)}
+                region={region}
+                selectedMethodId={selectedMethodId}
+                onSelect={handleSelectMethod}
+              />
             )}
 
-            {/* Toss 결제 방식 선택 (TOSS 수단 선택 시). 카드 단일이면 선택 UI 숨김 */}
-            {remainingAmount > 0 && isTossSelected && TOSS_SUB_METHODS.length > 1 && (
-              <Card className="border shadow-sm border-border/60">
-                <CardContent className="p-6">
-                  <span className="block mb-4 text-sm font-semibold">결제 방식 선택</span>
-                  <div className="space-y-2">
-                    {TOSS_SUB_METHODS.map(({ value, label, desc }) => {
-                      const isSelected = tossSubMethod === value;
-                      return (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setTossSubMethod(value)}
-                          className={[
-                            'w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors',
-                            isSelected
-                              ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                              : 'border-border bg-background hover:bg-accent/50',
-                          ].join(' ')}
-                        >
-                          <div
-                            className={[
-                              'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                              isSelected ? 'border-primary' : 'border-muted-foreground/40',
-                            ].join(' ')}
-                          >
-                            {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
-                          </div>
-                          <div>
-                            <span className="text-sm font-medium">{label}</span>
-                            <span className="ml-2 text-xs text-muted-foreground">{desc}</span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+            <div ref={methodExtrasRef} className="empty:hidden space-y-4 scroll-mb-32 md:scroll-mb-0">
+              {remainingAmount > 0 && isTossSelected && (
+                <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
+              )}
 
-            {/* 증빙 신청 (무통장입금 선택 시) — 현금영수증/세금계산서 택일 */}
-            {remainingAmount > 0 && isBankTransferSelected && (
-              <Card className="border shadow-sm border-border/60">
-                <CardContent className="p-6">
-                  <span className="block mb-4 text-sm font-semibold">증빙 신청 (선택)</span>
-
-                  {/* 증빙 종류 select */}
-                  <div className="flex items-center gap-3">
-                    <label className="w-20 text-sm shrink-0 text-muted-foreground">증빙</label>
-                    <Select value={evidenceType} onValueChange={(v) => handleEvidenceChange(v as typeof evidenceType)}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="NONE">신청 안 함</SelectItem>
-                        <SelectItem value="CASH_INCOME">현금영수증 (개인소득공제용)</SelectItem>
-                        <SelectItem value="CASH_EXPENSE">현금영수증 (사업자지출증빙용)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* 소득공제: 발급방법(휴대폰/현금영수증카드) + 번호 */}
-                  {evidenceType === 'CASH_INCOME' && (
-                    <div className="mt-3 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 text-sm shrink-0 text-muted-foreground">발급방법</label>
-                        <div className="flex gap-4 text-sm">
-                          <label className="flex items-center gap-1.5">
-                            <input
-                              type="radio"
-                              name="cashMethod"
-                              checked={cashReceiptMethod === 'PHONE'}
-                              onChange={() => handleCashMethodChange('PHONE')}
-                            />
-                            휴대폰
-                          </label>
-                          <label className="flex items-center gap-1.5">
-                            <input
-                              type="radio"
-                              name="cashMethod"
-                              checked={cashReceiptMethod === 'CARD'}
-                              onChange={() => handleCashMethodChange('CARD')}
-                            />
-                            현금영수증카드
-                          </label>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 text-sm shrink-0 text-muted-foreground">
-                          {cashReceiptMethod === 'PHONE' ? '휴대폰' : '카드번호'}
-                        </label>
-                        <input
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={cashReceiptNumber}
-                          onChange={(e) => setCashReceiptNumber(e.target.value)}
-                          placeholder={cashReceiptMethod === 'PHONE' ? '01012345678' : '현금영수증 카드번호'}
-                          className="flex-1 px-3 py-2 text-sm border rounded-md"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
-                    </div>
-                  )}
-
-                  {/* 지출증빙: 사업자번호 */}
-                  {evidenceType === 'CASH_EXPENSE' && (
-                    <div className="mt-3 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 text-sm shrink-0 text-muted-foreground">사업자번호</label>
-                        <input
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={cashReceiptNumber}
-                          onChange={(e) => setCashReceiptNumber(e.target.value)}
-                          placeholder="사업자등록번호 (1234567890)"
-                          className="flex-1 px-3 py-2 text-sm border rounded-md"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+              {remainingAmount > 0 && isBankTransferSelected && (
+                <CashReceiptCard
+                  value={cashReceiptState}
+                  onChange={handleCashReceiptChange}
+                  userPhone={userPhone}
+                  userBizNumber={userBizNumber}
+                />
+              )}
+            </div>
 
             {/* 에러 */}
             {error && (
@@ -814,7 +429,8 @@ export function PayForm({
             )}
 
             {/* CTA */}
-            <div className="space-y-2">
+            {/* 모바일은 카드가 세로로 쌓여 결제 버튼이 폴드 아래로 내려간다. 하단에 고정한다. */}
+            <div className="bg-background border-border sticky bottom-0 -mx-4 space-y-2 border-t px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:pt-0 md:pb-0">
               <Button
                 onClick={handleConfirm}
                 disabled={loading || !canConfirm}

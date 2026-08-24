@@ -13,7 +13,8 @@
     "breadcrumbCurrent": "주문/결제",
     "breadcrumbDone": "완료",
     "mobileTitle": "주문서 작성",
-    "closeAria": "닫기"
+    "closeAria": "닫기",
+    "breadcrumbCart": "장바구니"
   },
   "cta": {
     "mobileAgreement": "위 필수 동의 항목에 모두 동의해야 결제할 수 있어요.",
@@ -46,7 +47,19 @@
       "shippingFee": "반품비: 단순 변심은 고객 부담(왕복 배송비), 상품 하자·오배송은 회사 부담입니다.",
       "restriction": "철회 제한: 사용·훼손되었거나 시간 경과로 재판매가 어려운 상품, 개봉한 디지털콘텐츠는 청약철회가 제한될 수 있습니다.",
       "viewGuide": "교환·반품 안내 자세히 보기"
-    }
+    },
+    "view": "보기",
+    "docs": {
+      "purchaseTerms": "구매조건 확인 및 결제대행 서비스 약관 동의",
+      "personalInfo": "개인정보 수집 및 이용 안내",
+      "returns": "교환·반품 및 청약철회 안내"
+    },
+    "docTitles": {
+      "terms": "이용약관",
+      "privacy": "개인정보 처리방침",
+      "guide": "교환·반품 안내"
+    },
+    "agreementNotice": "약관 및 주문 내용을 확인하였으며, 정보 제공 등에 동의합니다."
   },
   "shipping": {
     "title": "배송지",
@@ -81,7 +94,11 @@
         "notice": "공동현관 출입번호는 주문하신 상품을 배송하는 용도로만 이용되며, 배송 완료 후 파기하고 늦어도 주문일로부터 14일 이내 삭제됩니다."
       },
       "customPlaceholder": "배송 시 요청사항을 입력해주세요",
-      "customAria": "배송메모 직접 입력"
+      "customAria": "배송메모 직접 입력",
+      "title": "배송 요청사항",
+      "empty": "배송 요청사항을 선택해주세요",
+      "submit": "확인",
+      "closeAria": "닫기"
     },
     "selector": {
       "title": "배송지 선택",
@@ -160,7 +177,8 @@
         "saveFailed": "배송지 저장에 실패했습니다. 다시 시도해주세요.",
         "postcodeLoading": "우편번호 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해주세요."
       }
-    }
+    },
+    "changeAddress": "배송지 변경"
   },
   "customsCode": {
     "title": "개인통관고유부호",
@@ -272,7 +290,8 @@
       "enterEntrancePw": "공동현관 비밀번호를 입력해주세요.",
       "noItems": "결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요.",
       "paymentInitFailed": "결제 세션 초기화에 실패했습니다.",
-      "unknownError": "알 수 없는 오류"
+      "unknownError": "알 수 없는 오류",
+      "enterCustomMemo": "배송 요청사항을 입력해주세요."
     },
     "unavailableItems": {
       "title": "주문할 수 없는 상품이 있어요",
