@@ -91,5 +91,6 @@ export function saveCashReceiptPreference(state: CashReceiptState): void {
     };
     window.localStorage.setItem(PREFERENCE_KEY, JSON.stringify(preference));
   } catch {
+    // localStorage 접근이 차단된 환경(사파리 프라이빗/인앱웹뷰 등). 저장은 편의 기능이라 생략한다.
   }
 }
