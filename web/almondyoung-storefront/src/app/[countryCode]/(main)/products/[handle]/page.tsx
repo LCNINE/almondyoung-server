@@ -11,6 +11,7 @@ import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { toMetaDescription } from "@/lib/seo/meta-description"
 import { isVariantSoldOut } from "@/lib/utils/cart-availability"
 import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
@@ -55,8 +56,18 @@ export async function generateMetadata(props: Props): Promise<Metadata> {
       }
     | null
     | undefined
+  // 상세 HTML 은 Page 도 같은 masterId 로 부르지만 getProductDetailByMasterId 가
+  // React.cache() 라 렌더당 1회만 나간다.
+  const pimMasterId = product.metadata?.pimMasterId as string | undefined
+  const pimDetail = pimMasterId
+    ? await getProductDetailByMasterId(pimMasterId).catch(() => null)
+    : null
+
   const title = seo?.seoTitle || product.title
-  const description = seo?.seoDescription || product.title
+  const description =
+    seo?.seoDescription ||
+    toMetaDescription(pimDetail?.descriptionHtml) ||
+    product.title
 
   return {
     title,

@@ -7,6 +7,7 @@ import {
   serializeAppContext,
 } from "@/lib/app-context/parse"
 import { getBackendBaseUrl } from "@/lib/config/backend"
+import { parseCafe24LegacyUrl } from "@/lib/seo/cafe24-legacy-url"
 
 const MEDUSA_BASE_URL = getBackendBaseUrl("medusa")
 const PUBLISHABLE_API_KEY = process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY
@@ -254,6 +255,20 @@ async function resolveStorefrontNotFound(
  * Middleware to handle region selection and onboarding status.
  */
 export async function middleware(request: NextRequest) {
+  // cafe24 시절 URL 은 구글에 아직 색인돼 있다. 매핑 룩업은 Node 런타임 라우트가 맡는다.
+  const legacy = parseCafe24LegacyUrl(
+    request.nextUrl.pathname,
+    request.nextUrl.searchParams
+  )
+  if (legacy) {
+    const url = new URL(request.url)
+    url.pathname = "/api/legacy-redirect"
+    url.search = ""
+    url.searchParams.set("kind", legacy.kind)
+    url.searchParams.set("value", legacy.value)
+    return NextResponse.rewrite(url)
+  }
+
   const accessToken = request.cookies.get("accessToken")?.value
   const refreshToken = request.cookies.get("refreshToken")?.value
 
