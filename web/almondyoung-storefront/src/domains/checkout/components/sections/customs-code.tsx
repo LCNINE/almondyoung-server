@@ -34,7 +34,7 @@ export function CustomsCodeSection({
       <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] lg:rounded-[10px] lg:px-10 lg:py-8">
         <Label
           htmlFor="personal-customs-code"
-          className="mb-2 block text-[13px] font-medium text-gray-900 lg:text-sm"
+          className="mb-2 block text-[14px] font-medium text-gray-900 lg:text-sm"
         >
           {t("label")} <span className="text-red-500">*</span>
         </Label>
@@ -48,21 +48,21 @@ export function CustomsCodeSection({
           autoComplete="off"
           aria-invalid={!!error}
           className={cn(
-            "h-auto w-full rounded border border-gray-300 px-3 py-2.5 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
+            "h-auto w-full rounded border border-gray-300 px-3 py-2.5 text-[14px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
             error && "border-red-400 focus:border-red-400"
           )}
         />
         {error && (
-          <p className="mt-1.5 text-[11px] text-red-500 lg:text-xs">{error}</p>
+          <p className="mt-1.5 text-[12px] text-red-500 lg:text-xs">{error}</p>
         )}
-        <p className="mt-3 text-[11px] leading-relaxed text-gray-500 lg:text-xs">
+        <p className="mt-3 text-[12px] leading-relaxed text-gray-500 lg:text-xs">
           {t("notice")}
         </p>
         <a
           href={PERSONAL_CUSTOMS_CODE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary mt-2 inline-block text-[12px] font-medium underline underline-offset-2 lg:text-sm"
+          className="text-primary mt-2 inline-block text-[13px] font-medium underline underline-offset-2 lg:text-sm"
         >
           {t("lookupLink")}
         </a>

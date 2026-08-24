@@ -42,7 +42,9 @@ function isKnownReason(r: string | undefined): r is PreviewReasonKey {
   return PREVIEW_REASON_KEYS.includes(r as PreviewReasonKey)
 }
 
-async function tryRestoreTokenAndRedirect(countryCode: string): Promise<boolean> {
+async function tryRestoreTokenAndRedirect(
+  countryCode: string
+): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/restore-token", {
       method: "POST",
@@ -195,7 +197,9 @@ export const DiscountSection = ({
           {selectedCoupon ? (
             <div className="flex items-center justify-between rounded-[5px] border border-[#ff6600] px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-medium lg:text-sm ${couponNotApplied ? "text-gray-400" : "text-[#ff6600]"}`}>
+                <span
+                  className={`text-xs font-medium lg:text-sm ${couponNotApplied ? "text-gray-400" : "text-[#ff6600]"}`}
+                >
                   {couponNotApplied
                     ? t("notApplicable")
                     : (() => {
@@ -206,7 +210,7 @@ export const DiscountSection = ({
                         return formatPromoLabel(promo)
                       })()}
                 </span>
-                <span className="text-[10px] text-gray-500 lg:text-xs">
+                <span className="text-[11px] text-gray-500 lg:text-xs">
                   ({selectedCoupon})
                 </span>
               </div>
@@ -298,7 +302,7 @@ const DiscountRow = ({
         <PriceRow.Label size="sm" weight="medium">
           {label}
         </PriceRow.Label>
-        <PriceRow.Value size="base" weight="semibold">
+        <PriceRow.Value size="base" weight="bold">
           {hasDiscount
             ? t("amountMinusWon", { amount: formatPrice(totalDiscount) })
             : t("zero")}
@@ -505,7 +509,7 @@ const DirectCouponInput = ({
               }}
               onKeyDown={(e) => e.key === "Enter" && handleCheck()}
               placeholder={td("placeholder")}
-              className="h-10 flex-1 text-sm uppercase placeholder:normal-case placeholder:text-gray-400"
+              className="h-10 flex-1 text-sm uppercase placeholder:text-gray-400 placeholder:normal-case"
             />
             <Button
               type="button"
@@ -535,10 +539,14 @@ const DirectCouponInput = ({
                       {discountLabel ?? td("confirmed")}
                     </span>
                     {!preview.claimable && (
-                      <span className="text-xs text-green-600">{td("confirmHint")}</span>
+                      <span className="text-xs text-green-600">
+                        {td("confirmHint")}
+                      </span>
                     )}
                     {preview.claimable && (
-                      <span className="text-green-700">{td("claimableHint")}</span>
+                      <span className="text-green-700">
+                        {td("claimableHint")}
+                      </span>
                     )}
                     {preview.promotion?.expires_at && (
                       <span className="text-green-600">

@@ -13,7 +13,8 @@
     "breadcrumbCurrent": "注文・決済",
     "breadcrumbDone": "完了",
     "mobileTitle": "注文書作成",
-    "closeAria": "閉じる"
+    "closeAria": "閉じる",
+    "breadcrumbCart": "カート"
   },
   "cta": {
     "mobileAgreement": "上記の必須同意項目にすべて同意すると決済に進めます。",
@@ -46,7 +47,19 @@
       "shippingFee": "返品送料：お客様都合の場合はお客様負担（往復送料）、商品不良・誤配送の場合は当社負担です。",
       "restriction": "撤回の制限：使用・毀損された商品、時間の経過により再販売が困難な商品、開封済みのデジタルコンテンツは申込撤回が制限される場合があります。",
       "viewGuide": "交換・返品案内を詳しく見る"
-    }
+    },
+    "view": "見る",
+    "docs": {
+      "purchaseTerms": "購入条件の確認および決済代行サービス利用規約への同意",
+      "personalInfo": "個人情報の収集・利用に関するご案内",
+      "returns": "交換・返品およびクーリングオフのご案内"
+    },
+    "docTitles": {
+      "terms": "利用規約",
+      "privacy": "個人情報処理方針",
+      "guide": "交換・返品案内"
+    },
+    "agreementNotice": "規約および注文内容を確認し、情報提供等に同意します。"
   },
   "shipping": {
     "title": "配送先",
@@ -81,7 +94,11 @@
         "notice": "共同玄関の暗証番号は注文商品の配送のためにのみ利用され、配送完了時に破棄され、遅くても注文日から14日以内に削除されます。"
       },
       "customPlaceholder": "配送時のご要望を入力してください",
-      "customAria": "配送メモ直接入力"
+      "customAria": "配送メモ直接入力",
+      "title": "配送リクエスト",
+      "empty": "配送リクエストを選択してください",
+      "submit": "確認",
+      "closeAria": "閉じる"
     },
     "selector": {
       "title": "配送先選択",
@@ -160,7 +177,8 @@
         "saveFailed": "配送先の保存に失敗しました。もう一度お試しください。",
         "postcodeLoading": "郵便番号検索サービスを読み込んでいます。しばらくしてからもう一度お試しください。"
       }
-    }
+    },
+    "changeAddress": "配送先変更"
   },
   "customsCode": {
     "title": "個人通関固有符号",
@@ -272,7 +290,8 @@
       "enterEntrancePw": "共同玄関の暗証番号を入力してください。",
       "noItems": "決済する商品がありません。カートに戻って商品を選択してください。",
       "paymentInitFailed": "決済セッションの初期化に失敗しました。",
-      "unknownError": "不明なエラー"
+      "unknownError": "不明なエラー",
+      "enterCustomMemo": "配送リクエストを入力してください。"
     },
     "unavailableItems": {
       "title": "ご注文できない商品があります",

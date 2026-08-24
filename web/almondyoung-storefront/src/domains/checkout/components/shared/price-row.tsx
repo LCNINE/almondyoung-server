@@ -10,10 +10,10 @@ type Size = "xs" | "sm" | "base" | "lg"
 type LabelTone = "default" | "muted" | "sub" | "membership" | "accent"
 type ValueTone = "default" | "muted" | "membership" | "discount"
 type Weight = "normal" | "medium" | "semibold" | "bold"
-type Highlight = "none" | "beige"
+type Highlight = "none" | "beige" | "total"
 
 const sizeClass: Record<Size, string> = {
-  xs: "text-[10px] lg:text-xs",
+  xs: "text-[11px] lg:text-xs",
   sm: "text-xs lg:text-sm",
   base: "text-sm lg:text-base",
   lg: "text-base lg:text-lg",
@@ -44,6 +44,7 @@ const valueToneClass: Record<ValueTone, string> = {
 const highlightClass: Record<Highlight, string> = {
   none: "",
   beige: "bg-[#FFFBF2] px-4 py-4 lg:px-6",
+  total: "border-t border-gray-200 px-4 py-4 lg:px-6",
 }
 
 interface PriceRowProps extends HTMLAttributes<HTMLDivElement> {

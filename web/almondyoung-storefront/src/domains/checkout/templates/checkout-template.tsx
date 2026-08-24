@@ -4,10 +4,7 @@ import { Banknote, Clock, Coins, Info } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CustomsCodeSection } from "@/domains/checkout/components/sections/customs-code"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
-import {
-  OrderConsentSection,
-  type OrderConsentState,
-} from "@/domains/checkout/components/sections/order-consent"
+import { OrderConsentSection } from "@/domains/checkout/components/sections/order-consent"
 import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
@@ -91,7 +88,6 @@ export default function CheckoutTemplate({
   const tProcess = useTranslations("checkout.process")
   const tCustoms = useTranslations("checkout.customsCode")
   const tNotice = useTranslations("checkout.paymentNotice")
-  const tConsent = useTranslations("checkout.consent")
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -192,12 +188,6 @@ export default function CheckoutTemplate({
   )
   const [customsCodeError, setCustomsCodeError] = useState<string | null>(null)
 
-  const [consent, setConsent] = useState<OrderConsentState>({
-    purchaseTerms: false,
-    personalInfo: false,
-  })
-  const consentGiven = consent.purchaseTerms && consent.personalInfo
-
   const handleCustomsCodeChange = useCallback((value: string) => {
     setPersonalCustomsCode(value)
     setCustomsCodeError((prev) => (prev ? null : prev))
@@ -225,9 +215,6 @@ export default function CheckoutTemplate({
     if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
       setCustomsCodeError(tCustoms("error"))
       return toast.error(tCustoms("error"))
-    }
-    if (!consentGiven) {
-      return toast.error(tConsent("required"))
     }
     processPayment()
   }
@@ -379,90 +366,97 @@ export default function CheckoutTemplate({
   }
 
   return (
-    <main className="w-full min-h-screen bg-muted">
+    <main className="bg-muted min-h-screen w-full">
       <PCHeader />
 
-      <div className="container mx-auto px-4 lg:px-[40px] lg:py-8">
+      <div className="container mx-auto px-4 lg:px-[40px] lg:pt-6 lg:pb-10">
         <MobileHeader onClose={() => router.push(`/${countryCode}/cart`)} />
 
-        <div className="mx-auto lg:max-w-[820px]">
-          {requiresShipping && (
-            <ShippingSection
-              cartId={checkoutCartId}
-              shippingAddress={cart?.shipping_address || null}
-              addressName={
-                cart?.metadata?.shipping_address_name as string | null
-              }
-              shippingMemo={shippingMemo}
-              onShippingMemoChange={handleShippingMemoChange}
+        <div className="lg:mx-auto lg:flex lg:max-w-[1080px] lg:items-start lg:gap-6">
+          <div className="lg:min-w-0 lg:flex-1">
+            {requiresShipping && (
+              <ShippingSection
+                cartId={checkoutCartId}
+                shippingAddress={cart?.shipping_address || null}
+                addressName={
+                  cart?.metadata?.shipping_address_name as string | null
+                }
+                shippingMemo={shippingMemo}
+                onShippingMemoChange={handleShippingMemoChange}
+              />
+            )}
+            {hasOverseasItem && (
+              <CustomsCodeSection
+                value={personalCustomsCode}
+                onChange={handleCustomsCodeChange}
+                error={customsCodeError}
+              />
+            )}
+            <OrderProductsSection
+              products={cartItems}
+              shipping={requiresShipping ? shipping.amount : 0}
+              shippingMethods={cartTotals.shippingBreakdown}
             />
-          )}
-          {hasOverseasItem && (
-            <CustomsCodeSection
-              value={personalCustomsCode}
-              onChange={handleCustomsCodeChange}
-              error={customsCodeError}
+            <DiscountSection
+              cartId={cart.id}
+              isMembership={isMembership}
+              membershipDiscount={cartTotals.membershipDiscount}
+              itemSubtotal={cartTotals.item_subtotal}
+              cartDiscountTotal={cartTotals.discount_subtotal}
+              shipping={shipping}
+              promotions={promotions}
+              appliedPromotionCode={cart.promotions?.[0]?.code}
+              onCouponApplied={() => router.refresh()}
             />
-          )}
-          <OrderProductsSection
-            products={cartItems}
-            shipping={requiresShipping ? shipping.amount : 0}
-            shippingMethods={cartTotals.shippingBreakdown}
-          />
-          <DiscountSection
-            cartId={cart.id}
-            isMembership={isMembership}
-            membershipDiscount={cartTotals.membershipDiscount}
-            itemSubtotal={cartTotals.item_subtotal}
-            cartDiscountTotal={cartTotals.discount_subtotal}
-            shipping={shipping}
-            promotions={promotions}
-            appliedPromotionCode={cart.promotions?.[0]?.code}
-            onCouponApplied={() => router.refresh()}
-          />
-          <PaymentTotalSection totals={cartTotals} />
-          <OrderConsentSection
-            value={consent}
-            onChange={setConsent}
-            hasOverseasItem={hasOverseasItem}
-          />
+            {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
+            <Card className="mb-8 shadow-none">
+              <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-3 lg:p-6 lg:pb-4">
+                <Info className="size-5 shrink-0 text-[#ff6600]" />
+                <CardTitle className="text-base font-bold lg:text-lg">
+                  {tNotice("title")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3 p-4 pt-0 lg:p-6 lg:pt-0">
+                <div className="flex items-start gap-2.5">
+                  <Banknote className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
+                    {tNotice("bankTransfer")}
+                  </p>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Clock className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
+                    {tNotice("bankTransferDelay")}
+                  </p>
+                </div>
+                <div className="flex items-start gap-2.5">
+                  <Coins className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                  <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
+                    {tNotice("points")}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
 
-          {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
-          <Card className="mb-8 shadow-none">
-            <CardHeader className="flex-row items-center gap-2 p-4 pb-3 space-y-0 lg:p-6 lg:pb-4">
-              <Info className="size-5 shrink-0 text-[#ff6600]" />
-              <CardTitle className="text-base font-bold lg:text-lg">
-                {tNotice("title")}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 pt-0 space-y-3 lg:p-6 lg:pt-0">
-              <div className="flex items-start gap-2.5">
-                <Banknote className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
-                <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
-                  {tNotice("bankTransfer")}
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Clock className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
-                <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
-                  {tNotice("bankTransferDelay")}
-                </p>
-              </div>
-              <div className="flex items-start gap-2.5">
-                <Coins className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
-                <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
-                  {tNotice("points")}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+            <div className="hidden lg:block">
+              <OrderConsentSection />
+            </div>
+          </div>
+
+          <div className="lg:sticky lg:top-6 lg:w-[375px] lg:shrink-0">
+            <PaymentTotalSection totals={cartTotals} />
+
+            <div className="lg:hidden">
+              <OrderConsentSection />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* 에러 메시지 표시 */}
       {error && (
-        <div className="fixed z-50 w-full max-w-md mx-4 -translate-x-1/2 top-20 left-1/2">
-          <div className="p-4 text-red-700 bg-red-100 border border-red-400 rounded-lg shadow-lg">
+        <div className="fixed top-20 left-1/2 z-50 mx-4 w-full max-w-md -translate-x-1/2">
+          <div className="rounded-lg border border-red-400 bg-red-100 p-4 text-red-700 shadow-lg">
             <div className="flex items-center justify-between">
               <strong>{tProcess("errorPrefix")}</strong>
               <button
@@ -481,12 +475,11 @@ export default function CheckoutTemplate({
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
-        disabled={!consentGiven}
       />
       <MobileCTA
         onPayment={handlePayment}
         loading={loading}
-        disabled={!consentGiven}
+        totals={cartTotals}
       />
     </main>
   )

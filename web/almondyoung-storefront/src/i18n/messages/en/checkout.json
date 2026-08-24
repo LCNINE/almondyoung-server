@@ -13,7 +13,8 @@
     "breadcrumbCurrent": "Order / Payment",
     "breadcrumbDone": "Done",
     "mobileTitle": "Order details",
-    "closeAria": "Close"
+    "closeAria": "Close",
+    "breadcrumbCart": "Cart"
   },
   "cta": {
     "mobileAgreement": "Agree to all required items above to continue to payment.",
@@ -46,7 +47,19 @@
       "shippingFee": "Return shipping: paid by the customer for a change of mind (round trip); paid by us for defective or incorrectly shipped items.",
       "restriction": "Limits: withdrawal may be restricted for items that are used, damaged, no longer resellable due to elapsed time, or for digital content already opened.",
       "viewGuide": "See full returns and exchanges guide"
-    }
+    },
+    "view": "View",
+    "docs": {
+      "purchaseTerms": "Purchase terms and payment service agreement",
+      "personalInfo": "Collection and use of personal information",
+      "returns": "Returns, exchanges and withdrawal of purchase"
+    },
+    "docTitles": {
+      "terms": "Terms of Service",
+      "privacy": "Privacy Policy",
+      "guide": "Returns & Exchanges"
+    },
+    "agreementNotice": "You have reviewed the terms and order details and agree to the provision of your information."
   },
   "shipping": {
     "title": "Shipping address",
@@ -81,7 +94,11 @@
         "notice": "The entrance code is used only to deliver your order, destroyed upon delivery completion, and deleted no later than 14 days from the order date."
       },
       "customPlaceholder": "Enter delivery requests",
-      "customAria": "Custom delivery memo"
+      "customAria": "Custom delivery memo",
+      "title": "Delivery instructions",
+      "empty": "Choose your delivery instructions",
+      "submit": "Done",
+      "closeAria": "Close"
     },
     "selector": {
       "title": "Select shipping address",
@@ -160,7 +177,8 @@
         "saveFailed": "Failed to save the shipping address. Please try again.",
         "postcodeLoading": "Loading the postal code search service. Please try again shortly."
       }
-    }
+    },
+    "changeAddress": "Change address"
   },
   "customsCode": {
     "title": "Personal Customs Clearance Code",
@@ -272,7 +290,8 @@
       "enterEntrancePw": "Please enter the building entrance code.",
       "noItems": "There are no items to pay for. Go back to the cart and select items.",
       "paymentInitFailed": "Failed to initialize the payment session.",
-      "unknownError": "An unknown error occurred"
+      "unknownError": "An unknown error occurred",
+      "enterCustomMemo": "Please enter your delivery instructions."
     },
     "unavailableItems": {
       "title": "Some items can't be ordered",

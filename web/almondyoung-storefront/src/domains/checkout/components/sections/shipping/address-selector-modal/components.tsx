@@ -87,7 +87,7 @@ export function AddressCard({
               {name}
             </span>
             {address.is_default_shipping ? (
-              <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[11px] font-semibold text-[#2ba24c]">
+              <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[12px] font-medium text-[#2ba24c]">
                 {tShipping("defaultBadge")}
               </span>
             ) : null}
@@ -147,7 +147,13 @@ export function AddressCard({
   )
 }
 
-function AddressRow({ label, value }: { label: string; value?: string | null }) {
+function AddressRow({
+  label,
+  value,
+}: {
+  label: string
+  value?: string | null
+}) {
   return (
     <div className="flex items-start gap-2">
       <dt className="min-w-14 text-gray-500">{label}</dt>

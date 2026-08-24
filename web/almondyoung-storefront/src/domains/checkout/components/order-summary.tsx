@@ -77,7 +77,9 @@ export const MobileOrderSummary = ({
 
         {/* 총 주문 금액 */}
         <div className="flex items-center justify-between bg-[#FFFBF2] px-5 py-4">
-          <p className="text-base font-bold text-gray-800">{t("totalAmount")}</p>
+          <p className="text-base font-bold text-gray-800">
+            {t("totalAmount")}
+          </p>
           <p className="text-xl font-extrabold text-[#F77F00]">
             {convertToLocale({ amount: finalTotal, currency_code })}
           </p>
