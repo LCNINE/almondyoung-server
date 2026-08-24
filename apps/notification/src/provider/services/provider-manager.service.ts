@@ -274,7 +274,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
       },
     });
 
-    return null;
+    return providers[0];
   }
 
   private async startHealthChecks() {
