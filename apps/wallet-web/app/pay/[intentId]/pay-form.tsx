@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   confirmPaymentIntent,
@@ -151,6 +151,26 @@ export function PayForm({
 
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
   const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
+
+  const methodExtrasRef = useRef<HTMLDivElement>(null);
+
+  const revealMethodExtras = () => {
+    setTimeout(() => {
+      const el = methodExtrasRef.current;
+      if (el?.childElementCount) el.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 0);
+  };
+
+  const handleSelectMethod = (id: string) => {
+    setSelectedMethodId(id);
+    revealMethodExtras();
+  };
+
+  // 증빙을 신청하면 입력 폼이 펼쳐지면서 고정 CTA 뒤로 밀린다. 같이 끌어올린다.
+  const handleCashReceiptChange = (next: CashReceiptState) => {
+    if (next.evidenceType !== cashReceiptState.evidenceType) revealMethodExtras();
+    setCashReceiptState(next);
+  };
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
   // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 멤버십은 적립 혜택 대상이 아니다.
@@ -381,22 +401,24 @@ export function PayForm({
                 regionFilterApplied={Array.isArray(availableMethods)}
                 region={region}
                 selectedMethodId={selectedMethodId}
-                onSelect={setSelectedMethodId}
+                onSelect={handleSelectMethod}
               />
             )}
 
-            {remainingAmount > 0 && isTossSelected && (
-              <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
-            )}
+            <div ref={methodExtrasRef} className="empty:hidden space-y-4 scroll-mb-32 md:scroll-mb-0">
+              {remainingAmount > 0 && isTossSelected && (
+                <TossSubMethodCard value={tossSubMethod} onChange={setTossSubMethod} />
+              )}
 
-            {remainingAmount > 0 && isBankTransferSelected && (
-              <CashReceiptCard
-                value={cashReceiptState}
-                onChange={setCashReceiptState}
-                userPhone={userPhone}
-                userBizNumber={userBizNumber}
-              />
-            )}
+              {remainingAmount > 0 && isBankTransferSelected && (
+                <CashReceiptCard
+                  value={cashReceiptState}
+                  onChange={handleCashReceiptChange}
+                  userPhone={userPhone}
+                  userBizNumber={userBizNumber}
+                />
+              )}
+            </div>
 
             {/* 에러 */}
             {error && (
