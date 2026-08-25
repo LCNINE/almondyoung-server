@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { SearchEmptyState } from "./search-empty-state"
 import { CircleHelp } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 interface SearchPageClientProps {
   isMembership: boolean
@@ -58,6 +58,16 @@ export function SearchPageClient({
 
   const hasKeyword = keyword.length > 0
   const hasResults = items.length > 0
+
+  // GA4 향상된 측정의 사이트 검색은 최초 로드 시에만 URL을 보므로 SPA 라우팅 검색이 통째로
+  // 누락된다. 검색어당 1회 직접 발생시킨다.
+  useEffect(() => {
+    if (!hasKeyword) return
+    trackEvent("view_search_results", {
+      search_term: keyword,
+      search_results_count: pagination.total,
+    })
+  }, [keyword, hasKeyword, pagination.total])
 
   const handleProductSelect = (
     product: HttpTypes.StoreProduct,
