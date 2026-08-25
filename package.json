@@ -239,6 +239,7 @@
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.44.5",
     "drizzle-seed": "^0.3.1",
+    "es-hangul": "^2.4.0",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "file-type": "^21.1.1",

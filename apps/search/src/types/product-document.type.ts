@@ -10,10 +10,16 @@ export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '가모,래쉬',
 ];
 
+// 공백 지운 상품명의 부분 문자열 검색용. 검색어가 MAX 보다 길면 매칭 안 되니 쿼리에서 거른다.
+export const COMPACT_NGRAM_MIN = 2;
+export const COMPACT_NGRAM_MAX = 12;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
   number_of_shards: 1,
   number_of_replicas: 1,
+  // 기본값 1 이면 인덱스 생성이 거부된다.
+  max_ngram_diff: COMPACT_NGRAM_MAX - COMPACT_NGRAM_MIN,
   analysis: {
     tokenizer: {
       nori_tokenizer: {
@@ -37,6 +43,11 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
         synonyms: PRODUCT_SEARCH_SYNONYMS,
         lenient: true,
       },
+      compact_ngram: {
+        type: 'ngram' as const,
+        min_gram: COMPACT_NGRAM_MIN,
+        max_gram: COMPACT_NGRAM_MAX,
+      },
     },
     analyzer: {
       nori: {
@@ -58,6 +69,18 @@ export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
         type: 'custom' as const,
         tokenizer: 'standard' as const,
         filter: ['lowercase', 'edge_ngram'],
+      },
+      // "살롱지은드림롯드" 안의 "드림롯드" 를 찾는다. tokenizer keyword 라야 공백 제거가 유지된다.
+      compact_ngram_index: {
+        type: 'custom' as const,
+        tokenizer: 'keyword' as const,
+        filter: ['lowercase', 'compact_ngram'],
+      },
+      // 검색어를 쪼개면 2글자 조각이 인덱스 전체와 매칭돼 노이즈가 터진다.
+      compact_ngram_search: {
+        type: 'custom' as const,
+        tokenizer: 'keyword' as const,
+        filter: ['lowercase'],
       },
     },
   },
@@ -83,7 +106,16 @@ export const PRODUCTS_INDEX_MAPPINGS = {
         },
       },
     },
-    name_compact: { type: 'keyword' as const },
+    name_compact: {
+      type: 'keyword' as const,
+      fields: {
+        ngram: {
+          type: 'text' as const,
+          analyzer: 'compact_ngram_index',
+          search_analyzer: 'compact_ngram_search',
+        },
+      },
+    },
     description: { type: 'text' as const, analyzer: 'nori' },
     thumbnail: { type: 'keyword' as const },
     brand: {
@@ -93,6 +125,8 @@ export const PRODUCTS_INDEX_MAPPINGS = {
         keyword: { type: 'keyword' as const },
       },
     },
+    name_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
+    brand_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
     category_ids: { type: 'keyword' as const },
     category_names: {
       type: 'text' as const,
@@ -141,11 +175,21 @@ export const MEMBERS_ONLY_FIELD_MAPPINGS = {
   },
 } as const;
 
+// 오타 내성용. nori 를 태우면 자모가 깨지므로 whitespace 로만 자른다.
+export const JAMO_FIELDS_MAPPINGS = {
+  properties: {
+    name_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
+    brand_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
+  },
+} as const;
+
 export interface SearchProductDocument {
   master_id: string;
   version_id: string;
   name: string;
   name_compact: string;
+  name_jamo: string;
+  brand_jamo: string;
   description: string | null;
   thumbnail: string | null;
   brand: string | null;

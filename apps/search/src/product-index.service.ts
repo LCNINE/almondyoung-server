@@ -4,6 +4,9 @@ import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { ProductSearchItemDto, ProductSearchResponseDto } from './dto/product-search-response.dto';
 import { OpenSearchService } from './opensearch.service';
 import {
+  COMPACT_NGRAM_MAX,
+  COMPACT_NGRAM_MIN,
+  JAMO_FIELDS_MAPPINGS,
   MEMBERS_ONLY_FIELD_MAPPINGS,
   PRODUCTS_INDEX_MAPPINGS,
   PRODUCTS_INDEX_SETTINGS,
@@ -11,7 +14,7 @@ import {
   ReviewStatsUpdateFields,
   SearchProductDocument,
 } from './types/product-document.type';
-import { compactText } from './utils/text.utils';
+import { compactText, qwertyToHangul, toJamo } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
 
@@ -24,6 +27,10 @@ const NORI_COLLAPSE_RATIO_THRESHOLD = 0.6;
 // 1~2음절 쿼리는 정상이어도 비율이 튀기 쉬워 감지 대상에서 뺀다.
 const NORI_COLLAPSE_MIN_LENGTH = 3;
 const NORI_ANALYZE_CACHE_LIMIT = 2000;
+// 자모 오타 절을 태울 최소 길이(공백 제외 음절 수).
+const JAMO_TYPO_MIN_LENGTH = 3;
+// 편집거리 2 를 허용할 최소 길이. 짧은 검색어에서 열면 후보가 폭증한다.
+const JAMO_FUZZY2_MIN_LENGTH = 5;
 
 @Injectable()
 export class ProductIndexService implements OnModuleInit {
@@ -268,6 +275,16 @@ export class ProductIndexService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`putMapping for members-only field failed (non-fatal): ${error.message}`);
     }
+
+    // 재색인 전까지 기존 문서는 값이 비어 자모 절만 안 걸린다.
+    try {
+      await client.indices.putMapping({
+        index,
+        body: JAMO_FIELDS_MAPPINGS,
+      });
+    } catch (error) {
+      this.logger.warn(`putMapping for jamo fields failed (non-fatal): ${error.message}`);
+    }
   }
 
   private async executeSearch(params: {
@@ -476,7 +493,7 @@ export class ProductIndexService implements OnModuleInit {
     return filters;
   }
 
-  private buildStrictTextQuery(q: string, _compactQ: string, noriCollapsed = false): any {
+  private buildStrictTextQuery(q: string, compactQ: string, noriCollapsed = false): any {
     // nori 를 타지 않는 절만 남긴다 — name.standard(standard) 와 name.ngram(edge_ngram).
     // 이 둘은 미등록 외래어에도 원문 그대로 매칭돼서 뭉갬의 영향을 받지 않는다.
     const noriFreeClauses = [
@@ -488,10 +505,13 @@ export class ProductIndexService implements OnModuleInit {
           },
         },
       },
+      ...this.buildCompactClauses(compactQ),
       {
         match: {
           'name.ngram': {
             query: q,
+            // 기본값 OR 이면 토큰 하나만 걸려도 매칭된다 — "셀프 네일" 1883건 vs "셀프네일" 13건.
+            operator: 'and',
             boost: 15,
           },
         },
@@ -584,6 +604,7 @@ export class ProductIndexService implements OnModuleInit {
             match: {
               'name.ngram': {
                 query: q,
+                operator: 'and',
                 boost: 10,
               },
             },
@@ -597,10 +618,91 @@ export class ProductIndexService implements OnModuleInit {
               },
             },
           },
+          ...this.buildCompactClauses(compactQ),
+          ...this.buildJamoTypoClauses(q, compactQ),
+          ...this.buildQwertyClauses(q),
         ],
         minimum_should_match: 1,
       },
     };
+  }
+
+  // "드림롯드" 로 "드림 롯드" 를 찾는다. nori 가 붙임/띄움을 다르게 잘라서 안 맞으므로
+  // 양쪽 공백을 지우고 부분 문자열로 본다.
+  private buildCompactClauses(compactQ: string): any[] {
+    // max_gram 보다 길면 인덱스에 해당 ngram 이 없다.
+    if (compactQ.length < COMPACT_NGRAM_MIN || compactQ.length > COMPACT_NGRAM_MAX) {
+      return [];
+    }
+
+    return [{ match: { 'name_compact.ngram': { query: compactQ, boost: 18 } } }];
+  }
+
+  /**
+   * "룰러킹" 으로 "롤러킹" 을 찾는다. 위 multi_match 는 완성형 토큰 위에서 돌아
+   * prefix_length 를 못 푼다(풀면 정상 검색어 85.8% 가 5000건으로 폭증). 자모 필드에서만 푼다.
+   *
+   * 실측(오타 900쌍): 0건 68.0% → 1.2%, recall@20 12.9% → 64.5%.
+   *
+   * ponytail: 토큰 통째 비교라 "파인애플" 오타가 "파인애플스티커" 에 묻히면 못 잡는다.
+   * 자모 ngram 서브필드가 업그레이드 경로 — 인덱스가 커지니 잔여율이 문제될 때.
+   */
+  private buildJamoTypoClauses(q: string, compactQ: string): any[] {
+    // 1~2음절은 자모로 펴도 6자모 이하라 편집거리 1 이 여전히 헐겁다.
+    if (compactQ.length < JAMO_TYPO_MIN_LENGTH) {
+      return [];
+    }
+
+    const jamoQuery = toJamo(q);
+    const jamoClause = (fuzziness: number, boost: number): any => ({
+      multi_match: {
+        query: jamoQuery,
+        fields: ['name_jamo^6', 'brand_jamo^4'],
+        fuzziness,
+        prefix_length: 0,
+        max_expansions: 25,
+        minimum_should_match: '100%',
+        boost,
+      },
+    });
+
+    // strict 절(정확 일치)보다 항상 뒤에 오도록 낮게 잡는다.
+    const clauses = [jamoClause(1, 1)];
+
+    // 오타 2글자 이상. 후보가 넓어지니 긴 검색어에서만 열고 boost 로 뒤에 둔다.
+    if (compactQ.length >= JAMO_FUZZY2_MIN_LENGTH) {
+      clauses.push(jamoClause(2, 0.3));
+    }
+
+    return clauses;
+  }
+
+  // "vjak" → "퍼마". 원문 절을 대체하지 않고 덧붙이기만 한다 — "Perma" 같은
+  // 진짜 영문 검색어를 망가뜨리면 안 된다.
+  private buildQwertyClauses(q: string): any[] {
+    const hangul = qwertyToHangul(q);
+    if (!hangul) {
+      return [];
+    }
+
+    return [
+      {
+        multi_match: {
+          query: hangul,
+          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
+          operator: 'and',
+          boost: 2,
+        },
+      },
+      {
+        match: {
+          'name_compact.ngram': {
+            query: compactText(hangul),
+            boost: 2,
+          },
+        },
+      },
+    ];
   }
 
   private resolveFallbackMinimumShouldMatch(q: string, compactQ: string): string {

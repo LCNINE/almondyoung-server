@@ -21,6 +21,7 @@ import {
   PRODUCTS_INDEX_SETTINGS,
   SearchProductDocument,
 } from '../src/types/product-document.type';
+import { compactText, toJamo } from '../src/utils/text.utils';
 
 type BackfillOptions = {
   batchSize: number;
@@ -159,10 +160,6 @@ function toThumbnailUrl(fileIdOrUrl: string | null, fileServiceUrl: string): str
   }
 
   return fileServiceUrl ? `${fileServiceUrl}/files/${fileIdOrUrl}` : `/files/${fileIdOrUrl}`;
-}
-
-function compactText(value: string): string {
-  return value.replace(/\s+/g, '');
 }
 
 async function ensureIndex(client: Client, index: string, recreateIndex: boolean): Promise<void> {
@@ -374,6 +371,8 @@ function buildDocuments(
       version_id: row.versionId,
       name: row.name,
       name_compact: compactText(row.name),
+      name_jamo: toJamo(row.name),
+      brand_jamo: toJamo(row.brand ?? ''),
       description: row.description ?? null,
       thumbnail: toThumbnailUrl(primaryFileId, fileServiceUrl),
       brand: row.brand ?? null,

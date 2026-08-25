@@ -126,6 +126,8 @@ describe('ProductIndexService.upsertProduct', () => {
       version_id: 'v1',
       name: '테스트 상품',
       name_compact: '테스트상품',
+      name_jamo: 'ㅌㅔㅅㅡㅌㅡ ㅅㅏㅇㅍㅜㅁ',
+      brand_jamo: '',
       description: null,
       thumbnail: null,
       brand: null,

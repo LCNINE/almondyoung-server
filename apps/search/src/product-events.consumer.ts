@@ -8,7 +8,7 @@ import {
 } from '@packages/event-contracts/streams/product.stream';
 import { ProductIndexService } from './product-index.service';
 import { SearchProductDocument } from './types/product-document.type';
-import { compactText } from './utils/text.utils';
+import { compactText, toJamo } from './utils/text.utils';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
 @Controller()
@@ -79,6 +79,8 @@ export class ProductEventsConsumer {
       version_id: payload.versionId as string,
       name: snapshot.name,
       name_compact: compactText(snapshot.name),
+      name_jamo: toJamo(snapshot.name),
+      brand_jamo: toJamo(snapshot.brand ?? ''),
       description: snapshot.description ?? null,
       thumbnail: snapshot.thumbnail ?? null,
       brand: snapshot.brand ?? null,
