@@ -333,7 +333,7 @@ API 변경(Phase 1)과 분리해 진행. 각 PR은 페이지 단위.
 - 발주 카트 Drawer + 내부 Tabs([카트 / 재발주 추천]), 카트로 발주 생성.
 - 직접 발주 생성 다이얼로그 (supplier/type/창고/라인), 라인 수정 다이얼로그.
 - ⚠️ `orders/dto`에 레거시 `PurchaseOrderDto`·`PurchaseOrderStatus` 정의가 있어 `LegacyPurchaseOrderDto` 등으로 rename 완료. 관련 orders 서비스 훅도 `useLegacyPurchaseOrders`로 rename.
-- B1b(입고) 계획 생성 시 `auditStatus='approved'` 발주만 선택 가능.
+- B1b(입고) 계획 생성 시 `status='confirmed'` 발주만 선택 가능 (심사(audit) 축은 #724 항목 3 에서 코드 전량 제거됨 — `auditStatus` 필터는 더 이상 없다).
 
 #### Wave B1b — `/inventory/inbound` ✅
 - 단일 라우트 + Tabs([입고 대기 / 계획 등록 / 입고 이력]) 구조. `?tab=` URL 동기화.
@@ -341,7 +341,7 @@ API 변경(Phase 1)과 분리해 진행. 각 PR은 페이지 단위.
 - 입고 처리: Simple / Full-scan(바코드 누적) / Individual 모드 전환 (ReceiveDialog).
 - 이력 탭: 입고 receipt 로그, detail drawer에서 work-logs + 라인 액션(putaway/return/cancel/memo).
 - ⚠️ **PO 자격 서버 가드 미적용**: `GET /inbound/plans/items` pending 조회 응답에 `planItemId`(DB row id)가 없어 UI에서 `GET /inbound/plans/items`를 별도 조회해 매핑. 서버 pending 응답에 `planItemId` 포함 요청 필요.
-- ⚠️ **백엔드 audit 가드 누락**: `updatePurchaseOrderStatus`가 `auditStatus`를 검사하지 않아 미승인 PO도 `status=confirmed` 전이 가능. admin-web은 UI 필터(`auditStatus=approved`)로만 강제. 서버 가드 추가는 별도 PR 필요.
+- ✅ **(해소, #724 항목 3)** 발주 심사(audit) 축이 코드에서 전량 제거됐다 — `updatePurchaseOrderStatus`가 갖고 있던 `auditStatus` 검사 게이트도 이번에 함께 지워졌고, admin-web도 더 이상 `auditStatus` UI 필터를 쓰지 않는다. 계획 생성 자격은 `status='confirmed'` 하나뿐이다. DB 컬럼·enum(`po_audit_status`)은 남아 있으나 코드 어디서도 읽지 않는다.
 - ⚠️ **`<BarcodeScanInput>` 미추출**: Full-scan 바코드 입력 패턴이 stocktaking과 inbound 두 곳에 중복. 추후 `components/common/barcode-scan-input/`로 추출 권장.
 - ⚠️ **`InboundController` JWT 가드 미적용**: 서버측 inbound 컨트롤러에 JwtAuthGuard 없음. 인프라 PR로 일괄 처리 필요.
 

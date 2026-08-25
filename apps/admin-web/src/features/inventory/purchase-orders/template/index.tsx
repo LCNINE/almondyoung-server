@@ -15,7 +15,7 @@ export default function PurchaseOrdersTemplate() {
     <Container>
       <Header
         title="발주관리"
-        subtitle="공급처별 발주를 생성하고 심사 및 입고 상태를 관리합니다."
+        subtitle="공급처별 발주를 생성하고 입고 상태를 관리합니다."
         right={
           <Button variant="outline" size="sm" onClick={() => setCartOpen(true)}>
             <ShoppingCart className="mr-1.5 h-4 w-4" />

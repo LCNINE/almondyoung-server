@@ -158,16 +158,18 @@ audit_notes
 
 마이그레이션 **0** · 시크릿 0 · env 0 · 이벤트 계약 변화 0.
 
-**순서: admin-web → core. 이번엔 역순이 무해하지 않다.**
+**admin-web 과 core 는 한 번의 `sst deploy` 로 함께 롤린다.** 둘은 같은 SST 스택에 있고(`deployments/lcnine/services/infra/services.ts`), `url('core')` 가 리소스 참조가 아니라 문자열이라(`shared.ts:38`) 의존 간선이 없다. 문서화된 배포 단위는 `npx sst deploy --stage live` 하나이므로 **"admin-web 먼저"를 기본 명령으로는 표현할 수 없다.**
 
-core 를 먼저 배포하면 응답에서 `auditStatus` 가 사라지고, admin-web 의 두 조건이 전부 거짓이 된다:
+롤아웃 중 몇 분간 두 방향 중 하나의 일시적 저하가 나타났다 사라진다:
 
-| 화면 | 코드 | core 선배포 시 증상 |
+| 먼저 뜨는 쪽 | 증상 | 지속 |
 |---|---|---|
-| 입고 → 계획 생성 | `po.auditStatus === 'approved'` 필터 | **발주 선택 목록이 전량 공백** |
-| 발주 상세 | `canChangeStatus` | **상태 드롭다운이 영구 비활성** |
+| core 새 코드 | 옛 admin-web 의 `auditStatus` 가 `undefined` → 계획 생성 탭 발주 목록 공백, 상세 드롭다운 숨김, 목록에 빈 배지 | 롤아웃 완료까지 |
+| admin-web 새 코드 | 새 UI 가 심사 없이 확정을 시도 → 옛 core 가 400 | 롤아웃 완료까지 |
 
-admin-web 을 먼저 배포하면 그 사이 core 는 여전히 `auditStatus` 를 실어 보내지만 아무도 읽지 않고, `confirmed` 전이는 여전히 승인을 요구한다 — 기능이 잠깐 보수적일 뿐 깨지지 않는다.
+**데이터 손상도 쓰기 실패도 없다.** 제거된 필드는 옛 admin-web 에서 **동등 비교에만** 쓰였다(`=== 'approved'`) — `.map()` 도 포맷팅도 없어 `undefined` 가 예외로 번지지 않는다. 롤아웃이 끝나면 자동으로 정상화된다.
+
+순서를 굳이 지키고 싶으면 `npx sst deploy --stage live --target AdminWeb` 를 먼저 돌린 뒤 전체 배포를 하면 된다. 저장소에 그 절차는 없으므로 선택이다.
 
 ### 배포 전 실측 (이슈에 기록)
 
@@ -179,7 +181,7 @@ SELECT audit_status, status, count(*) FROM purchase_orders GROUP BY 1, 2 ORDER B
 
 ## 9. 영향 범위 밖 — 확인 완료
 
-- **core·admin-web 밖에 소비자가 없다.** 저장소 전체 grep 결과 심사 필드를 참조하는 곳은 core(스키마·서비스·DTO·스펙) · admin-web · 개발 시드 스크립트뿐이다. `native/warehouse-app` · 타 마이크로서비스 · 외부 storefront 파급 **0**.
+- **core·admin-web 밖에 소비자가 없다.** 저장소 전체 grep 결과 심사 필드를 참조하는 곳은 core(스키마·서비스·DTO·스펙) · admin-web · 스크립트 2개(개발 시드 `scripts/local/seed-dev-core/inbound.ts`, CSV 일괄등록 `apps/core/scripts/import-inbound-plans.ts`)뿐이다. `native/warehouse-app` · 타 마이크로서비스 · 외부 storefront 파급 **0**.
 - **목록 필터에 심사 축이 없다.** `PurchaseOrderListFilters` 는 `auditStatus` 를 받지 않는다 — 필터 UI 를 지울 일이 없다.
 - **Kafka 이벤트에 심사 축이 없다.** 발주는 이벤트를 발행하지 않는다.
 - **`inbound_plans` 경로는 심사를 보지 않는다.** 계획 생성 자격은 `linkedPurchaseOrderId` 에서 도출된다 (항목 4 writer 단일화 이후).
@@ -188,6 +190,7 @@ SELECT audit_status, status, count(*) FROM purchase_orders GROUP BY 1, 2 ORDER B
 ## 10. 범위 밖 — 의도적으로 남기는 것
 
 - **항목 9 의 3단계 (contract phase)** — 헤더 `expected_arrival` 격하와 `PUT /:id/status` 의 계약 정리. 2단계가 그 경로를 "컬럼 쓰기" 에서 "일괄 라인 실행" 으로 바꿔 **전제가 달라졌으므로**, 무엇을 차단할지부터 다시 판단해야 한다. 이 PR 은 그 판단을 선점하지 않는다.
+  - 여기에 새로 추가되는 항목: **종결 상태(`received`)에서의 역방향 전이 차단.** `updatePurchaseOrderStatus` 에는 상태 전이 가드가 없다. 게이트 ①이 `CONFIRMED` 방향에서만 발화했던 탓에, `audit_status='draft'` 인 `received` 발주는 지금까지 `confirmed` 로 되돌릴 수 없었는데 **이 PR 이후엔 가능해진다.** 이중 계상은 라인 상태가 막고(`이미 입고된 발주를 다시 confirmed 로 불러도 아이템이 늘지 않는다` — `purchase-order-line-execution.integration.spec.ts:489` 가 고정), UI 로는 도달 불가하며(드로어가 `received` 면 상태 섹션을 감춘다 — `purchase-order-detail-drawer/index.tsx:95`), `received → created` 는 develop 에서도 이미 열려 있었다 — 즉 이 PR 이 구멍을 만든 게 아니라 넓혔다. §8 의 배포 전 실측 SQL 이 `GROUP BY audit_status, status` 라 이 모집단이 자동으로 드러난다.
 - **컬럼 드롭 (L3)** — §6.
 - **항목 12 (admin-web 라인 실행 UI)** — 이 PR 다음 차례. 드로어의 상태 드롭다운 정리도 그때 다시 본다.
 

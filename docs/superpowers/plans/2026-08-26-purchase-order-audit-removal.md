@@ -14,6 +14,7 @@
 
 - **DB 를 건드리지 않는다.** `apps/core/src/modules/inventory/schema/inventory.schema.ts` 의 `poAuditStatusEnum`(`:101`)과 `purchaseOrders` 의 심사 컬럼 6개(`:1882-1887`)는 **그대로 둔다.** 마이그레이션 파일을 만들지 않는다.
 - **검증 기준선은 0 이다** — `npm run type-check` 0, `npx jest --maxWorkers=2` 실패 0. `--maxWorkers` 를 빼면 OOM 이 난다.
+- **lint 판정 기준은 위 둘과 다르다.** 검증에는 `npx eslint "{src,apps,libs,test}/**/*.ts"` (`--fix` 없이) 를 쓴다 — `npm run lint`(`package.json:77`)는 `--fix` 를 포함해 저장소 전체를 고쳐버리므로 검증 명령으로 쓰지 않는다. `--fix` 없는 이 명령은 저장소 전체를 훑으므로 이 PR 과 무관한 기존 지적이 섞여 나올 수 있다 — 판정은 **"출력 0"이 아니라 develop 대비 새 지적 0** 이다. 기본 힙으로는 저장소 전체 스캔이 OOM 나므로(실측) `NODE_OPTIONS="--max-old-space-size=8192"` 를 붙인다 — `--maxWorkers` 없는 jest 가 OOM 나는 것과 같은 종류의 함정이다.
 - **admin-web 은 루트 `type-check` 밖이다.** 그쪽 검증은 `cd apps/admin-web && npx tsc --noEmit` 뿐이다 (컴포넌트 테스트 불가).
 - **통합 스펙 실행:** `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- <패턴>`. `COMPOSE_PROJECT_NAME` 을 빼면 워크트리에서 5432 포트 충돌로 죽는다.
 - **통합 스펙 결과는 숫자로 읽지 않는다.** develop 부터 RED 인 suite 가 있다. `git stash -u` 로 기준선을 뜨고 **실패 항목명이 문자열까지 같은지** 대조한다.
@@ -491,11 +492,11 @@ EOF
 rm -f tsconfig.tsbuildinfo
 npm run type-check
 npx jest --maxWorkers=2
-npm run lint
+NODE_OPTIONS="--max-old-space-size=8192" npx eslint "{src,apps,libs,test}/**/*.ts"   # npm run lint 는 --fix 라 트리 전체를 고쳐버린다 — 검증엔 쓰지 않는다. 힙 확장 없인 저장소 전체 스캔이 OOM 난다(실측)
 cd apps/admin-web && npx tsc --noEmit && cd ../..
 ```
 
-Expected: 전부 0. 삭제 규모에 비해 결과가 지나치게 깨끗하면 `tsbuildinfo` 를 지우고 다시 돌린다.
+Expected: type-check·jest·admin-web `tsc --noEmit` 은 전부 0. eslint 는 **develop 대비 새 지적 0** 이 기준이다 — 저장소 전체를 훑는 명령이라 이 PR 과 무관한 기존 지적까지 0 이길 기대하지 않는다. 삭제 규모에 비해 결과가 지나치게 깨끗하면 `tsbuildinfo` 를 지우고 다시 돌린다.
 
 - [ ] **Step 2: 통합 스펙을 기준선과 대조한다**
 
@@ -548,8 +549,17 @@ DB 컬럼 6개와 `po_audit_status` enum. 마이그레이션 **0**. 컬럼 드�
 - 발주 생성 직후 바로 확정·라인 실행 가능
 - 상세 드로어의 상태 드롭다운이 항상 보이되 `received` 선택지가 빠졌다 (입고 경로가 소유한 종결 상태)
 
-## 🔴 배포 순서: admin-web → core
-역순이면 `auditStatus` 를 읽는 admin-web 화면 2개가 깨진다 — 계획 생성 탭의 발주 목록이 전량 공백, 상세 드로어 드롭다운이 영구 비활성.
+## 🔴 배포 참고: admin-web 과 core 는 한 번에 함께 롤린다
+둘은 같은 SST 스택에 있고(`deployments/lcnine/services/infra/services.ts`), `url('core')` 가 리소스 참조가 아니라 문자열이라(`shared.ts:38`) 의존 간선이 없다. 문서화된 배포 단위는 `npx sst deploy --stage live` 하나이므로 **"admin-web 먼저"를 기본 명령으로는 표현할 수 없다.**
+
+롤아웃 중 몇 분간 두 방향 중 하나의 일시적 저하가 나타났다 사라진다:
+
+| 먼저 뜨는 쪽 | 증상 | 지속 |
+|---|---|---|
+| core 새 코드 | 옛 admin-web 의 `auditStatus` 가 `undefined` → 계획 생성 탭 발주 목록 공백, 상세 드롭다운 숨김, 목록에 빈 배지 | 롤아웃 완료까지 |
+| admin-web 새 코드 | 새 UI 가 심사 없이 확정을 시도 → 옛 core 가 400 | 롤아웃 완료까지 |
+
+데이터 손상도 쓰기 실패도 없다 — 제거된 필드는 옛 admin-web 에서 동등 비교에만 쓰였다(`=== 'approved'`). 롤아웃이 끝나면 자동으로 정상화된다. 순서를 굳이 지키고 싶으면 `npx sst deploy --stage live --target AdminWeb` 를 먼저 돌린 뒤 전체 배포를 하면 되나, 저장소에 그 절차는 없으므로 선택이다.
 
 ## 검증
 (Step 1·2 결과를 여기에 붙인다)

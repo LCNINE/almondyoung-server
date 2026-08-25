@@ -132,8 +132,10 @@ async function main() {
         skippedDup += items.length - fresh.length;
         if (!fresh.length) continue;
 
-        // 2) PO (해외, supplier 없이 source/dest 명시). status=confirmed+approved 로 박아
-        //    추후 누가 confirm 해도 createInboundPlanFromPO 가 재호출돼 plan 중복되는 걸 차단.
+        // 2) PO (해외, supplier 없이 source/dest 명시). status=confirmed 로 박는다.
+        //    (심사 축은 #724 항목 3 에서 코드 전량 제거됨 — auditStatus 는 더 이상
+        //    쓰지 않는다.) 재확정해도 안전한 이유는 바로 아래 라인 status 주석 참고 —
+        //    그 역할을 하던 createInboundPlanFromPO 는 이 브랜치 이전에 이미 삭제됐다.
         const [po] = await tx
           .insert(wmsTables.purchaseOrders)
           .values({
@@ -144,7 +146,6 @@ async function main() {
             requiresTransfer: true,
             expectedArrival: date,
             status: 'confirmed',
-            auditStatus: 'approved',
           })
           .returning();
         poCount++;
