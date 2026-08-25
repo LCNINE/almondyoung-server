@@ -40,6 +40,8 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
   const masterA = `itest-master-${randomUUID().slice(0, 8)}`;
   const masterB = `itest-master-${randomUUID().slice(0, 8)}`;
   const masterC = `itest-master-${randomUUID().slice(0, 8)}`; // dim 에 이름 없음 — fact 폴백 검증용
+  const masterD = `itest-master-${randomUUID().slice(0, 8)}`; // 활성인데 8월 판매 없음 — 무판매 목록 검증용
+  const masterE = `itest-master-${randomUUID().slice(0, 8)}`; // 비활성 — 무판매 목록에서 제외돼야 함
   const variantC = `itest-variant-${randomUUID().slice(0, 8)}`;
   const categoryId = `itest-cat-${randomUUID().slice(0, 8)}`;
   const tierId = `itest-tier-${randomUUID().slice(0, 8)}`;
@@ -69,8 +71,10 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
     ]);
 
     await db.insert(dimProductMasters).values([
-      { masterId: masterA, name: '통합테스트 상품 A' },
+      { masterId: masterA, name: '통합테스트 상품 A', isActive: true },
       { masterId: masterB, name: '통합테스트 상품 B' },
+      { masterId: masterD, name: '통합테스트 상품 D', isActive: true },
+      { masterId: masterE, name: '통합테스트 상품 E', isActive: false },
     ]);
     await db.insert(dimProductCategories).values([
       { masterId: masterA, categoryId, categoryName: '통합테스트 카테고리', isPrimary: true },
@@ -84,6 +88,8 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
       { aggDate: '2026-07-02', masterId: masterA, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 4000, cancelledAmount: 0, refundedAmount: 0 },
       // dim 없는 상품 — 이름은 주문 라인 폴백으로 온다
       { aggDate: '2026-08-03', masterId: masterC, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 1000, cancelledAmount: 0, refundedAmount: 0 },
+      // 활성 상품 D 는 7월에만 팔렸다 — 8월 조회에서 무판매 목록에 마지막 판매일과 함께 나와야 한다.
+      { aggDate: '2026-07-02', masterId: masterD, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 2000, cancelledAmount: 0, refundedAmount: 0 },
     ]);
 
     // 주문 라인 2건 — 폴백은 더 최근(occurredAt) 이름을 골라야 한다.
@@ -114,6 +120,8 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
       await db.delete(aggProductOrderDaily).where(eq(aggProductOrderDaily.salesChannel, channel));
       await db.delete(dimProductMasters).where(eq(dimProductMasters.masterId, masterA));
       await db.delete(dimProductMasters).where(eq(dimProductMasters.masterId, masterB));
+      await db.delete(dimProductMasters).where(eq(dimProductMasters.masterId, masterD));
+      await db.delete(dimProductMasters).where(eq(dimProductMasters.masterId, masterE));
       await db.delete(dimProductCategories).where(eq(dimProductCategories.masterId, masterA));
       await db.delete(dimProductCategories).where(eq(dimProductCategories.masterId, masterB));
       await db.delete(factOrderItems).where(eq(factOrderItems.masterId, masterC));
@@ -167,6 +175,36 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
     expect(result.categories).toEqual([
       { categoryId, categoryName: '통합테스트 카테고리', grossRevenue: 9000, quantitySold: 3 },
     ]);
+  });
+
+  it('order=asc 는 같은 랭킹을 하위부터 내린다', async () => {
+    const result = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 10, 'asc');
+    expect(result.ranking.map((row) => row.masterId)).toEqual([masterC, masterB, masterA]);
+    // 방향만 바뀌고 값 계산은 동일해야 한다.
+    expect(result.ranking[2]).toMatchObject({ masterId: masterA, netRevenue: 8000, previousNetRevenue: 4000 });
+  });
+
+  it('무판매 목록은 기간 내 판매 0건인 활성 상품만 마지막 판매일과 함께 내린다', async () => {
+    const result = await query.getUnsoldProducts('2026-08-01', '2026-08-31', channel, 200);
+
+    const rowD = result.items.find((row) => row.masterId === masterD);
+    expect(rowD).toMatchObject({ name: '통합테스트 상품 D', lastSoldDate: '2026-07-02' });
+    expect(result.total).toBeGreaterThanOrEqual(1);
+
+    const ids = result.items.map((row) => row.masterId);
+    expect(ids).not.toContain(masterA); // 기간 내 판매 있음
+    expect(ids).not.toContain(masterE); // 비활성
+    expect(ids).not.toContain(masterB); // isActive 미설정(null)
+
+    // 판매 기록 없는(null) 상품이 마지막 판매일 있는 상품보다 앞에 온다.
+    const firstDated = result.items.findIndex((row) => row.lastSoldDate !== null);
+    if (firstDated >= 0) {
+      expect(result.items.slice(firstDated).every((row) => row.lastSoldDate !== null)).toBe(true);
+    }
+
+    // 7월 조회에서는 D 가 팔렸으므로 빠져야 한다.
+    const july = await query.getUnsoldProducts('2026-07-01', '2026-07-31', channel, 200);
+    expect(july.items.map((row) => row.masterId)).not.toContain(masterD);
   });
 
   it('옵션별 판매는 기본 품목 여부와 폴백된 상품명을 함께 내린다', async () => {

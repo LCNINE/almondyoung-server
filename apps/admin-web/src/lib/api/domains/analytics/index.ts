@@ -57,6 +57,28 @@ export interface ProductStatistics {
   }>;
 }
 
+export type ProductSort = 'revenue' | 'quantity' | 'orders';
+export type ProductSortOrder = 'desc' | 'asc';
+
+export interface ProductStatisticsQuery extends StatisticsRangeQuery {
+  sort?: ProductSort;
+  limit?: number;
+  order?: ProductSortOrder;
+}
+
+export interface UnsoldProductRow {
+  masterId: string;
+  name: string | null;
+  /** 전 기간 통틀어 마지막 판매일. null 이면 집계 이래 판매 기록 없음 */
+  lastSoldDate: string | null;
+}
+
+export interface UnsoldProductsResult {
+  range: { from: string; to: string };
+  total: number;
+  items: UnsoldProductRow[];
+}
+
 export interface CustomerStatistics {
   range: { from: string; to: string };
   lifetime: {
@@ -110,13 +132,21 @@ export const analyticsApi = {
     return res.data;
   },
 
-  getProductStatistics: async (
-    query: StatisticsRangeQuery & { sort?: 'revenue' | 'quantity' | 'orders'; limit?: number }
-  ): Promise<ProductStatistics> => {
+  getProductStatistics: async (query: ProductStatisticsQuery): Promise<ProductStatistics> => {
     const params = new URLSearchParams(rangeQs(query));
     if (query.sort) params.set('sort', query.sort);
     if (query.limit) params.set('limit', String(query.limit));
+    if (query.order) params.set('order', query.order);
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/products?${params.toString()}`);
+    return res.data;
+  },
+
+  getUnsoldProducts: async (
+    query: StatisticsRangeQuery & { limit?: number }
+  ): Promise<UnsoldProductsResult> => {
+    const params = new URLSearchParams(rangeQs(query));
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/products/unsold?${params.toString()}`);
     return res.data;
   },
 

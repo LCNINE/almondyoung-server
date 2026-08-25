@@ -61,6 +61,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '@UseGuards(JwtAuthGuard)',
     note: '상품별 전사 집계 — 사용자 소유 리소스 파라미터 없음. 컨트롤러 클래스에 JwtAuthGuard.',
   },
+  'analytics GET /statistics/products/unsold': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '기간 내 무판매 활성 상품 목록 — 쿼리 파라미터가 날짜/채널/limit 뿐이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard.',
+  },
   'analytics GET /statistics/customers': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
@@ -644,15 +650,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(100);
+    expect(targets).toHaveLength(101);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(100);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(99);
+    expect(new Set(targets.map(keyOf)).size).toBe(101);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(100);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
-import { useProductStatistics } from '@/lib/services/analytics';
+import { useProductStatistics, useUnsoldProducts } from '@/lib/services/analytics';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList } from '../components/widgets';
 import { changeRate, formatCount, formatKrw, formatPercent, useStatisticsRange } from '../shared';
@@ -12,18 +12,25 @@ const SORT_OPTIONS = [
   { value: 'orders', label: '주문수순' },
 ] as const;
 
+const ORDER_OPTIONS = [
+  { value: 'desc', label: '상위' },
+  { value: 'asc', label: '하위' },
+] as const;
+
 export default function ProductStatisticsTemplate() {
   const range = useStatisticsRange();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sort = (searchParams.get('sort') as 'revenue' | 'quantity' | 'orders') ?? 'revenue';
+  const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
 
-  const { data, isLoading, isError } = useProductStatistics({ ...range, sort, limit: 20 });
+  const { data, isLoading, isError } = useProductStatistics({ ...range, sort, limit: 20, order });
+  const unsold = useUnsoldProducts({ from: range.from, to: range.to, channel: range.channel, limit: 50 });
 
-  const setSort = (value: string) => {
+  const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set('sort', value);
+    params.set(key, value);
     router.replace(`${pathname}?${params.toString()}`);
   };
 
@@ -36,20 +43,39 @@ export default function ProductStatisticsTemplate() {
       ) : (
         <div className="space-y-4">
           <ChartCard
-            title="상품 랭킹"
-            description="증감은 직전 동일 길이 기간의 순매출 대비입니다."
+            title={order === 'asc' ? '상품 랭킹 (하위)' : '상품 랭킹'}
+            description={
+              order === 'asc'
+                ? '판매 실적이 가장 낮은 상품부터 표시합니다. 기간 내 판매가 아예 없는 상품은 아래 무판매 상품 카드에서 확인하세요.'
+                : '증감은 직전 동일 길이 기간의 순매출 대비입니다.'
+            }
             isLoading={isLoading}
             isEmpty={!data || data.ranking.length === 0}
           >
-            <div className="mb-3 flex gap-1">
+            <div className="mb-3 flex flex-wrap items-center gap-1">
               {SORT_OPTIONS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
-                  onClick={() => setSort(option.value)}
+                  onClick={() => setParam('sort', option.value)}
                   className={
                     sort === option.value
                       ? 'rounded-full bg-orange-500 px-3 py-1 text-xs font-medium text-white'
+                      : 'rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50'
+                  }
+                >
+                  {option.label}
+                </button>
+              ))}
+              <span className="mx-1 h-4 w-px bg-gray-200" />
+              {ORDER_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setParam('order', option.value)}
+                  className={
+                    order === option.value
+                      ? 'rounded-full bg-gray-800 px-3 py-1 text-xs font-medium text-white'
                       : 'rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-600 hover:bg-gray-50'
                   }
                 >
@@ -95,6 +121,40 @@ export default function ProductStatisticsTemplate() {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </ChartCard>
+
+          <ChartCard
+            title="기간 내 무판매 상품"
+            description={`판매중(활성) 상품 중 조회 기간에 판매가 0건인 상품입니다. 마지막 판매일이 오래된 순 · 최대 50개 표시${
+              unsold.data ? ` · 총 ${formatCount(unsold.data.total)}개` : ''
+            }`}
+            isLoading={unsold.isLoading}
+            isEmpty={!unsold.data || unsold.data.items.length === 0}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b text-gray-500">
+                    <th className="py-1.5 text-left">#</th>
+                    <th className="py-1.5 text-left">상품</th>
+                    <th className="py-1.5 text-right">마지막 판매일</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(unsold.data?.items ?? []).map((row, index) => (
+                    <tr key={row.masterId} className="border-b last:border-0">
+                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5">
+                        <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">
+                        {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
