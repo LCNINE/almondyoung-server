@@ -53,6 +53,26 @@ interface MasterRow {
   name: string;
 }
 
+interface VariantRow {
+  master_id: string;
+  version_id: string;
+  variant_id: string;
+  variant_name: string | null;
+  is_default: boolean;
+  status: string;
+}
+
+interface CategoryLinkRow {
+  master_id: string;
+  category_id: string;
+  is_primary: boolean;
+}
+
+interface CategoryNameRow {
+  category_id: string;
+  name: string;
+}
+
 async function main() {
   if (!HAS_ENV_URLS) {
     await ensureInsideSstShell({ stage: args.stage, deployment: args.deployment });
@@ -75,8 +95,8 @@ async function main() {
     const masterById = new Map(masters.map((m) => [m.master_id, m]));
 
     // 대표 버전에 매달린 variant 들 (이름·기본품목 여부·상태)
-    const variants = versionIds.length
-      ? await core`
+    const variants: VariantRow[] = versionIds.length
+      ? await core<VariantRow[]>`
           SELECT mv.master_id::text AS master_id, mv.version_id::text AS version_id,
                  pv.id::text AS variant_id, pv.variant_name, pv.is_default, pv.status
           FROM product_master_variants mv
@@ -85,13 +105,13 @@ async function main() {
       : [];
 
     // 대표 버전의 카테고리 매핑 + 카테고리명
-    const categoryLinks = versionIds.length
-      ? await core`
+    const categoryLinks: CategoryLinkRow[] = versionIds.length
+      ? await core<CategoryLinkRow[]>`
           SELECT mc.master_id::text AS master_id, mc.category_id::text AS category_id, mc.is_primary
           FROM product_master_categories mc
           WHERE mc.version_id = ANY(${versionIds})`
       : [];
-    const categoryNames = await core`SELECT id::text AS category_id, name FROM product_categories`;
+    const categoryNames = await core<CategoryNameRow[]>`SELECT id::text AS category_id, name FROM product_categories`;
 
     console.log(
       `원본: masters ${masters.length} / variants ${variants.length} / ` +
