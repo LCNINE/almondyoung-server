@@ -61,11 +61,13 @@ export interface ProductStatistics {
   previousRange: { from: string; to: string };
   ranking: ProductRankingRow[];
   /** primary 카테고리 기준 — 다중 카테고리 중복 가산을 피한다 */
-  categories: Array<{ categoryId: string; grossRevenue: number; quantitySold: number }>;
+  categories: Array<{ categoryId: string; categoryName: string | null; grossRevenue: number; quantitySold: number }>;
   /** 옵션별은 총매출만 존재한다 — 순매출로 라벨링하지 말 것 */
   variants: Array<{
     variantId: string;
     variantName: string | null;
+    /** 옵션 없는 상품의 기본 품목 — variantName 이 비어 있을 때 화면이 라벨을 대신 정한다 */
+    isDefault: boolean;
     masterId: string;
     masterName: string | null;
     quantitySold: number;
@@ -210,26 +212,10 @@ export class StatisticsQuery {
       }
     }
 
-    const ranking: ProductRankingRow[] = rankingRows.map((row) => {
-      const grossRevenue = Number(row.grossRevenue ?? 0);
-      const cancelledAmount = Number(row.cancelledAmount ?? 0);
-      const refundedAmount = Number(row.refundedAmount ?? 0);
-      return {
-        masterId: row.masterId,
-        name: row.name ?? null,
-        ordersCount: Number(row.ordersCount ?? 0),
-        quantitySold: Number(row.quantitySold ?? 0),
-        grossRevenue,
-        cancelledAmount,
-        refundedAmount,
-        netRevenue: grossRevenue - cancelledAmount - refundedAmount,
-        previousNetRevenue: previousByMaster.get(row.masterId) ?? 0,
-      };
-    });
-
-    const categoryRows = await this.db
+    const categoryRowsPromise = this.db
       .select({
         categoryId: dimProductCategories.categoryId,
+        categoryName: dimProductCategories.categoryName,
         grossRevenue: sql<string>`SUM(${aggProductOrderDaily.grossRevenue})`,
         quantitySold: sql<string>`SUM(${aggProductOrderDaily.quantitySold})`,
       })
@@ -242,7 +228,7 @@ export class StatisticsQuery {
         ),
       )
       .where(where)
-      .groupBy(dimProductCategories.categoryId)
+      .groupBy(dimProductCategories.categoryId, dimProductCategories.categoryName)
       .orderBy(sql`SUM(${aggProductOrderDaily.grossRevenue}) DESC`);
 
     const variantWhereParts: SQL[] = [
@@ -252,10 +238,11 @@ export class StatisticsQuery {
     if (channel) {
       variantWhereParts.push(eq(aggVariantOrderDaily.salesChannel, channel));
     }
-    const variantRows = await this.db
+    const variantRowsPromise = this.db
       .select({
         variantId: aggVariantOrderDaily.variantId,
         variantName: dimProductVariants.variantName,
+        isDefault: dimProductVariants.isDefault,
         masterId: aggVariantOrderDaily.masterId,
         masterName: dimProductMasters.name,
         quantitySold: sql<string>`SUM(${aggVariantOrderDaily.quantitySold})`,
@@ -268,11 +255,42 @@ export class StatisticsQuery {
       .groupBy(
         aggVariantOrderDaily.variantId,
         dimProductVariants.variantName,
+        dimProductVariants.isDefault,
         aggVariantOrderDaily.masterId,
         dimProductMasters.name,
       )
       .orderBy(sql`SUM(${aggVariantOrderDaily.grossRevenue}) DESC`)
       .limit(limit);
+
+    const [categoryRows, variantRows] = await Promise.all([categoryRowsPromise, variantRowsPromise]);
+
+    // dim 에 이름이 없는 상품(집계 가동 전 발행분)은 주문 라인이 실어온 최신 상품명으로 폴백한다.
+    const namelessMasterIds = [
+      ...new Set(
+        [
+          ...rankingRows.filter((row) => !row.name).map((row) => row.masterId),
+          ...variantRows.filter((row) => !row.masterName).map((row) => row.masterId),
+        ],
+      ),
+    ];
+    const fallbackNames = await this.latestOrderedProductNames(namelessMasterIds);
+
+    const ranking: ProductRankingRow[] = rankingRows.map((row) => {
+      const grossRevenue = Number(row.grossRevenue ?? 0);
+      const cancelledAmount = Number(row.cancelledAmount ?? 0);
+      const refundedAmount = Number(row.refundedAmount ?? 0);
+      return {
+        masterId: row.masterId,
+        name: row.name ?? fallbackNames.get(row.masterId) ?? null,
+        ordersCount: Number(row.ordersCount ?? 0),
+        quantitySold: Number(row.quantitySold ?? 0),
+        grossRevenue,
+        cancelledAmount,
+        refundedAmount,
+        netRevenue: grossRevenue - cancelledAmount - refundedAmount,
+        previousNetRevenue: previousByMaster.get(row.masterId) ?? 0,
+      };
+    });
 
     return {
       range: { from, to },
@@ -280,18 +298,38 @@ export class StatisticsQuery {
       ranking,
       categories: categoryRows.map((row) => ({
         categoryId: row.categoryId,
+        categoryName: row.categoryName ?? null,
         grossRevenue: Number(row.grossRevenue ?? 0),
         quantitySold: Number(row.quantitySold ?? 0),
       })),
       variants: variantRows.map((row) => ({
         variantId: row.variantId,
         variantName: row.variantName ?? null,
+        isDefault: row.isDefault ?? false,
         masterId: row.masterId,
-        masterName: row.masterName ?? null,
+        masterName: row.masterName ?? fallbackNames.get(row.masterId) ?? null,
         quantitySold: Number(row.quantitySold ?? 0),
         grossRevenue: Number(row.grossRevenue ?? 0),
       })),
     };
+  }
+
+  /** masterId 별로 가장 최근 주문 라인이 실어온 상품명. dim 에 이름이 없을 때만 쓰는 폴백. */
+  private async latestOrderedProductNames(masterIds: string[]): Promise<Map<string, string>> {
+    if (masterIds.length === 0) return new Map();
+    const rows = await this.db
+      .selectDistinctOn([factOrderItems.masterId], {
+        masterId: factOrderItems.masterId,
+        productName: factOrderItems.productName,
+      })
+      .from(factOrderItems)
+      .where(and(inArray(factOrderItems.masterId, masterIds), sql`${factOrderItems.productName} IS NOT NULL`))
+      .orderBy(factOrderItems.masterId, desc(factOrderItems.occurredAt));
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.productName) map.set(row.masterId, row.productName);
+    }
+    return map;
   }
 
   async getCustomers(from: string, to: string, granularity: Granularity = 'day'): Promise<CustomerStatistics> {

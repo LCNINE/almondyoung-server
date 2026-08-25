@@ -7,10 +7,13 @@ import {
   aggChannelDaily,
   aggMembershipDaily,
   aggProductOrderDaily,
+  aggVariantOrderDaily,
   analyticsSchema,
   dimCustomerMembership,
   dimProductCategories,
   dimProductMasters,
+  dimProductVariants,
+  factOrderItems,
 } from '../../../schema';
 import { MembershipDailySnapshotService } from '../../../datasets/memberships/aggregates/membership-daily-snapshot.service';
 import { toSeoulDateOnly } from '../../../shared/date.util';
@@ -36,6 +39,8 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
   const channel = `itest-${randomUUID().slice(0, 8)}`;
   const masterA = `itest-master-${randomUUID().slice(0, 8)}`;
   const masterB = `itest-master-${randomUUID().slice(0, 8)}`;
+  const masterC = `itest-master-${randomUUID().slice(0, 8)}`; // dim 에 이름 없음 — fact 폴백 검증용
+  const variantC = `itest-variant-${randomUUID().slice(0, 8)}`;
   const categoryId = `itest-cat-${randomUUID().slice(0, 8)}`;
   const tierId = `itest-tier-${randomUUID().slice(0, 8)}`;
   const userPrefix = `itest-user-${randomUUID().slice(0, 8)}`;
@@ -68,7 +73,7 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
       { masterId: masterB, name: '통합테스트 상품 B' },
     ]);
     await db.insert(dimProductCategories).values([
-      { masterId: masterA, categoryId, isPrimary: true },
+      { masterId: masterA, categoryId, categoryName: '통합테스트 카테고리', isPrimary: true },
       // primary 아님 — 카테고리 구성에 잡히면 중복 가산 버그다.
       { masterId: masterB, categoryId: `${categoryId}-secondary`, isPrimary: false },
     ]);
@@ -77,6 +82,22 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
       { aggDate: '2026-08-02', masterId: masterB, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 6000, cancelledAmount: 0, refundedAmount: 0 },
       // 직전 기간(7월) — previousNetRevenue 산출용
       { aggDate: '2026-07-02', masterId: masterA, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 4000, cancelledAmount: 0, refundedAmount: 0 },
+      // dim 없는 상품 — 이름은 주문 라인 폴백으로 온다
+      { aggDate: '2026-08-03', masterId: masterC, salesChannel: channel, ordersCount: 1, quantitySold: 1, grossRevenue: 1000, cancelledAmount: 0, refundedAmount: 0 },
+    ]);
+
+    // 주문 라인 2건 — 폴백은 더 최근(occurredAt) 이름을 골라야 한다.
+    await db.insert(factOrderItems).values([
+      { messageId: `IT${randomUUID().replace(/-/g, '').slice(0, 24)}`, orderKey: `${masterC}-o1`, salesChannel: channel, masterId: masterC, productName: '옛 상품명', quantity: 1, occurredAt: new Date('2026-08-01T10:00:00+09:00') },
+      { messageId: `IT${randomUUID().replace(/-/g, '').slice(0, 24)}`, orderKey: `${masterC}-o2`, salesChannel: channel, masterId: masterC, productName: '폴백 상품명', quantity: 1, occurredAt: new Date('2026-08-03T10:00:00+09:00') },
+    ]);
+
+    // 옵션 집계: dim 은 이름 없는 기본 품목 — isDefault 가 내려가고 masterName 은 폴백돼야 한다.
+    await db.insert(dimProductVariants).values([
+      { variantId: variantC, masterId: masterC, versionId: `${masterC}-v1`, variantName: null, isDefault: true, status: 'ACTIVE' },
+    ]);
+    await db.insert(aggVariantOrderDaily).values([
+      { aggDate: '2026-08-03', variantId: variantC, masterId: masterC, salesChannel: channel, quantitySold: 1, grossRevenue: 1000 },
     ]);
 
     // 멤버십 dim: 열린 구간 2명 + 이미 닫힌 구간 1명 (스냅샷은 열린 구간만 세야 한다)
@@ -95,6 +116,9 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
       await db.delete(dimProductMasters).where(eq(dimProductMasters.masterId, masterB));
       await db.delete(dimProductCategories).where(eq(dimProductCategories.masterId, masterA));
       await db.delete(dimProductCategories).where(eq(dimProductCategories.masterId, masterB));
+      await db.delete(factOrderItems).where(eq(factOrderItems.masterId, masterC));
+      await db.delete(dimProductVariants).where(eq(dimProductVariants.variantId, variantC));
+      await db.delete(aggVariantOrderDaily).where(eq(aggVariantOrderDaily.salesChannel, channel));
       await db.delete(dimCustomerMembership).where(eq(dimCustomerMembership.tierId, tierId));
       await db.delete(aggMembershipDaily).where(eq(aggMembershipDaily.tierId, tierId));
     }
@@ -132,13 +156,23 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
   it('상품 랭킹에 이름·순매출·전기간 순매출이 붙는다', async () => {
     const result = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 10);
 
-    expect(result.ranking).toHaveLength(2);
-    const [first, second] = result.ranking;
+    expect(result.ranking).toHaveLength(3);
+    const [first, second, third] = result.ranking;
     expect(first).toMatchObject({ masterId: masterA, name: '통합테스트 상품 A', netRevenue: 8000, previousNetRevenue: 4000 });
     expect(second).toMatchObject({ masterId: masterB, netRevenue: 6000, previousNetRevenue: 0 });
+    // dim 에 이름이 없으면 가장 최근 주문 라인의 상품명으로 폴백한다.
+    expect(third).toMatchObject({ masterId: masterC, name: '폴백 상품명', netRevenue: 1000 });
 
-    // primary 카테고리만 — masterB 의 비-primary 링크는 잡히면 안 된다.
-    expect(result.categories).toEqual([{ categoryId, grossRevenue: 9000, quantitySold: 3 }]);
+    // primary 카테고리만 — masterB 의 비-primary 링크는 잡히면 안 된다. 이름도 함께 내려간다.
+    expect(result.categories).toEqual([
+      { categoryId, categoryName: '통합테스트 카테고리', grossRevenue: 9000, quantitySold: 3 },
+    ]);
+  });
+
+  it('옵션별 판매는 기본 품목 여부와 폴백된 상품명을 함께 내린다', async () => {
+    const result = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 10);
+    const row = result.variants.find((v) => v.variantId === variantC);
+    expect(row).toMatchObject({ variantName: null, isDefault: true, masterId: masterC, masterName: '폴백 상품명' });
   });
 
   it('스냅샷은 열린 구간만 세고, 재실행해도 값이 변하지 않는다', async () => {

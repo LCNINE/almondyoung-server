@@ -45,10 +45,11 @@ export interface ProductStatistics {
   range: { from: string; to: string };
   previousRange: { from: string; to: string };
   ranking: ProductRankingRow[];
-  categories: Array<{ categoryId: string; grossRevenue: number; quantitySold: number }>;
+  categories: Array<{ categoryId: string; categoryName: string | null; grossRevenue: number; quantitySold: number }>;
   variants: Array<{
     variantId: string;
     variantName: string | null;
+    isDefault: boolean;
     masterId: string;
     masterName: string | null;
     quantitySold: number;

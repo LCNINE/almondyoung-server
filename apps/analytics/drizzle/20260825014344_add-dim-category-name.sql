@@ -1,0 +1,1 @@
+ALTER TABLE "dim_product_categories" ADD COLUMN "category_name" varchar(255);
