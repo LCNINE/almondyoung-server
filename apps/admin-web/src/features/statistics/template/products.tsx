@@ -108,7 +108,7 @@ export default function ProductStatisticsTemplate() {
               isEmpty={!data || data.categories.length === 0}
             >
               <HorizontalBarList
-                items={(data?.categories ?? []).map((row) => ({ label: row.categoryId, value: row.grossRevenue }))}
+                items={(data?.categories ?? []).map((row) => ({ label: row.categoryName ?? row.categoryId, value: row.grossRevenue }))}
                 formatValue={formatKrw}
               />
             </ChartCard>
@@ -132,7 +132,7 @@ export default function ProductStatisticsTemplate() {
                   <tbody>
                     {(data?.variants ?? []).map((row) => (
                       <tr key={row.variantId} className="border-b last:border-0">
-                        <td className="py-1.5">{row.variantName ?? row.variantId}</td>
+                        <td className="py-1.5">{row.variantName ?? (row.isDefault ? '기본 품목' : row.variantId)}</td>
                         <td className="py-1.5 text-gray-500">{row.masterName ?? row.masterId}</td>
                         <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
                         <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>

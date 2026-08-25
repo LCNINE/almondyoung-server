@@ -36,6 +36,13 @@
       "when": 1786291953903,
       "tag": "20260809161233_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787622224208,
+      "tag": "20260825014344_add-dim-category-name",
+      "breakpoints": true
     }
   ]
 }
