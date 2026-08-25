@@ -14,6 +14,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useCustomerStatistics } from '@/lib/services/analytics';
+import { useTiersWithPlans } from '@/lib/services/membership';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatKrw, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -21,6 +22,17 @@ import { formatCount, formatKrw, formatPercent, SERIES_COLORS, useStatisticsRang
 export default function CustomerStatisticsTemplate() {
   const range = useStatisticsRange();
   const { data, isLoading, isError } = useCustomerStatistics(range);
+  // analytics 는 tierId 만 안다 — 등급 이름은 membership 등급 목록으로 매핑하고, 실패하면 id 그대로 둔다.
+  const { data: tiersWithPlans } = useTiersWithPlans();
+  const tierLabel = useMemo(() => {
+    const byId = new Map((tiersWithPlans ?? []).map(({ tier }) => [tier.id, tier.code]));
+    return (tierId: string) => {
+      if (tierId === 'GUEST') return '비회원';
+      if (tierId === 'NON_MEMBER') return '일반 회원';
+      if (tierId === 'UNKNOWN') return '등급 미상';
+      return byId.get(tierId) ?? tierId;
+    };
+  }, [tiersWithPlans]);
 
   // 멤버십 추이는 (날짜, tier) 행으로 오므로 tier 를 시리즈 컬럼으로 피벗한다.
   const membershipSeries = useMemo(() => {
@@ -125,7 +137,7 @@ export default function CustomerStatisticsTemplate() {
                     key={tier}
                     type="monotone"
                     dataKey={tier}
-                    name={tier === 'UNKNOWN' ? '등급 미상' : tier}
+                    name={tierLabel(tier)}
                     stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
                     strokeWidth={2}
                     dot={false}
@@ -157,7 +169,7 @@ export default function CustomerStatisticsTemplate() {
                     {(data?.tierRevenue ?? []).map((row) => (
                       <tr key={row.tierId} className="border-b last:border-0">
                         <td className="py-1.5 font-medium">
-                          {row.tierId === 'GUEST' ? '비회원' : row.tierId === 'NON_MEMBER' ? '일반 회원' : row.tierId}
+                          {tierLabel(row.tierId)}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>
                         <td className="py-1.5 text-right tabular-nums">{formatCount(row.ordersCount)}</td>
