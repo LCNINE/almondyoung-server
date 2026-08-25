@@ -161,6 +161,14 @@ npx jest             # 전체 유닛 테스트. 실패 0 이 기준선이다
 해석돼 패턴이 **조용히 안 걸렸다** (워크트리에서 jest 를 돌리면 `apps/medusa` spec 이
 딸려 들어와 실패가 17건 늘었다). `<rootDir>` 없는 부분일치 패턴으로 쓸 것.
 
+**jest 는 UTC 로 뜬다.** `scripts/jest/global-setup.js` 가 워커 fork 전에
+`process.env.TZ` 를 `UTC` 로 박는다. 라이브(ECS/Lambda)와 CI 러너가 UTC 인데 개발 머신만
+`Asia/Seoul` 이라, `toZonedTime` 처럼 **런타임 TZ 에 상대적인** 코드의 버그가 로컬에서만
+사라지는 일이 있었다 (#724 발견 ⑪ — 당일 입고 취소가 라이브에서만 400). 스펙 파일 안에서
+`process.env.TZ` 를 바꾸는 것은 이미 늦으니 그러지 말 것. TZ 견고성을 일부러 확인할 때만
+셸에서 `TZ=America/New_York npx jest …` 처럼 넘기면 되고(명시한 값이 우선한다), 그때는
+`scripts/jest/tz-is-utc.spec.ts` 하나가 빨간 게 정상이다.
+
 프론트·통합·외부환경 테스트는 별도 명령이다:
 
 ```bash

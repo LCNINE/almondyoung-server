@@ -96,6 +96,11 @@ TZ=UTC DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core \
 아무것도 증명하지 않는다. 스펙 헤더에 이 사실을 적어 뒀다 — 무효한 TZ 조작 코드를
 남겨 두면 다음 사람이 "고정돼 있네"라고 오독한다.
 
+> ✅ **해소됨 — #724 항목 13.** `scripts/jest/global-setup.js` 가 jest 를 UTC 로 띄운다.
+> 위 "방어력은 CI 에서 나온다 / 로컬 실행은 아무것도 증명하지 않는다"는 서술은 **그 시점의 기록**이며
+> 지금은 로컬 실행도 유효하다. 두 스펙의 헤더 주석은 그때 갱신했다.
+> 계획서: `docs/superpowers/plans/2026-08-25-jest-utc.md`
+>
 > 파생 질문(이 PR 범위 밖): **jest 를 UTC 로 띄우는 게 맞지 않나.** 라이브가 UTC 인데
 > 테스트가 KST 로 돌면 이 부류 전체가 로컬에서 안 보인다. `globalSetup` 으로 워커 포크
 > 전에 박으면 되지만, 다른 날짜 스펙들의 폭발 반경을 재야 해서 별도 항목이어야 한다.

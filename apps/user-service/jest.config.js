@@ -3,6 +3,8 @@ module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
   rootDir: '../../',
+  // 프로세스 TZ 를 UTC 로 박는다 (#724 항목 13) — 근거는 그 파일 주석.
+  globalSetup: '<rootDir>/scripts/jest/global-setup.js',
   testMatch: ['<rootDir>/apps/user-service/**/*.spec.ts'],
   moduleNameMapper: {
     '^@app/([^/]+)$': '<rootDir>/libs/$1/src',

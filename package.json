@@ -370,6 +370,7 @@
       "/apps/membership/test/membership-api\\.itdoc\\.spec\\.ts$"
     ],
     "rootDir": ".",
+    "globalSetup": "<rootDir>/scripts/jest/global-setup.js",
     "roots": [
       "<rootDir>/apps/",
       "<rootDir>/libs/",

@@ -15,16 +15,16 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
  * 이 스펙이 존재하는 이유: 판정이 `isSameSeoulDay(nowSeoul(), occurredAt)` 이라 왼쪽에만
  * 오프셋이 두 번 먹었다. 라이브(UTC 프로세스)에서 **KST 15:00~24:00 의 당일 취소가 전부 400** 이었다.
  *
- * ⚠️ **이 스펙은 서울 머신에서는 아무것도 증명하지 못한다.** `toZonedTime` 이 런타임 TZ 에
+ * ⚠️ **이 스펙은 프로세스가 UTC 로 떴을 때만 의미가 있다.** `toZonedTime` 이 런타임 TZ 에
  * 상대적이라 `Asia/Seoul` 에서는 이중 변환이 항등이 되고, 고치기 전 코드도 통과한다.
- * jest 안에서 `process.env.TZ` 를 바꾸는 것도 무효다(실측 — 할당해도 오프셋이 안 바뀐다).
- * **TZ 는 프로세스를 띄울 때 박아야 한다.** CI 러너와 라이브가 UTC 이므로 방어력은 CI 에서 나온다.
+ * `scripts/jest/global-setup.js` 가 jest 를 UTC 로 띄우므로(#724 항목 13) 로컬 실행도 유효하다.
+ * 스펙 파일 안에서 `process.env.TZ` 를 바꾸는 것은 이미 늦으니 그러지 말 것.
  *
  * 벽시계는 가짜 타이머로 못 박는다 — 판정이 `new Date()` 를 쓰므로 실행 시각이 새어 들어오면
  * 스펙이 거짓말한다. 타이머 API 는 그대로 둔다(postgres.js 가 진짜 타이머를 쓴다).
  *
- * 로컬 실행(서울 머신에서 의미 있게 돌리려면 TZ 를 직접 박을 것):
- *   TZ=UTC DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core \
+ * 로컬 실행(TZ 는 globalSetup 이 박으므로 따로 넘길 것이 없다):
+ *   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core \
  *     npx jest --testPathPattern=same-day-cancel.integration --runInBand
  */
 describeIfDb('InboundService.cancelInbound 당일 판정 (PostgreSQL integration)', () => {
