@@ -129,9 +129,9 @@ enum 정의는 schema.ts:99–116.
 
 각 항목: **증상 → 근거(파일:줄) → 확인 방법/여부 → 영향**.
 
-### 🔴 ① 자동 확정 크론이 매일 밤 조용히 죽는다 — **실측 확인 완료**
+### 🔴 ① 자동 확정 크론 — 매일 밤 죽고 있고, 살아나도 축이 틀렸다
 
-**근거**: `inbound/services/purchase-order-cron.service.ts:46`
+**근거**: `inbound/services/purchase-order-cron.service.ts:47`
 
 ```ts
 sql`DATE(${wmsTables.purchaseOrders.expectedArrival}) = ${todayDateOnly}`
@@ -158,6 +158,72 @@ STRING-BIND:   OK, rows = 1
 
 **참고**: 같은 함정의 미수정 사례가 `apps/notification/src/shared/services/metrics.service.ts:54`
 에도 있다(이번 범위 밖).
+
+#### 같은 한 줄에 있던 두 번째 결함 — 프로세스 TZ 의존 (수정 과정에서 발견)
+
+```ts
+const today = nowSeoul();                                             // KST 달력 필드
+const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+```
+
+`new Date(y, m, d)` 는 **프로세스 로컬 TZ** 로 순간을 만든다. 그래서 이 값을 어떻게
+직렬화하든 결과가 서버 TZ 를 탄다. 바인딩만 문자열로 바꾸는 최소 수정이었다면 이 결함이
+그대로 남았을 것이다.
+
+| 프로세스 TZ | `todayDateOnly` 의 UTC 순간 | 날짜 |
+|---|---|---|
+| UTC (배포 컨테이너 — `TZ` 미설정, `node:22-alpine`) | KST 날짜 00:00Z | 맞음 |
+| Asia/Seoul (개발 머신 실측) | 전날 15:00Z | **하루 어긋남** |
+
+빨간 테스트가 실제로 찍어낸 바인딩 값이 이 둘을 한꺼번에 보여준다:
+
+```
+params: created,approved,Tue Aug 25 2026 00:00:00 GMT+0900 (한국 표준시)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Date 객체 원본 + KST 자정
+```
+
+**남은 사실**: `audit_status` 기본값은 `'draft'` 이고 크론은 `'approved'` 만 고른다. 발견 ②
+때문에 심사 워크플로가 사실상 돌지 않으므로, **크래시를 없애도 승인된 발주가 없으면 크론은
+계속 0건을 고른다.** 자동 확정이 실제로 발주를 움직이려면 항목 3(D1) 이 먼저 정해져야 한다.
+
+#### 더 큰 사실 — 크래시가 아니라 트리거 축이 틀렸다 (2026-08-25 설계 검토)
+
+크래시를 고치면 도착예정일 0시에 발주 헤더가 통째로 `confirmed` 가 되고 입고 계획이 생긴다.
+그 동작 자체가 운영과 맞지 않는다. 근거는 셋 다 코드에 있다.
+
+**(1) `confirmed` 가 곧 가시성의 스위치다.** `stock_summary_view.on_order_qty` 는 하드코딩
+`0` 이다(`inventory.schema.ts:1123`, 라이브 뷰 정의로도 확인). 계획을 만드는 것은
+`createInboundPlanFromPO` 뿐이고 그건 확정 시점에만 돈다. 즉 **`created` 상태 발주는 어느
+화면에도 존재하지 않는다.**
+
+**(2) 그 가시성을 소비하는 리더가 확정된 발주만 본다.** `InboundPipelineReader`
+(`GET /stocks/inbound-pipeline`)의 ①발주 잔량은 `inbound_plan_items` 의 pending 에서 나온다
+(`inbound-pipeline.reader.ts:69~`). 그 파일 주석이 이 API 의 존재 이유를 *"②를 빼면 재고 0,
+입고예정 0 으로 보여 **중복 발주가 난다**"* 라고 적어 두었는데, 같은 논증이 ①에 더 강하게
+적용된다. 크론은 주문~도착 구간(중국 해상 운송이면 수 주~수 개월) 전체를 사각지대로 만든다.
+
+**(3) `expected_arrival` 은 nullable 인데 크론 조건은 날짜 일치다.** 도착예정일을 모르는
+발주는 **영원히 자동 확정되지 않는다 = 영원히 안 보인다.** 반면 파이프라인 리더는 이미
+*"예정일이 없는 단계는 숨기지 않고 null 로 낸다 — 숨기면 그 구간이 다시 사각지대가 된다"*
+로 이 경우를 감당한다. 데이터 모델이 "모른다"에 더 준비돼 있다.
+
+**덤**: 중국 창고 도착일은 업무상 이정표가 아니다. 중국은 비판매 창고라 도착해도 팔 수 있게
+되지 않는다 — 판매 가능 시점은 부천 도착이다. 도착일은 파이프라인 ①이 ②로 바뀌는 순간일 뿐인데
+크론은 하필 그 순간을 상태 전이 트리거로 삼는다.
+
+**그리고 크론은 능력을 주지도 않는다.** `PUT /:id/status` 와 admin-web 상세 드로어 버튼이
+이미 있다. 크론은 새 기능이 아니라 **타이밍 정책**이고, 그 정책이 위 이유로 틀렸다.
+
+**"오늘 입고 작업 목록"이 필요했던 것이라면 그건 조회다** — `inbound_plans WHERE
+expected_date = 오늘`. 그걸 얻자고 발주 상태를 바꿀 이유가 없다.
+
+**또 하나의 미강제 전제**: 읽기 쪽을 어떻게 고치든, `DATE(expected_arrival)` 가 사용자가 고른
+달력 날짜와 같다는 보장은 없다. `CreatePurchaseOrderDto.expectedArrival` 이 `@IsDateString()`
+이라 `'2026-08-26T00:00:00+09:00'` 이나 오프셋 없는 `'2026-08-26T00:00:00'` 도 통과하는데
+(실측), 전자는 `new Date(...).toISOString()` 이 `'2026-08-25T15:00:00.000Z'` 라 naive
+`timestamp` 컬럼에 `'2026-08-25 15:00'` 으로 저장된다 — **하루 앞 날짜로 잡힌다.** 후자는
+서버 TZ 에 따라 갈린다. admin-web 은 `<input type="date">` 라 `'YYYY-MM-DD'` 만 보내므로
+현재 UI 경로로는 안 나지만, API 계약이 막고 있지는 않다.
 
 ### 🔴 ② 심사 워크플로가 장식이다 — 세 겹으로 무력화
 
@@ -273,13 +339,44 @@ A(전량 입고완료 status=confirmed) + B(pending) 상태에서 라인 수정
 | **스테일 주석**: "이동 지시서 초안 자동 생성의 조건이기도 하다" | service:304. **그런 코드 없음** — `transfer_orders` 는 PO/plan 을 참조하지 않고 `warehouse-transfer.manager.ts:63` 컨트롤러 경로로만 생성 |
 | **도메인 이벤트 0건**: 발주 생성/승인/확정이 Kafka 로 안 나감 | analytics·정산이 발주를 볼 수 없음 |
 
+### 🟠 ⑪ `isSameSeoulDay(nowSeoul(), …)` 이중 변환 — 저녁 입고 취소가 막힌다
+
+**발견 경위**: ① 수정 중 `time.util` 사용처를 훑다가. **①과 별개 버그다.**
+
+**근거**: `apps/core/src/modules/inventory/inbound/services/inbound.service.ts:997`
+
+```ts
+if (!isSameSeoulDay(nowSeoul(), receiptRow.occurredAt)) {
+  throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
+}
+```
+
+`isSameSeoulDay(a, b)` 는 내부에서 두 인자를 각각 `toSeoulTime` 한다. 첫 인자에 이미
+변환된 `nowSeoul()` 을 넣으면 **+9h 가 두 번** 적용돼 "지금"이 9시간 미래로 밀린다.
+
+**확인** (2026-08-25, `TZ=UTC` 로 재현):
+
+```
+실제 KST now       : 2026-08-25 20:00
+실제 KST occurredAt: 2026-08-25 11:00   ← 같은 날
+현재 코드  isSameSeoulDay(nowSeoul(), occurredAt) = false   ← 취소 거부
+올바른 형태 isSameSeoulDay(new Date(), occurredAt) = true
+```
+
+**영향**: KST **15:00–24:00** 구간에 접수된 취소 요청이 같은 날 입고분인데도 전부
+`400 cancel is allowed only on the same day` 로 거부된다. 하루의 3/8 이고, 창고 저녁
+근무 시간대와 정확히 겹친다. 반대 방향 오류(전날 것을 허용)는 없다.
+
+**고치는 법**: 첫 인자를 `new Date()` 로. 한 줄이지만 입고 취소 경로라 별도 테스트가
+필요하고 ①과 위험이 다르므로 묶지 않았다.
+
 ---
 
 ## 3. 권고 — 작업 순서와 근거
 
 | # | 항목 | 다루는 발견 | 선행 | 마이그 |
 |---|---|---|---|---|
-| 1 | 크론 자동 확정 복구 | ① | — | 0 |
+| 1 | 크론 자동 확정 **제거** | ① | — | 0 |
 | 2 | 발주 응답 계약 DTO화 (`auditStatus` 포함) | ⑤ | — | 0 |
 | 3 | 심사 워크플로 — 살리기 또는 제거 | ② | **⚠️ 제품 결정** | 미정 |
 | 4 | `inbound_plans` writer 단일화 | ③ ④ | — | 0 |
@@ -287,6 +384,7 @@ A(전량 입고완료 status=confirmed) + B(pending) 상태에서 라인 수정
 | 6 | 재주문 제안 정리 | ⑥ | — | 0 |
 | 7 | 종결·취소 상태 | ⑦ | — | **있음** |
 | 8 | 잔가지 묶음 | ⑧ ⑩ | — | 소 |
+| 9 | `isSameSeoulDay` 이중 변환 수정 | ⑪ | — | 0 |
 
 ### 3.1 모듈 분리안 (항목 5)
 
