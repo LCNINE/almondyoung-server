@@ -38,6 +38,9 @@ export const FormRadioGroup = React.forwardRef<
     orientation = "horizontal",
     ...props
 }, ref) => {
+    // 한 화면에 값이 겹치는 라디오 그룹이 공존할 수 있어 (예: 기간 '당월'과 단위 '월별' 둘 다 'month')
+    // option.value 를 그대로 id 로 쓰면 라벨이 다른 그룹의 라디오에 연결된다.
+    const groupId = React.useId()
     return (
         <div className={cn("space-y-1", className)}>
             <RadioGroup
@@ -55,7 +58,7 @@ export const FormRadioGroup = React.forwardRef<
                     <div key={option.value} className="flex items-center gap-[6px]">
                         <RadioGroupItem
                             value={option.value}
-                            id={option.value}
+                            id={`${groupId}-${option.value}`}
                             disabled={option.disabled || disabled}
                             className={cn(
                                 "h-5 w-5 rounded-full border-0 text-white", // 기본 크기(20px), 기본 테두리 제거, 내부 점 흰색
@@ -74,7 +77,7 @@ export const FormRadioGroup = React.forwardRef<
                             )}
                         />
                         <Label
-                            htmlFor={option.value}
+                            htmlFor={`${groupId}-${option.value}`}
                             className={cn(
                                 "text-[15px] font-bold text-black cursor-pointer",
                                 (disabled || option.disabled) && "opacity-50 cursor-not-allowed"

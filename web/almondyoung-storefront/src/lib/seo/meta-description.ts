@@ -2,6 +2,16 @@ import sanitize from "sanitize-html"
 
 const MAX_LENGTH = 155
 const BLOCK_BOUNDARY = /<\/(p|div|h[1-6]|li|tr|td|section|article)>|<br\s*\/?>/gi
+// soft hyphen, zero-width space, word joiner
+const INVISIBLE = /[\u00ad\u200b\u2060]/g
+
+function normalize(text: string): string {
+  return text
+    .replace(/&nbsp;/g, " ")
+    .replace(INVISIBLE, "")
+    .replace(/\s+/g, " ")
+    .trim()
+}
 
 // 상세 HTML 은 어드민 에디터/cafe24 이관본이라 마크업·공백이 뒤섞여 있다.
 export function toMetaDescription(
@@ -9,13 +19,12 @@ export function toMetaDescription(
 ): string | undefined {
   if (!html) return undefined
 
-  const text = sanitize(html.replace(BLOCK_BOUNDARY, " "), {
-    allowedTags: [],
-    allowedAttributes: {},
-  })
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
+  const text = normalize(
+    sanitize(html.replace(BLOCK_BOUNDARY, " "), {
+      allowedTags: [],
+      allowedAttributes: {},
+    })
+  )
 
   if (!text) return undefined
 
@@ -30,22 +39,21 @@ export function markdownToMetaDescription(
 ): string | undefined {
   if (!markdown) return undefined
 
-  const text = sanitize(
-    markdown
-      .replace(/:{1,3}[a-zA-Z][\w-]*(\[[^\]]*\])?\s*(\{[^}]*\})?/g, " ")
-      .replace(/```[\w-]*\n?/g, " ")
-      .replace(/`([^`]*)`/g, "$1")
-      .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
-      .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-      .replace(/^[ \t]*(#{1,6}|>+|[-*+]|\d+\.)[ \t]+/gm, "")
-      .replace(/[*_~]{1,3}([^*_~\s][^*_~]*)[*_~]{1,3}/g, "$1")
-      .replace(/^\|(.*)\|$/gm, (_, row: string) => row.replace(/\|/g, " "))
-      .replace(/^[-=|: ]{3,}$/gm, " "),
-    { allowedTags: [], allowedAttributes: {} }
+  const text = normalize(
+    sanitize(
+      markdown
+        .replace(/:{1,3}[a-zA-Z][\w-]*(\[[^\]]*\])?\s*(\{[^}]*\})?/g, " ")
+        .replace(/```[\w-]*\n?/g, " ")
+        .replace(/`([^`]*)`/g, "$1")
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+        .replace(/^[ \t]*(#{1,6}|>+|[-*+]|\d+\.)[ \t]+/gm, "")
+        .replace(/[*_~]{1,3}([^*_~\s][^*_~]*)[*_~]{1,3}/g, "$1")
+        .replace(/^\|(.*)\|$/gm, (_, row: string) => row.replace(/\|/g, " "))
+        .replace(/^[-=|: ]{3,}$/gm, " "),
+      { allowedTags: [], allowedAttributes: {} }
+    )
   )
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
 
   if (!text) return undefined
 

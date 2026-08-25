@@ -214,6 +214,7 @@ export class BusinessLicensesService {
       this.assertNotCorporate(data.businessNumber!);
 
       const verification = await this.verifyWithNts(data.businessNumber!, data.representativeName!, data.startDate!);
+      this.assertNtsMatched(verification);
 
       await this.dbService.db.insert(businessLicenses).values({
         userId,
@@ -225,14 +226,54 @@ export class BusinessLicensesService {
       });
       return;
     } catch (error) {
-      console.log('error::', error);
+      // 우리가 의도해서 던진 예외는 상태코드째로 보존한다 — 전부 400 으로 재포장하면
+      // 중복(409) 같은 구분이 사라진다.
+      if (error instanceof BusinessLicenseException) throw error;
 
+      const duplicate = this.describeUniqueViolation(error);
+      if (duplicate) {
+        throw new BusinessLicenseException({
+          message: duplicate.message,
+          errorCode: duplicate.errorCode,
+          httpStatus: HttpStatus.CONFLICT,
+        });
+      }
+
+      // ⚠️ error.message 를 그대로 내보내면 안 된다. drizzle 은 실패한 SQL 원문
+      // (테이블·컬럼·바인딩된 입력값 전체)을 message 에 담으므로 그대로 화면에 노출됐다.
+      this.logger.error(
+        `사업자 등록 정보 생성 실패 (userId=${userId})`,
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new BusinessLicenseException({
-        message: error.message ?? '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
-        errorCode: error.errorCode ?? 'BUSINESS_LICENSE_CREATION_FAILED',
+        message: '사업자 등록 정보를 생성하는 중 오류가 발생했습니다.',
+        errorCode: 'BUSINESS_LICENSE_CREATION_FAILED',
         httpStatus: HttpStatus.BAD_REQUEST,
       });
     }
+  }
+
+  /**
+   * unique 제약 위반(23505)을 사람이 읽을 수 있는 안내로 바꾼다.
+   *
+   * 사전 중복검사는 user_id 만 본다. 같은 사업자등록번호를 **다른 계정**이 등록하면
+   * 그 검사를 통과해 DB 제약에서 터지고, 예전에는 그 원문이 그대로 사용자에게 갔다.
+   */
+  private describeUniqueViolation(error: unknown): { message: string; errorCode: string } | null {
+    const code = (error as { code?: string; cause?: { code?: string; constraint_name?: string } })?.cause?.code;
+    if (code !== '23505') return null;
+
+    const constraint = (error as { cause?: { constraint_name?: string } })?.cause?.constraint_name ?? '';
+    if (constraint.includes('business_number')) {
+      return {
+        message: '이미 등록된 사업자등록번호입니다. 본인 사업자번호가 맞다면 고객센터로 문의해주세요.',
+        errorCode: 'BUSINESS_LICENSE_NUMBER_ALREADY_EXISTS',
+      };
+    }
+    return {
+      message: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.',
+      errorCode: 'BUSINESS_LICENSE_ALREADY_EXISTS',
+    };
   }
 
   async getMyBusinessLicense(userId: string): Promise<BusinessLicenseResponseDto | null> {
@@ -419,6 +460,17 @@ export class BusinessLicensesService {
     }
   }
 
+  private assertNtsMatched(verification: NtsValidateResult): void {
+    if (verification.valid || verification.status !== 'not_found') return;
+
+    throw new BusinessLicenseException({
+      message:
+        '입력하신 정보가 국세청 기록과 일치하지 않습니다. 사업자등록증에 적힌 사업자등록번호·대표자명·개업일자를 그대로 입력해주세요.',
+      errorCode: 'BUSINESS_LICENSE_NTS_MISMATCH',
+      httpStatus: HttpStatus.BAD_REQUEST,
+    });
+  }
+
   /**
    * 진위확인을 통과하고 **계속사업자**인 경우에만 자동 승인한다.
    * 휴업·폐업·미등록·조회실패는 모두 사람이 보도록 under_review 로 남긴다.
@@ -516,6 +568,7 @@ export class BusinessLicensesService {
     this.assertNotCorporate(data.businessNumber!);
 
     const verification = await this.verifyWithNts(data.businessNumber!, data.representativeName!, data.startDate!);
+    this.assertNtsMatched(verification);
 
     await this.dbService.db
       .update(businessLicenses)

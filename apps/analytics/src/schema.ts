@@ -154,6 +154,8 @@ export const dimProductCategories = pgTable(
       .$defaultFn(() => uuidv7()),
     masterId: varchar('master_id', { length: 255 }).notNull(),
     categoryId: varchar('category_id', { length: 255 }).notNull(),
+    // 카테고리 표시명. 이벤트에는 없어 시딩 스크립트(scripts/ops/seed-analytics-product-dims.ts)가 채운다.
+    categoryName: varchar('category_name', { length: 255 }),
     isPrimary: boolean('is_primary').notNull().default(false),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),

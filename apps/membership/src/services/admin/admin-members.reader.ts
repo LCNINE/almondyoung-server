@@ -96,6 +96,21 @@ export interface AdminMembersResponse {
   limit: number;
 }
 
+/**
+ * 상태별 회원 수. 각 값은 같은 status 필터의 목록 API total 과 같은 쿼리로 센다.
+ *  - active 는 해지 예약(recurringCancelled) 회원을 포함한다 — 잔여기간 이용 중이라 목록의 ACTIVE 필터와 동일.
+ *  - recurringCancelled 는 active 의 부분집합이므로 버킷을 더해 total 을 만들면 안 된다.
+ */
+export interface AdminMembersSummary {
+  /** 멤버십을 한 번이라도 구독했던 회원 수 (필터 없음) */
+  total: number;
+  active: number;
+  paused: number;
+  recurringCancelled: number;
+  cancelled: number;
+  expired: number;
+}
+
 export interface AdminMemberDetail {
   contractId: string;
   userId: string;
@@ -332,9 +347,13 @@ export class AdminMembersReader {
     private readonly contractReader: SubscriptionContractReader,
   ) {}
 
-  async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
-    const { page = 1, limit = 20, status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt', refundPending } = query;
-    const offset = (page - 1) * limit;
+  /**
+   * 목록과 카운트가 공유하는 원천 subquery — user 별 최신 계약 1행.
+   * 필터 조건을 여기(subquery WHERE)에 넣은 뒤 distinct-on 하므로, 목록 total 과 요약 카운트가
+   * 같은 정의를 갖는다. 카운트를 따로 정의하면 화면의 카드 숫자와 목록 total 이 어긋난다.
+   */
+  private buildLatestPerUserSubquery(query: Omit<AdminMembersQuery, 'page' | 'limit'>) {
+    const { status, q, userIds, dateFrom, dateTo, dateCriteria = 'createdAt', refundPending } = query;
 
     // 모르는 상태값을 조용히 무시하면 조건이 통째로 빠져 '해지 내역' 화면에 전체 회원이 나온다.
     // 배포 과도기(옛 서버 + 새 화면)에 그렇게 되면 CS 가 목록을 믿을 수 없다 — 명시적으로 거부한다.
@@ -421,7 +440,7 @@ export class AdminMembersReader {
       eq(schema.subscriptionEntitlement.isCurrent, true),
     );
 
-    const latestPerUser = this.dbService.db
+    return this.dbService.db
       .selectDistinctOn([schema.subscriptionContracts.userId], {
         contractId: schema.subscriptionContracts.id,
         userId: schema.subscriptionContracts.userId,
@@ -456,6 +475,33 @@ export class AdminMembersReader {
       .where(whereClause)
       .orderBy(schema.subscriptionContracts.userId, desc(schema.subscriptionContracts.createdAt))
       .as('lc');
+  }
+
+  /** 상태별 회원 수. 각 버킷은 같은 status 필터의 목록 total 과 같은 쿼리로 계산된다. */
+  async countMembersByStatus(): Promise<AdminMembersSummary> {
+    const countFor = async (status?: AdminMemberStatusFilter) => {
+      const sub = this.buildLatestPerUserSubquery({ status });
+      const [{ total }] = await this.dbService.db.select({ total: count() }).from(sub);
+      return total;
+    };
+
+    const [total, active, paused, recurringCancelled, cancelled, expired] = await Promise.all([
+      countFor(undefined),
+      countFor('ACTIVE'),
+      countFor('PAUSED'),
+      countFor('RECURRING_CANCELLED'),
+      countFor('CANCELLED'),
+      countFor('EXPIRED'),
+    ]);
+
+    return { total, active, paused, recurringCancelled, cancelled, expired };
+  }
+
+  async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
+    const { page = 1, limit = 20 } = query;
+    const offset = (page - 1) * limit;
+
+    const latestPerUser = this.buildLatestPerUserSubquery(query);
 
     const [[{ total }], rows] = await Promise.all([
       this.dbService.db.select({ total: count() }).from(latestPerUser),

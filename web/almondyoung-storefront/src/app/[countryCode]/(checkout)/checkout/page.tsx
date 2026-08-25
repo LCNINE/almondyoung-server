@@ -121,7 +121,7 @@ async function CheckoutManager({
     return (
       <ProtectedRoute>
         <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col justify-center px-4 py-16">
-          <div className="rounded-md border border-red-200 bg-red-50 p-5 text-red-900">
+          <div className="bg-destructive/5 rounded-md border border-red-200 p-5 text-red-900">
             <h1 className="text-base font-semibold">
               배송 옵션을 찾을 수 없습니다.
             </h1>

@@ -173,8 +173,8 @@ export default function AdminInventoryPage() {
           onDragLeave={handleDragLeave}
           className={`
             rounded-xl border-2 border-dashed p-8 text-center transition-colors
-            ${isDragging ? "border-yellow-400 bg-yellow-50" : "border-gray-300 bg-white"}
-            ${isProcessing ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-yellow-400 hover:bg-yellow-50"}
+            ${isDragging ? "border-amber-400 bg-amber-50" : "border-gray-300 bg-white"}
+            ${isProcessing ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-amber-400 hover:bg-amber-50"}
           `}
         >
           <input

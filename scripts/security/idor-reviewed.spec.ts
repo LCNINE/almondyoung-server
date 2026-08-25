@@ -45,9 +45,27 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'analytics GET /summary': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/analytics-api/analytics.service.ts:19',
-    predicate: "throw new NotImplementedException('TODO: 뭘 리턴하게 할지 고민중');",
-    note: '무인증(컨트롤러에 @UseGuards 없음, analytics.controller.ts:34,44) 이지만 AnalyticsService.getSummary() 가 현재 NotImplementedException 만 던지는 미구현 스텁 — 실제로는 항상 501 이 나가고 매출/구매 데이터는 반환되지 않는다. 구현이 채워지면(특히 집계에 사용자별 필드가 들어가면) 인증/스코프 재검토 필요.',
+    evidence: 'apps/analytics/src/features/analytics-api/analytics.controller.ts:35',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '대시보드 요약(오늘/어제 전사 매출 + 활성 멤버십 수) — 사용자 소유 리소스 파라미터가 없어 IDOR 대상 아님. JwtAuthGuard 로 인증 요구. 응답이 전사 매출 수치라 관리자 스코프 제한은 analytics 전반 스코프 도입과 함께 별도 검토.',
+  },
+  'analytics GET /statistics/sales': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '기간별 전사 매출 집계 — 쿼리 파라미터가 날짜/채널뿐이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard. 관리자 스코프는 위 /summary 와 같은 별도 검토 항목.',
+  },
+  'analytics GET /statistics/products': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '상품별 전사 집계 — 사용자 소유 리소스 파라미터 없음. 컨트롤러 클래스에 JwtAuthGuard.',
+  },
+  'analytics GET /statistics/customers': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '고객·멤버십 전사 집계 — 개별 고객 식별자를 받지 않고 등급/버킷 단위로만 반환. 컨트롤러 클래스에 JwtAuthGuard.',
   },
   'core GET /library/ownerships': {
     verdict: 'SAFE',
@@ -504,7 +522,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /business-licenses//me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:242',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:283',
     predicate: '.where(eq(businessLicenses.userId, userId))',
   },
   'user-service GET /cafe24/link': {
@@ -553,9 +571,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /business-licenses//me/business-number': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:476',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:541',
     predicate: '.where(eq(businessLicenses.userId, userId))',
-    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (476행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(265행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
+    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (541행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(306행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
   },
   'user-service POST //recent-views': {
     verdict: 'N/A',
@@ -626,15 +644,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(97);
+    expect(targets).toHaveLength(100);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(97);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(96);
+    expect(new Set(targets.map(keyOf)).size).toBe(100);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(99);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

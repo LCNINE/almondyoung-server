@@ -888,6 +888,27 @@ export class AdminOperationsController {
   }
 
   /**
+   * 멤버십 회원 수 요약 (상태별)
+   *
+   * GET /admin/members/summary
+   * `members/:userId` 보다 먼저 선언해야 "summary" 가 userId 로 잡히지 않는다.
+   */
+  @Get('members/summary')
+  @ApiOperation({
+    summary: '멤버십 회원 수 요약',
+    description: '상태별 회원 수. 각 값은 같은 status 필터의 회원 목록 total 과 동일한 기준으로 계산됩니다.',
+  })
+  @UseGuards(JwtAuthGuard)
+  async getMembersSummary() {
+    try {
+      const result = await this.adminOperationsService.getMembersSummary();
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '멤버십 회원 수 요약');
+    }
+  }
+
+  /**
    * 멤버십 회원 상세 조회
    *
    * GET /admin/members/:userId
