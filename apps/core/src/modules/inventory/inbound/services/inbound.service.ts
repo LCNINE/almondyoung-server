@@ -21,7 +21,7 @@ import {
   ListPlanItemsQueryDto,
   InboundPendingListResponse,
 } from '../dto/simple-inbound.dto';
-import { isSameSeoulDay, nowSeoul } from '../../shared/services/time.util';
+import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 
 @Injectable()
@@ -647,6 +647,12 @@ export class InboundService {
     return this.dbService.run(async (trx) => {
       const { purchaseOrders } = wmsTables;
 
+      // 발주 행을 잠근 뒤에 계획 존재를 읽는다. 잠그지 않으면 같은 PO 로 동시에 들어온
+      // 두 요청이 둘 다 "계획 없음"을 보고 계획을 2행 만든다 → 그 PO 전 SKU 의
+      // inbound_pending 2배(#724 항목 10-a). 유니크 제약 대신 락인 이유는 아래 주석 참조.
+      // 잠금 불변식: **PO 행 → 라인 행** 순서. 여기는 PO 만 잠그므로 순서를 깨지 않는다.
+      // ensurePlanForPurchaseOrder 는 같은 트랜잭션에서 이미 이 행을 잠그고 들어오는데,
+      // 같은 행 재잠금은 no-op 이라 자기 데드락이 없다.
       const [po] = await trx
         .select({
           id: purchaseOrders.id,
@@ -655,7 +661,8 @@ export class InboundService {
         })
         .from(purchaseOrders)
         .where(eq(purchaseOrders.id, dto.linkedPurchaseOrderId))
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (!po) {
         throw new NotFoundError(`Purchase order not found: ${dto.linkedPurchaseOrderId}`);
@@ -1071,7 +1078,7 @@ export class InboundService {
         where: eq(wmsTables.inboundReceipts.id, line.receiptId),
       });
       if (!receiptRow) throw new NotFoundException('inbound receipt not found');
-      if (!isSameSeoulDay(nowSeoul(), receiptRow.occurredAt)) {
+      if (!isTodaySeoul(receiptRow.occurredAt)) {
         throw new BadRequestException('cancel is allowed only on the same day (Asia/Seoul)');
       }
 
