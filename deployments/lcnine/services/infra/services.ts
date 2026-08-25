@@ -656,19 +656,8 @@ export function setup(infra: SharedInfra) {
   if (__blocked) {
     console.log("STOREFRONT_BLOCKED_IP " + __ip);
     return { statusCode: 403, statusDescription: "Forbidden" };
-  }
-  // 크롤러 판별을 여기서 한 번만 하고 x-crawler 로 정규화해 넘긴다.
-  // UA 원문을 캐시 키에 넣으면 카디널리티가 폭발하므로 0/1 로 접는다.
-  // 이 헤더는 CachePolicy 화이트리스트에 있어 봇/사람 응답이 서로 섞이지 않는다.
-  var __ua = (request.headers["user-agent"] && request.headers["user-agent"].value || "").toLowerCase();
-  var __isCrawler =
-    __ua.indexOf("googlebot") >= 0 || __ua.indexOf("bingbot") >= 0 ||
-    __ua.indexOf("yeti") >= 0 || __ua.indexOf("daum") >= 0 ||
-    __ua.indexOf("gptbot") >= 0 || __ua.indexOf("claudebot") >= 0 ||
-    __ua.indexOf("perplexitybot") >= 0 || __ua.indexOf("ccbot") >= 0 ||
-    __ua.indexOf("applebot") >= 0 || __ua.indexOf("facebookexternalhit") >= 0 ||
-    __ua.indexOf("google-extended") >= 0 || __ua.indexOf("bytespider") >= 0;
-  request.headers["x-crawler"] = { value: __isCrawler ? "1" : "0" };`;
+  }`;
+
 
   // ─── storefront 액세스 로그 (정부망 IP '발견'용, live 전용) ───
   // 위 차단 Function 은 "이미 막은 IP"만 CloudWatch 에 남긴다. 아직 blocklist 에 없는
