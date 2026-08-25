@@ -18,22 +18,7 @@
   font-display: swap;
 }
 
-@font-face {
-  font-family: "Pretendard";
-  src:
-    url("/fonts/Pretendard-Regular.woff2") format("woff2"),
-    url("/fonts/Pretendard-Regular.woff") format("woff");
-  font-weight: 400;
-  font-display: swap;
-}
-@font-face {
-  font-family: "Pretendard";
-  src:
-    url("/fonts/Pretendard-Bold.woff2") format("woff2"),
-    url("/fonts/Pretendard-Bold.woff") format("woff");
-  font-weight: 700;
-  font-display: swap;
-}
+/* Pretendard 는 globals.css 의 dynamic-subset CDN 담당. 로컬로 재선언하면 전체 폰트를 받는다 */
 
 @theme inline {
   /* 폰트 패밀리 */
