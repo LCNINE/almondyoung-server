@@ -1,4 +1,4 @@
-import { StatisticsRangeQuery, TrafficStatisticsQuery } from '@/lib/api/domains/analytics';
+import { CustomerInsightsQuery, StatisticsRangeQuery, TrafficStatisticsQuery } from '@/lib/api/domains/analytics';
 
 export const analyticsQueryKeys = {
   all: ['analytics'] as const,
@@ -10,4 +10,5 @@ export const analyticsQueryKeys = {
     [...analyticsQueryKeys.all, 'unsold-products', query] as const,
   customers: (query: StatisticsRangeQuery) => [...analyticsQueryKeys.all, 'customers', query] as const,
   traffic: (query: TrafficStatisticsQuery) => [...analyticsQueryKeys.all, 'traffic', query] as const,
+  customerInsights: (query: CustomerInsightsQuery) => [...analyticsQueryKeys.all, 'customer-insights', query] as const,
 };

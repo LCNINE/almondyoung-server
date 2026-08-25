@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   analyticsApi,
+  CustomerInsightsQuery,
   ProductStatisticsQuery,
   StatisticsRangeQuery,
   TrafficStatisticsQuery,
@@ -41,6 +42,13 @@ export const useCustomerStatistics = (query: StatisticsRangeQuery) => {
   return useQuery({
     queryKey: analyticsQueryKeys.customers(query),
     queryFn: () => analyticsApi.getCustomerStatistics(query),
+  });
+};
+
+export const useCustomerInsights = (query: CustomerInsightsQuery) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.customerInsights(query),
+    queryFn: () => analyticsApi.getCustomerInsights(query),
   });
 };
 

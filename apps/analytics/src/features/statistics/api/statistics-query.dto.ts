@@ -43,6 +43,24 @@ export class ProductStatisticsQueryDto extends StatisticsRangeQueryDto {
   order?: 'asc' | 'desc' = 'desc';
 }
 
+export class CustomerInsightsQueryDto extends StatisticsRangeQueryDto {
+  @ApiPropertyOptional({ example: 20, default: 20, description: '재구매 상품 목록 최대 행 수' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number = 20;
+
+  @ApiPropertyOptional({ example: 5, default: 5, description: '재구매 목록에 올릴 최소 구매자 수 (노이즈 컷)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  minBuyers?: number = 5;
+}
+
 export class UnsoldProductsQueryDto extends StatisticsRangeQueryDto {
   @ApiPropertyOptional({ example: 50, default: 50, description: '최대 행 수' })
   @IsOptional()
