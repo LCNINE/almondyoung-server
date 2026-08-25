@@ -39,6 +39,16 @@ describe('toJamo', () => {
     expect(toJamo('롤러킹').length).toBe(8);
   });
 
+  // 같은 글자를 두 가지로 표현할 수 있다. macOS 파일시스템이 NFD 를 쓰기 때문에
+  // 편집 환경에 따라 테스트 결과가 갈렸다 — es-hangul 은 NFD 를 음절로 못 알아본다.
+  it('NFD 로 들어와도 NFC 와 같은 자모를 낸다', () => {
+    for (const word of ['값', '갃', '롤러킹', '퍼마 색소']) {
+      expect(toJamo(word.normalize('NFD'))).toBe(toJamo(word.normalize('NFC')));
+    }
+    // 정규화가 없으면 여기가 "값" 그대로 나와서 자모 매칭이 통째로 빗나간다.
+    expect(toJamo('값'.normalize('NFD'))).toBe('ㄱㅏㅂㅅ');
+  });
+
   it('한글이 아닌 문자는 소문자로 보존하고 공백은 유지한다', () => {
     expect(toJamo('Perma Blend')).toBe('perma blend');
     expect(toJamo('퍼마 색소')).toBe('ㅍㅓㅁㅏ ㅅㅐㄱㅅㅗ');
