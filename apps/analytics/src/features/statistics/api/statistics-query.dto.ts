@@ -1,17 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsCalendarDateConstraint } from '@app/shared';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+import { IsIn, IsInt, IsOptional, Max, Min, Validate } from 'class-validator';
 
 /** 기간 조회 공통 파라미터. 날짜는 KST 달력 날짜(YYYY-MM-DD), 양끝 포함. */
 export class StatisticsRangeQueryDto {
   @ApiProperty({ example: '2026-08-01', description: '조회 시작일 (KST, 포함)' })
-  @Matches(DATE_ONLY, { message: 'from 은 YYYY-MM-DD 형식이어야 합니다' })
+  @Validate(IsCalendarDateConstraint, { message: 'from 은 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   from: string;
 
   @ApiProperty({ example: '2026-08-24', description: '조회 종료일 (KST, 포함)' })
-  @Matches(DATE_ONLY, { message: 'to 는 YYYY-MM-DD 형식이어야 합니다' })
+  @Validate(IsCalendarDateConstraint, { message: 'to 는 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   to: string;
 
   @ApiPropertyOptional({ description: '판매 채널 필터 (생략 시 전체)' })

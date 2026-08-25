@@ -25,6 +25,9 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
 import { MembershipDailySnapshotService } from './datasets/memberships/aggregates/membership-daily-snapshot.service';
 import { StatisticsController } from './features/statistics/api/statistics.controller';
 import { StatisticsQuery } from './features/statistics/read-model/statistics.query';
+import { TrafficController } from './features/traffic/api/traffic.controller';
+import { TrafficQuery } from './features/traffic/read-model/traffic.query';
+import { Ga4Client } from './features/traffic/ga4/ga4.client';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 
 @Module({
@@ -65,7 +68,14 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
       scopes: [],
     }),
   ],
-  controllers: [AnalyticsController, StatisticsController, OrderEventsConsumer, ProductEventsConsumer, MembershipEventsConsumer],
+  controllers: [
+    AnalyticsController,
+    StatisticsController,
+    TrafficController,
+    OrderEventsConsumer,
+    ProductEventsConsumer,
+    MembershipEventsConsumer,
+  ],
   providers: [
     AnalyticsService,
     OrderFactsService,
@@ -81,6 +91,8 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     MembershipDimensionsService,
     MembershipDailySnapshotService,
     StatisticsQuery,
+    Ga4Client,
+    TrafficQuery,
   ],
 })
 export class AnalyticsModule {}

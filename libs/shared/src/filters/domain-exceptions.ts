@@ -43,6 +43,21 @@ export class ConflictError extends ApplicationException {
   }
 }
 
+/** 외부 시스템(GA4 등) 조회 실패 — 우리 잘못이 아니라 502 로 구분한다. */
+export class UpstreamUnavailableError extends ApplicationException {
+  constructor(message: string) {
+    super(message);
+  }
+
+  getErrorCode(): string {
+    return 'UPSTREAM_UNAVAILABLE';
+  }
+
+  getHttpStatus(): number {
+    return HttpStatus.BAD_GATEWAY;
+  }
+}
+
 export class UnauthorizedError extends ApplicationException {
   constructor(message: string) {
     super(message);

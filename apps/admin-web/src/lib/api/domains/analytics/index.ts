@@ -102,6 +102,35 @@ export interface CustomerStatistics {
   }>;
 }
 
+export type TrafficChannelGroup = 'organic' | 'all';
+
+export interface TrafficStatisticsQuery {
+  from: string;
+  to: string;
+  channelGroup?: TrafficChannelGroup;
+  limit?: number;
+}
+
+export interface TrafficTotals {
+  sessions: number;
+  totalUsers: number;
+  pageViews: number;
+  /** 참여 세션 ÷ 전체 세션. GA4 bounceRate(UA 와 정의가 다름)의 역수 */
+  engagementRate: number | null;
+}
+
+export interface TrafficStatistics {
+  /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
+  enabled: boolean;
+  range: { from: string; to: string };
+  channelGroup: TrafficChannelGroup;
+  totals: TrafficTotals | null;
+  series: Array<{ date: string; sessions: number; engagementRate: number | null }>;
+  landingPages: Array<{ path: string; sessions: number; engagementRate: number | null }>;
+  devices: Array<{ label: string; sessions: number }>;
+  countries: Array<{ label: string; sessions: number }>;
+}
+
 export interface DailyRevenueSummary extends RevenueTotals {
   date: string;
   avgOrderValue: number | null;
@@ -152,6 +181,14 @@ export const analyticsApi = {
 
   getCustomerStatistics: async (query: StatisticsRangeQuery): Promise<CustomerStatistics> => {
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/customers?${rangeQs(query)}`);
+    return res.data;
+  },
+
+  getTrafficStatistics: async (query: TrafficStatisticsQuery): Promise<TrafficStatistics> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.channelGroup) params.set('channelGroup', query.channelGroup);
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/traffic?${params.toString()}`);
     return res.data;
   },
 };
