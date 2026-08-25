@@ -11,7 +11,7 @@ function serviceWithSupplier(row: { defaultWarehouseId: string | null } | undefi
     })),
   };
   const dbService = { run: jest.fn((fn: (executor: typeof trx) => unknown) => fn(trx)) };
-  return new PurchaseOrderService(dbService as never, {} as never);
+  return new PurchaseOrderService(dbService as never, {} as never, {} as never);
 }
 
 describe('PurchaseOrderService 공급사 기본 창고', () => {

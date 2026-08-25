@@ -149,9 +149,21 @@ async function main() {
           .returning();
         poCount++;
 
-        await tx
-          .insert(wmsTables.purchaseOrderLines)
-          .values(fresh.map((i) => ({ poId: po.id, skuId: i.skuId, quantity: i.qty, unitPrice: null })));
+        // 라인도 실행된 것으로 박는다. status 를 비워 두면 기본값 'requested' 가 되고,
+        // 그 상태에서 누가 이 PO 를 한 번 더 확정하면 라인 실행이 아래에서 넣는 계획
+        // 아이템 위에 한 벌을 더 꽂아 inbound_pending_qty 가 두 배가 된다
+        // ((plan_id, sku_id) 유니크가 없어 DB 도 못 막는다). 헤더가 confirmed 인데
+        // 라인이 requested 인 조합은 새 모델에서 성립하지 않는다.
+        await tx.insert(wmsTables.purchaseOrderLines).values(
+          fresh.map((i) => ({
+            poId: po.id,
+            skuId: i.skuId,
+            quantity: i.qty,
+            unitPrice: null,
+            status: 'ordered' as const,
+            orderedQty: i.qty,
+          })),
+        );
 
         // 3) source plan 만 (중국 입고). 부천행 이동은 transfer_orders 가 소유한다 —
         //    예전에는 destination plan 을 짝으로 만들었는데, 두 계획이 모두

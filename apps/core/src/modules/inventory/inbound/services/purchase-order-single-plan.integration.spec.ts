@@ -8,6 +8,7 @@ import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__'
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderStatus } from '../dto/purchase-order.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
+import { InboundService } from './inbound.service';
 
 /**
  * 해외 발주(출발 창고 ≠ 최종 목적지)가 입고 계획을 하나만 만드는지 고정한다.
@@ -27,6 +28,8 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
   jest.setTimeout(120_000);
   let client: postgres.Sql;
   let db: PostgresJsDatabase<typeof wmsSchema>;
+  /** 확정도 라인 실행이므로 실행자가 필요하다 — ordered_by 로 남는다. */
+  const ACTOR = randomUUID();
 
   beforeAll(() => {
     ({ sql: client, db } = makeDb(DATABASE_URL as string));
@@ -50,9 +53,23 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     } as unknown as DbService<typeof wmsSchema>;
   }
 
+  /**
+   * InboundService 의 나머지 협력자(5개)는 `{} as never` 로 대역한다 —
+   * ensurePlanForPurchaseOrder → createInboundPlan/addInboundPlanItems 경로는
+   * dbService 만 쓰므로 본문에 도달하지 않는다(inbound.service.idempotency.spec.ts,
+   * inbound-plan-port-invariant.integration.spec.ts 와 같은 패턴).
+   */
   function buildPurchaseOrderService(trx: DbTx): PurchaseOrderService {
     const dbService = boundDbService(trx);
-    return new PurchaseOrderService(dbService, new TransactionService(dbService));
+    const inboundService = new InboundService(
+      dbService,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    return new PurchaseOrderService(dbService, new TransactionService(dbService), inboundService);
   }
 
   interface CrossWarehousePoFixture {
@@ -116,11 +133,12 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     };
   }
 
-  /** 발주 확정 — 입고 계획 생성 경로(`createInboundPlanFromPO`)를 지나는 유일한 공개 진입점. */
+  /** 발주 확정 — 입고 계획 생성 경로(`InboundService.ensurePlanForPurchaseOrder` 포트)를 지나는 유일한 공개 진입점. */
   async function confirmPurchaseOrder(trx: DbTx, poId: string): Promise<void> {
     await buildPurchaseOrderService(trx).updatePurchaseOrderStatus(
       poId,
       { status: PurchaseOrderStatus.CONFIRMED },
+      ACTOR,
       trx,
     );
   }
@@ -165,6 +183,52 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       // 옛 집계 키(destination_warehouse_id)에서는 여기가 20 이었다 — source/destination
       // 두 계획이 같은 창고에 잡혀 발주 수량의 2배가 됐다.
       expect(await readInboundPending(destinationWarehouseId)).toBe(0);
+    });
+  });
+
+  it('같은 발주를 두 번 확정해도 계획 아이템은 중복되지 않는다 (재시도/더블클릭)', async () => {
+    await inRollback(async (trx) => {
+      const { poId, quantity } = await seedCrossWarehousePurchaseOrder(trx);
+      const service = buildPurchaseOrderService(trx);
+
+      await service.updatePurchaseOrderStatus(poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
+      // 재확인 — 이미 confirmed 인 PO 에 같은 요청이 한 번 더 들어온다.
+      await service.updatePurchaseOrderStatus(poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
+
+      const items = await trx
+        .select({ expectedQty: wmsTables.inboundPlanItems.expectedQty })
+        .from(wmsTables.inboundPlanItems)
+        .innerJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlanItems.planId, wmsTables.inboundPlans.id))
+        .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
+
+      // 두 번째 호출이 라인을 다시 꽂았다면 여기가 2행·합계 2*quantity 가 된다.
+      expect(items).toHaveLength(1);
+      expect(items.reduce((sum, i) => sum + i.expectedQty, 0)).toBe(quantity);
+    });
+  });
+
+  it('확정 요청에 새 expectedArrival 이 실리면 계획 예정일이 그 값을 따른다', async () => {
+    await inRollback(async (trx) => {
+      // 시딩 시점 expectedArrival(new Date())과 확실히 다른 날짜를 확정 요청에 싣는다.
+      const { poId } = await seedCrossWarehousePurchaseOrder(trx);
+      const service = buildPurchaseOrderService(trx);
+      const newArrival = '2026-12-25';
+
+      await service.updatePurchaseOrderStatus(
+        poId,
+        { status: PurchaseOrderStatus.CONFIRMED, expectedArrival: newArrival },
+        ACTOR,
+        trx,
+      );
+
+      const [plan] = await trx
+        .select({ expectedDate: wmsTables.inboundPlans.expectedDate })
+        .from(wmsTables.inboundPlans)
+        .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
+
+      // UPDATE 전에 캡처한 existingPO.expectedArrival 을 그대로 썼다면 여기가
+      // 시딩 시점 날짜(오늘)로 나온다 — newArrival 이 아니라.
+      expect(plan.expectedDate?.toISOString().slice(0, 10)).toBe(newArrival);
     });
   });
 });

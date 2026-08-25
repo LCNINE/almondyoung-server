@@ -170,6 +170,59 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     await manager.ship({ transferOrderId, idempotencyKey: `ship-${randomUUID()}` }, trx);
   }
 
+  /**
+   * ①의 ETA 우선순위(아이템 vs 계획) 검증용 — 계획만 만들고 아이템은 비워둔다.
+   * 아이템은 각 테스트가 직접 심어 어떤 값이 이기는지를 스스로 통제한다.
+   */
+  async function seedNonSellableInboundPlan(
+    trx: DbTx,
+    input: { expectedDate: string },
+  ): Promise<{ planId: string; skuIds: string[]; sellableWarehouseId: string }> {
+    const suffix = randomUUID().slice(0, 8);
+    // seedWarehouseWithZone 은 기본이 판매 창고다 — 출발 창고만 비판매로 뒤집는다(중국 역할).
+    const source = await seedWarehouseWithZone(trx);
+    await trx
+      .update(wmsTables.warehouses)
+      .set({ isSellable: false })
+      .where(eq(wmsTables.warehouses.id, source.warehouseId));
+    const dest = await seedWarehouseWithZone(trx);
+    const { holderId } = await seedHolder(trx);
+    const { skuId } = await seedSku(trx, holderId);
+
+    const [supplier] = await trx
+      .insert(wmsTables.suppliers)
+      .values({ name: `it-supplier-${suffix}`, defaultWarehouseId: source.warehouseId })
+      .returning({ id: wmsTables.suppliers.id });
+    const [po] = await trx
+      .insert(wmsTables.purchaseOrders)
+      .values({
+        type: 'foreign',
+        supplierId: supplier.id,
+        status: 'confirmed',
+        auditStatus: 'approved',
+        sourceWarehouseId: source.warehouseId,
+        destinationWarehouseId: dest.warehouseId,
+        requiresTransfer: true,
+        expectedArrival: new Date(`${input.expectedDate}T00:00:00.000Z`),
+      })
+      .returning({ id: wmsTables.purchaseOrders.id });
+
+    const [plan] = await trx
+      .insert(wmsTables.inboundPlans)
+      .values({
+        planType: 'source',
+        status: 'pending',
+        warehouseId: source.warehouseId,
+        destinationWarehouseId: dest.warehouseId,
+        linkedPurchaseOrderId: po.id,
+        requiresTransfer: true,
+        expectedDate: new Date(`${input.expectedDate}T00:00:00.000Z`),
+      })
+      .returning({ id: wmsTables.inboundPlans.id });
+
+    return { planId: plan.id, skuIds: [skuId], sellableWarehouseId: dest.warehouseId };
+  }
+
   it('세 단계를 각각 수량과 예정일로 낸다', async () => {
     await inRollback(async (trx) => {
       const { source, dest, skuId } = await seedTwoWarehouses(trx);
@@ -266,6 +319,33 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
       expect(row.awaitingTransferQty).toBe(70);
       expect(row.inTransitQty).toBe(0);
       expect(row.inTransitEta).toBeNull();
+    });
+  });
+
+  it('①의 ETA 는 계획 날짜가 아니라 아이템 예정일 중 최소다', async () => {
+    await inRollback(async (trx) => {
+      // 비판매 창고(중국)로 들어오는 계획 하나에, 예정일이 다른 아이템 둘.
+      const fx = await seedNonSellableInboundPlan(trx, { expectedDate: '2026-12-31' });
+      await trx.insert(wmsTables.inboundPlanItems).values([
+        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 5, receivedQty: 0, status: 'pending', expectedDate: '2026-09-20' },
+        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 3, receivedQty: 0, status: 'pending', expectedDate: '2026-09-17' },
+      ]);
+
+      const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
+      expect(rows[0].onOrderQty).toBe(8);
+      expect(rows[0].onOrderEta?.toISOString().slice(0, 10)).toBe('2026-09-17');
+    });
+  });
+
+  it('아이템 예정일이 없으면 계획 예정일로 떨어진다', async () => {
+    await inRollback(async (trx) => {
+      const fx = await seedNonSellableInboundPlan(trx, { expectedDate: '2026-12-31' });
+      await trx.insert(wmsTables.inboundPlanItems).values([
+        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 4, receivedQty: 0, status: 'pending' },
+      ]);
+
+      const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
+      expect(rows[0].onOrderEta?.toISOString().slice(0, 10)).toBe('2026-12-31');
     });
   });
 });

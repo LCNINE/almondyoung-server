@@ -2,12 +2,11 @@ import { Injectable, NotFoundException, BadRequestException, Logger } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, inArray, sql, asc, desc, SQL } from 'drizzle-orm';
+import { eq, ne, and, inArray, sql, asc, desc, SQL } from 'drizzle-orm';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
-  UpdatePurchaseOrderLineDto,
   AddToCartDto,
   UpdateCartItemDto,
   CreatePurchaseOrderFromCartDto,
@@ -17,17 +16,29 @@ import {
   PurchaseOrderStatus,
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
-import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
+import {
+  SubmitForAuditDto,
+  ApprovePoDto,
+  RejectPoDto,
+  SubmitForAuditResponseDto,
+  ApprovePoResponseDto,
+  RejectPoResponseDto,
+} from '../dto/purchase-order/audit-po.dto';
+import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { InboundService } from './inbound.service';
 
 @Injectable()
 export class PurchaseOrderService {
   private readonly logger = new Logger(PurchaseOrderService.name);
 
   constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    @InjectTypedDb<typeof wmsSchema>()
+    private readonly dbService: DbService<typeof wmsSchema>,
     private readonly transactionService: TransactionService,
+    private readonly inboundService: InboundService,
   ) {}
 
   /**
@@ -146,10 +157,17 @@ export class PurchaseOrderService {
 
   /**
    * 발주 상태 업데이트
+   *
+   * `confirmed` 로의 전이는 "아직 실행 안 된 라인을 전부 지금 발주한 것으로 친다" 는
+   * 뜻이다 — 라인별 실행 화면을 쓰지 않는 운영자를 위한 일괄 경로다. 그래서 라인
+   * 실행과 **같은 경로**를 지난다(`executeLineOrder`). 두 경로가 각자
+   * `inbound_plan_items` 를 쓰면 두 화면을 번갈아 쓴 운영자에게 입고예정이 두 벌로
+   * 잡힌다 — 그 사고가 이미 한 번 났다.
    */
   async updatePurchaseOrderStatus(
     poId: string,
     updateDto: UpdatePurchaseOrderStatusDto,
+    userId: string,
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.dbService.run(async (trx) => {
@@ -163,22 +181,97 @@ export class PurchaseOrderService {
         throw new NotFoundException(`Purchase order with ID ${poId} not found`);
       }
 
+      // 심사 게이트 사본 ①. 다른 하나는 lockPurchaseOrderForLineExecution 에 있다
+      // (라인별 실행 경로). 둘 다 필요하다 — 이쪽은 실행할 requested 라인이 하나도
+      // 없어 아래 루프가 통째로 건너뛰어지는 확정까지 막고, 저쪽은 일괄 확정을 거치지
+      // 않는 라인별 실행을 막는다. 심사 축을 없앨 땐 **둘을 같이** 지운다.
       if (updateDto.status === PurchaseOrderStatus.CONFIRMED && existingPO.auditStatus !== 'approved') {
         throw new BadRequestException(`Cannot confirm PO with auditStatus: ${existingPO.auditStatus}`);
       }
+
+      // UPDATE 이후 유효한 도착예정일 — 이 요청이 expectedArrival 도 함께 보내면
+      // 그 값이 진실이다. existingPO 는 UPDATE 전 스냅샷이라 그대로 쓰면 방금 쓴 값을
+      // 무시하고 계획에 옛 날짜를 심는다(삭제된 createInboundPlanFromPO 는 UPDATE 뒤에
+      // 새로 SELECT 했기 때문에 이 문제가 없었다 — 이 포트 전환이 만든 회귀).
+      //
+      // 정규화는 `new Date(...)` 왕복이 아니라 **앞 10자 절단**이다. updateDto 는
+      // 이제 `@Validate(IsCalendarDateConstraint)`(calendar-date.validator.ts) 라
+      // HTTP 로 들어오는 값은 이미 정확히 'YYYY-MM-DD' 만 통과한다 — 이 절단은 그
+      // 경로를 위한 게 아니라, 서비스를 DTO 검증(ValidationPipe) 없이 직접 부르는
+      // 호출자(통합 스펙 등)가 '2026-08-26T00:00:00+09:00' 같은 오프셋 문자열을
+      // 넘길 때를 막는 방어선이다("오프셋이 붙은 확정 날짜도 달력 하루가 밀리지
+      // 않는다" 스펙이 그 경로를 그대로 재현한다). Date 로 왕복시키면 toISOString 이
+      // UTC 로 옮겨 '2026-08-25' 가 된다 — 운영자가 고른 달력 날짜가 하루 밀린다.
+      // ISO 8601 은 어떤 형태든 앞 10자가 그 달력 날짜라는 성질만 쓴다.
+      const headerExpectedDate: string | null = updateDto.expectedArrival
+        ? updateDto.expectedArrival.slice(0, 10)
+        : (existingPO.expectedArrival?.toISOString().slice(0, 10) ?? null);
 
       await trx
         .update(wmsTables.purchaseOrders)
         .set({
           status: updateDto.status,
-          expectedArrival: updateDto.expectedArrival ? new Date(updateDto.expectedArrival) : undefined,
+          // 헤더 컬럼에도 정규화한 날짜(UTC 자정)를 쓴다. 오프셋이 붙은 원본을 그대로
+          // 저장하면 헤더만 하루 다른 값을 갖고, 다음 확정의 폴백이 그 드리프트를
+          // 계획·라인까지 퍼뜨린다.
+          expectedArrival:
+            headerExpectedDate && updateDto.expectedArrival
+              ? new Date(`${headerExpectedDate}T00:00:00.000Z`)
+              : undefined,
           updatedAt: new Date(),
         })
         .where(eq(wmsTables.purchaseOrders.id, poId));
 
-      // 상태가 confirmed로 변경되면 inbound plans 생성
+      // 발주가 입고 테이블을 직접 쓰지 않고 InboundService 포트를 통해서만 쓰게 한다
+      // (두 번째 writer 제거). ensurePlanForPurchaseOrder 가 해외/국내 판단
+      // (source/destination, 창고)을 발주에서 도출하므로 여기서는 넘기지 않는다.
+      //
+      // 이중 계상 방어는 예전의 `existingPO.status !== 'confirmed'` 가드가 아니라
+      // **라인 상태**가 한다. 그 가드는 두 구멍이 있었다: (1) received → confirmed 는
+      // 조건을 통과해 이미 처리된 계획에 라인을 한 벌 더 꽂았고, (2) 라인별 실행
+      // 화면으로 이미 실행한 라인도 다시 꽂았다. 이제 아직 `requested` 인 라인만
+      // 실행하므로 재확정은 자연스러운 no-op 이 된다.
       if (updateDto.status === PurchaseOrderStatus.CONFIRMED) {
-        await this.createInboundPlanFromPO(trx, poId);
+        // 라인 status 는 drizzle enum 컬럼(문자열 유니온)이라 리터럴로 비교한다 —
+        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다
+        // (auditStatus 비교와 같은 이유).
+        const requestedLines = await trx
+          .select({
+            skuId: wmsTables.purchaseOrderLines.skuId,
+            quantity: wmsTables.purchaseOrderLines.quantity,
+          })
+          .from(wmsTables.purchaseOrderLines)
+          .where(
+            and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.status, 'requested')),
+          );
+
+        // 실행할 라인이 하나도 없으면 계획도 만들지 않는다 — 아이템 0개짜리 계획 행은
+        // 입고 화면에 유령으로 남는다(전 라인 unavailable, 또는 재확정).
+        if (requestedLines.length > 0) {
+          // 계획을 라인 루프 **앞에서** 헤더 날짜로 한 번 확보한다. 라인 실행의 호출에만
+          // 맡기면, 헤더에는 도착예정일이 있고 라인에는 없는 발주가 날짜 NULL 인 계획을
+          // 얻는다 — 오늘보다 나빠진다. ensurePlanForPurchaseOrder 는 멱등하므로 뒤이은
+          // 라인 실행의 호출은 조회로 끝난다.
+          await this.inboundService.ensurePlanForPurchaseOrder(poId, headerExpectedDate, trx);
+
+          // 확정 요청에 새 날짜가 실렸으면 라인·아이템도 그 날짜를 따른다. 넘기는 값은
+          // 이미 정규화된 'YYYY-MM-DD' 라 오프셋 위험이 없다 — date 컬럼에 닿으면
+          // 안 되는 건 raw `updateDto.expectedArrival` 쪽이다. 새 날짜가 없으면 아무것도
+          // 넘기지 않아 라인이 물려받은 값이 그대로 쓰인다(백필된 ETA 보존).
+          const bulkArrival = updateDto.expectedArrival ? (headerExpectedDate ?? undefined) : undefined;
+
+          for (const line of requestedLines) {
+            await this.executeLineOrder(
+              trx,
+              poId,
+              line.skuId,
+              { orderedQty: line.quantity, expectedArrival: bulkArrival },
+              userId,
+            );
+          }
+        }
+        // 헤더 status 를 다시 계산하지 않는다 — 위 UPDATE 가 이미 confirmed 를 썼고,
+        // 남은 requested 라인이 없으니 파생값도 confirmed 로 같다.
       }
 
       this.logger.log(`Updated purchase order ${poId} status to ${updateDto.status}`);
@@ -188,9 +281,215 @@ export class PurchaseOrderService {
   }
 
   /**
+   * 라인 하나를 실제로 발주했다고 기록한다.
+   *
+   * 실행 순간 수량·단가·도착예정일이 확정된다. 요청 수량(`quantity`)은 덮어쓰지 않는다 —
+   * 요청 10 / 실발주 6 이 둘 다 남아야 "왜 4개가 비었나" 를 나중에 답할 수 있다.
+   * 계획은 **첫 실행에서** 생긴다. 발주서 생성 시점이 아니다 — 아직 주문 안 했으니
+   * 입고 예정도 없다.
+   */
+  async orderLine(
+    poId: string,
+    skuId: string,
+    dto: OrderPurchaseOrderLineDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.dbService.run(async (trx) => {
+      await this.executeLineOrder(trx, poId, skuId, dto, userId);
+      await this.refreshHeaderStatus(trx, poId);
+      return this.getPurchaseOrderById(poId, trx);
+    }, tx);
+  }
+
+  /** 라인을 끝내 발주하지 못했다고 종결한다. 되살릴 수 없다 — 다시 사려면 새 발주서를 만든다. */
+  async markLineUnavailable(
+    poId: string,
+    skuId: string,
+    dto: MarkLineUnavailableDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.dbService.run(async (trx) => {
+      // PO 행 → 라인 행 순서로만 잠근다 (executeLineOrder 와 같은 순서).
+      await this.lockPurchaseOrderForLineExecution(trx, poId);
+      await this.loadRequestedLine(trx, poId, skuId);
+
+      await trx
+        .update(wmsTables.purchaseOrderLines)
+        .set({
+          status: 'unavailable',
+          unavailableReason: dto.reason ?? null,
+          // orderedAt/orderedBy 는 "발주한 시각" 이 아니라 라인 실행이 끝난 시각·사람이다.
+          // 종결도 실행이므로 누가 언제 끊었는지 같은 자리에 남긴다.
+          orderedAt: new Date(),
+          orderedBy: userId,
+        })
+        .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
+
+      await this.refreshHeaderStatus(trx, poId);
+      return this.getPurchaseOrderById(poId, trx);
+    }, tx);
+  }
+
+  /**
+   * 라인 실행의 알맹이. 라인별 실행(`orderLine`)과 일괄 확정이 **둘 다 여기로 온다** —
+   * 계획 아이템을 쓰는 자리를 하나로 두기 위해서다.
+   *
+   * 헤더 status 갱신과 응답 조립은 호출자가 한다. 일괄 확정은 라인마다 헤더를 다시
+   * 계산할 이유가 없고(마지막에 한 번이면 된다), 응답도 한 번만 필요하다.
+   */
+  private async executeLineOrder(
+    tx: DbTx,
+    poId: string,
+    skuId: string,
+    dto: OrderPurchaseOrderLineDto,
+    userId: string,
+  ): Promise<void> {
+    // 라인 락보다 **먼저** PO 행을 잠근다 (아래 helper 의 락 순서 불변식 참고).
+    await this.lockPurchaseOrderForLineExecution(tx, poId);
+    const line = await this.loadRequestedLine(tx, poId, skuId);
+    if (dto.orderedQty < 1) {
+      // class-validator 가 이미 막지만, 서비스를 직접 부르는 경로(스펙·다른 서비스)를 위해
+      // 여기서도 막는다. 0 은 unavailable 과 의미가 겹친다.
+      throw new BadRequestError('orderedQty must be at least 1; use the unavailable action instead');
+    }
+
+    // 실행자가 날짜를 안 주면 라인이 이미 들고 있던 값이 진실이다. `?? null` 로 덮으면
+    // 마이그레이션이 헤더에서 백필해 둔 살아있는 ETA 가 조용히 사라진다 —
+    // 옆의 unitPrice 와 같은 모양이어야 한다.
+    const effectiveArrival = dto.expectedArrival ?? line.expectedArrival;
+
+    await tx
+      .update(wmsTables.purchaseOrderLines)
+      .set({
+        status: 'ordered',
+        orderedQty: dto.orderedQty,
+        unitPrice: dto.unitPrice ?? line.unitPrice,
+        expectedArrival: effectiveArrival,
+        orderedAt: new Date(),
+        orderedBy: userId,
+      })
+      .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
+
+    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, effectiveArrival, tx);
+    await this.inboundService.addInboundPlanItems(
+      {
+        planId: plan.id,
+        items: [{ skuId, expectedQty: dto.orderedQty, expectedDate: effectiveArrival ?? undefined }],
+      },
+      tx,
+    );
+  }
+
+  /**
+   * 라인을 건드리기 전에 발주 헤더를 잠그고 심사 게이트를 확인한다.
+   *
+   * **락 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
+   * 일괄 확정은 헤더 UPDATE(와 ensurePlanForPurchaseOrder 의 FOR UPDATE)로 PO 행을
+   * 먼저 잡고 루프에서 라인을 잠근다. 라인별 실행이 라인을 먼저 잠그면 순서가 뒤집혀
+   * (ABBA) 두 경로가 만나는 순간 Postgres 가 한쪽을 40P01 로 죽인다 — 그건 도메인
+   * 예외가 아니라 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 그래서 라인별
+   * 경로도 여기서 PO 행부터 잡는다.
+   *
+   * 심사 게이트 사본 ②. 다른 하나는 updatePurchaseOrderStatus 의 CONFIRMED 가드다.
+   * 일괄 확정만 `auditStatus='approved'` 를 요구하면, draft 발주를 라인 하나씩 전부
+   * 실행해 헤더를 confirmed 로 만들 수 있다 — 같은 상태 전이에 문이 둘인데 자물쇠는
+   * 하나인 꼴이다. 반대로 이 검사 하나로 합칠 수도 없다: requested 라인이 0건인 확정은
+   * 루프를 통째로 건너뛰어 여기까지 오지 않는다. **둘 다 살아 있어야 하고, 지울 땐
+   * 같이 지운다.** (도메인 예외를 쓴다 — 저쪽의 Nest 예외는 이 파일에 남은 옛 코드다.)
+   */
+  private async lockPurchaseOrderForLineExecution(tx: DbTx, poId: string): Promise<void> {
+    const [po] = await tx
+      .select({ auditStatus: wmsTables.purchaseOrders.auditStatus, status: wmsTables.purchaseOrders.status })
+      .from(wmsTables.purchaseOrders)
+      .where(eq(wmsTables.purchaseOrders.id, poId))
+      .limit(1)
+      .for('update');
+
+    if (!po) throw new NotFoundError(`Purchase order not found: ${poId}`);
+    if (po.auditStatus !== 'approved') {
+      throw new BadRequestError(`Cannot execute purchase order lines with auditStatus: ${po.auditStatus}`);
+    }
+    // received 는 입고 경로가 소유한 종결 상태다(스펙 §5 헤더 status 파생표). 여기서
+    // 막지 않으면 라인 실행이 계획에 아이템을 더 붙여 inbound_pending_qty 를 부풀리고,
+    // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
+    // 그 뒤로는 아무것도 이 상태를 되돌리지 못한다. drizzle enum 컬럼은 문자열
+    // 유니온이라 TS enum 멤버가 아니라 리터럴로 비교한다(no-unsafe-enum-comparison).
+    if (po.status === 'received') {
+      throw new BadRequestError(`Cannot execute purchase order lines with status: ${po.status}`);
+    }
+  }
+
+  /**
+   * 아직 실행되지 않은 라인만 내준다. 종결된 라인은 재실행도 번복도 안 된다.
+   *
+   * `FOR UPDATE` 로 **라인 행**을 잠근다 — 라인이 실행의 단위이므로 락도 라인에 건다.
+   * 락이 없으면 같은 라인을 동시에 실행하는 두 트랜잭션이 둘 다 상태 검사를 통과해
+   * 계획 아이템을 두 번 꽂는다(`inbound_plan_items` 에는 (plan_id, sku_id) 유니크가
+   * 없어 DB 가 막아주지 않는다). 뒤에 온 쪽은 여기서 앞선 트랜잭션의 커밋을 기다렸다가
+   * 'ordered' 를 보고 409 로 끝난다.
+   */
+  private async loadRequestedLine(
+    tx: DbTx,
+    poId: string,
+    skuId: string,
+  ): Promise<{ status: string; unitPrice: number | null; expectedArrival: string | null }> {
+    const [line] = await tx
+      .select({
+        status: wmsTables.purchaseOrderLines.status,
+        unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+        expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
+      })
+      .from(wmsTables.purchaseOrderLines)
+      .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)))
+      .limit(1)
+      .for('update');
+
+    if (!line) throw new NotFoundError(`Purchase order line not found: ${poId}/${skuId}`);
+    if (line.status !== 'requested') {
+      throw new ConflictError(`Line already ${line.status}: ${poId}/${skuId}`);
+    }
+    return line;
+  }
+
+  /**
+   * 헤더 `status` 를 라인에서 다시 계산한다.
+   *
+   * 진실은 라인이고 컬럼은 캐시다. `partially_ordered` 같은 새 enum 값은 넣지 않는다 —
+   * "부분" 은 라인이 이미 표현하고, enum 값 추가는 admin-web 선배포를 요구해 단계만 늘린다.
+   * `received` 는 입고 경로가 소유하므로 여기서 건드리지 않는다.
+   */
+  private async refreshHeaderStatus(tx: DbTx, poId: string): Promise<void> {
+    const [header] = await tx
+      .select({ status: wmsTables.purchaseOrders.status })
+      .from(wmsTables.purchaseOrders)
+      .where(eq(wmsTables.purchaseOrders.id, poId))
+      .limit(1);
+    if (!header || header.status === 'received') return;
+
+    const [pending] = await tx
+      .select({ skuId: wmsTables.purchaseOrderLines.skuId })
+      .from(wmsTables.purchaseOrderLines)
+      .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.status, 'requested')))
+      .limit(1);
+
+    const next = pending ? 'created' : 'confirmed';
+    if (next === header.status) return;
+
+    await tx
+      .update(wmsTables.purchaseOrders)
+      .set({ status: next, updatedAt: new Date() })
+      .where(eq(wmsTables.purchaseOrders.id, poId));
+  }
+
+  /**
    * 발주 라인 수정 (created/confirmed 모두 가능)
    * - created: 자유롭게 수정 가능
-   * - confirmed: PO lines만 수정 (inbound_plan_items는 이미 입고 시작되었을 수 있음)
+   * - confirmed: 종결된(ordered/unavailable) 라인은 그대로 두고, 아직 requested 인
+   *   라인만 갈아끼운다. 종결된 라인은 이미 계획에 아이템으로 붙어 있어 요청 수량을
+   *   바꾸면 실행 기록(status/ordered_qty/ordered_at/ordered_by/expected_arrival/
+   *   unavailable_reason)과 어긋난다.
    */
   async updatePurchaseOrderLines(
     poId: string,
@@ -198,12 +497,27 @@ export class PurchaseOrderService {
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.dbService.run(async (trx) => {
-      // 1. PO 존재 및 상태 확인
+      // 1. PO 존재 확인 + 잠금(FOR UPDATE).
+      //
+      // 아래 4~5 단계가 라인 행을 지웠다 다시 넣고, refreshHeaderStatus 가 그 결과로
+      // PO 행을 UPDATE 한다 — 즉 이 메서드는 "라인을 먼저 건드리고 PO 행을 나중에
+      // 쓴다". lockPurchaseOrderForLineExecution 옆에 적힌 락 순서 불변식(PO 행 →
+      // 라인 행)을 지키려면, 라인을 건드리기 전에 여기서 PO 행부터 잠가야 한다 —
+      // 안 그러면 이 메서드만 반대 순서로 잠그는 유일한 경로가 되어, 일괄 확정이나
+      // 라인별 실행과 반대 방향으로 맞물리는 순간 Postgres 가 40P01(교착)로 한쪽을
+      // 죽인다. 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라 500 으로 나간다.
+      //
+      // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 그 helper 는
+      // auditStatus === 'approved' 를 요구하는데, 이 메서드의 계약(클래스 docstring)은
+      // "created: 자유롭게 수정 가능" 이다. 라인 편집은 실무에서 대개 심사 제출
+      // 전(auditStatus='draft') 에 일어나므로, 그 게이트를 재사용하면 정상적인 편집
+      // 경로가 전부 막힌다. 그래서 auditStatus 를 보지 않는 순수 FOR UPDATE 만 쓴다.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
         .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (!po) {
         throw new NotFoundException(`Purchase order ${poId} not found`);
@@ -214,154 +528,42 @@ export class PurchaseOrderService {
         throw new BadRequestException('Cannot modify purchase order lines after fully received');
       }
 
-      // 3. 기존 라인 삭제
-      await trx.delete(wmsTables.purchaseOrderLines).where(eq(wmsTables.purchaseOrderLines.poId, poId));
+      // 3. 종결된 라인(ordered/unavailable)은 건드리지 않는다. 그 라인은 이미 계획에
+      //    아이템으로 붙어 있고, 요청 수량을 바꾸면 실행 기록과 어긋난다.
+      const closed = await trx
+        .select({ skuId: wmsTables.purchaseOrderLines.skuId })
+        .from(wmsTables.purchaseOrderLines)
+        .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), ne(wmsTables.purchaseOrderLines.status, 'requested')));
+      const closedSkuIds = new Set(closed.map((l) => l.skuId));
 
-      // 4. 새 라인 삽입
-      await trx.insert(wmsTables.purchaseOrderLines).values(
-        updateDto.lines.map((line) => ({
-          poId,
-          skuId: line.skuId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice ?? null,
-        })),
-      );
+      // 4. 아직 요청 상태인 라인만 갈아끼운다.
+      await trx
+        .delete(wmsTables.purchaseOrderLines)
+        .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.status, 'requested')));
 
-      // 5. confirmed 상태면 inbound_plan_items도 업데이트 시도
-      if (po.status === 'confirmed') {
-        await this.syncInboundPlanItems(trx, poId, updateDto.lines);
+      const incoming = updateDto.lines.filter((line) => !closedSkuIds.has(line.skuId));
+      if (incoming.length > 0) {
+        await trx.insert(wmsTables.purchaseOrderLines).values(
+          incoming.map((line) => ({
+            poId,
+            skuId: line.skuId,
+            quantity: line.quantity,
+            unitPrice: line.unitPrice ?? null,
+          })),
+        );
       }
+
+      // 5. 계획 아이템 재동기화는 없다. 종결된 라인만 계획에 붙어 있고 그 라인은 위에서
+      //    건드리지 않았으므로 아이템도 그대로다. 예전 syncInboundPlanItems 는 pending
+      //    아이템만 지우고 새 라인 전체를 재삽입해서, 이미 입고된 수량을 pending 으로
+      //    한 벌 더 만들었다(진단 문서 ④). 라인 생명주기가 생긴 지금은 재동기화할
+      //    대상 자체가 없다 — 종결 라인은 계획에 붙었고 건드리지 않으니까.
+      await this.refreshHeaderStatus(trx, poId);
 
       this.logger.log(`Updated ${updateDto.lines.length} lines for PO ${poId}`);
 
       return this.getPurchaseOrderById(poId, trx);
     }, tx);
-  }
-
-  /**
-   * confirmed 상태 PO의 inbound_plan_items 동기화
-   * - pending 상태 items만 업데이트 (이미 입고 시작된 건은 건드리지 않음)
-   */
-  private async syncInboundPlanItems(tx: DbTx, poId: string, newLines: UpdatePurchaseOrderLineDto[]): Promise<void> {
-    // 1. 해당 PO의 모든 plan 조회
-    const plans = await tx
-      .select()
-      .from(wmsTables.inboundPlans)
-      .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
-
-    for (const plan of plans) {
-      // 2. pending 상태 items만 삭제
-      await tx
-        .delete(wmsTables.inboundPlanItems)
-        .where(and(eq(wmsTables.inboundPlanItems.planId, plan.id), eq(wmsTables.inboundPlanItems.status, 'pending')));
-
-      // 3. 새 items 삽입
-      await tx.insert(wmsTables.inboundPlanItems).values(
-        newLines.map((line) => ({
-          planId: plan.id,
-          skuId: line.skuId,
-          expectedQty: line.quantity,
-          receivedQty: 0,
-          status: 'pending' as const,
-        })),
-      );
-    }
-
-    this.logger.log(`Synced inbound plan items for ${plans.length} plans`);
-  }
-
-  /**
-   * 발주에서 입고 계획 생성 (이중 입고 계획 지원)
-   */
-  private async createInboundPlanFromPO(tx: DbTx, poId: string): Promise<void> {
-    const [purchaseOrder] = await tx
-      .select()
-      .from(wmsTables.purchaseOrders)
-      .where(eq(wmsTables.purchaseOrders.id, poId))
-      .limit(1);
-
-    if (!purchaseOrder) {
-      throw new NotFoundException(`Purchase order ${poId} not found`);
-    }
-
-    const sourceWarehouseId = purchaseOrder.sourceWarehouseId;
-    const destinationWarehouseId = purchaseOrder.destinationWarehouseId;
-    const requiresTransfer = sourceWarehouseId !== destinationWarehouseId;
-
-    if (requiresTransfer) {
-      // 해외 발주: 공급사 → 출발 창고 입고 계획만 만든다.
-      // 출발 창고 → 최종 목적지 이동은 별도 문서(transfer_orders)가 소유한다.
-      // 예전에는 destination plan 을 함께 만들었는데, 두 계획이 모두
-      // destination_warehouse_id 로 집계돼 입고예정이 2배로 잡혔고, destination plan
-      // 수령이 무조건 RECEIVE 라 도착 창고에 재고를 만들면서 출발 창고를 깎지 않았다.
-      const [sourcePlan] = await tx
-        .insert(wmsTables.inboundPlans)
-        .values({
-          warehouseId: sourceWarehouseId,
-          planType: 'source',
-          linkedPurchaseOrderId: poId,
-          destinationWarehouseId: destinationWarehouseId, // 하위 호환성
-          requiresTransfer: true, // 이동 지시서 초안 자동 생성의 조건이기도 하다
-          expectedDate: purchaseOrder.expectedArrival,
-          status: 'pending',
-        })
-        .returning();
-
-      const poLines = await tx
-        .select({
-          skuId: wmsTables.purchaseOrderLines.skuId,
-          quantity: wmsTables.purchaseOrderLines.quantity,
-        })
-        .from(wmsTables.purchaseOrderLines)
-        .where(eq(wmsTables.purchaseOrderLines.poId, poId));
-
-      await tx.insert(wmsTables.inboundPlanItems).values(
-        poLines.map((line) => ({
-          planId: sourcePlan.id,
-          skuId: line.skuId,
-          expectedQty: line.quantity,
-          receivedQty: 0,
-          status: 'pending' as const,
-        })),
-      );
-
-      this.logger.log(`Created source inbound plan ${sourcePlan.id} for cross-warehouse PO ${poId}`);
-    } else {
-      // 국내 발주는 기존 로직 유지 (destination plan만 생성)
-      const [plan] = await tx
-        .insert(wmsTables.inboundPlans)
-        .values({
-          warehouseId: destinationWarehouseId,
-          planType: 'destination',
-          linkedPurchaseOrderId: poId,
-          destinationWarehouseId: destinationWarehouseId,
-          requiresTransfer: false,
-          expectedDate: purchaseOrder.expectedArrival,
-          status: 'pending',
-        })
-        .returning();
-
-      // 기존 아이템 생성 로직
-      const poLines = await tx
-        .select({
-          skuId: wmsTables.purchaseOrderLines.skuId,
-          quantity: wmsTables.purchaseOrderLines.quantity,
-        })
-        .from(wmsTables.purchaseOrderLines)
-        .where(eq(wmsTables.purchaseOrderLines.poId, poId));
-
-      await tx.insert(wmsTables.inboundPlanItems).values(
-        poLines.map((line) => ({
-          planId: plan.id,
-          skuId: line.skuId,
-          expectedQty: line.quantity,
-          receivedQty: 0,
-          status: 'pending' as const,
-        })),
-      );
-
-      this.logger.log(`Created single inbound plan ${plan.id} for domestic PO ${poId}`);
-    }
   }
 
   /**
@@ -407,10 +609,16 @@ export class PurchaseOrderService {
           skuId: wmsTables.purchaseOrderLines.skuId,
           quantity: wmsTables.purchaseOrderLines.quantity,
           unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+          status: wmsTables.purchaseOrderLines.status,
+          orderedQty: wmsTables.purchaseOrderLines.orderedQty,
+          expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
+          orderedAt: wmsTables.purchaseOrderLines.orderedAt,
+          orderedBy: wmsTables.purchaseOrderLines.orderedBy,
+          unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
           skuName: wmsTables.skus.name,
           skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes 
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
+                      SELECT barcode FROM sku_barcodes
+                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
                       LIMIT 1
                     )`,
         })
@@ -436,12 +644,19 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
+        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({
           skuId: line.skuId,
           quantity: line.quantity,
+          status: line.status,
+          orderedQty: line.orderedQty,
           unitPrice: line.unitPrice,
+          expectedArrival: line.expectedArrival,
+          orderedAt: line.orderedAt,
+          orderedBy: line.orderedBy,
+          unavailableReason: line.unavailableReason,
           sku: {
             name: line.skuName ?? '삭제된 상품',
             barcode: line.skuBarcode ?? '',
@@ -492,10 +707,16 @@ export class PurchaseOrderService {
               skuId: wmsTables.purchaseOrderLines.skuId,
               quantity: wmsTables.purchaseOrderLines.quantity,
               unitPrice: wmsTables.purchaseOrderLines.unitPrice,
+              status: wmsTables.purchaseOrderLines.status,
+              orderedQty: wmsTables.purchaseOrderLines.orderedQty,
+              expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
+              orderedAt: wmsTables.purchaseOrderLines.orderedAt,
+              orderedBy: wmsTables.purchaseOrderLines.orderedBy,
+              unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
               skuName: wmsTables.skus.name,
               skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes 
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
+                      SELECT barcode FROM sku_barcodes
+                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
                       LIMIT 1
                     )`,
             })
@@ -522,12 +743,19 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
+        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({
           skuId: line.skuId,
           quantity: line.quantity,
+          status: line.status,
+          orderedQty: line.orderedQty,
           unitPrice: line.unitPrice,
+          expectedArrival: line.expectedArrival,
+          orderedAt: line.orderedAt,
+          orderedBy: line.orderedBy,
+          unavailableReason: line.unavailableReason,
           sku: {
             name: line.skuName ?? '',
             barcode: line.skuBarcode ?? '',
@@ -841,12 +1069,7 @@ export class PurchaseOrderService {
     dto: SubmitForAuditDto,
     userId?: string,
     tx?: DbTx,
-  ): Promise<{
-    id: string;
-    auditStatus: string;
-    submittedAt: Date;
-    message: string;
-  }> {
+  ): Promise<SubmitForAuditResponseDto> {
     return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx
@@ -888,17 +1111,7 @@ export class PurchaseOrderService {
   /**
    * Approve PO
    */
-  async approvePo(
-    poId: string,
-    dto: ApprovePoDto,
-    userId?: string,
-    tx?: DbTx,
-  ): Promise<{
-    id: string;
-    auditStatus: string;
-    approvedAt: Date;
-    message: string;
-  }> {
+  async approvePo(poId: string, dto: ApprovePoDto, userId?: string, tx?: DbTx): Promise<ApprovePoResponseDto> {
     return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx
@@ -942,18 +1155,7 @@ export class PurchaseOrderService {
   /**
    * Reject PO
    */
-  async rejectPo(
-    poId: string,
-    dto: RejectPoDto,
-    userId?: string,
-    tx?: DbTx,
-  ): Promise<{
-    id: string;
-    auditStatus: string;
-    rejectedAt: Date;
-    reason: string;
-    message: string;
-  }> {
+  async rejectPo(poId: string, dto: RejectPoDto, userId?: string, tx?: DbTx): Promise<RejectPoResponseDto> {
     return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx

@@ -28,7 +28,16 @@ import {
   PurchaseOrderStatus,
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
-import { SubmitForAuditDto, ApprovePoDto, RejectPoDto } from '../dto/purchase-order/audit-po.dto';
+import { PurchaseOrderResponseDto } from '../dto/purchase-order/purchase-order-response.dto';
+import {
+  SubmitForAuditDto,
+  ApprovePoDto,
+  RejectPoDto,
+  SubmitForAuditResponseDto,
+  ApprovePoResponseDto,
+  RejectPoResponseDto,
+} from '../dto/purchase-order/audit-po.dto';
+import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 
 interface JwtPayload {
   userId: string;
@@ -50,7 +59,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 201,
     description: '발주가 성공적으로 생성됨',
-    type: 'object', // PurchaseOrderResponse type would be defined here
+    type: PurchaseOrderResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createPurchaseOrder(@Body() createDto: CreatePurchaseOrderDto): Promise<PurchaseOrderResponse> {
@@ -63,6 +72,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 201,
     description: '장바구니 아이템들로부터 발주가 생성됨',
+    type: PurchaseOrderResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async createPurchaseOrderFromCart(
@@ -89,6 +99,7 @@ export class PurchaseOrderController {
     required: false,
     description: '오프셋 (기본: 0)',
   })
+  @ApiResponse({ status: 200, description: '발주 목록', type: [PurchaseOrderResponseDto] })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getPurchaseOrders(
     @Query('status') status?: PurchaseOrderStatus,
@@ -185,7 +196,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '재주문 제안 목록이 성공적으로 조회됨',
-    type: [Object], // StockReorderSuggestion would be defined here
+    type: [StockReorderSuggestion],
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getReorderSuggestions(@Query('warehouseId') warehouseId?: string): Promise<StockReorderSuggestion[]> {
@@ -200,6 +211,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '발주 정보가 성공적으로 조회됨',
+    type: PurchaseOrderResponseDto,
   })
   @ApiResponse({
     status: 404,
@@ -216,13 +228,18 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '발주 상태가 성공적으로 업데이트됨',
+    type: PurchaseOrderResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updatePurchaseOrderStatus(
     @Param('id') id: string,
     @Body() updateDto: UpdatePurchaseOrderStatusDto,
+    @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
-    return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto);
+    // @User() 를 실제로 넘긴다 — confirmed 전이가 라인을 실행하므로 ordered_by 에
+    // 사람이 남아야 한다. 감사 엔드포인트들은 이걸 빠뜨려 submitted_for_audit_by /
+    // audited_by 가 라이브에서 영원히 NULL 이다.
+    return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto, user.userId);
   }
 
   @Put(':id/lines')
@@ -231,6 +248,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '발주 라인이 성공적으로 수정됨',
+    type: PurchaseOrderResponseDto,
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updatePurchaseOrderLines(
@@ -238,6 +256,45 @@ export class PurchaseOrderController {
     @Body() updateDto: UpdatePurchaseOrderLinesDto,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.updatePurchaseOrderLines(id, updateDto);
+  }
+
+  // ========== 라인 실행 (하나씩 실제로 발주) ==========
+  // 경로 순서: 위의 @Get(':id') 와 세그먼트 수가 달라 충돌하지 않는다.
+
+  @Post(':poId/lines/:skuId/order')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '발주 라인 실행 (실제로 발주함)' })
+  @ApiParam({ name: 'poId', description: '발주 ID' })
+  @ApiParam({ name: 'skuId', description: 'SKU ID — 라인 주소' })
+  @ApiResponse({ status: 200, description: '라인이 실행됨', type: PurchaseOrderResponseDto })
+  @ApiResponse({ status: 409, description: '이미 종결된 라인' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
+  @HttpCode(HttpStatus.OK)
+  async orderLine(
+    @Param('poId') poId: string,
+    @Param('skuId') skuId: string,
+    @Body() dto: OrderPurchaseOrderLineDto,
+    @User() user: JwtPayload,
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.orderLine(poId, skuId, dto, user.userId);
+  }
+
+  @Post(':poId/lines/:skuId/unavailable')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '발주 라인 종결 (끝내 발주 못 함)' })
+  @ApiParam({ name: 'poId', description: '발주 ID' })
+  @ApiParam({ name: 'skuId', description: 'SKU ID — 라인 주소' })
+  @ApiResponse({ status: 200, description: '라인이 종결됨', type: PurchaseOrderResponseDto })
+  @ApiResponse({ status: 409, description: '이미 종결된 라인' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
+  @HttpCode(HttpStatus.OK)
+  async markLineUnavailable(
+    @Param('poId') poId: string,
+    @Param('skuId') skuId: string,
+    @Body() dto: MarkLineUnavailableDto,
+    @User() user: JwtPayload,
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.markLineUnavailable(poId, skuId, dto, user.userId);
   }
 
   // ========== Audit Workflow ==========
@@ -249,18 +306,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '검토 요청 제출 완료',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', example: 'uuid' },
-        auditStatus: { type: 'string', example: 'pending_audit' },
-        submittedAt: { type: 'string', format: 'date-time' },
-        message: {
-          type: 'string',
-          example: '검토 요청이 제출되었습니다. (Submitted for audit)',
-        },
-      },
-    },
+    type: SubmitForAuditResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -268,7 +314,7 @@ export class PurchaseOrderController {
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async submitForAudit(@Param('id') id: string, @Body() dto: SubmitForAuditDto): Promise<any> {
+  async submitForAudit(@Param('id') id: string, @Body() dto: SubmitForAuditDto): Promise<SubmitForAuditResponseDto> {
     return this.purchaseOrderService.submitForAudit(id, dto);
   }
 
@@ -279,18 +325,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '발주 승인 완료',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', example: 'uuid' },
-        auditStatus: { type: 'string', example: 'approved' },
-        approvedAt: { type: 'string', format: 'date-time' },
-        message: {
-          type: 'string',
-          example: '발주가 승인되었습니다. (Purchase order approved)',
-        },
-      },
-    },
+    type: ApprovePoResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -298,7 +333,7 @@ export class PurchaseOrderController {
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async approvePo(@Param('id') id: string, @Body() dto: ApprovePoDto): Promise<any> {
+  async approvePo(@Param('id') id: string, @Body() dto: ApprovePoDto): Promise<ApprovePoResponseDto> {
     return this.purchaseOrderService.approvePo(id, dto);
   }
 
@@ -309,22 +344,7 @@ export class PurchaseOrderController {
   @ApiResponse({
     status: 200,
     description: '발주 거부 완료 (상태가 draft로 재설정됨)',
-    schema: {
-      type: 'object',
-      properties: {
-        id: { type: 'string', example: 'uuid' },
-        auditStatus: { type: 'string', example: 'draft' },
-        rejectedAt: { type: 'string', format: 'date-time' },
-        reason: {
-          type: 'string',
-          example: 'SKU quantities exceed budget limits',
-        },
-        message: {
-          type: 'string',
-          example: '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)',
-        },
-      },
-    },
+    type: RejectPoResponseDto,
   })
   @ApiResponse({
     status: 400,
@@ -332,7 +352,7 @@ export class PurchaseOrderController {
   })
   @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async rejectPo(@Param('id') id: string, @Body() dto: RejectPoDto): Promise<any> {
+  async rejectPo(@Param('id') id: string, @Body() dto: RejectPoDto): Promise<RejectPoResponseDto> {
     return this.purchaseOrderService.rejectPo(id, dto);
   }
 }

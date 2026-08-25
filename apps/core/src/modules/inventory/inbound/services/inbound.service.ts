@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
+import { ConflictError, NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
@@ -636,34 +637,59 @@ export class InboundService {
   }
 
   // 입고예정 생성
+  //
+  // 해외/국내 판단은 **이 포트가 소유한다.** 호출자가 넘긴 planType /
+  // requiresTransfer / destinationWarehouseId / warehouseId 는 무시된다 — 예전에는
+  // 그대로 믿었고, 그래서 수동 API 로 해외 발주에 destination 계획을 붙이면 입고예정이
+  // 2배로 잡히고 목적지에 재고를 창조하면서 출발 창고를 안 깎는 이중계상이 났다.
+  // 불변식은 purchase-order-single-plan / inbound-plan-port-invariant 스펙이 고정한다.
   async createInboundPlan(dto: CreateInboundPlanDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
+    return this.dbService.run(async (trx) => {
       const { purchaseOrders } = wmsTables;
 
-      // 발주 존재 여부 확인
-      const [po] = await tx
-        .select({ id: purchaseOrders.id })
+      const [po] = await trx
+        .select({
+          id: purchaseOrders.id,
+          sourceWarehouseId: purchaseOrders.sourceWarehouseId,
+          destinationWarehouseId: purchaseOrders.destinationWarehouseId,
+        })
         .from(purchaseOrders)
         .where(eq(purchaseOrders.id, dto.linkedPurchaseOrderId))
         .limit(1);
 
       if (!po) {
-        throw new Error(`Purchase order not found: ${dto.linkedPurchaseOrderId}`);
+        throw new NotFoundError(`Purchase order not found: ${dto.linkedPurchaseOrderId}`);
       }
 
-      // destinationWarehouseId가 없으면 warehouseId를 사용
-      const destinationWarehouseId = dto.destinationWarehouseId ?? dto.warehouseId;
-      const planType = dto.planType ?? 'destination';
-      const requiresTransfer = dto.requiresTransfer ?? false;
+      // 한 발주에 계획은 하나뿐이다(스펙 §3.1). ensurePlanForPurchaseOrder 는 PO 행을
+      // FOR UPDATE 로 잠근 뒤 이미 이 검사를 하지만, 이 메서드는 공개
+      // POST /inbound/plans 로 직접 불려서 그 락을 거치지 않는다 — 여기서도 거부해야
+      // 수동 API 로 같은 발주에 계획을 두 번 만들 수 없다. 유니크 제약은 쓰지 않는다:
+      // 과거 이중계획 사고로 라이브에 이미 PO 하나당 계획 둘인 행이 있을 수 있어
+      // 그 마이그레이션이 배포 중 실패할 위험이 있다.
+      const [existingPlan] = await trx
+        .select({ id: wmsTables.inboundPlans.id })
+        .from(wmsTables.inboundPlans)
+        .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, dto.linkedPurchaseOrderId))
+        .limit(1);
 
-      const [plan] = await tx
+      if (existingPlan) {
+        throw new ConflictError(`Purchase order already has an inbound plan: ${dto.linkedPurchaseOrderId}`);
+      }
+
+      const requiresTransfer = po.sourceWarehouseId !== po.destinationWarehouseId;
+      // 해외 발주는 공급사 → 출발 창고 구간만 계획으로 잡는다. 출발 → 최종 목적지는
+      // transfer_orders 가 소유한다.
+      const warehouseId = requiresTransfer ? po.sourceWarehouseId : po.destinationWarehouseId;
+
+      const [plan] = await trx
         .insert(wmsTables.inboundPlans)
         .values({
-          expectedDate: new Date(dto.expectedDate),
-          warehouseId: dto.warehouseId,
-          destinationWarehouseId,
+          expectedDate: dto.expectedDate ? new Date(dto.expectedDate) : null,
+          warehouseId,
+          destinationWarehouseId: po.destinationWarehouseId,
           linkedPurchaseOrderId: dto.linkedPurchaseOrderId,
-          planType,
+          planType: requiresTransfer ? 'source' : 'destination',
           requiresTransfer,
           parentPlanId: dto.parentPlanId,
           status: 'pending',
@@ -671,6 +697,56 @@ export class InboundService {
         .returning();
 
       return plan;
+    }, tx);
+  }
+
+  /**
+   * 발주에 붙은 입고 계획을 확보한다. 없으면 만들고, 있으면 그대로 쓴다.
+   *
+   * 라인을 하나씩 발주 실행하므로 매 실행마다 불린다 — **멱등해야 한다.** 이미 계획이
+   * 있으면 `expectedDate` 로 갱신하지 않는다. 예정일의 진실은 아이템이 갖고(§4),
+   * 계획 날짜는 3단계까지 남는 표시용 값이다.
+   */
+  async ensurePlanForPurchaseOrder(poId: string, expectedDate: string | null, tx?: DbTx): Promise<{ id: string }> {
+    return this.dbService.run(async (trx) => {
+      // 동시성 레이스 방지: linked_purchase_order_id 에는 유니크 인덱스가 없다
+      // (idx_inbound_plans_purchase_order 는 평범한 btree). 유니크 제약이 구조적으로는
+      // 맞는 해법이지만, 과거 이중계획 사고 탓에 라이브에 이미 PO 하나에 계획이 둘
+      // 붙은 행이 남아 있을 수 있어 그 마이그레이션이 배포 중 실패할 위험이 있다
+      // (로컬 DB 가 비어 있어 0건인 건 증거가 못 된다). 그래서 구조 대신 락으로
+      // 막는다 — 발주 행을 FOR UPDATE 로 잠가 같은 PO 를 동시에 확정하는 두
+      // 트랜잭션을 직렬화한다. 없는 발주면 여기서 NotFoundError 로 존재 검증도 겸한다.
+      const [po] = await trx
+        .select({ id: wmsTables.purchaseOrders.id, expectedArrival: wmsTables.purchaseOrders.expectedArrival })
+        .from(wmsTables.purchaseOrders)
+        .where(eq(wmsTables.purchaseOrders.id, poId))
+        .limit(1)
+        .for('update');
+
+      if (!po) {
+        throw new NotFoundError(`Purchase order not found: ${poId}`);
+      }
+
+      const [existing] = await trx
+        .select({ id: wmsTables.inboundPlans.id })
+        .from(wmsTables.inboundPlans)
+        .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId))
+        .limit(1);
+
+      if (existing) return { id: existing.id };
+
+      // 헤더 expected_arrival 이 있으면 그 값이 우선이다(스펙 §4) — 라인별 실행이
+      // 넘긴 파라미터(그 라인 하나의 ETA)로 계획을 씨드하면, 첫 실행 라인의 날짜가
+      // 계획 전체의 날짜로 굳어버려 admin-web 입고 대기 목록·기간 필터가 엉뚱한
+      // 값을 본다. 일괄 확정 경로는 헤더를 먼저 써 두므로(updatePurchaseOrderStatus)
+      // 여기서 다시 읽는 값과 파라미터가 같아 그쪽엔 영향이 없다.
+      const seedExpectedDate = po.expectedArrival ? po.expectedArrival.toISOString().slice(0, 10) : expectedDate;
+
+      const plan = await this.createInboundPlan(
+        { linkedPurchaseOrderId: poId, expectedDate: seedExpectedDate ?? undefined },
+        trx,
+      );
+      return { id: plan.id };
     }, tx);
   }
 
@@ -684,6 +760,7 @@ export class InboundService {
           planId: dto.planId,
           skuId: item.skuId,
           expectedQty: item.expectedQty,
+          expectedDate: item.expectedDate ?? null,
           receivedQty: 0,
           status: 'pending',
         });

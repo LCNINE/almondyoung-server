@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsUUID,
   IsNotEmpty,
@@ -10,9 +10,11 @@ import {
   IsDateString,
   IsString,
   MaxLength,
+  Validate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { IsCalendarDateConstraint } from './calendar-date.validator';
 
 export class SimpleInboundItemDto {
   @ApiProperty({ description: 'SKU ID' })
@@ -145,16 +147,17 @@ export class CancelInboundDto {
 }
 
 export class CreateInboundPlanDto {
-  @ApiProperty({ description: '예정일 (YYYY-MM-DD)' })
+  @ApiPropertyOptional({ description: '예정일 (YYYY-MM-DD)' })
+  @IsOptional()
   @IsDateString()
-  expectedDate: string;
+  expectedDate?: string;
 
-  @ApiProperty({ description: '입고될 창고 ID (source warehouse)' })
+  @ApiPropertyOptional({ description: '(무시됨) 입고 창고는 연결된 발주에서 도출한다' })
   @IsUUID()
-  @IsNotEmpty()
-  warehouseId: string;
+  @IsOptional()
+  warehouseId?: string;
 
-  @ApiProperty({ description: '최종 목적지 창고 ID (destination warehouse)', required: false })
+  @ApiProperty({ description: '(무시됨) 최종 목적지 창고 ID — 연결된 발주에서 도출한다', required: false })
   @IsUUID()
   @IsOptional()
   destinationWarehouseId?: string;
@@ -165,7 +168,7 @@ export class CreateInboundPlanDto {
   linkedPurchaseOrderId: string;
 
   @ApiProperty({
-    description: '계획 타입 (source: 중국창고, destination: 최종창고)',
+    description: '(무시됨) 계획 타입 — 해외/국내 여부는 연결된 발주에서 도출한다 (source: 중국창고, destination: 최종창고)',
     enum: ['source', 'destination'],
     required: false,
     default: 'destination',
@@ -174,7 +177,7 @@ export class CreateInboundPlanDto {
   @IsString()
   planType?: 'source' | 'destination';
 
-  @ApiProperty({ description: '창고간 이동 필요 여부', required: false, default: false })
+  @ApiProperty({ description: '(무시됨) 창고간 이동 필요 여부 — 연결된 발주에서 도출한다', required: false, default: false })
   @IsOptional()
   requiresTransfer?: boolean;
 
@@ -194,6 +197,17 @@ export class InboundPlanItemInputDto {
   @IsNumber()
   @Min(1)
   expectedQty: number;
+
+  /**
+   * `@Matches(/^\d{4}-\d{2}-\d{2}$/)` 는 모양만 본다 — '2026-13-45'·'2026-02-31'·
+   * 윤년 아닌 해의 '2026-02-29' 를 전부 통과시키고, 그 값이 `date` 컬럼에 닿으면
+   * Postgres 가 `date/time field value out of range` 로 트랜잭션을 500 으로 죽인다.
+   * 왕복 비교로 달력까지 보는 IsCalendarDateConstraint 로 좁힌다(calendar-date.validator.ts).
+   */
+  @ApiPropertyOptional({ description: '품목별 도착예정일 (YYYY-MM-DD)' })
+  @IsOptional()
+  @Validate(IsCalendarDateConstraint)
+  expectedDate?: string;
 }
 
 export class AddInboundPlanItemsDto {

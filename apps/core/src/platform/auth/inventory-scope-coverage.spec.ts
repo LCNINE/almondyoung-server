@@ -96,7 +96,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (58) ──────────────────────────────────────────
+  // ── inventory.manage (60) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -138,6 +138,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'PUT /purchase-orders/:id/reject':                           S.MANAGE,
   'PUT /purchase-orders/:id/status':                           S.MANAGE,
   'PUT /purchase-orders/:id/submit-for-audit':                 S.MANAGE,
+  'POST /purchase-orders/:poId/lines/:skuId/order':            S.MANAGE,
+  'POST /purchase-orders/:poId/lines/:skuId/unavailable':      S.MANAGE,
   'DELETE /purchase-orders/cart':                              S.MANAGE,
   'GET /purchase-orders/cart':                                 S.MANAGE,
   'POST /purchase-orders/cart':                                S.MANAGE,

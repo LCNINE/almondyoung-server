@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, min, not, sql } from 'drizzle-orm';
+import { and, eq, inArray, not, sql } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { inSellableWarehouse } from '../../shared/availability/sellable-warehouses';
@@ -74,9 +74,10 @@ export class InboundPipelineReader {
       .select({
         skuId: items.skuId,
         qty: sql<number>`SUM(${items.expectedQty} - ${items.receivedQty})::int`,
-        // mapWith 로 컬럼 디코더를 태운다 — 안 태우면 드라이버가 준 문자열이 Date 인 척
-        // 타입만 붙어 나온다(drizzle 이 timestamp 파서를 투명하게 꺼놓는다).
-        eta: min(plans.expectedDate).mapWith(plans.expectedDate),
+        // 예정일의 진실은 아이템이다 — 라인마다 ETA 가 다를 수 있는데 계획 날짜는
+        // 계획 단위라 그걸 담지 못한다. 아이템 예정일이 없으면(수동 생성 계획 등)
+        // 계획 날짜로 떨어진다. `date` 컬럼이라 드라이버가 'YYYY-MM-DD' 를 준다.
+        eta: sql<string | null>`MIN(COALESCE(${items.expectedDate}, ${plans.expectedDate}::date))`,
       })
       .from(items)
       .innerJoin(plans, eq(plans.id, items.planId))
@@ -92,9 +93,8 @@ export class InboundPipelineReader {
       )
       .groupBy(items.skuId);
 
-    // 그룹 안 expected_date 가 전부 NULL 이면 MIN 도 NULL 이다 — 타입은 Date 로 좁혀지지만
-    // 런타임 null 이 실제로 온다.
-    return new Map(rows.map((row) => [row.skuId, { qty: Number(row.qty), eta: row.eta ?? null }]));
+    // 'YYYY-MM-DD' 는 UTC 자정으로 결정적으로 파싱된다 — TZ 함정이 없다.
+    return new Map(rows.map((row) => [row.skuId, { qty: Number(row.qty), eta: row.eta ? new Date(row.eta) : null }]));
   }
 
   /** ② 비판매 창고에 도착해 있으나 아직 이동 지시서에 실리지 않은 물량. 예정일이라 할 것이 없다. */

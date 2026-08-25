@@ -104,6 +104,11 @@ export const poAuditStatusEnum = pgEnum('po_audit_status', [
   'approved', // 승인됨 - Approved
   'rejected', // 거부됨 - Rejected
 ]);
+export const poLineStatusEnum = pgEnum('po_line_status', [
+  'requested', // 발주서에 적혔으나 아직 실행 안 됨
+  'ordered', // 실제로 발주함 — ordered_qty/unit_price/expected_arrival 이 확정됨
+  'unavailable', // 품절·단종 등으로 끝내 발주 못 함 (단방향 종결)
+]);
 export const inboundStatusEnum = pgEnum('inbound_status', [
   'pending', // 입고 대기 - Initial state
   'applied', // 입고신청 - Applied for inbound
@@ -1894,8 +1899,21 @@ export const purchaseOrderLines = pgTable(
     skuId: uuid('sku_id')
       .references(() => skus.id, { onDelete: 'restrict' })
       .notNull(),
+    /** 요청 수량. 실행이 덮어쓰지 않는다 — 실행 결과는 orderedQty 로 간다. */
     quantity: integer('quantity').notNull(),
-    unitPrice: integer('unit_price'), // 단가 추가
+    unitPrice: integer('unit_price'), // 실제 발주 시점에 확정된다
+    status: poLineStatusEnum('status').notNull().default('requested'),
+    /** 실발주 수량. status='ordered' 일 때만 채워진다. 0 은 허용하지 않는다(=unavailable). */
+    orderedQty: integer('ordered_qty'),
+    /**
+     * 라인별 도착예정일. `timestamp` 가 아니라 `date` + mode:'string' 인 것이 중요하다 —
+     * 앱 경계에 Date 객체를 두면 drizzle 의 toISOString 직렬화·IsDateString 의 오프셋
+     * 통과·raw sql 의 Date 바인딩이 전부 하루를 밀거나 드라이버를 터뜨린다.
+     */
+    expectedArrival: date('expected_arrival', { mode: 'string' }),
+    orderedAt: timestamp('ordered_at', { withTimezone: true }),
+    orderedBy: uuid('ordered_by'),
+    unavailableReason: text('unavailable_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -2071,6 +2089,8 @@ export const inboundPlanItems = pgTable(
     expectedQty: integer('expected_qty').notNull(),
     receivedQty: integer('received_qty').notNull().default(0),
     status: inboundStatusEnum('status').notNull().default('pending'),
+    /** 품목별 도착예정일. 계획 단위(inbound_plans.expected_date)로는 라인마다 다른 ETA 를 담을 수 없다. */
+    expectedDate: date('expected_date', { mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

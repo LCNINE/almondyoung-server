@@ -554,6 +554,13 @@
       "when": 1787533326436,
       "tag": "20260824010206_flip-warehouse-is-sellable-default",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1787619619622,
+      "tag": "20260825010019_add-purchase-order-line-lifecycle",
+      "breakpoints": true
     }
   ]
 }
