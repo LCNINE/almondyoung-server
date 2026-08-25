@@ -489,11 +489,14 @@ export class PurchaseOrderService {
       // 라인별 실행과 반대 방향으로 맞물리는 순간 Postgres 가 40P01(교착)로 한쪽을
       // 죽인다. 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라 500 으로 나간다.
       //
-      // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 그 helper 는
-      // auditStatus === 'approved' 를 요구하는데, 이 메서드의 계약(클래스 docstring)은
-      // "created: 자유롭게 수정 가능" 이다. 라인 편집은 실무에서 대개 심사 제출
-      // 전(auditStatus='draft') 에 일어나므로, 그 게이트를 재사용하면 정상적인 편집
-      // 경로가 전부 막힌다. 그래서 auditStatus 를 보지 않는 순수 FOR UPDATE 만 쓴다.
+      // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 심사 게이트가
+      // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + received 거부)은 이 메서드가
+      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 메시지·예외 타입이
+      // 다르기 때문이다 — 그 helper 는 도메인 BadRequestError("Cannot execute purchase
+      // order lines with status: ...")를 던지는데, 이 메서드는 라인 수정 엔드포인트에
+      // 맞는 Nest BadRequestException("Cannot modify purchase order lines after fully
+      // received")을 그대로 유지해야 한다. 합치는 건 API 응답 메시지를 바꾸는 일이라 이
+      // 태스크 범위 밖이다.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
