@@ -57,9 +57,6 @@ import type {
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
-  SubmitForAuditRequest,
-  ApprovePoRequest,
-  RejectPoRequest,
   SimpleInboundDto,
   IndividualInboundDto,
   VerifyBarcodeRequest,
@@ -644,42 +641,6 @@ export const useUpdatePurchaseOrderLines = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseOrderLinesRequest }) =>
       purchaseOrdersClient.updateLines(id, data),
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
-    },
-  });
-};
-
-export const useSubmitForAudit = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: SubmitForAuditRequest }) =>
-      purchaseOrdersClient.submitForAudit(id, data),
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
-    },
-  });
-};
-
-export const useApprovePo = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ApprovePoRequest }) =>
-      purchaseOrdersClient.approve(id, data),
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
-    },
-  });
-};
-
-export const useRejectPo = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: RejectPoRequest }) =>
-      purchaseOrdersClient.reject(id, data),
     onSuccess: (_result, { id }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });

@@ -12,9 +12,6 @@ import type {
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
-  SubmitForAuditRequest,
-  ApprovePoRequest,
-  RejectPoRequest,
   CartItemDto,
   StockReorderSuggestionDto,
 } from '../../../types/dto/inventory';
@@ -69,24 +66,6 @@ export const purchaseOrdersClient = {
     data: UpdatePurchaseOrderLinesRequest
   ): Promise<PurchaseOrderDto> => {
     const response = await client.put(`${BASE}/${encodeURIComponent(id)}/lines`, data);
-    return response.data;
-  },
-
-  submitForAudit: async (
-    id: string,
-    data: SubmitForAuditRequest
-  ): Promise<PurchaseOrderDto> => {
-    const response = await client.put(`${BASE}/${encodeURIComponent(id)}/submit-for-audit`, data);
-    return response.data;
-  },
-
-  approve: async (id: string, data: ApprovePoRequest): Promise<PurchaseOrderDto> => {
-    const response = await client.put(`${BASE}/${encodeURIComponent(id)}/approve`, data);
-    return response.data;
-  },
-
-  reject: async (id: string, data: RejectPoRequest): Promise<PurchaseOrderDto> => {
-    const response = await client.put(`${BASE}/${encodeURIComponent(id)}/reject`, data);
     return response.data;
   },
 

@@ -18,10 +18,6 @@ import type { PurchaseOrderDto, InboundPlanItemInputDto } from '@/lib/types/dto/
 import { toast } from 'sonner';
 import { Plus, Trash2 } from 'lucide-react';
 
-// ⚠️ PO 자격: UI 측에서 status='confirmed' AND auditStatus='approved'인 발주만 노출.
-// 서버 측 updatePurchaseOrderStatus에 auditStatus 검증이 없어 API 직접 호출은 막지 못함.
-// 백엔드 가드 추가는 별도 PR 예정.
-
 type PlanItem = { skuId: string; expectedQty: number };
 
 export function PlanCreateTab() {
@@ -38,10 +34,7 @@ export function PlanCreateTab() {
   const { data: poListData } = usePurchaseOrders({ status: 'confirmed', limit: 100, offset: 0 });
   const { data: warehouses } = useWarehouses();
 
-  // status='confirmed' AND auditStatus='approved' 인 PO만 선택 가능
-  const eligiblePos = (poListData?.data ?? []).filter(
-    (po: PurchaseOrderDto) => po.auditStatus === 'approved'
-  );
+  const eligiblePos = poListData?.data ?? [];
 
   const addItem = () => setPlanItems((prev) => [...prev, { skuId: '', expectedQty: 1 }]);
   const removeItem = (i: number) => setPlanItems((prev) => prev.filter((_, idx) => idx !== i));
