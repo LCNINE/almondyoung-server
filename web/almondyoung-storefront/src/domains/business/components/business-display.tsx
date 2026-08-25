@@ -52,6 +52,16 @@ export default function BusinessDisplay({
     )
   }
 
+  // 국세청 진위확인 불일치. 사유가 어드민에만 보이던 탓에, 개업일자 오타로 막힌 사용자가
+  // "심사중" 만 보고 영영 고치지 못한 채 쌓였다 (2026-08-24 심사중 21건 중 9건).
+  //
+  // status 까지 봐야 한다 — valid:false 는 국세청 API 장애(lookup_failed)에서도 나오므로
+  // valid 만 보면 장애 때 멀쩡한 고객에게 "정보가 틀렸다" 고 잘못 말한다.
+  const ntsMismatch =
+    data.status === "under_review" &&
+    data.metadata?.ntsValidate?.valid === false &&
+    data.metadata.ntsValidate.status === "not_found"
+
   const Row = ({ label, children }: { label: string; children: ReactNode }) => (
     <div className="flex items-start justify-between gap-4 px-5 py-4">
       <dt className="shrink-0 text-sm font-medium text-gray-500">{label}</dt>
@@ -72,6 +82,17 @@ export default function BusinessDisplay({
             </div>
           )}
         </Row>
+
+        {ntsMismatch && (
+          <div className="bg-amber-500/5 px-5 py-4 text-left">
+            <p className="text-sm font-medium text-amber-700">
+              {t("mismatchTitle")}
+            </p>
+            <p className="mt-1 text-xs font-normal leading-relaxed text-gray-500">
+              {t("mismatchHint")}
+            </p>
+          </div>
+        )}
 
         <Row label={t("businessNumberLabel")}>
           {formatBusinessNumber(data.businessNumber ?? "")}

@@ -1,5 +1,16 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsObject, IsOptional, IsString, Length, Matches, ValidateIf } from 'class-validator';
+import {
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  ValidateIf,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
+  Validate,
+} from 'class-validator';
 
 /**
  * 국세청 상태조회 결과. 번호가 실존하는지/영업 중인지만 알려준다 — 대표자명은 보지 않는다.
@@ -47,6 +58,68 @@ export interface BusinessMetadata {
   [key: string]: unknown;
 }
 
+/**
+ * 개업일자가 달력에 실제로 존재하는 과거 날짜인지 검사한다.
+ *
+ * `^\d{8}$` 만으로는 `20218326`(83월)·`10151104`(1015년)·미래 날짜가 그대로 통과해
+ * 국세청 진위확인에서 "확인할 수 없습니다" 로 떨어지고 심사중에 갇힌다 (2026-08-24 실측 9건).
+ * 접수 단계에서 걸러 사용자가 바로 고칠 수 있게 한다.
+ */
+@ValidatorConstraint({ name: 'isRealStartDate' })
+export class IsRealStartDateConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    if (typeof value !== 'string' || !/^\d{8}$/.test(value)) return false;
+
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6));
+    const day = Number(value.slice(6, 8));
+    if (year < 1900) return false;
+
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    const isRealDate =
+      parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+    if (!isRealDate) return false;
+
+    // KST 가 UTC 보다 9시간 앞서므로 "오늘 개업" 이 UTC 기준 미래로 보일 수 있다 — 하루 여유를 둔다.
+    return parsed.getTime() <= Date.now() + 24 * 60 * 60 * 1000;
+  }
+
+  defaultMessage(): string {
+    return '개업일자를 확인해주세요. 사업자등록증에 적힌 개업연월일을 YYYYMMDD 로 입력합니다.';
+  }
+}
+
+/**
+ * 사업자등록번호 체크섬. 마지막 자리가 앞 9자리로 계산되는 검증숫자다.
+ *
+ * `1234567890` 처럼 계산상 존재할 수 없는 번호가 그대로 접수돼 심사중에 쌓이거나
+ * (더 나쁘게는) 승인된 레코드에 실리는 걸 막는다 — 2026-08-25 라이브 실측으로
+ * **승인된 5건이 국세청에 없는 번호**를 들고 있었고, 4건은 ntsValidate 자체가 없었다
+ * (서류 승인 후 현금영수증 경로로 번호만 채워진 건. 그 경로는 10자리만 봤다).
+ *
+ * 라이브 346건 대조에서 오탐 0 — 실패한 6건은 국세청 조회로도 전부 "등록되지 않은 번호" 였다.
+ */
+@ValidatorConstraint({ name: 'isBusinessNumberChecksum' })
+export class IsBusinessNumberChecksumConstraint implements ValidatorConstraintInterface {
+  private static readonly WEIGHTS = [1, 3, 7, 1, 3, 7, 1, 3, 5];
+
+  validate(value: unknown): boolean {
+    if (typeof value !== 'string' || !/^\d{10}$/.test(value)) return false;
+
+    const digits = [...value].map(Number);
+    let sum = digits
+      .slice(0, 9)
+      .reduce((acc, d, i) => acc + d * IsBusinessNumberChecksumConstraint.WEIGHTS[i], 0);
+    sum += Math.floor((digits[8] * 5) / 10);
+
+    return (10 - (sum % 10)) % 10 === digits[9];
+  }
+
+  defaultMessage(): string {
+    return '사업자등록번호를 다시 확인해주세요. 존재할 수 없는 번호입니다.';
+  }
+}
+
 // 사업자 생성 dto
 //
 // metadata 는 클라이언트가 보낼 수 없다. 예전에는 body 로 받은 metadata.nts.result 로 승인
@@ -56,6 +129,7 @@ export class CreateBusinessLicenseDto {
   @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @Validate(IsBusinessNumberChecksumConstraint)
   @Transform(({ value }) => value?.replace(/-/g, ''))
   businessNumber?: string;
 
@@ -68,6 +142,7 @@ export class CreateBusinessLicenseDto {
   @IsNotEmpty({ message: '개업일자는 필수입니다.' })
   @Transform(({ value }) => value?.replace(/\D/g, ''))
   @Matches(/^\d{8}$/, { message: '개업일자는 YYYYMMDD 8자리로 입력해주세요.' })
+  @Validate(IsRealStartDateConstraint)
   startDate?: string;
 
   @IsOptional()
@@ -80,6 +155,7 @@ export class UpdateBusinessLicenseDto {
   @ValidateIf((o) => !o.fileUrl) // fileUrl이 없으면 필수
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @Validate(IsBusinessNumberChecksumConstraint)
   @Transform(({ value }) => value?.replace(/-/g, ''))
   businessNumber?: string;
 
@@ -92,6 +168,7 @@ export class UpdateBusinessLicenseDto {
   @IsNotEmpty({ message: '개업일자는 필수입니다.' })
   @Transform(({ value }) => value?.replace(/\D/g, ''))
   @Matches(/^\d{8}$/, { message: '개업일자는 YYYYMMDD 8자리로 입력해주세요.' })
+  @Validate(IsRealStartDateConstraint)
   startDate?: string;
 
   @IsOptional()
@@ -104,6 +181,7 @@ export class FillBusinessNumberDto {
   @Transform(({ value }) => value?.replace(/-/g, ''))
   @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
   @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @Validate(IsBusinessNumberChecksumConstraint)
   @IsString({ message: '사업자번호는 문자열이어야 합니다.' })
   businessNumber: string;
 }

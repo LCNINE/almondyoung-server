@@ -4,6 +4,7 @@
     "businessNumberPlaceholder": "000-00-00000",
     "businessNumberRequiredError": "Please enter the business registration number.",
     "businessNumberLengthError": "Business registration number must be 10 digits.",
+    "businessNumberInvalidError": "Check the registration number — this number cannot exist.",
     "representativeNameLabel": "Representative Name",
     "representativeNamePlaceholder": "Enter representative name",
     "lookupSuccess": "Business info retrieved. Press \"Register\" below to save.",
@@ -30,6 +31,7 @@
     "startDatePlaceholder": "YYYYMMDD (e.g. 20200315)",
     "startDateRequiredError": "Please enter the business start date.",
     "startDateInvalidError": "Enter the start date as 8 digits (YYYYMMDD).",
+    "startDateNotRealError": "Check the start date — it must match the opening date on your business registration.",
     "switchToDocumentConfirm": "Switching to documents will remove your approved business number and representative name, and your application will be reviewed again. Continue?",
     "orAttachFile": "Can't verify with your business number? Attach alternative proof",
     "backButton": "Verify with business number instead"
@@ -59,7 +61,9 @@
     "statusApproved": "Approved",
     "statusUnderReview": "Under Review",
     "statusRejected": "Rejected",
-    "statusNone": "None"
+    "statusNone": "None",
+    "mismatchTitle": "Your details don't match the NTS records",
+    "mismatchHint": "Re-enter the start date, representative name, and registration number exactly as they appear on your business registration. Approval is automatic once all three match."
   },
   "empty": {
     "title": "No business info registered",

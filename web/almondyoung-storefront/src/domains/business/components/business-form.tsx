@@ -52,6 +52,8 @@ export default function BusinessForm({
         representativeNameRequired: t("representativeNameRequiredError"),
         startDateRequired: t("startDateRequiredError"),
         startDateInvalid: t("startDateInvalidError"),
+        startDateNotReal: t("startDateNotRealError"),
+        businessNumberInvalid: t("businessNumberInvalidError"),
       }),
     [t]
   )

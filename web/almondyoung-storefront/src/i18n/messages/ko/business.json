@@ -4,6 +4,7 @@
     "businessNumberPlaceholder": "000-00-00000",
     "businessNumberRequiredError": "사업자등록번호를 입력해주세요.",
     "businessNumberLengthError": "사업자등록번호는 10자리이어야 합니다.",
+    "businessNumberInvalidError": "사업자등록번호를 다시 확인해주세요. 존재할 수 없는 번호예요.",
     "representativeNameLabel": "대표자명",
     "representativeNamePlaceholder": "대표자명을 입력하세요",
     "lookupSuccess": "사업자 정보 조회가 완료되었습니다. 아래 \"등록하기\" 버튼을 눌러 사업자 정보를 등록해주세요.",
@@ -30,6 +31,7 @@
     "startDatePlaceholder": "YYYYMMDD (예: 20200315)",
     "startDateRequiredError": "개업일자를 입력해주세요.",
     "startDateInvalidError": "개업일자는 YYYYMMDD 8자리로 입력해주세요.",
+    "startDateNotRealError": "개업일자를 다시 확인해주세요. 사업자등록증에 적힌 개업연월일이어야 해요.",
     "switchToDocumentConfirm": "증빙 서류로 바꾸면 승인된 사업자등록번호와 대표자명이 삭제되고 다시 심사를 받게 됩니다. 계속하시겠습니까?",
     "orAttachFile": "사업자등록번호로 인증이 어려우신가요? 대체 인증수단 첨부하기",
     "backButton": "사업자등록번호로 인증하기"
@@ -59,7 +61,9 @@
     "statusApproved": "승인됨",
     "statusUnderReview": "심사중",
     "statusRejected": "반려됨",
-    "statusNone": "없음"
+    "statusNone": "없음",
+    "mismatchTitle": "입력하신 정보가 국세청 기록과 달라요",
+    "mismatchHint": "사업자등록증의 개업일자·대표자명·사업자등록번호를 그대로 다시 입력해주세요. 세 값이 모두 일치하면 바로 승인돼요."
   },
   "empty": {
     "title": "등록된 사업자 정보가 없습니다",

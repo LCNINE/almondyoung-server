@@ -4,6 +4,7 @@
     "businessNumberPlaceholder": "000-00-00000",
     "businessNumberRequiredError": "事業者登録番号を入力してください。",
     "businessNumberLengthError": "事業者登録番号は10桁でなければなりません。",
+    "businessNumberInvalidError": "事業者登録番号をご確認ください。存在し得ない番号です。",
     "representativeNameLabel": "代表者名",
     "representativeNamePlaceholder": "代表者名を入力してください",
     "lookupSuccess": "事業者情報の照会が完了しました。下の「登録する」ボタンを押して登録してください。",
@@ -30,6 +31,7 @@
     "startDatePlaceholder": "YYYYMMDD (例: 20200315)",
     "startDateRequiredError": "開業日を入力してください。",
     "startDateInvalidError": "開業日はYYYYMMDDの8桁で入力してください。",
+    "startDateNotRealError": "開業日をご確認ください。事業者登録証に記載の開業年月日を入力してください。",
     "switchToDocumentConfirm": "証明書類に切り替えると、承認済みの事業者登録番号と代表者名が削除され、再審査となります。続行しますか？",
     "orAttachFile": "事業者登録番号での認証が難しいですか？代替の証明書類を添付する",
     "backButton": "事業者登録番号で認証する"
@@ -59,7 +61,9 @@
     "statusApproved": "承認済み",
     "statusUnderReview": "審査中",
     "statusRejected": "却下",
-    "statusNone": "なし"
+    "statusNone": "なし",
+    "mismatchTitle": "ご入力の情報が国税庁の記録と一致しません",
+    "mismatchHint": "事業者登録証に記載のとおり、開業日・代表者名・事業者登録番号を再度ご入力ください。3つとも一致すればすぐに承認されます。"
   },
   "empty": {
     "title": "登録された事業者情報がありません",

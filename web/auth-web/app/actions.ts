@@ -545,10 +545,37 @@ async function restoreSessionFromRefreshToken(): Promise<string | null> {
   return restored.accessToken
 }
 
-/**
- * 가입 직후 사업자 인증. 국세청 진위확인은 user-service 가 직접 수행하므로
- * 여기서는 입력값만 전달한다. 법인 번호는 user-service 가 400 으로 거절한다.
- */
+const BUSINESS_NUMBER_WEIGHTS = [1, 3, 7, 1, 3, 7, 1, 3, 5]
+
+function isBusinessNumberChecksumValid(value: string): boolean {
+  if (!/^\d{10}$/.test(value)) return false
+
+  const digits = value.split("").map(Number)
+  let sum = digits
+    .slice(0, 9)
+    .reduce((acc, d, i) => acc + d * BUSINESS_NUMBER_WEIGHTS[i], 0)
+  sum += Math.floor((digits[8] * 5) / 10)
+
+  return (10 - (sum % 10)) % 10 === digits[9]
+}
+
+function isRealStartDate(yyyymmdd: string): boolean {
+  const year = Number(yyyymmdd.slice(0, 4))
+  const month = Number(yyyymmdd.slice(4, 6))
+  const day = Number(yyyymmdd.slice(6, 8))
+  if (year < 1900) return false
+
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  const isRealDate =
+    parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day
+  if (!isRealDate) return false
+
+  // KST 가 UTC 보다 9시간 앞서 "오늘 개업" 이 미래로 보일 수 있다 — 하루 여유를 둔다.
+  return parsed.getTime() <= Date.now() + 24 * 60 * 60 * 1000
+}
+
 export async function registerBusinessAction(
   formData: FormData
 ): Promise<RegisterBusinessActionResult> {
@@ -592,11 +619,24 @@ export async function registerBusinessAction(
     if (businessNumber.length !== 10) {
       return { ok: false, error: "사업자등록번호 10자리를 입력해주세요." }
     }
+    if (!isBusinessNumberChecksumValid(businessNumber)) {
+      return {
+        ok: false,
+        error: "사업자등록번호를 다시 확인해주세요. 존재할 수 없는 번호입니다.",
+      }
+    }
     if (!representativeName) {
       return { ok: false, error: "대표자명을 입력해주세요." }
     }
     if (!/^\d{8}$/.test(startDate)) {
       return { ok: false, error: "개업일자를 YYYYMMDD 8자리로 입력해주세요." }
+    }
+    if (!isRealStartDate(startDate)) {
+      return {
+        ok: false,
+        error:
+          "개업일자를 다시 확인해주세요. 사업자등록증에 적힌 개업연월일이어야 해요.",
+      }
     }
   }
 

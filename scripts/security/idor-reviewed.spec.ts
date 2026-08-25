@@ -522,7 +522,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /business-licenses//me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:242',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:283',
     predicate: '.where(eq(businessLicenses.userId, userId))',
   },
   'user-service GET /cafe24/link': {
@@ -571,9 +571,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /business-licenses//me/business-number': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:476',
+    evidence: 'apps/user-service/src/api/business-licenses/business-licenses.service.ts:541',
     predicate: '.where(eq(businessLicenses.userId, userId))',
-    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (476행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(265행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
+    note: 'fillMyBusinessNumberIfEmpty(userId, businessNumber) 는 findBusinessLicenseByUserId(userId) (541행 predicate) 로 먼저 소유권을 확인해 license 를 얻고, 그 결과의 license.id 로만 update(306행: .where(eq(businessLicenses.id, license.id)))한다. 즉 최종 update 자체는 id 키지만, id 는 userId 로 스코프된 조회에서만 얻어진다.',
   },
   'user-service POST //recent-views': {
     verdict: 'N/A',

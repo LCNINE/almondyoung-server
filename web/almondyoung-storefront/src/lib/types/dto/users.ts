@@ -125,8 +125,22 @@ export interface NtsLookupResult {
   error?: string
 }
 
+/**
+ * 국세청 진위확인 결과. 상태조회(nts)와 달리 `사업자번호 + 대표자명 + 개업일자` 조합이
+ * 기록과 일치하는지를 본다. 셋 중 하나만 틀려도 valid=false 로 떨어져 심사중에 머문다.
+ */
+export interface NtsValidateResult {
+  valid: boolean
+  invalidReason?: string
+  status: NtsResult
+  checkedAt: string
+  raw?: Record<string, unknown>
+  error?: string
+}
+
 export interface BusinessMetadata {
   nts?: NtsLookupResult
+  ntsValidate?: NtsValidateResult
   [key: string]: unknown
 }
 
