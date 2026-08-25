@@ -115,6 +115,9 @@ export function setup(infra: SharedInfra) {
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
   const storefrontRevalidateSecret = new sst.Secret('StorefrontRevalidateSecret');
 
+  // GA4 Data API (유입 통계). 서비스 계정 JSON 원문을 통째로 담는다.
+  const ga4ServiceAccount = new sst.Secret('Ga4ServiceAccount');
+
   // Grafana Cloud
   const grafanaCloudApiToken = new sst.Secret('GrafanaCloudApiToken');
   const grafanaCloudPrometheusRemoteWriteUrl = new sst.Secret(
@@ -221,6 +224,10 @@ export function setup(infra: SharedInfra) {
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    // GA4 유입 통계용. 서비스 계정 JSON 원문 — @google-analytics/data 에
+    // credentials 로 JSON.parse 해서 넘긴다. 속성 권한은 뷰어(읽기 전용).
+    GA4_SERVICE_ACCOUNT: ga4ServiceAccount.value,
+    GA4_PROPERTY_ID: 'properties/543601630',
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
