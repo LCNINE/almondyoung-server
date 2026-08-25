@@ -16,7 +16,10 @@
     "loadingMore": "상품을 더 불러오는 중...",
     "noMore": "모든 상품을 확인했어요!",
     "loadMoreFailed": "더 불러오지 못했어요",
-    "retry": "다시 시도"
+    "retry": "다시 시도",
+    "paginationLabel": "카테고리 페이지 이동",
+    "prevPage": "이전 페이지",
+    "nextPage": "다음 페이지"
   },
   "sort": {
     "label": "정렬 기준",

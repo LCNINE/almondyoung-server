@@ -14,21 +14,26 @@ import {
   normalizePageSize,
 } from "../utils/sort-mapping"
 import InfiniteProducts from "./infinite-products"
+import { CategoryPaginationLinks } from "../components/pagination-links"
 
 export default async function CategoryProducts({
   sortBy,
   limit,
+  page = 1,
   collectionId,
   categoryIds,
   productsIds,
   countryCode,
+  paginationBaseUrl,
 }: {
   sortBy?: SortOptions
   limit?: number
+  page?: number
   collectionId?: string
   categoryIds?: string[]
   productsIds?: string[]
   countryCode: string
+  paginationBaseUrl?: string
 }) {
   const [region, customer] = await Promise.all([
     getRegion(countryCode),
@@ -44,7 +49,8 @@ export default async function CategoryProducts({
   const groups = customer?.groups ?? []
   const isMembership = isMembershipGroup(groups)
 
-  // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
+  // ?page=N 이 오면 그 페이지를 서버에서 렌더한다. 크롤러가 따라갈 URL 을 만들기
+  // 위한 것이고, 사람은 평소처럼 무한 로드로 다닌다 (UA 분기 아님).
   // 위시리스트는 customer 유무만 필요하므로 상품 조회와 같이 띄운다.
   const [
     {
@@ -55,7 +61,7 @@ export default async function CategoryProducts({
   ] = await Promise.all([
     isSortedOption(effectiveSortBy)
       ? listProductsSorted({
-          pageParam: 1,
+          pageParam: page,
           ...mapSortParams(effectiveSortBy),
           countryCode,
           categoryId: categoryIds,
@@ -63,7 +69,7 @@ export default async function CategoryProducts({
           limit: pageSize,
         })
       : listProducts({
-          pageParam: 1,
+          pageParam: page,
           countryCode,
           queryParams: {
             limit: pageSize,
@@ -103,21 +109,32 @@ export default async function CategoryProducts({
     )
   }
 
+  const lastPage = Math.max(1, Math.ceil(totalCount / pageSize))
+
   return (
-    <InfiniteProducts
-      key={`${effectiveSortBy}-${pageSize}`}
-      initialProducts={filteredProducts}
-      initialNextPage={initialNextPage}
-      totalCount={totalCount}
-      sortBy={effectiveSortBy}
-      limit={pageSize}
-      categoryIds={categoryIds}
-      collectionId={collectionId}
-      productsIds={productsIds}
-      countryCode={countryCode}
-      isMembership={isMembership}
-      isLoggedIn={!!customer}
-      initialWishlistIds={initialWishlistIds}
-    />
+    <>
+      <InfiniteProducts
+        key={`${effectiveSortBy}-${pageSize}-${page}`}
+        initialProducts={filteredProducts}
+        initialNextPage={initialNextPage}
+        totalCount={totalCount}
+        sortBy={effectiveSortBy}
+        limit={pageSize}
+        categoryIds={categoryIds}
+        collectionId={collectionId}
+        productsIds={productsIds}
+        countryCode={countryCode}
+        isMembership={isMembership}
+        isLoggedIn={!!customer}
+        initialWishlistIds={initialWishlistIds}
+      />
+      {paginationBaseUrl && lastPage > 1 && (
+        <CategoryPaginationLinks
+          baseUrl={paginationBaseUrl}
+          page={page}
+          lastPage={lastPage}
+        />
+      )}
+    </>
   )
 }

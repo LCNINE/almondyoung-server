@@ -17,12 +17,14 @@ const ALL_PRODUCTS_CATEGORY_HANDLE = "cafe24-cat-499"
 export function CategoryTemplate({
   sortBy,
   limit,
+  page = 1,
   countryCode,
   category,
   segments,
 }: {
   sortBy?: SortOptions
   limit?: string
+  page?: number
   countryCode: string
   category?: HttpTypes.StoreProductCategory
   segments?: string[]
@@ -85,6 +87,10 @@ export function CategoryTemplate({
             <CategoryProducts
               sortBy={sort}
               limit={pageSize}
+              page={page}
+              paginationBaseUrl={
+                segments ? `/category/${segments.join("/")}` : undefined
+              }
               countryCode={countryCode}
               categoryIds={
                 category && category.handle !== ALL_PRODUCTS_CATEGORY_HANDLE

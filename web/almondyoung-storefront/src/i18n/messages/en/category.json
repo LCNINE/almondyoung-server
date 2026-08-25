@@ -16,7 +16,10 @@
     "loadingMore": "Loading more products...",
     "noMore": "You've reached the end",
     "loadMoreFailed": "Couldn't load more",
-    "retry": "Retry"
+    "retry": "Retry",
+    "paginationLabel": "Category pagination",
+    "prevPage": "Previous page",
+    "nextPage": "Next page"
   },
   "sort": {
     "label": "Sort by",
