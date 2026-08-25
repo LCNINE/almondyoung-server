@@ -13,10 +13,10 @@ const STATUS_COLOR: Record<MyInvoiceStatus, string> = {
   PAID: "text-green-600 bg-green-50",
   OPEN: "text-blue-600 bg-blue-50",
   ATTEMPTING: "text-blue-600 bg-blue-50",
-  MANDATE_PENDING: "text-yellow-600 bg-yellow-50",
-  PAST_DUE: "text-red-500 bg-red-50",
-  UNCOLLECTIBLE: "text-red-500 bg-red-50",
-  MANDATE_REJECTED: "text-red-500 bg-red-50",
+  MANDATE_PENDING: "text-amber-700 bg-amber-50",
+  PAST_DUE: "text-destructive bg-destructive/10",
+  UNCOLLECTIBLE: "text-destructive bg-destructive/10",
+  MANDATE_REJECTED: "text-destructive bg-destructive/10",
   VOID: "text-gray-500 bg-gray-100",
   DRAFT: "text-gray-500 bg-gray-100",
 }
@@ -111,7 +111,7 @@ export default function MembershipInvoicesSection() {
               </span>
             </div>
             {FAILED_STATUSES.includes(inv.status) && (
-              <div className="mt-1.5 rounded-md bg-red-50 px-2 py-1.5 text-red-900">
+              <div className="mt-1.5 bg-destructive/10 rounded-md px-2 py-1.5 text-red-50">
                 <p className="leading-4">
                   {inv.lastErrorMessage
                     ? t("invoices.failureReason", { reason: inv.lastErrorMessage })

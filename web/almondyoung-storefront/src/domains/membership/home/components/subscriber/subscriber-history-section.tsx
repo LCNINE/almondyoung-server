@@ -15,9 +15,9 @@ interface MembershipHistorySectionProps {
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: "text-green-600 bg-green-50",
-  PAUSED: "text-yellow-600 bg-yellow-50",
+  PAUSED: "text-amber-700 bg-amber-50",
   RECURRING_CANCELLED: "text-orange-500 bg-orange-50",
-  CANCELLED: "text-red-500 bg-red-50",
+  CANCELLED: "text-destructive bg-destructive/10",
   ENDED: "text-gray-500 bg-gray-100",
   EXPIRED: "text-gray-500 bg-gray-100",
 }

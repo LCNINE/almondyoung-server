@@ -529,7 +529,7 @@ const DirectCouponInput = ({
               className={`rounded-[5px] border px-3 py-2.5 text-xs ${
                 preview.valid || preview.claimable
                   ? "border-green-200 bg-green-50"
-                  : "border-red-200 bg-red-50"
+                  : "bg-destructive/5 border-red-200"
               }`}
             >
               {preview.valid || preview.claimable ? (

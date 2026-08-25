@@ -69,7 +69,7 @@ export default function FailPage() {
 
         {/* Error Details */}
         <div className="mb-8 space-y-4">
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+          <div className="bg-destructive/5 rounded-lg border border-red-200 p-4">
             <div className="space-y-3">
               <div>
                 <span className="mb-1 block text-sm text-gray-600">

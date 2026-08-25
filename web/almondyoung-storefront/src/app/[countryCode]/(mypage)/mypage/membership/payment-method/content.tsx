@@ -458,7 +458,7 @@ export default function MembershipPaymentMethodContent() {
                                 : t("viewDetails")}
                             </button>
                             <button
-                              className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                              className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs text-red-700 shadow-sm hover:bg-destructive/5 disabled:opacity-50"
                               onClick={() =>
                                 handleDeleteMethod(
                                   currentMethod.id,
@@ -575,7 +575,7 @@ export default function MembershipPaymentMethodContent() {
                             : t("changeToCard")}
                       </button>
                       <button
-                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs text-red-700 shadow-sm hover:bg-destructive/5 disabled:opacity-50"
                         onClick={() =>
                           handleDeleteMethod(
                             method.id,
@@ -679,7 +679,7 @@ export default function MembershipPaymentMethodContent() {
                           : t("viewDetails")}
                       </button>
                       <button
-                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-destructive/5 disabled:opacity-50"
                         onClick={() =>
                           handleDeleteMethod(
                             m.billingMethodId,
@@ -716,7 +716,7 @@ export default function MembershipPaymentMethodContent() {
                 {failedCmsMethods.map((m) => (
                   <div
                     key={m.billingMethodId}
-                    className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-4"
+                    className="bg-destructive/5 flex flex-col gap-2 rounded-md border border-red-200 p-4"
                   >
                     <div className="flex items-center gap-2">
                       <p className="flex-1 text-sm font-medium text-black">
@@ -738,7 +738,7 @@ export default function MembershipPaymentMethodContent() {
                     {renderMethodDetails(m.billingMethodId, null, m)}
                     <div className="flex justify-end gap-2">
                       <button
-                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-red-50"
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-destructive/5"
                         onClick={() =>
                           setDetailOpenId(
                             detailOpenId === m.billingMethodId
@@ -752,7 +752,7 @@ export default function MembershipPaymentMethodContent() {
                           : t("viewDetails")}
                       </button>
                       <button
-                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-destructive/5 disabled:opacity-50"
                         onClick={() =>
                           handleReregisterFailedMethod(m.billingMethodId)
                         }
@@ -763,7 +763,7 @@ export default function MembershipPaymentMethodContent() {
                           : t("cmsReregister")}
                       </button>
                       <button
-                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-destructive/5 disabled:opacity-50"
                         onClick={() =>
                           handleDeleteMethod(
                             m.billingMethodId,
