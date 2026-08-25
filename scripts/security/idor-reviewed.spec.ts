@@ -429,8 +429,8 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   'search GET /search/admin/keywords/statistics': {
     verdict: 'N/A',
     evidence: 'apps/search/src/admin-keyword.controller.ts:12',
-    predicate: '@UseGuards(JwtAuthGuard)',
-    note: '관리자 검색 키워드 통계 — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 키워드 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard.',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '관리자 검색 키워드 통계 — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 키워드 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search GET /search/products': {
     verdict: 'N/A',

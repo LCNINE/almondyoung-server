@@ -1,13 +1,14 @@
+import { IsCalendarDateConstraint } from '@app/shared';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
-
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+import { IsInt, IsOptional, Max, Min, Validate } from 'class-validator';
 
 export class AdminKeywordStatisticsQueryDto {
-  @Matches(DATE_ONLY, { message: 'from 은 YYYY-MM-DD 형식이어야 합니다' })
+  // 모양만 보는 @Matches 는 '2026-02-31' 을 통과시키고, 그 값은
+  // kstDayStartIso 의 toISOString() 에서 RangeError(500)로 터진다.
+  @Validate(IsCalendarDateConstraint, { message: 'from 은 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   from: string;
 
-  @Matches(DATE_ONLY, { message: 'to 는 YYYY-MM-DD 형식이어야 합니다' })
+  @Validate(IsCalendarDateConstraint, { message: 'to 는 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   to: string;
 
   @IsOptional()
