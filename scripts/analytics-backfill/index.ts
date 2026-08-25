@@ -31,7 +31,7 @@ import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import postgres, { Sql } from 'postgres';
 import { DbModule, DbService } from '@app/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DomainEvent } from '@packages/event-contracts/types';
 import {
   ORDER_STREAM,
@@ -45,7 +45,7 @@ import {
   MEMBERSHIP_STREAM,
   MembershipStatusChangedPayload,
 } from '@packages/event-contracts/streams/membership.stream';
-import { analyticsSchema, factOrderEvents } from '../../apps/analytics/src/schema';
+import { analyticsSchema, factOrderEvents, factOrderItems } from '../../apps/analytics/src/schema';
 import { OrderFactsService } from '../../apps/analytics/src/datasets/orders/facts/order-facts.service';
 import { OrderAggregatesService } from '../../apps/analytics/src/datasets/orders/aggregates/order-aggregates.service';
 import { UserPurchaseAggregatesService } from '../../apps/analytics/src/datasets/orders/aggregates/user-purchase-aggregates.service';
@@ -70,6 +70,9 @@ const args = parseCommonArgs(process.argv);
 const APPLY = argvFlags.has('--apply');
 const DO_ORDERS = argvFlags.has('--orders');
 const DO_MEMBERSHIPS = argvFlags.has('--memberships');
+// 주문 계열 파생 상태를 지우고 처음부터 다시 백필한다. 라인 id 불일치로 실시간분과
+// 이중 집계된 사고 복구용 — 환불 봉투(OrderRefundCreated)와 멤버십 테이블은 보존한다.
+const RESET_ORDERS = argvFlags.has('--reset-orders');
 const FROM = (() => {
   const idx = process.argv.indexOf('--from');
   return idx >= 0 ? process.argv[idx + 1] : undefined;
@@ -241,6 +244,7 @@ async function backfillOrders(core: Sql, dbService: DbService<typeof analyticsSc
     read: 0,
     createdApplied: 0,
     createdDuplicate: 0,
+    createdSkippedExisting: 0,
     cancelApplied: 0,
     cancelSkippedExisting: 0,
     cancelOrphan: 0,
@@ -258,7 +262,8 @@ async function backfillOrders(core: Sql, dbService: DbService<typeof analyticsSc
              (SELECT MIN(e.created_at) FROM order_events e
                WHERE e.order_id = o.id AND e.event_type = 'ORDER_CANCELLED') AS cancelled_at
       FROM sales_orders o
-      ${FROM ? core`WHERE o.order_date >= ${FROM}::date` : core``}
+      WHERE o.order_date < (now() - interval '10 minutes')
+      ${FROM ? core`AND o.order_date >= ${FROM}::date` : core``}
       ORDER BY o.order_date ASC, o.id ASC
       LIMIT ${BATCH_SIZE} OFFSET ${offset}
     `;
@@ -283,6 +288,19 @@ async function backfillOrders(core: Sql, dbService: DbService<typeof analyticsSc
       const list = linesByOrder.get(line.sales_order_id) ?? [];
       list.push(line);
       linesByOrder.set(line.sales_order_id, list);
+    }
+
+    // 생성 겹침 방지: 실시간 소비분과 백필은 **주문 라인 id 가 다르다** (실시간=Medusa
+    // ordli_*, 원본=core 라인 UUID) — 라인 유니크 (orderKey, salesChannel, orderItemId) 는
+    // 이 겹침을 못 막는다(실측 확인). 주문 단위 (orderKey, salesChannel) 존재 여부로 막는다.
+    const batchKeys = orders.map((o) => o.channel_order_id ?? o.id);
+    const existingOrderKeys = new Set<string>();
+    if (batchKeys.length > 0) {
+      const rows = await dbService.db
+        .selectDistinct({ orderKey: factOrderItems.orderKey, salesChannel: factOrderItems.salesChannel })
+        .from(factOrderItems)
+        .where(inArray(factOrderItems.orderKey, batchKeys));
+      for (const row of rows) existingOrderKeys.add(`${row.orderKey}|${row.salesChannel}`);
     }
 
     // 취소 겹침 방지: 이 배치의 주문에 대한 취소 봉투가 이미 있는지 한 번에 조회.
@@ -338,7 +356,11 @@ async function backfillOrders(core: Sql, dbService: DbService<typeof analyticsSc
       const orderKey = payload.externalOrderId ?? payload.orderId;
       const messageId = syntheticMessageId('OrderCreated', `${orderKey}|${payload.salesChannel}`);
 
-      if (APPLY) {
+      if (existingOrderKeys.has(`${orderKey}|${payload.salesChannel}`)) {
+        // 이미 fact 에 라인이 있는 주문(실시간 소비분 또는 이전 백필분) — 생성은 건너뛰고
+        // 취소만 아래에서 기존 봉투 검사를 거쳐 처리한다.
+        counters.createdSkippedExisting += 1;
+      } else if (APPLY) {
         await dbService.run(async (tx) => {
           const result = await services.facts.recordOrderCreated(
             envelope('OrderCreated', 'Order', payload.orderId, messageId, createdAtIso, payload),
@@ -510,6 +532,30 @@ async function main() {
 
   try {
     const dbService = app.get(DbService) as DbService<typeof analyticsSchema>;
+
+    if (RESET_ORDERS) {
+      const counts = await dbService.db.execute(sql`
+        SELECT (SELECT count(*) FROM fact_order_items) items,
+               (SELECT count(*) FROM fact_order_events WHERE message_type IN ('OrderCreated', 'OrderCancelled')) events,
+               (SELECT count(*) FROM agg_channel_daily) + (SELECT count(*) FROM agg_product_order_daily) +
+               (SELECT count(*) FROM agg_variant_order_daily) + (SELECT count(*) FROM agg_customer_lifetime) +
+               (SELECT count(*) FROM agg_user_product_purchase) aggs`);
+      console.log('reset-orders 대상:', JSON.stringify(counts[0] ?? counts));
+      if (APPLY) {
+        await dbService.db.transaction(async (tx) => {
+          await tx.execute(sql`DELETE FROM fact_order_items`);
+          await tx.execute(sql`DELETE FROM fact_order_events WHERE message_type IN ('OrderCreated', 'OrderCancelled')`);
+          await tx.execute(sql`DELETE FROM agg_channel_daily`);
+          await tx.execute(sql`DELETE FROM agg_product_order_daily`);
+          await tx.execute(sql`DELETE FROM agg_variant_order_daily`);
+          await tx.execute(sql`DELETE FROM agg_customer_lifetime`);
+          await tx.execute(sql`DELETE FROM agg_user_product_purchase`);
+        });
+        console.log('주문 계열 리셋 완료 — 환불 봉투·멤버십 테이블은 보존됨');
+      } else {
+        console.log('dry-run — 리셋하지 않음');
+      }
+    }
 
     if (DO_ORDERS) {
       const core = sourceConnection('core', process.env.CORE_DATABASE_URL);
