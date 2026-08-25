@@ -442,32 +442,35 @@ export const mainMenus: MainMenu[] = [
     id: 'sales-statistics',
     title: '판매/통계',
     icon: 'BarChart3',
+    defaultPath: '/statistics/sales',
     children: [
       {
         id: 'sales-status',
         title: '판매 현황',
         children: [
-          { id: 'by-product', title: '상품별' },
-          { id: 'by-option', title: '옵션별' },
-          { id: 'by-period', title: '기간별' },
-          { id: 'by-membership', title: '회원등급별' },
+          { id: 'by-product', title: '상품별', path: '/statistics/products' },
+          { id: 'by-option', title: '옵션별', path: '/statistics/products' },
+          { id: 'by-period', title: '기간별', path: '/statistics/sales' },
+          { id: 'by-membership', title: '회원등급별', path: '/statistics/customers' },
         ],
       },
       {
+        // 웹 행동 추적 데이터가 아직 없다 — 수집부터 시작하는 별도 프로젝트.
         id: 'analytics',
         title: '애널리틱스',
         children: [
-          { id: 'customer-behavior', title: '고객 행동' },
-          { id: 'conversion-rate', title: '전환율' },
+          { id: 'customer-behavior', title: '고객 행동', isComingSoon: true },
+          { id: 'conversion-rate', title: '전환율', isComingSoon: true },
         ],
       },
       {
+        // 물류 부문 — 원천 데이터 부재로 범위 밖.
         id: 'shipping-statistics',
         title: '배송 통계',
         children: [
-          { id: 'combined-shipping', title: '합배송' },
-          { id: 'wrong-shipping', title: '오배송' },
-          { id: 'package-size', title: '택배 사이즈' },
+          { id: 'combined-shipping', title: '합배송', isComingSoon: true },
+          { id: 'wrong-shipping', title: '오배송', isComingSoon: true },
+          { id: 'package-size', title: '택배 사이즈', isComingSoon: true },
         ],
       },
     ],

@@ -18,6 +18,13 @@ export const useMembershipMembers = (
   });
 };
 
+export const useMembershipMembersSummary = () => {
+  return useQuery({
+    queryKey: membershipQueryKeys.membersSummary(),
+    queryFn: () => membershipApi.getMembersSummary(),
+  });
+};
+
 export const useMemberDetail = (userId: string | null) => {
   return useQuery({
     queryKey: membershipQueryKeys.memberDetail(userId ?? ''),

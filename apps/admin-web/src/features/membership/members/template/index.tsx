@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { MembershipMemberTable } from '../components/table';
 import { MembershipMemberFilterBox } from '../components/filter-box';
+import { MembershipMembersSummaryCards } from '../components/summary-cards';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -211,6 +212,7 @@ export default function MembershipMemberListTemplate() {
           </Button>
         }
       />
+      <MembershipMembersSummaryCards />
       <MembershipMemberFilterBox />
       <MembershipMemberTable />
       <AdminGrantDialog

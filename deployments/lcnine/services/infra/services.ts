@@ -608,6 +608,7 @@ export function setup(infra: SharedInfra) {
       CHANNEL_ADAPTER_SERVICE_URL: url('channel-adapter'),
       FILE_SERVICE_URL: url('file'),
       UGC_SERVICE_URL: url('ugc'),
+      ANALYTICS_SERVICE_URL: url('analytics'),
       ADMIN_DOMAIN: domain('admin'),
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OAUTH_ISSUER_URL: idpUserServiceUrl,

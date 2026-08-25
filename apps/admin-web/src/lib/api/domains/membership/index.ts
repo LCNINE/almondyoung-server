@@ -86,6 +86,20 @@ export interface AdminMembersResponse {
   limit: number;
 }
 
+/**
+ * 상태별 회원 수. 각 값은 같은 status 필터의 회원 목록 total 과 동일한 기준.
+ * active 는 해지 예약(recurringCancelled) 회원을 포함하고, recurringCancelled 는 그 부분집합이다 —
+ * 버킷을 더해 total 을 만들면 안 된다.
+ */
+export interface AdminMembersSummary {
+  total: number;
+  active: number;
+  paused: number;
+  recurringCancelled: number;
+  cancelled: number;
+  expired: number;
+}
+
 export interface AdminMemberDetail {
   contractId: string;
   userId: string;
@@ -315,6 +329,13 @@ export const membershipApi = {
     const qs = buildQueryString(query as Record<string, unknown>);
     const res = await client.get(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  getMembersSummary: async (): Promise<AdminMembersSummary> => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/summary`
     );
     return res.data;
   },

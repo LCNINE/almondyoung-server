@@ -22,9 +22,15 @@ import { UserPurchaseQuery } from './features/user-purchase/read-model/user-purc
 import { MembershipFactsService } from './datasets/memberships/facts/membership-facts.service';
 import { MembershipDimensionsService } from './datasets/memberships/dimensions/membership-dimensions.service';
 import { MembershipEventsConsumer } from './datasets/memberships/ingest/membership-events.consumer';
+import { MembershipDailySnapshotService } from './datasets/memberships/aggregates/membership-daily-snapshot.service';
+import { StatisticsController } from './features/statistics/api/statistics.controller';
+import { StatisticsQuery } from './features/statistics/read-model/statistics.query';
+import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 
 @Module({
   imports: [
+    // 단 하나의 forRoot 결과를 공유해야 한다 — 직접 부르면 @Cron 이 두 번 등록된다 (#599)
+    SCHEDULE_ROOT,
     LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -59,7 +65,7 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
       scopes: [],
     }),
   ],
-  controllers: [AnalyticsController, OrderEventsConsumer, ProductEventsConsumer, MembershipEventsConsumer],
+  controllers: [AnalyticsController, StatisticsController, OrderEventsConsumer, ProductEventsConsumer, MembershipEventsConsumer],
   providers: [
     AnalyticsService,
     OrderFactsService,
@@ -73,6 +79,8 @@ import { MembershipEventsConsumer } from './datasets/memberships/ingest/membersh
     UserPurchaseQuery,
     MembershipFactsService,
     MembershipDimensionsService,
+    MembershipDailySnapshotService,
+    StatisticsQuery,
   ],
 })
 export class AnalyticsModule {}
