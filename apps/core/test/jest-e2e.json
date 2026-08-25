@@ -1,6 +1,7 @@
 {
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": ".",
+  "globalSetup": "<rootDir>/../../../scripts/jest/global-setup.js",
   "testEnvironment": "node",
   "testRegex": ".e2e-spec.ts$",
   "transform": {

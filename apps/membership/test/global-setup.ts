@@ -1,3 +1,7 @@
+// 프로세스 TZ 를 UTC 로 박는다 (#724 항목 13). 워커 fork 전에 도는 이 파일이 유일한 기회다 —
+// 근거는 `scripts/jest/global-setup.js` 주석. 이 설정은 자체 globalSetup 이 있어 배선 대신 한 줄로 얹는다.
+process.env.TZ = process.env.TZ || 'UTC';
+
 const tsNode = require('ts-node');
 const tsConfigPaths = require('tsconfig-paths');
 
