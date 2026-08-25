@@ -73,6 +73,11 @@ interface CategoryNameRow {
   name: string;
 }
 
+interface DerivedNameRow {
+  variant_id: string;
+  derived_name: string;
+}
+
 async function main() {
   if (!HAS_ENV_URLS) {
     await ensureInsideSstShell({ stage: args.stage, deployment: args.deployment });
@@ -103,6 +108,26 @@ async function main() {
           JOIN product_variants pv ON pv.id = mv.variant_id
           WHERE mv.version_id = ANY(${versionIds})`
       : [];
+
+    // 수동 이름이 없는 옵션 조합 variant 는 옵션값 표시명을 이어 붙여 이름을 만든다 (예: "1제 / 2제").
+    // 이 값은 core 에서도 화면 조립으로만 존재해 이벤트·수동이름 어느 쪽으로도 안 들어온다.
+    const derivedNames: DerivedNameRow[] = versionIds.length
+      ? await core<DerivedNameRow[]>`
+          SELECT mv.variant_id::text AS variant_id,
+                 string_agg(d.display_name, ' / ' ORDER BY d.sort_order, d.display_name) AS derived_name
+          FROM product_master_variants mv
+          JOIN variant_option_values vov ON vov.variant_id = mv.variant_id
+          JOIN product_option_value_displays d
+            ON d.option_value_id = vov.option_value_id
+           AND d.version_id = mv.version_id
+           AND d.master_id = mv.master_id
+           AND d.locale = 'ko-KR'
+          WHERE mv.version_id = ANY(${versionIds})
+          GROUP BY mv.variant_id`
+      : [];
+    const derivedNameByVariant = new Map(derivedNames.map((row) => [row.variant_id, row.derived_name]));
+    const effectiveVariantName = (v: VariantRow): string | null =>
+      v.variant_name ?? derivedNameByVariant.get(v.variant_id) ?? null;
 
     // 대표 버전의 카테고리 매핑 + 카테고리명
     const categoryLinks: CategoryLinkRow[] = versionIds.length
@@ -135,7 +160,7 @@ async function main() {
     const variantInserts = variants.filter((v) => !existingVariantMap.has(v.variant_id));
     const variantNameFills = variants.filter(
       (v) =>
-        v.variant_name != null &&
+        effectiveVariantName(v) != null &&
         existingVariantMap.has(v.variant_id) &&
         existingVariantMap.get(v.variant_id) == null,
     );
@@ -168,13 +193,13 @@ async function main() {
       const master = masterById.get(v.master_id as string);
       await analytics`
         INSERT INTO dim_product_variants (variant_id, master_id, version_id, variant_name, is_default, status)
-        VALUES (${v.variant_id}, ${v.master_id}, ${master?.version_id ?? v.version_id}, ${v.variant_name},
+        VALUES (${v.variant_id}, ${v.master_id}, ${master?.version_id ?? v.version_id}, ${effectiveVariantName(v)},
                 ${v.is_default}, ${v.status})
         ON CONFLICT (variant_id) DO NOTHING`;
     }
     for (const v of variantNameFills) {
       await analytics`
-        UPDATE dim_product_variants SET variant_name = ${v.variant_name}, updated_at = now()
+        UPDATE dim_product_variants SET variant_name = ${effectiveVariantName(v)}, updated_at = now()
         WHERE variant_id = ${v.variant_id} AND variant_name IS NULL`;
     }
 
