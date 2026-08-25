@@ -6,6 +6,10 @@ import { OpenGraph, SEOTags } from "./types/common/seo"
 // 이 태그로 뺀다. follow 는 켜둬야 링크된 상품 페이지로 크롤이 흘러간다.
 export const NOINDEX = { index: false, follow: true } as const
 
+// apex(/) 는 /kr 로 308 되므로 자기참조 URL 은 전부 이쪽을 가리켜야 한다
+const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
+const HOME_URL = `https://${siteConfig.domainName}/${DEFAULT_REGION}`
+
 // SEO 기본값 상수
 const DEFAULT_SEO = {
   locale: "ko_KR",
@@ -22,11 +26,14 @@ const DEFAULT_OG_IMAGE = {
   alt: "아몬드영 — 세상의 모든 미용재료가 있는 곳",
 }
 
-// OpenGraph 메타데이터 생성 함수
-const createOpenGraphMetadata = (openGraph: OpenGraph) => ({
+// OpenGraph 메타데이터 생성 함수. url 은 그 페이지의 canonical 과 같아야 하므로
+// 알 수 없으면 아예 넣지 않는다 — 전 페이지에 홈 주소를 박으면 공유 카드가 홈을 가리킨다.
+const createOpenGraphMetadata = (openGraph: OpenGraph, canonicalUrl?: string) => ({
   title: openGraph.title || siteConfig.appName,
   description: openGraph.description || siteConfig.appDescription,
-  url: openGraph.url || `https://${siteConfig.domainName}/`,
+  ...(openGraph.url || canonicalUrl
+    ? { url: openGraph.url || canonicalUrl }
+    : {}),
   siteName: openGraph.title || siteConfig.appName,
   locale: DEFAULT_SEO.locale,
   type: DEFAULT_SEO.type,
@@ -44,12 +51,12 @@ const createTwitterMetadata = (openGraph: OpenGraph) => ({
 
 // Schema.org 데이터 생성 함수
 const createSchemaData = () => ({
-  "@context": "http://schema.org",
+  "@context": "https://schema.org",
   "@type": "Store",
   name: "아몬드영",
   description: siteConfig.appDescription,
   image: `https://${siteConfig.domainName}/icon.png`,
-  url: `https://${siteConfig.domainName}/`,
+  url: HOME_URL,
 })
 
 export const getSEOTags = ({
@@ -72,7 +79,12 @@ export const getSEOTags = ({
     applicationName: siteConfig.appName,
     metadataBase: new URL(baseUrl),
     // 페이지가 openGraph.description 을 따로 안 주면 페이지 description 을 물려받는다
-    openGraph: createOpenGraphMetadata({ description, ...openGraph }),
+    openGraph: createOpenGraphMetadata(
+      { description, ...openGraph },
+      canonicalUrlRelative
+        ? new URL(canonicalUrlRelative, baseUrl).toString()
+        : undefined
+    ),
     twitter: createTwitterMetadata({ description, ...openGraph }),
     ...(canonicalUrlRelative && {
       alternates: { canonical: canonicalUrlRelative },
