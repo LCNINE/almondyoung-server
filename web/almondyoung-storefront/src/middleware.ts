@@ -18,6 +18,24 @@ const DEFAULT_REGION = process.env.NEXT_PUBLIC_DEFAULT_REGION || "kr"
 // 공개: /(main)/*, /(auth)/*, /(policies)/*, /cart, /order/track 등 게스트 허용
 const PROTECTED_PATH_PREFIXES = ["/mypage", "/consents"]
 
+// 크롤러에게 CDN 캐시를 허용할 공개 경로. 장바구니·마이페이지·결제처럼 사람마다
+// 다른 화면은 제외한다 (크롤러가 밟을 일은 없지만 캐시 대상 판정은 경로로 못박는다).
+const CACHEABLE_PATH_PREFIXES = [
+  "/products",
+  "/category",
+  "/shop-trade",
+  "/best",
+  "/new",
+  "/cs",
+]
+
+function isPublicCacheablePath(pathname: string): boolean {
+  const segments = pathname.split("/").filter(Boolean)
+  if (segments.length === 1) return true // /kr 홈
+  const afterCountry = "/" + segments.slice(1).join("/")
+  return CACHEABLE_PATH_PREFIXES.some((p) => afterCountry.startsWith(p))
+}
+
 function isProtectedPath(pathname: string): boolean {
   // pathname: "/kr/mypage/..." → countryCode 제거하고 prefix 매칭
   const segments = pathname.split("/").filter(Boolean)
@@ -302,6 +320,12 @@ export async function middleware(request: NextRequest) {
 
   let cacheId = cacheIdCookie?.value || crypto.randomUUID()
 
+  // CloudFront viewer-request 함수가 UA 를 보고 0/1 로 접어 넘긴다.
+  // 크롤러는 장바구니도 세션도 없어 방문자별 캐시 태그가 의미 없다. 쿠키를 심지 않으면
+  // 응답에 Set-Cookie 가 없어 CDN 이 캐시할 수 있고, 사이트맵 1만건이 매번 Lambda 를
+  // 때리지 않는다. x-crawler 는 캐시 키에 포함돼 있어 사람 응답과 섞이지 않는다.
+  const isCrawler = request.headers.get("x-crawler") === "1"
+
   const regionMap = await getRegionMap(cacheId)
   const countryCode = regionMap && (await getCountryCode(request, regionMap))
 
@@ -314,7 +338,7 @@ export async function middleware(request: NextRequest) {
   const isPrefetch = request.headers.get("Next-Router-Prefetch") === "1"
 
   // 제목 추출코드
-  if (urlHasCountryCode && cacheIdCookie) {
+  if (urlHasCountryCode && (cacheIdCookie || isCrawler)) {
     // pathname을 헤더에 추가하여 layout에서 사용 가능하도록 설정
     const requestHeaders = new Headers(request.headers)
     requestHeaders.set("x-pathname", request.nextUrl.pathname)
@@ -334,11 +358,22 @@ export async function middleware(request: NextRequest) {
       requestHeaders.set("traceparent", `00-${traceId}-${spanId}-00`)
     }
 
-    return NextResponse.next({
+    const passthrough = NextResponse.next({
       request: {
         headers: requestHeaders,
       },
     })
+
+    // 크롤러 응답만 CDN 에 맡긴다. 사람 응답은 Set-Cookie 가 실려 있어 캐시하면
+    // 한 사람의 _medusa_cache_id 가 전원에게 배포된다 — 건드리지 않는다.
+    if (isCrawler && isPublicCacheablePath(request.nextUrl.pathname)) {
+      passthrough.headers.set(
+        "cache-control",
+        "public, max-age=0, s-maxage=300, stale-while-revalidate=3600"
+      )
+    }
+
+    return passthrough
   }
 
   // if one of the country codes is in the url and the cache id is not set, set the cache id and continue
