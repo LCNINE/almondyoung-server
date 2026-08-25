@@ -452,6 +452,7 @@ export const mainMenus: MainMenu[] = [
           { id: 'by-option', title: '옵션별', path: '/statistics/products' },
           { id: 'by-period', title: '기간별', path: '/statistics/sales' },
           { id: 'by-membership', title: '회원등급별', path: '/statistics/customers' },
+          { id: 'by-keyword', title: '검색 키워드', path: '/statistics/keywords' },
         ],
       },
       {

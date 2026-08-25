@@ -301,6 +301,10 @@ export function setup(infra: SharedInfra) {
     OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
     SEARCH_PRODUCTS_INDEX: 'search_products',
     ...kafkaEnv('search', 'search-indexer-group'),
+    // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
+    // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
+    AUTH_SECRET: authSecret.value,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
@@ -609,6 +613,7 @@ export function setup(infra: SharedInfra) {
       FILE_SERVICE_URL: url('file'),
       UGC_SERVICE_URL: url('ugc'),
       ANALYTICS_SERVICE_URL: url('analytics'),
+      SEARCH_SERVICE_URL: url('search'),
       ADMIN_DOMAIN: domain('admin'),
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OAUTH_ISSUER_URL: idpUserServiceUrl,

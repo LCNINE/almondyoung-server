@@ -424,7 +424,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     verdict: 'N/A',
     evidence: 'apps/search/src/health.controller.ts:8',
     predicate: '',
-    note: '무인증 — 헬스체크. OpenSearchService.ping() 결과만 반환, 사용자/식별자 무관. SearchModule(search.module.ts)은 AuthorizationModule 자체를 import 하지 않고, main.ts 에도 전역 가드/미들웨어 없음 — search 앱 전체가 인증 체계를 안 씀.',
+    note: '무인증 — 헬스체크. OpenSearchService.ping() 결과만 반환, 사용자/식별자 무관. SearchModule 은 AuthorizationModule.forAuthOnly 로 인증만 등록하고(전역 가드 아님, 라우트별 @UseGuards), 이 라우트는 가드 없이 공개.',
+  },
+  'search GET /search/admin/keywords/statistics': {
+    verdict: 'N/A',
+    evidence: 'apps/search/src/admin-keyword.controller.ts:12',
+    predicate: '@UseGuards(JwtAuthGuard)',
+    note: '관리자 검색 키워드 통계 — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 키워드 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard.',
   },
   'search GET /search/products': {
     verdict: 'N/A',
@@ -650,15 +656,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(101);
+    expect(targets).toHaveLength(102);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(101);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(100);
+    expect(new Set(targets.map(keyOf)).size).toBe(102);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(101);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

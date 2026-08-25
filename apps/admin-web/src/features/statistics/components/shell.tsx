@@ -21,7 +21,14 @@ const TABS = [
   { href: '/statistics/sales', label: '매출' },
   { href: '/statistics/products', label: '상품' },
   { href: '/statistics/customers', label: '고객·멤버십' },
+  { href: '/statistics/keywords', label: '검색 키워드' },
 ];
+
+/** 탭별로 의미 없는 필터를 숨긴다 — 검색 키워드 통계는 채널·집계 단위가 없다. */
+export interface StatisticsFilterOptions {
+  channel?: boolean;
+  granularity?: boolean;
+}
 
 const GRANULARITY_OPTIONS = [
   { value: 'day', label: '일별' },
@@ -32,7 +39,7 @@ const GRANULARITY_OPTIONS = [
 // '전체' 는 기간 필수인 통계에선 의미가 없어 뺀다.
 const PRESET_OPTIONS = DATE_PRESET_OPTIONS.filter((option) => option.value !== 'all');
 
-function StatisticsFilter() {
+function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptions> }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -59,9 +66,9 @@ function StatisticsFilter() {
     const params = new URLSearchParams();
     params.set('from', nextFrom);
     params.set('to', nextTo);
-    params.set('granularity', granularity);
+    if (options.granularity) params.set('granularity', granularity);
     if (preset !== 'custom') params.set('preset', preset);
-    if (channel.trim()) params.set('channel', channel.trim());
+    if (options.channel && channel.trim()) params.set('channel', channel.trim());
     router.replace(`${pathname}?${params.toString()}`);
   };
 
@@ -100,26 +107,32 @@ function StatisticsFilter() {
         </FormField>
       )}
 
-      <div className="flex flex-wrap items-end gap-4">
-        <FormField label="단위" direction="horizontal">
-          <FormRadioGroup
-            value={granularity}
-            onValueChange={(v) => setGranularity(v as typeof granularity)}
-            options={GRANULARITY_OPTIONS}
-            orientation="horizontal"
-          />
-        </FormField>
-        <FormField label="채널" direction="horizontal">
-          <div className="w-52">
-            <FormInput
-              placeholder="예: medusa (생략 시 전체)"
-              value={channel}
-              onChange={(e) => setChannel(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && apply()}
-            />
-          </div>
-        </FormField>
-      </div>
+      {(options.granularity || options.channel) && (
+        <div className="flex flex-wrap items-end gap-4">
+          {options.granularity && (
+            <FormField label="단위" direction="horizontal">
+              <FormRadioGroup
+                value={granularity}
+                onValueChange={(v) => setGranularity(v as typeof granularity)}
+                options={GRANULARITY_OPTIONS}
+                orientation="horizontal"
+              />
+            </FormField>
+          )}
+          {options.channel && (
+            <FormField label="채널" direction="horizontal">
+              <div className="w-52">
+                <FormInput
+                  placeholder="예: medusa (생략 시 전체)"
+                  value={channel}
+                  onChange={(e) => setChannel(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && apply()}
+                />
+              </div>
+            </FormField>
+          )}
+        </div>
+      )}
 
       <div className="flex justify-center gap-2 pt-1">
         <Button onClick={apply} className="h-9 w-28 bg-orange-500 text-white hover:bg-orange-600">
@@ -134,10 +147,17 @@ function StatisticsFilter() {
   );
 }
 
-export function StatisticsShell({ children }: { children: ReactNode }) {
+export function StatisticsShell({
+  children,
+  filterOptions,
+}: {
+  children: ReactNode;
+  filterOptions?: StatisticsFilterOptions;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
+  const options = { channel: true, granularity: true, ...filterOptions };
 
   return (
     <Container>
@@ -164,7 +184,7 @@ export function StatisticsShell({ children }: { children: ReactNode }) {
           );
         })}
       </div>
-      <StatisticsFilter />
+      <StatisticsFilter options={options} />
       {children}
     </Container>
   );
