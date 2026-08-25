@@ -4,7 +4,12 @@ describe('toJamo', () => {
   it('한글 음절을 초성/중성/종성으로 편다', () => {
     expect(toJamo('롤러킹')).toBe('ㄹㅗㄹㄹㅓㅋㅣㅇ');
     expect(toJamo('가')).toBe('ㄱㅏ');
-    expect(toJamo('갃')).toBe('ㄱㅏㄳ');
+  });
+
+  it('겹받침과 이중모음까지 끝까지 편다 — 영타를 되돌린 자모 배열과 맞추기 위함이다', () => {
+    // "값" 을 자판으로 치면 rkqt(ㄱㅏㅂㅅ) 라서 ㅄ 로 합치면 안 맞는다.
+    expect(toJamo('값')).toBe('ㄱㅏㅂㅅ');
+    expect(toJamo('과')).toBe('ㄱㅗㅏ');
   });
 
   it('오타는 자모 1개 차이로만 벌어진다 — 이게 fuzziness=1 이 먹는 근거다', () => {
