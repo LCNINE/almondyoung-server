@@ -181,14 +181,6 @@ export class PurchaseOrderService {
         throw new NotFoundException(`Purchase order with ID ${poId} not found`);
       }
 
-      // 심사 게이트 사본 ①. 다른 하나는 lockPurchaseOrderForLineExecution 에 있다
-      // (라인별 실행 경로). 둘 다 필요하다 — 이쪽은 실행할 requested 라인이 하나도
-      // 없어 아래 루프가 통째로 건너뛰어지는 확정까지 막고, 저쪽은 일괄 확정을 거치지
-      // 않는 라인별 실행을 막는다. 심사 축을 없앨 땐 **둘을 같이** 지운다.
-      if (updateDto.status === PurchaseOrderStatus.CONFIRMED && existingPO.auditStatus !== 'approved') {
-        throw new BadRequestException(`Cannot confirm PO with auditStatus: ${existingPO.auditStatus}`);
-      }
-
       // UPDATE 이후 유효한 도착예정일 — 이 요청이 expectedArrival 도 함께 보내면
       // 그 값이 진실이다. existingPO 는 UPDATE 전 스냅샷이라 그대로 쓰면 방금 쓴 값을
       // 무시하고 계획에 옛 날짜를 심는다(삭제된 createInboundPlanFromPO 는 UPDATE 뒤에
@@ -383,7 +375,7 @@ export class PurchaseOrderService {
   }
 
   /**
-   * 라인을 건드리기 전에 발주 헤더를 잠그고 심사 게이트를 확인한다.
+   * 라인을 건드리기 전에 발주 헤더를 잠그고 상태를 확인한다.
    *
    * **락 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
    * 일괄 확정은 헤더 UPDATE(와 ensurePlanForPurchaseOrder 의 FOR UPDATE)로 PO 행을
@@ -391,26 +383,16 @@ export class PurchaseOrderService {
    * (ABBA) 두 경로가 만나는 순간 Postgres 가 한쪽을 40P01 로 죽인다 — 그건 도메인
    * 예외가 아니라 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 그래서 라인별
    * 경로도 여기서 PO 행부터 잡는다.
-   *
-   * 심사 게이트 사본 ②. 다른 하나는 updatePurchaseOrderStatus 의 CONFIRMED 가드다.
-   * 일괄 확정만 `auditStatus='approved'` 를 요구하면, draft 발주를 라인 하나씩 전부
-   * 실행해 헤더를 confirmed 로 만들 수 있다 — 같은 상태 전이에 문이 둘인데 자물쇠는
-   * 하나인 꼴이다. 반대로 이 검사 하나로 합칠 수도 없다: requested 라인이 0건인 확정은
-   * 루프를 통째로 건너뛰어 여기까지 오지 않는다. **둘 다 살아 있어야 하고, 지울 땐
-   * 같이 지운다.** (도메인 예외를 쓴다 — 저쪽의 Nest 예외는 이 파일에 남은 옛 코드다.)
    */
   private async lockPurchaseOrderForLineExecution(tx: DbTx, poId: string): Promise<void> {
     const [po] = await tx
-      .select({ auditStatus: wmsTables.purchaseOrders.auditStatus, status: wmsTables.purchaseOrders.status })
+      .select({ status: wmsTables.purchaseOrders.status })
       .from(wmsTables.purchaseOrders)
       .where(eq(wmsTables.purchaseOrders.id, poId))
       .limit(1)
       .for('update');
 
     if (!po) throw new NotFoundError(`Purchase order not found: ${poId}`);
-    if (po.auditStatus !== 'approved') {
-      throw new BadRequestError(`Cannot execute purchase order lines with auditStatus: ${po.auditStatus}`);
-    }
     // received 는 입고 경로가 소유한 종결 상태다(스펙 §5 헤더 status 파생표). 여기서
     // 막지 않으면 라인 실행이 계획에 아이템을 더 붙여 inbound_pending_qty 를 부풀리고,
     // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
