@@ -16,7 +16,6 @@ import {
   settingKeyEnum,
   poTypeEnum,
   poStatusEnum,
-  poAuditStatusEnum,
   inboundStatusEnum,
   stockTypeEnum,
   planTypeEnum,
@@ -89,9 +88,6 @@ export type PoTypeEnum = (typeof poTypeValues)[number];
 
 export const poStatusValues = poStatusEnum.enumValues;
 export type PoStatusEnum = (typeof poStatusValues)[number];
-
-export const poAuditStatusValues = poAuditStatusEnum.enumValues;
-export type PoAuditStatusEnum = (typeof poAuditStatusValues)[number];
 
 export const inboundStatusValues = inboundStatusEnum.enumValues;
 export type InboundStatusEnum = (typeof inboundStatusValues)[number];

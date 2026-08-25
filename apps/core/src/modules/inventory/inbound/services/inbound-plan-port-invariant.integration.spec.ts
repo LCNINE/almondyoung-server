@@ -68,7 +68,6 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
         type: 'foreign',
         supplierId: supplier.id,
         status: 'created',
-        auditStatus: 'approved',
         sourceWarehouseId: source.id,
         destinationWarehouseId: dest.id,
         requiresTransfer: true,

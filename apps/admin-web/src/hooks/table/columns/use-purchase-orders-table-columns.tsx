@@ -15,18 +15,6 @@ const STATUS_LABELS: Record<string, string> = {
   received: '입고완료',
 };
 
-const AUDIT_STATUS_LABELS: Record<string, string> = {
-  draft: '초안',
-  pending_audit: '심사중',
-  approved: '승인됨',
-};
-
-const AUDIT_STATUS_VARIANTS: Record<string, 'default' | 'secondary' | 'outline'> = {
-  draft: 'outline',
-  pending_audit: 'secondary',
-  approved: 'default',
-};
-
 type RowActions = {
   onDetail: (row: PurchaseOrderDto) => void;
 };
@@ -59,17 +47,6 @@ export const usePurchaseOrdersTableColumns = (actions: RowActions) => {
         cell: ({ getValue }) => (
           <Badge variant="secondary">{STATUS_LABELS[getValue()] ?? getValue()}</Badge>
         ),
-      }),
-      columnHelper.accessor('auditStatus', {
-        header: '심사 상태',
-        cell: ({ getValue }) => {
-          const val = getValue();
-          return (
-            <Badge variant={AUDIT_STATUS_VARIANTS[val] ?? 'outline'}>
-              {AUDIT_STATUS_LABELS[val] ?? val}
-            </Badge>
-          );
-        },
       }),
       columnHelper.accessor('lines', {
         header: '라인 수',

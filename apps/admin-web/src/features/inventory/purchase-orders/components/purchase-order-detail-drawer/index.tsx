@@ -14,7 +14,6 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { usePurchaseOrder, useUpdatePurchaseOrderStatus } from '@/lib/services/inventory';
 import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
-import { AuditActionBar } from '../audit-action-bar';
 import { PurchaseOrderFormDialog } from '../purchase-order-form-dialog';
 import { toast } from 'sonner';
 
@@ -60,7 +59,6 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   if (!po) return null;
 
   const canEditLines = po.status === 'created' || po.status === 'confirmed';
-  const canChangeStatus = po.auditStatus === 'approved';
 
   return (
     <>
@@ -84,28 +82,17 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                 <span className="w-28 shrink-0 text-muted-foreground">운영 상태</span>
                 <Badge variant="secondary">{STATUS_LABELS[po.status]}</Badge>
               </div>
-              <div className="flex gap-2 py-1 text-sm">
-                <span className="w-28 shrink-0 text-muted-foreground">심사 상태</span>
-                <Badge variant={po.auditStatus === 'approved' ? 'default' : 'outline'}>
-                  {po.auditStatus === 'draft' ? '초안' :
-                    po.auditStatus === 'pending_audit' ? '심사중' : '승인됨'}
-                </Badge>
-              </div>
               {po.expectedArrival && (
                 <InfoRow label="입고 예정일" value={new Date(po.expectedArrival).toLocaleDateString('ko-KR')} />
               )}
             </section>
 
-            <Separator />
-
-            {/* 심사 액션 */}
-            <section>
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">심사</p>
-              <AuditActionBar po={po} />
-            </section>
-
-            {/* 상태 변경 (승인 후만 활성) */}
-            {canChangeStatus && (
+            {/* 이 게이트는 심사 축의 부활이 아니다 — "승인 여부" 가 아니라 종결 상태(received)
+                여부만 본다. received 는 입고 경로가 소유한 종결 상태라 아래 선택지에 없고
+                (SelectContent 주석 참고), 그 상태에서 드롭다운을 열면 매칭되는 SelectItem 이
+                없어 트리거가 빈칸으로 렌더된다. 위 「운영 상태」 배지가 이미 최종 상태를
+                보여주므로 이 섹션 자체를 감춰 정보 손실 없이 그 빈칸/강등 경로를 막는다. */}
+            {po.status !== 'received' && (
               <>
                 <Separator />
                 <section>
@@ -119,9 +106,12 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      {/* received 는 입고 경로가 소유한 종결 상태다. 수동으로 걸면 그 발주는
+                          라인 실행이 막히고(Cannot execute … status: received) 되돌릴 방법이
+                          화면에 없다. 확정(confirmed)은 남은 requested 라인을 전부 실행하는
+                          일괄 경로라 정당하다. */}
                       <SelectItem value="created">생성됨</SelectItem>
                       <SelectItem value="confirmed">확정됨</SelectItem>
-                      <SelectItem value="received">입고완료</SelectItem>
                     </SelectContent>
                   </Select>
                 </section>

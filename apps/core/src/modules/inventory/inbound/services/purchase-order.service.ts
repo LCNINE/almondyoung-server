@@ -16,14 +16,6 @@ import {
   PurchaseOrderStatus,
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
-import {
-  SubmitForAuditDto,
-  ApprovePoDto,
-  RejectPoDto,
-  SubmitForAuditResponseDto,
-  ApprovePoResponseDto,
-  RejectPoResponseDto,
-} from '../dto/purchase-order/audit-po.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { TransactionService } from '../../shared/services/transaction.service';
@@ -181,14 +173,6 @@ export class PurchaseOrderService {
         throw new NotFoundException(`Purchase order with ID ${poId} not found`);
       }
 
-      // 심사 게이트 사본 ①. 다른 하나는 lockPurchaseOrderForLineExecution 에 있다
-      // (라인별 실행 경로). 둘 다 필요하다 — 이쪽은 실행할 requested 라인이 하나도
-      // 없어 아래 루프가 통째로 건너뛰어지는 확정까지 막고, 저쪽은 일괄 확정을 거치지
-      // 않는 라인별 실행을 막는다. 심사 축을 없앨 땐 **둘을 같이** 지운다.
-      if (updateDto.status === PurchaseOrderStatus.CONFIRMED && existingPO.auditStatus !== 'approved') {
-        throw new BadRequestException(`Cannot confirm PO with auditStatus: ${existingPO.auditStatus}`);
-      }
-
       // UPDATE 이후 유효한 도착예정일 — 이 요청이 expectedArrival 도 함께 보내면
       // 그 값이 진실이다. existingPO 는 UPDATE 전 스냅샷이라 그대로 쓰면 방금 쓴 값을
       // 무시하고 계획에 옛 날짜를 심는다(삭제된 createInboundPlanFromPO 는 UPDATE 뒤에
@@ -233,8 +217,7 @@ export class PurchaseOrderService {
       // 실행하므로 재확정은 자연스러운 no-op 이 된다.
       if (updateDto.status === PurchaseOrderStatus.CONFIRMED) {
         // 라인 status 는 drizzle enum 컬럼(문자열 유니온)이라 리터럴로 비교한다 —
-        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다
-        // (auditStatus 비교와 같은 이유).
+        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다.
         const requestedLines = await trx
           .select({
             skuId: wmsTables.purchaseOrderLines.skuId,
@@ -383,7 +366,7 @@ export class PurchaseOrderService {
   }
 
   /**
-   * 라인을 건드리기 전에 발주 헤더를 잠그고 심사 게이트를 확인한다.
+   * 라인을 건드리기 전에 발주 헤더를 잠그고 상태를 확인한다.
    *
    * **락 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
    * 일괄 확정은 헤더 UPDATE(와 ensurePlanForPurchaseOrder 의 FOR UPDATE)로 PO 행을
@@ -391,26 +374,16 @@ export class PurchaseOrderService {
    * (ABBA) 두 경로가 만나는 순간 Postgres 가 한쪽을 40P01 로 죽인다 — 그건 도메인
    * 예외가 아니라 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 그래서 라인별
    * 경로도 여기서 PO 행부터 잡는다.
-   *
-   * 심사 게이트 사본 ②. 다른 하나는 updatePurchaseOrderStatus 의 CONFIRMED 가드다.
-   * 일괄 확정만 `auditStatus='approved'` 를 요구하면, draft 발주를 라인 하나씩 전부
-   * 실행해 헤더를 confirmed 로 만들 수 있다 — 같은 상태 전이에 문이 둘인데 자물쇠는
-   * 하나인 꼴이다. 반대로 이 검사 하나로 합칠 수도 없다: requested 라인이 0건인 확정은
-   * 루프를 통째로 건너뛰어 여기까지 오지 않는다. **둘 다 살아 있어야 하고, 지울 땐
-   * 같이 지운다.** (도메인 예외를 쓴다 — 저쪽의 Nest 예외는 이 파일에 남은 옛 코드다.)
    */
   private async lockPurchaseOrderForLineExecution(tx: DbTx, poId: string): Promise<void> {
     const [po] = await tx
-      .select({ auditStatus: wmsTables.purchaseOrders.auditStatus, status: wmsTables.purchaseOrders.status })
+      .select({ status: wmsTables.purchaseOrders.status })
       .from(wmsTables.purchaseOrders)
       .where(eq(wmsTables.purchaseOrders.id, poId))
       .limit(1)
       .for('update');
 
     if (!po) throw new NotFoundError(`Purchase order not found: ${poId}`);
-    if (po.auditStatus !== 'approved') {
-      throw new BadRequestError(`Cannot execute purchase order lines with auditStatus: ${po.auditStatus}`);
-    }
     // received 는 입고 경로가 소유한 종결 상태다(스펙 §5 헤더 status 파생표). 여기서
     // 막지 않으면 라인 실행이 계획에 아이템을 더 붙여 inbound_pending_qty 를 부풀리고,
     // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
@@ -507,11 +480,14 @@ export class PurchaseOrderService {
       // 라인별 실행과 반대 방향으로 맞물리는 순간 Postgres 가 40P01(교착)로 한쪽을
       // 죽인다. 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라 500 으로 나간다.
       //
-      // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 그 helper 는
-      // auditStatus === 'approved' 를 요구하는데, 이 메서드의 계약(클래스 docstring)은
-      // "created: 자유롭게 수정 가능" 이다. 라인 편집은 실무에서 대개 심사 제출
-      // 전(auditStatus='draft') 에 일어나므로, 그 게이트를 재사용하면 정상적인 편집
-      // 경로가 전부 막힌다. 그래서 auditStatus 를 보지 않는 순수 FOR UPDATE 만 쓴다.
+      // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 심사 게이트가
+      // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + received 거부)은 이 메서드가
+      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 메시지·예외 타입이
+      // 다르기 때문이다 — 그 helper 는 도메인 BadRequestError("Cannot execute purchase
+      // order lines with status: ...")를 던지는데, 이 메서드는 라인 수정 엔드포인트에
+      // 맞는 Nest BadRequestException("Cannot modify purchase order lines after fully
+      // received")을 그대로 유지해야 한다. 합치는 건 API 응답 메시지를 바꾸는 일이라 이
+      // 태스크 범위 밖이다.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -644,7 +620,6 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({
@@ -743,7 +718,6 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({
@@ -1057,143 +1031,5 @@ export class PurchaseOrderService {
       onOrderQty: row.on_order_qty,
       inTransferQty: row.in_transfer_qty,
     }));
-  }
-
-  // ========== Audit Workflow ==========
-
-  /**
-   * Submit PO for audit
-   */
-  async submitForAudit(
-    poId: string,
-    dto: SubmitForAuditDto,
-    userId?: string,
-    tx?: DbTx,
-  ): Promise<SubmitForAuditResponseDto> {
-    return this.dbService.run(async (trx) => {
-      // Get PO
-      const [po] = await trx
-        .select()
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
-
-      if (!po) {
-        throw new NotFoundException(`Purchase order ${poId} not found`);
-      }
-
-      // Validate current status
-      if (po.auditStatus !== 'draft') {
-        throw new BadRequestException(`Cannot submit: current audit status is ${po.auditStatus}, expected 'draft'`);
-      }
-
-      // Update status
-      await trx
-        .update(wmsTables.purchaseOrders)
-        .set({
-          auditStatus: 'pending_audit',
-          submittedForAuditAt: new Date(),
-          submittedForAuditBy: userId ?? null,
-          auditNotes: dto.notes ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.purchaseOrders.id, poId));
-
-      return {
-        id: poId,
-        auditStatus: 'pending_audit',
-        submittedAt: new Date(),
-        message: '검토 요청이 제출되었습니다. (Submitted for audit)',
-      };
-    }, tx);
-  }
-
-  /**
-   * Approve PO
-   */
-  async approvePo(poId: string, dto: ApprovePoDto, userId?: string, tx?: DbTx): Promise<ApprovePoResponseDto> {
-    return this.dbService.run(async (trx) => {
-      // Get PO
-      const [po] = await trx
-        .select()
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
-
-      if (!po) {
-        throw new NotFoundException(`Purchase order ${poId} not found`);
-      }
-
-      // Validate current status
-      if (po.auditStatus !== 'pending_audit') {
-        throw new BadRequestException(
-          `Cannot approve: current audit status is ${po.auditStatus}, expected 'pending_audit'`,
-        );
-      }
-
-      // Update status
-      await trx
-        .update(wmsTables.purchaseOrders)
-        .set({
-          auditStatus: 'approved',
-          auditedAt: new Date(),
-          auditedBy: userId ?? null,
-          auditNotes: dto.approvalNotes ?? null,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.purchaseOrders.id, poId));
-
-      return {
-        id: poId,
-        auditStatus: 'approved',
-        approvedAt: new Date(),
-        message: '발주가 승인되었습니다. (Purchase order approved)',
-      };
-    }, tx);
-  }
-
-  /**
-   * Reject PO
-   */
-  async rejectPo(poId: string, dto: RejectPoDto, userId?: string, tx?: DbTx): Promise<RejectPoResponseDto> {
-    return this.dbService.run(async (trx) => {
-      // Get PO
-      const [po] = await trx
-        .select()
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
-
-      if (!po) {
-        throw new NotFoundException(`Purchase order ${poId} not found`);
-      }
-
-      // Validate current status
-      if (po.auditStatus !== 'pending_audit') {
-        throw new BadRequestException(
-          `Cannot reject: current audit status is ${po.auditStatus}, expected 'pending_audit'`,
-        );
-      }
-
-      // Update status (back to draft so it can be revised)
-      await trx
-        .update(wmsTables.purchaseOrders)
-        .set({
-          auditStatus: 'draft', // Reset to draft for revision
-          auditedAt: new Date(),
-          auditedBy: userId ?? null,
-          auditNotes: `REJECTED: ${dto.rejectionReason}`,
-          updatedAt: new Date(),
-        })
-        .where(eq(wmsTables.purchaseOrders.id, poId));
-
-      return {
-        id: poId,
-        auditStatus: 'draft',
-        rejectedAt: new Date(),
-        reason: dto.rejectionReason,
-        message: '발주가 거부되었습니다. 수정 후 재제출하세요. (Purchase order rejected, please revise and resubmit)',
-      };
-    }, tx);
   }
 }

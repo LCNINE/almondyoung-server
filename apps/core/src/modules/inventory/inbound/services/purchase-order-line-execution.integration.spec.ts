@@ -83,8 +83,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     headerExpectedArrival?: Date;
     /** 라인마다 심을 도착예정일 (마이그레이션 백필이 만든 상태를 흉내낸다). */
     lineExpectedArrival?: string;
-    /** 기본은 approved — 심사를 통과한 발주여야 라인을 실행할 수 있다. */
-    auditStatus?: 'draft' | 'pending_audit' | 'approved' | 'rejected';
   }
 
   interface Prerequisites {
@@ -125,14 +123,12 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     const { warehouseId, supplierId, skuIds } = await seedPrerequisites(trx);
     const wh = { id: warehouseId };
 
-    // auditStatus 는 approved 여야 라인을 실행할 수 있다(감사 워크플로).
     const [po] = await trx
       .insert(wmsTables.purchaseOrders)
       .values({
         type: 'domestic',
         supplierId,
         status: 'created',
-        auditStatus: options.auditStatus ?? 'approved',
         sourceWarehouseId: wh.id,
         destinationWarehouseId: wh.id,
         requiresTransfer: false,
@@ -195,14 +191,12 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       skuIds.push(sku.id);
     }
 
-    // auditStatus 는 approved 여야 라인을 실행할 수 있다(감사 워크플로).
     const [po] = await trx
       .insert(wmsTables.purchaseOrders)
       .values({
         type: 'foreign',
         supplierId: supplier.id,
         status: 'created',
-        auditStatus: 'approved',
         sourceWarehouseId: source.id,
         destinationWarehouseId: dest.id,
         requiresTransfer: true,
@@ -278,28 +272,36 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('심사를 통과하지 않은 발주는 라인 실행을 거부한다', async () => {
+  it('심사 축이 없으므로 draft 발주도 라인을 실행할 수 있다', async () => {
     await inRollbackTx(db, async (trx) => {
-      // 라인별 실행이 심사 게이트를 우회하면, draft 발주를 라인 하나씩 전부 실행해
-      // 헤더를 confirmed 로 만들 수 있다 — PUT /:id/status 는 같은 발주를 거부하는데.
-      const fx = await seedPoWithThreeLines(trx, { auditStatus: 'draft' });
+      // D1=(b) 로 심사 워크플로를 제거했다(#724 항목 3). 예전에는 이 자리에
+      // "draft 면 BadRequestError" 를 고정하는 케이스가 있었다 — 그 계약은 없다.
+      const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
 
-      await expect(service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx)).rejects.toMatchObject({
-        name: 'BadRequestError',
-      });
-      await expect(service.markLineUnavailable(fx.poId, fx.skuIds[0], {}, ACTOR, trx)).rejects.toMatchObject({
-        name: 'BadRequestError',
-      });
-      expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'requested' });
-      expect(await readPlans(trx, fx.poId)).toHaveLength(0);
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
+
+      expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'ordered', orderedQty: 6 });
+      expect(await readPlans(trx, fx.poId)).toHaveLength(1);
+    });
+  });
+
+  it('심사 축이 없으므로 draft 발주도 일괄 확정된다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      // 게이트 ①(updatePurchaseOrderStatus 의 CONFIRMED 가드) 쪽 사본.
+      const fx = await seedPoWithThreeLines(trx);
+      const service = buildService(trx);
+
+      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
+
+      expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'ordered' });
+      expect(await readPlans(trx, fx.poId)).toHaveLength(1);
     });
   });
 
   it('이미 received 인 발주는 라인 실행을 거부한다', async () => {
     await inRollbackTx(db, async (trx) => {
-      // received 는 입고 경로가 소유한 종결 상태다. auditStatus 검사만으로는 이걸
-      // 못 막는다 — received 로 넘어간 뒤에도 auditStatus 는 여전히 approved 이므로
+      // received 는 입고 경로가 소유한 종결 상태다. 라인 실행 경로가 이걸 막지 않으면
       // 라인 실행이 통과해 계획에 아이템을 더 붙이고 inbound_pending_qty 를 부풀린다.
       // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
       // 그 뒤로는 아무것도 이 상태를 되돌리지 못한다.
@@ -726,7 +728,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('응답이 심사 상태와 라인 실행 정보를 싣는다', async () => {
+  it('응답이 라인 실행 정보를 싣는다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const response = await buildService(trx).orderLine(
@@ -737,7 +739,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         trx,
       );
 
-      expect(response.auditStatus).toBe('approved');
       const executed = response.lines.find((l) => l.skuId === fx.skuIds[0]);
       expect(executed).toMatchObject({
         status: 'ordered',

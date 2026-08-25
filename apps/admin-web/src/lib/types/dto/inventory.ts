@@ -1398,7 +1398,6 @@ export interface StocktakingSessionListResponse {
 
 export type PurchaseOrderType = 'domestic' | 'foreign';
 export type PurchaseOrderStatus = 'created' | 'confirmed' | 'received';
-export type PurchaseOrderAuditStatus = 'draft' | 'pending_audit' | 'approved';
 
 export interface PurchaseOrderLineDto {
   skuId: string;
@@ -1416,7 +1415,6 @@ export interface PurchaseOrderDto {
   supplierId: string | null;
   expectedArrival: string | null;
   status: PurchaseOrderStatus;
-  auditStatus: PurchaseOrderAuditStatus;
   createdAt: string;
   updatedAt: string;
   lines: PurchaseOrderLineDto[];
@@ -1478,18 +1476,6 @@ export interface CreatePurchaseOrderFromCartRequest {
   supplierId: string;
   expectedArrival?: string;
   destinationWarehouseId: string;
-}
-
-export interface SubmitForAuditRequest {
-  notes?: string;
-}
-
-export interface ApprovePoRequest {
-  approvalNotes?: string;
-}
-
-export interface RejectPoRequest {
-  rejectionReason: string;
 }
 
 export interface CartItemDto {

@@ -29,14 +29,6 @@ import {
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
 import { PurchaseOrderResponseDto } from '../dto/purchase-order/purchase-order-response.dto';
-import {
-  SubmitForAuditDto,
-  ApprovePoDto,
-  RejectPoDto,
-  SubmitForAuditResponseDto,
-  ApprovePoResponseDto,
-  RejectPoResponseDto,
-} from '../dto/purchase-order/audit-po.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 
 interface JwtPayload {
@@ -237,8 +229,8 @@ export class PurchaseOrderController {
     @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
     // @User() 를 실제로 넘긴다 — confirmed 전이가 라인을 실행하므로 ordered_by 에
-    // 사람이 남아야 한다. 감사 엔드포인트들은 이걸 빠뜨려 submitted_for_audit_by /
-    // audited_by 가 라이브에서 영원히 NULL 이다.
+    // 사람이 남아야 한다. (과거 심사 엔드포인트들은 이걸 빠뜨려 submitted_for_audit_by /
+    // audited_by 가 라이브에서 영원히 NULL 로 남았다 — 그 엔드포인트는 이후 제거됨.)
     return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto, user.userId);
   }
 
@@ -295,64 +287,5 @@ export class PurchaseOrderController {
     @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.markLineUnavailable(poId, skuId, dto, user.userId);
-  }
-
-  // ========== Audit Workflow ==========
-
-  @Put(':id/submit-for-audit')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '검토 제출 (Submit PO for audit)' })
-  @ApiParam({ name: 'id', description: 'Purchase Order ID' })
-  @ApiResponse({
-    status: 200,
-    description: '검토 요청 제출 완료',
-    type: SubmitForAuditResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 상태 (현재 상태가 draft가 아님)',
-  })
-  @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async submitForAudit(@Param('id') id: string, @Body() dto: SubmitForAuditDto): Promise<SubmitForAuditResponseDto> {
-    return this.purchaseOrderService.submitForAudit(id, dto);
-  }
-
-  @Put(':id/approve')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '발주 승인 (Approve purchase order)' })
-  @ApiParam({ name: 'id', description: 'Purchase Order ID' })
-  @ApiResponse({
-    status: 200,
-    description: '발주 승인 완료',
-    type: ApprovePoResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
-  })
-  @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async approvePo(@Param('id') id: string, @Body() dto: ApprovePoDto): Promise<ApprovePoResponseDto> {
-    return this.purchaseOrderService.approvePo(id, dto);
-  }
-
-  @Put(':id/reject')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '발주 거부 (Reject purchase order)' })
-  @ApiParam({ name: 'id', description: 'Purchase Order ID' })
-  @ApiResponse({
-    status: 200,
-    description: '발주 거부 완료 (상태가 draft로 재설정됨)',
-    type: RejectPoResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 상태 (현재 상태가 pending_audit가 아님)',
-  })
-  @ApiResponse({ status: 404, description: '발주를 찾을 수 없습니다.' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async rejectPo(@Param('id') id: string, @Body() dto: RejectPoDto): Promise<RejectPoResponseDto> {
-    return this.purchaseOrderService.rejectPo(id, dto);
   }
 }
