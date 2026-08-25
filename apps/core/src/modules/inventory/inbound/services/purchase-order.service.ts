@@ -217,8 +217,7 @@ export class PurchaseOrderService {
       // 실행하므로 재확정은 자연스러운 no-op 이 된다.
       if (updateDto.status === PurchaseOrderStatus.CONFIRMED) {
         // 라인 status 는 drizzle enum 컬럼(문자열 유니온)이라 리터럴로 비교한다 —
-        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다
-        // (auditStatus 비교와 같은 이유).
+        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다.
         const requestedLines = await trx
           .select({
             skuId: wmsTables.purchaseOrderLines.skuId,
@@ -621,7 +620,6 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({
@@ -720,7 +718,6 @@ export class PurchaseOrderService {
         supplierId: po.supplierId,
         expectedArrival: po.expectedArrival,
         status: po.status as PurchaseOrderStatus,
-        auditStatus: po.auditStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
         lines: lines.map((line) => ({

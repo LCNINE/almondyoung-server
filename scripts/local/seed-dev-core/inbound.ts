@@ -30,7 +30,6 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       requiresTransfer: false,
       expectedArrival: EXPECTED_DATE,
       status: 'confirmed',
-      auditStatus: 'approved',
     })
     .returning();
 
@@ -68,7 +67,6 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       requiresTransfer: true,
       expectedArrival: EXPECTED_DATE,
       status: 'confirmed',
-      auditStatus: 'approved',
     })
     .returning();
 

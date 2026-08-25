@@ -2,7 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PurchaseOrderStatus, PurchaseOrderType } from '../purchase-order.dto';
 import { SupplierResponseDto } from '../../../suppliers/dto/supplier-response.dto';
 
-export type PurchaseOrderAuditStatus = 'draft' | 'pending_audit' | 'approved' | 'rejected';
 export type PurchaseOrderLineStatus = 'requested' | 'ordered' | 'unavailable';
 
 export class PurchaseOrderLineSkuDto {
@@ -41,12 +40,6 @@ export class PurchaseOrderResponseDto {
   @ApiPropertyOptional({ nullable: true }) supplierId: string | null;
   @ApiPropertyOptional({ nullable: true }) expectedArrival: Date | null;
   @ApiProperty({ enum: ['created', 'confirmed', 'received'] }) status: PurchaseOrderStatus;
-
-  @ApiProperty({
-    enum: ['draft', 'pending_audit', 'approved', 'rejected'],
-    description: '심사 상태 — 예전 응답에서 통째로 빠져 있어 프론트가 심사 버튼을 못 그렸다',
-  })
-  auditStatus: PurchaseOrderAuditStatus;
 
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;

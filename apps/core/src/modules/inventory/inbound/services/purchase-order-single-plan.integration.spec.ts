@@ -106,14 +106,12 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       .values({ name: 'it-sku', code: `IT-${randomUUID().toUpperCase()}`, holderId: holder.id })
       .returning();
 
-    // auditStatus 는 approved 여야 confirmed 로 전이할 수 있다(감사 워크플로).
     const [po] = await trx
       .insert(wmsTables.purchaseOrders)
       .values({
         type: 'foreign',
         supplierId: supplier.id,
         status: 'created',
-        auditStatus: 'approved',
         sourceWarehouseId: sourceWarehouse.id,
         destinationWarehouseId: destinationWarehouse.id,
         requiresTransfer: true,
