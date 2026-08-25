@@ -45,6 +45,12 @@ const ANALYTICS_SERVICE_BASE_URL = isServer
   ? (process.env.ANALYTICS_SERVICE_URL ?? 'http://localhost:3040')
   : '/proxy/analytics';
 
+// 3004 는 배포 번들 포트. search 의 로컬 기본 PORT 는 3000 이라 core 와 겹친다 —
+// 로컬에선 PORT=3004 로 띄우거나 SEARCH_SERVICE_URL 을 맞춰야 한다.
+const SEARCH_SERVICE_BASE_URL = isServer
+  ? (process.env.SEARCH_SERVICE_URL ?? 'http://localhost:3004')
+  : '/proxy/search';
+
 export {
   ALMONDYOUNG_API_BASE_URL,
   USER_SERVICE_BASE_URL,
@@ -56,4 +62,5 @@ export {
   FILE_SERVICE_BASE_URL,
   MEDUSA_BASE_URL,
   ANALYTICS_SERVICE_BASE_URL,
+  SEARCH_SERVICE_BASE_URL,
 };

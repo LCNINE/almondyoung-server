@@ -1,6 +1,9 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { OpenSearchService } from './opensearch.service';
 import {
+  KeywordStatRow,
+  KeywordStatisticsAggregation,
+  KeywordVolumeBucket,
   SearchKeywordRecord,
   SearchKeywordRepository,
   SuggestedKeyword,
@@ -164,6 +167,163 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
 
     const buckets = this.extractBuckets(response.body);
     return this.toKeywordRows(buckets, options.size);
+  }
+
+  async getKeywordStatistics(options: {
+    fromIso: string;
+    toExclusiveIso: string;
+    size: number;
+  }): Promise<KeywordStatisticsAggregation> {
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const rangeFilter = {
+      range: {
+        searched_at: {
+          gte: options.fromIso,
+          lt: options.toExclusiveIso,
+        },
+      },
+    };
+
+    const keywordTermsAgg = (size: number) => ({
+      terms: {
+        field: 'keyword_norm',
+        size,
+        order: { _count: 'desc' as const },
+      },
+      aggs: {
+        latest: {
+          top_hits: {
+            size: 1,
+            sort: [{ searched_at: { order: 'desc' as const } }],
+            _source: { includes: ['keyword', 'searched_at'] },
+          },
+        },
+        zero: {
+          filter: { term: { result_count: 0 } },
+        },
+      },
+    });
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        track_total_hits: true,
+        query: rangeFilter,
+        aggs: {
+          keywords: keywordTermsAgg(Math.max(options.size * 5, options.size)),
+          zero_only: {
+            filter: { term: { result_count: 0 } },
+            aggs: { keywords: keywordTermsAgg(options.size) },
+          },
+          volume: {
+            date_histogram: {
+              field: 'searched_at',
+              calendar_interval: 'day' as const,
+              time_zone: '+09:00',
+              format: 'yyyy-MM-dd',
+              min_doc_count: 0,
+            },
+            aggs: {
+              zero: { filter: { term: { result_count: 0 } } },
+            },
+          },
+        },
+      },
+    });
+
+    const body: any = response.body;
+    const totalSearches =
+      typeof body?.hits?.total === 'number' ? body.hits.total : (body?.hits?.total?.value ?? 0);
+    const zeroResultSearches = body?.aggregations?.zero_only?.doc_count ?? 0;
+
+    const series: KeywordVolumeBucket[] = (body?.aggregations?.volume?.buckets ?? []).map((bucket: any) => ({
+      bucket: typeof bucket?.key_as_string === 'string' ? bucket.key_as_string : '',
+      count: typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0,
+      zeroCount: bucket?.zero?.doc_count ?? 0,
+    }));
+
+    return {
+      totalSearches: Number(totalSearches ?? 0),
+      zeroResultSearches: Number(zeroResultSearches ?? 0),
+      series,
+      top: this.toStatRows(body?.aggregations?.keywords?.buckets),
+      zeroTop: this.toStatRows(body?.aggregations?.zero_only?.keywords?.buckets),
+    };
+  }
+
+  async getKeywordCounts(options: {
+    fromIso: string;
+    toExclusiveIso: string;
+    keywordNorms: string[];
+  }): Promise<Map<string, number>> {
+    if (options.keywordNorms.length === 0) {
+      return new Map();
+    }
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        query: {
+          bool: {
+            filter: [
+              {
+                range: {
+                  searched_at: {
+                    gte: options.fromIso,
+                    lt: options.toExclusiveIso,
+                  },
+                },
+              },
+              { terms: { keyword_norm: options.keywordNorms } },
+            ],
+          },
+        },
+        aggs: {
+          keywords: {
+            terms: {
+              field: 'keyword_norm',
+              size: options.keywordNorms.length,
+            },
+          },
+        },
+      },
+    });
+
+    const map = new Map<string, number>();
+    for (const bucket of this.extractBuckets(response.body)) {
+      if (typeof bucket?.key === 'string' && typeof bucket?.doc_count === 'number') {
+        map.set(bucket.key, bucket.doc_count);
+      }
+    }
+    return map;
+  }
+
+  private toStatRows(buckets: unknown): KeywordStatRow[] {
+    if (!Array.isArray(buckets)) return [];
+    return buckets
+      .map((bucket: any) => {
+        const hit = bucket?.latest?.hits?.hits?.[0]?._source;
+        const key = typeof bucket?.key === 'string' ? bucket.key : '';
+        const keyword = typeof hit?.keyword === 'string' && hit.keyword.length > 0 ? hit.keyword : key;
+        const count = typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0;
+        if (!key || count <= 0) return null;
+        return {
+          keyword,
+          keywordNorm: key,
+          count,
+          zeroCount: bucket?.zero?.doc_count ?? 0,
+          lastSearchedAt: typeof hit?.searched_at === 'string' ? hit.searched_at : '',
+        };
+      })
+      .filter((row): row is KeywordStatRow => row !== null);
   }
 
   private ensureQueryEventsIndex(): Promise<void> {

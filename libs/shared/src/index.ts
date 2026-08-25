@@ -5,6 +5,7 @@ export * from './decorators/api-paginated-response.decorator';
 export * from './decorators/skip-response-envelope.decorator';
 export * from './interceptors/response.interceptor';
 export * from './pipes/zod-validation.pipe';
+export * from './validators/calendar-date.validator';
 export * from './pim/pim.port';
 export * from './pim/pim.client';
 export * from './pim/pim.orchestrator';
