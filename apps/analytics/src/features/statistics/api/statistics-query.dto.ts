@@ -37,4 +37,19 @@ export class ProductStatisticsQueryDto extends StatisticsRangeQueryDto {
   @Min(1)
   @Max(100)
   limit?: number = 20;
+
+  @ApiPropertyOptional({ enum: ['desc', 'asc'], default: 'desc', description: '랭킹 정렬 방향 — asc 는 하위(bottom-N) 조회' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc' = 'desc';
+}
+
+export class UnsoldProductsQueryDto extends StatisticsRangeQueryDto {
+  @ApiPropertyOptional({ example: 50, default: 50, description: '최대 행 수' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number = 50;
 }

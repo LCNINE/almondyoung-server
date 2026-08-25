@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { BadRequestError } from '@app/shared';
-import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, or, sql, SQL } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNull, lt, lte, notExists, or, sql, SQL } from 'drizzle-orm';
 import {
   aggChannelDaily,
   aggCustomerLifetime,
@@ -73,6 +73,20 @@ export interface ProductStatistics {
     quantitySold: number;
     grossRevenue: number;
   }>;
+}
+
+export interface UnsoldProductRow {
+  masterId: string;
+  name: string | null;
+  /** 전 기간 통틀어 마지막 판매일 (agg 기준, 채널 필터 적용). null 이면 집계 이래 판매 기록 없음. */
+  lastSoldDate: string | null;
+}
+
+/** 기간 내 판매가 0건인 활성 상품 — agg 에 행이 없어 랭킹 asc 로도 보이지 않는 상품들. */
+export interface UnsoldProductsResult {
+  range: { from: string; to: string };
+  total: number;
+  items: UnsoldProductRow[];
 }
 
 export interface CustomerStatistics {
@@ -167,6 +181,7 @@ export class StatisticsQuery {
     channel?: string,
     sort: 'revenue' | 'quantity' | 'orders' = 'revenue',
     limit = 20,
+    order: 'asc' | 'desc' = 'desc',
   ): Promise<ProductStatistics> {
     this.assertRange(from, to);
     const prev = previousRange(from, to);
@@ -193,7 +208,7 @@ export class StatisticsQuery {
       .leftJoin(dimProductMasters, eq(dimProductMasters.masterId, aggProductOrderDaily.masterId))
       .where(where)
       .groupBy(aggProductOrderDaily.masterId, dimProductMasters.name)
-      .orderBy(sql`${sortExpr} DESC`)
+      .orderBy(order === 'asc' ? sql`${sortExpr} ASC` : sql`${sortExpr} DESC`)
       .limit(limit);
 
     const masterIds = rankingRows.map((row) => row.masterId);
@@ -310,6 +325,71 @@ export class StatisticsQuery {
         masterName: row.masterName ?? fallbackNames.get(row.masterId) ?? null,
         quantitySold: Number(row.quantitySold ?? 0),
         grossRevenue: Number(row.grossRevenue ?? 0),
+      })),
+    };
+  }
+
+  /**
+   * 기간 내 판매 0건인 활성 상품 — agg_product_order_daily 에 행이 없어 랭킹 정렬로는
+   * 나오지 않는 상품들. 마지막 판매일이 오래된(없는) 순으로 내려준다.
+   */
+  async getUnsoldProducts(
+    from: string,
+    to: string,
+    channel?: string,
+    limit = 50,
+  ): Promise<UnsoldProductsResult> {
+    this.assertRange(from, to);
+
+    const soldInRangeParts: SQL[] = [
+      eq(aggProductOrderDaily.masterId, dimProductMasters.masterId),
+      gte(aggProductOrderDaily.aggDate, from),
+      lte(aggProductOrderDaily.aggDate, to),
+    ];
+    if (channel) {
+      soldInRangeParts.push(eq(aggProductOrderDaily.salesChannel, channel));
+    }
+    const soldInRange = this.db
+      .select({ one: sql`1` })
+      .from(aggProductOrderDaily)
+      .where(and(...soldInRangeParts));
+
+    const unsoldWhere = and(
+      eq(dimProductMasters.isActive, true),
+      isNull(dimProductMasters.deletedAt),
+      notExists(soldInRange),
+    );
+
+    const lastSoldParts: SQL[] = [eq(aggProductOrderDaily.masterId, dimProductMasters.masterId)];
+    if (channel) {
+      lastSoldParts.push(eq(aggProductOrderDaily.salesChannel, channel));
+    }
+    const lastSoldExpr = sql<string | null>`(SELECT MAX(${aggProductOrderDaily.aggDate}) FROM ${aggProductOrderDaily} WHERE ${and(...lastSoldParts)})`;
+
+    const [totalRows, itemRows] = await Promise.all([
+      this.db.select({ total: sql<string>`COUNT(*)` }).from(dimProductMasters).where(unsoldWhere),
+      this.db
+        .select({
+          masterId: dimProductMasters.masterId,
+          name: dimProductMasters.name,
+          lastSoldDate: lastSoldExpr,
+        })
+        .from(dimProductMasters)
+        .where(unsoldWhere)
+        .orderBy(sql`3 ASC NULLS FIRST`, dimProductMasters.name)
+        .limit(limit),
+    ]);
+
+    const namelessMasterIds = itemRows.filter((row) => !row.name).map((row) => row.masterId);
+    const fallbackNames = await this.latestOrderedProductNames(namelessMasterIds);
+
+    return {
+      range: { from, to },
+      total: Number(totalRows[0]?.total ?? 0),
+      items: itemRows.map((row) => ({
+        masterId: row.masterId,
+        name: row.name ?? fallbackNames.get(row.masterId) ?? null,
+        lastSoldDate: row.lastSoldDate ? String(row.lastSoldDate) : null,
       })),
     };
   }

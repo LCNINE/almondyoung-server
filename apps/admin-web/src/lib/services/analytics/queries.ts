@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { analyticsApi, StatisticsRangeQuery } from '@/lib/api/domains/analytics';
+import { analyticsApi, ProductStatisticsQuery, StatisticsRangeQuery } from '@/lib/api/domains/analytics';
 import { analyticsQueryKeys } from './query-keys';
 
 export const useAnalyticsOverview = () => {
@@ -18,12 +18,17 @@ export const useSalesStatistics = (query: StatisticsRangeQuery) => {
   });
 };
 
-export const useProductStatistics = (
-  query: StatisticsRangeQuery & { sort?: 'revenue' | 'quantity' | 'orders'; limit?: number },
-) => {
+export const useProductStatistics = (query: ProductStatisticsQuery) => {
   return useQuery({
     queryKey: analyticsQueryKeys.products(query),
     queryFn: () => analyticsApi.getProductStatistics(query),
+  });
+};
+
+export const useUnsoldProducts = (query: StatisticsRangeQuery & { limit?: number }) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.unsoldProducts(query),
+    queryFn: () => analyticsApi.getUnsoldProducts(query),
   });
 };
 
