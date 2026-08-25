@@ -13,7 +13,7 @@ import {
 import { useSalesStatistics } from '@/lib/services/analytics';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
-import { formatCount, formatKrw, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
+import { formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
 
 export default function SalesStatisticsTemplate() {
   const range = useStatisticsRange();
@@ -68,7 +68,7 @@ export default function SalesStatisticsTemplate() {
               <LineChart data={data?.series ?? []} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
-                <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={(v: number) => v.toLocaleString('ko-KR')} />
+                <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={formatKrwAxis} />
                 <Tooltip formatter={(value: number) => formatKrw(value)} />
                 <Legend />
                 <Line

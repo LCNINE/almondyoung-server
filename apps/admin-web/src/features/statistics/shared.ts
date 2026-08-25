@@ -16,6 +16,14 @@ export function formatKrw(value: number | null | undefined): string {
   return `₩${Math.round(value).toLocaleString('ko-KR')}`;
 }
 
+/** 축 눈금용 축약 금액 — 전체 자릿수는 월별·연별 집계에서 축 폭을 넘어 잘린다. */
+export function formatKrwAxis(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1e8) return `${(value / 1e8).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}억`;
+  if (abs >= 1e4) return `${Math.round(value / 1e4).toLocaleString('ko-KR')}만`;
+  return value.toLocaleString('ko-KR');
+}
+
 export function formatCount(value: number | null | undefined): string {
   if (value == null) return '-';
   return value.toLocaleString('ko-KR');
