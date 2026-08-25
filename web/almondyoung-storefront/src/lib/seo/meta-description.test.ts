@@ -23,6 +23,17 @@ describe("toMetaDescription", () => {
     expect(long.endsWith("…")).toBe(true)
   })
 
+  it("제로폭 문자만 남으면 undefined 로 폴백을 넘긴다", () => {
+    expect(toMetaDescription("<p>\u200b\u200b\u200b\u200b</p>")).toBeUndefined()
+    expect(toMetaDescription("<p>\u00ad\u2060</p>")).toBeUndefined()
+  })
+
+  it("텍스트 사이에 낀 제로폭 문자는 지우고 텍스트는 남긴다", () => {
+    expect(toMetaDescription("<p>좋습니다.\u200b \u200b본더입니다</p>")).toBe(
+      "좋습니다. 본더입니다"
+    )
+  })
+
   it("내용이 없으면 undefined 로 폴백을 넘긴다", () => {
     expect(toMetaDescription(null)).toBeUndefined()
     expect(toMetaDescription("")).toBeUndefined()
@@ -67,6 +78,12 @@ describe("markdownToMetaDescription", () => {
     const out = markdownToMetaDescription("가".repeat(300))!
     expect(out).toHaveLength(155)
     expect(out.endsWith("…")).toBe(true)
+  })
+
+  it("이미지 지시자를 걷어낸 자리에 제로폭 문자만 남으면 undefined", () => {
+    expect(
+      markdownToMetaDescription("::product-image{id=1}\u200b\u200b\u200b\u200b")
+    ).toBeUndefined()
   })
 
   it("비어 있으면 undefined", () => {
