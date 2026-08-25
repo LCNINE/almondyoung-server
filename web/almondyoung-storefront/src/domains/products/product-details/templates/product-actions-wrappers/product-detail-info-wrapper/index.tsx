@@ -1,3 +1,4 @@
+import { withImageAlt } from "@/lib/seo/detail-image-alt"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { HttpTypes } from "@medusajs/types"
 import { getTranslations } from "next-intl/server"
@@ -47,11 +48,18 @@ export async function ProductDetailInfoWrapper({
     .map((img) => getThumbnailUrl(img.url))
     .filter(Boolean)
 
+  const tInfo = await getTranslations("productDetail.info")
+  const descriptionHtml = pimDetail.descriptionHtml
+    ? withImageAlt(pimDetail.descriptionHtml, (index) =>
+        tInfo("detailImageAlt", { name: pricedProduct.title, index })
+      )
+    : undefined
+
   return (
     <ProductDetailInfo
       productInfo={pricedProduct.metadata as ProductInfo}
       description={pimDetail.description ?? undefined}
-      descriptionHtml={pimDetail.descriptionHtml ?? undefined}
+      descriptionHtml={descriptionHtml}
       detailImages={detailImageUrls}
       productName={pricedProduct.title}
     />
