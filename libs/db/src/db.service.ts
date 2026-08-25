@@ -4,6 +4,13 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
 import { DrizzleSchema, TxFor } from './types';
 
+// nest build(CJS)에서는 네임스페이스가 곧 호출 가능한 함수지만, tsx 같은 ESM 로더는
+// ESM 빌드를 골라 함수가 default 아래에 온다. 어느 쪽이든 호출 가능한 쪽을 집는다.
+const postgresFn: typeof postgres =
+  typeof postgres === 'function'
+    ? postgres
+    : ((postgres as { default?: typeof postgres }).default as typeof postgres);
+
 export const DB_CONNECTION = 'DB_CONNECTION';
 export const DB_SCHEMA = 'DB_SCHEMA';
 
@@ -28,7 +35,7 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>>
 
   private initializeConnection(): void {
     // postgres.js는 Connection String을 직접 받을 수 있습니다.
-    const client = postgres(this.config.connectionString);
+    const client = postgresFn(this.config.connectionString);
     this._client = client;
     this._db = drizzle(client, { schema: this.schema });
   }
