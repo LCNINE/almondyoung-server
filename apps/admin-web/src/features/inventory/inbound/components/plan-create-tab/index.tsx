@@ -89,7 +89,7 @@ export function PlanCreateTab() {
     <div className="flex flex-col gap-6 p-4">
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
-          <Label>발주 선택 (승인된 확정 발주)</Label>
+          <Label>발주 선택 (확정 발주)</Label>
           <Select value={selectedPoId} onValueChange={setSelectedPoId}>
             <SelectTrigger>
               <SelectValue placeholder="발주를 선택해 주세요" />
@@ -97,7 +97,7 @@ export function PlanCreateTab() {
             <SelectContent>
               {eligiblePos.length === 0 ? (
                 <SelectItem value="__none__" disabled>
-                  승인된 확정 발주가 없습니다
+                  확정 발주가 없습니다
                 </SelectItem>
               ) : (
                 eligiblePos.map((po: PurchaseOrderDto) => (
