@@ -458,12 +458,11 @@ export const mainMenus: MainMenu[] = [
         ],
       },
       {
-        // 웹 행동 추적 데이터가 아직 없다 — 수집부터 시작하는 별도 프로젝트.
         id: 'analytics',
         title: '애널리틱스',
         children: [
-          { id: 'customer-behavior', title: '고객 행동', isComingSoon: true },
-          { id: 'conversion-rate', title: '전환율', isComingSoon: true },
+          { id: 'customer-behavior', title: '고객 행동', path: '/statistics/behavior' },
+          { id: 'conversion-rate', title: '전환율', path: '/statistics/behavior' },
         ],
       },
       {

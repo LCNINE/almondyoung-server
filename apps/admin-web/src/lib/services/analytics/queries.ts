@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   analyticsApi,
+  BehaviorStatisticsQuery,
   CustomerInsightsQuery,
   ProductStatisticsQuery,
   StatisticsRangeQuery,
@@ -56,6 +57,15 @@ export const useTrafficStatistics = (query: TrafficStatisticsQuery) => {
   return useQuery({
     queryKey: analyticsQueryKeys.traffic(query),
     queryFn: () => analyticsApi.getTrafficStatistics(query),
+    // GA4 는 외부 API — 서버측 5분 캐시와 맞춰 탭 전환마다 재요청하지 않는다
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useBehaviorStatistics = (query: BehaviorStatisticsQuery) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.behavior(query),
+    queryFn: () => analyticsApi.getBehaviorStatistics(query),
     // GA4 는 외부 API — 서버측 5분 캐시와 맞춰 탭 전환마다 재요청하지 않는다
     staleTime: 5 * 60 * 1000,
   });

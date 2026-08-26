@@ -28,7 +28,9 @@ import { StatisticsQuery } from './features/statistics/read-model/statistics.que
 import { CustomerInsightsController } from './features/statistics/api/customer-insights.controller';
 import { CustomerInsightsQuery } from './features/statistics/read-model/customer-insights.query';
 import { TrafficController } from './features/traffic/api/traffic.controller';
+import { BehaviorController } from './features/traffic/api/behavior.controller';
 import { TrafficQuery } from './features/traffic/read-model/traffic.query';
+import { BehaviorQuery } from './features/traffic/read-model/behavior.query';
 import { Ga4Client } from './features/traffic/ga4/ga4.client';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 
@@ -75,6 +77,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     StatisticsController,
     CustomerInsightsController,
     TrafficController,
+    BehaviorController,
     OrderEventsConsumer,
     ProductEventsConsumer,
     MembershipEventsConsumer,
@@ -97,6 +100,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     CustomerInsightsQuery,
     Ga4Client,
     TrafficQuery,
+    BehaviorQuery,
   ],
 })
 export class AnalyticsModule {}

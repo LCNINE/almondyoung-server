@@ -180,6 +180,53 @@ export interface TrafficStatistics {
   countries: Array<{ label: string; sessions: number }>;
 }
 
+export interface BehaviorStatisticsQuery {
+  from: string;
+  to: string;
+  limit?: number;
+}
+
+export interface BehaviorTotals {
+  sessions: number;
+  totalUsers: number;
+  viewItem: number;
+  addToCart: number;
+  beginCheckout: number;
+  addPaymentInfo: number;
+  purchase: number;
+}
+
+export interface BehaviorStatistics {
+  /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
+  enabled: boolean;
+  range: { from: string; to: string };
+  totals: BehaviorTotals | null;
+  series: Array<{
+    date: string;
+    sessions: number;
+    viewItem: number;
+    addToCart: number;
+    purchase: number;
+    conversionRate: number | null;
+  }>;
+  items: Array<{
+    name: string;
+    viewed: number;
+    addedToCart: number;
+    purchased: number;
+    revenue: number;
+    cartRate: number | null;
+    purchaseRate: number | null;
+  }>;
+  devices: Array<{
+    device: string;
+    viewItem: number;
+    addToCart: number;
+    purchase: number;
+    conversionRate: number | null;
+  }>;
+}
+
 export interface DailyRevenueSummary extends RevenueTotals {
   date: string;
   avgOrderValue: number | null;
@@ -246,6 +293,13 @@ export const analyticsApi = {
     if (query.channelGroup) params.set('channelGroup', query.channelGroup);
     if (query.limit) params.set('limit', String(query.limit));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/traffic?${params.toString()}`);
+    return res.data;
+  },
+
+  getBehaviorStatistics: async (query: BehaviorStatisticsQuery): Promise<BehaviorStatistics> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/behavior?${params.toString()}`);
     return res.data;
   },
 };
