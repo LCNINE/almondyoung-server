@@ -29,7 +29,10 @@
     "title": "「{keyword}」の検索結果",
     "totalCount": "合計 <strong>{count}</strong> 件の商品",
     "pageInfo": "{current}/{total} ページ",
-    "loadFail": "[SearchContainer] 検索失敗:"
+    "loadFail": "[SearchContainer] 検索失敗:",
+    "correctedTitle": "<strong>{corrected}</strong> に修正した検索結果です。",
+    "searchOriginal": "入力された <link>{original}</link> で検索しますか？",
+    "relatedTitle": "関連キーワード"
   },
   "sort": {
     "relevance": "関連度順",

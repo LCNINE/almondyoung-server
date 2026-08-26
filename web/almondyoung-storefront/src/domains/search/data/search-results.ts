@@ -19,6 +19,9 @@ export interface SearchProductResult {
     total: number
     totalPages: number
   }
+  // 영타로 친 검색어를 되돌린 결과 ("tpwp" → "세제")
+  correctedQuery?: string
+  relatedKeywords?: string[]
 }
 
 export interface SearchQuery {
@@ -32,6 +35,7 @@ export interface SearchQuery {
   maxPrice?: number
   isMembership: boolean
   regionId?: string
+  correct?: boolean
 }
 
 const emptyResult = (size: number): SearchProductResult => ({
@@ -63,6 +67,7 @@ export async function fetchSearchResults(
     minPrice: query.minPrice,
     maxPrice: query.maxPrice,
     includeMembersOnly: isMembership,
+    correct: query.correct,
   }).catch((error) => {
     console.error("[search] OpenSearch 조회 실패:", error)
     return null
@@ -107,5 +112,7 @@ export async function fetchSearchResults(
       total: searchData.pagination.total,
       totalPages: searchData.pagination.totalPages,
     },
+    correctedQuery: searchData.correctedQuery,
+    relatedKeywords: searchData.relatedKeywords,
   }
 }

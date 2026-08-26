@@ -68,6 +68,13 @@ export interface SearchKeywordRepository {
     toExclusiveIso: string;
     keywordNorms: string[];
   }): Promise<Map<string, number>>;
+  /** 검색어를 부분 문자열로 품은 다른 검색어들 — "세제" → "세탁세제", "주방세제" */
+  getRelatedKeywords(options: {
+    compactKeyword: string;
+    excludeNorm: string;
+    size: number;
+    lookbackDays: number;
+  }): Promise<SuggestedKeyword[]>;
 }
 
 export const SEARCH_KEYWORD_REPOSITORY = 'SEARCH_KEYWORD_REPOSITORY';

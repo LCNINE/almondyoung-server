@@ -169,6 +169,73 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
     return this.toKeywordRows(buckets, options.size);
   }
 
+  async getRelatedKeywords(options: {
+    compactKeyword: string;
+    excludeNorm: string;
+    size: number;
+    lookbackDays: number;
+  }): Promise<SuggestedKeyword[]> {
+    if (!options.compactKeyword) {
+      return [];
+    }
+
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        query: {
+          bool: {
+            filter: [
+              {
+                range: {
+                  searched_at: {
+                    gte: `now-${options.lookbackDays}d`,
+                    lte: 'now',
+                  },
+                },
+              },
+              // keyword_compact 는 공백 없는 소문자라 앞뒤 * 만으로 부분 일치가 된다.
+              { wildcard: { keyword_compact: `*${this.escapeWildcard(options.compactKeyword)}*` } },
+              { range: { result_count: { gt: 0 } } },
+            ],
+            must_not: options.excludeNorm ? [{ term: { keyword_norm: options.excludeNorm } }] : [],
+          },
+        },
+        aggs: {
+          keywords: {
+            terms: {
+              field: 'keyword_norm',
+              size: Math.max(options.size * 5, options.size),
+              order: { _count: 'desc' as const },
+            },
+            aggs: {
+              latest: {
+                top_hits: {
+                  size: 1,
+                  sort: [{ searched_at: { order: 'desc' as const } }],
+                  _source: {
+                    includes: ['keyword', 'searched_at'],
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const buckets = this.extractBuckets(response.body);
+    return this.toKeywordRows(buckets, options.size);
+  }
+
+  private escapeWildcard(value: string): string {
+    return value.replace(/([*?\\])/g, '\\$1');
+  }
+
   async getKeywordStatistics(options: {
     fromIso: string;
     toExclusiveIso: string;

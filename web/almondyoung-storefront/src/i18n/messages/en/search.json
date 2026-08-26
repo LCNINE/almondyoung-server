@@ -29,7 +29,10 @@
     "title": "Search results for ‘{keyword}’",
     "totalCount": "<strong>{count}</strong> products",
     "pageInfo": "Page {current}/{total}",
-    "loadFail": "[SearchContainer] search failed:"
+    "loadFail": "[SearchContainer] search failed:",
+    "correctedTitle": "Showing results for <strong>{corrected}</strong>.",
+    "searchOriginal": "Search instead for <link>{original}</link>?",
+    "relatedTitle": "Related searches"
   },
   "sort": {
     "relevance": "Relevance",

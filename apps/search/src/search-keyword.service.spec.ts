@@ -15,6 +15,7 @@ describe('SearchKeywordService.getKeywordStatistics', () => {
       record: jest.fn(),
       getTrendingKeywords: jest.fn(),
       getSuggestions: jest.fn(),
+      getRelatedKeywords: jest.fn(),
       getKeywordStatistics: jest.fn().mockResolvedValue({
         totalSearches: 100,
         zeroResultSearches: 10,

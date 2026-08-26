@@ -34,6 +34,7 @@ describe('SearchService', () => {
             recordSearchKeyword: jest.fn().mockResolvedValue(undefined),
             getTrendingKeywords: jest.fn(),
             suggestKeywords: jest.fn(),
+            getRelatedKeywords: jest.fn().mockResolvedValue([]),
           },
         },
       ],

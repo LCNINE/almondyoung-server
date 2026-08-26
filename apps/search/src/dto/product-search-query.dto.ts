@@ -61,6 +61,12 @@ export class ProductSearchQueryDto {
   @Type(() => Number)
   size: number = 20;
 
+  // false 면 영타 교정("tpwp"→"세제")을 끄고 원문 그대로 찾는다.
+  @IsOptional()
+  @Transform(({ value }) => value !== false && value !== 'false')
+  @IsBoolean()
+  correct?: boolean;
+
   // 멤버십 회원이면 true — 멤버십 전용 노출 상품을 결과/집계에 포함한다.
   // 생략/false 면 fail-closed 로 멤버십 전용 상품을 제외(비회원 취급).
   @IsOptional()

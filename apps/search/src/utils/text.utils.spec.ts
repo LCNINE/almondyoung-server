@@ -1,4 +1,4 @@
-import { toJamo } from './text.utils';
+import { qwertyToHangul, toJamo } from './text.utils';
 
 describe('toJamo', () => {
   it('한글 음절을 초성/중성/종성으로 편다', () => {
@@ -57,5 +57,22 @@ describe('toJamo', () => {
 
   it('빈 문자열을 안전하게 처리한다 — brand 가 null 인 상품이 있다', () => {
     expect(toJamo('')).toBe('');
+  });
+});
+
+describe('qwertyToHangul', () => {
+  it('영타로 친 한글을 되돌린다', () => {
+    expect(qwertyToHangul('tpwp')).toBe('세제');
+    expect(qwertyToHangul('vjak')).toBe('퍼마');
+  });
+
+  it('이미 한글인 검색어는 교정으로 치지 않는다', () => {
+    expect(qwertyToHangul('세제')).toBe('');
+    expect(qwertyToHangul('퍼마 색소')).toBe('');
+  });
+
+  it('진짜 영문은 교정하지 않는다', () => {
+    expect(qwertyToHangul('Perma')).toBe('');
+    expect(qwertyToHangul('3D')).toBe('');
   });
 });

@@ -12,11 +12,11 @@ import { useSearchHistory } from "@hooks/ui/use-search-history"
 import type { SearchProductResult } from "../data/search-results"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { SearchEmptyState } from "./search-empty-state"
+import { SearchEmptyState } from "../components/search-empty-state"
 import { CircleHelp } from "lucide-react"
 import { useEffect, useState } from "react"
 
-interface SearchPageClientProps {
+interface SearchResultsProps {
   isMembership: boolean
   isLoggedIn: boolean
   keyword: string
@@ -24,18 +24,21 @@ interface SearchPageClientProps {
   countryCode: string
   regionId?: string
   wishlistIds?: string[]
-  /** 검색어가 브랜드관 브랜드와 매칭될 때 최상단에 띄우는 카드 (서버에서 렌더) */
+  /** 검색어가 브랜드관 브랜드와 매칭될 때 최상단에 띄우는 카드 */
   brandBanner?: React.ReactNode
+  /** 영타 교정 안내 + 연관검색어 */
+  correctionNotice?: React.ReactNode
 }
 
-export function SearchPageClient({
+export function SearchResults({
   keyword,
   searchResult,
   isMembership,
   countryCode,
   wishlistIds = [],
   brandBanner = null,
-}: SearchPageClientProps) {
+  correctionNotice = null,
+}: SearchResultsProps) {
   const router = useRouter()
   const t = useTranslations("search.result")
   const tSort = useTranslations("search.sort")
@@ -130,6 +133,7 @@ export function SearchPageClient({
     return (
       <div className="flex flex-col">
         {brandBanner}
+        {correctionNotice}
         <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
       </div>
     )
@@ -138,6 +142,7 @@ export function SearchPageClient({
   return (
     <div className="flex flex-col">
       {brandBanner}
+      {correctionNotice}
       <div className="mb-6">
         <h1 className="mb-2 text-xl font-bold text-gray-900 md:text-2xl">
           <span className="text-olive-600">{t("title", { keyword })}</span>
@@ -166,7 +171,7 @@ export function SearchPageClient({
               type="button"
               aria-label={tSort("reviewHelpAria")}
               aria-expanded={isReviewInfoOpen}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-500"
+              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-olive-500 focus-visible:outline-none"
               onClick={() => setIsReviewInfoOpen((open) => !open)}
               onBlur={() => setIsReviewInfoOpen(false)}
             >
@@ -175,7 +180,7 @@ export function SearchPageClient({
             {isReviewInfoOpen && (
               <div
                 role="tooltip"
-                className="absolute right-0 top-8 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
+                className="absolute top-8 right-0 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
               >
                 {tSort("reviewHelp")}
               </div>

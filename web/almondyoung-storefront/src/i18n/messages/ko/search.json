@@ -29,7 +29,10 @@
     "title": "‘{keyword}’ 검색결과",
     "totalCount": "총 <strong>{count}</strong>개의 상품",
     "pageInfo": "{current}/{total} 페이지",
-    "loadFail": "[SearchContainer] 검색 실패:"
+    "loadFail": "[SearchContainer] 검색 실패:",
+    "correctedTitle": "<strong>{corrected}</strong> (으)로 수정한 검색 결과입니다.",
+    "searchOriginal": "입력하신 <link>{original}</link> (으)로 검색하시겠습니까?",
+    "relatedTitle": "연관검색어"
   },
   "sort": {
     "relevance": "관련도순",

@@ -2,11 +2,12 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 import { getRegion } from "@lib/api/medusa/regions"
 import { getWishlist } from "@lib/api/users/wishlist"
-import { SearchPageClient } from "../components/search-page-client"
+import { SearchCorrectionNotice } from "../components/search-correction-notice"
+import { SearchResults } from "./results"
 import { resolveBrandBanner } from "../data/brand-banner"
 import { fetchSearchResults, type SearchSort } from "../data/search-results"
 
-interface SearchContainerProps {
+interface SearchTemplateProps {
   searchParams: Promise<{
     q?: string
     page?: string
@@ -15,6 +16,7 @@ interface SearchContainerProps {
     brands?: string | string[]
     minPrice?: string
     maxPrice?: string
+    correct?: string
   }>
   params: Promise<{
     countryCode: string
@@ -23,12 +25,12 @@ interface SearchContainerProps {
 
 const PAGE_SIZE = 20
 
-export async function SearchContainer({
+export async function SearchTemplate({
   searchParams,
   params,
-}: SearchContainerProps) {
+}: SearchTemplateProps) {
   const [
-    { q, page, sort, categoryIds, brands, minPrice, maxPrice },
+    { q, page, sort, categoryIds, brands, minPrice, maxPrice, correct },
     { countryCode },
   ] = await Promise.all([searchParams, params])
 
@@ -57,14 +59,22 @@ export async function SearchContainer({
       maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
       isMembership,
       regionId: region?.id,
+      correct: correct !== "false",
     }),
     resolveBrandBanner(keyword),
   ])
 
   return (
-    <SearchPageClient
+    <SearchResults
       keyword={keyword}
       brandBanner={brandBanner}
+      correctionNotice={
+        <SearchCorrectionNotice
+          keyword={keyword}
+          correctedQuery={searchResult.correctedQuery}
+          relatedKeywords={searchResult.relatedKeywords}
+        />
+      }
       searchResult={searchResult}
       countryCode={countryCode}
       regionId={region?.id}

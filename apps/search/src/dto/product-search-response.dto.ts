@@ -22,4 +22,7 @@ export class ProductSearchPaginationDto {
 export class ProductSearchResponseDto {
   items: ProductSearchItemDto[];
   pagination: ProductSearchPaginationDto;
+  // "tpwp" 를 두벌식으로 편 "세제". 있으면 프론트가 교정 안내 줄을 그린다.
+  correctedQuery?: string;
+  relatedKeywords?: string[];
 }
