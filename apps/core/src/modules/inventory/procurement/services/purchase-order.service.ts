@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -109,12 +109,12 @@ export class PurchaseOrderService {
         );
 
       if (cartItems.length !== createDto.cartItemIds.length) {
-        throw new BadRequestException("Some cart items not found or you don't have permission to access them");
+        throw new BadRequestError("Some cart items not found or you don't have permission to access them");
       }
 
       const types = [...new Set(cartItems.map((item) => item.type))];
       if (types.length > 1) {
-        throw new BadRequestException('All cart items must have the same purchase order type');
+        throw new BadRequestError('All cart items must have the same purchase order type');
       }
 
       const destinationWarehouseId = createDto.destinationWarehouseId;
@@ -418,12 +418,14 @@ export class PurchaseOrderService {
       //
       // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 심사 게이트가
       // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + received 거부)은 이 메서드가
-      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 메시지·예외 타입이
-      // 다르기 때문이다 — 그 helper 는 도메인 BadRequestError("Cannot execute purchase
-      // order lines with status: ...")를 던지는데, 이 메서드는 라인 수정 엔드포인트에
-      // 맞는 Nest BadRequestException("Cannot modify purchase order lines after fully
-      // received")을 그대로 유지해야 한다. 합치는 건 API 응답 메시지를 바꾸는 일이라 이
-      // 태스크 범위 밖이다.
+      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 **메시지**가 다르기
+      // 때문이다 — 그 helper 는 "Cannot execute purchase order lines with status: ..." 를
+      // 던지는데, 이 메서드는 라인 수정 엔드포인트에 맞는 "Cannot modify purchase order
+      // lines after fully received" 를 유지해야 한다. 예외 타입은 둘 다 BadRequestError 로
+      // 통일됐다(#724 항목 5-c). 합치는 건 API 응답 메시지를 바꾸는 일이라 범위 밖이다.
+      //
+      // ⚠️ 이 거부는 의미상 409(ConflictError)에 가깝지만 지금 400 이고, 바꾸면 API 계약
+      // 변경이라 그대로 둔다 — #745.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -432,12 +434,12 @@ export class PurchaseOrderService {
         .for('update');
 
       if (!po) {
-        throw new NotFoundException(`Purchase order ${poId} not found`);
+        throw new NotFoundError(`Purchase order ${poId} not found`);
       }
 
       // 2. received 상태는 수정 불가
       if (po.status === 'received') {
-        throw new BadRequestException('Cannot modify purchase order lines after fully received');
+        throw new BadRequestError('Cannot modify purchase order lines after fully received');
       }
 
       // 3. 종결된 라인(ordered/unavailable)은 건드리지 않는다. 그 라인은 이미 계획에
@@ -488,13 +490,13 @@ export class PurchaseOrderService {
       .where(eq(wmsTables.suppliers.id, supplierId))
       .limit(1);
     if (!supplier) {
-      throw new BadRequestException(`Supplier with ID ${supplierId} not found`);
+      throw new BadRequestError(`Supplier with ID ${supplierId} not found`);
     }
     if (!supplier.defaultWarehouseId) {
       // MD 가 발주 화면에서 직접 읽는 문구다. 원시 UUID 와 영어로는 어디를 고쳐야
       // 하는지 알 수 없다 — 라이브 공급사 전원이 이 값이 비어 있어 사실상 발주의
       // 첫 관문이므로, 다음 행동을 문장에 담는다.
-      throw new BadRequestException(
+      throw new BadRequestError(
         '이 공급처에 입고 창고가 지정되지 않아 발주를 만들 수 없습니다. 공급처 관리에서 입고 창고를 먼저 지정하세요.',
       );
     }
@@ -513,7 +515,7 @@ export class PurchaseOrderService {
         .limit(1);
 
       if (!po) {
-        throw new NotFoundException(`Purchase order with ID ${poId} not found`);
+        throw new NotFoundError(`Purchase order with ID ${poId} not found`);
       }
 
       const lines = await trx
@@ -751,7 +753,7 @@ export class PurchaseOrderService {
     }, tx);
 
     if (!existingItem) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
+      throw new NotFoundError(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
     }
 
     await this.dbService.run(
@@ -783,7 +785,7 @@ export class PurchaseOrderService {
     );
 
     if (result.length === 0) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to delete it`);
+      throw new NotFoundError(`Cart item with ID ${itemId} not found or you don't have permission to delete it`);
     }
 
     this.logger.log(`Removed cart item ${itemId}`);
@@ -877,7 +879,7 @@ export class PurchaseOrderService {
     }, tx);
 
     if (!item) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found`);
+      throw new NotFoundError(`Cart item with ID ${itemId} not found`);
     }
 
     return {

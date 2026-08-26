@@ -1,3 +1,5 @@
+import { HttpException } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderType } from '../dto/purchase-order.dto';
 
@@ -30,5 +32,38 @@ describe('PurchaseOrderService 공급사 기본 창고', () => {
 
     await expect(service.createPurchaseOrder(dto as never)).rejects.toThrow(/입고 창고/);
     await expect(service.createPurchaseOrder(dto as never)).rejects.toThrow(/공급처/);
+  });
+});
+
+/**
+ * 이 파일은 `@nestjs/common` 예외(10곳)와 `@app/shared` 예외(6곳)를 **동시에** 던지고 있었다.
+ * CLAUDE.md §Error handling 은 Service 층이 `HttpException` 을 알지 못하게 하라고 못 박는다 —
+ * 상태코드 매핑은 `GlobalExceptionFilter` 의 일이다.
+ *
+ * 상태코드는 그대로 보존한다: NotFoundException→NotFoundError(404), BadRequestException→
+ * BadRequestError(400). 의미상 409 인 곳이 하나 있으나(라인 수정을 received 에서 거부) 그건
+ * API 계약 변경이라 여기서 손대지 않는다 — #745.
+ */
+describe('PurchaseOrderService 예외 규약', () => {
+  function serviceWithNoRows() {
+    const trx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([]) })),
+        })),
+      })),
+    };
+    const dbService = { run: jest.fn((fn: (executor: typeof trx) => unknown) => fn(trx)) };
+    return new PurchaseOrderService(dbService as never, {} as never, {} as never);
+  }
+
+  it('없는 발주 조회는 @app/shared 의 NotFoundError 를 던진다 (Nest 예외가 아니다)', async () => {
+    const service = serviceWithNoRows();
+    await expect(service.getPurchaseOrderById('missing-po')).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('없는 발주 조회가 HttpException 계열을 던지지 않는다', async () => {
+    const service = serviceWithNoRows();
+    await expect(service.getPurchaseOrderById('missing-po')).rejects.not.toBeInstanceOf(HttpException);
   });
 });
