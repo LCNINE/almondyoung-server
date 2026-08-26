@@ -6,6 +6,7 @@ import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
+import { OverseasShowcaseWrapper } from "./overseas-showcase"
 import { InterestCategoriesSlot } from "./interest-categories"
 import {
   SHOWCASE_CATEGORIES,
@@ -175,9 +176,22 @@ export async function HomeLogoutTemplate({
         </ErrorBoundary>
       </HomeSection>
 
+      {/* 해외 직구 — 판매량순 캐러셀 */}
+      <ErrorBoundary fallback={null}>
+        <Suspense
+          fallback={
+            <HomeSection background="muted">
+              <MainSectionSkeleton />
+            </HomeSection>
+          }
+        >
+          <OverseasShowcaseWrapper countryCode={countryCode} />
+        </Suspense>
+      </ErrorBoundary>
+
       {/* 캔바 디자인 / 클래스 — 루트 카테고리 통째로 한 줄씩 */}
       {SHOWCASE_CATEGORIES.map((c) => (
-        <HomeSection key={c.handle}>
+        <HomeSection key={c.handle} className="border-t-0">
           <ErrorBoundary fallback={null}>
             <Suspense fallback={<MainSectionSkeleton />}>
               <ShowcaseCategoryWrapper countryCode={countryCode} {...c} />

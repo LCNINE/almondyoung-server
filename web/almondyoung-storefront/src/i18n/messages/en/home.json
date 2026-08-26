@@ -31,7 +31,9 @@
   "showcase": {
     "overseas": "Overseas Direct Purchase",
     "canva": "Canva Design",
-    "class": "Classes"
+    "class": "Classes",
+    "overseasDescription": "Products you can only find abroad",
+    "viewAll": "View all"
   },
   "cafe24Link": {
     "mobileText": "Connect your existing Almondyoung account",

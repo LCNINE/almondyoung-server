@@ -31,7 +31,9 @@
   "showcase": {
     "overseas": "海外直輸入",
     "canva": "Canvaデザイン",
-    "class": "クラス"
+    "class": "クラス",
+    "overseasDescription": "海外でしか出会えない商品",
+    "viewAll": "すべて見る"
   },
   "cafe24Link": {
     "mobileText": "旧アーモンドヤングアカウントを連携しましょう",

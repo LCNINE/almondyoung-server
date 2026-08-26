@@ -55,7 +55,7 @@ function ProductCardRating({
   rating: number
   reviewCount: number
 }) {
-  if (reviewCount <= 0) return null
+  if (reviewCount <= 0) return <div className="mt-1 h-3.5" aria-hidden />
 
   const clampedRating = Math.max(0, Math.min(5, rating))
   const roundedRating = Math.round(clampedRating * 2) / 2
