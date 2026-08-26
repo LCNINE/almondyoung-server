@@ -113,9 +113,17 @@ export class ProductCategoriesService {
           await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
         }
 
-        // Enqueue CategoryChanged event
+        // sortOrder 를 명시했을 때만 순서를 보낸다. 생략 = 위치에 뜻 없음(맨 뒤).
         const snapshot = this.buildCategorySnapshot(newCategory);
-        await this.publishCategoryEvent(newCategory.id, 'created', snapshot, client);
+        await this.publishCategoryEvent(
+          newCategory.id,
+          'created',
+          snapshot,
+          client,
+          categoryData.sortOrder !== undefined
+            ? await this.loadSiblingOrder(newCategory.parentId ?? null, client)
+            : undefined,
+        );
 
         const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
         return responseDto;
@@ -148,6 +156,20 @@ export class ProductCategoriesService {
       // 현재 값을 payload 에 실어 보내는데, undefined 만 보고 판단하면 저장 한 번에
       // 자손 전체(수십~수백 건)가 큐로 쏟아진다.
       let membersOnlyChanged = false;
+      // 어드민 폼은 정렬값을 안 건드려도 현재 값을 실어 보낸다. 값 비교가 필요한 이유.
+      let sortOrderChanged = false;
+      if (categoryData.sortOrder !== undefined) {
+        const [current] = await client
+          .select({ sortOrder: pimSchema.productCategories.sortOrder })
+          .from(pimSchema.productCategories)
+          .where(eq(pimSchema.productCategories.id, categoryId));
+
+        if (!current) {
+          throw new NotFoundError(`Category not found: ${categoryId}`);
+        }
+        sortOrderChanged = current.sortOrder !== categoryData.sortOrder;
+      }
+
       if (isVisibleToMembersOnly !== undefined || isBrand !== undefined) {
         const [current] = await client
           .select({ displaySettings: pimSchema.productCategories.displaySettings })
@@ -190,7 +212,13 @@ export class ProductCategoriesService {
 
       // Enqueue CategoryChanged event
       const snapshot = this.buildCategorySnapshot(updatedCategory);
-      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
+      await this.publishCategoryEvent(
+        categoryId,
+        'updated',
+        snapshot,
+        client,
+        sortOrderChanged ? await this.loadSiblingOrder(updatedCategory.parentId ?? null, client) : undefined,
+      );
 
       if (membersOnlyChanged) {
         await this.publishDescendantsChanged(categoryId, client);
@@ -770,10 +798,17 @@ export class ProductCategoriesService {
         }
       }
 
-      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 enqueue
-      for (const category of updatedCategories) {
+      // 4. CategoryChanged enqueue. 형제 순서는 첫 이벤트에만 (배열 하나로 전체가 정렬된다).
+      const siblingOrder = await this.loadSiblingOrder(parentId || null, txn);
+      for (const [index, category] of updatedCategories.entries()) {
         const snapshot = this.buildCategorySnapshot(category);
-        await this.publishCategoryEvent(category.id, 'updated', snapshot, txn);
+        await this.publishCategoryEvent(
+          category.id,
+          'updated',
+          snapshot,
+          txn,
+          index === 0 ? siblingOrder : undefined,
+        );
       }
     };
 
@@ -894,6 +929,21 @@ export class ProductCategoriesService {
     return ancestors;
   }
 
+  /** 형제 순서를 ID 배열로. sortOrder 는 중복되므로 name 으로 갈라 결정적으로 만든다. */
+  private async loadSiblingOrder(parentId: string | null, tx: DbTransaction): Promise<string[]> {
+    const siblings = await tx
+      .select({ id: pimSchema.productCategories.id })
+      .from(pimSchema.productCategories)
+      .where(
+        parentId
+          ? eq(pimSchema.productCategories.parentId, parentId)
+          : isNull(pimSchema.productCategories.parentId),
+      )
+      .orderBy(asc(pimSchema.productCategories.sortOrder), asc(pimSchema.productCategories.name));
+
+    return siblings.map((sibling) => sibling.id);
+  }
+
   /**
    * Enqueue CategoryChanged event
    */
@@ -902,6 +952,7 @@ export class ProductCategoriesService {
     changeType: 'created' | 'updated' | 'deleted' | 'moved',
     snapshot: CategorySnapshot | null,
     tx: DbTransaction,
+    siblingOrder?: string[],
   ): Promise<void> {
     const payload: CategoryChangedPayload = {
       categoryId,
@@ -909,6 +960,7 @@ export class ProductCategoriesService {
       timestamp: new Date().toISOString(),
       category: snapshot,
       ancestors: snapshot ? await this.buildAncestorSnapshots(snapshot, tx) : undefined,
+      ...(siblingOrder && { siblingOrder }),
     };
 
     await this.productPublisher.enqueue({ eventType: 'CategoryChanged', aggregateId: categoryId, payload }, tx);

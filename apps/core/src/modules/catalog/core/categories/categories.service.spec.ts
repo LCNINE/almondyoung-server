@@ -553,3 +553,97 @@ describe('ProductCategoriesService CategoryChanged 계약 적합성', () => {
     expect(parsed).toEqual(payload);
   });
 });
+
+/** 형제 순서는 배열째 넘기되, 순서가 실제로 바뀐 저장에만 싣는다. */
+describe('ProductCategoriesService siblingOrder', () => {
+  // 계약이 uuid 로 못박고 있어 테스트 데이터도 UUID.
+  const CAT_1 = '11111111-1111-4111-8111-111111111111';
+  const CAT_2 = '22222222-2222-4222-8222-222222222222';
+  const CAT_3 = '33333333-3333-4333-8333-333333333333';
+
+  function makeService(currentSortOrder = 0) {
+    const siblingRows = [{ id: CAT_1 }, { id: CAT_2 }, { id: CAT_3 }];
+    const tx = {
+      update: jest.fn(() => ({
+        set: () => ({
+          where: () => ({
+            returning: () => [
+              {
+                id: CAT_1,
+                name: 'Lip',
+                slug: 'lip',
+                description: null,
+                parentId: null,
+                level: 0,
+                path: CAT_1,
+                sortOrder: 5,
+                isActive: true,
+                visibility: true,
+                imageUrl: null,
+                displaySettings: null,
+                seoConfig: null,
+                templateConfig: null,
+                createdAt: new Date('2026-06-07T00:00:00.000Z'),
+                updatedAt: new Date('2026-06-07T00:00:00.000Z'),
+              },
+            ],
+          }),
+        }),
+      })),
+      // 이전 sortOrder 조회는 where() 에서 끝나고, 형제 순서 조회는 orderBy() 까지 간다.
+      select: jest.fn(() => ({
+        from: () => ({
+          where: () => Object.assign([{ sortOrder: currentSortOrder }], { orderBy: () => siblingRows }),
+        }),
+      })),
+    };
+    const db = {
+      run: jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>, t?: typeof tx) => callback(t ?? tx)),
+    };
+    const productPublisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const service = new (ProductCategoriesService as any)(
+      db,
+      { assembleActiveVersionSnapshot: jest.fn() },
+      productPublisher,
+    ) as ProductCategoriesService;
+
+    return { service, productPublisher };
+  }
+
+  function categoryPayloads(productPublisher: { enqueue: jest.Mock }) {
+    return productPublisher.enqueue.mock.calls
+      .filter(([params]: [{ eventType: string }]) => params.eventType === 'CategoryChanged')
+      .map(([params]: [{ payload: { siblingOrder?: string[] } }]) => params.payload);
+  }
+
+  it('정렬값이 실제로 바뀐 저장에만 형제 순서를 싣는다', async () => {
+    const { service, productPublisher } = makeService(0);
+
+    await service.updateCategory(CAT_1, { sortOrder: 5 } as any);
+
+    const payload = categoryPayloads(productPublisher as any)[0];
+    expect(payload.siblingOrder).toEqual([CAT_1, CAT_2, CAT_3]);
+    // 적재 시점 zod 가 미선언 키를 조용히 떼어내므로, 계약을 여기서 태워 둔다.
+    expect(PRODUCT_STREAM.events.CategoryChanged.schema!.parse(payload).siblingOrder).toEqual([
+      CAT_1,
+      CAT_2,
+      CAT_3,
+    ]);
+  });
+
+  it('정렬값을 같은 값으로 다시 보내면 형제 순서를 싣지 않는다', async () => {
+    const { service, productPublisher } = makeService(5);
+
+    await service.updateCategory(CAT_1, { sortOrder: 5 } as any);
+
+    expect(categoryPayloads(productPublisher as any)[0].siblingOrder).toBeUndefined();
+  });
+
+  it('이름만 고치면 형제 순서를 싣지 않는다', async () => {
+    const { service, productPublisher } = makeService(0);
+
+    await service.updateCategory(CAT_1, { name: 'Updated Lip' } as any);
+
+    expect(categoryPayloads(productPublisher as any)[0].siblingOrder).toBeUndefined();
+  });
+});

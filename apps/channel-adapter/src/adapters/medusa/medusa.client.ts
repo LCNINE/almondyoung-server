@@ -721,13 +721,21 @@ export class MedusaClient {
         return existing.id;
       }
 
+      // 같은 값이어도 키가 실려 있으면 Medusa 가 부모 이동으로 보고 형제 맨 뒤로 보낸다.
+      const currentParentId = verified.parent_category_id ?? null;
+      const desiredParentId = 'parent_category_id' in parentUpdate ? parentUpdate.parent_category_id ?? null : undefined;
+      const parentPatch =
+        desiredParentId !== undefined && desiredParentId !== currentParentId
+          ? { parent_category_id: desiredParentId }
+          : {};
+
       const updatePayload = {
         name: categorySnapshot.name,
         handle: preferredHandle,
         is_internal: false,
         is_active: isActive,
-        ...parentUpdate,
-        ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+        ...parentPatch,
+        // rank 는 보내지 않는다 — 순서는 syncSiblingRanks 만 만진다.
         ...(categorySnapshot.description !== undefined && {
           description: categorySnapshot.description ?? '',
         }),
@@ -756,7 +764,7 @@ export class MedusaClient {
       is_internal: false,
       is_active: isActive,
       parent_category_id: parentMedusaId,
-      ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+      // rank 미지정 = 맨 뒤. 순서에 뜻이 있으면 syncSiblingRanks 가 옮긴다.
       ...(categorySnapshot.description !== undefined && {
         description: categorySnapshot.description ?? '',
       }),
@@ -770,6 +778,38 @@ export class MedusaClient {
     this.setCategoryCache(categorySnapshot.id, created.id);
     this.logger.log(`Created Medusa category ${created.id} from snapshot for PIM category ${categorySnapshot.id}`);
     return created.id;
+  }
+
+  /**
+   * 형제 전체를 PIM 순서대로 rank 0..n-1 로 다시 세운다.
+   *
+   * rank 는 자리 번호가 아니라 삽입 위치다. 앞에서부터 순차로 밀어야 하고
+   * (병렬이면 시프트가 서로를 덮는다), 못 옮긴 형제의 번호는 비우지 않고 당겨 쓴다
+   * — 비우면 그 자리를 남의 카테고리가 차지한다.
+   */
+  async syncSiblingRanks(orderedPimCategoryIds: string[]): Promise<void> {
+    // 캐시 미스마다 목록을 통째로 훑으므로(형제 수 × 페이지 수) 한 번만 채우고 cacheOnly 로 본다.
+    if (orderedPimCategoryIds.some((pimCategoryId) => !this.categoryCache.has(pimCategoryId))) {
+      await this.primeCategoryCache();
+    }
+
+    let rank = 0;
+
+    for (const pimCategoryId of orderedPimCategoryIds) {
+      const found = await this.findCategoryByPimRef(pimCategoryId, { cacheOnly: true });
+      if (!found?.id) {
+        this.logger.warn(`Category ${pimCategoryId} not in Medusa — 순서 적용 건너뜀`);
+        continue;
+      }
+
+      try {
+        await this.sdk.admin.productCategory.update(found.id, { rank });
+        rank++;
+      } catch (err) {
+        const fetchError = err as FetchError;
+        this.logger.warn(`Failed to set rank ${rank} on Medusa category ${found.id}: ${fetchError.message}`);
+      }
+    }
   }
 
   // 상품을 지정된 카테고리에 강제 매핑 (Medusa v2: 제품 업데이트로 categories 설정)
