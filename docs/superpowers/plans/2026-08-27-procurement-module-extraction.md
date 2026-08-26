@@ -876,6 +876,40 @@ plan_type=source · requires_transfer=t · warehouse=중국 물류창고 · item
 - 🟠 `npm run generate:token` 은 **파이프 입력으로 못 돌린다.** readline 을 지연 생성하면서 파이프 버퍼 전체를 한 번에 삼켜 두 번째 질문부터 영원히 대기한다(프롬프트에서 멈추고 exit 0). #746 이 `iss` 는 고쳤지만 스크립트는 여전히 TTY 전용이다 — 자동화·CI 에서 못 쓴다.
 - 🟠 `GET /inbound/pending?warehouseId=x` → **500.** 그 쿼리 파라미터에 UUID 검증이 없어 Postgres 캐스팅 에러가 그대로 500 으로 나간다. 정상 UUID 로는 200.
 
+### admin-web 브라우저 확인 🟩 (2026-08-27, 부분)
+
+쿠키를 심고(`/api/proxy/api/purchase-orders` → `document.cookie='accessToken=…'` → 앱 URL) `/inventory/purchase-orders` 를 열었다.
+
+**목록** — 3건 렌더. API 로 만든 발주가 그대로 보인다:
+
+```
+1edd26f3… | 국내 | 개발용 공급처 | 확정됨 | 1/1 실행 | 2026. 12. 1.
+d4af550c… | 국내 | 개발용 공급처 | 확정됨 | 2/2 실행 | 2026. 8. 1.
+160749c9… | 해외 | 개발용 공급처 | 확정됨 | 1/1 실행 | 2026. 8. 1.
+```
+
+「라인 진행」·「입고 예정일」(파생 ETA) 컬럼이 정확하다.
+
+**상세 드로어** — 기본 정보(발주번호·공급처·유형·운영 상태·입고 예정일 2026-12-01) + 발주 라인:
+
+```
+개발용 상품 0001  [발주됨]
+요청 7 → 실발주 5   도착예정 2026-12-01
+2026. 8. 27. 오전 6:16:21 · 처리자 26f48044…
+```
+
+라인 생명주기(요청↔실발주·ETA·시각·처리자)가 화면까지 온전히 도달한다. 이 발주는 `requested === 0` 이라 **「라인 수정」 버튼이 없고**, 그게 문서화한 조건(`canEditLines = canExecuteLines(status) && progress.requested > 0`)과 정확히 일치한다.
+
+### 🔴 로컬 환경 한계로 못 본 것 — admin-web 은 user-service 없이 오래 못 버틴다
+
+`created` 상태(미실행 라인 2개) 발주를 만들어 「라인 수정」 버튼이 **나타나는** 쪽을 보려 했으나 그 뒤로 테이블이 스켈레톤에서 멈췄다.
+
+**원인은 발주가 아니다.** 페이지가 `RouteGuard requireRole={['admin','master']}` 로 감싸여 있고(`page.tsx:7`), 그 역할은 **user-service** 에서 온다. 콘솔이 `/proxy/users/users/me` · `users/roles` · `admin/users` 를 무한 재시도한다 — 로컬에 user-service 가 없다(`USER_SERVICE_URL=http://localhost:3000` 인데 그 포트는 비어 있고 `apps/user-service/.env` 자체가 없다). 같은 시점에 페이지 안에서 `fetch('/api/proxy/api/purchase-orders')` 는 **200 + 정상 JSON** 을 준다.
+
+첫 로드는 성공했다(그래서 위 목록·드로어를 봤다) — 브라우저에 남아 있던 역할 캐시가 만료되기 전이었던 것으로 보인다.
+
+**다음 사람에게:** admin-web 을 로컬에서 오래 보려면 user-service 를 같이 띄우거나(`apps/user-service/.env` 필요) 라이브 user-service 를 가리켜야 한다. `BYPASS_AUTH=true` 는 `middleware.ts` 의 페이지 가드만 우회하고 **`RouteGuard` 는 못 우회한다.**
+
 ### 남은 수동 검증
 
-- ⛔ **admin-web 발주 목록·상세 드로어 브라우저 확인.** API 경로·응답이 안 바뀌었고 core 응답은 위에서 확인했으나 화면은 못 봤다.
+- ⛔ `created` 발주에서 「라인 수정」 버튼이 **나타나는** 쪽 확인 (위 환경 한계). 이 조건은 #739 가 만든 것이고 항목 5 가 건드리지 않았다.
