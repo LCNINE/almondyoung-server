@@ -87,6 +87,7 @@ export class ProductEventsConsumer {
       category_ids: categoryIds,
       category_names: categoryNames,
       tags: snapshot.tags ?? [],
+      seo_keywords: snapshot.seoKeywords ?? '',
       min_base_price: basePrices.length > 0 ? Math.min(...basePrices) : null,
       max_base_price: basePrices.length > 0 ? Math.max(...basePrices) : null,
       min_membership_price: membershipPrices.length > 0 ? Math.min(...membershipPrices) : null,

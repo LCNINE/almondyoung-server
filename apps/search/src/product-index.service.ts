@@ -13,6 +13,7 @@ import {
   REVIEW_FIELDS_MAPPINGS,
   ReviewStatsUpdateFields,
   SearchProductDocument,
+  SEO_FIELDS_MAPPINGS,
 } from './types/product-document.type';
 import { compactText, qwertyToHangul, toJamo } from './utils/text.utils';
 
@@ -288,6 +289,16 @@ export class ProductIndexService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`putMapping for jamo fields failed (non-fatal): ${error.message}`);
     }
+
+    // 자모와 마찬가지로 기존 문서는 재색인 전까지 값이 비어 있다.
+    try {
+      await client.indices.putMapping({
+        index,
+        body: SEO_FIELDS_MAPPINGS,
+      });
+    } catch (error) {
+      this.logger.warn(`putMapping for seo fields failed (non-fatal): ${error.message}`);
+    }
   }
 
   private async executeSearch(params: {
@@ -554,7 +565,7 @@ export class ProductIndexService implements OnModuleInit {
           {
             multi_match: {
               query: q,
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'description'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2', 'description'],
               operator: 'or',
               minimum_should_match: '100%',
             },
@@ -566,7 +577,7 @@ export class ProductIndexService implements OnModuleInit {
             multi_match: {
               query: q,
               type: 'cross_fields',
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
               operator: 'and',
               boost: 20,
             },
@@ -583,7 +594,7 @@ export class ProductIndexService implements OnModuleInit {
 
     const multiMatch: Record<string, unknown> = {
       query: q,
-      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'description'],
+      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'seo_keywords^2', 'description'],
       analyzer: 'nori_search_synonym',
       operator: 'or',
       minimum_should_match: minimumShouldMatch,
@@ -692,7 +703,7 @@ export class ProductIndexService implements OnModuleInit {
       {
         multi_match: {
           query: hangul,
-          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
+          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
           operator: 'and',
           boost: 2,
         },

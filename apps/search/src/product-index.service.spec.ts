@@ -134,6 +134,7 @@ describe('ProductIndexService.upsertProduct', () => {
       category_ids: [],
       category_names: [],
       tags: [],
+      seo_keywords: '',
       min_base_price: null,
       max_base_price: null,
       min_membership_price: null,

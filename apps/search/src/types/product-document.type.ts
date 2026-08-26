@@ -142,6 +142,16 @@ export const PRODUCTS_INDEX_MAPPINGS = {
         keyword: { type: 'keyword' as const },
       },
     },
+    seo_keywords: {
+      type: 'text' as const,
+      analyzer: 'nori',
+      fields: {
+        standard: {
+          type: 'text' as const,
+          analyzer: 'standard_lowercase',
+        },
+      },
+    },
     min_base_price: { type: 'long' as const },
     max_base_price: { type: 'long' as const },
     min_membership_price: { type: 'long' as const },
@@ -183,6 +193,22 @@ export const JAMO_FIELDS_MAPPINGS = {
   },
 } as const;
 
+// 어드민 SEO 키워드 칸. nori 가 브랜드명을 뭉개므로 standard 서브필드를 같이 둔다.
+export const SEO_FIELDS_MAPPINGS = {
+  properties: {
+    seo_keywords: {
+      type: 'text' as const,
+      analyzer: 'nori' as const,
+      fields: {
+        standard: {
+          type: 'text' as const,
+          analyzer: 'standard_lowercase' as const,
+        },
+      },
+    },
+  },
+} as const;
+
 export interface SearchProductDocument {
   master_id: string;
   version_id: string;
@@ -196,6 +222,7 @@ export interface SearchProductDocument {
   category_ids: string[];
   category_names: string[];
   tags: string[];
+  seo_keywords: string;
   min_base_price: number | null;
   max_base_price: number | null;
   min_membership_price: number | null;

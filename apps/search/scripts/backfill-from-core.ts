@@ -38,6 +38,7 @@ type ActiveVersionRow = {
   name: string;
   description: string | null;
   brand: string | null;
+  seoKeywords: string[] | null;
   status: 'draft' | 'inactive' | 'active';
   isVisibleToMembersOnly: boolean;
   updatedAt: Date;
@@ -212,6 +213,7 @@ async function fetchActiveVersionsBatch(
       name: productMasterVersions.name,
       description: productMasterVersions.description,
       brand: productMasterVersions.brand,
+      seoKeywords: productMasterVersions.seoKeywords,
       status: productMasterVersions.status,
       isVisibleToMembersOnly: productMasterVersions.isVisibleToMembersOnly,
       updatedAt: productMasterVersions.updatedAt,
@@ -379,6 +381,7 @@ function buildDocuments(
       category_ids: categories?.ids ?? [],
       category_names: categories?.names ?? [],
       tags,
+      seo_keywords: row.seoKeywords?.join(', ') ?? '',
       min_base_price: prices?.minBasePrice ?? null,
       max_base_price: prices?.maxBasePrice ?? null,
       min_membership_price: prices?.minMembershipPrice ?? null,
