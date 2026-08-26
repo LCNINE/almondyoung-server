@@ -14,4 +14,18 @@ describe('발주 종결 전이', () => {
   it('이미 종결된 발주는 다시 종결되지 않는다', () => {
     expect(() => assertReceivedTransition('received')).toThrow(/received/);
   });
+
+  /**
+   * 두 거부는 같은 술어의 두 얼굴이지만 **원인이 반대**다. 한 문장을 돌려쓰면 운영자가
+   * 받는 409 가 자기 상황을 설명하지 못한다 — 이미 전 라인이 실행된 발주에게
+   * "라인을 먼저 실행하라" 고 말하는 식이다(2026-08-26 dev 스모크에서 발견).
+   */
+  it('created 거부는 아직 실행 안 된 라인을 지목한다', () => {
+    expect(() => assertReceivedTransition('created')).toThrow(/not executed yet/);
+  });
+
+  it('received 거부는 이미 종결됐음을 말한다 — 라인 실행을 요구하지 않는다', () => {
+    expect(() => assertReceivedTransition('received')).toThrow(/already received/);
+    expect(() => assertReceivedTransition('received')).not.toThrow(/executed/);
+  });
 });
