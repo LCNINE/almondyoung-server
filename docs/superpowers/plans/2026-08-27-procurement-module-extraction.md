@@ -213,57 +213,28 @@ git commit -m "refactor(inventory): 발주 파일을 procurement/ 로 이동 (#7
 
 ---
 
-### Task 2: `suppliers/` 를 `procurement/suppliers/` 로 이동
+### Task 2: `suppliers/` 는 옮기지 않는다 — 실측이 이슈의 전제를 반박했다 ✅ 판정 완료
 
 **Files:**
-- Move: `inventory/suppliers/` → `inventory/procurement/suppliers/` (11파일 전체)
-- Modify: `inventory/inventory.module.ts` · `procurement/procurement.module.ts` · `procurement/services/purchase-order.service.ts`(import 1줄) · **`catalog/operations/export/product-export.service.ts:7`**
+- Modify: `inventory/suppliers/suppliers.module.ts` (근거 docstring 만)
 
-**Interfaces:**
-- Consumes: 없음 (`SuppliersModule` 은 `imports: []` 다)
-- Produces: `SuppliersModule` 의 새 경로. `SuppliersService` · `SupplierCategoriesService` export 는 그대로.
+이슈 (a) 는 `purchase-order` + `suppliers` 를 함께 옮기라고 했다. 착수 시점 실측이 그 전제를 반박했다 — **공급처 소비자가 셋이고 둘이 조달 밖이다:**
 
-⚠️ **`suppliers` 의 §1.7 계층 정렬은 범위 밖이다** (이슈 (e)). 옮기는 것과 고치는 것을 한 PR 에 섞으면 리뷰가 diff 로 못 본다. 이 Task 는 `git mv` + import 경로뿐이다.
-
-- [ ] **Step 1: 크로스 BC 소비자를 먼저 확인한다**
-
-```bash
-grep -rn "inventory/suppliers" apps/ --include=*.ts | grep -v "modules/inventory/suppliers"
-```
-Expected: `apps/core/src/modules/catalog/operations/export/product-export.service.ts:7` 한 줄. **여기서 예상 못 한 파일이 더 나오면 목록을 계획에 반영하고 진행한다.**
-
-- [ ] **Step 2: 옮긴다**
-
-```bash
-cd apps/core/src/modules/inventory
-git mv suppliers procurement/suppliers
-```
-
-- [ ] **Step 3: import 를 고친다**
-
-| 파일 | 옛 | 새 |
+| 소비자 | 무엇을 | 방향 |
 |---|---|---|
-| `catalog/operations/export/product-export.service.ts:7` | `'../../../inventory/suppliers/services/suppliers.service'` | `'../../../inventory/procurement/suppliers/services/suppliers.service'` |
-| `procurement/services/purchase-order.service.ts` | `'../../suppliers/dto/supplier-response.dto'` | `'../suppliers/dto/supplier-response.dto'` |
-| `inventory.module.ts` | `'./suppliers/suppliers.module'` | `'./procurement/suppliers/suppliers.module'` |
+| `procurement/services/purchase-order.service.ts:22` | `SupplierResponseDto` | 같은 도메인 |
+| `inbound/services/inbound.service.ts:435` · `inbound/dto/simple-inbound.dto.ts:296` | `SupplierResponseDto.fromDbRow` — 입고 계획 응답에 연계 발주의 공급처를 싣는다 | **역방향** |
+| `catalog/operations/export/product-export.module.ts:5` | `SuppliersModule` 자체 (런타임 모듈 의존) | **크로스 BC** |
 
-`procurement/suppliers/**` 내부 파일은 상대 깊이가 한 단계 깊어졌으므로 `../../schema/…` 를 참조하던 곳은 `../../../schema/…` 가 된다 — `tsc` 가 전부 잡는다.
+`procurement/` 아래로 내리면 `inbound → procurement` · `catalog → procurement` 의존이 생겨 **ADR-0032 결정 4 와 어긋난다.** 공급처는 조달의 부품이 아니라 `sku-catalog` · `warehouse` 와 같은 층의 **마스터데이터**이므로 형제가 맞다.
 
-- [ ] **Step 4: 게이트**
+**결정(2026-08-27, 사용자 확인):** 형제로 남긴다. 이동 0건. 근거를 `suppliers.module.ts` docstring 에 박아 다음 사람이 다시 옮기려 들지 않게 한다.
 
-```bash
-npm run type-check && npx jest --maxWorkers=2
-```
-Expected: 0 / 0.
+**후속:** ADR-0032 에 이 근거를 한 문단 더한다 (ADR 은 `docs/adr-0032-procurement-boundaries` 브랜치에 있다 — 그 브랜치에서 수정한다).
 
-- [ ] **Step 5: 커밋**
-
-```bash
-git commit -am "refactor(inventory): suppliers 를 procurement/ 아래로 이동 (#724 항목 5-a)
-
-이동만. 계층 정렬(§1.7)은 #745 로 남긴다.
-크로스 BC 소비자 1건(catalog product-export) import 경로 동반 수정."
-```
+- [x] **Step 1: 소비자 실측** — `grep -rn "inventory/suppliers\|from '\.\./\.\./suppliers"` 로 위 표 확인
+- [x] **Step 2: 근거를 `suppliers.module.ts` docstring 에 기록**
+- [x] **Step 3: 커밋** (docs-only, 코드 이동 0)
 
 ---
 
