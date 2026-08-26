@@ -815,3 +815,33 @@ warehouse-transfer 3계층 선례를 따른다.
 - `:440` 의 400 → 409 승격 (API 계약 변경)
 - admin-web 의 영구히 빈 `isLinkedPlan` 컬럼·배지 정리
 - `inbound_plans.parent_plan_id` 컬럼 DROP (#663·#735 선례 — 코드 제거와 별 PR)
+
+---
+
+## 실행 결과 (2026-08-27)
+
+8 태스크 전부 실행. 커밋 9개 (`b54bbe91d` 계획 → `fcca7cf27` 3계층).
+
+| Task | 결과 | 계획과 달라진 점 |
+|---|---|---|
+| 1 이동 | 🟩 | **공유 순수 헬퍼 2개가 튀어나왔다** — `earliest-expected-date.ts`(inbound.service:428 이 사용) · `calendar-date.validator.ts`(simple-inbound.dto 가 사용). procurement 에 두면 `inbound → procurement` 역방향이 되어 `shared/dates/` · `shared/dto/` 로 보냈다 |
+| 2 suppliers 이동 | ⬜ **하지 않음** | 실측이 전제를 반박 — 소비자 3개 중 2개가 조달 밖(inbound · catalog). 형제로 남기고 근거를 `suppliers.module.ts` docstring 에 기록 |
+| 3 죽은 라우트 | 🟩 | **`inventory-scope-coverage.spec.ts` 가 잡았다** — 라우트 배정표가 stale 이 됐다. #551 의 가드가 의도대로 작동 |
+| 4 예외 통일 | 🟩 | 실측 10곳(이슈의 "12곳" 은 낡음). `updatePurchaseOrderLines` 의 "예외 타입이 달라 helper 재사용 안 한다" 주석도 정정 |
+| 5 TransactionService | 🟩 | — |
+| 6 카트 | 🟩 | — |
+| 7 재주문 제안 | 🟩 | — |
+| 8 3계층 | 🟩 | `findMany` 시그니처가 **위치 인자**였다(계획은 filters 객체로 잘못 적었다). 단위 스펙은 `purchase-order.manager.spec.ts` 로 개명 후 Manager/Reader 를 직접 겨눔 |
+
+**줄 수:** 971줄 God service → `service 103` · `manager 515` · `reader 204` · `cart 264` · `reorder 76`.
+
+**게이트 (전부 초록):** `type-check` 0 · admin-web `tsc` 0 · `eslint` 0 · `jest` 489 suite/4213 test · `nest build core` 성공 · 통합 8 suite/12 test 실패(=develop 기준선, 새 실패 0)이며 발주 통합 스펙 2개 PASS.
+
+**DI 그래프 검증 완료.** `nest build` 가 못 잡는 provider 미등록·순환 의존을 별도로 확인했다 — `Test.createTestingModule({ imports: [AppModule] }).compile()` 로 전체 그래프를 세우고 6개 provider + 컨트롤러 핸들러 5개를 해결시켰다. 전부 통과.
+
+**라우트 표면 불변 확인.** `inventory-scope-coverage.spec.ts` 가 "표와 코드의 라우트 집합이 정확히 일치" 를 통과한다 — 의도적으로 지운 `POST /inbound/plans` 하나 외에 라우트가 늘거나 준 것이 없다는 뜻이다.
+
+### 남은 수동 검증 (사람이 해야 한다)
+
+- ⛔ **실제 부팅 스모크.** 로컬 core(pid 3100)는 **옛 빌드로 돌고 있다** — `--watch` 가 실제로 안 붙는다. 직접 재시작한 뒤 위 「마무리」 절의 curl 5줄을 돌릴 것. DI 그래프는 검증됐으므로 남은 위험은 런타임 동작이다.
+- ⛔ **admin-web 발주 목록·상세 드로어 브라우저 확인.**
