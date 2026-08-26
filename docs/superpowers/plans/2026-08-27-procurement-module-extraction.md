@@ -841,7 +841,41 @@ warehouse-transfer 3계층 선례를 따른다.
 
 **라우트 표면 불변 확인.** `inventory-scope-coverage.spec.ts` 가 "표와 코드의 라우트 집합이 정확히 일치" 를 통과한다 — 의도적으로 지운 `POST /inbound/plans` 하나 외에 라우트가 늘거나 준 것이 없다는 뜻이다.
 
-### 남은 수동 검증 (사람이 해야 한다)
+### 부팅 스모크 🟩 완료 (2026-08-27, dev DB `dev_core`)
 
-- ⛔ **실제 부팅 스모크.** 로컬 core(pid 3100)는 **옛 빌드로 돌고 있다** — `--watch` 가 실제로 안 붙는다. 직접 재시작한 뒤 위 「마무리」 절의 curl 5줄을 돌릴 것. DI 그래프는 검증됐으므로 남은 위험은 런타임 동작이다.
-- ⛔ **admin-web 발주 목록·상세 드로어 브라우저 확인.**
+옛 프로세스를 죽이고 새 빌드로 재부팅 → `Nest application successfully started`.
+
+**라우트 상태코드**
+
+| 라우트 | 결과 |
+|---|---|
+| `GET /purchase-orders` · `/cart` · `/suggestions/reorder` · `/suppliers` | **200** |
+| `POST /inbound/plans` | **404** ✅ (죽은 라우트 제거 확인) |
+| `POST /inbound/plans/receive` | **400** ✅ (살아 있고 빈 본문을 거부) |
+
+**읽기 경로 (Reader)** — 목록 2건, 상세에 라인·공급처·파생 ETA 정상. 헤더 `expectedArrival` 이 `ordered` 라인 ETA 와 일치.
+
+**쓰기 경로 (Manager + Cart)** — 카트 추가 → 조회 → `clearCart`(204) 정상. 발주 생성 후 라인 실행(요청 7 → 실발주 5) 결과:
+
+```
+status: confirmed          ← refreshHeaderStatus 파생
+expectedArrival: 2026-12-01 ← purchaseOrderExpectedArrival 파생 (ordered 라인만)
+line: status=ordered qty=7 orderedQty=5
+```
+
+**ADR-0032 결정 1 을 DB 로 확인** — 그 발주의 입고 계획이 정확히 **1행**이고:
+
+```
+plan_type=source · requires_transfer=t · warehouse=중국 물류창고 · items=1 · qty=5
+```
+
+출발 창고(중국)에 계획 1개, 수량은 요청 7 이 아니라 **실발주 5**. `procurement → inbound` 포트(`ensurePlanForPurchaseOrder` · `addInboundPlanItems`)가 새 모듈 경계를 넘어 정상 동작한다.
+
+**곁다리 발견 2건 (내 변경과 무관, 기존 결함)**
+
+- 🟠 `npm run generate:token` 은 **파이프 입력으로 못 돌린다.** readline 을 지연 생성하면서 파이프 버퍼 전체를 한 번에 삼켜 두 번째 질문부터 영원히 대기한다(프롬프트에서 멈추고 exit 0). #746 이 `iss` 는 고쳤지만 스크립트는 여전히 TTY 전용이다 — 자동화·CI 에서 못 쓴다.
+- 🟠 `GET /inbound/pending?warehouseId=x` → **500.** 그 쿼리 파라미터에 UUID 검증이 없어 Postgres 캐스팅 에러가 그대로 500 으로 나간다. 정상 UUID 로는 200.
+
+### 남은 수동 검증
+
+- ⛔ **admin-web 발주 목록·상세 드로어 브라우저 확인.** API 경로·응답이 안 바뀌었고 core 응답은 위에서 확인했으나 화면은 못 봤다.
