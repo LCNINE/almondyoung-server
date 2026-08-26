@@ -9,7 +9,6 @@ import {
   UpdatePurchaseOrderLinesDto,
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
-  StockReorderSuggestion,
   PurchaseOrderStatus,
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
@@ -672,59 +671,5 @@ export class PurchaseOrderService {
       });
     }
     return results;
-  }
-
-  // ========== 재주문 제안 ==========
-
-  /**
-   * 재주문 제안 조회
-   * 안전재고 미만으로 떨어진 상품 목록
-   */
-  async getReorderSuggestions(warehouseId?: string, tx?: DbTx): Promise<StockReorderSuggestion[]> {
-    // stockSummary view에서 안전재고 미만 상품 조회
-    // 현재는 단순히 availableQty < 10인 상품을 반환 (향후 안전재고 설정 기능 추가 시 개선)
-
-    const query = sql`
-            SELECT
-                s.id as sku_id,
-                s.name as sku_name,
-                COALESCE(ss.available_qty, 0) as current_stock,
-                10 as safety_stock,  -- 임시 값
-                (10 - COALESCE(ss.available_qty, 0)) as shortfall,
-                GREATEST(20 - COALESCE(ss.available_qty, 0), 0) as suggested_order,
-                COALESCE(ss.on_order_qty, 0) as on_order_qty,
-                COALESCE(ss.in_transfer_qty, 0) as in_transfer_qty
-            FROM skus s
-            LEFT JOIN stock_summary_view ss ON s.id = ss.sku_id
-            WHERE COALESCE(ss.available_qty, 0) < 10
-            ${warehouseId ? sql`AND ss.warehouse_id = ${warehouseId}` : sql``}
-            ORDER BY shortfall DESC
-            LIMIT 100
-        `;
-
-    interface ReorderSuggestionRow {
-      sku_id: string;
-      sku_name: string;
-      current_stock: number;
-      safety_stock: number;
-      shortfall: number;
-      suggested_order: number;
-      on_order_qty: number;
-      in_transfer_qty: number;
-    }
-
-    const results = await this.dbService.run(async (trx) => trx.execute(query), tx);
-    const rows = results as unknown as ReorderSuggestionRow[];
-
-    return rows.map((row) => ({
-      skuId: row.sku_id,
-      skuName: row.sku_name,
-      currentStock: row.current_stock,
-      safetyStock: row.safety_stock,
-      shortfall: row.shortfall,
-      suggestedOrder: row.suggested_order,
-      onOrderQty: row.on_order_qty,
-      inTransferQty: row.in_transfer_qty,
-    }));
   }
 }
