@@ -18,7 +18,6 @@ import {
 } from '../dto/purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
-import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
@@ -31,7 +30,6 @@ export class PurchaseOrderService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly transactionService: TransactionService,
     private readonly inboundService: InboundService,
   ) {}
 

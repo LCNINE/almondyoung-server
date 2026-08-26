@@ -13,7 +13,7 @@ function serviceWithSupplier(row: { defaultWarehouseId: string | null } | undefi
     })),
   };
   const dbService = { run: jest.fn((fn: (executor: typeof trx) => unknown) => fn(trx)) };
-  return new PurchaseOrderService(dbService as never, {} as never, {} as never);
+  return new PurchaseOrderService(dbService as never, {} as never);
 }
 
 describe('PurchaseOrderService 공급사 기본 창고', () => {
@@ -54,7 +54,7 @@ describe('PurchaseOrderService 예외 규약', () => {
       })),
     };
     const dbService = { run: jest.fn((fn: (executor: typeof trx) => unknown) => fn(trx)) };
-    return new PurchaseOrderService(dbService as never, {} as never, {} as never);
+    return new PurchaseOrderService(dbService as never, {} as never);
   }
 
   it('없는 발주 조회는 @app/shared 의 NotFoundError 를 던진다 (Nest 예외가 아니다)', async () => {
