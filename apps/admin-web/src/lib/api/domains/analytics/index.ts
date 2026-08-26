@@ -102,6 +102,84 @@ export interface CustomerStatistics {
   }>;
 }
 
+export interface CustomerInsightsQuery {
+  from: string;
+  to: string;
+  limit?: number;
+  minBuyers?: number;
+}
+
+export interface CohortRow {
+  cohortMonth: string;
+  size: number;
+  /** 경과 개월별 재구매 고객 비율. 아직 오지 않은 달은 null */
+  retention: Array<number | null>;
+}
+
+export interface RfmCell {
+  recency: string;
+  frequency: string;
+  customers: number;
+  totalRevenue: number;
+}
+
+export interface CustomerInsights {
+  range: { from: string; to: string };
+  /** to 기준 최근 12개월 첫구매 코호트 — from 과 무관 */
+  cohorts: { rows: CohortRow[]; maxOffset: number };
+  rfm: {
+    recencyBuckets: string[];
+    frequencyBuckets: string[];
+    cells: RfmCell[];
+    segments: Array<{ key: string; label: string; customers: number }>;
+    totalCustomers: number;
+  };
+  repurchase: {
+    minBuyers: number;
+    items: Array<{
+      masterId: string;
+      name: string | null;
+      buyers: number;
+      repeatBuyers: number;
+      repurchaseRate: number;
+      avgCycleDays: number | null;
+    }>;
+  };
+  tierFlow: {
+    transitions: Array<{ fromTier: string; toTier: string; count: number }>;
+    currentDistribution: Array<{ tierId: string; count: number }>;
+  };
+}
+
+export type TrafficChannelGroup = 'organic' | 'all';
+
+export interface TrafficStatisticsQuery {
+  from: string;
+  to: string;
+  channelGroup?: TrafficChannelGroup;
+  limit?: number;
+}
+
+export interface TrafficTotals {
+  sessions: number;
+  totalUsers: number;
+  pageViews: number;
+  /** 참여 세션 ÷ 전체 세션. GA4 bounceRate(UA 와 정의가 다름)의 역수 */
+  engagementRate: number | null;
+}
+
+export interface TrafficStatistics {
+  /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
+  enabled: boolean;
+  range: { from: string; to: string };
+  channelGroup: TrafficChannelGroup;
+  totals: TrafficTotals | null;
+  series: Array<{ date: string; sessions: number; engagementRate: number | null }>;
+  landingPages: Array<{ path: string; sessions: number; engagementRate: number | null }>;
+  devices: Array<{ label: string; sessions: number }>;
+  countries: Array<{ label: string; sessions: number }>;
+}
+
 export interface DailyRevenueSummary extends RevenueTotals {
   date: string;
   avgOrderValue: number | null;
@@ -152,6 +230,22 @@ export const analyticsApi = {
 
   getCustomerStatistics: async (query: StatisticsRangeQuery): Promise<CustomerStatistics> => {
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/customers?${rangeQs(query)}`);
+    return res.data;
+  },
+
+  getCustomerInsights: async (query: CustomerInsightsQuery): Promise<CustomerInsights> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.minBuyers) params.set('minBuyers', String(query.minBuyers));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/customers/insights?${params.toString()}`);
+    return res.data;
+  },
+
+  getTrafficStatistics: async (query: TrafficStatisticsQuery): Promise<TrafficStatistics> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.channelGroup) params.set('channelGroup', query.channelGroup);
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/traffic?${params.toString()}`);
     return res.data;
   },
 };
