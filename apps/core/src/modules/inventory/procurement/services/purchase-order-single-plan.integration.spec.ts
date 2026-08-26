@@ -6,6 +6,7 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
+import { PurchaseOrderReader } from './purchase-order.reader';
 import { InboundService } from '../../inbound/services/inbound.service';
 
 /**
@@ -67,7 +68,7 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       {} as never,
       {} as never,
     );
-    return new PurchaseOrderService(dbService, inboundService);
+    return new PurchaseOrderService(dbService, inboundService, new PurchaseOrderReader(dbService));
   }
 
   interface CrossWarehousePoFixture {

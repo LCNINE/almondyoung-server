@@ -6,6 +6,7 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
+import { PurchaseOrderReader } from './purchase-order.reader';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { PurchaseOrderStatus, PurchaseOrderType } from '../dto/purchase-order.dto';
 import { InboundPipelineReader } from '../../stock-projection/services/inbound-pipeline.reader';
@@ -64,7 +65,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
 
   function buildService(trx: DbTx): PurchaseOrderService {
     const dbService = boundDbService(trx);
-    return new PurchaseOrderService(dbService, buildInboundService(trx));
+    return new PurchaseOrderService(dbService, buildInboundService(trx), new PurchaseOrderReader(dbService));
   }
 
   interface Fixture {

@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, ne, and, inArray, sql, desc, SQL } from 'drizzle-orm';
+import { eq, ne, and, inArray } from 'drizzle-orm';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderStatusDto,
@@ -14,10 +14,9 @@ import {
 } from '../dto/purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
-import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
-import { purchaseOrderExpectedArrival } from '../../shared/dates/earliest-expected-date';
+import { PurchaseOrderReader } from './purchase-order.reader';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -27,6 +26,7 @@ export class PurchaseOrderService {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly inboundService: InboundService,
+    private readonly reader: PurchaseOrderReader,
   ) {}
 
   /**
@@ -74,7 +74,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Created purchase order ${purchaseOrder.id} with ${purchaseOrderLines.length} lines`);
 
-      return this.getPurchaseOrderById(purchaseOrder.id, trx);
+      return this.reader.findById(purchaseOrder.id, trx);
     }, tx);
   }
 
@@ -146,7 +146,7 @@ export class PurchaseOrderService {
         `Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items for user ${userId}`,
       );
 
-      return this.getPurchaseOrderById(purchaseOrder.id, trx);
+      return this.reader.findById(purchaseOrder.id, trx);
     }, tx);
   }
 
@@ -189,7 +189,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Purchase order ${poId} marked received by ${userId}`);
 
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -211,7 +211,7 @@ export class PurchaseOrderService {
     return this.dbService.run(async (trx) => {
       await this.executeLineOrder(trx, poId, skuId, dto, userId);
       await this.refreshHeaderStatus(trx, poId);
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -241,7 +241,7 @@ export class PurchaseOrderService {
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
       await this.refreshHeaderStatus(trx, poId);
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -470,7 +470,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Updated ${updateDto.lines.length} lines for PO ${poId}`);
 
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -497,179 +497,21 @@ export class PurchaseOrderService {
     return supplier.defaultWarehouseId;
   }
 
-  /**
-   * 발주 조회
-   */
-  async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
-    return this.dbService.run(async (trx: DbTx) => {
-      const [po] = await trx
-        .select()
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
+  // ========== 조회 위임 (Reader 소유) ==========
 
-      if (!po) {
-        throw new NotFoundError(`Purchase order with ID ${poId} not found`);
-      }
-
-      const lines = await trx
-        .select({
-          skuId: wmsTables.purchaseOrderLines.skuId,
-          quantity: wmsTables.purchaseOrderLines.quantity,
-          unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-          status: wmsTables.purchaseOrderLines.status,
-          orderedQty: wmsTables.purchaseOrderLines.orderedQty,
-          expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
-          orderedAt: wmsTables.purchaseOrderLines.orderedAt,
-          orderedBy: wmsTables.purchaseOrderLines.orderedBy,
-          unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
-          skuName: wmsTables.skus.name,
-          skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
-                      LIMIT 1
-                    )`,
-        })
-        .from(wmsTables.purchaseOrderLines)
-        .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-        .where(eq(wmsTables.purchaseOrderLines.poId, poId));
-
-      const supplier = po.supplierId
-        ? (() =>
-            trx
-              .select()
-              .from(wmsTables.suppliers)
-              .where(eq(wmsTables.suppliers.id, po.supplierId))
-              .limit(1)
-              .then((rows) => rows[0]))()
-        : undefined;
-
-      const supplierRow = await supplier;
-
-      return {
-        id: po.id,
-        type: po.type as PurchaseOrderType,
-        supplierId: po.supplierId,
-        expectedArrival: purchaseOrderExpectedArrival(lines),
-        status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt,
-        updatedAt: po.updatedAt,
-        lines: lines.map((line) => ({
-          skuId: line.skuId,
-          quantity: line.quantity,
-          status: line.status,
-          orderedQty: line.orderedQty,
-          unitPrice: line.unitPrice,
-          expectedArrival: line.expectedArrival,
-          orderedAt: line.orderedAt,
-          orderedBy: line.orderedBy,
-          unavailableReason: line.unavailableReason,
-          sku: {
-            name: line.skuName ?? '삭제된 상품',
-            barcode: line.skuBarcode ?? '',
-          },
-        })),
-        supplier: supplierRow ? SupplierResponseDto.fromDbRow(supplierRow) : undefined,
-      };
-    }, tx);
+  /** @see PurchaseOrderReader.findById */
+  getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
+    return this.reader.findById(poId, tx);
   }
 
-  /**
-   * 발주 목록 조회
-   */
-  async getPurchaseOrders(
+  /** @see PurchaseOrderReader.findMany */
+  getPurchaseOrders(
     status?: PurchaseOrderStatus,
     type?: PurchaseOrderType,
     limit = 50,
     offset = 0,
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse[]> {
-    const conditions: SQL[] = [];
-
-    if (status) {
-      conditions.push(eq(wmsTables.purchaseOrders.status, status));
-    }
-
-    if (type) {
-      conditions.push(eq(wmsTables.purchaseOrders.type, type));
-    }
-
-    const purchaseOrders = await this.dbService.run(
-      async (trx) =>
-        trx
-          .select()
-          .from(wmsTables.purchaseOrders)
-          .where(conditions.length > 0 ? and(...conditions) : undefined)
-          .orderBy(desc(wmsTables.purchaseOrders.createdAt))
-          .limit(limit)
-          .offset(offset),
-      tx,
-    );
-    const results = [] as PurchaseOrderResponse[];
-    for (const po of purchaseOrders) {
-      const lines = await this.dbService.run(
-        async (trx) =>
-          trx
-            .select({
-              skuId: wmsTables.purchaseOrderLines.skuId,
-              quantity: wmsTables.purchaseOrderLines.quantity,
-              unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-              status: wmsTables.purchaseOrderLines.status,
-              orderedQty: wmsTables.purchaseOrderLines.orderedQty,
-              expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
-              orderedAt: wmsTables.purchaseOrderLines.orderedAt,
-              orderedBy: wmsTables.purchaseOrderLines.orderedBy,
-              unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
-              skuName: wmsTables.skus.name,
-              skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
-                      LIMIT 1
-                    )`,
-            })
-            .from(wmsTables.purchaseOrderLines)
-            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-            .where(eq(wmsTables.purchaseOrderLines.poId, po.id)),
-        tx,
-      );
-
-      const supplier = po.supplierId
-        ? await this.dbService.run(async (trx) => {
-            const [row] = await trx
-              .select()
-              .from(wmsTables.suppliers)
-              .where(eq(wmsTables.suppliers.id, po.supplierId!))
-              .limit(1);
-            return row;
-          }, tx)
-        : undefined;
-
-      results.push({
-        id: po.id,
-        type: po.type as PurchaseOrderType,
-        supplierId: po.supplierId,
-        expectedArrival: purchaseOrderExpectedArrival(lines),
-        status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt,
-        updatedAt: po.updatedAt,
-        lines: lines.map((line) => ({
-          skuId: line.skuId,
-          quantity: line.quantity,
-          status: line.status,
-          orderedQty: line.orderedQty,
-          unitPrice: line.unitPrice,
-          expectedArrival: line.expectedArrival,
-          orderedAt: line.orderedAt,
-          orderedBy: line.orderedBy,
-          unavailableReason: line.unavailableReason,
-          sku: {
-            name: line.skuName ?? '',
-            barcode: line.skuBarcode ?? '',
-          },
-        })),
-        supplier: supplier ? SupplierResponseDto.fromDbRow(supplier) : undefined,
-      });
-    }
-    return results;
+    return this.reader.findMany(status, type, limit, offset, tx);
   }
 }
