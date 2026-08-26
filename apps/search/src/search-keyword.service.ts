@@ -147,7 +147,7 @@ export class SearchKeywordService {
 
   async getRelatedKeywords(rawKeyword: string, size: number): Promise<string[]> {
     const keywordNorm = this.normalizeKeyword(rawKeyword);
-    if (!keywordNorm) {
+    if (!keywordNorm || size < 1) {
       return [];
     }
 

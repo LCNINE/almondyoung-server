@@ -199,6 +199,10 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
                 },
               },
               // keyword_compact 는 공백 없는 소문자라 앞뒤 * 만으로 부분 일치가 된다.
+              // ponytail: leading wildcard 라 term 전수 스캔이다. live 81k 도큐/8MB 기준
+              // 1글자 "솜" 까지 3ms 라 그냥 둔다 — 최소 길이 가드를 두면 "솜"(577건)·"젤"
+              // 같은 실제 인기 키워드가 연관검색어를 잃는다. 인덱스가 수백만 건이 되면
+              // keyword_compact 에 ngram 서브필드를 얹어 match 로 바꾼다.
               { wildcard: { keyword_compact: `*${this.escapeWildcard(options.compactKeyword)}*` } },
               { range: { result_count: { gt: 0 } } },
             ],

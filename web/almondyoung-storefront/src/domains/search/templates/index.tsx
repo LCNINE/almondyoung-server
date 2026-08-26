@@ -29,10 +29,12 @@ export async function SearchTemplate({
   searchParams,
   params,
 }: SearchTemplateProps) {
-  const [
-    { q, page, sort, categoryIds, brands, minPrice, maxPrice, correct },
-    { countryCode },
-  ] = await Promise.all([searchParams, params])
+  const [resolvedSearchParams, { countryCode }] = await Promise.all([
+    searchParams,
+    params,
+  ])
+  const { q, page, sort, categoryIds, brands, minPrice, maxPrice, correct } =
+    resolvedSearchParams
 
   const keyword = q?.trim() || ""
 
@@ -73,6 +75,7 @@ export async function SearchTemplate({
           keyword={keyword}
           correctedQuery={searchResult.correctedQuery}
           relatedKeywords={searchResult.relatedKeywords}
+          searchParams={resolvedSearchParams}
         />
       }
       searchResult={searchResult}

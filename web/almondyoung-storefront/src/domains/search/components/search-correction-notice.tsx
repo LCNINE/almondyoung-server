@@ -1,16 +1,45 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { getTranslations } from "next-intl/server"
 
+type SearchParamsRecord = Record<string, string | string[] | undefined>
+
 interface SearchCorrectionNoticeProps {
   keyword: string
   correctedQuery?: string
   relatedKeywords?: string[]
+  searchParams?: SearchParamsRecord
+}
+
+// 현재 검색 조건(카테고리·브랜드·가격·정렬)을 유지한 채 교정만 끈다.
+// page 는 결과셋이 달라지므로 버린다.
+function buildOriginalSearchHref(
+  keyword: string,
+  searchParams: SearchParamsRecord
+): string {
+  const params = new URLSearchParams()
+
+  for (const [key, value] of Object.entries(searchParams)) {
+    if (value === undefined || key === "q" || key === "page" || key === "correct") {
+      continue
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => params.append(key, item))
+    } else {
+      params.set(key, value)
+    }
+  }
+
+  params.set("q", keyword)
+  params.set("correct", "false")
+
+  return `/search?${params.toString()}`
 }
 
 export async function SearchCorrectionNotice({
   keyword,
   correctedQuery,
   relatedKeywords = [],
+  searchParams = {},
 }: SearchCorrectionNoticeProps) {
   const t = await getTranslations("search.result")
   const hasCorrection = Boolean(correctedQuery)
@@ -33,7 +62,7 @@ export async function SearchCorrectionNotice({
               original: keyword,
               link: (chunks) => (
                 <LocalizedClientLink
-                  href={`/search?q=${encodeURIComponent(keyword)}&correct=false`}
+                  href={buildOriginalSearchHref(keyword, searchParams)}
                   className="font-medium text-primary underline underline-offset-2"
                 >
                   {chunks}
