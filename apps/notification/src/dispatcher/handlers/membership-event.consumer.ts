@@ -6,6 +6,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { formatAmount, formatDate } from '../../shared/utils/template-helpers';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 
@@ -53,14 +54,16 @@ export class MembershipEventConsumer {
         payload: payload,
         correlationId: envelope.correlationId,
         priority: eventMapping.priority as any,
+        // 날짜·금액은 여기서 포맷을 끝낸다 — 렌더러는 `{{var}}` 단순 치환이라
+        // 템플릿 안의 `{{formatDate x}}` 는 치환되지 않고 리터럴로 남는다.
         variables: {
           userName: payload.userName,
           planName: payload.planName,
-          nextBillingDate: payload.nextBillingDate,
-          amount: payload.amount,
+          nextBillingDate: formatDate(payload.nextBillingDate),
+          amount: formatAmount(payload.amount),
           paymentMethodLabel: payload.paymentMethodLabel,
-          currentPeriodEnd: payload.currentPeriodEnd,
-          nextPeriodEnd: payload.nextPeriodEnd,
+          currentPeriodEnd: formatDate(payload.currentPeriodEnd),
+          nextPeriodEnd: formatDate(payload.nextPeriodEnd),
           noticeDaysBefore: payload.noticeDaysBefore,
           manageUrl: process.env.STOREFRONT_URL
             ? `${process.env.STOREFRONT_URL}/kr/mypage/membership`
@@ -105,7 +108,7 @@ export class MembershipEventConsumer {
         variables: {
           userName: payload.userName,
           planName: payload.planName,
-          expiresAt: payload.expiresAt,
+          expiresAt: formatDate(payload.expiresAt),
           noticeDaysBefore: payload.noticeDaysBefore,
           manageUrl: process.env.STOREFRONT_URL
             ? `${process.env.STOREFRONT_URL}/kr/mypage/membership`

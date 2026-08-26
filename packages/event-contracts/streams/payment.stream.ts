@@ -350,6 +350,22 @@ export interface MandateRejectedPayload {
   occurredAt: string;
 }
 
+/**
+ * CMS 계좌 심사 최종 거절 — 고객 통지용. `mandate.rejected` 와 별개다:
+ * 저쪽은 인보이스가 있어야 나가므로 구독 없이 계좌만 등록한 사람은 아무 통지도 못 받는다.
+ */
+export interface CmsMemberRejectedPayload {
+  cmsMemberId: string;
+  billingMethodId: string;
+  userId: string;
+  /** 수신자 — notification 은 사용자 조회 경로가 없어 발행자가 싣는다 */
+  email: string;
+  userName: string;
+  reasonCode: string | null;
+  reasonMessage: string | null;
+  occurredAt: string;
+}
+
 export interface InvoiceVoidedPayload {
   invoiceId: string;
   subscriberType: string;
@@ -780,6 +796,19 @@ const MandateRejectedSchema = z.object({
   occurredAt: z.string().min(1),
 });
 
+const CmsMemberRejectedSchema = z.object({
+  cmsMemberId: z.string().min(1),
+  billingMethodId: z.string().min(1),
+  userId: z.string().min(1),
+  // 이 이벤트의 존재 이유가 "이 주소로 메일을 보내라" 이므로 형식까지 검증한다.
+  // 발행자(poller)가 빈 값을 이미 거르지만, 형식이 깨진 값은 여기서 막는다.
+  email: z.string().email(),
+  userName: z.string().min(1),
+  reasonCode: z.string().nullable(),
+  reasonMessage: z.string().nullable(),
+  occurredAt: z.string().min(1),
+});
+
 const InvoiceVoidedSchema = z.object({
   invoiceId: z.string().min(1),
   subscriberType: z.string().min(1),
@@ -927,6 +956,10 @@ export const PAYMENT_STREAM = stream({
     ),
     'mandate.rejected': event<'mandate.rejected', MandateRejectedPayload>('mandate.rejected', MandateRejectedSchema),
     'invoice.voided': event<'invoice.voided', InvoiceVoidedPayload>('invoice.voided', InvoiceVoidedSchema),
+    'cms.member.rejected': event<'cms.member.rejected', CmsMemberRejectedPayload>(
+      'cms.member.rejected',
+      CmsMemberRejectedSchema,
+    ),
 
     // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
     'payment.intent.created': event<'payment.intent.created', PaymentIntentEventPayload>(

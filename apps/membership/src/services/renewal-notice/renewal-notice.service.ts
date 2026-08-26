@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
+import { UserContactClient } from '@app/shared';
 import { addDays, format, parseISO } from 'date-fns';
 import { BillingReader, RENEWAL_NOTICE_EVENT_TYPE, RenewalNoticeTarget } from '../billing/billing.reader';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
-import { UserContactClient } from './user-contact.client';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
 /**

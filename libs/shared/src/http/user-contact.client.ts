@@ -15,8 +15,12 @@ const CHUNK_SIZE = 500;
 /**
  * user-service 의 서버 간(internal) 연락처 조회 클라이언트.
  *
- * membership 은 userId 만 들고 있고 이메일을 갖지 않는다(SoT 는 user-service). 계약에 이메일을
+ * 서비스들은 userId 만 들고 있고 이메일을 갖지 않는다(SoT 는 user-service). 계약에 이메일을
  * 복제해 두면 이메일 변경이 전파되지 않아 옛 주소로 발송되므로, 발송 시점에 조회한다.
+ *
+ * 쓰는 쪽: membership(갱신·만료 사전 고지), wallet(CMS 계좌 심사 거절 통지).
+ * 주입하려면 그 앱 모듈에 HttpModule 과 이 클래스를 provider 로 넣고,
+ * USER_SERVICE_URL / USER_SERVICE_INTERNAL_KEY env 를 붙여야 한다.
  */
 @Injectable()
 export class UserContactClient {

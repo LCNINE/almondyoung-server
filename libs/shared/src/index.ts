@@ -13,6 +13,7 @@ export * from './streams';
 
 // HTTP server tuning
 export * from './http/keep-alive';
+export * from './http/user-contact.client';
 
 // Filters
 export * from './filters/application.exception';

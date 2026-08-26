@@ -44,6 +44,9 @@ import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
  * - TaxInvoiceIssued: 세금계산서 발행
  * - TaxInvoiceFailed: 세금계산서 발행 실패
  * - TaxInvoiceCancelled: 세금계산서 취소
+ *
+ * CMS(자동이체) 이벤트:
+ * - cms.member.rejected: 계좌 등록 심사 거절
  */
 @Controller()
 @UseInterceptors(EventTypeGuard)
@@ -764,5 +767,99 @@ export class WalletEventConsumer {
       this.logger.error(`[Event] Failed to process BANK_TRANSFER_ISSUED notification: ${error.message}`, error.stack);
       throw error;
     }
+  }
+
+  /**
+   * CMS 자동이체 계좌 등록 심사 거절 안내.
+   *
+   * 효성이 보내는 문자는 "신청 접수" 확인일 뿐 심사 결과가 아니다. 이 메일이 없으면 고객은
+   * 마이페이지를 직접 열어보기 전까지 거절 사실을 모르고, 정기결제가 조용히 멈춘다.
+   */
+  @On(PAYMENT_STREAM, 'cms.member.rejected')
+  async onCmsMemberRejected(
+    @EventEnvelope() envelope: EnvelopeOf<typeof PAYMENT_STREAM, 'cms.member.rejected'>,
+    @EventPayload() payload: EventPayloadOf<typeof PAYMENT_STREAM, 'cms.member.rejected'>,
+  ) {
+    this.logger.log(
+      `[Event] Received CmsMemberRejected: ${payload.cmsMemberId} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      const eventMapping = await this.eventMappingService.getEventMapping('CMS_MEMBER_REJECTED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for CMS_MEMBER_REJECTED not found or inactive.`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        // 키 이름은 CMS_MEMBER_REJECTED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
+        variables: {
+          name: payload.userName,
+          ...this.cmsRejectCopy(payload.reasonCode),
+          registerUrl: this.cmsRegisterUrl(),
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched CMS_MEMBER_REJECTED notification for ${payload.userId}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process CMS_MEMBER_REJECTED notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 거절 사유 → 본문에 끼울 연결형 문구 + 그 사유에 맞는 조치 안내.
+   *
+   * 효성 원문("생년월일/사업자번호 불일치")은 종결형 명사구라 문장에 그대로 못 넣는다. 또
+   * 코드마다 고쳐야 할 것이 다르다 — 계좌번호 오류(Q101)에 "생년월일을 확인하세요"라고 보내면
+   * 고객이 못 고치고 CS 로 되돌아온다. 아래 5개는 라이브에서 실제로 관측된 전체 집합이다
+   * (2026-08 기준 Q201 33 / Q101 11 / Q108 2 / Q121 2 / Q122 1).
+   */
+  private cmsRejectCopy(reasonCode: string | null): { reason: string; action: string } {
+    switch (reasonCode) {
+      case 'Q201':
+        return {
+          reason: '입력하신 생년월일(사업자번호)과 은행에 등록된 예금주 정보가 일치하지 않아',
+          action: '예금주명과 생년월일(사업자번호)을 은행에 등록된 정보와 동일하게 입력하신 후',
+        };
+      case 'Q101':
+        return {
+          reason: '입력하신 계좌번호를 확인할 수 없어',
+          action: '계좌번호를 다시 확인하신 후',
+        };
+      case 'Q122':
+        return {
+          reason: '입력하신 은행 또는 계좌번호를 확인할 수 없어',
+          action: '은행과 계좌번호를 다시 확인하신 후',
+        };
+      case 'Q108':
+        return {
+          reason: '해당 계좌가 출금이 불가능한 상태로 확인되어',
+          action: '출금이 가능한 다른 계좌로',
+        };
+      case 'Q121':
+        return {
+          reason: '해당 계좌가 자동이체 출금이 가능한 계좌로 등록되어 있지 않아',
+          action: '거래하시는 은행에 자동이체 가능 여부를 확인하시거나 다른 계좌로',
+        };
+      default:
+        return {
+          reason: '은행 확인 절차를 통과하지 못해',
+          action: '입력하신 계좌 정보를 다시 확인하신 후',
+        };
+    }
+  }
+
+  /** 계좌 등록 진입점. 여기서 wallet-web /billing-change 로 넘어간다. */
+  private cmsRegisterUrl(): string {
+    const base = process.env.STOREFRONT_URL ?? 'https://almondyoung.com';
+    return `${base}/kr/mypage/membership/payment-method`;
   }
 }
