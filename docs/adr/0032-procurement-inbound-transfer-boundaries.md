@@ -67,6 +67,10 @@
 
 - `procurement/` 는 `warehouse-transfer/` 를 **import 하지 않는다.** 지금 0곳이고, 이 ADR 이 그 0 을 규약으로 승격한다.
 
+- **공급처(`suppliers`)는 조달 안이 아니라 형제로 둔다.** 착수 시점 실측이 "공급처는 발주 전용" 이라는 전제를 반박했다 — 소비자 셋 중 **둘이 조달 밖**이다: `inbound/services/inbound.service.ts:435` 와 `inbound/dto/simple-inbound.dto.ts:296` 이 입고 계획 응답에 연계 발주의 공급처를 싣고, `catalog/operations/export/product-export.module.ts:5` 는 `SuppliersModule` 자체를 import 한다. `procurement/` 아래로 내리면 `inbound → procurement` · `catalog → procurement` 의존이 생겨 이 결정과 정면으로 어긋난다. 공급처는 조달의 부품이 아니라 `sku-catalog` · `warehouse` 와 같은 층의 **마스터데이터**다.
+
+- **같은 이유로 순수 헬퍼 둘도 중립 지대에 둔다.** `earliest-expected-date.ts`(입고가 `earliestExpectedDate` 를 쓴다)와 `calendar-date.validator.ts`(입고 DTO 가 쓴다)는 `inventory/shared/` 에 산다. 양쪽 BC 가 쓰는 것을 한쪽 안에 두면 그 순간 역방향 의존이 생긴다 — **경계는 "누가 만들었나" 가 아니라 "누가 쓰나" 로 긋는다.**
+
 - 🔴 **잠금 순서 불변식 `PO 행 → 라인 행` 은 분리 후에도 살아야 한다.** 취득 지점 3곳에 테스트가 없고 주석만이 방어선이다(`lockPurchaseOrderForLineExecution` docstring). 항목 5 의 3분할이 이 불변식을 세 클래스에 걸치게 하므로 **새 파일들에 규약을 명시적으로 옮길 것.** 어기면 ABBA 교착이 `40P01` → 500 으로 나간다.
 
 ## Why this shape
