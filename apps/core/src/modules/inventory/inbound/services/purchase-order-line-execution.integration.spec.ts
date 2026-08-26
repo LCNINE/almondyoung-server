@@ -441,6 +441,48 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
+  it('발주서 생성의 도착예정일이 모든 라인에 심긴다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      // seedPrerequisites 의 공급사는 이 창고를 기본 창고로 갖는다 = 국내 발주(출발＝목적지).
+      const { warehouseId, supplierId, skuIds } = await seedPrerequisites(trx);
+
+      const created = await buildService(trx).createPurchaseOrder(
+        {
+          type: PurchaseOrderType.DOMESTIC,
+          supplierId,
+          destinationWarehouseId: warehouseId,
+          expectedArrival: '2026-11-03',
+          lines: skuIds.map((skuId) => ({ skuId, quantity: 10 })),
+        },
+        trx,
+      );
+
+      expect(created.lines).toHaveLength(3);
+      created.lines.forEach((line) => expect(line.expectedArrival).toBe('2026-11-03'));
+      // 헤더 값은 이제 라인에서 파생된다.
+      expect(created.expectedArrival?.toISOString()).toBe('2026-11-03T00:00:00.000Z');
+    });
+  });
+
+  it('헤더 도착예정일은 라인 중 가장 이른 날짜다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx);
+      const service = buildService(trx);
+
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10, expectedArrival: '2026-12-01' }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10, expectedArrival: '2026-09-15' }, ACTOR, trx);
+      const result = await service.orderLine(
+        fx.poId,
+        fx.skuIds[2],
+        { orderedQty: 10, expectedArrival: '2026-10-20' },
+        ACTOR,
+        trx,
+      );
+
+      expect(result.expectedArrival?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+    });
+  });
+
   it('전 라인이 종결된 발주만 received 로 간다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);

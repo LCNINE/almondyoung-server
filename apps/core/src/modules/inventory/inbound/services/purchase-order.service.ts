@@ -22,6 +22,7 @@ import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { InboundService } from './inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
+import { earliestExpectedDate } from './earliest-expected-date';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -50,7 +51,6 @@ export class PurchaseOrderService {
         .values({
           type: createDto.type,
           supplierId: createDto.supplierId,
-          expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
           status: 'created',
           sourceWarehouseId: sourceWarehouseId,
           destinationWarehouseId: destinationWarehouseId,
@@ -58,7 +58,13 @@ export class PurchaseOrderService {
         })
         .returning();
 
-      // 발주 라인 생성
+      // 발주 라인 생성.
+      //
+      // 생성 시점의 도착예정일은 헤더가 아니라 **모든 라인의 기본 ETA** 다. 라인을
+      // 실제로 발주할 때 다른 날짜를 주면 그 라인만 갱신된다(executeLineOrder 의
+      // `dto.expectedArrival ?? line.expectedArrival`). createDto.expectedArrival 은
+      // IsCalendarDateConstraint 를 통과한 'YYYY-MM-DD' 라 date 컬럼에 그대로 넣는다 —
+      // new Date() 왕복은 UTC 로 옮겨 달력 하루를 민다.
       const purchaseOrderLines = await trx
         .insert(wmsTables.purchaseOrderLines)
         .values(
@@ -67,6 +73,7 @@ export class PurchaseOrderService {
             skuId: line.skuId,
             quantity: line.quantity,
             unitPrice: line.unitPrice || null,
+            expectedArrival: createDto.expectedArrival ?? null,
           })),
         )
         .returning();
@@ -119,7 +126,6 @@ export class PurchaseOrderService {
         .values({
           type: types[0],
           supplierId: createDto.supplierId,
-          expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
           status: 'created',
           sourceWarehouseId,
           destinationWarehouseId,
@@ -127,12 +133,14 @@ export class PurchaseOrderService {
         })
         .returning();
 
+      // 도착예정일은 헤더가 아니라 라인이 갖는다(createPurchaseOrder 주석 참조).
       await trx.insert(wmsTables.purchaseOrderLines).values(
         cartItems.map((item) => ({
           poId: purchaseOrder.id,
           skuId: item.skuId,
           quantity: item.quantity,
           unitPrice: null,
+          expectedArrival: createDto.expectedArrival ?? null,
         })),
       );
 
@@ -546,7 +554,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: po.expectedArrival,
+        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
@@ -644,7 +652,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: po.expectedArrival,
+        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
