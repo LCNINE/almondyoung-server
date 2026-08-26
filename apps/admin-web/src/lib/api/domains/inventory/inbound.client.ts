@@ -11,8 +11,6 @@ import type {
   ReturnInboundDto,
   CancelInboundDto,
   UpdateInboundLineMemoDto,
-  CreateInboundPlanDto,
-  AddInboundPlanItemsDto,
   ReceiveFromPlanDto,
   ReceiveFromPlanResponseDto,
   VerifyBarcodeRequest,
@@ -116,16 +114,6 @@ export const inboundClient = {
   },
 
   plans: {
-    create: async (data: CreateInboundPlanDto) => {
-      const response = await client.post(`${BASE}/plans`, data);
-      return response.data;
-    },
-
-    addItems: async (data: AddInboundPlanItemsDto) => {
-      const response = await client.post(`${BASE}/plans/items`, data);
-      return response.data;
-    },
-
     listItems: async (
       query?: ListPlanItemsQueryDto
     ): Promise<InboundPlanItemsResponse> => {

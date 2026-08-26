@@ -31,6 +31,7 @@ import type {
 } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 import { Plus, Trash2 } from 'lucide-react';
+import { partitionLinesForEdit } from '../../line-execution-model';
 
 type Props = {
   open: boolean;
@@ -58,12 +59,15 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
   useEffect(() => {
     if (!open) return;
     if (isEditLines && editLinesFor) {
+      const editable = partitionLinesForEdit(editLinesFor.lines).editable;
       setLines(
-        editLinesFor.lines.map((l) => ({
-          skuId: l.skuId,
-          quantity: l.quantity,
-          unitPrice: l.unitPrice ?? undefined,
-        }))
+        editable.length > 0
+          ? editable.map((l) => ({
+              skuId: l.skuId,
+              quantity: l.quantity,
+              unitPrice: l.unitPrice ?? undefined,
+            }))
+          : [{ ...EMPTY_LINE }]
       );
     } else {
       setType('domestic');
@@ -119,6 +123,9 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
   };
 
   const isPending = createMutation.isPending || updateLinesMutation.isPending;
+
+  const closedLines =
+    isEditLines && editLinesFor ? partitionLinesForEdit(editLinesFor.lines).closed : [];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -196,6 +203,20 @@ export function PurchaseOrderFormDialog({ open, onOpenChange, editLinesFor }: Pr
                 라인 추가
               </Button>
             </div>
+            {closedLines.length > 0 && (
+              <div className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">
+                <p className="mb-1">
+                  이미 처리된 라인 {closedLines.length}건은 수정할 수 없어 목록에서 제외했습니다.
+                </p>
+                <ul className="list-inside list-disc text-xs">
+                  {closedLines.map((line) => (
+                    <li key={line.skuId}>
+                      {line.sku?.name ?? line.skuId} — {line.status === 'ordered' ? '발주됨' : '불가'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {lines.map((line, i) => (
               <div key={i} className="flex items-center gap-2">
                 <Input

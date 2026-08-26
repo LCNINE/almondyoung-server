@@ -6,6 +6,10 @@ import { DateCell } from '@/components/table/table-cells/common';
 import type { PurchaseOrderDto } from '@/lib/types/dto/inventory';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  formatLineProgress,
+  summarizeLines,
+} from '@/features/inventory/purchase-orders/line-execution-model';
 
 const columnHelper = createColumnHelper<PurchaseOrderDto>();
 
@@ -49,9 +53,9 @@ export const usePurchaseOrdersTableColumns = (actions: RowActions) => {
         ),
       }),
       columnHelper.accessor('lines', {
-        header: '라인 수',
+        header: '라인 진행',
         cell: ({ getValue }) => (
-          <span className="text-sm">{getValue()?.length ?? 0}</span>
+          <span className="text-sm">{formatLineProgress(summarizeLines(getValue() ?? []))}</span>
         ),
       }),
       columnHelper.accessor('expectedArrival', {

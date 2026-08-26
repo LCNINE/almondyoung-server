@@ -2,13 +2,15 @@
 
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
+import { normalizePurchaseOrderList } from './purchase-order-list-envelope';
 import type {
   PurchaseOrderDto,
   PurchaseOrderListResponseDto,
   PurchaseOrderListFilters,
   CreatePurchaseOrderRequest,
-  UpdatePurchaseOrderStatusRequest,
   UpdatePurchaseOrderLinesRequest,
+  OrderPurchaseOrderLineRequest,
+  MarkLineUnavailableRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -33,7 +35,9 @@ export const purchaseOrdersClient = {
     const response = await client.get(
       `${BASE}?${buildQueryString((filters ?? {}) as Record<string, unknown>)}`
     );
-    return response.data;
+    // core 는 bare array 를 준다 — 감싸지 않으면 목록이 항상 비어 보인다.
+    // 근거와 페이지네이션 한계는 normalizePurchaseOrderList 주석 참고.
+    return normalizePurchaseOrderList(response.data);
   },
 
   get: async (id: string): Promise<PurchaseOrderDto> => {
@@ -53,19 +57,35 @@ export const purchaseOrdersClient = {
     return response.data;
   },
 
-  updateStatus: async (
-    id: string,
-    data: UpdatePurchaseOrderStatusRequest
-  ): Promise<PurchaseOrderDto> => {
-    const response = await client.put(`${BASE}/${encodeURIComponent(id)}/status`, data);
-    return response.data;
-  },
-
   updateLines: async (
     id: string,
     data: UpdatePurchaseOrderLinesRequest
   ): Promise<PurchaseOrderDto> => {
     const response = await client.put(`${BASE}/${encodeURIComponent(id)}/lines`, data);
+    return response.data;
+  },
+
+  orderLine: async (
+    poId: string,
+    skuId: string,
+    data: OrderPurchaseOrderLineRequest
+  ): Promise<PurchaseOrderDto> => {
+    const response = await client.post(
+      `${BASE}/${encodeURIComponent(poId)}/lines/${encodeURIComponent(skuId)}/order`,
+      data
+    );
+    return response.data;
+  },
+
+  markLineUnavailable: async (
+    poId: string,
+    skuId: string,
+    data: MarkLineUnavailableRequest
+  ): Promise<PurchaseOrderDto> => {
+    const response = await client.post(
+      `${BASE}/${encodeURIComponent(poId)}/lines/${encodeURIComponent(skuId)}/unavailable`,
+      data
+    );
     return response.data;
   },
 
