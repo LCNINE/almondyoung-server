@@ -4,6 +4,7 @@
 import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
+import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
 import { isCustomError } from '../../api/customError';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
@@ -54,6 +55,8 @@ import type {
   CreatePurchaseOrderRequest,
   UpdatePurchaseOrderStatusRequest,
   UpdatePurchaseOrderLinesRequest,
+  OrderPurchaseOrderLineRequest,
+  MarkLineUnavailableRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -644,6 +647,46 @@ export const useUpdatePurchaseOrderLines = () => {
     onSuccess: (_result, { id }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    },
+  });
+};
+
+export const useOrderPurchaseOrderLine = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      poId,
+      skuId,
+      data,
+    }: {
+      poId: string;
+      skuId: string;
+      data: OrderPurchaseOrderLineRequest;
+    }) => purchaseOrdersClient.orderLine(poId, skuId, data),
+    onSuccess: (_res, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+};
+
+export const useMarkPurchaseOrderLineUnavailable = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      poId,
+      skuId,
+      data,
+    }: {
+      poId: string;
+      skuId: string;
+      data: MarkLineUnavailableRequest;
+    }) => purchaseOrdersClient.markLineUnavailable(poId, skuId, data),
+    onSuccess: (_res, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
     },
   });
 };
