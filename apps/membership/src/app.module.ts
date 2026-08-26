@@ -65,7 +65,7 @@ import { SavingsReader } from './services/savings/savings.reader';
 import { MembershipEventPublisher } from './services/membership-event.publisher';
 import { ExpiryNoticeService } from './services/renewal-notice/expiry-notice.service';
 import { RenewalNoticeService } from './services/renewal-notice/renewal-notice.service';
-import { UserContactClient } from './services/renewal-notice/user-contact.client';
+import { UserContactClient } from '@app/shared';
 import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.service';
 import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';

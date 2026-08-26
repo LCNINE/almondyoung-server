@@ -42,6 +42,10 @@ export const walletEnvSchema = z.object({
   HYOSUNG_CMS_SW_KEY: z.string().min(1).optional(),
   HYOSUNG_CMS_CUST_KEY: z.string().min(1).optional(),
   HYOSUNG_CMS_CUST_ID: z.string().min(1).optional(),
+  // 계좌 심사 거절 통지가 수신자 이메일을 조회하는 user-service 내부 API.
+  // 없으면 통지만 스킵되고 심사 결과 반영은 그대로 진행된다.
+  USER_SERVICE_URL: z.string().url().optional(),
+  USER_SERVICE_INTERNAL_KEY: z.string().min(1).optional(),
   // Legacy deployment secret names. Prefer HYOSUNG_CMS_* for new environments.
   SW_KEY: z.string().min(1).optional(),
   CUST_KEY: z.string().min(1).optional(),

@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { AUTH_CONFIG, AuthenticationService, JwtAccessStrategy, JwtAuthGuard } from '@app/authorization';
 import { ConfigModule } from '@nestjs/config';
+import { HttpModule } from '@nestjs/axios';
+import { UserContactClient } from '@app/shared';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
@@ -392,6 +394,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
       policy: { validateOnConsume: true },
     }),
     EventTraceApiModule,
+    // CMS 심사 거절 통지가 user-service 에서 수신자 이메일을 조회한다.
+    HttpModule,
   ],
   controllers: [
     HealthController,
@@ -524,6 +528,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CmsRegistrationService,
     CmsBatchProvider,
     CmsSettlementPollerService,
+    UserContactClient,
 
     // Invoices (ADR-0027)
     InvoiceOutcomeService,

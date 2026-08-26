@@ -57,3 +57,25 @@ export const formatDueDate = (value: unknown): string => {
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
   return `${get('month')} ${get('day')}일(${get('weekday')}) ${get('hour')}:${get('minute')}`;
 };
+
+/**
+ * 날짜만 필요한 안내(멤버십 갱신·만료 고지)용. `formatDueDate` 는 시:분까지 붙어서
+ * "9월 1일에 만료됩니다" 류 문장에 쓰면 어색하다.
+ *
+ * 렌더러는 `{{var}}` 단순 치환이라 템플릿 안에서 헬퍼를 못 쓴다
+ * (`{{formatDate x}}` 는 정규식 `[\w.]+` 에 걸리지 않아 리터럴로 남는다).
+ * 그래서 포맷은 반드시 이 자리에서 끝내고 문자열로 넘긴다.
+ */
+export const formatDate = (value: unknown): string => {
+  if (typeof value !== 'string') return '-';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return `${get('year')}년 ${get('month')} ${get('day')}일`;
+};
