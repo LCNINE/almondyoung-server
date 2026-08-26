@@ -113,8 +113,7 @@ export class ProductCategoriesService {
           await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
         }
 
-        // sortOrder 를 명시한 경우에만 형제 순서를 함께 보낸다.
-        // 생략했다면 위치에 뜻이 없으므로 소비자 기본값(맨 뒤)에 맡긴다.
+        // sortOrder 를 명시했을 때만 순서를 보낸다. 생략 = 위치에 뜻 없음(맨 뒤).
         const snapshot = this.buildCategorySnapshot(newCategory);
         await this.publishCategoryEvent(
           newCategory.id,
@@ -157,8 +156,7 @@ export class ProductCategoriesService {
       // 현재 값을 payload 에 실어 보내는데, undefined 만 보고 판단하면 저장 한 번에
       // 자손 전체(수십~수백 건)가 큐로 쏟아진다.
       let membersOnlyChanged = false;
-      // 어드민 폼은 정렬값을 건드리지 않아도 현재 값을 그대로 실어 보낸다.
-      // undefined 만 보고 판단하면 이름 한 글자 수정에도 형제 전체가 재정렬된다.
+      // 어드민 폼은 정렬값을 안 건드려도 현재 값을 실어 보낸다. 값 비교가 필요한 이유.
       let sortOrderChanged = false;
       if (categoryData.sortOrder !== undefined) {
         const [current] = await client
@@ -800,8 +798,7 @@ export class ProductCategoriesService {
         }
       }
 
-      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 enqueue.
-      //    형제 순서는 첫 이벤트에만 싣는다 (배열 하나로 형제 전체가 정렬되므로).
+      // 4. CategoryChanged enqueue. 형제 순서는 첫 이벤트에만 (배열 하나로 전체가 정렬된다).
       const siblingOrder = await this.loadSiblingOrder(parentId || null, txn);
       for (const [index, category] of updatedCategories.entries()) {
         const snapshot = this.buildCategorySnapshot(category);
@@ -932,10 +929,7 @@ export class ProductCategoriesService {
     return ancestors;
   }
 
-  /**
-   * 형제 전체의 최종 순서를 PIM 카테고리 ID 배열로 만든다.
-   * sortOrder 는 중복될 수 있어 name 으로 갈라 결정적인 순서를 만든다.
-   */
+  /** 형제 순서를 ID 배열로. sortOrder 는 중복되므로 name 으로 갈라 결정적으로 만든다. */
   private async loadSiblingOrder(parentId: string | null, tx: DbTransaction): Promise<string[]> {
     const siblings = await tx
       .select({ id: pimSchema.productCategories.id })

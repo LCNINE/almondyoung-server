@@ -721,8 +721,7 @@ export class MedusaClient {
         return existing.id;
       }
 
-      // 부모가 실제로 바뀔 때만 보낸다. 같은 값이어도 키가 있으면 Medusa 는 부모 이동으로
-      // 보고 카테고리를 형제 맨 뒤로 재배치한다 (루트에 null 재전송 → 형제 21건 동반 이동).
+      // 같은 값이어도 키가 실려 있으면 Medusa 가 부모 이동으로 보고 형제 맨 뒤로 보낸다.
       const currentParentId = verified.parent_category_id ?? null;
       const desiredParentId = 'parent_category_id' in parentUpdate ? parentUpdate.parent_category_id ?? null : undefined;
       const parentPatch =
@@ -765,8 +764,7 @@ export class MedusaClient {
       is_internal: false,
       is_active: isActive,
       parent_category_id: parentMedusaId,
-      // 신규도 rank 를 지정하지 않는다. Medusa 가 맨 뒤에 붙이고, 순서에 뜻이 있으면
-      // 뒤따르는 syncSiblingRanks 가 제자리로 옮긴다.
+      // rank 미지정 = 맨 뒤. 순서에 뜻이 있으면 syncSiblingRanks 가 옮긴다.
       ...(categorySnapshot.description !== undefined && {
         description: categorySnapshot.description ?? '',
       }),
@@ -783,20 +781,22 @@ export class MedusaClient {
   }
 
   /**
-   * 형제 전체의 rank 를 PIM 순서대로 0..n-1 로 다시 매긴다.
+   * 형제 전체를 PIM 순서대로 rank 0..n-1 로 다시 세운다.
    *
-   * Medusa 는 rank 를 받을 때마다 형제를 시프트하므로 앞에서부터 순차로 밀어야 한다.
-   * 병렬로 보내면 시프트가 서로를 덮어써 순서가 어긋난다.
-   *
-   * rank 는 배열 index 가 아니라 실제로 적용한 횟수로 센다. Medusa 에 아직 없는
-   * 카테고리 자리에 구멍을 남기면 그 자리를 남의 카테고리가 차지한다.
-   * PIM 배열에 없는 형제(비활성 legacy 등)는 자연히 뒤로 밀린다.
+   * rank 는 자리 번호가 아니라 삽입 위치다. 앞에서부터 순차로 밀어야 하고
+   * (병렬이면 시프트가 서로를 덮는다), 못 옮긴 형제의 번호는 비우지 않고 당겨 쓴다
+   * — 비우면 그 자리를 남의 카테고리가 차지한다.
    */
   async syncSiblingRanks(orderedPimCategoryIds: string[]): Promise<void> {
+    // 캐시 미스마다 목록을 통째로 훑으므로(형제 수 × 페이지 수) 한 번만 채우고 cacheOnly 로 본다.
+    if (orderedPimCategoryIds.some((pimCategoryId) => !this.categoryCache.has(pimCategoryId))) {
+      await this.primeCategoryCache();
+    }
+
     let rank = 0;
 
     for (const pimCategoryId of orderedPimCategoryIds) {
-      const found = await this.findCategoryByPimRef(pimCategoryId);
+      const found = await this.findCategoryByPimRef(pimCategoryId, { cacheOnly: true });
       if (!found?.id) {
         this.logger.warn(`Category ${pimCategoryId} not in Medusa — 순서 적용 건너뜀`);
         continue;

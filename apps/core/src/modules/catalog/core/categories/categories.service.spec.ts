@@ -554,28 +554,28 @@ describe('ProductCategoriesService CategoryChanged 계약 적합성', () => {
   });
 });
 
-/**
- * 순서는 형제 전체를 아는 쪽만 정할 수 있다. 소비자(Medusa)의 rank 는 형제 목록 안의
- * 삽입 위치라, 한 건씩 보내면 그 건이 남의 자리를 뺏고 뒷사람을 민다. 그래서 PIM 이
- * 형제 순서를 배열째 넘기되, **순서가 실제로 바뀐 저장에만** 싣는다 — 어드민 폼은
- * 정렬값을 건드리지 않아도 현재 값을 그대로 실어 보내기 때문이다.
- */
+/** 형제 순서는 배열째 넘기되, 순서가 실제로 바뀐 저장에만 싣는다. */
 describe('ProductCategoriesService siblingOrder', () => {
+  // 계약이 uuid 로 못박고 있어 테스트 데이터도 UUID.
+  const CAT_1 = '11111111-1111-4111-8111-111111111111';
+  const CAT_2 = '22222222-2222-4222-8222-222222222222';
+  const CAT_3 = '33333333-3333-4333-8333-333333333333';
+
   function makeService(currentSortOrder = 0) {
-    const siblingRows = [{ id: 'cat-1' }, { id: 'cat-2' }, { id: 'cat-3' }];
+    const siblingRows = [{ id: CAT_1 }, { id: CAT_2 }, { id: CAT_3 }];
     const tx = {
       update: jest.fn(() => ({
         set: () => ({
           where: () => ({
             returning: () => [
               {
-                id: 'cat-1',
+                id: CAT_1,
                 name: 'Lip',
                 slug: 'lip',
                 description: null,
                 parentId: null,
                 level: 0,
-                path: 'cat-1',
+                path: CAT_1,
                 sortOrder: 5,
                 isActive: true,
                 visibility: true,
@@ -619,15 +619,22 @@ describe('ProductCategoriesService siblingOrder', () => {
   it('정렬값이 실제로 바뀐 저장에만 형제 순서를 싣는다', async () => {
     const { service, productPublisher } = makeService(0);
 
-    await service.updateCategory('cat-1', { sortOrder: 5 } as any);
+    await service.updateCategory(CAT_1, { sortOrder: 5 } as any);
 
-    expect(categoryPayloads(productPublisher as any)[0].siblingOrder).toEqual(['cat-1', 'cat-2', 'cat-3']);
+    const payload = categoryPayloads(productPublisher as any)[0];
+    expect(payload.siblingOrder).toEqual([CAT_1, CAT_2, CAT_3]);
+    // 적재 시점 zod 가 미선언 키를 조용히 떼어내므로, 계약을 여기서 태워 둔다.
+    expect(PRODUCT_STREAM.events.CategoryChanged.schema!.parse(payload).siblingOrder).toEqual([
+      CAT_1,
+      CAT_2,
+      CAT_3,
+    ]);
   });
 
   it('정렬값을 같은 값으로 다시 보내면 형제 순서를 싣지 않는다', async () => {
     const { service, productPublisher } = makeService(5);
 
-    await service.updateCategory('cat-1', { sortOrder: 5 } as any);
+    await service.updateCategory(CAT_1, { sortOrder: 5 } as any);
 
     expect(categoryPayloads(productPublisher as any)[0].siblingOrder).toBeUndefined();
   });
@@ -635,7 +642,7 @@ describe('ProductCategoriesService siblingOrder', () => {
   it('이름만 고치면 형제 순서를 싣지 않는다', async () => {
     const { service, productPublisher } = makeService(0);
 
-    await service.updateCategory('cat-1', { name: 'Updated Lip' } as any);
+    await service.updateCategory(CAT_1, { name: 'Updated Lip' } as any);
 
     expect(categoryPayloads(productPublisher as any)[0].siblingOrder).toBeUndefined();
   });

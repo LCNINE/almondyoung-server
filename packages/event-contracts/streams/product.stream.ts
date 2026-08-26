@@ -202,10 +202,7 @@ export interface CategoryChangedPayload {
   ancestors?: CategorySnapshot[];
   /**
    * 형제 전체의 최종 순서(PIM 카테고리 ID 배열). 순서가 실제로 바뀐 변경에만 실린다.
-   *
-   * 소비자의 rank 는 절대값이 아니라 형제 목록 안의 삽입 위치라, 한 건만 보내면 그
-   * 카테고리가 남의 자리를 뺏고 나머지를 밀어낸다. 순서는 형제 전체를 아는 PIM 이
-   * 배열째 넘긴다.
+   * 소비자의 rank 는 삽입 위치라 한 건만 보내면 나머지가 밀린다 — 배열째 넘겨야 한다.
    */
   siblingOrder?: string[];
 }

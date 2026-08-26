@@ -1011,8 +1011,7 @@ describe('MedusaClient.refreshCustomerCartPrices', () => {
 });
 
 describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
-  // currentParent = Medusa 에 저장돼 있는 현재 부모. 부모 갱신은 이 값과 다를 때만
-  // payload 에 실린다 (같은 값을 다시 보내면 Medusa 가 형제 맨 뒤로 재배치한다).
+  // currentParent = Medusa 에 저장된 현재 부모. 이 값과 다를 때만 payload 에 실린다.
   function makeCategoryClient(parentLookup: { id: string } | null, currentParent: string | null = 'pcat_old_parent') {
     const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } });
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
@@ -1222,10 +1221,7 @@ describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건
   });
 })
 
-/**
- * rank·parent 는 형제 순서를 흔든다. 단건 갱신은 둘 다 건드리지 않아야 한다 —
- * 이름만 고쳐도 순서가 무너지던 사고의 재발 방지.
- */
+/** rank·parent 는 형제 순서를 흔든다. 단건 갱신은 둘 다 건드리지 않아야 한다. */
 describe('MedusaClient 카테고리 순서', () => {
   function makeClient() {
     const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_x' } });
@@ -1234,7 +1230,9 @@ describe('MedusaClient 카테고리 순서', () => {
       sdk: { value: { admin: { productCategory: { update } } } },
       logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
       cacheOnlyMode: { value: false, writable: true },
+      categoryCache: { value: new Map(), writable: true },
     });
+    (client as any).primeCategoryCache = jest.fn().mockResolvedValue(0);
     const existing = { id: 'pcat_x', handle: 'cafe24-cat-499', metadata: {} };
     (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
     (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
@@ -1320,7 +1318,36 @@ describe('MedusaClient 카테고리 순서', () => {
     ]);
   });
 
-  // 구멍을 남기면 그 자리를 남의 카테고리가 차지한다.
+  it('형제 목록은 한 번만 훑는다 (형제마다 LIST 스캔 금지)', async () => {
+    const { client } = makeClient();
+    (client as any).findCategoryByPimRef = jest.fn(async (pimId: string) => ({ id: `medusa-${pimId}` }));
+
+    await client.syncSiblingRanks(['pim-a', 'pim-b', 'pim-c']);
+
+    expect((client as any).primeCategoryCache).toHaveBeenCalledTimes(1);
+    for (const call of (client as any).findCategoryByPimRef.mock.calls) {
+      expect(call[1]).toEqual({ cacheOnly: true });
+    }
+  });
+
+  // 슬롯을 비우면 그 자리를 남의 카테고리가 차지한다.
+  it('update 가 실패한 형제는 rank 슬롯을 소비하지 않는다', async () => {
+    const { client, update } = makeClient();
+    (client as any).findCategoryByPimRef = jest.fn(async (pimId: string) => ({ id: `medusa-${pimId}` }));
+    update.mockImplementation(async (id: string) => {
+      if (id === 'medusa-pim-b') throw new Error('boom');
+      return { product_category: { id } };
+    });
+
+    await client.syncSiblingRanks(['pim-a', 'pim-b', 'pim-c']);
+
+    expect(update.mock.calls).toEqual([
+      ['medusa-pim-a', { rank: 0 }],
+      ['medusa-pim-b', { rank: 1 }],
+      ['medusa-pim-c', { rank: 1 }],
+    ]);
+  });
+
   it('Medusa 에 아직 없는 형제 자리는 비우지 않고 뒤를 당긴다', async () => {
     const { client, update } = makeClient();
     (client as any).findCategoryByPimRef = jest.fn(async (pimId: string) =>
