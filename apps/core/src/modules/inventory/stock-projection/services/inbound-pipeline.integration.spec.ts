@@ -123,7 +123,6 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         sourceWarehouseId: input.warehouseId,
         destinationWarehouseId: finalDestination.id,
         requiresTransfer: true,
-        expectedArrival: input.expectedDate,
       })
       .returning({ id: wmsTables.purchaseOrders.id });
     await trx
@@ -171,12 +170,11 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   }
 
   /**
-   * ①의 ETA 우선순위(아이템 vs 계획) 검증용 — 계획만 만들고 아이템은 비워둔다.
-   * 아이템은 각 테스트가 직접 심어 어떤 값이 이기는지를 스스로 통제한다.
+   * ①의 ETA 검증용 — 계획만 만들고 아이템은 비워둔다. 계획은 날짜를 갖지 않으므로
+   * 예정일은 각 테스트가 아이템에 직접 심는다(#724 항목 9).
    */
   async function seedNonSellableInboundPlan(
     trx: DbTx,
-    input: { expectedDate: string },
   ): Promise<{ planId: string; skuIds: string[]; sellableWarehouseId: string }> {
     const suffix = randomUUID().slice(0, 8);
     // seedWarehouseWithZone 은 기본이 판매 창고다 — 출발 창고만 비판매로 뒤집는다(중국 역할).
@@ -202,7 +200,6 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         sourceWarehouseId: source.warehouseId,
         destinationWarehouseId: dest.warehouseId,
         requiresTransfer: true,
-        expectedArrival: new Date(`${input.expectedDate}T00:00:00.000Z`),
       })
       .returning({ id: wmsTables.purchaseOrders.id });
 
@@ -215,7 +212,6 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         destinationWarehouseId: dest.warehouseId,
         linkedPurchaseOrderId: po.id,
         requiresTransfer: true,
-        expectedDate: new Date(`${input.expectedDate}T00:00:00.000Z`),
       })
       .returning({ id: wmsTables.inboundPlans.id });
 
@@ -324,7 +320,7 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   it('①의 ETA 는 계획 날짜가 아니라 아이템 예정일 중 최소다', async () => {
     await inRollback(async (trx) => {
       // 비판매 창고(중국)로 들어오는 계획 하나에, 예정일이 다른 아이템 둘.
-      const fx = await seedNonSellableInboundPlan(trx, { expectedDate: '2026-12-31' });
+      const fx = await seedNonSellableInboundPlan(trx);
       await trx.insert(wmsTables.inboundPlanItems).values([
         { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 5, receivedQty: 0, status: 'pending', expectedDate: '2026-09-20' },
         { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 3, receivedQty: 0, status: 'pending', expectedDate: '2026-09-17' },
@@ -340,7 +336,7 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   // 없다 — 아이템이 날짜를 모르면 파이프라인도 모르는 것이 맞다.
   it('아이템 예정일이 없으면 ETA 도 없다', async () => {
     await inRollback(async (trx) => {
-      const fx = await seedNonSellableInboundPlan(trx, { expectedDate: '2026-12-31' });
+      const fx = await seedNonSellableInboundPlan(trx);
       await trx.insert(wmsTables.inboundPlanItems).values([
         { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 4, receivedQty: 0, status: 'pending' },
       ]);

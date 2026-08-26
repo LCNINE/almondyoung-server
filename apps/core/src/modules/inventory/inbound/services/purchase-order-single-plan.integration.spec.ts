@@ -115,7 +115,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
         sourceWarehouseId: sourceWarehouse.id,
         destinationWarehouseId: destinationWarehouse.id,
         requiresTransfer: true,
-        expectedArrival: new Date(),
       })
       .returning();
     await trx

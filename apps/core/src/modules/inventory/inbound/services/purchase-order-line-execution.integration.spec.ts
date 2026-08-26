@@ -82,9 +82,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
   }
 
   interface SeedOptions {
-    /** 발주 헤더의 도착예정일. 라인에는 심지 않는다. */
-    headerExpectedArrival?: Date;
-    /** 라인마다 심을 도착예정일 (마이그레이션 백필이 만든 상태를 흉내낸다). */
+    /** 라인마다 심을 도착예정일. 예정일은 헤더가 아니라 라인이 갖는다(#724 항목 9). */
     lineExpectedArrival?: string;
   }
 
@@ -135,7 +133,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         sourceWarehouseId: wh.id,
         destinationWarehouseId: wh.id,
         requiresTransfer: false,
-        expectedArrival: options.headerExpectedArrival ?? null,
       })
       .returning();
 
@@ -239,7 +236,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
 
   async function readPlans(trx: DbTx, poId: string) {
     return trx
-      .select({ id: wmsTables.inboundPlans.id, expectedDate: wmsTables.inboundPlans.expectedDate })
+      .select({ id: wmsTables.inboundPlans.id })
       .from(wmsTables.inboundPlans)
       .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
   }

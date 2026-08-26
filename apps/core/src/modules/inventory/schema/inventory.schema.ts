@@ -1866,7 +1866,8 @@ export const purchaseOrders = pgTable('purchase_orders', {
   id: uuid('id').primaryKey().defaultRandom(),
   type: poTypeEnum('type').notNull(),
   supplierId: uuid('supplier_id').references(() => suppliers.id), // 공급사 참조 추가
-  expectedArrival: timestamp('expected_arrival', { mode: 'date' }),
+  // 도착예정일은 헤더가 아니라 라인이 갖는다(#724 항목 9). 라인마다 실제 발주 시점이
+  // 다르므로 ETA 도 라인마다 다르다. 응답의 expectedArrival 은 MIN(라인 ETA) 파생이다.
   status: poStatusEnum('status').notNull().default('created'),
 
   // 최종 목적지 창고 추적을 위한 새 필드들
@@ -2042,7 +2043,8 @@ export const inboundPlans = pgTable(
   'inbound_plans',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    expectedDate: timestamp('expected_date', { mode: 'date' }),
+    // 예정일은 계획이 아니라 아이템이 갖는다(#724 항목 9) — inbound_plan_items.expected_date.
+    // 계획을 쪼개는 것은 "해외 발주는 계획 하나" 불변식이 금지하므로 예정일을 내렸다.
 
     // 기존 warehouseId는 입고될 창고 (source)
     warehouseId: uuid('warehouse_id')
@@ -2067,8 +2069,8 @@ export const inboundPlans = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
-    index('idx_inbound_plans_wh_date').on(t.warehouseId, t.expectedDate),
-    index('idx_inbound_plans_destination').on(t.destinationWarehouseId, t.expectedDate),
+    // wh_date 인덱스는 사라졌다 — 창고 접두는 아래 warehouse_type_status 가 덮는다.
+    index('idx_inbound_plans_destination').on(t.destinationWarehouseId),
     // 이중 입고 계획을 위한 새 인덱스들
     index('idx_inbound_plans_warehouse_type_status').on(t.warehouseId, t.planType, t.status),
     index('idx_inbound_plans_parent').on(t.parentPlanId),
@@ -2097,6 +2099,8 @@ export const inboundPlanItems = pgTable(
   (t) => ({
     idxInboundPlanItemsPlan: index('idx_inbound_plan_items_plan').on(t.planId),
     idxInboundPlanItemsSku: index('idx_inbound_plan_items_sku').on(t.skuId),
+    // 기간 필터가 계획이 아니라 아이템 예정일을 본다(listInboundPlanItems).
+    idxInboundPlanItemsExpectedDate: index('idx_inbound_plan_items_expected_date').on(t.expectedDate),
   }),
 );
 
