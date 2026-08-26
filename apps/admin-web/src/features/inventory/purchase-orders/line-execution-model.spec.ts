@@ -112,6 +112,12 @@ describe('toCalendarDate / orderDialogDefaults', () => {
     expect(toCalendarDate(null)).toBe('');
   });
 
+  it('오프셋이 붙은 값도 앞 10자를 그대로 쓴다', () => {
+    // slice → '2026-08-30'. new Date(v).toISOString().slice(0,10) → '2026-08-29'.
+    // jest 가 UTC 로 고정돼 있어도 이 케이스는 두 구현을 가른다.
+    expect(toCalendarDate('2026-08-30T00:00:00+09:00')).toBe('2026-08-30');
+  });
+
   it('라인 값이 있으면 라인을 쓰고, 없으면 헤더 날짜로 떨어진다', () => {
     expect(
       orderDialogDefaults(po({ expectedArrival: '2026-09-01T00:00:00.000Z' }), line({ expectedArrival: '2026-08-30' }))
@@ -154,6 +160,16 @@ describe('buildOrderLinePayload', () => {
     // core 는 오프셋이 붙은 문자열을 IsCalendarDateConstraint 로 막는다. 화면도 같은 문을 세운다.
     expect(
       buildOrderLinePayload({ orderedQty: '3', unitPrice: '', expectedArrival: '2026-08-30T00:00:00+09:00' }).ok
+    ).toBe(false);
+  });
+
+  it('모양은 맞지만 실재하지 않는 날짜를 거부한다', () => {
+    // core isCalendarDate 와 같은 왕복 비교 — 모양만 보는 정규식은 이걸 못 잡는다.
+    expect(
+      buildOrderLinePayload({ orderedQty: '3', unitPrice: '', expectedArrival: '2026-02-31' }).ok
+    ).toBe(false);
+    expect(
+      buildOrderLinePayload({ orderedQty: '3', unitPrice: '', expectedArrival: '2026-13-45' }).ok
     ).toBe(false);
   });
 });

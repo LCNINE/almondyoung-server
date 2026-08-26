@@ -103,7 +103,22 @@ export type OrderLinePayloadResult =
   | { ok: true; payload: OrderLinePayload }
   | { ok: false; reason: string };
 
-const CALENDAR_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const CALENDAR_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 달력에 실제로 존재하는 'YYYY-MM-DD' 인지 본다. 모양만 보는 정규식은
+ * '2026-02-31' 을 통과시킨다 — core 의 isCalendarDate
+ * (libs/shared/src/validators/calendar-date.validator.ts) 가 그 이유를 적어놨고,
+ * 여기서 같은 왕복 비교를 쓴다.
+ *
+ * 이 `new Date` 는 값을 도출하지 않는다 — 'Z' 로 UTC 에 고정한 검증 전용이라
+ * 런타임 TZ 와 무관하다. 날짜 값을 만들 때는 여전히 slice 만 쓴다(toCalendarDate).
+ */
+function isCalendarDate(value: string): boolean {
+  if (!CALENDAR_DATE_SHAPE.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
 
 /**
  * 폼 문자열을 요청 본문으로 옮긴다. 검사 기준은 core 의 OrderPurchaseOrderLineDto 와
@@ -127,7 +142,7 @@ export function buildOrderLinePayload(values: OrderLineFormValues): OrderLinePay
   }
 
   if (values.expectedArrival.trim()) {
-    if (!CALENDAR_DATE.test(values.expectedArrival)) {
+    if (!isCalendarDate(values.expectedArrival)) {
       return { ok: false, reason: '도착예정일은 YYYY-MM-DD 형식이어야 합니다.' };
     }
     payload.expectedArrival = values.expectedArrival;
