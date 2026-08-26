@@ -56,8 +56,14 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
   /** 해외 발주 = 출발 창고(중국) ≠ 목적지 창고(부천). */
   async function seedForeignPo(trx: DbTx): Promise<Fixture> {
     const suffix = randomUUID().slice(0, 8);
-    const [source] = await trx.insert(wmsTables.warehouses).values({ name: `it-src-${suffix}` }).returning();
-    const [dest] = await trx.insert(wmsTables.warehouses).values({ name: `it-dst-${suffix}` }).returning();
+    const [source] = await trx
+      .insert(wmsTables.warehouses)
+      .values({ name: `it-src-${suffix}` })
+      .returning();
+    const [dest] = await trx
+      .insert(wmsTables.warehouses)
+      .values({ name: `it-dst-${suffix}` })
+      .returning();
     const [supplier] = await trx
       .insert(wmsTables.suppliers)
       .values({ name: `it-sup-${suffix}`, defaultWarehouseId: source.id })
@@ -140,9 +146,9 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
 
       await service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx);
 
-      await expect(
-        service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx),
-      ).rejects.toMatchObject({ name: 'ConflictError' });
+      await expect(service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx)).rejects.toMatchObject({
+        name: 'ConflictError',
+      });
 
       const plans = await trx
         .select({ id: wmsTables.inboundPlans.id })
@@ -156,7 +162,10 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
     await inRollbackTx(db, async (trx) => {
       const fx = await seedForeignPo(trx);
       const suffix = randomUUID().slice(0, 8);
-      const [holder] = await trx.insert(wmsTables.holders).values({ name: `it-h-${suffix}` }).returning();
+      const [holder] = await trx
+        .insert(wmsTables.holders)
+        .values({ name: `it-h-${suffix}` })
+        .returning();
       const [sku] = await trx
         .insert(wmsTables.skus)
         .values({ name: 'it-sku', code: `IT-${randomUUID().toUpperCase()}`, holderId: holder.id })

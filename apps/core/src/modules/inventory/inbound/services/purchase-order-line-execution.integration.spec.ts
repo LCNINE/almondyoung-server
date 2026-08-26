@@ -60,14 +60,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
    * inbound-plan-port-invariant 스펙과 같은 패턴).
    */
   function buildInboundService(trx: DbTx): InboundService {
-    return new InboundService(
-      boundDbService(trx),
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
+    return new InboundService(boundDbService(trx), {} as never, {} as never, {} as never, {} as never, {} as never);
   }
 
   function buildService(trx: DbTx): PurchaseOrderService {

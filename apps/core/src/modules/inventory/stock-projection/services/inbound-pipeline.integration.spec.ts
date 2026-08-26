@@ -322,8 +322,22 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
       // 비판매 창고(중국)로 들어오는 계획 하나에, 예정일이 다른 아이템 둘.
       const fx = await seedNonSellableInboundPlan(trx);
       await trx.insert(wmsTables.inboundPlanItems).values([
-        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 5, receivedQty: 0, status: 'pending', expectedDate: '2026-09-20' },
-        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 3, receivedQty: 0, status: 'pending', expectedDate: '2026-09-17' },
+        {
+          planId: fx.planId,
+          skuId: fx.skuIds[0],
+          expectedQty: 5,
+          receivedQty: 0,
+          status: 'pending',
+          expectedDate: '2026-09-20',
+        },
+        {
+          planId: fx.planId,
+          skuId: fx.skuIds[0],
+          expectedQty: 3,
+          receivedQty: 0,
+          status: 'pending',
+          expectedDate: '2026-09-17',
+        },
       ]);
 
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
@@ -337,9 +351,9 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
   it('아이템 예정일이 없으면 ETA 도 없다', async () => {
     await inRollback(async (trx) => {
       const fx = await seedNonSellableInboundPlan(trx);
-      await trx.insert(wmsTables.inboundPlanItems).values([
-        { planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 4, receivedQty: 0, status: 'pending' },
-      ]);
+      await trx
+        .insert(wmsTables.inboundPlanItems)
+        .values([{ planId: fx.planId, skuId: fx.skuIds[0], expectedQty: 4, receivedQty: 0, status: 'pending' }]);
 
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
       expect(rows[0].onOrderQty).toBe(4);
