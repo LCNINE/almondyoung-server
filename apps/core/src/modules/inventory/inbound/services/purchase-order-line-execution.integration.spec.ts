@@ -458,12 +458,14 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
 
       expect(created.lines).toHaveLength(3);
       created.lines.forEach((line) => expect(line.expectedArrival).toBe('2026-11-03'));
-      // 헤더 값은 이제 라인에서 파생된다.
-      expect(created.expectedArrival?.toISOString()).toBe('2026-11-03T00:00:00.000Z');
+      // 헤더 값은 **실발주된 라인**에서만 파생된다. 아직 한 라인도 실행 안 했으므로
+      // 라인이 계획상 날짜를 들고 있어도 헤더는 비어 있다 — 입고 계획이 아직 없는 것과
+      // 같은 상태를 말해야 한다(purchaseOrderExpectedArrival docstring).
+      expect(created.expectedArrival).toBeNull();
     });
   });
 
-  it('헤더 도착예정일은 라인 중 가장 이른 날짜다', async () => {
+  it('헤더 도착예정일은 실발주된 라인 중 가장 이른 날짜다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
@@ -479,6 +481,95 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       );
 
       expect(result.expectedArrival?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
+    });
+  });
+
+  /**
+   * dev 스모크(2026-08-26)에서 잡힌 실제 발주(`0e687ae7…`)를 그대로 고정한다.
+   *
+   * 발주 목록·상세는 「2026-09-15」를, 입고 대기는 「2026-10-01」을 말했다. 09-15 는
+   * **단종되어 구매 불가**로 종결된 라인이 들고 있던 날짜다 — 영영 안 오는 물건의
+   * 예정일이 발주 전체의 입고 예정일 행세를 했다. 입고 계획 쪽은 애초에 불가 라인을
+   * 아이템으로 안 만들어서 맞게 나왔다.
+   */
+  it('발주불가 라인의 예정일은 헤더 도착예정일에 들어가지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      // 세 라인 모두 생성 시 예정일 2026-09-15 를 물려받는다.
+      const fx = await seedPoWithThreeLines(trx, { lineExpectedArrival: '2026-09-15' });
+      const service = buildService(trx);
+
+      // 요청 10 → 실발주 6, 실제 도착은 10-01
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-10-01' }, ACTOR, trx);
+      // 단종 — 09-15 를 든 채 종결된다
+      await service.markLineUnavailable(fx.poId, fx.skuIds[1], { reason: '단종되어 구매 불가' }, ACTOR, trx);
+      const result = await service.orderLine(
+        fx.poId,
+        fx.skuIds[2],
+        { orderedQty: 30, expectedArrival: '2026-11-01' },
+        ACTOR,
+        trx,
+      );
+
+      // 불가 라인은 09-15 를 그대로 들고 있다 — 지운 게 아니라 헤더 산식에서 뺀 것이다.
+      expect(result.lines.find((line) => line.skuId === fx.skuIds[1])).toMatchObject({
+        status: 'unavailable',
+        expectedArrival: '2026-09-15',
+      });
+      expect(result.expectedArrival?.toISOString()).toBe('2026-10-01T00:00:00.000Z');
+    });
+  });
+
+  /**
+   * 위 불일치를 구조적으로 막는다. 헤더 도착예정일과 입고 계획 예정일은 **같은 발주에
+   * 대해 같은 날짜**여야 한다 — 운영자가 발주 목록과 입고 대기를 번갈아 보기 때문이다.
+   *
+   * 두 값을 각각 손으로 계산해 비교하지 않는다. 실제 두 화면이 부르는 서비스 메서드의
+   * 응답끼리 맞춘다. 한쪽 산식만 바꾸면 여기가 빨개진다.
+   */
+  it('헤더 도착예정일이 그 발주에서 파생된 입고 계획의 예정일과 같다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx, { lineExpectedArrival: '2026-09-15' });
+      const service = buildService(trx);
+
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-10-01' }, ACTOR, trx);
+      await service.markLineUnavailable(fx.poId, fx.skuIds[1], { reason: '단종되어 구매 불가' }, ACTOR, trx);
+      const header = await service.orderLine(
+        fx.poId,
+        fx.skuIds[2],
+        { orderedQty: 30, expectedArrival: '2026-11-01' },
+        ACTOR,
+        trx,
+      );
+
+      const pending = await buildInboundService(trx).getInboundPending(fx.warehouseId, trx);
+      const plan = pending.pendingPlans.find((p) => p.purchaseOrder?.id === fx.poId);
+
+      expect(plan).toBeDefined();
+      expect(header.expectedArrival?.toISOString()).toBe(plan?.expectedDate?.toISOString());
+      // 미입고 수량도 실발주분만 센다 — 불가 처리한 요청분은 빠진다.
+      expect(plan?.totalPendingQuantity).toBe(36);
+    });
+  });
+
+  /**
+   * 아직 실행 안 된 라인은 계획 아이템이 없다. 그 라인이 생성 시 물려받은 "계획상" 날짜를
+   * 헤더가 말하면, 위와 똑같이 두 화면이 갈린다 — 불가 라인만 빼는 것으로는 안 잠긴다.
+   */
+  it('아직 실행 안 된 라인의 예정일은 헤더 도착예정일에 들어가지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx, { lineExpectedArrival: '2026-09-01' });
+      const service = buildService(trx);
+
+      const result = await service.orderLine(
+        fx.poId,
+        fx.skuIds[0],
+        { orderedQty: 10, expectedArrival: '2026-10-01' },
+        ACTOR,
+        trx,
+      );
+
+      expect(result.lines.filter((line) => line.status === 'requested')).toHaveLength(2);
+      expect(result.expectedArrival?.toISOString()).toBe('2026-10-01T00:00:00.000Z');
     });
   });
 

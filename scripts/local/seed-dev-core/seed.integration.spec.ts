@@ -198,6 +198,25 @@ describeIfSeedDb('dev_core 시드', () => {
     expect(new Set(barcodes.map((b) => b.barcode)).size).toBe(20); // 바코드 유일성 (더블체크)
   });
 
+  /**
+   * 공급처가 없으면 **로컬에서 발주를 아예 만들 수 없다** — `CreatePurchaseOrderDto.supplierId`
+   * 가 `@IsUUID()` 필수라 발주 스모크 1번에서 바로 막힌다(2026-08-26 발견).
+   *
+   * `defaultWarehouseId` 는 중국 물류창고다. `getSupplierDefaultWarehouseId` 가 발주의
+   * 출발 창고를 여기서 파생하고, **비어 있으면 발주 생성이 400** 이다. 중국을 출발로 두면
+   * 목적지(부천)와 달라 `requiresTransfer=true` 인 해외 발주 경로가 열린다 — 라이브의
+   * 실제 모양이다.
+   */
+  it('공급처 1건이 중국 창고를 기본 창고로 들어간다', async () => {
+    const suppliers = await db.select().from(wmsTables.suppliers);
+    expect(suppliers).toHaveLength(1);
+
+    // 리터럴이다 — SEED_IDS 를 import 하면 상수 자체가 틀렸을 때도 통과한다(위 마스터 데이터 주석).
+    expect(suppliers[0].id).toBe('019d000e-0001-7000-a000-000000000001');
+    expect(suppliers[0].name).toBe('개발용 공급처');
+    expect(suppliers[0].defaultWarehouseId).toBe('019d0001-0002-7000-a000-000000000002');
+  });
+
   it('재고가 원장과 이벤트 양쪽에 정합하게 들어간다', async () => {
     const ledgers = await db
       .select({
@@ -383,6 +402,21 @@ describeIfSeedDb('dev_core 시드', () => {
     expect(poLineQtyByPoAndSku.get(`${domesticPo!.id}:${DEV_SKU_0001}`)).toBe(40);
     expect(poLineQtyByPoAndSku.get(`${domesticPo!.id}:${DEV_SKU_0002}`)).toBe(25);
     expect(poLineQtyByPoAndSku.get(`${foreignPo!.id}:${DEV_SKU_0003}`)).toBe(60);
+
+    // 라인 생명주기(#739/#742)를 시드도 지켜야 한다. 헤더 `confirmed` 는 **전 라인이 종결됐다**는
+    // 파생 결과이고(refreshHeaderStatus), 계획 아이템은 `ordered` 라인에서만 생긴다
+    // (executeLineOrder). 라인을 requested 로 두면 실제 코드로는 도달할 수 없는 상태가 되고,
+    // 그 순간 발주 헤더 도착예정일(실발주 라인 기준)과 입고 계획 예정일이 갈린다 —
+    // 발주 목록은 「—」, 입고 대기는 「2026-08-01」이 되는 식이다.
+    poLines.forEach((line) => {
+      expect(line.status).toBe('ordered');
+      expect(line.orderedQty).toBe(line.quantity);
+      expect(line.orderedAt).not.toBeNull();
+      expect(line.orderedBy).toBe('019d0008-0001-7000-a000-000000000001'); // SEED_ACTOR
+    });
+
+    // 발주에 공급처가 붙어 있어야 목록·상세의 공급처 열이 비지 않는다.
+    expect(orders.every((o) => o.supplierId === '019d000e-0001-7000-a000-000000000001')).toBe(true);
 
     const plans = await db.select().from(wmsTables.inboundPlans);
     expect(plans).toHaveLength(3);

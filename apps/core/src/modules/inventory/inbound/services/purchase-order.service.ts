@@ -22,7 +22,7 @@ import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { InboundService } from './inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
-import { earliestExpectedDate } from './earliest-expected-date';
+import { purchaseOrderExpectedArrival } from './earliest-expected-date';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -554,7 +554,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
+        expectedArrival: purchaseOrderExpectedArrival(lines),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
@@ -652,7 +652,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
+        expectedArrival: purchaseOrderExpectedArrival(lines),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,

@@ -14,18 +14,46 @@ const jwt = require('jsonwebtoken');
 const readline = require('readline');
 const { randomUUID } = require('crypto');
 
-const rl = readline.createInterface({
-  input: process.stdin,
-  output: process.stdout
-});
+// readline 은 **부를 때** 만든다. 모듈 로드 시점에 만들면 이 파일을 require 하는
+// 것만으로 stdin 이 열려 jest 가 종료하지 못한다.
+let rl = null;
 
 function question(query) {
+  if (!rl) {
+    rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
+  }
   return new Promise(resolve => rl.question(query, resolve));
+}
+
+function closeRl() {
+  if (rl) rl.close();
 }
 
 function isValidUUID(str) {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(str);
+}
+
+/**
+ * HS256 legacy 토큰의 페이로드.
+ *
+ * **`iss`/`aud` 를 넣지 않는다.** `libs/authorization` 의 JwtAccessStrategy.validate()
+ * 는 *iss 가 있을 때만* issuer/audience 를 검증하는데, 그 분기는 RS256 OIDC 토큰을
+ * 위한 것이다. 여기서 iss 를 실으면 HS256 토큰이 그 분기로 끌려 들어가 `OIDC_ISSUER_URL`
+ * 과 대조당하고, 로컬 core 의 그 값은 `https://user.almondyoung.com` 이라 **어떤 값을
+ * 넣어도 401 이다.** 예전엔 `iss: 'almondyoung-auth'` 가 박혀 있어서 이 스크립트가
+ * 발급한 토큰이 core 에 아예 못 들어갔다.
+ */
+function buildTokenPayload({ userId, email, roles }) {
+  return {
+    sub: userId,
+    userId: userId,
+    email: email,
+    roles: roles,
+  };
 }
 
 async function main() {
@@ -37,7 +65,7 @@ async function main() {
   const authSecret = await question('AUTH_SECRET (필수): ');
   if (!authSecret || authSecret.trim() === '') {
     console.error('❌ AUTH_SECRET은 필수입니다.');
-    rl.close();
+    closeRl();
     process.exit(1);
   }
   
@@ -83,18 +111,12 @@ async function main() {
       expiresIn = '876000h';
   }
   
-  rl.close();
+  closeRl();
   
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('🔨 토큰 생성 중...\n');
   
-  const payload = {
-    sub: userId,
-    userId: userId,
-    email: email,
-    roles: roles,
-    iss: 'almondyoung-auth',
-  };
+  const payload = buildTokenPayload({ userId, email, roles });
   
   const token = jwt.sign(payload, authSecret, { expiresIn });
   
@@ -135,9 +157,13 @@ async function main() {
   console.log('');
 }
 
-main().catch(err => {
-  console.error('❌ 에러 발생:', err.message);
-  rl.close();
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    console.error('❌ 에러 발생:', err.message);
+    closeRl();
+    process.exit(1);
+  });
+}
+
+module.exports = { buildTokenPayload };
 

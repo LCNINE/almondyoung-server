@@ -2,10 +2,30 @@ import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 import { InboundService } from '../../../apps/core/src/modules/inventory/inbound/services/inbound.service';
 import { SEED_IDS, SEED_SKUS } from './constants';
+import { SEED_ACTOR } from './shipments';
 
 /** 리셋마다 같은 날짜가 나오도록 고정한다 (결정론 규약). */
 /** 예정일은 헤더/계획이 아니라 라인·아이템이 갖는다(#724 항목 9). date 컬럼이라 'YYYY-MM-DD'. */
 const EXPECTED_DATE = '2026-08-01';
+
+/**
+ * 실행된 라인의 공통 필드. **헤더를 `confirmed` 로 심으려면 라인이 종결돼 있어야 한다** —
+ * 헤더 status 는 라인에서 파생되고(`refreshHeaderStatus`), 계획 아이템은 `ordered` 라인에서만
+ * 생긴다(`executeLineOrder`). 라인을 기본값 `requested` 로 두면 실제 코드로는 만들 수 없는
+ * 상태가 되고, 그 순간 발주 헤더 도착예정일(실발주 라인 기준)과 입고 계획 예정일이 갈린다.
+ *
+ * `orderedAt` 은 결정론 규약에 따라 고정 시각이다 — 리셋마다 값이 흔들리면 안 된다.
+ */
+const ORDERED_AT = new Date('2026-07-25T00:00:00.000Z');
+function executedLine(quantity: number) {
+  return {
+    quantity,
+    status: 'ordered' as const,
+    orderedQty: quantity,
+    orderedAt: ORDERED_AT,
+    orderedBy: SEED_ACTOR.id,
+  };
+}
 
 /**
  * 국내 PO 1건(부천 단일 plan) + 해외 PO 1건(중국 source → 부천 destination 2-plan).
@@ -25,7 +45,7 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
     .insert(wmsTables.purchaseOrders)
     .values({
       type: 'domestic',
-      supplierId: null,
+      supplierId: SEED_IDS.supplier,
       sourceWarehouseId: SEED_IDS.warehouseBucheon,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: false,
@@ -34,8 +54,20 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
     .returning();
 
   await tx.insert(wmsTables.purchaseOrderLines).values([
-    { poId: domesticPo.id, skuId: SEED_SKUS[0].id, quantity: 40, unitPrice: null, expectedArrival: EXPECTED_DATE },
-    { poId: domesticPo.id, skuId: SEED_SKUS[1].id, quantity: 25, unitPrice: null, expectedArrival: EXPECTED_DATE },
+    {
+      poId: domesticPo.id,
+      skuId: SEED_SKUS[0].id,
+      unitPrice: null,
+      expectedArrival: EXPECTED_DATE,
+      ...executedLine(40),
+    },
+    {
+      poId: domesticPo.id,
+      skuId: SEED_SKUS[1].id,
+      unitPrice: null,
+      expectedArrival: EXPECTED_DATE,
+      ...executedLine(25),
+    },
   ]);
 
   // 국내 plan: 입고 전혀 안 태움 — pending / receivedQty 0 그대로 유지.
@@ -74,7 +106,7 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
     .insert(wmsTables.purchaseOrders)
     .values({
       type: 'foreign',
-      supplierId: null,
+      supplierId: SEED_IDS.supplier,
       sourceWarehouseId: SEED_IDS.warehouseChina,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: true,
@@ -82,11 +114,15 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
     })
     .returning();
 
-  await tx
-    .insert(wmsTables.purchaseOrderLines)
-    .values([
-      { poId: foreignPo.id, skuId: SEED_SKUS[2].id, quantity: 60, unitPrice: null, expectedArrival: EXPECTED_DATE },
-    ]);
+  await tx.insert(wmsTables.purchaseOrderLines).values([
+    {
+      poId: foreignPo.id,
+      skuId: SEED_SKUS[2].id,
+      unitPrice: null,
+      expectedArrival: EXPECTED_DATE,
+      ...executedLine(60),
+    },
+  ]);
 
   // source plan (중국): 시작은 pending / receivedQty 0.
   const [sourcePlan] = await tx

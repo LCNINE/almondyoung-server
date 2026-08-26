@@ -155,6 +155,17 @@ npm run start:main:dev               # core :3100
 - **`npm run generate:token` 의 HS256 토큰은 curl 검증용이다.** 임의 역할로 발급할 수 있어 권한
   경계를 확인하기 좋지만, **warehouse-app 에는 토큰 주입 경로가 없다**(`src/app/config.ts` 가 OIDC
   로만 토큰을 얻는다). 앱 화면에서 역할을 바꿔 보려면 위처럼 라이브 계정이 필요하다.
+  - ⚠️ **그 토큰에 `iss` 를 넣으면 core 가 무조건 401 을 준다.** `JwtAccessStrategy.validate()` 는
+    *iss 가 있을 때만* issuer 를 검증하고, 그 분기는 RS256 OIDC 토큰용이다 — 로컬 core 의
+    `OIDC_ISSUER_URL` 은 `https://user.almondyoung.com` 이라 어떤 로컬 값을 넣어도 안 맞는다.
+    2026-08-26 이전의 `generate:token` 이 `iss: 'almondyoung-auth'` 를 박고 있어서 **이 문장이
+    사실이 아니었다** (스크립트가 발급한 토큰이 core 에 못 들어갔다). 직접 서명할 때도 페이로드는
+    `{ sub, userId, email, roles }` 까지만 둔다.
+  - 쿠키로도 같은 토큰을 쓴다. admin-web 프록시가 `accessToken` 쿠키를 그대로 업스트림에 넘긴다:
+
+    ```bash
+    curl --cookie "accessToken=$TOKEN" http://localhost:8002/api/proxy/api/purchase-orders
+    ```
 - 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`,
   운송장번호 `DEV-WAYBILL-0001…` 이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
 - **출고작업(단순출고)이 시드만으로 바로 열린다.** 주문 10건 중 planned 인 5건이 배치

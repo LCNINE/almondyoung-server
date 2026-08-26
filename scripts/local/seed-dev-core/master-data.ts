@@ -26,6 +26,26 @@ export async function seedMasterData(tx: DbTx): Promise<void> {
     },
   ]);
 
+  // 공급처가 없으면 **발주를 아예 만들 수 없다** — CreatePurchaseOrderDto.supplierId 가
+  // @IsUUID() 필수라 발주 화면의 첫 걸음에서 막힌다.
+  //
+  // defaultWarehouseId 는 중국 물류창고다. 이 값이 비면 getSupplierDefaultWarehouseId 가
+  // 발주 생성을 400 으로 막고, 값이 있으면 그게 발주의 **출발 창고**가 된다. 중국을 출발로
+  // 두면 목적지(부천)와 달라 requiresTransfer=true 인 해외 발주 경로가 열린다 — 라이브의
+  // 실제 모양이고, 국내 발주만 시드하면 그 경로가 로컬에서 한 번도 안 밟힌다.
+  await tx.insert(wmsTables.suppliers).values([
+    {
+      id: SEED_IDS.supplier,
+      name: '개발용 공급처',
+      code: 'DEV-SUP',
+      defaultWarehouseId: SEED_IDS.warehouseChina,
+      email: 'supplier@example.com',
+      phone: '02-0000-0000',
+      isDirectDelivery: false,
+      paymentMethod: 'postpaid',
+    },
+  ]);
+
   await tx.insert(wmsTables.locations).values([
     {
       id: SEED_IDS.locBucheonReceiving,
