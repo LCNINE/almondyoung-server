@@ -59,17 +59,20 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
    * dbService 만 쓰므로 본문에 도달하지 않는다(purchase-order-single-plan,
    * inbound-plan-port-invariant 스펙과 같은 패턴).
    */
-  function buildService(trx: DbTx): PurchaseOrderService {
-    const dbService = boundDbService(trx);
-    const inboundService = new InboundService(
-      dbService,
+  function buildInboundService(trx: DbTx): InboundService {
+    return new InboundService(
+      boundDbService(trx),
       {} as never,
       {} as never,
       {} as never,
       {} as never,
       {} as never,
     );
-    return new PurchaseOrderService(dbService, new TransactionService(dbService), inboundService);
+  }
+
+  function buildService(trx: DbTx): PurchaseOrderService {
+    const dbService = boundDbService(trx);
+    return new PurchaseOrderService(dbService, new TransactionService(dbService), buildInboundService(trx));
   }
 
   interface Fixture {
@@ -426,18 +429,24 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('라인별 실행이 첫 계획을 만들 때도 헤더 도착예정일을 씨드로 쓴다', async () => {
+  it('입고예정 기간 필터가 아이템 예정일을 본다', async () => {
     await inRollbackTx(db, async (trx) => {
-      // 헤더에는 도착예정일이 있지만 라인에는 없다 — 일괄 확정 경로(§4)와 달리
-      // 라인별 실행은 계획 생성 시 헤더 날짜를 무시하고 라인의(여기선 없는) ETA 만
-      // 넘겼었다. 그러면 이 계획은 expected_date NULL 로 태어나
-      // GET /inbound/plan-items?startDate=… 필터에서 통째로 빠진다.
-      const fx = await seedPoWithThreeLines(trx, { headerExpectedArrival: new Date('2026-11-11T00:00:00Z') });
-      await buildService(trx).orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
+      // 계획은 날짜를 갖지 않는다. 라인마다 ETA 가 다른데 계획 단위 컬럼으로 거르면
+      // 한 계획 안의 아이템이 전부 같이 걸리거나 같이 빠진다 — 이 API 의 요약이
+      // "헤더 무시, 아이템 기준" 인데도 그랬다.
+      const fx = await seedPoWithThreeLines(trx);
+      const service = buildService(trx);
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-11-11' }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 6, expectedArrival: '2026-12-25' }, ACTOR, trx);
 
-      const plans = await readPlans(trx, fx.poId);
-      expect(plans).toHaveLength(1);
-      expect(plans[0].expectedDate?.toISOString().slice(0, 10)).toBe('2026-11-11');
+      const november = await buildInboundService(trx).listInboundPlanItems(
+        { startDate: '2026-11-01', endDate: '2026-11-30' },
+        trx,
+      );
+
+      expect(november.items).toHaveLength(1);
+      expect(november.items[0].skuId).toBe(fx.skuIds[0]);
+      expect(november.items[0].expectedDate).toBe('2026-11-11');
     });
   });
 

@@ -291,7 +291,7 @@ export class PurchaseOrderService {
       })
       .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
-    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, effectiveArrival, tx);
+    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, tx);
     await this.inboundService.addInboundPlanItems(
       {
         planId: plan.id,

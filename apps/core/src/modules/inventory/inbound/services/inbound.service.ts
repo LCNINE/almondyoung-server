@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
+import { earliestExpectedDate } from './earliest-expected-date';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
@@ -333,7 +334,6 @@ export class InboundService {
           planId: inboundPlans.id,
           planType: inboundPlans.planType,
           warehouseId: inboundPlans.warehouseId,
-          expectedDate: inboundPlans.expectedDate,
           parentPlanId: inboundPlans.parentPlanId,
           linkedPurchaseOrderId: inboundPlans.linkedPurchaseOrderId,
           poId: purchaseOrders.id,
@@ -389,6 +389,7 @@ export class InboundService {
           skuCode: skus.code,
           expectedQty: inboundPlanItems.expectedQty,
           receivedQty: inboundPlanItems.receivedQty,
+          expectedDate: inboundPlanItems.expectedDate,
         })
         .from(inboundPlanItems)
         .innerJoin(skus, eq(inboundPlanItems.skuId, skus.id))
@@ -421,7 +422,10 @@ export class InboundService {
           planId: plan.planId,
           planType: plan.planType,
           warehouseId: plan.warehouseId,
-          expectedDate: plan.expectedDate,
+          // 계획은 날짜를 갖지 않는다. 아직 안 들어온 아이템 중 가장 이른 예정일이
+          // 그 계획의 예정일이다. 응답 타입(Date | null)은 그대로 — 물류팀 Tauri 앱과
+          // admin-web 입고 대기 목록이 이 필드를 읽는다.
+          expectedDate: earliestExpectedDate(planItems.map((item) => item.expectedDate)),
           isLinkedPlan: !!plan.parentPlanId,
           sourcePlanStatus: parentPlan?.status,
           purchaseOrder: {
@@ -692,7 +696,6 @@ export class InboundService {
       const [plan] = await trx
         .insert(wmsTables.inboundPlans)
         .values({
-          expectedDate: dto.expectedDate ? new Date(dto.expectedDate) : null,
           warehouseId,
           destinationWarehouseId: po.destinationWarehouseId,
           linkedPurchaseOrderId: dto.linkedPurchaseOrderId,
@@ -710,11 +713,10 @@ export class InboundService {
   /**
    * 발주에 붙은 입고 계획을 확보한다. 없으면 만들고, 있으면 그대로 쓴다.
    *
-   * 라인을 하나씩 발주 실행하므로 매 실행마다 불린다 — **멱등해야 한다.** 이미 계획이
-   * 있으면 `expectedDate` 로 갱신하지 않는다. 예정일의 진실은 아이템이 갖고(§4),
-   * 계획 날짜는 3단계까지 남는 표시용 값이다.
+   * 라인을 하나씩 발주 실행하므로 매 실행마다 불린다 — **멱등해야 한다.**
+   * 예정일은 넘기지 않는다: 계획은 날짜를 갖지 않고, 진실은 아이템이 소유한다.
    */
-  async ensurePlanForPurchaseOrder(poId: string, expectedDate: string | null, tx?: DbTx): Promise<{ id: string }> {
+  async ensurePlanForPurchaseOrder(poId: string, tx?: DbTx): Promise<{ id: string }> {
     return this.dbService.run(async (trx) => {
       // 동시성 레이스 방지: linked_purchase_order_id 에는 유니크 인덱스가 없다
       // (idx_inbound_plans_purchase_order 는 평범한 btree). 유니크 제약이 구조적으로는
@@ -724,7 +726,7 @@ export class InboundService {
       // 막는다 — 발주 행을 FOR UPDATE 로 잠가 같은 PO 를 동시에 확정하는 두
       // 트랜잭션을 직렬화한다. 없는 발주면 여기서 NotFoundError 로 존재 검증도 겸한다.
       const [po] = await trx
-        .select({ id: wmsTables.purchaseOrders.id, expectedArrival: wmsTables.purchaseOrders.expectedArrival })
+        .select({ id: wmsTables.purchaseOrders.id })
         .from(wmsTables.purchaseOrders)
         .where(eq(wmsTables.purchaseOrders.id, poId))
         .limit(1)
@@ -742,17 +744,7 @@ export class InboundService {
 
       if (existing) return { id: existing.id };
 
-      // 헤더 expected_arrival 이 있으면 그 값이 우선이다(스펙 §4) — 라인별 실행이
-      // 넘긴 파라미터(그 라인 하나의 ETA)로 계획을 씨드하면, 첫 실행 라인의 날짜가
-      // 계획 전체의 날짜로 굳어버려 admin-web 입고 대기 목록·기간 필터가 엉뚱한
-      // 값을 본다. 일괄 확정 경로는 헤더를 먼저 써 두므로(updatePurchaseOrderStatus)
-      // 여기서 다시 읽는 값과 파라미터가 같아 그쪽엔 영향이 없다.
-      const seedExpectedDate = po.expectedArrival ? po.expectedArrival.toISOString().slice(0, 10) : expectedDate;
-
-      const plan = await this.createInboundPlan(
-        { linkedPurchaseOrderId: poId, expectedDate: seedExpectedDate ?? undefined },
-        trx,
-      );
+      const plan = await this.createInboundPlan({ linkedPurchaseOrderId: poId }, trx);
       return { id: plan.id };
     }, tx);
   }
@@ -783,7 +775,10 @@ export class InboundService {
       .select({
         planItemId: wmsTables.inboundPlanItems.id,
         planId: wmsTables.inboundPlanItems.planId,
-        expectedDate: wmsTables.inboundPlans.expectedDate,
+        // 예정일은 아이템이 소유한다. 예전엔 이 자리가 계획 헤더의 값을 냈는데,
+        // 계획 날짜는 첫 생성에서 고정되고 갱신되지 않아 아이템과 갈라졌다 —
+        // "헤더 무시, 아이템 기준" 이라는 이 API 의 요약과도 어긋났다.
+        expectedDate: wmsTables.inboundPlanItems.expectedDate,
         warehouseId: wmsTables.inboundPlans.warehouseId,
         skuId: wmsTables.inboundPlanItems.skuId,
         expectedQty: wmsTables.inboundPlanItems.expectedQty,
@@ -796,13 +791,14 @@ export class InboundService {
         and(
           warehouseId ? eq(wmsTables.inboundPlans.warehouseId, warehouseId) : undefined,
           skuId ? eq(wmsTables.inboundPlanItems.skuId, skuId) : undefined,
-          startDate ? gte(wmsTables.inboundPlans.expectedDate, new Date(startDate)) : undefined,
-          endDate
-            ? lte(wmsTables.inboundPlans.expectedDate, new Date(new Date(endDate).setHours(23, 59, 59, 999)))
-            : undefined,
+          // date 컬럼끼리는 'YYYY-MM-DD' 문자열 비교로 끝난다. 옛 코드의
+          // new Date(startDate) / setHours(23,59,59,999) 는 러너 TZ 에 따라 경계
+          // 하루가 들쭉날쭉했다(#724 발견 ⑪ 과 같은 계열).
+          startDate ? gte(wmsTables.inboundPlanItems.expectedDate, startDate) : undefined,
+          endDate ? lte(wmsTables.inboundPlanItems.expectedDate, endDate) : undefined,
         ),
       )
-      .orderBy(desc(wmsTables.inboundPlans.expectedDate));
+      .orderBy(desc(wmsTables.inboundPlanItems.expectedDate));
     return { total: rows.length, items: rows };
   }
 

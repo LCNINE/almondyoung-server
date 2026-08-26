@@ -139,15 +139,16 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         destinationWarehouseId: finalDestination.id,
         linkedPurchaseOrderId: po.id,
         requiresTransfer: true,
-        expectedDate: input.expectedDate,
       })
       .returning({ id: wmsTables.inboundPlans.id });
+    // 예정일은 계획이 아니라 아이템이 갖는다(#724 항목 9).
     await trx.insert(wmsTables.inboundPlanItems).values({
       planId: plan.id,
       skuId: input.skuId,
       expectedQty: input.qty,
       receivedQty: 0,
       status: 'pending',
+      expectedDate: input.expectedDate.toISOString().slice(0, 10),
     });
   }
 
@@ -335,7 +336,9 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     });
   });
 
-  it('아이템 예정일이 없으면 계획 예정일로 떨어진다', async () => {
+  // 예전엔 계획 예정일로 떨어졌다. 계획이 날짜를 갖지 않게 된 뒤로는 떨어질 곳이
+  // 없다 — 아이템이 날짜를 모르면 파이프라인도 모르는 것이 맞다.
+  it('아이템 예정일이 없으면 ETA 도 없다', async () => {
     await inRollback(async (trx) => {
       const fx = await seedNonSellableInboundPlan(trx, { expectedDate: '2026-12-31' });
       await trx.insert(wmsTables.inboundPlanItems).values([
@@ -343,7 +346,8 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
       ]);
 
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
-      expect(rows[0].onOrderEta?.toISOString().slice(0, 10)).toBe('2026-12-31');
+      expect(rows[0].onOrderQty).toBe(4);
+      expect(rows[0].onOrderEta).toBeNull();
     });
   });
 });

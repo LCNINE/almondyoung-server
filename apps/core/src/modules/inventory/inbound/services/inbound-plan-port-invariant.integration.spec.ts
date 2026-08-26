@@ -84,7 +84,6 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       // 호출자가 거짓말을 한다 — 최종 목적지를 입고 창고로, 타입을 destination 으로.
       const plan = await service.createInboundPlan(
         {
-          expectedDate: '2026-09-01',
           warehouseId: fx.destinationWarehouseId,
           destinationWarehouseId: fx.destinationWarehouseId,
           linkedPurchaseOrderId: fx.poId,
@@ -107,7 +106,6 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       await expect(
         service.createInboundPlan(
           {
-            expectedDate: '2026-09-01',
             warehouseId: randomUUID(),
             linkedPurchaseOrderId: randomUUID(),
           },
@@ -122,8 +120,8 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       const fx = await seedForeignPo(trx);
       const service = buildInboundService(trx);
 
-      const first = await service.ensurePlanForPurchaseOrder(fx.poId, '2026-09-01', trx);
-      const second = await service.ensurePlanForPurchaseOrder(fx.poId, '2026-09-05', trx);
+      const first = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
+      const second = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
 
       expect(second.id).toBe(first.id);
 
@@ -140,10 +138,10 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       const fx = await seedForeignPo(trx);
       const service = buildInboundService(trx);
 
-      await service.createInboundPlan({ expectedDate: '2026-09-01', linkedPurchaseOrderId: fx.poId }, trx);
+      await service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx);
 
       await expect(
-        service.createInboundPlan({ expectedDate: '2026-09-05', linkedPurchaseOrderId: fx.poId }, trx),
+        service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx),
       ).rejects.toMatchObject({ name: 'ConflictError' });
 
       const plans = await trx
@@ -165,7 +163,7 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
         .returning();
 
       const service = buildInboundService(trx);
-      const plan = await service.ensurePlanForPurchaseOrder(fx.poId, null, trx);
+      const plan = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
       await service.addInboundPlanItems(
         { planId: plan.id, items: [{ skuId: sku.id, expectedQty: 5, expectedDate: '2026-09-17' }] },
         trx,
