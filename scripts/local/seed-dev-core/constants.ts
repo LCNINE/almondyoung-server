@@ -22,6 +22,7 @@
  *   019d000b — outbound.ts    outboundBatchId (출고 배치 1개)
  *   019d000c — outbound.ts    workItemId (배치 work item 5개)
  *   019d000d — outbound.ts    waybillId (운송장 5개)
+ *   019d000e — constants.ts   SEED_IDS.supplier
  */
 export const SEED_IDS = {
   warehouseBucheon: '019d0001-0001-7000-a000-000000000001',
@@ -40,6 +41,8 @@ export const SEED_IDS = {
   holderSecondary: '019d0003-0002-7000-a000-000000000002',
 
   deliveryProfile: '019d0004-0001-7000-a000-000000000001',
+
+  supplier: '019d000e-0001-7000-a000-000000000001',
 } as const;
 
 /** 부천 일반 랙/빈 6개 — 이동·실사 대상. code 가 곧 라벨이다. */
