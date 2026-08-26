@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { IsCalendarDateConstraint } from './calendar-date.validator';
+import { IsCalendarDateConstraint } from '../../shared/dto/calendar-date.validator';
 
 export class SimpleInboundItemDto {
   @ApiProperty({ description: 'SKU ID' })

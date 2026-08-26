@@ -9,7 +9,7 @@ import {
   UpdatePurchaseOrderLineDto,
 } from './purchase-order.dto';
 import { OrderPurchaseOrderLineDto } from './purchase-order/execute-line.dto';
-import { InboundPlanItemInputDto } from './simple-inbound.dto';
+import { InboundPlanItemInputDto } from '../../inbound/dto/simple-inbound.dto';
 
 /**
  * 발주 관련 DTO 의 날짜 필드(`expectedArrival` / `expectedDate`) 계약을 고정한다.

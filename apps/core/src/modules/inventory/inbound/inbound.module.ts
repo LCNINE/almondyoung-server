@@ -3,15 +3,13 @@ import { CoreInventoryModule } from '../core/inventory.module';
 import { SkuCatalogModule } from '../sku-catalog/sku-catalog.module';
 import { SharedModule } from '../shared/shared.module';
 import { InboundController } from './controllers/inbound.controllers';
-import { PurchaseOrderController } from './controllers/purchase-order.controller';
 import { InboundService } from './services/inbound.service';
 import { InboundPutawayReader } from './services/inbound-putaway.reader';
-import { PurchaseOrderService } from './services/purchase-order.service';
 
 @Module({
   imports: [CoreInventoryModule, SkuCatalogModule, SharedModule],
-  controllers: [InboundController, PurchaseOrderController],
-  providers: [InboundService, InboundPutawayReader, PurchaseOrderService],
-  exports: [InboundService, PurchaseOrderService],
+  controllers: [InboundController],
+  providers: [InboundService, InboundPutawayReader],
+  exports: [InboundService],
 })
 export class InboundModule {}

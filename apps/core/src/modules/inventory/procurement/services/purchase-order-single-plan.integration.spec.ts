@@ -7,7 +7,7 @@ import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
 import { TransactionService } from '../../shared/services/transaction.service';
-import { InboundService } from './inbound.service';
+import { InboundService } from '../../inbound/services/inbound.service';
 
 /**
  * 해외 발주(출발 창고 ≠ 최종 목적지)가 입고 계획을 하나만 만드는지 고정한다.

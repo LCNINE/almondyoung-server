@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
-import { earliestExpectedDate } from './earliest-expected-date';
+import { earliestExpectedDate } from '../../shared/dates/earliest-expected-date';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import type { InboundReceipt, InboundReceiptLine } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';

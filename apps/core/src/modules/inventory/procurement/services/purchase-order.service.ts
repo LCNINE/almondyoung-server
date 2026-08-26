@@ -20,9 +20,9 @@ import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purcha
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { InboundService } from './inbound.service';
+import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
-import { purchaseOrderExpectedArrival } from './earliest-expected-date';
+import { purchaseOrderExpectedArrival } from '../../shared/dates/earliest-expected-date';
 
 @Injectable()
 export class PurchaseOrderService {

@@ -6,7 +6,7 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
-import { InboundService } from './inbound.service';
+import { InboundService } from '../../inbound/services/inbound.service';
 import { TransactionService } from '../../shared/services/transaction.service';
 import { PurchaseOrderStatus, PurchaseOrderType } from '../dto/purchase-order.dto';
 import { InboundPipelineReader } from '../../stock-projection/services/inbound-pipeline.reader';
