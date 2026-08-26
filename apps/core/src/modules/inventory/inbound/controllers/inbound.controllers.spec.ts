@@ -64,3 +64,26 @@ describe('InboundController.listPutawayPending — days 파싱', () => {
     expect(listPending).toHaveBeenCalledWith({ warehouseId: 'w-1', days: undefined });
   });
 });
+
+/**
+ * `POST /inbound/plans` 는 호출자가 0이었다 — #739 가 admin-web 「계획 등록」 탭을 지웠고
+ * Tauri 앱이 쓰는 것은 `plans/receive`(POST) 와 `plans/:planId`(GET) 로 다른 라우트다.
+ *
+ * 계획을 만드는 유일한 경로는 발주 라인 실행(`ensurePlanForPurchaseOrder`)이며, 그 경로만이
+ * "한 발주에 계획 하나" 불변식(ADR-0032 결정 1)을 PO 행 FOR UPDATE 로 잠근다. 공개 라우트는
+ * 그 락을 거치지 않으므로 수동 API 로 이중계획을 만들 여지가 남아 있었다.
+ *
+ * `InboundService.createInboundPlan` 메서드 자체는 남는다 — `ensurePlanForPurchaseOrder`
+ * 가 그걸 부른다.
+ */
+describe('InboundController — 계획 생성 라우트', () => {
+  type Handlers = Record<string, unknown>;
+
+  it('POST /inbound/plans 핸들러는 없다 (계획 생성은 발주 라인 실행이 소유한다)', () => {
+    expect((InboundController.prototype as unknown as Handlers).createPlan).toBeUndefined();
+  });
+
+  it('POST /inbound/plans/receive 핸들러는 남아 있다 (창고 Tauri 앱의 실입고 경로)', () => {
+    expect(typeof (InboundController.prototype as unknown as Handlers).receiveFromPlan).toBe('function');
+  });
+});

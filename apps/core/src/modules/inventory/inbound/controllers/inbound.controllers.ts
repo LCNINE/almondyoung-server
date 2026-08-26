@@ -10,7 +10,6 @@ import {
   PutawayRequestDto,
   ReturnInboundDto,
   CancelInboundDto,
-  CreateInboundPlanDto,
   AddInboundPlanItemsDto,
   ListPlanItemsQueryDto,
   ReceiveFromPlanDto,
@@ -264,14 +263,12 @@ export class InboundController {
   }
 
   // 예정 CRUD 및 연계
-  @Post('plans')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '입고예정 생성' })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  async createPlan(@Body() dto: CreateInboundPlanDto) {
-    return this.inboundService.createInboundPlan(dto);
-  }
-
+  //
+  // `POST plans`(입고예정 생성)는 제거됐다 — 호출자 0이었고, 계획을 만드는 유일한 경로는
+  // 발주 라인 실행(`ensurePlanForPurchaseOrder`)이다. 그 경로만이 "한 발주에 계획 하나"
+  // 불변식(ADR-0032 결정 1)을 PO 행 FOR UPDATE 로 잠그는데, 공개 라우트는 그 락을 거치지
+  // 않아 수동 API 로 이중계획을 만들 여지가 남아 있었다. `InboundService.createInboundPlan`
+  // 메서드 자체는 남는다.
   @Post('plans/items')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '입고예정 아이템 추가' })

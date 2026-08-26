@@ -426,6 +426,9 @@ export class InboundService {
           // 그 계획의 예정일이다. 응답 타입(Date | null)은 그대로 — 물류팀 Tauri 앱과
           // admin-web 입고 대기 목록이 이 필드를 읽는다.
           expectedDate: earliestExpectedDate(planItems.map((item) => item.expectedDate)),
+          // `parentPlanId` 를 채우던 유일한 경로(`POST /inbound/plans`)가 제거되어 이 값은
+          // 이제 항상 false 다. 컬럼·필드는 남긴다(#663·#735 선례 — 코드에서 걷어내는 것과
+          // DROP 은 다른 PR). admin-web 의 「연계」 컬럼·배지는 영구히 빈다 — 화면 정리는 #745.
           isLinkedPlan: !!plan.parentPlanId,
           sourcePlanStatus: parentPlan?.status,
           purchaseOrder: {
