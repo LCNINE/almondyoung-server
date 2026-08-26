@@ -41,7 +41,8 @@
     "reviewHelp": "Review sorting uses a confidence score based on public review ratings and review count, not review count alone.",
     "priceAsc": "Lowest price",
     "priceDesc": "Highest price",
-    "newest": "Newest"
+    "newest": "Newest",
+    "label": "Sort by"
   },
   "empty": {
     "title": "No results for ‘{keyword}’",

@@ -1,11 +1,14 @@
 "use client"
 
 import ProductCard from "@/domains/products/components/product-card"
+import {
+  ProductSortTabs,
+  type ProductSortTabOption,
+} from "@/components/products/product-sort-tabs"
 import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { HttpTypes } from "@medusajs/types"
-import CustomDropdown from "@components/dropdown"
 import { SearchHistory } from "@components/search/search-history"
 import { SharedPagination } from "@/components/shared/pagination"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
@@ -46,13 +49,7 @@ export function SearchResults({
   const { keywords: historyKeywords } = useSearchHistory()
   const [isReviewInfoOpen, setIsReviewInfoOpen] = useState(false)
 
-  const SORT_OPTIONS = [
-    { id: "relevance", label: tSort("relevance") },
-    { id: "review", label: tSort("review") },
-    { id: "price_asc", label: tSort("priceAsc") },
-    { id: "price_desc", label: tSort("priceDesc") },
-    { id: "newest", label: tSort("newest") },
-  ]
+
 
   const currentSort = normalizeSearchSort(searchParams.get("sort"))
   const currentPage = Math.max(1, Number(searchParams.get("page")) || 1)
@@ -94,6 +91,41 @@ export function SearchResults({
       ],
     })
   }
+
+  const reviewHelp = (
+    <span
+      className="relative flex items-center"
+      onMouseEnter={() => setIsReviewInfoOpen(true)}
+      onMouseLeave={() => setIsReviewInfoOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label={tSort("reviewHelpAria")}
+        aria-expanded={isReviewInfoOpen}
+        className="ml-1 flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-olive-500 focus-visible:outline-none"
+        onClick={() => setIsReviewInfoOpen((open) => !open)}
+        onBlur={() => setIsReviewInfoOpen(false)}
+      >
+        <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+      {isReviewInfoOpen && (
+        <span
+          role="tooltip"
+          className="absolute top-7 left-0 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
+        >
+          {tSort("reviewHelp")}
+        </span>
+      )}
+    </span>
+  )
+
+  const sortTabOptions: ProductSortTabOption[] = [
+    { value: "relevance", label: tSort("relevance") },
+    { value: "review", label: tSort("review"), adornment: reviewHelp },
+    { value: "price_asc", label: tSort("priceAsc") },
+    { value: "price_desc", label: tSort("priceDesc") },
+    { value: "newest", label: tSort("newest") },
+  ]
 
   const handleSortChange = (sortId: string) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -157,40 +189,17 @@ export function SearchResults({
         </p>
       </div>
 
-      <div className="mb-4 flex items-center justify-between">
-        <div className="hidden text-sm text-gray-500 md:block">
-          {t("pageInfo", { current: currentPage, total: totalPages })}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div
-            className="relative flex items-center"
-            onMouseEnter={() => setIsReviewInfoOpen(true)}
-            onMouseLeave={() => setIsReviewInfoOpen(false)}
-          >
-            <button
-              type="button"
-              aria-label={tSort("reviewHelpAria")}
-              aria-expanded={isReviewInfoOpen}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-olive-500 focus-visible:outline-none"
-              onClick={() => setIsReviewInfoOpen((open) => !open)}
-              onBlur={() => setIsReviewInfoOpen(false)}
-            >
-              <CircleHelp className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {isReviewInfoOpen && (
-              <div
-                role="tooltip"
-                className="absolute top-8 right-0 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
-              >
-                {tSort("reviewHelp")}
-              </div>
-            )}
-          </div>
-          <CustomDropdown
-            items={SORT_OPTIONS}
-            defaultValue={currentSort}
-            onSelect={handleSortChange}
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <ProductSortTabs
+            options={sortTabOptions}
+            value={currentSort}
+            onChange={handleSortChange}
+            label={tSort("label")}
           />
+        </div>
+        <div className="hidden shrink-0 text-sm text-gray-500 md:block">
+          {t("pageInfo", { current: currentPage, total: totalPages })}
         </div>
       </div>
 

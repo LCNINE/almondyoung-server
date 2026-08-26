@@ -1,6 +1,9 @@
 "use client"
 
-import { cn } from "@/lib/utils"
+import {
+  ProductSortTabs,
+  type ProductSortTabOption,
+} from "@/components/products/product-sort-tabs"
 import { useTranslations } from "next-intl"
 
 export type SortOptions =
@@ -26,33 +29,17 @@ const sortOptions: { value: SortOptions; labelKey: string }[] = [
 const SortProducts = ({ sortBy, setQueryParams }: SortProductsProps) => {
   const t = useTranslations("category.sort")
 
+  const options: ProductSortTabOption<SortOptions>[] = sortOptions.map(
+    (item) => ({ value: item.value, label: t(item.labelKey) })
+  )
+
   return (
-    <div
-      role="group"
-      aria-label={t("label")}
-      className="scrollbar-hide -mx-3 flex items-center overflow-x-auto px-3 sm:mx-0 sm:px-0"
-    >
-      {sortOptions.map((item, index) => (
-        <div key={item.value} className="flex shrink-0 items-center">
-          {index > 0 && (
-            <span aria-hidden className="bg-border mx-2 h-3 w-px sm:mx-3" />
-          )}
-          <button
-            type="button"
-            aria-current={sortBy === item.value ? "true" : undefined}
-            onClick={() => setQueryParams("sortBy", item.value)}
-            className={cn(
-              "cursor-pointer text-sm whitespace-nowrap transition-colors",
-              sortBy === item.value
-                ? "text-foreground font-bold"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {t(item.labelKey)}
-          </button>
-        </div>
-      ))}
-    </div>
+    <ProductSortTabs
+      options={options}
+      value={sortBy}
+      onChange={(value) => setQueryParams("sortBy", value)}
+      label={t("label")}
+    />
   )
 }
 
