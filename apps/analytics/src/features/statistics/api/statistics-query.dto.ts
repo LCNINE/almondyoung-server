@@ -61,6 +61,37 @@ export class CustomerInsightsQueryDto extends StatisticsRangeQueryDto {
   minBuyers?: number = 5;
 }
 
+export class ProfitStatisticsQueryDto extends StatisticsRangeQueryDto {
+  @ApiPropertyOptional({
+    enum: ['revenue', 'margin', 'marginRate', 'quantity'],
+    default: 'revenue',
+    description: '상품 목록 정렬 기준 — 마진 정렬에서 원가 미입력(계산 불가) 상품은 항상 뒤로 간다',
+  })
+  @IsOptional()
+  @IsIn(['revenue', 'margin', 'marginRate', 'quantity'])
+  sort?: 'revenue' | 'margin' | 'marginRate' | 'quantity' = 'revenue';
+
+  @ApiPropertyOptional({ enum: ['desc', 'asc'], default: 'desc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({ example: 1, default: 1, description: '페이지 (1부터)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 50, default: 50, description: '페이지 크기' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number = 50;
+}
+
 export class UnsoldProductsQueryDto extends StatisticsRangeQueryDto {
   @ApiPropertyOptional({ example: 50, default: 50, description: '최대 행 수' })
   @IsOptional()

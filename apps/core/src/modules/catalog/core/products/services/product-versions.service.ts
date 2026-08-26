@@ -1169,6 +1169,8 @@ export class ProductVersionsService {
           primaryCategoryId,
           changeReason,
           changedAt: new Date().toISOString(),
+          // 원가 미상(null 저장)과 키 부재(미게시)를 구분해 소비 측이 기존 값을 안 지우게 한다
+          ...(changeReason === 'unpublished' ? {} : { supplyPrice: newVersion.supplyPrice ?? null }),
           snapshot,
           // 출처가 없으면 키를 만들지 않는다 — 단건 게시의 payload 를 그대로 두기 위해서다.
           ...(options?.origin ? { origin: options.origin } : {}),

@@ -6,6 +6,7 @@ import {
   BehaviorStatisticsQuery,
   CustomerInsightsQuery,
   ProductStatisticsQuery,
+  ProfitStatisticsQuery,
   StatisticsRangeQuery,
   TrafficStatisticsQuery,
 } from '@/lib/api/domains/analytics';
@@ -36,6 +37,15 @@ export const useUnsoldProducts = (query: StatisticsRangeQuery & { limit?: number
   return useQuery({
     queryKey: analyticsQueryKeys.unsoldProducts(query),
     queryFn: () => analyticsApi.getUnsoldProducts(query),
+  });
+};
+
+export const useProfitStatistics = (query: ProfitStatisticsQuery) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.profit(query),
+    queryFn: () => analyticsApi.getProfitStatistics(query),
+    // 페이지 이동 시 이전 페이지를 유지해 테이블이 깜빡이지 않게 한다
+    placeholderData: (previous) => previous,
   });
 };
 

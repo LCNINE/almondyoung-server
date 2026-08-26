@@ -1,6 +1,7 @@
 import {
   BehaviorStatisticsQuery,
   CustomerInsightsQuery,
+  ProfitStatisticsQuery,
   StatisticsRangeQuery,
   TrafficStatisticsQuery,
 } from '@/lib/api/domains/analytics';
@@ -14,6 +15,7 @@ export const analyticsQueryKeys = {
   unsoldProducts: (query: StatisticsRangeQuery & { limit?: number }) =>
     [...analyticsQueryKeys.all, 'unsold-products', query] as const,
   customers: (query: StatisticsRangeQuery) => [...analyticsQueryKeys.all, 'customers', query] as const,
+  profit: (query: ProfitStatisticsQuery) => [...analyticsQueryKeys.all, 'profit', query] as const,
   traffic: (query: TrafficStatisticsQuery) => [...analyticsQueryKeys.all, 'traffic', query] as const,
   customerInsights: (query: CustomerInsightsQuery) => [...analyticsQueryKeys.all, 'customer-insights', query] as const,
   behavior: (query: BehaviorStatisticsQuery) => [...analyticsQueryKeys.all, 'behavior', query] as const,

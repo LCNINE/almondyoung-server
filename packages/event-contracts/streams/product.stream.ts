@@ -77,6 +77,11 @@ export interface ProductMasterActiveVersionChangedPayload {
   primaryCategoryId?: string | null;
   changeReason: 'published' | 'unpublished' | 'rollback';
   changedAt: string;
+  /**
+   * 게시된 버전의 매입 원가(공급가, 원). 내부 통계 전용이라 Medusa 로 가는 snapshot 에는
+   * 넣지 않는다. 키가 없으면 원가 미상 — 소비 측은 기존 값을 유지해야 한다.
+   */
+  supplyPrice?: number | null;
   snapshot?: ProductSnapshot | null;
   /** 대량 작업이 낸 이벤트임을 표시한다. 단건 게시에는 키 자체가 없다. */
   origin?: ProductPublishOrigin;
@@ -385,6 +390,7 @@ const ProductMasterActiveVersionChangedSchema = z.object({
   primaryCategoryId: z.string().nullable().optional(),
   changeReason: z.enum(['published', 'unpublished', 'rollback']),
   changedAt: z.string().datetime(),
+  supplyPrice: z.number().int().nonnegative().nullable().optional(),
   snapshot: ProductSnapshotSchema.nullable().optional(),
   origin: z.literal('bulk_import').optional(),
   importSessionId: z.string().min(1).optional(),

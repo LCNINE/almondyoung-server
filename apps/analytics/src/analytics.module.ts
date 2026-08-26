@@ -27,6 +27,8 @@ import { StatisticsController } from './features/statistics/api/statistics.contr
 import { StatisticsQuery } from './features/statistics/read-model/statistics.query';
 import { CustomerInsightsController } from './features/statistics/api/customer-insights.controller';
 import { CustomerInsightsQuery } from './features/statistics/read-model/customer-insights.query';
+import { ProfitController } from './features/statistics/api/profit.controller';
+import { ProfitQuery } from './features/statistics/read-model/profit.query';
 import { TrafficController } from './features/traffic/api/traffic.controller';
 import { BehaviorController } from './features/traffic/api/behavior.controller';
 import { TrafficQuery } from './features/traffic/read-model/traffic.query';
@@ -76,6 +78,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     AnalyticsController,
     StatisticsController,
     CustomerInsightsController,
+    ProfitController,
     TrafficController,
     BehaviorController,
     OrderEventsConsumer,
@@ -98,6 +101,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     MembershipDailySnapshotService,
     StatisticsQuery,
     CustomerInsightsQuery,
+    ProfitQuery,
     Ga4Client,
     TrafficQuery,
     BehaviorQuery,

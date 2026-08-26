@@ -110,6 +110,8 @@ export const dimProductMasters = pgTable(
     activeVersionId: varchar('active_version_id', { length: 255 }),
     isActive: boolean('is_active'),
     lastChangeReason: varchar('last_change_reason', { length: 50 }),
+    /** 게시 시점 매입 원가(공급가, 원). null = 원가 미입력 — 마진은 "계산 불가"로 구분한다. */
+    supplyPrice: bigint('supply_price', { mode: 'number' }),
     createdAt: timestamp('created_at').defaultNow(),
     updatedAt: timestamp('updated_at').defaultNow(),
     deletedAt: timestamp('deleted_at'),
