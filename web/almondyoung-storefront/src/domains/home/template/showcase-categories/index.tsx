@@ -8,7 +8,7 @@ import { getTranslations } from "next-intl/server"
 import { ShowcaseSection } from "../../components/sections/showcase-section"
 
 export type ShowcaseCategory = {
-  titleKey: "canva" | "class"
+  titleKey: "overseas" | "canva" | "class"
   handle: string
   /** 이 자식 카테고리 상품을 섹션 앞쪽에 먼저 깐다 (마진 좋은 상품 우선 노출) */
   priorityHandle?: string
@@ -16,6 +16,7 @@ export type ShowcaseCategory = {
 
 // 홈에 통째로 노출하는 루트 카테고리. handle 은 Medusa product_category.handle.
 export const SHOWCASE_CATEGORIES: readonly ShowcaseCategory[] = [
+  { titleKey: "overseas", handle: "9xpr2r" }, // 해외 직구상품
   {
     titleKey: "canva",
     handle: "cafe24-cat-345",

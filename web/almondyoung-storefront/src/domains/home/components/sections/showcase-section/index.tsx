@@ -26,10 +26,19 @@ export function ShowcaseSection({
 }: ShowcaseSectionProps) {
   const t = useTranslations("home.categoryBest")
   const tab = { id: handle, name: title, handle }
+  const [head, ...tail] = title.split(" ")
 
   return (
     <ProductSection
-      title={<span className="text-yellow-30">{title}</span>}
+      title={
+        tail.length ? (
+          <>
+            {head} <span className="text-yellow-30">{tail.join(" ")}</span>
+          </>
+        ) : (
+          <span className="text-yellow-30">{title}</span>
+        )
+      }
       tabs={[tab]}
       activeTab={tab}
       products={products}
