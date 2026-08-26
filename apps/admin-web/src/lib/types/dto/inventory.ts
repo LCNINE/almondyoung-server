@@ -1462,11 +1462,6 @@ export interface CreatePurchaseOrderRequest {
   lines: CreatePurchaseOrderLineRequest[];
 }
 
-export interface UpdatePurchaseOrderStatusRequest {
-  status: PurchaseOrderStatus;
-  expectedArrival?: string;
-}
-
 export interface UpdatePurchaseOrderLinesRequest {
   lines: CreatePurchaseOrderLineRequest[];
 }

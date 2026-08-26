@@ -7,7 +7,6 @@ import type {
   PurchaseOrderListResponseDto,
   PurchaseOrderListFilters,
   CreatePurchaseOrderRequest,
-  UpdatePurchaseOrderStatusRequest,
   UpdatePurchaseOrderLinesRequest,
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
@@ -52,14 +51,6 @@ export const purchaseOrdersClient = {
     data: CreatePurchaseOrderFromCartRequest
   ): Promise<PurchaseOrderDto> => {
     const response = await client.post(`${BASE}/from-cart`, data);
-    return response.data;
-  },
-
-  updateStatus: async (
-    id: string,
-    data: UpdatePurchaseOrderStatusRequest
-  ): Promise<PurchaseOrderDto> => {
-    const response = await client.put(`${BASE}/${encodeURIComponent(id)}/status`, data);
     return response.data;
   },
 

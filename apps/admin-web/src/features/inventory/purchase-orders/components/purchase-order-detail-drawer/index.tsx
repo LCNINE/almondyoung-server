@@ -4,18 +4,12 @@ import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { usePurchaseOrder, useUpdatePurchaseOrderStatus } from '@/lib/services/inventory';
+import { usePurchaseOrder } from '@/lib/services/inventory';
 import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
 import { PurchaseOrderFormDialog } from '../purchase-order-form-dialog';
-import { toast } from 'sonner';
+import { PurchaseOrderLineList } from '../line-list';
+import { canExecuteLines, formatLineProgress, summarizeLines, toCalendarDate } from '../../line-execution-model';
 
 type Props = {
   row: PurchaseOrderDto | null;
@@ -44,32 +38,22 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   const { data: detail } = usePurchaseOrder(row?.id ?? '');
   const po = detail ?? row;
 
-  const updateStatusMutation = useUpdatePurchaseOrderStatus();
-
-  const handleStatusChange = async (newStatus: PurchaseOrderStatus) => {
-    if (!po) return;
-    try {
-      await updateStatusMutation.mutateAsync({ id: po.id, data: { status: newStatus } });
-      toast.success('상태가 변경되었습니다.');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '상태 변경에 실패했습니다.');
-    }
-  };
-
   if (!po) return null;
 
-  const canEditLines = po.status === 'created' || po.status === 'confirmed';
+  const progress = summarizeLines(po.lines);
+  // 요청 라인이 하나도 없으면 수정할 대상이 없다 — 새 SKU 를 얹는 것도
+  // 종결된 발주에 요청 라인을 되살리는 셈이라 막는다.
+  const canEditLines = canExecuteLines(po.status) && progress.requested > 0;
 
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent className="w-[520px] overflow-y-auto">
+        <SheetContent className="w-[640px] max-w-full overflow-y-auto">
           <SheetHeader className="mb-4">
             <SheetTitle>발주 상세</SheetTitle>
           </SheetHeader>
 
           <div className="space-y-5">
-            {/* 요약 */}
             <section>
               <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">기본 정보</p>
               <InfoRow label="발주번호" value={po.id} />
@@ -78,73 +62,37 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                 <span className="w-28 shrink-0 text-muted-foreground">유형</span>
                 <Badge variant="outline">{po.type === 'domestic' ? '국내' : '해외'}</Badge>
               </div>
+              {/* 상태는 라인에서 파생된 값이라 화면에서 바꾸지 않는다 (core refreshHeaderStatus).
+                  옛 「운영 상태 변경」 드롭다운은 사실 일괄 실행이었고, 강등 선택지는
+                  헤더를 파생값과 어긋난 채로 영구히 남겼다. 라인 실행이 그 자리를 대신한다. */}
               <div className="flex gap-2 py-1 text-sm">
                 <span className="w-28 shrink-0 text-muted-foreground">운영 상태</span>
                 <Badge variant="secondary">{STATUS_LABELS[po.status]}</Badge>
+                {progress.requested > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    요청 남음 {progress.requested}건
+                  </span>
+                )}
               </div>
-              {po.expectedArrival && (
-                <InfoRow label="입고 예정일" value={new Date(po.expectedArrival).toLocaleDateString('ko-KR')} />
-              )}
+              <InfoRow label="입고 예정일" value={toCalendarDate(po.expectedArrival) || undefined} />
             </section>
-
-            {/* 이 게이트는 심사 축의 부활이 아니다 — "승인 여부" 가 아니라 종결 상태(received)
-                여부만 본다. received 는 입고 경로가 소유한 종결 상태라 아래 선택지에 없고
-                (SelectContent 주석 참고), 그 상태에서 드롭다운을 열면 매칭되는 SelectItem 이
-                없어 트리거가 빈칸으로 렌더된다. 위 「운영 상태」 배지가 이미 최종 상태를
-                보여주므로 이 섹션 자체를 감춰 정보 손실 없이 그 빈칸/강등 경로를 막는다. */}
-            {po.status !== 'received' && (
-              <>
-                <Separator />
-                <section>
-                  <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">운영 상태 변경</p>
-                  <Select
-                    value={po.status}
-                    onValueChange={(v) => handleStatusChange(v as PurchaseOrderStatus)}
-                    disabled={updateStatusMutation.isPending}
-                  >
-                    <SelectTrigger className="w-48">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {/* received 는 입고 경로가 소유한 종결 상태다. 수동으로 걸면 그 발주는
-                          라인 실행이 막히고(Cannot execute … status: received) 되돌릴 방법이
-                          화면에 없다. 확정(confirmed)은 남은 requested 라인을 전부 실행하는
-                          일괄 경로라 정당하다. */}
-                      <SelectItem value="created">생성됨</SelectItem>
-                      <SelectItem value="confirmed">확정됨</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </section>
-              </>
-            )}
 
             <Separator />
 
-            {/* 라인 목록 */}
             <section>
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase text-muted-foreground">발주 라인</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-semibold uppercase text-muted-foreground">발주 라인</p>
+                  <span className="text-xs text-muted-foreground">{formatLineProgress(progress)}</span>
+                </div>
                 {canEditLines && (
                   <Button size="sm" variant="outline" onClick={() => setEditLinesOpen(true)}>
                     라인 수정
                   </Button>
                 )}
               </div>
-              {po.lines.length === 0 ? (
-                <p className="text-sm text-muted-foreground">라인 없음</p>
-              ) : (
-                <div className="space-y-2">
-                  {po.lines.map((line, i) => (
-                    <div key={i} className="rounded-md border p-3 text-sm">
-                      <div className="font-medium">{line.sku?.name ?? line.skuId}</div>
-                      <div className="mt-1 flex gap-4 text-muted-foreground">
-                        <span>수량: {line.quantity}</span>
-                        {line.unitPrice != null && <span>단가: {line.unitPrice.toLocaleString('ko-KR')}원</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+
+              <PurchaseOrderLineList po={po} />
             </section>
           </div>
         </SheetContent>

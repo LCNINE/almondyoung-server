@@ -53,7 +53,6 @@ import type {
   UpdateLocationRequest,
   AddCustomBinRequest,
   CreatePurchaseOrderRequest,
-  UpdatePurchaseOrderStatusRequest,
   UpdatePurchaseOrderLinesRequest,
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
@@ -623,18 +622,6 @@ export const useCreatePurchaseOrderFromCart = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
-    },
-  });
-};
-
-export const useUpdatePurchaseOrderStatus = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseOrderStatusRequest }) =>
-      purchaseOrdersClient.updateStatus(id, data),
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
     },
   });
 };
