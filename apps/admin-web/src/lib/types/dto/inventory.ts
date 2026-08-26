@@ -1399,10 +1399,22 @@ export interface StocktakingSessionListResponse {
 export type PurchaseOrderType = 'domestic' | 'foreign';
 export type PurchaseOrderStatus = 'created' | 'confirmed' | 'received';
 
+export type PurchaseOrderLineStatus = 'requested' | 'ordered' | 'unavailable';
+
 export interface PurchaseOrderLineDto {
   skuId: string;
+  /** 요청 수량 — 실행이 덮어쓰지 않는다. 실제로 발주한 양은 orderedQty. */
   quantity: number;
+  status: PurchaseOrderLineStatus;
+  /** 실제로 발주한 수량. 아직 실행 전이거나 불가로 종결된 라인은 null. */
+  orderedQty: number | null;
   unitPrice: number | null;
+  /** 이 품목의 도착예정일. core 가 date 컬럼을 그대로 내보내므로 'YYYY-MM-DD' 다. */
+  expectedArrival: string | null;
+  /** 라인 실행(발주 또는 불가 종결)이 끝난 시각. ISO 문자열. */
+  orderedAt: string | null;
+  orderedBy: string | null;
+  unavailableReason: string | null;
   sku?: {
     name: string;
     barcode: string | null;
@@ -1457,6 +1469,18 @@ export interface UpdatePurchaseOrderStatusRequest {
 
 export interface UpdatePurchaseOrderLinesRequest {
   lines: CreatePurchaseOrderLineRequest[];
+}
+
+export interface OrderPurchaseOrderLineRequest {
+  orderedQty: number;
+  unitPrice?: number;
+  /** 'YYYY-MM-DD'. core 가 @Validate(IsCalendarDateConstraint) 로 형식을 강제한다. */
+  expectedArrival?: string;
+}
+
+export interface MarkLineUnavailableRequest {
+  /** 품절·단종 등. 최대 500자. */
+  reason?: string;
 }
 
 export interface AddToCartRequest {
