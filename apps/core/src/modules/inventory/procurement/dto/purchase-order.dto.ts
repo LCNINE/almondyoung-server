@@ -12,7 +12,7 @@ import {
   Validate,
   ValidateNested,
 } from 'class-validator';
-import { IsCalendarDateConstraint } from './calendar-date.validator';
+import { IsCalendarDateConstraint } from '../../shared/dto/calendar-date.validator';
 
 export enum PurchaseOrderType {
   DOMESTIC = 'domestic',

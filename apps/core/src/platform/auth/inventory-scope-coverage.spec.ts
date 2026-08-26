@@ -105,7 +105,6 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /holders':                                             S.MANAGE,
   'DELETE /holders/:id':                                       S.MANAGE,
   'PUT /holders/:id':                                          S.MANAGE,
-  'POST /inbound/plans':                                       S.MANAGE,
   'POST /inbound/plans/items':                                 S.MANAGE,
   'POST /inventory/sku-groups':                                S.MANAGE,
   'DELETE /inventory/sku-groups/:id':                          S.MANAGE,

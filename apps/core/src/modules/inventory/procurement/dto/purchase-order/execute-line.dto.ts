@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsInt, IsOptional, IsString, MaxLength, Min, Validate } from 'class-validator';
-import { IsCalendarDateConstraint } from '../calendar-date.validator';
+import { IsCalendarDateConstraint } from '../../../shared/dto/calendar-date.validator';
 
 /** 발주 라인을 실제로 발주했다고 기록할 때 확정되는 값들. */
 export class OrderPurchaseOrderLineDto {

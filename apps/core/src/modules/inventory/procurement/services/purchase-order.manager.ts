@@ -1,38 +1,48 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
+import { eq, ne, and, inArray } from 'drizzle-orm';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, ne, and, inArray, sql, asc, desc, SQL } from 'drizzle-orm';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
-  AddToCartDto,
-  UpdateCartItemDto,
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
-  CartItemResponse,
-  StockReorderSuggestion,
-  PurchaseOrderStatus,
-  PurchaseOrderType,
 } from '../dto/purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
-import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
-import { TransactionService } from '../../shared/services/transaction.service';
-import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { InboundService } from './inbound.service';
+import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
-import { purchaseOrderExpectedArrival } from './earliest-expected-date';
+import { PurchaseOrderReader } from './purchase-order.reader';
 
+/**
+ * 발주의 검증·비즈니스 로직·DB 쓰기가 전부 여기 산다.
+ *
+ * 🔴 **잠금 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
+ * 이 파일에 발주 쓰기를 추가하는 편집은 PO 행을 먼저 잡는다. 순서가 뒤집히면 두 경로가
+ * 만나는 순간 Postgres 가 ABBA 교착으로 한쪽을 40P01 로 죽이고, 그건 도메인 예외가 아니라
+ * 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 취득 지점 3곳에 테스트가 없고 이
+ * 주석만이 방어선이다 — 지우지 말 것.
+ *
+ * 경계는 ADR-0032 가 소유한다:
+ * - 발주는 공급사 → 출발 창고 입고까지만 소유하고 거기서 종결한다.
+ * - `inbound/` 로 나가는 호출은 `ensurePlanForPurchaseOrder` · `addInboundPlanItems` 둘뿐이다.
+ *   역방향(입고 완료가 발주를 미는) 경로는 만들지 않는다 — 헤더 상태는 `refreshHeaderStatus`
+ *   로 라인에서 파생된다.
+ * - `warehouse-transfer/` 를 부르지 않는다. 선적은 이동 지시서가 독립 소유한다.
+ *
+ * 조회는 `PurchaseOrderReader` 가 소유한다 — 쓰기 후 응답을 만들 때 그 리더를 부른다.
+ */
 @Injectable()
-export class PurchaseOrderService {
-  private readonly logger = new Logger(PurchaseOrderService.name);
+export class PurchaseOrderManager {
+  private readonly logger = new Logger(PurchaseOrderManager.name);
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly transactionService: TransactionService,
     private readonly inboundService: InboundService,
+    private readonly reader: PurchaseOrderReader,
   ) {}
 
   /**
@@ -80,7 +90,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Created purchase order ${purchaseOrder.id} with ${purchaseOrderLines.length} lines`);
 
-      return this.getPurchaseOrderById(purchaseOrder.id, trx);
+      return this.reader.findById(purchaseOrder.id, trx);
     }, tx);
   }
 
@@ -109,12 +119,12 @@ export class PurchaseOrderService {
         );
 
       if (cartItems.length !== createDto.cartItemIds.length) {
-        throw new BadRequestException("Some cart items not found or you don't have permission to access them");
+        throw new BadRequestError("Some cart items not found or you don't have permission to access them");
       }
 
       const types = [...new Set(cartItems.map((item) => item.type))];
       if (types.length > 1) {
-        throw new BadRequestException('All cart items must have the same purchase order type');
+        throw new BadRequestError('All cart items must have the same purchase order type');
       }
 
       const destinationWarehouseId = createDto.destinationWarehouseId;
@@ -152,7 +162,7 @@ export class PurchaseOrderService {
         `Created purchase order ${purchaseOrder.id} from ${cartItems.length} cart items for user ${userId}`,
       );
 
-      return this.getPurchaseOrderById(purchaseOrder.id, trx);
+      return this.reader.findById(purchaseOrder.id, trx);
     }, tx);
   }
 
@@ -195,7 +205,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Purchase order ${poId} marked received by ${userId}`);
 
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -217,7 +227,7 @@ export class PurchaseOrderService {
     return this.dbService.run(async (trx) => {
       await this.executeLineOrder(trx, poId, skuId, dto, userId);
       await this.refreshHeaderStatus(trx, poId);
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -247,7 +257,7 @@ export class PurchaseOrderService {
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
       await this.refreshHeaderStatus(trx, poId);
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -418,12 +428,14 @@ export class PurchaseOrderService {
       //
       // lockPurchaseOrderForLineExecution 을 그대로 재사용하지 않는다 — 심사 게이트가
       // 사라진 지금 그 helper 가 하는 일(PO 행 FOR UPDATE + received 거부)은 이 메서드가
-      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 메시지·예외 타입이
-      // 다르기 때문이다 — 그 helper 는 도메인 BadRequestError("Cannot execute purchase
-      // order lines with status: ...")를 던지는데, 이 메서드는 라인 수정 엔드포인트에
-      // 맞는 Nest BadRequestException("Cannot modify purchase order lines after fully
-      // received")을 그대로 유지해야 한다. 합치는 건 API 응답 메시지를 바꾸는 일이라 이
-      // 태스크 범위 밖이다.
+      // 필요로 하는 것과 사실상 같아졌다. 그래도 갈아타지 않는 이유는 **메시지**가 다르기
+      // 때문이다 — 그 helper 는 "Cannot execute purchase order lines with status: ..." 를
+      // 던지는데, 이 메서드는 라인 수정 엔드포인트에 맞는 "Cannot modify purchase order
+      // lines after fully received" 를 유지해야 한다. 예외 타입은 둘 다 BadRequestError 로
+      // 통일됐다(#724 항목 5-c). 합치는 건 API 응답 메시지를 바꾸는 일이라 범위 밖이다.
+      //
+      // ⚠️ 이 거부는 의미상 409(ConflictError)에 가깝지만 지금 400 이고, 바꾸면 API 계약
+      // 변경이라 그대로 둔다 — #745.
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -432,12 +444,12 @@ export class PurchaseOrderService {
         .for('update');
 
       if (!po) {
-        throw new NotFoundException(`Purchase order ${poId} not found`);
+        throw new NotFoundError(`Purchase order ${poId} not found`);
       }
 
       // 2. received 상태는 수정 불가
       if (po.status === 'received') {
-        throw new BadRequestException('Cannot modify purchase order lines after fully received');
+        throw new BadRequestError('Cannot modify purchase order lines after fully received');
       }
 
       // 3. 종결된 라인(ordered/unavailable)은 건드리지 않는다. 그 라인은 이미 계획에
@@ -474,7 +486,7 @@ export class PurchaseOrderService {
 
       this.logger.log(`Updated ${updateDto.lines.length} lines for PO ${poId}`);
 
-      return this.getPurchaseOrderById(poId, trx);
+      return this.reader.findById(poId, trx);
     }, tx);
   }
 
@@ -488,484 +500,16 @@ export class PurchaseOrderService {
       .where(eq(wmsTables.suppliers.id, supplierId))
       .limit(1);
     if (!supplier) {
-      throw new BadRequestException(`Supplier with ID ${supplierId} not found`);
+      throw new BadRequestError(`Supplier with ID ${supplierId} not found`);
     }
     if (!supplier.defaultWarehouseId) {
       // MD 가 발주 화면에서 직접 읽는 문구다. 원시 UUID 와 영어로는 어디를 고쳐야
       // 하는지 알 수 없다 — 라이브 공급사 전원이 이 값이 비어 있어 사실상 발주의
       // 첫 관문이므로, 다음 행동을 문장에 담는다.
-      throw new BadRequestException(
+      throw new BadRequestError(
         '이 공급처에 입고 창고가 지정되지 않아 발주를 만들 수 없습니다. 공급처 관리에서 입고 창고를 먼저 지정하세요.',
       );
     }
     return supplier.defaultWarehouseId;
-  }
-
-  /**
-   * 발주 조회
-   */
-  async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
-    return this.dbService.run(async (trx: DbTx) => {
-      const [po] = await trx
-        .select()
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
-
-      if (!po) {
-        throw new NotFoundException(`Purchase order with ID ${poId} not found`);
-      }
-
-      const lines = await trx
-        .select({
-          skuId: wmsTables.purchaseOrderLines.skuId,
-          quantity: wmsTables.purchaseOrderLines.quantity,
-          unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-          status: wmsTables.purchaseOrderLines.status,
-          orderedQty: wmsTables.purchaseOrderLines.orderedQty,
-          expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
-          orderedAt: wmsTables.purchaseOrderLines.orderedAt,
-          orderedBy: wmsTables.purchaseOrderLines.orderedBy,
-          unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
-          skuName: wmsTables.skus.name,
-          skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
-                      LIMIT 1
-                    )`,
-        })
-        .from(wmsTables.purchaseOrderLines)
-        .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-        .where(eq(wmsTables.purchaseOrderLines.poId, poId));
-
-      const supplier = po.supplierId
-        ? (() =>
-            trx
-              .select()
-              .from(wmsTables.suppliers)
-              .where(eq(wmsTables.suppliers.id, po.supplierId))
-              .limit(1)
-              .then((rows) => rows[0]))()
-        : undefined;
-
-      const supplierRow = await supplier;
-
-      return {
-        id: po.id,
-        type: po.type as PurchaseOrderType,
-        supplierId: po.supplierId,
-        expectedArrival: purchaseOrderExpectedArrival(lines),
-        status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt,
-        updatedAt: po.updatedAt,
-        lines: lines.map((line) => ({
-          skuId: line.skuId,
-          quantity: line.quantity,
-          status: line.status,
-          orderedQty: line.orderedQty,
-          unitPrice: line.unitPrice,
-          expectedArrival: line.expectedArrival,
-          orderedAt: line.orderedAt,
-          orderedBy: line.orderedBy,
-          unavailableReason: line.unavailableReason,
-          sku: {
-            name: line.skuName ?? '삭제된 상품',
-            barcode: line.skuBarcode ?? '',
-          },
-        })),
-        supplier: supplierRow ? SupplierResponseDto.fromDbRow(supplierRow) : undefined,
-      };
-    }, tx);
-  }
-
-  /**
-   * 발주 목록 조회
-   */
-  async getPurchaseOrders(
-    status?: PurchaseOrderStatus,
-    type?: PurchaseOrderType,
-    limit = 50,
-    offset = 0,
-    tx?: DbTx,
-  ): Promise<PurchaseOrderResponse[]> {
-    const conditions: SQL[] = [];
-
-    if (status) {
-      conditions.push(eq(wmsTables.purchaseOrders.status, status));
-    }
-
-    if (type) {
-      conditions.push(eq(wmsTables.purchaseOrders.type, type));
-    }
-
-    const purchaseOrders = await this.dbService.run(
-      async (trx) =>
-        trx
-          .select()
-          .from(wmsTables.purchaseOrders)
-          .where(conditions.length > 0 ? and(...conditions) : undefined)
-          .orderBy(desc(wmsTables.purchaseOrders.createdAt))
-          .limit(limit)
-          .offset(offset),
-      tx,
-    );
-    const results = [] as PurchaseOrderResponse[];
-    for (const po of purchaseOrders) {
-      const lines = await this.dbService.run(
-        async (trx) =>
-          trx
-            .select({
-              skuId: wmsTables.purchaseOrderLines.skuId,
-              quantity: wmsTables.purchaseOrderLines.quantity,
-              unitPrice: wmsTables.purchaseOrderLines.unitPrice,
-              status: wmsTables.purchaseOrderLines.status,
-              orderedQty: wmsTables.purchaseOrderLines.orderedQty,
-              expectedArrival: wmsTables.purchaseOrderLines.expectedArrival,
-              orderedAt: wmsTables.purchaseOrderLines.orderedAt,
-              orderedBy: wmsTables.purchaseOrderLines.orderedBy,
-              unavailableReason: wmsTables.purchaseOrderLines.unavailableReason,
-              skuName: wmsTables.skus.name,
-              skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true
-                      LIMIT 1
-                    )`,
-            })
-            .from(wmsTables.purchaseOrderLines)
-            .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderLines.skuId, wmsTables.skus.id))
-            .where(eq(wmsTables.purchaseOrderLines.poId, po.id)),
-        tx,
-      );
-
-      const supplier = po.supplierId
-        ? await this.dbService.run(async (trx) => {
-            const [row] = await trx
-              .select()
-              .from(wmsTables.suppliers)
-              .where(eq(wmsTables.suppliers.id, po.supplierId!))
-              .limit(1);
-            return row;
-          }, tx)
-        : undefined;
-
-      results.push({
-        id: po.id,
-        type: po.type as PurchaseOrderType,
-        supplierId: po.supplierId,
-        expectedArrival: purchaseOrderExpectedArrival(lines),
-        status: po.status as PurchaseOrderStatus,
-        createdAt: po.createdAt,
-        updatedAt: po.updatedAt,
-        lines: lines.map((line) => ({
-          skuId: line.skuId,
-          quantity: line.quantity,
-          status: line.status,
-          orderedQty: line.orderedQty,
-          unitPrice: line.unitPrice,
-          expectedArrival: line.expectedArrival,
-          orderedAt: line.orderedAt,
-          orderedBy: line.orderedBy,
-          unavailableReason: line.unavailableReason,
-          sku: {
-            name: line.skuName ?? '',
-            barcode: line.skuBarcode ?? '',
-          },
-        })),
-        supplier: supplier ? SupplierResponseDto.fromDbRow(supplier) : undefined,
-      });
-    }
-    return results;
-  }
-
-  // ========== 발주대기리스트 (Cart) 관리 ==========
-
-  /**
-   * 장바구니에 아이템 추가
-   */
-  async addToCart(addDto: AddToCartDto, userId: string, tx?: DbTx): Promise<CartItemResponse> {
-    const existingItem = await this.dbService.run(async (trx) => {
-      const [row] = await trx
-        .select()
-        .from(wmsTables.purchaseOrderCart)
-        .where(
-          and(
-            eq(wmsTables.purchaseOrderCart.skuId, addDto.skuId),
-            eq(wmsTables.purchaseOrderCart.type, addDto.type),
-            eq(wmsTables.purchaseOrderCart.createdBy, userId),
-          ),
-        )
-        .limit(1);
-      return row;
-    }, tx);
-
-    if (existingItem) {
-      await this.dbService.run(
-        async (trx) =>
-          trx
-            .update(wmsTables.purchaseOrderCart)
-            .set({
-              quantity: existingItem.quantity + addDto.quantity,
-              supplierId: addDto.supplierId || existingItem.supplierId,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.purchaseOrderCart.id, existingItem.id)),
-        tx,
-      );
-      return this.getCartItemById(existingItem.id, userId, tx);
-    } else {
-      const [cartItem] = await this.dbService.run(
-        async (trx) =>
-          trx
-            .insert(wmsTables.purchaseOrderCart)
-            .values({
-              skuId: addDto.skuId,
-              quantity: addDto.quantity,
-              type: addDto.type,
-              supplierId: addDto.supplierId,
-              createdBy: userId,
-            })
-            .returning(),
-        tx,
-      );
-
-      return this.getCartItemById(cartItem.id, userId, tx);
-    }
-  }
-
-  /**
-   * 장바구니 아이템 수정
-   */
-  async updateCartItem(
-    itemId: string,
-    userId: string,
-    updateDto: UpdateCartItemDto,
-    tx?: DbTx,
-  ): Promise<CartItemResponse> {
-    const existingItem = await this.dbService.run(async (trx) => {
-      const [row] = await trx
-        .select()
-        .from(wmsTables.purchaseOrderCart)
-        .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
-        .limit(1);
-      return row;
-    }, tx);
-
-    if (!existingItem) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
-    }
-
-    await this.dbService.run(
-      async (trx) =>
-        trx
-          .update(wmsTables.purchaseOrderCart)
-          .set({
-            quantity: updateDto.quantity,
-            supplierId: updateDto.supplierId ?? existingItem.supplierId,
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.purchaseOrderCart.id, itemId)),
-      tx,
-    );
-    return this.getCartItemById(itemId, userId, tx);
-  }
-
-  /**
-   * 장바구니에서 아이템 제거
-   */
-  async removeFromCart(itemId: string, userId: string, tx?: DbTx): Promise<void> {
-    const result = await this.dbService.run(
-      async (trx) =>
-        trx
-          .delete(wmsTables.purchaseOrderCart)
-          .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
-          .returning(),
-      tx,
-    );
-
-    if (result.length === 0) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to delete it`);
-    }
-
-    this.logger.log(`Removed cart item ${itemId}`);
-  }
-
-  /**
-   * 장바구니 조회
-   */
-  async getCartItems(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<CartItemResponse[]> {
-    const conditions: SQL[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
-    if (type) {
-      conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
-    }
-
-    const cartItems = await this.dbService.run(
-      async (trx) =>
-        trx
-          .select({
-            id: wmsTables.purchaseOrderCart.id,
-            skuId: wmsTables.purchaseOrderCart.skuId,
-            quantity: wmsTables.purchaseOrderCart.quantity,
-            type: wmsTables.purchaseOrderCart.type,
-            supplierId: wmsTables.purchaseOrderCart.supplierId,
-            supplierName: wmsTables.suppliers.name,
-            createdAt: wmsTables.purchaseOrderCart.createdAt,
-            updatedAt: wmsTables.purchaseOrderCart.updatedAt,
-            skuName: wmsTables.skus.name,
-            skuBarcode: sql<string>`(
-                  SELECT barcode FROM sku_barcodes 
-                  WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
-                  LIMIT 1
-                )`,
-          })
-          .from(wmsTables.purchaseOrderCart)
-          .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
-          .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
-          .where(and(...conditions))
-          .orderBy(desc(wmsTables.purchaseOrderCart.createdAt)),
-      tx,
-    );
-
-    return cartItems.map((item) => ({
-      id: item.id,
-      skuId: item.skuId,
-      quantity: item.quantity,
-      type: item.type as PurchaseOrderType,
-      supplier:
-        item.supplierId && item.supplierName
-          ? {
-              id: item.supplierId,
-              name: item.supplierName,
-            }
-          : null,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      sku: {
-        name: item.skuName ?? '',
-        barcode: item.skuBarcode ?? '',
-      },
-    }));
-  }
-
-  /**
-   * 장바구니 아이템 조회
-   */
-  private async getCartItemById(itemId: string, userId: string, tx?: DbTx): Promise<CartItemResponse> {
-    const item = await this.dbService.run(async (trx) => {
-      const [row] = await trx
-        .select({
-          id: wmsTables.purchaseOrderCart.id,
-          skuId: wmsTables.purchaseOrderCart.skuId,
-          quantity: wmsTables.purchaseOrderCart.quantity,
-          type: wmsTables.purchaseOrderCart.type,
-          supplierId: wmsTables.purchaseOrderCart.supplierId,
-          supplierName: wmsTables.suppliers.name,
-          createdAt: wmsTables.purchaseOrderCart.createdAt,
-          updatedAt: wmsTables.purchaseOrderCart.updatedAt,
-          skuName: wmsTables.skus.name,
-          skuBarcode: sql<string>`(
-                      SELECT barcode FROM sku_barcodes 
-                      WHERE sku_id = ${wmsTables.skus.id} AND is_primary = true 
-                      LIMIT 1
-                    )`,
-        })
-        .from(wmsTables.purchaseOrderCart)
-        .leftJoin(wmsTables.skus, eq(wmsTables.purchaseOrderCart.skuId, wmsTables.skus.id))
-        .leftJoin(wmsTables.suppliers, eq(wmsTables.purchaseOrderCart.supplierId, wmsTables.suppliers.id))
-        .where(and(eq(wmsTables.purchaseOrderCart.id, itemId), eq(wmsTables.purchaseOrderCart.createdBy, userId)))
-        .limit(1);
-      return row;
-    }, tx);
-
-    if (!item) {
-      throw new NotFoundException(`Cart item with ID ${itemId} not found`);
-    }
-
-    return {
-      id: item.id,
-      skuId: item.skuId,
-      quantity: item.quantity,
-      type: item.type as PurchaseOrderType,
-      supplier:
-        item.supplierId && item.supplierName
-          ? {
-              id: item.supplierId,
-              name: item.supplierName,
-            }
-          : null,
-      createdAt: item.createdAt,
-      updatedAt: item.updatedAt,
-      sku: {
-        name: item.skuName ?? '',
-        barcode: item.skuBarcode ?? '',
-      },
-    };
-  }
-
-  /**
-   * 장바구니 비우기
-   */
-  async clearCart(type: PurchaseOrderType | undefined, userId: string, tx?: DbTx): Promise<void> {
-    const conditions: SQL[] = [eq(wmsTables.purchaseOrderCart.createdBy, userId)];
-    if (type) {
-      conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
-    }
-
-    await this.dbService.run(async (trx) => trx.delete(wmsTables.purchaseOrderCart).where(and(...conditions)), tx);
-
-    this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''} for user ${userId}`);
-  }
-
-  // ========== 재주문 제안 ==========
-
-  /**
-   * 재주문 제안 조회
-   * 안전재고 미만으로 떨어진 상품 목록
-   */
-  async getReorderSuggestions(warehouseId?: string, tx?: DbTx): Promise<StockReorderSuggestion[]> {
-    // stockSummary view에서 안전재고 미만 상품 조회
-    // 현재는 단순히 availableQty < 10인 상품을 반환 (향후 안전재고 설정 기능 추가 시 개선)
-
-    const query = sql`
-            SELECT
-                s.id as sku_id,
-                s.name as sku_name,
-                COALESCE(ss.available_qty, 0) as current_stock,
-                10 as safety_stock,  -- 임시 값
-                (10 - COALESCE(ss.available_qty, 0)) as shortfall,
-                GREATEST(20 - COALESCE(ss.available_qty, 0), 0) as suggested_order,
-                COALESCE(ss.on_order_qty, 0) as on_order_qty,
-                COALESCE(ss.in_transfer_qty, 0) as in_transfer_qty
-            FROM skus s
-            LEFT JOIN stock_summary_view ss ON s.id = ss.sku_id
-            WHERE COALESCE(ss.available_qty, 0) < 10
-            ${warehouseId ? sql`AND ss.warehouse_id = ${warehouseId}` : sql``}
-            ORDER BY shortfall DESC
-            LIMIT 100
-        `;
-
-    interface ReorderSuggestionRow {
-      sku_id: string;
-      sku_name: string;
-      current_stock: number;
-      safety_stock: number;
-      shortfall: number;
-      suggested_order: number;
-      on_order_qty: number;
-      in_transfer_qty: number;
-    }
-
-    const results = await this.dbService.run(async (trx) => trx.execute(query), tx);
-    const rows = results as unknown as ReorderSuggestionRow[];
-
-    return rows.map((row) => ({
-      skuId: row.sku_id,
-      skuName: row.sku_name,
-      currentStock: row.current_stock,
-      safetyStock: row.safety_stock,
-      shortfall: row.shortfall,
-      suggestedOrder: row.suggested_order,
-      onOrderQty: row.on_order_qty,
-      inTransferQty: row.in_transfer_qty,
-    }));
   }
 }

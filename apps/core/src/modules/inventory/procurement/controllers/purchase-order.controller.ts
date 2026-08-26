@@ -15,6 +15,8 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { PurchaseOrderService } from '../services/purchase-order.service';
+import { PurchaseOrderCartService } from '../services/purchase-order-cart.service';
+import { ReorderSuggestionReader } from '../services/reorder-suggestion.reader';
 import {
   CreatePurchaseOrderDto,
   UpdatePurchaseOrderStatusDto,
@@ -41,7 +43,11 @@ interface JwtPayload {
 @Controller('purchase-orders')
 @UseGuards(ScopeGuard)
 export class PurchaseOrderController {
-  constructor(private readonly purchaseOrderService: PurchaseOrderService) {}
+  constructor(
+    private readonly purchaseOrderService: PurchaseOrderService,
+    private readonly cartService: PurchaseOrderCartService,
+    private readonly reorderReader: ReorderSuggestionReader,
+  ) {}
 
   // ========== 발주 관리 ==========
 
@@ -113,7 +119,7 @@ export class PurchaseOrderController {
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async addToCart(@Body() addDto: AddToCartDto, @User() user: JwtPayload): Promise<CartItemResponse> {
-    return this.purchaseOrderService.addToCart(addDto, user.userId);
+    return this.cartService.addToCart(addDto, user.userId);
   }
 
   @Get('cart')
@@ -125,7 +131,7 @@ export class PurchaseOrderController {
     @Query('type') type: PurchaseOrderType | undefined,
     @User() user: JwtPayload,
   ): Promise<CartItemResponse[]> {
-    return this.purchaseOrderService.getCartItems(type, user.userId);
+    return this.cartService.getCartItems(type, user.userId);
   }
 
   @Put('cart/:itemId')
@@ -141,7 +147,7 @@ export class PurchaseOrderController {
     @Body() updateDto: UpdateCartItemDto,
     @User() user: JwtPayload,
   ): Promise<CartItemResponse> {
-    return this.purchaseOrderService.updateCartItem(itemId, user.userId, updateDto);
+    return this.cartService.updateCartItem(itemId, user.userId, updateDto);
   }
 
   @Delete('cart/:itemId')
@@ -154,7 +160,7 @@ export class PurchaseOrderController {
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeFromCart(@Param('itemId') itemId: string, @User() user: JwtPayload): Promise<void> {
-    return this.purchaseOrderService.removeFromCart(itemId, user.userId);
+    return this.cartService.removeFromCart(itemId, user.userId);
   }
 
   @Delete('cart')
@@ -168,7 +174,7 @@ export class PurchaseOrderController {
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async clearCart(@Query('type') type: PurchaseOrderType | undefined, @User() user: JwtPayload): Promise<void> {
-    return this.purchaseOrderService.clearCart(type, user.userId);
+    return this.cartService.clearCart(type, user.userId);
   }
 
   // ========== 재주문 제안 ==========
@@ -192,7 +198,7 @@ export class PurchaseOrderController {
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getReorderSuggestions(@Query('warehouseId') warehouseId?: string): Promise<StockReorderSuggestion[]> {
-    return this.purchaseOrderService.getReorderSuggestions(warehouseId);
+    return this.reorderReader.getSuggestions(warehouseId);
   }
 
   // ========== 발주 상세 조회 및 관리 (동적 라우트) ==========
