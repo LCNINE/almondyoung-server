@@ -83,7 +83,12 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
               <div className="mb-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <p className="text-xs font-semibold uppercase text-muted-foreground">발주 라인</p>
-                  <span className="text-xs text-muted-foreground">{formatLineProgress(progress)}</span>
+                  {/* progress.total === 0 이면 formatLineProgress 는 '라인 없음' 을 낸다.
+                      PurchaseOrderLineList 도 라인이 없을 때 같은 문구를 자체적으로
+                      낸다 — 여기서까지 렌더하면 화면에 '라인 없음' 이 두 번 뜬다. */}
+                  {progress.total > 0 && (
+                    <span className="text-xs text-muted-foreground">{formatLineProgress(progress)}</span>
+                  )}
                 </div>
                 {canEditLines && (
                   <Button size="sm" variant="outline" onClick={() => setEditLinesOpen(true)}>

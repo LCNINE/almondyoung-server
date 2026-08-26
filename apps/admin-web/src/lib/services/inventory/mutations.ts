@@ -607,7 +607,7 @@ export const useCreatePurchaseOrder = () => {
   return useMutation({
     mutationFn: (data: CreatePurchaseOrderRequest) => purchaseOrdersClient.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrdersRoot });
     },
   });
 };
@@ -618,7 +618,8 @@ export const useCreatePurchaseOrderFromCart = () => {
     mutationFn: (data: CreatePurchaseOrderFromCartRequest) =>
       purchaseOrdersClient.createFromCart(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrdersRoot });
+      // purchaseOrdersRoot 가 이미 cart 쿼리도 덮지만, 의도를 남기려고 남겨둔다.
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrderCart() });
     },
   });
@@ -629,9 +630,8 @@ export const useUpdatePurchaseOrderLines = () => {
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdatePurchaseOrderLinesRequest }) =>
       purchaseOrdersClient.updateLines(id, data),
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrders() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrder(id) });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.purchaseOrdersRoot });
     },
   });
 };
@@ -648,7 +648,12 @@ export const useOrderPurchaseOrderLine = () => {
       skuId: string;
       data: OrderPurchaseOrderLineRequest;
     }) => purchaseOrdersClient.orderLine(poId, skuId, data),
-    onSuccess: (_res, { poId }) => {
+    // onSettled — 실패(특히 409)에도 무효화한다. 이미 남이 실행한 라인을 409 로
+    // 되돌려받았을 때 목록이 여전히 requested+버튼을 보여주면 무한 재시도가
+    // 가능해진다. 전역 mutation 기본값이 retry:1 이라, 서버는 커밋됐는데
+    // 응답만 유실된 요청이 재시도 뒤 409 로 돌아오는 경우도 있다 — 그때는 실제로
+    // 성공한 액션이 실패 토스트와 함께 옛 화면 위에 뜨므로 무효화가 더더욱 필요하다.
+    onSettled: (_res, _err, { poId }) => {
       for (const queryKey of lineExecutionInvalidationKeys(poId)) {
         queryClient.invalidateQueries({ queryKey });
       }
@@ -668,7 +673,12 @@ export const useMarkPurchaseOrderLineUnavailable = () => {
       skuId: string;
       data: MarkLineUnavailableRequest;
     }) => purchaseOrdersClient.markLineUnavailable(poId, skuId, data),
-    onSuccess: (_res, { poId }) => {
+    // onSettled — 실패(특히 409)에도 무효화한다. 이미 남이 실행한 라인을 409 로
+    // 되돌려받았을 때 목록이 여전히 requested+버튼을 보여주면 무한 재시도가
+    // 가능해진다. 전역 mutation 기본값이 retry:1 이라, 서버는 커밋됐는데
+    // 응답만 유실된 요청이 재시도 뒤 409 로 돌아오는 경우도 있다 — 그때는 실제로
+    // 성공한 액션이 실패 토스트와 함께 옛 화면 위에 뜨므로 무효화가 더더욱 필요하다.
+    onSettled: (_res, _err, { poId }) => {
       for (const queryKey of lineExecutionInvalidationKeys(poId)) {
         queryClient.invalidateQueries({ queryKey });
       }

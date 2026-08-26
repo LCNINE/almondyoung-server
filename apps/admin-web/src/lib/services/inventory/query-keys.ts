@@ -129,6 +129,15 @@ export const inventoryQueryKeys = {
     ['inventory', 'stocktaking', 'sessions', sessionId, 'variances'] as const,
 
   // 발주 관련
+  /**
+   * 발주 쿼리 서브트리 전체. 무효화에 쓴다.
+   *
+   * `purchaseOrders()` 를 무효화 필터로 쓰면 안 된다 — 인자 없이 부르면
+   * ['purchase-orders', undefined] 가 되고, TanStack Query 의 partialMatchKey 는
+   * 접두사 일치가 아니라 위치별 비교라 typeof {} !== typeof undefined 에서 걸려
+   * 필터가 실린 목록 쿼리를 하나도 못 잡는다(query-core 5.90.5 실측).
+   */
+  purchaseOrdersRoot: ['purchase-orders'] as const,
   purchaseOrders: (filters?: PurchaseOrderListFilters) =>
     ['purchase-orders', filters] as const,
   purchaseOrder: (id: string) => ['purchase-orders', id] as const,

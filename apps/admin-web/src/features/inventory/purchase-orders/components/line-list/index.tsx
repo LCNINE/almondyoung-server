@@ -9,6 +9,7 @@ import type {
   PurchaseOrderLineStatus,
 } from '@/lib/types/dto/inventory';
 import {
+  canExecuteLines,
   isLineExecutable,
   sortLinesForExecution,
   toCalendarDate,
@@ -51,8 +52,18 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
     return <p className="text-sm text-muted-foreground">라인 없음</p>;
   }
 
+  // received 는 canExecuteLines 가 항상 false 라 모든 라인의 [실행][불가] 버튼이
+  // 사라진다 — 남은 requested 라인이 있으면 왜 못 건드리는지 이유를 알려준다.
+  const showReceivedNotice =
+    !canExecuteLines(po.status) && po.lines.some((line) => line.status === 'requested');
+
   return (
     <>
+      {showReceivedNotice && (
+        <p className="mb-2 text-sm text-muted-foreground">
+          입고가 완료된 발주라 남은 요청 라인을 실행할 수 없습니다.
+        </p>
+      )}
       <div className="space-y-2">
         {sortLinesForExecution(po.lines).map((line) => (
           <div key={line.skuId} className="rounded-md border p-3 text-sm">
@@ -82,7 +93,9 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
                 {line.orderedAt && (
                   <span className="text-xs text-muted-foreground">
                     {new Date(line.orderedAt).toLocaleString('ko-KR')}
-                    {line.orderedBy && ` · ${line.orderedBy}`}
+                    {/* orderedBy 는 이름 조인이 없는 raw UUID 다 — 36자를 그대로 실으면
+                        640px 드로어에서 타임스탬프 뒤가 넘친다. 앞 8자만 라벨과 함께. */}
+                    {line.orderedBy && ` · 처리자 ${line.orderedBy.slice(0, 8)}…`}
                   </span>
                 )}
               </div>

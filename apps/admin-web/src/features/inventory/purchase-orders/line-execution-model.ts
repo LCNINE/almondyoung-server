@@ -143,7 +143,7 @@ export function buildOrderLinePayload(values: OrderLineFormValues): OrderLinePay
 
   if (values.expectedArrival.trim()) {
     if (!isCalendarDate(values.expectedArrival)) {
-      return { ok: false, reason: '도착예정일은 YYYY-MM-DD 형식이어야 합니다.' };
+      return { ok: false, reason: '도착예정일은 달력에 존재하는 날짜를 YYYY-MM-DD 형식으로 입력하세요.' };
     }
     payload.expectedArrival = values.expectedArrival;
   }

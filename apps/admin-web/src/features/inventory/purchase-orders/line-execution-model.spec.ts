@@ -172,6 +172,17 @@ describe('buildOrderLinePayload', () => {
       buildOrderLinePayload({ orderedQty: '3', unitPrice: '', expectedArrival: '2026-13-45' }).ok
     ).toBe(false);
   });
+
+  it('모양은 맞지만 실재하지 않는 날짜는 "형식이 아니다" 가 아니라 "달력에 없다" 로 거부한다', () => {
+    // '2026-02-31' 은 YYYY-MM-DD 모양 자체는 맞으므로, 형식 메시지를 그대로 쓰면
+    // 사용자에게 틀린 이유를 알려주게 된다. core 문구를 그대로 쓴다.
+    expect(
+      buildOrderLinePayload({ orderedQty: '3', unitPrice: '', expectedArrival: '2026-02-31' })
+    ).toEqual({
+      ok: false,
+      reason: '도착예정일은 달력에 존재하는 날짜를 YYYY-MM-DD 형식으로 입력하세요.',
+    });
+  });
 });
 
 describe('partitionLinesForEdit', () => {
