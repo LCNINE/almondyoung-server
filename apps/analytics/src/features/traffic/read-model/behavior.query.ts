@@ -8,6 +8,7 @@ import {
   BehaviorTotalsDto,
   DeviceFunnelRowDto,
   ItemBehaviorRowDto,
+  LandingRevenueRowDto,
 } from '../api/behavior-query.dto';
 import { fromGa4Date } from './traffic.query';
 
@@ -111,6 +112,21 @@ export function mapItemBehavior(response: RunReportResponse): ItemBehaviorRowDto
   });
 }
 
+/** landingPage 차원 리포트 → 랜딩페이지별 세션·구매·매출 행 */
+export function mapLandingRevenue(response: RunReportResponse): LandingRevenueRowDto[] {
+  return (response.rows ?? []).map((row) => {
+    const sessions = toNum(row.metricValues?.[0]?.value);
+    const transactions = toNum(row.metricValues?.[1]?.value);
+    return {
+      path: row.dimensionValues?.[0]?.value ?? '(not set)',
+      sessions,
+      transactions,
+      revenue: toNum(row.metricValues?.[2]?.value),
+      conversionRate: rate(transactions, sessions),
+    };
+  });
+}
+
 /** deviceCategory×eventName 리포트 → 기기별 퍼널 행 (상품조회 많은 순) */
 export function mapDeviceFunnel(response: RunReportResponse): DeviceFunnelRowDto[] {
   const byDevice = new Map<string, Record<string, number>>();
@@ -146,7 +162,7 @@ export class BehaviorQuery {
   async getBehavior(from: string, to: string, limit: number): Promise<BehaviorStatisticsResponseDto> {
     const base = { range: { from, to } };
     if (!this.ga4.enabled) {
-      return { ...base, enabled: false, totals: null, series: [], items: [], devices: [] };
+      return { ...base, enabled: false, totals: null, series: [], items: [], devices: [], landingRevenue: [] };
     }
 
     const cacheKey = `${from}|${to}|${limit}`;
@@ -161,8 +177,9 @@ export class BehaviorQuery {
     let dailySessions: RunReportResponse;
     let items: RunReportResponse;
     let devices: RunReportResponse;
+    let landing: RunReportResponse;
     try {
-      [sessions, funnel, dailyEvents, dailySessions, items, devices] = await Promise.all([
+      [sessions, funnel, dailyEvents, dailySessions, items, devices, landing] = await Promise.all([
         this.ga4.runReport({
           dateRanges,
           metrics: [{ name: 'sessions' }, { name: 'totalUsers' }],
@@ -205,6 +222,13 @@ export class BehaviorQuery {
           metrics: [{ name: 'eventCount' }],
           limit: 50,
         }),
+        this.ga4.runReport({
+          dateRanges,
+          dimensions: [{ name: 'landingPage' }],
+          metrics: [{ name: 'sessions' }, { name: 'transactions' }, { name: 'purchaseRevenue' }],
+          orderBys: [{ metric: { metricName: 'purchaseRevenue' }, desc: true }],
+          limit,
+        }),
       ]);
     } catch (error) {
       this.logger.warn(`GA4 조회 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -230,6 +254,7 @@ export class BehaviorQuery {
       series: mapBehaviorDailySeries(dailyEvents, dailySessions, from, to),
       items: mapItemBehavior(items),
       devices: mapDeviceFunnel(devices),
+      landingRevenue: mapLandingRevenue(landing),
     };
 
     if (this.cache.size >= CACHE_MAX_ENTRIES) {

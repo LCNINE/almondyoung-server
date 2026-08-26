@@ -1,6 +1,13 @@
 import { UpstreamUnavailableError } from '@app/shared';
 import { Ga4Client } from '../ga4/ga4.client';
-import { BehaviorQuery, mapBehaviorDailySeries, mapDeviceFunnel, mapEventCounts, mapItemBehavior } from './behavior.query';
+import {
+  BehaviorQuery,
+  mapBehaviorDailySeries,
+  mapDeviceFunnel,
+  mapEventCounts,
+  mapItemBehavior,
+  mapLandingRevenue,
+} from './behavior.query';
 
 function row(dimensions: string[], metrics: number[]) {
   return {
@@ -44,6 +51,9 @@ function fakeReports(request: ReportRequest) {
   }
   if (names === 'itemName') {
     return { rows: [row(['골드키위'], [50, 20, 5, 150000]), row(['퍼마블렌드'], [30, 0, 0, 0])] };
+  }
+  if (names === 'landingPage') {
+    return { rows: [row(['/products/kiwi'], [80, 4, 200000]), row(['/'], [120, 2, 90000])] };
   }
   // deviceCategory,eventName
   return {
@@ -120,6 +130,22 @@ describe('mapDeviceFunnel', () => {
   });
 });
 
+describe('mapLandingRevenue', () => {
+  it('랜딩페이지별 세션·구매·매출과 전환율(구매÷세션)을 계산한다', () => {
+    const rows = mapLandingRevenue({
+      rows: [row(['/products/kiwi'], [80, 4, 200000]), row(['/event'], [0, 0, 0])],
+    });
+    expect(rows[0]).toEqual({
+      path: '/products/kiwi',
+      sessions: 80,
+      transactions: 4,
+      revenue: 200000,
+      conversionRate: 0.05,
+    });
+    expect(rows[1].conversionRate).toBeNull();
+  });
+});
+
 describe('BehaviorQuery.getBehavior', () => {
   it('env 미배선이면 GA4 를 부르지 않고 enabled=false 를 돌려준다', async () => {
     const { query, runReport } = buildQuery({ enabled: false });
@@ -130,7 +156,7 @@ describe('BehaviorQuery.getBehavior', () => {
     expect(runReport).not.toHaveBeenCalled();
   });
 
-  it('여섯 리포트를 응답 모양으로 변환한다', async () => {
+  it('일곱 리포트를 응답 모양으로 변환한다', async () => {
     const { query } = buildQuery();
     const result = await query.getBehavior('2026-08-01', '2026-08-03', 20);
 
@@ -147,13 +173,20 @@ describe('BehaviorQuery.getBehavior', () => {
     expect(result.series).toHaveLength(3);
     expect(result.items[0].name).toBe('골드키위');
     expect(result.devices[0].device).toBe('mobile');
+    expect(result.landingRevenue[0]).toEqual({
+      path: '/products/kiwi',
+      sessions: 80,
+      transactions: 4,
+      revenue: 200000,
+      conversionRate: 0.05,
+    });
   });
 
   it('같은 조회는 캐시에서 돌려준다 (외부 API 쿼터 보호)', async () => {
     const { query, runReport } = buildQuery();
     await query.getBehavior('2026-08-01', '2026-08-03', 20);
     await query.getBehavior('2026-08-01', '2026-08-03', 20);
-    expect(runReport).toHaveBeenCalledTimes(6);
+    expect(runReport).toHaveBeenCalledTimes(7);
   });
 
   it('GA4 호출 실패는 500 이 아니라 UpstreamUnavailableError(502)로 나간다', async () => {

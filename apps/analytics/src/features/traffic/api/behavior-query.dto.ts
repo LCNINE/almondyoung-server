@@ -68,6 +68,18 @@ export class DeviceFunnelRowDto {
   conversionRate: number | null;
 }
 
+export class LandingRevenueRowDto {
+  /** 세션이 시작된 랜딩페이지 경로 */
+  path: string;
+  sessions: number;
+  /** 그 세션들에서 발생한 구매 건수 */
+  transactions: number;
+  /** 그 세션들에서 발생한 구매 매출 */
+  revenue: number;
+  /** 구매 ÷ 세션. 세션 0 이면 null */
+  conversionRate: number | null;
+}
+
 export class BehaviorStatisticsResponseDto {
   /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
   enabled: boolean;
@@ -76,4 +88,6 @@ export class BehaviorStatisticsResponseDto {
   series: BehaviorDailyBucketDto[];
   items: ItemBehaviorRowDto[];
   devices: DeviceFunnelRowDto[];
+  /** 랜딩페이지별 매출 — SEO/유입 투자가 매출로 이어졌는지 (매출 내림차순) */
+  landingRevenue: LandingRevenueRowDto[];
 }

@@ -223,6 +223,42 @@ export default function BehaviorStatisticsTemplate() {
           </ChartCard>
 
           <ChartCard
+            title="랜딩페이지별 매출"
+            description="그 페이지로 들어온 세션이 만든 구매·매출 — 상세페이지 랜딩이 홈 랜딩보다 잘 사는지, SEO 투자가 매출로 이어졌는지 봅니다."
+            isLoading={isLoading}
+            isEmpty={!data || data.landingRevenue.length === 0}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b text-gray-500">
+                    <th className="py-1.5 text-left">#</th>
+                    <th className="py-1.5 text-left">랜딩페이지</th>
+                    <th className="py-1.5 text-right">세션</th>
+                    <th className="py-1.5 text-right">구매</th>
+                    <th className="py-1.5 text-right">세션→구매</th>
+                    <th className="py-1.5 text-right">매출</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.landingRevenue ?? []).map((rowItem, index) => (
+                    <tr key={rowItem.path} className="border-b last:border-0">
+                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5">
+                        <span className="font-medium text-gray-900 break-all">{rowItem.path}</span>
+                      </td>
+                      <td className="py-1.5 text-right tabular-nums">{formatCount(rowItem.sessions)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{formatCount(rowItem.transactions)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{formatPercent(rowItem.conversionRate)}</td>
+                      <td className="py-1.5 text-right tabular-nums text-gray-900">{formatKrw(rowItem.revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </ChartCard>
+
+          <ChartCard
             title="기기별 퍼널"
             description="기기별 상품 조회→구매 — 특정 기기의 전환율이 유독 낮으면 그 화면의 UX 문제를 의심합니다."
             isLoading={isLoading}

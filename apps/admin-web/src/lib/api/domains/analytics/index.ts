@@ -225,6 +225,14 @@ export interface BehaviorStatistics {
     purchase: number;
     conversionRate: number | null;
   }>;
+  /** 랜딩페이지별 매출 — SEO/유입 투자가 매출로 이어졌는지 (매출 내림차순) */
+  landingRevenue: Array<{
+    path: string;
+    sessions: number;
+    transactions: number;
+    revenue: number;
+    conversionRate: number | null;
+  }>;
 }
 
 export interface DailyRevenueSummary extends RevenueTotals {
