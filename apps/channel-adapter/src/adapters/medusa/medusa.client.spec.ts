@@ -1011,7 +1011,9 @@ describe('MedusaClient.refreshCustomerCartPrices', () => {
 });
 
 describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
-  function makeCategoryClient(parentLookup: { id: string } | null) {
+  // currentParent = Medusa 에 저장돼 있는 현재 부모. 부모 갱신은 이 값과 다를 때만
+  // payload 에 실린다 (같은 값을 다시 보내면 Medusa 가 형제 맨 뒤로 재배치한다).
+  function makeCategoryClient(parentLookup: { id: string } | null, currentParent: string | null = 'pcat_old_parent') {
     const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_child' } });
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
     Object.defineProperties(client, {
@@ -1022,7 +1024,12 @@ describe('MedusaClient.ensureCategoryFromSnapshot 부모 갱신', () => {
     });
 
     // ensureCategoryFromSnapshot 이 쓰는 조회/캐시 헬퍼만 대체한다.
-    const existing = { id: 'pcat_child', handle: 'cafe24-cat-531', metadata: {} };
+    const existing = {
+      id: 'pcat_child',
+      handle: 'cafe24-cat-531',
+      metadata: {},
+      parent_category_id: currentParent,
+    };
     (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(parentLookup);
     (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
     (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
@@ -1214,3 +1221,117 @@ describe('MedusaClient.ensureCategoryFromSnapshot 상품 경로는 필드를 건
     expect(update.mock.calls[0][1].metadata.isVisibleToMembersOnly).toBe(true);
   });
 })
+
+/**
+ * rank·parent 는 형제 순서를 흔든다. 단건 갱신은 둘 다 건드리지 않아야 한다 —
+ * 이름만 고쳐도 순서가 무너지던 사고의 재발 방지.
+ */
+describe('MedusaClient 카테고리 순서', () => {
+  function makeClient() {
+    const update = jest.fn().mockResolvedValue({ product_category: { id: 'pcat_x' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { admin: { productCategory: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() } },
+      cacheOnlyMode: { value: false, writable: true },
+    });
+    const existing = { id: 'pcat_x', handle: 'cafe24-cat-499', metadata: {} };
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue(null);
+    (client as any).findCategoryByCandidateHandles = jest.fn().mockResolvedValue(existing);
+    (client as any).findCategoryByPimId = jest.fn().mockResolvedValue(existing);
+    (client as any).getCategoryById = jest.fn().mockResolvedValue(existing);
+    (client as any).setCategoryCache = jest.fn();
+    return { client, update };
+  }
+
+  it('단건 갱신은 sortOrder 를 받아도 rank 를 보내지 않는다', async () => {
+    const { client, update } = makeClient();
+
+    await client.ensureCategoryFromSnapshot(
+      {
+        id: 'pim-499',
+        name: '전체상품 보기',
+        slug: 'cafe24-cat-499',
+        path: '499',
+        parentId: null,
+        isActive: true,
+        visibility: true,
+        showOnMainCategory: false,
+        sortOrder: 0,
+      },
+      { refreshFields: true },
+    );
+
+    expect(update).toHaveBeenCalled();
+    expect(update.mock.calls[0][1]).not.toHaveProperty('rank');
+  });
+
+  it('부모가 그대로면 parent_category_id 를 보내지 않는다', async () => {
+    const { client, update } = makeClient();
+
+    await client.ensureCategoryFromSnapshot(
+      {
+        id: 'pim-499',
+        name: '전체상품 보기',
+        slug: 'cafe24-cat-499',
+        path: '499',
+        parentId: null,
+        isActive: true,
+        visibility: true,
+        showOnMainCategory: false,
+      },
+      { refreshFields: true },
+    );
+
+    expect(update.mock.calls[0][1]).not.toHaveProperty('parent_category_id');
+  });
+
+  it('부모가 실제로 바뀌면 parent_category_id 를 보낸다', async () => {
+    const { client, update } = makeClient();
+    (client as any).findCategoryByPimRef = jest.fn().mockResolvedValue({ id: 'medusa-parent' });
+
+    await client.ensureCategoryFromSnapshot(
+      {
+        id: 'pim-499',
+        name: '전체상품 보기',
+        slug: 'cafe24-cat-499',
+        path: '499',
+        parentId: 'pim-parent',
+        isActive: true,
+        visibility: true,
+        showOnMainCategory: false,
+      },
+      { refreshFields: true },
+    );
+
+    expect(update.mock.calls[0][1].parent_category_id).toBe('medusa-parent');
+  });
+
+  it('syncSiblingRanks 는 배열 순서대로 rank 0..n-1 을 순차로 민다', async () => {
+    const { client, update } = makeClient();
+    (client as any).findCategoryByPimRef = jest.fn(async (pimId: string) => ({ id: `medusa-${pimId}` }));
+
+    await client.syncSiblingRanks(['pim-a', 'pim-b', 'pim-c']);
+
+    expect(update.mock.calls).toEqual([
+      ['medusa-pim-a', { rank: 0 }],
+      ['medusa-pim-b', { rank: 1 }],
+      ['medusa-pim-c', { rank: 2 }],
+    ]);
+  });
+
+  // 구멍을 남기면 그 자리를 남의 카테고리가 차지한다.
+  it('Medusa 에 아직 없는 형제 자리는 비우지 않고 뒤를 당긴다', async () => {
+    const { client, update } = makeClient();
+    (client as any).findCategoryByPimRef = jest.fn(async (pimId: string) =>
+      pimId === 'pim-b' ? null : { id: `medusa-${pimId}` },
+    );
+
+    await client.syncSiblingRanks(['pim-a', 'pim-b', 'pim-c']);
+
+    expect(update.mock.calls).toEqual([
+      ['medusa-pim-a', { rank: 0 }],
+      ['medusa-pim-c', { rank: 1 }],
+    ]);
+  });
+});

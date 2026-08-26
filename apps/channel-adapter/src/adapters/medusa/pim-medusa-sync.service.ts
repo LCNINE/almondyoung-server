@@ -683,7 +683,7 @@ export class PimMedusaSyncService {
    * Handle CategoryChanged event from PIM
    */
   async handleCategoryChanged(event: CategoryChangedPayload): Promise<SyncResult> {
-    const { categoryId, changeType, category, ancestors } = event;
+    const { categoryId, changeType, category, ancestors, siblingOrder } = event;
 
     this.logger.log(`Processing CategoryChanged: ${categoryId} (${changeType})`);
 
@@ -751,6 +751,12 @@ export class PimMedusaSyncService {
       );
 
       this.logger.log(`Category synced to Medusa: PIM=${categoryId} → Medusa=${medusaCategoryId}`);
+
+      // 순서가 실제로 바뀐 변경에만 실린다. 카테고리 자체를 보장한 뒤에 밀어야
+      // 방금 만든 카테고리도 제자리를 잡는다.
+      if (siblingOrder?.length) {
+        await this.medusaClient.syncSiblingRanks(siblingOrder);
+      }
 
       await this.storefrontRevalidate.revalidateCategory(medusaCategoryId);
 

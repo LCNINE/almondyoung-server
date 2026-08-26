@@ -721,13 +721,22 @@ export class MedusaClient {
         return existing.id;
       }
 
+      // 부모가 실제로 바뀔 때만 보낸다. 같은 값이어도 키가 있으면 Medusa 는 부모 이동으로
+      // 보고 카테고리를 형제 맨 뒤로 재배치한다 (루트에 null 재전송 → 형제 21건 동반 이동).
+      const currentParentId = verified.parent_category_id ?? null;
+      const desiredParentId = 'parent_category_id' in parentUpdate ? parentUpdate.parent_category_id ?? null : undefined;
+      const parentPatch =
+        desiredParentId !== undefined && desiredParentId !== currentParentId
+          ? { parent_category_id: desiredParentId }
+          : {};
+
       const updatePayload = {
         name: categorySnapshot.name,
         handle: preferredHandle,
         is_internal: false,
         is_active: isActive,
-        ...parentUpdate,
-        ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+        ...parentPatch,
+        // rank 는 보내지 않는다 — 순서는 syncSiblingRanks 만 만진다.
         ...(categorySnapshot.description !== undefined && {
           description: categorySnapshot.description ?? '',
         }),
@@ -756,7 +765,8 @@ export class MedusaClient {
       is_internal: false,
       is_active: isActive,
       parent_category_id: parentMedusaId,
-      ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
+      // 신규도 rank 를 지정하지 않는다. Medusa 가 맨 뒤에 붙이고, 순서에 뜻이 있으면
+      // 뒤따르는 syncSiblingRanks 가 제자리로 옮긴다.
       ...(categorySnapshot.description !== undefined && {
         description: categorySnapshot.description ?? '',
       }),
@@ -770,6 +780,36 @@ export class MedusaClient {
     this.setCategoryCache(categorySnapshot.id, created.id);
     this.logger.log(`Created Medusa category ${created.id} from snapshot for PIM category ${categorySnapshot.id}`);
     return created.id;
+  }
+
+  /**
+   * 형제 전체의 rank 를 PIM 순서대로 0..n-1 로 다시 매긴다.
+   *
+   * Medusa 는 rank 를 받을 때마다 형제를 시프트하므로 앞에서부터 순차로 밀어야 한다.
+   * 병렬로 보내면 시프트가 서로를 덮어써 순서가 어긋난다.
+   *
+   * rank 는 배열 index 가 아니라 실제로 적용한 횟수로 센다. Medusa 에 아직 없는
+   * 카테고리 자리에 구멍을 남기면 그 자리를 남의 카테고리가 차지한다.
+   * PIM 배열에 없는 형제(비활성 legacy 등)는 자연히 뒤로 밀린다.
+   */
+  async syncSiblingRanks(orderedPimCategoryIds: string[]): Promise<void> {
+    let rank = 0;
+
+    for (const pimCategoryId of orderedPimCategoryIds) {
+      const found = await this.findCategoryByPimRef(pimCategoryId);
+      if (!found?.id) {
+        this.logger.warn(`Category ${pimCategoryId} not in Medusa — 순서 적용 건너뜀`);
+        continue;
+      }
+
+      try {
+        await this.sdk.admin.productCategory.update(found.id, { rank });
+        rank++;
+      } catch (err) {
+        const fetchError = err as FetchError;
+        this.logger.warn(`Failed to set rank ${rank} on Medusa category ${found.id}: ${fetchError.message}`);
+      }
+    }
   }
 
   // 상품을 지정된 카테고리에 강제 매핑 (Medusa v2: 제품 업데이트로 categories 설정)

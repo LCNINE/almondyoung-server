@@ -200,6 +200,14 @@ export interface CategoryChangedPayload {
    * 자식이 최상위로 잘못 붙지 않는다(이벤트 순서와 무관하게 트리 유지).
    */
   ancestors?: CategorySnapshot[];
+  /**
+   * 형제 전체의 최종 순서(PIM 카테고리 ID 배열). 순서가 실제로 바뀐 변경에만 실린다.
+   *
+   * 소비자의 rank 는 절대값이 아니라 형제 목록 안의 삽입 위치라, 한 건만 보내면 그
+   * 카테고리가 남의 자리를 뺏고 나머지를 밀어낸다. 순서는 형제 전체를 아는 PIM 이
+   * 배열째 넘긴다.
+   */
+  siblingOrder?: string[];
 }
 
 export interface CategorySnapshot {
@@ -423,6 +431,7 @@ const CategoryChangedSchema = z.object({
    * 추가는 additive 라 옛 producer 를 깨지 않는다.
    */
   ancestors: z.array(CategorySnapshotSchema).optional(),
+  siblingOrder: z.array(z.string().uuid()).optional(),
 });
 
 // ===== Stream Config =====
