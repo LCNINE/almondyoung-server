@@ -4,6 +4,7 @@ import { SharedModule } from '../shared/shared.module';
 import { InboundModule } from '../inbound/inbound.module';
 import { PurchaseOrderController } from './controllers/purchase-order.controller';
 import { PurchaseOrderService } from './services/purchase-order.service';
+import { PurchaseOrderCartService } from './services/purchase-order-cart.service';
 
 /**
  * 조달(발주) 모듈. 경계는 ADR-0032 가 소유한다.
@@ -23,7 +24,7 @@ import { PurchaseOrderService } from './services/purchase-order.service';
 @Module({
   imports: [CoreInventoryModule, SharedModule, InboundModule],
   controllers: [PurchaseOrderController],
-  providers: [PurchaseOrderService],
-  exports: [PurchaseOrderService],
+  providers: [PurchaseOrderService, PurchaseOrderCartService],
+  exports: [PurchaseOrderService, PurchaseOrderCartService],
 })
 export class ProcurementModule {}
