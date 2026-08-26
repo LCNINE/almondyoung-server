@@ -1,22 +1,24 @@
 "use client"
 
 import ProductCard from "@/domains/products/components/product-card"
+import {
+  ProductSortTabs,
+  type ProductSortTabOption,
+} from "@/components/products/product-sort-tabs"
 import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { HttpTypes } from "@medusajs/types"
-import CustomDropdown from "@components/dropdown"
 import { SearchHistory } from "@components/search/search-history"
 import { SharedPagination } from "@/components/shared/pagination"
 import { useSearchHistory } from "@hooks/ui/use-search-history"
 import type { SearchProductResult } from "../data/search-results"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
-import { SearchEmptyState } from "./search-empty-state"
-import { CircleHelp } from "lucide-react"
-import { useEffect, useState } from "react"
+import { SearchEmptyState } from "../components/search-empty-state"
+import { useEffect } from "react"
 
-interface SearchPageClientProps {
+interface SearchResultsProps {
   isMembership: boolean
   isLoggedIn: boolean
   keyword: string
@@ -24,32 +26,28 @@ interface SearchPageClientProps {
   countryCode: string
   regionId?: string
   wishlistIds?: string[]
-  /** 검색어가 브랜드관 브랜드와 매칭될 때 최상단에 띄우는 카드 (서버에서 렌더) */
+  /** 검색어가 브랜드관 브랜드와 매칭될 때 최상단에 띄우는 카드 */
   brandBanner?: React.ReactNode
+  /** 영타 교정 안내 + 연관검색어 */
+  correctionNotice?: React.ReactNode
 }
 
-export function SearchPageClient({
+export function SearchResults({
   keyword,
   searchResult,
   isMembership,
   countryCode,
   wishlistIds = [],
   brandBanner = null,
-}: SearchPageClientProps) {
+  correctionNotice = null,
+}: SearchResultsProps) {
   const router = useRouter()
   const t = useTranslations("search.result")
   const tSort = useTranslations("search.sort")
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
-  const [isReviewInfoOpen, setIsReviewInfoOpen] = useState(false)
 
-  const SORT_OPTIONS = [
-    { id: "relevance", label: tSort("relevance") },
-    { id: "review", label: tSort("review") },
-    { id: "price_asc", label: tSort("priceAsc") },
-    { id: "price_desc", label: tSort("priceDesc") },
-    { id: "newest", label: tSort("newest") },
-  ]
+
 
   const currentSort = normalizeSearchSort(searchParams.get("sort"))
   const currentPage = Math.max(1, Number(searchParams.get("page")) || 1)
@@ -92,6 +90,14 @@ export function SearchPageClient({
     })
   }
 
+  const sortTabOptions: ProductSortTabOption[] = [
+    { value: "relevance", label: tSort("relevance") },
+    { value: "review", label: tSort("review") },
+    { value: "price_asc", label: tSort("priceAsc") },
+    { value: "price_desc", label: tSort("priceDesc") },
+    { value: "newest", label: tSort("newest") },
+  ]
+
   const handleSortChange = (sortId: string) => {
     const params = new URLSearchParams(searchParams.toString())
     if (sortId === "relevance") {
@@ -130,6 +136,7 @@ export function SearchPageClient({
     return (
       <div className="flex flex-col">
         {brandBanner}
+        {correctionNotice}
         <SearchEmptyState keyword={keyword} historyKeywords={historyKeywords} />
       </div>
     )
@@ -138,6 +145,7 @@ export function SearchPageClient({
   return (
     <div className="flex flex-col">
       {brandBanner}
+      {correctionNotice}
       <div className="mb-6">
         <h1 className="mb-2 text-xl font-bold text-gray-900 md:text-2xl">
           <span className="text-olive-600">{t("title", { keyword })}</span>
@@ -152,40 +160,17 @@ export function SearchPageClient({
         </p>
       </div>
 
-      <div className="mb-4 flex items-center justify-between">
-        <div className="hidden text-sm text-gray-500 md:block">
-          {t("pageInfo", { current: currentPage, total: totalPages })}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <div
-            className="relative flex items-center"
-            onMouseEnter={() => setIsReviewInfoOpen(true)}
-            onMouseLeave={() => setIsReviewInfoOpen(false)}
-          >
-            <button
-              type="button"
-              aria-label={tSort("reviewHelpAria")}
-              aria-expanded={isReviewInfoOpen}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-500"
-              onClick={() => setIsReviewInfoOpen((open) => !open)}
-              onBlur={() => setIsReviewInfoOpen(false)}
-            >
-              <CircleHelp className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {isReviewInfoOpen && (
-              <div
-                role="tooltip"
-                className="absolute right-0 top-8 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
-              >
-                {tSort("reviewHelp")}
-              </div>
-            )}
-          </div>
-          <CustomDropdown
-            items={SORT_OPTIONS}
-            defaultValue={currentSort}
-            onSelect={handleSortChange}
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <ProductSortTabs
+            options={sortTabOptions}
+            value={currentSort}
+            onChange={handleSortChange}
+            label={tSort("label")}
           />
+        </div>
+        <div className="hidden shrink-0 text-sm text-gray-500 md:block">
+          {t("pageInfo", { current: currentPage, total: totalPages })}
         </div>
       </div>
 

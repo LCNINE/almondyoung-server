@@ -145,6 +145,22 @@ export class SearchKeywordService {
     };
   }
 
+  async getRelatedKeywords(rawKeyword: string, size: number): Promise<string[]> {
+    const keywordNorm = this.normalizeKeyword(rawKeyword);
+    if (!keywordNorm || size < 1) {
+      return [];
+    }
+
+    const rows = await this.repository.getRelatedKeywords({
+      compactKeyword: compactText(keywordNorm),
+      excludeNorm: keywordNorm,
+      size,
+      lookbackDays: this.defaultLookbackDays,
+    });
+
+    return rows.map((row) => row.keyword);
+  }
+
   private normalizeDisplayKeyword(value: string): string {
     return value.trim().replace(/\s+/g, ' ');
   }

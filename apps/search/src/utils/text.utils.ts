@@ -24,5 +24,9 @@ export function toJamo(value: string): string {
 // ("Perma" → "ㅖㄷ금"). 호출부는 원문 검색을 함께 유지할 것.
 export function qwertyToHangul(value: string): string {
   const converted = normalizeHangul(convertQwertyToHangul(value).trim());
+  // 이미 한글인 검색어는 변환기가 그대로 돌려주므로 아래 가드를 통과한다. 교정이 아니니 버린다.
+  if (converted === normalizeHangul(value).trim()) {
+    return '';
+  }
   return /^[가-힣\s]+$/.test(converted) ? converted : '';
 }

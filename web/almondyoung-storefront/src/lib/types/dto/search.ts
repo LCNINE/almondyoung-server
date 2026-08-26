@@ -25,6 +25,9 @@ export interface SearchServicePagination {
 export interface SearchServiceProductsResponse {
   items: SearchServiceProductItem[]
   pagination: SearchServicePagination
+  // 영타로 친 검색어를 되돌린 결과 ("tpwp" → "세제")
+  correctedQuery?: string
+  relatedKeywords?: string[]
 }
 
 // 급상승 검색어 아이템

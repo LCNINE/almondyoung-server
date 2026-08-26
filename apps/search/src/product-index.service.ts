@@ -215,6 +215,8 @@ export class ProductIndexService implements OnModuleInit {
       };
     });
 
+    const correctedQuery = hasKeyword && query.correct !== false ? qwertyToHangul(query.q!.trim()) : '';
+
     return {
       items,
       pagination: {
@@ -223,6 +225,7 @@ export class ProductIndexService implements OnModuleInit {
         total,
         totalPages: Math.ceil(total / size),
       },
+      ...(correctedQuery ? { correctedQuery } : {}),
     };
   }
 
@@ -411,7 +414,7 @@ export class ProductIndexService implements OnModuleInit {
       if (stage === 'strict') {
         mustClauses.push(this.buildStrictTextQuery(q, compactQ, noriCollapsed));
       } else {
-        mustClauses.push(this.buildFallbackTextQuery(q, compactQ));
+        mustClauses.push(this.buildFallbackTextQuery(q, compactQ, query.correct !== false));
       }
     }
 
@@ -574,7 +577,7 @@ export class ProductIndexService implements OnModuleInit {
     };
   }
 
-  private buildFallbackTextQuery(q: string, compactQ: string): any {
+  private buildFallbackTextQuery(q: string, compactQ: string, allowCorrection = true): any {
     const compactLength = compactQ.length;
     const minimumShouldMatch = this.resolveFallbackMinimumShouldMatch(q, compactQ);
 
@@ -620,7 +623,7 @@ export class ProductIndexService implements OnModuleInit {
           },
           ...this.buildCompactClauses(compactQ),
           ...this.buildJamoTypoClauses(q, compactQ),
-          ...this.buildQwertyClauses(q),
+          ...(allowCorrection ? this.buildQwertyClauses(q) : []),
         ],
         minimum_should_match: 1,
       },

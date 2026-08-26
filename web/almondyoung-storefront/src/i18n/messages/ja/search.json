@@ -29,16 +29,18 @@
     "title": "「{keyword}」の検索結果",
     "totalCount": "合計 <strong>{count}</strong> 件の商品",
     "pageInfo": "{current}/{total} ページ",
-    "loadFail": "[SearchContainer] 検索失敗:"
+    "loadFail": "[SearchContainer] 検索失敗:",
+    "correctedTitle": "<strong>{corrected}</strong> に修正した検索結果です。",
+    "searchOriginal": "入力された <link>{original}</link> で検索しますか？",
+    "relatedTitle": "関連キーワード"
   },
   "sort": {
     "relevance": "関連度順",
     "review": "レビュー順",
-    "reviewHelpAria": "レビュー順の基準を見る",
-    "reviewHelp": "レビュー順は単純なレビュー件数ではなく、公開レビューの評価と件数を合わせた信頼スコアで並べ替えます。",
     "priceAsc": "価格の安い順",
     "priceDesc": "価格の高い順",
-    "newest": "新着順"
+    "newest": "新着順",
+    "label": "並び替え"
   },
   "empty": {
     "title": "「{keyword}」の検索結果がありません",
