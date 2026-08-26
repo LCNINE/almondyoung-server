@@ -59,17 +59,13 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
    * dbService 만 쓰므로 본문에 도달하지 않는다(purchase-order-single-plan,
    * inbound-plan-port-invariant 스펙과 같은 패턴).
    */
+  function buildInboundService(trx: DbTx): InboundService {
+    return new InboundService(boundDbService(trx), {} as never, {} as never, {} as never, {} as never, {} as never);
+  }
+
   function buildService(trx: DbTx): PurchaseOrderService {
     const dbService = boundDbService(trx);
-    const inboundService = new InboundService(
-      dbService,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-    );
-    return new PurchaseOrderService(dbService, new TransactionService(dbService), inboundService);
+    return new PurchaseOrderService(dbService, new TransactionService(dbService), buildInboundService(trx));
   }
 
   interface Fixture {
@@ -79,9 +75,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
   }
 
   interface SeedOptions {
-    /** 발주 헤더의 도착예정일. 라인에는 심지 않는다. */
-    headerExpectedArrival?: Date;
-    /** 라인마다 심을 도착예정일 (마이그레이션 백필이 만든 상태를 흉내낸다). */
+    /** 라인마다 심을 도착예정일. 예정일은 헤더가 아니라 라인이 갖는다(#724 항목 9). */
     lineExpectedArrival?: string;
   }
 
@@ -132,7 +126,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         sourceWarehouseId: wh.id,
         destinationWarehouseId: wh.id,
         requiresTransfer: false,
-        expectedArrival: options.headerExpectedArrival ?? null,
       })
       .returning();
 
@@ -236,7 +229,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
 
   async function readPlans(trx: DbTx, poId: string) {
     return trx
-      .select({ id: wmsTables.inboundPlans.id, expectedDate: wmsTables.inboundPlans.expectedDate })
+      .select({ id: wmsTables.inboundPlans.id })
       .from(wmsTables.inboundPlans)
       .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
   }
@@ -282,19 +275,6 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
       await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
 
       expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'ordered', orderedQty: 6 });
-      expect(await readPlans(trx, fx.poId)).toHaveLength(1);
-    });
-  });
-
-  it('심사 축이 없으므로 draft 발주도 일괄 확정된다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      // 게이트 ①(updatePurchaseOrderStatus 의 CONFIRMED 가드) 쪽 사본.
-      const fx = await seedPoWithThreeLines(trx);
-      const service = buildService(trx);
-
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
-      expect(await readLine(trx, fx.poId, fx.skuIds[0])).toMatchObject({ status: 'ordered' });
       expect(await readPlans(trx, fx.poId)).toHaveLength(1);
     });
   });
@@ -439,139 +419,114 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('라인별 실행이 첫 계획을 만들 때도 헤더 도착예정일을 씨드로 쓴다', async () => {
+  it('입고예정 기간 필터가 아이템 예정일을 본다', async () => {
     await inRollbackTx(db, async (trx) => {
-      // 헤더에는 도착예정일이 있지만 라인에는 없다 — 일괄 확정 경로(§4)와 달리
-      // 라인별 실행은 계획 생성 시 헤더 날짜를 무시하고 라인의(여기선 없는) ETA 만
-      // 넘겼었다. 그러면 이 계획은 expected_date NULL 로 태어나
-      // GET /inbound/plan-items?startDate=… 필터에서 통째로 빠진다.
-      const fx = await seedPoWithThreeLines(trx, { headerExpectedArrival: new Date('2026-11-11T00:00:00Z') });
-      await buildService(trx).orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
-
-      const plans = await readPlans(trx, fx.poId);
-      expect(plans).toHaveLength(1);
-      expect(plans[0].expectedDate?.toISOString().slice(0, 10)).toBe('2026-11-11');
-    });
-  });
-
-  it('일괄 확정도 라인 실행 경로를 지난다 — 라인이 ordered 가 되고 실행자가 남는다', async () => {
-    await inRollbackTx(db, async (trx) => {
+      // 계획은 날짜를 갖지 않는다. 라인마다 ETA 가 다른데 계획 단위 컬럼으로 거르면
+      // 한 계획 안의 아이템이 전부 같이 걸리거나 같이 빠진다 — 이 API 의 요약이
+      // "헤더 무시, 아이템 기준" 인데도 그랬다.
       const fx = await seedPoWithThreeLines(trx);
-      await buildService(trx).updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
+      const service = buildService(trx);
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6, expectedArrival: '2026-11-11' }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 6, expectedArrival: '2026-12-25' }, ACTOR, trx);
 
-      for (const skuId of fx.skuIds) {
-        expect(await readLine(trx, fx.poId, skuId)).toMatchObject({
-          status: 'ordered',
-          orderedQty: 10, // 일괄 확정은 요청 수량 그대로 발주한 것으로 본다
-          orderedBy: ACTOR,
-        });
-      }
-      expect(await readPlanItems(trx, fx.poId)).toHaveLength(3);
-      expect(await readHeaderStatus(trx, fx.poId)).toBe('confirmed');
+      const november = await buildInboundService(trx).listInboundPlanItems(
+        { startDate: '2026-11-01', endDate: '2026-11-30' },
+        trx,
+      );
+
+      expect(november.items).toHaveLength(1);
+      expect(november.items[0].skuId).toBe(fx.skuIds[0]);
+      expect(november.items[0].expectedDate).toBe('2026-11-11');
     });
   });
 
-  it('라인을 하나 실행한 뒤 일괄 확정해도 아이템은 라인당 하나다 (두 writer 제거)', async () => {
+  it('발주서 생성의 도착예정일이 모든 라인에 심긴다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      // seedPrerequisites 의 공급사는 이 창고를 기본 창고로 갖는다 = 국내 발주(출발＝목적지).
+      const { warehouseId, supplierId, skuIds } = await seedPrerequisites(trx);
+
+      const created = await buildService(trx).createPurchaseOrder(
+        {
+          type: PurchaseOrderType.DOMESTIC,
+          supplierId,
+          destinationWarehouseId: warehouseId,
+          expectedArrival: '2026-11-03',
+          lines: skuIds.map((skuId) => ({ skuId, quantity: 10 })),
+        },
+        trx,
+      );
+
+      expect(created.lines).toHaveLength(3);
+      created.lines.forEach((line) => expect(line.expectedArrival).toBe('2026-11-03'));
+      // 헤더 값은 이제 라인에서 파생된다.
+      expect(created.expectedArrival?.toISOString()).toBe('2026-11-03T00:00:00.000Z');
+    });
+  });
+
+  it('헤더 도착예정일은 라인 중 가장 이른 날짜다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
-      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 6 }, ACTOR, trx);
 
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
-      const items = await readPlanItems(trx, fx.poId);
-      // 옛 경로는 확정 시 라인 전체를 다시 꽂아 sku[0] 이 6 + 10 두 행이 됐다.
-      expect(items).toHaveLength(3);
-      expect(items.find((i) => i.skuId === fx.skuIds[0])?.expectedQty).toBe(6);
-    });
-  });
-
-  it('이미 입고된 발주를 다시 confirmed 로 불러도 아이템이 늘지 않는다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      const fx = await seedPoWithThreeLines(trx);
-      const service = buildService(trx);
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
-      // 입고가 끝나 received 로 넘어간 상태를 만든다.
-      await trx
-        .update(wmsTables.purchaseOrders)
-        .set({ status: 'received' })
-        .where(eq(wmsTables.purchaseOrders.id, fx.poId));
-
-      // 옛 가드는 `status !== 'confirmed'` 였다 — received 는 그 조건을 통과해
-      // 이미 처리된 계획에 라인을 한 벌 더 꽂았다.
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
-      expect(await readPlanItems(trx, fx.poId)).toHaveLength(3);
-    });
-  });
-
-  it('라인별 날짜가 없어도 헤더 날짜가 계획에 실린다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      const fx = await seedPoWithThreeLines(trx, { headerExpectedArrival: new Date('2026-11-11T00:00:00Z') });
-      await buildService(trx).updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
-      const plans = await readPlans(trx, fx.poId);
-      expect(plans).toHaveLength(1);
-      // 라인 실행에만 계획 생성을 맡기면 여기가 null 이 된다 — 오늘보다 나빠진다.
-      expect(plans[0].expectedDate?.toISOString().slice(0, 10)).toBe('2026-11-11');
-    });
-  });
-
-  it('확정 요청의 새 도착예정일이 계획·아이템·라인에 모두 실린다', async () => {
-    await inRollbackTx(db, async (trx) => {
-      // 백필이 심어둔 옛 날짜를 라인이 들고 있다. 확정 요청이 새 날짜를 실으면 그게
-      // 진실이다 — 아이템이 옛 날짜를 붙들면 파이프라인 ETA(아이템 우선)가 방금
-      // 바꾼 날짜를 무시하고 옛 날짜를 보여준다.
-      const fx = await seedPoWithThreeLines(trx, {
-        headerExpectedArrival: new Date('2026-09-15T00:00:00Z'),
-        lineExpectedArrival: '2026-09-15',
-      });
-      await buildService(trx).updatePurchaseOrderStatus(
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10, expectedArrival: '2026-12-01' }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10, expectedArrival: '2026-09-15' }, ACTOR, trx);
+      const result = await service.orderLine(
         fx.poId,
-        { status: PurchaseOrderStatus.CONFIRMED, expectedArrival: '2026-12-25' },
+        fx.skuIds[2],
+        { orderedQty: 10, expectedArrival: '2026-10-20' },
         ACTOR,
         trx,
       );
 
-      const plans = await readPlans(trx, fx.poId);
-      expect(plans[0].expectedDate?.toISOString().slice(0, 10)).toBe('2026-12-25');
-      for (const item of await readPlanItems(trx, fx.poId)) {
-        expect(item.expectedDate).toBe('2026-12-25');
-      }
-      for (const skuId of fx.skuIds) {
-        expect(await readLine(trx, fx.poId, skuId)).toMatchObject({ expectedArrival: '2026-12-25' });
-      }
+      expect(result.expectedArrival?.toISOString()).toBe('2026-09-15T00:00:00.000Z');
     });
   });
 
-  it('오프셋이 붙은 확정 날짜도 달력 하루가 밀리지 않는다', async () => {
+  it('전 라인이 종결된 발주만 received 로 간다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
-      // `@IsDateString()` 은 오프셋이 붙은 값을 통과시킨다. new Date(...).toISOString()
-      // 을 거치면 '2026-08-25' 가 되어 달력 하루가 밀린다 — 날짜 부분만 잘라 쓴다.
-      await buildService(trx).updatePurchaseOrderStatus(
+      const service = buildService(trx);
+      for (const skuId of fx.skuIds) {
+        await service.orderLine(fx.poId, skuId, { orderedQty: 10 }, ACTOR, trx);
+      }
+
+      const result = await service.updatePurchaseOrderStatus(
         fx.poId,
-        { status: PurchaseOrderStatus.CONFIRMED, expectedArrival: '2026-08-26T00:00:00+09:00' },
+        { status: PurchaseOrderStatus.RECEIVED },
         ACTOR,
         trx,
       );
 
-      const plans = await readPlans(trx, fx.poId);
-      expect(plans[0].expectedDate?.toISOString().slice(0, 10)).toBe('2026-08-26');
-      for (const item of await readPlanItems(trx, fx.poId)) {
-        expect(item.expectedDate).toBe('2026-08-26');
-      }
+      expect(result.status).toBe('received');
+    });
+  });
+
+  it('아직 실행 안 된 라인이 남은 발주는 종결을 거부한다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx);
+      const service = buildService(trx);
+      // 라인 하나만 실행 — 헤더는 여전히 created 로 파생된다.
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10 }, ACTOR, trx);
+
+      await expect(
+        service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx),
+      ).rejects.toThrow(/created/);
+    });
+  });
+
+  // #735 가 심사 게이트를 걷어내며 열린 역방향 전이. 종결은 한 번뿐이다.
+  it('이미 종결된 발주는 다시 종결되지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithThreeLines(trx);
+      const service = buildService(trx);
       for (const skuId of fx.skuIds) {
-        expect(await readLine(trx, fx.poId, skuId)).toMatchObject({ expectedArrival: '2026-08-26' });
+        await service.orderLine(fx.poId, skuId, { orderedQty: 10 }, ACTOR, trx);
       }
-      // 헤더 컬럼도 같은 달력 날짜다. 여기만 오프셋 원본을 저장하면 다음 확정의 폴백이
-      // 하루 밀린 값을 읽어 계획·라인까지 드리프트를 퍼뜨린다.
-      const [header] = await trx
-        .select({ expectedArrival: wmsTables.purchaseOrders.expectedArrival })
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, fx.poId));
-      expect(header.expectedArrival?.toISOString().slice(0, 10)).toBe('2026-08-26');
+      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx);
+
+      await expect(
+        service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx),
+      ).rejects.toThrow(/received/);
     });
   });
 
@@ -583,9 +538,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         await service.markLineUnavailable(fx.poId, skuId, { reason: '품절' }, ACTOR, trx);
       }
 
-      // 실행할 라인이 하나도 없다 — 아이템 0개짜리 계획 행은 입고 화면의 유령이다.
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-
+      // 실행된 라인이 하나도 없다 — 아이템 0개짜리 계획 행은 입고 화면의 유령이다.
       expect(await readPlans(trx, fx.poId)).toHaveLength(0);
     });
   });

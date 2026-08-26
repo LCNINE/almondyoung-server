@@ -77,7 +77,7 @@ export class InboundPipelineReader {
         // 예정일의 진실은 아이템이다 — 라인마다 ETA 가 다를 수 있는데 계획 날짜는
         // 계획 단위라 그걸 담지 못한다. 아이템 예정일이 없으면(수동 생성 계획 등)
         // 계획 날짜로 떨어진다. `date` 컬럼이라 드라이버가 'YYYY-MM-DD' 를 준다.
-        eta: sql<string | null>`MIN(COALESCE(${items.expectedDate}, ${plans.expectedDate}::date))`,
+        eta: sql<string | null>`MIN(${items.expectedDate})`,
       })
       .from(items)
       .innerJoin(plans, eq(plans.id, items.planId))

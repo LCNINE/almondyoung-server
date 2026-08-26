@@ -34,6 +34,16 @@ const DST_WAREHOUSE = '019d0001-0001-7000-a000-000000000001'; // 부천 물류�
 const onlyDigits = (s: string): string => (s ?? '').replace(/[^0-9]/g, '');
 
 // "2026-07-01" / "2026.7.1" / "2026-07-01 오후 4:21:00" → Date(자정). 빈 값이면 null.
+/**
+ * 로컬 달력 날짜를 'YYYY-MM-DD' 로 낸다. `toISOString()` 은 UTC 로 옮기므로
+ * parseDate 가 만든 로컬 자정(KST)이 전날로 밀린다 — 예정일은 달력 값이라
+ * 그 이동이 곧 하루 오차다(#724 발견 ⑪ 과 같은 계열).
+ */
+function toCalendarDate(d: Date): string {
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function parseDate(raw: string): Date | null {
   const m = (raw ?? '').match(/(\d{4})[.\-/]\s*(\d{1,2})[.\-/]\s*(\d{1,2})/);
   if (!m) return null;
@@ -103,12 +113,12 @@ async function main() {
     if (missing.length) console.log(`   ❌ 미매핑 바코드: ${missing.join(', ')}`);
 
     // 등록 대상 = 매핑된 행만, (입고예정일 → [{skuId, qty}]) 그룹핑 (날짜=PO 단위)
-    const groups = new Map<string, { date: Date; items: { skuId: string; qty: number }[] }>();
+    const groups = new Map<string, { date: string; items: { skuId: string; qty: number }[] }>();
     for (const r of rows) {
       const skuId = skuByBarcode.get(r.barcode);
       if (!skuId) continue;
-      const key = r.expectedDate.toISOString().slice(0, 10);
-      if (!groups.has(key)) groups.set(key, { date: r.expectedDate, items: [] });
+      const key = toCalendarDate(r.expectedDate);
+      if (!groups.has(key)) groups.set(key, { date: key, items: [] });
       groups.get(key)!.items.push({ skuId, qty: r.expectedQty });
     }
 
@@ -123,7 +133,7 @@ async function main() {
           .where(
             and(
               inArray(wmsTables.inboundPlanItems.skuId, skuIds),
-              eq(wmsTables.inboundPlans.expectedDate, date),
+              eq(wmsTables.inboundPlanItems.expectedDate, date),
               eq(wmsTables.inboundPlanItems.status, 'pending'),
             ),
           );
@@ -144,7 +154,6 @@ async function main() {
             sourceWarehouseId: SRC_WAREHOUSE,
             destinationWarehouseId: DST_WAREHOUSE,
             requiresTransfer: true,
-            expectedArrival: date,
             status: 'confirmed',
           })
           .returning();
@@ -163,6 +172,8 @@ async function main() {
             unitPrice: null,
             status: 'ordered' as const,
             orderedQty: i.qty,
+            // 도착예정일은 헤더가 아니라 라인이 갖는다(#724 항목 9).
+            expectedArrival: date,
           })),
         );
 
@@ -177,7 +188,6 @@ async function main() {
             linkedPurchaseOrderId: po.id,
             destinationWarehouseId: DST_WAREHOUSE,
             requiresTransfer: true,
-            expectedDate: date,
             status: 'pending',
           })
           .returning();
@@ -190,6 +200,8 @@ async function main() {
             expectedQty: i.qty,
             receivedQty: 0,
             status: 'pending' as const,
+            // 예정일은 계획이 아니라 아이템이 갖는다(#724 항목 9).
+            expectedDate: date,
           })),
         );
         itemCount += fresh.length;

@@ -56,8 +56,14 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
   /** 해외 발주 = 출발 창고(중국) ≠ 목적지 창고(부천). */
   async function seedForeignPo(trx: DbTx): Promise<Fixture> {
     const suffix = randomUUID().slice(0, 8);
-    const [source] = await trx.insert(wmsTables.warehouses).values({ name: `it-src-${suffix}` }).returning();
-    const [dest] = await trx.insert(wmsTables.warehouses).values({ name: `it-dst-${suffix}` }).returning();
+    const [source] = await trx
+      .insert(wmsTables.warehouses)
+      .values({ name: `it-src-${suffix}` })
+      .returning();
+    const [dest] = await trx
+      .insert(wmsTables.warehouses)
+      .values({ name: `it-dst-${suffix}` })
+      .returning();
     const [supplier] = await trx
       .insert(wmsTables.suppliers)
       .values({ name: `it-sup-${suffix}`, defaultWarehouseId: source.id })
@@ -84,7 +90,6 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       // 호출자가 거짓말을 한다 — 최종 목적지를 입고 창고로, 타입을 destination 으로.
       const plan = await service.createInboundPlan(
         {
-          expectedDate: '2026-09-01',
           warehouseId: fx.destinationWarehouseId,
           destinationWarehouseId: fx.destinationWarehouseId,
           linkedPurchaseOrderId: fx.poId,
@@ -107,7 +112,6 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       await expect(
         service.createInboundPlan(
           {
-            expectedDate: '2026-09-01',
             warehouseId: randomUUID(),
             linkedPurchaseOrderId: randomUUID(),
           },
@@ -122,8 +126,8 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       const fx = await seedForeignPo(trx);
       const service = buildInboundService(trx);
 
-      const first = await service.ensurePlanForPurchaseOrder(fx.poId, '2026-09-01', trx);
-      const second = await service.ensurePlanForPurchaseOrder(fx.poId, '2026-09-05', trx);
+      const first = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
+      const second = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
 
       expect(second.id).toBe(first.id);
 
@@ -140,11 +144,11 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
       const fx = await seedForeignPo(trx);
       const service = buildInboundService(trx);
 
-      await service.createInboundPlan({ expectedDate: '2026-09-01', linkedPurchaseOrderId: fx.poId }, trx);
+      await service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx);
 
-      await expect(
-        service.createInboundPlan({ expectedDate: '2026-09-05', linkedPurchaseOrderId: fx.poId }, trx),
-      ).rejects.toMatchObject({ name: 'ConflictError' });
+      await expect(service.createInboundPlan({ linkedPurchaseOrderId: fx.poId }, trx)).rejects.toMatchObject({
+        name: 'ConflictError',
+      });
 
       const plans = await trx
         .select({ id: wmsTables.inboundPlans.id })
@@ -158,14 +162,17 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
     await inRollbackTx(db, async (trx) => {
       const fx = await seedForeignPo(trx);
       const suffix = randomUUID().slice(0, 8);
-      const [holder] = await trx.insert(wmsTables.holders).values({ name: `it-h-${suffix}` }).returning();
+      const [holder] = await trx
+        .insert(wmsTables.holders)
+        .values({ name: `it-h-${suffix}` })
+        .returning();
       const [sku] = await trx
         .insert(wmsTables.skus)
         .values({ name: 'it-sku', code: `IT-${randomUUID().toUpperCase()}`, holderId: holder.id })
         .returning();
 
       const service = buildInboundService(trx);
-      const plan = await service.ensurePlanForPurchaseOrder(fx.poId, null, trx);
+      const plan = await service.ensurePlanForPurchaseOrder(fx.poId, trx);
       await service.addInboundPlanItems(
         { planId: plan.id, items: [{ skuId: sku.id, expectedQty: 5, expectedDate: '2026-09-17' }] },
         trx,

@@ -39,13 +39,6 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
     return errors.filter((e) => e.property === property).map((e) => e.property);
   }
 
-  function updateStatusDto(expectedArrival?: string): UpdatePurchaseOrderStatusDto {
-    const dto = new UpdatePurchaseOrderStatusDto();
-    dto.status = PurchaseOrderStatus.CONFIRMED;
-    dto.expectedArrival = expectedArrival;
-    return dto;
-  }
-
   function createDto(expectedArrival?: string): CreatePurchaseOrderDto {
     const dto = new CreatePurchaseOrderDto();
     dto.type = PurchaseOrderType.DOMESTIC;
@@ -81,7 +74,6 @@ describe('발주 관련 DTO 의 날짜 필드 계약', () => {
   }
 
   const builders: [string, (v?: string) => object, string][] = [
-    ['UpdatePurchaseOrderStatusDto', updateStatusDto, 'expectedArrival'],
     ['CreatePurchaseOrderDto', createDto, 'expectedArrival'],
     ['CreatePurchaseOrderFromCartDto', fromCartDto, 'expectedArrival'],
     ['OrderPurchaseOrderLineDto', orderLineDto, 'expectedArrival'],
@@ -169,5 +161,37 @@ describe('UpdatePurchaseOrderLinesDto', () => {
     line.quantity = 1;
     const errors = await validate(dtoWithLines([line]));
     expect(errors.filter((e) => e.property === 'lines')).toHaveLength(0);
+  });
+});
+
+/**
+ * 상태 API 는 종결 전용이다(#724 항목 9의 3단계). 헤더 status 는 라인에서 파생되고,
+ * 사람이 직접 쓰는 값은 `received` 하나뿐이다. 통합 스펙은 서비스를 직접 부르므로
+ * ValidationPipe 를 지나지 않는다 — 이 좁힘이 실제로 도는 곳은 HTTP 경계뿐이다.
+ */
+describe('UpdatePurchaseOrderStatusDto 는 종결만 받는다', () => {
+  function statusDto(status: PurchaseOrderStatus): UpdatePurchaseOrderStatusDto {
+    const dto = new UpdatePurchaseOrderStatusDto();
+    // 좁힌 타입을 일부러 우회한다 — 막는 것이 TS 가 아니라 런타임 검증임을 확인해야 한다.
+    dto.status = status as PurchaseOrderStatus.RECEIVED;
+    return dto;
+  }
+
+  async function statusErrors(status: PurchaseOrderStatus): Promise<number> {
+    const errors = await validate(statusDto(status));
+    return errors.filter((e) => e.property === 'status').length;
+  }
+
+  it('received 를 받는다', async () => {
+    await expect(statusErrors(PurchaseOrderStatus.RECEIVED)).resolves.toBe(0);
+  });
+
+  // 이 값을 사람이 쓰던 경로가 곧 일괄 라인 실행이었다.
+  it('confirmed 를 거부한다', async () => {
+    await expect(statusErrors(PurchaseOrderStatus.CONFIRMED)).resolves.toBe(1);
+  });
+
+  it('created 를 거부한다', async () => {
+    await expect(statusErrors(PurchaseOrderStatus.CREATED)).resolves.toBe(1);
   });
 });

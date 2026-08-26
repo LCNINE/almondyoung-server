@@ -147,10 +147,9 @@ export class CancelInboundDto {
 }
 
 export class CreateInboundPlanDto {
-  @ApiPropertyOptional({ description: '예정일 (YYYY-MM-DD)' })
-  @IsOptional()
-  @IsDateString()
-  expectedDate?: string;
+  // 예정일은 계획이 아니라 **아이템**이 갖는다(#724 항목 9). 계획 단위 컬럼으로는
+  // 라인마다 다른 ETA 를 담을 수 없었고, 계획을 쪼개는 것은 "해외 발주는 계획 하나"
+  // 불변식이 금지한다.
 
   @ApiPropertyOptional({ description: '(무시됨) 입고 창고는 연결된 발주에서 도출한다' })
   @IsUUID()

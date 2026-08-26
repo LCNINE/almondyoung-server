@@ -4,7 +4,8 @@ import { InboundService } from '../../../apps/core/src/modules/inventory/inbound
 import { SEED_IDS, SEED_SKUS } from './constants';
 
 /** 리셋마다 같은 날짜가 나오도록 고정한다 (결정론 규약). */
-const EXPECTED_DATE = new Date('2026-08-01T00:00:00.000Z');
+/** 예정일은 헤더/계획이 아니라 라인·아이템이 갖는다(#724 항목 9). date 컬럼이라 'YYYY-MM-DD'. */
+const EXPECTED_DATE = '2026-08-01';
 
 /**
  * 국내 PO 1건(부천 단일 plan) + 해외 PO 1건(중국 source → 부천 destination 2-plan).
@@ -28,14 +29,13 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       sourceWarehouseId: SEED_IDS.warehouseBucheon,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: false,
-      expectedArrival: EXPECTED_DATE,
       status: 'confirmed',
     })
     .returning();
 
   await tx.insert(wmsTables.purchaseOrderLines).values([
-    { poId: domesticPo.id, skuId: SEED_SKUS[0].id, quantity: 40, unitPrice: null },
-    { poId: domesticPo.id, skuId: SEED_SKUS[1].id, quantity: 25, unitPrice: null },
+    { poId: domesticPo.id, skuId: SEED_SKUS[0].id, quantity: 40, unitPrice: null, expectedArrival: EXPECTED_DATE },
+    { poId: domesticPo.id, skuId: SEED_SKUS[1].id, quantity: 25, unitPrice: null, expectedArrival: EXPECTED_DATE },
   ]);
 
   // 국내 plan: 입고 전혀 안 태움 — pending / receivedQty 0 그대로 유지.
@@ -47,14 +47,27 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       linkedPurchaseOrderId: domesticPo.id,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: false,
-      expectedDate: EXPECTED_DATE,
       status: 'pending',
     })
     .returning();
 
   await tx.insert(wmsTables.inboundPlanItems).values([
-    { planId: domesticPlan.id, skuId: SEED_SKUS[0].id, expectedQty: 40, receivedQty: 0, status: 'pending' },
-    { planId: domesticPlan.id, skuId: SEED_SKUS[1].id, expectedQty: 25, receivedQty: 0, status: 'pending' },
+    {
+      planId: domesticPlan.id,
+      skuId: SEED_SKUS[0].id,
+      expectedQty: 40,
+      receivedQty: 0,
+      status: 'pending',
+      expectedDate: EXPECTED_DATE,
+    },
+    {
+      planId: domesticPlan.id,
+      skuId: SEED_SKUS[1].id,
+      expectedQty: 25,
+      receivedQty: 0,
+      status: 'pending',
+      expectedDate: EXPECTED_DATE,
+    },
   ]);
 
   const [foreignPo] = await tx
@@ -65,14 +78,15 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       sourceWarehouseId: SEED_IDS.warehouseChina,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: true,
-      expectedArrival: EXPECTED_DATE,
       status: 'confirmed',
     })
     .returning();
 
   await tx
     .insert(wmsTables.purchaseOrderLines)
-    .values([{ poId: foreignPo.id, skuId: SEED_SKUS[2].id, quantity: 60, unitPrice: null }]);
+    .values([
+      { poId: foreignPo.id, skuId: SEED_SKUS[2].id, quantity: 60, unitPrice: null, expectedArrival: EXPECTED_DATE },
+    ]);
 
   // source plan (중국): 시작은 pending / receivedQty 0.
   const [sourcePlan] = await tx
@@ -83,14 +97,22 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       linkedPurchaseOrderId: foreignPo.id,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: true,
-      expectedDate: EXPECTED_DATE,
       status: 'pending',
     })
     .returning();
 
   const [sourceItem] = await tx
     .insert(wmsTables.inboundPlanItems)
-    .values([{ planId: sourcePlan.id, skuId: SEED_SKUS[2].id, expectedQty: 60, receivedQty: 0, status: 'pending' }])
+    .values([
+      {
+        planId: sourcePlan.id,
+        skuId: SEED_SKUS[2].id,
+        expectedQty: 60,
+        receivedQty: 0,
+        status: 'pending',
+        expectedDate: EXPECTED_DATE,
+      },
+    ])
     .returning();
 
   // destination plan (부천): 시작은 pending / receivedQty 0. parent_plan_id 로 source plan 참조.
@@ -103,7 +125,6 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
       linkedPurchaseOrderId: foreignPo.id,
       destinationWarehouseId: SEED_IDS.warehouseBucheon,
       requiresTransfer: false,
-      expectedDate: null,
       status: 'pending',
     })
     .returning();
@@ -111,7 +132,14 @@ export async function seedInbound(inboundService: InboundService, tx: DbTx): Pro
   const [destinationItem] = await tx
     .insert(wmsTables.inboundPlanItems)
     .values([
-      { planId: destinationPlan.id, skuId: SEED_SKUS[2].id, expectedQty: 60, receivedQty: 0, status: 'pending' },
+      {
+        planId: destinationPlan.id,
+        skuId: SEED_SKUS[2].id,
+        expectedQty: 60,
+        receivedQty: 0,
+        status: 'pending',
+        expectedDate: EXPECTED_DATE,
+      },
     ])
     .returning();
 

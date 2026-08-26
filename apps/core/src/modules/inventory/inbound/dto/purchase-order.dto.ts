@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   IsUUID,
   IsEnum,
+  IsIn,
   IsOptional,
   IsNumber,
   IsPositive,
@@ -71,19 +72,18 @@ export class CreatePurchaseOrderDto {
 }
 
 export class UpdatePurchaseOrderStatusDto {
-  @ApiProperty({ enum: PurchaseOrderStatus, description: '발주 상태' })
-  @IsEnum(PurchaseOrderStatus)
-  status: PurchaseOrderStatus;
-
   /**
-   * 확정 경로가 이 값을 `date` 컬럼(계획 아이템·라인 ETA)에 넣으므로, 모양뿐 아니라
-   * **달력에 실재하는 날짜**여야 한다. `@IsDateString()`('2026' 통과)도 모양 정규식
-   * ('2026-13-45' 통과)도 혼자서는 부족하다 — calendar-date.validator.ts 참고.
+   * 종결(`received`)만 받는다. `created`/`confirmed` 는 라인에서 파생되는 값이라
+   * 사람이 직접 쓰지 않는다 — 라인을 실행하거나(`POST /:poId/lines/:skuId/order`)
+   * 발주불가로 끊으면(`.../unavailable`) 헤더가 따라온다.
+   *
+   * 예전엔 이 자리가 `confirmed` 도 받아 "아직 실행 안 된 라인을 전부 지금 발주한
+   * 것으로 친다" 는 일괄 실행을 상태 쓰기로 위장해 수행했고, `expectedArrival` 도
+   * 함께 받아 계획·아이템·라인에 날짜를 퍼뜨렸다. 둘 다 사라졌다.
    */
-  @ApiPropertyOptional({ description: '입고 예정일 (YYYY-MM-DD)' })
-  @IsOptional()
-  @Validate(IsCalendarDateConstraint)
-  expectedArrival?: string;
+  @ApiProperty({ enum: [PurchaseOrderStatus.RECEIVED], description: '발주 종결 (입고 완료)' })
+  @IsIn([PurchaseOrderStatus.RECEIVED])
+  status: PurchaseOrderStatus.RECEIVED;
 }
 
 export class UpdatePurchaseOrderLineDto {

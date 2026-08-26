@@ -6,7 +6,6 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
-import { PurchaseOrderStatus } from '../dto/purchase-order.dto';
 import { TransactionService } from '../../shared/services/transaction.service';
 import { InboundService } from './inbound.service';
 
@@ -115,7 +114,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
         sourceWarehouseId: sourceWarehouse.id,
         destinationWarehouseId: destinationWarehouse.id,
         requiresTransfer: true,
-        expectedArrival: new Date(),
       })
       .returning();
     await trx
@@ -131,20 +129,22 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     };
   }
 
-  /** 발주 확정 — 입고 계획 생성 경로(`InboundService.ensurePlanForPurchaseOrder` 포트)를 지나는 유일한 공개 진입점. */
-  async function confirmPurchaseOrder(trx: DbTx, poId: string): Promise<void> {
-    await buildPurchaseOrderService(trx).updatePurchaseOrderStatus(
-      poId,
-      { status: PurchaseOrderStatus.CONFIRMED },
-      ACTOR,
-      trx,
-    );
+  /** 전 라인 실행 — 입고 계획 생성 경로(`InboundService.ensurePlanForPurchaseOrder` 포트)를 지나는 유일한 진입점. */
+  async function orderAllLines(trx: DbTx, poId: string): Promise<void> {
+    const service = buildPurchaseOrderService(trx);
+    const lines = await trx
+      .select({ skuId: wmsTables.purchaseOrderLines.skuId, quantity: wmsTables.purchaseOrderLines.quantity })
+      .from(wmsTables.purchaseOrderLines)
+      .where(eq(wmsTables.purchaseOrderLines.poId, poId));
+    for (const line of lines) {
+      await service.orderLine(poId, line.skuId, { orderedQty: line.quantity }, ACTOR, trx);
+    }
   }
 
   it('창고간 이동이 필요한 발주도 입고 계획을 하나만 만든다', async () => {
     await inRollback(async (trx) => {
       const { poId, sourceWarehouseId, destinationWarehouseId } = await seedCrossWarehousePurchaseOrder(trx);
-      await confirmPurchaseOrder(trx, poId);
+      await orderAllLines(trx, poId);
 
       const plans = await trx
         .select({
@@ -166,7 +166,7 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     await inRollback(async (trx) => {
       const { poId, sourceWarehouseId, destinationWarehouseId, skuId, quantity } =
         await seedCrossWarehousePurchaseOrder(trx);
-      await confirmPurchaseOrder(trx, poId);
+      await orderAllLines(trx, poId);
 
       const readInboundPending = async (warehouseId: string): Promise<number> => {
         const rows = (await trx.execute(sql`
@@ -184,14 +184,14 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
     });
   });
 
-  it('같은 발주를 두 번 확정해도 계획 아이템은 중복되지 않는다 (재시도/더블클릭)', async () => {
+  it('같은 라인을 두 번 실행해도 계획 아이템은 중복되지 않는다 (재시도/더블클릭)', async () => {
     await inRollback(async (trx) => {
-      const { poId, quantity } = await seedCrossWarehousePurchaseOrder(trx);
+      const { poId, skuId, quantity } = await seedCrossWarehousePurchaseOrder(trx);
       const service = buildPurchaseOrderService(trx);
 
-      await service.updatePurchaseOrderStatus(poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
-      // 재확인 — 이미 confirmed 인 PO 에 같은 요청이 한 번 더 들어온다.
-      await service.updatePurchaseOrderStatus(poId, { status: PurchaseOrderStatus.CONFIRMED }, ACTOR, trx);
+      await service.orderLine(poId, skuId, { orderedQty: quantity }, ACTOR, trx);
+      // 재확인 — 같은 요청이 한 번 더 들어온다. 라인 종결은 단방향이라 거부된다.
+      await expect(service.orderLine(poId, skuId, { orderedQty: quantity }, ACTOR, trx)).rejects.toThrow();
 
       const items = await trx
         .select({ expectedQty: wmsTables.inboundPlanItems.expectedQty })
@@ -202,31 +202,6 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       // 두 번째 호출이 라인을 다시 꽂았다면 여기가 2행·합계 2*quantity 가 된다.
       expect(items).toHaveLength(1);
       expect(items.reduce((sum, i) => sum + i.expectedQty, 0)).toBe(quantity);
-    });
-  });
-
-  it('확정 요청에 새 expectedArrival 이 실리면 계획 예정일이 그 값을 따른다', async () => {
-    await inRollback(async (trx) => {
-      // 시딩 시점 expectedArrival(new Date())과 확실히 다른 날짜를 확정 요청에 싣는다.
-      const { poId } = await seedCrossWarehousePurchaseOrder(trx);
-      const service = buildPurchaseOrderService(trx);
-      const newArrival = '2026-12-25';
-
-      await service.updatePurchaseOrderStatus(
-        poId,
-        { status: PurchaseOrderStatus.CONFIRMED, expectedArrival: newArrival },
-        ACTOR,
-        trx,
-      );
-
-      const [plan] = await trx
-        .select({ expectedDate: wmsTables.inboundPlans.expectedDate })
-        .from(wmsTables.inboundPlans)
-        .where(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId));
-
-      // UPDATE 전에 캡처한 existingPO.expectedArrival 을 그대로 썼다면 여기가
-      // 시딩 시점 날짜(오늘)로 나온다 — newArrival 이 아니라.
-      expect(plan.expectedDate?.toISOString().slice(0, 10)).toBe(newArrival);
     });
   });
 });

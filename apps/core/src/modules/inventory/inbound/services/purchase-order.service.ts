@@ -21,6 +21,8 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { TransactionService } from '../../shared/services/transaction.service';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
 import { InboundService } from './inbound.service';
+import { assertReceivedTransition } from './purchase-order-status.rules';
+import { earliestExpectedDate } from './earliest-expected-date';
 
 @Injectable()
 export class PurchaseOrderService {
@@ -49,7 +51,6 @@ export class PurchaseOrderService {
         .values({
           type: createDto.type,
           supplierId: createDto.supplierId,
-          expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
           status: 'created',
           sourceWarehouseId: sourceWarehouseId,
           destinationWarehouseId: destinationWarehouseId,
@@ -57,7 +58,13 @@ export class PurchaseOrderService {
         })
         .returning();
 
-      // 발주 라인 생성
+      // 발주 라인 생성.
+      //
+      // 생성 시점의 도착예정일은 헤더가 아니라 **모든 라인의 기본 ETA** 다. 라인을
+      // 실제로 발주할 때 다른 날짜를 주면 그 라인만 갱신된다(executeLineOrder 의
+      // `dto.expectedArrival ?? line.expectedArrival`). createDto.expectedArrival 은
+      // IsCalendarDateConstraint 를 통과한 'YYYY-MM-DD' 라 date 컬럼에 그대로 넣는다 —
+      // new Date() 왕복은 UTC 로 옮겨 달력 하루를 민다.
       const purchaseOrderLines = await trx
         .insert(wmsTables.purchaseOrderLines)
         .values(
@@ -66,6 +73,7 @@ export class PurchaseOrderService {
             skuId: line.skuId,
             quantity: line.quantity,
             unitPrice: line.unitPrice || null,
+            expectedArrival: createDto.expectedArrival ?? null,
           })),
         )
         .returning();
@@ -118,7 +126,6 @@ export class PurchaseOrderService {
         .values({
           type: types[0],
           supplierId: createDto.supplierId,
-          expectedArrival: createDto.expectedArrival ? new Date(createDto.expectedArrival) : null,
           status: 'created',
           sourceWarehouseId,
           destinationWarehouseId,
@@ -126,12 +133,14 @@ export class PurchaseOrderService {
         })
         .returning();
 
+      // 도착예정일은 헤더가 아니라 라인이 갖는다(createPurchaseOrder 주석 참조).
       await trx.insert(wmsTables.purchaseOrderLines).values(
         cartItems.map((item) => ({
           poId: purchaseOrder.id,
           skuId: item.skuId,
           quantity: item.quantity,
           unitPrice: null,
+          expectedArrival: createDto.expectedArrival ?? null,
         })),
       );
 
@@ -148,13 +157,14 @@ export class PurchaseOrderService {
   }
 
   /**
-   * 발주 상태 업데이트
+   * 발주를 종결한다.
    *
-   * `confirmed` 로의 전이는 "아직 실행 안 된 라인을 전부 지금 발주한 것으로 친다" 는
-   * 뜻이다 — 라인별 실행 화면을 쓰지 않는 운영자를 위한 일괄 경로다. 그래서 라인
-   * 실행과 **같은 경로**를 지난다(`executeLineOrder`). 두 경로가 각자
-   * `inbound_plan_items` 를 쓰면 두 화면을 번갈아 쓴 운영자에게 입고예정이 두 벌로
-   * 잡힌다 — 그 사고가 이미 한 번 났다.
+   * 헤더 status 는 라인에서 파생된다(`refreshHeaderStatus`). 사람이 직접 쓰는 값은
+   * 종결 하나뿐이다 — 예전엔 이 자리가 `confirmed` 도 받아 "아직 실행 안 된 라인을
+   * 전부 지금 발주한 것으로 친다" 는 일괄 실행을 상태 쓰기로 위장해 수행했다.
+   * 두 번째 실행 경로가 곧 이중 계상 사고의 원인이었고, 라인 실행 UI(#739)가 붙은
+   * 지금은 대체 경로도 있다. 일괄 실행이 다시 필요해지면 상태 쓰기가 아니라
+   * `POST /:id/lines/order-all` 같은 전용 엔드포인트로 만든다.
    */
   async updatePurchaseOrderStatus(
     poId: string,
@@ -163,101 +173,27 @@ export class PurchaseOrderService {
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.dbService.run(async (trx) => {
+      // 락 순서 불변식(PO 행 → 라인 행)을 지킨다. 여기서 라인을 잠그지는 않지만,
+      // 상태 읽기와 쓰기 사이에 다른 트랜잭션이 라인을 종결시키는 것을 막는다.
       const [existingPO] = await trx
-        .select()
+        .select({ status: wmsTables.purchaseOrders.status })
         .from(wmsTables.purchaseOrders)
         .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1);
+        .limit(1)
+        .for('update');
 
       if (!existingPO) {
-        throw new NotFoundException(`Purchase order with ID ${poId} not found`);
+        throw new NotFoundError(`Purchase order not found: ${poId}`);
       }
 
-      // UPDATE 이후 유효한 도착예정일 — 이 요청이 expectedArrival 도 함께 보내면
-      // 그 값이 진실이다. existingPO 는 UPDATE 전 스냅샷이라 그대로 쓰면 방금 쓴 값을
-      // 무시하고 계획에 옛 날짜를 심는다(삭제된 createInboundPlanFromPO 는 UPDATE 뒤에
-      // 새로 SELECT 했기 때문에 이 문제가 없었다 — 이 포트 전환이 만든 회귀).
-      //
-      // 정규화는 `new Date(...)` 왕복이 아니라 **앞 10자 절단**이다. updateDto 는
-      // 이제 `@Validate(IsCalendarDateConstraint)`(calendar-date.validator.ts) 라
-      // HTTP 로 들어오는 값은 이미 정확히 'YYYY-MM-DD' 만 통과한다 — 이 절단은 그
-      // 경로를 위한 게 아니라, 서비스를 DTO 검증(ValidationPipe) 없이 직접 부르는
-      // 호출자(통합 스펙 등)가 '2026-08-26T00:00:00+09:00' 같은 오프셋 문자열을
-      // 넘길 때를 막는 방어선이다("오프셋이 붙은 확정 날짜도 달력 하루가 밀리지
-      // 않는다" 스펙이 그 경로를 그대로 재현한다). Date 로 왕복시키면 toISOString 이
-      // UTC 로 옮겨 '2026-08-25' 가 된다 — 운영자가 고른 달력 날짜가 하루 밀린다.
-      // ISO 8601 은 어떤 형태든 앞 10자가 그 달력 날짜라는 성질만 쓴다.
-      const headerExpectedDate: string | null = updateDto.expectedArrival
-        ? updateDto.expectedArrival.slice(0, 10)
-        : (existingPO.expectedArrival?.toISOString().slice(0, 10) ?? null);
+      assertReceivedTransition(existingPO.status);
 
       await trx
         .update(wmsTables.purchaseOrders)
-        .set({
-          status: updateDto.status,
-          // 헤더 컬럼에도 정규화한 날짜(UTC 자정)를 쓴다. 오프셋이 붙은 원본을 그대로
-          // 저장하면 헤더만 하루 다른 값을 갖고, 다음 확정의 폴백이 그 드리프트를
-          // 계획·라인까지 퍼뜨린다.
-          expectedArrival:
-            headerExpectedDate && updateDto.expectedArrival
-              ? new Date(`${headerExpectedDate}T00:00:00.000Z`)
-              : undefined,
-          updatedAt: new Date(),
-        })
+        .set({ status: updateDto.status, updatedAt: new Date() })
         .where(eq(wmsTables.purchaseOrders.id, poId));
 
-      // 발주가 입고 테이블을 직접 쓰지 않고 InboundService 포트를 통해서만 쓰게 한다
-      // (두 번째 writer 제거). ensurePlanForPurchaseOrder 가 해외/국내 판단
-      // (source/destination, 창고)을 발주에서 도출하므로 여기서는 넘기지 않는다.
-      //
-      // 이중 계상 방어는 예전의 `existingPO.status !== 'confirmed'` 가드가 아니라
-      // **라인 상태**가 한다. 그 가드는 두 구멍이 있었다: (1) received → confirmed 는
-      // 조건을 통과해 이미 처리된 계획에 라인을 한 벌 더 꽂았고, (2) 라인별 실행
-      // 화면으로 이미 실행한 라인도 다시 꽂았다. 이제 아직 `requested` 인 라인만
-      // 실행하므로 재확정은 자연스러운 no-op 이 된다.
-      if (updateDto.status === PurchaseOrderStatus.CONFIRMED) {
-        // 라인 status 는 drizzle enum 컬럼(문자열 유니온)이라 리터럴로 비교한다 —
-        // TS enum 멤버와 직접 비교하면 no-unsafe-enum-comparison 에 걸린다.
-        const requestedLines = await trx
-          .select({
-            skuId: wmsTables.purchaseOrderLines.skuId,
-            quantity: wmsTables.purchaseOrderLines.quantity,
-          })
-          .from(wmsTables.purchaseOrderLines)
-          .where(
-            and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.status, 'requested')),
-          );
-
-        // 실행할 라인이 하나도 없으면 계획도 만들지 않는다 — 아이템 0개짜리 계획 행은
-        // 입고 화면에 유령으로 남는다(전 라인 unavailable, 또는 재확정).
-        if (requestedLines.length > 0) {
-          // 계획을 라인 루프 **앞에서** 헤더 날짜로 한 번 확보한다. 라인 실행의 호출에만
-          // 맡기면, 헤더에는 도착예정일이 있고 라인에는 없는 발주가 날짜 NULL 인 계획을
-          // 얻는다 — 오늘보다 나빠진다. ensurePlanForPurchaseOrder 는 멱등하므로 뒤이은
-          // 라인 실행의 호출은 조회로 끝난다.
-          await this.inboundService.ensurePlanForPurchaseOrder(poId, headerExpectedDate, trx);
-
-          // 확정 요청에 새 날짜가 실렸으면 라인·아이템도 그 날짜를 따른다. 넘기는 값은
-          // 이미 정규화된 'YYYY-MM-DD' 라 오프셋 위험이 없다 — date 컬럼에 닿으면
-          // 안 되는 건 raw `updateDto.expectedArrival` 쪽이다. 새 날짜가 없으면 아무것도
-          // 넘기지 않아 라인이 물려받은 값이 그대로 쓰인다(백필된 ETA 보존).
-          const bulkArrival = updateDto.expectedArrival ? (headerExpectedDate ?? undefined) : undefined;
-
-          for (const line of requestedLines) {
-            await this.executeLineOrder(
-              trx,
-              poId,
-              line.skuId,
-              { orderedQty: line.quantity, expectedArrival: bulkArrival },
-              userId,
-            );
-          }
-        }
-        // 헤더 status 를 다시 계산하지 않는다 — 위 UPDATE 가 이미 confirmed 를 썼고,
-        // 남은 requested 라인이 없으니 파생값도 confirmed 로 같다.
-      }
-
-      this.logger.log(`Updated purchase order ${poId} status to ${updateDto.status}`);
+      this.logger.log(`Purchase order ${poId} marked received by ${userId}`);
 
       return this.getPurchaseOrderById(poId, trx);
     }, tx);
@@ -355,7 +291,7 @@ export class PurchaseOrderService {
       })
       .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
-    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, effectiveArrival, tx);
+    const plan = await this.inboundService.ensurePlanForPurchaseOrder(poId, tx);
     await this.inboundService.addInboundPlanItems(
       {
         planId: plan.id,
@@ -618,7 +554,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: po.expectedArrival,
+        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
@@ -716,7 +652,7 @@ export class PurchaseOrderService {
         id: po.id,
         type: po.type as PurchaseOrderType,
         supplierId: po.supplierId,
-        expectedArrival: po.expectedArrival,
+        expectedArrival: earliestExpectedDate(lines.map((line) => line.expectedArrival)),
         status: po.status as PurchaseOrderStatus,
         createdAt: po.createdAt,
         updatedAt: po.updatedAt,
