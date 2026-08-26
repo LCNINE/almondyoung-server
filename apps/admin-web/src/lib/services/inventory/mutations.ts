@@ -66,8 +66,6 @@ import type {
   ReturnInboundDto,
   CancelInboundDto,
   UpdateInboundLineMemoDto,
-  CreateInboundPlanDto,
-  AddInboundPlanItemsDto,
   ReceiveFromPlanDto,
   CreateReturnDto,
   ReceiveReturnDto,
@@ -753,27 +751,6 @@ export const useIndividualInbound = () => {
 export const useVerifyBarcode = () => {
   return useMutation({
     mutationFn: (data: VerifyBarcodeRequest) => inboundClient.verifyBarcode(data),
-  });
-};
-
-export const useCreateInboundPlan = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateInboundPlanDto) => inboundClient.plans.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPlanItems() });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
-    },
-  });
-};
-
-export const useAddInboundPlanItems = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AddInboundPlanItemsDto) => inboundClient.plans.addItems(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPlanItems() });
-    },
   });
 };
 
