@@ -5,6 +5,7 @@ import { salesOrders } from '@/lib/api/domains/orders';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { walletQueryKeys } from './query-keys';
 import type {
+  CreateFeeRatePayload,
   CreateRegionPayload,
   PutRegionMethodItem,
   UpdateCatalogPayload,
@@ -277,6 +278,28 @@ export const usePutRegionPaymentMethods = () => {
         queryKey: walletQueryKeys.regionMethods(variables.code),
       });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.regions() });
+    },
+  });
+};
+
+// ── 통계 — 수수료율 설정 ─────────────────────────────────────────────────────
+
+export const useCreateFeeRate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateFeeRatePayload) => walletApi.createFeeRate(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.statistics() });
+    },
+  });
+};
+
+export const useDeleteFeeRate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => walletApi.deleteFeeRate(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.statistics() });
     },
   });
 };

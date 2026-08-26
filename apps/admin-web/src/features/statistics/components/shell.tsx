@@ -19,6 +19,7 @@ import { defaultRange, useStatisticsRange } from '../shared';
 
 const TABS = [
   { href: '/statistics/sales', label: '매출' },
+  { href: '/statistics/profit', label: '이익' },
   { href: '/statistics/products', label: '상품' },
   { href: '/statistics/customers', label: '고객·멤버십' },
   { href: '/statistics/keywords', label: '검색 키워드' },

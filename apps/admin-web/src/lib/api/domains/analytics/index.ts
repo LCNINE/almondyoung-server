@@ -235,6 +235,65 @@ export interface BehaviorStatistics {
   }>;
 }
 
+export type ProfitSort = 'revenue' | 'margin' | 'marginRate' | 'quantity';
+
+export interface ProfitStatisticsQuery extends StatisticsRangeQuery {
+  sort?: ProfitSort;
+  order?: 'desc' | 'asc';
+  page?: number;
+  limit?: number;
+}
+
+export interface ProfitTotals {
+  grossRevenue: number;
+  cancelledAmount: number;
+  refundedAmount: number;
+  netRevenue: number;
+  quantitySold: number;
+  productsCount: number;
+  computedNetRevenue: number;
+  estimatedCost: number;
+  estimatedMargin: number;
+  marginRate: number | null;
+  uncomputedNetRevenue: number;
+  uncomputedProductsCount: number;
+  costCoverageRate: number | null;
+}
+
+export interface ProfitProductRow {
+  masterId: string;
+  name: string | null;
+  quantitySold: number;
+  grossRevenue: number;
+  cancelledAmount: number;
+  refundedAmount: number;
+  netRevenue: number;
+  supplyPrice: number | null;
+  estimatedCost: number | null;
+  estimatedMargin: number | null;
+  marginRate: number | null;
+}
+
+export interface ProfitSeriesPoint {
+  bucket: string;
+  netRevenue: number;
+  computedNetRevenue: number;
+  estimatedCost: number;
+  estimatedMargin: number;
+}
+
+export interface ProfitStatistics {
+  range: { from: string; to: string };
+  previousRange: { from: string; to: string };
+  totals: ProfitTotals;
+  previousTotals: ProfitTotals;
+  series: ProfitSeriesPoint[];
+  items: ProfitProductRow[];
+  page: number;
+  limit: number;
+  totalItems: number;
+}
+
 export interface DailyRevenueSummary extends RevenueTotals {
   date: string;
   avgOrderValue: number | null;
@@ -280,6 +339,17 @@ export const analyticsApi = {
     const params = new URLSearchParams(rangeQs(query));
     if (query.limit) params.set('limit', String(query.limit));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/products/unsold?${params.toString()}`);
+    return res.data;
+  },
+
+  getProfitStatistics: async (query: ProfitStatisticsQuery): Promise<ProfitStatistics> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.channel) params.set('channel', query.channel);
+    if (query.sort) params.set('sort', query.sort);
+    if (query.order) params.set('order', query.order);
+    if (query.page) params.set('page', String(query.page));
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/profit?${params.toString()}`);
     return res.data;
   },
 

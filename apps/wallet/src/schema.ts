@@ -949,6 +949,29 @@ export const subscriptionBillingMethods = pgTable(
   ],
 );
 
+// ─── 결제수단별 수수료율 (관리자 입력) ────────────────────────────────────────
+// PG 거래별 실 수수료 원천이 없어(승인 응답 미저장) 관리자가 입력한 요율로 근사 계산한다.
+// 요율 변경은 UPDATE 가 아니라 새 effective_from 행 추가 — 과거 기간을 다시 조회해도
+// 그 시점 요율이 적용되도록 이력을 보존한다.
+
+export const paymentFeeRates = pgTable(
+  'payment_fee_rates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    methodType: paymentMethodTypeEnum('method_type').notNull(),
+    // 만분율(basis point): 2.9% = 290
+    feeRateBp: integer('fee_rate_bp').notNull(),
+    // 이 요율이 적용되기 시작하는 시각(포함). 관리자는 KST 날짜로 입력하고 서버가 자정으로 변환.
+    effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull(),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('payment_fee_rates_bp_range', sql`${table.feeRateBp} >= 0 AND ${table.feeRateBp} <= 10000`),
+    uniqueIndex('uq_payment_fee_rates_method_effective').on(table.methodType, table.effectiveFrom),
+  ],
+);
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type PaymentMethodType = (typeof paymentMethodTypeEnum.enumValues)[number];
@@ -1005,6 +1028,7 @@ export const walletSchema = {
   cmsAgreements,
   invoices,
   subscriptionBillingMethods,
+  paymentFeeRates,
 };
 
 export { idempotencyKeys };

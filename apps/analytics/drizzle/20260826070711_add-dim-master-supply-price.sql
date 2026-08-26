@@ -1,0 +1,1 @@
+ALTER TABLE "dim_product_masters" ADD COLUMN "supply_price" bigint;

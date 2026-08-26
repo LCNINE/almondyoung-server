@@ -49,4 +49,12 @@ export const walletQueryKeys = {
   regions: () => [...walletQueryKeys.all, 'regions'] as const,
   regionMethods: (code: string) =>
     [...walletQueryKeys.regions(), code, 'payment-methods'] as const,
+
+  // 통계 (수수료율·수수료 요약·멤버십 수입)
+  statistics: () => [...walletQueryKeys.all, 'statistics'] as const,
+  feeRates: () => [...walletQueryKeys.statistics(), 'fee-rates'] as const,
+  feeSummary: (from: string, to: string) =>
+    [...walletQueryKeys.statistics(), 'fees', { from, to }] as const,
+  membershipRevenue: (from: string, to: string) =>
+    [...walletQueryKeys.statistics(), 'membership-revenue', { from, to }] as const,
 } as const;

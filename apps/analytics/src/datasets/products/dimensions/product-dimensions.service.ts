@@ -19,6 +19,7 @@ type MasterPatch = {
   activeVersionId?: string | null;
   isActive?: boolean | null;
   lastChangeReason?: string | null;
+  supplyPrice?: number | null;
   deletedAt?: Date | null;
   eventAt?: Date;
 };
@@ -158,6 +159,8 @@ export class ProductDimensionsService {
           activeVersionId: payload.versionId,
           isActive: payload.versionId !== null,
           lastChangeReason: payload.changeReason,
+          // 키 부재(구버전 이벤트·미게시)는 기존 원가 유지, null 은 "원가 지움"으로 반영
+          ...(payload.supplyPrice !== undefined ? { supplyPrice: payload.supplyPrice } : {}),
           eventAt,
         },
         executor,
@@ -200,6 +203,7 @@ export class ProductDimensionsService {
       activeVersionId: patch.activeVersionId ?? null,
       isActive: patch.isActive ?? null,
       lastChangeReason: patch.lastChangeReason ?? null,
+      supplyPrice: patch.supplyPrice ?? null,
       createdAt: now,
       updatedAt: now,
       deletedAt: patch.deletedAt ?? null,
@@ -225,6 +229,10 @@ export class ProductDimensionsService {
 
     if (Object.prototype.hasOwnProperty.call(patch, 'lastChangeReason')) {
       set.lastChangeReason = patch.lastChangeReason ?? null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'supplyPrice')) {
+      set.supplyPrice = patch.supplyPrice ?? null;
     }
 
     if (Object.prototype.hasOwnProperty.call(patch, 'deletedAt')) {
