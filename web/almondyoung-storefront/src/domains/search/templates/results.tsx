@@ -16,8 +16,7 @@ import type { SearchProductResult } from "../data/search-results"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { SearchEmptyState } from "../components/search-empty-state"
-import { CircleHelp } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 
 interface SearchResultsProps {
   isMembership: boolean
@@ -47,7 +46,6 @@ export function SearchResults({
   const tSort = useTranslations("search.sort")
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
-  const [isReviewInfoOpen, setIsReviewInfoOpen] = useState(false)
 
 
 
@@ -92,36 +90,9 @@ export function SearchResults({
     })
   }
 
-  const reviewHelp = (
-    <span
-      className="relative flex items-center"
-      onMouseEnter={() => setIsReviewInfoOpen(true)}
-      onMouseLeave={() => setIsReviewInfoOpen(false)}
-    >
-      <button
-        type="button"
-        aria-label={tSort("reviewHelpAria")}
-        aria-expanded={isReviewInfoOpen}
-        className="ml-1 flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:ring-2 focus-visible:ring-olive-500 focus-visible:outline-none"
-        onClick={() => setIsReviewInfoOpen((open) => !open)}
-        onBlur={() => setIsReviewInfoOpen(false)}
-      >
-        <CircleHelp className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-      {isReviewInfoOpen && (
-        <span
-          role="tooltip"
-          className="absolute top-7 left-0 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
-        >
-          {tSort("reviewHelp")}
-        </span>
-      )}
-    </span>
-  )
-
   const sortTabOptions: ProductSortTabOption[] = [
     { value: "relevance", label: tSort("relevance") },
-    { value: "review", label: tSort("review"), adornment: reviewHelp },
+    { value: "review", label: tSort("review") },
     { value: "price_asc", label: tSort("priceAsc") },
     { value: "price_desc", label: tSort("priceDesc") },
     { value: "newest", label: tSort("newest") },

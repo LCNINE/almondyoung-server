@@ -1,13 +1,10 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import type { ReactNode } from "react"
 
 export interface ProductSortTabOption<T extends string = string> {
   value: T
   label: string
-  /** 라벨 뒤에 붙는 도움말 아이콘 등 */
-  adornment?: ReactNode
 }
 
 interface ProductSortTabsProps<T extends string = string> {
@@ -52,7 +49,6 @@ export function ProductSortTabs<T extends string = string>({
           >
             {option.label}
           </button>
-          {option.adornment}
         </div>
       ))}
     </div>
