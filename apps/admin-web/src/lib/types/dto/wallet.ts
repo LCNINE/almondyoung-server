@@ -458,3 +458,63 @@ export interface IssueCashReceiptPayload {
   type: AdminCashReceiptType;
   customerIdentityNumber: string;
 }
+
+// ── 통계 (수수료율 설정·수수료 요약·멤버십 수입) ─────────────────────────────
+export type WalletPaymentMethodType =
+  | 'POINTS'
+  | 'CARD'
+  | 'BANK_TRANSFER'
+  | 'BNPL'
+  | 'TOSS'
+  | 'NICEPAY'
+  | 'TOSS_BILLING'
+  | 'NICEPAY_BILLING'
+  | 'CMS_BATCH';
+
+export interface FeeRateDto {
+  id: string;
+  methodType: WalletPaymentMethodType;
+  /** 만분율(basis point): 2.9% = 290 */
+  feeRateBp: number;
+  effectiveFrom: string;
+  memo: string | null;
+  createdAt: string;
+}
+
+export interface CreateFeeRatePayload {
+  methodType: WalletPaymentMethodType;
+  feeRateBp: number;
+  /** KST 적용 시작일, YYYY-MM-DD */
+  effectiveFrom: string;
+  memo?: string;
+}
+
+export interface FeeMethodSummaryDto {
+  methodType: string;
+  capturedAmount: number;
+  capturedCount: number;
+  refundedAmount: number;
+  coveredAmount: number;
+  uncoveredAmount: number;
+  estimatedFee: number;
+  appliedFeeRateBp: number | null;
+}
+
+export interface FeeSummaryDto {
+  range: { from: string; to: string };
+  methods: FeeMethodSummaryDto[];
+  totals: {
+    capturedAmount: number;
+    refundedAmount: number;
+    coveredAmount: number;
+    uncoveredAmount: number;
+    estimatedFee: number;
+  };
+}
+
+export interface MembershipRevenueDto {
+  range: { from: string; to: string };
+  totalAmount: number;
+  invoiceCount: number;
+  series: Array<{ bucket: string; amount: number; count: number }>;
+}

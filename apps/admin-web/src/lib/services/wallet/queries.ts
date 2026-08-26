@@ -154,6 +154,34 @@ export const useRegions = () => {
   });
 };
 
+// ── 통계 (수수료율·수수료 요약·멤버십 수입) ─────────────────────────────────
+
+export const useFeeRates = () => {
+  return useQuery({
+    queryKey: walletQueryKeys.feeRates(),
+    queryFn: () => walletApi.listFeeRates(),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useFeeSummary = (from: string, to: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.feeSummary(from, to),
+    queryFn: () => walletApi.getFeeSummary(from, to),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
+export const useMembershipRevenue = (from: string, to: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.membershipRevenue(from, to),
+    queryFn: () => walletApi.getMembershipRevenue(from, to),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
 export const useRegionPaymentMethods = (code: string | null) => {
   return useQuery({
     queryKey: walletQueryKeys.regionMethods(code ?? ''),

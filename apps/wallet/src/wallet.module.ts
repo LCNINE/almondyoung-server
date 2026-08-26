@@ -89,6 +89,8 @@ import { PointsController } from './points/points.controller';
 import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
 import { RecurringBillingAdminService } from './admin/recurring-billing-admin.service';
 import { RecurringBillingAdminController } from './admin/recurring-billing-admin.controller';
+import { StatisticsAdminService } from './admin/statistics-admin.service';
+import { StatisticsAdminController } from './admin/statistics-admin.controller';
 
 // Messaging + Jobs
 import { ExpirationJob } from './jobs/expiration.job';
@@ -420,6 +422,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CheckoutSessionController,
     CmsAgreementController,
     RecurringBillingAdminController,
+    StatisticsAdminController,
     InvoiceController,
     MyInvoiceController,
     UgcCommandConsumer,
@@ -510,6 +513,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     BankTransferAdminService,
     PaymentIntentAdminService,
     RecurringBillingAdminService,
+    StatisticsAdminService,
 
     // Billing
     BillingMethodService,

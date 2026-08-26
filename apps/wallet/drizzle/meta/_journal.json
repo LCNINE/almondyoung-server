@@ -99,6 +99,13 @@
       "when": 1786312671957,
       "tag": "20260809215751_drop-legacy-wallet-outbox",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787731737591,
+      "tag": "20260826080857_add-payment-fee-rates",
+      "breakpoints": true
     }
   ]
 }

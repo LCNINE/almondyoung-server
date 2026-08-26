@@ -30,6 +30,10 @@ import {
   PutRegionMethodItem,
   AdminCashReceiptDto,
   IssueCashReceiptPayload,
+  FeeRateDto,
+  CreateFeeRatePayload,
+  FeeSummaryDto,
+  MembershipRevenueDto,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -479,6 +483,44 @@ export const walletApi = {
       `${BASE}/v1/admin/regions/${encodeURIComponent(code)}/payment-methods`,
       { items },
       idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  // ── 통계 (수수료율·수수료 요약·멤버십 수입) ─────────────────────────────────
+
+  listFeeRates: async (): Promise<{ items: FeeRateDto[] }> => {
+    const res = await client.get(`${BASE}/v1/admin/statistics/fee-rates`);
+    return res.data;
+  },
+
+  createFeeRate: async (payload: CreateFeeRatePayload): Promise<{ id: string }> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/statistics/fee-rates`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  deleteFeeRate: async (id: string): Promise<{ deleted: true }> => {
+    const res = await client.delete(
+      `${BASE}/v1/admin/statistics/fee-rates/${encodeURIComponent(id)}`,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  getFeeSummary: async (from: string, to: string): Promise<FeeSummaryDto> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/statistics/fees?${buildQueryString({ from, to })}`
+    );
+    return res.data;
+  },
+
+  getMembershipRevenue: async (from: string, to: string): Promise<MembershipRevenueDto> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/statistics/membership-revenue?${buildQueryString({ from, to })}`
     );
     return res.data;
   },
