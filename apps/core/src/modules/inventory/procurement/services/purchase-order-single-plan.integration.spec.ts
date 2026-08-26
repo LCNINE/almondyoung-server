@@ -7,7 +7,20 @@ import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderReader } from './purchase-order.reader';
+import { PurchaseOrderManager } from './purchase-order.manager';
 import { InboundService } from '../../inbound/services/inbound.service';
+
+/**
+ * 포트 조립. 3계층(#724 항목 5-b) 이후 `PurchaseOrderService` 는 위임만 하므로 통합
+ * 스펙도 Manager/Reader 를 손으로 엮어 넣는다 — 실제 DI 가 하는 일과 같다.
+ */
+function buildPurchaseOrderPort(
+  dbService: ConstructorParameters<typeof PurchaseOrderManager>[0],
+  inboundService: ConstructorParameters<typeof PurchaseOrderManager>[1],
+): PurchaseOrderService {
+  const reader = new PurchaseOrderReader(dbService);
+  return new PurchaseOrderService(new PurchaseOrderManager(dbService, inboundService, reader), reader);
+}
 
 /**
  * 해외 발주(출발 창고 ≠ 최종 목적지)가 입고 계획을 하나만 만드는지 고정한다.
@@ -68,7 +81,7 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       {} as never,
       {} as never,
     );
-    return new PurchaseOrderService(dbService, inboundService, new PurchaseOrderReader(dbService));
+    return buildPurchaseOrderPort(dbService, inboundService);
   }
 
   interface CrossWarehousePoFixture {
