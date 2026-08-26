@@ -800,7 +800,9 @@ const CmsMemberRejectedSchema = z.object({
   cmsMemberId: z.string().min(1),
   billingMethodId: z.string().min(1),
   userId: z.string().min(1),
-  email: z.string().min(1),
+  // 이 이벤트의 존재 이유가 "이 주소로 메일을 보내라" 이므로 형식까지 검증한다.
+  // 발행자(poller)가 빈 값을 이미 거르지만, 형식이 깨진 값은 여기서 막는다.
+  email: z.string().email(),
   userName: z.string().min(1),
   reasonCode: z.string().nullable(),
   reasonMessage: z.string().nullable(),

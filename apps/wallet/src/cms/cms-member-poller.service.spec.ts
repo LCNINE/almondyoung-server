@@ -10,7 +10,11 @@ const MEMBER = {
   userId: 'user-1',
 } as never;
 
-function makePoller(opts: { liveStatus: string; contact?: { email: string; username: string } | null }) {
+function makePoller(opts: {
+  liveStatus: string;
+  contact?: { email: string; username: string } | null;
+  configured?: boolean;
+}) {
   const cmsMemberService = {
     findPendingMembers: jest.fn().mockResolvedValue([MEMBER]),
     updateStatus: jest.fn().mockResolvedValue(undefined),
@@ -33,6 +37,9 @@ function makePoller(opts: { liveStatus: string; contact?: { email: string; usern
   }
   const userContactClient = { findContacts: jest.fn().mockResolvedValue(contacts) };
   const publisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
+  const env: Record<string, string> =
+    opts.configured === false ? {} : { USER_SERVICE_URL: 'http://user-service', USER_SERVICE_INTERNAL_KEY: 'k' };
+  const configService = { get: jest.fn((key: string) => env[key]) };
 
   const poller = new CmsMemberPollerService(
     cmsMemberService as never,
@@ -40,6 +47,7 @@ function makePoller(opts: { liveStatus: string; contact?: { email: string; usern
     dbService as never,
     invoiceOutcomeService as never,
     userContactClient as never,
+    configService as never,
     publisher as never,
   );
   return { poller, cmsMemberService, publisher, userContactClient };
@@ -79,6 +87,19 @@ describe('CmsMemberPollerService — 심사 거절 통지', () => {
 
     expect(cmsMemberService.updateStatus).toHaveBeenCalledWith('cms-row-1', 'FAILED', 'Q201', '생년월일 불일치');
     expect(publisher.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('user-service 연동이 없는 환경이면 조회 없이 스킵한다 — 고장이 아니라 구성이다', async () => {
+    const { poller, publisher, userContactClient, cmsMemberService } = makePoller({
+      liveStatus: '신청실패',
+      configured: false,
+    });
+
+    await poller.pollPendingMembers();
+
+    expect(userContactClient.findContacts).not.toHaveBeenCalled();
+    expect(publisher.enqueue).not.toHaveBeenCalled();
+    expect(cmsMemberService.updateStatus).toHaveBeenCalledWith('cms-row-1', 'FAILED', 'Q201', '생년월일 불일치');
   });
 
   it('발행이 터져도 폴링을 중단시키지 않는다 — 상태는 이미 확정됐다', async () => {

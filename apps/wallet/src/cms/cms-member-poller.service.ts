@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
@@ -21,6 +22,7 @@ export class CmsMemberPollerService {
     private readonly dbService: DbService<WalletSchema>,
     private readonly invoiceOutcomeService: InvoiceOutcomeService,
     private readonly userContactClient: UserContactClient,
+    private readonly configService: ConfigService,
     @InjectPublisher(PAYMENT_STREAM)
     private readonly publisher: PublisherFor<typeof PAYMENT_STREAM>,
   ) {}
@@ -29,11 +31,7 @@ export class CmsMemberPollerService {
    * 특정 cms_member UUID로 단건 폴링 (admin trigger).
    */
   async pollMemberById(id: string): Promise<void> {
-    const rows = await this.dbService.db
-      .select()
-      .from(cmsMembers)
-      .where(eq(cmsMembers.id, id))
-      .limit(1);
+    const rows = await this.dbService.db.select().from(cmsMembers).where(eq(cmsMembers.id, id)).limit(1);
     const member = rows[0];
     if (!member) throw new Error('CMS member not found: ' + id);
     await this.pollOneMember(member);
@@ -54,11 +52,15 @@ export class CmsMemberPollerService {
     await Promise.all(pendingMembers.map((member) => this.pollOneMember(member)));
   }
 
-  private async pollOneMember(member: Awaited<ReturnType<CmsMemberService['findPendingMembers']>>[number]): Promise<void> {
+  private async pollOneMember(
+    member: Awaited<ReturnType<CmsMemberService['findPendingMembers']>>[number],
+  ): Promise<void> {
     try {
       const result = await this.cmsApi.getMember(member.cmsMemberId);
       if (!result.ok) {
-        this.logger.warn(`CMS member query failed for ${member.cmsMemberId}: ${result.error.code} ${result.error.message}`);
+        this.logger.warn(
+          `CMS member query failed for ${member.cmsMemberId}: ${result.error.code} ${result.error.message}`,
+        );
         return;
       }
 
@@ -102,6 +104,16 @@ export class CmsMemberPollerService {
     resultCode: string | undefined,
     resultMessage: string | undefined,
   ): Promise<void> {
+    // user-service 연동은 옵셔널 설정이다(env.ts). 안 붙인 환경에서 통지를 못 보내는 건
+    // 고장이 아니라 그 환경의 구성이므로, error 로 올려 운영 알람을 울리지 않는다.
+    if (
+      !this.configService.get<string>('USER_SERVICE_URL') ||
+      !this.configService.get<string>('USER_SERVICE_INTERNAL_KEY')
+    ) {
+      this.logger.warn(`계좌 심사 거절 통지 스킵 — user-service 연동 미설정 (cmsMemberId=${member.cmsMemberId})`);
+      return;
+    }
+
     try {
       const contacts = await this.userContactClient.findContacts([member.userId]);
       const contact = contacts.get(member.userId);

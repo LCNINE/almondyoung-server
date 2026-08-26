@@ -123,7 +123,9 @@ const RENEWAL_NOTICE_TEMPLATE = {
     userName: { type: 'string', required: true },
     planName: { type: 'string', required: true },
     nextBillingDate: { type: 'string', required: true },
-    amount: { type: 'number', required: true },
+    // 컨슈머가 formatAmount 로 "29,900" 문자열을 넘기고 본문도 `{{amount}}원` 으로 단위를
+    // 붙이므로 string 이다. number 로 두면 스키마 기반 변수 추출 경로에서 타입이 어긋난다.
+    amount: { type: 'string', required: true },
     paymentMethodLabel: { type: 'string', required: true },
     currentPeriodEnd: { type: 'string', required: true },
     nextPeriodEnd: { type: 'string', required: true },
