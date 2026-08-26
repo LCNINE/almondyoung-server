@@ -25,6 +25,7 @@ const TABS = [
   { href: '/statistics/traffic', label: '유입' },
   { href: '/statistics/insights', label: '고객 분석' },
   { href: '/statistics/behavior', label: '행동 분석' },
+  { href: '/statistics/reviews', label: '리뷰' },
 ];
 
 /** 탭별로 의미 없는 필터를 숨긴다 — 검색 키워드 통계는 채널·집계 단위가 없다. */

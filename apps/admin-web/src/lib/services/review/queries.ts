@@ -1,4 +1,4 @@
-import { reviewApi } from '@/lib/api/domains/review';
+import { reviewApi, reviewStatisticsApi, ReviewStatisticsQuery } from '@/lib/api/domains/review';
 import { ReviewListQuery } from '@/lib/types/dto/review';
 import {
   keepPreviousData,
@@ -13,6 +13,13 @@ export const useReviews = (query: ReviewListQuery) => {
     queryFn: () => reviewApi.getReviews(query),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  });
+};
+
+export const useReviewStatistics = (query: ReviewStatisticsQuery) => {
+  return useQuery({
+    queryKey: reviewQueryKeys.statistics(query),
+    queryFn: () => reviewStatisticsApi.getStatistics(query),
   });
 };
 

@@ -90,3 +90,74 @@ export const reviewApi = {
     );
   },
 };
+
+// ─── 리뷰 통계 (통계 페이지 전용) ───
+
+export interface ReviewStatisticsQuery {
+  from: string;
+  to: string;
+  limit?: number;
+}
+
+export interface ReviewStatisticsTotals {
+  reviewCount: number;
+  previousReviewCount: number;
+  averageRating: number | null;
+  previousAverageRating: number | null;
+  photoReviewCount: number;
+  adminCommentedCount: number;
+  eligibleCount: number;
+  consumedEligibleCount: number;
+}
+
+export interface ReviewRatingBucket {
+  rating: number;
+  count: number;
+}
+
+export interface ReviewVolumeBucket {
+  /** KST 달력 날짜 (YYYY-MM-DD) */
+  bucket: string;
+  count: number;
+  averageRating: number | null;
+}
+
+export interface ReviewProductRatingRow {
+  productId: string;
+  reviewCount: number;
+  averageRating: number;
+}
+
+export interface BestReview {
+  reviewId: string;
+  productId: string;
+  rating: number;
+  contentExcerpt: string;
+  reactionCount: number;
+  hasPhoto: boolean;
+  createdAt: string;
+}
+
+export interface ReviewStatistics {
+  range: { from: string; to: string };
+  previousRange: { from: string; to: string };
+  totals: ReviewStatisticsTotals;
+  ratingDistribution: ReviewRatingBucket[];
+  series: ReviewVolumeBucket[];
+  /** 저평점 경보 — 기간 평균이 임계 아래인 상품 (평균 오름차순) */
+  lowRated: ReviewProductRatingRow[];
+  topProducts: ReviewProductRatingRow[];
+  /** 리액션을 받은 리뷰 — 전시 후보 */
+  bestReviews: BestReview[];
+}
+
+export const reviewStatisticsApi = {
+  getStatistics: async (query: ReviewStatisticsQuery): Promise<ReviewStatistics> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.limit) params.set('limit', String(query.limit));
+    const res = await client.get(
+      `${UGC_SERVICE_BASE_URL}/reviews/admin/statistics?${params.toString()}`
+    );
+    return res.data;
+  },
+};

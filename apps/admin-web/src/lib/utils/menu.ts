@@ -455,6 +455,7 @@ export const mainMenus: MainMenu[] = [
           { id: 'by-keyword', title: '검색 키워드', path: '/statistics/keywords' },
           { id: 'by-traffic', title: '유입', path: '/statistics/traffic' },
           { id: 'customer-insights', title: '고객 분석', path: '/statistics/insights' },
+          { id: 'by-review', title: '리뷰', path: '/statistics/reviews' },
         ],
       },
       {
