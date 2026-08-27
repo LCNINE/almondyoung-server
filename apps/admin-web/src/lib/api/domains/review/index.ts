@@ -97,6 +97,8 @@ export interface ReviewStatisticsQuery {
   from: string;
   to: string;
   limit?: number;
+  lowRatedPage?: number;
+  topProductsPage?: number;
 }
 
 export interface ReviewStatisticsTotals {
@@ -146,7 +148,12 @@ export interface ReviewStatistics {
   series: ReviewVolumeBucket[];
   /** 저평점 경보 — 기간 평균이 임계 아래인 상품 (평균 오름차순) */
   lowRated: ReviewProductRatingRow[];
+  lowRatedPage: number;
+  lowRatedTotalItems: number;
   topProducts: ReviewProductRatingRow[];
+  topProductsPage: number;
+  topProductsTotalItems: number;
+  limit: number;
   /** 리액션을 받은 리뷰 — 전시 후보 */
   bestReviews: BestReview[];
 }
@@ -155,6 +162,8 @@ export const reviewStatisticsApi = {
   getStatistics: async (query: ReviewStatisticsQuery): Promise<ReviewStatistics> => {
     const params = new URLSearchParams({ from: query.from, to: query.to });
     if (query.limit) params.set('limit', String(query.limit));
+    if (query.lowRatedPage) params.set('lowRatedPage', String(query.lowRatedPage));
+    if (query.topProductsPage) params.set('topProductsPage', String(query.topProductsPage));
     const res = await client.get(
       `${UGC_SERVICE_BASE_URL}/reviews/admin/statistics?${params.toString()}`
     );

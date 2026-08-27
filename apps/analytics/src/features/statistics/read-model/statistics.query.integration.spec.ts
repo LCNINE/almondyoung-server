@@ -207,6 +207,43 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
     expect(july.items.map((row) => row.masterId)).not.toContain(masterD);
   });
 
+  it('랭킹 페이지네이션 — limit=1 로 세 페이지를 걸으면 전 상품이 한 번씩 나온다', async () => {
+    const pages = await Promise.all(
+      [1, 2, 3].map((page) => query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 1, 'desc', page)),
+    );
+
+    expect(pages.map((p) => p.ranking.map((row) => row.masterId)).flat()).toEqual([masterA, masterB, masterC]);
+    for (const [index, result] of pages.entries()) {
+      expect(result.rankingTotalItems).toBe(3);
+      expect(result.page).toBe(index + 1);
+      expect(result.limit).toBe(1);
+    }
+    // 범위 밖 페이지는 빈 목록 — 총건수는 유지된다.
+    const beyond = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 1, 'desc', 4);
+    expect(beyond.ranking).toEqual([]);
+    expect(beyond.rankingTotalItems).toBe(3);
+  });
+
+  it('옵션별 판매 페이지네이션은 랭킹과 독립으로 움직인다', async () => {
+    const result = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 1, 'desc', 1, 2);
+    // variantPage=2 — 채널 내 옵션 행은 1개뿐이라 빈 목록, 랭킹(page=1)은 그대로.
+    expect(result.variants).toEqual([]);
+    expect(result.variantTotalItems).toBe(1);
+    expect(result.variantPage).toBe(2);
+    expect(result.ranking.map((row) => row.masterId)).toEqual([masterA]);
+  });
+
+  it('무판매 목록 페이지네이션 — page 와 limit 이 응답에 실리고 범위 밖 페이지는 비어 있다', async () => {
+    const first = await query.getUnsoldProducts('2026-08-01', '2026-08-31', channel, 1, 1);
+    expect(first.items).toHaveLength(1);
+    expect(first.page).toBe(1);
+    expect(first.limit).toBe(1);
+
+    const beyond = await query.getUnsoldProducts('2026-08-01', '2026-08-31', channel, 200, first.total + 1);
+    expect(beyond.items).toEqual([]);
+    expect(beyond.total).toBe(first.total);
+  });
+
   it('옵션별 판매는 기본 품목 여부와 폴백된 상품명을 함께 내린다', async () => {
     const result = await query.getProducts('2026-08-01', '2026-08-31', channel, 'revenue', 10);
     const row = result.variants.find((v) => v.variantId === variantC);

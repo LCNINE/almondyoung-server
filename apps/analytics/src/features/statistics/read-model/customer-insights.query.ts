@@ -61,7 +61,7 @@ export interface CustomerInsights {
     totalCustomers: number;
   };
   /** 전 기간 누적 상품별 재구매 (agg_user_product_purchase) — 기간 필터 무관. */
-  repurchase: { minBuyers: number; items: RepurchaseItem[] };
+  repurchase: { minBuyers: number; page: number; limit: number; totalItems: number; items: RepurchaseItem[] };
   /** 기간 내 등급 전환 + 현재 등급 분포. 실시간 수집 이전 이력은 없어 과거는 과소집계다. */
   tierFlow: {
     transitions: Array<{ fromTier: string; toTier: string; count: number }>;
@@ -181,7 +181,7 @@ export class CustomerInsightsQuery {
     return this.dbService.db;
   }
 
-  async getInsights(from: string, to: string, limit = 20, minBuyers = 5): Promise<CustomerInsights> {
+  async getInsights(from: string, to: string, limit = 20, minBuyers = 5, page = 1): Promise<CustomerInsights> {
     if (from > to) {
       throw new BadRequestError(`조회 기간이 뒤집혔습니다: ${from} > ${to}`);
     }
@@ -189,7 +189,7 @@ export class CustomerInsightsQuery {
     const [cohorts, rfm, repurchase, tierFlow] = await Promise.all([
       this.cohortRetention(to),
       this.rfmDistribution(),
-      this.productRepurchase(limit, minBuyers),
+      this.productRepurchase(limit, minBuyers, page),
       this.tierTransitions(from, to),
     ]);
 
@@ -267,10 +267,24 @@ export class CustomerInsightsQuery {
     };
   }
 
-  private async productRepurchase(limit: number, minBuyers: number): Promise<CustomerInsights['repurchase']> {
+  private async productRepurchase(
+    limit: number,
+    minBuyers: number,
+    page: number,
+  ): Promise<CustomerInsights['repurchase']> {
     const buyersExpr = sql`COUNT(*)`;
     const repeatExpr = sql`COUNT(*) FILTER (WHERE ${aggUserProductPurchase.purchaseCount} >= 2)`;
-    const rows = await this.db
+
+    // having 을 통과한 그룹 수 — 페이지네이션 총건수.
+    const qualified = this.db
+      .select({ masterId: aggUserProductPurchase.masterId })
+      .from(aggUserProductPurchase)
+      .groupBy(aggUserProductPurchase.masterId)
+      .having(sql`${buyersExpr} >= ${minBuyers}`)
+      .as('qualified');
+    const countRowsPromise = this.db.select({ value: sql<string>`COUNT(*)` }).from(qualified);
+
+    const rowsPromise = this.db
       .select({
         masterId: aggUserProductPurchase.masterId,
         name: dimProductMasters.name,
@@ -286,14 +300,24 @@ export class CustomerInsightsQuery {
       .leftJoin(dimProductMasters, eq(dimProductMasters.masterId, aggUserProductPurchase.masterId))
       .groupBy(aggUserProductPurchase.masterId, dimProductMasters.name)
       .having(sql`${buyersExpr} >= ${minBuyers}`)
-      .orderBy(sql`${repeatExpr}::float / ${buyersExpr} DESC`, sql`${buyersExpr} DESC`)
-      .limit(limit);
+      .orderBy(
+        sql`${repeatExpr}::float / ${buyersExpr} DESC`,
+        sql`${buyersExpr} DESC`,
+        sql`${aggUserProductPurchase.masterId} ASC`,
+      )
+      .limit(limit)
+      .offset((page - 1) * limit);
+
+    const [countRows, rows] = await Promise.all([countRowsPromise, rowsPromise]);
 
     const namelessMasterIds = rows.filter((row) => !row.name).map((row) => row.masterId);
     const fallbackNames = await this.latestOrderedProductNames(namelessMasterIds);
 
     return {
       minBuyers,
+      page,
+      limit,
+      totalItems: Number(countRows[0]?.value ?? 0),
       items: rows.map((row) => {
         const buyers = Number(row.buyers ?? 0);
         const repeatBuyers = Number(row.repeatBuyers ?? 0);

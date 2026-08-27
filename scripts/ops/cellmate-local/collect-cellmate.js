@@ -22,7 +22,21 @@ function csv(value) { const s = value == null ? '' : String(value); return /[",\
 (async () => {
   const medusa = new Client({ connectionString: dbUrl('medusa') }); await medusa.connect();
   const wallet = new Client({ connectionString: dbUrl('wallet') }); let refundIds = new Set();
-  try { await wallet.connect(); refundIds = new Set((await wallet.query("select intent_id from refund_requests where status in ('REQUESTED','APPROVED') and intent_id is not null")).rows.map((x) => x.intent_id)); }
+  try {
+    await wallet.connect();
+    refundIds = new Set((await wallet.query(`
+      select intent_id::text as intent_id
+      from refund_requests
+      where status in ('REQUESTED','APPROVED') and intent_id is not null
+      union
+      select r.intent_id::text as intent_id
+      from refunds r
+      join payment_intents pi on pi.id = r.intent_id
+      where r.status in ('PENDING','SUCCEEDED') and r.intent_id is not null
+      group by r.intent_id, pi.payable_amount
+      having sum(r.amount) >= pi.payable_amount
+    `)).rows.map((x) => x.intent_id));
+  }
   catch (e) { if (e.code !== '3D000' && !/does not exist/i.test(e.message)) throw e; }
   finally { try { await wallet.end(); } catch (_) {} }
   const orders = (await medusa.query(`select o.id,o.display_id,o.created_at,o.canceled_at,o.metadata,a.first_name as first_name,a.last_name as last_name,a.address_1,a.address_2,a.postal_code,a.phone,ps.data->>'intentId' as intent_id from "order" o left join order_address a on a.id=o.shipping_address_id left join order_payment_collection opc on opc.order_id=o.id and opc.deleted_at is null left join payment_session ps on ps.payment_collection_id=opc.payment_collection_id and ps.deleted_at is null where o.deleted_at is null and (o.display_id>$1 or o.display_id=any($2::int[]) or ($3::boolean and o.metadata->>'bank_transfer_status'='awaiting_deposit')) order by o.display_id`, [latest, awaiting, includeAllAwaiting])).rows;
@@ -32,7 +46,7 @@ function csv(value) { const s = value == null ? '' : String(value); return /[",\
   for (const order of orders) {
     const shipping = { name: [order.last_name, order.first_name].filter(Boolean).join('').trim(), address: [order.address_1, order.address_2].filter(Boolean).join(' ').trim(), postal: String(order.postal_code || ''), phone: phone(order.phone) };
     const items = itemsByOrder.get(order.id) || []; const orderNo = `${kstDate(order.created_at)}-${order.display_id}`; const bank = order.metadata && order.metadata.bank_transfer_status; let reason = '';
-    if (excludedDisplayIds.has(Number(order.display_id))) reason = 'manually_excluded'; else if (order.canceled_at) reason = 'canceled'; else if (bank === 'awaiting_deposit') reason = 'awaiting_deposit'; else if (order.intent_id && refundIds.has(order.intent_id)) reason = 'refund_requested'; else if (items.some((x) => Number(x.shipped_quantity || 0) > 0)) reason = 'already_shipped'; else if (!shipping.address && !shipping.postal && !shipping.phone) reason = 'no_shipping_info_digital_or_non_delivery';
+    if (excludedDisplayIds.has(Number(order.display_id))) reason = 'manually_excluded'; else if (order.canceled_at) reason = 'canceled'; else if (bank === 'awaiting_deposit') reason = 'awaiting_deposit'; else if (order.intent_id && refundIds.has(order.intent_id)) reason = 'refund_requested_or_completed'; else if (items.some((x) => Number(x.shipped_quantity || 0) > 0)) reason = 'already_shipped'; else if (!shipping.address && !shipping.postal && !shipping.phone) reason = 'no_shipping_info_digital_or_non_delivery';
     source.push({ ...order, shipping, orderNo, items });
     if (reason) { excluded.push({ display_id: order.display_id, name: shipping.name, reason }); continue; }
     let lineCount = 0;

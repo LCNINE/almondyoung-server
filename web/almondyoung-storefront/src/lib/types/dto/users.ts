@@ -166,7 +166,7 @@ export interface UserVerificationStatusDto {
 /*───────────────────────────
  * 휴대폰 인증번호 발송 요청
  *──────────────────────────*/
-export type SendTwilioMessageDto = {
+export type SendVerificationCodeDto = {
   countryCode: string
   phoneNumber: string
   purpose?: "forget_pin" | "phone_verify" | "password_change"

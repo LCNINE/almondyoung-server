@@ -9,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import useTwilio from "@/domains/payment/components/hooks/use-twilio"
+import usePhoneVerification from "@/domains/payment/components/hooks/use-phone-verification"
 import {
   formatPhoneNumber,
   getCleanKoreanNumber,
@@ -55,15 +55,15 @@ export function PhoneChangeDialog({
   const [isUpdating, startUpdateTransition] = useTransition()
 
   const {
-    sendTwilioMessage,
+    sendVerificationCode,
     isCodeSendPending,
     isCodeSent,
     verifyCode,
     isCodeVerifyPending,
     isCodeVerified,
     timer,
-    reset: resetTwilio,
-  } = useTwilio()
+    reset: resetPhoneVerification,
+  } = usePhoneVerification()
 
   // 현재 번호 대신 이메일로 본인확인하는 대안 경로
   const emailOtp = useEmailOtp()
@@ -78,7 +78,7 @@ export function PhoneChangeDialog({
     setStep(initialStep)
     setCode("")
     setNewPhone("")
-    resetTwilio()
+    resetPhoneVerification()
     emailOtp.reset()
   }
 
@@ -114,7 +114,7 @@ export function PhoneChangeDialog({
   useEffect(() => {
     if (!isCodeVerified) return
     if (step === "verifyCurrent") {
-      resetTwilio()
+      resetPhoneVerification()
       setCode("")
       setStep("input")
       return
@@ -143,9 +143,9 @@ export function PhoneChangeDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCodeVerified, step])
 
-  // twilio 엔드포인트는 E.164(+8210...) 형식만 허용
+  // 인증번호 발송 API 는 E.164(+8210...) 형식만 허용
   const handleSendCode = (phone: string) => {
-    sendTwilioMessage({
+    sendVerificationCode({
       countryCode: countryCode || "KR",
       phoneNumber: toE164Korean(phone),
       purpose: "phone_verify",

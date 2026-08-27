@@ -20,6 +20,8 @@ export const useReviewStatistics = (query: ReviewStatisticsQuery) => {
   return useQuery({
     queryKey: reviewQueryKeys.statistics(query),
     queryFn: () => reviewStatisticsApi.getStatistics(query),
+    // 페이지 이동 시 이전 페이지를 유지해 테이블이 깜빡이지 않게 한다
+    placeholderData: (previous) => previous,
   });
 };
 

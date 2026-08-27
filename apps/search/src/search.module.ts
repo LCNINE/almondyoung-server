@@ -3,12 +3,17 @@ import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { AuthorizationModule } from '@app/authorization';
+import { DbModule } from '@app/db';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { AdminKeywordController } from './admin-keyword.controller';
+import { searchDbSchema } from './db/schema';
+import { KeywordIssueRepository } from './keyword-issue.repository';
+import { SearchKeywordOpsService } from './search-keyword-ops.service';
 import { SearchController } from './search.controller';
 import { ProductEventsConsumer } from './product-events.consumer';
 import { ReviewEventsConsumer } from './review-events.consumer';
 import { OpenSearchService } from './opensearch.service';
+import { EmbeddingService } from './embedding.service';
 import { ProductIndexService } from './product-index.service';
 import { SearchService } from './search.service';
 import { HealthController } from './health.controller';
@@ -23,12 +28,20 @@ import { SearchKeywordService } from './search-keyword.service';
       isGlobal: true,
       envFilePath: ['.env', 'apps/search/.env'],
     }),
-    // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 이 앱은 DB 가 없어 forRoot(스코프
-    // 부트스트랩이 DbService 요구) 대신 인증 전용 forAuthOnly 를 쓴다. AUTH_SECRET 또는
+    // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 스코프를 쓰지 않아 forRoot(스코프
+    // 부트스트랩) 대신 인증 전용 forAuthOnly 를 유지한다. AUTH_SECRET 또는
     // OIDC_ISSUER_URL 둘 중 하나라도 없으면 부팅이 실패한다 (notification 판례 — 이
     // 서비스도 그 전까지 인증이 아예 없었다). 배포 env 는
     // deployments/lcnine/services/infra/services.ts 의 searchEnv 에서 주입한다.
     AuthorizationModule.forAuthOnly(),
+    // 키워드 운영 상태(담당·메모) 테이블 전용 search 논리 DB. postgres.js 는 lazy 연결이라
+    // DATABASE_URL 이 없어도 부팅은 되고, 이슈 라우트 첫 쿼리에서 실패한다.
+    DbModule.forRoot({
+      config: {
+        connectionString: process.env.DATABASE_URL ?? '',
+      },
+      schema: searchDbSchema,
+    }),
     // #510: Kafka 브로커가 있으면 DLQ 핸들러·추적 서비스·소비 정책을 등록한다.
     // forApp 은 provider 만 등록하고 connectMicroservice 를 부르지 않으므로
     // 두 번째 컨슈머를 만들지 않는다 — 소비 전송 배선은 main.ts 의 startConsumer 가 한다.
@@ -59,8 +72,11 @@ import { SearchKeywordService } from './search-keyword.service';
   providers: [
     SearchService,
     OpenSearchService,
+    EmbeddingService,
     ProductIndexService,
     SearchKeywordService,
+    SearchKeywordOpsService,
+    KeywordIssueRepository,
     OpenSearchKeywordRepository,
     {
       provide: SEARCH_KEYWORD_REPOSITORY,

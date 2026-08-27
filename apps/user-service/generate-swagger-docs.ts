@@ -25,9 +25,8 @@ async function generateSwaggerDocs() {
       .addTag('Admin/Scopes', '관리자 스코프 관련 API')
       .addTag('Admin/Dormant', '휴면 계정 관련 API')
       .addTag('Shop', '상점 관련 API')
-      .addTag('Twilio - 인증 메시지', 'Twilio 인증 코드 발송 API')
-      .addTag('Twilio - 인증 확인', 'Twilio 인증 코드 검증 API')
-      .addTag('Twilio - 전화번호 조회', 'Twilio 전화번호 유효성 검증 API')
+      .addTag('휴대폰 인증 - 인증번호 발송', '휴대폰 인증번호 발송 API')
+      .addTag('휴대폰 인증 - 인증번호 확인', '휴대폰 인증번호 검증 API')
       .addBearerAuth(
         {
           type: 'http',

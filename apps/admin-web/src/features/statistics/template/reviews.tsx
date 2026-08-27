@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -12,9 +12,12 @@ import {
 } from 'recharts';
 import { useReviewStatistics } from '@/lib/services/review';
 import { useMastersByIds } from '@/lib/services/products/queries';
+import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
+
+const PAGE_SIZE = 10;
 
 function formatRating(value: number | null | undefined): string {
   return value == null ? '—' : value.toFixed(2);
@@ -22,7 +25,22 @@ function formatRating(value: number | null | undefined): string {
 
 export default function ReviewStatisticsTemplate() {
   const range = useStatisticsRange();
-  const { data, isLoading, isError } = useReviewStatistics({ from: range.from, to: range.to, limit: 10 });
+  const [lowRatedPage, setLowRatedPage] = useState(1);
+  const [topProductsPage, setTopProductsPage] = useState(1);
+
+  // 조회 조건이 바뀌면 페이지가 범위를 벗어날 수 있다 — 1페이지로 되돌린다
+  useEffect(() => {
+    setLowRatedPage(1);
+    setTopProductsPage(1);
+  }, [range.from, range.to]);
+
+  const { data, isLoading, isError } = useReviewStatistics({
+    from: range.from,
+    to: range.to,
+    limit: PAGE_SIZE,
+    lowRatedPage,
+    topProductsPage,
+  });
 
   const productIds = useMemo(() => {
     if (!data) return [];
@@ -185,6 +203,13 @@ export default function ReviewStatisticsTemplate() {
                   </tbody>
                 </table>
               </div>
+              <PaginationBar
+                totalItems={data?.lowRatedTotalItems}
+                page={lowRatedPage}
+                pageSize={PAGE_SIZE}
+                onPageChange={setLowRatedPage}
+                unitLabel="개 상품"
+              />
             </ChartCard>
           </div>
 
@@ -208,7 +233,7 @@ export default function ReviewStatisticsTemplate() {
                   <tbody>
                     {(data?.topProducts ?? []).map((row, index) => (
                       <tr key={row.productId} className="border-b last:border-0">
-                        <td className="py-1.5 text-gray-400">{index + 1}</td>
+                        <td className="py-1.5 text-gray-400">{(topProductsPage - 1) * PAGE_SIZE + index + 1}</td>
                         <td className="py-1.5">
                           <span className="font-medium text-gray-900">{productLabel(row.productId)}</span>
                         </td>
@@ -219,6 +244,13 @@ export default function ReviewStatisticsTemplate() {
                   </tbody>
                 </table>
               </div>
+              <PaginationBar
+                totalItems={data?.topProductsTotalItems}
+                page={topProductsPage}
+                pageSize={PAGE_SIZE}
+                onPageChange={setTopProductsPage}
+                unitLabel="개 상품"
+              />
             </ChartCard>
 
             <ChartCard

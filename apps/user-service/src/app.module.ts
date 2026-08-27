@@ -25,7 +25,7 @@ import { EmailVerificationModule } from './api/email-verification/email-verifica
 import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
-import { TwilioModule } from './api/twilio/twilio.module';
+import { PhoneVerificationModule } from './api/phone-verification/phone-verification.module';
 import { createKafkaConfigFromEnv } from '@app/events';
 import { UsersModule } from './api/users/users.module';
 import { WishlistModule } from './api/wishlist/wishlist.module';
@@ -53,11 +53,9 @@ if (process.env.CAFE24_SERVICE_KEY) {
   console.warn('⚠️  CAFE24_SERVICE_KEY가 설정되지 않아 Cafe24 계정 연동이 비활성화됩니다.');
 }
 
-if (process.env.TWILIO_ACCOUNT_SID) {
-  optionalModules.push(TwilioModule);
-} else {
-  console.warn('⚠️  TWILIO_ACCOUNT_SID가 설정되지 않아 SMS 인증이 비활성화됩니다.');
-}
+// 휴대폰 인증은 조건부가 아니다. 발송은 notification 이 하고 여기엔 벤더 키가 없다 —
+// 설정 누락은 발송 시점에 503 으로 드러난다(SmsSenderService).
+optionalModules.push(PhoneVerificationModule);
 
 config({
   path: join(process.cwd(), 'apps', 'user-service', '.env'),

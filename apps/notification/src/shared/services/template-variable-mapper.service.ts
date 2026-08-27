@@ -110,8 +110,7 @@ export class TemplateVariableMapperService {
         break;
 
       case 'SMS':
-        // Twilio SMS는 일반 텍스트 치환 사용
-        // (Twilio Verify 템플릿은 별도 서비스이므로 여기서는 일반 SMS만 처리)
+        // SMS는 일반 텍스트 치환 사용
         result.interpolationVariables = variables;
         break;
 

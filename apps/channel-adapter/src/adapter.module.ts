@@ -80,6 +80,7 @@ import { ProductSellableQuantityConsumer } from './consumers/product-sellable-qu
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
+import { InboxFailedRevivalService } from './adapters/medusa/inbox-failed-revival.service';
 import { FirebaseMembershipSyncService } from './adapters/medusa/firebase-membership-sync.service';
 import { AlmondAuthClient } from './adapters/almond-auth/almond-auth.client';
 import { UserServiceClient } from './services/user-service.client';
@@ -295,6 +296,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     FirebaseMembershipSyncService,
     MembershipDailySyncService,
     CouponIssueReconciliationService,
+    InboxFailedRevivalService,
 
     // Event Chain Tracking (환경 무관하게 항상 등록)
     EventChainService,

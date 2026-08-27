@@ -23,10 +23,65 @@ export function toJamo(value: string): string {
 // "vjak" → "퍼마". 완성된 음절만 나올 때만 인정한다 — 진짜 영문은 자모가 섞인다
 // ("Perma" → "ㅖㄷ금"). 호출부는 원문 검색을 함께 유지할 것.
 export function qwertyToHangul(value: string): string {
-  const converted = normalizeHangul(convertQwertyToHangul(value).trim());
+  // es-hangul 은 조합 불가능한 자모 시퀀스를 만나면 throw 한다 — "elationpassport" 는
+  // ㅜ 다음에 ㅔ 가 와서 "Invalid hangul Characters" 로 터졌고, 그대로 검색 500 이 됐다.
+  let converted: string;
+  try {
+    converted = normalizeHangul(convertQwertyToHangul(value).trim());
+  } catch {
+    return '';
+  }
   // 이미 한글인 검색어는 변환기가 그대로 돌려주므로 아래 가드를 통과한다. 교정이 아니니 버린다.
   if (converted === normalizeHangul(value).trim()) {
     return '';
   }
   return /^[가-힣\s]+$/.test(converted) ? converted : '';
+}
+
+// 임베딩용 상품명 정제. 용량·모델번호가 섞이면 벡터가 흐려진다 —
+// "알콜"↔"에탄올"은 단어끼리 0.429 인데 "소분용 에탄올 80% 60ml" 로는 0.193 이었다.
+// 평가셋 17개 기준 1위 적중 5개 → 8개.
+const SPEC_UNIT = '(?:ml|l|g|kg|mm|cm|p|ea|pcs|매|장|쌍|구|종|입|개입|개|팩|세트|호)';
+const SPEC_PATTERNS: RegExp[] = [
+  /\[[^\]]*\]/g, // [캔바]
+  /\([^)]*\)/g, // (3쌍)
+  /#\s*\w+/g, // #FG144 — 모델번호 규칙보다 먼저 지워야 '#' 이 안 남는다
+  /\d+(?:\.\d+)?\s*%/g,
+  // 한글 단위(구/매/쌍)는 \b 가 안 먹는다. 30구 의 '구' 가 남았던 자리다.
+  new RegExp(`\\d+(?:\\.\\d+)?\\s*${SPEC_UNIT}`, 'gi'),
+  /\b[A-Z]{1,5}[-–]?\d{2,}[A-Z]?\b/gi, // KS544K, SC-101
+  /\b\d+\b/g,
+];
+
+export function stripProductSpec(name: string): string {
+  const stripped = SPEC_PATTERNS.reduce((acc, pattern) => acc.replace(pattern, ' '), name)
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-/&#]+|[\s\-/&#]+$/g, '');
+  return stripped || name;
+}
+
+// 브랜드 제거. 한글은 단어 경계가 없어 "요거트젤"에서 "요거트"만 떼면 "젤"이 남는다.
+// 그래서 공백으로 둘러싸인 조각만 지운다.
+export function stripBrand(name: string, brand: string | null | undefined): string {
+  if (!brand || brand === 'B0000000') {
+    return name;
+  }
+
+  const candidates = [brand, ...brand.split(/\s+/).filter((token) => token.length >= 2)].sort(
+    (a, b) => b.length - a.length,
+  );
+  const stripped = candidates
+    .reduce((acc, token) => acc.replace(new RegExp(`(?<=\\s)${escapeRegExp(token)}(?=\\s)`, 'gi'), ' '), ` ${name} `)
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped || name;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// 색인과 검색이 같은 함수를 타야 한다.
+export function toEmbeddingText(name: string, brand: string | null | undefined): string {
+  return stripProductSpec(stripBrand(name, brand));
 }

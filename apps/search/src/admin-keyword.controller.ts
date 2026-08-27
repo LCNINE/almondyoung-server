@@ -1,6 +1,15 @@
-import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
 import { AdminKeywordStatisticsQueryDto, AdminKeywordStatisticsResponseDto } from './dto/admin-keyword-statistics.dto';
+import {
+  AdminKeywordDetailQueryDto,
+  AdminKeywordDetailResponseDto,
+  AdminZeroHitKeywordsQueryDto,
+  AdminZeroHitKeywordsResponseDto,
+  KeywordIssueDto,
+  UpsertKeywordIssueDto,
+} from './dto/admin-keyword-ops.dto';
+import { SearchKeywordOpsService } from './search-keyword-ops.service';
 import { SearchKeywordService } from './search-keyword.service';
 
 /**
@@ -14,7 +23,10 @@ import { SearchKeywordService } from './search-keyword.service';
 @UseGuards(JwtAuthGuard, AdminRealmGuard)
 @Controller('search/admin/keywords')
 export class AdminKeywordController {
-  constructor(private readonly searchKeywordService: SearchKeywordService) {}
+  constructor(
+    private readonly searchKeywordService: SearchKeywordService,
+    private readonly searchKeywordOpsService: SearchKeywordOpsService,
+  ) {}
 
   @Get('statistics')
   async getStatistics(@Query() query: AdminKeywordStatisticsQueryDto): Promise<AdminKeywordStatisticsResponseDto> {
@@ -22,5 +34,32 @@ export class AdminKeywordController {
       throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${query.from} > ${query.to}`);
     }
     return this.searchKeywordService.getKeywordStatistics(query.from, query.to, query.limit);
+  }
+
+  /** 0건 검색어 운영 목록 — "N일 지연" 방치 추적 + 원인 자동 분류 + 담당·메모 */
+  @Get('zero-hit')
+  async getZeroHitKeywords(@Query() query: AdminZeroHitKeywordsQueryDto): Promise<AdminZeroHitKeywordsResponseDto> {
+    if (query.from > query.to) {
+      throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${query.from} > ${query.to}`);
+    }
+    return this.searchKeywordOpsService.getZeroHitKeywords(query.from, query.to, query.page, query.limit);
+  }
+
+  /** 특정 키워드 단건 드릴다운 — 검색수·0건수·일별 추이·전기간 비교 */
+  @Get('detail')
+  async getKeywordDetail(@Query() query: AdminKeywordDetailQueryDto): Promise<AdminKeywordDetailResponseDto> {
+    if (query.from > query.to) {
+      throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${query.from} > ${query.to}`);
+    }
+    return this.searchKeywordOpsService.getKeywordDetail(query.keyword, query.from, query.to);
+  }
+
+  /** 키워드 운영 상태 upsert — 담당자 지정·메모·처리 상태 */
+  @Patch('issues/:keywordNorm')
+  async upsertIssue(
+    @Param('keywordNorm') keywordNorm: string,
+    @Body() body: UpsertKeywordIssueDto,
+  ): Promise<KeywordIssueDto> {
+    return this.searchKeywordOpsService.upsertIssue(keywordNorm, body);
   }
 }

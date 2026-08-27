@@ -11,14 +11,13 @@ export function setup(infra: IdpInfra) {
   const jwtRefreshSecret = new sst.Secret('JwtRefreshSecret');
   const jwtVerificationTokenSecret = new sst.Secret('JwtVerificationTokenSecret');
 
-  // 초기 구축 단계에서는 OAuth 핵심 경로만 열어둔다. Kakao/Twilio/Cafe24/S3는
+  // 초기 구축 단계에서는 OAuth 핵심 경로만 열어둔다. Kakao/Cafe24/S3는
   // 해당 기능을 실제로 dev에서 검증할 때 주석 해제하고 Secret을 세팅한다.
   // const kakaoClientId = new sst.Secret("KakaoClientId");
   // const kakaoClientSecret = new sst.Secret("KakaoClientSecret");
 
-  const twilioAccountSid = new sst.Secret('TwilioAccountSid');
-  const twilioAuthToken = new sst.Secret('TwilioAuthToken');
-  const twilioServiceId = new sst.Secret('TwilioServiceId');
+  // notification 의 /internal/sms/send 호출 키. services 배포에도 같은 이름으로 세팅해야 한다.
+  const notificationInternalKey = new sst.Secret('NotificationInternalKey');
 
   const cafe24ClientId = new sst.Secret('Cafe24ClientId');
   const cafe24ClientSecret = new sst.Secret('Cafe24ClientSecret');
@@ -147,10 +146,11 @@ export function setup(infra: IdpInfra) {
       // KAKAO_CLIENT_ID: kakaoClientId.value,
       // KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
       // KAKAO_CALLBACK_URL: `${userServiceUrl}/auth/kakao/callback`,
-      TWILIO_ACCOUNT_SID: twilioAccountSid.value,
-      TWILIO_AUTH_TOKEN: twilioAuthToken.value,
-      TWILIO_PHONE_NUMBER: '+15856342856',
-      TWILIO_SERVICE_ID: twilioServiceId.value,
+      // 인증문자 발송 위임 경로. notification 은 services 배포에 있으므로 도메인으로 부른다.
+      // Twilio 는 완전히 제거됐다 — 미국 롱코드가 국내에서 *국제발신* 으로 필터링돼 일부 번호에
+      // 영구히 도달하지 못했다.
+      NOTIFICATION_SERVICE_URL: url('notification'),
+      NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
       CAFE24_CLIENT_ID: cafe24ClientId.value,
       CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
       CAFE24_SERVICE_KEY: cafe24ServiceKey.value,

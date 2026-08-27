@@ -1,5 +1,8 @@
 export const DEFAULT_PRODUCTS_INDEX = 'search_products';
 
+// 검색 시점에만 쓰인다. 바꾸면 인덱스 settings 갱신이 필요하고 재색인은 필요 없다.
+// nori 가 검색어와 상품명을 같은 토큰으로 잘라줘야 먹는다 — "점도제"(→ 점/도조/절제)처럼
+// 조각이 어긋나면 넣어도 0건이다. 새 줄은 _analyze 로 먼저 확인할 것.
 export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '전처리,프라이머',
   '글루,접착제',
@@ -8,7 +11,15 @@ export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '롯드,로드,롯뜨,로뜨,롣드,롣뜨',
   '1회용,일회용',
   '가모,래쉬',
+  '알콜,알코올,에탄올,ethanol,alcohol',
+  '젬소,잼소,젬스톤',
+  '색소통,잉크통',
+  '생장제,영양제',
 ];
+
+// 3072 차원을 그대로 쓰면 1만 건에 123MB 라 dimensions 로 줄여 받는다. 바꾸면 전체 재색인.
+export const NAME_VECTOR_DIMENSION = 1024;
+export const EMBEDDING_MODEL = 'text-embedding-3-large';
 
 // 공백 지운 상품명의 부분 문자열 검색용. 검색어가 MAX 보다 길면 매칭 안 되니 쿼리에서 거른다.
 export const COMPACT_NGRAM_MIN = 2;
@@ -18,6 +29,8 @@ export const COMPACT_NGRAM_MAX = 12;
 export const PRODUCTS_INDEX_SETTINGS: Record<string, any> = {
   number_of_shards: 1,
   number_of_replicas: 1,
+  // knn_vector 는 인덱스 생성 시점에 켜져 있어야 한다.
+  'index.knn': true,
   // 기본값 1 이면 인덱스 생성이 거부된다.
   max_ngram_diff: COMPACT_NGRAM_MAX - COMPACT_NGRAM_MIN,
   analysis: {
@@ -127,6 +140,11 @@ export const PRODUCTS_INDEX_MAPPINGS = {
     },
     name_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
     brand_jamo: { type: 'text' as const, analyzer: 'whitespace' as const },
+    name_vector: {
+      type: 'knn_vector' as const,
+      dimension: NAME_VECTOR_DIMENSION,
+      method: { name: 'hnsw' as const, space_type: 'cosinesimil' as const, engine: 'lucene' as const },
+    },
     category_ids: { type: 'keyword' as const },
     category_names: {
       type: 'text' as const,
@@ -193,6 +211,20 @@ export const JAMO_FIELDS_MAPPINGS = {
   },
 } as const;
 
+export const VECTOR_FIELDS_MAPPINGS = {
+  properties: {
+    name_vector: {
+      type: 'knn_vector' as const,
+      dimension: NAME_VECTOR_DIMENSION,
+      method: {
+        name: 'hnsw' as const,
+        space_type: 'cosinesimil' as const,
+        engine: 'lucene' as const,
+      },
+    },
+  },
+} as const;
+
 // 어드민 SEO 키워드 칸. nori 가 브랜드명을 뭉개므로 standard 서브필드를 같이 둔다.
 export const SEO_FIELDS_MAPPINGS = {
   properties: {
@@ -216,6 +248,7 @@ export interface SearchProductDocument {
   name_compact: string;
   name_jamo: string;
   brand_jamo: string;
+  name_vector?: number[];
   description: string | null;
   thumbnail: string | null;
   brand: string | null;
