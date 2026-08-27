@@ -39,7 +39,7 @@ export class PurchaseOrderResponseDto {
   @ApiProperty({ enum: ['domestic', 'foreign'] }) type: PurchaseOrderType;
   @ApiPropertyOptional({ nullable: true }) supplierId: string | null;
   @ApiPropertyOptional({ nullable: true }) expectedArrival: Date | null;
-  @ApiProperty({ enum: ['created', 'confirmed', 'received'] }) status: PurchaseOrderStatus;
+  @ApiProperty({ enum: ['created', 'confirmed', 'received', 'cancelled'] }) status: PurchaseOrderStatus;
 
   @ApiProperty() createdAt: Date;
   @ApiProperty() updatedAt: Date;

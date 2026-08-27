@@ -133,6 +133,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /purchase-orders':                                      S.MANAGE,
   'POST /purchase-orders':                                     S.MANAGE,
   'GET /purchase-orders/:id':                                  S.MANAGE,
+  'POST /purchase-orders/:id/cancel':                          S.MANAGE,
   'PUT /purchase-orders/:id/lines':                            S.MANAGE,
   'PUT /purchase-orders/:id/status':                           S.MANAGE,
   'POST /purchase-orders/:poId/lines/:skuId/order':            S.MANAGE,

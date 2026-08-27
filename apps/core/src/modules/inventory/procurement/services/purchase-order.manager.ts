@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { eq, ne, and, inArray } from 'drizzle-orm';
+import { eq, ne, and, gt, inArray } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import {
@@ -11,6 +11,7 @@ import {
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
 } from '../dto/purchase-order.dto';
+import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
@@ -263,6 +264,71 @@ export class PurchaseOrderManager {
         .where(and(eq(wmsTables.purchaseOrderLines.poId, poId), eq(wmsTables.purchaseOrderLines.skuId, skuId)));
 
       await this.refreshHeaderStatus(trx, poId);
+      return this.reader.findById(poId, trx);
+    }, tx);
+  }
+
+  /**
+   * 발주를 취소한다. 파생이 아니라 **사람의 결정**이므로 전용 종결 경로다.
+   *
+   * 입고가 한 건이라도 있으면 거부한다 — 이미 받은 물건이 있는 발주는 취소가 아니라
+   * 잔량 포기(잎 종결)로 닫는다(#724 항목 7 스펙 §2.1·§2.2).
+   * 전 라인이 `unavailable` 인 발주도 자동으로 취소되지 않는다. 닫을지는 사람이 정한다.
+   *
+   * 🔴 잠금 순서: PO 행부터 잡는다. 라인은 읽지 않고 아이템만 읽는다.
+   */
+  async cancelPurchaseOrder(
+    poId: string,
+    dto: CancelPurchaseOrderDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.dbService.run(async (trx) => {
+      const [header] = await trx
+        .select({ status: wmsTables.purchaseOrders.status })
+        .from(wmsTables.purchaseOrders)
+        .where(eq(wmsTables.purchaseOrders.id, poId))
+        .limit(1)
+        .for('update');
+      if (!header) throw new NotFoundError(`Purchase order not found: ${poId}`);
+
+      if (isTerminal(header.status)) {
+        throw new ConflictError(`Purchase order is already ${header.status}; it cannot be cancelled`);
+      }
+
+      // 🔴 알려진 경합(고의로 안 막음, 판정 완료): 여기서 계획/아이템 행을 잠그지 않는다.
+      // 이 SELECT 는 MVCC 스냅샷 읽기라 다른 트랜잭션의 미커밋 입고를 기다리지 않고
+      // 그냥 못 본다 — 그 입고가 우리가 위에서 잡은 PO 행 락과 무관하게 진행 중이면,
+      // 이 취소는 "입고 없음" 으로 읽고 통과한 뒤 그 입고가 뒤이어 커밋될 수 있다.
+      // 막으려면 취소도 계획/아이템 행을 잠가야 하는데, 취소는 PO 를 먼저 잡으므로
+      // 그러면 순서가 `PO → 계획` 이 되어 입고 경로(`아이템 → 계획 → PO`)와 ABBA
+      // 교착이 생긴다 — 그 대가가 이 경합보다 나쁘다고 판단했다(도메인 예외가 아니라
+      // 40P01 드라이버 에러 → 500). 이 경합이 실현되면 `cancelled` 상태에
+      // `received_qty > 0` 인 아이템이 남는다 — 조용하지 않고 눈에 보이며, 재고의
+      // 진실은 어차피 stock_ledgers 원장이 갖는다. 그래서 여기서는 잠그지 않는다.
+      const [received] = await trx
+        .select({ id: wmsTables.inboundPlanItems.id })
+        .from(wmsTables.inboundPlanItems)
+        .innerJoin(wmsTables.inboundPlans, eq(wmsTables.inboundPlans.id, wmsTables.inboundPlanItems.planId))
+        .where(
+          and(eq(wmsTables.inboundPlans.linkedPurchaseOrderId, poId), gt(wmsTables.inboundPlanItems.receivedQty, 0)),
+        )
+        .limit(1);
+      if (received) {
+        throw new ConflictError('Purchase order already has receipts; close the remaining items instead');
+      }
+
+      await trx
+        .update(wmsTables.purchaseOrders)
+        .set({
+          status: 'cancelled',
+          cancelledReason: dto.reason,
+          cancelledAt: new Date(),
+          cancelledBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.purchaseOrders.id, poId));
+
       return this.reader.findById(poId, trx);
     }, tx);
   }

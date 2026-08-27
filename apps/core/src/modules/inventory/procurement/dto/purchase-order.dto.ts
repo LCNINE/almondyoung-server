@@ -23,6 +23,7 @@ export enum PurchaseOrderStatus {
   CREATED = 'created',
   CONFIRMED = 'confirmed',
   RECEIVED = 'received',
+  CANCELLED = 'cancelled',
 }
 
 export class CreatePurchaseOrderLineDto {
