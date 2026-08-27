@@ -143,6 +143,16 @@ purchase_orders.status
 `lockPurchaseOrderForLineExecution`(`:338`)의 `received` 거부도 `cancelled` 을 포함해야 한다(기존 가드가 `BadRequestError` = 400 이므로 새 값도 400 으로 맞춘다 — 신설 라우트의 409 와 다른 것은 여기가 "라인 실행 거부" 이지 "종결 재시도" 가 아니기 때문이다) —
 빠뜨리면 취소된 발주에 라인 실행이 들어가 계획에 아이템이 붙고 `inbound_pending_qty` 가 부푼다.
 
+**되돌림이 없다 — 1층(아이템)에도 적용된다.** `receiveFromPlan`(`inbound.service.ts:887`)의
+`newStatus` 계산이 아이템 상태 가드 없이 `newReceived >= expectedQty ? 'confirmed' : 'pending'`
+으로 짜여 있으면, 이미 `short_closed`(잎 종결)된 아이템에 뒤늦은 입고가 들어왔을 때 상태가
+`pending` 으로 되살아난다 — 계획은 이미 `confirmed` 로 닫혔고 발주도 `received` 로 굳어 있는데
+아이템 하나만 `pending` 으로 되돌아가는 **pending 아이템 / confirmed 계획 / received 발주** 3층
+불일치가 생긴다(최종 전체 리뷰 발견). `inbound-plan-closure.rules.ts` 의 `isItemClosed` 로 이미
+종결된 아이템은 상태를 보존해야 한다: `isItemClosed(item.status) ? item.status : (파생값)`.
+`confirmed` 아이템에 대한 초과 입고 동작(그대로 `confirmed` 유지)은 우연히도 같은 코드로
+이미 보존된다.
+
 **계획이 없는 발주는 `received` 로 가지 않는다.** 계획은 첫 라인 실행에서 생기고
 (`ensurePlanForPurchaseOrder`), `unavailable` 라인은 아이템을 만들지 않는다. 따라서 전 라인이
 `unavailable` 인 발주에는 계획 자체가 없다 → `confirmed` 로 남는다(§2.2). 이건 버그가 아니라 결정이다.

@@ -32,7 +32,7 @@ import {
 } from '../dto/simple-inbound.dto';
 import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
-import { isPlanClosed } from './inbound-plan-closure.rules';
+import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
 import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
 
 @Injectable()
@@ -883,8 +883,22 @@ export class InboundService {
         .returning();
 
       // 예정 누계/상태 갱신
+      //
+      // 🔴 이미 종결된 아이템(confirmed/short_closed)의 상태는 보존한다(최종 전체
+      // 리뷰 발견) — 이 메서드엔 아이템 상태 가드가 없어서, 잎 종결(short_closed)된
+      // 아이템에 뒤늦은 입고 요청이 들어오면 파생값 계산만으로는 상태가 'pending'
+      // 으로 되살아난다. 그러면 계획은 이미 confirmed, 발주도 received 로 굳었는데
+      // 아이템 하나만 pending 인 3층 불일치가 생기고, 그 수량은 inbound_pending_qty
+      // 로 다시 잡히지만 GET /inbound/pending 은 계획 헤더로 걸러 화면엔 영원히 안
+      // 보인다. 도달 경로: Tauri 창고앱은 planItemId 만 보내므로 화면이 stale 하면
+      // 이미 닫힌 아이템 id 로 요청이 나갈 수 있다. short_closed 에 예외를 던지지
+      // 않는다 — 그건 API 계약 추가라 별도 판단이 필요하다.
       const newReceived = (item.receivedQty ?? 0) + dto.quantity;
-      const newStatus = newReceived >= item.expectedQty ? 'confirmed' : 'pending';
+      const newStatus = isItemClosed(item.status)
+        ? item.status
+        : newReceived >= item.expectedQty
+          ? 'confirmed'
+          : 'pending';
       await tx
         .update(wmsTables.inboundPlanItems)
         .set({ receivedQty: newReceived, status: newStatus })

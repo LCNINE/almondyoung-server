@@ -162,6 +162,34 @@ describeIfDb('발주 종결 파생 (DB integration)', () => {
     });
   });
 
+  it('잎 종결된 아이템에 뒤늦은 입고가 들어와도 pending 으로 되살아나지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const fx = await seedPoWithOneLine(trx, 10);
+      const po = buildPoService(trx);
+      await po.orderLine(fx.poId, fx.skuId, { orderedQty: 10 }, ACTOR, trx);
+
+      const itemId = await planItemIdOf(trx, fx.poId);
+      await inbound.receiveFromPlan({ planItemId: itemId, quantity: 7, idempotencyKey: randomUUID() }, trx);
+      await inbound.closePlanItem(itemId, { reason: '공급처 결품' }, ACTOR, trx);
+
+      // 창고앱 화면이 stale 하면 이미 종결된 아이템 id 로 뒤늦은 입고 요청이 나갈 수
+      // 있다 — receiveFromPlan 에는 아이템 상태 가드가 없다(#724 항목 7 최종 전체
+      // 리뷰 발견 I2). 가드 없이 파생값만 계산하면 8/10 < 10 이라 상태가 'pending'
+      // 으로 되살아나, 계획은 confirmed·발주는 received 인데 아이템만 pending 인
+      // 3층 불일치가 생긴다.
+      await inbound.receiveFromPlan({ planItemId: itemId, quantity: 1, idempotencyKey: randomUUID() }, trx);
+
+      const [item] = await trx
+        .select({ status: wmsTables.inboundPlanItems.status, receivedQty: wmsTables.inboundPlanItems.receivedQty })
+        .from(wmsTables.inboundPlanItems)
+        .where(eq(wmsTables.inboundPlanItems.id, itemId))
+        .limit(1);
+      expect(item).toMatchObject({ status: 'short_closed', receivedQty: 8 });
+      expect(await planStatusOf(trx, fx.poId)).toBe('confirmed');
+      expect((await po.getPurchaseOrderById(fx.poId, trx)).status).toBe('received');
+    });
+  });
+
   it('이미 종결된 아이템은 다시 종결되지 않는다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithOneLine(trx, 10);
