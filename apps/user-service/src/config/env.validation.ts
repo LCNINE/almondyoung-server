@@ -70,6 +70,11 @@ export const userServiceEnvSchema = z.object({
   // 미설정이면 internal 라우트가 fail-closed 로 전부 거부된다.
   USER_SERVICE_INTERNAL_KEY: z.string().optional(),
 
+  // 인증문자 발송을 notification 에 위임하는 경로 (→ /internal/sms/send).
+  // 둘 중 하나라도 없으면 SmsSenderService.send() 시점에 503(PhoneVerificationException)으로 실패한다.
+  NOTIFICATION_SERVICE_URL: z.string().url().optional(),
+  NOTIFICATION_INTERNAL_KEY: z.string().optional(),
+
   // OAuth IdP (Authorization Code + PKCE for cross-domain SSO)
   // 클라이언트 등록 정보(clientId/secret/redirectUris/scopes)는 oauth_clients 테이블이 SoT.
   // Shared secret for auth-web → user-service /oauth/internal/issue-code

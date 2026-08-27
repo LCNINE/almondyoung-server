@@ -8,7 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import useTwilio from "@/domains/payment/components/hooks/use-twilio"
+import usePhoneVerification from "@/domains/payment/components/hooks/use-phone-verification"
 import {
   formatPhoneNumber,
   getCleanKoreanNumber,
@@ -50,7 +50,7 @@ export function IdentityVerifyDialog({
   const [channel, setChannel] = useState<Channel | null>(null)
   const [code, setCode] = useState("")
 
-  const sms = useTwilio()
+  const sms = usePhoneVerification()
   const emailOtp = useEmailOtp()
 
   const active = channel === "email" ? emailOtp : sms
@@ -84,7 +84,7 @@ export function IdentityVerifyDialog({
   }, [isVerified])
 
   const sendSms = () => {
-    sms.sendTwilioMessage({
+    sms.sendVerificationCode({
       countryCode: "KR",
       phoneNumber: toE164Korean(currentPhone),
       purpose: "password_change",

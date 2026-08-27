@@ -17,7 +17,7 @@ export class CreateProviderDto {
     example: 'sendgrid',
   })
   @IsString()
-  providerName: string; // 'sendgrid', 'twilio', 'kakao', 'fcm'
+  providerName: string; // 'resend', 'nhn sms', 'nhn kakaotalk', 'fcm'
 
   @ApiProperty({
     type: 'object',

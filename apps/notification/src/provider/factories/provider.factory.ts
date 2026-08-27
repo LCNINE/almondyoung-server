@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NotificationProvider } from '../interfaces/notification-provider.interface';
 import { ResendProvider } from '../providers/email/resend.provider';
-import { TwilioProvider } from '../providers/sms/twilio.provider';
+import { NHNSmsProvider } from '../providers/sms/nhn-sms.provider';
 import { NHNProvider } from '../providers/kakao/nhn.provider';
 import { FCMProvider } from '../providers/push/fcm.provider';
 
@@ -19,9 +19,10 @@ export class ProviderFactory {
       return new ResendProvider(providerId, config, this.configService);
     }
 
-    // Twilio SMS Provider
-    if (name.includes('twilio')) {
-      return new TwilioProvider(providerId, config, this.configService);
+    // NHN Cloud SMS Provider — 알림톡 분기보다 **먼저** 검사해야 한다. 부분일치라 'NHN SMS' 가
+    // `name.includes('nhn')` 에 먼저 걸리면 알림톡 프로바이더가 만들어진다.
+    if (name.includes('nhn') && name.includes('sms')) {
+      return new NHNSmsProvider(providerId, config, this.configService);
     }
 
     // NHN KakaoTalk Provider

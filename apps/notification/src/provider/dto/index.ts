@@ -4,3 +4,4 @@ export * from './update-provider.dto';
 export * from './provider-filter.dto';
 export * from './provider-config.dto';
 export * from './test-provider.dto';
+export * from './send-sms.dto';

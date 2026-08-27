@@ -79,6 +79,11 @@ export function setup(infra: SharedInfra) {
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
   const nhnSenderKey = new sst.Secret('NhnSenderKey');
+  const nhnSmsAppKey = new sst.Secret('NhnSmsAppKey');
+  const nhnSmsSecretKey = new sst.Secret('NhnSmsSecretKey');
+  // NHN 콘솔에 사전등록·승인된 발신번호. 하이픈 없이 (예: '18777184').
+  const nhnSmsSendNo = new sst.Secret('NhnSmsSendNo');
+  const notificationInternalKey = new sst.Secret('NotificationInternalKey');
   const resendApiKey = new sst.Secret('ResendApiKey');
   const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
 
@@ -287,6 +292,14 @@ export function setup(infra: SharedInfra) {
     NHN_SECRET_KEY: nhnSecretKey.value,
     NHN_SENDER_KEY: nhnSenderKey.value,
     NHN_PLUS_FRIEND_ID: '@아몬드영',
+    // NHN Cloud SMS — 알림톡과 별개 상품이라 앱키·시크릿이 따로다. 셋이 다 차야 SMS 프로바이더가
+    // 등록된다.
+    NHN_SMS_API_URL: 'https://sms.api.nhncloudservice.com',
+    NHN_SMS_APP_KEY: nhnSmsAppKey.value,
+    NHN_SMS_SECRET_KEY: nhnSmsSecretKey.value,
+    NHN_SMS_SEND_NO: nhnSmsSendNo.value,
+    // user-service 가 /internal/sms/send 를 부를 때 쓰는 키. auth 배포에도 같은 값이 필요하다.
+    NOTIFICATION_INTERNAL_KEY: notificationInternalKey.value,
     RESEND_API_KEY: resendApiKey.value,
     RESEND_BASE_URL: 'https://api.resend.com',
     RESEND_FROM: `noreply@mail.${baseDomain}`,

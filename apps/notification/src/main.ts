@@ -28,9 +28,6 @@ async function bootstrap() {
   // 항상 빈손이 되고, 관리자 화면이 전부 401 이 된다.
   await app.register(fastifyCookie);
 
-  // NOTE: 기존 body-parser urlencoded 파서는 제거됨. urlencoded 를 쓰던 경로는 Twilio 웹훅뿐이며
-  // 현재 휴면(TWILIO_* env 미설정, 서명검증 TODO). 재활성화 시 @fastify/formbody 등록 필요.
-
   // Global pipes
   app.useGlobalPipes(
     new ValidationPipe({

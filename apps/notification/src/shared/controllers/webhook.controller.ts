@@ -7,8 +7,8 @@ import { WebhookService } from '../services/webhook.service';
 import { ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
 
 @ApiTags('webhooks')
-// 호출자는 Resend/Twilio/NHN 이라 사용자 JWT 가 없다. 인증 대신 **프로바이더 서명**이 게이트다
-// (svix-signature / X-Twilio-Signature / X-Toast-Webhook-Signature — 각 핸들러가 검증).
+// 호출자는 Resend/NHN 이라 사용자 JWT 가 없다. 인증 대신 **프로바이더 서명**이 게이트다
+// (svix-signature / X-Toast-Webhook-Signature — 각 핸들러가 검증).
 // 여기에 핸들러를 추가할 때 서명 검증을 빠뜨리면 무인증 엔드포인트가 된다.
 @Public()
 @Controller('webhooks')
@@ -112,32 +112,6 @@ export class WebhookController {
 
     await this.webhookService.handleResendWebhook(payload, headers);
 
-    return { received: true };
-  }
-
-  @Post('twilio')
-  @HttpCode(200)
-  @ApiOperation({
-    summary: 'Twilio 웹훅 처리',
-    description: 'Twilio SMS 서비스의 웹훅 이벤트를 처리합니다.',
-  })
-  @ApiHeader({
-    name: 'X-Twilio-Signature',
-    description: 'Twilio 웹훅 서명 (프로덕션 환경 권장)',
-    required: false,
-  })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      example: { MessageSid: 'SM123', MessageStatus: 'delivered', To: '+1234567890' },
-      additionalProperties: true,
-    },
-  })
-  @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
-  @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
-  async handleTwilio(@Req() req: FastifyRequest, @Body() data: any, @Headers('X-Twilio-Signature') signature?: string) {
-    const requestUrl = `${req.protocol}://${req.headers.host}${req.url}`;
-    await this.webhookService.handleTwilioWebhook(data, signature, requestUrl);
     return { received: true };
   }
 

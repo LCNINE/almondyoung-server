@@ -1,7 +1,7 @@
 import { ApplicationException } from '@app/shared/filters/application.exception';
 import { HttpStatus } from '@nestjs/common';
 
-export class TwilioException extends ApplicationException {
+export class PhoneVerificationException extends ApplicationException {
   private readonly httpStatus: number;
   private readonly errorCode: string;
 
@@ -16,6 +16,7 @@ export class TwilioException extends ApplicationException {
   }) {
     super(message);
     this.httpStatus = httpStatus;
+    this.errorCode = errorCode;
   }
 
   getErrorCode(): string {
