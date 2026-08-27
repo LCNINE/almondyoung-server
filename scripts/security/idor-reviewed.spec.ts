@@ -452,9 +452,27 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'search GET /search/admin/keywords/statistics': {
     verdict: 'N/A',
-    evidence: 'apps/search/src/admin-keyword.controller.ts:12',
+    evidence: 'apps/search/src/admin-keyword.controller.ts:23',
     predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
     note: '관리자 검색 키워드 통계 — 쿼리 파라미터가 날짜/limit 뿐이고 응답도 전사 키워드 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'search GET /search/admin/keywords/zero-hit': {
+    verdict: 'N/A',
+    evidence: 'apps/search/src/admin-keyword.controller.ts:23',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '관리자 0건 검색어 운영 목록 — 파라미터가 날짜/page/limit 뿐, 응답은 전사 키워드 집계 + 운영 상태(담당·메모)라 사용자 소유 리소스 식별자가 없어 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'search GET /search/admin/keywords/detail': {
+    verdict: 'N/A',
+    evidence: 'apps/search/src/admin-keyword.controller.ts:23',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '관리자 키워드 단건 드릴다운 — 파라미터가 keyword/날짜뿐이고 keyword 는 사용자 소유 리소스가 아니라 전사 검색 로그의 조회 축이라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'search PATCH /search/admin/keywords/issues/:keywordNorm': {
+    verdict: 'N/A',
+    evidence: 'apps/search/src/admin-keyword.controller.ts:23',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '관리자 키워드 운영 상태 upsert — :keywordNorm 은 사용자 소유 리소스가 아니라 전사 검색 키워드 키다. 쓰기 대상(search_keyword_issues)도 운영 데이터라 소유권 개념이 없어 IDOR 대상 아님. staff 전체가 서로의 배정·메모를 수정하는 것은 의도(협업 도구). 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'search GET /search/products': {
     verdict: 'N/A',
@@ -680,15 +698,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(106);
+    expect(targets).toHaveLength(109);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(106);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(105);
+    expect(new Set(targets.map(keyOf)).size).toBe(109);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(108);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

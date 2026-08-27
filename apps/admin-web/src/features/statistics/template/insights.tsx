@@ -1,9 +1,13 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useCustomerInsights } from '@/lib/services/analytics';
+import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatPercent, useStatisticsRange } from '../shared';
+
+const REPURCHASE_PAGE_SIZE = 50;
 
 /** 코호트 셀 배경 — 시리즈 1번 색(#2a78d6)의 투명도 스케일. 값 라벨을 늘 함께 찍는다. */
 function cohortCellBackground(rate: number): string {
@@ -22,7 +26,19 @@ const SEGMENT_HINTS: Record<string, string> = {
 
 export default function CustomerInsightsTemplate() {
   const range = useStatisticsRange();
-  const { data, isLoading, isError } = useCustomerInsights({ from: range.from, to: range.to });
+  const [repurchasePage, setRepurchasePage] = useState(1);
+
+  // 조회 조건이 바뀌면 페이지가 범위를 벗어날 수 있다 — 1페이지로 되돌린다
+  useEffect(() => {
+    setRepurchasePage(1);
+  }, [range.from, range.to]);
+
+  const { data, isLoading, isError } = useCustomerInsights({
+    from: range.from,
+    to: range.to,
+    limit: REPURCHASE_PAGE_SIZE,
+    page: repurchasePage,
+  });
 
   return (
     <StatisticsShell filterOptions={{ channel: false, granularity: false }}>
@@ -146,7 +162,9 @@ export default function CustomerInsightsTemplate() {
                 <tbody>
                   {(data?.repurchase.items ?? []).map((item, index) => (
                     <tr key={item.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5 text-gray-400">
+                        {(repurchasePage - 1) * REPURCHASE_PAGE_SIZE + index + 1}
+                      </td>
                       <td className="py-1.5">
                         <span className="font-medium text-gray-900">{item.name ?? item.masterId}</span>
                       </td>
@@ -161,6 +179,13 @@ export default function CustomerInsightsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={data?.repurchase.totalItems}
+              page={repurchasePage}
+              pageSize={REPURCHASE_PAGE_SIZE}
+              onPageChange={setRepurchasePage}
+              unitLabel="개 상품"
+            />
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

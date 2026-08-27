@@ -320,6 +320,8 @@ export function setup(infra: SharedInfra) {
     // search 백엔드는 Railway OpenSearch. AWS OpenSearch 도메인은 미사용으로 제거됨 (shared.ts 참조).
     OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
     SEARCH_PRODUCTS_INDEX: 'search_products_v2',
+    // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
+    DATABASE_URL: dbUrl('search'),
     ...kafkaEnv('search', 'search-indexer-group'),
     // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.

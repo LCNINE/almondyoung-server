@@ -5,12 +5,12 @@ import { SEARCH_KEYWORD_REPOSITORY, SearchKeywordRepository } from './search-key
 import { compactText } from './utils/text.utils';
 
 /** KST 달력 날짜(YYYY-MM-DD)의 자정을 ISO instant 로 — searched_at 은 UTC instant 로 저장된다. */
-function kstDayStartIso(dateOnly: string): string {
+export function kstDayStartIso(dateOnly: string): string {
   return new Date(`${dateOnly}T00:00:00+09:00`).toISOString();
 }
 
 /** 날짜 문자열 산술은 KST 오프셋과 무관하다 — 달력 날짜끼리의 덧뺄셈은 UTC 기준으로 해도 같다. */
-function addDays(dateOnly: string, days: number): string {
+export function addDays(dateOnly: string, days: number): string {
   const base = new Date(`${dateOnly}T00:00:00Z`);
   base.setUTCDate(base.getUTCDate() + days);
   return base.toISOString().slice(0, 10);
@@ -21,6 +21,17 @@ export function previousRange(from: string, to: string): { from: string; to: str
   const lengthDays =
     Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
   return { from: addDays(from, -lengthDays), to: addDays(from, -1) };
+}
+
+/** 표시용 정규화 — trim + 연속 공백 접기. 소문자화하지 않는다. */
+export function normalizeDisplayKeyword(value: string): string {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+/** keyword_norm 규칙 — 색인 write 경로와 조회가 반드시 같은 함수를 타야 매칭된다. */
+export function normalizeKeyword(value: string): string {
+  const normalized = value.trim().replace(/\s+/g, ' ').toLowerCase();
+  return normalized.length > 0 ? normalized : '';
 }
 
 /** 급상승 후보 최소 검색 횟수 — 1~2건짜리 노이즈가 무한 성장률로 상위를 덮는 것을 막는다 */
@@ -162,11 +173,10 @@ export class SearchKeywordService {
   }
 
   private normalizeDisplayKeyword(value: string): string {
-    return value.trim().replace(/\s+/g, ' ');
+    return normalizeDisplayKeyword(value);
   }
 
   private normalizeKeyword(value: string): string {
-    const normalized = value.trim().replace(/\s+/g, ' ').toLowerCase();
-    return normalized.length > 0 ? normalized : '';
+    return normalizeKeyword(value);
   }
 }

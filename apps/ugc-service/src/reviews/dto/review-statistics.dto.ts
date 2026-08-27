@@ -17,6 +17,18 @@ export class AdminReviewStatisticsQueryDto {
   @Max(50)
   @Type(() => Number)
   limit: number = 10;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  lowRatedPage: number = 1;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Type(() => Number)
+  topProductsPage: number = 1;
 }
 
 export class ReviewStatisticsRangeDto {
@@ -79,8 +91,14 @@ export class AdminReviewStatisticsResponseDto {
   series: ReviewVolumeBucketDto[];
   /** 저평점 경보 — 기간 평균이 임계 아래인 상품 (평균 오름차순) */
   lowRated: ProductRatingRowDto[];
+  lowRatedPage: number;
+  lowRatedTotalItems: number;
   /** 기간 내 리뷰가 많이 달린 상품 (리뷰 수 내림차순) */
   topProducts: ProductRatingRowDto[];
+  topProductsPage: number;
+  topProductsTotalItems: number;
+  /** lowRated·topProducts 공통 페이지 크기 */
+  limit: number;
   /** 리액션을 받은 리뷰 (리액션 수 내림차순) — 전시 후보 */
   bestReviews: BestReviewDto[];
 }

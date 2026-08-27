@@ -33,7 +33,16 @@ export class StatisticsController {
     description: '상품 랭킹(순매출·직전 기간 대비), primary 카테고리 구성, 옵션별 판매(총매출만).',
   })
   getProducts(@Query() query: ProductStatisticsQueryDto) {
-    return this.statisticsQuery.getProducts(query.from, query.to, query.channel, query.sort, query.limit, query.order);
+    return this.statisticsQuery.getProducts(
+      query.from,
+      query.to,
+      query.channel,
+      query.sort,
+      query.limit,
+      query.order,
+      query.page,
+      query.variantPage,
+    );
   }
 
   @Get('products/unsold')
@@ -43,7 +52,7 @@ export class StatisticsController {
       '기간 내 판매가 0건이라 랭킹에 아예 나오지 않는 활성 상품 목록. 마지막 판매일이 오래된(없는) 순.',
   })
   getUnsoldProducts(@Query() query: UnsoldProductsQueryDto) {
-    return this.statisticsQuery.getUnsoldProducts(query.from, query.to, query.channel, query.limit);
+    return this.statisticsQuery.getUnsoldProducts(query.from, query.to, query.channel, query.limit, query.page);
   }
 
   @Get('customers')

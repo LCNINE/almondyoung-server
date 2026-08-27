@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { OpenSearchService } from './opensearch.service';
 import {
+  KeywordActivity,
+  KeywordDetailAggregation,
   KeywordStatRow,
   KeywordStatisticsAggregation,
   KeywordVolumeBucket,
@@ -8,6 +10,7 @@ import {
   SearchKeywordRepository,
   SuggestedKeyword,
   TrendingKeyword,
+  ZeroHitKeywordAggRow,
 } from './search-keyword.repository';
 import {
   QUERY_EVENTS_INDEX_MAPPINGS,
@@ -375,6 +378,175 @@ export class OpenSearchKeywordRepository implements SearchKeywordRepository, OnM
       }
     }
     return map;
+  }
+
+  async getZeroHitKeywords(options: {
+    fromIso: string;
+    toExclusiveIso: string;
+    size: number;
+  }): Promise<ZeroHitKeywordAggRow[]> {
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        query: {
+          bool: {
+            filter: [
+              { range: { searched_at: { gte: options.fromIso, lt: options.toExclusiveIso } } },
+              { term: { result_count: 0 } },
+            ],
+          },
+        },
+        aggs: {
+          keywords: {
+            terms: {
+              field: 'keyword_norm',
+              size: options.size,
+              order: { _count: 'desc' as const },
+            },
+            aggs: {
+              latest: {
+                top_hits: {
+                  size: 1,
+                  sort: [{ searched_at: { order: 'desc' as const } }],
+                  _source: { includes: ['keyword', 'searched_at'] },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    return this.extractBuckets(response.body)
+      .map((bucket: any) => {
+        const hit = bucket?.latest?.hits?.hits?.[0]?._source;
+        const key = typeof bucket?.key === 'string' ? bucket.key : '';
+        if (!key) return null;
+        return {
+          keyword: typeof hit?.keyword === 'string' && hit.keyword.length > 0 ? hit.keyword : key,
+          keywordNorm: key,
+          zeroCount: typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0,
+          lastSearchedAt: typeof hit?.searched_at === 'string' ? hit.searched_at : '',
+        };
+      })
+      .filter((row): row is ZeroHitKeywordAggRow => row !== null);
+  }
+
+  async getKeywordActivity(options: { keywordNorms: string[] }): Promise<Map<string, KeywordActivity>> {
+    if (options.keywordNorms.length === 0) {
+      return new Map();
+    }
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        query: { bool: { filter: [{ terms: { keyword_norm: options.keywordNorms } }] } },
+        aggs: {
+          keywords: {
+            terms: { field: 'keyword_norm', size: options.keywordNorms.length },
+            aggs: {
+              positive: {
+                filter: { range: { result_count: { gt: 0 } } },
+                aggs: { last: { max: { field: 'searched_at' } } },
+              },
+              zero: {
+                filter: { term: { result_count: 0 } },
+                aggs: {
+                  first: { min: { field: 'searched_at' } },
+                  last: { max: { field: 'searched_at' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const toIso = (value: unknown): string | null =>
+      typeof value === 'number' && Number.isFinite(value) ? new Date(value).toISOString() : null;
+
+    const map = new Map<string, KeywordActivity>();
+    for (const bucket of this.extractBuckets(response.body)) {
+      if (typeof bucket?.key !== 'string') continue;
+      map.set(bucket.key, {
+        lastPositiveAt: toIso(bucket?.positive?.last?.value),
+        firstZeroAt: toIso(bucket?.zero?.first?.value),
+        lastZeroAt: toIso(bucket?.zero?.last?.value),
+      });
+    }
+    return map;
+  }
+
+  async getKeywordDetail(options: {
+    keywordNorm: string;
+    fromIso: string;
+    toExclusiveIso: string;
+  }): Promise<KeywordDetailAggregation> {
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getQueryEventsIndex();
+    await this.ensureQueryEventsIndex();
+
+    const response = await client.search({
+      index,
+      body: {
+        size: 0,
+        track_total_hits: true,
+        query: {
+          bool: {
+            filter: [
+              { term: { keyword_norm: options.keywordNorm } },
+              { range: { searched_at: { gte: options.fromIso, lt: options.toExclusiveIso } } },
+            ],
+          },
+        },
+        aggs: {
+          zero: { filter: { term: { result_count: 0 } } },
+          volume: {
+            date_histogram: {
+              field: 'searched_at',
+              calendar_interval: 'day' as const,
+              time_zone: '+09:00',
+              format: 'yyyy-MM-dd',
+              min_doc_count: 0,
+            },
+            aggs: { zero: { filter: { term: { result_count: 0 } } } },
+          },
+          latest: {
+            top_hits: {
+              size: 1,
+              sort: [{ searched_at: { order: 'desc' as const } }],
+              _source: { includes: ['keyword', 'searched_at'] },
+            },
+          },
+        },
+      },
+    });
+
+    const body: any = response.body;
+    const count = typeof body?.hits?.total === 'number' ? body.hits.total : (body?.hits?.total?.value ?? 0);
+    const series: KeywordVolumeBucket[] = (body?.aggregations?.volume?.buckets ?? []).map((bucket: any) => ({
+      bucket: typeof bucket?.key_as_string === 'string' ? bucket.key_as_string : '',
+      count: typeof bucket?.doc_count === 'number' ? bucket.doc_count : 0,
+      zeroCount: bucket?.zero?.doc_count ?? 0,
+    }));
+    const hit = body?.aggregations?.latest?.hits?.hits?.[0]?._source;
+
+    return {
+      count: Number(count ?? 0),
+      zeroCount: Number(body?.aggregations?.zero?.doc_count ?? 0),
+      series,
+      latestKeyword: typeof hit?.keyword === 'string' && hit.keyword.length > 0 ? hit.keyword : null,
+      lastSearchedAt: typeof hit?.searched_at === 'string' ? hit.searched_at : null,
+    };
   }
 
   private toStatRows(buckets: unknown): KeywordStatRow[] {

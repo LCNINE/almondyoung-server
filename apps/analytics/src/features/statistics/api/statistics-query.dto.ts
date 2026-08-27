@@ -41,6 +41,20 @@ export class ProductStatisticsQueryDto extends StatisticsRangeQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   order?: 'asc' | 'desc' = 'desc';
+
+  @ApiPropertyOptional({ example: 1, default: 1, description: '랭킹 페이지 (1부터)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 1, default: 1, description: '옵션별 판매 페이지 (1부터) — 랭킹과 독립' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  variantPage?: number = 1;
 }
 
 export class CustomerInsightsQueryDto extends StatisticsRangeQueryDto {
@@ -59,6 +73,13 @@ export class CustomerInsightsQueryDto extends StatisticsRangeQueryDto {
   @Min(1)
   @Max(100)
   minBuyers?: number = 5;
+
+  @ApiPropertyOptional({ example: 1, default: 1, description: '재구매 상품 목록 페이지 (1부터)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
 }
 
 export class ProfitStatisticsQueryDto extends StatisticsRangeQueryDto {
@@ -100,4 +121,11 @@ export class UnsoldProductsQueryDto extends StatisticsRangeQueryDto {
   @Min(1)
   @Max(200)
   limit?: number = 50;
+
+  @ApiPropertyOptional({ example: 1, default: 1, description: '페이지 (1부터)' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
 }

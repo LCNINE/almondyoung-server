@@ -30,13 +30,16 @@ export const useProductStatistics = (query: ProductStatisticsQuery) => {
   return useQuery({
     queryKey: analyticsQueryKeys.products(query),
     queryFn: () => analyticsApi.getProductStatistics(query),
+    // 페이지 이동 시 이전 페이지를 유지해 테이블이 깜빡이지 않게 한다
+    placeholderData: (previous) => previous,
   });
 };
 
-export const useUnsoldProducts = (query: StatisticsRangeQuery & { limit?: number }) => {
+export const useUnsoldProducts = (query: StatisticsRangeQuery & { limit?: number; page?: number }) => {
   return useQuery({
     queryKey: analyticsQueryKeys.unsoldProducts(query),
     queryFn: () => analyticsApi.getUnsoldProducts(query),
+    placeholderData: (previous) => previous,
   });
 };
 
@@ -60,6 +63,7 @@ export const useCustomerInsights = (query: CustomerInsightsQuery) => {
   return useQuery({
     queryKey: analyticsQueryKeys.customerInsights(query),
     queryFn: () => analyticsApi.getCustomerInsights(query),
+    placeholderData: (previous) => previous,
   });
 };
 

@@ -40,6 +40,7 @@
     "db:generate:file-service": "drizzle-kit generate --config apps/file-service/drizzle.config.ts",
     "db:generate:membership": "drizzle-kit generate --config apps/membership/drizzle.config.ts",
     "db:generate:notification": "drizzle-kit generate --config apps/notification/database/drizzle/drizzle.config.ts",
+    "db:generate:search": "drizzle-kit generate --config apps/search/drizzle.config.ts",
     "db:generate:ugc-service": "drizzle-kit generate --config apps/ugc-service/src/db/drizzle.config.ts",
     "db:generate:user-service": "drizzle-kit generate --config apps/user-service/database/drizzle/drizzle.config.ts",
     "db:generate:wallet": "drizzle-kit generate --config apps/wallet/drizzle.config.ts",

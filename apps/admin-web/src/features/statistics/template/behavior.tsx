@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -11,9 +12,15 @@ import {
   YAxis,
 } from 'recharts';
 import { useBehaviorStatistics } from '@/lib/services/analytics';
+import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
 import { formatCount, formatKrw, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
+
+// GA4 는 서버 offset 페이지네이션 대신 큰 limit 1회 조회 + 화면 페이지네이션이다 —
+// 페이지마다 별도 GA4 호출·캐시 항목이 생기는 것을 피한다 (5분 캐시 1건으로 전체 커버).
+const FETCH_LIMIT = 1000;
+const PAGE_SIZE = 50;
 
 /** 세션부터 구매까지의 퍼널 — 막대 폭은 첫 단계 대비, 우측에 직전 단계 대비 전환율. */
 function FunnelSteps({ steps }: { steps: Array<{ label: string; value: number }> }) {
@@ -50,7 +57,19 @@ function FunnelSteps({ steps }: { steps: Array<{ label: string; value: number }>
 
 export default function BehaviorStatisticsTemplate() {
   const range = useStatisticsRange();
-  const { data, isLoading, isError } = useBehaviorStatistics({ from: range.from, to: range.to, limit: 20 });
+  const [itemsPage, setItemsPage] = useState(1);
+  const [landingPage, setLandingPage] = useState(1);
+
+  // 조회 조건이 바뀌면 페이지가 범위를 벗어날 수 있다 — 1페이지로 되돌린다
+  useEffect(() => {
+    setItemsPage(1);
+    setLandingPage(1);
+  }, [range.from, range.to]);
+
+  const { data, isLoading, isError } = useBehaviorStatistics({ from: range.from, to: range.to, limit: FETCH_LIMIT });
+
+  const itemRows = (data?.items ?? []).slice((itemsPage - 1) * PAGE_SIZE, itemsPage * PAGE_SIZE);
+  const landingRows = (data?.landingRevenue ?? []).slice((landingPage - 1) * PAGE_SIZE, landingPage * PAGE_SIZE);
 
   const totals = data?.totals;
   const conversionRate = totals && totals.sessions > 0 ? totals.purchase / totals.sessions : null;
@@ -203,9 +222,9 @@ export default function BehaviorStatisticsTemplate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.items ?? []).map((rowItem, index) => (
+                  {itemRows.map((rowItem, index) => (
                     <tr key={rowItem.name} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5 text-gray-400">{(itemsPage - 1) * PAGE_SIZE + index + 1}</td>
                       <td className="py-1.5">
                         <span className="font-medium text-gray-900 break-all">{rowItem.name}</span>
                       </td>
@@ -220,6 +239,13 @@ export default function BehaviorStatisticsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={data?.items.length}
+              page={itemsPage}
+              pageSize={PAGE_SIZE}
+              onPageChange={setItemsPage}
+              unitLabel="개 상품"
+            />
           </ChartCard>
 
           <ChartCard
@@ -241,9 +267,9 @@ export default function BehaviorStatisticsTemplate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.landingRevenue ?? []).map((rowItem, index) => (
+                  {landingRows.map((rowItem, index) => (
                     <tr key={rowItem.path} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5 text-gray-400">{(landingPage - 1) * PAGE_SIZE + index + 1}</td>
                       <td className="py-1.5">
                         <span className="font-medium text-gray-900 break-all">{rowItem.path}</span>
                       </td>
@@ -256,6 +282,13 @@ export default function BehaviorStatisticsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={data?.landingRevenue.length}
+              page={landingPage}
+              pageSize={PAGE_SIZE}
+              onPageChange={setLandingPage}
+              unitLabel="개 페이지"
+            />
           </ChartCard>
 
           <ChartCard

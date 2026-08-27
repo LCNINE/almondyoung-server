@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   CartesianGrid,
   Line,
@@ -13,6 +13,7 @@ import {
 import { TrafficChannelGroup } from '@/lib/api/domains/analytics';
 import { useTrafficStatistics } from '@/lib/services/analytics';
 import { cn } from '@/lib/utils/ui';
+import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -22,17 +23,37 @@ const CHANNEL_GROUP_OPTIONS: Array<{ value: TrafficChannelGroup; label: string }
   { value: 'all', label: '전체 유입' },
 ];
 
+// GA4 는 서버 offset 페이지네이션 대신 큰 limit 1회 조회 + 화면 페이지네이션이다 —
+// 페이지마다 별도 GA4 호출·캐시 항목이 생기는 것을 피한다 (5분 캐시 1건으로 전체 커버).
+const FETCH_LIMIT = 1000;
+const PAGE_SIZE = 50;
+const COUNTRY_PAGE_SIZE = 20;
+
 export default function TrafficStatisticsTemplate() {
   const range = useStatisticsRange();
   const [channelGroup, setChannelGroup] = useState<TrafficChannelGroup>('organic');
+  const [landingPage, setLandingPage] = useState(1);
+  const [countryPage, setCountryPage] = useState(1);
+
+  // 조회 조건이 바뀌면 페이지가 범위를 벗어날 수 있다 — 1페이지로 되돌린다
+  useEffect(() => {
+    setLandingPage(1);
+    setCountryPage(1);
+  }, [range.from, range.to, channelGroup]);
+
   const { data, isLoading, isError } = useTrafficStatistics({
     from: range.from,
     to: range.to,
     channelGroup,
-    limit: 10,
+    limit: FETCH_LIMIT,
   });
 
   const totalSessions = data?.totals?.sessions ?? 0;
+  const landingRows = (data?.landingPages ?? []).slice((landingPage - 1) * PAGE_SIZE, landingPage * PAGE_SIZE);
+  const countryRows = (data?.countries ?? []).slice(
+    (countryPage - 1) * COUNTRY_PAGE_SIZE,
+    countryPage * COUNTRY_PAGE_SIZE,
+  );
 
   return (
     <StatisticsShell filterOptions={{ channel: false, granularity: false }}>
@@ -119,9 +140,9 @@ export default function TrafficStatisticsTemplate() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(data?.landingPages ?? []).map((rowItem, index) => (
+                  {landingRows.map((rowItem, index) => (
                     <tr key={rowItem.path} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5 text-gray-400">{(landingPage - 1) * PAGE_SIZE + index + 1}</td>
                       <td className="py-1.5">
                         <span className="font-medium text-gray-900 break-all">{rowItem.path}</span>
                       </td>
@@ -135,6 +156,13 @@ export default function TrafficStatisticsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={data?.landingPages.length}
+              page={landingPage}
+              pageSize={PAGE_SIZE}
+              onPageChange={setLandingPage}
+              unitLabel="개 페이지"
+            />
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -155,8 +183,15 @@ export default function TrafficStatisticsTemplate() {
               isEmpty={!data || data.countries.length === 0}
             >
               <HorizontalBarList
-                items={(data?.countries ?? []).map((rowItem) => ({ label: rowItem.label, value: rowItem.sessions }))}
+                items={countryRows.map((rowItem) => ({ label: rowItem.label, value: rowItem.sessions }))}
                 formatValue={formatCount}
+              />
+              <PaginationBar
+                totalItems={data?.countries.length}
+                page={countryPage}
+                pageSize={COUNTRY_PAGE_SIZE}
+                onPageChange={setCountryPage}
+                unitLabel="개 국가"
               />
             </ChartCard>
           </div>

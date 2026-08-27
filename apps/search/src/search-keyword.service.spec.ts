@@ -24,6 +24,9 @@ describe('SearchKeywordService.getKeywordStatistics', () => {
         zeroTop: [],
       }),
       getKeywordCounts: jest.fn().mockResolvedValue(previousCounts),
+      getZeroHitKeywords: jest.fn(),
+      getKeywordActivity: jest.fn(),
+      getKeywordDetail: jest.fn(),
     };
     return { service: new SearchKeywordService(repository), repository };
   }
