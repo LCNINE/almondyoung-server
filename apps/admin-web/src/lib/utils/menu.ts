@@ -442,12 +442,14 @@ export const mainMenus: MainMenu[] = [
     id: 'sales-statistics',
     title: '판매/통계',
     icon: 'BarChart3',
-    defaultPath: '/statistics/sales',
+    defaultPath: '/statistics/overview',
     children: [
       {
         id: 'sales-status',
         title: '판매 현황',
         children: [
+          { id: 'statistics-overview', title: '종합 대시보드', path: '/statistics/overview' },
+          { id: 'by-profit', title: '이익', path: '/statistics/profit' },
           { id: 'by-product', title: '상품별', path: '/statistics/products' },
           { id: 'by-option', title: '옵션별', path: '/statistics/products' },
           { id: 'by-period', title: '기간별', path: '/statistics/sales' },
