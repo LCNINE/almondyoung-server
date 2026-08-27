@@ -14,6 +14,7 @@ import {
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { InboundService } from '../../inbound/services/inbound.service';
 import { assertReceivedTransition } from './purchase-order-status.rules';
+import { isTerminal } from './purchase-order-closure.rules';
 import { PurchaseOrderReader } from './purchase-order.reader';
 
 /**
@@ -330,12 +331,12 @@ export class PurchaseOrderManager {
       .for('update');
 
     if (!po) throw new NotFoundError(`Purchase order not found: ${poId}`);
-    // received 는 입고 경로가 소유한 종결 상태다(스펙 §5 헤더 status 파생표). 여기서
-    // 막지 않으면 라인 실행이 계획에 아이템을 더 붙여 inbound_pending_qty 를 부풀리고,
-    // refreshHeaderStatus 는 header.status === 'received' 를 보면 일찍 반환하므로
-    // 그 뒤로는 아무것도 이 상태를 되돌리지 못한다. drizzle enum 컬럼은 문자열
-    // 유니온이라 TS enum 멤버가 아니라 리터럴로 비교한다(no-unsafe-enum-comparison).
-    if (po.status === 'received') {
+    // 종결(received/cancelled)은 입고 경로/사람이 소유한 상태다(스펙 §5 헤더 status
+    // 파생표). 여기서 막지 않으면 라인 실행이 계획에 아이템을 더 붙여
+    // inbound_pending_qty 를 부풀리고, refreshHeaderStatus 는 종결 상태를 보면 일찍
+    // 반환하므로 그 뒤로는 아무것도 이 상태를 되돌리지 못한다. drizzle enum 컬럼은
+    // 문자열 유니온이라 TS enum 멤버가 아니라 리터럴로 비교한다(no-unsafe-enum-comparison).
+    if (isTerminal(po.status)) {
       throw new BadRequestError(`Cannot execute purchase order lines with status: ${po.status}`);
     }
   }
@@ -385,7 +386,9 @@ export class PurchaseOrderManager {
       .from(wmsTables.purchaseOrders)
       .where(eq(wmsTables.purchaseOrders.id, poId))
       .limit(1);
-    if (!header || header.status === 'received') return;
+    // 종결 2개(received/cancelled)는 파생의 밖에 있다. 파생이 이 둘을 되돌리면
+    // 취소된 발주가 라인 실행으로 살아난다.
+    if (!header || isTerminal(header.status)) return;
 
     const [pending] = await tx
       .select({ skuId: wmsTables.purchaseOrderLines.skuId })

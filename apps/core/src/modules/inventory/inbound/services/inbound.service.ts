@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { earliestExpectedDate } from '../../shared/dates/earliest-expected-date';
@@ -24,6 +31,8 @@ import {
 } from '../dto/simple-inbound.dto';
 import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { isPlanClosed } from './inbound-plan-closure.rules';
+import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
 
 @Injectable()
 export class InboundService {
@@ -36,6 +45,8 @@ export class InboundService {
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
     private readonly idempotency: InventoryIdempotencyService,
+    @Inject(PURCHASE_ORDER_CLOSURE)
+    private readonly poClosure: PurchaseOrderClosurePort,
   ) {}
 
   private get db() {
@@ -878,6 +889,8 @@ export class InboundService {
         .set({ receivedQty: newReceived, status: newStatus })
         .where(eq(wmsTables.inboundPlanItems.id, item.id));
 
+      await this.closePlanIfDone(tx, item.planId, plan.linkedPurchaseOrderId);
+
       await tx
         .update(wmsTables.inboundReceipts)
         .set({ totalQuantity: dto.quantity })
@@ -899,6 +912,28 @@ export class InboundService {
       // 바로 적치를 걸 수 있도록 여기서 돌려준다.
       return { success: true, receiptId: receipt.id, lineId: line.id };
     }, tx);
+  }
+
+  /**
+   * 계획의 아이템이 전부 종결됐으면 계획을 닫고, 조달에 통보한다 (2층 → 3층 파생).
+   *
+   * 입고와 잎 종결 **둘 다** 여기로 온다 — 파생 규칙이 한 곳에 있어야 두 경로가
+   * 갈라지지 않는다. 발주를 종결할지는 조달이 판단한다(#724 항목 7 스펙 §5).
+   */
+  private async closePlanIfDone(tx: DbTx, planId: string, linkedPurchaseOrderId: string): Promise<void> {
+    const items = await tx
+      .select({ status: wmsTables.inboundPlanItems.status })
+      .from(wmsTables.inboundPlanItems)
+      .where(eq(wmsTables.inboundPlanItems.planId, planId));
+
+    if (!isPlanClosed(items.map((i) => i.status))) return;
+
+    await tx
+      .update(wmsTables.inboundPlans)
+      .set({ status: 'confirmed', updatedAt: new Date() })
+      .where(eq(wmsTables.inboundPlans.id, planId));
+
+    await this.poClosure.onPlanClosed(linkedPurchaseOrderId, tx);
   }
 
   // 즉시 적치(원위치 → 목적지)

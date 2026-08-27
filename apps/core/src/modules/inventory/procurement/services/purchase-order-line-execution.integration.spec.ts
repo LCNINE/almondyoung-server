@@ -12,6 +12,7 @@ import { InboundService } from '../../inbound/services/inbound.service';
 import { PurchaseOrderStatus, PurchaseOrderType } from '../dto/purchase-order.dto';
 import { InboundPipelineReader } from '../../stock-projection/services/inbound-pipeline.reader';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
+import { PurchaseOrderClosureAdapter } from './purchase-order-closure.adapter';
 
 /**
  * 포트 조립. 3계층(#724 항목 5-b) 이후 `PurchaseOrderService` 는 위임만 하므로 통합
@@ -73,7 +74,15 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
    * inbound-plan-port-invariant 스펙과 같은 패턴).
    */
   function buildInboundService(trx: DbTx): InboundService {
-    return new InboundService(boundDbService(trx), {} as never, {} as never, {} as never, {} as never, {} as never);
+    return new InboundService(
+      boundDbService(trx),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new PurchaseOrderClosureAdapter(),
+    );
   }
 
   function buildService(trx: DbTx): PurchaseOrderService {
