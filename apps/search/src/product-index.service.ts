@@ -29,7 +29,14 @@ const NORI_COLLAPSE_RATIO_THRESHOLD = 0.6;
 const NORI_COLLAPSE_MIN_LENGTH = 3;
 const NORI_ANALYZE_CACHE_LIMIT = 2000;
 // 자모 오타 절을 태울 최소 길이(공백 제외 음절 수).
-const JAMO_TYPO_MIN_LENGTH = 3;
+// 2음절은 자모로 펴도 4~6자라 편집거리 1 이 헐거워 후보가 넓다("태그"→"택1" 55건). 그래도 여는 건,
+// 막아두면 "헨나"→헤나·"깍이"→깎이·"일룸"→일륨·"말백"→말벡 처럼 정답이 유일한 케이스까지 0건이 되기
+// 때문이다. 자모 절은 fallback 에만 있고 mergeHitsWithPriority 가 strict 를 앞세우므로,
+// "글루"처럼 정상 매칭되는 검색어의 상위 순위는 그대로다. 넓어진 후보는 JAMO_SHORT_BOOST 로 뒤로 민다.
+const JAMO_TYPO_MIN_LENGTH = 2;
+// 2~3음절 자모 절 boost. 1.0 이면 넓은 후보가 상위로 새어나온다.
+const JAMO_SHORT_BOOST = 0.3;
+const JAMO_SHORT_MAX_LENGTH = 2;
 // 편집거리 2 를 허용할 최소 길이. 짧은 검색어에서 열면 후보가 폭증한다.
 const JAMO_FUZZY2_MIN_LENGTH = 5;
 
@@ -662,7 +669,7 @@ export class ProductIndexService implements OnModuleInit {
    * 자모 ngram 서브필드가 업그레이드 경로 — 인덱스가 커지니 잔여율이 문제될 때.
    */
   private buildJamoTypoClauses(q: string, compactQ: string): any[] {
-    // 1~2음절은 자모로 펴도 6자모 이하라 편집거리 1 이 여전히 헐겁다.
+    // 1음절은 자모로 펴도 3자모 이하라 편집거리 1 이 인덱스를 통째로 긁는다.
     if (compactQ.length < JAMO_TYPO_MIN_LENGTH) {
       return [];
     }
@@ -681,7 +688,7 @@ export class ProductIndexService implements OnModuleInit {
     });
 
     // strict 절(정확 일치)보다 항상 뒤에 오도록 낮게 잡는다.
-    const clauses = [jamoClause(1, 1)];
+    const clauses = [jamoClause(1, compactQ.length <= JAMO_SHORT_MAX_LENGTH ? JAMO_SHORT_BOOST : 1)];
 
     // 오타 2글자 이상. 후보가 넓어지니 긴 검색어에서만 열고 boost 로 뒤에 둔다.
     if (compactQ.length >= JAMO_FUZZY2_MIN_LENGTH) {

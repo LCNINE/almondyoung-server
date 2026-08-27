@@ -1,5 +1,11 @@
 export const DEFAULT_PRODUCTS_INDEX = 'search_products';
 
+// 검색 시점에만 적용된다(nori_search_synonym). 바꾼 뒤에는 인덱스 settings 갱신이 필요하고,
+// 색인 토큰은 그대로라 재색인은 필요 없다.
+//
+// nori 가 양쪽을 같은 토큰으로 잘라줘야 먹는다 — "점도제"(→ 점/도조/절제)처럼 조각이 어긋나면
+// minimum_should_match 를 못 채워 동의어를 넣어도 0건이다. 새 줄을 추가할 때는 _analyze 로
+// 검색어와 상품명의 토큰이 겹치는지 먼저 확인할 것.
 export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '전처리,프라이머',
   '글루,접착제',
@@ -8,6 +14,10 @@ export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '롯드,로드,롯뜨,로뜨,롣드,롣뜨',
   '1회용,일회용',
   '가모,래쉬',
+  '알콜,알코올,에탄올,ethanol,alcohol',
+  '젬소,잼소,젬스톤',
+  '색소통,잉크통',
+  '생장제,영양제',
 ];
 
 // 공백 지운 상품명의 부분 문자열 검색용. 검색어가 MAX 보다 길면 매칭 안 되니 쿼리에서 거른다.
