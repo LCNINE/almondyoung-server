@@ -230,6 +230,55 @@ export class ProductIndexService implements OnModuleInit {
     };
   }
 
+  /**
+   * 키워드 문자열을 실제로 담고 있는 상품 수 — 오타보정·fuzzy 없는 문자열 포함 대조.
+   * 0건 검색어 원인 분류용: 색인에 상품이 있는데 검색이 0건이면 검색엔진/노출 문제,
+   * 색인에도 없으면 소싱 부재다. (scripts/ops/search-zero-hit/collect.py 의 index_match 와 같은 절)
+   */
+  async countKeywordMatches(keywords: string[]): Promise<Map<string, number>> {
+    const result = new Map<string, number>();
+    if (keywords.length === 0) return result;
+
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getProductsIndex();
+    await this.ensureProductsIndex();
+
+    const escapeWildcard = (value: string) => value.replace(/([*?\\])/g, '\\$1');
+    const batchSize = 40;
+    for (let start = 0; start < keywords.length; start += batchSize) {
+      const chunk = keywords.slice(start, start + batchSize);
+      const lines: Record<string, unknown>[] = [];
+      for (const keyword of chunk) {
+        const compact = escapeWildcard(compactText(keyword).toLowerCase());
+        lines.push({ index });
+        lines.push({
+          size: 0,
+          track_total_hits: true,
+          query: {
+            bool: {
+              should: [
+                { wildcard: { name_compact: { value: `*${compact}*` } } },
+                { wildcard: { 'brand.keyword': { value: `*${escapeWildcard(keyword)}*` } } },
+                { match_phrase: { brand: keyword } },
+                { match_phrase: { seo_keywords: keyword } },
+                { match_phrase: { tags: keyword } },
+              ],
+              minimum_should_match: 1,
+            },
+          },
+        });
+      }
+      const response = await client.msearch({ body: lines });
+      const responses: any[] = (response.body as any)?.responses ?? [];
+      chunk.forEach((keyword, offset) => {
+        const hits = responses[offset]?.hits?.total;
+        const total = typeof hits === 'number' ? hits : (hits?.value ?? 0);
+        result.set(keyword, Number(total ?? 0));
+      });
+    }
+    return result;
+  }
+
   private ensureProductsIndex(): Promise<void> {
     if (!this.initPromise) {
       this.initPromise = this.initIndex();

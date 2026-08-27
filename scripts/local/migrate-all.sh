@@ -20,6 +20,7 @@ SERVICES=(
   "membership:apps/membership/drizzle.config.ts"
   "notification:apps/notification/database/drizzle/drizzle.config.ts"
   "ugc:apps/ugc-service/src/db/drizzle.config.ts"
+  "search:apps/search/drizzle.config.ts"
   "file_service:apps/file-service/drizzle.config.ts"
   "user_service:apps/user-service/database/drizzle/drizzle.config.ts"
 )
