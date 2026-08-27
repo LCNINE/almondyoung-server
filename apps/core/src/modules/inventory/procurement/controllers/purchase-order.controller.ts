@@ -19,7 +19,6 @@ import { PurchaseOrderCartService } from '../services/purchase-order-cart.servic
 import { ReorderSuggestionReader } from '../services/reorder-suggestion.reader';
 import {
   CreatePurchaseOrderDto,
-  UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
   AddToCartDto,
   UpdateCartItemDto,
@@ -219,30 +218,6 @@ export class PurchaseOrderController {
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async getPurchaseOrderById(@Param('id') id: string): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.getPurchaseOrderById(id);
-  }
-
-  @Put(':id/status')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '발주 종결 (입고 완료)' })
-  @ApiResponse({
-    status: 200,
-    description: '발주가 종결됨',
-    type: PurchaseOrderResponseDto,
-  })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  @ApiResponse({
-    status: 409,
-    description: '아직 실행되지 않은 라인이 남았거나 이미 종결된 발주입니다.',
-  })
-  async updatePurchaseOrderStatus(
-    @Param('id') id: string,
-    @Body() updateDto: UpdatePurchaseOrderStatusDto,
-    @User() user: JwtPayload,
-  ): Promise<PurchaseOrderResponse> {
-    // @User() 를 실제로 넘긴다 — 누가 종결했는지 로그에 남는다. (과거 심사
-    // 엔드포인트들은 이걸 빠뜨려 submitted_for_audit_by / audited_by 가 라이브에서
-    // 영원히 NULL 로 남았다 — 그 엔드포인트는 이후 제거됨.)
-    return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto, user.userId);
   }
 
   @Put(':id/lines')

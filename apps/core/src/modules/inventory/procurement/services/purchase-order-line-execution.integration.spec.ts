@@ -9,7 +9,7 @@ import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { InboundService } from '../../inbound/services/inbound.service';
-import { PurchaseOrderStatus, PurchaseOrderType } from '../dto/purchase-order.dto';
+import { PurchaseOrderType } from '../dto/purchase-order.dto';
 import { InboundPipelineReader } from '../../stock-projection/services/inbound-pipeline.reader';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
 import { PurchaseOrderClosureAdapter } from './purchase-order-closure.adapter';
@@ -32,9 +32,10 @@ function buildPurchaseOrderPort(
  * 실무: 발주서를 만든 뒤 직원이 라인을 하나씩 실제로 산다. 그 순간 수량·단가·도착예정일이
  * 확정되고, 아예 못 사는 라인도 생긴다. 한 라인을 나눠 사는 일은 없다(단방향 종결).
  *
- * 일괄 확정(`updatePurchaseOrderStatus(confirmed)`)도 **같은 라인 실행 경로**를 지난다.
- * 두 경로가 각자 `inbound_plan_items` 를 쓰면, 두 화면을 번갈아 쓰는 운영자에게
- * 입고예정이 두 벌로 잡힌다 — 그 사고가 이미 한 번 났다(purchase-order-single-plan 스펙).
+ * 라인 실행 경로는 하나뿐이다 — 예전엔 상태 API 로 위장한 일괄 확정 경로가 따로 있어
+ * 두 경로가 각자 `inbound_plan_items` 를 썼고, 두 화면을 번갈아 쓰는 운영자에게
+ * 입고예정이 두 벌로 잡히는 사고가 이미 한 번 났다(purchase-order-single-plan 스펙).
+ * 그 상태 API 는 #724 항목 7 로 제거됐다 — 종결은 이제 입고/취소가 파생으로 소유한다.
  *
  * 단위 테스트로는 아무것도 안 잡힌다 — 전부 다중 테이블 상태 전이다.
  *
@@ -595,7 +596,7 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
     });
   });
 
-  it('전 라인이 종결된 발주만 received 로 간다', async () => {
+  it('전 라인이 종결됐어도 입고 전에는 received 로 가지 않는다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
@@ -603,43 +604,33 @@ describeIfDb('발주 라인 실행 (DB integration)', () => {
         await service.orderLine(fx.poId, skuId, { orderedQty: 10 }, ACTOR, trx);
       }
 
-      const result = await service.updatePurchaseOrderStatus(
-        fx.poId,
-        { status: PurchaseOrderStatus.RECEIVED },
-        ACTOR,
-        trx,
-      );
-
-      expect(result.status).toBe('received');
+      const po = await service.getPurchaseOrderById(fx.poId, trx);
+      // 라인은 전부 실행됐지만 물건이 안 들어왔다. 종결은 입고가 소유한다.
+      expect(po.status).toBe('confirmed');
     });
   });
 
-  it('아직 실행 안 된 라인이 남은 발주는 종결을 거부한다', async () => {
+  it('아직 실행 안 된 라인이 남은 발주는 confirmed 로도 가지 않는다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
-      // 라인 하나만 실행 — 헤더는 여전히 created 로 파생된다.
       await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10 }, ACTOR, trx);
 
-      await expect(
-        service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx),
-      ).rejects.toThrow(/created/);
+      const po = await service.getPurchaseOrderById(fx.poId, trx);
+      expect(po.status).toBe('created');
     });
   });
 
-  // #735 가 심사 게이트를 걷어내며 열린 역방향 전이. 종결은 한 번뿐이다.
-  it('이미 종결된 발주는 다시 종결되지 않는다', async () => {
+  it('종결된 발주에는 라인을 실행할 수 없다', async () => {
     await inRollbackTx(db, async (trx) => {
       const fx = await seedPoWithThreeLines(trx);
       const service = buildService(trx);
-      for (const skuId of fx.skuIds) {
-        await service.orderLine(fx.poId, skuId, { orderedQty: 10 }, ACTOR, trx);
-      }
-      await service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx);
+      await service.orderLine(fx.poId, fx.skuIds[0], { orderedQty: 10 }, ACTOR, trx);
+      await service.cancelPurchaseOrder(fx.poId, { reason: '오발주' }, ACTOR, trx);
 
       await expect(
-        service.updatePurchaseOrderStatus(fx.poId, { status: PurchaseOrderStatus.RECEIVED }, ACTOR, trx),
-      ).rejects.toThrow(/received/);
+        service.orderLine(fx.poId, fx.skuIds[1], { orderedQty: 10 }, ACTOR, trx),
+      ).rejects.toThrow(/cancelled/);
     });
   });
 

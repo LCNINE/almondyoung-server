@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../schema/inventory.schema';
 import {
   CreatePurchaseOrderDto,
-  UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
@@ -47,15 +46,6 @@ export class PurchaseOrderService {
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.manager.createPurchaseOrderFromCart(createDto, userId, tx);
-  }
-
-  updatePurchaseOrderStatus(
-    poId: string,
-    updateDto: UpdatePurchaseOrderStatusDto,
-    userId: string,
-    tx?: DbTx,
-  ): Promise<PurchaseOrderResponse> {
-    return this.manager.updatePurchaseOrderStatus(poId, updateDto, userId, tx);
   }
 
   orderLine(

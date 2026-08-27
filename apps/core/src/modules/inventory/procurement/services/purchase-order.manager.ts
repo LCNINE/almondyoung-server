@@ -6,7 +6,6 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import {
   CreatePurchaseOrderDto,
-  UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
@@ -14,7 +13,6 @@ import {
 import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
 import { InboundService } from '../../inbound/services/inbound.service';
-import { assertReceivedTransition } from './purchase-order-status.rules';
 import { isTerminal } from './purchase-order-closure.rules';
 import { PurchaseOrderReader } from './purchase-order.reader';
 
@@ -170,49 +168,6 @@ export class PurchaseOrderManager {
       );
 
       return this.reader.findById(purchaseOrder.id, trx);
-    }, tx);
-  }
-
-  /**
-   * 발주를 종결한다.
-   *
-   * 헤더 status 는 라인에서 파생된다(`refreshHeaderStatus`). 사람이 직접 쓰는 값은
-   * 종결 하나뿐이다 — 예전엔 이 자리가 `confirmed` 도 받아 "아직 실행 안 된 라인을
-   * 전부 지금 발주한 것으로 친다" 는 일괄 실행을 상태 쓰기로 위장해 수행했다.
-   * 두 번째 실행 경로가 곧 이중 계상 사고의 원인이었고, 라인 실행 UI(#739)가 붙은
-   * 지금은 대체 경로도 있다. 일괄 실행이 다시 필요해지면 상태 쓰기가 아니라
-   * `POST /:id/lines/order-all` 같은 전용 엔드포인트로 만든다.
-   */
-  async updatePurchaseOrderStatus(
-    poId: string,
-    updateDto: UpdatePurchaseOrderStatusDto,
-    userId: string,
-    tx?: DbTx,
-  ): Promise<PurchaseOrderResponse> {
-    return this.dbService.run(async (trx) => {
-      // 락 순서 불변식(PO 행 → 라인 행)을 지킨다. 여기서 라인을 잠그지는 않지만,
-      // 상태 읽기와 쓰기 사이에 다른 트랜잭션이 라인을 종결시키는 것을 막는다.
-      const [existingPO] = await trx
-        .select({ status: wmsTables.purchaseOrders.status })
-        .from(wmsTables.purchaseOrders)
-        .where(eq(wmsTables.purchaseOrders.id, poId))
-        .limit(1)
-        .for('update');
-
-      if (!existingPO) {
-        throw new NotFoundError(`Purchase order not found: ${poId}`);
-      }
-
-      assertReceivedTransition(existingPO.status);
-
-      await trx
-        .update(wmsTables.purchaseOrders)
-        .set({ status: updateDto.status, updatedAt: new Date() })
-        .where(eq(wmsTables.purchaseOrders.id, poId));
-
-      this.logger.log(`Purchase order ${poId} marked received by ${userId}`);
-
-      return this.reader.findById(poId, trx);
     }, tx);
   }
 
