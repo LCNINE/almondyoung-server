@@ -41,7 +41,7 @@
 
 `auth/infra/services.ts`
 
-- **user-service** (Fargate, `apps/user-service/Dockerfile`, monorepo root context). `AuthSecret`/`JwtRefreshSecret`/`JwtVerificationTokenSecret`/`OauthClients`/`OauthInternalSecret` 주입. `COOKIE_DOMAIN=.<baseDomain>`. 데모 단계라 Kakao/Twilio/Cafe24/S3 secret 은 주석.
+- **user-service** (Fargate, `apps/user-service/Dockerfile`, monorepo root context). `AuthSecret`/`JwtRefreshSecret`/`JwtVerificationTokenSecret`/`OauthClients`/`OauthInternalSecret` 주입. `COOKIE_DOMAIN=.<baseDomain>`. 데모 단계라 Kakao/Cafe24/S3 secret 은 주석.
 - **auth-web** (`sst.aws.Nextjs` — OpenNext + CloudFront). `web/auth-web` 빌드, 도메인 `auth.<base>`. ALB 와 별개 배포라 충돌 없음.
 
 SSM publish:

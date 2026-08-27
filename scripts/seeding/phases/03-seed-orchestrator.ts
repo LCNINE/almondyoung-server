@@ -91,8 +91,9 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
   // Notification config
   const fcmPrivateKey = process.env.NOTIFICATION_FCM_PRIVATE_KEY || '';
   const resendApiKey = process.env.NOTIFICATION_RESEND_API_KEY || process.env.RESEND_API_KEY || '';
-  const twilioAuthToken = process.env.NOTIFICATION_TWILIO_AUTH_TOKEN || '';
-  const twilioAccountSid = process.env.NOTIFICATION_TWILIO_ACCOUNT_SID || '';
+  const nhnSmsAppKey = process.env.NOTIFICATION_NHN_SMS_APP_KEY || process.env.NHN_SMS_APP_KEY || '';
+  const nhnSmsSecretKey = process.env.NOTIFICATION_NHN_SMS_SECRET_KEY || process.env.NHN_SMS_SECRET_KEY || '';
+  const nhnSmsSendNo = process.env.NOTIFICATION_NHN_SMS_SEND_NO || process.env.NHN_SMS_SEND_NO || '';
   const nhnAppKey = process.env.NOTIFICATION_NHN_APP_KEY || process.env.NHN_APP_KEY || '';
   const nhnSecretKey = process.env.NOTIFICATION_NHN_SECRET_KEY || '';
   const nhnSenderKey = process.env.NOTIFICATION_NHN_SENDER_KEY || process.env.NHN_SENDER_KEY || '';
@@ -143,8 +144,9 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
     notification: {
       fcmPrivateKey,
       resendApiKey,
-      twilioAuthToken,
-      twilioAccountSid,
+      nhnSmsAppKey,
+      nhnSmsSecretKey,
+      nhnSmsSendNo,
       nhnAppKey,
       nhnSecretKey,
       nhnSenderKey,
@@ -382,8 +384,9 @@ export async function listGroupsForDeployment(deployment?: string): Promise<stri
     notification: {
       fcmPrivateKey: '',
       resendApiKey: '',
-      twilioAuthToken: '',
-      twilioAccountSid: '',
+      nhnSmsAppKey: '',
+      nhnSmsSecretKey: '',
+      nhnSmsSendNo: '',
       nhnAppKey: '',
       nhnSecretKey: '',
       nhnSenderKey: '',

@@ -6,8 +6,9 @@ import { FIXED_UUIDS } from '../constants/uuids';
 export interface NotificationConfig {
   fcmPrivateKey: string;
   resendApiKey: string;
-  twilioAuthToken: string;
-  twilioAccountSid: string;
+  nhnSmsAppKey: string;
+  nhnSmsSecretKey: string;
+  nhnSmsSendNo: string;
   nhnAppKey: string;
   nhnSecretKey: string;
   nhnSenderKey: string;
@@ -47,16 +48,15 @@ function buildProviders(config: NotificationConfig) {
       priority: 10,
     },
     {
-      providerId: FIXED_UUIDS.PROVIDER_TWILIO_SMS,
-      providerName: 'Twilio SMS',
+      providerId: FIXED_UUIDS.PROVIDER_NHN_SMS,
+      providerName: 'NHN SMS',
       channel: 'SMS',
       config: {
+        apiUrl: 'https://sms.api.nhncloudservice.com',
+        appKey: config.nhnSmsAppKey,
+        secretKey: config.nhnSmsSecretKey,
+        sendNo: config.nhnSmsSendNo,
         timeout: 30000,
-        authToken: config.twilioAuthToken,
-        accountSid: config.twilioAccountSid,
-        fromNumber: '+15856342856',
-        messagingServiceSid: '',
-        enableDeliveryReports: true,
       },
       status: 'ACTIVE',
       priority: 10,
@@ -247,14 +247,14 @@ const NOTICE_EVENTS = [RENEWAL_NOTICE_EVENT, EXPIRY_NOTICE_EVENT, CMS_REJECTED_E
 const PROVIDER_IDS = [
   FIXED_UUIDS.PROVIDER_FCM_PUSH,
   FIXED_UUIDS.PROVIDER_RESEND_EMAIL,
-  FIXED_UUIDS.PROVIDER_TWILIO_SMS,
+  FIXED_UUIDS.PROVIDER_NHN_SMS,
   FIXED_UUIDS.PROVIDER_NHN_KAKAO,
 ];
 
 const PROVIDER_NAMES: Record<string, string> = {
   [FIXED_UUIDS.PROVIDER_FCM_PUSH]: 'FCM Push',
   [FIXED_UUIDS.PROVIDER_RESEND_EMAIL]: 'Resend Email',
-  [FIXED_UUIDS.PROVIDER_TWILIO_SMS]: 'Twilio SMS',
+  [FIXED_UUIDS.PROVIDER_NHN_SMS]: 'NHN SMS',
   [FIXED_UUIDS.PROVIDER_NHN_KAKAO]: 'NHN KakaoTalk',
 };
 

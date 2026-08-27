@@ -11,7 +11,7 @@ export function setup(infra: IdpInfra) {
   const jwtRefreshSecret = new sst.Secret('JwtRefreshSecret');
   const jwtVerificationTokenSecret = new sst.Secret('JwtVerificationTokenSecret');
 
-  // 초기 구축 단계에서는 OAuth 핵심 경로만 열어둔다. Kakao/Twilio/Cafe24/S3는
+  // 초기 구축 단계에서는 OAuth 핵심 경로만 열어둔다. Kakao/Cafe24/S3는
   // 해당 기능을 실제로 dev에서 검증할 때 주석 해제하고 Secret을 세팅한다.
   // const kakaoClientId = new sst.Secret("KakaoClientId");
   // const kakaoClientSecret = new sst.Secret("KakaoClientSecret");

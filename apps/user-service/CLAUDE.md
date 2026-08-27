@@ -13,7 +13,7 @@
 - 상점(Shop) 정보 관리
 - Cafe24 계정 연동/마이그레이션
 - 파일 업로드/삭제 (AWS S3)
-- 휴대폰 인증 (Twilio SMS)
+- 휴대폰 인증 (인증코드 생성·검증. 문자 발송 자체는 notification 에 위임한다)
 - 블랙리스트, 휴면/탈퇴 회원 관리 (Admin)
 
 ### 책임지지 않는 것
@@ -136,7 +136,7 @@ phone_verifications (독립, 전화번호 기준)
 | `JWT_VERIFICATION_TOKEN_SECRET` | 이메일 인증 토큰 시크릿 |
 | `KAKAO_CLIENT_ID/SECRET/CALLBACK_URL` | 카카오 OAuth (선택) |
 | `NAVER_CLIENT_ID/SECRET/CALLBACK_URL` | 네이버 OAuth (선택) |
-| `TWILIO_ACCOUNT_SID/AUTH_TOKEN/PHONE_NUMBER/SERVICE_ID` | SMS 인증 |
+| `NOTIFICATION_SERVICE_URL`, `NOTIFICATION_INTERNAL_KEY` | 인증문자 발송을 notification 에 위임 (→ `POST /internal/sms/send`) |
 | `AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/S3_BUCKET` | S3 파일 업로드 |
 | `CAFE24_CLIENT_ID/CLIENT_SECRET/SERVICE_KEY` | Cafe24 연동 |
 | `CORS_ORIGIN_DOMAIN`, `COOKIE_DOMAIN` | CORS/쿠키 설정 |

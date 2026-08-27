@@ -184,9 +184,6 @@ final-summary.md
 **/nhn-kakao-keys.json
 **/kakao-config.json
 
-# Twilio credentials
-**/twilio-credentials.json
-
 # Resend API keys
 **/resend-keys.json
 
