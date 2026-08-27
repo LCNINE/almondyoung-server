@@ -56,6 +56,8 @@ import type {
   UpdatePurchaseOrderLinesRequest,
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
+  CancelPurchaseOrderRequest,
+  ClosePlanItemRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -680,6 +682,46 @@ export const useMarkPurchaseOrderLineUnavailable = () => {
     // 성공한 액션이 실패 토스트와 함께 옛 화면 위에 뜨므로 무효화가 더더욱 필요하다.
     onSettled: (_res, _err, { poId }) => {
       for (const queryKey of lineExecutionInvalidationKeys(poId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+};
+
+export const useCancelPurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      poId,
+      data,
+    }: {
+      poId: string;
+      data: CancelPurchaseOrderRequest;
+    }) => purchaseOrdersClient.cancel(poId, data),
+    onSettled: (_res, _err, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+};
+
+export const useClosePlanItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      planId,
+      itemId,
+      data,
+    }: {
+      planId: string;
+      itemId: string;
+      data: ClosePlanItemRequest;
+    }) => inboundClient.closePlanItem(planId, itemId, data),
+    // 잎 종결은 발주 헤더까지 파생으로 밀 수 있다 — 입고 키만 무효화하면
+    // 발주 목록이 옛 상태를 보여준다. 라인 실행과 같은 키 묶음을 쓴다.
+    onSettled: (_res, _err, { planId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(planId)) {
         queryClient.invalidateQueries({ queryKey });
       }
     },
