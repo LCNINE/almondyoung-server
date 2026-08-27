@@ -19,6 +19,7 @@ import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
+import { ClosePlanItemDto } from '../dto/close-plan-item.dto';
 import {
   CancelInboundDto,
   PutawayRequestDto,
@@ -911,6 +912,67 @@ export class InboundService {
       // lineId 는 후속 적치(putaway)의 유일한 입력이다 — 현장 앱이 입고 직후
       // 바로 적치를 걸 수 있도록 여기서 돌려준다.
       return { success: true, receiptId: receipt.id, lineId: line.id };
+    }, tx);
+  }
+
+  /**
+   * 잔량을 포기하고 아이템을 종결한다 (잎 종결).
+   *
+   * 사람의 쓰기는 **잎에서만** 일어난다 — 계획 헤더를 직접 닫으면 "헤더는 아이템에서
+   * 파생된다" 가 깨져 파생 경로가 둘이 된다(#724 항목 7 스펙 §2.1).
+   * 미달 사실은 expected_qty/received_qty 로 영구히 남고, 여기 기록이 그 판단의 출처다.
+   */
+  async closePlanItem(
+    planItemId: string,
+    dto: ClosePlanItemDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<{ success: true }> {
+    return this.dbService.run(async (trx) => {
+      // 아이템 행을 FOR UPDATE 로 잠근다 — 평범한 SELECT 로는 동시에 진행 중인
+      // receiveFromPlan 의 미커밋 UPDATE(pending → confirmed) 를 못 보고, 전량
+      // 입고된 아이템이 "공급처 결품" 사유로 덮어써질 수 있다(#724 항목 7 리뷰
+      // Finding 1 과 같은 계열의 경합). 잠금 순서는 closePlanIfDone 과 동일하게
+      // 아이템 행 → 계획 행 → 발주 행을 유지한다.
+      const [item] = await trx
+        .select({
+          id: wmsTables.inboundPlanItems.id,
+          planId: wmsTables.inboundPlanItems.planId,
+          status: wmsTables.inboundPlanItems.status,
+        })
+        .from(wmsTables.inboundPlanItems)
+        .where(eq(wmsTables.inboundPlanItems.id, planItemId))
+        .limit(1)
+        .for('update');
+      if (!item) throw new NotFoundError(`Inbound plan item not found: ${planItemId}`);
+
+      // 재실행 금지 = 자연 멱등 (항목 9 선례). 멱등키를 따로 도입하지 않는다.
+      if (item.status !== 'pending') {
+        throw new ConflictError(`Inbound plan item is already closed: ${item.status}`);
+      }
+
+      const [plan] = await trx
+        .select({
+          id: wmsTables.inboundPlans.id,
+          linkedPurchaseOrderId: wmsTables.inboundPlans.linkedPurchaseOrderId,
+        })
+        .from(wmsTables.inboundPlans)
+        .where(eq(wmsTables.inboundPlans.id, item.planId))
+        .limit(1);
+      if (!plan) throw new NotFoundError(`Inbound plan not found: ${item.planId}`);
+
+      await trx
+        .update(wmsTables.inboundPlanItems)
+        .set({
+          status: 'short_closed',
+          closedReason: dto.reason,
+          closedAt: new Date(),
+          closedBy: userId,
+        })
+        .where(eq(wmsTables.inboundPlanItems.id, planItemId));
+
+      await this.closePlanIfDone(trx, plan.id, plan.linkedPurchaseOrderId);
+      return { success: true as const };
     }, tx);
   }
 

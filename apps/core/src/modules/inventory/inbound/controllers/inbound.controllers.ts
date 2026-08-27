@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Get, Query, Param, BadRequestException, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { InboundService } from '../services/inbound.service';
 import { InboundPutawayReader } from '../services/inbound-putaway.reader';
@@ -15,9 +15,16 @@ import {
   ReceiveFromPlanDto,
   UpdateInboundLineMemoDto,
 } from '../dto/simple-inbound.dto';
+import { ClosePlanItemDto } from '../dto/close-plan-item.dto';
 import { PutawayPendingListDto } from '../dto/putaway-pending.dto';
 import { IndividualInboundResponseDto, SimpleInboundResponseDto } from '../dto/inbound-response.dto';
 import { InboundReceiptMapper } from '../mappers/inbound.mapper';
+
+interface JwtPayload {
+  userId: string;
+  email: string;
+  roles: string[];
+}
 
 @ApiTags('Inbound')
 @Controller('inbound')
@@ -295,5 +302,21 @@ export class InboundController {
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
   async receiveFromPlan(@Body() dto: ReceiveFromPlanDto) {
     return this.inboundService.receiveFromPlan(dto);
+  }
+
+  @Post('plans/:planId/items/:itemId/close')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '입고예정 아이템 잔량 포기 종결' })
+  @ApiParam({ name: 'planId', description: '입고 계획 ID' })
+  @ApiParam({ name: 'itemId', description: '입고예정 아이템 ID' })
+  @ApiResponse({ status: 201, description: '아이템이 종결됨' })
+  @ApiResponse({ status: 409, description: '이미 종결된 아이템' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
+  async closePlanItem(
+    @Param('itemId') itemId: string,
+    @Body() dto: ClosePlanItemDto,
+    @User() user: JwtPayload,
+  ) {
+    return this.inboundService.closePlanItem(itemId, dto, user.userId);
   }
 }
