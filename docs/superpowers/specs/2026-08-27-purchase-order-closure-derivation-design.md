@@ -85,6 +85,17 @@ core 와 한 세트로 간다. 배포 순서 제약이 없다는 것은 §7 에�
 **정직한 비용**: `apps/core/src` 전체에 포트/어댑터 선례가 **0건**이다. 다음 사람이 처음 보는
 모양이므로 포트 파일이 "왜 이렇게 했는가" 를 들고 있어야 한다.
 
+### 2.5 수동 종결 라우트 `PUT /:id/status` 를 제거한다
+
+파생이 생기면 이 라우트는 **기록 없는 지름길**이 된다 — 계획 아이템이 아직 `pending` 인
+발주를 사유 한 줄 없이 `received` 로 닫을 수 있고, 그건 §2.1 이 잎 종결을 도입하며 거부한
+바로 그 모양이다. 제거 비용은 0이다: 2026-08-27 실측 기준 **제품 코드 소비자 0곳**
+(admin-web·Tauri 앱·스크립트 어디에도 없고, core 자신과 스펙, 스코프 커버리지 표뿐).
+
+같이 사라지는 것: `UpdatePurchaseOrderStatusDto` · `updatePurchaseOrderStatus`
+(controller → service → manager) · `assertReceivedTransition` 과 그 스펙.
+`PurchaseOrderStatus` enum 자체는 응답 계약이므로 남는다.
+
 ## 3. 상태 모델
 
 ```
@@ -202,6 +213,12 @@ POST /purchase-orders/:id/cancel                      scope: inventory.manage
   409 if 이미 종결 (received | cancelled)
   409 if 입고가 한 건이라도 있음 (계획 아이템 중 received_qty > 0)
   404 if 발주 없음
+```
+
+### 제거
+
+```
+PUT /purchase-orders/:id/status      — §2.5. 소비자 0곳. 파생이 대체한다.
 ```
 
 **스코프**: 발주 컨트롤러 14개 라우트가 전부 `INVENTORY_SCOPE.MANAGE` 이므로 취소도 `MANAGE`.
