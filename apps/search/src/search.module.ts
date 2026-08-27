@@ -9,6 +9,7 @@ import { SearchController } from './search.controller';
 import { ProductEventsConsumer } from './product-events.consumer';
 import { ReviewEventsConsumer } from './review-events.consumer';
 import { OpenSearchService } from './opensearch.service';
+import { EmbeddingService } from './embedding.service';
 import { ProductIndexService } from './product-index.service';
 import { SearchService } from './search.service';
 import { HealthController } from './health.controller';
@@ -59,6 +60,7 @@ import { SearchKeywordService } from './search-keyword.service';
   providers: [
     SearchService,
     OpenSearchService,
+    EmbeddingService,
     ProductIndexService,
     SearchKeywordService,
     OpenSearchKeywordRepository,

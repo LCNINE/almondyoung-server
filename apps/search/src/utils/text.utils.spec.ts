@@ -1,4 +1,4 @@
-import { qwertyToHangul, toJamo } from './text.utils';
+import { qwertyToHangul, toEmbeddingText, toJamo } from './text.utils';
 
 describe('toJamo', () => {
   it('한글 음절을 초성/중성/종성으로 편다', () => {
@@ -81,5 +81,37 @@ describe('qwertyToHangul', () => {
     expect(qwertyToHangul('elationpassport')).toBe('');
     expect(qwertyToHangul('how to heal stiff muscles')).toBe('');
     expect(qwertyToHangul('hotel tales')).toBe('');
+  });
+});
+
+describe('toEmbeddingText', () => {
+  it('용량·퍼센트·모델번호를 떼어낸다', () => {
+    expect(toEmbeddingText('소분용 에탄올 80% 60ml', null)).toBe('소분용 에탄올');
+    expect(toEmbeddingText('키스뉴욕 몽글볼룸 KC145K', null)).toBe('키스뉴욕 몽글볼룸');
+    expect(toEmbeddingText('속눈썹 롯드 보관함 30구', null)).toBe('속눈썹 롯드 보관함');
+  });
+
+  it('머리표와 괄호를 뗀다', () => {
+    expect(toEmbeddingText('[캔바] 반영구(PMU) 아이라인 교재', null)).toBe('반영구 아이라인 교재');
+  });
+
+  it('#으로 시작하는 색번호를 통째로 뗀다 — 조각이 남으면 안 된다', () => {
+    expect(toEmbeddingText('프롬 더 네일 글리터 젤 #FG144', null)).toBe('프롬 더 네일 글리터 젤');
+  });
+
+  it('브랜드는 공백으로 둘러싸인 온전한 조각일 때만 뗀다', () => {
+    // "요거트젤"에서 "요거트"만 떼면 "젤"이 남아 의미가 무너진다.
+    expect(toEmbeddingText('요거트젤 젤라또 시럽젤', '요거트')).toBe('요거트젤 젤라또 시럽젤');
+    expect(toEmbeddingText('BL Lashes 비엘래쉬 와이드 글루 테이프', 'BL Lashes')).toBe(
+      '비엘래쉬 와이드 글루 테이프',
+    );
+  });
+
+  it('플레이스홀더 브랜드는 무시한다', () => {
+    expect(toEmbeddingText('크리스마스 선물용 가방', 'B0000000')).toBe('크리스마스 선물용 가방');
+  });
+
+  it('전부 떼어지면 원문을 돌려준다 — 빈 문자열을 임베딩할 수는 없다', () => {
+    expect(toEmbeddingText('30ml', null)).toBe('30ml');
   });
 });

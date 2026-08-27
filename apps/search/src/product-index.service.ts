@@ -15,6 +15,7 @@ import {
   SearchProductDocument,
   SEO_FIELDS_MAPPINGS,
 } from './types/product-document.type';
+import { EmbeddingService } from './embedding.service';
 import { compactText, qwertyToHangul, toJamo } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
@@ -28,13 +29,15 @@ const NORI_COLLAPSE_RATIO_THRESHOLD = 0.6;
 // 1~2음절 쿼리는 정상이어도 비율이 튀기 쉬워 감지 대상에서 뺀다.
 const NORI_COLLAPSE_MIN_LENGTH = 3;
 const NORI_ANALYZE_CACHE_LIMIT = 2000;
+// RRF 상수. 1위와 2위의 격차를 완충한다.
+const RRF_K = 60;
+const VECTOR_POOL_LIMIT = 100;
+
 // 자모 오타 절을 태울 최소 길이(공백 제외 음절 수).
-// 2음절은 자모로 펴도 4~6자라 편집거리 1 이 헐거워 후보가 넓다("태그"→"택1" 55건). 그래도 여는 건,
-// 막아두면 "헨나"→헤나·"깍이"→깎이·"일룸"→일륨·"말백"→말벡 처럼 정답이 유일한 케이스까지 0건이 되기
-// 때문이다. 자모 절은 fallback 에만 있고 mergeHitsWithPriority 가 strict 를 앞세우므로,
-// "글루"처럼 정상 매칭되는 검색어의 상위 순위는 그대로다. 넓어진 후보는 JAMO_SHORT_BOOST 로 뒤로 민다.
+// 2음절을 막으면 "헨나"→헤나, "깍이"→깎이 같은 유일한 정답까지 0건이 된다. 대신 "태그"→"택1"
+// 처럼 후보가 넓어지는 검색어가 같이 열리므로 boost 로 뒤로 민다. 자모 절은 fallback 에만 있어
+// 정상 매칭되는 검색어의 상위 순위는 건드리지 않는다.
 const JAMO_TYPO_MIN_LENGTH = 2;
-// 2~3음절 자모 절 boost. 1.0 이면 넓은 후보가 상위로 새어나온다.
 const JAMO_SHORT_BOOST = 0.3;
 const JAMO_SHORT_MAX_LENGTH = 2;
 // 편집거리 2 를 허용할 최소 길이. 짧은 검색어에서 열면 후보가 폭증한다.
@@ -53,6 +56,7 @@ export class ProductIndexService implements OnModuleInit {
   constructor(
     private readonly openSearchService: OpenSearchService,
     private readonly configService: ConfigService,
+    private readonly embeddingService: EmbeddingService,
   ) {
     this.reviewScoreWeight = this.parsePositiveNumber(configService.get<string>('REVIEW_SCORE_WEIGHT'), 0.1);
     this.reviewSortVolumeWeight = this.parsePositiveNumber(
@@ -84,10 +88,7 @@ export class ProductIndexService implements OnModuleInit {
   private computeReviewSortScore(bayesianReviewScore: number, reviewCount: number): number {
     const safeBayesian = Number.isFinite(bayesianReviewScore) ? bayesianReviewScore : 0;
     const safeReviewCount = Number.isFinite(reviewCount) && reviewCount > 0 ? reviewCount : 0;
-    const normalizedVolume = Math.min(
-      1,
-      Math.log1p(safeReviewCount) / Math.log1p(this.reviewSortCountSaturation),
-    );
+    const normalizedVolume = Math.min(1, Math.log1p(safeReviewCount) / Math.log1p(this.reviewSortCountSaturation));
     const volumeBoost = normalizedVolume * this.reviewSortVolumeWeight;
     return Math.round((safeBayesian + volumeBoost) * 1000) / 1000;
   }
@@ -97,15 +98,37 @@ export class ProductIndexService implements OnModuleInit {
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
 
+    const doc = { ...document, ...(await this.buildNameVector(document)) };
+
     // doc_as_upsert: true — creates if missing, otherwise merges; review fields in existing docs are preserved
     await client.update({
       index,
       id: masterId,
       body: {
-        doc: document,
+        doc,
         doc_as_upsert: true,
       },
     });
+  }
+
+  /**
+   * 상품명 벡터. 실패해도 색인은 진행한다 — 벡터가 없으면 그 상품이 키워드 검색으로만 잡힐 뿐이고,
+   * 나중에 백필로 채워진다. 여기서 던지면 상품 갱신 이벤트가 통째로 DLQ 로 간다.
+   */
+  private async buildNameVector(document: SearchProductDocument): Promise<{ name_vector?: number[] }> {
+    if (!this.embeddingService.enabled || document.name_vector) {
+      return {};
+    }
+
+    try {
+      const [vector] = await this.embeddingService.embedProductNames([
+        { name: document.name, brand: document.brand },
+      ]);
+      return vector ? { name_vector: vector } : {};
+    } catch (error) {
+      this.logger.warn(`상품명 임베딩 실패 — 벡터 없이 색인한다: ${error instanceof Error ? error.message : error}`);
+      return {};
+    }
   }
 
   async updateProductReviewStats(masterId: string, stats: ReviewStatsUpdateFields): Promise<void> {
@@ -115,8 +138,7 @@ export class ProductIndexService implements OnModuleInit {
     const doc = {
       ...stats,
       review_sort_score:
-        stats.review_sort_score ??
-        this.computeReviewSortScore(stats.bayesian_review_score, stats.review_count),
+        stats.review_sort_score ?? this.computeReviewSortScore(stats.bayesian_review_score, stats.review_count),
     };
 
     try {
@@ -170,7 +192,7 @@ export class ProductIndexService implements OnModuleInit {
 
     if (hasKeyword) {
       const noriCollapsed = await this.isNoriCollapsed(query.q!.trim());
-      const [strictResponse, fallbackResponse] = await Promise.all([
+      const [strictResponse, fallbackResponse, vectorHits] = await Promise.all([
         this.executeSearch({
           index,
           query: this.buildQuery(query, 'strict', noriCollapsed),
@@ -185,11 +207,18 @@ export class ProductIndexService implements OnModuleInit {
           from: 0,
           size: this.keywordResultPoolLimit,
         }),
+        this.searchByVector(index, query),
       ]);
 
       const strictHits = strictResponse.body.hits.hits as any[];
       const fallbackHits = fallbackResponse.body.hits.hits as any[];
-      const mergedHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
+      const keywordHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
+
+      // 관련도 정렬일 때만 벡터를 섞는다. 가격·최신순은 정렬 기준이 따로 있어 융합이 의미 없다.
+      const mergedHits =
+        vectorHits.length > 0 && query.sort === 'relevance'
+          ? this.fuseWithRrf(keywordHits, vectorHits, this.keywordResultPoolLimit)
+          : keywordHits;
 
       total = mergedHits.length;
       resultHits = mergedHits.slice(from, from + size);
@@ -334,6 +363,66 @@ export class ProductIndexService implements OnModuleInit {
       return typeof value === 'number' ? value : 0;
     }
     return typeof totalField === 'number' ? totalField : 0;
+  }
+
+  /** 상품명 임베딩으로 k-NN 검색. 실패하면 빈 배열 — 검색은 키워드만으로 계속 간다. */
+  private async searchByVector(index: string, query: ProductSearchQueryDto): Promise<any[]> {
+    if (!this.embeddingService.enabled) {
+      return [];
+    }
+
+    // Promise.all 로 묶여 있어 여기서 던지면 검색 전체가 500 이다.
+    try {
+      const vector = await this.embeddingService.embedQuery(query.q!.trim());
+      if (!vector) {
+        return [];
+      }
+
+      const response = await this.openSearchService.getClient().search({
+        index,
+        body: {
+          size: VECTOR_POOL_LIMIT,
+          query: {
+            bool: {
+              must: [{ knn: { name_vector: { vector, k: VECTOR_POOL_LIMIT } } }],
+              filter: this.buildFilterClauses(query),
+            },
+          },
+        },
+      });
+      return response.body.hits.hits as any[];
+    } catch (error) {
+      this.logger.warn(`벡터 검색 실패 — 키워드 결과만 쓴다: ${error instanceof Error ? error.message : error}`);
+      return [];
+    }
+  }
+
+  /**
+   * Reciprocal Rank Fusion. BM25 는 상한이 없고 코사인은 0~1 이라 점수를 그대로 더할 수 없어,
+   * 순위의 역수를 더한다. 양쪽에서 다 걸린 상품이 위로 올라온다. 지금은 동등 가중이다.
+   */
+  private fuseWithRrf(keywordHits: any[], vectorHits: any[], limit: number): any[] {
+    const scores = new Map<string, { score: number; hit: any }>();
+
+    const accumulate = (hits: any[]): void => {
+      hits.forEach((hit, index) => {
+        const key = this.getHitKey(hit);
+        if (!key) {
+          return;
+        }
+        const entry = scores.get(key) ?? { score: 0, hit };
+        entry.score += 1 / (RRF_K + index + 1);
+        scores.set(key, entry);
+      });
+    };
+
+    accumulate(keywordHits);
+    accumulate(vectorHits);
+
+    return [...scores.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map((entry) => entry.hit);
   }
 
   private mergeHitsWithPriority(primaryHits: any[], secondaryHits: any[], limit: number): any[] {

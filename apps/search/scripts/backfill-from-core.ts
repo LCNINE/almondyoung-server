@@ -21,7 +21,8 @@ import {
   PRODUCTS_INDEX_SETTINGS,
   SearchProductDocument,
 } from '../src/types/product-document.type';
-import { compactText, toJamo } from '../src/utils/text.utils';
+import { compactText, toEmbeddingText, toJamo } from '../src/utils/text.utils';
+import { EMBEDDING_MODEL, NAME_VECTOR_DIMENSION } from '../src/types/product-document.type';
 
 type BackfillOptions = {
   batchSize: number;
@@ -394,6 +395,33 @@ function buildDocuments(
   });
 }
 
+// OPENAI_API_KEY 가 없으면 건너뛴다 — 벡터 없이도 키워드 검색은 동작하고, 나중에 다시 돌리면 채워진다.
+async function attachNameVectors(documents: SearchProductDocument[]): Promise<void> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey || documents.length === 0) {
+    return;
+  }
+
+  const response = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: EMBEDDING_MODEL,
+      input: documents.map((doc) => toEmbeddingText(doc.name, doc.brand)),
+      dimensions: NAME_VECTOR_DIMENSION,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Embedding failed ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  }
+
+  const body = (await response.json()) as { data: Array<{ index: number; embedding: number[] }> };
+  for (const item of body.data) {
+    documents[item.index].name_vector = item.embedding;
+  }
+}
+
 async function bulkUpsert(
   client: Client,
   index: string,
@@ -531,6 +559,7 @@ async function main() {
       ]);
 
       const documents = buildDocuments(batch, categoryMap, tagMap, priceMap, primaryImageMap, fileServiceUrl);
+      await attachNameVectors(documents);
 
       if (options.dryRun) {
         success += documents.length;
