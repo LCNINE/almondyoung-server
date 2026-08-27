@@ -10,6 +10,7 @@ export function usePurchaseOrdersTableFilters(): Filter[] {
         { label: '생성됨', value: 'created' },
         { label: '확정됨', value: 'confirmed' },
         { label: '입고완료', value: 'received' },
+        { label: '취소됨', value: 'cancelled' },
       ],
     },
     {
