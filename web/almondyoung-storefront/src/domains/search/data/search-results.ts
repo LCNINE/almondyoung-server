@@ -1,4 +1,5 @@
 import "server-only"
+import { headers } from "next/headers"
 import { listProducts } from "@lib/api/medusa/products"
 import { searchProducts } from "@lib/api/pim/search"
 import { filterProductsByMembershipVisibility } from "@/lib/utils/product-card"
@@ -43,6 +44,22 @@ const emptyResult = (size: number): SearchProductResult => ({
   pagination: { page: 1, size, total: 0, totalPages: 0 },
 })
 
+// bingbot 이 자기 검색 쿼리를 우리 /search?q= 에 던진다. 2026-08-26 액세스 로그 기준
+// /search 요청의 44% 가 bingbot 이었고, 이게 추천검색어와 0건 리포트로 새어 0건 비율을
+// 8% → 40% 로 밀어올렸다. 페이지는 정상 응답하되 통계에만 안 남긴다.
+const CRAWLER_UA = /bot|crawl|spider|slurp|bingpreview/i
+
+async function isCrawlerRequest(): Promise<boolean> {
+  try {
+    const requestHeaders = await headers()
+    // x-crawler 는 캐시 계층이 붙여줄 때만 있다.
+    if (requestHeaders.get("x-crawler") === "1") return true
+    return CRAWLER_UA.test(requestHeaders.get("user-agent") ?? "")
+  } catch {
+    return false
+  }
+}
+
 /**
  * 검색어로 상품 목록을 만든다. OpenSearch 가 관련도 순서를 정하고 Medusa 가 가격·재고를
  * 채우는 2단 구조라, 두 응답을 합쳐 관련도 순서를 복원하는 것까지가 이 함수의 몫이다.
@@ -54,6 +71,8 @@ export async function fetchSearchResults(
 ): Promise<SearchProductResult> {
   const { keyword, size, isMembership, regionId } = query
   if (!keyword) return emptyResult(size)
+
+  const isCrawler = await isCrawlerRequest()
 
   // isMembership 을 전달해 비회원에겐 멤버십 전용 노출 상품을 소스에서 제외 →
   // pagination.total/totalPages 가 실제 노출 개수와 일치.
@@ -68,6 +87,7 @@ export async function fetchSearchResults(
     maxPrice: query.maxPrice,
     includeMembersOnly: isMembership,
     correct: query.correct,
+    track: !isCrawler,
   }).catch((error) => {
     console.error("[search] OpenSearch 조회 실패:", error)
     return null

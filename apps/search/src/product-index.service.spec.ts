@@ -2,6 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ProductIndexService } from './product-index.service';
 import { OpenSearchService } from './opensearch.service';
+import { EmbeddingService } from './embedding.service';
+
+// 벡터 없음이 기본 — 키워드 경로만 검증하는 스펙들이 벡터 융합에 영향받지 않게 한다.
+function makeEmbeddingService(vector: number[] | null = null) {
+  return { enabled: vector !== null, embedQuery: jest.fn().mockResolvedValue(vector) };
+}
 
 const MASTER_ID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -62,6 +68,7 @@ describe('ProductIndexService.updateProductReviewStats', () => {
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -115,6 +122,7 @@ describe('ProductIndexService.upsertProduct', () => {
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -174,6 +182,7 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -215,6 +224,7 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService({ REVIEW_SORT_VOLUME_WEIGHT: '0.9' }) },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -276,6 +286,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -336,6 +347,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService('0.25') },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     const customService = customModule.get(ProductIndexService);
@@ -358,6 +370,7 @@ describe('ProductIndexService.searchProducts - relevance without keyword', () =>
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -395,6 +408,7 @@ describe('ProductIndexService.searchProducts - nori collapse guard', () => {
         ProductIndexService,
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
       ],
     }).compile();
     return { service: module.get(ProductIndexService), client };
@@ -467,5 +481,88 @@ describe('ProductIndexService.searchProducts - nori collapse guard', () => {
     await service.searchProducts({ q: '오샤레', sort: 'relevance', page: 2, size: 20 } as any);
 
     expect(analyze).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 벡터 검색이 붙었을 때의 융합 동작. 임베딩이 꺼져 있거나 실패하면 키워드 결과가 그대로여야 하고,
+// 켜져 있으면 RRF 로 두 순위를 합쳐야 한다.
+describe('ProductIndexService.searchProducts - RRF 융합', () => {
+  const hit = (id: string) => ({ _id: id, _source: { master_id: id, version_id: `v-${id}`, name: id } });
+
+  async function buildService(embedding: any, keywordHits: any[], vectorHits: any[]) {
+    const client = makeOpenSearchClient();
+    let call = 0;
+    client.search = jest.fn().mockImplementation((params: any) => {
+      // knn 절이 있으면 벡터 검색이다. 없으면 strict → fallback 순.
+      const isKnn = JSON.stringify(params.body.query).includes('"knn"');
+      if (isKnn) return Promise.resolve({ body: { hits: { hits: vectorHits, total: { value: vectorHits.length } } } });
+      const hits = call++ === 0 ? keywordHits : [];
+      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: embedding },
+      ],
+    }).compile();
+    return { service: module.get(ProductIndexService), client };
+  }
+
+  it('임베딩이 꺼져 있으면 키워드 순서를 그대로 쓴다', async () => {
+    const { service } = await buildService(makeEmbeddingService(), [hit('a'), hit('b')], []);
+
+    const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.items.map((item) => item.productId)).toEqual(['a', 'b']);
+  });
+
+  it('양쪽에서 걸린 상품이 한쪽에서만 1위인 상품보다 위로 온다', async () => {
+    // 키워드 [a, b, c] / 벡터 [c, b] →
+    //   b = 1/62 + 1/62 = 0.03226  (양쪽에서 2위)
+    //   c = 1/63 + 1/61 = 0.03227  (키워드 3위 + 벡터 1위)
+    //   a = 1/61          = 0.01639 (키워드 1위뿐)
+    // a 가 키워드 1위여도 양쪽에 걸린 b·c 에게 밀린다.
+    const { service } = await buildService(
+      makeEmbeddingService([0.1, 0.2]),
+      [hit('a'), hit('b'), hit('c')],
+      [hit('c'), hit('b')],
+    );
+
+    const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.items.map((item) => item.productId)).toEqual(['c', 'b', 'a']);
+  });
+
+  it('관련도 정렬이 아니면 벡터를 섞지 않는다', async () => {
+    const { service } = await buildService(
+      makeEmbeddingService([0.1, 0.2]),
+      [hit('a'), hit('b')],
+      [hit('b'), hit('a')],
+    );
+
+    const result = await service.searchProducts({ q: '펌지', sort: 'price_asc', page: 1, size: 20 } as any);
+
+    expect(result.items.map((item) => item.productId)).toEqual(['a', 'b']);
+  });
+
+  it('관련도 정렬이 아니면 임베딩을 호출조차 하지 않는다', async () => {
+    const embedding = makeEmbeddingService([0.1, 0.2]);
+    const { service } = await buildService(embedding, [hit('a')], [hit('b')]);
+
+    await service.searchProducts({ q: '펌지', sort: 'price_asc', page: 1, size: 20 } as any);
+
+    expect(embedding.embedQuery).not.toHaveBeenCalled();
+  });
+
+  it('벡터 검색이 실패해도 키워드 결과로 계속 간다', async () => {
+    const embedding = { enabled: true, embedQuery: jest.fn().mockRejectedValue(new Error('openai down')) };
+    const { service } = await buildService(embedding, [hit('a'), hit('b')], []);
+
+    await expect(
+      service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any),
+    ).resolves.toMatchObject({ items: [{ productId: 'a' }, { productId: 'b' }] });
   });
 });

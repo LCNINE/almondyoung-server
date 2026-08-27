@@ -23,7 +23,7 @@ export class SearchService {
     const hasKeyword = Boolean(query.q?.trim());
     const isFirstPage = (query.page || 1) === 1;
 
-    if (hasKeyword && isFirstPage) {
+    if (hasKeyword && isFirstPage && query.track !== false) {
       void this.searchKeywordService.recordSearchKeyword(query.q || '', response.pagination.total).catch((error) => {
         this.logger.warn(`Failed to record search keyword: ${error instanceof Error ? error.message : String(error)}`);
       });
