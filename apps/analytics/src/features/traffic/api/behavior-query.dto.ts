@@ -12,12 +12,16 @@ export class BehaviorStatisticsQueryDto {
   @Validate(IsCalendarDateConstraint, { message: 'to 는 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   to: string;
 
-  @ApiPropertyOptional({ example: 20, default: 20, description: '상품별 행동 목록 최대 행 수' })
+  @ApiPropertyOptional({
+    example: 20,
+    default: 20,
+    description: '상품별 행동·랜딩 매출 목록 최대 행 수 — 전체 열람은 큰 limit 1회 조회 후 화면 페이지네이션 (GA4 는 서버 offset 미사용)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
+  @Max(1000)
   limit?: number = 20;
 }
 

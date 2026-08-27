@@ -150,6 +150,23 @@ describeIfDb('CustomerInsightsQuery (실 Postgres)', () => {
     expect(item?.avgCycleDays).toBeCloseTo(25, 1);
   });
 
+  it('재구매 목록 페이지네이션 — limit=1 페이지 걷기가 전체 목록 슬라이스와 일치한다', async () => {
+    const full = await query.getInsights('2030-08-01', '2030-08-31', 200, 3);
+    expect(full.repurchase.totalItems).toBeGreaterThanOrEqual(1);
+
+    const pagesToWalk = Math.min(3, full.repurchase.totalItems);
+    for (let page = 1; page <= pagesToWalk; page += 1) {
+      const paged = await query.getInsights('2030-08-01', '2030-08-31', 1, 3, page);
+      expect(paged.repurchase.items.map((row) => row.masterId)).toEqual([full.repurchase.items[page - 1].masterId]);
+      expect(paged.repurchase.totalItems).toBe(full.repurchase.totalItems);
+      expect(paged.repurchase.page).toBe(page);
+      expect(paged.repurchase.limit).toBe(1);
+    }
+
+    const beyond = await query.getInsights('2030-08-01', '2030-08-31', 200, 3, full.repurchase.totalItems + 1);
+    expect(beyond.repurchase.items).toEqual([]);
+  });
+
   it('등급 전환 — 기간 내 전환 1건과 현재 분포', async () => {
     const result = await query.getInsights('2030-08-01', '2030-08-31');
 

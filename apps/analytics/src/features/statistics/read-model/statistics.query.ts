@@ -59,6 +59,13 @@ export interface ProductRankingRow extends RevenueTotals {
 export interface ProductStatistics {
   range: { from: string; to: string };
   previousRange: { from: string; to: string };
+  page: number;
+  variantPage: number;
+  limit: number;
+  /** 랭킹 전체 상품 수 (기간·채널 필터 적용) */
+  rankingTotalItems: number;
+  /** 옵션별 판매 전체 행 수 (기간·채널 필터 적용) */
+  variantTotalItems: number;
   ranking: ProductRankingRow[];
   /** primary 카테고리 기준 — 다중 카테고리 중복 가산을 피한다 */
   categories: Array<{ categoryId: string; categoryName: string | null; grossRevenue: number; quantitySold: number }>;
@@ -86,6 +93,8 @@ export interface UnsoldProductRow {
 export interface UnsoldProductsResult {
   range: { from: string; to: string };
   total: number;
+  page: number;
+  limit: number;
   items: UnsoldProductRow[];
 }
 
@@ -182,6 +191,8 @@ export class StatisticsQuery {
     sort: 'revenue' | 'quantity' | 'orders' = 'revenue',
     limit = 20,
     order: 'asc' | 'desc' = 'desc',
+    page = 1,
+    variantPage = 1,
   ): Promise<ProductStatistics> {
     this.assertRange(from, to);
     const prev = previousRange(from, to);
@@ -194,22 +205,33 @@ export class StatisticsQuery {
           ? sql`SUM(${aggProductOrderDaily.ordersCount})`
           : sql`SUM(${aggProductOrderDaily.grossRevenue} - ${aggProductOrderDaily.cancelledAmount} - ${aggProductOrderDaily.refundedAmount})`;
 
-    const rankingRows = await this.db
-      .select({
-        masterId: aggProductOrderDaily.masterId,
-        name: dimProductMasters.name,
-        ordersCount: sql<string>`SUM(${aggProductOrderDaily.ordersCount})`,
-        quantitySold: sql<string>`SUM(${aggProductOrderDaily.quantitySold})`,
-        grossRevenue: sql<string>`SUM(${aggProductOrderDaily.grossRevenue})`,
-        cancelledAmount: sql<string>`SUM(${aggProductOrderDaily.cancelledAmount})`,
-        refundedAmount: sql<string>`SUM(${aggProductOrderDaily.refundedAmount})`,
-      })
-      .from(aggProductOrderDaily)
-      .leftJoin(dimProductMasters, eq(dimProductMasters.masterId, aggProductOrderDaily.masterId))
-      .where(where)
-      .groupBy(aggProductOrderDaily.masterId, dimProductMasters.name)
-      .orderBy(order === 'asc' ? sql`${sortExpr} ASC` : sql`${sortExpr} DESC`)
-      .limit(limit);
+    // tiebreaker(masterId ASC)가 없으면 동점 행이 페이지 경계에서 중복·누락된다 — profit 선례와 동일.
+    const [rankingCountRows, rankingRows] = await Promise.all([
+      this.db
+        .select({ value: sql<string>`COUNT(DISTINCT ${aggProductOrderDaily.masterId})` })
+        .from(aggProductOrderDaily)
+        .where(where),
+      this.db
+        .select({
+          masterId: aggProductOrderDaily.masterId,
+          name: dimProductMasters.name,
+          ordersCount: sql<string>`SUM(${aggProductOrderDaily.ordersCount})`,
+          quantitySold: sql<string>`SUM(${aggProductOrderDaily.quantitySold})`,
+          grossRevenue: sql<string>`SUM(${aggProductOrderDaily.grossRevenue})`,
+          cancelledAmount: sql<string>`SUM(${aggProductOrderDaily.cancelledAmount})`,
+          refundedAmount: sql<string>`SUM(${aggProductOrderDaily.refundedAmount})`,
+        })
+        .from(aggProductOrderDaily)
+        .leftJoin(dimProductMasters, eq(dimProductMasters.masterId, aggProductOrderDaily.masterId))
+        .where(where)
+        .groupBy(aggProductOrderDaily.masterId, dimProductMasters.name)
+        .orderBy(
+          order === 'asc' ? sql`${sortExpr} ASC` : sql`${sortExpr} DESC`,
+          sql`${aggProductOrderDaily.masterId} ASC`,
+        )
+        .limit(limit)
+        .offset((page - 1) * limit),
+    ]);
 
     const masterIds = rankingRows.map((row) => row.masterId);
     const previousByMaster = new Map<string, number>();
@@ -253,6 +275,10 @@ export class StatisticsQuery {
     if (channel) {
       variantWhereParts.push(eq(aggVariantOrderDaily.salesChannel, channel));
     }
+    const variantCountPromise = this.db
+      .select({ value: sql<string>`COUNT(DISTINCT ${aggVariantOrderDaily.variantId})` })
+      .from(aggVariantOrderDaily)
+      .where(and(...variantWhereParts));
     const variantRowsPromise = this.db
       .select({
         variantId: aggVariantOrderDaily.variantId,
@@ -274,10 +300,15 @@ export class StatisticsQuery {
         aggVariantOrderDaily.masterId,
         dimProductMasters.name,
       )
-      .orderBy(sql`SUM(${aggVariantOrderDaily.grossRevenue}) DESC`)
-      .limit(limit);
+      .orderBy(sql`SUM(${aggVariantOrderDaily.grossRevenue}) DESC`, sql`${aggVariantOrderDaily.variantId} ASC`)
+      .limit(limit)
+      .offset((variantPage - 1) * limit);
 
-    const [categoryRows, variantRows] = await Promise.all([categoryRowsPromise, variantRowsPromise]);
+    const [categoryRows, variantRows, variantCountRows] = await Promise.all([
+      categoryRowsPromise,
+      variantRowsPromise,
+      variantCountPromise,
+    ]);
 
     // dim 에 이름이 없는 상품(집계 가동 전 발행분)은 주문 라인이 실어온 최신 상품명으로 폴백한다.
     const namelessMasterIds = [
@@ -310,6 +341,11 @@ export class StatisticsQuery {
     return {
       range: { from, to },
       previousRange: prev,
+      page,
+      variantPage,
+      limit,
+      rankingTotalItems: Number(rankingCountRows[0]?.value ?? 0),
+      variantTotalItems: Number(variantCountRows[0]?.value ?? 0),
       ranking,
       categories: categoryRows.map((row) => ({
         categoryId: row.categoryId,
@@ -338,6 +374,7 @@ export class StatisticsQuery {
     to: string,
     channel?: string,
     limit = 50,
+    page = 1,
   ): Promise<UnsoldProductsResult> {
     this.assertRange(from, to);
 
@@ -376,8 +413,9 @@ export class StatisticsQuery {
         })
         .from(dimProductMasters)
         .where(unsoldWhere)
-        .orderBy(sql`3 ASC NULLS FIRST`, dimProductMasters.name)
-        .limit(limit),
+        .orderBy(sql`3 ASC NULLS FIRST`, dimProductMasters.name, dimProductMasters.masterId)
+        .limit(limit)
+        .offset((page - 1) * limit),
     ]);
 
     const namelessMasterIds = itemRows.filter((row) => !row.name).map((row) => row.masterId);
@@ -386,6 +424,8 @@ export class StatisticsQuery {
     return {
       range: { from, to },
       total: Number(totalRows[0]?.total ?? 0),
+      page,
+      limit,
       items: itemRows.map((row) => ({
         masterId: row.masterId,
         name: row.name ?? fallbackNames.get(row.masterId) ?? null,

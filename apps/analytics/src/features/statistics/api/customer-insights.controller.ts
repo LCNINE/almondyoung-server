@@ -24,6 +24,6 @@ export class CustomerInsightsController {
       '코호트 리텐션(to 기준 최근 12개월 첫구매), RFM 분포·세그먼트(전 고객), 상품별 재구매(전 기간 누적), 기간 내 멤버십 등급 전환.',
   })
   getInsights(@Query() query: CustomerInsightsQueryDto): Promise<CustomerInsights> {
-    return this.customerInsightsQuery.getInsights(query.from, query.to, query.limit, query.minBuyers);
+    return this.customerInsightsQuery.getInsights(query.from, query.to, query.limit, query.minBuyers, query.page);
   }
 }

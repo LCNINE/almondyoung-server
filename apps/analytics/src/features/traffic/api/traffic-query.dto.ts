@@ -21,12 +21,16 @@ export class TrafficStatisticsQueryDto {
   @IsIn(['organic', 'all'])
   channelGroup?: 'organic' | 'all' = 'organic';
 
-  @ApiPropertyOptional({ example: 10, default: 10, description: '랜딩페이지·국가 목록 최대 행 수' })
+  @ApiPropertyOptional({
+    example: 10,
+    default: 10,
+    description: '랜딩페이지·국가 목록 최대 행 수 — 전체 열람은 큰 limit 1회 조회 후 화면 페이지네이션 (GA4 는 서버 offset 미사용)',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(50)
+  @Max(1000)
   limit?: number = 10;
 }
 
