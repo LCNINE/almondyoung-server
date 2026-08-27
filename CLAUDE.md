@@ -298,3 +298,8 @@ Canonical defaults (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context layout (`CONTEXT.md` + `docs/adr/` at repo root; created lazily by `/grill-with-docs`). See `docs/agents/domain.md`.
+
+### 검색 0건 미취급 키워드 리포트
+
+고객이 검색했는데 0건이었고 시중엔 파는 상품을 뽑아 소싱 후보 엑셀로 만든다.
+`.claude/skills/search-zero-hit/` (실행 절차는 `scripts/ops/search-zero-hit/README.md`).
