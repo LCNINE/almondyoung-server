@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,14 @@ export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
   const [closeReason, setCloseReason] = useState('');
   const receiveMutation = useReceiveFromPlan();
   const closeMutation = useClosePlanItem();
+
+  // 다이얼로그는 「잔량 포기」 버튼이 setClosingItem(...) 을 직접 불러서 열린다 —
+  // Radix Dialog.Root 는 제어 prop 이 외부에서 true 로 바뀔 때 onOpenChange(true) 를
+  // 부르지 않으므로(내부 발생 닫기에서만 부름), 리셋을 onOpenChange 분기가 아니라
+  // closingItem 자체에 건다. 안 그러면 A 의 사유가 남은 채로 B 다이얼로그가 열린다.
+  useEffect(() => {
+    if (closingItem) setCloseReason('');
+  }, [closingItem]);
 
   // pending 응답의 items에는 planItemId(DB row id)가 없으므로 별도 조회
   const { data: planItemsData } = useInboundPlanItems(
@@ -76,11 +84,9 @@ export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
   };
 
   const handleClosingItemOpenChange = (nextOpen: boolean) => {
-    if (!nextOpen) {
-      setClosingItem(null);
-      return;
-    }
-    setCloseReason('');
+    // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setClosingItem(...)
+    // 직접 호출이다. 여기서는 (Escape·오버레이 클릭 등) 내부 발생 닫기만 처리한다.
+    if (!nextOpen) setClosingItem(null);
   };
 
   const handleCloseItem = async () => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -44,6 +44,16 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   const [cancelReason, setCancelReason] = useState('');
   const { data: detail } = usePurchaseOrder(row?.id ?? '');
   const cancelMutation = useCancelPurchaseOrder();
+
+  // 다이얼로그는 「발주 취소」 버튼이 setCancelOpen(true) 를 직접 불러서 열린다 —
+  // Radix Dialog.Root 는 제어 prop 이 외부에서 true 로 바뀔 때 onOpenChange(true) 를
+  // 부르지 않으므로(내부 발생 닫기에서만 부름), 리셋을 onOpenChange 분기가 아니라
+  // cancelOpen 자체에 건다. 이 hook 은 이른 리턴(!po) 보다 앞에 있어야 한다 — 매
+  // 렌더 무조건 호출돼야 Rules of Hooks 를 지킨다.
+  useEffect(() => {
+    if (cancelOpen) setCancelReason('');
+  }, [cancelOpen]);
+
   const po = detail ?? row;
 
   if (!po) return null;
@@ -57,8 +67,10 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   const canCancel = po.status === 'created' || po.status === 'confirmed';
 
   const handleCancelOpenChange = (nextOpen: boolean) => {
+    // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setCancelOpen(true)
+    // 직접 호출이다(위 useEffect 가 리셋을 담당). 여기서는 (Escape·오버레이 클릭 등)
+    // 내부 발생 닫기만 처리한다.
     setCancelOpen(nextOpen);
-    if (nextOpen) setCancelReason('');
   };
 
   const handleCancelSubmit = async () => {
