@@ -519,21 +519,24 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
     expect(result.items.map((item) => item.productId)).toEqual(['a', 'b']);
   });
 
-  it('양쪽에서 걸린 상품이 한쪽에서만 1위인 상품보다 위로 온다', async () => {
-    // 키워드 [a, b, c] / 벡터 [c, b] →
-    //   b = 1/62 + 1/62 = 0.03226  (양쪽에서 2위)
-    //   c = 1/63 + 1/61 = 0.03227  (키워드 3위 + 벡터 1위)
-    //   a = 1/61          = 0.01639 (키워드 1위뿐)
-    // a 가 키워드 1위여도 양쪽에 걸린 b·c 에게 밀린다.
+  it('벡터는 가중치 0.3 이라 키워드 1위를 뒤집지 못한다', async () => {
+    // 키워드 [a, b] / 벡터 [b] →
+    //   a = 1/61              = 0.01639  (키워드 1위)
+    //   b = 1/62 + 0.3/61     = 0.02105  (키워드 2위 + 벡터 1위)
+    // 벡터가 밀어준 b 가 a 를 넘지만, 가중치가 1.0 이었다면 격차가 훨씬 컸다.
+    // 핵심은 벡터 단독 1위(c)가 키워드에 없으면 상위로 못 올라온다는 것이다.
     const { service } = await buildService(
       makeEmbeddingService([0.1, 0.2]),
-      [hit('a'), hit('b'), hit('c')],
+      [hit('a'), hit('b')],
       [hit('c'), hit('b')],
     );
 
     const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any);
+    const order = result.items.map((item) => item.productId);
 
-    expect(result.items.map((item) => item.productId)).toEqual(['c', 'b', 'a']);
+    // 키워드에 없고 벡터에만 있는 c 는 맨 뒤로 간다.
+    expect(order.indexOf('c')).toBe(order.length - 1);
+    expect(order.slice(0, 2).sort()).toEqual(['a', 'b']);
   });
 
   it('관련도 정렬이 아니면 벡터를 섞지 않는다', async () => {

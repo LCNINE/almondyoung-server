@@ -50,6 +50,10 @@ const NORI_COLLAPSE_MIN_LENGTH = 3;
 const NORI_ANALYZE_CACHE_LIMIT = 2000;
 // RRF 상수. 1위와 2위의 격차를 완충한다.
 const RRF_K = 60;
+// 벡터 순위에 곱하는 가중치. 1.0(동등)으로 배포했더니 "펌지"의 1위가 실제 펌지에서
+// "펌지 대용 리본"으로 밀렸다 — 벡터가 펌제·펌스틱을 "펌 관련"으로 뭉쳐 끌어올린 탓이다.
+// 0.3 이면 평가셋 적중은 그대로(10/17)면서 인기 검색어 1위 변경이 57 → 42 로 줄었다.
+const RRF_VECTOR_WEIGHT = 0.3;
 const VECTOR_POOL_LIMIT = 100;
 
 // 자모 오타 절을 태울 최소 길이(공백 제외 음절 수).
@@ -500,25 +504,25 @@ export class ProductIndexService implements OnModuleInit {
 
   /**
    * Reciprocal Rank Fusion. BM25 는 상한이 없고 코사인은 0~1 이라 점수를 그대로 더할 수 없어,
-   * 순위의 역수를 더한다. 양쪽에서 다 걸린 상품이 위로 올라온다. 지금은 동등 가중이다.
+   * 순위의 역수를 더한다. 양쪽에서 다 걸린 상품이 위로 올라온다.
    */
   private fuseWithRrf(keywordHits: any[], vectorHits: any[], limit: number): any[] {
     const scores = new Map<string, { score: number; hit: any }>();
 
-    const accumulate = (hits: any[]): void => {
+    const accumulate = (hits: any[], weight: number): void => {
       hits.forEach((hit, index) => {
         const key = this.getHitKey(hit);
         if (!key) {
           return;
         }
         const entry = scores.get(key) ?? { score: 0, hit };
-        entry.score += 1 / (RRF_K + index + 1);
+        entry.score += weight / (RRF_K + index + 1);
         scores.set(key, entry);
       });
     };
 
-    accumulate(keywordHits);
-    accumulate(vectorHits);
+    accumulate(keywordHits, 1);
+    accumulate(vectorHits, RRF_VECTOR_WEIGHT);
 
     return [...scores.values()]
       .sort((a, b) => b.score - a.score)
