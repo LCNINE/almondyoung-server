@@ -75,4 +75,11 @@ describe('qwertyToHangul', () => {
     expect(qwertyToHangul('Perma')).toBe('');
     expect(qwertyToHangul('3D')).toBe('');
   });
+
+  it('조합 불가능한 자모가 나오는 영문도 던지지 않고 빈 문자열을 준다', () => {
+    // 라이브 500 을 낸 실제 검색어들 — es-hangul 이 "Invalid hangul Characters" 로 터졌다.
+    expect(qwertyToHangul('elationpassport')).toBe('');
+    expect(qwertyToHangul('how to heal stiff muscles')).toBe('');
+    expect(qwertyToHangul('hotel tales')).toBe('');
+  });
 });

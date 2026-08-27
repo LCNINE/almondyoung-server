@@ -23,7 +23,14 @@ export function toJamo(value: string): string {
 // "vjak" → "퍼마". 완성된 음절만 나올 때만 인정한다 — 진짜 영문은 자모가 섞인다
 // ("Perma" → "ㅖㄷ금"). 호출부는 원문 검색을 함께 유지할 것.
 export function qwertyToHangul(value: string): string {
-  const converted = normalizeHangul(convertQwertyToHangul(value).trim());
+  // es-hangul 은 조합 불가능한 자모 시퀀스를 만나면 throw 한다 — "elationpassport" 는
+  // ㅜ 다음에 ㅔ 가 와서 "Invalid hangul Characters" 로 터졌고, 그대로 검색 500 이 됐다.
+  let converted: string;
+  try {
+    converted = normalizeHangul(convertQwertyToHangul(value).trim());
+  } catch {
+    return '';
+  }
   // 이미 한글인 검색어는 변환기가 그대로 돌려주므로 아래 가드를 통과한다. 교정이 아니니 버린다.
   if (converted === normalizeHangul(value).trim()) {
     return '';
