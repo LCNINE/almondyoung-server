@@ -548,6 +548,15 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
     expect(result.items.map((item) => item.productId)).toEqual(['a', 'b']);
   });
 
+  it('관련도 정렬이 아니면 임베딩을 호출조차 하지 않는다', async () => {
+    const embedding = makeEmbeddingService([0.1, 0.2]);
+    const { service } = await buildService(embedding, [hit('a')], [hit('b')]);
+
+    await service.searchProducts({ q: '펌지', sort: 'price_asc', page: 1, size: 20 } as any);
+
+    expect(embedding.embedQuery).not.toHaveBeenCalled();
+  });
+
   it('벡터 검색이 실패해도 키워드 결과로 계속 간다', async () => {
     const embedding = { enabled: true, embedQuery: jest.fn().mockRejectedValue(new Error('openai down')) };
     const { service } = await buildService(embedding, [hit('a'), hit('b')], []);

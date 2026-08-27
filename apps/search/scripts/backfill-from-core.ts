@@ -17,12 +17,13 @@ import {
 } from '../../core/src/modules/catalog/schema/catalog.schema';
 import {
   DEFAULT_PRODUCTS_INDEX,
+  EMBEDDING_MODEL,
+  NAME_VECTOR_DIMENSION,
   PRODUCTS_INDEX_MAPPINGS,
   PRODUCTS_INDEX_SETTINGS,
   SearchProductDocument,
 } from '../src/types/product-document.type';
 import { compactText, toEmbeddingText, toJamo } from '../src/utils/text.utils';
-import { EMBEDDING_MODEL, NAME_VECTOR_DIMENSION } from '../src/types/product-document.type';
 
 type BackfillOptions = {
   batchSize: number;

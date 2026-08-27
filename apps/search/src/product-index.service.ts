@@ -192,6 +192,8 @@ export class ProductIndexService implements OnModuleInit {
 
     if (hasKeyword) {
       const noriCollapsed = await this.isNoriCollapsed(query.q!.trim());
+      // 관련도 정렬일 때만 벡터를 태운다. 가격·최신순은 융합하지 않으므로 임베딩 호출이 낭비다.
+      const useVector = query.sort === 'relevance';
       const [strictResponse, fallbackResponse, vectorHits] = await Promise.all([
         this.executeSearch({
           index,
@@ -207,16 +209,15 @@ export class ProductIndexService implements OnModuleInit {
           from: 0,
           size: this.keywordResultPoolLimit,
         }),
-        this.searchByVector(index, query),
+        useVector ? this.searchByVector(index, query) : Promise.resolve([]),
       ]);
 
       const strictHits = strictResponse.body.hits.hits as any[];
       const fallbackHits = fallbackResponse.body.hits.hits as any[];
       const keywordHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
 
-      // 관련도 정렬일 때만 벡터를 섞는다. 가격·최신순은 정렬 기준이 따로 있어 융합이 의미 없다.
       const mergedHits =
-        vectorHits.length > 0 && query.sort === 'relevance'
+        vectorHits.length > 0
           ? this.fuseWithRrf(keywordHits, vectorHits, this.keywordResultPoolLimit)
           : keywordHits;
 

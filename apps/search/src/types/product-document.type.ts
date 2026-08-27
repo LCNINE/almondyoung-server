@@ -17,7 +17,7 @@ export const PRODUCT_SEARCH_SYNONYMS: string[] = [
   '생장제,영양제',
 ];
 
-// 3072 차원을 그대로 쓰면 1만 건에 123MB 라 dimensions 로 줄여 받는다. 바꾸면 전체 재색인.'
+// 3072 차원을 그대로 쓰면 1만 건에 123MB 라 dimensions 로 줄여 받는다. 바꾸면 전체 재색인.
 export const NAME_VECTOR_DIMENSION = 1024;
 export const EMBEDDING_MODEL = 'text-embedding-3-large';
 
