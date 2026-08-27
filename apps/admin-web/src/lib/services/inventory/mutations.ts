@@ -810,9 +810,18 @@ export const useReceiveFromPlan = () => {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
     mutationFn: (data: ReceiveFromPlanDto, idempotencyKey) => inboundClient.plans.receive({ ...data, idempotencyKey }),
-    onSuccess: () => {
+    // 입고가 이제 계획(2층)뿐 아니라 발주(3층, purchase_orders.status)까지 파생으로
+    // 밀 수 있다 — 전량 입고 직후 이 무효화가 없으면 발주 화면이 옛 상태(confirmed)
+    // 로 남는다(최종 전체 리뷰 발견 M1). 형제인 useClosePlanItem 은 이미 양쪽을
+    // 무효화한다 — 여기도 lineExecutionInvalidationKeys 로 맞춘다. 그 함수는 id
+    // 인자를 쓰지 않으므로(항상 같은 루트 키 묶음을 반환) planItemId 를 그대로
+    // 넘겨도 무방하다.
+    onSuccess: (_res, data) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
+      for (const queryKey of lineExecutionInvalidationKeys(data.planItemId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
     },
   });
 };
