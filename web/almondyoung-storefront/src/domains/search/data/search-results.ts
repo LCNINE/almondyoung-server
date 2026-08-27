@@ -44,16 +44,15 @@ const emptyResult = (size: number): SearchProductResult => ({
   pagination: { page: 1, size, total: 0, totalPages: 0 },
 })
 
-// bingbot 이 자기 검색 쿼리를 우리 /search?q= 에 그대로 던진다. 2026-08-26 액세스 로그의
-// /search 요청 199건 중 87건이 bingbot 이었고, 검색어는 "passport processing time current"
-// 처럼 카탈로그와 무관했다. 이게 추천검색어와 0건 리포트로 새어 0건 비율을 8% → 40% 로
-// 밀어올렸다. 페이지는 정상 응답하되 통계에만 안 남기면 된다.
+// bingbot 이 자기 검색 쿼리를 우리 /search?q= 에 던진다. 2026-08-26 액세스 로그 기준
+// /search 요청의 44% 가 bingbot 이었고, 이게 추천검색어와 0건 리포트로 새어 0건 비율을
+// 8% → 40% 로 밀어올렸다. 페이지는 정상 응답하되 통계에만 안 남긴다.
 const CRAWLER_UA = /bot|crawl|spider|slurp|bingpreview/i
 
 async function isCrawlerRequest(): Promise<boolean> {
   try {
     const requestHeaders = await headers()
-    // x-crawler 는 캐시 계층이 붙여줄 때만 있다. 없으면 UA 로 판별한다.
+    // x-crawler 는 캐시 계층이 붙여줄 때만 있다.
     if (requestHeaders.get("x-crawler") === "1") return true
     return CRAWLER_UA.test(requestHeaders.get("user-agent") ?? "")
   } catch {
