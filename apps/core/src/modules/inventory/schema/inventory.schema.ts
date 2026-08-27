@@ -97,7 +97,7 @@ export const matchingStrategyEnum = pgEnum('matching_strategy', ['void', 'varian
 
 export const settingKeyEnum = pgEnum('setting_key', ['use_sub_barcode', 'use_expiry_separation']);
 export const poTypeEnum = pgEnum('po_type', ['domestic', 'foreign']);
-export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received']);
+export const poStatusEnum = pgEnum('po_status', ['created', 'confirmed', 'received', 'cancelled']);
 export const poAuditStatusEnum = pgEnum('po_audit_status', [
   'draft', // 초안 - Not yet submitted
   'pending_audit', // 검토 대기 - Submitted for approval
@@ -111,9 +111,10 @@ export const poLineStatusEnum = pgEnum('po_line_status', [
 ]);
 export const inboundStatusEnum = pgEnum('inbound_status', [
   'pending', // 입고 대기 - Initial state
-  'applied', // 입고신청 - Applied for inbound
-  'receiving', // 입고 중 - Currently receiving
+  'applied', // 입고신청 - Applied for inbound  ⚠️ 코드 참조 0건. 되살리지 않는다(#724 항목 7)
+  'receiving', // 입고 중 - Currently receiving  ⚠️ 코드 참조 0건. 되살리지 않는다(#724 항목 7)
   'confirmed', // 입고 완료 - Completed
+  'short_closed', // 잔량 포기 — 사람이 "이만 기다린다" 고 결정한 종결. 아이템 전용.
 ]);
 export const stockTypeEnum = pgEnum('stock_type', ['physical', 'infinite', 'drop_shipped', 'consignment']);
 
@@ -1887,6 +1888,11 @@ export const purchaseOrders = pgTable('purchase_orders', {
   auditedBy: uuid('audited_by'),
   auditNotes: text('audit_notes'),
 
+  /** 발주 취소 기록. status='cancelled' 인 행에서만 채워진다. */
+  cancelledReason: text('cancelled_reason'),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  cancelledBy: uuid('cancelled_by'),
+
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -2093,6 +2099,10 @@ export const inboundPlanItems = pgTable(
     status: inboundStatusEnum('status').notNull().default('pending'),
     /** 품목별 도착예정일. 계획 단위(inbound_plans.expected_date)로는 라인마다 다른 ETA 를 담을 수 없다. */
     expectedDate: date('expected_date', { mode: 'string' }),
+    /** 잔량 포기 기록. status='short_closed' 인 행에서만 채워진다. */
+    closedReason: text('closed_reason'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

@@ -1,7 +1,12 @@
 import { ConflictError } from '@app/shared';
 
-/** drizzle enum 컬럼은 문자열 유니온이다. TS enum 멤버로 비교하지 않는다. */
-export type PurchaseOrderHeaderStatus = 'created' | 'confirmed' | 'received';
+/**
+ * drizzle enum 컬럼은 문자열 유니온이다. TS enum 멤버로 비교하지 않는다.
+ * `cancelled` 은 #724 항목 7 에서 추가된 값이다 — 이 함수는 아직 그 상태로부터의
+ * 전이를 별도로 다루지 않고, 아래 catch-all 이 `created` 와 동일하게 거부한다
+ * (취소된 발주는 입고 완료로 전이할 수 없다는 점에서 이미 올바른 동작이다).
+ */
+export type PurchaseOrderHeaderStatus = 'created' | 'confirmed' | 'received' | 'cancelled';
 
 /**
  * 헤더 status 는 라인에서 파생된다(`refreshHeaderStatus`). 사람이 직접 쓸 수 있는 값은
