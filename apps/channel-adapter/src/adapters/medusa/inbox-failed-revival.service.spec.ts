@@ -68,8 +68,14 @@ describe('InboxFailedRevivalService', () => {
       errorMessage: null,
       failedAt: null,
     });
-    // 상품이 아직 없는 m-missing(e3) 은 깨우지 않는다 — 깨우면 attempts 만 또 소진한다.
-    expect(renderSql(updates[0].where)).toContain('$1, $2');
+    // 상품이 아직 없는 m-missing(e3) 은 깨우지 않는다.
+    const where = renderSql(updates[0].where);
+    expect(where).toContain('$4, $5');
+    // 조회 때와 같은 조건을 UPDATE 에도 건다.
+    expect(where).toContain('"status" = $1');
+    expect(where).toContain('"event_type" = $2');
+    expect(where).toContain('"error_message" like $3');
+    expect(where).toContain('not exists');
   });
 
   it('상품이 하나도 안 생겼으면 UPDATE 를 아예 하지 않는다', async () => {
@@ -96,7 +102,7 @@ describe('InboxFailedRevivalService', () => {
     await run(new InboxFailedRevivalService(dbService, medusaClient));
 
     expect(updates).toHaveLength(1);
-    expect(renderSql(updates[0].where)).toContain('$1');
+    expect(renderSql(updates[0].where)).toContain('$4');
   });
 
   it('product-not-found 실패만, ProductSellableQuantityChanged 만 고른다', async () => {
@@ -109,6 +115,13 @@ describe('InboxFailedRevivalService', () => {
     expect(sql).toContain('"status" = $1');
     expect(sql).toContain('"event_type" = $2');
     expect(sql).toContain('"error_message" like $3');
+    // 같은 variant 에 더 최신 이벤트가 있으면 되살리지 않는다.
+    expect(sql.replace(/\s+/g, ' ')).toContain(
+      'not exists ( select 1 from "inbox_events" newer where newer.aggregate_id = "inbox_events"."aggregate_id"',
+    );
+    expect(sql.replace(/\s+/g, ' ')).toContain(
+      'coalesce(newer.event_occurred_at, newer.created_at) > coalesce("inbox_events"."event_occurred_at", "inbox_events"."created_at")',
+    );
     expect(medusaClient.findProductByHandle).not.toHaveBeenCalled();
   });
 
