@@ -46,12 +46,33 @@ export function sortLinesForExecution(lines: PurchaseOrderLineDto[]): PurchaseOr
 }
 
 /**
- * received 는 입고 경로가 소유한 종결 상태다. core 의
- * lockPurchaseOrderForLineExecution 이 그 상태의 라인 실행을 400 으로 막으므로,
+ * received/cancelled 는 종결 상태다. core 의 isTerminal 과 대칭이다 —
+ * lockPurchaseOrderForLineExecution 이 이 두 상태의 라인 실행을 400 으로 막으므로,
  * 화면은 버튼을 눌러 실패를 보여주는 대신 아예 감춘다.
+ *
+ * cancelled 를 빠뜨렸던 적이 있다(최종 전체 리뷰 발견 I1) — 그때는 취소된 발주에
+ * PUT /:id/lines(라인 일괄 수정)가 admin-web 안내대로 통과해, 종결된 발주의 라인만
+ * 조용히 바뀌었다.
  */
+export function isTerminalPoStatus(poStatus: PurchaseOrderStatus): boolean {
+  return poStatus === 'received' || poStatus === 'cancelled';
+}
+
 export function canExecuteLines(poStatus: PurchaseOrderStatus): boolean {
-  return poStatus !== 'received';
+  return !isTerminalPoStatus(poStatus);
+}
+
+/**
+ * 입고가 시작된 발주는 취소가 아니라 잔량 포기로 닫는다 — core 가 409 로 막는다
+ * (이미 입고 있음). 종결 상태에서도 당연히 취소할 수 없다.
+ *
+ * ⚠️ 이 조건은 "부분 입고" 를 걸러내지 못한다 — 부분 입고된 발주는 status 가
+ * `confirmed` 로 남아 있어 이 함수가 true 를 반환하고, 버튼이 뜬 채 사용자가 core
+ * 의 409 를 직접 만난다. core 응답을 먼저 읽지 않고는 화면만으로 판별할 수 없다
+ * (진행 중인 입고 여부는 라인 목록에 없다).
+ */
+export function canCancel(poStatus: PurchaseOrderStatus): boolean {
+  return !isTerminalPoStatus(poStatus);
 }
 
 export function isLineExecutable(

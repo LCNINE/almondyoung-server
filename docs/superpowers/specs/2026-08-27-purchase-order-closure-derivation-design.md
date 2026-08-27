@@ -143,6 +143,16 @@ purchase_orders.status
 `lockPurchaseOrderForLineExecution`(`:338`)의 `received` 거부도 `cancelled` 을 포함해야 한다(기존 가드가 `BadRequestError` = 400 이므로 새 값도 400 으로 맞춘다 — 신설 라우트의 409 와 다른 것은 여기가 "라인 실행 거부" 이지 "종결 재시도" 가 아니기 때문이다) —
 빠뜨리면 취소된 발주에 라인 실행이 들어가 계획에 아이템이 붙고 `inbound_pending_qty` 가 부푼다.
 
+**되돌림이 없다 — 1층(아이템)에도 적용된다.** `receiveFromPlan`(`inbound.service.ts:887`)의
+`newStatus` 계산이 아이템 상태 가드 없이 `newReceived >= expectedQty ? 'confirmed' : 'pending'`
+으로 짜여 있으면, 이미 `short_closed`(잎 종결)된 아이템에 뒤늦은 입고가 들어왔을 때 상태가
+`pending` 으로 되살아난다 — 계획은 이미 `confirmed` 로 닫혔고 발주도 `received` 로 굳어 있는데
+아이템 하나만 `pending` 으로 되돌아가는 **pending 아이템 / confirmed 계획 / received 발주** 3층
+불일치가 생긴다(최종 전체 리뷰 발견). `inbound-plan-closure.rules.ts` 의 `isItemClosed` 로 이미
+종결된 아이템은 상태를 보존해야 한다: `isItemClosed(item.status) ? item.status : (파생값)`.
+`confirmed` 아이템에 대한 초과 입고 동작(그대로 `confirmed` 유지)은 우연히도 같은 코드로
+이미 보존된다.
+
 **계획이 없는 발주는 `received` 로 가지 않는다.** 계획은 첫 라인 실행에서 생기고
 (`ensurePlanForPurchaseOrder`), `unavailable` 라인은 아이템을 만들지 않는다. 따라서 전 라인이
 `unavailable` 인 발주에는 계획 자체가 없다 → `confirmed` 로 남는다(§2.2). 이건 버그가 아니라 결정이다.
@@ -264,17 +274,43 @@ PUT /purchase-orders/:id/status      — §2.5. 소비자 0곳. 파생이 대체
 
 🔴 **불변식: PO 행 → 라인 행.** 어느 경로든 이 순서로만 잠근다.
 
-2026-08-27 실측으로 **ABBA 는 발생하지 않는다**:
+> 🔴 **2026-08-27 최종 전체 리뷰 정정**: 아래 원래 논증("ABBA 는 발생하지 않는다")은
+> **틀렸다.** 개별 태스크 리뷰들은 명시적 `.for('update')` 호출만 셌고, Postgres 가
+> FK 검사로 거는 **암묵적 락**을 세지 않았다 — 그 구멍이 전체를 한 번에 보는 최종
+> 리뷰에서만 드러났다. `inbound_plan_items` 는 `inbound_plans` 를 FK 로 참조하므로,
+> 라인 실행 경로의 아이템 **insert** 자체가 그 자리에서 부모(계획) 행에 `FOR KEY
+> SHARE` 를 건다. 즉 라인 실행 경로도 결국 계획 행을 건드린다 — "아이템 insert 전용
+> 이라 계획 행을 안 건드린다" 는 전제가 성립하지 않았다.
+>
+> 계획 행 잠금이 `FOR UPDATE` 였을 때 실제 사이클:
+> ```
+> T_line (라인 실행): PO(FOR UPDATE) 보유 → 아이템 insert → 계획 행 FKS 대기
+> T_recv (입고):      계획 행(FOR UPDATE) 보유 → PO(FOR UPDATE) 대기
+> ```
+> `FOR UPDATE` 는 `FOR KEY SHARE` 와 충돌하므로 이 두 대기가 사이클을 이루고,
+> Postgres 가 한쪽을 `40P01` 로 죽인다 — 도메인 예외가 아닌 드라이버 에러라 409 가
+> 아니라 **500** 으로 나간다. 로컬 PG16 격리 DB 에서 실제로 재현됐다.
+>
+> **고침**: `closePlanIfDone` 의 계획 행 잠금을 `FOR UPDATE` → **`FOR NO KEY UPDATE`**
+> 로 낮췄다. `FOR NO KEY UPDATE` 는 `FOR KEY SHARE` 와 **충돌하지 않으므로** 그
+> 간선이 열려 사이클이 닫히지 않는다. 동시에 `FOR NO KEY UPDATE` 끼리는 여전히
+> 상호 배제라, 이 잠금이 원래 막으려던 경합(§4·리뷰 Finding 1 — 같은 계획의 서로
+> 다른 아이템을 동시에 입고하는 두 트랜잭션이 서로의 미커밋을 못 보고 계획을 영영
+> 안 닫는 것)은 그대로 막힌다.
 
-- 라인 실행 경로는 `PO(FOR UPDATE)` → 라인 → 새 아이템 **insert** 순이다.
-- 입고·잎 종결 경로는 기존 아이템 → 계획 → `PO(UPDATE)` 순이다.
-- 두 경로가 공유하는 자원은 **PO 행 하나뿐**이다. 라인 실행은 `addInboundPlanItems` 가
-  **insert 전용**(`inbound.service.ts:761`)이라 기존 아이템 행을 결코 잠그지 않기 때문에
-  대기 사이클이 닫히지 않는다.
+아래는 정정 후 실제 그림이다:
 
-> ⚠️ **다음 사람에게**: `addInboundPlanItems` 를 upsert 로 바꾸는 순간 위 논증이 무너지고
-> ABBA 가 실재하게 된다(`40P01` → 500). 바꾸려면 입고 경로가 아이템을 건드리기 전에 PO 행을
-> 먼저 잠그도록 같이 고칠 것.
+- 라인 실행 경로는 `PO(FOR UPDATE)` → 라인 → 새 아이템 **insert**(→ 계획 행 `FOR KEY
+  SHARE`, FK 가 암묵적으로 건다) 순이다.
+- 입고·잎 종결 경로는 기존 아이템 → 계획(`FOR NO KEY UPDATE`) → `PO(FOR UPDATE)` 순이다.
+- 두 경로가 공유하는 자원은 PO 행과 계획 행 **둘**이다. `FOR NO KEY UPDATE` vs `FOR KEY
+  SHARE` 는 비충돌 조합이라 대기 사이클이 닫히지 않는다.
+
+> ⚠️ **다음 사람에게**: `addInboundPlanItems` 를 upsert 로 바꿔 **기존** 아이템 행을
+> `FOR UPDATE`/`FOR NO KEY UPDATE` 로 잠그게 되면 위 논증이 다시 무너질 수 있다 —
+> 그 잠금 종류와 계획 행 잠금(`FOR NO KEY UPDATE`)의 충돌 여부를 다시 따질 것. 계획
+> 행 잠금 자체를 `FOR UPDATE` 로 되돌리는 것도 마찬가지로 위험하다 — 그게 바로 이
+> 결함을 만든 원인(`e04a21633`)이었다.
 
 발주 취소는 PO 를 잠그고 아이템을 **읽기만** 한다(MVCC 스냅샷 읽기라 행 잠금을 기다리지 않는다).
 

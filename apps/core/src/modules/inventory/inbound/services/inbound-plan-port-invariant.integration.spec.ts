@@ -6,6 +6,7 @@ import { DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { makeDb, inRollbackTx } from '../../../fulfillment/services/__support__';
 import { InboundService } from './inbound.service';
+import { PurchaseOrderClosureAdapter } from '../../procurement/services/purchase-order-closure.adapter';
 
 /**
  * 계획 생성 포트가 해외/국내 불변식을 스스로 지키는지 고정한다.
@@ -44,7 +45,15 @@ describeIfDb('입고 계획 포트가 불변식을 소유한다 (DB integration)
    * (inbound.service.idempotency.spec.ts 와 같은 패턴).
    */
   function buildInboundService(trx: DbTx): InboundService {
-    return new InboundService(boundDbService(trx), {} as never, {} as never, {} as never, {} as never, {} as never);
+    return new InboundService(
+      boundDbService(trx),
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      new PurchaseOrderClosureAdapter(),
+    );
   }
 
   interface Fixture {

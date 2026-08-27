@@ -1,15 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { usePurchaseOrder } from '@/lib/services/inventory';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { usePurchaseOrder, useCancelPurchaseOrder } from '@/lib/services/inventory';
 import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
 import { PurchaseOrderFormDialog } from '../purchase-order-form-dialog';
 import { PurchaseOrderLineList } from '../line-list';
-import { canExecuteLines, formatLineProgress, summarizeLines, toCalendarDate } from '../../line-execution-model';
+import { canCancel, canExecuteLines, formatLineProgress, summarizeLines, toCalendarDate } from '../../line-execution-model';
+import { toast } from 'sonner';
 
 type Props = {
   row: PurchaseOrderDto | null;
@@ -21,6 +25,7 @@ const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
   created: '생성됨',
   confirmed: '확정됨',
   received: '입고완료',
+  cancelled: '취소됨',
 };
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
@@ -35,7 +40,20 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
 
 export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   const [editLinesOpen, setEditLinesOpen] = useState(false);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const { data: detail } = usePurchaseOrder(row?.id ?? '');
+  const cancelMutation = useCancelPurchaseOrder();
+
+  // 다이얼로그는 「발주 취소」 버튼이 setCancelOpen(true) 를 직접 불러서 열린다 —
+  // Radix Dialog.Root 는 제어 prop 이 외부에서 true 로 바뀔 때 onOpenChange(true) 를
+  // 부르지 않으므로(내부 발생 닫기에서만 부름), 리셋을 onOpenChange 분기가 아니라
+  // cancelOpen 자체에 건다. 이 hook 은 이른 리턴(!po) 보다 앞에 있어야 한다 — 매
+  // 렌더 무조건 호출돼야 Rules of Hooks 를 지킨다.
+  useEffect(() => {
+    if (cancelOpen) setCancelReason('');
+  }, [cancelOpen]);
+
   const po = detail ?? row;
 
   if (!po) return null;
@@ -44,6 +62,33 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   // 요청 라인이 하나도 없으면 수정할 대상이 없다 — 새 SKU 를 얹는 것도
   // 종결된 발주에 요청 라인을 되살리는 셈이라 막는다.
   const canEditLines = canExecuteLines(po.status) && progress.requested > 0;
+  // 판단(어떤 상태에서 취소 가능한가)은 line-execution-model.canCancel 이 소유한다.
+  // ⚠️ 부분 입고된 발주는 status 가 여전히 confirmed 라 버튼이 뜨고, 사용자는
+  // core 의 409(이미 입고 있음)를 직접 만난다 — 버튼을 숨겨서 막는 게 아니다
+  // (canCancel 의 jsdoc 참조, 최종 전체 리뷰 발견 M4).
+  const showCancelButton = canCancel(po.status);
+
+  const handleCancelOpenChange = (nextOpen: boolean) => {
+    // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setCancelOpen(true)
+    // 직접 호출이다(위 useEffect 가 리셋을 담당). 여기서는 (Escape·오버레이 클릭 등)
+    // 내부 발생 닫기만 처리한다.
+    setCancelOpen(nextOpen);
+  };
+
+  const handleCancelSubmit = async () => {
+    const reason = cancelReason.trim();
+    if (!reason) {
+      toast.error('취소 사유를 입력해주세요.');
+      return;
+    }
+    try {
+      await cancelMutation.mutateAsync({ poId: po.id, data: { reason } });
+      toast.success('발주를 취소했습니다.');
+      setCancelOpen(false);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '발주 취소에 실패했습니다.');
+    }
+  };
 
   return (
     <>
@@ -90,11 +135,18 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                     <span className="text-xs text-muted-foreground">{formatLineProgress(progress)}</span>
                   )}
                 </div>
-                {canEditLines && (
-                  <Button size="sm" variant="outline" onClick={() => setEditLinesOpen(true)}>
-                    라인 수정
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {canEditLines && (
+                    <Button size="sm" variant="outline" onClick={() => setEditLinesOpen(true)}>
+                      라인 수정
+                    </Button>
+                  )}
+                  {showCancelButton && (
+                    <Button size="sm" variant="destructive" onClick={() => setCancelOpen(true)}>
+                      발주 취소
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <PurchaseOrderLineList po={po} />
@@ -108,6 +160,45 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
         onOpenChange={setEditLinesOpen}
         editLinesFor={po}
       />
+
+      <Dialog open={cancelOpen} onOpenChange={handleCancelOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>발주 취소</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 py-2">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              이 발주를 취소합니다. <strong>되돌릴 수 없습니다.</strong> 이미 입고된 라인이
+              있으면 취소할 수 없습니다 — 그때는 잔량 포기로 남은 라인을 닫아주세요.
+            </p>
+
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="cancel-po-reason">취소 사유 (필수, 500자 이내)</Label>
+              <Textarea
+                id="cancel-po-reason"
+                maxLength={500}
+                placeholder="오발주 / 중복 발주 등"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCancelOpen(false)}>
+              닫기
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCancelSubmit}
+              disabled={cancelMutation.isPending || !cancelReason.trim()}
+            >
+              {cancelMutation.isPending ? '처리 중…' : '발주 취소'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

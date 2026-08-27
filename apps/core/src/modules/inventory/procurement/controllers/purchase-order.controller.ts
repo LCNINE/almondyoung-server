@@ -19,7 +19,6 @@ import { PurchaseOrderCartService } from '../services/purchase-order-cart.servic
 import { ReorderSuggestionReader } from '../services/reorder-suggestion.reader';
 import {
   CreatePurchaseOrderDto,
-  UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
   AddToCartDto,
   UpdateCartItemDto,
@@ -32,6 +31,7 @@ import {
 } from '../dto/purchase-order.dto';
 import { PurchaseOrderResponseDto } from '../dto/purchase-order/purchase-order-response.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
+import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 
 interface JwtPayload {
   userId: string;
@@ -220,30 +220,6 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.getPurchaseOrderById(id);
   }
 
-  @Put(':id/status')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
-  @ApiOperation({ summary: '발주 종결 (입고 완료)' })
-  @ApiResponse({
-    status: 200,
-    description: '발주가 종결됨',
-    type: PurchaseOrderResponseDto,
-  })
-  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
-  @ApiResponse({
-    status: 409,
-    description: '아직 실행되지 않은 라인이 남았거나 이미 종결된 발주입니다.',
-  })
-  async updatePurchaseOrderStatus(
-    @Param('id') id: string,
-    @Body() updateDto: UpdatePurchaseOrderStatusDto,
-    @User() user: JwtPayload,
-  ): Promise<PurchaseOrderResponse> {
-    // @User() 를 실제로 넘긴다 — 누가 종결했는지 로그에 남는다. (과거 심사
-    // 엔드포인트들은 이걸 빠뜨려 submitted_for_audit_by / audited_by 가 라이브에서
-    // 영원히 NULL 로 남았다 — 그 엔드포인트는 이후 제거됨.)
-    return this.purchaseOrderService.updatePurchaseOrderStatus(id, updateDto, user.userId);
-  }
-
   @Put(':id/lines')
   @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 수정 (created/confirmed 상태)' })
@@ -297,5 +273,21 @@ export class PurchaseOrderController {
     @User() user: JwtPayload,
   ): Promise<PurchaseOrderResponse> {
     return this.purchaseOrderService.markLineUnavailable(poId, skuId, dto, user.userId);
+  }
+
+  @Post(':id/cancel')
+  @RequireScopes(INVENTORY_SCOPE.MANAGE)
+  @ApiOperation({ summary: '발주 취소 (입고 전에만)' })
+  @ApiParam({ name: 'id', description: '발주 ID' })
+  @ApiResponse({ status: 200, description: '발주가 취소됨', type: PurchaseOrderResponseDto })
+  @ApiResponse({ status: 409, description: '이미 종결됐거나 입고가 있는 발주' })
+  @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
+  @HttpCode(HttpStatus.OK)
+  async cancelPurchaseOrder(
+    @Param('id') id: string,
+    @Body() dto: CancelPurchaseOrderDto,
+    @User() user: JwtPayload,
+  ): Promise<PurchaseOrderResponse> {
+    return this.purchaseOrderService.cancelPurchaseOrder(id, dto, user.userId);
   }
 }

@@ -56,6 +56,8 @@ import type {
   UpdatePurchaseOrderLinesRequest,
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
+  CancelPurchaseOrderRequest,
+  ClosePlanItemRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -686,6 +688,46 @@ export const useMarkPurchaseOrderLineUnavailable = () => {
   });
 };
 
+export const useCancelPurchaseOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      poId,
+      data,
+    }: {
+      poId: string;
+      data: CancelPurchaseOrderRequest;
+    }) => purchaseOrdersClient.cancel(poId, data),
+    onSettled: (_res, _err, { poId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(poId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+};
+
+export const useClosePlanItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      planId,
+      itemId,
+      data,
+    }: {
+      planId: string;
+      itemId: string;
+      data: ClosePlanItemRequest;
+    }) => inboundClient.closePlanItem(planId, itemId, data),
+    // 잎 종결은 발주 헤더까지 파생으로 밀 수 있다 — 입고 키만 무효화하면
+    // 발주 목록이 옛 상태를 보여준다. 라인 실행과 같은 키 묶음을 쓴다.
+    onSettled: (_res, _err, { planId }) => {
+      for (const queryKey of lineExecutionInvalidationKeys(planId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
+    },
+  });
+};
+
 export const useAddToCart = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -768,9 +810,18 @@ export const useReceiveFromPlan = () => {
   const queryClient = useQueryClient();
   return useIdempotentMutation({
     mutationFn: (data: ReceiveFromPlanDto, idempotencyKey) => inboundClient.plans.receive({ ...data, idempotencyKey }),
-    onSuccess: () => {
+    // 입고가 이제 계획(2층)뿐 아니라 발주(3층, purchase_orders.status)까지 파생으로
+    // 밀 수 있다 — 전량 입고 직후 이 무효화가 없으면 발주 화면이 옛 상태(confirmed)
+    // 로 남는다(최종 전체 리뷰 발견 M1). 형제인 useClosePlanItem 은 이미 양쪽을
+    // 무효화한다 — 여기도 lineExecutionInvalidationKeys 로 맞춘다. 그 함수는 id
+    // 인자를 쓰지 않으므로(항상 같은 루트 키 묶음을 반환) planItemId 를 그대로
+    // 넘겨도 무방하다.
+    onSuccess: (_res, data) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
+      for (const queryKey of lineExecutionInvalidationKeys(data.planItemId)) {
+        queryClient.invalidateQueries({ queryKey });
+      }
     },
   });
 };

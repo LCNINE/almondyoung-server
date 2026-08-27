@@ -26,6 +26,7 @@ import type {
   InboundActionResponse,
   InboundLineMemoResponse,
   WithIdempotencyKey,
+  ClosePlanItemRequest,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/inbound`;
@@ -97,6 +98,18 @@ export const inboundClient = {
 
   cancel: async (data: WithIdempotencyKey<CancelInboundDto>): Promise<InboundActionResponse> => {
     const response = await client.post(`${BASE}/cancel`, data);
+    return response.data;
+  },
+
+  closePlanItem: async (
+    planId: string,
+    itemId: string,
+    data: ClosePlanItemRequest
+  ): Promise<{ success: true }> => {
+    const response = await client.post(
+      `${BASE}/plans/${encodeURIComponent(planId)}/items/${encodeURIComponent(itemId)}/close`,
+      data
+    );
     return response.data;
   },
 

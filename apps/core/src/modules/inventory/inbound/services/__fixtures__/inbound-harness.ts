@@ -12,6 +12,7 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { outboxPublisherFor } from '../../../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { InboundService } from '../inbound.service';
 import { InboundPutawayReader } from '../inbound-putaway.reader';
+import { PurchaseOrderClosureAdapter } from '../../../procurement/services/purchase-order-closure.adapter';
 
 export type Database = PostgresJsDatabase<typeof wmsSchema>;
 
@@ -58,7 +59,15 @@ function buildWiring(database: Database) {
 
 export function makeInboundService(database: Database): InboundService {
   const { dbService, skuCatalog, command, location, eventStore, idempotency } = buildWiring(database);
-  return new InboundService(dbService, skuCatalog as never, command, location, eventStore, idempotency);
+  return new InboundService(
+    dbService,
+    skuCatalog as never,
+    command,
+    location,
+    eventStore,
+    idempotency,
+    new PurchaseOrderClosureAdapter(),
+  );
 }
 
 export function makeInboundPutawayReader(database: Database): InboundPutawayReader {

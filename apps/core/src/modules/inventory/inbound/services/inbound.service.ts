@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { earliestExpectedDate } from '../../shared/dates/earliest-expected-date';
@@ -12,6 +19,7 @@ import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
+import { ClosePlanItemDto } from '../dto/close-plan-item.dto';
 import {
   CancelInboundDto,
   PutawayRequestDto,
@@ -24,6 +32,8 @@ import {
 } from '../dto/simple-inbound.dto';
 import { isTodaySeoul } from '../../shared/services/time.util';
 import { SupplierResponseDto } from '../../suppliers/dto/supplier-response.dto';
+import { isItemClosed, isPlanClosed } from './inbound-plan-closure.rules';
+import { PURCHASE_ORDER_CLOSURE, PurchaseOrderClosurePort } from '../../shared/ports/purchase-order-closure.port';
 
 @Injectable()
 export class InboundService {
@@ -36,6 +46,8 @@ export class InboundService {
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
     private readonly idempotency: InventoryIdempotencyService,
+    @Inject(PURCHASE_ORDER_CLOSURE)
+    private readonly poClosure: PurchaseOrderClosurePort,
   ) {}
 
   private get db() {
@@ -871,12 +883,28 @@ export class InboundService {
         .returning();
 
       // 예정 누계/상태 갱신
+      //
+      // 🔴 이미 종결된 아이템(confirmed/short_closed)의 상태는 보존한다(최종 전체
+      // 리뷰 발견) — 이 메서드엔 아이템 상태 가드가 없어서, 잎 종결(short_closed)된
+      // 아이템에 뒤늦은 입고 요청이 들어오면 파생값 계산만으로는 상태가 'pending'
+      // 으로 되살아난다. 그러면 계획은 이미 confirmed, 발주도 received 로 굳었는데
+      // 아이템 하나만 pending 인 3층 불일치가 생기고, 그 수량은 inbound_pending_qty
+      // 로 다시 잡히지만 GET /inbound/pending 은 계획 헤더로 걸러 화면엔 영원히 안
+      // 보인다. 도달 경로: Tauri 창고앱은 planItemId 만 보내므로 화면이 stale 하면
+      // 이미 닫힌 아이템 id 로 요청이 나갈 수 있다. short_closed 에 예외를 던지지
+      // 않는다 — 그건 API 계약 추가라 별도 판단이 필요하다.
       const newReceived = (item.receivedQty ?? 0) + dto.quantity;
-      const newStatus = newReceived >= item.expectedQty ? 'confirmed' : 'pending';
+      const newStatus = isItemClosed(item.status)
+        ? item.status
+        : newReceived >= item.expectedQty
+          ? 'confirmed'
+          : 'pending';
       await tx
         .update(wmsTables.inboundPlanItems)
         .set({ receivedQty: newReceived, status: newStatus })
         .where(eq(wmsTables.inboundPlanItems.id, item.id));
+
+      await this.closePlanIfDone(tx, item.planId, plan.linkedPurchaseOrderId);
 
       await tx
         .update(wmsTables.inboundReceipts)
@@ -899,6 +927,121 @@ export class InboundService {
       // 바로 적치를 걸 수 있도록 여기서 돌려준다.
       return { success: true, receiptId: receipt.id, lineId: line.id };
     }, tx);
+  }
+
+  /**
+   * 잔량을 포기하고 아이템을 종결한다 (잎 종결).
+   *
+   * 사람의 쓰기는 **잎에서만** 일어난다 — 계획 헤더를 직접 닫으면 "헤더는 아이템에서
+   * 파생된다" 가 깨져 파생 경로가 둘이 된다(#724 항목 7 스펙 §2.1).
+   * 미달 사실은 expected_qty/received_qty 로 영구히 남고, 여기 기록이 그 판단의 출처다.
+   */
+  async closePlanItem(
+    planItemId: string,
+    dto: ClosePlanItemDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<{ success: true }> {
+    return this.dbService.run(async (trx) => {
+      // 아이템 행을 FOR UPDATE 로 잠근다 — 평범한 SELECT 로는 동시에 진행 중인
+      // receiveFromPlan 의 미커밋 UPDATE(pending → confirmed) 를 못 보고, 전량
+      // 입고된 아이템이 "공급처 결품" 사유로 덮어써질 수 있다(#724 항목 7 리뷰
+      // Finding 1 과 같은 계열의 경합). 잠금 순서는 closePlanIfDone 과 동일하게
+      // 아이템 행 → 계획 행 → 발주 행을 유지한다.
+      const [item] = await trx
+        .select({
+          id: wmsTables.inboundPlanItems.id,
+          planId: wmsTables.inboundPlanItems.planId,
+          status: wmsTables.inboundPlanItems.status,
+        })
+        .from(wmsTables.inboundPlanItems)
+        .where(eq(wmsTables.inboundPlanItems.id, planItemId))
+        .limit(1)
+        .for('update');
+      if (!item) throw new NotFoundError(`Inbound plan item not found: ${planItemId}`);
+
+      // 재실행 금지 = 자연 멱등 (항목 9 선례). 멱등키를 따로 도입하지 않는다.
+      if (item.status !== 'pending') {
+        throw new ConflictError(`Inbound plan item is already closed: ${item.status}`);
+      }
+
+      const [plan] = await trx
+        .select({
+          id: wmsTables.inboundPlans.id,
+          linkedPurchaseOrderId: wmsTables.inboundPlans.linkedPurchaseOrderId,
+        })
+        .from(wmsTables.inboundPlans)
+        .where(eq(wmsTables.inboundPlans.id, item.planId))
+        .limit(1);
+      if (!plan) throw new NotFoundError(`Inbound plan not found: ${item.planId}`);
+
+      await trx
+        .update(wmsTables.inboundPlanItems)
+        .set({
+          status: 'short_closed',
+          closedReason: dto.reason,
+          closedAt: new Date(),
+          closedBy: userId,
+        })
+        .where(eq(wmsTables.inboundPlanItems.id, planItemId));
+
+      await this.closePlanIfDone(trx, plan.id, plan.linkedPurchaseOrderId);
+      return { success: true as const };
+    }, tx);
+  }
+
+  /**
+   * 계획의 아이템이 전부 종결됐으면 계획을 닫고, 조달에 통보한다 (2층 → 3층 파생).
+   *
+   * 입고와 잎 종결 **둘 다** 여기로 온다 — 파생 규칙이 한 곳에 있어야 두 경로가
+   * 갈라지지 않는다. 발주를 종결할지는 조달이 판단한다(#724 항목 7 스펙 §5).
+   *
+   * 🔴 **잠금 순서: 아이템 행(호출자가 이미 UPDATE 로 잡고 있다) → 계획 행 → 발주
+   * 행(어댑터가 잠근다).** 계획 행을 먼저 잠가야 하는 이유: 아이템을 잠금 없는
+   * SELECT 로만 읽으면, 같은 계획의 서로 다른 아이템을 동시에 입고하는 두
+   * 트랜잭션이 READ COMMITTED 아래서 서로 상대의 미커밋 갱신을 못 보고 "아직 pending
+   * 아이템이 남았다" 고 각자 판단해 계획을 영영 안 닫는다(#724 항목 7 리뷰 Finding 1).
+   * 계획 행을 잠그고 두 번째 트랜잭션이 첫 번째의 커밋을 기다렸다가 새 스냅샷에서
+   * 다시 읽어 정확히 한 번 닫는다.
+   *
+   * 🔴 **`FOR UPDATE` 가 아니라 `FOR NO KEY UPDATE` 여야 한다(최종 전체 리뷰에서
+   * 발견 — FK 가 거는 암묵 락을 세지 않아 개별 태스크 리뷰에서는 안 보였다).**
+   * `addInboundPlanItems`(라인 실행 경로)는 이 계획 행에 대해 insert 전용이라 기존
+   * *아이템* 행은 잠그지 않지만, `inbound_plan_items` 는 `inbound_plans` 를 FK 로
+   * 참조하므로 그 insert 자체가 Postgres 의 FK 검사로 부모(계획) 행에 암묵적으로
+   * `FOR KEY SHARE` 를 건다 — 이건 놓치기 쉬운 사실이다. `FOR KEY SHARE` 는 `FOR
+   * UPDATE` 와는 충돌하지만 `FOR NO KEY UPDATE` 와는 **충돌하지 않는다**. 계획 락이
+   * `FOR UPDATE` 였을 때는:
+   *   T_line(라인 실행): PO FOR UPDATE 보유 → 아이템 insert → 계획 행 FKS 대기
+   *   T_recv(입고):      계획 행 FOR UPDATE 보유 → PO FOR UPDATE 대기
+   * 로 ABBA 사이클이 닫혀 Postgres 가 한쪽을 40P01(lock_timeout/deadlock)로 죽였다 —
+   * 도메인 예외가 아닌 드라이버 에러라 409 가 아니라 500 으로 나갔다(로컬 PG16 에서
+   * 재현됨). `FOR NO KEY UPDATE` 로 바꾸면 이 간선이 열려 사이클이 안 닫히면서도,
+   * `FOR NO KEY UPDATE` 끼리는 여전히 상호 배제이므로 위 문단이 막으려는 "두 입고가
+   * 서로의 미커밋을 못 봐 계획을 영영 안 닫는" 경합은 그대로 막힌다.
+   */
+  private async closePlanIfDone(tx: DbTx, planId: string, linkedPurchaseOrderId: string): Promise<void> {
+    const [plan] = await tx
+      .select({ id: wmsTables.inboundPlans.id })
+      .from(wmsTables.inboundPlans)
+      .where(eq(wmsTables.inboundPlans.id, planId))
+      .limit(1)
+      .for('no key update');
+    if (!plan) return;
+
+    const items = await tx
+      .select({ status: wmsTables.inboundPlanItems.status })
+      .from(wmsTables.inboundPlanItems)
+      .where(eq(wmsTables.inboundPlanItems.planId, planId));
+
+    if (!isPlanClosed(items.map((i) => i.status))) return;
+
+    await tx
+      .update(wmsTables.inboundPlans)
+      .set({ status: 'confirmed', updatedAt: new Date() })
+      .where(eq(wmsTables.inboundPlans.id, planId));
+
+    await this.poClosure.onPlanClosed(linkedPurchaseOrderId, tx);
   }
 
   // 즉시 적치(원위치 → 목적지)

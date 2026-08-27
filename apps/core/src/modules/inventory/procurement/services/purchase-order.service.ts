@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../schema/inventory.schema';
 import {
   CreatePurchaseOrderDto,
-  UpdatePurchaseOrderStatusDto,
   UpdatePurchaseOrderLinesDto,
   CreatePurchaseOrderFromCartDto,
   PurchaseOrderResponse,
@@ -10,6 +9,7 @@ import {
   PurchaseOrderType,
 } from '../dto/purchase-order.dto';
 import { OrderPurchaseOrderLineDto, MarkLineUnavailableDto } from '../dto/purchase-order/execute-line.dto';
+import { CancelPurchaseOrderDto } from '../dto/purchase-order/cancel-purchase-order.dto';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { PurchaseOrderReader } from './purchase-order.reader';
 
@@ -48,15 +48,6 @@ export class PurchaseOrderService {
     return this.manager.createPurchaseOrderFromCart(createDto, userId, tx);
   }
 
-  updatePurchaseOrderStatus(
-    poId: string,
-    updateDto: UpdatePurchaseOrderStatusDto,
-    userId: string,
-    tx?: DbTx,
-  ): Promise<PurchaseOrderResponse> {
-    return this.manager.updatePurchaseOrderStatus(poId, updateDto, userId, tx);
-  }
-
   orderLine(
     poId: string,
     skuId: string,
@@ -75,6 +66,15 @@ export class PurchaseOrderService {
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
     return this.manager.markLineUnavailable(poId, skuId, dto, userId, tx);
+  }
+
+  cancelPurchaseOrder(
+    poId: string,
+    dto: CancelPurchaseOrderDto,
+    userId: string,
+    tx?: DbTx,
+  ): Promise<PurchaseOrderResponse> {
+    return this.manager.cancelPurchaseOrder(poId, dto, userId, tx);
   }
 
   updatePurchaseOrderLines(

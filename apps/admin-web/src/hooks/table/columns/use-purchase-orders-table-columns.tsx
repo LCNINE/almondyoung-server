@@ -3,7 +3,7 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { DateCell } from '@/components/table/table-cells/common';
-import type { PurchaseOrderDto } from '@/lib/types/dto/inventory';
+import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,10 +13,13 @@ import {
 
 const columnHelper = createColumnHelper<PurchaseOrderDto>();
 
-const STATUS_LABELS: Record<string, string> = {
+// exhaustive Record 로 좁혀둔다 — 드로어(purchase-order-detail-drawer/index.tsx)의
+// STATUS_LABELS 와 글자 그대로 동일해야 한다. 상태값이 늘 때 여기가 컴파일 에러로 잡힌다.
+const STATUS_LABELS: Record<PurchaseOrderStatus, string> = {
   created: '생성됨',
   confirmed: '확정됨',
   received: '입고완료',
+  cancelled: '취소됨',
 };
 
 type RowActions = {

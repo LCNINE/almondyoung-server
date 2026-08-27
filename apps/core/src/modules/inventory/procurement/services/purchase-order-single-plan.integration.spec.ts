@@ -9,6 +9,7 @@ import { PurchaseOrderService } from './purchase-order.service';
 import { PurchaseOrderReader } from './purchase-order.reader';
 import { PurchaseOrderManager } from './purchase-order.manager';
 import { InboundService } from '../../inbound/services/inbound.service';
+import { PurchaseOrderClosureAdapter } from './purchase-order-closure.adapter';
 
 /**
  * 포트 조립. 3계층(#724 항목 5-b) 이후 `PurchaseOrderService` 는 위임만 하므로 통합
@@ -80,6 +81,7 @@ describeIfDb('해외 발주는 입고 계획을 하나만 만든다 (DB integrat
       {} as never,
       {} as never,
       {} as never,
+      new PurchaseOrderClosureAdapter(),
     );
     return buildPurchaseOrderPort(dbService, inboundService);
   }

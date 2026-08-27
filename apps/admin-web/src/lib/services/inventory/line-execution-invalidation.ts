@@ -12,10 +12,13 @@ import { inventoryQueryKeys } from './query-keys';
  * 첫 실행에서 ensurePlanForPurchaseOrder 로 입고 계획을 만들고, 이후 실행마다
  * 계획 아이템을 붙인다. 발주 키만 무효화하면 입고 대기 화면이 옛 목록을 보여준다.
  *
- * poId 파라미터는 지금은 안 쓰지만 시그니처에 남겨둔다 — 호출부가 이미 넘기고
+ * `id` 파라미터는 지금은 안 쓰지만 시그니처에 남겨둔다 — 호출부가 이미 넘기고
  * 있고, 나중에 발주별로 무효화를 좁혀야 할 때(예: 다른 발주 캐시는 건드리지
- * 않기) 다시 필요해질 수 있다.
+ * 않기) 다시 필요해질 수 있다. 이름을 `poId` 가 아니라 `id` 로 둔 이유: 이 함수는
+ * 안 쓰는 인자라 호출부마다 실제로 다른 종류의 id 를 넘긴다 — `useCancelPurchaseOrder`
+ * 는 poId, `useClosePlanItem`/`useReceiveFromPlan` 은 planId/planItemId 를 넘긴다.
+ * 어차피 쓰지 않으므로 어느 쪽을 넘겨도 동작은 같다(최종 전체 리뷰 발견 M3).
  */
-export function lineExecutionInvalidationKeys(poId: string): readonly (readonly unknown[])[] {
+export function lineExecutionInvalidationKeys(id: string): readonly (readonly unknown[])[] {
   return [inventoryQueryKeys.purchaseOrdersRoot, inventoryQueryKeys.inbounds];
 }
