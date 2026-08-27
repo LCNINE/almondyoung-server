@@ -35,16 +35,26 @@ export default function CustomerStatisticsTemplate() {
   }, [tiersWithPlans]);
 
   // 멤버십 추이는 (날짜, tier) 행으로 오므로 tier 를 시리즈 컬럼으로 피벗한다.
+  // 차트 선은 SERIES_COLORS 4색 제약으로 최신 회원 수 상위 4개 등급만 — 전체는 아래 표로.
   const membershipSeries = useMemo(() => {
     const rows = data?.membershipTrend ?? [];
-    const tiers = [...new Set(rows.map((row) => row.tierId))];
+    const latestByTier = new Map<string, { membersCount: number; aggDate: string }>();
+    for (const row of rows) {
+      const current = latestByTier.get(row.tierId);
+      if (!current || row.aggDate >= current.aggDate) {
+        latestByTier.set(row.tierId, { membersCount: row.membersCount, aggDate: row.aggDate });
+      }
+    }
+    const tiers = [...latestByTier.entries()]
+      .sort((a, b) => b[1].membersCount - a[1].membersCount)
+      .map(([tierId]) => tierId);
     const byDate = new Map<string, Record<string, number | string>>();
     for (const row of rows) {
       const entry = byDate.get(row.aggDate) ?? { aggDate: row.aggDate };
       entry[row.tierId] = row.membersCount;
       byDate.set(row.aggDate, entry);
     }
-    return { tiers, rows: [...byDate.values()] };
+    return { tiers, rows: [...byDate.values()], latestByTier };
   }, [data?.membershipTrend]);
 
   const lifetime = data?.lifetime;
@@ -120,7 +130,11 @@ export default function CustomerStatisticsTemplate() {
 
           <ChartCard
             title="멤버십 회원 수 추이"
-            description="일별 스냅샷 (활성 기준). 스냅샷 크론 가동 이후 날짜만 존재합니다."
+            description={`일별 스냅샷 (활성 기준). 스냅샷 크론 가동 이후 날짜만 존재합니다.${
+              membershipSeries.tiers.length > 4
+                ? ` 차트는 회원 수 상위 4개 등급만 — 외 ${membershipSeries.tiers.length - 4}개 등급은 아래 표에서 확인하세요.`
+                : ''
+            }`}
             isLoading={isLoading}
             isEmpty={!data || membershipSeries.rows.length === 0}
             emptyText="아직 기록된 스냅샷이 없습니다"
@@ -145,6 +159,28 @@ export default function CustomerStatisticsTemplate() {
                 ))}
               </LineChart>
             </ResponsiveContainer>
+            {membershipSeries.tiers.length > 0 ? (
+              <div className="mt-3 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">등급 (전체)</th>
+                      <th className="py-1.5 text-right">최신 스냅샷 회원 수</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {membershipSeries.tiers.map((tier) => (
+                      <tr key={tier} className="border-b last:border-0">
+                        <td className="py-1.5 font-medium text-gray-900">{tierLabel(tier)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatCount(membershipSeries.latestByTier.get(tier)?.membersCount)}명
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

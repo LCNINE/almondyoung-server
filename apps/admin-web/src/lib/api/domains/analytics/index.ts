@@ -44,6 +44,11 @@ export interface ProductRankingRow extends RevenueTotals {
 export interface ProductStatistics {
   range: { from: string; to: string };
   previousRange: { from: string; to: string };
+  page: number;
+  variantPage: number;
+  limit: number;
+  rankingTotalItems: number;
+  variantTotalItems: number;
   ranking: ProductRankingRow[];
   categories: Array<{ categoryId: string; categoryName: string | null; grossRevenue: number; quantitySold: number }>;
   variants: Array<{
@@ -64,6 +69,8 @@ export interface ProductStatisticsQuery extends StatisticsRangeQuery {
   sort?: ProductSort;
   limit?: number;
   order?: ProductSortOrder;
+  page?: number;
+  variantPage?: number;
 }
 
 export interface UnsoldProductRow {
@@ -76,6 +83,8 @@ export interface UnsoldProductRow {
 export interface UnsoldProductsResult {
   range: { from: string; to: string };
   total: number;
+  page: number;
+  limit: number;
   items: UnsoldProductRow[];
 }
 
@@ -107,6 +116,7 @@ export interface CustomerInsightsQuery {
   to: string;
   limit?: number;
   minBuyers?: number;
+  page?: number;
 }
 
 export interface CohortRow {
@@ -136,6 +146,9 @@ export interface CustomerInsights {
   };
   repurchase: {
     minBuyers: number;
+    page: number;
+    limit: number;
+    totalItems: number;
     items: Array<{
       masterId: string;
       name: string | null;
@@ -329,15 +342,18 @@ export const analyticsApi = {
     if (query.sort) params.set('sort', query.sort);
     if (query.limit) params.set('limit', String(query.limit));
     if (query.order) params.set('order', query.order);
+    if (query.page) params.set('page', String(query.page));
+    if (query.variantPage) params.set('variantPage', String(query.variantPage));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/products?${params.toString()}`);
     return res.data;
   },
 
   getUnsoldProducts: async (
-    query: StatisticsRangeQuery & { limit?: number }
+    query: StatisticsRangeQuery & { limit?: number; page?: number }
   ): Promise<UnsoldProductsResult> => {
     const params = new URLSearchParams(rangeQs(query));
     if (query.limit) params.set('limit', String(query.limit));
+    if (query.page) params.set('page', String(query.page));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/products/unsold?${params.toString()}`);
     return res.data;
   },
@@ -362,6 +378,7 @@ export const analyticsApi = {
     const params = new URLSearchParams({ from: query.from, to: query.to });
     if (query.limit) params.set('limit', String(query.limit));
     if (query.minBuyers) params.set('minBuyers', String(query.minBuyers));
+    if (query.page) params.set('page', String(query.page));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/customers/insights?${params.toString()}`);
     return res.data;
   },

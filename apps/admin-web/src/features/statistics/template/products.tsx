@@ -1,10 +1,14 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { useProductStatistics, useUnsoldProducts } from '@/lib/services/analytics';
+import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList } from '../components/widgets';
 import { changeRate, formatCount, formatKrw, formatPercent, useStatisticsRange } from '../shared';
+
+const PAGE_SIZE = 50;
 
 const SORT_OPTIONS = [
   { value: 'revenue', label: '순매출순' },
@@ -25,12 +29,38 @@ export default function ProductStatisticsTemplate() {
   const sort = (searchParams.get('sort') as 'revenue' | 'quantity' | 'orders') ?? 'revenue';
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
 
-  const { data, isLoading, isError } = useProductStatistics({ ...range, sort, limit: 20, order });
-  const unsold = useUnsoldProducts({ from: range.from, to: range.to, channel: range.channel, limit: 50 });
+  const [page, setPage] = useState(1);
+  const [variantPage, setVariantPage] = useState(1);
+  const [unsoldPage, setUnsoldPage] = useState(1);
+
+  // 조회 조건이 바뀌면 페이지가 범위를 벗어날 수 있다 — 1페이지로 되돌린다
+  useEffect(() => {
+    setPage(1);
+    setVariantPage(1);
+    setUnsoldPage(1);
+  }, [range.from, range.to, range.channel]);
+
+  const { data, isLoading, isError } = useProductStatistics({
+    ...range,
+    sort,
+    limit: PAGE_SIZE,
+    order,
+    page,
+    variantPage,
+  });
+  const unsold = useUnsoldProducts({
+    from: range.from,
+    to: range.to,
+    channel: range.channel,
+    limit: PAGE_SIZE,
+    page: unsoldPage,
+  });
 
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set(key, value);
+    setPage(1);
+    setVariantPage(1);
     router.replace(`${pathname}?${params.toString()}`);
   };
 
@@ -101,7 +131,7 @@ export default function ProductStatisticsTemplate() {
                     const rate = changeRate(row.netRevenue, row.previousNetRevenue);
                     return (
                       <tr key={row.masterId} className="border-b last:border-0">
-                        <td className="py-1.5 text-gray-400">{index + 1}</td>
+                        <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
                         <td className="py-1.5">
                           <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
                         </td>
@@ -124,13 +154,18 @@ export default function ProductStatisticsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={data?.rankingTotalItems}
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              unitLabel="개 상품"
+            />
           </ChartCard>
 
           <ChartCard
             title="기간 내 무판매 상품"
-            description={`판매중(활성) 상품 중 조회 기간에 판매가 0건인 상품입니다. 마지막 판매일이 오래된 순 · 최대 50개 표시${
-              unsold.data ? ` · 총 ${formatCount(unsold.data.total)}개` : ''
-            }`}
+            description="판매중(활성) 상품 중 조회 기간에 판매가 0건인 상품입니다. 마지막 판매일이 오래된 순."
             isLoading={unsold.isLoading}
             isEmpty={!unsold.data || unsold.data.items.length === 0}
           >
@@ -146,7 +181,7 @@ export default function ProductStatisticsTemplate() {
                 <tbody>
                   {(unsold.data?.items ?? []).map((row, index) => (
                     <tr key={row.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{index + 1}</td>
+                      <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
                       <td className="py-1.5">
                         <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
                       </td>
@@ -158,6 +193,13 @@ export default function ProductStatisticsTemplate() {
                 </tbody>
               </table>
             </div>
+            <PaginationBar
+              totalItems={unsold.data?.total}
+              page={unsoldPage}
+              pageSize={PAGE_SIZE}
+              onPageChange={setUnsoldPage}
+              unitLabel="개 상품"
+            />
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -201,6 +243,13 @@ export default function ProductStatisticsTemplate() {
                   </tbody>
                 </table>
               </div>
+              <PaginationBar
+                totalItems={data?.variantTotalItems}
+                page={variantPage}
+                pageSize={PAGE_SIZE}
+                onPageChange={setVariantPage}
+                unitLabel="개 옵션"
+              />
             </ChartCard>
           </div>
         </div>
