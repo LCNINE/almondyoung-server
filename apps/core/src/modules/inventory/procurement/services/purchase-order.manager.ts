@@ -19,11 +19,15 @@ import { PurchaseOrderReader } from './purchase-order.reader';
 /**
  * 발주의 검증·비즈니스 로직·DB 쓰기가 전부 여기 산다.
  *
- * 🔴 **잠금 순서 불변식: PO 행 → 라인 행. 어느 경로든 이 순서로만 잠근다.**
- * 이 파일에 발주 쓰기를 추가하는 편집은 PO 행을 먼저 잡는다. 순서가 뒤집히면 두 경로가
- * 만나는 순간 Postgres 가 ABBA 교착으로 한쪽을 40P01 로 죽이고, 그건 도메인 예외가 아니라
- * 드라이버 에러라 409 가 아니라 **500** 으로 나간다. 취득 지점 3곳에 테스트가 없고 이
- * 주석만이 방어선이다 — 지우지 말 것.
+ * 🔴 **잠금 순서 불변식: PO 행 → 라인(`purchase_order_lines`) 행. 어느 경로든 이
+ * 순서로만 잠근다.** "라인" 은 발주 라인(`purchase_order_lines`)만 가리킨다 —
+ * 입고 아이템(`inbound_plan_items`)은 다른 테이블이고 다른 규칙을 따른다: 취소
+ * (`cancelPurchaseOrder`)가 읽는 것은 후자이며, 그건 잠그지 않고 MVCC 스냅샷으로만
+ * 읽는다(§ 아래 해당 메서드 주석 참조). 이 파일에 발주 쓰기를 추가하는 편집은 PO
+ * 행을 먼저 잡는다. 순서가 뒤집히면 두 경로가 만나는 순간 Postgres 가 ABBA 교착으로
+ * 한쪽을 40P01 로 죽이고, 그건 도메인 예외가 아니라 드라이버 에러라 409 가 아니라
+ * **500** 으로 나간다. 취득 지점 3곳에 테스트가 없고 이 주석만이 방어선이다 —
+ * 지우지 말 것.
  *
  * 경계는 ADR-0032 가 소유한다:
  * - 발주는 공급사 → 출발 창고 입고까지만 소유하고 거기서 종결한다.
@@ -477,8 +481,11 @@ export class PurchaseOrderManager {
         throw new NotFoundError(`Purchase order ${poId} not found`);
       }
 
-      // 2. received 상태는 수정 불가
-      if (po.status === 'received') {
+      // 2. 종결(received/cancelled) 상태는 수정 불가. inventory 전체에서 남았던
+      //    유일한 `=== 'received'` 비교였다 — cancelled 발주가 이 문을 통과해 라인이
+      //    조용히 바뀌었다(최종 전체 리뷰 발견 I1). refreshHeaderStatus 는 isTerminal
+      //    로 조기 반환하므로 헤더 status 는 cancelled 로 남은 채 라인만 바뀐다.
+      if (isTerminal(po.status)) {
         throw new BadRequestError('Cannot modify purchase order lines after fully received');
       }
 

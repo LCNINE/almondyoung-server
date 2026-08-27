@@ -12,7 +12,7 @@ import { usePurchaseOrder, useCancelPurchaseOrder } from '@/lib/services/invento
 import type { PurchaseOrderDto, PurchaseOrderStatus } from '@/lib/types/dto/inventory';
 import { PurchaseOrderFormDialog } from '../purchase-order-form-dialog';
 import { PurchaseOrderLineList } from '../line-list';
-import { canExecuteLines, formatLineProgress, summarizeLines, toCalendarDate } from '../../line-execution-model';
+import { canCancel, canExecuteLines, formatLineProgress, summarizeLines, toCalendarDate } from '../../line-execution-model';
 import { toast } from 'sonner';
 
 type Props = {
@@ -62,9 +62,11 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
   // 요청 라인이 하나도 없으면 수정할 대상이 없다 — 새 SKU 를 얹는 것도
   // 종결된 발주에 요청 라인을 되살리는 셈이라 막는다.
   const canEditLines = canExecuteLines(po.status) && progress.requested > 0;
-  // 입고가 시작된 발주는 취소가 아니라 잔량 포기로 닫는다 — core 가 409 로 막지만
-  // 버튼을 숨겨 그 409 를 사용자가 만나지 않게 한다.
-  const canCancel = po.status === 'created' || po.status === 'confirmed';
+  // 판단(어떤 상태에서 취소 가능한가)은 line-execution-model.canCancel 이 소유한다.
+  // ⚠️ 부분 입고된 발주는 status 가 여전히 confirmed 라 버튼이 뜨고, 사용자는
+  // core 의 409(이미 입고 있음)를 직접 만난다 — 버튼을 숨겨서 막는 게 아니다
+  // (canCancel 의 jsdoc 참조, 최종 전체 리뷰 발견 M4).
+  const showCancelButton = canCancel(po.status);
 
   const handleCancelOpenChange = (nextOpen: boolean) => {
     // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setCancelOpen(true)
@@ -139,7 +141,7 @@ export function PurchaseOrderDetailDrawer({ row, open, onOpenChange }: Props) {
                       라인 수정
                     </Button>
                   )}
-                  {canCancel && (
+                  {showCancelButton && (
                     <Button size="sm" variant="destructive" onClick={() => setCancelOpen(true)}>
                       발주 취소
                     </Button>

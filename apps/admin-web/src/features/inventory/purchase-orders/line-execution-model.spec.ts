@@ -1,6 +1,7 @@
 import type { PurchaseOrderDto, PurchaseOrderLineDto } from '@/lib/types/dto/inventory';
 import {
   buildOrderLinePayload,
+  canCancel,
   canExecuteLines,
   formatLineProgress,
   isLineExecutable,
@@ -89,9 +90,10 @@ describe('sortLinesForExecution', () => {
 });
 
 describe('canExecuteLines / isLineExecutable', () => {
-  it('received 발주는 라인 실행이 막힌다', () => {
+  it('received/cancelled 발주는 라인 실행이 막힌다', () => {
     // core lockPurchaseOrderForLineExecution 이 BadRequestError 를 던진다.
     expect(canExecuteLines('received')).toBe(false);
+    expect(canExecuteLines('cancelled')).toBe(false);
     expect(canExecuteLines('created')).toBe(true);
     expect(canExecuteLines('confirmed')).toBe(true);
   });
@@ -101,6 +103,21 @@ describe('canExecuteLines / isLineExecutable', () => {
     expect(isLineExecutable('created', line({ status: 'ordered' }))).toBe(false);
     expect(isLineExecutable('created', line({ status: 'unavailable' }))).toBe(false);
     expect(isLineExecutable('received', line({ status: 'requested' }))).toBe(false);
+    expect(isLineExecutable('cancelled', line({ status: 'requested' }))).toBe(false);
+  });
+});
+
+describe('canCancel', () => {
+  it('종결(received/cancelled) 발주는 취소할 수 없다', () => {
+    expect(canCancel('received')).toBe(false);
+    expect(canCancel('cancelled')).toBe(false);
+  });
+
+  it('created/confirmed 발주는 취소할 수 있다', () => {
+    // ⚠️ confirmed 는 부분 입고 중일 수도 있다 — 그 경우 core 가 409 로 막는다.
+    // 이 함수는 화면만으로 그 구분을 못 한다(jsdoc 참조).
+    expect(canCancel('created')).toBe(true);
+    expect(canCancel('confirmed')).toBe(true);
   });
 });
 
