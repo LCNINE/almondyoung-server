@@ -37,6 +37,8 @@ export const searchProducts = async (params?: {
   includeMembersOnly?: boolean
   // false 면 영타 교정을 끄고 입력한 그대로 찾는다
   correct?: boolean
+  // false 면 이 검색을 추천검색어·0건 리포트 통계에 남기지 않는다
+  track?: boolean
 }): Promise<ApiResponse<SearchServiceProductsResponse>> => {
   try {
     const searchParams = new URLSearchParams()
@@ -60,6 +62,7 @@ export const searchProducts = async (params?: {
     if (params?.includeMembersOnly)
       searchParams.set("includeMembersOnly", "true")
     if (params?.correct === false) searchParams.set("correct", "false")
+    if (params?.track === false) searchParams.set("track", "false")
 
     const queryString = searchParams.toString()
     const path = queryString ? `/search/products?${queryString}` : "/search/products"

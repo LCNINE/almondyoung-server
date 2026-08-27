@@ -73,4 +73,10 @@ export class ProductSearchQueryDto {
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   includeMembersOnly?: boolean;
+
+  // false 면 이 검색을 통계(추천검색어·0건 리포트)에 남기지 않는다. 크롤러 요청용.
+  @IsOptional()
+  @Transform(({ value }) => value !== false && value !== 'false')
+  @IsBoolean()
+  track?: boolean;
 }
