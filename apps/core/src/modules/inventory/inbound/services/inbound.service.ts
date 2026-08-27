@@ -919,8 +919,25 @@ export class InboundService {
    *
    * 입고와 잎 종결 **둘 다** 여기로 온다 — 파생 규칙이 한 곳에 있어야 두 경로가
    * 갈라지지 않는다. 발주를 종결할지는 조달이 판단한다(#724 항목 7 스펙 §5).
+   *
+   * 🔴 **잠금 순서: 아이템 행(호출자가 이미 UPDATE 로 잡고 있다) → 계획 행 → 발주
+   * 행(어댑터가 잠근다).** 계획 행을 먼저 잠가야 하는 이유: 아이템을 잠금 없는
+   * SELECT 로만 읽으면, 같은 계획의 서로 다른 아이템을 동시에 입고하는 두
+   * 트랜잭션이 READ COMMITTED 아래서 서로 상대의 미커밋 갱신을 못 보고 "아직 pending
+   * 아이템이 남았다" 고 각자 판단해 계획을 영영 안 닫는다(#724 항목 7 리뷰 Finding 1).
+   * 계획 행을 FOR UPDATE 로 먼저 잡으면 두 번째 트랜잭션이 첫 번째의 커밋을 기다렸다가
+   * 새 스냅샷에서 다시 읽어 정확히 한 번 닫는다. 라인 실행 경로(`addInboundPlanItems`)는
+   * 계획 행을 잠그지 않고 아이템도 insert 전용이라 이 락과 역순으로 부딪히지 않는다.
    */
   private async closePlanIfDone(tx: DbTx, planId: string, linkedPurchaseOrderId: string): Promise<void> {
+    const [plan] = await tx
+      .select({ id: wmsTables.inboundPlans.id })
+      .from(wmsTables.inboundPlans)
+      .where(eq(wmsTables.inboundPlans.id, planId))
+      .limit(1)
+      .for('update');
+    if (!plan) return;
+
     const items = await tx
       .select({ status: wmsTables.inboundPlanItems.status })
       .from(wmsTables.inboundPlanItems)

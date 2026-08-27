@@ -29,8 +29,13 @@ import { PurchaseOrderReader } from './purchase-order.reader';
  * 경계는 ADR-0032 가 소유한다:
  * - 발주는 공급사 → 출발 창고 입고까지만 소유하고 거기서 종결한다.
  * - `inbound/` 로 나가는 호출은 `ensurePlanForPurchaseOrder` · `addInboundPlanItems` 둘뿐이다.
- *   역방향(입고 완료가 발주를 미는) 경로는 만들지 않는다 — 헤더 상태는 `refreshHeaderStatus`
- *   로 라인에서 파생된다.
+ *   라인이 살아있는 동안의 헤더 상태(`created`/`confirmed`)는 `refreshHeaderStatus` 로
+ *   라인에서만 파생된다.
+ * - 역방향(계획 종결 → 발주 종결) 통보는 존재하되 `PurchaseOrderClosurePort` 를 통해서만
+ *   들어온다(`shared/ports/purchase-order-closure.port.ts`) — **호출 방향**은
+ *   inbound → procurement 지만 **모듈 의존 방향**은 그대로 procurement → inbound
+ *   한쪽이다. 이 포트를 우회해 `inbound/` 가 여기 메서드를 직접 부르게 하거나, 여기서
+ *   `inbound/` 내부를 아는 새 파생 경로를 만들지 않는다 — 그 이유는 포트 파일이 설명한다.
  * - `warehouse-transfer/` 를 부르지 않는다. 선적은 이동 지시서가 독립 소유한다.
  *
  * 조회는 `PurchaseOrderReader` 가 소유한다 — 쓰기 후 응답을 만들 때 그 리더를 부른다.
@@ -378,7 +383,8 @@ export class PurchaseOrderManager {
    *
    * 진실은 라인이고 컬럼은 캐시다. `partially_ordered` 같은 새 enum 값은 넣지 않는다 —
    * "부분" 은 라인이 이미 표현하고, enum 값 추가는 admin-web 선배포를 요구해 단계만 늘린다.
-   * `received` 는 입고 경로가 소유하므로 여기서 건드리지 않는다.
+   * 종결 2개(`received`/`cancelled`)는 각각 입고 경로/사람이 소유하므로 여기서
+   * 건드리지 않는다(조기 반환이 `isTerminal` 로 둘 다 막는다).
    */
   private async refreshHeaderStatus(tx: DbTx, poId: string): Promise<void> {
     const [header] = await tx

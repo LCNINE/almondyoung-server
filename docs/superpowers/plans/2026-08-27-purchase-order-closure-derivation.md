@@ -656,16 +656,18 @@ import { isTerminal } from './purchase-order-closure.rules';
     }
 ```
 
-- [ ] **Step 5: `InboundService` 조립 지점 6곳을 갱신한다**
+- [ ] **Step 5: `InboundService` 조립 지점 8곳을 갱신한다**
 
 🔴 **이걸 빼먹으면 타입 게이트가 통째로 빨개진다.** 통합 스펙들이 Nest DI 를 거치지 않고
 생성자를 **위치 인자**로 직접 부른다. 7번째 인자를 더한다:
 
 ```bash
-grep -rn "new InboundService(" apps/core/src --include=*.ts
+grep -rn "new InboundService(" apps scripts --include=*.ts
 ```
 
-여섯 곳 전부에 `new PurchaseOrderClosureAdapter()` 를 마지막 인자로 넘긴다. 어댑터는
+⚠️ **`apps/core/src` 만 훑지 마라.** 이 계획의 초안이 그렇게 세어 6곳이라 적었는데 실제로는 8곳이었다 — `scripts/` 밑 두 곳이 빠져 타입 게이트로 드러났다. 소비자를 세는 것은 grep 이 아니라 tsc 다.
+
+여덟 곳 전부에 `new PurchaseOrderClosureAdapter()` 를 마지막 인자로 넘긴다. 어댑터는
 생성자 의존이 없는 무상태 클래스이므로 `{} as never` 대신 **진짜를 넘긴다** — 그래야
 스펙이 파생을 실제로 지난다.
 
@@ -677,6 +679,8 @@ grep -rn "new InboundService(" apps/core/src --include=*.ts
 | `inbound/services/inbound-plan-port-invariant.integration.spec.ts:47` | |
 | `inbound/services/inbound.service.idempotency.spec.ts:9` | |
 | `core/services/inventory-idempotency.integration.spec.ts:47` | |
+| `scripts/local/seed-dev-core/index.ts` | 초안이 놓쳤던 곳 |
+| `scripts/qa/seed-qa7-dev.ts` | 초안이 놓쳤던 곳 |
 
 - [ ] **Step 6: 게이트를 돌린다**
 
