@@ -22,6 +22,12 @@ export class ReviewStatisticsController {
     if (query.from > query.to) {
       throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${query.from} > ${query.to}`);
     }
-    return this.reviewStatisticsService.getStatistics(query.from, query.to, query.limit);
+    return this.reviewStatisticsService.getStatistics(
+      query.from,
+      query.to,
+      query.limit,
+      query.lowRatedPage,
+      query.topProductsPage,
+    );
   }
 }

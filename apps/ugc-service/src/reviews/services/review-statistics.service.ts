@@ -52,7 +52,13 @@ export class ReviewStatisticsService {
     return this.db.db;
   }
 
-  async getStatistics(from: string, to: string, limit: number): Promise<AdminReviewStatisticsResponseDto> {
+  async getStatistics(
+    from: string,
+    to: string,
+    limit: number,
+    lowRatedPage = 1,
+    topProductsPage = 1,
+  ): Promise<AdminReviewStatisticsResponseDto> {
     const prev = previousRange(from, to);
     const fromTs = kstDayStartUtc(from);
     const toExclusiveTs = kstDayStartUtc(addDays(to, 1));
@@ -72,6 +78,17 @@ export class ReviewStatisticsService {
     // created_at 은 UTC naive — 먼저 UTC 로 못박은 뒤 KST 로 옮겨야 달력 날짜가 맞다.
     const kstBucketExpr = sql<string>`to_char((${reviews.createdAt} at time zone 'UTC') at time zone 'Asia/Seoul', 'YYYY-MM-DD')`;
 
+    // 저평점 경보를 통과한 상품 그룹 수 — 페이지네이션 총건수.
+    const lowRatedQualified = this.client
+      .select({ productId: reviews.productId })
+      .from(reviews)
+      .where(base)
+      .groupBy(reviews.productId)
+      .having(
+        sql`count(*) >= ${LOW_RATED_MIN_REVIEWS} and avg(${reviews.rating}) < ${LOW_RATED_THRESHOLD}`,
+      )
+      .as('low_rated_qualified');
+
     const [
       [totals],
       [previousTotals],
@@ -83,6 +100,8 @@ export class ReviewStatisticsService {
       [photoTotals],
       [commentTotals],
       [eligibility],
+      [lowRatedCount],
+      [topProductsCount],
     ] = await Promise.all([
       this.client.select({ reviewCount: count(), averageRating: averageRatingExpr }).from(reviews).where(base),
       this.client
@@ -108,15 +127,17 @@ export class ReviewStatisticsService {
         .having(
           sql`count(*) >= ${LOW_RATED_MIN_REVIEWS} and avg(${reviews.rating}) < ${LOW_RATED_THRESHOLD}`,
         )
-        .orderBy(sql`avg(${reviews.rating}) asc`, desc(count()))
-        .limit(limit),
+        .orderBy(sql`avg(${reviews.rating}) asc`, desc(count()), reviews.productId)
+        .limit(limit)
+        .offset((lowRatedPage - 1) * limit),
       this.client
         .select({ productId: reviews.productId, reviewCount: count(), averageRating: averageRatingExpr })
         .from(reviews)
         .where(base)
         .groupBy(reviews.productId)
-        .orderBy(desc(count()), sql`avg(${reviews.rating}) desc`)
-        .limit(limit),
+        .orderBy(desc(count()), sql`avg(${reviews.rating}) desc`, reviews.productId)
+        .limit(limit)
+        .offset((topProductsPage - 1) * limit),
       this.client
         .select({
           reviewId: reviews.id,
@@ -151,6 +172,11 @@ export class ReviewStatisticsService {
         })
         .from(reviewEligibilities)
         .where(and(gte(reviewEligibilities.eligibleAt, fromTs), lt(reviewEligibilities.eligibleAt, toExclusiveTs))),
+      this.client.select({ count: count() }).from(lowRatedQualified),
+      this.client
+        .select({ count: sql<number>`count(distinct ${reviews.productId})::int` })
+        .from(reviews)
+        .where(base),
     ]);
 
     const toProductRow = (row: { productId: string; reviewCount: number; averageRating: number | null }): ProductRatingRowDto => ({
@@ -185,7 +211,12 @@ export class ReviewStatisticsService {
       ratingDistribution: fillRatingDistribution(distributionRows),
       series: seriesRows,
       lowRated: lowRatedRows.map(toProductRow),
+      lowRatedPage,
+      lowRatedTotalItems: lowRatedCount?.count ?? 0,
       topProducts: topProductRows.map(toProductRow),
+      topProductsPage,
+      topProductsTotalItems: topProductsCount?.count ?? 0,
+      limit,
       bestReviews,
     };
   }
