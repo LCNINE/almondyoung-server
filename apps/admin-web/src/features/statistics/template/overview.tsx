@@ -15,13 +15,17 @@ import {
 import { ArrowRight } from 'lucide-react';
 import {
   useAnalyticsOverview,
+  useProductStatistics,
   useProfitStatistics,
   useSalesStatistics,
   useUnsoldProducts,
 } from '@/lib/services/analytics';
-import { useZeroHitKeywords } from '@/lib/services/search';
-import { useReviewStatistics } from '@/lib/services/review';
-import { useFeeSummary } from '@/lib/services/wallet/queries';
+import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
+import { useReviewStatistics, useReviews } from '@/lib/services/review';
+import { useFeeSummary, usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet/queries';
+import { useOrderStats } from '@/lib/services/orders/queries';
+import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
+import { useQuestions } from '@/lib/services/qna/queries';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -71,6 +75,30 @@ export default function OverviewStatisticsTemplate() {
   const reviews = useReviewStatistics({ from: month.from, to: month.to, limit: 5 });
   const fees = useFeeSummary(month.from, month.to);
   const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: 1 });
+  const topProducts = useProductStatistics({ from: week.from, to: week.to, limit: 5 });
+  const topKeywords = useKeywordStatistics({ from: week.from, to: week.to, limit: 5 });
+
+  // ─── 오늘의 운영 현황 — 처리 대기 큐를 건수만 세서 담당 화면으로 보낸다 (count 전용 limit 1) ───
+  const orderStats = useOrderStats();
+  const bankTransfers = usePendingBankTransfers(1, 1);
+  const refundRequests = useRefundRequests(1, 1);
+  const returnRequests = useReturnRequests({ status: 'requested', page: 1, limit: 1 });
+  const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
+  const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
+  const unansweredReviews = useReviews({ hasComment: 'false', status: 'active', page: 1, limit: 1 });
+
+  const opsTiles = [
+    { id: 'today-orders', label: '오늘 주문', count: orderStats.data?.todayCount, href: '/order/history', isLoading: orderStats.isLoading, isError: orderStats.isError },
+    { id: 'outbound-requested', label: '출고 요청 대기', count: orderStats.data?.outboundRequested, href: '/order/fulfillments', isLoading: orderStats.isLoading, isError: orderStats.isError },
+    { id: 'cannot-ship', label: '출고 불가(재고)', count: orderStats.data?.cannotShip, href: '/order/fulfillments', isLoading: orderStats.isLoading, isError: orderStats.isError },
+    { id: 'waiting-matching', label: '매칭 대기', count: orderStats.data?.waitingMatching, href: '/order/matching', isLoading: orderStats.isLoading, isError: orderStats.isError },
+    { id: 'bank-transfers', label: '입금 대기', count: bankTransfers.data?.total, href: '/payments/bank-transfers', isLoading: bankTransfers.isLoading, isError: bankTransfers.isError },
+    { id: 'refund-requests', label: '환불 요청', count: refundRequests.data?.total, href: '/payments/refund-requests', isLoading: refundRequests.isLoading, isError: refundRequests.isError },
+    { id: 'return-requests', label: '반품 접수', count: returnRequests.data?.total, href: '/cs/return-exchange', isLoading: returnRequests.isLoading, isError: returnRequests.isError },
+    { id: 'exchange-requests', label: '교환 접수', count: exchangeRequests.data?.total, href: '/cs/return-exchange', isLoading: exchangeRequests.isLoading, isError: exchangeRequests.isError },
+    { id: 'unanswered-qna', label: '미답변 문의', count: unansweredQna.data?.total, href: '/cs/qna', isLoading: unansweredQna.isLoading, isError: unansweredQna.isError },
+    { id: 'unanswered-reviews', label: '미답변 리뷰', count: unansweredReviews.data?.total, href: '/cs/reviews', isLoading: unansweredReviews.isLoading, isError: unansweredReviews.isError },
+  ] as const;
 
   const actionsLoading =
     profit.isLoading || zeroHit.isLoading || reviews.isLoading || fees.isLoading || unsold.isLoading;
@@ -199,6 +227,12 @@ export default function OverviewStatisticsTemplate() {
       `최근 30일 추정 마진은 ${formatKrw(profitTotals.estimatedMargin)}(마진율 ${formatPercent(profitTotals.marginRate)})입니다.${profitTotals.uncomputedProductsCount > 0 ? ' 원가 미입력 상품 몫은 빠진 값입니다.' : ''}`,
     );
   }
+  const bestProduct = topProducts.data?.ranking[0];
+  if (bestProduct) {
+    diagnosis.push(
+      `최근 7일 가장 많이 팔린 상품은 '${bestProduct.name ?? bestProduct.masterId}'입니다 (순매출 ${formatKrw(bestProduct.netRevenue)}, ${formatCount(bestProduct.quantitySold)}개).`,
+    );
+  }
   if (!actionsLoading) {
     diagnosis.push(
       actions.length > 0
@@ -265,6 +299,47 @@ export default function OverviewStatisticsTemplate() {
 
         <div className="rounded-[10px] border border-gray-200 bg-white p-4">
           <div className="mb-3 flex items-baseline justify-between">
+            <p className="text-sm font-semibold text-gray-900">오늘의 운영 현황</p>
+            <p className="text-xs text-gray-400">숫자를 누르면 처리 화면으로 이동합니다</p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+            {opsTiles.map((tile) => (
+              <Link
+                key={tile.id}
+                href={tile.href}
+                className={cn(
+                  'rounded-md border px-3 py-2.5 transition-colors',
+                  (tile.count ?? 0) > 0
+                    ? 'border-orange-200 bg-orange-50/60 hover:bg-orange-50'
+                    : 'border-gray-200 hover:bg-gray-50',
+                )}
+              >
+                <p className="text-xs text-gray-500">{tile.label}</p>
+                {tile.isLoading ? (
+                  <Skeleton className="mt-1 h-6 w-10" />
+                ) : tile.isError ? (
+                  <p className="mt-1 text-xs text-red-500">조회 실패</p>
+                ) : (
+                  <p
+                    className={cn(
+                      'mt-0.5 text-xl font-bold tabular-nums',
+                      (tile.count ?? 0) > 0 ? 'text-gray-900' : 'text-gray-300',
+                    )}
+                  >
+                    {formatCount(tile.count ?? 0)}
+                  </p>
+                )}
+              </Link>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-400">
+            오늘 주문은 오늘(KST) 접수분, 출고·매칭은 최근 14일 창의 대기 건수, 나머지는 현재 대기 중인 전체
+            건수입니다.
+          </p>
+        </div>
+
+        <div className="rounded-[10px] border border-gray-200 bg-white p-4">
+          <div className="mb-3 flex items-baseline justify-between">
             <p className="text-sm font-semibold text-gray-900">오늘의 액션</p>
             <p className="text-xs text-gray-400">최근 30일 기준 · 심각한 것부터</p>
           </div>
@@ -314,6 +389,74 @@ export default function OverviewStatisticsTemplate() {
               })}
             </div>
           )}
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="rounded-[10px] border border-gray-200 bg-white p-4">
+            <div className="mb-2 flex items-baseline justify-between">
+              <p className="text-sm font-semibold text-gray-900">최근 7일 많이 팔린 상품</p>
+              <Link href="/statistics/products" className="text-xs font-medium text-orange-600 hover:text-orange-700">
+                전체 보기
+              </Link>
+            </div>
+            {topProducts.isLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : topProducts.isError ? (
+              <p className="py-6 text-center text-xs text-red-500">불러오지 못했습니다</p>
+            ) : (topProducts.data?.ranking ?? []).length === 0 ? (
+              <p className="py-6 text-center text-xs text-gray-400">최근 7일 판매가 없습니다</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {(topProducts.data?.ranking ?? []).map((row, index) => (
+                  <li key={row.masterId} className="flex items-center gap-2 py-1.5 text-xs">
+                    <span className="w-4 shrink-0 text-gray-400">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-gray-800" title={row.name ?? row.masterId}>
+                      {row.name ?? row.masterId}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-gray-500">{formatCount(row.quantitySold)}개</span>
+                    <span className="w-24 shrink-0 text-right tabular-nums font-medium text-gray-900">
+                      {formatKrw(row.netRevenue)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="rounded-[10px] border border-gray-200 bg-white p-4">
+            <div className="mb-2 flex items-baseline justify-between">
+              <p className="text-sm font-semibold text-gray-900">최근 7일 인기 검색어</p>
+              <Link href="/statistics/keywords" className="text-xs font-medium text-orange-600 hover:text-orange-700">
+                전체 보기
+              </Link>
+            </div>
+            {topKeywords.isLoading ? (
+              <Skeleton className="h-32 w-full" />
+            ) : topKeywords.isError ? (
+              <p className="py-6 text-center text-xs text-red-500">불러오지 못했습니다</p>
+            ) : (topKeywords.data?.top ?? []).length === 0 ? (
+              <p className="py-6 text-center text-xs text-gray-400">최근 7일 검색이 없습니다</p>
+            ) : (
+              <ul className="divide-y divide-gray-100">
+                {(topKeywords.data?.top ?? []).map((row, index) => (
+                  <li key={row.keywordNorm} className="flex items-center gap-2 py-1.5 text-xs">
+                    <span className="w-4 shrink-0 text-gray-400">{index + 1}</span>
+                    <span className="min-w-0 flex-1 truncate text-gray-800" title={row.keyword}>
+                      {row.keyword}
+                    </span>
+                    {row.zeroCount > 0 && (
+                      <span className="shrink-0 rounded-full bg-red-100 px-1.5 py-0.5 text-[11px] text-red-700">
+                        0건 {formatCount(row.zeroCount)}회
+                      </span>
+                    )}
+                    <span className="w-16 shrink-0 text-right tabular-nums text-gray-500">
+                      {formatCount(row.count)}회
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <ChartCard
