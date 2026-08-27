@@ -115,6 +115,8 @@ export function setup(infra: SharedInfra) {
   const walletWebOidcClientSecret = new sst.Secret('WalletWebOidcClientSecret');
   // admin-web 상품 상세설명 AI 초안 생성용 Anthropic API key.
   const anthropicApiKey = new sst.Secret('AnthropicApiKey');
+  // 검색어·상품명 임베딩용 OpenAI API key. 없으면 벡터 없이 키워드 검색만 동작한다.
+  const openAiApiKey = new sst.Secret('OpenAiApiKey');
 
   // Storefront
   const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
@@ -327,6 +329,7 @@ export function setup(infra: SharedInfra) {
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
+    OPENAI_API_KEY: openAiApiKey.value,
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
