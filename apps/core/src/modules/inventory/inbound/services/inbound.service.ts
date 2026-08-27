@@ -1001,9 +1001,24 @@ export class InboundService {
    * SELECT 로만 읽으면, 같은 계획의 서로 다른 아이템을 동시에 입고하는 두
    * 트랜잭션이 READ COMMITTED 아래서 서로 상대의 미커밋 갱신을 못 보고 "아직 pending
    * 아이템이 남았다" 고 각자 판단해 계획을 영영 안 닫는다(#724 항목 7 리뷰 Finding 1).
-   * 계획 행을 FOR UPDATE 로 먼저 잡으면 두 번째 트랜잭션이 첫 번째의 커밋을 기다렸다가
-   * 새 스냅샷에서 다시 읽어 정확히 한 번 닫는다. 라인 실행 경로(`addInboundPlanItems`)는
-   * 계획 행을 잠그지 않고 아이템도 insert 전용이라 이 락과 역순으로 부딪히지 않는다.
+   * 계획 행을 잠그고 두 번째 트랜잭션이 첫 번째의 커밋을 기다렸다가 새 스냅샷에서
+   * 다시 읽어 정확히 한 번 닫는다.
+   *
+   * 🔴 **`FOR UPDATE` 가 아니라 `FOR NO KEY UPDATE` 여야 한다(최종 전체 리뷰에서
+   * 발견 — FK 가 거는 암묵 락을 세지 않아 개별 태스크 리뷰에서는 안 보였다).**
+   * `addInboundPlanItems`(라인 실행 경로)는 이 계획 행에 대해 insert 전용이라 기존
+   * *아이템* 행은 잠그지 않지만, `inbound_plan_items` 는 `inbound_plans` 를 FK 로
+   * 참조하므로 그 insert 자체가 Postgres 의 FK 검사로 부모(계획) 행에 암묵적으로
+   * `FOR KEY SHARE` 를 건다 — 이건 놓치기 쉬운 사실이다. `FOR KEY SHARE` 는 `FOR
+   * UPDATE` 와는 충돌하지만 `FOR NO KEY UPDATE` 와는 **충돌하지 않는다**. 계획 락이
+   * `FOR UPDATE` 였을 때는:
+   *   T_line(라인 실행): PO FOR UPDATE 보유 → 아이템 insert → 계획 행 FKS 대기
+   *   T_recv(입고):      계획 행 FOR UPDATE 보유 → PO FOR UPDATE 대기
+   * 로 ABBA 사이클이 닫혀 Postgres 가 한쪽을 40P01(lock_timeout/deadlock)로 죽였다 —
+   * 도메인 예외가 아닌 드라이버 에러라 409 가 아니라 500 으로 나갔다(로컬 PG16 에서
+   * 재현됨). `FOR NO KEY UPDATE` 로 바꾸면 이 간선이 열려 사이클이 안 닫히면서도,
+   * `FOR NO KEY UPDATE` 끼리는 여전히 상호 배제이므로 위 문단이 막으려는 "두 입고가
+   * 서로의 미커밋을 못 봐 계획을 영영 안 닫는" 경합은 그대로 막힌다.
    */
   private async closePlanIfDone(tx: DbTx, planId: string, linkedPurchaseOrderId: string): Promise<void> {
     const [plan] = await tx
@@ -1011,7 +1026,7 @@ export class InboundService {
       .from(wmsTables.inboundPlans)
       .where(eq(wmsTables.inboundPlans.id, planId))
       .limit(1)
-      .for('update');
+      .for('no key update');
     if (!plan) return;
 
     const items = await tx
