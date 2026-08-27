@@ -71,7 +71,7 @@ export const userServiceEnvSchema = z.object({
   USER_SERVICE_INTERNAL_KEY: z.string().optional(),
 
   // 인증문자 발송을 notification 에 위임하는 경로 (→ /internal/sms/send).
-  // 둘 다 없으면 SmsSenderService 가 부팅 시 던진다 — 인증문자가 조용히 안 나가는 것보다 낫다.
+  // 둘 중 하나라도 없으면 SmsSenderService.send() 시점에 503(PhoneVerificationException)으로 실패한다.
   NOTIFICATION_SERVICE_URL: z.string().url().optional(),
   NOTIFICATION_INTERNAL_KEY: z.string().optional(),
 
