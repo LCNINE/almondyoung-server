@@ -12,7 +12,6 @@ import {
   YAxis,
 } from 'recharts';
 import {
-  KeywordAutoCause,
   KeywordDetail,
   KeywordIssueStatus,
   ZeroHitKeywordRow,
@@ -44,16 +43,40 @@ const STATUS_LABELS: Record<KeywordIssueStatus, string> = {
   ignored: '무시',
 };
 
-const CAUSE_LABELS: Record<KeywordAutoCause, string> = {
-  engine: '검색엔진(개발)',
-  sourcing: '소싱 부재(MD)',
-  unclassified: '미분류',
-};
-
-function causeBadgeClass(cause: KeywordAutoCause): string {
-  if (cause === 'engine') return 'bg-blue-50 text-blue-700 border-blue-200';
-  if (cause === 'sourcing') return 'bg-purple-50 text-purple-700 border-purple-200';
-  return 'bg-gray-50 text-gray-500 border-gray-200';
+/** 색인 대조 근거 — 자동 판정 없이 재료만 보여준다. 개발/MD 판단은 사람이 상태로 지정. */
+function IndexEvidence({
+  matchedProductsCount,
+  matchedProductNames,
+  similarProductNames,
+  correctedQuery,
+}: {
+  matchedProductsCount: number;
+  matchedProductNames: string[];
+  similarProductNames: string[];
+  correctedQuery: string | null;
+}) {
+  if (matchedProductsCount === 0 && similarProductNames.length === 0 && !correctedQuery) {
+    return <span className="text-gray-400">색인 일치 없음</span>;
+  }
+  return (
+    <div className="space-y-0.5">
+      {matchedProductsCount > 0 ? (
+        <p title={matchedProductNames.join(' · ')}>
+          <span className="font-medium text-blue-700">색인 일치 {formatCount(matchedProductsCount)}건</span>
+          {matchedProductNames.length > 0 ? (
+            <span className="ml-1 text-gray-500">{matchedProductNames[0]}{matchedProductsCount > 1 ? ' 외' : ''}</span>
+          ) : null}
+        </p>
+      ) : null}
+      {similarProductNames.length > 0 ? (
+        <p className="text-gray-500" title={similarProductNames.join(' · ')}>
+          유사: {similarProductNames.slice(0, 2).join(', ')}
+          {similarProductNames.length > 2 ? ' 외' : ''}
+        </p>
+      ) : null}
+      {correctedQuery ? <p className="text-gray-500">영타 교정: {correctedQuery}</p> : null}
+    </div>
+  );
 }
 
 /** "N일 지연" 배지 — 방치가 길수록 진한 경고색 */
@@ -224,7 +247,7 @@ export default function KeywordStatisticsTemplate() {
 
           <ChartCard
             title="결과 0건 검색어 운영"
-            description="찾는 사람은 있는데 결과가 없던 키워드입니다. 지연 배지는 마지막으로 결과가 있었던 날(없으면 최초 0건일)부터의 일수 — 검색엔진 문제는 개발팀, 소싱 부재는 MD팀이 해결하도록 담당을 지정하세요. 검색어를 클릭하면 상세·담당·메모 편집이 열립니다."
+            description="찾는 사람은 있는데 결과가 없던 키워드입니다. 지연 배지는 마지막으로 결과가 있었던 날(없으면 최초 0건일)부터의 일수. 색인 근거(일치·유사 상품명)를 참고해 검색엔진 문제면 개발팀, 소싱 부재면 MD팀으로 상태를 지정하세요 — 자동 판정은 오탐이 있어 하지 않습니다. 검색어를 클릭하면 상세·담당·메모 편집이 열립니다."
             isLoading={zeroHit.isLoading}
             isEmpty={!zeroHit.data || zeroHit.data.totalItems === 0}
             emptyText="조회 기간에 결과 0건 검색이 없습니다"
@@ -241,7 +264,7 @@ export default function KeywordStatisticsTemplate() {
                         <th className="py-1.5 text-left">검색어</th>
                         <th className="py-1.5 text-left">지연</th>
                         <th className="py-1.5 text-right">0건 검색</th>
-                        <th className="py-1.5 text-left pl-4">자동 분류</th>
+                        <th className="py-1.5 text-left pl-4">색인 근거</th>
                         <th className="py-1.5 text-left">상태</th>
                         <th className="py-1.5 text-left">담당자</th>
                         <th className="py-1.5 text-left">메모</th>
@@ -388,6 +411,12 @@ function ZeroHitRow({
   rowNumber: number;
   onSelect: () => void;
 }) {
+  const upsert = useUpsertKeywordIssue();
+  // 상태만 바꾼다 — 서버 upsert 는 미전달 필드(담당·메모)를 보존한다
+  const changeStatus = (status: KeywordIssueStatus) => {
+    upsert.mutate({ keywordNorm: row.keywordNorm, keyword: row.keyword, status });
+  };
+
   return (
     <tr className="border-b last:border-0">
       <td className="py-1.5 text-gray-400">{rowNumber}</td>
@@ -395,24 +424,32 @@ function ZeroHitRow({
         <button type="button" onClick={onSelect} className="font-medium text-gray-900 hover:underline">
           {row.keyword}
         </button>
-        {row.correctedQuery ? (
-          <span className="ml-1 text-[11px] text-gray-400">→ {row.correctedQuery}</span>
-        ) : null}
       </td>
       <td className="py-1.5">
         <NeglectBadge days={row.neglectDays} resolved={row.resolvedByIndex} />
       </td>
       <td className="py-1.5 text-right tabular-nums">{formatCount(row.zeroCount)}</td>
-      <td className="py-1.5 pl-4">
-        <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px]', causeBadgeClass(row.autoCause))}>
-          {CAUSE_LABELS[row.autoCause]}
-        </span>
-        {row.matchedProductsCount > 0 ? (
-          <span className="ml-1 text-[11px] text-gray-400">색인 {formatCount(row.matchedProductsCount)}개</span>
-        ) : null}
+      <td className="py-1.5 pl-4 text-[11px]">
+        <IndexEvidence
+          matchedProductsCount={row.matchedProductsCount}
+          matchedProductNames={row.matchedProductNames}
+          similarProductNames={row.similarProductNames}
+          correctedQuery={row.correctedQuery}
+        />
       </td>
       <td className="py-1.5">
-        {row.issue ? STATUS_LABELS[row.issue.status] : <span className="text-gray-400">신규</span>}
+        <select
+          value={row.issue?.status ?? 'new'}
+          onChange={(event) => changeStatus(event.target.value as KeywordIssueStatus)}
+          disabled={upsert.isPending}
+          className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40"
+        >
+          {(Object.keys(STATUS_LABELS) as KeywordIssueStatus[]).map((value) => (
+            <option key={value} value={value}>
+              {STATUS_LABELS[value]}
+            </option>
+          ))}
+        </select>
       </td>
       <td className="py-1.5">
         {row.issue?.assigneeName ?? <span className="text-gray-400">미지정</span>}
@@ -432,17 +469,14 @@ function KeywordDetailPanel({ detail }: { detail: KeywordDetail }) {
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <span className="text-sm font-semibold text-gray-900">{detail.keyword}</span>
         {detail.neglectDays != null ? <NeglectBadge days={detail.neglectDays} resolved={false} /> : null}
-        <span
-          className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px]', causeBadgeClass(detail.autoCause))}
-        >
-          {CAUSE_LABELS[detail.autoCause]}
-        </span>
-        {detail.correctedQuery ? (
-          <span className="text-gray-500">영타 교정: {detail.correctedQuery}</span>
-        ) : null}
-        {detail.matchedProductsCount > 0 ? (
-          <span className="text-gray-500">색인 일치 상품 {formatCount(detail.matchedProductsCount)}개</span>
-        ) : null}
+      </div>
+      <div className="text-xs">
+        <IndexEvidence
+          matchedProductsCount={detail.matchedProductsCount}
+          matchedProductNames={detail.matchedProductNames}
+          similarProductNames={detail.similarProductNames}
+          correctedQuery={detail.correctedQuery}
+        />
       </div>
       {detail.count === 0 ? (
         <p className="text-xs text-gray-500">조회 기간에 이 키워드의 검색 이력이 없습니다.</p>

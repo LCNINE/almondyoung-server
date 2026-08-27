@@ -27,13 +27,20 @@ function buildIssueRepository(rows: SearchKeywordIssue[] = []): KeywordIssueRepo
   } as unknown as KeywordIssueRepository;
 }
 
-function buildProductIndex(matches: Record<string, number> = {}): ProductIndexService {
+type EvidenceStub = { exactCount: number; exactNames: string[]; similarNames: string[] };
+
+function buildProductIndex(evidence: Record<string, Partial<EvidenceStub>> = {}): ProductIndexService {
   return {
-    countKeywordMatches: jest
-      .fn()
-      .mockImplementation((keywords: string[]) =>
-        Promise.resolve(new Map(keywords.map((keyword) => [keyword, matches[keyword] ?? 0]))),
+    getKeywordMatchEvidence: jest.fn().mockImplementation((keywords: string[]) =>
+      Promise.resolve(
+        new Map(
+          keywords.map((keyword) => [
+            keyword,
+            { exactCount: 0, exactNames: [], similarNames: [], ...evidence[keyword] },
+          ]),
+        ),
       ),
+    ),
   } as unknown as ProductIndexService;
 }
 
@@ -104,29 +111,40 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
     expect(result.items.map((item) => item.keywordNorm)).toEqual(['b']);
     expect(result.totalItems).toBe(2);
     expect(issueRepository.findByNorms).toHaveBeenCalledWith(['b']);
-    expect(productIndex.countKeywordMatches).toHaveBeenCalledWith(['b']);
+    expect(productIndex.getKeywordMatchEvidence).toHaveBeenCalledWith(['b']);
   });
 
-  it('색인 대조 결과로 원인을 분류한다 — 색인에 있으면 engine, 없으면 sourcing, 조회 실패면 unclassified', async () => {
+  it('색인 대조는 판정 없이 근거만 싣는다 — 정확 일치 수·이름과 유사 상품명', async () => {
     const repository = buildRepository({
       getZeroHitKeywords: jest.fn().mockResolvedValue([
         zeroRow('퍼마색소', 5, '2026-08-26T01:00:00Z'),
-        zeroRow('경이로운', 3, '2026-08-26T01:00:00Z'),
+        zeroRow('로리킹', 3, '2026-08-26T01:00:00Z'),
       ]),
     });
     const service = new SearchKeywordOpsService(
       repository,
       buildIssueRepository(),
-      buildProductIndex({ 퍼마색소: 53 }),
+      buildProductIndex({
+        퍼마색소: { exactCount: 53, exactNames: ['퍼마 색소 30ml'] },
+        // 오타 키워드 — 정확 일치는 없지만 자모 유사로 실제 상품명이 잡힌다
+        로리킹: { similarNames: ['롤리킹 롤러'] },
+      }),
     );
 
     const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
     const byNorm = new Map(result.items.map((item) => [item.keywordNorm, item]));
-    expect(byNorm.get('퍼마색소')).toMatchObject({ autoCause: 'engine', matchedProductsCount: 53 });
-    expect(byNorm.get('경이로운')).toMatchObject({ autoCause: 'sourcing', matchedProductsCount: 0 });
+    expect(byNorm.get('퍼마색소')).toMatchObject({
+      matchedProductsCount: 53,
+      matchedProductNames: ['퍼마 색소 30ml'],
+      similarProductNames: [],
+    });
+    expect(byNorm.get('로리킹')).toMatchObject({
+      matchedProductsCount: 0,
+      similarProductNames: ['롤리킹 롤러'],
+    });
 
     const failingIndex = {
-      countKeywordMatches: jest.fn().mockRejectedValue(new Error('opensearch down')),
+      getKeywordMatchEvidence: jest.fn().mockRejectedValue(new Error('opensearch down')),
     } as unknown as ProductIndexService;
     const degraded = await new SearchKeywordOpsService(repository, buildIssueRepository(), failingIndex).getZeroHitKeywords(
       '2026-08-01',
@@ -134,21 +152,27 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
       1,
       20,
     );
-    expect(degraded.items.every((item) => item.autoCause === 'unclassified')).toBe(true);
+    // 색인 조회가 죽어도 목록은 나온다 — 근거만 비어 있다
+    expect(degraded.items).toHaveLength(2);
+    expect(degraded.items.every((item) => item.matchedProductsCount === 0 && item.similarProductNames.length === 0)).toBe(true);
   });
 
-  it('영타 검색어는 교정 결과가 색인에 있으면 engine 으로 분류한다', async () => {
+  it('영타 검색어는 교정어의 일치 상품명을 유사 근거로 합친다', async () => {
     const repository = buildRepository({
       getZeroHitKeywords: jest.fn().mockResolvedValue([zeroRow('vjak', 4, '2026-08-26T01:00:00Z')]),
     });
     const service = new SearchKeywordOpsService(
       repository,
       buildIssueRepository(),
-      buildProductIndex({ 퍼마: 12 }),
+      buildProductIndex({ 퍼마: { exactCount: 12, exactNames: ['퍼마 블렌드'] } }),
     );
 
     const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
-    expect(result.items[0]).toMatchObject({ autoCause: 'engine', correctedQuery: '퍼마', matchedProductsCount: 0 });
+    expect(result.items[0]).toMatchObject({
+      correctedQuery: '퍼마',
+      matchedProductsCount: 0,
+      similarProductNames: ['퍼마 블렌드'],
+    });
   });
 });
 

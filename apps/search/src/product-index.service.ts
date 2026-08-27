@@ -19,6 +19,25 @@ import { compactText, qwertyToHangul, toJamo } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
 
+/** 키워드 ↔ 상품 색인 대조 근거 — 판정 없이 재료만 */
+export interface KeywordMatchEvidence {
+  /** 문자열 포함 정확 일치 상품 수 */
+  exactCount: number;
+  /** 정확 일치 상품명 샘플 */
+  exactNames: string[];
+  /** 자모 유사(오타 후보) 상품명 샘플 — 무관 상품이 섞일 수 있는 참고 정보 */
+  similarNames: string[];
+}
+
+const EVIDENCE_SAMPLE_SIZE = 3;
+
+function extractHitNames(response: any): string[] {
+  const hits: any[] = response?.hits?.hits ?? [];
+  return hits
+    .map((hit) => hit?._source?.name)
+    .filter((name): name is string => typeof name === 'string' && name.length > 0);
+}
+
 // nori 가 미등록 고유명사를 동사 활용형으로 오분석해 토큰을 통째로 날려버리는 경우가 있다.
 // 예: "오샤레" → 오(VV 동사어간) + 샤(E 어미) + 레(E 어미) → posfilter 가 E 를 버려 ["오"] 만 남는다.
 // 남은 "오" 는 "타사와라"("와라"→"오") 같은 무관 상품과 name^8 로 매칭돼 정답을 랭킹 밖으로 밀어낸다.
@@ -231,12 +250,14 @@ export class ProductIndexService implements OnModuleInit {
   }
 
   /**
-   * 키워드 문자열을 실제로 담고 있는 상품 수 — 오타보정·fuzzy 없는 문자열 포함 대조.
-   * 0건 검색어 원인 분류용: 색인에 상품이 있는데 검색이 0건이면 검색엔진/노출 문제,
-   * 색인에도 없으면 소싱 부재다. (scripts/ops/search-zero-hit/collect.py 의 index_match 와 같은 절)
+   * 키워드 ↔ 상품 색인 대조 **근거** — 자동 "판정"에 쓰지 않는다.
+   * 사람이 개발/MD 를 판단할 재료로, (1) 문자열 포함 정확 일치(오타보정·fuzzy 없음 —
+   * scripts/ops/search-zero-hit/collect.py 의 index_match 와 같은 절)와 (2) 자모 유사
+   * 상품명(검색 엔진의 오타 절과 같은 name_jamo/brand_jamo fuzzy)을 함께 돌려준다.
+   * 유사 매칭은 무관 상품이 걸릴 수 있으므로 화면에서 "유사" 라벨로만 보여줄 것.
    */
-  async countKeywordMatches(keywords: string[]): Promise<Map<string, number>> {
-    const result = new Map<string, number>();
+  async getKeywordMatchEvidence(keywords: string[]): Promise<Map<string, KeywordMatchEvidence>> {
+    const result = new Map<string, KeywordMatchEvidence>();
     if (keywords.length === 0) return result;
 
     const client = this.openSearchService.getClient();
@@ -244,16 +265,19 @@ export class ProductIndexService implements OnModuleInit {
     await this.ensureProductsIndex();
 
     const escapeWildcard = (value: string) => value.replace(/([*?\\])/g, '\\$1');
-    const batchSize = 40;
+    // 키워드당 msearch 2건(정확·유사)이라 배치를 절반으로 줄인다.
+    const batchSize = 20;
     for (let start = 0; start < keywords.length; start += batchSize) {
       const chunk = keywords.slice(start, start + batchSize);
       const lines: Record<string, unknown>[] = [];
       for (const keyword of chunk) {
-        const compact = escapeWildcard(compactText(keyword).toLowerCase());
+        const compactRaw = compactText(keyword).toLowerCase();
+        const compact = escapeWildcard(compactRaw);
         lines.push({ index });
         lines.push({
-          size: 0,
+          size: EVIDENCE_SAMPLE_SIZE,
           track_total_hits: true,
+          _source: ['name'],
           query: {
             bool: {
               should: [
@@ -267,13 +291,40 @@ export class ProductIndexService implements OnModuleInit {
             },
           },
         });
+        lines.push({ index });
+        // 자모 유사 — 검색 엔진의 buildJamoTypoClauses 와 같은 필드·fuzziness 규칙.
+        // 너무 짧은 키워드는 편집거리 1도 헐거워서 아예 안 돌린다 (match_none).
+        lines.push({
+          size: EVIDENCE_SAMPLE_SIZE,
+          _source: ['name'],
+          query:
+            compactRaw.length >= JAMO_TYPO_MIN_LENGTH
+              ? {
+                  multi_match: {
+                    query: toJamo(keyword),
+                    fields: ['name_jamo^6', 'brand_jamo^4'],
+                    fuzziness: compactRaw.length >= JAMO_FUZZY2_MIN_LENGTH ? 2 : 1,
+                    prefix_length: 0,
+                    max_expansions: 25,
+                    minimum_should_match: '100%',
+                  },
+                }
+              : { match_none: {} },
+        });
       }
       const response = await client.msearch({ body: lines });
       const responses: any[] = (response.body as any)?.responses ?? [];
       chunk.forEach((keyword, offset) => {
-        const hits = responses[offset]?.hits?.total;
-        const total = typeof hits === 'number' ? hits : (hits?.value ?? 0);
-        result.set(keyword, Number(total ?? 0));
+        const exact = responses[offset * 2];
+        const similar = responses[offset * 2 + 1];
+        const totalRaw = exact?.hits?.total;
+        const exactNames = extractHitNames(exact);
+        result.set(keyword, {
+          exactCount: Number((typeof totalRaw === 'number' ? totalRaw : totalRaw?.value) ?? 0),
+          exactNames,
+          // 정확 일치에 이미 나온 이름은 유사 목록에서 뺀다 — 화면 중복 방지
+          similarNames: extractHitNames(similar).filter((name) => !exactNames.includes(name)),
+        });
       });
     }
     return result;

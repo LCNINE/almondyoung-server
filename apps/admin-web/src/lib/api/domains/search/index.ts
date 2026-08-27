@@ -49,7 +49,6 @@ export interface KeywordStatistics {
 
 export const KEYWORD_ISSUE_STATUSES = ['new', 'dev', 'md', 'in_progress', 'resolved', 'ignored'] as const;
 export type KeywordIssueStatus = (typeof KEYWORD_ISSUE_STATUSES)[number];
-export type KeywordAutoCause = 'engine' | 'sourcing' | 'unclassified';
 
 export interface KeywordIssue {
   keywordNorm: string;
@@ -72,8 +71,11 @@ export interface ZeroHitKeywordRow {
   neglectDays: number;
   /** 0건 이후 결과가 다시 나오기 시작했으면 true (자동 해소) */
   resolvedByIndex: boolean;
-  autoCause: KeywordAutoCause;
+  /** 색인 대조 근거 — 자동 판정 없음, 개발/MD 판단 재료 */
   matchedProductsCount: number;
+  matchedProductNames: string[];
+  /** 자모 유사(오타 후보) 상품명 — 무관 상품이 섞일 수 있는 참고 정보 */
+  similarProductNames: string[];
   correctedQuery: string | null;
   issue: KeywordIssue | null;
 }
@@ -120,8 +122,9 @@ export interface KeywordDetail {
   lastPositiveAt: string | null;
   firstZeroAt: string | null;
   neglectDays: number | null;
-  autoCause: KeywordAutoCause;
   matchedProductsCount: number;
+  matchedProductNames: string[];
+  similarProductNames: string[];
   correctedQuery: string | null;
   issue: KeywordIssue | null;
 }

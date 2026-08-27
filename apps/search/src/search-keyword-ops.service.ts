@@ -2,7 +2,6 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   AdminKeywordDetailResponseDto,
   AdminZeroHitKeywordsResponseDto,
-  KeywordAutoCause,
   KeywordIssueDto,
   UpsertKeywordIssueDto,
   ZeroHitKeywordRowDto,
@@ -108,13 +107,13 @@ export class SearchKeywordOpsService {
     };
 
     const pageRows = enriched.slice((page - 1) * limit, (page - 1) * limit + limit);
-    const [issues, classification] = await Promise.all([
+    const [issues, evidence] = await Promise.all([
       this.keywordIssueRepository.findByNorms(pageRows.map((row) => row.keywordNorm)),
-      this.classifyKeywords(pageRows.map((row) => row.keyword)),
+      this.gatherEvidence(pageRows.map((row) => row.keyword)),
     ]);
 
     const items: ZeroHitKeywordRowDto[] = pageRows.map((row) => {
-      const cls = classification.get(row.keyword);
+      const ev = evidence.get(row.keyword);
       const issue = issues.get(row.keywordNorm);
       return {
         keyword: row.keyword,
@@ -125,9 +124,10 @@ export class SearchKeywordOpsService {
         firstZeroAt: row.firstZeroAt,
         neglectDays: row.neglectDays,
         resolvedByIndex: row.resolvedByIndex,
-        autoCause: cls?.autoCause ?? 'unclassified',
-        matchedProductsCount: cls?.matchedProductsCount ?? 0,
-        correctedQuery: cls?.correctedQuery ?? null,
+        matchedProductsCount: ev?.matchedProductsCount ?? 0,
+        matchedProductNames: ev?.matchedProductNames ?? [],
+        similarProductNames: ev?.similarProductNames ?? [],
+        correctedQuery: ev?.correctedQuery ?? null,
         issue: issue ? toIssueDto(issue) : null,
       };
     });
@@ -145,7 +145,7 @@ export class SearchKeywordOpsService {
     const fromIso = kstDayStartIso(from);
     const toExclusiveIso = kstDayStartIso(addDays(to, 1));
 
-    const [detail, activityMap, previousCounts, issues, classification] = await Promise.all([
+    const [detail, activityMap, previousCounts, issues, evidence] = await Promise.all([
       this.repository.getKeywordDetail({ keywordNorm, fromIso, toExclusiveIso }),
       this.repository.getKeywordActivity({ keywordNorms: [keywordNorm] }),
       this.repository.getKeywordCounts({
@@ -154,7 +154,7 @@ export class SearchKeywordOpsService {
         keywordNorms: [keywordNorm],
       }),
       this.keywordIssueRepository.findByNorms([keywordNorm]),
-      this.classifyKeywords([keyword]),
+      this.gatherEvidence([keyword]),
     ]);
 
     const activity = activityMap.get(keywordNorm);
@@ -163,7 +163,7 @@ export class SearchKeywordOpsService {
     const lastZeroAt = activity?.lastZeroAt ?? null;
     const neglecting = Boolean(lastZeroAt && (!lastPositiveAt || lastPositiveAt < lastZeroAt));
     const anchorIso = lastPositiveAt ?? firstZeroAt;
-    const cls = classification.get(keyword);
+    const ev = evidence.get(keyword);
     const issue = issues.get(keywordNorm);
 
     return {
@@ -179,9 +179,10 @@ export class SearchKeywordOpsService {
       lastPositiveAt,
       firstZeroAt,
       neglectDays: neglecting && anchorIso ? daysBetween(kstDateOf(anchorIso), todayKst()) : null,
-      autoCause: cls?.autoCause ?? 'unclassified',
-      matchedProductsCount: cls?.matchedProductsCount ?? 0,
-      correctedQuery: cls?.correctedQuery ?? null,
+      matchedProductsCount: ev?.matchedProductsCount ?? 0,
+      matchedProductNames: ev?.matchedProductNames ?? [],
+      similarProductNames: ev?.similarProductNames ?? [],
+      correctedQuery: ev?.correctedQuery ?? null,
       issue: issue ? toIssueDto(issue) : null,
     };
   }
@@ -203,14 +204,31 @@ export class SearchKeywordOpsService {
   }
 
   /**
-   * 원인 자동 분류 — 색인 문자열 대조(+영타 교정 재대조).
-   * 색인에 상품이 있으면 검색엔진/노출 문제(engine, 개발), 없으면 소싱 부재(sourcing, MD).
-   * 색인 조회가 실패하면 unclassified 로 남긴다 — 목록 조회 자체를 막지 않는다.
+   * 색인 대조 **근거** 수집 — 자동 판정을 내리지 않는다 (판정은 오탐이 잦아 제거,
+   * 개발/MD 판단은 사람이 status 로 지정한다). 정확 일치 상품 수·이름, 자모 유사
+   * 상품명(오타 후보), 영타 교정어를 재료로 돌려준다. 영타 교정어의 정확 일치
+   * 상품명은 유사 목록에 합친다. 색인 조회가 실패해도 목록 조회는 막지 않는다.
    */
-  private async classifyKeywords(
-    keywords: string[],
-  ): Promise<Map<string, { autoCause: KeywordAutoCause; matchedProductsCount: number; correctedQuery: string | null }>> {
-    const result = new Map<string, { autoCause: KeywordAutoCause; matchedProductsCount: number; correctedQuery: string | null }>();
+  private async gatherEvidence(keywords: string[]): Promise<
+    Map<
+      string,
+      {
+        matchedProductsCount: number;
+        matchedProductNames: string[];
+        similarProductNames: string[];
+        correctedQuery: string | null;
+      }
+    >
+  > {
+    const result = new Map<
+      string,
+      {
+        matchedProductsCount: number;
+        matchedProductNames: string[];
+        similarProductNames: string[];
+        correctedQuery: string | null;
+      }
+    >();
     const unique = [...new Set(keywords.filter((keyword) => keyword.length > 0))];
     if (unique.length === 0) return result;
 
@@ -221,24 +239,33 @@ export class SearchKeywordOpsService {
     }
 
     try {
-      const matches = await this.productIndexService.countKeywordMatches([
+      const evidence = await this.productIndexService.getKeywordMatchEvidence([
         ...new Set([...unique, ...correctedBy.values()]),
       ]);
       for (const keyword of unique) {
-        const matched = matches.get(keyword) ?? 0;
+        const own = evidence.get(keyword);
         const corrected = correctedBy.get(keyword) ?? null;
-        const correctedMatched = corrected ? (matches.get(corrected) ?? 0) : 0;
+        const correctedEvidence = corrected ? evidence.get(corrected) : undefined;
+        const similar = [
+          ...new Set([
+            ...(own?.similarNames ?? []),
+            ...(correctedEvidence?.exactNames ?? []),
+            ...(correctedEvidence?.similarNames ?? []),
+          ]),
+        ].filter((name) => !(own?.exactNames ?? []).includes(name));
         result.set(keyword, {
-          autoCause: matched > 0 || correctedMatched > 0 ? 'engine' : 'sourcing',
-          matchedProductsCount: matched,
+          matchedProductsCount: own?.exactCount ?? 0,
+          matchedProductNames: own?.exactNames ?? [],
+          similarProductNames: similar,
           correctedQuery: corrected,
         });
       }
     } catch {
       for (const keyword of unique) {
         result.set(keyword, {
-          autoCause: 'unclassified',
           matchedProductsCount: 0,
+          matchedProductNames: [],
+          similarProductNames: [],
           correctedQuery: correctedBy.get(keyword) ?? null,
         });
       }

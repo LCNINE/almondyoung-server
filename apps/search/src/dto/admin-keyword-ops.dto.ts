@@ -6,9 +6,6 @@ import { DateRangeDto, KeywordVolumeBucketDto } from './admin-keyword-statistics
 export const KEYWORD_ISSUE_STATUSES = ['new', 'dev', 'md', 'in_progress', 'resolved', 'ignored'] as const;
 export type KeywordIssueStatus = (typeof KEYWORD_ISSUE_STATUSES)[number];
 
-/** 0건 검색어의 자동 원인 분류 — 수동 상태(status)가 항상 우선한다 */
-export type KeywordAutoCause = 'engine' | 'sourcing' | 'unclassified';
-
 export class AdminZeroHitKeywordsQueryDto {
   @Validate(IsCalendarDateConstraint, { message: 'from 은 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   from: string;
@@ -53,10 +50,14 @@ export class ZeroHitKeywordRowDto {
   neglectDays: number;
   /** 0건 이후 다시 결과가 나오기 시작했으면 true (자동 해소 표시) */
   resolvedByIndex: boolean;
-  /** 자동 원인 분류 — engine: 색인엔 있는데 검색 0건(개발), sourcing: 색인에도 없음(MD) */
-  autoCause: KeywordAutoCause;
-  /** 문자열 포함 대조로 색인에서 찾은 상품 수 */
+  /**
+   * 색인 대조 근거 — 자동 판정 없음. 개발/MD 판단은 사람이 이 재료와 함께 status 로 지정한다.
+   * matchedProductsCount>0 이면 색인엔 있는데 검색이 0건이었다는 뜻(검색엔진·노출 쪽 신호),
+   * similarProductNames 는 오타 후보(무관 상품이 섞일 수 있는 참고 정보).
+   */
   matchedProductsCount: number;
+  matchedProductNames: string[];
+  similarProductNames: string[];
   /** 영타 교정 결과 ("vjak"→"퍼마") — 교정 불가면 null */
   correctedQuery: string | null;
   issue: KeywordIssueDto | null;
@@ -109,8 +110,9 @@ export class AdminKeywordDetailResponseDto {
   firstZeroAt: string | null;
   /** 현재 0건 방치 중일 때만 값이 있다 */
   neglectDays: number | null;
-  autoCause: KeywordAutoCause;
   matchedProductsCount: number;
+  matchedProductNames: string[];
+  similarProductNames: string[];
   correctedQuery: string | null;
   issue: KeywordIssueDto | null;
 }
