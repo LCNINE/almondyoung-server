@@ -701,3 +701,77 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
     expect(spell.suggest).not.toHaveBeenCalled();
   });
 });
+
+describe('ProductIndexService.searchProducts - 키워드 0건일 때 벡터·계측', () => {
+  const hit = (id: string) => ({ _id: id, _source: { master_id: id, version_id: `v-${id}`, name: id } });
+
+  // keywordHitsFor 의 키(검색어)가 요청 본문에 있으면 그 히트를, 없으면 0건을 돌려준다 —
+  // 원본 검색과 교정 재검색을 구분하기 위해 호출 순서가 아니라 본문으로 가른다.
+  async function buildService(
+    keywordHitsFor: Record<string, any[]>,
+    vectorHits: any[],
+    suggestion: string | null = null,
+  ) {
+    const client = makeOpenSearchClient();
+    const knnCalls: any[] = [];
+    client.search = jest.fn().mockImplementation((params: any) => {
+      const body = JSON.stringify(params.body.query);
+      if (body.includes('"knn"')) {
+        knnCalls.push(params);
+        return Promise.resolve({ body: { hits: { hits: vectorHits, total: { value: vectorHits.length } } } });
+      }
+      const matched = Object.keys(keywordHitsFor).find((keyword) => body.includes(keyword));
+      const hits = matched ? keywordHitsFor[matched] : [];
+      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService([0.1, 0.2]) },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService(suggestion) },
+      ],
+    }).compile();
+    return { service: module.get<ProductIndexService>(ProductIndexService), knnCalls };
+  }
+
+  it('키워드가 0건이면 벡터로 채우지 않는다', async () => {
+    const { service } = await buildService({}, [hit('c'), hit('d')]);
+
+    const result = await service.searchProducts({ q: '바리깡', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.items).toHaveLength(0);
+    expect(result.pagination.total).toBe(0);
+  });
+
+  it('교정 재검색에는 벡터를 태우지 않는다 — 교정어의 이웃으로 화면이 덮이지 않게', async () => {
+    const { service, knnCalls } = await buildService({ 발광: [hit('x')] }, [hit('c'), hit('d')], '발광');
+
+    const result = await service.searchProducts({ q: '바리깡', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.correctedQuery).toBe('발광');
+    expect(result.items.map((item) => item.productId)).toEqual(['x']);
+    // 원본 검색에서 한 번 부르고, 교정 재검색에서는 부르지 않는다.
+    expect(knnCalls).toHaveLength(1);
+  });
+
+  it('교정으로 찾은 건수는 원본 검색어의 몫이 아니라 0 으로 기록된다', async () => {
+    const { service } = await buildService({ 발광: [hit('x')] }, [], '발광');
+
+    const result = await service.searchProducts({ q: '바리깡', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.pagination.total).toBe(1);
+    expect(result.keywordMatchCount).toBe(0);
+  });
+
+  it('키워드가 있으면 벡터 융합은 그대로 돈다', async () => {
+    const { service } = await buildService({ 펌지: [hit('a')] }, [hit('c')]);
+
+    const result = await service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.items.map((item) => item.productId)).toEqual(['a', 'c']);
+    expect(result.keywordMatchCount).toBe(1);
+  });
+});

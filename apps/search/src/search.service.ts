@@ -24,7 +24,10 @@ export class SearchService {
     const isFirstPage = (query.page || 1) === 1;
 
     if (hasKeyword && isFirstPage && query.track !== false) {
-      void this.searchKeywordService.recordSearchKeyword(query.q || '', response.pagination.total).catch((error) => {
+      // pagination.total 이 아니라 keywordMatchCount 를 남긴다 — total 에는 벡터가 채운 몫과
+      // 교정어로 찾은 몫이 섞여 있어, 안 파는 상품의 검색어가 0 건으로 안 잡힌다.
+      const resultCount = response.keywordMatchCount ?? response.pagination.total;
+      void this.searchKeywordService.recordSearchKeyword(query.q || '', resultCount).catch((error) => {
         this.logger.warn(`Failed to record search keyword: ${error instanceof Error ? error.message : String(error)}`);
       });
     }

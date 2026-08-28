@@ -216,11 +216,14 @@ export class ProductIndexService implements OnModuleInit {
 
     let resultHits: any[] = [];
     let total = 0;
+    let keywordMatchCount = 0;
 
     if (hasKeyword) {
       const noriCollapsed = await this.isNoriCollapsed(query.q!.trim());
       // 관련도 정렬일 때만 벡터를 태운다. 가격·최신순은 융합하지 않으므로 임베딩 호출이 낭비다.
-      const useVector = query.sort === 'relevance';
+      // 교정 재검색(correct=false)에서도 뺀다 — 교정어 자체가 이미 추측이라 그 위에 벡터 추측을
+      // 얹으면 "바리깡"이 교정어 "발광"의 이웃 99 건으로 뒤덮인다.
+      const useVector = query.sort === 'relevance' && query.correct !== false;
       const [strictResponse, fallbackResponse, vectorHits] = await Promise.all([
         this.executeSearch({
           index,
@@ -243,11 +246,14 @@ export class ProductIndexService implements OnModuleInit {
       const fallbackHits = fallbackResponse.body.hits.hits as any[];
       const keywordHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
 
+      // 키워드가 한 건도 못 찾았으면 벡터로 채우지 않는다. 안 파는 상품을 뜻만 닮은 100 건으로
+      // 덮으면 화면이 거짓말을 하고, result_count 도 0 이 아니게 되어 소싱 리포트에서 사라진다.
       const mergedHits =
-        vectorHits.length > 0
+        keywordHits.length > 0 && vectorHits.length > 0
           ? this.fuseWithRrf(keywordHits, vectorHits, this.keywordResultPoolLimit)
           : keywordHits;
 
+      keywordMatchCount = keywordHits.length;
       total = mergedHits.length;
       resultHits = mergedHits.slice(from, from + size);
 
@@ -273,6 +279,7 @@ export class ProductIndexService implements OnModuleInit {
       const hits = response.body.hits;
       total = this.extractTotal(hits.total);
       resultHits = hits.hits as any[];
+      keywordMatchCount = total;
     }
 
     const items: ProductSearchItemDto[] = resultHits.map((hit: any) => {
@@ -303,6 +310,7 @@ export class ProductIndexService implements OnModuleInit {
         totalPages: Math.ceil(total / size),
       },
       ...(correctedQuery ? { correctedQuery } : {}),
+      keywordMatchCount,
     };
   }
 
@@ -502,7 +510,8 @@ export class ProductIndexService implements OnModuleInit {
     }
 
     this.logger.log(`검색어 교정: "${query.q}" → "${corrected}" (${retried.pagination.total}건)`);
-    return { ...retried, correctedQuery: corrected };
+    // 교정어가 찾은 건수는 원본 검색어가 찾은 게 아니다 — 0 으로 남겨야 "바리깡"이 소싱 후보에 남는다.
+    return { ...retried, correctedQuery: corrected, keywordMatchCount: 0 };
   }
 
   /** 상품명 임베딩으로 k-NN 검색. 실패하면 빈 배열 — 검색은 키워드만으로 계속 간다. */
