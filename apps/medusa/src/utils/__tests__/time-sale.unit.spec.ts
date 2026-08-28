@@ -1,5 +1,5 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { getActiveTimeSale, listProductsInPriceLists } from '../time-sale';
+import { listActiveTimeSales, listProductsInPriceLists } from '../time-sale';
 import timeSaleCacheBoundaryJob from '../../jobs/time-sale-cache-boundary';
 
 type RawCall = { sql: string; bindings: unknown[] };
@@ -40,11 +40,11 @@ const listRow = (over: Partial<Record<string, unknown>> = {}) => ({
 const isListQuery = (sql: string) => sql.includes('from price_list pl');
 const isProductQuery = (sql: string) => sql.includes('from price pr');
 
-describe('getActiveTimeSale', () => {
+describe('listActiveTimeSales', () => {
   it('상시 리스트를 거르려고 기간이 설정된 sale price list 만 고른다', async () => {
-    const { container, calls } = makeContainer(({ sql }) => (isListQuery(sql) ? [] : []));
+    const { container, calls } = makeContainer(() => []);
 
-    await getActiveTimeSale(container);
+    await listActiveTimeSales(container);
 
     const sql = calls[0].sql;
     expect(sql).toContain("pl.type = 'sale'");
@@ -53,44 +53,97 @@ describe('getActiveTimeSale', () => {
     expect(sql).toContain('pl.starts_at is not null or pl.ends_at is not null');
   });
 
-  it('진행 중인 세일이 없으면 null 이고 상품을 조회하지 않는다', async () => {
+  it('진행 중인 세일이 없으면 빈 배열이고 상품을 조회하지 않는다', async () => {
     const { container, calls } = makeContainer(() => []);
 
-    await expect(getActiveTimeSale(container)).resolves.toBeNull();
+    await expect(listActiveTimeSales(container)).resolves.toEqual([]);
     expect(calls.filter((c) => isProductQuery(c.sql))).toHaveLength(0);
   });
 
-  // 겹침은 어드민이 막지만 뚫렸을 때 카운트다운이 실제보다 길게 보이면 "아직 남았다" 를 보고 담은
-  // 손님이 정가를 만난다. 짧게 보이는 쪽이 안전하다.
-  it('여러 세일이 활성이면 가장 빨리 끝나는 종료 시각을 쓴다', async () => {
+  // 카테고리마다 기간이 다른 세일을 동시에 거는 게 목적이다. 하나로 접으면 늦게 끝나는 세일의
+  // 상품에 남의 카운트다운이 붙는다.
+  it('제목이 다른 세일은 따로 돌려주고 상품도 각자의 것만 담는다', async () => {
     const { container } = makeContainer(({ sql }) =>
       isListQuery(sql)
         ? [
-            listRow({ id: 'plist_late', ends_at: new Date('2026-09-05T00:00:00Z') }),
-            listRow({ id: 'plist_soon', ends_at: new Date('2026-08-29T00:00:00Z') }),
+            listRow({ id: 'plist_a', title: '미용기기 세일', ends_at: new Date('2026-08-29T00:00:00Z') }),
+            listRow({ id: 'plist_b', title: '색소 세일', ends_at: new Date('2026-09-05T00:00:00Z') }),
           ]
-        : [{ id: 'prod_1', handle: 'handle-1' }]
+        : [
+            { price_list_id: 'plist_a', id: 'prod_1', handle: 'h1' },
+            { price_list_id: 'plist_b', id: 'prod_2', handle: 'h2' },
+          ]
     );
 
-    const sale = await getActiveTimeSale(container);
+    const sales = await listActiveTimeSales(container);
 
-    expect(sale?.endsAt).toBe('2026-08-29T00:00:00.000Z');
-    expect(sale?.priceListIds).toEqual(['plist_late', 'plist_soon']);
+    expect(sales).toHaveLength(2);
+    expect(sales[0]).toMatchObject({
+      title: '미용기기 세일',
+      endsAt: '2026-08-29T00:00:00.000Z',
+      productIds: ['prod_1'],
+    });
+    expect(sales[1]).toMatchObject({
+      title: '색소 세일',
+      endsAt: '2026-09-05T00:00:00.000Z',
+      productIds: ['prod_2'],
+    });
   });
 
-  it('세일 이름은 멤버십 전용이 아닌 리스트에서 가져온다', async () => {
+  // 세일 하나는 price list 둘(일반용·멤버십용)로 저장된다. 묶지 않으면 화면에 같은 세일이 두 번 뜬다.
+  it('멤버십용 리스트를 제목 접미사로 일반용과 한 세일로 묶는다', async () => {
     const { container } = makeContainer(({ sql }) =>
       isListQuery(sql)
         ? [
-            listRow({ id: 'plist_m', title: '멤버십용', is_membership_only: true }),
-            listRow({ id: 'plist_g', title: '8월 마감 세일', is_membership_only: false }),
+            listRow({ id: 'plist_g', title: '8월 마감 세일' }),
+            listRow({ id: 'plist_m', title: '8월 마감 세일 (멤버십)', is_membership_only: true }),
+          ]
+        : [
+            { price_list_id: 'plist_g', id: 'prod_1', handle: 'h1' },
+            { price_list_id: 'plist_m', id: 'prod_1', handle: 'h1' },
+          ]
+    );
+
+    const sales = await listActiveTimeSales(container);
+
+    expect(sales).toHaveLength(1);
+    expect(sales[0].title).toBe('8월 마감 세일');
+    expect(sales[0].priceListIds).toEqual(['plist_g', 'plist_m']);
+    // 두 리스트에 같은 상품이 걸려 있어도 목록엔 한 번만 나온다.
+    expect(sales[0].productIds).toEqual(['prod_1']);
+  });
+
+  it('멤버십용 리스트만 남은 세일은 접미사를 뗀 제목을 쓴다', async () => {
+    const { container } = makeContainer(({ sql }) =>
+      isListQuery(sql)
+        ? [listRow({ id: 'plist_m', title: '8월 마감 세일 (멤버십)', is_membership_only: true })]
+        : []
+    );
+
+    const [sale] = await listActiveTimeSales(container);
+
+    expect(sale.title).toBe('8월 마감 세일');
+  });
+
+  // 짝인 두 리스트는 기간이 같지만, 어긋났다면 "아직 남았다" 를 보고 담은 손님이 정가를 만난다.
+  it('한 세일 안에서 종료 시각이 어긋나면 짧은 쪽을 쓴다', async () => {
+    const { container } = makeContainer(({ sql }) =>
+      isListQuery(sql)
+        ? [
+            listRow({ id: 'plist_g', title: '8월 마감 세일', ends_at: new Date('2026-09-05T00:00:00Z') }),
+            listRow({
+              id: 'plist_m',
+              title: '8월 마감 세일 (멤버십)',
+              is_membership_only: true,
+              ends_at: new Date('2026-08-29T00:00:00Z'),
+            }),
           ]
         : []
     );
 
-    const sale = await getActiveTimeSale(container);
+    const [sale] = await listActiveTimeSales(container);
 
-    expect(sale?.title).toBe('8월 마감 세일');
+    expect(sale.endsAt).toBe('2026-08-29T00:00:00.000Z');
   });
 });
 
@@ -142,9 +195,9 @@ describe('time-sale-cache-boundary job', () => {
       isListQuery(sql)
         ? [listRow()]
         : [
-            { id: 'prod_1', handle: 'h1' },
-            { id: 'prod_2', handle: 'h2' },
-            { id: 'prod_3', handle: 'h3' },
+            { price_list_id: 'plist_general', id: 'prod_1', handle: 'h1' },
+            { price_list_id: 'plist_general', id: 'prod_2', handle: 'h2' },
+            { price_list_id: 'plist_general', id: 'prod_3', handle: 'h3' },
           ]
     );
 

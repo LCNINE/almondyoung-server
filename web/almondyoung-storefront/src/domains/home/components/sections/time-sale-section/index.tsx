@@ -11,6 +11,8 @@ import { HomeSection } from "../../shared/home-section"
 
 interface TimeSaleSectionProps {
   endsAt: string
+  /** 세일이 여럿일 때만 준다 — 하나뿐이면 "타임세일" 이 곧 이름이라 운영자가 지은 제목이 군더더기다. */
+  title?: string
   products: HttpTypes.StoreProduct[]
   tabs: TimeSaleTab[]
   customer: StoreCustomerWithGroups | null
@@ -29,6 +31,7 @@ const FALLBACK_TAB = {
 
 export function TimeSaleSection({
   endsAt,
+  title,
   products,
   tabs,
   customer,
@@ -43,13 +46,17 @@ export function TimeSaleSection({
     : products
 
   return (
-    <HomeSection background="muted" className="[&_img]:p-0!">
+    <HomeSection className="[&_img]:p-0!">
       <ProductSection
         title={
-          <>
-            <span className="text-primary">{t("titleFirst")}</span>
-            {t("titleSecond")}
-          </>
+          title ? (
+            <span className="text-primary">{title}</span>
+          ) : (
+            <>
+              <span className="text-primary">{t("titleFirst")}</span>
+              {t("titleSecond")}
+            </>
+          )
         }
         tabs={items.length > 0 ? items : [FALLBACK_TAB]}
         activeTab={activeTab ?? FALLBACK_TAB}
@@ -59,6 +66,9 @@ export function TimeSaleSection({
         customer={customer}
         wishlistIds={wishlistIds}
         moreHref="/time-sale"
+        // 데스크톱은 두 줄까지만. lg 는 5열이라 10개가 두 줄이고, md 는 4열이라 그 구간에서만
+        // 9번째부터 감춰 두 줄을 맞춘다. 넘치는 상품은 "더보기" 로 전용 페이지에서 본다.
+        gridClassName="md:max-lg:[&>li:nth-child(n+9)]:hidden"
         emptyTitle={t("emptyTitle")}
         renderOverlay={() => (
           <TimeSaleCountdown

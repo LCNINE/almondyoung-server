@@ -1,6 +1,6 @@
 import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { TimeSaleWrapper } from "@/domains/home/template/time-sale"
-import { getActiveTimeSale } from "@/lib/api/medusa/time-sale"
+import { listActiveTimeSales } from "@/lib/api/medusa/time-sale"
 import { NOINDEX } from "@lib/seo"
 import { getTranslations } from "next-intl/server"
 import type { Metadata } from "next"
@@ -15,8 +15,8 @@ export default async function TimeSalePage({
   params: Promise<{ countryCode: string }>
 }) {
   const { countryCode } = await params
-  const [timeSale, t] = await Promise.all([
-    getActiveTimeSale(),
+  const [sales, t] = await Promise.all([
+    listActiveTimeSales(),
     getTranslations("home.timeSale"),
   ])
 
@@ -26,7 +26,7 @@ export default async function TimeSalePage({
 
       {/* 세일이 없어도 404 로 보내지 않는다 — 이 링크는 홈·카트·상품상세에 박혀 있어서
           세일 사이에 죽은 링크가 된다. */}
-      {timeSale ? (
+      {sales.length > 0 ? (
         <TimeSaleWrapper countryCode={countryCode} />
       ) : (
         <div className="py-24 text-center">

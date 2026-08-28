@@ -1,17 +1,17 @@
 "use client"
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
+import type { TimeSale } from "@/lib/api/medusa/time-sale"
 
 type TimeSaleContextValue = {
-  endsAt: string | null
-  /** 이 id 로 계산된 가격이면 타임세일가다. */
-  priceListIds: Set<string>
+  sales: TimeSale[]
+  /** price list id → 그 리스트를 만든 세일. */
+  byPriceListId: Map<string, TimeSale>
 }
 
-const TimeSaleContext = createContext<TimeSaleContextValue>({
-  endsAt: null,
-  priceListIds: new Set(),
-})
+const EMPTY: TimeSaleContextValue = { sales: [], byPriceListId: new Map() }
+
+const TimeSaleContext = createContext<TimeSaleContextValue>(EMPTY)
 
 /**
  * 진행 중인 타임세일을 카드·상세·카트가 함께 본다.
@@ -21,20 +21,24 @@ const TimeSaleContext = createContext<TimeSaleContextValue>({
  * 그 화면에서만 뱃지가 사라진다.
  *
  * `price_list_type` 으로는 판별할 수 없다 — 멤버십가·수량 할인도 전부 sale 타입이라 같은 흔적을
- * 남긴다. 그래서 id 집합으로 가른다.
+ * 남긴다. 그래서 id 로 가른다. 세일이 여럿이라 id → 세일 맵이어야 한다: 어느 세일에서 나온
+ * 가격인지 알아야 그 상품에 **자기 세일의** 남은 시간을 붙일 수 있다.
  */
 export function TimeSaleProvider({
-  endsAt,
-  priceListIds,
+  sales,
   children,
 }: {
-  endsAt: string | null
-  priceListIds: string[]
+  sales: TimeSale[]
   children: ReactNode
 }) {
   const value = useMemo(
-    () => ({ endsAt, priceListIds: new Set(priceListIds) }),
-    [endsAt, priceListIds]
+    () => ({
+      sales,
+      byPriceListId: new Map(
+        sales.flatMap((sale) => sale.priceListIds.map((id) => [id, sale] as const))
+      ),
+    }),
+    [sales]
   )
 
   return <TimeSaleContext.Provider value={value}>{children}</TimeSaleContext.Provider>
@@ -55,9 +59,32 @@ type VariantLike =
   | null
   | undefined
 
+/** 이 variant 의 현재 가격을 만든 타임세일. 세일가가 아니면 null. */
+export function useTimeSaleForVariant(variant: VariantLike): TimeSale | null {
+  const { byPriceListId } = useTimeSale()
+  const priceListId = variant?.calculated_price?.calculated_price?.price_list_id
+  return (priceListId && byPriceListId.get(priceListId)) || null
+}
+
 /** 이 variant 의 현재 가격이 타임세일에서 나왔는지. */
 export function useIsTimeSalePrice(variant: VariantLike): boolean {
-  const { priceListIds } = useTimeSale()
-  const priceListId = variant?.calculated_price?.calculated_price?.price_list_id
-  return Boolean(priceListId && priceListIds.has(priceListId))
+  return useTimeSaleForVariant(variant) !== null
+}
+
+/**
+ * 이 상품들이 속한 세일 중 가장 먼저 끝나는 종료 시각. 없으면 null.
+ *
+ * 카트처럼 여러 상품을 한 번에 안내하는 자리에서 쓴다 — 가장 임박한 마감을 보여줘야 손님이
+ * 늦게 알아차리지 않는다.
+ */
+export function useEarliestSaleEnd(productIds: string[]): string | null {
+  const { sales } = useTimeSale()
+
+  return useMemo(() => {
+    const ids = new Set(productIds)
+    return sales.reduce<string | null>((earliest, sale) => {
+      if (!sale.endsAt || !sale.productIds.some((id) => ids.has(id))) return earliest
+      return !earliest || sale.endsAt < earliest ? sale.endsAt : earliest
+    }, null)
+  }, [sales, productIds])
 }

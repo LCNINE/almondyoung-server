@@ -43,7 +43,8 @@ export default async function timeSaleCacheBoundaryJob(container: MedusaContaine
     container,
     crossed.map((list) => list.id)
   );
-  const handles = products.map((product) => product.handle).filter(Boolean);
+  // 한 상품이 여러 리스트에 걸려 있으면 행도 여럿이라 중복을 걷는다 (무효화는 멱등이지만 태그가 불어난다).
+  const handles = [...new Set(products.map((product) => product.handle).filter(Boolean))];
 
   // 라우트는 `handle` 이 실렸을 때만 전역 목록 태그와 카테고리 경로를 비운다. 그건 한 번이면 족하므로
   // 첫 상품만 handle 로 싣고 나머지는 태그로 정확히 지운다 (channel-adapter 의 배치 무효화와 같은 형태).

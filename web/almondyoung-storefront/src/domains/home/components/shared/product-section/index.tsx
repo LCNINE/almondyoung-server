@@ -8,6 +8,7 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs"
 import ProductCard from "@/domains/products/components/product-card"
 import RankBadge from "@/domains/products/components/rank-badge"
+import { cn } from "@/lib/utils"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import { CustomerGroup } from "@/lib/types/dto/medusa"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
@@ -46,6 +47,8 @@ interface ProductSectionProps<T extends TabItem> {
   headerExtra?: ReactNode
   footer?: ReactNode
   renderOverlay?: (product: HttpTypes.StoreProduct, index: number) => ReactNode
+  /** 데스크톱 그리드에 얹을 클래스. 줄 수를 제한할 때 쓴다. */
+  gridClassName?: string
 }
 
 export function ProductSection<T extends TabItem>({
@@ -65,6 +68,7 @@ export function ProductSection<T extends TabItem>({
   headerExtra,
   footer,
   renderOverlay = (_product, index) => <RankBadge rank={index + 1} />,
+  gridClassName,
 }: ProductSectionProps<T>) {
   const handleTabChange = (value: string) => {
     const nextTab = tabs.find((t) => t.id === value)
@@ -124,7 +128,12 @@ export function ProductSection<T extends TabItem>({
         </Carousel>
 
         {/* 태블릿 이상 */}
-        <ul className="hidden w-full gap-x-4 gap-y-6 md:grid md:grid-cols-4 lg:grid-cols-5">
+        <ul
+          className={cn(
+            "hidden w-full gap-x-4 gap-y-6 md:grid md:grid-cols-4 lg:grid-cols-5",
+            gridClassName
+          )}
+        >
           {products.map((p, index) => (
             <li key={p.id}>{renderProductCard(p, index)}</li>
           ))}

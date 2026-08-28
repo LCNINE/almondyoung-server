@@ -3,10 +3,7 @@
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { TimeSaleBadge } from "@/components/shared/badges/time-sale-badge"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
-import {
-  useIsTimeSalePrice,
-  useTimeSale,
-} from "@/components/providers/time-sale-provider"
+import { useTimeSaleForVariant } from "@/components/providers/time-sale-provider"
 import {
   getPricesForVariant,
   getProductPrice,
@@ -28,8 +25,10 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const t = useTranslations("productDetail.price")
   const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })
-  const isTimeSale = useIsTimeSalePrice(cheapestVariant)
-  const { endsAt } = useTimeSale()
+  // 세일이 여럿이라 전역 종료 시각이 없다 — 이 품목의 가격을 만든 세일의 것을 쓴다.
+  const timeSale = useTimeSaleForVariant(cheapestVariant)
+  const isTimeSale = timeSale !== null
+  const endsAt = timeSale?.endsAt ?? null
 
   if (!cheapestPrice) return null
 

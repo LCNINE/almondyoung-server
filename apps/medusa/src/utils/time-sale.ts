@@ -90,7 +90,7 @@ type ListRow = {
   is_membership_only: boolean;
 };
 
-type ProductRow = { id: string; handle: string };
+type ProductRow = { id: string; handle: string; price_list_id: string };
 
 const toIso = (value: Date | string | null): string | null => {
   if (!value) return null;
@@ -106,7 +106,12 @@ const toLists = (rows: ListRow[]): TimeSaleList[] =>
     isMembershipOnly: row.is_membership_only,
   }));
 
-/** price list 에 가격이 걸린 판매중 상품. 세일 종료 뒤에도 가격 행은 남으므로 종료된 리스트에도 쓸 수 있다. */
+/**
+ * price list 에 가격이 걸린 판매중 상품. 세일 종료 뒤에도 가격 행은 남으므로 종료된 리스트에도 쓸 수 있다.
+ *
+ * 어느 리스트에서 나왔는지(`price_list_id`)를 같이 준다 — 세일이 여럿이면 그걸로 갈라야 한다.
+ * 한 상품이 두 리스트에 걸려 있으면 행도 둘이니, 상품 단위로 쓰는 쪽은 중복을 걷어내야 한다.
+ */
 export async function listProductsInPriceLists(
   container: MedusaContainer,
   priceListIds: string[]
@@ -116,16 +121,26 @@ export async function listProductsInPriceLists(
   const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
   // `= any(?)` 는 드라이버가 배열을 펼쳐 넣어 문법이 깨지는 사례가 있어 placeholder 를 직접 만든다.
   const placeholders = priceListIds.map(() => '?').join(',');
+  // 정렬 기준은 판매순 → 리뷰순 → 최신순. 홈 타임세일이 이 순서를 그대로 쓰므로 여기서 한 번만
+  // 정한다 — 스토어프론트가 다시 정렬하면 정렬에 필요한 판매량·리뷰수를 상품 응답에 또 실어야 한다.
+  // psi 는 left join 이다: 색인이 아직 없는 신상품을 목록에서 통째로 떨어뜨리면 안 된다.
   const result = await knex.raw(
     `
-      select distinct p.id, p.handle
+      select pr.price_list_id, p.id, p.handle
       from price pr
       join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id
       join product_variant pv on pv.id = pvps.variant_id and pv.deleted_at is null
       join product p on p.id = pv.product_id and p.deleted_at is null
+      left join product_sort_index psi
+        on psi.product_id = p.id and psi.deleted_at is null and psi.currency_code = 'krw'
       where pr.price_list_id in (${placeholders})
         and pr.deleted_at is null
         and p.status = 'published'
+      group by pr.price_list_id, p.id, p.handle, psi.sales_count, psi.review_count, p.created_at
+      order by
+        coalesce(psi.sales_count, 0) desc,
+        coalesce(psi.review_count, 0) desc,
+        p.created_at desc
     `,
     priceListIds
   );
@@ -133,37 +148,175 @@ export async function listProductsInPriceLists(
   return (result.rows ?? []) as ProductRow[];
 }
 
+/** 어드민이 멤버십용 리스트 제목에 붙이는 접미사 (admin-web `MEMBERSHIP_LIST_TITLE_SUFFIX` 와 같은 값). */
+const MEMBERSHIP_LIST_TITLE_SUFFIX = ' (멤버십)';
+
+/** 일반용·멤버십용 두 리스트를 한 세일로 묶는 키. 짝의 단서는 제목뿐이다 — 룰도 기간도 세일마다 같을 수 있다. */
+const saleKey = (list: TimeSaleList): string =>
+  list.isMembershipOnly && list.title.endsWith(MEMBERSHIP_LIST_TITLE_SUFFIX)
+    ? list.title.slice(0, -MEMBERSHIP_LIST_TITLE_SUFFIX.length)
+    : list.title;
+
+export type TimeSaleDetail = {
+  generalId: string | null;
+  membershipId: string | null;
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  productIds: string[];
+  /** variant id → 일반용 세일가. */
+  generalPrices: Record<string, number>;
+  /** variant id → 멤버십용 세일가. */
+  membershipPrices: Record<string, number>;
+};
+
+type PriceRow = {
+  price_list_id: string;
+  amount: string | number;
+  variant_id: string;
+  product_id: string;
+};
+
+const ALL_SQL = `
+  select ${TIME_SALE_LIST_COLUMNS}
+  from price_list pl
+  where ${TIME_SALE_BASE_WHERE}
+  order by pl.starts_at desc nulls last
+`;
+
 /**
- * 지금 진행 중인 타임세일. 없으면 null.
+ * 어드민이 보는 타임세일 전부 — 예약·진행·종료를 가리지 않는다.
  *
- * 기간 겹침은 어드민이 막으므로 활성 세일은 최대 하나이고, 그 하나가 일반용·멤버십용 리스트 둘로
- * 이뤄진다. 겹침이 뚫려 여러 세일이 활성이면 가장 빨리 끝나는 쪽의 종료 시각을 쓴다 —
- * 카운트다운이 실제보다 길게 보이는 것보다 짧게 보이는 쪽이 안전하다.
+ * 가격을 **variant id 로** 돌려주는 게 핵심이다. Medusa Admin API 로는 price 에서 variant 로 갈 수
+ * 없다 — pricing 모듈은 product 를 모르고, `*prices.price_set.variant` 확장은 mikro-orm 에서
+ * 그대로 터진다. 그 사이를 잇는 건 `product_variant_price_set` 링크 테이블뿐이라 여기서 조인한다.
  */
-export async function getActiveTimeSale(container: MedusaContainer): Promise<ActiveTimeSale | null> {
+export async function listAllTimeSales(container: MedusaContainer): Promise<TimeSaleDetail[]> {
+  const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+  const result = await knex.raw(ALL_SQL);
+  const lists = toLists((result.rows ?? []) as ListRow[]);
+
+  if (lists.length === 0) return [];
+
+  const placeholders = lists.map(() => '?').join(',');
+  const priceResult = await knex.raw(
+    `
+      select pr.price_list_id, pr.amount, pvps.variant_id, pv.product_id
+      from price pr
+      join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id
+      join product_variant pv on pv.id = pvps.variant_id and pv.deleted_at is null
+      where pr.price_list_id in (${placeholders})
+        and pr.deleted_at is null
+    `,
+    lists.map((list) => list.id)
+  );
+  const priceRows = (priceResult.rows ?? []) as PriceRow[];
+
+  const groups = new Map<string, TimeSaleList[]>();
+  for (const list of lists) {
+    const key = saleKey(list);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(list);
+    else groups.set(key, [list]);
+  }
+
+  return [...groups.entries()].map(([key, group]) => {
+    const general = group.find((list) => !list.isMembershipOnly) ?? null;
+    const membership = group.find((list) => list.isMembershipOnly) ?? null;
+    const face = general ?? group[0];
+
+    const generalPrices: Record<string, number> = {};
+    const membershipPrices: Record<string, number> = {};
+    const productIds = new Set<string>();
+
+    for (const row of priceRows) {
+      const amount = Number(row.amount);
+      if (row.price_list_id === general?.id) {
+        generalPrices[row.variant_id] = amount;
+        productIds.add(row.product_id);
+      } else if (row.price_list_id === membership?.id) {
+        membershipPrices[row.variant_id] = amount;
+        productIds.add(row.product_id);
+      }
+    }
+
+    return {
+      generalId: general?.id ?? null,
+      membershipId: membership?.id ?? null,
+      title: face.isMembershipOnly ? key : face.title,
+      startsAt: face.startsAt,
+      endsAt: face.endsAt,
+      productIds: [...productIds],
+      generalPrices,
+      membershipPrices,
+    };
+  });
+}
+
+/**
+ * 지금 진행 중인 타임세일 전부. 종료가 빠른 순.
+ *
+ * 세일 하나가 일반용·멤버십용 리스트 둘로 이뤄지므로 제목으로 묶어 되돌린다. 세일이 여럿일 수
+ * 있는 이유는 카테고리마다 기간이 다른 세일을 동시에 걸기 때문이다 — 어드민은 **같은 상품이**
+ * 겹칠 때만 막고, 기간만 겹치는 건 허용한다.
+ *
+ * 한 상품이 두 세일에 겹치면 Medusa 가 `rules_count 내림 → amount 오름` 으로 싼 쪽을 고른다.
+ * 그 상품은 두 세일 모두의 목록에 뜨지만 카드에 찍히는 가격은 이긴 쪽이라, 종료 시각이 실제보다
+ * 길게 보일 수 있다. 겹침을 막는 건 어드민의 몫이다.
+ */
+export async function listActiveTimeSales(container: MedusaContainer): Promise<ActiveTimeSale[]> {
   const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
   const result = await knex.raw(ACTIVE_SQL);
   const lists = toLists((result.rows ?? []) as ListRow[]);
 
-  if (lists.length === 0) return null;
+  if (lists.length === 0) return [];
 
-  const priceListIds = lists.map((list) => list.id);
-  const products = await listProductsInPriceLists(container, priceListIds);
+  const products = await listProductsInPriceLists(
+    container,
+    lists.map((list) => list.id)
+  );
 
-  // 일반용 리스트가 세일의 얼굴이다 — 멤버십 전용 리스트는 미구독자에게 안 보이므로 제목이 될 수 없다.
-  const face = lists.find((list) => !list.isMembershipOnly) ?? lists[0];
+  const productsByList = new Map<string, ProductRow[]>();
+  for (const product of products) {
+    const bucket = productsByList.get(product.price_list_id);
+    if (bucket) bucket.push(product);
+    else productsByList.set(product.price_list_id, [product]);
+  }
 
-  return {
-    title: face.title,
-    startsAt: face.startsAt,
-    endsAt: lists.reduce<string | null>((earliest, list) => {
-      if (!list.endsAt) return earliest;
-      return !earliest || list.endsAt < earliest ? list.endsAt : earliest;
-    }, null),
-    priceListIds,
-    productIds: products.map((product) => product.id),
-    productHandles: products.map((product) => product.handle),
-  };
+  // ACTIVE_SQL 이 종료 빠른 순으로 주고 Map 이 삽입 순서를 지키므로, 그룹 순서가 곧 마감 임박 순이다.
+  const groups = new Map<string, TimeSaleList[]>();
+  for (const list of lists) {
+    const key = saleKey(list);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(list);
+    else groups.set(key, [list]);
+  }
+
+  return [...groups.entries()].map(([key, group]) => {
+    // 일반용 리스트가 세일의 얼굴이다 — 멤버십 전용 리스트는 미구독자에게 안 보이므로 제목이 될 수 없다.
+    const face = group.find((list) => !list.isMembershipOnly) ?? group[0];
+    const byProductId = new Map<string, ProductRow>();
+    for (const list of group) {
+      for (const product of productsByList.get(list.id) ?? []) {
+        byProductId.set(product.id, product);
+      }
+    }
+    const grouped = [...byProductId.values()];
+
+    return {
+      title: face.isMembershipOnly ? key : face.title,
+      startsAt: face.startsAt,
+      // 짝인 두 리스트는 기간이 같지만, 어긋났다면 짧은 쪽을 쓴다 — 카운트다운이 실제보다 길게
+      // 보이는 것보다 짧게 보이는 쪽이 안전하다.
+      endsAt: group.reduce<string | null>((earliest, list) => {
+        if (!list.endsAt) return earliest;
+        return !earliest || list.endsAt < earliest ? list.endsAt : earliest;
+      }, null),
+      priceListIds: group.map((list) => list.id),
+      productIds: grouped.map((product) => product.id),
+      productHandles: grouped.map((product) => product.handle),
+    };
+  });
 }
 
 /**

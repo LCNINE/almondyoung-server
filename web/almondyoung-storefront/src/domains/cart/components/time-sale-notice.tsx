@@ -1,7 +1,8 @@
 "use client"
 
+import { useMemo } from "react"
 import type { HttpTypes } from "@medusajs/types"
-import { useTimeSale } from "@/components/providers/time-sale-provider"
+import { useEarliestSaleEnd } from "@/components/providers/time-sale-provider"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 
 /**
@@ -14,23 +15,22 @@ import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
  *
  * 카트 라인에서 타임세일 여부를 직접 읽을 수는 없다 — `compare_at_unit_price` 는 멤버십가·수량
  * 할인도 똑같이 채우기 때문이다. 그래서 세일 상품 id 집합과 교차한다.
+ *
+ * 세일이 여럿이면 가장 먼저 끝나는 마감을 쓴다. 담긴 상품마다 카운터를 다는 것보다, 다음에
+ * 가격이 바뀌는 시점 하나를 보여주는 편이 읽힌다 — 그 시점에 새로고침이 걸려 나머지도 함께 맞는다.
  */
 export function CartTimeSaleNotice({
   items,
-  saleProductIds,
 }: {
   items: HttpTypes.StoreCartLineItem[]
-  saleProductIds: string[]
 }) {
-  const { endsAt } = useTimeSale()
-
-  if (!endsAt || saleProductIds.length === 0) return null
-
-  const onSale = new Set(saleProductIds)
-  const hasSaleItem = items.some(
-    (item) => item.product_id && onSale.has(item.product_id)
+  const productIds = useMemo(
+    () => items.map((item) => item.product_id).filter((id): id is string => Boolean(id)),
+    [items]
   )
-  if (!hasSaleItem) return null
+  const endsAt = useEarliestSaleEnd(productIds)
+
+  if (!endsAt) return null
 
   return (
     <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3">
