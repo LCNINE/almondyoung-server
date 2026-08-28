@@ -3,10 +3,11 @@
 import { useMemo } from 'react';
 import Link from 'next/link';
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -21,7 +22,7 @@ import {
   useUnsoldProducts,
 } from '@/lib/services/analytics';
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
-import { useStockValuationSummary } from '@/lib/services/inventory/queries';
+import { useStockValuationProducts, useStockValuationSummary } from '@/lib/services/inventory/queries';
 import { useReviewStatistics, useReviews } from '@/lib/services/review';
 import { useFeeSummary, usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet/queries';
 import { useOrderStats } from '@/lib/services/orders/queries';
@@ -32,6 +33,7 @@ import { cn } from '@/lib/utils/ui';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatisticsShell, TABS } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
+import { buildTrendChart } from '../forecast';
 import { changeRate, formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS } from '../shared';
 
 /** 오늘 기준 n일 전 ~ 오늘 구간 (KST 로컬 달력) */
@@ -41,6 +43,12 @@ function lastDays(days: number): { from: string; to: string } {
   from.setDate(from.getDate() - (days - 1));
   return { from: toLocalDateString(from), to: toLocalDateString(to) };
 }
+
+/** 추세를 뽑을 근거 기간과 예측 구간. 계절성은 넣지 않는다 — 집계 데이터가 아직 1년이 안 됐다. */
+const FORECAST_BASIS_DAYS = 14;
+const FORECAST_HORIZON_DAYS = 7;
+/** 전략 카드가 훑어보는 '오래 안 팔린 상품' 표본 크기. 전체가 아니므로 화면 문구에 모수를 밝힌다. */
+const UNSOLD_SAMPLE_SIZE = 50;
 
 type ActionSeverity = 'critical' | 'warning' | 'info';
 
@@ -75,10 +83,38 @@ export default function OverviewStatisticsTemplate() {
   const zeroHit = useZeroHitKeywords({ from: month.from, to: month.to, page: 1, limit: 1 });
   const reviews = useReviewStatistics({ from: month.from, to: month.to, limit: 5 });
   const fees = useFeeSummary(month.from, month.to);
-  const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: 1 });
+  // 건수뿐 아니라 표본도 받는다 — 오래 안 팔린 순 정렬이라 이 표본이 '털 후보' 전략 카드의 모수다
+  const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: UNSOLD_SAMPLE_SIZE });
   const stockValuation = useStockValuationSummary();
   const topProducts = useProductStatistics({ from: week.from, to: week.to, limit: 5 });
   const topKeywords = useKeywordStatistics({ from: week.from, to: week.to, limit: 5 });
+
+  // 전략 카드용 재고 병합 — 무판매 표본과 최근 판매 상위 상품의 재고를 한 번에 되묻는다
+  const strategyMasterIds = useMemo(() => {
+    const ids = new Set<string>();
+    (unsold.data?.items ?? []).forEach((row) => ids.add(row.masterId));
+    (topProducts.data?.ranking ?? []).forEach((row) => ids.add(row.masterId));
+    return [...ids];
+  }, [unsold.data, topProducts.data]);
+  const strategyValuation = useStockValuationProducts(
+    { masterIds: strategyMasterIds, limit: UNSOLD_SAMPLE_SIZE + 10 },
+    { enabled: strategyMasterIds.length > 0 },
+  );
+  const strategyStockByMaster = useMemo(
+    () => new Map((strategyValuation.data?.data ?? []).map((row) => [row.masterId, row])),
+    [strategyValuation.data],
+  );
+
+  // ─── 추세 기반 예측 — 실적 시리즈에 추정 구간을 이어 붙인다 (근사치, 계절성 없음) ───
+  const trend = useMemo(
+    () =>
+      buildTrendChart(profit.data?.series ?? [], {
+        today: toLocalDateString(new Date()),
+        basisDays: FORECAST_BASIS_DAYS,
+        horizonDays: FORECAST_HORIZON_DAYS,
+      }),
+    [profit.data],
+  );
 
   // ─── 오늘의 운영 현황 — 처리 대기 큐를 건수만 세서 담당 화면으로 보낸다 (count 전용 limit 1) ───
   const orderStats = useOrderStats();
@@ -108,7 +144,8 @@ export default function OverviewStatisticsTemplate() {
     reviews.isLoading ||
     fees.isLoading ||
     unsold.isLoading ||
-    stockValuation.isLoading;
+    stockValuation.isLoading ||
+    strategyValuation.isLoading;
 
   const failedSources = [
     profit.isError ? '이익' : null,
@@ -116,7 +153,7 @@ export default function OverviewStatisticsTemplate() {
     reviews.isError ? '리뷰' : null,
     fees.isError ? '수수료' : null,
     unsold.isError ? '무판매 상품' : null,
-    stockValuation.isError ? '재고' : null,
+    stockValuation.isError || strategyValuation.isError ? '재고' : null,
   ].filter((name): name is string => name != null);
 
   const actions = useMemo<ActionCard[]>(() => {
@@ -135,6 +172,18 @@ export default function OverviewStatisticsTemplate() {
             : '아직 오래 방치된 건 없지만, 원인을 나눠 담당자를 지정해 두세요.',
         href: '/statistics/keywords',
         linkLabel: '검색 키워드 탭에서 처리',
+      });
+    }
+
+    if (trend.margin && trend.margin.total < 0) {
+      cards.push({
+        id: 'margin-forecast-negative',
+        severity: 'critical',
+        owner: 'MD · 운영',
+        title: `이 추세가 이어지면 앞으로 ${FORECAST_HORIZON_DAYS}일 추정 마진이 마이너스입니다`,
+        description: `최근 ${FORECAST_BASIS_DAYS}일 추세로 계산한 ${FORECAST_HORIZON_DAYS}일 합계는 ${formatKrw(trend.margin.total)}입니다 (범위 ${formatKrw(trend.margin.totalLower)} ~ ${formatKrw(trend.margin.totalUpper)}). 계절성을 넣지 않은 추세 추정치이니, 원가·판매가·할인 구조를 직접 확인할 신호로 쓰세요.`,
+        href: '/statistics/profit?sort=margin&order=asc',
+        linkLabel: '이익 탭에서 상품별 마진 확인',
       });
     }
 
@@ -209,21 +258,68 @@ export default function OverviewStatisticsTemplate() {
       });
     }
 
+    const topRanking = topProducts.data?.ranking ?? [];
+    const stockless = strategyValuation.isSuccess
+      ? topRanking.flatMap((row) => {
+          const stock = strategyStockByMaster.get(row.masterId);
+          return stock == null || stock.onHandQuantity === 0 ? [{ row, stock }] : [];
+        })
+      : [];
+    if (stockless.length > 0) {
+      const worst = stockless[0];
+      const unattributed = worst.stock?.unattributedQuantity ?? 0;
+      cards.push({
+        id: 'selling-without-stock',
+        severity: 'warning',
+        owner: 'MD · 물류',
+        title: `최근 7일 많이 팔린 상품 ${formatCount(topRanking.length)}개 중 ${formatCount(stockless.length)}개는 재고가 잡히지 않습니다`,
+        description:
+          `'${worst.row.name ?? worst.row.masterId}' 는 7일간 ${formatCount(worst.row.quantitySold)}개 팔렸는데 재고 수량이 0으로 잡힙니다. ` +
+          (unattributed > 0
+            ? `이 상품이 쓰는 SKU 는 여러 상품이 공유해 재고 ${formatCount(unattributed)}개를 어느 상품 몫인지 나눌 수 없습니다 — 품절이 아닐 수 있습니다.`
+            : '실제 품절일 수도, SKU 가 카탈로그에 매칭되지 않아 재고가 귀속되지 않은 것일 수도 있습니다.'),
+        href: '/statistics/inventory',
+        linkLabel: '재고 탭에서 확인',
+      });
+    }
+
     const unsoldTotal = unsold.data?.total ?? 0;
     if (unsoldTotal > 0) {
+      const sample = unsold.data?.items ?? [];
+      const tied = sample
+        .flatMap((row) => {
+          const stock = strategyStockByMaster.get(row.masterId);
+          return stock != null && stock.onHandValue > 0 ? [{ row, stock }] : [];
+        })
+        .sort((a, b) => b.stock.onHandValue - a.stock.onHandValue);
+      const worst = tied[0];
+      const tiedValue = tied.reduce((sum, entry) => sum + entry.stock.onHandValue, 0);
       cards.push({
         id: 'unsold',
         severity: 'info',
         owner: 'MD',
         title: `최근 30일 동안 한 개도 안 팔린 상품이 ${formatCount(unsoldTotal)}개 있습니다`,
-        description: '노출·가격·소싱을 다시 볼 후보입니다. 재고 탭에서 묶인 돈까지 같이 보세요.',
+        description: worst
+          ? `가장 오래 안 팔린 ${formatCount(sample.length)}개만 봐도 재고 ${formatKrw(tiedValue)}이 묶여 있습니다 — 가장 큰 건 '${worst.row.name ?? worst.row.masterId}'(${formatKrw(worst.stock.onHandValue)}, ${formatCount(worst.stock.onHandQuantity)}개)입니다. 노출·가격·소진을 볼 후보입니다.`
+          : '노출·가격·소싱을 다시 볼 후보입니다. 재고 탭에서 묶인 돈까지 같이 보세요.',
         href: '/statistics/inventory',
         linkLabel: '재고 탭에서 묶인 돈 확인',
       });
     }
 
     return cards.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-  }, [zeroHit.data, profit.data, reviews.data, fees.data, unsold.data, stockValuation.data]);
+  }, [
+    zeroHit.data,
+    profit.data,
+    reviews.data,
+    fees.data,
+    unsold.data,
+    stockValuation.data,
+    topProducts.data,
+    strategyStockByMaster,
+    strategyValuation.isSuccess,
+    trend.margin,
+  ]);
 
   // ─── 한 줄 진단 — 숫자를 읽어주는 문장 ───
   const weekKpis = weekSales.data?.kpis;
@@ -246,6 +342,11 @@ export default function OverviewStatisticsTemplate() {
   if (profitTotals) {
     diagnosis.push(
       `최근 30일 추정 마진은 ${formatKrw(profitTotals.estimatedMargin)}(마진율 ${formatPercent(profitTotals.marginRate)})입니다.${profitTotals.uncomputedProductsCount > 0 ? ' 원가 미입력 상품 몫은 빠진 값입니다.' : ''}`,
+    );
+  }
+  if (trend.revenue && trend.margin) {
+    diagnosis.push(
+      `이 추세가 이어지면 앞으로 ${FORECAST_HORIZON_DAYS}일 순매출은 약 ${formatKrw(trend.revenue.total)}(범위 ${formatKrw(trend.revenue.totalLower)} ~ ${formatKrw(trend.revenue.totalUpper)}), 추정 마진은 약 ${formatKrw(trend.margin.total)}입니다 — 최근 ${FORECAST_BASIS_DAYS}일 추세만 이은 추정치이고 계절성·이벤트는 넣지 않았습니다.`,
     );
   }
   const bestProduct = topProducts.data?.ranking[0];
@@ -481,18 +582,40 @@ export default function OverviewStatisticsTemplate() {
         </div>
 
         <ChartCard
-          title="최근 30일 매출·마진 추이"
-          description="마진은 원가가 입력된 상품 몫만 반영한 추정치입니다. 취소·환불이 발생일에 귀속되어 음수인 날이 있을 수 있습니다."
+          title={`최근 30일 매출·마진 추이 + 앞으로 ${FORECAST_HORIZON_DAYS}일 추정`}
+          description={
+            trend.revenue
+              ? `점선은 최근 ${FORECAST_BASIS_DAYS}일 추세를 그대로 이은 추정치이고, 옅은 띠는 그 추세의 95% 예측 범위입니다 — 계절성·이벤트·프로모션은 넣지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다. 취소·환불이 발생일에 귀속되어 음수인 날이 있을 수 있습니다.`
+              : `최근 ${FORECAST_BASIS_DAYS}일 안에 판매가 있는 날이 3일이 안 돼 추세를 추정하지 않았습니다. 마진은 원가가 입력된 상품 몫만 반영합니다.`
+          }
           isLoading={profit.isLoading}
-          isEmpty={!profit.data || profit.data.series.length === 0}
+          isEmpty={trend.rows.length === 0}
         >
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={profit.data?.series ?? []} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+            <ComposedChart data={trend.rows} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
               <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={formatKrwAxis} />
               <Tooltip formatter={(value: number) => formatKrw(value)} />
               <Legend />
+              <Area
+                dataKey="netRevenueBand"
+                fill={SERIES_COLORS[0]}
+                fillOpacity={0.1}
+                stroke="none"
+                legendType="none"
+                tooltipType="none"
+                isAnimationActive={false}
+              />
+              <Area
+                dataKey="estimatedMarginBand"
+                fill={SERIES_COLORS[1]}
+                fillOpacity={0.1}
+                stroke="none"
+                legendType="none"
+                tooltipType="none"
+                isAnimationActive={false}
+              />
               <Line
                 type="monotone"
                 dataKey="netRevenue"
@@ -509,7 +632,25 @@ export default function OverviewStatisticsTemplate() {
                 strokeWidth={2}
                 dot={false}
               />
-            </LineChart>
+              <Line
+                type="monotone"
+                dataKey="netRevenueForecast"
+                name="순매출 추정"
+                stroke={SERIES_COLORS[0]}
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="estimatedMarginForecast"
+                name="마진 추정"
+                stroke={SERIES_COLORS[1]}
+                strokeWidth={2}
+                strokeDasharray="4 4"
+                dot={false}
+              />
+            </ComposedChart>
           </ResponsiveContainer>
         </ChartCard>
 
