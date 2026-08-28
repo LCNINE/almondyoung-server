@@ -87,9 +87,33 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'analytics GET /statistics/traffic': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/traffic/api/traffic.controller.ts:15',
+    evidence: 'apps/analytics/src/features/traffic/api/traffic.controller.ts:29',
     predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
     note: 'GA4 유입 통계(세션·랜딩페이지·기기·국가) — 쿼리 파라미터가 날짜/채널그룹/limit 뿐이고 응답도 전사 집계라 IDOR 대상 아님. 컨트롤러 클래스에 JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics GET /statistics/traffic/realtime': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/traffic/api/traffic.controller.ts:29',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: 'GA4 실시간 접속(최근 30분 활성 사용자·페이지·기기) — 쿼리 파라미터가 limit 뿐이고 응답은 전사 집계라 사용자별 자원을 지목할 수단이 없다. GA4 는 개별 식별자를 주지 않는다. 같은 컨트롤러 클래스의 JwtAuthGuard + AdminRealmGuard(staff role 강제)를 그대로 받는다.',
+  },
+  'analytics GET /statistics/operating-costs': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '월 고정비 설정 목록 — 전사 단일 설정이라 사용자·테넌트 소유 자원이 아니다. 파라미터도 없다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics POST /statistics/operating-costs': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: '월 고정비 등록 — 전사 단일 설정이라 소유권 개념이 없다. 본문은 금액·적용일·메모뿐이고 식별자를 받지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
+  },
+  'analytics DELETE /statistics/operating-costs/:id': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/operating-cost.controller.ts:36',
+    predicate: '@UseGuards(JwtAuthGuard, AdminRealmGuard)',
+    note: ':id 를 받지만 전사 단일 설정 테이블의 행이라 사용자별 소유자가 없다 — staff 끼리는 같은 자원을 공유한다. 남의 자원을 넘겨다볼 경계 자체가 존재하지 않는다. JwtAuthGuard + AdminRealmGuard(staff role 강제).',
   },
   'analytics GET /statistics/behavior': {
     verdict: 'N/A',
@@ -698,15 +722,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(109);
+    expect(targets).toHaveLength(113);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(109);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(108);
+    expect(new Set(targets.map(keyOf)).size).toBe(113);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(112);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

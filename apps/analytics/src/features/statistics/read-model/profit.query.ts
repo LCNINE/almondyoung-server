@@ -4,6 +4,7 @@ import { DbService } from '@app/db';
 import { BadRequestError } from '@app/shared';
 import { and, eq, gte, inArray, lte, sql, SQL } from 'drizzle-orm';
 import { aggProductOrderDaily, analyticsSchema, dimProductMasters, factOrderItems } from '../../../schema';
+import { OperatingCostForRange, OperatingCostService } from '../settings/operating-cost.service';
 
 export type ProfitSort = 'revenue' | 'margin' | 'marginRate' | 'quantity';
 
@@ -56,16 +57,68 @@ export interface ProfitSeriesPoint {
   estimatedMargin: number;
 }
 
+/**
+ * 고정비를 반영한 기간 손익. 마진(매출총이익)에서 고정비를 빼야 "적자인가"를 답할 수 있다.
+ * 고정비가 미설정이면 전부 null 이다 — 0 으로 두면 적자를 흑자로 보이게 만든다.
+ *
+ * 결제 수수료는 여기 없다. wallet 이 소유한 수치라 화면이 마지막에 뺀다(수입 2분리와 같은 병합).
+ */
+export interface OperatingResult {
+  /** 기간에 일할로 귀속된 고정비. 기간 전체가 미설정이면 null. */
+  fixedCost: number | null;
+  /** 고정비가 설정되지 않아 계산에서 빠진 일수 */
+  fixedCostUncoveredDays: number;
+  /** estimatedMargin - fixedCost. 고정비 미설정이면 null. */
+  operatingProfit: number | null;
+  /**
+   * 손익분기 순매출 = 고정비 ÷ 마진율. 이만큼 팔아야 본전이라는 뜻이다.
+   * 마진율이 0 이하이거나(팔수록 손해) 고정비 미설정이면 null.
+   */
+  breakEvenNetRevenue: number | null;
+  /** 손익분기 대비 달성률 = computedNetRevenue / breakEvenNetRevenue. 분모가 null 이면 null. */
+  breakEvenAchievementRate: number | null;
+}
+
 export interface ProfitStatistics {
   range: { from: string; to: string };
   previousRange: { from: string; to: string };
   totals: ProfitTotals;
   previousTotals: ProfitTotals;
+  operating: OperatingResult;
   series: ProfitSeriesPoint[];
   items: ProfitProductRow[];
   page: number;
   limit: number;
   totalItems: number;
+}
+
+/**
+ * 마진과 고정비로 영업손익·손익분기를 낸다.
+ * 마진율은 **원가가 입력된 몫(computedNetRevenue)** 기준이다 — 원가 미입력 상품까지 분모에 넣으면
+ * 마진율이 실제보다 낮게 나와 손익분기가 과대해진다.
+ */
+export function computeOperatingResult(totals: ProfitTotals, fixedCost: OperatingCostForRange): OperatingResult {
+  const amount = fixedCost.amount;
+  if (amount == null) {
+    return {
+      fixedCost: null,
+      fixedCostUncoveredDays: fixedCost.uncoveredDays,
+      operatingProfit: null,
+      breakEvenNetRevenue: null,
+      breakEvenAchievementRate: null,
+    };
+  }
+  const operatingProfit = totals.estimatedMargin - amount;
+  const marginRate = totals.marginRate;
+  const breakEvenNetRevenue = marginRate != null && marginRate > 0 ? Math.round(amount / marginRate) : null;
+  return {
+    fixedCost: amount,
+    fixedCostUncoveredDays: fixedCost.uncoveredDays,
+    operatingProfit,
+    breakEvenNetRevenue,
+    breakEvenAchievementRate:
+      breakEvenNetRevenue != null && breakEvenNetRevenue > 0 ? totals.computedNetRevenue / breakEvenNetRevenue : null,
+  };
 }
 
 /**
@@ -128,6 +181,7 @@ export class ProfitQuery {
   constructor(
     @InjectTypedDb<typeof analyticsSchema>()
     private readonly dbService: DbService<typeof analyticsSchema>,
+    private readonly operatingCostService: OperatingCostService,
   ) {}
 
   private get db() {
@@ -148,11 +202,12 @@ export class ProfitQuery {
     }
     const prev = previousRange(from, to);
 
-    const [totals, previousTotals, series, pageResult] = await Promise.all([
+    const [totals, previousTotals, series, pageResult, fixedCost] = await Promise.all([
       this.totals(from, to, channel),
       this.totals(prev.from, prev.to, channel),
       this.series(from, to, channel),
       this.pagedItems(from, to, channel, sort, order, page, limit),
+      this.operatingCostService.getForRange(from, to),
     ]);
 
     return {
@@ -160,6 +215,7 @@ export class ProfitQuery {
       previousRange: prev,
       totals,
       previousTotals,
+      operating: computeOperatingResult(totals, fixedCost),
       series,
       items: pageResult.items,
       page,

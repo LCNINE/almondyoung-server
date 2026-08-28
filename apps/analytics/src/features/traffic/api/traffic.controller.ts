@@ -1,8 +1,22 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { AdminRealmGuard, JwtAuthGuard } from '@app/authorization';
+import { Type } from 'class-transformer';
+import { IsInt, IsOptional, Max, Min } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { TrafficQuery } from '../read-model/traffic.query';
-import { TrafficStatisticsQueryDto, TrafficStatisticsResponseDto } from './traffic-query.dto';
+import { RealtimeQuery } from '../read-model/realtime.query';
+import { RealtimeTrafficResponseDto, TrafficStatisticsQueryDto, TrafficStatisticsResponseDto } from './traffic-query.dto';
+
+class RealtimeQueryDto {
+  @ApiPropertyOptional({ example: 10, default: 10, description: '페이지 목록 최대 행 수' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number = 10;
+}
 
 /**
  * 관리자 유입 통계 (GA4 Data API 조회 전용). admin-web 프록시를 통해서만 호출된다.
@@ -15,7 +29,21 @@ import { TrafficStatisticsQueryDto, TrafficStatisticsResponseDto } from './traff
 @UseGuards(JwtAuthGuard, AdminRealmGuard)
 @Controller('statistics')
 export class TrafficController {
-  constructor(private readonly trafficQuery: TrafficQuery) {}
+  constructor(
+    private readonly trafficQuery: TrafficQuery,
+    private readonly realtimeQuery: RealtimeQuery,
+  ) {}
+
+  @Get('traffic/realtime')
+  @ApiOperation({
+    summary: '실시간 접속 현황',
+    description:
+      'GA4 실시간 리포트 — 최근 30분 활성 사용자와 분 단위 추이·페이지·기기별. ' +
+      '기간을 고를 수 없다(GA4 실시간 창이 30분 고정). GA4 env 미배선이면 enabled=false 로 응답한다.',
+  })
+  getRealtime(@Query() query: RealtimeQueryDto): Promise<RealtimeTrafficResponseDto> {
+    return this.realtimeQuery.getRealtime(query.limit ?? 10);
+  }
 
   @Get('traffic')
   @ApiOperation({

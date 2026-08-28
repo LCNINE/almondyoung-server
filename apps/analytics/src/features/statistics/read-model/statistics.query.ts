@@ -133,6 +133,11 @@ export interface StatisticsOverview {
   /** 최근 스냅샷 기준 활성 멤버십 회원 수. 스냅샷이 아직 없으면 null. */
   activeMembers: number | null;
   activeMembersAsOf: string | null;
+  /**
+   * 매출 집계가 마지막으로 갱신된 순간(ISO). 이벤트 소비가 밀리면 화면 숫자가 과거를 가리키므로
+   * "언제 기준인지"를 같이 준다. 집계 행이 하나도 없으면 null.
+   */
+  dataAsOf: string | null;
 }
 
 const LIFETIME_BUCKETS: Array<{ label: string; min: number; max: number | null }> = [
@@ -581,7 +586,7 @@ export class StatisticsQuery {
     const today = toSeoulDateOnly(new Date());
     const yesterday = previousRange(today, today).from;
 
-    const [todayTotals, yesterdayTotals, latestSnapshotRows] = await Promise.all([
+    const [todayTotals, yesterdayTotals, latestSnapshotRows, aggUpdatedRows] = await Promise.all([
       this.channelTotals(today, today),
       this.channelTotals(yesterday, yesterday),
       this.db
@@ -594,14 +599,23 @@ export class StatisticsQuery {
         .groupBy(aggMembershipDaily.aggDate)
         .orderBy(desc(aggMembershipDaily.aggDate))
         .limit(1),
+      // 저장값 자체가 UTC 벽시계다(drizzle 이 toISOString() 으로 쓴다) — 변환 없이 'Z' 만 붙인다.
+      // AT TIME ZONE 이나 드라이버 파서에 맡기면 세션 TZ 가 끼어들어 값이 9시간 흔들린다.
+      this.db
+        .select({
+          updatedAt: sql<string | null>`to_char(MAX(${aggChannelDaily.updatedAt}), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`,
+        })
+        .from(aggChannelDaily),
     ]);
 
     const snapshot = latestSnapshotRows[0];
+    const dataAsOf = aggUpdatedRows[0]?.updatedAt ?? null;
     return {
       today: { date: today, ...todayTotals, avgOrderValue: avgOrderValue(todayTotals) },
       yesterday: { date: yesterday, ...yesterdayTotals, avgOrderValue: avgOrderValue(yesterdayTotals) },
       activeMembers: snapshot ? Number(snapshot.membersCount ?? 0) : null,
       activeMembersAsOf: snapshot ? String(snapshot.aggDate) : null,
+      dataAsOf,
     };
   }
 

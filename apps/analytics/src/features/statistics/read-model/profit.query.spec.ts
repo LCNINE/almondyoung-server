@@ -1,4 +1,4 @@
-import { estimateCost, marginRateOf } from './profit.query';
+import { computeOperatingResult, estimateCost, marginRateOf, ProfitTotals } from './profit.query';
 
 describe('estimateCost', () => {
   it('원가 미입력이면 null — 0 으로 뭉개지 않는다', () => {
@@ -42,5 +42,69 @@ describe('marginRateOf', () => {
 
   it('마진 / 순매출', () => {
     expect(marginRateOf(30_000, 100_000)).toBeCloseTo(0.3);
+  });
+});
+
+describe('computeOperatingResult', () => {
+  const totals: ProfitTotals = {
+    grossRevenue: 12_000_000,
+    cancelledAmount: 0,
+    refundedAmount: 0,
+    netRevenue: 12_000_000,
+    quantitySold: 400,
+    productsCount: 40,
+    computedNetRevenue: 10_000_000,
+    estimatedCost: 7_000_000,
+    estimatedMargin: 3_000_000,
+    marginRate: 0.3,
+    uncomputedNetRevenue: 2_000_000,
+    uncomputedProductsCount: 5,
+    costCoverageRate: 10 / 12,
+  };
+
+  it('고정비 미설정이면 판정을 내리지 않고 전부 null — 0 으로 두면 적자가 흑자로 보인다', () => {
+    const result = computeOperatingResult(totals, { amount: null, coveredDays: 0, uncoveredDays: 31 });
+    expect(result).toEqual({
+      fixedCost: null,
+      fixedCostUncoveredDays: 31,
+      operatingProfit: null,
+      breakEvenNetRevenue: null,
+      breakEvenAchievementRate: null,
+    });
+  });
+
+  it('영업손익은 마진에서 고정비를 뺀 값이고, 고정비가 마진보다 크면 음수다', () => {
+    expect(computeOperatingResult(totals, { amount: 2_000_000, coveredDays: 31, uncoveredDays: 0 }).operatingProfit).toBe(
+      1_000_000,
+    );
+    expect(computeOperatingResult(totals, { amount: 5_000_000, coveredDays: 31, uncoveredDays: 0 }).operatingProfit).toBe(
+      -2_000_000,
+    );
+  });
+
+  it('손익분기 순매출 = 고정비 ÷ 마진율', () => {
+    const result = computeOperatingResult(totals, { amount: 3_000_000, coveredDays: 31, uncoveredDays: 0 });
+    expect(result.breakEvenNetRevenue).toBe(10_000_000);
+    expect(result.breakEvenAchievementRate).toBe(1);
+  });
+
+  it('마진율이 0 이하면(팔수록 손해) 손익분기를 못 낸다', () => {
+    const lossMaking = { ...totals, estimatedMargin: -500_000, marginRate: -0.05 };
+    const result = computeOperatingResult(lossMaking, { amount: 3_000_000, coveredDays: 31, uncoveredDays: 0 });
+    expect(result.breakEvenNetRevenue).toBeNull();
+    expect(result.breakEvenAchievementRate).toBeNull();
+    expect(result.operatingProfit).toBe(-3_500_000);
+  });
+
+  it('마진율이 null(원가 전량 미입력)이어도 손익분기는 null 이고 영업손익은 나온다', () => {
+    const noCost = { ...totals, estimatedMargin: 0, marginRate: null, computedNetRevenue: 0 };
+    const result = computeOperatingResult(noCost, { amount: 3_000_000, coveredDays: 31, uncoveredDays: 0 });
+    expect(result.breakEvenNetRevenue).toBeNull();
+    expect(result.operatingProfit).toBe(-3_000_000);
+  });
+
+  it('고정비 일부 구간만 설정됐으면 미커버 일수를 그대로 전달한다', () => {
+    const result = computeOperatingResult(totals, { amount: 1_000_000, coveredDays: 20, uncoveredDays: 11 });
+    expect(result.fixedCostUncoveredDays).toBe(11);
   });
 });

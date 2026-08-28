@@ -278,4 +278,36 @@ describeIfDb('StatisticsQuery (실 Postgres)', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].membersCount).toBe(1);
   });
+
+  it('요약의 데이터 기준 시각은 집계 갱신 시각을 UTC ISO 로 왕복 보존한다', async () => {
+    // 이 표의 updated_at 은 timestamp(무 시간대)이고 저장값이 UTC 벽시계다.
+    //
+    // 위험한 축은 **Node 프로세스 시간대**다. `sql<Date>\`MAX(...)\`` 로 받으면 드라이버가
+    // 벽시계를 로컬 시간으로 읽어 TZ=Asia/Seoul 개발 머신에서만 9시간 어긋난다
+    // (라이브·CI 는 UTC 라 통과한다 — 로컬에서만 나는 종류의 버그다).
+    // jest 는 TZ 를 UTC 로 고정하므로 이 스펙 자체는 그 축을 재현하지 못한다.
+    // 재현은 `TZ=Asia/Seoul npx jest --testPathPattern="statistics.query.integration"`.
+    // 여기서는 계약(넣은 순간이 그대로 돌아온다)을 고정하고, 세션 시간대에도 흔들리지 않음을 본다.
+    const marker = new Date('2031-03-01T04:05:06.000Z');
+    await db.insert(aggChannelDaily).values({
+      aggDate: '2031-03-01',
+      salesChannel: channel,
+      grossRevenue: 0,
+      cancelledAmount: 0,
+      refundedAmount: 0,
+      ordersCount: 0,
+      updatedAt: marker,
+    });
+
+    await sql`SET TIME ZONE 'Asia/Seoul'`;
+    try {
+      const seoulSession = await query.getOverview();
+      expect(seoulSession.dataAsOf).toBe(marker.toISOString());
+    } finally {
+      await sql`SET TIME ZONE 'UTC'`;
+    }
+
+    const utcSession = await query.getOverview();
+    expect(utcSession.dataAsOf).toBe(marker.toISOString());
+  });
 });
