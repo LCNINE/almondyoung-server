@@ -47,6 +47,10 @@ export interface StockValuationProduct {
   onHandQuantity: number;
   onHandValue: number;
   hasUncostedSku: boolean;
+  /** 여러 상품 공유로 금액 귀속이 불가한, 재고 보유 SKU 수. 위 수량·금액에 포함되지 않는다. */
+  unattributedSkuCount: number;
+  /** 그 SKU 들의 ON_HAND 수량. 공유 상품마다 같은 재고가 잡히므로 상품 간 합산 금지. */
+  unattributedQuantity: number;
 }
 
 export interface StockValuationProductsQuery {

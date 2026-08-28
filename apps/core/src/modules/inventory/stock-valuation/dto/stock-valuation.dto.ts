@@ -100,6 +100,18 @@ export class StockValuationProductDto {
 
   @ApiProperty({ description: '원가 판정 불가 SKU 포함 여부 (금액이 과소일 수 있음)' })
   hasUncostedSku: boolean;
+
+  @ApiProperty({
+    description:
+      '이 상품에 걸쳐 있으나 여러 상품 공유로 귀속 불가한, 재고 보유 SKU 수. 위 수량·금액에 포함되지 않는다.',
+  })
+  unattributedSkuCount: number;
+
+  @ApiProperty({
+    description:
+      '그 SKU 들의 ON_HAND 수량. 같은 재고가 공유 상품마다 잡히므로 **상품 간 합산 금지** — 재고 유무를 알리는 용도다.',
+  })
+  unattributedQuantity: number;
 }
 
 export class GetStockValuationProductsQueryDto {

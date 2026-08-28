@@ -28,6 +28,12 @@ export interface SkuCost {
   masterName?: string | null;
   /** valued 일 때만. SKU 1단위 원가 (세트는 공급가 ÷ 구성수량) */
   unitCost?: number;
+  /**
+   * multiMaster 일 때만. 이 SKU 가 걸쳐 있는 상품들.
+   * 금액은 어느 쪽에도 귀속할 수 없지만, 재고가 있다는 사실 자체는 상품별로 알려야 한다 —
+   * 안 그러면 화면이 "재고 없음"으로 단정한다.
+   */
+  sharedMasters?: Array<{ masterId: string; name: string | null }>;
 }
 
 export interface SkuCostCandidate {
@@ -46,7 +52,11 @@ export function classifySkuCost(candidates: SkuCostCandidate[]): SkuCost {
 
   const masterIds = new Set(usable.map((candidate) => candidate.masterId));
   if (masterIds.size > 1) {
-    return { status: 'multiMaster' };
+    const byMaster = new Map(usable.map((candidate) => [candidate.masterId, candidate.name]));
+    return {
+      status: 'multiMaster',
+      sharedMasters: [...byMaster].map(([masterId, name]) => ({ masterId, name })),
+    };
   }
 
   const { masterId, name } = usable[0];
@@ -183,20 +193,49 @@ export class StockValuationReader {
       const { ledgerRows, skuCosts } = await this.loadValuation(trx);
 
       const byMaster = new Map<string, StockValuationProductDto>();
-      const countedSkus = new Set<string>();
-      for (const row of ledgerRows) {
-        if (row.stockState !== 'ON_HAND') continue;
-        const cost = skuCosts.get(row.skuId);
-        if (!cost?.masterId) continue; // multiMaster/unmatched 는 상품 귀속 불가 — summary 버킷에서 확인
-
-        const item = byMaster.get(cost.masterId) ?? {
-          masterId: cost.masterId,
-          name: cost.masterName ?? null,
+      const ensureItem = (masterId: string, name: string | null): StockValuationProductDto => {
+        const existing = byMaster.get(masterId);
+        if (existing) {
+          existing.name ??= name;
+          return existing;
+        }
+        const created: StockValuationProductDto = {
+          masterId,
+          name,
           skuCount: 0,
           onHandQuantity: 0,
           onHandValue: 0,
           hasUncostedSku: false,
+          unattributedSkuCount: 0,
+          unattributedQuantity: 0,
         };
+        byMaster.set(masterId, created);
+        return created;
+      };
+      const countedSkus = new Set<string>();
+      const countedSharedSkus = new Set<string>();
+      for (const row of ledgerRows) {
+        if (row.stockState !== 'ON_HAND') continue;
+        const cost = skuCosts.get(row.skuId);
+        if (!cost) continue;
+
+        if (!cost.masterId) {
+          // 귀속 불가. multiMaster 는 걸쳐 있는 상품마다 '재고는 있으나 귀속 불가'로 남긴다 —
+          // 금액에 더하지 않고 별도 필드로만 센다(상품 간 중복 계상이라 합산 금지).
+          // unmatched 는 상품을 특정할 수 없어 summary 버킷에서만 보인다.
+          for (const shared of cost.sharedMasters ?? []) {
+            const item = ensureItem(shared.masterId, shared.name);
+            const key = `${shared.masterId}:${row.skuId}`;
+            if (!countedSharedSkus.has(key)) {
+              countedSharedSkus.add(key);
+              item.unattributedSkuCount += 1;
+            }
+            item.unattributedQuantity += row.qty;
+          }
+          continue;
+        }
+
+        const item = ensureItem(cost.masterId, cost.masterName ?? null);
         if (!countedSkus.has(row.skuId)) {
           countedSkus.add(row.skuId);
           item.skuCount += 1;
@@ -207,7 +246,6 @@ export class StockValuationReader {
         } else {
           item.hasUncostedSku = true;
         }
-        byMaster.set(cost.masterId, item);
       }
 
       let items = [...byMaster.values()];

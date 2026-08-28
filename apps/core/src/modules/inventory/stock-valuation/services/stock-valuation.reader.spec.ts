@@ -62,9 +62,24 @@ describe('classifySkuCost', () => {
     expect(result.unitCost).toBe(3000);
   });
 
-  it('서로 다른 상품 여럿에 연결되면 multiMaster — 금액·귀속 모두 불가', () => {
+  it('서로 다른 상품 여럿에 연결되면 multiMaster — 금액은 못 매기되 어느 상품들인지는 남긴다', () => {
     const result = classifySkuCost([candidate(), candidate({ masterId: 'master-2', name: '다른 상품' })]);
-    expect(result).toEqual({ status: 'multiMaster' });
+    expect(result).toEqual({
+      status: 'multiMaster',
+      sharedMasters: [
+        { masterId: 'master-1', name: '단품' },
+        { masterId: 'master-2', name: '다른 상품' },
+      ],
+    });
+  });
+
+  it('같은 상품에 링크가 여러 개면 sharedMasters 에 중복으로 담지 않는다', () => {
+    const result = classifySkuCost([
+      candidate(),
+      candidate({ linkQuantity: 2 }),
+      candidate({ masterId: 'master-2', name: '다른 상품' }),
+    ]);
+    expect(result.sharedMasters?.map((shared) => shared.masterId)).toEqual(['master-1', 'master-2']);
   });
 
   it('부동소수 오차 범위의 같은 단위 원가는 상충으로 보지 않는다', () => {

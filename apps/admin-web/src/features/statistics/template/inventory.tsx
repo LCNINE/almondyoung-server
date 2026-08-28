@@ -209,7 +209,7 @@ export default function InventoryStatisticsTemplate() {
 
           <ChartCard
             title="상품별 재고 금액"
-            description="상품(master)별 보유 수량 × 원가. 원가 판정 불가 SKU 가 섞인 상품은 금액이 과소일 수 있어 표시해둡니다."
+            description="상품(master)별 보유 수량 × 원가. 원가 판정 불가 SKU 가 섞인 상품은 금액이 과소일 수 있어 표시해둡니다. 여러 상품이 함께 쓰는 SKU 의 재고는 어느 상품 몫인지 나눌 수 없어 금액에서 빼고 '귀속 불가'로만 적습니다."
             isLoading={products.isLoading}
             isEmpty={!products.data || products.data.data.length === 0}
           >
@@ -259,6 +259,14 @@ export default function InventoryStatisticsTemplate() {
                             원가 일부 미상
                           </span>
                         ) : null}
+                        {row.unattributedSkuCount > 0 ? (
+                          <span
+                            className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                            title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다. 위 수량·금액에 포함되지 않습니다."
+                          >
+                            귀속 불가 {formatCount(row.unattributedQuantity)}개
+                          </span>
+                        ) : null}
                       </td>
                       <td className="py-1.5 text-right tabular-nums">{formatCount(row.skuCount)}</td>
                       <td className="py-1.5 text-right tabular-nums">{formatCount(row.onHandQuantity)}</td>
@@ -297,6 +305,10 @@ export default function InventoryStatisticsTemplate() {
                 <tbody>
                   {(unsold.data?.items ?? []).map((row, index) => {
                     const valuation = valuationByMaster.get(row.masterId);
+                    // 재고를 공유 SKU 로만 들고 있으면 금액을 이 상품 몫으로 나눌 수 없다.
+                    // '재고 없음' 으로 단정하면 묶인 돈을 숨기는 셈이라 따로 표기한다.
+                    const unattributedOnly =
+                      valuation != null && valuation.onHandQuantity === 0 && valuation.unattributedQuantity > 0;
                     return (
                       <tr key={row.masterId} className="border-b last:border-0">
                         <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
@@ -307,15 +319,31 @@ export default function InventoryStatisticsTemplate() {
                               원가 일부 미상
                             </span>
                           ) : null}
+                          {valuation && valuation.unattributedSkuCount > 0 ? (
+                            <span
+                              className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                              title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다."
+                            >
+                              귀속 불가 {formatCount(valuation.unattributedQuantity)}개
+                            </span>
+                          ) : null}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">
                           {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">
-                          {valuation ? formatCount(valuation.onHandQuantity) : <span className="text-gray-400">-</span>}
+                          {unattributedOnly ? (
+                            <span className="text-slate-600">{formatCount(valuation.unattributedQuantity)}</span>
+                          ) : valuation ? (
+                            formatCount(valuation.onHandQuantity)
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
                         </td>
                         <td className="py-1.5 text-right tabular-nums font-medium">
-                          {valuation ? (
+                          {unattributedOnly ? (
+                            <span className="text-slate-600">귀속 불가</span>
+                          ) : valuation ? (
                             formatKrw(valuation.onHandValue)
                           ) : (
                             <span className="text-gray-400">재고 없음</span>

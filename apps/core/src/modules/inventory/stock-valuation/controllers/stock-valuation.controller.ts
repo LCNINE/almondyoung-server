@@ -35,7 +35,9 @@ export class StockValuationController {
   @ApiOperation({
     summary: '상품별 재고 금액 (전체 페이지네이션)',
     description:
-      '상품(master)별 ON_HAND 수량·재고 금액. masterIds 필터로 통계 화면의 무판매 상품 병합에 씁니다.',
+      '상품(master)별 ON_HAND 수량·재고 금액. masterIds 필터로 통계 화면의 무판매 상품 병합에 씁니다. ' +
+      '재고를 여러 상품 공유 SKU 로만 들고 있어 금액 귀속이 불가한 상품도 수량 0 + unattributed* 로 함께 반환합니다 — ' +
+      '응답에 없는 것과 재고가 없는 것을 화면이 혼동하지 않게 하기 위함입니다.',
   })
   @ApiOkResponsePaginated(StockValuationProductDto)
   @ApiResponse({ status: 403, description: '재고 조회 권한이 없습니다.' })
