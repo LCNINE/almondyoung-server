@@ -1,8 +1,12 @@
 // src/lib/services/inventory/queries.ts
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
+import {
+  stockValuationClient,
+  type StockValuationProductsQuery,
+} from '../../api/domains/inventory/stock-valuation.client';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
@@ -36,6 +40,24 @@ import type {
   ReturnFiltersDto,
   MovementHistoryQuery,
 } from '../../types/dto/inventory';
+
+export const useStockValuationSummary = () => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.stockValuationSummary,
+    queryFn: () => stockValuationClient.getSummary(),
+    staleTime: 60_000,
+  });
+};
+
+export const useStockValuationProducts = (query: StockValuationProductsQuery = {}, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.stockValuationProducts(query),
+    queryFn: () => stockValuationClient.getProducts(query),
+    staleTime: 60_000,
+    placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
+  });
+};
 
 export const useStocks = (query = {}) => {
   return useQuery({

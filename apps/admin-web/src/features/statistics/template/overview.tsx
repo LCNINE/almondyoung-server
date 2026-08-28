@@ -21,6 +21,7 @@ import {
   useUnsoldProducts,
 } from '@/lib/services/analytics';
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
+import { useStockValuationSummary } from '@/lib/services/inventory/queries';
 import { useReviewStatistics, useReviews } from '@/lib/services/review';
 import { useFeeSummary, usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet/queries';
 import { useOrderStats } from '@/lib/services/orders/queries';
@@ -75,6 +76,7 @@ export default function OverviewStatisticsTemplate() {
   const reviews = useReviewStatistics({ from: month.from, to: month.to, limit: 5 });
   const fees = useFeeSummary(month.from, month.to);
   const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: 1 });
+  const stockValuation = useStockValuationSummary();
   const topProducts = useProductStatistics({ from: week.from, to: week.to, limit: 5 });
   const topKeywords = useKeywordStatistics({ from: week.from, to: week.to, limit: 5 });
 
@@ -101,7 +103,12 @@ export default function OverviewStatisticsTemplate() {
   ] as const;
 
   const actionsLoading =
-    profit.isLoading || zeroHit.isLoading || reviews.isLoading || fees.isLoading || unsold.isLoading;
+    profit.isLoading ||
+    zeroHit.isLoading ||
+    reviews.isLoading ||
+    fees.isLoading ||
+    unsold.isLoading ||
+    stockValuation.isLoading;
 
   const failedSources = [
     profit.isError ? '이익' : null,
@@ -109,6 +116,7 @@ export default function OverviewStatisticsTemplate() {
     reviews.isError ? '리뷰' : null,
     fees.isError ? '수수료' : null,
     unsold.isError ? '무판매 상품' : null,
+    stockValuation.isError ? '재고' : null,
   ].filter((name): name is string => name != null);
 
   const actions = useMemo<ActionCard[]>(() => {
@@ -188,6 +196,19 @@ export default function OverviewStatisticsTemplate() {
       });
     }
 
+    const soldOutMasters = stockValuation.data?.soldOutMasterCount ?? 0;
+    if (soldOutMasters > 0) {
+      cards.push({
+        id: 'sold-out',
+        severity: 'warning',
+        owner: 'MD · 물류',
+        title: `품절 품목이 있는 상품이 ${formatCount(soldOutMasters)}개 있습니다`,
+        description: '수동 품절·재고 부족으로 팔지 못하는 품목입니다. 팔리는 상품이면 소싱·입고를 서둘러야 합니다.',
+        href: '/statistics/inventory',
+        linkLabel: '재고 탭에서 확인',
+      });
+    }
+
     const unsoldTotal = unsold.data?.total ?? 0;
     if (unsoldTotal > 0) {
       cards.push({
@@ -195,14 +216,14 @@ export default function OverviewStatisticsTemplate() {
         severity: 'info',
         owner: 'MD',
         title: `최근 30일 동안 한 개도 안 팔린 상품이 ${formatCount(unsoldTotal)}개 있습니다`,
-        description: '노출·가격·소싱을 다시 볼 후보입니다.',
-        href: '/statistics/products',
-        linkLabel: '상품 탭에서 확인',
+        description: '노출·가격·소싱을 다시 볼 후보입니다. 재고 탭에서 묶인 돈까지 같이 보세요.',
+        href: '/statistics/inventory',
+        linkLabel: '재고 탭에서 묶인 돈 확인',
       });
     }
 
     return cards.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-  }, [zeroHit.data, profit.data, reviews.data, fees.data, unsold.data]);
+  }, [zeroHit.data, profit.data, reviews.data, fees.data, unsold.data, stockValuation.data]);
 
   // ─── 한 줄 진단 — 숫자를 읽어주는 문장 ───
   const weekKpis = weekSales.data?.kpis;

@@ -63,6 +63,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/skus/deleted':                             S.OPERATE,
   'GET /inventory/skus/managers/all':                        S.OPERATE,
   'GET /inventory/skus/search/advanced':                     S.OPERATE,
+  'GET /inventory/statistics/stock-valuation/products':       S.OPERATE,
+  'GET /inventory/statistics/stock-valuation/summary':        S.OPERATE,
   'GET /inventory/stocks':                                   S.OPERATE,
   'GET /inventory/stocks/history':                           S.OPERATE,
   'GET /inventory/stocks/inbound-pipeline':                  S.OPERATE,

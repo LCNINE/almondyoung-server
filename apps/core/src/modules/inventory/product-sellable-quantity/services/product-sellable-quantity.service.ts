@@ -26,7 +26,8 @@ type MergedTx = TxFor<MergedSchema>;
 export type SoldOutState = 'none' | 'partial' | 'all';
 
 // 목록의 품절 배지로 집계할 '실제 품절' 사유. 설정 미완(매칭없음 등)/판매기간/비활성은 제외.
-const SOLD_OUT_REASONS = new Set(['MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK']);
+// 품절 판정 사유의 단일 정의 — 재고 통계(stock-valuation)도 이 목록을 쓴다.
+export const SOLD_OUT_REASONS = new Set(['MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK']);
 
 @Injectable()
 export class ProductSellableQuantityService {
