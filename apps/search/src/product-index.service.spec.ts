@@ -620,6 +620,37 @@ describe('ProductIndexService.searchProducts - 검색어 교정', () => {
     expect(result.pagination.total).toBe(1);
   });
 
+  // 벡터는 "나찌반" 에도 뜻이 닮은 상품을 얹어준다. 융합 결과로 판단하면 0건이 될 일이 없어
+  // 교정이 영영 돌지 않는다 — 실제로 배포 후 이 상태였다.
+  it('벡터가 결과를 채워도 키워드가 0건이면 교정한다', async () => {
+    const client = makeOpenSearchClient();
+    client.search = jest.fn().mockImplementation((params: any) => {
+      const body = JSON.stringify(params.body);
+      if (body.includes('"knn"')) {
+        // 벡터는 무관한 상품을 끌어온다.
+        return Promise.resolve({ body: { hits: { hits: [hit('noise')], total: { value: 1 } } } });
+      }
+      const hits = body.includes('니치반') ? [hit('a')] : [];
+      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService([0.1, 0.2]) },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService('니치반') },
+      ],
+    }).compile();
+
+    const result = await module
+      .get(ProductIndexService)
+      .searchProducts({ q: '나찌반', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.correctedQuery).toBe('니치반');
+  });
+
   it('교정어도 0건이면 교정하지 않는다', async () => {
     const service = await buildService('니치반', {});
 

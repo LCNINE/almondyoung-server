@@ -251,9 +251,12 @@ export class ProductIndexService implements OnModuleInit {
       total = mergedHits.length;
       resultHits = mergedHits.slice(from, from + size);
 
-      // 한 건도 못 찾았을 때만 교정을 시도한다. "나찌반"→"니치반" 처럼 토큰이 하나도 안 겹쳐
-      // 어떤 필드로도 못 잡는 오타가 대상이다.
-      if (total === 0 && query.correct !== false) {
+      // 키워드가 한 건도 못 찾았을 때만 교정을 시도한다. "나찌반"→"니치반" 처럼 토큰이 하나도
+      // 안 겹쳐 어떤 필드로도 못 잡는 오타가 대상이다.
+      //
+      // total(=융합 결과)이 아니라 keywordHits 로 판단해야 한다 — 벡터는 "나찌반"에도 뜻이
+      // 닮은 상품을 100건씩 얹어주므로, total 로 재면 0건이 될 일이 없어 교정이 영영 안 돈다.
+      if (keywordHits.length === 0 && query.correct !== false) {
         const corrected = await this.retryWithCorrection(query);
         if (corrected) {
           return corrected;
