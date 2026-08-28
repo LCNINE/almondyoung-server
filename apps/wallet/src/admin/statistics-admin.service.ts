@@ -52,6 +52,20 @@ export interface MembershipRevenueResponse {
   series: MembershipRevenuePoint[];
 }
 
+/** 일별 결제(캡처)·환불 한 칸. 금액과 건수를 같이 준다 — 화면 표가 두 줄로 쓴다. */
+export interface DailyPaymentPoint {
+  bucket: string;
+  capturedAmount: number;
+  capturedCount: number;
+  refundedAmount: number;
+  refundedCount: number;
+}
+
+export interface DailyPaymentsResponse {
+  range: { from: string; to: string };
+  series: DailyPaymentPoint[];
+}
+
 interface FeeRateLookupRow {
   methodType: string;
   feeRateBp: number;
@@ -118,6 +132,38 @@ export function summarizeFees(
     }
   }
   return [...byMethod.values()].sort((a, b) => b.capturedAmount - a.capturedAmount);
+}
+
+/**
+ * 결제·환불이 하나도 없는 날은 DB 가 행을 주지 않는다 — 기간 전체를 0 으로 채워
+ * 차트 선이 끊기거나 x축이 실제보다 촘촘해 보이지 않게 한다.
+ * 날짜 순회는 UTC 로 못박는다(로컬 TZ 로 순회하면 서머타임·오프셋에 하루가 밀린다).
+ */
+export function buildDailyPaymentSeries(
+  captured: Array<{ day: string; amount: number; count: number }>,
+  refunded: Array<{ day: string; amount: number; count: number }>,
+  from: string,
+  to: string,
+): DailyPaymentPoint[] {
+  const capturedByDay = new Map(captured.map((row) => [row.day, row]));
+  const refundedByDay = new Map(refunded.map((row) => [row.day, row]));
+  const series: DailyPaymentPoint[] = [];
+  const cursor = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  while (cursor.getTime() <= end.getTime()) {
+    const bucket = cursor.toISOString().slice(0, 10);
+    const cap = capturedByDay.get(bucket);
+    const ref = refundedByDay.get(bucket);
+    series.push({
+      bucket,
+      capturedAmount: cap?.amount ?? 0,
+      capturedCount: cap?.count ?? 0,
+      refundedAmount: ref?.amount ?? 0,
+      refundedCount: ref?.count ?? 0,
+    });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return series;
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -269,6 +315,46 @@ export class StatisticsAdminService {
       )
       .groupBy(paymentMethods.type);
     return new Map(rows.map((row) => [row.methodType, Number(row.amount)]));
+  }
+
+  /**
+   * 일별 결제(캡처)·환불 시계열. 매출 차트의 "결제" 축이다 —
+   * analytics 의 주문 집계는 주문 시점 기준이라 "실제로 돈이 들어온 날"을 답하지 못한다.
+   * 귀속은 KST 달력일이며 수수료 요약과 같은 정의(SUCCEEDED CAPTURE / SUCCEEDED refund)를 쓴다.
+   */
+  async getDailyPayments(from: string, to: string): Promise<DailyPaymentsResponse> {
+    assertRange(from, to);
+
+    const chargeDay = sql<string>`((${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`;
+    const refundDay = sql<string>`((${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`;
+    const [capturedRows, refundedRows] = await Promise.all([
+      this.db
+        .select({ day: chargeDay, amount: sql<string>`SUM(${charges.amount})`, count: sql<string>`COUNT(*)` })
+        .from(charges)
+        .where(
+          and(
+            eq(charges.operation, 'CAPTURE'),
+            eq(charges.status, 'SUCCEEDED'),
+            sql`(${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+          ),
+        )
+        .groupBy(sql`1`),
+      this.db
+        .select({ day: refundDay, amount: sql<string>`SUM(${refunds.amount})`, count: sql<string>`COUNT(*)` })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.status, 'SUCCEEDED'),
+            sql`(${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+          ),
+        )
+        .groupBy(sql`1`),
+    ]);
+
+    const toRows = (rows: Array<{ day: string; amount: string; count: string }>) =>
+      rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
+
+    return { range: { from, to }, series: buildDailyPaymentSeries(toRows(capturedRows), toRows(refundedRows), from, to) };
   }
 
   /** 멤버십 구독료 수입 — PAID 인보이스의 amount_due 를 finalized_at(KST 달력일) 기준으로 귀속 */
