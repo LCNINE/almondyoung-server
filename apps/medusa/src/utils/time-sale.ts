@@ -1,0 +1,188 @@
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import type { MedusaContainer } from '@medusajs/framework/types';
+
+/**
+ * 타임세일은 **기간이 설정된 sale price list** 다.
+ *
+ * price_list 에는 metadata 컬럼이 없어 마커를 심을 자리가 없다. 대신 상시 운영되는 두 리스트
+ * (`Membership Prices`, `Tiered Prices - Min N`) 는 starts_at·ends_at 이 둘 다 null 이라,
+ * "기간이 있다" 는 조건만으로 타임세일이 갈린다. 이름 접두사 규칙보다 깨질 구석이 적다.
+ *
+ * 일반용/멤버십용 구분도 구조로 한다 — 룰이 customer.groups.id 면 멤버십 전용이다.
+ */
+export type TimeSaleList = {
+  id: string;
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  isMembershipOnly: boolean;
+};
+
+export type ActiveTimeSale = {
+  title: string;
+  startsAt: string | null;
+  endsAt: string | null;
+  priceListIds: string[];
+  productIds: string[];
+  productHandles: string[];
+};
+
+const TIME_SALE_LIST_COLUMNS = `
+  pl.id,
+  pl.title,
+  pl.starts_at,
+  pl.ends_at,
+  exists (
+    select 1 from price_list_rule plr
+    where plr.price_list_id = pl.id
+      and plr.deleted_at is null
+      and plr.attribute = 'customer.groups.id'
+  ) as is_membership_only
+`;
+
+const TIME_SALE_BASE_WHERE = `
+  pl.deleted_at is null
+  and pl.status = 'active'
+  and pl.type = 'sale'
+  and (pl.starts_at is not null or pl.ends_at is not null)
+`;
+
+const ACTIVE_SQL = `
+  select ${TIME_SALE_LIST_COLUMNS}
+  from price_list pl
+  where ${TIME_SALE_BASE_WHERE}
+    and (pl.starts_at is null or pl.starts_at <= now())
+    and (pl.ends_at is null or pl.ends_at >= now())
+  order by pl.ends_at asc nulls last
+`;
+
+// 경계를 지났거나(종료) 곧 지날(시작) 리스트. 종료된 리스트도 잡아야 하므로 활성 창 조건을 걸지 않는다.
+//
+// 시작 쪽만 prewarmSeconds 만큼 앞당겨 본다. 전역 목록 캐시를 비우는 순간 캐시 미스가 한꺼번에
+// Medusa 로 몰리는데, 세일 시작은 트래픽이 몰리는 시점이라 그 둘이 겹치면 CPU 가 포화된다
+// (이 서비스는 Medusa CPU 포화로 결제 콜백이 타임아웃된 전례가 있다). 미리 비워두면 워밍이
+// 분산되고, 그 사이 방문자는 아직 정가를 본다 — 손님에게 손해가 아니다.
+// 종료 쪽은 반대다. 앞당기면 세일 중인데 정가가 보이므로 정확히 경계에서 친다.
+const CROSSED_BOUNDARY_SQL = `
+  select ${TIME_SALE_LIST_COLUMNS}
+  from price_list pl
+  where ${TIME_SALE_BASE_WHERE}
+    and (
+      (
+        pl.starts_at is not null
+        and pl.starts_at > now() + ((?::int - ?::int) * interval '1 second')
+        and pl.starts_at <= now() + (?::int * interval '1 second')
+      )
+      or
+      (
+        pl.ends_at is not null
+        and pl.ends_at > now() - (?::int * interval '1 second')
+        and pl.ends_at <= now()
+      )
+    )
+`;
+
+type ListRow = {
+  id: string;
+  title: string;
+  starts_at: Date | string | null;
+  ends_at: Date | string | null;
+  is_membership_only: boolean;
+};
+
+type ProductRow = { id: string; handle: string };
+
+const toIso = (value: Date | string | null): string | null => {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+};
+
+const toLists = (rows: ListRow[]): TimeSaleList[] =>
+  rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    startsAt: toIso(row.starts_at),
+    endsAt: toIso(row.ends_at),
+    isMembershipOnly: row.is_membership_only,
+  }));
+
+/** price list 에 가격이 걸린 판매중 상품. 세일 종료 뒤에도 가격 행은 남으므로 종료된 리스트에도 쓸 수 있다. */
+export async function listProductsInPriceLists(
+  container: MedusaContainer,
+  priceListIds: string[]
+): Promise<ProductRow[]> {
+  if (priceListIds.length === 0) return [];
+
+  const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+  // `= any(?)` 는 드라이버가 배열을 펼쳐 넣어 문법이 깨지는 사례가 있어 placeholder 를 직접 만든다.
+  const placeholders = priceListIds.map(() => '?').join(',');
+  const result = await knex.raw(
+    `
+      select distinct p.id, p.handle
+      from price pr
+      join product_variant_price_set pvps on pvps.price_set_id = pr.price_set_id
+      join product_variant pv on pv.id = pvps.variant_id and pv.deleted_at is null
+      join product p on p.id = pv.product_id and p.deleted_at is null
+      where pr.price_list_id in (${placeholders})
+        and pr.deleted_at is null
+        and p.status = 'published'
+    `,
+    priceListIds
+  );
+
+  return (result.rows ?? []) as ProductRow[];
+}
+
+/**
+ * 지금 진행 중인 타임세일. 없으면 null.
+ *
+ * 기간 겹침은 어드민이 막으므로 활성 세일은 최대 하나이고, 그 하나가 일반용·멤버십용 리스트 둘로
+ * 이뤄진다. 겹침이 뚫려 여러 세일이 활성이면 가장 빨리 끝나는 쪽의 종료 시각을 쓴다 —
+ * 카운트다운이 실제보다 길게 보이는 것보다 짧게 보이는 쪽이 안전하다.
+ */
+export async function getActiveTimeSale(container: MedusaContainer): Promise<ActiveTimeSale | null> {
+  const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+  const result = await knex.raw(ACTIVE_SQL);
+  const lists = toLists((result.rows ?? []) as ListRow[]);
+
+  if (lists.length === 0) return null;
+
+  const priceListIds = lists.map((list) => list.id);
+  const products = await listProductsInPriceLists(container, priceListIds);
+
+  // 일반용 리스트가 세일의 얼굴이다 — 멤버십 전용 리스트는 미구독자에게 안 보이므로 제목이 될 수 없다.
+  const face = lists.find((list) => !list.isMembershipOnly) ?? lists[0];
+
+  return {
+    title: face.title,
+    startsAt: face.startsAt,
+    endsAt: lists.reduce<string | null>((earliest, list) => {
+      if (!list.endsAt) return earliest;
+      return !earliest || list.endsAt < earliest ? list.endsAt : earliest;
+    }, null),
+    priceListIds,
+    productIds: products.map((product) => product.id),
+    productHandles: products.map((product) => product.handle),
+  };
+}
+
+/**
+ * 경계를 막 지난(종료) 또는 prewarmSeconds 뒤에 지날(시작) 타임세일 리스트.
+ *
+ * prewarmSeconds 는 windowSeconds 이상이어야 한다 — 작으면 같은 세일의 시작이 예열 때 한 번,
+ * 실제 경계 때 또 한 번 잡힌다. 무효화는 멱등이라 깨지진 않지만 캐시를 두 번 버린다.
+ */
+export async function listTimeSalesCrossingBoundary(
+  container: MedusaContainer,
+  windowSeconds: number,
+  prewarmSeconds: number
+): Promise<TimeSaleList[]> {
+  const knex = container.resolve(ContainerRegistrationKeys.PG_CONNECTION);
+  const result = await knex.raw(CROSSED_BOUNDARY_SQL, [
+    prewarmSeconds,
+    windowSeconds,
+    prewarmSeconds,
+    windowSeconds,
+  ]);
+  return toLists((result.rows ?? []) as ListRow[]);
+}

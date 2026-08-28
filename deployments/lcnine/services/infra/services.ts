@@ -603,6 +603,10 @@ export function setup(infra: SharedInfra) {
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
+      // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
+      STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
+      STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       // S3
       S3_FILE_URL: 'https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com',
       S3_ACCESS_KEY_ID: awsS3AccessKeyId.value,
