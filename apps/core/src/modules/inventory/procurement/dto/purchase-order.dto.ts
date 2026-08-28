@@ -3,7 +3,6 @@ import { Type } from 'class-transformer';
 import {
   IsUUID,
   IsEnum,
-  IsIn,
   IsOptional,
   IsNumber,
   IsPositive,
@@ -23,6 +22,7 @@ export enum PurchaseOrderStatus {
   CREATED = 'created',
   CONFIRMED = 'confirmed',
   RECEIVED = 'received',
+  CANCELLED = 'cancelled',
 }
 
 export class CreatePurchaseOrderLineDto {
@@ -69,21 +69,6 @@ export class CreatePurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreatePurchaseOrderLineDto)
   lines: CreatePurchaseOrderLineDto[];
-}
-
-export class UpdatePurchaseOrderStatusDto {
-  /**
-   * 종결(`received`)만 받는다. `created`/`confirmed` 는 라인에서 파생되는 값이라
-   * 사람이 직접 쓰지 않는다 — 라인을 실행하거나(`POST /:poId/lines/:skuId/order`)
-   * 발주불가로 끊으면(`.../unavailable`) 헤더가 따라온다.
-   *
-   * 예전엔 이 자리가 `confirmed` 도 받아 "아직 실행 안 된 라인을 전부 지금 발주한
-   * 것으로 친다" 는 일괄 실행을 상태 쓰기로 위장해 수행했고, `expectedArrival` 도
-   * 함께 받아 계획·아이템·라인에 날짜를 퍼뜨렸다. 둘 다 사라졌다.
-   */
-  @ApiProperty({ enum: [PurchaseOrderStatus.RECEIVED], description: '발주 종결 (입고 완료)' })
-  @IsIn([PurchaseOrderStatus.RECEIVED])
-  status: PurchaseOrderStatus.RECEIVED;
 }
 
 export class UpdatePurchaseOrderLineDto {

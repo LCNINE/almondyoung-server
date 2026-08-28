@@ -450,6 +450,7 @@ export const mainMenus: MainMenu[] = [
         children: [
           { id: 'statistics-overview', title: '종합 대시보드', path: '/statistics/overview' },
           { id: 'by-profit', title: '이익', path: '/statistics/profit' },
+          { id: 'by-inventory', title: '재고', path: '/statistics/inventory' },
           { id: 'by-product', title: '상품별', path: '/statistics/products' },
           { id: 'by-option', title: '옵션별', path: '/statistics/products' },
           { id: 'by-period', title: '기간별', path: '/statistics/sales' },

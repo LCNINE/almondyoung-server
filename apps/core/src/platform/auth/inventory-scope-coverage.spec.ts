@@ -63,6 +63,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/skus/deleted':                             S.OPERATE,
   'GET /inventory/skus/managers/all':                        S.OPERATE,
   'GET /inventory/skus/search/advanced':                     S.OPERATE,
+  'GET /inventory/statistics/stock-valuation/products':       S.OPERATE,
+  'GET /inventory/statistics/stock-valuation/summary':        S.OPERATE,
   'GET /inventory/stocks':                                   S.OPERATE,
   'GET /inventory/stocks/history':                           S.OPERATE,
   'GET /inventory/stocks/inbound-pipeline':                  S.OPERATE,
@@ -96,7 +98,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (60) ──────────────────────────────────────────
+  // ── inventory.manage (57) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -105,6 +107,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /holders':                                             S.MANAGE,
   'DELETE /holders/:id':                                       S.MANAGE,
   'PUT /holders/:id':                                          S.MANAGE,
+  'POST /inbound/plans/:planId/items/:itemId/close':           S.MANAGE,
   'POST /inbound/plans/items':                                 S.MANAGE,
   'POST /inventory/sku-groups':                                S.MANAGE,
   'DELETE /inventory/sku-groups/:id':                          S.MANAGE,
@@ -132,8 +135,8 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /purchase-orders':                                      S.MANAGE,
   'POST /purchase-orders':                                     S.MANAGE,
   'GET /purchase-orders/:id':                                  S.MANAGE,
+  'POST /purchase-orders/:id/cancel':                          S.MANAGE,
   'PUT /purchase-orders/:id/lines':                            S.MANAGE,
-  'PUT /purchase-orders/:id/status':                           S.MANAGE,
   'POST /purchase-orders/:poId/lines/:skuId/order':            S.MANAGE,
   'POST /purchase-orders/:poId/lines/:skuId/unavailable':      S.MANAGE,
   'DELETE /purchase-orders/cart':                              S.MANAGE,

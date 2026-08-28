@@ -11,6 +11,7 @@ import type {
   UpdatePurchaseOrderLinesRequest,
   OrderPurchaseOrderLineRequest,
   MarkLineUnavailableRequest,
+  CancelPurchaseOrderRequest,
   AddToCartRequest,
   UpdateCartItemRequest,
   CreatePurchaseOrderFromCartRequest,
@@ -86,6 +87,11 @@ export const purchaseOrdersClient = {
       `${BASE}/${encodeURIComponent(poId)}/lines/${encodeURIComponent(skuId)}/unavailable`,
       data
     );
+    return response.data;
+  },
+
+  cancel: async (id: string, data: CancelPurchaseOrderRequest): Promise<PurchaseOrderDto> => {
+    const response = await client.post(`${BASE}/${encodeURIComponent(id)}/cancel`, data);
     return response.data;
   },
 

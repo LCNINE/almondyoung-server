@@ -22,6 +22,7 @@ export const TABS = [
   { href: '/statistics/overview', label: '종합', question: '오늘 뭘 해야 하나 — 핵심 지표와 처리할 일을 한눈에' },
   { href: '/statistics/sales', label: '매출', question: '얼마나 팔리고 있나' },
   { href: '/statistics/profit', label: '이익', question: '팔아서 실제로 남고 있나 (원가·수수료 반영)' },
+  { href: '/statistics/inventory', label: '재고', question: '재고가 돈을 얼마나 묶고 있나 — 뭘 털어야 하나' },
   { href: '/statistics/products', label: '상품', question: '뭐가 팔리고 뭐가 안 팔리나' },
   { href: '/statistics/customers', label: '고객·멤버십', question: '누가 사고 있나 (등급별)' },
   { href: '/statistics/keywords', label: '검색 키워드', question: '고객이 뭘 찾나 — 찾는데 없는 건 뭔가' },

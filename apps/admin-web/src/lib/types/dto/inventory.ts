@@ -1397,7 +1397,11 @@ export interface StocktakingSessionListResponse {
 // ─── 발주 (Purchase Orders) ───────────────────────────────────────────────────
 
 export type PurchaseOrderType = 'domestic' | 'foreign';
-export type PurchaseOrderStatus = 'created' | 'confirmed' | 'received';
+export type PurchaseOrderStatus =
+  | 'created'
+  | 'confirmed'
+  | 'received'
+  | 'cancelled';
 
 export type PurchaseOrderLineStatus = 'requested' | 'ordered' | 'unavailable';
 
@@ -1476,6 +1480,16 @@ export interface OrderPurchaseOrderLineRequest {
 export interface MarkLineUnavailableRequest {
   /** 품절·단종 등. 최대 500자. */
   reason?: string;
+}
+
+export interface CancelPurchaseOrderRequest {
+  /** 취소 사유. 필수, 최대 500자. */
+  reason: string;
+}
+
+export interface ClosePlanItemRequest {
+  /** 더 기다리지 않기로 한 이유. 필수, 최대 500자. */
+  reason: string;
 }
 
 export interface AddToCartRequest {

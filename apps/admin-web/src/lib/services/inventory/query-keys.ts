@@ -27,6 +27,8 @@ export const inventoryQueryKeys = {
   skuWarehouseStock: (sku: string, warehouseId: string) =>
     ['stocks', 'sku', sku, 'warehouse', warehouseId] as const,
   stockHistory: (query: StockHistoryQuery) => ['stocks', 'history', query] as const,
+  stockValuationSummary: ['stocks', 'valuation', 'summary'] as const,
+  stockValuationProducts: (query?: unknown) => ['stocks', 'valuation', 'products', query] as const,
 
   // SKU 관련
   skus: (query?: any) => ['skus', query] as const,

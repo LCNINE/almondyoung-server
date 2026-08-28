@@ -1,5 +1,8 @@
 # 쿠폰 · 적립금 · 프로모션 설계 문서
 
+> **기준 시점:** 2026-08-27 — `origin/develop` 코드와 1:1 대조해 갱신함.
+> 구현 상태는 코드 실측 기준이다. 라이브 DB/환경변수 실제 값이 필요한 항목은 따로 표시했다.
+
 ---
 
 ## 1. 전체 서비스 구조와 SoT
@@ -97,6 +100,10 @@ admin-web ───────────────────────�
 | 캠페인 목록 | 이름/기간/예산/진행률 |
 | 캠페인 생성 | 이름, 기간, 예산(횟수/금액) 설정 |
 | 캠페인 상세 | 연결된 쿠폰 목록, 쿠폰 연결/해제 |
+| 고객 셀프 발급 | `POST /store/customers/me/promotions/:id/claim` — 마이페이지 "발급받기" 탭. `max_claims` 원자적 예약 |
+| 쿠폰 코드 직접 입력 | 체크아웃 할인 섹션 `DirectCouponInput` — 코드 입력 → `GET /store/coupons/preview` 미리보기 → 적용 (적용 실패 시 기존 쿠폰 rollback) |
+| 발급 딥링크 페이지 | `/{countryCode}/coupons/claim?code=CODE` — preview 결과로 발급/사용가능/불가 상태를 렌더 |
+| 쿠폰 이벤트 | 배너 하나에 쿠폰 여러 개를 묶는 노출 단위 — 6절 참고 |
 
 #### 쿠폰 생성 폼
 
@@ -104,7 +111,7 @@ admin-web ───────────────────────�
 |------|------|
 | 쿠폰 코드 | ✅ |
 | 할인 유형 — 정률(%) / 정액(원) | ✅ |
-| 최대 할인 금액 (정률 시) | ❌ UI 미지원 (Medusa 기본 엔진 미지원 — 커스텀 워크플로우 필요) |
+| 최대 할인 금액 (정률 시) | ❌ `promotion_meta.max_discount_amount` 컬럼·API·어드민 타입은 존재하나 **생성 폼 입력란 없음 + 체크아웃 강제 없음** (Medusa 기본 엔진 미지원) |
 | 적용 대상 — 전체 주문 / 특정 상품 / 배송비 | ✅ |
 | 특정 상품 선택 (상품/카테고리/컬렉션) | ✅ (브랜드 미지원) |
 | 최소 주문금액 조건 | ✅ |
@@ -114,7 +121,7 @@ admin-web ───────────────────────�
 | 1인당 사용 횟수 제한 (campaign budget: `use_by_attribute`/`customer_id`) | ✅ |
 | 발급 방식 — 공개(`public`) / 발급받기(`claimable`) / 발급 고객 전용(`assigned_only`) (`promotion_meta.visibility`) | ✅ |
 | 대상 고객 그룹 (`promotion.rules: customer.groups.id in [...]`) | ✅ |
-| 자동 발급 트리거 — 회원가입 / 멤버십 가입 (`promotion_meta.auto_issue_trigger`) | ✅
+| 자동 발급 트리거 — 회원가입 / 멤버십 가입 (`promotion_meta.auto_issue_trigger`) | ⚠️ 구현됐으나 **라이브 OFF** (`COUPON_AUTO_ISSUE_ENABLED`) — 아래 "자동 발급" 참고 |
 
 #### 발급 방식 (visibility) 모델
 
@@ -127,12 +134,15 @@ admin-web ───────────────────────�
 | `assigned_only` | 발급받은 쿠폰 섹션 | customer-promotion link 필수 | 관리자 수동 발급 / 시스템 자동 발급 |
 
 **checkout 검증 (2단계):**
-1. `POST /store/carts/:id/promotions` — `per-customer-limit.ts` 미들웨어에서 선제 차단
+1. `POST /store/carts/:id/promotions` — `per-customer-limit.ts` 미들웨어에서 선제 차단 (파일명과 달리 실제 검사는 발급 여부(visibility) 뿐이다)
 2. `completeCartWorkflow.hooks.validate` — 주문 완료 직전 재검증 (race window 축소, cart.id로 promotions 명시 재조회)
 
 claimable / assigned_only 모두 customer-promotion link 없으면 `COUPON_NOT_ASSIGNED` 오류 반환.
 
-> **알려진 한계:** 1인당 사용 횟수 검증은 주문 수 조회 후 비교 방식이라 동시 주문 완료 두 건이 같은 주문 수를 보고 둘 다 통과할 수 있습니다. 완전 차단은 `promotion_redemption` 테이블에 unique key 또는 transaction lock이 필요합니다 (로드맵 참고).
+> **1인당 사용 횟수는 우리 코드가 세지 않는다.** Medusa campaign budget `use_by_attribute/customer_id` 가 엔진 레벨에서
+> 처리하며, 미들웨어·`completeCart` 훅 어디에도 주문 수를 세어 비교하는 로직은 없다. 엔진의 동시성 보장 수준은 우리가
+> 검증하지 않았다. (어드민 "발급 현황"의 고객별 사용 횟수는 표시용 집계로, 주문 최대 100,000건까지만 훑는다.)
+
 #### 캠페인과 쿠폰의 관계
 
 Medusa Campaign은 여러 쿠폰을 하나의 행사로 묶는 단위:
@@ -146,23 +156,39 @@ Campaign "봄 할인 행사 2025"
 └── Promotion "SPRINGSHIP"  → 배송비 무료
 ```
 
-쿠폰 생성 시 기간/횟수를 설정하면 `CAMP_{코드}` 형태의 캠페인이 자동 생성됨.
+쿠폰 생성 시 기간/횟수를 설정하면 `CAMP_{코드}_{timestamp}` 형태의 캠페인이 자동 생성됨.
 이 자동 생성 캠페인도 캠페인 탭에서 관리 가능.
+
+### 자동 발급 (트리거)
+
+`channel-adapter` inbox 가 Kafka 이벤트를 받아 Medusa `POST /admin/customers/:id/issue-coupons` 를 호출한다
+(Medusa 는 Kafka 를 직접 수신하지 않는다).
+
+| 트리거 | 소스 이벤트 | 상태 |
+|--------|-----------|------|
+| `customer_registered` | `UserEmailVerified` | 구현 |
+| `membership_activated` | `MembershipStatusChanged` | 구현 |
+| `birthday` | (없음) | **미구현** — 타입·CHECK 제약에만 존재하고 생성 UI 는 `disabled` |
+
+- **멱등성:** `promotion_issue_log` 의 `(customer_id, promotion_id)` unique
+- **그룹 검증:** 자동 발급 직전에도 `meetsGroupRule()` 적용
+- **보정 job:** `CouponIssueReconciliationService` — 매일 03:00 KST 크론이 `failed` inbox 를 재처리한다.
+  `UserEmailVerified` 는 최대 365일 소급해 직접 재발급을 시도하고(고객이 뒤늦게 최초 로그인하는 케이스),
+  `MembershipStatusChanged` 는 최대 30일 소급해 `pending` 으로 되돌려 재대기시킨다.
+  수동 실행: `POST /internal/membership/run-coupon-reconciliation`
+
+> **⚠️ 라이브에서는 꺼져 있다.** `issue-coupons` 라우트가 `COUPON_AUTO_ISSUE_ENABLED !== 'true'` 이면 전면 차단한다
+> (커밋 `4ad795026` 에서 의도적으로 비활성화). 이 변수는 `deployments/lcnine/services/infra/services.ts` 에 설정돼
+> 있지 않으므로 **라이브 트리거 자동 발급은 동작하지 않는다.** 개통하려면 Medusa 서비스 환경변수에 추가해야 한다.
 
 ### 미구현 항목
 
 | 항목 | 설명 |
 |------|------|
-| ~~발급 고객 전용/claimable 쿠폰 장바구니 적용 차단~~ | ✅ **구현 완료** — `POST /store/carts/:id/promotions` 미들웨어(`per-customer-limit.ts`)가 `visibility: assigned_only\|claimable`인 쿠폰을 비발급 고객이 장바구니에 넣는 것을 차단. 1인당 사용 횟수 제한은 Medusa campaign budget `use_by_attribute/customer_id`로 엔진이 직접 처리. |
-| ~~발급 고객 전용 쿠폰 강제 적용~~ | ✅ **구현 완료** — `visibility: 'assigned_only'` 설정 시 스토어 공개 목록 제외 + 비발급 고객 장바구니 적용/주문 완료 차단 |
-| ~~고객 셀프 발급 (`claimable`)~~ | ✅ **구현 완료** — `POST /store/customers/me/promotions/:id/claim` 엔드포인트. 마이페이지 "발급받기 가능한 쿠폰" 섹션에서 버튼 클릭 시 customer-promotion link 생성 |
-| ~~발급 수량 제한~~ | ✅ **구현 완료** — `promotion_meta.max_claims` + `issued_count` 기반 atomic reserve로 claimable 쿠폰 발급 수량 제한 |
-| ~~고객 그룹 한정~~ | ✅ **구현 완료** — `promotion.rules[customer.groups.id in [...]]`, `GET /store/customers/me/promotions` 목록·`claim`·`issue-coupons` 자동 발급 전 구간에 `meetsGroupRule()` 적용 |
-| ~~자동 발급 트리거~~ | ✅ **구현 완료** — channel-adapter inbox → `POST /admin/customers/:id/issue-coupons`. 회원가입(`UserEmailVerified`)/멤버십 가입(`MembershipStatusChanged`) 지원. `promotion_issue_log`로 멱등 처리. `birthday` 미구현(UI disabled) |
-| buyget 유형 | "N개 사면 M개 무료" — `type: 'buyget'` + `buy_rules`. 현재 `type: 'standard'`만 지원 |
-| 쿠폰 코드 수동 입력 (스토어프론트) | 체크아웃에서 코드 직접 입력 불가. 마이페이지 쿠폰 목록에는 발급받은 쿠폰과 공개 쿠폰이 모두 표시되며, 체크아웃 드롭다운도 동일 API 사용 |
-| 최대 할인금액 | Medusa 기본 엔진 미지원 — 커스텀 워크플로우 단계 필요 |
-| 자동 발급 보정 job | max retry 초과·고객 늦게 생성 케이스 보정. `failed inbox` 재처리 스케줄러 미구현 |
+| 최대 할인금액 강제 적용 | `promotion_meta.max_discount_amount` 는 저장·조회되지만 **체크아웃에서 강제하는 코드가 0곳**이다. 생성 폼 입력란도 없다. Medusa 기본 엔진 미지원 — 커스텀 워크플로우 단계 필요 |
+| 생일 쿠폰 | 위 트리거 표 참고 |
+| buyget 유형 | "N개 사면 M개 무료" — `type: 'buyget'` + `buy_rules`. 현재 `type: 'standard'` 만 지원 |
+| 브랜드 단위 상품 한정 | 상품 / 카테고리 / 컬렉션만 지원 |
 
 ---
 
@@ -222,9 +248,11 @@ Campaign "봄 할인 행사 2025"
 ### 현재 상태: dormant
 
 코어 서비스의 `promotions` + `promotionProducts` 테이블이 존재하지만 완전히 비활성:
-- `catalogSchema` 객체에 미포함 → DB 마이그레이션에도 미반영
+- `catalog.schema.ts` 에 `pgTable` 정의는 있으나 `catalogSchema` 집합 객체에는 미포함 → 코드에서 접근할 경로가 없다
+- **DB 에는 실재한다** — `apps/core/drizzle/20260518141559_baseline.sql` 이 `promotions` / `promotion_products` 를
+  FK 까지 포함해 생성한다. 이후 드롭한 마이그레이션도 없다. 즉 라이브에 빈 테이블로 남아 있다
 - 서비스, 컨트롤러, 타입 없음
-- 어드민 메뉴 `프로모션` 항목에 `path` 없는 플레이스홀더만 존재
+- 어드민 메뉴에서 `프로모션` 항목은 **제거됐다** (현재 마케팅 메뉴: 배너 그룹 / 팝업 / 적립금 / 쿠폰 / 이벤트 / 샵매매 / 예치금)
 
 ### 두 개념의 차이
 
@@ -266,21 +294,64 @@ campaign.starts_at / ends_at ← 기간 제한
 | 발급 권한 | customer-promotion remote link | `claimable` claim 후 또는 admin/system 직접 발급 |
 | 자동 발급 멱등성 | `promotion_issue_log` | `(customer_id, promotion_id)` unique — 중복 발급 방지 |
 | 1인 사용 횟수 제한 | campaign budget `use_by_attribute` | Medusa 엔진이 직접 처리 |
-| 발급 수량 제한 | `promotion_meta.max_claims` | count-then-create (고트래픽 선착순이면 보강 필요) |
+| 발급 수량 제한 | `promotion_meta.max_claims` + `issued_count` | `UPDATE … WHERE issued_count < max_claims RETURNING` 원자적 예약. 링크 생성 실패·중복 시 슬롯 반환 |
+| 할인 상한 | `promotion_meta.max_discount_amount` | 저장만 됨 — **체크아웃 강제 없음** |
+| 쿠폰 노출 묶음 | `coupon_event` + `coupon_event_item` | 캠페인(예산 묶음)과 별개 — 6절 |
 | 이벤트 재시도 | channel-adapter inbox | Medusa는 Kafka 직접 수신 안 함 |
+
+---
+
+## 6. 쿠폰 이벤트 (배너용 쿠폰 묶음)
+
+배너 하나에 쿠폰 여러 개를 묶어 한 페이지에서 발급받게 하는 마케팅 단위. 예산·기간 로직을 갖는 **캠페인과는 별개**다
+(캠페인 = 예산 묶음, 쿠폰 이벤트 = 노출 묶음).
+
+### 모델 (`promotion-meta` 모듈)
+
+| 테이블 | 컬럼 |
+|--------|------|
+| `coupon_event` | `slug`(unique), `title`, `description`, `banner_image_url`, `starts_at`, `ends_at`, `status`(`draft` / `active` / `ended`) |
+| `coupon_event_item` | `event_id`, `promotion_id`, `sort_order` — `(event_id, promotion_id)` unique |
+
+> 두 테이블의 unique 인덱스는 마이그레이션에서 **partial** (`WHERE deleted_at IS NULL`) 로 생성된다.
+> 모델 DSL 이 partial 조건을 표현하지 못해 코드상으로는 full unique 로 보인다. 스키마 재생성 시 이 조건을 반드시 보존할 것
+> (`promotion_meta` 도 동일 — soft-delete 후 재생성이 이 조건에 의존한다).
+
+### API
+
+| 엔드포인트 | 용도 |
+|-----------|------|
+| `GET` / `POST /admin/coupon-events` | 목록 / 생성 |
+| `GET` / `POST` / `DELETE /admin/coupon-events/:id` | 상세 / 수정 / 삭제 |
+| `GET /store/events/:slug` | 스토어 노출. `draft` 는 404. 담긴 쿠폰을 고객 기준으로 필터링해(`active` + 비자동 + visibility 별 발급 여부) 반환 |
+
+### 화면
+
+- **어드민** — 자사몰 관리 > 마케팅 > 이벤트 (`/mall/marketing/events`): 배너 이미지, 상태, 담긴 쿠폰 수, 공개 URL 복사
+- **스토어프론트** — `/{countryCode}/events/{slug}`
 
 ---
 
 ## 7. 인프라 변경 사항
 
 쿠폰/적립금 구현에서 SST 파일 변경 최소화:
-- `services/infra/services.ts` — AdminWeb 환경변수 2개 추가 (`MEDUSA_API_URL`, `MEDUSA_API_KEY`)
+- `deployments/lcnine/services/infra/services.ts` — AdminWeb 환경변수 2개 추가 (`MEDUSA_API_URL`, `MEDUSA_API_KEY`)
 - 신규 시크릿 생성 없음 — 기존 `medusaApiKey` 시크릿 참조
 - 그 외 SST 파일 미변경
 
+### 인프라에 설정돼 있지 않은 변수
+
+| 변수 | 미설정 시 | 영향 |
+|------|---------|------|
+| `COUPON_AUTO_ISSUE_ENABLED` | OFF | 트리거 자동 발급 전면 차단. 개통하려면 Medusa 서비스에 `'true'` 추가 |
+| `WALLET_POINTS_EXPIRATION_CRON` | `0 2 * * *` | 포인트 만료 크론 주기 (기본값으로 동작하므로 조치 불필요) |
+
 ---
 
-## 8. 레거시 backfill 절차 (`promotion_meta.max_uses_per_customer`)
+## 8. 레거시 backfill 절차 (`promotion_meta.max_uses_per_customer`) — 아카이브
+
+> **완료된 1회성 절차.** `max_uses_per_customer` 는 `Migration20260527120000` 이 이미 DROP 했고 모델에도 없다.
+> 이 마이그레이션 이전 상태의 DB(옛 백업 복원 등)를 올릴 때만 아래 절차가 필요하다.
 
 `Migration20260527120000`은 `promotion_meta.max_uses_per_customer`에 값이 남아 있으면 배포를 실패로 처리합니다. 운영 배포 전 아래 절차를 완료해야 합니다.
 
@@ -346,9 +417,26 @@ SELECT COUNT(*) FROM promotion_meta WHERE max_uses_per_customer IS NOT NULL;
 
 ---
 
-### max_claims 동시성 주의 (잔여 리스크)
+### max_claims 동시성 — 해소됨 (단, 카운터 backfill 주의)
 
-`claim` 엔드포인트의 `max_claims` 검증은 count-then-create 방식입니다. 선착순 이벤트 쿠폰에서는 초과 발급 가능성이 있습니다. 일반 운영 수준에서는 허용 가능하며, 선착순 고트래픽 이벤트를 운영한다면 `promotion_meta.claim_count`에 대한 row lock 또는 atomic increment 방식으로 교체가 필요합니다.
+`claim` 엔드포인트는 슬롯을 원자적으로 예약한다 (`reserveClaimSlot`):
+
+```sql
+UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1
+WHERE "promotion_id" = ? AND "issued_count" < ?
+RETURNING "id"
+```
+
+행이 안 돌아오면 소진으로 판정한다. 링크 생성이 실패하거나 중복이면 `releaseClaimSlot` 으로 되돌린다. 초과 발급 리스크는 없다.
+
+> **남은 주의:** `issued_count` 는 마이그레이션 시점에 0 에서 시작한다. 그 이전에 만들어져 이미 customer-promotion link 가
+> 달린 쿠폰은 실제 발급 수보다 작은 `issued_count` 를 갖는다. 그런 쿠폰에 `max_claims` 를 걸려면 먼저 정합화할 것:
+>
+> ```sql
+> UPDATE promotion_meta SET issued_count = <실제 link 수> WHERE promotion_id = '<id>';
+> ```
+>
+> `claim` 라우트의 fast check(`link 수 >= max_claims`)가 완전 소진은 막아주지만, 카운터 자체를 고치지는 않는다.
 
 ---
 
@@ -356,9 +444,11 @@ SELECT COUNT(*) FROM promotion_meta WHERE max_uses_per_customer IS NOT NULL;
 
 | 우선순위 | 기능 | 난이도 | 비고 |
 |----------|------|--------|------|
-| 1 | 자동 발급 보정 job | 중간 | failed inbox 재처리 + 고객 늦게 생성 케이스 backfill 스케줄러 |
-| 2 | 스토어프론트 쿠폰 코드 직접 입력 | 낮음 | 체크아웃 UI에 코드 입력란 추가 |
-| 3 | 최대 할인금액 체크아웃 강제 적용 | 중간 | Medusa 기본 엔진 미지원 — 커스텀 워크플로우 단계 필요 |
-| 4 | 생일 쿠폰 | 중간 | daily scheduler 또는 `UserBirthdayReached` 이벤트 필요 |
-| 5 | 타임세일 (프로모션) 이관 | 중간 | is_automatic + target_rules, 코어 테이블 정리까지 |
-| 6 | buyget 유형 쿠폰 | 높음 | 복잡도 높음 |
+| 1 | 트리거 자동 발급 개통 | 낮음 | 코드는 완성. `COUPON_AUTO_ISSUE_ENABLED=true` 를 인프라에 넣을지가 **운영 판단** |
+| 2 | 최대 할인금액 체크아웃 강제 적용 | 중간 | Medusa 기본 엔진 미지원 — 커스텀 워크플로우 단계 필요. 생성 폼 입력란도 함께 |
+| 3 | 생일 쿠폰 | 중간 | daily scheduler 또는 `UserBirthdayReached` 이벤트 필요 |
+| 4 | 타임세일 (프로모션) 이관 | 중간 | is_automatic + target_rules, 코어 테이블 정리까지 |
+| 5 | buyget 유형 쿠폰 | 높음 | 복잡도 높음 |
+
+**완료된 로드맵 항목** — 자동 발급 보정 job(`CouponIssueReconciliationService`), 스토어프론트 쿠폰 코드 직접 입력
+(`DirectCouponInput` + `GET /store/coupons/preview`).

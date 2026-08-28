@@ -1,4 +1,5 @@
 import { InboundService } from './inbound.service';
+import { PurchaseOrderClosureAdapter } from '../../procurement/services/purchase-order-closure.adapter';
 
 const SENTINEL = { sentinel: true };
 
@@ -6,7 +7,15 @@ function build() {
   const withIdempotency = jest.fn().mockResolvedValue(SENTINEL);
   const idempotency = { withIdempotency } as never;
   // 나머지 의존성은 withIdempotency 모킹으로 본문이 실행되지 않으므로 도달하지 않음
-  const svc = new InboundService({} as never, {} as never, {} as never, {} as never, {} as never, idempotency);
+  const svc = new InboundService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    idempotency,
+    new PurchaseOrderClosureAdapter(),
+  );
   return { svc, withIdempotency };
 }
 

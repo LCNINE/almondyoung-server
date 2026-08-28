@@ -52,16 +52,20 @@ export function PurchaseOrderLineList({ po }: { po: PurchaseOrderDto }) {
     return <p className="text-sm text-muted-foreground">라인 없음</p>;
   }
 
-  // received 는 canExecuteLines 가 항상 false 라 모든 라인의 [실행][불가] 버튼이
-  // 사라진다 — 남은 requested 라인이 있으면 왜 못 건드리는지 이유를 알려준다.
-  const showReceivedNotice =
+  // received/cancelled 는 canExecuteLines 가 항상 false 라 모든 라인의 [실행][불가]
+  // 버튼이 사라진다 — 남은 requested 라인이 있으면 왜 못 건드리는지 이유를 알려준다.
+  // 상태별로 문구를 가른다 — cancelled 에는 "입고가 완료된 발주라" 가 맞지 않는다
+  // (최종 전체 리뷰 발견 I1 덤).
+  const showClosedNotice =
     !canExecuteLines(po.status) && po.lines.some((line) => line.status === 'requested');
 
   return (
     <>
-      {showReceivedNotice && (
+      {showClosedNotice && (
         <p className="mb-2 text-sm text-muted-foreground">
-          입고가 완료된 발주라 남은 요청 라인을 실행할 수 없습니다.
+          {po.status === 'cancelled'
+            ? '취소된 발주라 남은 요청 라인을 실행할 수 없습니다.'
+            : '입고가 완료된 발주라 남은 요청 라인을 실행할 수 없습니다.'}
         </p>
       )}
       <div className="space-y-2">

@@ -1,13 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { useReceiveFromPlan, useInboundPlanItems } from '@/lib/services/inventory';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { useReceiveFromPlan, useInboundPlanItems, useClosePlanItem } from '@/lib/services/inventory';
 import type { InboundPendingDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
@@ -27,7 +29,18 @@ type ReceiveState = Record<string, { quantity: number; locationId: string; memo:
 export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
   const [receiveState, setReceiveState] = useState<ReceiveState>({});
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
+  const [closingItem, setClosingItem] = useState<{ mapKey: string; skuName: string } | null>(null);
+  const [closeReason, setCloseReason] = useState('');
   const receiveMutation = useReceiveFromPlan();
+  const closeMutation = useClosePlanItem();
+
+  // 다이얼로그는 「잔량 포기」 버튼이 setClosingItem(...) 을 직접 불러서 열린다 —
+  // Radix Dialog.Root 는 제어 prop 이 외부에서 true 로 바뀔 때 onOpenChange(true) 를
+  // 부르지 않으므로(내부 발생 닫기에서만 부름), 리셋을 onOpenChange 분기가 아니라
+  // closingItem 자체에 건다. 안 그러면 A 의 사유가 남은 채로 B 다이얼로그가 열린다.
+  useEffect(() => {
+    if (closingItem) setCloseReason('');
+  }, [closingItem]);
 
   // pending 응답의 items에는 planItemId(DB row id)가 없으므로 별도 조회
   const { data: planItemsData } = useInboundPlanItems(
@@ -70,9 +83,37 @@ export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
     }
   };
 
+  const handleClosingItemOpenChange = (nextOpen: boolean) => {
+    // Radix 가 onOpenChange(true) 를 부르는 경로는 없다 — 열기는 항상 setClosingItem(...)
+    // 직접 호출이다. 여기서는 (Escape·오버레이 클릭 등) 내부 발생 닫기만 처리한다.
+    if (!nextOpen) setClosingItem(null);
+  };
+
+  const handleCloseItem = async () => {
+    if (!row || !closingItem) return;
+    const itemId = planItemIdMap.get(closingItem.mapKey);
+    if (!itemId) {
+      toast.error('입고예정 아이템 ID를 찾을 수 없습니다. 잠시 후 다시 시도해 주세요.');
+      return;
+    }
+    const reason = closeReason.trim();
+    if (!reason) {
+      toast.error('사유를 입력해주세요.');
+      return;
+    }
+    try {
+      await closeMutation.mutateAsync({ planId: row.planId, itemId, data: { reason } });
+      toast.success(`${closingItem.skuName} 잔량을 포기 처리했습니다.`);
+      setClosingItem(null);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : '잔량 포기 처리에 실패했습니다.');
+    }
+  };
+
   if (!row) return null;
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full max-w-xl overflow-y-auto">
         <SheetHeader>
@@ -126,14 +167,24 @@ export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
                       </span>
                     </div>
                     {item.pendingQty > 0 && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setActiveItemId(isExpanded ? null : mapKey)}
-                        disabled={!hasPlanItemId}
-                      >
-                        {isExpanded ? '닫기' : '입고'}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setActiveItemId(isExpanded ? null : mapKey)}
+                          disabled={!hasPlanItemId}
+                        >
+                          {isExpanded ? '닫기' : '입고'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setClosingItem({ mapKey, skuName: item.skuName })}
+                          disabled={!hasPlanItemId}
+                        >
+                          잔량 포기
+                        </Button>
+                      </div>
                     )}
                   </div>
 
@@ -183,5 +234,44 @@ export function PlanDetailDrawer({ row, open, onOpenChange }: Props) {
         </div>
       </SheetContent>
     </Sheet>
+
+      <Dialog open={!!closingItem} onOpenChange={handleClosingItemOpenChange}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>잔량 포기 — {closingItem?.skuName}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4 py-2">
+            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              더 기다리지 않고 이 아이템을 종결합니다. <strong>되돌릴 수 없습니다.</strong>
+            </p>
+
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="close-plan-item-reason">사유 (필수, 500자 이내)</Label>
+              <Textarea
+                id="close-plan-item-reason"
+                maxLength={500}
+                placeholder="공급처 회신 없음 / 재고 조정 등"
+                value={closeReason}
+                onChange={(e) => setCloseReason(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setClosingItem(null)}>
+              닫기
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleCloseItem}
+              disabled={closeMutation.isPending || !closeReason.trim()}
+            >
+              {closeMutation.isPending ? '처리 중…' : '잔량 포기'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
