@@ -24,7 +24,12 @@ import {
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
 import { useStockValuationProducts, useStockValuationSummary } from '@/lib/services/inventory/queries';
 import { useReviewStatistics, useReviews } from '@/lib/services/review';
-import { useFeeSummary, usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet/queries';
+import {
+  useFeeSummary,
+  useMembershipRevenue,
+  usePendingBankTransfers,
+  useRefundRequests,
+} from '@/lib/services/wallet/queries';
 import { useOrderStats } from '@/lib/services/orders/queries';
 import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
 import { useQuestions } from '@/lib/services/qna/queries';
@@ -34,6 +39,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatisticsShell, TABS } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
 import { buildTrendChart } from '../forecast';
+import { buildBusinessHealth } from '../business-health';
+import { BusinessHealthCard } from '../components/BusinessHealthCard';
+import { asOfLabel, stalenessNote } from '../as-of';
 import { changeRate, formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS } from '../shared';
 
 /** 오늘 기준 n일 전 ~ 오늘 구간 (KST 로컬 달력) */
@@ -83,6 +91,7 @@ export default function OverviewStatisticsTemplate() {
   const zeroHit = useZeroHitKeywords({ from: month.from, to: month.to, page: 1, limit: 1 });
   const reviews = useReviewStatistics({ from: month.from, to: month.to, limit: 5 });
   const fees = useFeeSummary(month.from, month.to);
+  const membershipRevenue = useMembershipRevenue(month.from, month.to);
   // 건수뿐 아니라 표본도 받는다 — 오래 안 팔린 순 정렬이라 이 표본이 '털 후보' 전략 카드의 모수다
   const unsold = useUnsoldProducts({ from: month.from, to: month.to, page: 1, limit: UNSOLD_SAMPLE_SIZE });
   const stockValuation = useStockValuationSummary();
@@ -103,6 +112,40 @@ export default function OverviewStatisticsTemplate() {
   const strategyStockByMaster = useMemo(
     () => new Map((strategyValuation.data?.data ?? []).map((row) => [row.masterId, row])),
     [strategyValuation.data],
+  );
+
+  // ─── 경영 진단 — 세 서비스의 요약을 한 판정으로 접는다 (병합은 화면에서만 가능하다) ───
+  const uncostedStockQuantity = useMemo(() => {
+    const summary = stockValuation.data;
+    if (!summary) return null;
+    return (
+      summary.costMissing.onHandQuantity +
+      summary.costConflict.onHandQuantity +
+      summary.multiMaster.onHandQuantity +
+      summary.unmatched.onHandQuantity
+    );
+  }, [stockValuation.data]);
+
+  const health = useMemo(
+    () =>
+      buildBusinessHealth({
+        estimatedMargin: profit.data?.totals.estimatedMargin ?? null,
+        computedNetRevenue: profit.data?.totals.computedNetRevenue ?? null,
+        marginRate: profit.data?.totals.marginRate ?? null,
+        netRevenue: profit.data?.totals.netRevenue ?? null,
+        previousNetRevenue: profit.data?.previousTotals.netRevenue ?? null,
+        estimatedFee: fees.data?.totals.estimatedFee ?? null,
+        feeUncoveredAmount: fees.data?.totals.uncoveredAmount ?? null,
+        fixedCost: profit.data?.operating.fixedCost ?? null,
+        fixedCostUncoveredDays: profit.data?.operating.fixedCostUncoveredDays ?? 0,
+        membershipRevenue: membershipRevenue.data?.totalAmount ?? null,
+        stockValue: stockValuation.data?.onHandValue ?? null,
+        // 네 버킷은 SKU 하나가 상태 하나를 갖는 배타 분류라 합산이 맞다.
+        // costMissing 만 쓰면 실제 미평가 몫(대부분 unmatched)을 크게 과소평가한다.
+        stockUncostedQuantity: uncostedStockQuantity,
+        rangeDays: 30,
+      }),
+    [profit.data, fees.data, membershipRevenue.data, stockValuation.data, uncostedStockQuantity],
   );
 
   // ─── 추세 기반 예측 — 실적 시리즈에 추정 구간을 이어 붙인다 (근사치, 계절성 없음) ───
@@ -364,6 +407,8 @@ export default function OverviewStatisticsTemplate() {
   }
 
   const ov = overview.data;
+  const asOf = asOfLabel(ov?.dataAsOf);
+  const stale = stalenessNote(ov?.dataAsOf);
 
   return (
     <StatisticsShell hideFilter>
@@ -371,7 +416,18 @@ export default function OverviewStatisticsTemplate() {
         <p className="text-xs text-gray-400">
           이 화면은 기간 필터 없이 오늘·최근 7일·최근 30일 고정 기준으로 보여줍니다. 기간을 바꿔 보려면 각
           탭으로 이동하세요.
+          {asOf ? <span className="ml-1">매출 집계는 {asOf}입니다.</span> : null}
         </p>
+        {stale ? (
+          <p className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] text-amber-800">{stale}</p>
+        ) : null}
+
+        <BusinessHealthCard
+          health={health}
+          isLoading={profit.isLoading || fees.isLoading || membershipRevenue.isLoading || stockValuation.isLoading}
+          rangeLabel="최근 30일"
+          needsFixedCost={profit.data != null && profit.data.operating.fixedCost == null}
+        />
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           <KpiTile

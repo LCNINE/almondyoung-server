@@ -193,6 +193,31 @@ export interface TrafficStatistics {
   countries: Array<{ label: string; sessions: number }>;
 }
 
+/** 실시간 축의 지표는 세션이 아니라 활성 사용자다 — 이름을 세션과 섞지 않는다. */
+export interface RealtimeDimensionRow {
+  label: string;
+  activeUsers: number;
+}
+
+export interface RealtimeTraffic {
+  /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
+  enabled: boolean;
+  /** 최근 30분 활성 사용자. GA4 실시간 창이 30분 고정이라 기간을 고를 수 없다. */
+  activeUsers: number;
+  /** 응답을 만든 순간(UTC ISO). 화면은 KST 로 바꿔 표기한다. */
+  observedAt: string;
+  byMinute: Array<{ minutesAgo: number; activeUsers: number }>;
+  pages: RealtimeDimensionRow[];
+  devices: RealtimeDimensionRow[];
+}
+
+export interface OperatingCost {
+  id: string;
+  monthlyFixedCost: number;
+  effectiveFrom: string;
+  memo: string | null;
+}
+
 export interface BehaviorStatisticsQuery {
   from: string;
   to: string;
@@ -295,11 +320,25 @@ export interface ProfitSeriesPoint {
   estimatedMargin: number;
 }
 
+/**
+ * 고정비를 반영한 기간 손익. 고정비가 미설정이면 전부 null 이다 —
+ * 0 으로 두면 적자를 흑자로 보이게 만든다.
+ * 결제 수수료는 wallet 소유라 여기 없다. 화면이 마지막에 뺀다.
+ */
+export interface OperatingResult {
+  fixedCost: number | null;
+  fixedCostUncoveredDays: number;
+  operatingProfit: number | null;
+  breakEvenNetRevenue: number | null;
+  breakEvenAchievementRate: number | null;
+}
+
 export interface ProfitStatistics {
   range: { from: string; to: string };
   previousRange: { from: string; to: string };
   totals: ProfitTotals;
   previousTotals: ProfitTotals;
+  operating: OperatingResult;
   series: ProfitSeriesPoint[];
   items: ProfitProductRow[];
   page: number;
@@ -317,6 +356,8 @@ export interface AnalyticsOverview {
   yesterday: DailyRevenueSummary;
   activeMembers: number | null;
   activeMembersAsOf: string | null;
+  /** 매출 집계가 마지막으로 갱신된 순간(UTC ISO). 화면은 KST 로 바꿔 "언제 기준"을 표기한다. */
+  dataAsOf: string | null;
 }
 
 function rangeQs(query: StatisticsRangeQuery): string {
@@ -388,6 +429,32 @@ export const analyticsApi = {
     if (query.channelGroup) params.set('channelGroup', query.channelGroup);
     if (query.limit) params.set('limit', String(query.limit));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/traffic?${params.toString()}`);
+    return res.data;
+  },
+
+  getRealtimeTraffic: async (limit = 10): Promise<RealtimeTraffic> => {
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/traffic/realtime?limit=${limit}`);
+    return res.data;
+  },
+
+  listOperatingCosts: async (): Promise<{ items: OperatingCost[] }> => {
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/operating-costs`);
+    return res.data;
+  },
+
+  createOperatingCost: async (payload: {
+    monthlyFixedCost: number;
+    effectiveFrom: string;
+    memo?: string;
+  }): Promise<{ id: string }> => {
+    const res = await client.post(`${ANALYTICS_SERVICE_BASE_URL}/statistics/operating-costs`, payload);
+    return res.data;
+  },
+
+  deleteOperatingCost: async (id: string): Promise<{ deleted: true }> => {
+    const res = await client.delete(
+      `${ANALYTICS_SERVICE_BASE_URL}/statistics/operating-costs/${encodeURIComponent(id)}`,
+    );
     return res.data;
   },
 

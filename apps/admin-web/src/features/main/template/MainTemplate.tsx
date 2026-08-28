@@ -19,7 +19,9 @@ import { useReviews } from '@/lib/services/review';
 import { useExchangeRequests, useReturnRequests } from '@/lib/services/return-exchange/queries';
 import { useKeywordStatistics, useZeroHitKeywords } from '@/lib/services/search';
 import { useAllUserCount } from '@/lib/services/users';
-import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
+import { usePendingBankTransfers, usePointsStats, useRefundRequests } from '@/lib/services/wallet';
+import { SalesBoard } from '@/features/main/sales/SalesBoard';
+import { RealtimeBoard } from '@/features/main/RealtimeBoard';
 import { toLocalDateString } from '@/lib/utils/date';
 import { cn } from '@/lib/utils/ui';
 import type { SalesOrderStatus } from '@/lib/types/dto/orders';
@@ -62,17 +64,19 @@ function lastDays(days: number): { from: string; to: string } {
 }
 
 const BOARD_TABS = [
+  { id: 'sales', label: '오늘의 매출' },
+  { id: 'realtime', label: '실시간 접속' },
   { id: 'sourcing', label: '소싱 후보 (검색 0건)' },
   { id: 'keywords', label: '인기 검색어' },
   { id: 'orders', label: '주문처리 현황' },
-  { id: 'members', label: '회원/멤버십' },
+  { id: 'members', label: '회원/적립금' },
   { id: 'cs', label: 'CS 현황' },
 ] as const;
 
 type BoardTabId = (typeof BOARD_TABS)[number]['id'];
 
 export default function MainTemplate() {
-  const [tab, setTab] = useState<BoardTabId>('sourcing');
+  const [tab, setTab] = useState<BoardTabId>('sales');
   const range = lastDays(MAIN_RANGE_DAYS);
 
   // ─── 오늘의 할 일 — 처리 대기 큐를 건수만 센다 (count 전용 limit 1) ───
@@ -244,6 +248,8 @@ export default function MainTemplate() {
         </CardHeader>
         <CardContent className="pt-4">
           {/* 선택된 탭만 그린다 — 안 보는 탭의 요청까지 로그인 직후에 한꺼번에 나가지 않도록 */}
+          {tab === 'sales' ? <SalesBoard /> : null}
+          {tab === 'realtime' ? <RealtimeBoard /> : null}
           {tab === 'sourcing' ? <SourcingBoard range={range} /> : null}
           {tab === 'keywords' ? <PopularKeywordsBoard range={range} /> : null}
           {tab === 'orders' ? <OrdersBoard /> : null}
@@ -329,8 +335,8 @@ function BoardHeader({ children, href, linkLabel }: { children: React.ReactNode;
 }
 
 /**
- * 기본 탭 — 고객이 찾았는데 결과를 못 준 검색어.
- * 매출은 /statistics/overview 에 있어 메인에 중복으로 두지 않는다.
+ * 고객이 찾았는데 결과를 못 준 검색어 — 소싱 담당자가 업무를 받아 가는 자리.
+ * 메인의 매출 탭은 '오늘'만 답하고, 기간을 바꿔 보는 분석은 /statistics/overview 가 맡는다.
  */
 function SourcingBoard({ range }: { range: { from: string; to: string } }) {
   const zeroHit = useZeroHitKeywords({
@@ -488,13 +494,14 @@ function OrdersBoard() {
 function MembersBoard() {
   const userCount = useAllUserCount();
   const members = useMembershipMembersSummary();
+  const points = usePointsStats();
 
   return (
     <div className="space-y-3">
       <BoardHeader href="/membership/members?status=ACTIVE&page=1" linkLabel="멤버십 회원 보기">
         누적 기준 · 멤버십 활성은 목록의 ACTIVE 필터와 같은 기준(해지 예약 포함, 일시정지 제외)
       </BoardHeader>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <BoardStat label="전체 회원" value={userCount.data} unit="명" isLoading={userCount.isLoading} isError={userCount.isError} />
         <BoardStat
           label="멤버십 활성 회원"
@@ -503,7 +510,31 @@ function MembersBoard() {
           isLoading={members.isLoading}
           isError={members.isError}
         />
+        <BoardStat
+          label="미사용 적립금"
+          value={points.data?.currentCirculating}
+          unit="원"
+          hint="언젠가 나갈 돈 — 부채로 잡히는 몫"
+          isLoading={points.isLoading}
+          isError={points.isError}
+        />
+        <BoardStat
+          label="누적 적립"
+          value={points.data?.totalEarned}
+          unit="원"
+          hint={
+            points.data && points.data.totalEarned > 0
+              ? `이 중 ${Math.round((points.data.totalRedeemed / points.data.totalEarned) * 100)}% 사용됨`
+              : undefined
+          }
+          isLoading={points.isLoading}
+          isError={points.isError}
+        />
       </div>
+      <p className="text-[11px] text-gray-400">
+        적립금 상세는 <Link href="/payments/points" className="text-blue-600 hover:underline">적립금 관리</Link>에 있습니다.
+        예치금(선불 충전)은 아직 도입하지 않았습니다.
+      </p>
     </div>
   );
 }

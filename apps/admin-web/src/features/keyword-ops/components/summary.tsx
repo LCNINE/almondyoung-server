@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils/ui';
 import type { KeywordIssueFilter, ZeroHitSummary } from '@/lib/api/domains/search';
 import { buildKeywordDiagnosis, type DiagnosisSentence } from '../diagnosis';
 import { FILTER_LABELS, FILTER_ORDER, formatDays, formatKinds, formatTimes } from '../labels';
+import { missedDemandSentence, type MissedDemand } from '../missed-demand';
 
 /** 숫자를 문장으로 읽어주는 줄 — 이 화면에서 가장 먼저 읽히는 자리다. */
 export function DiagnosisLines({
@@ -50,6 +51,7 @@ export function KeywordOpsHeadline({
   zeroResultSearches,
   summary,
   rangeDays,
+  missedDemand,
   isStatisticsLoading,
   isSummaryLoading,
 }: {
@@ -57,10 +59,20 @@ export function KeywordOpsHeadline({
   zeroResultSearches: number | undefined;
   summary: ZeroHitSummary | undefined;
   rangeDays: number;
+  /** 놓친 수요 추정. 넘기지 않으면 그 줄을 아예 그리지 않는다 — 메인은 이 축을 쓰지 않는다. */
+  missedDemand?: MissedDemand;
   isStatisticsLoading?: boolean;
   isSummaryLoading?: boolean;
 }) {
   const sentences = buildKeywordDiagnosis({ totalSearches, zeroResultSearches, summary, rangeDays });
+  if (missedDemand) {
+    // 금액 문장은 진단의 맨 앞에 온다 — "빈손 검색 N회"보다 "얼마를 놓쳤나"가 먼저 읽혀야 한다.
+    sentences.unshift({
+      id: 'missed-demand',
+      tone: missedDemand.amount != null && missedDemand.amount > 0 ? 'alert' : 'neutral',
+      text: missedDemandSentence(missedDemand, rangeDays),
+    });
+  }
   const rate =
     totalSearches != null && zeroResultSearches != null && totalSearches > 0
       ? `${((zeroResultSearches / totalSearches) * 100).toFixed(1)}%`

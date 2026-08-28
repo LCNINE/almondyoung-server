@@ -19,4 +19,6 @@ export const analyticsQueryKeys = {
   traffic: (query: TrafficStatisticsQuery) => [...analyticsQueryKeys.all, 'traffic', query] as const,
   customerInsights: (query: CustomerInsightsQuery) => [...analyticsQueryKeys.all, 'customer-insights', query] as const,
   behavior: (query: BehaviorStatisticsQuery) => [...analyticsQueryKeys.all, 'behavior', query] as const,
+  realtime: (limit: number) => [...analyticsQueryKeys.all, 'realtime', { limit }] as const,
+  operatingCosts: () => [...analyticsQueryKeys.all, 'operating-costs'] as const,
 };

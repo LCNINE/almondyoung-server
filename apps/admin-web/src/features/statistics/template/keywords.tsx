@@ -37,6 +37,8 @@ import {
 import { ZeroHitTable, useAssigneeOptions } from '@/features/keyword-ops/components/ZeroHitTable';
 import { buildZeroSearchForecastSentence } from '@/features/keyword-ops/diagnosis';
 import { buildKeywordTrendChart } from '@/features/keyword-ops/forecast-chart';
+import { estimateMissedDemand } from '@/features/keyword-ops/missed-demand';
+import { useBehaviorStatistics, useSalesStatistics } from '@/lib/services/analytics';
 import { STATUS_LABELS, formatTimes } from '@/features/keyword-ops/labels';
 import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
@@ -107,6 +109,20 @@ export default function KeywordStatisticsTemplate() {
   );
   const forecastSentence = buildZeroSearchForecastSentence(trend.zero?.total ?? null, FORECAST_HORIZON_DAYS);
 
+  // ─── 놓친 수요 금액 — 세 인자 모두 실측이고, 가정("평균만큼 샀을 것")은 문장에 드러난다 ───
+  const behavior = useBehaviorStatistics({ from: range.from, to: range.to });
+  const sales = useSalesStatistics({ from: range.from, to: range.to, granularity: 'day' });
+  const missedDemand = useMemo(
+    () =>
+      estimateMissedDemand({
+        zeroResultSearches: data?.zeroResultSearches,
+        purchases: behavior.data?.totals?.purchase,
+        sessions: behavior.data?.totals?.sessions,
+        avgOrderValue: sales.data?.kpis.avgOrderValue,
+      }),
+    [data?.zeroResultSearches, behavior.data, sales.data],
+  );
+
   const lookupKeyword = (keyword: string) => {
     setKeywordInput(keyword);
     setSelectedKeyword(keyword);
@@ -125,6 +141,7 @@ export default function KeywordStatisticsTemplate() {
             zeroResultSearches={data?.zeroResultSearches}
             summary={summary}
             rangeDays={rangeDays}
+            missedDemand={missedDemand}
             isStatisticsLoading={isLoading}
             isSummaryLoading={zeroHit.isLoading}
           />

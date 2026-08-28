@@ -459,6 +459,7 @@ export const mainMenus: MainMenu[] = [
           { id: 'by-traffic', title: '유입', path: '/statistics/traffic' },
           { id: 'customer-insights', title: '고객 분석', path: '/statistics/insights' },
           { id: 'by-review', title: '리뷰', path: '/statistics/reviews' },
+          { id: 'statistics-settings', title: '경영 설정 (고정비)', path: '/statistics/settings' },
         ],
       },
       {

@@ -173,6 +173,15 @@ export const useFeeSummary = (from: string, to: string) => {
   });
 };
 
+export const useDailyPayments = (from: string, to: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.dailyPayments(from, to),
+    queryFn: () => walletApi.getDailyPayments(from, to),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
 export const useMembershipRevenue = (from: string, to: string) => {
   return useQuery({
     queryKey: walletQueryKeys.membershipRevenue(from, to),
