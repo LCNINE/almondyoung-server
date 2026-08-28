@@ -52,7 +52,7 @@ export function ReviewPreviewCarousel({ reviews, ratingSummary }: Props) {
         <button
           type="button"
           onClick={handleViewAll}
-          className="flex items-center gap-0.5 text-xs text-primary/70 hover:text-primary"
+          className="text-muted-foreground hover:text-foreground flex items-center gap-0.5 text-xs"
         >
           {t("previewViewAll")}
           <ChevronRight className="h-3 w-3" />
@@ -74,9 +74,9 @@ export function ReviewPreviewCarousel({ reviews, ratingSummary }: Props) {
             <button
               type="button"
               onClick={handleViewAll}
-              className="flex h-full min-h-[96px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-primary/20 bg-primary/5 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+              className="border-border text-muted-foreground hover:bg-muted flex h-full min-h-[96px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border bg-transparent text-xs font-medium transition-colors"
             >
-              <ChevronRight className="h-5 w-5 text-primary/60" />
+              <ChevronRight className="text-muted-foreground h-5 w-5" />
               {t("previewViewAll")}
             </button>
           </CarouselItem>
