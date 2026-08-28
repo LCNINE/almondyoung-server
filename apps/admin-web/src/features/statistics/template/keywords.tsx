@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
   CartesianGrid,
+  ComposedChart,
   Legend,
   Line,
   LineChart,
@@ -13,9 +15,10 @@ import {
 } from 'recharts';
 import {
   KeywordDetail,
+  KeywordIssueFilter,
   KeywordIssueStatus,
-  ZeroHitKeywordRow,
 } from '@/lib/api/domains/search';
+import { KEYWORD_ISSUE_STATUSES } from '@/lib/api/domains/search';
 import {
   useKeywordDetail,
   useKeywordStatistics,
@@ -23,7 +26,18 @@ import {
   useZeroHitKeywords,
 } from '@/lib/services/search';
 import { useAdminUsers } from '@/lib/services/users/queries';
-import { cn } from '@/lib/utils/ui';
+import { toLocalDateString } from '@/lib/utils/date';
+import { IndexEvidence, NeglectBadge } from '@/features/keyword-ops/components/badges';
+import {
+  AssigneeLoad,
+  KeywordOpsHeadline,
+  NeglectDistribution,
+  StatusFilterChips,
+} from '@/features/keyword-ops/components/summary';
+import { ZeroHitTable, useAssigneeOptions } from '@/features/keyword-ops/components/ZeroHitTable';
+import { buildZeroSearchForecastSentence } from '@/features/keyword-ops/diagnosis';
+import { buildKeywordTrendChart } from '@/features/keyword-ops/forecast-chart';
+import { STATUS_LABELS, formatTimes } from '@/features/keyword-ops/labels';
 import { PaginationBar } from '../components/pagination';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
@@ -34,77 +48,21 @@ const TOP_FETCH_LIMIT = 100;
 const TOP_PAGE_SIZE = 20;
 const ZERO_PAGE_SIZE = 20;
 
-const STATUS_LABELS: Record<KeywordIssueStatus, string> = {
-  new: '신규',
-  dev: '개발팀',
-  md: 'MD팀',
-  in_progress: '처리중',
-  resolved: '해소',
-  ignored: '무시',
-};
+// 예측은 이익 탭과 같은 규칙 — 최근 14일 추세로 7일 앞까지.
+const FORECAST_BASIS_DAYS = 14;
+const FORECAST_HORIZON_DAYS = 7;
 
-/** 색인 대조 근거 — 자동 판정 없이 재료만 보여준다. 개발/MD 판단은 사람이 상태로 지정. */
-function IndexEvidence({
-  matchedProductsCount,
-  matchedProductNames,
-  similarProductNames,
-  correctedQuery,
-}: {
-  matchedProductsCount: number;
-  matchedProductNames: string[];
-  similarProductNames: string[];
-  correctedQuery: string | null;
-}) {
-  if (matchedProductsCount === 0 && similarProductNames.length === 0 && !correctedQuery) {
-    return <span className="text-gray-400">색인 일치 없음</span>;
-  }
-  return (
-    <div className="space-y-0.5">
-      {matchedProductsCount > 0 ? (
-        <p title={matchedProductNames.join(' · ')}>
-          <span className="font-medium text-blue-700">색인 일치 {formatCount(matchedProductsCount)}건</span>
-          {matchedProductNames.length > 0 ? (
-            <span className="ml-1 text-gray-500">{matchedProductNames[0]}{matchedProductsCount > 1 ? ' 외' : ''}</span>
-          ) : null}
-        </p>
-      ) : null}
-      {similarProductNames.length > 0 ? (
-        <p className="text-gray-500" title={similarProductNames.join(' · ')}>
-          유사: {similarProductNames.slice(0, 2).join(', ')}
-          {similarProductNames.length > 2 ? ' 외' : ''}
-        </p>
-      ) : null}
-      {correctedQuery ? <p className="text-gray-500">영타 교정: {correctedQuery}</p> : null}
-    </div>
-  );
-}
-
-/** "N일 지연" 배지 — 방치가 길수록 진한 경고색 */
-function NeglectBadge({ days, resolved }: { days: number; resolved: boolean }) {
-  if (resolved) {
-    return (
-      <span className="inline-block rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-700">
-        해소됨
-      </span>
-    );
-  }
-  const cls =
-    days >= 30
-      ? 'border-red-200 bg-red-50 text-red-700'
-      : days >= 7
-        ? 'border-amber-200 bg-amber-50 text-amber-700'
-        : 'border-gray-200 bg-gray-50 text-gray-600';
-  return (
-    <span className={cn('inline-block rounded border px-1.5 py-0.5 text-[11px] font-medium tabular-nums', cls)}>
-      {days}일 지연
-    </span>
-  );
+/** 조회 기간 일수 (양끝 포함) — 진단 문장의 "최근 N일" 문구용 */
+function rangeDaysOf(from: string, to: string): number {
+  const days = Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+  return Math.max(1, days);
 }
 
 export default function KeywordStatisticsTemplate() {
   const range = useStatisticsRange();
   const [topPage, setTopPage] = useState(1);
   const [zeroPage, setZeroPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<KeywordIssueFilter | undefined>(undefined);
   const [keywordInput, setKeywordInput] = useState('');
   const [selectedKeyword, setSelectedKeyword] = useState('');
 
@@ -114,17 +72,40 @@ export default function KeywordStatisticsTemplate() {
     setZeroPage(1);
   }, [range.from, range.to]);
 
+  useEffect(() => {
+    setZeroPage(1);
+  }, [statusFilter]);
+
   const { data, isLoading, isError } = useKeywordStatistics({
     from: range.from,
     to: range.to,
     limit: TOP_FETCH_LIMIT,
   });
-  const zeroHit = useZeroHitKeywords({ from: range.from, to: range.to, page: zeroPage, limit: ZERO_PAGE_SIZE });
+  const zeroHit = useZeroHitKeywords({
+    from: range.from,
+    to: range.to,
+    page: zeroPage,
+    limit: ZERO_PAGE_SIZE,
+    status: statusFilter,
+  });
   const detail = useKeywordDetail({ keyword: selectedKeyword, from: range.from, to: range.to }, Boolean(selectedKeyword));
+  const assigneeOptions = useAssigneeOptions();
 
-  const zeroRate = data && data.totalSearches > 0 ? data.zeroResultSearches / data.totalSearches : null;
   const topRows = (data?.top ?? []).slice((topPage - 1) * TOP_PAGE_SIZE, topPage * TOP_PAGE_SIZE);
   const summary = zeroHit.data?.summary;
+  const rangeDays = rangeDaysOf(range.from, range.to);
+
+  // ─── 빈손 검색 추세 예측 — 추세를 그대로 이은 추정치 (계절성·이벤트 미반영) ───
+  const trend = useMemo(
+    () =>
+      buildKeywordTrendChart(data?.series ?? [], {
+        today: toLocalDateString(new Date()),
+        basisDays: FORECAST_BASIS_DAYS,
+        horizonDays: FORECAST_HORIZON_DAYS,
+      }),
+    [data?.series],
+  );
+  const forecastSentence = buildZeroSearchForecastSentence(trend.zero?.total ?? null, FORECAST_HORIZON_DAYS);
 
   const lookupKeyword = (keyword: string) => {
     setKeywordInput(keyword);
@@ -139,31 +120,59 @@ export default function KeywordStatisticsTemplate() {
         </p>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <KpiTile label="총 검색 수" value={formatCount(data?.totalSearches)} isLoading={isLoading} />
-            <KpiTile
-              label="결과 0건 검색 수"
-              value={formatCount(data?.zeroResultSearches)}
-              hint={`결과 0건 비율 ${formatPercent(zeroRate)}`}
-              isLoading={isLoading}
-            />
-            <KpiTile
-              label="7일 이상 방치"
-              value={`${formatCount(summary?.neglectedOver7Days)}건`}
-              hint="0건인데 결과가 나오기 시작하지 않은 검색어"
-              isLoading={zeroHit.isLoading}
-            />
-            <KpiTile
-              label="최장 방치"
-              value={summary ? `${formatCount(summary.maxNeglectDays)}일` : '—'}
-              hint={`0건 검색어 ${formatCount(summary?.zeroKeywordCount)}개 중 최장`}
-              isLoading={zeroHit.isLoading}
-            />
-          </div>
+          <KeywordOpsHeadline
+            totalSearches={data?.totalSearches}
+            zeroResultSearches={data?.zeroResultSearches}
+            summary={summary}
+            rangeDays={rangeDays}
+            isStatisticsLoading={isLoading}
+            isSummaryLoading={zeroHit.isLoading}
+          />
+
+          <ChartCard
+            title="해야 할 일 — 결과를 못 준 검색어"
+            description={
+              '찾는 사람은 있는데 상품이 하나도 안 나온 검색어입니다. 방치 배지는 마지막으로 결과가 있었던 날' +
+              '(없으면 최초로 0건이 된 날)부터 오늘까지의 일수입니다. 색인을 다시 뒤진 결과는 판단 재료일 뿐 자동 판정이 아닙니다 — ' +
+              '검색엔진·노출 문제로 보이면 개발팀, 안 파는 물건이면 MD팀으로 상태를 지정하세요. 검색어를 클릭하면 상세·메모 편집이 열립니다.'
+            }
+            isLoading={zeroHit.isLoading}
+            isEmpty={false}
+          >
+            {zeroHit.isError ? (
+              <p className="py-6 text-center text-xs text-red-500">0건 검색어 목록을 불러오지 못했습니다.</p>
+            ) : (
+              <div className="space-y-3">
+                <NeglectDistribution summary={summary} />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <StatusFilterChips value={statusFilter} onChange={setStatusFilter} summary={summary} />
+                  <AssigneeLoad summary={summary} />
+                </div>
+                <ZeroHitTable
+                  rows={zeroHit.data?.items ?? []}
+                  startNumber={(zeroPage - 1) * ZERO_PAGE_SIZE + 1}
+                  assigneeOptions={assigneeOptions}
+                  onSelectKeyword={lookupKeyword}
+                  emptyText={
+                    statusFilter
+                      ? '이 상태에 해당하는 검색어가 없습니다'
+                      : '조회 기간에 결과를 못 준 검색이 없습니다'
+                  }
+                />
+                <PaginationBar
+                  totalItems={zeroHit.data?.totalItems}
+                  page={zeroPage}
+                  pageSize={ZERO_PAGE_SIZE}
+                  onPageChange={setZeroPage}
+                  unitLabel="개 검색어"
+                />
+              </div>
+            )}
+          </ChartCard>
 
           <ChartCard
             title="키워드 조회"
-            description="특정 검색어의 기간 내 검색량·0건 여부·방치 상태를 조회하고 담당자·메모를 관리합니다. 아래 표의 검색어를 클릭해도 열립니다."
+            description="특정 검색어의 기간 내 검색량·빈손 여부·방치 상태를 조회하고 담당자·메모를 관리합니다. 위 표의 검색어를 클릭해도 열립니다."
             isLoading={false}
             isEmpty={false}
           >
@@ -213,22 +222,34 @@ export default function KeywordStatisticsTemplate() {
           </ChartCard>
 
           <ChartCard
-            title="검색량 추이"
-            description="상품 검색 1페이지 요청 기준 · 자동완성과 2페이지 이후는 집계되지 않습니다."
+            title="검색량 추이와 앞으로 7일"
+            description={
+              '상품 검색 1페이지 요청 기준 · 자동완성과 2페이지 이후는 집계되지 않습니다. ' +
+              '점선과 옅은 띠는 최근 14일 추세를 그대로 이은 추정치이며 계절성·이벤트를 반영하지 않습니다.'
+            }
             isLoading={isLoading}
             isEmpty={!data || data.series.length === 0}
           >
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={data?.series ?? []} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+              <ComposedChart data={trend.rows} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
                 <YAxis tick={{ fontSize: 11 }} stroke="#999" allowDecimals={false} />
                 <Tooltip formatter={(value: number) => formatCount(value)} />
                 <Legend />
+                <Area
+                  dataKey="zeroBand"
+                  stroke="none"
+                  fill={SERIES_COLORS[1]}
+                  fillOpacity={0.12}
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />
                 <Line
                   type="monotone"
                   dataKey="count"
-                  name="검색 수"
+                  name="검색 수(회)"
                   stroke={SERIES_COLORS[0]}
                   strokeWidth={2}
                   dot={false}
@@ -236,60 +257,28 @@ export default function KeywordStatisticsTemplate() {
                 <Line
                   type="monotone"
                   dataKey="zeroCount"
-                  name="결과 0건"
+                  name="빈손 검색(회)"
                   stroke={SERIES_COLORS[1]}
                   strokeWidth={2}
                   dot={false}
                 />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartCard>
-
-          <ChartCard
-            title="결과 0건 검색어 운영"
-            description="찾는 사람은 있는데 결과가 없던 키워드입니다. 지연 배지는 마지막으로 결과가 있었던 날(없으면 최초 0건일)부터의 일수. 색인 근거(일치·유사 상품명)를 참고해 검색엔진 문제면 개발팀, 소싱 부재면 MD팀으로 상태를 지정하세요 — 자동 판정은 오탐이 있어 하지 않습니다. 검색어를 클릭하면 상세·담당·메모 편집이 열립니다."
-            isLoading={zeroHit.isLoading}
-            isEmpty={!zeroHit.data || zeroHit.data.totalItems === 0}
-            emptyText="조회 기간에 결과 0건 검색이 없습니다"
-          >
-            {zeroHit.isError ? (
-              <p className="py-6 text-center text-xs text-red-500">0건 검색어 목록을 불러오지 못했습니다.</p>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b text-gray-500">
-                        <th className="py-1.5 text-left">#</th>
-                        <th className="py-1.5 text-left">검색어</th>
-                        <th className="py-1.5 text-left">지연</th>
-                        <th className="py-1.5 text-right">0건 검색</th>
-                        <th className="py-1.5 text-left pl-4">색인 근거</th>
-                        <th className="py-1.5 text-left">상태</th>
-                        <th className="py-1.5 text-left">담당자</th>
-                        <th className="py-1.5 text-left">메모</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {(zeroHit.data?.items ?? []).map((row, index) => (
-                        <ZeroHitRow
-                          key={row.keywordNorm}
-                          row={row}
-                          rowNumber={(zeroPage - 1) * ZERO_PAGE_SIZE + index + 1}
-                          onSelect={() => lookupKeyword(row.keyword)}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <PaginationBar
-                  totalItems={zeroHit.data?.totalItems}
-                  page={zeroPage}
-                  pageSize={ZERO_PAGE_SIZE}
-                  onPageChange={setZeroPage}
-                  unitLabel="개 검색어"
+                <Line
+                  type="monotone"
+                  dataKey="zeroForecast"
+                  name="빈손 검색 추정"
+                  stroke={SERIES_COLORS[1]}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                  dot={false}
                 />
-              </>
+              </ComposedChart>
+            </ResponsiveContainer>
+            {forecastSentence ? (
+              <p className="mt-2 text-xs text-gray-600">{forecastSentence}</p>
+            ) : (
+              <p className="mt-2 text-xs text-gray-400">
+                관측일이 3일이 안 돼 추정선을 그리지 않았습니다 — 근거 없는 선은 긋지 않습니다.
+              </p>
             )}
           </ChartCard>
 
@@ -306,7 +295,7 @@ export default function KeywordStatisticsTemplate() {
                     <th className="py-1.5 text-left">#</th>
                     <th className="py-1.5 text-left">검색어</th>
                     <th className="py-1.5 text-right">검색 수</th>
-                    <th className="py-1.5 text-right">결과 0건</th>
+                    <th className="py-1.5 text-right">그중 빈손</th>
                     <th className="py-1.5 text-right">전기간 대비</th>
                   </tr>
                 </thead>
@@ -325,12 +314,12 @@ export default function KeywordStatisticsTemplate() {
                             {row.keyword}
                           </button>
                         </td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.count)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatTimes(row.count)}</td>
                         <td className="py-1.5 text-right tabular-nums">
                           {row.zeroCount > 0 ? (
-                            <span className="text-red-600">{formatCount(row.zeroCount)}</span>
+                            <span className="text-red-600">{formatTimes(row.zeroCount)}</span>
                           ) : (
-                            <span className="text-gray-400">0</span>
+                            <span className="text-gray-400">0회</span>
                           )}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">
@@ -385,8 +374,8 @@ export default function KeywordStatisticsTemplate() {
                           {row.keyword}
                         </button>
                       </td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(row.count)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(row.previousCount)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{formatTimes(row.count)}</td>
+                      <td className="py-1.5 text-right tabular-nums">{formatTimes(row.previousCount)}</td>
                       <td className="py-1.5 text-right tabular-nums text-emerald-600">
                         {row.previousCount === 0 ? '신규' : `×${(row.count / row.previousCount).toFixed(1)}`}
                       </td>
@@ -399,65 +388,6 @@ export default function KeywordStatisticsTemplate() {
         </div>
       )}
     </StatisticsShell>
-  );
-}
-
-function ZeroHitRow({
-  row,
-  rowNumber,
-  onSelect,
-}: {
-  row: ZeroHitKeywordRow;
-  rowNumber: number;
-  onSelect: () => void;
-}) {
-  const upsert = useUpsertKeywordIssue();
-  // 상태만 바꾼다 — 서버 upsert 는 미전달 필드(담당·메모)를 보존한다
-  const changeStatus = (status: KeywordIssueStatus) => {
-    upsert.mutate({ keywordNorm: row.keywordNorm, keyword: row.keyword, status });
-  };
-
-  return (
-    <tr className="border-b last:border-0">
-      <td className="py-1.5 text-gray-400">{rowNumber}</td>
-      <td className="py-1.5">
-        <button type="button" onClick={onSelect} className="font-medium text-gray-900 hover:underline">
-          {row.keyword}
-        </button>
-      </td>
-      <td className="py-1.5">
-        <NeglectBadge days={row.neglectDays} resolved={row.resolvedByIndex} />
-      </td>
-      <td className="py-1.5 text-right tabular-nums">{formatCount(row.zeroCount)}</td>
-      <td className="py-1.5 pl-4 text-[11px]">
-        <IndexEvidence
-          matchedProductsCount={row.matchedProductsCount}
-          matchedProductNames={row.matchedProductNames}
-          similarProductNames={row.similarProductNames}
-          correctedQuery={row.correctedQuery}
-        />
-      </td>
-      <td className="py-1.5">
-        <select
-          value={row.issue?.status ?? 'new'}
-          onChange={(event) => changeStatus(event.target.value as KeywordIssueStatus)}
-          disabled={upsert.isPending}
-          className="rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40"
-        >
-          {(Object.keys(STATUS_LABELS) as KeywordIssueStatus[]).map((value) => (
-            <option key={value} value={value}>
-              {STATUS_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </td>
-      <td className="py-1.5">
-        {row.issue?.assigneeName ?? <span className="text-gray-400">미지정</span>}
-      </td>
-      <td className="max-w-48 truncate py-1.5 text-gray-500" title={row.issue?.memo ?? undefined}>
-        {row.issue?.memo ?? ''}
-      </td>
-    </tr>
   );
 }
 
@@ -483,19 +413,19 @@ function KeywordDetailPanel({ detail }: { detail: KeywordDetail }) {
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <KpiTile label="검색 수" value={formatCount(detail.count)} />
-            <KpiTile label="결과 0건" value={formatCount(detail.zeroCount)} />
+            <KpiTile label="검색 수" value={formatTimes(detail.count)} />
+            <KpiTile label="그중 빈손" value={formatTimes(detail.zeroCount)} />
             <KpiTile
               label="전기간 대비"
               value={
                 rate == null ? '신규' : `${rate >= 0 ? '▲' : '▼'} ${formatPercent(Math.abs(rate))}`
               }
-              hint={`직전 기간 ${formatCount(detail.previousCount)}회`}
+              hint={`직전 기간 ${formatTimes(detail.previousCount)}`}
             />
             <KpiTile
               label="마지막 결과 있음"
               value={detail.lastPositiveAt ? detail.lastPositiveAt.slice(0, 10) : '없음'}
-              hint={detail.firstZeroAt ? `최초 0건 ${detail.firstZeroAt.slice(0, 10)}` : undefined}
+              hint={detail.firstZeroAt ? `최초 빈손 ${detail.firstZeroAt.slice(0, 10)}` : undefined}
             />
           </div>
           <ResponsiveContainer width="100%" height={180}>
@@ -504,11 +434,11 @@ function KeywordDetailPanel({ detail }: { detail: KeywordDetail }) {
               <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
               <YAxis tick={{ fontSize: 11 }} stroke="#999" allowDecimals={false} />
               <Tooltip formatter={(value: number) => formatCount(value)} />
-              <Line type="monotone" dataKey="count" name="검색 수" stroke={SERIES_COLORS[0]} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="count" name="검색 수(회)" stroke={SERIES_COLORS[0]} strokeWidth={2} dot={false} />
               <Line
                 type="monotone"
                 dataKey="zeroCount"
-                name="결과 0건"
+                name="빈손 검색(회)"
                 stroke={SERIES_COLORS[1]}
                 strokeWidth={2}
                 dot={false}
@@ -571,7 +501,7 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
             onChange={(event) => setStatus(event.target.value as KeywordIssueStatus)}
             className="rounded border border-gray-200 bg-white px-2 py-1.5"
           >
-            {(Object.keys(STATUS_LABELS) as KeywordIssueStatus[]).map((value) => (
+            {KEYWORD_ISSUE_STATUSES.map((value) => (
               <option key={value} value={value}>
                 {STATUS_LABELS[value]}
               </option>

@@ -80,17 +80,50 @@ export interface ZeroHitKeywordRow {
   issue: KeywordIssue | null;
 }
 
+/** 담당자 한 명이 맡고 있는 0건 검색어 종수 */
+export interface KeywordAssigneeLoad {
+  assigneeId: string;
+  assigneeName: string | null;
+  count: number;
+}
+
+/** 방치 일수 구간별 검색어 종수 — 자동 해소분 제외 */
+export interface NeglectBuckets {
+  under7: number;
+  from7to13: number;
+  from14to29: number;
+  over30: number;
+}
+
+/**
+ * 아래 값은 전부 **검색어 종수**이지 검색 횟수가 아니다.
+ * status 필터를 걸어도 요약은 기간 전체 기준으로 내려온다.
+ */
 export interface ZeroHitSummary {
   zeroKeywordCount: number;
+  /** 사람이 지정한 처리 상태와 무관한 방치 종수 */
   neglectedOver7Days: number;
+  /** 그중 아직 안 닫힌 것 — "오늘의 할 일" 자리에 쓰는 값 */
+  openNeglectedOver7Days: number;
   maxNeglectDays: number;
+  neglectBuckets: NeglectBuckets;
+  byStatus: Record<KeywordIssueStatus, number>;
+  unassignedCount: number;
+  /** 담당자별 검색어 종수 — 많이 맡은 순. 미지정은 unassignedCount 로 따로 나온다. */
+  byAssignee: KeywordAssigneeLoad[];
+  resolvedByIndexCount: number;
 }
+
+/** 목록 필터 — 6개 처리 상태 + 'open'(아직 처리할 일만) */
+export const KEYWORD_ISSUE_FILTERS = [...KEYWORD_ISSUE_STATUSES, 'open'] as const;
+export type KeywordIssueFilter = (typeof KEYWORD_ISSUE_FILTERS)[number];
 
 export interface ZeroHitKeywordsQuery {
   from: string;
   to: string;
   page?: number;
   limit?: number;
+  status?: KeywordIssueFilter;
 }
 
 export interface ZeroHitKeywordsResult {
@@ -152,6 +185,7 @@ export const searchAdminApi = {
     const params = new URLSearchParams({ from: query.from, to: query.to });
     if (query.page) params.set('page', String(query.page));
     if (query.limit) params.set('limit', String(query.limit));
+    if (query.status) params.set('status', query.status);
     const res = await client.get(
       `${SEARCH_SERVICE_BASE_URL}/search/admin/keywords/zero-hit?${params.toString()}`
     );
