@@ -2,7 +2,11 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   AdminKeywordDetailResponseDto,
   AdminZeroHitKeywordsResponseDto,
+  KEYWORD_ISSUE_STATUSES,
+  KeywordAssigneeLoadDto,
   KeywordIssueDto,
+  KeywordIssueFilter,
+  KeywordIssueStatus,
   UpsertKeywordIssueDto,
   ZeroHitKeywordRowDto,
 } from './dto/admin-keyword-ops.dto';
@@ -38,6 +42,27 @@ function daysBetween(fromDate: string, toDate: string): number {
   return Math.max(0, Math.round((Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`)) / 86_400_000));
 }
 
+/** 담당자별 부하 — 많이 맡은 순, 동수면 이름순으로 고정해 페이지가 흔들리지 않게 한다. */
+function buildAssigneeLoad(
+  rows: { keywordNorm: string }[],
+  issues: Map<string, SearchKeywordIssue>,
+): KeywordAssigneeLoadDto[] {
+  const byId = new Map<string, KeywordAssigneeLoadDto>();
+  for (const row of rows) {
+    const issue = issues.get(row.keywordNorm);
+    if (!issue?.assigneeId) continue;
+    const existing = byId.get(issue.assigneeId);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      byId.set(issue.assigneeId, { assigneeId: issue.assigneeId, assigneeName: issue.assigneeName, count: 1 });
+    }
+  }
+  return [...byId.values()].sort(
+    (a, b) => b.count - a.count || (a.assigneeName ?? '').localeCompare(b.assigneeName ?? ''),
+  );
+}
+
 function toIssueDto(row: SearchKeywordIssue): KeywordIssueDto {
   return {
     keywordNorm: row.keywordNorm,
@@ -69,6 +94,7 @@ export class SearchKeywordOpsService {
     to: string,
     page: number,
     limit: number,
+    statusFilter?: KeywordIssueFilter,
   ): Promise<AdminZeroHitKeywordsResponseDto> {
     const fromIso = kstDayStartIso(from);
     const toExclusiveIso = kstDayStartIso(addDays(to, 1));
@@ -99,18 +125,50 @@ export class SearchKeywordOpsService {
       return a.keywordNorm.localeCompare(b.keywordNorm);
     });
 
+    // 상태별 집계와 필터가 전체 집합을 대상으로 하려면 이슈를 페이지가 아니라 전량으로 읽어야 한다.
+    // 운영자가 손댄 키워드만 행이 있어 실제 반환량은 훨씬 작다.
+    const issues = await this.keywordIssueRepository.findByNorms(enriched.map((row) => row.keywordNorm));
+    const statusOf = (keywordNorm: string): KeywordIssueStatus => issues.get(keywordNorm)?.status ?? 'new';
+
     const unresolved = enriched.filter((row) => !row.resolvedByIndex);
+    const isOpen = (keywordNorm: string) => {
+      const status = statusOf(keywordNorm);
+      return status !== 'resolved' && status !== 'ignored';
+    };
+    const byStatus = Object.fromEntries(KEYWORD_ISSUE_STATUSES.map((status) => [status, 0])) as Record<
+      KeywordIssueStatus,
+      number
+    >;
+    for (const row of unresolved) byStatus[statusOf(row.keywordNorm)] += 1;
+
     const summary = {
       zeroKeywordCount: unresolved.length,
       neglectedOver7Days: unresolved.filter((row) => row.neglectDays >= NEGLECT_ALERT_DAYS).length,
+      openNeglectedOver7Days: unresolved.filter(
+        (row) => row.neglectDays >= NEGLECT_ALERT_DAYS && isOpen(row.keywordNorm),
+      ).length,
       maxNeglectDays: unresolved.reduce((max, row) => Math.max(max, row.neglectDays), 0),
+      neglectBuckets: {
+        under7: unresolved.filter((row) => row.neglectDays < 7).length,
+        from7to13: unresolved.filter((row) => row.neglectDays >= 7 && row.neglectDays < 14).length,
+        from14to29: unresolved.filter((row) => row.neglectDays >= 14 && row.neglectDays < 30).length,
+        over30: unresolved.filter((row) => row.neglectDays >= 30).length,
+      },
+      byStatus,
+      unassignedCount: unresolved.filter((row) => !issues.get(row.keywordNorm)?.assigneeId).length,
+      byAssignee: buildAssigneeLoad(unresolved, issues),
+      resolvedByIndexCount: enriched.length - unresolved.length,
     };
 
-    const pageRows = enriched.slice((page - 1) * limit, (page - 1) * limit + limit);
-    const [issues, evidence] = await Promise.all([
-      this.keywordIssueRepository.findByNorms(pageRows.map((row) => row.keywordNorm)),
-      this.gatherEvidence(pageRows.map((row) => row.keyword)),
-    ]);
+    // 필터는 목록에만 적용한다 — 요약은 종합 대시보드 경보 피드의 모수라 기간 전체 기준을 유지한다.
+    const filtered = !statusFilter
+      ? enriched
+      : statusFilter === 'open'
+        ? unresolved.filter((row) => isOpen(row.keywordNorm))
+        : enriched.filter((row) => statusOf(row.keywordNorm) === statusFilter);
+
+    const pageRows = filtered.slice((page - 1) * limit, (page - 1) * limit + limit);
+    const evidence = await this.gatherEvidence(pageRows.map((row) => row.keyword));
 
     const items: ZeroHitKeywordRowDto[] = pageRows.map((row) => {
       const ev = evidence.get(row.keyword);
@@ -132,7 +190,7 @@ export class SearchKeywordOpsService {
       };
     });
 
-    return { range: { from, to }, page, limit, totalItems: enriched.length, summary, items };
+    return { range: { from, to }, page, limit, totalItems: filtered.length, summary, items };
   }
 
   async getKeywordDetail(rawKeyword: string, from: string, to: string): Promise<AdminKeywordDetailResponseDto> {
