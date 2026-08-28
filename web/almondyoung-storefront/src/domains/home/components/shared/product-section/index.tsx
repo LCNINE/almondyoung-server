@@ -44,6 +44,8 @@ interface ProductSectionProps<T extends TabItem> {
   hideTabs?: boolean
   /** 헤더 우측에 추가로 렌더링할 요소 (편집 버튼 등). MoreButton 옆에 배치 */
   headerExtra?: ReactNode
+  footer?: ReactNode
+  renderOverlay?: (product: HttpTypes.StoreProduct, index: number) => ReactNode
 }
 
 export function ProductSection<T extends TabItem>({
@@ -61,6 +63,8 @@ export function ProductSection<T extends TabItem>({
   wishlistIds,
   hideTabs = false,
   headerExtra,
+  footer,
+  renderOverlay = (_product, index) => <RankBadge rank={index + 1} />,
 }: ProductSectionProps<T>) {
   const handleTabChange = (value: string) => {
     const nextTab = tabs.find((t) => t.id === value)
@@ -93,7 +97,7 @@ export function ProductSection<T extends TabItem>({
           ) ?? false
         }
         isMembershipOnly={getIsMembershipOnly(p)}
-        overlay={<RankBadge rank={index + 1} />}
+        overlay={renderOverlay(p, index)}
         isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
       />
     )
@@ -151,6 +155,8 @@ export function ProductSection<T extends TabItem>({
           <TabsContent value={activeTab.id}>{renderProducts()}</TabsContent>
         </Tabs>
       )}
+
+      {footer}
     </div>
   )
 }

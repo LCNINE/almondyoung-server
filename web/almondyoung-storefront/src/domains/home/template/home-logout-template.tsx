@@ -7,6 +7,7 @@ import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
+import { TimeSaleWrapper } from "./time-sale"
 import { InterestCategoriesSlot } from "./interest-categories"
 import {
   SHOWCASE_CATEGORIES,
@@ -139,6 +140,12 @@ export async function HomeLogoutTemplate({
       <div className="xl:hidden">
         <HomeQuickLinks />
       </div>
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <TimeSaleWrapper countryCode={countryCode} />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
       <HomeSection background="muted" className="md:py-12 lg:py-16">

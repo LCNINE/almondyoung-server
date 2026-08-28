@@ -1,5 +1,6 @@
 import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import CartTemplate from "@/domains/cart/templates"
+import { getActiveTimeSale } from "@/lib/api/medusa/time-sale"
 import {
   ensureCorrectShippingMethod,
   findUnavailableLineItems,
@@ -71,9 +72,12 @@ export default async function Cart({
     }
   }
 
+  const timeSale = await getActiveTimeSale()
+
   return (
     <CartTemplate
       cart={cart}
+      timeSaleProductIds={timeSale?.productIds ?? []}
       unavailableVariantIds={unavailableVariantIds}
       optionGoneVariantIds={optionGoneVariantIds}
       soldOutVariantIds={soldOutVariantIds}

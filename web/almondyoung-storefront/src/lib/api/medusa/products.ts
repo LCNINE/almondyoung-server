@@ -9,6 +9,7 @@ import {
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { PRODUCT_LIST_TAG } from "@lib/data/cache-tags"
+import { PRODUCT_LIST_FIELDS } from "@lib/data/product-fields"
 import { getRegion, retrieveRegion } from "./regions"
 
 /**
@@ -117,8 +118,7 @@ export const listProducts = async ({
           limit,
           offset,
           region_id: region?.id,
-          fields:
-            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,+metadata,+tags,",
+          fields: PRODUCT_LIST_FIELDS,
           ...queryParams,
         },
         headers,

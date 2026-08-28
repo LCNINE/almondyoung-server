@@ -2,6 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
+import { CartTimeSaleNotice } from "@/domains/cart/components/time-sale-notice"
 import { createCheckoutCartFromLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -19,6 +20,8 @@ type Props = {
   /** 그중 상품은 그대로인데 옵션만 없어진 variant id 목록 */
   optionGoneVariantIds?: string[]
   soldOutVariantIds?: string[]
+  /** 진행 중인 타임세일 상품 id — 카트에 하나라도 있으면 마감 안내를 띄운다 */
+  timeSaleProductIds?: string[]
   /** 재고를 추적하는 variant 의 남은 수량 (없으면 상한 없음) */
   availableByVariantId?: Record<string, number>
 }
@@ -29,6 +32,7 @@ export default function CartTemplate({
   optionGoneVariantIds = [],
   soldOutVariantIds = [],
   availableByVariantId,
+  timeSaleProductIds = [],
 }: Props) {
   const router = useRouter()
   const params = useParams()
@@ -181,6 +185,8 @@ export default function CartTemplate({
     <>
       <main className="bg-background container mx-auto max-w-[1360px] px-4 py-8">
         <CartHeader />
+
+        <CartTimeSaleNotice items={sortedItems} saleProductIds={timeSaleProductIds} />
 
         <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-[1fr_360px]">
           <Card>

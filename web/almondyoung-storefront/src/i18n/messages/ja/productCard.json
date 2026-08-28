@@ -23,5 +23,6 @@
   "quickAddToCartWithPrice": "{price} カートに追加",
   "quickAddSelect": "オプションを選択してください",
   "quickAddError": "オプション情報を読み込めませんでした。",
-  "membersOnly": "メンバー限定"
+  "membersOnly": "メンバー限定",
+  "discountBadge": "{percent}% 割引"
 }

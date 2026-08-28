@@ -6,6 +6,7 @@ import { ProductRating } from "./product-rating"
 import { LowStockBadge } from "@/components/shared/badges/low-stock-badge"
 import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
 import { SoldOutTag } from "./sold-out-tag"
+import { resolveCardPriceDisplay } from "@/lib/utils/product-card-display"
 
 const LOW_STOCK_THRESHOLD = 10
 
@@ -15,7 +16,7 @@ export function ProductInfo({
   manageInventory,
   price,
   originalPrice,
-  discount,
+  discount: _discount,
   rating,
   reviewCount,
   membershipSavings,
@@ -24,33 +25,20 @@ export function ProductInfo({
   isOverseas,
   showMembershipHint: _showMembershipHint,
 }: Omit<ProductCardProps, "imageSrc" | "rank">) {
-  // 멤버십 회원: 멤버십 가격(price) 표시 + 뱃지
-  // 비회원/일반회원: 기본가(originalPrice) 표시 + 멤버십 절약 힌트
-  const hasMembershipPrice = membershipSavings != null && membershipSavings > 0
-  const membershipPrice =
-    membershipSavings != null && originalPrice != null
-      ? originalPrice - membershipSavings
-      : undefined
-  const memberDisplayPrice =
-    isMembership && hasMembershipPrice
-      ? typeof price === "number" && price > 0 && price < originalPrice
-        ? price
-        : (membershipPrice ?? price)
-      : price
-
-  const displayPrice =
-    isMembership || !hasMembershipPrice ? memberDisplayPrice : originalPrice
-  const displayOriginalPrice =
-    isMembership && hasMembershipPrice ? originalPrice : undefined
-  const displayDiscount =
-    isMembership &&
-    hasMembershipPrice &&
-    displayPrice > 0 &&
-    originalPrice > displayPrice
-      ? Math.round(((originalPrice - displayPrice) / originalPrice) * 100)
-      : discount
-  const showMembershipBadge = isMembership && hasMembershipPrice
-  const showMembershipHint = !isMembership && hasMembershipPrice
+  const {
+    displayPrice,
+    displayOriginalPrice,
+    displayDiscount,
+    membershipPrice,
+    showMembershipBadge,
+    showMembershipHint,
+    membershipHintSavings,
+  } = resolveCardPriceDisplay({
+    price,
+    originalPrice,
+    membershipSavings,
+    isMembership,
+  })
 
   // 재고 상태
   const stockStatus: StockStatus =
@@ -89,7 +77,7 @@ export function ProductInfo({
           price={displayPrice}
           originalPrice={displayOriginalPrice ?? originalPrice}
           discount={displayDiscount}
-          membershipSavings={membershipSavings}
+          membershipSavings={membershipHintSavings}
           showMembershipHint={showMembershipHint}
           showMembershipBadge={showMembershipBadge}
           membershipPrice={membershipPrice}

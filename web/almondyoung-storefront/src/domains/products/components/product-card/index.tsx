@@ -10,6 +10,7 @@ import { Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
+import { useIsTimeSalePrice } from "@/components/providers/time-sale-provider"
 import Thumbnail from "../thumbnail"
 import { Quantity } from "./quantity"
 import { calculateStockStatus } from "./quantity/stock-status"
@@ -116,6 +117,7 @@ export default function ProductCard({
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
   })
+  const isTimeSale = useIsTimeSalePrice(cheapestVariant)
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
 
@@ -226,6 +228,7 @@ export default function ProductCard({
                 }
                 isMembership={isMembership}
                 isMembershipOnly={isMembershipOnly}
+                isTimeSale={isTimeSale}
               />
             )}
 
