@@ -112,10 +112,17 @@ export default function InventoryStatisticsTemplate() {
             <KpiTile
               label="품절 품목 보유 상품"
               value={formatCount(data?.soldOutMasterCount)}
-              hint="수동 품절·재고 부족 사유의 품목이 있는 상품 수"
+              hint="수동 품절·재고 부족 사유 · 재고 보유 여부와 무관한 전체 기준"
               isLoading={summary.isLoading}
             />
           </div>
+
+          <p className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            <span className="font-medium text-gray-800">이 금액은 경영 판단용 근사치입니다 — 회계 장부가 아닙니다.</span>{' '}
+            상품에 현재 등록된 공급가로 계산하므로, 실제 매입가(취득원가)를 선입선출·가중평균으로 잡는 회계상
+            재고자산 평가와 다릅니다. 공급가를 수정하면 과거 시점의 재고 금액도 함께 바뀝니다. 불량 재고도
+            정상 원가로 계산되니 세 상태를 합쳐 &lsquo;총 재고자산&rsquo;으로 읽지 마세요.
+          </p>
 
           {data && uncosted.quantity > 0 ? (
             <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -130,7 +137,7 @@ export default function InventoryStatisticsTemplate() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ChartCard
               title="상태별 재고"
-              description="전 창고 합계 · 금액은 원가 판정 가능한 SKU 만"
+              description="전 창고 합계 · 금액은 원가 판정 가능한 SKU 만 · 불량·이동중도 정상 원가로 계산"
               isLoading={summary.isLoading}
               isEmpty={!data || data.states.every((row) => row.quantity === 0)}
             >
