@@ -20,6 +20,10 @@ export type ReviewStatusFilter = (typeof REVIEW_STATUS_FILTERS)[number];
 export const REVIEW_HAS_COMMENT_FILTERS = ['true', 'false'] as const;
 export type ReviewHasCommentFilter = (typeof REVIEW_HAS_COMMENT_FILTERS)[number];
 
+// own = 아몬드영에서 직접 작성된 리뷰, legacy = 이전 사이트에서 이관된 리뷰
+export const REVIEW_SOURCE_FILTERS = ['own', 'legacy'] as const;
+export type ReviewSourceFilter = (typeof REVIEW_SOURCE_FILTERS)[number];
+
 export class ReviewListQueryDto extends PaginationQueryDto {
   @ApiProperty({
     description: '상품 ID (UUID)',
@@ -104,4 +108,12 @@ export class AdminReviewListQueryDto extends PaginationQueryDto {
   })
   @IsOptional()
   q?: string;
+
+  @ApiPropertyOptional({
+    description: '출처 필터 ("own"=자체 작성, "legacy"=이전 사이트 이관분). 미지정 시 둘 다 포함.',
+    enum: REVIEW_SOURCE_FILTERS,
+  })
+  @IsOptional()
+  @IsIn(REVIEW_SOURCE_FILTERS)
+  source?: ReviewSourceFilter;
 }

@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import {
   reviewComments,
   reviewEligibilities,
@@ -824,6 +824,12 @@ export class ReviewsService {
         conditions.push(
           sql`(${reviews.content} ILIKE ${searchTerm} OR COALESCE(${reviews.legacyAuthorName}, '') ILIKE ${searchTerm})`,
         );
+      }
+
+      if (query.source === 'own') {
+        conditions.push(eq(reviews.sourceSystem, SOURCE_SYSTEM));
+      } else if (query.source === 'legacy') {
+        conditions.push(ne(reviews.sourceSystem, SOURCE_SYSTEM));
       }
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
