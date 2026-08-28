@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { ProductIndexService } from './product-index.service';
 import { OpenSearchService } from './opensearch.service';
 import { EmbeddingService } from './embedding.service';
+import { SpellCorrectionService } from './spell-correction.service';
+
+// 교정 없음이 기본 — 0건 재검색 경로가 다른 스펙에 끼어들지 않게 한다.
+function makeSpellCorrectionService(suggestion: string | null = null) {
+  return { buildDictionary: jest.fn().mockResolvedValue(undefined), suggest: jest.fn().mockReturnValue(suggestion) };
+}
 
 // 벡터 없음이 기본 — 키워드 경로만 검증하는 스펙들이 벡터 융합에 영향받지 않게 한다.
 function makeEmbeddingService(vector: number[] | null = null) {
@@ -69,6 +75,7 @@ describe('ProductIndexService.updateProductReviewStats', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -123,6 +130,7 @@ describe('ProductIndexService.upsertProduct', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -183,6 +191,7 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -225,6 +234,7 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService({ REVIEW_SORT_VOLUME_WEIGHT: '0.9' }) },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -287,6 +297,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -348,6 +359,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService('0.25') },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     const customService = customModule.get(ProductIndexService);
@@ -371,6 +383,7 @@ describe('ProductIndexService.searchProducts - relevance without keyword', () =>
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     service = module.get(ProductIndexService);
@@ -409,6 +422,7 @@ describe('ProductIndexService.searchProducts - nori collapse guard', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     return { service: module.get(ProductIndexService), client };
@@ -506,6 +520,7 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
         { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
         { provide: ConfigService, useValue: makeConfigService() },
         { provide: EmbeddingService, useValue: embedding },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService() },
       ],
     }).compile();
     return { service: module.get(ProductIndexService), client };
@@ -567,5 +582,91 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
     await expect(
       service.searchProducts({ q: '펌지', sort: 'relevance', page: 1, size: 20 } as any),
     ).resolves.toMatchObject({ items: [{ productId: 'a' }, { productId: 'b' }] });
+  });
+});
+
+// 0건일 때만 교정으로 다시 찾는다. 교정어도 0건이면 원래의 빈 결과를 그대로 쓴다 —
+// "닮은 말"을 찾았다는 것만으로 화면에 다른 검색어를 띄우면 안 된다.
+describe('ProductIndexService.searchProducts - 검색어 교정', () => {
+  const hit = (id: string) => ({ _id: id, _source: { master_id: id, version_id: `v-${id}`, name: id } });
+
+  async function buildService(suggestion: string | null, hitsByKeyword: Record<string, any[]>) {
+    const client = makeOpenSearchClient();
+    client.search = jest.fn().mockImplementation((params: any) => {
+      const body = JSON.stringify(params.body);
+      const keyword = Object.keys(hitsByKeyword).find((k) => body.includes(k));
+      const hits = keyword ? hitsByKeyword[keyword] : [];
+      return Promise.resolve({ body: { hits: { hits, total: { value: hits.length } } } });
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: makeSpellCorrectionService(suggestion) },
+      ],
+    }).compile();
+    return module.get(ProductIndexService);
+  }
+
+  it('0건이면 교정어로 다시 찾고 correctedQuery 를 함께 돌려준다', async () => {
+    const service = await buildService('니치반', { 니치반: [hit('a')] });
+
+    const result = await service.searchProducts({ q: '나찌반', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.correctedQuery).toBe('니치반');
+    expect(result.pagination.total).toBe(1);
+  });
+
+  it('교정어도 0건이면 교정하지 않는다', async () => {
+    const service = await buildService('니치반', {});
+
+    const result = await service.searchProducts({ q: '나찌반', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(result.correctedQuery).toBeUndefined();
+    expect(result.pagination.total).toBe(0);
+  });
+
+  it('결과가 있으면 교정을 시도조차 하지 않는다', async () => {
+    const spell = makeSpellCorrectionService('니치반');
+    const client = makeOpenSearchClient();
+    client.search = jest.fn().mockResolvedValue({ body: { hits: { hits: [hit('a')], total: { value: 1 } } } });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: spell },
+      ],
+    }).compile();
+
+    await module
+      .get(ProductIndexService)
+      .searchProducts({ q: '니들', sort: 'relevance', page: 1, size: 20 } as any);
+
+    expect(spell.suggest).not.toHaveBeenCalled();
+  });
+
+  it('correct=false 면 교정하지 않는다 — 고객이 원문으로 보겠다고 한 것이다', async () => {
+    const spell = makeSpellCorrectionService('니치반');
+    const client = makeOpenSearchClient();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService() },
+        { provide: EmbeddingService, useValue: makeEmbeddingService() },
+        { provide: SpellCorrectionService, useValue: spell },
+      ],
+    }).compile();
+
+    await module
+      .get(ProductIndexService)
+      .searchProducts({ q: '나찌반', sort: 'relevance', page: 1, size: 20, correct: false } as any);
+
+    expect(spell.suggest).not.toHaveBeenCalled();
   });
 });

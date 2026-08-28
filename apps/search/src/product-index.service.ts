@@ -16,6 +16,7 @@ import {
   SEO_FIELDS_MAPPINGS,
 } from './types/product-document.type';
 import { EmbeddingService } from './embedding.service';
+import { SpellCorrectionService } from './spell-correction.service';
 import { compactText, qwertyToHangul, toJamo } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
@@ -80,6 +81,7 @@ export class ProductIndexService implements OnModuleInit {
     private readonly openSearchService: OpenSearchService,
     private readonly configService: ConfigService,
     private readonly embeddingService: EmbeddingService,
+    private readonly spellCorrectionService: SpellCorrectionService,
   ) {
     this.reviewScoreWeight = this.parsePositiveNumber(configService.get<string>('REVIEW_SCORE_WEIGHT'), 0.1);
     this.reviewSortVolumeWeight = this.parsePositiveNumber(
@@ -94,6 +96,8 @@ export class ProductIndexService implements OnModuleInit {
 
   async onModuleInit(): Promise<void> {
     await this.ensureProductsIndex();
+    // 사전 구축은 색인을 훑느라 몇 초 걸린다. 검색은 사전 없이도 동작하므로 기다리지 않는다.
+    void this.spellCorrectionService.buildDictionary();
   }
 
   private parsePositiveNumber(raw: string | undefined, fallback: number): number {
@@ -246,6 +250,15 @@ export class ProductIndexService implements OnModuleInit {
 
       total = mergedHits.length;
       resultHits = mergedHits.slice(from, from + size);
+
+      // 한 건도 못 찾았을 때만 교정을 시도한다. "나찌반"→"니치반" 처럼 토큰이 하나도 안 겹쳐
+      // 어떤 필드로도 못 잡는 오타가 대상이다.
+      if (total === 0 && query.correct !== false) {
+        const corrected = await this.retryWithCorrection(query);
+        if (corrected) {
+          return corrected;
+        }
+      }
     } else {
       const response = await this.executeSearch({
         index,
@@ -468,6 +481,25 @@ export class ProductIndexService implements OnModuleInit {
       return typeof value === 'number' ? value : 0;
     }
     return typeof totalField === 'number' ? totalField : 0;
+  }
+
+  /**
+   * 0건일 때 교정어로 다시 찾는다. 교정어도 0건이면 null 을 돌려 원래의 빈 결과를 쓴다 —
+   * "닮은 말"을 찾았다는 것만으로 화면에 다른 검색어를 띄우면 안 된다.
+   */
+  private async retryWithCorrection(query: ProductSearchQueryDto): Promise<ProductSearchResponseDto | null> {
+    const corrected = this.spellCorrectionService.suggest(query.q!.trim());
+    if (!corrected) {
+      return null;
+    }
+
+    const retried = await this.searchProducts({ ...query, q: corrected, correct: false });
+    if (retried.pagination.total === 0) {
+      return null;
+    }
+
+    this.logger.log(`검색어 교정: "${query.q}" → "${corrected}" (${retried.pagination.total}건)`);
+    return { ...retried, correctedQuery: corrected };
   }
 
   /** 상품명 임베딩으로 k-NN 검색. 실패하면 빈 배열 — 검색은 키워드만으로 계속 간다. */

@@ -469,12 +469,12 @@ SINCE_HOURS=72 bash scripts/sellmate/run.sh live recalc-sellable .
 A-3 이후 outbox 가 실제로 비워졌는지 확인한다 (core DB):
 
 ```sql
-SELECT status, count(*) FROM outbox_events
+SELECT status, count(*) FROM event.outbox_events
 WHERE event_type = 'ProductSellableQuantityChanged'
   AND created_at >= now() - make_interval(mins => 60)
 GROUP BY status;
 
-SELECT count(*) FROM outbox_events WHERE status = 'failed';  -- 0 이어야 정상
+SELECT count(*) FROM event.outbox_events WHERE status = 'failed';  -- 0 이어야 정상
 ```
 
 `published` 만 있고 `failed` 0 이면 Kafka 까지 나간 것이다. `pending` 이 안 줄면 live core 앱의 outbox 디스패처를 확인한다.
