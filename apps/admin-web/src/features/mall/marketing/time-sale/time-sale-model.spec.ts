@@ -1,13 +1,13 @@
 import {
   applyPercentDiscount,
+  applySavedSalePrices,
+  summarizeSaleRows,
   buildPriceListPayloads,
   findOverlapping,
-  groupTimeSales,
-  isTimeSalePriceList,
+  findVariantConflicts,
   resolveTimeSaleStatus,
   validateRows,
   toTimeSaleRows,
-  type RawPriceList,
   type TimeSaleRow,
 } from './time-sale-model';
 
@@ -20,16 +20,6 @@ const row = (over: Partial<TimeSaleRow> = {}): TimeSaleRow => ({
   membershipBasePrice: 8000,
   generalSalePrice: null,
   membershipSalePrice: null,
-  ...over,
-});
-
-const priceList = (over: Partial<RawPriceList> = {}): RawPriceList => ({
-  id: 'plist_1',
-  title: '8월 마감 세일',
-  type: 'sale',
-  status: 'active',
-  starts_at: '2026-08-28T00:00:00.000Z',
-  ends_at: '2026-08-30T00:00:00.000Z',
   ...over,
 });
 
@@ -72,6 +62,27 @@ describe('findOverlapping', () => {
         existing
       )
     ).toEqual([]);
+  });
+});
+
+describe('findVariantConflicts', () => {
+  const overlapping = [
+    { title: '색소 세일', variantIds: ['variant_1', 'variant_2'] },
+    { title: '니들 세일', variantIds: ['variant_9'] },
+  ];
+
+  // 카테고리마다 기간이 다른 세일을 동시에 거는 게 요구사항이라, 기간만 겹치는 건 정상이다.
+  it('기간이 겹쳐도 품목이 안 겹치면 통과다', () => {
+    expect(findVariantConflicts(['variant_5'], overlapping)).toEqual([]);
+  });
+
+  // 같은 품목이 두 세일에 걸리면 Medusa 가 한쪽 가격만 적용해, 손님이 A 목록에서 B 가격을 본다.
+  it('같은 품목을 쓰는 세일만 골라내고 겹친 품목을 알려준다', () => {
+    const hit = findVariantConflicts(['variant_2', 'variant_5'], overlapping);
+
+    expect(hit).toHaveLength(1);
+    expect(hit[0].title).toBe('색소 세일');
+    expect(hit[0].conflictingVariantIds).toEqual(['variant_2']);
   });
 });
 
@@ -165,29 +176,6 @@ describe('buildPriceListPayloads', () => {
   });
 });
 
-describe('isTimeSalePriceList / groupTimeSales', () => {
-  // 상시 리스트는 두 시각이 모두 null 이라 이 조건 하나로 갈린다.
-  it('기간 없는 상시 리스트는 타임세일이 아니다', () => {
-    expect(isTimeSalePriceList(priceList({ title: 'Membership Prices', starts_at: null, ends_at: null }))).toBe(
-      false
-    );
-    expect(isTimeSalePriceList(priceList())).toBe(true);
-  });
-
-  it('일반용과 멤버십용을 세일 하나로 묶는다', () => {
-    const sales = groupTimeSales([
-      priceList({ id: 'plist_g', title: '8월 마감 세일' }),
-      priceList({ id: 'plist_m', title: '8월 마감 세일 (멤버십)' }),
-      priceList({ title: 'Membership Prices', starts_at: null, ends_at: null }),
-    ]);
-
-    expect(sales).toHaveLength(1);
-    expect(sales[0].title).toBe('8월 마감 세일');
-    expect(sales[0].general?.id).toBe('plist_g');
-    expect(sales[0].membership?.id).toBe('plist_m');
-  });
-});
-
 describe('toTimeSaleRows', () => {
   const product = {
     id: 'prod_1',
@@ -226,5 +214,69 @@ describe('toTimeSaleRows', () => {
 
     expect(row.basePrice).toBe(10000);
     expect(row.membershipBasePrice).toBeNull();
+  });
+});
+
+describe('summarizeSaleRows', () => {
+  // "입력 111개" 만으로는 얼마로 채워졌는지 알 수 없어 운영자가 111 개를 펼쳐 확인하게 된다.
+  it('할인율이 같으면 단일 값, 다르면 범위로 요약한다', () => {
+    const same = summarizeSaleRows([
+      row({ variantId: 'v1', basePrice: 10000, generalSalePrice: 9000 }),
+      row({ variantId: 'v2', basePrice: 20000, generalSalePrice: 18000 }),
+    ]);
+    expect(same.minPercent).toBe(10);
+    expect(same.maxPercent).toBe(10);
+    expect(same.minPrice).toBe(9000);
+    expect(same.maxPrice).toBe(18000);
+
+    const mixed = summarizeSaleRows([
+      row({ variantId: 'v1', basePrice: 10000, generalSalePrice: 9000 }),
+      row({ variantId: 'v2', basePrice: 10000, generalSalePrice: 8000 }),
+    ]);
+    expect(mixed.minPercent).toBe(10);
+    expect(mixed.maxPercent).toBe(20);
+  });
+
+  it('세일가가 없으면 할인율이 null 이고 미입력 수를 셀 수 있다', () => {
+    const summary = summarizeSaleRows([
+      row({ variantId: 'v1', generalSalePrice: null }),
+      row({ variantId: 'v2', basePrice: 10000, generalSalePrice: 9000 }),
+    ]);
+    expect(summary.total).toBe(2);
+    expect(summary.filled).toBe(1);
+    expect(summary.minPercent).toBe(10);
+  });
+
+  it('입력이 하나도 없으면 전부 null 이다', () => {
+    const summary = summarizeSaleRows([row({ generalSalePrice: null })]);
+    expect(summary.filled).toBe(0);
+    expect(summary.minPercent).toBeNull();
+    expect(summary.minPrice).toBeNull();
+  });
+});
+
+describe('applySavedSalePrices', () => {
+  // 정가·멤버십가는 상품 응답의 현재 값을 쓴다. 저장 당시 값으로 검증하면 그 사이 정가가 내려간
+  // 상품이 "세일가가 정가보다 비쌈" 을 통과해버린다.
+  it('저장된 세일가만 덮고 정가·멤버십가는 그대로 둔다', () => {
+    const [restored] = applySavedSalePrices(
+      [row({ variantId: 'v1', basePrice: 12000, membershipBasePrice: 9000 })],
+      { general: new Map([['v1', 9000]]), membership: new Map([['v1', 7000]]) }
+    );
+
+    expect(restored.basePrice).toBe(12000);
+    expect(restored.membershipBasePrice).toBe(9000);
+    expect(restored.generalSalePrice).toBe(9000);
+    expect(restored.membershipSalePrice).toBe(7000);
+  });
+
+  // 멤버십가가 없는 상품(라이브 기준 54%)에 멤버십 세일가를 남기면 저장 단계에서 거부된다.
+  it('멤버십가가 없는 품목은 멤버십 세일가를 복원하지 않는다', () => {
+    const [restored] = applySavedSalePrices(
+      [row({ variantId: 'v1', membershipBasePrice: null })],
+      { general: new Map([['v1', 9000]]), membership: new Map([['v1', 7000]]) }
+    );
+
+    expect(restored.membershipSalePrice).toBeNull();
   });
 });

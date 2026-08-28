@@ -31,6 +31,71 @@ export type TimeSaleRow = {
 
 export type RowError = { variantId: string; message: string };
 
+export type SaleRowsSummary = {
+  total: number;
+  filled: number;
+  /** 정가 대비 할인율. 품목마다 다르면 최소~최대. 입력된 게 없으면 null. */
+  minPercent: number | null;
+  maxPercent: number | null;
+  minPrice: number | null;
+  maxPrice: number | null;
+};
+
+/**
+ * 접힌 상품 줄에 보여줄 세일가 요약.
+ *
+ * "입력 111개" 만으로는 얼마로 채워졌는지 알 수 없어 운영자가 111 개를 펼쳐 확인하게 된다.
+ * 할인율과 가격 범위를 접힌 채로 보여주면 일괄 적용이 먹었는지 한눈에 판정된다.
+ */
+/**
+ * 이미 등록된 세일을 편집 행으로 되돌린다.
+ *
+ * 정가·멤버십가는 상품 응답에서 다시 읽고(그 사이 바뀌었을 수 있다), 세일가만 price list 에서
+ * 덮는다. 반대로 하면 편집 화면이 등록 당시의 낡은 정가를 기준으로 검증하게 된다.
+ */
+export function applySavedSalePrices(
+  rows: TimeSaleRow[],
+  saved: { general: Map<string, number>; membership: Map<string, number> }
+): TimeSaleRow[] {
+  return rows.map((row) => ({
+    ...row,
+    generalSalePrice: saved.general.get(row.variantId) ?? null,
+    membershipSalePrice:
+      row.membershipBasePrice === null ? null : (saved.membership.get(row.variantId) ?? null),
+  }));
+}
+
+export function summarizeSaleRows(rows: TimeSaleRow[]): SaleRowsSummary {
+  const filled = rows.filter(
+    (row) => row.generalSalePrice !== null && row.basePrice > 0
+  );
+
+  if (filled.length === 0) {
+    return {
+      total: rows.length,
+      filled: 0,
+      minPercent: null,
+      maxPercent: null,
+      minPrice: null,
+      maxPrice: null,
+    };
+  }
+
+  const percents = filled.map((row) =>
+    Math.round(((row.basePrice - (row.generalSalePrice as number)) / row.basePrice) * 100)
+  );
+  const prices = filled.map((row) => row.generalSalePrice as number);
+
+  return {
+    total: rows.length,
+    filled: filled.length,
+    minPercent: Math.min(...percents),
+    maxPercent: Math.max(...percents),
+    minPrice: Math.min(...prices),
+    maxPrice: Math.max(...prices),
+  };
+}
+
 export function resolveTimeSaleStatus(period: TimeSalePeriod, now: Date): TimeSaleStatus {
   const start = Date.parse(period.startsAt);
   const end = Date.parse(period.endsAt);
@@ -48,10 +113,11 @@ export const TIME_SALE_STATUS_LABEL: Record<TimeSaleStatus, string> = {
 };
 
 /**
- * 기간이 겹치는 세일이 있는지.
+ * 기간이 겹치는 세일.
  *
- * 겹치면 어느 종료 시각으로 카운트다운을 그릴지 정할 수 없다 — 손님이 "3시간 남음" 을 보고 담은
- * 상품이 실은 5일짜리 세일 소속인 상황이 생긴다. 그래서 저장 단계에서 막는다.
+ * 겹친다는 사실만으로는 막지 않는다 — 카테고리마다 기간이 다른 세일을 동시에 거는 게 요구사항이라
+ * 기간 겹침은 정상이다. 여기서 나온 세일들과 **상품이** 겹치는지를 `findVariantConflicts` 로 한 번
+ * 더 본다.
  */
 export function findOverlapping<T extends TimeSalePeriod & { id?: string }>(
   candidate: TimeSalePeriod & { id?: string },
@@ -64,6 +130,27 @@ export function findOverlapping<T extends TimeSalePeriod & { id?: string }>(
     if (candidate.id && other.id === candidate.id) return false;
     return start < Date.parse(other.endsAt) && end > Date.parse(other.startsAt);
   });
+}
+
+/**
+ * 기간이 겹치는 세일 중 **같은 품목을 쓰는** 것들.
+ *
+ * 상품이 겹치면 Medusa 가 `rules_count 내림 → amount 오름` 으로 한쪽 가격만 적용한다. 손님은 A
+ * 세일 목록에서 B 세일의 가격을 보면서 A 의 카운트다운을 읽게 되고, A 가 끝나도 가격이 안 변한다.
+ * 기간만 겹치는 건 통과시키고 이 경우만 막는다.
+ */
+export function findVariantConflicts<T extends { variantIds: string[] }>(
+  variantIds: string[],
+  overlapping: T[]
+): Array<T & { conflictingVariantIds: string[] }> {
+  const candidate = new Set(variantIds);
+
+  return overlapping
+    .map((sale) => ({
+      ...sale,
+      conflictingVariantIds: sale.variantIds.filter((id) => candidate.has(id)),
+    }))
+    .filter((sale) => sale.conflictingVariantIds.length > 0);
 }
 
 /**
@@ -205,57 +292,6 @@ export function buildPriceListPayloads(params: {
   };
 }
 
-export type RawPriceList = {
-  id: string;
-  title: string;
-  type: string;
-  status: string;
-  starts_at: string | null;
-  ends_at: string | null;
-};
-
-/**
- * 타임세일 price list 판정.
- *
- * price_list 에는 metadata 컬럼이 없어 마커를 심을 자리가 없다. 대신 상시 운영되는
- * `Membership Prices` / `Tiered Prices - Min N` 은 두 시각이 모두 null 이라, "기간이 있는 sale"
- * 만으로 갈린다. Medusa 쪽 `/store/time-sale` 도 같은 기준을 쓴다.
- */
-export function isTimeSalePriceList(list: RawPriceList): boolean {
-  return list.type === 'sale' && Boolean(list.starts_at) && Boolean(list.ends_at);
-}
-
-/** 일반용/멤버십용 두 리스트를 세일 하나로 묶는다. 짝은 제목 접미사로 찾는다. */
-export function groupTimeSales(lists: RawPriceList[]): Array<{
-  title: string;
-  period: TimeSalePeriod;
-  general: RawPriceList | null;
-  membership: RawPriceList | null;
-}> {
-  const timeSales = lists.filter(isTimeSalePriceList);
-  const byTitle = new Map<string, { general: RawPriceList | null; membership: RawPriceList | null }>();
-
-  for (const list of timeSales) {
-    const isMembership = list.title.endsWith(MEMBERSHIP_LIST_TITLE_SUFFIX);
-    const key = isMembership
-      ? list.title.slice(0, -MEMBERSHIP_LIST_TITLE_SUFFIX.length)
-      : list.title;
-    const entry = byTitle.get(key) ?? { general: null, membership: null };
-    if (isMembership) entry.membership = list;
-    else entry.general = list;
-    byTitle.set(key, entry);
-  }
-
-  return [...byTitle.entries()].map(([title, entry]) => {
-    const face = entry.general ?? entry.membership!;
-    return {
-      title,
-      period: { startsAt: face.starts_at!, endsAt: face.ends_at! },
-      general: entry.general,
-      membership: entry.membership,
-    };
-  });
-}
 
 type RawVariant = {
   id: string;

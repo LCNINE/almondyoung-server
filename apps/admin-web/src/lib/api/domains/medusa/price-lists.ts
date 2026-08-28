@@ -20,7 +20,17 @@ export interface MedusaPriceListPrice {
   amount: number;
   currency_code: string;
   variant_id?: string;
+  /** `*prices.price_set.variant` 를 펼쳤을 때만 실린다. 응답에 variant_id 가 없을 때의 출처. */
+  price_set?: { variant?: { id: string; product_id?: string } | null } | null;
 }
+
+/** 이 가격이 걸린 variant. Medusa 버전에 따라 실리는 자리가 달라 둘 다 본다. */
+export const priceVariantId = (price: MedusaPriceListPrice): string | undefined =>
+  price.variant_id ?? price.price_set?.variant?.id;
+
+/** 이 가격이 걸린 상품. 편집 화면이 "어떤 상품이 이 세일에 있나" 를 복원할 때 쓴다. */
+export const priceProductId = (price: MedusaPriceListPrice): string | undefined =>
+  price.price_set?.variant?.product_id;
 
 export interface CreatePriceListPayload {
   title: string;

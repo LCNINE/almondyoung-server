@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
@@ -18,7 +20,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useDeleteTimeSale, useTimeSaleList } from '@/lib/services/time-sale';
 import { TIME_SALE_STATUS_LABEL, resolveTimeSaleStatus } from '../time-sale-model';
-import { TimeSaleCreateDialog } from '../components/time-sale-create-dialog';
 
 const STATUS_CLASS = {
   scheduled: 'bg-blue-100 text-blue-600',
@@ -36,7 +37,7 @@ const formatDate = (iso: string) =>
   });
 
 export default function MarketingTimeSaleTemplate() {
-  const [createOpen, setCreateOpen] = useState(false);
+  const router = useRouter();
   const [deleteTarget, setDeleteTarget] = useState<{ title: string; ids: string[] } | null>(null);
 
   const { data: sales, isLoading } = useTimeSaleList();
@@ -61,9 +62,11 @@ export default function MarketingTimeSaleTemplate() {
       <Header
         title="타임세일"
         right={
-          <Button onClick={() => setCreateOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
-            타임세일 등록
+          <Button asChild>
+            <Link href="/mall/marketing/time-sale/new">
+              <Plus className="mr-1 h-4 w-4" />
+              타임세일 등록
+            </Link>
           </Button>
         }
       />
@@ -84,6 +87,7 @@ export default function MarketingTimeSaleTemplate() {
                 <th className="px-3 py-2 text-left">상태</th>
                 <th className="px-3 py-2 text-left">이름</th>
                 <th className="px-3 py-2 text-left">기간</th>
+                <th className="px-3 py-2 text-right">품목</th>
                 <th className="px-3 py-2 text-left">멤버십 세일가</th>
                 <th className="px-3 py-2" />
               </tr>
@@ -91,9 +95,14 @@ export default function MarketingTimeSaleTemplate() {
             <tbody>
               {sales?.map((sale) => {
                 const status = resolveTimeSaleStatus(sale.period, now);
-                const ids = [sale.general?.id, sale.membership?.id].filter(Boolean) as string[];
+                const ids = sale.priceListIds;
+                const editPath = `/mall/marketing/time-sale/${ids[0]}/edit`;
                 return (
-                  <tr key={sale.title} className="border-t">
+                  <tr
+                    key={sale.title}
+                    className="cursor-pointer border-t hover:bg-muted/50"
+                    onClick={() => router.push(editPath)}
+                  >
                     <td className="px-3 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}>
                         {TIME_SALE_STATUS_LABEL[status]}
@@ -103,13 +112,25 @@ export default function MarketingTimeSaleTemplate() {
                     <td className="px-3 py-2 tabular-nums text-muted-foreground">
                       {formatDate(sale.period.startsAt)} → {formatDate(sale.period.endsAt)}
                     </td>
-                    <td className="px-3 py-2 text-muted-foreground">
-                      {sale.membership ? '있음' : '없음'}
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {sale.variantCount}개
                     </td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {sale.membershipId ? '있음' : '없음'}
+                    </td>
+                    <td
+                      className="px-3 py-2 text-right"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <Button variant="ghost" size="sm" asChild>
+                        <Link href={editPath} aria-label="수정">
+                          <Pencil className="h-4 w-4" />
+                        </Link>
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
+                        aria-label="삭제"
                         onClick={() => setDeleteTarget({ title: sale.title, ids })}
                       >
                         <Trash2 className="h-4 w-4" />
@@ -122,8 +143,6 @@ export default function MarketingTimeSaleTemplate() {
           </table>
         </div>
       )}
-
-      <TimeSaleCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
