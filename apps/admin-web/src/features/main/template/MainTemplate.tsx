@@ -221,8 +221,6 @@ export default function MainTemplate() {
         </CardContent>
       </Card>
 
-      <QuickActionsCard />
-
       <Card className="border border-gray-200 bg-white shadow-sm">
         <CardHeader className="pb-0">
           <div className="flex flex-wrap gap-1 border-b border-gray-200">
@@ -253,6 +251,8 @@ export default function MainTemplate() {
           {tab === 'cs' ? <CsBoard /> : null}
         </CardContent>
       </Card>
+
+      <QuickActionsCard />
     </div>
   );
 }
