@@ -10,7 +10,7 @@ const MAX_DISTANCE_BY_SYLLABLE: Record<number, number> = { 1: 0, 2: 1, 3: 2 };
 // 상품명에서 뽑은 후보 중 이 길이 미만은 버린다 — "1개", "대" 같은 조각이 교정 대상이 되면 안 된다.
 const MIN_CANDIDATE_LENGTH = 2;
 const MAX_CANDIDATE_LENGTH = 12;
-// 사전 구축 시 훑을 상품 수 상한.
+// 사전 구축 시 훑을 상품 수 상한. 부팅이 색인 크기에 끌려가지 않게 막는다.
 const SCAN_LIMIT = 20000;
 const SUGGEST_CACHE_LIMIT = 2000;
 
@@ -45,8 +45,9 @@ export class SpellCorrectionService {
 
     try {
       let searchAfter: (string | number)[] | undefined;
+      let scanned = 0;
 
-      while (freq.size < SCAN_LIMIT) {
+      while (scanned < SCAN_LIMIT) {
         const response = await this.openSearchService.getClient().search({
           index,
           body: {
@@ -68,6 +69,7 @@ export class SpellCorrectionService {
             freq.set(word, (freq.get(word) ?? 0) + 1);
           }
         }
+        scanned += hits.length;
         searchAfter = hits[hits.length - 1].sort;
       }
     } catch (error) {

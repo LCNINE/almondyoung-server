@@ -254,7 +254,7 @@ export class ProductIndexService implements OnModuleInit {
       // 한 건도 못 찾았을 때만 교정을 시도한다. "나찌반"→"니치반" 처럼 토큰이 하나도 안 겹쳐
       // 어떤 필드로도 못 잡는 오타가 대상이다.
       if (total === 0 && query.correct !== false) {
-        const corrected = await this.retryWithCorrection(index, query, sort, from, size);
+        const corrected = await this.retryWithCorrection(query);
         if (corrected) {
           return corrected;
         }
@@ -487,13 +487,7 @@ export class ProductIndexService implements OnModuleInit {
    * 0건일 때 교정어로 다시 찾는다. 교정어도 0건이면 null 을 돌려 원래의 빈 결과를 쓴다 —
    * "닮은 말"을 찾았다는 것만으로 화면에 다른 검색어를 띄우면 안 된다.
    */
-  private async retryWithCorrection(
-    index: string,
-    query: ProductSearchQueryDto,
-    sort: any[],
-    from: number,
-    size: number,
-  ): Promise<ProductSearchResponseDto | null> {
+  private async retryWithCorrection(query: ProductSearchQueryDto): Promise<ProductSearchResponseDto | null> {
     const corrected = this.spellCorrectionService.suggest(query.q!.trim());
     if (!corrected) {
       return null;
