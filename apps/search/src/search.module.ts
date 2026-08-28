@@ -15,6 +15,7 @@ import { ReviewEventsConsumer } from './review-events.consumer';
 import { OpenSearchService } from './opensearch.service';
 import { EmbeddingService } from './embedding.service';
 import { ProductIndexService } from './product-index.service';
+import { SpellCorrectionService } from './spell-correction.service';
 import { SearchService } from './search.service';
 import { HealthController } from './health.controller';
 import { OpenSearchKeywordRepository } from './opensearch-keyword.repository';
@@ -74,6 +75,7 @@ import { SearchKeywordService } from './search-keyword.service';
     OpenSearchService,
     EmbeddingService,
     ProductIndexService,
+    SpellCorrectionService,
     SearchKeywordService,
     SearchKeywordOpsService,
     KeywordIssueRepository,
