@@ -40,6 +40,12 @@ export interface UpdatePriceListPayload {
   ends_at?: string;
 }
 
+export interface BatchPricesPayload {
+  create?: Array<{ amount: number; currency_code: string; variant_id: string }>;
+  update?: Array<{ id: string; amount: number }>;
+  delete?: string[];
+}
+
 const LIST_FIELDS = 'id,title,description,type,status,starts_at,ends_at';
 
 export const medusaPriceListsApi = {
@@ -54,7 +60,8 @@ export const medusaPriceListsApi = {
 
   get: async (id: string) => {
     const res = await client.get<{ price_list: MedusaPriceList }>(
-      `${MEDUSA_BASE_URL}/admin/price-lists/${id}?fields=${LIST_FIELDS},*prices`
+      // price 응답에 variant_id 를 실으려면 price_set.variant 까지 펼쳐야 한다.
+      `${MEDUSA_BASE_URL}/admin/price-lists/${id}?fields=${LIST_FIELDS},*prices,*prices.price_set,*prices.price_set.variant`
     );
     return res.data.price_list;
   },
@@ -77,6 +84,14 @@ export const medusaPriceListsApi = {
 
   remove: async (id: string) => {
     await client.delete(`${MEDUSA_BASE_URL}/admin/price-lists/${id}`);
+  },
+
+  batchPrices: async (id: string, payload: BatchPricesPayload) => {
+    await client.post(`${MEDUSA_BASE_URL}/admin/price-lists/${id}/prices/batch`, {
+      create: payload.create ?? [],
+      update: payload.update ?? [],
+      delete: payload.delete ?? [],
+    });
   },
 };
 

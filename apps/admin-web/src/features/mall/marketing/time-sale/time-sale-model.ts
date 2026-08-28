@@ -257,41 +257,40 @@ export function groupTimeSales(lists: RawPriceList[]): Array<{
   });
 }
 
-/** channel-adapter 가 이 제목으로 만든다 (`syncPriceLists`). Medusa 쪽 감사 잡도 같은 상수를 쓴다. */
-export const MEMBERSHIP_PRICE_LIST_TITLE = 'Membership Prices';
-
 type RawVariant = {
   id: string;
   title: string;
+  metadata?: Record<string, unknown> | null;
   prices?: Array<{ amount: number; currency_code: string; price_list_id?: string | null }>;
 };
 
 type RawProduct = { id: string; title: string; variants: RawVariant[] };
 
+const toAmount = (raw: unknown): number | null => {
+  if (typeof raw === 'number') return Number.isFinite(raw) && raw > 0 ? raw : null;
+  if (typeof raw === 'string') {
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }
+  return null;
+};
+
 /**
  * 상품 응답 → 편집 행.
  *
- * 멤버십가는 `variant.metadata.membershipPrice` 가 아니라 **price list 의 실제 가격**에서 읽는다.
- * metadata 는 표시용 사본이라 수동 DB 작업 뒤 어긋난 전례가 있고(그래서 Medusa 에 일일 감사 잡이
- * 있다), 여기서 어긋난 값을 기준으로 세일가를 계산하면 구독자에게 세일이 안 먹는다.
+ * 멤버십가는 `variant.metadata.membershipPrice` 에서 읽는다. Medusa Admin 의 상품 응답은 price list
+ * 가격을 싣지 않고 기본가만 준다 — price list 쪽을 보려면 33,000행짜리 멤버십 리스트를 통째로
+ * 받아야 하고 그 엔드포인트엔 variant 필터가 없다.
  *
- * 멤버십 리스트를 못 찾으면 멤버십 세일가 없이 진행한다 — 구독자는 전원 대상인 일반용 리스트를
- * 받으므로 세일에서 빠지지 않는다.
+ * metadata 는 표시용 사본이라 원장과 어긋날 수 있지만, 스토어프론트가 손님에게 보여주는 값도
+ * 같은 metadata 다. 어긋나면 어드민과 화면이 같이 틀리고 Medusa 의 일일 감사 잡이 그걸 잡는다.
  */
-export function toTimeSaleRows(
-  products: RawProduct[],
-  membershipPriceListId: string | null
-): TimeSaleRow[] {
+export function toTimeSaleRows(products: RawProduct[]): TimeSaleRow[] {
   return products.flatMap((product) =>
     product.variants.map((variant) => {
-      const prices = variant.prices ?? [];
-      const base = prices.find((price) => !price.price_list_id && price.currency_code === CURRENCY);
-      const membership = membershipPriceListId
-        ? prices.find(
-            (price) =>
-              price.price_list_id === membershipPriceListId && price.currency_code === CURRENCY
-          )
-        : undefined;
+      const base = (variant.prices ?? []).find(
+        (price) => !price.price_list_id && price.currency_code === CURRENCY,
+      );
 
       return {
         variantId: variant.id,
@@ -299,10 +298,10 @@ export function toTimeSaleRows(
         productTitle: product.title,
         variantTitle: variant.title,
         basePrice: base?.amount ?? 0,
-        membershipBasePrice: membership?.amount ?? null,
+        membershipBasePrice: toAmount(variant.metadata?.membershipPrice),
         generalSalePrice: null,
         membershipSalePrice: null,
       };
-    })
+    }),
   );
 }

@@ -17,7 +17,6 @@ import { medusaCatalogApi, type MedusaProductItem } from '@/lib/api/domains/medu
 import {
   TimeSaleValidationError,
   useCreateTimeSale,
-  useMembershipPriceListId,
   useTimeSaleProductRows,
 } from '@/lib/services/time-sale';
 import { applyPercentDiscount, validateRows, type TimeSaleRow } from '../time-sale-model';
@@ -105,9 +104,8 @@ export function TimeSaleCreateDialog({
   const [selected, setSelected] = useState<MedusaProductItem[]>([]);
   const [rows, setRows] = useState<TimeSaleRow[]>([]);
 
-  const membershipPriceListId = useMembershipPriceListId();
   const productIds = useMemo(() => selected.map((product) => product.id), [selected]);
-  const { data: loadedRows, isFetching } = useTimeSaleProductRows(productIds, membershipPriceListId);
+  const { data: loadedRows, isFetching } = useTimeSaleProductRows(productIds);
   const createTimeSale = useCreateTimeSale();
 
   // 상품 목록이 바뀌면 이미 입력한 세일가는 유지하고 새 품목만 붙인다.

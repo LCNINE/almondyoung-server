@@ -196,26 +196,33 @@ describe('toTimeSaleRows', () => {
       {
         id: 'variant_1',
         title: '기본 품목',
-        prices: [
-          { amount: 10000, currency_code: 'krw', price_list_id: null },
-          { amount: 8000, currency_code: 'krw', price_list_id: 'plist_membership' },
-          { amount: 7000, currency_code: 'krw', price_list_id: 'plist_tiered' },
-        ],
+        metadata: { membershipPrice: 8000 },
+        prices: [{ amount: 10000, currency_code: 'krw', price_list_id: null }],
       },
     ],
   };
 
-  // metadata.membershipPrice 는 표시용 사본이라 어긋난 전례가 있다. 어긋난 값으로 세일가를 계산하면
-  // 구독자에게 세일이 안 먹으므로 price list 의 실제 가격을 읽는다.
-  it('정가는 price list 없는 행, 멤버십가는 멤버십 리스트 행에서 읽는다', () => {
-    const [row] = toTimeSaleRows([product], 'plist_membership');
+  // Medusa Admin 의 상품 응답은 price list 가격을 싣지 않는다 — 기본가만 온다.
+  // 멤버십가는 metadata 에서만 읽을 수 있고, 스토어프론트가 손님에게 보여주는 값도 같은 metadata 다.
+  it('정가는 price list 없는 가격 행, 멤버십가는 metadata 에서 읽는다', () => {
+    const [row] = toTimeSaleRows([product]);
 
     expect(row.basePrice).toBe(10000);
     expect(row.membershipBasePrice).toBe(8000);
   });
 
-  it('멤버십 리스트를 못 찾으면 멤버십가 없이 진행한다', () => {
-    const [row] = toTimeSaleRows([product], null);
+  it('문자열로 들어온 멤버십가도 숫자로 읽는다', () => {
+    const [row] = toTimeSaleRows([
+      { ...product, variants: [{ ...product.variants[0], metadata: { membershipPrice: '8000' } }] },
+    ]);
+
+    expect(row.membershipBasePrice).toBe(8000);
+  });
+
+  it('멤버십가가 없으면 null — 멤버십 세일가를 만들지 않는다', () => {
+    const [row] = toTimeSaleRows([
+      { ...product, variants: [{ ...product.variants[0], metadata: null }] },
+    ]);
 
     expect(row.basePrice).toBe(10000);
     expect(row.membershipBasePrice).toBeNull();

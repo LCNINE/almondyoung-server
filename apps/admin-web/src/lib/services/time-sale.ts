@@ -4,11 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   medusaPriceListsApi,
   medusaProductPricingApi,
-  type MedusaPriceList,
 } from '@/lib/api/domains/medusa/price-lists';
 import { medusaRegionsApi } from '@/lib/api/domains/medusa/regions';
 import {
-  MEMBERSHIP_PRICE_LIST_TITLE,
   buildPriceListPayloads,
   findOverlapping,
   groupTimeSales,
@@ -42,21 +40,12 @@ export function useTimeSaleList() {
   };
 }
 
-/** 상시 멤버십 리스트의 id. 세일에 올릴 상품의 "현재 멤버십가" 를 이 리스트에서 읽는다. */
-export function useMembershipPriceListId(): string | null {
-  const { data } = useAllPriceLists();
-  const found = data?.price_lists.find(
-    (list: MedusaPriceList) => list.title === MEMBERSHIP_PRICE_LIST_TITLE
-  );
-  return found?.id ?? null;
-}
-
-export function useTimeSaleProductRows(productIds: string[], membershipPriceListId: string | null) {
+export function useTimeSaleProductRows(productIds: string[]) {
   return useQuery({
     queryKey: timeSaleKeys.products(productIds),
     queryFn: async (): Promise<TimeSaleRow[]> => {
       const products = await medusaProductPricingApi.getProducts(productIds);
-      return toTimeSaleRows(products, membershipPriceListId);
+      return toTimeSaleRows(products);
     },
     enabled: productIds.length > 0,
   });
