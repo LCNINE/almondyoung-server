@@ -46,6 +46,18 @@
 | 사용 권한 | customer-promotion remote link 존재 여부 |
 | 사용량·예산 | Medusa campaign budget (`usage` / `spend` / `use_by_attribute`) |
 
+**한도의 저장 위치는 하나가 아니다.** "사용량·예산" 행을 한 줄로 뭉뚱그리면 놓치는 함정이 있어 따로 표로 못 박는다 — 2026-08 `feat/coupon-limit-combination` 이 전역 사용 횟수의 자리를 옮기면서, 그 값을 읽는 코드가 admin-web 두 곳(`marketing-coupons-template.tsx`, `coupon-detail-dialog.tsx`)과 storefront 쿠폰 소진 필터(`store/customers/me/promotions/route.ts`)에 흩어져 있다는 것이 드러났다. 저장 위치를 바꿀 때 이 세 지점을 다 같이 고치지 않으면 "값은 있는데 어디에도 안 보인다"가 재현된다.
+
+| 한도 종류 | 저장 위치 | 비고 |
+|---|---|---|
+| 전역 사용 횟수 (신규, 2026-08+) | `promotion.limit` (Medusa 2.12.0+) | campaign budget 과 **독립적으로 검사** — 아래 두 한도와 공존 가능. `build-create-promotion-payload.ts:88` |
+| 총 사용 횟수 (옛 쿠폰) | campaign `budget{type:'usage'}` | 신규 쿠폰은 이 자리를 더 이상 쓰지 않는다. 읽는 쪽은 하위 호환을 위해 계속 봐야 한다 |
+| 총 할인 금액 | campaign `budget{type:'spend'}` | `currency_code` 필수이며 `application_method.currency_code` 와 일치해야 한다 — 불일치 시 엔진이 `INVALID_DATA`(400) (`@medusajs/promotion/dist/services/promotion-module.js:542-546`) |
+| 1인당 사용 횟수 | campaign `budget{type:'use_by_attribute', attribute:'customer_id'}` | |
+| 발급 매수 (claimable) | `promotion_meta.max_claims` | **우리 것.** `reserveClaimSlot()` 의 원자적 `UPDATE … WHERE issued_count < ? RETURNING` — 위 "엔진 위임의 실제 강도" 절이 지적하는 lost update 위험이 없다 |
+
+**캠페인 예산 슬롯은 하나뿐이다** (`Campaign.budget` 은 hasOne) — `spend` 와 `use_by_attribute` 는 같은 쿠폰에 공존할 수 없다. `build-create-promotion-payload.ts` 가 둘 다 채워지면 조용히 버리지 않고 throw 한다.
+
 **이 결정이 복제를 불필요하게 만드는 지점이다.** 판정을 밖으로 꺼내려 하면 "밖이 보유 현황을 알아야 한다" 가 되고, 그때 비로소 복제본이 필요해 보인다. 판정을 안쪽에 두면 그 요구 자체가 생기지 않는다. **밖의 서비스는 쿠폰을 읽을 필요가 없고 알릴 필요만 있다.**
 
 ### 3. 밖에서 안으로 — 사건만 알린다
