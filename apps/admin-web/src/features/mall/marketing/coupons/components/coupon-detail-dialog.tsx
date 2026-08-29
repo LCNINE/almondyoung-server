@@ -106,6 +106,13 @@ export function CouponDetailDialog({
               {Number((minOrder.values[0] as any)?.value ?? minOrder.values[0]).toLocaleString('ko-KR')}원 이상
             </Row>
           )}
+          {/* 신규 쿠폰: 전역 사용 한도는 campaign budget 이 아니라 promotion.limit 에 있다.
+              옛 쿠폰은 이 필드가 없으므로 아래 budget 기반 행이 그대로 대체한다 — 하위 호환. */}
+          {c.limit != null && (
+            <Row label="총 사용 한도">
+              {`${c.limit.toLocaleString('ko-KR')}회 (사용: ${(c.used ?? 0).toLocaleString('ko-KR')}회)`}
+            </Row>
+          )}
           {budget?.limit && (budget as any)?.type !== 'use_by_attribute' && (
             <Row label="총 사용 한도">
               {budget.type === 'spend'

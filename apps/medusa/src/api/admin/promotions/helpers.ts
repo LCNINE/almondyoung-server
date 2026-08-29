@@ -4,6 +4,7 @@ import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 export const PROMOTION_FIELDS = [
   'id', 'code', 'is_automatic', 'is_tax_inclusive', 'type', 'status',
   'campaign_id', 'created_at', 'updated_at', 'deleted_at',
+  'limit', 'used',
   '*campaign', '*campaign.budget',
   '*application_method',
   '*application_method.target_rules',
