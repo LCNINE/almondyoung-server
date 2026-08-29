@@ -73,7 +73,9 @@ describe('buildCreatePromotionPayload', () => {
   });
 
   it('campaign_identifier 에 주입받은 suffix 를 붙인다 (1-3 충돌 방지)', () => {
-    const p = buildCreatePromotionPayload({ ...base, endsAt: '2026-12-31' }, opts);
+    // UI 는 datetime-local 이라 실제 입력은 'YYYY-MM-DDTHH:mm' 꼴이다 — 날짜만 있는 픽스처는
+    // 이 필드가 실제로 뭘 받는지 검증하지 못하는 거짓 안전이라 실제 입력 모양으로 맞춘다.
+    const p = buildCreatePromotionPayload({ ...base, endsAt: '2026-12-31T23:59' }, opts);
     expect(p.campaign?.campaign_identifier).toBe('CAMP_WELCOME10_1756400000000');
   });
 });
@@ -111,5 +113,31 @@ describe('사용 한도 조합', () => {
 
   it('전역 한도만 있으면 campaign 을 만들지 않는다 (캠페인 오염 감소)', () => {
     expect(buildCreatePromotionPayload({ ...base, usageLimit: 100 }, opts).campaign).toBeUndefined();
+  });
+});
+
+describe('spend budget 과 application_method.currency_code 정합', () => {
+  // @medusajs/promotion promotion-module.js:542-546 — campaign.budget.type === SPEND 이면
+  // application_method.currency_code 와 campaign.budget.currency_code 가 일치해야 하고,
+  // 안 실으면 (정률 쿠폰은 기본적으로 currency_code 가 없다) INVALID_DATA 로 400.
+  // 이 유닛 테스트는 "우리가 만드는 객체 모양"만 증명한다 — Medusa 가 실제로 받아주는지는
+  // 이 테스트로 증명되지 않는다(엔진 통합 테스트가 아니므로).
+  it('정률 + spendLimit 이면 application_method 에도 currency_code 가 실린다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, discountType: 'percentage', spendLimit: 5_000_000 },
+      opts,
+    );
+    expect(p.application_method.currency_code).toBe('krw');
+    expect(p.campaign?.budget).toEqual({ type: 'spend', limit: 5_000_000, currency_code: 'krw' });
+  });
+
+  it('정액 할인은 spendLimit 없이도 currency_code 를 싣는다 (기존 동작 유지)', () => {
+    const p = buildCreatePromotionPayload({ ...base, discountType: 'fixed' }, opts);
+    expect(p.application_method.currency_code).toBe('krw');
+  });
+
+  it('정률 + spendLimit 없음이면 currency_code 를 싣지 않는다', () => {
+    const p = buildCreatePromotionPayload({ ...base, discountType: 'percentage' }, opts);
+    expect(p.application_method.currency_code).toBeUndefined();
   });
 });

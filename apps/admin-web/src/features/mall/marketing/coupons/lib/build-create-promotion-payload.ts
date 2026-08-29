@@ -50,6 +50,12 @@ export function buildCreatePromotionPayload(
   const code = form.code.trim().toUpperCase();
   const name = form.name.trim();
 
+  // 총 할인금액(spend)과 1인당 한도(use_by_attribute)는 둘 다 캠페인의 유일한 예산 슬롯을
+  // 요구한다(Campaign.budget 은 hasOne). 엔진 제약이므로 조용히 버리지 않고 알린다.
+  if (form.spendLimit && form.maxUsesPerCustomer) {
+    throw new Error('총 할인금액 한도와 1인당 사용 한도는 동시에 설정할 수 없습니다');
+  }
+
   // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
   const additional_data: Record<string, unknown> = { visibility: form.visibility };
   if (name) additional_data.name = name;
@@ -77,12 +83,6 @@ export function buildCreatePromotionPayload(
       : []),
   ];
 
-  // 총 할인금액(spend)과 1인당 한도(use_by_attribute)는 둘 다 캠페인의 유일한 예산 슬롯을
-  // 요구한다(Campaign.budget 은 hasOne). 엔진 제약이므로 조용히 버리지 않고 알린다.
-  if (form.spendLimit && form.maxUsesPerCustomer) {
-    throw new Error('총 할인금액 한도와 1인당 사용 한도는 동시에 설정할 수 없습니다');
-  }
-
   // 전역 사용 횟수는 campaign budget 이 아니라 promotion.limit 으로 보낸다.
   // 그래야 예산 슬롯이 비어 1인당 한도 또는 총 할인금액 한도와 공존할 수 있다.
   const limit = form.usageLimit ? Number(form.usageLimit) : undefined;
@@ -106,7 +106,10 @@ export function buildCreatePromotionPayload(
       type: form.discountType,
       value: form.value,
       target_type: form.targetType,
-      ...(form.discountType === 'fixed' ? { currency_code: 'krw' } : {}),
+      // 정액 할인은 항상 통화가 필요하고, 정률이라도 총 할인금액(spend budget) 을 쓰면
+      // 엔진이 campaign.budget.currency_code 와 application_method.currency_code 일치를
+      // 요구한다(@medusajs/promotion promotion-module.js 의 SPEND 분기) — 안 실으면 400.
+      ...(form.discountType === 'fixed' || form.spendLimit ? { currency_code: 'krw' } : {}),
       ...(form.targetType === 'items' ? { allocation: 'across' as const } : {}),
       ...(target_rules ? { target_rules } : {}),
     },

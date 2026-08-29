@@ -409,7 +409,7 @@ export function CouponCreateDialog({
 
           <p className="text-xs text-muted-foreground">
             &lsquo;총 사용 횟수(선착순)&rsquo;는 전역 한도라 다른 한도와 자유롭게 함께 쓸 수 있습니다.
-            &lsquo;총 할인금액 한도&rsquo;와 &lsquo;1인당 사용 한도&rsquo;는 캠페인 예산 슬롯을 하나만 쓰므로
+            &lsquo;총 할인금액 한도&rsquo;와 &lsquo;1인당 사용 횟수 제한&rsquo;은 캠페인 예산 슬롯을 하나만 쓰므로
             <b>둘을 동시에 설정할 수 없습니다</b>.
             발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
           </p>
