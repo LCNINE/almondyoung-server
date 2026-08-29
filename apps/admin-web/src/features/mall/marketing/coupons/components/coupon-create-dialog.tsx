@@ -188,20 +188,20 @@ export function CouponCreateDialog({
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
-    const payload = buildCreatePromotionPayload(
-      {
-        code, name, discountType, value: value as number,
-        targetType, targetAttribute,
-        targetItemIds: targetItems.map((i) => i.id),
-        minOrderAmount, customerGroupIds, startsAt, endsAt,
-        usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
-        visibility, autoIssueTrigger,
-        createdBy: me?.email || me?.username,
-      },
-      { campaignSuffix: String(Date.now()) },
-    );
-
     try {
+      const payload = buildCreatePromotionPayload(
+        {
+          code, name, discountType, value: value as number,
+          targetType, targetAttribute,
+          targetItemIds: targetItems.map((i) => i.id),
+          minOrderAmount, customerGroupIds, startsAt, endsAt,
+          usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
+          visibility, autoIssueTrigger,
+          createdBy: me?.email || me?.username,
+        },
+        { campaignSuffix: String(Date.now()) },
+      );
+
       await createMutation.mutateAsync(payload);
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
@@ -403,13 +403,14 @@ export function CouponCreateDialog({
               <div className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">캠페인 예산 제한 (하나만 선택)</span>
+              <span className="bg-background px-2 text-muted-foreground">사용 한도</span>
             </div>
           </div>
 
           <p className="text-xs text-muted-foreground">
-            세 한도는 캠페인 예산을 공유해 <b>동시에 설정할 수 없습니다</b>. 일반적으로 프로모션은
-            &lsquo;1인당 사용 제한&rsquo; 또는 &lsquo;총 사용 횟수(선착순)&rsquo; 중 하나를 씁니다.
+            &lsquo;총 사용 횟수(선착순)&rsquo;는 전역 한도라 다른 한도와 자유롭게 함께 쓸 수 있습니다.
+            &lsquo;총 할인금액 한도&rsquo;와 &lsquo;1인당 사용 한도&rsquo;는 캠페인 예산 슬롯을 하나만 쓰므로
+            <b>둘을 동시에 설정할 수 없습니다</b>.
             발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
           </p>
 
@@ -420,12 +421,8 @@ export function CouponCreateDialog({
                 type="number"
                 min={1}
                 value={usageLimit}
-                onChange={(e) => {
-                  setUsageLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) { setSpendLimit(''); setMaxUsesPerCustomer(''); }
-                }}
+                onChange={(e) => setUsageLimit(e.target.value ? Number(e.target.value) : '')}
                 placeholder="예: 100"
-                disabled={!!spendLimit || !!maxUsesPerCustomer}
               />
               {!!usageLimit && (
                 <p className="text-xs text-muted-foreground">
@@ -441,14 +438,19 @@ export function CouponCreateDialog({
                 value={spendLimit}
                 onChange={(e) => {
                   setSpendLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) { setUsageLimit(''); setMaxUsesPerCustomer(''); }
+                  if (e.target.value) setMaxUsesPerCustomer('');
                 }}
                 placeholder="예: 5000000"
-                disabled={!!usageLimit || !!maxUsesPerCustomer}
+                disabled={!!maxUsesPerCustomer}
               />
               {!!spendLimit && (
                 <p className="text-xs text-muted-foreground">
                   최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
+                </p>
+              )}
+              {!!maxUsesPerCustomer && (
+                <p className="text-xs text-muted-foreground">
+                  1인당 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
                 </p>
               )}
             </div>
@@ -462,14 +464,19 @@ export function CouponCreateDialog({
               value={maxUsesPerCustomer}
               onChange={(e) => {
                 setMaxUsesPerCustomer(e.target.value ? Number(e.target.value) : '');
-                if (e.target.value) { setUsageLimit(''); setSpendLimit(''); }
+                if (e.target.value) setSpendLimit('');
               }}
               placeholder="예: 1"
-              disabled={!!usageLimit || !!spendLimit}
+              disabled={!!spendLimit}
             />
             {!!maxUsesPerCustomer && (
               <p className="text-xs text-muted-foreground">
                 1인당 {maxUsesPerCustomer.toLocaleString('ko-KR')}회 사용 가능
+              </p>
+            )}
+            {!!spendLimit && (
+              <p className="text-xs text-muted-foreground">
+                총 할인금액 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
               </p>
             )}
           </div>
