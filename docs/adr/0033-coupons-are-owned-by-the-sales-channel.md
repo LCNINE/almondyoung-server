@@ -123,9 +123,32 @@ user-service          core / ugc / membership …
 | 5 | `apps/admin-web/.../coupons/coupon-helpers.tsx:30` | admin-web 의 **자체** `AutoIssueTrigger` 타입 + 라벨 맵 |
 | 6 | `apps/channel-adapter/.../medusa.client.ts:2377` | 메서드 시그니처의 **인라인 유니온** |
 
+#### 2026-08-30 갱신 — 어휘가 두 축이고, 드리프트는 이제 테스트가 잡는다 (#488 N3, P3)
+
+`auto_issue_trigger` 만의 문제가 아니었다. **`visibility` 도 정확히 같은 병을 앓고 있었고 사본이
+여덟 벌이었다**(#488 N3). 두 축을 다르게 처리했다.
+
+| 축 | 처방 | 이유 |
+|---|---|---|
+| `visibility` | **`@packages/domain-types` 의 공유 타입**(`CouponVisibility`). admin-web 이 실제로 import 한다 | 표시 버그가 이미 나 있었다 — 라벨 맵이 `Record<string,…>` 이고 삼항 연쇄 2곳이 **모르는 값을 «공개» 로 렌더**했다 |
+| `auto_issue_trigger` | **공유 타입을 만들지 않는다.** 위 표대로 사본을 유지한다 | 실사용이 0이라는 이 절의 판단은 그대로 유효하다 |
+
+**두 축 모두 `packages/domain-types/coupon-vocabulary-drift.spec.ts` 가 덮는다.** 이 스펙은
+사본들의 **소스 리터럴을 읽어** 정본과 대조하며, 앵커를 못 찾아도 실패한다. 그래서 위 표는
+이제 사람이 지키는 체크리스트가 아니라 **기계가 지키는 검사**다 — 값을 하나 늘리면 아직 안 고친
+곳이 전부 이름으로 지목된다. DB CHECK 제약(4번)까지 덮으므로, 어떤 공유 타입보다 커버리지가 넓다.
+
+**`apps/medusa` 와 `web/almondyoung-storefront` 는 공유 타입을 import 하지 않으며, 앞으로도
+그럴 것이다.** medusa 는 빌드에 번들러가 없어(`nest build` 와 달리) `@packages/*` 별칭이 런타임에
+해석되지 않는다 — import 하면 컨테이너가 부팅에서 죽는다. storefront 는 이 값을 읽는 코드가
+0곳이라 `file:` 의존성과 lockfile 재생성의 위험을 지불할 이익이 없다. **두 트리에서 이 어휘를
+「공유 타입으로 합치자」는 제안이 다시 나오면 이 문단을 근거로 기각할 것.**
+
 5번의 라벨 맵만 `Record<AutoIssueTrigger, string>` 이라 exhaustive 하지만, 그것은 **admin-web 자신의 복사본**(5번 앞줄)에 대해 exhaustive 할 뿐이다. Medusa 에서 값을 하나 늘려도 **어느 앱에서도 타입 에러가 나지 않는다.** 이 저장소는 같은 실패를 겪은 적이 있다(#724 — 라벨 맵이 두 벌인데 한쪽만 exhaustive 라 타입 게이트가 못 잡았다).
 
-따라서 트리거를 추가할 때는 위 표를 체크리스트로 쓴다. 여섯 곳을 하나로 합치는 것은 이 ADR 의 범위가 아니다 — 앱 경계를 넘는 공유 타입은 `@packages/event-contracts` 에 두는 것이 이 저장소의 관례이나, 실사용이 0인 지금 그 추상화는 이르다.
+따라서 트리거를 추가할 때는 위 표를 체크리스트로 쓴다. 트리거 여섯 곳을 **하나의 타입으로** 합치는 것은 여전히 이 ADR 의 범위가 아니다(실사용 0). 다만
+「컴파일러가 잡아주는 것은 하나도 없다」는 위 갱신의 드리프트 가드가 닫았다 — 가드는 공유 타입이
+아니라 검사이므로 이 결정과 충돌하지 않는다.
 
 그리고 사건 자체를 붙이는 쪽(발행 서비스 → channel-adapter 소비자 → inbox)은 별개 작업이다. `birthday` 가 타입·CHECK 제약·어드민 UI 에는 있으나 **발행처가 없어 미구현으로 남아 있는 것**이 그 예다(생성 UI 에서 `disabled`).
 

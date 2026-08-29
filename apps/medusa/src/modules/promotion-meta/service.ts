@@ -4,6 +4,11 @@ import PromotionIssueLog from './models/promotion-issue-log';
 import CouponEvent from './models/coupon-event';
 import CouponEventItem from './models/coupon-event-item';
 
+// 쿠폰 어휘(`AutoIssueTrigger` · `PromotionMetaData.visibility`)는 이 트리 밖에도 사본이 있다.
+// 값을 늘리거나 줄이면 `packages/domain-types/coupon-vocabulary-drift.spec.ts` 가 빨개지며
+// 함께 고쳐야 할 곳을 전부 이름으로 지목한다(마이그레이션 CHECK 제약 포함).
+// `visibility` 의 타입 정본은 `@packages/domain-types` 에 있으나 **여기서 import 할 수 없다**
+// — Medusa 빌드에는 번들러가 없어 `@packages/*` 별칭이 런타임에 해석되지 않는다.
 export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
 export type AdminIssueTrigger = 'admin_manual' | 'admin_force' | 'customer_claim';
 export type IssueTrigger = AutoIssueTrigger | AdminIssueTrigger;
