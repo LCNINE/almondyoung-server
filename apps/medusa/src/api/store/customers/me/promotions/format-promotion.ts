@@ -62,20 +62,14 @@ export type FormattedPromotion = {
  * 룰 값은 그래프 결과에 따라 문자열이거나 `{ value }` 객체다.
  */
 function minOrderAmount(promo: PromotionLike): number | null {
-  const rule = (promo.rules ?? []).find(
-    (r) => r?.attribute === 'subtotal' && r?.operator === 'gte',
-  );
+  const rule = (promo.rules ?? []).find((r) => r?.attribute === 'subtotal' && r?.operator === 'gte');
   if (!rule) return null;
   const raw = rule.values?.[0];
   const val = Number(typeof raw === 'string' ? raw : raw?.value);
   return Number.isFinite(val) ? val : null;
 }
 
-export function formatPromotion(
-  promo: PromotionLike,
-  isAssigned: boolean,
-  visibility: string,
-): FormattedPromotion {
+export function formatPromotion(promo: PromotionLike, isAssigned: boolean, visibility: string): FormattedPromotion {
   return {
     id: promo.id,
     code: promo.code,
