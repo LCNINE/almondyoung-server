@@ -156,10 +156,37 @@ user-service          core / ugc / membership …
 
 **이 원칙은 실전 검증된 적이 없다.** 설계는 코드로 존재하고 통합 테스트 973줄이 붙어 있지만, 쿠폰이 적용된 주문이 0건이므로 트래픽 아래에서 확인된 것은 없다. 특히:
 
-- 1인당 사용 횟수는 **우리 코드가 세지 않는다.** Medusa campaign budget `use_by_attribute/customer_id` 에 위임했고, 미들웨어·`completeCart` 훅 어디에도 주문 수를 세어 비교하는 로직이 없다. **엔진의 동시성 보장 수준을 우리는 검증하지 않았다.**
+- 1인당 사용 횟수는 **우리 코드가 세지 않는다.** Medusa campaign budget `use_by_attribute/customer_id` 에 위임했고, 미들웨어·`completeCart` 훅 어디에도 주문 수를 세어 비교하는 로직이 없다. ~~엔진의 동시성 보장 수준을 우리는 검증하지 않았다.~~ → **2026-08-29 판정됨. 아래 «엔진 위임의 실제 강도» 참조.**
 - 체크아웃 2단계 검증(장바구니 추가 시 미들웨어 + 주문 완료 직전 훅)의 race window 축소 효과도 실트래픽에서 확인된 바 없다.
 
-첫 실사용 전에 이 두 가지를 확인할 것.
+첫 실사용 전에 두 번째를 확인할 것.
+
+### 엔진 위임의 실제 강도 (2026-08-29, `@medusajs/promotion` 2.13.4 소스 실측)
+
+위 항목이 오래 "미검증"으로 남은 이유는 우리가 엔진 내부를 읽지 않았기 때문이다. 읽었고, 결론은 **위임한 한도는 동시성 안전하지 않다** 이다.
+
+`services/promotion-module.js:75–97` (`registerCampaignBudgetUsageByAttribute_`):
+
+```js
+const [usage] = await this.campaignBudgetUsageService_.list({ budget_id, attribute_value });
+if (!usage) { create({ used: 1 }) }
+else {
+  const newUsedValue = MathBN.add(usage.used ?? 0, 1);  // 읽고
+  if (limit && gt(newUsedValue, limit)) throw ...        // 비교하고
+  await update({ id, used: newUsedValue });              // 쓴다
+}
+```
+
+원자적 `UPDATE … WHERE` 도 `SELECT FOR UPDATE` 도 없는 read-modify-write 다. `registerUsage` 에 `InjectTransactionManager()` 는 붙어 있으나 isolation level 지정이 없어 Postgres 기본값(READ COMMITTED)으로 돌고, 그 수준에서 트랜잭션은 lost update 를 막아주지 않는다. 같은 패턴이 전역 한도(`promotion.limit`/`used`, budget `usage`/`spend`)에도 그대로 있다.
+
+- **첫 사용은 우연히 막힌다** — `promotion_campaign_budget_usage` 의 `(attribute_value, budget_id)` partial unique 가 동시 insert 를 23505 로 터뜨린다. 우아하지 않을 뿐 막히기는 한다.
+- **2회차 이후 증가는 보호가 없다.** 동시 2건이 `used=1` 을 읽고 둘 다 `used=2` 를 쓴다.
+
+**여기서 비대칭이 생긴다: 발급은 우리가 원자적으로 막고(`reserveClaimSlot` 의 `UPDATE … WHERE issued_count < ? RETURNING`), 사용은 엔진이 열어 둔다.** 결정 2의 "판정은 Medusa 안에서" 는 유지되나 *어느 Medusa 인가*가 갈린다 — 우리가 쓴 판정은 원자적이고, 위임한 판정은 아니다.
+
+그럼에도 위임을 유지한다. 실사용 0건에서 엔진을 포크할 이유가 없고, 한도 초과의 손해는 쿠폰 몇 장이지 재고나 결제가 아니다. 다만 **1인당 한도를 엄격히 지켜야 하는 쿠폰(예: 고액 정액 할인)을 발행하기 전에는** 이 한계를 알고 발행하거나, `max_claims`(발급 상한) 쪽으로 조이는 편이 낫다 — 그쪽은 이미 원자적이다.
+
+코드 형태로 내린 판단이며, 동시성 테스트로 lost update 를 재현한 것은 아니다.
 
 ## 결과
 
@@ -167,4 +194,5 @@ user-service          core / ugc / membership …
 - 밖은 사건만 발행한다. "쿠폰을 발급하라" 는 명령은 어느 서비스도 보내지 않는다.
 - 쓰기는 channel-adapter 를, 읽기는 admin-web 프록시를 지난다. 관리자 직권 발급은 동기다.
 - 분석용 파생만이 예외이며, SoT 가 아니고 재생성 가능해야 한다.
+- 위임한 사용 한도(campaign budget)는 동시성 안전하지 않다. 엄격한 한도가 필요하면 원자적인 `max_claims` 쪽으로 조인다.
 - 트리거 추가 시 여섯 곳 체크리스트를 쓴다. 컴파일러는 도와주지 않는다.
