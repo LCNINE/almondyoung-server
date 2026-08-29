@@ -39,6 +39,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'status',
     'is_automatic',
     'metadata',
+    // 신규 쿠폰(Medusa 2.12.0+)의 전역 사용 한도. campaign.budget 과 독립적으로 검사된다.
+    'limit',
+    'used',
     'campaign_id',
     'campaign.campaign_identifier',
     'campaign.starts_at',
@@ -190,6 +193,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
   }
   const isUsageExhausted = (promo: any): boolean => {
+    // 신규 쿠폰: 전역 한도가 campaign budget 이 아니라 promotion.limit 에 있다.
+    if (promo.limit != null && Number(promo.used ?? 0) >= Number(promo.limit)) {
+      return true;
+    }
+
     const b = promo.campaign?.budget;
     if (!b || b.limit == null) return false;
     const limit = Number(b.limit);
