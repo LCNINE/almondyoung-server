@@ -27,6 +27,7 @@ import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
 import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
+import { formatCouponConditions } from '../lib/format-coupon-conditions';
 import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
 const PAGE_SIZE = 20;
@@ -75,29 +76,6 @@ function IssuanceCell({ issued, max }: { issued: number | null; max: number | nu
   );
 }
 
-function formatConditions(coupon: MedusaPromotion) {
-  const parts: string[] = [];
-  const minOrder = coupon.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
-  if (minOrder) {
-    const rawVal = minOrder.values[0];
-    const minOrderNum = Number((rawVal as any)?.value ?? rawVal);
-    parts.push(`${minOrderNum.toLocaleString('ko-KR')}원 이상`);
-  }
-  const budget = coupon.campaign?.budget;
-  if (budget?.limit) {
-    if (budget.type === 'spend') {
-      parts.push(`총 ${budget.limit.toLocaleString('ko-KR')}원 한도`);
-    } else if (budget.type === 'use_by_attribute') {
-      parts.push(`1인당 ${budget.limit.toLocaleString('ko-KR')}회`);
-    } else if (budget.type === 'usage') {
-      parts.push(`전체 ${budget.limit.toLocaleString('ko-KR')}회`);
-    } else {
-      parts.push(`예산 ${budget.limit.toLocaleString('ko-KR')}`);
-    }
-  }
-  return parts.length > 0 ? parts.join(' · ') : '-';
-}
-
 interface CouponRowProps {
   coupon: MedusaPromotion;
   onDetail: (coupon: MedusaPromotion) => void;
@@ -141,7 +119,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         <VisibilityBadge visibility={visibility} />
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
-        {formatConditions(coupon)}
+        {formatCouponConditions(coupon)}
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatPeriod(coupon)}

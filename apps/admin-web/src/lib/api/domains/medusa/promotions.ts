@@ -27,6 +27,12 @@ export interface MedusaPromotion {
   status: string;
   is_automatic: boolean;
   campaign_id: string | null;
+  /**
+   * 프로모션 전역 사용 횟수 상한 (Medusa 2.12.0+). campaign budget 과 독립적으로 검사된다.
+   * 옛 쿠폰은 이 필드 대신 campaign.budget{type:'usage'} 에 전역 한도를 갖는다 — 둘 다 표시 대상.
+   */
+  limit?: number | null;
+  used?: number;
   campaign?: {
     campaign_identifier: string;
     starts_at: string | null;
