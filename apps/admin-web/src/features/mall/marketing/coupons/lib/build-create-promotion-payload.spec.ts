@@ -77,3 +77,39 @@ describe('buildCreatePromotionPayload', () => {
     expect(p.campaign?.campaign_identifier).toBe('CAMP_WELCOME10_1756400000000');
   });
 });
+
+describe('사용 한도 조합', () => {
+  it('전역 사용 한도는 campaign budget 이 아니라 promotion.limit 으로 나간다', () => {
+    const p = buildCreatePromotionPayload({ ...base, usageLimit: 100 }, opts);
+    expect(p.limit).toBe(100);
+    expect(p.campaign).toBeUndefined();
+  });
+
+  it('전역 한도와 1인당 한도를 동시에 실을 수 있다 (1-2 해금)', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, usageLimit: 100, maxUsesPerCustomer: 1 }, opts);
+    expect(p.limit).toBe(100);
+    expect(p.campaign?.budget).toEqual({
+      type: 'use_by_attribute', attribute: 'customer_id', limit: 1,
+    });
+  });
+
+  it('전역 한도와 총 할인금액 한도를 동시에 실을 수 있다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, usageLimit: 100, spendLimit: 5_000_000 }, opts);
+    expect(p.limit).toBe(100);
+    expect(p.campaign?.budget).toEqual({
+      type: 'spend', limit: 5_000_000, currency_code: 'krw',
+    });
+  });
+
+  it('총 할인금액 한도와 1인당 한도는 조용히 버리지 않고 throw 한다', () => {
+    expect(() =>
+      buildCreatePromotionPayload({ ...base, spendLimit: 5_000_000, maxUsesPerCustomer: 1 }, opts),
+    ).toThrow('총 할인금액 한도와 1인당 사용 한도는 동시에 설정할 수 없습니다');
+  });
+
+  it('전역 한도만 있으면 campaign 을 만들지 않는다 (캠페인 오염 감소)', () => {
+    expect(buildCreatePromotionPayload({ ...base, usageLimit: 100 }, opts).campaign).toBeUndefined();
+  });
+});

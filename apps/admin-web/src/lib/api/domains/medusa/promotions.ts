@@ -64,6 +64,12 @@ export interface CreatePromotionPayload {
   type: 'standard';
   is_automatic: false;
   status?: 'active' | 'inactive' | 'draft';
+  /**
+   * 프로모션 전역 사용 횟수 상한 (Medusa 2.12.0+).
+   * campaign budget 과 독립적으로 검사되므로 1인당 한도(use_by_attribute)와 공존할 수 있다.
+   * is_automatic: true 인 프로모션에는 설정할 수 없다 (Medusa 검증기 refine).
+   */
+  limit?: number;
   application_method: {
     type: 'percentage' | 'fixed';
     value: number;
