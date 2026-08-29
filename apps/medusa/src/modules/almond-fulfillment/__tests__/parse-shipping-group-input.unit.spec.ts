@@ -15,7 +15,10 @@ describe('parseShippingGroupInput', () => {
       name: '간편식 배송',
       policy: { type: 'conditional_free', baseFee: 3000, freeThreshold: 30000 },
       areaTemplateCode: 'default',
-      delivery: { method: '택배', area: '전국지역', leadTimeMinDays: 2, leadTimeMaxDays: 3 },
+      // carrier·description 은 입력이 없어도 빈 문자열로 항상 채운다. data 갱신이 JSON 병합이라
+      // 키를 빠뜨리면 옛 값이 남아 '지우기' 가 동작하지 않는다.
+      delivery: { method: '택배', area: '전국지역', leadTimeMinDays: 2, leadTimeMaxDays: 3, carrier: '' },
+      description: '',
     });
   });
 
@@ -26,7 +29,37 @@ describe('parseShippingGroupInput', () => {
       area: '전국지역',
       leadTimeMinDays: 2,
       leadTimeMaxDays: 3,
+      carrier: '',
     });
+  });
+
+  it('택배사와 안내 문구는 앞뒤 공백을 떼고 담는다', () => {
+    const parsed = parseShippingGroupInput({
+      ...valid,
+      delivery: { ...valid.delivery, carrier: '  한진택배  ' },
+      description: '  주문 후 2~3일 내 발송합니다.  ',
+    });
+    expect(parsed.delivery.carrier).toBe('한진택배');
+    expect(parsed.description).toBe('주문 후 2~3일 내 발송합니다.');
+  });
+
+  // 비운 값도 키를 남겨야 JSON 병합에서 옛 값이 되살아나지 않는다.
+  it.each<[string, unknown]>([
+    ['빈 문자열', ''],
+    ['null', null],
+    ['생략', undefined],
+  ])('안내 문구가 %s 이면 빈 문자열로 지운다', (_label, description) => {
+    expect(parseShippingGroupInput({ ...valid, description })).toHaveProperty('description', '');
+  });
+
+  it('공백뿐인 택배사는 빈 문자열로 지운다', () => {
+    const parsed = parseShippingGroupInput({ ...valid, delivery: { ...valid.delivery, carrier: '   ' } });
+    expect(parsed.delivery).toHaveProperty('carrier', '');
+  });
+
+  it('안내 문구는 500자까지 허용한다', () => {
+    const description = '가'.repeat(500);
+    expect(parseShippingGroupInput({ ...valid, description }).description).toBe(description);
   });
 
   it('배송기간 시작일이 종료일보다 크면 거부한다', () => {
@@ -54,6 +87,7 @@ describe('parseShippingGroupInput', () => {
     ['소수점 금액', { ...valid, policy: { type: 'flat', baseFee: 1000.5 } }, /baseFee/],
     ['조건부 무료인데 기준금액 없음', { ...valid, policy: { type: 'conditional_free', baseFee: 3000 } }, /freeThreshold/],
     ['유료인데 배송비 0원', { ...valid, policy: { type: 'flat', baseFee: 0 } }, /baseFee/],
+    ['500자를 넘는 안내 문구', { ...valid, description: '가'.repeat(501) }, /description/],
   ])('%s 은 거부한다', (_label, input, pattern) => {
     expect(() => parseShippingGroupInput(input)).toThrow(pattern as RegExp);
   });
