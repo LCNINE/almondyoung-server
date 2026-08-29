@@ -109,4 +109,22 @@ describe('formatPromotion', () => {
   it('visibility 는 스토어가 받는 유일한 메타 정보다 — 항상 최상위 필드로 나간다', () => {
     expect(formatPromotion(basePromo, false, 'assigned_only').visibility).toBe('assigned_only');
   });
+
+  // 응답의 키 집합 자체를 고정한다. 부분일치(`toMatchObject`)만으로는 나중에 누가 `...promo` 를
+  // 스프레드하거나 필드를 더해도 스펙이 초록이라, 「무엇이 나가는가」가 다시 검증 밖으로 샌다.
+  it('응답 키 집합을 고정한다 — 여기 없는 키는 스토어로 나가지 않는다', () => {
+    const out = formatPromotion(basePromo, false, 'public');
+    expect(Object.keys(out).sort()).toEqual([
+      'application_method',
+      'campaign',
+      'code',
+      'id',
+      'is_assigned',
+      'is_automatic',
+      'min_order_amount',
+      'status',
+      'type',
+      'visibility',
+    ]);
+  });
 });
