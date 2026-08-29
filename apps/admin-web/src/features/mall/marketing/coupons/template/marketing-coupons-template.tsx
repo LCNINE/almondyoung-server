@@ -116,7 +116,11 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         </div>
       </td>
       <td className="px-4 py-3">
-        <VisibilityBadge visibility={visibility} />
+        {/* getCouponMeta().visibility 가 이 태스크(#488 N3, P3)에서 CouponVisibility | null 로
+            넓어졌다. 이 화면의 VisibilityBadge/VISIBILITY_LABEL 은 아직 옛 사본이고(Task 4 가
+            lib/coupon-labels.ts 로 이전 예정), 그 옛 로직은 원래도 미지 값을 '공개' 로
+            폴백했으므로 여기서도 같은 폴백으로 표시 문구를 그대로 유지한다. */}
+        <VisibilityBadge visibility={visibility ?? 'public'} />
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatCouponConditions(coupon)}

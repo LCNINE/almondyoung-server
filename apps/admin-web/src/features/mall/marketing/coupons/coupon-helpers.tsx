@@ -27,36 +27,17 @@ export function formatPeriod(coupon: MedusaPromotion): string {
   return '무기한';
 }
 
-export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
-
-export const AUTO_ISSUE_TRIGGER_LABELS: Record<AutoIssueTrigger, string> = {
-  customer_registered: '회원가입 완료',
-  membership_activated: '멤버십 가입',
-  birthday: '생일 (미구현 — 발급되지 않음)',
-};
-
-export interface CouponMeta {
-  name: string | undefined;
-  maxDiscountAmount: number | null;
-  maxClaims: number | null;
-  issuedCount: number | null;
-  createdBy: string | undefined;
-  visibility: 'public' | 'claimable' | 'assigned_only';
-  autoIssueTrigger: AutoIssueTrigger | null;
-}
-
-export function getCouponMeta(coupon: MedusaPromotion): CouponMeta {
-  const meta = (coupon.metadata ?? {}) as Record<string, unknown>;
-  return {
-    name: meta.name as string | undefined,
-    maxDiscountAmount: meta.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
-    maxClaims: meta.max_claims != null ? Number(meta.max_claims) : null,
-    issuedCount: meta.issued_count != null ? Number(meta.issued_count) : null,
-    createdBy: meta.created_by as string | undefined,
-    visibility: (meta.visibility as 'public' | 'claimable' | 'assigned_only') ?? 'public',
-    autoIssueTrigger: (meta.auto_issue_trigger as AutoIssueTrigger) ?? null,
-  };
-}
+// 판정과 트리거 어휘는 `lib/coupon-meta.ts` 로 옮겼다 — `.tsx` 는 admin-web 의 jest
+// transform(`^.+\.(t|j)s$`) 밖이라 여기 있으면 테스트가 실행되지 않는다.
+// 아래 재수출은 Task 4 에서 호출부를 새 경로로 옮긴 뒤 제거한다.
+export {
+  AUTO_ISSUE_TRIGGERS,
+  AUTO_ISSUE_TRIGGER_LABELS,
+  getCouponMeta,
+  toAutoIssueTrigger,
+  type AutoIssueTrigger,
+  type CouponMeta,
+} from './lib/coupon-meta';
 
 export function StatusBadge({ status }: { status: string }) {
   if (status === 'active') return <Badge className="bg-green-100 text-green-700 border-0">활성</Badge>;

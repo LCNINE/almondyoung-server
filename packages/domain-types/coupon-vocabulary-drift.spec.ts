@@ -94,6 +94,11 @@ const TRIGGER_SITES: Site[] = [
     path: 'apps/channel-adapter/src/adapters/medusa/medusa.client.ts',
     anchor: /issuePromotionsByTrigger\([^)]*?trigger:\s*([^,)]+),/s,
   },
+  {
+    name: 'admin-web AUTO_ISSUE_TRIGGERS 사본',
+    path: 'apps/admin-web/src/features/mall/marketing/coupons/lib/coupon-meta.ts',
+    anchor: /AUTO_ISSUE_TRIGGERS\s*=\s*\[([^\]]*)\]/,
+  },
 ];
 
 describe('쿠폰 visibility 어휘는 저장소 전체에서 하나다', () => {
