@@ -23,7 +23,6 @@ import { Badge } from '@/components/ui/badge';
 import { useCreateCoupon, useCustomerGroupList } from '@/lib/services/coupons';
 import { useMe } from '@/lib/services/users';
 import { useProductSearch, useCategoryList, useCollectionList } from '@/lib/services/catalog';
-import type { PromotionTargetRule } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { RefreshCw, X, ChevronsUpDown, Check } from 'lucide-react';
 import {
@@ -38,22 +37,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils/cn';
 import { useDebounced } from '@/hooks/use-debounced';
 import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../coupon-helpers';
+import { buildCreatePromotionPayload, type TargetAttribute } from '../lib/build-create-promotion-payload';
 
 function generateCode() {
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(36)).join('').slice(0, 8).toUpperCase();
 }
-
-type TargetAttribute = 'product_id' | 'product_category_id' | 'product_collection_id';
-
-// Medusa 라인아이템 컨텍스트가 노출하는 실제 경로로 매핑한다.
-// 플랫 키(product_category_id 등)는 라인아이템에 없어 룰이 절대 매칭되지 않음.
-const TARGET_ATTR_TO_MEDUSA: Record<TargetAttribute, PromotionTargetRule['attribute']> = {
-  product_id: 'items.product.id',
-  product_category_id: 'items.product.categories.id',
-  product_collection_id: 'items.product.collection_id',
-};
 
 interface SelectedItem {
   id: string;
@@ -194,75 +184,25 @@ export function CouponCreateDialog({
   };
 
   const handleSubmit = async () => {
-    const trimmedName = name.trim();
     if (!code.trim() || !value || (value as number) <= 0) return;
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
-    // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
-    const additional_data: Record<string, unknown> = {};
-    if (trimmedName) additional_data.name = trimmedName;
-    if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
-    if (me) additional_data.created_by = me.email || me.username;
-    additional_data.visibility = visibility;
-    if (autoIssueTrigger) additional_data.auto_issue_trigger = autoIssueTrigger;
-
-    const hasCampaign = startsAt || endsAt || usageLimit || spendLimit || maxUsesPerCustomer;
-    // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
-    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}_${Date.now()}`;
-
-    const targetRules: PromotionTargetRule[] | undefined =
-      targetType === 'items' && targetItems.length > 0
-        ? [{ attribute: TARGET_ATTR_TO_MEDUSA[targetAttribute], operator: 'in', values: targetItems.map((i) => i.id) }]
-        : undefined;
-
-    const promotionRules = [
-      ...(minOrderAmount
-        ? [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }]
-        : []),
-      ...(customerGroupIds.length > 0
-        ? [{ attribute: 'customer.groups.id', operator: 'in', values: customerGroupIds }]
-        : []),
-    ];
-    const allocation = targetType === 'items' ? 'across' : undefined;
-
-    const campaignBudget = maxUsesPerCustomer
-      ? { type: 'use_by_attribute' as const, attribute: 'customer_id', limit: Number(maxUsesPerCustomer) }
-      : usageLimit
-      ? { type: 'usage' as const, limit: Number(usageLimit) }
-      : spendLimit
-      ? { type: 'spend' as const, limit: Number(spendLimit), currency_code: 'krw' }
-      : undefined;
+    const payload = buildCreatePromotionPayload(
+      {
+        code, name, discountType, value: value as number,
+        targetType, targetAttribute,
+        targetItemIds: targetItems.map((i) => i.id),
+        minOrderAmount, customerGroupIds, startsAt, endsAt,
+        usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
+        visibility, autoIssueTrigger,
+        createdBy: me?.email || me?.username,
+      },
+      { campaignSuffix: String(Date.now()) },
+    );
 
     try {
-      await createMutation.mutateAsync({
-        code: code.trim().toUpperCase(),
-        type: 'standard',
-        is_automatic: false,
-        // draft는 체크아웃에서 적용 안 됨
-        status: 'active',
-        application_method: {
-          type: discountType,
-          value: value as number,
-          target_type: targetType,
-          ...(discountType === 'fixed' ? { currency_code: 'krw' } : {}),
-          ...(allocation ? { allocation } : {}),
-          ...(targetRules ? { target_rules: targetRules } : {}),
-        },
-        ...(hasCampaign
-          ? {
-              campaign: {
-                name: trimmedName || code.trim().toUpperCase(),
-                campaign_identifier: campaignIdentifier,
-                ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
-                ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
-                ...(campaignBudget ? { budget: campaignBudget } : {}),
-              },
-            }
-          : {}),
-        ...(promotionRules.length > 0 ? { rules: promotionRules } : {}),
-        ...(Object.keys(additional_data).length > 0 ? { additional_data } : {}),
-      });
+      await createMutation.mutateAsync(payload);
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
     } catch (e: unknown) {
