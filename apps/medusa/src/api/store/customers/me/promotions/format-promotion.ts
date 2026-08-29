@@ -2,8 +2,14 @@
  * 스토어 쿠폰 목록 응답의 한 항목을 만든다.
  *
  * 라우트 핸들러가 아니라 이 파일에 사는 이유: Medusa 의 유닛 게이트가
- * `src/**\/__tests__/*.unit.spec.ts` 만 돌리므로, 클로저로 두면 「무엇이 나가는가」가
+ * `__tests__/*.unit.spec.ts` 패턴만 돌리므로, 클로저로 두면 「무엇이 나가는가」가
  * 검증 대상 밖이다. 응답 모양은 계약이고, 계약은 테스트가 지켜야 한다.
+ *
+ * **`metadata` 를 내리지 않는 것은 의도다 (#488 N2).** 어드민 응답의 `metadata` 는 우리가
+ * `promotion_meta` 에서 합성한 것이고, 여기서 같은 이름으로 나가던 것은 Medusa 네이티브 json
+ * 컬럼이었다. 그 컬럼에 쓰는 코드가 0곳이라 값은 늘 `null` 이었고, 「스토어엔 메타가 없다」는
+ * 정반대 진단을 유도했다. 스토어에 필요한 메타 정보는 최상위 `visibility` 하나뿐이므로 그것만
+ * 내보내고, 네이티브 컬럼은 나중에 쓸 수 있게 이름을 비워 둔다.
  */
 
 export type PromotionRuleValue = string | { value?: string | null } | null | undefined;
@@ -50,7 +56,6 @@ export type FormattedPromotion = {
   status: string;
   is_automatic: boolean;
   is_assigned: boolean;
-  metadata: Record<string, unknown> | null;
   min_order_amount: number | null;
   visibility: string;
   application_method: ApplicationMethodLike | null;
@@ -77,7 +82,6 @@ export function formatPromotion(promo: PromotionLike, isAssigned: boolean, visib
     status: promo.status,
     is_automatic: promo.is_automatic,
     is_assigned: isAssigned,
-    metadata: promo.metadata ?? null,
     min_order_amount: minOrderAmount(promo),
     visibility,
     application_method: promo.application_method

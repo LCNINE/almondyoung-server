@@ -39,7 +39,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'type',
     'status',
     'is_automatic',
-    'metadata',
     // 신규 쿠폰(Medusa 2.12.0+)의 전역 사용 한도. campaign.budget 과 독립적으로 검사된다.
     'limit',
     'used',

@@ -96,10 +96,17 @@ describe('formatPromotion', () => {
     ).toBeNull();
   });
 
-  // ⚠️ 이 테스트는 Task 2 에서 정반대로 뒤집힌다. 지금은 **현행 동작을 고정**하는 것이 목적이다 —
-  // 추출이 충실했는지를 증명하고 나서 필드를 뺀다.
-  it('[현행 고정] 네이티브 metadata 를 그대로 싣는다', () => {
-    expect(formatPromotion({ ...basePromo, metadata: { k: 1 } }, false, 'public').metadata).toEqual({ k: 1 });
-    expect(formatPromotion(basePromo, false, 'public').metadata).toBeNull();
+  // #488 N2. 스토어 응답의 `metadata` 는 어드민의 합성 metadata 와 이름만 같고 정체가 달랐다 —
+  // Medusa 네이티브 json 컬럼이라 쓰는 코드가 0곳이고 값이 항상 null 이었다. 「스토어에 메타가
+  // 없다」는 잘못된 진단을 유도했으므로 이름 자체를 비운다. 스토어가 필요로 하는 메타 정보는
+  // 최상위 `visibility` 로 이미 나간다.
+  it('metadata 를 내리지 않는다 — 네이티브 값이 채워져 있어도 응답에 새지 않는다', () => {
+    const out = formatPromotion({ ...basePromo, metadata: { internal: 'x' } }, false, 'public');
+    expect(out).not.toHaveProperty('metadata');
+    expect(JSON.stringify(out)).not.toContain('internal');
+  });
+
+  it('visibility 는 스토어가 받는 유일한 메타 정보다 — 항상 최상위 필드로 나간다', () => {
+    expect(formatPromotion(basePromo, false, 'assigned_only').visibility).toBe('assigned_only');
   });
 });

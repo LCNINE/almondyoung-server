@@ -32,7 +32,6 @@ export type PromotionDto = {
   min_order_amount?: number | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
-  metadata: Record<string, unknown> | null
 }
 
 /*───────────────────────────
