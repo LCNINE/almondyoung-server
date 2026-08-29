@@ -50,6 +50,7 @@ export function buildCreatePromotionPayload(
   const code = form.code.trim().toUpperCase();
   const name = form.name.trim();
 
+  // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
   const additional_data: Record<string, unknown> = { visibility: form.visibility };
   if (name) additional_data.name = name;
   if (form.visibility === 'claimable' && form.maxClaims) {
@@ -92,6 +93,7 @@ export function buildCreatePromotionPayload(
     code,
     type: 'standard',
     is_automatic: false,
+    // draft는 체크아웃에서 적용 안 됨
     status: 'active',
     application_method: {
       type: form.discountType,
@@ -105,6 +107,7 @@ export function buildCreatePromotionPayload(
       ? {
           campaign: {
             name: name || code,
+            // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
             campaign_identifier: `CAMP_${code}_${opts.campaignSuffix}`,
             ...(form.startsAt ? { starts_at: new Date(form.startsAt).toISOString() } : {}),
             ...(form.endsAt ? { ends_at: new Date(form.endsAt).toISOString() } : {}),
