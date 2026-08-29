@@ -18,6 +18,7 @@
  * 이 값을 읽는 코드가 0곳이라 의존성을 더할 이익이 없다. 두 트리의 사본과 DB CHECK 제약과의
  * 정합은 `coupon-vocabulary-drift.spec.ts` 가 대신 지킨다.
  */
+/** ⚠️ 이 배열의 **순서가 화면에 나간다** — 어드민 쿠폰 생성 폼의 발급 방식 드롭다운이 이 순서로 렌더된다. 알파벳순 등으로 «정리» 하지 말 것. */
 export const COUPON_VISIBILITIES = ['public', 'claimable', 'assigned_only'] as const;
 
 export type CouponVisibility = (typeof COUPON_VISIBILITIES)[number];
@@ -30,9 +31,11 @@ export function isCouponVisibility(value: unknown): value is CouponVisibility {
 /**
  * 저장된 값을 어휘로 좁힌다. **두 실패를 구분한다.**
  *
- * - **없음(`null` · `undefined` · `''`) → `'public'`.** `promotion_meta.visibility` 컬럼이
+ * - **없음(`null` · `undefined`) → `'public'`.** `promotion_meta.visibility` 컬럼이
  *   `NOT NULL DEFAULT 'public'` 이고 Medusa 읽기 경로도 전부 `?? 'public'` 이다. 즉 비어
- *   있는 것은 정상이고 «공개» 를 뜻한다.
+ *   있는 것은 정상이고 «공개» 를 뜻한다. 빈 문자열 `''` 도 여기 함께 접는데, 그것은 `?? ` 의
+ *   의미론이 아니라 **CHECK 제약(`promotion_meta_visibility_check`)이 `''` 를 애초에
+ *   막으므로 도달 불가값을 편의상 «없음» 과 같이 다루는 것**이다.
  * - **어휘 밖 → `null`.** 여기서 `'public'` 으로 접으면 안 된다. 그것이 #488 N3 이 지적한
  *   바로 그 버그다(모르는 값이 «공개» 로 렌더된다). 호출부가 «모른다» 를 눈에 보이게
  *   렌더할 수 있도록 두 경우를 다른 값으로 돌려준다.

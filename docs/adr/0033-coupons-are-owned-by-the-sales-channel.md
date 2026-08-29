@@ -116,11 +116,11 @@ user-service          core / ugc / membership …
 
 | # | 위치 | 형태 |
 |---|------|------|
-| 1 | `apps/medusa/src/modules/promotion-meta/service.ts:7` | `AutoIssueTrigger` 타입 |
-| 2 | `apps/medusa/src/modules/promotion-meta/service.ts:31` | `upsert()` 안의 **인라인 리터럴 배열** (1번과 연결돼 있지 않다) |
+| 1 | `apps/medusa/src/modules/promotion-meta/service.ts:12` | `AutoIssueTrigger` 타입 |
+| 2 | `apps/medusa/src/modules/promotion-meta/service.ts:36` | `upsert()` 안의 **인라인 리터럴 배열** (1번과 연결돼 있지 않다) |
 | 3 | `apps/medusa/src/api/admin/customers/[id]/issue-coupons/route.ts:8` | `VALID_TRIGGERS` |
 | 4 | `Migration20260527100000.ts:10` | DB CHECK 제약 — **새 마이그레이션으로 교체해야 한다** |
-| 5 | `apps/admin-web/.../coupons/coupon-helpers.tsx:30` | admin-web 의 **자체** `AutoIssueTrigger` 타입 + 라벨 맵 |
+| 5 | `apps/admin-web/.../coupons/lib/coupon-meta.ts` | admin-web 의 **자체** `AutoIssueTrigger` 타입 + 라벨 맵 (P3 가 `.tsx` 에서 옮겼다) |
 | 6 | `apps/channel-adapter/.../medusa.client.ts:2377` | 메서드 시그니처의 **인라인 유니온** |
 
 #### 2026-08-30 갱신 — 어휘가 두 축이고, 드리프트는 이제 테스트가 잡는다 (#488 N3, P3)
@@ -139,8 +139,7 @@ user-service          core / ugc / membership …
 곳이 전부 이름으로 지목된다. DB CHECK 제약(4번)까지 덮으므로, 어떤 공유 타입보다 커버리지가 넓다.
 
 **`apps/medusa` 와 `web/almondyoung-storefront` 는 공유 타입을 import 하지 않으며, 앞으로도
-그럴 것이다.** medusa 는 빌드에 번들러가 없어(`nest build` 와 달리) `@packages/*` 별칭이 런타임에
-해석되지 않는다 — import 하면 컨테이너가 부팅에서 죽는다. storefront 는 이 값을 읽는 코드가
+그럴 것이다.** medusa 는 빌드에 번들러가 없어 `@packages/*` 를 **값으로** import 하면 런타임에 해석되지 않는다(`import type` 은 emit 에서 지워지므로 예외이고, 실제로 해석된다 — 2026-08-30 실측). 그러나 type-only import 로 바꿔도 이득이 없다: `apps/medusa` 는 루트 `type-check` 의 `exclude` 에 있고 `medusa-unit-tests.yml` 도 전체 tsc 를 돌리지 않아 **CI 가 그 타입을 검사하지 않으며**, `medusa build` 는 타입 에러로 실패하지도 않는다(선재 에러 3건을 안고 이미지가 나간다). 게다가 검증이 필요한 두 지점(`upsert()` 의 런타임 검증 배열, 마이그레이션 CHECK 제약)은 애초에 타입으로 못 덮는다. **가드가 엄밀히 넓다.** storefront 는 이 값을 읽는 코드가
 0곳이라 `file:` 의존성과 lockfile 재생성의 위험을 지불할 이익이 없다. **두 트리에서 이 어휘를
 「공유 타입으로 합치자」는 제안이 다시 나오면 이 문단을 근거로 기각할 것.**
 

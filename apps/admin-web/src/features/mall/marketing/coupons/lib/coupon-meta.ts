@@ -34,6 +34,8 @@ export interface CouponMeta {
   /**
    * `null` = 서버가 우리 어휘 밖의 값을 보냈다. **«공개» 로 접지 않는다** — 제한 쿠폰이
    * 관리자 눈에 공개로 보이던 것이 #488 N3 이다. 표시는 `visibilityBadge` 가 맡는다.
+   * 메타 자체가 없는 쿠폰(`metadata` 없음)은 이 경우가 **아니다** — `null` 이 아니라 컬럼
+   * 기본값과 같은 `'public'` 이 된다(`toCouponVisibility` 가 없음을 `'public'` 으로 접는다).
    */
   visibility: CouponVisibility | null;
   autoIssueTrigger: AutoIssueTrigger | null;

@@ -17,6 +17,11 @@ import { COUPON_VISIBILITIES } from './coupon-visibility';
  * ⚠️ 이 가드는 **파일 경로와 앵커 정규식에 의존한다.** 선언을 옮기면 앵커가 안 맞아 실패하는데,
  * 그것은 버그가 아니라 의도다 — 조용히 통과하는 가드보다 시끄럽게 죽는 가드가 낫다.
  * 옮겼다면 아래 표의 경로·앵커를 같이 고칠 것.
+ *
+ * **앵커의 알려진 한계 (2026-08-30 최종 리뷰):**
+ * - `visibility\?:` 에 단어 경계가 없다 — `price_visibility?:` 같은 필드가 앞에 생기면 그것에 먼저 걸린다.
+ *   결과는 값 불일치로 **시끄럽게** 실패하니 안전 방향이지만 오탐이다.
+ * - `String.match` 는 non-global 이라 **같은 형태의 선언이 한 파일에 둘이면 첫 것만** 검사한다.
  */
 
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -41,7 +46,7 @@ function extractVocabulary(site: Site): string[] {
         `선언이 옮겨졌거나 형태가 바뀌었다. packages/domain-types/coupon-vocabulary-drift.spec.ts 의 앵커를 갱신할 것.`,
     );
   }
-  const literals = [...matched[1].matchAll(/['"]([a-zA-Z_]+)['"]/g)].map((m) => m[1]);
+  const literals = [...matched[1].matchAll(/['"]([^'"]+)['"]/g)].map((m) => m[1]);
   return [...new Set(literals)].sort();
 }
 

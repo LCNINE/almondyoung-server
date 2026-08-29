@@ -15,7 +15,15 @@
 ## Global Constraints
 
 - **마이그레이션 0건 · 시크릿 0건 · env 0건 · 이벤트 계약 0건 · npm 의존성 0건.**
-- **런타임 동작 변화는 정확히 하나다** — 「어휘 밖 `visibility` 값」의 표시가 «공개» 에서 «알 수 없음» 으로 바뀐다. 그 외 모든 화면·분기는 동일해야 한다. 라이브 데이터에 어휘 밖 값은 DB CHECK 제약 때문에 존재할 수 없으므로(`promotion_meta_visibility_check`), **오늘 라이브 화면은 픽셀 하나도 안 바뀐다.** 이 변경은 «4번째 값이 생기는 날」을 위한 것이다.
+- **런타임 동작 변화는 셋이고, 그중 사람 눈에 보이는 것은 둘이다** (2026-08-30 최종 리뷰가 전수로 셈):
+
+  | # | 변화 | 보이는가 | 라이브 도달 |
+  |---|---|---|---|
+  | 1 | 어휘 밖 `visibility` 의 표시가 «공개» → «알 수 없음» (목록 배지·상세·이벤트 폼 3곳) | 보임 | DB CHECK 제약이 막음 |
+  | 2 | 어휘 밖 `auto_issue_trigger` → `null` — 상세의 「자동 발급」 행이 **빈 값 렌더 대신 사라진다** | 보임 | DB CHECK 제약이 막음 |
+  | 3 | `visibility: ''` 가 `'public'` 으로 정규화 (옛 `?? 'public'` 은 `''` 를 nullish 로 안 봐 그대로 실었다) | **안 보임** — 세 표시 표면의 옛 폴백이 전부 «공개» 였고 `=== 'claimable'` 분기도 양쪽 false | DB CHECK 제약이 막음 |
+
+  셋 다 `promotion_meta_visibility_check` / `promotion_meta_auto_issue_trigger_check` 가 막고 있어 **오늘 라이브 화면은 픽셀 하나도 안 바뀐다.** 이 변경은 「4번째 값이 생기는 날」을 위한 것이다.
 - **배포 순서 제약 없음.** 바뀌는 것은 admin-web 하나뿐이고, 그것이 부르는 API 계약은 그대로다. 애초에 SST 한 스택엔 앱 간 배포 순서를 강제할 수단이 없다(메모리 「SST 한 스택엔 배포 순서가 없다」).
 - **`apps/medusa` 소스는 주석 1줄 외에 고치지 않는다.** 이유는 아래 «왜 medusa 는 정본을 import 하지 않는가».
 - **`web/almondyoung-storefront` 는 주석 1줄 외에 고치지 않는다.** 이유는 아래 «왜 storefront 는 정본을 import 하지 않는가».
@@ -29,6 +37,10 @@
   | 어휘 패키지 유닛 | `npx jest packages/domain-types --maxWorkers=2` | **2 suites / 6 tests 통과, 0.12s** |
   | admin-web 유닛 | `npm run test:admin-web` | **89 suites / 737 tests 통과, 1.5s** |
   | admin-web 타입 | `cd apps/admin-web && npx tsc --noEmit` | **에러 0** |
+
+  **어느 게이트가 CI 에 있는가 (2026-08-30 실측):**
+  - ✅ **드리프트 가드는 CI 차단 게이트다.** 루트 jest 의 `roots` 에 `packages/domain-types/` 가 있고 `.github/workflows/verification-gates.yml` 이 `npx jest --ci` 를 돈다. 루트 jest 는 **admin-web 의 `.spec.ts` 도 수집**하므로 `coupon-labels.spec.ts` 의 「세 맵이 어휘 전체를 덮는다」도 CI 에 있다.
+  - 🔴 **`cd apps/admin-web && npx tsc --noEmit` 는 CI 에 없다.** 루트 `tsconfig.json:exclude` 에 `apps/admin-web` 이 있고 `.github/workflows/` 어디에도 admin-web tsc 가 없다. 즉 **어휘 확장을 막는 CI 방어선은 `Record<CouponVisibility,…>` 의 타입 에러가 아니라 스펙이다.** 그래서 라벨 맵마다 키 커버리지 스펙을 둔 것이 장식이 아니다 — 그게 유일하게 CI 에서 도는 방어선이다.
 
   **`npm run type-check` 는 admin-web 을 제외한다** (루트 `tsconfig.json:exclude`). admin-web 의 타입 게이트는 반드시 `cd apps/admin-web && npx tsc --noEmit` 를 따로 부를 것 — 메모리 「admin-web 은 컴포넌트 테스트 불가」 항목이 기록한 함정이다.
   **`npx jest` 전체는 OOM 이 난다** — 이 플랜에서는 위 두 스코프 명령만 쓴다(`--maxWorkers=2` 유지).
@@ -90,12 +102,12 @@
 
 1. `apps/medusa/tsconfig.json` 에 `paths: { "@packages/*": [...] }` 가 **있다**. 그래서 타입체크는 통과한다.
 2. 그러나 **`apps/medusa/src` 전체에서 `@packages/` import 는 0건**이고, 트리 밖으로 나가는 상대경로 import 도 0건이다. 즉 이 별칭은 **한 번도 런타임에서 검증된 적이 없다.**
-3. 별칭을 쓰는 유일한 파일은 `src/api/store/orders/[id]/__tests__/confirm-purchase.unit.spec.ts:11` (`@workflows/…`) 인데, 그것은 **오늘 medusa 의 선재 tsc 에러 3건 중 하나**다. 별칭이 medusa 트리에서 실제로 동작하지 않는다는 직접 증거다.
+3. ~~별칭을 쓰는 유일한 파일이 tsc 에러라는 것이 «별칭이 동작하지 않는 증거»~~ — **2026-08-30 최종 리뷰에서 반증됐다.** 그 파일이 쓰는 `@workflows/*` 는 medusa `tsconfig.json` 의 `paths` 에 애초에 없고(거기엔 `@packages/*` 하나뿐) jest `moduleNameMapper` 전용 별칭이라, `@packages/*` 에 대해 아무것도 말해주지 않는다.
 4. `apps/medusa/jest.config.js` 의 `moduleNameMapper` 에도 `@packages` 매핑이 없다.
 5. **core·channel-adapter 가 `@packages/domain-types` 를 쓸 수 있는 이유는 Nest 가 webpack 으로 번들하기 때문이다** (`nest-cli.json: "webpack": true`). webpack 이 빌드타임에 별칭을 해소한다. **Medusa 빌드에는 번들러가 없다** — `tsc` 계열은 별칭을 emit 결과에 그대로 남기므로 `require('@packages/domain-types')` 가 런타임 `MODULE_NOT_FOUND` 가 된다.
 6. node_modules 심볼릭 링크로 우회하는 길도 막혀 있다: `@packages/domain-types` 의 `main` 은 **빌드되지 않은 `index.ts`** 라 Node 가 직접 require 할 수 없고, medusa Dockerfile 은 `yarn install` 을 `COPY packages` **앞에서** 수행한다.
 
-→ **정본을 medusa 가 import 하면 컨테이너가 부팅에서 죽는다.** 타입 정리를 위해 감수할 위험이 아니다. medusa 쪽 정합은 Task 2 의 가드가 지킨다 — 그리고 가드는 **마이그레이션의 CHECK 제약까지** 덮으므로, 어떤 import 방식보다 커버리지가 넓다.
+→ **값으로 import 하면 컨테이너가 부팅에서 죽는다.** `import type` 은 emit 에서 지워져 안전하고 실제로 타입이 강제된다(2026-08-30 실측 — 위 6개 근거 중 3번은 그래서 반증됐다). 그럼에도 type-only import 로 바꾸지 않는 이유는 **이득이 0**이기 때문이다: `apps/medusa` 는 루트 `type-check` 의 `exclude` 에 있고 `medusa-unit-tests.yml` 도 전체 tsc 를 돌리지 않아 CI 가 그 타입을 안 보며, `medusa build` 는 타입 에러로 실패하지도 않는다. 그리고 검증이 필요한 두 지점(`upsert()` 의 런타임 배열, 마이그레이션 CHECK)은 타입으로 못 덮는다. 가드가 엄밀히 넓다 — 마이그레이션의 CHECK 제약까지 덮으므로.
 
 ## 왜 storefront 는 정본을 import 하지 않는가
 
@@ -1133,7 +1145,7 @@ gh pr create --base develop --title "refactor: 쿠폰 노출 어휘를 정본 �
 ```
 
 PR 본문에 반드시 담을 것:
-- **런타임 동작 변화 1건**: 어휘 밖 `visibility` 값의 표시가 «공개» → «알 수 없음». DB CHECK 제약 때문에 **오늘 라이브에 그런 값은 존재할 수 없으므로 화면 변화 0.**
+- **런타임 동작 변화 3건(보이는 것 2건)**: 위 Global Constraints 의 표를 그대로 붙일 것. 셋 다 DB CHECK 제약이 막고 있어 **오늘 라이브 화면 변화 0.**
 - **마이그레이션 0 · 시크릿 0 · env 0 · 이벤트 계약 0 · npm 의존성 0. 배포 순서 제약 없음.**
 - **`apps/medusa` 와 `web/` 은 주석만 바뀌었다.** 근거는 플랜의 «왜 medusa 는 정본을 import 하지 않는가».
 - 게이트 5개의 실제 출력.
