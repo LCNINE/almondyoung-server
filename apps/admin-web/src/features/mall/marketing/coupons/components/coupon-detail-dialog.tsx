@@ -14,11 +14,11 @@ import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import {
   formatCouponDateTime,
   formatPeriod,
-  getCouponMeta,
   StatusBadge,
   TARGET_ATTR_LABEL,
-  AUTO_ISSUE_TRIGGER_LABELS,
 } from '../coupon-helpers';
+import { getCouponMeta, AUTO_ISSUE_TRIGGER_LABELS } from '../lib/coupon-meta';
+import { visibilityDetailLabel } from '../lib/coupon-labels';
 import { Link, Check } from 'lucide-react';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -124,7 +124,7 @@ export function CouponDetailDialog({
             <Row label="1인당 사용 한도">{perCustomerLimit}회</Row>
           )}
           <Row label="발급 방식">
-            {visibility === 'assigned_only' ? '발급 고객 전용' : visibility === 'claimable' ? '발급받기' : '공개'}
+            {visibilityDetailLabel(visibility)}
           </Row>
           {visibility === 'claimable' && (
             <Row label="총 발급 수량">

@@ -3,10 +3,10 @@ import type {
   PromotionRule,
   PromotionTargetRule,
 } from '@/lib/api/domains/medusa/promotions';
-import type { AutoIssueTrigger } from '../coupon-helpers';
+import type { AutoIssueTrigger } from './coupon-meta';
+import type { CouponVisibility } from '@packages/domain-types';
 
 export type TargetAttribute = 'product_id' | 'product_category_id' | 'product_collection_id';
-export type Visibility = 'public' | 'claimable' | 'assigned_only';
 
 // Medusa 라인아이템 컨텍스트가 노출하는 실제 경로로 매핑한다.
 // 플랫 키(product_category_id 등)는 라인아이템에 없어 룰이 절대 매칭되지 않음.
@@ -32,7 +32,7 @@ export interface CouponFormState {
   spendLimit: number | '';
   maxUsesPerCustomer: number | '';
   maxClaims: number | '';
-  visibility: Visibility;
+  visibility: CouponVisibility;
   autoIssueTrigger: AutoIssueTrigger | '';
   createdBy?: string;
 }

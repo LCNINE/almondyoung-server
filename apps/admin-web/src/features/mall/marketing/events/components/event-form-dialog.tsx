@@ -30,7 +30,8 @@ import {
 } from '@/lib/services/coupon-events';
 import { uploadFileToFileService, PRODUCT_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import type { CouponEventStatus } from '@/lib/api/domains/medusa/coupon-events';
-import { getCouponMeta } from '../../coupons/coupon-helpers';
+import { getCouponMeta } from '../../coupons/lib/coupon-meta';
+import { visibilityBadge } from '../../coupons/lib/coupon-labels';
 import { toast } from 'sonner';
 import { X, ImagePlus, Search } from 'lucide-react';
 
@@ -259,7 +260,7 @@ export function EventFormDialog({ open, onOpenChange, eventId }: EventFormDialog
                       >
                         <span className="font-mono">{c.code}</span>
                         <span className="text-xs text-muted-foreground">
-                          {visibility === 'claimable' ? '발급받기' : visibility === 'assigned_only' ? '지정발급' : '공개'}
+                          {visibilityBadge(visibility).label}
                         </span>
                       </button>
                     </li>

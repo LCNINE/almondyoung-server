@@ -26,7 +26,10 @@ import { CouponDetailDialog } from '../components/coupon-detail-dialog';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
-import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
+import { formatPeriod, StatusBadge } from '../coupon-helpers';
+import { getCouponMeta } from '../lib/coupon-meta';
+import { visibilityBadge } from '../lib/coupon-labels';
+import type { CouponVisibility } from '@packages/domain-types';
 import { formatCouponConditions } from '../lib/format-coupon-conditions';
 import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
@@ -41,14 +44,8 @@ function formatDiscount(coupon: MedusaPromotion) {
   return `${m.value.toLocaleString('ko-KR')}원`;
 }
 
-const VISIBILITY_LABEL: Record<string, { label: string; cls: string }> = {
-  public: { label: '공개', cls: 'bg-slate-100 text-slate-600' },
-  claimable: { label: '발급받기', cls: 'bg-blue-100 text-blue-700' },
-  assigned_only: { label: '지정발급', cls: 'bg-purple-100 text-purple-700' },
-};
-
-function VisibilityBadge({ visibility }: { visibility: string }) {
-  const v = VISIBILITY_LABEL[visibility] ?? VISIBILITY_LABEL.public;
+function VisibilityBadge({ visibility }: { visibility: CouponVisibility | null }) {
+  const v = visibilityBadge(visibility);
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${v.cls}`}>
       {v.label}
@@ -116,11 +113,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         </div>
       </td>
       <td className="px-4 py-3">
-        {/* getCouponMeta().visibility 가 이 태스크(#488 N3, P3)에서 CouponVisibility | null 로
-            넓어졌다. 이 화면의 VisibilityBadge/VISIBILITY_LABEL 은 아직 옛 사본이고(Task 4 가
-            lib/coupon-labels.ts 로 이전 예정), 그 옛 로직은 원래도 미지 값을 '공개' 로
-            폴백했으므로 여기서도 같은 폴백으로 표시 문구를 그대로 유지한다. */}
-        <VisibilityBadge visibility={visibility ?? 'public'} />
+        <VisibilityBadge visibility={visibility} />
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatCouponConditions(coupon)}

@@ -34,6 +34,16 @@ describe('오늘의 문구를 그대로 유지한다 — 이 태스크는 표시
     expect(VISIBILITY_DETAIL_LABEL.claimable).toBe('발급받기');
     expect(VISIBILITY_DETAIL_LABEL.assigned_only).toBe('발급 고객 전용');
   });
+
+  it('어휘 밖 값의 문구는 «알 수 없음» 이다 — 이 플랜이 만든 유일한 신규 문구', () => {
+    expect(UNKNOWN_VISIBILITY.label).toBe('알 수 없음');
+  });
+
+  it('생성 드롭다운은 설명까지 포함한 문구를 그대로 유지한다', () => {
+    expect(VISIBILITY_SELECT_LABEL.public).toBe('공개 — 모든 로그인 고객에게 노출');
+    expect(VISIBILITY_SELECT_LABEL.claimable).toBe('발급받기 — 고객이 직접 발급받아야 사용 가능');
+    expect(VISIBILITY_SELECT_LABEL.assigned_only).toBe('발급 고객 전용 — 관리자가 발급한 고객만 사용 가능');
+  });
 });
 
 describe('어휘 밖 값은 «공개» 로 렌더되지 않는다 — #488 N3 의 회귀 방어선', () => {
