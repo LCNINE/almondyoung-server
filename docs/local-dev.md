@@ -221,6 +221,23 @@ curl -X POST http://localhost:9000/store/carts/<cartId>/complete -H "authorizati
 wallet 의 쓰기 API 는 **전부 `Idempotency-Key` 헤더가 필수**고(없으면 400),
 `/v1/admin/*` 은 API 키가 아니라 **`accessToken` 쿠키**로 인증한다.
 
+### 6. Medusa HTTP 통합 스펙
+
+```bash
+scripts/local/run-medusa-integration.sh --testPathPattern 'coupon-'
+```
+
+`docker compose` 의 postgres 만 있으면 된다(Medusa 서버는 안 떠 있어도 된다 — 러너가 in-app 으로
+띄운다). 스펙마다 임시 DB 를 만들었다 지우므로 `medusa` DB 는 건드리지 않는다.
+
+**`npm run test:integration:http` 를 직접 부르지 말 것.** 러너는 `DATABASE_URL` 이 아니라
+`DB_HOST`/`DB_USERNAME`/`DB_PASSWORD`/`DB_PORT` 를 읽는데(`@medusajs/test-utils/dist/database.js:12-15`)
+`.env` 에 그 넷이 없어서 전 스펙이 `SASL: client password must be a string` 으로 죽는다 —
+스펙이 빨간 게 아니라 환경이 안 넘어간 것이다. 위 스크립트가 `DATABASE_URL` 에서 넷을 파생시켜 넘긴다.
+
+**CI 는 이걸 돌리지 않는다.** `medusa-unit-tests.yml` 은 DB 가 없어 `test:unit` 만 돌린다.
+쿠폰 도메인을 건드렸으면 **로컬에서 이 명령을 돌리는 것이 유일한 방어선이다.**
+
 ### 부팅 중 실제로 걸린 것들
 
 리허설 1차에서 막힌 지점. 같은 데서 또 막히지 않도록 남긴다.
