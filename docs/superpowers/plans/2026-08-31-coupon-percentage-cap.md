@@ -2035,3 +2035,47 @@ git commit -m "docs(coupon): P10-B 실행 기록 (#488 A4)"
   ② 🔴 **배송수단 되쓰기 경로는 이 플랜의 자동 테스트가 안 지난다.** 통합 스펙에 배송옵션 픽스처가 필요한데(fulfillment set → service zone → shipping option → price) **저장소의 어느 통합 스펙에도 그 픽스처가 없다**(2026-08-31 확인). 라인아이템 경로만 실행된다. 완화책 둘을 **Task 2 안에서** 밟을 것:
   - Task 2 Step 3 을 마친 직후 `node_modules/@medusajs/cart/dist/services/cart-module-service.js` 에서 `upsertShippingMethodAdjustments` 의 실제 구현을 읽어 **update 분기가 `id` 만으로 도는지, `shipping_method_id` 를 요구하는지**를 확인한다. 타입 선언(`(Create|Update)ShippingMethodAdjustmentDTO[]`)은 둘 다 받아들이게 생겨서 타입만으로는 안 갈린다.
   - **배송비 쿠폰 + 캡** 조합을 리허설 2차 항목에 명시적으로 넣는다(`target_type: shipping_methods` · `type: percentage` · 캡 설정 → 체크아웃에서 배송비 할인이 캡을 안 넘는지).
+
+---
+
+## 실행 기록 (2026-08-31)
+
+브랜치 `feat/coupon-percentage-cap`. 8개 태스크 전부 계획대로. **마이그레이션 0 · 시크릿 0 · env 0.**
+
+### 계획과 달라진 것 넷
+
+| # | 계획 | 실제 |
+|---|---|---|
+| ① | 자기리뷰 ②의 「`upsertShippingMethodAdjustments` 시그니처를 런타임 구현으로 확인」 | **했다.** `cart-module.js:335-358` 이 둘 다 제네릭 `upsert` 로 위임하고 `id` 유무로 create/update 를 가른다 → `{ id, … }` 만으로 update 가 돈다. **덤으로 `set*` 을 피한 판단이 확인됐다** — `setLineItemAdjustments_`(`:363-378`)는 목록에 없는 adjustment 를 **soft delete** 한다 |
+| ② | 백스톱은 HTTP 통합으로 못 덮을 수도 있다(자기리뷰) | **덮었다.** `validateCartPaymentsStep`(`:285`)이 백스톱(`:291`)보다 먼저 돌아 결제 세션을 요구하는데, 필요한 건 `POST /v1/payment-intents` **하나**뿐이라 20줄 스텁으로 충분했다(백스톱이 승인보다 먼저 던진다). `deferred-approval-checkout.spec.ts` 의 150줄 FakeWallet 복제는 불필요했다 |
+| ③ | 통합 스펙 = 5 suites / 51 tests | 맞다 (**42 → 51**, 신규 9) |
+| ④ | Medusa 유닛 = 29 suites / 254 tests | **29 / 256** — `format-promotion` 에 캡 테스트 2개가 더 들어갔다 |
+
+### 이번에 시간을 먹은 것 — 다음 사람에게
+
+**🔴 통합 스펙에서 포트를 상수로 박지 말 것.** wallet 스텁 포트를 `39118` 로 고정했더니, 앞 실행이
+jest 의 `Force exiting` 으로 끝나면서 리스너가 잠깐 살아남아 **다음 실행의 전 스펙(9개)이
+`EADDRINUSE` 로 죽었다.** 증상이 「hook 타임아웃 180초 × 9」라 원인이 포트로 보이지 않는다.
+`39100 + (process.pid % 400)` 으로 흩어 해결. 앱 부팅(=프로바이더 생성)보다 먼저 정해져야 하므로
+**모듈 로드 시점**에 계산해야 한다 — `beforeAll` 은 이미 늦다.
+
+**🔴 `web/almondyoung-storefront` 의 타입 기준선은 0 이 아니라 49 다.** CI 게이트가 0개라
+(`[[medusa-storefront-gate-topology]]`) 선재 에러가 쌓여 있다. `npx tsc --noEmit` 결과를
+「내가 깼다」로 읽지 말고 **`git stash` 후 기준선을 먼저 재라.** 이 작업의 기여분은 0 이었다.
+
+**storefront 에는 vitest 가 있다**(`npm test`, `src/**/*.test.ts`, 23 files / 212 tests).
+`web/**` 이 CI 게이트 0개인 것과 「테스트를 못 쓴다」는 다른 이야기다 — 순수 함수를 뽑으면 검증된다.
+
+### 최종 게이트
+
+| 게이트 | 기준선 → 결과 |
+|---|---|
+| 루트 `type-check` | 0 → **0** |
+| Medusa 유닛 | 28 suites / 243 → **29 / 256** |
+| Medusa 타입 | 선재 3 → **선재 3** |
+| 쿠폰 통합(실 DB, HTTP) | 4 suites / 42 → **5 / 51** |
+| admin-web 유닛 | → **92 suites / 767** |
+| admin-web 타입 | 0 → **0** |
+| storefront vitest | → **23 files / 212** |
+| storefront 타입 | 49(선재) → **49** |
+| 어휘 드리프트 | → **4 suites / 24** |
