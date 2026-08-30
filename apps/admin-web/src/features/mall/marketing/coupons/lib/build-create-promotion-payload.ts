@@ -110,7 +110,12 @@ export function buildCreatePromotionPayload(
       // 엔진이 campaign.budget.currency_code 와 application_method.currency_code 일치를
       // 요구한다(@medusajs/promotion promotion-module.js 의 SPEND 분기) — 안 실으면 400.
       ...(form.discountType === 'fixed' || form.spendLimit ? { currency_code: 'krw' } : {}),
-      ...(form.targetType === 'items' ? { allocation: 'across' as const } : {}),
+      // 엔진은 target_type 이 items·shipping_methods 일 때 allocation 을 요구한다
+      // (없으면 400). `across` 가 유일한 선택지다 — each·once 는 max_quantity 를 추가로
+      // 요구하는데 그 입력란이 폼에 없다(#488 N5 의 미개봉 축). 입력란이 생기면 선택지가 열린다.
+      ...(form.targetType === 'items' || form.targetType === 'shipping_methods'
+        ? { allocation: 'across' as const }
+        : {}),
       ...(target_rules ? { target_rules } : {}),
     },
     ...(hasCampaign

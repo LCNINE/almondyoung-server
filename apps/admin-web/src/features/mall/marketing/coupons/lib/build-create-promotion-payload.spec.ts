@@ -141,3 +141,26 @@ describe('spend budget 과 application_method.currency_code 정합', () => {
     expect(p.application_method.currency_code).toBeUndefined();
   });
 });
+
+// Medusa 는 target_type 이 items·shipping_methods 일 때 allocation 을 요구한다
+// (없으면 400 invalid_data). 이 축에 테스트가 하나도 없어서 배송비 쿠폰이 생성
+// 불가인 채로 살아남았다 — 리허설 1차가 실측으로 잡았다(#488 F1).
+describe('application_method.allocation', () => {
+  it('배송비 대상에도 allocation 을 싣는다 (F1 회귀 방지)', () => {
+    const p = buildCreatePromotionPayload({ ...base, targetType: 'shipping_methods' }, opts);
+    expect(p.application_method.allocation).toBe('across');
+  });
+
+  it('상품 대상에는 계속 allocation 을 싣는다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, targetType: 'items', targetItemIds: ['prod_1'] },
+      opts,
+    );
+    expect(p.application_method.allocation).toBe('across');
+  });
+
+  it('전체 주문 대상에는 allocation 을 싣지 않는다', () => {
+    const p = buildCreatePromotionPayload({ ...base, targetType: 'order' }, opts);
+    expect(p.application_method.allocation).toBeUndefined();
+  });
+});
