@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { createPromotionsWorkflow } from '@medusajs/core-flows';
 import jwt from 'jsonwebtoken';
 import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 
@@ -243,6 +244,42 @@ medusaIntegrationTestRunner({
 
       await api.delete(`/admin/promotions/${promoId}`, adminHeaders);
       expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(false);
+    });
+
+    it('메타 쓰기가 실패하면 프로모션이 롤백된다 (N7 — 워크플로 안으로 옮긴 이유)', async () => {
+      const container = getContainer();
+      const code = `ROLLBACK${seq}`;
+
+      // HTTP validator 를 우회해 워크플로를 직접 돌린다 — 훅 안의 쓰기가 던졌을 때 앞 스텝이
+      // 보상되는가만 본다. `visibility` 어휘 밖 값은 모듈 서비스 upsert 가 던진다.
+      //
+      // ⚠️ `.rejects.toThrow()` 를 쓰지 말 것. 워크플로 엔진을 거친 에러는 프로토타입을 잃어
+      // **Error 인스턴스가 아닌 평범한 객체**로 온다(2026-08-31 실측: `instanceof Error === false`).
+      // 그러면 jest 의 toThrow 가 「Received function did not throw」라는 엉뚱한 메시지로 실패해,
+      // 롤백이 실제로 동작하는데도 구현 버그처럼 보인다.
+      let caught: unknown = null;
+      try {
+        await createPromotionsWorkflow(container).run({
+          input: {
+            promotionsData: [
+              {
+                code,
+                type: 'standard',
+                status: 'active',
+                application_method: { type: 'percentage', value: 10, target_type: 'order' },
+              },
+            ],
+            additional_data: { visibility: 'bogus_value' },
+          },
+        } as any);
+      } catch (e) {
+        caught = e;
+      }
+      expect((caught as { message?: string } | null)?.message).toContain('Invalid visibility value');
+
+      // 프로모션이 남아 있으면 안 된다. 남으면 그게 바로 «전체공개 활성 쿠폰» 이다.
+      const promotionModule = container.resolve(Modules.PROMOTION);
+      expect(await promotionModule.listPromotions({ code })).toHaveLength(0);
     });
   },
 });
