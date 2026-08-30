@@ -14,7 +14,15 @@ export const PROMOTION_FIELDS = [
   'rules.id', 'rules.attribute', 'rules.operator', 'rules.values.value',
 ];
 
-const META_KEYS = [
+/**
+ * `additional_data` ↔ `promotion_meta` 사이를 오가는 키 전부.
+ *
+ * ⚠️ 이 배열은 **`additional-data-schema.ts` 의 검증 스키마와 같은 집합**이어야 한다.
+ * 프레임워크가 검증기를 `z.object(shape)` 로 감싸는데 그 기본이 **strip** 이라, 스키마에 없는
+ * 키는 400 이 아니라 **조용히 버려져** 훅까지 도달하지 못한다(2026-08-31 실측). 그 정합은
+ * `__tests__/additional-data-schema.unit.spec.ts` 가 지킨다.
+ */
+export const META_KEYS = [
   'name',
   'max_discount_amount',
   'created_by',
