@@ -179,7 +179,8 @@
     "test:payment:watch": "jest --testPathPattern=payment.*spec.ts --watch",
     "test:user": "npm run test:user-service",
     "test:user-service": "jest --config ./apps/user-service/jest.config.js",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "db:seed:user-service:local": "npx tsx scripts/local/seed-user-service-local.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.876.0",
