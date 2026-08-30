@@ -486,11 +486,20 @@ const DirectCouponInput = ({
     return td("errors.UNKNOWN")
   })()
 
-  const discountLabel = preview?.promotion?.discount
-    ? preview.promotion.discount.type === "percentage"
-      ? `${preview.promotion.discount.value}%${td("discountSuffix")}`
-      : `${formatPrice(preview.promotion.discount.value)}원${td("discountSuffix")}`
-    : null
+  const previewDiscount = preview?.promotion?.discount
+  const discountLabel = (() => {
+    if (!previewDiscount) return null
+    const base =
+      previewDiscount.type === "percentage"
+        ? `${previewDiscount.value}%${td("discountSuffix")}`
+        : `${formatPrice(previewDiscount.value)}원${td("discountSuffix")}`
+    // 직접 입력으로 코드를 넣은 고객도 상한을 여기서 알아야 한다 (#488 A4).
+    return shouldShowCap(previewDiscount, previewDiscount.max_discount_amount)
+      ? `${base} (${t("maxCap", {
+          amount: formatPrice(previewDiscount.max_discount_amount as number),
+        })})`
+      : base
+  })()
 
   return (
     <div className="flex flex-col gap-2">
