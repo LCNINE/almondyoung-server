@@ -190,5 +190,33 @@ medusaIntegrationTestRunner({
       const again = await api.post(`/store/carts/${cart.id}`, { email: 'idem@cap.test' }, storeHeaders);
       expect(again.data.cart.discount_total).toBe(3000);
     });
+
+    it('POST /store/carts/:id/promotions 로 붙여도 캡이 걸린다 (코어 라우트 자리)', async () => {
+      seq++;
+      await createCappedPromo(`CAP_ROUTE_${seq}`, 50, 3000);
+      const cart = await newCart(5);
+      const res = await api.post(
+        `/store/carts/${cart.id}/promotions`,
+        { promo_codes: [`CAP_ROUTE_${seq}`] },
+        storeHeaders,
+      );
+      expect(res.data.cart.discount_total).toBe(3000);
+    });
+
+    it('DELETE /store/carts/:id/promotions 는 쿠폰을 떼고 할인을 0 으로 돌린다', async () => {
+      seq++;
+      await createCappedPromo(`CAP_DEL_${seq}`, 50, 3000);
+      const cart = await newCart(5);
+      await api.post(
+        `/store/carts/${cart.id}/promotions`,
+        { promo_codes: [`CAP_DEL_${seq}`] },
+        storeHeaders,
+      );
+      const res = await api.delete(`/store/carts/${cart.id}/promotions`, {
+        ...storeHeaders,
+        data: { promo_codes: [`CAP_DEL_${seq}`] },
+      });
+      expect(res.data.cart.discount_total).toBe(0);
+    });
   },
 });
