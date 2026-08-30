@@ -7,3 +7,4 @@
 export * from './channel-adapter.types';
 export * from './medusa-inventory-projection';
 export * from './listing-resolution-cause';
+export * from './coupon-visibility';

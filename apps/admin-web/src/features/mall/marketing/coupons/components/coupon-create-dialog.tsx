@@ -36,7 +36,9 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils/cn';
 import { useDebounced } from '@/hooks/use-debounced';
-import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../coupon-helpers';
+import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../lib/coupon-meta';
+import { VISIBILITY_SELECT_LABEL } from '../lib/coupon-labels';
+import { COUPON_VISIBILITIES, type CouponVisibility } from '@packages/domain-types';
 import { buildCreatePromotionPayload, type TargetAttribute } from '../lib/build-create-promotion-payload';
 
 function generateCode() {
@@ -166,7 +168,7 @@ export function CouponCreateDialog({
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
   const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
   const [maxClaims, setMaxClaims] = useState<number | ''>('');
-  const [visibility, setVisibility] = useState<'public' | 'claimable' | 'assigned_only'>('public');
+  const [visibility, setVisibility] = useState<CouponVisibility>('public');
   const [autoIssueTrigger, setAutoIssueTrigger] = useState<AutoIssueTrigger | ''>('');
   const [customerGroupIds, setCustomerGroupIds] = useState<string[]>([]);
   const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping_methods'>('order');
@@ -483,14 +485,14 @@ export function CouponCreateDialog({
 
           <div className="space-y-2">
             <Label>발급 방식</Label>
-            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'claimable' | 'assigned_only')}>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as CouponVisibility)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="public">공개 — 모든 로그인 고객에게 노출</SelectItem>
-                <SelectItem value="claimable">발급받기 — 고객이 직접 발급받아야 사용 가능</SelectItem>
-                <SelectItem value="assigned_only">발급 고객 전용 — 관리자가 발급한 고객만 사용 가능</SelectItem>
+                {COUPON_VISIBILITIES.map((v) => (
+                  <SelectItem key={v} value={v}>{VISIBILITY_SELECT_LABEL[v]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {visibility === 'claimable' && (

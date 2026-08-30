@@ -26,7 +26,10 @@ import { CouponDetailDialog } from '../components/coupon-detail-dialog';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
-import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
+import { formatPeriod, StatusBadge } from '../coupon-helpers';
+import { getCouponMeta } from '../lib/coupon-meta';
+import { visibilityBadge } from '../lib/coupon-labels';
+import type { CouponVisibility } from '@packages/domain-types';
 import { formatCouponConditions } from '../lib/format-coupon-conditions';
 import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
@@ -41,14 +44,8 @@ function formatDiscount(coupon: MedusaPromotion) {
   return `${m.value.toLocaleString('ko-KR')}원`;
 }
 
-const VISIBILITY_LABEL: Record<string, { label: string; cls: string }> = {
-  public: { label: '공개', cls: 'bg-slate-100 text-slate-600' },
-  claimable: { label: '발급받기', cls: 'bg-blue-100 text-blue-700' },
-  assigned_only: { label: '지정발급', cls: 'bg-purple-100 text-purple-700' },
-};
-
-function VisibilityBadge({ visibility }: { visibility: string }) {
-  const v = VISIBILITY_LABEL[visibility] ?? VISIBILITY_LABEL.public;
+function VisibilityBadge({ visibility }: { visibility: CouponVisibility | null }) {
+  const v = visibilityBadge(visibility);
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${v.cls}`}>
       {v.label}

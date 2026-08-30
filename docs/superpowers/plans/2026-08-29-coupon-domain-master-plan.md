@@ -36,7 +36,7 @@
 |---|---|---|---|
 | **P1** 생성 페이로드 매퍼 + 한도 조합 해금 | `1-2` | admin-web | ✅ **머지됨** — PR #759, `develop` `5ce6ec7a8` |
 | **P2** 스토어 응답 `metadata` 정리 | `N2` | medusa | `2026-08-30-coupon-store-metadata-cleanup.md` ✅ 실행됨 |
-| **P3** `visibility` 타입 단일화 | `N3` → `7-3` | admin-web → `@packages` | 미작성 |
+| **P3** `visibility` 타입 단일화 | `N3` (+ `7-3` 의 어휘 축) | `@packages` → admin-web | `2026-08-30-coupon-visibility-vocabulary.md` ✅ 실행됨 |
 
 셋 다 되돌리기 쉽고 서로 파일이 겹치지 않는다. **먼저 하는 이유는 쉬워서가 아니라, P4 전에 페이로드·타입 표면을 정리해 두면 P4 의 리뷰 면적이 줄기 때문이다.**
 
@@ -159,8 +159,8 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
 - [x] P1 플랜 작성 — `2026-08-29-coupon-limit-combination.md`
 - [x] **P1 실행·머지 (2026-08-29, PR #759)** — 잔여 R1~R5 는 #488 «2026-08-29 실행 기록» 절
 - [x] **P2 플랜 작성·실행 (2026-08-30)** — `2026-08-30-coupon-store-metadata-cleanup.md`
-- [ ] P3 플랜 작성 및 실행  ← **다음 차례**
-- [ ] 리허설 1차
+- [x] **P3 플랜 작성·실행 (2026-08-30)** — `2026-08-30-coupon-visibility-vocabulary.md`. `visibility` 는 `@packages/domain-types` 공유 타입으로, 트리거는 ADR-0033 §7 의 결정대로 사본 유지 + **두 축 모두 드리프트 가드로 덮음**. medusa·storefront 는 의도적으로 import 하지 않는다(근거는 플랜 본문)
+- [ ] 리허설 1차  ← **다음 차례**
 - [ ] P4 플랜 작성 및 실행
 - [ ] 1-5 설계 결정 → P7 플랜 작성
 - [ ] A4 · 1-6 결정
