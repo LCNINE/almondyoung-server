@@ -284,5 +284,26 @@ medusaIntegrationTestRunner({
         api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [`gatelow_${seq}`] }, custHeaders),
       ).rejects.toMatchObject({ response: { status: 400, data: { message: 'COUPON_NOT_ASSIGNED' } } });
     });
+
+    it('gate: 메타 행이 아예 없는 쿠폰은 «공개» 가 아니라 차단된다 (#488 N7 닫힌 기본값)', async () => {
+      seq++;
+      // additional_data 를 통째로 생략하면 검증기를 통과하고 promotion_meta 가 0행이 된다
+      // (프레임워크가 z.object(shape).nullish() 로 감싸므로 객체 자체는 선택이다 — 실측).
+      // 옛 기본값 'public' 이면 이 쿠폰은 아무나 쓸 수 있었다.
+      const code = `NOMETA_${seq}`;
+      await api.post(
+        '/admin/promotions',
+        {
+          code, type: 'standard', is_automatic: false, status: 'active',
+          application_method: { type: 'percentage', value: 50, target_type: 'order', currency_code: 'krw' },
+        },
+        adminHeaders,
+      );
+
+      const { cartId, custHeaders } = await newCustomerCart();
+      await expect(
+        api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [code] }, custHeaders),
+      ).rejects.toMatchObject({ response: { status: 400, data: { message: 'COUPON_NOT_ASSIGNED' } } });
+    });
   },
 });
