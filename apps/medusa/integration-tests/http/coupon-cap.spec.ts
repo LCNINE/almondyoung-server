@@ -24,7 +24,11 @@ jest.setTimeout(180 * 1000);
  * 던지므로 `authorizePayment` 는 영원히 안 불린다. `deferred-approval-checkout.spec.ts` 의
  * 완전한 FakeWallet 을 복제하지 않는 이유다.
  */
-const WALLET_PORT = 39118;
+// 🔴 포트를 상수로 박으면 안 된다. jest 가 "Force exiting" 으로 끝나면 앞 실행의 리스너가
+// 잠깐 살아남아 다음 실행이 EADDRINUSE 로 **전 스펙** 실패한다(실측). pid 로 흩어 놓으면
+// 죽은 프로세스의 포트를 다시 잡을 일이 없다. 이 값은 앱 부팅(=프로바이더 생성)보다 먼저
+// 정해져야 하므로 모듈 로드 시점에 계산한다 — beforeAll 은 이미 늦다.
+const WALLET_PORT = 39100 + (process.pid % 400);
 const WALLET_BASE_URL = `http://127.0.0.1:${WALLET_PORT}`;
 process.env.WALLET_BASE_URL = WALLET_BASE_URL;
 process.env.WALLET_API_KEY = 'test-wallet-key';
@@ -33,7 +37,7 @@ let walletStub: Server | undefined;
 let intentSeq = 0;
 
 const startWalletStub = () =>
-  new Promise<void>((resolve) => {
+  new Promise<void>((resolve, reject) => {
     walletStub = createServer((req, res) => {
       if (req.method === 'POST' && (req.url ?? '').startsWith('/v1/payment-intents')) {
         intentSeq += 1;
@@ -44,6 +48,7 @@ const startWalletStub = () =>
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ message: 'not stubbed' }));
     });
+    walletStub.once('error', reject);
     walletStub.listen(WALLET_PORT, '127.0.0.1', resolve);
   });
 

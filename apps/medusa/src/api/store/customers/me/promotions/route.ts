@@ -123,12 +123,21 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const visibilityById = new Map<string, string>(
     metas.map((m: any) => [m.promotion_id, resolveVisibility(m) as string])
   );
+  // 정률 캡(#488 A4)도 같은 메타 조회에서 나온다 — 프로모션마다 재조회하지 않는다.
+  const maxDiscountById = new Map<string, number>(
+    metas
+      .filter((m: any) => m.max_discount_amount != null && Number.isFinite(Number(m.max_discount_amount)))
+      .map((m: any) => [m.promotion_id, Number(m.max_discount_amount)])
+  );
   // 메타 행이 아예 없는 프로모션은 맵에 키가 없다 → 닫힌 기본값으로 떨어진다(#488 N7).
   const visibilityOf = (promotionId: string): string =>
     visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   const format = (promo: any, isAssigned: boolean) =>
-    formatPromotion(promo, isAssigned, visibilityOf(promo.id));
+    formatPromotion(promo, isAssigned, {
+      visibility: visibilityOf(promo.id),
+      maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
+    });
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metas.find((r: any) => r.promotion_id === promotionId);
