@@ -281,5 +281,44 @@ medusaIntegrationTestRunner({
       const promotionModule = container.resolve(Modules.PROMOTION);
       expect(await promotionModule.listPromotions({ code })).toHaveLength(0);
     });
+
+    it('어휘 밖 visibility 는 400 이고 프로모션이 남지 않는다 (N7 회귀)', async () => {
+      const code = `BADVIS${seq}`;
+      const err = await api
+        .post(
+          '/admin/promotions',
+          {
+            code,
+            type: 'standard',
+            is_automatic: false,
+            status: 'active',
+            application_method: { type: 'percentage', value: 10, target_type: 'order' },
+            additional_data: { visibility: 'bogus_value' },
+          },
+          adminHeaders,
+        )
+        .catch((e: any) => e);
+
+      expect(err.response.status).toEqual(400);
+
+      const promotionModule = getContainer().resolve(Modules.PROMOTION);
+      expect(await promotionModule.listPromotions({ code })).toHaveLength(0);
+    });
+
+    it('상태 토글은 additional_data 없이도 200 이고 메타를 지우지 않는다', async () => {
+      const id = await createPromo(`TOGGLE${seq}`, {
+        visibility: 'assigned_only',
+        name: '토글 대상',
+      });
+
+      const res = await api.post(`/admin/promotions/${id}`, { status: 'inactive' }, adminHeaders);
+      expect(res.status).toEqual(200);
+
+      const detail = await api.get(`/admin/promotions/${id}`, adminHeaders);
+      expect(detail.data.promotion.metadata).toMatchObject({
+        visibility: 'assigned_only',
+        name: '토글 대상',
+      });
+    });
   },
 });

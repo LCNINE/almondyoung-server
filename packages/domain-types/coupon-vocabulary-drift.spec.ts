@@ -62,6 +62,11 @@ const VISIBILITY_SITES: Site[] = [
     anchor: /\[([^\]]*)\]\.includes\(data\.visibility\)/,
   },
   {
+    name: 'medusa additional_data zod enum (visibility)',
+    path: 'apps/medusa/src/api/admin/promotions/additional-data-schema.ts',
+    anchor: /const visibility = z\.enum\(\[([^\]]*)\]\)/,
+  },
+  {
     name: 'DB CHECK 제약 (Migration20260526140000)',
     path: 'apps/medusa/src/modules/promotion-meta/migrations/Migration20260526140000.ts',
     anchor: /visibility IN \(([^)]*)\)/,
@@ -74,6 +79,11 @@ const VISIBILITY_SITES: Site[] = [
 ];
 
 const TRIGGER_SITES: Site[] = [
+  {
+    name: 'medusa additional_data zod enum (auto_issue_trigger)',
+    path: 'apps/medusa/src/api/admin/promotions/additional-data-schema.ts',
+    anchor: /const autoIssueTrigger = z\.enum\(\[([^\]]*)\]\)/,
+  },
   {
     name: 'medusa AutoIssueTrigger 타입',
     path: 'apps/medusa/src/modules/promotion-meta/service.ts',
