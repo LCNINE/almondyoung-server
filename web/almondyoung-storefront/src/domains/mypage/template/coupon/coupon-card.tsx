@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { shouldShowCap } from "@/lib/utils/coupon-discount"
 import { Copy, Check } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
@@ -79,6 +80,17 @@ export function CouponCard({
           <span className={`mt-1 text-xs ${expired ? "text-stone-400" : "text-amber-600/70"}`}>
             {t("discount")}
           </span>
+          {shouldShowCap(promo.application_method, promo.max_discount_amount) && (
+            <span
+              className={`mt-0.5 text-[10px] leading-tight ${
+                expired ? "text-stone-400" : "text-amber-600/70"
+              }`}
+            >
+              {t("maxCap", {
+                amount: formatPrice(promo.max_discount_amount as number),
+              })}
+            </span>
+          )}
         </div>
 
         <div className="flex flex-1 items-center justify-between gap-2 px-4 py-4">

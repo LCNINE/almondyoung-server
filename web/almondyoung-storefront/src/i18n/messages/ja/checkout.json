@@ -248,7 +248,8 @@
       "couponRemoveFailed": "クーポンの削除に失敗しました。しばらくしてから再度お試しください。",
       "claimAndApplyFailed": "クーポンの発行に失敗しました。しばらくしてから再度お試しください。",
       "claimSuccessApplyFailed": "クーポンは発行されましたが、現在のカートに適用できませんでした。クーポン一覧でご確認のうえご利用ください。"
-    }
+    },
+    "maxCap": "最大{amount}ウォン"
   },
   "paymentTotal": {
     "title": "決済情報",

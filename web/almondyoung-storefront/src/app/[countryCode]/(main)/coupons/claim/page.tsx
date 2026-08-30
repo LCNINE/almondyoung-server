@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server"
 import { previewCouponCode, type CouponPreviewResult } from "@/lib/api/medusa/store"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { CouponClaimButton, type CouponClaimState } from "./_components/coupon-claim-button"
+import { shouldShowCap } from "@/lib/utils/coupon-discount"
 
 interface PageProps {
   params: Promise<{ countryCode: string }>
@@ -78,11 +79,18 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
   const { promotion } = result
   const { discount, expires_at } = promotion
 
-  const discountLabel = discount
+  const discountBase = discount
     ? discount.type === "percentage"
       ? t("discountPercent", { value: discount.value })
       : t("discountAmount", { amount: discount.value.toLocaleString("ko-KR") })
     : null
+  // 쿠폰을 «받는» 자리다 — 상한을 여기서 안 보여주면 받고 나서야 알게 된다 (#488 A4).
+  const discountLabel =
+    discountBase && shouldShowCap(discount, discount?.max_discount_amount)
+      ? `${discountBase} (${t("maxCap", {
+          amount: (discount?.max_discount_amount as number).toLocaleString("ko-KR"),
+        })})`
+      : discountBase
 
   const expiryLabel = expires_at
     ? t("expiresAt", { date: formatDate(expires_at, DATE_FORMATS.KO_DOT) })

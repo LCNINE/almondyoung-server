@@ -24,5 +24,6 @@
     "claimSuccess": "Coupon claimed!",
     "claimFailed": "Failed to claim coupon. Please try again later.",
     "groupRestricted": "This coupon is only available to eligible customers."
-  }
+  },
+  "maxCap": "up to {amount} KRW"
 }
