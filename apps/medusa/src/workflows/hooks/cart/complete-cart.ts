@@ -5,6 +5,7 @@ import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { requiresIssuance } from '../../../api/admin/promotions/helpers';
+import { findPromotionCapViolations } from './enforce-promotion-cap';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
@@ -45,6 +46,22 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
         }
       }
     }
+  }
+
+  // 정률 쿠폰 최대 할인금액 백스톱 (#488 A4 / P10-B).
+  //
+  // 정상 경로(카트 생성·수정·프로모션 라우트)는 전부 캡을 걸고 지나간다. 여기가 켜진다는 것은
+  // Medusa 업그레이드가 재계산 경로를 옮겼거나 누군가 adjustment 를 직접 건드렸다는 뜻이다.
+  //
+  // ⚠️ **여기서 고치지 않는다.** 이 시점엔 결제 컬렉션 금액이 이미 잡혀 있어, 할인을 줄이면
+  // 주문 총액이 올라가 승인된 결제액과 어긋난다("덜 받고 출고"). 막는 쪽이 옳다 —
+  // 최악이 "이 경로로는 쿠폰이 안 먹는다"가 되고 "돈이 나갔다"가 되지 않는다.
+  const capViolations = await findPromotionCapViolations(container, cart.id);
+  if (capViolations.length) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      '쿠폰 할인 한도가 초과되었습니다. 장바구니를 새로고침한 뒤 다시 시도해주세요.',
+    );
   }
 
   // cart.email이 없고 customer_id가 있으면 customer.email로 자동 채우기

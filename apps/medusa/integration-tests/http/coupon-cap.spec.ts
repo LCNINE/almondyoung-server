@@ -1,5 +1,6 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { createServer, Server } from 'http';
 import jwt from 'jsonwebtoken';
 import {
   createRegionsWorkflow,
@@ -11,6 +12,46 @@ import {
 import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 
 jest.setTimeout(180 * 1000);
+
+/**
+ * 백스톱 테스트 하나만을 위한 **최소** wallet 스텁.
+ *
+ * `completeCartWorkflow` 는 `validateCartPaymentsStep`(`complete-cart.js:285`)에서 결제 세션을
+ * 요구하고, 그건 우리 백스톱 훅(`:291`)보다 **먼저** 돈다. 세션을 만들려면 결제 프로바이더의
+ * `initiatePayment` 가 성공해야 하는데 그게 wallet 을 부른다.
+ *
+ * 필요한 것은 `POST /v1/payment-intents` **하나**다 — 백스톱이 그보다 뒤·승인보다 앞에서
+ * 던지므로 `authorizePayment` 는 영원히 안 불린다. `deferred-approval-checkout.spec.ts` 의
+ * 완전한 FakeWallet 을 복제하지 않는 이유다.
+ */
+const WALLET_PORT = 39118;
+const WALLET_BASE_URL = `http://127.0.0.1:${WALLET_PORT}`;
+process.env.WALLET_BASE_URL = WALLET_BASE_URL;
+process.env.WALLET_API_KEY = 'test-wallet-key';
+
+let walletStub: Server | undefined;
+let intentSeq = 0;
+
+const startWalletStub = () =>
+  new Promise<void>((resolve) => {
+    walletStub = createServer((req, res) => {
+      if (req.method === 'POST' && (req.url ?? '').startsWith('/v1/payment-intents')) {
+        intentSeq += 1;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ id: `pi_cap_${intentSeq}`, status: 'REQUIRES_ACTION' }));
+        return;
+      }
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: 'not stubbed' }));
+    });
+    walletStub.listen(WALLET_PORT, '127.0.0.1', resolve);
+  });
+
+const stopWalletStub = () =>
+  new Promise<void>((resolve) => {
+    if (!walletStub) return resolve();
+    walletStub.close(() => resolve());
+  });
 
 /**
  * #488 A4 / P10-B — 정률 쿠폰 최대 할인금액이 **실제로 강제되는가**.
@@ -30,7 +71,13 @@ medusaIntegrationTestRunner({
     let variantId: string;
     let seq = 0;
 
+    afterAll(async () => {
+      await stopWalletStub();
+    });
+
     beforeAll(async () => {
+      await startWalletStub();
+
       const container = getContainer();
       const config = container.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
       const secret = config.projectConfig.http.jwtSecret;
@@ -217,6 +264,54 @@ medusaIntegrationTestRunner({
         data: { promo_codes: [`CAP_DEL_${seq}`] },
       });
       expect(res.data.cart.discount_total).toBe(0);
+    });
+
+    it('백스톱: 캡을 넘은 카트는 주문이 만들어지지 않는다', async () => {
+      seq++;
+      await createCappedPromo(`CAP_BACKSTOP_${seq}`, 50, 3000);
+      const cart = await newCart(5);
+      await api.post(
+        `/store/carts/${cart.id}`,
+        { promo_codes: [`CAP_BACKSTOP_${seq}`], email: 'backstop@cap.test' },
+        storeHeaders,
+      );
+
+      // 캡을 우회한 상태를 인위적으로 만든다 — adjustment 를 캡 이전 금액으로 되돌린다.
+      // 정상 경로로는 이 상태를 만들 수 없으므로(그게 이 플랜의 요점) 직접 심는다.
+      const container = getContainer();
+      const query = container.resolve(ContainerRegistrationKeys.QUERY);
+      const { data: carts } = await query.graph({
+        entity: 'cart',
+        fields: ['id', 'items.id', 'items.adjustments.id'],
+        filters: { id: cart.id },
+      });
+      const item = (carts[0] as any).items[0];
+      const cartModule: any = container.resolve(Modules.CART);
+      await cartModule.upsertLineItemAdjustments([
+        { id: item.adjustments[0].id, item_id: item.id, amount: 25000 },
+      ]);
+
+      // 백스톱(`complete-cart.js:291`)보다 앞선 `validateCartPaymentsStep`(`:285`)을 통과시킨다.
+      // 배송도 마찬가지 이유로 비활성화 — 이 테스트의 대상은 캡 검사이지 체크아웃 전체가 아니다.
+      const cartRow = await cartModule.retrieveCart(cart.id, { relations: ['items'] });
+      await cartModule.updateLineItems(
+        (cartRow.items ?? []).map((line: any) => ({ id: line.id, requires_shipping: false })),
+      );
+      const pcRes = await api.post('/store/payment-collections', { cart_id: cart.id }, storeHeaders);
+      await api.post(
+        `/store/payment-collections/${pcRes.data.payment_collection.id}/payment-sessions`,
+        { provider_id: 'pp_almond-payment_almond-payment' },
+        storeHeaders,
+      );
+
+      // 🔴 워크플로 엔진을 거친 에러는 Error 인스턴스가 아니다 — .rejects.toThrow() 를 쓰지 말 것.
+      let message = '';
+      try {
+        await api.post(`/store/carts/${cart.id}/complete`, {}, storeHeaders);
+      } catch (error: any) {
+        message = error?.response?.data?.message ?? error?.message ?? '';
+      }
+      expect(message).toContain('쿠폰 할인 한도');
     });
   },
 });
