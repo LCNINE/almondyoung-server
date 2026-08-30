@@ -161,6 +161,7 @@ export function CouponCreateDialog({
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [value, setValue] = useState<number | ''>('');
+  const [maxDiscountAmount, setMaxDiscountAmount] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
@@ -193,7 +194,7 @@ export function CouponCreateDialog({
     try {
       const payload = buildCreatePromotionPayload(
         {
-          code, name, discountType, value: value as number,
+          code, name, discountType, value: value as number, maxDiscountAmount,
           targetType, targetAttribute,
           targetItemIds: targetItems.map((i) => i.id),
           minOrderAmount, customerGroupIds, startsAt, endsAt,
@@ -218,6 +219,7 @@ export function CouponCreateDialog({
     setCode('');
     setDiscountType('percentage');
     setValue('');
+    setMaxDiscountAmount('');
     setStartsAt('');
     setEndsAt('');
     setMinOrderAmount('');
@@ -308,6 +310,24 @@ export function CouponCreateDialog({
               />
             </div>
           </div>
+
+          {discountType === 'percentage' && (
+            <div className="space-y-2">
+              <Label>최대 할인금액 (원)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={maxDiscountAmount}
+                onChange={(e) => setMaxDiscountAmount(e.target.value ? Number(e.target.value) : '')}
+                placeholder="예: 30000 (비우면 상한 없음)"
+              />
+              <p className="text-xs text-muted-foreground">
+                {maxDiscountAmount
+                  ? `장바구니가 아무리 커도 이 쿠폰의 할인은 ${maxDiscountAmount.toLocaleString('ko-KR')}원을 넘지 않습니다.`
+                  : '비워두면 상한이 없습니다. 「10% 최대 3만원」처럼 정률 할인의 상한을 정합니다.'}
+              </p>
+            </div>
+          )}
 
 
           <div className="space-y-2">
