@@ -4,7 +4,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
-import { toMetadataShape } from '../../../api/admin/promotions/helpers';
+import { requiresIssuance } from '../../../api/admin/promotions/helpers';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
@@ -28,9 +28,9 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
 
     for (const promo of cartPromos) {
       const meta = await promotionMetaService.getByPromotionId(promo.id);
-      const metaShape = toMetadataShape(meta);
 
-      if (metaShape?.visibility === 'assigned_only' || metaShape?.visibility === 'claimable') {
+      // 메타가 없으면 «발급 필요» 다(닫힌 기본값 — #488 N7). 옛 코드는 undefined 라 백스톱도 통과했다.
+      if (requiresIssuance(meta)) {
         if (!cart.customer_id) {
           throw new MedusaError(MedusaError.Types.INVALID_DATA, '이 쿠폰은 발급된 고객만 사용할 수 있습니다.');
         }

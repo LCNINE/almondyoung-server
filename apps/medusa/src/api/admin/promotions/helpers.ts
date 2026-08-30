@@ -14,7 +14,15 @@ export const PROMOTION_FIELDS = [
   'rules.id', 'rules.attribute', 'rules.operator', 'rules.values.value',
 ];
 
-const META_KEYS = [
+/**
+ * `additional_data` ↔ `promotion_meta` 사이를 오가는 키 전부.
+ *
+ * ⚠️ 이 배열은 **`additional-data-schema.ts` 의 검증 스키마와 같은 집합**이어야 한다.
+ * 프레임워크가 검증기를 `z.object(shape)` 로 감싸는데 그 기본이 **strip** 이라, 스키마에 없는
+ * 키는 400 이 아니라 **조용히 버려져** 훅까지 도달하지 못한다(2026-08-31 실측). 그 정합은
+ * `__tests__/additional-data-schema.unit.spec.ts` 가 지킨다.
+ */
+export const META_KEYS = [
   'name',
   'max_discount_amount',
   'created_by',
@@ -46,6 +54,51 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   // 읽기 전용 발급 카운터 — 관리자 발급 현황 표시용(클라 write 대상 아님)
   if (record.issued_count != null) result.issued_count = record.issued_count;
   return Object.keys(result).length > 0 ? result : null;
+}
+
+/**
+ * `promotion_meta` **행이 없을 때** 의 `visibility`.
+ *
+ * 오늘 이 자리의 기본값은 전부 `'public'` 이었고, 그것이 #488 `N7` 의 손해를 키웠다 —
+ * 메타 쓰기가 실패해 행이 안 남으면 「발급받은 사람만」 쿠폰이 **아무나 쓰는 쿠폰**이 됐다.
+ * 검증기(`additional-data-schema.ts`)를 걸어도 `additional_data` **객체 자체를 생략**하면
+ * 메타 0행 쿠폰은 계속 만들어진다(2026-08-31 실측) — 그 구멍을 막는 것이 이 상수다.
+ *
+ * 부수 효과는 의도한 것이다: 네이티브 Medusa 대시보드(`/app/promotions`)로 만든 쿠폰은
+ * 메타가 없으므로 아무도 못 쓴다. 감사되지 않은 쓰기 경로가 **위험**에서 **무해**로 바뀐다.
+ */
+export const VISIBILITY_WHEN_META_MISSING = 'assigned_only' as const;
+
+export type CouponVisibilityValue = 'public' | 'claimable' | 'assigned_only';
+
+const KNOWN_VISIBILITIES: readonly CouponVisibilityValue[] = [
+  'public',
+  'claimable',
+  'assigned_only',
+];
+
+/**
+ * 메타 레코드에서 `visibility` 를 꺼낸다. **행이 없거나 어휘 밖이면 닫힌 쪽으로 접는다.**
+ *
+ * 행이 **있고** 컬럼만 비어 있는 경우는 `'public'` 이다 — 그 컬럼은
+ * `NOT NULL DEFAULT 'public'`(`Migration20260526140000`) 이라 「비어 있음 = 공개」가 맞다.
+ * `toMetadataShape` 안의 `?? 'public'` 이 그 의미론이고, 그래서 그 줄은 바꾸지 않는다.
+ */
+export function resolveVisibility(metaRecord: unknown): CouponVisibilityValue {
+  const shape = toMetadataShape(metaRecord);
+  if (!shape) return VISIBILITY_WHEN_META_MISSING;
+  const value = shape.visibility as CouponVisibilityValue | undefined;
+  return value && KNOWN_VISIBILITIES.includes(value) ? value : VISIBILITY_WHEN_META_MISSING;
+}
+
+/**
+ * 「이 쿠폰은 발급받은 고객만 쓸 수 있는가」. 카트 게이트와 주문 확정 백스톱이 묻는 질문이다.
+ *
+ * 옛 코드는 `visibility === 'assigned_only' || === 'claimable'` 였는데, 메타가 없으면
+ * `undefined` 라 **게이트를 통과**했다. 「공개가 아니면 발급 필요」로 뒤집으면 그 구멍이 닫힌다.
+ */
+export function requiresIssuance(metaRecord: unknown): boolean {
+  return resolveVisibility(metaRecord) !== 'public';
 }
 
 async function remoteQueryPromotions(

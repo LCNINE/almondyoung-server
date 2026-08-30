@@ -2,7 +2,11 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { toMetadataShape, meetsGroupRule } from '../../../../admin/promotions/helpers';
+import {
+  resolveVisibility,
+  meetsGroupRule,
+  VISIBILITY_WHEN_META_MISSING,
+} from '../../../../admin/promotions/helpers';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -117,11 +121,14 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     ? await promotionMetaService.getByPromotionIds([...new Set(allPromoIds)])
     : [];
   const visibilityById = new Map<string, string>(
-    metas.map((m: any) => [m.promotion_id, toMetadataShape(m)?.visibility as string ?? 'public'])
+    metas.map((m: any) => [m.promotion_id, resolveVisibility(m) as string])
   );
+  // 메타 행이 아예 없는 프로모션은 맵에 키가 없다 → 닫힌 기본값으로 떨어진다(#488 N7).
+  const visibilityOf = (promotionId: string): string =>
+    visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   const format = (promo: any, isAssigned: boolean) =>
-    formatPromotion(promo, isAssigned, visibilityById.get(promo.id) ?? 'public');
+    formatPromotion(promo, isAssigned, visibilityOf(promo.id));
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metas.find((r: any) => r.promotion_id === promotionId);
@@ -184,7 +191,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
       !isUsageExhausted(promo) &&
-      (visibilityById.get(promo.id) ?? 'public') === 'public' &&
+      visibilityOf(promo.id) === 'public' &&
       meetsGroupRule(promo, customerGroupIds)
     )
     .map((promo: any) => format(promo, false));
