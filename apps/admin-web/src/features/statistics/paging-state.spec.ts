@@ -5,15 +5,15 @@ describe('isPageChanging', () => {
     expect(isPageChanging({ isPlaceholderData: true, isFetching: true, isLoading: false })).toBe(true);
   });
 
-  it('재요청 중이면 placeholder 플래그가 없어도 표시한다', () => {
-    expect(isPageChanging({ isPlaceholderData: false, isFetching: true, isLoading: false })).toBe(true);
+  it('같은 페이지를 다시 확인하는 재요청은 옛 페이지가 아니다 — 흐리게 하거나 잠그지 않는다', () => {
+    expect(isPageChanging({ isPlaceholderData: false, isFetching: true, isLoading: false })).toBe(false);
   });
 
   it('첫 로딩은 스켈레톤이 담당하므로 여기서는 false', () => {
     expect(isPageChanging({ isPlaceholderData: false, isFetching: true, isLoading: true })).toBe(false);
   });
 
-  it('다 끝났으면 false', () => {
+  it('응답이 도착하면 재요청이 남아 있어도 false', () => {
     expect(isPageChanging({ isPlaceholderData: false, isFetching: false, isLoading: false })).toBe(false);
   });
 
