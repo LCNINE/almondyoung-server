@@ -1,4 +1,4 @@
-import { convertQwertyToHangul, disassemble } from 'es-hangul';
+import { convertQwertyToHangul, disassemble, romanize } from 'es-hangul';
 
 export function compactText(value: string): string {
   return value.replace(/\s+/g, '');
@@ -36,6 +36,19 @@ export function qwertyToHangul(value: string): string {
     return '';
   }
   return /^[가-힣\s]+$/.test(converted) ? converted : '';
+}
+
+// "탯밤" → "taetbam". 고객이 한글 발음을 영어로 옮겨 치는 검색어("tatbam")를 되돌리는 데 쓴다.
+// 한글이 없는 말은 되돌릴 것도 없으므로 빈 문자열을 준다.
+export function toRoman(value: string): string {
+  if (!/[가-힣]/.test(value)) {
+    return '';
+  }
+  try {
+    return romanize(normalizeHangul(value)).toLowerCase();
+  } catch {
+    return '';
+  }
 }
 
 // 임베딩용 상품명 정제. 용량·모델번호가 섞이면 벡터가 흐려진다 —

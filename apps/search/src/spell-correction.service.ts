@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenSearchService } from './opensearch.service';
-import { toJamo } from './utils/text.utils';
+import { toJamo, toRoman } from './utils/text.utils';
 
 // 자모 기준 편집 거리 상한. "나찌반"↔"니치반"이 2(ㅏ↔ㅣ, ㅉ↔ㅊ)라 2까지 본다.
 // 3 을 넘기면 "글루"↔"클립" 같은 무관한 쌍이 붙는다.
@@ -8,6 +8,12 @@ const MAX_DISTANCE = 2;
 // 짧은 검색어는 편집 거리 2 가 곧 절반이라 다른 단어가 된다. 음절 수로 상한을 조인다.
 const MAX_DISTANCE_BY_SYLLABLE: Record<number, number> = { 1: 0, 2: 1, 3: 2 };
 // 상품명에서 뽑은 후보 중 이 길이 미만은 버린다 — "1개", "대" 같은 조각이 교정 대상이 되면 안 된다.
+// 로마자 기준 상한. "탯밤"→taetbam 을 고객은 tatbam 으로 친다(거리 1). 2 를 주면
+// 정답이 없는 검색어가 엉뚱한 말로 끌려간다 — tatbam 이 "풋밤"(putbam, 거리 2)이 됐다.
+// 짧은 검색어는 거리 1 도 다른 말이 되므로 길이로 더 조인다 — 4 글자에 1 을 주면
+// 브랜드 "bare" 가 "카레"(kare)가 된다. 5 글자부터 열어야 "perma"→"퍼마"(peoma)가 산다.
+const MAX_ROMAN_DISTANCE = 1;
+const MAX_ROMAN_DISTANCE_BY_LENGTH: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 1 };
 const MIN_CANDIDATE_LENGTH = 2;
 const MAX_CANDIDATE_LENGTH = 12;
 // 사전 구축 시 훑을 상품 수 상한. 부팅이 색인 크기에 끌려가지 않게 막는다.
@@ -17,8 +23,16 @@ const SUGGEST_CACHE_LIMIT = 2000;
 interface Candidate {
   word: string;
   jamo: string;
+  // 로마자 표기. 고객이 한글 발음을 영어로 옮겨 치는 경우("탯밤"→tatbam)를 되돌린다.
+  roman: string;
   // 이 단어를 이름에 가진 상품 수. 동점일 때 흔한 쪽을 고른다.
   freq: number;
+}
+
+// 자판만 한글로 안 바꾼 영타(dkdlvocl)는 qwertyToHangul 이 따로 잡는다. 여기는 발음을
+// 옮겨 적은 검색어라 알파벳만으로 이뤄진다.
+function isRomanQuery(value: string): boolean {
+  return /^[a-z]+$/i.test(value);
 }
 
 @Injectable()
@@ -26,6 +40,7 @@ export class SpellCorrectionService {
   private readonly logger = new Logger(SpellCorrectionService.name);
   // 자모 길이별로 나눠 담는다. 편집 거리 d 이내면 길이 차도 d 이내라 그 구간만 보면 된다.
   private readonly byJamoLength = new Map<number, Candidate[]>();
+  private readonly byRomanLength = new Map<number, Candidate[]>();
   private readonly suggestCache = new Map<string, string | null>();
   private ready = false;
 
@@ -78,11 +93,18 @@ export class SpellCorrectionService {
     }
 
     this.byJamoLength.clear();
+    this.byRomanLength.clear();
     for (const [word, count] of freq) {
-      const jamo = toJamo(word);
-      const bucket = this.byJamoLength.get(jamo.length) ?? [];
-      bucket.push({ word, jamo, freq: count });
-      this.byJamoLength.set(jamo.length, bucket);
+      const candidate: Candidate = { word, jamo: toJamo(word), roman: toRoman(word), freq: count };
+      const jamoBucket = this.byJamoLength.get(candidate.jamo.length) ?? [];
+      jamoBucket.push(candidate);
+      this.byJamoLength.set(candidate.jamo.length, jamoBucket);
+
+      if (candidate.roman) {
+        const romanBucket = this.byRomanLength.get(candidate.roman.length) ?? [];
+        romanBucket.push(candidate);
+        this.byRomanLength.set(candidate.roman.length, romanBucket);
+      }
     }
 
     this.ready = true;
@@ -104,7 +126,7 @@ export class SpellCorrectionService {
       return cached;
     }
 
-    const result = this.findNearest(trimmed);
+    const result = isRomanQuery(trimmed) ? this.findNearestRoman(trimmed) : this.findNearest(trimmed);
     if (this.suggestCache.size >= SUGGEST_CACHE_LIMIT) {
       const oldest = this.suggestCache.keys().next().value;
       if (oldest !== undefined) {
@@ -133,6 +155,34 @@ export class SpellCorrectionService {
         }
 
         const distance = this.boundedDistance(jamo, candidate.jamo, limit);
+        if (distance > limit) {
+          continue;
+        }
+        if (!best || distance < best.distance || (distance === best.distance && candidate.freq > best.freq)) {
+          best = { word: candidate.word, distance, freq: candidate.freq };
+        }
+      }
+    }
+
+    return best?.word ?? null;
+  }
+
+  /**
+   * 발음을 영어로 옮겨 친 검색어를 되돌린다. "tatbam" → "탯밤"(taetbam, 거리 1).
+   * 로마자 표기법은 사람마다 흔들리므로(ae↔a, eo↔u) 편집 거리로 흡수한다.
+   */
+  private findNearestRoman(query: string): string | null {
+    const roman = query.toLowerCase();
+    const limit = MAX_ROMAN_DISTANCE_BY_LENGTH[roman.length] ?? MAX_ROMAN_DISTANCE;
+    if (limit === 0) {
+      return null;
+    }
+
+    let best: { word: string; distance: number; freq: number } | null = null;
+
+    for (let length = roman.length - limit; length <= roman.length + limit; length++) {
+      for (const candidate of this.byRomanLength.get(length) ?? []) {
+        const distance = this.boundedDistance(roman, candidate.roman, limit);
         if (distance > limit) {
           continue;
         }
