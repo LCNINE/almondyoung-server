@@ -27,6 +27,7 @@ import {
 } from '@/lib/services/search';
 import { useAdminUsers } from '@/lib/services/users/queries';
 import { toLocalDateString } from '@/lib/utils/date';
+import { cn } from '@/lib/utils/ui';
 import { IndexEvidence, NeglectBadge } from '@/features/keyword-ops/components/badges';
 import {
   AssigneeLoad,
@@ -41,6 +42,7 @@ import { estimateMissedDemand } from '@/features/keyword-ops/missed-demand';
 import { useBehaviorStatistics, useSalesStatistics } from '@/lib/services/analytics';
 import { STATUS_LABELS, formatTimes } from '@/features/keyword-ops/labels';
 import { PaginationBar } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
 import { changeRate, formatCount, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -92,6 +94,8 @@ export default function KeywordStatisticsTemplate() {
   });
   const detail = useKeywordDetail({ keyword: selectedKeyword, from: range.from, to: range.to }, Boolean(selectedKeyword));
   const assigneeOptions = useAssigneeOptions();
+
+  const isZeroPageChanging = isPageChanging(zeroHit);
 
   const topRows = (data?.top ?? []).slice((topPage - 1) * TOP_PAGE_SIZE, topPage * TOP_PAGE_SIZE);
   const summary = zeroHit.data?.summary;
@@ -165,6 +169,14 @@ export default function KeywordStatisticsTemplate() {
                   <StatusFilterChips value={statusFilter} onChange={setStatusFilter} summary={summary} />
                   <AssigneeLoad summary={summary} />
                 </div>
+                {/*
+                  placeholderData 로 이전 페이지가 남아 있는 동안은 흐리게 해서 "지금 보이는 건
+                  아직 옛 페이지"임을 드러낸다 — 표시가 없으면 페이지네이션이 안 먹는 것으로 읽힌다.
+                */}
+                <div
+                  className={cn('transition-opacity', isZeroPageChanging && 'pointer-events-none opacity-40')}
+                  aria-busy={isZeroPageChanging}
+                >
                 <ZeroHitTable
                   rows={zeroHit.data?.items ?? []}
                   startNumber={(zeroPage - 1) * ZERO_PAGE_SIZE + 1}
@@ -176,12 +188,14 @@ export default function KeywordStatisticsTemplate() {
                       : '조회 기간에 결과를 못 준 검색이 없습니다'
                   }
                 />
+                </div>
                 <PaginationBar
                   totalItems={zeroHit.data?.totalItems}
                   page={zeroPage}
                   pageSize={ZERO_PAGE_SIZE}
                   onPageChange={setZeroPage}
                   unitLabel="개 검색어"
+                  isFetching={isZeroPageChanging}
                 />
               </div>
             )}
