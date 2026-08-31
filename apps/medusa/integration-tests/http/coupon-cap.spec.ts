@@ -318,5 +318,49 @@ medusaIntegrationTestRunner({
       }
       expect(message).toContain('쿠폰 할인 한도');
     });
+
+    it('백스톱: 카트에 붙은 뒤 만료된 public 쿠폰은 주문 완료를 막는다', async () => {
+      seq++;
+      // 부착 시점엔 무기한(ends_at 없음) — 미들웨어 게이트를 정상 통과한다.
+      const promotionId = await createCappedPromo(`EXP_BACKSTOP_${seq}`, 10, null);
+      const cart = await newCart(1);
+      await api.post(
+        `/store/carts/${cart.id}`,
+        { promo_codes: [`EXP_BACKSTOP_${seq}`], email: 'expbackstop@cap.test' },
+        storeHeaders,
+      );
+
+      // 카트에 붙은 «뒤» 정책이 만료되도록 만든다 — 백스톱이 지키는 바로 그 race window
+      // (미들웨어는 부착 시점만 보므로 이 변경을 볼 수 없다. 직접 서비스 호출이라 카트
+      // 라우트를 거치지 않는다).
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.upsert({
+        promotion_id: promotionId,
+        ends_at: new Date('2000-01-01T00:00:00.000Z'),
+      });
+
+      // 백스톱(`complete-cart.ts`)보다 앞선 `validateCartPaymentsStep`을 통과시킨다.
+      const container = getContainer();
+      const cartModule: any = container.resolve(Modules.CART);
+      const cartRow = await cartModule.retrieveCart(cart.id, { relations: ['items'] });
+      await cartModule.updateLineItems(
+        (cartRow.items ?? []).map((line: any) => ({ id: line.id, requires_shipping: false })),
+      );
+      const pcRes = await api.post('/store/payment-collections', { cart_id: cart.id }, storeHeaders);
+      await api.post(
+        `/store/payment-collections/${pcRes.data.payment_collection.id}/payment-sessions`,
+        { provider_id: 'pp_almond-payment_almond-payment' },
+        storeHeaders,
+      );
+
+      // 🔴 워크플로 엔진을 거친 에러는 Error 인스턴스가 아니다 — .rejects.toThrow() 를 쓰지 말 것.
+      let message = '';
+      try {
+        await api.post(`/store/carts/${cart.id}/complete`, {}, storeHeaders);
+      } catch (error: any) {
+        message = error?.response?.data?.message ?? error?.message ?? '';
+      }
+      expect(message).toContain('유효기간이 지난 쿠폰입니다');
+    });
   },
 });
