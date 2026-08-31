@@ -9,6 +9,7 @@ import {
   type CouponClaimState,
   type CouponBlockReason,
 } from "@/app/[countryCode]/(main)/coupons/claim/_components/coupon-claim-button"
+import { shouldShowCap } from "@/lib/utils/coupon-discount"
 
 interface PageProps {
   params: Promise<{ countryCode: string; slug: string }>
@@ -52,9 +53,16 @@ export default async function CouponEventPage({ params }: PageProps) {
 
   const discountLabel = (c: CouponEventCoupon) => {
     if (!c.discount) return null
-    return c.discount.type === "percentage"
-      ? t("discountPercent", { value: c.discount.value })
-      : t("discountAmount", { amount: c.discount.value.toLocaleString("ko-KR") })
+    const base =
+      c.discount.type === "percentage"
+        ? t("discountPercent", { value: c.discount.value })
+        : t("discountAmount", { amount: c.discount.value.toLocaleString("ko-KR") })
+    // 이벤트 페이지도 쿠폰을 «받는» 자리다 (#488 A4).
+    return shouldShowCap(c.discount, c.discount.max_discount_amount)
+      ? `${base} (${t("maxCap", {
+          amount: (c.discount.max_discount_amount as number).toLocaleString("ko-KR"),
+        })})`
+      : base
   }
   const expiryLabel = (c: CouponEventCoupon) =>
     c.expires_at ? t("expiresAt", { date: formatDate(c.expires_at, DATE_FORMATS.KO_DOT) }) : t("unlimited")

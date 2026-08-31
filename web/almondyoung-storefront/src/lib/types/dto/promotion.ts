@@ -35,6 +35,8 @@ export type PromotionDto = {
    */
   visibility?: "public" | "claimable" | "assigned_only"
   min_order_amount?: number | null
+  /** 정률 쿠폰 최대 할인금액 (#488 A4). 상한이 없으면 `null`. */
+  max_discount_amount?: number | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
 }

@@ -141,6 +141,8 @@
 
 **웨이브 A·B 직후에 1차(2026-08-30 완료), A5 개통 직전에 2차.**
 
+**2차 리허설에 「배송비 쿠폰 + 정률 캡」을 반드시 넣는다** (P10-B 가 자동 테스트로 못 덮은 유일한 경로).
+
 **2차 리허설의 페이로드 검사는 조합이 아니라 축으로 짠다.** 1차의 R7 은 세 조합을 쐈지만
 셋 다 `target_type: order` 라 `allocation` 축을 지나가지 않았고, 배송비 결함은 R7 이 아니라
 「4종을 다 만들어 본다」가 잡았다. → `target_type` 3값 × `discountType` 2값을 전부 발사할 것.
@@ -268,11 +270,25 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       ③ 🔴 `z.object` 가 **strip** 이라 **스키마에 없는 키는 400 이 아니라 조용히 사라진다.**
       **결과**: 훅 3개 신설 · 검증기 2개 등록 · 읽기 5곳 닫힌 기본값 · 쓰기 라우트 3개 삭제.
       마이그레이션 0. 통합 42 tests(신규 4) · 유닛 28 suites/243 tests.
-- [ ] **P10-B 플랜 작성·실행** — A4 정률 캡. **P10-A 선행 필수**(캡 값이 `additional_data` 를 탄다).
-      **P10-A 가 남긴 선행조건**: `max_discount_amount` 는 이미 `META_KEYS` 와
-      `additional-data-schema.ts` 에 들어 있다(스키마 키 집합 유닛 테스트가 강제한다). 폼에서 값을
-      보내면 훅이 그대로 `promotion_meta` 에 쓴다 — **P10-B 는 쓰기 배선을 새로 만들 필요가 없다.**
-      ⚠️ 표시 6곳은 여전히 P10-B 몫이다(스토어 allowlist `format-promotion.ts` 포함).
+- [x] **P10-B 플랜 작성·실행 (2026-08-31)** — `2026-08-31-coupon-percentage-cap.md`.
+      브랜치 `feat/coupon-percentage-cap`. **마이그레이션 0 · 시크릿 0 · env 0.**
+      캡 훅 2개(`refreshCartItems.beforeRefreshingPaymentCollection` ·
+      `createCart.cartCreated`) + 라우트 1개(`/store/carts/:id/promotions`) + 백스톱 1개
+      (`completeCart.validate` **기존 핸들러 안에**) + 표시 **8곳** + 폼 입력란.
+      **P10-A 예측대로 쓰기 배선은 새로 만들 것이 없었다** — `META_KEYS`·검증 스키마가 이미 받았다.
+      🔴 **#488 의 「표시 6곳」은 6곳이 아니라 8곳이었다** — `/store/coupons/preview`(클레임 화면)와
+      `/store/events/:slug`(이벤트 화면)가 빠져 있었다. 하필 **쿠폰을 받는 순간**의 화면들이다.
+      🔴 **`refreshPaymentCollectionForCartWorkflow.hooks.validate` 는 「한 곳으로 다 덮는」 자리처럼
+      보이지만 함정이다** — 그 워크플로는 카트를 훅보다 **먼저** fetch 해 그 `raw_total` 로
+      결제금액을 정한다. 거기서 깎으면 결제 컬렉션이 캡 이전 금액으로 잡힌다. #488 의 4곳이 맞다.
+      🔴 **마이페이지 정렬은 실제로 버그였다** — 정률을 무조건 정액 위로 올려 「10% 최대 3천원」이
+      「5만원 정액」보다 위였다. `maxPossibleDiscount` 로 교체(정렬 라벨도 「할인 큰 순」으로).
+      **하지 않은 것**: 쿠폰 **수정** 화면이 없어 캡은 생성 시에만 정할 수 있다(바꾸려면 삭제·재생성).
+      **배송수단 adjustment 되쓰기 경로는 자동 테스트가 안 지난다** — 통합 스펙에 배송옵션 픽스처가
+      저장소 어디에도 없다. 리허설 2차에 「배송비 쿠폰 + 캡」을 넣을 것.
+      **검증**: Medusa 유닛 29 suites/256 · 쿠폰 통합 5 suites/51 · admin-web 92 suites/767 ·
+      storefront vitest 23 files/212 · 루트 type-check 0 · admin-web tsc 0 ·
+      storefront tsc **49(= develop 기준선 그대로, 이 작업이 더한 것 0)**.
 - [ ] **P7 플랜 작성** — 1-5(발급 시점 룰 분류 + fail-closed) 담당. **P4 선행**(`issue-coupons` 충돌)
 - [ ] 1-6 결정 (`birthday` 트리거) — **못 정함**. 선행: 생년월일 데이터 소재 + 스케줄러 거처
 - [ ] Medusa 네이티브 `/app` 비활성화 여부 — **못 정함**, 이번 범위 밖

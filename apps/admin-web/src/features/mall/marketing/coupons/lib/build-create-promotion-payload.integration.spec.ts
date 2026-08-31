@@ -45,6 +45,7 @@ const baseForm: CouponFormState = {
   name: '축 전수 가드',
   discountType: 'percentage',
   value: 10,
+  maxDiscountAmount: '',
   targetType: 'order',
   targetAttribute: 'product_id' as TargetAttribute,
   targetItemIds: [],

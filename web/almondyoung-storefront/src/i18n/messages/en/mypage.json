@@ -66,7 +66,7 @@
     "tabMine": "My Coupons",
     "tabClaim": "Get Coupons",
     "tabExpired": "Expired",
-    "sortDiscount": "Highest discount",
+    "sortDiscount": "Largest discount",
     "sortMinOrder": "Lowest min. order",
     "expiredBadge": "Expired",
     "expiredNotice": "Coupons expired within the last month.",
@@ -76,7 +76,8 @@
     "toasts": {
       "claimSuccess": "Coupon claimed successfully.",
       "claimFailed": "Failed to claim the coupon. Please try again later."
-    }
+    },
+    "maxCap": "up to {amount} KRW"
   },
   "point": {
     "historyTitle": "Point History",

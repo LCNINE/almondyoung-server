@@ -31,18 +31,10 @@ import { getCouponMeta } from '../lib/coupon-meta';
 import { visibilityBadge } from '../lib/coupon-labels';
 import type { CouponVisibility } from '@packages/domain-types';
 import { formatCouponConditions } from '../lib/format-coupon-conditions';
+import { formatDiscountLabel } from '../lib/format-discount-label';
 import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
 const PAGE_SIZE = 20;
-
-function formatDiscount(coupon: MedusaPromotion) {
-  const m = coupon.application_method;
-  if (!m) return '-';
-  if (m.type === 'percentage') {
-    return `${m.value}%`;
-  }
-  return `${m.value.toLocaleString('ko-KR')}원`;
-}
 
 function VisibilityBadge({ visibility }: { visibility: CouponVisibility | null }) {
   const v = visibilityBadge(visibility);
@@ -86,7 +78,7 @@ interface CouponRowProps {
 
 function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
   const canToggle = coupon.status === 'active' || coupon.status === 'inactive' || coupon.status === 'draft';
-  const { name, visibility, maxClaims, issuedCount } = getCouponMeta(coupon);
+  const { name, visibility, maxClaims, issuedCount, maxDiscountAmount } = getCouponMeta(coupon);
 
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30 transition-colors">
@@ -102,7 +94,9 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
       </td>
       <td className="px-4 py-3 text-sm">
         <div className="flex flex-col">
-          <span className="font-medium">{formatDiscount(coupon)}</span>
+          <span className="font-medium">
+            {formatDiscountLabel(coupon.application_method, maxDiscountAmount)}
+          </span>
           <span className="text-xs text-muted-foreground">
             {coupon.application_method?.target_type === 'shipping_methods'
               ? '배송비'

@@ -89,6 +89,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           value: promotion.application_method.value,
           target_type: promotion.application_method.target_type,
           currency_code: promotion.application_method.currency_code,
+          // 정률 캡(#488 A4). 클레임 화면이 「10%」만 보여주면 캡을 모르는 채로 받게 된다.
+          max_discount_amount:
+            meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
         }
       : null,
     expires_at: promotion.campaign?.ends_at ?? null,

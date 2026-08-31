@@ -113,7 +113,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         promotion_id: promo.id,
         code: promo.code,
         discount: am
-          ? { type: am.type, value: am.value, target_type: am.target_type, currency_code: am.currency_code }
+          ? {
+              type: am.type,
+              value: am.value,
+              target_type: am.target_type,
+              currency_code: am.currency_code,
+              // 정률 캡(#488 A4). 이벤트 페이지도 쿠폰을 받는 자리다.
+              max_discount_amount:
+                meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
+            }
           : null,
         expires_at: promo.campaign?.ends_at ?? null,
         state: resolveState(promo, meta),

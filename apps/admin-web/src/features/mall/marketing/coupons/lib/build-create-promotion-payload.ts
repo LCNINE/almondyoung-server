@@ -21,6 +21,11 @@ export interface CouponFormState {
   name: string;
   discountType: 'percentage' | 'fixed';
   value: number;
+  /**
+   * 정률 쿠폰 최대 할인금액 (#488 A4). 엔진에는 이 개념이 없어 `promotion_meta` 에 싣고
+   * 카트 재계산 훅이 강제한다(`apps/medusa/src/workflows/hooks/cart/promotion-cap-hooks.ts`).
+   */
+  maxDiscountAmount: number | '';
   targetType: 'order' | 'items' | 'shipping_methods';
   targetAttribute: TargetAttribute;
   targetItemIds: string[];
@@ -61,6 +66,11 @@ export function buildCreatePromotionPayload(
   if (name) additional_data.name = name;
   if (form.visibility === 'claimable' && form.maxClaims) {
     additional_data.max_claims = Number(form.maxClaims);
+  }
+  // 정률에만 싣는다 — 정액 쿠폰의 상한은 할인액 자신이라 의미가 없고,
+  // 검증 스키마도 양수 정수만 받는다(`additional-data-schema.ts`).
+  if (form.discountType === 'percentage' && form.maxDiscountAmount) {
+    additional_data.max_discount_amount = Number(form.maxDiscountAmount);
   }
   if (form.createdBy) additional_data.created_by = form.createdBy;
   if (form.autoIssueTrigger) additional_data.auto_issue_trigger = form.autoIssueTrigger;

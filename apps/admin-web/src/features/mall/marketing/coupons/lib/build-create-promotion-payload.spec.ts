@@ -5,6 +5,7 @@ const base: CouponFormState = {
   name: '웰컴 쿠폰',
   discountType: 'percentage',
   value: 10,
+  maxDiscountAmount: '',
   targetType: 'order',
   targetAttribute: 'product_id',
   targetItemIds: [],
@@ -162,5 +163,31 @@ describe('application_method.allocation', () => {
   it('전체 주문 대상에는 allocation 을 싣지 않는다', () => {
     const p = buildCreatePromotionPayload({ ...base, targetType: 'order' }, opts);
     expect(p.application_method.allocation).toBeUndefined();
+  });
+});
+
+describe('최대 할인금액 (#488 A4)', () => {
+  it('정률 쿠폰이면 additional_data 에 실린다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, discountType: 'percentage', value: 10, maxDiscountAmount: 30000 },
+      opts,
+    );
+    expect(p.additional_data).toMatchObject({ max_discount_amount: 30000 });
+  });
+
+  it('정액 쿠폰이면 싣지 않는다 — 정액에 상한은 무의미하다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, discountType: 'fixed', value: 5000, maxDiscountAmount: 30000 },
+      opts,
+    );
+    expect(p.additional_data).not.toHaveProperty('max_discount_amount');
+  });
+
+  it('비어 있으면 싣지 않는다', () => {
+    const p = buildCreatePromotionPayload(
+      { ...base, discountType: 'percentage', value: 10, maxDiscountAmount: '' },
+      opts,
+    );
+    expect(p.additional_data).not.toHaveProperty('max_discount_amount');
   });
 });

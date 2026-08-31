@@ -19,6 +19,7 @@ import {
 } from '../coupon-helpers';
 import { getCouponMeta, AUTO_ISSUE_TRIGGER_LABELS } from '../lib/coupon-meta';
 import { visibilityDetailLabel } from '../lib/coupon-labels';
+import { formatDiscountLabel } from '../lib/format-discount-label';
 import { Link, Check } from 'lucide-react';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,7 +46,8 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxClaims, issuedCount, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+  const { name, maxClaims, issuedCount, createdBy, visibility, autoIssueTrigger, maxDiscountAmount } =
+    getCouponMeta(c);
 
   // 끝 슬래시 제거 — 환경변수에 trailing slash 가 있어도 이중 슬래시 방지
   const storefrontUrl = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(/\/+$/, '');
@@ -57,11 +59,7 @@ export function CouponDetailDialog({
     setTimeout(() => setLinkCopied(false), 2000);
   };
   const m = c.application_method;
-  const discountStr = m
-    ? m.type === 'percentage'
-      ? `${m.value}%`
-      : `${m.value.toLocaleString('ko-KR')}원`
-    : '-';
+  const discountStr = formatDiscountLabel(m, maxDiscountAmount);
 
   const targetRules = m?.target_rules ?? [];
   const minOrder = c.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');

@@ -57,6 +57,12 @@ export type FormattedPromotion = {
   is_automatic: boolean;
   is_assigned: boolean;
   min_order_amount: number | null;
+  /**
+   * 정률 쿠폰 최대 할인금액 (#488 A4). `promotion_meta` 에서 온다 — 엔진에는 이 개념이 없다.
+   * `visibility` 와 같은 이유로 **최상위**에 둔다: `application_method` 는 엔진 필드를 그대로
+   * 옮기는 자리이고, 여기 우리 확장을 섞으면 「엔진이 준 것」과 「우리가 붙인 것」이 안 갈린다.
+   */
+  max_discount_amount: number | null;
   visibility: string;
   application_method: ApplicationMethodLike | null;
   campaign: CampaignLike | null;
@@ -74,7 +80,17 @@ function minOrderAmount(promo: PromotionLike): number | null {
   return Number.isFinite(val) ? val : null;
 }
 
-export function formatPromotion(promo: PromotionLike, isAssigned: boolean, visibility: string): FormattedPromotion {
+/** `promotion_meta` 에서 온 값들. 호출부가 프로모션마다 조회하지 않도록 묶어서 받는다. */
+export type PromotionMetaView = {
+  visibility: string;
+  maxDiscountAmount: number | null;
+};
+
+export function formatPromotion(
+  promo: PromotionLike,
+  isAssigned: boolean,
+  meta: PromotionMetaView,
+): FormattedPromotion {
   return {
     id: promo.id,
     code: promo.code,
@@ -83,7 +99,8 @@ export function formatPromotion(promo: PromotionLike, isAssigned: boolean, visib
     is_automatic: promo.is_automatic,
     is_assigned: isAssigned,
     min_order_amount: minOrderAmount(promo),
-    visibility,
+    max_discount_amount: meta.maxDiscountAmount,
+    visibility: meta.visibility,
     application_method: promo.application_method
       ? {
           // 필드를 하나씩 옮긴다 — 그래프가 더 실어 보내도 스토어 응답에 새지 않게.
