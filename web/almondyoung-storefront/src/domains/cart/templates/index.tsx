@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
-import { CartTimeSaleNotice } from "@/domains/cart/components/time-sale-notice"
+import { TimeSaleNotice } from "@/domains/cart/components/time-sale-notice"
 import { createCheckoutCartFromLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -183,7 +183,7 @@ export default function CartTemplate({
       <main className="bg-background container mx-auto max-w-[1360px] px-4 py-8">
         <CartHeader />
 
-        <CartTimeSaleNotice items={sortedItems} />
+        <TimeSaleNotice items={sortedItems} />
 
         <div className="grid grid-cols-1 gap-x-10 lg:grid-cols-[1fr_360px]">
           <Card>

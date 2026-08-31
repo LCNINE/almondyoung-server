@@ -196,7 +196,8 @@
     "optionLine": "{value} | {quantity} pcs",
     "shippingFee": "Shipping {amount} KRW",
     "shippingFeeLine": "{name} {amount} KRW",
-    "amountWon": "{amount} KRW"
+    "amountWon": "{amount} KRW",
+    "timeSaleBadge": "Time sale"
   },
   "discount": {
     "title": "Discounts / Additional payments",

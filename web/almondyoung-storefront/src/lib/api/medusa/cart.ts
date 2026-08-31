@@ -22,6 +22,7 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
+import { listActiveTimeSales } from "./time-sale"
 import { recoverCustomerCart, retrieveCustomer, transferCart } from "./customer"
 import {
   cartRequiresShipping,
@@ -1538,12 +1539,16 @@ export async function refreshCartPrices(): Promise<CartRefreshResult> {
 }
 
 /**
- * 이 재계산이 필요한 건 멤버십 상태가 바뀌었을 때다. 그 상태가 그대로면 다시 부를 이유가 없어
- * (카트 id, 멤버십 여부) 별로 최근에 한 번 돌렸는지 기억해 건너뛴다.
+ * 이 재계산이 필요한 건 멤버십 상태나 진행 중인 타임세일이 바뀌었을 때다. 둘 다 그대로면 다시
+ * 부를 이유가 없어 (카트 id, 멤버십 여부, 세일 상태) 별로 최근에 한 번 돌렸는지 기억해 건너뛴다.
+ *
+ * 세일 상태를 키에 넣는 이유: 카트 라인엔 담을 때의 세일가가 박혀 있어서, 세일이 끝나도 재계산이
+ * 돌지 않으면 옛 세일가 그대로 결제된다. 멤버십만으로 키를 만들면 세일 종료가 키를 바꾸지 못해
+ * 최대 TTL 만큼 그 상태가 유지됐다.
  *
  * 렌더 중에는 쿠키를 쓸 수 없어 프로세스 메모리에 둔다. 인스턴스가 바뀌면 한 번 더 돌 뿐이고,
- * 멤버십이 바뀌면 키가 달라져 즉시 다시 돈다. 관리자가 가격을 직접 고친 경우만 최대 TTL 만큼
- * 늦게 반영된다.
+ * 멤버십·세일이 바뀌면 키가 달라져 즉시 다시 돈다. 관리자가 가격을 직접 고친 경우만 최대 TTL
+ * 만큼 늦게 반영된다.
  */
 const PRICE_REFRESH_TTL_MS = 10 * 60 * 1000
 const priceRefreshThrottle = createRefreshThrottle(PRICE_REFRESH_TTL_MS)
@@ -1564,7 +1569,19 @@ export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult
   if (!cartId) return EMPTY_REFRESH_RESULT
 
   const isMember = await getIsMembershipCustomer()
-  if (!priceRefreshThrottle.take(`${cartId}:${isMember ? "mem" : "reg"}`)) {
+  // 진행 중인 세일이 하나 끝나면 이 문자열이 달라진다 — 그 순간 스로틀이 열려 재계산이 한 번 돈다.
+  const sales = await listActiveTimeSales()
+  const saleEpoch =
+    sales
+      .map((sale) => sale.endsAt ?? "")
+      .sort()
+      .join(",") || "none"
+
+  if (
+    !priceRefreshThrottle.take(
+      `${cartId}:${isMember ? "mem" : "reg"}:${saleEpoch}`
+    )
+  ) {
     return EMPTY_REFRESH_RESULT
   }
 

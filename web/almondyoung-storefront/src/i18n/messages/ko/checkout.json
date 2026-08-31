@@ -196,7 +196,8 @@
     "optionLine": "{value} | {quantity}개",
     "shippingFee": "배송비 {amount}원",
     "shippingFeeLine": "{name} {amount}원",
-    "amountWon": "{amount}원"
+    "amountWon": "{amount}원",
+    "timeSaleBadge": "타임세일"
   },
   "discount": {
     "title": "할인 / 부가결제",

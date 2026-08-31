@@ -2,6 +2,7 @@ import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import {
   ensureCorrectShippingMethod,
   findUnavailableLineItems,
+  refreshCartPricesDuringRender,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
 import { isUnavailableVariantError } from "@/lib/utils/cart-availability"
@@ -45,6 +46,10 @@ async function CheckoutManager({
   cartId?: string
   countryCode: string
 }) {
+  // 카트 페이지와 같은 재계산을 여기서도 건다. 카트를 거치지 않고 바로 들어오는 경로가 있어서,
+  // 이게 없으면 세일이 끝난 뒤에도 라인에 박힌 옛 세일가로 결제 금액이 잡힌다.
+  await refreshCartPricesDuringRender()
+
   let cart = (await retrieveCart(
     cartId,
     CHECKOUT_CART_FIELDS,

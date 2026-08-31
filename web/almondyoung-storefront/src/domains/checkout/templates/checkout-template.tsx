@@ -2,6 +2,7 @@
 
 import { Banknote, Clock, Coins, Info } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { TimeSaleNotice } from "@/domains/cart/components/time-sale-notice"
 import { CustomsCodeSection } from "@/domains/checkout/components/sections/customs-code"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
 import { OrderConsentSection } from "@/domains/checkout/components/sections/order-consent"
@@ -392,6 +393,7 @@ export default function CheckoutTemplate({
                 error={customsCodeError}
               />
             )}
+            <TimeSaleNotice items={cartItems} />
             <OrderProductsSection
               products={cartItems}
               shipping={requiresShipping ? shipping.amount : 0}
