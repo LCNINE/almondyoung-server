@@ -2,7 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
+import { listIssuedLinks, meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 
 interface AssignPromotionsBody {
@@ -40,8 +40,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       'promotions.is_automatic',
       'promotions.campaign_id',
       'promotions.campaign.campaign_identifier',
-      'promotions.campaign.starts_at',
-      'promotions.campaign.ends_at',
       'promotions.application_method.id',
       'promotions.application_method.type',
       'promotions.application_method.value',
@@ -57,8 +55,17 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const customer = customers[0];
   const promotions = customer.promotions || [];
 
+  const linkByPromotionId = new Map(
+    (await listIssuedLinks(req.scope, customerId)).map((l) => [l.promotion_id, l]),
+  );
+
   // Apply pagination
-  const paginatedPromotions = promotions.slice(offset, offset + limit);
+  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => ({
+    ...p,
+    expires_at: linkByPromotionId.get(p.id)?.expires_at ?? null,
+    used_at: linkByPromotionId.get(p.id)?.used_at ?? null,
+    issued_via: linkByPromotionId.get(p.id)?.issued_via ?? null,
+  }));
 
   return res.status(200).json({
     customer_id: customerId,

@@ -23,7 +23,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }),
     // linkService에는 typed interface가 없어 any cast 불가피
     (link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id') as any)
-      .list({ promotion_id: promotionId }, { select: ['customer_id', 'created_at'] }) as Promise<any[]>,
+      .list({ promotion_id: promotionId }, {
+        select: ['customer_id', 'created_at', 'expires_at', 'used_at', 'order_id', 'issued_via'],
+      }) as Promise<any[]>,
   ]);
 
   const promotion = promotions?.[0];
@@ -36,8 +38,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     ? Number(budget.limit)
     : null;
 
-  const issuedAtMap = new Map<string, string>(
-    (allLinks as any[]).map((l) => [l.customer_id, l.created_at]),
+  const linkByCustomerId = new Map<string, any>(
+    (allLinks as any[]).map((l) => [l.customer_id, l]),
   );
   const customerIds = (allLinks as any[]).map((l) => l.customer_id);
   const count = customerIds.length;
@@ -71,11 +73,18 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
   }
 
-  const customersWithUsage = customers.map((c) => ({
-    ...c,
-    issued_at: issuedAtMap.get(c.id) ?? c.created_at,
-    used_count: usageMap.get(c.id) ?? 0,
-  }));
+  const customersWithUsage = customers.map((c) => {
+    const l = linkByCustomerId.get(c.id);
+    return {
+      ...c,
+      issued_at: l?.created_at ?? c.created_at,
+      expires_at: l?.expires_at ?? null,
+      used_at: l?.used_at ?? null,
+      order_id: l?.order_id ?? null,
+      issued_via: l?.issued_via ?? null,
+      used_count: usageMap.get(c.id) ?? 0,
+    };
+  });
 
   return res.status(200).json({
     promotion_id: promotionId,
