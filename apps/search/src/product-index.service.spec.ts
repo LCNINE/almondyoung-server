@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
-import { ProductIndexService } from './product-index.service';
+import { ProductIndexService, VECTOR_FILL_KEYWORD_LIMIT, VECTOR_FILL_LIMIT } from './product-index.service';
 import { OpenSearchService } from './opensearch.service';
 import { EmbeddingService } from './embedding.service';
 import { SpellCorrectionService } from './spell-correction.service';
@@ -552,6 +552,35 @@ describe('ProductIndexService.searchProducts - RRF 융합', () => {
     // 키워드에 없고 벡터에만 있는 c 는 맨 뒤로 간다.
     expect(order.indexOf('c')).toBe(order.length - 1);
     expect(order.slice(0, 2).sort()).toEqual(['a', 'b']);
+  });
+
+  it('키워드가 한 화면을 채우면 벡터를 섞지 않는다', async () => {
+    const keywordHits = Array.from({ length: VECTOR_FILL_KEYWORD_LIMIT }, (_, i) => hit(`k${i}`));
+    const { service } = await buildService(makeEmbeddingService([0.1, 0.2]), keywordHits, [hit('vector-only')]);
+
+    const result = await service.searchProducts({ q: '유키반 테이프', sort: 'relevance', page: 1, size: 100 } as any);
+
+    expect(result.items.map((item) => item.productId)).not.toContain('vector-only');
+    expect(result.items).toHaveLength(VECTOR_FILL_KEYWORD_LIMIT);
+  });
+
+  it('키워드가 한 화면에 못 미치면 벡터로 채운다', async () => {
+    const keywordHits = Array.from({ length: VECTOR_FILL_KEYWORD_LIMIT - 1 }, (_, i) => hit(`k${i}`));
+    const { service } = await buildService(makeEmbeddingService([0.1, 0.2]), keywordHits, [hit('vector-only')]);
+
+    const result = await service.searchProducts({ q: '유키반 테이프', sort: 'relevance', page: 1, size: 100 } as any);
+
+    expect(result.items.map((item) => item.productId)).toContain('vector-only');
+  });
+
+  it('벡터로 덧붙이는 건 상한까지다 — 키워드 3 건에 99 건이 붙던 걸 막는다', async () => {
+    const keywordHits = [hit('k0'), hit('k1'), hit('k2')];
+    const vectorHits = Array.from({ length: 99 }, (_, i) => hit(`v${i}`));
+    const { service } = await buildService(makeEmbeddingService([0.1, 0.2]), keywordHits, vectorHits);
+
+    const result = await service.searchProducts({ q: '니치반', sort: 'relevance', page: 1, size: 100 } as any);
+
+    expect(result.items).toHaveLength(keywordHits.length + VECTOR_FILL_LIMIT);
   });
 
   it('관련도 정렬이 아니면 벡터를 섞지 않는다', async () => {

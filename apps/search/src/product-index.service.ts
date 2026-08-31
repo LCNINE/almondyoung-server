@@ -46,6 +46,13 @@ function extractHitNames(response: any): string[] {
 // nori 토큰 총 길이가 원문의 이 비율 미만이면 "뭉갬"으로 보고 nori 기반 절을 통째로 뺀다.
 // (측정: 오샤레 0.33 / 타사와라 0.75 / 그 외 대표 키워드 1.00 — 임계 0.6 은 양쪽에 여유가 있다.)
 const NORI_COLLAPSE_RATIO_THRESHOLD = 0.6;
+
+// 벡터는 키워드가 이만큼도 못 찾았을 때만 보강으로 태운다. 한 화면(20 건) 기준.
+export const VECTOR_FILL_KEYWORD_LIMIT = 20;
+
+// 그때도 덧붙이는 건 이만큼까지다. k-NN 은 유사도 하한이 없어 항상 k 개를 채워 오므로
+// ("니치반" 키워드 3 건 + 벡터 99 건) 개수로 막지 않으면 무관 상품이 화면을 덮는다.
+export const VECTOR_FILL_LIMIT = 10;
 // 1~2음절 쿼리는 정상이어도 비율이 튀기 쉬워 감지 대상에서 뺀다.
 const NORI_COLLAPSE_MIN_LENGTH = 3;
 const NORI_ANALYZE_CACHE_LIMIT = 2000;
@@ -246,12 +253,17 @@ export class ProductIndexService implements OnModuleInit {
       const fallbackHits = fallbackResponse.body.hits.hits as any[];
       const keywordHits = this.mergeHitsWithPriority(strictHits, fallbackHits, this.keywordResultPoolLimit);
 
-      // 키워드가 한 건도 못 찾았으면 벡터로 채우지 않는다. 안 파는 상품을 뜻만 닮은 100 건으로
-      // 덮으면 화면이 거짓말을 하고, result_count 도 0 이 아니게 되어 소싱 리포트에서 사라진다.
-      const mergedHits =
-        keywordHits.length > 0 && vectorHits.length > 0
-          ? this.fuseWithRrf(keywordHits, vectorHits, this.keywordResultPoolLimit)
-          : keywordHits;
+      // 벡터는 키워드가 부족할 때 채우는 용도다. 양쪽 끝에서는 태우지 않는다 — 0 건이면 안 파는
+      // 상품을 뜻만 닮은 100 건으로 덮어 화면이 거짓말을 하고 result_count 도 0 이 아니게 되어
+      // 소싱 리포트에서 사라진다. 반대로 키워드가 이미 한 화면을 채웠으면 꼬리에 무관 상품만
+      // 붙는다 ("유키반 테이프" 106 건의 뒤쪽이 전부 맥반석가루·슈가링왁스 같은 벡터 이웃이었다).
+      const fillWithVector =
+        vectorHits.length > 0 &&
+        keywordHits.length > 0 &&
+        keywordHits.length < VECTOR_FILL_KEYWORD_LIMIT;
+      const mergedHits = fillWithVector
+        ? this.fuseWithRrf(keywordHits, vectorHits.slice(0, VECTOR_FILL_LIMIT), this.keywordResultPoolLimit)
+        : keywordHits;
 
       keywordMatchCount = keywordHits.length;
       total = mergedHits.length;
@@ -349,7 +361,6 @@ export class ProductIndexService implements OnModuleInit {
                 { wildcard: { name_compact: { value: `*${compact}*` } } },
                 { wildcard: { 'brand.keyword': { value: `*${escapeWildcard(keyword)}*` } } },
                 { match_phrase: { brand: keyword } },
-                { match_phrase: { seo_keywords: keyword } },
                 { match_phrase: { tags: keyword } },
               ],
               minimum_should_match: 1,
@@ -810,7 +821,7 @@ export class ProductIndexService implements OnModuleInit {
           {
             multi_match: {
               query: q,
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2', 'description'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'description'],
               operator: 'or',
               minimum_should_match: '100%',
             },
@@ -822,7 +833,7 @@ export class ProductIndexService implements OnModuleInit {
             multi_match: {
               query: q,
               type: 'cross_fields',
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
               operator: 'and',
               boost: 20,
             },
@@ -839,7 +850,7 @@ export class ProductIndexService implements OnModuleInit {
 
     const multiMatch: Record<string, unknown> = {
       query: q,
-      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'seo_keywords^2', 'description'],
+      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'description'],
       analyzer: 'nori_search_synonym',
       operator: 'or',
       minimum_should_match: minimumShouldMatch,
@@ -948,7 +959,7 @@ export class ProductIndexService implements OnModuleInit {
       {
         multi_match: {
           query: hangul,
-          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
+          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
           operator: 'and',
           boost: 2,
         },

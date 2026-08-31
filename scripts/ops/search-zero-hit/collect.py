@@ -63,7 +63,6 @@ def index_match(keywords):
                 {"wildcard": {"name_compact": {"value": f"*{c}*"}}},
                 {"wildcard": {"brand.keyword": {"value": f"*{kw}*"}}},
                 {"match_phrase": {"brand": kw}},
-                {"match_phrase": {"seo_keywords": kw}},
                 {"match_phrase": {"tags": kw}},
             ], "minimum_should_match": 1}},
                 "_source": ["name", "brand", "is_visible_to_members_only", "status"]}, ensure_ascii=False))
