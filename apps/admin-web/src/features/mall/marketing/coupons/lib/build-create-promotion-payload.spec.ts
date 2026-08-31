@@ -208,6 +208,17 @@ describe('유효기간 두 축 — 날짜는 additional_data 로, 캠페인은 �
     const out = buildCreatePromotionPayload(form({}), { campaignSuffix: 'X' });
     expect('validity_days' in (out.additional_data ?? {})).toBe(false);
   });
+
+  it('유효기간(일)이 0이면 키 자체가 없다 — 백엔드는 0을 양수 정수 위반으로 거부한다', () => {
+    const out = buildCreatePromotionPayload(form({ validityDays: 0 }), { campaignSuffix: 'X' });
+    expect('validity_days' in (out.additional_data ?? {})).toBe(false);
+  });
+
+  it('시작일·종료일이 비어 있으면 additional_data 에도 키가 없다', () => {
+    const out = buildCreatePromotionPayload(form({ startsAt: '', endsAt: '' }), { campaignSuffix: 'X' });
+    expect('starts_at' in (out.additional_data ?? {})).toBe(false);
+    expect('ends_at' in (out.additional_data ?? {})).toBe(false);
+  });
 });
 
 describe('최대 할인금액 (#488 A4)', () => {
