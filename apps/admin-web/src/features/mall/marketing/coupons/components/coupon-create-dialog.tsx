@@ -164,6 +164,7 @@ export function CouponCreateDialog({
   const [maxDiscountAmount, setMaxDiscountAmount] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
+  const [validityDays, setValidityDays] = useState<number | ''>('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
   const [usageLimit, setUsageLimit] = useState<number | ''>('');
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
@@ -197,7 +198,7 @@ export function CouponCreateDialog({
           code, name, discountType, value: value as number, maxDiscountAmount,
           targetType, targetAttribute,
           targetItemIds: targetItems.map((i) => i.id),
-          minOrderAmount, customerGroupIds, startsAt, endsAt,
+          minOrderAmount, customerGroupIds, startsAt, endsAt, validityDays,
           usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
           visibility, autoIssueTrigger,
           createdBy: me?.email || me?.username,
@@ -222,6 +223,7 @@ export function CouponCreateDialog({
     setMaxDiscountAmount('');
     setStartsAt('');
     setEndsAt('');
+    setValidityDays('');
     setMinOrderAmount('');
     setUsageLimit('');
     setSpendLimit('');
@@ -235,6 +237,12 @@ export function CouponCreateDialog({
     setTargetItems([]);
     onOpenChange(false);
   };
+
+  // claimable·assigned_only 는 "발급"이라는 사건이 있어 날짜 두 칸이 발급 가능 구간이다.
+  // public 은 발급 없이 곧바로 쓰이므로 같은 두 칸이 사용 가능 구간이다(validity.ts 의 정책 축).
+  // 순수 표시 라벨 선택일 뿐 payload 를 바꾸지 않으므로 여기 둬도 된다 — 판정은 여전히
+  // build-create-promotion-payload.ts 안에서만 일어난다.
+  const isIssuedVisibility = visibility === 'claimable' || visibility === 'assigned_only';
 
   const isValid =
     code.trim() &&
@@ -403,7 +411,7 @@ export function CouponCreateDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>시작일</Label>
+              <Label>{isIssuedVisibility ? '발급 시작일' : '사용 시작일'}</Label>
               <Input
                 type="datetime-local"
                 value={startsAt}
@@ -411,13 +419,36 @@ export function CouponCreateDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>만료일</Label>
+              <Label>{isIssuedVisibility ? '발급 종료일' : '사용 종료일'}</Label>
               <Input
                 type="datetime-local"
                 value={endsAt}
                 onChange={(e) => setEndsAt(e.target.value)}
               />
             </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {isIssuedVisibility
+              ? '이 기간 동안 고객이 쿠폰을 발급받을 수 있습니다. 발급된 한 장의 만료일은 아래 「유효기간」이 따로 정합니다.'
+              : '전체공개 쿠폰은 발급이라는 절차가 없어, 이 기간이 곧 사용 가능한 기간입니다.'}
+          </p>
+
+          <div className="space-y-2">
+            <Label>유효기간 (일)</Label>
+            <Input
+              type="number"
+              min={1}
+              value={validityDays}
+              onChange={(e) => setValidityDays(e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="예: 30 (발급받은 날부터 30일)"
+            />
+            <p className="text-xs text-muted-foreground">
+              {!isIssuedVisibility
+                ? '전체공개 쿠폰에는 발급이 없어 이 값은 적용되지 않습니다 — 위 사용 종료일이 곧 만료일입니다.'
+                : validityDays
+                ? `발급받은 날부터 ${validityDays}일간 사용할 수 있습니다. 위 발급 종료일이 지나도 이 쿠폰은 유효합니다.`
+                : '비워두면 위 발급 종료일이 그대로 만료일이 됩니다.'}
+            </p>
           </div>
 
           <div className="relative">

@@ -53,6 +53,7 @@ const baseForm: CouponFormState = {
   customerGroupIds: [],
   startsAt: '',
   endsAt: '',
+  validityDays: '',
   usageLimit: '',
   spendLimit: '',
   maxUsesPerCustomer: '',

@@ -33,6 +33,10 @@ export interface CouponFormState {
   customerGroupIds: string[];
   startsAt: string;
   endsAt: string;
+  /**
+   * 발급된 한 장의 수명(일). #488 결정 1 의 «인스턴스 축». 비우면 만료는 `endsAt` 이 정한다.
+   */
+  validityDays: number | '';
   usageLimit: number | '';
   spendLimit: number | '';
   maxUsesPerCustomer: number | '';
@@ -74,6 +78,12 @@ export function buildCreatePromotionPayload(
   }
   if (form.createdBy) additional_data.created_by = form.createdBy;
   if (form.autoIssueTrigger) additional_data.auto_issue_trigger = form.autoIssueTrigger;
+  // 유효기간 두 축 (#488 결정 1): 창은 promotion_meta 가 갖고, 캠페인 날짜는 쓰지 않는다.
+  // 엔진의 listActivePromotions_ 가 캠페인 창이 지난 프로모션을 할인 계산에서 제외하기 때문에
+  // 캠페인에 날짜를 실으면 「발급 후 N일」이 표현되지 않는다.
+  if (form.startsAt) additional_data.starts_at = new Date(form.startsAt).toISOString();
+  if (form.endsAt) additional_data.ends_at = new Date(form.endsAt).toISOString();
+  if (form.validityDays) additional_data.validity_days = Number(form.validityDays);
 
   const target_rules: PromotionTargetRule[] | undefined =
     form.targetType === 'items' && form.targetItemIds.length > 0
@@ -103,7 +113,9 @@ export function buildCreatePromotionPayload(
     ? { type: 'spend' as const, limit: Number(form.spendLimit), currency_code: 'krw' }
     : undefined;
 
-  const hasCampaign = Boolean(form.startsAt || form.endsAt || budget);
+  // 캠페인은 «예산이 필요할 때만» 만든다. 날짜만으로 만들면 CAMP_<code> 가 캠페인 탭을
+  // 기계 생성 행으로 오염시킨다(#488 1-3).
+  const hasCampaign = Boolean(budget);
 
   return {
     code,
@@ -134,8 +146,6 @@ export function buildCreatePromotionPayload(
             name: name || code,
             // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
             campaign_identifier: `CAMP_${code}_${opts.campaignSuffix}`,
-            ...(form.startsAt ? { starts_at: new Date(form.startsAt).toISOString() } : {}),
-            ...(form.endsAt ? { ends_at: new Date(form.endsAt).toISOString() } : {}),
             ...(budget ? { budget } : {}),
           },
         }

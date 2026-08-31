@@ -13,6 +13,7 @@ const base: CouponFormState = {
   customerGroupIds: [],
   startsAt: '',
   endsAt: '',
+  validityDays: '',
   usageLimit: '',
   spendLimit: '',
   maxUsesPerCustomer: '',
@@ -23,6 +24,13 @@ const base: CouponFormState = {
 };
 
 const opts = { campaignSuffix: '1756400000000' };
+
+// 기존 테스트들은 `{ ...base, ... }` 리터럴을 인라인으로 써왔다. 아래 유효기간 테스트들이
+// 요구하는 `form(overrides)` 헬퍼가 파일에 없었으므로 여기서 뽑는다 — `base` 를 감싸기만
+// 하고 기본값은 바꾸지 않는다(`validityDays` 기본은 `''`, `base` 에 없으므로 자동으로 `''`).
+function form(overrides: Partial<CouponFormState> = {}): CouponFormState {
+  return { ...base, ...overrides };
+}
 
 describe('buildCreatePromotionPayload', () => {
   it('코드를 대문자로 정규화하고 항상 active·비자동으로 생성한다', () => {
@@ -74,9 +82,9 @@ describe('buildCreatePromotionPayload', () => {
   });
 
   it('campaign_identifier 에 주입받은 suffix 를 붙인다 (1-3 충돌 방지)', () => {
-    // UI 는 datetime-local 이라 실제 입력은 'YYYY-MM-DDTHH:mm' 꼴이다 — 날짜만 있는 픽스처는
-    // 이 필드가 실제로 뭘 받는지 검증하지 못하는 거짓 안전이라 실제 입력 모양으로 맞춘다.
-    const p = buildCreatePromotionPayload({ ...base, endsAt: '2026-12-31T23:59' }, opts);
+    // 날짜만으로는 더 이상 campaign 이 생기지 않는다(#488 1-3) — 이 테스트가 검증하려는
+    // campaign_identifier 를 실제로 얻으려면 예산(캠페인의 유일한 트리거)이 있어야 한다.
+    const p = buildCreatePromotionPayload({ ...base, spendLimit: 100000 }, opts);
     expect(p.campaign?.campaign_identifier).toBe('CAMP_WELCOME10_1756400000000');
   });
 });
@@ -163,6 +171,42 @@ describe('application_method.allocation', () => {
   it('전체 주문 대상에는 allocation 을 싣지 않는다', () => {
     const p = buildCreatePromotionPayload({ ...base, targetType: 'order' }, opts);
     expect(p.application_method.allocation).toBeUndefined();
+  });
+});
+
+describe('유효기간 두 축 — 날짜는 additional_data 로, 캠페인은 예산 전용 (#488 결정 1)', () => {
+  it('날짜는 campaign 이 아니라 additional_data 로 간다 (#488 결정 1)', () => {
+    const out = buildCreatePromotionPayload(
+      form({ startsAt: '2026-09-01T00:00', endsAt: '2026-09-30T00:00' }),
+      { campaignSuffix: 'X' },
+    );
+    expect(out.additional_data?.starts_at).toEqual(new Date('2026-09-01T00:00').toISOString());
+    expect(out.additional_data?.ends_at).toEqual(new Date('2026-09-30T00:00').toISOString());
+  });
+
+  it('🔴 날짜만 넣으면 캠페인을 만들지 않는다 — 캠페인 탭 오염 종결 (#488 1-3)', () => {
+    const out = buildCreatePromotionPayload(
+      form({ startsAt: '2026-09-01T00:00', endsAt: '2026-09-30T00:00' }),
+      { campaignSuffix: 'X' },
+    );
+    expect(out.campaign).toBeUndefined();
+  });
+
+  it('예산이 있으면 캠페인을 만든다 — 예산은 캠페인에만 있다', () => {
+    const out = buildCreatePromotionPayload(form({ spendLimit: 100000 }), { campaignSuffix: 'X' });
+    expect(out.campaign).toBeDefined();
+    expect(out.campaign?.starts_at).toBeUndefined();
+    expect(out.campaign?.ends_at).toBeUndefined();
+  });
+
+  it('유효기간(일)은 additional_data 로 간다', () => {
+    const out = buildCreatePromotionPayload(form({ validityDays: 30 }), { campaignSuffix: 'X' });
+    expect(out.additional_data?.validity_days).toEqual(30);
+  });
+
+  it('유효기간(일)을 안 넣으면 키 자체가 없다', () => {
+    const out = buildCreatePromotionPayload(form({}), { campaignSuffix: 'X' });
+    expect('validity_days' in (out.additional_data ?? {})).toBe(false);
   });
 });
 
