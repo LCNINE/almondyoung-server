@@ -33,12 +33,12 @@ export function CartTimeSaleNotice({
   if (!endsAt) return null
 
   return (
-    <div className="bg-red-30 mb-4 inline-flex w-fit items-center rounded-lg px-3 py-2">
+    <div className="mb-4">
       <TimeSaleCountdown
         endsAt={endsAt}
         refreshOnEnd
         endedLabel="타임세일이 종료되어 가격이 변경되었습니다."
-        className="text-[14px] font-semibold text-white"
+        className="text-red-30 text-[14px] font-bold"
       />
     </div>
   )
