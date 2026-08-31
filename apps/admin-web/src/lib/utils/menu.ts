@@ -468,6 +468,7 @@ export const mainMenus: MainMenu[] = [
         children: [
           { id: 'customer-behavior', title: '고객 행동', path: '/statistics/behavior' },
           { id: 'conversion-rate', title: '전환율', path: '/statistics/behavior' },
+          { id: 'payment-abandonment', title: '결제 이탈', path: '/statistics/abandonment' },
         ],
       },
       {

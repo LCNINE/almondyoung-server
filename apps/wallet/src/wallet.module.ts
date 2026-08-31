@@ -90,6 +90,7 @@ import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
 import { RecurringBillingAdminService } from './admin/recurring-billing-admin.service';
 import { RecurringBillingAdminController } from './admin/recurring-billing-admin.controller';
 import { StatisticsAdminService } from './admin/statistics-admin.service';
+import { PaymentAbandonmentService } from './admin/payment-abandonment.service';
 import { StatisticsAdminController } from './admin/statistics-admin.controller';
 
 // Messaging + Jobs
@@ -514,6 +515,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PaymentIntentAdminService,
     RecurringBillingAdminService,
     StatisticsAdminService,
+    PaymentAbandonmentService,
 
     // Billing
     BillingMethodService,

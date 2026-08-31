@@ -526,6 +526,62 @@ export interface DailyPaymentsDto {
   series: DailyPaymentPointDto[];
 }
 
+export interface AbandonmentSummaryDto {
+  attemptedCount: number;
+  attemptedAmount: number;
+  succeededCount: number;
+  succeededAmount: number;
+  abandonedCount: number;
+  abandonedAmount: number;
+  openCount: number;
+  openAmount: number;
+  /** 이탈 / (성공 + 이탈). 결말이 난 게 없으면 null. */
+  abandonRate: number | null;
+  settledCount: number;
+}
+
+export interface AbandonmentStageDto {
+  stage: string | null;
+  reason: string | null;
+  count: number;
+  amount: number;
+}
+
+export interface AbandonmentMethodDto {
+  methodType: string;
+  attemptedCount: number;
+  succeededCount: number;
+  abandonedCount: number;
+  openCount: number;
+  abandonedAmount: number;
+  abandonRate: number | null;
+}
+
+export interface AbandonmentDailyPointDto {
+  bucket: string;
+  attemptedCount: number;
+  succeededCount: number;
+  abandonedCount: number;
+  openCount: number;
+  abandonedAmount: number;
+}
+
+export interface AbandonmentDurationDto {
+  sampleCount: number;
+  p50Seconds: number | null;
+  p90Seconds: number | null;
+}
+
+export interface PaymentAbandonmentDto {
+  range: { from: string; to: string };
+  summary: AbandonmentSummaryDto;
+  byStage: AbandonmentStageDto[];
+  byMethod: AbandonmentMethodDto[];
+  daily: AbandonmentDailyPointDto[];
+  duration: { succeeded: AbandonmentDurationDto; abandoned: AbandonmentDurationDto };
+  openByStatus: Array<{ status: string; count: number; amount: number }>;
+}
+
 export interface MembershipRevenueDto {
   range: { from: string; to: string };
   totalAmount: number;

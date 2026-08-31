@@ -1,0 +1,1 @@
+CREATE INDEX "idx_payment_intents_purpose_created_at" ON "payment_intents" USING btree ("purpose","created_at");

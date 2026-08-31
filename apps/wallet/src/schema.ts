@@ -267,6 +267,9 @@ export const paymentIntents = pgTable(
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
     index('idx_payment_intents_status_action_expires_at').on(table.status, table.actionExpiresAt),
     index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
+    // 관리자 통계의 결제 이탈 집계가 목적별 기간 창을 잡는다. user_id 선두 인덱스로는
+    // 못 타 전수 스캔이 된다.
+    index('idx_payment_intents_purpose_created_at').on(table.purpose, table.createdAt),
     index('idx_payment_intents_invoice_id')
       .on(table.invoiceId)
       .where(sql`${table.invoiceId} IS NOT NULL`),

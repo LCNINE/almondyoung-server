@@ -29,6 +29,7 @@ export const TABS = [
   { href: '/statistics/traffic', label: '유입', question: '어떻게 들어오고 있나 (검색·랜딩·기기)' },
   { href: '/statistics/insights', label: '고객 분석', question: '한 번 산 고객이 다시 사고 있나' },
   { href: '/statistics/behavior', label: '행동 분석', question: '보다가 어디서 이탈하나' },
+  { href: '/statistics/abandonment', label: '결제 이탈', question: '결제까지 왔는데 어디서 왜 멈췄나' },
   { href: '/statistics/reviews', label: '리뷰', question: '산 뒤에 만족했나' },
   { href: '/statistics/settings', label: '설정', question: '월 고정비 — 흑자·적자 판정에 필요한 값' },
 ];

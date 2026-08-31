@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { paymentMethodTypeEnum, PaymentMethodType } from '../schema';
 import { StatisticsAdminService } from './statistics-admin.service';
+import { PaymentAbandonmentService } from './payment-abandonment.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
@@ -45,7 +46,10 @@ class StatisticsRangeQueryDto {
 @WalletAdminAuth()
 @Controller('v1/admin/statistics')
 export class StatisticsAdminController {
-  constructor(private readonly service: StatisticsAdminService) {}
+  constructor(
+    private readonly service: StatisticsAdminService,
+    private readonly abandonmentService: PaymentAbandonmentService,
+  ) {}
 
   @Get('fee-rates')
   @ApiOperation({ summary: '결제수단별 수수료율 목록 (이력 포함)' })
@@ -81,6 +85,12 @@ export class StatisticsAdminController {
   @ApiOperation({ summary: '일별 결제(캡처)·환불 시계열 — KST 달력일 귀속' })
   async getDailyPayments(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getDailyPayments(query.from, query.to);
+  }
+
+  @Get('payment-abandonment')
+  @ApiOperation({ summary: '결제 단계 이탈 — 구매 인텐트가 어디서 왜 멈췄나 (진행 중은 이탈과 분리)' })
+  async getPaymentAbandonment(@Query() query: StatisticsRangeQueryDto) {
+    return this.abandonmentService.getAbandonment(query.from, query.to);
   }
 
   @Get('membership-revenue')

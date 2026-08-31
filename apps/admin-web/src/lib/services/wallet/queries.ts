@@ -182,6 +182,15 @@ export const useDailyPayments = (from: string, to: string) => {
   });
 };
 
+export const usePaymentAbandonment = (from: string, to: string) => {
+  return useQuery({
+    queryKey: walletQueryKeys.paymentAbandonment(from, to),
+    queryFn: () => walletApi.getPaymentAbandonment(from, to),
+    staleTime: 60 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
 export const useMembershipRevenue = (from: string, to: string) => {
   return useQuery({
     queryKey: walletQueryKeys.membershipRevenue(from, to),
