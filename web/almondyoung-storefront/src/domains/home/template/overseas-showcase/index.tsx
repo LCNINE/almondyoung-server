@@ -3,6 +3,8 @@ import {
   Carousel,
   CarouselContent,
   CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
 } from "@/components/ui/carousel"
 import { getCategoryByHandle } from "@/lib/api/medusa/categories"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
@@ -59,7 +61,7 @@ export async function OverseasShowcaseWrapper({
 
   return (
     <HomeSection background="muted" className="border-t-0">
-      <Carousel opts={{ align: "start" }} className="w-full">
+      <Carousel opts={{ align: "start" }} className="group/carousel w-full">
         <div className="mb-6 flex items-end justify-between">
           <div>
             <Title>
@@ -76,13 +78,13 @@ export async function OverseasShowcaseWrapper({
             {t("viewAll")} <ArrowRight className="h-4 w-4" />
           </LocalizedClientLink>
         </div>
-        <CarouselContent className="-ml-4 py-2">
+        <CarouselContent className="-ml-2 py-2 sm:-ml-4">
           {products.map((product, index) => (
             <CarouselItem
               key={product.id}
-              className="basis-[46%] pl-4 sm:basis-[38%] lg:basis-[31%]"
+              className="basis-[45%] pl-2 sm:basis-[38%] sm:pl-4 lg:basis-[31%]"
             >
-              <div className="rounded-2xl bg-white p-5 pb-6 shadow-sm">
+              <div className="sm:rounded-2xl sm:bg-white sm:p-5 sm:pb-6 sm:shadow-sm">
                 <ProductCard
                   product={product}
                   isMembership={isMembership}
@@ -94,6 +96,8 @@ export async function OverseasShowcaseWrapper({
             </CarouselItem>
           ))}
         </CarouselContent>
+        <CarouselPrevious className="left-2 hidden size-10 bg-white/90 opacity-0 shadow-md transition-opacity group-hover/carousel:opacity-100 disabled:opacity-0 md:inline-flex" />
+        <CarouselNext className="right-2 hidden size-10 bg-white/90 opacity-0 shadow-md transition-opacity group-hover/carousel:opacity-100 disabled:opacity-0 md:inline-flex" />
       </Carousel>
     </HomeSection>
   )

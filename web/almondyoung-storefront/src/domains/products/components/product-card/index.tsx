@@ -156,7 +156,7 @@ export default function ProductCard({
   return (
     <LocalizedClientLink
       href={`/products/${product.handle}`}
-      className="cursor-pointer group"
+      className="group cursor-pointer"
       onClick={onClick}
     >
       <div>
@@ -208,7 +208,7 @@ export default function ProductCard({
         </div>
 
         <div className="mt-4 min-h-20">
-          <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
+          <h3 className="text-foreground line-clamp-2 text-[14px] leading-tight">
             {getIsOverseas(product) && <OverseasBadge />}
             {product.title}
           </h3>
