@@ -1676,7 +1676,11 @@ DATABASE_URL="$(grep -m1 '^DATABASE_URL=' apps/channel-adapter/.env | cut -d= -f
   npx jest --maxWorkers=2 coupon-issue-reconciliation.integration
 ```
 Expected: PASS (2 케이스).
-`DATABASE_URL` 이 없거나 로컬 channel-adapter DB 가 없으면 **skip 된다** — 그때는 이 스펙을 아래 「이번에 검증되지 않는 것」에 **반드시 적을 것**. 조용히 넘어가면 마커 술어가 미검증인 채로 배포된다.
+
+⚠️ **실제로 돌릴 때 주의 (2026-09-01 실측):**
+- `apps/channel-adapter/.env` 는 **없다**. `DATABASE_URL="postgres://postgres:postgres@localhost:5432/channel_adapter"` 를 직접 넘긴다(로컬 compose 의 `channel_adapter` DB 에 `inbox_events` 가 이미 있다).
+- **`--forceExit` 가 필요하다.** 없으면 postgres 커넥션이 열린 채 jest 가 종료하지 못하고 매달린다.
+- `DATABASE_URL` 이 없거나 로컬 DB 가 없으면 **skip 된다** — 그때는 이 스펙을 아래 「이번에 검증되지 않는 것」에 **반드시 적을 것**. 조용히 넘어가면 마커 술어가 미검증인 채로 배포된다.
 
 - [ ] **Step 7: 게이트**
 
@@ -1799,7 +1803,7 @@ BODY
 **실행자는 아래를 실제 상태로 갱신한 뒤에 완료를 보고한다.** 「돌렸다고 치고」가 가장 비싼 거짓말이다.
 
 - **자동발급 전 구간 end-to-end** — `COUPON_AUTO_ISSUE_ENABLED` 가 꺼져 있어 라이브에서 이 경로는 **한 번도 실행된 적이 없다**. 통합 스펙은 러너에만 플래그를 켠다. 리허설 2차가 유일한 방어선.
-- **빠른 레인의 SQL 술어** — Task 6 Step 6 을 실제로 돌렸는지 여기에 적을 것. 안 돌렸다면 `metadata -> 'coupon_fast_reset' is null` 과 jsonb 병합은 **미검증**이다(목은 조용히 통과한다).
+- ~~**빠른 레인의 SQL 술어**~~ ✅ **2026-09-01 실 Postgres 로 검증함** (`DATABASE_URL=postgres://…/channel_adapter`, 2 케이스 통과). 그리고 그 실행이 **목이 가린 버그 2건을 잡았다**: `jsonb_build_object($1, now())` 는 `::text` 캐스트 없이 `could not determine data type of parameter $1` 로 죽었고, `->` 도 `(jsonb,int)`/`(jsonb,text)` 오버로드 때문에 캐스트가 필요했다. 유닛 목은 둘 다 통과했었다.
 - **메트릭이 실제로 스크레이프되는지** — `/metrics` 노출은 기존 배선(`startMetricsServer`)에 얹혀 있고 이 플랜은 그것을 확인하지 않는다. 배포 후 Grafana 에서 `coupon_auto_issue_total` 이 보이는지 한 번 봐야 한다.
 - **admin-web 다이얼로그의 화면 동작** — `.tsx` 는 렌더 테스트가 없다. 라벨 «맵»은 `.ts` 로 빼서 검증하지만, 그 맵을 화면이 실제로 부르는지는 브라우저에서만 보인다.
 - **`customer.email` 같은 «진짜 낯선» 속성으로 프로모션이 생성되는지** — 통합 스펙은 `customer.groups.id` + `ne`(확실히 생성되는 조합)로 fail-closed 를 증명한다. 임의 속성 생성 가능성은 #488 의 실측 기록에만 있다.
