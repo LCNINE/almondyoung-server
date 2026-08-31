@@ -14,10 +14,7 @@ type Props = {
   endsAt: string
   /** 0 이 되는 순간 서버 데이터를 다시 받는다. 카트처럼 가격이 바뀌는 화면에서 켠다. */
   refreshOnEnd?: boolean
-  /**
-   * `router.refresh()` **전에** 한 번 기다렸다 부를 일. 카트·체크아웃은 여기서 가격 재계산을
-   * 건다 — 다시 받기만 해서는 세일이 끝나도 라인에 박힌 옛 세일가가 그대로 온다.
-   */
+  /** `router.refresh()` 전에 await 할 작업. 카트·체크아웃은 여기서 가격 재계산을 건다. */
   onEnd?: () => void | Promise<void>
   compact?: boolean
   /** 24시간 이하로 남았을 때만 그린다. 그 위로는 아무것도 렌더하지 않는다. */

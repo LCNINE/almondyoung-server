@@ -8,23 +8,11 @@ import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
 
 /**
- * 카트·체크아웃에 타임세일 상품이 있을 때의 마감 안내.
+ * 카트·체크아웃의 타임세일 마감 안내. 종료되면 가격 재계산을 건 뒤 변경 안내로 바뀐다.
  *
- * 종료 순간 가격 재계산을 건 뒤 `router.refresh()` 로 다시 받는다. 다시 받기만 하면 안 된다 —
- * 카트 라인엔 담을 때의 세일가가 박혀 있고, 페이지가 부르는 `refreshCartPricesDuringRender` 는
- * (스코프, 멤버십, 세일 상태) 키로 10분 스로틀이다. 재계산 없이는 세일이 끝나도 옛 세일가로
- * 결제된다.
- *
- * 그리고 종료 뒤에도 안내를 계속 그린다. 재계산이 끝나면 서버가 세일 목록을 비워 `endsAt` 이
- * null 이 되는데, 그때 컴포넌트가 사라져 버리면 **금액만 조용히 오른다** — 결제 버튼 숫자가
- * 눈앞에서 바뀌는 게 유일한 신호가 되어 "9,000원이라며" CS 가 된다. 그래서 종료 사실을 로컬
- * state 로 붙잡고, 아마존처럼 **바뀌기 전 금액과 바뀐 금액을 함께** 보여준다.
- *
- * 카트 라인에서 타임세일 여부를 직접 읽을 수는 없다 — `compare_at_unit_price` 는 멤버십가·수량
- * 할인도 똑같이 채우기 때문이다. 그래서 세일 상품 id 집합과 교차한다.
- *
- * 세일이 여럿이면 가장 먼저 끝나는 마감을 쓴다. 담긴 상품마다 카운터를 다는 것보다, 다음에
- * 가격이 바뀌는 시점 하나를 보여주는 편이 읽힌다 — 그 시점에 새로고침이 걸려 나머지도 함께 맞는다.
+ * 라인엔 담을 때의 세일가가 박혀 있어 재계산 없이는 옛 가격으로 결제된다. 종료 후에도 안내를
+ * 남기는 건 `endsAt` 이 null 이 되는 순간 컴포넌트가 사라져 금액만 조용히 오르기 때문이다.
+ * 세일이 여럿이면 가장 먼저 끝나는 마감을 쓴다.
  */
 export function TimeSaleNotice({
   items,
@@ -38,16 +26,16 @@ export function TimeSaleNotice({
   )
   const endsAt = useEarliestSaleEnd(productIds)
 
-  // 배송비는 세일과 무관하게 움직이므로 상품 금액만 본다.
+  // 배송비는 세일과 무관하다.
   const subtotal = useMemo(
     () => items.reduce((sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0), 0),
     [items]
   )
-  // 종료 순간의 금액을 붙잡아야 하는데, 그 시점은 렌더가 아니라 타이머 콜백이다.
+  // 종료 시점은 렌더가 아니라 타이머 콜백이라 ref 로 붙잡는다.
   const subtotalRef = useRef(subtotal)
   subtotalRef.current = subtotal
 
-  // 종료 직전의 라인별 단가. 어떤 상품이 올랐는지 이름으로 말해야 손님이 납득한다.
+  // 종료 직전 라인별 단가. 달라진 상품만 이름으로 알린다.
   const linesRef = useRef(items)
   linesRef.current = items
   const [snapshot, setSnapshot] = useState<Map<string, number> | null>(null)

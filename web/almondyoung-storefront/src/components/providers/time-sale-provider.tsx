@@ -73,9 +73,7 @@ export function useIsTimeSalePrice(variant: VariantLike): boolean {
 
 /**
  * 이 상품이 걸린 타임세일. 없으면 null.
- *
- * variant 판정(`useTimeSaleForVariant`)과 달리 상품 id 로 가른다 — 카트 라인은
- * `calculated_price.price_list_id` 를 실어 오지 않아 가격의 출처를 알 수 없다.
+ * 카트 라인은 `price_list_id` 를 안 실어 오므로 variant 대신 상품 id 로 가른다.
  */
 export function useTimeSaleForProduct(productId: string | null | undefined): TimeSale | null {
   const { sales } = useTimeSale()
