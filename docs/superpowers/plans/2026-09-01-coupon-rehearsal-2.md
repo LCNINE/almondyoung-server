@@ -7,7 +7,7 @@
 
 **SoT:** 이슈 [#488](https://github.com/LCNINE/almondyoung-server/issues/488) · 로드맵 `docs/superpowers/plans/2026-08-29-coupon-domain-master-plan.md`
 **1차 기록:** #488 「리허설 1차 실행 기록」 절 (2026-08-30, 11항목 ✅10/❌1)
-**환경 절차 정본:** `docs/local-dev.md` 「전체 스택 로컬 구동」 — 이 문서는 거기에 **channel-adapter 를 더한다**
+**환경 절차 정본:** `docs/local-dev.md` 「전체 스택 로컬 구동」 — 이 문서는 거기에 **channel-adapter 와 membership 을 더한다**
 
 ---
 
@@ -83,7 +83,7 @@ echo 'COUPON_AUTO_ISSUE_ENABLED=true' >> apps/medusa/.env
 
 ### 2-3. 🔴 이번에만 추가되는 것 ②: channel-adapter
 
-**1차 환경에는 없었다.** `7-2`(빠른 레인)·`7-4`(메트릭)는 channel-adapter 안에 있으므로 이걸 안 띄우면 그 둘이 미검증으로 남는다.
+**1차 환경에는 없었다.** `7-2`(빠른 레인)·`7-4`(메트릭)는 channel-adapter 안에 있으므로 이걸 안 띄우면 그 둘이 미검증으로 남고, 자동발급 두 트리거(R11·R11b)도 전부 여기를 지난다.
 
 `apps/channel-adapter/.env` 를 새로 만든다. `env-templates/.env.channel-adapter.example` 은 Railway 시절 것이라 그대로는 안 되고, **`env.validation.ts` 가 required 로 요구하는 것들을 채워야 부팅한다** — 쿠폰과 무관한 채널 자격증명도 required 라 **더미로 채운다**:
 
@@ -101,6 +101,13 @@ KAFKA_GROUP_ID=channel-adapter-rehearsal
 # Medusa — 발급 API 를 부른다. MEDUSA_API_KEY 는 admin-web 이 쓰는 것과 같은 secret API 키다
 MEDUSA_API_URL=http://localhost:9000
 MEDUSA_API_KEY=<admin-web 과 같은 값>
+
+# 🔴 멤버십 트리거(R11b)에 필수. 미설정이면 동기화가 통째로 skip 되고 쿠폰 발급이 «조용히» 안 일어난다.
+#    §2-4 에서 Medusa 고객 그룹을 만든 뒤 그 id 를 여기 넣는다.
+MEDUSA_MEMBERSHIP_GROUP_ID=<§2-4 에서 만든 그룹 id>
+# membership 앱 호출용 (해지·정합화 경로가 쓴다. ACTIVE 경로만 볼 거면 없어도 되지만 맞춰 두는 편이 낫다)
+MEMBERSHIP_SERVICE_URL=http://localhost:3001
+MEMBERSHIP_INTERNAL_KEY=local-membership-internal-key
 
 # 쿠폰과 무관하지만 env 검증이 required 로 요구한다 (부팅만 되면 된다)
 NAVER_API_ENDPOINT=http://localhost:1
@@ -124,13 +131,71 @@ npm run start:channel-adapter:dev      # :3010, 메트릭은 :13010/metrics
 - `OrderPollerOrchestrator` 가 5분마다 core `/internal/channels/active-sites` 를 부르는데 core 를 안 띄웠으므로 실패한다. 게이트는 **fail-closed** 라 그 주기의 수집을 건너뛸 뿐이고 (#654), 쿠폰 경로와 무관하다.
 - Naver/Coupang 어댑터가 더미 자격증명으로 실패하는 로그. 마찬가지로 무관하다.
 
-### 2-4. 기동 순서
+### 2-4. 🔴 이번에만 추가되는 것 ③: membership 앱 (`membership_activated` 트리거용)
+
+`customer_registered` 만 볼 거면 이 절을 건너뛰어도 된다. **`R11b` 를 하려면 필요하다.**
+
+#### 먼저 Medusa 멤버십 고객 그룹을 만든다
+
+```bash
+TOK=$(curl -s -X POST http://localhost:9000/auth/user/emailpass -H 'content-type: application/json' \
+  -d '{"email":"<관리자메일>","password":"<비밀번호>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+curl -s -X POST http://localhost:9000/admin/customer-groups -H "authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{"name":"membership-local"}' \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["customer_group"]["id"])'
+```
+
+출력된 `cusgroup_...` 를 channel-adapter `.env` 의 `MEDUSA_MEMBERSHIP_GROUP_ID` 에 넣고 **재기동한다.**
+
+🔴 **이게 이 경로에서 가장 조용히 실패하는 지점이다.** 미설정이면
+`handleMembershipStatusChanged` 가 첫 줄에서 `MEDUSA_MEMBERSHIP_GROUP_ID is not set. Skipping sync.`
+warn 하나만 남기고 `{success:false, action:'skipped'}` 로 끝난다 — **inbox 행은 published 가 되고
+쿠폰은 발급되지 않는다.** 에러가 아니라서 안 보인다.
+
+#### `apps/membership/.env`
+
+```bash
+cat > apps/membership/.env <<'EOF'
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/membership
+PORT=3001
+NODE_ENV=development
+
+# 아웃박스 발행에 필요 (MembershipStatusChanged 가 여기로 나간다)
+KAFKA_BROKERS=localhost:9092
+KAFKA_CLIENT_ID_PREFIX=membership
+KAFKA_GROUP_ID=membership-rehearsal
+
+# 인증 — AUTH_SECRET 이나 OIDC_ISSUER_URL 중 하나는 반드시 있어야 부팅한다
+OIDC_ISSUER_URL=http://localhost:3000
+
+# 🔴 내부 라우트 키. dev 에선 env 검증이 optional 로 두지만, 가드는 «미설정이면 401» 이라
+#    이 값이 없으면 /internal/grant 를 못 부른다. channel-adapter 의 같은 이름과 값을 맞춘다.
+MEMBERSHIP_INTERNAL_KEY=local-membership-internal-key
+EOF
+```
+
+#### 활성 플랜을 하나 시드한다
+
+```bash
+npx dotenv -e apps/membership/.env -- npm run db:seed:membership
+```
+
+🔴 **플랜이 없으면 지급이 `활성 플랜이 없어 구독을 생성할 수 없습니다` 로 던진다.**
+`grantByDays` 가 활성 플랜 하나를 골라 계약을 만들기 때문이다.
+
+기동:
+```bash
+npx dotenv -e apps/membership/.env -- nest start membership    # :3001
+```
+
+### 2-5. 기동 순서
 
 ```bash
 npx dotenv -e apps/user-service/.env -- nest start user-service   # :3000
 (cd web/auth-web && npm run dev)                                  # :8001
 (cd apps/medusa && npx medusa develop)                            # :9000
 npx dotenv -e apps/wallet/.env -- nest start wallet               # :5001
+npx dotenv -e apps/membership/.env -- nest start membership       # :3001  ← R11b 용
 npm run start:channel-adapter:dev                                 # :3010  ← 이번 추가분
 (cd apps/admin-web && npm run dev)                                # :8002
 (cd web/almondyoung-storefront && npm run dev)                    # :8000
@@ -138,7 +203,7 @@ npm run start:channel-adapter:dev                                 # :3010  ← �
 
 `http://localhost:8000/kr/login` 에서 로그인이 되면 배선이 맞은 것이다.
 
-### 2-5. 1차에서 실제로 막혔던 지점 (같은 데서 또 막히지 말 것)
+### 2-6. 1차에서 실제로 막혔던 지점 (같은 데서 또 막히지 말 것)
 
 `docs/local-dev.md` 「부팅 중 실제로 걸린 것들」에 전문이 있다. 요약:
 - **user-service 는 `KAFKA_BROKERS` 없이 못 뜬다**(경고만 찍고 죽는다). 선택 아님
@@ -166,7 +231,8 @@ npm run start:channel-adapter:dev                                 # :3010  ← �
 | **R8** | `detach-coupon-campaigns.ts` dry-run → 반영 | 배포 후 필수 스크립트 | **라이브에서 처음 돌면 늦다** |
 | **R9** | 분류표 밖 룰 → 발급 거부 · 새 문구 · `force` 우회 | P7 `1-5` | 어드민 다이얼로그 문구는 `.tsx` |
 | **R10** | 카트 문맥 룰(`subtotal`) 쿠폰은 발급됨 | P7 대조군 | — |
-| **R11** | **자동발급 end-to-end (channel-adapter 경유)** | `A5` 전체 | 라이브·로컬 통틀어 **실행 0회** |
+| **R11** | **자동발급 end-to-end — `customer_registered`** | `A5` 전체 | 라이브·로컬 통틀어 **실행 0회** |
+| **R11b** | **자동발급 end-to-end — `membership_activated`** | `A5` 두 번째 트리거 | 앱 4개를 가로지른다 |
 | **R12** | `/metrics` 에 발급 카운터가 뜨는가 | `7-4` | 스크레이프는 앱 밖 |
 | **R13** | 빠른 레인이 실패 행을 **1회만** 되살리는가 | `7-2` | 크론 실발화 |
 | **R14** | 전액 환불 후 쿠폰 상태 | `A2`(미해결 확인) | — |
@@ -302,7 +368,7 @@ R9 와 같은 방법으로 `{"attribute":"subtotal","operator":"gte","values":["
 **기대: 자동발급으로 정상 발급된다.** (최소주문금액은 카트가 생겨야 판정되므로 발급 시점에 막으면 안 된다.)
 그리고 그 쿠폰은 **3만원 미만 카트에서는 할인 0**, 3만원 이상에서 할인 적용 — 엔진이 카트에서 제대로 평가하는지까지 본다.
 
-### R11. 🔴 자동발급 end-to-end — 이 리허설의 본체
+### R11. 🔴 자동발급 end-to-end ① `customer_registered` — 이 리허설의 본체
 
 **경로:** storefront 회원가입 → 이메일 인증 → user-service 가 `UserEmailVerified` 발행 → Kafka `users.events.v1` → channel-adapter `UserEventConsumer` → `inbox_events` → `InboxWorkerService` → `findCustomerByAlmondUserId` → `POST /admin/customers/:id/issue-coupons` → 링크 생성
 
@@ -329,7 +395,59 @@ R9 와 같은 방법으로 `{"attribute":"subtotal","operator":"gte","values":["
    - `status='failed'` → `error_message` 를 본다 (그리고 **R13 의 재료가 된다 — 지우지 말 것**)
 6. Medusa 로그에 `Auto-issued N coupon(s) to customer ...` 가 찍히고, **마이페이지 쿠폰 목록에 그 쿠폰이 있어야 한다**
 
-**`membership_activated` 트리거는 이 리허설에서 end-to-end 로 돌리지 않는다**(membership 앱 + Firebase 가 필요). 대신 `POST /admin/customers/:id/issue-coupons {"trigger":"membership_activated"}` 를 직접 쳐서 **Medusa 쪽 절반만** 확인하고, 그 사실을 결과에 명시한다.
+### R11b. 🔴 자동발급 end-to-end ② `membership_activated`
+
+**경로 (앱 4개를 가로지른다):**
+
+```
+POST /internal/grant (membership :3001)
+  → grantByDays 트랜잭션 안에서 saveStatusChanged({status:'ACTIVE'}) = 트랜잭셔널 아웃박스
+  → 아웃박스 디스패처 → Kafka membership.events.v1 / MembershipStatusChanged
+  → channel-adapter MembershipEventConsumer → inbox_events
+  → InboxWorkerService → MembershipMedusaSyncService.handleMembershipStatusChanged
+  → addCustomerToGroup(고객, MEDUSA_MEMBERSHIP_GROUP_ID)
+  → refreshCartPricesAfterGroupChange
+  → issuePromotionsByTrigger(고객, 'membership_activated')   ← 여기가 목적지
+```
+
+**선행 조건 셋** — 하나라도 빠지면 조용히 아무 일도 안 일어난다:
+1. `MEDUSA_MEMBERSHIP_GROUP_ID` 가 channel-adapter `.env` 에 있고 그 그룹이 Medusa 에 실재한다(§2-4)
+2. **Medusa customer 가 이미 있다** — R11 과 같은 함정이다. 스토어프론트에 한 번 로그인해 둔 계정을 쓴다
+3. membership DB 에 **활성 플랜이 있다**(§2-4 의 시드)
+
+**절차:**
+
+1. `auto_issue_trigger = 멤버십 활성화`(`membership_activated`) 인 `assigned_only` 쿠폰을 하나 만든다
+2. 지급을 쏜다 — `userId` 는 **user-service 의 user id** 다(Medusa customer id 가 아니다):
+   ```bash
+   curl -i -X POST http://localhost:3001/internal/grant \
+     -H "authorization: Bearer local-membership-internal-key" \
+     -H 'content-type: application/json' \
+     -d '{"userId":"<user-service user id>","days":30,"memo":"rehearsal"}'
+   ```
+   - `{"granted":true}` → 진행
+   - `{"granted":false,"reason":"already_active"}` → **그 유저는 이미 활성 구독이 있다.** 같은 유저로 두 번은 안 된다 — 새 계정을 쓰거나 `subscription_entitlement` 의 `is_current` 를 내린다
+3. **끊긴 지점을 순서대로 좇는다** — 어디서 멈췄는지가 곧 진단이다:
+   ```sql
+   -- ① membership DB: 아웃박스에 실렸는가
+   SELECT id, event_type, status, created_at FROM event.outbox_events
+    WHERE event_type='MembershipStatusChanged' ORDER BY created_at DESC LIMIT 3;
+
+   -- ② channel_adapter DB: 컨슈머가 받았는가
+   SELECT id, event_type, status, attempts, error_message, created_at
+     FROM inbox_events WHERE event_type='MembershipStatusChanged'
+    ORDER BY created_at DESC LIMIT 3;
+   ```
+   - ①에 행이 없다 → membership 아웃박스/Kafka 문제
+   - ①은 있는데 ②가 없다 → Kafka 구독(브로커 주소·groupId) 문제
+   - ②가 `pending`+`attempts>0` → Medusa customer 미존재가 대표 원인(선행 조건 2)
+   - ②가 `published` 인데 쿠폰이 없다 → 🔴 **`MEDUSA_MEMBERSHIP_GROUP_ID` 미설정을 의심한다.** channel-adapter 로그에 `MEDUSA_MEMBERSHIP_GROUP_ID is not set. Skipping sync.` 가 있는지 본다
+4. **기대:** 고객이 Medusa 멤버십 그룹에 들어가고, 로그에 `Auto-issued N coupon(s) ... trigger=membership_activated` 가 찍히고, **마이페이지에 그 쿠폰이 있다**
+5. `/metrics` 에 `coupon_auto_issue_total{trigger="membership_activated",outcome="issued"}` 가 뜬다(R12 와 함께 확인)
+
+⚠️ **`refreshCartPricesAfterGroupChange` 가 그룹 추가와 쿠폰 발급 사이에 있다.** 거기서 던지면 쿠폰 발급까지 못 간 채 inbox 가 재시도된다 — ②가 `pending` 인데 고객은 이미 그룹에 들어가 있으면 이 구간을 의심한다.
+
+**Firebase 경로(`Cafe24Linked`)는 여전히 다루지 않는다** — 외부 Firebase 자격증명이 필요하고, 그 경로도 결국 같은 `MembershipStatusChanged` 로 합류하므로 여기서 이미 덮인다.
 
 ### R12. 메트릭
 
@@ -402,7 +520,8 @@ SELECT id, status, attempts, metadata->'coupon_fast_reset' AS marker FROM inbox_
 
 ## 6. 이 리허설이 다루지 않는 것 (미리 적어 둔다)
 
-- **`membership_activated` end-to-end** — membership 앱 + Firebase 필요. Medusa 쪽 절반만 확인한다(R11)
+- **Firebase 경로(`Cafe24Linked`/`Cafe24Unlinked`)** — 외부 Firebase 자격증명이 필요하다. 그 경로도 결국 `MembershipStatusChanged` 로 합류하므로 R11b 가 그 뒷단을 이미 덮는다
+- **멤버십 해지/만료 경로(`CANCELLED`/`EXPIRED`)** — 쿠폰 발급과 무관하다(그룹 제거만 한다). R11b 는 `ACTIVE` 만 본다
 - **실 PG 결제** — 포인트 전액결제로 우회한다(`docs/local-dev.md` §5). NicePay 결제창은 미실행
 - **CS 화면(`A1`)** — 백엔드만 있고 admin-web 호출부가 0건(P8 범위)
 - **`7-3`(발급 계약이 3서비스에 샌다)** — 별도 트랙(2026-08-31 결정 5)
