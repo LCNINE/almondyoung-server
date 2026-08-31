@@ -43,7 +43,8 @@
     "outOfStockHint": "This item is sold out. Remove it to continue to checkout.",
     "overStockBadge": "Not enough stock",
     "overStockHint": "Only {max} left in stock. Please lower the quantity to {max} or fewer.",
-    "quantityAdjustedToMax": "Only {max} left in stock, so the quantity was set to {max}."
+    "quantityAdjustedToMax": "Only {max} left in stock, so the quantity was set to {max}.",
+    "timeSaleBadge": "Time sale"
   },
   "summary": {
     "title": "Order summary",
@@ -81,5 +82,7 @@
     "refresh": "Refresh",
     "inquiry": "Contact us"
   },
-  "won": "KRW"
+  "won": "KRW",
+  "timeSaleEndedOne": "The time sale ended — {name} changed from {from} to {to}.",
+  "timeSaleEndedMany": "The time sale ended — {name} and {count} more changed. Item total {from} → {to}"
 }

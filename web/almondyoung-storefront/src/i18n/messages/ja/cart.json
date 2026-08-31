@@ -43,7 +43,8 @@
     "outOfStockHint": "品切れの商品です。決済を進めるには削除してください。",
     "overStockBadge": "在庫不足",
     "overStockHint": "在庫が残り{max}個です。{max}個以下に調整してください。",
-    "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。"
+    "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。",
+    "timeSaleBadge": "タイムセール"
   },
   "summary": {
     "title": "ご注文金額",
@@ -81,5 +82,7 @@
     "refresh": "再読み込み",
     "inquiry": "お問い合わせ"
   },
-  "won": "ウォン"
+  "won": "ウォン",
+  "timeSaleEndedOne": "タイムセールが終了し、{name} の価格が {from} → {to} に変更されました。",
+  "timeSaleEndedMany": "タイムセールが終了し、{name} 他 {count}件の価格が変更されました。商品金額 {from} → {to}"
 }

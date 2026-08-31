@@ -23,5 +23,6 @@
   "quickAddToCartWithPrice": "Add to Cart · {price}",
   "quickAddSelect": "Please select options",
   "quickAddError": "Could not load product options.",
-  "membersOnly": "Members only"
+  "membersOnly": "Members only",
+  "discountBadge": "{percent}% OFF"
 }

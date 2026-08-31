@@ -2,6 +2,7 @@ import { EmptyCartView } from "@/components/cart/empty-cart-view"
 import {
   ensureCorrectShippingMethod,
   findUnavailableLineItems,
+  refreshCartPricesDuringRender,
   retrieveCart,
 } from "@/lib/api/medusa/cart"
 import { isUnavailableVariantError } from "@/lib/utils/cart-availability"
@@ -45,6 +46,9 @@ async function CheckoutManager({
   cartId?: string
   countryCode: string
 }) {
+  // 카트를 거치지 않고 들어오는 경로가 있어 여기서도 재계산한다.
+  await refreshCartPricesDuringRender()
+
   let cart = (await retrieveCart(
     cartId,
     CHECKOUT_CART_FIELDS,

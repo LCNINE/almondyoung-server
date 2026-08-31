@@ -1,6 +1,9 @@
 "use client"
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
+import { TimeSaleBadge } from "@/components/shared/badges/time-sale-badge"
+import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
+import { useTimeSaleForVariant } from "@/components/providers/time-sale-provider"
 import {
   getPricesForVariant,
   getProductPrice,
@@ -20,7 +23,12 @@ interface Props {
 
 export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const t = useTranslations("productDetail.price")
+  const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })
+  // 세일이 여럿이라 전역 종료 시각이 없다 — 이 품목의 가격을 만든 세일의 것을 쓴다.
+  const timeSale = useTimeSaleForVariant(cheapestVariant)
+  const isTimeSale = timeSale !== null
+  const endsAt = timeSale?.endsAt ?? null
 
   if (!cheapestPrice) return null
 
@@ -34,16 +42,21 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
   const hasMembershipPrice =
     typeof membershipPrice === "number" && membershipPrice > 0
 
-  const membershipDiscountRate = hasMembershipPrice
+  // 멤버십가는 지금 보고 있는 값보다 쌀 때만 가입 유인이 된다. 타임세일가가 더 싸면 "가입 시 절약"
+  // 은 거짓말이 되고, 실제로 20,000원을 19,800원보다 싸다고 광고하게 된다.
+  const membershipBeatsCurrentPrice =
+    hasMembershipPrice && membershipPrice < cheapestPrice.calculated_price_number
+
+  const membershipDiscountRate = membershipBeatsCurrentPrice
     ? Math.round(
-        ((cheapestPrice.original_price_number - membershipPrice) /
-          cheapestPrice.original_price_number) *
+        ((cheapestPrice.calculated_price_number - membershipPrice) /
+          cheapestPrice.calculated_price_number) *
           100
       )
     : 0
 
-  const membershipSavings = hasMembershipPrice
-    ? cheapestPrice.original_price_number - membershipPrice
+  const membershipSavings = membershipBeatsCurrentPrice
+    ? cheapestPrice.calculated_price_number - membershipPrice
     : 0
 
   // 멤버: Medusa가 실제 적용한 할인 (price list 기반)
@@ -78,6 +91,21 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   return (
     <div className="flex flex-col gap-1.5 pt-0 pb-2">
+      {isTimeSale && endsAt && (
+        <div className="flex items-baseline gap-2">
+          <TimeSaleBadge className="self-center" />
+          <span className="text-muted-foreground text-[12px]">
+            {tSale("countdownLabel")}
+          </span>
+          <TimeSaleCountdown
+            endsAt={endsAt}
+            compact
+            refreshOnEnd
+            className="text-primary text-[17px] leading-none font-bold tabular-nums"
+          />
+        </div>
+      )}
+
       {/* 원래 가격 (취소선) */}
       {showOriginalPrice && (
         <span className="text-sm text-gray-400 line-through">

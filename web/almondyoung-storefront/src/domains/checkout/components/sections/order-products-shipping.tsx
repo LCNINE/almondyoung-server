@@ -3,6 +3,7 @@
 import { Badge } from "@/components/ui/badge"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { FreeShippingProgress } from "@/domains/cart/components/free-shipping-progress"
+import { useTimeSaleForProduct } from "@/components/providers/time-sale-provider"
 import { ShippingGroupNotice } from "@/domains/cart/components/shipping-group-notice"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
@@ -103,6 +104,7 @@ function ProductItem({
   showDivider: boolean
 }) {
   const t = useTranslations("checkout.orderProducts")
+  const isTimeSale = useTimeSaleForProduct(item.product_id) !== null
   const { thumbnail, product_title, title, variant_title, subtitle, quantity } =
     item
   const productTitle = product_title ?? title
@@ -122,6 +124,11 @@ function ProductItem({
         />
       </div>
       <div className="flex-1">
+        {isTimeSale && (
+          <span className="bg-red-30 mb-1 inline-flex w-fit items-center rounded-[3px] px-1 py-0.5 text-[11px] leading-none font-medium text-white">
+            {t("timeSaleBadge")}
+          </span>
+        )}
         <p className="text-[13px] text-gray-900 lg:text-sm">{productTitle}</p>
         <ShippingGroupNotice item={item} className="mt-0.5" />
       </div>

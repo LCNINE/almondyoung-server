@@ -60,5 +60,18 @@
     "prev": "前のブランド",
     "next": "次のブランド",
     "all": "すべて"
+  },
+  "timeSale": {
+    "titleFirst": "タイム",
+    "titleSecond": "セール",
+    "allTab": "すべて",
+    "emptyTitle": "開催中のタイムセールはありません",
+    "pageDescription": "この価格は期間限定です。",
+    "noSaleTitle": "開催中のタイムセールはありません",
+    "noSaleDescription": "次のタイムセールを準備しています。",
+    "nextSale": "次のタイムセールは {date} 開始",
+    "endsIn": "タイムセール終了まで {remaining}",
+    "countdownLabel": "タイムセール終了まで",
+    "endsOn": "{date}まで"
   }
 }
