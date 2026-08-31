@@ -396,7 +396,7 @@ transform 이 `^.+\.(t|j)s$` 라 `.tsx` 안의 분기는 **테스트가 실행�
 npm run type-check                      # 루트 (admin-web 제외됨)
 npx jest --maxWorkers=2                 # 전체 유닛. OOM 방지로 워커 제한
 cd apps/admin-web && npx tsc --noEmit   # 루트가 안 보는 트리
-cd web/almondyoung-storefront && npx tsc --noEmit   # 기준선 49, 늘어나면 안 됨
+cd web/almondyoung-storefront && npx tsc --noEmit   # 기준선 51(develop 상속, 이 작업과 무관 — Task 14 에서 49→51 로 정정), 늘어나면 안 됨
 cd apps/medusa && <medusa 유닛 + 쿠폰 통합>
 ```
 
