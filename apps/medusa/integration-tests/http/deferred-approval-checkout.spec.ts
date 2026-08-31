@@ -182,6 +182,8 @@ medusaIntegrationTestRunner({
   disableAutoTeardown: true,
   testSuite: ({ api, getContainer }) => {
     let storeHeaders: { headers: Record<string, string> };
+    let adminHeaders: { headers: Record<string, string> };
+    let jwtSecret: string;
     let regionId: string;
     let salesChannelId: string;
     let variantId: string;
@@ -264,8 +266,17 @@ medusaIntegrationTestRunner({
       const container = getContainer();
       const config = container.resolve(ContainerRegistrationKeys.CONFIG_MODULE) as any;
       const secret = config.projectConfig.http.jwtSecret;
+      jwtSecret = secret;
       const userModule = container.resolve(Modules.USER);
       const [user] = await userModule.createUsers([{ email: 'admin@deferred.test' }]);
+      adminHeaders = {
+        headers: {
+          authorization: `Bearer ${jwt.sign(
+            { actor_id: user.id, actor_type: 'user', auth_identity_id: 'a', app_metadata: { user_id: user.id } },
+            secret,
+          )}`,
+        },
+      };
 
       const { result: scRes } = await createSalesChannelsWorkflow(container).run({
         input: { salesChannelsData: [{ name: 'Deferred SC' }] },
@@ -339,7 +350,6 @@ medusaIntegrationTestRunner({
         input: { id: keyRes[0].id, add: [salesChannelId] },
       });
       storeHeaders = { headers: { 'x-publishable-api-key': keyRes[0].token } };
-      void jwt; // 인증 고객 컨텍스트는 이 스펙에서 불필요
     });
 
     afterAll(async () => {
@@ -511,6 +521,144 @@ medusaIntegrationTestRunner({
       expect(res.data.cart_id).toBe(cartId);
       expect(wallet.intents.get(intentId)!.approved).toBe(true);
       expect(await orderIdForCart(cartId)).toBe(res.data.order_id);
+    });
+
+    /**
+     * C1(2026-08-31 최종 리뷰) 회귀 + T6 완결.
+     *
+     * 이 파일이 유일하게 `completeCartWorkflow` 를 실제 주문까지 끝까지 태우는 스펙이라 여기
+     * 붙인다 — `record-coupon-usage.ts` 의 `orderCreated` 훅이 **실 결제 완료 경로**에서 도는지
+     * 확인하는 유일한 자리다(다른 쿠폰 스펙은 카트 단계까지만 가거나 백스톱에서 일부러 실패시킨다).
+     *
+     * C1 의 사고 경로: `public` 쿠폰은 발급 사건이 없어 링크 행이 원래 없다. 훅이 필터 없이
+     * `Link.create` 를 부르면 upsert 라 그 자리에서 INSERT 되고, 그 행의 `expires_at` 은
+     * NULL(무기한)로 박혀 정책의 `ends_at` 을 지나도 그 고객에게만 영구 유효가 된다.
+     */
+    describe('C1: public 쿠폰 사용이 발급 링크를 만들면 안 된다', () => {
+      let c1Seq = 0;
+      let customerId: string;
+      let customerHeaders: { headers: Record<string, string> };
+
+      const linkRowsFor = async (promotionId: string, custId: string) =>
+        (getContainer().resolve(ContainerRegistrationKeys.LINK) as any)
+          .getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id')
+          .list(
+            { customer_id: custId, promotion_id: promotionId },
+            { select: ['customer_id', 'promotion_id', 'expires_at', 'used_at', 'order_id'] },
+          ) as Promise<any[]>;
+
+      const createPromo = async (code: string, additional_data: Record<string, unknown>) => {
+        const res = await api.post(
+          '/admin/promotions',
+          {
+            code,
+            type: 'standard',
+            is_automatic: false,
+            status: 'active',
+            application_method: { type: 'percentage', value: 10, target_type: 'order', currency_code: 'krw' },
+            additional_data,
+          },
+          adminHeaders,
+        );
+        return res.data.promotion.id as string;
+      };
+
+      /**
+       * `startCheckout` 과 같은 모양이지만 둘이 다르다: (1) 인증된 고객 헤더로 카트를 만든다
+       * (C1 은 "로그인한 고객"에게서만 재현되므로 — 링크 테이블은 customer_id 가 있어야 행이
+       * 남는다), (2) `promo_codes` 로 쿠폰을 카트 생성 시점에 붙인다.
+       */
+      const checkoutWithPromo = async (promoCode: string) => {
+        const cartRes = await api.post(
+          '/store/carts',
+          {
+            region_id: regionId,
+            sales_channel_id: salesChannelId,
+            items: [{ variant_id: variantId, quantity: 1 }],
+            promo_codes: [promoCode],
+          },
+          customerHeaders,
+        );
+        const cartId = cartRes.data.cart.id as string;
+
+        const cartModule = getContainer().resolve(Modules.CART);
+        const cartRow = await cartModule.retrieveCart(cartId, { relations: ['items'] });
+        await cartModule.updateLineItems(
+          (cartRow.items ?? []).map((item: any) => ({ id: item.id, requires_shipping: false })),
+        );
+
+        const pcRes = await api.post('/store/payment-collections', { cart_id: cartId }, customerHeaders);
+        const paymentCollectionId = pcRes.data.payment_collection.id as string;
+
+        const sessionRes = await api.post(
+          `/store/payment-collections/${paymentCollectionId}/payment-sessions`,
+          { provider_id: 'pp_almond-payment_almond-payment' },
+          customerHeaders,
+        );
+        const session = sessionRes.data.payment_collection.payment_sessions[0];
+        const intentId = session.data.intentId as string;
+
+        wallet.simulateCheckout(intentId);
+
+        const completeRes = await api.post(`/store/carts/${cartId}/complete`, {}, customerHeaders);
+        return { cartId, intentId, completeRes };
+      };
+
+      beforeEach(async () => {
+        c1Seq += 1;
+        const customerModule = getContainer().resolve(Modules.CUSTOMER);
+        const [cust] = await customerModule.createCustomers([{ email: `c1-${c1Seq}@deferred.test` }]);
+        customerId = cust.id;
+        customerHeaders = {
+          headers: {
+            'x-publishable-api-key': storeHeaders.headers['x-publishable-api-key'],
+            authorization: `Bearer ${jwt.sign(
+              {
+                actor_id: customerId,
+                actor_type: 'customer',
+                auth_identity_id: `c1_${c1Seq}`,
+                app_metadata: { customer_id: customerId },
+              },
+              jwtSecret,
+            )}`,
+          },
+        };
+      });
+
+      it('만료일 있는 public 쿠폰으로 주문을 완료해도 그 고객·프로모션 쌍의 링크 행은 생기지 않는다', async () => {
+        const promoCode = `C1PUB${c1Seq}`;
+        // 지금은 아직 살아있는(=카트에 붙는) 정책 만료일. 하루 뒤 만료라 사용 시점엔 유효하다.
+        const futureEndsAt = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+        const promotionId = await createPromo(promoCode, { visibility: 'public', ends_at: futureEndsAt });
+
+        const { completeRes } = await checkoutWithPromo(promoCode);
+        expect(completeRes.data.type).toBe('order');
+
+        // 되돌리면(=필터 제거) 여기서 길이 1인 행이 생긴다 — 그게 바로 C1.
+        const rows = await linkRowsFor(promotionId, customerId);
+        expect(rows).toHaveLength(0);
+      });
+
+      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 링크 행에 used_at/order_id 가 채워진다 (T6)', async () => {
+        const promoCode = `C1ISSUED${c1Seq}`;
+        const promotionId = await createPromo(promoCode, { visibility: 'assigned_only' });
+
+        // 발급 3경로 중 하나로 실제 발급한다 — 링크 행을 만드는 유일하게 정당한 방법.
+        await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [promotionId] },
+          adminHeaders,
+        );
+
+        const { completeRes } = await checkoutWithPromo(promoCode);
+        expect(completeRes.data.type).toBe('order');
+        const orderId = completeRes.data.order.id as string;
+
+        const [row] = await linkRowsFor(promotionId, customerId);
+        expect(row).toBeDefined();
+        expect(row.used_at).not.toBeNull();
+        expect(row.order_id).toEqual(orderId);
+      });
     });
   },
 });

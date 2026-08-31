@@ -1,5 +1,6 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
+import { listIssuedLinks } from '../../../api/admin/promotions/helpers';
 import { buildUsageLinks } from './coupon-usage';
 
 /**
@@ -62,11 +63,33 @@ completeCartWorkflow.hooks.orderCreated(
       const found = orders?.[0];
       const promotionIds = (found?.promotions ?? []).map((p) => p.id);
 
-      const payloads = buildUsageLinks(found?.customer_id, promotionIds, order_id, new Date());
+      // C1(2026-08-31 최종 리뷰): buildUsageLinks 는 «이미 발급된» 쌍만 갱신해야 한다 — 이
+      // 고객의 기존 링크 행 집합을 먼저 물어 그 경계를 여기서 정한다. 이 조회를 지우고
+      // promotionIds 를 통째로 넘기면, public 쿠폰처럼 링크 행이 없던 쌍도 upsert 가 INSERT
+      // 해버려 「한 번 쓰면 영원히 유효」가 된다(coupon-usage.ts 상단 주석 참고).
+      const issuedLinks = found?.customer_id ? await listIssuedLinks(container, found.customer_id) : [];
+      const issuedPromotionIds = new Set(issuedLinks.map((l) => l.promotion_id));
+
+      const payloads = buildUsageLinks(
+        found?.customer_id,
+        promotionIds,
+        order_id,
+        new Date(),
+        issuedPromotionIds,
+      );
       if (payloads.length) await link.create(payloads);
     } catch (e) {
-      const logger = container.resolve<{ error: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER);
-      logger.error(`[coupon] 사용 기록 실패 (주문은 유지): ${(e as Error)?.message}`);
+      // I1(2026-08-31 최종 리뷰): LOGGER 해석 자체가 던지는 경우까지 이 catch 밖으로 새면,
+      // orderCreated 는 authorizePaymentSessionStep 뒤에 도는 훅이라 이미 성공한 결제 승인·
+      // 주문 생성을 보상(롤백)시킨다 — 이 catch 가 막으려던 바로 그 사고다. 그래서 여기
+      // 안에서도 절대 던지지 않는다(LOGGER 는 핵심 인프라라 사실상 항상 성공하지만, 그
+      // "거의 항상"에 결제 롤백을 걸 수는 없다).
+      try {
+        const logger = container.resolve<{ error: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER);
+        logger.error(`[coupon] 사용 기록 실패 (주문은 유지): ${(e as Error)?.message}`);
+      } catch {
+        // LOGGER 조차 못 얻으면 조용히 삼킨다 — 기록 실패를 기록할 방법이 없을 뿐, 주문은 지킨다.
+      }
     }
   },
 );
