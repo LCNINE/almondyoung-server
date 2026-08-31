@@ -151,11 +151,20 @@ export async function listProductsInPriceLists(
 /** 어드민이 멤버십용 리스트 제목에 붙이는 접미사 (admin-web `MEMBERSHIP_LIST_TITLE_SUFFIX` 와 같은 값). */
 const MEMBERSHIP_LIST_TITLE_SUFFIX = ' (멤버십)';
 
-/** 일반용·멤버십용 두 리스트를 한 세일로 묶는 키. 짝의 단서는 제목뿐이다 — 룰도 기간도 세일마다 같을 수 있다. */
-const saleKey = (list: TimeSaleList): string =>
+/** 접미사를 뗀 세일 이름. */
+const saleTitle = (list: TimeSaleList): string =>
   list.isMembershipOnly && list.title.endsWith(MEMBERSHIP_LIST_TITLE_SUFFIX)
     ? list.title.slice(0, -MEMBERSHIP_LIST_TITLE_SUFFIX.length)
     : list.title;
+
+/**
+ * 일반용·멤버십용 두 리스트를 한 세일로 묶는 키. 짝의 단서는 제목과 시작 시각뿐이다.
+ *
+ * 제목만 쓰면 같은 이름을 재사용한 다른 기간의 세일(「주말 타임세일」 같은)이 한 그룹으로 섞여,
+ * 카운트다운이 남의 마감으로 찍히고 상품 목록이 합쳐진다. 짝은 어드민이 한 번에 만들어 시작
+ * 시각이 같으므로 그걸 키에 넣는다 — 종료 시각은 나중에 한쪽만 늘어날 수 있어 키로 못 쓴다.
+ */
+const saleKey = (list: TimeSaleList): string => `${saleTitle(list)}\u0000${list.startsAt ?? ''}`;
 
 export type TimeSaleDetail = {
   generalId: string | null;
@@ -220,7 +229,7 @@ export async function listAllTimeSales(container: MedusaContainer): Promise<Time
     else groups.set(key, [list]);
   }
 
-  return [...groups.entries()].map(([key, group]) => {
+  return [...groups.values()].map((group) => {
     const general = group.find((list) => !list.isMembershipOnly) ?? null;
     const membership = group.find((list) => list.isMembershipOnly) ?? null;
     const face = general ?? group[0];
@@ -243,7 +252,7 @@ export async function listAllTimeSales(container: MedusaContainer): Promise<Time
     return {
       generalId: general?.id ?? null,
       membershipId: membership?.id ?? null,
-      title: face.isMembershipOnly ? key : face.title,
+      title: saleTitle(face),
       startsAt: face.startsAt,
       endsAt: face.endsAt,
       productIds: [...productIds],
@@ -292,7 +301,7 @@ export async function listActiveTimeSales(container: MedusaContainer): Promise<A
     else groups.set(key, [list]);
   }
 
-  return [...groups.entries()].map(([key, group]) => {
+  return [...groups.values()].map((group) => {
     // 일반용 리스트가 세일의 얼굴이다 — 멤버십 전용 리스트는 미구독자에게 안 보이므로 제목이 될 수 없다.
     const face = group.find((list) => !list.isMembershipOnly) ?? group[0];
     const byProductId = new Map<string, ProductRow>();
@@ -304,7 +313,7 @@ export async function listActiveTimeSales(container: MedusaContainer): Promise<A
     const grouped = [...byProductId.values()];
 
     return {
-      title: face.isMembershipOnly ? key : face.title,
+      title: saleTitle(face),
       startsAt: face.startsAt,
       // 짝인 두 리스트는 기간이 같지만, 어긋났다면 짧은 쪽을 쓴다 — 카운트다운이 실제보다 길게
       // 보이는 것보다 짧게 보이는 쪽이 안전하다.

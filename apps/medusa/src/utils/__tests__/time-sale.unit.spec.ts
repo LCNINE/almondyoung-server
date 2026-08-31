@@ -90,6 +90,36 @@ describe('listActiveTimeSales', () => {
     });
   });
 
+  // 「주말 타임세일」처럼 이름을 재사용하면 제목만으로는 갈리지 않는다. 섞이면 늦게 끝나는 세일의
+  // 상품에 남의 카운트다운이 붙고 상품 목록도 합쳐진다.
+  it('제목이 같아도 시작 시각이 다르면 다른 세일로 가른다', async () => {
+    const { container } = makeContainer(({ sql }) =>
+      isListQuery(sql)
+        ? [
+            listRow({
+              id: 'plist_1',
+              starts_at: new Date('2026-08-28T00:00:00Z'),
+              ends_at: new Date('2026-08-29T00:00:00Z'),
+            }),
+            listRow({
+              id: 'plist_2',
+              starts_at: new Date('2026-09-04T00:00:00Z'),
+              ends_at: new Date('2026-09-05T00:00:00Z'),
+            }),
+          ]
+        : [
+            { price_list_id: 'plist_1', id: 'prod_1', handle: 'h1' },
+            { price_list_id: 'plist_2', id: 'prod_2', handle: 'h2' },
+          ]
+    );
+
+    const sales = await listActiveTimeSales(container);
+
+    expect(sales).toHaveLength(2);
+    expect(sales[0]).toMatchObject({ endsAt: '2026-08-29T00:00:00.000Z', productIds: ['prod_1'] });
+    expect(sales[1]).toMatchObject({ endsAt: '2026-09-05T00:00:00.000Z', productIds: ['prod_2'] });
+  });
+
   // 세일 하나는 price list 둘(일반용·멤버십용)로 저장된다. 묶지 않으면 화면에 같은 세일이 두 번 뜬다.
   it('멤버십용 리스트를 제목 접미사로 일반용과 한 세일로 묶는다', async () => {
     const { container } = makeContainer(({ sql }) =>

@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl"
 import { useEarliestSaleEnd } from "@/components/providers/time-sale-provider"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
+import { formatPrice } from "@/lib/utils/price-utils"
 
 /**
  * 카트·체크아웃의 타임세일 마감 안내. 종료되면 가격 재계산을 건 뒤 변경 안내로 바뀐다.
@@ -60,18 +61,19 @@ export function TimeSaleNotice({
   if (priceBeforeEnd !== null && changed.length > 0) {
     const first = changed[0]
     const name = first.product_title ?? first.title ?? ""
+    const won = (value: number) => `${formatPrice(value)}${t("won")}`
     const message =
       changed.length === 1
         ? t("timeSaleEndedOne", {
             name,
-            from: `${(snapshot?.get(first.id) ?? 0).toLocaleString()}원`,
-            to: `${(first.unit_price ?? 0).toLocaleString()}원`,
+            from: won(snapshot?.get(first.id) ?? 0),
+            to: won(first.unit_price ?? 0),
           })
         : t("timeSaleEndedMany", {
             name,
             count: changed.length - 1,
-            from: `${priceBeforeEnd.toLocaleString()}원`,
-            to: `${subtotal.toLocaleString()}원`,
+            from: won(priceBeforeEnd),
+            to: won(subtotal),
           })
 
     return <p className="text-red-30 mb-4 text-[14px] font-bold">{message}</p>

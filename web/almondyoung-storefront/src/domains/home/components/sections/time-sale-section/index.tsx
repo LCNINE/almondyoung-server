@@ -39,7 +39,10 @@ export function TimeSaleSection({
 }: TimeSaleSectionProps) {
   const t = useTranslations("home.timeSale")
   const items = tabs.map(toTabItem)
-  const [activeTab, setActiveTab] = useState(items[0])
+  // 탭은 id 만 들고 매 렌더에서 다시 찾는다 — 세일 갱신으로 탭 목록이 바뀌면 붙잡아 둔 탭 객체는
+  // 옛 productIds 를 가리켜 목록이 빈다.
+  const [activeId, setActiveId] = useState<string | undefined>(items[0]?.id)
+  const activeTab = items.find((item) => item.id === activeId) ?? items[0]
 
   const visible = activeTab
     ? products.filter((product) => activeTab.productIds.includes(product.id))
@@ -62,7 +65,7 @@ export function TimeSaleSection({
         activeTab={activeTab ?? FALLBACK_TAB}
         hideTabs={items.length === 0}
         products={visible}
-        onTabChange={setActiveTab}
+        onTabChange={(tab) => setActiveId(tab.id)}
         customer={customer}
         wishlistIds={wishlistIds}
         moreHref="/time-sale"
