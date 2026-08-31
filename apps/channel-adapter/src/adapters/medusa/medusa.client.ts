@@ -13,6 +13,10 @@ import {
 } from '@packages/domain-types';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
+import {
+  recordAutoIssueOutcome,
+  recordAutoIssueFailure,
+} from '../../observability/coupon-issue.metrics';
 
 type CoreShippingProjectionStatus = 'partially_shipped' | 'shipped' | 'partially_delivered' | 'delivered' | 'recalled';
 
@@ -2405,6 +2409,9 @@ export class MedusaClient {
       );
       const issued = result?.issued?.length ?? 0;
       const skipped = result?.skipped?.length ?? 0;
+      // 발급 결과를 메트릭으로 남긴다 (#488 7-4). 스킵 «사유» 까지 세는 것이 요점이다 —
+      // fail-closed 스킵(unsupported_rule)은 로그를 안 보면 아무도 모른다.
+      recordAutoIssueOutcome(trigger, result);
       if (issued > 0) {
         this.logger.log(`Auto-issued ${issued} coupon(s) to customer ${customerId} via trigger=${trigger}`);
       }
@@ -2416,6 +2423,7 @@ export class MedusaClient {
       // 리컨실이 재구동하도록(발급 누락 가시화 + 복구). 예전엔 영구 4xx 를 {0,0} 으로
       // 삼켰는데, 그러면 event 가 published 로 마킹돼 발급 실패가 영구 유실됐다.
       const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      recordAutoIssueFailure(trigger, isPermanent ? 'permanent' : 'transient');
       if (isPermanent) {
         // 영구성 4xx(잘못된 요청/설정 오류 등)는 코드/설정 문제 신호 → ERROR 로 알린다.
         this.logger.error(
