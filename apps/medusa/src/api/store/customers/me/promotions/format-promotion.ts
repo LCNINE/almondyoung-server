@@ -66,9 +66,17 @@ export type FormattedPromotion = {
   visibility: string;
   /**
    * 이 쿠폰이 언제까지 쓸 수 있는가 (#488 결정 1). `campaign.ends_at` 을 대체한다 —
-   * 캠페인 날짜는 더 이상 쓰지 않는다. `null` 이면 무기한.
+   * 캠페인 날짜는 더 이상 쓰지 않는다. `null` 이면 무기한 **이거나**, 미발급
+   * `validity_days` 쿠폰이라 아직 만료일이 정해지지 않은 상태다(W1) — 그 구분은
+   * `validity_days` 필드로 한다.
    */
   expires_at: string | Date | null;
+  /**
+   * 발급일로부터 며칠간 유효한가 (W1, 2026-08-31). `expires_at` 이 null 인데 이 값이
+   * 있으면 「무기한」이 아니라 「아직 발급 안 받아서 만료일 미정, 받으면 이 값만큼 유효」다.
+   * 화면이 「발급 후 N일」을 표시할 수 있게 노출한다.
+   */
+  validity_days: number | null;
   application_method: ApplicationMethodLike | null;
   campaign: CampaignLike | null;
 };
@@ -94,6 +102,8 @@ export type PromotionMetaView = {
    * 호출부가 링크를 한 번에 조회해 넣는다 — 프로모션마다 조회하지 않는다.
    */
   expiresAt: string | Date | null;
+  /** 정책의 `validity_days` 그대로. `expiresAt` 이 null 인 이유를 화면이 구분할 수 있게. */
+  validityDays: number | null;
 };
 
 export function formatPromotion(
@@ -112,6 +122,7 @@ export function formatPromotion(
     max_discount_amount: meta.maxDiscountAmount,
     visibility: meta.visibility,
     expires_at: meta.expiresAt,
+    validity_days: meta.validityDays,
     application_method: promo.application_method
       ? {
           // 필드를 하나씩 옮긴다 — 그래프가 더 실어 보내도 스토어 응답에 새지 않게.

@@ -1,6 +1,6 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
-import { listIssuedLinks } from '../../../api/admin/promotions/helpers';
+import { listIssuedLinks } from '../../../modules/promotion-meta/issued-link';
 import { buildUsageLinks } from './coupon-usage';
 
 /**

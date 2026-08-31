@@ -2,8 +2,9 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { resolveVisibility, meetsGroupRule, listIssuedLinks } from '../../../admin/promotions/helpers';
+import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
+import { listIssuedLinks } from '../../../../modules/promotion-meta/issued-link';
 
 /**
  * GET /store/events/:slug
@@ -133,6 +134,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             }
           : null,
         expires_at: displayExpiresAt(linkByPromotionId.get(promo.id) ?? null, meta),
+        // W1: expires_at 이 null 인 이유(무기한 vs 미발급 validity_days)를 화면이 구분할 수 있게.
+        validity_days: meta?.validity_days != null ? Number(meta.validity_days) : null,
         state: resolveState(promo, meta),
       };
     })

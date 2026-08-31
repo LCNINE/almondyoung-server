@@ -6,9 +6,9 @@ import {
   resolveVisibility,
   meetsGroupRule,
   VISIBILITY_WHEN_META_MISSING,
-  listIssuedLinks,
 } from '../../../../admin/promotions/helpers';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
+import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -111,16 +111,22 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const linkByPromotionId = new Map(issuedLinks.map((l) => [l.promotion_id, l]));
   const expiresAtOf = (promotionId: string): string | Date | null =>
     displayExpiresAt(linkByPromotionId.get(promotionId) ?? null, metaById.get(promotionId));
+  // W1: expires_at 이 null 인 이유(무기한 vs 미발급 validity_days)를 화면이 구분할 수 있게.
+  const validityDaysOf = (promotionId: string): number | null => {
+    const raw = metaById.get(promotionId)?.validity_days;
+    return raw != null ? Number(raw) : null;
+  };
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   const format = (promo: any, isAssigned: boolean) =>
     formatPromotion(promo, isAssigned, {
       visibility: visibilityOf(promo.id),
       maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
       expiresAt: expiresAtOf(promo.id),
+      validityDays: validityDaysOf(promo.id),
     });
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
-    const m = metas.find((r: any) => r.promotion_id === promotionId);
+    const m = metaById.get(promotionId);
     if (!m || m.max_claims == null) return false;
     return Number(m.issued_count ?? 0) >= Number(m.max_claims);
   };

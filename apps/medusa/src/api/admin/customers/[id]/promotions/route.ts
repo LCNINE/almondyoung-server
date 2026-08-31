@@ -2,8 +2,9 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { listIssuedLinks, meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
+import { meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
+import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];

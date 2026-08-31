@@ -83,7 +83,13 @@ export function buildCreatePromotionPayload(
   // 캠페인에 날짜를 실으면 「발급 후 N일」이 표현되지 않는다.
   if (form.startsAt) additional_data.starts_at = new Date(form.startsAt).toISOString();
   if (form.endsAt) additional_data.ends_at = new Date(form.endsAt).toISOString();
-  if (form.validityDays) additional_data.validity_days = Number(form.validityDays);
+  // public 은 발급이라는 사건이 없어 validity_days 가 절대 안 쓰인다(computeExpiresAt 은
+  // 발급 시점에만 돈다) — 안 쓰일 값을 저장하면 어드민 목록이 「발급 후 N일」을 거짓으로
+  // 확인시켜준다. 쓰기 자체를 막는다(읽기 쪽 couponPeriodText 는 손대지 않는다).
+  const isIssuedVisibility = form.visibility === 'claimable' || form.visibility === 'assigned_only';
+  if (isIssuedVisibility && form.validityDays) {
+    additional_data.validity_days = Number(form.validityDays);
+  }
 
   const target_rules: PromotionTargetRule[] | undefined =
     form.targetType === 'items' && form.targetItemIds.length > 0

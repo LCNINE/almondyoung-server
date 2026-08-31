@@ -57,4 +57,16 @@ describe('additional_data 스키마', () => {
     expect(schema.safeParse({ validity_days: 1.5 }).success).toBe(false);
     expect(schema.safeParse({ ends_at: '언젠가' }).success).toBe(false);
   });
+
+  // W3 (2026-08-31): 유효기간 3키는 명시적 null 로 «비움» 을 표현할 수 있어야 한다 —
+  // 그래야 「30일로 정했다가 무기한으로」가 삭제·재생성 없이 가능하다.
+  it('유효기간 3키는 명시적 null 을 받는다(비움) — 생성·수정 둘 다', () => {
+    const createSchema = z.object(promotionAdditionalDataCreateShape);
+    const updateSchema = z.object(promotionAdditionalDataUpdateShape);
+    for (const schema of [createSchema, updateSchema]) {
+      expect(schema.safeParse({ visibility: 'claimable', starts_at: null }).success).toBe(true);
+      expect(schema.safeParse({ visibility: 'claimable', ends_at: null }).success).toBe(true);
+      expect(schema.safeParse({ visibility: 'claimable', validity_days: null }).success).toBe(true);
+    }
+  });
 });

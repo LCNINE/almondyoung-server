@@ -49,6 +49,12 @@ export type PromotionDto = {
    * ⚠️ `campaign.ends_at` 을 대체한다 — 캠페인 날짜는 서버가 더 이상 채우지 않는다.
    */
   expires_at?: string | null
+  /**
+   * 발급일로부터 며칠간 유효한가 (#488 결정 1, W1). `expires_at` 이 `null` 인 이유가
+   * 「무기한」인지 「아직 발급 안 받아서 만료일 미정」인지 이 필드로 구분한다 — 이 값이
+   * 있으면 후자다: 「발급 후 N일」로 표시할 것.
+   */
+  validity_days?: number | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
 }

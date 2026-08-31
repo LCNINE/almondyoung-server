@@ -199,18 +199,41 @@ describe('유효기간 두 축 — 날짜는 additional_data 로, 캠페인은 �
     expect(out.campaign?.ends_at).toBeUndefined();
   });
 
-  it('유효기간(일)은 additional_data 로 간다', () => {
-    const out = buildCreatePromotionPayload(form({ validityDays: 30 }), { campaignSuffix: 'X' });
+  it('유효기간(일)은 발급형 visibility(claimable/assigned_only)에서 additional_data 로 간다', () => {
+    const out = buildCreatePromotionPayload(
+      form({ visibility: 'claimable', validityDays: 30 }),
+      { campaignSuffix: 'X' },
+    );
     expect(out.additional_data?.validity_days).toEqual(30);
+
+    const outAssigned = buildCreatePromotionPayload(
+      form({ visibility: 'assigned_only', validityDays: 7 }),
+      { campaignSuffix: 'X' },
+    );
+    expect(outAssigned.additional_data?.validity_days).toEqual(7);
+  });
+
+  // public 은 발급이라는 사건이 없어 validity_days 가 절대 안 쓰인다(computeExpiresAt 은
+  // 발급 시점에만 돈다) — 쓰지 않을 값을 저장해 어드민 목록이 「발급 후 N일」을 거짓으로
+  // 표시하게 두지 않는다.
+  it('유효기간(일)을 입력해도 public 이면 키 자체가 없다 — 발급 개념이 없어 절대 안 쓰인다', () => {
+    const out = buildCreatePromotionPayload(
+      form({ visibility: 'public', validityDays: 30 }),
+      { campaignSuffix: 'X' },
+    );
+    expect('validity_days' in (out.additional_data ?? {})).toBe(false);
   });
 
   it('유효기간(일)을 안 넣으면 키 자체가 없다', () => {
-    const out = buildCreatePromotionPayload(form({}), { campaignSuffix: 'X' });
+    const out = buildCreatePromotionPayload(form({ visibility: 'claimable' }), { campaignSuffix: 'X' });
     expect('validity_days' in (out.additional_data ?? {})).toBe(false);
   });
 
   it('유효기간(일)이 0이면 키 자체가 없다 — 백엔드는 0을 양수 정수 위반으로 거부한다', () => {
-    const out = buildCreatePromotionPayload(form({ validityDays: 0 }), { campaignSuffix: 'X' });
+    const out = buildCreatePromotionPayload(
+      form({ visibility: 'claimable', validityDays: 0 }),
+      { campaignSuffix: 'X' },
+    );
     expect('validity_days' in (out.additional_data ?? {})).toBe(false);
   });
 

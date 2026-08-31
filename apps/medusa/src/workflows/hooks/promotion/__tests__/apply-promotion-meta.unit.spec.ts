@@ -53,6 +53,17 @@ describe('applyMetaOnCreate', () => {
     expect(await applyMetaOnCreate(writer, [{ id: 'promo_1' }], { unrelated: 1 })).toEqual([]);
     expect(calls).toEqual([]);
   });
+
+  // W3: 추출기(extractMetaFromAdditionalData)는 create·update 두 경로가 공유한다 — 생성 경로도
+  // 명시적 null 을 그대로 흘려보낸다(생성 시점엔 실무적 의미가 크진 않지만, 갈라지면 안 된다).
+  it('명시적 null 도 그대로 쓴다 — update 와 같은 추출기를 공유한다', async () => {
+    const { writer, rows } = fakeWriter();
+    await applyMetaOnCreate(writer, [{ id: 'promo_1' }], {
+      visibility: 'claimable',
+      ends_at: null,
+    });
+    expect(rows.promo_1).toMatchObject({ visibility: 'claimable', ends_at: null });
+  });
 });
 
 describe('applyMetaOnUpdate', () => {
@@ -76,6 +87,46 @@ describe('applyMetaOnUpdate', () => {
     });
     expect(await applyMetaOnUpdate(writer, [{ id: 'promo_1' }], undefined)).toEqual([]);
     expect(calls).toEqual([]);
+  });
+
+  // W3 (2026-08-31): {status} 만 보내는 상태 토글(additional_data 자체가 없다)과, 관리자가
+  // 명시적으로 `{ ends_at: null }` 을 보내 비우는 것을 구분해야 한다. 전자는 위 테스트가,
+  // 후자는 이 테스트가 지킨다 — 둘 다 지켜야 P10-A 의 구멍이 다시 안 열린다.
+  // (실제 `key in additional_data` 판정은 `helpers.ts` 의 `extractMetaFromAdditionalData` 안에
+  // 있다 — 여기서는 그 산출물이 upsert 까지 그대로 전해지는지를 확인한다.)
+  it('명시적 null 은 그 필드만 비운다 — 다른 메타는 그대로 남는다', async () => {
+    const { writer, rows } = fakeWriter({
+      promo_1: {
+        promotion_id: 'promo_1',
+        visibility: 'claimable',
+        starts_at: '2026-09-01T00:00:00.000Z',
+        ends_at: '2026-09-30T00:00:00.000Z',
+        validity_days: 30,
+      },
+    });
+    await applyMetaOnUpdate(writer, [{ id: 'promo_1' }], { ends_at: null, validity_days: null });
+    expect(rows.promo_1).toMatchObject({
+      visibility: 'claimable',
+      starts_at: '2026-09-01T00:00:00.000Z',
+      ends_at: null,
+      validity_days: null,
+    });
+  });
+
+  it('키가 없는 필드는 null 로 덮이지 않는다 — 부분 갱신이 여전히 부분이다', async () => {
+    const { writer, rows } = fakeWriter({
+      promo_1: {
+        promotion_id: 'promo_1',
+        visibility: 'claimable',
+        ends_at: '2026-09-30T00:00:00.000Z',
+      },
+    });
+    await applyMetaOnUpdate(writer, [{ id: 'promo_1' }], { name: '새 이름' });
+    expect(rows.promo_1).toMatchObject({
+      visibility: 'claimable',
+      ends_at: '2026-09-30T00:00:00.000Z',
+      name: '새 이름',
+    });
   });
 });
 

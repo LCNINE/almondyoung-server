@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, MedusaError, Modules, remoteQueryObjectFromString } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, remoteQueryObjectFromString } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 
 export const PROMOTION_FIELDS = [
@@ -35,13 +35,31 @@ export const META_KEYS = [
   'validity_days',
 ] as const;
 
+/**
+ * `starts_at`/`ends_at`/`validity_days` 는 명시적 `null` 로 «비움» 을 표현할 수 있다(W3,
+ * 2026-08-31) — 「30일로 정했다가 무기한으로」를 삭제·재생성(발급된 인스턴스 전부 무효화) 없이
+ * 할 수 있어야 한다. 나머지 키는 옛 write-once 의미론 그대로다.
+ */
+const NULLABLE_META_KEYS = new Set<(typeof META_KEYS)[number]>([
+  'starts_at',
+  'ends_at',
+  'validity_days',
+]);
+
 export function extractMetaFromAdditionalData(
   additional_data: Record<string, unknown> | undefined | null,
 ): Record<string, unknown> | null {
   if (!additional_data) return null;
   const result: Record<string, unknown> = {};
   for (const key of META_KEYS) {
-    if (additional_data[key] != null) result[key] = additional_data[key];
+    if (NULLABLE_META_KEYS.has(key)) {
+      // 🔴 「키 없음(안 건드림)」과 「키=null(비움)」을 반드시 구분한다 — 상태 토글(`{ status }`
+      // 만 보낸다)이 이 키들을 갖고 있지 않은 것과, 관리자가 명시적으로 비운 것을 truthiness나
+      // `!= null` 로는 가를 수 없다(그러면 상태 토글이 메타를 지워버린다 — P10-A 가 막아둔 구멍).
+      if (key in additional_data) result[key] = additional_data[key] ?? null;
+    } else if (additional_data[key] != null) {
+      result[key] = additional_data[key];
+    }
   }
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -153,57 +171,7 @@ export function meetsGroupRule(promotion: any, customerGroupIds: Set<string>): b
 
 export { remoteQueryPromotions };
 
-/** 발급된 «한 장». 링크 행의 우리 컬럼들이다. */
-export type IssuedLinkRow = {
-  customer_id: string;
-  promotion_id: string;
-  expires_at: string | Date | null;
-  used_at: string | Date | null;
-  order_id: string | null;
-  issued_via: string | null;
-};
-
-const ISSUED_LINK_FIELDS = [
-  'customer_id',
-  'promotion_id',
-  'expires_at',
-  'used_at',
-  'order_id',
-  'issued_via',
-];
-
-function customerPromotionLinkModule(scope: any) {
-  return (scope.resolve(ContainerRegistrationKeys.LINK) as any).getLinkModule(
-    Modules.CUSTOMER,
-    'customer_id',
-    Modules.PROMOTION,
-    'promotion_id',
-  );
-}
-
-/**
- * 이 고객이 이 쿠폰을 발급받았는가 — 받았다면 그 «한 장»의 상태를 돌려준다.
- *
- * 스칼라 필터 한 쌍으로 조회한다. (배열 필터는 이 링크 모듈에서 신뢰하지 않는 것이 저장소
- * 관례라 `listIssuedLinks` 도 고객 하나로만 좁힌다. 스칼라 조회가 도는 것은
- * `integration-tests/http/coupon-validity.spec.ts` 의 T3 마지막 케이스가 확인한다.)
- */
-export async function findIssuedLink(
-  scope: any,
-  customerId: string,
-  promotionId: string,
-): Promise<IssuedLinkRow | null> {
-  const rows = (await customerPromotionLinkModule(scope).list(
-    { customer_id: customerId, promotion_id: promotionId },
-    { select: ISSUED_LINK_FIELDS },
-  )) as IssuedLinkRow[];
-  return rows?.[0] ?? null;
-}
-
-/** 이 고객이 가진 모든 «한 장». 목록 화면이 프로모션마다 조회하지 않도록 한 번에 가져온다. */
-export async function listIssuedLinks(scope: any, customerId: string): Promise<IssuedLinkRow[]> {
-  return (await customerPromotionLinkModule(scope).list(
-    { customer_id: customerId },
-    { select: ISSUED_LINK_FIELDS },
-  )) as IssuedLinkRow[];
-}
+// 발급된 «한 장»(링크 행) 리더는 여기 없다 — `../../../modules/promotion-meta/issued-link` 로
+// 이전됐다(W5, 2026-08-31). 워크플로 훅·스토어 라우트·카트 미들웨어가 admin 라우트 폴더를
+// 참조하는 계층 역전을 없애기 위해서다. `findIssuedLink`/`listIssuedLinks`/`IssuedLinkRow` 를
+// 찾고 있다면 그쪽에서 import 할 것.

@@ -44,9 +44,11 @@ export const promotionAdditionalDataCreateShape = {
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),
   auto_issue_trigger: autoIssueTrigger.optional(),
-  starts_at: isoDateTime.optional(),
-  ends_at: isoDateTime.optional(),
-  validity_days: validityDays.optional(),
+  // nullable (W3, 2026-08-31): 명시적 null 로 «비움» 을 표현할 수 있어야 한다. `helpers.ts` 의
+  // `extractMetaFromAdditionalData` 가 「키 없음(안 건드림)」과 「키=null(비움)」을 구분한다.
+  starts_at: isoDateTime.nullable().optional(),
+  ends_at: isoDateTime.nullable().optional(),
+  validity_days: validityDays.nullable().optional(),
 };
 
 /**
@@ -60,7 +62,11 @@ export const promotionAdditionalDataUpdateShape = {
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),
   auto_issue_trigger: autoIssueTrigger.optional(),
-  starts_at: isoDateTime.optional(),
-  ends_at: isoDateTime.optional(),
-  validity_days: validityDays.optional(),
+  // nullable (W3, 2026-08-31): 「30일로 정했다가 무기한으로」처럼 되돌릴 수 있어야 한다 —
+  // 수정 화면이 없어 복구가 삭제·재생성뿐이면 이미 발급된 인스턴스가 전부 무효화된다.
+  // `{ ends_at: null }` 은 허용하고, 키 자체의 생략(상태 토글 `{ status }`)과는 구분한다
+  // (`extractMetaFromAdditionalData` 의 `key in additional_data`).
+  starts_at: isoDateTime.nullable().optional(),
+  ends_at: isoDateTime.nullable().optional(),
+  validity_days: validityDays.nullable().optional(),
 };

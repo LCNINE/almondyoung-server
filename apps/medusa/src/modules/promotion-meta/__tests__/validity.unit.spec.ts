@@ -105,7 +105,7 @@ describe('isUsable — 링크 행이 있으면 그 행이, 없으면 정책이 �
   });
 });
 
-describe('displayExpiresAt — 스토어 응답에 내보낼 만료 표시값 (isUsable 과 같은 규칙)', () => {
+describe('displayExpiresAt — 스토어 응답에 내보낼 만료 표시값', () => {
   it('링크가 있으면 링크의 expires_at 을 그대로 쓴다', () => {
     const instance = { expires_at: '2026-12-31T00:00:00.000Z' };
     const policy = { ends_at: '2000-01-01T00:00:00.000Z' };
@@ -127,5 +127,26 @@ describe('displayExpiresAt — 스토어 응답에 내보낼 만료 표시값 (i
   it('링크도 없고 정책도 없으면(또는 ends_at 없으면) null(무기한)이다', () => {
     expect(displayExpiresAt(null, null)).toBeNull();
     expect(displayExpiresAt(null, {})).toBeNull();
+  });
+
+  // W1 (2026-08-31): 미발급 validity_days 쿠폰은 «발급 마감일」(ends_at) 을 «만료일」인 것처럼
+  // 보여주면 안 된다 — 발급 즉시 그 표시가 거짓이 된다(발급일+N일로 바뀐다).
+  it('링크가 없고 정책에 validity_days 가 있으면 null 이다 — ends_at 은 발급 마감일이지 만료일이 아니다', () => {
+    expect(
+      displayExpiresAt(null, { ends_at: '2026-09-30T00:00:00.000Z', validity_days: 30 }),
+    ).toBeNull();
+    expect(displayExpiresAt(null, { validity_days: 30 })).toBeNull();
+  });
+
+  it('링크가 있으면 정책에 validity_days 가 있어도 링크의 expires_at 이 이긴다', () => {
+    const instance = { expires_at: '2026-10-05T00:00:00.000Z' };
+    const policy = { ends_at: '2026-09-30T00:00:00.000Z', validity_days: 30 };
+    expect(displayExpiresAt(instance, policy)).toEqual('2026-10-05T00:00:00.000Z');
+  });
+
+  it('링크는 있는데 expires_at 이 NULL(무기한)이면, 정책에 validity_days 가 있어도 null 이다 — validity_days 처리로 새면 안 된다', () => {
+    const instance = { expires_at: null };
+    const policy = { validity_days: 30 };
+    expect(displayExpiresAt(instance, policy)).toBeNull();
   });
 });
