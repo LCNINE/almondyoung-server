@@ -1565,8 +1565,14 @@ export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult
   const headers = await getAuthHeaders()
   if (!headers) return EMPTY_REFRESH_RESULT
 
+  // 쿠키에 카트 id 가 없어도 카트는 있을 수 있다 — 쿠키가 어긋나면 페이지가 고객 id 로 카트를
+  // 복구한다(recoverCustomerCart). 재계산 엔드포인트도 고객 기준으로 도니 여기서 멈출 이유가
+  // 없다. 카트 id 는 스로틀 구분에만 쓰이므로 없을 때는 고객 id 로 대신한다. 예전엔 여기서
+  // 그냥 리턴해서, 쿠키가 어긋난 사용자는 가격 재계산을 영영 못 받았다.
   const cartId = await getCartId()
-  if (!cartId) return EMPTY_REFRESH_RESULT
+  const customer = cartId ? null : await retrieveCustomer().catch(() => null)
+  const throttleScope = cartId ?? (customer?.id ? `customer:${customer.id}` : null)
+  if (!throttleScope) return EMPTY_REFRESH_RESULT
 
   const isMember = await getIsMembershipCustomer()
   // 진행 중인 세일이 하나 끝나면 이 문자열이 달라진다 — 그 순간 스로틀이 열려 재계산이 한 번 돈다.
@@ -1579,7 +1585,7 @@ export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult
 
   if (
     !priceRefreshThrottle.take(
-      `${cartId}:${isMember ? "mem" : "reg"}:${saleEpoch}`
+      `${throttleScope}:${isMember ? "mem" : "reg"}:${saleEpoch}`
     )
   ) {
     return EMPTY_REFRESH_RESULT

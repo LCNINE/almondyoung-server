@@ -82,5 +82,7 @@
     "refresh": "Refresh",
     "inquiry": "Contact us"
   },
-  "won": "KRW"
+  "won": "KRW",
+  "timeSaleEndedOne": "The time sale ended — {name} changed from {from} to {to}.",
+  "timeSaleEndedMany": "The time sale ended — {name} and {count} more changed. Item total {from} → {to}"
 }

@@ -19,7 +19,6 @@ type Props = {
    * 건다 — 다시 받기만 해서는 세일이 끝나도 라인에 박힌 옛 세일가가 그대로 온다.
    */
   onEnd?: () => void | Promise<void>
-  endedLabel?: string
   compact?: boolean
   /** 24시간 이하로 남았을 때만 그린다. 그 위로는 아무것도 렌더하지 않는다. */
   clockOnly?: boolean
@@ -30,7 +29,6 @@ export function TimeSaleCountdown({
   endsAt,
   refreshOnEnd,
   onEnd,
-  endedLabel,
   compact,
   clockOnly,
   className,
@@ -70,11 +68,7 @@ export function TimeSaleCountdown({
 
   const view = resolveCountdown(endsAt, now)
   if (clockOnly && view.kind !== "clock") return null
-  if (view.kind === "ended") {
-    return endedLabel ? (
-      <span className={className}>{endedLabel}</span>
-    ) : null
-  }
+  if (view.kind === "ended") return null
 
   if (compact) {
     return <span className={className}>{formatCountdown(view)}</span>

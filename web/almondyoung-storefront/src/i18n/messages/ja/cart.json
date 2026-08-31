@@ -82,5 +82,7 @@
     "refresh": "再読み込み",
     "inquiry": "お問い合わせ"
   },
-  "won": "ウォン"
+  "won": "ウォン",
+  "timeSaleEndedOne": "タイムセールが終了し、{name} の価格が {from} → {to} に変更されました。",
+  "timeSaleEndedMany": "タイムセールが終了し、{name} 他 {count}件の価格が変更されました。商品金額 {from} → {to}"
 }
