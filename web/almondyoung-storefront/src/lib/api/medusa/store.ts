@@ -86,6 +86,11 @@ function throwCouponError(error: any): never {
     e.digest = "COUPON_NOT_ASSIGNED"
     throw e
   }
+  if (token === "COUPON_EXPIRED") {
+    const e = new HttpApiError("COUPON_EXPIRED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_EXPIRED"
+    throw e
+  }
   medusaError(error)
 }
 
@@ -134,6 +139,7 @@ export type CouponPreviewResult = {
       max_discount_amount?: number | null
     } | null
     expires_at: string | null
+    validity_days?: number | null
     promotion_id_to_claim?: string
   }
 }

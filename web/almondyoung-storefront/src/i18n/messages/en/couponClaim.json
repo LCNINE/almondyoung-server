@@ -11,6 +11,7 @@
   "discountPercent": "{value}% off",
   "discountAmount": "{amount} KRW off",
   "expiresAt": "Valid until {date}",
+  "validForDaysAfterClaim": "{days} days after claiming",
   "unlimited": "No expiry",
   "claimButton": "Get Coupon",
   "claiming": "Processing...",

@@ -52,6 +52,7 @@
     "discount": "割引",
     "exclusive": "専用クーポン",
     "unlimited": "期間無制限",
+    "validForDaysAfterClaim": "受け取り後{days}日間",
     "percentDiscount": "{value}% 割引",
     "wonDiscount": "{value} ウォン割引",
     "percentValue": "{value}%",

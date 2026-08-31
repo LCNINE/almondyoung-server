@@ -3,6 +3,8 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
 import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
+import { findIssuedLink } from '../../../../modules/promotion-meta/issued-link';
 
 /**
  * GET /store/coupons/preview?code=CODE123
@@ -24,7 +26,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     entity: 'promotion',
     fields: [
       'id', 'code', 'status', 'is_automatic',
-      'campaign.starts_at', 'campaign.ends_at',
       'application_method.type', 'application_method.value',
       'application_method.target_type', 'application_method.currency_code',
       'rules.attribute', 'rules.operator', 'rules.values.value',
@@ -49,32 +50,34 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 
-  const now = new Date();
-  if (promotion.campaign) {
-    const startsAt = promotion.campaign.starts_at ? new Date(promotion.campaign.starts_at) : null;
-    const endsAt = promotion.campaign.ends_at ? new Date(promotion.campaign.ends_at) : null;
-    if (startsAt && now < startsAt) {
-      return res.status(200).json({
-        valid: false,
-        reason: 'COUPON_NOT_STARTED',
-        message: '아직 사용 기간이 아닌 쿠폰입니다.',
-      });
-    }
-    if (endsAt && now > endsAt) {
-      return res.status(200).json({
-        valid: false,
-        reason: 'COUPON_EXPIRED',
-        message: '기간이 만료된 쿠폰입니다.',
-        expired_at: endsAt.toISOString(),
-      });
-    }
-  }
-
   const meta = await promotionMetaService.getByPromotionId(promotion.id);
   // 메타가 없으면 닫힌 쪽이다(#488 N7).
   const visibility: string = resolveVisibility(meta);
 
   const customerId: string | null = (req as any).auth_context?.actor_id ?? null;
+
+  const now = new Date();
+  const issuedLink = customerId ? await findIssuedLink(req.scope, customerId, promotion.id) : null;
+  const expiresAt = displayExpiresAt(issuedLink, meta);
+
+  // 발급 여부와 무관하게 검사한다 — isUsable 도 정책 starts_at 은 발급 여부와 상관없이 보므로,
+  // 여기서 `&& !issuedLink` 로 건너뛰면 이미 발급받은 고객에게 같은 사유가 EXPIRED 로
+  // 오분류된다(리뷰에서 발견된 회귀 — events/:slug 라우트와 라벨이 갈렸었다).
+  if (issuanceWindowState(meta, now) === 'not_started') {
+    return res.status(200).json({
+      valid: false,
+      reason: 'COUPON_NOT_STARTED',
+      message: '아직 사용 기간이 아닌 쿠폰입니다.',
+    });
+  }
+  if (!isUsable(issuedLink, meta, now)) {
+    return res.status(200).json({
+      valid: false,
+      reason: 'COUPON_EXPIRED',
+      message: '기간이 만료된 쿠폰입니다.',
+      expired_at: expiresAt ? new Date(expiresAt).toISOString() : null,
+    });
+  }
 
   // 비인증 고객이 비공개 쿠폰을 조회하는 경우 — 존재 노출 자체를 막을 필요는 없음
   // (코드를 알고 있다는 것은 이미 정보가 전달된 것)
@@ -94,7 +97,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
             meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
         }
       : null,
-    expires_at: promotion.campaign?.ends_at ?? null,
+    expires_at: expiresAt,
+    // W1: expires_at 이 null 인 이유(무기한 vs 미발급 validity_days)를 화면이 구분할 수 있게.
+    validity_days: meta?.validity_days != null ? Number(meta.validity_days) : null,
   };
 
   if (!customerId) {

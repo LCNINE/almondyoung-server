@@ -1,13 +1,21 @@
 import { getMyPromotions } from "@/lib/api/medusa/promotion"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { resolveExpiryDisplay } from "@/lib/utils/coupon-expiry"
 import { getTranslations } from "next-intl/server"
 import { CouponTabs, type CouponItem } from "./coupon-tabs"
 
 export async function formatExpiry(promo: Promotion) {
   const t = await getTranslations("mypage.coupon")
-  if (!promo.campaign?.ends_at) return t("unlimited")
-  return `~ ${formatDate(promo.campaign.ends_at, DATE_FORMATS.KO_DOT)}`
+  const display = resolveExpiryDisplay(promo)
+  switch (display.kind) {
+    case "dated":
+      return `~ ${formatDate(display.date, DATE_FORMATS.KO_DOT)}`
+    case "daysAfterClaim":
+      return t("validForDaysAfterClaim", { days: display.days })
+    case "unlimited":
+      return t("unlimited")
+  }
 }
 
 export async function CouponTemplate() {

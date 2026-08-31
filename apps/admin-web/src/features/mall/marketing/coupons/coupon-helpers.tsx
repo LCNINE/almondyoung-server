@@ -2,6 +2,7 @@
 
 import { Badge } from '@/components/ui/badge';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
+import { couponPeriodText } from './lib/coupon-period';
 
 // Short date format used throughout coupon UI: "24. 05. 20."
 export function formatCouponDate(iso: string | null | undefined): string | null {
@@ -17,14 +18,10 @@ export function formatCouponDateTime(iso: string | null | undefined): string | n
   });
 }
 
+// 판정은 lib/coupon-period.ts 에 있다 — 이 파일은 .tsx 라 jest transform 밖이고
+// (admin-web transform 은 `^.+\.(t|j)s$`), 여기 두면 분기가 테스트에서 실행조차 안 된다.
 export function formatPeriod(coupon: MedusaPromotion): string {
-  if (!coupon.campaign) return '무기한';
-  const start = formatCouponDate(coupon.campaign.starts_at);
-  const end = formatCouponDate(coupon.campaign.ends_at);
-  if (start && end) return `${start} ~ ${end}`;
-  if (end) return `~ ${end}`;
-  if (start) return `${start} ~`;
-  return '무기한';
+  return couponPeriodText(coupon);
 }
 
 export function StatusBadge({ status }: { status: string }) {

@@ -27,7 +27,7 @@ import { COUPON_VISIBILITIES } from './coupon-visibility';
 const REPO_ROOT = join(__dirname, '..', '..');
 
 /** `auto_issue_trigger` 어휘. 정본은 `apps/medusa/.../promotion-meta/service.ts` 이고 여기는 사본이다 — ADR-0033 §7 이 공유 타입을 아직 만들지 않기로 했기 때문이다. */
-const AUTO_ISSUE_TRIGGERS = ['customer_registered', 'membership_activated', 'birthday'] as const;
+const AUTO_ISSUE_TRIGGERS = ['customer_registered', 'membership_activated'] as const;
 
 interface Site {
   /** 실패 메시지에 그대로 나가는 사람이 읽는 이름. */
@@ -100,9 +100,9 @@ const TRIGGER_SITES: Site[] = [
     anchor: /VALID_TRIGGERS[^=]*=\s*\[([^\]]*)\]/,
   },
   {
-    name: 'DB CHECK 제약 (Migration20260527100000)',
-    path: 'apps/medusa/src/modules/promotion-meta/migrations/Migration20260527100000.ts',
-    anchor: /auto_issue_trigger IN \(([^)]*)\)/,
+    name: 'DB CHECK 제약 (Migration20260831110000)',
+    path: 'apps/medusa/src/modules/promotion-meta/migrations/Migration20260831110000.ts',
+    anchor: /"auto_issue_trigger" IN \(([^)]*)\)/,
   },
   {
     name: 'channel-adapter issuePromotionsByTrigger 시그니처',

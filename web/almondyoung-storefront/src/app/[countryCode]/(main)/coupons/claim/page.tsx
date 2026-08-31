@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
 import { previewCouponCode, type CouponPreviewResult } from "@/lib/api/medusa/store"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { resolveExpiryDisplay } from "@/lib/utils/coupon-expiry"
 import { CouponClaimButton, type CouponClaimState } from "./_components/coupon-claim-button"
 import { shouldShowCap } from "@/lib/utils/coupon-discount"
 
@@ -77,7 +78,7 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
   }
 
   const { promotion } = result
-  const { discount, expires_at } = promotion
+  const { discount, expires_at, validity_days } = promotion
 
   const discountBase = discount
     ? discount.type === "percentage"
@@ -92,9 +93,17 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
         })})`
       : discountBase
 
-  const expiryLabel = expires_at
-    ? t("expiresAt", { date: formatDate(expires_at, DATE_FORMATS.KO_DOT) })
-    : t("unlimited")
+  const display = resolveExpiryDisplay({ expires_at, validity_days, is_assigned: result.is_assigned })
+  const expiryLabel = (() => {
+    switch (display.kind) {
+      case "dated":
+        return t("expiresAt", { date: formatDate(display.date, DATE_FORMATS.KO_DOT) })
+      case "daysAfterClaim":
+        return t("validForDaysAfterClaim", { days: display.days })
+      case "unlimited":
+        return t("unlimited")
+    }
+  })()
 
   return (
     <PageShell>

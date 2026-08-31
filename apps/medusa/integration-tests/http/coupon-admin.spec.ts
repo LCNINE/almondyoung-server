@@ -173,11 +173,13 @@ medusaIntegrationTestRunner({
 
     it('skip reasons: automatic / not_started / expired / group_mismatch', async () => {
       const autoId = await createPromo('AUTOMATIC', { visibility: 'assigned_only' }, { is_automatic: true });
-      const futureId = await createPromo('FUTURE', { visibility: 'assigned_only' }, {
-        campaign: { name: 'f', campaign_identifier: `F_${seq}`, starts_at: '2999-01-01T00:00:00Z' },
+      const futureId = await createPromo('FUTURE', {
+        visibility: 'assigned_only',
+        starts_at: '2999-01-01T00:00:00.000Z',
       });
-      const pastId = await createPromo('PAST', { visibility: 'assigned_only' }, {
-        campaign: { name: 'p', campaign_identifier: `P_${seq}`, ends_at: '2000-01-01T00:00:00Z' },
+      const pastId = await createPromo('PAST', {
+        visibility: 'assigned_only',
+        ends_at: '2000-01-01T00:00:00.000Z',
       });
       const otherGroup = (await getContainer().resolve(Modules.CUSTOMER).createCustomerGroups([{ name: `other${seq}` }]))[0];
       const groupId = otherGroup.id;
@@ -318,6 +320,28 @@ medusaIntegrationTestRunner({
       expect(detail.data.promotion.metadata).toMatchObject({
         visibility: 'assigned_only',
         name: '토글 대상',
+      });
+    });
+
+    it('유효기간 3키가 promotion_meta 에 저장되고 metadata 로 돌아온다 (Task 5)', async () => {
+      const startsAt = '2026-09-01T00:00:00.000Z';
+      const endsAt = '2026-09-30T00:00:00.000Z';
+      const validityDays = 30;
+
+      const promoId = await createPromo(`VALIDITY${seq}`, {
+        visibility: 'claimable',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        validity_days: validityDays,
+      });
+
+      const res = await api.get(`/admin/promotions/${promoId}`, adminHeaders);
+      expect(res.status).toEqual(200);
+      expect(res.data.promotion.metadata).toMatchObject({
+        visibility: 'claimable',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        validity_days: validityDays,
       });
     });
   },

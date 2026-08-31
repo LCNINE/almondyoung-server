@@ -52,6 +52,7 @@
     "discount": "Discount",
     "exclusive": "Exclusive coupon",
     "unlimited": "No expiry",
+    "validForDaysAfterClaim": "{days} days after claiming",
     "percentDiscount": "{value}% off",
     "wonDiscount": "{value} KRW off",
     "percentValue": "{value}%",

@@ -4,8 +4,9 @@ import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { meetsGroupRule } from '../../../promotions/helpers';
+import { computeExpiresAt, isWithinIssuanceWindow } from '../../../../../modules/promotion-meta/validity';
 
-const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated', 'birthday'];
+const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
 
 /**
  * POST /admin/customers/:id/issue-coupons
@@ -30,7 +31,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const { data: customers } = await query.graph({
@@ -57,28 +58,24 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     entity: 'promotion',
     fields: [
       'id', 'code', 'status', 'is_automatic',
-      'campaign.starts_at', 'campaign.ends_at',
       'rules.attribute', 'rules.operator', 'rules.values.value',
     ],
     filters: { id: promotionIds, status: 'active', is_automatic: false },
   });
 
   const now = new Date();
+  const metaById = new Map<string, any>(metaRecords.map((m: any) => [m.promotion_id, m]));
   const validPromotions = (promotions as any[]).filter((p) => {
     if (!meetsGroupRule(p, customerGroupIds)) return false;
-    if (!p.campaign) return true;
-    const starts = p.campaign.starts_at ? new Date(p.campaign.starts_at) : null;
-    const ends = p.campaign.ends_at ? new Date(p.campaign.ends_at) : null;
-    if (starts && now < starts) return false;
-    if (ends && now > ends) return false;
-    return true;
+    // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
+    return isWithinIssuanceWindow(metaById.get(p.id), now);
   });
 
   const issued: { promotion_id: string; code: string }[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
 
   for (const promo of validPromotions) {
-    const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
+    const meta = metaById.get(promo.id);
     if (!meta) continue;
 
     const alreadyIssued = await promotionMetaService.isAlreadyIssued(customerId, promo.id);
@@ -97,31 +94,31 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     let linkCreated = false;
     try {
-      await (remoteLink as any).create([{
+      await (link as any).create([{
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promo.id },
+        data: {
+          expires_at: computeExpiresAt(meta, now),
+          issued_via: trigger,
+          used_at: null,
+          order_id: null,
+        },
       }]);
       linkCreated = true;
       await promotionMetaService.recordIssue(customerId, promo.id, trigger);
       issued.push({ promotion_id: promo.id, code: promo.code });
     } catch (e: any) {
-      const dupMsg = String(e?.message ?? '').toLowerCase();
-      const isDuplicate = e?.code === '23505' || dupMsg.includes('unique') || dupMsg.includes('duplicate') || dupMsg.includes('already exists');
+      // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
+      // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
       // 슬롯 반환은 링크가 생성되지 않은 경우에만 한다.
       // 링크는 생겼는데 recordIssue 만 실패(transient)한 경우엔 슬롯을 유지해야
       // issued_count 가 실제 링크 수와 정합 — 재시도는 recordIssue 만 멱등 보정한다.
-      // (링크가 이미 존재해 dup 인 경우는 이번 reserve 가 중복 카운트이므로 되돌린다.)
       if (meta.max_claims != null && !linkCreated) {
         await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
       }
-      if (isDuplicate) {
-        await promotionMetaService.recordIssue(customerId, promo.id, trigger).catch(() => {});
-        skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      } else {
-        // Transient DB/Link error → 500으로 올려서 channel-adapter가 재시도하게 함.
-        // isAlreadyIssued 체크로 재시도는 멱등하게 처리됨.
-        throw e;
-      }
+      // Transient DB/Link error → 500으로 올려서 channel-adapter가 재시도하게 함.
+      // isAlreadyIssued 체크로 재시도는 멱등하게 처리됨.
+      throw e;
     }
   }
 

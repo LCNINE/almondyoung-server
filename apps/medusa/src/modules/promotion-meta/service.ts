@@ -9,7 +9,7 @@ import CouponEventItem from './models/coupon-event-item';
 // 함께 고쳐야 할 곳을 전부 이름으로 지목한다(마이그레이션 CHECK 제약 포함).
 // `visibility` 의 타입 정본은 `@packages/domain-types` 에 있으나 **여기서 import 할 수 없다**
 // — Medusa 빌드에는 번들러가 없어 `@packages/*` 별칭이 런타임에 해석되지 않는다.
-export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
+export type AutoIssueTrigger = 'customer_registered' | 'membership_activated';
 export type AdminIssueTrigger = 'admin_manual' | 'admin_force' | 'customer_claim';
 export type IssueTrigger = AutoIssueTrigger | AdminIssueTrigger;
 
@@ -21,6 +21,9 @@ export type PromotionMetaData = {
   visibility?: 'public' | 'claimable' | 'assigned_only' | null;
   max_claims?: number | null;
   auto_issue_trigger?: AutoIssueTrigger | null;
+  starts_at?: Date | string | null;
+  ends_at?: Date | string | null;
+  validity_days?: number | null;
 };
 
 class PromotionMetaModuleService extends MedusaService({
@@ -33,8 +36,14 @@ class PromotionMetaModuleService extends MedusaService({
     if (data.visibility != null && !['public', 'claimable', 'assigned_only'].includes(data.visibility)) {
       throw new Error(`Invalid visibility value: ${data.visibility}`);
     }
-    if (data.auto_issue_trigger != null && !['customer_registered', 'membership_activated', 'birthday'].includes(data.auto_issue_trigger)) {
+    if (data.auto_issue_trigger != null && !['customer_registered', 'membership_activated'].includes(data.auto_issue_trigger)) {
       throw new Error(`Invalid auto_issue_trigger value: ${data.auto_issue_trigger}`);
+    }
+    if (data.validity_days != null) {
+      const n = Number(data.validity_days);
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`Invalid validity_days value: ${data.validity_days}`);
+      }
     }
     const existing = await (this as any).listPromotionMetas({ promotion_id: data.promotion_id });
     if (existing.length > 0) {

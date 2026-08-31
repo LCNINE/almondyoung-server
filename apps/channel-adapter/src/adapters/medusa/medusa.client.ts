@@ -2396,7 +2396,7 @@ export class MedusaClient {
 
   async issuePromotionsByTrigger(
     customerId: string,
-    trigger: 'customer_registered' | 'membership_activated' | 'birthday',
+    trigger: 'customer_registered' | 'membership_activated',
   ): Promise<{ issued: number; skipped: number }> {
     try {
       const result = await this.sdk.client.fetch<{ issued: any[]; skipped: any[] }>(

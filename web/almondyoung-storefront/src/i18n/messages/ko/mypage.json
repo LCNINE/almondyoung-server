@@ -52,6 +52,7 @@
     "discount": "할인",
     "exclusive": "전용 쿠폰",
     "unlimited": "기간 무제한",
+    "validForDaysAfterClaim": "발급 후 {days}일",
     "percentDiscount": "{value}% 할인",
     "wonDiscount": "{value}원 할인",
     "percentValue": "{value}%",
