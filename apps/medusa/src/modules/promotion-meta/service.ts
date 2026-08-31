@@ -21,6 +21,9 @@ export type PromotionMetaData = {
   visibility?: 'public' | 'claimable' | 'assigned_only' | null;
   max_claims?: number | null;
   auto_issue_trigger?: AutoIssueTrigger | null;
+  starts_at?: Date | string | null;
+  ends_at?: Date | string | null;
+  validity_days?: number | null;
 };
 
 class PromotionMetaModuleService extends MedusaService({
@@ -35,6 +38,12 @@ class PromotionMetaModuleService extends MedusaService({
     }
     if (data.auto_issue_trigger != null && !['customer_registered', 'membership_activated', 'birthday'].includes(data.auto_issue_trigger)) {
       throw new Error(`Invalid auto_issue_trigger value: ${data.auto_issue_trigger}`);
+    }
+    if (data.validity_days != null) {
+      const n = Number(data.validity_days);
+      if (!Number.isInteger(n) || n <= 0) {
+        throw new Error(`Invalid validity_days value: ${data.validity_days}`);
+      }
     }
     const existing = await (this as any).listPromotionMetas({ promotion_id: data.promotion_id });
     if (existing.length > 0) {
