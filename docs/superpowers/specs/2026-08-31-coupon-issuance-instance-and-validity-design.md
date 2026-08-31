@@ -230,11 +230,19 @@ isWithinIssuanceWindow(meta, now: Date): boolean
 
 /** 지금 이 쿠폰을 «사용»할 수 있는가. */
 isUsable(link: { expires_at } | null, meta, now: Date): boolean
-//   링크 행이 있으면 link.expires_at, 없으면(=public) meta.ends_at.
+//   «발급된» 링크 행이 있으면 link.expires_at, 없으면(=public) meta.ends_at.
 //   둘 다 null = 무기한. meta.starts_at 이 미래면 아직 못 쓴다.
 ```
 
-**만료 판정 규칙 한 줄:** *링크 행이 있으면 `link.expires_at`, 없으면 `meta.ends_at`.*
+**만료 판정 규칙 한 줄:** *발급된 링크 행이 있으면 `link.expires_at`, 없으면 `meta.ends_at`.*
+「발급된」이 핵심이다 — 링크 테이블에 행이 있다는 사실 자체가 아니라 **그 행이 발급 사건에서
+났다는 것**이 이 규칙의 전제다. C1(2026-08-31 최종 리뷰)이 이 구분을 잊고 "행이 있으면"으로
+읽었을 때 실사고가 났다: §5.2 의 사용 기록 훅이 발급 3경로 밖에서 **네 번째로** 이 테이블에
+쓰는데, `Link.create` 가 upsert 라(§2 ⓑ) 발급된 적 없는 쌍에도 행을 만들 수 있었다. 그 행은
+`expires_at = NULL`(무기한)로 박히고, 규칙을 "행이 있으면"으로 읽으면 그 무기한이 그대로
+적용돼 public 쿠폰이 한 번 쓰이는 순간 그 고객에게 영구 유효가 된다. 그래서 §5.2 의 훅은
+**이미 발급된 쌍만 갱신**하도록 걸러야 하고(`buildUsageLinks` 의 `issuedPromotionIds` 필터),
+그 필터가 있는 한에서만 "링크 행 존재 = 발급됨"이 성립한다.
 
 라우트 안 클로저로 두면 검증 대상 밖이라는 P1 교훈 그대로, 판정은 전부 이 `.ts` 에 산다.
 
@@ -280,6 +288,14 @@ isUsable(link: { expires_at } | null, meta, now: Date): boolean
 `used_at = now`, `order_id = order.id` 를 `link.create` 로 upsert 한다(같은 행 갱신).
 
 판정·조립은 `.ts` 순수 함수로 뽑고 훅 등록부는 얇게 둔다(`apply-promotion-meta.ts` 와 같은 모양).
+
+> 🔴 **이 훅은 링크 테이블의 네 번째 쓰기 경로다** (§5.1 의 발급 3경로 + 이 훅). 앞의 셋은
+> 「발급」이라는 사건이 있어야 도는데, 이 훅은 **주문에 붙은 프로모션이면 무엇이든** 대상으로
+> 삼는다 — `public` 쿠폰처럼 발급 사건 없이 코드만으로 붙는 프로모션도 포함된다는 뜻이다.
+> `Link.create` 가 upsert 인 이상(§2 ⓑ), 이 훅이 걸러내지 않고 그대로 넘기면 **발급된 적
+> 없는 쌍에도 INSERT 가 나가** §4 의 "링크 행이 있으면"이 깨진다. 그래서 구현은 반드시
+> «이미 발급된(=링크 행이 이미 있는) 쌍만 갱신»하도록 그 쌍의 집합을 먼저 조회해 교집합을
+> 취해야 한다 — **절대 INSERT 하지 않는다.** (C1, 2026-08-31 최종 리뷰)
 
 > `A2`(취소·환불 시 복구)는 이번 범위 밖이다. 이 두 컬럼이 그 후속의 **유일한 선행**이고,
 > 후속은 `cancelOrderWorkflow.hooks.orderCanceled` 하나로 끝난다.
@@ -408,7 +424,7 @@ cd apps/medusa && <medusa 유닛 + 쿠폰 통합>
 `medusa db:migrate --execute-safe-links` 를 돌려 모듈 마이그레이션 + 링크 sync 를 함께 적용한다.
 **별도 `db:migrate` 호출은 없다.** 마스터플랜의 `migrate → deploy` 표기는 drizzle 서비스 규약이다.
 
-배포 **후** 사람이 1회:
+배포 **후** 사람이 1회, **필수 절차로**(선택적 후속 정리가 아니다 — 아래 ⓒ가 그 이유다):
 
 ```bash
 # apps/medusa 에서 — dry-run 이 기본, 반영은 확인값을 줘야 한다
@@ -424,13 +440,22 @@ DETACH_CAMPAIGNS_DRY_RUN=false DETACH_CAMPAIGNS_CONFIRM=detach-coupon-campaigns 
 dry-run 기본 + 확인 환경변수 패턴은 `src/scripts/backfill-issued-count.ts` 의 것을 그대로 따른다
 (같은 파일 상단 주석 참조).
 
-### 감수하는 창 둘
+### 감수하는 창 셋
 
 - **ⓐ 롤링 배포 중**, 아직 안 바뀐 옛 태스크가 발급하면 `expires_at` 이 NULL(무기한)로 박힌다.
   수 분짜리 창이고 방향이 「고객에게 유리」쪽이다.
 - **ⓑ 캐시된 옛 storefront 번들**이 만료 쿠폰을 「무기한」으로 **표시**할 수 있다
   (`campaign.ends_at` 이 null 이 되므로). SST 한 스택이라 배포 순서를 못 정하는 데서 오는 것이고
   (`docs` 메모: SST 한 스택엔 배포 순서가 없다), **강제는 서버가 하므로 금액은 새지 않는다.**
+- **ⓒ `detach-coupon-campaigns.ts` 를 실제로 돌리기 전까지**, 이 브랜치 이전에 발급된 링크
+  행은 전부 `expires_at = NULL` 이다 — §4 의 규칙대로 무기한으로 읽힌다. ⓐ·ⓑ와 달리 **이
+  창은 시간으로 안 닫힌다.** 배포는 코드를 바꿀 뿐 기존 행을 건드리지 않으므로, 스크립트를
+  안 돌리면 무기한으로 영원히 남는다. 이 창에서는 옛 발급 건 중 정책상 이미 만료됐어야 할
+  쿠폰이 스토어에 「무기한」으로 표시되고, 고객이 그것을 카트에 붙일 수도 있다 — 다만
+  엔진의 캠페인 필터(§2 ⓕ)가 그 프로모션을 여전히 `listActivePromotions_` 밖으로 쳐내므로
+  할인 계산은 0 이 된다("쿠폰은 붙었는데 할인이 안 된다"로 나타나지, 금액이 새지는 않는다).
+  그래서 스크립트 실행은 §10 도입부에 적은 대로 **배포의 선택적 뒷정리가 아니라 배포
+  절차의 마지막 단계**다.
 
 ---
 
