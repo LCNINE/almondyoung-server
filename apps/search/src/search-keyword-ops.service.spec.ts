@@ -273,6 +273,66 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
       expect(result.summary.neglectBuckets).toEqual({ under7: 1, from7to13: 1, from14to29: 1, over30: 0 });
     });
   });
+
+  describe('같은 기간의 집계 재사용', () => {
+    /** 집계 호출 횟수를 세는 저장소 — 페이지를 넘길 때마다 다시 집계하던 비용을 고정한다. */
+    function buildCountingService(issues: SearchKeywordIssue[] = []) {
+      const getZeroHitKeywords = jest
+        .fn()
+        .mockResolvedValue([zeroRow('a', 9, '2026-08-26T01:00:00Z'), zeroRow('b', 8, '2026-08-26T01:00:00Z')]);
+      const getKeywordActivity = jest.fn().mockResolvedValue(new Map<string, KeywordActivity>());
+      const issueRepository = buildIssueRepository(issues);
+      const service = new SearchKeywordOpsService(
+        buildRepository({ getZeroHitKeywords, getKeywordActivity }),
+        issueRepository,
+        buildProductIndex(),
+      );
+      return { service, getZeroHitKeywords, getKeywordActivity, issueRepository };
+    }
+
+    it('같은 기간이면 페이지를 넘겨도 집계를 다시 하지 않는다', async () => {
+      const { service, getZeroHitKeywords, getKeywordActivity } = buildCountingService();
+
+      await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 1);
+      await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 2, 1);
+      await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 1, 'open');
+
+      expect(getZeroHitKeywords).toHaveBeenCalledTimes(1);
+      expect(getKeywordActivity).toHaveBeenCalledTimes(1);
+    });
+
+    it('기간이 다르면 따로 집계한다', async () => {
+      const { service, getZeroHitKeywords } = buildCountingService();
+
+      await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+      await service.getZeroHitKeywords('2026-08-02', '2026-08-27', 1, 20);
+
+      expect(getZeroHitKeywords).toHaveBeenCalledTimes(2);
+    });
+
+    // 담당자·메모·처리 상태는 운영자가 방금 저장한 값이다. 집계와 같이 캐시하면
+    // 저장했는데 화면이 안 바뀌는, 느린 것보다 나쁜 버그가 된다.
+    it('운영 상태는 재사용하지 않고 매번 다시 읽는다', async () => {
+      const { service, issueRepository } = buildCountingService();
+
+      await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+      const stored = {
+        keywordNorm: 'a',
+        keyword: 'a',
+        status: 'md',
+        assigneeId: 'user-1',
+        assigneeName: '담당자',
+        memo: '소싱 검토',
+        updatedAt: new Date('2026-08-27T00:00:00Z'),
+      } as SearchKeywordIssue;
+      (issueRepository.findByNorms as jest.Mock).mockResolvedValue(new Map([['a', stored]]));
+
+      const after = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+
+      expect(after.items[0].issue).toMatchObject({ status: 'md', assigneeId: 'user-1', memo: '소싱 검토' });
+      expect(after.summary.byStatus.md).toBe(1);
+    });
+  });
 });
 
 describe('SearchKeywordOpsService.getKeywordDetail', () => {

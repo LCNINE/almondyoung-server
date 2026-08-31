@@ -139,20 +139,21 @@ export class StockValuationReader {
         if (cost.status !== 'valued') buckets[cost.status].skuIds.add(skuId);
       }
 
-      const warehouseRows = await trx
-        .select({
-          id: wmsTables.warehouses.id,
-          name: wmsTables.warehouses.name,
-          isSellable: wmsTables.warehouses.isSellable,
-        })
-        .from(wmsTables.warehouses);
-      const warehouseById = new Map(warehouseRows.map((w) => [w.id, w]));
-
       const proj = wmsTables.productSellableQuantityProjections;
-      const [soldOut] = await trx
-        .select({ count: sql<number>`count(distinct ${proj.masterId})::int` })
-        .from(proj)
-        .where(inArray(proj.reason, [...SOLD_OUT_REASONS]));
+      const [warehouseRows, [soldOut]] = await Promise.all([
+        trx
+          .select({
+            id: wmsTables.warehouses.id,
+            name: wmsTables.warehouses.name,
+            isSellable: wmsTables.warehouses.isSellable,
+          })
+          .from(wmsTables.warehouses),
+        trx
+          .select({ count: sql<number>`count(distinct ${proj.masterId})::int` })
+          .from(proj)
+          .where(inArray(proj.reason, [...SOLD_OUT_REASONS])),
+      ]);
+      const warehouseById = new Map(warehouseRows.map((w) => [w.id, w]));
 
       const onHand = stateAgg.get('ON_HAND') ?? { quantity: 0, value: 0, uncostedQuantity: 0 };
 
@@ -295,77 +296,75 @@ export class StockValuationReader {
       return { ledgerRows, skuCosts };
     }
 
-    const linkRows = await trx
+    // 재고가 있는 SKU 집합. id 를 JS 로 꺼내 `inArray` 로 되묻지 않고 서브쿼리로 남긴다 —
+    // 왕복이 줄고, 바인드 파라미터 상한(65,535)에 SKU 수가 부딪히는 절벽도 사라진다.
+    const stockedGroups = trx
+      .select({ skuId: ledger.skuId })
+      .from(ledger)
+      .groupBy(ledger.skuId, ledger.warehouseId, ledger.stockState)
+      .having(sql`SUM(${ledger.qty}) > 0`)
+      .as('stocked_groups');
+    const stocked = trx.selectDistinct({ skuId: stockedGroups.skuId }).from(stockedGroups).as('stocked');
+
+    // variant 당 최신 active 버전 하나 — product-sellable-quantity 와 같은 판정.
+    // 옛 구현이 (updatedAt desc, createdAt desc) 로 받아 variant 별 첫 행만 남긴 것과 같다.
+    const activeVersions = trx
+      .selectDistinctOn([productMasterVariants.variantId], {
+        variantId: productMasterVariants.variantId,
+        masterId: productMasterVariants.masterId,
+        name: productMasterVersions.name,
+        supplyPrice: productMasterVersions.supplyPrice,
+      })
+      .from(productMasterVariants)
+      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
+      .innerJoin(productMasters, eq(productMasterVariants.masterId, productMasters.id))
+      .where(
+        and(
+          eq(productMasterVersions.status, 'active'),
+          isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
+        ),
+      )
+      .orderBy(
+        productMasterVariants.variantId,
+        desc(productMasterVersions.updatedAt),
+        desc(productMasterVersions.createdAt),
+      )
+      .as('active_versions');
+
+    // 링크 경로(sku ← link ← matching ← variant ← active version)를 한 번의 조인으로 잇는다.
+    // 옛 구현이 중간 id 를 왕복시키며 걸러내던 것(매칭 없음·active 버전 없음)은 innerJoin 이 한다.
+    const candidateRows = await trx
       .select({
         skuId: wmsTables.productVariantSkuLinks.skuId,
-        matchingId: wmsTables.productVariantSkuLinks.productMatchingId,
-        quantity: wmsTables.productVariantSkuLinks.quantity,
+        masterId: activeVersions.masterId,
+        name: activeVersions.name,
+        supplyPrice: activeVersions.supplyPrice,
+        linkQuantity: wmsTables.productVariantSkuLinks.quantity,
       })
       .from(wmsTables.productVariantSkuLinks)
-      .where(inArray(wmsTables.productVariantSkuLinks.skuId, skuIds));
+      .innerJoin(stocked, eq(stocked.skuId, wmsTables.productVariantSkuLinks.skuId))
+      .innerJoin(
+        wmsTables.productMatchings,
+        eq(wmsTables.productMatchings.id, wmsTables.productVariantSkuLinks.productMatchingId),
+      )
+      .innerJoin(activeVersions, eq(activeVersions.variantId, wmsTables.productMatchings.variantId));
 
-    const matchingIds = [...new Set(linkRows.map((row) => row.matchingId))];
-    const matchingRows = matchingIds.length
-      ? await trx
-          .select({
-            id: wmsTables.productMatchings.id,
-            variantId: wmsTables.productMatchings.variantId,
-          })
-          .from(wmsTables.productMatchings)
-          .where(inArray(wmsTables.productMatchings.id, matchingIds))
-      : [];
-    const variantByMatching = new Map(matchingRows.map((row) => [row.id, row.variantId]));
-
-    const variantIds = [...new Set(matchingRows.map((row) => row.variantId))];
-    // variant 당 최신 active 버전 하나 — product-sellable-quantity 와 같은 판정
-    const versionRows = variantIds.length
-      ? await trx
-          .select({
-            variantId: productMasterVariants.variantId,
-            masterId: productMasterVariants.masterId,
-            name: productMasterVersions.name,
-            supplyPrice: productMasterVersions.supplyPrice,
-          })
-          .from(productMasterVariants)
-          .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
-          .innerJoin(productMasters, eq(productMasterVariants.masterId, productMasters.id))
-          .where(
-            and(
-              inArray(productMasterVariants.variantId, variantIds),
-              eq(productMasterVersions.status, 'active'),
-              isNull(productMasterVersions.deletedAt),
-              isNull(productMasters.deletedAt),
-            ),
-          )
-          .orderBy(desc(productMasterVersions.updatedAt), desc(productMasterVersions.createdAt))
-      : [];
-    const activeByVariant = new Map<string, (typeof versionRows)[number]>();
-    for (const row of versionRows) {
-      if (!activeByVariant.has(row.variantId)) activeByVariant.set(row.variantId, row);
-    }
-
-    const linksBySku = new Map<string, typeof linkRows>();
-    for (const link of linkRows) {
-      const links = linksBySku.get(link.skuId) ?? [];
-      links.push(link);
-      linksBySku.set(link.skuId, links);
-    }
-
-    for (const skuId of skuIds) {
-      const candidates: SkuCostCandidate[] = (linksBySku.get(skuId) ?? []).flatMap((link) => {
-        const variantId = variantByMatching.get(link.matchingId);
-        const active = variantId ? activeByVariant.get(variantId) : undefined;
-        if (!active) return [];
-        return [
-          {
-            masterId: active.masterId,
-            name: active.name,
-            supplyPrice: active.supplyPrice,
-            linkQuantity: link.quantity,
-          },
-        ];
+    const candidatesBySku = new Map<string, SkuCostCandidate[]>();
+    for (const row of candidateRows) {
+      const candidates = candidatesBySku.get(row.skuId) ?? [];
+      candidates.push({
+        masterId: row.masterId,
+        name: row.name,
+        supplyPrice: row.supplyPrice,
+        linkQuantity: row.linkQuantity,
       });
-      skuCosts.set(skuId, classifySkuCost(candidates));
+      candidatesBySku.set(row.skuId, candidates);
+    }
+
+    // 후보가 하나도 없는 SKU 도 'unmatched' 로 남아야 하므로 원장의 SKU 전부를 돈다.
+    for (const skuId of skuIds) {
+      skuCosts.set(skuId, classifySkuCost(candidatesBySku.get(skuId) ?? []));
     }
 
     return { ledgerRows, skuCosts };
