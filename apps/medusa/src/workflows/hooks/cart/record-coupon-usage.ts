@@ -22,7 +22,17 @@ import { buildUsageLinks } from './coupon-usage';
  * 노출한다. 하지만 `orderCreated` 는 워크플로 본문에서 실제로 `createHook("orderCreated", …)`
  * 로 등록되고, `mainFlow.hooks[hook]` 이 그 등록 목록을 그대로 순회해 채운다
  * (`workflows-sdk/create-workflow.js` 실측) — 즉 **런타임엔 존재하는데 타입 선언에서만 빠진**
- * 케이스다(JSDoc 이 `@ignore` 로 표시). 그래서 이 한 줄에서만 타입을 좁혀 캐스팅한다.
+ * 케이스다(JSDoc 이 `@ignore` 로 표시). `@ts-expect-error` 로 그 한 줄만 눌러 끈다 — 객체를
+ * 다른 타입으로 캐스팅하지 않는 이유는, `no-duplicate-validate-hooks.unit.spec.ts` 의 가드가
+ * 소스를 정규식 `(\w+Workflow)\.hooks\.(\w+)\(` 로 스캔하기 때문이다. `completeCartWorkflow`
+ * `.hooks` 를 중간에서 캐스팅해 변수로 받으면, 실제 호출부의 「식별자 + .hooks. + 훅이름 + (」
+ * 연속 패턴이 깨져 그 가드의 탐지망을 빠져나간다 — 나중에 누가 같은 훅을 또 등록해도 가드가
+ * "중복 없음"으로 오판한다(실측: 캐스팅 변수를 썼더니 가드가 이 등록 자체를 못 셌다). 아래
+ * 실제 호출은 그래서 캐스팅 없이, 원래 식별자 그대로 남겨 가드가 계속 이 등록을 셀 수 있게 한다.
+ *
+ * ⚠️ 이 주석 안에는 실제 호출부와 같은 문자열(식별자+.hooks.+훅이름+여는 괄호)을 그대로 적지
+ * 말 것 — 가드는 파일 전체를 정규식으로 스캔하므로 주석에 있어도 매치로 잡혀 「같은 파일에
+ * 두 번 등록」으로 오판해 이 가드 자체를 빨갛게 만든다(실측으로 재현했다).
  */
 type OrderCreatedHookInput = { order_id: string; cart_id: string };
 type HookContainer = { resolve: <T>(key: string) => T };
@@ -31,31 +41,32 @@ type OrderWithPromotions = {
   customer_id: string | null;
   promotions?: { id: string }[];
 };
-const hooks = completeCartWorkflow.hooks as unknown as {
-  orderCreated: (invoke: (input: OrderCreatedHookInput, ctx: { container: HookContainer }) => Promise<void>) => void;
-};
 
-hooks.orderCreated(async ({ order_id }, { container }) => {
-  try {
-    const query = container.resolve<{
-      graph: (args: unknown) => Promise<{ data: OrderWithPromotions[] }>;
-    }>(ContainerRegistrationKeys.QUERY);
-    const link = container.resolve<{ create: (payloads: unknown[]) => Promise<unknown> }>(
-      ContainerRegistrationKeys.LINK,
-    );
+// @ts-expect-error — orderCreated 는 런타임엔 등록되지만 공개 .d.ts 엔 없다(위 설명 참고).
+// eslint-disable-next-line @typescript-eslint/no-unsafe-call -- 위와 같은 이유로 타입이 해석되지 않는다.
+completeCartWorkflow.hooks.orderCreated(
+  async ({ order_id }: OrderCreatedHookInput, { container }: { container: HookContainer }) => {
+    try {
+      const query = container.resolve<{
+        graph: (args: unknown) => Promise<{ data: OrderWithPromotions[] }>;
+      }>(ContainerRegistrationKeys.QUERY);
+      const link = container.resolve<{ create: (payloads: unknown[]) => Promise<unknown> }>(
+        ContainerRegistrationKeys.LINK,
+      );
 
-    const { data: orders } = await query.graph({
-      entity: 'order',
-      fields: ['id', 'customer_id', 'promotions.id'],
-      filters: { id: order_id },
-    });
-    const found = orders?.[0];
-    const promotionIds = (found?.promotions ?? []).map((p) => p.id);
+      const { data: orders } = await query.graph({
+        entity: 'order',
+        fields: ['id', 'customer_id', 'promotions.id'],
+        filters: { id: order_id },
+      });
+      const found = orders?.[0];
+      const promotionIds = (found?.promotions ?? []).map((p) => p.id);
 
-    const payloads = buildUsageLinks(found?.customer_id, promotionIds, order_id, new Date());
-    if (payloads.length) await link.create(payloads);
-  } catch (e) {
-    const logger = container.resolve<{ error: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER);
-    logger.error(`[coupon] 사용 기록 실패 (주문은 유지): ${(e as Error)?.message}`);
-  }
-});
+      const payloads = buildUsageLinks(found?.customer_id, promotionIds, order_id, new Date());
+      if (payloads.length) await link.create(payloads);
+    } catch (e) {
+      const logger = container.resolve<{ error: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER);
+      logger.error(`[coupon] 사용 기록 실패 (주문은 유지): ${(e as Error)?.message}`);
+    }
+  },
+);
