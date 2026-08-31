@@ -9,6 +9,7 @@ import {
   jsonb,
   timestamp,
   bigint,
+  date,
   uniqueIndex,
   index,
   check,
@@ -1045,6 +1046,25 @@ export const sitePopups = pgTable(
 );
 
 // ===== SHOP LISTINGS (샵매매) =====
+export const shopListingViews = pgTable(
+  'shop_listing_views',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    listingId: uuid('listing_id').notNull(),
+    /** 방문자 IP + 매물 id 해시. 원본 IP 는 저장하지 않는다. */
+    visitorHash: varchar('visitor_hash', { length: 64 }).notNull(),
+    /** dedup 단위. 같은 방문자·같은 매물·같은 날은 1행만 남는다. */
+    viewedOn: date('viewed_on').notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('unique_shop_listing_view_per_day').on(table.listingId, table.visitorHash, table.viewedOn),
+    index('idx_shop_listing_views_listing_day').on(table.listingId, table.viewedOn),
+  ],
+);
+
 export const shopListings = pgTable(
   'shop_listings',
   {
@@ -1067,6 +1087,8 @@ export const shopListings = pgTable(
     /** 샵 사진 갤러리. file-service fileId 배열이고 순서가 곧 노출 순서다. */
     images: jsonb('images').$type<string[]>(),
     isActive: boolean('is_active').notNull().default(true),
+    /** 상세 페이지 조회수. 스토어프론트 비콘이 세션당 1회 올린다. */
+    viewCount: integer('view_count').notNull().default(0),
 
     deletedAt: timestamp('deleted_at'),
     deletedBy: uuid('deleted_by'),
@@ -1407,6 +1429,7 @@ export const catalogSchema = {
   notices,
   sitePopups,
   shopListings,
+  shopListingViews,
   productFormExports,
   productFormExportItems,
   productBulkSessions,

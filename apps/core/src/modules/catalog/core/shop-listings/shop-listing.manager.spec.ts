@@ -1,5 +1,6 @@
 import { BadRequestError } from '@app/shared';
-import { ShopListingManager } from './shop-listing.manager';
+import { SQL } from 'drizzle-orm';
+import { hashVisitor, ShopListingManager, today } from './shop-listing.manager';
 import { ShopListingEntity } from '../../schema/catalog.schema.types';
 
 const BASE = { region: 'seoul', businessType: 'nail', dealType: 'transfer' } as const;
@@ -110,6 +111,84 @@ describe('ShopListingManager', () => {
     await expect(
       manager.create({ ...BASE, slug: 'a-shop', title: '제목', thumbnailFileId: THUMB, content: '<p><br></p>' }),
     ).rejects.toThrow(BadRequestError);
+  });
+
+  describe('조회수', () => {
+    function makeViewManager(options: { conflict?: boolean } = {}) {
+      const updates: Record<string, unknown>[] = [];
+      const inserts: Record<string, unknown>[] = [];
+
+      const tx = {
+        select: () => ({
+          from: () => ({
+            where: () => ({ limit: () => Promise.resolve([{ id: 'listing-1' }]) }),
+          }),
+        }),
+        insert: () => ({
+          values: (values: Record<string, unknown>) => {
+            inserts.push(values);
+            return {
+              onConflictDoNothing: () => ({
+                // unique 제약에 걸리면 drizzle 이 빈 배열을 준다
+                returning: () => Promise.resolve(options.conflict ? [] : [{ id: 'view-1' }]),
+              }),
+            };
+          },
+        }),
+        update: () => ({
+          set: (values: Record<string, unknown>) => {
+            updates.push(values);
+            return { where: () => Promise.resolve(undefined) };
+          },
+        }),
+      };
+
+      const db = { run: (cb: (trx: typeof tx) => Promise<unknown>) => cb(tx) };
+
+      return {
+        manager: new ShopListingManager(db as never, {} as never),
+        updates,
+        inserts,
+      };
+    }
+
+    it('첫 조회는 로그를 남기고 카운터를 올린다', async () => {
+      const { manager, updates, inserts } = makeViewManager();
+
+      await manager.incrementViewCount('gangnam-nail-shop', '1.2.3.4');
+
+      expect(inserts).toHaveLength(1);
+      expect(updates).toHaveLength(1);
+      // 숫자를 읽어와 +1 해서 쓰면 동시 조회가 서로를 덮어쓴다. SQL 식이어야 한다.
+      expect((updates[0] as { viewCount: unknown }).viewCount).toBeInstanceOf(SQL);
+    });
+
+    it('같은 방문자의 재조회는 카운터를 올리지 않는다', async () => {
+      const { manager, updates } = makeViewManager({ conflict: true });
+
+      await manager.incrementViewCount('gangnam-nail-shop', '1.2.3.4');
+
+      expect(updates).toHaveLength(0);
+    });
+
+    it('IP 는 그대로 저장하지 않는다', async () => {
+      const { manager, inserts } = makeViewManager();
+
+      await manager.incrementViewCount('gangnam-nail-shop', '1.2.3.4');
+
+      const hash = (inserts[0] as { visitorHash: string }).visitorHash;
+      expect(hash).not.toContain('1.2.3.4');
+      expect(hash).toHaveLength(64);
+    });
+
+    it('같은 IP 라도 매물이 다르면 해시가 다르다', () => {
+      expect(hashVisitor('1.2.3.4', 'listing-1')).not.toBe(hashVisitor('1.2.3.4', 'listing-2'));
+    });
+
+    it('viewed_on 은 KST 날짜다 — UTC 로 자르면 오전 9시 전이 전날이 된다', () => {
+      expect(today(new Date('2026-08-31T00:30:00.000Z'))).toBe('2026-08-31');
+      expect(today(new Date('2026-08-30T15:30:00.000Z'))).toBe('2026-08-31');
+    });
   });
 
   it('본문이 이미지뿐이어도 통과한다', async () => {

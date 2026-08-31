@@ -121,8 +121,9 @@ export default function ShopListingsTemplate() {
                   </Badge>
                 </div>
                 <p className="text-muted-foreground mt-1 truncate text-xs">
-                  {new Date(listing.createdAt).toLocaleDateString('ko-KR')} ·
-                  /kr/shop-trade/{listing.slug}
+                  {new Date(listing.createdAt).toLocaleDateString('ko-KR')} · 조회{' '}
+                  {listing.viewCount.toLocaleString()} · /kr/shop-trade/
+                  {listing.slug}
                 </p>
               </div>
 

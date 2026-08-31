@@ -8,6 +8,7 @@ import { SiteBreadcrumb } from "@/components/shared/site-breadcrumb"
 import { ListingGallery } from "@/domains/shop-trade/components/listing-gallery"
 import { RelatedListings } from "@/domains/shop-trade/components/related-listings"
 import { ShareButton } from "@/domains/shop-trade/components/share-button"
+import { ViewBeacon } from "@/domains/shop-trade/components/view-beacon"
 import { formatKoreanMoney } from "@/domains/shop-trade/format-money"
 import { getPublicShopListing } from "@/lib/api/pim/shop-listings"
 import { sanitizeNoticeHtml } from "@/lib/utils/sanitize-html"
@@ -88,6 +89,7 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
 
   return (
     <article className="container mx-auto max-w-[800px] px-3.5 py-6 xl:px-[40px]">
+      <ViewBeacon slug={listing.slug} />
       <SiteBreadcrumb
         className="mb-4"
         items={[
