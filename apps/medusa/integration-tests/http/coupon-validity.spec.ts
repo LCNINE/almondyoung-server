@@ -220,14 +220,17 @@ medusaIntegrationTestRunner({
       });
 
       it('관리자 수동 발급 — validity_days 가 없으면 정책의 ends_at 이 박힌다', async () => {
+        // 절대 미래시각 하드코딩 금지(I3, 2026-08-31 최종 리뷰) — 발급 창이 지나면 이 테스트가
+        // "expired" skip 으로 죽어 "만료 로직이 바뀌었다"가 아니라 "스위트가 깨졌다"로 보인다.
+        const endsAt = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
         const id = await createPromo(`MANUALABS${seq}`, {
           visibility: 'assigned_only',
-          ends_at: '2027-06-30T00:00:00.000Z',
+          ends_at: endsAt,
         });
         await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
 
         const [row] = await listLinks(id);
-        expect(new Date(row.expires_at).toISOString()).toEqual('2027-06-30T00:00:00.000Z');
+        expect(new Date(row.expires_at).toISOString()).toEqual(endsAt);
       });
 
       it('둘 다 없으면 무기한(NULL)으로 박힌다', async () => {
