@@ -23,6 +23,11 @@ const visibility = z.enum(['public', 'claimable', 'assigned_only']);
 const autoIssueTrigger = z.enum(['customer_registered', 'membership_activated']);
 const maxClaims = z.number().int().positive();
 const maxDiscountAmount = z.number().int().positive();
+/** ISO 8601 문자열. 폼의 `datetime-local` 값을 `toISOString()` 한 것이 온다. */
+const isoDateTime = z.string().refine((v) => !Number.isNaN(new Date(v).getTime()), {
+  message: 'must be a parseable ISO date-time string',
+});
+const validityDays = z.number().int().positive();
 
 /**
  * 생성용. `visibility` 만 **필수**다 — 이 값이 없으면 「발급 정책 없는 쿠폰」이 되고
@@ -39,6 +44,9 @@ export const promotionAdditionalDataCreateShape = {
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),
   auto_issue_trigger: autoIssueTrigger.optional(),
+  starts_at: isoDateTime.optional(),
+  ends_at: isoDateTime.optional(),
+  validity_days: validityDays.optional(),
 };
 
 /**
@@ -52,4 +60,7 @@ export const promotionAdditionalDataUpdateShape = {
   max_claims: maxClaims.optional(),
   max_discount_amount: maxDiscountAmount.optional(),
   auto_issue_trigger: autoIssueTrigger.optional(),
+  starts_at: isoDateTime.optional(),
+  ends_at: isoDateTime.optional(),
+  validity_days: validityDays.optional(),
 };

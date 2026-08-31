@@ -320,5 +320,27 @@ medusaIntegrationTestRunner({
         name: '토글 대상',
       });
     });
+
+    it('유효기간 3키가 promotion_meta 에 저장되고 metadata 로 돌아온다 (Task 5)', async () => {
+      const startsAt = '2026-09-01T00:00:00.000Z';
+      const endsAt = '2026-09-30T00:00:00.000Z';
+      const validityDays = 30;
+
+      const promoId = await createPromo(`VALIDITY${seq}`, {
+        visibility: 'claimable',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        validity_days: validityDays,
+      });
+
+      const res = await api.get(`/admin/promotions/${promoId}`, adminHeaders);
+      expect(res.status).toEqual(200);
+      expect(res.data.promotion.metadata).toMatchObject({
+        visibility: 'claimable',
+        starts_at: startsAt,
+        ends_at: endsAt,
+        validity_days: validityDays,
+      });
+    });
   },
 });

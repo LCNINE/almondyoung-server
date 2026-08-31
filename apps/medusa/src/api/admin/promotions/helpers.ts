@@ -29,6 +29,10 @@ export const META_KEYS = [
   'visibility',
   'max_claims',
   'auto_issue_trigger',
+  // 유효기간 «정책 축» (#488 결정 1). 인스턴스 축(링크 행 expires_at)은 발급 경로가 계산해 박는다.
+  'starts_at',
+  'ends_at',
+  'validity_days',
 ] as const;
 
 export function extractMetaFromAdditionalData(
@@ -51,6 +55,9 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   result.visibility = record.visibility ?? 'public';
   if (record.max_claims != null) result.max_claims = record.max_claims;
   if (record.auto_issue_trigger != null) result.auto_issue_trigger = record.auto_issue_trigger;
+  if (record.starts_at != null) result.starts_at = record.starts_at;
+  if (record.ends_at != null) result.ends_at = record.ends_at;
+  if (record.validity_days != null) result.validity_days = record.validity_days;
   // 읽기 전용 발급 카운터 — 관리자 발급 현황 표시용(클라 write 대상 아님)
   if (record.issued_count != null) result.issued_count = record.issued_count;
   return Object.keys(result).length > 0 ? result : null;

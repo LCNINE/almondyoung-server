@@ -43,4 +43,18 @@ describe('additional_data 스키마', () => {
     expect(schema.safeParse({ max_claims: 0 }).success).toBe(false);
     expect(schema.safeParse({ max_claims: 1.5 }).success).toBe(false);
   });
+
+  it('유효기간 3키를 받는다', () => {
+    const schema = z.object(promotionAdditionalDataUpdateShape);
+    expect(schema.safeParse({ starts_at: '2026-09-01T00:00:00.000Z' }).success).toBe(true);
+    expect(schema.safeParse({ ends_at: '2026-09-30T00:00:00.000Z' }).success).toBe(true);
+    expect(schema.safeParse({ validity_days: 30 }).success).toBe(true);
+  });
+
+  it('validity_days 는 양의 정수만, 날짜는 파싱 가능한 문자열만 받는다', () => {
+    const schema = z.object(promotionAdditionalDataUpdateShape);
+    expect(schema.safeParse({ validity_days: 0 }).success).toBe(false);
+    expect(schema.safeParse({ validity_days: 1.5 }).success).toBe(false);
+    expect(schema.safeParse({ ends_at: '언젠가' }).success).toBe(false);
+  });
 });
