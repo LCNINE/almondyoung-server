@@ -60,12 +60,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   );
 
   // Apply pagination
-  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => ({
-    ...p,
-    expires_at: linkByPromotionId.get(p.id)?.expires_at ?? null,
-    used_at: linkByPromotionId.get(p.id)?.used_at ?? null,
-    issued_via: linkByPromotionId.get(p.id)?.issued_via ?? null,
-  }));
+  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => {
+    const link = linkByPromotionId.get(p.id);
+    return {
+      ...p,
+      expires_at: link?.expires_at ?? null,
+      used_at: link?.used_at ?? null,
+      order_id: link?.order_id ?? null,
+      issued_via: link?.issued_via ?? null,
+    };
+  });
 
   return res.status(200).json({
     customer_id: customerId,

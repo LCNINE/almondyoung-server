@@ -37,6 +37,14 @@ describe('computeExpiresAt — 발급 시점에 링크 행에 박을 값', () =>
     expect(computeExpiresAt({}, NOW)).toBeNull();
     expect(computeExpiresAt(null, NOW)).toBeNull();
   });
+
+  it('validity_days 가 소수(0.5)면 정수가 아니므로 무시하고 ends_at 으로 떨어진다 — Math.floor(0.5)=0 이면 발급 즉시 만료였다', () => {
+    expect(
+      computeExpiresAt({ validity_days: 0.5, ends_at: '2026-12-31T00:00:00.000Z' }, NOW),
+    ).toEqual(new Date('2026-12-31T00:00:00.000Z'));
+    // ends_at 도 없으면 무기한 — issuedAt 으로 떨어지지 않는다.
+    expect(computeExpiresAt({ validity_days: 0.5 }, NOW)).toBeNull();
+  });
 });
 
 describe('issuanceWindowState — 지금 발급할 수 있는가', () => {

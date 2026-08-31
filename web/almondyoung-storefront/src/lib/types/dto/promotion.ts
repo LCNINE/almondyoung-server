@@ -14,8 +14,13 @@ export type ApplicationMethodDto = {
  *──────────────────────────*/
 export type PromotionCampaignDto = {
   campaign_identifier: string
-  starts_at: string
-  ends_at: string
+  /**
+   * 이 브랜치부터 서버가 더는 채우지 않는다(`format-promotion.ts` 가 항상 `null` 로 내려보낸다) —
+   * 유효기간의 정본은 `PromotionDto.expires_at` 이다(#488 결정 1). 필드 자체는 옛 응답 캐시·
+   * 아직 안 바뀐 배포 태스크와의 호환을 위해 남아 있다.
+   */
+  starts_at: string | null
+  ends_at: string | null
 }
 
 /*───────────────────────────

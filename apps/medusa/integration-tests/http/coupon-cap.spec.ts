@@ -360,7 +360,12 @@ medusaIntegrationTestRunner({
       } catch (error: any) {
         message = error?.response?.data?.message ?? error?.message ?? '';
       }
-      expect(message).toContain('유효기간이 지난 쿠폰입니다');
+      // 머신 토큰 — per-customer-limit 미들웨어와 같은 값(F5). Korean prose 였던 옛 문구를
+      // 대체한 것이지, 매칭을 느슨하게 만든 것이 아니다 — `toContain` 은 이 파일의 다른
+      // 워크플로-백스톱 어서션(위 '쿠폰 할인 한도')과 같은 스타일을 따르는 것뿐, 옛 한국어
+      // 문구와도 새 토큰과도 동시에 통과하는 문자열을 고른 것이 아니다(옛 문구는 이 substring 을
+      // 포함하지 않는다).
+      expect(message).toContain('COUPON_EXPIRED');
     });
   },
 });

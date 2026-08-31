@@ -35,7 +35,11 @@ function toDate(value: Date | string | null | undefined): Date | null {
 function toDays(value: number | string | null | undefined): number | null {
   if (value == null) return null;
   const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+  // `Math.floor` 였다면 0.5 가 0 을 통과시켜 "발급 즉시 만료"가 된다 — 오늘의 쓰기 경로(zod
+  // `.int()`, DB CHECK `> 0`)는 막지만, 이 함수는 그 가드 이전에 쓰인 행과
+  // `restoreMetaSnapshots` 가 복원한 행도 읽는 순수 함수다. `service.ts` 의 형제 검증과 같은
+  // 규칙(`Number.isInteger`)으로 맞춘다.
+  return Number.isInteger(n) && n > 0 ? n : null;
 }
 
 /**

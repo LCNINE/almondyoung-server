@@ -16,6 +16,11 @@ export class Migration20260831100000 extends Migration {
     this.addSql(`ALTER TABLE "promotion_meta" ADD COLUMN IF NOT EXISTS "ends_at" timestamptz NULL;`);
     this.addSql(`ALTER TABLE "promotion_meta" ADD COLUMN IF NOT EXISTS "validity_days" integer NULL;`);
 
+    // Postgres 엔 `ADD CONSTRAINT IF NOT EXISTS` 가 없다 — 위 `ADD COLUMN IF NOT EXISTS` 셋과
+    // 달리 이 줄만 비-멱등이면, 제약이 이미 있는 스키마에서 재실행 시 `42710` 으로 죽는다
+    // (`db:migrate` 는 컨테이너 CMD 라 태스크가 `yarn start` 에 못 닿는다). 형제
+    // `Migration20260831110000` 과 같은 패턴으로 먼저 지우고 다시 만든다.
+    this.addSql(`ALTER TABLE "promotion_meta" DROP CONSTRAINT IF EXISTS "promotion_meta_validity_days_check";`);
     this.addSql(
       `ALTER TABLE "promotion_meta" ADD CONSTRAINT "promotion_meta_validity_days_check" ` +
         `CHECK ("validity_days" IS NULL OR "validity_days" > 0);`,
