@@ -173,8 +173,9 @@ medusaIntegrationTestRunner({
 
     it('preview reasons: assigned_only(not assigned)=NOT_ASSIGNED, expired=EXPIRED, group=RESTRICTED', async () => {
       await createPromo('ASSIGNONLY', { visibility: 'assigned_only' });
-      await createPromoRaw('EXPIREDC', { visibility: 'public' }, {
-        campaign: { name: 'e', campaign_identifier: `E_${seq}`, ends_at: '2000-01-01T00:00:00Z' },
+      await createPromoRaw('EXPIREDC', {
+        visibility: 'public',
+        ends_at: '2000-01-01T00:00:00.000Z',
       });
       await createPromoRaw('GROUPRES', { visibility: 'public' }, await otherGroupRule());
 

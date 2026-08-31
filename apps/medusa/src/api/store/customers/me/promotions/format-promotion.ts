@@ -64,6 +64,11 @@ export type FormattedPromotion = {
    */
   max_discount_amount: number | null;
   visibility: string;
+  /**
+   * 이 쿠폰이 언제까지 쓸 수 있는가 (#488 결정 1). `campaign.ends_at` 을 대체한다 —
+   * 캠페인 날짜는 더 이상 쓰지 않는다. `null` 이면 무기한.
+   */
+  expires_at: string | Date | null;
   application_method: ApplicationMethodLike | null;
   campaign: CampaignLike | null;
 };
@@ -84,6 +89,11 @@ function minOrderAmount(promo: PromotionLike): number | null {
 export type PromotionMetaView = {
   visibility: string;
   maxDiscountAmount: number | null;
+  /**
+   * 이 고객에게 이 쿠폰이 언제까지인가. **발급된 장이면 링크 행의 값**, 아니면 정책의 `ends_at`.
+   * 호출부가 링크를 한 번에 조회해 넣는다 — 프로모션마다 조회하지 않는다.
+   */
+  expiresAt: string | Date | null;
 };
 
 export function formatPromotion(
@@ -101,6 +111,7 @@ export function formatPromotion(
     min_order_amount: minOrderAmount(promo),
     max_discount_amount: meta.maxDiscountAmount,
     visibility: meta.visibility,
+    expires_at: meta.expiresAt,
     application_method: promo.application_method
       ? {
           // 필드를 하나씩 옮긴다 — 그래프가 더 실어 보내도 스토어 응답에 새지 않게.
@@ -115,8 +126,11 @@ export function formatPromotion(
     campaign: promo.campaign
       ? {
           campaign_identifier: promo.campaign.campaign_identifier,
-          starts_at: promo.campaign.starts_at,
-          ends_at: promo.campaign.ends_at,
+          // 이 플랜이 그래프 필드 목록에서 campaign.starts_at/ends_at 을 뺐다 — 값은 항상
+          // undefined 로 들어온다. `?? null` 없이 두면 JSON 직렬화가 키를 통째로 지워
+          // 응답 모양이 조용히 바뀐다. 응답 shape 을 오늘과 동일하게 유지하기 위한 것.
+          starts_at: promo.campaign.starts_at ?? null,
+          ends_at: promo.campaign.ends_at ?? null,
         }
       : null,
   };

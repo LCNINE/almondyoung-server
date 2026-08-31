@@ -2,7 +2,8 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { resolveVisibility, meetsGroupRule, listIssuedLinks } from '../../../admin/promotions/helpers';
+import { isUsable, issuanceWindowState } from '../../../../modules/promotion-meta/validity';
 
 /**
  * GET /store/events/:slug
@@ -45,7 +46,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     entity: 'promotion',
     fields: [
       'id', 'code', 'status', 'is_automatic',
-      'campaign.starts_at', 'campaign.ends_at',
       'application_method.type', 'application_method.value',
       'application_method.target_type', 'application_method.currency_code',
       'rules.attribute', 'rules.operator', 'rules.values.value',
@@ -71,16 +71,33 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     assignedIds = new Set<string>((customer?.promotions ?? []).map((p: any) => p.id));
     customerGroupIds = new Set<string>((customer?.groups ?? []).map((g: any) => g.id));
   }
+  // 발급된 «한 장»들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
+  const linkByPromotionId = new Map(
+    (customerId ? await listIssuedLinks(req.scope, customerId) : []).map((l) => [l.promotion_id, l]),
+  );
+
+  // 만료 시점: «링크 행이 있으면 링크 행», 없으면 정책(#488 결정 1). `?? meta?.ends_at` 로
+  // 한 줄에 합치면 link.expires_at 이 정당하게 null(무기한)일 때 meta 쪽으로 새어버린다
+  // (`??` 는 null 도 "없음"으로 취급) — 그래서 존재 여부를 명시적으로 분기한다.
+  const expiresAtOf = (promotionId: string, meta: any): string | Date | null => {
+    const link = linkByPromotionId.get(promotionId);
+    return link ? link.expires_at : (meta?.ends_at ?? null);
+  };
 
   // promotion → 발급 버튼 상태(kind/reason) 계산
   const resolveState = (promo: any, meta: any): { kind: string; reason?: string } => {
     if (!promo || promo.status !== 'active' || promo.is_automatic) {
       return { kind: 'blocked', reason: 'inactive' };
     }
-    const startsAt = promo.campaign?.starts_at ? new Date(promo.campaign.starts_at) : null;
-    const endsAt = promo.campaign?.ends_at ? new Date(promo.campaign.ends_at) : null;
-    if (startsAt && now < startsAt) return { kind: 'blocked', reason: 'not_started' };
-    if (endsAt && now > endsAt) return { kind: 'blocked', reason: 'expired' };
+    // «아직 시작 전」을 먼저 걸러낸다 — isUsable 도 정책 starts_at 을 보므로, 순서를 바꾸면
+    // 시작 전 쿠폰이 (아직 발급 개념도 없는데) 'expired' 로 오분류된다.
+    if (issuanceWindowState(meta, now) === 'not_started') {
+      return { kind: 'blocked', reason: 'not_started' };
+    }
+    // 사용 가능 여부는 «링크 행이 있으면 링크 행» 이 정한다 (#488 결정 1).
+    if (!isUsable(linkByPromotionId.get(promo.id) ?? null, meta, now)) {
+      return { kind: 'blocked', reason: 'expired' };
+    }
 
     // 메타가 없으면 닫힌 쪽이다(#488 N7) → not_assigned 로 막힌다.
     const visibility: string = resolveVisibility(meta);
@@ -123,7 +140,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
                 meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
             }
           : null,
-        expires_at: promo.campaign?.ends_at ?? null,
+        expires_at: expiresAtOf(promo.id, meta),
         state: resolveState(promo, meta),
       };
     })
