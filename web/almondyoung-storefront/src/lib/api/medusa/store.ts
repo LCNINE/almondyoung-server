@@ -139,6 +139,7 @@ export type CouponPreviewResult = {
       max_discount_amount?: number | null
     } | null
     expires_at: string | null
+    validity_days?: number | null
     promotion_id_to_claim?: string
   }
 }

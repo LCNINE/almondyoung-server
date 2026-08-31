@@ -11,6 +11,7 @@
   "discountPercent": "{value}% 割引",
   "discountAmount": "{amount}ウォン 割引",
   "expiresAt": "{date} まで有効",
+  "validForDaysAfterClaim": "受け取り後{days}日間",
   "unlimited": "有効期限なし",
   "claimButton": "クーポンを受け取る",
   "claiming": "処理中...",
