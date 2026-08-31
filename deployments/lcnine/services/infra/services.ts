@@ -657,6 +657,9 @@ export function setup(infra: SharedInfra) {
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
       NEXT_PUBLIC_STOREFRONT_URL: storefrontUrl,
       NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: 'kr',
+      // 타임세일이 멤버십용 price list 를 만들 때 거는 고객그룹 룰. 비면 멤버십 세일가를
+      // 저장할 수 없다. NEXT_PUBLIC_ 이라 빌드 타임에 박히므로 값이 바뀌면 재빌드가 필요하다.
+      NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       ANTHROPIC_API_KEY: anthropicApiKey.value,
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
