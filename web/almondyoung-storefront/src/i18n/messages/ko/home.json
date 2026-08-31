@@ -1,16 +1,17 @@
 {
   "pageTitle": "아몬드영 - 최저가 미용재료 MRO 쇼핑몰",
   "interestBanner": {
-    "title": "딱! 맞는 재료만 보고 싶다면?",
-    "description": "지금 분야를 선택하고 더 많은 제품을 둘러보세요.",
+    "title": "내 분야 상품만 모아볼까요?",
+    "description": "최대 {max}개까지 고르면 홈이 그 분야 베스트로 바뀝니다.",
     "dismiss": "1주일간 보지 않기",
-    "save": "저장",
-    "saving": "저장 중...",
-    "needAtLeastOne": "1개 이상 선택해주세요",
-    "saved": "관심 카테고리가 저장됐어요",
+    "saved": "이제 홈에서 고른 {count}개 분야 상품을 먼저 보여드릴게요",
     "saveFail": "저장에 실패했어요. 다시 시도해주세요.",
     "dismissFail": "처리에 실패했어요",
-    "maxSelectable": "최대 {max}개까지 선택할 수 있어요"
+    "maxSelectable": "최대 {max}개까지 선택할 수 있어요",
+    "selectPrompt": "분야를 골라주세요",
+    "save": "{count}개 분야 적용하기",
+    "saving": "저장 중...",
+    "needAtLeastOne": "1개 이상 선택해주세요"
   },
   "interestEdit": {
     "trigger": "편집",

@@ -9,6 +9,12 @@ interface InterestCategoriesSlotProps {
   countryCode: string
 }
 
+export async function isInterestBannerVisible(): Promise<boolean> {
+  const selectedKeys = await getInterestCategoryKeys()
+  if (selectedKeys.length > 0) return false
+  return !(await getInterestBannerDismissed())
+}
+
 /*───────────────────────────
  * 홈 상단 슬롯 — 쿠키 분기로 다음 셋 중 하나를 렌더:
  *  1. 미선택 + dismiss 안됨  → InterestSelectorBanner

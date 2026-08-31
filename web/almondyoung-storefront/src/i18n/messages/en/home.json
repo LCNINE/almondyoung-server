@@ -1,16 +1,17 @@
 {
   "pageTitle": "Almondyoung - Beauty Supply MRO Store",
   "interestBanner": {
-    "title": "Want to see only what fits you?",
-    "description": "Pick your fields now and browse more products.",
+    "title": "See only your fields?",
+    "description": "Pick up to {max} and your home switches to their best sellers.",
     "dismiss": "Hide for a week",
-    "save": "Save",
-    "saving": "Saving...",
-    "needAtLeastOne": "Please select at least one",
-    "saved": "Interests saved",
+    "saved": "Your home page now leads with your {count} chosen fields",
     "saveFail": "Failed to save. Please try again.",
     "dismissFail": "Failed to process",
-    "maxSelectable": "You can select up to {max}"
+    "maxSelectable": "You can select up to {max}",
+    "selectPrompt": "Pick your fields",
+    "save": "Apply {count} fields",
+    "saving": "Saving...",
+    "needAtLeastOne": "Please select at least one"
   },
   "interestEdit": {
     "trigger": "Edit",
