@@ -39,7 +39,7 @@ medusaIntegrationTestRunner({
     };
 
     const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.REMOTE_LINK) as any;
+      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
       await remoteLink.create([
         { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
       ]);
