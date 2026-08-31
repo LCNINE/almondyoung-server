@@ -37,6 +37,13 @@ export type PromotionDto = {
   min_order_amount?: number | null
   /** 정률 쿠폰 최대 할인금액 (#488 A4). 상한이 없으면 `null`. */
   max_discount_amount?: number | null
+  /**
+   * 이 쿠폰이 언제까지 쓸 수 있는가 (#488 결정 1). 발급된 쿠폰이면 «받은 한 장»의 만료이고,
+   * 아니면 정책의 종료일이다. `null` 이면 무기한.
+   *
+   * ⚠️ `campaign.ends_at` 을 대체한다 — 캠페인 날짜는 서버가 더 이상 채우지 않는다.
+   */
+  expires_at?: string | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
 }

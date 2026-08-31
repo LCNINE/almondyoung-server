@@ -6,8 +6,8 @@ import { CouponTabs, type CouponItem } from "./coupon-tabs"
 
 export async function formatExpiry(promo: Promotion) {
   const t = await getTranslations("mypage.coupon")
-  if (!promo.campaign?.ends_at) return t("unlimited")
-  return `~ ${formatDate(promo.campaign.ends_at, DATE_FORMATS.KO_DOT)}`
+  if (!promo.expires_at) return t("unlimited")
+  return `~ ${formatDate(promo.expires_at, DATE_FORMATS.KO_DOT)}`
 }
 
 export async function CouponTemplate() {
