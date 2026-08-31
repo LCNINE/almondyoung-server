@@ -8,7 +8,6 @@ import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
 import { TimeSaleWrapper } from "./time-sale"
-import { InterestCategoriesSlot } from "./interest-categories"
 import {
   InterestCategoriesSlot,
   isInterestBannerVisible,
