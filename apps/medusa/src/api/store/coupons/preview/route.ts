@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
 import { resolveVisibility, meetsGroupRule, findIssuedLink } from '../../../admin/promotions/helpers';
-import { isUsable, issuanceWindowState } from '../../../../modules/promotion-meta/validity';
+import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
 
 /**
  * GET /store/coupons/preview?code=CODE123
@@ -57,9 +57,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const now = new Date();
   const issuedLink = customerId ? await findIssuedLink(req.scope, customerId, promotion.id) : null;
-  const expiresAt = issuedLink ? issuedLink.expires_at : (meta?.ends_at ?? null);
+  const expiresAt = displayExpiresAt(issuedLink, meta);
 
-  if (issuanceWindowState(meta, now) === 'not_started' && !issuedLink) {
+  // 발급 여부와 무관하게 검사한다 — isUsable 도 정책 starts_at 은 발급 여부와 상관없이 보므로,
+  // 여기서 `&& !issuedLink` 로 건너뛰면 이미 발급받은 고객에게 같은 사유가 EXPIRED 로
+  // 오분류된다(리뷰에서 발견된 회귀 — events/:slug 라우트와 라벨이 갈렸었다).
+  if (issuanceWindowState(meta, now) === 'not_started') {
     return res.status(200).json({
       valid: false,
       reason: 'COUPON_NOT_STARTED',

@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
 import { resolveVisibility, meetsGroupRule, listIssuedLinks } from '../../../admin/promotions/helpers';
-import { isUsable, issuanceWindowState } from '../../../../modules/promotion-meta/validity';
+import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
 
 /**
  * GET /store/events/:slug
@@ -76,14 +76,6 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     (customerId ? await listIssuedLinks(req.scope, customerId) : []).map((l) => [l.promotion_id, l]),
   );
 
-  // 만료 시점: «링크 행이 있으면 링크 행», 없으면 정책(#488 결정 1). `?? meta?.ends_at` 로
-  // 한 줄에 합치면 link.expires_at 이 정당하게 null(무기한)일 때 meta 쪽으로 새어버린다
-  // (`??` 는 null 도 "없음"으로 취급) — 그래서 존재 여부를 명시적으로 분기한다.
-  const expiresAtOf = (promotionId: string, meta: any): string | Date | null => {
-    const link = linkByPromotionId.get(promotionId);
-    return link ? link.expires_at : (meta?.ends_at ?? null);
-  };
-
   // promotion → 발급 버튼 상태(kind/reason) 계산
   const resolveState = (promo: any, meta: any): { kind: string; reason?: string } => {
     if (!promo || promo.status !== 'active' || promo.is_automatic) {
@@ -140,7 +132,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
                 meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
             }
           : null,
-        expires_at: expiresAtOf(promo.id, meta),
+        expires_at: displayExpiresAt(linkByPromotionId.get(promo.id) ?? null, meta),
         state: resolveState(promo, meta),
       };
     })

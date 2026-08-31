@@ -194,6 +194,18 @@ medusaIntegrationTestRunner({
       expect(res.data.valid).toBe(true);
     });
 
+    // 리뷰 Finding 1: `issuanceWindowState === 'not_started'` 검사에 `&& !issuedLink` 를 얹으면
+    // 이미 발급받은(admin 이 launch 전에 미리 배정한) 고객에게 같은 사유가 COUPON_EXPIRED 로
+    // 오분류됐다 — isUsable 도 정책 starts_at 을 보므로 다음 줄에서 같은 이유로 다시 걸리기
+    // 때문이다. 발급 여부와 무관하게 COUPON_NOT_STARTED 여야 한다.
+    it('preview of an assigned coupon whose policy starts_at is future is NOT_STARTED, not EXPIRED', async () => {
+      const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
+      const id = await createPromo('ASSIGNED_NS', { visibility: 'assigned_only', starts_at: future });
+      await linkCustomer(id);
+      const res = await preview('ASSIGNED_NS');
+      expect(res.data.reason).toEqual('COUPON_NOT_STARTED');
+    });
+
     it('claim rejects non-claimable (assigned_only) coupon', async () => {
       const id = await createPromo('NOTCLAIM', { visibility: 'assigned_only' });
       await expect(claim(id)).rejects.toMatchObject({ response: { status: 400 } });

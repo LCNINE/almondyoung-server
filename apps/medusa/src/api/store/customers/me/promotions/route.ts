@@ -8,7 +8,7 @@ import {
   VISIBILITY_WHEN_META_MISSING,
   listIssuedLinks,
 } from '../../../../admin/promotions/helpers';
-import { isUsable, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
+import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -109,10 +109,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 발급된 «한 장»들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
   const issuedLinks = await listIssuedLinks(req.scope, customerId);
   const linkByPromotionId = new Map(issuedLinks.map((l) => [l.promotion_id, l]));
-  const expiresAtOf = (promotionId: string): string | Date | null => {
-    const link = linkByPromotionId.get(promotionId);
-    return link ? link.expires_at : (metaById.get(promotionId)?.ends_at ?? null);
-  };
+  const expiresAtOf = (promotionId: string): string | Date | null =>
+    displayExpiresAt(linkByPromotionId.get(promotionId) ?? null, metaById.get(promotionId));
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   const format = (promo: any, isAssigned: boolean) =>
     formatPromotion(promo, isAssigned, {
@@ -211,20 +209,25 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     .map((promo: any) => format(promo, false));
 
   // 만료 쿠폰: 고객에게 발급됐던 쿠폰 중 만료가 지난 것, 최근 30일 이내. 최근 만료순, 최대 50개.
+  // 만료일을 promo 마다 (promo, endsAt) 으로 한 번만 계산해 들고 다닌다 — sort 안에서
+  // expiresAtOf 를 다시 불러 `new Date(string | Date | null)` 을 `as any` 로 눌러 넘기지
+  // 않기 위해서다(필터가 이미 null 이 아님을 보장하므로, 그 사실을 타입으로도 드러낸다).
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const expiredCutoff = new Date(now.getTime() - THIRTY_DAYS_MS);
-  const expiredPromotions = (customer?.promotions ?? [])
-    .filter((promo: any) => {
-      if (promo.is_automatic) return false;
-      const raw = expiresAtOf(promo.id);
-      if (!raw) return false;
-      const endsAt = new Date(raw);
-      return endsAt < now && endsAt >= expiredCutoff;
-    })
-    .sort((a: any, b: any) =>
-      new Date(expiresAtOf(b.id) as any).getTime() - new Date(expiresAtOf(a.id) as any).getTime())
+  const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
+  for (const promo of customer?.promotions ?? []) {
+    if (promo.is_automatic) continue;
+    const raw = expiresAtOf(promo.id);
+    if (!raw) continue;
+    const endsAt = new Date(raw);
+    if (endsAt < now && endsAt >= expiredCutoff) {
+      expiredCandidates.push({ promo, endsAt });
+    }
+  }
+  const expiredPromotions = expiredCandidates
+    .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())
     .slice(0, 50)
-    .map((promo: any) => format(promo, true));
+    .map(({ promo }) => format(promo, true));
 
   // 합치기: 직접 발급된 것 먼저, 그 다음 일반 프로모션
   const combinedPromotions = [...assignedPromotions, ...publicPromotions];

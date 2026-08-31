@@ -96,3 +96,21 @@ export function isUsable(
 
   return true;
 }
+
+/**
+ * 스토어 응답에 «이 쿠폰이 언제까지인가」로 내보낼 값. `isUsable` 과 같은 규칙을 쓴다 —
+ * **링크 행이 있으면 링크 행**, 없으면 정책의 `ends_at`. 둘 다 없으면 무기한(`null`).
+ *
+ * `preview`·`events/:slug`·`me/promotions` 세 라우트가 각자 이 선택을 인라인으로 들고 있다가
+ * 두 번 버그가 났다: `link.expires_at ?? policy.ends_at` 로 합치면 «발급된 무기한 링크»(`expires_at`
+ * 이 정당하게 `null`)가 `??` 에 「없음」으로 읽혀 정책 값으로 새고, `&& !instance` 같은 조건을
+ * 얹으면 다른 판정(`isUsable`)과 라벨이 어긋난다. 그래서 이 선택 자체를 여기 한 곳에 둔다 —
+ * 인스턴스 존재 여부는 `?:` 로만 분기하고 `??` 를 쓰지 않는다.
+ */
+export function displayExpiresAt(
+  instance: IssuedInstance,
+  policy: ValidityPolicy | null | undefined,
+): string | Date | null {
+  if (instance) return instance.expires_at ?? null;
+  return policy?.ends_at ?? null;
+}

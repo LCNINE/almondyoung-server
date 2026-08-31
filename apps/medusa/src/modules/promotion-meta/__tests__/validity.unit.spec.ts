@@ -3,6 +3,7 @@ import {
   issuanceWindowState,
   isWithinIssuanceWindow,
   isUsable,
+  displayExpiresAt,
 } from '../validity';
 
 const NOW = new Date('2026-08-31T00:00:00.000Z');
@@ -93,5 +94,30 @@ describe('isUsable — 링크 행이 있으면 그 행이, 없으면 정책이 �
 
   it('정책도 링크도 비어 있으면 무기한', () => {
     expect(isUsable(null, null, NOW)).toBe(true);
+  });
+});
+
+describe('displayExpiresAt — 스토어 응답에 내보낼 만료 표시값 (isUsable 과 같은 규칙)', () => {
+  it('링크가 있으면 링크의 expires_at 을 그대로 쓴다', () => {
+    const instance = { expires_at: '2026-12-31T00:00:00.000Z' };
+    const policy = { ends_at: '2000-01-01T00:00:00.000Z' };
+    expect(displayExpiresAt(instance, policy)).toEqual('2026-12-31T00:00:00.000Z');
+  });
+
+  it('«링크는 있는데 expires_at 이 NULL(무기한)」이면 null 이다 — 정책 ends_at 으로 새면 안 된다', () => {
+    const instance = { expires_at: null };
+    const policy = { ends_at: '2026-12-31T00:00:00.000Z' };
+    expect(displayExpiresAt(instance, policy)).toBeNull();
+  });
+
+  it('링크가 없으면 정책의 ends_at 이다', () => {
+    expect(displayExpiresAt(null, { ends_at: '2026-12-31T00:00:00.000Z' })).toEqual(
+      '2026-12-31T00:00:00.000Z',
+    );
+  });
+
+  it('링크도 없고 정책도 없으면(또는 ends_at 없으면) null(무기한)이다', () => {
+    expect(displayExpiresAt(null, null)).toBeNull();
+    expect(displayExpiresAt(null, {})).toBeNull();
   });
 });
