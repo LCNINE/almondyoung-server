@@ -592,7 +592,7 @@ export function CouponCreateDialog({
               <SelectContent>
                 <SelectItem value="none">없음 (수동 발급만)</SelectItem>
                 {(Object.entries(AUTO_ISSUE_TRIGGER_LABELS) as [AutoIssueTrigger, string][]).map(([key, label]) => (
-                  <SelectItem key={key} value={key} disabled={key === 'birthday'}>{label}</SelectItem>
+                  <SelectItem key={key} value={key}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

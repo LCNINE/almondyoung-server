@@ -48,7 +48,6 @@ describe('getCouponMeta', () => {
 
   it('어휘 밖의 auto_issue_trigger 는 null 이다 — 라벨 조회가 undefined 를 렌더하지 않게', () => {
     expect(getCouponMeta(promo({ auto_issue_trigger: 'first_purchase' })).autoIssueTrigger).toBeNull();
-    expect(getCouponMeta(promo({ auto_issue_trigger: 'birthday' })).autoIssueTrigger).toBe('birthday');
   });
 });
 

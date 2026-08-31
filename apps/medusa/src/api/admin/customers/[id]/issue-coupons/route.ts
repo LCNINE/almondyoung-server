@@ -5,7 +5,7 @@ import type PromotionMetaModuleService from '../../../../../modules/promotion-me
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { meetsGroupRule } from '../../../promotions/helpers';
 
-const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated', 'birthday'];
+const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
 
 /**
  * POST /admin/customers/:id/issue-coupons

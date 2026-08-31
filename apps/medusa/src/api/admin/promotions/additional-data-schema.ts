@@ -20,7 +20,7 @@ import { z } from '@medusajs/framework/zod';
  */
 
 const visibility = z.enum(['public', 'claimable', 'assigned_only']);
-const autoIssueTrigger = z.enum(['customer_registered', 'membership_activated', 'birthday']);
+const autoIssueTrigger = z.enum(['customer_registered', 'membership_activated']);
 const maxClaims = z.number().int().positive();
 const maxDiscountAmount = z.number().int().positive();
 
