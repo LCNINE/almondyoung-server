@@ -4,9 +4,9 @@ import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import {
   resolveVisibility,
-  meetsGroupRule,
   VISIBILITY_WHEN_META_MISSING,
 } from '../../../../admin/promotions/helpers';
+import { isIssuableToCustomer } from '../../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
 import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 import { formatPromotion } from './format-promotion';
@@ -195,7 +195,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       isValidPromotion(promo) &&
       !isUsageExhausted(promo) &&
       visibilityOf(promo.id) === 'public' &&
-      meetsGroupRule(promo, customerGroupIds)
+      isIssuableToCustomer(promo.rules, customerGroupIds)
     )
     .map((promo: any) => format(promo, false));
 
@@ -209,7 +209,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       issuanceWindowState(metaById.get(promo.id), now) === 'ok' &&
       !isClaimExhausted(promo.id) &&
       !isUsageExhausted(promo) &&
-      meetsGroupRule(promo, customerGroupIds)
+      isIssuableToCustomer(promo.rules, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)
     .map((promo: any) => format(promo, false));

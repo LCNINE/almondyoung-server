@@ -2,7 +2,11 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { resolveVisibility } from '../../../admin/promotions/helpers';
+import {
+  isIssuableToCustomer,
+  requiresCustomerContext,
+} from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
 import { findIssuedLink } from '../../../../modules/promotion-meta/issued-link';
 
@@ -103,10 +107,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   };
 
   if (!customerId) {
-    const hasGroupRule = (promotion.rules ?? []).some(
-      (r: any) => r.attribute === 'customer.groups.id',
-    );
-    if (visibility !== 'public' || hasGroupRule) {
+    // 고객이 누구인지 알아야 판정되는 룰이 하나라도 있으면 로그인부터 받는다.
+    // 분류표 밖 룰도 여기서 흡수된다 — 로그인하면 아래에서 COUPON_GROUP_RESTRICTED 로 떨어진다.
+    if (visibility !== 'public' || requiresCustomerContext(promotion.rules)) {
       return res.status(200).json({
         valid: false,
         reason: 'LOGIN_REQUIRED',
@@ -132,7 +135,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const customerGroupIds = new Set<string>((customer?.groups ?? []).map((g: any) => g.id));
   const isAssigned = (customer?.promotions ?? []).some((p: any) => p.id === promotion.id);
 
-  if (!meetsGroupRule(promotion, customerGroupIds)) {
+  if (!isIssuableToCustomer(promotion.rules, customerGroupIds)) {
     return res.status(200).json({
       valid: false,
       reason: 'COUPON_GROUP_RESTRICTED',

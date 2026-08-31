@@ -149,5 +149,45 @@ medusaIntegrationTestRunner({
         ).rejects.toThrow();
       });
     });
+
+    describe('표시 경로도 같은 술어를 쓴다', () => {
+      it('분류표 밖 룰 쿠폰은 프리뷰에서 거부된다 (기존 어휘 그대로)', async () => {
+        await createPromo('P7PREVIEW', unsupportedRule());
+
+        const res = await api.get('/store/coupons/preview?code=P7PREVIEW', storeHeaders);
+
+        expect(res.status).toEqual(200);
+        expect(res.data.valid).toBe(false);
+        // 새 reason 을 만들지 않는다 — 스토어프론트가 닫힌 집합으로 읽는다.
+        expect(res.data.reason).toEqual('COUPON_GROUP_RESTRICTED');
+      });
+
+      it('분류표 밖 룰 쿠폰은 claimable 목록에 뜨지 않는다', async () => {
+        await createPromo('P7LIST', unsupportedRule());
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        const codes = (res.data.claimable_promotions ?? []).map((p: any) => p.code);
+        expect(codes).not.toContain('P7LIST');
+      });
+
+      it('이미 발급된 쿠폰은 룰과 무관하게 목록에 남는다 (회귀 가드)', async () => {
+        // 🔴 assigned 목록에 fail-closed 를 넣으면 **고객이 보유한 쿠폰이 사라진다.**
+        // 카트에서는 엔진이 룰을 제대로 평가해 쓸 수 있는데도 목록에서만 없어진다.
+        const promoId = await createPromo('P7OWNED', unsupportedRule(), { visibility: 'assigned_only' });
+        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
+        await link.create([
+          {
+            [Modules.CUSTOMER]: { customer_id: customerId },
+            [Modules.PROMOTION]: { promotion_id: promoId },
+            data: { expires_at: null, issued_via: 'admin_manual', used_at: null, order_id: null },
+          },
+        ]);
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect((res.data.promotions ?? []).map((p: any) => p.code)).toContain('P7OWNED');
+      });
+    });
   },
 });
