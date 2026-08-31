@@ -1,6 +1,12 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import jwt from 'jsonwebtoken';
+import {
+  createRegionsWorkflow,
+  createSalesChannelsWorkflow,
+  createApiKeysWorkflow,
+  linkSalesChannelsToApiKeyWorkflow,
+} from '@medusajs/core-flows';
 
 jest.setTimeout(180 * 1000);
 
@@ -14,7 +20,11 @@ medusaIntegrationTestRunner({
   disableAutoTeardown: true,
   testSuite: ({ api, getContainer }) => {
     let adminHeaders: { headers: Record<string, string> };
+    let storeHeaders: { headers: Record<string, string> };
     let customerId: string;
+    let regionId = '';
+    let salesChannelId = '';
+    let pk = '';
     let seq = 0;
 
     const linkModule = () =>
@@ -49,6 +59,44 @@ medusaIntegrationTestRunner({
       const customerModule = container.resolve(Modules.CUSTOMER);
       const [cust] = await customerModule.createCustomers([{ email: `buyer${seq}@validity.test` }]);
       customerId = cust.id;
+
+      // T4·T5 는 /store/carts 를 때리므로 지역·판매채널·퍼블리셔블 키가 필요하다
+      // (coupon-cart.spec.ts:36-90 과 같은 모양). 국가 코드는 리전에 한 번만 배정할 수 있어
+      // beforeEach 가 매번 돌아도 이 픽스처는 최초 한 번만 만든다.
+      if (!regionId) {
+        const { result: scRes } = await createSalesChannelsWorkflow(container).run({
+          input: { salesChannelsData: [{ name: 'Validity SC' }] },
+        });
+        salesChannelId = scRes[0].id;
+
+        const { result: regionRes } = await createRegionsWorkflow(container).run({
+          input: { regions: [{ name: 'KR', currency_code: 'krw', countries: ['kr'] }] },
+        });
+        regionId = regionRes[0].id;
+
+        const { result: keyRes } = await createApiKeysWorkflow(container).run({
+          input: { api_keys: [{ title: 'pk-validity', type: 'publishable', created_by: user.id }] },
+        });
+        pk = keyRes[0].token;
+        await linkSalesChannelsToApiKeyWorkflow(container).run({
+          input: { id: keyRes[0].id, add: [salesChannelId] },
+        });
+      }
+
+      storeHeaders = {
+        headers: {
+          'x-publishable-api-key': pk,
+          authorization: `Bearer ${jwt.sign(
+            {
+              actor_id: customerId,
+              actor_type: 'customer',
+              auth_identity_id: 'c',
+              app_metadata: { customer_id: customerId },
+            },
+            secret,
+          )}`,
+        },
+      };
     });
 
     const createPromo = async (code: string, additional_data: Record<string, unknown>) => {
@@ -242,6 +290,89 @@ medusaIntegrationTestRunner({
         expect(row.used_at).toBeNull();
         expect(row.order_id).toBeNull();
         expect(row.expires_at).not.toBeNull();
+      });
+    });
+
+    describe('T4·T5: 만료 강제', () => {
+      it('T5 🔴 public 쿠폰도 meta.ends_at 만료면 카트에 못 붙는다', async () => {
+        await createPromo(`PUBEXP${seq}`, {
+          visibility: 'public',
+          ends_at: '2000-01-01T00:00:00.000Z',
+        });
+        await expect(
+          api.post('/store/carts', { region_id: regionId, promo_codes: [`PUBEXP${seq}`] }, storeHeaders),
+        ).rejects.toMatchObject({ response: { status: 400, data: { code: 'COUPON_EXPIRED' } } });
+      });
+
+      it('T5 대조군: 만료되지 않은 public 쿠폰은 붙는다', async () => {
+        await createPromo(`PUBOK${seq}`, {
+          visibility: 'public',
+          ends_at: '2999-01-01T00:00:00.000Z',
+        });
+        const res = await api.post(
+          '/store/carts',
+          { region_id: regionId, promo_codes: [`PUBOK${seq}`] },
+          storeHeaders,
+        );
+        expect(res.status).toEqual(200);
+      });
+
+      it('T4 발급된 쿠폰은 «링크 행»의 만료가 기준이다 — 정책 창이 지나도 산다', async () => {
+        const id = await createPromo(`ISSUEDLIVE${seq}`, {
+          visibility: 'assigned_only',
+          ends_at: '2000-01-01T00:00:00.000Z',
+        });
+        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
+        await link.create([{
+          [Modules.CUSTOMER]: { customer_id: customerId },
+          [Modules.PROMOTION]: { promotion_id: id },
+          data: {
+            expires_at: new Date('2999-01-01T00:00:00.000Z'),
+            issued_via: 'admin_manual', used_at: null, order_id: null,
+          },
+        }]);
+
+        const res = await api.post(
+          '/store/carts',
+          { region_id: regionId, promo_codes: [`ISSUEDLIVE${seq}`] },
+          storeHeaders,
+        );
+        expect(res.status).toEqual(200);
+      });
+
+      it('T4 발급된 쿠폰의 링크 만료가 지났으면 못 붙는다 — 정책 창이 열려 있어도', async () => {
+        const id = await createPromo(`ISSUEDDEAD${seq}`, {
+          visibility: 'assigned_only',
+          ends_at: '2999-01-01T00:00:00.000Z',
+        });
+        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
+        await link.create([{
+          [Modules.CUSTOMER]: { customer_id: customerId },
+          [Modules.PROMOTION]: { promotion_id: id },
+          data: {
+            expires_at: new Date('2000-01-01T00:00:00.000Z'),
+            issued_via: 'admin_manual', used_at: null, order_id: null,
+          },
+        }]);
+
+        await expect(
+          api.post('/store/carts', { region_id: regionId, promo_codes: [`ISSUEDDEAD${seq}`] }, storeHeaders),
+        ).rejects.toMatchObject({ response: { status: 400, data: { code: 'COUPON_EXPIRED' } } });
+      });
+
+      it('T4 /store/carts/:id/promotions 경로도 막는다', async () => {
+        await createPromo(`PROMOPATH${seq}`, {
+          visibility: 'public',
+          ends_at: '2000-01-01T00:00:00.000Z',
+        });
+        const cart = await api.post('/store/carts', { region_id: regionId }, storeHeaders);
+        await expect(
+          api.post(
+            `/store/carts/${cart.data.cart.id}/promotions`,
+            { promo_codes: [`PROMOPATH${seq}`] },
+            storeHeaders,
+          ),
+        ).rejects.toMatchObject({ response: { status: 400, data: { code: 'COUPON_EXPIRED' } } });
       });
     });
   },

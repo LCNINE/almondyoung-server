@@ -4,7 +4,8 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
-import { requiresIssuance } from '../../../api/admin/promotions/helpers';
+import { requiresIssuance, findIssuedLink } from '../../../api/admin/promotions/helpers';
+import { isUsable } from '../../../modules/promotion-meta/validity';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
@@ -29,6 +30,15 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
 
     for (const promo of cartPromos) {
       const meta = await promotionMetaService.getByPromotionId(promo.id);
+
+      // 만료 백스톱 — 카트에 붙은 뒤 주문 완료 사이에 만료된 쿠폰을 막는다.
+      // 캡(P10-B)과 달리 만료는 금액 조정이 아니라 «거부» 라 여기서 던져도 결제금액이 어긋나지 않는다.
+      const issuedLink = cart.customer_id
+        ? await findIssuedLink(container, cart.customer_id, promo.id)
+        : null;
+      if (!isUsable(issuedLink, meta, new Date())) {
+        throw new MedusaError(MedusaError.Types.INVALID_DATA, '유효기간이 지난 쿠폰입니다.');
+      }
 
       // 메타가 없으면 «발급 필요» 다(닫힌 기본값 — #488 N7). 옛 코드는 undefined 라 백스톱도 통과했다.
       if (requiresIssuance(meta)) {
