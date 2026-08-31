@@ -94,6 +94,10 @@ export default function ProductActions({
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
+  const [priceChange, setPriceChange] = useState<{
+    from: number
+    to: number
+  } | null>(null)
   const [showCartModal, setShowCartModal] = useState(false)
 
   const isSimple = (product.variants?.length ?? 0) <= 1
@@ -347,6 +351,7 @@ export default function ProductActions({
     if (selectedItems.length === 0) return
 
     setShowCartModal(true)
+    setPriceChange(null)
 
     startTransition(async () => {
       try {
@@ -356,6 +361,16 @@ export default function ProductActions({
             quantity: item.quantity,
             countryCode,
           })
+          // 세일이 방금 끝났으면 화면이 보여준 가격과 담긴 가격이 다르다. 조용히 넘기면
+          // "4,491원인 줄 알고 담았는데 4,990원" 이 된다.
+          const shown = item.price?.calculated_price_number
+          if (
+            result.unitPrice != null &&
+            shown != null &&
+            result.unitPrice !== shown
+          ) {
+            setPriceChange({ from: shown, to: result.unitPrice })
+          }
           if (result.error) {
             setShowCartModal(false)
             // 담기 직전에 상한을 이미 걸러주므로, 여기까지 온 재고부족은 "이 옵션이 품절" 이 아니라
@@ -603,6 +618,7 @@ export default function ProductActions({
         onOpenChange={setShowCartModal}
         isPending={isPending}
         product={product}
+        priceChange={priceChange}
       />
     </>
   )

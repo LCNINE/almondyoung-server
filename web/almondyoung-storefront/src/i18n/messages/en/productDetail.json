@@ -122,7 +122,8 @@
     "addingBody": "Adding to cart...",
     "addedBody": "Product added to cart",
     "processingSr": "Processing",
-    "goToCart": "Go to cart"
+    "goToCart": "Go to cart",
+    "priceChanged": "Price changed — added at {to} instead of the {from} shown."
   },
   "price": {
     "won": "KRW",

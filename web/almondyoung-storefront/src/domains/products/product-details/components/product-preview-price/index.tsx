@@ -100,6 +100,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
           <TimeSaleCountdown
             endsAt={endsAt}
             compact
+            refreshOnEnd
             className="text-primary text-[17px] leading-none font-bold tabular-nums"
           />
         </div>
