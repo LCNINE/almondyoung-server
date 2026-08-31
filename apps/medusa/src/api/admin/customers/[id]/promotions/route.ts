@@ -2,7 +2,8 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
+import { toMetadataShape } from '../../../promotions/helpers';
+import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 
@@ -96,6 +97,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+  const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
 
   const [{ data: customers }, metaRecords] = await Promise.all([
     query.graph({
@@ -173,8 +175,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         skipped.push({ promotion_id: promo.id, reason: 'expired' });
         continue;
       }
-      if (!meetsGroupRule(promo, customerGroupIds)) {
-        skipped.push({ promotion_id: promo.id, reason: 'group_mismatch' });
+      // 분류표 밖 룰은 fail-closed (#488 1-5). `force` 는 여전히 이 게이트를 넘는다 —
+      // 새 조건을 화면에 추가한 사람이 발급 로직을 고칠 때까지 운영이 막히지 않게 하는
+      // 탈출구이고, 그 탈출은 `issued_via='admin_force'` 로 링크 행에 기록된다.
+      const eligibility = evaluateIssuanceRules(promo.rules, customerGroupIds);
+      if (!eligibility.eligible) {
+        if (eligibility.reason === 'unsupported_rule') {
+          logger.warn(
+            `[coupon] 수동발급 skip — 발급 시점에 평가할 수 없는 룰 (promotion_id=${promo.id}, ` +
+              `attribute=${eligibility.attribute}, operator=${eligibility.operator}, ` +
+              `customer_id=${customerId}). force 로 우회할 수 있으나, ` +
+              'modules/promotion-meta/issuance-rules.ts 의 분류표를 채우는 것이 정답이다.',
+          );
+        }
+        skipped.push({ promotion_id: promo.id, reason: eligibility.reason });
         continue;
       }
     }

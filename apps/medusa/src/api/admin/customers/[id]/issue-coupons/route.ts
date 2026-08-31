@@ -3,8 +3,8 @@ import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/frame
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
-import { meetsGroupRule } from '../../../promotions/helpers';
-import { computeExpiresAt, isWithinIssuanceWindow } from '../../../../../modules/promotion-meta/validity';
+import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
+import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
 
@@ -64,19 +64,43 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   });
 
   const now = new Date();
+  const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
   const metaById = new Map<string, any>(metaRecords.map((m: any) => [m.promotion_id, m]));
-  const validPromotions = (promotions as any[]).filter((p) => {
-    if (!meetsGroupRule(p, customerGroupIds)) return false;
-    // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
-    return isWithinIssuanceWindow(metaById.get(p.id), now);
-  });
 
   const issued: { promotion_id: string; code: string }[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
 
-  for (const promo of validPromotions) {
+  // 옛 코드는 창·그룹 불일치를 `filter` 로 조용히 떨어뜨려 응답에 흔적이 없었다. 자동발급은
+  // 사람이 안 보는 경로라 그 침묵이 곧 «발급이 안 된 이유를 아무도 모름» 이었다 — 이제
+  // 수동 경로처럼 사유를 실어 보내고, channel-adapter 가 그것을 메트릭으로 센다(#488 7-4).
+  for (const promo of promotions as any[]) {
     const meta = metaById.get(promo.id);
     if (!meta) continue;
+
+    // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
+    const window = issuanceWindowState(meta, now);
+    if (window !== 'ok') {
+      skipped.push({
+        promotion_id: promo.id,
+        reason: window === 'not_started' ? 'not_started' : 'expired',
+      });
+      continue;
+    }
+
+    // 분류표 밖 룰은 fail-closed (#488 1-5). 근거는 issuance-rules.ts 헤더 주석.
+    const eligibility = evaluateIssuanceRules(promo.rules, customerGroupIds);
+    if (!eligibility.eligible) {
+      if (eligibility.reason === 'unsupported_rule') {
+        logger.warn(
+          `[coupon] 자동발급 skip — 발급 시점에 평가할 수 없는 룰 (promotion_id=${promo.id}, ` +
+            `attribute=${eligibility.attribute}, operator=${eligibility.operator}, ` +
+            `customer_id=${customerId}, trigger=${trigger}). ` +
+            'modules/promotion-meta/issuance-rules.ts 의 분류표에 이 속성을 추가하고 평가를 구현할 것.',
+        );
+      }
+      skipped.push({ promotion_id: promo.id, reason: eligibility.reason });
+      continue;
+    }
 
     const alreadyIssued = await promotionMetaService.isAlreadyIssued(customerId, promo.id);
     if (alreadyIssued) {
