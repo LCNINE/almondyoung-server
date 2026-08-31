@@ -61,6 +61,8 @@ export default async function detachCouponCampaigns({ container }: ExecArgs) {
     filters: {},
   });
   const promotions = promotionsData as any[];
+  // ④ 링크 로그에 promotion_id 옆에 사람이 읽을 code 를 같이 보여주기 위한 조회용 맵.
+  const promotionCodeById = new Map(promotions.map((p) => [p.id, p.code]));
 
   const metas = await metaService.getByPromotionIds(promotions.map((p) => p.id));
   const metaByPromotionId = new Map(metas.map((m) => [m.promotion_id, m]));
@@ -77,6 +79,9 @@ export default async function detachCouponCampaigns({ container }: ExecArgs) {
 
   if (!dryRun) {
     for (const p of toDetach) {
+      // campaign 조인이 비어 있으면(소프트 삭제 등 이례적 상황) 캠페인 자체를 갱신할 대상이
+      // 없다 — 그래도 이 프로모션의 campaign_id 를 떼는 것(②)까지 막을 이유는 없으므로
+      // updatePromotions 는 조건 없이 돈다.
       if (p.campaign?.id) {
         await promotionModule.updateCampaigns([{ id: p.campaign.id, starts_at: null, ends_at: null }]);
       }
@@ -138,10 +143,48 @@ export default async function detachCouponCampaigns({ container }: ExecArgs) {
   const backfillable = needBackfill
     .map((l) => ({ l, endsAt: metaByPromotionId.get(l.promotion_id)?.ends_at ?? null }))
     .filter((x) => x.endsAt != null);
+  // "채울 수 없는" 쪽 — 정책에도 ends_at 이 없어 이번에도 무기한으로 남는 링크. 카운트 차이로만
+  // 보이면 이 행들이 그대로 사라지므로(가장 위험한 부분), 따로 뽑아 이름을 붙여 로그로 남긴다.
+  // (`backfillable[i].l` 은 `needBackfill` 원소를 그대로 참조하므로 Set 은 참조 동등성으로 걸러진다.)
+  const backfillableLinks = new Set(backfillable.map((x) => x.l));
+  const stillUnlimited = needBackfill.filter((l) => !backfillableLinks.has(l));
   logger.info(
     `[detach-coupon-campaigns] expires_at 이 빈 링크 ${needBackfill.length}건 중 ` +
-      `정책값으로 채울 수 있는 것 ${backfillable.length}건`,
+      `정책값으로 채울 수 있는 것 ${backfillable.length}건, 정책도 무기한이라 그대로 남는 것 ${stillUnlimited.length}건`,
   );
+
+  // ①②③은 행마다 상세를 찍는데 여기만 집계 두 개만 찍으면, 운영자가 CONFIRM 을 켜기 전에
+  // 무엇이 바뀌는지도 무엇이 안 바뀌는지도 못 본다. 특히 "그대로 남는" 쪽은 이 스크립트 이후에도
+  // 영원히 무기한인 쿠폰이라 — 두 카운트의 차이로만 존재를 암시하지 않고 행 단위로 보여준다.
+  // 행이 아주 많을 수 있으니 상한을 두고 초과분은 건수만 알린다.
+  const LOG_ROW_LIMIT = 20;
+  const logRows = (rows: string[]) => {
+    for (const row of rows.slice(0, LOG_ROW_LIMIT)) {
+      logger.info(`[detach-coupon-campaigns]   - ${row}`);
+    }
+    if (rows.length > LOG_ROW_LIMIT) {
+      logger.info(`[detach-coupon-campaigns]   ...그 외 ${rows.length - LOG_ROW_LIMIT}건 더 (상한 ${LOG_ROW_LIMIT}줄)`);
+    }
+  };
+  logRows(
+    backfillable.map(({ l, endsAt }) => {
+      const code = promotionCodeById.get(l.promotion_id) ?? '-';
+      return (
+        `[백필] customer=${l.customer_id} promotion=${l.promotion_id}(${code}) ` +
+        `→ expires_at=${new Date(endsAt).toISOString()}`
+      );
+    }),
+  );
+  logRows(
+    stillUnlimited.map((l) => {
+      const code = promotionCodeById.get(l.promotion_id) ?? '-';
+      return (
+        `[무기한 유지] customer=${l.customer_id} promotion=${l.promotion_id}(${code}) ` +
+        `— 정책 ends_at 없음, 이 쿠폰은 계속 무기한이다`
+      );
+    }),
+  );
+
   if (!dryRun) {
     for (const { l, endsAt } of backfillable) {
       await link.create([
