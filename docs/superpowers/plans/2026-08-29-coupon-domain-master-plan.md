@@ -340,7 +340,27 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       **종결**: `1-4` · `4-1` · `7-6` · `N2` · `N3`.
       **신규 ❌**: 배송비 쿠폰 생성이 100% 400 (`allocation` 누락) → 아래 F1 후보.
       **A2 우선순위 상향**: 전액 환불된 주문에서도 한도가 소진된 채 남아 쿠폰이 영구 소실됨을 실측.
-- [ ] P4 플랜 작성 및 실행
+- [x] **P4+P5 플랜 작성·실행 (2026-08-31)** — 설계 `docs/superpowers/specs/2026-08-31-coupon-issuance-instance-and-validity-design.md`,
+      플랜 `docs/superpowers/plans/2026-08-31-coupon-issuance-instance-and-validity.md`.
+      **PR #771 OPEN · 미머지 · 미배포.** 마이그 2건(모듈) + 링크 `extraColumns` 4개.
+      결정 2(`birthday` 어휘 제거)와 **`1-3` 종결**을 함께 담았다.
+      **이 세션에서 정한 것 3건**: 저장 모양 = `promotion_meta` 3열(mode 컬럼 없음) /
+      기존 캠페인 날짜는 마이그레이션이 백필만 하고 비우기는 `medusa exec` 1회성 스크립트 /
+      `used_at`·`order_id` 를 이번에 쓴다(`completeCartWorkflow.hooks.orderCreated` 신설).
+      🔴 **실측으로 닫은 것 셋** — ① `Link.create` 는 복합 PK **upsert** 다(`23505` 안 남 →
+      발급 3경로의 중복 catch 분기 삭제, 회수된 행이 옛 값을 달고 부활하므로 발급 시 4필드 명시 필수)
+      ② 링크 `extraColumns` 는 **마이그레이션 파일이 없다** — 컨테이너 부팅의
+      `--execute-safe-links` 가 `add column` 을 적용한다(마스터플랜의 「마이그 1건·migrate→deploy」는
+      drizzle 규약이라 Medusa 엔 해당 없음) ③ 모듈 통합 테스트는 마이그레이션을 **안 돌린다**
+      (모델에서 스키마 동기화) — 마이그 SQL 의 첫 실행은 프로덕션 부팅이다.
+      🔴 **최종 리뷰가 잡은 Critical**: 사용 기록 훅이 링크 행을 **생성**해 public 쿠폰을 쓴 고객에게
+      영구 유효가 됐다. 스펙 §4 의 「링크 행이 있으면」이 *생산자가 발급 3경로뿐*이라는 전제 위에
+      서 있었는데 훅이 **네 번째 생산자**였다 — per-task 리뷰가 구조적으로 못 보는 종류.
+      → 규칙을 「**발급된** 링크 행이 있으면」으로 정정하고 훅을 교집합으로 좁혔다.
+      **⛔ 배포 후 사람 작업 3건**: §12 실측 SQL → dry-run 육안 확인 →
+      `medusa exec ./src/scripts/detach-coupon-campaigns.ts` 반영.
+      **그 스크립트는 선택이 아니다** — 안 돌리면 이 브랜치 이전에 발급된 링크 전량이
+      `expires_at = null` = 무기한으로 영영 남는다.
 - [x] **1-5 설계 결정 (2026-08-31)** — 3단 처방 그대로, ③의 근거 교체. 기록은 #488 「개통 전 결정」
 - [x] **A4 결정 (2026-08-31)** — (b) 워크플로 훅으로 캡 구현. 모듈 교체 없음
 - [x] **문서 대조 (2026-08-31)** — `llms.txt` 를 읽고 기존 배선을 재검토. 신규 `N7`(High, 실측 확정) ·
