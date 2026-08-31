@@ -228,6 +228,7 @@ export class SpellCorrectionService {
   /** 상품명을 교정 후보로 쓸 단어로 자른다. 규격·모델번호는 후보가 될 이유가 없다. */
   private tokenize(name: string): string[] {
     const words = name
+      .normalize('NFC')
       .split(/[\s/,()[\]+&]+/)
       .map((word) => word.trim().toLowerCase())
       .filter(
