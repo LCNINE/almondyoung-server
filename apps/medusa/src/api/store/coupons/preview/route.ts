@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { toMetadataShape, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
 
 /**
  * GET /store/coupons/preview?code=CODE123
@@ -71,8 +71,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const meta = await promotionMetaService.getByPromotionId(promotion.id);
-  const metaShape = toMetadataShape(meta);
-  const visibility = (metaShape?.visibility as string) ?? 'public';
+  // 메타가 없으면 닫힌 쪽이다(#488 N7).
+  const visibility: string = resolveVisibility(meta);
 
   const customerId: string | null = (req as any).auth_context?.actor_id ?? null;
 
@@ -89,6 +89,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
           value: promotion.application_method.value,
           target_type: promotion.application_method.target_type,
           currency_code: promotion.application_method.currency_code,
+          // 정률 캡(#488 A4). 클레임 화면이 「10%」만 보여주면 캡을 모르는 채로 받게 된다.
+          max_discount_amount:
+            meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
         }
       : null,
     expires_at: promotion.campaign?.ends_at ?? null,

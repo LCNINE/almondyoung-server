@@ -190,6 +190,12 @@ export class ReviewsController {
     enum: ['latest', 'oldest', 'rating_high', 'rating_low'],
   })
   @ApiQuery({ name: 'q', description: '검색어 (본문, 작성자명)', required: false, type: String })
+  @ApiQuery({
+    name: 'source',
+    description: '출처 필터 ("own"=자체 작성, "legacy"=이전 사이트 이관분)',
+    required: false,
+    enum: ['own', 'legacy'],
+  })
   @ApiQuery({ name: 'page', description: '페이지 번호', required: false, type: Number })
   @ApiQuery({ name: 'limit', description: '페이지당 아이템 수', required: false, type: Number })
   @ApiOkResponsePaginated(ReviewResponseDto, { description: '전체 리뷰 목록 조회 성공' })

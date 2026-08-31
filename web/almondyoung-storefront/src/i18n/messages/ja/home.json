@@ -1,16 +1,17 @@
 {
   "pageTitle": "アーモンドヨン - 美容材料MROショップ",
   "interestBanner": {
-    "title": "ぴったりの材料だけ見たいなら？",
-    "description": "今すぐ分野を選んで、もっと多くの商品をご覧ください。",
+    "title": "自分の分野の商品だけ見ますか？",
+    "description": "最大{max}つ選ぶと、ホームがその分野のベストに変わります。",
     "dismiss": "1週間表示しない",
-    "save": "保存",
-    "saving": "保存中...",
-    "needAtLeastOne": "1つ以上選択してください",
-    "saved": "関心カテゴリを保存しました",
+    "saved": "これからホームで選んだ{count}分野の商品を先にお見せします",
     "saveFail": "保存に失敗しました。もう一度お試しください。",
     "dismissFail": "処理に失敗しました",
-    "maxSelectable": "最大{max}個まで選択できます"
+    "maxSelectable": "最大{max}個まで選択できます",
+    "selectPrompt": "分野を選んでください",
+    "save": "{count}分野を適用する",
+    "saving": "保存中...",
+    "needAtLeastOne": "1つ以上選択してください"
   },
   "interestEdit": {
     "trigger": "編集",

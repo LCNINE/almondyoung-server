@@ -7,6 +7,10 @@ import { StoreGetOrdersListParams } from './store/orders-list/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
 import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
 import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
+import {
+  promotionAdditionalDataCreateShape,
+  promotionAdditionalDataUpdateShape,
+} from './admin/promotions/additional-data-schema';
 
 // 멤버십가 표시 정책: 비회원 응답에서 멤버십가 metadata만 제거한다 (상품 숨김 아님).
 // authenticate(allowUnauthenticated)로 로그인 고객의 auth_context를 채운 뒤 멤버 여부를 판별한다.
@@ -42,6 +46,21 @@ export default defineMiddlewares({
       middlewares: [timingMiddleware],
     },
     ...adminRouteMiddlewares,
+    // additional_data 안쪽 검증 (#488 N7). 코어 zod 는 여기를 z.record(z.unknown()) 로 열어두므로
+    // 어휘 밖 값이 워크플로까지 갔다가 DB CHECK 에서 500 이 났고, 그 시점엔 프로모션이 이미
+    // active 로 만들어져 있었다. 검증기를 걸면 400 이고 프로모션 행이 남지 않는다(실측).
+    // 쓰기 핸들러는 코어 것이지만 이 검증기는 그대로 걸린다 — 코어 validator 가
+    // req.additionalDataValidator 를 읽어 스키마에 합쳐 넣기 때문이다(WithAdditionalData).
+    {
+      matcher: '/admin/promotions',
+      method: 'POST',
+      additionalDataValidator: promotionAdditionalDataCreateShape,
+    },
+    {
+      matcher: '/admin/promotions/:id',
+      method: 'POST',
+      additionalDataValidator: promotionAdditionalDataUpdateShape,
+    },
     {
       matcher: '/store/products',
       method: 'GET',

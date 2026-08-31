@@ -71,3 +71,27 @@ export class TrafficStatisticsResponseDto {
   devices: SessionsByDimensionRowDto[];
   countries: SessionsByDimensionRowDto[];
 }
+
+/** 실시간 축의 지표는 세션이 아니라 활성 사용자다 — 필드명을 세션과 섞지 않는다. */
+export class RealtimeDimensionRowDto {
+  label: string;
+  activeUsers: number;
+}
+
+export class RealtimeBucketDto {
+  /** 'N분 전' — GA4 minutesAgo(0~29). 0 이 지금 이 순간. */
+  minutesAgo: number;
+  activeUsers: number;
+}
+
+export class RealtimeTrafficResponseDto {
+  /** false 면 GA4 env 미배선 — 화면은 "연동 대기"를 보여준다 */
+  enabled: boolean;
+  /** 최근 30분 활성 사용자. GA4 실시간 창이 30분 고정이라 기간을 고를 수 없다. */
+  activeUsers: number;
+  /** 응답을 만든 순간(UTC ISO). 실시간 화면은 언제 찍은 값인지가 특히 중요하다. */
+  observedAt: string;
+  byMinute: RealtimeBucketDto[];
+  pages: RealtimeDimensionRowDto[];
+  devices: RealtimeDimensionRowDto[];
+}

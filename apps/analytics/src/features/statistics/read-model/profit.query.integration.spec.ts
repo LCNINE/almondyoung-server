@@ -3,8 +3,15 @@ import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import type { DbService } from '@app/db';
-import { aggProductOrderDaily, analyticsSchema, dimProductMasters, factOrderItems } from '../../../schema';
+import {
+  aggProductOrderDaily,
+  analyticsSchema,
+  dimProductMasters,
+  factOrderItems,
+  settingOperatingCosts,
+} from '../../../schema';
 import { ProfitQuery } from './profit.query';
+import { OperatingCostService } from '../settings/operating-cost.service';
 
 /**
  * 이익 read-model 을 실 Postgres 로 검증한다 — 검증 대상이 SQL(그룹핑·서브쿼리·FILTER) 자체다.
@@ -27,6 +34,7 @@ describeIfDb('ProfitQuery (실 Postgres)', () => {
   const masterCost = `itest-master-${randomUUID().slice(0, 8)}`; // 원가 있음, 취소 있음
   const masterNoCost = `itest-master-${randomUUID().slice(0, 8)}`; // 원가 없음 — 계산 불가 몫
   const masterCheap = `itest-master-${randomUUID().slice(0, 8)}`; // 원가 있음, 저마진
+  const costMemo = `itest-cost-${randomUUID().slice(0, 8)}`;
   const masterNameless = `itest-master-${randomUUID().slice(0, 8)}`; // dim 없음 — 이름 폴백
 
   let sql: postgres.Sql;
@@ -41,7 +49,7 @@ describeIfDb('ProfitQuery (실 Postgres)', () => {
       run: <T>(fn: (t: unknown) => Promise<T>, tx?: unknown): Promise<T> =>
         tx ? fn(tx) : (db.transaction((t) => fn(t)) as Promise<T>),
     } as unknown as DbService<typeof analyticsSchema>;
-    query = new ProfitQuery(dbService);
+    query = new ProfitQuery(dbService, new OperatingCostService(dbService));
 
     await db.insert(dimProductMasters).values([
       { masterId: masterCost, name: '이익테스트 원가상품', supplyPrice: 3000 },
@@ -178,5 +186,58 @@ describeIfDb('ProfitQuery (실 Postgres)', () => {
 
   it('기간이 뒤집히면 400', async () => {
     await expect(query.getProfit('2026-08-31', '2026-08-01', channel)).rejects.toThrow('조회 기간이 뒤집혔습니다');
+  });
+
+  describe('고정비 반영 — 영업손익·손익분기', () => {
+    afterEach(async () => {
+      await db.delete(settingOperatingCosts).where(eq(settingOperatingCosts.memo, costMemo));
+    });
+
+    it('고정비가 없으면 판정을 하지 않는다 — 0 으로 두면 적자가 흑자로 보인다', async () => {
+      const result = await query.getProfit('2026-08-01', '2026-08-31', channel);
+      expect(result.operating).toEqual({
+        fixedCost: null,
+        fixedCostUncoveredDays: 31,
+        operatingProfit: null,
+        breakEvenNetRevenue: null,
+        breakEvenAchievementRate: null,
+      });
+    });
+
+    it('한 달을 통째로 조회하면 월 고정비가 그대로 귀속되고 영업손익·손익분기가 나온다', async () => {
+      await db
+        .insert(settingOperatingCosts)
+        .values({ monthlyFixedCost: 30_000, effectiveFrom: '2026-08-01', memo: costMemo });
+
+      const result = await query.getProfit('2026-08-01', '2026-08-31', channel);
+      expect(result.operating.fixedCost).toBe(30_000);
+      expect(result.operating.fixedCostUncoveredDays).toBe(0);
+      // 마진 57,000 - 고정비 30,000
+      expect(result.operating.operatingProfit).toBe(27_000);
+      // 손익분기 = 30,000 ÷ (57,000/90,000) = 47,368
+      expect(result.operating.breakEvenNetRevenue).toBe(Math.round(30_000 / (57_000 / 90_000)));
+      expect(result.operating.breakEvenAchievementRate).toBeCloseTo(90_000 / Math.round(30_000 / (57_000 / 90_000)));
+    });
+
+    it('설정 시작일 이후 날짜만 일할로 세고, 그 전 날짜는 미커버로 남긴다', async () => {
+      await db
+        .insert(settingOperatingCosts)
+        .values({ monthlyFixedCost: 31_000, effectiveFrom: '2026-08-21', memo: costMemo });
+
+      const result = await query.getProfit('2026-08-01', '2026-08-31', channel);
+      // 8/21~8/31 = 11일 × (31,000 ÷ 31일) = 11,000
+      expect(result.operating.fixedCost).toBe(11_000);
+      expect(result.operating.fixedCostUncoveredDays).toBe(20);
+    });
+
+    it('고정비가 마진보다 크면 영업손익이 음수로 나온다', async () => {
+      await db
+        .insert(settingOperatingCosts)
+        .values({ monthlyFixedCost: 100_000, effectiveFrom: '2026-08-01', memo: costMemo });
+
+      const result = await query.getProfit('2026-08-01', '2026-08-31', channel);
+      expect(result.operating.operatingProfit).toBe(57_000 - 100_000);
+      expect(result.operating.breakEvenAchievementRate).toBeLessThan(1);
+    });
   });
 });

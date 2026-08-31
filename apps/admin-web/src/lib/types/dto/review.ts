@@ -44,6 +44,9 @@ export interface ReviewDto {
   adminComment: AdminCommentDto | null;
 }
 
+/** own = 아몬드영에서 직접 작성된 리뷰, legacy = 이전 사이트에서 이관된 리뷰 */
+export type ReviewSourceOption = 'own' | 'legacy';
+
 export interface ReviewListQuery {
   page?: number;
   limit?: number;
@@ -53,6 +56,7 @@ export interface ReviewListQuery {
   hasComment?: ReviewHasCommentOption;
   sort?: ReviewSortOption;
   q?: string;
+  source?: ReviewSourceOption;
 }
 
 export interface ReviewListResponse {

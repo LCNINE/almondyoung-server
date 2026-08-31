@@ -1,4 +1,4 @@
-import { kstDayStart, resolveFeeRateBp, summarizeFees } from './statistics-admin.service';
+import { buildDailyPaymentSeries, kstDayStart, resolveFeeRateBp, summarizeFees } from './statistics-admin.service';
 
 describe('kstDayStart', () => {
   it('KST 날짜의 자정을 UTC 로 환산한다', () => {
@@ -90,5 +90,58 @@ describe('summarizeFees', () => {
     const [card] = summarizeFees(daily, new Map(), rates, '2026-08-01');
     // 999 × 290 / 10000 = 28.971 → 29
     expect(card.estimatedFee).toBe(29);
+  });
+});
+
+describe('buildDailyPaymentSeries', () => {
+  it('결제·환불이 없는 날을 0 으로 채워 기간 전체를 준다', () => {
+    const series = buildDailyPaymentSeries(
+      [{ day: '2026-08-11', amount: 50_000, count: 2 }],
+      [],
+      '2026-08-10',
+      '2026-08-12',
+    );
+    expect(series.map((point) => point.bucket)).toEqual(['2026-08-10', '2026-08-11', '2026-08-12']);
+    expect(series[0]).toEqual({
+      bucket: '2026-08-10',
+      capturedAmount: 0,
+      capturedCount: 0,
+      refundedAmount: 0,
+      refundedCount: 0,
+    });
+    expect(series[1].capturedAmount).toBe(50_000);
+    expect(series[1].capturedCount).toBe(2);
+  });
+
+  it('같은 날의 결제와 환불을 한 칸에 합친다', () => {
+    const series = buildDailyPaymentSeries(
+      [{ day: '2026-08-10', amount: 80_000, count: 3 }],
+      [{ day: '2026-08-10', amount: 20_000, count: 1 }],
+      '2026-08-10',
+      '2026-08-10',
+    );
+    expect(series).toEqual([
+      { bucket: '2026-08-10', capturedAmount: 80_000, capturedCount: 3, refundedAmount: 20_000, refundedCount: 1 },
+    ]);
+  });
+
+  it('환불만 있는 날도 칸을 남긴다 — 결제 0 인 날의 환불이 사라지면 안 된다', () => {
+    const series = buildDailyPaymentSeries([], [{ day: '2026-08-11', amount: 7_000, count: 1 }], '2026-08-10', '2026-08-11');
+    expect(series[1]).toEqual({
+      bucket: '2026-08-11',
+      capturedAmount: 0,
+      capturedCount: 0,
+      refundedAmount: 7_000,
+      refundedCount: 1,
+    });
+  });
+
+  it('기간이 하루면 한 칸만 준다', () => {
+    expect(buildDailyPaymentSeries([], [], '2026-08-10', '2026-08-10')).toHaveLength(1);
+  });
+
+  it('월을 넘겨도 날짜가 밀리지 않는다', () => {
+    const series = buildDailyPaymentSeries([], [], '2026-08-30', '2026-09-02');
+    expect(series.map((point) => point.bucket)).toEqual(['2026-08-30', '2026-08-31', '2026-09-01', '2026-09-02']);
   });
 });

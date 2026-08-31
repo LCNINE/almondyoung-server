@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useCustomerInsights } from '@/lib/services/analytics';
-import { PaginationBar } from '../components/pagination';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatPercent, useStatisticsRange } from '../shared';
@@ -33,12 +34,14 @@ export default function CustomerInsightsTemplate() {
     setRepurchasePage(1);
   }, [range.from, range.to]);
 
-  const { data, isLoading, isError } = useCustomerInsights({
+  const insights = useCustomerInsights({
     from: range.from,
     to: range.to,
     limit: REPURCHASE_PAGE_SIZE,
     page: repurchasePage,
   });
+  const { data, isLoading, isError } = insights;
+  const isRepurchasePaging = isPageChanging(insights);
 
   return (
     <StatisticsShell filterOptions={{ channel: false, granularity: false }}>
@@ -147,44 +150,47 @@ export default function CustomerInsightsTemplate() {
             isLoading={isLoading}
             isEmpty={!data || data.repurchase.items.length === 0}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">구매자</th>
-                    <th className="py-1.5 text-right">재구매자</th>
-                    <th className="py-1.5 text-right">재구매율</th>
-                    <th className="py-1.5 text-right">평균 재구매 주기</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.repurchase.items ?? []).map((item, index) => (
-                    <tr key={item.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">
-                        {(repurchasePage - 1) * REPURCHASE_PAGE_SIZE + index + 1}
-                      </td>
-                      <td className="py-1.5">
-                        <span className="font-medium text-gray-900">{item.name ?? item.masterId}</span>
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(item.buyers)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(item.repeatBuyers)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatPercent(item.repurchaseRate)}</td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {item.avgCycleDays == null ? '-' : `${Math.round(item.avgCycleDays)}일`}
-                      </td>
+            <PagingRows isPaging={isRepurchasePaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">구매자</th>
+                      <th className="py-1.5 text-right">재구매자</th>
+                      <th className="py-1.5 text-right">재구매율</th>
+                      <th className="py-1.5 text-right">평균 재구매 주기</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(data?.repurchase.items ?? []).map((item, index) => (
+                      <tr key={item.masterId} className="border-b last:border-0">
+                        <td className="py-1.5 text-gray-400">
+                          {(repurchasePage - 1) * REPURCHASE_PAGE_SIZE + index + 1}
+                        </td>
+                        <td className="py-1.5">
+                          <span className="font-medium text-gray-900">{item.name ?? item.masterId}</span>
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{formatCount(item.buyers)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatCount(item.repeatBuyers)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatPercent(item.repurchaseRate)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {item.avgCycleDays == null ? '-' : `${Math.round(item.avgCycleDays)}일`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </PagingRows>
             <PaginationBar
               totalItems={data?.repurchase.totalItems}
               page={repurchasePage}
               pageSize={REPURCHASE_PAGE_SIZE}
               onPageChange={setRepurchasePage}
               unitLabel="개 상품"
+              isPaging={isRepurchasePaging}
             />
           </ChartCard>
 

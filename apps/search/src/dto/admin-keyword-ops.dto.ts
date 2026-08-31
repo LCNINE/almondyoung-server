@@ -6,12 +6,23 @@ import { DateRangeDto, KeywordVolumeBucketDto } from './admin-keyword-statistics
 export const KEYWORD_ISSUE_STATUSES = ['new', 'dev', 'md', 'in_progress', 'resolved', 'ignored'] as const;
 export type KeywordIssueStatus = (typeof KEYWORD_ISSUE_STATUSES)[number];
 
+/**
+ * 목록 필터 — 6개 처리 상태 + 'open'(아직 처리할 일만).
+ * 'open' = 사람이 해소/무시로 닫지 않았고 색인에서 자동 해소되지도 않은 것.
+ */
+export const KEYWORD_ISSUE_FILTERS = [...KEYWORD_ISSUE_STATUSES, 'open'] as const;
+export type KeywordIssueFilter = (typeof KEYWORD_ISSUE_FILTERS)[number];
+
 export class AdminZeroHitKeywordsQueryDto {
   @Validate(IsCalendarDateConstraint, { message: 'from 은 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   from: string;
 
   @Validate(IsCalendarDateConstraint, { message: 'to 는 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
   to: string;
+
+  @IsOptional()
+  @IsIn(KEYWORD_ISSUE_FILTERS)
+  status?: KeywordIssueFilter;
 
   @IsOptional()
   @IsInt()
@@ -63,13 +74,47 @@ export class ZeroHitKeywordRowDto {
   issue: KeywordIssueDto | null;
 }
 
-/** 종합 대시보드 "오늘의 액션" 피드가 그대로 가져다 쓰는 경보 요약 — 목록과 분리해 내려간다 */
+/** 담당자 한 명이 맡고 있는 0건 검색어 종수 */
+export class KeywordAssigneeLoadDto {
+  assigneeId: string;
+  assigneeName: string | null;
+  count: number;
+}
+
+/** 방치 일수 구간별 검색어 종수 — 자동 해소분 제외, 화면 위계용 */
+export class NeglectBucketsDto {
+  under7: number;
+  from7to13: number;
+  from14to29: number;
+  over30: number;
+}
+
+/**
+ * 종합 대시보드 "오늘의 액션" 피드가 그대로 가져다 쓰는 경보 요약 — 목록과 분리해 내려간다.
+ * 아래 값은 전부 **검색어 종수**이지 검색 횟수가 아니다. status 필터를 걸어도 요약은
+ * 기간 전체 기준으로 내려간다 (경보 피드의 모수가 화면 필터에 따라 흔들리면 안 된다).
+ */
 export class ZeroHitSummaryDto {
   /** 기간 내 0건 검색어 수 (자동 해소 제외) */
   zeroKeywordCount: number;
-  /** 7일 이상 방치 건수 */
+  /** 7일 이상 방치 건수 — 사람이 지정한 처리 상태와 무관하다 */
   neglectedOver7Days: number;
+  /**
+   * 그중 아직 안 닫힌 것 (해소·무시로 지정되지 않은 것).
+   * "오늘의 할 일" 자리에 쓰는 값 — 사람이 닫은 건 할 일이 아니다.
+   */
+  openNeglectedOver7Days: number;
   maxNeglectDays: number;
+  /** 방치 일수 분포 (자동 해소 제외) */
+  neglectBuckets: NeglectBucketsDto;
+  /** 처리 상태별 검색어 종수 — 이슈 행이 없는 키워드는 'new' 로 센다 (자동 해소 제외) */
+  byStatus: Record<KeywordIssueStatus, number>;
+  /** 담당자 미지정 검색어 종수 (자동 해소 제외) */
+  unassignedCount: number;
+  /** 담당자별 검색어 종수 — 많이 맡은 순, 미지정은 unassignedCount 로 따로 뺀다 */
+  byAssignee: KeywordAssigneeLoadDto[];
+  /** 색인에서 결과가 다시 나오기 시작해 자동 해소된 검색어 종수 */
+  resolvedByIndexCount: number;
 }
 
 export class AdminZeroHitKeywordsResponseDto {

@@ -36,13 +36,19 @@ export class AdminKeywordController {
     return this.searchKeywordService.getKeywordStatistics(query.from, query.to, query.limit);
   }
 
-  /** 0건 검색어 운영 목록 — "N일 지연" 방치 추적 + 원인 자동 분류 + 담당·메모 */
+  /** 0건 검색어 운영 목록 — "N일 지연" 방치 추적 + 색인 근거 + 담당·메모 */
   @Get('zero-hit')
   async getZeroHitKeywords(@Query() query: AdminZeroHitKeywordsQueryDto): Promise<AdminZeroHitKeywordsResponseDto> {
     if (query.from > query.to) {
       throw new BadRequestException(`조회 기간이 뒤집혔습니다: ${query.from} > ${query.to}`);
     }
-    return this.searchKeywordOpsService.getZeroHitKeywords(query.from, query.to, query.page, query.limit);
+    return this.searchKeywordOpsService.getZeroHitKeywords(
+      query.from,
+      query.to,
+      query.page,
+      query.limit,
+      query.status,
+    );
   }
 
   /** 특정 키워드 단건 드릴다운 — 검색수·0건수·일별 추이·전기간 비교 */

@@ -512,6 +512,20 @@ export interface FeeSummaryDto {
   };
 }
 
+/** 일별 결제(캡처)·환불. 금액과 건수를 같이 준다 — 표가 두 줄로 쓴다. */
+export interface DailyPaymentPointDto {
+  bucket: string;
+  capturedAmount: number;
+  capturedCount: number;
+  refundedAmount: number;
+  refundedCount: number;
+}
+
+export interface DailyPaymentsDto {
+  range: { from: string; to: string };
+  series: DailyPaymentPointDto[];
+}
+
 export interface MembershipRevenueDto {
   range: { from: string; to: string };
   totalAmount: number;

@@ -158,7 +158,7 @@ export default function ProductCard({
   return (
     <LocalizedClientLink
       href={`/products/${product.handle}`}
-      className="cursor-pointer group"
+      className="group cursor-pointer"
       onClick={onClick}
     >
       <div>

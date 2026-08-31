@@ -314,6 +314,33 @@ export const aggMembershipDaily = pgTable(
   ],
 );
 
+/**
+ * 월 고정비(임대·인건비·마케팅 등 매출과 무관하게 나가는 돈). 이벤트가 아니라 **관리자 입력값**이다 —
+ * 시스템 어디에도 원천이 없어서 손익분기·"이대로 가면 흑자인가"를 못 물어보던 공백을 메운다.
+ * 손익을 계산하는 곳이 이 서비스라 여기 둔다. 집계 파이프라인과는 무관한 설정 테이블이며,
+ * 소비자·아웃박스가 이 표를 쓰지 않는다.
+ * 수정이 아니라 새 적용일 행을 쌓아 이력을 보존한다 — 과거 기간의 손익이 나중 입력으로 바뀌면 안 된다.
+ *
+ * **항목별(임대료·인건비·광고비) 분해를 일부러 하지 않았다.** 커머스 손익 도구들(TrueProfit 등)은
+ * 항목명을 받지만, 그건 복식부기 없는 미니 회계가 되어 나중에 들어올 회계 모듈과 이중 원천이 된다.
+ * 여기서는 판정용 파라미터로만 쓰고 합계 하나만 받는다.
+ * **승격 경로**: 회계 모듈이 들어오면 이 표를 사람이 입력하는 대신 비용 원장에서 읽도록 바꾼다 —
+ * 지우는 범위는 이 표 1개 + CRUD 1개 + 설정 화면 1개다.
+ */
+export const settingOperatingCosts = pgTable(
+  'setting_operating_costs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** 원 단위 월 고정비 합계. 항목별 분해는 지금 필요가 없어 합계 하나만 받는다. */
+    monthlyFixedCost: bigint('monthly_fixed_cost', { mode: 'number' }).notNull(),
+    /** 적용 시작일 (KST 달력일). 이 날부터 다음 행의 적용일 전날까지 이 값을 쓴다. */
+    effectiveFrom: date('effective_from').notNull(),
+    memo: varchar('memo', { length: 255 }),
+    createdAt: timestamp('created_at').defaultNow(),
+  },
+  (table) => [uniqueIndex('uq_setting_operating_costs_effective').on(table.effectiveFrom)],
+);
+
 export const analyticsSchema = {
   factOrderEvents,
   factOrderItems,
@@ -328,6 +355,7 @@ export const analyticsSchema = {
   dimProductMasters,
   dimProductVariants,
   dimProductCategories,
+  settingOperatingCosts,
 } as const;
 
 export type AnalyticsSchema = typeof analyticsSchema;

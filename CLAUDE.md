@@ -280,6 +280,29 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 - Auto-DLQ support for failed consumers
 - Graceful shutdown support; see `libs/events/docs/` for patterns
 
+### Medusa (`apps/medusa`) — 확장은 소스가 아니라 문서에서 시작한다
+
+`apps/medusa` 에서 「이걸 할 수 있나 / 얼마나 드나」를 판단하기 전에
+**`https://docs.medusajs.com/llms.txt` 를 읽는다.** 카테고리별 URL 목록이라 필요한 페이지를 거기서 고른다.
+
+설치된 `node_modules` 만 읽으면 *무엇이 있는지*는 알아도 **무엇이 «지원되는 확장점»인지는 모른다** —
+훅은 코드로 보면 `createHook("name", …)` 한 줄이라 「여기로 들어오라」는 초대인지 내부 구현 디테일인지
+구별되지 않는다. **역순도 성립하지 않는다**: 문서는 확장점은 알려줘도 *우리 호출 경로가 그걸 전부
+지나가는지*는 안 알려준다. **문서로 확장점 목록 → 소스로 커버리지, 둘 다 필요하다.**
+
+- **확장 권장 순서(문서):** 추가데이터(`additional_data`) → 워크플로 훅 → 커스텀 미들웨어 →
+  이벤트 구독 → 라우트 **«복제»**(override 아님).
+- **모듈 서비스 교체는 문서에 존재하지 않는다.** 그 결론이 나오면 **그 자체를 오답 신호로 볼 것.**
+- **코어 라우트 override 는 지양한다** — 코어 미들웨어(zod 검증)에 암묵 의존하게 되고, 업그레이드가
+  그 매칭을 바꾸면 조용히 무검증이 된다. 다른 경로에 복제하면 원본이 그대로 남는다.
+- **워크플로 훅은 워크플로당 핸들러 하나뿐이다.** 중복 등록하면 부팅이 죽는다 —
+  `apps/medusa/src/workflows/hooks/__tests__/no-duplicate-validate-hooks.unit.spec.ts` 가 이걸 지킨다.
+  새 검증이 필요하면 **새 훅을 등록하지 말고 기존 핸들러 안에 함수를 더한다.**
+
+2026-08-31 에 이 규칙이 없어서 비용을 **자릿수 단위로** 틀렸다(「모듈을 통째로 갈아끼워야 한다」 →
+실제로는 비어 있는 공식 훅). 같은 이유로 워크플로 밖 쓰기가 만든 결함 하나를 오래 못 봤다.
+경위는 이슈 #488 의 `A4` · `N7` · `N8`.
+
 ## Environment Variables
 - `DATABASE_URL` — PostgreSQL connection string
 - `PORT` — Service port

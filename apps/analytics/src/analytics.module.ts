@@ -29,9 +29,12 @@ import { CustomerInsightsController } from './features/statistics/api/customer-i
 import { CustomerInsightsQuery } from './features/statistics/read-model/customer-insights.query';
 import { ProfitController } from './features/statistics/api/profit.controller';
 import { ProfitQuery } from './features/statistics/read-model/profit.query';
+import { OperatingCostController } from './features/statistics/api/operating-cost.controller';
+import { OperatingCostService } from './features/statistics/settings/operating-cost.service';
 import { TrafficController } from './features/traffic/api/traffic.controller';
 import { BehaviorController } from './features/traffic/api/behavior.controller';
 import { TrafficQuery } from './features/traffic/read-model/traffic.query';
+import { RealtimeQuery } from './features/traffic/read-model/realtime.query';
 import { BehaviorQuery } from './features/traffic/read-model/behavior.query';
 import { Ga4Client } from './features/traffic/ga4/ga4.client';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
@@ -79,6 +82,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     StatisticsController,
     CustomerInsightsController,
     ProfitController,
+    OperatingCostController,
     TrafficController,
     BehaviorController,
     OrderEventsConsumer,
@@ -102,8 +106,10 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     StatisticsQuery,
     CustomerInsightsQuery,
     ProfitQuery,
+    OperatingCostService,
     Ga4Client,
     TrafficQuery,
+    RealtimeQuery,
     BehaviorQuery,
   ],
 })

@@ -26,28 +26,18 @@ import { CouponDetailDialog } from '../components/coupon-detail-dialog';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
-import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
+import { formatPeriod, StatusBadge } from '../coupon-helpers';
+import { getCouponMeta } from '../lib/coupon-meta';
+import { visibilityBadge } from '../lib/coupon-labels';
+import type { CouponVisibility } from '@packages/domain-types';
+import { formatCouponConditions } from '../lib/format-coupon-conditions';
+import { formatDiscountLabel } from '../lib/format-discount-label';
 import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
 const PAGE_SIZE = 20;
 
-function formatDiscount(coupon: MedusaPromotion) {
-  const m = coupon.application_method;
-  if (!m) return '-';
-  if (m.type === 'percentage') {
-    return `${m.value}%`;
-  }
-  return `${m.value.toLocaleString('ko-KR')}원`;
-}
-
-const VISIBILITY_LABEL: Record<string, { label: string; cls: string }> = {
-  public: { label: '공개', cls: 'bg-slate-100 text-slate-600' },
-  claimable: { label: '발급받기', cls: 'bg-blue-100 text-blue-700' },
-  assigned_only: { label: '지정발급', cls: 'bg-purple-100 text-purple-700' },
-};
-
-function VisibilityBadge({ visibility }: { visibility: string }) {
-  const v = VISIBILITY_LABEL[visibility] ?? VISIBILITY_LABEL.public;
+function VisibilityBadge({ visibility }: { visibility: CouponVisibility | null }) {
+  const v = visibilityBadge(visibility);
   return (
     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${v.cls}`}>
       {v.label}
@@ -75,29 +65,6 @@ function IssuanceCell({ issued, max }: { issued: number | null; max: number | nu
   );
 }
 
-function formatConditions(coupon: MedusaPromotion) {
-  const parts: string[] = [];
-  const minOrder = coupon.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
-  if (minOrder) {
-    const rawVal = minOrder.values[0];
-    const minOrderNum = Number((rawVal as any)?.value ?? rawVal);
-    parts.push(`${minOrderNum.toLocaleString('ko-KR')}원 이상`);
-  }
-  const budget = coupon.campaign?.budget;
-  if (budget?.limit) {
-    if (budget.type === 'spend') {
-      parts.push(`총 ${budget.limit.toLocaleString('ko-KR')}원 한도`);
-    } else if (budget.type === 'use_by_attribute') {
-      parts.push(`1인당 ${budget.limit.toLocaleString('ko-KR')}회`);
-    } else if (budget.type === 'usage') {
-      parts.push(`전체 ${budget.limit.toLocaleString('ko-KR')}회`);
-    } else {
-      parts.push(`예산 ${budget.limit.toLocaleString('ko-KR')}`);
-    }
-  }
-  return parts.length > 0 ? parts.join(' · ') : '-';
-}
-
 interface CouponRowProps {
   coupon: MedusaPromotion;
   onDetail: (coupon: MedusaPromotion) => void;
@@ -111,7 +78,7 @@ interface CouponRowProps {
 
 function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
   const canToggle = coupon.status === 'active' || coupon.status === 'inactive' || coupon.status === 'draft';
-  const { name, visibility, maxClaims, issuedCount } = getCouponMeta(coupon);
+  const { name, visibility, maxClaims, issuedCount, maxDiscountAmount } = getCouponMeta(coupon);
 
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30 transition-colors">
@@ -127,7 +94,9 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
       </td>
       <td className="px-4 py-3 text-sm">
         <div className="flex flex-col">
-          <span className="font-medium">{formatDiscount(coupon)}</span>
+          <span className="font-medium">
+            {formatDiscountLabel(coupon.application_method, maxDiscountAmount)}
+          </span>
           <span className="text-xs text-muted-foreground">
             {coupon.application_method?.target_type === 'shipping_methods'
               ? '배송비'
@@ -141,7 +110,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         <VisibilityBadge visibility={visibility} />
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
-        {formatConditions(coupon)}
+        {formatCouponConditions(coupon)}
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatPeriod(coupon)}

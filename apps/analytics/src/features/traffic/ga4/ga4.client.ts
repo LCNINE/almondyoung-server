@@ -3,6 +3,8 @@ import { BetaAnalyticsDataClient, protos } from '@google-analytics/data';
 
 type RunReportRequest = protos.google.analytics.data.v1beta.IRunReportRequest;
 type RunReportResponse = protos.google.analytics.data.v1beta.IRunReportResponse;
+type RunRealtimeReportRequest = protos.google.analytics.data.v1beta.IRunRealtimeReportRequest;
+type RunRealtimeReportResponse = protos.google.analytics.data.v1beta.IRunRealtimeReportResponse;
 
 /**
  * GA4 Data API 클라이언트 래퍼.
@@ -28,6 +30,17 @@ export class Ga4Client {
 
   async runReport(request: Omit<RunReportRequest, 'property'>): Promise<RunReportResponse> {
     const [response] = await this.getClient().runReport({ ...request, property: this.property });
+    return response;
+  }
+
+  /**
+   * 실시간 리포트. 집계 리포트와 달리 dateRanges 를 못 받고 최근 30분 창만 본다 —
+   * "지금 몇 명이 보고 있나"는 이 API 로만 답할 수 있다.
+   */
+  async runRealtimeReport(
+    request: Omit<RunRealtimeReportRequest, 'property'>,
+  ): Promise<RunRealtimeReportResponse> {
+    const [response] = await this.getClient().runRealtimeReport({ ...request, property: this.property });
     return response;
   }
 

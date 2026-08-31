@@ -249,7 +249,8 @@
       "couponRemoveFailed": "Failed to remove the coupon. Please try again later.",
       "claimAndApplyFailed": "Failed to claim the coupon. Please try again later.",
       "claimSuccessApplyFailed": "Coupon claimed, but it could not be applied to the current cart. Check your coupons page to use it."
-    }
+    },
+    "maxCap": "up to {amount} KRW"
   },
   "paymentTotal": {
     "title": "Payment summary",

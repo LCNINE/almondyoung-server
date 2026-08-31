@@ -12,7 +12,8 @@ import {
 } from 'recharts';
 import { useReviewStatistics } from '@/lib/services/review';
 import { useMastersByIds } from '@/lib/services/products/queries';
-import { PaginationBar } from '../components/pagination';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -34,13 +35,15 @@ export default function ReviewStatisticsTemplate() {
     setTopProductsPage(1);
   }, [range.from, range.to]);
 
-  const { data, isLoading, isError } = useReviewStatistics({
+  const stats = useReviewStatistics({
     from: range.from,
     to: range.to,
     limit: PAGE_SIZE,
     lowRatedPage,
     topProductsPage,
   });
+  const { data, isLoading, isError } = stats;
+  const isStatsPaging = isPageChanging(stats);
 
   const productIds = useMemo(() => {
     if (!data) return [];
@@ -179,36 +182,39 @@ export default function ReviewStatisticsTemplate() {
               isEmpty={!data || data.lowRated.length === 0}
               emptyText="기간 내 저평점 경보 대상이 없습니다"
             >
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b text-gray-500">
-                      <th className="py-1.5 text-left">상품</th>
-                      <th className="py-1.5 text-right">평균 평점</th>
-                      <th className="py-1.5 text-right">리뷰 수</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.lowRated ?? []).map((row) => (
-                      <tr key={row.productId} className="border-b last:border-0">
-                        <td className="py-1.5">
-                          <span className="font-medium text-gray-900">{productLabel(row.productId)}</span>
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums text-red-600">
-                          {formatRating(row.averageRating)}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.reviewCount)}</td>
+              <PagingRows isPaging={isStatsPaging}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-gray-500">
+                        <th className="py-1.5 text-left">상품</th>
+                        <th className="py-1.5 text-right">평균 평점</th>
+                        <th className="py-1.5 text-right">리뷰 수</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(data?.lowRated ?? []).map((row) => (
+                        <tr key={row.productId} className="border-b last:border-0">
+                          <td className="py-1.5">
+                            <span className="font-medium text-gray-900">{productLabel(row.productId)}</span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums text-red-600">
+                            {formatRating(row.averageRating)}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCount(row.reviewCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </PagingRows>
               <PaginationBar
                 totalItems={data?.lowRatedTotalItems}
                 page={lowRatedPage}
                 pageSize={PAGE_SIZE}
                 onPageChange={setLowRatedPage}
                 unitLabel="개 상품"
+                isPaging={isStatsPaging}
               />
             </ChartCard>
           </div>
@@ -220,36 +226,39 @@ export default function ReviewStatisticsTemplate() {
               isLoading={isLoading}
               isEmpty={!data || data.topProducts.length === 0}
             >
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b text-gray-500">
-                      <th className="py-1.5 text-left">#</th>
-                      <th className="py-1.5 text-left">상품</th>
-                      <th className="py-1.5 text-right">리뷰 수</th>
-                      <th className="py-1.5 text-right">평균 평점</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.topProducts ?? []).map((row, index) => (
-                      <tr key={row.productId} className="border-b last:border-0">
-                        <td className="py-1.5 text-gray-400">{(topProductsPage - 1) * PAGE_SIZE + index + 1}</td>
-                        <td className="py-1.5">
-                          <span className="font-medium text-gray-900">{productLabel(row.productId)}</span>
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.reviewCount)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatRating(row.averageRating)}</td>
+              <PagingRows isPaging={isStatsPaging}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-gray-500">
+                        <th className="py-1.5 text-left">#</th>
+                        <th className="py-1.5 text-left">상품</th>
+                        <th className="py-1.5 text-right">리뷰 수</th>
+                        <th className="py-1.5 text-right">평균 평점</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(data?.topProducts ?? []).map((row, index) => (
+                        <tr key={row.productId} className="border-b last:border-0">
+                          <td className="py-1.5 text-gray-400">{(topProductsPage - 1) * PAGE_SIZE + index + 1}</td>
+                          <td className="py-1.5">
+                            <span className="font-medium text-gray-900">{productLabel(row.productId)}</span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCount(row.reviewCount)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatRating(row.averageRating)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </PagingRows>
               <PaginationBar
                 totalItems={data?.topProductsTotalItems}
                 page={topProductsPage}
                 pageSize={PAGE_SIZE}
                 onPageChange={setTopProductsPage}
                 unitLabel="개 상품"
+                isPaging={isStatsPaging}
               />
             </ChartCard>
 

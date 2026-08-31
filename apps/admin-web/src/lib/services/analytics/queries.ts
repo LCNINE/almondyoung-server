@@ -84,3 +84,26 @@ export const useBehaviorStatistics = (query: BehaviorStatisticsQuery) => {
     staleTime: 5 * 60 * 1000,
   });
 };
+
+/**
+ * 실시간 접속. 서버가 20초 캐시하므로 화면도 그 주기로 다시 묻는다.
+ * `enabled` 로 폴링을 끌 수 있게 열어 둔다 — 탭이 안 보일 때 계속 부르면 GA4 쿼터만 축낸다.
+ */
+export const useRealtimeTraffic = (options?: { limit?: number; enabled?: boolean }) => {
+  const limit = options?.limit ?? 10;
+  return useQuery({
+    queryKey: analyticsQueryKeys.realtime(limit),
+    queryFn: () => analyticsApi.getRealtimeTraffic(limit),
+    enabled: options?.enabled ?? true,
+    refetchInterval: 20 * 1000,
+    staleTime: 20 * 1000,
+  });
+};
+
+export const useOperatingCosts = () => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.operatingCosts(),
+    queryFn: () => analyticsApi.listOperatingCosts(),
+    staleTime: 60 * 1000,
+  });
+};

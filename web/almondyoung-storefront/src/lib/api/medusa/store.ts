@@ -130,6 +130,8 @@ export type CouponPreviewResult = {
       value: number
       target_type: string
       currency_code?: string
+      /** 정률 쿠폰 최대 할인금액 (#488 A4). 상한이 없으면 `null`. */
+      max_discount_amount?: number | null
     } | null
     expires_at: string | null
     promotion_id_to_claim?: string
@@ -176,6 +178,8 @@ export type CouponEventCoupon = {
     value: number
     target_type: string
     currency_code?: string
+    /** 정률 쿠폰 최대 할인금액 (#488 A4). 상한이 없으면 `null`. */
+    max_discount_amount?: number | null
   } | null
   expires_at: string | null
   state: { kind: "claimable" | "claimed" | "usable" | "blocked"; reason?: string }

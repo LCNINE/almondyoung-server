@@ -116,6 +116,147 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
 - macOS 는 첫 실행 시 방화벽 허용 프롬프트만 수락하면 됨. 리눅스는 `ufw allow <포트>`.
 - DB 도 직접 붙어야 하면 `postgresql://postgres:postgres@<노트북 IP>:5432/<논리DB>` (compose 가 5432 를 노출).
 
+## 전체 스택 로컬 구동 (user-service·auth-web 포함)
+
+`core` 단독이 아니라 **로그인·주문·결제까지 로컬에서 닫으려면** IdP(user-service + auth-web)와
+결제(wallet)까지 띄운다. 2026-08-30 쿠폰 개통 리허설 1차가 이 구성으로 돌았고, 그 실행 기록은
+이슈 #488 의 「리허설 1차 실행 기록」 절에 있다.
+
+**왜 라이브 user-service 를 쓰지 않는가.** 스토어프론트 로그인은 Medusa 가 중개한다 —
+storefront → Medusa `/auth/customer/user-service-sso` → auth-web `/oauth/authorize` → user-service.
+그래서 `medusa-storefront` OAuth 클라이언트에 `http://localhost:8000/kr/callback/oidc` 가
+등록돼 있어야 하는데 **라이브에는 없다**(실측: 「등록되지 않은 redirect_uri 입니다」).
+라이브 클라이언트에 localhost 를 등록하는 것은 라이브 IdP 설정 변경이므로, 로컬 IdP 를 쓴다.
+
+### 1. 인프라 + 스키마
+
+```bash
+docker compose up -d                 # postgres·redis·kafka (redis 가 내려가 있으면 Medusa 가 안 뜬다)
+npm run db:migrate:local             # drizzle 서비스 전체
+cd apps/medusa && npx medusa db:migrate --execute-safe-links && cd ../..
+```
+
+### 2. `.env` 배치
+
+`env-templates/.env.<앱>.local.example` 을 각 앱 위치로 복사한다.
+
+| 템플릿 | 복사 위치 | 포트 |
+|---|---|---|
+| `.env.user-service.local.example` | `apps/user-service/.env` | 3000 |
+| `.env.medusa.local.example` | `apps/medusa/.env` | 9000 |
+| `.env.wallet.local.example` | `apps/wallet/.env` | 5001 |
+| `.env.admin-web.local.example` | `apps/admin-web/.env.local` | 8002 |
+| `.env.auth-web.local.example` | `web/auth-web/.env.local` | 8001 |
+| `.env.storefront.local.example` | `web/almondyoung-storefront/.env.local` | 8000 |
+
+user-service 의 RS256 키쌍만 생성이 필요하다:
+
+```bash
+./scripts/local/gen-oauth-keys.sh >> apps/user-service/.env   # 템플릿의 자리표시자 두 줄은 지운다
+```
+
+**세 값이 앱 사이에서 일치해야 한다** — 어긋나면 조용히 401/400 이 난다:
+
+| 값 | 맞춰야 하는 곳 |
+|---|---|
+| `OAUTH_INTERNAL_SECRET` | user-service ↔ auth-web |
+| `OIDC_CLIENT_SECRET` | medusa ↔ storefront ↔ user_service `oauth_clients` 시드 |
+| `WALLET_API_KEY` | medusa ↔ wallet |
+
+### 3. 시드
+
+```bash
+npm run db:seed:user-service:local          # 역할 6·스코프 12·admin 계정·OAuth 클라이언트 3
+cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts
+npx medusa user -e <관리자메일> -p <비밀번호>   # Medusa 어드민 계정 (user-service 계정과 별개다)
+```
+
+`db:seed:user-service:local` 은 정본 `UserServiceSeedStep` 을 로컬 DB 로 돌린다
+(`npm run db:seed:ref` 는 SST/AWS 에서 DB URL 을 읽어 로컬에선 못 쓴다). 만들어지는 관리자 계정은
+`admin` / `LOCAL_ADMIN_PASSWORD`(기본 `Rehearsal1234!`), 역할 `master`+`admin`.
+
+**admin-web 의 `MEDUSA_API_KEY`** 는 Medusa 관리자 API 키다. 한 번 만들어 `.env.local` 에 넣는다:
+
+```bash
+TOK=$(curl -s -X POST http://localhost:9000/auth/user/emailpass -H 'content-type: application/json' \
+  -d '{"email":"<관리자메일>","password":"<비밀번호>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+curl -s -X POST http://localhost:9000/admin/api-keys -H "authorization: Bearer $TOK" \
+  -H 'content-type: application/json' -d '{"title":"admin-web-local","type":"secret"}'
+```
+
+### 4. 기동
+
+```bash
+npx dotenv -e apps/user-service/.env -- nest start user-service   # :3000
+(cd web/auth-web && npm run dev)                                  # :8001
+(cd apps/medusa && npx medusa develop)                            # :9000
+npx dotenv -e apps/wallet/.env -- nest start wallet               # :5001
+(cd apps/admin-web && npm run dev)                                # :8002
+(cd web/almondyoung-storefront && npm run dev)                    # :8000
+```
+
+`http://localhost:8000/kr/login` → auth-web 계정 허브 → 로그인이 되면 배선이 다 맞은 것이다.
+
+### 5. 결제 없이 주문을 완결하는 법
+
+`checkout-template.tsx` 가 `pp_almond-payment_almond-payment` 로 고정돼 있어 주문 완료는
+wallet 을 거친다. 그런데 **PG 자격증명(`NICEPAY_*`·`TOSS_*`)은 전부 optional** 이고,
+`POINTS` 는 외부 PG 를 타지 않는 **ledger** provider다. 그래서 포인트로 전액 결제하면
+결제창 없이 주문이 완결된다 — `confirm` DTO 의 `pointsToApply` 가 전액을 덮으면
+`paymentMethodId` 가 필요 없다.
+
+```bash
+# 1) 포인트 지급 (admin 토큰, user-service 의 user id 로)
+curl -X POST http://localhost:5001/v1/admin/points/earn \
+  -H "Cookie: accessToken=$ADMIN_AT" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'content-type: application/json' -d '{"userId":"<user-service user id>","amount":100000,"reason":"local test"}'
+# 2) 결제 세션의 intentId 로 포인트 결제 → status CAPTURED
+curl -X POST http://localhost:5001/v1/payment-intents/<intentId>/confirm \
+  -H "Cookie: accessToken=$USER_AT" -H "Idempotency-Key: $(uuidgen)" \
+  -H 'content-type: application/json' -d '{"pointsToApply":<총액>}'
+# 3) Medusa 카트 완료
+curl -X POST http://localhost:9000/store/carts/<cartId>/complete -H "authorization: Bearer <customer jwt>" ...
+```
+
+wallet 의 쓰기 API 는 **전부 `Idempotency-Key` 헤더가 필수**고(없으면 400),
+`/v1/admin/*` 은 API 키가 아니라 **`accessToken` 쿠키**로 인증한다.
+
+### 6. Medusa HTTP 통합 스펙
+
+```bash
+scripts/local/run-medusa-integration.sh --testPathPattern 'coupon-'
+```
+
+`docker compose` 의 postgres 만 있으면 된다(Medusa 서버는 안 떠 있어도 된다 — 러너가 in-app 으로
+띄운다). 스펙마다 임시 DB 를 만들었다 지우므로 `medusa` DB 는 건드리지 않는다.
+
+**`npm run test:integration:http` 를 직접 부르지 말 것.** 러너는 `DATABASE_URL` 이 아니라
+`DB_HOST`/`DB_USERNAME`/`DB_PASSWORD`/`DB_PORT` 를 읽는데(`@medusajs/test-utils/dist/database.js:12-15`)
+`.env` 에 그 넷이 없어서 전 스펙이 `SASL: client password must be a string` 으로 죽는다 —
+스펙이 빨간 게 아니라 환경이 안 넘어간 것이다. 위 스크립트가 `DATABASE_URL` 에서 넷을 파생시켜 넘긴다.
+
+**CI 는 이걸 돌리지 않는다.** `medusa-unit-tests.yml` 은 DB 가 없어 `test:unit` 만 돌린다.
+쿠폰 도메인을 건드렸으면 **로컬에서 이 명령을 돌리는 것이 유일한 방어선이다.**
+
+### 부팅 중 실제로 걸린 것들
+
+리허설 1차에서 막힌 지점. 같은 데서 또 막히지 않도록 남긴다.
+
+- **user-service 는 `KAFKA_BROKERS` 없이 못 뜬다.** 「설정되지 않아 Kafka를 사용하지 않습니다」
+  경고를 찍은 뒤 `EventsModule.forApp` 이 `kafka.clientId` 를 역참조해 죽는다. 선택 아님.
+- **user-service 의 포트 변수는 `PORT` 다.** `env.validation.ts` 에 `USER_SERVICE_PORT` 가
+  있지만 `main.ts` 는 `process.env.PORT ?? 3030` 만 읽는다 — 아무도 안 읽는 변수다.
+- **회원가입 `birthday` 는 ISO(`1990-01-01`)여야 한다.** `sign-up.dto.ts` 의 예시값
+  `19900101` 은 `new Date()` 에서 Invalid Date 가 되어 500 이 난다.
+- **storefront `.env.template` 을 그대로 쓰면 안 된다.** 옛 도메인(`almondyoung-next.com`) +
+  `USE_RAILWAY_BACKEND=true` 라 라이브를 본다. `false` 로 두면 `lib/config/backend.ts` 의
+  `LOCAL_SERVICE_URLS` 가 쓰여 전부 localhost 로 간다.
+- **`AUTH_WEB_URL` 을 세우는 순간 Medusa 의 customer 인증이 `user-service-sso` 하나로 좁혀진다**
+  (`medusa-config.js` 의 `authMethodsPerActor`). 비워두면 emailpass 로도 로그인되지만,
+  그러면 스토어프론트 로그인 버튼은 404 다(provider 미등록).
+- **`localhost` 는 부모 도메인 쿠키를 못 쓴다.** `PARENT_COOKIE_DOMAIN` 은 비우고
+  `PARENT_COOKIE_SECURE=false`, auth-web 도 `COOKIE_SECURE=false`.
+
 ## core 단독 개발 + `dev_core` 시드
 
 warehouse-app 등 클라이언트 개발용으로 core 만 로컬에 띄우고, 전용 논리 DB `dev_core` 를

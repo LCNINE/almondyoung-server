@@ -10,6 +10,10 @@ import { OverseasShowcaseWrapper } from "./overseas-showcase"
 import { TimeSaleWrapper } from "./time-sale"
 import { InterestCategoriesSlot } from "./interest-categories"
 import {
+  InterestCategoriesSlot,
+  isInterestBannerVisible,
+} from "./interest-categories"
+import {
   SHOWCASE_CATEGORIES,
   ShowcaseCategoryWrapper,
 } from "./showcase-categories"
@@ -132,14 +136,18 @@ interface HomeLogoutTemplateProps {
 export async function HomeLogoutTemplate({
   countryCode,
 }: HomeLogoutTemplateProps) {
+  const bannerVisible = await isInterestBannerVisible()
+
   return (
     <div className="w-full">
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      <div className="xl:hidden">
-        <HomeQuickLinks />
-      </div>
+      {!bannerVisible && (
+        <div className="xl:hidden">
+          <HomeQuickLinks />
+        </div>
+      )}
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
@@ -148,7 +156,10 @@ export async function HomeLogoutTemplate({
       </ErrorBoundary>
 
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
-      <HomeSection background="muted" className="md:py-12 lg:py-16">
+      <HomeSection
+        background="muted"
+        className={bannerVisible ? "py-5 lg:py-8" : "md:py-12 lg:py-16"}
+      >
         <ErrorBoundary
           fallback={<div>관심 카테고리 섹션을 불러오지 못했어요.</div>}
         >

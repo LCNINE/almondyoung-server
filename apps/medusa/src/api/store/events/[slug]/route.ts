@@ -2,7 +2,7 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { toMetadataShape, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
 
 /**
  * GET /store/events/:slug
@@ -82,7 +82,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (startsAt && now < startsAt) return { kind: 'blocked', reason: 'not_started' };
     if (endsAt && now > endsAt) return { kind: 'blocked', reason: 'expired' };
 
-    const visibility = (toMetadataShape(meta)?.visibility as string) ?? 'public';
+    // 메타가 없으면 닫힌 쪽이다(#488 N7) → not_assigned 로 막힌다.
+    const visibility: string = resolveVisibility(meta);
 
     if (customerId && !meetsGroupRule(promo, customerGroupIds)) {
       return { kind: 'blocked', reason: 'group_restricted' };
@@ -112,7 +113,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         promotion_id: promo.id,
         code: promo.code,
         discount: am
-          ? { type: am.type, value: am.value, target_type: am.target_type, currency_code: am.currency_code }
+          ? {
+              type: am.type,
+              value: am.value,
+              target_type: am.target_type,
+              currency_code: am.currency_code,
+              // 정률 캡(#488 A4). 이벤트 페이지도 쿠폰을 받는 자리다.
+              max_discount_amount:
+                meta?.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
+            }
           : null,
         expires_at: promo.campaign?.ends_at ?? null,
         state: resolveState(promo, meta),

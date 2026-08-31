@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { useTranslations } from "next-intl"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { claimCoupon } from "@/lib/api/medusa/promotion"
+import { maxPossibleDiscount } from "@/lib/utils/coupon-discount"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
@@ -21,16 +22,25 @@ export interface CouponItem {
 
 type SortKey = "discount" | "minOrder"
 
-// 할인율 높은순: 정률(%) 쿠폰을 위로, 각 그룹 안에서 값 큰 순.
+// 할인 큰 순: 「이 쿠폰이 낼 수 있는 최대 할인액」으로 비교한다.
 // 최소주문금액 낮은순: 최소 주문 금액 오름차순(없으면 0으로 간주).
 function sortItems(items: CouponItem[], key: SortKey): CouponItem[] {
   const sorted = [...items]
   if (key === "discount") {
+    // 옛 구현은 정률을 무조건 정액 위로 올리고 raw value 로 비교해서
+    // 「10% 최대 3천원」이 「5만원 정액」보다 위에 왔다(#488 A4).
+    // ⚠️ 뺄셈으로 쓰면 상한 없는 정률끼리 Infinity - Infinity = NaN 이라 순서가 무너진다.
     sorted.sort((a, b) => {
-      const rank = (p: Promotion) => (p.application_method?.type === "percentage" ? 1 : 0)
-      const r = rank(b.promo) - rank(a.promo)
-      if (r !== 0) return r
-      return (b.promo.application_method?.value ?? 0) - (a.promo.application_method?.value ?? 0)
+      const left = maxPossibleDiscount(
+        a.promo.application_method,
+        a.promo.max_discount_amount
+      )
+      const right = maxPossibleDiscount(
+        b.promo.application_method,
+        b.promo.max_discount_amount
+      )
+      if (left === right) return 0
+      return right > left ? 1 : -1
     })
   } else {
     sorted.sort(

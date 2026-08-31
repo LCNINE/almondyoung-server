@@ -2,7 +2,12 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { toMetadataShape, meetsGroupRule } from '../../../../admin/promotions/helpers';
+import {
+  resolveVisibility,
+  meetsGroupRule,
+  VISIBILITY_WHEN_META_MISSING,
+} from '../../../../admin/promotions/helpers';
+import { formatPromotion } from './format-promotion';
 
 /**
  * GET /store/customers/me/promotions
@@ -38,7 +43,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'type',
     'status',
     'is_automatic',
-    'metadata',
+    // 신규 쿠폰(Medusa 2.12.0+)의 전역 사용 한도. campaign.budget 과 독립적으로 검사된다.
+    'limit',
+    'used',
     'campaign_id',
     'campaign.campaign_identifier',
     'campaign.starts_at',
@@ -105,46 +112,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return true;
   };
 
-  // 최소 주문 금액(subtotal gte rule) 추출 — 마이페이지 "최소주문금액 낮은순" 정렬용.
-  const minOrderAmount = (promo: any): number | null => {
-    const rule = (promo.rules ?? []).find(
-      (r: any) => r.attribute === 'subtotal' && r.operator === 'gte',
-    );
-    if (!rule) return null;
-    const raw = rule.values?.[0];
-    const val = Number(typeof raw === 'string' ? raw : raw?.value);
-    return Number.isFinite(val) ? val : null;
-  };
-
-  const formatPromotion = (promo: any, isAssigned: boolean) => ({
-    id: promo.id,
-    code: promo.code,
-    type: promo.type,
-    status: promo.status,
-    is_automatic: promo.is_automatic,
-    is_assigned: isAssigned,
-    metadata: promo.metadata ?? null,
-    min_order_amount: minOrderAmount(promo),
-    visibility: visibilityById.get(promo.id) ?? 'public',
-    application_method: promo.application_method
-      ? {
-          id: promo.application_method.id,
-          type: promo.application_method.type,
-          value: promo.application_method.value,
-          target_type: promo.application_method.target_type,
-          max_quantity: promo.application_method.max_quantity,
-          currency_code: promo.application_method.currency_code,
-        }
-      : null,
-    campaign: promo.campaign
-      ? {
-          campaign_identifier: promo.campaign.campaign_identifier,
-          starts_at: promo.campaign.starts_at,
-          ends_at: promo.campaign.ends_at,
-        }
-      : null,
-  });
-
   // 모든 프로모션의 visibility 일괄 조회
   const allPromoIds = [
     ...(customers?.[0]?.promotions ?? []).map((p: any) => p.id),
@@ -154,8 +121,23 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     ? await promotionMetaService.getByPromotionIds([...new Set(allPromoIds)])
     : [];
   const visibilityById = new Map<string, string>(
-    metas.map((m: any) => [m.promotion_id, toMetadataShape(m)?.visibility as string ?? 'public'])
+    metas.map((m: any) => [m.promotion_id, resolveVisibility(m) as string])
   );
+  // 정률 캡(#488 A4)도 같은 메타 조회에서 나온다 — 프로모션마다 재조회하지 않는다.
+  const maxDiscountById = new Map<string, number>(
+    metas
+      .filter((m: any) => m.max_discount_amount != null && Number.isFinite(Number(m.max_discount_amount)))
+      .map((m: any) => [m.promotion_id, Number(m.max_discount_amount)])
+  );
+  // 메타 행이 아예 없는 프로모션은 맵에 키가 없다 → 닫힌 기본값으로 떨어진다(#488 N7).
+  const visibilityOf = (promotionId: string): string =>
+    visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
+  // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
+  const format = (promo: any, isAssigned: boolean) =>
+    formatPromotion(promo, isAssigned, {
+      visibility: visibilityOf(promo.id),
+      maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
+    });
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metas.find((r: any) => r.promotion_id === promotionId);
@@ -190,6 +172,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     }
   }
   const isUsageExhausted = (promo: any): boolean => {
+    // 신규 쿠폰: 전역 한도가 campaign budget 이 아니라 promotion.limit 에 있다.
+    if (promo.limit != null && Number(promo.used ?? 0) >= Number(promo.limit)) {
+      return true;
+    }
+
     const b = promo.campaign?.budget;
     if (!b || b.limit == null) return false;
     const limit = Number(b.limit);
@@ -202,7 +189,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     .filter((promo: any) => isValidPromotion(promo) && !isUsageExhausted(promo))
     .map((promo: any) => {
       assignedPromotionIds.add(promo.id);
-      return formatPromotion(promo, true);
+      return format(promo, true);
     });
 
   const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
@@ -213,10 +200,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
       !isUsageExhausted(promo) &&
-      (visibilityById.get(promo.id) ?? 'public') === 'public' &&
+      visibilityOf(promo.id) === 'public' &&
       meetsGroupRule(promo, customerGroupIds)
     )
-    .map((promo: any) => formatPromotion(promo, false));
+    .map((promo: any) => format(promo, false));
 
   // claimable: 아직 발급받지 않은 활성 claimable 쿠폰 (최대 50개 고정; 대량 운영 시 별도 pagination 필요)
   const CLAIMABLE_LIMIT = 50;
@@ -230,7 +217,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       meetsGroupRule(promo, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)
-    .map((promo: any) => formatPromotion(promo, false));
+    .map((promo: any) => format(promo, false));
 
   // 만료 쿠폰: 고객에게 발급됐던(assigned) 쿠폰 중 캠페인 종료일이 지난 것, 최근 30일 이내.
   // 최근 만료순, 최대 50개.
@@ -245,7 +232,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     })
     .sort((a: any, b: any) => new Date(b.campaign.ends_at).getTime() - new Date(a.campaign.ends_at).getTime())
     .slice(0, 50)
-    .map((promo: any) => formatPromotion(promo, true));
+    .map((promo: any) => format(promo, true));
 
   // 합치기: 직접 발급된 것 먼저, 그 다음 일반 프로모션
   const combinedPromotions = [...assignedPromotions, ...publicPromotions];

@@ -1,0 +1,123 @@
+/**
+ * 스토어 쿠폰 목록 응답의 한 항목을 만든다.
+ *
+ * 라우트 핸들러가 아니라 이 파일에 사는 이유: Medusa 의 유닛 게이트가
+ * `__tests__/*.unit.spec.ts` 패턴만 돌리므로, 클로저로 두면 「무엇이 나가는가」가
+ * 검증 대상 밖이다. 응답 모양은 계약이고, 계약은 테스트가 지켜야 한다.
+ *
+ * **`metadata` 를 내리지 않는 것은 의도다 (#488 N2).** 어드민 응답의 `metadata` 는 우리가
+ * `promotion_meta` 에서 합성한 것이고, 여기서 같은 이름으로 나가던 것은 Medusa 네이티브 json
+ * 컬럼이었다. 그 컬럼에 쓰는 코드가 0곳이라 값은 늘 `null` 이었고, 「스토어엔 메타가 없다」는
+ * 정반대 진단을 유도했다. 스토어에 필요한 메타 정보는 최상위 `visibility` 하나뿐이므로 그것만
+ * 내보내고, 네이티브 컬럼은 나중에 쓸 수 있게 이름을 비워 둔다.
+ */
+
+export type PromotionRuleValue = string | { value?: string | null } | null | undefined;
+
+export type PromotionRuleLike = {
+  attribute?: string | null;
+  operator?: string | null;
+  values?: PromotionRuleValue[] | null;
+};
+
+// 그래프 필드 목록(`route.ts` 의 `promotionFields`)이 항상 선택하는 것들이라 optional 로 두지
+// 않는다 — optional 로 두면 매퍼가 `as` 캐스팅으로 되돌려야 한다.
+export type ApplicationMethodLike = {
+  id: string;
+  type: string;
+  value: number;
+  target_type: string;
+  max_quantity: number | null;
+  currency_code: string | null;
+};
+
+export type CampaignLike = {
+  campaign_identifier: string;
+  starts_at: string | Date | null;
+  ends_at: string | Date | null;
+};
+
+export type PromotionLike = {
+  id: string;
+  code: string;
+  type: string;
+  status: string;
+  is_automatic: boolean;
+  metadata?: Record<string, unknown> | null;
+  rules?: PromotionRuleLike[] | null;
+  application_method?: ApplicationMethodLike | null;
+  campaign?: CampaignLike | null;
+};
+
+export type FormattedPromotion = {
+  id: string;
+  code: string;
+  type: string;
+  status: string;
+  is_automatic: boolean;
+  is_assigned: boolean;
+  min_order_amount: number | null;
+  /**
+   * 정률 쿠폰 최대 할인금액 (#488 A4). `promotion_meta` 에서 온다 — 엔진에는 이 개념이 없다.
+   * `visibility` 와 같은 이유로 **최상위**에 둔다: `application_method` 는 엔진 필드를 그대로
+   * 옮기는 자리이고, 여기 우리 확장을 섞으면 「엔진이 준 것」과 「우리가 붙인 것」이 안 갈린다.
+   */
+  max_discount_amount: number | null;
+  visibility: string;
+  application_method: ApplicationMethodLike | null;
+  campaign: CampaignLike | null;
+};
+
+/**
+ * 최소 주문 금액(subtotal gte rule) 추출 — 마이페이지 "최소주문금액 낮은순" 정렬용.
+ * 룰 값은 그래프 결과에 따라 문자열이거나 `{ value }` 객체다.
+ */
+function minOrderAmount(promo: PromotionLike): number | null {
+  const rule = (promo.rules ?? []).find((r) => r?.attribute === 'subtotal' && r?.operator === 'gte');
+  if (!rule) return null;
+  const raw = rule.values?.[0];
+  const val = Number(typeof raw === 'string' ? raw : raw?.value);
+  return Number.isFinite(val) ? val : null;
+}
+
+/** `promotion_meta` 에서 온 값들. 호출부가 프로모션마다 조회하지 않도록 묶어서 받는다. */
+export type PromotionMetaView = {
+  visibility: string;
+  maxDiscountAmount: number | null;
+};
+
+export function formatPromotion(
+  promo: PromotionLike,
+  isAssigned: boolean,
+  meta: PromotionMetaView,
+): FormattedPromotion {
+  return {
+    id: promo.id,
+    code: promo.code,
+    type: promo.type,
+    status: promo.status,
+    is_automatic: promo.is_automatic,
+    is_assigned: isAssigned,
+    min_order_amount: minOrderAmount(promo),
+    max_discount_amount: meta.maxDiscountAmount,
+    visibility: meta.visibility,
+    application_method: promo.application_method
+      ? {
+          // 필드를 하나씩 옮긴다 — 그래프가 더 실어 보내도 스토어 응답에 새지 않게.
+          id: promo.application_method.id,
+          type: promo.application_method.type,
+          value: promo.application_method.value,
+          target_type: promo.application_method.target_type,
+          max_quantity: promo.application_method.max_quantity ?? null,
+          currency_code: promo.application_method.currency_code ?? null,
+        }
+      : null,
+    campaign: promo.campaign
+      ? {
+          campaign_identifier: promo.campaign.campaign_identifier,
+          starts_at: promo.campaign.starts_at,
+          ends_at: promo.campaign.ends_at,
+        }
+      : null,
+  };
+}

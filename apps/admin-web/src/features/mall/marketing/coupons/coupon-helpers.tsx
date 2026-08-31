@@ -27,37 +27,6 @@ export function formatPeriod(coupon: MedusaPromotion): string {
   return '무기한';
 }
 
-export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
-
-export const AUTO_ISSUE_TRIGGER_LABELS: Record<AutoIssueTrigger, string> = {
-  customer_registered: '회원가입 완료',
-  membership_activated: '멤버십 가입',
-  birthday: '생일 (미구현 — 발급되지 않음)',
-};
-
-export interface CouponMeta {
-  name: string | undefined;
-  maxDiscountAmount: number | null;
-  maxClaims: number | null;
-  issuedCount: number | null;
-  createdBy: string | undefined;
-  visibility: 'public' | 'claimable' | 'assigned_only';
-  autoIssueTrigger: AutoIssueTrigger | null;
-}
-
-export function getCouponMeta(coupon: MedusaPromotion): CouponMeta {
-  const meta = (coupon.metadata ?? {}) as Record<string, unknown>;
-  return {
-    name: meta.name as string | undefined,
-    maxDiscountAmount: meta.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
-    maxClaims: meta.max_claims != null ? Number(meta.max_claims) : null,
-    issuedCount: meta.issued_count != null ? Number(meta.issued_count) : null,
-    createdBy: meta.created_by as string | undefined,
-    visibility: (meta.visibility as 'public' | 'claimable' | 'assigned_only') ?? 'public',
-    autoIssueTrigger: (meta.auto_issue_trigger as AutoIssueTrigger) ?? null,
-  };
-}
-
 export function StatusBadge({ status }: { status: string }) {
   if (status === 'active') return <Badge className="bg-green-100 text-green-700 border-0">활성</Badge>;
   if (status === 'inactive') return <Badge className="bg-gray-100 text-gray-500 border-0">비활성</Badge>;

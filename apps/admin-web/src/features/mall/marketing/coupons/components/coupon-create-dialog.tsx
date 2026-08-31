@@ -23,7 +23,6 @@ import { Badge } from '@/components/ui/badge';
 import { useCreateCoupon, useCustomerGroupList } from '@/lib/services/coupons';
 import { useMe } from '@/lib/services/users';
 import { useProductSearch, useCategoryList, useCollectionList } from '@/lib/services/catalog';
-import type { PromotionTargetRule } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { RefreshCw, X, ChevronsUpDown, Check } from 'lucide-react';
 import {
@@ -37,23 +36,16 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils/cn';
 import { useDebounced } from '@/hooks/use-debounced';
-import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../coupon-helpers';
+import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../lib/coupon-meta';
+import { VISIBILITY_SELECT_LABEL } from '../lib/coupon-labels';
+import { COUPON_VISIBILITIES, type CouponVisibility } from '@packages/domain-types';
+import { buildCreatePromotionPayload, type TargetAttribute } from '../lib/build-create-promotion-payload';
 
 function generateCode() {
   const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(36)).join('').slice(0, 8).toUpperCase();
 }
-
-type TargetAttribute = 'product_id' | 'product_category_id' | 'product_collection_id';
-
-// Medusa 라인아이템 컨텍스트가 노출하는 실제 경로로 매핑한다.
-// 플랫 키(product_category_id 등)는 라인아이템에 없어 룰이 절대 매칭되지 않음.
-const TARGET_ATTR_TO_MEDUSA: Record<TargetAttribute, PromotionTargetRule['attribute']> = {
-  product_id: 'items.product.id',
-  product_category_id: 'items.product.categories.id',
-  product_collection_id: 'items.product.collection_id',
-};
 
 interface SelectedItem {
   id: string;
@@ -169,6 +161,7 @@ export function CouponCreateDialog({
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [value, setValue] = useState<number | ''>('');
+  const [maxDiscountAmount, setMaxDiscountAmount] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
@@ -176,7 +169,7 @@ export function CouponCreateDialog({
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
   const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
   const [maxClaims, setMaxClaims] = useState<number | ''>('');
-  const [visibility, setVisibility] = useState<'public' | 'claimable' | 'assigned_only'>('public');
+  const [visibility, setVisibility] = useState<CouponVisibility>('public');
   const [autoIssueTrigger, setAutoIssueTrigger] = useState<AutoIssueTrigger | ''>('');
   const [customerGroupIds, setCustomerGroupIds] = useState<string[]>([]);
   const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping_methods'>('order');
@@ -194,75 +187,25 @@ export function CouponCreateDialog({
   };
 
   const handleSubmit = async () => {
-    const trimmedName = name.trim();
     if (!code.trim() || !value || (value as number) <= 0) return;
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
-    // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
-    const additional_data: Record<string, unknown> = {};
-    if (trimmedName) additional_data.name = trimmedName;
-    if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
-    if (me) additional_data.created_by = me.email || me.username;
-    additional_data.visibility = visibility;
-    if (autoIssueTrigger) additional_data.auto_issue_trigger = autoIssueTrigger;
-
-    const hasCampaign = startsAt || endsAt || usageLimit || spendLimit || maxUsesPerCustomer;
-    // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
-    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}_${Date.now()}`;
-
-    const targetRules: PromotionTargetRule[] | undefined =
-      targetType === 'items' && targetItems.length > 0
-        ? [{ attribute: TARGET_ATTR_TO_MEDUSA[targetAttribute], operator: 'in', values: targetItems.map((i) => i.id) }]
-        : undefined;
-
-    const promotionRules = [
-      ...(minOrderAmount
-        ? [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }]
-        : []),
-      ...(customerGroupIds.length > 0
-        ? [{ attribute: 'customer.groups.id', operator: 'in', values: customerGroupIds }]
-        : []),
-    ];
-    const allocation = targetType === 'items' ? 'across' : undefined;
-
-    const campaignBudget = maxUsesPerCustomer
-      ? { type: 'use_by_attribute' as const, attribute: 'customer_id', limit: Number(maxUsesPerCustomer) }
-      : usageLimit
-      ? { type: 'usage' as const, limit: Number(usageLimit) }
-      : spendLimit
-      ? { type: 'spend' as const, limit: Number(spendLimit), currency_code: 'krw' }
-      : undefined;
-
     try {
-      await createMutation.mutateAsync({
-        code: code.trim().toUpperCase(),
-        type: 'standard',
-        is_automatic: false,
-        // draft는 체크아웃에서 적용 안 됨
-        status: 'active',
-        application_method: {
-          type: discountType,
-          value: value as number,
-          target_type: targetType,
-          ...(discountType === 'fixed' ? { currency_code: 'krw' } : {}),
-          ...(allocation ? { allocation } : {}),
-          ...(targetRules ? { target_rules: targetRules } : {}),
+      const payload = buildCreatePromotionPayload(
+        {
+          code, name, discountType, value: value as number, maxDiscountAmount,
+          targetType, targetAttribute,
+          targetItemIds: targetItems.map((i) => i.id),
+          minOrderAmount, customerGroupIds, startsAt, endsAt,
+          usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
+          visibility, autoIssueTrigger,
+          createdBy: me?.email || me?.username,
         },
-        ...(hasCampaign
-          ? {
-              campaign: {
-                name: trimmedName || code.trim().toUpperCase(),
-                campaign_identifier: campaignIdentifier,
-                ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
-                ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
-                ...(campaignBudget ? { budget: campaignBudget } : {}),
-              },
-            }
-          : {}),
-        ...(promotionRules.length > 0 ? { rules: promotionRules } : {}),
-        ...(Object.keys(additional_data).length > 0 ? { additional_data } : {}),
-      });
+        { campaignSuffix: String(Date.now()) },
+      );
+
+      await createMutation.mutateAsync(payload);
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
     } catch (e: unknown) {
@@ -276,6 +219,7 @@ export function CouponCreateDialog({
     setCode('');
     setDiscountType('percentage');
     setValue('');
+    setMaxDiscountAmount('');
     setStartsAt('');
     setEndsAt('');
     setMinOrderAmount('');
@@ -366,6 +310,24 @@ export function CouponCreateDialog({
               />
             </div>
           </div>
+
+          {discountType === 'percentage' && (
+            <div className="space-y-2">
+              <Label>최대 할인금액 (원)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={maxDiscountAmount}
+                onChange={(e) => setMaxDiscountAmount(e.target.value ? Number(e.target.value) : '')}
+                placeholder="예: 30000 (비우면 상한 없음)"
+              />
+              <p className="text-xs text-muted-foreground">
+                {maxDiscountAmount
+                  ? `장바구니가 아무리 커도 이 쿠폰의 할인은 ${maxDiscountAmount.toLocaleString('ko-KR')}원을 넘지 않습니다.`
+                  : '비워두면 상한이 없습니다. 「10% 최대 3만원」처럼 정률 할인의 상한을 정합니다.'}
+              </p>
+            </div>
+          )}
 
 
           <div className="space-y-2">
@@ -463,13 +425,14 @@ export function CouponCreateDialog({
               <div className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="bg-background px-2 text-muted-foreground">캠페인 예산 제한 (하나만 선택)</span>
+              <span className="bg-background px-2 text-muted-foreground">사용 한도</span>
             </div>
           </div>
 
           <p className="text-xs text-muted-foreground">
-            세 한도는 캠페인 예산을 공유해 <b>동시에 설정할 수 없습니다</b>. 일반적으로 프로모션은
-            &lsquo;1인당 사용 제한&rsquo; 또는 &lsquo;총 사용 횟수(선착순)&rsquo; 중 하나를 씁니다.
+            &lsquo;총 사용 횟수(선착순)&rsquo;는 전역 한도라 다른 한도와 자유롭게 함께 쓸 수 있습니다.
+            &lsquo;총 할인금액 한도&rsquo;와 &lsquo;1인당 사용 횟수 제한&rsquo;은 캠페인 예산 슬롯을 하나만 쓰므로
+            <b>둘을 동시에 설정할 수 없습니다</b>.
             발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
           </p>
 
@@ -480,12 +443,8 @@ export function CouponCreateDialog({
                 type="number"
                 min={1}
                 value={usageLimit}
-                onChange={(e) => {
-                  setUsageLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) { setSpendLimit(''); setMaxUsesPerCustomer(''); }
-                }}
+                onChange={(e) => setUsageLimit(e.target.value ? Number(e.target.value) : '')}
                 placeholder="예: 100"
-                disabled={!!spendLimit || !!maxUsesPerCustomer}
               />
               {!!usageLimit && (
                 <p className="text-xs text-muted-foreground">
@@ -501,14 +460,19 @@ export function CouponCreateDialog({
                 value={spendLimit}
                 onChange={(e) => {
                   setSpendLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) { setUsageLimit(''); setMaxUsesPerCustomer(''); }
+                  if (e.target.value) setMaxUsesPerCustomer('');
                 }}
                 placeholder="예: 5000000"
-                disabled={!!usageLimit || !!maxUsesPerCustomer}
+                disabled={!!maxUsesPerCustomer}
               />
               {!!spendLimit && (
                 <p className="text-xs text-muted-foreground">
                   최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
+                </p>
+              )}
+              {!!maxUsesPerCustomer && (
+                <p className="text-xs text-muted-foreground">
+                  1인당 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
                 </p>
               )}
             </div>
@@ -522,28 +486,33 @@ export function CouponCreateDialog({
               value={maxUsesPerCustomer}
               onChange={(e) => {
                 setMaxUsesPerCustomer(e.target.value ? Number(e.target.value) : '');
-                if (e.target.value) { setUsageLimit(''); setSpendLimit(''); }
+                if (e.target.value) setSpendLimit('');
               }}
               placeholder="예: 1"
-              disabled={!!usageLimit || !!spendLimit}
+              disabled={!!spendLimit}
             />
             {!!maxUsesPerCustomer && (
               <p className="text-xs text-muted-foreground">
                 1인당 {maxUsesPerCustomer.toLocaleString('ko-KR')}회 사용 가능
               </p>
             )}
+            {!!spendLimit && (
+              <p className="text-xs text-muted-foreground">
+                총 할인금액 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
             <Label>발급 방식</Label>
-            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'claimable' | 'assigned_only')}>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as CouponVisibility)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="public">공개 — 모든 로그인 고객에게 노출</SelectItem>
-                <SelectItem value="claimable">발급받기 — 고객이 직접 발급받아야 사용 가능</SelectItem>
-                <SelectItem value="assigned_only">발급 고객 전용 — 관리자가 발급한 고객만 사용 가능</SelectItem>
+                {COUPON_VISIBILITIES.map((v) => (
+                  <SelectItem key={v} value={v}>{VISIBILITY_SELECT_LABEL[v]}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
             {visibility === 'claimable' && (

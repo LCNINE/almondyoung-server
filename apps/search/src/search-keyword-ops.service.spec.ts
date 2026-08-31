@@ -87,11 +87,18 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
     expect(result.items[2].resolvedByIndex).toBe(true);
     expect(result.items[2].neglectDays).toBe(0);
     // 경보 요약은 자동 해소를 제외한다
-    expect(result.summary).toEqual({ zeroKeywordCount: 2, neglectedOver7Days: 1, maxNeglectDays: 10 });
+    expect(result.summary).toMatchObject({
+      zeroKeywordCount: 2,
+      neglectedOver7Days: 1,
+      openNeglectedOver7Days: 1,
+      maxNeglectDays: 10,
+    });
+    expect(result.summary.resolvedByIndexCount).toBe(1);
+    expect(result.summary.neglectBuckets).toEqual({ under7: 1, from7to13: 1, from14to29: 0, over30: 0 });
     expect(result.totalItems).toBe(3);
   });
 
-  it('페이지 밖 행은 분류·이슈 조회를 하지 않는다', async () => {
+  it('색인 대조는 페이지 안의 행만 한다 — 이슈는 상태 집계 때문에 전량 읽는다', async () => {
     const rows = [zeroRow('a', 5, '2026-08-26T01:00:00Z'), zeroRow('b', 4, '2026-08-26T01:00:00Z')];
     const repository = buildRepository({
       getZeroHitKeywords: jest.fn().mockResolvedValue(rows),
@@ -110,8 +117,11 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
 
     expect(result.items.map((item) => item.keywordNorm)).toEqual(['b']);
     expect(result.totalItems).toBe(2);
-    expect(issueRepository.findByNorms).toHaveBeenCalledWith(['b']);
+    // 색인 대조는 키워드마다 OpenSearch 를 때리므로 페이지 안으로 제한된 채여야 한다
     expect(productIndex.getKeywordMatchEvidence).toHaveBeenCalledWith(['b']);
+    // 상태별 집계·필터의 모수가 전체라서 이슈는 전량 조회한다 (한 번의 inArray)
+    expect(issueRepository.findByNorms).toHaveBeenCalledWith(['a', 'b']);
+    expect(issueRepository.findByNorms).toHaveBeenCalledTimes(1);
   });
 
   it('색인 대조는 판정 없이 근거만 싣는다 — 정확 일치 수·이름과 유사 상품명', async () => {
@@ -172,6 +182,95 @@ describe('SearchKeywordOpsService.getZeroHitKeywords', () => {
       correctedQuery: '퍼마',
       matchedProductsCount: 0,
       similarProductNames: ['퍼마 블렌드'],
+    });
+  });
+
+  describe('상태 필터와 상태별 집계', () => {
+    const issue = (keywordNorm: string, status: SearchKeywordIssue['status'], assigneeId: string | null = null) =>
+      ({
+        keywordNorm,
+        keyword: keywordNorm,
+        status,
+        assigneeId,
+        assigneeName: assigneeId ? '담당자' : null,
+        memo: null,
+        updatedAt: new Date('2026-08-26T00:00:00Z'),
+      }) as SearchKeywordIssue;
+
+    /** a=신규(미지정) · b=MD팀(담당 있음) · c=해소 · d=자동 해소 */
+    function buildService(issues: SearchKeywordIssue[]) {
+      const repository = buildRepository({
+        getZeroHitKeywords: jest.fn().mockResolvedValue([
+          zeroRow('a', 9, '2026-08-26T01:00:00Z'),
+          zeroRow('b', 8, '2026-08-26T01:00:00Z'),
+          zeroRow('c', 7, '2026-08-26T01:00:00Z'),
+          zeroRow('d', 6, '2026-08-26T01:00:00Z'),
+        ]),
+        getKeywordActivity: jest.fn().mockResolvedValue(
+          new Map<string, KeywordActivity>([
+            ['a', { lastPositiveAt: null, firstZeroAt: '2026-08-05T01:00:00Z', lastZeroAt: '2026-08-26T01:00:00Z' }],
+            ['b', { lastPositiveAt: null, firstZeroAt: '2026-08-20T01:00:00Z', lastZeroAt: '2026-08-26T01:00:00Z' }],
+            ['c', { lastPositiveAt: null, firstZeroAt: '2026-08-25T01:00:00Z', lastZeroAt: '2026-08-26T01:00:00Z' }],
+            // 0건 이후 결과가 다시 나옴 → 자동 해소
+            ['d', { lastPositiveAt: '2026-08-26T05:00:00Z', firstZeroAt: '2026-08-01T01:00:00Z', lastZeroAt: '2026-08-20T01:00:00Z' }],
+          ]),
+        ),
+      });
+      return new SearchKeywordOpsService(repository, buildIssueRepository(issues), buildProductIndex());
+    }
+
+    it('이슈 행이 없는 키워드는 신규로 세고, 담당자 미지정 수를 따로 센다', async () => {
+      const service = buildService([issue('b', 'md', 'user-1'), issue('c', 'resolved')]);
+
+      const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+
+      // 자동 해소된 d 는 상태 집계 모수에서 빠진다
+      expect(result.summary.byStatus).toEqual({ new: 1, dev: 0, md: 1, in_progress: 0, resolved: 1, ignored: 0 });
+      expect(result.summary.unassignedCount).toBe(2);
+      expect(result.summary.resolvedByIndexCount).toBe(1);
+      expect(result.summary.byAssignee).toEqual([{ assigneeId: 'user-1', assigneeName: '담당자', count: 1 }]);
+    });
+
+    // "오늘의 할 일" 칩이 이 값을 쓴다 — 사람이 닫은 건 표에 안 뜨는데 칩에만 남으면 안 된다.
+    it('사람이 해소·무시로 닫은 검색어는 열린 방치 수에서 빠진다', async () => {
+      // a 는 22일 방치(신규), c 는 2일 방치라 7일 문턱을 넘지 않는다.
+      // a 를 해소로 닫으면 열린 방치는 0 이 되지만 전체 방치 수는 그대로다.
+      const service = buildService([issue('a', 'resolved')]);
+
+      const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+
+      expect(result.summary.neglectedOver7Days).toBe(2);
+      expect(result.summary.openNeglectedOver7Days).toBe(1);
+    });
+
+    it("status='open' 은 해소·무시와 자동 해소를 뺀 목록만 준다", async () => {
+      const service = buildService([issue('b', 'md', 'user-1'), issue('c', 'resolved')]);
+
+      const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20, 'open');
+
+      expect(result.items.map((item) => item.keywordNorm)).toEqual(['a', 'b']);
+      expect(result.totalItems).toBe(2);
+    });
+
+    it('상태 필터를 걸어도 요약은 기간 전체 기준을 유지한다', async () => {
+      const service = buildService([issue('b', 'md', 'user-1'), issue('c', 'resolved')]);
+
+      const filtered = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20, 'md');
+      const unfiltered = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+
+      expect(filtered.items.map((item) => item.keywordNorm)).toEqual(['b']);
+      expect(filtered.totalItems).toBe(1);
+      // 종합 대시보드 경보 피드가 이 요약을 그대로 쓴다 — 화면 필터에 흔들리면 안 된다
+      expect(filtered.summary).toEqual(unfiltered.summary);
+    });
+
+    it('방치 일수를 구간별로 나눠 센다', async () => {
+      const service = buildService([]);
+
+      const result = await service.getZeroHitKeywords('2026-08-01', '2026-08-27', 1, 20);
+
+      // a=22일 · b=7일 · c=2일 (d 는 자동 해소라 제외)
+      expect(result.summary.neglectBuckets).toEqual({ under7: 1, from7to13: 1, from14to29: 1, over30: 0 });
     });
   });
 });

@@ -33,6 +33,7 @@ import {
   FeeRateDto,
   CreateFeeRatePayload,
   FeeSummaryDto,
+  DailyPaymentsDto,
   MembershipRevenueDto,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
@@ -514,6 +515,13 @@ export const walletApi = {
   getFeeSummary: async (from: string, to: string): Promise<FeeSummaryDto> => {
     const res = await client.get(
       `${BASE}/v1/admin/statistics/fees?${buildQueryString({ from, to })}`
+    );
+    return res.data;
+  },
+
+  getDailyPayments: async (from: string, to: string): Promise<DailyPaymentsDto> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/statistics/payments/daily?${buildQueryString({ from, to })}`
     );
     return res.data;
   },

@@ -35,4 +35,11 @@ export class AnalyticsSummaryDto {
 
   @ApiPropertyOptional({ nullable: true, description: '위 값의 스냅샷 날짜 (KST)' })
   activeMembersAsOf: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2026-08-28T01:00:00.000Z',
+    description: '매출 집계가 마지막으로 갱신된 순간(UTC ISO). 화면은 이걸 KST 로 바꿔 "언제 기준"을 표기한다.',
+  })
+  dataAsOf: string | null;
 }

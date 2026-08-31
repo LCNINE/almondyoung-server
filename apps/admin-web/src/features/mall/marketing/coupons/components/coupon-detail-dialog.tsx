@@ -14,11 +14,12 @@ import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import {
   formatCouponDateTime,
   formatPeriod,
-  getCouponMeta,
   StatusBadge,
   TARGET_ATTR_LABEL,
-  AUTO_ISSUE_TRIGGER_LABELS,
 } from '../coupon-helpers';
+import { getCouponMeta, AUTO_ISSUE_TRIGGER_LABELS } from '../lib/coupon-meta';
+import { visibilityDetailLabel } from '../lib/coupon-labels';
+import { formatDiscountLabel } from '../lib/format-discount-label';
 import { Link, Check } from 'lucide-react';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -45,7 +46,8 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxClaims, issuedCount, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+  const { name, maxClaims, issuedCount, createdBy, visibility, autoIssueTrigger, maxDiscountAmount } =
+    getCouponMeta(c);
 
   // 끝 슬래시 제거 — 환경변수에 trailing slash 가 있어도 이중 슬래시 방지
   const storefrontUrl = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(/\/+$/, '');
@@ -57,11 +59,7 @@ export function CouponDetailDialog({
     setTimeout(() => setLinkCopied(false), 2000);
   };
   const m = c.application_method;
-  const discountStr = m
-    ? m.type === 'percentage'
-      ? `${m.value}%`
-      : `${m.value.toLocaleString('ko-KR')}원`
-    : '-';
+  const discountStr = formatDiscountLabel(m, maxDiscountAmount);
 
   const targetRules = m?.target_rules ?? [];
   const minOrder = c.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
@@ -106,6 +104,13 @@ export function CouponDetailDialog({
               {Number((minOrder.values[0] as any)?.value ?? minOrder.values[0]).toLocaleString('ko-KR')}원 이상
             </Row>
           )}
+          {/* 신규 쿠폰: 전역 사용 한도는 campaign budget 이 아니라 promotion.limit 에 있다.
+              옛 쿠폰은 이 필드가 없으므로 아래 budget 기반 행이 그대로 대체한다 — 하위 호환. */}
+          {c.limit != null && (
+            <Row label="총 사용 한도">
+              {`${c.limit.toLocaleString('ko-KR')}회 (사용: ${(c.used ?? 0).toLocaleString('ko-KR')}회)`}
+            </Row>
+          )}
           {budget?.limit && (budget as any)?.type !== 'use_by_attribute' && (
             <Row label="총 사용 한도">
               {budget.type === 'spend'
@@ -117,7 +122,7 @@ export function CouponDetailDialog({
             <Row label="1인당 사용 한도">{perCustomerLimit}회</Row>
           )}
           <Row label="발급 방식">
-            {visibility === 'assigned_only' ? '발급 고객 전용' : visibility === 'claimable' ? '발급받기' : '공개'}
+            {visibilityDetailLabel(visibility)}
           </Row>
           {visibility === 'claimable' && (
             <Row label="총 발급 수량">

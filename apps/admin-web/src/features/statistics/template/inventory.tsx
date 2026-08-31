@@ -7,7 +7,8 @@ import { useStockValuationProducts, useStockValuationSummary } from '@/lib/servi
 import type { StockValuationSummary } from '@/lib/api/domains/inventory/stock-valuation.client';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
-import { PaginationBar } from '../components/pagination';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { defaultRange, formatCount, formatKrw } from '../shared';
 
 const PAGE_SIZE = 50;
@@ -58,6 +59,8 @@ export default function InventoryStatisticsTemplate() {
     limit: PAGE_SIZE,
     page: unsoldPage,
   });
+  const isProductsPaging = isPageChanging(products);
+
   const unsoldMasterIds = useMemo(
     () => (unsold.data?.items ?? []).map((row) => row.masterId),
     [unsold.data],
@@ -66,6 +69,9 @@ export default function InventoryStatisticsTemplate() {
     { masterIds: unsoldMasterIds, limit: PAGE_SIZE },
     { enabled: unsoldMasterIds.length > 0 },
   );
+  // 무판매 페이지가 바뀌면 재고 금액 조회도 뒤따라 바뀐다 — 두 단계가 다 끝나야 맞는 행이다
+  const isUnsoldPaging = isPageChanging(unsold) || isPageChanging(unsoldValuation);
+
   const valuationByMaster = useMemo(
     () => new Map((unsoldValuation.data?.data ?? []).map((row) => [row.masterId, row])),
     [unsoldValuation.data],
@@ -237,51 +243,54 @@ export default function InventoryStatisticsTemplate() {
                 ))}
               </select>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">SKU 수</th>
-                    <th className="py-1.5 text-right">보유 수량</th>
-                    <th className="py-1.5 text-right">재고 금액</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(products.data?.data ?? []).map((row, index) => (
-                    <tr key={row.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
-                      <td className="py-1.5">
-                        <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
-                        {row.hasUncostedSku ? (
-                          <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] text-amber-700">
-                            원가 일부 미상
-                          </span>
-                        ) : null}
-                        {row.unattributedSkuCount > 0 ? (
-                          <span
-                            className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
-                            title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다. 위 수량·금액에 포함되지 않습니다."
-                          >
-                            귀속 불가 {formatCount(row.unattributedQuantity)}개
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(row.skuCount)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(row.onHandQuantity)}</td>
-                      <td className="py-1.5 text-right tabular-nums font-medium">{formatKrw(row.onHandValue)}</td>
+            <PagingRows isPaging={isProductsPaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">SKU 수</th>
+                      <th className="py-1.5 text-right">보유 수량</th>
+                      <th className="py-1.5 text-right">재고 금액</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(products.data?.data ?? []).map((row, index) => (
+                      <tr key={row.masterId} className="border-b last:border-0">
+                        <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
+                        <td className="py-1.5">
+                          <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                          {row.hasUncostedSku ? (
+                            <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] text-amber-700">
+                              원가 일부 미상
+                            </span>
+                          ) : null}
+                          {row.unattributedSkuCount > 0 ? (
+                            <span
+                              className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                              title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다. 위 수량·금액에 포함되지 않습니다."
+                            >
+                              귀속 불가 {formatCount(row.unattributedQuantity)}개
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.skuCount)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.onHandQuantity)}</td>
+                        <td className="py-1.5 text-right tabular-nums font-medium">{formatKrw(row.onHandValue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </PagingRows>
             <PaginationBar
               totalItems={products.data?.total}
               page={page}
               pageSize={PAGE_SIZE}
               onPageChange={setPage}
               unitLabel="개 상품"
+              isPaging={isProductsPaging}
             />
           </ChartCard>
 
@@ -291,76 +300,79 @@ export default function InventoryStatisticsTemplate() {
             isLoading={unsold.isLoading || (unsoldMasterIds.length > 0 && unsoldValuation.isLoading)}
             isEmpty={!unsold.data || unsold.data.items.length === 0}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">마지막 판매일</th>
-                    <th className="py-1.5 text-right">보유 수량</th>
-                    <th className="py-1.5 text-right">재고 금액</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(unsold.data?.items ?? []).map((row, index) => {
-                    const valuation = valuationByMaster.get(row.masterId);
-                    // 재고를 공유 SKU 로만 들고 있으면 금액을 이 상품 몫으로 나눌 수 없다.
-                    // '재고 없음' 으로 단정하면 묶인 돈을 숨기는 셈이라 따로 표기한다.
-                    const unattributedOnly =
-                      valuation != null && valuation.onHandQuantity === 0 && valuation.unattributedQuantity > 0;
-                    return (
-                      <tr key={row.masterId} className="border-b last:border-0">
-                        <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
-                        <td className="py-1.5">
-                          <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
-                          {valuation?.hasUncostedSku ? (
-                            <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] text-amber-700">
-                              원가 일부 미상
-                            </span>
-                          ) : null}
-                          {valuation && valuation.unattributedSkuCount > 0 ? (
-                            <span
-                              className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
-                              title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다."
-                            >
-                              귀속 불가 {formatCount(valuation.unattributedQuantity)}개
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">
-                          {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">
-                          {unattributedOnly ? (
-                            <span className="text-slate-600">{formatCount(valuation.unattributedQuantity)}</span>
-                          ) : valuation ? (
-                            formatCount(valuation.onHandQuantity)
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums font-medium">
-                          {unattributedOnly ? (
-                            <span className="text-slate-600">귀속 불가</span>
-                          ) : valuation ? (
-                            formatKrw(valuation.onHandValue)
-                          ) : (
-                            <span className="text-gray-400">재고 없음</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <PagingRows isPaging={isUnsoldPaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">마지막 판매일</th>
+                      <th className="py-1.5 text-right">보유 수량</th>
+                      <th className="py-1.5 text-right">재고 금액</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(unsold.data?.items ?? []).map((row, index) => {
+                      const valuation = valuationByMaster.get(row.masterId);
+                      // 재고를 공유 SKU 로만 들고 있으면 금액을 이 상품 몫으로 나눌 수 없다.
+                      // '재고 없음' 으로 단정하면 묶인 돈을 숨기는 셈이라 따로 표기한다.
+                      const unattributedOnly =
+                        valuation != null && valuation.onHandQuantity === 0 && valuation.unattributedQuantity > 0;
+                      return (
+                        <tr key={row.masterId} className="border-b last:border-0">
+                          <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
+                          <td className="py-1.5">
+                            <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                            {valuation?.hasUncostedSku ? (
+                              <span className="ml-1.5 rounded bg-amber-50 px-1 py-0.5 text-[10px] text-amber-700">
+                                원가 일부 미상
+                              </span>
+                            ) : null}
+                            {valuation && valuation.unattributedSkuCount > 0 ? (
+                              <span
+                                className="ml-1.5 rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600"
+                                title="여러 상품이 함께 쓰는 SKU 라 이 상품 몫으로 나눌 수 없는 재고입니다."
+                              >
+                                귀속 불가 {formatCount(valuation.unattributedQuantity)}개
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">
+                            {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">
+                            {unattributedOnly ? (
+                              <span className="text-slate-600">{formatCount(valuation.unattributedQuantity)}</span>
+                            ) : valuation ? (
+                              formatCount(valuation.onHandQuantity)
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums font-medium">
+                            {unattributedOnly ? (
+                              <span className="text-slate-600">귀속 불가</span>
+                            ) : valuation ? (
+                              formatKrw(valuation.onHandValue)
+                            ) : (
+                              <span className="text-gray-400">재고 없음</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </PagingRows>
             <PaginationBar
               totalItems={unsold.data?.total}
               page={unsoldPage}
               pageSize={PAGE_SIZE}
               onPageChange={setUnsoldPage}
               unitLabel="개 상품"
+              isPaging={isUnsoldPaging}
             />
           </ChartCard>
         </div>

@@ -30,6 +30,7 @@ export const TABS = [
   { href: '/statistics/insights', label: '고객 분석', question: '한 번 산 고객이 다시 사고 있나' },
   { href: '/statistics/behavior', label: '행동 분석', question: '보다가 어디서 이탈하나' },
   { href: '/statistics/reviews', label: '리뷰', question: '산 뒤에 만족했나' },
+  { href: '/statistics/settings', label: '설정', question: '월 고정비 — 흑자·적자 판정에 필요한 값' },
 ];
 
 /** 탭별로 의미 없는 필터를 숨긴다 — 검색 키워드 통계는 채널·집계 단위가 없다. */

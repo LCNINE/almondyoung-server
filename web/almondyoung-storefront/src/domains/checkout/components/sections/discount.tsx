@@ -21,6 +21,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { shouldShowCap } from "@/lib/utils/coupon-discount"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { useTranslations } from "next-intl"
 import { useCallback, useState, useTransition } from "react"
@@ -152,12 +153,20 @@ export const DiscountSection = ({
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
   const totalDiscount = membershipDiscount + couponDiscount
 
-  const formatPromoLabel = (promo: Promotion) =>
-    promo.application_method?.type === "percentage"
-      ? t("percentDiscount", { value: promo.application_method.value })
-      : t("amountDiscount", {
-          amount: formatPrice(promo.application_method?.value ?? 0),
-        })
+  const formatPromoLabel = (promo: Promotion) => {
+    const base =
+      promo.application_method?.type === "percentage"
+        ? t("percentDiscount", { value: promo.application_method.value })
+        : t("amountDiscount", {
+            amount: formatPrice(promo.application_method?.value ?? 0),
+          })
+    // 「10%」만 보이면 상한이 있는 쿠폰인지 알 수 없다 (#488 A4).
+    return shouldShowCap(promo.application_method, promo.max_discount_amount)
+      ? `${base} (${t("maxCap", {
+          amount: formatPrice(promo.max_discount_amount as number),
+        })})`
+      : base
+  }
 
   return (
     <section aria-labelledby="discount-heading" className="mb-8">
@@ -477,11 +486,20 @@ const DirectCouponInput = ({
     return td("errors.UNKNOWN")
   })()
 
-  const discountLabel = preview?.promotion?.discount
-    ? preview.promotion.discount.type === "percentage"
-      ? `${preview.promotion.discount.value}%${td("discountSuffix")}`
-      : `${formatPrice(preview.promotion.discount.value)}원${td("discountSuffix")}`
-    : null
+  const previewDiscount = preview?.promotion?.discount
+  const discountLabel = (() => {
+    if (!previewDiscount) return null
+    const base =
+      previewDiscount.type === "percentage"
+        ? `${previewDiscount.value}%${td("discountSuffix")}`
+        : `${formatPrice(previewDiscount.value)}원${td("discountSuffix")}`
+    // 직접 입력으로 코드를 넣은 고객도 상한을 여기서 알아야 한다 (#488 A4).
+    return shouldShowCap(previewDiscount, previewDiscount.max_discount_amount)
+      ? `${base} (${t("maxCap", {
+          amount: formatPrice(previewDiscount.max_discount_amount as number),
+        })})`
+      : base
+  })()
 
   return (
     <div className="flex flex-col gap-2">
