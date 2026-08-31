@@ -65,24 +65,31 @@ export default function ProductPrice({
     const membershipStillCheaper = membershipPrice > 0 && membershipPrice < price.calculated_price_number
 
     return (
-      <div className="flex flex-col gap-1">
+      <div className={`flex flex-col ${isTimeSale ? "gap-2" : "gap-1"}`}>
         <div className="flex items-center gap-1 text-[13px] text-gray-400">
           {!isTimeSale && <span className="shrink-0 font-bold">{saleDiscount}%</span>}
           <span className="min-w-0 truncate line-through">
             {price.original_price_number.toLocaleString()}원
           </span>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-1 gap-y-0.5">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5">
           <span
             className={`text-[16px] leading-none font-bold whitespace-nowrap ${
-              isTimeSale ? "text-primary" : "text-foreground"
+              isTimeSale ? "text-red-30" : "text-foreground"
             }`}
           >
             {price.calculated_price_number.toLocaleString()}원
           </span>
+          {isTimeSale && membershipStillCheaper && (
+            <ProductMembershipBadge
+              size="sm"
+              label="멤버십할인가"
+              className="shrink-0"
+            />
+          )}
         </div>
         {isTimeSale && <DiscountBadge percent={saleDiscount} />}
-        {membershipStillCheaper && (
+        {!isTimeSale && membershipStillCheaper && (
           <div className="flex flex-col gap-0.5 text-[#F2994A]">
             <ProductMembershipBadge size="sm" label="멤버십할인가" />
             <span className="text-[15px] font-bold whitespace-nowrap">
@@ -116,7 +123,7 @@ export default function ProductPrice({
         <div className="flex min-w-0 flex-col gap-x-1 gap-y-0.5 md:flex-row md:items-center">
           <span
             className={`text-[16px] leading-none font-bold whitespace-nowrap ${
-              isTimeSale ? "text-primary" : "text-black"
+              isTimeSale ? "text-red-30" : "text-black"
             }`}
           >
             {price.calculated_price_number.toLocaleString()}원

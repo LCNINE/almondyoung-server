@@ -128,7 +128,7 @@ export function PartialSoldOutDialog({ product, variants, total }: Props) {
           ) : (
             <Badge
               variant="outline"
-              className="cursor-pointer border-gray-300 font-bold text-gray-600 hover:bg-gray-100"
+              className="cursor-pointer rounded-[3px] border-gray-300 px-1 py-px text-xs leading-none font-medium text-gray-600 hover:bg-gray-100"
             >
               {t("partialSoldOutBadge")}
             </Badge>

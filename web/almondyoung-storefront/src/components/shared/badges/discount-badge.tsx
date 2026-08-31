@@ -17,7 +17,7 @@ export function DiscountBadge({
   return (
     <span
       className={cn(
-        "inline-flex w-fit shrink-0 items-center rounded-lg bg-[#ff3b20] px-2.5 py-1.5 text-[13px] leading-none font-bold text-white",
+        "bg-red-30 inline-flex w-fit shrink-0 items-center rounded-[3px] px-1 py-0.5 text-xs leading-none font-medium text-white",
         className
       )}
     >
