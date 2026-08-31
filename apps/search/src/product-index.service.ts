@@ -349,7 +349,6 @@ export class ProductIndexService implements OnModuleInit {
                 { wildcard: { name_compact: { value: `*${compact}*` } } },
                 { wildcard: { 'brand.keyword': { value: `*${escapeWildcard(keyword)}*` } } },
                 { match_phrase: { brand: keyword } },
-                { match_phrase: { seo_keywords: keyword } },
                 { match_phrase: { tags: keyword } },
               ],
               minimum_should_match: 1,
@@ -810,7 +809,7 @@ export class ProductIndexService implements OnModuleInit {
           {
             multi_match: {
               query: q,
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2', 'description'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'description'],
               operator: 'or',
               minimum_should_match: '100%',
             },
@@ -822,7 +821,7 @@ export class ProductIndexService implements OnModuleInit {
             multi_match: {
               query: q,
               type: 'cross_fields',
-              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
+              fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
               operator: 'and',
               boost: 20,
             },
@@ -839,7 +838,7 @@ export class ProductIndexService implements OnModuleInit {
 
     const multiMatch: Record<string, unknown> = {
       query: q,
-      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'seo_keywords^2', 'description'],
+      fields: ['name^6', 'brand^4', 'category_names^2', 'tags^2', 'description'],
       analyzer: 'nori_search_synonym',
       operator: 'or',
       minimum_should_match: minimumShouldMatch,
@@ -948,7 +947,7 @@ export class ProductIndexService implements OnModuleInit {
       {
         multi_match: {
           query: hangul,
-          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3', 'seo_keywords^2'],
+          fields: ['name^8', 'brand^5', 'category_names^3', 'tags^3'],
           operator: 'and',
           boost: 2,
         },

@@ -27,6 +27,7 @@ const CATALOG = [
   '일자형 네일 클리퍼 손톱깎이',
   '래쉬몬스터 하이드로겔 아이패치',
   '속눈썹 롯드 보관함 30구',
+  'TAT After 탯 에프터 허슬 버터 타투 탯 밤 30g / 100g',
 ];
 
 describe('SpellCorrectionService', () => {
@@ -49,6 +50,12 @@ describe('SpellCorrectionService', () => {
   it('조합하다 만 낱자가 섞여도 되돌린다', () => {
     expect(service.suggest('롤리ㅣㅇ')).toBe('롤리킹');
     expect(service.suggest('롤리킹ㅇ')).toBe('롤리킹');
+  });
+
+  // 상품명은 "탯 에프터"로 띄어져 있는데 고객은 "텟에프터"로 붙여 친다.
+  it('띄어 쓴 두 단어를 붙여 친 오타도 되돌린다', () => {
+    expect(service.suggest('텟에프터')).toBe('탯에프터');
+    expect(service.suggest('탯빔')).toBe('탯밤');
   });
 
   it('상품명에 그대로 있는 말은 교정하지 않는다', () => {

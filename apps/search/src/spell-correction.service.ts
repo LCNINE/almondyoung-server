@@ -177,17 +177,30 @@ export class SpellCorrectionService {
 
   /** 상품명을 교정 후보로 쓸 단어로 자른다. 규격·모델번호는 후보가 될 이유가 없다. */
   private tokenize(name: string): string[] {
-    return name
+    const words = name
       .split(/[\s/,()[\]+&]+/)
       .map((word) => word.trim().toLowerCase())
       .filter(
         (word) =>
-          word.length >= MIN_CANDIDATE_LENGTH &&
+          word.length > 0 &&
           word.length <= MAX_CANDIDATE_LENGTH &&
           // 한글이 하나라도 있어야 한다. 영문·숫자 모델번호는 자모 편집 거리로 다룰 대상이 아니다.
           /[가-힣]/.test(word) &&
           !/\d/.test(word),
       );
+
+    const candidates = words.filter((word) => word.length >= MIN_CANDIDATE_LENGTH);
+
+    // 붙여 친 검색어("텟에프터")는 상품명이 "탯 에프터"로 띄어져 있으면 어느 단어와도
+    // 가깝지 않다. 인접한 두 단어를 붙인 말도 후보로 넣어야 걸린다.
+    for (let i = 0; i + 1 < words.length; i++) {
+      const joined = words[i] + words[i + 1];
+      if (joined.length >= MIN_CANDIDATE_LENGTH && joined.length <= MAX_CANDIDATE_LENGTH) {
+        candidates.push(joined);
+      }
+    }
+
+    return candidates;
   }
 
   private message(error: unknown): string {
