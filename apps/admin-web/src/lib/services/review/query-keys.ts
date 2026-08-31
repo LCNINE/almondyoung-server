@@ -6,4 +6,5 @@ export const reviewQueryKeys = {
   list: (query: ReviewListQuery) => [...reviewQueryKeys.all, 'list', query] as const,
   review: (id: string) => [...reviewQueryKeys.all, 'review', id] as const,
   statistics: (query: ReviewStatisticsQuery) => [...reviewQueryKeys.all, 'statistics', query] as const,
+  ratingSummary: (productId: string) => [...reviewQueryKeys.all, 'rating-summary', productId] as const,
 } as const;

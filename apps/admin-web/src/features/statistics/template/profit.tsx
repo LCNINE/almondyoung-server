@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import {
   CartesianGrid,
@@ -21,7 +22,7 @@ import { PaginationBar, PagingRows } from '../components/pagination';
 import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
-import { formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
+import { formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS, productDiagnosisHref, useStatisticsRange } from '../shared';
 
 const METHOD_LABELS: Record<string, string> = {
   POINTS: '포인트',
@@ -247,6 +248,7 @@ export default function ProfitStatisticsTemplate() {
                       <th className="py-1.5 text-right">추정 원가</th>
                       <th className="py-1.5 text-right">추정 마진</th>
                       <th className="py-1.5 text-right">마진율</th>
+                      <th className="py-1.5 text-right">진단</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -274,6 +276,11 @@ export default function ProfitStatisticsTemplate() {
                           )}
                         </td>
                         <td className="py-1.5 text-right tabular-nums">{formatPercent(row.marginRate)}</td>
+                        <td className="py-1.5 text-right">
+                          <Link href={productDiagnosisHref(row.masterId, range)} className="text-orange-600 hover:underline">
+                            진단
+                          </Link>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -367,6 +367,88 @@ function rangeQs(query: StatisticsRangeQuery): string {
   return params.toString();
 }
 
+/** 상품 단건 진단(카르테) — 매출·마진 축 */
+export interface ProductDiagnosisQuery {
+  masterId: string;
+  from: string;
+  to: string;
+  channel?: string;
+}
+
+export interface ProductDiagnosisSales {
+  ordersCount: number;
+  quantitySold: number;
+  grossRevenue: number;
+  cancelledAmount: number;
+  refundedAmount: number;
+  netRevenue: number;
+  previousNetRevenue: number;
+}
+
+export interface ProductDiagnosisMargin {
+  /** null = 공급가 미입력 → 아래 세 값도 전부 null ("계산 불가") */
+  supplyPrice: number | null;
+  estimatedCost: number | null;
+  estimatedMargin: number | null;
+  /** 분모는 이 상품의 순매출. 전사 기준과 분모가 다르다. */
+  marginRate: number | null;
+}
+
+export interface ProductDiagnosis {
+  range: { from: string; to: string };
+  previousRange: { from: string; to: string };
+  masterId: string;
+  name: string | null;
+  sales: ProductDiagnosisSales;
+  margin: ProductDiagnosisMargin;
+  /** 전사 이익 요약 — marginRate 분모는 원가 입력분(computedNetRevenue)뿐이다 */
+  benchmark: ProfitTotals;
+  variants: Array<{
+    variantId: string;
+    variantName: string | null;
+    isDefault: boolean;
+    quantitySold: number;
+    grossRevenue: number;
+  }>;
+}
+
+export interface ItemBehaviorQuery {
+  from: string;
+  to: string;
+  /** GA4 item_id — Medusa product id 다 (masterId 아님) */
+  itemId: string;
+}
+
+export interface SingleItemBehavior {
+  itemId: string;
+  name: string | null;
+  viewed: number;
+  addedToCart: number;
+  purchased: number;
+  revenue: number;
+  /** 담기 ÷ 조회 */
+  cartRate: number | null;
+  /** 구매 ÷ 담기 — 행동 탭 표의 '구매율'(분모가 조회)과 다른 값이다 */
+  purchaseRate: number | null;
+}
+
+export interface ItemBehaviorTotals {
+  viewed: number;
+  addedToCart: number;
+  purchased: number;
+  cartRate: number | null;
+  purchaseRate: number | null;
+}
+
+export interface ItemBehaviorResult {
+  enabled: boolean;
+  range: { from: string; to: string };
+  itemId: string;
+  /** null = 기간 내 이 상품의 아이템 이벤트 없음 */
+  item: SingleItemBehavior | null;
+  totals: ItemBehaviorTotals | null;
+}
+
 export const analyticsApi = {
   getOverview: async (): Promise<AnalyticsOverview> => {
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/summary`);
@@ -462,6 +544,21 @@ export const analyticsApi = {
     const params = new URLSearchParams({ from: query.from, to: query.to });
     if (query.limit) params.set('limit', String(query.limit));
     const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/behavior?${params.toString()}`);
+    return res.data;
+  },
+
+  getProductDiagnosis: async (query: ProductDiagnosisQuery): Promise<ProductDiagnosis> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to });
+    if (query.channel) params.set('channel', query.channel);
+    const res = await client.get(
+      `${ANALYTICS_SERVICE_BASE_URL}/statistics/products/${encodeURIComponent(query.masterId)}/diagnosis?${params.toString()}`,
+    );
+    return res.data;
+  },
+
+  getItemBehavior: async (query: ItemBehaviorQuery): Promise<ItemBehaviorResult> => {
+    const params = new URLSearchParams({ from: query.from, to: query.to, itemId: query.itemId });
+    const res = await client.get(`${ANALYTICS_SERVICE_BASE_URL}/statistics/behavior/item?${params.toString()}`);
     return res.data;
   },
 };

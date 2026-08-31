@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { useProductStatistics, useUnsoldProducts } from '@/lib/services/analytics';
 import { PaginationBar, PagingRows } from '../components/pagination';
 import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList } from '../components/widgets';
-import { changeRate, formatCount, formatKrw, formatPercent, useStatisticsRange } from '../shared';
+import { changeRate, formatCount, formatKrw, formatPercent, productDiagnosisHref, useStatisticsRange } from '../shared';
 
 const PAGE_SIZE = 50;
 
@@ -130,6 +131,7 @@ export default function ProductStatisticsTemplate() {
                       <th className="py-1.5 text-right">총매출</th>
                       <th className="py-1.5 text-right">순매출</th>
                       <th className="py-1.5 text-right">전기간 대비</th>
+                      <th className="py-1.5 text-right">진단</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -153,6 +155,14 @@ export default function ProductStatisticsTemplate() {
                                 {rate >= 0 ? '▲' : '▼'} {formatPercent(Math.abs(rate))}
                               </span>
                             )}
+                          </td>
+                          <td className="py-1.5 text-right">
+                            <Link
+                              href={productDiagnosisHref(row.masterId, range)}
+                              className="text-orange-600 hover:underline"
+                            >
+                              진단
+                            </Link>
                           </td>
                         </tr>
                       );

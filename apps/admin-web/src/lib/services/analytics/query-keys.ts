@@ -1,5 +1,7 @@
 import {
   BehaviorStatisticsQuery,
+  ItemBehaviorQuery,
+  ProductDiagnosisQuery,
   CustomerInsightsQuery,
   ProfitStatisticsQuery,
   StatisticsRangeQuery,
@@ -19,6 +21,9 @@ export const analyticsQueryKeys = {
   traffic: (query: TrafficStatisticsQuery) => [...analyticsQueryKeys.all, 'traffic', query] as const,
   customerInsights: (query: CustomerInsightsQuery) => [...analyticsQueryKeys.all, 'customer-insights', query] as const,
   behavior: (query: BehaviorStatisticsQuery) => [...analyticsQueryKeys.all, 'behavior', query] as const,
+  productDiagnosis: (query: ProductDiagnosisQuery) =>
+    [...analyticsQueryKeys.all, 'product-diagnosis', query] as const,
+  itemBehavior: (query: ItemBehaviorQuery) => [...analyticsQueryKeys.all, 'item-behavior', query] as const,
   realtime: (limit: number) => [...analyticsQueryKeys.all, 'realtime', { limit }] as const,
   operatingCosts: () => [...analyticsQueryKeys.all, 'operating-costs'] as const,
 };

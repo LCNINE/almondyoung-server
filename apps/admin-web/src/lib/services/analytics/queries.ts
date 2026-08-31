@@ -5,6 +5,8 @@ import {
   analyticsApi,
   BehaviorStatisticsQuery,
   CustomerInsightsQuery,
+  ItemBehaviorQuery,
+  ProductDiagnosisQuery,
   ProductStatisticsQuery,
   ProfitStatisticsQuery,
   StatisticsRangeQuery,
@@ -105,5 +107,26 @@ export const useOperatingCosts = () => {
     queryKey: analyticsQueryKeys.operatingCosts(),
     queryFn: () => analyticsApi.listOperatingCosts(),
     staleTime: 60 * 1000,
+  });
+};
+
+/**
+ * 상품 단건 진단(카르테)의 매출·마진 축. masterId 가 비면 조회하지 않는다 —
+ * 라우트 파라미터가 아직 안 잡힌 첫 렌더에서 400 을 부르지 않기 위함이다.
+ */
+export const useProductDiagnosis = (query: ProductDiagnosisQuery) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.productDiagnosis(query),
+    queryFn: () => analyticsApi.getProductDiagnosis(query),
+    enabled: Boolean(query.masterId),
+  });
+};
+
+/** 상품 단건 GA4 행동. itemId(Medusa product id) 를 아직 모르면 조회하지 않는다. */
+export const useItemBehavior = (query: ItemBehaviorQuery, options?: { enabled?: boolean }) => {
+  return useQuery({
+    queryKey: analyticsQueryKeys.itemBehavior(query),
+    queryFn: () => analyticsApi.getItemBehavior(query),
+    enabled: (options?.enabled ?? true) && Boolean(query.itemId),
   });
 };

@@ -203,8 +203,8 @@ export class ProfitQuery {
     const prev = previousRange(from, to);
 
     const [totals, previousTotals, series, pageResult, fixedCost] = await Promise.all([
-      this.totals(from, to, channel),
-      this.totals(prev.from, prev.to, channel),
+      this.getTotals(from, to, channel),
+      this.getTotals(prev.from, prev.to, channel),
       this.series(from, to, channel),
       this.pagedItems(from, to, channel, sort, order, page, limit),
       this.operatingCostService.getForRange(from, to),
@@ -237,7 +237,8 @@ export class ProfitQuery {
     return sql`ROUND(${qty} * ${dimProductMasters.supplyPrice} * CASE WHEN ${gross} > 0 THEN LEAST(GREATEST(${net}::numeric / ${gross}, 0), 1) ELSE 1 END)`;
   }
 
-  private async totals(from: string, to: string, channel?: string): Promise<ProfitTotals> {
+  /** 기간 전사 이익 요약. 상품 카르테가 '전사 마진율' 비교 기준으로 같은 값을 쓴다. */
+  async getTotals(from: string, to: string, channel?: string): Promise<ProfitTotals> {
     const qty = sql`SUM(${aggProductOrderDaily.quantitySold})`;
     const gross = sql`SUM(${aggProductOrderDaily.grossRevenue})`;
     const net = sql`SUM(${aggProductOrderDaily.grossRevenue} - ${aggProductOrderDaily.cancelledAmount} - ${aggProductOrderDaily.refundedAmount})`;

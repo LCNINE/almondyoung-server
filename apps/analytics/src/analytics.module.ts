@@ -28,11 +28,15 @@ import { StatisticsQuery } from './features/statistics/read-model/statistics.que
 import { CustomerInsightsController } from './features/statistics/api/customer-insights.controller';
 import { CustomerInsightsQuery } from './features/statistics/read-model/customer-insights.query';
 import { ProfitController } from './features/statistics/api/profit.controller';
+import { ProductDiagnosisController } from './features/statistics/api/product-diagnosis.controller';
+import { ProductDiagnosisQuery } from './features/statistics/read-model/product-diagnosis.query';
 import { ProfitQuery } from './features/statistics/read-model/profit.query';
 import { OperatingCostController } from './features/statistics/api/operating-cost.controller';
 import { OperatingCostService } from './features/statistics/settings/operating-cost.service';
 import { TrafficController } from './features/traffic/api/traffic.controller';
 import { BehaviorController } from './features/traffic/api/behavior.controller';
+import { ItemBehaviorController } from './features/traffic/api/item-behavior.controller';
+import { ItemBehaviorQuery } from './features/traffic/read-model/item-behavior.query';
 import { TrafficQuery } from './features/traffic/read-model/traffic.query';
 import { RealtimeQuery } from './features/traffic/read-model/realtime.query';
 import { BehaviorQuery } from './features/traffic/read-model/behavior.query';
@@ -82,9 +86,11 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     StatisticsController,
     CustomerInsightsController,
     ProfitController,
+    ProductDiagnosisController,
     OperatingCostController,
     TrafficController,
     BehaviorController,
+    ItemBehaviorController,
     OrderEventsConsumer,
     ProductEventsConsumer,
     MembershipEventsConsumer,
@@ -106,11 +112,13 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
     StatisticsQuery,
     CustomerInsightsQuery,
     ProfitQuery,
+    ProductDiagnosisQuery,
     OperatingCostService,
     Ga4Client,
     TrafficQuery,
     RealtimeQuery,
     BehaviorQuery,
+    ItemBehaviorQuery,
   ],
 })
 export class AnalyticsModule {}

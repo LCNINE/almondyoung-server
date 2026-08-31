@@ -79,6 +79,7 @@ import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { ProductSellableQuantityConsumer } from './consumers/product-sellable-quantity.consumer';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
+import { PimMedusaMappingController } from './controllers/pim-medusa-mapping.controller';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
 import { InboxFailedRevivalService } from './adapters/medusa/inbox-failed-revival.service';
 import { FirebaseMembershipSyncService } from './adapters/medusa/firebase-membership-sync.service';
@@ -219,6 +220,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     PaymentEventsConsumer,
     OrderCollectionFailuresController,
     ChannelDispatchOperationsController,
+    PimMedusaMappingController,
   ],
   providers: [
     // 이 서비스도 공용 ALB 와일드카드로 인터넷에 노출돼 있는데 인증이 전혀 없었다.

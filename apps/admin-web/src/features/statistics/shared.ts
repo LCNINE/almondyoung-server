@@ -59,3 +59,10 @@ export function useStatisticsRange(): StatisticsRangeQuery {
     return { from, to, channel, granularity };
   }, [searchParams]);
 }
+
+/** 상품 목록 행에서 단건 진단(카르테)으로 가는 링크. 보고 있던 기간·채널을 그대로 넘긴다. */
+export function productDiagnosisHref(masterId: string, range: StatisticsRangeQuery): string {
+  const params = new URLSearchParams({ from: range.from, to: range.to });
+  if (range.channel) params.set('channel', range.channel);
+  return `/statistics/products/${encodeURIComponent(masterId)}?${params.toString()}`;
+}

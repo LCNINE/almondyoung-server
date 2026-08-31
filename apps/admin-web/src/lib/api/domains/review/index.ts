@@ -170,3 +170,26 @@ export const reviewStatisticsApi = {
     return res.data;
   },
 };
+
+/**
+ * 상품 하나의 평점 요약. 서버의 `productId` 는 **PIM masterId** 다 —
+ * 스토어프론트도 `metadata.pimMasterId` 로 이 API 를 부른다
+ * (web/almondyoung-storefront/src/app/[countryCode]/(main)/products/[handle]/page.tsx).
+ *
+ * 기간 필터가 없다: **전 기간 누적**이다. 리뷰 통계의 기간 평균과 나란히 놓을 때 화면이 그 차이를 밝혀야 한다.
+ */
+export interface ProductRatingSummary {
+  productId: string;
+  averageRating: number;
+  totalCount: number;
+  /** 평점(1~5)별 리뷰 수 */
+  ratingDistribution: Record<string, number>;
+}
+
+export const ratingSummaryApi = {
+  getByProductId: async (productId: string): Promise<ProductRatingSummary> => {
+    const params = new URLSearchParams({ productId });
+    const res = await client.get(`${UGC_SERVICE_BASE_URL}/reviews/rating-summary?${params.toString()}`);
+    return res.data;
+  },
+};

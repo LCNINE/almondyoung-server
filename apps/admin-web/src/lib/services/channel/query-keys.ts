@@ -6,4 +6,5 @@ export const channelQueryKeys = {
   failuresList: (query: Record<string, unknown>) =>
     [...channelQueryKeys.failures, 'list', query] as const,
   failure: (id: string) => [...channelQueryKeys.failures, id] as const,
+  pimMedusaMappings: (masterIds: string[]) => ['pim-medusa-mappings', masterIds] as const,
 };

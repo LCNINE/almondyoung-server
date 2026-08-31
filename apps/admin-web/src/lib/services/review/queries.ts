@@ -1,4 +1,4 @@
-import { reviewApi, reviewStatisticsApi, ReviewStatisticsQuery } from '@/lib/api/domains/review';
+import { ratingSummaryApi, reviewApi, reviewStatisticsApi, ReviewStatisticsQuery } from '@/lib/api/domains/review';
 import { ReviewListQuery } from '@/lib/types/dto/review';
 import {
   keepPreviousData,
@@ -30,5 +30,14 @@ export const useReview = (id: string) => {
     queryKey: reviewQueryKeys.review(id),
     queryFn: () => reviewApi.getReview(id),
     staleTime: 30 * 1000,
+  });
+};
+
+/** 상품 하나의 평점 요약(전 기간 누적). productId 는 PIM masterId 다. */
+export const useProductRatingSummary = (productId: string) => {
+  return useQuery({
+    queryKey: reviewQueryKeys.ratingSummary(productId),
+    queryFn: () => ratingSummaryApi.getByProductId(productId),
+    enabled: Boolean(productId),
   });
 };

@@ -2,7 +2,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { pimMedusaMappings } from '../../schema';
 import type { PimMedusaMapping, NewPimMedusaMapping, UpdatePimMedusaMapping, ChannelAdapterSchema } from '../../types';
 
@@ -32,6 +32,13 @@ export class PimMedusaMappingRepository {
       .limit(1);
 
     return mapping || null;
+  }
+
+  // pim master id 여러 개로 매핑 일괄 조회 (관리자 조회용 — 없는 id 는 결과에서 빠진다)
+  async findByPimMasterIds(pimMasterIds: string[]): Promise<PimMedusaMapping[]> {
+    if (pimMasterIds.length === 0) return [];
+
+    return this.dbService.db.select().from(pimMedusaMappings).where(inArray(pimMedusaMappings.pimMasterId, pimMasterIds));
   }
 
   // 매핑 생성

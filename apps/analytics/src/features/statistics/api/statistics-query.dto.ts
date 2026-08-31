@@ -129,3 +129,18 @@ export class UnsoldProductsQueryDto extends StatisticsRangeQueryDto {
   @Min(1)
   page?: number = 1;
 }
+
+/** 상품 단건 진단(카르테) — 기간·채널만 받는다. 집계 단위는 이 화면이 안 쓴다. */
+export class ProductDiagnosisQueryDto {
+  @ApiProperty({ example: '2026-08-01', description: '조회 시작일 (KST, 포함)' })
+  @Validate(IsCalendarDateConstraint, { message: 'from 은 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
+  from: string;
+
+  @ApiProperty({ example: '2026-08-24', description: '조회 종료일 (KST, 포함)' })
+  @Validate(IsCalendarDateConstraint, { message: 'to 는 달력에 존재하는 YYYY-MM-DD 여야 합니다' })
+  to: string;
+
+  @ApiPropertyOptional({ description: '판매 채널 필터 (생략 시 전체)' })
+  @IsOptional()
+  channel?: string;
+}
