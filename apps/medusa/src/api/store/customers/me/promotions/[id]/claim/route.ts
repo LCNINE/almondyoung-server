@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/frame
 import { PROMOTION_META_MODULE } from '../../../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../../../../admin/promotions/helpers';
+import { computeExpiresAt, issuanceWindowState } from '../../../../../../../modules/promotion-meta/validity';
 
 type LinkRecord = { customer_id: string; promotion_id: string };
 
@@ -15,12 +16,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK) as any;
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const { data: promotions } = await query.graph({
     entity: 'promotion',
-    fields: ['id', 'code', 'status', 'is_automatic', 'campaign.starts_at', 'campaign.ends_at',
+    fields: ['id', 'code', 'status', 'is_automatic',
       'rules.attribute', 'rules.operator', 'rules.values.value'],
     filters: { id: promotionId },
   });
@@ -42,19 +43,18 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const now = new Date();
-  if (promotion.campaign) {
-    const startsAt = promotion.campaign.starts_at ? new Date(promotion.campaign.starts_at) : null;
-    const endsAt = promotion.campaign.ends_at ? new Date(promotion.campaign.ends_at) : null;
-    if (startsAt && now < startsAt) {
-      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '아직 발급받을 수 없는 쿠폰입니다.');
-    }
-    if (endsAt && now > endsAt) {
-      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '기간이 만료된 쿠폰입니다.');
-    }
+  // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
+  const window = issuanceWindowState(meta, now);
+  if (window === 'not_started') {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '아직 발급받을 수 없는 쿠폰입니다.');
+  }
+  if (window === 'ended') {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 기간이 끝난 쿠폰입니다.');
   }
 
-  const linkModule = (req.scope.resolve(ContainerRegistrationKeys.LINK) as any)
-    .getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id');
+  const linkModule = link.getLinkModule(
+    Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id',
+  );
 
   const [{ data: customers }, allLinks] = await Promise.all([
     query.graph({
@@ -101,22 +101,21 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   try {
-    await (remoteLink as any).create([{
+    await link.create([{
       [Modules.CUSTOMER]: { customer_id: customerId },
       [Modules.PROMOTION]: { promotion_id: promotionId },
+      data: {
+        expires_at: computeExpiresAt(meta, now),
+        issued_via: 'customer_claim',
+        used_at: null,
+        order_id: null,
+      },
     }]);
   } catch (e: any) {
-    // unique constraint violation → 동시 요청에서 이미 발급 처리된 경우, idempotent하게 성공 반환
-    const isUniqueViolation =
-      e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
-    if (!isUniqueViolation) {
-      // Link creation failed — release the reserved slot so it doesn't block future claims
-      if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
-      throw e;
-    }
-    // Duplicate = already claimed by this customer → release the pre-reserved slot
+    // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
+    // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
     if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
-    return res.status(200).json({ success: true, promotion_id: promotionId });
+    throw e;
   }
 
   // Audit log: customer self-claim

@@ -173,11 +173,13 @@ medusaIntegrationTestRunner({
 
     it('skip reasons: automatic / not_started / expired / group_mismatch', async () => {
       const autoId = await createPromo('AUTOMATIC', { visibility: 'assigned_only' }, { is_automatic: true });
-      const futureId = await createPromo('FUTURE', { visibility: 'assigned_only' }, {
-        campaign: { name: 'f', campaign_identifier: `F_${seq}`, starts_at: '2999-01-01T00:00:00Z' },
+      const futureId = await createPromo('FUTURE', {
+        visibility: 'assigned_only',
+        starts_at: '2999-01-01T00:00:00.000Z',
       });
-      const pastId = await createPromo('PAST', { visibility: 'assigned_only' }, {
-        campaign: { name: 'p', campaign_identifier: `P_${seq}`, ends_at: '2000-01-01T00:00:00Z' },
+      const pastId = await createPromo('PAST', {
+        visibility: 'assigned_only',
+        ends_at: '2000-01-01T00:00:00.000Z',
       });
       const otherGroup = (await getContainer().resolve(Modules.CUSTOMER).createCustomerGroups([{ name: `other${seq}` }]))[0];
       const groupId = otherGroup.id;

@@ -154,5 +154,95 @@ medusaIntegrationTestRunner({
         expect(rows[0].issued_via).toEqual('admin_manual');
       });
     });
+
+    describe('T1: 발급이 인스턴스 만료를 박는다', () => {
+      it('관리자 수동 발급 — validity_days 가 발급일 + N일로 박힌다', async () => {
+        const id = await createPromo(`MANUALREL${seq}`, {
+          visibility: 'assigned_only',
+          validity_days: 30,
+        });
+        const before = Date.now();
+        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+
+        const [row] = await listLinks(id);
+        expect(row.issued_via).toEqual('admin_manual');
+        const delta = new Date(row.expires_at).getTime() - before;
+        expect(delta).toBeGreaterThan(29.9 * 24 * 3600 * 1000);
+        expect(delta).toBeLessThan(30.1 * 24 * 3600 * 1000);
+      });
+
+      it('관리자 수동 발급 — validity_days 가 없으면 정책의 ends_at 이 박힌다', async () => {
+        const id = await createPromo(`MANUALABS${seq}`, {
+          visibility: 'assigned_only',
+          ends_at: '2027-06-30T00:00:00.000Z',
+        });
+        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+
+        const [row] = await listLinks(id);
+        expect(new Date(row.expires_at).toISOString()).toEqual('2027-06-30T00:00:00.000Z');
+      });
+
+      it('둘 다 없으면 무기한(NULL)으로 박힌다', async () => {
+        const id = await createPromo(`MANUALINF${seq}`, { visibility: 'assigned_only' });
+        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+
+        const [row] = await listLinks(id);
+        expect(row.expires_at).toBeNull();
+      });
+
+      it('발급 창이 지난 쿠폰은 expired 로 skip 된다 — 캠페인이 아니라 meta 가 기준이다', async () => {
+        const id = await createPromo(`WINDOWEND${seq}`, {
+          visibility: 'assigned_only',
+          ends_at: '2000-01-01T00:00:00.000Z',
+        });
+        const res = await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [id] },
+          adminHeaders,
+        );
+        expect(res.data.skipped.find((s: any) => s.promotion_id === id)?.reason).toEqual('expired');
+        expect(await listLinks(id)).toHaveLength(0);
+      });
+
+      it('발급 창이 아직인 쿠폰은 not_started 로 skip 된다', async () => {
+        const id = await createPromo(`WINDOWSTART${seq}`, {
+          visibility: 'assigned_only',
+          starts_at: '2999-01-01T00:00:00.000Z',
+        });
+        const res = await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [id] },
+          adminHeaders,
+        );
+        expect(res.data.skipped.find((s: any) => s.promotion_id === id)?.reason).toEqual('not_started');
+      });
+    });
+
+    describe('T2: 회수 후 재발급이 옛 사용기록을 지운다', () => {
+      it('used_at·order_id 가 null 로 덮인다 (upsert 라 같은 행이 되살아나므로)', async () => {
+        const id = await createPromo(`REISSUE${seq}`, { visibility: 'assigned_only', validity_days: 7 });
+        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
+
+        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+        // 사용된 것처럼 만든다
+        await link.create([{
+          [Modules.CUSTOMER]: { customer_id: customerId },
+          [Modules.PROMOTION]: { promotion_id: id },
+          data: { used_at: new Date(), order_id: 'order_stale' },
+        }]);
+        // 회수
+        await api.delete(`/admin/customers/${customerId}/promotions`, {
+          ...adminHeaders,
+          data: { promotion_ids: [id] },
+        });
+        // 재발급
+        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+
+        const [row] = await listLinks(id);
+        expect(row.used_at).toBeNull();
+        expect(row.order_id).toBeNull();
+        expect(row.expires_at).not.toBeNull();
+      });
+    });
   },
 });

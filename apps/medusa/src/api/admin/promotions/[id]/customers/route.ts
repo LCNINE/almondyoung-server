@@ -98,7 +98,6 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   }
 
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   // 실제 연결된 고객만 — issued_count 과다 감소 방지.
@@ -109,7 +108,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   const toRemove = customer_ids.filter((id) => linkedCustomerIds.has(id));
 
   if (toRemove.length > 0) {
-    await remoteLink.dismiss(
+    await link.dismiss(
       toRemove.map((customerId) => ({
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promotionId },

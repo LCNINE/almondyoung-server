@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, MedusaError, remoteQueryObjectFromString } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules, remoteQueryObjectFromString } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 
 export const PROMOTION_FIELDS = [
@@ -152,3 +152,58 @@ export function meetsGroupRule(promotion: any, customerGroupIds: Set<string>): b
 }
 
 export { remoteQueryPromotions };
+
+/** 발급된 «한 장». 링크 행의 우리 컬럼들이다. */
+export type IssuedLinkRow = {
+  customer_id: string;
+  promotion_id: string;
+  expires_at: string | Date | null;
+  used_at: string | Date | null;
+  order_id: string | null;
+  issued_via: string | null;
+};
+
+const ISSUED_LINK_FIELDS = [
+  'customer_id',
+  'promotion_id',
+  'expires_at',
+  'used_at',
+  'order_id',
+  'issued_via',
+];
+
+function customerPromotionLinkModule(scope: any) {
+  return (scope.resolve(ContainerRegistrationKeys.LINK) as any).getLinkModule(
+    Modules.CUSTOMER,
+    'customer_id',
+    Modules.PROMOTION,
+    'promotion_id',
+  );
+}
+
+/**
+ * 이 고객이 이 쿠폰을 발급받았는가 — 받았다면 그 «한 장»의 상태를 돌려준다.
+ *
+ * 스칼라 필터 한 쌍으로 조회한다. (배열 필터는 이 링크 모듈에서 신뢰하지 않는 것이 저장소
+ * 관례라 `listIssuedLinks` 도 고객 하나로만 좁힌다. 스칼라 조회가 도는 것은
+ * `integration-tests/http/coupon-validity.spec.ts` 의 T3 마지막 케이스가 확인한다.)
+ */
+export async function findIssuedLink(
+  scope: any,
+  customerId: string,
+  promotionId: string,
+): Promise<IssuedLinkRow | null> {
+  const rows = (await customerPromotionLinkModule(scope).list(
+    { customer_id: customerId, promotion_id: promotionId },
+    { select: ISSUED_LINK_FIELDS },
+  )) as IssuedLinkRow[];
+  return rows?.[0] ?? null;
+}
+
+/** 이 고객이 가진 모든 «한 장». 목록 화면이 프로모션마다 조회하지 않도록 한 번에 가져온다. */
+export async function listIssuedLinks(scope: any, customerId: string): Promise<IssuedLinkRow[]> {
+  return (await customerPromotionLinkModule(scope).list(
+    { customer_id: customerId },
+    { select: ISSUED_LINK_FIELDS },
+  )) as IssuedLinkRow[];
+}
