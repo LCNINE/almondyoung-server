@@ -122,7 +122,8 @@
     "addingBody": "장바구니에 담는 중...",
     "addedBody": "장바구니에 상품을 담았어요",
     "processingSr": "처리 중",
-    "goToCart": "바로가기"
+    "goToCart": "바로가기",
+    "priceChanged": "가격이 바뀌어 {to}원으로 담겼습니다. (담기 전 표시 {from}원)"
   },
   "price": {
     "won": "원",

@@ -60,5 +60,18 @@
     "prev": "Previous brands",
     "next": "More brands",
     "all": "All"
+  },
+  "timeSale": {
+    "titleFirst": "Time",
+    "titleSecond": "Sale",
+    "allTab": "All",
+    "emptyTitle": "No time sale is running",
+    "pageDescription": "These prices are only for a limited time.",
+    "noSaleTitle": "No time sale is running",
+    "noSaleDescription": "The next time sale is being prepared.",
+    "nextSale": "Next time sale starts {date}",
+    "endsIn": "Ends in {remaining}",
+    "countdownLabel": "Time sale ends in",
+    "endsOn": "Until {date}"
   }
 }

@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, usePathname, useRouter } from 'next/navigation';
 import { useProductStatistics, useUnsoldProducts } from '@/lib/services/analytics';
-import { PaginationBar } from '../components/pagination';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList } from '../components/widgets';
 import { changeRate, formatCount, formatKrw, formatPercent, useStatisticsRange } from '../shared';
@@ -40,7 +41,7 @@ export default function ProductStatisticsTemplate() {
     setUnsoldPage(1);
   }, [range.from, range.to, range.channel]);
 
-  const { data, isLoading, isError } = useProductStatistics({
+  const productStats = useProductStatistics({
     ...range,
     sort,
     limit: PAGE_SIZE,
@@ -48,6 +49,7 @@ export default function ProductStatisticsTemplate() {
     page,
     variantPage,
   });
+  const { data, isLoading, isError } = productStats;
   const unsold = useUnsoldProducts({
     from: range.from,
     to: range.to,
@@ -55,6 +57,9 @@ export default function ProductStatisticsTemplate() {
     limit: PAGE_SIZE,
     page: unsoldPage,
   });
+
+  const isMainPaging = isPageChanging(productStats);
+  const isUnsoldPaging = isPageChanging(unsold);
 
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -113,53 +118,56 @@ export default function ProductStatisticsTemplate() {
                 </button>
               ))}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">판매량</th>
-                    <th className="py-1.5 text-right">주문수</th>
-                    <th className="py-1.5 text-right">총매출</th>
-                    <th className="py-1.5 text-right">순매출</th>
-                    <th className="py-1.5 text-right">전기간 대비</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.ranking ?? []).map((row, index) => {
-                    const rate = changeRate(row.netRevenue, row.previousNetRevenue);
-                    return (
-                      <tr key={row.masterId} className="border-b last:border-0">
-                        <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
-                        <td className="py-1.5">
-                          <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
-                        </td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.ordersCount)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>
-                        <td className="py-1.5 text-right tabular-nums font-medium">{formatKrw(row.netRevenue)}</td>
-                        <td className="py-1.5 text-right tabular-nums">
-                          {rate == null ? (
-                            <span className="text-gray-400">신규</span>
-                          ) : (
-                            <span className={rate >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                              {rate >= 0 ? '▲' : '▼'} {formatPercent(Math.abs(rate))}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <PagingRows isPaging={isMainPaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">판매량</th>
+                      <th className="py-1.5 text-right">주문수</th>
+                      <th className="py-1.5 text-right">총매출</th>
+                      <th className="py-1.5 text-right">순매출</th>
+                      <th className="py-1.5 text-right">전기간 대비</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(data?.ranking ?? []).map((row, index) => {
+                      const rate = changeRate(row.netRevenue, row.previousNetRevenue);
+                      return (
+                        <tr key={row.masterId} className="border-b last:border-0">
+                          <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
+                          <td className="py-1.5">
+                            <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                          </td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCount(row.ordersCount)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>
+                          <td className="py-1.5 text-right tabular-nums font-medium">{formatKrw(row.netRevenue)}</td>
+                          <td className="py-1.5 text-right tabular-nums">
+                            {rate == null ? (
+                              <span className="text-gray-400">신규</span>
+                            ) : (
+                              <span className={rate >= 0 ? 'text-emerald-600' : 'text-red-600'}>
+                                {rate >= 0 ? '▲' : '▼'} {formatPercent(Math.abs(rate))}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </PagingRows>
             <PaginationBar
               totalItems={data?.rankingTotalItems}
               page={page}
               pageSize={PAGE_SIZE}
               onPageChange={setPage}
               unitLabel="개 상품"
+              isPaging={isMainPaging}
             />
           </ChartCard>
 
@@ -169,36 +177,39 @@ export default function ProductStatisticsTemplate() {
             isLoading={unsold.isLoading}
             isEmpty={!unsold.data || unsold.data.items.length === 0}
           >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">마지막 판매일</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(unsold.data?.items ?? []).map((row, index) => (
-                    <tr key={row.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
-                      <td className="py-1.5">
-                        <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
-                      </td>
+            <PagingRows isPaging={isUnsoldPaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">마지막 판매일</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {(unsold.data?.items ?? []).map((row, index) => (
+                      <tr key={row.masterId} className="border-b last:border-0">
+                        <td className="py-1.5 text-gray-400">{(unsoldPage - 1) * PAGE_SIZE + index + 1}</td>
+                        <td className="py-1.5">
+                          <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {row.lastSoldDate ?? <span className="text-gray-400">판매 기록 없음</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </PagingRows>
             <PaginationBar
               totalItems={unsold.data?.total}
               page={unsoldPage}
               pageSize={PAGE_SIZE}
               onPageChange={setUnsoldPage}
               unitLabel="개 상품"
+              isPaging={isUnsoldPaging}
             />
           </ChartCard>
 
@@ -221,34 +232,37 @@ export default function ProductStatisticsTemplate() {
               isLoading={isLoading}
               isEmpty={!data || data.variants.length === 0}
             >
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b text-gray-500">
-                      <th className="py-1.5 text-left">옵션</th>
-                      <th className="py-1.5 text-left">상품</th>
-                      <th className="py-1.5 text-right">판매량</th>
-                      <th className="py-1.5 text-right">총매출</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(data?.variants ?? []).map((row) => (
-                      <tr key={row.variantId} className="border-b last:border-0">
-                        <td className="py-1.5">{row.variantName ?? (row.isDefault ? '기본 품목' : row.variantId)}</td>
-                        <td className="py-1.5 text-gray-500">{row.masterName ?? row.masterId}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>
+              <PagingRows isPaging={isMainPaging}>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b text-gray-500">
+                        <th className="py-1.5 text-left">옵션</th>
+                        <th className="py-1.5 text-left">상품</th>
+                        <th className="py-1.5 text-right">판매량</th>
+                        <th className="py-1.5 text-right">총매출</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(data?.variants ?? []).map((row) => (
+                        <tr key={row.variantId} className="border-b last:border-0">
+                          <td className="py-1.5">{row.variantName ?? (row.isDefault ? '기본 품목' : row.variantId)}</td>
+                          <td className="py-1.5 text-gray-500">{row.masterName ?? row.masterId}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
+                          <td className="py-1.5 text-right tabular-nums">{formatKrw(row.grossRevenue)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </PagingRows>
               <PaginationBar
                 totalItems={data?.variantTotalItems}
                 page={variantPage}
                 pageSize={PAGE_SIZE}
                 onPageChange={setVariantPage}
                 unitLabel="개 옵션"
+                isPaging={isMainPaging}
               />
             </ChartCard>
           </div>

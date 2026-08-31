@@ -22,6 +22,7 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
+import { listActiveTimeSales } from "./time-sale"
 import { recoverCustomerCart, retrieveCustomer, transferCart } from "./customer"
 import {
   cartRequiresShipping,
@@ -294,7 +295,8 @@ export async function addToCart({
   quantity: number
   countryCode: string
 }): Promise<
-  { cartId: string; error?: never } | { cartId?: never; error: string }
+  | { cartId: string; unitPrice: number | null; error?: never }
+  | { cartId?: never; unitPrice?: never; error: string }
 > {
   if (!variantId) {
     return { error: "Missing variant ID when adding to cart" }
@@ -311,7 +313,7 @@ export async function addToCart({
   }
 
   try {
-    await sdk.store.cart.createLineItem(
+    const added = await sdk.store.cart.createLineItem(
       cart.id,
       { variant_id: variantId, quantity },
       {},
@@ -323,7 +325,10 @@ export async function addToCart({
     const fulfillmentCacheTag = await getCacheTag("fulfillment")
     revalidateTag(fulfillmentCacheTag)
 
-    return { cartId: cart.id }
+    // 화면이 보여준 가격과 대조하려면 실제로 담긴 단가가 필요하다. 세일이 방금 끝났으면 다르다.
+    const line = added?.cart?.items?.find((item) => item.variant_id === variantId)
+
+    return { cartId: cart.id, unitPrice: line?.unit_price ?? null }
   } catch (err: any) {
     const status = err?.response?.status ?? err?.status ?? 0
     if (status === 401) throw err
@@ -1538,33 +1543,41 @@ export async function refreshCartPrices(): Promise<CartRefreshResult> {
 }
 
 /**
- * 이 재계산이 필요한 건 멤버십 상태가 바뀌었을 때다. 그 상태가 그대로면 다시 부를 이유가 없어
- * (카트 id, 멤버십 여부) 별로 최근에 한 번 돌렸는지 기억해 건너뛴다.
- *
- * 렌더 중에는 쿠키를 쓸 수 없어 프로세스 메모리에 둔다. 인스턴스가 바뀌면 한 번 더 돌 뿐이고,
- * 멤버십이 바뀌면 키가 달라져 즉시 다시 돈다. 관리자가 가격을 직접 고친 경우만 최대 TTL 만큼
- * 늦게 반영된다.
+ * (스코프, 멤버십, 세일 상태) 별로 TTL 동안 재계산을 건너뛴다. 세일 상태를 키에 넣어야
+ * 세일 종료가 즉시 반영된다. 렌더 중엔 쿠키를 못 써서 프로세스 메모리에 둔다.
  */
 const PRICE_REFRESH_TTL_MS = 10 * 60 * 1000
 const priceRefreshThrottle = createRefreshThrottle(PRICE_REFRESH_TTL_MS)
 
 /**
- * 렌더 중에 부를 수 있는 가격 재계산. revalidateTag 는 부르지 않는다 (렌더 도중 호출은 금지).
- *
- * 카트를 읽기 **전에** 순차로 돌리는 용도다. 예전처럼 클라이언트에서 재계산을 걸고
- * router.refresh 로 다시 그리면, 그 재계산과 다음 렌더의 배송수단 정합이 같은 카트를 동시에
- * 고쳐 경합이 났다. 다만 이 호출이 카트 조회 앞을 막고 서기 때문에, 매 렌더마다 돌리면
- * 그대로 TTFB 가 된다. 필요할 때만 돌린다.
+ * 렌더 중 호출용 가격 재계산. 카트를 읽기 전에 돌리고, revalidateTag 는 부르지 않는다
+ * (렌더 도중 호출 금지). 카트 조회 앞을 막고 서므로 스로틀에 걸릴 때만 실제로 돈다.
  */
 export async function refreshCartPricesDuringRender(): Promise<CartRefreshResult> {
   const headers = await getAuthHeaders()
   if (!headers) return EMPTY_REFRESH_RESULT
 
+  // 쿠키가 어긋나도 페이지가 고객 id 로 카트를 복구한다. 재계산도 고객 기준이라 멈추지 않고,
+  // 스로틀 키만 고객 id 로 대신한다.
   const cartId = await getCartId()
-  if (!cartId) return EMPTY_REFRESH_RESULT
+  const customer = cartId ? null : await retrieveCustomer().catch(() => null)
+  const throttleScope = cartId ?? (customer?.id ? `customer:${customer.id}` : null)
+  if (!throttleScope) return EMPTY_REFRESH_RESULT
 
   const isMember = await getIsMembershipCustomer()
-  if (!priceRefreshThrottle.take(`${cartId}:${isMember ? "mem" : "reg"}`)) {
+  // 세일이 하나 끝나면 이 값이 달라져 스로틀이 열린다.
+  const sales = await listActiveTimeSales()
+  const saleEpoch =
+    sales
+      .map((sale) => sale.endsAt ?? "")
+      .sort()
+      .join(",") || "none"
+
+  if (
+    !priceRefreshThrottle.take(
+      `${throttleScope}:${isMember ? "mem" : "reg"}:${saleEpoch}`
+    )
+  ) {
     return EMPTY_REFRESH_RESULT
   }
 

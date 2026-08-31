@@ -10,6 +10,7 @@ import { Lock, Star } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
+import { useIsTimeSalePrice } from "@/components/providers/time-sale-provider"
 import Thumbnail from "../thumbnail"
 import { Quantity } from "./quantity"
 import { calculateStockStatus } from "./quantity/stock-status"
@@ -116,6 +117,7 @@ export default function ProductCard({
   const { cheapestPrice, cheapestVariant } = getProductPrice({
     product,
   })
+  const isTimeSale = useIsTimeSalePrice(cheapestVariant)
   const tCard = useTranslations("productCard")
   const isDigital = isDigitalProduct(product)
 
@@ -207,17 +209,19 @@ export default function ProductCard({
           />
         </div>
 
-        <div className="mt-4 min-h-20">
-          <h3 className="text-foreground line-clamp-2 text-[14px] leading-tight">
+        <div className={`mt-4 min-h-20 ${isTimeSale ? "flex flex-col gap-2" : ""}`}>
+          <h3 className="text-foreground line-clamp-1 text-[14px] leading-tight">
             {getIsOverseas(product) && <OverseasBadge />}
             {product.title}
           </h3>
-          <ProductCardRating
-            rating={ratingSummary.averageRating}
-            reviewCount={ratingSummary.totalCount}
-          />
+          {!isTimeSale && (
+            <ProductCardRating
+              rating={ratingSummary.averageRating}
+              reviewCount={ratingSummary.totalCount}
+            />
+          )}
 
-          <div className="flex flex-col gap-3">
+          <div className={`flex flex-col ${isTimeSale ? "gap-2" : "gap-3"}`}>
             {cheapestPrice && (
               <ProductPrice
                 price={cheapestPrice}
@@ -226,10 +230,18 @@ export default function ProductCard({
                 }
                 isMembership={isMembership}
                 isMembershipOnly={isMembershipOnly}
+                isTimeSale={isTimeSale}
               />
             )}
 
             {!isSoldOut && <Quantity product={product} />}
+
+            {isTimeSale && (
+              <ProductCardRating
+                rating={ratingSummary.averageRating}
+                reviewCount={ratingSummary.totalCount}
+              />
+            )}
           </div>
         </div>
       </div>

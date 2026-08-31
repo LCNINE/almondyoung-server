@@ -506,6 +506,7 @@ export const mainMenus: MainMenu[] = [
           { id: 'popups', title: '팝업', path: '/mall/popups' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
+          { id: 'time-sale', title: '타임세일', path: '/mall/marketing/time-sale' },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'shop-listings', title: '샵매매', path: '/mall/shop-listings' },
           { id: 'deposit', title: '예치금' },

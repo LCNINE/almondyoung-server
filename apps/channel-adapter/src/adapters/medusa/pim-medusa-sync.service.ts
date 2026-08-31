@@ -664,12 +664,18 @@ export class PimMedusaSyncService {
     }
 
     // 3. Tiered Price Lists 동기화
+    // 수량 할인 리스트를 멤버십 리스트와 rules_count 동률로 맞춘다 — 빼면 조용히 최저가가 아닌 값이
+    // 나간다. 근거는 getAllVisitorsPriceListRule 주석.
+    const allVisitorsRule =
+      tieredPricesMap.size > 0 ? await this.medusaClient.getAllVisitorsPriceListRule() : undefined;
+
     for (const [minQty, prices] of tieredPricesMap.entries()) {
       const listId = await this.medusaClient.ensurePriceList({
         name: `Tiered Prices - Min ${minQty}`,
         description: `Bulk discount for quantity ${minQty}+`,
         type: 'sale',
         status: 'active',
+        rules: allVisitorsRule,
       });
       // Replace, not append (same rationale as the membership list above).
       if (!opts.skipRemove) {

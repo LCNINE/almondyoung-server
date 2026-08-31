@@ -17,6 +17,8 @@ import { useProfitStatistics } from '@/lib/services/analytics';
 import { useFeeRates, useFeeSummary, useMembershipRevenue } from '@/lib/services/wallet/queries';
 import { useCreateFeeRate, useDeleteFeeRate } from '@/lib/services/wallet/mutations';
 import type { FeeSummaryDto, MembershipRevenueDto, WalletPaymentMethodType } from '@/lib/types/dto/wallet';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
 import { formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -73,7 +75,7 @@ export default function ProfitStatisticsTemplate() {
     setPage(1);
   }, [range.from, range.to, range.channel]);
 
-  const { data, isLoading, isError } = useProfitStatistics({
+  const profit = useProfitStatistics({
     from: range.from,
     to: range.to,
     channel: range.channel,
@@ -82,6 +84,8 @@ export default function ProfitStatisticsTemplate() {
     page,
     limit: PAGE_SIZE,
   });
+  const { data, isLoading, isError } = profit;
+  const isProductsPaging = isPageChanging(profit);
 
   const setParam = (key: string, value: string) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -92,7 +96,6 @@ export default function ProfitStatisticsTemplate() {
 
   const totals = data?.totals;
   const prev = data?.previousTotals;
-  const totalPages = data ? Math.max(1, Math.ceil(data.totalItems / PAGE_SIZE)) : 1;
 
   // 수수료·멤버십 수입은 wallet 원장 기준 전사 값이다 — 채널 필터와 무관.
   const feeQuery = useFeeSummary(range.from, range.to);
@@ -231,73 +234,60 @@ export default function ProfitStatisticsTemplate() {
                 </button>
               ))}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b text-gray-500">
-                    <th className="py-1.5 text-left">#</th>
-                    <th className="py-1.5 text-left">상품</th>
-                    <th className="py-1.5 text-right">판매량</th>
-                    <th className="py-1.5 text-right">순매출</th>
-                    <th className="py-1.5 text-right">공급가</th>
-                    <th className="py-1.5 text-right">추정 원가</th>
-                    <th className="py-1.5 text-right">추정 마진</th>
-                    <th className="py-1.5 text-right">마진율</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data?.items ?? []).map((row, index) => (
-                    <tr key={row.masterId} className="border-b last:border-0">
-                      <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
-                      <td className="py-1.5">
-                        <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
-                      <td className="py-1.5 text-right tabular-nums">{formatKrw(row.netRevenue)}</td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {row.supplyPrice == null ? <span className="text-gray-400">미입력</span> : formatKrw(row.supplyPrice)}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">
-                        {row.estimatedCost == null ? <span className="text-gray-400">-</span> : formatKrw(row.estimatedCost)}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums font-medium">
-                        {row.estimatedMargin == null ? (
-                          <span className="font-normal text-gray-400">계산 불가</span>
-                        ) : (
-                          <span className={row.estimatedMargin >= 0 ? undefined : 'text-red-600'}>
-                            {formatKrw(row.estimatedMargin)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-1.5 text-right tabular-nums">{formatPercent(row.marginRate)}</td>
+            <PagingRows isPaging={isProductsPaging}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b text-gray-500">
+                      <th className="py-1.5 text-left">#</th>
+                      <th className="py-1.5 text-left">상품</th>
+                      <th className="py-1.5 text-right">판매량</th>
+                      <th className="py-1.5 text-right">순매출</th>
+                      <th className="py-1.5 text-right">공급가</th>
+                      <th className="py-1.5 text-right">추정 원가</th>
+                      <th className="py-1.5 text-right">추정 마진</th>
+                      <th className="py-1.5 text-right">마진율</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
-              <span>
-                전체 {formatCount(data?.totalItems)}개 상품 · {page}/{totalPages} 페이지
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  className="rounded border border-gray-200 px-2.5 py-1 disabled:opacity-40"
-                >
-                  이전
-                </button>
-                <button
-                  type="button"
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                  className="rounded border border-gray-200 px-2.5 py-1 disabled:opacity-40"
-                >
-                  다음
-                </button>
+                  </thead>
+                  <tbody>
+                    {(data?.items ?? []).map((row, index) => (
+                      <tr key={row.masterId} className="border-b last:border-0">
+                        <td className="py-1.5 text-gray-400">{(page - 1) * PAGE_SIZE + index + 1}</td>
+                        <td className="py-1.5">
+                          <span className="font-medium text-gray-900">{row.name ?? row.masterId}</span>
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{formatCount(row.quantitySold)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{formatKrw(row.netRevenue)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {row.supplyPrice == null ? <span className="text-gray-400">미입력</span> : formatKrw(row.supplyPrice)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {row.estimatedCost == null ? <span className="text-gray-400">-</span> : formatKrw(row.estimatedCost)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums font-medium">
+                          {row.estimatedMargin == null ? (
+                            <span className="font-normal text-gray-400">계산 불가</span>
+                          ) : (
+                            <span className={row.estimatedMargin >= 0 ? undefined : 'text-red-600'}>
+                              {formatKrw(row.estimatedMargin)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{formatPercent(row.marginRate)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            </div>
+            </PagingRows>
+            <PaginationBar
+              totalItems={data?.totalItems}
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
+              unitLabel="개 상품"
+              isPaging={isProductsPaging}
+            />
           </ChartCard>
         </div>
       )}

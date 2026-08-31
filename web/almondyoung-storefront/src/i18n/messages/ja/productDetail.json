@@ -122,7 +122,8 @@
     "addingBody": "カートに追加中...",
     "addedBody": "商品をカートに追加しました",
     "processingSr": "処理中",
-    "goToCart": "カートへ"
+    "goToCart": "カートへ",
+    "priceChanged": "価格が変わり {to}円 で追加されました。(表示は {from}円)"
   },
   "price": {
     "won": "ウォン",

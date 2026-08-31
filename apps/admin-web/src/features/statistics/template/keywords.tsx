@@ -40,7 +40,8 @@ import { buildKeywordTrendChart } from '@/features/keyword-ops/forecast-chart';
 import { estimateMissedDemand } from '@/features/keyword-ops/missed-demand';
 import { useBehaviorStatistics, useSalesStatistics } from '@/lib/services/analytics';
 import { STATUS_LABELS, formatTimes } from '@/features/keyword-ops/labels';
-import { PaginationBar } from '../components/pagination';
+import { PaginationBar, PagingRows } from '../components/pagination';
+import { isPageChanging } from '../paging-state';
 import { StatisticsShell } from '../components/shell';
 import { ChartCard, KpiTile } from '../components/widgets';
 import { changeRate, formatCount, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
@@ -92,6 +93,8 @@ export default function KeywordStatisticsTemplate() {
   });
   const detail = useKeywordDetail({ keyword: selectedKeyword, from: range.from, to: range.to }, Boolean(selectedKeyword));
   const assigneeOptions = useAssigneeOptions();
+
+  const isZeroPageChanging = isPageChanging(zeroHit);
 
   const topRows = (data?.top ?? []).slice((topPage - 1) * TOP_PAGE_SIZE, topPage * TOP_PAGE_SIZE);
   const summary = zeroHit.data?.summary;
@@ -165,23 +168,26 @@ export default function KeywordStatisticsTemplate() {
                   <StatusFilterChips value={statusFilter} onChange={setStatusFilter} summary={summary} />
                   <AssigneeLoad summary={summary} />
                 </div>
-                <ZeroHitTable
-                  rows={zeroHit.data?.items ?? []}
-                  startNumber={(zeroPage - 1) * ZERO_PAGE_SIZE + 1}
-                  assigneeOptions={assigneeOptions}
-                  onSelectKeyword={lookupKeyword}
-                  emptyText={
-                    statusFilter
-                      ? '이 상태에 해당하는 검색어가 없습니다'
-                      : '조회 기간에 결과를 못 준 검색이 없습니다'
-                  }
-                />
+                <PagingRows isPaging={isZeroPageChanging}>
+                  <ZeroHitTable
+                    rows={zeroHit.data?.items ?? []}
+                    startNumber={(zeroPage - 1) * ZERO_PAGE_SIZE + 1}
+                    assigneeOptions={assigneeOptions}
+                    onSelectKeyword={lookupKeyword}
+                    emptyText={
+                      statusFilter
+                        ? '이 상태에 해당하는 검색어가 없습니다'
+                        : '조회 기간에 결과를 못 준 검색이 없습니다'
+                    }
+                  />
+                </PagingRows>
                 <PaginationBar
                   totalItems={zeroHit.data?.totalItems}
                   page={zeroPage}
                   pageSize={ZERO_PAGE_SIZE}
                   onPageChange={setZeroPage}
                   unitLabel="개 검색어"
+                  isPaging={isZeroPageChanging}
                 />
               </div>
             )}

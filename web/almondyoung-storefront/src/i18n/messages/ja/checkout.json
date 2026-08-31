@@ -196,7 +196,8 @@
     "optionLine": "{value} | {quantity}点",
     "shippingFee": "送料 {amount}ウォン",
     "shippingFeeLine": "{name} {amount}ウォン",
-    "amountWon": "{amount}ウォン"
+    "amountWon": "{amount}ウォン",
+    "timeSaleBadge": "タイムセール"
   },
   "discount": {
     "title": "割引・付加決済",

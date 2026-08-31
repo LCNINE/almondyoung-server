@@ -2195,35 +2195,40 @@ describe('SalesOrdersService.confirm() state guard', () => {
 });
 
 describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)', () => {
-  // getStats 의 6개 쿼리 체인을 (from 테이블, innerJoin 테이블, groupBy 여부)로 판별해
-  // 캔드 결과를 돌려주는 목. drizzle 연산자(and/or/eq/inArray/isNotNull)는 실제 실행돼도
-  // AST 만 만들고 DB 를 건드리지 않으므로 목이 인자를 무시하면 된다.
+  // getStats 의 쿼리 체인을 (from 테이블, innerJoin 테이블, groupBy 여부)로 판별해 캔드 결과를
+  // 돌려주는 목. drizzle 연산자(and/or/eq/inArray/isNotNull)는 실제 실행돼도 AST 만 만들고
+  // DB 를 건드리지 않으므로 목이 인자를 무시하면 된다.
+  // 숫자는 DB 가 세서 한 행으로 내려주므로 캔드도 `[{ cnt }]` 모양이다 —
+  // 실제 SQL 이 그 숫자를 맞게 세는지는 sales-orders-stats.integration.spec.ts 가 실 DB 로 본다.
   function makeStatsService(canned: {
     today: number;
     statusCounts: Array<{ status: string; cnt: number }>;
-    waitingMatch: unknown[];
-    cannotShip: unknown[];
-    directShip: unknown[];
-    outboundComplete: unknown[];
+    waitingMatch: number;
+    cannotShip: number;
+    partialOutbound: number;
+    directShip: number;
+    outboundComplete: number;
   }): SalesOrdersService {
+    const blockedSubquery = Symbol('blocked');
+
     function builder() {
       const state: { from?: unknown; joins: unknown[]; grouped: boolean } = { joins: [], grouped: false };
       const resolveRows = (): unknown[] => {
         const { from, joins } = state;
+        if (from === blockedSubquery) {
+          return [{ cannotShip: canned.cannotShip, partialOutbound: canned.partialOutbound }];
+        }
         if (from === wmsTables.salesOrders && joins.length === 0) {
           return state.grouped ? canned.statusCounts : [{ cnt: canned.today }];
         }
         if (from === wmsTables.salesOrders && joins.includes(wmsTables.fulfillmentOrders)) {
-          return canned.outboundComplete;
-        }
-        if (from === wmsTables.salesOrders && joins.includes(wmsTables.salesOrderLines)) {
-          return canned.cannotShip;
+          return [{ cnt: canned.outboundComplete }];
         }
         if (from === wmsTables.fulfillmentOrders && joins.includes(wmsTables.salesOrders)) {
-          return canned.directShip;
+          return [{ cnt: canned.directShip }];
         }
         if (from === wmsTables.fulfillmentOrderCreationBacklogs && joins.includes(wmsTables.salesOrders)) {
-          return canned.waitingMatch;
+          return [{ cnt: canned.waitingMatch }];
         }
         return [];
       };
@@ -2241,6 +2246,9 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
           state.grouped = true;
           return b;
         },
+        having: () => b,
+        // 출고 불가/부분 출고는 주문 단위로 접은 서브쿼리에서 한 번에 센다
+        as: () => blockedSubquery,
         then: (onF: any, onR: any) => Promise.resolve(resolveRows()).then(onF, onR),
       };
       return b;
@@ -2268,10 +2276,11 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
         { status: 'delivered', cnt: 3 },
         { status: 'processing', cnt: 1 },
       ],
-      waitingMatch: [],
-      cannotShip: [], // 비우면 partialOutbound 2차 쿼리 스킵
-      directShip: [],
-      outboundComplete: [{ id: 'so-a' }, { id: 'so-b' }], // FO 출고 증거 있는 confirmed SO 2건
+      waitingMatch: 0,
+      cannotShip: 0,
+      partialOutbound: 0,
+      directShip: 0,
+      outboundComplete: 2, // FO 출고 증거 있는 confirmed SO 2건
     });
 
     const stats = await service.getStats();

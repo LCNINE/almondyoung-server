@@ -1086,104 +1086,118 @@ export class SalesOrdersService {
     // KST 달력일 기준 오늘/최근 14일 경계 (서버 TZ 무관)
     const { start: today, end: todayEnd, backStart: fourteenDaysAgo } = kstTodayRange(13);
 
-    const [todayResult] = await db
-      .select({ cnt: count() })
-      .from(wmsTables.salesOrders)
-      .where(and(gte(wmsTables.salesOrders.orderDate, today), lte(wmsTables.salesOrders.orderDate, todayEnd)));
+    // 칩 하나에 숫자 하나씩이라 행을 실어 오지 않고 DB 에서 세서 받는다. 서로 의존하지 않는
+    // 질문들이라 순차로 기다릴 이유도 없다 — 관리자 메인과 통계 종합 탭이 같이 부르는 경로다.
+    const [todayResult, statusCounts, [waitingMatchRow], [shipBlockRow], [directShipRow], [outboundCompleteRow]] =
+      await Promise.all([
+        db
+          .select({ cnt: count() })
+          .from(wmsTables.salesOrders)
+          .where(and(gte(wmsTables.salesOrders.orderDate, today), lte(wmsTables.salesOrders.orderDate, todayEnd)))
+          .then((rows) => rows[0]),
 
-    const statusCounts = await db
-      .select({ status: wmsTables.salesOrders.status, cnt: count() })
-      .from(wmsTables.salesOrders)
-      .where(gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo))
-      .groupBy(wmsTables.salesOrders.status);
+        db
+          .select({ status: wmsTables.salesOrders.status, cnt: count() })
+          .from(wmsTables.salesOrders)
+          .where(gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo))
+          .groupBy(wmsTables.salesOrders.status),
+
+        db
+          .select({
+            cnt: sql<number>`count(distinct ${wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId})::int`,
+          })
+          .from(wmsTables.fulfillmentOrderCreationBacklogs)
+          .innerJoin(
+            wmsTables.salesOrders,
+            eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId),
+          )
+          .where(
+            and(
+              gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+              eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
+            ),
+          ),
+
+        // 출고 불가와 그중 일부 출고는 같은 주문 집합을 두 번 묻는 질문이라 한 번에 센다.
+        // 옛 구현은 출고 불가 주문 id 를 전부 받아 두 번째 쿼리에 inArray 로 되물었다.
+        this.shipBlockCounts(fourteenDaysAgo),
+
+        db
+          .select({ cnt: count() })
+          .from(wmsTables.fulfillmentOrders)
+          .innerJoin(
+            wmsTables.salesOrders,
+            and(
+              eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId),
+              gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+            ),
+          )
+          .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship')),
+
+        // 출고완료: confirmed SO 중 FO 가 출고 증거를 가진 건수. SO.status 는 processing/shipped/
+        // delivered 로 전이하지 않으므로(작업 15, ADR-0017) FO(status + shippedAt)에서 도출한다.
+        // 표시 레이어의 `hasShippedEvidence`(store-sales-orders)와 동일한 출고 증거 정의.
+        // distinct so.id — 미래 SO:다중 FO 이중계산 방지
+        db
+          .select({ cnt: sql<number>`count(distinct ${wmsTables.salesOrders.id})::int` })
+          .from(wmsTables.salesOrders)
+          .innerJoin(
+            wmsTables.fulfillmentOrders,
+            eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id),
+          )
+          .where(
+            and(
+              gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+              eq(wmsTables.salesOrders.status, 'confirmed'),
+              or(
+                inArray(wmsTables.fulfillmentOrders.status, ['shipped', 'completed']),
+                isNotNull(wmsTables.fulfillmentOrders.shippedAt),
+              ),
+            ),
+          ),
+      ]);
 
     const byStatus = (s: string) => Number(statusCounts.find((r) => r.status === s)?.cnt ?? 0);
 
-    const waitingMatchRows = await db
-      .select({ id: wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId })
-      .from(wmsTables.fulfillmentOrderCreationBacklogs)
-      .innerJoin(
-        wmsTables.salesOrders,
-        eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId),
-      )
-      .where(
-        and(
-          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-          eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
-        ),
-      )
-      .groupBy(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId);
+    return {
+      todayCount: Number(todayResult.cnt),
+      outboundRequested: byStatus('confirmed'),
+      directShip: Number(directShipRow?.cnt ?? 0),
+      cannotShip: Number(shipBlockRow?.cannotShip ?? 0),
+      partialOutbound: Number(shipBlockRow?.partialOutbound ?? 0),
+      waitingMatching: Number(waitingMatchRow?.cnt ?? 0),
+      outboundComplete: Number(outboundCompleteRow?.cnt ?? 0),
+    };
+  }
 
-    const cannotShipRows = await db
-      .select({ id: wmsTables.salesOrders.id })
+  /**
+   * 최근 14일 confirmed 주문 중 출고 불가(재고 없는 라인 보유) 건수와,
+   * 그중 일부는 이미 차감돼 부분 출고인 건수. 주문 단위로 한 번 접어 두 숫자를 같이 센다.
+   */
+  private async shipBlockCounts(fourteenDaysAgo: Date) {
+    const blocked = this.db.db
+      .select({
+        id: wmsTables.salesOrders.id,
+        hasDeducted: sql<boolean>`bool_or(${wmsTables.salesOrderLines.status} = 'stock_deducted')`.as('has_deducted'),
+      })
       .from(wmsTables.salesOrders)
       .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
       .where(
         and(
           gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
           eq(wmsTables.salesOrders.status, 'confirmed'),
-          eq(wmsTables.salesOrderLines.status, 'stock_unavailable'),
         ),
       )
-      .groupBy(wmsTables.salesOrders.id);
+      .groupBy(wmsTables.salesOrders.id)
+      .having(sql`bool_or(${wmsTables.salesOrderLines.status} = 'stock_unavailable')`)
+      .as('blocked');
 
-    let partialOutboundCount = 0;
-    if (cannotShipRows.length > 0) {
-      const cannotShipOrderIds = cannotShipRows.map((r) => r.id);
-      const deductedRows = await db
-        .select({ id: wmsTables.salesOrders.id })
-        .from(wmsTables.salesOrders)
-        .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
-        .where(
-          and(
-            inArray(wmsTables.salesOrders.id, cannotShipOrderIds),
-            eq(wmsTables.salesOrderLines.status, 'stock_deducted'),
-          ),
-        )
-        .groupBy(wmsTables.salesOrders.id);
-      partialOutboundCount = deductedRows.length;
-    }
-
-    const directShipRows = await db
-      .select({ id: wmsTables.fulfillmentOrders.id })
-      .from(wmsTables.fulfillmentOrders)
-      .innerJoin(
-        wmsTables.salesOrders,
-        and(
-          eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId),
-          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-        ),
-      )
-      .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'));
-
-    // 출고완료: confirmed SO 중 FO 가 출고 증거를 가진 건수. SO.status 는 processing/shipped/
-    // delivered 로 전이하지 않으므로(작업 15, ADR-0017) FO(status + shippedAt)에서 도출한다.
-    // 표시 레이어의 `hasShippedEvidence`(store-sales-orders)와 동일한 출고 증거 정의.
-    const outboundCompleteRows = await db
-      .select({ id: wmsTables.salesOrders.id })
-      .from(wmsTables.salesOrders)
-      .innerJoin(wmsTables.fulfillmentOrders, eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id))
-      .where(
-        and(
-          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-          eq(wmsTables.salesOrders.status, 'confirmed'),
-          or(
-            inArray(wmsTables.fulfillmentOrders.status, ['shipped', 'completed']),
-            isNotNull(wmsTables.fulfillmentOrders.shippedAt),
-          ),
-        ),
-      )
-      .groupBy(wmsTables.salesOrders.id); // DISTINCT so.id — 미래 SO:다중 FO 이중계산 방지
-
-    return {
-      todayCount: Number(todayResult.cnt),
-      outboundRequested: byStatus('confirmed'),
-      directShip: directShipRows.length,
-      cannotShip: cannotShipRows.length,
-      partialOutbound: partialOutboundCount,
-      waitingMatching: waitingMatchRows.length,
-      outboundComplete: outboundCompleteRows.length,
-    };
+    return this.db.db
+      .select({
+        cannotShip: sql<number>`count(*)::int`,
+        partialOutbound: sql<number>`count(*) filter (where ${blocked.hasDeducted})::int`,
+      })
+      .from(blocked);
   }
 
   async createFromEvent(payload: OrderCreatedPayload, tx?: DbTx) {

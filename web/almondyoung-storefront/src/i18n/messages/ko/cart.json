@@ -43,7 +43,8 @@
     "outOfStockHint": "품절된 상품이에요. 결제하려면 빼주세요.",
     "overStockBadge": "재고 부족",
     "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요.",
-    "quantityAdjustedToMax": "재고가 {max}개라 {max}개로 맞췄어요."
+    "quantityAdjustedToMax": "재고가 {max}개라 {max}개로 맞췄어요.",
+    "timeSaleBadge": "타임세일"
   },
   "summary": {
     "title": "주문 예상 금액",
@@ -81,5 +82,7 @@
     "refresh": "새로고침",
     "inquiry": "문의"
   },
-  "won": "원"
+  "won": "원",
+  "timeSaleEndedOne": "타임세일이 종료되어 {name} 가격이 {from} → {to} 으로 변경되었습니다.",
+  "timeSaleEndedMany": "타임세일이 종료되어 {name} 외 {count}건의 가격이 변경되었습니다. 상품 금액 {from} → {to}"
 }

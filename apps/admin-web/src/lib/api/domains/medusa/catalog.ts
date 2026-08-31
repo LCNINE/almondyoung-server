@@ -7,6 +7,8 @@ export interface MedusaProductItem {
   id: string;
   title: string;
   thumbnail?: string | null;
+  /** 타임세일 선택 화면이 "이 상품이 이미 세일 중인가" 를 variant id 로 판별한다. */
+  variants?: Array<{ id: string }>;
 }
 
 export interface MedusaCategoryItem {
@@ -20,9 +22,17 @@ export interface MedusaCollectionItem {
 }
 
 export const medusaCatalogApi = {
-  searchProducts: async (q?: string) => {
-    const p = new URLSearchParams({ limit: '20' });
+  searchProducts: async (
+    q?: string,
+    options: { limit?: number; offset?: number; categoryId?: string } = {}
+  ) => {
+    const p = new URLSearchParams({
+      limit: String(options.limit ?? 20),
+      offset: String(options.offset ?? 0),
+      fields: 'id,title,thumbnail,variants.id',
+    });
     if (q) p.append('q', q);
+    if (options.categoryId) p.append('category_id[]', options.categoryId);
     const res = await client.get<{ products: MedusaProductItem[]; count: number }>(
       `${MEDUSA_BASE_URL}/admin/products?${p}`
     );

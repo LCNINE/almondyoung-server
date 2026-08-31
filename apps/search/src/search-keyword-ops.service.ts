@@ -12,7 +12,12 @@ import {
 } from './dto/admin-keyword-ops.dto';
 import { KeywordIssueRepository } from './keyword-issue.repository';
 import { ProductIndexService } from './product-index.service';
-import { SEARCH_KEYWORD_REPOSITORY, SearchKeywordRepository } from './search-keyword.repository';
+import {
+  KeywordActivity,
+  SEARCH_KEYWORD_REPOSITORY,
+  SearchKeywordRepository,
+  ZeroHitKeywordAggRow,
+} from './search-keyword.repository';
 import {
   addDays,
   kstDayStartIso,
@@ -27,6 +32,16 @@ import { qwertyToHangul } from './utils/text.utils';
 const ZERO_HIT_AGG_LIMIT = 5000;
 /** 경보 요약의 "N일 이상 방치" 임계 */
 const NEGLECT_ALERT_DAYS = 7;
+
+/**
+ * OpenSearch 집계 재사용 창. 목록은 요약을 기간 전체에서 내야 해서 페이지와 무관하게 전량을
+ * 집계한다 — 그래서 관리자 메인·통계 종합 탭·키워드 탭이 같은 기간을 각자, 그리고 페이지를
+ * 넘길 때마다 다시 집계했다. 같은 기간의 집계는 잠시 재사용한다.
+ * 운영 상태(담당자·메모·처리 상태)는 여기 담기지 않는다 — 캐시하면 저장한 값이 화면에
+ * 안 나타난다. 매 요청 Postgres 에서 다시 읽는다.
+ */
+const ZERO_HIT_CACHE_TTL_MS = 60 * 1000;
+const ZERO_HIT_CACHE_MAX_ENTRIES = 20;
 
 /** ISO instant → KST 달력 날짜 */
 function kstDateOf(iso: string): string {
@@ -82,6 +97,11 @@ function toIssueDto(row: SearchKeywordIssue): KeywordIssueDto {
  */
 @Injectable()
 export class SearchKeywordOpsService {
+  private readonly zeroHitCache = new Map<
+    string,
+    { at: number; rows: ZeroHitKeywordAggRow[]; activity: Map<string, KeywordActivity> }
+  >();
+
   constructor(
     @Inject(SEARCH_KEYWORD_REPOSITORY)
     private readonly repository: SearchKeywordRepository,
@@ -99,11 +119,9 @@ export class SearchKeywordOpsService {
     const fromIso = kstDayStartIso(from);
     const toExclusiveIso = kstDayStartIso(addDays(to, 1));
 
-    const rows = await this.repository.getZeroHitKeywords({ fromIso, toExclusiveIso, size: ZERO_HIT_AGG_LIMIT });
-    const activity = await this.repository.getKeywordActivity({
-      keywordNorms: rows.map((row) => row.keywordNorm),
-    });
+    const { rows, activity } = await this.loadZeroHitAggregation(fromIso, toExclusiveIso);
 
+    // 방치 일수는 "오늘"에 상대적이라 캐시에 담지 않고 매번 다시 센다 — 자정을 넘기면 값이 바뀐다.
     const today = todayKst();
     const enriched = rows.map((row) => {
       const act = activity.get(row.keywordNorm);
@@ -191,6 +209,30 @@ export class SearchKeywordOpsService {
     });
 
     return { range: { from, to }, page, limit, totalItems: filtered.length, summary, items };
+  }
+
+  /** 기간별 0건 집계 — 같은 기간이면 잠시 재사용한다. 상한을 넘기면 가장 오래된 것부터 버린다. */
+  private async loadZeroHitAggregation(
+    fromIso: string,
+    toExclusiveIso: string,
+  ): Promise<{ rows: ZeroHitKeywordAggRow[]; activity: Map<string, KeywordActivity> }> {
+    const key = `${fromIso}|${toExclusiveIso}`;
+    const cached = this.zeroHitCache.get(key);
+    if (cached && Date.now() - cached.at < ZERO_HIT_CACHE_TTL_MS) {
+      return { rows: cached.rows, activity: cached.activity };
+    }
+
+    const rows = await this.repository.getZeroHitKeywords({ fromIso, toExclusiveIso, size: ZERO_HIT_AGG_LIMIT });
+    const activity = await this.repository.getKeywordActivity({
+      keywordNorms: rows.map((row) => row.keywordNorm),
+    });
+
+    if (this.zeroHitCache.size >= ZERO_HIT_CACHE_MAX_ENTRIES) {
+      const oldest = this.zeroHitCache.keys().next().value;
+      if (oldest !== undefined) this.zeroHitCache.delete(oldest);
+    }
+    this.zeroHitCache.set(key, { at: Date.now(), rows, activity });
+    return { rows, activity };
   }
 
   async getKeywordDetail(rawKeyword: string, from: string, to: string): Promise<AdminKeywordDetailResponseDto> {

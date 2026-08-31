@@ -19,6 +19,8 @@ interface CartAddedModalProps {
   onOpenChange: (open: boolean) => void
   product: HttpTypes.StoreProduct
   isPending?: boolean
+  /** 화면이 보여준 가격과 실제로 담긴 가격이 다를 때만 준다. */
+  priceChange?: { from: number; to: number } | null
 }
 
 export default function CartAddedModal({
@@ -26,6 +28,7 @@ export default function CartAddedModal({
   onOpenChange,
   product,
   isPending = false,
+  priceChange = null,
 }: CartAddedModalProps) {
   const t = useTranslations("productDetail.cartModal")
   const thumbnail = product.thumbnail || product.images?.[0]?.url
@@ -77,6 +80,15 @@ export default function CartAddedModal({
             </LocalizedClientLink>
           )}
         </div>
+
+        {!isPending && priceChange && (
+          <p className="text-red-30 text-[13px] font-bold">
+            {t("priceChanged", {
+              from: priceChange.from.toLocaleString(),
+              to: priceChange.to.toLocaleString(),
+            })}
+          </p>
+        )}
       </DialogContent>
     </Dialog>
   )

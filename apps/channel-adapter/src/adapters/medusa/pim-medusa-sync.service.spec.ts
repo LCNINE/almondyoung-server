@@ -232,10 +232,11 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
   function createService() {
     const calls: string[] = [];
     const medusaClient = {
-      ensurePriceList: jest.fn(async (payload: { name: string }) => {
+      ensurePriceList: jest.fn(async (payload: { name: string; rules?: Record<string, string[]> }) => {
         if (payload.name === 'Membership Prices') return 'plist_membership';
         return `plist_${payload.name.replace(/\s+/g, '_')}`;
       }),
+      getAllVisitorsPriceListRule: jest.fn(async () => ({ region_id: ['reg_kr'] })),
       removeProductFromPriceList: jest.fn(async () => {
         calls.push('remove');
       }),
@@ -293,6 +294,43 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
       { amount: 9000, currency_code: 'krw', variant_id: 'variant_m1', min_quantity: 5 },
     ]);
     expect(calls).toEqual(['remove', 'add']);
+  });
+
+  // Medusa 는 `rules_count 내림 → amount 오름` 으로 가격을 고른다. 룰이 0 개인 수량 할인 리스트는
+  // 아무리 싸도 룰 1 개인 멤버십 리스트에 지므로, 둘을 동률(각 1개)로 맞춰야 최저가가 나간다.
+  it('수량 할인 리스트에 region 룰을 붙여 멤버십 리스트와 rules_count 를 맞춘다', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = {
+      variants: [
+        {
+          id: 'pim-var-1',
+          membershipPrice: 8000,
+          tieredPrices: [{ minQuantity: 5, price: 7000 }],
+        },
+      ],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants);
+
+    const payloads = medusaClient.ensurePriceList.mock.calls.map(([p]: [any]) => p);
+    const membership = payloads.find((p: any) => p.name === 'Membership Prices');
+    const tiered = payloads.find((p: any) => p.name === 'Tiered Prices - Min 5');
+
+    expect(Object.keys(membership.rules)).toHaveLength(1);
+    expect(membership.rules).toEqual({ 'customer.groups.id': ['cusgroup_membership'] });
+    expect(Object.keys(tiered.rules)).toHaveLength(1);
+    expect(tiered.rules).toEqual({ region_id: ['reg_kr'] });
+  });
+
+  it('수량 할인이 없으면 리전을 조회하지 않는다', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [] }] };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants);
+
+    expect(medusaClient.getAllVisitorsPriceListRule).not.toHaveBeenCalled();
   });
 
   it('신규 생성 상품이면 remove 를 건너뛰고 add 만 한다', async () => {

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { DbService } from '@app/db';
 import { charges, invoices, paymentFeeRates, paymentMethods, PaymentMethodType, refunds, WalletSchema } from '../schema';
 
@@ -168,6 +169,18 @@ export function buildDailyPaymentSeries(
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * KST 달력일 [from, to] 을 시각 구간으로 옮긴 조건. 컬럼을 함수로 감싸면(`(created_at AT TIME
+ * ZONE …)::date`) 인덱스를 못 타 매 조회가 전수 스캔이 된다 — 귀속 정의는 그대로 두고
+ * 경계만 시각으로 계산해 컬럼을 맨몸으로 비교한다. `to` 는 그날 끝까지 포함한다.
+ */
+function kstDayRange(column: AnyPgColumn, from: string, to: string) {
+  return and(
+    gte(column, sql`(${from}::date)::timestamp at time zone 'Asia/Seoul'`),
+    lt(column, sql`(${to}::date + 1)::timestamp at time zone 'Asia/Seoul'`),
+  );
+}
+
 function assertRange(from: string, to: string): void {
   if (!DATE_ONLY.test(from) || !DATE_ONLY.test(to)) {
     throw new BadRequestException('from/to 는 YYYY-MM-DD 형식이어야 합니다');
@@ -262,7 +275,7 @@ export class StatisticsAdminService {
           and(
             eq(charges.operation, 'CAPTURE'),
             eq(charges.status, 'SUCCEEDED'),
-            sql`(${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+            kstDayRange(charges.createdAt, from, to),
           ),
         )
         .groupBy(paymentMethods.type, sql`(${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date`),
@@ -310,7 +323,7 @@ export class StatisticsAdminService {
       .where(
         and(
           eq(refunds.status, 'SUCCEEDED'),
-          sql`(${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+          kstDayRange(refunds.createdAt, from, to),
         ),
       )
       .groupBy(paymentMethods.type);
@@ -335,7 +348,7 @@ export class StatisticsAdminService {
           and(
             eq(charges.operation, 'CAPTURE'),
             eq(charges.status, 'SUCCEEDED'),
-            sql`(${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+            kstDayRange(charges.createdAt, from, to),
           ),
         )
         .groupBy(sql`1`),
@@ -345,7 +358,7 @@ export class StatisticsAdminService {
         .where(
           and(
             eq(refunds.status, 'SUCCEEDED'),
-            sql`(${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+            kstDayRange(refunds.createdAt, from, to),
           ),
         )
         .groupBy(sql`1`),
@@ -373,7 +386,7 @@ export class StatisticsAdminService {
         and(
           eq(invoices.subscriberType, 'MEMBERSHIP'),
           eq(invoices.status, 'PAID'),
-          sql`(${invoices.finalizedAt} AT TIME ZONE 'Asia/Seoul')::date BETWEEN ${from}::date AND ${to}::date`,
+          kstDayRange(invoices.finalizedAt, from, to),
         ),
       )
       .groupBy(sql`1`)

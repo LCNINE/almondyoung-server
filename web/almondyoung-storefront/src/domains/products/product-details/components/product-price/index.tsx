@@ -20,7 +20,6 @@ export default function ProductPrice({
   })
 
   const selectedPrice = variant ? variantPrice : cheapestPrice
-
   if (!selectedPrice) {
     return <div className="block h-9 w-32 animate-pulse bg-gray-100" />
   }
@@ -50,7 +49,9 @@ export default function ProductPrice({
           {subtotal.toLocaleString()}
           {t("won")}
         </span>
+
       </div>
+
     </div>
   )
 }
