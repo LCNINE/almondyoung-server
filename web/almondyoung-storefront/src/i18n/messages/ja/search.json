@@ -35,7 +35,16 @@
     "relatedTitle": "関連キーワード"
   },
   "sort": {
-    "relevance": "関連度順",
+    "relevance": "アモンドヨンランキング順",
+    "rankingInfoLabel": "アモンドヨンランキング順について",
+    "rankingInfoIntro": "アモンドヨンランキング順は、販売実績・検索精度・お客様の評価などを総合的に考慮したものです。",
+    "rankingInfoSales": "販売実績",
+    "rankingInfoSalesDesc": "商品の累計購入数量",
+    "rankingInfoAccuracy": "検索精度",
+    "rankingInfoAccuracyDesc": "検索キーワードと商品名・ブランド・カテゴリーとの関連度",
+    "rankingInfoReviews": "お客様の評価",
+    "rankingInfoReviewsDesc": "レビューの評価と件数",
+    "rankingInfoFootnote": "このほか、お客様の利便性と満足度の向上のため、追加の要素が随時反映される場合があります。",
     "review": "レビュー順",
     "priceAsc": "価格の安い順",
     "priceDesc": "価格の高い順",

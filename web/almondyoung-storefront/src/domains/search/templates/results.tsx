@@ -91,7 +91,33 @@ export function SearchResults({
   }
 
   const sortTabOptions: ProductSortTabOption[] = [
-    { value: "relevance", label: tSort("relevance") },
+    {
+      value: "relevance",
+      label: tSort("relevance"),
+      hintLabel: tSort("rankingInfoLabel"),
+      hint: (
+        <div className="flex flex-col">
+          <p>{tSort("rankingInfoIntro")}</p>
+          <ul className="mt-3 ml-4 list-disc space-y-1.5">
+            <li>
+              <span className="font-bold">{tSort("rankingInfoSales")}</span>:{" "}
+              {tSort("rankingInfoSalesDesc")}
+            </li>
+            <li>
+              <span className="font-bold">{tSort("rankingInfoAccuracy")}</span>:{" "}
+              {tSort("rankingInfoAccuracyDesc")}
+            </li>
+            <li>
+              <span className="font-bold">{tSort("rankingInfoReviews")}</span>:{" "}
+              {tSort("rankingInfoReviewsDesc")}
+            </li>
+          </ul>
+          <p className="border-border mt-3 border-t pt-3">
+            {tSort("rankingInfoFootnote")}
+          </p>
+        </div>
+      ),
+    },
     { value: "review", label: tSort("review") },
     { value: "price_asc", label: tSort("priceAsc") },
     { value: "price_desc", label: tSort("priceDesc") },

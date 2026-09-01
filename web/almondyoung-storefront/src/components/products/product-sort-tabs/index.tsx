@@ -1,10 +1,20 @@
 "use client"
 
+import { Info } from "lucide-react"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
 
 export interface ProductSortTabOption<T extends string = string> {
   value: T
   label: string
+  /** 있으면 라벨 옆에 ⓘ 가 붙고 눌렀을 때 이 설명이 뜬다 */
+  hint?: React.ReactNode
+  /** ⓘ 버튼의 스크린리더 이름. hint 를 줄 때 같이 준다 */
+  hintLabel?: string
 }
 
 interface ProductSortTabsProps<T extends string = string> {
@@ -49,6 +59,27 @@ export function ProductSortTabs<T extends string = string>({
           >
             {option.label}
           </button>
+          {option.hint && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={option.hintLabel}
+                  className="text-muted-foreground hover:text-foreground ml-1 cursor-pointer"
+                >
+                  <Info className="size-3.5" aria-hidden />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                sideOffset={10}
+                collisionPadding={16}
+                className="text-foreground w-[calc(100vw-2rem)] max-w-[360px] rounded-xl p-3.5 text-[13px] leading-relaxed break-keep shadow-lg sm:p-4"
+              >
+                {option.hint}
+              </PopoverContent>
+            </Popover>
+          )}
         </div>
       ))}
     </div>
