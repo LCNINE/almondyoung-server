@@ -12,7 +12,6 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
-import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -26,7 +25,6 @@ import { movementClient } from '../../api/domains/inventory/movement.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
-  TransferJobQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
   SupplierFiltersDto,
@@ -404,30 +402,6 @@ export const useLocationRacks = (
     queryFn: () => locationsClient.racks.list(warehouseId, { columnName, isActive }),
     enabled: !!warehouseId,
     staleTime: 2 * 60 * 1000,
-  });
-};
-
-// 재고 이동 관련 쿼리
-export const useTransferJobs = (query: TransferJobQuery = {}) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.transferJobs(query),
-    queryFn: () => transfersClient.listTransferJobs(query),
-  });
-};
-
-export const useTransferJob = (id: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.transferJob(id),
-    queryFn: () => transfersClient.getTransferJob(id),
-    enabled: !!id,
-  });
-};
-
-export const useTransferJobStatus = (id: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.transferJobStatus(id),
-    queryFn: () => transfersClient.getTransferJobStatus(id),
-    enabled: !!id,
   });
 };
 
