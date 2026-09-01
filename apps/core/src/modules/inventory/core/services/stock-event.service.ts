@@ -8,7 +8,6 @@ import { SkuCreationSource } from '../../sku-catalog/dto/create-sku.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
-import { LocationService } from './location.service';
 
 @Injectable()
 export class StockEventService {
@@ -19,7 +18,6 @@ export class StockEventService {
     private readonly eventStore: StockEventStore,
     private readonly commandService: InventoryCommandService,
     private readonly unifiedReservation: UnifiedReservationService,
-    private readonly locationService: LocationService,
   ) {}
 
   /**
@@ -94,78 +92,6 @@ export class StockEventService {
       await this.unifiedReservation.releaseReservation(reservationId, executor);
 
       this.logger.log(`Successfully released reservation: ${reservationId}`);
-    }, tx);
-  }
-
-  /**
-   * 창고 간 재고 이동
-   *
-   * 프로세스:
-   * 1. 출발 창고에서 transferShip (ON_HAND → IN_TRANSFER)
-   * 2. 도착 창고에서 transferReceive (IN_TRANSFER → ON_HAND)
-   */
-  async transferBetweenWarehouses(
-    skuId: string,
-    fromWarehouseId: string,
-    fromLocationId: string,
-    toWarehouseId: string,
-    toLocationId: string,
-    quantity: number,
-    reason?: string,
-    tx?: DbTx,
-  ) {
-    this.logger.log(
-      `Transferring ${quantity} units of SKU ${skuId} from ${fromWarehouseId}/${fromLocationId} to ${toWarehouseId}/${toLocationId}`,
-    );
-
-    return this.dbService.run(async (executor) => {
-      if (quantity <= 0) {
-        throw new BadRequestException('Quantity must be positive');
-      }
-
-      // 1. 출발지에서 재고 차감 및 IN_TRANSFER 상태로 전환
-      const shipEvent = await this.commandService.transferShip(
-        {
-          skuId,
-          fromWarehouseId,
-          fromLocationId,
-          quantity,
-          reason: reason || `Transfer to warehouse ${toWarehouseId}`,
-        },
-        executor,
-      );
-
-      this.logger.log(`Transfer ship event created: ${shipEvent.eventId}`);
-
-      // transferShip 이 IN_TRANSFER 를 출발 선반이 아니라 운송중존에 쌓는다
-      // (apps/core/.../inventory-command.service.ts transferShip 참고). transferShip
-      // 이 이미 ensureSystemLocations 를 불렀으므로 존은 존재가 보장돼 있다.
-      const transitZone = await this.locationService.getSystemLocationByRole(
-        fromWarehouseId,
-        'transit_out',
-        executor,
-      );
-
-      // 2. 도착지에서 재고 입고 및 ON_HAND 상태로 전환
-      const receiveEvent = await this.commandService.transferReceive(
-        {
-          skuId,
-          fromWarehouseId,
-          fromLocationId: transitZone.id,
-          toWarehouseId,
-          toLocationId,
-          quantity,
-          reason: reason || `Transfer from warehouse ${fromWarehouseId}`,
-        },
-        executor,
-      );
-
-      this.logger.log(`Transfer receive event created: ${receiveEvent.eventId}`);
-
-      return {
-        shipEventId: shipEvent.eventId,
-        receiveEventId: receiveEvent.eventId,
-      };
     }, tx);
   }
 
