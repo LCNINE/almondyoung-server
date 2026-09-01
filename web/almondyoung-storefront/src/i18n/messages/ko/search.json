@@ -35,7 +35,16 @@
     "relatedTitle": "연관검색어"
   },
   "sort": {
-    "relevance": "관련도순",
+    "relevance": "아몬드영 랭킹순",
+    "rankingInfoLabel": "아몬드영 랭킹순 설명",
+    "rankingInfoIntro": "아몬드영 랭킹순은 판매 실적, 검색 정확도, 고객 평가 등을 종합적으로 고려한 것입니다.",
+    "rankingInfoSales": "판매 실적",
+    "rankingInfoSalesDesc": "상품의 누적 구매 수량",
+    "rankingInfoAccuracy": "검색 정확도",
+    "rankingInfoAccuracyDesc": "검색어와 상품명·브랜드·카테고리의 연관도",
+    "rankingInfoReviews": "고객 평가",
+    "rankingInfoReviewsDesc": "리뷰 평점과 리뷰 수",
+    "rankingInfoFootnote": "이 밖에 아몬드영 랭킹순은 고객의 편의 및 만족도 향상을 위한 추가적인 요소가 수시로 반영될 수 있습니다.",
     "review": "리뷰순",
     "priceAsc": "낮은가격순",
     "priceDesc": "높은가격순",
