@@ -13,7 +13,7 @@ export interface ProductSortTabOption<T extends string = string> {
   label: string
   /** 있으면 라벨 옆에 ⓘ 가 붙고 눌렀을 때 이 설명이 뜬다 */
   hint?: React.ReactNode
-  /** ⓘ 버튼의 스크린리더 이름. hint 를 줄 때 같이 준다 */
+  /** ⓘ 버튼의 스크린리더 이름. 없으면 탭 라벨을 쓴다 */
   hintLabel?: string
 }
 
@@ -64,7 +64,7 @@ export function ProductSortTabs<T extends string = string>({
               <PopoverTrigger asChild>
                 <button
                   type="button"
-                  aria-label={option.hintLabel}
+                  aria-label={option.hintLabel ?? option.label}
                   className="text-muted-foreground hover:text-foreground ml-1 cursor-pointer"
                 >
                   <Info className="size-3.5" aria-hidden />

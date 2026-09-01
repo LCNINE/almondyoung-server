@@ -111,10 +111,14 @@ export async function fetchSearchResults(
   }
 
   const searchData = searchApiResult.data
+  // 고정은 1페이지에서만 계산한다 — 2페이지 이후엔 그 페이지의 1위 점수가 낮아
+  // 관련도 하한이 헐거워져, 1페이지에 고정한 적도 없는 상품을 걷어내게 된다.
+  const pinnedIds =
+    query.page === 1 ? await resolveOwnBrandPin(query, searchData) : []
+
   const masterIds = pinOwnBrand(
     searchData.items.map((item) => item.productId),
-    await resolveOwnBrandPin(query, searchData),
-    query.page
+    pinnedIds
   )
 
   let items: HttpTypes.StoreProduct[] = []

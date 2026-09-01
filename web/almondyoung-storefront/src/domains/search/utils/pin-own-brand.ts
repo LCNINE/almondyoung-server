@@ -22,19 +22,21 @@ export const PIN_LIMIT = 2
 
 /**
  * 자사 상품이 이미 1위면 그대로 두고, 아니면 2위부터 끌어올린다.
- * 관련도 정렬 1페이지에서만 자리를 옮기고, 그 밖의 페이지에선 중복 노출만 걷어낸다.
+ *
+ * 호출 측이 1페이지에서만 pinnedIds 를 채운다 (search-results.ts). 페이지마다
+ * 따로 계산하면 2페이지의 1위 점수가 낮아 관련도 하한을 쉽게 통과해버려서,
+ * 1페이지에 고정한 적도 없는 상품을 2페이지에서 걷어내 «원래 있어야 할 결과»를
+ * 지워버린다.
+ *
+ * ponytail: 고정한 상품이 자기 원래 순위(예: 3페이지)에도 한 번 더 나올 수 있다.
+ * 없애려면 페이지마다 1페이지 기준을 다시 계산해야 하는데 — 매 페이지 검색 호출이
+ * 한 번씩 늘고, 잘못 계산하면 상품이 아예 사라진다. 중복 노출이 유실보다 낫다.
  */
-export function pinOwnBrand(
-  masterIds: string[],
-  pinnedIds: string[],
-  page: number
-): string[] {
+export function pinOwnBrand(masterIds: string[], pinnedIds: string[]): string[] {
   if (pinnedIds.length === 0) return masterIds
   if (pinnedIds.includes(masterIds[0])) return masterIds
 
   const rest = masterIds.filter((id) => !pinnedIds.includes(id))
-  if (page !== 1) return rest
-
   rest.splice(PIN_AT, 0, ...pinnedIds)
   return rest
 }

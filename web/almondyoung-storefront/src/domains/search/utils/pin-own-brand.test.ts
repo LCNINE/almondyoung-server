@@ -4,11 +4,11 @@ import { findOwnBrandAlias } from "../data/own-brand-aliases"
 
 describe("pinOwnBrand", () => {
   it("자사 상품이 1위면 그대로 둔다", () => {
-    expect(pinOwnBrand(["own", "a", "b"], ["own"], 1)).toEqual(["own", "a", "b"])
+    expect(pinOwnBrand(["own", "a", "b"], ["own"])).toEqual(["own", "a", "b"])
   })
 
   it("1위가 고정 후보 중 하나면 순서를 건드리지 않는다", () => {
-    expect(pinOwnBrand(["own2", "a", "b"], ["own1", "own2"], 1)).toEqual([
+    expect(pinOwnBrand(["own2", "a", "b"], ["own1", "own2"])).toEqual([
       "own2",
       "a",
       "b",
@@ -16,7 +16,7 @@ describe("pinOwnBrand", () => {
   })
 
   it("결과 안에 있으면 2위로 끌어올린다", () => {
-    expect(pinOwnBrand(["a", "b", "own", "c"], ["own"], 1)).toEqual([
+    expect(pinOwnBrand(["a", "b", "own", "c"], ["own"])).toEqual([
       "a",
       "own",
       "b",
@@ -25,7 +25,7 @@ describe("pinOwnBrand", () => {
   })
 
   it("두 개면 2위·3위에 나란히 끼운다", () => {
-    expect(pinOwnBrand(["a", "b", "c"], ["own1", "own2"], 1)).toEqual([
+    expect(pinOwnBrand(["a", "b", "c"], ["own1", "own2"])).toEqual([
       "a",
       "own1",
       "own2",
@@ -35,17 +35,19 @@ describe("pinOwnBrand", () => {
   })
 
   it("결과가 1건뿐이어도 뒤에 붙는다", () => {
-    expect(pinOwnBrand(["a"], ["own"], 1)).toEqual(["a", "own"])
+    expect(pinOwnBrand(["a"], ["own"])).toEqual(["a", "own"])
   })
 
-  it("2페이지 이후에는 1페이지에 고정된 상품을 중복 노출하지 않는다", () => {
-    expect(pinOwnBrand(["a", "own1", "b", "own2"], ["own1", "own2"], 2)).toEqual(
-      ["a", "b"]
+  // 고정 대상이 결과 안에 이미 있으면 그 자리를 비우고 옮긴다 — 같은 상품이
+  // 한 페이지에 두 번 나오면 안 된다.
+  it("이미 목록에 있는 상품을 고정해도 중복되지 않는다", () => {
+    expect(pinOwnBrand(["a", "b", "own1", "c", "own2"], ["own1", "own2"])).toEqual(
+      ["a", "own1", "own2", "b", "c"]
     )
   })
 
   it("고정 대상이 없으면 순서를 건드리지 않는다", () => {
-    expect(pinOwnBrand(["a", "b"], [], 1)).toEqual(["a", "b"])
+    expect(pinOwnBrand(["a", "b"], [])).toEqual(["a", "b"])
   })
 })
 
