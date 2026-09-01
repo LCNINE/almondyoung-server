@@ -480,12 +480,49 @@ Expected: `movement` 와 `inventory/warehouse-transfers` 둘만 나온다.
 > `movement_jobs` 자체가 **0행**임을 보였다 — 생성조차 0건이다. 깨질 화면에 쓴 사람이 없었다.
 ```
 
-- [ ] **Step 4: 커밋**
+- [ ] **Step 4: 스코프 배정표의 섹션 헤더 개수 주석 교정**
+
+> 이 스텝은 Task 1 리뷰에서 나온 Minor 지적을 여기로 합류시킨 것이다 (컨트롤러 Ruling 2).
+
+`apps/core/src/platform/auth/inventory-scope-coverage.spec.ts` 의 두 섹션 헤더가 실제 항목 수와 어긋난다. 어떤 단언도 이 숫자를 검사하지 않으므로 게이트가 못 잡는다 — 그래서 틀린 채로 조용히 오도한다.
+
+- 28행 `// ── inventory.operate (69) ──` → 실제 **67**. (변경 전에도 어긋나 있었다: 실제 71 / 선언 69.)
+- 156행 `// ── inventory.adjust (17) ──` → 실제 **15**. (변경 전에는 정확했다: 실제 17 / 선언 17. Task 1 의 2줄 삭제가 깨뜨렸다.)
+
+두 숫자를 실제값으로 고친다. 대시 장식(`──────`)의 길이는 원래 형태를 유지한다.
+
+고친 뒤 실제 항목 수를 직접 세어 검증한다:
+
+```bash
+grep -n "── inventory\." apps/core/src/platform/auth/inventory-scope-coverage.spec.ts
+```
+
+그 출력이 알려주는 각 섹션의 시작·끝 줄 사이에서 라우트 항목을 센다 (헤더 다음 줄부터 다음 헤더 직전까지):
+
+```bash
+sed -n '<operate시작+1>,<manage시작-1>p' apps/core/src/platform/auth/inventory-scope-coverage.spec.ts | grep -cE "^ +'(GET|POST|PATCH|PUT|DELETE) "
+sed -n '<adjust시작+1>,<warehouse시작-1>p' apps/core/src/platform/auth/inventory-scope-coverage.spec.ts | grep -cE "^ +'(GET|POST|PATCH|PUT|DELETE) "
+```
+
+Expected: 각각 `67`, `15` — 그리고 그 값이 방금 적은 주석의 숫자와 같아야 한다.
+
+- [ ] **Step 5: 스코프 스펙이 여전히 초록인지 확인**
+
+```bash
+npx jest --maxWorkers=2 --testPathPattern="inventory-scope-coverage"
+```
+
+Expected: PASS (5개 테스트). 주석만 고쳤으므로 당연히 초록이어야 하고, 빨개지면 주석이 아닌 것을 건드린 것이다.
+
+- [ ] **Step 6: 커밋**
 
 ```bash
 git add -A
 git commit -m "$(cat <<'MSG'
-docs(inventory): #629 Task 10 연기 해소 기록
+docs(inventory): #629 Task 10 연기 해소 기록 + 스코프 배정표 개수 주석 교정
+
+operate 69→67 (선행 부채), adjust 17→15 (경로 A 철거가 깨뜨린 것).
+어떤 단언도 이 숫자에 의존하지 않아 게이트가 못 잡는 자리다.
 
 Claude-Session: https://claude.ai/code/session_01KtY3kxWhGgcZUNfSRjCHfh
 MSG
