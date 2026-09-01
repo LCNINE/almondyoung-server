@@ -90,6 +90,11 @@ export const getAccessToken = async () => {
   return cookies.get("accessToken")?.value
 }
 
+export const getRefreshToken = async () => {
+  const cookies = await nextCookies()
+  return cookies.get("refreshToken")?.value
+}
+
 export const getCacheTag = async (tag: string): Promise<string> => {
   try {
     const cookies = await nextCookies()
