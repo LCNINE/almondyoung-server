@@ -299,11 +299,30 @@ git rm apps/admin-web/src/hooks/table/columns/use-transfer-jobs-table-columns.ts
 
 - [ ] **Step 4: 끊긴 참조가 없는지 확인**
 
+두 개를 따로 본다. (a) 가 이 태스크의 게이트고, (b) 는 다음 태스크의 대상 목록 확인이다.
+
+**(a) 삭제한 UI 를 아직 import 하는 곳 — 0건이어야 한다:**
+
 ```bash
-grep -rn "features/inventory/transfers\|use-transfer-jobs-table-columns\|inventory/transfers" apps/admin-web/src | grep -v node_modules
+grep -rn "features/inventory/transfers\|use-transfer-jobs-table-columns" apps/admin-web/src | grep -v node_modules
 ```
 
-Expected: 출력 없음. (`transfers.client.ts` 안의 URL 문자열은 Task 4 에서 파일째 사라진다 — 이 단계에서 나오면 그건 남겨둔다.)
+Expected: 출력 없음. 한 줄이라도 나오면 삭제가 덜 된 것이다.
+
+**(b) `inventory/transfers` 문자열의 잔존 위치 — 데이터 계층에만 남아야 한다:**
+
+```bash
+grep -rln "inventory/transfers" apps/admin-web/src | grep -v node_modules | sort
+```
+
+Expected: 정확히 아래 넷. **이 단계에서 지우지 않는다 — Task 4 의 대상이다.** 이 목록 밖의 파일이 나오면 멈추고 보고한다.
+
+```
+apps/admin-web/src/lib/api/domains/inventory/transfers.client.ts
+apps/admin-web/src/lib/services/inventory/mutations.ts
+apps/admin-web/src/lib/services/inventory/queries.ts
+apps/admin-web/src/lib/services/inventory/query-keys.ts
+```
 
 - [ ] **Step 5: 타입 게이트**
 
