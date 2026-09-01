@@ -12,6 +12,7 @@ import {
   PRODUCTS_INDEX_SETTINGS,
   REVIEW_FIELDS_MAPPINGS,
   ReviewStatsUpdateFields,
+  SALES_FIELDS_MAPPINGS,
   SearchProductDocument,
   SEO_FIELDS_MAPPINGS,
 } from './types/product-document.type';
@@ -79,6 +80,7 @@ export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
   private readonly keywordResultPoolLimit = 5000;
   private readonly reviewScoreWeight: number;
+  private readonly salesScoreWeight: number;
   private readonly reviewSortVolumeWeight: number;
   private readonly reviewSortCountSaturation: number;
   private initPromise: Promise<void> | null = null;
@@ -91,6 +93,7 @@ export class ProductIndexService implements OnModuleInit {
     private readonly spellCorrectionService: SpellCorrectionService,
   ) {
     this.reviewScoreWeight = this.parsePositiveNumber(configService.get<string>('REVIEW_SCORE_WEIGHT'), 0.1);
+    this.salesScoreWeight = this.parsePositiveNumber(configService.get<string>('SALES_SCORE_WEIGHT'), 0.1);
     this.reviewSortVolumeWeight = this.parsePositiveNumber(
       configService.get<string>('REVIEW_SORT_VOLUME_WEIGHT') ?? configService.get<string>('REVIEW_SORT_COUNT_WEIGHT'),
       1.0,
@@ -190,6 +193,39 @@ export class ProductIndexService implements OnModuleInit {
       }
       throw error;
     }
+  }
+
+  /**
+   * Medusa 가 밀어 넣는 누적 판매 수량을 반영한다. 색인에 없는 상품은 조용히 건너뛴다
+   * (판매는 있는데 아직 색인 안 된 상품 — 재색인이 오면 채워진다).
+   *
+   * @returns 실제로 반영된 건수
+   */
+  async updateProductSalesCounts(entries: Array<{ masterId: string; salesCount: number }>): Promise<number> {
+    if (entries.length === 0) return 0;
+
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getProductsIndex();
+    await this.ensureProductsIndex();
+
+    const updatedAt = new Date().toISOString();
+    const body = entries.flatMap((entry) => [
+      { update: { _index: index, _id: entry.masterId } },
+      { doc: { sales_count: entry.salesCount, sales_count_updated_at: updatedAt } },
+    ]);
+
+    const response = await client.bulk({ body });
+    const items: any[] = response.body?.items ?? [];
+
+    let applied = 0;
+    for (const item of items) {
+      const status = item.update?.status;
+      if (status !== undefined && status < 300) applied += 1;
+      else if (status !== 404) {
+        this.logger.warn(`updateProductSalesCounts failed for one doc: ${JSON.stringify(item.update?.error)}`);
+      }
+    }
+    return applied;
   }
 
   async deleteProduct(masterId: string): Promise<void> {
@@ -447,6 +483,16 @@ export class ProductIndexService implements OnModuleInit {
       this.logger.warn(`putMapping for review fields failed (non-fatal): ${error.message}`);
     }
 
+    // 판매량 필드도 additive PUT — 재색인 없이 기존 인덱스에 붙는다.
+    try {
+      await client.indices.putMapping({
+        index,
+        body: SALES_FIELDS_MAPPINGS,
+      });
+    } catch (error) {
+      this.logger.warn(`putMapping for sales fields failed (non-fatal): ${error.message}`);
+    }
+
     // Ensure members-only visibility field mapping exists (additive PUT — 기존 인덱스에도 적용)
     try {
       await client.indices.putMapping({
@@ -702,8 +748,18 @@ export class ProductIndexService implements OnModuleInit {
     return boolQuery;
   }
 
-  // final_score = text_relevance_score + (bayesian_review_score * reviewScoreWeight)
-  // Weight is intentionally small so review can only overcome near-equal text matches (~0.5 score diff at default 0.1).
+  // final_score = text_relevance_score
+  //             + (bayesian_review_score * reviewScoreWeight)
+  //             + (ln(1 + sales_count) * salesScoreWeight)
+  //
+  // 두 가중치 모두 일부러 작다 — 텍스트 점수는 1000 단위라 이 항들은 «텍스트가 거의 같을 때만»
+  // 순서를 뒤집는 동점 처리로 동작한다. 실제로 "메가 액상 색소"/"메가 펌핑 색소"처럼 점수가
+  // 소수점까지 같은 경우가 흔해서 뒤집을 여지는 충분하다.
+  //
+  // 판매량에 log 를 씌우는 이유: 누적 판매는 0~수천으로 자릿수가 벌어져 선형으로 더하면
+  // 베스트셀러가 텍스트 관련도를 통째로 덮는다. 그러면 잘 팔린 상품이 더 위로 → 더 팔림 →
+  // 더 위로 가 되어 신상품이 영영 안 올라온다. ln(1+n) 이면 1000개 팔린 상품이 10개 팔린
+  // 상품보다 2.9배가 아니라 ~2.9점 만큼만 앞선다.
   private wrapWithReviewBoost(boolQuery: any): any {
     return {
       function_score: {
@@ -715,6 +771,14 @@ export class ProductIndexService implements OnModuleInit {
               factor: this.reviewScoreWeight,
               modifier: 'none',
               missing: 3.5,
+            },
+          },
+          {
+            field_value_factor: {
+              field: 'sales_count',
+              factor: this.salesScoreWeight,
+              modifier: 'ln1p',
+              missing: 0,
             },
           },
         ],

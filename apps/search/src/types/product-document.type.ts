@@ -183,6 +183,8 @@ export const PRODUCTS_INDEX_MAPPINGS = {
     bayesian_review_score: { type: 'float' as const },
     review_sort_score: { type: 'float' as const },
     review_stats_updated_at: { type: 'date' as const },
+    sales_count: { type: 'integer' as const },
+    sales_count_updated_at: { type: 'date' as const },
   },
 } as const;
 
@@ -193,6 +195,14 @@ export const REVIEW_FIELDS_MAPPINGS = {
     bayesian_review_score: { type: 'float' as const },
     review_sort_score: { type: 'float' as const },
     review_stats_updated_at: { type: 'date' as const },
+  },
+} as const;
+
+// Medusa product_sort_index 에서 밀어 넣는 누적 판매 수량. 랭킹의 동점 처리에 쓴다.
+export const SALES_FIELDS_MAPPINGS = {
+  properties: {
+    sales_count: { type: 'integer' as const },
+    sales_count_updated_at: { type: 'date' as const },
   },
 } as const;
 
@@ -269,6 +279,8 @@ export interface SearchProductDocument {
   bayesian_review_score?: number;
   review_sort_score?: number;
   review_stats_updated_at?: string | null;
+  sales_count?: number;
+  sales_count_updated_at?: string | null;
 }
 
 export interface ReviewStatsUpdateFields {

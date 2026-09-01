@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 import { PRODUCT_SORTING_MODULE } from '../modules/product-sorting';
+import { pushSalesCounts, type SalesCountEntry } from '../utils/search-sales-sync';
 import type ProductSortingModuleService from '../modules/product-sorting/service';
 
 type OrderItem = {
@@ -49,10 +50,31 @@ export default async function handleOrderPlacedSort({ event, container }: Subscr
       }
     }
 
+    const salesCountByProductId = new Map<string, number>();
     for (const [productId, quantity] of productQuantityMap) {
-      await sortingService.incrementSalesCount(productId, 'krw', quantity);
+      const updated = await sortingService.incrementSalesCount(productId, 'krw', quantity);
       logger.info(`[ProductSorting] Sales count incremented for product ${productId} by ${quantity}`);
+
+      const record = Array.isArray(updated) ? updated[0] : updated;
+      const salesCount = (record as { sales_count?: number } | undefined)?.sales_count;
+      if (typeof salesCount === 'number') salesCountByProductId.set(productId, salesCount);
     }
+
+    // 검색 랭킹의 판매량 항도 같이 올린다. 색인 문서 ID 는 product_id 가 아니라 handle 이다.
+    const { data: products } = await query.graph({
+      entity: 'product',
+      fields: ['id', 'handle'],
+      filters: { id: [...salesCountByProductId.keys()] },
+    });
+
+    const entries: SalesCountEntry[] = (products ?? [])
+      .filter((product: { id: string; handle?: string | null }) => Boolean(product.handle))
+      .map((product: { id: string; handle?: string | null }) => ({
+        masterId: product.handle as string,
+        salesCount: salesCountByProductId.get(product.id) as number,
+      }));
+
+    await pushSalesCounts(entries, logger);
   } catch (err: any) {
     logger.error(`[ProductSorting] Order placed handler error for ${orderId}: ${err?.message}`);
   }

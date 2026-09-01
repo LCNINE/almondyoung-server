@@ -17,6 +17,7 @@ import { EmbeddingService } from './embedding.service';
 import { ProductIndexService } from './product-index.service';
 import { SpellCorrectionService } from './spell-correction.service';
 import { SearchService } from './search.service';
+import { InternalSalesController } from './internal-sales.controller';
 import { HealthController } from './health.controller';
 import { OpenSearchKeywordRepository } from './opensearch-keyword.repository';
 import { SEARCH_KEYWORD_REPOSITORY } from './search-keyword.repository';
@@ -69,7 +70,14 @@ import { SearchKeywordService } from './search-keyword.service';
         ]
       : []),
   ],
-  controllers: [SearchController, AdminKeywordController, ProductEventsConsumer, ReviewEventsConsumer, HealthController],
+  controllers: [
+    SearchController,
+    AdminKeywordController,
+    InternalSalesController,
+    ProductEventsConsumer,
+    ReviewEventsConsumer,
+    HealthController,
+  ],
   providers: [
     SearchService,
     OpenSearchService,
