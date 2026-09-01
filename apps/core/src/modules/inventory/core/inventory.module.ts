@@ -9,7 +9,6 @@ import { LocationController } from './controllers/location.controller';
 import { SkuManagersController, ManagerSkusController } from './controllers/sku-managers.controller';
 import { ReservationController } from './controllers/reservation.controller';
 import { ReturnController } from './controllers/return.controller';
-import { TransferController } from './controllers/transfer.controller';
 import { HolderController } from './controllers/holder.controller';
 import { LedgerReconciliationController } from './controllers/ledger-reconciliation.controller';
 
@@ -25,7 +24,6 @@ import { LedgerReconciliationService } from './services/ledger-reconciliation.se
 import { FulfillmentReservationReconciliationService } from './services/fulfillment-reservation-reconciliation.service';
 import { InventoryIdempotencyService } from './services/inventory-idempotency.service';
 import { ReturnService } from './services/return.service';
-import { TransferService } from './services/transfer.service';
 import { HolderService } from './services/holder.service';
 import { BatchControlledStockGuard } from './services/batch-controlled-stock.guard';
 
@@ -43,7 +41,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     ManagerSkusController,
     ReservationController,
     ReturnController,
-    TransferController,
     HolderController,
     LedgerReconciliationController,
   ],
@@ -60,7 +57,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     FulfillmentReservationReconciliationService,
     InventoryIdempotencyService,
     ReturnService,
-    TransferService,
     HolderService,
     BatchControlledStockGuard,
   ],
@@ -74,7 +70,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     SkuManagersService,
     LOCATION_RESOLUTION_STRATEGY,
     ReturnService,
-    TransferService,
     HolderService,
     BatchControlledStockGuard,
     InventoryIdempotencyService,
