@@ -2459,6 +2459,14 @@ git commit -m "feat(inventory): 창고간 이동 체류 감시 크론"
 > **수행된 것**: Step 3 — `stock-projection.reader.ts` 의 `transfer_pending_qty → returnPendingQuantity` 오배선 제거(소비자 0건 확인).
 >
 > 그 결과 **창고 간 이동 경로가 두 벌 공존한다.** 옛 경로로 한 이동은 한 트랜잭션에서 끝나 custody 모델(이동 지시서·ETA·미완결 감시)을 건너뛴다. 데이터를 깨뜨리지는 않으나 이 작업이 없애려던 "두 벌" 상태 그 자체다.
+>
+> **✅ 2026-09-02 해소.** 연기된 Step 2·4·5 를 `docs/superpowers/plans/2026-09-02-remove-legacy-transfer-path.md`
+> 가 수행했다. 단 범위가 넓어졌다 — 창고간 분기만 제거하는 대신 **경로 A 를 통째로 철거**하고
+> 창고 내 이동을 `movement` 로 일원화했다.
+>
+> 연기 사유였던 "admin-web 화면이 400 으로 깨진다" 는 2026-09-01 실측으로 소멸했다.
+> 08-13 근거는 `stock_journals` 0건("실행 성공 이력 없음")이었으나, 09-01 측정은
+> `movement_jobs` 자체가 **0행**임을 보였다 — 생성조차 0건이다. 깨질 화면에 쓴 사람이 없었다.
 
 실측상 `warehouse_transfer` 저널이 0건이라 기존 창고간 경로는 프로덕션 실행 이력이 없다. 두 벌이 남으면 다음 사람이 어느 쪽이 정본인지 모른다.
 

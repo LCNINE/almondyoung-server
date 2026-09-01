@@ -25,7 +25,7 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (69) ──────────────────────────────────────────
+  // ── inventory.operate (67) ──────────────────────────────────────────
   'GET /holders':                                            S.OPERATE,
   'GET /holders/:id':                                        S.OPERATE,
   'POST /inbound/cancel':                                    S.OPERATE,
@@ -153,7 +153,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /suppliers/:id':                                        S.MANAGE,
   'PUT /suppliers/:id':                                        S.MANAGE,
 
-  // ── inventory.adjust (17) ──────────────────────────────────────────
+  // ── inventory.adjust (15) ──────────────────────────────────────────
   'DELETE /inventory/reservations/:id':                         S.ADJUST,
   'POST /inventory/reservations/reconcile':                     S.ADJUST,
   'POST /inventory/returns':                                    S.ADJUST,
