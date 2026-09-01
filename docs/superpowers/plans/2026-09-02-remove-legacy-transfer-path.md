@@ -315,14 +315,18 @@ Expected: 출력 없음. 한 줄이라도 나오면 삭제가 덜 된 것이다.
 grep -rln "inventory/transfers" apps/admin-web/src | grep -v node_modules | sort
 ```
 
-Expected: 정확히 아래 넷. **이 단계에서 지우지 않는다 — Task 4 의 대상이다.** 이 목록 밖의 파일이 나오면 멈추고 보고한다.
+Expected: 정확히 아래 셋. **이 단계에서 지우지 않는다 — Task 4 의 대상이다.** 이 목록 밖의 파일이 나오면 멈추고 보고한다.
 
 ```
 apps/admin-web/src/lib/api/domains/inventory/transfers.client.ts
 apps/admin-web/src/lib/services/inventory/mutations.ts
 apps/admin-web/src/lib/services/inventory/queries.ts
-apps/admin-web/src/lib/services/inventory/query-keys.ts
 ```
+
+> ⚠️ **이 grep 은 `query-keys.ts` 를 못 본다.** 거기서는 문자열이 URL 이 아니라 배열 원소로
+> 쪼개져 있다 — `['inventory', 'transfers', query]`. `query-keys.ts:7,114-116` 은 여전히
+> Task 4 의 정당한 대상이며, Task 4 는 파일 목록과 `TransferJobQuery` 를 잡는 자체 grep 으로
+> 그것을 처리한다. **이 grep 의 결과를 Task 4 의 대상 목록으로 쓰지 말 것.**
 
 - [ ] **Step 5: 타입 게이트**
 
