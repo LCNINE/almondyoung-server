@@ -70,6 +70,12 @@ export function setup(infra: SharedInfra) {
   // UGC — 서버 간(internal) 라우트 인증 키 (medusa 구매확정 → ugc 리뷰자격 등록)
   const ugcInternalKey = new sst.Secret('UgcInternalKey');
 
+  // Search — 서버 간(internal) 라우트 인증 키 (medusa 주문/백필 → search 판매량 색인)
+  // 아래 searchEnv 와 Medusa **양쪽**에 같은 값이 들어가야 한다. search 쪽 라우트는
+  // 키가 비면 아예 잠기므로(fail-closed), 한쪽만 배포되면 판매량이 색인에 안 실린다 —
+  // 장애는 아니고 랭킹의 판매량 항이 조용히 0 이 된다.
+  const searchInternalKey = new sst.Secret('SearchInternalKey');
+
   // Core — 서버 간(internal) 라우트 인증 키 (channel-adapter 수집 게이트 → core /internal/channels/*)
   // 아래 Core 와 channelAdapterEnv **양쪽**에 같은 값이 들어가야 한다. 한쪽만 배포되면 401 이고,
   // 수집 게이트는 fail-closed 라 주문 수집이 멈춘다 (#654).
@@ -330,6 +336,7 @@ export function setup(infra: SharedInfra) {
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
     OPENAI_API_KEY: openAiApiKey.value,
+    SEARCH_INTERNAL_KEY: searchInternalKey.value,
   });
 
   // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
@@ -602,6 +609,8 @@ export function setup(infra: SharedInfra) {
       MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
+      SEARCH_SERVICE_URL: url('search'),
+      SEARCH_INTERNAL_KEY: searchInternalKey.value,
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // 타임세일 시작·종료 경계에서 storefront 캐시를 비우는 크론이 쓴다.
       // channel-adapter 와 같은 엔드포인트·시크릿을 공유한다.
@@ -782,7 +791,12 @@ export function setup(infra: SharedInfra) {
     ...(storefrontCdnTransform ? { transform: { cdn: storefrontCdnTransform } } : {}),
     environment: {
       // GA4 측정 ID — live 만 주입해 dev 트래픽이 운영 속성에 섞이지 않게 한다.
-      ...(isDev ? {} : { NEXT_PUBLIC_GA_ID: 'G-QLQEGSPQP8' }),
+      ...(isDev
+        ? {}
+        : {
+            NEXT_PUBLIC_GA_ID: 'G-QLQEGSPQP8',
+            NEXT_PUBLIC_CLARITY_ID: 'ybcljdgsqu',
+          }),
       NEXT_PUBLIC_BASE_URL: storefrontUrl,
       NEXT_PUBLIC_DEFAULT_REGION: 'kr',
       NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
