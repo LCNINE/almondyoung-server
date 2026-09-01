@@ -7,7 +7,7 @@
  * 이미 같은 handle 이 있으면 건너뛴다. 로컬에 없는 카테고리·태그는 버린다.
  */
 import { ExecArgs } from '@medusajs/framework/types';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { createProductsWorkflow } from '@medusajs/medusa/core-flows';
 import { promises as fs } from 'node:fs';
 
