@@ -158,16 +158,9 @@ export async function fetchPromotionWithMeta(id: string, scope: any, fields?: st
   return { ...promotion, metadata: toMetadataShape(meta) };
 }
 
-export function meetsGroupRule(promotion: any, customerGroupIds: Set<string>): boolean {
-  const groupRule = (promotion.rules ?? []).find(
-    (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
-  );
-  if (!groupRule) return true;
-  const requiredIds = (groupRule.values ?? []).map((v: any) =>
-    typeof v === 'string' ? v : (v?.value as string),
-  );
-  return requiredIds.some((gid: string) => customerGroupIds.has(gid));
-}
+// `meetsGroupRule` 은 삭제됐다 (P7, #488 1-5). 발급 시점 룰 평가는
+// `../../../modules/promotion-meta/issuance-rules` 의 `evaluateIssuanceRules` /
+// `isIssuableToCustomer` 하나뿐이다. 이 함수는 그룹 룰만 봐서 나머지 조건을 **조용히 통과**시켰다.
 
 export { remoteQueryPromotions };
 

@@ -2,7 +2,8 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { resolveVisibility, meetsGroupRule } from '../../../admin/promotions/helpers';
+import { resolveVisibility } from '../../../admin/promotions/helpers';
+import { isIssuableToCustomer } from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
 import { listIssuedLinks } from '../../../../modules/promotion-meta/issued-link';
 
@@ -95,7 +96,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     // 메타가 없으면 닫힌 쪽이다(#488 N7) → not_assigned 로 막힌다.
     const visibility: string = resolveVisibility(meta);
 
-    if (customerId && !meetsGroupRule(promo, customerGroupIds)) {
+    if (customerId && !isIssuableToCustomer(promo.rules, customerGroupIds)) {
       return { kind: 'blocked', reason: 'group_restricted' };
     }
     if (assignedIds.has(promo.id)) return { kind: 'claimed' };

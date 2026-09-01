@@ -4,6 +4,7 @@ import { PROMOTION_META_MODULE } from '../../../../../../../modules/promotion-me
 import PromotionMetaModuleService from '../../../../../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../../../../admin/promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../../../modules/promotion-meta/validity';
+import { evaluateIssuanceRules } from '../../../../../../../modules/promotion-meta/issuance-rules';
 
 type LinkRecord = { customer_id: string; promotion_id: string };
 
@@ -65,19 +66,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     linkModule.list({ promotion_id: promotionId }, { select: ['customer_id'] }) as Promise<LinkRecord[]>,
   ]);
 
-  // 고객 그룹 rule 검증: promotion에 customer.groups.id 룰이 있으면 고객이 해당 그룹에 속해야 함
-  const groupRule = (promotion.rules ?? []).find(
-    (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
-  );
-  if (groupRule) {
-    const requiredGroupIds = new Set<string>(
-      (groupRule.values ?? []).map((v: any) => (typeof v === 'string' ? v : v?.value)),
-    );
-    const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
-    const hasGroup = [...requiredGroupIds].some((gid) => customerGroupIds.has(gid));
-    if (!hasGroup) {
-      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이 쿠폰은 대상 고객만 발급받을 수 있습니다.');
+  // 발급 시점 룰 평가 — 판정은 modules/promotion-meta/issuance-rules.ts 하나뿐이다.
+  // 옛 코드는 여기에 그룹 룰 검사를 손으로 복제해 뒀고, 그래서 `meetsGroupRule` 을 grep 해도
+  // 이 자리가 안 잡혔다 (#488 7-3 이 말하는 «샌 계약» 의 축소판).
+  const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
+  const eligibility = evaluateIssuanceRules(promotion.rules, customerGroupIds);
+  if (!eligibility.eligible) {
+    if (eligibility.reason === 'unsupported_rule') {
+      req.scope
+        .resolve(ContainerRegistrationKeys.LOGGER)
+        .warn(
+          `[coupon] 클레임 거부 — 발급 시점에 평가할 수 없는 룰 (promotion_id=${promotionId}, ` +
+            `attribute=${eligibility.attribute}, operator=${eligibility.operator}, ` +
+            `customer_id=${customerId}).`,
+        );
     }
+    // 고객에게는 사유를 구별해 주지 않는다 — 스토어프론트가 닫힌 어휘를 읽는다.
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이 쿠폰은 대상 고객만 발급받을 수 있습니다.');
   }
 
   const alreadyClaimed = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promotionId);
