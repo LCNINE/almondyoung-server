@@ -288,13 +288,8 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/sku-groups',
       },
       {
-        id: 'inventory-transfers',
-        title: '재고 이동(잡)',
-        path: '/inventory/transfers',
-      },
-      {
         id: 'inventory-movement',
-        title: '재고 즉시 이동',
+        title: '재고 이동',
         path: '/inventory/movement',
       },
       {
