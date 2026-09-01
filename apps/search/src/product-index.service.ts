@@ -774,12 +774,16 @@ export class ProductIndexService implements OnModuleInit {
             },
           },
           {
+            // field_value_factor 는 modifier(factor × 값) 순서다. factor 에 가중치를
+            // 넣으면 ln(1 + w×n) 이 되어 log 안으로 들어가버리므로, factor 는 1 로 두고
+            // 가중치는 function 의 weight 로 곱한다 → ln(1+n) × w.
             field_value_factor: {
               field: 'sales_count',
-              factor: this.salesScoreWeight,
+              factor: 1,
               modifier: 'ln1p',
               missing: 0,
             },
+            weight: this.salesScoreWeight,
           },
         ],
         score_mode: 'sum',
