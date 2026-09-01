@@ -85,8 +85,9 @@
 | 창고 소속 검증 | **없음** (`transfer.service.ts` 에 라인별 검사 부재) | 라인마다 (`movement.service.ts:51-53`) |
 | 입력 방식 | UUID 자유 입력 | UUID 자유 입력 (동일) |
 | 작업자·메모 | 메모만 | `actorId` + 메모 + 라인 메모 |
+| 잡 목록 조회 | `GET /inventory/transfers` (movement_jobs 잡 단위) | **없음** — `GET /movement/jobs/:jobId`(단건) + `GET /movement/history`(작업로그 grain) |
 
-UX 회귀가 없다. B 가 상위집합이다.
+UX 회귀가 없다 — 한 축만 빼고. A 의 목록 라우트는 `movement_jobs` 를 잡 단위로 보여줬고 B 에는 그 축이 없다. 실질 회귀는 아니다(0행이고, movement 화면의 이력 탭이 `/movement/history` 를 쓰며 B 가 `movement_work_logs` 를 채운다 — `movement.service.ts:135`). 나머지 축은 전부 B 가 상위집합이다.
 
 ---
 
@@ -539,4 +540,6 @@ MSG
 
 - **마이그레이션 0건.** `migrate → deploy` / `deploy → migrate` 순서 문제가 없다.
 - **SST 는 한 스택이라 앱별 배포 순서를 강제할 수 없다** (`docs/adr` 및 메모리 `sst-single-stack-no-deploy-order`). core 와 admin-web 이 한 번의 `sst deploy` 로 함께 롤린다. 롤링 중 옛 admin-web 이 사라진 `/inventory/transfers` 를 부를 수 있으나, **그 화면을 쓴 사람이 0명**(테이블 0행)이라 실질 영향이 없다.
+- 🔴 **이 시점 이후 admin-web 에 창고 간 이동 UI 가 없다.** C(`/inventory/warehouse-transfers`)는 API 전용이다 — `apps/admin-web/src` 전역에서 `warehouse-transfers`·`WarehouseTransfer` grep 이 0건이고 `native/` 도 마찬가지다. 삭제된 `create-transfer-dialog` 가 창고 간 이동의 유일한 운영자 진입점이었다. 실질 영향은 0 이지만(`transfer_orders`·`movement_jobs` 전부 0행, 쓴 사람이 없다) **"정본이 C 로 옮겨갔다"를 "기능이 C 에 있다"로 읽으면 틀린다** — 운영자 경로는 아직 만들어지지 않았다. ADR-0032:100 의 미해결 경고("중국 → 부천 실물 경로가 정말 `transfer_orders` 인지는 미검증")와 겹치는 지점이다.
+- 🔴 **재배선의 착지점 B 도 라이브 실행 이력이 0 이다.** 이 작업의 근거인 2026-09-01 실측에서 `movement_jobs` 가 0행이었는데, 그 테이블을 쓰는 것이 바로 B 다. 즉 그 0행은 "A 를 아무도 안 썼다"가 아니라 **"A 도 B 도 한 번도 안 돌았다"**는 뜻이다(메모리 `wms-ledger-write-paths-never-ran` 의 MOVE 0건과 일치). 위 기능 비교표의 "UX 회귀가 없다"는 **코드 독해에서 나온 결론**이고, B 의 통합 스펙은 `describeIfDb` 라 기본 게이트에서 돌지 않는다. **배포 후 창고 내 이동 1건을 수동 스모크할 것** — 그것이 B 의 라이브 최초 실행이다.
 - **범위 밖(별도 PR 후보):** `movement_jobs`·`movement_job_lines`·`movement_work_logs` 테이블 DROP. B 가 아직 이 테이블들을 쓰므로 DROP 대상이 아니라 **A 전용 컬럼이 있는지부터 조사**하는 게 먼저다.
