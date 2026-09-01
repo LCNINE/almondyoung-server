@@ -12,6 +12,10 @@ const SEARCH_SERVICE_URL = process.env.SEARCH_SERVICE_URL || 'http://localhost:3
 // search 쪽 DTO 의 ArrayMaxSize 와 같은 값
 export const SALES_SYNC_BATCH_SIZE = 1000;
 
+// 응답이 없으면 이만큼 기다렸다 포기한다. 주문 구독자가 이 호출에 걸려 무기한
+// 붙잡히면 안 된다 — 판매량은 랭킹 보조라 늦게 반영되는 편이 낫다.
+const SALES_SYNC_TIMEOUT_MS = 10_000;
+
 export interface SalesCountEntry {
   /** 상품 마스터 ID = Medusa handle = 색인 문서 ID */
   masterId: string;
@@ -40,6 +44,7 @@ export async function pushSalesCounts(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({ items: entries }),
+      signal: AbortSignal.timeout(SALES_SYNC_TIMEOUT_MS),
     });
 
     if (!response.ok) {

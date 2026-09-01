@@ -24,7 +24,8 @@ export const PIN_LIMIT = 2
  * 자사 상품이 이미 1위면 그대로 두고, 아니면 2위부터 끌어올린다.
  * pinnedIds 는 1페이지에서만 채워진다 (search-results.ts).
  *
- * ponytail: 고정한 상품이 원래 순위에도 한 번 더 나올 수 있다. 감수한다.
+ * ponytail: 1페이지로 끌어올린 상품이 «다른 페이지»의 원래 순위에도 나올 수 있다.
+ * 한 페이지 안에서는 중복되지 않는다 (아래 filter). 감수한다.
  */
 export function pinOwnBrand(masterIds: string[], pinnedIds: string[]): string[] {
   if (pinnedIds.length === 0) return masterIds
