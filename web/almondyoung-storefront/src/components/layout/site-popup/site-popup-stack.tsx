@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { X } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { useTranslations } from "next-intl"
 
@@ -8,6 +9,7 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogHeader,
   DialogTitle,
@@ -91,6 +93,7 @@ export function SitePopupStack({ popups, countryCode }: Props) {
       }}
     >
       <DialogContent
+        showCloseButton={false}
         className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
         // 크기는 관리자가 px 로 정하는 값이라 클래스로 표현할 수 없다.
         // 화면보다 넓게 지정돼도 화면 안에 들어오도록 maxWidth 로 막는다.
@@ -100,11 +103,16 @@ export function SitePopupStack({ popups, countryCode }: Props) {
           height: height ?? undefined,
         }}
       >
-        <DialogHeader className="shrink-0 space-y-0 px-6 pt-6 pb-3 text-left">
+        <DialogHeader className="shrink-0 space-y-0 py-4 pr-16 pl-6 text-left">
           <DialogTitle className="text-foreground text-[19px] leading-snug font-bold tracking-tight">
             {current.title}
           </DialogTitle>
         </DialogHeader>
+
+        <DialogClose className="text-muted-foreground hover:bg-secondary hover:text-foreground focus-visible:ring-ring absolute top-2.5 right-2.5 flex size-11 items-center justify-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none">
+          <X className="size-6" />
+          <span className="sr-only">{t("close")}</span>
+        </DialogClose>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           <PopupBodyLink popup={current} onNavigate={closeCurrent}>

@@ -3,7 +3,7 @@
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import { Search, X } from "lucide-react"
-import { forwardRef } from "react"
+import { forwardRef, useLayoutEffect, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
 interface SearchInputProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -28,10 +28,33 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
     ref
   ) => {
     const t = useTranslations("search")
+    const inputRef = useRef<HTMLInputElement>(null)
+    const [hintLeft, setHintLeft] = useState<number | null>(null)
+
+    useLayoutEffect(() => {
+      const el = inputRef.current
+      if (!el || !searchTerm) {
+        setHintLeft(null)
+        return
+      }
+
+      const style = getComputedStyle(el)
+      const ctx = document.createElement("canvas").getContext("2d")
+      if (!ctx) return
+
+      ctx.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+      const textEnd =
+        parseFloat(style.paddingLeft) + ctx.measureText(searchTerm).width + 8
+      const limit = el.clientWidth - parseFloat(style.paddingRight) - 60
+
+      setHintLeft(textEnd > limit ? null : textEnd)
+    }, [searchTerm])
+
     return (
       <div ref={ref} {...props} className={cn("w-full", className)}>
         <div className="relative w-full">
           <Input
+            ref={inputRef}
             type="search"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -51,6 +74,23 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
               inputClassName
             )}
           />
+          {hintLeft !== null && (
+            <button
+              type="button"
+              aria-hidden
+              tabIndex={-1}
+              style={{ left: hintLeft }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onSearch()
+              }}
+              className="bg-primary hover:bg-primary/90 absolute top-1/2 flex -translate-y-1/2 cursor-pointer items-center gap-1 rounded-full py-1 pr-2.5 pl-2 text-[11px] font-semibold text-white shadow-sm transition-colors"
+            >
+              <Search className="h-3 w-3" />
+              {t("submit")}
+            </button>
+          )}
+
           <div className="absolute top-1/2 right-3.5 flex -translate-y-1/2 items-center gap-2.5">
             {searchTerm && (
               <button
