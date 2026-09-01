@@ -425,4 +425,17 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       admin-web tsc 0 · medusa tsc 선재 3건 그대로 · channel-adapter 실 DB 통합 2/2.
 - [ ] 1-6 결정 (`birthday` 트리거) — **못 정함**. 선행: 생년월일 데이터 소재 + 스케줄러 거처
 - [ ] Medusa 네이티브 `/app` 비활성화 여부 — **못 정함**, 이번 범위 밖
-- [ ] 리허설 2차 → A5 개통
+- [x] **리허설 2차 실행 완료 (2026-09-01, 브랜치 `feat/coupon-auto-issue-activation` `ab37d5c52`)**
+      — 기록은 #488 「리허설 2차 실행 기록」. **14항목 중 ✅12 · ✅(부분)1 · ❌1.**
+      P7 은 결함 없음(R9·R10·R12 전부 의도대로). P4+P5 인스턴스 축(R5·R6), 결정 1(R7),
+      P10-B 캡(R3·R4), 빠른 레인(R13), `membership_activated` e2e(R11b) 전부 통과.
+- [ ] 🔴 **A5 개통 차단 — `customer_registered` 트리거가 발화할 수 없다** (R11 ❌) → **#775**
+      가입이 `isEmailVerified: true` 로 행을 넣는데(`apps/user-service/src/api/auth/auth.service.ts:208`,
+      소셜은 `:612`) 인증 처리기는 `isEmailVerified=false` 만 찾는다(`:278`). 그래서 그 함수 안의
+      유일한 `UserEmailVerified` 발행(`:321`)에 **영영 도달하지 못한다.**
+      `isEmailVerified: false` 로 만드는 코드는 저장소에 0곳. 선재 결함(`19c998a97`, 2026-04-22)이고
+      쿠폰 도메인 밖이다. 뒷단(Kafka→inbox→워커→발급 API→링크→메트릭)은 강제 발화로 정상 확인됨.
+      **선택지 3개와 조사 결과·작업 항목은 #775 에 있다.** 권고는 안 3(Medusa `customer.created`
+      subscriber) — customer 가 정의상 존재해 슬로우 리트라이 함정이 원인부터 사라진다.
+      #775 에서 같은 실패 모드(구독자는 있는데 발행자가 없다)를 Medusa subscriber 2건에서 추가 발견.
+- [ ] A5 개통 (위 결정 후)
