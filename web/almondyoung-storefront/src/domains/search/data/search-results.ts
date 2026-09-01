@@ -3,7 +3,20 @@ import { headers } from "next/headers"
 import { listProducts } from "@lib/api/medusa/products"
 import { searchProducts } from "@lib/api/pim/search"
 import { filterProductsByMembershipVisibility } from "@/lib/utils/product-card"
+import {
+  OWN_BRAND,
+  PIN_CANDIDATE_SIZE,
+  PIN_EXCLUDED_CATEGORY_IDS,
+  PIN_LIMIT,
+  PIN_SCORE_RATIO,
+  pinOwnBrand,
+} from "../utils/pin-own-brand"
+import { findOwnBrandAlias } from "./own-brand-aliases"
 import type { HttpTypes } from "@medusajs/types"
+import type {
+  SearchServiceProductItem,
+  SearchServiceProductsResponse,
+} from "@lib/types/dto/search"
 
 export type SearchSort =
   | "relevance"
@@ -98,7 +111,11 @@ export async function fetchSearchResults(
   }
 
   const searchData = searchApiResult.data
-  const masterIds = searchData.items.map((item) => item.productId)
+  const masterIds = pinOwnBrand(
+    searchData.items.map((item) => item.productId),
+    await resolveOwnBrandPin(query, searchData),
+    query.page
+  )
 
   let items: HttpTypes.StoreProduct[] = []
 
@@ -135,4 +152,77 @@ export async function fetchSearchResults(
     correctedQuery: searchData.correctedQuery,
     relatedKeywords: searchData.relatedKeywords,
   }
+}
+
+/**
+ * 검색 결과에 끼워 넣을 자사 상품을 고른다 (최대 PIN_LIMIT 개).
+ *
+ * 1) 검색어 그대로 자사 상품을 찾는다 — 관련도가 1위 대비 너무 낮은 건 버린다.
+ * 2) 하나도 안 남으면 사전(own-brand-aliases)에 등록된 대체 검색어로 다시 찾는다.
+ *    "롤리킹"(타사 롯드 브랜드)처럼 우리 상품명엔 없는 말로 검색한 경우가 여기 걸린다.
+ *    사전은 사람이 고른 대응이라 관련도 하한을 적용하지 않는다.
+ *
+ * 검색 본류를 안 건드린다: 이 조회들은 통계에 남기지 않고(track: false), 교정도 다시
+ * 걸지 않으며(correct: false), 실패는 빈 배열로 흡수한다.
+ */
+async function resolveOwnBrandPin(
+  query: SearchQuery,
+  searchData: SearchServiceProductsResponse
+): Promise<string[]> {
+  if (query.sort !== "relevance") return []
+  if (query.brands?.length) return []
+  if (searchData.items[0]?.brand === OWN_BRAND) return []
+
+  const keyword = searchData.correctedQuery ?? query.keyword
+  const topScore = maxScore(searchData.items)
+  if (topScore <= 0) return []
+
+  const matched = (await findOwnBrandProducts(query, keyword)).filter(
+    (item) => (item.score ?? 0) >= topScore * PIN_SCORE_RATIO
+  )
+  if (matched.length > 0) {
+    return matched.slice(0, PIN_LIMIT).map((item) => item.productId)
+  }
+
+  const alias = findOwnBrandAlias(keyword)
+  if (!alias) return []
+
+  return (await findOwnBrandProducts(query, alias))
+    .slice(0, PIN_LIMIT)
+    .map((item) => item.productId)
+}
+
+/** 주어진 검색어로 자사 상품을 관련도 높은 순으로 돌려준다. */
+async function findOwnBrandProducts(
+  query: SearchQuery,
+  keyword: string
+): Promise<SearchServiceProductItem[]> {
+  const result = await searchProducts({
+    q: keyword,
+    page: 1,
+    size: PIN_CANDIDATE_SIZE,
+    sort: "relevance",
+    categoryIds: query.categoryIds,
+    brands: [OWN_BRAND],
+    minPrice: query.minPrice,
+    maxPrice: query.maxPrice,
+    includeMembersOnly: query.isMembership,
+    correct: false,
+    track: false,
+  }).catch(() => null)
+
+  const items =
+    result && "data" in result && result.data ? result.data.items : []
+
+  // 응답 순서는 관련도 점수 순서와 다를 수 있다 (벡터 검색과 RRF 로 섞인다).
+  return items
+    .filter(
+      (item) =>
+        !item.categoryIds.some((id) => PIN_EXCLUDED_CATEGORY_IDS.includes(id))
+    )
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+}
+
+function maxScore(items: SearchServiceProductItem[]): number {
+  return items.reduce((acc, item) => Math.max(acc, item.score ?? 0), 0)
 }
