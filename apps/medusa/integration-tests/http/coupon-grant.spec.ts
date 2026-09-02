@@ -196,5 +196,72 @@ medusaIntegrationTestRunner({
         expect(res.data.max_uses_per_customer).toBeUndefined();
       });
     });
+
+    describe('대량 발급', () => {
+      let customerId2: string;
+
+      beforeEach(async () => {
+        const [c2] = await getContainer()
+          .resolve(Modules.CUSTOMER)
+          .createCustomers([{ email: `buyer2_${seq}@grant.test` }]);
+        customerId2 = c2.id;
+      });
+
+      it('한 쿠폰을 여러 고객에게 발급한다', async () => {
+        const promotionId = await createPromo(`BULK${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId, customerId2], quantity: 2, submit_id: 'bulk-1' },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        expect(res.data.issued).toHaveLength(2);
+        expect(res.data.issued[0].granted).toBe(2);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(2);
+        expect(await svc().listGrantsForCustomer(customerId2)).toHaveLength(2);
+      });
+
+      it('같은 submit_id 로 두 번 보내도 장수가 늘지 않는다', async () => {
+        const promotionId = await createPromo(`BULKI${seq}`, { visibility: 'assigned_only' });
+        const body = { customer_ids: [customerId], quantity: 2, submit_id: 'bulk-same' };
+
+        await api.post(`/admin/promotions/${promotionId}/customers`, body, adminHeaders);
+        await api.post(`/admin/promotions/${promotionId}/customers`, body, adminHeaders);
+
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(2);
+      });
+
+      it('한 고객의 실패가 나머지를 막지 않는다', async () => {
+        const promotionId = await createPromo(`BULKM${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: ['cus_does_not_exist', customerId], submit_id: 'bulk-mixed' },
+          adminHeaders,
+        );
+
+        expect(res.data.issued.map((i: any) => i.customer_id)).toEqual([customerId]);
+        expect(res.data.skipped[0]).toEqual({
+          customer_id: 'cus_does_not_exist',
+          reason: 'customer_not_found',
+        });
+      });
+
+      it('submit_id 가 없으면 400 이다 — 멱등성을 포기할 수 없다', async () => {
+        const promotionId = await createPromo(`BULKN${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api
+          .post(
+            `/admin/promotions/${promotionId}/customers`,
+            { customer_ids: [customerId] },
+            adminHeaders,
+          )
+          .catch((e: any) => e.response);
+
+        expect(res.status).toBe(400);
+      });
+    });
   },
 });
