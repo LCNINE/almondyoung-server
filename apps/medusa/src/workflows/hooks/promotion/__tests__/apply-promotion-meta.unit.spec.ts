@@ -24,9 +24,6 @@ function fakeWriter(seed: Record<string, Record<string, unknown>> = {}) {
       calls.push(`delete:${id}`);
       delete rows[id];
     },
-    async removeAllIssueLogs(id) {
-      calls.push(`logs:${id}`);
-    },
   };
   return { writer, rows, calls };
 }
@@ -131,7 +128,7 @@ describe('applyMetaOnUpdate', () => {
 });
 
 describe('applyMetaOnDelete', () => {
-  it('메타와 발급 로그를 지우고 메타 스냅샷을 돌려준다', async () => {
+  it('메타를 지우고 메타 스냅샷을 돌려준다', async () => {
     const { writer, rows, calls } = fakeWriter({
       promo_1: { promotion_id: 'promo_1', visibility: 'claimable' },
     });
@@ -140,17 +137,7 @@ describe('applyMetaOnDelete', () => {
       { promotion_id: 'promo_1', before: { promotion_id: 'promo_1', visibility: 'claimable' } },
     ]);
     expect(rows.promo_1).toBeUndefined();
-    expect(calls).toEqual(['get:promo_1', 'delete:promo_1', 'logs:promo_1']);
-  });
-
-  it('발급 로그 정리가 실패해도 삭제 전체를 실패시키지 않는다', async () => {
-    const { writer } = fakeWriter({ promo_1: { promotion_id: 'promo_1' } });
-    writer.removeAllIssueLogs = async () => {
-      throw new Error('boom');
-    };
-    await expect(applyMetaOnDelete(writer, ['promo_1'])).resolves.toEqual([
-      { promotion_id: 'promo_1', before: { promotion_id: 'promo_1' } },
-    ]);
+    expect(calls).toEqual(['get:promo_1', 'delete:promo_1']);
   });
 });
 

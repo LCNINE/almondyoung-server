@@ -164,7 +164,6 @@ export async function fetchPromotionWithMeta(id: string, scope: any, fields?: st
 
 export { remoteQueryPromotions };
 
-// 발급된 «한 장»(링크 행) 리더는 여기 없다 — `../../../modules/promotion-meta/issued-link` 로
-// 이전됐다(W5, 2026-08-31). 워크플로 훅·스토어 라우트·카트 미들웨어가 admin 라우트 폴더를
-// 참조하는 계층 역전을 없애기 위해서다. `findIssuedLink`/`listIssuedLinks`/`IssuedLinkRow` 를
-// 찾고 있다면 그쪽에서 import 할 것.
+// 발급된 «한 장» 리더는 여기 없다 — `coupon_grant` 모델로 이관됐다(#488, Task 3~10).
+// `../../../modules/promotion-meta/service` 의 `listGrantsForCustomer`/`listGrantsForPromotion` 을
+// 쓸 것. 옛 링크 리더(`issued-link.ts`, W5 2026-08-31 도입)는 Task 10 이 걷어냈다.

@@ -1,6 +1,5 @@
 import { MedusaService } from '@medusajs/framework/utils';
 import PromotionMeta from './models/promotion-meta';
-import PromotionIssueLog from './models/promotion-issue-log';
 import CouponEvent from './models/coupon-event';
 import CouponEventItem from './models/coupon-event-item';
 import CouponGrant from './models/coupon-grant';
@@ -42,7 +41,6 @@ export type CouponGrantRow = {
 
 class PromotionMetaModuleService extends MedusaService({
   PromotionMeta,
-  PromotionIssueLog,
   CouponEvent,
   CouponEventItem,
   CouponGrant,
@@ -85,45 +83,6 @@ class PromotionMetaModuleService extends MedusaService({
     const existing = await (this as any).listPromotionMetas({ promotion_id: promotionId });
     if (existing.length > 0) {
       await (this as any).deletePromotionMetas([existing[0].id]);
-    }
-  }
-
-  async isAlreadyIssued(customerId: string, promotionId: string): Promise<boolean> {
-    const records = await (this as any).listPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId });
-    return records.length > 0;
-  }
-
-  async recordIssue(customerId: string, promotionId: string, trigger: IssueTrigger): Promise<void> {
-    try {
-      await (this as any).createPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId, trigger });
-    } catch (e: any) {
-      // MedusaService는 unique 위반을 "... already exists" 메시지로 감싸므로 pg 23505 매칭만으론 부족하다.
-      const msg = String(e?.message ?? '').toLowerCase();
-      const isDuplicate =
-        e?.code === '23505' ||
-        msg.includes('unique') ||
-        msg.includes('duplicate') ||
-        msg.includes('already exists');
-      if (!isDuplicate) throw e;
-    }
-  }
-
-  /**
-   * 회수 시 발급 로그를 soft-delete 한다. partial unique index(deleted_at IS NULL)가
-   * 재발급을 허용하도록 — 그렇지 않으면 자동발급 dedup(isAlreadyIssued)이 영구 skip 한다.
-   */
-  async removeIssueLog(customerId: string, promotionId: string): Promise<void> {
-    const records = await (this as any).listPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId });
-    if (records.length > 0) {
-      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
-    }
-  }
-
-  /** 프로모션 삭제 시 발급 로그 전체 정리(고아 로우 방지). */
-  async removeAllIssueLogs(promotionId: string): Promise<void> {
-    const records = await (this as any).listPromotionIssueLogs({ promotion_id: promotionId });
-    if (records.length > 0) {
-      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
     }
   }
 

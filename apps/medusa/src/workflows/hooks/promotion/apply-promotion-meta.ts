@@ -12,7 +12,6 @@ export interface PromotionMetaWriter {
   getByPromotionId(id: string): Promise<any | null>;
   upsert(data: Record<string, unknown> & { promotion_id: string }): Promise<unknown>;
   deleteByPromotionId(id: string): Promise<void>;
-  removeAllIssueLogs(id: string): Promise<void>;
 }
 
 /** 보상(compensation)에 쓸 이전 상태. `before: null` 은 「원래 없었다」는 뜻이다. */
@@ -69,11 +68,14 @@ export async function applyMetaOnUpdate(
 }
 
 /**
- * 삭제된 프로모션들의 메타와 발급 로그를 정리한다.
+ * 삭제된 프로모션들의 메타를 정리한다.
  *
- * 발급 로그 정리는 **best-effort** 다 — 실패해도 삭제 전체를 되돌리지 않는다(옛 라우트의
- * `.catch(() => {})` 와 같은 판단이다. 로그는 이미 고아이고, 그것 때문에 프로모션 삭제를
- * 롤백하면 관리자가 지울 수 없는 쿠폰이 생긴다).
+ * 옛 모델은 여기서 발급 로그(`promotion_issue_log`, 순수 dedup 부기)도 같이 지웠다
+ * (`removeAllIssueLogs`, Task 10 이 걷어냄). `coupon_grant` 모델엔 그 부기 테이블의
+ * 대응물이 없다 — dedup 키(`issue_key`)가 grant 행 자체의 유니크 인덱스에 있어서다.
+ * 옛 코드도 실제 발급 자산(고객↔프로모션 링크)은 이 경로에서 건드리지 않았으니,
+ * grant 도 여기서 건드리지 않는 것이 그 행동과 동형이다 — 삭제된 프로모션을 가리키는
+ * grant 는 고아로 남지만, 옛 링크도 똑같이 고아로 남았었다.
  */
 export async function applyMetaOnDelete(
   writer: PromotionMetaWriter,
@@ -84,17 +86,12 @@ export async function applyMetaOnDelete(
     const before = await writer.getByPromotionId(id);
     snapshots.push({ promotion_id: id, before: before ? { ...before } : null });
     await writer.deleteByPromotionId(id);
-    await writer.removeAllIssueLogs(id).catch(() => {});
   }
   return snapshots;
 }
 
 /**
  * 스냅샷대로 되돌린다. 보상 함수의 본체다.
- *
- * ⚠️ 발급 로그는 되돌리지 않는다 — 삭제된 로그를 복원할 재료가 없다. 이 경로는 프로모션
- * 삭제가 롤백되는 경우에만 도는데, 그때 로그가 비어 있는 것은 자동발급 dedup 을 다시 여는
- * 쪽(재발급 가능)이라 고객이 쿠폰을 잃지 않는 방향이다.
  */
 export async function restoreMetaSnapshots(
   writer: PromotionMetaWriter,
