@@ -44,8 +44,12 @@ medusaIntegrationTestRunner({
 
     // 만료·사용의 정본은 Task 4(#488 G1~G4) 이후 grant 다 — 관리자 수동 발급 라우트는 더
     // 이상 링크의 `data`(expires_at/issued_via/used_at/order_id)를 채우지 않는다. T1·T2 는
-    // 그 값을 링크가 아니라 grant 에서 읽도록 옮겼다(T3·T4·T5 는 링크를 직접 조작/검사하는
-    // 테스트라 영향 없음 — 그대로 둔다).
+    // 그 값을 링크가 아니라 grant 에서 읽도록 옮겼다(T3 는 링크 모듈 자체의 의미론을
+    // 검사하는 테스트라 영향 없음 — 그대로 둔다).
+    //
+    // 🔴 T4(카트 게이트의 인스턴스 만료)는 Task 5(#488 G5~G7)로 한 번 더 옮겨간다 — 게이트가
+    // 이제 링크 행이 아니라 grant 로 「발급된 장」을 판정하므로, T4 도 grant 로 만든다. T5(public
+    // 쿠폰)는 애초에 발급 개념이 없어 grant 와 무관하다 — 정책 `ends_at` 만 본다(영향 없음).
     const metaService = () => getContainer().resolve(PROMOTION_META_MODULE) as any;
 
     beforeEach(async () => {
@@ -325,20 +329,15 @@ medusaIntegrationTestRunner({
         expect(res.status).toEqual(200);
       });
 
-      it('T4 발급된 쿠폰은 «링크 행»의 만료가 기준이다 — 정책 창이 지나도 산다', async () => {
+      it('T4 발급된 쿠폰은 «장»의 만료가 기준이다 — 정책 창이 지나도 산다', async () => {
         const id = await createPromo(`ISSUEDLIVE${seq}`, {
           visibility: 'assigned_only',
           ends_at: '2000-01-01T00:00:00.000Z',
         });
-        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-        await link.create([{
-          [Modules.CUSTOMER]: { customer_id: customerId },
-          [Modules.PROMOTION]: { promotion_id: id },
-          data: {
-            expires_at: new Date('2999-01-01T00:00:00.000Z'),
-            issued_via: 'admin_manual', used_at: null, order_id: null,
-          },
-        }]);
+        await metaService().issueGrant({
+          promotion_id: id, customer_id: customerId, issue_key: `issuedlive_${seq}`,
+          issued_via: 'admin_manual', expires_at: new Date('2999-01-01T00:00:00.000Z'), now: new Date(),
+        });
 
         const res = await api.post(
           '/store/carts',
@@ -348,20 +347,15 @@ medusaIntegrationTestRunner({
         expect(res.status).toEqual(200);
       });
 
-      it('T4 발급된 쿠폰의 링크 만료가 지났으면 못 붙는다 — 정책 창이 열려 있어도', async () => {
+      it('T4 발급된 쿠폰의 장 만료가 지났으면 못 붙는다 — 정책 창이 열려 있어도', async () => {
         const id = await createPromo(`ISSUEDDEAD${seq}`, {
           visibility: 'assigned_only',
           ends_at: '2999-01-01T00:00:00.000Z',
         });
-        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-        await link.create([{
-          [Modules.CUSTOMER]: { customer_id: customerId },
-          [Modules.PROMOTION]: { promotion_id: id },
-          data: {
-            expires_at: new Date('2000-01-01T00:00:00.000Z'),
-            issued_via: 'admin_manual', used_at: null, order_id: null,
-          },
-        }]);
+        await metaService().issueGrant({
+          promotion_id: id, customer_id: customerId, issue_key: `issueddead_${seq}`,
+          issued_via: 'admin_manual', expires_at: new Date('2000-01-01T00:00:00.000Z'), now: new Date(),
+        });
 
         await expect(
           api.post('/store/carts', { region_id: regionId, promo_codes: [`ISSUEDDEAD${seq}`] }, storeHeaders),

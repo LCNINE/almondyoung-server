@@ -10,6 +10,7 @@ import {
   createApiKeysWorkflow,
   linkSalesChannelsToApiKeyWorkflow,
 } from '@medusajs/core-flows';
+import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 
 jest.setTimeout(180 * 1000);
 
@@ -150,6 +151,20 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
+    /** `createAssignedOnlyPromo` 의 일반화 — additional_data 를 그대로 넘긴다(coupon-grant.spec.ts 관례). */
+    const createPromo = async (code: string, additional_data: Record<string, unknown>) => {
+      const res = await api.post(
+        '/admin/promotions',
+        {
+          code, type: 'standard', is_automatic: false, status: 'active',
+          application_method: { type: 'percentage', value: 50, target_type: 'order', currency_code: 'krw' },
+          additional_data,
+        },
+        adminHeaders,
+      );
+      return res.data.promotion.id as string;
+    };
+
     const createTargetPromo = async (code: string, attribute: string, values: string[]) => {
       const res = await api.post(
         '/admin/promotions',
@@ -235,10 +250,13 @@ medusaIntegrationTestRunner({
       seq++;
       const promoId = await createAssignedOnlyPromo(`GATEOK_${seq}`);
       const { cartId, custHeaders, customerId } = await newCustomerCart();
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-      await remoteLink.create([
-        { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promoId } },
-      ]);
+      // 게이트의 정본이 Task 5(#488 G5~G7)로 grant 로 옮겨갔다 — 「할당됨」은 이제 링크 행이
+      // 아니라 coupon_grant 행으로 판정한다(실제 발급 라우트가 그렇게 쓴다).
+      const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await service.issueGrant({
+        promotion_id: promoId, customer_id: customerId, issue_key: `gateok_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
       const res = await api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [`GATEOK_${seq}`] }, custHeaders);
       expect(res.status).toEqual(200);
       expect(res.data.cart.discount_total).toBeGreaterThan(0);
@@ -304,6 +322,66 @@ medusaIntegrationTestRunner({
       await expect(
         api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [code] }, custHeaders),
       ).rejects.toMatchObject({ response: { status: 400, data: { message: 'COUPON_NOT_ASSIGNED' } } });
+    });
+
+    it('G6: 쓸 수 있는 장이 없으면 카트에 붙지 않는다', async () => {
+      seq++;
+      const { cartId, custHeaders, customerId } = await newCustomerCart();
+      const promotionId = await createPromo(`SPENT_${seq}`, { visibility: 'assigned_only' });
+      const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      // 한 장 발급한 뒤 그 장을 소모시킨다 — 체크아웃 없이 「다 쓴 상태」를 만든다.
+      await service.issueGrant({
+        promotion_id: promotionId, customer_id: customerId, issue_key: 'k1',
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
+      const [grant] = await service.listGrantsForCustomer(customerId);
+      await service.consumeGrant(grant.id, 'order_spent', new Date());
+
+      const res = await api
+        .post(`/store/carts/${cartId}/promotions`, { promo_codes: [`SPENT_${seq}`] }, custHeaders)
+        .catch((e: any) => e.response);
+
+      expect(res.status).toBe(400);
+      expect(res.data.message).toBe('COUPON_EXPIRED');
+    });
+
+    it('G5: 2장 중 1장을 써도 남은 장으로 계속 붙는다', async () => {
+      seq++;
+      const { cartId, custHeaders, customerId } = await newCustomerCart();
+      const promotionId = await createPromo(`TWO_${seq}`, { visibility: 'assigned_only' });
+      const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      for (const key of ['k1', 'k2']) {
+        await service.issueGrant({
+          promotion_id: promotionId, customer_id: customerId, issue_key: key,
+          issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        });
+      }
+      const grants = await service.listGrantsForCustomer(customerId);
+      await service.consumeGrant(grants[0].id, 'order_one', new Date());
+
+      const res = await api.post(
+        `/store/carts/${cartId}/promotions`,
+        { promo_codes: [`TWO_${seq}`] },
+        custHeaders,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.data.cart.discount_total).toBeGreaterThan(0);
+    });
+
+    it('발급받지 않은 assigned_only 쿠폰은 여전히 거절된다 — 회귀 방지', async () => {
+      seq++;
+      const { cartId, custHeaders } = await newCustomerCart();
+      await createPromo(`NONE_${seq}`, { visibility: 'assigned_only' });
+
+      const res = await api
+        .post(`/store/carts/${cartId}/promotions`, { promo_codes: [`NONE_${seq}`] }, custHeaders)
+        .catch((e: any) => e.response);
+
+      expect(res.status).toBe(400);
+      expect(res.data.message).toBe('COUPON_NOT_ASSIGNED');
     });
   },
 });

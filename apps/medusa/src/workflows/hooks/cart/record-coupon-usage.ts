@@ -1,10 +1,11 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
-import { listIssuedLinks } from '../../../modules/promotion-meta/issued-link';
-import { buildUsageLinks } from './coupon-usage';
+import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
+import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
+import { selectGrantIdsToConsume } from './coupon-usage';
 
 /**
- * 주문이 생기면 「이 주문에 쓰인 쿠폰」을 링크 행에 남긴다 (#488 N4 → A2 의 선행).
+ * 주문이 생기면 「이 주문에 쓰인 쿠폰」의 장(coupon_grant)을 소모한다 (#488 A2 의 선행, G5~G7).
  *
  * `completeCartWorkflow.hooks.orderCreated` 는 이 저장소에서 아직 아무도 쓰지 않던 자리다
  * (`validate` 는 `complete-cart.ts` 가 이미 쓴다 — 워크플로당 핸들러는 하나뿐이므로 새 훅을
@@ -51,9 +52,7 @@ completeCartWorkflow.hooks.orderCreated(
       const query = container.resolve<{
         graph: (args: unknown) => Promise<{ data: OrderWithPromotions[] }>;
       }>(ContainerRegistrationKeys.QUERY);
-      const link = container.resolve<{ create: (payloads: unknown[]) => Promise<unknown> }>(
-        ContainerRegistrationKeys.LINK,
-      );
+      const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
       const { data: orders } = await query.graph({
         entity: 'order',
@@ -61,23 +60,20 @@ completeCartWorkflow.hooks.orderCreated(
         filters: { id: order_id },
       });
       const found = orders?.[0];
+
+      // C1(2026-08-31 최종 리뷰)이 지키던 불변식("발급된 적 없는 쌍은 절대 만들지 않는다")은
+      // 링크 upsert 를 grant 소모(id 로 UPDATE)로 옮기면서 **구조적으로** 성립한다 — 발급받지
+      // 않은 쿠폰은 `listGrantsForCustomer` 가 애초에 행을 안 돌려주므로 `selectGrantIdsToConsume`
+      // 이 고를 장 자체가 없다. 없는 쌍에 INSERT 가 일어날 경로가 이제 없다(coupon-usage.ts 상단
+      // 주석 참고). 그래서 옛 구현이 필요로 했던 「이미 발급된 것만」 필터가 여기엔 없다.
+      const grants = found?.customer_id ? await promotionMetaService.listGrantsForCustomer(found.customer_id) : [];
+      const now = new Date();
       const promotionIds = (found?.promotions ?? []).map((p) => p.id);
+      const grantIds = selectGrantIdsToConsume(grants, promotionIds, now);
 
-      // C1(2026-08-31 최종 리뷰): buildUsageLinks 는 «이미 발급된» 쌍만 갱신해야 한다 — 이
-      // 고객의 기존 링크 행 집합을 먼저 물어 그 경계를 여기서 정한다. 이 조회를 지우고
-      // promotionIds 를 통째로 넘기면, public 쿠폰처럼 링크 행이 없던 쌍도 upsert 가 INSERT
-      // 해버려 「한 번 쓰면 영원히 유효」가 된다(coupon-usage.ts 상단 주석 참고).
-      const issuedLinks = found?.customer_id ? await listIssuedLinks(container, found.customer_id) : [];
-      const issuedPromotionIds = new Set(issuedLinks.map((l) => l.promotion_id));
-
-      const payloads = buildUsageLinks(
-        found?.customer_id,
-        promotionIds,
-        order_id,
-        new Date(),
-        issuedPromotionIds,
-      );
-      if (payloads.length) await link.create(payloads);
+      for (const grantId of grantIds) {
+        await promotionMetaService.consumeGrant(grantId, order_id, now);
+      }
     } catch (e) {
       // I1(2026-08-31 최종 리뷰): LOGGER 해석 자체가 던지는 경우까지 이 catch 밖으로 새면,
       // orderCreated 는 authorizePaymentSessionStep 뒤에 도는 훅이라 이미 성공한 결제 승인·
