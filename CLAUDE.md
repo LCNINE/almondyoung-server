@@ -177,11 +177,29 @@ npm run test:user-service         # user-service 전용 config
 npm run test:membership           # itdoc (전용 config)
 npm run test:coupang:integration  # 실 DB + adapter-mock 필요
 npm run test:core:integration:local
+scripts/local/run-medusa-integration.sh            # medusa HTTP 통합 (실 DB+redis)
+scripts/local/run-medusa-integration.sh --modules  # medusa 모듈 통합
 ```
 
 DB 를 요구하는 통합 스펙은 `describeIfDb` / `REQUIRE_*_DB=1` 가드로 기본 실행에서
 자동 skip 된다. 새 통합 스펙도 이 컨벤션을 따를 것 — 가드 없이 두면 기본 게이트가
 빨개진다.
+
+**`apps/medusa` 통합 스펙은 `npm run test:integration:*` 를 직접 부르면 안 된다.**
+`@medusajs/test-utils` 는 `DATABASE_URL` 이 아니라 `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`
+를 읽어서, 직접 부르면 원인과 무관해 보이는
+`SASL: SCRAM-SERVER-FIRST-MESSAGE: client password must be a string` 으로 전 스펙이 죽는다.
+위 래퍼 스크립트가 `.env` 의 `DATABASE_URL` 에서 그 넷을 파생시켜 넘긴다 —
+자세한 건 `docs/local-dev.md` §6.
+
+**postgres 와 redis 가 «둘 다» 떠 있어야 한다.** `medusa-config.js` 에서 `TEST_TYPE` 으로
+in-memory 로 갈리는 것은 `event_bus` 하나뿐이고 `cache-redis`·`caching-redis`·
+`workflow-engine-redis`·`locking-redis` 는 테스트에서도 실제 접속한다(2026-09-03 실측:
+redis 없이 돌리면 앱 부팅 단계에서 스펙이 실패한다).
+
+CI 는 `medusa-unit-tests.yml` 의 `integration` job 이 두 스펙 묶음을 모두 돌린다 —
+postgres + redis service 를 띄우고 `DB_*`·`REDIS_URL` 을 넘긴다. `apps/medusa/**` 변경 PR 에만
+붙는다.
 
 ## Architecture
 

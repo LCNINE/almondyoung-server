@@ -1,4 +1,4 @@
-name: Medusa unit tests
+name: Medusa tests
 
 # 루트 검증 게이트(verification-gates.yml)는 apps/medusa 를 덮지 않는다.
 # tsconfig.json 의 exclude 에 apps/medusa 가 있어 type-check 가 보지 않고,
@@ -6,6 +6,10 @@ name: Medusa unit tests
 #
 # Medusa 는 자체 package-lock 과 jest 설정을 가진 별도 트리라 설치가 무겁다.
 # 매 PR 에 붙이면 관계없는 변경까지 느려지므로 paths 필터로 Medusa 변경 시에만 돈다.
+#
+# 파일명이 `medusa-unit-tests.yml` 인 채로 유닛 + 통합을 둘 다 돌린다. 이름을 바꾸면
+# Actions 실행 이력이 끊기고 이 파일을 가리키는 문서 참조 여러 곳이 한꺼번에 낡는다 —
+# 표시 이름(`name:`)만 실제 내용에 맞췄다.
 #
 # 주의: 이 워크플로는 npm ci / package-lock.json 으로 설치한다. 프로덕션 배포(Dockerfile)는
 # `yarn --frozen-lockfile` / yarn.lock 을 쓴다 — 두 lockfile 이 항상 같은 트리를 고정한다는
@@ -53,3 +57,74 @@ jobs:
       - name: Unit tests
         working-directory: apps/medusa
         run: npm run test:unit
+
+  # 실 DB 통합 스펙. 이 게이트가 없던 동안 `integration-tests/http/` 의 쿠폰 스펙 8개와
+  # `src/modules/*/__tests__/*.integration.spec.ts` 는 사람이 로컬에서 돌리는 것이 유일한
+  # 방어선이었다 — ADR-0034 의 결정 4 가 이 job 을 요구한다.
+  #
+  # 조건부 UPDATE·트랜잭션 원자성처럼 «목으로는 전부 통과하고 실 DB 에서만 갈리는» 성질이
+  # 쿠폰 발급 경로의 핵심이라, 유닛 게이트만으로는 회귀를 못 잡는다.
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      # docker-compose.yml 의 로컬 개발 스택과 같은 이미지·같은 자격증명으로 맞춘다.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      # 🔴 redis 는 선택이 아니다. medusa-config.js 에서 TEST_TYPE 으로 in-memory 로 갈리는
+      # 것은 event_bus «하나뿐»이고, cache-redis · caching-redis · workflow-engine-redis ·
+      # locking-redis 는 테스트에서도 REDIS_URL 로 실제 접속한다. 없으면 앱 부팅에서 죽는다.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # 🔴 @medusajs/test-utils 는 DATABASE_URL 을 «보지 않는다». DB_HOST/DB_USERNAME/
+      # DB_PASSWORD 로 접속해 실행마다 임시 DB 를 만든다. DATABASE_URL 만 걸어두면 원인과
+      # 무관해 보이는 `SASL: ... client password must be a string` 으로 죽는다.
+      DB_HOST: localhost
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_URL: redis://localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/medusa/package-lock.json
+
+      - name: Install (medusa)
+        working-directory: apps/medusa
+        run: npm ci
+
+      # apps/medusa/.env 는 커밋되지 않는다. 위 env 만으로 부팅되는 것을 확인했다
+      # (2026-09-03 실측: .env 를 치우고 health 스펙 통과).
+      - name: Module integration tests
+        working-directory: apps/medusa
+        run: npm run test:integration:modules
+
+      - name: HTTP integration tests
+        working-directory: apps/medusa
+        run: npm run test:integration:http
