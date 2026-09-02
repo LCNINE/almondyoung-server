@@ -230,6 +230,35 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
+   * 백필 전용. `(promotion_id, customer_id, issue_key)` 로 grant 를 찾아 **아직 미사용일 때만**
+   * `used_at`/`order_id` 를 채운다.
+   *
+   * 존재 확인과 "미사용일 때만" 갱신을 한 호출로 묶은 이유: `backfill-coupon-grants.ts` 가
+   * grant 생성(`issueGrant`, 멱등)과 사용 상태 이관을 **별개 스텝**으로 부른다 — 스크립트가
+   * grant 생성 뒤 이 호출 전에 중단되면(프로세스 킬·DB 타임아웃), 재실행 시 `issueGrant` 는
+   * `'duplicate'` 를 돌려주지만 grant 는 이미 존재하므로 이 메서드는 여전히 불려야 한다.
+   * `used_at != null` 가드가 그 재실행에서 이미 채워진 값을 또 덮어쓰지 않게 해 멱등하다.
+   */
+  async markGrantUsedIfUnused(
+    promotionId: string,
+    customerId: string,
+    issueKey: string,
+    orderId: string,
+    usedAt: Date,
+  ): Promise<'consumed' | 'already_used' | 'not_found'> {
+    const rows = (await (this as any).listCouponGrants({
+      promotion_id: promotionId,
+      customer_id: customerId,
+      issue_key: issueKey,
+    })) as CouponGrantRow[];
+    const grant = rows[0];
+    if (!grant) return 'not_found';
+    if (grant.used_at != null) return 'already_used';
+    await this.consumeGrant(grant.id, orderId, usedAt);
+    return 'consumed';
+  }
+
+  /**
    * 이 주문에 쓰인 장들을 되돌린다 (A2). 되살린 장수를 돌려준다.
    *
    * **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.

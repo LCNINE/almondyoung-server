@@ -18,7 +18,12 @@ const CONFIRM_VALUE = 'backfill-coupon-grants';
  * 유니크는 그 쌍에 키를 더한 삼중이므로, 관리자 발급분은 `'legacy'` 고정으로 충분하다.
  * 이후 관리자 발급은 제출 UUID 키를 쓰므로 `'legacy'` 와 절대 충돌하지 않는다.
  *
- * 멱등하다 — 같은 키로 두 번 돌리면 유니크가 막아 `duplicate` 로 건너뛴다.
+ * 멱등하다 — 같은 키로 두 번 돌리면 grant 생성은 유니크가 막아 `duplicate` 로 건너뛰고,
+ * 사용 상태 이관은 `markGrantUsedIfUnused` 가 "아직 미사용일 때만" 갱신해 멱등하다. 이 둘을
+ * 하나의 `if (result === 'duplicate') continue` 로 묶으면 안 된다 — grant 생성 성공 뒤
+ * 사용 상태 이관 전에 스크립트가 중단되면, 재실행에서 `'duplicate'` 로 스킵되어 그 grant 는
+ * 영원히 미사용으로 남는다(이미 쓴 쿠폰을 고객이 한 번 더 쓸 수 있게 된다). 그래서 사용 상태
+ * 이관은 `result` 와 무관하게 매번 시도한다.
  *
  * 사용:
  *   dry-run(기본):  medusa exec ./src/scripts/backfill-coupon-grants.ts
@@ -51,6 +56,7 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
 
   let created = 0;
   let duplicate = 0;
+  let usageSynced = 0;
   for (const l of rows) {
     const issuedVia: IssueTrigger = (l.issued_via as IssueTrigger) ?? 'admin_manual';
     const issueKey =
@@ -78,24 +84,27 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
     });
     if (result === 'duplicate') {
       duplicate++;
-      continue;
+    } else {
+      created++;
     }
-    created++;
 
-    // 옛 링크가 이미 사용된 장이었다면 사용 기록도 옮긴다.
+    // 옛 링크가 이미 사용된 장이었다면 사용 기록도 옮긴다. `result` 와 무관하게 매번 시도한다 —
+    // 'duplicate' 는 "이 실행에서 grant 를 안 만들었다"는 뜻이지 "사용 상태까지 이미 옮겨졌다"는
+    // 뜻이 아니다(중단-재실행 케이스, 위 docblock 참고). `markGrantUsedIfUnused` 가 이미 채워진
+    // 값은 건드리지 않으므로 몇 번을 불러도 안전하다.
     if (l.used_at) {
-      const mine = await promotionMetaService.listCouponGrants({
-        promotion_id: l.promotion_id,
-        customer_id: l.customer_id,
-        issue_key: issueKey,
-      });
-      if (mine[0]) {
-        await promotionMetaService.consumeGrant(mine[0].id, l.order_id ?? 'legacy', new Date(l.used_at));
-      }
+      const outcome = await promotionMetaService.markGrantUsedIfUnused(
+        l.promotion_id,
+        l.customer_id,
+        issueKey,
+        l.order_id ?? 'legacy',
+        new Date(l.used_at),
+      );
+      if (outcome === 'consumed') usageSynced++;
     }
   }
 
   logger.info(
-    `[grant-backfill] done mode=${dryRun ? 'dry-run' : 'write'} created=${created} duplicate=${duplicate}`,
+    `[grant-backfill] done mode=${dryRun ? 'dry-run' : 'write'} created=${created} duplicate=${duplicate} usageSynced=${usageSynced}`,
   );
 }

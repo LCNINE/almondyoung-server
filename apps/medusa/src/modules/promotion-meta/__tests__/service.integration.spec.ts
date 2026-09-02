@@ -169,6 +169,61 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(after.find((g) => g.id === grants[0].id)?.order_id).toBe('order_1');
       });
 
+      // 백필 스크립트의 «중단→재실행» 시나리오를 지킨다: grant 생성은 됐지만 사용 상태 이관
+      // 전에 죽었다가 재실행되는 경우를 흉내낸다. issueGrant 가 재실행에서 'duplicate' 를
+      // 돌려줘도 이 메서드는 여전히 불려야 하고(스크립트가 그렇게 부른다), 이미 채워진 값은
+      // 덮어쓰지 않아야 한다(#488 Task 10 리뷰 Important #1).
+      it('markGrantUsedIfUnused 는 미사용 grant 만 채우고 재호출에도 값이 그대로다', async () => {
+        await service.createCouponGrants([
+          {
+            promotion_id: 'promo_backfill',
+            customer_id: 'cus_backfill',
+            issue_key: 'legacy',
+            issued_via: 'admin_manual',
+            issued_at: new Date(),
+          },
+        ]);
+
+        const usedAt = new Date('2026-01-01T00:00:00.000Z');
+        const first = await service.markGrantUsedIfUnused(
+          'promo_backfill',
+          'cus_backfill',
+          'legacy',
+          'order_legacy',
+          usedAt,
+        );
+        expect(first).toBe('consumed');
+
+        const afterFirst = await service.listGrantsForCustomer('cus_backfill');
+        expect(afterFirst[0].used_at).not.toBeNull();
+        expect(afterFirst[0].order_id).toBe('order_legacy');
+
+        // 재실행(같은 usedAt 이거나 달라도) — 이미 채워진 값을 덮어쓰지 않는다.
+        const second = await service.markGrantUsedIfUnused(
+          'promo_backfill',
+          'cus_backfill',
+          'legacy',
+          'order_other',
+          new Date('2099-01-01T00:00:00.000Z'),
+        );
+        expect(second).toBe('already_used');
+
+        const afterSecond = await service.listGrantsForCustomer('cus_backfill');
+        expect(new Date(afterSecond[0].used_at as string).toISOString()).toBe(usedAt.toISOString());
+        expect(afterSecond[0].order_id).toBe('order_legacy');
+      });
+
+      it('markGrantUsedIfUnused 는 grant 가 없으면 not_found 를 돌려준다', async () => {
+        const outcome = await service.markGrantUsedIfUnused(
+          'promo_missing',
+          'cus_missing',
+          'legacy',
+          'order_x',
+          new Date(),
+        );
+        expect(outcome).toBe('not_found');
+      });
+
       it('restoreGrantsByOrder 는 만료되지 않은 장만 되살린다', async () => {
         const past = new Date('2020-01-01T00:00:00.000Z');
         const future = new Date('2099-01-01T00:00:00.000Z');
