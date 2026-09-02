@@ -142,7 +142,7 @@ export class UsersController {
   @Get('me')
   @HttpCode(HttpStatus.OK)
   async getMe(@CurrentUser() user: JwtPayload): Promise<UserResponseDto> {
-    return this.usersService.findUserById(user.id);
+    return this.usersService.findActiveUserById(user.id);
   }
 
   @ApiOperation({ summary: '현재 사용자 프로필 상세 조회 (전화번호, 주소, 상점 정보 포함)' })

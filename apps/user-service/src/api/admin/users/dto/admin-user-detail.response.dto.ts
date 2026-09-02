@@ -25,6 +25,7 @@ export class AdminUserDetailResponseDto {
 
   @ApiProperty({ nullable: true })
   deletedAt: Date | null;
+  dormantAt: Date | null;
 
   @ApiProperty()
   createdAt: Date;

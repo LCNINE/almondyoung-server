@@ -22,6 +22,13 @@
       "when": 1783663333407,
       "tag": "20260710060213_add-email-verifications",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788325251538,
+      "tag": "20260902050051_add-dormant-at",
+      "breakpoints": true
     }
   ]
 }

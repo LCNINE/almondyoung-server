@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, ilike, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, isNotNull, isNull, or } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { AdminUserDetailResponseDto } from './dto/admin-user-detail.response.dto';
 import { UpdateUserDto } from '../../users/dto/update-user.dto';
@@ -30,6 +30,7 @@ export class UsersService {
     page?: number;
     limit?: number;
     roleName?: string;
+    status?: 'active' | 'withdrawn' | 'dormant';
     sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
     order?: 'asc' | 'desc';
     ids?: string;
@@ -84,6 +85,13 @@ export class UsersService {
         }
         conditions.push(or(...orConditions));
       }
+      if (filters?.status === 'active') {
+        conditions.push(and(isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
+      } else if (filters?.status === 'withdrawn') {
+        conditions.push(isNotNull(schema.users.deletedAt));
+      } else if (filters?.status === 'dormant') {
+        conditions.push(and(isNotNull(schema.users.dormantAt), isNull(schema.users.deletedAt)));
+      }
       if (filters?.roleName) {
         const roleNames = filters.roleName
           .split(',')
@@ -128,6 +136,7 @@ export class UsersService {
           mustChangePassword: schema.users.mustChangePassword,
           lastActivityAt: schema.users.lastActivityAt,
           deletedAt: schema.users.deletedAt,
+          dormantAt: schema.users.dormantAt,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
           phoneNumber: schema.profiles.phoneNumber,
@@ -189,6 +198,7 @@ export class UsersService {
         isEmailVerified: schema.users.isEmailVerified,
         lastActivityAt: schema.users.lastActivityAt,
         deletedAt: schema.users.deletedAt,
+        dormantAt: schema.users.dormantAt,
         createdAt: schema.users.createdAt,
         updatedAt: schema.users.updatedAt,
         shop: schema.shops,
@@ -238,6 +248,7 @@ export class UsersService {
         mustChangePassword: schema.users.mustChangePassword,
         lastActivityAt: schema.users.lastActivityAt,
         deletedAt: schema.users.deletedAt,
+        dormantAt: schema.users.dormantAt,
         createdAt: schema.users.createdAt,
         updatedAt: schema.users.updatedAt,
       });

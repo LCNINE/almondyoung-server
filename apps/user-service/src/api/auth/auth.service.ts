@@ -431,6 +431,10 @@ export class AuthService {
     if (!user) throw new BadRequestException(INVALID_CREDENTIALS_MESSAGE);
 
     if (user.deletedAt) {
+      throw new ForbiddenException('탈퇴한 계정입니다. 다시 이용하시려면 새로 가입해주세요.');
+    }
+
+    if (user.dormantAt) {
       throw new ForbiddenException('휴면 처리된 사용자입니다. 관리자에게 문의해주세요.');
     }
 
@@ -1016,14 +1020,34 @@ export class AuthService {
     return;
   }
 
+  /**
+   * 회원 탈퇴 — 식별정보를 즉시 파기(익명화)한다.
+   *
+   * 개인정보처리방침 제3조는 "회원 탈퇴 시 지체 없이 파기", 이용약관 제8조 ① 은 "즉시 탈퇴
+   * 처리" 를 약속한다. 그래서 논리 삭제 플래그만 세우고 개인정보를 그대로 들고 있으면 안 된다.
+   *
+   * 남는 것은 식별정보가 제거된 껍데기 행과 동의 이력·블랙리스트뿐이다. 행 자체를 즉시 지우지
+   * 않는 이유는 두 가지다 — (1) 소비자 불만·분쟁 처리 기록 3년(전자상거래법) 의 근거가 되는
+   * 동의 이력이 cascade 로 함께 사라지고, (2) 블랙리스트 이력이 사라져 자격 상실자가 곧바로
+   * 재가입할 수 있게 된다. 껍데기 행은 `PermanentDeleteService` 가 보관 기간 뒤에 지운다.
+   *
+   * 계약·결제 기록의 법정 보관(5년)은 여기가 아니라 주문 데이터가 담당한다. Medusa 의 order 는
+   * customer 를 FK 로 참조하지 않고 주문자 이름·연락처·주소를 자체 스냅샷으로 들고 있어,
+   * 이 익명화가 그 보관을 깨지 않는다.
+   */
   async softDeleteUser(userId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
+      // 탈퇴는 세션 종료까지 포함한다. 살아있는 refresh token 을 남기면 IdP 세션이 그대로
+      // 유지돼, 탈퇴한 계정이 로그인 화면을 거치지 않고 silent SSO 로 다시 들어온다.
       await tx
-        .update(userServiceSchema.users)
-        .set({
-          deletedAt: new Date(),
-        })
-        .where(eq(userServiceSchema.users.id, userId));
+        .update(userServiceSchema.oauthTokens)
+        .set({ isRevoked: true, updatedAt: new Date() })
+        .where(
+          and(eq(userServiceSchema.oauthTokens.userId, userId), eq(userServiceSchema.oauthTokens.isRevoked, false)),
+        );
+      await this.tokensService.deleteAllTokens(userId, tx);
+
+      await this.anonymizeIdentity(userId, tx);
 
       await this.eventPublisher.publishEvent({
         eventType: 'UserDeleted',
@@ -1033,6 +1057,51 @@ export class AuthService {
         },
       });
     }, tx);
+  }
+
+  /**
+   * 식별정보 파기. users 행의 식별 컬럼을 되돌릴 수 없는 값으로 덮고, 부가 개인정보 행은 지운다.
+   *
+   * loginId/email 을 비워두는 게 아니라 치환하는 이유는 두 컬럼이 NOT NULL + UNIQUE 이기 때문이다.
+   * 치환은 유일성 제약을 풀어주므로, 탈퇴자가 같은 이메일·아이디로 곧바로 재가입할 수 있게 된다
+   * (자발적 탈퇴자에게 재가입 제한을 두지 않는 것이 표준이고, 약관의 3년 제한은 회사가 자격을
+   * 박탈한 경우에만 적용된다).
+   *
+   * password 를 null 로 만들어 비밀번호 대조 자체가 성립하지 않게 한다 — `signIn` 의 탈퇴 차단이
+   * 어떤 이유로 우회되더라도 로그인이 되지 않는다.
+   */
+  private async anonymizeIdentity(userId: string, tx: DbTransaction): Promise<void> {
+    // 사용자 id 에서 파생해 충돌 없이 유일하고, 원본으로 되돌릴 수 없는 값.
+    const token = userId.replace(/-/g, '');
+
+    await tx
+      .update(userServiceSchema.users)
+      .set({
+        loginId: `withdrawn_${token.slice(0, 20)}`, // varchar(30)
+        nickname: `withdrawn_${token.slice(0, 20)}`,
+        email: `withdrawn_${token}@deleted.invalid`, // varchar(60)
+        username: '탈퇴회원',
+        password: null,
+        deletedAt: new Date(),
+      })
+      .where(eq(userServiceSchema.users.id, userId));
+
+    // 서비스 이용을 위해 받았을 뿐 법정 보관 근거가 없는 정보는 이 시점에 파기한다.
+    // profiles: 전화번호·주소·생년월일·프로필 이미지
+    // user_identities: 소셜 로그인 연동
+    // cafe24_links: 외부몰 연동 (cafe24_snapshots 의 이름·연락처가 cascade 로 함께 삭제된다)
+    // wishlist / recent_views: 행태 정보
+    await tx.delete(userServiceSchema.profiles).where(eq(userServiceSchema.profiles.userId, userId));
+    await tx.delete(userServiceSchema.userIdentities).where(eq(userServiceSchema.userIdentities.userId, userId));
+    await tx.delete(userServiceSchema.cafe24Links).where(eq(userServiceSchema.cafe24Links.userId, userId));
+    await tx.delete(userServiceSchema.wishlist).where(eq(userServiceSchema.wishlist.userId, userId));
+    await tx.delete(userServiceSchema.userRecentViews).where(eq(userServiceSchema.userRecentViews.userId, userId));
+
+    // 사업자 정보(사업자번호·대표자명)와 상점 정보. 법정 보관 목록에 없어 파기 대상이고,
+    // business_number 에 유일 제약이 걸려 있어 남겨두면 같은 사업자번호로 재가입한 사람이
+    // 사업자 등록을 다시 하지 못한다 — 이메일·아이디를 치환하는 것과 같은 이유로 지운다.
+    await tx.delete(userServiceSchema.businessLicenses).where(eq(userServiceSchema.businessLicenses.userId, userId));
+    await tx.delete(userServiceSchema.shops).where(eq(userServiceSchema.shops.userId, userId));
   }
 
   /**

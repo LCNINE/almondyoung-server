@@ -56,6 +56,14 @@ export class GetUsersQueryDto {
   order?: 'asc' | 'desc';
 
   @ApiPropertyOptional({
+    description: '계정 상태 필터. 미지정 시 탈퇴 회원까지 모두 반환',
+    enum: ['active', 'withdrawn'],
+  })
+  @IsOptional()
+  @IsEnum(['active', 'withdrawn'])
+  status?: 'active' | 'withdrawn';
+
+  @ApiPropertyOptional({
     description: 'ID 목록 (UUID 콤마 구분, 예: id1,id2). 지정 시 일치 항목만 반환',
   })
   @IsOptional()

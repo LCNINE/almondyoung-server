@@ -56,6 +56,7 @@ export class UsersService {
           mustChangePassword: schema.users.mustChangePassword,
           lastActivityAt: schema.users.lastActivityAt,
           deletedAt: schema.users.deletedAt,
+          dormantAt: schema.users.dormantAt,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
         })
@@ -136,6 +137,7 @@ export class UsersService {
           mustChangePassword: schema.users.mustChangePassword,
           lastActivityAt: schema.users.lastActivityAt,
           deletedAt: schema.users.deletedAt,
+          dormantAt: schema.users.dormantAt,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
         })
@@ -153,7 +155,7 @@ export class UsersService {
   /**
    * userId 묶음 → 알림 발송용 연락처. 서버 간(internal) 호출 전용이다.
    *
-   * 탈퇴(deletedAt) 계정은 제외한다 — 법정 고지라도 탈퇴자에겐 보내지 않는다.
+   * 탈퇴(deletedAt)·휴면(dormantAt) 계정은 제외한다 — 법정 고지라도 탈퇴자에겐 보내지 않는다.
    * 못 찾은 userId 는 조용히 빠진다(호출자가 개수 차이로 판단).
    */
   async findContactsByIds(userIds: string[]): Promise<{ userId: string; email: string; username: string }[]> {
@@ -165,7 +167,9 @@ export class UsersService {
         username: schema.users.username,
       })
       .from(schema.users)
-      .where(and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt)));
+      .where(
+        and(inArray(schema.users.id, userIds), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)),
+      );
     return rows;
   }
 
@@ -255,6 +259,21 @@ export class UsersService {
   async findUserById(id: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
     return this.getUserBaseInfo(id, client);
+  }
+
+  /**
+   * 탈퇴 계정을 "없는 사용자" 로 취급해 조회한다.
+   *
+   * auth-web 의 `/oauth/authorize` 는 `/users/me` 가 200 을 주는지로 활성 세션을 판정한다.
+   * 탈퇴한 계정에도 200 을 주면 로그인 화면을 거치지 않고 silent SSO 로 다시 들어온다.
+   * 관리자 화면은 탈퇴 회원도 봐야 하므로 `findUserById` 는 그대로 두고, 인증 경로만 이걸 쓴다.
+   */
+  async findActiveUserById(id: string, tx?: DbTransaction) {
+    const user = await this.findUserById(id, tx);
+    if (user.deletedAt || user.dormantAt) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+    return user;
   }
 
   // 사용자 프로필 정보 업데이트

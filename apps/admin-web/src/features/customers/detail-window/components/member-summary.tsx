@@ -57,6 +57,17 @@ export function MemberSummary({ customerId }: { customerId: string }) {
         )}
       </div>
 
+      {/* 탈퇴·휴면은 다른 정보보다 먼저 보여야 한다 — 응대 판단이 여기서 갈린다. */}
+      {customer?.deletedAt ? (
+        <div className="px-2 py-1 mt-2 text-xs font-medium text-red-700 rounded-md bg-red-50">
+          탈퇴 회원 · {formatDate(customer.deletedAt)} 탈퇴
+        </div>
+      ) : customer?.dormantAt ? (
+        <div className="px-2 py-1 mt-2 text-xs font-medium text-gray-700 rounded-md bg-gray-100">
+          휴면 회원 · {formatDate(customer.dormantAt)} 전환
+        </div>
+      ) : null}
+
       {/* 멤버십 상태 + 역할 배지 */}
       <div className="flex flex-wrap gap-1 mt-2">
         {badges.map((label) => (

@@ -98,7 +98,11 @@ export const users = pgTable('users', {
   lastActivityAt: timestamp('last_activity_at')
     .default(sql`now()`)
     .notNull(),
+  // 탈퇴(본인 요청) 시각. 휴면과 구분한다 — 두 상태를 한 컬럼으로 다루면 관리자 화면도
+  // 로그인 안내 문구도 둘을 구별할 수 없다.
   deletedAt: timestamp('deleted_at'),
+  // 장기 미접속 휴면 전환 시각. 되살릴 수 있는 상태라 탈퇴와 성격이 다르다.
+  dormantAt: timestamp('dormant_at'),
   ...timestampColumns,
 });
 

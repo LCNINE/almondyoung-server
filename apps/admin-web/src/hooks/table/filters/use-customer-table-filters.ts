@@ -12,5 +12,15 @@ export function useCustomerTableFilters(): Filter[] {
         { label: '일반회원', value: 'user' },
       ],
     },
+    {
+      key: 'status',
+      label: '계정 상태',
+      type: 'select',
+      options: [
+        { label: '정상', value: 'active' },
+        { label: '탈퇴', value: 'withdrawn' },
+        { label: '휴면', value: 'dormant' },
+      ],
+    },
   ];
 }

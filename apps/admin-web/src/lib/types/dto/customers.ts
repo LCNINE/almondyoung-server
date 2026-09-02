@@ -147,6 +147,7 @@ interface CustomerListQuery {
   limit?: number;
   q?: string;
   roleName?: string;
+  status?: 'active' | 'withdrawn' | 'dormant';
   sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
   order?: 'asc' | 'desc';
 }
@@ -161,6 +162,7 @@ interface CustomerListItem {
   isEmailVerified: boolean;
   lastActivityAt: string | null;
   deletedAt: string | null;
+  dormantAt: string | null;
   createdAt: string;
   updatedAt: string;
   roles: string[];

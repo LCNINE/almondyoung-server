@@ -12,7 +12,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Checkbox } from "@/components/ui/checkbox"
-import { toLocalizedPath } from "@lib/utils/locale-path"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useId, useState, useTransition } from "react"
@@ -22,9 +22,17 @@ import { Button } from "@/components/ui/button"
 
 interface WithdrawFormProps {
   countryCode: string
+  /** 이용 중인 멤버십이 있는지. 있으면 자동 해지 사실을 안내한다. */
+  hasMembership?: boolean
+  /** 정책상 환급받을 금액이 남아 있는지. 있을 때만 "먼저 해지" 를 권한다. */
+  hasRefundableAmount?: boolean
 }
 
-export function WithdrawForm({ countryCode }: WithdrawFormProps) {
+export function WithdrawForm({
+  countryCode,
+  hasMembership = false,
+  hasRefundableAmount = false,
+}: WithdrawFormProps) {
   const t = useTranslations("mypage.account.withdraw")
   const router = useRouter()
   const checkboxId = useId()
@@ -32,19 +40,29 @@ export function WithdrawForm({ countryCode }: WithdrawFormProps) {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  const notices = [t("notice1"), t("notice2"), t("notice3"), t("notice4")]
+  const notices = [
+    t("notice1"),
+    t("notice2"),
+    t("notice3"),
+    t("notice4"),
+    t("notice5"),
+  ]
 
   const handleWithdraw = () => {
     setConfirmOpen(false)
 
     startTransition(async () => {
       try {
-        await withdrawUserAction()
-        window.location.replace(toLocalizedPath(countryCode, "/"))
+        const { redirectUrl } = await withdrawUserAction(countryCode)
+        // IdP 세션까지 끊어야 하므로 end_session 으로 이동한다 (없으면 홈).
+        window.location.replace(redirectUrl)
       } catch (error) {
-        const message =
-          error instanceof Error && error.message ? error.message : t("error")
-        toast.error(message)
+        const err = error as Error & { digest?: string }
+        // UNAUTHORIZED 는 error.tsx 의 토큰 복구로 넘긴다.
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
+        }
+        toast.error(err.message || t("error"))
       }
     })
   }
@@ -52,6 +70,27 @@ export function WithdrawForm({ countryCode }: WithdrawFormProps) {
   return (
     <div className="mx-auto max-w-2xl space-y-8 py-2 md:py-4">
       <p className="text-sm text-gray-500">{t("description")}</p>
+
+      {hasMembership && (
+        <section className="rounded-md border border-primary/30 bg-primary/5 px-5 py-4">
+          <h2 className="mb-2 text-sm font-semibold text-foreground">
+            {t("membershipNoticeTitle")}
+          </h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {hasRefundableAmount
+              ? t("membershipNoticeRefundable")
+              : t("membershipNotice")}
+          </p>
+          {hasRefundableAmount && (
+            <LocalizedClientLink
+              href="/mypage/membership"
+              className="mt-3 inline-flex text-sm font-medium text-primary underline underline-offset-4"
+            >
+              {t("membershipNoticeAction")}
+            </LocalizedClientLink>
+          )}
+        </section>
+      )}
 
       <section className="rounded-md bg-gray-50 px-5 py-4">
         <h2 className="mb-3 text-sm font-semibold text-gray-900">

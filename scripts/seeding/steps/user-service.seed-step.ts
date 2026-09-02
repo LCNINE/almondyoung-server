@@ -128,8 +128,9 @@ const SCOPES = [
 export const USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP: Record<string, string[]> = {
   master: ['master'],
   admin: SCOPES.map((s) => s.key).filter((k) => k !== 'master'),
-  membership: ['user:read', 'user:modify'],
-  user: ['user:read', 'user:modify'],
+  // user:delete 는 "본인 계정 탈퇴" 다. 관리자 권한이 아니라 고객이 당연히 가져야 하는 스코프.
+  membership: ['user:read', 'user:modify', 'user:delete'],
+  user: ['user:read', 'user:modify', 'user:delete'],
 };
 
 const ROLE_SCOPE_MAP = USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP;

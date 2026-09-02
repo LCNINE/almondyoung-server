@@ -2,7 +2,7 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { CustomerListItem } from '@/lib/types';
 import { IdCell, DateCell, CopyableTextCell, PlaceholderCell } from '@/components/table/table-cells/common';
-import { EmailVerifiedCell, RoleCell } from '@/components/table/table-cells/user';
+import { AccountStatusCell, EmailVerifiedCell, RoleCell } from '@/components/table/table-cells/user';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 
 const columnHelper = createColumnHelper<CustomerListItem>();
@@ -39,6 +39,13 @@ export const useCustomerTableColumns = () => {
       columnHelper.accessor('createdAt', {
         header: '가입일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
+      }),
+      columnHelper.accessor('deletedAt', {
+        header: '상태',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <AccountStatusCell deletedAt={row.original.deletedAt} dormantAt={row.original.dormantAt} />
+        ),
       }),
     ],
     []

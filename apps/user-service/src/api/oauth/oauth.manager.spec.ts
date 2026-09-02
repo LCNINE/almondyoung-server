@@ -378,4 +378,51 @@ describe('OAuthManager — nonce propagation', () => {
       ).rejects.toThrow(/code .*required/);
     });
   });
+
+  // 탈퇴한 계정이 계속 로그인되던 경로. 탈퇴 시점에 살아있던 refresh token 으로 회전을 계속하면
+  // 세션이 만료 없이 이어졌고, auth-web 의 silent SSO 는 그 위에서 새 code 까지 내줬다.
+  describe('탈퇴 계정 차단', () => {
+    const withdrawn = {
+      id: 'u-1',
+      email: 'a@b.c',
+      nickname: 'n',
+      username: 'u',
+      deletedAt: new Date('2026-09-01'),
+    };
+
+    it('refresh_token 그랜트: 탈퇴 계정이면 토큰을 재발급하지 않는다', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(makeClient());
+      usersService.findUserById.mockResolvedValue(withdrawn as never);
+      repo.findOAuthTokenByRefresh.mockResolvedValue({
+        id: 'rt-1',
+        userId: 'u-1',
+        clientId: 'admin-web',
+        refreshToken: 'rt-parent',
+        scope: 'openid profile',
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      } as never);
+
+      await expect(
+        manager.issueToken({ grantType: 'refresh_token', clientId: 'admin-web', refreshToken: 'rt-parent' }),
+      ).rejects.toThrow(/withdrawn/);
+      expect(repo.insertOAuthToken).not.toHaveBeenCalled();
+    });
+
+    it('authorization code 발급: 탈퇴 계정이면 code 를 만들지 않는다', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(makeClient());
+      usersService.findUserById.mockResolvedValue(withdrawn as never);
+
+      await expect(
+        manager.issueAuthorizationCode({
+          clientId: 'admin-web',
+          userId: '11111111-1111-1111-1111-111111111111',
+          redirectUri: 'https://admin.example.com/auth/callback',
+          codeChallenge: 'challenge',
+          codeChallengeMethod: 'S256',
+        }),
+      ).rejects.toThrow(/user not found/);
+      expect(repo.insertAuthorizationCode).not.toHaveBeenCalled();
+    });
+  });
 });
