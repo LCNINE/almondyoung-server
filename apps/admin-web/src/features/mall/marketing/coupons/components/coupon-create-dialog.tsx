@@ -168,7 +168,6 @@ export function CouponCreateDialog({
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
   const [usageLimit, setUsageLimit] = useState<number | ''>('');
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
-  const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
   const [maxClaims, setMaxClaims] = useState<number | ''>('');
   const [visibility, setVisibility] = useState<CouponVisibility>('public');
   const [autoIssueTrigger, setAutoIssueTrigger] = useState<AutoIssueTrigger | ''>('');
@@ -199,7 +198,7 @@ export function CouponCreateDialog({
           targetType, targetAttribute,
           targetItemIds: targetItems.map((i) => i.id),
           minOrderAmount, customerGroupIds, startsAt, endsAt, validityDays,
-          usageLimit, spendLimit, maxUsesPerCustomer, maxClaims,
+          usageLimit, spendLimit, maxClaims,
           visibility, autoIssueTrigger,
           createdBy: me?.email || me?.username,
         },
@@ -227,7 +226,6 @@ export function CouponCreateDialog({
     setMinOrderAmount('');
     setUsageLimit('');
     setSpendLimit('');
-    setMaxUsesPerCustomer('');
     setMaxClaims('');
     setVisibility('public');
     setAutoIssueTrigger('');
@@ -461,9 +459,7 @@ export function CouponCreateDialog({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            &lsquo;총 사용 횟수(선착순)&rsquo;는 전역 한도라 다른 한도와 자유롭게 함께 쓸 수 있습니다.
-            &lsquo;총 할인금액 한도&rsquo;와 &lsquo;1인당 사용 횟수 제한&rsquo;은 캠페인 예산 슬롯을 하나만 쓰므로
-            <b>둘을 동시에 설정할 수 없습니다</b>.
+            &lsquo;총 사용 횟수(선착순)&rsquo;와 &lsquo;총 할인금액 한도&rsquo;는 서로 다른 슬롯이라 자유롭게 함께 쓸 수 있습니다.
             발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
           </p>
 
@@ -489,50 +485,20 @@ export function CouponCreateDialog({
                 type="number"
                 min={1}
                 value={spendLimit}
-                onChange={(e) => {
-                  setSpendLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) setMaxUsesPerCustomer('');
-                }}
+                onChange={(e) => setSpendLimit(e.target.value ? Number(e.target.value) : '')}
                 placeholder="예: 5000000"
-                disabled={!!maxUsesPerCustomer}
               />
               {!!spendLimit && (
                 <p className="text-xs text-muted-foreground">
                   최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
                 </p>
               )}
-              {!!maxUsesPerCustomer && (
-                <p className="text-xs text-muted-foreground">
-                  1인당 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
-                </p>
-              )}
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>1인당 사용 횟수 제한</Label>
-            <Input
-              type="number"
-              min={1}
-              value={maxUsesPerCustomer}
-              onChange={(e) => {
-                setMaxUsesPerCustomer(e.target.value ? Number(e.target.value) : '');
-                if (e.target.value) setSpendLimit('');
-              }}
-              placeholder="예: 1"
-              disabled={!!spendLimit}
-            />
-            {!!maxUsesPerCustomer && (
-              <p className="text-xs text-muted-foreground">
-                1인당 {maxUsesPerCustomer.toLocaleString('ko-KR')}회 사용 가능
-              </p>
-            )}
-            {!!spendLimit && (
-              <p className="text-xs text-muted-foreground">
-                총 할인금액 한도와 함께 쓸 수 없습니다 (캠페인 예산은 하나만 설정 가능)
-              </p>
-            )}
-          </div>
+          <p className="text-xs text-muted-foreground">
+            쿠폰은 한 장당 1회만 사용됩니다. 여러 번 주려면 같은 쿠폰을 여러 장 발급하세요.
+          </p>
 
           <div className="space-y-2">
             <Label>발급 방식</Label>

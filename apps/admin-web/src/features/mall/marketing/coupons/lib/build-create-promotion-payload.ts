@@ -39,7 +39,6 @@ export interface CouponFormState {
   validityDays: number | '';
   usageLimit: number | '';
   spendLimit: number | '';
-  maxUsesPerCustomer: number | '';
   maxClaims: number | '';
   visibility: CouponVisibility;
   autoIssueTrigger: AutoIssueTrigger | '';
@@ -59,13 +58,6 @@ export function buildCreatePromotionPayload(
   const code = form.code.trim().toUpperCase();
   const name = form.name.trim();
 
-  // 총 할인금액(spend)과 1인당 한도(use_by_attribute)는 둘 다 캠페인의 유일한 예산 슬롯을
-  // 요구한다(Campaign.budget 은 hasOne). 엔진 제약이므로 조용히 버리지 않고 알린다.
-  if (form.spendLimit && form.maxUsesPerCustomer) {
-    throw new Error('총 할인금액 한도와 1인당 사용 한도는 동시에 설정할 수 없습니다');
-  }
-
-  // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
   const additional_data: Record<string, unknown> = { visibility: form.visibility };
   if (name) additional_data.name = name;
   if (form.visibility === 'claimable' && form.maxClaims) {
@@ -110,12 +102,12 @@ export function buildCreatePromotionPayload(
   ];
 
   // 전역 사용 횟수는 campaign budget 이 아니라 promotion.limit 으로 보낸다.
-  // 그래야 예산 슬롯이 비어 1인당 한도 또는 총 할인금액 한도와 공존할 수 있다.
+  // 그래야 예산 슬롯이 비어 총 할인금액 한도와 공존할 수 있다.
   const limit = form.usageLimit ? Number(form.usageLimit) : undefined;
 
-  const budget = form.maxUsesPerCustomer
-    ? { type: 'use_by_attribute' as const, attribute: 'customer_id', limit: Number(form.maxUsesPerCustomer) }
-    : form.spendLimit
+  // 1장 = 1회는 이제 coupon_grant 가 강제한다(설계 §5.3) — 캠페인 예산의 use_by_attribute 를
+  // 쓰지 않으므로 예산 슬롯이 「총 할인금액 한도」 하나에게 온전히 돌아간다.
+  const budget = form.spendLimit
     ? { type: 'spend' as const, limit: Number(form.spendLimit), currency_code: 'krw' }
     : undefined;
 

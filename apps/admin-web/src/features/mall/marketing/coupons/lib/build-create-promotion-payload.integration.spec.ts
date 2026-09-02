@@ -32,11 +32,14 @@ const describeIfMedusa = MEDUSA_ADMIN_URL && MEDUSA_ADMIN_TOKEN ? describe : des
 /** 폼이 낼 수 있는 축. 폼에 값이 늘면 여기에 더한다. */
 const TARGET_TYPES = ['order', 'items', 'shipping_methods'] as const;
 const DISCOUNT_TYPES = ['fixed', 'percentage'] as const;
-/** 한도는 서로 배타다 — spend + 1인당 조합은 빌더가 의도적으로 throw 하므로 축에 넣지 않는다. */
+/**
+ * 한도 축. 1인당 한도(use_by_attribute)는 #488 Task 13 에서 제거됐다 —
+ * 1장 = 1회는 이제 `coupon_grant` 가 구조적으로 강제하므로, 전역 한도(promotion.limit)와
+ * 총 할인금액 한도(campaign budget)만 남는다. 둘은 서로 다른 슬롯이라 자유롭게 공존한다.
+ */
 const LIMIT_AXIS = [
   { key: '한도없음', patch: {} },
   { key: '전역한도', patch: { usageLimit: 100 } },
-  { key: '1인당한도', patch: { maxUsesPerCustomer: 2 } },
   { key: '총할인금액', patch: { spendLimit: 500_000 } },
 ] as const satisfies readonly { key: string; patch: Partial<CouponFormState> }[];
 
@@ -56,7 +59,6 @@ const baseForm: CouponFormState = {
   validityDays: '',
   usageLimit: '',
   spendLimit: '',
-  maxUsesPerCustomer: '',
   maxClaims: '',
   visibility: 'public',
   autoIssueTrigger: '',
