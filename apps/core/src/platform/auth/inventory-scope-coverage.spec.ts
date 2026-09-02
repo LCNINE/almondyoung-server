@@ -25,7 +25,7 @@ const HTTP_METHODS = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'H
 const S = INVENTORY_SCOPE;
 
 const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
-  // ── inventory.operate (69) ──────────────────────────────────────────
+  // ── inventory.operate (67) ──────────────────────────────────────────
   'GET /holders':                                            S.OPERATE,
   'GET /holders/:id':                                        S.OPERATE,
   'POST /inbound/cancel':                                    S.OPERATE,
@@ -72,10 +72,6 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /inventory/stocks/sku/:skuId/total':                  S.OPERATE,
   'GET /inventory/stocks/sku/:skuId/warehouse/:warehouseId': S.OPERATE,
   'GET /inventory/stocks/summary':                           S.OPERATE,
-  'GET /inventory/transfers':                                S.OPERATE,
-  'GET /inventory/transfers/:id':                            S.OPERATE,
-  'GET /inventory/transfers/:id/status':                     S.OPERATE,
-  'POST /inventory/transfers/move-within-warehouse':         S.OPERATE,
   'GET /inventory/warehouse-transfers/outstanding':          S.OPERATE,
   'GET /inventory/warehouses':                               S.OPERATE,
   'GET /inventory/warehouses/:id':                           S.OPERATE,
@@ -157,7 +153,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'GET /suppliers/:id':                                        S.MANAGE,
   'PUT /suppliers/:id':                                        S.MANAGE,
 
-  // ── inventory.adjust (17) ──────────────────────────────────────────
+  // ── inventory.adjust (15) ──────────────────────────────────────────
   'DELETE /inventory/reservations/:id':                         S.ADJUST,
   'POST /inventory/reservations/reconcile':                     S.ADJUST,
   'POST /inventory/returns':                                    S.ADJUST,
@@ -168,8 +164,6 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /inventory/stocks/entry-safe':                          S.ADJUST,
   'DELETE /inventory/stocks/events/:eventId/cancel':            S.ADJUST,
   'POST /inventory/stocks/summary/:skuId/:warehouseId/rebuild': S.ADJUST,
-  'POST /inventory/transfers':                                  S.ADJUST,
-  'PATCH /inventory/transfers/:id/execute':                     S.ADJUST,
   'POST /inventory/warehouse-transfers':                        S.ADJUST,
   'PATCH /inventory/warehouse-transfers/:id/eta':               S.ADJUST,
   'POST /inventory/warehouse-transfers/:id/receipts':           S.ADJUST,

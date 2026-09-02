@@ -32,8 +32,8 @@ export default function MovementTemplate() {
   return (
     <Container>
       <Header
-        title="재고 즉시 이동"
-        subtitle="동일 창고 내 위치 간 재고를 즉시 이동합니다. 잡(job) 기반 계획 이동은 재고 이동(잡) 메뉴를 이용하세요."
+        title="재고 이동"
+        subtitle="동일 창고 내 위치 간 재고를 즉시 이동합니다."
         right={
           <Button onClick={() => setMoveOpen(true)}>즉시 이동</Button>
         }

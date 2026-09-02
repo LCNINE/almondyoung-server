@@ -4,7 +4,6 @@
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
-  TransferJobQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
   SupplierFiltersDto,
@@ -109,11 +108,6 @@ export const inventoryQueryKeys = {
   skuGroupMembers: (id: string) => ['inventory', 'sku-groups', id, 'members'] as const,
   ungroupedSkus: (params?: { limit?: number; offset?: number }) =>
     ['inventory', 'sku-groups', 'ungrouped', params] as const,
-
-  // 재고 이동 관련
-  transferJobs: (query?: TransferJobQuery) => ['inventory', 'transfers', query] as const,
-  transferJob: (id: string) => ['inventory', 'transfers', id] as const,
-  transferJobStatus: (id: string) => ['inventory', 'transfers', id, 'status'] as const,
 
   // 재고 예약 관련
   reservationsBySku: (skuId: string, warehouseId?: string) =>
