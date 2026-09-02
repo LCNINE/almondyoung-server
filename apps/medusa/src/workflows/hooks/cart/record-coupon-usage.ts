@@ -69,7 +69,9 @@ completeCartWorkflow.hooks.orderCreated(
       const grants = found?.customer_id ? await promotionMetaService.listGrantsForCustomer(found.customer_id) : [];
       const now = new Date();
       const promotionIds = (found?.promotions ?? []).map((p) => p.id);
-      const grantIds = selectGrantIdsToConsume(grants, promotionIds, now);
+      // order_id 를 넘겨 재실행 멱등성을 지킨다(coupon-usage.ts 상단 주석 참고) — 이 훅이 같은
+      // 주문으로 두 번 불려도 이미 이 주문이 소모한 프로모션은 다시 고르지 않는다.
+      const grantIds = selectGrantIdsToConsume(grants, promotionIds, now, order_id);
 
       for (const grantId of grantIds) {
         await promotionMetaService.consumeGrant(grantId, order_id, now);
