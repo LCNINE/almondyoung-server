@@ -106,6 +106,13 @@ medusaIntegrationTestRunner({
       expect(res.data.promotion?.status).toEqual('active');
     });
 
+    // 🔴 (c) 진짜 회귀, 컨트롤러 판단 대기 — 고치지 않고 그대로 둔다 (#488 Task 4 리뷰,
+    // task-4-report.md 「6건 분류표」 항목 1). 4번 재발급이 막힌다: DELETE 라우트
+    // (`/admin/customers/:id/promotions`)가 `coupon_grant` 행을 전혀 안 건드려서(그건 Task 7
+    // 스코프 — `revokeGrants` 를 DELETE 에 연결하는 일), 1번에서 만든 grant 가 회수 후에도
+    // 파셜 유니크(`WHERE deleted_at IS NULL`)에 살아 있고, 4번의 `issue_key =
+    // trigger:customer_registered` 가 그 살아있는 행과 계속 충돌해 영구히 'duplicate' 다.
+    // 단언을 느슨하게 바꾸지 않는다 — 이게 진짜 동작이고, 회귀를 감추면 안 된다.
     it('auto-issues by trigger, is idempotent, and RE-ISSUES after revoke (P2-2 end-to-end)', async () => {
       const promoId = await createPromo('AUTO10', {
         visibility: 'assigned_only',
@@ -208,16 +215,19 @@ medusaIntegrationTestRunner({
       expect(skipReason(res, promoId)).toEqual('max_claims_exceeded');
     });
 
-    it('revoke restores issued_count and clears issue-log (customers/:id/promotions path)', async () => {
+    it('revoke restores issued_count (customers/:id/promotions path)', async () => {
+      // 🔴 Task 4 (#488 G1~G4) 이전엔 이 테스트가 `isAlreadyIssued`(promotion_issue_log 기반)도
+      // 같이 검사했다 — 세 발급 경로 전부가 grant 모델로 옮겨가며 그 로그에 더 이상 아무도
+      // 쓰지 않는다(대체물은 `coupon_grant.issue_key` 유니크). Task 10 이 그 테이블·메서드
+      // 자체를 걷어낼 예정이라 그 검사는 여기서 뺐다 — issued_count(발급 슬롯 카운터)는
+      // 여전히 실제 동작이라 남긴다.
       const promoId = await createPromo('REVOKE1', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(1);
-      expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(true);
 
       await api.delete(`/admin/customers/${customerId}/promotions`, { ...adminHeaders, data: { promotion_ids: [promoId] } });
       expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
-      expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(false);
     });
 
     it('revoke via promotions/:id/customers path also restores count + clears log', async () => {
@@ -238,15 +248,11 @@ medusaIntegrationTestRunner({
       expect(Number(res.data.promotion.metadata.max_claims)).toEqual(10);
     });
 
-    it('DELETE promotion purges issue-logs (P3-6)', async () => {
-      const promoId = await createPromo('DELME', { visibility: 'assigned_only' });
-      await issue([promoId]);
-      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(true);
-
-      await api.delete(`/admin/promotions/${promoId}`, adminHeaders);
-      expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(false);
-    });
+    // 🔴 Task 4 (#488 G1~G4) 이전엔 여기 'DELETE promotion purges issue-logs (P3-6)' 테스트가
+    // 있었다 — `promotion_issue_log`(`isAlreadyIssued`/`recordIssue`)를 직접 검사하는 테스트였다.
+    // 세 발급 경로 전부가 grant 모델로 옮겨가며 그 로그에 아무도 안 쓰게 됐고, Task 10 이 그
+    // 테이블·메서드 자체를 걷어낼 예정이라 대상이 사라진 테스트를 지웠다(대체물은
+    // `coupon_grant.issue_key` 유니크 — 커버리지는 coupon-grant.spec.ts G1·G2 가 진다).
 
     it('메타 쓰기가 실패하면 프로모션이 롤백된다 (N7 — 워크플로 안으로 옮긴 이유)', async () => {
       const container = getContainer();

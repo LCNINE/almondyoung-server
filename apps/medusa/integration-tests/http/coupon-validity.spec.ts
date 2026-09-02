@@ -7,6 +7,7 @@ import {
   createApiKeysWorkflow,
   linkSalesChannelsToApiKeyWorkflow,
 } from '@medusajs/core-flows';
+import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 
 jest.setTimeout(180 * 1000);
 
@@ -40,6 +41,12 @@ medusaIntegrationTestRunner({
         { promotion_id: promotionId },
         { select: ['customer_id', 'promotion_id', 'expires_at', 'used_at', 'order_id', 'issued_via'] },
       ) as Promise<any[]>;
+
+    // 만료·사용의 정본은 Task 4(#488 G1~G4) 이후 grant 다 — 관리자 수동 발급 라우트는 더
+    // 이상 링크의 `data`(expires_at/issued_via/used_at/order_id)를 채우지 않는다. T1·T2 는
+    // 그 값을 링크가 아니라 grant 에서 읽도록 옮겼다(T3·T4·T5 는 링크를 직접 조작/검사하는
+    // 테스트라 영향 없음 — 그대로 둔다).
+    const metaService = () => getContainer().resolve(PROMOTION_META_MODULE) as any;
 
     beforeEach(async () => {
       seq++;
@@ -205,6 +212,10 @@ medusaIntegrationTestRunner({
 
     describe('T1: 발급이 인스턴스 만료를 박는다', () => {
       it('관리자 수동 발급 — validity_days 가 발급일 + N일로 박힌다', async () => {
+        // 🔴 (a) 계약 변경 (#488 Task 4, task-4-report.md 「6건 분류표」 항목 4): 이전엔 링크의
+        // `data.expires_at`/`data.issued_via` 를 검사했다. 발급이 인스턴스 만료를 박는다는
+        // «무엇»은 그대로지만 그 저장 위치가 grant 로 옮겨갔다 — 관리자 수동 발급 라우트는
+        // 더 이상 링크에 `data:` 를 싣지 않는다(만료·사용의 정본이 grant 이므로).
         const id = await createPromo(`MANUALREL${seq}`, {
           visibility: 'assigned_only',
           validity_days: 30,
@@ -212,9 +223,9 @@ medusaIntegrationTestRunner({
         const before = Date.now();
         await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
 
-        const [row] = await listLinks(id);
-        expect(row.issued_via).toEqual('admin_manual');
-        const delta = new Date(row.expires_at).getTime() - before;
+        const [grant] = await metaService().listGrantsForPromotion(id);
+        expect(grant.issued_via).toEqual('admin_manual');
+        const delta = new Date(grant.expires_at).getTime() - before;
         expect(delta).toBeGreaterThan(29.9 * 24 * 3600 * 1000);
         expect(delta).toBeLessThan(30.1 * 24 * 3600 * 1000);
       });
@@ -222,6 +233,7 @@ medusaIntegrationTestRunner({
       it('관리자 수동 발급 — validity_days 가 없으면 정책의 ends_at 이 박힌다', async () => {
         // 절대 미래시각 하드코딩 금지(I3, 2026-08-31 최종 리뷰) — 발급 창이 지나면 이 테스트가
         // "expired" skip 으로 죽어 "만료 로직이 바뀌었다"가 아니라 "스위트가 깨졌다"로 보인다.
+        // 🔴 (a) 계약 변경 — 위와 같은 이유로 링크 대신 grant 를 읽는다.
         const endsAt = new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString();
         const id = await createPromo(`MANUALABS${seq}`, {
           visibility: 'assigned_only',
@@ -229,8 +241,8 @@ medusaIntegrationTestRunner({
         });
         await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
 
-        const [row] = await listLinks(id);
-        expect(new Date(row.expires_at).toISOString()).toEqual(endsAt);
+        const [grant] = await metaService().listGrantsForPromotion(id);
+        expect(new Date(grant.expires_at).toISOString()).toEqual(endsAt);
       });
 
       it('둘 다 없으면 무기한(NULL)으로 박힌다', async () => {
@@ -270,29 +282,36 @@ medusaIntegrationTestRunner({
     });
 
     describe('T2: 회수 후 재발급이 옛 사용기록을 지운다', () => {
-      it('used_at·order_id 가 null 로 덮인다 (upsert 라 같은 행이 되살아나므로)', async () => {
+      // 🔴 (a) 계약 변경 (#488 Task 4, task-4-report.md 「6건 분류표」 항목 6): 옛 테스트는
+      // 링크가 (customer_id, promotion_id) 복합 PK 라 재발급이 "같은 행을 되살리는" upsert 였고,
+      // 그래서 `used_at`/`order_id` 를 명시로 null 덮어써야 했다(그 시절 그게 이 테스트의
+      // «무엇»이었다). grant 는 append-only 다 — `issue_key` 가 다르면(submit_id 를 안 줘서
+      // 매 호출 서버가 새 UUID 를 고른다) 매번 새 행을 INSERT 하므로 "되살아나서 옛 값이
+      // 남는다" 라는 시나리오 자체가 구조적으로 성립하지 않는다. «재발급된 새 한 장은 옛
+      // 사용기록을 물려받지 않는다» 라는 원래 불변식은 여전히 지켜야 하므로, 검사 대상을
+      // grant 로 옮겨 같은 불변식을 검증한다.
+      it('재발급으로 생긴 새 grant 는 used_at·order_id 가 null 이다 (grant 는 append-only 라 옛 사용기록을 물려받지 않는다)', async () => {
         const id = await createPromo(`REISSUE${seq}`, { visibility: 'assigned_only', validity_days: 7 });
-        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
 
         await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
-        // 사용된 것처럼 만든다
-        await link.create([{
-          [Modules.CUSTOMER]: { customer_id: customerId },
-          [Modules.PROMOTION]: { promotion_id: id },
-          data: { used_at: new Date(), order_id: 'order_stale' },
-        }]);
-        // 회수
+        const [firstGrant] = await metaService().listGrantsForPromotion(id);
+        // 사용된 것처럼 만든다 — 사용의 정본은 이제 grant 다.
+        await metaService().consumeGrant(firstGrant.id, 'order_stale', new Date());
+
+        // 회수 (링크·issued_count 만 정리한다 — grant 자체를 회수하는 건 Task 7 스코프다)
         await api.delete(`/admin/customers/${customerId}/promotions`, {
           ...adminHeaders,
           data: { promotion_ids: [id] },
         });
-        // 재발급
+        // 재발급 — submit_id 를 안 줬으므로 서버가 매번 새 UUID 를 골라 새 grant 행을 만든다.
         await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
 
-        const [row] = await listLinks(id);
-        expect(row.used_at).toBeNull();
-        expect(row.order_id).toBeNull();
-        expect(row.expires_at).not.toBeNull();
+        const grants = await metaService().listGrantsForPromotion(id);
+        const fresh = grants.find((g: any) => g.id !== firstGrant.id);
+        expect(fresh).toBeDefined();
+        expect(fresh.used_at).toBeNull();
+        expect(fresh.order_id).toBeNull();
+        expect(fresh.expires_at).not.toBeNull();
       });
     });
 
