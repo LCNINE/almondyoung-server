@@ -124,17 +124,32 @@ export interface CouponCustomer {
   last_name: string | null;
   created_at: string;
   issued_at: string;
+  /** 발급 인스턴스 모델(#488) 이후 필드 — 이 고객이 가진 grant 장수. */
+  granted_count: number;
   used_count: number;
+  /** 지금 쓸 수 있는(만료·소진 아닌) 장수. */
+  usable_count: number;
+  /** 가진 장 중 가장 빠른 만료일. 없으면 null. */
+  next_expires_at: string | null;
+  /** 가장 최근 발급 경로 (admin_manual / admin_force / …). */
+  issued_via: string | null;
 }
 
 export interface CouponCustomersResponse {
   promotion_id: string;
   promotion_code: string;
-  max_uses_per_customer: number | null;
   customers: CouponCustomer[];
   count: number;
   offset: number;
   limit: number;
+}
+
+/** `POST /admin/promotions/:id/customers` 응답 (#488 Task 9). */
+export interface BulkIssueResult {
+  promotion_id: string;
+  issued: { customer_id: string; granted: number }[];
+  skipped: { customer_id: string; reason: string }[];
+  force: boolean;
 }
 
 export const medusaPromotionsApi = {
@@ -202,5 +217,20 @@ export const medusaPromotionsApi = {
       `${MEDUSA_BASE_URL}/admin/promotions/${promotionId}/customers`,
       { data: { customer_ids: customerIds } }
     );
+  },
+
+  /** 쿠폰 1개를 고객 N명에게. `submitId` 가 따닥·재시도를 멱등하게 만든다. */
+  bulkIssue: async (
+    promotionId: string,
+    customerIds: string[],
+    quantity: number,
+    submitId: string,
+    force = false,
+  ): Promise<BulkIssueResult> => {
+    const res = await client.post<BulkIssueResult>(
+      `${MEDUSA_BASE_URL}/admin/promotions/${promotionId}/customers`,
+      { customer_ids: customerIds, quantity, submit_id: submitId, force },
+    );
+    return res.data;
   },
 };

@@ -46,6 +46,18 @@ export const useAssignCoupon = () => {
   });
 };
 
+export const useBulkIssueCoupon = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ promotionId, customerIds, quantity, submitId, force }: {
+      promotionId: string; customerIds: string[]; quantity: number; submitId: string; force?: boolean;
+    }) => medusaPromotionsApi.bulkIssue(promotionId, customerIds, quantity, submitId, force),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: couponQueryKeys.all });
+    },
+  });
+};
+
 export const useRevokeCouponFromCustomer = () => {
   const queryClient = useQueryClient();
   return useMutation({

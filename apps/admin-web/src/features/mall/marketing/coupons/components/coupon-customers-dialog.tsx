@@ -21,46 +21,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useCouponCustomers, useRevokeCouponFromCustomer } from '@/lib/services/coupons';
 import { toast } from 'sonner';
-import { Users, UserMinus, Loader2, AlertCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Users, UserMinus, Loader2 } from 'lucide-react';
+import { useState } from 'react';
 import type { CouponCustomer } from '@/lib/api/domains/medusa/promotions';
 import { formatCouponDate } from '../coupon-helpers';
 
 function formatCustomerName(c: CouponCustomer) {
   const name = [c.first_name, c.last_name].filter(Boolean).join(' ');
   return name || c.email;
-}
-
-function UsageChip({
-  usedCount,
-  maxUses,
-}: {
-  usedCount: number;
-  maxUses: number | null;
-}) {
-  const baseClass = 'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium';
-
-  if (maxUses != null && maxUses > 0) {
-    const exhausted = usedCount >= maxUses;
-    const colorClass = exhausted
-      ? 'bg-red-100 text-red-700'
-      : usedCount > 0
-        ? 'bg-orange-50 text-orange-700'
-        : 'bg-muted text-muted-foreground';
-    return (
-      <span className={`${baseClass} gap-1 ${colorClass}`}>
-        {exhausted && <AlertCircle className="h-3 w-3" />}
-        {usedCount}/{maxUses}회
-        {exhausted && ' 한도'}
-      </span>
-    );
-  }
-
-  return (
-    <span className={`${baseClass} bg-muted text-muted-foreground`}>
-      {usedCount > 0 ? `${usedCount}회 사용` : '미사용'}
-    </span>
-  );
 }
 
 export function CouponCustomersDialog({
@@ -92,19 +60,11 @@ export function CouponCustomersDialog({
 
   const customers = data?.customers ?? [];
   const total = data?.count ?? 0;
-  const maxUsesPerCustomer = data?.max_uses_per_customer ?? null;
-
-  const exhaustedCount = useMemo(
-    () => maxUsesPerCustomer != null && maxUsesPerCustomer > 0
-      ? customers.filter((c) => c.used_count >= maxUsesPerCustomer).length
-      : 0,
-    [customers, maxUsesPerCustomer],
-  );
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Users className="h-4 w-4" />
@@ -121,20 +81,6 @@ export function CouponCustomersDialog({
             <span className="text-muted-foreground">
               총 발급 <span className="font-semibold text-foreground">{total}</span>명
             </span>
-            {maxUsesPerCustomer != null && maxUsesPerCustomer > 0 && (
-              <>
-                <span className="text-muted-foreground">·</span>
-                <span className="text-muted-foreground">
-                  1인 한도 <span className="font-semibold text-foreground">{maxUsesPerCustomer}</span>회
-                </span>
-                {exhaustedCount > 0 && (
-                  <>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="font-semibold text-red-600">{exhaustedCount}명 한도 도달</span>
-                  </>
-                )}
-              </>
-            )}
           </div>
 
           {isLoading ? (
@@ -148,25 +94,36 @@ export function CouponCustomersDialog({
             </div>
           ) : (
             <div className="max-h-80 overflow-y-auto divide-y">
-              <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-1 pb-1.5 text-[10px] font-medium text-muted-foreground">
+              <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-2 px-1 pb-1.5 text-[10px] font-medium text-muted-foreground">
                 <span>고객</span>
-                <span className="text-right">사용 횟수</span>
-                <span className="text-right">발급일</span>
+                <span className="text-right">발급</span>
+                <span className="text-right">사용</span>
+                <span className="text-right">사용가능</span>
+                <span className="text-right">다음 만료</span>
                 <span />
               </div>
               {customers.map((customer) => (
                 <div
                   key={customer.id}
-                  className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2 px-1 py-2.5"
+                  className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] items-center gap-2 px-1 py-2.5"
                 >
                   <div className="flex flex-col gap-0.5 min-w-0">
                     <span className="text-sm font-medium truncate">{formatCustomerName(customer)}</span>
                     <span className="text-xs text-muted-foreground truncate">{customer.email}</span>
                   </div>
-                  <UsageChip usedCount={customer.used_count} maxUses={maxUsesPerCustomer} />
-                  <Badge variant="outline" className="text-[10px] text-muted-foreground shrink-0">
-                    {formatCouponDate(customer.issued_at)}
+                  <span className="text-right text-sm tabular-nums">{customer.granted_count}장</span>
+                  <span className="text-right text-sm tabular-nums text-muted-foreground">
+                    {customer.used_count}회
+                  </span>
+                  <Badge
+                    variant={customer.usable_count > 0 ? 'outline' : 'secondary'}
+                    className="justify-self-end text-[10px] shrink-0"
+                  >
+                    {customer.usable_count}장
                   </Badge>
+                  <span className="text-right text-xs text-muted-foreground shrink-0">
+                    {formatCouponDate(customer.next_expires_at) ?? '-'}
+                  </span>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -189,7 +146,8 @@ export function CouponCustomersDialog({
           <AlertDialogHeader>
             <AlertDialogTitle>쿠폰 회수</AlertDialogTitle>
             <AlertDialogDescription>
-              <span className="font-semibold">{revokeTarget?.email}</span> 고객에게서 쿠폰을 회수하시겠습니까?
+              <span className="font-semibold">{revokeTarget?.email}</span> 고객에게서{' '}
+              <span className="font-semibold">{revokeTarget?.granted_count ?? 0}장</span>을 회수합니다.
               회수된 쿠폰은 다시 발급해야 사용할 수 있습니다.
             </AlertDialogDescription>
           </AlertDialogHeader>
