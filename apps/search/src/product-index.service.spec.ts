@@ -303,7 +303,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
     service = module.get(ProductIndexService);
   });
 
-  it('wraps bool query in function_score with field_value_factor on bayesian_review_score', async () => {
+  it('wraps bool query in function_score with review and sales field_value_factors', async () => {
     await service.searchProducts({ q: '글루', sort: 'relevance', page: 1, size: 20 } as any);
 
     // strict call is the first client.search invocation
@@ -318,6 +318,18 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
               modifier: 'none',
               missing: 3.5,
             },
+          },
+          {
+            // 누적 판매는 자릿수가 벌어져 log 없이 더하면 베스트셀러가 관련도를 덮는다.
+            // factor 는 1 — 가중치를 factor 에 넣으면 modifier(factor × 값) 순서 때문에
+            // ln(1 + w×n) 이 되어 log 안으로 들어간다. 가중치는 weight 로 곱한다.
+            field_value_factor: {
+              field: 'sales_count',
+              factor: 1,
+              modifier: 'ln1p',
+              missing: 0,
+            },
+            weight: 0.1,
           },
         ],
         score_mode: 'sum',

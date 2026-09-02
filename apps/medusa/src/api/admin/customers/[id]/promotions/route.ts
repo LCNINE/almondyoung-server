@@ -2,7 +2,10 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { meetsGroupRule, toMetadataShape } from '../../../promotions/helpers';
+import { toMetadataShape } from '../../../promotions/helpers';
+import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
+import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
+import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];
@@ -39,8 +42,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       'promotions.is_automatic',
       'promotions.campaign_id',
       'promotions.campaign.campaign_identifier',
-      'promotions.campaign.starts_at',
-      'promotions.campaign.ends_at',
       'promotions.application_method.id',
       'promotions.application_method.type',
       'promotions.application_method.value',
@@ -56,8 +57,21 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const customer = customers[0];
   const promotions = customer.promotions || [];
 
+  const linkByPromotionId = new Map(
+    (await listIssuedLinks(req.scope, customerId)).map((l) => [l.promotion_id, l]),
+  );
+
   // Apply pagination
-  const paginatedPromotions = promotions.slice(offset, offset + limit);
+  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => {
+    const link = linkByPromotionId.get(p.id);
+    return {
+      ...p,
+      expires_at: link?.expires_at ?? null,
+      used_at: link?.used_at ?? null,
+      order_id: link?.order_id ?? null,
+      issued_via: link?.issued_via ?? null,
+    };
+  });
 
   return res.status(200).json({
     customer_id: customerId,
@@ -81,8 +95,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+  const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
 
   const [{ data: customers }, metaRecords] = await Promise.all([
     query.graph({
@@ -101,7 +116,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     entity: 'promotion',
     fields: [
       'id', 'code', 'status', 'is_automatic',
-      'campaign.starts_at', 'campaign.ends_at',
       'rules.attribute', 'rules.operator', 'rules.values.value',
     ],
     filters: { id: promotion_ids },
@@ -138,6 +152,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
+    const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
+    const metaShape = toMetadataShape(meta);
+
     // 검증 실패는 throw 대신 skip — 배치의 다른 쿠폰까지 막지 않는다. force로 우회 가능.
     if (!force) {
       if (promo.status !== 'active') {
@@ -148,26 +165,34 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         skipped.push({ promotion_id: promo.id, reason: 'automatic' });
         continue;
       }
-      if (promo.campaign) {
-        const startsAt = promo.campaign.starts_at ? new Date(promo.campaign.starts_at) : null;
-        const endsAt = promo.campaign.ends_at ? new Date(promo.campaign.ends_at) : null;
-        if (startsAt && now < startsAt) {
-          skipped.push({ promotion_id: promo.id, reason: 'not_started' });
-          continue;
-        }
-        if (endsAt && now > endsAt) {
-          skipped.push({ promotion_id: promo.id, reason: 'expired' });
-          continue;
-        }
+      // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
+      const window = issuanceWindowState(meta, now);
+      if (window === 'not_started') {
+        skipped.push({ promotion_id: promo.id, reason: 'not_started' });
+        continue;
       }
-      if (!meetsGroupRule(promo, customerGroupIds)) {
-        skipped.push({ promotion_id: promo.id, reason: 'group_mismatch' });
+      if (window === 'ended') {
+        skipped.push({ promotion_id: promo.id, reason: 'expired' });
+        continue;
+      }
+      // 분류표 밖 룰은 fail-closed (#488 1-5). `force` 는 여전히 이 게이트를 넘는다 —
+      // 새 조건을 화면에 추가한 사람이 발급 로직을 고칠 때까지 운영이 막히지 않게 하는
+      // 탈출구이고, 그 탈출은 `issued_via='admin_force'` 로 링크 행에 기록된다.
+      const eligibility = evaluateIssuanceRules(promo.rules, customerGroupIds);
+      if (!eligibility.eligible) {
+        if (eligibility.reason === 'unsupported_rule') {
+          logger.warn(
+            `[coupon] 수동발급 skip — 발급 시점에 평가할 수 없는 룰 (promotion_id=${promo.id}, ` +
+              `attribute=${eligibility.attribute}, operator=${eligibility.operator}, ` +
+              `customer_id=${customerId}). force 로 우회할 수 있으나, ` +
+              'modules/promotion-meta/issuance-rules.ts 의 분류표를 채우는 것이 정답이다.',
+          );
+        }
+        skipped.push({ promotion_id: promo.id, reason: eligibility.reason });
         continue;
       }
     }
 
-    const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
-    const metaShape = toMetadataShape(meta);
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
     let slotReserved = false;
@@ -181,9 +206,16 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     try {
-      await (remoteLink as any).create([{
+      await (link as any).create([{
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promo.id },
+        data: {
+          expires_at: computeExpiresAt(meta, now),
+          issued_via: issueTrigger,
+          // 🔴 Link.create 는 upsert 라 회수된 행이 되살아난다. 옛 사용기록을 반드시 지운다.
+          used_at: null,
+          order_id: null,
+        },
       }]);
       await promotionMetaService.recordIssue(customerId, promo.id, issueTrigger).catch(() => {});
       // force 발급도 총 발급 수량에 포함 (issued_count SoT 유지)
@@ -193,15 +225,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       issued.push(promo.id);
     } catch (e: any) {
       if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      const dupMsg = String(e?.message ?? '').toLowerCase();
-      const isDuplicate = e?.code === '23505' || dupMsg.includes('unique') || dupMsg.includes('duplicate') || dupMsg.includes('already exists');
-      if (isDuplicate) {
-        skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      } else {
-        // 배치 resilient: transient 링크 에러도 throw 하지 않고 skip — 나머지 쿠폰 처리 계속.
-        // (자동발급 issue-coupons 는 반대로 throw 해서 channel-adapter 재시도를 유발한다.)
-        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
-      }
+      // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
+      // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
+      // 배치 resilient: transient 링크 에러도 throw 하지 않고 skip — 나머지 쿠폰 처리 계속.
+      // (자동발급 issue-coupons 는 반대로 throw 해서 channel-adapter 재시도를 유발한다.)
+      skipped.push({ promotion_id: promo.id, reason: 'link_error' });
     }
   }
 
@@ -228,7 +256,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   // 실제로 연결된 프로모션만 대상으로 — issued_count 과다 감소 방지
@@ -241,7 +269,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   const toRemove = promotion_ids.filter((id) => linkedIds.has(id));
 
   if (toRemove.length > 0) {
-    await remoteLink.dismiss(
+    await link.dismiss(
       toRemove.map((promotionId) => ({
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promotionId },

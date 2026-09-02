@@ -235,7 +235,7 @@ medusaIntegrationTestRunner({
       seq++;
       const promoId = await createAssignedOnlyPromo(`GATEOK_${seq}`);
       const { cartId, custHeaders, customerId } = await newCustomerCart();
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.REMOTE_LINK) as any;
+      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
       await remoteLink.create([
         { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promoId } },
       ]);

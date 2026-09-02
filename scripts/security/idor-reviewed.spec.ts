@@ -516,6 +516,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: '무인증 — 공개 상품 카탈로그 검색(키워드/카테고리/브랜드/가격/정렬). ProductSearchQueryDto 에 사용자 식별자 없음, 응답도 상품 메타(이름/가격/썸네일 등)뿐. 근거: 공개 카탈로그로 판단 — status:active 상품만 노출(product-index.service.ts:440)하고 개인 데이터 필드 없음. 단, includeMembersOnly 플래그(product-search-query.dto.ts:69, product-index.service.ts:470)는 클라이언트가 임의로 true 를 보내면 멤버십 인증 없이 멤버십 전용 상품까지 결과에 포함되는 별개의 접근제어 이슈로 observations 에 기록.',
   },
+  'search POST /search/products/internal/sales-counts': {
+    verdict: 'N/A',
+    evidence: 'apps/search/src/internal-sales.controller.ts:37',
+    predicate: "authorization !== `Bearer ${this.internalKey}`",
+    note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:37-42), 키가 비어 있으면 라우트를 아예 잠근다(:37-39, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
+  },
   'search GET /search/products/suggestions': {
     verdict: 'N/A',
     evidence: 'apps/search/src/search.controller.ts:23',
@@ -734,15 +740,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(115);
+    expect(targets).toHaveLength(116);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(115);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(114);
+    expect(new Set(targets.map(keyOf)).size).toBe(116);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(115);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -39,7 +39,7 @@ medusaIntegrationTestRunner({
     };
 
     const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.REMOTE_LINK) as any;
+      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
       await remoteLink.create([
         { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
       ]);
@@ -185,12 +185,8 @@ medusaIntegrationTestRunner({
       const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
       const future2 = new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString();
 
-      const expired = await createPromo('S_EXP', { visibility: 'claimable' }, {
-        campaign: { name: 'e', campaign_identifier: `E_${seq}`, starts_at: past, ends_at: past2 },
-      });
-      const notStarted = await createPromo('S_NS', { visibility: 'claimable' }, {
-        campaign: { name: 'n', campaign_identifier: `N_${seq}`, starts_at: future, ends_at: future2 },
-      });
+      const expired = await createPromo('S_EXP', { visibility: 'claimable', starts_at: past, ends_at: past2 });
+      const notStarted = await createPromo('S_NS', { visibility: 'claimable', starts_at: future, ends_at: future2 });
       const event = await createEvent({ title: 'time', status: 'active', promotion_ids: [expired, notStarted] });
 
       const res = await getEventStore(event.slug);

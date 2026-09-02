@@ -340,7 +340,27 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       **종결**: `1-4` · `4-1` · `7-6` · `N2` · `N3`.
       **신규 ❌**: 배송비 쿠폰 생성이 100% 400 (`allocation` 누락) → 아래 F1 후보.
       **A2 우선순위 상향**: 전액 환불된 주문에서도 한도가 소진된 채 남아 쿠폰이 영구 소실됨을 실측.
-- [ ] P4 플랜 작성 및 실행
+- [x] **P4+P5 플랜 작성·실행 (2026-08-31)** — 설계 `docs/superpowers/specs/2026-08-31-coupon-issuance-instance-and-validity-design.md`,
+      플랜 `docs/superpowers/plans/2026-08-31-coupon-issuance-instance-and-validity.md`.
+      **PR #771 MERGED (`develop` `ef28e5d73`, 2026-08-31) · 미배포.** 마이그 2건(모듈) + 링크 `extraColumns` 4개.
+      결정 2(`birthday` 어휘 제거)와 **`1-3` 종결**을 함께 담았다.
+      **이 세션에서 정한 것 3건**: 저장 모양 = `promotion_meta` 3열(mode 컬럼 없음) /
+      기존 캠페인 날짜는 마이그레이션이 백필만 하고 비우기는 `medusa exec` 1회성 스크립트 /
+      `used_at`·`order_id` 를 이번에 쓴다(`completeCartWorkflow.hooks.orderCreated` 신설).
+      🔴 **실측으로 닫은 것 셋** — ① `Link.create` 는 복합 PK **upsert** 다(`23505` 안 남 →
+      발급 3경로의 중복 catch 분기 삭제, 회수된 행이 옛 값을 달고 부활하므로 발급 시 4필드 명시 필수)
+      ② 링크 `extraColumns` 는 **마이그레이션 파일이 없다** — 컨테이너 부팅의
+      `--execute-safe-links` 가 `add column` 을 적용한다(마스터플랜의 「마이그 1건·migrate→deploy」는
+      drizzle 규약이라 Medusa 엔 해당 없음) ③ 모듈 통합 테스트는 마이그레이션을 **안 돌린다**
+      (모델에서 스키마 동기화) — 마이그 SQL 의 첫 실행은 프로덕션 부팅이다.
+      🔴 **최종 리뷰가 잡은 Critical**: 사용 기록 훅이 링크 행을 **생성**해 public 쿠폰을 쓴 고객에게
+      영구 유효가 됐다. 스펙 §4 의 「링크 행이 있으면」이 *생산자가 발급 3경로뿐*이라는 전제 위에
+      서 있었는데 훅이 **네 번째 생산자**였다 — per-task 리뷰가 구조적으로 못 보는 종류.
+      → 규칙을 「**발급된** 링크 행이 있으면」으로 정정하고 훅을 교집합으로 좁혔다.
+      **⛔ 배포 후 사람 작업 3건**: §12 실측 SQL → dry-run 육안 확인 →
+      `medusa exec ./src/scripts/detach-coupon-campaigns.ts` 반영.
+      **그 스크립트는 선택이 아니다** — 안 돌리면 이 브랜치 이전에 발급된 링크 전량이
+      `expires_at = null` = 무기한으로 영영 남는다.
 - [x] **1-5 설계 결정 (2026-08-31)** — 3단 처방 그대로, ③의 근거 교체. 기록은 #488 「개통 전 결정」
 - [x] **A4 결정 (2026-08-31)** — (b) 워크플로 훅으로 캡 구현. 모듈 교체 없음
 - [x] **문서 대조 (2026-08-31)** — `llms.txt` 를 읽고 기존 배선을 재검토. 신규 `N7`(High, 실측 확정) ·
@@ -375,7 +395,47 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       **검증**: Medusa 유닛 29 suites/256 · 쿠폰 통합 5 suites/51 · admin-web 92 suites/767 ·
       storefront vitest 23 files/212 · 루트 type-check 0 · admin-web tsc 0 ·
       storefront tsc **49(= develop 기준선 그대로, 이 작업이 더한 것 0)**.
-- [ ] **P7 플랜 작성** — 1-5(발급 시점 룰 분류 + fail-closed) 담당. **P4 선행**(`issue-coupons` 충돌)
+- [x] **P7 플랜 작성·실행 (2026-09-01)** — `2026-09-01-coupon-auto-issue-activation.md`.
+      브랜치 `feat/coupon-auto-issue-activation`. **마이그레이션 0 · 시크릿 0 · env 0.**
+      분류표(고객 고유 1 + 카트 문맥 5)를 `modules/promotion-meta/issuance-rules.ts` 한 곳에 두고
+      **`meetsGroupRule` 을 삭제**했다 — 발급 3경로 + 표시 3경로 + 클레임 라우트의 **인라인 사본**까지
+      일곱 자리가 같은 술어를 쓴다. 🔴 그 인라인 사본은 `meetsGroupRule` grep 으로는 안 잡혔다.
+      **operator 까지 못 박았다** — 엔진은 `gt|lt|eq|ne|in|lte|gte` 를 다 허용하는데 우리 폼은
+      `in` 만 만든다. 속성만 보는 분류표였다면 `ne` 로 들어온 그룹 룰을 `in` 처럼 읽어
+      **의미가 뒤집힌 채 조용히 발급**된다.
+      **드리프트 가드**: `issuance-rules-engine-drift.unit.spec.ts` 가 엔진의
+      `rule-attributes-map.js` 를 직접 읽어 ORDER 스코프 속성이 분류표를 벗어나면 CI 에서 빨개진다
+      (프로덕션에서 조용히 fail-closed 되기 전에).
+      `7-2` — 🔴 **#488 의 전제가 반만 맞았다**: `processing` 에 낀 행은 워커의 클레임 술어가
+      리스 만료 후 이미 다시 물어간다(`inbox-worker.service.ts` claim SQL 의
+      `status='processing' AND next_attempt_at <= NOW()`). 진짜 지연은 `failed` → 03:00 크론뿐인
+      ~24시간이고, 15분 빠른 레인 + `metadata` 마커(이벤트당 1회)로 줄였다. 마이그레이션 없이
+      «1회» 를 표현할 자리가 그 jsonb 컬럼뿐이었다.
+      `7-4` — prom-client 카운터 2 + 게이지 1. **스킵 «사유» 를 센다** — fail-closed 스킵은
+      로그를 안 보면 아무도 모른다. 자동발급 라우트도 이제 `not_started`/`expired`/`group_mismatch`
+      를 응답에 싣는다(옛 코드는 `filter` 로 조용히 떨어뜨려 흔적이 없었다).
+      🔴 **실 DB 통합 스펙이 목이 가린 버그 2건을 잡았다** — `jsonb_build_object($1, now())` 는
+      `::text` 캐스트 없이 `could not determine data type of parameter $1` 로 죽고, `->` 도
+      오버로드가 둘이라 모호하다. 유닛 목은 둘 다 조용히 통과했다.
+      **`7-3` 은 이번에 하지 않았다** (2026-08-31 결정 5, 별도 트랙).
+      **`A5` 플립은 이 PR 에 없다** — 순서가 `P7 → 리허설 2차 → A5` 라, 플립을 담으면 배포가
+      곧 개통이 된다. 절차는 플랜 「배포」 절.
+      **검증**: medusa 유닛 34 suites/330 · medusa HTTP 통합 9 suites/90 · medusa 모듈 통합
+      7 suites/97 · 루트 type-check 0 · 루트 jest 520 suites/4579 · admin-web 96 suites/815 ·
+      admin-web tsc 0 · medusa tsc 선재 3건 그대로 · channel-adapter 실 DB 통합 2/2.
 - [ ] 1-6 결정 (`birthday` 트리거) — **못 정함**. 선행: 생년월일 데이터 소재 + 스케줄러 거처
 - [ ] Medusa 네이티브 `/app` 비활성화 여부 — **못 정함**, 이번 범위 밖
-- [ ] 리허설 2차 → A5 개통
+- [x] **리허설 2차 실행 완료 (2026-09-01, 브랜치 `feat/coupon-auto-issue-activation` `ab37d5c52`)**
+      — 기록은 #488 「리허설 2차 실행 기록」. **14항목 중 ✅12 · ✅(부분)1 · ❌1.**
+      P7 은 결함 없음(R9·R10·R12 전부 의도대로). P4+P5 인스턴스 축(R5·R6), 결정 1(R7),
+      P10-B 캡(R3·R4), 빠른 레인(R13), `membership_activated` e2e(R11b) 전부 통과.
+- [ ] 🔴 **A5 개통 차단 — `customer_registered` 트리거가 발화할 수 없다** (R11 ❌) → **#775**
+      가입이 `isEmailVerified: true` 로 행을 넣는데(`apps/user-service/src/api/auth/auth.service.ts:208`,
+      소셜은 `:612`) 인증 처리기는 `isEmailVerified=false` 만 찾는다(`:278`). 그래서 그 함수 안의
+      유일한 `UserEmailVerified` 발행(`:321`)에 **영영 도달하지 못한다.**
+      `isEmailVerified: false` 로 만드는 코드는 저장소에 0곳. 선재 결함(`19c998a97`, 2026-04-22)이고
+      쿠폰 도메인 밖이다. 뒷단(Kafka→inbox→워커→발급 API→링크→메트릭)은 강제 발화로 정상 확인됨.
+      **선택지 3개와 조사 결과·작업 항목은 #775 에 있다.** 권고는 안 3(Medusa `customer.created`
+      subscriber) — customer 가 정의상 존재해 슬로우 리트라이 함정이 원인부터 사라진다.
+      #775 에서 같은 실패 모드(구독자는 있는데 발행자가 없다)를 Medusa subscriber 2건에서 추가 발견.
+- [ ] A5 개통 (위 결정 후)

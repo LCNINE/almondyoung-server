@@ -41,6 +41,10 @@ export class ShopListingsService {
     return ShopListingMapper.toDto(await this.manager.update(id, dto, actorId, tx));
   }
 
+  async recordView(slug: string, visitorIp: string, tx?: DbTransaction): Promise<void> {
+    return this.manager.incrementViewCount(slug, visitorIp, tx);
+  }
+
   async delete(id: string, actorId?: string, tx?: DbTransaction): Promise<void> {
     return this.manager.softDelete(id, actorId, tx);
   }

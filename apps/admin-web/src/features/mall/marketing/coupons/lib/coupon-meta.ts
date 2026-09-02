@@ -8,14 +8,13 @@ import { type CouponVisibility, toCouponVisibility } from '@packages/domain-type
  * — 공유 타입으로 합치지 않기로 한 것은 ADR-0033 §7 의 결정이다(실사용 0). 사본이 정본과
  * 어긋나면 `packages/domain-types/coupon-vocabulary-drift.spec.ts` 가 빨개진다.
  */
-export const AUTO_ISSUE_TRIGGERS = ['customer_registered', 'membership_activated', 'birthday'] as const;
+export const AUTO_ISSUE_TRIGGERS = ['customer_registered', 'membership_activated'] as const;
 
 export type AutoIssueTrigger = (typeof AUTO_ISSUE_TRIGGERS)[number];
 
 export const AUTO_ISSUE_TRIGGER_LABELS: Record<AutoIssueTrigger, string> = {
   customer_registered: '회원가입 완료',
   membership_activated: '멤버십 가입',
-  birthday: '생일 (미구현 — 발급되지 않음)',
 };
 
 /** 어휘 밖 값은 `null`. 그대로 통과시키면 라벨 조회가 `undefined` 를 렌더한다. */

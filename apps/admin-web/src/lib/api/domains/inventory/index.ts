@@ -99,7 +99,6 @@ export { stocksClient } from './stocks.client';
 export { skusClient } from './skus.client';
 export { warehousesClient } from './warehouses.client';
 export { matchingClient } from '../matching/matching.client';
-export { transfersClient } from './transfers.client';
 export { reservationsClient } from './reservations.client';
 export { stocktakingClient } from './stocktaking.client';
 export { suppliersClient } from './suppliers.client';

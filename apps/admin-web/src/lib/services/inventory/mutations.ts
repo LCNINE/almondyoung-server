@@ -11,7 +11,6 @@ import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
 import { warehousesClient } from '../../api/domains/inventory/warehouses.client';
-import { transfersClient } from '../../api/domains/inventory/transfers.client';
 import { reservationsClient } from '../../api/domains/inventory/reservations.client';
 import { stocktakingClient } from '../../api/domains/inventory/stocktaking.client';
 import { suppliersClient } from '../../api/domains/inventory/suppliers.client';
@@ -32,8 +31,6 @@ import type {
   CreateSkuGroupDto,
   UpdateSkuGroupDto,
   BulkAddSkusToGroupDto,
-  CreateTransferJobDto,
-  MoveWithinWarehouseDto,
   CreateStocktakingSessionRequest,
   ScanLocationRequest,
   ScanProductRequest,
@@ -471,40 +468,6 @@ export const useRemoveSkuFromGroup = () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
-    },
-  });
-};
-
-// 재고 이동 관련 mutations
-export const useCreateTransferJob = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateTransferJobDto) => transfersClient.createTransferJob(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory', 'transfers'] });
-    },
-  });
-};
-
-export const useExecuteTransferJob = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => transfersClient.executeTransferJob(id),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: ['inventory', 'transfers'] });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.transferJob(id) });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.transferJobStatus(id) });
-    },
-  });
-};
-
-export const useMoveWithinWarehouse = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: MoveWithinWarehouseDto) => transfersClient.moveWithinWarehouse(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory', 'transfers'] });
-      queryClient.invalidateQueries({ queryKey: ['stocks', 'summary'] });
     },
   });
 };

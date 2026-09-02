@@ -16,18 +16,7 @@ import { useAssignCoupon } from '@/lib/services/coupons';
 import { medusaCustomerApi } from '@/lib/api/domains/medusa';
 import { toast } from 'sonner';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
-
-// 발급 스킵 사유 → 안내 문구
-const SKIP_REASON_LABELS: Record<string, string> = {
-  inactive: '비활성 쿠폰입니다.',
-  automatic: '자동 적용 쿠폰은 수동 발급할 수 없습니다.',
-  not_started: '아직 발급 기간이 아닙니다.',
-  expired: '기간이 만료된 쿠폰입니다.',
-  group_mismatch: '대상 고객 그룹이 아닙니다.',
-  max_claims_exceeded: '발급 수량이 소진되었습니다.',
-  link_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
-  unknown: '발급할 수 없습니다.',
-};
+import { skipReasonLabel } from '../lib/skip-reason-labels';
 
 export function CouponAssignDialog({
   promotionId,
@@ -155,7 +144,7 @@ export function CouponAssignDialog({
           {skipReason && (
             <div className="flex items-start gap-2 rounded-md bg-amber-50 p-2.5 text-sm text-amber-700">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>{SKIP_REASON_LABELS[skipReason] ?? SKIP_REASON_LABELS.unknown} 강제 발급하시겠습니까?</span>
+              <span>{skipReasonLabel(skipReason)} 강제 발급하시겠습니까?</span>
             </div>
           )}
         </div>

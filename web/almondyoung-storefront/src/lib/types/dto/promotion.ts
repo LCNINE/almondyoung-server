@@ -14,8 +14,13 @@ export type ApplicationMethodDto = {
  *──────────────────────────*/
 export type PromotionCampaignDto = {
   campaign_identifier: string
-  starts_at: string
-  ends_at: string
+  /**
+   * 이 브랜치부터 서버가 더는 채우지 않는다(`format-promotion.ts` 가 항상 `null` 로 내려보낸다) —
+   * 유효기간의 정본은 `PromotionDto.expires_at` 이다(#488 결정 1). 필드 자체는 옛 응답 캐시·
+   * 아직 안 바뀐 배포 태스크와의 호환을 위해 남아 있다.
+   */
+  starts_at: string | null
+  ends_at: string | null
 }
 
 /*───────────────────────────
@@ -37,6 +42,19 @@ export type PromotionDto = {
   min_order_amount?: number | null
   /** 정률 쿠폰 최대 할인금액 (#488 A4). 상한이 없으면 `null`. */
   max_discount_amount?: number | null
+  /**
+   * 이 쿠폰이 언제까지 쓸 수 있는가 (#488 결정 1). 발급된 쿠폰이면 «받은 한 장»의 만료이고,
+   * 아니면 정책의 종료일이다. `null` 이면 무기한.
+   *
+   * ⚠️ `campaign.ends_at` 을 대체한다 — 캠페인 날짜는 서버가 더 이상 채우지 않는다.
+   */
+  expires_at?: string | null
+  /**
+   * 발급일로부터 며칠간 유효한가 (#488 결정 1, W1). `expires_at` 이 `null` 인 이유가
+   * 「무기한」인지 「아직 발급 안 받아서 만료일 미정」인지 이 필드로 구분한다 — 이 값이
+   * 있으면 후자다: 「발급 후 N일」로 표시할 것.
+   */
+  validity_days?: number | null
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
 }

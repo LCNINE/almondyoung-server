@@ -1,5 +1,7 @@
 {
   "inputPlaceholder": "What will you buy today? Almondyoung",
+  "submit": "Search",
+  "clearInput": "Clear search term",
   "sheetTitle": "Almondyoung Search",
   "back": "Back",
   "popover": {
@@ -9,11 +11,13 @@
     "historyEmpty": "No recent searches.",
     "clearAll": "Clear all",
     "saveOff": "Turn off history saving",
-    "saveOn": "Turn on history saving"
+    "saveOn": "Turn on history saving",
+    "removeKeyword": "Remove {keyword}"
   },
   "history": {
     "title": "Recent searches",
-    "clearAll": "Clear all"
+    "clearAll": "Clear all",
+    "removeKeyword": "Remove {keyword}"
   },
   "hotKeywords": {
     "title": "Trending searches",
@@ -35,7 +39,16 @@
     "relatedTitle": "Related searches"
   },
   "sort": {
-    "relevance": "Relevance",
+    "relevance": "Almondyoung ranking",
+    "rankingInfoLabel": "About Almondyoung ranking",
+    "rankingInfoIntro": "Almondyoung ranking considers sales, search accuracy, customer ratings and more.",
+    "rankingInfoSales": "Sales",
+    "rankingInfoSalesDesc": "Total quantity purchased",
+    "rankingInfoAccuracy": "Search accuracy",
+    "rankingInfoAccuracyDesc": "How closely the query matches the product name, brand and category",
+    "rankingInfoReviews": "Customer ratings",
+    "rankingInfoReviewsDesc": "Review score and number of reviews",
+    "rankingInfoFootnote": "Additional factors may be applied from time to time to improve convenience and satisfaction.",
     "review": "Top reviewed",
     "priceAsc": "Lowest price",
     "priceDesc": "Highest price",

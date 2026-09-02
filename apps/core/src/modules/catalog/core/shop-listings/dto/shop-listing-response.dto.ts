@@ -43,6 +43,9 @@ export class ShopListingResponseDto {
   @ApiProperty({ description: '노출 여부' })
   isActive: boolean;
 
+  @ApiProperty({ description: '상세 페이지 조회수' })
+  viewCount: number;
+
   @ApiProperty({ description: '삭제 시간 (ISO 8601)', required: false, nullable: true })
   deletedAt: string | null;
 

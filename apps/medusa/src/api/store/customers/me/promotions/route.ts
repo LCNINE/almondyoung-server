@@ -4,9 +4,11 @@ import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import {
   resolveVisibility,
-  meetsGroupRule,
   VISIBILITY_WHEN_META_MISSING,
 } from '../../../../admin/promotions/helpers';
+import { isIssuableToCustomer } from '../../../../../modules/promotion-meta/issuance-rules';
+import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
+import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -48,8 +50,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'used',
     'campaign_id',
     'campaign.campaign_identifier',
-    'campaign.starts_at',
-    'campaign.ends_at',
     'campaign.budget.id',
     'campaign.budget.type',
     'campaign.budget.limit',
@@ -85,33 +85,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   const now = new Date();
 
-  const isValidPromotion = (promo: any): boolean => {
-    // status가 active가 아니면 제외
-    if (promo.status !== 'active') {
-      return false;
-    }
-
-    // 자동 적용 프로모션은 제외 (코드 입력 필요한 것만)
-    if (promo.is_automatic) {
-      return false;
-    }
-
-    // 캠페인 기간 검증
-    if (promo.campaign) {
-      const startsAt = promo.campaign.starts_at ? new Date(promo.campaign.starts_at) : null;
-      const endsAt = promo.campaign.ends_at ? new Date(promo.campaign.ends_at) : null;
-
-      if (startsAt && now < startsAt) {
-        return false;
-      }
-      if (endsAt && now > endsAt) {
-        return false;
-      }
-    }
-
-    return true;
-  };
-
   // 모든 프로모션의 visibility 일괄 조회
   const allPromoIds = [
     ...(customers?.[0]?.promotions ?? []).map((p: any) => p.id),
@@ -132,17 +105,38 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 메타 행이 아예 없는 프로모션은 맵에 키가 없다 → 닫힌 기본값으로 떨어진다(#488 N7).
   const visibilityOf = (promotionId: string): string =>
     visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
+  const metaById = new Map<string, any>(metas.map((m: any) => [m.promotion_id, m]));
+  // 발급된 «한 장»들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
+  const issuedLinks = await listIssuedLinks(req.scope, customerId);
+  const linkByPromotionId = new Map(issuedLinks.map((l) => [l.promotion_id, l]));
+  const expiresAtOf = (promotionId: string): string | Date | null =>
+    displayExpiresAt(linkByPromotionId.get(promotionId) ?? null, metaById.get(promotionId));
+  // W1: expires_at 이 null 인 이유(무기한 vs 미발급 validity_days)를 화면이 구분할 수 있게.
+  const validityDaysOf = (promotionId: string): number | null => {
+    const raw = metaById.get(promotionId)?.validity_days;
+    return raw != null ? Number(raw) : null;
+  };
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
   const format = (promo: any, isAssigned: boolean) =>
     formatPromotion(promo, isAssigned, {
       visibility: visibilityOf(promo.id),
       maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
+      expiresAt: expiresAtOf(promo.id),
+      validityDays: validityDaysOf(promo.id),
     });
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
-    const m = metas.find((r: any) => r.promotion_id === promotionId);
+    const m = metaById.get(promotionId);
     if (!m || m.max_claims == null) return false;
     return Number(m.issued_count ?? 0) >= Number(m.max_claims);
+  };
+
+  // status/자동적용/유효기간 검증. 사용 가능 여부는 «링크 행이 있으면 링크 행» 이 정한다
+  // (#488 결정 1) — metaById·linkByPromotionId 에 의존하므로 그 두 맵보다 아래에 있어야 한다.
+  const isValidPromotion = (promo: any): boolean => {
+    if (promo.status !== 'active') return false;
+    if (promo.is_automatic) return false;
+    return isUsable(linkByPromotionId.get(promo.id) ?? null, metaById.get(promo.id), now);
   };
 
   const assignedPromotionIds = new Set<string>();
@@ -201,7 +195,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       isValidPromotion(promo) &&
       !isUsageExhausted(promo) &&
       visibilityOf(promo.id) === 'public' &&
-      meetsGroupRule(promo, customerGroupIds)
+      isIssuableToCustomer(promo.rules, customerGroupIds)
     )
     .map((promo: any) => format(promo, false));
 
@@ -212,27 +206,34 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
       visibilityById.get(promo.id) === 'claimable' &&
+      issuanceWindowState(metaById.get(promo.id), now) === 'ok' &&
       !isClaimExhausted(promo.id) &&
       !isUsageExhausted(promo) &&
-      meetsGroupRule(promo, customerGroupIds)
+      isIssuableToCustomer(promo.rules, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)
     .map((promo: any) => format(promo, false));
 
-  // 만료 쿠폰: 고객에게 발급됐던(assigned) 쿠폰 중 캠페인 종료일이 지난 것, 최근 30일 이내.
-  // 최근 만료순, 최대 50개.
+  // 만료 쿠폰: 고객에게 발급됐던 쿠폰 중 만료가 지난 것, 최근 30일 이내. 최근 만료순, 최대 50개.
+  // 만료일을 promo 마다 (promo, endsAt) 으로 한 번만 계산해 들고 다닌다 — sort 안에서
+  // expiresAtOf 를 다시 불러 `new Date(string | Date | null)` 을 `as any` 로 눌러 넘기지
+  // 않기 위해서다(필터가 이미 null 이 아님을 보장하므로, 그 사실을 타입으로도 드러낸다).
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const expiredCutoff = new Date(now.getTime() - THIRTY_DAYS_MS);
-  const expiredPromotions = (customer?.promotions ?? [])
-    .filter((promo: any) => {
-      if (promo.is_automatic) return false;
-      const endsAt = promo.campaign?.ends_at ? new Date(promo.campaign.ends_at) : null;
-      if (!endsAt) return false;
-      return endsAt < now && endsAt >= expiredCutoff;
-    })
-    .sort((a: any, b: any) => new Date(b.campaign.ends_at).getTime() - new Date(a.campaign.ends_at).getTime())
+  const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
+  for (const promo of customer?.promotions ?? []) {
+    if (promo.is_automatic) continue;
+    const raw = expiresAtOf(promo.id);
+    if (!raw) continue;
+    const endsAt = new Date(raw);
+    if (endsAt < now && endsAt >= expiredCutoff) {
+      expiredCandidates.push({ promo, endsAt });
+    }
+  }
+  const expiredPromotions = expiredCandidates
+    .sort((a, b) => b.endsAt.getTime() - a.endsAt.getTime())
     .slice(0, 50)
-    .map((promo: any) => format(promo, true));
+    .map(({ promo }) => format(promo, true));
 
   // 합치기: 직접 발급된 것 먼저, 그 다음 일반 프로모션
   const combinedPromotions = [...assignedPromotions, ...publicPromotions];

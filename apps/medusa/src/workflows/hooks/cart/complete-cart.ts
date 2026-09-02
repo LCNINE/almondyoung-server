@@ -5,6 +5,8 @@ import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { requiresIssuance } from '../../../api/admin/promotions/helpers';
+import { isUsable } from '../../../modules/promotion-meta/validity';
+import { listIssuedLinks, type IssuedLinkRow } from '../../../modules/promotion-meta/issued-link';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
@@ -27,8 +29,28 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   if (cartPromos.length) {
     const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
+    // 발급된 «한 장»들을 한 번에 가져온다 — 카트에 붙은 프로모션마다 조회하지 않는다.
+    const issuedLinks = cart.customer_id
+      ? await listIssuedLinks(container, cart.customer_id)
+      : [];
+    const linkByPromotionId = new Map<string, IssuedLinkRow>(
+      issuedLinks.map((l) => [l.promotion_id, l]),
+    );
+
     for (const promo of cartPromos) {
       const meta = await promotionMetaService.getByPromotionId(promo.id);
+
+      // 만료 백스톱 — 카트에 붙은 뒤 주문 완료 사이에 만료된 쿠폰을 막는다.
+      // 캡(P10-B)과 달리 만료는 금액 조정이 아니라 «거부» 라 여기서 던져도 결제금액이 어긋나지 않는다.
+      const issuedLink = linkByPromotionId.get(promo.id) ?? null;
+      if (!isUsable(issuedLink, meta, new Date())) {
+        // message는 머신 토큰 — 스토어프론트가 로케일별 문구로 매핑한다. 같은 조건을 지키는
+        // per-customer-limit 미들웨어(카트에 붙는 시점)와 토큰을 맞춘다 — 여기(백스톱)는 그
+        // 미들웨어가 못 본 race window(부착 뒤 만료)를 잡는 자리일 뿐, 다른 사유가 아니다.
+        // 쿠폰 코드는 싣지 않는다 — 토큰에 붙이면 스토어프론트의 정확 일치(`=== 'COUPON_EXPIRED'`)가
+        // 깨진다. 카트엔 보통 쿠폰이 하나뿐이라 "적용된 쿠폰을 제거"만으로 고객이 복구 가능하다.
+        throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');
+      }
 
       // 메타가 없으면 «발급 필요» 다(닫힌 기본값 — #488 N7). 옛 코드는 undefined 라 백스톱도 통과했다.
       if (requiresIssuance(meta)) {

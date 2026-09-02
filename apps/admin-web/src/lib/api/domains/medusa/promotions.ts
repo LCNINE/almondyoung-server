@@ -53,7 +53,17 @@ export interface MedusaPromotion {
     target_rules?: PromotionTargetRule[];
   } | null;
   rules?: PromotionRule[];
-  metadata?: Record<string, unknown> | null;
+  /**
+   * 우리가 `promotion_meta` 에서 합성한 것 — 나머지 알려진 키(`max_claims`·`visibility` 등)는
+   * `getCouponMeta` 가 캐스팅해 읽으므로 여기선 이 태스크가 새로 쓰는 유효기간 정책 3필드만
+   * 명시한다(#488 결정 1). 인덱스 시그니처로 나머지 키의 존재도 여전히 허용한다.
+   */
+  metadata?: {
+    starts_at?: string | null;
+    ends_at?: string | null;
+    validity_days?: number | null;
+    [key: string]: unknown;
+  } | null;
   created_at: string;
   updated_at: string;
 }

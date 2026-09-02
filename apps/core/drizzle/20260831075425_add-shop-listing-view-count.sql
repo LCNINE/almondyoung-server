@@ -1,0 +1,1 @@
+ALTER TABLE "shop_listings" ADD COLUMN "view_count" integer DEFAULT 0 NOT NULL;

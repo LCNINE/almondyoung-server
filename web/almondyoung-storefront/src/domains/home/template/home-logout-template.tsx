@@ -7,6 +7,7 @@ import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
+import { ShopTradeWrapper } from "./shop-trade"
 import { TimeSaleWrapper } from "./time-sale"
 import {
   InterestCategoriesSlot,
@@ -216,6 +217,19 @@ export async function HomeLogoutTemplate({
           </ErrorBoundary>
         </HomeSection>
       ))}
+
+      {/* 샵매매 — 최신 매물 캐러셀 */}
+      <ErrorBoundary fallback={null}>
+        <Suspense
+          fallback={
+            <HomeSection background="muted" className="border-t-0">
+              <MainSectionSkeleton />
+            </HomeSection>
+          }
+        >
+          <ShopTradeWrapper />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* 멤버쉽 배너 */}
       <MembershipBanner />

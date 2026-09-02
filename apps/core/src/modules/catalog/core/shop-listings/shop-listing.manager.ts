@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { createHash } from 'node:crypto';
 import { type PimSchema, pimSchema } from '../../schema/catalog.schema';
 import { DbTransaction } from '../../catalog.types';
 import { ShopListingEntity, ShopListingInsert } from '../../schema/catalog.schema.types';
@@ -106,6 +107,49 @@ export class ShopListingManager {
     }, tx);
   }
 
+  /**
+   * 조회수 +1. 같은 방문자·같은 매물·같은 날은 unique 제약이 걸러내므로,
+   * 로그 행이 실제로 새로 생겼을 때만 카운터를 올린다. 새로고침 반복은 첫 회만 센다.
+   */
+  async incrementViewCount(slug: string, visitorIp: string, tx?: DbTransaction): Promise<void> {
+    await this.db.run(async (trx) => {
+      const [listing] = await trx
+        .select({ id: pimSchema.shopListings.id })
+        .from(pimSchema.shopListings)
+        .where(
+          and(
+            eq(pimSchema.shopListings.slug, slug),
+            eq(pimSchema.shopListings.isActive, true),
+            isNull(pimSchema.shopListings.deletedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!listing) {
+        return;
+      }
+
+      const inserted = await trx
+        .insert(pimSchema.shopListingViews)
+        .values({
+          listingId: listing.id,
+          visitorHash: hashVisitor(visitorIp, listing.id),
+          viewedOn: today(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: pimSchema.shopListingViews.id });
+
+      if (inserted.length === 0) {
+        return;
+      }
+
+      await trx
+        .update(pimSchema.shopListings)
+        .set({ viewCount: sql`${pimSchema.shopListings.viewCount} + 1` })
+        .where(eq(pimSchema.shopListings.id, listing.id));
+    }, tx);
+  }
+
   private async resolveSlug(raw: string, excludeId: string | null, tx: DbTransaction): Promise<string> {
     const base = slugify(raw);
 
@@ -141,4 +185,14 @@ function assertContent(content: string): void {
   if (!content.replace(/<[^>]*>/g, '').trim() && !/<img\b/i.test(content)) {
     throw new BadRequestError('본문을 입력해주세요.');
   }
+}
+
+/** IP 를 그대로 두지 않는다. 매물 id 를 섞어 매물 간 방문자 대조도 막는다. */
+export function hashVisitor(ip: string, listingId: string): string {
+  return createHash('sha256').update(`${ip}|${listingId}`).digest('hex').slice(0, 64);
+}
+
+/** viewed_on 은 KST 기준 날짜다. 런타임은 UTC 라 직접 더한다. */
+export function today(now: Date = new Date()): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }

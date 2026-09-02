@@ -2,6 +2,7 @@
 
 import type { ShopListingResponseDto } from "@/lib/types/dto/shop-listing"
 import type { ShopListingItem } from "@/lib/types/ui/shop-listing"
+import { headers } from "next/headers"
 import { api } from "../api"
 
 const SHOP_LISTINGS_TAG = "shop-listings"
@@ -41,5 +42,25 @@ export async function getPublicShopListing(
     )
   } catch {
     return null
+  }
+}
+
+export async function recordShopListingView(slug: string): Promise<void> {
+  const forwarded = (await headers()).get("x-forwarded-for") ?? ""
+  const visitorIp = forwarded.split(",")[0]?.trim() ?? ""
+
+  try {
+    await api<void>(
+      "pim",
+      `/shop-listings/public/${encodeSlugOnce(slug)}/view`,
+      {
+        method: "POST",
+        withAuth: false,
+        cache: "no-store",
+        headers: visitorIp ? { "x-visitor-ip": visitorIp } : {},
+      }
+    )
+  } catch {
+    // 조회수는 실패해도 페이지가 멀쩡해야 한다
   }
 }

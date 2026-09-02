@@ -19,6 +19,7 @@ export class ShopListingMapper {
       thumbnailFileId: entity.thumbnailFileId,
       images: entity.images ?? [],
       isActive: entity.isActive,
+      viewCount: entity.viewCount,
       deletedAt: DateMapper.toNullableString(entity.deletedAt),
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),

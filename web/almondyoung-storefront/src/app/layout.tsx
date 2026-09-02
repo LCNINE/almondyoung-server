@@ -54,6 +54,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
 
   // GA4 — NEXT_PUBLIC_GA_ID 는 live 빌드에만 주입된다(dev 데이터 오염 방지).
   const gaId = process.env.NEXT_PUBLIC_GA_ID
+  const clarityId = process.env.NEXT_PUBLIC_CLARITY_ID
 
   return (
     <html lang={locale} suppressHydrationWarning>
@@ -71,6 +72,11 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
               {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${gaId}');`}
             </Script>
           </>
+        )}
+        {clarityId && (
+          <Script id="clarity-init" strategy="afterInteractive">
+            {`(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${clarityId}");`}
+          </Script>
         )}
         <NextIntlClientProvider locale={locale} messages={messages}>
           <QueryProvider>

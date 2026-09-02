@@ -1,4 +1,5 @@
 import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { getAccessToken, getRefreshToken } from "@lib/data/cookies"
 import { isMembershipGroup } from "@lib/utils/membership-group"
 import { listPublicSitePopups } from "@/lib/api/pim/site-popups"
 import type { SitePopupViewerType } from "@/lib/types/dto/site-popup"
@@ -29,6 +30,17 @@ export async function SitePopupHost({ countryCode }: { countryCode: string }) {
 
 async function resolveViewerType(): Promise<SitePopupViewerType> {
   const customer = await retrieveCustomer().catch(() => null)
-  if (!customer) return "guest"
-  return isMembershipGroup(customer.groups) ? "membership" : "member"
+  if (customer) {
+    return isMembershipGroup(customer.groups) ? "membership" : "member"
+  }
+
+  // Medusa JWT 는 토큰 회전 경합으로 사라져도 로그인 세션 자체는 살아있다 (#491).
+  // 그걸 guest 로 보면 비로그인 대상 팝업이 로그인한 회원에게 뜬다.
+  // accessToken 은 15분이라 만료된 채로 방문하는 회원이 흔하므로 30일짜리
+  // refreshToken 까지 본다.
+  const [accessToken, refreshToken] = await Promise.all([
+    getAccessToken(),
+    getRefreshToken(),
+  ])
+  return accessToken || refreshToken ? "member" : "guest"
 }

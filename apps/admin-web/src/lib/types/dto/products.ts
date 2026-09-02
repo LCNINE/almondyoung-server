@@ -807,6 +807,8 @@ export interface ShopListingDto {
   /** 샵 사진 갤러리 fileId 목록. 배열 순서가 곧 노출 순서 */
   images: string[];
   isActive: boolean;
+  /** 상세 페이지 조회수 */
+  viewCount: number;
   deletedAt: string | null;
   createdAt: string;
   updatedAt: string;

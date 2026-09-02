@@ -11,6 +11,7 @@
   "discountPercent": "{value}% 할인",
   "discountAmount": "{amount}원 할인",
   "expiresAt": "~ {date} 까지",
+  "validForDaysAfterClaim": "발급 후 {days}일",
   "unlimited": "기간 무제한",
   "claimButton": "발급받기",
   "claiming": "처리 중...",

@@ -27,6 +27,7 @@ import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
 import { formatPeriod, StatusBadge } from '../coupon-helpers';
+import { isCouponExpired } from '../lib/coupon-period';
 import { getCouponMeta } from '../lib/coupon-meta';
 import { visibilityBadge } from '../lib/coupon-labels';
 import type { CouponVisibility } from '@packages/domain-types';
@@ -205,10 +206,7 @@ export default function MarketingCouponsTemplate() {
   const filtered = statusFilter
     ? allCoupons.filter((c) => {
         if (statusFilter === 'expired') {
-          return (
-            c.status === 'expired' ||
-            (c.campaign?.ends_at != null && new Date(c.campaign.ends_at) < new Date())
-          );
+          return c.status === 'expired' || isCouponExpired(c, new Date());
         }
         return c.status === statusFilter;
       })

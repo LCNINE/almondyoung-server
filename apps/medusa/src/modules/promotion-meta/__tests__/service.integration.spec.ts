@@ -84,6 +84,36 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.isAlreadyIssued('cust_x', 'promo_del')).toBe(false);
         expect(await service.isAlreadyIssued('cust_y', 'promo_del')).toBe(false);
       });
+
+      it('유효기간 3열을 저장하고 되읽는다', async () => {
+        await service.upsert({
+          promotion_id: 'promo_validity',
+          starts_at: new Date('2026-09-01T00:00:00.000Z'),
+          ends_at: new Date('2026-09-30T00:00:00.000Z'),
+          validity_days: 14,
+        });
+        const rec = await service.getByPromotionId('promo_validity');
+        expect(new Date(rec.starts_at).toISOString()).toEqual('2026-09-01T00:00:00.000Z');
+        expect(new Date(rec.ends_at).toISOString()).toEqual('2026-09-30T00:00:00.000Z');
+        expect(Number(rec.validity_days)).toEqual(14);
+      });
+
+      it('유효기간 3열은 선택이다 — 안 주면 null 로 남는다', async () => {
+        await service.upsert({ promotion_id: 'promo_no_validity' });
+        const rec = await service.getByPromotionId('promo_no_validity');
+        expect(rec.starts_at).toBeNull();
+        expect(rec.ends_at).toBeNull();
+        expect(rec.validity_days).toBeNull();
+      });
+
+      it('validity_days 는 양의 정수만 받는다', async () => {
+        await expect(
+          service.upsert({ promotion_id: 'promo_bad_days', validity_days: 0 }),
+        ).rejects.toThrow(/validity_days/);
+        await expect(
+          service.upsert({ promotion_id: 'promo_bad_days2', validity_days: 1.5 }),
+        ).rejects.toThrow(/validity_days/);
+      });
     });
   },
 });

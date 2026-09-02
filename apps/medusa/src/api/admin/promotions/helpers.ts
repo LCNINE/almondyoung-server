@@ -29,7 +29,22 @@ export const META_KEYS = [
   'visibility',
   'max_claims',
   'auto_issue_trigger',
+  // 유효기간 «정책 축» (#488 결정 1). 인스턴스 축(링크 행 expires_at)은 발급 경로가 계산해 박는다.
+  'starts_at',
+  'ends_at',
+  'validity_days',
 ] as const;
+
+/**
+ * `starts_at`/`ends_at`/`validity_days` 는 명시적 `null` 로 «비움» 을 표현할 수 있다(W3,
+ * 2026-08-31) — 「30일로 정했다가 무기한으로」를 삭제·재생성(발급된 인스턴스 전부 무효화) 없이
+ * 할 수 있어야 한다. 나머지 키는 옛 write-once 의미론 그대로다.
+ */
+const NULLABLE_META_KEYS = new Set<(typeof META_KEYS)[number]>([
+  'starts_at',
+  'ends_at',
+  'validity_days',
+]);
 
 export function extractMetaFromAdditionalData(
   additional_data: Record<string, unknown> | undefined | null,
@@ -37,7 +52,14 @@ export function extractMetaFromAdditionalData(
   if (!additional_data) return null;
   const result: Record<string, unknown> = {};
   for (const key of META_KEYS) {
-    if (additional_data[key] != null) result[key] = additional_data[key];
+    if (NULLABLE_META_KEYS.has(key)) {
+      // 🔴 「키 없음(안 건드림)」과 「키=null(비움)」을 반드시 구분한다 — 상태 토글(`{ status }`
+      // 만 보낸다)이 이 키들을 갖고 있지 않은 것과, 관리자가 명시적으로 비운 것을 truthiness나
+      // `!= null` 로는 가를 수 없다(그러면 상태 토글이 메타를 지워버린다 — P10-A 가 막아둔 구멍).
+      if (key in additional_data) result[key] = additional_data[key] ?? null;
+    } else if (additional_data[key] != null) {
+      result[key] = additional_data[key];
+    }
   }
   return Object.keys(result).length > 0 ? result : null;
 }
@@ -51,6 +73,9 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   result.visibility = record.visibility ?? 'public';
   if (record.max_claims != null) result.max_claims = record.max_claims;
   if (record.auto_issue_trigger != null) result.auto_issue_trigger = record.auto_issue_trigger;
+  if (record.starts_at != null) result.starts_at = record.starts_at;
+  if (record.ends_at != null) result.ends_at = record.ends_at;
+  if (record.validity_days != null) result.validity_days = record.validity_days;
   // 읽기 전용 발급 카운터 — 관리자 발급 현황 표시용(클라 write 대상 아님)
   if (record.issued_count != null) result.issued_count = record.issued_count;
   return Object.keys(result).length > 0 ? result : null;
@@ -133,15 +158,13 @@ export async function fetchPromotionWithMeta(id: string, scope: any, fields?: st
   return { ...promotion, metadata: toMetadataShape(meta) };
 }
 
-export function meetsGroupRule(promotion: any, customerGroupIds: Set<string>): boolean {
-  const groupRule = (promotion.rules ?? []).find(
-    (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
-  );
-  if (!groupRule) return true;
-  const requiredIds = (groupRule.values ?? []).map((v: any) =>
-    typeof v === 'string' ? v : (v?.value as string),
-  );
-  return requiredIds.some((gid: string) => customerGroupIds.has(gid));
-}
+// `meetsGroupRule` 은 삭제됐다 (P7, #488 1-5). 발급 시점 룰 평가는
+// `../../../modules/promotion-meta/issuance-rules` 의 `evaluateIssuanceRules` /
+// `isIssuableToCustomer` 하나뿐이다. 이 함수는 그룹 룰만 봐서 나머지 조건을 **조용히 통과**시켰다.
 
 export { remoteQueryPromotions };
+
+// 발급된 «한 장»(링크 행) 리더는 여기 없다 — `../../../modules/promotion-meta/issued-link` 로
+// 이전됐다(W5, 2026-08-31). 워크플로 훅·스토어 라우트·카트 미들웨어가 admin 라우트 폴더를
+// 참조하는 계층 역전을 없애기 위해서다. `findIssuedLink`/`listIssuedLinks`/`IssuedLinkRow` 를
+// 찾고 있다면 그쪽에서 import 할 것.
