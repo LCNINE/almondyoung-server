@@ -223,13 +223,21 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 가능한 장"만 다룬다), 정작 만료 목록에 넣어야 할 항목의 실제 만료일을 못 구한다. 장이
   // 있으면(mine.length>0) 그 장들의 원본 expires_at 중 가장 늦은 것(=가장 최근 만료)을,
   // 장이 없으면(순수 링크 배정) 정책 폴백인 expiresAtOf 를 그대로 쓴다.
+  //
+  // 🔴 (#488 Task 8 리뷰 Important #1) **지금 사용 가능한 장은 여기서 뺀다.** 같은
+  // 프로모션에 만료된 장 A 와 무기한 미사용 장 B 를 같이 가진 고객은 `hasUsableGrant` 가
+  // B 때문에 true 라 `assignedPromotions` 에 든다 — 그런데 이 함수가 살아있는 B 를 무시하고
+  // 죽은 A 의 날짜만 보면, 같은 쿠폰이 "만료" 바구니에도 동시에 들어간다("사용 가능"과
+  // "최근 만료"가 응답에 동시 노출). 아래 루프의 `assignedPromotionIds` 스킵과 이중 방어.
   const expiredEndsAtOf = (promotionId: string): Date | null => {
     const mine = grantsOf(promotionId);
     if (mine.length === 0) {
       const raw = expiresAtOf(promotionId);
       return raw ? new Date(raw) : null;
     }
+    const usableIds = new Set(usableGrants(mine, now).map((g) => g.id));
     const dated = mine
+      .filter((g) => !usableIds.has(g.id))
       .map((g) => (g.expires_at ? new Date(g.expires_at) : null))
       .filter((d): d is Date => d !== null && !Number.isNaN(d.getTime()));
     if (dated.length === 0) return null;
@@ -240,6 +248,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
   for (const promo of customer?.promotions ?? []) {
     if (promo.is_automatic) continue;
+    // 이미 assignedPromotions 에 든 쿠폰은 건너뛴다 — 같은 쿠폰이 "사용 가능"과 "최근 만료"
+    // 두 바구니에 동시에 뜨는 것을 막는 1차 방어(publicPromotions/claimablePromotions 와
+    // 같은 패턴, #488 Task 8 리뷰 Important #1). expiredEndsAtOf 의 usable 제외와 이중 방어.
+    if (assignedPromotionIds.has(promo.id)) continue;
     const endsAt = expiredEndsAtOf(promo.id);
     if (!endsAt) continue;
     if (endsAt < now && endsAt >= expiredCutoff) {

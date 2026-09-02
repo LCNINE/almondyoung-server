@@ -157,6 +157,33 @@ medusaIntegrationTestRunner({
       expect(after.data.promotions.map((p: any) => p.code)).not.toContain('USEDUP');
     });
 
+    // #488 Task 8 리뷰 Important #1 회귀 가드. 여러 장을 가진 고객이 그중 하나는 만료됐지만
+    // (날짜 있음) 다른 하나는 무기한으로 아직 살아있으면(usable_count > 0), 그 쿠폰은
+    // "사용 가능"(promotions) 목록에만 떠야 한다 — expiredEndsAtOf 가 살아있는 무기한 장을
+    // 무시하고 죽은 장의 날짜만 봐서 같은 쿠폰이 "최근 만료"(expired_promotions) 에도 동시에
+    // 뜨던 결함이 있었다(수정 전 실측: 아래 두 assertion 중 두 번째가 실패했다).
+    it('a coupon with one expired grant and one still-usable grant appears only as assigned, never also as expired', async () => {
+      const id = await createPromo('MIXGRANT', { visibility: 'assigned_only' });
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 3600 * 1000);
+      // 만료된 장 — 날짜가 있고 이미 지났다(30일 컷오프 안).
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `mix_old_${seq}`,
+        issued_via: 'admin_manual', expires_at: fiveDaysAgo, now: new Date(),
+      });
+      // 사용 가능한 장 — 무기한, 미사용.
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `mix_live_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
+      await linkCustomer(id);
+
+      const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+      expect(res.data.promotions.map((p: any) => p.code)).toContain('MIXGRANT');
+      expect(res.data.expired_promotions.map((p: any) => p.code)).not.toContain('MIXGRANT');
+    });
+
     it('customer can claim a claimable coupon; it then appears as assigned', async () => {
       const claimId = await createPromo('CLAIMME', { visibility: 'claimable' });
       const res0 = await claim(claimId);
