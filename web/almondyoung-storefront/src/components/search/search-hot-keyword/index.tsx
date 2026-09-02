@@ -62,7 +62,7 @@ export function SearchHotKeyword() {
           </h3>
           <Skeleton className="h-4 w-16" />
         </div>
-        <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+        <div className="grid grid-cols-1 gap-x-8 gap-y-4 sm:grid-cols-2">
           {Array.from({ length: 10 }).map((_, idx) => (
             <div key={idx} className="flex items-center gap-3">
               <Skeleton className="h-5 w-5 rounded" />
@@ -89,9 +89,9 @@ export function SearchHotKeyword() {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-8 gap-y-2">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-2 sm:grid-cols-2">
         {columns.map((col, colIdx) => (
-          <div key={colIdx} className="flex flex-col gap-y-4">
+          <div key={colIdx} className="flex min-w-0 flex-col gap-y-4">
             {col.map((item, itemIdx) => {
               // 전체 순서를 계산
               const overallIdx =
@@ -100,16 +100,16 @@ export function SearchHotKeyword() {
               return (
                 <div
                   key={item.keyword}
-                  className="flex cursor-pointer items-center gap-3 transition-opacity hover:opacity-70"
+                  className="flex min-w-0 cursor-pointer items-center gap-3 py-1 transition-opacity hover:opacity-70 sm:py-0"
                   onClick={() => handleHotKeywordClick(item.keyword)}
                 >
-                  <span className="w-5 text-center font-black text-green-700 italic">
+                  <span className="w-5 shrink-0 text-center font-black text-green-700 italic">
                     {overallIdx + 1}
                   </span>
-                  <span className="flex-1 truncate text-[15px] font-medium text-gray-800">
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-gray-800">
                     {item.keyword}
                   </span>
-                  <div className="flex w-8 justify-end">
+                  <div className="flex w-8 shrink-0 justify-end">
                     {item.status === "new" ? (
                       <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
                         {t("statusNew")}

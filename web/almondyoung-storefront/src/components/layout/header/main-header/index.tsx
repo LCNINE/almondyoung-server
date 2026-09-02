@@ -37,7 +37,7 @@ export async function MainHeader() {
         </div>
 
         <div className="px-3 pt-2 pb-3">
-          <SearchCombobox inputClassName="border-primary h-10 rounded-none border-2 bg-white py-2 pr-16 pl-4 text-[13px] focus-visible:ring-0" />
+          <SearchCombobox inputClassName="border-primary h-10 rounded-none border-2 bg-white py-2 pr-20 pl-4 text-[13px] focus-visible:ring-0" />
         </div>
       </div>
 

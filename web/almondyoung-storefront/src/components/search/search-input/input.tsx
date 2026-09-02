@@ -95,11 +95,12 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
             {searchTerm && (
               <button
                 type="button"
+                aria-label={t("clearInput")}
                 onClick={(e) => {
                   e.stopPropagation()
                   setSearchTerm("")
                 }}
-                className="rounded-full bg-gray-400 p-1 text-white"
+                className="relative flex size-5 cursor-pointer items-center justify-center rounded-full bg-gray-400 text-white before:absolute before:-inset-1 before:content-['']"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -107,18 +108,25 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
 
             <button
               type="button"
-              className="group relative flex cursor-pointer items-center justify-center rounded-full p-2 transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] active:scale-90"
+              aria-label={t("submit")}
+              title={t("submit")}
+              className={cn(
+                "group relative flex size-8 cursor-pointer items-center justify-center rounded-full transition-transform duration-300 ease-[cubic-bezier(0.2,0,0,1)] active:scale-90",
+                // 버튼 자체는 입력창 높이에 맞춰 작지만, 실제 터치 영역은 넓힌다.
+                "before:absolute before:-inset-1.5 before:content-['']",
+                // 아이콘만 두면 눌러도 되는 버튼인지 안 보여서, 평상시에도 옅은 면을
+                // 깔아 클릭 대상임을 드러낸다.
+                "bg-secondary hover:bg-primary"
+              )}
               onClick={(e) => {
                 e.stopPropagation()
                 onSearch()
               }}
             >
-              <div className="absolute inset-0 rounded-full bg-gray-200 opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-
               <Search
                 className={cn(
-                  "relative h-5 w-5 text-gray-800 transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)]",
-                  "group-hover:scale-110 group-hover:text-black"
+                  "relative h-5 w-5 transition-colors duration-200",
+                  "text-foreground group-hover:text-white"
                 )}
               />
             </button>

@@ -1,6 +1,7 @@
 {
   "inputPlaceholder": "What will you buy today? Almondyoung",
   "submit": "Search",
+  "clearInput": "Clear search term",
   "sheetTitle": "Almondyoung Search",
   "back": "Back",
   "popover": {
@@ -10,11 +11,13 @@
     "historyEmpty": "No recent searches.",
     "clearAll": "Clear all",
     "saveOff": "Turn off history saving",
-    "saveOn": "Turn on history saving"
+    "saveOn": "Turn on history saving",
+    "removeKeyword": "Remove {keyword}"
   },
   "history": {
     "title": "Recent searches",
-    "clearAll": "Clear all"
+    "clearAll": "Clear all",
+    "removeKeyword": "Remove {keyword}"
   },
   "hotKeywords": {
     "title": "Trending searches",

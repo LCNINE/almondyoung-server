@@ -30,14 +30,15 @@ export function SearchPopover({
         align="start"
         sideOffset={-2}
         onOpenAutoFocus={(e) => e.preventDefault()}
-        className="mt-2 w-(--radix-popover-trigger-width) min-w-[580px] overflow-hidden rounded-[30px] bg-white p-0 py-7"
+        collisionPadding={12}
+        className="mt-2 max-h-[70vh] w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] min-w-0 overflow-x-hidden overflow-y-auto rounded-2xl bg-white p-0 py-5 sm:max-h-none sm:w-(--radix-popover-trigger-width) sm:max-w-none sm:min-w-[580px] sm:overflow-hidden sm:rounded-[30px] sm:py-7"
       >
-        <div className="flex min-h-[420px]">
+        <div className="flex flex-col sm:min-h-[420px] sm:flex-row">
           <SearchHistory
             suggestions={suggestions}
             onClose={() => setIsOpen(false)}
           />
-          <div className="flex-1 px-8 py-2">
+          <div className="min-w-0 flex-1 px-5 pt-6 sm:px-8 sm:py-2">
             <SearchHotKeyword />
           </div>
         </div>
@@ -88,7 +89,7 @@ function SearchHistory({
   }
 
   return (
-    <div className="flex flex-1 flex-col justify-between border-r border-gray-100 px-8">
+    <div className="flex min-w-0 flex-1 flex-col justify-between border-b border-gray-100 px-5 pb-5 sm:border-r sm:border-b-0 sm:px-8 sm:pb-0">
       <div>
         {suggestions.length > 0 && (
           <div className="mb-6">
@@ -117,24 +118,26 @@ function SearchHistory({
             {t("historyDisabled")}
           </p>
         ) : history.length > 0 ? (
-          <ul className="space-y-4">
+          <ul className="space-y-1">
             {history.map((item, i) => (
               <li
                 key={i}
-                className="group flex cursor-pointer items-center justify-between"
+                className="group flex cursor-pointer items-center justify-between gap-2"
                 onClick={() => handleHistoryClick(item)}
               >
-                <span className="text-[15px] text-gray-600 transition-colors hover:text-black">
+                <span className="min-w-0 flex-1 truncate py-2.5 text-[15px] text-gray-600 transition-colors hover:text-black">
                   {item}
                 </span>
                 <button
-                  className="cursor-pointer text-gray-300 hover:text-gray-500"
+                  type="button"
+                  aria-label={t("removeKeyword", { keyword: item })}
+                  className="-mr-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                   onClick={(event) => {
                     event.stopPropagation()
                     removeKeyword(item)
                   }}
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-5 w-5" />
                 </button>
               </li>
             ))}
@@ -146,17 +149,17 @@ function SearchHistory({
         )}
       </div>
 
-      <div className="mt-8 flex gap-4 pb-2 text-[13px] text-gray-400">
+      <div className="mt-4 flex gap-2 pb-2 text-[13px] text-gray-400 sm:mt-8">
         <button
           type="button"
-          className="cursor-pointer transition-colors hover:text-gray-600"
+          className="cursor-pointer px-1 py-2 transition-colors hover:text-gray-600"
           onClick={clearAll}
         >
           {t("clearAll")}
         </button>
         <button
           type="button"
-          className="cursor-pointer transition-colors hover:text-gray-600"
+          className="cursor-pointer px-1 py-2 transition-colors hover:text-gray-600"
           onClick={() => setDisableSave(!disableSave)}
         >
           {disableSave ? t("saveOn") : t("saveOff")}
