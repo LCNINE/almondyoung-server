@@ -26,6 +26,7 @@ import {
   type IssueSummary,
 } from '../lib/parse-issue-targets';
 import { classifyLookupMatches } from '../lib/classify-lookup-matches';
+import { issueFingerprint } from '../lib/issue-fingerprint';
 
 export function CouponAssignDialog({
   promotionId,
@@ -49,28 +50,25 @@ export function CouponAssignDialog({
   //    성공하면 버린다. 이게 없으면 타임아웃 후 재제출이 곧 두 배 발급이다.
   //    (버튼 disabled 는 방어가 아니다 — 렌더 사이 연타도, 네트워크 재시도도 못 막는다.)
   const submitIdRef = useRef<string | null>(null);
+  // 그 식별자가 «어떤 제출» 을 위해 만들어졌는지 — 대상 집합 + 수량의 지문이다.
+  // 판정은 `issue-fingerprint.ts` 의 순수 함수가 하고, 여기선 비교만 한다.
+  const submitFingerprintRef = useRef<string | null>(null);
 
   const bulkIssue = useBulkIssueCoupon();
 
-  // 🔴 발급 키 집합은 «대상 × 수량» 으로 정해진다(`${submitId}:1..n`). 둘 중 하나가 바뀌면
-  //    옛 키를 재사용해선 안 된다 — 겹치는 n 이 서버에서 duplicate 로 떨어져 **요청한
-  //    장수보다 적게** 발급되고, 화면엔 아무 경고도 안 뜬다.
-  //    예: [alice,bob] 제출 → bob 실패(키 S 보존) → alice 만 남기고 수량 3 으로 재조회 →
-  //        S:1 은 이미 alice 것이라 duplicate → 3장이 아니라 2장.
-  //    ⚠️ «재시도»(강제 발급 버튼)는 재조회를 거치지 않으므로 이 초기화에 안 걸린다 — 그쪽은
-  //       같은 키를 써야 맞다.
-  const resetSubmitId = () => { submitIdRef.current = null; };
-
-  const handleQuantityChange = (next: number) => {
-    setQuantity(next);
-    resetSubmitId();
-  };
+  // 🔴 발급 키 집합은 «대상 × 수량» 으로 정해진다(`${submitId}:1..n`). 그래서 키를 언제
+  //    버릴지는 **그 둘이 실제로 바뀌었는가**로 정해야 한다 — 조회·수량 «조작» 이 아니라.
+  //    - 계속 들고 있으면: [alice,bob] → alice 만 남기고 수량 3 으로 재조회 → 겹치는 n 이
+  //      duplicate 로 떨어져 3장이 아니라 2장(경고 없음).
+  //    - 조작할 때마다 버리면: 발급 타임아웃 → 관리자가 「조회」부터 다시 누름 → 새 키 →
+  //      또 발급(이중 발급).
+  //    지문 비교는 둘 다 막는다. 판정은 `issue-fingerprint.ts` 참고.
+  //    ⚠️ «재시도»(강제 발급 버튼)는 대상·수량이 그대로라 지문이 같고, 따라서 같은 키를
+  //       재사용한다 — 그쪽은 그게 맞다.
 
   const handleResolve = async () => {
     const targets = parseIssueTargets(raw);
     if (targets.length === 0) return;
-    // 대상 집합이 새로 정해진다 — 직전 제출의 키는 여기서 버린다.
-    resetSubmitId();
     setIsResolving(true);
     const ok: ResolvedTarget[] = [];
     const bad: { input: string; reason: string }[] = [];
@@ -104,12 +102,20 @@ export function CouponAssignDialog({
 
   const handleIssue = async (force = false) => {
     if (resolved.length === 0) return;
-    if (!submitIdRef.current) submitIdRef.current = crypto.randomUUID();
+
+    const customerIds = resolved.map((r) => r.customerId);
+    const fingerprint = issueFingerprint(customerIds, quantity);
+    // 지문이 다르면(=대상이나 수량이 실제로 바뀌었으면) 새 제출이다. 같으면 직전 제출의
+    // 재도착이므로 키를 그대로 써서 서버가 duplicate 로 접게 한다.
+    if (!submitIdRef.current || submitFingerprintRef.current !== fingerprint) {
+      submitIdRef.current = crypto.randomUUID();
+      submitFingerprintRef.current = fingerprint;
+    }
 
     try {
       const result = await bulkIssue.mutateAsync({
         promotionId,
-        customerIds: resolved.map((r) => r.customerId),
+        customerIds,
         quantity,
         submitId: submitIdRef.current,
         force,
@@ -118,7 +124,11 @@ export function CouponAssignDialog({
       setSummary(s);
       if (s.failed.length === 0) {
         toast.success(`${s.succeeded.length}명에게 ${s.grantedTotal}장 발급했습니다.`);
-        submitIdRef.current = null; // 다음 제출은 새 키
+        // 다음 제출은 새 키다 — 같은 대상에게 «한 번 더» 주는 것은 별개의 제출이다.
+        // 지문도 같이 버린다: 키가 null 이면 어차피 새로 만들지만, 둘을 항상 짝지어 비워야
+        // 나중에 조건을 손대는 사람이 「지문은 남아 있는데 키만 없는」 상태를 안 만난다.
+        submitIdRef.current = null;
+        submitFingerprintRef.current = null;
       }
     } catch (e: unknown) {
       // 🔴 재시도는 같은 submitIdRef 를 쓴다 — 여기서 초기화하지 말 것.
@@ -134,6 +144,7 @@ export function CouponAssignDialog({
     setUnresolved([]);
     setSummary(null);
     submitIdRef.current = null;
+    submitFingerprintRef.current = null;
     onOpenChange(false);
   };
 
@@ -169,7 +180,7 @@ export function CouponAssignDialog({
                 min={1}
                 max={50}
                 value={quantity}
-                onChange={(e) => handleQuantityChange(Math.max(1, Number(e.target.value) || 1))}
+                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
                 className="w-24"
               />
             </div>
