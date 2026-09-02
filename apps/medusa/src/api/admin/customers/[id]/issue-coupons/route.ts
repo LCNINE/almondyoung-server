@@ -1,10 +1,11 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
+import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 import { resolveVisibility } from '../../../promotions/helpers';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
@@ -32,7 +33,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const { data: customers } = await query.graph({
@@ -112,52 +112,40 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
-    // 슬롯 예약·되돌리기가 장 생성과 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
+    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2).
     //
-    // 🔴 이 라우트에서 순서가 특히 중요하다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에
-    // 대해 **이미 발급받은 고객**을 channel-adapter 가 재시도하면 `already_issued` 가 아니라
-    // `max_claims_exceeded` 를 돌려줬다. channel-adapter 의 `coupon-issue.metrics.ts` 가 그
-    // 사유를 실제 소진으로 세므로, 재시도마다 없는 소진이 지표에 쌓였다. 이제 중복이 먼저
-    // 판정된다.
+    // 🔴 옛 코드는 링크 실패를 `.catch(로그)` 로 삼켜서 「장은 있는데 마이페이지에도 어드민에도
+    // 안 보이는」 쿠폰을 만들었다. 사람이 안 보는 자동 경로라 그 침묵이 특히 나빴다. 이제
+    // 링크가 실패하면 장까지 되감기고 예외가 위로 올라가 500 이 된다 — channel-adapter 가
+    // 재시도하고, 결정적 issue_key 덕에 그 재시도는 멱등하다.
     //
-    // Transient DB 에러는 그대로 위로 던진다 — 500 으로 올려 channel-adapter 가 재시도하게
-    // 한다. 재시도는 아래 결정적 issue_key 덕에 멱등하다.
-    const result = await promotionMetaService.issueGrantWithSlot({
-      promotion_id: promo.id,
-      customer_id: customerId,
-      // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
-      issue_key: `trigger:${trigger}`,
-      issued_via: trigger,
-      expires_at: computeExpiresAt(meta, now),
-      now,
-      max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
-      enforce_cap: true,
+    // 🔴 순서도 여기서 바로잡힌다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에 대해 이미
+    // 발급받은 고객을 재시도하면 `already_issued` 가 아니라 `max_claims_exceeded` 를 돌려줬다.
+    // channel-adapter 의 `coupon-issue.metrics.ts` 가 그 사유를 실제 소진으로 세므로, 재시도마다
+    // 없는 소진이 지표에 쌓였다.
+    const { result: outcome } = await issueCouponGrantWorkflow(req.scope).run({
+      input: {
+        promotion_id: promo.id,
+        customer_id: customerId,
+        // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
+        issue_keys: [`trigger:${trigger}`],
+        issued_via: trigger,
+        expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+        max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
+        enforce_cap: true,
+      },
     });
 
-    if (result === 'duplicate') {
+    if (outcome.duplicated.length > 0) {
       skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       continue;
     }
 
-    if (result === 'exhausted') {
+    if (outcome.exhausted) {
       skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
       continue;
     }
 
-    // 🔴 링크 생성 실패를 조용히 삼키면 「장은 있는데 어디에도 안 보이는 쿠폰」이 된다 —
-    // 마이페이지(`/store/customers/me/promotions`)도 어드민 고객 상세도 링크 행으로
-    // 열거하기 때문이다. 여기는 사람이 안 보는 자동 경로라 로그가 유일한 흔적이다.
-    // 사유 집합은 늘리지 않는다 — channel-adapter 가 이 응답의 `skipped.reason` 을
-    // 메트릭으로 세므로, 새 값은 그쪽 계약 변경이다.
-    await (link as any).create([{
-      [Modules.CUSTOMER]: { customer_id: customerId },
-      [Modules.PROMOTION]: { promotion_id: promo.id },
-    }]).catch((e: any) => {
-      logger.warn(
-        `[coupon] 자동발급 link 생성 실패 — 장은 만들어졌으나 목록에 안 보인다 ` +
-          `(promotion_id=${promo.id}, customer_id=${customerId}, trigger=${trigger}): ${e?.message ?? e}`,
-      );
-    });
     issued.push({ promotion_id: promo.id, code: promo.code });
   }
 

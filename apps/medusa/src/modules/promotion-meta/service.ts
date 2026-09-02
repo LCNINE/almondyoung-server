@@ -417,6 +417,30 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
+   * 워크플로 보상 전용. **이번 실행이 만든 장만** 지목해 되돌린다.
+   *
+   * `revokeGrants` 와 달리 「이 고객의 이 쿠폰 전부」가 아니라 `issue_key` 목록으로 좁힌다 —
+   * 보상은 자기가 만든 것만 치워야 하고, 같은 쌍에 미리 있던 장(다른 제출로 발급됐거나
+   * 이번 실행에서 `'duplicate'` 로 판정된 장)은 남의 것이다. 되돌린 장수를 돌려주므로
+   * 호출부가 그만큼 슬롯을 반환할 수 있다.
+   */
+  async revokeGrantsByIssueKeys(
+    promotionId: string,
+    customerId: string,
+    issueKeys: string[],
+  ): Promise<number> {
+    if (issueKeys.length === 0) return 0;
+    const rows = (await (this as any).listCouponGrants({
+      promotion_id: promotionId,
+      customer_id: customerId,
+      issue_key: { $in: issueKeys },
+    })) as CouponGrantRow[];
+    if (rows.length === 0) return 0;
+    await (this as any).softDeleteCouponGrants(rows.map((g) => g.id));
+    return rows.length;
+  }
+
+  /**
    * 이 고객의 이 쿠폰 중 **아직 안 쓴 장**을 회수한다.
    *
    * 🔴 이미 쓴 장은 건드리지 않는다. 옛 구현은 전량 soft delete 하고 그 수만큼 슬롯을

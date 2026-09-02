@@ -6,7 +6,7 @@ import type { CouponGrantRow } from '../../../../modules/promotion-meta/service'
 import { resolveVisibility } from '../../../admin/promotions/helpers';
 import { isIssuableToCustomer } from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
-import { grantsFor, hasUsableGrant, nextExpiryAt } from '../../../../modules/promotion-meta/grants';
+import { grantsFor, hasUsableGrant, nextExpiryAt, grantsGovernUsage } from '../../../../modules/promotion-meta/grants';
 
 /**
  * GET /store/events/:slug
@@ -88,15 +88,16 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     if (issuanceWindowState(meta, now) === 'not_started') {
       return { kind: 'blocked', reason: 'not_started' };
     }
-    // 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면(=발급 개념이 없는 public)
-    // 정책» 이 정한다 (#488 결정 1 — 카트 미들웨어·complete-cart 훅과 같은 판정).
-    const usable = mine.length > 0 ? hasUsableGrant(mine, now) : isUsable(null, meta, now);
+    // 메타가 없으면 닫힌 쪽이다(#488 N7) → not_assigned 로 막힌다.
+    const visibility: string = resolveVisibility(meta);
+
+    // 사용 가능 여부는 «장이 정하는 쿠폰이면 그 장들, 아니면 정책» 이 정한다 (#488 결정 1).
+    // 🔴 `mine.length > 0` 이 아니라 `grantsGovernUsage` 다 — preview 와 같은 이유로,
+    // 발급 후 `public` 으로 바뀐 쿠폰에서 표시(여기)와 판정(카트 게이트)이 갈렸다.
+    const usable = grantsGovernUsage(mine, visibility) ? hasUsableGrant(mine, now) : isUsable(null, meta, now);
     if (!usable) {
       return { kind: 'blocked', reason: 'expired' };
     }
-
-    // 메타가 없으면 닫힌 쪽이다(#488 N7) → not_assigned 로 막힌다.
-    const visibility: string = resolveVisibility(meta);
 
     if (customerId && !isIssuableToCustomer(promo.rules, customerGroupIds)) {
       return { kind: 'blocked', reason: 'group_restricted' };

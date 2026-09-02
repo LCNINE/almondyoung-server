@@ -9,7 +9,7 @@ import {
   requiresCustomerContext,
 } from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
-import { grantsFor, hasUsableGrant, nextExpiryAt } from '../../../../modules/promotion-meta/grants';
+import { grantsFor, hasUsableGrant, nextExpiryAt, grantsGovernUsage } from '../../../../modules/promotion-meta/grants';
 
 /**
  * GET /store/coupons/preview?code=CODE123
@@ -84,9 +84,15 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       message: '아직 사용 기간이 아닌 쿠폰입니다.',
     });
   }
-  // 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면(=발급 개념이 없는 public) 정책»
-  // 이 정한다 (#488 결정 1 — 카트 미들웨어·complete-cart 훅과 같은 판정).
-  const usable = mine.length > 0 ? usableMine : isUsable(null, meta, now);
+  // 사용 가능 여부는 «장이 정하는 쿠폰이면 그 장들, 아니면 정책» 이 정한다 (#488 결정 1).
+  //
+  // 🔴 `mine.length > 0` 이 아니라 `grantsGovernUsage` 다. 둘은 `public` 쿠폰에서 갈린다 —
+  // `assigned_only` 로 발급한 뒤 visibility 를 `public` 으로 바꾸면 발급받은 고객에게만 장이
+  // 있고, 옛 분기는 그 고객의 장이 소진됐다는 이유로 `COUPON_EXPIRED` 를 돌려줬다. 그런데
+  // 카트 게이트(`per-customer-limit`·`complete-cart`)는 같은 상황에서 `grantsGovernUsage` 를
+  // 써서 정책으로 갈리므로 쿠폰을 받아준다. 결과는 「체크아웃 패널은 못 쓴다는데 실제로는
+  // 적용되는」 쿠폰이었다. 판정은 한 곳에서만 온다.
+  const usable = grantsGovernUsage(mine, visibility) ? usableMine : isUsable(null, meta, now);
   if (!usable) {
     return res.status(200).json({
       valid: false,

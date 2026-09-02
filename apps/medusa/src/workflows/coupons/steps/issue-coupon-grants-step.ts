@@ -1,0 +1,110 @@
+import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
+import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
+import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
+import type { IssueTrigger } from '../../../modules/promotion-meta/service';
+
+export type IssueCouponGrantsStepInput = {
+  promotion_id: string;
+  customer_id: string;
+  /** 발급할 장들의 멱등 키. 길이가 곧 요청 수량이다. */
+  issue_keys: string[];
+  issued_via: IssueTrigger;
+  /**
+   * 이 장의 만료. **ISO 문자열이다** — 워크플로 입력은 엔진을 거치며 직렬화될 수 있어
+   * `Date` 를 그대로 실어 보내지 않는다. 스텝 안에서 되살린다.
+   */
+  expires_at: string | null;
+  max_claims: number | null;
+  enforce_cap: boolean;
+};
+
+export type IssueCouponGrantsStepResult = {
+  /** 이번 실행이 «실제로 만든» 장의 issue_key 들. */
+  created: string[];
+  /** 같은 키가 이미 있어 건너뛴 것들. 재시도의 정상 결과다. */
+  duplicated: string[];
+  /** 상한에 걸려 중단됐는가. 일부만 만들어진 채 true 일 수 있다. */
+  exhausted: boolean;
+};
+
+type CompensationData = {
+  promotion_id: string;
+  customer_id: string;
+  issue_keys: string[];
+  release_slots: boolean;
+} | null;
+
+/**
+ * 장을 발급한다. 슬롯 예약은 모듈의 트랜잭션 안에서 함께 일어난다 (ADR-0034 결정 1).
+ *
+ * 보상은 **이번 실행이 만든 장만** 되돌린다. `duplicated` 는 이전 제출이 만든 남의 것이라
+ * 건드리면 안 된다 — 링크 생성이 실패했다고 이미 잘 쓰고 있던 쿠폰을 회수해 버리는 것은
+ * 고치려는 문제보다 나쁘다.
+ */
+export const issueCouponGrantsStep = createStep(
+  'issue-coupon-grants',
+  async (input: IssueCouponGrantsStepInput, { container }) => {
+    const service = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+    const now = new Date();
+    const expiresAt = input.expires_at ? new Date(input.expires_at) : null;
+
+    const created: string[] = [];
+    const duplicated: string[] = [];
+    let exhausted = false;
+
+    for (const issueKey of input.issue_keys) {
+      const result = await service.issueGrantWithSlot({
+        promotion_id: input.promotion_id,
+        customer_id: input.customer_id,
+        issue_key: issueKey,
+        issued_via: input.issued_via,
+        expires_at: expiresAt,
+        now,
+        max_claims: input.max_claims,
+        enforce_cap: input.enforce_cap,
+      });
+
+      if (result === 'created') {
+        created.push(issueKey);
+      } else if (result === 'duplicate') {
+        duplicated.push(issueKey);
+      } else {
+        // 상한에 닿았다. 남은 수량은 시도하지 않는다 — 어차피 같은 답이다.
+        exhausted = true;
+        break;
+      }
+    }
+
+    const compensation: CompensationData =
+      created.length > 0
+        ? {
+            promotion_id: input.promotion_id,
+            customer_id: input.customer_id,
+            issue_keys: created,
+            // 상한이 있는 프로모션에서만 카운터가 올라갔다.
+            release_slots: input.max_claims !== null,
+          }
+        : null;
+
+    return new StepResponse<IssueCouponGrantsStepResult, CompensationData>(
+      { created, duplicated, exhausted },
+      compensation,
+    );
+  },
+  async (compensation, { container }) => {
+    if (!compensation) return;
+    const service = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+
+    const revoked = await service.revokeGrantsByIssueKeys(
+      compensation.promotion_id,
+      compensation.customer_id,
+      compensation.issue_keys,
+    );
+
+    if (compensation.release_slots) {
+      for (let i = 0; i < revoked; i++) {
+        await service.releaseClaimSlot(compensation.promotion_id);
+      }
+    }
+  },
+);

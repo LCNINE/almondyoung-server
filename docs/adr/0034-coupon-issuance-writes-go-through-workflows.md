@@ -116,12 +116,19 @@ consumeGrantIfUnused(grantId, orderId, usedAt) → boolean
 않는다. 그 자리가 보상의 자리다.
 
 ```
-issueCouponGrantWorkflow:  issueGrantStep → createRemoteLinkStep
-revokeCouponGrantWorkflow: revokeGrantsStep → dismissRemoteLinkStep
+issueCouponGrantWorkflow: issueCouponGrantsStep → createRemoteLinkStep
 ```
 
-링크 생성 실패는 워크플로 실패가 되고, 앞선 스텝이 보상된다. **`.catch(() => {})` 로 삼키는
-것이 구조적으로 불가능해진다** — 지금 C 와 D 가 하고 있는 것이 그것이다.
+링크 생성 실패는 워크플로 실패가 되고, 앞선 스텝이 보상된다(이번 실행이 만든 장만 회수하고
+그만큼 슬롯을 되돌린다 — `duplicated` 는 이전 제출이 만든 남의 것이라 건드리지 않는다).
+**`.catch(() => {})` 로 삼키는 것이 구조적으로 불가능해진다** — C 와 D 가 하고 있던 것이 그것이다.
+
+**회수(revoke)에는 대칭 워크플로를 두지 않는다.** 처음엔 `revokeCouponGrantWorkflow` 를 같이
+두려 했으나, 만들면서 두 가지가 드러났다. 첫째, 결정 1 이 회수 경로를 이미 자기치유로
+만들었다 — 링크는 「남은 장이 없을 때만」 걷고, 회수할 장이 0개여도 그 판정을 하므로, 한 번
+어긋나도 **다음 회수 시도가 고친다**. 둘째, soft delete 의 보상은 「되살리기 + 슬롯 재예약」인데
+그 재예약은 그 사이 상한이 찼으면 **정당하게 실패할 수 있다**. 복구하지 못하는 보상은 없는
+것보다 나쁘다 — 롤백됐다고 믿게 만든다. 그래서 회수는 직접 호출로 남긴다.
 
 이것이 Medusa 가 이 문제에 대해 제공하는 답이고, 이 저장소는 이미 그 답을 쓰고 있다 —
 커스텀 워크플로 12개가 있고 그중 `capture-order-payments` · `register-auth-identity` ·

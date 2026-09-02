@@ -5,6 +5,7 @@ import type PromotionMetaModuleService from '../../../../../modules/promotion-me
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
+import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { resolveVisibility } from '../../helpers';
 
@@ -83,7 +84,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     byCustomer.set(g.customer_id, list);
   }
 
-  const customerIds = [...byCustomer.keys()];
+  // 🔴 Map 의 키 순서는 `listGrantsForPromotion` 이 돌려준 행 순서 — 그건 `orderBy` 가 없어
+  // 보장되지 않는다(플랜이 바뀌거나 동시 쓰기가 힙 순서를 흔들면 달라진다). 그 위에서
+  // `slice(offset, offset+limit)` 를 하면 같은 고객이 1·2 페이지에 다 나오고 다른 고객은
+  // 어느 쪽에도 안 나온다. 값으로 정렬한다 — 최초 발급 시각, 동률은 고객 id.
+  const customerIds = [...byCustomer.keys()].sort((a, b) => {
+    const ta = toDate(earliestIssuedGrant(byCustomer.get(a) ?? [])?.issued_at)?.getTime() ?? 0;
+    const tb = toDate(earliestIssuedGrant(byCustomer.get(b) ?? [])?.issued_at)?.getTime() ?? 0;
+    if (ta !== tb) return ta - tb;
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
   const count = customerIds.length;
   const paginatedIds = customerIds.slice(offset, offset + limit);
 
@@ -141,11 +151,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'submit_id is required');
   }
   const rawQty = Number(quantity);
-  if (!Number.isFinite(rawQty)) {
+  // 🔴 `isInteger` 다. `isFinite` 만 보면 2.7 이 통과해 루프 조건에서 조용히 2 로 잘리고,
+  // 응답 어디에도 「요청한 수량을 지키지 못했다」는 표시가 없다. `validity_days` 가 같은
+  // 이유로 `Number.isInteger` 를 쓴다(validity.ts).
+  if (!Number.isInteger(rawQty)) {
     // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
     //    false 라 `for (n=1; n<=qty; n++)` 가 한 번도 안 돈다. 그러면 전원이 조용히
     //    `granted:0` 이 돼 `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다.
-    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be a finite number');
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be an integer');
   }
   const qty = Math.max(1, Math.min(rawQty, 50));
   if (customer_ids.length > 500) {
@@ -162,7 +175,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
 
@@ -182,33 +194,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issued: { customer_id: string; granted: number }[] = [];
   const skipped: { customer_id: string; reason: string }[] = [];
-
-  /**
-   * 표시용 링크를 보장한다. 성공 여부를 **돌려준다** — 삼키면 안 된다.
-   *
-   * 🔴 링크가 없는 grant 는 「고객이 가지고 있고 코드를 치면 쓸 수 있는데, 마이페이지에도
-   * (`/store/customers/me/promotions` 가 링크 행으로 열거한다) 어드민 고객 상세에도
-   * (`GET /admin/customers/:id/promotions`) **안 보이는**」 쿠폰이다. 옛 코드는 이 실패를
-   * `link_error` 로 보고하고 슬롯을 되돌렸는데, `.catch(() => {})` 로 바뀌면서 «발급됨» 이라고
-   * 보고하고 로그에도 아무것도 남기지 않게 됐다(2026-09-02 전체 리뷰).
-   */
-  async function ensureLink(customerId: string): Promise<boolean> {
-    try {
-      await (link as any).create([{
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promotionId },
-      }]);
-      return true;
-    } catch (e: any) {
-      logger.warn(
-        `[coupon] 대량발급 link_error — 장은 만들어졌으나 표시용 링크 생성 실패 ` +
-          `(promotion_id=${promotionId}, customer_id=${customerId}, submit_id=${submit_id}): ` +
-          `${e?.message ?? e}. 이 고객은 쿠폰을 «가지고 있지만 목록에 안 보인다» — 재시도하면 ` +
-          `링크만 다시 만든다(장은 issue_key 로 멱등하다).`,
-      );
-      return false;
-    }
-  }
 
   // 쿠폰 축 검증은 루프 밖에서 한 번만 — 고객마다 같은 답이 나온다.
   //
@@ -281,74 +266,49 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       }
     }
 
-    let granted = 0;
-    // 이 고객이 이 customerId 이터레이션 안에서 이미 skipped 에 등재됐는지 — 아래 「전량
-    // duplicate」 판정이 그 위에 또 등재해 이중화하지 않도록 추적한다.
-    let skippedInLoop = false;
-    for (let n = 1; n <= qty; n++) {
-      // 슬롯 예약·되돌리기·force 보정은 전부 모듈의 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
-      let result: 'created' | 'duplicate' | 'exhausted';
-      try {
-        result = await promotionMetaService.issueGrantWithSlot({
+    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2). 링크가 실패하면
+    // 장까지 함께 되감기므로, 옛 `link_error`(장은 있는데 목록에 안 보임) 상태가
+    // 만들어지지 않는다 — 실패는 `grant_error` 하나로 정직하게 나간다.
+    const issueKeys = Array.from({ length: qty }, (_, i) => `${submit_id}:${i + 1}`);
+
+    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
+    try {
+      const { result } = await issueCouponGrantWorkflow(req.scope).run({
+        input: {
           promotion_id: promotionId,
           customer_id: customerId,
-          issue_key: `${submit_id}:${n}`,
+          issue_keys: issueKeys,
           issued_via: issueTrigger,
-          expires_at: computeExpiresAt(meta, now),
-          now,
+          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
           max_claims: maxClaims,
           enforce_cap: !force,
-        });
-      } catch (e: any) {
-        // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
-        // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
-        logger.error(
-          `[coupon] 대량발급 grant_error (promotion_id=${promotionId}, customer_id=${customerId}, ` +
-            `n=${n}, submit_id=${submit_id}): ${e?.message ?? e}`,
-        );
-        // 배치 resilient — 한 고객의 장애가 나머지를 막지 않는다.
-        skipped.push({ customer_id: customerId, reason: 'grant_error' });
-        skippedInLoop = true;
-        break;
-      }
-
-      if (result === 'exhausted') {
-        skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
-        skippedInLoop = true;
-        break;
-      }
-
-      if (result === 'duplicate') {
-        // 같은 제출의 재도착이다. 슬롯 증가는 트랜잭션과 함께 되감겼다.
-        continue;
-      }
-
-      granted++;
+        },
+      });
+      outcome = result;
+    } catch (e: any) {
+      // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
+      // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
+      logger.error(
+        `[coupon] 대량발급 grant_error (promotion_id=${promotionId}, customer_id=${customerId}, ` +
+          `submit_id=${submit_id}): ${e?.message ?? e}`,
+      );
+      // 배치 resilient — 한 고객의 장애가 나머지를 막지 않는다.
+      skipped.push({ customer_id: customerId, reason: 'grant_error' });
+      continue;
     }
 
-    if (granted > 0) {
-      if (await ensureLink(customerId)) {
-        issued.push({ customer_id: customerId, granted });
-      } else {
-        skipped.push({ customer_id: customerId, reason: 'link_error' });
-      }
-    } else if (!skippedInLoop) {
-      // 🔴 모든 n 이 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
-      // 다른 사유로 이미 skipped 에 등재된 경우(max_claims_exceeded/grant_error)는
-      // skippedInLoop 가 true 라 여기 안 온다. customer_not_found·eligibility 스킵은
-      // 위에서 continue 로 이 지점 자체에 도달하지 않는다. 이 branch 가 없으면 재시도로
-      // 이미 성공한 고객이 issued 에도 skipped 에도 없는 「응답에 없는 고객」이 되어
-      // 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다(#488 Task 12 리뷰).
-      //
-      // 링크는 여기서도 보장한다 — 직전 시도가 `link_error` 로 끝났다면 장은 있고 링크만
-      // 없는 상태다. 그 재시도는 전량 duplicate 로 떨어지므로, 이 자리에서 링크를 다시
-      // 만들지 않으면 `link_error` 에 복구 경로가 없다. `link.create` 는 upsert 라
-      // 정상 재시도에서는 무해한 no-op 이다.
-      if (await ensureLink(customerId)) {
-        skipped.push({ customer_id: customerId, reason: 'already_issued' });
-      } else {
-        skipped.push({ customer_id: customerId, reason: 'link_error' });
-      }
+    // 상한에 걸려 «일부만» 발급된 경우가 있으므로 두 보고는 배타적이지 않다.
+    if (outcome.exhausted) {
+      skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
+    }
+    if (outcome.created.length > 0) {
+      issued.push({ customer_id: customerId, granted: outcome.created.length });
+    } else if (!outcome.exhausted) {
+      // 🔴 모든 키가 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
+      // 이 branch 가 없으면 재시도로 이미 성공한 고객이 issued 에도 skipped 에도 없는
+      // 「응답에 없는 고객」이 되어 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못
+      // 표시한다(#488 Task 12 리뷰).
+      skipped.push({ customer_id: customerId, reason: 'already_issued' });
     }
   }
 

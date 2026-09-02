@@ -77,10 +77,14 @@ export function CouponAssignDialog({
       try {
         // 🔴 새 엔드포인트를 만들지 말 것 — `q` 하나가 loginId·email·username·nickname·전화를
         //    모두 ilike 검색한다(user-service `users.service.ts:66-70`). 이 클라이언트도 이미 있다.
-        const users = await customerApi.getCustomersWithPagination({ q: input, limit: 2 });
-        // 0건/1건/2건+ 판정은 `classify-lookup-matches.ts` 의 순수 함수가 한다 — `.tsx` 안에
-        // 두면 admin-web jest 가 아예 실행하지 않는다(#488 Task 12 리뷰 Important #2).
-        const outcome = classifyLookupMatches(users.data ?? []);
+        // 🔴 `limit` 은 2 가 아니라 10 이다. 아래 판정이 「부분일치 히트 중 **정확히 일치하는**
+        //    것」을 고르므로, 부분일치가 정확일치를 밀어내면 안 된다 — `bob` 을 찾는데
+        //    `bobby`·`bobcat` 두 건만 실려 오면 정작 `bob` 을 못 본다.
+        const users = await customerApi.getCustomersWithPagination({ q: input, limit: 10 });
+        // 판정은 `classify-lookup-matches.ts` 의 순수 함수가 한다 — `.tsx` 안에 두면
+        // admin-web jest 가 아예 실행하지 않는다(#488 Task 12 리뷰 Important #2).
+        // 입력과 식별자를 함께 넘긴다: `q` 는 ilike 부분일치라 「1건이면 그 사람」이 아니다.
+        const outcome = classifyLookupMatches(input, users.data ?? [], (u) => [u.loginId, u.email]);
         if (outcome.kind === 'not_found') { bad.push({ input, reason: '회원을 찾을 수 없습니다' }); continue; }
         if (outcome.kind === 'ambiguous') { bad.push({ input, reason: '두 명 이상 일치합니다' }); continue; }
 

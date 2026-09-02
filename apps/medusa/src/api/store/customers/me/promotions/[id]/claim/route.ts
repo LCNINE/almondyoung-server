@@ -1,10 +1,11 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../../../../admin/promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../../../modules/promotion-meta/issuance-rules';
+import { issueCouponGrantWorkflow } from '../../../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context?.actor_id;
@@ -15,7 +16,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK) as any;
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const { data: promotions } = await query.graph({
@@ -79,66 +79,48 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이 쿠폰은 대상 고객만 발급받을 수 있습니다.');
   }
 
-  // 🔴 「이미 가지고 있다」는 소진 검사보다 **먼저**다 (스펙 §5.1 의 200 계약).
+  // 🔴 「이미 가지고 있다」는 소진 검사보다 **먼저** 판정돼야 한다 (스펙 §5.1 의 200 계약).
   //
-  // 클레임의 `issue_key` 는 `'claim'` 고정이라 한 고객당 영원히 한 장이다 — 그래서
-  // 아래 원자 경로는 재클릭에 반드시 `'duplicate'` 를 돌려주고 200 이 나간다. 그런데
-  // 소진된 쿠폰에서는 그 경로에 닿기도 전에 `allLinks.length >= maxClaims` 가 먼저 걸려,
-  // **이미 받은 사람이 재클릭하면 '발급 수량이 모두 소진되었습니다'** 가 됐다(장 모델로
-  // 옮기면서 옛 `alreadyClaimed` 조기 반환이 이 검사보다 앞에 있던 사실이 사라졌다).
+  // 클레임의 `issue_key` 는 `'claim'` 고정이라 한 고객당 영원히 한 장이고, 아래 원자 경로는
+  // 재클릭에 반드시 `'duplicate'` 를 돌려준다. 그런데 **읽기 기반 소진 거절**이 그 앞에
+  // 있으면, 소진된 쿠폰에서 이미 받은 사람이 재클릭할 때 「발급 수량이 모두 소진되었습니다」가
+  // 나간다. 그래서 그 빠른 거절은 «새로 받으려는 사람» 에게만 적용한다.
   //
-  // ⚠️ 이것은 **읽기 전용 빠른 경로**일 뿐이다 — 발급 여부의 결정은 아래 원자 경로가
-  // 그대로 내리고, 최종 권위는 여전히 유니크 인덱스다. 이 조회가 낡았어도(방금 다른
-  // 요청이 만들었어도) 아래로 흘러가 `'duplicate'` 로 같은 200 이 나온다. read-then-write
-  // 경합을 되살리는 것이 아니다.
+  // 🔴 옛 코드는 여기서 아예 `return 200` 으로 빠져나갔는데, 그게 링크 복구를 영영 막았다 —
+  // 링크 생성이 한 번 실패해 「장은 있는데 쿠폰함에 안 보이는」 상태가 되면, 재클릭이 이
+  // 조기 반환에 걸려 링크를 다시 만들 기회가 없었다(그 코드 주석도 「로그가 유일한 단서다」라고
+  // 인정했다). 이제는 이미 가진 사람도 워크플로를 그대로 지나가고, `createRemoteLinkStep` 의
+  // upsert 가 링크를 복구한다.
   const myLiveGrants = allLinks.filter((g) => g.customer_id === customerId);
-  if (myLiveGrants.length > 0) {
-    return res.status(200).json({ success: true, promotion_id: promotionId });
-  }
+  const alreadyHolds = myLiveGrants.length > 0;
 
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
   // 읽기 기반 빠른 거절(백필 이전 링크까지 덮는다). 최종 권위는 아래 원자 경로다.
-  if (maxClaims !== null && allLinks.length >= maxClaims) {
+  if (!alreadyHolds && maxClaims !== null && allLinks.length >= maxClaims) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
-  // 슬롯 예약·되돌리기가 장 생성과 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
-  const result = await promotionMetaService.issueGrantWithSlot({
-    promotion_id: promotionId,
-    customer_id: customerId,
-    issue_key: 'claim', // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
-    issued_via: 'customer_claim',
-    expires_at: computeExpiresAt(meta, now),
-    now,
-    max_claims: maxClaims,
-    enforce_cap: true,
+  // 발급·슬롯·표시용 링크가 한 워크플로다 (ADR-0034 결정 1·2). 링크가 실패하면 장까지
+  // 되감기므로 「받았는데 쿠폰함에 안 보이는」 쿠폰이 만들어지지 않는다 — 고객은 실패를
+  // 보고 다시 누르면 되고, 그 재시도는 `issue_key` 가 고정이라 멱등하다.
+  const { result: outcome } = await issueCouponGrantWorkflow(req.scope).run({
+    input: {
+      promotion_id: promotionId,
+      customer_id: customerId,
+      issue_keys: ['claim'], // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
+      issued_via: 'customer_claim',
+      expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+      max_claims: maxClaims,
+      enforce_cap: true,
+    },
   });
 
-  if (result === 'exhausted') {
+  if (outcome.exhausted) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
-  if (result === 'duplicate') {
-    // 이미 받았다. 슬롯 증가는 트랜잭션과 함께 되감겼다 — 따닥 한 번에 2명분이 소진되지 않는다.
-    return res.status(200).json({ success: true, promotion_id: promotionId });
-  }
-
-  // 🔴 링크 생성 실패를 조용히 삼키면 「받았는데 쿠폰함에 안 보이는」 쿠폰이 된다 —
-  // 마이페이지가 링크 행으로 열거하기 때문이다. 장은 이미 만들어졌으니 200 은 유지하되
-  // (고객은 실제로 쿠폰을 가졌다) 흔적은 반드시 남긴다. 재클릭하면 위 빠른 경로가
-  // 200 을 돌려주므로 링크는 스스로 복구되지 않는다 — 로그가 유일한 단서다.
-  await link.create([{
-    [Modules.CUSTOMER]: { customer_id: customerId },
-    [Modules.PROMOTION]: { promotion_id: promotionId },
-  }]).catch((e: any) => {
-    req.scope
-      .resolve(ContainerRegistrationKeys.LOGGER)
-      .warn(
-        `[coupon] 클레임 link 생성 실패 — 장은 만들어졌으나 쿠폰함에 안 보인다 ` +
-          `(promotion_id=${promotionId}, customer_id=${customerId}): ${e?.message ?? e}`,
-      );
-  });
-
+  // `duplicate` 든 `created` 든 200 이다 — 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는
+  // 중복일 때 트랜잭션과 함께 되감겼다(따닥 한 번에 2명분이 소진되지 않는다).
   return res.status(200).json({ success: true, promotion_id: promotionId });
 }

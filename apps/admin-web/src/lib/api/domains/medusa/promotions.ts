@@ -110,13 +110,6 @@ export interface CreatePromotionPayload {
   additional_data?: Record<string, unknown>;
 }
 
-export interface AssignPromotionResult {
-  success: boolean;
-  issued: string[];
-  skipped: { promotion_id: string; reason: string }[];
-  force: boolean;
-}
-
 export interface CouponCustomer {
   id: string;
   email: string;
@@ -191,29 +184,6 @@ export const medusaPromotionsApi = {
 
   delete: async (id: string) => {
     await client.delete(`${MEDUSA_BASE_URL}/admin/promotions/${id}`);
-  },
-
-  /**
-   * 고객 한 명에게 쿠폰 여러 개를 발급한다 (고객축).
-   *
-   * 🔴 `submitId` 는 **필수다** — 라우트가 없으면 400 을 낸다. 서버가 만들어 주던 시절엔
-   * 재도착마다 새 키라 따닥이 곧 두 배 발급이었다. 호출부는 「제출 시작」에 한 번 만들어
-   * 재시도 내내 **같은 값**을 보내야 한다(`coupon-assign-dialog.tsx` 의 `submitIdRef` 와
-   * 같은 규약). 인자에 기본값을 두지 않는 것은 의도다 — 호출부가 무심코 새 값을 만드는
-   * 자리를 남기지 않는다.
-   */
-  assignToCustomer: async (
-    medusaCustomerId: string,
-    promotionIds: string[],
-    submitId: string,
-    force = false,
-    quantity?: number,
-  ): Promise<AssignPromotionResult> => {
-    const res = await client.post<AssignPromotionResult>(
-      `${MEDUSA_BASE_URL}/admin/customers/${medusaCustomerId}/promotions`,
-      { promotion_ids: promotionIds, submit_id: submitId, force, ...(quantity != null ? { quantity } : {}) }
-    );
-    return res.data;
   },
 
   getCustomers: async (promotionId: string, params: { limit?: number; offset?: number } = {}) => {
