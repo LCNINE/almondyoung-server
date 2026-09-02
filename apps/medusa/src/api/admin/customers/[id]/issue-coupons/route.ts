@@ -5,6 +5,7 @@ import type PromotionMetaModuleService from '../../../../../modules/promotion-me
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
+import { resolveVisibility } from '../../../promotions/helpers';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
 
@@ -76,6 +77,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   for (const promo of promotions as any[]) {
     const meta = metaById.get(promo.id);
     if (!meta) continue;
+
+    // 🔴 `public` 쿠폰에 트리거를 걸어두면 가입자 전원에게 장이 한 장씩 생기고, 카트 게이트가
+    // 「장이 있으면 장이 정한다」로 갈리는 탓에 **그 전원이** 1회 제한에 걸린다 — 아무나 쓰라고
+    // 만든 쿠폰이 자동발급을 켠 순간 1인 1회 쿠폰이 된다 (#488 A2). 수동 발급 두 라우트와
+    // 같은 사유·같은 판단이다.
+    if (resolveVisibility(meta) === 'public') {
+      skipped.push({ promotion_id: promo.id, reason: 'public_promotion' });
+      continue;
+    }
 
     // 발급 창은 캠페인이 아니라 promotion_meta 가 정한다 (#488 결정 1).
     const window = issuanceWindowState(meta, now);

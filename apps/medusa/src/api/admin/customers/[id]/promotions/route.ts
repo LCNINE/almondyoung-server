@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/frame
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
-import { toMetadataShape } from '../../../promotions/helpers';
+import { toMetadataShape, resolveVisibility } from '../../../promotions/helpers';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
@@ -197,6 +197,18 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   for (const promo of promotions as any[]) {
     const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
     const metaShape = toMetadataShape(meta);
+
+    // 🔴 `public` 거절은 **`!force` 밖**이다 (#488 A2). 아래 검사들은 전부 「지금은 정책상
+    // 발급이 안 되는 상태」라 운영자가 정당하게 넘어설 수 있는 것들이지만, `public` 은
+    // 그게 아니라 「이 쿠폰엔 1인 발급 개념 자체가 없다」이다. 넘어서면 카트 게이트가
+    // 「장이 있으면 장이 정한다」로 갈리는 탓에 **발급받은 그 고객만** 장 수만큼 제한되고
+    // 나머지 전원은 계속 자유롭게 쓴다 — 선의가 정확히 반대로 작동한다. 강제 발급으로
+    // 결함을 찍어낼 수 있게 두지 않는다. (`grants.ts` 의 `grantsGovernUsage` 가 이미
+    // 발급된 뒤 visibility 가 바뀌는 경로를 게이트 쪽에서 받는다.)
+    if (resolveVisibility(meta) === 'public') {
+      skipped.push({ promotion_id: promo.id, reason: 'public_promotion' });
+      continue;
+    }
 
     // 검증 실패는 throw 대신 skip — 배치의 다른 쿠폰까지 막지 않는다. force로 우회 가능.
     if (!force) {

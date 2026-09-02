@@ -1,8 +1,8 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
-import { requiresIssuance } from '../../../admin/promotions/helpers';
+import { requiresIssuance, resolveVisibility } from '../../../admin/promotions/helpers';
 import { isUsable, hasPolicyStarted } from '../../../../modules/promotion-meta/validity';
-import { grantsFor, hasUsableGrant } from '../../../../modules/promotion-meta/grants';
+import { grantsFor, hasUsableGrant, grantsGovernUsage } from '../../../../modules/promotion-meta/grants';
 import type { CouponGrantRow } from '../../../../modules/promotion-meta/service';
 
 interface AddPromotionsBody {
@@ -51,7 +51,12 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
 
     // 🔴 만료는 visibility 와 무관하다 — public 쿠폰도 대상이다.
     // 발급된 장이 있으면 그 장들이, 없으면(=발급 개념이 없는 public) 정책이 만료를 정한다.
-    if (mine.length > 0) {
+    //
+    // 🔴 단, `public` 쿠폰은 장이 있어도 **정책이 정한다** (#488 A2). 발급 3경로가 public 을
+    // 거절하므로 보통은 장이 없지만, 발급이 끝난 뒤 visibility 를 public 으로 바꾸면 발급
+    // 시점 검사로는 못 잡는다 — 그 순간 이미 발급받은 고객«만» 장 수만큼 제한되고 나머지
+    // 전원은 자유롭게 쓴다. 판정은 `grantsGovernUsage` 가 하고 체크아웃 백스톱도 같은 것을 쓴다.
+    if (grantsGovernUsage(mine, resolveVisibility(meta))) {
       if (!hasUsableGrant(mine, now)) {
         // 쓸 수 있는 장이 없다. 만료됐거나 다 썼거나 — 고객에겐 같은 얘기다.
         // message는 머신 토큰 — 스토어프론트가 로케일별 문구로 매핑한다.

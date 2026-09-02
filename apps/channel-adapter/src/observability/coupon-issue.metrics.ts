@@ -26,6 +26,9 @@ const KNOWN_OUTCOMES = new Set([
   'max_claims_exceeded',
   'not_started',
   'expired',
+  // 공개 쿠폰에 자동발급 트리거가 걸려 있다 (#488 A2). 발급하면 가입자 전원이 1회 제한에
+  // 걸리므로 Medusa 가 거절한다 — 이 라벨이 보이면 쿠폰 설정을 고쳐야 한다는 신호다.
+  'public_promotion',
 ]);
 
 const autoIssueTotal = new Counter({

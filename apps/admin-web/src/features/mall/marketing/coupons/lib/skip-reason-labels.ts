@@ -25,6 +25,7 @@ export const BACKEND_SKIP_REASONS = [
   'already_issued',
   'customer_not_found',
   'grant_error',
+  'public_promotion',
 ] as const;
 
 const LABELS: Record<string, string> = {
@@ -38,12 +39,19 @@ const LABELS: Record<string, string> = {
   unsupported_rule:
     '이 쿠폰의 발급 조건은 아직 발급 시점에 판정할 수 없습니다. 개발팀 확인이 필요합니다(강제 발급은 가능).',
   max_claims_exceeded: '발급 수량이 소진되었습니다.',
-  link_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+  // 🔴 `link_error` 는 **쿠폰이 발급된 뒤** 표시용 링크 생성만 실패한 경우다 — 두 발생
+  // 지점(발급 직후 / 전량 duplicate 후 `ensureLink`) 모두 그 시점엔 grant 가 이미 있다.
+  // 옛 문구(「발급 처리 중 오류」)는 관리자에게 «발급 실패» 로 읽혀 실제 상태와 반대였다.
+  // 같은 조건으로 다시 발급하면 전량 duplicate 로 떨어지면서 링크만 다시 만든다.
+  link_error: '쿠폰은 발급됐지만 목록 표시가 지연될 수 있습니다. 같은 조건으로 다시 발급하면 복구됩니다.',
   already_issued: '이미 발급된 고객입니다.',
   // 대량발급(`/admin/promotions/:id/customers`) 전용 사유 — 고객id 가 존재하지 않음.
   customer_not_found: '존재하지 않는 고객입니다.',
   // 같은 라우트에서 grant 생성 자체가 실패한 경우(DB 오류 등) — 재시도 안내.
   grant_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+  // 공개 쿠폰은 발급 대상이 아니다 (#488 A2). 발급하면 그 고객«만» 1회 제한에 걸리고
+  // 나머지 고객은 계속 자유롭게 쓴다 — 선의가 정확히 반대로 작동하므로 발급 자체를 막는다.
+  public_promotion: '공개 쿠폰은 발급할 수 없습니다. 이미 모든 고객이 사용할 수 있고, 발급하면 그 고객만 사용 횟수가 제한됩니다.',
   unknown: '발급할 수 없습니다.',
 };
 

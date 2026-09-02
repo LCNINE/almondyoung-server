@@ -6,6 +6,7 @@ import type { CouponGrantRow } from '../../../../../modules/promotion-meta/servi
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
+import { resolveVisibility } from '../../helpers';
 
 interface RevokeBody {
   customer_ids: string[];
@@ -221,6 +222,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       skipped: customer_ids.map((id) => ({ customer_id: id, reason })),
       force,
     });
+
+  // 🔴 `public` 거절은 **`!force` 밖**이다 (#488 A2). 아래 검사들은 「지금은 정책상 발급이
+  // 안 되는 상태」라 운영자가 넘어설 수 있지만, `public` 은 「이 쿠폰엔 1인 발급 개념 자체가
+  // 없다」이다. 넘어서면 발급받은 그 고객«만» 카트 게이트에서 장 수만큼 제한되고 나머지는
+  // 자유롭게 쓴다 — 형제(고객축) 라우트와 같은 판단이다.
+  if (resolveVisibility(meta) === 'public') {
+    return couponAxisSkip('public_promotion');
+  }
 
   if (!force) {
     if (promo.status !== 'active') {

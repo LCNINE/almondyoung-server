@@ -4,9 +4,9 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
-import { requiresIssuance } from '../../../api/admin/promotions/helpers';
+import { requiresIssuance, resolveVisibility } from '../../../api/admin/promotions/helpers';
 import { isUsable, hasPolicyStarted } from '../../../modules/promotion-meta/validity';
-import { grantsFor, hasUsableGrant } from '../../../modules/promotion-meta/grants';
+import { grantsFor, hasUsableGrant, grantsGovernUsage } from '../../../modules/promotion-meta/grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
@@ -58,7 +58,9 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
         throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_NOT_STARTED');
       }
 
-      if (mine.length > 0) {
+      // 🔴 `public` 쿠폰은 장이 있어도 정책이 정한다 (#488 A2) — 카트 미들웨어와 «같은»
+      // 판정이어야 한다. 한쪽만 고치면 카트엔 붙는데 주문에서 거절되는 창이 생긴다.
+      if (grantsGovernUsage(mine, resolveVisibility(meta))) {
         if (!hasUsableGrant(mine, now)) {
           throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');
         }

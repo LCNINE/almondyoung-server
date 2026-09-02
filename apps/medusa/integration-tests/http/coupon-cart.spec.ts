@@ -383,5 +383,32 @@ medusaIntegrationTestRunner({
       expect(res.status).toBe(400);
       expect(res.data.message).toBe('COUPON_NOT_ASSIGNED');
     });
+
+    it('A2: public 쿠폰은 장을 다 써도 계속 붙는다 — 그 고객«만» 잠기지 않게', async () => {
+      // 🔴 발급 3경로가 `public` 을 거절하므로 이 상태는 보통 안 생긴다. 그런데
+      // **발급이 끝난 뒤 visibility 를 public 으로 바꾸면** 발급 시점 검사로는 못 잡는다 —
+      // 그 순간 이미 발급받은 고객만 1회 제한에 걸리고 나머지는 무제한이 된다.
+      // 위 G6 와 정확히 같은 상황(장 하나를 발급하고 소모)인데 visibility 만 다르다.
+      seq++;
+      const { cartId, custHeaders, customerId } = await newCustomerCart();
+      const promotionId = await createPromo(`PUBSPENT_${seq}`, { visibility: 'public' });
+      const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      await service.issueGrant({
+        promotion_id: promotionId, customer_id: customerId, issue_key: 'k1',
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
+      const [grant] = await service.listGrantsForCustomer(customerId);
+      await service.consumeGrant(grant.id, 'order_pub_spent', new Date());
+
+      const res = await api.post(
+        `/store/carts/${cartId}/promotions`,
+        { promo_codes: [`PUBSPENT_${seq}`] },
+        custHeaders,
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.data.cart.discount_total).toBeGreaterThan(0);
+    });
   },
 });

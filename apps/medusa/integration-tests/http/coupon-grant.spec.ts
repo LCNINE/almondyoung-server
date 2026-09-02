@@ -391,7 +391,10 @@ medusaIntegrationTestRunner({
           .catch((e: any) => e.response);
 
         expect(res.status).toBe(400);
-        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+        // 🔴 `customerId` 로 물으면 «항상» 0 이다 — 이 요청의 대상은 `cus_fake_*` 40개라
+        // 그 고객은 애초에 후보가 아니었다(공허한 단언). 물어야 할 것은 «이 프로모션에
+        // 장이 하나도 안 생겼는가» 다.
+        expect(await svc().listGrantsForPromotion(promotionId)).toHaveLength(0);
       });
 
       it('곱이 상한 이내면 통과한다 — 위 테스트가 「전부 400」으로 공허하게 통과하지 않게', async () => {
@@ -437,6 +440,109 @@ medusaIntegrationTestRunner({
 
         expect(res.status).toBe(400);
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+    });
+
+    /**
+     * #488 A2 — `public` 쿠폰에 직권 발급하면 **그 고객만** 제한된다.
+     *
+     * 카트 게이트는 「장이 있으면 장이 정한다」로 갈리므로, 선의로 발급한 한 장이 곧
+     * 그 고객만의 1회 제한이 된다. 나머지 고객은 계속 자유롭게 쓴다. 발급 자체를 막는 것이
+     * 가장 싼 해법이라 세 경로(고객축·쿠폰축·트리거) 전부에서 거절한다.
+     */
+    describe('public 쿠폰 직권 발급 차단 (#488 A2)', () => {
+      it('고객축: public 쿠폰은 발급되지 않는다', async () => {
+        const promotionId = await createPromo(`PUBC${seq}`, { visibility: 'public' });
+
+        const res = await issue(promotionId, `pub-c-${seq}`);
+
+        expect(res.status).toBe(200);
+        expect(res.data.issued).toEqual([]);
+        expect(res.data.skipped).toEqual([{ promotion_id: promotionId, reason: 'public_promotion' }]);
+        expect(await svc().listGrantsForPromotion(promotionId)).toHaveLength(0);
+      });
+
+      it('쿠폰축: public 쿠폰 대량발급은 전원 public_promotion 으로 떨어진다', async () => {
+        const promotionId = await createPromo(`PUBB${seq}`, { visibility: 'public' });
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId], quantity: 3, submit_id: `pub-b-${seq}` },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        expect(res.data.issued).toEqual([]);
+        expect(res.data.skipped).toEqual([{ customer_id: customerId, reason: 'public_promotion' }]);
+        // 쿠폰축 조기 반환은 성공 응답과 같은 모양이어야 한다(admin-web `BulkIssueResult`).
+        expect(res.data.promotion_id).toBe(promotionId);
+        expect(res.data.force).toBe(false);
+        expect(await svc().listGrantsForPromotion(promotionId)).toHaveLength(0);
+      });
+
+      it('🔴 force 로도 뚫리지 않는다 — 강제 발급이 결함을 «찍어내면» 안 된다', async () => {
+        // 다른 `!force` 검사들(inactive·not_started·룰)은 전부 「지금은 정책상 발급이 안 되는
+        // 상태」라 운영자가 정당하게 넘어설 수 있다. `public` 은 그게 아니라 「이 쿠폰엔 1인
+        // 발급 개념 자체가 없다」이고, 넘어서면 그 고객만 제한되는 결함이 만들어진다.
+        // 그래서 이 검사만 `!force` 블록 «밖»에 둔다.
+        const promotionId = await createPromo(`PUBF${seq}`, { visibility: 'public' });
+
+        const customerAxis = await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [promotionId], submit_id: `pub-f1-${seq}`, force: true },
+          adminHeaders,
+        );
+        const couponAxis = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId], submit_id: `pub-f2-${seq}`, force: true },
+          adminHeaders,
+        );
+
+        expect(customerAxis.data.skipped).toEqual([
+          { promotion_id: promotionId, reason: 'public_promotion' },
+        ]);
+        expect(couponAxis.data.skipped).toEqual([
+          { customer_id: customerId, reason: 'public_promotion' },
+        ]);
+        expect(await svc().listGrantsForPromotion(promotionId)).toHaveLength(0);
+      });
+
+      it('트리거 자동발급도 public 쿠폰을 건너뛴다', async () => {
+        const promotionId = await createPromo(`PUBT${seq}`, {
+          visibility: 'public',
+          auto_issue_trigger: 'customer_registered',
+        });
+
+        const res = await api.post(
+          `/admin/customers/${customerId}/issue-coupons`,
+          { trigger: 'customer_registered' },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        // 🔴 자동발급은 «그 트리거를 가진 모든 쿠폰» 에 작용하므로 이 스위트의 다른 테스트가
+        // 만든 쿠폰(G4)도 같이 실린다. `toEqual([])` 로 쓰면 그 쿠폰 때문에 실패하고,
+        // 그걸 피하려고 스위트를 격리하면 이 라우트의 실제 동작에서 멀어진다 — 기존 G4 와
+        // 같이 «내 프로모션만» 골라 본다.
+        expect(res.data.issued.map((i: any) => i.promotion_id)).not.toContain(promotionId);
+        expect(res.data.skipped).toContainEqual({ promotion_id: promotionId, reason: 'public_promotion' });
+        expect(await svc().listGrantsForPromotion(promotionId)).toHaveLength(0);
+      });
+
+      it('대조군: assigned_only·claimable 은 그대로 발급된다 — 위 넷이 「전부 거절」로 공허하게 통과하지 않게', async () => {
+        const assignedId = await createPromo(`PUBOK1${seq}`, { visibility: 'assigned_only' });
+        const claimableId = await createPromo(`PUBOK2${seq}`, { visibility: 'claimable' });
+
+        const res = await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [assignedId, claimableId], submit_id: `pub-ok-${seq}` },
+          adminHeaders,
+        );
+
+        expect(res.data.issued).toEqual([assignedId, claimableId]);
+        expect(res.data.skipped).toEqual([]);
+        expect(await svc().listGrantsForPromotion(assignedId)).toHaveLength(1);
+        expect(await svc().listGrantsForPromotion(claimableId)).toHaveLength(1);
       });
     });
   },
