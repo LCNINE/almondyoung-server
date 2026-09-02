@@ -23,30 +23,54 @@ describe('parseIssueTargets', () => {
 });
 
 describe('summarizeIssueResult', () => {
-  const resolved = [
-    { input: 'alice', customerId: 'cus_1', label: 'alice@x.com' },
-    { input: 'bob', customerId: 'cus_2', label: 'bob@x.com' },
-  ];
-
   it('발급된 장수를 합산한다', () => {
+    const resolved = [
+      { input: 'alice', customerId: 'cus_1', label: 'alice@x.com' },
+      { input: 'bob', customerId: 'cus_2', label: 'bob@x.com' },
+    ];
     const s = summarizeIssueResult(
       { issued: [{ customer_id: 'cus_1', granted: 2 }], skipped: [] },
       resolved,
     );
     expect(s.grantedTotal).toBe(2);
     expect(s.succeeded).toEqual([{ label: 'alice@x.com', granted: 2 }]);
+    expect(s.failed).toEqual([{ label: 'bob@x.com', reason: 'unknown' }]);
   });
 
   it('실패를 사유와 함께 라벨로 되돌린다', () => {
+    const resolved = [{ input: 'bob', customerId: 'cus_2', label: 'bob@x.com' }];
     const s = summarizeIssueResult(
       { issued: [], skipped: [{ customer_id: 'cus_2', reason: 'group_mismatch' }] },
       resolved,
     );
+    expect(s.succeeded).toEqual([]);
     expect(s.failed).toEqual([{ label: 'bob@x.com', reason: 'group_mismatch' }]);
   });
 
-  it('응답에 없는 고객은 unknown 으로 남긴다 — 조용히 성공으로 세지 않는다', () => {
+  it('부분 응답에서 미언급 고객은 unknown 으로 남긴다', () => {
+    const resolved = [
+      { input: 'alice', customerId: 'cus_1', label: 'alice@x.com' },
+      { input: 'bob', customerId: 'cus_2', label: 'bob@x.com' },
+      { input: 'carol', customerId: 'cus_3', label: 'carol@x.com' },
+    ];
+    const s = summarizeIssueResult(
+      { issued: [{ customer_id: 'cus_1', granted: 1 }], skipped: [] },
+      resolved,
+    );
+    expect(s.succeeded).toEqual([{ label: 'alice@x.com', granted: 1 }]);
+    expect(s.failed).toEqual([
+      { label: 'bob@x.com', reason: 'unknown' },
+      { label: 'carol@x.com', reason: 'unknown' },
+    ]);
+  });
+
+  it('응답이 완전히 비어 있으면 모든 고객을 unknown 으로 남긴다', () => {
+    const resolved = [
+      { input: 'alice', customerId: 'cus_1', label: 'alice@x.com' },
+      { input: 'bob', customerId: 'cus_2', label: 'bob@x.com' },
+    ];
     const s = summarizeIssueResult({ issued: [], skipped: [] }, resolved);
+    expect(s.succeeded).toEqual([]);
     expect(s.failed).toEqual([
       { label: 'alice@x.com', reason: 'unknown' },
       { label: 'bob@x.com', reason: 'unknown' },

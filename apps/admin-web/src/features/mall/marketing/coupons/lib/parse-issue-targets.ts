@@ -41,7 +41,6 @@ export function summarizeIssueResult(
 ): IssueSummary {
   const grantedById = new Map(result.issued.map((i) => [i.customer_id, i.granted]));
   const reasonById = new Map(result.skipped.map((s) => [s.customer_id, s.reason]));
-  const responseIsEmpty = result.issued.length === 0 && result.skipped.length === 0;
 
   const succeeded: IssueSummary['succeeded'] = [];
   const failed: IssueSummary['failed'] = [];
@@ -52,12 +51,7 @@ export function summarizeIssueResult(
       succeeded.push({ label: target.label, granted });
       continue;
     }
-
-    const reason = reasonById.get(target.customerId);
-    // Only report failed if: they have a reason, OR the response was completely empty
-    if (reason != null || responseIsEmpty) {
-      failed.push({ label: target.label, reason: reason ?? 'unknown' });
-    }
+    failed.push({ label: target.label, reason: reasonById.get(target.customerId) ?? 'unknown' });
   }
 
   return {
