@@ -1,6 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
+import { buildEndSessionUrl } from "@/lib/api/medusa/sso"
 import { formatBirthday } from "@/lib/utils/format-birthday"
 import { getCacheTag, removeAllAuthTokens } from "@lib/data/cookies"
 import { api } from "@lib/api/api"
@@ -168,7 +169,17 @@ export async function resendVerificationEmailAction(
   }
 }
 
-export async function withdrawUserAction(): Promise<void> {
+/**
+ * 회원탈퇴. 성공 시 이동할 URL 을 돌려준다.
+ *
+ * 스토어프론트 쿠키만 지우면 IdP(auth-web) 세션은 그대로 살아있고, 다음 로그인 시도가
+ * `/oauth/authorize` 의 silent SSO 에 걸려 비밀번호 없이 다시 로그인된다 — 실제로 "탈퇴했는데
+ * 계속 로그인된다" 는 문의로 이어졌다. 로그아웃과 같은 경로(`/oauth/end_session`)를 거쳐야
+ * host-only 세션 쿠키 정리 + refresh token revoke + 계정 허브 정리가 함께 일어난다.
+ */
+export async function withdrawUserAction(
+  countryCode: string = "kr"
+): Promise<{ redirectUrl: string }> {
   try {
     await api("users", "/auth", {
       method: "DELETE",
@@ -189,10 +200,6 @@ export async function withdrawUserAction(): Promise<void> {
   }
 
   sdk.auth.logout().catch(() => {})
-  await api("users", "/auth/signout", {
-    method: "POST",
-    withAuth: false,
-  }).catch(() => {})
 
   const [customerCacheTag, cartCacheTag] = await Promise.all([
     getCacheTag("customers"),
@@ -203,4 +210,7 @@ export async function withdrawUserAction(): Promise<void> {
   revalidateTag(customerCacheTag)
   revalidateTag(cartCacheTag)
   revalidatePath("/mypage")
+
+  const endSessionUrl = await buildEndSessionUrl(countryCode)
+  return { redirectUrl: endSessionUrl ?? `/${countryCode}` }
 }

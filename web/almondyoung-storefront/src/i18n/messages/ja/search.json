@@ -1,6 +1,7 @@
 {
   "inputPlaceholder": "今日は何を買う? アモンドヤン",
   "submit": "検索",
+  "clearInput": "検索語を消す",
   "sheetTitle": "アモンドヤン 検索",
   "back": "戻る",
   "popover": {
@@ -10,11 +11,13 @@
     "historyEmpty": "最近の検索はありません。",
     "clearAll": "全て削除",
     "saveOff": "履歴保存をオフ",
-    "saveOn": "履歴保存をオン"
+    "saveOn": "履歴保存をオン",
+    "removeKeyword": "{keyword} を削除"
   },
   "history": {
     "title": "最近の検索",
-    "clearAll": "全削除"
+    "clearAll": "全削除",
+    "removeKeyword": "{keyword} を削除"
   },
   "hotKeywords": {
     "title": "急上昇検索",

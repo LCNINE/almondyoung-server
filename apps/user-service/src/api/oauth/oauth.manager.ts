@@ -85,7 +85,7 @@ export class OAuthManager {
       throw new BadRequestError('invalid code_challenge_method (only S256 allowed)');
     }
     const user = await this.usersService.findUserById(input.userId);
-    if (!user) throw new BadRequestError('user not found');
+    if (!user || user.deletedAt || user.dormantAt) throw new BadRequestError('user not found');
 
     const code = crypto.randomBytes(48).toString('base64url');
     const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
@@ -258,6 +258,9 @@ export class OAuthManager {
     // (auth.service.ts mintTokens) 과 동일한 claim 셋을 유지해 admin-web 등 RP 가 토큰만으로
     // sub/email/login_id/roles 를 읽을 수 있게 한다.
     const user = await this.usersService.findUserById(userId);
+    // 탈퇴 계정에는 토큰을 내주지 않는다. authorization_code / refresh_token 두 그랜트가 모두
+    // 여기를 지나므로, 탈퇴 시점에 살아있던 세션도 다음 회전에서 끊긴다.
+    if (user?.deletedAt || user?.dormantAt) throw new UnauthorizedError('user withdrawn');
     const roles = user ? await this.usersService.getUserRoleNames(userId, tx) : [];
 
     // access token: RS256 JWT. iss/kid/alg은 모듈 기본 signOptions에서 부여, aud=client_id.
@@ -363,7 +366,7 @@ export class OAuthManager {
     if (!client) throw new UnauthorizedError('invalid access_token');
 
     const user = await this.usersService.findUserById(payload.sub);
-    if (!user) throw new UnauthorizedError('invalid access_token');
+    if (!user || user.deletedAt || user.dormantAt) throw new UnauthorizedError('invalid access_token');
 
     return {
       sub: user.id,

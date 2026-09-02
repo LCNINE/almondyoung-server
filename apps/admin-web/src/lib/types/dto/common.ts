@@ -25,6 +25,7 @@ interface BaseUserInfo {
   isEmailVerified: boolean;
   lastActivityAt: string | null;
   deletedAt: string | null;
+  dormantAt: string | null;
   createdAt: string;
   updatedAt: string;
 }

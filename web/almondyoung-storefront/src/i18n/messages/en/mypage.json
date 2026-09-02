@@ -320,9 +320,9 @@
       "pageTitle": "Delete Account",
       "description": "Please review the following before deleting your account.",
       "noticeTitle": "Before you delete your account",
-      "notice1": "Your account info and order/review/inquiry history cannot be recovered.",
+      "notice1": "Your personal information is destroyed immediately, and you will no longer be able to view your order or inquiry history.",
       "notice2": "All points, coupons, and membership benefits will expire immediately.",
-      "notice3": "Re-registration with the same email/ID may be restricted for a period of time.",
+      "notice3": "You may sign up again with the same email/ID, but your previous activity will not be restored.",
       "notice4": "If you have ongoing orders/shipments, we recommend deleting after they are completed.",
       "agreement": "I have read all the notices above and agree to delete my account.",
       "submit": "Delete My Account",
@@ -331,7 +331,12 @@
       "error": "An error occurred while processing your account deletion.",
       "confirmTitle": "Are you sure you want to delete your account?",
       "confirmDescription": "Your account and all activity history cannot be recovered after deletion. Do you want to continue?",
-      "confirmAction": "Delete"
+      "confirmAction": "Delete",
+      "membershipNoticeTitle": "You have an active membership",
+      "membershipNotice": "Deleting your account cancels your membership automatically, so you will not be billed again. There is no refundable amount at this time.",
+      "membershipNoticeAction": "Go to membership cancellation",
+      "notice5": "Product reviews you have written remain as product information, shown without identifying the author.",
+      "membershipNoticeRefundable": "Deleting your account cancels your membership automatically, so you will not be billed again. However, you still have a refundable amount, and it is not refunded during account deletion. If you would like a refund, please cancel your membership first, then delete your account."
     },
     "password": {
       "description": "Enter your current password and a new password to change it.",

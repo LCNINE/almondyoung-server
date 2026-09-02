@@ -10,6 +10,7 @@ import { WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-
 import { BillingResultConsumer } from './consumers/billing-result.consumer';
 import { MembershipCheckoutConsumer } from './consumers/membership-checkout.consumer';
 import { MembershipRefundConsumer } from './consumers/membership-refund.consumer';
+import { UserWithdrawalConsumer } from './consumers/user-withdrawal.consumer';
 import { WalletCommandPublisher } from './services/billing/wallet-command.publisher';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
@@ -131,6 +132,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
     InvoiceResultConsumer,
     MembershipCheckoutConsumer,
     MembershipRefundConsumer,
+    UserWithdrawalConsumer,
     BillingController,
     AdminOperationsController,
     SubscriptionController,

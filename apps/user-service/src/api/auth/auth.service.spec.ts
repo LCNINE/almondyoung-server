@@ -220,3 +220,106 @@ describe('AuthService - signUp', () => {
     });
   });
 });
+
+/**
+ * 탈퇴는 "고객 입장에서 완전히 사라진 것"이어야 한다.
+ * 식별정보 파기와 로그인 차단이 함께 성립하는지를 본다.
+ */
+describe('AuthService - 탈퇴 익명화', () => {
+  let service: AuthService;
+  let updates: { table: unknown; set: Record<string, unknown> }[];
+  let deletes: unknown[];
+  let publishEvent: jest.Mock;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    updates = [];
+    deletes = [];
+    publishEvent = jest.fn();
+
+    const tx = {
+      update: jest.fn((table: unknown) => ({
+        set: jest.fn((set: Record<string, unknown>) => {
+          updates.push({ table, set });
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      delete: jest.fn((table: unknown) => {
+        deletes.push(table);
+        return { where: jest.fn().mockResolvedValue(undefined) };
+      }),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: UsersService, useValue: {} },
+        { provide: JwtService, useValue: { signAsync: jest.fn() } },
+        { provide: ConfigService, useValue: { get: jest.fn(), getOrThrow: jest.fn() } },
+        {
+          provide: DbService,
+          useValue: { db: { transaction: jest.fn().mockImplementation((cb: Function) => cb(tx)) } },
+        },
+        { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent } },
+        { provide: ConsentsService, useValue: {} },
+        { provide: TokensService, useValue: { deleteAllTokens: jest.fn().mockResolvedValue(undefined) } },
+        { provide: Cafe24LinkService, useValue: {} },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+  });
+
+  const USER_ID = '00000000-1111-2222-3333-444444444444';
+
+  it('식별정보를 원본으로 되돌릴 수 없는 값으로 덮는다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    const identity = updates.find((u) => 'loginId' in u.set);
+    expect(identity).toBeDefined();
+    expect(identity!.set.loginId).toMatch(/^withdrawn_/);
+    expect(identity!.set.email).toMatch(/^withdrawn_.*@deleted\.invalid$/);
+    expect(identity!.set.username).toBe('탈퇴회원');
+    expect(identity!.set.deletedAt).toBeInstanceOf(Date);
+  });
+
+  it('비밀번호를 지워 대조 자체가 성립하지 않게 한다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    const identity = updates.find((u) => 'loginId' in u.set);
+    expect(identity!.set.password).toBeNull();
+  });
+
+  it('아이디·이메일 유일 제약을 풀어 같은 주소로 재가입할 수 있게 한다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    const identity = updates.find((u) => 'loginId' in u.set);
+    // 사용자 id 에서 파생하므로 계정마다 다르다 — 두 탈퇴자가 같은 값으로 충돌하지 않는다.
+    expect(identity!.set.loginId).toContain(USER_ID.replace(/-/g, '').slice(0, 20));
+    expect(String(identity!.set.loginId).length).toBeLessThanOrEqual(30);
+    expect(String(identity!.set.email).length).toBeLessThanOrEqual(60);
+  });
+
+  it('법정 보관 근거가 없는 부가 개인정보 행을 지운다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    // profiles / user_identities / cafe24_links / wishlist / recent_views
+    // + business_licenses / shops (사업자번호 유일 제약이 재가입을 막지 않도록)
+    expect(deletes).toHaveLength(7);
+  });
+
+  it('살아있는 세션을 끊는다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    const revoke = updates.find((u) => u.set.isRevoked === true);
+    expect(revoke).toBeDefined();
+  });
+
+  it('UserDeleted 이벤트를 발행한다', async () => {
+    await service.softDeleteUser(USER_ID);
+
+    expect(publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'UserDeleted', aggregateId: USER_ID }),
+    );
+  });
+});

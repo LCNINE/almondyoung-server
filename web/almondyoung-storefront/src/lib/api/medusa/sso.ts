@@ -218,6 +218,29 @@ export async function oidcCallback(args: {
 }
 
 /**
+ * auth-web `/oauth/end_session` URL. 없으면(로컬 등) null.
+ *
+ * 서버 액션 안에서 `redirect()` 를 쓸 수 없는 호출자 — 예: 성공/실패를 직접 처리해야 하는
+ * 회원탈퇴 폼 — 은 이 URL 을 받아 클라이언트에서 이동한다. redirect() 가 던지는
+ * NEXT_REDIRECT 는 호출자의 try/catch 에 잡혀 "에러" 토스트로 둔갑한다.
+ */
+export async function buildEndSessionUrl(
+  countryCode: string
+): Promise<string | null> {
+  const authWebOrigin =
+    process.env.AUTH_WEB_ORIGIN ?? process.env.NEXT_PUBLIC_AUTH_WEB_ORIGIN
+  if (!authWebOrigin) return null
+
+  const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
+  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
+
+  const url = new URL("/oauth/end_session", authWebOrigin)
+  url.searchParams.set("client_id", clientId)
+  url.searchParams.set("post_logout_redirect_uri", `${base}/${countryCode}`)
+  return url.toString()
+}
+
+/**
  * 로그아웃: _medusa_jwt 제거 후 auth-web /oauth/end_session 으로 redirect.
  *
  * end_session 은 user-service(백엔드)가 아니라 auth-web(IdP 프론트)으로 보낸다. authorize 가
@@ -232,28 +255,13 @@ export async function oidcSignOut(countryCode: string): Promise<void> {
   await removeAllAuthTokens()
   console.log("[logout] oidcSignOut: removeAllAuthTokens 완료")
 
-  const authWebOrigin =
-    process.env.AUTH_WEB_ORIGIN ?? process.env.NEXT_PUBLIC_AUTH_WEB_ORIGIN
-  const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
-  const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
-  console.log(
-    "[logout] oidcSignOut: authWebOrigin=",
-    authWebOrigin,
-    "clientId=",
-    clientId,
-    "base=",
-    base
-  )
+  const url = await buildEndSessionUrl(countryCode)
 
-  if (!authWebOrigin) {
+  if (!url) {
     console.log("[logout] oidcSignOut: authWebOrigin 없음 → 홈으로 redirect")
     redirect(`/${countryCode}`)
   }
 
-  const url = new URL("/oauth/end_session", authWebOrigin)
-  url.searchParams.set("client_id", clientId)
-  url.searchParams.set("post_logout_redirect_uri", `${base}/${countryCode}`)
-
-  console.log("[logout] oidcSignOut: end_session redirect 직전 url=", url.toString())
-  redirect(url.toString())
+  console.log("[logout] oidcSignOut: end_session redirect 직전 url=", url)
+  redirect(url)
 }

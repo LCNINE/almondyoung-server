@@ -17,6 +17,15 @@ function phone(value) { const d = String(value || '').replace(/\D/g, ''); if (d.
 function kstDate(value) { const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value)); const m = Object.fromEntries(p.map((x) => [x.type, x.value])); return `${m.year}${m.month}${m.day}`; }
 function isBasic(value) { const s = String(value || '').trim(); return !s || ['기본 옵션값', '기본 품목', '단일옵션'].includes(s) || /^P0{3,}[A-Z0-9]+$/i.test(s); }
 function option(item) { if (item.option_values && !isBasic(item.option_values)) return item.option_values; if (item.variant_title && !isBasic(item.variant_title)) return item.variant_title; return '단일옵션'; }
+function deliveryNote(metadata) {
+  const type = metadata && metadata.shipping_memo_type;
+  if (typeof type !== 'string' || !type) return '';
+  const labels = { door: '문 앞에 놓아주세요', security: '경비실에 맡겨주세요', 'parcel-box': '택배함에 넣어주세요', direct: '직접 받겠습니다' };
+  const note = type === 'other' ? (typeof metadata.shipping_memo_custom === 'string' ? metadata.shipping_memo_custom.trim() : '') : (labels[type] || '');
+  if (type !== 'door' || metadata.has_entrance !== true) return note;
+  const password = typeof metadata.entrance_password === 'string' ? metadata.entrance_password.trim() : '';
+  return password ? `${note} (공동현관 ${password})` : note;
+}
 function csv(value) { const s = value == null ? '' : String(value); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
 
 (async () => {
@@ -44,13 +53,13 @@ function csv(value) { const s = value == null ? '' : String(value); return /[",\
   if (orderIds.length) for (const item of (await medusa.query(`select oi.order_id,oli.title,oli.variant_title,oli.requires_shipping,oi.quantity,oi.shipped_quantity,coalesce(nullif(oli.unit_price,0),nullif(oi.unit_price,0),0) as unit_price,string_agg(pov.value,' / ' order by pov.id) as option_values from order_item oi join order_line_item oli on oli.id=oi.item_id and oli.deleted_at is null left join product_variant_option pvo on pvo.variant_id=oli.variant_id left join product_option_value pov on pov.id=pvo.option_value_id and pov.deleted_at is null where oi.deleted_at is null and oi.order_id=any($1::text[]) group by oi.order_id,oi.id,oli.id order by oi.created_at,oi.id`, [orderIds])).rows) { if (!itemsByOrder.has(item.order_id)) itemsByOrder.set(item.order_id, []); itemsByOrder.get(item.order_id).push(item); }
   const rows = [], included = [], excluded = [], source = [];
   for (const order of orders) {
-    const shipping = { name: [order.last_name, order.first_name].filter(Boolean).join('').trim(), address: [order.address_1, order.address_2].filter(Boolean).join(' ').trim(), postal: String(order.postal_code || ''), phone: phone(order.phone) };
+    const shipping = { name: [order.last_name, order.first_name].filter(Boolean).join('').trim(), address: [order.address_1, order.address_2].filter(Boolean).join(' ').trim(), postal: String(order.postal_code || ''), phone: phone(order.phone), deliveryNote: deliveryNote(order.metadata) };
     const items = itemsByOrder.get(order.id) || []; const orderNo = `${kstDate(order.created_at)}-${order.display_id}`; const bank = order.metadata && order.metadata.bank_transfer_status; let reason = '';
     if (excludedDisplayIds.has(Number(order.display_id))) reason = 'manually_excluded'; else if (order.canceled_at) reason = 'canceled'; else if (bank === 'awaiting_deposit') reason = 'awaiting_deposit'; else if (order.intent_id && refundIds.has(order.intent_id)) reason = 'refund_requested_or_completed'; else if (items.some((x) => Number(x.shipped_quantity || 0) > 0)) reason = 'already_shipped'; else if (!shipping.address && !shipping.postal && !shipping.phone) reason = 'no_shipping_info_digital_or_non_delivery';
     source.push({ ...order, shipping, orderNo, items });
     if (reason) { excluded.push({ display_id: order.display_id, name: shipping.name, reason }); continue; }
     let lineCount = 0;
-    for (const item of items) { if (item.requires_shipping === false || !Number(item.quantity)) continue; rows.push([shipping.name, shipping.address, shipping.postal, shipping.phone, orderNo, item.title || '', option(item), Number(item.unit_price || 0) * Number(item.quantity), Number(item.quantity), '', '']); lineCount++; }
+    for (const item of items) { if (item.requires_shipping === false || !Number(item.quantity)) continue; rows.push([shipping.name, shipping.address, shipping.postal, shipping.phone, orderNo, item.title || '', option(item), Number(item.unit_price || 0) * Number(item.quantity), Number(item.quantity), '', shipping.deliveryNote]); lineCount++; }
     if (lineCount) included.push({ display_id: order.display_id, id: order.id, name: shipping.name, phone: shipping.phone, lines: lineCount });
   }
   await medusa.end(); fs.mkdirSync(outputDir, { recursive: true });
