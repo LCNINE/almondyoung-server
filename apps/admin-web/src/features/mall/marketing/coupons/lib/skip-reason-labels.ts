@@ -8,8 +8,9 @@
 
 /**
  * Medusa 발급 라우트가 낼 수 있는 사유의 **손으로 유지하는 사본**이다.
- * 정본은 `apps/medusa/src/api/admin/customers/[id]/promotions/route.ts` 와
- * `.../issue-coupons/route.ts` 의 `skipped.push({ reason })` 자리들.
+ * 정본은 `apps/medusa/src/api/admin/customers/[id]/promotions/route.ts` ·
+ * `.../issue-coupons/route.ts` · `.../promotions/[id]/customers/route.ts`(대량발급, #488
+ * Task 9)의 `skipped.push({ reason })` 자리들.
  * admin-web 이 medusa 를 import 할 수 없어(별도 트리·번들러 없음) 사본이 유일한 방법이다.
  */
 export const BACKEND_SKIP_REASONS = [
@@ -22,6 +23,8 @@ export const BACKEND_SKIP_REASONS = [
   'max_claims_exceeded',
   'link_error',
   'already_issued',
+  'customer_not_found',
+  'grant_error',
 ] as const;
 
 const LABELS: Record<string, string> = {
@@ -37,6 +40,10 @@ const LABELS: Record<string, string> = {
   max_claims_exceeded: '발급 수량이 소진되었습니다.',
   link_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
   already_issued: '이미 발급된 고객입니다.',
+  // 대량발급(`/admin/promotions/:id/customers`) 전용 사유 — 고객id 가 존재하지 않음.
+  customer_not_found: '존재하지 않는 고객입니다.',
+  // 같은 라우트에서 grant 생성 자체가 실패한 경우(DB 오류 등) — 재시도 안내.
+  grant_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
   unknown: '발급할 수 없습니다.',
 };
 

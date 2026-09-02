@@ -25,6 +25,7 @@ import {
   type ResolvedTarget,
   type IssueSummary,
 } from '../lib/parse-issue-targets';
+import { classifyLookupMatches } from '../lib/classify-lookup-matches';
 
 export function CouponAssignDialog({
   promotionId,
@@ -63,10 +64,13 @@ export function CouponAssignDialog({
         // 🔴 새 엔드포인트를 만들지 말 것 — `q` 하나가 loginId·email·username·nickname·전화를
         //    모두 ilike 검색한다(user-service `users.service.ts:66-70`). 이 클라이언트도 이미 있다.
         const users = await customerApi.getCustomersWithPagination({ q: input, limit: 2 });
-        if (!users.data?.length) { bad.push({ input, reason: '회원을 찾을 수 없습니다' }); continue; }
-        if (users.data.length > 1) { bad.push({ input, reason: '두 명 이상 일치합니다' }); continue; }
+        // 0건/1건/2건+ 판정은 `classify-lookup-matches.ts` 의 순수 함수가 한다 — `.tsx` 안에
+        // 두면 admin-web jest 가 아예 실행하지 않는다(#488 Task 12 리뷰 Important #2).
+        const outcome = classifyLookupMatches(users.data ?? []);
+        if (outcome.kind === 'not_found') { bad.push({ input, reason: '회원을 찾을 수 없습니다' }); continue; }
+        if (outcome.kind === 'ambiguous') { bad.push({ input, reason: '두 명 이상 일치합니다' }); continue; }
 
-        const user = users.data[0];
+        const user = outcome.match;
         // `medusaCustomerApi.getCustomerByAlmondUserId` 도 이미 있다 — 새로 만들지 말 것.
         // almond_user_id 가 없는 계정은 여기서 404 다(연동 안 된 계정). 이메일로 다시
         // 시도하면 잡히는 경우가 있으므로 사유를 그렇게 안내한다.

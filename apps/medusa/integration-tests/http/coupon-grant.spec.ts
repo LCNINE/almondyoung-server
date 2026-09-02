@@ -242,6 +242,27 @@ medusaIntegrationTestRunner({
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(2);
       });
 
+      it('재시도(같은 submit_id, 전량 duplicate)는 그 고객을 skipped(already_issued) 로 정직하게 답한다', async () => {
+        // 🔴 Task 12 리뷰 Important #1: 첫 발급이 이미 성공한 고객을 같은 submit_id 로
+        // 재전송하면(force 재시도가 전체 목록을 다시 보내는 경우가 실제 경로) 모든 n 이
+        // 'duplicate' 로 끝나 granted===0 이 된다. 이 branch 가 없으면 그 고객은 issued 에도
+        // skipped 에도 없는 「응답에 없는 고객」이 되어, 클라이언트의 summarizeIssueResult 가
+        // 'unknown' 으로 떨어뜨려 이미 성공한 고객을 화면에 «발급할 수 없습니다» 로 보여준다.
+        // 위 테스트는 장수(원장)만 봐서 이 응답 계약 결함을 못 잡았다 — 이번엔 응답 본문을 본다.
+        const promotionId = await createPromo(`BULKI2${seq}`, { visibility: 'assigned_only' });
+        const body = { customer_ids: [customerId], quantity: 2, submit_id: 'bulk-same-2' };
+
+        const first = await api.post(`/admin/promotions/${promotionId}/customers`, body, adminHeaders);
+        expect(first.data.issued).toEqual([{ customer_id: customerId, granted: 2 }]);
+        expect(first.data.skipped).toEqual([]);
+
+        const second = await api.post(`/admin/promotions/${promotionId}/customers`, body, adminHeaders);
+        expect(second.data.issued).toEqual([]);
+        expect(second.data.skipped).toEqual([{ customer_id: customerId, reason: 'already_issued' }]);
+
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(2);
+      });
+
       it('한 고객의 실패가 나머지를 막지 않는다', async () => {
         const promotionId = await createPromo(`BULKM${seq}`, { visibility: 'assigned_only' });
 

@@ -228,12 +228,16 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     let granted = 0;
+    // 이 고객이 이 customerId 이터레이션 안에서 이미 skipped 에 등재됐는지 — 아래 「전량
+    // duplicate」 판정이 그 위에 또 등재해 이중화하지 않도록 추적한다.
+    let skippedInLoop = false;
     for (let n = 1; n <= qty; n++) {
       let slotReserved = false;
       if (!force && maxClaims !== null) {
         const slot = await promotionMetaService.reserveClaimSlot(promotionId, maxClaims);
         if (slot === 'exhausted') {
           skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
+          skippedInLoop = true;
           break;
         }
         slotReserved = true;
@@ -253,6 +257,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         if (slotReserved) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
         // 배치 resilient — 한 고객의 장애가 나머지를 막지 않는다.
         skipped.push({ customer_id: customerId, reason: 'grant_error' });
+        skippedInLoop = true;
         break;
       }
 
@@ -272,6 +277,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         [Modules.PROMOTION]: { promotion_id: promotionId },
       }]).catch(() => {});
       issued.push({ customer_id: customerId, granted });
+    } else if (!skippedInLoop) {
+      // 🔴 모든 n 이 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
+      // 다른 사유로 이미 skipped 에 등재된 경우(max_claims_exceeded/grant_error)는
+      // skippedInLoop 가 true 라 여기 안 온다. customer_not_found·eligibility 스킵은
+      // 위에서 continue 로 이 지점 자체에 도달하지 않는다. 이 branch 가 없으면 재시도로
+      // 이미 성공한 고객이 issued 에도 skipped 에도 없는 「응답에 없는 고객」이 되어
+      // 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다(#488 Task 12 리뷰).
+      skipped.push({ customer_id: customerId, reason: 'already_issued' });
     }
   }
 
