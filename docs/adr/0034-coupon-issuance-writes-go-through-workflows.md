@@ -73,6 +73,21 @@ createStep('create-remote-links',
 **즉 「슬롯 예약과 장 생성이 따로 논다」는 제약은 없었다.** 지금 네 라우트가 손으로 밟는 예약·해제
 춤은 필요해서 있는 게 아니라, 묶을 수 있다는 사실을 몰라서 있는 것이다.
 
+**3. 트랜잭션 안에서 ORM 쓰기와 원시 SQL 은 «쓴 순서대로 실행되지 않는다».** 구현하고 나서
+모듈 통합 스펙이 잡아낸 것이다. `MedusaService` 가 만든 `createCouponGrants` 는 MikroORM
+unit-of-work 라 엔티티를 **등록만** 하고 INSERT 를 커밋 시점 flush 까지 미룬다. 반면
+`em.execute` 로 쓴 슬롯 UPDATE 는 즉시 나간다. 그래서 코드에서 INSERT 를 위에 적어도 실제
+SQL 순서는 뒤집히고, 두 가지가 한꺼번에 깨졌다 —
+
+- 상한에 닿은 프로모션에 「이미 받은 사람」이 재시도하면 `'duplicate'` 가 아니라
+  `'exhausted'` 가 나온다(이 ADR 이 없애려던 바로 그 증상이 ORM 의 지연 flush 로 되살아난다)
+- 커밋 시점에 터진 유니크 위반은 `MikroOrmBaseRepository.transaction` 에서 던져지므로
+  우리 `try/catch` 를 **벗어나** `'duplicate'` 로 변환되지도 않는다
+
+해법은 `createCouponGrants` 직후의 명시적 `flush()` 다. 이 두 증상은 **목으로는 재현되지
+않는다** — 결정 4 의 게이트가 없었으면 리뷰에서도 통과했을 것이고, 실제로 그렇게 통과할
+뻔했다.
+
 ## Decision
 
 ### 1. 모듈 경계 «안» 의 다단 쓰기는 한 트랜잭션 메서드로 묶는다

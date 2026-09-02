@@ -112,39 +112,35 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
-    if (meta.max_claims != null) {
-      const slot = await promotionMetaService.reserveClaimSlot(promo.id, Number(meta.max_claims));
-      if (slot === 'exhausted') {
-        skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
-        continue;
-      }
-    }
-
-    let result: 'created' | 'duplicate';
-    try {
-      result = await promotionMetaService.issueGrant({
-        promotion_id: promo.id,
-        customer_id: customerId,
-        // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
-        issue_key: `trigger:${trigger}`,
-        issued_via: trigger,
-        expires_at: computeExpiresAt(meta, now),
-        now,
-      });
-    } catch (e: any) {
-      if (meta.max_claims != null) {
-        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      }
-      // Transient DB 에러 → 500 으로 올려 channel-adapter 가 재시도하게 한다.
-      // 재시도는 위 결정적 issue_key 덕에 멱등하다.
-      throw e;
-    }
+    // 슬롯 예약·되돌리기가 장 생성과 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
+    //
+    // 🔴 이 라우트에서 순서가 특히 중요하다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에
+    // 대해 **이미 발급받은 고객**을 channel-adapter 가 재시도하면 `already_issued` 가 아니라
+    // `max_claims_exceeded` 를 돌려줬다. channel-adapter 의 `coupon-issue.metrics.ts` 가 그
+    // 사유를 실제 소진으로 세므로, 재시도마다 없는 소진이 지표에 쌓였다. 이제 중복이 먼저
+    // 판정된다.
+    //
+    // Transient DB 에러는 그대로 위로 던진다 — 500 으로 올려 channel-adapter 가 재시도하게
+    // 한다. 재시도는 아래 결정적 issue_key 덕에 멱등하다.
+    const result = await promotionMetaService.issueGrantWithSlot({
+      promotion_id: promo.id,
+      customer_id: customerId,
+      // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
+      issue_key: `trigger:${trigger}`,
+      issued_via: trigger,
+      expires_at: computeExpiresAt(meta, now),
+      now,
+      max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
+      enforce_cap: true,
+    });
 
     if (result === 'duplicate') {
-      if (meta.max_claims != null) {
-        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      }
       skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
+      continue;
+    }
+
+    if (result === 'exhausted') {
+      skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
       continue;
     }
 

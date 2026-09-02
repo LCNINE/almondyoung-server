@@ -98,36 +98,29 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
-  if (maxClaims !== null) {
-    // Fast check: catch already-exhausted promotions (covers pre-migration links)
-    if (allLinks.length >= maxClaims) {
-      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
-    }
-    // Atomic slot reservation: prevents concurrent overclaims
-    const slot = await promotionMetaService.reserveClaimSlot(promotionId, maxClaims);
-    if (slot === 'exhausted') {
-      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
-    }
+  // 읽기 기반 빠른 거절(백필 이전 링크까지 덮는다). 최종 권위는 아래 원자 경로다.
+  if (maxClaims !== null && allLinks.length >= maxClaims) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
-  let result: 'created' | 'duplicate';
-  try {
-    result = await promotionMetaService.issueGrant({
-      promotion_id: promotionId,
-      customer_id: customerId,
-      issue_key: 'claim', // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
-      issued_via: 'customer_claim',
-      expires_at: computeExpiresAt(meta, now),
-      now,
-    });
-  } catch (e: any) {
-    if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
-    throw e;
+  // 슬롯 예약·되돌리기가 장 생성과 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
+  const result = await promotionMetaService.issueGrantWithSlot({
+    promotion_id: promotionId,
+    customer_id: customerId,
+    issue_key: 'claim', // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
+    issued_via: 'customer_claim',
+    expires_at: computeExpiresAt(meta, now),
+    now,
+    max_claims: maxClaims,
+    enforce_cap: true,
+  });
+
+  if (result === 'exhausted') {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
   if (result === 'duplicate') {
-    // 이미 받았다. 슬롯을 잡았다면 반환한다 — 이게 없으면 따닥 한 번에 2명분이 소진된다.
-    if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+    // 이미 받았다. 슬롯 증가는 트랜잭션과 함께 되감겼다 — 따닥 한 번에 2명분이 소진되지 않는다.
     return res.status(200).json({ success: true, promotion_id: promotionId });
   }
 

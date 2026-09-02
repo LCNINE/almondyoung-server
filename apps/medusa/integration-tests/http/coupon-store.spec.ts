@@ -150,7 +150,7 @@ medusaIntegrationTestRunner({
 
       // 「1장=1회」— 발급받은 장을 소모한다(주문 완료를 흉내)
       const [grant] = await metaService.listGrantsForCustomer(customerId);
-      await metaService.consumeGrant(grant.id, `order_${seq}`, new Date());
+      await metaService.consumeGrantIfUnused(grant.id, `order_${seq}`, new Date());
 
       // 사용 후: 목록에서 제외
       const after = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -207,7 +207,7 @@ medusaIntegrationTestRunner({
       const consumeAll = async (promotionId: string, usedAt = new Date()) => {
         const grants = await metaSvc().listGrantsForCustomer(customerId);
         for (const g of grants.filter((x: any) => x.promotion_id === promotionId)) {
-          await metaSvc().consumeGrant(g.id, `order_${seq}_${g.id}`, usedAt);
+          await metaSvc().consumeGrantIfUnused(g.id, `order_${seq}_${g.id}`, usedAt);
         }
       };
 
@@ -255,7 +255,7 @@ medusaIntegrationTestRunner({
         // 두 장 중 한 장만 소모한다.
         const grants = (await metaSvc().listGrantsForCustomer(customerId))
           .filter((g: any) => g.promotion_id === id);
-        await metaSvc().consumeGrant(grants[0].id, `order_left_${seq}`, new Date());
+        await metaSvc().consumeGrantIfUnused(grants[0].id, `order_left_${seq}`, new Date());
 
         const res = await api.get('/store/customers/me/promotions', storeHeaders);
 

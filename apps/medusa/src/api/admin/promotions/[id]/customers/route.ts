@@ -286,29 +286,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     // duplicate」 판정이 그 위에 또 등재해 이중화하지 않도록 추적한다.
     let skippedInLoop = false;
     for (let n = 1; n <= qty; n++) {
-      let slotReserved = false;
-      if (!force && maxClaims !== null) {
-        const slot = await promotionMetaService.reserveClaimSlot(promotionId, maxClaims);
-        if (slot === 'exhausted') {
-          skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
-          skippedInLoop = true;
-          break;
-        }
-        slotReserved = true;
-      }
-
-      let result: 'created' | 'duplicate';
+      // 슬롯 예약·되돌리기·force 보정은 전부 모듈의 한 트랜잭션 안에 있다 (ADR-0034 결정 1).
+      let result: 'created' | 'duplicate' | 'exhausted';
       try {
-        result = await promotionMetaService.issueGrant({
+        result = await promotionMetaService.issueGrantWithSlot({
           promotion_id: promotionId,
           customer_id: customerId,
           issue_key: `${submit_id}:${n}`,
           issued_via: issueTrigger,
           expires_at: computeExpiresAt(meta, now),
           now,
+          max_claims: maxClaims,
+          enforce_cap: !force,
         });
       } catch (e: any) {
-        if (slotReserved) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
         // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
         // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
         logger.error(
@@ -321,13 +312,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         break;
       }
 
+      if (result === 'exhausted') {
+        skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
+        skippedInLoop = true;
+        break;
+      }
+
       if (result === 'duplicate') {
-        if (slotReserved) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+        // 같은 제출의 재도착이다. 슬롯 증가는 트랜잭션과 함께 되감겼다.
         continue;
       }
-      if (force && maxClaims !== null) {
-        await promotionMetaService.incrementIssuedCount(promotionId).catch(() => {});
-      }
+
       granted++;
     }
 
@@ -373,24 +368,32 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
 
   const removed: { customer_id: string; grants: number }[] = [];
   for (const cid of customer_ids) {
-    const n = await promotionMetaService.revokeGrants(promotionId, cid);
-    if (n === 0) continue;
-    removed.push({ customer_id: cid, grants: n });
+    const { revoked, remaining } = await promotionMetaService.revokeGrants(promotionId, cid);
 
     // 회수한 장수만큼 발급 카운트를 되돌린다 — 1회 고정이면 여러 장 회수 시 카운터가 남는다.
-    for (let i = 0; i < n; i++) {
+    // 이미 쓴 장은 회수 대상이 아니고 그 슬롯은 실제로 소비됐으므로 여기서 세지 않는다.
+    for (let i = 0; i < revoked; i++) {
       await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
     }
 
-    // 남은 장이 없으면 표시용 링크도 걷는다.
-    await link
-      .dismiss([
-        {
-          [Modules.CUSTOMER]: { customer_id: cid },
-          [Modules.PROMOTION]: { promotion_id: promotionId },
-        },
-      ])
-      .catch(() => {});
+    // 🔴 링크는 「남은 장이 없을 때만」 걷는다 — 형제(고객축) 라우트와 같은 판단이다.
+    // 쓴 장이 남았는데 걷으면 마이페이지의 「사용완료」가 사라지고, 회수할 장이 0개라고
+    // 건너뛰면(옛 `if (n === 0) continue`) 링크만 있고 장이 없는 쌍을 영원히 못 끊는다.
+    const dismissed = remaining === 0;
+    if (dismissed) {
+      await link
+        .dismiss([
+          {
+            [Modules.CUSTOMER]: { customer_id: cid },
+            [Modules.PROMOTION]: { promotion_id: promotionId },
+          },
+        ])
+        .catch(() => {});
+    }
+
+    if (revoked > 0 || dismissed) {
+      removed.push({ customer_id: cid, grants: revoked });
+    }
   }
 
   return res.status(200).json({
