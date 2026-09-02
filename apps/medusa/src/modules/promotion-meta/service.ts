@@ -3,6 +3,7 @@ import PromotionMeta from './models/promotion-meta';
 import PromotionIssueLog from './models/promotion-issue-log';
 import CouponEvent from './models/coupon-event';
 import CouponEventItem from './models/coupon-event-item';
+import CouponGrant from './models/coupon-grant';
 
 // 쿠폰 어휘(`AutoIssueTrigger` · `PromotionMetaData.visibility`)는 이 트리 밖에도 사본이 있다.
 // 값을 늘리거나 줄이면 `packages/domain-types/coupon-vocabulary-drift.spec.ts` 가 빨개지며
@@ -26,11 +27,25 @@ export type PromotionMetaData = {
   validity_days?: number | null;
 };
 
+/** `coupon_grant` 한 행. 숫자·날짜가 DB 에서 문자열로 오는 경우가 있어 union 이다. */
+export type CouponGrantRow = {
+  id: string;
+  promotion_id: string;
+  customer_id: string;
+  issue_key: string;
+  issued_via: IssueTrigger;
+  issued_at: Date | string;
+  expires_at: Date | string | null;
+  used_at: Date | string | null;
+  order_id: string | null;
+};
+
 class PromotionMetaModuleService extends MedusaService({
   PromotionMeta,
   PromotionIssueLog,
   CouponEvent,
   CouponEventItem,
+  CouponGrant,
 }) {
   async upsert(data: PromotionMetaData): Promise<any> {
     if (data.visibility != null && !['public', 'claimable', 'assigned_only'].includes(data.visibility)) {
