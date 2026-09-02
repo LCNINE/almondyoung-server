@@ -7,7 +7,12 @@ import {
   VISIBILITY_WHEN_META_MISSING,
 } from '../../../../admin/promotions/helpers';
 import { isIssuableToCustomer } from '../../../../../modules/promotion-meta/issuance-rules';
-import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
+import {
+  isUsable,
+  issuanceWindowState,
+  displayExpiresAt,
+  hasPolicyStarted,
+} from '../../../../../modules/promotion-meta/validity';
 import { grantsFor, usableGrants, hasUsableGrant, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 import { formatPromotion } from './format-promotion';
 
@@ -155,8 +160,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const isValidPromotion = (promo: any): boolean => {
     if (promo.status !== 'active') return false;
     if (promo.is_automatic) return false;
+    const meta = metaById.get(promo.id);
+    // 🔴 정책 시작(`starts_at`)은 **장 유무 분기 밖**이다 — `hasUsableGrant` 는 정책을 모르므로
+    // 분기 안에 두면 장을 가진 고객에게만 `starts_at` 이 사라져, 아직 시작 전인 쿠폰이
+    // 마이페이지 "사용 가능"에 뜨고 카트에도 붙는다(카트 게이트와 같은 판정이어야 한다).
+    if (!hasPolicyStarted(meta, now)) return false;
     const mine = grantsOf(promo.id);
-    return mine.length > 0 ? hasUsableGrant(mine, now) : isUsable(null, metaById.get(promo.id), now);
+    return mine.length > 0 ? hasUsableGrant(mine, now) : isUsable(null, meta, now);
   };
 
   const assignedPromotionIds = new Set<string>();

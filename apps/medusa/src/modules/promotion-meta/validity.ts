@@ -58,13 +58,29 @@ export function computeExpiresAt(
   return toDate(policy?.ends_at);
 }
 
+/**
+ * **정책 축의 시작 시각이 지났는가.** `starts_at` 이 없으면 항상 `true`.
+ *
+ * 🔴 이 검사는 **발급 여부와 무관하다** — 장(grant)을 가진 고객에게도 그대로 적용된다.
+ * `hasUsableGrant` 는 장의 만료/소모만 보므로 정책 시작을 모른다. 게이트가 장 유무로
+ * 분기하면서 이 검사를 grant 없는 쪽에만 두면, **장을 가진 고객에게는 `starts_at` 이
+ * 사라진다**(2026-09-02 전체 리뷰 Critical). 그래서 세 게이트(카트 미들웨어·완료 백스톱·
+ * 마이페이지)가 분기 «밖»에서 이 함수를 부르고, 여기 한 곳이 경계의 정본이다.
+ *
+ * `issuanceWindowState`·`isUsable` 도 같은 정의를 쓴다 — 경계(`now >= startsAt` 포함)가
+ * 갈리면 표시와 판정이 어긋난다(`displayExpiresAt` 헤더 주석이 막으려는 그 실패다).
+ */
+export function hasPolicyStarted(policy: ValidityPolicy | null | undefined, now: Date): boolean {
+  const startsAt = toDate(policy?.starts_at);
+  return !startsAt || now >= startsAt;
+}
+
 /** 지금 이 쿠폰을 **발급**할 수 있는가. 경계 시각은 양쪽 다 포함이다. */
 export function issuanceWindowState(
   policy: ValidityPolicy | null | undefined,
   now: Date,
 ): WindowState {
-  const startsAt = toDate(policy?.starts_at);
-  if (startsAt && now < startsAt) return 'not_started';
+  if (!hasPolicyStarted(policy, now)) return 'not_started';
   const endsAt = toDate(policy?.ends_at);
   if (endsAt && now > endsAt) return 'ended';
   return 'ok';
@@ -92,8 +108,7 @@ export function isUsable(
   policy: ValidityPolicy | null | undefined,
   now: Date,
 ): boolean {
-  const startsAt = toDate(policy?.starts_at);
-  if (startsAt && now < startsAt) return false;
+  if (!hasPolicyStarted(policy, now)) return false;
 
   const expiresAt = instance ? toDate(instance.expires_at) : toDate(policy?.ends_at);
   if (expiresAt && now > expiresAt) return false;

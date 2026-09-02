@@ -4,6 +4,7 @@ import {
   isWithinIssuanceWindow,
   isUsable,
   displayExpiresAt,
+  hasPolicyStarted,
 } from '../validity';
 
 const NOW = new Date('2026-08-31T00:00:00.000Z');
@@ -102,6 +103,40 @@ describe('isUsable — 링크 행이 있으면 그 행이, 없으면 정책이 �
 
   it('정책도 링크도 비어 있으면 무기한', () => {
     expect(isUsable(null, null, NOW)).toBe(true);
+  });
+});
+
+// 🔴 이 함수가 «따로» 있는 이유: 게이트 3곳이 「장이 있으면 장, 없으면 정책」으로 분기하는데,
+// 정책 시작 검사는 그 분기 «밖»에 있어야 한다. 분기 안에 두면 `hasUsableGrant` 가 정책을
+// 모르므로 장을 가진 고객에게서 `starts_at` 이 통째로 사라진다(2026-09-02 전체 리뷰 Critical).
+describe('hasPolicyStarted — 정책 시작 시각이 지났는가 (발급 여부와 무관)', () => {
+  it('starts_at 이 없으면 항상 시작된 것으로 본다', () => {
+    expect(hasPolicyStarted(null, NOW)).toBe(true);
+    expect(hasPolicyStarted({}, NOW)).toBe(true);
+    expect(hasPolicyStarted({ starts_at: null }, NOW)).toBe(true);
+  });
+
+  it('미래 starts_at 이면 false', () => {
+    expect(hasPolicyStarted({ starts_at: '2999-01-01T00:00:00.000Z' }, NOW)).toBe(false);
+  });
+
+  it('과거 starts_at 이면 true', () => {
+    expect(hasPolicyStarted({ starts_at: '2000-01-01T00:00:00.000Z' }, NOW)).toBe(true);
+  });
+
+  it('경계는 포함이다 — 정확히 시작 시각이면 시작된 것이다', () => {
+    expect(hasPolicyStarted({ starts_at: NOW.toISOString() }, NOW)).toBe(true);
+  });
+
+  it('파싱 불가 값은 「제약 없음」으로 읽는다 (isUsable 과 같은 fail-open 방향)', () => {
+    expect(hasPolicyStarted({ starts_at: 'not-a-date' }, NOW)).toBe(true);
+  });
+
+  it('isUsable·issuanceWindowState 와 경계가 같다 — 셋이 갈리면 표시와 판정이 어긋난다', () => {
+    const future = { starts_at: '2999-01-01T00:00:00.000Z' };
+    expect(hasPolicyStarted(future, NOW)).toBe(false);
+    expect(isUsable(null, future, NOW)).toBe(false);
+    expect(issuanceWindowState(future, NOW)).toBe('not_started');
   });
 });
 

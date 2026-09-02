@@ -5,7 +5,7 @@ import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { requiresIssuance } from '../../../api/admin/promotions/helpers';
-import { isUsable } from '../../../modules/promotion-meta/validity';
+import { isUsable, hasPolicyStarted } from '../../../modules/promotion-meta/validity';
 import { grantsFor, hasUsableGrant } from '../../../modules/promotion-meta/grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
@@ -49,6 +49,15 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
       // 미들웨어가 못 본 race window(부착 뒤 만료/소모)를 잡는 자리일 뿐, 다른 사유가 아니다.
       // 쿠폰 코드는 싣지 않는다 — 토큰에 붙이면 스토어프론트의 정확 일치(`=== 'COUPON_EXPIRED'`)가
       // 깨진다. 카트엔 보통 쿠폰이 하나뿐이라 "적용된 쿠폰을 제거"만으로 고객이 복구 가능하다.
+      //
+      // 🔴 정책 시작(`starts_at`)은 **장 유무 분기 밖**이다 — `hasUsableGrant` 는 장의
+      // 만료/소모만 알고 정책은 모른다. 분기 안에 두면 장을 가진 고객에게만 `starts_at` 이
+      // 사라진다. 사유가 다르므로 토큰도 다르다(`COUPON_NOT_STARTED`) — 카트 미들웨어·preview
+      // 와 같은 토큰이라 세 표면의 라벨이 일치한다.
+      if (!hasPolicyStarted(meta, now)) {
+        throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_NOT_STARTED');
+      }
+
       if (mine.length > 0) {
         if (!hasUsableGrant(mine, now)) {
           throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');

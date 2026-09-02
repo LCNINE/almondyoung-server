@@ -1,7 +1,7 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import { requiresIssuance } from '../../../admin/promotions/helpers';
-import { isUsable } from '../../../../modules/promotion-meta/validity';
+import { isUsable, hasPolicyStarted } from '../../../../modules/promotion-meta/validity';
 import { grantsFor, hasUsableGrant } from '../../../../modules/promotion-meta/grants';
 import type { CouponGrantRow } from '../../../../modules/promotion-meta/service';
 
@@ -38,6 +38,16 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
 
     const mine = grantsFor(grants, promotion.id);
     const now = new Date();
+
+    // 🔴 정책 시작(`starts_at`)은 **장 유무 분기 밖**이다 — 장을 가졌다고 시작 전 쿠폰을
+    // 쓸 수 있는 것이 아니다. 분기 안에 두면 `hasUsableGrant` 가 정책을 모르므로 보유자에게만
+    // `starts_at` 이 사라진다(강제 발급, 혹은 운영 중 시작일을 뒤로 미는 순간 전원 해당).
+    // preview 는 같은 사유를 `COUPON_NOT_STARTED` 로 내보내므로 여기도 같은 토큰을 쓴다 —
+    // 표시와 판정이 갈리면 `displayExpiresAt` 헤더 주석이 경고하는 그 실패가 된다.
+    if (!hasPolicyStarted(meta, now)) {
+      // message는 머신 토큰 — 스토어프론트가 로케일별 문구로 매핑한다.
+      return res.status(400).json({ message: 'COUPON_NOT_STARTED', code: 'COUPON_NOT_STARTED' });
+    }
 
     // 🔴 만료는 visibility 와 무관하다 — public 쿠폰도 대상이다.
     // 발급된 장이 있으면 그 장들이, 없으면(=발급 개념이 없는 public) 정책이 만료를 정한다.

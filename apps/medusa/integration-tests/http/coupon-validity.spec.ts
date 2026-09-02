@@ -225,7 +225,11 @@ medusaIntegrationTestRunner({
           validity_days: 30,
         });
         const before = Date.now();
-        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+        await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [id], submit_id: `manualrel-${seq}` },
+          adminHeaders,
+        );
 
         const [grant] = await metaService().listGrantsForPromotion(id);
         expect(grant.issued_via).toEqual('admin_manual');
@@ -243,7 +247,11 @@ medusaIntegrationTestRunner({
           visibility: 'assigned_only',
           ends_at: endsAt,
         });
-        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+        await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [id], submit_id: `manualabs-${seq}` },
+          adminHeaders,
+        );
 
         const [grant] = await metaService().listGrantsForPromotion(id);
         expect(new Date(grant.expires_at).toISOString()).toEqual(endsAt);
@@ -251,7 +259,11 @@ medusaIntegrationTestRunner({
 
       it('둘 다 없으면 무기한(NULL)으로 박힌다', async () => {
         const id = await createPromo(`MANUALINF${seq}`, { visibility: 'assigned_only' });
-        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
+        await api.post(
+          `/admin/customers/${customerId}/promotions`,
+          { promotion_ids: [id], submit_id: `manualinf-${seq}` },
+          adminHeaders,
+        );
 
         const [row] = await listLinks(id);
         expect(row.expires_at).toBeNull();
@@ -264,7 +276,7 @@ medusaIntegrationTestRunner({
         });
         const res = await api.post(
           `/admin/customers/${customerId}/promotions`,
-          { promotion_ids: [id] },
+          { promotion_ids: [id], submit_id: `windowend-${seq}` },
           adminHeaders,
         );
         expect(res.data.skipped.find((s: any) => s.promotion_id === id)?.reason).toEqual('expired');
@@ -278,7 +290,7 @@ medusaIntegrationTestRunner({
         });
         const res = await api.post(
           `/admin/customers/${customerId}/promotions`,
-          { promotion_ids: [id] },
+          { promotion_ids: [id], submit_id: `windowstart-${seq}` },
           adminHeaders,
         );
         expect(res.data.skipped.find((s: any) => s.promotion_id === id)?.reason).toEqual('not_started');
@@ -360,6 +372,75 @@ medusaIntegrationTestRunner({
         await expect(
           api.post('/store/carts', { region_id: regionId, promo_codes: [`ISSUEDDEAD${seq}`] }, storeHeaders),
         ).rejects.toMatchObject({ response: { status: 400, data: { code: 'COUPON_EXPIRED' } } });
+      });
+
+      // 🔴 2026-09-02 전체 리뷰 Critical: `isUsable(instance, policy, now)` → `hasUsableGrant`
+      // 로 옮기면서 **정책 `starts_at` 검사가 장 보유자에게서 사라졌다**. `hasUsableGrant` 는
+      // 장의 만료/소모만 알고 정책은 모르는데, 게이트가 «장이 있으면 장, 없으면 정책» 으로
+      // 분기하면서 정책 검사가 no-grant 가지에만 남았기 때문이다.
+      //
+      // 이 테스트가 없으면 안 잡힌다 — coupon-store.spec.ts 의 'ASSIGNED_NS' 는 `linkCustomer`
+      // 만 부르고 **grant 를 안 만들어** no-grant 폴백을 타므로 이 결함에 공허하게 통과한다.
+      // 그래서 여기서는 반드시 살아있는 장을 심는다.
+      //
+      // 도달 경로 둘: (a) 관리자가 미래 시작 쿠폰을 «강제 발급» (발급 실패 직후 다이얼로그가
+      // 그 버튼을 준다), (b) 운영 중인 쿠폰의 `starts_at` 을 뒤로 미룸 — (b)는 강제 발급조차
+      // 필요 없이 기존 보유자 전원이 해당된다.
+      it('T4 🔴 장을 가졌어도 정책 starts_at 이 미래면 못 붙는다 (COUPON_NOT_STARTED)', async () => {
+        const id = await createPromo(`GRANTNS${seq}`, {
+          visibility: 'assigned_only',
+          starts_at: '2999-01-01T00:00:00.000Z',
+        });
+        // 장 자체는 완전히 «살아있다» — 미사용이고 무기한이다. 거절 사유는 오직 정책 시작이다.
+        await metaService().issueGrant({
+          promotion_id: id, customer_id: customerId, issue_key: `grantns_${seq}`,
+          issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        });
+
+        await expect(
+          api.post('/store/carts', { region_id: regionId, promo_codes: [`GRANTNS${seq}`] }, storeHeaders),
+        ).rejects.toMatchObject({ response: { status: 400, data: { code: 'COUPON_NOT_STARTED' } } });
+      });
+
+      // 같은 결함의 마이페이지 쪽 얼굴 — 표시와 판정이 갈리면 안 된다. 카트가 거절하는 쿠폰이
+      // "사용 가능" 목록에 떠 있으면 고객은 붙지 않는 쿠폰을 계속 누른다.
+      it('T4 🔴 시작 전 쿠폰은 장이 있어도 마이페이지 «사용 가능» 에 안 뜬다', async () => {
+        const id = await createPromo(`GRANTNSME${seq}`, {
+          visibility: 'assigned_only',
+          starts_at: '2999-01-01T00:00:00.000Z',
+        });
+        await metaService().issueGrant({
+          promotion_id: id, customer_id: customerId, issue_key: `grantnsme_${seq}`,
+          issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        });
+        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
+        await link.create([{
+          [Modules.CUSTOMER]: { customer_id: customerId },
+          [Modules.PROMOTION]: { promotion_id: id },
+        }]);
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+        expect(res.data.promotions.map((p: any) => p.code)).not.toContain(`GRANTNSME${seq}`);
+      });
+
+      // 대조군 — 시작 시각이 지난 쿠폰은 장으로 정상 통과한다. 위 두 개가 "전부 거절"로
+      // 공허하게 통과하는 것을 막는다.
+      it('T4 대조군: 시작 시각이 지난 쿠폰은 장으로 붙는다', async () => {
+        const id = await createPromo(`GRANTSTARTED${seq}`, {
+          visibility: 'assigned_only',
+          starts_at: '2000-01-01T00:00:00.000Z',
+        });
+        await metaService().issueGrant({
+          promotion_id: id, customer_id: customerId, issue_key: `grantstarted_${seq}`,
+          issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        });
+
+        const res = await api.post(
+          '/store/carts',
+          { region_id: regionId, promo_codes: [`GRANTSTARTED${seq}`] },
+          storeHeaders,
+        );
+        expect(res.status).toEqual(200);
       });
 
       it('T4 /store/carts/:id/promotions 경로도 막는다', async () => {

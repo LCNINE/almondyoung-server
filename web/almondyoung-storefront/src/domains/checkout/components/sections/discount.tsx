@@ -123,6 +123,8 @@ export const DiscountSection = ({
             toast.error(t("toasts.couponLimitExceeded"))
           } else if (err.digest === "COUPON_EXPIRED") {
             toast.error(t("toasts.couponExpired"))
+          } else if (err.digest === "COUPON_NOT_STARTED") {
+            toast.error(t("toasts.couponNotStarted"))
           } else {
             toast.error(t("toasts.couponApplyFailed"))
           }

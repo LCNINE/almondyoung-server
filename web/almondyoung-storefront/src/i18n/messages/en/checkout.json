@@ -247,6 +247,7 @@
       "couponLimitExceeded": "You have reached the usage limit for this coupon.",
       "couponNotAssigned": "This coupon is only available for customers it was issued to.",
       "couponExpired": "This coupon has expired.",
+      "couponNotStarted": "This coupon is not available yet.",
       "couponRemoveFailed": "Failed to remove the coupon. Please try again later.",
       "claimAndApplyFailed": "Failed to claim the coupon. Please try again later.",
       "claimSuccessApplyFailed": "Coupon claimed, but it could not be applied to the current cart. Check your coupons page to use it."

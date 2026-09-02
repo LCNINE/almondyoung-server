@@ -91,6 +91,13 @@ function throwCouponError(error: any): never {
     e.digest = "COUPON_EXPIRED"
     throw e
   }
+  // 「아직 시작 전」은 「만료」와 다른 사유다 — 카트 게이트가 두 토큰을 구분해 보내므로
+  // (preview 와 같은 토큰) 여기서도 갈라야 만료 문구가 시작 전 쿠폰에 붙지 않는다.
+  if (token === "COUPON_NOT_STARTED") {
+    const e = new HttpApiError("COUPON_NOT_STARTED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_NOT_STARTED"
+    throw e
+  }
   medusaError(error)
 }
 
