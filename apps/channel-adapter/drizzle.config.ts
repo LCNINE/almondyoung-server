@@ -3,7 +3,6 @@ import { join } from 'path';
 import { config } from 'dotenv';
 
 config({ path: './apps/channel-adapter/.env' });
-console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
   schema: [

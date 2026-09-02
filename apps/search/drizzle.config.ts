@@ -2,7 +2,6 @@ import { defineConfig } from 'drizzle-kit';
 import { config } from 'dotenv';
 
 config({ path: './apps/search/.env' });
-console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
   schema: ['./apps/search/src/db/schema.ts'],
