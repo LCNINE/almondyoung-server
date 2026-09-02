@@ -281,39 +281,25 @@ medusaIntegrationTestRunner({
       });
     });
 
-    describe('T2: 회수 후 재발급이 옛 사용기록을 지운다', () => {
-      // 🔴 (a) 계약 변경 (#488 Task 4, task-4-report.md 「6건 분류표」 항목 6): 옛 테스트는
-      // 링크가 (customer_id, promotion_id) 복합 PK 라 재발급이 "같은 행을 되살리는" upsert 였고,
-      // 그래서 `used_at`/`order_id` 를 명시로 null 덮어써야 했다(그 시절 그게 이 테스트의
-      // «무엇»이었다). grant 는 append-only 다 — `issue_key` 가 다르면(submit_id 를 안 줘서
-      // 매 호출 서버가 새 UUID 를 고른다) 매번 새 행을 INSERT 하므로 "되살아나서 옛 값이
-      // 남는다" 라는 시나리오 자체가 구조적으로 성립하지 않는다. «재발급된 새 한 장은 옛
-      // 사용기록을 물려받지 않는다» 라는 원래 불변식은 여전히 지켜야 하므로, 검사 대상을
-      // grant 로 옮겨 같은 불변식을 검증한다.
-      it('재발급으로 생긴 새 grant 는 used_at·order_id 가 null 이다 (grant 는 append-only 라 옛 사용기록을 물려받지 않는다)', async () => {
-        const id = await createPromo(`REISSUE${seq}`, { visibility: 'assigned_only', validity_days: 7 });
-
-        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
-        const [firstGrant] = await metaService().listGrantsForPromotion(id);
-        // 사용된 것처럼 만든다 — 사용의 정본은 이제 grant 다.
-        await metaService().consumeGrant(firstGrant.id, 'order_stale', new Date());
-
-        // 회수 (링크·issued_count 만 정리한다 — grant 자체를 회수하는 건 Task 7 스코프다)
-        await api.delete(`/admin/customers/${customerId}/promotions`, {
-          ...adminHeaders,
-          data: { promotion_ids: [id] },
-        });
-        // 재발급 — submit_id 를 안 줬으므로 서버가 매번 새 UUID 를 골라 새 grant 행을 만든다.
-        await api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [id] }, adminHeaders);
-
-        const grants = await metaService().listGrantsForPromotion(id);
-        const fresh = grants.find((g: any) => g.id !== firstGrant.id);
-        expect(fresh).toBeDefined();
-        expect(fresh.used_at).toBeNull();
-        expect(fresh.order_id).toBeNull();
-        expect(fresh.expires_at).not.toBeNull();
-      });
-    });
+    // 🔴 (#488 Task 4 리뷰 Important #2, 2026-09-02 재분류): 여기 있던 'T2: 회수 후 재발급이
+    // 옛 사용기록을 지운다' 는 원래 `Link.create` 의 upsert 의미론에 특유한 결함(회수 후
+    // 되살아난 행이 낡은 used_at/order_id 를 끌고 오는 것)을 지켰다. `issueGrant` 는 매번
+    // `used_at: null, order_id: null` 을 하드코딩한 순수 INSERT 라 그 결함이 재현될 코드
+    // 경로가 없고, 이 describe 의 "회수" 단계도 DELETE 가 `coupon_grant` 를 안 건드리니
+    // (Task 7 스코프) 장식이었다 — 처음 세션에서 grant 기반으로 재작성했더니 "제목이
+    // 주장하는 것보다 덜 검사하는", 사실상 깨질 수 없는 테스트가 됐다(리뷰 발견).
+    // 삭제한다 — 이 불변식(새로 만든 grant 는 used_at/order_id 가 비어 있다)은
+    // `issueGrant` 의 INSERT 구조 자체가 구조적으로 보장하고, 실제 커버리지는:
+    //   - `apps/medusa/src/modules/promotion-meta/__tests__/service.integration.spec.ts`
+    //     (`issueGrant 는 같은 issue_key 두 번째에 duplicate 를 돌려준다`, 라인 177~ 및
+    //     `restoreGrantsByOrder` 스펙들)이 이미 `issueGrant`/grant 행의 `used_at` 상태를
+    //     module 레벨에서 직접 검증한다 — 이 HTTP 스펙보다 더 정확하고 더 빠르다.
+    //   - `coupon-grant.spec.ts` G1·G2 가 관리자 수동 발급이 매번 독립된 새 grant 행을
+    //     만든다는 것(=append-only, 되살아나지 않음)을 이미 직접 덮는다.
+    // 회수→재발급의 «진짜» 계약(회수가 실제로 grant 를 되돌리는 것)은 Task 7 이
+    // `revokeGrants` 를 DELETE 라우트에 연결한 뒤에야 검사할 수 있다 — 그때는 지금
+    // 의도적으로 빨간 채로 남긴 coupon-admin.spec.ts 의 'RE-ISSUES after revoke' 가 그
+    // 자리를 채운다.
 
     describe('T4·T5: 만료 강제', () => {
       it('T5 🔴 public 쿠폰도 meta.ends_at 만료면 카트에 못 붙는다', async () => {

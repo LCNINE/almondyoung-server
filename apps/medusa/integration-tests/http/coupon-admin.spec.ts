@@ -230,14 +230,18 @@ medusaIntegrationTestRunner({
       expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
     });
 
-    it('revoke via promotions/:id/customers path also restores count + clears log', async () => {
+    it('revoke via promotions/:id/customers path also restores count', async () => {
+      // 🔴 :211 의 형제 수정과 같은 이유(#488 Task 4 리뷰 Important #1) — `isAlreadyIssued`
+      // 는 세 발급 경로 전부가 `recordIssue` 를 안 부르니 항상 `false` 다. 예전엔 여기에도
+      // `expect(await metaService.isAlreadyIssued(...)).toBe(false)` 가 있었는데, DELETE 가
+      // 아무 일도 안 해도 통과하는(공허하게 참) 단언이라 제거한다 — issued_count 복원만
+      // 실제로 검사되는 것이라 그것만 남긴다.
       const promoId = await createPromo('REVOKE2', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       await api.delete(`/admin/promotions/${promoId}/customers`, { ...adminHeaders, data: { customer_ids: [customerId] } });
       expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
-      expect(await metaService.isAlreadyIssued(customerId, promoId)).toBe(false);
     });
 
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {
