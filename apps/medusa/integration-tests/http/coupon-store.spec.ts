@@ -246,6 +246,30 @@ medusaIntegrationTestRunner({
       await expect(claim(id)).rejects.toMatchObject({ response: { status: 400 } });
     });
 
+    // 🔴 2026-09-02 전체 리뷰: 소진 fast-check 가 「이미 받았는가」보다 **앞**에 서면서,
+    // 마지막 한 장을 자기가 받은 고객이 받기를 다시 누르면 '발급 수량이 모두 소진되었습니다'
+    // 가 됐다. 장 모델로 옮기기 전에는 `alreadyClaimed` 조기 반환이 이 검사보다 앞에 있어
+    // 200 이 나갔다 — 설계 §5.1 이 「200 계약은 유지된다」고 약속한 그 동작이다.
+    // 위 'exhausted' 테스트는 **다른 사람이** 소진시킨 경우라 이 결함을 못 잡는다.
+    it('claim of a sold-out coupon I already hold is still 200 (§5.1 멱등 계약)', async () => {
+      const id = await createPromo('CLAIMMINE', { visibility: 'claimable', max_claims: 1 });
+
+      const first = await claim(id);
+      expect(first.status).toEqual(200);
+      // 이제 max_claims=1 이 내 발급으로 소진됐다.
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+
+      const again = await claim(id);
+      expect(again.status).toEqual(200);
+      // 🔴 200 이 「한 장 더 줬다」는 뜻이면 안 된다 — 장수도 카운터도 그대로여야 한다.
+      const mine = (await meta.listGrantsForCustomer(customerId)).filter(
+        (g: any) => g.promotion_id === id,
+      );
+      expect(mine).toHaveLength(1);
+      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+    });
+
     it('claim is idempotent (already claimed → 200)', async () => {
       const id = await createPromo('CLAIMIDEM', { visibility: 'claimable' });
       const first = await claim(id);

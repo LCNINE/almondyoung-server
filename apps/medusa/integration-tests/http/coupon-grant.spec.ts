@@ -109,6 +109,38 @@ medusaIntegrationTestRunner({
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(1);
       });
 
+      it('고객축: 전량 duplicate 인 재시도는 skipped(already_issued) 로 답한다 — 응답에서 사라지지 않는다', async () => {
+        // 🔴 형제(쿠폰축) 라우트는 Task 12 리뷰에서 이 수정을 받았는데 고객축은 빠져 있었다
+        // (2026-09-02 전체 리뷰). `if (granted > 0) { issued.push }` 에 else 가 없어, 재시도한
+        // 프로모션이 issued 에도 skipped 에도 없는 「응답에 없는 항목」이 됐다 — 클라이언트는
+        // 그걸 'unknown' 으로 떨어뜨려 이미 성공한 건을 «발급할 수 없습니다» 로 보여준다.
+        // 위 G2 는 장수(원장)만 봐서 이 응답 계약 결함을 못 잡는다 — 여기선 응답 본문을 본다.
+        const promotionId = await createPromo(`G2R${seq}`, { visibility: 'assigned_only' });
+
+        const first = await issue(promotionId, `sub-retry-${seq}`, 2);
+        expect(first.data.issued).toEqual([promotionId]);
+        expect(first.data.skipped).toEqual([]);
+
+        const second = await issue(promotionId, `sub-retry-${seq}`, 2);
+        expect(second.data.issued).toEqual([]);
+        expect(second.data.skipped).toEqual([{ promotion_id: promotionId, reason: 'already_issued' }]);
+
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(2);
+      });
+
+      it('고객축: submit_id 가 없으면 400 이다 — 서버가 만들어 주면 따닥이 곧 두 배 발급', async () => {
+        // 🔴 옛 코드는 `submit_id ?? randomUUID()` 라 요청마다 새 키였다 — 클라이언트가 값을
+        // 안 보내면 멱등성이 통째로 사라진다(2026-09-02 전체 리뷰). 형제 라우트와 같은 계약.
+        const promotionId = await createPromo(`G2N${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api
+          .post(`/admin/customers/${customerId}/promotions`, { promotion_ids: [promotionId] }, adminHeaders)
+          .catch((e: any) => e.response);
+
+        expect(res.status).toBe(400);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+
       it('quantity 만큼 한 번에 발급된다', async () => {
         const promotionId = await createPromo(`GQ${seq}`, { visibility: 'assigned_only' });
 
@@ -314,7 +346,65 @@ medusaIntegrationTestRunner({
           { customer_id: customerId, reason: 'automatic' },
           { customer_id: customerId2, reason: 'automatic' },
         ]);
+        // 🔴 쿠폰축 조기 반환도 성공 응답과 «같은 모양»이어야 한다 — admin-web 의
+        // `BulkIssueResult` 는 `promotion_id`·`force` 를 required 로 선언하는데, 두 트리
+        // 사이엔 타입 검사가 없어(admin-web 은 medusa 를 import 못 한다) 빠뜨려도 어떤
+        // 게이트도 안 잡는다(2026-09-02 전체 리뷰). 네 조기 반환 중 하나로 대표 검증한다.
+        expect(res.data.promotion_id).toBe(promotionId);
+        expect(res.data.force).toBe(false);
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+
+      it('시작 전 쿠폰의 조기 반환도 promotion_id·force 를 싣는다 (not_started)', async () => {
+        const promotionId = await createPromo(`BULKNS${seq}`, {
+          visibility: 'assigned_only',
+          starts_at: '2999-01-01T00:00:00.000Z',
+        });
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId], submit_id: `bulk-ns-${seq}` },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        expect(res.data).toMatchObject({
+          promotion_id: promotionId,
+          force: false,
+          issued: [],
+          skipped: [{ customer_id: customerId, reason: 'not_started' }],
+        });
+      });
+
+      it('customer_ids × quantity 상한(1000)을 넘으면 400 이다 — 두 상한을 따로 두면 곱이 안 막힌다', async () => {
+        // 500명 × 50장 = 25,000 회의 순차 INSERT 는 어떤 프록시 타임아웃보다 길고, 클라이언트가
+        // 끊긴 뒤에도 서버 루프는 계속 돈다 = 「응답은 실패인데 발급은 됐다」(2026-09-02 리뷰).
+        const promotionId = await createPromo(`BULKCAP${seq}`, { visibility: 'assigned_only' });
+        const many = Array.from({ length: 40 }, (_, i) => `cus_fake_${i}`);
+
+        const res = await api
+          .post(
+            `/admin/promotions/${promotionId}/customers`,
+            { customer_ids: many, quantity: 50, submit_id: `bulk-cap-${seq}` },
+            adminHeaders,
+          )
+          .catch((e: any) => e.response);
+
+        expect(res.status).toBe(400);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+
+      it('곱이 상한 이내면 통과한다 — 위 테스트가 「전부 400」으로 공허하게 통과하지 않게', async () => {
+        const promotionId = await createPromo(`BULKCAPOK${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId, customerId2], quantity: 50, submit_id: `bulk-cap-ok-${seq}` },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(50);
       });
 
       it('비숫자 quantity 는 400 이다 — 조용한 200 이 아니어야 한다', async () => {

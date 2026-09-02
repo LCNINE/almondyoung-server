@@ -150,6 +150,15 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   if (customer_ids.length > 500) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'customer_ids must be 500 or fewer');
   }
+  // 🔴 두 상한을 **따로** 두면 곱이 안 막힌다 — 500명 × 50장 = 25,000 회의 순차 INSERT 다.
+  // 어떤 프록시 타임아웃보다 길고, 클라이언트가 끊긴 뒤에도 루프는 서버에서 계속 돌아
+  // 「응답은 실패인데 발급은 됐다」가 된다. 그래서 곱 자체를 막는다.
+  if (customer_ids.length * qty > 1000) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `customer_ids × quantity must be 1000 or fewer (got ${customer_ids.length} × ${qty})`,
+    );
+  }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
@@ -173,46 +182,82 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const issued: { customer_id: string; granted: number }[] = [];
   const skipped: { customer_id: string; reason: string }[] = [];
 
+  /**
+   * 표시용 링크를 보장한다. 성공 여부를 **돌려준다** — 삼키면 안 된다.
+   *
+   * 🔴 링크가 없는 grant 는 「고객이 가지고 있고 코드를 치면 쓸 수 있는데, 마이페이지에도
+   * (`/store/customers/me/promotions` 가 링크 행으로 열거한다) 어드민 고객 상세에도
+   * (`GET /admin/customers/:id/promotions`) **안 보이는**」 쿠폰이다. 옛 코드는 이 실패를
+   * `link_error` 로 보고하고 슬롯을 되돌렸는데, `.catch(() => {})` 로 바뀌면서 «발급됨» 이라고
+   * 보고하고 로그에도 아무것도 남기지 않게 됐다(2026-09-02 전체 리뷰).
+   */
+  async function ensureLink(customerId: string): Promise<boolean> {
+    try {
+      await (link as any).create([{
+        [Modules.CUSTOMER]: { customer_id: customerId },
+        [Modules.PROMOTION]: { promotion_id: promotionId },
+      }]);
+      return true;
+    } catch (e: any) {
+      logger.warn(
+        `[coupon] 대량발급 link_error — 장은 만들어졌으나 표시용 링크 생성 실패 ` +
+          `(promotion_id=${promotionId}, customer_id=${customerId}, submit_id=${submit_id}): ` +
+          `${e?.message ?? e}. 이 고객은 쿠폰을 «가지고 있지만 목록에 안 보인다» — 재시도하면 ` +
+          `링크만 다시 만든다(장은 issue_key 로 멱등하다).`,
+      );
+      return false;
+    }
+  }
+
   // 쿠폰 축 검증은 루프 밖에서 한 번만 — 고객마다 같은 답이 나온다.
+  //
+  // 🔴 이 조기 반환들도 성공 응답과 **같은 모양**이어야 한다. admin-web 의 `BulkIssueResult`
+  // 는 `promotion_id`·`force` 를 required 로 선언하는데, 두 트리 사이엔 타입 검사가 없어
+  // (admin-web 은 medusa 를 import 하지 못한다) 빠뜨려도 아무 게이트가 안 잡는다.
+  const couponAxisSkip = (reason: string) =>
+    res.status(200).json({
+      promotion_id: promotionId,
+      issued: [],
+      skipped: customer_ids.map((id) => ({ customer_id: id, reason })),
+      force,
+    });
+
   if (!force) {
     if (promo.status !== 'active') {
-      return res.status(200).json({
-        issued: [],
-        skipped: customer_ids.map((id) => ({ customer_id: id, reason: 'inactive' })),
-      });
+      return couponAxisSkip('inactive');
     }
     // 형제(고객축) 라우트와 같은 검사 — 자동적용 프로모션은 개별 grant 발급 대상이 아니다.
     if (promo.is_automatic) {
-      return res.status(200).json({
-        issued: [],
-        skipped: customer_ids.map((id) => ({ customer_id: id, reason: 'automatic' })),
-      });
+      return couponAxisSkip('automatic');
     }
     const window = issuanceWindowState(meta, now);
     if (window !== 'ok') {
-      const reason = window === 'not_started' ? 'not_started' : 'expired';
-      return res.status(200).json({
-        issued: [],
-        skipped: customer_ids.map((id) => ({ customer_id: id, reason })),
-      });
+      return couponAxisSkip(window === 'not_started' ? 'not_started' : 'expired');
     }
   }
 
   const maxClaims = meta?.max_claims != null ? Number(meta.max_claims) : null;
 
+  // 🔴 고객 조회는 루프 «밖» 한 번이다 — 안에 두면 500명에 500번의 순차 `query.graph` 가
+  // 발급 INSERT 위에 얹힌다. 위 `GET` 핸들러가 이미 같은 모양(`filters: { id: [...] }`)을
+  // 쓴다. 이 조회가 통째로 실패하면 500 으로 크게 터지는 것이 맞다 — 「전원 조용히 스킵」보다
+  // 낫고, 아직 아무것도 발급하지 않은 시점이라 부분 반영도 없다.
+  const { data: foundCustomers } = await query.graph({
+    entity: 'customer',
+    fields: ['id', 'groups.id'],
+    filters: { id: customer_ids },
+  });
+  const customerById = new Map<string, any>((foundCustomers ?? []).map((c: any) => [c.id, c]));
+
   for (const customerId of customer_ids) {
-    const { data: customers } = await query.graph({
-      entity: 'customer',
-      fields: ['id', 'groups.id'],
-      filters: { id: customerId },
-    });
-    if (!customers?.length) {
+    const customer = customerById.get(customerId);
+    if (!customer) {
       skipped.push({ customer_id: customerId, reason: 'customer_not_found' });
       continue;
     }
 
     if (!force) {
-      const groupIds = new Set<string>((customers[0].groups ?? []).map((g: any) => g.id));
+      const groupIds = new Set<string>((customer.groups ?? []).map((g: any) => g.id));
       const eligibility = evaluateIssuanceRules(promo.rules, groupIds);
       if (!eligibility.eligible) {
         if (eligibility.reason === 'unsupported_rule') {
@@ -255,6 +300,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         });
       } catch (e: any) {
         if (slotReserved) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+        // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
+        // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
+        logger.error(
+          `[coupon] 대량발급 grant_error (promotion_id=${promotionId}, customer_id=${customerId}, ` +
+            `n=${n}, submit_id=${submit_id}): ${e?.message ?? e}`,
+        );
         // 배치 resilient — 한 고객의 장애가 나머지를 막지 않는다.
         skipped.push({ customer_id: customerId, reason: 'grant_error' });
         skippedInLoop = true;
@@ -272,11 +323,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     if (granted > 0) {
-      await (link as any).create([{
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promotionId },
-      }]).catch(() => {});
-      issued.push({ customer_id: customerId, granted });
+      if (await ensureLink(customerId)) {
+        issued.push({ customer_id: customerId, granted });
+      } else {
+        skipped.push({ customer_id: customerId, reason: 'link_error' });
+      }
     } else if (!skippedInLoop) {
       // 🔴 모든 n 이 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
       // 다른 사유로 이미 skipped 에 등재된 경우(max_claims_exceeded/grant_error)는
@@ -284,7 +335,16 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       // 위에서 continue 로 이 지점 자체에 도달하지 않는다. 이 branch 가 없으면 재시도로
       // 이미 성공한 고객이 issued 에도 skipped 에도 없는 「응답에 없는 고객」이 되어
       // 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다(#488 Task 12 리뷰).
-      skipped.push({ customer_id: customerId, reason: 'already_issued' });
+      //
+      // 링크는 여기서도 보장한다 — 직전 시도가 `link_error` 로 끝났다면 장은 있고 링크만
+      // 없는 상태다. 그 재시도는 전량 duplicate 로 떨어지므로, 이 자리에서 링크를 다시
+      // 만들지 않으면 `link_error` 에 복구 경로가 없다. `link.create` 는 upsert 라
+      // 정상 재시도에서는 무해한 no-op 이다.
+      if (await ensureLink(customerId)) {
+        skipped.push({ customer_id: customerId, reason: 'already_issued' });
+      } else {
+        skipped.push({ customer_id: customerId, reason: 'link_error' });
+      }
     }
   }
 

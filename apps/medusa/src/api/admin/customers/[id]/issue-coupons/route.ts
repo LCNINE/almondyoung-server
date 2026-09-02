@@ -138,10 +138,20 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
+    // 🔴 링크 생성 실패를 조용히 삼키면 「장은 있는데 어디에도 안 보이는 쿠폰」이 된다 —
+    // 마이페이지(`/store/customers/me/promotions`)도 어드민 고객 상세도 링크 행으로
+    // 열거하기 때문이다. 여기는 사람이 안 보는 자동 경로라 로그가 유일한 흔적이다.
+    // 사유 집합은 늘리지 않는다 — channel-adapter 가 이 응답의 `skipped.reason` 을
+    // 메트릭으로 세므로, 새 값은 그쪽 계약 변경이다.
     await (link as any).create([{
       [Modules.CUSTOMER]: { customer_id: customerId },
       [Modules.PROMOTION]: { promotion_id: promo.id },
-    }]).catch(() => {});
+    }]).catch((e: any) => {
+      logger.warn(
+        `[coupon] 자동발급 link 생성 실패 — 장은 만들어졌으나 목록에 안 보인다 ` +
+          `(promotion_id=${promo.id}, customer_id=${customerId}, trigger=${trigger}): ${e?.message ?? e}`,
+      );
+    });
     issued.push({ promotion_id: promo.id, code: promo.code });
   }
 

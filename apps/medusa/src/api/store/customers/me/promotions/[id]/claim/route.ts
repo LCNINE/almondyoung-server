@@ -79,6 +79,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이 쿠폰은 대상 고객만 발급받을 수 있습니다.');
   }
 
+  // 🔴 「이미 가지고 있다」는 소진 검사보다 **먼저**다 (스펙 §5.1 의 200 계약).
+  //
+  // 클레임의 `issue_key` 는 `'claim'` 고정이라 한 고객당 영원히 한 장이다 — 그래서
+  // 아래 원자 경로는 재클릭에 반드시 `'duplicate'` 를 돌려주고 200 이 나간다. 그런데
+  // 소진된 쿠폰에서는 그 경로에 닿기도 전에 `allLinks.length >= maxClaims` 가 먼저 걸려,
+  // **이미 받은 사람이 재클릭하면 '발급 수량이 모두 소진되었습니다'** 가 됐다(장 모델로
+  // 옮기면서 옛 `alreadyClaimed` 조기 반환이 이 검사보다 앞에 있던 사실이 사라졌다).
+  //
+  // ⚠️ 이것은 **읽기 전용 빠른 경로**일 뿐이다 — 발급 여부의 결정은 아래 원자 경로가
+  // 그대로 내리고, 최종 권위는 여전히 유니크 인덱스다. 이 조회가 낡았어도(방금 다른
+  // 요청이 만들었어도) 아래로 흘러가 `'duplicate'` 로 같은 200 이 나온다. read-then-write
+  // 경합을 되살리는 것이 아니다.
+  const myLiveGrants = allLinks.filter((g) => g.customer_id === customerId);
+  if (myLiveGrants.length > 0) {
+    return res.status(200).json({ success: true, promotion_id: promotionId });
+  }
+
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
   if (maxClaims !== null) {
@@ -114,10 +131,21 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return res.status(200).json({ success: true, promotion_id: promotionId });
   }
 
+  // 🔴 링크 생성 실패를 조용히 삼키면 「받았는데 쿠폰함에 안 보이는」 쿠폰이 된다 —
+  // 마이페이지가 링크 행으로 열거하기 때문이다. 장은 이미 만들어졌으니 200 은 유지하되
+  // (고객은 실제로 쿠폰을 가졌다) 흔적은 반드시 남긴다. 재클릭하면 위 빠른 경로가
+  // 200 을 돌려주므로 링크는 스스로 복구되지 않는다 — 로그가 유일한 단서다.
   await link.create([{
     [Modules.CUSTOMER]: { customer_id: customerId },
     [Modules.PROMOTION]: { promotion_id: promotionId },
-  }]).catch(() => {});
+  }]).catch((e: any) => {
+    req.scope
+      .resolve(ContainerRegistrationKeys.LOGGER)
+      .warn(
+        `[coupon] 클레임 link 생성 실패 — 장은 만들어졌으나 쿠폰함에 안 보인다 ` +
+          `(promotion_id=${promotionId}, customer_id=${customerId}): ${e?.message ?? e}`,
+      );
+  });
 
   return res.status(200).json({ success: true, promotion_id: promotionId });
 }

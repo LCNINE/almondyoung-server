@@ -667,7 +667,7 @@ medusaIntegrationTestRunner({
         // 같이 생기지만(위 route.ts 참고), 사용 기록의 정본은 아래에서 보는 grant 다.
         await api.post(
           `/admin/customers/${customerId}/promotions`,
-          { promotion_ids: [promotionId] },
+          { promotion_ids: [promotionId], submit_id: `c1issued-${c1Seq}` },
           adminHeaders,
         );
 

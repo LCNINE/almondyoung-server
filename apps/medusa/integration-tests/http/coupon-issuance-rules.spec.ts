@@ -125,7 +125,7 @@ medusaIntegrationTestRunner({
 
         const skipped = await api.post(
           `/admin/customers/${customerId}/promotions`,
-          { promotion_ids: [promoId], force: false },
+          { promotion_ids: [promoId], force: false, submit_id: `p7manual-skip-${seq}` },
           adminHeaders,
         );
         expect(skipped.data.issued).not.toContain(promoId);
@@ -135,7 +135,7 @@ medusaIntegrationTestRunner({
 
         const forced = await api.post(
           `/admin/customers/${customerId}/promotions`,
-          { promotion_ids: [promoId], force: true },
+          { promotion_ids: [promoId], force: true, submit_id: `p7manual-force-${seq}` },
           adminHeaders,
         );
         expect(forced.data.issued).toContain(promoId);

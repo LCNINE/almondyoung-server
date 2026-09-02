@@ -1,4 +1,3 @@
-import { randomUUID } from 'crypto';
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
@@ -15,9 +14,10 @@ interface AssignPromotionsBody {
   force?: boolean;
   /**
    * 이 «제출» 의 식별자. 같은 제출이 재도착하면(따닥·타임아웃 재시도) 한 장만 남는다.
-   * 없으면 서버가 만들어 쓰지만 **그 요청은 멱등하지 않다** — 클라이언트가 보내야 한다.
+   * **필수다** — 형제(쿠폰축) 라우트와 같다. 서버가 만들어 주면 매 요청이 새 키라
+   * 따닥이 곧 두 배 발급이다.
    */
-  submit_id?: string;
+  submit_id: string;
   /** 1인당 발급 장수. 기본 1. */
   quantity?: number;
 }
@@ -111,6 +111,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   if (!promotion_ids || !Array.isArray(promotion_ids) || promotion_ids.length === 0) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
+  if (!submit_id) {
+    // 🔴 서버가 만들어 주면 재도착마다 새 키라 따닥이 곧 두 배 발급이다. 재시도가 «같은»
+    //    값을 보낼 수 있는 쪽은 클라이언트뿐이다 — 형제(쿠폰축) 라우트와 같은 계약이다.
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'submit_id is required');
+  }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
@@ -159,9 +164,35 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be a finite number');
   }
   const quantity = Math.max(1, Math.min(rawQty, 50));
-  const submitId = submit_id ?? randomUUID();
+  const submitId = submit_id;
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
+
+  /**
+   * 표시용 링크를 보장한다. 성공 여부를 **돌려준다** — 삼키면 안 된다.
+   *
+   * 🔴 링크가 없는 grant 는 「고객이 가지고 있고 코드를 치면 쓸 수 있는데, 마이페이지에도
+   * (`/store/customers/me/promotions` 가 링크 행으로 열거한다) 이 라우트의 `GET` 에도
+   * **안 보이는**」 쿠폰이다. 옛 코드는 `link_error` 로 보고했는데 `.catch(() => {})` 가
+   * 그것을 「발급됨」+무로그로 바꿔놨다(2026-09-02 전체 리뷰).
+   */
+  async function ensureLink(promotionId: string): Promise<boolean> {
+    try {
+      await (link as any).create([{
+        [Modules.CUSTOMER]: { customer_id: customerId },
+        [Modules.PROMOTION]: { promotion_id: promotionId },
+      }]);
+      return true;
+    } catch (e: any) {
+      logger.warn(
+        `[coupon] 수동발급 link_error — 장은 만들어졌으나 표시용 링크 생성 실패 ` +
+          `(promotion_id=${promotionId}, customer_id=${customerId}, submit_id=${submitId}): ` +
+          `${e?.message ?? e}. 이 고객은 쿠폰을 «가지고 있지만 목록에 안 보인다» — 재시도하면 ` +
+          `링크만 다시 만든다(장은 issue_key 로 멱등하다).`,
+      );
+      return false;
+    }
+  }
 
   for (const promo of promotions as any[]) {
     const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
@@ -208,6 +239,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
     let granted = 0;
+    // 이 프로모션이 안쪽 n-루프에서 이미 skipped 에 등재됐는지 — 아래 「전량 duplicate」
+    // 판정이 그 위에 또 등재해 이중화하지 않도록 추적한다(쿠폰축 라우트와 같은 모양).
+    let skippedInLoop = false;
     for (let n = 1; n <= quantity; n++) {
       const issueKey = `${submitId}:${n}`;
 
@@ -216,6 +250,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         const slot = await promotionMetaService.reserveClaimSlot(promo.id, maxClaims);
         if (slot === 'exhausted') {
           skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+          skippedInLoop = true;
           break;
         }
         slotReserved = true;
@@ -233,7 +268,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         });
       } catch (e: any) {
         if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
+        // 🔴 원인을 반드시 남긴다 — 사유만 `grant_error` 로 돌려주면 진단할 근거가 없다.
+        logger.error(
+          `[coupon] 수동발급 grant_error (promotion_id=${promo.id}, customer_id=${customerId}, ` +
+            `n=${n}, submit_id=${submitId}): ${e?.message ?? e}`,
+        );
         skipped.push({ promotion_id: promo.id, reason: 'grant_error' });
+        skippedInLoop = true;
         break;
       }
 
@@ -252,11 +293,23 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     // 링크는 표시 조인용으로만 유지한다 — `data` 는 싣지 않는다(만료·사용의 정본은 grant 다).
     if (granted > 0) {
-      await (link as any).create([{
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promo.id },
-      }]).catch(() => {});
-      issued.push(promo.id);
+      if (await ensureLink(promo.id)) {
+        issued.push(promo.id);
+      } else {
+        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
+      }
+    } else if (!skippedInLoop) {
+      // 🔴 모든 n 이 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
+      // 이 branch 가 없으면 그 프로모션이 `issued` 에도 `skipped` 에도 없는 「응답에 없는
+      // 항목」이 되어, 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다. 형제
+      // (쿠폰축) 라우트는 Task 12 리뷰에서 이 수정을 받았는데 이쪽은 빠져 있었다.
+      // 링크는 여기서도 보장한다 — 직전 시도가 `link_error` 였다면 그 재시도는 전량
+      // duplicate 로 떨어지므로, 이 자리가 링크의 유일한 복구 경로다.
+      if (await ensureLink(promo.id)) {
+        skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
+      } else {
+        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
+      }
     }
   }
 

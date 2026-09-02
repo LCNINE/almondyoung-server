@@ -61,8 +61,16 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
+    // `submit_id` 는 라우트가 요구한다(없으면 400) — 없으면 따닥이 곧 두 배 발급이라
+    // 서버가 만들어 주지 않는다. 스펙에서는 호출마다 새 값을 써서 각 호출이 독립적인
+    // «제출» 이 되게 한다(같은 값을 재사용하면 두 번째가 duplicate 로 떨어진다).
+    let issueSeq = 0;
     const issue = (promotionIds: string[], force = false) =>
-      api.post(`/admin/customers/${customerId}/promotions`, { promotion_ids: promotionIds, force }, adminHeaders);
+      api.post(
+        `/admin/customers/${customerId}/promotions`,
+        { promotion_ids: promotionIds, force, submit_id: `admin-spec-${seq}-${++issueSeq}` },
+        adminHeaders,
+      );
 
     const skipReason = (res: any, id: string) =>
       res.data.skipped.find((s: any) => s.promotion_id === id)?.reason;
@@ -160,7 +168,7 @@ medusaIntegrationTestRunner({
 
       const res = await api.post(
         `/admin/customers/${customerId}/promotions`,
-        { promotion_ids: [validId, inactiveId] },
+        { promotion_ids: [validId, inactiveId], submit_id: `batch-resilient-${seq}` },
         adminHeaders,
       );
       expect(res.status).toEqual(200); // throw 아님
