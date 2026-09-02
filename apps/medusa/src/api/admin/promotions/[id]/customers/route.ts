@@ -9,6 +9,38 @@ interface RevokeBody {
   customer_ids: string[];
 }
 
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * 값으로 고른다 — 배열 순서에 기대지 않는다. `listGrantsForPromotion` 은 `orderBy` 가 없어
+ * 행 순서가 보장되지 않으므로, 위치(`mine[0]`/`mine[mine.length-1]`)로 「최초/최근」을 뽑으면
+ * 여러 장을 가진 고객의 표시가 틀릴 수 있다(#488 Task 7 리뷰). `grants.ts` 의 `nextExpiryAt`
+ * (reduce)·`selectGrantToConsume`(명시적 정렬 + id 동률 처리)와 같은 모양을 따른다.
+ */
+function earliestIssuedGrant(grants: CouponGrantRow[]): CouponGrantRow | undefined {
+  return grants.reduce<CouponGrantRow | undefined>((min, g) => {
+    if (!min) return g;
+    const gt = toDate(g.issued_at)?.getTime() ?? 0;
+    const mt = toDate(min.issued_at)?.getTime() ?? 0;
+    if (gt !== mt) return gt < mt ? g : min;
+    return g.id < min.id ? g : min; // 동률(같은 issued_at)은 id 로 결정적이게
+  }, undefined);
+}
+
+function latestIssuedGrant(grants: CouponGrantRow[]): CouponGrantRow | undefined {
+  return grants.reduce<CouponGrantRow | undefined>((max, g) => {
+    if (!max) return g;
+    const gt = toDate(g.issued_at)?.getTime() ?? 0;
+    const mt = toDate(max.issued_at)?.getTime() ?? 0;
+    if (gt !== mt) return gt > mt ? g : max;
+    return g.id > max.id ? g : max;
+  }, undefined);
+}
+
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
@@ -64,9 +96,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       used_count: mine.filter((g) => g.used_at != null).length,
       usable_count: usable.length,
       next_expires_at: nextExpiryAt(mine, now),
-      // 가장 최근 발급의 경로 — 어느 출처에서 왔는지 한눈에 보이게.
-      issued_via: mine[mine.length - 1]?.issued_via ?? null,
-      issued_at: mine[0]?.issued_at ?? c.created_at,
+      // 가장 최근 발급의 경로 — 어느 출처에서 왔는지 한눈에 보이게. 위치가 아니라 issued_at 값으로 고른다.
+      issued_via: latestIssuedGrant(mine)?.issued_via ?? null,
+      issued_at: earliestIssuedGrant(mine)?.issued_at ?? c.created_at,
     };
   });
 

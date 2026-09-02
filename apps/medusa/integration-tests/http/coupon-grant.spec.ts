@@ -162,6 +162,27 @@ medusaIntegrationTestRunner({
         expect(Number((await svc().getByPromotionId(promotionId)).issued_count)).toBe(0);
       });
 
+      it('G10 (고객축): DELETE /admin/customers/:id/promotions 도 장수만큼 issued_count 를 되돌린다', async () => {
+        // 두 DELETE 라우트(프로모션축·고객축)가 같은 회수 루프를 각자 갖고 있다 — 한쪽만
+        // 배선하고 다른 쪽을 놓치는 게 이 태스크의 실제 실패 모드였다(#488 Task 7 리뷰).
+        // 프로모션축은 위 G10 이 다장 회수를 검사하니, 여기선 고객축을 같은 강도로 검사한다.
+        const promotionId = await createPromo(`G10B${seq}`, {
+          visibility: 'assigned_only',
+          max_claims: 100,
+        });
+        await issue(promotionId, 'sub-rev-b', 3);
+        const before = Number((await svc().getByPromotionId(promotionId)).issued_count);
+        expect(before).toBe(3);
+
+        await api.delete(`/admin/customers/${customerId}/promotions`, {
+          ...adminHeaders,
+          data: { promotion_ids: [promotionId] },
+        });
+
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+        expect(Number((await svc().getByPromotionId(promotionId)).issued_count)).toBe(0);
+      });
+
       it('발급 현황이 고객별 보유·사용 장수를 돌려준다', async () => {
         const promotionId = await createPromo(`GST${seq}`, { visibility: 'assigned_only' });
         await issue(promotionId, 'sub-stat', 2);
