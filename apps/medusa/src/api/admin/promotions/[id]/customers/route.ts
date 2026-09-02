@@ -139,7 +139,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     //    보낼 수 있는 쪽은 클라이언트뿐이다.
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'submit_id is required');
   }
-  const qty = Math.max(1, Math.min(Number(quantity), 50));
+  const rawQty = Number(quantity);
+  if (!Number.isFinite(rawQty)) {
+    // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
+    //    false 라 `for (n=1; n<=qty; n++)` 가 한 번도 안 돈다. 그러면 전원이 조용히
+    //    `granted:0` 이 돼 `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다.
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be a finite number');
+  }
+  const qty = Math.max(1, Math.min(rawQty, 50));
   if (customer_ids.length > 500) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'customer_ids must be 500 or fewer');
   }
@@ -172,6 +179,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       return res.status(200).json({
         issued: [],
         skipped: customer_ids.map((id) => ({ customer_id: id, reason: 'inactive' })),
+      });
+    }
+    // 형제(고객축) 라우트와 같은 검사 — 자동적용 프로모션은 개별 grant 발급 대상이 아니다.
+    if (promo.is_automatic) {
+      return res.status(200).json({
+        issued: [],
+        skipped: customer_ids.map((id) => ({ customer_id: id, reason: 'automatic' })),
       });
     }
     const window = issuanceWindowState(meta, now);

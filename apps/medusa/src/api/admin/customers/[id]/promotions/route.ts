@@ -151,7 +151,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issueTrigger = force ? 'admin_force' : 'admin_manual';
   const now = new Date();
-  const quantity = Math.max(1, Math.min(Number(rawQuantity ?? 1), 50));
+  const rawQty = Number(rawQuantity ?? 1);
+  if (!Number.isFinite(rawQty)) {
+    // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
+    //    false 라 발급 루프가 한 번도 안 돈다. 그러면 전원이 조용히 `granted:0` 이 돼
+    //    `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다(#488 Task 9 리뷰).
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be a finite number');
+  }
+  const quantity = Math.max(1, Math.min(rawQty, 50));
   const submitId = submit_id ?? randomUUID();
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];

@@ -54,8 +54,16 @@ medusaIntegrationTestRunner({
       };
     });
 
-    /** 쿠폰 하나를 만든다. `additional_data` 로 visibility·발급창·수량한도를 준다. */
-    const createPromo = async (code: string, additional_data: Record<string, unknown>) => {
+    /**
+     * 쿠폰 하나를 만든다. `additional_data` 로 visibility·발급창·수량한도를 준다.
+     * `overrides` 는 `is_automatic` 등 promotion 자체 필드를 덮어쓴다(coupon-admin.spec.ts 의
+     * 같은 이름 파라미터와 같은 모양 — 새 헬퍼가 아니라 기존 헬퍼의 확장이다).
+     */
+    const createPromo = async (
+      code: string,
+      additional_data: Record<string, unknown>,
+      overrides: Record<string, unknown> = {},
+    ) => {
       const res = await api.post(
         '/admin/promotions',
         {
@@ -65,6 +73,7 @@ medusaIntegrationTestRunner({
           status: 'active',
           application_method: { type: 'percentage', value: 10, target_type: 'order', currency_code: 'krw' },
           additional_data,
+          ...overrides,
         },
         adminHeaders,
       );
@@ -261,6 +270,62 @@ medusaIntegrationTestRunner({
           .catch((e: any) => e.response);
 
         expect(res.status).toBe(400);
+      });
+
+      it('자동적용 프로모션은 대량발급 대상이 아니다 — 전원 skip(reason: automatic)', async () => {
+        // 리뷰 Important #1: 형제(고객축) 라우트는 is_automatic 을 막는데 이 라우트는 fetch 만
+        // 하고 안 읽었다 — 자동적용 쿠폰에 개별 grant 를 대량발급할 수 있게 되는 결함이었다.
+        const promotionId = await createPromo(
+          `BULKA${seq}`,
+          { visibility: 'assigned_only' },
+          { is_automatic: true },
+        );
+
+        const res = await api.post(
+          `/admin/promotions/${promotionId}/customers`,
+          { customer_ids: [customerId, customerId2], submit_id: 'bulk-auto' },
+          adminHeaders,
+        );
+
+        expect(res.status).toBe(200);
+        expect(res.data.issued).toEqual([]);
+        expect(res.data.skipped).toEqual([
+          { customer_id: customerId, reason: 'automatic' },
+          { customer_id: customerId2, reason: 'automatic' },
+        ]);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+
+      it('비숫자 quantity 는 400 이다 — 조용한 200 이 아니어야 한다', async () => {
+        // 리뷰 Important #2: `Number('abc')` 는 NaN 이고 NaN 과의 모든 비교가 false 라
+        // 발급 루프가 한 번도 안 돌아 `200 {issued: [], skipped: []}` 가 사유 없이 나갔다.
+        const promotionId = await createPromo(`BULKQ${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api
+          .post(
+            `/admin/promotions/${promotionId}/customers`,
+            { customer_ids: [customerId], submit_id: 'bulk-bad-qty', quantity: 'abc' },
+            adminHeaders,
+          )
+          .catch((e: any) => e.response);
+
+        expect(res.status).toBe(400);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+      });
+
+      it('형제(고객축) 라우트도 비숫자 quantity 에 400 이다 — 같은 결함, 같은 수정', async () => {
+        const promotionId = await createPromo(`BULKQ2${seq}`, { visibility: 'assigned_only' });
+
+        const res = await api
+          .post(
+            `/admin/customers/${customerId}/promotions`,
+            { promotion_ids: [promotionId], submit_id: 'bulk-bad-qty-sibling', quantity: 'abc' },
+            adminHeaders,
+          )
+          .catch((e: any) => e.response);
+
+        expect(res.status).toBe(400);
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
       });
     });
   },
