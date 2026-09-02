@@ -52,9 +52,25 @@ export function CouponAssignDialog({
 
   const bulkIssue = useBulkIssueCoupon();
 
+  // 🔴 발급 키 집합은 «대상 × 수량» 으로 정해진다(`${submitId}:1..n`). 둘 중 하나가 바뀌면
+  //    옛 키를 재사용해선 안 된다 — 겹치는 n 이 서버에서 duplicate 로 떨어져 **요청한
+  //    장수보다 적게** 발급되고, 화면엔 아무 경고도 안 뜬다.
+  //    예: [alice,bob] 제출 → bob 실패(키 S 보존) → alice 만 남기고 수량 3 으로 재조회 →
+  //        S:1 은 이미 alice 것이라 duplicate → 3장이 아니라 2장.
+  //    ⚠️ «재시도»(강제 발급 버튼)는 재조회를 거치지 않으므로 이 초기화에 안 걸린다 — 그쪽은
+  //       같은 키를 써야 맞다.
+  const resetSubmitId = () => { submitIdRef.current = null; };
+
+  const handleQuantityChange = (next: number) => {
+    setQuantity(next);
+    resetSubmitId();
+  };
+
   const handleResolve = async () => {
     const targets = parseIssueTargets(raw);
     if (targets.length === 0) return;
+    // 대상 집합이 새로 정해진다 — 직전 제출의 키는 여기서 버린다.
+    resetSubmitId();
     setIsResolving(true);
     const ok: ResolvedTarget[] = [];
     const bad: { input: string; reason: string }[] = [];
@@ -153,7 +169,7 @@ export function CouponAssignDialog({
                 min={1}
                 max={50}
                 value={quantity}
-                onChange={(e) => setQuantity(Math.max(1, Number(e.target.value) || 1))}
+                onChange={(e) => handleQuantityChange(Math.max(1, Number(e.target.value) || 1))}
                 className="w-24"
               />
             </div>
