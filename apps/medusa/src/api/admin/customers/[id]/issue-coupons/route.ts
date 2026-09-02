@@ -102,12 +102,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
-    const alreadyIssued = await promotionMetaService.isAlreadyIssued(customerId, promo.id);
-    if (alreadyIssued) {
-      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      continue;
-    }
-
     if (meta.max_claims != null) {
       const slot = await promotionMetaService.reserveClaimSlot(promo.id, Number(meta.max_claims));
       if (slot === 'exhausted') {
@@ -116,34 +110,39 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       }
     }
 
-    let linkCreated = false;
+    let result: 'created' | 'duplicate';
     try {
-      await (link as any).create([{
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promo.id },
-        data: {
-          expires_at: computeExpiresAt(meta, now),
-          issued_via: trigger,
-          used_at: null,
-          order_id: null,
-        },
-      }]);
-      linkCreated = true;
-      await promotionMetaService.recordIssue(customerId, promo.id, trigger);
-      issued.push({ promotion_id: promo.id, code: promo.code });
+      result = await promotionMetaService.issueGrant({
+        promotion_id: promo.id,
+        customer_id: customerId,
+        // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
+        issue_key: `trigger:${trigger}`,
+        issued_via: trigger,
+        expires_at: computeExpiresAt(meta, now),
+        now,
+      });
     } catch (e: any) {
-      // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
-      // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
-      // 슬롯 반환은 링크가 생성되지 않은 경우에만 한다.
-      // 링크는 생겼는데 recordIssue 만 실패(transient)한 경우엔 슬롯을 유지해야
-      // issued_count 가 실제 링크 수와 정합 — 재시도는 recordIssue 만 멱등 보정한다.
-      if (meta.max_claims != null && !linkCreated) {
+      if (meta.max_claims != null) {
         await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
       }
-      // Transient DB/Link error → 500으로 올려서 channel-adapter가 재시도하게 함.
-      // isAlreadyIssued 체크로 재시도는 멱등하게 처리됨.
+      // Transient DB 에러 → 500 으로 올려 channel-adapter 가 재시도하게 한다.
+      // 재시도는 위 결정적 issue_key 덕에 멱등하다.
       throw e;
     }
+
+    if (result === 'duplicate') {
+      if (meta.max_claims != null) {
+        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
+      }
+      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
+      continue;
+    }
+
+    await (link as any).create([{
+      [Modules.CUSTOMER]: { customer_id: customerId },
+      [Modules.PROMOTION]: { promotion_id: promo.id },
+    }]).catch(() => {});
+    issued.push({ promotion_id: promo.id, code: promo.code });
   }
 
   return res.status(200).json({ issued, skipped });

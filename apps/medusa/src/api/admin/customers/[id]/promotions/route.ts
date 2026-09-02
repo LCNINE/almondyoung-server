@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
@@ -11,6 +12,13 @@ interface AssignPromotionsBody {
   promotion_ids: string[];
   /** true = 정책 검증 우회. 감사 로그에 admin_force로 기록됩니다. */
   force?: boolean;
+  /**
+   * 이 «제출» 의 식별자. 같은 제출이 재도착하면(따닥·타임아웃 재시도) 한 장만 남는다.
+   * 없으면 서버가 만들어 쓰지만 **그 요청은 멱등하지 않다** — 클라이언트가 보내야 한다.
+   */
+  submit_id?: string;
+  /** 1인당 발급 장수. 기본 1. */
+  quantity?: number;
 }
 
 interface RemovePromotionsBody {
@@ -88,7 +96,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
  */
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.params.id;
-  const { promotion_ids, force = false } = req.body as AssignPromotionsBody;
+  const { promotion_ids, force = false, submit_id, quantity: rawQuantity } = req.body as AssignPromotionsBody;
 
   if (!promotion_ids || !Array.isArray(promotion_ids) || promotion_ids.length === 0) {
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
@@ -131,27 +139,14 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     (customers[0].groups ?? []).map((g: any) => g.id as string),
   );
 
-  // Fetch already-issued promotions for this customer to avoid duplicate processing
-  const { data: existingCustomers } = await query.graph({
-    entity: 'customer',
-    fields: ['id', 'promotions.id'],
-    filters: { id: customerId },
-  });
-  const alreadyIssuedIds = new Set<string>(
-    (existingCustomers?.[0]?.promotions ?? []).map((p: any) => p.id as string),
-  );
-
   const issueTrigger = force ? 'admin_force' : 'admin_manual';
   const now = new Date();
+  const quantity = Math.max(1, Math.min(Number(rawQuantity ?? 1), 50));
+  const submitId = submit_id ?? randomUUID();
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
 
   for (const promo of promotions as any[]) {
-    if (alreadyIssuedIds.has(promo.id)) {
-      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      continue;
-    }
-
     const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
     const metaShape = toMetadataShape(meta);
 
@@ -195,41 +190,56 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
-    let slotReserved = false;
-    if (!force && maxClaims !== null) {
-      const slot = await promotionMetaService.reserveClaimSlot(promo.id, maxClaims);
-      if (slot === 'exhausted') {
-        skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+    let granted = 0;
+    for (let n = 1; n <= quantity; n++) {
+      const issueKey = `${submitId}:${n}`;
+
+      let slotReserved = false;
+      if (!force && maxClaims !== null) {
+        const slot = await promotionMetaService.reserveClaimSlot(promo.id, maxClaims);
+        if (slot === 'exhausted') {
+          skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+          break;
+        }
+        slotReserved = true;
+      }
+
+      let result: 'created' | 'duplicate';
+      try {
+        result = await promotionMetaService.issueGrant({
+          promotion_id: promo.id,
+          customer_id: customerId,
+          issue_key: issueKey,
+          issued_via: issueTrigger,
+          expires_at: computeExpiresAt(meta, now),
+          now,
+        });
+      } catch (e: any) {
+        if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
+        skipped.push({ promotion_id: promo.id, reason: 'grant_error' });
+        break;
+      }
+
+      if (result === 'duplicate') {
+        // 같은 제출의 재도착이다. 슬롯을 잡았다면 되돌린다 — 잡은 쪽이 반환 책임을 진다.
+        if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         continue;
       }
-      slotReserved = true;
+
+      if (force && maxClaims !== null) {
+        // force 발급도 총 발급 수량에 포함 (issued_count SoT 유지)
+        await promotionMetaService.incrementIssuedCount(promo.id).catch(() => {});
+      }
+      granted++;
     }
 
-    try {
+    // 링크는 표시 조인용으로만 유지한다 — `data` 는 싣지 않는다(만료·사용의 정본은 grant 다).
+    if (granted > 0) {
       await (link as any).create([{
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promo.id },
-        data: {
-          expires_at: computeExpiresAt(meta, now),
-          issued_via: issueTrigger,
-          // 🔴 Link.create 는 upsert 라 회수된 행이 되살아난다. 옛 사용기록을 반드시 지운다.
-          used_at: null,
-          order_id: null,
-        },
-      }]);
-      await promotionMetaService.recordIssue(customerId, promo.id, issueTrigger).catch(() => {});
-      // force 발급도 총 발급 수량에 포함 (issued_count SoT 유지)
-      if (force && maxClaims !== null) {
-        await promotionMetaService.incrementIssuedCount(promo.id).catch(() => {});
-      }
+      }]).catch(() => {});
       issued.push(promo.id);
-    } catch (e: any) {
-      if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
-      // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
-      // 배치 resilient: transient 링크 에러도 throw 하지 않고 skip — 나머지 쿠폰 처리 계속.
-      // (자동발급 issue-coupons 는 반대로 throw 해서 channel-adapter 재시도를 유발한다.)
-      skipped.push({ promotion_id: promo.id, reason: 'link_error' });
     }
   }
 

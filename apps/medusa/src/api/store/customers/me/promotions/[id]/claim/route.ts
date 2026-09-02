@@ -6,8 +6,6 @@ import { toMetadataShape } from '../../../../../../admin/promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../../../modules/promotion-meta/issuance-rules';
 
-type LinkRecord = { customer_id: string; promotion_id: string };
-
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.auth_context?.actor_id;
 
@@ -53,17 +51,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 기간이 끝난 쿠폰입니다.');
   }
 
-  const linkModule = link.getLinkModule(
-    Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id',
-  );
-
   const [{ data: customers }, allLinks] = await Promise.all([
     query.graph({
       entity: 'customer',
-      fields: ['id', 'promotions.id', 'groups.id'],
+      fields: ['id', 'groups.id'],
       filters: { id: customerId },
     }),
-    linkModule.list({ promotion_id: promotionId }, { select: ['customer_id'] }) as Promise<LinkRecord[]>,
+    promotionMetaService.listGrantsForPromotion(promotionId),
   ]);
 
   // 발급 시점 룰 평가 — 판정은 modules/promotion-meta/issuance-rules.ts 하나뿐이다.
@@ -85,12 +79,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '이 쿠폰은 대상 고객만 발급받을 수 있습니다.');
   }
 
-  const alreadyClaimed = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promotionId);
-
-  if (alreadyClaimed) {
-    return res.status(200).json({ success: true, promotion_id: promotionId });
-  }
-
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
   if (maxClaims !== null) {
@@ -105,26 +93,31 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
   }
 
+  let result: 'created' | 'duplicate';
   try {
-    await link.create([{
-      [Modules.CUSTOMER]: { customer_id: customerId },
-      [Modules.PROMOTION]: { promotion_id: promotionId },
-      data: {
-        expires_at: computeExpiresAt(meta, now),
-        issued_via: 'customer_claim',
-        used_at: null,
-        order_id: null,
-      },
-    }]);
+    result = await promotionMetaService.issueGrant({
+      promotion_id: promotionId,
+      customer_id: customerId,
+      issue_key: 'claim', // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
+      issued_via: 'customer_claim',
+      expires_at: computeExpiresAt(meta, now),
+      now,
+    });
   } catch (e: any) {
-    // Link.create 는 복합 PK upsert 라 중복이 예외가 되지 않는다
-    // (integration-tests/http/coupon-validity.spec.ts T3 로 실측). 여기 오는 것은 진짜 장애다.
     if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
     throw e;
   }
 
-  // Audit log: customer self-claim
-  await promotionMetaService.recordIssue(customerId, promotionId, 'customer_claim').catch(() => {});
+  if (result === 'duplicate') {
+    // 이미 받았다. 슬롯을 잡았다면 반환한다 — 이게 없으면 따닥 한 번에 2명분이 소진된다.
+    if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+    return res.status(200).json({ success: true, promotion_id: promotionId });
+  }
+
+  await link.create([{
+    [Modules.CUSTOMER]: { customer_id: customerId },
+    [Modules.PROMOTION]: { promotion_id: promotionId },
+  }]).catch(() => {});
 
   return res.status(200).json({ success: true, promotion_id: promotionId });
 }
