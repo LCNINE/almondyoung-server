@@ -173,6 +173,100 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(alive).toHaveLength(1);
         expect(alive[0].id).not.toBe(created.id);
       });
+
+      it('issueGrant 는 같은 issue_key 두 번째에 duplicate 를 돌려준다 — 던지지 않는다', async () => {
+        const input = {
+          promotion_id: 'promo_idem',
+          customer_id: 'cus_idem',
+          issue_key: 'sub-9:1',
+          issued_via: 'admin_manual' as const,
+          expires_at: null,
+          now: new Date(),
+        };
+
+        expect(await service.issueGrant(input)).toBe('created');
+        expect(await service.issueGrant(input)).toBe('duplicate');
+        expect(await service.listCouponGrants({ promotion_id: 'promo_idem' })).toHaveLength(1);
+      });
+
+      it('consumeGrant 는 그 한 장에만 사용 기록을 남긴다', async () => {
+        const base = {
+          promotion_id: 'promo_use',
+          customer_id: 'cus_use',
+          issued_via: 'admin_manual' as const,
+          issued_at: new Date(),
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'k1' },
+          { ...base, issue_key: 'k2' },
+        ]);
+        const grants = await service.listGrantsForCustomer('cus_use');
+        const usedAt = new Date();
+
+        await service.consumeGrant(grants[0].id, 'order_1', usedAt);
+
+        const after = await service.listGrantsForCustomer('cus_use');
+        expect(after.filter((g) => g.used_at != null)).toHaveLength(1);
+        expect(after.find((g) => g.id === grants[0].id)?.order_id).toBe('order_1');
+      });
+
+      it('restoreGrantsByOrder 는 만료되지 않은 장만 되살린다', async () => {
+        const past = new Date('2020-01-01T00:00:00.000Z');
+        const future = new Date('2099-01-01T00:00:00.000Z');
+        const base = {
+          promotion_id: 'promo_restore',
+          customer_id: 'cus_restore',
+          issued_via: 'admin_manual' as const,
+          issued_at: past,
+          used_at: past,
+          order_id: 'order_cancel',
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'alive', expires_at: future },
+          { ...base, issue_key: 'dead', expires_at: past },
+        ]);
+
+        const restored = await service.restoreGrantsByOrder('order_cancel', new Date());
+
+        expect(restored).toBe(1);
+        const rows = await service.listGrantsForCustomer('cus_restore');
+        expect(rows.find((g) => g.issue_key === 'alive')?.used_at).toBeNull();
+        expect(rows.find((g) => g.issue_key === 'dead')?.used_at).not.toBeNull();
+      });
+
+      it('restoreGrantsByOrder 는 두 번 불려도 결과가 같다', async () => {
+        const base = {
+          promotion_id: 'promo_restore2',
+          customer_id: 'cus_restore2',
+          issue_key: 'k',
+          issued_via: 'admin_manual' as const,
+          issued_at: new Date(),
+          used_at: new Date(),
+          order_id: 'order_twice',
+          expires_at: null,
+        };
+        await service.createCouponGrants([base]);
+
+        expect(await service.restoreGrantsByOrder('order_twice', new Date())).toBe(1);
+        expect(await service.restoreGrantsByOrder('order_twice', new Date())).toBe(0);
+      });
+
+      it('revokeGrants 는 회수한 장수를 돌려준다', async () => {
+        const base = {
+          promotion_id: 'promo_rev',
+          customer_id: 'cus_rev',
+          issued_via: 'admin_manual' as const,
+          issued_at: new Date(),
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'k1' },
+          { ...base, issue_key: 'k2' },
+        ]);
+
+        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toBe(2);
+        expect(await service.listGrantsForCustomer('cus_rev')).toHaveLength(0);
+        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toBe(0);
+      });
     });
   },
 });

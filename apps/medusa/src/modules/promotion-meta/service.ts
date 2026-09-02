@@ -201,6 +201,106 @@ class PromotionMetaModuleService extends MedusaService({
       );
     }
   }
+
+  /*───────────────────────────
+   * coupon_grant (발급된 «한 장»)
+   *──────────────────────────*/
+
+  /**
+   * 유니크 위반인가. 🔴 `e.code === '23505'` 만 보면 안 된다 — `MedusaService` 가 위반을
+   * "... already exists" 메시지로 감싸 코드를 잃어버리는 경로가 있다(기존 `recordIssue` 가
+   * 같은 이유로 이 판정을 갖고 있었다).
+   */
+  private isUniqueViolation(e: any): boolean {
+    const msg = String(e?.message ?? '').toLowerCase();
+    return (
+      e?.code === '23505' ||
+      msg.includes('unique') ||
+      msg.includes('duplicate') ||
+      msg.includes('already exists')
+    );
+  }
+
+  /**
+   * 한 장을 발급한다. **같은 `issue_key` 의 재도착은 예외가 아니라 `'duplicate'` 다.**
+   *
+   * 이것이 따닥·재시도 방어의 전부다. 호출부는 `'duplicate'` 를 「이미 처리됨」으로 다루고,
+   * 예약해 둔 claim 슬롯이 있으면 반환해야 한다(슬롯을 잡은 쪽이 반환 책임을 진다).
+   */
+  async issueGrant(input: {
+    promotion_id: string;
+    customer_id: string;
+    issue_key: string;
+    issued_via: IssueTrigger;
+    expires_at: Date | null;
+    now: Date;
+  }): Promise<'created' | 'duplicate'> {
+    try {
+      await (this as any).createCouponGrants([
+        {
+          promotion_id: input.promotion_id,
+          customer_id: input.customer_id,
+          issue_key: input.issue_key,
+          issued_via: input.issued_via,
+          issued_at: input.now,
+          expires_at: input.expires_at,
+          used_at: null,
+          order_id: null,
+        },
+      ]);
+      return 'created';
+    } catch (e: any) {
+      if (this.isUniqueViolation(e)) return 'duplicate';
+      throw e;
+    }
+  }
+
+  /** 이 고객이 가진 모든 장. 호출부가 프로모션마다 조회하지 않도록 한 번에 가져온다. */
+  async listGrantsForCustomer(customerId: string): Promise<CouponGrantRow[]> {
+    return (await (this as any).listCouponGrants({ customer_id: customerId })) as CouponGrantRow[];
+  }
+
+  /** 이 프로모션이 발급된 모든 장. 발급 현황·회수가 쓴다. */
+  async listGrantsForPromotion(promotionId: string): Promise<CouponGrantRow[]> {
+    return (await (this as any).listCouponGrants({ promotion_id: promotionId })) as CouponGrantRow[];
+  }
+
+  /** 고른 한 장을 소모한다. */
+  async consumeGrant(grantId: string, orderId: string, usedAt: Date): Promise<void> {
+    await (this as any).updateCouponGrants({ id: grantId, used_at: usedAt, order_id: orderId });
+  }
+
+  /**
+   * 이 주문에 쓰인 장들을 되돌린다 (A2). 되살린 장수를 돌려준다.
+   *
+   * **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
+   * 이미 되돌려진 장은 `used_at` 이 null 이라 대상에서 빠지므로 두 번 불려도 안전하다.
+   */
+  async restoreGrantsByOrder(orderId: string, now: Date): Promise<number> {
+    const rows = (await (this as any).listCouponGrants({ order_id: orderId })) as CouponGrantRow[];
+    const targets = rows.filter((g) => {
+      if (g.used_at == null) return false;
+      if (g.expires_at == null) return true;
+      const expiresAt = g.expires_at instanceof Date ? g.expires_at : new Date(g.expires_at);
+      return !(now > expiresAt);
+    });
+    if (targets.length === 0) return 0;
+    await (this as any).updateCouponGrants(
+      targets.map((g) => ({ id: g.id, used_at: null, order_id: null })),
+    );
+    return targets.length;
+  }
+
+  /** 이 고객의 이 쿠폰을 전량 회수한다. 회수한 장수를 돌려준다. */
+  async revokeGrants(promotionId: string, customerId: string): Promise<number> {
+    const rows = (await (this as any).listCouponGrants({
+      promotion_id: promotionId,
+      customer_id: customerId,
+    })) as CouponGrantRow[];
+    if (rows.length === 0) return 0;
+    await (this as any).softDeleteCouponGrants(rows.map((g) => g.id));
+    return rows.length;
+  }
 }
 
 export default PromotionMetaModuleService;
