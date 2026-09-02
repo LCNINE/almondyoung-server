@@ -38,6 +38,9 @@ export class Migration20260902100000 extends Migration {
         `ON "coupon_grant" ("promotion_id", "customer_id", "issue_key") WHERE "deleted_at" IS NULL;`,
     );
     // 발급 경로 어휘를 DB 로도 닫는다 (promotion_meta 의 CHECK 제약과 같은 규약).
+    // ADD CONSTRAINT 에는 IF NOT EXISTS 가 없다 — 재실행(리더 선출 없는 부팅 태스크 경합) 시
+    // 42710 으로 죽는 걸 막으려면 DROP 을 먼저 해야 한다 (Migration20260831110000.ts 와 동형).
+    this.addSql(`ALTER TABLE "coupon_grant" DROP CONSTRAINT IF EXISTS "coupon_grant_issued_via_check";`);
     this.addSql(
       `ALTER TABLE "coupon_grant" ADD CONSTRAINT "coupon_grant_issued_via_check" ` +
         `CHECK ("issued_via" IN ('customer_registered', 'membership_activated', ` +
