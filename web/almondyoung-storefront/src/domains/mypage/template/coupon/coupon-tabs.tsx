@@ -61,10 +61,16 @@ function EmptyState({ message }: { message: string }) {
 export function CouponTabs({
   mine,
   claimable,
+  used,
   expired,
 }: {
   mine: CouponItem[]
   claimable: CouponItem[]
+  /**
+   * 최근 30일 안에 «쓴» 쿠폰 (#488 A1). 이 탭이 없던 동안 쓴 쿠폰은 어느 탭에도 뜨지
+   * 않았다 — 만료 탭은 만료일이 지난 것만 담는데 고객은 보통 만료 전에 쓰기 때문이다.
+   */
+  used: CouponItem[]
   expired: CouponItem[]
 }) {
   const t = useTranslations("mypage.coupon")
@@ -80,6 +86,7 @@ export function CouponTabs({
           {t("tabMine")} {mine.length > 0 && <span className="ml-1 tabular-nums">{mine.length}</span>}
         </TabsTrigger>
         <TabsTrigger value="claim">{t("tabClaim")}</TabsTrigger>
+        <TabsTrigger value="used">{t("tabUsed")}</TabsTrigger>
         <TabsTrigger value="expired">{t("tabExpired")}</TabsTrigger>
       </TabsList>
 
@@ -116,6 +123,30 @@ export function CouponTabs({
           </ul>
         ) : (
           <EmptyState message={t("emptyClaim")} />
+        )}
+      </TabsContent>
+
+      {/* 사용완료: 만료 탭과 같은 카드(흐린 스타일)를 쓰되 배지 문구만 다르다. 카드에 뜨는
+          날짜는 «그 쿠폰의 만료일» 이라 아직 미래일 수 있다 — 「12/31까지 · 사용완료」는
+          「그 기한짜리 쿠폰을 이미 썼다」로 읽힌다. */}
+      <TabsContent value="used" className="mt-4">
+        {used.length > 0 ? (
+          <>
+            <p className="mb-3 text-xs text-stone-400">{t("usedNotice")}</p>
+            <ul className="flex flex-col gap-3">
+              {used.map(({ promo, expiry }) => (
+                <CouponCard
+                  key={promo.id}
+                  promo={promo}
+                  expiry={expiry}
+                  expired
+                  badgeLabel={t("usedBadge")}
+                />
+              ))}
+            </ul>
+          </>
+        ) : (
+          <EmptyState message={t("emptyUsed")} />
         )}
       </TabsContent>
 

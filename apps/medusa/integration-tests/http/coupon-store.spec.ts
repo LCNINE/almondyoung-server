@@ -184,6 +184,111 @@ medusaIntegrationTestRunner({
       expect(res.data.expired_promotions.map((p: any) => p.code)).not.toContain('MIXGRANT');
     });
 
+    /**
+     * #488 A1 — 쓴 쿠폰은 어느 바구니에도 없었다.
+     *
+     * 「1장=1회」가 강제되기 전에는 쓴 쿠폰이 계속 「사용 가능」에 남았다(그것도 그것대로
+     * 버그였다 — 다시 쓸 수 있었으니까). 강제한 뒤에는 반대 극단이 됐다: 무기한이거나
+     * 만료가 미래인 장을 쓰면 **어디에도 안 뜬다.** 그런데 고객은 보통 만료 «전»에 쓰므로
+     * 「쓰면 사라진다」가 예외가 아니라 기본 동작이었다.
+     */
+    describe('사용완료 바구니 (#488 A1)', () => {
+      const metaSvc = () => getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      /** 장 한 장을 발급하고 링크까지 만든다 — 마이페이지는 링크 행으로 쿠폰을 열거한다. */
+      const grantOne = async (promotionId: string, key: string, expiresAt: Date | null = null) => {
+        await metaSvc().issueGrant({
+          promotion_id: promotionId, customer_id: customerId, issue_key: key,
+          issued_via: 'admin_manual', expires_at: expiresAt, now: new Date(),
+        });
+        await linkCustomer(promotionId);
+      };
+
+      const consumeAll = async (promotionId: string, usedAt = new Date()) => {
+        const grants = await metaSvc().listGrantsForCustomer(customerId);
+        for (const g of grants.filter((x: any) => x.promotion_id === promotionId)) {
+          await metaSvc().consumeGrant(g.id, `order_${seq}_${g.id}`, usedAt);
+        }
+      };
+
+      it('🔴 무기한 장을 쓰면 used_promotions 에 뜬다 — 예전엔 어디에도 없었다', async () => {
+        const id = await createPromo('USEDINF', { visibility: 'assigned_only' });
+        await grantOne(id, `usedinf_${seq}`, null);
+        await consumeAll(id);
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.used_promotions.map((p: any) => p.code)).toContain('USEDINF');
+      });
+
+      it('🔴 만료가 «미래» 인 장을 써도 뜬다 — 이게 정상 사용 경로다', async () => {
+        // 고객은 보통 만료 전에 쓴다. 만료 바구니는 `endsAt < now` 라 이 장을 절대 안 담았고,
+        // 「사용 가능」에서는 소모돼 빠졌다 — 가장 흔한 경로가 곧 「쿠폰이 증발한다」였다.
+        const id = await createPromo('USEDFUT', { visibility: 'assigned_only' });
+        const inTenDays = new Date(Date.now() + 10 * 24 * 3600 * 1000);
+        await grantOne(id, `usedfut_${seq}`, inTenDays);
+        await consumeAll(id);
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.used_promotions.map((p: any) => p.code)).toContain('USEDFUT');
+      });
+
+      it('바구니는 배타적이다 — 사용완료는 「사용 가능」에도 「만료」에도 없다', async () => {
+        const id = await createPromo('USEDEXCL', { visibility: 'assigned_only' });
+        // 이미 지난 만료일 + 사용됨. 옛 동작이면 「만료」에 떠서 «쓴 건데 만료됐다» 고 나온다.
+        const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 3600 * 1000);
+        await grantOne(id, `usedexcl_${seq}`, fiveDaysAgo);
+        await consumeAll(id, new Date(Date.now() - 6 * 24 * 3600 * 1000));
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.used_promotions.map((p: any) => p.code)).toContain('USEDEXCL');
+        expect(res.data.promotions.map((p: any) => p.code)).not.toContain('USEDEXCL');
+        expect(res.data.expired_promotions.map((p: any) => p.code)).not.toContain('USEDEXCL');
+      });
+
+      it('아직 쓸 수 있는 장이 남아 있으면 「사용 가능」이 이긴다 — 사용완료엔 안 뜬다', async () => {
+        const id = await createPromo('USEDLEFT', { visibility: 'assigned_only' });
+        await grantOne(id, `usedleft_a_${seq}`, null);
+        await grantOne(id, `usedleft_b_${seq}`, null);
+        // 두 장 중 한 장만 소모한다.
+        const grants = (await metaSvc().listGrantsForCustomer(customerId))
+          .filter((g: any) => g.promotion_id === id);
+        await metaSvc().consumeGrant(grants[0].id, `order_left_${seq}`, new Date());
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.promotions.map((p: any) => p.code)).toContain('USEDLEFT');
+        expect(res.data.used_promotions.map((p: any) => p.code)).not.toContain('USEDLEFT');
+      });
+
+      it('A2: 장을 다 쓴 public 쿠폰은 「사용 가능」에 남는다 — 카트와 같은 판정이어야 한다', async () => {
+        // 🔴 A1(사용완료 바구니)과 A2(게이트)가 «결합될 때» 생기던 어긋남이다. 게이트는
+        // public 이면 장을 무시하도록 고쳤는데 이 라우트가 안 고쳐져 있으면, 그 쿠폰이
+        // 마이페이지엔 「사용완료」로 뜨는데 카트엔 그대로 붙는다 — 고객은 못 쓰는 줄 알고
+        // 넘어가고, 코드를 직접 입력한 사람만 쓴다. 표시와 판정이 갈리는 그 실패다.
+        const id = await createPromo('PUBUSED', { visibility: 'public' });
+        await grantOne(id, `pubused_${seq}`, null);
+        await consumeAll(id);
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.promotions.map((p: any) => p.code)).toContain('PUBUSED');
+        expect(res.data.used_promotions.map((p: any) => p.code)).not.toContain('PUBUSED');
+      });
+
+      it('30일보다 오래된 사용은 빠진다 — 만료 바구니와 같은 컷오프', async () => {
+        const id = await createPromo('USEDOLD', { visibility: 'assigned_only' });
+        await grantOne(id, `usedold_${seq}`, null);
+        await consumeAll(id, new Date(Date.now() - 40 * 24 * 3600 * 1000));
+
+        const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+        expect(res.data.used_promotions.map((p: any) => p.code)).not.toContain('USEDOLD');
+      });
+    });
+
     it('customer can claim a claimable coupon; it then appears as assigned', async () => {
       const claimId = await createPromo('CLAIMME', { visibility: 'claimable' });
       const res0 = await claim(claimId);

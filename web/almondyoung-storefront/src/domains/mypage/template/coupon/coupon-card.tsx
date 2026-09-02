@@ -14,11 +14,18 @@ export function CouponCard({
   expiry,
   onClaim,
   expired = false,
+  badgeLabel,
 }: {
   promo: Promotion
   expiry: string
   onClaim?: () => Promise<void>
+  /** 「지난 쿠폰」 스타일(흐림 + 배지, 발급 버튼 없음). 만료·사용완료 탭이 공유한다. */
   expired?: boolean
+  /**
+   * 배지 문구를 갈아끼운다. 기본값은 「만료됨」 (#488 A1 — 사용완료 탭이 같은 카드를
+   * 쓰면서 배지만 「사용완료」로 바꾼다). `expired` 가 false 면 배지 자체가 없으므로 무시된다.
+   */
+  badgeLabel?: string
 }) {
   const t = useTranslations("mypage.coupon")
   const router = useRouter()
@@ -114,7 +121,7 @@ export function CouponCard({
 
           {expired ? (
             <span className="shrink-0 rounded-full bg-stone-200 px-2.5 py-1 text-[11px] font-medium text-stone-500">
-              {t("expiredBadge")}
+              {badgeLabel ?? t("expiredBadge")}
             </span>
           ) : onClaim ? (
             <button

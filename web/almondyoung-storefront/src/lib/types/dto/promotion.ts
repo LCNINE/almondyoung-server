@@ -65,6 +65,11 @@ export type PromotionDto = {
 export type PromotionsResponseDto = {
   promotions: PromotionDto[]
   claimable_promotions: PromotionDto[]
+  /**
+   * 최근 30일 안에 «사용한» 쿠폰 (#488 A1). 옵셔널인 이유는 `expired_promotions` 와 같다 —
+   * 서버가 먼저 배포되지 않은 조합에서도 화면이 깨지지 않게 한다.
+   */
+  used_promotions?: PromotionDto[]
   expired_promotions?: PromotionDto[]
   count: number
   offset: number

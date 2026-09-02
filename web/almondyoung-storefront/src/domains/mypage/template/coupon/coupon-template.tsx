@@ -26,6 +26,7 @@ export async function CouponTemplate() {
 
   const coupons = (data.promotions ?? []) as Promotion[]
   const claimableCoupons = (data.claimable_promotions ?? []) as Promotion[]
+  const usedCoupons = (data.used_promotions ?? []) as Promotion[]
   const expiredCoupons = (data.expired_promotions ?? []) as Promotion[]
 
   // 내 쿠폰 = 사용 가능한 쿠폰(발급받은 것 + 공개 쿠폰)
@@ -35,9 +36,10 @@ export async function CouponTemplate() {
   const withExpiry = async (list: Promotion[]): Promise<CouponItem[]> =>
     Promise.all(list.map(async (promo) => ({ promo, expiry: await formatExpiry(promo) })))
 
-  const [mine, claimable, expired] = await Promise.all([
+  const [mine, claimable, used, expired] = await Promise.all([
     withExpiry(mineCoupons),
     withExpiry(claimableCoupons),
+    withExpiry(usedCoupons),
     withExpiry(expiredCoupons),
   ])
 
@@ -47,7 +49,7 @@ export async function CouponTemplate() {
         <h1 className="text-xl font-bold text-stone-900 md:text-2xl">{t("myCoupons")}</h1>
       </header>
 
-      <CouponTabs mine={mine} claimable={claimable} expired={expired} />
+      <CouponTabs mine={mine} claimable={claimable} used={used} expired={expired} />
     </section>
   )
 }

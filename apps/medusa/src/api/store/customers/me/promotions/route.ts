@@ -13,7 +13,7 @@ import {
   displayExpiresAt,
   hasPolicyStarted,
 } from '../../../../../modules/promotion-meta/validity';
-import { grantsFor, usableGrants, hasUsableGrant, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
+import { grantsFor, usableGrants, hasUsableGrant, nextExpiryAt, latestUsedAt, grantsGovernUsage } from '../../../../../modules/promotion-meta/grants';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -166,7 +166,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     // 마이페이지 "사용 가능"에 뜨고 카트에도 붙는다(카트 게이트와 같은 판정이어야 한다).
     if (!hasPolicyStarted(meta, now)) return false;
     const mine = grantsOf(promo.id);
-    return mine.length > 0 ? hasUsableGrant(mine, now) : isUsable(null, meta, now);
+    // 🔴 `public` 쿠폰은 장이 있어도 정책이 정한다 (#488 A2) — 카트 미들웨어·체크아웃
+    // 백스톱과 «같은» 판정이어야 한다. 여기만 장 유무로 갈리면, 장을 다 쓴 public 쿠폰이
+    // 마이페이지에선 사라지는데 카트엔 그대로 붙는다(코드를 직접 입력한 사람만 쓴다).
+    return grantsGovernUsage(mine, visibilityOf(promo.id))
+      ? hasUsableGrant(mine, now)
+      : isUsable(null, meta, now);
   };
 
   const assignedPromotionIds = new Set<string>();
@@ -255,6 +260,39 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   };
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const expiredCutoff = new Date(now.getTime() - THIRTY_DAYS_MS);
+
+  // 사용완료 쿠폰: 이 고객이 «쓴 장» 이 있는 쿠폰. 최근 사용순, 최근 30일, 최대 50개 (#488 A1).
+  //
+  // 🔴 이 바구니가 없던 동안 **쓴 쿠폰은 어디에도 뜨지 않았다.** 만료 바구니는 `endsAt < now`
+  // 라 무기한 장도, 만료가 아직 미래인 장도 담지 못하는데 고객은 보통 만료 «전»에 쓴다 —
+  // 즉 가장 흔한 사용 경로가 곧 「쿠폰이 증발한다」였다. (「1장=1회」 강제 «전»에는 반대로
+  // 쓴 쿠폰이 계속 「사용 가능」에 남아 다시 쓸 수 있었다. 지금은 그 반대 극단이다.)
+  //
+  // 배타성은 「사용 가능」 > 「사용완료」 > 「만료」 순이다. 아직 쓸 수 있는 장이 남아 있으면
+  // (`assignedPromotionIds`) 고객에게 중요한 건 그쪽이므로 사용완료로 내리지 않는다. 반대로
+  // 「썼고 그 뒤 만료도 됐다」는 «썼다» 가 더 정확한 정보라 만료 바구니가 양보한다(아래 루프).
+  //
+  // 컷오프·상한은 만료 바구니와 같은 값을 쓴다 — 두 바구니의 「최근」이 다르면 설명할 수 없다.
+  const usedPromotionIds = new Set<string>();
+  const usedCandidates: Array<{ promo: any; usedAt: Date }> = [];
+  for (const promo of customer?.promotions ?? []) {
+    if (promo.is_automatic) continue;
+    if (assignedPromotionIds.has(promo.id)) continue;
+    const usedAt = latestUsedAt(grantsOf(promo.id));
+    if (!usedAt) continue;
+    if (usedAt < expiredCutoff) continue;
+    usedCandidates.push({ promo, usedAt });
+  }
+  const usedPromotions = usedCandidates
+    .sort((a, b) => b.usedAt.getTime() - a.usedAt.getTime())
+    .slice(0, 50)
+    .map(({ promo }) => {
+      // 🔴 상한에 잘린 항목은 이 집합에 «넣지 않는다» — 넣으면 아래 만료 루프까지 그 쿠폰을
+      // 건너뛰어, 어느 바구니에도 없는 항목이 다시 생긴다(이 바구니를 만든 이유 그 자체).
+      usedPromotionIds.add(promo.id);
+      return format(promo, true);
+    });
+
   const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
   for (const promo of customer?.promotions ?? []) {
     if (promo.is_automatic) continue;
@@ -262,6 +300,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     // 두 바구니에 동시에 뜨는 것을 막는 1차 방어(publicPromotions/claimablePromotions 와
     // 같은 패턴, #488 Task 8 리뷰 Important #1). expiredEndsAtOf 의 usable 제외와 이중 방어.
     if (assignedPromotionIds.has(promo.id)) continue;
+    // 「사용완료」에 담긴 쿠폰은 만료 바구니가 양보한다 (#488 A1) — 쓴 쿠폰을 「만료됨」으로
+    // 보여주면 문구가 틀린다. 위 세 바구니의 배타성을 지키는 마지막 스킵이다.
+    if (usedPromotionIds.has(promo.id)) continue;
     const endsAt = expiredEndsAtOf(promo.id);
     if (!endsAt) continue;
     if (endsAt < now && endsAt >= expiredCutoff) {
@@ -282,6 +323,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   return res.status(200).json({
     promotions: paginatedPromotions,
     claimable_promotions: claimablePromotions,
+    used_promotions: usedPromotions,
     expired_promotions: expiredPromotions,
     count: combinedPromotions.length,
     offset,
