@@ -32,6 +32,11 @@ export class Migration20260902100000 extends Migration {
     this.addSql(
       `CREATE INDEX IF NOT EXISTS "idx_coupon_grant_promotion" ON "coupon_grant" ("promotion_id") WHERE "deleted_at" IS NULL;`,
     );
+    // `restoreGrantsByOrder` 가 `order.canceled` 이벤트마다 `order_id` 로 조회한다 (A2).
+    // 이 테이블은 발급 1건당 1행으로 자라므로 인덱스 없이는 취소마다 풀스캔이다.
+    this.addSql(
+      `CREATE INDEX IF NOT EXISTS "idx_coupon_grant_order" ON "coupon_grant" ("order_id") WHERE "deleted_at" IS NULL;`,
+    );
     // 🔴 파셜이어야 한다 — 회수(soft delete) 후 재발급이 이 조건에 의존한다.
     this.addSql(
       `CREATE UNIQUE INDEX IF NOT EXISTS "idx_coupon_grant_issue_key" ` +
