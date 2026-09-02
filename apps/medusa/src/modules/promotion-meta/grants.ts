@@ -4,10 +4,14 @@ import type { CouponGrantRow } from './service';
  * 발급된 «장» 들에 대한 판정 — 컨테이너도 워크플로도 모르는 순수 함수다.
  *
  * `validity.ts` 와 같은 자리에 두는 이유(P1 교훈): 라우트 안 클로저로 두면 검증 대상 밖이다.
- * 카트 미들웨어·체크아웃 백스톱·주문 생성 훅·표시 라우트 5곳이 전부 여기에 의존한다.
+ * 소비자는 6곳이다 — 카트 미들웨어(`per-customer-limit.ts`) · 체크아웃 백스톱
+ * (`complete-cart.ts`) · 주문 생성 소모 훅(`coupon-usage.ts`) · 마이페이지
+ * (`store/customers/me/promotions/route.ts`) · 이벤트 페이지(`store/events/[slug]/route.ts`) ·
+ * 코드 미리보기(`store/coupons/preview/route.ts`).
  *
  * ⚠️ 「사용 가능」의 정의는 `validity.ts` 의 `isUsable` 과 **경계가 같아야 한다** — 만료
  * 시각은 양쪽 다 포함이다. 두 곳이 어긋나면 카트에는 붙는데 주문에서 거절되는 창이 생긴다.
+ *
  */
 
 function toDate(value: Date | string | null | undefined): Date | null {
@@ -33,6 +37,49 @@ export function usableGrants(grants: CouponGrantRow[], now: Date): CouponGrantRo
 
 export function hasUsableGrant(grants: CouponGrantRow[], now: Date): boolean {
   return usableGrants(grants, now).length > 0;
+}
+
+/**
+ * 이 쿠폰의 「1장 = 1회」를 **장이** 정하는가, 아니면 정책이 정하는가 (#488 A2).
+ *
+ * 게이트들은 원래 `mine.length > 0` 하나로 갈랐다. 그런데 `public` 쿠폰은 «발급» 개념이
+ * 없는데도 장이 생길 수 있다 — 관리자가 선의로 직권 발급하거나, `assigned_only` 로 발급한
+ * 뒤 visibility 를 `public` 으로 바꾸는 경우다. 그러면 **장을 받은 그 고객만** 장 수만큼
+ * 제한되고 나머지 전원은 계속 자유롭게 쓴다. 선의가 정확히 반대로 작동한다.
+ *
+ * 발급 3경로(고객축·쿠폰축·트리거)는 이제 `public` 을 `public_promotion` 으로 거절하므로
+ * 이 상태는 보통 생기지 않는다. 이 함수는 **그 검사가 못 잡는 경로**를 위한 것이다 —
+ * 발급이 끝난 뒤에 visibility 를 바꾸는 것은 발급 시점에 알 수 없다.
+ *
+ * ⚠️ **여섯 소비자 중 세 곳에서 쓴다** — 거절이 일어나는 둘(카트 미들웨어·체크아웃 백스톱)과
+ * 그 판정을 그대로 비춰야 하는 마이페이지(`store/customers/me/promotions`)다. 표시와 판정이
+ * 갈리면 「목록엔 없는데 코드를 넣으면 쓰이는」 쿠폰이 생긴다.
+ *
+ * 나머지 셋(이벤트 페이지·preview·소모 훅)은 아직 장 유무로 갈린다. 그쪽이 어긋나도 고객이
+ * «못 쓰게» 되지는 않고(전자 둘은 표시, 소모 훅은 고를 장이 없으면 그냥 건너뛴다), 발급
+ * 3경로가 public 을 막은 뒤로는 도달하려면 **발급 후 visibility 를 바꾸는** 수밖에 없다.
+ * 넓히려면 그 셋에서도 이 함수를 부르면 된다.
+ *
+ * `visibility` 는 호출부가 `resolveVisibility(meta)` 로 이미 접은 값을 넘긴다(메타가 없으면
+ * `assigned_only`). 어휘 밖 값은 발급형으로 본다 — 닫힌 쪽이 기본값이다.
+ */
+export function grantsGovernUsage(grants: CouponGrantRow[], visibility: string): boolean {
+  return grants.length > 0 && visibility !== 'public';
+}
+
+/**
+ * 이 장들 중 **마지막으로 쓴 시각**. 쓴 장이 하나도 없으면 `null` (#488 A1).
+ *
+ * 마이페이지의 「사용완료」 바구니가 정렬·컷오프에 쓴다. `nextExpiryAt` 이 «사용 가능한 장
+ * 중 가장 이른 만료»(앞으로 다가올 것)를 보는 것과 대칭으로, 이쪽은 «이미 지나간 것 중 가장
+ * 최근»을 본다 — 그래서 `usableGrants` 로 좁히지 않고 전 장을 본다.
+ */
+export function latestUsedAt(grants: CouponGrantRow[]): Date | null {
+  const dated = grants
+    .map((g) => toDate(g.used_at))
+    .filter((d): d is Date => d !== null);
+  if (dated.length === 0) return null;
+  return dated.reduce((max, d) => (d > max ? d : max));
 }
 
 /**
