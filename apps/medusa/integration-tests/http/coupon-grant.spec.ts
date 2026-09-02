@@ -142,5 +142,38 @@ medusaIntegrationTestRunner({
         expect(Number(meta.issued_count)).toBe(1);
       });
     });
+
+    describe('회수와 발급 현황', () => {
+      it('G10: 회수는 장수만큼 issued_count 를 되돌린다', async () => {
+        const promotionId = await createPromo(`G10${seq}`, {
+          visibility: 'assigned_only',
+          max_claims: 100,
+        });
+        await issue(promotionId, 'sub-rev', 3);
+        const before = Number((await svc().getByPromotionId(promotionId)).issued_count);
+        expect(before).toBe(3);
+
+        await api.delete(`/admin/promotions/${promotionId}/customers`, {
+          ...adminHeaders,
+          data: { customer_ids: [customerId] },
+        });
+
+        expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
+        expect(Number((await svc().getByPromotionId(promotionId)).issued_count)).toBe(0);
+      });
+
+      it('발급 현황이 고객별 보유·사용 장수를 돌려준다', async () => {
+        const promotionId = await createPromo(`GST${seq}`, { visibility: 'assigned_only' });
+        await issue(promotionId, 'sub-stat', 2);
+
+        const res = await api.get(`/admin/promotions/${promotionId}/customers`, adminHeaders);
+
+        const row = res.data.customers.find((c: any) => c.id === customerId);
+        expect(row.granted_count).toBe(2);
+        expect(row.used_count).toBe(0);
+        expect(row.usable_count).toBe(2);
+        expect(res.data.max_uses_per_customer).toBeUndefined();
+      });
+    });
   },
 });

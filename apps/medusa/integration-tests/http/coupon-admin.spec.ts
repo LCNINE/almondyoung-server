@@ -106,13 +106,11 @@ medusaIntegrationTestRunner({
       expect(res.data.promotion?.status).toEqual('active');
     });
 
-    // 🔴 (c) 진짜 회귀, 컨트롤러 판단 대기 — 고치지 않고 그대로 둔다 (#488 Task 4 리뷰,
-    // task-4-report.md 「6건 분류표」 항목 1). 4번 재발급이 막힌다: DELETE 라우트
-    // (`/admin/customers/:id/promotions`)가 `coupon_grant` 행을 전혀 안 건드려서(그건 Task 7
-    // 스코프 — `revokeGrants` 를 DELETE 에 연결하는 일), 1번에서 만든 grant 가 회수 후에도
-    // 파셜 유니크(`WHERE deleted_at IS NULL`)에 살아 있고, 4번의 `issue_key =
-    // trigger:customer_registered` 가 그 살아있는 행과 계속 충돌해 영구히 'duplicate' 다.
-    // 단언을 느슨하게 바꾸지 않는다 — 이게 진짜 동작이고, 회귀를 감추면 안 된다.
+    // (c) 였던 회귀는 Task 7 이 닫았다 (#488 Task 4 리뷰, task-4-report.md 「6건 분류표」
+    // 항목 1). DELETE 라우트(`/admin/customers/:id/promotions`, `/admin/promotions/:id/customers`
+    // 양쪽)가 이제 `revokeGrants` 로 `coupon_grant` 행을 soft-delete 하므로, 파셜 유니크
+    // (`WHERE deleted_at IS NULL`)가 더 이상 회수된 행과 충돌하지 않고 4번의 `issue_key =
+    // trigger:customer_registered` 재발급이 통과한다.
     it('auto-issues by trigger, is idempotent, and RE-ISSUES after revoke (P2-2 end-to-end)', async () => {
       const promoId = await createPromo('AUTO10', {
         visibility: 'assigned_only',

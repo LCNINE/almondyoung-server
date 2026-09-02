@@ -2,6 +2,8 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
+import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
+import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 
 interface RevokeBody {
   customer_ids: string[];
@@ -10,22 +12,18 @@ interface RevokeBody {
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const [{ data: promotions }, allLinks] = await Promise.all([
+  const [{ data: promotions }, grants] = await Promise.all([
     query.graph({
       entity: 'promotion',
-      fields: ['id', 'code', 'campaign.budget.type', 'campaign.budget.limit'],
+      fields: ['id', 'code'],
       filters: { id: promotionId },
     }),
-    // linkService에는 typed interface가 없어 any cast 불가피
-    (link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id') as any)
-      .list({ promotion_id: promotionId }, {
-        select: ['customer_id', 'created_at', 'expires_at', 'used_at', 'order_id', 'issued_via'],
-      }) as Promise<any[]>,
+    promotionMetaService.listGrantsForPromotion(promotionId),
   ]);
 
   const promotion = promotions?.[0];
@@ -33,70 +31,54 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotion ${promotionId} not found`);
   }
 
-  const budget = (promotion as any).campaign?.budget;
-  const maxUsesPerCustomer = budget?.type === 'use_by_attribute' && budget?.limit != null
-    ? Number(budget.limit)
-    : null;
+  const now = new Date();
 
-  const linkByCustomerId = new Map<string, any>(
-    (allLinks as any[]).map((l) => [l.customer_id, l]),
-  );
-  const customerIds = (allLinks as any[]).map((l) => l.customer_id);
+  const byCustomer = new Map<string, CouponGrantRow[]>();
+  for (const g of grants) {
+    const list = byCustomer.get(g.customer_id) ?? [];
+    list.push(g);
+    byCustomer.set(g.customer_id, list);
+  }
+
+  const customerIds = [...byCustomer.keys()];
   const count = customerIds.length;
   const paginatedIds = customerIds.slice(offset, offset + limit);
 
   let customers: any[] = [];
-  let usageMap = new Map<string, number>();
 
   if (paginatedIds.length > 0) {
-    // query.graph는 GROUP BY 집계를 지원하지 않으므로 레코드를 직접 가져와 앱에서 카운트.
-    // take: 100_000 은 page 내 고객 수 * 주문 건수 상한을 커버하는 실용적 상한; 고량 프로모션엔 DB-side GROUP BY로 교체 필요.
-    const orderTake = 100_000;
-
-    const [{ data }, { data: orders }] = await Promise.all([
-      query.graph({
-        entity: 'customer',
-        fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
-        filters: { id: paginatedIds },
-      }),
-      query.graph({
-        entity: 'order',
-        fields: ['id', 'customer_id'],
-        filters: { customer_id: paginatedIds, promotions: { id: promotionId } },
-        pagination: { take: orderTake },
-      }),
-    ]);
-
+    const { data } = await query.graph({
+      entity: 'customer',
+      fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
+      filters: { id: paginatedIds },
+    });
     customers = data;
-    for (const order of orders ?? []) {
-      usageMap.set(order.customer_id, (usageMap.get(order.customer_id) ?? 0) + 1);
-    }
   }
 
   const customersWithUsage = customers.map((c) => {
-    const l = linkByCustomerId.get(c.id);
+    const mine = byCustomer.get(c.id) ?? [];
+    const usable = usableGrants(mine, now);
     return {
       ...c,
-      issued_at: l?.created_at ?? c.created_at,
-      expires_at: l?.expires_at ?? null,
-      used_at: l?.used_at ?? null,
-      order_id: l?.order_id ?? null,
-      issued_via: l?.issued_via ?? null,
-      used_count: usageMap.get(c.id) ?? 0,
+      granted_count: mine.length,
+      used_count: mine.filter((g) => g.used_at != null).length,
+      usable_count: usable.length,
+      next_expires_at: nextExpiryAt(mine, now),
+      // 가장 최근 발급의 경로 — 어느 출처에서 왔는지 한눈에 보이게.
+      issued_via: mine[mine.length - 1]?.issued_via ?? null,
+      issued_at: mine[0]?.issued_at ?? c.created_at,
     };
   });
 
   return res.status(200).json({
     promotion_id: promotionId,
     promotion_code: promotion.code,
-    max_uses_per_customer: maxUsesPerCustomer,
     customers: customersWithUsage,
     count,
     offset,
     limit,
   });
 }
-
 
 export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const promotionId = req.params.id;
@@ -109,33 +91,33 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  // 실제 연결된 고객만 — issued_count 과다 감소 방지.
-  // 위 GET과 동일하게 promotion_id로만 조회하고 customer_ids는 앱에서 필터 (link module 배열 필터 미신뢰).
-  const existingLinks = (await (link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id') as any)
-    .list({ promotion_id: promotionId }, { select: ['customer_id'] })) as any[];
-  const linkedCustomerIds = new Set<string>(existingLinks.map((l) => l.customer_id));
-  const toRemove = customer_ids.filter((id) => linkedCustomerIds.has(id));
+  const removed: { customer_id: string; grants: number }[] = [];
+  for (const cid of customer_ids) {
+    const n = await promotionMetaService.revokeGrants(promotionId, cid);
+    if (n === 0) continue;
+    removed.push({ customer_id: cid, grants: n });
 
-  if (toRemove.length > 0) {
-    await link.dismiss(
-      toRemove.map((customerId) => ({
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promotionId },
-      })),
-    );
-    // 회수한 링크 수만큼 발급 수량 카운트 원복 + 발급 로그 soft-delete(자동발급 재발급 허용)
-    await Promise.all(
-      toRemove.flatMap((customerId) => [
-        promotionMetaService.releaseClaimSlot(promotionId).catch(() => {}),
-        promotionMetaService.removeIssueLog(customerId, promotionId).catch(() => {}),
-      ]),
-    );
+    // 회수한 장수만큼 발급 카운트를 되돌린다 — 1회 고정이면 여러 장 회수 시 카운터가 남는다.
+    for (let i = 0; i < n; i++) {
+      await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+    }
+
+    // 남은 장이 없으면 표시용 링크도 걷는다.
+    await link
+      .dismiss([
+        {
+          [Modules.CUSTOMER]: { customer_id: cid },
+          [Modules.PROMOTION]: { promotion_id: promotionId },
+        },
+      ])
+      .catch(() => {});
   }
 
   return res.status(200).json({
     success: true,
-    message: `${toRemove.length} customer(s) revoked from promotion`,
+    message: `${removed.length} customer(s) revoked from promotion`,
     promotion_id: promotionId,
-    customer_ids: toRemove,
+    customer_ids: removed.map((r) => r.customer_id),
+    revoked_grants: removed.reduce((s, r) => s + r.grants, 0),
   });
 }

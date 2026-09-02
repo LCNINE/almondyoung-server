@@ -3,10 +3,11 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
+import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../promotions/helpers';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
-import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
+import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];
@@ -32,31 +33,35 @@ interface RemovePromotionsBody {
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const customerId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   // Query parameters for pagination
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
   // Customer와 연결된 Promotions 조회
-  const { data: customers } = await query.graph({
-    entity: 'customer',
-    fields: [
-      'id',
-      'email',
-      'promotions.id',
-      'promotions.code',
-      'promotions.type',
-      'promotions.status',
-      'promotions.is_automatic',
-      'promotions.campaign_id',
-      'promotions.campaign.campaign_identifier',
-      'promotions.application_method.id',
-      'promotions.application_method.type',
-      'promotions.application_method.value',
-      'promotions.application_method.target_type',
-    ],
-    filters: { id: customerId },
-  });
+  const [{ data: customers }, grants] = await Promise.all([
+    query.graph({
+      entity: 'customer',
+      fields: [
+        'id',
+        'email',
+        'promotions.id',
+        'promotions.code',
+        'promotions.type',
+        'promotions.status',
+        'promotions.is_automatic',
+        'promotions.campaign_id',
+        'promotions.campaign.campaign_identifier',
+        'promotions.application_method.id',
+        'promotions.application_method.type',
+        'promotions.application_method.value',
+        'promotions.application_method.target_type',
+      ],
+      filters: { id: customerId },
+    }),
+    promotionMetaService.listGrantsForCustomer(customerId),
+  ]);
 
   if (!customers || customers.length === 0) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Customer not found');
@@ -65,19 +70,24 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const customer = customers[0];
   const promotions = customer.promotions || [];
 
-  const linkByPromotionId = new Map(
-    (await listIssuedLinks(req.scope, customerId)).map((l) => [l.promotion_id, l]),
-  );
+  const now = new Date();
+  const byPromotion = new Map<string, CouponGrantRow[]>();
+  for (const g of grants) {
+    const list = byPromotion.get(g.promotion_id) ?? [];
+    list.push(g);
+    byPromotion.set(g.promotion_id, list);
+  }
 
   // Apply pagination
   const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => {
-    const link = linkByPromotionId.get(p.id);
+    const mine = byPromotion.get(p.id) ?? [];
+    const usable = usableGrants(mine, now);
     return {
       ...p,
-      expires_at: link?.expires_at ?? null,
-      used_at: link?.used_at ?? null,
-      order_id: link?.order_id ?? null,
-      issued_via: link?.issued_via ?? null,
+      granted_count: mine.length,
+      used_count: mine.filter((g) => g.used_at != null).length,
+      usable_count: usable.length,
+      next_expires_at: nextExpiryAt(mine, now),
     };
   });
 
@@ -265,39 +275,36 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  // 실제로 연결된 프로모션만 대상으로 — issued_count 과다 감소 방지
-  const { data: customers } = await query.graph({
-    entity: 'customer',
-    fields: ['id', 'promotions.id'],
-    filters: { id: customerId },
-  });
-  const linkedIds = new Set<string>((customers?.[0]?.promotions ?? []).map((p: any) => p.id));
-  const toRemove = promotion_ids.filter((id) => linkedIds.has(id));
+  const removed: { promotion_id: string; grants: number }[] = [];
+  for (const pid of promotion_ids) {
+    const n = await promotionMetaService.revokeGrants(pid, customerId);
+    if (n === 0) continue;
+    removed.push({ promotion_id: pid, grants: n });
 
-  if (toRemove.length > 0) {
-    await link.dismiss(
-      toRemove.map((promotionId) => ({
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promotionId },
-      })),
-    );
-    // 회수했으니 발급 수량 카운트 원복 + 발급 로그 soft-delete(자동발급 재발급 허용)
-    await Promise.all(
-      toRemove.flatMap((id) => [
-        promotionMetaService.releaseClaimSlot(id).catch(() => {}),
-        promotionMetaService.removeIssueLog(customerId, id).catch(() => {}),
-      ]),
-    );
+    // 회수한 장수만큼 발급 카운트를 되돌린다 — 1회 고정이면 여러 장 회수 시 카운터가 남는다.
+    for (let i = 0; i < n; i++) {
+      await promotionMetaService.releaseClaimSlot(pid).catch(() => {});
+    }
+
+    // 남은 장이 없으면 표시용 링크도 걷는다.
+    await link
+      .dismiss([
+        {
+          [Modules.CUSTOMER]: { customer_id: customerId },
+          [Modules.PROMOTION]: { promotion_id: pid },
+        },
+      ])
+      .catch(() => {});
   }
 
   return res.status(200).json({
     success: true,
-    message: `${toRemove.length} promotion(s) removed from customer`,
+    message: `${removed.length} promotion(s) removed from customer`,
     customer_id: customerId,
-    promotion_ids: toRemove,
+    promotion_ids: removed.map((r) => r.promotion_id),
+    revoked_grants: removed.reduce((s, r) => s + r.grants, 0),
   });
 }
