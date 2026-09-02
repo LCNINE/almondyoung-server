@@ -2,6 +2,7 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { createServer, Server } from 'http';
 import jwt from 'jsonwebtoken';
+import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 import {
   createRegionsWorkflow,
   createSalesChannelsWorkflow,
@@ -533,6 +534,13 @@ medusaIntegrationTestRunner({
      * C1 의 사고 경로: `public` 쿠폰은 발급 사건이 없어 링크 행이 원래 없다. 훅이 필터 없이
      * `Link.create` 를 부르면 upsert 라 그 자리에서 INSERT 되고, 그 행의 `expires_at` 은
      * NULL(무기한)로 박혀 정책의 `ends_at` 을 지나도 그 고객에게만 영구 유효가 된다.
+     *
+     * 🔴 T6 재작성(#488 그랜트 모델, Task 14 리뷰): 사용 기록의 정본이 링크 행에서
+     * `coupon_grant` 로 옮겨갔다(`record-coupon-usage.ts` 가 `consumeGrant()` 로 grant 를
+     * 갱신하지, 링크 행의 `used_at`/`order_id` 를 쓰지 않는다 — 링크는 이제 표시 조인 전용).
+     * 그래서 T6 은 이제 링크 행이 아니라 **grant** 를 본다. C1(링크 행에 사용사건이 새면 안
+     * 된다)은 여전히 링크 행을 봐야 하므로 `linkRowsFor` 는 그대로 둔다 — 두 불변식은
+     * 그랜트 모델 전환 후에도 별개로 유효하다.
      */
     describe('C1: public 쿠폰 사용이 발급 링크를 만들면 안 된다', () => {
       let c1Seq = 0;
@@ -546,6 +554,17 @@ medusaIntegrationTestRunner({
             { customer_id: custId, promotion_id: promotionId },
             { select: ['customer_id', 'promotion_id', 'expires_at', 'used_at', 'order_id'] },
           ) as Promise<any[]>;
+
+      /** grant 조회. 사용 기록(`used_at`/`order_id`)의 정본은 T6 이후로 여기다. */
+      const grantsFor = async (promotionId: string, custId: string) => {
+        const svc = getContainer().resolve(PROMOTION_META_MODULE) as any;
+        const grants = (await svc.listGrantsForCustomer(custId)) as Array<{
+          promotion_id: string;
+          used_at: Date | string | null;
+          order_id: string | null;
+        }>;
+        return grants.filter((g) => g.promotion_id === promotionId);
+      };
 
       const createPromo = async (code: string, additional_data: Record<string, unknown>) => {
         const res = await api.post(
@@ -639,11 +658,13 @@ medusaIntegrationTestRunner({
         expect(rows).toHaveLength(0);
       });
 
-      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 링크 행에 used_at/order_id 가 채워진다 (T6)', async () => {
+      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 grant 정확히 한 장이 used_at/order_id 를 갖는다 (T6)', async () => {
         const promoCode = `C1ISSUED${c1Seq}`;
         const promotionId = await createPromo(promoCode, { visibility: 'assigned_only' });
 
-        // 발급 3경로 중 하나로 실제 발급한다 — 링크 행을 만드는 유일하게 정당한 방법.
+        // 발급 3경로 중 하나로 실제 발급한다 — grant 1장을 만드는 유일하게 정당한 방법
+        // (관리자 수동 발급 경로, `issued_via='admin_manual'`). 링크 행도 표시 조인용으로
+        // 같이 생기지만(위 route.ts 참고), 사용 기록의 정본은 아래에서 보는 grant 다.
         await api.post(
           `/admin/customers/${customerId}/promotions`,
           { promotion_ids: [promotionId] },
@@ -654,10 +675,12 @@ medusaIntegrationTestRunner({
         expect(completeRes.data.type).toBe('order');
         const orderId = completeRes.data.order.id as string;
 
-        const [row] = await linkRowsFor(promotionId, customerId);
-        expect(row).toBeDefined();
-        expect(row.used_at).not.toBeNull();
-        expect(row.order_id).toEqual(orderId);
+        // 「무언가 기록됐다」가 아니라 「어느 장이 그 주문으로 소모됐다」를 본다 — 발급이
+        // 정확히 한 장이었으므로 소모도 정확히 그 한 장이어야 한다.
+        const grants = await grantsFor(promotionId, customerId);
+        expect(grants).toHaveLength(1);
+        expect(grants[0].used_at).not.toBeNull();
+        expect(grants[0].order_id).toEqual(orderId);
       });
     });
   },

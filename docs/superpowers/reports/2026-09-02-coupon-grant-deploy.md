@@ -39,6 +39,7 @@ admin-web 쪽도 마찬가지다: **`npm run test:admin-web` 의 jest 는 transp
 | medusa 유닛 | `cd apps/medusa && npm run test:unit` | 36 suites / 354 tests 전부 PASS |
 | 모듈 통합 (promotion-meta) | `scripts/local/run-medusa-integration.sh --modules --testPathPattern 'promotion-meta'` | 5 suites / 78 tests 전부 PASS |
 | HTTP 통합 (coupon- 스코프) | `scripts/local/run-medusa-integration.sh --testPathPattern 'integration-tests/http/coupon-'` | 8 suites / 94 tests 전부 PASS |
+| HTTP 통합 (전체, 최종 확인) | `scripts/local/run-medusa-integration.sh --testPathPattern 'integration-tests/http/'` | **10 suites / 108 tests 전부 PASS** (T6 재작성 후 재실행 — 아래 "스코프 구멍" 절) |
 | 어휘 드리프트 가드 | `npx jest --testPathPattern 'coupon-vocabulary-drift' --maxWorkers=2` | 1 suite / 12 tests 전부 PASS |
 
 ### ⚠️ `--testPathPattern 'coupon-'` (브리프 원문)를 그대로 쓰면 워크트리 이름이 또 오염시킨다
@@ -68,16 +69,15 @@ Tests:       1 failed, 107 passed, 108 total
     > expect(row.used_at).not.toBeNull();
 ```
 
-**이건 이 브랜치가 만든 진짜 회귀다 — 고치지 않고 그대로 보고한다(Task 14 범위 밖 판단).**
-이 테스트("T6")는 customer↔promotion 링크 행의 `used_at`/`order_id` 가 주문 완료 시 채워지는
-*옛* 동작을 검증한다. 그런데 이 브랜치의 `record-coupon-usage.ts`(`eb62421f2` 에서 도입)는
-주문 완료 시 링크 행이 아니라 `coupon_grant.used_at` 을 `consumeGrant()` 로 채운다 — 링크 행
-쓰기는 더 이상 일어나지 않는다. `deferred-approval-checkout.spec.ts` 는 `coupon-` 로 시작하지
-않는 파일명이라 이 브랜치의 여러 태스크가 돌린 "coupon- 전체 재실행" 관례적 회귀 확인에
-한 번도 걸리지 않았고(각 태스크 리포트가 쓴 패턴은 `integration-tests/http/coupon-` 로 좁혀져
-있어 이 파일을 스코프 밖에 뒀다), CI 도 이 스펙을 안 돌리므로 지금까지 아무도 못 봤다.
-**판단 필요**: 이 테스트를 grant 모델에 맞게 고치거나(예: `coupon_grant` 조회로 교체), 옛
-동작 검증이 더 이상 유효하지 않다는 근거로 삭제할지는 이 태스크의 권한 밖이다.
+**이건 이 브랜치가 만든 진짜 회귀였다 — 처음엔 고치지 않고 보고만 했으나, 오케스트레이터
+지시로 재작성해 고쳤다** (아래 "이 태스크가 발견하고 고친 것" 절). 이 테스트("T6")는
+customer↔promotion 링크 행의 `used_at`/`order_id` 가 주문 완료 시 채워지는 *옛* 동작을
+검증했다. 그런데 이 브랜치의 `record-coupon-usage.ts`(`eb62421f2` 에서 도입)는 주문 완료 시
+링크 행이 아니라 `coupon_grant.used_at` 을 `consumeGrant()` 로 채운다 — 링크 행 쓰기는 더
+이상 일어나지 않는다. `deferred-approval-checkout.spec.ts` 는 `coupon-` 로 시작하지 않는
+파일명이라 이 브랜치의 여러 태스크가 돌린 "coupon- 전체 재실행" 관례적 회귀 확인에 한 번도
+걸리지 않았고(각 태스크 리포트가 쓴 패턴은 `integration-tests/http/coupon-` 로 좁혀져 있어
+이 파일을 스코프 밖에 뒀다), CI 도 이 스펙을 안 돌리므로 Task 14 전까지 아무도 못 봤다.
 
 ## 어휘 드리프트 가드
 
@@ -178,12 +178,32 @@ IF EXISTS` 를 먼저 하는 방어를 넣어뒀다)이라는 변수가 남는�
 3. `almond_user_id` 없는 라이브 고객 수 — 많으면 「미해결」 케이스가 자주 뜬다
 4. 브라우저 수동 확인 0회 — 새 발급 다이얼로그. #488 리허설 2차 몫
 
-## 이 태스크가 새로 발견한 것 — `deferred-approval-checkout.spec.ts` T6 회귀
+## 이 태스크가 발견하고 고친 것 — `deferred-approval-checkout.spec.ts` T6
 
 위 "⚠️" 절에 적은 것과 같다: `record-coupon-usage.ts` 가 링크 행이 아니라 `coupon_grant` 를
-갱신하도록 바뀌면서, 링크 행의 `used_at`/`order_id` 를 검증하던 옛 테스트 하나가 깨졌다. 이
-브랜치의 13개 선행 태스크 중 어느 리포트에도 이 파일이 언급되지 않는다 — `coupon-` 로 시작하지
-않는 파일명이라 관례적 회귀 확인 패턴(`integration-tests/http/coupon-`)의 스코프 밖에 있었고,
-CI 도 이 스펙 자체를 안 돌린다. 이 태스크는 브리프 원문의 넓은 패턴(`coupon-`)이 워크트리
-이름과 우연히 충돌한 덕에 이걸 발견했다. **고치지 않았다 — 사람의 판단이 필요하다** (T6 를
-grant 조회로 재작성할지, 옛 불변식 검증으로서 폐기할지).
+갱신하도록 바뀌면서, 링크 행의 `used_at`/`order_id` 를 검증하던 옛 테스트 하나(T6)가 깨졌다.
+이 브랜치의 13개 선행 태스크 중 어느 리포트에도 이 파일이 언급되지 않는다 — `coupon-` 로
+시작하지 않는 파일명이라 관례적 회귀 확인 패턴(`integration-tests/http/coupon-`)의 스코프
+밖에 있었고, CI 도 이 스펙 자체를 안 돌린다. 이 태스크는 브리프 원문의 넓은 패턴(`coupon-`)이
+워크트리 이름과 우연히 충돌한 덕에 이걸 발견했다.
+
+**코드는 틀리지 않았다 — 테스트가 옛 계약을 보고 있었다.** 사용 기록의 정본이 grant 로 옮겨간
+것은 이 브랜치의 의도한 설계다. 하지만 T6 이 지키던 불변식(「체크아웃이 완료되면 사용이
+기록된다」)은 여전히 지켜야 하고, 이건 이 브랜치에서 자동 테스트가 못 덮는다고 명시했던 구간
+(주문 완료 → 장 소모, 「이 플랜이 끝나도 남는 것」 표 참고)에 실제로 도달하는 몇 안 되는
+테스트라 특히 아까웠다. 그래서 **재작성했다**(폐기하지 않음) — 단언을 링크 행 대신
+`listGrantsForCustomer` 로 가져온 grant 로 바꿨고, 「무언가 기록됐다」가 아니라 「발급된
+그 한 장이 정확히 그 주문으로 소모됐다」(`toHaveLength(1)` + `used_at`/`order_id` 값 확인)를
+보도록 강화했다. C1(같은 describe 블록의 다른 테스트 — public 쿠폰이 링크 행을 만들면 안
+된다)은 원래부터 링크 행을 봐야 하는 불변식이라 그대로 뒀다. 상세 diff·근거·재실행 결과는
+`task-14-report.md` 의 "Fix: T6 재작성" 절.
+
+## 🕳 스코프 구멍 — 다음 사람에게
+
+**이 브랜치의 회귀 확인은 `coupon-` 접두사 스펙으로 돌렸고, 그 때문에
+`deferred-approval-checkout.spec.ts` 의 stale 테스트를 마지막(Task 14)에야 발견했다.** 쿠폰
+경로를 만지는 스펙이 그 이름 규칙 밖에도 있다 — 파일명 접두사만으로 스코프를 정하면
+사각지대가 생긴다. Task 14 이후로는 `integration-tests/http/` 전체(파일 10개, 이 브랜치가
+`apps/medusa` 에 스펙을 새로 추가하지 않는 한 이게 전량이다)를 최종 확인으로 한 번 더
+돌렸다 — 결과는 `task-14-report.md` 참고. 다음 브랜치에서 쿠폰/프로모션 관련 코드를 다시
+만지면, 접두사가 아니라 **디렉터리 전체**를 스코프로 잡을 것.
