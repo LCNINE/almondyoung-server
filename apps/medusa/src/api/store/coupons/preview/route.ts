@@ -2,13 +2,14 @@ import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
+import type { CouponGrantRow } from '../../../../modules/promotion-meta/service';
 import { resolveVisibility } from '../../../admin/promotions/helpers';
 import {
   isIssuableToCustomer,
   requiresCustomerContext,
 } from '../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../modules/promotion-meta/validity';
-import { findIssuedLink } from '../../../../modules/promotion-meta/issued-link';
+import { grantsFor, hasUsableGrant, nextExpiryAt } from '../../../../modules/promotion-meta/grants';
 
 /**
  * GET /store/coupons/preview?code=CODE123
@@ -61,12 +62,21 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const customerId: string | null = (req as any).auth_context?.actor_id ?? null;
 
   const now = new Date();
-  const issuedLink = customerId ? await findIssuedLink(req.scope, customerId, promotion.id) : null;
-  const expiresAt = displayExpiresAt(issuedLink, meta);
+  // 발급된 «장» 들을 한 번에 가져온다. 「보유 여부」는 이제 링크가 아니라 사용 가능한 장이
+  // 정한다(#488 Task 8 결정 3) — 링크는 「가진 적 있다」만 말해 다 쓴 쿠폰도 통과시킨다.
+  const grants: CouponGrantRow[] = customerId
+    ? await promotionMetaService.listGrantsForCustomer(customerId)
+    : [];
+  const mine = grantsFor(grants, promotion.id);
+  const usableMine = hasUsableGrant(mine, now);
+  // 만료 표시는 «사용 가능한 장 중 가장 이른 만료» (#488 결정 1). displayExpiresAt 의 `?:`
+  // 분기를 지키려고 인스턴스 인자로 그 장을 합성해 넘긴다 — `??` 로 합치지 않는다.
+  const expiresAtInstance = usableMine ? { expires_at: nextExpiryAt(mine, now) } : null;
+  const expiresAt = displayExpiresAt(expiresAtInstance, meta);
 
   // 발급 여부와 무관하게 검사한다 — isUsable 도 정책 starts_at 은 발급 여부와 상관없이 보므로,
-  // 여기서 `&& !issuedLink` 로 건너뛰면 이미 발급받은 고객에게 같은 사유가 EXPIRED 로
-  // 오분류된다(리뷰에서 발견된 회귀 — events/:slug 라우트와 라벨이 갈렸었다).
+  // 여기서 건너뛰면 이미 발급받은 고객에게 같은 사유가 EXPIRED 로 오분류된다(리뷰에서 발견된
+  // 회귀 — events/:slug 라우트와 라벨이 갈렸었다).
   if (issuanceWindowState(meta, now) === 'not_started') {
     return res.status(200).json({
       valid: false,
@@ -74,7 +84,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       message: '아직 사용 기간이 아닌 쿠폰입니다.',
     });
   }
-  if (!isUsable(issuedLink, meta, now)) {
+  // 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면(=발급 개념이 없는 public) 정책»
+  // 이 정한다 (#488 결정 1 — 카트 미들웨어·complete-cart 훅과 같은 판정).
+  const usable = mine.length > 0 ? usableMine : isUsable(null, meta, now);
+  if (!usable) {
     return res.status(200).json({
       valid: false,
       reason: 'COUPON_EXPIRED',
@@ -124,16 +137,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     });
   }
 
-  // 인증된 고객 — 발급 여부 + 그룹 조건 확인
+  // 인증된 고객 — 발급 여부 + 그룹 조건 확인. 그룹 룰 평가에 쓰는 groups.id 만 조회하고
+  // promotions.id 는 빼둔다(#488 Task 8 결정 3) — 「보유 여부」는 아래에서 grant 로 정한다.
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id', 'promotions.id', 'groups.id'],
+    fields: ['id', 'groups.id'],
     filters: { id: customerId },
   });
 
   const customer = customers?.[0];
   const customerGroupIds = new Set<string>((customer?.groups ?? []).map((g: any) => g.id));
-  const isAssigned = (customer?.promotions ?? []).some((p: any) => p.id === promotion.id);
+  // «보유 여부» 는 사용 가능한 장이 있는가로 정한다 (#488 Task 8 결정 3).
+  const isAssigned = usableMine;
 
   if (!isIssuableToCustomer(promotion.rules, customerGroupIds)) {
     return res.status(200).json({

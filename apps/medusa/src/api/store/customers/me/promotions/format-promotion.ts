@@ -12,6 +12,9 @@
  * 내보내고, 네이티브 컬럼은 나중에 쓸 수 있게 이름을 비워 둔다.
  */
 
+import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
+import { usableGrants } from '../../../../../modules/promotion-meta/grants';
+
 export type PromotionRuleValue = string | { value?: string | null } | null | undefined;
 
 export type PromotionRuleLike = {
@@ -77,6 +80,11 @@ export type FormattedPromotion = {
    * 화면이 「발급 후 N일」을 표시할 수 있게 노출한다.
    */
   validity_days: number | null;
+  /**
+   * 지금 쓸 수 있는 장 수 (#488 Task 8). 0 이면 「발급받았지만 다 썼거나 만료됨」 —
+   * `is_assigned: true` 인데 `usable_count: 0` 인 항목이 그 경우다(예: 만료 목록).
+   */
+  usable_count: number;
   application_method: ApplicationMethodLike | null;
   campaign: CampaignLike | null;
 };
@@ -98,18 +106,28 @@ export type PromotionMetaView = {
   visibility: string;
   maxDiscountAmount: number | null;
   /**
-   * 이 고객에게 이 쿠폰이 언제까지인가. **발급된 장이면 링크 행의 값**, 아니면 정책의 `ends_at`.
-   * 호출부가 링크를 한 번에 조회해 넣는다 — 프로모션마다 조회하지 않는다.
+   * 이 고객에게 이 쿠폰이 언제까지인가. **사용 가능한 장이 있으면 그 중 가장 이른 만료**,
+   * 아니면 정책의 `ends_at`(#488 결정 1). 호출부가 장을 한 번에 조회해 `displayExpiresAt` 로
+   * 계산해 넣는다 — 프로모션마다 조회하지 않는다.
    */
   expiresAt: string | Date | null;
   /** 정책의 `validity_days` 그대로. `expiresAt` 이 null 인 이유를 화면이 구분할 수 있게. */
   validityDays: number | null;
+  /**
+   * 이 쿠폰이 「직접 발급된 목록」(assigned/expired) 에서 왔는가 — 호출부가 어느 버킷에서
+   * 이 항목을 뽑았는지로 정한다(#488 Task 8). **grants 존재 여부와 독립이다**: 장 없이
+   * 링크 행만 있는 구식 배정도 여전히 assigned 로 보여야 한다 — `coupon-issuance-rules.spec.ts`
+   * 의 "이미 발급된 쿠폰은 룰과 무관하게 목록에 남는다" 회귀 가드가 이 값을 지킨다. `grants`
+   * 인자에서 파생시키면(예: `grants.length > 0`) 그 가드가 깨진다.
+   */
+  isAssigned: boolean;
 };
 
 export function formatPromotion(
   promo: PromotionLike,
-  isAssigned: boolean,
   meta: PromotionMetaView,
+  grants: CouponGrantRow[],
+  now: Date,
 ): FormattedPromotion {
   return {
     id: promo.id,
@@ -117,12 +135,13 @@ export function formatPromotion(
     type: promo.type,
     status: promo.status,
     is_automatic: promo.is_automatic,
-    is_assigned: isAssigned,
+    is_assigned: meta.isAssigned,
     min_order_amount: minOrderAmount(promo),
     max_discount_amount: meta.maxDiscountAmount,
     visibility: meta.visibility,
     expires_at: meta.expiresAt,
     validity_days: meta.validityDays,
+    usable_count: usableGrants(grants, now).length,
     application_method: promo.application_method
       ? {
           // 필드를 하나씩 옮긴다 — 그래프가 더 실어 보내도 스토어 응답에 새지 않게.

@@ -152,6 +152,13 @@ medusaIntegrationTestRunner({
       const assigned = await createPromo('S_ASSIGN', { visibility: 'claimable' });
       const pub = await createPromo('S_PUB', { visibility: 'public' });
       const assignedOnly = await createPromo('S_AO', { visibility: 'assigned_only' });
+      // «claimed» 는 이제 링크가 아니라 사용 가능한 grant 로 판정된다(#488 Task 8 결정 3) —
+      // 링크만 있고 장이 없으면 claimable 로 보인다. 그래서 grant 도 함께 심는다.
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: assigned, customer_id: customerId, issue_key: `s_assign_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
       await linkCustomer(assigned);
 
       const event = await createEvent({

@@ -131,13 +131,16 @@ medusaIntegrationTestRunner({
       expect(claimCodes).not.toContain('CLAIMFULL');
     });
 
-    it('me/promotions excludes a coupon whose per-customer usage limit is used up (P2 used-coupon)', async () => {
-      const id = await createPromoRaw('USEDUP', { visibility: 'public' }, {
-        campaign: {
-          name: 'u',
-          campaign_identifier: `U_${seq}`,
-          budget: { type: 'use_by_attribute', attribute: 'customer_id', limit: 1 },
-        },
+    // #488 Task 8. per-customer 소진의 정본이 campaign budget(use_by_attribute) 에서 grant 로
+    // 옮겨갔다 — 「1장=1회」가 grant 로 강제되므로 캠페인 예산 축은 더 이상 검사하지 않는다
+    // (me/promotions/route.ts 의 isUsageExhausted 에서 그 브랜치가 삭제됨). 그래서 이 테스트도
+    // «장 발급 → 소모» 로 다시 쓴다 — 원래 의도("이미 쓴 쿠폰은 목록에서 빠진다")는 그대로다.
+    it('me/promotions excludes a coupon whose grant has been used up (P2 used-coupon)', async () => {
+      const id = await createPromo('USEDUP', { visibility: 'assigned_only' });
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `usedup_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
       await linkCustomer(id);
 
@@ -145,18 +148,9 @@ medusaIntegrationTestRunner({
       const before = await api.get('/store/customers/me/promotions', storeHeaders);
       expect(before.data.promotions.map((p: any) => p.code)).toContain('USEDUP');
 
-      // 이 고객의 사용 1회 등록 → 1인당 한도(1) 소진
-      const query = getContainer().resolve(ContainerRegistrationKeys.QUERY) as any;
-      const { data: promos } = await query.graph({
-        entity: 'promotion',
-        fields: ['id', 'campaign.budget.id'],
-        filters: { id },
-      });
-      const budgetId = promos[0].campaign.budget.id as string;
-      const promotionModule = getContainer().resolve(Modules.PROMOTION) as any;
-      await promotionModule.createCampaignBudgetUsages([
-        { attribute_value: customerId, used: 1, budget_id: budgetId },
-      ]);
+      // 「1장=1회」— 발급받은 장을 소모한다(주문 완료를 흉내)
+      const [grant] = await metaService.listGrantsForCustomer(customerId);
+      await metaService.consumeGrant(grant.id, `order_${seq}`, new Date());
 
       // 사용 후: 목록에서 제외
       const after = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -187,8 +181,15 @@ medusaIntegrationTestRunner({
       expect(g.data.reason).toEqual('COUPON_GROUP_RESTRICTED');
     });
 
+    // preview 의 「보유 여부」가 링크가 아니라 grant 로 판정된다(#488 Task 8 결정 3) — 링크만
+    // 있고 장이 없으면 COUPON_NOT_ASSIGNED 로 떨어진다. 그래서 link 뿐 아니라 grant 도 심는다.
     it('preview of an assigned assigned_only coupon is valid', async () => {
       const id = await createPromo('ASSIGNED_OK', { visibility: 'assigned_only' });
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `assigned_ok_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
       await linkCustomer(id);
       const res = await preview('ASSIGNED_OK');
       expect(res.data.valid).toBe(true);

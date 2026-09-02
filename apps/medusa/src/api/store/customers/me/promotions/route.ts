@@ -1,14 +1,14 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
-import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
+import PromotionMetaModuleService, { type CouponGrantRow } from '../../../../../modules/promotion-meta/service';
 import {
   resolveVisibility,
   VISIBILITY_WHEN_META_MISSING,
 } from '../../../../admin/promotions/helpers';
 import { isIssuableToCustomer } from '../../../../../modules/promotion-meta/issuance-rules';
 import { isUsable, issuanceWindowState, displayExpiresAt } from '../../../../../modules/promotion-meta/validity';
-import { listIssuedLinks } from '../../../../../modules/promotion-meta/issued-link';
+import { grantsFor, usableGrants, hasUsableGrant, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 import { formatPromotion } from './format-promotion';
 
 /**
@@ -106,24 +106,41 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const visibilityOf = (promotionId: string): string =>
     visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
   const metaById = new Map<string, any>(metas.map((m: any) => [m.promotion_id, m]));
-  // 발급된 «한 장»들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
-  const issuedLinks = await listIssuedLinks(req.scope, customerId);
-  const linkByPromotionId = new Map(issuedLinks.map((l) => [l.promotion_id, l]));
-  const expiresAtOf = (promotionId: string): string | Date | null =>
-    displayExpiresAt(linkByPromotionId.get(promotionId) ?? null, metaById.get(promotionId));
+  // 발급된 «장» 들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
+  const grants: CouponGrantRow[] = await promotionMetaService.listGrantsForCustomer(customerId);
+  const grantsOf = (promotionId: string): CouponGrantRow[] => grantsFor(grants, promotionId);
+  // 만료 표시는 «사용 가능한 장 중 가장 이른 만료» (#488 결정 1/Task 8). `displayExpiresAt`
+  // 의 `?:` 분기를 지키기 위해 인스턴스 인자로 "가장 이른 사용 가능 장"을 합성해 넘긴다 —
+  // `??` 로 합치면 발급된 무기한 장(`expires_at===null` 이 정당한 값)이 정책값으로 샌다.
+  // 사용 가능한 장이 없으면(발급 자체가 없거나 전부 소모/만료) instance 없음으로 취급해
+  // 정책으로 폴백한다.
+  const expiresAtOf = (promotionId: string): string | Date | null => {
+    const mine = grantsOf(promotionId);
+    const usable = usableGrants(mine, now);
+    const instance = usable.length > 0 ? { expires_at: nextExpiryAt(mine, now) } : null;
+    return displayExpiresAt(instance, metaById.get(promotionId));
+  };
   // W1: expires_at 이 null 인 이유(무기한 vs 미발급 validity_days)를 화면이 구분할 수 있게.
   const validityDaysOf = (promotionId: string): number | null => {
     const raw = metaById.get(promotionId)?.validity_days;
     return raw != null ? Number(raw) : null;
   };
   // visibility 는 promotion_meta 에서 온다. 호출부가 매번 조회하지 않도록 여기서 묶는다.
+  // isAssigned 는 어느 버킷(assigned/expired vs public/claimable)에서 이 항목을 뽑았는지로
+  // 정한다 — grants 존재 여부와 독립이다(format-promotion.ts 의 PromotionMetaView 주석 참고).
   const format = (promo: any, isAssigned: boolean) =>
-    formatPromotion(promo, isAssigned, {
-      visibility: visibilityOf(promo.id),
-      maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
-      expiresAt: expiresAtOf(promo.id),
-      validityDays: validityDaysOf(promo.id),
-    });
+    formatPromotion(
+      promo,
+      {
+        visibility: visibilityOf(promo.id),
+        maxDiscountAmount: maxDiscountById.get(promo.id) ?? null,
+        expiresAt: expiresAtOf(promo.id),
+        validityDays: validityDaysOf(promo.id),
+        isAssigned,
+      },
+      grantsOf(promo.id),
+      now,
+    );
   // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metaById.get(promotionId);
@@ -131,40 +148,24 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return Number(m.issued_count ?? 0) >= Number(m.max_claims);
   };
 
-  // status/자동적용/유효기간 검증. 사용 가능 여부는 «링크 행이 있으면 링크 행» 이 정한다
-  // (#488 결정 1) — metaById·linkByPromotionId 에 의존하므로 그 두 맵보다 아래에 있어야 한다.
+  // status/자동적용/유효기간 검증. 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면
+  // (=발급 개념이 없는 public 이거나 아직 grant 없이 링크만 있는 구식 배정) 정책» 이 정한다
+  // (#488 결정 1) — 카트 미들웨어(`per-customer-limit.ts`)·`complete-cart.ts` 훅과 같은 판정.
+  // metaById·grants 에 의존하므로 그 아래에 있어야 한다.
   const isValidPromotion = (promo: any): boolean => {
     if (promo.status !== 'active') return false;
     if (promo.is_automatic) return false;
-    return isUsable(linkByPromotionId.get(promo.id) ?? null, metaById.get(promo.id), now);
+    const mine = grantsOf(promo.id);
+    return mine.length > 0 ? hasUsableGrant(mine, now) : isUsable(null, metaById.get(promo.id), now);
   };
 
   const assignedPromotionIds = new Set<string>();
   const customer = customers?.[0];
 
-  // 사용 소진 쿠폰 제외 — 전역 usage 한도 소진(전원) + per-customer use_by_attribute 소진(본인).
-  // 이미 다 쓴 쿠폰이 "사용 가능"으로 목록에 남지 않도록 한다.
-  const customerEmail = customer?.email as string | undefined;
-  const attrBudgetIds = new Set<string>();
-  for (const p of [...(customer?.promotions ?? []), ...(allPromotions ?? [])]) {
-    const b = (p as any).campaign?.budget;
-    if (b?.id && b.type === 'use_by_attribute') attrBudgetIds.add(b.id);
-  }
-  const usedByBudgetId = new Map<string, number>();
-  if (attrBudgetIds.size > 0) {
-    const promotionModule = req.scope.resolve<any>(Modules.PROMOTION);
-    const attributeValues = [customerId, customerEmail].filter(Boolean) as string[];
-    const usages = await promotionModule.listCampaignBudgetUsages({
-      budget_id: [...attrBudgetIds],
-      attribute_value: attributeValues,
-    });
-    for (const u of usages) {
-      usedByBudgetId.set(
-        u.budget_id,
-        Math.max(usedByBudgetId.get(u.budget_id) ?? 0, Number(u.used ?? 0)),
-      );
-    }
-  }
+  // 사용 소진 쿠폰 제외 — 전역 usage 한도(전원 공통)만 남는다. per-customer 소진은 이제
+  // `isValidPromotion` 의 grant 기반 판정(위)이 대신한다 — 「1장=1회」가 grant 로 강제되므로
+  // 캠페인 예산의 use_by_attribute 축은 더 이상 쓰지 않는다(#488 결정 2). 옛 코드는 이 축을
+  // 별도 조회(campaign budget usage)로 흉내 냈었다.
   const isUsageExhausted = (promo: any): boolean => {
     // 신규 쿠폰: 전역 한도가 campaign budget 이 아니라 promotion.limit 에 있다.
     if (promo.limit != null && Number(promo.used ?? 0) >= Number(promo.limit)) {
@@ -173,9 +174,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
     const b = promo.campaign?.budget;
     if (!b || b.limit == null) return false;
-    const limit = Number(b.limit);
-    if (b.type === 'usage') return Number(b.used ?? 0) >= limit;
-    if (b.type === 'use_by_attribute') return (usedByBudgetId.get(b.id) ?? 0) >= limit;
+    if (b.type === 'usage') return Number(b.used ?? 0) >= Number(b.limit);
     return false;
   };
 
@@ -216,16 +215,33 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   // 만료 쿠폰: 고객에게 발급됐던 쿠폰 중 만료가 지난 것, 최근 30일 이내. 최근 만료순, 최대 50개.
   // 만료일을 promo 마다 (promo, endsAt) 으로 한 번만 계산해 들고 다닌다 — sort 안에서
-  // expiresAtOf 를 다시 불러 `new Date(string | Date | null)` 을 `as any` 로 눌러 넘기지
+  // expiredEndsAtOf 를 다시 불러 `new Date(string | Date | null)` 을 `as any` 로 눌러 넘기지
   // 않기 위해서다(필터가 이미 null 이 아님을 보장하므로, 그 사실을 타입으로도 드러낸다).
+  //
+  // 🔴 여기서 `expiresAtOf` (usable_count 와 같은 «사용 가능한 장» 기준) 를 쓰면 안 된다 —
+  // 다 쓰거나 만료된 장은 usableGrants 에서 걸러져 정책값으로 새므로(#488 결정 1 은 "사용
+  // 가능한 장"만 다룬다), 정작 만료 목록에 넣어야 할 항목의 실제 만료일을 못 구한다. 장이
+  // 있으면(mine.length>0) 그 장들의 원본 expires_at 중 가장 늦은 것(=가장 최근 만료)을,
+  // 장이 없으면(순수 링크 배정) 정책 폴백인 expiresAtOf 를 그대로 쓴다.
+  const expiredEndsAtOf = (promotionId: string): Date | null => {
+    const mine = grantsOf(promotionId);
+    if (mine.length === 0) {
+      const raw = expiresAtOf(promotionId);
+      return raw ? new Date(raw) : null;
+    }
+    const dated = mine
+      .map((g) => (g.expires_at ? new Date(g.expires_at) : null))
+      .filter((d): d is Date => d !== null && !Number.isNaN(d.getTime()));
+    if (dated.length === 0) return null;
+    return dated.reduce((max, d) => (d > max ? d : max));
+  };
   const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
   const expiredCutoff = new Date(now.getTime() - THIRTY_DAYS_MS);
   const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
   for (const promo of customer?.promotions ?? []) {
     if (promo.is_automatic) continue;
-    const raw = expiresAtOf(promo.id);
-    if (!raw) continue;
-    const endsAt = new Date(raw);
+    const endsAt = expiredEndsAtOf(promo.id);
+    if (!endsAt) continue;
     if (endsAt < now && endsAt >= expiredCutoff) {
       expiredCandidates.push({ promo, endsAt });
     }
