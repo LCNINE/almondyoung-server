@@ -255,21 +255,27 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service DELETE /files/:fileId': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:68',
+    evidence: 'apps/file-service/src/access/file-access.ts:75',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:51) -> isMasterOrOwner(file, user) at file-access.ts:56 gates the softDelete call on the same file.uploadedBy === user.userId check; repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the STAFF_READABLE_CONTEXT_IDS path added in 235197151 — that path lives in loadReadable only.',
   },
   'file-service GET /files/:fileId/download': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:68',
+    evidence: 'apps/file-service/src/access/file-access.ts:75',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:26) -> isMasterOrOwner (file-access.ts:67-77) compares file.uploadedBy against caller's own userId before returning the row. 235197151 added a fourth allow path at file-access.ts:37 — a STAFF_ROLES caller may read any file whose contextId is in STAFF_READABLE_CONTEXT_IDS (digital-asset only). That is an intentional role-based grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
+    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:26) -> isMasterOrOwner (file-access.ts:67-77) compares file.uploadedBy against caller's own userId before returning the row. 235197151 added a fourth allow path at file-access.ts:44 — a STAFF_ROLES caller may read any file whose contextId is in STAFF_READABLE_CONTEXT_IDS (digital-asset-file, archive-page-attachment). That is an intentional role-based grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
+  },
+  'file-service GET /files/:fileId/open': {
+    verdict: 'SAFE',
+    evidence: 'apps/file-service/src/access/file-access.ts:75',
+    predicate: 'if (file.uploadedBy === user.userId) return true;',
+    note: "DownloadController.openFile -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:33) -> isMasterOrOwner (file-access.ts:74) compares file.uploadedBy against the caller's own userId before the row is returned; the route then 302s to a 5-minute signed URL for that same row. Same gate as GET /files/:fileId/download — this route only changes the response shape (redirect instead of JSON) so a plain anchor in archive body text can open a private attachment. The STAFF_READABLE_CONTEXT_IDS allow path (file-access.ts:44) covers archive-page-attachment: an intentional role-based grant scoped by context, not by object id, and file-access.spec.ts asserts a non-staff caller is still refused.",
   },
   'file-service GET /files/:fileId/metadata': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:68',
+    evidence: 'apps/file-service/src/access/file-access.ts:75',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isMasterOrOwner ownership check as the download route, and the same STAFF_READABLE_CONTEXT_IDS allow path at file-access.ts:37.',
+    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isMasterOrOwner ownership check as the download route, and the same STAFF_READABLE_CONTEXT_IDS allow path at file-access.ts:44.',
   },
   'file-service POST /files/batch-upload': {
     verdict: 'N/A',
@@ -728,15 +734,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(114);
+    expect(targets).toHaveLength(115);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 다. `<VERB> <route>` 로 키를 만들면
   // 97건이 96개로 뭉개지고 스냅샷이 한 건을 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(114);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(113);
+    expect(new Set(targets.map(keyOf)).size).toBe(115);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(114);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

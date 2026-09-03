@@ -23,6 +23,9 @@ export type FileContextSeedRow = {
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const DIGITAL_ASSET_FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 
+/** 아카이브 문서에 딸린 비이미지 첨부. 비공개라 열람은 signed URL 로만 나간다. */
+export const ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID = 'archive-page-attachment';
+
 function normalizeAllowedMimeTypes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value;
@@ -145,6 +148,23 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/*'],
     maxFileSize: 20971520,
     pathPrefix: 'archive/page-image',
+    isActive: true,
+  },
+  {
+    id: ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+    name: 'Archive Page Attachment',
+    description: '아카이브 문서에 딸린 비이미지 첨부(문서·표·영상 등)',
+    // 내부 문서라 «URL 만 알면 누구나»가 실수로도 생기면 안 된다.
+    // 공개를 아예 막고, 열람은 관리자 인증을 거친 signed URL 로만.
+    allowPublic: false,
+    allowPrivate: true,
+    // 노션 export 에 pdf·hwp·xlsx·ai·docx·pptx·m4a·mp4·csv 가 섞여 있고,
+    // hwp·ai 처럼 브라우저가 MIME 을 못 붙이는 것도 있다. 종류로 거르는 대신
+    // 크기와 공개 여부로 막는다.
+    // 노션 export 의 최대 첨부가 63.2MB(pdf)다. 상한을 그 아래로 두면 조용히 한 건이 빠진다.
+    allowedMimeTypes: ['*/*'],
+    maxFileSize: 104857600,
+    pathPrefix: 'archive/page-attachment',
     isActive: true,
   },
   {

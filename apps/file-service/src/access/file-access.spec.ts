@@ -103,6 +103,16 @@ describe('FileAccess', () => {
       await expect(fileAccess.loadReadable('file-1', adminUser)).resolves.toMatchObject({ id: 'file-1' });
     });
 
+    it('아카이브 첨부는 올린 사람이 아니어도 관리자면 읽는다 — 이관은 계정 하나가 전부 올린다', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'archive-page-attachment' } as Upload);
+      await expect(fileAccess.loadReadable('file-1', adminUser)).resolves.toMatchObject({ id: 'file-1' });
+    });
+
+    it('아카이브 첨부라도 직원이 아니면 못 읽는다', async () => {
+      repo.findById.mockResolvedValue({ ...baseFile, contextId: 'archive-page-attachment' } as Upload);
+      await expect(fileAccess.loadReadable('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
     it('still hides other private contexts from admin', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'business-license' } as Upload);
       await expect(fileAccess.loadReadable('file-1', adminUser)).rejects.toBeInstanceOf(ForbiddenError);
