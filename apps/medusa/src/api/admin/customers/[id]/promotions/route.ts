@@ -40,27 +40,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  // Customer와 연결된 Promotions 조회
+  // customer 조회는 존재 확인(404)용으로만 남긴다 — 「이 고객이 가진 쿠폰」의 정본은
+  // grant 다(설계 결정 2). grant 가 0건인 것과 고객이 없는 것은 다른 사건이라 이 조회를
+  // 지우지 않는다.
   const [{ data: customers }, grants] = await Promise.all([
-    query.graph({
-      entity: 'customer',
-      fields: [
-        'id',
-        'email',
-        'promotions.id',
-        'promotions.code',
-        'promotions.type',
-        'promotions.status',
-        'promotions.is_automatic',
-        'promotions.campaign_id',
-        'promotions.campaign.campaign_identifier',
-        'promotions.application_method.id',
-        'promotions.application_method.type',
-        'promotions.application_method.value',
-        'promotions.application_method.target_type',
-      ],
-      filters: { id: customerId },
-    }),
+    query.graph({ entity: 'customer', fields: ['id', 'email'], filters: { id: customerId } }),
     promotionMetaService.listGrantsForCustomer(customerId),
   ]);
 
@@ -68,8 +52,28 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Customer not found');
   }
 
-  const customer = customers[0];
-  const promotions = customer.promotions || [];
+  // 「이 고객이 가진 쿠폰」의 정본은 grant 다 (설계 결정 2). 링크는 읽지 않는다.
+  const grantedPromotionIds = [...new Set(grants.map((g) => g.promotion_id))];
+  const { data: promotions } =
+    grantedPromotionIds.length > 0
+      ? await query.graph({
+          entity: 'promotion',
+          fields: [
+            'id',
+            'code',
+            'type',
+            'status',
+            'is_automatic',
+            'campaign_id',
+            'campaign.campaign_identifier',
+            'application_method.id',
+            'application_method.type',
+            'application_method.value',
+            'application_method.target_type',
+          ],
+          filters: { id: grantedPromotionIds },
+        })
+      : { data: [] as any[] };
 
   const now = new Date();
   const byPromotion = new Map<string, CouponGrantRow[]>();
@@ -79,8 +83,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     byPromotion.set(g.promotion_id, list);
   }
 
-  // Apply pagination
-  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => {
+  // 이제 목록이 grant 조회 순서를 따르므로(customer.promotions 링크 순서가 아니다) 페이지
+  // 사이 순서가 안 흔들리도록 id 오름차순으로 고정한 뒤 slice 한다 (Task 8 발견 6 과 같은 부류).
+  const sorted = [...promotions].sort((a: any, b: any) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const paginatedPromotions = sorted.slice(offset, offset + limit).map((p: any) => {
     const mine = byPromotion.get(p.id) ?? [];
     const usable = usableGrants(mine, now);
     return {

@@ -113,7 +113,9 @@ medusaIntegrationTestRunner({
       await promotionModule.updatePromotions([{ id, status: 'inactive' }]);
     };
 
-    const linkedPromoIds = async (): Promise<string[]> => {
+    // 이 GET 은 Task 6 부터 grant 에서 프로모션을 유도한다(customer-promotion 링크는 읽지
+    // 않는다) — 이름을 `linkedPromoIds` 로 두면 낡은 전제를 코드로 남기는 셈이라 고친다.
+    const grantedPromoIds = async (): Promise<string[]> => {
       const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
       return (res.data.promotions ?? []).map((p: any) => p.id);
     };
@@ -135,6 +137,44 @@ medusaIntegrationTestRunner({
       expect(res.data.promotion?.status).toEqual('active');
     });
 
+    it('링크 없이 grant 만 있는 쌍도 어드민 고객 상세에 뜬다', async () => {
+      const promoId = await createPromo(`ADMGRANT${seq}`, { visibility: 'assigned_only' });
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrantWithSlot({
+        promotion_id: promoId,
+        customer_id: customerId,
+        issue_key: `${promoId}:${customerId}:direct:1`,
+        issued_via: 'admin_manual',
+        expires_at: null,
+        now: new Date(),
+        max_claims: null,
+        enforce_cap: true,
+      });
+
+      const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
+
+      expect(res.status).toEqual(200);
+      expect(res.data.promotions.map((p: any) => p.id)).toContain(promoId);
+      expect(res.data.count).toEqual(1);
+    });
+
+    // grant 0건과 고객 미존재는 다른 사건이다 — customer 조회를 존재 확인용으로 남긴 이유.
+    it('존재하지 않는 고객은 grant 유무와 무관하게 404', async () => {
+      const err = await api
+        .get(`/admin/customers/cus_does_not_exist/promotions`, adminHeaders)
+        .catch((e: any) => e);
+      expect(err.response.status).toEqual(404);
+    });
+
+    // grant 가 하나도 없으면 promotion id 목록도 비므로, 그 빈 배열로 `query.graph` 를
+    // 부르지 않아야 한다(부르면 빈 filters.id 가 «전체 프로모션» 으로 풀릴 수 있는 함정).
+    it('grant 가 0건인 고객은 200 + 빈 목록', async () => {
+      const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
+      expect(res.status).toEqual(200);
+      expect(res.data.promotions).toEqual([]);
+      expect(res.data.count).toEqual(0);
+    });
+
     // (c) 였던 회귀는 Task 7 이 닫았다 (#488 Task 4 리뷰, task-4-report.md 「6건 분류표」
     // 항목 1). DELETE 라우트(`/admin/customers/:id/promotions`, `/admin/promotions/:id/customers`
     // 양쪽)가 이제 `revokeGrants` 로 `coupon_grant` 행을 soft-delete 하므로, 파셜 유니크
@@ -153,7 +193,7 @@ medusaIntegrationTestRunner({
         adminHeaders,
       );
       expect(issue1.data.issued.map((i: any) => i.promotion_id)).toContain(promoId);
-      expect(await linkedPromoIds()).toContain(promoId);
+      expect(await grantedPromoIds()).toContain(promoId);
 
       // 2) 재발급 시도 → 멱등(already_issued skip)
       const issue2 = await api.post(
@@ -170,7 +210,7 @@ medusaIntegrationTestRunner({
         data: { promotion_ids: [promoId] },
       });
       expect(revoke.status).toEqual(200);
-      expect(await linkedPromoIds()).not.toContain(promoId);
+      expect(await grantedPromoIds()).not.toContain(promoId);
 
       // 4) 회수 후 트리거 → 재발급되어야 함 (issue-log 정리 검증, P2-2)
       const issue3 = await api.post(
@@ -179,7 +219,7 @@ medusaIntegrationTestRunner({
         adminHeaders,
       );
       expect(issue3.data.issued.map((i: any) => i.promotion_id)).toContain(promoId);
-      expect(await linkedPromoIds()).toContain(promoId);
+      expect(await grantedPromoIds()).toContain(promoId);
     });
 
     it('manual assign is batch-resilient: invalid coupon is skipped, valid one issued (P1-3)', async () => {
