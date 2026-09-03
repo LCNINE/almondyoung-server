@@ -615,7 +615,7 @@ medusaIntegrationTestRunner({
         });
         await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
         const [grant] = await svc().listGrantsForCustomer(customerId);
-        expect(await svc().consumeGrantIfUnused(grant.id, `order_${seq}`, new Date())).toBe(true);
+        expect(await svc().consumeGrantIfUnused(grant.id, `cart_${seq}`, new Date())).toBe(true);
 
         const second = await api.post(
           `/store/customers/me/promotions/${promotionId}/claim`,

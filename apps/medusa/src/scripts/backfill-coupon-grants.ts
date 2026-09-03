@@ -142,6 +142,7 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
       // 유일한 호출자였다. 키로 찾고 「미사용일 때만」은 `consumeGrantIfUnused` 의 SQL
       // 술어가 지킨다(조회를 믿고 덮어쓰지 않는다). 키가 안 맞는 쌍(개통 후 발급분)은
       // 조용히 지나가고 이미 채워진 값은 건드리지 않으므로 몇 번을 불러도 안전하다.
+      // `order_id` 는 옮기지 않는다 — 읽는 곳이 없고 컬럼은 다음 배포 뒤 지운다(ADR-0034 결정 6).
       const [grant] = (await promotionMetaService.listCouponGrants({
         promotion_id: l.promotion_id,
         customer_id: l.customer_id,
@@ -150,7 +151,8 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
       if (grant && grant.used_at == null) {
         const consumed = await promotionMetaService.consumeGrantIfUnused(
           grant.id,
-          l.order_id ?? 'legacy',
+          // 옛 링크 행에는 카트가 없다 — null 로 둔다. 스위퍼는 cart_id 가 있는 장만 본다.
+          null,
           new Date(l.used_at),
         );
         if (consumed) usageSynced++;

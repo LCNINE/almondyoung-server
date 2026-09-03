@@ -71,7 +71,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await service.upsert({ promotion_id: 'promo_used', max_claims: 1 });
         await issue('promo_used', 'cus_f', 'k1', 1);
         const [g] = await service.listGrantsForPromotion('promo_used');
-        await service.consumeGrantIfUnused(g.id, 'order_1', new Date());
+        await service.consumeGrantIfUnused(g.id, 'cart_1', new Date());
         await service.revokeGrants('promo_used', 'cus_f');
         expect(await service.countIssuedGrants('promo_used')).toEqual(1);
       });
@@ -80,10 +80,10 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await service.upsert({ promotion_id: 'promo_res', max_claims: null });
         await issue('promo_res', 'cus_j', 'k1', null);
         const [g] = await service.listGrantsForPromotion('promo_res');
-        await service.consumeGrantIfUnused(g.id, 'order_res', new Date());
+        await service.consumeGrantIfUnused(g.id, 'cart_res', new Date());
         await service.revokeGrants('promo_res', 'cus_j');
 
-        expect(await service.restoreGrantsByOrder('order_res', new Date())).toEqual(0);
+        expect(await service.restoreGrantsByCart('cart_res', new Date())).toEqual(0);
 
         const after = await service.listGrantsForCustomer('cus_j');
         const mine = after.find((r) => r.id === g.id);
@@ -95,9 +95,9 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await service.upsert({ promotion_id: 'promo_ok', max_claims: null });
         await issue('promo_ok', 'cus_k', 'k1', null);
         const [g] = await service.listGrantsForPromotion('promo_ok');
-        await service.consumeGrantIfUnused(g.id, 'order_ok', new Date());
+        await service.consumeGrantIfUnused(g.id, 'cart_ok', new Date());
 
-        expect(await service.restoreGrantsByOrder('order_ok', new Date())).toEqual(1);
+        expect(await service.restoreGrantsByCart('cart_ok', new Date())).toEqual(1);
 
         const after = await service.listGrantsForCustomer('cus_k');
         expect(after.find((r) => r.id === g.id)?.used_at).toBeNull();
@@ -239,7 +239,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         const em = (service as any).baseRepository_.manager_;
         const before = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
         await new Promise((r) => setTimeout(r, 10));
-        await service.consumeGrantIfUnused(g.id, 'order_upd', new Date());
+        await service.consumeGrantIfUnused(g.id, 'cart_upd', new Date());
         const after = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
 
         expect(new Date(after[0].updated_at).getTime()).toBeGreaterThan(
@@ -319,14 +319,14 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         const grants = await service.listGrantsForCustomer('cus_use');
         const usedAt = new Date();
 
-        await service.consumeGrantIfUnused(grants[0].id, 'order_1', usedAt);
+        await service.consumeGrantIfUnused(grants[0].id, 'cart_1', usedAt);
 
         const after = await service.listGrantsForCustomer('cus_use');
         expect(after.filter((g) => g.used_at != null)).toHaveLength(1);
-        expect(after.find((g) => g.id === grants[0].id)?.order_id).toBe('order_1');
+        expect(after.find((g) => g.id === grants[0].id)?.cart_id).toBe('cart_1');
       });
 
-      it('restoreGrantsByOrder 는 만료되지 않은 장만 되살린다', async () => {
+      it('restoreGrantsByCart 는 만료되지 않은 장만 되살린다', async () => {
         const past = new Date('2020-01-01T00:00:00.000Z');
         const future = new Date('2099-01-01T00:00:00.000Z');
         const base = {
@@ -335,22 +335,23 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           issued_via: 'admin_manual' as const,
           issued_at: past,
           used_at: past,
-          order_id: 'order_cancel',
+          cart_id: 'cart_cancel',
         };
         await service.createCouponGrants([
           { ...base, issue_key: 'alive', expires_at: future },
           { ...base, issue_key: 'dead', expires_at: past },
         ]);
 
-        const restored = await service.restoreGrantsByOrder('order_cancel', new Date());
+        const restored = await service.restoreGrantsByCart('cart_cancel', new Date());
 
         expect(restored).toBe(1);
         const rows = await service.listGrantsForCustomer('cus_restore');
         expect(rows.find((g) => g.issue_key === 'alive')?.used_at).toBeNull();
+        expect(rows.find((g) => g.issue_key === 'alive')?.cart_id).toBeNull();
         expect(rows.find((g) => g.issue_key === 'dead')?.used_at).not.toBeNull();
       });
 
-      it('restoreGrantsByOrder 는 두 번 불려도 결과가 같다', async () => {
+      it('restoreGrantsByCart 는 두 번 불려도 결과가 같다', async () => {
         const base = {
           promotion_id: 'promo_restore2',
           customer_id: 'cus_restore2',
@@ -358,13 +359,50 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           issued_via: 'admin_manual' as const,
           issued_at: new Date(),
           used_at: new Date(),
-          order_id: 'order_twice',
+          cart_id: 'cart_twice',
           expires_at: null,
         };
         await service.createCouponGrants([base]);
 
-        expect(await service.restoreGrantsByOrder('order_twice', new Date())).toBe(1);
-        expect(await service.restoreGrantsByOrder('order_twice', new Date())).toBe(0);
+        expect(await service.restoreGrantsByCart('cart_twice', new Date())).toBe(1);
+        expect(await service.restoreGrantsByCart('cart_twice', new Date())).toBe(0);
+      });
+
+      // ── ADR-0034 결정 6: 되돌림 본체는 하나다 ─────────────────────────────────────
+      // 훅 보상(이번 실행이 잡은 id) · 취소 구독자(카트로 고른 id) · 스위퍼(조건으로 고른 id) 가
+      // 전부 `restoreGrants(ids)` 를 지난다. 정책(만료·회수)은 고르는 쪽의 일이고 여기엔 없다.
+      it('restoreGrants 는 id 목록 중 «사용된» 장만 되돌리고 그 수를 돌려준다 — 만료·회수는 보지 않는다', async () => {
+        const past = new Date('2020-01-01T00:00:00.000Z');
+        const base = {
+          promotion_id: 'promo_undo',
+          customer_id: 'cus_undo',
+          issued_via: 'admin_manual' as const,
+          issued_at: past,
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'used', used_at: past, cart_id: 'cart_u' },
+          { ...base, issue_key: 'expired_used', used_at: past, cart_id: 'cart_u', expires_at: past },
+          { ...base, issue_key: 'unused' },
+        ]);
+        const rows = await service.listGrantsForCustomer('cus_undo');
+        const ids = rows.map((g) => g.id);
+
+        // 보상은 undo 다 — 만료된 장도 잡았던 그대로 놓는다(「사용됨」보다 「만료」가 진실에 가깝다).
+        expect(await service.restoreGrants(ids)).toBe(2);
+
+        const after = await service.listGrantsForCustomer('cus_undo');
+        expect(after.every((g) => g.used_at == null && g.cart_id == null)).toBe(true);
+        expect(await service.restoreGrants(ids)).toBe(0);
+        expect(await service.restoreGrants([])).toBe(0);
+      });
+
+      it('restoreGrants 는 soft delete 된 장은 건드리지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_undo_del', max_claims: null });
+        await issue('promo_undo_del', 'cus_undo_del', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_undo_del');
+        await service.revokeGrants('promo_undo_del', 'cus_undo_del'); // 미사용 → soft delete
+
+        expect(await service.restoreGrants([g.id])).toBe(0);
       });
 
       it('revokeGrants 는 회수한 장수를 돌려준다', async () => {
@@ -401,7 +439,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           { ...base, issue_key: 'k3' },
         ]);
         const grants = await service.listGrantsForCustomer('cus_rev_used');
-        await service.consumeGrantIfUnused(grants[0].id, 'order_kept', new Date());
+        await service.consumeGrantIfUnused(grants[0].id, 'cart_kept', new Date());
 
         expect(await service.revokeGrants('promo_rev_used', 'cus_rev_used')).toEqual({
           revoked: 2,
@@ -411,8 +449,8 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         // 쓴 장은 그대로 살아 있지만(이력 보존), 회수됐으므로 그 주문으로도 되살아나지 않는다.
         const left = await service.listGrantsForCustomer('cus_rev_used');
         expect(left).toHaveLength(1);
-        expect(left[0].order_id).toBe('order_kept');
-        expect(await service.restoreGrantsByOrder('order_kept', new Date())).toBe(0);
+        expect(left[0].cart_id).toBe('cart_kept');
+        expect(await service.restoreGrantsByCart('cart_kept', new Date())).toBe(0);
       });
 
       // ── 0단계 (PR #778 리뷰 F3·F12·F5) ──────────────────────────────────────────
@@ -442,10 +480,10 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await issue('promo_comp_used', 'cus_comp', 'k1', null);
         await issue('promo_comp_used', 'cus_comp', 'k2', null);
         const k1 = (await service.listGrantsForCustomer('cus_comp')).find((g) => g.issue_key === 'k1')!;
-        expect(await service.consumeGrantIfUnused(k1.id, 'order_comp', new Date())).toBe(true);
+        expect(await service.consumeGrantIfUnused(k1.id, 'cart_comp', new Date())).toBe(true);
 
         // 보상은 «이번 실행이 만든 것» 중 아직 안 쓴 장만 치운다 — 쓴 장은 슬롯이 실제로
-        // 소비됐고 이력이라, 지우면 countIssuedGrants·restoreGrantsByOrder 가 함께 틀린다.
+        // 소비됐고 이력이라, 지우면 countIssuedGrants·restoreGrantsByCart 가 함께 틀린다.
         expect(await service.revokeGrantsByIssueKeys('promo_comp_used', 'cus_comp', ['k1', 'k2'])).toBe(1);
 
         const left = await service.listGrantsForCustomer('cus_comp');
@@ -460,7 +498,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await service.upsert({ promotion_id: 'promo_rerev', max_claims: null });
         await issue('promo_rerev', 'cus_rerev', 'k1', null);
         const [g] = await service.listGrantsForPromotion('promo_rerev');
-        await service.consumeGrantIfUnused(g.id, 'order_rerev', new Date());
+        await service.consumeGrantIfUnused(g.id, 'cart_rerev', new Date());
 
         await service.revokeGrants('promo_rerev', 'cus_rerev');
         const first = (await service.listGrantsForCustomer('cus_rerev'))[0].revoked_at;
@@ -516,7 +554,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           await issue('promo_mirror_comp', 'cus_mc', 'k2', 5);
           expect(await issuedCountOf('promo_mirror_comp')).toBe(2);
           const k1 = (await service.listGrantsForCustomer('cus_mc')).find((g) => g.issue_key === 'k1')!;
-          await service.consumeGrantIfUnused(k1.id, 'order_mc', new Date());
+          await service.consumeGrantIfUnused(k1.id, 'cart_mc', new Date());
 
           await service.revokeGrantsByIssueKeys('promo_mirror_comp', 'cus_mc', ['k1', 'k2']);
           expect(await issuedCountOf('promo_mirror_comp')).toBe(1);
@@ -671,13 +709,13 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           ]);
           const [grant] = await service.listGrantsForCustomer('cus_once');
 
-          expect(await service.consumeGrantIfUnused(grant.id, 'order_first', new Date())).toBe(true);
+          expect(await service.consumeGrantIfUnused(grant.id, 'cart_first', new Date())).toBe(true);
           // 두 카트가 동시에 완료되면 두 훅이 «같은» 장을 고른다(선택은 결정적이다).
           // 옛 무조건 UPDATE 는 둘 다 성공해 한 장으로 할인 주문 두 건이 나갔다.
-          expect(await service.consumeGrantIfUnused(grant.id, 'order_second', new Date())).toBe(false);
+          expect(await service.consumeGrantIfUnused(grant.id, 'cart_second', new Date())).toBe(false);
 
           const [after] = await service.listGrantsForCustomer('cus_once');
-          expect(after.order_id).toBe('order_first');
+          expect(after.cart_id).toBe('cart_first');
         });
 
         it('회수된 장은 소모되지 않는다', async () => {
@@ -693,7 +731,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           const [grant] = await service.listGrantsForCustomer('cus_dead');
           await service.revokeGrants('promo_dead', 'cus_dead');
 
-          expect(await service.consumeGrantIfUnused(grant.id, 'order_x', new Date())).toBe(false);
+          expect(await service.consumeGrantIfUnused(grant.id, 'cart_x', new Date())).toBe(false);
         });
 
         it('used_at 이 Date 로 되읽힌다 — 바인딩이 문자열로 새지 않는다', async () => {
@@ -709,7 +747,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           const [grant] = await service.listGrantsForCustomer('cus_ts');
           const usedAt = new Date('2026-03-04T05:06:07.000Z');
 
-          expect(await service.consumeGrantIfUnused(grant.id, 'order_ts', usedAt)).toBe(true);
+          expect(await service.consumeGrantIfUnused(grant.id, 'cart_ts', usedAt)).toBe(true);
 
           const [after] = await service.listGrantsForCustomer('cus_ts');
           expect(new Date(after.used_at as string | Date).toISOString()).toBe('2026-03-04T05:06:07.000Z');

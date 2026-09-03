@@ -343,7 +343,7 @@ medusaIntegrationTestRunner({
 
       // 발급된 한 장을 «사용» 상태로 만든다.
       const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
-      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used`, new Date())).toBe(true);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `cart_${seq}_used`, new Date())).toBe(true);
 
       const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
         ...adminHeaders,
@@ -374,7 +374,7 @@ medusaIntegrationTestRunner({
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
-      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used2`, new Date())).toBe(true);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `cart_${seq}_used2`, new Date())).toBe(true);
 
       const res = await api.delete(`/admin/promotions/${promoId}/customers`, {
         ...adminHeaders,

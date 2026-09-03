@@ -366,31 +366,26 @@ class PromotionMetaModuleService extends MedusaService({
    *
    * 🔴 술어를 SQL 에 적는 것이 요점이다. 이전 구현은 조건 없는 `updateCouponGrants` 라,
    * 같은 고객이 두 카트를 동시에 완료하면 두 훅이 같은 장을 골라(선택은 결정적이다) 둘 다
-   * 덮어썼다 — 한 장으로 할인 주문 두 건, `order_id` 는 나중 것만 남았다. 「1장 = 1회」는
-   * 이 PR 이 세우려는 불변식이므로 애플리케이션 읽기-후-쓰기가 아니라 **한 문장**으로
-   * 집행한다. 같은 파일의 `countIssuedGrants`/`lockPromotionForIssue` 가 쓰는 기법과 같다
-   * (ADR-0034 결정 1).
+   * 덮어썼다 — 한 장으로 할인 주문 두 건. 「1장 = 1회」는 애플리케이션 읽기-후-쓰기가 아니라
+   * **한 문장**으로 집행한다(ADR-0034 결정 1).
    *
-   * `deleted_at IS NULL` 도 술어에 넣는다 — 회수된 장은 소모 대상이 아니다.
+   * `cartId` 가 null 인 호출자는 백필뿐이다 — 옛 링크 행에는 카트가 없었다. 스위퍼는
+   * `cart_id IS NOT NULL` 만 보므로 그런 장은 「주문 없는 소모」로 오판되지 않는다.
    *
-   * `sharedContext` 는 형제 원시 SQL 헬퍼(`countIssuedGrants` 등)와 같은 이유로 열어 둔다 —
-   * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
-   * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
-   * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.
-   *
-   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrant` 다 — 이건 id 를 아는 호출자(백필·스펙)의 원시 연산이다.
+   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrantForCart` 다 — 이건 id 를 아는 호출자
+   * (백필·스펙)의 원시 연산이다.
    */
   async consumeGrantIfUnused(
     grantId: string,
-    orderId: string,
+    cartId: string | null,
     usedAt: Date,
     sharedContext?: Context<EntityManager>,
   ): Promise<boolean> {
     const rows = await this.txEm(sharedContext).execute(
-      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
+      `UPDATE "coupon_grant" SET "used_at" = ?, "cart_id" = ?, "updated_at" = now()
        WHERE "id" = ? AND "used_at" IS NULL AND "deleted_at" IS NULL
        RETURNING "id"`,
-      [usedAt, orderId, grantId],
+      [usedAt, cartId, grantId],
     );
     return (rows?.length ?? 0) > 0;
   }
@@ -451,28 +446,46 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 이 주문에 쓰인 장들을 되돌린다 (A2). 되살린 장수를 돌려준다.
+   * 되돌림의 **유일한 본체** (ADR-0034 결정 6). id 목록 중 «사용된» 장만 미사용으로 되돌리고
+   * 실제로 되돌린 장수를 돌려준다.
    *
-   * **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
-   * **회수된 장도 되살리지 않는다** — 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면
-   * 안 된다(설계 결정 3, `revoked_at`).
-   * 이미 되돌려진 장은 `used_at` 이 null 이라 대상에서 빠지므로 두 번 불려도 안전하다.
+   * 정책은 여기 없다 — 고르는 쪽의 일이다. 훅 보상은 이번 실행이 잡은 id 를 무조건 놓고(undo),
+   * 취소 구독자는 `restoreGrantsByCart` 가 만료·회수를 걸러 넘기고, 스위퍼는
+   * `listStuckConsumptions` 가 고른다. 셋이 각자 UPDATE 를 들면 PR-2 가 걷어낸 쌍둥이가 되돌아온다.
+   *
+   * `used_at IS NOT NULL` 술어 덕에 두 번 불려도 두 번째는 0 이다. `order_id` 는 만지지 않는다 —
+   * 읽는 곳이 없고, 컬럼은 다음 배포 뒤 지운다.
    */
-  async restoreGrantsByOrder(orderId: string, now: Date): Promise<number> {
-    const rows = (await (this as any).listCouponGrants({ order_id: orderId })) as CouponGrantRow[];
+  async restoreGrants(ids: string[], sharedContext?: Context<EntityManager>): Promise<number> {
+    if (ids.length === 0) return 0;
+    const rows = await this.txEm(sharedContext).execute(
+      `UPDATE "coupon_grant" SET "used_at" = NULL, "cart_id" = NULL, "updated_at" = now()
+        WHERE "id" IN (?) AND "used_at" IS NOT NULL AND "deleted_at" IS NULL
+        RETURNING "id"`,
+      [ids],
+    );
+    return rows?.length ?? 0;
+  }
+
+  /**
+   * 이 카트가 소모한 장들을 되돌린다 (A2 — 주문 취소). 되살린 장수.
+   *
+   * 주문 → 카트는 호출자(`subscribers/coupon-grant-restore.ts`)가 Medusa 의 `order_cart` 링크로
+   * 푼다. 여기서는 고르기만 하고 되돌리는 것은 `restoreGrants` 다.
+   * - **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
+   * - **회수된 장도 되살리지 않는다** — 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면
+   *   안 된다(설계 결정 3, `revoked_at`).
+   */
+  async restoreGrantsByCart(cartId: string, now: Date): Promise<number> {
+    const rows = (await (this as any).listCouponGrants({ cart_id: cartId })) as CouponGrantRow[];
     const targets = rows.filter((g) => {
       if (g.used_at == null) return false;
-      // 🔴 회수된 장은 되살리지 않는다. 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면 안 된다.
       if (g.revoked_at != null) return false;
       if (g.expires_at == null) return true;
       const expiresAt = g.expires_at instanceof Date ? g.expires_at : new Date(g.expires_at);
       return !(now > expiresAt);
     });
-    if (targets.length === 0) return 0;
-    await (this as any).updateCouponGrants(
-      targets.map((g) => ({ id: g.id, used_at: null, order_id: null })),
-    );
-    return targets.length;
+    return this.restoreGrants(targets.map((g) => g.id));
   }
 
   /**
@@ -510,7 +523,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 에서 빠지고, (2) 「누가 언제 썼는가」의 근거가 사라졌다(발급 현황의 `used_count` 가 0 이
    * 된다). `deleted_at` 은 「슬롯을 안 점유한다」는 뜻이라 이미 쓴 장에는 못 쓰지만, 회수
    * 사실 자체는 잊으면 안 된다 — 그래서 `revoked_at` 을 이미 쓴 장에도 찍는다. 이게 없으면
-   * 그 주문이 나중에 취소될 때 `restoreGrantsByOrder` 가 「쓴 적 있는 장」으로만 판단해
+   * 그 주문이 나중에 취소될 때 `restoreGrantsByCart` 가 「쓴 적 있는 장」으로만 판단해
    * 어드민이 뺏은 쿠폰을 되살려 버린다(설계 결정 3) — soft delete 와 회수 표지는 별개의
    * 질문에 답한다: 하나는 「슬롯을 세는가」, 다른 하나는 「회수됐는가」.
    *
