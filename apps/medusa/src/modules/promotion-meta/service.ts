@@ -321,7 +321,6 @@ class PromotionMetaModuleService extends MedusaService({
             issued_at: input.now,
             expires_at: input.expires_at,
             used_at: null,
-            order_id: null,
           },
         ],
         sharedContext,
@@ -410,6 +409,16 @@ class PromotionMetaModuleService extends MedusaService({
    * 키만 `cart_id`) ② 0행이면 «이 카트가 이미 잡은 장» 을 읽어 `already` 와 `none` 을 가른다.
    * ②가 읽기-후-판정인데도 안전한 이유: 같은 카트의 동시 호출은 워크플로가 카트 id 로 잡는
    * 락(`acquireLockStep`)이 직렬화한다. 다른 카트와의 경합은 ①이 정한다.
+   *
+   * 🔴 ①과 ②를 잇는 불변식: **`cart_id IS NOT NULL ⟺ used_at IS NOT NULL`.** 모든 writer(①·
+   * `consumeGrantIfUnused`·`restoreGrants`)가 두 컬럼을 함께 찍고 함께 비운다. DB 는 이것을 강제하지
+   * 않는다(마이그레이션은 파셜 인덱스뿐). `cart_id` 만 찍는 writer(「예약」 같은 것)를 만들면 ①은 막히고
+   * ②는 못 봐서 **조용한 거짓 `none`** 이 된다 — 그런 writer 를 두지 말 것.
+   *
+   * SQL 단독으로는 «같은 카트»의 동시 호출 둘을 못 막는다 — `NOT EXISTS` 는 스냅샷 술어라 둘 다 통과하고
+   * `SKIP LOCKED` 가 장을 하나씩 내준다(한 카트가 두 장). 그것을 막는 것은 워크플로의 카트 락
+   * (`acquireLockStep`, `complete-cart.js:259`, ttl 2분)이다. 워크플로 밖에서 `sharedContext` 로 이
+   * 메서드를 부르는 호출자에겐 그 락이 없다 — 그런 호출자는 순차 멱등성만 기대할 것.
    *
    * 키가 주문이 아니라 카트인 이유: `validate` 시점엔 주문이 없다. 주문 → 카트는 Medusa 의
    * `order_cart` 링크가 안다(ADR-0034 결정 6).
@@ -506,6 +515,29 @@ class PromotionMetaModuleService extends MedusaService({
       return !(now > expiresAt);
     });
     return this.restoreGrants(targets.map((g) => g.id));
+  }
+
+  /**
+   * 스위퍼의 후보 — 카트가 잡았는데(`cart_id`) `usedBefore` 보다 오래된 «사용된» 장 (ADR-0034 결정 7).
+   *
+   * 훅이 커밋한 뒤 워크플로가 끝나기 전에 프로세스가 죽으면 «주문 없는 소모» 가 남는다. 보상은
+   * 살아 있는 프로세스만 돌리므로 잡이 훑는다. 「주문이 있는가」 는 모듈 밖의 질문
+   * (`order_cart` 링크·카트 `completed_at`)이라 여기서는 후보만 고르고, 판정과 되돌림은
+   * `scripts/restore-stuck-coupon-consumptions.ts` 가 한다.
+   *
+   * `cart_id IS NOT NULL` — 백필된 옛 장은 카트가 없어 「주문 없는 소모」로 오판될 수 없다.
+   */
+  async listStuckConsumptions(usedBefore: Date, limit: number): Promise<Array<{ id: string; cart_id: string }>> {
+    if (limit <= 0) return [];
+    const rows = await this.txEm().execute(
+      `SELECT "id", "cart_id" FROM "coupon_grant"
+        WHERE "used_at" IS NOT NULL AND "cart_id" IS NOT NULL AND "deleted_at" IS NULL
+          AND "used_at" < ?
+        ORDER BY "used_at" ASC
+        LIMIT ?`,
+      [usedBefore, limit],
+    );
+    return (rows ?? []).map((r: { id: string; cart_id: string }) => ({ id: String(r.id), cart_id: String(r.cart_id) }));
   }
 
   /**

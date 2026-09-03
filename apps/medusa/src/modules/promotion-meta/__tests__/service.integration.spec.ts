@@ -405,6 +405,30 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.restoreGrants([g.id])).toBe(0);
       });
 
+      it('listStuckConsumptions 는 «카트가 있고, 쓰였고, 오래된» 장만 고른다 — 옛 장(cart_id null) 은 빼고', async () => {
+        const old = new Date('2026-09-01T00:00:00.000Z');
+        const recent = new Date('2026-09-10T00:00:00.000Z');
+        const base = {
+          promotion_id: 'promo_stuck',
+          customer_id: 'cus_stuck',
+          issued_via: 'admin_manual' as const,
+          issued_at: old,
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'old_with_cart', used_at: old, cart_id: 'cart_stuck_old' },
+          { ...base, issue_key: 'recent_with_cart', used_at: recent, cart_id: 'cart_stuck_recent' },
+          { ...base, issue_key: 'legacy_no_cart', used_at: old, cart_id: null },
+          { ...base, issue_key: 'unused' },
+        ]);
+        const rows = await service.listGrantsForCustomer('cus_stuck');
+        const oldId = rows.find((g) => g.issue_key === 'old_with_cart')!.id;
+
+        const stuck = await service.listStuckConsumptions(new Date('2026-09-05T00:00:00.000Z'), 100);
+
+        expect(stuck.filter((s) => s.cart_id.startsWith('cart_stuck_'))).toEqual([{ id: oldId, cart_id: 'cart_stuck_old' }]);
+        expect(await service.listStuckConsumptions(new Date('2026-09-05T00:00:00.000Z'), 0)).toEqual([]);
+      });
+
       it('revokeGrants 는 회수한 장수를 돌려준다', async () => {
         const base = {
           promotion_id: 'promo_rev',
