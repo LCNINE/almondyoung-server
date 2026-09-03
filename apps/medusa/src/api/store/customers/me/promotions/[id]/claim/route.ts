@@ -138,18 +138,39 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     },
   });
 
-  if (outcome.verdict === 'error') {
-    throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `클레임 발급 실패: ${outcome.error}`);
-  }
-  if (outcome.verdict === 'exhausted') {
-    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
-  }
-
   // 200 본문은 빠른 경로와 **같은 모양**이다 (PR-2 결정 4). `issued` 가 이번 클릭이 장을 만들었는지,
   // `reason` 은 안 만들었을 때만 붙는다. 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는 중복일 때
   // 트랜잭션과 함께 되감겼다(따닥 한 번에 2명분이 소진되지 않는다).
-  if (outcome.verdict === 'already_issued') {
-    return res.status(200).json({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
+  switch (outcome.verdict) {
+    case 'error':
+      // 🔴 `outcome.error` 는 스토어프론트에 나가면 안 된다 — Medusa 의 error-handler 는
+      // `UNEXPECTED_STATE` 메시지를 **가리지 않고 그대로** 내보내므로, DB 에러 문구·테이블 이름이
+      // 고객 브라우저까지 간다. 원인은 서버 로그에만 남기고 고객에겐 일반 문구를 준다.
+      req.scope
+        .resolve(ContainerRegistrationKeys.LOGGER)
+        .error(
+          `[coupon] 클레임 발급 실패 (promotion_id=${promotionId}, customer_id=${customerId}): ${outcome.error}`,
+        );
+      throw new MedusaError(
+        MedusaError.Types.UNEXPECTED_STATE,
+        '쿠폰 발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
+      );
+    case 'exhausted':
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+    case 'already_issued':
+      return res
+        .status(200)
+        .json({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
+    case 'issued':
+    case 'partial':
+      // `partial` 은 키가 `['claim']` 하나뿐이라 나올 수 없다 — 그래도 어휘가 닫혀 있으니 같은 칸에
+      // 둔다. 나오더라도 장은 «만들어졌으므로» `issued: true` 가 맞다.
+      return res.status(200).json({ success: true, promotion_id: promotionId, issued: true });
+    default: {
+      // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+      // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+      const exhaustive: never = outcome.verdict;
+      throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+    }
   }
-  return res.status(200).json({ success: true, promotion_id: promotionId, issued: true });
 }

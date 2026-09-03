@@ -199,7 +199,7 @@ PR #778 머지 직전 재리뷰 14건을 세 시험(접기의 2차 미분 / 인�
 
 - **결정 1 「조건부 쓰기는 술어를 SQL 에 적는다」는 소모의 «선택»에도 적용된다.** `consumeGrantIfUnused(id)`
   는 술어를 SQL 에 두었지만 *어느 id 인지*는 훅이 골랐다 — 고르기와 CAS 가 다른 층에 있어 같은
-  고객의 두 카트가 같은 장을 골랐다. `consumeOneUsableGrant` 가 FEFO·만료 경계·재호출 멱등성·
+  고객의 두 카트가 같은 장을 골랐다. `consumeOneUsableGrant` 가 FEFO·만료 경계·재호출(순차) 멱등성·
   `FOR UPDATE SKIP LOCKED` 를 한 UPDATE 로 묶는다. 핫패스는 이것만 부른다.
 - **결정 3 「라우트에는 정책 게이트·워크플로 호출·응답 모양만」은 워크플로 출력이 날것이면 지켜지지
   않는다.** `{created[], duplicated[], exhausted}` 를 라우트 넷이 제각각 접었다. 워크플로가 요청

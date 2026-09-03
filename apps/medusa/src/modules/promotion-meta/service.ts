@@ -404,8 +404,9 @@ class PromotionMetaModuleService extends MedusaService({
    * - **FEFO** 는 `ORDER BY expires_at NULLS LAST, issued_at, id` — `grants.ts` 의 옛 정렬과 같다.
    * - **만료 경계(포함)** 는 `expires_at >= now` — `usableGrants` 와 같은 경계여야 카트 게이트와
    *   어긋나지 않는다.
-   * - **재호출 멱등성**은 `NOT EXISTS(같은 order_id)` — 엔진이 이 훅을 두 번 불러도 주문당
-   *   쿠폰당 한 장이다.
+   * - **재호출(순차) 멱등성**은 `NOT EXISTS(같은 order_id)` — 엔진이 이 훅을 «다시» 불러도 주문당
+   *   쿠폰당 한 장이다. 스냅샷 술어라 같은 `order_id` 의 **동시** 호출 둘은 못 막는다(둘 다 통과해
+   *   SKIP LOCKED 가 다른 장을 준다) — 주문 생성 경로는 그런 호출을 만들지 않는다.
    * - **동시성**은 `FOR UPDATE SKIP LOCKED` — 다른 트랜잭션이 잡은 장은 건너뛰고 다음 장을 잡는다.
    *   장이 하나뿐이면 늦은 쪽은 `null` 이고, 그게 정답이다.
    *

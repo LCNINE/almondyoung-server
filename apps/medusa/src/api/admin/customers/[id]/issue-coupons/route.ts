@@ -170,6 +170,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         );
         failed.push(r.promotion_id);
         break;
+      default: {
+        // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+        // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+        const exhaustive: never = r.verdict;
+        throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+      }
     }
   }
 

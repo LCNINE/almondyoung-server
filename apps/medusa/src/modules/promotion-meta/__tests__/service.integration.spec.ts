@@ -565,6 +565,27 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           expect(await consume('p_fefo', 'c_fefo', 'o4')).toBeNull();
         });
 
+        it('FEFO 동률 — expires_at 이 같으면 issued_at 이 이른 장, 그것도 같으면 id 오름차순', async () => {
+          const exp = new Date('2026-09-30T00:00:00.000Z');
+          await seed('p_tie', 'c_tie', [
+            { key: 'later_issued', expires_at: exp, issued_at: new Date('2026-09-02T00:00:00.000Z') },
+            { key: 'earlier_issued', expires_at: exp, issued_at: new Date('2026-09-01T00:00:00.000Z') },
+          ]);
+          const grants = await byKey('c_tie');
+          expect(await consume('p_tie', 'c_tie', 'o1')).toBe(grants.get('earlier_issued')!.id);
+          expect(await consume('p_tie', 'c_tie', 'o2')).toBe(grants.get('later_issued')!.id);
+
+          // 대량발급은 배치당 now 하나를 쓰므로 issued_at 동률이 기본 상황이다 — 그때는 id 가 정한다.
+          const same = new Date('2026-09-03T00:00:00.000Z');
+          await seed('p_tie2', 'c_tie2', [
+            { key: 'a', expires_at: exp, issued_at: same },
+            { key: 'b', expires_at: exp, issued_at: same },
+          ]);
+          const ids = [...(await byKey('c_tie2')).values()].map((g) => g.id).sort();
+          expect(await consume('p_tie2', 'c_tie2', 'o3')).toBe(ids[0]);
+          expect(await consume('p_tie2', 'c_tie2', 'o4')).toBe(ids[1]);
+        });
+
         it('만료 경계는 포함이다 — expires_at == now 는 쓸 수 있고, 지난 장은 고르지 않는다', async () => {
           // `grants.ts::usableGrants` 와 같은 경계(`now > expiresAt` 만 불가). 어긋나면
           // 「카트엔 붙는데 주문에서 소모되지 않는」 창이 생긴다.

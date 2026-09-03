@@ -88,7 +88,7 @@ UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
  RETURNING "id"
 ```
 
-- **FEFO** 는 `ORDER BY` 가, **만료 경계(포함)** 는 `expires_at >= now` 가, **재호출 멱등성**은
+- **FEFO** 는 `ORDER BY` 가, **만료 경계(포함)** 는 `expires_at >= now` 가, **재호출(순차) 멱등성**은
   `NOT EXISTS(order_id)` 가, **동시성**은 `FOR UPDATE SKIP LOCKED` 가 맡는다. 옛 훅이 애플리케이션
   코드로 들고 있던 네 규칙이 전부 한 문장에 들어간다.
 - 두 카트가 동시에 완료되면 한쪽이 잠근 장을 다른 쪽이 **건너뛰고 다음 장**을 잡는다 — F1 이
@@ -188,6 +188,8 @@ type IssueGrantResult = {
   문서: “the hook handler is a step function, you can set its compensation function”. 검사와 소모가
   한 문장이 되어 F1 의 창 자체가 닫힌다. `validate` 는 결제 승인 전이므로 승인 실패 시 보상이 복원.
 - (b) `order.placed` 구독자 — 문서화된 자리, at-least-once 는 `NOT EXISTS(order_id)` 가 받는다.
+  — 단 **순차** 재전달만이다. 겹치는 재전달은 스냅샷 술어가 못 막으므로 별도 가드가 필요하다
+  (`(promotion_id, customer_id, order_id) WHERE order_id IS NOT NULL` 파셜 유니크, 또는 advisory lock).
 - (c) 캠페인 예산 `use_by_attribute`(v2.11+, 설치 2.13.4 에 존재) — `customer_id` 별 사용 횟수를
   엔진이 집행하고 `registerUsageStep` 이 completeCart 에서 기록한다. ADR-0034 의 기각 근거
   (「전체 사용량이라 1인 1장 불가」)는 낡았다. 단 캠페인 재부착이 필요해 `detach-coupon-campaigns`

@@ -268,8 +268,10 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     });
   }
 
-  // 발급은 워크플로다 (ADR-0034 결정 1). 요청 하나의 예외는 그 요청의 `error` 로 격리돼 돌아오므로
-  // 여기 try/catch 는 «워크플로 자체»가 죽은 경우만 남는다 — 그땐 500 이 맞다(아무것도 발급 전).
+  // 발급은 워크플로다 (ADR-0034 결정 1). 요청 하나의 예외는 그 요청의 `error` 로 격리돼 돌아온다.
+  // 여기서 던지는 것은 «워크플로 엔진 자체»가 죽은 경우뿐이고 그땐 500 이 맞다 — 그 실패가 스텝이
+  // 장을 만든 뒤에 나도 불변식을 지키는 것은 보상이지 「아직 발급 전」이 아니다. 재시도는
+  // `submit_id` 고정 키라 멱등하다.
   const results: IssueGrantResult[] =
     requests.length > 0
       ? (await issueCouponGrantWorkflow(req.scope).run({ input: { requests } })).result.results
@@ -300,6 +302,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
         );
         skipped.push({ promotion_id: r.promotion_id, reason: 'grant_error' });
         break;
+      default: {
+        // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+        // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+        const exhaustive: never = r.verdict;
+        throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+      }
     }
   }
 

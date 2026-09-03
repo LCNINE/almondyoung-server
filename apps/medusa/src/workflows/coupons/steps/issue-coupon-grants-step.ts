@@ -101,6 +101,8 @@ export const issueCouponGrantsStep = createStep(
             await service.revokeGrantsByIssueKeys(req.promotion_id, req.customer_id, created);
           } catch (e2: any) {
             error += ` (되감기 실패: ${String(e2?.message ?? e2)})`;
+            // 제자리 되감기가 실패했으면 보상이 다시 걷게 등록한다 (회수는 멱등이라 겹쳐도 안전).
+            compensation.push({ promotion_id: req.promotion_id, customer_id: req.customer_id, issue_keys: created });
           }
         }
         results.push({
