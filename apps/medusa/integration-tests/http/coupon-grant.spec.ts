@@ -164,11 +164,13 @@ medusaIntegrationTestRunner({
       });
 
       it('G3: 동시 클레임 2회 → 장 1개, 그리고 coupon_grant COUNT 는 +1 이다', async () => {
-        // 🔴 장수만 검사하면 안 된다. 오늘 새고 있는 것은 장수가 아니라 «상한 집행» 이다 —
-        //    (Task 2 이전에는) claim 라우트의 read-then-write 경합이 `reserveClaimSlot` 을
-        //    두 번 돌렸는데, 링크의 복합 PK 가 장수만 1로 막아 증상이 안 보였다. 지금은
-        //    `promotion_meta` 행을 `FOR UPDATE` 로 잠그고 COUNT 하므로 같은 경합이 직렬화되는지
-        //    이 테스트가 계속 지킨다. max_claims 가 있어야 재현된다(enforce_cap 경로만 잠근다).
+        // 🔴 이 테스트가 실제로 지키는 것은 `FOR UPDATE` 락(상한 직렬화)이 «아니다» — 두 요청
+        // 모두 **같은** 고객이고, `claim/route.ts` 의 `issue_key` 는 `'claim'` 고정이라
+        // `(promotion_id, customer_id, issue_key)` 유니크 인덱스가 둘 중 하나를 유니크
+        // 위반으로 되감는다(따닥 방어). max_claims: 10 은 두 동시 요청으로는 닿지도 않는
+        // 값이라 상한 집행 경로를 재현하지 않는다 — 상한 락의 실제 경합 테스트는
+        // `service.integration.spec.ts` 의 "동시에 서로 다른 고객 둘이 상한 1에 경합하면
+        // 하나만 살아남는다" 가 맡는다(서로 다른 고객이라 유니크 인덱스가 못 막는 경우).
         const promotionId = await createPromo(`G3${seq}`, {
           visibility: 'claimable',
           max_claims: 10,

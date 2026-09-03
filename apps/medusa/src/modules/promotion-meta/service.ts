@@ -140,15 +140,26 @@ class PromotionMetaModuleService extends MedusaService({
    * 출처는 카운터 «값» 이 아니라 이 행의 배타 락이었다 — Postgres READ COMMITTED 에서
    * 두 번째 UPDATE 는 첫 커밋을 기다렸다가 WHERE 를 재평가한다. 같은 행을 `FOR UPDATE` 로
    * 잠그고 장을 세면 동일한 직렬화를 얻는다.
+   *
+   * 🔴 **fail-closed.** 0행이면(그 `promotion_id` 의 `promotion_meta` 가 없으면) throw 해
+   * 트랜잭션을 되감는다 — 잠그지 못했는데 조용히 넘어가면 아래 COUNT 검사가 직렬화 없이
+   * 돌아 상한이 새는 fail-open 이 된다(옛 `reserveClaimSlot` 은 0행 갱신 시 `'exhausted'`
+   * 를 돌려줘 fail-closed 였다). 오늘은 호출부가 전부 메타 레코드에서 `max_claims` 를 뽑아
+   * 넘기므로(`enforcing===true` 면 그 레코드가 존재) 이 분기에 실제로 닿지 않지만, 그
+   * 불변식을 지키는 것은 이 함수가 아니라 호출 사슬이다 — 조용히 안 잠그는 것보다 시끄럽게
+   * 500 으로 죽는 편이 낫다.
    */
   private async lockPromotionForIssue(
     promotionId: string,
     sharedContext?: Context<EntityManager>,
   ): Promise<void> {
-    await this.txEm(sharedContext).execute(
+    const rows = await this.txEm(sharedContext).execute(
       `SELECT 1 FROM "promotion_meta" WHERE "promotion_id" = ? FOR UPDATE`,
       [promotionId],
     );
+    if ((rows?.length ?? 0) === 0) {
+      throw new Error(`Cannot lock promotion_meta for issue — no row for promotion_id=${promotionId}`);
+    }
   }
 
   /** issued_count 를 실제 링크 수로 정합화(backfill). 음수는 0으로 보정. */
@@ -314,11 +325,11 @@ class PromotionMetaModuleService extends MedusaService({
       // 🔴 **반드시 여기서 flush 한다.** MikroORM 은 unit-of-work 라 `createCouponGrants` 는
       // 엔티티를 등록만 하고 INSERT 는 커밋 시점까지 미룬다 — flush 없이 아래 (2) 의 COUNT(원시
       // SQL 이라 즉시 실행된다)를 돌리면 방금 등록한 장이 아직 DB 에 없어 세어지지 않는다.
-      // 상한에 닿은 프로모션에 재발급을 시도한 「이미 받은 사람」이 `'duplicate'` 가 아니라
-      // `'exhausted'` 를 받던 그 순서 문제가 ORM 의 지연 flush 로 되살아난다. 게다가 커밋
-      // 시점의 위반은 이 try 를 벗어나 `MikroOrmBaseRepository.transaction` 에서 던져지므로
-      // `'duplicate'` 로 바뀌지도 않는다. (2026-09-03 모듈 통합 스펙이 두 증상을 다 잡아냈다 —
-      // 목이었으면 통과했다.)
+      // COUNT 가 실제보다 1 작게 나오므로 `issued > max_claims` 검사가 매번 통과해 버려 —
+      // 상한이 발급마다 1 씩 새는 fail-open 이 된다(트랜잭션이 커밋되고 나서야 진짜 개수가
+      // 드러난다). 게다가 커밋 시점의 위반은 이 try 를 벗어나
+      // `MikroOrmBaseRepository.transaction` 에서 던져지므로 `'duplicate'` 로 바뀌지도
+      // 않는다. (2026-09-03 모듈 통합 스펙이 두 증상을 다 잡아냈다 — 목이었으면 통과했다.)
       await this.txEm(sharedContext).flush();
     } catch (e: any) {
       if (this.isUniqueViolation(e)) throw new DuplicateGrantSignal();
