@@ -202,6 +202,7 @@ PR #778 머지 직전 재리뷰 14건을 세 시험(접기의 2차 미분 / 인�
   는 술어를 SQL 에 두었지만 *어느 id 인지*는 훅이 골랐다 — 고르기와 CAS 가 다른 층에 있어 같은
   고객의 두 카트가 같은 장을 골랐다. `consumeOneUsableGrant` 가 FEFO·만료 경계·재호출(순차) 멱등성·
   `FOR UPDATE SKIP LOCKED` 를 한 UPDATE 로 묶는다. 핫패스는 이것만 부른다.
+  (2026-09-04 개정에서 `consumeOneUsableGrantForCart` 로 — 키가 주문에서 카트로, 결과가 세 값으로)
 - **결정 3 「라우트에는 정책 게이트·워크플로 호출·응답 모양만」은 워크플로 출력이 날것이면 지켜지지
   않는다.** `{created[], duplicated[], exhausted}` 를 라우트 넷이 제각각 접었다. 워크플로가 요청
   배치를 받아 요청당 `verdict`(`issued|partial|already_issued|exhausted|error`) 를 돌려주고,
@@ -259,9 +260,10 @@ Medusa 2.13.4. 경로는 `apps/medusa/node_modules/@medusajs/` 아래.
    `use_by_attribute` 도 같다 — `registerCampaignBudgetUsageByAttribute_`(:75) 가 `list` → `create`
    또는 `update`. 한도 판정은 `computeActions`(:428, **카트 계산 시점**) 에 있고, 등록(:91) 의 판정은
    주문 생성 뒤 `parallelize` 안에서 돈다. 어느 쪽도 «같은 고객의 두 카트» 를 막지 못한다.
-6. **`coupon_grant.order_id` 를 읽는 프로덕션 코드는 `restoreGrantsByOrder` 하나다.** 스토어 응답
-   (`store/customers/me/promotions/format-promotion.ts`)·스토어프론트·admin-web 은 읽지 않는다.
-   백필 스크립트가 옛 링크 행에서 옮겨 적었을 뿐이다.
+6. **(개정 전) `coupon_grant.order_id` 를 읽는 프로덕션 코드는 `restoreGrantsByOrder` 하나였다.**
+   스토어 응답(`store/customers/me/promotions/format-promotion.ts`)·스토어프론트·admin-web 은
+   읽지 않는다. 백필 스크립트가 옛 링크 행에서 옮겨 적었을 뿐이다. → PR-3 에서 `restoreGrantsByOrder`
+   는 `restoreGrantsByCart` 로 바뀌며(결정 6) 읽는 곳이 0 이 됐다.
 7. **카트를 완료하는 HTTP 스펙은 둘**(`coupon-cap.spec.ts` · `deferred-approval-checkout.spec.ts`)이고
    **소모를 단언하는 스펙은 없다.** cap 스펙의 wallet 스텁(`POST /v1/payment-intents` 하나)은
    `validate` 까지 닿는 최소 픽스처라 그대로 재사용한다.
@@ -397,3 +399,6 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 - 「하지 않는 것」 의 캠페인 예산 항목 — 근거를 교체했다(결론 동일).
 - 2026-09-03 보강 절의 「결정 2 의 매단 자리(`orderCreated`)는 미문서 훅이다 … 별도 결정(PR-3)」 —
   이 절이 그 결정이다.
+- 2026-09-03 보강 절의 결정 1 문단 — `consumeOneUsableGrant` 는 `consumeOneUsableGrantForCart` 로
+  바뀌었다(키가 주문에서 카트로, 결과가 세 값으로). 그 문단 자체는 09-03 시점의 기록이라 다시
+  쓰지 않고, 문장 뒤에 이 개정을 가리키는 포인터만 붙였다.
