@@ -39,6 +39,7 @@ export type CouponGrantRow = {
   expires_at: Date | string | null;
   used_at: Date | string | null;
   order_id: string | null;
+  revoked_at: Date | string | null;
 };
 
 /** `issueGrantWithSlot` 의 입력. 공개 메서드와 트랜잭션 본체가 같은 모양을 공유한다. */
@@ -445,12 +446,16 @@ class PromotionMetaModuleService extends MedusaService({
    * 이 주문에 쓰인 장들을 되돌린다 (A2). 되살린 장수를 돌려준다.
    *
    * **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
+   * **회수된 장도 되살리지 않는다** — 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면
+   * 안 된다(설계 결정 3, `revoked_at`).
    * 이미 되돌려진 장은 `used_at` 이 null 이라 대상에서 빠지므로 두 번 불려도 안전하다.
    */
   async restoreGrantsByOrder(orderId: string, now: Date): Promise<number> {
     const rows = (await (this as any).listCouponGrants({ order_id: orderId })) as CouponGrantRow[];
     const targets = rows.filter((g) => {
       if (g.used_at == null) return false;
+      // 🔴 회수된 장은 되살리지 않는다. 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면 안 된다.
+      if (g.revoked_at != null) return false;
       if (g.expires_at == null) return true;
       const expiresAt = g.expires_at instanceof Date ? g.expires_at : new Date(g.expires_at);
       return !(now > expiresAt);
@@ -487,13 +492,17 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 이 고객의 이 쿠폰 중 **아직 안 쓴 장**을 회수한다.
+   * 이 고객의 이 쿠폰을 회수한다. 매칭된 **전부**에 `revoked_at` 을 찍고, 그중 **아직 안 쓴
+   * 장만** soft delete 한다.
    *
-   * 🔴 이미 쓴 장은 건드리지 않는다. 옛 구현은 전량 soft delete 하고 그 수만큼 슬롯을
-   * 되돌렸는데, 그러면 (1) 실제로 소비돼 다시 발급할 수 없는 수량까지 `issued_count` 에서
-   * 빠지고, (2) 「누가 언제 썼는가」의 근거가 사라지며(발급 현황의 `used_count` 가 0 이 된다),
-   * (3) 그 주문이 나중에 취소돼도 `restoreGrantsByOrder` 가 soft delete 된 행을 못 찾아
-   * 조용히 0 을 보고했다.
+   * 🔴 이미 쓴 장은 soft delete 하지 않는다. 옛 구현은 전량 soft delete 하고 그 수만큼
+   * 슬롯을 되돌렸는데, 그러면 (1) 실제로 소비돼 다시 발급할 수 없는 수량까지 `issued_count`
+   * 에서 빠지고, (2) 「누가 언제 썼는가」의 근거가 사라졌다(발급 현황의 `used_count` 가 0 이
+   * 된다). `deleted_at` 은 「슬롯을 안 점유한다」는 뜻이라 이미 쓴 장에는 못 쓰지만, 회수
+   * 사실 자체는 잊으면 안 된다 — 그래서 `revoked_at` 을 이미 쓴 장에도 찍는다. 이게 없으면
+   * 그 주문이 나중에 취소될 때 `restoreGrantsByOrder` 가 「쓴 적 있는 장」으로만 판단해
+   * 어드민이 뺏은 쿠폰을 되살려 버린다(설계 결정 3) — soft delete 와 회수 표지는 별개의
+   * 질문에 답한다: 하나는 「슬롯을 세는가」, 다른 하나는 「회수됐는가」.
    *
    * `remaining` 은 회수 후에도 남는 장(= 이미 쓴 장)의 수다. 호출부는 이것으로 표시용 링크를
    * 끊을지 정한다 — 쓴 이력이 남아 있으면 링크를 끊으면 안 된다(마이페이지의 「사용완료」가
@@ -504,6 +513,11 @@ class PromotionMetaModuleService extends MedusaService({
       promotion_id: promotionId,
       customer_id: customerId,
     })) as CouponGrantRow[];
+    if (rows.length === 0) return { revoked: 0, remaining: 0 };
+    const now = new Date();
+    // 🔴 사용 여부와 무관하게 회수 표지를 찍는다. 사용된 장은 아래 soft delete 대상이 아니라
+    //    살아남는데, 그 장을 주문 취소가 되살리는 것을 이 열이 막는다.
+    await (this as any).updateCouponGrants(rows.map((g) => ({ id: g.id, revoked_at: now })));
     const unused = rows.filter((g) => g.used_at == null);
     if (unused.length > 0) {
       await (this as any).softDeleteCouponGrants(unused.map((g) => g.id));

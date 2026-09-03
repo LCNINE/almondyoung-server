@@ -21,6 +21,7 @@ function grant(over: Partial<CouponGrantRow> & { id: string }): CouponGrantRow {
     expires_at: null,
     used_at: null,
     order_id: null,
+    revoked_at: null,
     ...over,
   };
 }

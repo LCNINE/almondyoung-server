@@ -27,6 +27,8 @@ const CouponGrant = model
       expires_at: model.dateTime().nullable(),
       used_at: model.dateTime().nullable(),
       order_id: model.text().nullable(),
+      /** 어드민이 이 장을 회수한 시각. 사용된 장은 soft delete 되지 않으므로 이 열이 회수의 유일한 표지다. */
+      revoked_at: model.dateTime().nullable(),
     },
   )
   .indexes([

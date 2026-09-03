@@ -84,6 +84,33 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.countIssuedGrants('promo_used')).toEqual(1);
       });
 
+      it('회수된 장은 주문이 취소돼도 되살아나지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_res', max_claims: null });
+        await issue('promo_res', 'cus_j', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_res');
+        await service.consumeGrantIfUnused(g.id, 'order_res', new Date());
+        await service.revokeGrants('promo_res', 'cus_j');
+
+        expect(await service.restoreGrantsByOrder('order_res', new Date())).toEqual(0);
+
+        const after = await service.listGrantsForCustomer('cus_j');
+        const mine = after.find((r) => r.id === g.id);
+        expect(mine?.used_at).not.toBeNull();
+        expect(mine?.revoked_at).not.toBeNull();
+      });
+
+      it('회수되지 않은 장은 주문 취소로 되살아난다 (기존 동작 유지)', async () => {
+        await service.upsert({ promotion_id: 'promo_ok', max_claims: null });
+        await issue('promo_ok', 'cus_k', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_ok');
+        await service.consumeGrantIfUnused(g.id, 'order_ok', new Date());
+
+        expect(await service.restoreGrantsByOrder('order_ok', new Date())).toEqual(1);
+
+        const after = await service.listGrantsForCustomer('cus_k');
+        expect(after.find((r) => r.id === g.id)?.used_at).toBeNull();
+      });
+
       it('max_claims 가 null 이면 세지 않고 무제한으로 발급된다', async () => {
         await service.upsert({ promotion_id: 'promo_free' });
         expect(await issue('promo_free', 'cus_g', 'k1', null)).toEqual('created');
@@ -393,8 +420,10 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.revokeGrants('promo_rev', 'cus_rev')).toEqual({ revoked: 0, remaining: 0 });
       });
 
-      // 옛 구현은 «전량» soft delete 라 쓴 장의 이력이 사라지고, 그 슬롯까지 되돌아갔으며,
-      // 나중에 주문이 취소돼도 restoreGrantsByOrder 가 아무것도 못 찾았다 (ADR-0034 결정 1).
+      // 옛 구현은 «전량» soft delete 라 쓴 장의 이력이 사라지고, 그 슬롯까지 되돌아갔다
+      // (ADR-0034 결정 1). 지금 구현은 쓴 장을 살려 두지만, 그 대신 revoked_at 을 찍어
+      // 회수된 사실 자체를 기억한다 — 그래서 그 주문이 나중에 취소돼도 되살아나지 않는다
+      // (설계 결정 3, 아래 '회수된 장은 주문이 취소돼도 되살아나지 않는다' 참고).
       it('revokeGrants 는 이미 쓴 장을 남기고 remaining 으로 알린다', async () => {
         const base = {
           promotion_id: 'promo_rev_used',
@@ -415,11 +444,11 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           remaining: 1,
         });
 
-        // 쓴 장은 그대로 살아 있고, 그 주문으로 되살릴 수도 있다.
+        // 쓴 장은 그대로 살아 있지만(이력 보존), 회수됐으므로 그 주문으로도 되살아나지 않는다.
         const left = await service.listGrantsForCustomer('cus_rev_used');
         expect(left).toHaveLength(1);
         expect(left[0].order_id).toBe('order_kept');
-        expect(await service.restoreGrantsByOrder('order_kept', new Date())).toBe(1);
+        expect(await service.restoreGrantsByOrder('order_kept', new Date())).toBe(0);
       });
 
       describe('consumeGrantIfUnused', () => {
