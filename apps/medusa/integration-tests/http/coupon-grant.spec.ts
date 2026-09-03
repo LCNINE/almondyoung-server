@@ -2,6 +2,10 @@ import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import jwt from 'jsonwebtoken';
 import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
+import {
+  issueCouponGrantWorkflow,
+  type IssueGrantRequest,
+} from '../../src/workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 jest.setTimeout(120 * 1000);
 
@@ -581,14 +585,18 @@ medusaIntegrationTestRunner({
 
       it('이미 보유한 고객의 재클레임은 워크플로를 다시 돌리지 않는다', async () => {
         const promotionId = await createPromo(`RECLAIM${seq}`, { visibility: 'claimable' });
-        await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        const first = await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        // 두 경로(빠른 경로 / 원자 경로)의 200 본문이 한 모양이다 (PR-2 결정 4). 스토어프론트는
+        // 본문을 안 읽지만(claimCoupon: Promise<void>), 읽는 소비자가 생겼을 때 `success` 와
+        // `reason` 이 경로에 따라 undefined 로 갈리면 성공한 재클릭이 실패로 렌더된다.
+        expect(first.data).toEqual({ success: true, promotion_id: promotionId, issued: true });
         const second = await api.post(
           `/store/customers/me/promotions/${promotionId}/claim`,
           {},
           storeHeaders,
         );
         expect(second.status).toEqual(200);
-        expect(second.data.reason).toEqual('already_issued');
+        expect(second.data).toEqual({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
 
         expect(await svc().countIssuedGrants(promotionId)).toEqual(1);
       });
@@ -615,10 +623,57 @@ medusaIntegrationTestRunner({
           storeHeaders,
         );
         expect(second.status).toEqual(200);
+        // 이 재클릭은 빠른 경로가 아니라 원자 경로의 duplicate 다 — 그래도 본문은 같은 모양이어야 한다.
+        expect(second.data).toEqual({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
         // 🔴 `second.status === 200` 만으로는 이 가드가 상한 집행을 «통째로» 건너뛰도록
         // 바뀌어도 통과한다 — max_claims: 1 인 쿠폰에서 장이 2장이 되면 안 된다는 것까지
         // 같이 고정한다.
         expect(await svc().countIssuedGrants(promotionId)).toEqual(1);
+      });
+    });
+
+    // 워크플로가 배치를 받고 verdict 를 돌려준다 (PR-2 결정 3). 라우트 계약은 위 블록들이 지키므로
+    // 여기는 워크플로 «자체»의 계약 둘만 본다 — 요청 단위 격리와 verdict 결정.
+    //
+    // 🔴 별도 스펙 파일이 아니라 이 파일 안에 있다. 스위트 하나 = 임시 DB 생성·마이그레이션·앱 부팅
+    // 한 사이클이라, 테스트 2개를 위해 그 사이클을 더 도는 것이 HTTP 게이트의 간헐 실패 확률을
+    // 올렸다(최종 리뷰 진단). 여기 `svc()`·`getContainer()` 를 그대로 쓴다.
+    describe('issueCouponGrantWorkflow — 배치 입력·verdict 출력', () => {
+      const run = (requests: IssueGrantRequest[]) =>
+        issueCouponGrantWorkflow(getContainer()).run({ input: { requests } });
+
+      it('요청 하나의 예외는 그 요청의 error 로 격리되고 나머지는 발급된다', async () => {
+        await svc().upsert({ promotion_id: 'promo_wf_ok', max_claims: 5 });
+        // promo_wf_bad 는 promotion_meta 행이 없다 — 상한 집행 요청이 오면 lockPromotionForIssue 가
+        // fail-closed 로 던진다(서비스 독스트링). 그 예외가 배치를 죽이면 옛 라우트 셋이 지키던
+        // 「한 고객의 장애가 나머지를 막지 않는다」가 깨진다.
+        const { result } = await run([
+          { promotion_id: 'promo_wf_bad', customer_id: 'cus_wf', issue_keys: ['k1'], issued_via: 'admin_manual', expires_at: null, max_claims: 1, enforce_cap: true },
+          { promotion_id: 'promo_wf_ok', customer_id: 'cus_wf', issue_keys: ['k1', 'k2'], issued_via: 'admin_manual', expires_at: null, max_claims: 5, enforce_cap: true },
+        ]);
+        expect(result.results.map((r: any) => r.verdict)).toEqual(['error', 'issued']);
+        expect(result.results[0].error).toMatch(/promotion_meta/);
+        expect(result.results[1]).toMatchObject({ created: 2, duplicated: 0 });
+        expect(await svc().countIssuedGrants('promo_wf_ok')).toBe(2);
+      });
+
+      it('verdict 는 created·duplicated·상한으로 결정된다 — issued → already_issued → partial → exhausted', async () => {
+        await svc().upsert({ promotion_id: 'promo_wf_v', max_claims: 3 });
+        const base = { promotion_id: 'promo_wf_v', issued_via: 'admin_manual' as const, expires_at: null, max_claims: 3, enforce_cap: true };
+
+        const first = await run([{ ...base, customer_id: 'c1', issue_keys: ['a', 'b'] }]);
+        expect(first.result.results[0]).toMatchObject({ verdict: 'issued', created: 2, duplicated: 0 });
+
+        const again = await run([{ ...base, customer_id: 'c1', issue_keys: ['a', 'b'] }]);
+        expect(again.result.results[0]).toMatchObject({ verdict: 'already_issued', created: 0, duplicated: 2 });
+
+        const partial = await run([{ ...base, customer_id: 'c2', issue_keys: ['a', 'b'] }]); // 슬롯 1개 남음
+        expect(partial.result.results[0]).toMatchObject({ verdict: 'partial', created: 1 });
+
+        const none = await run([{ ...base, customer_id: 'c3', issue_keys: ['a'] }]);
+        expect(none.result.results[0]).toMatchObject({ verdict: 'exhausted', created: 0 });
+
+        expect(await svc().countIssuedGrants('promo_wf_v')).toBe(3);
       });
     });
   },

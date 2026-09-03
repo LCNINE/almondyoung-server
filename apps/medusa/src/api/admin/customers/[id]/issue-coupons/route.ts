@@ -5,7 +5,11 @@ import type PromotionMetaModuleService from '../../../../../modules/promotion-me
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
-import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
+import {
+  issueCouponGrantWorkflow,
+  type IssueGrantRequest,
+  type IssueGrantResult,
+} from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 import { resolveVisibility } from '../../../promotions/helpers';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
@@ -70,8 +74,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issued: { promotion_id: string; code: string }[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
-  // 워크플로가 던진 프로모션들. 루프를 끝까지 돈 뒤 하나라도 있으면 500 으로 올린다.
+  // 워크플로가 던진 프로모션들. 결과를 다 읽은 뒤 하나라도 있으면 500 으로 올린다.
   const failed: string[] = [];
+  // 게이트를 넘은 프로모션만 여기 쌓여 워크플로를 **한 번** 지난다 (PR-2 결정 3).
+  const requests: IssueGrantRequest[] = [];
+  const codeById = new Map<string, string>();
 
   // 옛 코드는 창·그룹 불일치를 `filter` 로 조용히 떨어뜨려 응답에 흔적이 없었다. 자동발급은
   // 사람이 안 보는 경로라 그 침묵이 곧 «발급이 안 된 이유를 아무도 모름» 이었다 — 이제
@@ -114,57 +121,62 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
-    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2).
-    //
-    // 🔴 옛 코드는 링크 실패를 `.catch(로그)` 로 삼켜서 「장은 있는데 마이페이지에도 어드민에도
-    // 안 보이는」 쿠폰을 만들었다. 사람이 안 보는 자동 경로라 그 침묵이 특히 나빴다. 이제
-    // 링크가 실패하면 장까지 되감기고, 그 프로모션은 `failed` 에 담긴다.
-    //
-    // 🔴 실패를 **모아서 마지막에** 던지는 이유. 루프 안에서 그대로 터뜨리면 A 의 링크 실패가
-    // 같은 고객의 B·C 발급까지 막는다(옛 `.catch` 는 최소한 나머지를 발급했다). 반대로 삼키면
-    // channel-adapter 가 200 을 받고 published 로 마킹해 **그 쿠폰은 영영 안 나간다.**
-    // 그래서 「나머지는 다 시도하고, 하나라도 실패했으면 500」이다 — 재시도는 아래 결정적
-    // issue_key 덕에 멱등하다.
-    //
-    // 🔴 순서도 여기서 바로잡힌다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에 대해 이미
-    // 발급받은 고객을 재시도하면 `already_issued` 가 아니라 `max_claims_exceeded` 를 돌려줬다.
-    // channel-adapter 의 `coupon-issue.metrics.ts` 가 그 사유를 실제 소진으로 세므로, 재시도마다
-    // 없는 소진이 지표에 쌓였다.
-    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
-    try {
-      const run = await issueCouponGrantWorkflow(req.scope).run({
-        input: {
-          promotion_id: promo.id,
-          customer_id: customerId,
-          // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
-          issue_keys: [`trigger:${trigger}`],
-          issued_via: trigger,
-          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
-          max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
-          enforce_cap: true,
-        },
-      });
-      outcome = run.result;
-    } catch (e: any) {
-      logger.error(
-        `[coupon] 자동발급 실패 (promotion_id=${promo.id}, customer_id=${customerId}, ` +
-          `trigger=${trigger}): ${e?.message ?? e}`,
-      );
-      failed.push(promo.id);
-      continue;
-    }
+    codeById.set(promo.id, promo.code);
+    requests.push({
+      promotion_id: promo.id,
+      customer_id: customerId,
+      // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
+      issue_keys: [`trigger:${trigger}`],
+      issued_via: trigger,
+      expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+      max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
+      enforce_cap: true,
+    });
+  }
 
-    if (outcome.duplicated.length > 0) {
-      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      continue;
-    }
+  // 발급은 워크플로다 (ADR-0034 결정 1) — 요청 배치가 한 번에 지나간다 (PR-2 결정 3).
+  //
+  // 🔴 실패를 **모아서 마지막에** 던지는 이유. 요청 하나가 터졌다고 그대로 터뜨리면 A 의 실패가
+  // 같은 고객의 B·C 발급까지 막는다. 반대로 삼키면 channel-adapter 가 200 을 받고 published 로
+  // 마킹해 **그 쿠폰은 영영 안 나간다.** 그래서 「나머지는 다 시도하고, 하나라도 실패했으면
+  // 500」이다 — 재시도는 위 결정적 issue_key 덕에 멱등하다. 요청 단위 격리는 이제 스텝이
+  // 해 준다(`verdict === 'error'`).
+  //
+  // 🔴 순서도 여기서 바로잡힌다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에 대해 이미
+  // 발급받은 고객을 재시도하면 `already_issued` 가 아니라 `max_claims_exceeded` 를 돌려줬다.
+  // channel-adapter 의 `coupon-issue.metrics.ts` 가 그 사유를 실제 소진으로 세므로, 재시도마다
+  // 없는 소진이 지표에 쌓였다.
+  const results: IssueGrantResult[] =
+    requests.length > 0
+      ? (await issueCouponGrantWorkflow(req.scope).run({ input: { requests } })).result.results
+      : [];
 
-    if (outcome.exhausted) {
-      skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
-      continue;
+  for (const r of results) {
+    switch (r.verdict) {
+      case 'already_issued':
+        skipped.push({ promotion_id: r.promotion_id, reason: 'already_issued' });
+        break;
+      case 'exhausted':
+        skipped.push({ promotion_id: r.promotion_id, reason: 'max_claims_exceeded' });
+        break;
+      case 'issued':
+      case 'partial': // 키가 하나라 partial 은 나올 수 없지만, 어휘가 닫혀 있으니 같은 칸에 둔다
+        issued.push({ promotion_id: r.promotion_id, code: codeById.get(r.promotion_id) ?? '' });
+        break;
+      case 'error':
+        logger.error(
+          `[coupon] 자동발급 실패 (promotion_id=${r.promotion_id}, customer_id=${customerId}, ` +
+            `trigger=${trigger}): ${r.error}`,
+        );
+        failed.push(r.promotion_id);
+        break;
+      default: {
+        // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+        // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+        const exhaustive: never = r.verdict;
+        throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+      }
     }
-
-    issued.push({ promotion_id: promo.id, code: promo.code });
   }
 
   if (failed.length > 0) {

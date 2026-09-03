@@ -130,6 +130,29 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(counts.get('promo_none')).toEqual(0);
       });
 
+      it('countIssuedGrantsByPromotion 은 sharedContext 를 받으면 그 트랜잭션 «안»을 읽는다', async () => {
+        // 형제 `countIssuedGrants` 와 달리 컨텍스트를 거부하던 자리(재리뷰 F10). 집행 트랜잭션
+        // 안에서 배치 카운트를 부르는 호출자가 생기면 자기 INSERT 를 못 보고 상한이 한 장씩 새는
+        // fail-open 이 된다 — 주석으로만 막던 덫을 없앤다.
+        await service.upsert({ promotion_id: 'promo_ctx', max_claims: 5 });
+        const em = (service as any).baseRepository_.manager_;
+        const tx = em.fork();
+        await tx.begin();
+        try {
+          await tx.execute(
+            `INSERT INTO "coupon_grant"
+               ("id", "promotion_id", "customer_id", "issue_key", "issued_via", "issued_at", "created_at", "updated_at")
+             VALUES ('cg_ctx_1', 'promo_ctx', 'cus_ctx', 'k1', 'admin_manual', now(), now(), now())`,
+          );
+          const inside = await service.countIssuedGrantsByPromotion(['promo_ctx'], { transactionManager: tx });
+          const outside = await service.countIssuedGrantsByPromotion(['promo_ctx']);
+          expect(inside.get('promo_ctx')).toBe(1); // 커밋 전 — 트랜잭션 안에서만 보인다
+          expect(outside.get('promo_ctx')).toBe(0);
+        } finally {
+          await tx.rollback();
+        }
+      });
+
       // 🔴 타이밍 경합(Promise.all 두 호출이 실제로 겹치길 «기다리는» 방식)으로는 이 락을
       // 검증할 수 없었다 — 2-way 11회·20-way 1회 전부 과다발급 0건으로, 이 테스트 하네스의
       // 로컬 Postgres 왕복이 너무 빨라 레이스 윈도우가 안정적으로 재현되지 않는다(자세한
@@ -282,21 +305,6 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(alive[0].id).not.toBe(created.id);
       });
 
-      it('issueGrant 는 같은 issue_key 두 번째에 duplicate 를 돌려준다 — 던지지 않는다', async () => {
-        const input = {
-          promotion_id: 'promo_idem',
-          customer_id: 'cus_idem',
-          issue_key: 'sub-9:1',
-          issued_via: 'admin_manual' as const,
-          expires_at: null,
-          now: new Date(),
-        };
-
-        expect(await service.issueGrant(input)).toBe('created');
-        expect(await service.issueGrant(input)).toBe('duplicate');
-        expect(await service.listCouponGrants({ promotion_id: 'promo_idem' })).toHaveLength(1);
-      });
-
       it('consumeGrantIfUnused 는 그 한 장에만 사용 기록을 남긴다', async () => {
         const base = {
           promotion_id: 'promo_use',
@@ -316,61 +324,6 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         const after = await service.listGrantsForCustomer('cus_use');
         expect(after.filter((g) => g.used_at != null)).toHaveLength(1);
         expect(after.find((g) => g.id === grants[0].id)?.order_id).toBe('order_1');
-      });
-
-      // 백필 스크립트의 «중단→재실행» 시나리오를 지킨다: grant 생성은 됐지만 사용 상태 이관
-      // 전에 죽었다가 재실행되는 경우를 흉내낸다. issueGrant 가 재실행에서 'duplicate' 를
-      // 돌려줘도 이 메서드는 여전히 불려야 하고(스크립트가 그렇게 부른다), 이미 채워진 값은
-      // 덮어쓰지 않아야 한다(#488 Task 10 리뷰 Important #1).
-      it('markGrantUsedIfUnused 는 미사용 grant 만 채우고 재호출에도 값이 그대로다', async () => {
-        await service.createCouponGrants([
-          {
-            promotion_id: 'promo_backfill',
-            customer_id: 'cus_backfill',
-            issue_key: 'legacy',
-            issued_via: 'admin_manual',
-            issued_at: new Date(),
-          },
-        ]);
-
-        const usedAt = new Date('2026-01-01T00:00:00.000Z');
-        const first = await service.markGrantUsedIfUnused(
-          'promo_backfill',
-          'cus_backfill',
-          'legacy',
-          'order_legacy',
-          usedAt,
-        );
-        expect(first).toBe('consumed');
-
-        const afterFirst = await service.listGrantsForCustomer('cus_backfill');
-        expect(afterFirst[0].used_at).not.toBeNull();
-        expect(afterFirst[0].order_id).toBe('order_legacy');
-
-        // 재실행(같은 usedAt 이거나 달라도) — 이미 채워진 값을 덮어쓰지 않는다.
-        const second = await service.markGrantUsedIfUnused(
-          'promo_backfill',
-          'cus_backfill',
-          'legacy',
-          'order_other',
-          new Date('2099-01-01T00:00:00.000Z'),
-        );
-        expect(second).toBe('already_used');
-
-        const afterSecond = await service.listGrantsForCustomer('cus_backfill');
-        expect(new Date(afterSecond[0].used_at as string).toISOString()).toBe(usedAt.toISOString());
-        expect(afterSecond[0].order_id).toBe('order_legacy');
-      });
-
-      it('markGrantUsedIfUnused 는 grant 가 없으면 not_found 를 돌려준다', async () => {
-        const outcome = await service.markGrantUsedIfUnused(
-          'promo_missing',
-          'cus_missing',
-          'legacy',
-          'order_x',
-          new Date(),
-        );
-        expect(outcome).toBe('not_found');
       });
 
       it('restoreGrantsByOrder 는 만료되지 않은 장만 되살린다', async () => {
@@ -567,6 +520,141 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
 
           await service.revokeGrantsByIssueKeys('promo_mirror_comp', 'cus_mc', ['k1', 'k2']);
           expect(await issuedCountOf('promo_mirror_comp')).toBe(1);
+        });
+      });
+
+      // ── PR-2 결정 1: 소모는 모듈 안에서 「고르기 + CAS」 한 문장이다 ──────────────────
+      // 옛 구조는 훅이 `selectGrantToConsume`(FEFO) 으로 장을 고른 뒤 `consumeGrantIfUnused(id)` 로
+      // 찍었다. 두 층이 갈려 있어 같은 고객의 두 카트가 «결정적으로 같은 장»을 고르고, 진 쪽은
+      // 다음 장을 시도하지 않았다(재리뷰 F1). 아래 스펙들은 옛 훅의 네 규칙(FEFO·만료 경계·
+      // 재호출 멱등성·동시성)이 전부 SQL 한 문장으로 옮겨졌음을 실 DB 로 고정한다.
+      describe('consumeOneUsableGrant — 고르기와 CAS 가 한 문장이다 (PR-2 결정 1)', () => {
+        const NOW = new Date('2026-09-10T00:00:00.000Z');
+        const seed = (
+          promotionId: string,
+          customerId: string,
+          rows: Array<{ key: string; expires_at?: Date | null; issued_at?: Date; used_at?: Date | null; order_id?: string | null }>,
+        ) =>
+          service.createCouponGrants(
+            rows.map((r) => ({
+              promotion_id: promotionId,
+              customer_id: customerId,
+              issue_key: r.key,
+              issued_via: 'admin_manual' as const,
+              issued_at: r.issued_at ?? new Date('2026-09-01T00:00:00.000Z'),
+              expires_at: r.expires_at ?? null,
+              used_at: r.used_at ?? null,
+              order_id: r.order_id ?? null,
+            })),
+          );
+        const consume = (promotionId: string, customerId: string, orderId: string, now = NOW) =>
+          service.consumeOneUsableGrant({ promotion_id: promotionId, customer_id: customerId, order_id: orderId, now });
+        const byKey = async (customerId: string) =>
+          new Map((await service.listGrantsForCustomer(customerId)).map((g) => [g.issue_key, g]));
+
+        it('FEFO — 만료가 이른 장을 먼저, 무기한은 맨 뒤', async () => {
+          await seed('p_fefo', 'c_fefo', [
+            { key: 'forever', expires_at: null },
+            { key: 'late', expires_at: new Date('2026-12-31T00:00:00.000Z') },
+            { key: 'soon', expires_at: new Date('2026-09-20T00:00:00.000Z') },
+          ]);
+          const grants = await byKey('c_fefo');
+          expect(await consume('p_fefo', 'c_fefo', 'o1')).toBe(grants.get('soon')!.id);
+          expect(await consume('p_fefo', 'c_fefo', 'o2')).toBe(grants.get('late')!.id);
+          expect(await consume('p_fefo', 'c_fefo', 'o3')).toBe(grants.get('forever')!.id);
+          expect(await consume('p_fefo', 'c_fefo', 'o4')).toBeNull();
+        });
+
+        it('FEFO 동률 — expires_at 이 같으면 issued_at 이 이른 장, 그것도 같으면 id 오름차순', async () => {
+          const exp = new Date('2026-09-30T00:00:00.000Z');
+          await seed('p_tie', 'c_tie', [
+            { key: 'later_issued', expires_at: exp, issued_at: new Date('2026-09-02T00:00:00.000Z') },
+            { key: 'earlier_issued', expires_at: exp, issued_at: new Date('2026-09-01T00:00:00.000Z') },
+          ]);
+          const grants = await byKey('c_tie');
+          expect(await consume('p_tie', 'c_tie', 'o1')).toBe(grants.get('earlier_issued')!.id);
+          expect(await consume('p_tie', 'c_tie', 'o2')).toBe(grants.get('later_issued')!.id);
+
+          // 대량발급은 배치당 now 하나를 쓰므로 issued_at 동률이 기본 상황이다 — 그때는 id 가 정한다.
+          const same = new Date('2026-09-03T00:00:00.000Z');
+          await seed('p_tie2', 'c_tie2', [
+            { key: 'a', expires_at: exp, issued_at: same },
+            { key: 'b', expires_at: exp, issued_at: same },
+          ]);
+          const ids = [...(await byKey('c_tie2')).values()].map((g) => g.id).sort();
+          expect(await consume('p_tie2', 'c_tie2', 'o3')).toBe(ids[0]);
+          expect(await consume('p_tie2', 'c_tie2', 'o4')).toBe(ids[1]);
+        });
+
+        it('만료 경계는 포함이다 — expires_at == now 는 쓸 수 있고, 지난 장은 고르지 않는다', async () => {
+          // `grants.ts::usableGrants` 와 같은 경계(`now > expiresAt` 만 불가). 어긋나면
+          // 「카트엔 붙는데 주문에서 소모되지 않는」 창이 생긴다.
+          await seed('p_edge', 'c_edge', [
+            { key: 'past', expires_at: new Date('2026-09-09T23:59:59.000Z') },
+            { key: 'edge', expires_at: NOW },
+          ]);
+          const grants = await byKey('c_edge');
+          expect(await consume('p_edge', 'c_edge', 'o1')).toBe(grants.get('edge')!.id);
+          expect(await consume('p_edge', 'c_edge', 'o2')).toBeNull();
+        });
+
+        it('같은 order_id 로 두 번 부르면 두 번째는 null — 여분 장이 있어도 (재호출 멱등성)', async () => {
+          // 옛 `selectGrantIdsToConsume` 의 「이 주문이 이미 소모한 장이 있으면 건너뛴다」가
+          // `NOT EXISTS(order_id)` 로 옮겨졌다. 엔진이 훅을 재호출해도 주문당 쿠폰당 한 장이다.
+          await seed('p_idem', 'c_idem', [{ key: 'a' }, { key: 'b' }]);
+          expect(await consume('p_idem', 'c_idem', 'o_same')).not.toBeNull();
+          expect(await consume('p_idem', 'c_idem', 'o_same')).toBeNull();
+          expect(await consume('p_idem', 'c_idem', 'o_other')).not.toBeNull();
+        });
+
+        it('발급받지 않은 프로모션·회수된 장·이미 쓴 장은 null', async () => {
+          await seed('p_none', 'c_none', [
+            { key: 'used', used_at: new Date('2026-09-02T00:00:00.000Z'), order_id: 'o_old' },
+            { key: 'rev' },
+          ]);
+          await service.revokeGrantsByIssueKeys('p_none', 'c_none', ['rev']); // soft delete
+          expect(await consume('p_none', 'c_none', 'o1')).toBeNull();
+          expect(await consume('p_never', 'c_none', 'o1')).toBeNull();
+        });
+
+        it('소모한 장에만 used_at·order_id 가 찍힌다', async () => {
+          await seed('p_one', 'c_one', [{ key: 'a' }, { key: 'b' }]);
+          const id = await consume('p_one', 'c_one', 'o_one');
+          const grants = await service.listGrantsForCustomer('c_one');
+          const hit = grants.find((g) => g.id === id)!;
+          const miss = grants.find((g) => g.id !== id)!;
+          expect(hit.order_id).toBe('o_one');
+          expect(hit.used_at).not.toBeNull();
+          expect(miss.order_id).toBeNull();
+          expect(miss.used_at).toBeNull();
+        });
+
+        it('다른 트랜잭션이 잡은 장은 건너뛰고 다음 장을 소모한다 — SKIP LOCKED', async () => {
+          // 두 카트 동시 완료의 결정적 재현: FEFO 만 보면 first 다. first 를 밖에서 잠가 두면
+          // second 를 잡아야 하고, 락을 기다리지도 않아야 한다(300ms 안에 끝난다).
+          await seed('p_lock', 'c_lock', [
+            { key: 'first', expires_at: new Date('2026-09-15T00:00:00.000Z') },
+            { key: 'second', expires_at: new Date('2026-09-16T00:00:00.000Z') },
+          ]);
+          const grants = await byKey('c_lock');
+          const em = (service as any).baseRepository_.manager_;
+          const holder = em.fork();
+          await holder.begin();
+          try {
+            await holder.execute(`SELECT 1 FROM "coupon_grant" WHERE "id" = ? FOR UPDATE`, [grants.get('first')!.id]);
+            let done = false;
+            const consuming = consume('p_lock', 'c_lock', 'o_race').then((r) => {
+              done = true;
+              return r;
+            });
+            await new Promise((r) => setTimeout(r, 300));
+            expect(done).toBe(true); // 🔴 false 면 SKIP LOCKED 가 빠져 락을 기다리고 있다
+            expect(await consuming).toBe(grants.get('second')!.id);
+          } finally {
+            await holder.rollback();
+          }
+          // 락이 풀리면 first 는 여전히 미사용이라 다음 주문이 가져간다.
+          expect(await consume('p_lock', 'c_lock', 'o_next')).toBe(grants.get('first')!.id);
         });
       });
 

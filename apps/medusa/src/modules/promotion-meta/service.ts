@@ -147,17 +147,17 @@ class PromotionMetaModuleService extends MedusaService({
    * 장이 없는 프로모션도 **0 으로 채워서** 돌려준다 — 호출부가 `undefined` 를 만나
    * `?? null` 로 접으면 「무제한」과 「0장」이 구분되지 않는다.
    *
-   * 🔴 **트랜잭션 밖 읽기 전용이다.** 형제 `countIssuedGrants` 와 달리 `sharedContext` 를
-   * 받지 않고 저장소 기본 매니저(`baseRepository_.manager_`)를 직접 잡는다 — 오늘 호출부는
-   * 전부 표시용(목록 화면)이라 무해하지만, 상한 집행 트랜잭션 «안» 에서 이 메서드를 부르면
-   * 조용히 트랜잭션 밖을 읽어 낡은(stale) 값을 얻는다. 집행 경로에서는 대신
-   * `countIssuedGrants(promotionId, sharedContext)` 를 쓸 것.
+   * `sharedContext` 는 형제 `countIssuedGrants` 와 같은 이유로 받는다 — 넘기면 그 트랜잭션
+   * 안을 읽고, 안 넘기면 저장소 기본 매니저로 떨어진다. 옛 구현은 이 인자를 거부하고 주석으로
+   * 「집행 경로에서 부르지 말 것」만 적어 두었는데, 주석은 덫을 표시할 뿐 막지 못한다.
    */
-  async countIssuedGrantsByPromotion(promotionIds: string[]): Promise<Map<string, number>> {
+  async countIssuedGrantsByPromotion(
+    promotionIds: string[],
+    sharedContext?: Context<EntityManager>,
+  ): Promise<Map<string, number>> {
     const result = new Map<string, number>(promotionIds.map((id) => [id, 0]));
     if (promotionIds.length === 0) return result;
-    const em = (this as any).baseRepository_.manager_;
-    const rows = await em.execute(
+    const rows = await this.txEm(sharedContext).execute(
       `SELECT "promotion_id", count(*)::int AS c FROM "coupon_grant"
         WHERE "deleted_at" IS NULL AND "promotion_id" IN (?)
         GROUP BY "promotion_id"`,
@@ -245,40 +245,6 @@ class PromotionMetaModuleService extends MedusaService({
       msg.includes('duplicate') ||
       msg.includes('already exists')
     );
-  }
-
-  /**
-   * 한 장을 발급한다. **같은 `issue_key` 의 재도착은 예외가 아니라 `'duplicate'` 다.**
-   *
-   * 이것이 따닥·재시도 방어의 전부다. 호출부는 `'duplicate'` 를 「이미 처리됨」으로 다루고,
-   * 예약해 둔 claim 슬롯이 있으면 반환해야 한다(슬롯을 잡은 쪽이 반환 책임을 진다).
-   */
-  async issueGrant(input: {
-    promotion_id: string;
-    customer_id: string;
-    issue_key: string;
-    issued_via: IssueTrigger;
-    expires_at: Date | null;
-    now: Date;
-  }): Promise<'created' | 'duplicate'> {
-    try {
-      await (this as any).createCouponGrants([
-        {
-          promotion_id: input.promotion_id,
-          customer_id: input.customer_id,
-          issue_key: input.issue_key,
-          issued_via: input.issued_via,
-          issued_at: input.now,
-          expires_at: input.expires_at,
-          used_at: null,
-          order_id: null,
-        },
-      ]);
-      return 'created';
-    } catch (e: any) {
-      if (this.isUniqueViolation(e)) return 'duplicate';
-      throw e;
-    }
   }
 
   /**
@@ -409,6 +375,8 @@ class PromotionMetaModuleService extends MedusaService({
    * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
    * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
    * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.
+   *
+   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrant` 다 — 이건 id 를 아는 호출자(백필·스펙)의 원시 연산이다.
    */
   async consumeGrantIfUnused(
     grantId: string,
@@ -426,34 +394,58 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 백필 전용. `(promotion_id, customer_id, issue_key)` 로 grant 를 찾아 **아직 미사용일 때만**
-   * `used_at`/`order_id` 를 채운다.
+   * 「이 주문에 쓸 장 한 장」을 **고르고 소모한다 — 한 문장으로.** 소모한 장의 id, 없으면 `null`.
    *
-   * 존재 확인과 "미사용일 때만" 갱신을 한 호출로 묶은 이유: `backfill-coupon-grants.ts` 가
-   * grant 생성(`issueGrant`, 멱등)과 사용 상태 이관을 **별개 스텝**으로 부른다 — 스크립트가
-   * grant 생성 뒤 이 호출 전에 중단되면(프로세스 킬·DB 타임아웃), 재실행 시 `issueGrant` 는
-   * `'duplicate'` 를 돌려주지만 grant 는 이미 존재하므로 이 메서드는 여전히 불려야 한다.
-   * `used_at != null` 가드가 그 재실행에서 이미 채워진 값을 또 덮어쓰지 않게 해 멱등하다.
+   * 옛 구조는 훅이 `selectGrantToConsume`(FEFO) 으로 장을 고른 뒤 `consumeGrantIfUnused(id)` 로
+   * 찍었다. 고르기와 CAS 가 다른 층에 있어, 같은 고객의 두 카트가 동시에 완료되면 둘이
+   * «결정적으로 같은 장»을 골라 한쪽만 이기고 진 쪽은 다음 장을 시도하지 않았다 — 한 장으로
+   * 할인 주문 두 건(PR #778 재리뷰 F1). 선택을 SQL 로 내리면 그 창 자체가 없다:
+   *
+   * - **FEFO** 는 `ORDER BY expires_at NULLS LAST, issued_at, id` — `grants.ts` 의 옛 정렬과 같다.
+   * - **만료 경계(포함)** 는 `expires_at >= now` — `usableGrants` 와 같은 경계여야 카트 게이트와
+   *   어긋나지 않는다.
+   * - **재호출(순차) 멱등성**은 `NOT EXISTS(같은 order_id)` — 엔진이 이 훅을 «다시» 불러도 주문당
+   *   쿠폰당 한 장이다. 스냅샷 술어라 같은 `order_id` 의 **동시** 호출 둘은 못 막는다(둘 다 통과해
+   *   SKIP LOCKED 가 다른 장을 준다) — 주문 생성 경로는 그런 호출을 만들지 않는다.
+   * - **동시성**은 `FOR UPDATE SKIP LOCKED` — 다른 트랜잭션이 잡은 장은 건너뛰고 다음 장을 잡는다.
+   *   장이 하나뿐이면 늦은 쪽은 `null` 이고, 그게 정답이다.
+   *
+   * `null` 은 「소모할 장이 없다」다 — 발급 개념이 없는 `public` 쿠폰이 대부분이므로 호출부는
+   * 경고하지 않는다. `consumeGrantIfUnused(id)` 는 id 로 찍는 원시 연산으로 남는다(백필·스펙
+   * 픽스처). **핫패스(주문 생성 훅)는 이 메서드만 부른다.**
    */
-  async markGrantUsedIfUnused(
-    promotionId: string,
-    customerId: string,
-    issueKey: string,
-    orderId: string,
-    usedAt: Date,
-  ): Promise<'consumed' | 'already_used' | 'not_found'> {
-    const rows = (await (this as any).listCouponGrants({
-      promotion_id: promotionId,
-      customer_id: customerId,
-      issue_key: issueKey,
-    })) as CouponGrantRow[];
-    const grant = rows[0];
-    if (!grant) return 'not_found';
-    if (grant.used_at != null) return 'already_used';
-    // 위 조회와 이 갱신 사이에 다른 요청이 같은 장을 소모했을 수 있다. 술어가 SQL 에 있으므로
-    // 그 경우 0행이 갱신되고, 여기서 `already_used` 로 정직하게 보고한다 — 조회 결과를 믿고
-    // 덮어쓰지 않는다.
-    return (await this.consumeGrantIfUnused(grant.id, orderId, usedAt)) ? 'consumed' : 'already_used';
+  async consumeOneUsableGrant(
+    input: { promotion_id: string; customer_id: string; order_id: string; now: Date },
+    sharedContext?: Context<EntityManager>,
+  ): Promise<string | null> {
+    const rows = await this.txEm(sharedContext).execute(
+      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
+        WHERE "id" = (
+          SELECT "id" FROM "coupon_grant"
+           WHERE "promotion_id" = ? AND "customer_id" = ?
+             AND "deleted_at" IS NULL AND "used_at" IS NULL
+             AND ("expires_at" IS NULL OR "expires_at" >= ?)
+             AND NOT EXISTS (
+               SELECT 1 FROM "coupon_grant" o
+                WHERE o."promotion_id" = ? AND o."customer_id" = ?
+                  AND o."order_id" = ? AND o."deleted_at" IS NULL)
+           ORDER BY "expires_at" ASC NULLS LAST, "issued_at" ASC, "id" ASC
+           LIMIT 1
+           FOR UPDATE SKIP LOCKED)
+        RETURNING "id"`,
+      [
+        input.now,
+        input.order_id,
+        input.promotion_id,
+        input.customer_id,
+        input.now,
+        input.promotion_id,
+        input.customer_id,
+        input.order_id,
+      ],
+    );
+    const id = rows?.[0]?.id;
+    return id != null ? String(id) : null;
   }
 
   /**

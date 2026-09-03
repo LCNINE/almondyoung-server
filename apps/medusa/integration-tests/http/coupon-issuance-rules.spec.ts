@@ -180,9 +180,10 @@ medusaIntegrationTestRunner({
         // 링크를 더 이상 읽지 않으므로 grant 를 직접 심는다(옛 픽스처의 link.create 는 지웠다).
         const promoId = await createPromo('P7OWNED', unsupportedRule(), { visibility: 'assigned_only' });
         const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-        await metaService.issueGrant({
+        await metaService.issueGrantWithSlot({
           promotion_id: promoId, customer_id: customerId, issue_key: `p7owned_${seq}`,
           issued_via: 'admin_manual', expires_at: null, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
 
         const res = await api.get('/store/customers/me/promotions', storeHeaders);

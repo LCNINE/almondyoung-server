@@ -2,7 +2,6 @@ import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
-import { selectGrantIdsToConsume } from './coupon-usage';
 
 /**
  * 주문이 생기면 「이 주문에 쓰인 쿠폰」의 장(coupon_grant)을 소모한다 (#488 A2 의 선행, G5~G7).
@@ -60,40 +59,25 @@ completeCartWorkflow.hooks.orderCreated(
         filters: { id: order_id },
       });
       const found = orders?.[0];
+      // 비회원 주문엔 발급 개념이 없다 — 소모할 장도 없다.
+      if (!found?.customer_id) return;
 
-      // C1(2026-08-31 최종 리뷰)이 지키던 불변식("발급된 적 없는 쌍은 절대 만들지 않는다")은
-      // 링크 upsert 를 grant 소모(id 로 UPDATE)로 옮기면서 **구조적으로** 성립한다 — 발급받지
-      // 않은 쿠폰은 `listGrantsForCustomer` 가 애초에 행을 안 돌려주므로 `selectGrantIdsToConsume`
-      // 이 고를 장 자체가 없다. 없는 쌍에 INSERT 가 일어날 경로가 이제 없다(coupon-usage.ts 상단
-      // 주석 참고). 그래서 옛 구현이 필요로 했던 「이미 발급된 것만」 필터가 여기엔 없다.
-      const grants = found?.customer_id ? await promotionMetaService.listGrantsForCustomer(found.customer_id) : [];
       const now = new Date();
-      const promotionIds = (found?.promotions ?? []).map((p) => p.id);
-      // order_id 를 넘겨 재실행 멱등성을 지킨다(coupon-usage.ts 상단 주석 참고) — 이 훅이 같은
-      // 주문으로 두 번 불려도 이미 이 주문이 소모한 프로모션은 다시 고르지 않는다.
-      const grantIds = selectGrantIdsToConsume(grants, promotionIds, now, order_id);
-
-      for (const grantId of grantIds) {
-        const consumed = await promotionMetaService.consumeGrantIfUnused(grantId, order_id, now);
-        if (!consumed) {
-          // 이 장을 그 사이에 다른 주문이 먼저 소모했거나 회수됐다. 주문은 이미 생겼으니
-          // 되돌리지 않되(위 주석의 판단 그대로), 흔적은 남긴다.
-          //
-          // 🔴 옛 구현은 조건 없는 UPDATE 라 이 경우를 «성공» 으로 삼켰다 — 한 장이 두 주문에
-          // 쓰이고 `order_id` 는 나중 것만 남았다. 이제 술어가 SQL 에 있어 두 번째 소모가
-          // 0행으로 떨어지고, 여기서 그 사실이 드러난다.
-          try {
-            container
-              .resolve<{ warn: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER)
-              .warn(
-                `[coupon] 장 소모 실패 — 이미 사용됐거나 회수된 장이다 ` +
-                  `(grant_id=${grantId}, order_id=${order_id}). 이 주문은 그 장으로 기록되지 않는다.`,
-              );
-          } catch {
-            // 로그를 못 남겨도 나머지 장의 소모는 계속한다 — 위 I1 판단과 같은 이유로,
-            // 기록 실패가 주문 경로를 건드리게 두지 않는다.
-          }
-        }
+      for (const promo of found.promotions ?? []) {
+        // 고르기와 CAS 가 모듈 안 «한 문장»이다 (PR-2 결정 1, `consumeOneUsableGrant` 독스트링).
+        // FEFO·만료 경계·재호출(순차) 멱등성(같은 order_id)·동시성(SKIP LOCKED)을 전부 그 문장이
+        // 맡으므로 여기엔 판정이 없다. `null` 은 「소모할 장이 없다」— 발급 개념이 없는 public
+        // 쿠폰이 대부분이라 경고하지 않는다. 옛 「이미 사용됐거나 회수됨」 경고는 고르기/CAS
+        // 분리가 만들던 상태였고 이제 생기지 않는다.
+        //
+        // 「발급된 적 없는 쌍은 절대 만들지 않는다」(C1) 는 UPDATE 만 하는 구조 자체가 지킨다 —
+        // 없는 장을 소모할 수 없다.
+        await promotionMetaService.consumeOneUsableGrant({
+          promotion_id: promo.id,
+          customer_id: found.customer_id,
+          order_id,
+          now,
+        });
       }
     } catch (e) {
       // I1(2026-08-31 최종 리뷰): LOGGER 해석 자체가 던지는 경우까지 이 catch 밖으로 새면,

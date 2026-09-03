@@ -170,9 +170,10 @@ medusaIntegrationTestRunner({
       // 이벤트 라우트는 링크를 아예 읽지 않으므로(그 라우트는 groups.id 만 확장한다) 링크를
       // 심는 셋업은 죽은 코드였다 — 장만 심는다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: assigned, customer_id: customerId, issue_key: `s_assign_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
 
       const event = await createEvent({

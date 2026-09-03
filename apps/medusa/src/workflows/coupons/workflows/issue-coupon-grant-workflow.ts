@@ -4,10 +4,15 @@ import {
   type IssueCouponGrantsStepInput,
 } from '../steps/issue-coupon-grants-step';
 
+export type {
+  IssueGrantRequest,
+  IssueGrantResult,
+  IssueGrantVerdict,
+} from '../steps/issue-coupon-grants-step';
 export type IssueCouponGrantWorkflowInput = IssueCouponGrantsStepInput;
 
 /**
- * 쿠폰 한 장(또는 여러 장)을 발급한다.
+ * 발급 요청 배치를 처리한다 — 요청당 verdict 하나 (PR-2 결정 3). `.run()` 은 HTTP 요청당 1회다.
  *
  * **왜 링크 스텝이 없는가 (Task 7, ADR-0034 결정 2 완료).** 이 워크플로는 한때 표시용
  * customer↔promotion 링크도 같이 세웠다. 장은 `promotion-meta` 모듈에, 링크는 link

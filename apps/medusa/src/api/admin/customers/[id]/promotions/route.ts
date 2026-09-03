@@ -7,7 +7,11 @@ import { toMetadataShape, resolveVisibility } from '../../../promotions/helpers'
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
-import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
+import {
+  issueCouponGrantWorkflow,
+  type IssueGrantRequest,
+  type IssueGrantResult,
+} from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];
@@ -193,6 +197,10 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const submitId = submit_id;
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
+  // 게이트를 넘은 프로모션만 여기 쌓여 워크플로를 **한 번** 지난다 (PR-2 결정 3).
+  const requests: IssueGrantRequest[] = [];
+  // 키는 이 «제출»과 수량에만 달려 있다 — 프로모션마다 같으므로 한 번만 만든다.
+  const issueKeys = Array.from({ length: quantity }, (_, i) => `${submitId}:${i + 1}`);
 
   for (const promo of promotions as any[]) {
     const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
@@ -249,48 +257,57 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
+    requests.push({
+      promotion_id: promo.id,
+      customer_id: customerId,
+      issue_keys: issueKeys,
+      issued_via: issueTrigger,
+      expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+      max_claims: maxClaims,
+      enforce_cap: !force,
+    });
+  }
 
-    // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다(정본이
-    // grant 하나로 좁혀지며 아무도 링크를 안 읽으니 지킬 이유도 없다). 실패는 `grant_error`
-    // 하나로 정직하게 나간다.
-    const issueKeys = Array.from({ length: quantity }, (_, i) => `${submitId}:${i + 1}`);
+  // 발급은 워크플로다 (ADR-0034 결정 1). 요청 하나의 예외는 그 요청의 `error` 로 격리돼 돌아온다.
+  // 여기서 던지는 것은 «워크플로 엔진 자체»가 죽은 경우뿐이고 그땐 500 이 맞다 — 그 실패가 스텝이
+  // 장을 만든 뒤에 나도 불변식을 지키는 것은 보상이지 「아직 발급 전」이 아니다. 재시도는
+  // `submit_id` 고정 키라 멱등하다.
+  const results: IssueGrantResult[] =
+    requests.length > 0
+      ? (await issueCouponGrantWorkflow(req.scope).run({ input: { requests } })).result.results
+      : [];
 
-    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
-    try {
-      const { result } = await issueCouponGrantWorkflow(req.scope).run({
-        input: {
-          promotion_id: promo.id,
-          customer_id: customerId,
-          issue_keys: issueKeys,
-          issued_via: issueTrigger,
-          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
-          max_claims: maxClaims,
-          enforce_cap: !force,
-        },
-      });
-      outcome = result;
-    } catch (e: any) {
-      // 🔴 원인을 반드시 남긴다 — 사유만 `grant_error` 로 돌려주면 진단할 근거가 없다.
-      logger.error(
-        `[coupon] 수동발급 grant_error (promotion_id=${promo.id}, customer_id=${customerId}, ` +
-          `submit_id=${submitId}): ${e?.message ?? e}`,
-      );
-      skipped.push({ promotion_id: promo.id, reason: 'grant_error' });
-      continue;
-    }
-
-    // 상한에 걸려 «일부만» 발급된 경우가 있으므로 두 보고는 배타적이지 않다 — 옛 루프도
-    // granted>0 이면서 max_claims_exceeded 를 함께 올렸다.
-    if (outcome.exhausted) {
-      skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
-    }
-    if (outcome.created.length > 0) {
-      issued.push(promo.id);
-    } else if (!outcome.exhausted) {
-      // 🔴 모든 키가 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
-      // 이 branch 가 없으면 그 프로모션이 `issued` 에도 `skipped` 에도 없는 「응답에 없는
-      // 항목」이 되어, 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다.
-      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
+  for (const r of results) {
+    switch (r.verdict) {
+      case 'issued':
+        issued.push(r.promotion_id);
+        break;
+      case 'partial':
+        // 상한에 걸려 «일부만» 발급됐다 — 옛 루프처럼 두 보고를 함께 올린다.
+        issued.push(r.promotion_id);
+        skipped.push({ promotion_id: r.promotion_id, reason: 'max_claims_exceeded' });
+        break;
+      case 'exhausted':
+        skipped.push({ promotion_id: r.promotion_id, reason: 'max_claims_exceeded' });
+        break;
+      case 'already_issued':
+        // 같은 submit_id 로 이미 전량 발급된 재시도 — 「응답에 없는 항목」이 되지 않게 한다.
+        skipped.push({ promotion_id: r.promotion_id, reason: 'already_issued' });
+        break;
+      case 'error':
+        // 🔴 원인을 반드시 남긴다 — 사유만 `grant_error` 로 돌려주면 진단할 근거가 없다.
+        logger.error(
+          `[coupon] 수동발급 grant_error (promotion_id=${r.promotion_id}, customer_id=${customerId}, ` +
+            `submit_id=${submitId}): ${r.error}`,
+        );
+        skipped.push({ promotion_id: r.promotion_id, reason: 'grant_error' });
+        break;
+      default: {
+        // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+        // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+        const exhaustive: never = r.verdict;
+        throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+      }
     }
   }
 

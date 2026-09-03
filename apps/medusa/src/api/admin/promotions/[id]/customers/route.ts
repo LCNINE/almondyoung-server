@@ -5,7 +5,11 @@ import type PromotionMetaModuleService from '../../../../../modules/promotion-me
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
-import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
+import {
+  issueCouponGrantWorkflow,
+  type IssueGrantRequest,
+  type IssueGrantResult,
+} from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { resolveVisibility } from '../../helpers';
 
@@ -31,7 +35,7 @@ function toDate(value: Date | string | null | undefined): Date | null {
  * 값으로 고른다 — 배열 순서에 기대지 않는다. `listGrantsForPromotion` 은 `orderBy` 가 없어
  * 행 순서가 보장되지 않으므로, 위치(`mine[0]`/`mine[mine.length-1]`)로 「최초/최근」을 뽑으면
  * 여러 장을 가진 고객의 표시가 틀릴 수 있다(#488 Task 7 리뷰). `grants.ts` 의 `nextExpiryAt`
- * (reduce)·`selectGrantToConsume`(명시적 정렬 + id 동률 처리)와 같은 모양을 따른다.
+ * (reduce)·`service.ts::consumeOneUsableGrant`(SQL ORDER BY, id 동률 처리)와 같은 모양을 따른다.
  */
 function earliestIssuedGrant(grants: CouponGrantRow[]): CouponGrantRow | undefined {
   return grants.reduce<CouponGrantRow | undefined>((min, g) => {
@@ -253,6 +257,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   });
   const customerById = new Map<string, any>((foundCustomers ?? []).map((c: any) => [c.id, c]));
 
+  // 게이트를 넘은 고객만 여기 쌓여 워크플로를 **한 번** 지난다 (PR-2 결정 3) — 500명이면
+  // 옛 루프는 Redis 워크플로 엔진을 500번 왕복했다.
+  const requests: IssueGrantRequest[] = [];
+  // 키는 이 «제출»과 수량에만 달려 있다 — 고객마다 같으므로 한 번만 만든다.
+  const issueKeys = Array.from({ length: qty }, (_, i) => `${submit_id}:${i + 1}`);
+  const expiresAt = computeExpiresAt(meta, now)?.toISOString() ?? null;
+
   for (const customerId of customer_ids) {
     const customer = customerById.get(customerId);
     if (!customer) {
@@ -276,48 +287,60 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       }
     }
 
-    // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다(형제
-    // 고객축 라우트와 같은 이유). 실패는 `grant_error` 하나로 정직하게 나간다.
-    const issueKeys = Array.from({ length: qty }, (_, i) => `${submit_id}:${i + 1}`);
+    // 발급은 워크플로다 (ADR-0034 결정 1) — 게이트를 넘은 고객은 요청으로 쌓기만 한다.
+    requests.push({
+      promotion_id: promotionId,
+      customer_id: customerId,
+      issue_keys: issueKeys,
+      issued_via: issueTrigger,
+      expires_at: expiresAt,
+      max_claims: maxClaims,
+      enforce_cap: !force,
+    });
+  }
 
-    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
-    try {
-      const { result } = await issueCouponGrantWorkflow(req.scope).run({
-        input: {
-          promotion_id: promotionId,
-          customer_id: customerId,
-          issue_keys: issueKeys,
-          issued_via: issueTrigger,
-          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
-          max_claims: maxClaims,
-          enforce_cap: !force,
-        },
-      });
-      outcome = result;
-    } catch (e: any) {
-      // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
-      // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
-      logger.error(
-        `[coupon] 대량발급 grant_error (promotion_id=${promotionId}, customer_id=${customerId}, ` +
-          `submit_id=${submit_id}): ${e?.message ?? e}`,
-      );
-      // 배치 resilient — 한 고객의 장애가 나머지를 막지 않는다.
-      skipped.push({ customer_id: customerId, reason: 'grant_error' });
-      continue;
-    }
+  // 발급은 워크플로다 (ADR-0034 결정 1). 요청 하나의 예외는 그 요청의 `error` 로 격리돼 돌아온다.
+  // 여기서 던지는 것은 «워크플로 엔진 자체»가 죽은 경우뿐이고 그땐 500 이 맞다 — 그 실패가 스텝이
+  // 장을 만든 뒤에 나도 불변식을 지키는 것은 보상이지 「아직 발급 전」이 아니다. 재시도는
+  // `submit_id` 고정 키라 멱등하다.
+  const results: IssueGrantResult[] =
+    requests.length > 0
+      ? (await issueCouponGrantWorkflow(req.scope).run({ input: { requests } })).result.results
+      : [];
 
-    // 상한에 걸려 «일부만» 발급된 경우가 있으므로 두 보고는 배타적이지 않다.
-    if (outcome.exhausted) {
-      skipped.push({ customer_id: customerId, reason: 'max_claims_exceeded' });
-    }
-    if (outcome.created.length > 0) {
-      issued.push({ customer_id: customerId, granted: outcome.created.length });
-    } else if (!outcome.exhausted) {
-      // 🔴 모든 키가 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
-      // 이 branch 가 없으면 재시도로 이미 성공한 고객이 issued 에도 skipped 에도 없는
-      // 「응답에 없는 고객」이 되어 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못
-      // 표시한다(#488 Task 12 리뷰).
-      skipped.push({ customer_id: customerId, reason: 'already_issued' });
+  for (const r of results) {
+    switch (r.verdict) {
+      case 'issued':
+        issued.push({ customer_id: r.customer_id, granted: r.created });
+        break;
+      case 'partial':
+        // 상한에 걸려 «일부만» 발급됐다 — 옛 루프처럼 두 보고를 함께 올린다.
+        issued.push({ customer_id: r.customer_id, granted: r.created });
+        skipped.push({ customer_id: r.customer_id, reason: 'max_claims_exceeded' });
+        break;
+      case 'exhausted':
+        skipped.push({ customer_id: r.customer_id, reason: 'max_claims_exceeded' });
+        break;
+      case 'already_issued':
+        // 같은 submit_id 로 이미 전량 발급된 재시도 — 「응답에 없는 고객」이 되지 않게 한다
+        // (#488 Task 12 리뷰).
+        skipped.push({ customer_id: r.customer_id, reason: 'already_issued' });
+        break;
+      case 'error':
+        // 🔴 원인을 반드시 남긴다 — 500명 배치에서 사유만 `grant_error` 로 돌려주면 화면엔
+        // 진단 불가능한 실패의 벽이 서고 로그엔 아무것도 없다.
+        logger.error(
+          `[coupon] 대량발급 grant_error (promotion_id=${promotionId}, customer_id=${r.customer_id}, ` +
+            `submit_id=${submit_id}): ${r.error}`,
+        );
+        skipped.push({ customer_id: r.customer_id, reason: 'grant_error' });
+        break;
+      default: {
+        // 어휘가 늘었는데 여기 분기를 안 더하면 컴파일이 막는다 — 안 그러면 그 항목은 issued 에도
+        // skipped 에도 없는 「응답에 없는 항목」이 되어 화면이 조용히 '발급할 수 없습니다' 로 뭉갠다.
+        const exhaustive: never = r.verdict;
+        throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `알 수 없는 발급 결과: ${String(exhaustive)}`);
+      }
     }
   }
 

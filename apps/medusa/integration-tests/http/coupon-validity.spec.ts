@@ -354,9 +354,10 @@ medusaIntegrationTestRunner({
           visibility: 'assigned_only',
           ends_at: '2000-01-01T00:00:00.000Z',
         });
-        await metaService().issueGrant({
+        await metaService().issueGrantWithSlot({
           promotion_id: id, customer_id: customerId, issue_key: `issuedlive_${seq}`,
           issued_via: 'admin_manual', expires_at: new Date('2999-01-01T00:00:00.000Z'), now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
 
         const res = await api.post(
@@ -372,9 +373,10 @@ medusaIntegrationTestRunner({
           visibility: 'assigned_only',
           ends_at: '2999-01-01T00:00:00.000Z',
         });
-        await metaService().issueGrant({
+        await metaService().issueGrantWithSlot({
           promotion_id: id, customer_id: customerId, issue_key: `issueddead_${seq}`,
           issued_via: 'admin_manual', expires_at: new Date('2000-01-01T00:00:00.000Z'), now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
 
         await expect(
@@ -403,9 +405,10 @@ medusaIntegrationTestRunner({
           starts_at: '2999-01-01T00:00:00.000Z',
         });
         // 장 자체는 완전히 «살아있다» — 미사용이고 무기한이다. 거절 사유는 오직 정책 시작이다.
-        await metaService().issueGrant({
+        await metaService().issueGrantWithSlot({
           promotion_id: id, customer_id: customerId, issue_key: `grantns_${seq}`,
           issued_via: 'admin_manual', expires_at: null, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
 
         await expect(
@@ -420,9 +423,10 @@ medusaIntegrationTestRunner({
           visibility: 'assigned_only',
           starts_at: '2999-01-01T00:00:00.000Z',
         });
-        await metaService().issueGrant({
+        await metaService().issueGrantWithSlot({
           promotion_id: id, customer_id: customerId, issue_key: `grantnsme_${seq}`,
           issued_via: 'admin_manual', expires_at: null, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
         const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
         await link.create([{
@@ -441,9 +445,10 @@ medusaIntegrationTestRunner({
           visibility: 'assigned_only',
           starts_at: '2000-01-01T00:00:00.000Z',
         });
-        await metaService().issueGrant({
+        await metaService().issueGrantWithSlot({
           promotion_id: id, customer_id: customerId, issue_key: `grantstarted_${seq}`,
           issued_via: 'admin_manual', expires_at: null, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
 
         const res = await api.post(
