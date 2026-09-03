@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import {
+  ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
   DIGITAL_ASSET_FILE_CONTEXT_ID,
   FILE_CONTEXTS,
   fileContextMatchesSeed,
@@ -9,6 +10,16 @@ import {
 import type { FileContextSeedRow } from '../../../apps/file-service/src/database/default-file-contexts';
 
 const CONTEXT_IDS = FILE_CONTEXTS.map((c) => c.id);
+
+/**
+ * 이 컨텍스트들은 «있으면 넘어가기»가 아니라 **소스 값으로 덮어쓴다.**
+ *
+ * 기본은 ON CONFLICT DO NOTHING 이다 — 운영에서 손으로 조정한 값을 시드가 되돌리면 안 되기 때문.
+ * 그런데 그 규칙 때문에 **소스의 상한을 올려도 이미 있는 행은 안 바뀐다.** 실제로 아카이브 첨부
+ * 상한을 100MB → 600MB 로 올렸는데 라이브가 그대로여서 업로드가 400 으로 죽었다.
+ * 소스가 정본이어야 하는 컨텍스트는 여기 적는다.
+ */
+const OVERWRITE_FROM_SOURCE: readonly string[] = [DIGITAL_ASSET_FILE_CONTEXT_ID, ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID];
 const CONTEXT_NAMES: Record<string, string> = Object.fromEntries(FILE_CONTEXTS.map((c) => [c.id, c.name]));
 
 export class FileServiceSeedStep extends SeedStep {
@@ -27,7 +38,7 @@ export class FileServiceSeedStep extends SeedStep {
     const existingById = new Map(rows.map((row) => [row.id, row]));
     const missingIds = CONTEXT_IDS.filter((id) => !existingById.has(id));
     const driftedIds = FILE_CONTEXTS.filter((ctx) => {
-      if (ctx.id !== DIGITAL_ASSET_FILE_CONTEXT_ID) {
+      if (!OVERWRITE_FROM_SOURCE.includes(ctx.id)) {
         return false;
       }
 
@@ -65,7 +76,7 @@ export class FileServiceSeedStep extends SeedStep {
     try {
       this.logger.step(1, 1, 'Inserting file_contexts');
       for (const ctx of FILE_CONTEXTS) {
-        if (ctx.id === DIGITAL_ASSET_FILE_CONTEXT_ID) {
+        if (OVERWRITE_FROM_SOURCE.includes(ctx.id)) {
           await this.db.execute(sql`
             INSERT INTO file_contexts (
               id, name, description, allow_public, allow_private,

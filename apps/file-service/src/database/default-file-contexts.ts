@@ -161,9 +161,9 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     // 노션 export 에 pdf·hwp·xlsx·ai·docx·pptx·m4a·mp4·csv 가 섞여 있고,
     // hwp·ai 처럼 브라우저가 MIME 을 못 붙이는 것도 있다. 종류로 거르는 대신
     // 크기와 공개 여부로 막는다.
-    // 노션 export 의 최대 첨부가 63.2MB(pdf)다. 상한을 그 아래로 두면 조용히 한 건이 빠진다.
+    // 실물 자료의 최대 첨부가 560MB(교육 영상)다. 상한을 그 아래로 두면 조용히 빠진다.
     allowedMimeTypes: ['*/*'],
-    maxFileSize: 104857600,
+    maxFileSize: 629145600,
     pathPrefix: 'archive/page-attachment',
     isActive: true,
   },
