@@ -556,13 +556,19 @@ medusaIntegrationTestRunner({
             { select: ['customer_id', 'promotion_id', 'expires_at', 'used_at', 'order_id'] },
           ) as Promise<any[]>;
 
-      /** grant 조회. 사용 기록(`used_at`/`order_id`)의 정본은 T6 이후로 여기다. */
+      /**
+       * grant 조회. 사용 기록(`used_at`/`cart_id`)의 정본은 T6 이후로 여기다.
+       *
+       * 🔴 소모의 키는 주문이 아니라 **카트**다(ADR-0034 2026-09-04 개정, 결정 6) — 소모가
+       * `validate` 훅에서 일어나 그 시점엔 주문이 없다. `order_id` 는 아무도 쓰지 않으므로
+       * 이 픽스처도 읽지 않는다.
+       */
       const grantsFor = async (promotionId: string, custId: string) => {
         const svc = getContainer().resolve(PROMOTION_META_MODULE) as any;
         const grants = (await svc.listGrantsForCustomer(custId)) as Array<{
           promotion_id: string;
           used_at: Date | string | null;
-          order_id: string | null;
+          cart_id: string | null;
         }>;
         return grants.filter((g) => g.promotion_id === promotionId);
       };
@@ -659,7 +665,7 @@ medusaIntegrationTestRunner({
         expect(rows).toHaveLength(0);
       });
 
-      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 grant 정확히 한 장이 used_at/order_id 를 갖는다 (T6)', async () => {
+      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 grant 정확히 한 장이 used_at/cart_id 를 갖는다 (T6)', async () => {
         const promoCode = `C1ISSUED${c1Seq}`;
         const promotionId = await createPromo(promoCode, { visibility: 'assigned_only' });
 
@@ -672,16 +678,15 @@ medusaIntegrationTestRunner({
           adminHeaders,
         );
 
-        const { completeRes } = await checkoutWithPromo(promoCode);
+        const { cartId, completeRes } = await checkoutWithPromo(promoCode);
         expect(completeRes.data.type).toBe('order');
-        const orderId = completeRes.data.order.id as string;
 
-        // 「무언가 기록됐다」가 아니라 「어느 장이 그 주문으로 소모됐다」를 본다 — 발급이
+        // 「무언가 기록됐다」가 아니라 「어느 장이 그 카트로 소모됐다」를 본다 — 발급이
         // 정확히 한 장이었으므로 소모도 정확히 그 한 장이어야 한다.
         const grants = await grantsFor(promotionId, customerId);
         expect(grants).toHaveLength(1);
         expect(grants[0].used_at).not.toBeNull();
-        expect(grants[0].order_id).toEqual(orderId);
+        expect(grants[0].cart_id).toEqual(cartId);
       });
     });
   },
