@@ -138,6 +138,12 @@ class PromotionMetaModuleService extends MedusaService({
    * 프로모션별 발급 장수를 한 번에 센다. 목록 화면이 프로모션마다 조회하지 않도록.
    * 장이 없는 프로모션도 **0 으로 채워서** 돌려준다 — 호출부가 `undefined` 를 만나
    * `?? null` 로 접으면 「무제한」과 「0장」이 구분되지 않는다.
+   *
+   * 🔴 **트랜잭션 밖 읽기 전용이다.** 형제 `countIssuedGrants` 와 달리 `sharedContext` 를
+   * 받지 않고 저장소 기본 매니저(`baseRepository_.manager_`)를 직접 잡는다 — 오늘 호출부는
+   * 전부 표시용(목록 화면)이라 무해하지만, 상한 집행 트랜잭션 «안» 에서 이 메서드를 부르면
+   * 조용히 트랜잭션 밖을 읽어 낡은(stale) 값을 얻는다. 집행 경로에서는 대신
+   * `countIssuedGrants(promotionId, sharedContext)` 를 쓸 것.
    */
   async countIssuedGrantsByPromotion(promotionIds: string[]): Promise<Map<string, number>> {
     const result = new Map<string, number>(promotionIds.map((id) => [id, 0]));
@@ -290,7 +296,11 @@ class PromotionMetaModuleService extends MedusaService({
    * - `max_claims === null` — 상한 없음. 잠그지도 세지도 않는다.
    * - `enforce_cap === false` — admin force. 상한을 넘겨서 발급하되 발급 수에는 포함한다
    *   (장 자체가 카운트라 — `coupon_grant` 가 「지금까지 몇 장 나갔나」의 정본이므로 force 로
-   *   만든 장도 이미 세어진 상태다. 별도로 셀 것이 없다).
+   *   만든 장도 이미 세어진 상태다. 별도로 셀 것이 없다). 🔴 force 는 `lockPromotionForIssue`
+   *   를 안 타므로, 그와 동시에 상한을 «집행하는» 발급이 진행 중이면 그 발급의 COUNT 가
+   *   방금 들어온 force INSERT 를 못 보고 통과시킬 수 있다 — force 는 정의상 상한을 넘기는
+   *   것이라 스펙 위반은 아니지만, 결과 프로모션이 순간적으로 cap+1 장이 될 수 있다는
+   *   뜻이다(「집행할 때만 잠근다」 최적화의 명시되지 않은 귀결).
    */
   async issueGrantWithSlot(input: IssueGrantWithSlotInput): Promise<'created' | 'duplicate' | 'exhausted'> {
     try {
@@ -499,18 +509,39 @@ class PromotionMetaModuleService extends MedusaService({
    * 없어졌고, `revoked`(이번에 실제로 회수된 수)와 구분되는 값으로만 남는다.
    */
   async revokeGrants(promotionId: string, customerId: string): Promise<{ revoked: number; remaining: number }> {
-    const rows = (await (this as any).listCouponGrants({
-      promotion_id: promotionId,
-      customer_id: customerId,
-    })) as CouponGrantRow[];
+    return this.revokeGrants_(promotionId, customerId);
+  }
+
+  /**
+   * `revokeGrants` 의 트랜잭션 본체. `issueGrantWithSlot_` 과 같은 모양이다 —
+   * `@InjectTransactionManager` 가 트랜잭션을 열고, 아래 두 쓰기(회수 표지 스탬프 + 미사용분
+   * soft delete)가 같은 `sharedContext` 를 받아 그 안에서 실행된다.
+   *
+   * 🔴 옛 구현은 두 쓰기가 `MedusaService` 가 생성한 메서드를 각각 직접 불러 **자기
+   * 트랜잭션**을 하나씩 열었다 — 첫 UPDATE 커밋 후 두 번째(soft delete) 전에 죽으면
+   * 「회수 표시는 됐는데 여전히 쓸 수 있고 슬롯도 점유하는」 장이 남았다. `sharedContext` 를
+   * 명시적으로 넘기지 않으면 생성된 메서드는 새 매니저를 포크해 컨텍스트를 안 이어받는다 —
+   * `issueGrantWithSlot_` 의 `createCouponGrants` 주석과 같은 함정이다.
+   */
+  @InjectTransactionManager()
+  protected async revokeGrants_(
+    promotionId: string,
+    customerId: string,
+    @MedusaContext() sharedContext?: Context<EntityManager>,
+  ): Promise<{ revoked: number; remaining: number }> {
+    const rows = (await (this as any).listCouponGrants(
+      { promotion_id: promotionId, customer_id: customerId },
+      {},
+      sharedContext,
+    )) as CouponGrantRow[];
     if (rows.length === 0) return { revoked: 0, remaining: 0 };
     const now = new Date();
     // 🔴 사용 여부와 무관하게 회수 표지를 찍는다. 사용된 장은 아래 soft delete 대상이 아니라
     //    살아남는데, 그 장을 주문 취소가 되살리는 것을 이 열이 막는다.
-    await (this as any).updateCouponGrants(rows.map((g) => ({ id: g.id, revoked_at: now })));
+    await (this as any).updateCouponGrants(rows.map((g) => ({ id: g.id, revoked_at: now })), sharedContext);
     const unused = rows.filter((g) => g.used_at == null);
     if (unused.length > 0) {
-      await (this as any).softDeleteCouponGrants(unused.map((g) => g.id));
+      await (this as any).softDeleteCouponGrants(unused.map((g) => g.id), {}, sharedContext);
     }
     return { revoked: unused.length, remaining: rows.length - unused.length };
   }

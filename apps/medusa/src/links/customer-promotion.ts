@@ -9,8 +9,13 @@ import PromotionModule from '@medusajs/medusa/promotion';
 // 그전까지 인스턴스가 못 하던 일을 클래스(`promotion_meta.issued_count`)와
 // 사이드테이블(`promotion_issue_log`)이 나눠 하고 있었다.
 //
-// ⚠️ `issued_count` 는 옮기지 않는다 — 원자적 예약이 목적이라 링크를 COUNT 하는 순간
-//    원자성을 잃는다. #488 본문 7-1 의 「링크 수에서 도출」 제안은 따르지 않는다.
+// ⚠️ 2026-09-03 갱신: 위 문단은 `coupon_grant` 와 partial unique 인덱스가 생기기 «전» 판단이고
+//    지금은 근거가 소멸했다(설계 문서 §2.3) — 상한의 원자성은 카운터 값이 아니라
+//    `promotion_meta` 행의 배타 락에서 온다는 게 드러났다. 이 링크는 이제 **읽는 코드도 쓰는
+//    코드도 없다**(예외 하나: `scripts/backfill-coupon-grants.ts` 가 1회성 이관에 읽는다).
+//    「이 고객이 이 쿠폰을 가지고 있는가」의 정본은 `coupon_grant` 하나다(ADR-0034 결정 1·2).
+//    이 파일과 링크 테이블 자체는 후속 contract PR 의 삭제 대상이다 — 지우기 전에
+//    `scripts/backfill-coupon-grants.ts` 가 이미 다른 방법으로 대체됐는지 확인할 것.
 //
 // ⚠️ 이 스키마 변경에는 **마이그레이션 파일이 없다.** 컨테이너 CMD 의
 //    `medusa db:migrate --execute-safe-links` 가 적용한다 — `--execute-safe` 는 SQL 에

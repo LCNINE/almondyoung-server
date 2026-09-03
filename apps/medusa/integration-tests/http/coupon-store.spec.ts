@@ -31,13 +31,6 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
-    const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-      await remoteLink.create([
-        { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
-      ]);
-    };
-
     const preview = (code: string) =>
       api.get(`/store/coupons/preview?code=${code}`, storeHeaders);
 
@@ -365,7 +358,8 @@ medusaIntegrationTestRunner({
     });
 
     // preview 의 「보유 여부」가 링크가 아니라 grant 로 판정된다(#488 Task 8 결정 3) — 링크만
-    // 있고 장이 없으면 COUPON_NOT_ASSIGNED 로 떨어진다. 그래서 link 뿐 아니라 grant 도 심는다.
+    // 있고 장이 없으면 COUPON_NOT_ASSIGNED 로 떨어진다. 그래서 grant 를 심는다(링크는 이제
+    // 아무도 읽지 않으므로 함께 심을 이유가 없다).
     it('preview of an assigned assigned_only coupon is valid', async () => {
       const id = await createPromo('ASSIGNED_OK', { visibility: 'assigned_only' });
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
@@ -373,7 +367,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `assigned_ok_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
       const res = await preview('ASSIGNED_OK');
       expect(res.data.valid).toBe(true);
     });
@@ -382,10 +375,17 @@ medusaIntegrationTestRunner({
     // 이미 발급받은(admin 이 launch 전에 미리 배정한) 고객에게 같은 사유가 COUPON_EXPIRED 로
     // 오분류됐다 — isUsable 도 정책 starts_at 을 보므로 다음 줄에서 같은 이유로 다시 걸리기
     // 때문이다. 발급 여부와 무관하게 COUPON_NOT_STARTED 여야 한다.
+    // 「이미 발급받은」은 이제 grant 로 만든다(#488 Task 8 결정 2) — 링크만 심으면 실제로는
+    // «미발급» 고객이 되어, 이 테스트는 이름이 말하는 시나리오(이미 발급받은 고객)를 더는
+    // 덮지 못하게 된다.
     it('preview of an assigned coupon whose policy starts_at is future is NOT_STARTED, not EXPIRED', async () => {
       const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
       const id = await createPromo('ASSIGNED_NS', { visibility: 'assigned_only', starts_at: future });
-      await linkCustomer(id);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `assigned_ns_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
       const res = await preview('ASSIGNED_NS');
       expect(res.data.reason).toEqual('COUPON_NOT_STARTED');
     });

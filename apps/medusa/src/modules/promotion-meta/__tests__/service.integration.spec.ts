@@ -171,8 +171,11 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           expect(issued).toBe(false);
         } finally {
           await holder.commit();
+          // 🔴 위 expect 가 throw 해도 발급 promise 는 반드시 여기서 회수한다 — commit 이
+          //    락을 풀면 곧 resolve 되는데(reject 는 아니라 unhandled rejection 은 안 나지만),
+          //    finally 밖에서 기다리면 이 테스트가 끝난 뒤에야 정착해 다음 테스트로 샌다.
+          expect(await issuing!).toEqual('created');
         }
-        expect(await issuing!).toEqual('created');
       });
 
       it('유효기간 3열을 저장하고 되읽는다', async () => {
