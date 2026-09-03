@@ -130,6 +130,29 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(counts.get('promo_none')).toEqual(0);
       });
 
+      it('countIssuedGrantsByPromotion 은 sharedContext 를 받으면 그 트랜잭션 «안»을 읽는다', async () => {
+        // 형제 `countIssuedGrants` 와 달리 컨텍스트를 거부하던 자리(재리뷰 F10). 집행 트랜잭션
+        // 안에서 배치 카운트를 부르는 호출자가 생기면 자기 INSERT 를 못 보고 상한이 한 장씩 새는
+        // fail-open 이 된다 — 주석으로만 막던 덫을 없앤다.
+        await service.upsert({ promotion_id: 'promo_ctx', max_claims: 5 });
+        const em = (service as any).baseRepository_.manager_;
+        const tx = em.fork();
+        await tx.begin();
+        try {
+          await tx.execute(
+            `INSERT INTO "coupon_grant"
+               ("id", "promotion_id", "customer_id", "issue_key", "issued_via", "issued_at", "created_at", "updated_at")
+             VALUES ('cg_ctx_1', 'promo_ctx', 'cus_ctx', 'k1', 'admin_manual', now(), now(), now())`,
+          );
+          const inside = await service.countIssuedGrantsByPromotion(['promo_ctx'], { transactionManager: tx });
+          const outside = await service.countIssuedGrantsByPromotion(['promo_ctx']);
+          expect(inside.get('promo_ctx')).toBe(1); // 커밋 전 — 트랜잭션 안에서만 보인다
+          expect(outside.get('promo_ctx')).toBe(0);
+        } finally {
+          await tx.rollback();
+        }
+      });
+
       // 🔴 타이밍 경합(Promise.all 두 호출이 실제로 겹치길 «기다리는» 방식)으로는 이 락을
       // 검증할 수 없었다 — 2-way 11회·20-way 1회 전부 과다발급 0건으로, 이 테스트 하네스의
       // 로컬 Postgres 왕복이 너무 빨라 레이스 윈도우가 안정적으로 재현되지 않는다(자세한

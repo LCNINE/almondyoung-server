@@ -147,17 +147,17 @@ class PromotionMetaModuleService extends MedusaService({
    * 장이 없는 프로모션도 **0 으로 채워서** 돌려준다 — 호출부가 `undefined` 를 만나
    * `?? null` 로 접으면 「무제한」과 「0장」이 구분되지 않는다.
    *
-   * 🔴 **트랜잭션 밖 읽기 전용이다.** 형제 `countIssuedGrants` 와 달리 `sharedContext` 를
-   * 받지 않고 저장소 기본 매니저(`baseRepository_.manager_`)를 직접 잡는다 — 오늘 호출부는
-   * 전부 표시용(목록 화면)이라 무해하지만, 상한 집행 트랜잭션 «안» 에서 이 메서드를 부르면
-   * 조용히 트랜잭션 밖을 읽어 낡은(stale) 값을 얻는다. 집행 경로에서는 대신
-   * `countIssuedGrants(promotionId, sharedContext)` 를 쓸 것.
+   * `sharedContext` 는 형제 `countIssuedGrants` 와 같은 이유로 받는다 — 넘기면 그 트랜잭션
+   * 안을 읽고, 안 넘기면 저장소 기본 매니저로 떨어진다. 옛 구현은 이 인자를 거부하고 주석으로
+   * 「집행 경로에서 부르지 말 것」만 적어 두었는데, 주석은 덫을 표시할 뿐 막지 못한다.
    */
-  async countIssuedGrantsByPromotion(promotionIds: string[]): Promise<Map<string, number>> {
+  async countIssuedGrantsByPromotion(
+    promotionIds: string[],
+    sharedContext?: Context<EntityManager>,
+  ): Promise<Map<string, number>> {
     const result = new Map<string, number>(promotionIds.map((id) => [id, 0]));
     if (promotionIds.length === 0) return result;
-    const em = (this as any).baseRepository_.manager_;
-    const rows = await em.execute(
+    const rows = await this.txEm(sharedContext).execute(
       `SELECT "promotion_id", count(*)::int AS c FROM "coupon_grant"
         WHERE "deleted_at" IS NULL AND "promotion_id" IN (?)
         GROUP BY "promotion_id"`,
