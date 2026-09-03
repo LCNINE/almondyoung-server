@@ -38,13 +38,6 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
-    const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-      await remoteLink.create([
-        { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
-      ]);
-    };
-
     const createEvent = async (body: Record<string, unknown>) => {
       const res = await api.post('/admin/coupon-events', body, adminHeaders);
       return res.data.event;
@@ -173,14 +166,14 @@ medusaIntegrationTestRunner({
       const assigned = await createPromo('S_ASSIGN', { visibility: 'claimable' });
       const pub = await createPromo('S_PUB', { visibility: 'public' });
       const assignedOnly = await createPromo('S_AO', { visibility: 'assigned_only' });
-      // «claimed» 는 이제 링크가 아니라 사용 가능한 grant 로 판정된다(#488 Task 8 결정 3) —
-      // 링크만 있고 장이 없으면 claimable 로 보인다. 그래서 grant 도 함께 심는다.
+      // «claimed» 는 링크가 아니라 «사용 가능한 장»이 판정한다(#488 Task 8 결정 3). Task 7 이후
+      // 이벤트 라우트는 링크를 아예 읽지 않으므로(그 라우트는 groups.id 만 확장한다) 링크를
+      // 심는 셋업은 죽은 코드였다 — 장만 심는다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       await metaService.issueGrant({
         promotion_id: assigned, customer_id: customerId, issue_key: `s_assign_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(assigned);
 
       const event = await createEvent({
         title: 'states',

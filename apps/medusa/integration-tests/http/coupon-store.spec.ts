@@ -123,8 +123,8 @@ medusaIntegrationTestRunner({
       const assignedId = await createPromo('ASSIGNED1', { visibility: 'assigned_only' });
       await createPromo('PUBLIC1', { visibility: 'public' });
       await createPromo('CLAIM1', { visibility: 'claimable' });
-      // Task 5: 「발급됨」의 정본이 링크에서 grant 로 옮겨갔다 — linkCustomer() 만으로는
-      // 더 이상 assigned 버킷에 뜨지 않는다.
+      // Task 5: 「발급됨」의 정본이 링크에서 grant 로 옮겨갔다 — 링크 행만으로는 더 이상
+      // assigned 버킷에 뜨지 않으므로 여기서 장을 심는다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       await metaService.issueGrant({
         promotion_id: assignedId, customer_id: customerId, issue_key: `assigned1_${seq}`,
@@ -142,7 +142,9 @@ medusaIntegrationTestRunner({
 
     it('링크 없이 grant 만 있는 고객도 마이페이지에서 쿠폰을 본다', async () => {
       const id = await createPromo(`GRANTONLY${seq}`, { visibility: 'assigned_only' });
-      // linkCustomer() 를 부르지 않는다 — 장만 있고 링크가 없는 상태를 만든다.
+      // 링크는 «아무 데서도» 만들지 않는다 — Task 7 이후 링크를 쓰는 코드가 없다. 즉 이건
+      // 일부러 구성한 예외 상태가 아니라 이제의 «정상» 상태이고, 이 테스트가 고정하는 것은
+      // 「목록이 링크가 아니라 장에서 나온다」는 것이다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       await metaService.issueGrantWithSlot({
         promotion_id: id,
