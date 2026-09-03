@@ -60,8 +60,14 @@ export function hasUsableGrant(grants: CouponGrantRow[], now: Date): boolean {
  * — 또는 그 반대로 「패널은 못 쓴다는데 카트는 받아주는」 — 쿠폰이 생긴다. 표시 둘은 그
  * 반대 방향으로 실제로 갈려 있었고, 그래서 이 함수로 옮겼다.
  *
- * 남은 하나는 **소모 훅**(`workflows/hooks/cart/coupon-usage.ts`)이고 일부러 장 유무로 갈린다 —
- * 고를 장이 없으면 그냥 건너뛰므로 어긋나도 고객이 «못 쓰게» 되지 않는다.
+ * 남은 둘은 **소모 훅**(`workflows/hooks/cart/coupon-usage.ts`)과 **쿠폰 클레임**
+ * (`store/customers/me/promotions/[id]/claim/route.ts`)이고, 쓰지 않는 이유가 서로 다르다.
+ * 소모 훅은 일부러 장 유무로 갈린다 — 고를 장이 없으면 그냥 건너뛰므로 어긋나도 고객이
+ * «못 쓰게» 되지 않는다. 클레임 라우트는 애초에 `visibility === 'claimable'` 인 쿠폰만
+ * 처리한다(`claim/route.ts:37-39` — 아니면 그 앞에서 거절) — 이 함수가 푸는 문제(«공개»
+ * 쿠폰에서 장 유무로 오판하는 것)가 그 라우트엔 아예 생기지 않는다. 대신 「이 고객이 이미
+ * 발급받았는가」를 묻는 `grantsFor`/`hasUsableGrant` 를 직접 쓴다 — `grantsGovernUsage`
+ * 와는 다른 질문이다.
  *
  * 🔴 **이 목록을 늘리거나 줄일 때 이 주석을 같이 고칠 것.** 낡은 목록은 다음 사람이
  * 「표시 vs 판정」 감사를 틀린 모델로 하게 만든다 — #488 이 반복해서 물린 자리다.
