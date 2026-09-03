@@ -126,9 +126,10 @@ medusaIntegrationTestRunner({
       // Task 5: 「발급됨」의 정본이 링크에서 grant 로 옮겨갔다 — 링크 행만으로는 더 이상
       // assigned 버킷에 뜨지 않으므로 여기서 장을 심는다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: assignedId, customer_id: customerId, issue_key: `assigned1_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -181,9 +182,10 @@ medusaIntegrationTestRunner({
     it('me/promotions excludes a coupon whose grant has been used up (P2 used-coupon)', async () => {
       const id = await createPromo('USEDUP', { visibility: 'assigned_only' });
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: id, customer_id: customerId, issue_key: `usedup_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
 
       // 사용 전: 목록에 노출
@@ -209,14 +211,16 @@ medusaIntegrationTestRunner({
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 3600 * 1000);
       // 만료된 장 — 날짜가 있고 이미 지났다(30일 컷오프 안).
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: id, customer_id: customerId, issue_key: `mix_old_${seq}`,
         issued_via: 'admin_manual', expires_at: fiveDaysAgo, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       // 사용 가능한 장 — 무기한, 미사용.
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: id, customer_id: customerId, issue_key: `mix_live_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -238,9 +242,10 @@ medusaIntegrationTestRunner({
 
       /** 장 한 장을 발급한다 — 장이 「이 고객이 가진 쿠폰」의 정본이다(Task 5, 링크는 안 심는다). */
       const grantOne = async (promotionId: string, key: string, expiresAt: Date | null = null) => {
-        await metaSvc().issueGrant({
+        await metaSvc().issueGrantWithSlot({
           promotion_id: promotionId, customer_id: customerId, issue_key: key,
           issued_via: 'admin_manual', expires_at: expiresAt, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
       };
 
@@ -365,9 +370,10 @@ medusaIntegrationTestRunner({
     it('preview of an assigned assigned_only coupon is valid', async () => {
       const id = await createPromo('ASSIGNED_OK', { visibility: 'assigned_only' });
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: id, customer_id: customerId, issue_key: `assigned_ok_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       const res = await preview('ASSIGNED_OK');
       expect(res.data.valid).toBe(true);
@@ -384,9 +390,10 @@ medusaIntegrationTestRunner({
       const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
       const id = await createPromo('ASSIGNED_NS', { visibility: 'assigned_only', starts_at: future });
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.issueGrant({
+      await metaService.issueGrantWithSlot({
         promotion_id: id, customer_id: customerId, issue_key: `assigned_ns_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       const res = await preview('ASSIGNED_NS');
       expect(res.data.reason).toEqual('COUPON_NOT_STARTED');

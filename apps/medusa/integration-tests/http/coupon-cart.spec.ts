@@ -253,9 +253,10 @@ medusaIntegrationTestRunner({
       // 게이트의 정본이 Task 5(#488 G5~G7)로 grant 로 옮겨갔다 — 「할당됨」은 이제 링크 행이
       // 아니라 coupon_grant 행으로 판정한다(실제 발급 라우트가 그렇게 쓴다).
       const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await service.issueGrant({
+      await service.issueGrantWithSlot({
         promotion_id: promoId, customer_id: customerId, issue_key: `gateok_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       const res = await api.post(`/store/carts/${cartId}/promotions`, { promo_codes: [`GATEOK_${seq}`] }, custHeaders);
       expect(res.status).toEqual(200);
@@ -331,9 +332,10 @@ medusaIntegrationTestRunner({
       const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       // 한 장 발급한 뒤 그 장을 소모시킨다 — 체크아웃 없이 「다 쓴 상태」를 만든다.
-      await service.issueGrant({
+      await service.issueGrantWithSlot({
         promotion_id: promotionId, customer_id: customerId, issue_key: 'k1',
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       const [grant] = await service.listGrantsForCustomer(customerId);
       await service.consumeGrantIfUnused(grant.id, 'order_spent', new Date());
@@ -353,9 +355,10 @@ medusaIntegrationTestRunner({
       const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       for (const key of ['k1', 'k2']) {
-        await service.issueGrant({
+        await service.issueGrantWithSlot({
           promotion_id: promotionId, customer_id: customerId, issue_key: key,
           issued_via: 'admin_manual', expires_at: null, now: new Date(),
+          max_claims: null, enforce_cap: false,
         });
       }
       const grants = await service.listGrantsForCustomer(customerId);
@@ -394,9 +397,10 @@ medusaIntegrationTestRunner({
       const promotionId = await createPromo(`PUBSPENT_${seq}`, { visibility: 'public' });
       const service = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
-      await service.issueGrant({
+      await service.issueGrantWithSlot({
         promotion_id: promotionId, customer_id: customerId, issue_key: 'k1',
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        max_claims: null, enforce_cap: false,
       });
       const [grant] = await service.listGrantsForCustomer(customerId);
       await service.consumeGrantIfUnused(grant.id, 'order_pub_spent', new Date());
