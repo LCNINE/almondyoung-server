@@ -31,7 +31,7 @@ function toDate(value: Date | string | null | undefined): Date | null {
  * 값으로 고른다 — 배열 순서에 기대지 않는다. `listGrantsForPromotion` 은 `orderBy` 가 없어
  * 행 순서가 보장되지 않으므로, 위치(`mine[0]`/`mine[mine.length-1]`)로 「최초/최근」을 뽑으면
  * 여러 장을 가진 고객의 표시가 틀릴 수 있다(#488 Task 7 리뷰). `grants.ts` 의 `nextExpiryAt`
- * (reduce)·`consumeOneUsableGrant`(명시적 정렬 + id 동률 처리)와 같은 모양을 따른다.
+ * (reduce)·`service.ts::consumeOneUsableGrant`(SQL ORDER BY, id 동률 처리)와 같은 모양을 따른다.
  */
 function earliestIssuedGrant(grants: CouponGrantRow[]): CouponGrantRow | undefined {
   return grants.reduce<CouponGrantRow | undefined>((min, g) => {

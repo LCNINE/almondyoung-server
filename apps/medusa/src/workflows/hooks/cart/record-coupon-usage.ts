@@ -65,7 +65,7 @@ completeCartWorkflow.hooks.orderCreated(
       const now = new Date();
       for (const promo of found.promotions ?? []) {
         // 고르기와 CAS 가 모듈 안 «한 문장»이다 (PR-2 결정 1, `consumeOneUsableGrant` 독스트링).
-        // FEFO·만료 경계·재호출 멱등성(같은 order_id)·동시성(SKIP LOCKED)을 전부 그 문장이
+        // FEFO·만료 경계·재호출(순차) 멱등성(같은 order_id)·동시성(SKIP LOCKED)을 전부 그 문장이
         // 맡으므로 여기엔 판정이 없다. `null` 은 「소모할 장이 없다」— 발급 개념이 없는 public
         // 쿠폰이 대부분이라 경고하지 않는다. 옛 「이미 사용됐거나 회수됨」 경고는 고르기/CAS
         // 분리가 만들던 상태였고 이제 생기지 않는다.
