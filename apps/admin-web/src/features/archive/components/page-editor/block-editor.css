@@ -53,9 +53,16 @@
   font-weight: 600;
 }
 
+/* BlockNote 기본 코드블록은 어두운 배경 + 흰 글자다. 배경만 밝게 덮으면
+   글자색이 #fff 로 남아 사실상 안 보인다 — 글자색과 언어 선택기도 같이 뒤집는다. */
 .archive-block-editor [data-content-type='codeBlock'] {
   background: var(--grayscale-10);
   border-radius: var(--radius);
+  color: var(--foreground);
+}
+
+.archive-block-editor [data-content-type='codeBlock'] > div > select {
+  color: var(--foreground);
 }
 
 .archive-block-editor [data-content-type='quote'] {

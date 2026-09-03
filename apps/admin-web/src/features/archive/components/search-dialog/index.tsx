@@ -61,17 +61,20 @@ export function ArchiveSearchDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>아카이브 검색</DialogTitle>
-        <DialogDescription>제목과 본문에서 문서를 찾습니다.</DialogDescription>
-      </DialogHeader>
+      {/* 헤더가 DialogContent 밖에 있으면 닫혀 있을 때도 이 문구가 화면 본문에 남아 읽힌다. */}
       <DialogContent className="overflow-hidden p-0">
+        <DialogHeader className="sr-only">
+          <DialogTitle>아카이브 검색</DialogTitle>
+          <DialogDescription>
+            제목과 본문에서 문서를 찾습니다.
+          </DialogDescription>
+        </DialogHeader>
         {/* 서버가 이미 걸러 온 결과라 cmdk 가 한 번 더 거르면 한글 조합 중에 결과가 사라진다. */}
         <Command shouldFilter={false}>
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder="문서 제목이나 본문 내용을 입력하세요"
+            placeholder="문서 제목이나 본문 내용을 입력하세요…"
           />
           <CommandList>
             {showRecent ? (

@@ -129,6 +129,19 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
     };
   }, [pageId, queryClient]);
 
+  // 본문과 달리 제목·아이콘·커버는 탭을 닫을 때 언마운트 정리가 돌지 않는다.
+  // 여기서도 보내기를 시작시키고 경고를 띄우는 것까지가 할 수 있는 전부다.
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!pendingMeta.current) return;
+      flushMetaNow();
+      event.preventDefault();
+    };
+
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [flushMetaNow]);
+
   const handleBodySave = useCallback(
     ({ content, markdown }: { content: ArchiveBlock[]; markdown: string }) => {
       save({ content, contentMarkdown: markdown });

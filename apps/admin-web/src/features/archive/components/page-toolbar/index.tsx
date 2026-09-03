@@ -1,5 +1,7 @@
 'use client';
 
+import type * as React from 'react';
+
 import Link from 'next/link';
 import {
   ChevronRight,
@@ -10,6 +12,11 @@ import {
   Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils/ui';
 import type { ArchiveBreadcrumbDto } from '@/lib/types/dto/archive';
 
@@ -70,14 +77,11 @@ export function PageToolbar({
 
       <SaveIndicator state={saveState} savedAt={savedAt} />
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-pressed={isFavorite}
-        aria-label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기에 추가'}
+      {/* 아이콘만 있는 버튼은 이름을 읽어주는 것과 별개로, 보는 사람에게도 이름이 필요하다. */}
+      <IconAction
+        label={isFavorite ? '즐겨찾기 해제' : '즐겨찾기에 추가'}
         onClick={onToggleFavorite}
-        className="size-8"
+        aria-pressed={isFavorite}
       >
         <Star
           className={cn(
@@ -86,30 +90,52 @@ export function PageToolbar({
           )}
           aria-hidden
         />
-      </Button>
+      </IconAction>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="저장 이력 보기"
-        onClick={onOpenHistory}
-        className="size-8"
-      >
+      <IconAction label="저장 이력 보기" onClick={onOpenHistory}>
         <History className="size-4" aria-hidden />
-      </Button>
+      </IconAction>
 
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        aria-label="휴지통으로 옮기기"
+      <IconAction
+        label="휴지통으로 옮기기"
         onClick={onDelete}
-        className="size-8 text-muted-foreground hover:text-destructive"
+        className="text-muted-foreground hover:text-destructive"
       >
         <Trash2 className="size-4" aria-hidden />
-      </Button>
+      </IconAction>
     </div>
+  );
+}
+
+function IconAction({
+  label,
+  onClick,
+  className,
+  children,
+  ...rest
+}: {
+  label: string;
+  onClick: () => void;
+  className?: string;
+  children: React.ReactNode;
+} & Pick<React.ComponentProps<'button'>, 'aria-pressed'>) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={label}
+          onClick={onClick}
+          className={cn('size-8', className)}
+          {...rest}
+        >
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }
 

@@ -106,7 +106,12 @@ export function VersionHistory({ pageId, open, onOpenChange }: Props) {
                 {selected.contentMarkdown || '(본문 없음)'}
               </pre>
             </div>
-            <div className="p-3">
+            <div className="space-y-2 p-3">
+              {/* 되돌리기는 본문을 통째로 바꾼다. 되돌릴 수 있다는 사실을 누르기 «전에» 알려준다. */}
+              <p className="text-xs text-muted-foreground">
+                지금 본문은 되돌리기 직전 상태로 이력에 남으니, 다시 되돌릴 수
+                있어요.
+              </p>
               <Button
                 type="button"
                 className="w-full"
