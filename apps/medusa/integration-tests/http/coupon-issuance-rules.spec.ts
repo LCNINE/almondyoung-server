@@ -1,6 +1,7 @@
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import jwt from 'jsonwebtoken';
+import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 
 jest.setTimeout(120 * 1000);
 
@@ -174,15 +175,15 @@ medusaIntegrationTestRunner({
       it('이미 발급된 쿠폰은 룰과 무관하게 목록에 남는다 (회귀 가드)', async () => {
         // 🔴 assigned 목록에 fail-closed 를 넣으면 **고객이 보유한 쿠폰이 사라진다.**
         // 카트에서는 엔진이 룰을 제대로 평가해 쓸 수 있는데도 목록에서만 없어진다.
+        //
+        // Task 5: 「보유」의 정본이 customer-promotion 링크에서 grant 로 옮겨갔다 — 이 라우트는
+        // 링크를 더 이상 읽지 않으므로 grant 를 직접 심는다(옛 픽스처의 link.create 는 지웠다).
         const promoId = await createPromo('P7OWNED', unsupportedRule(), { visibility: 'assigned_only' });
-        const link = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-        await link.create([
-          {
-            [Modules.CUSTOMER]: { customer_id: customerId },
-            [Modules.PROMOTION]: { promotion_id: promoId },
-            data: { expires_at: null, issued_via: 'admin_manual', used_at: null, order_id: null },
-          },
-        ]);
+        const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+        await metaService.issueGrant({
+          promotion_id: promoId, customer_id: customerId, issue_key: `p7owned_${seq}`,
+          issued_via: 'admin_manual', expires_at: null, now: new Date(),
+        });
 
         const res = await api.get('/store/customers/me/promotions', storeHeaders);
 

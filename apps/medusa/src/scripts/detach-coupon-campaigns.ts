@@ -47,8 +47,9 @@ export default async function detachCouponCampaigns({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   // ContainerRegistrationKeys.LINK 는 컨테이너에 좁은 타입이 없어 resolve() 가 unknown 을
-  // 반환한다 — `.getLinkModule`/`.create` 를 부르려면 캐스팅이 필요하다. 이 저장소 전체가
-  // 이 자리에서 이미 그렇게 한다(backfill-issued-count.ts, admin/promotions 라우트 등).
+  // 반환한다 — `.getLinkModule`/`.create` 를 부르려면 캐스팅이 필요하다. 이 저장소는 이
+  // 자리에서 이미 그렇게 한다(`scripts/backfill-coupon-grants.ts:46,54` 등 — 어드민
+  // promotions 라우트 둘은 Task 7 이 링크 쓰기를 걷어내며 이 캐스트도 함께 사라졌다).
   const link = container.resolve(ContainerRegistrationKeys.LINK) as any;
   const promotionModule = container.resolve<IPromotionModuleService>(Modules.PROMOTION);
   const metaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);

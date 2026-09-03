@@ -35,23 +35,6 @@ export const useDeleteCoupon = () => {
   });
 };
 
-/**
- * 고객축 발급. `submitId` 는 필수다 — 호출부가 「제출 시작」에 한 번 만들어 재시도 내내
- * 같은 값을 보낸다(`coupon-assign-dialog.tsx` 의 `submitIdRef` 참고). 여기서 만들지 않는다:
- * 훅 본문에서 만들면 재시도마다 새 값이 되어 멱등성이 사라진다.
- */
-export const useAssignCoupon = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ medusaCustomerId, promotionIds, submitId, force, quantity }: {
-      medusaCustomerId: string; promotionIds: string[]; submitId: string; force?: boolean; quantity?: number;
-    }) => medusaPromotionsApi.assignToCustomer(medusaCustomerId, promotionIds, submitId, force, quantity),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: couponQueryKeys.all });
-    },
-  });
-};
-
 export const useBulkIssueCoupon = () => {
   const queryClient = useQueryClient();
   return useMutation({

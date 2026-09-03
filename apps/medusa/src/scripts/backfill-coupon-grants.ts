@@ -11,8 +11,7 @@ const CONFIRM_VALUE = 'backfill-coupon-grants';
  *
  * 왜 마이그레이션이 아닌가: 링크 테이블의 **실제 이름이 우리 소스에 없다.** 부팅 시
  * `medusa db:migrate --execute-safe-links` 가 만들고 마이그레이션 파일이 남지 않는다.
- * 추측한 이름으로 SQL 을 쓰면 배포 중에 죽는다. 링크 «모듈 API» 를 쓰면 이름을 몰라도 된다
- * (`backfill-issued-count.ts` 와 같은 패턴).
+ * 추측한 이름으로 SQL 을 쓰면 배포 중에 죽는다. 링크 «모듈 API» 를 쓰면 이름을 몰라도 된다.
  *
  * `issue_key` 는 결정적으로 만든다 — 원본이 복합 PK 라 (쿠폰, 고객) 쌍마다 정확히 한 행이고
  * 유니크는 그 쌍에 키를 더한 삼중이므로, 관리자 발급분은 `'legacy'` 고정으로 충분하다.

@@ -228,8 +228,13 @@ scripts/local/run-medusa-integration.sh --testPathPattern 'coupon-'
 scripts/local/run-medusa-integration.sh --modules --testPathPattern 'promotion-meta'   # 모듈 통합 스펙
 ```
 
-`docker compose` 의 postgres 만 있으면 된다(Medusa 서버는 안 떠 있어도 된다 — 러너가 in-app 으로
-띄운다). 스펙마다 임시 DB 를 만들었다 지우므로 `medusa` DB 는 건드리지 않는다.
+`docker compose` 의 **postgres 와 redis 가 둘 다** 있어야 한다(Medusa 서버는 안 떠 있어도 된다 —
+러너가 in-app 으로 띄운다). 스펙마다 임시 DB 를 만들었다 지우므로 `medusa` DB 는 건드리지 않는다.
+
+**redis 는 선택이 아니다.** `medusa-config.js` 에서 `TEST_TYPE` 으로 in-memory 로 갈리는 것은
+`event_bus` 하나뿐이고, `cache-redis`·`caching-redis`·`workflow-engine-redis`·`locking-redis` 는
+통합 스펙에서도 `REDIS_URL` 로 실제 접속한다. redis 없이 돌리면 `ECONNREFUSED` 가 잔뜩 찍히다가
+앱 부팅 단계에서 스펙이 실패한다(2026-09-03 실측).
 
 **`npm run test:integration:http` 도 `npm run test:integration:modules` 도 직접 부르지 말 것.**
 둘 다 같은 러너 계열이라 같은 이유로 죽는다. 러너는 `DATABASE_URL` 이 아니라
@@ -237,8 +242,12 @@ scripts/local/run-medusa-integration.sh --modules --testPathPattern 'promotion-m
 `.env` 에 그 넷이 없어서 전 스펙이 `SASL: client password must be a string` 으로 죽는다 —
 스펙이 빨간 게 아니라 환경이 안 넘어간 것이다. 위 스크립트가 `DATABASE_URL` 에서 넷을 파생시켜 넘긴다.
 
-**CI 는 이걸 돌리지 않는다.** `medusa-unit-tests.yml` 은 DB 가 없어 `test:unit` 만 돌린다.
-쿠폰 도메인을 건드렸으면 **로컬에서 이 명령을 돌리는 것이 유일한 방어선이다.**
+**CI 도 이걸 돌린다(2026-09-03 부터).** `medusa-unit-tests.yml` 의 `integration` job 이
+postgres + redis service 를 띄우고 모듈·HTTP 통합 스펙을 모두 돌린다 — `apps/medusa/**` 를
+건드린 PR 에만 붙는다. 그 전까지는 로컬 실행이 유일한 방어선이었고, `integration-tests/http/` 의
+쿠폰 스펙 8개는 한 번도 게이트를 통과한 적이 없었다(ADR-0034 결정 4).
+
+로컬 실행은 여전히 유용하다 — CI 는 PR 을 올려야 돌지만 이건 지금 돌릴 수 있다.
 
 ### 부팅 중 실제로 걸린 것들
 

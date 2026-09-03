@@ -21,7 +21,8 @@ import { formatPromotion } from './format-promotion';
  * 인증된 고객의 사용 가능한 쿠폰(Promotion) 목록을 조회합니다.
  *
  * 반환 대상:
- * 1. 고객에게 직접 발급된 프로모션 (Customer-Promotion 링크)
+ * 1. 고객에게 직접 발급된 프로모션 (coupon_grant — Task 5 부터 Customer-Promotion 링크는
+ *    읽지 않는다. 링크는 (고객, 프로모션)당 1행이라 quantity>1 발급을 표현하지 못했다)
  * 2. 일반적으로 사용 가능한 프로모션 (전체 공개 쿠폰)
  *
  * 필터링 조건:
@@ -71,12 +72,26 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'rules.values.value',
   ];
 
-  //  고객에게 직접 발급된 프로모션 조회 (groups.id로 그룹 rule 검증에 활용)
+  // 그룹 룰 평가에 쓰는 groups.id 만 남긴다. 「발급된 쿠폰」은 링크가 아니라 grant 가 정한다
+  // (설계 결정 2) — 링크는 (고객, 프로모션)당 1행이라 quantity>1 을 표현하지도 못한다.
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id', 'email', 'groups.id', ...promotionFields.map((f) => `promotions.${f}`)],
+    fields: ['id', 'groups.id'],
     filters: { id: customerId },
   });
+
+  // 발급된 «장» 들. 이것이 「이 고객이 가진 쿠폰」의 정본이다 — 프로모션 조회보다 먼저 구해
+  // 그 id 로 프로모션을 끌어온다(customer-promotion 링크를 거치지 않는다).
+  const grants: CouponGrantRow[] = await promotionMetaService.listGrantsForCustomer(customerId);
+  const grantedPromotionIds = [...new Set(grants.map((g) => g.promotion_id))];
+
+  const { data: grantedPromotions } = grantedPromotionIds.length > 0
+    ? await query.graph({
+        entity: 'promotion',
+        fields: promotionFields,
+        filters: { id: grantedPromotionIds },
+      })
+    : { data: [] as any[] };
 
   //  일반적으로 사용 가능한 모든 프로모션 조회 (전체 공개 쿠폰)
   const { data: allPromotions } = await query.graph({
@@ -92,7 +107,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   // 모든 프로모션의 visibility 일괄 조회
   const allPromoIds = [
-    ...(customers?.[0]?.promotions ?? []).map((p: any) => p.id),
+    ...(grantedPromotions ?? []).map((p: any) => p.id),
     ...(allPromotions ?? []).map((p: any) => p.id),
   ];
   const metas = allPromoIds.length > 0
@@ -111,8 +126,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const visibilityOf = (promotionId: string): string =>
     visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
   const metaById = new Map<string, any>(metas.map((m: any) => [m.promotion_id, m]));
-  // 발급된 «장» 들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
-  const grants: CouponGrantRow[] = await promotionMetaService.listGrantsForCustomer(customerId);
+  // 상한 판정은 이제 issued_count 컬럼이 아니라 coupon_grant 실측 COUNT 다(Task 2 가 그
+  // 컬럼의 갱신을 끊었다). 프로모션마다 재조회하지 않도록 한 번에 센다.
+  const countById = allPromoIds.length > 0
+    ? await promotionMetaService.countIssuedGrantsByPromotion([...new Set(allPromoIds)])
+    : new Map<string, number>();
+  // grants 는 위(프로모션 조회 전)에서 이미 가져왔다 — 프로모션마다 조회하지 않는다.
   const grantsOf = (promotionId: string): CouponGrantRow[] => grantsFor(grants, promotionId);
   // 만료 표시는 «사용 가능한 장 중 가장 이른 만료» (#488 결정 1/Task 8). `displayExpiresAt`
   // 의 `?:` 분기를 지키기 위해 인스턴스 인자로 "가장 이른 사용 가능 장"을 합성해 넘긴다 —
@@ -150,13 +169,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metaById.get(promotionId);
     if (!m || m.max_claims == null) return false;
-    return Number(m.issued_count ?? 0) >= Number(m.max_claims);
+    return (countById.get(promotionId) ?? 0) >= Number(m.max_claims);
   };
 
   // status/자동적용/유효기간 검증. 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면
-  // (=발급 개념이 없는 public 이거나 아직 grant 없이 링크만 있는 구식 배정) 정책» 이 정한다
-  // (#488 결정 1) — 카트 미들웨어(`per-customer-limit.ts`)·`complete-cart.ts` 훅과 같은 판정.
-  // metaById·grants 에 의존하므로 그 아래에 있어야 한다.
+  // (=발급 개념이 없는 public 쿠폰이거나, 아직 grant 를 받지 않은 claimable/public 후보)
+  // 정책» 이 정한다 (#488 결정 1) — 카트 미들웨어(`per-customer-limit.ts`)·
+  // `complete-cart.ts` 훅과 같은 판정. metaById·grants 에 의존하므로 그 아래에 있어야 한다.
+  // (Task 5) 이 라우트는 더 이상 customer-promotion 링크를 읽지 않으므로 「grant 없이 링크만
+  // 있는 배정」 케이스는 구조적으로 사라졌다 — assignedPromotions 로 오는 항목은 반드시 장을
+  // 가진다.
   const isValidPromotion = (promo: any): boolean => {
     if (promo.status !== 'active') return false;
     if (promo.is_automatic) return false;
@@ -175,7 +197,6 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   };
 
   const assignedPromotionIds = new Set<string>();
-  const customer = customers?.[0];
 
   // 사용 소진 쿠폰 제외 — 전역 usage 한도(전원 공통)만 남는다. per-customer 소진은 이제
   // `isValidPromotion` 의 grant 기반 판정(위)이 대신한다 — 「1장=1회」가 grant 로 강제되므로
@@ -193,7 +214,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return false;
   };
 
-  const assignedPromotions = (customer?.promotions || [])
+  const assignedPromotions = (grantedPromotions || [])
     .filter((promo: any) => isValidPromotion(promo) && !isUsageExhausted(promo))
     .map((promo: any) => {
       assignedPromotionIds.add(promo.id);
@@ -236,8 +257,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 🔴 여기서 `expiresAtOf` (usable_count 와 같은 «사용 가능한 장» 기준) 를 쓰면 안 된다 —
   // 다 쓰거나 만료된 장은 usableGrants 에서 걸러져 정책값으로 새므로(#488 결정 1 은 "사용
   // 가능한 장"만 다룬다), 정작 만료 목록에 넣어야 할 항목의 실제 만료일을 못 구한다. 장이
-  // 있으면(mine.length>0) 그 장들의 원본 expires_at 중 가장 늦은 것(=가장 최근 만료)을,
-  // 장이 없으면(순수 링크 배정) 정책 폴백인 expiresAtOf 를 그대로 쓴다.
+  // 있으면(mine.length>0 — 아래 호출부는 grantedPromotions 만 순회하므로 사실상 항상 이쪽이다)
+  // 그 장들의 원본 expires_at 중 가장 늦은 것(=가장 최근 만료)을 쓴다. `mine.length===0` 는
+  // 이 함수가 grant 없는 프로모션에 불려도 안전하도록 남겨 둔 방어적 폴백(정책값)일 뿐, 지금은
+  // 이 라우트 안에서 실제로 그 경로를 타는 호출이 없다(Task 5 — 링크 기반 배정이 사라졌다).
   //
   // 🔴 (#488 Task 8 리뷰 Important #1) **지금 사용 가능한 장은 여기서 뺀다.** 같은
   // 프로모션에 만료된 장 A 와 무기한 미사용 장 B 를 같이 가진 고객은 `hasUsableGrant` 가
@@ -275,7 +298,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 컷오프·상한은 만료 바구니와 같은 값을 쓴다 — 두 바구니의 「최근」이 다르면 설명할 수 없다.
   const usedPromotionIds = new Set<string>();
   const usedCandidates: Array<{ promo: any; usedAt: Date }> = [];
-  for (const promo of customer?.promotions ?? []) {
+  for (const promo of grantedPromotions ?? []) {
     if (promo.is_automatic) continue;
     if (assignedPromotionIds.has(promo.id)) continue;
     const usedAt = latestUsedAt(grantsOf(promo.id));
@@ -294,7 +317,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     });
 
   const expiredCandidates: Array<{ promo: any; endsAt: Date }> = [];
-  for (const promo of customer?.promotions ?? []) {
+  for (const promo of grantedPromotions ?? []) {
     if (promo.is_automatic) continue;
     // 이미 assignedPromotions 에 든 쿠폰은 건너뛴다 — 같은 쿠폰이 "사용 가능"과 "최근 만료"
     // 두 바구니에 동시에 뜨는 것을 막는 1차 방어(publicPromotions/claimablePromotions 와

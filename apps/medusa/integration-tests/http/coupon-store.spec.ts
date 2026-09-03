@@ -31,18 +31,32 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
-    const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-      await remoteLink.create([
-        { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
-      ]);
-    };
-
     const preview = (code: string) =>
       api.get(`/store/coupons/preview?code=${code}`, storeHeaders);
 
     const claim = (promotionId: string) =>
       api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
 
     const otherGroupRule = async () => {
       const [g] = await getContainer().resolve(Modules.CUSTOMER).createCustomerGroups([{ name: `og${seq}` }]);
@@ -109,7 +123,13 @@ medusaIntegrationTestRunner({
       const assignedId = await createPromo('ASSIGNED1', { visibility: 'assigned_only' });
       await createPromo('PUBLIC1', { visibility: 'public' });
       await createPromo('CLAIM1', { visibility: 'claimable' });
-      await linkCustomer(assignedId);
+      // Task 5: 「발급됨」의 정본이 링크에서 grant 로 옮겨갔다 — 링크 행만으로는 더 이상
+      // assigned 버킷에 뜨지 않으므로 여기서 장을 심는다.
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: assignedId, customer_id: customerId, issue_key: `assigned1_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
       const codes = res.data.promotions.map((p: any) => p.code);
@@ -120,11 +140,34 @@ medusaIntegrationTestRunner({
       expect(claimCodes).toContain('CLAIM1');
     });
 
+    it('링크 없이 grant 만 있는 고객도 마이페이지에서 쿠폰을 본다', async () => {
+      const id = await createPromo(`GRANTONLY${seq}`, { visibility: 'assigned_only' });
+      // 링크는 «아무 데서도» 만들지 않는다 — Task 7 이후 링크를 쓰는 코드가 없다. 즉 이건
+      // 일부러 구성한 예외 상태가 아니라 이제의 «정상» 상태이고, 이 테스트가 고정하는 것은
+      // 「목록이 링크가 아니라 장에서 나온다」는 것이다.
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrantWithSlot({
+        promotion_id: id,
+        customer_id: customerId,
+        issue_key: `${id}:${customerId}:direct:1`,
+        issued_via: 'admin_manual',
+        expires_at: null,
+        now: new Date(),
+        max_claims: null,
+        enforce_cap: true,
+      });
+
+      const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+      expect(res.status).toEqual(200);
+      const assigned = res.data.promotions.filter((p: any) => p.is_assigned);
+      expect(assigned.map((p: any) => p.code)).toContain(`GRANTONLY${seq}`);
+    });
+
     it('me/promotions excludes a claim-exhausted claimable coupon (P2-8)', async () => {
       const claimId = await createPromo('CLAIMFULL', { visibility: 'claimable', max_claims: 1 });
-      // issued_count 를 max_claims 까지 채워 소진 상태로
-      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.reserveClaimSlot(claimId, 1); // issued_count = 1 == max_claims
+      // 발급 상한을 소진 상태로 — 이제 카운터가 아니라 실제 장으로 채운다.
+      await fillClaims(claimId, 1);
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
       const claimCodes = res.data.claimable_promotions.map((p: any) => p.code);
@@ -142,7 +185,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `usedup_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
 
       // 사용 전: 목록에 노출
       const before = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -150,7 +192,7 @@ medusaIntegrationTestRunner({
 
       // 「1장=1회」— 발급받은 장을 소모한다(주문 완료를 흉내)
       const [grant] = await metaService.listGrantsForCustomer(customerId);
-      await metaService.consumeGrant(grant.id, `order_${seq}`, new Date());
+      await metaService.consumeGrantIfUnused(grant.id, `order_${seq}`, new Date());
 
       // 사용 후: 목록에서 제외
       const after = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -176,7 +218,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `mix_live_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
 
@@ -195,19 +236,18 @@ medusaIntegrationTestRunner({
     describe('사용완료 바구니 (#488 A1)', () => {
       const metaSvc = () => getContainer().resolve(PROMOTION_META_MODULE) as any;
 
-      /** 장 한 장을 발급하고 링크까지 만든다 — 마이페이지는 링크 행으로 쿠폰을 열거한다. */
+      /** 장 한 장을 발급한다 — 장이 「이 고객이 가진 쿠폰」의 정본이다(Task 5, 링크는 안 심는다). */
       const grantOne = async (promotionId: string, key: string, expiresAt: Date | null = null) => {
         await metaSvc().issueGrant({
           promotion_id: promotionId, customer_id: customerId, issue_key: key,
           issued_via: 'admin_manual', expires_at: expiresAt, now: new Date(),
         });
-        await linkCustomer(promotionId);
       };
 
       const consumeAll = async (promotionId: string, usedAt = new Date()) => {
         const grants = await metaSvc().listGrantsForCustomer(customerId);
         for (const g of grants.filter((x: any) => x.promotion_id === promotionId)) {
-          await metaSvc().consumeGrant(g.id, `order_${seq}_${g.id}`, usedAt);
+          await metaSvc().consumeGrantIfUnused(g.id, `order_${seq}_${g.id}`, usedAt);
         }
       };
 
@@ -255,7 +295,7 @@ medusaIntegrationTestRunner({
         // 두 장 중 한 장만 소모한다.
         const grants = (await metaSvc().listGrantsForCustomer(customerId))
           .filter((g: any) => g.promotion_id === id);
-        await metaSvc().consumeGrant(grants[0].id, `order_left_${seq}`, new Date());
+        await metaSvc().consumeGrantIfUnused(grants[0].id, `order_left_${seq}`, new Date());
 
         const res = await api.get('/store/customers/me/promotions', storeHeaders);
 
@@ -276,6 +316,12 @@ medusaIntegrationTestRunner({
 
         expect(res.data.promotions.map((p: any) => p.code)).toContain('PUBUSED');
         expect(res.data.used_promotions.map((p: any) => p.code)).not.toContain('PUBUSED');
+        // 장을 가진 public 쿠폰은 assigned 바구니(grantedPromotions 유래)를 통해 나온다 —
+        // publicPromotions 는 assignedPromotionIds 에 있는 항목을 제외하므로 여기서 뜬 것은
+        // 곧 is_assigned:true 다(결정 2: 장을 가졌다 = 실제로 발급받았다). 다음 사람이
+        // 「버그처럼 보이는 의도」로 되돌리지 않도록 고정해 둔다.
+        const pubused = res.data.promotions.find((p: any) => p.code === 'PUBUSED');
+        expect(pubused.is_assigned).toBe(true);
       });
 
       it('30일보다 오래된 사용은 빠진다 — 만료 바구니와 같은 컷오프', async () => {
@@ -314,7 +360,8 @@ medusaIntegrationTestRunner({
     });
 
     // preview 의 「보유 여부」가 링크가 아니라 grant 로 판정된다(#488 Task 8 결정 3) — 링크만
-    // 있고 장이 없으면 COUPON_NOT_ASSIGNED 로 떨어진다. 그래서 link 뿐 아니라 grant 도 심는다.
+    // 있고 장이 없으면 COUPON_NOT_ASSIGNED 로 떨어진다. 그래서 grant 를 심는다(링크는 이제
+    // 아무도 읽지 않으므로 함께 심을 이유가 없다).
     it('preview of an assigned assigned_only coupon is valid', async () => {
       const id = await createPromo('ASSIGNED_OK', { visibility: 'assigned_only' });
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
@@ -322,7 +369,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `assigned_ok_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
       const res = await preview('ASSIGNED_OK');
       expect(res.data.valid).toBe(true);
     });
@@ -331,10 +377,17 @@ medusaIntegrationTestRunner({
     // 이미 발급받은(admin 이 launch 전에 미리 배정한) 고객에게 같은 사유가 COUPON_EXPIRED 로
     // 오분류됐다 — isUsable 도 정책 starts_at 을 보므로 다음 줄에서 같은 이유로 다시 걸리기
     // 때문이다. 발급 여부와 무관하게 COUPON_NOT_STARTED 여야 한다.
+    // 「이미 발급받은」은 이제 grant 로 만든다(#488 Task 8 결정 2) — 링크만 심으면 실제로는
+    // «미발급» 고객이 되어, 이 테스트는 이름이 말하는 시나리오(이미 발급받은 고객)를 더는
+    // 덮지 못하게 된다.
     it('preview of an assigned coupon whose policy starts_at is future is NOT_STARTED, not EXPIRED', async () => {
       const future = new Date(Date.now() + 3 * 24 * 3600 * 1000).toISOString();
       const id = await createPromo('ASSIGNED_NS', { visibility: 'assigned_only', starts_at: future });
-      await linkCustomer(id);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: id, customer_id: customerId, issue_key: `assigned_ns_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
       const res = await preview('ASSIGNED_NS');
       expect(res.data.reason).toEqual('COUPON_NOT_STARTED');
     });
@@ -346,8 +399,7 @@ medusaIntegrationTestRunner({
 
     it('claim rejects an exhausted claimable coupon', async () => {
       const id = await createPromo('CLAIMEXH', { visibility: 'claimable', max_claims: 1 });
-      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await meta.reserveClaimSlot(id, 1); // 소진
+      await fillClaims(id, 1); // 소진
       await expect(claim(id)).rejects.toMatchObject({ response: { status: 400 } });
     });
 
@@ -361,18 +413,19 @@ medusaIntegrationTestRunner({
 
       const first = await claim(id);
       expect(first.status).toEqual(200);
-      // 이제 max_claims=1 이 내 발급으로 소진됐다.
+      // 이제 max_claims=1 이 내 발급으로 소진됐다 — 상한의 정본은 카운터가 아니라
+      // `coupon_grant` COUNT 다 (결정 1).
       const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+      expect(await meta.countIssuedGrants(id)).toBe(1);
 
       const again = await claim(id);
       expect(again.status).toEqual(200);
-      // 🔴 200 이 「한 장 더 줬다」는 뜻이면 안 된다 — 장수도 카운터도 그대로여야 한다.
+      // 🔴 200 이 「한 장 더 줬다」는 뜻이면 안 된다 — 장수도 COUNT 도 그대로여야 한다.
       const mine = (await meta.listGrantsForCustomer(customerId)).filter(
         (g: any) => g.promotion_id === id,
       );
       expect(mine).toHaveLength(1);
-      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+      expect(await meta.countIssuedGrants(id)).toBe(1);
     });
 
     it('claim is idempotent (already claimed → 200)', async () => {

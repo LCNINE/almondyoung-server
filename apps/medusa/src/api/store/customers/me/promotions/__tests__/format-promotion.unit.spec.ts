@@ -213,6 +213,7 @@ describe('usable_count — 지금 쓸 수 있는 장 수 (#488 Task 8)', () => {
         expires_at: null,
         used_at: null,
         order_id: null,
+        revoked_at: null,
       },
       {
         id: 'b',
@@ -224,6 +225,7 @@ describe('usable_count — 지금 쓸 수 있는 장 수 (#488 Task 8)', () => {
         expires_at: null,
         used_at: new Date(),
         order_id: 'o1',
+        revoked_at: null,
       },
     ];
     const out = formatPromotion(basePromo, meta({ visibility: 'assigned_only', isAssigned: true }), grants, NOW);
@@ -247,6 +249,7 @@ describe('usable_count — 지금 쓸 수 있는 장 수 (#488 Task 8)', () => {
         expires_at: '2026-06-01T00:00:00.000Z',
         used_at: null,
         order_id: null,
+        revoked_at: null,
       },
     ];
     const out = formatPromotion(basePromo, meta({ visibility: 'assigned_only', isAssigned: true }), grants, NOW);

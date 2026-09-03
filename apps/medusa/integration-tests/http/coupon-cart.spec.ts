@@ -336,7 +336,7 @@ medusaIntegrationTestRunner({
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
       const [grant] = await service.listGrantsForCustomer(customerId);
-      await service.consumeGrant(grant.id, 'order_spent', new Date());
+      await service.consumeGrantIfUnused(grant.id, 'order_spent', new Date());
 
       const res = await api
         .post(`/store/carts/${cartId}/promotions`, { promo_codes: [`SPENT_${seq}`] }, custHeaders)
@@ -359,7 +359,7 @@ medusaIntegrationTestRunner({
         });
       }
       const grants = await service.listGrantsForCustomer(customerId);
-      await service.consumeGrant(grants[0].id, 'order_one', new Date());
+      await service.consumeGrantIfUnused(grants[0].id, 'order_one', new Date());
 
       const res = await api.post(
         `/store/carts/${cartId}/promotions`,
@@ -399,7 +399,7 @@ medusaIntegrationTestRunner({
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
       const [grant] = await service.listGrantsForCustomer(customerId);
-      await service.consumeGrant(grant.id, 'order_pub_spent', new Date());
+      await service.consumeGrantIfUnused(grant.id, 'order_pub_spent', new Date());
 
       const res = await api.post(
         `/store/carts/${cartId}/promotions`,

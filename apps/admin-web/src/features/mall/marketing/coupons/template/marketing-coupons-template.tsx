@@ -47,8 +47,8 @@ function VisibilityBadge({ visibility }: { visibility: CouponVisibility | null }
 }
 
 function IssuanceCell({ issued, max }: { issued: number | null; max: number | null }) {
-  // issued_count 는 발급 수량 한도(max_claims)가 설정된 경우에만 정확히 집계된다.
-  // 한도가 없으면 0으로 남으므로 수치를 표기하지 않는다(오표기 방지).
+  // issued_count 는 coupon_grant 실측 COUNT 다(#488 Task 3) — 한도(max_claims) 유무와 무관하게
+  // 항상 정확하다. 한도가 없으면 분모가 없어 진행률을 표기할 수 없으므로 여기선 그냥 숨긴다.
   // 실제 발급 고객은 행의 "현황" 버튼으로 확인.
   if (max == null) return <span className="text-muted-foreground">—</span>;
 

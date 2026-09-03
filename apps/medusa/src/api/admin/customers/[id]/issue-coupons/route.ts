@@ -1,10 +1,11 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
+import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 import { resolveVisibility } from '../../../promotions/helpers';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated'];
@@ -32,7 +33,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const { data: customers } = await query.graph({
@@ -70,6 +70,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issued: { promotion_id: string; code: string }[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
+  // 워크플로가 던진 프로모션들. 루프를 끝까지 돈 뒤 하나라도 있으면 500 으로 올린다.
+  const failed: string[] = [];
 
   // 옛 코드는 창·그룹 불일치를 `filter` 로 조용히 떨어뜨려 응답에 흔적이 없었다. 자동발급은
   // 사람이 안 보는 경로라 그 침묵이 곧 «발급이 안 된 이유를 아무도 모름» 이었다 — 이제
@@ -112,57 +114,66 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
-    if (meta.max_claims != null) {
-      const slot = await promotionMetaService.reserveClaimSlot(promo.id, Number(meta.max_claims));
-      if (slot === 'exhausted') {
-        skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
-        continue;
-      }
-    }
-
-    let result: 'created' | 'duplicate';
+    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2).
+    //
+    // 🔴 옛 코드는 링크 실패를 `.catch(로그)` 로 삼켜서 「장은 있는데 마이페이지에도 어드민에도
+    // 안 보이는」 쿠폰을 만들었다. 사람이 안 보는 자동 경로라 그 침묵이 특히 나빴다. 이제
+    // 링크가 실패하면 장까지 되감기고, 그 프로모션은 `failed` 에 담긴다.
+    //
+    // 🔴 실패를 **모아서 마지막에** 던지는 이유. 루프 안에서 그대로 터뜨리면 A 의 링크 실패가
+    // 같은 고객의 B·C 발급까지 막는다(옛 `.catch` 는 최소한 나머지를 발급했다). 반대로 삼키면
+    // channel-adapter 가 200 을 받고 published 로 마킹해 **그 쿠폰은 영영 안 나간다.**
+    // 그래서 「나머지는 다 시도하고, 하나라도 실패했으면 500」이다 — 재시도는 아래 결정적
+    // issue_key 덕에 멱등하다.
+    //
+    // 🔴 순서도 여기서 바로잡힌다. 옛 구현은 슬롯을 «먼저» 잡아서, 소진된 쿠폰에 대해 이미
+    // 발급받은 고객을 재시도하면 `already_issued` 가 아니라 `max_claims_exceeded` 를 돌려줬다.
+    // channel-adapter 의 `coupon-issue.metrics.ts` 가 그 사유를 실제 소진으로 세므로, 재시도마다
+    // 없는 소진이 지표에 쌓였다.
+    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
     try {
-      result = await promotionMetaService.issueGrant({
-        promotion_id: promo.id,
-        customer_id: customerId,
-        // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
-        issue_key: `trigger:${trigger}`,
-        issued_via: trigger,
-        expires_at: computeExpiresAt(meta, now),
-        now,
+      const run = await issueCouponGrantWorkflow(req.scope).run({
+        input: {
+          promotion_id: promo.id,
+          customer_id: customerId,
+          // 트리거당 한 장. 결정적 키라 channel-adapter 재시도가 멱등하다.
+          issue_keys: [`trigger:${trigger}`],
+          issued_via: trigger,
+          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+          max_claims: meta.max_claims != null ? Number(meta.max_claims) : null,
+          enforce_cap: true,
+        },
       });
+      outcome = run.result;
     } catch (e: any) {
-      if (meta.max_claims != null) {
-        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      }
-      // Transient DB 에러 → 500 으로 올려 channel-adapter 가 재시도하게 한다.
-      // 재시도는 위 결정적 issue_key 덕에 멱등하다.
-      throw e;
+      logger.error(
+        `[coupon] 자동발급 실패 (promotion_id=${promo.id}, customer_id=${customerId}, ` +
+          `trigger=${trigger}): ${e?.message ?? e}`,
+      );
+      failed.push(promo.id);
+      continue;
     }
 
-    if (result === 'duplicate') {
-      if (meta.max_claims != null) {
-        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      }
+    if (outcome.duplicated.length > 0) {
       skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       continue;
     }
 
-    // 🔴 링크 생성 실패를 조용히 삼키면 「장은 있는데 어디에도 안 보이는 쿠폰」이 된다 —
-    // 마이페이지(`/store/customers/me/promotions`)도 어드민 고객 상세도 링크 행으로
-    // 열거하기 때문이다. 여기는 사람이 안 보는 자동 경로라 로그가 유일한 흔적이다.
-    // 사유 집합은 늘리지 않는다 — channel-adapter 가 이 응답의 `skipped.reason` 을
-    // 메트릭으로 세므로, 새 값은 그쪽 계약 변경이다.
-    await (link as any).create([{
-      [Modules.CUSTOMER]: { customer_id: customerId },
-      [Modules.PROMOTION]: { promotion_id: promo.id },
-    }]).catch((e: any) => {
-      logger.warn(
-        `[coupon] 자동발급 link 생성 실패 — 장은 만들어졌으나 목록에 안 보인다 ` +
-          `(promotion_id=${promo.id}, customer_id=${customerId}, trigger=${trigger}): ${e?.message ?? e}`,
-      );
-    });
+    if (outcome.exhausted) {
+      skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+      continue;
+    }
+
     issued.push({ promotion_id: promo.id, code: promo.code });
+  }
+
+  if (failed.length > 0) {
+    // 사유 집합은 늘리지 않는다 — channel-adapter 가 `skipped.reason` 을 메트릭으로 세므로
+    // 새 값은 그쪽 계약 변경이다. 실패는 200 의 사유가 아니라 500 으로 알린다.
+    throw new MedusaError(
+      MedusaError.Types.UNEXPECTED_STATE,
+      `자동발급 실패 ${failed.length}건 (promotion_ids=${failed.join(',')}, customer_id=${customerId}, trigger=${trigger})`,
+    );
   }
 
   return res.status(200).json({ issued, skipped });

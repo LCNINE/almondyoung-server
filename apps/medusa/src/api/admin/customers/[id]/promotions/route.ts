@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
@@ -7,6 +7,7 @@ import { toMetadataShape, resolveVisibility } from '../../../promotions/helpers'
 import { evaluateIssuanceRules } from '../../../../../modules/promotion-meta/issuance-rules';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../modules/promotion-meta/validity';
 import { usableGrants, nextExpiryAt } from '../../../../../modules/promotion-meta/grants';
+import { issueCouponGrantWorkflow } from '../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 interface AssignPromotionsBody {
   promotion_ids: string[];
@@ -39,27 +40,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  // Customer와 연결된 Promotions 조회
+  // customer 조회는 존재 확인(404)용으로만 남긴다 — 「이 고객이 가진 쿠폰」의 정본은
+  // grant 다(설계 결정 2). grant 가 0건인 것과 고객이 없는 것은 다른 사건이라 이 조회를
+  // 지우지 않는다.
   const [{ data: customers }, grants] = await Promise.all([
-    query.graph({
-      entity: 'customer',
-      fields: [
-        'id',
-        'email',
-        'promotions.id',
-        'promotions.code',
-        'promotions.type',
-        'promotions.status',
-        'promotions.is_automatic',
-        'promotions.campaign_id',
-        'promotions.campaign.campaign_identifier',
-        'promotions.application_method.id',
-        'promotions.application_method.type',
-        'promotions.application_method.value',
-        'promotions.application_method.target_type',
-      ],
-      filters: { id: customerId },
-    }),
+    query.graph({ entity: 'customer', fields: ['id', 'email'], filters: { id: customerId } }),
     promotionMetaService.listGrantsForCustomer(customerId),
   ]);
 
@@ -67,8 +52,28 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Customer not found');
   }
 
-  const customer = customers[0];
-  const promotions = customer.promotions || [];
+  // 「이 고객이 가진 쿠폰」의 정본은 grant 다 (설계 결정 2). 링크는 읽지 않는다.
+  const grantedPromotionIds = [...new Set(grants.map((g) => g.promotion_id))];
+  const { data: promotions } =
+    grantedPromotionIds.length > 0
+      ? await query.graph({
+          entity: 'promotion',
+          fields: [
+            'id',
+            'code',
+            'type',
+            'status',
+            'is_automatic',
+            'campaign_id',
+            'campaign.campaign_identifier',
+            'application_method.id',
+            'application_method.type',
+            'application_method.value',
+            'application_method.target_type',
+          ],
+          filters: { id: grantedPromotionIds },
+        })
+      : { data: [] as any[] };
 
   const now = new Date();
   const byPromotion = new Map<string, CouponGrantRow[]>();
@@ -78,8 +83,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     byPromotion.set(g.promotion_id, list);
   }
 
-  // Apply pagination
-  const paginatedPromotions = promotions.slice(offset, offset + limit).map((p: any) => {
+  // 이제 목록이 grant 조회 순서를 따르므로(customer.promotions 링크 순서가 아니다) 페이지
+  // 사이 순서가 안 흔들리도록 id 오름차순으로 고정한 뒤 slice 한다 (Task 8 발견 6 과 같은 부류).
+  const sorted = [...promotions].sort((a: any, b: any) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const paginatedPromotions = sorted.slice(offset, offset + limit).map((p: any) => {
     const mine = byPromotion.get(p.id) ?? [];
     const usable = usableGrants(mine, now);
     return {
@@ -117,8 +124,35 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'submit_id is required');
   }
 
+  // 🔴 입력 상한은 **아무것도 조회하기 전에** 본다. 형제(쿠폰축) 라우트가 그 순서인데
+  // 이쪽은 가드만 복사하고 위치를 안 옮겨서, 10만 개짜리 promotion_ids 가 400 을 받기 전에
+  // `getByPromotionIds` 와 `query.graph` 의 `IN (10만)` 두 방을 먼저 맞았다.
+  const rawQty = Number(rawQuantity ?? 1);
+  // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
+  //    false 라 발급 루프가 한 번도 안 돈다. 그러면 전원이 조용히 `granted:0` 이 돼
+  //    `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다(#488 Task 9 리뷰).
+  // 🔴 `isInteger` 다. `isFinite` 만 보면 2.7 이 통과해 루프에서 조용히 2 로 잘리고,
+  //    응답 어디에도 「요청한 수량을 지키지 못했다」는 표시가 없다.
+  if (!Number.isInteger(rawQty)) {
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be an integer');
+  }
+  const quantity = Math.max(1, Math.min(rawQty, 50));
+
+  // 🔴 두 상한을 **따로** 두면 곱이 안 막힌다 — 형제(쿠폰축) 라우트가 이미 이 가드를 갖고
+  // 있는데 이쪽만 빠져 있었다. 1000개 쿠폰 × 50장 = 50,000 회의 순차 발급이고, 어떤 프록시
+  // 타임아웃보다 길다. 클라이언트가 끊긴 뒤에도 루프는 서버에서 계속 돌아 「응답은 실패인데
+  // 발급은 됐다」가 된다.
+  if (promotion_ids.length > 500) {
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids must be 500 or fewer');
+  }
+  if (promotion_ids.length * quantity > 1000) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `promotion_ids × quantity must be 1000 or fewer (got ${promotion_ids.length} × ${quantity})`,
+    );
+  }
+
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
 
@@ -156,43 +190,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issueTrigger = force ? 'admin_force' : 'admin_manual';
   const now = new Date();
-  const rawQty = Number(rawQuantity ?? 1);
-  if (!Number.isFinite(rawQty)) {
-    // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
-    //    false 라 발급 루프가 한 번도 안 돈다. 그러면 전원이 조용히 `granted:0` 이 돼
-    //    `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다(#488 Task 9 리뷰).
-    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be a finite number');
-  }
-  const quantity = Math.max(1, Math.min(rawQty, 50));
   const submitId = submit_id;
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
-
-  /**
-   * 표시용 링크를 보장한다. 성공 여부를 **돌려준다** — 삼키면 안 된다.
-   *
-   * 🔴 링크가 없는 grant 는 「고객이 가지고 있고 코드를 치면 쓸 수 있는데, 마이페이지에도
-   * (`/store/customers/me/promotions` 가 링크 행으로 열거한다) 이 라우트의 `GET` 에도
-   * **안 보이는**」 쿠폰이다. 옛 코드는 `link_error` 로 보고했는데 `.catch(() => {})` 가
-   * 그것을 「발급됨」+무로그로 바꿔놨다(2026-09-02 전체 리뷰).
-   */
-  async function ensureLink(promotionId: string): Promise<boolean> {
-    try {
-      await (link as any).create([{
-        [Modules.CUSTOMER]: { customer_id: customerId },
-        [Modules.PROMOTION]: { promotion_id: promotionId },
-      }]);
-      return true;
-    } catch (e: any) {
-      logger.warn(
-        `[coupon] 수동발급 link_error — 장은 만들어졌으나 표시용 링크 생성 실패 ` +
-          `(promotion_id=${promotionId}, customer_id=${customerId}, submit_id=${submitId}): ` +
-          `${e?.message ?? e}. 이 고객은 쿠폰을 «가지고 있지만 목록에 안 보인다» — 재시도하면 ` +
-          `링크만 다시 만든다(장은 issue_key 로 멱등하다).`,
-      );
-      return false;
-    }
-  }
 
   for (const promo of promotions as any[]) {
     const meta = metaRecords.find((m: any) => m.promotion_id === promo.id);
@@ -250,78 +250,47 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
-    let granted = 0;
-    // 이 프로모션이 안쪽 n-루프에서 이미 skipped 에 등재됐는지 — 아래 「전량 duplicate」
-    // 판정이 그 위에 또 등재해 이중화하지 않도록 추적한다(쿠폰축 라우트와 같은 모양).
-    let skippedInLoop = false;
-    for (let n = 1; n <= quantity; n++) {
-      const issueKey = `${submitId}:${n}`;
+    // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다(정본이
+    // grant 하나로 좁혀지며 아무도 링크를 안 읽으니 지킬 이유도 없다). 실패는 `grant_error`
+    // 하나로 정직하게 나간다.
+    const issueKeys = Array.from({ length: quantity }, (_, i) => `${submitId}:${i + 1}`);
 
-      let slotReserved = false;
-      if (!force && maxClaims !== null) {
-        const slot = await promotionMetaService.reserveClaimSlot(promo.id, maxClaims);
-        if (slot === 'exhausted') {
-          skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
-          skippedInLoop = true;
-          break;
-        }
-        slotReserved = true;
-      }
-
-      let result: 'created' | 'duplicate';
-      try {
-        result = await promotionMetaService.issueGrant({
+    let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
+    try {
+      const { result } = await issueCouponGrantWorkflow(req.scope).run({
+        input: {
           promotion_id: promo.id,
           customer_id: customerId,
-          issue_key: issueKey,
+          issue_keys: issueKeys,
           issued_via: issueTrigger,
-          expires_at: computeExpiresAt(meta, now),
-          now,
-        });
-      } catch (e: any) {
-        if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-        // 🔴 원인을 반드시 남긴다 — 사유만 `grant_error` 로 돌려주면 진단할 근거가 없다.
-        logger.error(
-          `[coupon] 수동발급 grant_error (promotion_id=${promo.id}, customer_id=${customerId}, ` +
-            `n=${n}, submit_id=${submitId}): ${e?.message ?? e}`,
-        );
-        skipped.push({ promotion_id: promo.id, reason: 'grant_error' });
-        skippedInLoop = true;
-        break;
-      }
-
-      if (result === 'duplicate') {
-        // 같은 제출의 재도착이다. 슬롯을 잡았다면 되돌린다 — 잡은 쪽이 반환 책임을 진다.
-        if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-        continue;
-      }
-
-      if (force && maxClaims !== null) {
-        // force 발급도 총 발급 수량에 포함 (issued_count SoT 유지)
-        await promotionMetaService.incrementIssuedCount(promo.id).catch(() => {});
-      }
-      granted++;
+          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+          max_claims: maxClaims,
+          enforce_cap: !force,
+        },
+      });
+      outcome = result;
+    } catch (e: any) {
+      // 🔴 원인을 반드시 남긴다 — 사유만 `grant_error` 로 돌려주면 진단할 근거가 없다.
+      logger.error(
+        `[coupon] 수동발급 grant_error (promotion_id=${promo.id}, customer_id=${customerId}, ` +
+          `submit_id=${submitId}): ${e?.message ?? e}`,
+      );
+      skipped.push({ promotion_id: promo.id, reason: 'grant_error' });
+      continue;
     }
 
-    // 링크는 표시 조인용으로만 유지한다 — `data` 는 싣지 않는다(만료·사용의 정본은 grant 다).
-    if (granted > 0) {
-      if (await ensureLink(promo.id)) {
-        issued.push(promo.id);
-      } else {
-        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
-      }
-    } else if (!skippedInLoop) {
-      // 🔴 모든 n 이 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
+    // 상한에 걸려 «일부만» 발급된 경우가 있으므로 두 보고는 배타적이지 않다 — 옛 루프도
+    // granted>0 이면서 max_claims_exceeded 를 함께 올렸다.
+    if (outcome.exhausted) {
+      skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+    }
+    if (outcome.created.length > 0) {
+      issued.push(promo.id);
+    } else if (!outcome.exhausted) {
+      // 🔴 모든 키가 'duplicate' 로 끝났다 — 같은 submit_id 로 이미 전량 발급된 재시도다.
       // 이 branch 가 없으면 그 프로모션이 `issued` 에도 `skipped` 에도 없는 「응답에 없는
-      // 항목」이 되어, 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다. 형제
-      // (쿠폰축) 라우트는 Task 12 리뷰에서 이 수정을 받았는데 이쪽은 빠져 있었다.
-      // 링크는 여기서도 보장한다 — 직전 시도가 `link_error` 였다면 그 재시도는 전량
-      // duplicate 로 떨어지므로, 이 자리가 링크의 유일한 복구 경로다.
-      if (await ensureLink(promo.id)) {
-        skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
-      } else {
-        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
-      }
+      // 항목」이 되어, 클라이언트가 조용히 '발급할 수 없습니다' 로 잘못 표시한다.
+      skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
     }
   }
 
@@ -347,35 +316,31 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  const removed: { promotion_id: string; grants: number }[] = [];
+  const removed: { promotion_id: string; grants: number; kept_used: number }[] = [];
   for (const pid of promotion_ids) {
-    const n = await promotionMetaService.revokeGrants(pid, customerId);
-    if (n === 0) continue;
-    removed.push({ promotion_id: pid, grants: n });
+    const { revoked, remaining } = await promotionMetaService.revokeGrants(pid, customerId);
 
-    // 회수한 장수만큼 발급 카운트를 되돌린다 — 1회 고정이면 여러 장 회수 시 카운터가 남는다.
-    for (let i = 0; i < n; i++) {
-      await promotionMetaService.releaseClaimSlot(pid).catch(() => {});
+    // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
+    // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
+    // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
+
+    // 🔴 «무엇이든 매칭됐으면» 보고한다 — `revoked > 0` 만 보면 「쓴 장만 남은 쌍」의 회수가
+    // `removed: []` 로 나가, 실제로는 `revoked_at` 이 찍혀 주문 취소 복원까지 막혔는데
+    // 어드민은 무동작으로 읽고 다시 누른다(PR #778 리뷰 F3). `grants` 는 이번에 치운 미사용
+    // 장수, `kept_used` 는 남긴 쓴 장수다. «애초에 없던 쌍»(둘 다 0)만 빠진다 — 오타 난
+    // promotion_id 를 「제거됨」으로 답하지 않는다. 형제(쿠폰축) 라우트와 같은 계약이다.
+    if (revoked + remaining > 0) {
+      removed.push({ promotion_id: pid, grants: revoked, kept_used: remaining });
     }
-
-    // 남은 장이 없으면 표시용 링크도 걷는다.
-    await link
-      .dismiss([
-        {
-          [Modules.CUSTOMER]: { customer_id: customerId },
-          [Modules.PROMOTION]: { promotion_id: pid },
-        },
-      ])
-      .catch(() => {});
   }
 
   return res.status(200).json({
     success: true,
     message: `${removed.length} promotion(s) removed from customer`,
     customer_id: customerId,
+    removed,
     promotion_ids: removed.map((r) => r.promotion_id),
     revoked_grants: removed.reduce((s, r) => s + r.grants, 0),
   });

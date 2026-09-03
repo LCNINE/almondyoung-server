@@ -64,7 +64,17 @@ export function extractMetaFromAdditionalData(
   return Object.keys(result).length > 0 ? result : null;
 }
 
-export function toMetadataShape(record: any): Record<string, unknown> | null {
+/**
+ * `issuedCount` 는 `promotion_meta.issued_count` 컬럼이 아니라 `coupon_grant` 실측 COUNT
+ * (`countIssuedGrants`/`countIssuedGrantsByPromotion`)에서 온다 — 그 컬럼은 더 이상 갱신되지
+ * 않는다(Task 2). `helpers.ts` 는 순수 변환 함수라 여기서 모듈 서비스를 부르지 않고 **인자로
+ * 받는다**.
+ *
+ * 🔴 미전달이면 «싣지 않는다». 0 으로 채우면 표시 목적이 아닌 호출부(claim)까지 거짓
+ * 숫자를 실어 나른다. 반대로 목록·상세는 항상 숫자를 받으므로 「0장」과 「미측정」이
+ * 구분된다 — admin-web 의 coupon-meta.spec.ts 「0 은 없음이 아니다」가 이에 의존한다.
+ */
+export function toMetadataShape(record: any, issuedCount?: number): Record<string, unknown> | null {
   if (!record) return null;
   const result: Record<string, unknown> = {};
   if (record.name != null) result.name = record.name;
@@ -77,7 +87,7 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   if (record.ends_at != null) result.ends_at = record.ends_at;
   if (record.validity_days != null) result.validity_days = record.validity_days;
   // 읽기 전용 발급 카운터 — 관리자 발급 현황 표시용(클라 write 대상 아님)
-  if (record.issued_count != null) result.issued_count = record.issued_count;
+  if (issuedCount != null) result.issued_count = issuedCount;
   return Object.keys(result).length > 0 ? result : null;
 }
 
@@ -155,7 +165,9 @@ export async function fetchPromotionWithMeta(id: string, scope: any, fields?: st
 
   const promotion = promotions[0];
   const meta = await promotionMetaService.getByPromotionId(promotion.id);
-  return { ...promotion, metadata: toMetadataShape(meta) };
+  // 상세는 단건이므로 배치가 아니라 단건 COUNT(`countIssuedGrants`)를 쓴다.
+  const issuedCount = await promotionMetaService.countIssuedGrants(promotion.id);
+  return { ...promotion, metadata: toMetadataShape(meta, issuedCount) };
 }
 
 // `meetsGroupRule` 은 삭제됐다 (P7, #488 1-5). 발급 시점 룰 평가는

@@ -21,6 +21,7 @@ function g(over: {
     expires_at: over.expires_at ?? null,
     used_at: over.used_at ?? null,
     order_id: over.order_id ?? null,
+    revoked_at: null,
   };
 }
 

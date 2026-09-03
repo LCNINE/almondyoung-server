@@ -18,31 +18,164 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(rec?.visibility).toEqual('public');
       });
 
-      it('reserveClaimSlot is atomic and returns exhausted at the cap', async () => {
-        await service.upsert({ promotion_id: 'promo_cap', max_claims: 2 });
-        expect(await service.reserveClaimSlot('promo_cap', 2)).toEqual('ok');
-        expect(await service.reserveClaimSlot('promo_cap', 2)).toEqual('ok');
-        // 3rd reservation must be refused
-        expect(await service.reserveClaimSlot('promo_cap', 2)).toEqual('exhausted');
-        const rec = await service.getByPromotionId('promo_cap');
-        expect(Number(rec?.issued_count)).toEqual(2);
+      const issue = (
+        promotionId: string,
+        customerId: string,
+        key: string,
+        maxClaims: number | null,
+        enforceCap = true,
+      ) =>
+        service.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: customerId,
+          issue_key: key,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: maxClaims,
+          enforce_cap: enforceCap,
+        });
+
+      it('상한은 카운터가 아니라 coupon_grant 를 세어 집행된다', async () => {
+        await service.upsert({ promotion_id: 'promo_cnt', max_claims: 2 });
+        expect(await issue('promo_cnt', 'cus_a', 'k1', 2)).toEqual('created');
+        expect(await issue('promo_cnt', 'cus_a', 'k2', 2)).toEqual('created');
+        expect(await issue('promo_cnt', 'cus_a', 'k3', 2)).toEqual('exhausted');
+        expect(await service.countIssuedGrants('promo_cnt')).toEqual(2);
       });
 
-      it('releaseClaimSlot decrements and floors at 0', async () => {
-        await service.upsert({ promotion_id: 'promo_rel', max_claims: 5 });
-        await service.reserveClaimSlot('promo_rel', 5); // issued_count = 1
-        await service.releaseClaimSlot('promo_rel'); // -> 0
-        await service.releaseClaimSlot('promo_rel'); // must not go negative
-        const rec = await service.getByPromotionId('promo_rel');
-        expect(Number(rec?.issued_count)).toEqual(0);
+      it('상한 초과로 되감긴 시도는 장을 남기지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_rb', max_claims: 1 });
+        await issue('promo_rb', 'cus_b', 'k1', 1);
+        await issue('promo_rb', 'cus_b', 'k2', 1); // exhausted
+        const rows = await service.listGrantsForPromotion('promo_rb');
+        expect(rows.map((g) => g.issue_key)).toEqual(['k1']);
       });
 
-      it('setIssuedCount reconciles the counter to the given value and floors negatives', async () => {
-        await service.upsert({ promotion_id: 'promo_set', max_claims: 100 });
-        await service.setIssuedCount('promo_set', 37);
-        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(37);
-        await service.setIssuedCount('promo_set', -5);
-        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(0);
+      it('중복은 상한보다 먼저 판정된다 — 소진된 쿠폰에 재시도해도 duplicate 다', async () => {
+        await service.upsert({ promotion_id: 'promo_dup', max_claims: 1 });
+        expect(await issue('promo_dup', 'cus_c', 'k1', 1)).toEqual('created');
+        expect(await issue('promo_dup', 'cus_c', 'k1', 1)).toEqual('duplicate');
+      });
+
+      it('회수된 미사용 장은 슬롯을 돌려준다', async () => {
+        await service.upsert({ promotion_id: 'promo_rev', max_claims: 1 });
+        await issue('promo_rev', 'cus_d', 'k1', 1);
+        expect(await issue('promo_rev', 'cus_e', 'k2', 1)).toEqual('exhausted');
+        await service.revokeGrants('promo_rev', 'cus_d');
+        expect(await service.countIssuedGrants('promo_rev')).toEqual(0);
+        expect(await issue('promo_rev', 'cus_e', 'k3', 1)).toEqual('created');
+      });
+
+      it('사용된 장은 회수돼도 슬롯을 계속 점유한다', async () => {
+        await service.upsert({ promotion_id: 'promo_used', max_claims: 1 });
+        await issue('promo_used', 'cus_f', 'k1', 1);
+        const [g] = await service.listGrantsForPromotion('promo_used');
+        await service.consumeGrantIfUnused(g.id, 'order_1', new Date());
+        await service.revokeGrants('promo_used', 'cus_f');
+        expect(await service.countIssuedGrants('promo_used')).toEqual(1);
+      });
+
+      it('회수된 장은 주문이 취소돼도 되살아나지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_res', max_claims: null });
+        await issue('promo_res', 'cus_j', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_res');
+        await service.consumeGrantIfUnused(g.id, 'order_res', new Date());
+        await service.revokeGrants('promo_res', 'cus_j');
+
+        expect(await service.restoreGrantsByOrder('order_res', new Date())).toEqual(0);
+
+        const after = await service.listGrantsForCustomer('cus_j');
+        const mine = after.find((r) => r.id === g.id);
+        expect(mine?.used_at).not.toBeNull();
+        expect(mine?.revoked_at).not.toBeNull();
+      });
+
+      it('회수되지 않은 장은 주문 취소로 되살아난다 (기존 동작 유지)', async () => {
+        await service.upsert({ promotion_id: 'promo_ok', max_claims: null });
+        await issue('promo_ok', 'cus_k', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_ok');
+        await service.consumeGrantIfUnused(g.id, 'order_ok', new Date());
+
+        expect(await service.restoreGrantsByOrder('order_ok', new Date())).toEqual(1);
+
+        const after = await service.listGrantsForCustomer('cus_k');
+        expect(after.find((r) => r.id === g.id)?.used_at).toBeNull();
+      });
+
+      it('max_claims 가 null 이면 세지 않고 무제한으로 발급된다', async () => {
+        await service.upsert({ promotion_id: 'promo_free' });
+        expect(await issue('promo_free', 'cus_g', 'k1', null)).toEqual('created');
+        expect(await issue('promo_free', 'cus_g', 'k2', null)).toEqual('created');
+        expect(await service.countIssuedGrants('promo_free')).toEqual(2);
+      });
+
+      it('enforce_cap=false(admin force) 는 상한을 넘겨 발급하되 세어진다', async () => {
+        await service.upsert({ promotion_id: 'promo_force', max_claims: 1 });
+        expect(await issue('promo_force', 'cus_h', 'k1', 1)).toEqual('created');
+        expect(await issue('promo_force', 'cus_h', 'k2', 1, false)).toEqual('created');
+        expect(await service.countIssuedGrants('promo_force')).toEqual(2);
+      });
+
+      it('countIssuedGrantsByPromotion 은 한 번의 조회로 프로모션별 장수를 돌려준다', async () => {
+        await service.upsert({ promotion_id: 'promo_b1' });
+        await service.upsert({ promotion_id: 'promo_b2' });
+        await issue('promo_b1', 'cus_i', 'k1', null);
+        await issue('promo_b1', 'cus_i', 'k2', null);
+        await issue('promo_b2', 'cus_i', 'k3', null);
+        const counts = await service.countIssuedGrantsByPromotion(['promo_b1', 'promo_b2', 'promo_none']);
+        expect(counts.get('promo_b1')).toEqual(2);
+        expect(counts.get('promo_b2')).toEqual(1);
+        // 장이 하나도 없는 프로모션은 «0» 이어야 한다 — 키 없음으로 두면 호출부가 undefined 를 만난다
+        expect(counts.get('promo_none')).toEqual(0);
+      });
+
+      // 🔴 타이밍 경합(Promise.all 두 호출이 실제로 겹치길 «기다리는» 방식)으로는 이 락을
+      // 검증할 수 없었다 — 2-way 11회·20-way 1회 전부 과다발급 0건으로, 이 테스트 하네스의
+      // 로컬 Postgres 왕복이 너무 빨라 레이스 윈도우가 안정적으로 재현되지 않는다(자세한
+      // 내용은 task-2-report.md 수정 라운드 1). 그래서 경합을 «기다리지» 않고 «만든다»:
+      // 한 트랜잭션이 `promotion_meta` 행을 밖에서 잡아 쥔 채 발급을 시도해, 발급이 그 락에
+      // «걸려» 대기하는지를 직접 관찰한다 — 결정론적이고 타이밍에 기대지 않는다.
+      it('발급은 promotion_meta 행 락으로 직렬화된다 — 락을 빼면 빨개진다', async () => {
+        await service.upsert({ promotion_id: 'promo_lockA', max_claims: 1 });
+        await service.upsert({ promotion_id: 'promo_lockB', max_claims: 1 });
+        const em = (service as any).baseRepository_.manager_;
+        const lockSql = `SELECT 1 FROM "promotion_meta" WHERE "promotion_id" = ? FOR UPDATE`;
+
+        // ── 대조군: «다른» 프로모션을 잡아두면 발급은 막히지 않아야 한다.
+        //    이게 막히면 커넥션 풀이 직렬화하고 있다는 뜻이고, 아래 본시험은 무의미해진다.
+        const other = em.fork();
+        await other.begin();
+        try {
+          await other.execute(lockSql, ['promo_lockB']);
+          let controlDone = false;
+          const control = issue('promo_lockA', 'cus_ctl', 'kc', 1).then((r) => { controlDone = true; return r; });
+          await new Promise((r) => setTimeout(r, 300));
+          expect(controlDone).toBe(true); // 🔴 false 면 하네스가 직렬화 중 — 이 테스트는 무효다
+          expect(await control).toEqual('created');
+        } finally {
+          await other.rollback();
+        }
+
+        // ── 본시험: «같은» 프로모션을 잡아두면 발급이 락에서 막혀야 한다.
+        const holder = em.fork();
+        await holder.begin();
+        let issued = false;
+        let issuing: Promise<string>;
+        try {
+          await holder.execute(lockSql, ['promo_lockB']);
+          issuing = issue('promo_lockB', 'cus_sub', 'ks', 1).then((r) => { issued = true; return r; });
+          await new Promise((r) => setTimeout(r, 300));
+          // 🔴 lockPromotionForIssue 를 지우면 발급이 promotion_meta 를 아예 안 건드리므로
+          //    즉시 끝나 issued === true 가 되고 이 단언이 빨개진다. 이것이 이 테스트의 요점이다.
+          expect(issued).toBe(false);
+        } finally {
+          await holder.commit();
+          // 🔴 위 expect 가 throw 해도 발급 promise 는 반드시 여기서 회수한다 — commit 이
+          //    락을 풀면 곧 resolve 되는데(reject 는 아니라 unhandled rejection 은 안 나지만),
+          //    finally 밖에서 기다리면 이 테스트가 끝난 뒤에야 정착해 다음 테스트로 샌다.
+          expect(await issuing!).toEqual('created');
+        }
       });
 
       it('유효기간 3열을 저장하고 되읽는다', async () => {
@@ -73,6 +206,22 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await expect(
           service.upsert({ promotion_id: 'promo_bad_days2', validity_days: 1.5 }),
         ).rejects.toThrow(/validity_days/);
+      });
+
+      it('consumeGrantIfUnused 는 updated_at 을 갱신한다', async () => {
+        await service.upsert({ promotion_id: 'promo_upd', max_claims: null });
+        await issue('promo_upd', 'cus_l', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_upd');
+
+        const em = (service as any).baseRepository_.manager_;
+        const before = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
+        await new Promise((r) => setTimeout(r, 10));
+        await service.consumeGrantIfUnused(g.id, 'order_upd', new Date());
+        const after = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
+
+        expect(new Date(after[0].updated_at).getTime()).toBeGreaterThan(
+          new Date(before[0].updated_at).getTime(),
+        );
       });
     });
 
@@ -148,7 +297,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.listCouponGrants({ promotion_id: 'promo_idem' })).toHaveLength(1);
       });
 
-      it('consumeGrant 는 그 한 장에만 사용 기록을 남긴다', async () => {
+      it('consumeGrantIfUnused 는 그 한 장에만 사용 기록을 남긴다', async () => {
         const base = {
           promotion_id: 'promo_use',
           customer_id: 'cus_use',
@@ -162,7 +311,7 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         const grants = await service.listGrantsForCustomer('cus_use');
         const usedAt = new Date();
 
-        await service.consumeGrant(grants[0].id, 'order_1', usedAt);
+        await service.consumeGrantIfUnused(grants[0].id, 'order_1', usedAt);
 
         const after = await service.listGrantsForCustomer('cus_use');
         expect(after.filter((g) => g.used_at != null)).toHaveLength(1);
@@ -277,9 +426,206 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
           { ...base, issue_key: 'k2' },
         ]);
 
-        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toBe(2);
+        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toEqual({ revoked: 2, remaining: 0 });
         expect(await service.listGrantsForCustomer('cus_rev')).toHaveLength(0);
-        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toBe(0);
+        expect(await service.revokeGrants('promo_rev', 'cus_rev')).toEqual({ revoked: 0, remaining: 0 });
+      });
+
+      // 옛 구현은 «전량» soft delete 라 쓴 장의 이력이 사라지고, 그 슬롯까지 되돌아갔다
+      // (ADR-0034 결정 1). 지금 구현은 쓴 장을 살려 두지만, 그 대신 revoked_at 을 찍어
+      // 회수된 사실 자체를 기억한다 — 그래서 그 주문이 나중에 취소돼도 되살아나지 않는다
+      // (설계 결정 3, 아래 '회수된 장은 주문이 취소돼도 되살아나지 않는다' 참고).
+      it('revokeGrants 는 이미 쓴 장을 남기고 remaining 으로 알린다', async () => {
+        const base = {
+          promotion_id: 'promo_rev_used',
+          customer_id: 'cus_rev_used',
+          issued_via: 'admin_manual' as const,
+          issued_at: new Date(),
+        };
+        await service.createCouponGrants([
+          { ...base, issue_key: 'k1' },
+          { ...base, issue_key: 'k2' },
+          { ...base, issue_key: 'k3' },
+        ]);
+        const grants = await service.listGrantsForCustomer('cus_rev_used');
+        await service.consumeGrantIfUnused(grants[0].id, 'order_kept', new Date());
+
+        expect(await service.revokeGrants('promo_rev_used', 'cus_rev_used')).toEqual({
+          revoked: 2,
+          remaining: 1,
+        });
+
+        // 쓴 장은 그대로 살아 있지만(이력 보존), 회수됐으므로 그 주문으로도 되살아나지 않는다.
+        const left = await service.listGrantsForCustomer('cus_rev_used');
+        expect(left).toHaveLength(1);
+        expect(left[0].order_id).toBe('order_kept');
+        expect(await service.restoreGrantsByOrder('order_kept', new Date())).toBe(0);
+      });
+
+      // ── 0단계 (PR #778 리뷰 F3·F12·F5) ──────────────────────────────────────────
+      // 회수 본체가 둘(어드민 회수 `revokeGrants_` / 워크플로 보상 `revokeGrantsByIssueKeys`)로
+      // 갈려 「쓴 장은 soft delete 하지 않는다」가 한쪽에만 걸려 있었다.
+      // 위쪽 describe 의 `issue` 헬퍼는 이 스코프에 없다 — 같은 모양으로 하나 둔다.
+      const issue = (
+        promotionId: string,
+        customerId: string,
+        key: string,
+        maxClaims: number | null,
+        enforceCap = true,
+      ) =>
+        service.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: customerId,
+          issue_key: key,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: maxClaims,
+          enforce_cap: enforceCap,
+        });
+
+      it('revokeGrantsByIssueKeys(보상) 는 이미 쓴 장을 soft delete 하지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_comp_used', max_claims: null });
+        await issue('promo_comp_used', 'cus_comp', 'k1', null);
+        await issue('promo_comp_used', 'cus_comp', 'k2', null);
+        const k1 = (await service.listGrantsForCustomer('cus_comp')).find((g) => g.issue_key === 'k1')!;
+        expect(await service.consumeGrantIfUnused(k1.id, 'order_comp', new Date())).toBe(true);
+
+        // 보상은 «이번 실행이 만든 것» 중 아직 안 쓴 장만 치운다 — 쓴 장은 슬롯이 실제로
+        // 소비됐고 이력이라, 지우면 countIssuedGrants·restoreGrantsByOrder 가 함께 틀린다.
+        expect(await service.revokeGrantsByIssueKeys('promo_comp_used', 'cus_comp', ['k1', 'k2'])).toBe(1);
+
+        const left = await service.listGrantsForCustomer('cus_comp');
+        expect(left.map((g) => g.issue_key)).toEqual(['k1']);
+        expect(left[0].used_at).not.toBeNull();
+        // 보상은 어드민 회수가 아니다 — 회수 표지를 찍지 않는다(주문 취소 복원을 막으면 안 된다).
+        expect(left[0].revoked_at).toBeNull();
+        expect(await service.countIssuedGrants('promo_comp_used')).toBe(1);
+      });
+
+      it('재회수는 revoked_at 을 덮어쓰지 않는다', async () => {
+        await service.upsert({ promotion_id: 'promo_rerev', max_claims: null });
+        await issue('promo_rerev', 'cus_rerev', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_rerev');
+        await service.consumeGrantIfUnused(g.id, 'order_rerev', new Date());
+
+        await service.revokeGrants('promo_rerev', 'cus_rerev');
+        const first = (await service.listGrantsForCustomer('cus_rerev'))[0].revoked_at;
+        expect(first).not.toBeNull();
+
+        await new Promise((r) => setTimeout(r, 20));
+        expect(await service.revokeGrants('promo_rerev', 'cus_rerev')).toEqual({ revoked: 0, remaining: 1 });
+        const second = (await service.listGrantsForCustomer('cus_rerev'))[0].revoked_at;
+        expect(new Date(second as string).getTime()).toBe(new Date(first as string).getTime());
+      });
+
+      // `issued_count` 는 이 PR 이 읽기를 COUNT 로 옮겼지만 컬럼은 후속 contract PR 까지 남는다.
+      // 그동안 옛 태스크(롤링·롤백)가 이 컬럼으로 상한을 집행하므로, expand 단계 규약대로
+      // 쓰기를 **미러**한다 — 안 하면 동결된 카운터가 실제 장수 아래로 내려가 롤백 즉시
+      // 상한이 새는 fail-open 이 된다. 의미는 옛 코드와 같다: 상한 있는 프로모션만 센다.
+      describe('issued_count 미러 — expand 단계 dual write (롤백 안전망)', () => {
+        const issuedCountOf = async (promotionId: string) =>
+          Number((await service.getByPromotionId(promotionId))?.issued_count);
+
+        it('상한 있는 프로모션은 발급·중복·소진·force·회수마다 issued_count 가 장수를 따라간다', async () => {
+          await service.upsert({ promotion_id: 'promo_mirror', max_claims: 2 });
+          expect(await issuedCountOf('promo_mirror')).toBe(0);
+
+          expect(await issue('promo_mirror', 'cus_m', 'k1', 2)).toBe('created');
+          expect(await issuedCountOf('promo_mirror')).toBe(1);
+
+          expect(await issue('promo_mirror', 'cus_m', 'k1', 2)).toBe('duplicate');
+          expect(await issuedCountOf('promo_mirror')).toBe(1);
+
+          expect(await issue('promo_mirror', 'cus_m', 'k2', 2)).toBe('created');
+          expect(await issue('promo_mirror', 'cus_m', 'k3', 2)).toBe('exhausted');
+          expect(await issuedCountOf('promo_mirror')).toBe(2);
+
+          // force 는 상한을 넘겨도 센다 — 옛 `incrementIssuedCount` 와 같은 규칙.
+          expect(await issue('promo_mirror', 'cus_m', 'k4', 2, false)).toBe('created');
+          expect(await issuedCountOf('promo_mirror')).toBe(3);
+
+          expect(await service.revokeGrants('promo_mirror', 'cus_m')).toEqual({ revoked: 3, remaining: 0 });
+          expect(await issuedCountOf('promo_mirror')).toBe(0);
+        });
+
+        it('상한 없는 프로모션은 issued_count 를 건드리지 않는다 (옛 코드와 같은 의미)', async () => {
+          await service.upsert({ promotion_id: 'promo_mirror_free', max_claims: null });
+          await issue('promo_mirror_free', 'cus_mf', 'k1', null);
+          expect(await issuedCountOf('promo_mirror_free')).toBe(0);
+          await service.revokeGrants('promo_mirror_free', 'cus_mf');
+          expect(await issuedCountOf('promo_mirror_free')).toBe(0);
+        });
+
+        it('보상(revokeGrantsByIssueKeys) 도 실제로 치운 장수만큼만 되돌린다', async () => {
+          await service.upsert({ promotion_id: 'promo_mirror_comp', max_claims: 5 });
+          await issue('promo_mirror_comp', 'cus_mc', 'k1', 5);
+          await issue('promo_mirror_comp', 'cus_mc', 'k2', 5);
+          expect(await issuedCountOf('promo_mirror_comp')).toBe(2);
+          const k1 = (await service.listGrantsForCustomer('cus_mc')).find((g) => g.issue_key === 'k1')!;
+          await service.consumeGrantIfUnused(k1.id, 'order_mc', new Date());
+
+          await service.revokeGrantsByIssueKeys('promo_mirror_comp', 'cus_mc', ['k1', 'k2']);
+          expect(await issuedCountOf('promo_mirror_comp')).toBe(1);
+        });
+      });
+
+      describe('consumeGrantIfUnused', () => {
+        it('두 번째 소모는 false 이고 첫 주문의 기록을 덮어쓰지 않는다', async () => {
+          await service.createCouponGrants([
+            {
+              promotion_id: 'promo_once',
+              customer_id: 'cus_once',
+              issue_key: 'k1',
+              issued_via: 'admin_manual',
+              issued_at: new Date(),
+            },
+          ]);
+          const [grant] = await service.listGrantsForCustomer('cus_once');
+
+          expect(await service.consumeGrantIfUnused(grant.id, 'order_first', new Date())).toBe(true);
+          // 두 카트가 동시에 완료되면 두 훅이 «같은» 장을 고른다(선택은 결정적이다).
+          // 옛 무조건 UPDATE 는 둘 다 성공해 한 장으로 할인 주문 두 건이 나갔다.
+          expect(await service.consumeGrantIfUnused(grant.id, 'order_second', new Date())).toBe(false);
+
+          const [after] = await service.listGrantsForCustomer('cus_once');
+          expect(after.order_id).toBe('order_first');
+        });
+
+        it('회수된 장은 소모되지 않는다', async () => {
+          await service.createCouponGrants([
+            {
+              promotion_id: 'promo_dead',
+              customer_id: 'cus_dead',
+              issue_key: 'k1',
+              issued_via: 'admin_manual',
+              issued_at: new Date(),
+            },
+          ]);
+          const [grant] = await service.listGrantsForCustomer('cus_dead');
+          await service.revokeGrants('promo_dead', 'cus_dead');
+
+          expect(await service.consumeGrantIfUnused(grant.id, 'order_x', new Date())).toBe(false);
+        });
+
+        it('used_at 이 Date 로 되읽힌다 — 바인딩이 문자열로 새지 않는다', async () => {
+          await service.createCouponGrants([
+            {
+              promotion_id: 'promo_ts',
+              customer_id: 'cus_ts',
+              issue_key: 'k1',
+              issued_via: 'admin_manual',
+              issued_at: new Date(),
+            },
+          ]);
+          const [grant] = await service.listGrantsForCustomer('cus_ts');
+          const usedAt = new Date('2026-03-04T05:06:07.000Z');
+
+          expect(await service.consumeGrantIfUnused(grant.id, 'order_ts', usedAt)).toBe(true);
+
+          const [after] = await service.listGrantsForCustomer('cus_ts');
+          expect(new Date(after.used_at as string | Date).toISOString()).toBe('2026-03-04T05:06:07.000Z');
+        });
       });
     });
   },

@@ -75,6 +75,27 @@ medusaIntegrationTestRunner({
     const skipReason = (res: any, id: string) =>
       res.data.skipped.find((s: any) => s.promotion_id === id)?.reason;
 
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
+
     const createGroupWithCustomer = async (): Promise<string> => {
       const customerModule = getContainer().resolve(Modules.CUSTOMER);
       const [group] = await customerModule.createCustomerGroups([{ name: `grp${seq}` }]);
@@ -92,7 +113,9 @@ medusaIntegrationTestRunner({
       await promotionModule.updatePromotions([{ id, status: 'inactive' }]);
     };
 
-    const linkedPromoIds = async (): Promise<string[]> => {
+    // 이 GET 은 Task 6 부터 grant 에서 프로모션을 유도한다(customer-promotion 링크는 읽지
+    // 않는다) — 이름을 `linkedPromoIds` 로 두면 낡은 전제를 코드로 남기는 셈이라 고친다.
+    const grantedPromoIds = async (): Promise<string[]> => {
       const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
       return (res.data.promotions ?? []).map((p: any) => p.id);
     };
@@ -114,6 +137,44 @@ medusaIntegrationTestRunner({
       expect(res.data.promotion?.status).toEqual('active');
     });
 
+    it('링크 없이 grant 만 있는 쌍도 어드민 고객 상세에 뜬다', async () => {
+      const promoId = await createPromo(`ADMGRANT${seq}`, { visibility: 'assigned_only' });
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrantWithSlot({
+        promotion_id: promoId,
+        customer_id: customerId,
+        issue_key: `${promoId}:${customerId}:direct:1`,
+        issued_via: 'admin_manual',
+        expires_at: null,
+        now: new Date(),
+        max_claims: null,
+        enforce_cap: true,
+      });
+
+      const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
+
+      expect(res.status).toEqual(200);
+      expect(res.data.promotions.map((p: any) => p.id)).toContain(promoId);
+      expect(res.data.count).toEqual(1);
+    });
+
+    // grant 0건과 고객 미존재는 다른 사건이다 — customer 조회를 존재 확인용으로 남긴 이유.
+    it('존재하지 않는 고객은 grant 유무와 무관하게 404', async () => {
+      const err = await api
+        .get(`/admin/customers/cus_does_not_exist/promotions`, adminHeaders)
+        .catch((e: any) => e);
+      expect(err.response.status).toEqual(404);
+    });
+
+    // grant 가 하나도 없으면 promotion id 목록도 비므로, 그 빈 배열로 `query.graph` 를
+    // 부르지 않아야 한다(부르면 빈 filters.id 가 «전체 프로모션» 으로 풀릴 수 있는 함정).
+    it('grant 가 0건인 고객은 200 + 빈 목록', async () => {
+      const res = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
+      expect(res.status).toEqual(200);
+      expect(res.data.promotions).toEqual([]);
+      expect(res.data.count).toEqual(0);
+    });
+
     // (c) 였던 회귀는 Task 7 이 닫았다 (#488 Task 4 리뷰, task-4-report.md 「6건 분류표」
     // 항목 1). DELETE 라우트(`/admin/customers/:id/promotions`, `/admin/promotions/:id/customers`
     // 양쪽)가 이제 `revokeGrants` 로 `coupon_grant` 행을 soft-delete 하므로, 파셜 유니크
@@ -132,7 +193,7 @@ medusaIntegrationTestRunner({
         adminHeaders,
       );
       expect(issue1.data.issued.map((i: any) => i.promotion_id)).toContain(promoId);
-      expect(await linkedPromoIds()).toContain(promoId);
+      expect(await grantedPromoIds()).toContain(promoId);
 
       // 2) 재발급 시도 → 멱등(already_issued skip)
       const issue2 = await api.post(
@@ -149,7 +210,7 @@ medusaIntegrationTestRunner({
         data: { promotion_ids: [promoId] },
       });
       expect(revoke.status).toEqual(200);
-      expect(await linkedPromoIds()).not.toContain(promoId);
+      expect(await grantedPromoIds()).not.toContain(promoId);
 
       // 4) 회수 후 트리거 → 재발급되어야 함 (issue-log 정리 검증, P2-2)
       const issue3 = await api.post(
@@ -158,7 +219,7 @@ medusaIntegrationTestRunner({
         adminHeaders,
       );
       expect(issue3.data.issued.map((i: any) => i.promotion_id)).toContain(promoId);
-      expect(await linkedPromoIds()).toContain(promoId);
+      expect(await grantedPromoIds()).toContain(promoId);
     });
 
     it('manual assign is batch-resilient: invalid coupon is skipped, valid one issued (P1-3)', async () => {
@@ -213,41 +274,117 @@ medusaIntegrationTestRunner({
       expect(res.data.issued).toContain(promoId);
     });
 
-    it('max_claims_exceeded once issued_count reaches the cap', async () => {
+    it('max_claims_exceeded once coupon_grant COUNT reaches the cap', async () => {
       const promoId = await createPromo('CAPPED', { visibility: 'claimable', max_claims: 1 });
-      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.reserveClaimSlot(promoId, 1); // 소진
+      await fillClaims(promoId, 1); // 소진
       const res = await issue([promoId]);
       expect(skipReason(res, promoId)).toEqual('max_claims_exceeded');
     });
 
-    it('revoke restores issued_count (customers/:id/promotions path)', async () => {
+    it('revoke restores the grant COUNT (customers/:id/promotions path)', async () => {
       // 🔴 Task 4 (#488 G1~G4) 이전엔 이 테스트가 `isAlreadyIssued`(promotion_issue_log 기반)도
       // 같이 검사했다 — 세 발급 경로 전부가 grant 모델로 옮겨가며 그 로그에 더 이상 아무도
       // 쓰지 않는다(대체물은 `coupon_grant.issue_key` 유니크). Task 10 이 그 테이블·메서드
-      // 자체를 걷어낼 예정이라 그 검사는 여기서 뺐다 — issued_count(발급 슬롯 카운터)는
-      // 여전히 실제 동작이라 남긴다.
+      // 자체를 걷어낼 예정이라 그 검사는 여기서 뺐다 — `coupon_grant` COUNT(Task 2 로
+      // `issued_count` 를 대체한 상한의 정본)는 여전히 실제 동작이라 남긴다.
       const promoId = await createPromo('REVOKE1', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(1);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
 
       await api.delete(`/admin/customers/${customerId}/promotions`, { ...adminHeaders, data: { promotion_ids: [promoId] } });
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(0);
     });
 
-    it('revoke via promotions/:id/customers path also restores count', async () => {
+    it('revoke via promotions/:id/customers path also restores the grant COUNT', async () => {
       // 🔴 :211 의 형제 수정과 같은 이유(#488 Task 4 리뷰 Important #1) — `isAlreadyIssued`
       // 는 세 발급 경로 전부가 `recordIssue` 를 안 부르니 항상 `false` 다. 예전엔 여기에도
       // `expect(await metaService.isAlreadyIssued(...)).toBe(false)` 가 있었는데, DELETE 가
-      // 아무 일도 안 해도 통과하는(공허하게 참) 단언이라 제거한다 — issued_count 복원만
+      // 아무 일도 안 해도 통과하는(공허하게 참) 단언이라 제거한다 — grant COUNT 복원만
       // 실제로 검사되는 것이라 그것만 남긴다.
       const promoId = await createPromo('REVOKE2', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       await api.delete(`/admin/promotions/${promoId}/customers`, { ...adminHeaders, data: { customer_ids: [customerId] } });
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(0);
+    });
+
+    // 🔴 이 회귀는 원래 링크 유무 판정 버그였다(ADR-0034) — 「남은 장이 없을 때만」 링크를
+    // 걷도록 `remaining === 0` 하나로 판정했더니, 「쓴 장만 남았다」와 «애초에 아무 관계도
+    // 없었다»가 구별되지 않아 오타로 넣은 promotion_id 까지 「제거됨」으로 응답했다. Task 7 로
+    // 링크 자체가 사라지면서 그 버그의 재발 경로도 같이 사라졌지만, «회수할 게 없다»의 두
+    // 원인 — 아예 없었다(아래) / 있었지만 다 썼다(그 아래) — 을 `removed` 가 여전히 정직하게
+    // 구별하는지는 grant 모델만으로도 계속 지켜야 하는 불변식이라 테스트를 남긴다.
+    it('revoke reports nothing removed for a pair that never existed', async () => {
+      const promoId = await createPromo('NEVERHELD', { visibility: 'claimable', max_claims: 5 });
+      // 발급하지 않는다 — grant 가 없는 쌍이다.
+
+      const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
+        ...adminHeaders,
+        data: { promotion_ids: [promoId] },
+      });
+
+      expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([]);
+      expect(res.data.promotion_ids).toEqual([]);
+      expect(res.data.revoked_grants).toEqual(0);
+    });
+
+    // Task 7 이전 이름은 '... and still dismisses the link' 였다 — 하지만 이 시나리오
+    // (grant 1장, 이미 사용됨) 는 `remaining` 이 1(≠0)이라 옛 코드에서도 링크를 안 걷었다.
+    // 이름이 실제로 검증한 적 없는 걸 주장하고 있었다. 링크 자체가 사라진 지금 그 주장은
+    // 의미가 없으므로 지우고, 이 테스트가 실제로 지키는 불변식(쓴 장은 회수돼도 남는다) 만
+    // 이름에 남긴다.
+    it('revoke keeps used grants when none remain usable', async () => {
+      const promoId = await createPromo('REVOKEUSED', { visibility: 'claimable', max_claims: 5 });
+      await issue([promoId]);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      // 발급된 한 장을 «사용» 상태로 만든다.
+      const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used`, new Date())).toBe(true);
+
+      const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
+        ...adminHeaders,
+        data: { promotion_ids: [promoId] },
+      });
+
+      // 회수할(미사용) 장은 없지만 «회수는 일어났다» — 쓴 장에 revoked_at 이 찍혀 주문 취소로도
+      // 되살아나지 않는다. 그걸 `removed` 에 정직하게 보고해야 어드민이 무동작으로 오해해 다시
+      // 누르지 않는다(PR #778 리뷰 F3). `grants: 0` 이 「미사용 장은 없었다」를, `kept_used: 1` 이
+      // 「쓴 장 1은 남겼다」를 말한다. «애초에 없던 쌍»(위 테스트)만 `removed` 에서 빠진다.
+      expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([{ promotion_id: promoId, grants: 0, kept_used: 1 }]);
+      expect(res.data.promotion_ids).toEqual([promoId]);
+      expect(res.data.revoked_grants).toEqual(0);
+      // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다. 단 회수 표지는 찍혀 있다.
+      const left = await metaService.listGrantsForCustomer(customerId);
+      const mine = left.filter((g: any) => g.promotion_id === promoId);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].revoked_at).not.toBeNull();
+      // 실제로 소비된 슬롯이므로 (deleted_at 이 그대로라) COUNT 도 되돌아가지 않는다.
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
+    });
+
+    it('revoke via promotions/:id/customers path also reports a used-only pair as removed', async () => {
+      // 형제(고객축) 라우트와 같은 계약 — 두 DELETE 가 같은 `revokeGrants` 결과를 다르게 읽으면
+      // 같은 회수가 한 화면에선 성공, 다른 화면에선 무동작으로 보인다.
+      const promoId = await createPromo('REVOKEUSED2', { visibility: 'claimable', max_claims: 5 });
+      await issue([promoId]);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used2`, new Date())).toBe(true);
+
+      const res = await api.delete(`/admin/promotions/${promoId}/customers`, {
+        ...adminHeaders,
+        data: { customer_ids: [customerId] },
+      });
+
+      expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([{ customer_id: customerId, grants: 0, kept_used: 1 }]);
+      expect(res.data.customer_ids).toEqual([customerId]);
+      expect(res.data.revoked_grants).toEqual(0);
     });
 
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {

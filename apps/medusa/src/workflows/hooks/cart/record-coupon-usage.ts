@@ -74,7 +74,26 @@ completeCartWorkflow.hooks.orderCreated(
       const grantIds = selectGrantIdsToConsume(grants, promotionIds, now, order_id);
 
       for (const grantId of grantIds) {
-        await promotionMetaService.consumeGrant(grantId, order_id, now);
+        const consumed = await promotionMetaService.consumeGrantIfUnused(grantId, order_id, now);
+        if (!consumed) {
+          // 이 장을 그 사이에 다른 주문이 먼저 소모했거나 회수됐다. 주문은 이미 생겼으니
+          // 되돌리지 않되(위 주석의 판단 그대로), 흔적은 남긴다.
+          //
+          // 🔴 옛 구현은 조건 없는 UPDATE 라 이 경우를 «성공» 으로 삼켰다 — 한 장이 두 주문에
+          // 쓰이고 `order_id` 는 나중 것만 남았다. 이제 술어가 SQL 에 있어 두 번째 소모가
+          // 0행으로 떨어지고, 여기서 그 사실이 드러난다.
+          try {
+            container
+              .resolve<{ warn: (msg: string) => void }>(ContainerRegistrationKeys.LOGGER)
+              .warn(
+                `[coupon] 장 소모 실패 — 이미 사용됐거나 회수된 장이다 ` +
+                  `(grant_id=${grantId}, order_id=${order_id}). 이 주문은 그 장으로 기록되지 않는다.`,
+              );
+          } catch {
+            // 로그를 못 남겨도 나머지 장의 소모는 계속한다 — 위 I1 판단과 같은 이유로,
+            // 기록 실패가 주문 경로를 건드리게 두지 않는다.
+          }
+        }
       }
     } catch (e) {
       // I1(2026-08-31 최종 리뷰): LOGGER 해석 자체가 던지는 경우까지 이 catch 밖으로 새면,

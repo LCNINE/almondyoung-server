@@ -38,13 +38,6 @@ medusaIntegrationTestRunner({
       return res.data.promotion.id as string;
     };
 
-    const linkCustomer = async (promotionId: string) => {
-      const remoteLink = getContainer().resolve(ContainerRegistrationKeys.LINK) as any;
-      await remoteLink.create([
-        { [Modules.CUSTOMER]: { customer_id: customerId }, [Modules.PROMOTION]: { promotion_id: promotionId } },
-      ]);
-    };
-
     const createEvent = async (body: Record<string, unknown>) => {
       const res = await api.post('/admin/coupon-events', body, adminHeaders);
       return res.data.event;
@@ -55,6 +48,27 @@ medusaIntegrationTestRunner({
 
     const stateOf = (coupons: any[], code: string) =>
       coupons.find((c: any) => c.code === code)?.state;
+
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
 
     beforeEach(async () => {
       seq++;
@@ -152,14 +166,14 @@ medusaIntegrationTestRunner({
       const assigned = await createPromo('S_ASSIGN', { visibility: 'claimable' });
       const pub = await createPromo('S_PUB', { visibility: 'public' });
       const assignedOnly = await createPromo('S_AO', { visibility: 'assigned_only' });
-      // «claimed» 는 이제 링크가 아니라 사용 가능한 grant 로 판정된다(#488 Task 8 결정 3) —
-      // 링크만 있고 장이 없으면 claimable 로 보인다. 그래서 grant 도 함께 심는다.
+      // «claimed» 는 링크가 아니라 «사용 가능한 장»이 판정한다(#488 Task 8 결정 3). Task 7 이후
+      // 이벤트 라우트는 링크를 아예 읽지 않으므로(그 라우트는 groups.id 만 확장한다) 링크를
+      // 심는 셋업은 죽은 코드였다 — 장만 심는다.
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
       await metaService.issueGrant({
         promotion_id: assigned, customer_id: customerId, issue_key: `s_assign_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(assigned);
 
       const event = await createEvent({
         title: 'states',
@@ -178,8 +192,7 @@ medusaIntegrationTestRunner({
 
     it('store: exhausted claimable → blocked/exhausted', async () => {
       const id = await createPromo('S_FULL', { visibility: 'claimable', max_claims: 1 });
-      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await meta.reserveClaimSlot(id, 1); // issued_count = max
+      await fillClaims(id, 1); // 소진
       const event = await createEvent({ title: 'x', status: 'active', promotion_ids: [id] });
 
       const res = await getEventStore(event.slug);

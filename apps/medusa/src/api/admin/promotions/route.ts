@@ -49,10 +49,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const promotionIds = (promotions as any[]).map((p: any) => p.id);
   const metas = await promotionMetaService.getByPromotionIds(promotionIds);
   const metaMap = new Map((metas as any[]).map((m: any) => [m.promotion_id, m]));
+  // 목록이므로 프로모션마다 조회하지 않도록 한 번에 센다(N+1 방지).
+  const countsById = await promotionMetaService.countIssuedGrantsByPromotion(promotionIds);
 
   const promotionsWithMeta = (promotions as any[]).map((p: any) => ({
     ...p,
-    metadata: toMetadataShape(metaMap.get(p.id)),
+    metadata: toMetadataShape(metaMap.get(p.id), countsById.get(p.id)),
   }));
 
   return res.json({

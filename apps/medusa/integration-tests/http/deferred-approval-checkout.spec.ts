@@ -536,7 +536,7 @@ medusaIntegrationTestRunner({
      * NULL(무기한)로 박혀 정책의 `ends_at` 을 지나도 그 고객에게만 영구 유효가 된다.
      *
      * 🔴 T6 재작성(#488 그랜트 모델, Task 14 리뷰): 사용 기록의 정본이 링크 행에서
-     * `coupon_grant` 로 옮겨갔다(`record-coupon-usage.ts` 가 `consumeGrant()` 로 grant 를
+     * `coupon_grant` 로 옮겨갔다(`record-coupon-usage.ts` 가 `consumeGrantIfUnused()` 로 grant 를
      * 갱신하지, 링크 행의 `used_at`/`order_id` 를 쓰지 않는다 — 링크는 이제 표시 조인 전용).
      * 그래서 T6 은 이제 링크 행이 아니라 **grant** 를 본다. C1(링크 행에 사용사건이 새면 안
      * 된다)은 여전히 링크 행을 봐야 하므로 `linkRowsFor` 는 그대로 둔다 — 두 불변식은
