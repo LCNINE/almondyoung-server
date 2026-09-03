@@ -111,6 +111,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const visibilityOf = (promotionId: string): string =>
     visibilityById.get(promotionId) ?? VISIBILITY_WHEN_META_MISSING;
   const metaById = new Map<string, any>(metas.map((m: any) => [m.promotion_id, m]));
+  // 상한 판정은 이제 issued_count 컬럼이 아니라 coupon_grant 실측 COUNT 다(Task 2 가 그
+  // 컬럼의 갱신을 끊었다) — 이 라우트는 Task 5 에서 크게 바뀌므로 지금은 metaById 옆에
+  // countById 를 하나 더 두는 최소 변경만 한다. 프로모션마다 재조회하지 않도록 한 번에 센다.
+  const countById = allPromoIds.length > 0
+    ? await promotionMetaService.countIssuedGrantsByPromotion([...new Set(allPromoIds)])
+    : new Map<string, number>();
   // 발급된 «장» 들을 한 번에 가져온다 — 프로모션마다 조회하지 않는다.
   const grants: CouponGrantRow[] = await promotionMetaService.listGrantsForCustomer(customerId);
   const grantsOf = (promotionId: string): CouponGrantRow[] => grantsFor(grants, promotionId);
@@ -150,7 +156,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const isClaimExhausted = (promotionId: string): boolean => {
     const m = metaById.get(promotionId);
     if (!m || m.max_claims == null) return false;
-    return Number(m.issued_count ?? 0) >= Number(m.max_claims);
+    return (countById.get(promotionId) ?? 0) >= Number(m.max_claims);
   };
 
   // status/자동적용/유효기간 검증. 사용 가능 여부는 «사용 가능한 장이 있으면 그 장들, 없으면

@@ -311,9 +311,6 @@ medusaIntegrationTestRunner({
       expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
     });
 
-    // 🔴 Task 2 로 이 응답이 싣는 `metadata.issued_count`(`admin/promotions/helpers.ts` 의
-    // `toMetadataShape`) 는 더 이상 갱신되지 않는 컬럼을 그대로 읽는다 — 이 테스트는 Task 3 이
-    // 그 변환을 실측 COUNT 로 바꿀 때까지 RED 다(#488 설계 문서 결정 1, SDD Ruling 2).
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {
       const promoId = await createPromo('PROGRESS', { visibility: 'claimable', max_claims: 10 });
       await issue([promoId]);

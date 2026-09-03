@@ -98,6 +98,19 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.countIssuedGrants('promo_force')).toEqual(2);
       });
 
+      it('countIssuedGrantsByPromotion 은 한 번의 조회로 프로모션별 장수를 돌려준다', async () => {
+        await service.upsert({ promotion_id: 'promo_b1' });
+        await service.upsert({ promotion_id: 'promo_b2' });
+        await issue('promo_b1', 'cus_i', 'k1', null);
+        await issue('promo_b1', 'cus_i', 'k2', null);
+        await issue('promo_b2', 'cus_i', 'k3', null);
+        const counts = await service.countIssuedGrantsByPromotion(['promo_b1', 'promo_b2', 'promo_none']);
+        expect(counts.get('promo_b1')).toEqual(2);
+        expect(counts.get('promo_b2')).toEqual(1);
+        // 장이 하나도 없는 프로모션은 «0» 이어야 한다 — 키 없음으로 두면 호출부가 undefined 를 만난다
+        expect(counts.get('promo_none')).toEqual(0);
+      });
+
       // 🔴 타이밍 경합(Promise.all 두 호출이 실제로 겹치길 «기다리는» 방식)으로는 이 락을
       // 검증할 수 없었다 — 2-way 11회·20-way 1회 전부 과다발급 0건으로, 이 테스트 하네스의
       // 로컬 Postgres 왕복이 너무 빨라 레이스 윈도우가 안정적으로 재현되지 않는다(자세한

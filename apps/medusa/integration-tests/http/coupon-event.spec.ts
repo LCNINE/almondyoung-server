@@ -197,9 +197,6 @@ medusaIntegrationTestRunner({
       expect(stateOf(c, 'S_AO')).toEqual({ kind: 'blocked', reason: 'not_assigned' });
     });
 
-    // 🔴 Task 2 로 이 라우트의 `resolveState` 가 읽는 `issued_count` 는 더 이상 갱신되지
-    // 않는다(상한 집행이 `coupon_grant` COUNT 로 옮겨갔다) — 이 테스트는 Task 3 이 그 읽기를
-    // COUNT 로 전환할 때까지 RED 다(#488 설계 문서 결정 1, Task 3 Step 4 가 이 시퀀싱을 명시).
     it('store: exhausted claimable → blocked/exhausted', async () => {
       const id = await createPromo('S_FULL', { visibility: 'claimable', max_claims: 1 });
       await fillClaims(id, 1); // 소진

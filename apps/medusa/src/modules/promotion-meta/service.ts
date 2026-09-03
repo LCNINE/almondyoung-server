@@ -134,6 +134,27 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
+   * 프로모션별 발급 장수를 한 번에 센다. 목록 화면이 프로모션마다 조회하지 않도록.
+   * 장이 없는 프로모션도 **0 으로 채워서** 돌려준다 — 호출부가 `undefined` 를 만나
+   * `?? null` 로 접으면 「무제한」과 「0장」이 구분되지 않는다.
+   */
+  async countIssuedGrantsByPromotion(promotionIds: string[]): Promise<Map<string, number>> {
+    const result = new Map<string, number>(promotionIds.map((id) => [id, 0]));
+    if (promotionIds.length === 0) return result;
+    const em = (this as any).baseRepository_.manager_;
+    const rows = await em.execute(
+      `SELECT "promotion_id", count(*)::int AS c FROM "coupon_grant"
+        WHERE "deleted_at" IS NULL AND "promotion_id" IN (?)
+        GROUP BY "promotion_id"`,
+      [promotionIds],
+    );
+    for (const row of rows ?? []) {
+      result.set(String(row.promotion_id), Number(row.c));
+    }
+    return result;
+  }
+
+  /**
    * 이 프로모션의 발급을 직렬화한다. **상한을 집행하는 트랜잭션에서만** 부른다.
    *
    * 🔴 이 락이 상한의 원자성을 준다. 옛 `UPDATE ... WHERE issued_count < ?` 도 원자성의

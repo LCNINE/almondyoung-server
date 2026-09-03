@@ -159,8 +159,8 @@ export function CouponDetailDialog({
           {visibility === 'claimable' && (
             <Row label="발급 현황">
               {maxClaims != null
-                ? `${(issuedCount ?? 0).toLocaleString('ko-KR')} / ${maxClaims.toLocaleString('ko-KR')}명`
-                : `${(issuedCount ?? 0).toLocaleString('ko-KR')}명 (무제한)`}
+                ? `${(issuedCount ?? 0).toLocaleString('ko-KR')} / ${maxClaims.toLocaleString('ko-KR')}장`
+                : `${(issuedCount ?? 0).toLocaleString('ko-KR')}장 (무제한)`}
             </Row>
           )}
           <Row label="유효 기간">{formatPeriod(c)}</Row>

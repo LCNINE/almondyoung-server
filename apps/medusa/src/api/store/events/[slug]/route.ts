@@ -59,6 +59,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
   const metas = await service.getByPromotionIds(promotionIds);
   const metaById = new Map((metas as any[]).map((m: any) => [m.promotion_id, m]));
+  // 상한 판정은 이제 issued_count 컬럼이 아니라 coupon_grant 실측 COUNT 다(Task 2 가 그
+  // 컬럼의 갱신을 끊었다). 목록이므로 프로모션마다 조회하지 않도록 한 번에 센다.
+  const issuedCountById = await service.countIssuedGrantsByPromotion(promotionIds);
 
   // 로그인 고객 정보(발급 여부 + 그룹). «보유 여부» 는 이제 링크가 아니라 사용 가능한 장이
   // 정한다(#488 Task 8 결정 3) — 링크는 「가진 적 있다」만 말해 다 쓴 쿠폰도 통과시킨다.
@@ -107,7 +110,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
     if (visibility === 'claimable') {
       const max = meta?.max_claims != null ? Number(meta.max_claims) : null;
-      if (max != null && Number(meta?.issued_count ?? 0) >= max) {
+      if (max != null && (issuedCountById.get(promo.id) ?? 0) >= max) {
         return { kind: 'blocked', reason: 'exhausted' };
       }
       return { kind: 'claimable' };
