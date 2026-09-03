@@ -528,7 +528,7 @@ medusaIntegrationTestRunner({
      * C1(2026-08-31 최종 리뷰) 회귀 + T6 완결.
      *
      * 이 파일이 유일하게 `completeCartWorkflow` 를 실제 주문까지 끝까지 태우는 스펙이라 여기
-     * 붙인다 — `record-coupon-usage.ts` 의 `orderCreated` 훅이 **실 결제 완료 경로**에서 도는지
+     * 붙인다 — `hooks/cart/complete-cart.ts` 의 validate 훅(`consume-coupon-grants.ts`)이 **실 결제 완료 경로**에서 도는지
      * 확인하는 유일한 자리다(다른 쿠폰 스펙은 카트 단계까지만 가거나 백스톱에서 일부러 실패시킨다).
      *
      * C1 의 사고 경로: `public` 쿠폰은 발급 사건이 없어 링크 행이 원래 없다. 훅이 필터 없이
@@ -536,8 +536,9 @@ medusaIntegrationTestRunner({
      * NULL(무기한)로 박혀 정책의 `ends_at` 을 지나도 그 고객에게만 영구 유효가 된다.
      *
      * 🔴 T6 재작성(#488 그랜트 모델, Task 14 리뷰): 사용 기록의 정본이 링크 행에서
-     * `coupon_grant` 로 옮겨갔다(`record-coupon-usage.ts` 가 `consumeGrantIfUnused()` 로 grant 를
-     * 갱신하지, 링크 행의 `used_at`/`order_id` 를 쓰지 않는다 — 링크는 이제 표시 조인 전용).
+     * `coupon_grant` 로 옮겨갔다(`hooks/cart/complete-cart.ts` 의 validate 훅
+     * (`consume-coupon-grants.ts`)이 소모로 grant 를 갱신하지, 링크 행의 `used_at`/`order_id` 를
+     * 쓰지 않는다 — 링크는 이제 표시 조인 전용).
      * 그래서 T6 은 이제 링크 행이 아니라 **grant** 를 본다. C1(링크 행에 사용사건이 새면 안
      * 된다)은 여전히 링크 행을 봐야 하므로 `linkRowsFor` 는 그대로 둔다 — 두 불변식은
      * 그랜트 모델 전환 후에도 별개로 유효하다.
