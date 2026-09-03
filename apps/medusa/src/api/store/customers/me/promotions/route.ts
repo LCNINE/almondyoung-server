@@ -76,7 +76,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // (설계 결정 2) — 링크는 (고객, 프로모션)당 1행이라 quantity>1 을 표현하지도 못한다.
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id', 'email', 'groups.id'],
+    fields: ['id', 'groups.id'],
     filters: { id: customerId },
   });
 

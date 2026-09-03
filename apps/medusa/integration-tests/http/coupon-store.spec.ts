@@ -190,7 +190,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `usedup_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
 
       // 사용 전: 목록에 노출
       const before = await api.get('/store/customers/me/promotions', storeHeaders);
@@ -224,7 +223,6 @@ medusaIntegrationTestRunner({
         promotion_id: id, customer_id: customerId, issue_key: `mix_live_${seq}`,
         issued_via: 'admin_manual', expires_at: null, now: new Date(),
       });
-      await linkCustomer(id);
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
 
@@ -243,13 +241,12 @@ medusaIntegrationTestRunner({
     describe('사용완료 바구니 (#488 A1)', () => {
       const metaSvc = () => getContainer().resolve(PROMOTION_META_MODULE) as any;
 
-      /** 장 한 장을 발급하고 링크까지 만든다 — 마이페이지는 링크 행으로 쿠폰을 열거한다. */
+      /** 장 한 장을 발급한다 — 장이 「이 고객이 가진 쿠폰」의 정본이다(Task 5, 링크는 안 심는다). */
       const grantOne = async (promotionId: string, key: string, expiresAt: Date | null = null) => {
         await metaSvc().issueGrant({
           promotion_id: promotionId, customer_id: customerId, issue_key: key,
           issued_via: 'admin_manual', expires_at: expiresAt, now: new Date(),
         });
-        await linkCustomer(promotionId);
       };
 
       const consumeAll = async (promotionId: string, usedAt = new Date()) => {
@@ -324,6 +321,12 @@ medusaIntegrationTestRunner({
 
         expect(res.data.promotions.map((p: any) => p.code)).toContain('PUBUSED');
         expect(res.data.used_promotions.map((p: any) => p.code)).not.toContain('PUBUSED');
+        // 장을 가진 public 쿠폰은 assigned 바구니(grantedPromotions 유래)를 통해 나온다 —
+        // publicPromotions 는 assignedPromotionIds 에 있는 항목을 제외하므로 여기서 뜬 것은
+        // 곧 is_assigned:true 다(결정 2: 장을 가졌다 = 실제로 발급받았다). 다음 사람이
+        // 「버그처럼 보이는 의도」로 되돌리지 않도록 고정해 둔다.
+        const pubused = res.data.promotions.find((p: any) => p.code === 'PUBUSED');
+        expect(pubused.is_assigned).toBe(true);
       });
 
       it('30일보다 오래된 사용은 빠진다 — 만료 바구니와 같은 컷오프', async () => {
