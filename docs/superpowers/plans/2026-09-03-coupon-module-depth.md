@@ -497,7 +497,7 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
 - [ ] **Step 4: 게이트**
 
 Run: `npx tsc --noEmit -p apps/medusa/tsconfig.json` → 에러 3(기준선). 스크립트가 컴파일되는 것이 이 태스크의 시험이다.
-Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 114 passed (117 − 3), 0 failed.
+Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 109 passed (112 − 3), 0 failed. (Task 3 이 `grants.unit.spec.ts` 의 FEFO 5건을 지웠고 이 패턴은 그 유닛 스펙도 포함하므로 117 이 아니라 112 에서 시작한다.)
 Run: `grep -rn "issueGrant(\|markGrantUsedIfUnused" apps/medusa/src` → 0건.
 
 - [ ] **Step 5: Commit**
@@ -1170,7 +1170,7 @@ PR #778 머지 직전 재리뷰 14건을 세 시험(접기의 2차 미분 / 인�
 
 Run: `npx tsc --noEmit -p apps/medusa/tsconfig.json` → 3(기준선, 변경 파일 0).
 Run: `npm --prefix apps/medusa run test:unit` → 0 failed.
-Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 114 passed.
+Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 109 passed.
 Run: `scripts/local/run-medusa-integration.sh --testPathPattern coupon-` → 141 passed.
 Run: `cd apps/admin-web && npx tsc --noEmit` 은 **불필요** — admin-web 파일은 이 PR 에서 하나도 바뀌지 않는다(`git diff --stat develop -- apps/admin-web` 이 비어 있는지 확인).
 
@@ -1192,4 +1192,4 @@ PR 본문에 넣을 것: 설계 문서 링크 · 해소한 지적(F1·F9·F10·F
 - **스펙 커버리지.** 결정 1 → Task 1·3. 결정 2 → Task 4(+ 0단계의 revoke 통일, Task 2 의 count). 결정 3 → Task 5. 결정 4 → Task 6. §4 「하지 않는 것」은 어느 태스크도 건드리지 않는다(자동발급 500 정책 유지 — Task 5 Step 8 명시).
 - **플레이스홀더.** 「기존 게이트들 그대로」는 라우트의 현재 코드를 가리키며 삭제 대상만 열거했다 — 실행자는 해당 파일을 열고 게이트 블록을 보존한다. 코드 스텝은 전부 코드 블록을 갖는다.
 - **타입 일관성.** `IssueGrantRequest`/`IssueGrantResult`/`verdictOf` 이름·시그니처가 Task 5 정의와 라우트 사용에서 같다. `consumeOneUsableGrant` 의 입력 객체 키(`promotion_id, customer_id, order_id, now`)가 Task 1 스펙·구현·Task 3 훅에서 같다. `countIssuedGrantsByPromotion(ids, sharedContext?)` 는 Task 2 만 건드리고 호출자 셋(admin 목록·이벤트·마이페이지)은 인자 하나로 그대로 동작한다.
-- **기준선 숫자.** 모듈(패턴 promotion-meta) 110 → +6(T1) +1(T2) −3(T4) = 114 (패턴 없는 전체는 152 → 156). HTTP 139 → +2(T5) = 141. 유닛은 T3 삭제(7 + FEFO 블록)와 T5 추가(4)로 바뀐다 — 정확한 수는 실행 시 기록한다.
+- **기준선 숫자.** 모듈(패턴 promotion-meta, `grants.unit.spec.ts` 포함) 110 → +6(T1) +1(T2) −5(T3 FEFO 유닛) −3(T4) = 109 (패턴 없는 전체 `--modules` 는 152 → 156 — 유닛 스펙은 거기 안 잡힌다). 실측: T1 116 · T2 117 · T3 112 · T4 109. HTTP 139 → +2(T5) = 141. 유닛은 T3 삭제(7 + FEFO 블록)와 T5 추가(4)로 바뀐다 — 정확한 수는 실행 시 기록한다.
