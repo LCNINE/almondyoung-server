@@ -230,6 +230,7 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
           <PageEditor
             key={pageId}
             pageId={pageId}
+            space={page.space}
             initialContent={page.content}
             onSave={handleBodySave}
             onLeave={handleBodyLeave}
