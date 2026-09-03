@@ -58,6 +58,12 @@ export type IssueGrantWithSlotInput = {
   enforce_cap: boolean;
 };
 
+/** `consumeOneUsableGrantForCart` 의 결과. 소모가 곧 검사라 세 값이 곧 판정이다 (ADR-0034 결정 5). */
+export type ConsumeOutcome =
+  | { outcome: 'consumed'; grant_id: string }
+  | { outcome: 'already'; grant_id: string }
+  | { outcome: 'none' };
+
 /** `revokeGrants_` 의 두 얼굴 — 어드민 회수(전부, 표지 찍음)와 워크플로 보상(키 목록, 표지 없음). */
 type RevokeGrantsOptions = {
   /** 주면 이 `issue_key` 들만 대상이다. 보상이 «이번 실행이 만든 것»으로 좁힐 때 쓴다. */
@@ -391,32 +397,33 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 「이 주문에 쓸 장 한 장」을 **고르고 소모한다 — 한 문장으로.** 소모한 장의 id, 없으면 `null`.
+   * 「이 카트에 쓸 장 한 장」을 **고르고 소모한다 — 한 문장으로.** 그리고 그 결과가 곧 판정이다.
    *
-   * 옛 구조는 훅이 `selectGrantToConsume`(FEFO) 으로 장을 고른 뒤 `consumeGrantIfUnused(id)` 로
-   * 찍었다. 고르기와 CAS 가 다른 층에 있어, 같은 고객의 두 카트가 동시에 완료되면 둘이
-   * «결정적으로 같은 장»을 골라 한쪽만 이기고 진 쪽은 다음 장을 시도하지 않았다 — 한 장으로
-   * 할인 주문 두 건(PR #778 재리뷰 F1). 선택을 SQL 로 내리면 그 창 자체가 없다:
+   * - `consumed` — 잡았다. 훅은 id 를 모아 보상의 입력으로 돌려준다.
+   * - `already` — 이 카트가 이미 잡은 장이 있다. 완료된 카트의 재완료·엔진의 재호출이 여기로 온다
+   *   (`completeCartWorkflow` 는 주문이 있어도 `validate` 를 다시 지난다). **통과**다.
+   * - `none` — 잡을 장이 없다. 장이 사용을 지배하는 쿠폰이면 훅이 `COUPON_EXPIRED` 로 거절한다.
+   *   늦은 카트가 여기로 온다 — 같은 고객의 두 카트가 장 하나로 둘 다 통과하던 창(재리뷰 F1)이
+   *   이 값으로 닫힌다.
    *
-   * - **FEFO** 는 `ORDER BY expires_at NULLS LAST, issued_at, id` — `grants.ts` 의 옛 정렬과 같다.
-   * - **만료 경계(포함)** 는 `expires_at >= now` — `usableGrants` 와 같은 경계여야 카트 게이트와
-   *   어긋나지 않는다.
-   * - **재호출(순차) 멱등성**은 `NOT EXISTS(같은 order_id)` — 엔진이 이 훅을 «다시» 불러도 주문당
-   *   쿠폰당 한 장이다. 스냅샷 술어라 같은 `order_id` 의 **동시** 호출 둘은 못 막는다(둘 다 통과해
-   *   SKIP LOCKED 가 다른 장을 준다) — 주문 생성 경로는 그런 호출을 만들지 않는다.
-   * - **동시성**은 `FOR UPDATE SKIP LOCKED` — 다른 트랜잭션이 잡은 장은 건너뛰고 다음 장을 잡는다.
-   *   장이 하나뿐이면 늦은 쪽은 `null` 이고, 그게 정답이다.
+   * 문장 둘이다. ① UPDATE 가 잡기(FEFO · 만료 경계 포함 · `FOR UPDATE SKIP LOCKED` — PR-2 그대로,
+   * 키만 `cart_id`) ② 0행이면 «이 카트가 이미 잡은 장» 을 읽어 `already` 와 `none` 을 가른다.
+   * ②가 읽기-후-판정인데도 안전한 이유: 같은 카트의 동시 호출은 워크플로가 카트 id 로 잡는
+   * 락(`acquireLockStep`)이 직렬화한다. 다른 카트와의 경합은 ①이 정한다.
    *
-   * `null` 은 「소모할 장이 없다」다 — 발급 개념이 없는 `public` 쿠폰이 대부분이므로 호출부는
-   * 경고하지 않는다. `consumeGrantIfUnused(id)` 는 id 로 찍는 원시 연산으로 남는다(백필·스펙
-   * 픽스처). **핫패스(주문 생성 훅)는 이 메서드만 부른다.**
+   * 키가 주문이 아니라 카트인 이유: `validate` 시점엔 주문이 없다. 주문 → 카트는 Medusa 의
+   * `order_cart` 링크가 안다(ADR-0034 결정 6).
+   *
+   * `sharedContext` 는 형제 원시 SQL 헬퍼와 같은 이유로 열어 둔다. `consumeGrantIfUnused(id)` 는
+   * id 로 찍는 원시 연산으로 남는다(백필·스펙 픽스처). **핫패스(validate 훅)는 이 메서드만 부른다.**
    */
-  async consumeOneUsableGrant(
-    input: { promotion_id: string; customer_id: string; order_id: string; now: Date },
+  async consumeOneUsableGrantForCart(
+    input: { promotion_id: string; customer_id: string; cart_id: string; now: Date },
     sharedContext?: Context<EntityManager>,
-  ): Promise<string | null> {
-    const rows = await this.txEm(sharedContext).execute(
-      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
+  ): Promise<ConsumeOutcome> {
+    const em = this.txEm(sharedContext);
+    const consumed = await em.execute(
+      `UPDATE "coupon_grant" SET "used_at" = ?, "cart_id" = ?, "updated_at" = now()
         WHERE "id" = (
           SELECT "id" FROM "coupon_grant"
            WHERE "promotion_id" = ? AND "customer_id" = ?
@@ -425,24 +432,37 @@ class PromotionMetaModuleService extends MedusaService({
              AND NOT EXISTS (
                SELECT 1 FROM "coupon_grant" o
                 WHERE o."promotion_id" = ? AND o."customer_id" = ?
-                  AND o."order_id" = ? AND o."deleted_at" IS NULL)
+                  AND o."cart_id" = ? AND o."deleted_at" IS NULL)
            ORDER BY "expires_at" ASC NULLS LAST, "issued_at" ASC, "id" ASC
            LIMIT 1
            FOR UPDATE SKIP LOCKED)
         RETURNING "id"`,
       [
         input.now,
-        input.order_id,
+        input.cart_id,
         input.promotion_id,
         input.customer_id,
         input.now,
         input.promotion_id,
         input.customer_id,
-        input.order_id,
+        input.cart_id,
       ],
     );
-    const id = rows?.[0]?.id;
-    return id != null ? String(id) : null;
+    const consumedId = consumed?.[0]?.id;
+    if (consumedId != null) return { outcome: 'consumed', grant_id: String(consumedId) };
+
+    const already = await em.execute(
+      `SELECT "id" FROM "coupon_grant"
+        WHERE "promotion_id" = ? AND "customer_id" = ? AND "cart_id" = ?
+          AND "used_at" IS NOT NULL AND "deleted_at" IS NULL
+        ORDER BY "id" ASC
+        LIMIT 1`,
+      [input.promotion_id, input.customer_id, input.cart_id],
+    );
+    const alreadyId = already?.[0]?.id;
+    if (alreadyId != null) return { outcome: 'already', grant_id: String(alreadyId) };
+
+    return { outcome: 'none' };
   }
 
   /**
