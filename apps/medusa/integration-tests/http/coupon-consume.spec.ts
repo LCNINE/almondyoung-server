@@ -376,6 +376,7 @@ medusaIntegrationTestRunner({
       const cartId = await cartReadyToComplete(custHeaders, `CONSUME_FIELDS_${seq}`);
 
       // completeCartWorkflow 가 validate 훅에 넘기는 카트와 같은 필드 목록으로 읽는다.
+      // 훅 인자 자체를 캡처한 것은 아니다 — 같은 필드 목록의 재질의라 간접 측정이다.
       // 🔴 `@medusajs/core-flows` 의 package.json `exports` 는 루트(`.`)만 열어 둔다 —
       // `require('@medusajs/core-flows/dist/cart/utils/fields')` 는 jest 든 node 든
       // `Cannot find module` 이고(실측), 루트도 이 상수를 재수출하지 않는다. `exports` 를 우회하는

@@ -249,8 +249,11 @@ Medusa 2.13.4. 경로는 `apps/medusa/node_modules/@medusajs/` 아래.
    `compensatePaymentIfNeededStep`(측정 1) 이 받는다 — 이것도 `validate` 앞에 있다.
 4. **훅 입력 카트에 최상위 `customer_id` 는 없다.** `completeCartFields`(`core-flows/dist/cart/utils/
    fields.js`) 는 `customer.*` 를 싣는다. 워크플로 자신도 `cart.customer?.id` 로 읽는다(:452
-   `registrationContext`). 현행 훅의 `cart.customer_id` 는 조인이 FK 를 남겨줄 때만 맞는다 — 새 코드는
-   `cart.customer?.id` 를 읽고, 스펙 ① 이 실측을 겸한다.
+   `registrationContext`). 실측(2026-09-04, `coupon-consume.spec.ts` ⑦): 같은 필드 목록으로 읽은
+   행에는 최상위 `customer_id` 도 **함께 온다** — 목록엔 없지만 카트 FK 라 실린다. 그래서 옛
+   `cart.customer_id` 읽기도 틀리지 않았고, 새 코드의 `cart.customer?.id ?? cart.customer_id ?? null`
+   은 둘 다 맞는 값이다(다른 가드 셋의 동작 변화 없음). 단 ⑦ 은 훅 인자 자체를 캡처한 것이 아니라
+   같은 필드 목록의 재질의다.
 5. **캠페인 예산의 집행은 원자적이지 않다.** `promotion/dist/services/promotion-module.js:127`
    `registerUsage` 는 `listActivePromotions_` 로 읽고 `+1` 해서 `update` 한다(read-modify-write).
    `use_by_attribute` 도 같다 — `registerCampaignBudgetUsageByAttribute_`(:75) 가 `list` → `create`
@@ -360,24 +363,29 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 결정 4 그대로: 방어선은 실 DB 스펙이다. 이 결정의 주장은 전부 목으로는 구별되지 않는다.
 
 - HTTP `integration-tests/http/coupon-consume.spec.ts` (cap 스펙의 wallet 스텁 재사용):
-  ① 발급 장 하나 → 완료 → `used_at` · `cart_id` 찍힘, 주문 생김(측정 4 의 `customer?.id` 실측 겸함)
+  ① 발급 장 하나 → 완료 → `used_at` · `cart_id` 찍힘, 주문 생김
   ② 같은 고객의 두 번째 카트 → 400 `COUPON_EXPIRED`, 주문 없음
   ③ `validate` 뒤 스텝 실패 → 장이 돌아옴 (스텁이 `GET /v1/payment-intents/:id` 에 실패 상태를 주어
   `authorizePaymentSessionStep` 이 던지게 한다 — 스텁 10줄)
   ④ 완료된 카트의 재완료 → 200 · 같은 주문 id · 장 그대로(`already`)
   ⑤ 주문 취소 → 링크 경유 복원
+  ⑥ 스위퍼는 주문 없는 소모만 되돌리고, 주문이 선 소모는 놓지 않는다
+  ⑦ 훅 입력 카트에서 고객 id 는 `customer.id` 로 읽힌다(측정 4 실측 겸함 — 같은 필드 목록의 재질의)
 - 모듈 `service.integration.spec.ts`: 새 SQL 의 세 결과 · 카트 키 멱등성 · `SKIP LOCKED`.
 
 ### 이행 순서 (PR-3, 코드는 결정 뒤)
 
-1. 모듈 — `cart_id` 마이그레이션 · `consumeOneUsableGrantForCart` · `restoreGrants(ids)` 로 되돌림 통합
-   → 모듈 스펙.
-2. 훅 — `hooks/cart/complete-cart.ts` 의 `validate` 핸들러 **끝**에 소모, 두 번째 인자로 보상.
-   `record-coupon-usage.ts` 삭제(`@ts-expect-error` 와 함께). 새 훅 등록은 없다 —
-   `no-duplicate-validate-hooks.unit.spec.ts` 가 지키는 규칙 그대로.
-3. 구독자 — 취소 복원을 링크 경유로. `order_id` 를 읽는 마지막 코드가 여기서 사라진다.
-4. 스위퍼 잡.
-5. HTTP 스펙 ①~⑤.
+1. 모듈 — `cart_id` 마이그레이션(`Migration20260904120000`) · `consumeOneUsableGrantForCart` ·
+   `restoreGrants` · `restoreGrantsByCart` · `listStuckConsumptions` 로 되돌림 통합 → 모듈 스펙.
+2. 훅 — `hooks/cart/consume-coupon-grants.ts`(소모 헬퍼) + `hooks/cart/complete-cart.ts` 의
+   `validate` 핸들러 **끝**에 소모, 두 번째 인자로 보상. `record-coupon-usage.ts` 삭제
+   (`@ts-expect-error` 와 함께). 새 훅 등록은 없다 — `no-duplicate-validate-hooks.unit.spec.ts` 가
+   지키는 규칙 그대로.
+3. 구독자 — `subscribers/coupon-grant-restore.ts`, 취소 복원을 링크 경유로. `order_id` 를 읽는
+   마지막 코드가 여기서 사라진다.
+4. 스위퍼 — `scripts/restore-stuck-coupon-consumptions.ts` + `jobs/restore-stuck-coupon-consumptions.ts`
+   (매시 23분, `COUPON_STUCK_MIN_AGE_MINUTES` 기본 60).
+5. HTTP 스펙 — `integration-tests/http/coupon-consume.spec.ts` ①~⑦(⑦ = 측정 4 실측 겸용).
 6. (다음 배포 뒤, 별도 PR) `order_id` DROP COLUMN — 선행 조건은 결정 6 의 count 0.
 
 배포 제약: additive 마이그레이션 1건, Medusa 컨테이너가 부팅 시 자체 migrate 하므로(CLAUDE.md) 순서
