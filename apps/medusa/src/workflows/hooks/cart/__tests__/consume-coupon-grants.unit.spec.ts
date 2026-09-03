@@ -25,6 +25,10 @@ describe('consumeCouponGrantsForCart — 훅의 마지막 문장', () => {
     ]);
     expect(result).toEqual({ cart_id: 'cart_1', grant_ids: ['g1', 'g2'] });
     expect(service.restoreGrants).not.toHaveBeenCalled();
+    // 배선 가드 — cart_id 가 이 PR 이 멱등성의 키로 옮긴 값이다. 인자가 빠지면 목은 그대로 통과하므로 여기서 잡는다.
+    expect(service.consumeOneUsableGrantForCart).toHaveBeenCalledWith({
+      promotion_id: 'p1', customer_id: 'cus_1', cart_id: 'cart_1', now: input.now,
+    });
   });
 
   it('already 는 통과이고 보상 목록에 넣지 않는다 — 남의 실행이 잡은 장을 이번 실행이 놓으면 안 된다', async () => {
