@@ -410,8 +410,10 @@ class PromotionMetaModuleService extends MedusaService({
    * ②가 읽기-후-판정인데도 안전한 이유: 같은 카트의 동시 호출은 워크플로가 카트 id 로 잡는
    * 락(`acquireLockStep`)이 직렬화한다. 다른 카트와의 경합은 ①이 정한다.
    *
-   * 🔴 ①과 ②를 잇는 불변식: **`cart_id IS NOT NULL ⟺ used_at IS NOT NULL`.** 모든 writer(①·
-   * `consumeGrantIfUnused`·`restoreGrants`)가 두 컬럼을 함께 찍고 함께 비운다. DB 는 이것을 강제하지
+   * 🔴 ①과 ②를 잇는 불변식: **`cart_id IS NOT NULL → used_at IS NOT NULL`** (한 방향). 카트가 잡은
+   * 장은 반드시 사용됨이고, 카트 없는 «사용됨» 은 정당하게 존재한다 — 백필(`consumeGrantIfUnused(id,
+   * null, …)`)과 PR-3 이전 옛 행이 그것이다. 모든 writer(①·`consumeGrantIfUnused`·`restoreGrants`)는
+   * `cart_id` 를 찍을 때 `used_at` 도 찍고, 비울 때 함께 비운다. DB 는 이것을 강제하지
    * 않는다(마이그레이션은 파셜 인덱스뿐). `cart_id` 만 찍는 writer(「예약」 같은 것)를 만들면 ①은 막히고
    * ②는 못 봐서 **조용한 거짓 `none`** 이 된다 — 그런 writer 를 두지 말 것.
    *

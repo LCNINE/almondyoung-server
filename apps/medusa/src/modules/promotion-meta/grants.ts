@@ -55,7 +55,7 @@ export function hasUsableGrant(grants: CouponGrantRow[], now: Date): boolean {
  *
  * ⚠️ **여섯 소비자 중 다섯 곳에서 쓴다**(2026-09-03 기준, ADR-0034 가 둘을 더 옮겼다) —
  * 거절이 일어나는 둘(카트 미들웨어 `per-customer-limit:59`·체크아웃 백스톱
- * `complete-cart:63`), 그 판정을 그대로 비춰야 하는 마이페이지
+ * `complete-cart:60`), 그 판정을 그대로 비춰야 하는 마이페이지
  * (`store/customers/me/promotions:172`), 그리고 표시 두 곳(`store/coupons/preview:95` ·
  * `store/events/[slug]:97`)이다. 표시와 판정이 갈리면 「목록엔 없는데 코드를 넣으면 쓰이는」
  * — 또는 그 반대로 「패널은 못 쓴다는데 카트는 받아주는」 — 쿠폰이 생긴다. 표시 둘은 그

@@ -48,6 +48,17 @@ describe('consumeCouponGrantsForCart — 훅의 마지막 문장', () => {
     expect(service.restored).toEqual([['g1']]);
   });
 
+  it('되돌리기가 실패해도 COUPON_EXPIRED 토큰은 지킨다 — 못 놓은 장은 스위퍼 몫', async () => {
+    const service = fakeService({ p1: { outcome: 'consumed', grant_id: 'g1' }, p2: { outcome: 'none' } });
+    service.restoreGrants.mockRejectedValueOnce(new Error('db down'));
+    await expect(
+      consumeCouponGrantsForCart(service, input, [
+        { promotion_id: 'p1', grants_govern: true },
+        { promotion_id: 'p2', grants_govern: true },
+      ]),
+    ).rejects.toMatchObject({ message: 'COUPON_EXPIRED' });
+  });
+
   it('장이 지배하지 않는(public) 쿠폰의 none 은 그냥 지나간다', async () => {
     const service = fakeService({ p1: { outcome: 'none' } });
     const result = await consumeCouponGrantsForCart(service, input, [{ promotion_id: 'p1', grants_govern: false }]);

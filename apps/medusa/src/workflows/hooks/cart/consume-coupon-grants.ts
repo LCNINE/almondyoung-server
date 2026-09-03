@@ -1,6 +1,14 @@
 import { MedusaError } from '@medusajs/framework/utils';
 import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 
+/** 훅 보상의 입력 — 이번 실행이 잡은 장. */
+export type ConsumedCouponGrants = { cart_id: string; grant_ids: string[] };
+
+/** 훅이 앞에서 모아 두는 판정 — 어느 쿠폰을, 장이 사용을 지배하는지(`grantsGovernUsage`)와 함께. */
+export type ConsumeRequest = { promotion_id: string; grants_govern: boolean };
+
+type ConsumeService = Pick<PromotionMetaModuleService, 'consumeOneUsableGrantForCart' | 'restoreGrants'>;
+
 /**
  * `completeCartWorkflow` 의 `validate` 훅 «마지막 문장» — 쿠폰 장의 소모 (ADR-0034 2026-09-04 개정, 결정 5·7).
  *
@@ -9,7 +17,8 @@ import type PromotionMetaModuleService from '../../../modules/promotion-meta/ser
  * `consumeOneUsableGrantForCart` 의 결과가 판정이다 — `none` 이고 장이 사용을 지배하면 거절.
  *
  * 🔴 **이 함수는 훅 핸들러의 마지막에 불려야 한다.** 다른 거절(통관부호·멤버십·캡 …)이 전부 지난
- * 뒤여야, 여기서 잡은 장을 놓아야 하는 경우가 «이 함수 안의 거절» 하나로 좁혀진다.
+ * 뒤여야, 여기서 잡은 장을 놓아야 하는 경우가 «이 함수 안의 거절» 로 좁혀진다(소모 자체의 DB
+ * 오류나 되돌리기 실패로 못 놓은 장은 스위퍼가 받는다).
  *
  * 🔴 **거절할 때는 이번 호출이 잡은 장을 먼저 놓는다.** 실패한 스텝 자신의 보상은 invoke 출력을
  * 받지 못한다(`workflows-sdk` `create-step-handler.js` — `stepArguments.invoke[stepName]?.output`
@@ -20,13 +29,6 @@ import type PromotionMetaModuleService from '../../../modules/promotion-meta/ser
  * 그건 이미 `COUPON_EXPIRED` 가 하는 일이다. 옛 `orderCreated` 훅의 I1(「기록 실패로 결제된
  * 주문을 되돌리지 않는다」)은 결제 뒤 훅에 맞는 정책이었다.
  */
-export type ConsumedCouponGrants = { cart_id: string; grant_ids: string[] };
-
-/** 훅이 앞에서 모아 두는 판정 — 어느 쿠폰을, 장이 사용을 지배하는지(`grantsGovernUsage`)와 함께. */
-export type ConsumeRequest = { promotion_id: string; grants_govern: boolean };
-
-type ConsumeService = Pick<PromotionMetaModuleService, 'consumeOneUsableGrantForCart' | 'restoreGrants'>;
-
 export async function consumeCouponGrantsForCart(
   service: ConsumeService,
   input: { cart_id: string; customer_id: string | null; now: Date },
@@ -52,7 +54,13 @@ export async function consumeCouponGrantsForCart(
     if (result.outcome === 'already') continue;
     if (request.grants_govern) {
       // 카트 미들웨어(`per-customer-limit`)와 같은 토큰 — 스토어프론트가 정확 일치로 본다.
-      await service.restoreGrants(grantIds);
+      // 되돌리기가 실패해도 거절 토큰은 지킨다 — 스토어프론트가 정확 일치로 보는 값이다. 못 놓은 장은
+      // 스위퍼(주문 없는 소모)가 받는다. 삼키는 것은 «undo 의 실패»이지 소모의 실패가 아니다.
+      try {
+        await service.restoreGrants(grantIds);
+      } catch {
+        // 스위퍼가 받는다.
+      }
       throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');
     }
     // `public` 쿠폰(장이 지배하지 않음)의 `none` 은 소모할 장이 없을 뿐이다 — 정책이 정한다.

@@ -319,9 +319,11 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
   자체는 **다음 배포 뒤 별도 PR 에서 DROP** 한다. CLAUDE.md 의 「column drop 은 2 PR」 규칙인데,
   Medusa 에서는 이 규칙이 더 무겁다 — 컨테이너가 부팅하며 스스로 migrate 하므로 같은 PR 에 DROP 을
   넣으면 롤링 중 옛 태스크(`orderCreated` 훅이 아직 `order_id` 를 쓴다)가 DROP 을 만난다. 옛 훅은 그
-  실패를 삼키니 사고는 아니지만, 규칙을 깨서 얻는 것이 없다. DROP PR 의 선행 조건 하나: 라이브에서
-  `SELECT count(*) FROM coupon_grant WHERE order_id IS NOT NULL` 이 0 인 것을 본다. 「어느 주문이 썼나」는
-  그 뒤로 `order_cart` 조인이 답한다.
+  실패를 삼키니 사고는 아니지만, 규칙을 깨서 얻는 것이 없다. DROP PR 의 선행 조건: 라이브에서 (ⅰ)
+  PR-3 배포 시각 이후에 `order_id` 가 쓰인 행이 없고(`SELECT count(*) FROM coupon_grant WHERE
+  order_id IS NOT NULL AND updated_at > '<PR-3 배포 시각>'` = 0 — 백필·옛 행의 `order_id` 는 남아
+  있어도 된다), (ⅱ) 소스에 `order_id` 를 읽는 코드가 0 이며(grep), (ⅲ) 위 배포 제약의 롤링 창 집합이
+  비어 있는 것을 본다. 「어느 주문이 썼나」는 그 뒤로 `order_cart` 조인이 답한다.
 - **되돌림 본체는 하나다** — `restoreGrants(ids)`. 훅 보상(이번 실행이 잡은 id) · 취소 구독자(카트로
   고른 id) · 아래 스위퍼(조건으로 고른 id) 가 전부 이것을 지난다. 「만료된 장은 되살리지 않는다」 는
   고르는 쪽(구독자)의 필터로 남기고, 보상은 잡은 것을 무조건 놓는다 — 보상은 undo 이지 정책이 아니다.
@@ -393,6 +395,16 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 배포 제약: additive 마이그레이션 1건, Medusa 컨테이너가 부팅 시 자체 migrate 하므로(CLAUDE.md) 순서
 제약 없음. 옛 태스크는 새 컬럼을 무시한다. 배포 직후 스위퍼의 첫 회는 0건이어야 한다 — 옛 행은
 `cart_id` 가 없어 조건에 안 걸린다.
+
+🔴 **롤링 창의 사각지대 하나.** 배포 중 옛 태스크와 새 태스크가 함께 산다. 옛 태스크(`orderCreated` 훅)가 그 창에서
+소모한 장은 `used_at`·`order_id` 만 찍히고 `cart_id` 가 없다. 그 주문이 나중에 취소되면 새 구독자는 `order_cart` →
+`cart_id` 로 장을 찾으므로 **0건을 되돌리고 조용히 끝난다** — `order_id` 폴백을 두지 않기로 한 결정의 대가다.
+창은 롤링 시간(분 단위)이고 대상은 그 사이 쿠폰 주문 중 취소되는 것뿐이지만, 보이지 않게 잃는 것이라 배포 직후
+한 번 센다:
+`SELECT id, promotion_id, customer_id, order_id FROM coupon_grant WHERE used_at IS NOT NULL AND cart_id IS NULL AND order_id IS NOT NULL;`
+이 집합은 취소 시 자동 복원되지 않으므로, 그 주문이 취소되면 `used_at` 을 수동으로 비운다. 집합이 비면 끝이다.
+같은 창의 다른 잔상 — 옛 태스크가 완료한 카트를 새 태스크가 재완료하면 `already` 가 아니라 `none` 이 나온다 —
+은 재완료 자체가 드물어 그대로 둔다.
 
 ### 이 개정이 본문에서 바꾸는 것
 

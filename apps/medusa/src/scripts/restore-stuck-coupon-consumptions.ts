@@ -50,7 +50,7 @@ export async function restoreStuckCouponConsumptions(
   const cartIds = [...new Set(candidates.map((c) => c.cart_id))];
   const { data: links } = await query.graph({
     entity: 'order_cart',
-    fields: ['cart_id', 'order_id'],
+    fields: ['cart_id'],
     filters: { cart_id: cartIds },
   });
   const withOrder = new Set((links ?? []).map((l: { cart_id: string }) => l.cart_id));

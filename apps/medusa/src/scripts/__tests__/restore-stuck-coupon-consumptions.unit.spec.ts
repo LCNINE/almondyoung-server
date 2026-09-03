@@ -62,6 +62,7 @@ describe('restoreStuckCouponConsumptions — 주문 없는 소모만 되돌린�
   });
 
   it('usedBefore 는 now − minAgeMs 다 (기본 60분)', async () => {
+    delete process.env.COUPON_STUCK_MIN_AGE_MINUTES;
     const { container, service } = makeContainer({ stuck: [], links: [], carts: [] });
     const now = new Date('2026-09-10T12:00:00.000Z');
     await restoreStuckCouponConsumptions(container, { now });

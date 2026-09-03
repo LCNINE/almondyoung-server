@@ -61,7 +61,7 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
 
   const rows = (await linkModule.list(
     {},
-    { select: ['customer_id', 'promotion_id', 'created_at', 'expires_at', 'used_at', 'order_id', 'issued_via'] },
+    { select: ['customer_id', 'promotion_id', 'created_at', 'expires_at', 'used_at', 'issued_via'] },
   )) as any[];
 
   logger.info(`[grant-backfill] mode=${dryRun ? 'dry-run' : 'write'} links=${rows.length}`);
