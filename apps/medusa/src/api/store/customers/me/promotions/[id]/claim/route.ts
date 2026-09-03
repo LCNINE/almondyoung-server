@@ -93,7 +93,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   // 결정 2 완료) — 복구할 게 없으니 다시 빠른 경로로 끝나도 안전하다.
   const myGrants = grantsFor(grants, promotionId);
   if (hasUsableGrant(myGrants, now)) {
-    return res.status(200).json({ issued: false, reason: 'already_issued' });
+    return res.status(200).json({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
   }
 
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
@@ -145,7 +145,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
-  // `already_issued` 든 `issued` 든 200 이다 — 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는
-  // 중복일 때 트랜잭션과 함께 되감겼다(따닥 한 번에 2명분이 소진되지 않는다).
-  return res.status(200).json({ success: true, promotion_id: promotionId });
+  // 200 본문은 빠른 경로와 **같은 모양**이다 (PR-2 결정 4). `issued` 가 이번 클릭이 장을 만들었는지,
+  // `reason` 은 안 만들었을 때만 붙는다. 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는 중복일 때
+  // 트랜잭션과 함께 되감겼다(따닥 한 번에 2명분이 소진되지 않는다).
+  if (outcome.verdict === 'already_issued') {
+    return res.status(200).json({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
+  }
+  return res.status(200).json({ success: true, promotion_id: promotionId, issued: true });
 }

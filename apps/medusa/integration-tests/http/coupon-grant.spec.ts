@@ -581,14 +581,18 @@ medusaIntegrationTestRunner({
 
       it('이미 보유한 고객의 재클레임은 워크플로를 다시 돌리지 않는다', async () => {
         const promotionId = await createPromo(`RECLAIM${seq}`, { visibility: 'claimable' });
-        await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        const first = await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        // 두 경로(빠른 경로 / 원자 경로)의 200 본문이 한 모양이다 (PR-2 결정 4). 스토어프론트는
+        // 본문을 안 읽지만(claimCoupon: Promise<void>), 읽는 소비자가 생겼을 때 `success` 와
+        // `reason` 이 경로에 따라 undefined 로 갈리면 성공한 재클릭이 실패로 렌더된다.
+        expect(first.data).toEqual({ success: true, promotion_id: promotionId, issued: true });
         const second = await api.post(
           `/store/customers/me/promotions/${promotionId}/claim`,
           {},
           storeHeaders,
         );
         expect(second.status).toEqual(200);
-        expect(second.data.reason).toEqual('already_issued');
+        expect(second.data).toEqual({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
 
         expect(await svc().countIssuedGrants(promotionId)).toEqual(1);
       });
@@ -615,6 +619,8 @@ medusaIntegrationTestRunner({
           storeHeaders,
         );
         expect(second.status).toEqual(200);
+        // 이 재클릭은 빠른 경로가 아니라 원자 경로의 duplicate 다 — 그래도 본문은 같은 모양이어야 한다.
+        expect(second.data).toEqual({ success: true, promotion_id: promotionId, issued: false, reason: 'already_issued' });
         // 🔴 `second.status === 200` 만으로는 이 가드가 상한 집행을 «통째로» 건너뛰도록
         // 바뀌어도 통과한다 — max_claims: 1 인 쿠폰에서 장이 2장이 되면 안 된다는 것까지
         // 같이 고정한다.
