@@ -436,7 +436,7 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
 
 - [ ] **Step 1: 백필 스크립트를 먼저 바꾼다 (삭제 전에 — 그래야 tsc 가 빨갛지 않다)**
 
-`backfill-coupon-grants.ts` 상단 import 에 `CouponGrantRow` 를 더한다: `import type PromotionMetaModuleService, { CouponGrantRow } from '../modules/promotion-meta/service';` (기존 import 형태에 맞춰 `type` 만 추가).
+`backfill-coupon-grants.ts` 상단 import 에 한 줄 더한다: `import type { CouponGrantRow } from '../modules/promotion-meta/service';` (기존 `import type PromotionMetaModuleService from …` 는 그대로 — `import type` 은 default 와 named 를 한 문장에 못 섞는다, TS1363). `promotionMetaService.listCouponGrants` 가 타입으로 안 열리면 `(promotionMetaService as any).listCouponGrants` 로 부른다 — `service.ts` 안에서도 생성 메서드는 그렇게 부른다.
 
 `promotionMetaService.issueGrant({…})` 호출을 다음으로 교체:
 
@@ -600,7 +600,10 @@ Run: `npm --prefix apps/medusa run test:unit` → 새 suite 4 passed.
 import { medusaIntegrationTestRunner } from '@medusajs/test-utils';
 import { PROMOTION_META_MODULE } from '../../src/modules/promotion-meta';
 import type PromotionMetaModuleService from '../../src/modules/promotion-meta/service';
-import { issueCouponGrantWorkflow } from '../../src/workflows/coupons/workflows/issue-coupon-grant-workflow';
+import {
+  issueCouponGrantWorkflow,
+  type IssueGrantRequest,
+} from '../../src/workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 jest.setTimeout(120 * 1000);
 
@@ -609,7 +612,7 @@ jest.setTimeout(120 * 1000);
 medusaIntegrationTestRunner({
   testSuite: ({ getContainer }) => {
     const svc = () => getContainer().resolve(PROMOTION_META_MODULE) as PromotionMetaModuleService;
-    const run = (requests: Parameters<typeof issueCouponGrantWorkflow>[0] extends never ? never : any[]) =>
+    const run = (requests: IssueGrantRequest[]) =>
       issueCouponGrantWorkflow(getContainer()).run({ input: { requests } });
 
     describe('issueCouponGrantWorkflow — 배치 입력·verdict 출력', () => {
@@ -630,7 +633,7 @@ medusaIntegrationTestRunner({
 
       it('verdict 는 created·duplicated·상한으로 결정된다 — issued → already_issued → partial → exhausted', async () => {
         await svc().upsert({ promotion_id: 'promo_wf_v', max_claims: 3 });
-        const base = { promotion_id: 'promo_wf_v', issued_via: 'admin_manual', expires_at: null, max_claims: 3, enforce_cap: true };
+        const base = { promotion_id: 'promo_wf_v', issued_via: 'admin_manual' as const, expires_at: null, max_claims: 3, enforce_cap: true };
 
         const first = await run([{ ...base, customer_id: 'c1', issue_keys: ['a', 'b'] }]);
         expect(first.result.results[0]).toMatchObject({ verdict: 'issued', created: 2, duplicated: 0 });
