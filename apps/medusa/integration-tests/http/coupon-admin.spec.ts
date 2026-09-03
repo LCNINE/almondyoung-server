@@ -310,12 +310,15 @@ medusaIntegrationTestRunner({
       expect(await metaService.countIssuedGrants(promoId)).toEqual(0);
     });
 
-    // 🔴 ADR-0034 회귀 방지. 링크를 「남은 장이 없을 때만」 걷도록 바꾸면서 `remaining === 0`
-    // 하나로 판정했더니, 「쓴 장만 남았다」와 «애초에 아무 관계도 없었다»가 구별되지 않아
-    // 오타로 넣은 promotion_id 까지 「제거됨」으로 응답했다.
+    // 🔴 이 회귀는 원래 링크 유무 판정 버그였다(ADR-0034) — 「남은 장이 없을 때만」 링크를
+    // 걷도록 `remaining === 0` 하나로 판정했더니, 「쓴 장만 남았다」와 «애초에 아무 관계도
+    // 없었다»가 구별되지 않아 오타로 넣은 promotion_id 까지 「제거됨」으로 응답했다. Task 7 로
+    // 링크 자체가 사라지면서 그 버그의 재발 경로도 같이 사라졌지만, «회수할 게 없다»의 두
+    // 원인 — 아예 없었다(아래) / 있었지만 다 썼다(그 아래) — 을 `removed` 가 여전히 정직하게
+    // 구별하는지는 grant 모델만으로도 계속 지켜야 하는 불변식이라 테스트를 남긴다.
     it('revoke reports nothing removed for a pair that never existed', async () => {
       const promoId = await createPromo('NEVERHELD', { visibility: 'claimable', max_claims: 5 });
-      // 발급하지 않는다 — 장도 링크도 없는 쌍이다.
+      // 발급하지 않는다 — grant 가 없는 쌍이다.
 
       const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
         ...adminHeaders,
@@ -323,11 +326,17 @@ medusaIntegrationTestRunner({
       });
 
       expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([]);
       expect(res.data.promotion_ids).toEqual([]);
       expect(res.data.revoked_grants).toEqual(0);
     });
 
-    it('revoke keeps used grants and still dismisses the link when none remain usable', async () => {
+    // Task 7 이전 이름은 '... and still dismisses the link' 였다 — 하지만 이 시나리오
+    // (grant 1장, 이미 사용됨) 는 `remaining` 이 1(≠0)이라 옛 코드에서도 링크를 안 걷었다.
+    // 이름이 실제로 검증한 적 없는 걸 주장하고 있었다. 링크 자체가 사라진 지금 그 주장은
+    // 의미가 없으므로 지우고, 이 테스트가 실제로 지키는 불변식(쓴 장은 회수돼도 남는다) 만
+    // 이름에 남긴다.
+    it('revoke keeps used grants when none remain usable', async () => {
       const promoId = await createPromo('REVOKEUSED', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
@@ -343,6 +352,7 @@ medusaIntegrationTestRunner({
 
       // 회수할(미사용) 장이 없으므로 아무것도 제거되지 않았다고 보고해야 한다.
       expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([]);
       expect(res.data.revoked_grants).toEqual(0);
       // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다.
       const left = await metaService.listGrantsForCustomer(customerId);

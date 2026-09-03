@@ -169,8 +169,10 @@ medusaIntegrationTestRunner({
         // `(promotion_id, customer_id, issue_key)` 유니크 인덱스가 둘 중 하나를 유니크
         // 위반으로 되감는다(따닥 방어). max_claims: 10 은 두 동시 요청으로는 닿지도 않는
         // 값이라 상한 집행 경로를 재현하지 않는다 — 상한 락의 실제 경합 테스트는
-        // `service.integration.spec.ts` 의 "동시에 서로 다른 고객 둘이 상한 1에 경합하면
-        // 하나만 살아남는다" 가 맡는다(서로 다른 고객이라 유니크 인덱스가 못 막는 경우).
+        // `service.integration.spec.ts` 의 "발급은 promotion_meta 행 락으로 직렬화된다 —
+        // 락을 빼면 빨개진다" 가 맡는다(타이밍 경합을 기다리는 대신 락을 밖에서 쥐고
+        // 대기 여부를 결정론적으로 관찰한다 — 옛 「서로 다른 고객 둘이 경합」테스트는
+        // 재현이 안 돼 이 방식으로 대체됐다).
         const promotionId = await createPromo(`G3${seq}`, {
           visibility: 'claimable',
           max_claims: 10,
@@ -546,6 +548,72 @@ medusaIntegrationTestRunner({
         expect(res.data.skipped).toEqual([]);
         expect(await svc().listGrantsForPromotion(assignedId)).toHaveLength(1);
         expect(await svc().listGrantsForPromotion(claimableId)).toHaveLength(1);
+      });
+    });
+
+    /**
+     * Task 7 — customer↔promotion 링크 쓰기 제거 (ADR-0034 결정 2 완료). 회수·재클레임 둘 다
+     * 이제 grant 만으로 끝난다. 링크가 있던 시절엔 이 두 경로가 `link.dismiss`/워크플로의
+     * `createRemoteLinkStep` 을 각자 걸고 있었다 — 그게 사라졌다는 것 자체가 회귀 없이
+     * 확인돼야 한다.
+     */
+    describe('링크 쓰기 제거 (Task 7)', () => {
+      it('회수는 링크와 무관하게 grant 만으로 끝난다', async () => {
+        const promotionId = await createPromo(`REVOKE${seq}`, { visibility: 'assigned_only' });
+        // 🔴 브리프 원문은 `submit_id` 없이 발급 POST 를 불렀는데, 이 라우트는 그걸 필수로
+        // 요구한다(없으면 400) — 위에서 이미 만들어 둔 `issue` 헬퍼를 그대로 쓴다.
+        await issue(promotionId, `revoke-${seq}`);
+        // 🔴 브리프 원문은 `promotion_ids` 를 쿼리스트링으로 실었는데, 이 라우트는 body 만
+        // 읽는다(`req.body as RemovePromotionsBody`) — 다른 모든 DELETE 호출과 같은 모양으로
+        // 고쳐 부른다. 그러지 않으면 400(`promotion_ids is required`)이 나 이 테스트가
+        // 검증하려는 것(링크 없이도 `removed` 가 정직하다)을 아예 확인하지 못한다.
+        const del = await api.delete(`/admin/customers/${customerId}/promotions`, {
+          ...adminHeaders,
+          data: { promotion_ids: [promotionId] },
+        });
+        expect(del.status).toEqual(200);
+        expect(del.data.removed).toEqual([{ promotion_id: promotionId, grants: 1 }]);
+
+        const after = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
+        expect(after.data.promotions).toEqual([]);
+      });
+
+      it('이미 보유한 고객의 재클레임은 워크플로를 다시 돌리지 않는다', async () => {
+        const promotionId = await createPromo(`RECLAIM${seq}`, { visibility: 'claimable' });
+        await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        const second = await api.post(
+          `/store/customers/me/promotions/${promotionId}/claim`,
+          {},
+          storeHeaders,
+        );
+        expect(second.status).toEqual(200);
+        expect(second.data.reason).toEqual('already_issued');
+
+        expect(await svc().countIssuedGrants(promotionId)).toEqual(1);
+      });
+
+      it('이미 쓴 장을 가진 고객의 재클레임은 쿠폰이 소진돼 있어도 200 이다 (§5.1 200 계약)', async () => {
+        // 🔴 이 케이스는 위 테스트와 다르다 — 위는 «usable 한 장이 있는» 고객이라 빠른 경로
+        // (hasUsableGrant) 가 잡는다. 여기는 그 장을 «다 쓴» 고객이라 hasUsableGrant 는
+        // false 다. `myGrants.length === 0` 를 같이 안 보면, 읽기 기반 소진 pre-check
+        // (countIssuedGrants ≥ maxClaims) 가 이 재시도까지 막아 「소진되었습니다」를 던진다 —
+        // 그런데 issue_key='claim' 고정이라 원자 경로는 이 재시도를 항상 duplicate 로
+        // 판정한다(상한보다 먼저). 자기 몫을 이미 쓴 사람이 재클릭했을 때도 200 이어야
+        // 스펙 §5.1 이 지켜진다.
+        const promotionId = await createPromo(`RECLAIMUSED${seq}`, {
+          visibility: 'claimable',
+          max_claims: 1,
+        });
+        await api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
+        const [grant] = await svc().listGrantsForCustomer(customerId);
+        expect(await svc().consumeGrantIfUnused(grant.id, `order_${seq}`, new Date())).toBe(true);
+
+        const second = await api.post(
+          `/store/customers/me/promotions/${promotionId}/claim`,
+          {},
+          storeHeaders,
+        );
+        expect(second.status).toEqual(200);
       });
     });
   },

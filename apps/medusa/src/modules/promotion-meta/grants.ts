@@ -4,10 +4,11 @@ import type { CouponGrantRow } from './service';
  * 발급된 «장» 들에 대한 판정 — 컨테이너도 워크플로도 모르는 순수 함수다.
  *
  * `validity.ts` 와 같은 자리에 두는 이유(P1 교훈): 라우트 안 클로저로 두면 검증 대상 밖이다.
- * 소비자는 6곳이다 — 카트 미들웨어(`per-customer-limit.ts`) · 체크아웃 백스톱
- * (`complete-cart.ts`) · 주문 생성 소모 훅(`coupon-usage.ts`) · 마이페이지
- * (`store/customers/me/promotions/route.ts`) · 이벤트 페이지(`store/events/[slug]/route.ts`) ·
- * 코드 미리보기(`store/coupons/preview/route.ts`).
+ * 소비자는 7곳이다(2026-09-03, Task 7 이 클레임을 더했다) — 카트 미들웨어
+ * (`per-customer-limit.ts`) · 체크아웃 백스톱(`complete-cart.ts`) · 주문 생성 소모 훅
+ * (`coupon-usage.ts`) · 마이페이지(`store/customers/me/promotions/route.ts`) · 이벤트 페이지
+ * (`store/events/[slug]/route.ts`) · 코드 미리보기(`store/coupons/preview/route.ts`) ·
+ * 쿠폰 클레임(`store/customers/me/promotions/[id]/claim/route.ts`).
  *
  * ⚠️ 「사용 가능」의 정의는 `validity.ts` 의 `isUsable` 과 **경계가 같아야 한다** — 만료
  * 시각은 양쪽 다 포함이다. 두 곳이 어긋나면 카트에는 붙는데 주문에서 거절되는 창이 생긴다.

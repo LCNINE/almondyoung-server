@@ -5,6 +5,7 @@ import PromotionMetaModuleService from '../../../../../../../modules/promotion-m
 import { toMetadataShape } from '../../../../../../admin/promotions/helpers';
 import { computeExpiresAt, issuanceWindowState } from '../../../../../../../modules/promotion-meta/validity';
 import { evaluateIssuanceRules } from '../../../../../../../modules/promotion-meta/issuance-rules';
+import { grantsFor, hasUsableGrant } from '../../../../../../../modules/promotion-meta/grants';
 import { issueCouponGrantWorkflow } from '../../../../../../../workflows/coupons/workflows/issue-coupon-grant-workflow';
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
@@ -51,13 +52,13 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 기간이 끝난 쿠폰입니다.');
   }
 
-  const [{ data: customers }, allLinks] = await Promise.all([
+  const [{ data: customers }, grants] = await Promise.all([
     query.graph({
       entity: 'customer',
       fields: ['id', 'groups.id'],
       filters: { id: customerId },
     }),
-    promotionMetaService.listGrantsForPromotion(promotionId),
+    promotionMetaService.listGrantsForCustomer(customerId),
   ]);
 
   // 발급 시점 룰 평가 — 판정은 modules/promotion-meta/issuance-rules.ts 하나뿐이다.
@@ -86,24 +87,37 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   // 있으면, 소진된 쿠폰에서 이미 받은 사람이 재클릭할 때 「발급 수량이 모두 소진되었습니다」가
   // 나간다. 그래서 그 빠른 거절은 «새로 받으려는 사람» 에게만 적용한다.
   //
-  // 🔴 옛 코드는 여기서 아예 `return 200` 으로 빠져나갔는데, 그게 링크 복구를 영영 막았다 —
-  // 링크 생성이 한 번 실패해 「장은 있는데 쿠폰함에 안 보이는」 상태가 되면, 재클릭이 이
-  // 조기 반환에 걸려 링크를 다시 만들 기회가 없었다(그 코드 주석도 「로그가 유일한 단서다」라고
-  // 인정했다). 이제는 이미 가진 사람도 워크플로를 그대로 지나가고, `createRemoteLinkStep` 의
-  // upsert 가 링크를 복구한다.
-  const myLiveGrants = allLinks.filter((g) => g.customer_id === customerId);
-  const alreadyHolds = myLiveGrants.length > 0;
+  // Task 7: 이 빠른 경로는 한때 있다가 사라졌었다 — customer↔promotion 링크가 살아 있던
+  // 시절에는 여기서 200 으로 빠져나가면 링크 복구 기회(워크플로를 다시 지나가야만 도는
+  // `createRemoteLinkStep` 의 upsert)를 영영 잃었다. 이제 그 링크 자체가 없다(ADR-0034
+  // 결정 2 완료) — 복구할 게 없으니 다시 빠른 경로로 끝나도 안전하다.
+  const myGrants = grantsFor(grants, promotionId);
+  if (hasUsableGrant(myGrants, now)) {
+    return res.status(200).json({ issued: false, reason: 'already_issued' });
+  }
 
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
-  // 읽기 기반 빠른 거절(백필 이전 링크까지 덮는다). 최종 권위는 아래 원자 경로다.
-  if (!alreadyHolds && maxClaims !== null && allLinks.length >= maxClaims) {
-    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+  // 읽기 기반 빠른 거절. 최종 권위는 아래 원자 경로다 — 이 카운트와 실제 발급 사이 레이스는
+  // `issueGrantWithSlot` 의 `enforce_cap` 이 잡는다.
+  //
+  // 🔴 `myGrants.length === 0` 를 반드시 같이 본다 — «usable 한 장이 없다» 가 «이 쿠폰과
+  // 아무 관계가 없다» 를 뜻하지 않는다. 이미 쓴 장을 가진 고객이 재클릭하면 `myGrants` 는
+  // 비지 않지만 `hasUsableGrant` 는 false 라 위 빠른 경로를 못 탄다. `issue_key` 가
+  // `'claim'` 고정이라 그 재시도는 원자 경로에서 반드시 `duplicate` 로 끝나는데
+  // (`중복은 상한보다 먼저 판정된다`, service.integration.spec.ts), 그 앞에서 이 카운트가
+  // 먼저 던지면 소진된 쿠폰을 이미 써버린 자기 자신에게 「소진되었습니다」가 나간다 — 스펙
+  // §5.1 의 200 계약을 새로 가진 grant 만 아는 사람에게 위반하는 셈이다. «새로 받으려는
+  // 사람»(이 쿠폰의 grant 가 하나도 없는 사람)만 이 조회를 문다.
+  if (myGrants.length === 0 && maxClaims !== null) {
+    const issuedCount = await promotionMetaService.countIssuedGrants(promotionId);
+    if (issuedCount >= maxClaims) {
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+    }
   }
 
-  // 발급·슬롯·표시용 링크가 한 워크플로다 (ADR-0034 결정 1·2). 링크가 실패하면 장까지
-  // 되감기므로 「받았는데 쿠폰함에 안 보이는」 쿠폰이 만들어지지 않는다 — 고객은 실패를
-  // 보고 다시 누르면 되고, 그 재시도는 `issue_key` 가 고정이라 멱등하다.
+  // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다. 실패하면
+  // 고객은 다시 누르면 되고, 그 재시도는 `issue_key` 가 고정이라 멱등하다.
   const { result: outcome } = await issueCouponGrantWorkflow(req.scope).run({
     input: {
       promotion_id: promotionId,

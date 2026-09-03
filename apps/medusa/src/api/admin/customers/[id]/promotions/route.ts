@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
@@ -250,9 +250,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
     const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
 
-    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2). 링크가 실패하면
-    // 장까지 함께 되감기므로, 옛 `link_error`(장은 있는데 목록에 안 보임) 상태가
-    // 만들어지지 않는다 — 실패는 `grant_error` 하나로 정직하게 나간다.
+    // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다(정본이
+    // grant 하나로 좁혀지며 아무도 링크를 안 읽으니 지킬 이유도 없다). 실패는 `grant_error`
+    // 하나로 정직하게 나간다.
     const issueKeys = Array.from({ length: quantity }, (_, i) => `${submitId}:${i + 1}`);
 
     let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
@@ -316,52 +316,21 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
-
-  // 🔴 「지울 링크가 실제로 있었는가」를 미리 알아야 정직하게 보고할 수 있다. 이것 없이
-  // `remaining === 0` 만 보면 **애초에 아무 관계도 없던 쌍**(오타로 넣은 promotion_id 포함)이
-  // 「제거됨」으로 응답된다. 루프 밖에서 한 번만 조회한다.
-  const { data: linkedCustomers } = await query.graph({
-    entity: 'customer',
-    fields: ['id', 'promotions.id'],
-    filters: { id: customerId },
-  });
-  const linkedPromotionIds = new Set<string>(
-    (linkedCustomers?.[0]?.promotions ?? []).map((p: any) => p.id as string),
-  );
 
   const removed: { promotion_id: string; grants: number }[] = [];
   for (const pid of promotion_ids) {
-    const { revoked, remaining } = await promotionMetaService.revokeGrants(pid, customerId);
+    const { revoked } = await promotionMetaService.revokeGrants(pid, customerId);
 
     // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
     // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
     // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
 
-    // 🔴 링크는 「남은 장이 없을 때만」 걷는다. 두 방향 다 틀리면 사고다:
-    //  - 쓴 장이 남았는데 걷으면 마이페이지의 「사용완료」가 사라진다(링크 행으로 열거한다).
-    //  - 회수할 장이 0개라고 건너뛰면(옛 `if (n === 0) continue`), 링크만 있고 장이 없는 쌍
-    //    — 백필 이전 배정, 또는 장은 생겼는데 링크만 남은 재시도 — 을 **영원히 못 끊는다**.
-    //    응답은 `0 promotion(s) removed` 인데 쿠폰은 고객 화면에 계속 남아 있었다.
-    //
-    // `linkedPromotionIds` 를 함께 보는 이유: 「남은 장 없음」에는 «쓴 장만 남았다» 와
-    // «애초에 아무것도 없었다» 가 둘 다 들어온다. 후자까지 걷었다고 보고하면 오타로 넣은
-    // promotion_id 도 「제거됨」이 된다.
-    const dismissed = remaining === 0 && linkedPromotionIds.has(pid);
-    if (dismissed) {
-      await link
-        .dismiss([
-          {
-            [Modules.CUSTOMER]: { customer_id: customerId },
-            [Modules.PROMOTION]: { promotion_id: pid },
-          },
-        ])
-        .catch(() => {});
-    }
-
-    if (revoked > 0 || dismissed) {
+    // 링크가 없으므로 「지웠다고 보고했는데 안 지워졌다」가 성립하지 않는다 (Task 7, 리뷰
+    // 발견 5). 옛 코드는 링크 유무로 `dismissed` 를 «먼저» 계산해 두고 그 dismiss 호출의
+    // 실패를 `.catch(() => {})` 로 삼켰다 — `removed` 는 이제 `revokeGrants` 의 실제
+    // 결과만 반영한다.
+    if (revoked > 0) {
       removed.push({ promotion_id: pid, grants: revoked });
     }
   }
@@ -370,6 +339,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     success: true,
     message: `${removed.length} promotion(s) removed from customer`,
     customer_id: customerId,
+    removed,
     promotion_ids: removed.map((r) => r.promotion_id),
     revoked_grants: removed.reduce((s, r) => s + r.grants, 0),
   });

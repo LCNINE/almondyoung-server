@@ -504,9 +504,9 @@ class PromotionMetaModuleService extends MedusaService({
    * 어드민이 뺏은 쿠폰을 되살려 버린다(설계 결정 3) — soft delete 와 회수 표지는 별개의
    * 질문에 답한다: 하나는 「슬롯을 세는가」, 다른 하나는 「회수됐는가」.
    *
-   * `remaining` 은 회수 후에도 남는 장(= 이미 쓴 장)의 수다. 호출부는 이것으로 표시용 링크를
-   * 끊을지 정한다 — 쓴 이력이 남아 있으면 링크를 끊으면 안 된다(마이페이지의 「사용완료」가
-   * 링크 행으로 열거된다).
+   * `remaining` 은 회수 후에도 남는 장(= 이미 쓴 장)의 수다. Task 7 이전엔 호출부(두 DELETE
+   * 라우트)가 이것으로 표시용 링크를 끊을지 정했다 — 링크 자체가 사라진 지금 그 용도는
+   * 없어졌고, `revoked`(이번에 실제로 회수된 수)와 구분되는 값으로만 남는다.
    */
   async revokeGrants(promotionId: string, customerId: string): Promise<{ revoked: number; remaining: number }> {
     const rows = (await (this as any).listCouponGrants({

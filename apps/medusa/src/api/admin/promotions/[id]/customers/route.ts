@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { CouponGrantRow } from '../../../../../modules/promotion-meta/service';
@@ -273,9 +273,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       }
     }
 
-    // 발급과 표시용 링크를 한 워크플로로 묶는다 (ADR-0034 결정 2). 링크가 실패하면
-    // 장까지 함께 되감기므로, 옛 `link_error`(장은 있는데 목록에 안 보임) 상태가
-    // 만들어지지 않는다 — 실패는 `grant_error` 하나로 정직하게 나간다.
+    // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다(형제
+    // 고객축 라우트와 같은 이유). 실패는 `grant_error` 하나로 정직하게 나간다.
     const issueKeys = Array.from({ length: qty }, (_, i) => `${submit_id}:${i + 1}`);
 
     let outcome: { created: string[]; duplicated: string[]; exhausted: boolean };
@@ -330,48 +329,20 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'customer_ids is required');
   }
 
-  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
-
-  // 🔴 「지울 링크가 실제로 있었는가」를 미리 알아 둔다 — 형제(고객축) 라우트와 같은 이유다.
-  // 없으면 아무 관계도 없던 고객 id(오타 포함)까지 「회수됨」으로 응답한다. 루프 밖 1회 조회.
-  const { data: linkedCustomers } = await query.graph({
-    entity: 'customer',
-    fields: ['id', 'promotions.id'],
-    filters: { id: customer_ids },
-  });
-  const linkedCustomerIds = new Set<string>(
-    (linkedCustomers ?? [])
-      .filter((c: any) => (c.promotions ?? []).some((p: any) => p.id === promotionId))
-      .map((c: any) => c.id as string),
-  );
 
   const removed: { customer_id: string; grants: number }[] = [];
   for (const cid of customer_ids) {
-    const { revoked, remaining } = await promotionMetaService.revokeGrants(promotionId, cid);
+    const { revoked } = await promotionMetaService.revokeGrants(promotionId, cid);
 
     // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
     // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
     // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
 
-    // 🔴 링크는 「남은 장이 없을 때만」 걷는다 — 형제(고객축) 라우트와 같은 판단이다.
-    // 쓴 장이 남았는데 걷으면 마이페이지의 「사용완료」가 사라지고, 회수할 장이 0개라고
-    // 건너뛰면(옛 `if (n === 0) continue`) 링크만 있고 장이 없는 쌍을 영원히 못 끊는다.
-    // 「남은 장 없음」에 «애초에 아무것도 없던 쌍» 이 섞여 들어오므로 링크 유무를 함께 본다.
-    const dismissed = remaining === 0 && linkedCustomerIds.has(cid);
-    if (dismissed) {
-      await link
-        .dismiss([
-          {
-            [Modules.CUSTOMER]: { customer_id: cid },
-            [Modules.PROMOTION]: { promotion_id: promotionId },
-          },
-        ])
-        .catch(() => {});
-    }
-
-    if (revoked > 0 || dismissed) {
+    // 링크가 없으므로 「지웠다고 보고했는데 안 지워졌다」가 성립하지 않는다 (Task 7, 리뷰
+    // 발견 5) — 형제(고객축) 라우트와 같은 이유다. `removed` 는 `revokeGrants` 의 실제
+    // 결과만 반영한다.
+    if (revoked > 0) {
       removed.push({ customer_id: cid, grants: revoked });
     }
   }
@@ -380,6 +351,7 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     success: true,
     message: `${removed.length} customer(s) revoked from promotion`,
     promotion_id: promotionId,
+    removed,
     customer_ids: removed.map((r) => r.customer_id),
     revoked_grants: removed.reduce((s, r) => s + r.grants, 0),
   });

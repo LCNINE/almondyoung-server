@@ -265,8 +265,12 @@ medusaIntegrationTestRunner({
           adminHeaders,
         );
 
-        const [row] = await listLinks(id);
-        expect(row.expires_at).toBeNull();
+        // 🔴 이 자리는 위 두 테스트와 같은 (a) 계약 변경 대상이었는데 마이그레이션 때
+        // 빠졌다 — 발급 워크플로가 여전히 링크를 세우던 동안은 `listLinks` 가 우연히 빈
+        // 값(=null)을 돌려줘 통과했을 뿐이다. Task 7 로 링크 쓰기 자체가 사라지면서 그
+        // 우연이 깨졌다(행이 아예 없어 구조분해가 `undefined`) — grant 를 읽도록 고친다.
+        const [grant] = await metaService().listGrantsForPromotion(id);
+        expect(grant.expires_at).toBeNull();
       });
 
       it('발급 창이 지난 쿠폰은 expired 로 skip 된다 — 캠페인이 아니라 meta 가 기준이다', async () => {
@@ -280,7 +284,11 @@ medusaIntegrationTestRunner({
           adminHeaders,
         );
         expect(res.data.skipped.find((s: any) => s.promotion_id === id)?.reason).toEqual('expired');
-        expect(await listLinks(id)).toHaveLength(0);
+        // 🔴 Task 7 이전엔 이 단언이 "링크가 없다" 를 봤다 — 발급 자체가 skip 됐으니 원래도
+        // 없었을 값이다. 이제 링크는 발급 성공 여부와 무관하게 «항상» 비어 있으므로
+        // (아무도 안 쓴다) 그 단언은 이 라우트가 무엇을 하든 항상 참인 공허한 단언이 된다.
+        // grant 가 없다는 것으로 바꿔야 이 테스트가 «정말 발급이 안 됐다» 를 지킨다.
+        expect(await metaService().listGrantsForPromotion(id)).toHaveLength(0);
       });
 
       it('발급 창이 아직인 쿠폰은 not_started 로 skip 된다', async () => {
