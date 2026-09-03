@@ -1,0 +1,77 @@
+/**
+ * 편집기 겉모습만 우리 화면에 맞춘다 — BlockNote 소스는 건드리지 않는다.
+ * 색은 전부 admin-web 의 CSS 변수를 참조하므로 팔레트를 바꾸면 편집기도 따라온다.
+ */
+.archive-block-editor {
+  --bn-colors-editor-background: transparent;
+  --bn-colors-editor-text: var(--foreground);
+  --bn-colors-menu-background: var(--popover);
+  --bn-colors-menu-text: var(--popover-foreground);
+  --bn-colors-hovered-background: var(--accent);
+  --bn-colors-hovered-text: var(--accent-foreground);
+  --bn-colors-selected-background: var(--primary);
+  --bn-colors-selected-text: var(--primary-foreground);
+  --bn-colors-border: var(--border);
+  --bn-colors-side-menu: var(--muted-foreground);
+  --bn-font-family: inherit;
+
+  background: transparent;
+}
+
+/* 본문 폭 — 노션과 같은 읽기 폭. 좌우 여백은 블록 핸들이 놓일 자리다. */
+.archive-block-editor .bn-editor {
+  padding-inline: 0;
+}
+
+.archive-block-editor .bn-block-outer {
+  line-height: 1.75;
+}
+
+.archive-block-editor .bn-inline-content {
+  word-break: break-word;
+}
+
+/* 제목 위 여백을 넉넉히 줘야 문단 덩어리가 눈으로 갈린다. */
+.archive-block-editor [data-content-type='heading'] {
+  margin-top: 1.5em;
+}
+
+.archive-block-editor [data-level='1'] {
+  font-size: 1.875rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.archive-block-editor [data-level='2'] {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.archive-block-editor [data-level='3'] {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.archive-block-editor [data-content-type='codeBlock'] {
+  background: var(--grayscale-10);
+  border-radius: var(--radius);
+}
+
+.archive-block-editor [data-content-type='quote'] {
+  border-left: 3px solid var(--border);
+  padding-left: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+/* 표가 화면보다 넓으면 페이지 전체가 아니라 표 안에서 가로로 스크롤돼야 한다. */
+.archive-block-editor .bn-block-content[data-content-type='table'] {
+  overflow-x: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .archive-block-editor * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

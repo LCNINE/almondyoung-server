@@ -23,6 +23,7 @@ import { useMe, useMyRoles } from '@/lib/services/users';
 import { getFirstPagePath, mainMenus } from '@/lib/utils/menu';
 import {
   BarChart3,
+  BookOpen,
   Boxes,
   Building2,
   Crown,
@@ -41,6 +42,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 const iconMap = {
+  BookOpen,
   Users,
   Building2,
   Package,

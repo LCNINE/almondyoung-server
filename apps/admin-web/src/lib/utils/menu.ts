@@ -617,6 +617,15 @@ export const mainMenus: MainMenu[] = [
       },
     ],
   },
+  {
+    id: 'archive',
+    title: '아카이브',
+    icon: 'BookOpen',
+    defaultPath: '/archive',
+    // 실제 문서 목록은 /archive 화면이 자기 사이드바에 트리로 그린다.
+    // 여기 항목들은 헤더 드롭다운과 모바일 내비에서 쓰는 진입점이다.
+    children: [{ id: 'archive-pages', title: '문서', path: '/archive' }],
+  },
 ];
 
 // 첫 번째 페이지를 찾는 헬퍼 함수 추가

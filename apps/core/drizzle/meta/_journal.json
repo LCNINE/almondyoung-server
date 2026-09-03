@@ -589,6 +589,13 @@
       "when": 1788163398866,
       "tag": "20260831080318_add-shop-listing-views",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1788396252006,
+      "tag": "20260903004411_add-archive-pages",
+      "breakpoints": true
     }
   ]
 }
