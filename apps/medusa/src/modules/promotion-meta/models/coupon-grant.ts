@@ -26,6 +26,13 @@ const CouponGrant = model
       /** 이 한 장의 만료. 발급 시점에 `computeExpiresAt` 로 계산해 박는다. null = 무기한. */
       expires_at: model.dateTime().nullable(),
       used_at: model.dateTime().nullable(),
+      /**
+       * 이 장을 소모한 «카트». 소모는 `completeCartWorkflow` 의 `validate` 훅에서 일어나고 그 시점엔
+       * 주문이 없다 — 결정이 내려지는 순간에 존재하는 것이 키다 (ADR-0034 2026-09-04 개정, 결정 6).
+       * 주문은 Medusa 의 `order_cart` 링크로 닿는다. 백필된 옛 장은 null 이다(카트가 없었다).
+       */
+      cart_id: model.text().nullable(),
+      /** 옛 키. 읽기·쓰기 모두 끊겼다 — DROP 은 다음 배포 뒤 별도 PR (ADR-0034 결정 6, expand-contract). */
       order_id: model.text().nullable(),
       /** 어드민이 이 장을 회수한 시각. 사용된 장은 soft delete 되지 않으므로 이 열이 회수의 유일한 표지다. */
       revoked_at: model.dateTime().nullable(),
@@ -51,9 +58,11 @@ const CouponGrant = model
     // 벗어난 값은 통합 스펙에서 안 걸린다.
     { on: ['customer_id'], name: 'idx_coupon_grant_customer' },
     { on: ['promotion_id'], name: 'idx_coupon_grant_promotion' },
-    // `restoreGrantsByOrder` 가 `order.canceled` 마다 이 컬럼으로 조회한다. 테이블은 발급
-    // 1건당 1행으로 자란다 — 인덱스 없이는 취소마다 풀스캔이다.
+    // 옛 키의 인덱스. 컬럼과 함께 다음 배포 뒤 별도 PR 에서 지운다.
     { on: ['order_id'], name: 'idx_coupon_grant_order' },
+    // `restoreGrantsByCart`(주문 취소) 와 스위퍼(`listStuckConsumptions`) 가 이 컬럼으로 조회한다.
+    // 테이블은 발급 1건당 1행으로 자란다 — 인덱스 없이는 취소마다 풀스캔이다.
+    { on: ['cart_id'], name: 'idx_coupon_grant_cart' },
     { on: ['promotion_id', 'customer_id', 'issue_key'], name: 'idx_coupon_grant_issue_key', unique: true },
   ]);
 

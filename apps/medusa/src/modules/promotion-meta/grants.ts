@@ -4,8 +4,9 @@ import type { CouponGrantRow } from './service';
  * 발급된 «장» 들에 대한 판정 — 컨테이너도 워크플로도 모르는 순수 함수다.
  *
  * `validity.ts` 와 같은 자리에 두는 이유(P1 교훈): 라우트 안 클로저로 두면 검증 대상 밖이다.
- * 소비자는 6곳이다(2026-09-03, PR-2 가 소모 훅을 뺐다 — 소모는 `service.ts::consumeOneUsableGrant`
- * 가 SQL 로 한다) — 카트 미들웨어(`per-customer-limit.ts`) · 체크아웃 백스톱
+ * 소비자는 6곳이다(2026-09-04, PR-3 — 체크아웃 백스톱은 `hasUsableGrant` 를 더 읽지 않는다:
+ * 소모(`service.ts::consumeOneUsableGrantForCart`)가 곧 검사다. `grantsFor`·`grantsGovernUsage` 는
+ * 여전히 쓴다) — 카트 미들웨어(`per-customer-limit.ts`) · 체크아웃 백스톱
  * (`complete-cart.ts`) · 마이페이지(`store/customers/me/promotions/route.ts`) · 이벤트 페이지
  * (`store/events/[slug]/route.ts`) · 코드 미리보기(`store/coupons/preview/route.ts`) ·
  * 쿠폰 클레임(`store/customers/me/promotions/[id]/claim/route.ts`).
@@ -54,7 +55,7 @@ export function hasUsableGrant(grants: CouponGrantRow[], now: Date): boolean {
  *
  * ⚠️ **여섯 소비자 중 다섯 곳에서 쓴다**(2026-09-03 기준, ADR-0034 가 둘을 더 옮겼다) —
  * 거절이 일어나는 둘(카트 미들웨어 `per-customer-limit:59`·체크아웃 백스톱
- * `complete-cart:63`), 그 판정을 그대로 비춰야 하는 마이페이지
+ * `complete-cart:60`), 그 판정을 그대로 비춰야 하는 마이페이지
  * (`store/customers/me/promotions:172`), 그리고 표시 두 곳(`store/coupons/preview:95` ·
  * `store/events/[slug]:97`)이다. 표시와 판정이 갈리면 「목록엔 없는데 코드를 넣으면 쓰이는」
  * — 또는 그 반대로 「패널은 못 쓴다는데 카트는 받아주는」 — 쿠폰이 생긴다. 표시 둘은 그

@@ -38,6 +38,8 @@ export type CouponGrantRow = {
   issued_at: Date | string;
   expires_at: Date | string | null;
   used_at: Date | string | null;
+  /** 이 장을 소모한 카트. 백필된 옛 장은 null. */
+  cart_id: string | null;
   order_id: string | null;
   revoked_at: Date | string | null;
 };
@@ -55,6 +57,12 @@ export type IssueGrantWithSlotInput = {
   /** 상한을 **집행**할 것인가. admin force 는 `false` 지만 발급 수에는 여전히 포함된다. */
   enforce_cap: boolean;
 };
+
+/** `consumeOneUsableGrantForCart` 의 결과. 소모가 곧 검사라 세 값이 곧 판정이다 (ADR-0034 결정 5). */
+export type ConsumeOutcome =
+  | { outcome: 'consumed'; grant_id: string }
+  | { outcome: 'already'; grant_id: string }
+  | { outcome: 'none' };
 
 /** `revokeGrants_` 의 두 얼굴 — 어드민 회수(전부, 표지 찍음)와 워크플로 보상(키 목록, 표지 없음). */
 type RevokeGrantsOptions = {
@@ -313,7 +321,6 @@ class PromotionMetaModuleService extends MedusaService({
             issued_at: input.now,
             expires_at: input.expires_at,
             used_at: null,
-            order_id: null,
           },
         ],
         sharedContext,
@@ -364,62 +371,70 @@ class PromotionMetaModuleService extends MedusaService({
    *
    * 🔴 술어를 SQL 에 적는 것이 요점이다. 이전 구현은 조건 없는 `updateCouponGrants` 라,
    * 같은 고객이 두 카트를 동시에 완료하면 두 훅이 같은 장을 골라(선택은 결정적이다) 둘 다
-   * 덮어썼다 — 한 장으로 할인 주문 두 건, `order_id` 는 나중 것만 남았다. 「1장 = 1회」는
-   * 이 PR 이 세우려는 불변식이므로 애플리케이션 읽기-후-쓰기가 아니라 **한 문장**으로
-   * 집행한다. 같은 파일의 `countIssuedGrants`/`lockPromotionForIssue` 가 쓰는 기법과 같다
-   * (ADR-0034 결정 1).
+   * 덮어썼다 — 한 장으로 할인 주문 두 건. 「1장 = 1회」는 애플리케이션 읽기-후-쓰기가 아니라
+   * **한 문장**으로 집행한다(ADR-0034 결정 1).
    *
-   * `deleted_at IS NULL` 도 술어에 넣는다 — 회수된 장은 소모 대상이 아니다.
+   * `cartId` 가 null 인 호출자는 백필뿐이다 — 옛 링크 행에는 카트가 없었다. 스위퍼는
+   * `cart_id IS NOT NULL` 만 보므로 그런 장은 「주문 없는 소모」로 오판되지 않는다.
    *
-   * `sharedContext` 는 형제 원시 SQL 헬퍼(`countIssuedGrants` 등)와 같은 이유로 열어 둔다 —
-   * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
-   * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
-   * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.
-   *
-   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrant` 다 — 이건 id 를 아는 호출자(백필·스펙)의 원시 연산이다.
+   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrantForCart` 다 — 이건 id 를 아는 호출자
+   * (백필·스펙)의 원시 연산이다.
    */
   async consumeGrantIfUnused(
     grantId: string,
-    orderId: string,
+    cartId: string | null,
     usedAt: Date,
     sharedContext?: Context<EntityManager>,
   ): Promise<boolean> {
     const rows = await this.txEm(sharedContext).execute(
-      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
+      `UPDATE "coupon_grant" SET "used_at" = ?, "cart_id" = ?, "updated_at" = now()
        WHERE "id" = ? AND "used_at" IS NULL AND "deleted_at" IS NULL
        RETURNING "id"`,
-      [usedAt, orderId, grantId],
+      [usedAt, cartId, grantId],
     );
     return (rows?.length ?? 0) > 0;
   }
 
   /**
-   * 「이 주문에 쓸 장 한 장」을 **고르고 소모한다 — 한 문장으로.** 소모한 장의 id, 없으면 `null`.
+   * 「이 카트에 쓸 장 한 장」을 **고르고 소모한다 — 한 문장으로.** 그리고 그 결과가 곧 판정이다.
    *
-   * 옛 구조는 훅이 `selectGrantToConsume`(FEFO) 으로 장을 고른 뒤 `consumeGrantIfUnused(id)` 로
-   * 찍었다. 고르기와 CAS 가 다른 층에 있어, 같은 고객의 두 카트가 동시에 완료되면 둘이
-   * «결정적으로 같은 장»을 골라 한쪽만 이기고 진 쪽은 다음 장을 시도하지 않았다 — 한 장으로
-   * 할인 주문 두 건(PR #778 재리뷰 F1). 선택을 SQL 로 내리면 그 창 자체가 없다:
+   * - `consumed` — 잡았다. 훅은 id 를 모아 보상의 입력으로 돌려준다.
+   * - `already` — 이 카트가 이미 잡은 장이 있다. 완료된 카트의 재완료·엔진의 재호출이 여기로 온다
+   *   (`completeCartWorkflow` 는 주문이 있어도 `validate` 를 다시 지난다). **통과**다.
+   * - `none` — 잡을 장이 없다. 장이 사용을 지배하는 쿠폰이면 훅이 `COUPON_EXPIRED` 로 거절한다.
+   *   늦은 카트가 여기로 온다 — 같은 고객의 두 카트가 장 하나로 둘 다 통과하던 창(재리뷰 F1)이
+   *   이 값으로 닫힌다.
    *
-   * - **FEFO** 는 `ORDER BY expires_at NULLS LAST, issued_at, id` — `grants.ts` 의 옛 정렬과 같다.
-   * - **만료 경계(포함)** 는 `expires_at >= now` — `usableGrants` 와 같은 경계여야 카트 게이트와
-   *   어긋나지 않는다.
-   * - **재호출(순차) 멱등성**은 `NOT EXISTS(같은 order_id)` — 엔진이 이 훅을 «다시» 불러도 주문당
-   *   쿠폰당 한 장이다. 스냅샷 술어라 같은 `order_id` 의 **동시** 호출 둘은 못 막는다(둘 다 통과해
-   *   SKIP LOCKED 가 다른 장을 준다) — 주문 생성 경로는 그런 호출을 만들지 않는다.
-   * - **동시성**은 `FOR UPDATE SKIP LOCKED` — 다른 트랜잭션이 잡은 장은 건너뛰고 다음 장을 잡는다.
-   *   장이 하나뿐이면 늦은 쪽은 `null` 이고, 그게 정답이다.
+   * 문장 둘이다. ① UPDATE 가 잡기(FEFO · 만료 경계 포함 · `FOR UPDATE SKIP LOCKED` — PR-2 그대로,
+   * 키만 `cart_id`) ② 0행이면 «이 카트가 이미 잡은 장» 을 읽어 `already` 와 `none` 을 가른다.
+   * ②가 읽기-후-판정인데도 안전한 이유: 같은 카트의 동시 호출은 워크플로가 카트 id 로 잡는
+   * 락(`acquireLockStep`)이 직렬화한다. 다른 카트와의 경합은 ①이 정한다.
    *
-   * `null` 은 「소모할 장이 없다」다 — 발급 개념이 없는 `public` 쿠폰이 대부분이므로 호출부는
-   * 경고하지 않는다. `consumeGrantIfUnused(id)` 는 id 로 찍는 원시 연산으로 남는다(백필·스펙
-   * 픽스처). **핫패스(주문 생성 훅)는 이 메서드만 부른다.**
+   * 🔴 ①과 ②를 잇는 불변식: **`cart_id IS NOT NULL → used_at IS NOT NULL`** (한 방향). 카트가 잡은
+   * 장은 반드시 사용됨이고, 카트 없는 «사용됨» 은 정당하게 존재한다 — 백필(`consumeGrantIfUnused(id,
+   * null, …)`)과 PR-3 이전 옛 행이 그것이다. 모든 writer(①·`consumeGrantIfUnused`·`restoreGrants`)는
+   * `cart_id` 를 찍을 때 `used_at` 도 찍고, 비울 때 함께 비운다. DB 는 이것을 강제하지
+   * 않는다(마이그레이션은 파셜 인덱스뿐). `cart_id` 만 찍는 writer(「예약」 같은 것)를 만들면 ①은 막히고
+   * ②는 못 봐서 **조용한 거짓 `none`** 이 된다 — 그런 writer 를 두지 말 것.
+   *
+   * SQL 단독으로는 «같은 카트»의 동시 호출 둘을 못 막는다 — `NOT EXISTS` 는 스냅샷 술어라 둘 다 통과하고
+   * `SKIP LOCKED` 가 장을 하나씩 내준다(한 카트가 두 장). 그것을 막는 것은 워크플로의 카트 락
+   * (`acquireLockStep`, `complete-cart.js:259`, ttl 2분)이다. 워크플로 밖에서 `sharedContext` 로 이
+   * 메서드를 부르는 호출자에겐 그 락이 없다 — 그런 호출자는 순차 멱등성만 기대할 것.
+   *
+   * 키가 주문이 아니라 카트인 이유: `validate` 시점엔 주문이 없다. 주문 → 카트는 Medusa 의
+   * `order_cart` 링크가 안다(ADR-0034 결정 6).
+   *
+   * `sharedContext` 는 형제 원시 SQL 헬퍼와 같은 이유로 열어 둔다. `consumeGrantIfUnused(id)` 는
+   * id 로 찍는 원시 연산으로 남는다(백필·스펙 픽스처). **핫패스(validate 훅)는 이 메서드만 부른다.**
    */
-  async consumeOneUsableGrant(
-    input: { promotion_id: string; customer_id: string; order_id: string; now: Date },
+  async consumeOneUsableGrantForCart(
+    input: { promotion_id: string; customer_id: string; cart_id: string; now: Date },
     sharedContext?: Context<EntityManager>,
-  ): Promise<string | null> {
-    const rows = await this.txEm(sharedContext).execute(
-      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
+  ): Promise<ConsumeOutcome> {
+    const em = this.txEm(sharedContext);
+    const consumed = await em.execute(
+      `UPDATE "coupon_grant" SET "used_at" = ?, "cart_id" = ?, "updated_at" = now()
         WHERE "id" = (
           SELECT "id" FROM "coupon_grant"
            WHERE "promotion_id" = ? AND "customer_id" = ?
@@ -428,49 +443,103 @@ class PromotionMetaModuleService extends MedusaService({
              AND NOT EXISTS (
                SELECT 1 FROM "coupon_grant" o
                 WHERE o."promotion_id" = ? AND o."customer_id" = ?
-                  AND o."order_id" = ? AND o."deleted_at" IS NULL)
+                  AND o."cart_id" = ? AND o."deleted_at" IS NULL)
            ORDER BY "expires_at" ASC NULLS LAST, "issued_at" ASC, "id" ASC
            LIMIT 1
            FOR UPDATE SKIP LOCKED)
         RETURNING "id"`,
       [
         input.now,
-        input.order_id,
+        input.cart_id,
         input.promotion_id,
         input.customer_id,
         input.now,
         input.promotion_id,
         input.customer_id,
-        input.order_id,
+        input.cart_id,
       ],
     );
-    const id = rows?.[0]?.id;
-    return id != null ? String(id) : null;
+    const consumedId = consumed?.[0]?.id;
+    if (consumedId != null) return { outcome: 'consumed', grant_id: String(consumedId) };
+
+    const already = await em.execute(
+      `SELECT "id" FROM "coupon_grant"
+        WHERE "promotion_id" = ? AND "customer_id" = ? AND "cart_id" = ?
+          AND "used_at" IS NOT NULL AND "deleted_at" IS NULL
+        ORDER BY "id" ASC
+        LIMIT 1`,
+      [input.promotion_id, input.customer_id, input.cart_id],
+    );
+    const alreadyId = already?.[0]?.id;
+    if (alreadyId != null) return { outcome: 'already', grant_id: String(alreadyId) };
+
+    return { outcome: 'none' };
   }
 
   /**
-   * 이 주문에 쓰인 장들을 되돌린다 (A2). 되살린 장수를 돌려준다.
+   * 되돌림의 **유일한 본체** (ADR-0034 결정 6). id 목록 중 «사용된» 장만 미사용으로 되돌리고
+   * 실제로 되돌린 장수를 돌려준다.
    *
-   * **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
-   * **회수된 장도 되살리지 않는다** — 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면
-   * 안 된다(설계 결정 3, `revoked_at`).
-   * 이미 되돌려진 장은 `used_at` 이 null 이라 대상에서 빠지므로 두 번 불려도 안전하다.
+   * 정책은 여기 없다 — 고르는 쪽의 일이다. 훅 보상은 이번 실행이 잡은 id 를 무조건 놓고(undo),
+   * 취소 구독자는 `restoreGrantsByCart` 가 만료·회수를 걸러 넘기고, 스위퍼는
+   * `listStuckConsumptions` 가 고른다. 셋이 각자 UPDATE 를 들면 PR-2 가 걷어낸 쌍둥이가 되돌아온다.
+   *
+   * `used_at IS NOT NULL` 술어 덕에 두 번 불려도 두 번째는 0 이다. `order_id` 는 만지지 않는다 —
+   * 읽는 곳이 없고, 컬럼은 다음 배포 뒤 지운다.
    */
-  async restoreGrantsByOrder(orderId: string, now: Date): Promise<number> {
-    const rows = (await (this as any).listCouponGrants({ order_id: orderId })) as CouponGrantRow[];
+  async restoreGrants(ids: string[], sharedContext?: Context<EntityManager>): Promise<number> {
+    if (ids.length === 0) return 0;
+    const rows = await this.txEm(sharedContext).execute(
+      `UPDATE "coupon_grant" SET "used_at" = NULL, "cart_id" = NULL, "updated_at" = now()
+        WHERE "id" IN (?) AND "used_at" IS NOT NULL AND "deleted_at" IS NULL
+        RETURNING "id"`,
+      [ids],
+    );
+    return rows?.length ?? 0;
+  }
+
+  /**
+   * 이 카트가 소모한 장들을 되돌린다 (A2 — 주문 취소). 되살린 장수.
+   *
+   * 주문 → 카트는 호출자(`subscribers/coupon-grant-restore.ts`)가 Medusa 의 `order_cart` 링크로
+   * 푼다. 여기서는 고르기만 하고 되돌리는 것은 `restoreGrants` 다.
+   * - **이미 만료된 장은 되살리지 않는다** — 되살려도 못 쓰고, 「돌아왔는데 못 쓴다」가 더 나쁘다.
+   * - **회수된 장도 되살리지 않는다** — 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면
+   *   안 된다(설계 결정 3, `revoked_at`).
+   */
+  async restoreGrantsByCart(cartId: string, now: Date): Promise<number> {
+    const rows = (await (this as any).listCouponGrants({ cart_id: cartId })) as CouponGrantRow[];
     const targets = rows.filter((g) => {
       if (g.used_at == null) return false;
-      // 🔴 회수된 장은 되살리지 않는다. 어드민이 명시적으로 뺏은 쿠폰이 주문 취소로 돌아오면 안 된다.
       if (g.revoked_at != null) return false;
       if (g.expires_at == null) return true;
       const expiresAt = g.expires_at instanceof Date ? g.expires_at : new Date(g.expires_at);
       return !(now > expiresAt);
     });
-    if (targets.length === 0) return 0;
-    await (this as any).updateCouponGrants(
-      targets.map((g) => ({ id: g.id, used_at: null, order_id: null })),
+    return this.restoreGrants(targets.map((g) => g.id));
+  }
+
+  /**
+   * 스위퍼의 후보 — 카트가 잡았는데(`cart_id`) `usedBefore` 보다 오래된 «사용된» 장 (ADR-0034 결정 7).
+   *
+   * 훅이 커밋한 뒤 워크플로가 끝나기 전에 프로세스가 죽으면 «주문 없는 소모» 가 남는다. 보상은
+   * 살아 있는 프로세스만 돌리므로 잡이 훑는다. 「주문이 있는가」 는 모듈 밖의 질문
+   * (`order_cart` 링크·카트 `completed_at`)이라 여기서는 후보만 고르고, 판정과 되돌림은
+   * `scripts/restore-stuck-coupon-consumptions.ts` 가 한다.
+   *
+   * `cart_id IS NOT NULL` — 백필된 옛 장은 카트가 없어 「주문 없는 소모」로 오판될 수 없다.
+   */
+  async listStuckConsumptions(usedBefore: Date, limit: number): Promise<Array<{ id: string; cart_id: string }>> {
+    if (limit <= 0) return [];
+    const rows = await this.txEm().execute(
+      `SELECT "id", "cart_id" FROM "coupon_grant"
+        WHERE "used_at" IS NOT NULL AND "cart_id" IS NOT NULL AND "deleted_at" IS NULL
+          AND "used_at" < ?
+        ORDER BY "used_at" ASC
+        LIMIT ?`,
+      [usedBefore, limit],
     );
-    return targets.length;
+    return (rows ?? []).map((r: { id: string; cart_id: string }) => ({ id: String(r.id), cart_id: String(r.cart_id) }));
   }
 
   /**
@@ -508,7 +577,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 에서 빠지고, (2) 「누가 언제 썼는가」의 근거가 사라졌다(발급 현황의 `used_count` 가 0 이
    * 된다). `deleted_at` 은 「슬롯을 안 점유한다」는 뜻이라 이미 쓴 장에는 못 쓰지만, 회수
    * 사실 자체는 잊으면 안 된다 — 그래서 `revoked_at` 을 이미 쓴 장에도 찍는다. 이게 없으면
-   * 그 주문이 나중에 취소될 때 `restoreGrantsByOrder` 가 「쓴 적 있는 장」으로만 판단해
+   * 그 주문이 나중에 취소될 때 `restoreGrantsByCart` 가 「쓴 적 있는 장」으로만 판단해
    * 어드민이 뺏은 쿠폰을 되살려 버린다(설계 결정 3) — soft delete 와 회수 표지는 별개의
    * 질문에 답한다: 하나는 「슬롯을 세는가」, 다른 하나는 「회수됐는가」.
    *

@@ -528,7 +528,7 @@ medusaIntegrationTestRunner({
      * C1(2026-08-31 최종 리뷰) 회귀 + T6 완결.
      *
      * 이 파일이 유일하게 `completeCartWorkflow` 를 실제 주문까지 끝까지 태우는 스펙이라 여기
-     * 붙인다 — `record-coupon-usage.ts` 의 `orderCreated` 훅이 **실 결제 완료 경로**에서 도는지
+     * 붙인다 — `hooks/cart/complete-cart.ts` 의 validate 훅(`consume-coupon-grants.ts`)이 **실 결제 완료 경로**에서 도는지
      * 확인하는 유일한 자리다(다른 쿠폰 스펙은 카트 단계까지만 가거나 백스톱에서 일부러 실패시킨다).
      *
      * C1 의 사고 경로: `public` 쿠폰은 발급 사건이 없어 링크 행이 원래 없다. 훅이 필터 없이
@@ -536,8 +536,9 @@ medusaIntegrationTestRunner({
      * NULL(무기한)로 박혀 정책의 `ends_at` 을 지나도 그 고객에게만 영구 유효가 된다.
      *
      * 🔴 T6 재작성(#488 그랜트 모델, Task 14 리뷰): 사용 기록의 정본이 링크 행에서
-     * `coupon_grant` 로 옮겨갔다(`record-coupon-usage.ts` 가 `consumeGrantIfUnused()` 로 grant 를
-     * 갱신하지, 링크 행의 `used_at`/`order_id` 를 쓰지 않는다 — 링크는 이제 표시 조인 전용).
+     * `coupon_grant` 로 옮겨갔다(`hooks/cart/complete-cart.ts` 의 validate 훅
+     * (`consume-coupon-grants.ts`)이 소모로 grant 를 갱신하지, 링크 행의 `used_at`/`order_id` 를
+     * 쓰지 않는다 — 링크는 이제 표시 조인 전용).
      * 그래서 T6 은 이제 링크 행이 아니라 **grant** 를 본다. C1(링크 행에 사용사건이 새면 안
      * 된다)은 여전히 링크 행을 봐야 하므로 `linkRowsFor` 는 그대로 둔다 — 두 불변식은
      * 그랜트 모델 전환 후에도 별개로 유효하다.
@@ -555,13 +556,19 @@ medusaIntegrationTestRunner({
             { select: ['customer_id', 'promotion_id', 'expires_at', 'used_at', 'order_id'] },
           ) as Promise<any[]>;
 
-      /** grant 조회. 사용 기록(`used_at`/`order_id`)의 정본은 T6 이후로 여기다. */
+      /**
+       * grant 조회. 사용 기록(`used_at`/`cart_id`)의 정본은 T6 이후로 여기다.
+       *
+       * 🔴 소모의 키는 주문이 아니라 **카트**다(ADR-0034 2026-09-04 개정, 결정 6) — 소모가
+       * `validate` 훅에서 일어나 그 시점엔 주문이 없다. `order_id` 는 아무도 쓰지 않으므로
+       * 이 픽스처도 읽지 않는다.
+       */
       const grantsFor = async (promotionId: string, custId: string) => {
         const svc = getContainer().resolve(PROMOTION_META_MODULE) as any;
         const grants = (await svc.listGrantsForCustomer(custId)) as Array<{
           promotion_id: string;
           used_at: Date | string | null;
-          order_id: string | null;
+          cart_id: string | null;
         }>;
         return grants.filter((g) => g.promotion_id === promotionId);
       };
@@ -658,7 +665,7 @@ medusaIntegrationTestRunner({
         expect(rows).toHaveLength(0);
       });
 
-      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 grant 정확히 한 장이 used_at/order_id 를 갖는다 (T6)', async () => {
+      it('발급된(assigned_only) 쿠폰으로 주문을 완료하면 그 grant 정확히 한 장이 used_at/cart_id 를 갖는다 (T6)', async () => {
         const promoCode = `C1ISSUED${c1Seq}`;
         const promotionId = await createPromo(promoCode, { visibility: 'assigned_only' });
 
@@ -671,16 +678,15 @@ medusaIntegrationTestRunner({
           adminHeaders,
         );
 
-        const { completeRes } = await checkoutWithPromo(promoCode);
+        const { cartId, completeRes } = await checkoutWithPromo(promoCode);
         expect(completeRes.data.type).toBe('order');
-        const orderId = completeRes.data.order.id as string;
 
-        // 「무언가 기록됐다」가 아니라 「어느 장이 그 주문으로 소모됐다」를 본다 — 발급이
+        // 「무언가 기록됐다」가 아니라 「어느 장이 그 카트로 소모됐다」를 본다 — 발급이
         // 정확히 한 장이었으므로 소모도 정확히 그 한 장이어야 한다.
         const grants = await grantsFor(promotionId, customerId);
         expect(grants).toHaveLength(1);
         expect(grants[0].used_at).not.toBeNull();
-        expect(grants[0].order_id).toEqual(orderId);
+        expect(grants[0].cart_id).toEqual(cartId);
       });
     });
   },

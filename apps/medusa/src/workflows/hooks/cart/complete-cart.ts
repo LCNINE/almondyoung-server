@@ -6,7 +6,9 @@ import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { requiresIssuance, resolveVisibility } from '../../../api/admin/promotions/helpers';
 import { isUsable, hasPolicyStarted } from '../../../modules/promotion-meta/validity';
-import { grantsFor, hasUsableGrant, grantsGovernUsage } from '../../../modules/promotion-meta/grants';
+import { StepResponse } from '@medusajs/framework/workflows-sdk';
+import { grantsFor, grantsGovernUsage } from '../../../modules/promotion-meta/grants';
+import { consumeCouponGrantsForCart, restoreConsumedCouponGrants, type ConsumeRequest } from './consume-coupon-grants';
 import type { CouponGrantRow } from '../../../modules/promotion-meta/service';
 import { findPromotionCapViolations } from './enforce-promotion-cap';
 import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
@@ -18,6 +20,13 @@ const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
 
+  // 훅 입력 카트의 정본은 `customer.*` 다(`completeCartFields` 엔 최상위 `customer_id` 가 없다 —
+  // ADR-0034 측정 4). 워크플로 자신도 `cart.customer?.id` 로 읽는다.
+  const customerId: string | null = cart.customer?.id ?? cart.customer_id ?? null;
+  const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+  // 소모는 훅의 «마지막» 이다(ADR-0034 결정 5). 앞에서는 판정만 모은다.
+  const consumeRequests: ConsumeRequest[] = [];
+
   // 쿠폰 정책 재검증 — cart-add 이후 주문 완료 사이 race window 차단
   // promotions relation은 validate hook 인자에 보장되지 않으므로 cart.id로 명시 재조회
   const { data: cartsWithPromos } = await query.graph({
@@ -28,12 +37,10 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const cartPromos: Array<{ id: string }> = (cartsWithPromos?.[0] as any)?.promotions ?? [];
 
   if (cartPromos.length) {
-    const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
-
     // 발급된 «한 장»들을 한 번에 가져온다 — 카트에 붙은 프로모션마다 조회하지 않는다.
-    const grants: CouponGrantRow[] = cart.customer_id
-      ? await promotionMetaService.listGrantsForCustomer(cart.customer_id)
-      : [];
+    // 여기서 읽는 것은 «발급받았는가»(requiresIssuance) 와 «장이 사용을 지배하는가» 뿐이다.
+    // «쓸 장이 있는가» 는 읽지 않는다 — 훅 끝의 소모가 그 검사다(읽고 검사한 뒤 쓰지 않는다, 결정 1).
+    const grants: CouponGrantRow[] = customerId ? await promotionMetaService.listGrantsForCustomer(customerId) : [];
 
     for (const promo of cartPromos) {
       const meta = await promotionMetaService.getByPromotionId(promo.id);
@@ -41,40 +48,29 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
       const mine = grantsFor(grants, promo.id);
       const now = new Date();
 
-      // 만료 백스톱 — 카트에 붙은 뒤 주문 완료 사이에 만료됐거나(혹은 다른 카트에서 먼저)
-      // 다 쓴 쿠폰을 막는다. 캡(P10-B)과 달리 만료/소모는 금액 조정이 아니라 «거부» 라 여기서
-      // 던져도 결제금액이 어긋나지 않는다.
-      // 발급된 장이 있으면 그 장들이, 없으면(=발급 개념이 없는 public) 정책이 만료를 정한다.
-      // per-customer-limit 미들웨어(카트에 붙는 시점)와 같은 판정 — 여기(백스톱)는 그
-      // 미들웨어가 못 본 race window(부착 뒤 만료/소모)를 잡는 자리일 뿐, 다른 사유가 아니다.
-      // 쿠폰 코드는 싣지 않는다 — 토큰에 붙이면 스토어프론트의 정확 일치(`=== 'COUPON_EXPIRED'`)가
-      // 깨진다. 카트엔 보통 쿠폰이 하나뿐이라 "적용된 쿠폰을 제거"만으로 고객이 복구 가능하다.
-      //
-      // 🔴 정책 시작(`starts_at`)은 **장 유무 분기 밖**이다 — `hasUsableGrant` 는 장의
-      // 만료/소모만 알고 정책은 모른다. 분기 안에 두면 장을 가진 고객에게만 `starts_at` 이
-      // 사라진다. 사유가 다르므로 토큰도 다르다(`COUPON_NOT_STARTED`) — 카트 미들웨어·preview
+      // 🔴 정책 시작(`starts_at`)은 **장 유무 분기 밖**이다 — 장을 가진 고객에게만 `starts_at` 이
+      // 사라지면 안 된다. 사유가 다르므로 토큰도 다르다(`COUPON_NOT_STARTED`) — 카트 미들웨어·preview
       // 와 같은 토큰이라 세 표면의 라벨이 일치한다.
       if (!hasPolicyStarted(meta, now)) {
         throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_NOT_STARTED');
       }
 
-      // 🔴 `public` 쿠폰은 장이 있어도 정책이 정한다 (#488 A2) — 카트 미들웨어와 «같은»
-      // 판정이어야 한다. 한쪽만 고치면 카트엔 붙는데 주문에서 거절되는 창이 생긴다.
-      if (grantsGovernUsage(mine, resolveVisibility(meta))) {
-        if (!hasUsableGrant(mine, now)) {
-          throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');
-        }
-      } else if (!isUsable(null, meta, now)) {
+      // 🔴 `public` 쿠폰은 장이 있어도 정책이 정한다 (#488 A2) — 카트 미들웨어와 «같은» 판정이어야
+      // 한다. 장이 지배하면 만료·소모 판정은 훅 끝의 소모(`none` → COUPON_EXPIRED)가 한다.
+      const grantsGovern = grantsGovernUsage(mine, resolveVisibility(meta));
+      if (!grantsGovern && !isUsable(null, meta, now)) {
         throw new MedusaError(MedusaError.Types.INVALID_DATA, 'COUPON_EXPIRED');
       }
 
       // 메타가 없으면 «발급 필요» 다(닫힌 기본값 — #488 N7). 옛 코드는 undefined 라 백스톱도 통과했다.
       if (requiresIssuance(meta)) {
-        if (!cart.customer_id || mine.length === 0) {
+        if (!customerId || mine.length === 0) {
           throw new MedusaError(MedusaError.Types.INVALID_DATA, '이 쿠폰은 발급된 고객만 사용할 수 있습니다.');
         }
-        // 발급은 받았는데 쓸 장이 없는 경우는 위에서 이미 걸렀다.
+        // 발급은 받았는데 쓸 장이 없는 경우는 훅 끝의 소모가 거른다.
       }
+
+      consumeRequests.push({ promotion_id: promo.id, grants_govern: grantsGovern });
     }
   }
 
@@ -95,11 +91,11 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   }
 
   // cart.email이 없고 customer_id가 있으면 customer.email로 자동 채우기
-  if (!cart.email && cart.customer_id) {
+  if (!cart.email && customerId) {
     const { data: customers } = await query.graph({
       entity: 'customer',
       fields: ['id', 'email'],
-      filters: { id: cart.customer_id },
+      filters: { id: customerId },
     });
 
     const customer = customers?.[0];
@@ -134,11 +130,11 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
     let isMember = false;
 
-    if (cart.customer_id && membershipGroupId) {
+    if (customerId && membershipGroupId) {
       const { data: memberCustomers } = await query.graph({
         entity: 'customer',
         fields: ['id', 'groups.id'],
-        filters: { id: cart.customer_id },
+        filters: { id: customerId },
       });
       const groups: Array<{ id?: string }> = (memberCustomers?.[0] as any)?.groups ?? [];
       isMember = groups.some((group) => group?.id === membershipGroupId);
@@ -184,7 +180,7 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     (item?.variant?.product?.tags ?? []).some((tag) => tag?.value === WELCOME_MEMBERSHIP_TAG),
   );
 
-  if (cartHasWelcome && cart.customer_id) {
+  if (cartHasWelcome && customerId) {
     const { data: welcomeTags } = await query.graph({
       entity: 'product_tag',
       fields: ['id', 'products.id'],
@@ -199,7 +195,7 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
     const { data: customerOrders } = await query.graph({
       entity: 'order',
       fields: ['id', 'canceled_at', 'items.product_id'],
-      filters: { customer_id: cart.customer_id },
+      filters: { customer_id: customerId },
     });
 
     const hasOpenWelcomeOrder = (customerOrders ?? []).some(
@@ -299,4 +295,18 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   // }
   //
   // // 재고 부족이 없으면 통과
+
+  // ── 소모: 훅의 마지막 문장 (ADR-0034 결정 5). 위의 어떤 거절도 장을 잡은 뒤에 일어나지 않는다. ──
+  const consumed = await consumeCouponGrantsForCart(
+    promotionMetaService,
+    { cart_id: cart.id, customer_id: customerId, now: new Date() },
+    consumeRequests,
+  );
+  // 두 번째 인자(보상)의 입력이다 — 뒤 스텝이 실패하면 이번 실행이 잡은 장을 놓는다.
+  return new StepResponse(undefined, consumed);
+}, async (consumed, { container }) => {
+  // 훅 보상 — 주문 생성·재고예약·결제 승인 중 어느 것이 실패해도 여기로 온다. 실패한 스텝이 이 훅
+  // 자신이면 `consumed` 는 undefined 다(그 경우는 invoke 가 스스로 놓고 던졌다).
+  const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+  await restoreConsumedCouponGrants(promotionMetaService, consumed);
 });

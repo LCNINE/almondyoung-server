@@ -316,7 +316,7 @@ medusaIntegrationTestRunner({
     // `issueGrant` 의 INSERT 구조 자체가 구조적으로 보장하고, 실제 커버리지는:
     //   - `apps/medusa/src/modules/promotion-meta/__tests__/service.integration.spec.ts`
     //     (`issueGrant 는 같은 issue_key 두 번째에 duplicate 를 돌려준다`, 라인 177~ 및
-    //     `restoreGrantsByOrder` 스펙들)이 이미 `issueGrant`/grant 행의 `used_at` 상태를
+    //     `restoreGrantsByCart` 스펙들)이 이미 `issueGrant`/grant 행의 `used_at` 상태를
     //     module 레벨에서 직접 검증한다 — 이 HTTP 스펙보다 더 정확하고 더 빠르다.
     //   - `coupon-grant.spec.ts` G1·G2 가 관리자 수동 발급이 매번 독립된 새 grant 행을
     //     만든다는 것(=append-only, 되살아나지 않음)을 이미 직접 덮는다.
