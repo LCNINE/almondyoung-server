@@ -248,40 +248,6 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 한 장을 발급한다. **같은 `issue_key` 의 재도착은 예외가 아니라 `'duplicate'` 다.**
-   *
-   * 이것이 따닥·재시도 방어의 전부다. 호출부는 `'duplicate'` 를 「이미 처리됨」으로 다루고,
-   * 예약해 둔 claim 슬롯이 있으면 반환해야 한다(슬롯을 잡은 쪽이 반환 책임을 진다).
-   */
-  async issueGrant(input: {
-    promotion_id: string;
-    customer_id: string;
-    issue_key: string;
-    issued_via: IssueTrigger;
-    expires_at: Date | null;
-    now: Date;
-  }): Promise<'created' | 'duplicate'> {
-    try {
-      await (this as any).createCouponGrants([
-        {
-          promotion_id: input.promotion_id,
-          customer_id: input.customer_id,
-          issue_key: input.issue_key,
-          issued_via: input.issued_via,
-          issued_at: input.now,
-          expires_at: input.expires_at,
-          used_at: null,
-          order_id: null,
-        },
-      ]);
-      return 'created';
-    } catch (e: any) {
-      if (this.isUniqueViolation(e)) return 'duplicate';
-      throw e;
-    }
-  }
-
-  /**
    * 원시 SQL 을 실행할 EntityManager. 트랜잭션 컨텍스트가 있으면 **그것을 쓴다** — 없으면
    * 저장소의 기본 매니저로 떨어진다(단독 호출 경로).
    */
@@ -409,6 +375,8 @@ class PromotionMetaModuleService extends MedusaService({
    * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
    * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
    * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.
+   *
+   * 핫패스는 이 메서드가 아니라 `consumeOneUsableGrant` 다 — 이건 id 를 아는 호출자(백필·스펙)의 원시 연산이다.
    */
   async consumeGrantIfUnused(
     grantId: string,
@@ -477,37 +445,6 @@ class PromotionMetaModuleService extends MedusaService({
     );
     const id = rows?.[0]?.id;
     return id != null ? String(id) : null;
-  }
-
-  /**
-   * 백필 전용. `(promotion_id, customer_id, issue_key)` 로 grant 를 찾아 **아직 미사용일 때만**
-   * `used_at`/`order_id` 를 채운다.
-   *
-   * 존재 확인과 "미사용일 때만" 갱신을 한 호출로 묶은 이유: `backfill-coupon-grants.ts` 가
-   * grant 생성(`issueGrant`, 멱등)과 사용 상태 이관을 **별개 스텝**으로 부른다 — 스크립트가
-   * grant 생성 뒤 이 호출 전에 중단되면(프로세스 킬·DB 타임아웃), 재실행 시 `issueGrant` 는
-   * `'duplicate'` 를 돌려주지만 grant 는 이미 존재하므로 이 메서드는 여전히 불려야 한다.
-   * `used_at != null` 가드가 그 재실행에서 이미 채워진 값을 또 덮어쓰지 않게 해 멱등하다.
-   */
-  async markGrantUsedIfUnused(
-    promotionId: string,
-    customerId: string,
-    issueKey: string,
-    orderId: string,
-    usedAt: Date,
-  ): Promise<'consumed' | 'already_used' | 'not_found'> {
-    const rows = (await (this as any).listCouponGrants({
-      promotion_id: promotionId,
-      customer_id: customerId,
-      issue_key: issueKey,
-    })) as CouponGrantRow[];
-    const grant = rows[0];
-    if (!grant) return 'not_found';
-    if (grant.used_at != null) return 'already_used';
-    // 위 조회와 이 갱신 사이에 다른 요청이 같은 장을 소모했을 수 있다. 술어가 SQL 에 있으므로
-    // 그 경우 0행이 갱신되고, 여기서 `already_used` 로 정직하게 보고한다 — 조회 결과를 믿고
-    // 덮어쓰지 않는다.
-    return (await this.consumeGrantIfUnused(grant.id, orderId, usedAt)) ? 'consumed' : 'already_used';
   }
 
   /**

@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../modules/promotion-meta';
 import type PromotionMetaModuleService from '../modules/promotion-meta/service';
 import type { IssueTrigger } from '../modules/promotion-meta/service';
+import type { CouponGrantRow } from '../modules/promotion-meta/service';
 
 const CONFIRM_VALUE = 'backfill-coupon-grants';
 
@@ -31,7 +32,7 @@ const CONFIRM_VALUE = 'backfill-coupon-grants';
  * 만든다). 이 판정은 dry-run 에도 그대로 적용된다 — 안 그러면 부분 반영 후의 dry-run 이
  * "만들 개수"를 부풀려, 배포 노트가 시키는 「dry-run 수와 대조」가 무의미해진다.
  *
- * 사용 상태 이관(`markGrantUsedIfUnused`)은 **생성 여부와 무관하게 매번 시도한다.** 생성
+ * 사용 상태 이관은 **생성 여부와 무관하게 매번 시도한다.** 생성
  * 성공 뒤 이관 전에 스크립트가 중단되면, 재실행에서 스킵되어 그 grant 가 영원히 미사용으로
  * 남기 때문이다(이미 쓴 쿠폰을 고객이 한 번 더 쓸 수 있게 된다). 이관 자체는 "아직 미사용일
  * 때만" 갱신이라 몇 번을 불러도 안전하고, 키가 안 맞으면 `not_found` 로 조용히 지나간다.
@@ -111,13 +112,17 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
       // 공짜 쿠폰을 찍어내던 자리다.
       skippedExisting++;
     } else {
-      const result = await promotionMetaService.issueGrant({
+      const result = await promotionMetaService.issueGrantWithSlot({
         promotion_id: l.promotion_id,
         customer_id: l.customer_id,
         issue_key: issueKey,
         issued_via: issuedVia,
         expires_at: l.expires_at ? new Date(l.expires_at) : null,
         now: l.created_at ? new Date(l.created_at) : new Date(),
+        // 백필은 상한을 집행하지 않는다 — 옛 링크는 이미 «발급된 사실»이다. `max_claims: null`
+        // 이라 카운터 미러도 건드리지 않는다(정합화는 PR 본문의 SQL 한 방이 한다).
+        max_claims: null,
+        enforce_cap: false,
       });
       if (result === 'duplicate') {
         // 프리로드 이후에 누가 같은 키로 먼저 넣은 경우. 유니크가 여전히 최종 권위다.
@@ -133,14 +138,23 @@ export default async function backfillCouponGrants({ container }: ExecArgs) {
     // 케이스, 위 docblock 참고). 키가 안 맞는 쌍(개통 후 발급분)은 `not_found` 로 조용히
     // 지나가고, 이미 채워진 값은 건드리지 않으므로 몇 번을 불러도 안전하다.
     if (l.used_at) {
-      const outcome = await promotionMetaService.markGrantUsedIfUnused(
-        l.promotion_id,
-        l.customer_id,
-        issueKey,
-        l.order_id ?? 'legacy',
-        new Date(l.used_at),
-      );
-      if (outcome === 'consumed') usageSynced++;
+      // 옛 사용 상태 이관 전용 메서드(백필만 부르던 것)의 본체를 여기로 — 이 스크립트가
+      // 유일한 호출자였다. 키로 찾고 「미사용일 때만」은 `consumeGrantIfUnused` 의 SQL
+      // 술어가 지킨다(조회를 믿고 덮어쓰지 않는다). 키가 안 맞는 쌍(개통 후 발급분)은
+      // 조용히 지나가고 이미 채워진 값은 건드리지 않으므로 몇 번을 불러도 안전하다.
+      const [grant] = (await promotionMetaService.listCouponGrants({
+        promotion_id: l.promotion_id,
+        customer_id: l.customer_id,
+        issue_key: issueKey,
+      })) as CouponGrantRow[];
+      if (grant && grant.used_at == null) {
+        const consumed = await promotionMetaService.consumeGrantIfUnused(
+          grant.id,
+          l.order_id ?? 'legacy',
+          new Date(l.used_at),
+        );
+        if (consumed) usageSynced++;
+      }
     }
   }
 
