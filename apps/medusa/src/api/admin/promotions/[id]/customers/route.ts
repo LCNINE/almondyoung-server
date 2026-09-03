@@ -88,9 +88,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   // 보장되지 않는다(플랜이 바뀌거나 동시 쓰기가 힙 순서를 흔들면 달라진다). 그 위에서
   // `slice(offset, offset+limit)` 를 하면 같은 고객이 1·2 페이지에 다 나오고 다른 고객은
   // 어느 쪽에도 안 나온다. 값으로 정렬한다 — 최초 발급 시각, 동률은 고객 id.
+  // 정렬 키는 **비교자 밖에서 한 번만** 만든다. 비교자 안에서 `earliestIssuedGrant` 를 부르면
+  // 비교마다 양쪽에서 전체 reduce 가 다시 돌아 O(N·k·log N) 이 된다 — 5,000명이면 Date 생성이
+  // 수백만 회이고, `limit` 행만 돌려주는 매 페이지 요청마다 반복된다.
+  const earliestIssuedAt = new Map<string, number>();
+  for (const [cid, list] of byCustomer) {
+    earliestIssuedAt.set(cid, toDate(earliestIssuedGrant(list)?.issued_at)?.getTime() ?? 0);
+  }
   const customerIds = [...byCustomer.keys()].sort((a, b) => {
-    const ta = toDate(earliestIssuedGrant(byCustomer.get(a) ?? [])?.issued_at)?.getTime() ?? 0;
-    const tb = toDate(earliestIssuedGrant(byCustomer.get(b) ?? [])?.issued_at)?.getTime() ?? 0;
+    const ta = earliestIssuedAt.get(a) ?? 0;
+    const tb = earliestIssuedAt.get(b) ?? 0;
     if (ta !== tb) return ta - tb;
     return a < b ? -1 : a > b ? 1 : 0;
   });
@@ -324,7 +331,21 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   }
 
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+
+  // 🔴 「지울 링크가 실제로 있었는가」를 미리 알아 둔다 — 형제(고객축) 라우트와 같은 이유다.
+  // 없으면 아무 관계도 없던 고객 id(오타 포함)까지 「회수됨」으로 응답한다. 루프 밖 1회 조회.
+  const { data: linkedCustomers } = await query.graph({
+    entity: 'customer',
+    fields: ['id', 'promotions.id'],
+    filters: { id: customer_ids },
+  });
+  const linkedCustomerIds = new Set<string>(
+    (linkedCustomers ?? [])
+      .filter((c: any) => (c.promotions ?? []).some((p: any) => p.id === promotionId))
+      .map((c: any) => c.id as string),
+  );
 
   const removed: { customer_id: string; grants: number }[] = [];
   for (const cid of customer_ids) {
@@ -339,7 +360,8 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     // 🔴 링크는 「남은 장이 없을 때만」 걷는다 — 형제(고객축) 라우트와 같은 판단이다.
     // 쓴 장이 남았는데 걷으면 마이페이지의 「사용완료」가 사라지고, 회수할 장이 0개라고
     // 건너뛰면(옛 `if (n === 0) continue`) 링크만 있고 장이 없는 쌍을 영원히 못 끊는다.
-    const dismissed = remaining === 0;
+    // 「남은 장 없음」에 «애초에 아무것도 없던 쌍» 이 섞여 들어오므로 링크 유무를 함께 본다.
+    const dismissed = remaining === 0 && linkedCustomerIds.has(cid);
     if (dismissed) {
       await link
         .dismiss([

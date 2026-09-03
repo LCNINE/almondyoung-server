@@ -250,6 +250,47 @@ medusaIntegrationTestRunner({
       expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
     });
 
+    // 🔴 ADR-0034 회귀 방지. 링크를 「남은 장이 없을 때만」 걷도록 바꾸면서 `remaining === 0`
+    // 하나로 판정했더니, 「쓴 장만 남았다」와 «애초에 아무 관계도 없었다»가 구별되지 않아
+    // 오타로 넣은 promotion_id 까지 「제거됨」으로 응답했다.
+    it('revoke reports nothing removed for a pair that never existed', async () => {
+      const promoId = await createPromo('NEVERHELD', { visibility: 'claimable', max_claims: 5 });
+      // 발급하지 않는다 — 장도 링크도 없는 쌍이다.
+
+      const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
+        ...adminHeaders,
+        data: { promotion_ids: [promoId] },
+      });
+
+      expect(res.status).toEqual(200);
+      expect(res.data.promotion_ids).toEqual([]);
+      expect(res.data.revoked_grants).toEqual(0);
+    });
+
+    it('revoke keeps used grants and still dismisses the link when none remain usable', async () => {
+      const promoId = await createPromo('REVOKEUSED', { visibility: 'claimable', max_claims: 5 });
+      await issue([promoId]);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+
+      // 발급된 한 장을 «사용» 상태로 만든다.
+      const [grant] = await metaService.listGrantsForCustomer(customerId);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used`, new Date())).toBe(true);
+
+      const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
+        ...adminHeaders,
+        data: { promotion_ids: [promoId] },
+      });
+
+      // 회수할(미사용) 장이 없으므로 아무것도 제거되지 않았다고 보고해야 한다.
+      expect(res.status).toEqual(200);
+      expect(res.data.revoked_grants).toEqual(0);
+      // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다.
+      const left = await metaService.listGrantsForCustomer(customerId);
+      expect(left.filter((g: any) => g.promotion_id === promoId)).toHaveLength(1);
+      // 실제로 소비된 슬롯이므로 카운터도 되돌아가지 않는다.
+      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(1);
+    });
+
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {
       const promoId = await createPromo('PROGRESS', { visibility: 'claimable', max_claims: 10 });
       await issue([promoId]);

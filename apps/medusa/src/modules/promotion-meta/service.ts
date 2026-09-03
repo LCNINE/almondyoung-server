@@ -353,9 +353,19 @@ class PromotionMetaModuleService extends MedusaService({
    * 집행한다. 같은 파일의 `reserveClaimSlot` 이 쓰는 기법과 같다 (ADR-0034 결정 1).
    *
    * `deleted_at IS NULL` 도 술어에 넣는다 — 회수된 장은 소모 대상이 아니다.
+   *
+   * `sharedContext` 는 형제 원시 SQL 헬퍼(`reserveClaimSlot` 등)와 같은 이유로 열어 둔다 —
+   * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
+   * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
+   * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.
    */
-  async consumeGrantIfUnused(grantId: string, orderId: string, usedAt: Date): Promise<boolean> {
-    const rows = await this.txEm().execute(
+  async consumeGrantIfUnused(
+    grantId: string,
+    orderId: string,
+    usedAt: Date,
+    sharedContext?: Context<EntityManager>,
+  ): Promise<boolean> {
+    const rows = await this.txEm(sharedContext).execute(
       `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?
        WHERE "id" = ? AND "used_at" IS NULL AND "deleted_at" IS NULL
        RETURNING "id"`,

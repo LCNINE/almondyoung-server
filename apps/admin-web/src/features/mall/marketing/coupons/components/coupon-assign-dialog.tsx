@@ -84,7 +84,14 @@ export function CouponAssignDialog({
         // 판정은 `classify-lookup-matches.ts` 의 순수 함수가 한다 — `.tsx` 안에 두면
         // admin-web jest 가 아예 실행하지 않는다(#488 Task 12 리뷰 Important #2).
         // 입력과 식별자를 함께 넘긴다: `q` 는 ilike 부분일치라 「1건이면 그 사람」이 아니다.
-        const outcome = classifyLookupMatches(input, users.data ?? [], (u) => [u.loginId, u.email]);
+        // 🔴 식별자 목록은 **서버가 검색하는 축과 같아야 한다**(username·nickname·email·
+        //    loginId·전화). 좁히면 그 축으로 조회한 관리자에게 있는 고객이 「없음」으로 뜬다.
+        const outcome = classifyLookupMatches(
+          input,
+          users.data ?? [],
+          (u) => [u.loginId, u.email, u.username, u.nickname],
+          (u) => u.phoneNumber,
+        );
         if (outcome.kind === 'not_found') { bad.push({ input, reason: '회원을 찾을 수 없습니다' }); continue; }
         if (outcome.kind === 'ambiguous') { bad.push({ input, reason: '두 명 이상 일치합니다' }); continue; }
 

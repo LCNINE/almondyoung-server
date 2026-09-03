@@ -118,6 +118,34 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'submit_id is required');
   }
 
+  // 🔴 입력 상한은 **아무것도 조회하기 전에** 본다. 형제(쿠폰축) 라우트가 그 순서인데
+  // 이쪽은 가드만 복사하고 위치를 안 옮겨서, 10만 개짜리 promotion_ids 가 400 을 받기 전에
+  // `getByPromotionIds` 와 `query.graph` 의 `IN (10만)` 두 방을 먼저 맞았다.
+  const rawQty = Number(rawQuantity ?? 1);
+  // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
+  //    false 라 발급 루프가 한 번도 안 돈다. 그러면 전원이 조용히 `granted:0` 이 돼
+  //    `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다(#488 Task 9 리뷰).
+  // 🔴 `isInteger` 다. `isFinite` 만 보면 2.7 이 통과해 루프에서 조용히 2 로 잘리고,
+  //    응답 어디에도 「요청한 수량을 지키지 못했다」는 표시가 없다.
+  if (!Number.isInteger(rawQty)) {
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be an integer');
+  }
+  const quantity = Math.max(1, Math.min(rawQty, 50));
+
+  // 🔴 두 상한을 **따로** 두면 곱이 안 막힌다 — 형제(쿠폰축) 라우트가 이미 이 가드를 갖고
+  // 있는데 이쪽만 빠져 있었다. 1000개 쿠폰 × 50장 = 50,000 회의 순차 발급이고, 어떤 프록시
+  // 타임아웃보다 길다. 클라이언트가 끊긴 뒤에도 루프는 서버에서 계속 돌아 「응답은 실패인데
+  // 발급은 됐다」가 된다.
+  if (promotion_ids.length > 500) {
+    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids must be 500 or fewer');
+  }
+  if (promotion_ids.length * quantity > 1000) {
+    throw new MedusaError(
+      MedusaError.Types.INVALID_DATA,
+      `promotion_ids × quantity must be 1000 or fewer (got ${promotion_ids.length} × ${quantity})`,
+    );
+  }
+
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
   const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
@@ -156,30 +184,6 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const issueTrigger = force ? 'admin_force' : 'admin_manual';
   const now = new Date();
-  const rawQty = Number(rawQuantity ?? 1);
-  // 🔴 클램프 전에 걸러야 한다 — `Number('abc')` 는 NaN 이고, NaN 과의 모든 비교는
-  //    false 라 발급 루프가 한 번도 안 돈다. 그러면 전원이 조용히 `granted:0` 이 돼
-  //    `issued`·`skipped` 둘 다 비고, 사유 없는 `200` 이 나간다(#488 Task 9 리뷰).
-  // 🔴 `isInteger` 다. `isFinite` 만 보면 2.7 이 통과해 루프에서 조용히 2 로 잘리고,
-  //    응답 어디에도 「요청한 수량을 지키지 못했다」는 표시가 없다.
-  if (!Number.isInteger(rawQty)) {
-    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'quantity must be an integer');
-  }
-  const quantity = Math.max(1, Math.min(rawQty, 50));
-
-  // 🔴 두 상한을 **따로** 두면 곱이 안 막힌다 — 형제(쿠폰축) 라우트가 이미 이 가드를 갖고
-  // 있는데 이쪽만 빠져 있었다. 1000개 쿠폰 × 50장 = 50,000 회의 순차 발급이고, 어떤 프록시
-  // 타임아웃보다 길다. 클라이언트가 끊긴 뒤에도 루프는 서버에서 계속 돌아 「응답은 실패인데
-  // 발급은 됐다」가 된다.
-  if (promotion_ids.length > 500) {
-    throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids must be 500 or fewer');
-  }
-  if (promotion_ids.length * quantity > 1000) {
-    throw new MedusaError(
-      MedusaError.Types.INVALID_DATA,
-      `promotion_ids × quantity must be 1000 or fewer (got ${promotion_ids.length} × ${quantity})`,
-    );
-  }
   const submitId = submit_id;
   const issued: string[] = [];
   const skipped: { promotion_id: string; reason: string }[] = [];
@@ -307,7 +311,20 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   }
 
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+
+  // 🔴 「지울 링크가 실제로 있었는가」를 미리 알아야 정직하게 보고할 수 있다. 이것 없이
+  // `remaining === 0` 만 보면 **애초에 아무 관계도 없던 쌍**(오타로 넣은 promotion_id 포함)이
+  // 「제거됨」으로 응답된다. 루프 밖에서 한 번만 조회한다.
+  const { data: linkedCustomers } = await query.graph({
+    entity: 'customer',
+    fields: ['id', 'promotions.id'],
+    filters: { id: customerId },
+  });
+  const linkedPromotionIds = new Set<string>(
+    (linkedCustomers?.[0]?.promotions ?? []).map((p: any) => p.id as string),
+  );
 
   const removed: { promotion_id: string; grants: number }[] = [];
   for (const pid of promotion_ids) {
@@ -324,7 +341,11 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     //  - 회수할 장이 0개라고 건너뛰면(옛 `if (n === 0) continue`), 링크만 있고 장이 없는 쌍
     //    — 백필 이전 배정, 또는 장은 생겼는데 링크만 남은 재시도 — 을 **영원히 못 끊는다**.
     //    응답은 `0 promotion(s) removed` 인데 쿠폰은 고객 화면에 계속 남아 있었다.
-    const dismissed = remaining === 0;
+    //
+    // `linkedPromotionIds` 를 함께 보는 이유: 「남은 장 없음」에는 «쓴 장만 남았다» 와
+    // «애초에 아무것도 없었다» 가 둘 다 들어온다. 후자까지 걷었다고 보고하면 오타로 넣은
+    // promotion_id 도 「제거됨」이 된다.
+    const dismissed = remaining === 0 && linkedPromotionIds.has(pid);
     if (dismissed) {
       await link
         .dismiss([
