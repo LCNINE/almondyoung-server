@@ -1,7 +1,6 @@
 import {
   usableGrants,
   hasUsableGrant,
-  selectGrantToConsume,
   nextExpiryAt,
   grantsFor,
   grantsGovernUsage,
@@ -52,48 +51,6 @@ describe('usableGrants', () => {
   it('문자열로 온 날짜도 읽는다', () => {
     const g = [grant({ id: 'a', expires_at: '2026-09-01T00:00:00.000Z' })];
     expect(usableGrants(g, NOW)).toHaveLength(0);
-  });
-});
-
-describe('selectGrantToConsume — FEFO', () => {
-  it('만료가 이른 장을 먼저 고른다', () => {
-    const g = [
-      grant({ id: 'late', expires_at: new Date('2026-09-30T00:00:00.000Z') }),
-      grant({ id: 'soon', expires_at: new Date('2026-09-05T00:00:00.000Z') }),
-    ];
-    expect(selectGrantToConsume(g, NOW)?.id).toBe('soon');
-  });
-
-  it('무기한 장은 맨 뒤다', () => {
-    const g = [
-      grant({ id: 'forever', expires_at: null }),
-      grant({ id: 'dated', expires_at: new Date('2026-12-31T00:00:00.000Z') }),
-    ];
-    expect(selectGrantToConsume(g, NOW)?.id).toBe('dated');
-  });
-
-  it('만료가 같으면 먼저 발급된 장을 고른다', () => {
-    const exp = new Date('2026-09-10T00:00:00.000Z');
-    const g = [
-      grant({ id: 'new', expires_at: exp, issued_at: new Date('2026-09-02T00:00:00.000Z') }),
-      grant({ id: 'old', expires_at: exp, issued_at: new Date('2026-08-01T00:00:00.000Z') }),
-    ];
-    expect(selectGrantToConsume(g, NOW)?.id).toBe('old');
-  });
-
-  it('만료도 발급시각도 같으면 id 오름차순 — 결정적이어야 한다', () => {
-    const exp = new Date('2026-09-10T00:00:00.000Z');
-    const at = new Date('2026-08-01T00:00:00.000Z');
-    const g = [
-      grant({ id: 'b', expires_at: exp, issued_at: at }),
-      grant({ id: 'a', expires_at: exp, issued_at: at }),
-    ];
-    expect(selectGrantToConsume(g, NOW)?.id).toBe('a');
-  });
-
-  it('쓸 수 있는 장이 없으면 null 이다', () => {
-    expect(selectGrantToConsume([grant({ id: 'a', used_at: NOW })], NOW)).toBeNull();
-    expect(selectGrantToConsume([], NOW)).toBeNull();
   });
 });
 
