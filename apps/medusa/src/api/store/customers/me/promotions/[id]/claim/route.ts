@@ -118,23 +118,34 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   // 발급은 워크플로다 (ADR-0034 결정 1) — 표시용 링크 스텝은 Task 7 로 사라졌다. 실패하면
   // 고객은 다시 누르면 되고, 그 재시도는 `issue_key` 가 고정이라 멱등하다.
-  const { result: outcome } = await issueCouponGrantWorkflow(req.scope).run({
+  const {
+    result: {
+      results: [outcome],
+    },
+  } = await issueCouponGrantWorkflow(req.scope).run({
     input: {
-      promotion_id: promotionId,
-      customer_id: customerId,
-      issue_keys: ['claim'], // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
-      issued_via: 'customer_claim',
-      expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
-      max_claims: maxClaims,
-      enforce_cap: true,
+      requests: [
+        {
+          promotion_id: promotionId,
+          customer_id: customerId,
+          issue_keys: ['claim'], // 클레임은 영구 1장 — 따닥 방어가 DB 레벨이다.
+          issued_via: 'customer_claim',
+          expires_at: computeExpiresAt(meta, now)?.toISOString() ?? null,
+          max_claims: maxClaims,
+          enforce_cap: true,
+        },
+      ],
     },
   });
 
-  if (outcome.exhausted) {
+  if (outcome.verdict === 'error') {
+    throw new MedusaError(MedusaError.Types.UNEXPECTED_STATE, `클레임 발급 실패: ${outcome.error}`);
+  }
+  if (outcome.verdict === 'exhausted') {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
   }
 
-  // `duplicate` 든 `created` 든 200 이다 — 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는
+  // `already_issued` 든 `issued` 든 200 이다 — 재클릭은 성공으로 보이는 것이 맞고, 슬롯 증가는
   // 중복일 때 트랜잭션과 함께 되감겼다(따닥 한 번에 2명분이 소진되지 않는다).
   return res.status(200).json({ success: true, promotion_id: promotionId });
 }
