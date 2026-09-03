@@ -38,6 +38,8 @@ export type CouponGrantRow = {
   issued_at: Date | string;
   expires_at: Date | string | null;
   used_at: Date | string | null;
+  /** 이 장을 소모한 카트. 백필된 옛 장은 null. */
+  cart_id: string | null;
   order_id: string | null;
   revoked_at: Date | string | null;
 };

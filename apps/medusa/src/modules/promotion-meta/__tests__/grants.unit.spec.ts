@@ -19,6 +19,7 @@ function grant(over: Partial<CouponGrantRow> & { id: string }): CouponGrantRow {
     issued_at: new Date('2026-09-01T00:00:00.000Z'),
     expires_at: null,
     used_at: null,
+    cart_id: null,
     order_id: null,
     revoked_at: null,
     ...over,
