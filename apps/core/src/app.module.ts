@@ -19,6 +19,7 @@ import { FulfillmentOutboxDispatchGateModule } from './modules/fulfillment/outbo
 import { WaybillModule } from './modules/fulfillment/waybill/waybill.module';
 import { LibraryModule } from './modules/library/library.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
+import { ArchiveModule } from './modules/archive/archive.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
     WaybillModule,
     LibraryModule,
     CustomerServiceModule,
+    ArchiveModule,
   ],
   controllers: [AppController],
   providers: [

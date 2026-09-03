@@ -137,6 +137,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     isActive: true,
   },
   {
+    id: 'archive-page-image',
+    name: 'Archive Page Image',
+    description: '사내 아카이브 문서 본문 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 20971520,
+    pathPrefix: 'archive/page-image',
+    isActive: true,
+  },
+  {
     id: 'notice-content-image',
     name: 'Notice Content Image',
     description: '공지사항 본문 이미지',
