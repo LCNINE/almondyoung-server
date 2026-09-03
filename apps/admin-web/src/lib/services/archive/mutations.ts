@@ -11,6 +11,7 @@ import type {
   UpdateArchivePageDto,
 } from '@/lib/types/dto/archive';
 import { archiveQueryKeys } from './query-keys';
+import { mergeSavedPage } from './write-back';
 
 /** 트리·최근 문서처럼 «목록» 성격의 캐시만 털어낸다. 열려 있는 본문은 건드리지 않는다. */
 function invalidateLists(
@@ -24,11 +25,7 @@ function invalidateLists(
 
 /**
  * 저장한 값을 상세 캐시에 그대로 되써 넣는다.
- *
- * 서버 응답에는 본문이 없고(`ArchivePageSaveResultDto`), 상세 조회는 `staleTime: Infinity` 라
- * 여기서 안 넣으면 캐시의 `content` 가 «문서를 처음 연 순간의 값»에 영원히 묶인다.
- * 그러면 다른 문서에 갔다 돌아왔을 때 방금 쓴 본문이 없는 편집기가 뜨고,
- * 거기서 한 글자만 쳐도 그 빈 본문이 서버의 진짜 본문을 덮는다.
+ * 무엇을 어떻게 병합하는지와 그 이유는 `mergeSavedPage` 에 있다 — 여기는 캐시 키 배선뿐이다.
  */
 export function writeBackSavedPage(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -38,27 +35,7 @@ export function writeBackSavedPage(
 ): void {
   queryClient.setQueryData<ArchivePageDetailDto>(
     archiveQueryKeys.page(id),
-    (previous) => {
-      if (!previous) return previous;
-
-      const next: ArchivePageDetailDto = result
-        ? {
-            ...previous,
-            title: result.title,
-            icon: result.icon,
-            coverUrl: result.coverUrl,
-            updatedAt: result.updatedAt,
-            updatedBy: result.updatedBy,
-          }
-        : { ...previous };
-
-      // 보낸 것만 반영한다 — 제목만 저장한 요청이 본문을 건드리면 안 된다.
-      if (dto.content !== undefined) next.content = dto.content;
-      if (dto.contentMarkdown !== undefined)
-        next.contentMarkdown = dto.contentMarkdown;
-
-      return next;
-    }
+    (previous) => mergeSavedPage(previous, dto, result)
   );
 }
 
