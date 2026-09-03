@@ -1144,7 +1144,7 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
   1. 링크 테이블과 `extraColumns` 4개 제거
   2. `promotion_meta.issued_count` 컬럼 제거 (이 계획으로 읽기 소비자 0) — **함께** `PromotionMetaModuleService.mirrorIssuedCount`(0단계 dual write)와 그 스펙(`issued_count 미러` describe)을 지운다. 컬럼만 지우면 미러 UPDATE 가 부팅 직후부터 던진다
   3. `promotion_issue_log` 테이블 제거 (이 계획 이전부터 죽어 있었고 여전히 참조 0)
-  4. `scripts/backfill-coupon-grants.ts` 삭제 — **단, Task 1 게이트가 끝난 뒤에.** 이 스크립트가 링크를 읽는 «마지막» 코드이고, 게이트 실패 시의 복구 수단이다
+  4. `scripts/backfill-coupon-grants.ts` 삭제 — **단, Task 1 게이트가 끝난 뒤에.** 이 스크립트가 링크를 읽는 «마지막» 코드이고, 게이트 실패 시의 복구 수단이다. Task 4 가 옮긴 `markGrantUsedIfUnused` 본체도 같이 사라진다
   5. `coupon-validity.spec.ts` 의 T3 블록(링크 upsert·`extraColumns`·dismiss 특성 테스트, 프로덕션 소비자 0)과 남은 `linkCustomer` 잔재 제거
   6. 클레임 라우트의 200 응답 형태 2종 통일 (`{issued,reason}` vs `{success,promotion_id}`) — 오늘 스토어프론트가 본문을 안 읽어 안전하지만 스펙이 `reason` 을 단언한다
 - **고아 링크 행** (Task 7 리뷰 ⚠️): 옛 코드가 쓴 링크 행이 라이브에 남아 있고, 이제 **아무도 지우지 않는다**(회수가 `link.dismiss` 를 부르지 않는다). 아무도 «읽지»도 않으므로 무해하지만, 위 후속 PR 이 테이블을 지울 때까지는 남는다. 그 PR 이 이 정리를 포함하므로 별도 작업은 아니고, **테이블 삭제를 미룰 경우에만** 별도 정리가 필요하다.

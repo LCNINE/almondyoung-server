@@ -190,3 +190,23 @@ issueCouponGrantWorkflow: issueCouponGrantsStep → createRemoteLinkStep
 - 「1장 = 1회」 가 애플리케이션 읽기-후-쓰기가 아니라 **SQL 술어**로 집행된다.
 - 대가: 발급 한 건당 워크플로 오버헤드가 붙는다. 대량발급은 곱 상한 1000 이 이미 있으므로
   실측이 필요한 구간은 그 상한 근처뿐이다.
+
+## 2026-09-03 보강 — 결정 1 은 소모 seam 에도, 결정 3 은 verdict 로
+
+PR #778 머지 직전 재리뷰 14건을 세 시험(접기의 2차 미분 / 인터페이스 폭 대 불변식 / 매단 자리의
+문서 정당성)으로 판정한 결과는 `docs/superpowers/specs/2026-09-03-coupon-module-depth-design.md` 에
+있다. 이 ADR 에 닿는 결론 둘:
+
+- **결정 1 「조건부 쓰기는 술어를 SQL 에 적는다」는 소모의 «선택»에도 적용된다.** `consumeGrantIfUnused(id)`
+  는 술어를 SQL 에 두었지만 *어느 id 인지*는 훅이 골랐다 — 고르기와 CAS 가 다른 층에 있어 같은
+  고객의 두 카트가 같은 장을 골랐다. `consumeOneUsableGrant` 가 FEFO·만료 경계·재호출 멱등성·
+  `FOR UPDATE SKIP LOCKED` 를 한 UPDATE 로 묶는다. 핫패스는 이것만 부른다.
+- **결정 3 「라우트에는 정책 게이트·워크플로 호출·응답 모양만」은 워크플로 출력이 날것이면 지켜지지
+  않는다.** `{created[], duplicated[], exhausted}` 를 라우트 넷이 제각각 접었다. 워크플로가 요청
+  배치를 받아 요청당 `verdict`(`issued|partial|already_issued|exhausted|error`) 를 돌려주고,
+  `.run()` 은 HTTP 요청당 1회다. 요청 하나의 예외는 그 요청의 `error` 로 격리한다 — 스텝이 던지면
+  보상이 성공분까지 걷는다.
+
+**결정 2 의 매단 자리(`orderCreated`)는 미문서 훅이다** — `completeCartWorkflow` 레퍼런스는 `validate`
+하나만 노출한다. 그 이전은 별도 결정(PR-3)이며 이 ADR 의 개정으로 다룬다. 후보와 스파이크 항목은
+위 설계 문서 §6.
