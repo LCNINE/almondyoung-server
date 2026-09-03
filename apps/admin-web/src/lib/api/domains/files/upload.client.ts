@@ -51,6 +51,8 @@ export const BANNER_IMAGE_CONTEXT_ID = 'banner-image';
 export const SITE_POPUP_IMAGE_CONTEXT_ID = 'notice-content-image';
 export const SHOP_LISTING_IMAGE_CONTEXT_ID = 'notice-content-image';
 export const ARCHIVE_PAGE_IMAGE_CONTEXT_ID = 'archive-page-image';
+/** 아카이브 본문의 «이미지가 아닌» 첨부. 비공개라 열람은 인증을 거친다. */
+export const ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID = 'archive-page-attachment';
 export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {
@@ -220,6 +222,26 @@ export async function uploadRichTextImage(
   contextId: string
 ): Promise<FileUploadResponse> {
   return uploadFileToFileService(file, { contextId, isPublic: true });
+}
+
+/**
+ * 아카이브 본문의 이미지가 아닌 첨부(pdf·hwp·xlsx·html …).
+ *
+ * 이미지와 다른 컨텍스트로 간다 — `archive-page-image` 는 `image/*` 만 받으므로 그리로 보내면
+ * presign 이 400 으로 거절한다. 그리고 내부 문서라 **비공개**다
+ * (`allowPublic: false` 라 isPublic 을 넘기면 오히려 거절된다).
+ *
+ * 비공개 파일의 `url` 은 인증 없이 못 여는 주소이므로, 본문에 넣을 주소는 서명 URL 로 302 해 주는
+ * 열람 경로다. 그래야 편집기 안에서 «평범한 링크»로 열린다.
+ */
+export async function uploadRichTextAttachment(file: File): Promise<{ url: string; fileId: string }> {
+  const uploaded = await uploadFileToFileService(file, {
+    contextId: ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+    // 이미지가 아니면 어차피 변환 대상이 아니지만, 의도를 코드로 남긴다.
+    compress: false,
+  });
+
+  return { url: `/api/proxy/file/files/${uploaded.id}/open`, fileId: uploaded.id };
 }
 
 export async function getFileSignedUrlFromFileService(

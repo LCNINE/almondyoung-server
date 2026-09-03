@@ -24,6 +24,7 @@ import {
 import { ko } from '@blocknote/core/locales';
 import {
   ARCHIVE_PAGE_IMAGE_CONTEXT_ID,
+  uploadRichTextAttachment,
   uploadRichTextImage,
 } from '@/lib/api/domains/files/upload.client';
 import { archiveClient } from '@/lib/api/domains/archive';
@@ -115,11 +116,19 @@ export default function BlockEditor({
       schema: archiveSchema,
       initialContent: startContent,
       dictionary: ko,
+      // 편집기는 이미지·파일·영상·소리 블록의 업로드를 **전부 이 하나로** 보낸다.
+      // 그래서 여기서 갈라야 한다 — 이미지 컨텍스트는 `image/*` 만 받으므로
+      // pdf·hwp·html 을 그리로 보내면 presign 이 400 으로 거절한다.
       uploadFile: async (file: File) => {
-        const { url } = await uploadRichTextImage(
-          file,
-          ARCHIVE_PAGE_IMAGE_CONTEXT_ID
-        );
+        if (file.type.startsWith('image/')) {
+          const { url } = await uploadRichTextImage(
+            file,
+            ARCHIVE_PAGE_IMAGE_CONTEXT_ID
+          );
+          return url;
+        }
+
+        const { url } = await uploadRichTextAttachment(file);
         return url;
       },
     },
