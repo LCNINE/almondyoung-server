@@ -24,17 +24,17 @@ export function useArchiveEditorScope(): ArchiveEditorScope | null {
 }
 
 /**
- * 마크다운 내보내기 전용 제목 캐시.
+ * 마크다운 내보내기 전용 제목 캐시. 하위 페이지 블록과 인라인 페이지 링크가 같이 쓴다.
  *
- * 블록은 `pageId` 만 저장한다 — 제목을 저장하면 원본이 바뀔 때 어긋나기 때문이다.
+ * 문서 참조는 `pageId` 만 저장한다 — 제목을 저장하면 원본이 바뀔 때 어긋나기 때문이다.
  * 그런데 `toExternalHTML` 은 동기 함수라 그 자리에서 제목을 조회할 수 없다. 그래서
  * 화면이 제목을 해석할 때마다 여기에 적어 두고, 내보내기는 그 값을 «있으면» 쓴다.
  * 문서(DB)에는 들어가지 않으므로 낡은 제목이 굳는 일은 없고, 캐시가 비어 있으면
  * 링크 라벨이 id 로 떨어질 뿐 링크 자체는 온전하다.
  */
-const subPageTitleCache = new Map<string, string>();
+export const archivePageTitleCache = new Map<string, string>();
 
-type Resolved =
+export type ResolvedArchiveTarget =
   | { state: 'loading' }
   | { state: 'ok'; title: string; icon: string | null; moved: boolean }
   | { state: 'trashed'; title: string; icon: string | null }
@@ -46,11 +46,11 @@ type Resolved =
  * 트리 캐시가 1차 출처다 — 사이드바가 이미 받아 둔 것이라 추가 요청이 없다.
  * 트리에 없으면 휴지통을 확인하고(그때만 요청한다), 거기에도 없으면 «찾을 수 없음»이다.
  */
-function useSubPageTarget(
+export function useSubPageTarget(
   pageId: string,
   hostPageId?: string,
   space?: ArchiveSpace
-): Resolved {
+): ResolvedArchiveTarget {
   const { data: nodes, isLoading: treeLoading } = useArchiveTree(
     space ?? 'team'
   );
@@ -89,7 +89,7 @@ function SubPageBlockView({ pageId }: { pageId: string }) {
   const target = useSubPageTarget(pageId, scope?.pageId, scope?.space);
 
   if (target.state === 'ok')
-    subPageTitleCache.set(pageId, target.title || '제목 없음');
+    archivePageTitleCache.set(pageId, target.title || '제목 없음');
 
   if (target.state === 'loading') {
     return (
@@ -164,7 +164,7 @@ export const createSubPageBlockSpec = createReactBlockSpec(
       const { pageId } = block.props;
       return (
         <a href={`/archive/${pageId}`}>
-          {subPageTitleCache.get(pageId) ?? pageId}
+          {archivePageTitleCache.get(pageId) ?? pageId}
         </a>
       );
     },

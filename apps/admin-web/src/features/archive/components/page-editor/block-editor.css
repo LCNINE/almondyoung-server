@@ -134,3 +134,51 @@
   color: var(--muted-foreground);
   text-decoration: none;
 }
+
+/* 문장 속 문서 참조. 하위 페이지 블록이 «한 줄 카드»인 것과 달리 이쪽은 글자 흐름에 섞여야
+   하므로 inline 이고, 줄 끝에서 자연스럽게 넘어가도록 줄바꿈을 막지 않는다.
+   밑줄을 쓰지 않는 대신 앞의 문서 아이콘이 «링크»라는 단서다 — 색만으로 가르면 안 된다. */
+.archive-block-editor .archive-page-link {
+  display: inline;
+  white-space: normal;
+  border-radius: 0.25rem;
+  padding: 0 0.125rem;
+}
+
+/* BlockNote 의 `.bn-shadcn .bn-editor a` 가 색과 밑줄을 브라우저 기본값으로 되돌린다.
+   클래스 하나로는 그 규칙을 못 이기므로(선택자가 더 구체적이다) 여기서 같이 못 박는다 —
+   한쪽만 덮으면 색은 우리 것, 밑줄은 브라우저 것이 남아 평범한 URL 링크처럼 보인다. */
+.archive-block-editor .bn-editor a.archive-page-link {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.archive-block-editor .archive-page-link__icon {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  margin-right: 0.15em;
+  vertical-align: -0.125em;
+}
+
+.archive-block-editor .archive-page-link--ref {
+  color: var(--primary);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.archive-block-editor .archive-page-link--ref:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.archive-block-editor .archive-page-link--ref:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* 지워졌거나 찾을 수 없는 문서 — 링크처럼 보이면 안 된다. */
+.archive-block-editor .archive-page-link--muted {
+  color: var(--muted-foreground);
+  cursor: default;
+}

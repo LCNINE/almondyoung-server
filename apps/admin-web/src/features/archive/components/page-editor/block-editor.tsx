@@ -6,6 +6,7 @@ import './block-editor.css';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { FileText } from 'lucide-react';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { BlockNoteView } from '@blocknote/shadcn';
 import {
   SuggestionMenuController,
@@ -16,6 +17,7 @@ import {
 import {
   BlockNoteSchema,
   defaultBlockSpecs,
+  defaultInlineContentSpecs,
   filterSuggestionItems,
   insertOrUpdateBlockForSlashMenu,
 } from '@blocknote/core';
@@ -24,13 +26,16 @@ import {
   ARCHIVE_PAGE_IMAGE_CONTEXT_ID,
   uploadRichTextImage,
 } from '@/lib/api/domains/files/upload.client';
-import { useCreateArchivePage } from '@/lib/services/archive';
+import { archiveClient } from '@/lib/api/domains/archive';
+import { archiveQueryKeys, useCreateArchivePage } from '@/lib/services/archive';
 import type { ArchiveBlock, ArchiveSpace } from '@/lib/types/dto/archive';
 import {
   ArchiveEditorScopeProvider,
   SUB_PAGE_BLOCK_TYPE,
+  archivePageTitleCache,
   createSubPageBlockSpec,
 } from './sub-page-block';
+import { PAGE_LINK_INLINE_TYPE, pageLinkInlineSpec } from './page-link-inline';
 
 /**
  * 본문 안에 하위 페이지를 박을 수 있어야 노션 자료를 그대로 받을 수 있다 — 노션은
@@ -42,6 +47,11 @@ const archiveSchema = BlockNoteSchema.create({
     ...defaultBlockSpecs,
     [SUB_PAGE_BLOCK_TYPE]: createSubPageBlockSpec(),
   },
+  inlineContentSpecs: {
+    ...defaultInlineContentSpecs,
+    // 블록 스펙과 달리 인라인 스펙 생성기는 팩토리가 아니라 스펙 자체를 돌려준다.
+    [PAGE_LINK_INLINE_TYPE]: pageLinkInlineSpec,
+  },
 });
 
 type ArchiveBlockType = typeof archiveSchema.Block;
@@ -52,6 +62,21 @@ const BASIC_BLOCK_GROUP = ko.slash_menu.paragraph.group;
 
 /** 타이핑이 멈춘 뒤 저장까지 기다리는 시간. 노션도 이 정도 간격으로 올린다. */
 const AUTOSAVE_DEBOUNCE_MS = 800;
+
+/** 서버가 두 글자 미만을 거절한다. 그보다 짧으면 최근 문서를 보여 준다. */
+const PAGE_SEARCH_MIN_LENGTH = 2;
+
+/** 글자마다 본문 전체를 훑는 조회를 보내지 않는다. 한글은 조합 중에도 질의가 바뀐다. */
+const PAGE_SEARCH_DEBOUNCE_MS = 200;
+
+/** 문서 아이콘은 사용자가 넣은 이모지다. 없으면 기본 문서 아이콘으로 떨어진다. */
+function pageIcon(icon: string | null) {
+  return icon ? (
+    <span className="text-base leading-none">{icon}</span>
+  ) : (
+    <FileText className="size-4" />
+  );
+}
 
 type Props = {
   /** 페이지가 바뀌면 편집기를 새로 만들어야 하므로 key 로도 쓴다. */
@@ -102,7 +127,11 @@ export default function BlockEditor({
   );
 
   const createPage = useCreateArchivePage();
+  const queryClient = useQueryClient();
   const scope = useMemo(() => ({ pageId, space }), [pageId, space]);
+
+  // 가장 최근 질의만 서버로 보낸다. 늦게 온 결과는 편집기가 이미 버리지만, 보내지 않는 게 낫다.
+  const searchSeq = useRef(0);
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // 최신 콜백을 ref 로 들고 있어야 debounce 타이머가 낡은 클로저를 붙잡지 않는다.
@@ -184,6 +213,70 @@ export default function BlockEditor({
       });
   }, [createPage, editor, flush, pageId, space]);
 
+  // 「@」로 기존 문서를 문장 안에서 참조한다. 자식을 만들지 않으므로 트리는 그대로다.
+  const insertPageLink = useCallback(
+    (page: { id: string; title: string }) => {
+      // 내보내기용 라벨은 캐시에서 나온다. 방금 고른 제목을 여기서 미리 채워 두면
+      // 그 블록을 화면에 그린 적이 없어도 마크다운에 제목이 남는다.
+      archivePageTitleCache.set(page.id, page.title || '제목 없음');
+      // 뒤에 공백을 붙이지 않는다 — 한국어는 참조 바로 뒤에 조사가 붙으므로
+      // 「…정책 v2 를」처럼 한 칸이 벌어진다. 필요하면 사용자가 직접 띄운다.
+      editor.insertInlineContent([
+        { type: PAGE_LINK_INLINE_TYPE, props: { pageId: page.id } },
+      ]);
+    },
+    [editor]
+  );
+
+  const pageLinkItems = useCallback(
+    async (query: string): Promise<DefaultReactSuggestionItem[]> => {
+      const trimmed = query.trim();
+      const seq = (searchSeq.current += 1);
+
+      if (trimmed.length < PAGE_SEARCH_MIN_LENGTH) {
+        const recent = await queryClient.fetchQuery({
+          queryKey: archiveQueryKeys.recent(),
+          queryFn: () => archiveClient.listRecent(),
+          staleTime: 30 * 1000,
+        });
+
+        return recent.map((page) => ({
+          title: page.title || '제목 없음',
+          icon: pageIcon(page.icon),
+          group: '최근 수정한 문서',
+          onItemClick: () => insertPageLink(page),
+        }));
+      }
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, PAGE_SEARCH_DEBOUNCE_MS)
+      );
+      if (seq !== searchSeq.current) return [];
+
+      const result = await queryClient.fetchQuery({
+        queryKey: archiveQueryKeys.search(trimmed),
+        queryFn: () => archiveClient.search(trimmed),
+        staleTime: 15 * 1000,
+      });
+
+      // 서버가 제목과 본문 양쪽을 이미 걸러 왔다. 여기서 한 번 더 거르면 본문으로 걸린 문서가
+      // 사라지고, 한글 조합 중에는 결과가 통째로 비어 보인다.
+      return result.hits.map((hit) => ({
+        title: hit.title || '제목 없음',
+        subtext:
+          hit.breadcrumbs.length > 0
+            ? hit.breadcrumbs.map((crumb) => crumb.title).join(' / ')
+            : (hit.snippet ?? undefined),
+        icon: pageIcon(hit.icon),
+        group: result.hasMore
+          ? '검색 결과 — 더 있어요. 검색어를 좁혀보세요'
+          : '검색 결과',
+        onItemClick: () => insertPageLink(hit),
+      }));
+    },
+    [insertPageLink, queryClient]
+  );
+
   const slashItems = useCallback(
     (query: string): Promise<DefaultReactSuggestionItem[]> => {
       const items = getDefaultReactSlashMenuItems(editor);
@@ -226,6 +319,16 @@ export default function BlockEditor({
         slashMenu={false}
       >
         <SuggestionMenuController triggerCharacter="/" getItems={slashItems} />
+        <SuggestionMenuController
+          triggerCharacter="@"
+          getItems={pageLinkItems}
+          // 낱말 한가운데 「@」(메일 주소 같은)에는 열지 않는다.
+          shouldOpen={(tr) => {
+            const { from } = tr.selection;
+            const before = from > 1 ? tr.doc.textBetween(from - 1, from) : '';
+            return before === '' || /\s/.test(before);
+          }}
+        />
       </BlockNoteView>
     </ArchiveEditorScopeProvider>
   );
