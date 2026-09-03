@@ -44,6 +44,27 @@ medusaIntegrationTestRunner({
     const claim = (promotionId: string) =>
       api.post(`/store/customers/me/promotions/${promotionId}/claim`, {}, storeHeaders);
 
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
+
     const otherGroupRule = async () => {
       const [g] = await getContainer().resolve(Modules.CUSTOMER).createCustomerGroups([{ name: `og${seq}` }]);
       return { rules: [{ attribute: 'customer.groups.id', operator: 'in', values: [g.id] }] };
@@ -120,11 +141,13 @@ medusaIntegrationTestRunner({
       expect(claimCodes).toContain('CLAIM1');
     });
 
+    // 🔴 Task 2 로 이 라우트의 `isClaimExhausted` 가 읽는 `issued_count` 는 더 이상 갱신되지
+    // 않는다(상한 집행이 `coupon_grant` COUNT 로 옮겨갔다) — 이 테스트는 Task 3 이 그 읽기를
+    // COUNT 로 전환할 때까지 RED 다(#488 설계 문서 결정 1, Task 3 Step 4 가 이 시퀀싱을 명시).
     it('me/promotions excludes a claim-exhausted claimable coupon (P2-8)', async () => {
       const claimId = await createPromo('CLAIMFULL', { visibility: 'claimable', max_claims: 1 });
-      // issued_count 를 max_claims 까지 채워 소진 상태로
-      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.reserveClaimSlot(claimId, 1); // issued_count = 1 == max_claims
+      // 발급 상한을 소진 상태로 — 이제 카운터가 아니라 실제 장으로 채운다.
+      await fillClaims(claimId, 1);
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
       const claimCodes = res.data.claimable_promotions.map((p: any) => p.code);
@@ -346,8 +369,7 @@ medusaIntegrationTestRunner({
 
     it('claim rejects an exhausted claimable coupon', async () => {
       const id = await createPromo('CLAIMEXH', { visibility: 'claimable', max_claims: 1 });
-      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await meta.reserveClaimSlot(id, 1); // 소진
+      await fillClaims(id, 1); // 소진
       await expect(claim(id)).rejects.toMatchObject({ response: { status: 400 } });
     });
 
@@ -361,18 +383,19 @@ medusaIntegrationTestRunner({
 
       const first = await claim(id);
       expect(first.status).toEqual(200);
-      // 이제 max_claims=1 이 내 발급으로 소진됐다.
+      // 이제 max_claims=1 이 내 발급으로 소진됐다 — 상한의 정본은 카운터가 아니라
+      // `coupon_grant` COUNT 다 (결정 1).
       const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+      expect(await meta.countIssuedGrants(id)).toBe(1);
 
       const again = await claim(id);
       expect(again.status).toEqual(200);
-      // 🔴 200 이 「한 장 더 줬다」는 뜻이면 안 된다 — 장수도 카운터도 그대로여야 한다.
+      // 🔴 200 이 「한 장 더 줬다」는 뜻이면 안 된다 — 장수도 COUNT 도 그대로여야 한다.
       const mine = (await meta.listGrantsForCustomer(customerId)).filter(
         (g: any) => g.promotion_id === id,
       );
       expect(mine).toHaveLength(1);
-      expect(Number((await meta.getByPromotionId(id)).issued_count)).toBe(1);
+      expect(await meta.countIssuedGrants(id)).toBe(1);
     });
 
     it('claim is idempotent (already claimed → 200)', async () => {

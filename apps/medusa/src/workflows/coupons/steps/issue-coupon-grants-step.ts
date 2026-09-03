@@ -31,7 +31,6 @@ type CompensationData = {
   promotion_id: string;
   customer_id: string;
   issue_keys: string[];
-  release_slots: boolean;
 } | null;
 
 /**
@@ -81,8 +80,6 @@ export const issueCouponGrantsStep = createStep(
             promotion_id: input.promotion_id,
             customer_id: input.customer_id,
             issue_keys: created,
-            // 상한이 있는 프로모션에서만 카운터가 올라갔다.
-            release_slots: input.max_claims !== null,
           }
         : null;
 
@@ -95,16 +92,13 @@ export const issueCouponGrantsStep = createStep(
     if (!compensation) return;
     const service = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-    const revoked = await service.revokeGrantsByIssueKeys(
+    // soft delete 가 곧 슬롯 반환이다 — `countIssuedGrants` 가 `deleted_at IS NULL` 인 장만
+    // 세므로, 되돌린 장은 되돌리는 즉시 다음 발급 시도의 상한 계산에서 빠진다. 별도로
+    // 슬롯을 반환하는 호출이 필요 없다(옛 `releaseClaimSlot` 루프가 하던 일).
+    await service.revokeGrantsByIssueKeys(
       compensation.promotion_id,
       compensation.customer_id,
       compensation.issue_keys,
     );
-
-    if (compensation.release_slots) {
-      for (let i = 0; i < revoked; i++) {
-        await service.releaseClaimSlot(compensation.promotion_id);
-      }
-    }
   },
 );

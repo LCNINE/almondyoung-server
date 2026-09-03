@@ -75,6 +75,27 @@ medusaIntegrationTestRunner({
     const skipReason = (res: any, id: string) =>
       res.data.skipped.find((s: any) => s.promotion_id === id)?.reason;
 
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
+
     const createGroupWithCustomer = async (): Promise<string> => {
       const customerModule = getContainer().resolve(Modules.CUSTOMER);
       const [group] = await customerModule.createCustomerGroups([{ name: `grp${seq}` }]);
@@ -213,41 +234,40 @@ medusaIntegrationTestRunner({
       expect(res.data.issued).toContain(promoId);
     });
 
-    it('max_claims_exceeded once issued_count reaches the cap', async () => {
+    it('max_claims_exceeded once coupon_grant COUNT reaches the cap', async () => {
       const promoId = await createPromo('CAPPED', { visibility: 'claimable', max_claims: 1 });
-      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await metaService.reserveClaimSlot(promoId, 1); // 소진
+      await fillClaims(promoId, 1); // 소진
       const res = await issue([promoId]);
       expect(skipReason(res, promoId)).toEqual('max_claims_exceeded');
     });
 
-    it('revoke restores issued_count (customers/:id/promotions path)', async () => {
+    it('revoke restores the grant COUNT (customers/:id/promotions path)', async () => {
       // 🔴 Task 4 (#488 G1~G4) 이전엔 이 테스트가 `isAlreadyIssued`(promotion_issue_log 기반)도
       // 같이 검사했다 — 세 발급 경로 전부가 grant 모델로 옮겨가며 그 로그에 더 이상 아무도
       // 쓰지 않는다(대체물은 `coupon_grant.issue_key` 유니크). Task 10 이 그 테이블·메서드
-      // 자체를 걷어낼 예정이라 그 검사는 여기서 뺐다 — issued_count(발급 슬롯 카운터)는
-      // 여전히 실제 동작이라 남긴다.
+      // 자체를 걷어낼 예정이라 그 검사는 여기서 뺐다 — `coupon_grant` COUNT(Task 2 로
+      // `issued_count` 를 대체한 상한의 정본)는 여전히 실제 동작이라 남긴다.
       const promoId = await createPromo('REVOKE1', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(1);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
 
       await api.delete(`/admin/customers/${customerId}/promotions`, { ...adminHeaders, data: { promotion_ids: [promoId] } });
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(0);
     });
 
-    it('revoke via promotions/:id/customers path also restores count', async () => {
+    it('revoke via promotions/:id/customers path also restores the grant COUNT', async () => {
       // 🔴 :211 의 형제 수정과 같은 이유(#488 Task 4 리뷰 Important #1) — `isAlreadyIssued`
       // 는 세 발급 경로 전부가 `recordIssue` 를 안 부르니 항상 `false` 다. 예전엔 여기에도
       // `expect(await metaService.isAlreadyIssued(...)).toBe(false)` 가 있었는데, DELETE 가
-      // 아무 일도 안 해도 통과하는(공허하게 참) 단언이라 제거한다 — issued_count 복원만
+      // 아무 일도 안 해도 통과하는(공허하게 참) 단언이라 제거한다 — grant COUNT 복원만
       // 실제로 검사되는 것이라 그것만 남긴다.
       const promoId = await createPromo('REVOKE2', { visibility: 'claimable', max_claims: 5 });
       await issue([promoId]);
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       await api.delete(`/admin/promotions/${promoId}/customers`, { ...adminHeaders, data: { customer_ids: [customerId] } });
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(0);
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(0);
     });
 
     // 🔴 ADR-0034 회귀 방지. 링크를 「남은 장이 없을 때만」 걷도록 바꾸면서 `remaining === 0`
@@ -287,10 +307,13 @@ medusaIntegrationTestRunner({
       // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다.
       const left = await metaService.listGrantsForCustomer(customerId);
       expect(left.filter((g: any) => g.promotion_id === promoId)).toHaveLength(1);
-      // 실제로 소비된 슬롯이므로 카운터도 되돌아가지 않는다.
-      expect(Number((await metaService.getByPromotionId(promoId)).issued_count)).toEqual(1);
+      // 실제로 소비된 슬롯이므로 (deleted_at 이 그대로라) COUNT 도 되돌아가지 않는다.
+      expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
     });
 
+    // 🔴 Task 2 로 이 응답이 싣는 `metadata.issued_count`(`admin/promotions/helpers.ts` 의
+    // `toMetadataShape`) 는 더 이상 갱신되지 않는 컬럼을 그대로 읽는다 — 이 테스트는 Task 3 이
+    // 그 변환을 실측 COUNT 로 바꿀 때까지 RED 다(#488 설계 문서 결정 1, SDD Ruling 2).
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {
       const promoId = await createPromo('PROGRESS', { visibility: 'claimable', max_claims: 10 });
       await issue([promoId]);

@@ -114,41 +114,39 @@ class PromotionMetaModuleService extends MedusaService({
   }
 
   /**
-   * 슬롯 하나를 원자적으로 예약한다. `UPDATE ... WHERE issued_count < maxClaims` 라서 동시
-   * 요청이 상한을 넘기지 못한다. 마이그레이션 이전에 발급된 프로모션은 `issued_count` 가 0 이니
-   * `backfill:issued-count` 로 실제 발급 수를 채운 뒤에 상한이 의미를 갖는다.
+   * 이 프로모션이 지금까지 소진한 슬롯 수.
    *
-   * `sharedContext` 를 받는 이유: `issueGrantWithSlot_` 이 자기 트랜잭션 안에서 이것을 부른다.
-   * 넘기지 않으면 저장소의 기본 매니저로 떨어져 **다른 트랜잭션**에서 카운터를 올리게 되고,
-   * 장 INSERT 가 되감겨도 카운터만 남는다. 같은 SQL 을 두 벌로 복제하지 않으려고 이 한
-   * 인자를 열어 둔다.
+   * 「슬롯을 점유한다」의 정의는 **`deleted_at IS NULL`** 이다 — 회수된 미사용 장은 soft
+   * delete 되어 슬롯을 돌려주고, 사용된 장은 회수돼도 남아 슬롯을 계속 점유한다(이미 소비돼
+   * 다시 발급할 수 없다). 옛 `reserveClaimSlot`/`releaseClaimSlot` 짝이 손으로 지키던 규칙을
+   * 데이터가 스스로 표현하게 한 것이다.
+   *
+   * 🔴 `count(*)` 는 bigint 라 드라이버가 **문자열**로 돌려준다. `::int` 와 `Number()` 를 둘 다
+   * 건다 — 한쪽이라도 빠지면 비교가 조용히 어긋난다.
    */
-  async reserveClaimSlot(
-    promotionId: string,
-    maxClaims: number,
-    sharedContext?: Context<EntityManager>,
-  ): Promise<'ok' | 'exhausted'> {
-    const result = await this.txEm(sharedContext).execute(
-      `UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1
-       WHERE "promotion_id" = ? AND "issued_count" < ?
-       RETURNING "id"`,
-      [promotionId, maxClaims],
-    );
-    return (result?.length ?? 0) > 0 ? 'ok' : 'exhausted';
-  }
-
-  async releaseClaimSlot(promotionId: string, sharedContext?: Context<EntityManager>): Promise<void> {
-    await this.txEm(sharedContext).execute(
-      `UPDATE "promotion_meta" SET "issued_count" = GREATEST("issued_count" - 1, 0)
-       WHERE "promotion_id" = ?`,
+  async countIssuedGrants(promotionId: string, sharedContext?: Context<EntityManager>): Promise<number> {
+    const rows = await this.txEm(sharedContext).execute(
+      `SELECT count(*)::int AS c FROM "coupon_grant"
+        WHERE "promotion_id" = ? AND "deleted_at" IS NULL`,
       [promotionId],
     );
+    return Number(rows?.[0]?.c ?? 0);
   }
 
-  /** 상한을 집행하지 않고 발급 수만 올린다 (admin force). 위와 같은 이유로 컨텍스트를 받는다. */
-  async incrementIssuedCount(promotionId: string, sharedContext?: Context<EntityManager>): Promise<void> {
+  /**
+   * 이 프로모션의 발급을 직렬화한다. **상한을 집행하는 트랜잭션에서만** 부른다.
+   *
+   * 🔴 이 락이 상한의 원자성을 준다. 옛 `UPDATE ... WHERE issued_count < ?` 도 원자성의
+   * 출처는 카운터 «값» 이 아니라 이 행의 배타 락이었다 — Postgres READ COMMITTED 에서
+   * 두 번째 UPDATE 는 첫 커밋을 기다렸다가 WHERE 를 재평가한다. 같은 행을 `FOR UPDATE` 로
+   * 잠그고 장을 세면 동일한 직렬화를 얻는다.
+   */
+  private async lockPromotionForIssue(
+    promotionId: string,
+    sharedContext?: Context<EntityManager>,
+  ): Promise<void> {
     await this.txEm(sharedContext).execute(
-      `UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1 WHERE "promotion_id" = ?`,
+      `SELECT 1 FROM "promotion_meta" WHERE "promotion_id" = ? FOR UPDATE`,
       [promotionId],
     );
   }
@@ -266,9 +264,10 @@ class PromotionMetaModuleService extends MedusaService({
    * 소진 지표가 나갔다. 중복은 유니크 인덱스가 먼저 판정하게 두고, 슬롯을 못 잡으면
    * `ExhaustedSignal` 로 트랜잭션을 되감아 방금 넣은 장까지 함께 사라지게 한다.
    *
-   * - `max_claims === null` — 상한 없음. 카운터를 건드리지 않는다.
+   * - `max_claims === null` — 상한 없음. 잠그지도 세지도 않는다.
    * - `enforce_cap === false` — admin force. 상한을 넘겨서 발급하되 발급 수에는 포함한다
-   *   (`issued_count` 가 「지금까지 몇 장 나갔나」의 정본이라 force 도 세야 한다).
+   *   (장 자체가 카운트라 — `coupon_grant` 가 「지금까지 몇 장 나갔나」의 정본이므로 force 로
+   *   만든 장도 이미 세어진 상태다. 별도로 셀 것이 없다).
    */
   async issueGrantWithSlot(input: IssueGrantWithSlotInput): Promise<'created' | 'duplicate' | 'exhausted'> {
     try {
@@ -285,6 +284,12 @@ class PromotionMetaModuleService extends MedusaService({
     input: IssueGrantWithSlotInput,
     @MedusaContext() sharedContext?: Context<EntityManager>,
   ): Promise<'created' | 'duplicate' | 'exhausted'> {
+    // (0) 상한을 집행할 때만 잠근다. 이 락이 아래 COUNT 를 정확하게 만든다.
+    const enforcing = input.max_claims !== null && input.enforce_cap;
+    if (enforcing) {
+      await this.lockPromotionForIssue(input.promotion_id, sharedContext);
+    }
+
     // (1) 장 먼저. 같은 `issue_key` 의 재도착은 여기서 유니크 인덱스가 판정한다.
     try {
       // 🔴 `sharedContext` 를 반드시 넘긴다. `MedusaService` 가 만든 메서드는
@@ -307,27 +312,25 @@ class PromotionMetaModuleService extends MedusaService({
         sharedContext,
       );
       // 🔴 **반드시 여기서 flush 한다.** MikroORM 은 unit-of-work 라 `createCouponGrants` 는
-      // 엔티티를 등록만 하고 INSERT 는 커밋 시점까지 미룬다 — 그러면 아래 슬롯 UPDATE(원시
-      // SQL 이라 즉시 실행된다)가 «먼저» 나가서, 상한에 닿은 프로모션에 재발급을 시도한
-      // 「이미 받은 사람」이 `'duplicate'` 가 아니라 `'exhausted'` 를 받는다. 고치려던 바로
-      // 그 순서 문제가 ORM 의 지연 flush 로 되살아난다. 게다가 커밋 시점의 위반은 이 try 를
-      // 벗어나 `MikroOrmBaseRepository.transaction` 에서 던져지므로 `'duplicate'` 로 바뀌지도
-      // 않는다. (2026-09-03 모듈 통합 스펙이 두 증상을 다 잡아냈다 — 목이었으면 통과했다.)
+      // 엔티티를 등록만 하고 INSERT 는 커밋 시점까지 미룬다 — flush 없이 아래 (2) 의 COUNT(원시
+      // SQL 이라 즉시 실행된다)를 돌리면 방금 등록한 장이 아직 DB 에 없어 세어지지 않는다.
+      // 상한에 닿은 프로모션에 재발급을 시도한 「이미 받은 사람」이 `'duplicate'` 가 아니라
+      // `'exhausted'` 를 받던 그 순서 문제가 ORM 의 지연 flush 로 되살아난다. 게다가 커밋
+      // 시점의 위반은 이 try 를 벗어나 `MikroOrmBaseRepository.transaction` 에서 던져지므로
+      // `'duplicate'` 로 바뀌지도 않는다. (2026-09-03 모듈 통합 스펙이 두 증상을 다 잡아냈다 —
+      // 목이었으면 통과했다.)
       await this.txEm(sharedContext).flush();
     } catch (e: any) {
       if (this.isUniqueViolation(e)) throw new DuplicateGrantSignal();
       throw e;
     }
 
-    // (2) 슬롯. 못 잡으면 위 INSERT 까지 함께 되감긴다.
-    if (input.max_claims !== null) {
-      if (input.enforce_cap) {
-        const slot = await this.reserveClaimSlot(input.promotion_id, input.max_claims, sharedContext);
-        if (slot === 'exhausted') throw new ExhaustedSignal();
-      } else {
-        // force: 상한을 집행하지 않되 발급 수에는 포함한다.
-        await this.incrementIssuedCount(input.promotion_id, sharedContext);
-      }
+    // (2) 상한. INSERT 뒤에 세므로 방금 넣은 장이 포함된다 — 넘으면 트랜잭션째 되감긴다.
+    //     force(`enforce_cap=false`)는 세기만 하고 막지 않으므로 아무것도 하지 않는다
+    //     (장 자체가 카운트라 옛 `incrementIssuedCount` 가 필요 없다).
+    if (enforcing) {
+      const issued = await this.countIssuedGrants(input.promotion_id, sharedContext);
+      if (issued > Number(input.max_claims)) throw new ExhaustedSignal();
     }
 
     return 'created';
@@ -350,11 +353,12 @@ class PromotionMetaModuleService extends MedusaService({
    * 같은 고객이 두 카트를 동시에 완료하면 두 훅이 같은 장을 골라(선택은 결정적이다) 둘 다
    * 덮어썼다 — 한 장으로 할인 주문 두 건, `order_id` 는 나중 것만 남았다. 「1장 = 1회」는
    * 이 PR 이 세우려는 불변식이므로 애플리케이션 읽기-후-쓰기가 아니라 **한 문장**으로
-   * 집행한다. 같은 파일의 `reserveClaimSlot` 이 쓰는 기법과 같다 (ADR-0034 결정 1).
+   * 집행한다. 같은 파일의 `countIssuedGrants`/`lockPromotionForIssue` 가 쓰는 기법과 같다
+   * (ADR-0034 결정 1).
    *
    * `deleted_at IS NULL` 도 술어에 넣는다 — 회수된 장은 소모 대상이 아니다.
    *
-   * `sharedContext` 는 형제 원시 SQL 헬퍼(`reserveClaimSlot` 등)와 같은 이유로 열어 둔다 —
+   * `sharedContext` 는 형제 원시 SQL 헬퍼(`countIssuedGrants` 등)와 같은 이유로 열어 둔다 —
    * 넘기지 않으면 저장소의 기본 매니저로 떨어져 호출자의 트랜잭션 **밖**에서 갱신된다.
    * 소모를 주문 쓰기와 한 트랜잭션에 묶는 호출자가 생기면, 그 트랜잭션이 롤백돼도 장은
    * 사용됨으로 남고 `order_id` 가 대롱대롱 남는다.

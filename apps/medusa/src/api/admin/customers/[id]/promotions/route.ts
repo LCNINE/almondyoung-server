@@ -330,11 +330,9 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
   for (const pid of promotion_ids) {
     const { revoked, remaining } = await promotionMetaService.revokeGrants(pid, customerId);
 
-    // 회수한 장수만큼 발급 카운트를 되돌린다 — 1회 고정이면 여러 장 회수 시 카운터가 남는다.
-    // 이미 쓴 장은 회수 대상이 아니고 그 슬롯은 실제로 소비됐으므로 여기서 세지 않는다.
-    for (let i = 0; i < revoked; i++) {
-      await promotionMetaService.releaseClaimSlot(pid).catch(() => {});
-    }
+    // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
+    // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
+    // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
 
     // 🔴 링크는 「남은 장이 없을 때만」 걷는다. 두 방향 다 틀리면 사고다:
     //  - 쓴 장이 남았는데 걷으면 마이페이지의 「사용완료」가 사라진다(링크 행으로 열거한다).

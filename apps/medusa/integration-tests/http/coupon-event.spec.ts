@@ -56,6 +56,27 @@ medusaIntegrationTestRunner({
     const stateOf = (coupons: any[], code: string) =>
       coupons.find((c: any) => c.code === code)?.state;
 
+    /**
+     * 발급 상한을 「소진」 상태로 만든다. 옛 픽스처는 `reserveClaimSlot` 으로 카운터만 올렸지만,
+     * 이제 상한의 정본은 `coupon_grant` 행이라 실제 장을 심어야 한다 (설계 결정 1).
+     * `coupon_grant` 는 customer 테이블에 FK 가 없으므로 채움용 고객 id 는 실재하지 않아도 된다.
+     */
+    const fillClaims = async (promotionId: string, n: number) => {
+      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      for (let i = 0; i < n; i++) {
+        await meta.issueGrantWithSlot({
+          promotion_id: promotionId,
+          customer_id: `filler_${seq}_${i}`,
+          issue_key: `${promotionId}:filler:${i}`,
+          issued_via: 'admin_manual',
+          expires_at: null,
+          now: new Date(),
+          max_claims: null, // 채우는 단계에서는 상한을 집행하지 않는다
+          enforce_cap: false,
+        });
+      }
+    };
+
     beforeEach(async () => {
       seq++;
       const container = getContainer();
@@ -176,10 +197,12 @@ medusaIntegrationTestRunner({
       expect(stateOf(c, 'S_AO')).toEqual({ kind: 'blocked', reason: 'not_assigned' });
     });
 
+    // 🔴 Task 2 로 이 라우트의 `resolveState` 가 읽는 `issued_count` 는 더 이상 갱신되지
+    // 않는다(상한 집행이 `coupon_grant` COUNT 로 옮겨갔다) — 이 테스트는 Task 3 이 그 읽기를
+    // COUNT 로 전환할 때까지 RED 다(#488 설계 문서 결정 1, Task 3 Step 4 가 이 시퀀싱을 명시).
     it('store: exhausted claimable → blocked/exhausted', async () => {
       const id = await createPromo('S_FULL', { visibility: 'claimable', max_claims: 1 });
-      const meta = getContainer().resolve(PROMOTION_META_MODULE) as any;
-      await meta.reserveClaimSlot(id, 1); // issued_count = max
+      await fillClaims(id, 1); // 소진
       const event = await createEvent({ title: 'x', status: 'active', promotion_ids: [id] });
 
       const res = await getEventStore(event.slug);

@@ -163,10 +163,12 @@ medusaIntegrationTestRunner({
         expect(grants.filter((g: any) => g.promotion_id === promotionId)).toHaveLength(1);
       });
 
-      it('G3: 동시 클레임 2회 → 장 1개, 그리고 issued_count 는 +1 이다', async () => {
-        // 🔴 장수만 검사하면 안 된다. 오늘 새고 있는 것은 장수가 아니라 «카운터» 다 —
-        //    claim 라우트의 read-then-write 경합이 reserveClaimSlot 을 두 번 돌리는데,
-        //    링크의 복합 PK 가 장수만 1로 막아 증상이 안 보였다. max_claims 가 있어야 재현된다.
+      it('G3: 동시 클레임 2회 → 장 1개, 그리고 coupon_grant COUNT 는 +1 이다', async () => {
+        // 🔴 장수만 검사하면 안 된다. 오늘 새고 있는 것은 장수가 아니라 «상한 집행» 이다 —
+        //    (Task 2 이전에는) claim 라우트의 read-then-write 경합이 `reserveClaimSlot` 을
+        //    두 번 돌렸는데, 링크의 복합 PK 가 장수만 1로 막아 증상이 안 보였다. 지금은
+        //    `promotion_meta` 행을 `FOR UPDATE` 로 잠그고 COUNT 하므로 같은 경합이 직렬화되는지
+        //    이 테스트가 계속 지킨다. max_claims 가 있어야 재현된다(enforce_cap 경로만 잠근다).
         const promotionId = await createPromo(`G3${seq}`, {
           visibility: 'claimable',
           max_claims: 10,
@@ -179,19 +181,18 @@ medusaIntegrationTestRunner({
         await Promise.all([claim(), claim()]);
 
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(1);
-        const meta = await svc().getByPromotionId(promotionId);
-        expect(Number(meta.issued_count)).toBe(1);
+        expect(await svc().countIssuedGrants(promotionId)).toBe(1);
       });
     });
 
     describe('회수와 발급 현황', () => {
-      it('G10: 회수는 장수만큼 issued_count 를 되돌린다', async () => {
+      it('G10: 회수는 장수만큼 coupon_grant COUNT 를 되돌린다', async () => {
         const promotionId = await createPromo(`G10${seq}`, {
           visibility: 'assigned_only',
           max_claims: 100,
         });
         await issue(promotionId, 'sub-rev', 3);
-        const before = Number((await svc().getByPromotionId(promotionId)).issued_count);
+        const before = await svc().countIssuedGrants(promotionId);
         expect(before).toBe(3);
 
         await api.delete(`/admin/promotions/${promotionId}/customers`, {
@@ -200,10 +201,10 @@ medusaIntegrationTestRunner({
         });
 
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
-        expect(Number((await svc().getByPromotionId(promotionId)).issued_count)).toBe(0);
+        expect(await svc().countIssuedGrants(promotionId)).toBe(0);
       });
 
-      it('G10 (고객축): DELETE /admin/customers/:id/promotions 도 장수만큼 issued_count 를 되돌린다', async () => {
+      it('G10 (고객축): DELETE /admin/customers/:id/promotions 도 장수만큼 coupon_grant COUNT 를 되돌린다', async () => {
         // 두 DELETE 라우트(프로모션축·고객축)가 같은 회수 루프를 각자 갖고 있다 — 한쪽만
         // 배선하고 다른 쪽을 놓치는 게 이 태스크의 실제 실패 모드였다(#488 Task 7 리뷰).
         // 프로모션축은 위 G10 이 다장 회수를 검사하니, 여기선 고객축을 같은 강도로 검사한다.
@@ -212,7 +213,7 @@ medusaIntegrationTestRunner({
           max_claims: 100,
         });
         await issue(promotionId, 'sub-rev-b', 3);
-        const before = Number((await svc().getByPromotionId(promotionId)).issued_count);
+        const before = await svc().countIssuedGrants(promotionId);
         expect(before).toBe(3);
 
         await api.delete(`/admin/customers/${customerId}/promotions`, {
@@ -221,7 +222,7 @@ medusaIntegrationTestRunner({
         });
 
         expect(await svc().listGrantsForCustomer(customerId)).toHaveLength(0);
-        expect(Number((await svc().getByPromotionId(promotionId)).issued_count)).toBe(0);
+        expect(await svc().countIssuedGrants(promotionId)).toBe(0);
       });
 
       it('발급 현황이 고객별 보유·사용 장수를 돌려준다', async () => {
