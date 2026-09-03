@@ -18,14 +18,6 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(rec?.visibility).toEqual('public');
       });
 
-      it('setIssuedCount reconciles the counter to the given value and floors negatives', async () => {
-        await service.upsert({ promotion_id: 'promo_set', max_claims: 100 });
-        await service.setIssuedCount('promo_set', 37);
-        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(37);
-        await service.setIssuedCount('promo_set', -5);
-        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(0);
-      });
-
       const issue = (
         promotionId: string,
         customerId: string,
@@ -211,6 +203,22 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         await expect(
           service.upsert({ promotion_id: 'promo_bad_days2', validity_days: 1.5 }),
         ).rejects.toThrow(/validity_days/);
+      });
+
+      it('consumeGrantIfUnused 는 updated_at 을 갱신한다', async () => {
+        await service.upsert({ promotion_id: 'promo_upd', max_claims: null });
+        await issue('promo_upd', 'cus_l', 'k1', null);
+        const [g] = await service.listGrantsForPromotion('promo_upd');
+
+        const em = (service as any).baseRepository_.manager_;
+        const before = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
+        await new Promise((r) => setTimeout(r, 10));
+        await service.consumeGrantIfUnused(g.id, 'order_upd', new Date());
+        const after = await em.execute(`SELECT "updated_at" FROM "coupon_grant" WHERE "id" = ?`, [g.id]);
+
+        expect(new Date(after[0].updated_at).getTime()).toBeGreaterThan(
+          new Date(before[0].updated_at).getTime(),
+        );
       });
     });
 

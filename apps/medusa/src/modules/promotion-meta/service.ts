@@ -184,16 +184,6 @@ class PromotionMetaModuleService extends MedusaService({
     }
   }
 
-  /** issued_count 를 실제 링크 수로 정합화(backfill). 음수는 0으로 보정. */
-  async setIssuedCount(promotionId: string, count: number): Promise<void> {
-    const safe = Math.max(0, Math.floor(count));
-    const em = (this as any).baseRepository_.manager_;
-    await em.execute(
-      `UPDATE "promotion_meta" SET "issued_count" = ? WHERE "promotion_id" = ?`,
-      [safe, promotionId],
-    );
-  }
-
   /*───────────────────────────
    * 쿠폰 이벤트 (배너용 쿠폰 묶음)
    *──────────────────────────*/
@@ -403,7 +393,7 @@ class PromotionMetaModuleService extends MedusaService({
     sharedContext?: Context<EntityManager>,
   ): Promise<boolean> {
     const rows = await this.txEm(sharedContext).execute(
-      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?
+      `UPDATE "coupon_grant" SET "used_at" = ?, "order_id" = ?, "updated_at" = now()
        WHERE "id" = ? AND "used_at" IS NULL AND "deleted_at" IS NULL
        RETURNING "id"`,
       [usedAt, orderId, grantId],

@@ -112,7 +112,10 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
       filters: { id: paginatedIds },
     });
-    customers = data;
+    // query.graph 는 IN(...) 의 순서를 보장하지 않는다. 「최초 발급 시각 순」이라는 주장을
+    // 지키려면 여기서 되돌려야 한다.
+    const byId = new Map(data.map((c: any) => [c.id, c]));
+    customers = paginatedIds.map((id) => byId.get(id)).filter(Boolean) as any[];
   }
 
   const customersWithUsage = customers.map((c) => {

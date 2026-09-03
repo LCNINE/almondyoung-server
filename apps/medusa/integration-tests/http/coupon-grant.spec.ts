@@ -614,6 +614,10 @@ medusaIntegrationTestRunner({
           storeHeaders,
         );
         expect(second.status).toEqual(200);
+        // 🔴 `second.status === 200` 만으로는 이 가드가 상한 집행을 «통째로» 건너뛰도록
+        // 바뀌어도 통과한다 — max_claims: 1 인 쿠폰에서 장이 2장이 되면 안 된다는 것까지
+        // 같이 고정한다.
+        expect(await svc().countIssuedGrants(promotionId)).toEqual(1);
       });
     });
   },
