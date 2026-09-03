@@ -296,7 +296,7 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 이 시점엔 총액이 결제 세션에 묶여 있으니 총액을 바꾸는 쓰기를 금하는 것이다. 우리 모듈 테이블에의
 쓰기는 총액을 건드리지 않고 보상이 있다. 결정 2 「모듈 경계를 넘는 쓰기는 워크플로 + 보상을 지난다」
 가 소모에도 그대로 적용되는 셈이다 — 발급이 `issueCouponGrantsStep` + 보상이듯 소모는 `validate` 훅
-+ 보상이다.
++ 보상이다. (이 해석은 2026-09-04 결정 시 확인됐다 — 「이 동작을 카트를 고치는 것으로 보지 않는다」.)
 
 ### 결정 6 — 소모의 키는 주문이 아니라 카트다
 
@@ -308,9 +308,15 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
   `NOT EXISTS` 의 한계는 이 자리에서는 닿지 않는다.
 - 주문 ↔ 카트는 Medusa 의 `order_cart` 링크가 안다(`link-modules/dist/definitions/order-cart.js`,
   `order.cart` 별칭). 취소 복원 구독자(`subscribers/coupon-grant-restore.ts`)는 주문 → 링크 →
-  `cart_id` 로 장을 고르고, 링크가 없는 옛 행(백필분)만 `order_id` 로 고른다 — dual read.
-- `order_id` 컬럼은 남긴다. 읽는 곳이 취소 복원 하나뿐이라(측정 6) 지울 이유가 급하지 않고, 지우는
-  것은 별도 contract PR 이다(expand-contract). 「어느 주문이 썼나」는 `order_cart` 조인으로 답한다.
+  `cart_id` 로 장을 고른다. **`order_id` 폴백은 두지 않는다** — 이 기능은 라이브에서 돈 적이 없어
+  그 컬럼이 가리키는 주문이 없다(2026-09-04 확인). 폴백은 섬길 데이터가 없는 코드다.
+- `order_id` 는 PR-3 에서 **읽기·쓰기를 전부 끊고**(핫패스·복원·백필 스크립트·스펙 픽스처), 컬럼
+  자체는 **다음 배포 뒤 별도 PR 에서 DROP** 한다. CLAUDE.md 의 「column drop 은 2 PR」 규칙인데,
+  Medusa 에서는 이 규칙이 더 무겁다 — 컨테이너가 부팅하며 스스로 migrate 하므로 같은 PR 에 DROP 을
+  넣으면 롤링 중 옛 태스크(`orderCreated` 훅이 아직 `order_id` 를 쓴다)가 DROP 을 만난다. 옛 훅은 그
+  실패를 삼키니 사고는 아니지만, 규칙을 깨서 얻는 것이 없다. DROP PR 의 선행 조건 하나: 라이브에서
+  `SELECT count(*) FROM coupon_grant WHERE order_id IS NOT NULL` 이 0 인 것을 본다. 「어느 주문이 썼나」는
+  그 뒤로 `order_cart` 조인이 답한다.
 - **되돌림 본체는 하나다** — `restoreGrants(ids)`. 훅 보상(이번 실행이 잡은 id) · 취소 구독자(카트로
   고른 id) · 아래 스위퍼(조건으로 고른 id) 가 전부 이것을 지난다. 「만료된 장은 되살리지 않는다」 는
   고르는 쪽(구독자)의 필터로 남기고, 보상은 잡은 것을 무조건 놓는다 — 보상은 undo 이지 정책이 아니다.
@@ -332,7 +338,8 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
   선례는 `jobs/orphan-payment-reconcile.ts`(같은 모양의 잔여 케이스를 매시 훑는다).
 
 옛 구조의 같은 창은 반대 방향이었다 — 주문은 섰는데 장이 안 찍힘(고객에게 유리, 회사가 한 장 손해).
-새 구조는 고객에게 불리한 방향이라 스위퍼가 **선택이 아니라 결정의 일부**다.
+새 구조는 고객에게 불리한 방향이라 스위퍼가 **선택이 아니라 결정의 일부**다 — PR-3 범위로 확정
+(2026-09-04). 후속으로 미루지 않는다.
 
 ### 기각
 
@@ -368,9 +375,10 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 2. 훅 — `hooks/cart/complete-cart.ts` 의 `validate` 핸들러 **끝**에 소모, 두 번째 인자로 보상.
    `record-coupon-usage.ts` 삭제(`@ts-expect-error` 와 함께). 새 훅 등록은 없다 —
    `no-duplicate-validate-hooks.unit.spec.ts` 가 지키는 규칙 그대로.
-3. 구독자 — 취소 복원을 링크 경유 + `order_id` 폴백으로.
+3. 구독자 — 취소 복원을 링크 경유로. `order_id` 를 읽는 마지막 코드가 여기서 사라진다.
 4. 스위퍼 잡.
 5. HTTP 스펙 ①~⑤.
+6. (다음 배포 뒤, 별도 PR) `order_id` DROP COLUMN — 선행 조건은 결정 6 의 count 0.
 
 배포 제약: additive 마이그레이션 1건, Medusa 컨테이너가 부팅 시 자체 migrate 하므로(CLAUDE.md) 순서
 제약 없음. 옛 태스크는 새 컬럼을 무시한다. 배포 직후 스위퍼의 첫 회는 0건이어야 한다 — 옛 행은
