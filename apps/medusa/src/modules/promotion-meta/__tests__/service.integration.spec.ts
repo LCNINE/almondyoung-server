@@ -98,33 +98,49 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.countIssuedGrants('promo_force')).toEqual(2);
       });
 
-      // 🔴 위 테스트들은 전부 순차 호출이라 락이 있든 없든 통과한다(COUNT-after-INSERT 만
-      // 있어도 맞는 답이 나온다) — `lockPromotionForIssue` 를 지켜주지 않는다. 이 테스트는
-      // 서로 «다른» 고객 둘이 같은 순간에 상한 1인 프로모션에 발급을 시도해도 정확히 하나만
-      // 살아남는다는 «불변식»을 확인한다. 유니크 인덱스는 (promotion, customer, issue_key)
-      // 라 서로 다른 고객을 막지 않으므로, 이 시나리오가 지금 통과하는 것은 `FOR UPDATE`
-      // 락이 COUNT 를 직렬화하기 때문이다(이론상: 락이 없으면 두 트랜잭션이 서로의 INSERT
-      // 를 못 보고 둘 다 `countIssuedGrants() === 1` 로 읽어 둘 다 `'created'` 를 반환할 수
-      // 있다).
-      //
-      // 🔴 **하지만 이 테스트는 락 제거의 신뢰할 만한 회귀 감지기가 «아니다».** `Promise.all`
-      // 두 호출만으로는 실제 레이스 윈도우가 안정적으로 재현되지 않는다 — 락을 실제로 지우고
-      // 로컬에서 검증한 결과(2-way 11회, 20-way 1회, 총 12회) **단 한 번도 실패하지 않았다**
-      // (task-2-report.md 참고). 원인은 미확정이나, 로컬 단일 Postgres 의 왕복 지연이 너무
-      // 짧아 두 트랜잭션의 INSERT~COMMIT 구간이 실제로 겹치는 경우가 드문 것으로 보인다.
-      // 그래서 이 테스트는 "지금 이 불변식이 성립한다"는 포지티브 검증일 뿐,
-      // "락을 지우면 여기가 빨개진다"는 보장으로 읽으면 안 된다 — 그렇게 읽는 것이 바로
-      // 리뷰가 지적한 원래 실수였다.
-      it('동시에 서로 다른 고객 둘이 상한 1에 경합하면 하나만 살아남는다', async () => {
-        await service.upsert({ promotion_id: 'promo_race', max_claims: 1 });
+      // 🔴 타이밍 경합(Promise.all 두 호출이 실제로 겹치길 «기다리는» 방식)으로는 이 락을
+      // 검증할 수 없었다 — 2-way 11회·20-way 1회 전부 과다발급 0건으로, 이 테스트 하네스의
+      // 로컬 Postgres 왕복이 너무 빨라 레이스 윈도우가 안정적으로 재현되지 않는다(자세한
+      // 내용은 task-2-report.md 수정 라운드 1). 그래서 경합을 «기다리지» 않고 «만든다»:
+      // 한 트랜잭션이 `promotion_meta` 행을 밖에서 잡아 쥔 채 발급을 시도해, 발급이 그 락에
+      // «걸려» 대기하는지를 직접 관찰한다 — 결정론적이고 타이밍에 기대지 않는다.
+      it('발급은 promotion_meta 행 락으로 직렬화된다 — 락을 빼면 빨개진다', async () => {
+        await service.upsert({ promotion_id: 'promo_lockA', max_claims: 1 });
+        await service.upsert({ promotion_id: 'promo_lockB', max_claims: 1 });
+        const em = (service as any).baseRepository_.manager_;
+        const lockSql = `SELECT 1 FROM "promotion_meta" WHERE "promotion_id" = ? FOR UPDATE`;
 
-        const results = await Promise.all([
-          issue('promo_race', 'cus_race_a', 'k1', 1),
-          issue('promo_race', 'cus_race_b', 'k2', 1),
-        ]);
+        // ── 대조군: «다른» 프로모션을 잡아두면 발급은 막히지 않아야 한다.
+        //    이게 막히면 커넥션 풀이 직렬화하고 있다는 뜻이고, 아래 본시험은 무의미해진다.
+        const other = em.fork();
+        await other.begin();
+        try {
+          await other.execute(lockSql, ['promo_lockB']);
+          let controlDone = false;
+          const control = issue('promo_lockA', 'cus_ctl', 'kc', 1).then((r) => { controlDone = true; return r; });
+          await new Promise((r) => setTimeout(r, 300));
+          expect(controlDone).toBe(true); // 🔴 false 면 하네스가 직렬화 중 — 이 테스트는 무효다
+          expect(await control).toEqual('created');
+        } finally {
+          await other.rollback();
+        }
 
-        expect([...results].sort()).toEqual(['created', 'exhausted']);
-        expect(await service.countIssuedGrants('promo_race')).toEqual(1);
+        // ── 본시험: «같은» 프로모션을 잡아두면 발급이 락에서 막혀야 한다.
+        const holder = em.fork();
+        await holder.begin();
+        let issued = false;
+        let issuing: Promise<string>;
+        try {
+          await holder.execute(lockSql, ['promo_lockB']);
+          issuing = issue('promo_lockB', 'cus_sub', 'ks', 1).then((r) => { issued = true; return r; });
+          await new Promise((r) => setTimeout(r, 300));
+          // 🔴 lockPromotionForIssue 를 지우면 발급이 promotion_meta 를 아예 안 건드리므로
+          //    즉시 끝나 issued === true 가 되고 이 단언이 빨개진다. 이것이 이 테스트의 요점이다.
+          expect(issued).toBe(false);
+        } finally {
+          await holder.commit();
+        }
+        expect(await issuing!).toEqual('created');
       });
 
       it('유효기간 3열을 저장하고 되읽는다', async () => {
