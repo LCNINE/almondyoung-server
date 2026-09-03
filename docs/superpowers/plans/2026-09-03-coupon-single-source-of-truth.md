@@ -1120,6 +1120,13 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
   집행하는 실제 발급 요청 자체가 없으므로 어긋난 카운터를 볼 일이 없다. 운영자가 이 조건을
   스스로 판단해 정합화 SQL 실행 여부를 정할 것.
 
+  **동결 자체는 닫았다 (0단계, PR #778 리뷰 F5).** 위 서술은 「이 PR 이 `issued_count` 쓰기를
+  끊는다」를 전제로 했는데, 그러면 백필과 무관하게 **배포 뒤 발급된 장수만큼** 카운터가 실제
+  아래로 내려가 롤백 즉시 상한이 샌다. 그래서 `PromotionMetaModuleService.mirrorIssuedCount`
+  가 장을 만들고 지우는 그 트랜잭션에서 컬럼을 같은 델타로 따라가게 한다(expand 단계 dual
+  write, 상한 있는 프로모션만 — 옛 코드와 같은 의미). 남는 어긋남은 위 백필 경로 하나뿐이고,
+  그건 여전히 정합화 SQL 이 맞춘다. 미러는 contract PR 이 컬럼과 함께 지운다.
+
 - **배포 직후 확인 2건:**
   1. 상한 있는 쿠폰의 어드민 발급현황이 Task 1 Step 2 (C) 쿼리가 예고한 값으로 바뀌었는가.
   2. 상한 **없는** 쿠폰의 발급현황이 더 이상 0 이 아닌가 (라이브 결함 ① 해소 확인). **목록
@@ -1135,7 +1142,7 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
 
 - **후속 PR (contract phase, 배포 한 사이클 뒤) — 아래를 «한 PR 로 묶는다»** (최종 브랜치 리뷰 권고):
   1. 링크 테이블과 `extraColumns` 4개 제거
-  2. `promotion_meta.issued_count` 컬럼 제거 (이 계획으로 소비자 0)
+  2. `promotion_meta.issued_count` 컬럼 제거 (이 계획으로 읽기 소비자 0) — **함께** `PromotionMetaModuleService.mirrorIssuedCount`(0단계 dual write)와 그 스펙(`issued_count 미러` describe)을 지운다. 컬럼만 지우면 미러 UPDATE 가 부팅 직후부터 던진다
   3. `promotion_issue_log` 테이블 제거 (이 계획 이전부터 죽어 있었고 여전히 참조 0)
   4. `scripts/backfill-coupon-grants.ts` 삭제 — **단, Task 1 게이트가 끝난 뒤에.** 이 스크립트가 링크를 읽는 «마지막» 코드이고, 게이트 실패 시의 복구 수단이다
   5. `coupon-validity.spec.ts` 의 T3 블록(링크 upsert·`extraColumns`·dismiss 특성 테스트, 프로덕션 소비자 0)과 남은 `linkCustomer` 잔재 제거

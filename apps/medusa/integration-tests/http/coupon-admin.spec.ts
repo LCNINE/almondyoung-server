@@ -342,7 +342,7 @@ medusaIntegrationTestRunner({
       const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
 
       // 발급된 한 장을 «사용» 상태로 만든다.
-      const [grant] = await metaService.listGrantsForCustomer(customerId);
+      const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
       expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used`, new Date())).toBe(true);
 
       const res = await api.delete(`/admin/customers/${customerId}/promotions`, {
@@ -350,15 +350,41 @@ medusaIntegrationTestRunner({
         data: { promotion_ids: [promoId] },
       });
 
-      // 회수할(미사용) 장이 없으므로 아무것도 제거되지 않았다고 보고해야 한다.
+      // 회수할(미사용) 장은 없지만 «회수는 일어났다» — 쓴 장에 revoked_at 이 찍혀 주문 취소로도
+      // 되살아나지 않는다. 그걸 `removed` 에 정직하게 보고해야 어드민이 무동작으로 오해해 다시
+      // 누르지 않는다(PR #778 리뷰 F3). `grants: 0` 이 「미사용 장은 없었다」를, `kept_used: 1` 이
+      // 「쓴 장 1은 남겼다」를 말한다. «애초에 없던 쌍»(위 테스트)만 `removed` 에서 빠진다.
       expect(res.status).toEqual(200);
-      expect(res.data.removed).toEqual([]);
+      expect(res.data.removed).toEqual([{ promotion_id: promoId, grants: 0, kept_used: 1 }]);
+      expect(res.data.promotion_ids).toEqual([promoId]);
       expect(res.data.revoked_grants).toEqual(0);
-      // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다.
+      // 쓴 장은 살아 있어야 한다 — 이력이자 주문 취소 시 복원의 근거다. 단 회수 표지는 찍혀 있다.
       const left = await metaService.listGrantsForCustomer(customerId);
-      expect(left.filter((g: any) => g.promotion_id === promoId)).toHaveLength(1);
+      const mine = left.filter((g: any) => g.promotion_id === promoId);
+      expect(mine).toHaveLength(1);
+      expect(mine[0].revoked_at).not.toBeNull();
       // 실제로 소비된 슬롯이므로 (deleted_at 이 그대로라) COUNT 도 되돌아가지 않는다.
       expect(await metaService.countIssuedGrants(promoId)).toEqual(1);
+    });
+
+    it('revoke via promotions/:id/customers path also reports a used-only pair as removed', async () => {
+      // 형제(고객축) 라우트와 같은 계약 — 두 DELETE 가 같은 `revokeGrants` 결과를 다르게 읽으면
+      // 같은 회수가 한 화면에선 성공, 다른 화면에선 무동작으로 보인다.
+      const promoId = await createPromo('REVOKEUSED2', { visibility: 'claimable', max_claims: 5 });
+      await issue([promoId]);
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      const grant = (await metaService.listGrantsForCustomer(customerId)).find((g: any) => g.promotion_id === promoId);
+      expect(await metaService.consumeGrantIfUnused(grant.id, `order_${seq}_used2`, new Date())).toBe(true);
+
+      const res = await api.delete(`/admin/promotions/${promoId}/customers`, {
+        ...adminHeaders,
+        data: { customer_ids: [customerId] },
+      });
+
+      expect(res.status).toEqual(200);
+      expect(res.data.removed).toEqual([{ customer_id: customerId, grants: 0, kept_used: 1 }]);
+      expect(res.data.customer_ids).toEqual([customerId]);
+      expect(res.data.revoked_grants).toEqual(0);
     });
 
     it('GET promotion exposes issued_count in metadata (P2-10)', async () => {

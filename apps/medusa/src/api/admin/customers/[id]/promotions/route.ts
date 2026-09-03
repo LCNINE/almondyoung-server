@@ -318,20 +318,21 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
 
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  const removed: { promotion_id: string; grants: number }[] = [];
+  const removed: { promotion_id: string; grants: number; kept_used: number }[] = [];
   for (const pid of promotion_ids) {
-    const { revoked } = await promotionMetaService.revokeGrants(pid, customerId);
+    const { revoked, remaining } = await promotionMetaService.revokeGrants(pid, customerId);
 
     // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
     // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
     // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
 
-    // 링크가 없으므로 「지웠다고 보고했는데 안 지워졌다」가 성립하지 않는다 (Task 7, 리뷰
-    // 발견 5). 옛 코드는 링크 유무로 `dismissed` 를 «먼저» 계산해 두고 그 dismiss 호출의
-    // 실패를 `.catch(() => {})` 로 삼켰다 — `removed` 는 이제 `revokeGrants` 의 실제
-    // 결과만 반영한다.
-    if (revoked > 0) {
-      removed.push({ promotion_id: pid, grants: revoked });
+    // 🔴 «무엇이든 매칭됐으면» 보고한다 — `revoked > 0` 만 보면 「쓴 장만 남은 쌍」의 회수가
+    // `removed: []` 로 나가, 실제로는 `revoked_at` 이 찍혀 주문 취소 복원까지 막혔는데
+    // 어드민은 무동작으로 읽고 다시 누른다(PR #778 리뷰 F3). `grants` 는 이번에 치운 미사용
+    // 장수, `kept_used` 는 남긴 쓴 장수다. «애초에 없던 쌍»(둘 다 0)만 빠진다 — 오타 난
+    // promotion_id 를 「제거됨」으로 답하지 않는다. 형제(쿠폰축) 라우트와 같은 계약이다.
+    if (revoked + remaining > 0) {
+      removed.push({ promotion_id: pid, grants: revoked, kept_used: remaining });
     }
   }
 

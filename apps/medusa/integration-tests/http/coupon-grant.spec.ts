@@ -572,7 +572,8 @@ medusaIntegrationTestRunner({
           data: { promotion_ids: [promotionId] },
         });
         expect(del.status).toEqual(200);
-        expect(del.data.removed).toEqual([{ promotion_id: promotionId, grants: 1 }]);
+        // `kept_used` 는 0단계(PR #778 리뷰 F3)가 더한 필드 — 회수 뒤 남긴 «쓴 장» 수. 여긴 미사용 1장이라 0.
+        expect(del.data.removed).toEqual([{ promotion_id: promotionId, grants: 1, kept_used: 0 }]);
 
         const after = await api.get(`/admin/customers/${customerId}/promotions`, adminHeaders);
         expect(after.data.promotions).toEqual([]);

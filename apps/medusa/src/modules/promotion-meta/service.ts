@@ -56,6 +56,14 @@ export type IssueGrantWithSlotInput = {
   enforce_cap: boolean;
 };
 
+/** `revokeGrants_` 의 두 얼굴 — 어드민 회수(전부, 표지 찍음)와 워크플로 보상(키 목록, 표지 없음). */
+type RevokeGrantsOptions = {
+  /** 주면 이 `issue_key` 들만 대상이다. 보상이 «이번 실행이 만든 것»으로 좁힐 때 쓴다. */
+  issueKeys?: string[];
+  /** `revoked_at` 을 찍는가. 어드민 회수는 true, 보상은 false. */
+  markRevoked: boolean;
+};
+
 /**
  * `issueGrantWithSlot_` 내부 신호. 트랜잭션 «안»에서 유니크 위반을 잡아 그냥 반환하면 안 된다 —
  * Postgres 는 제약 위반이 나는 순간 트랜잭션을 aborted 상태로 만들어, 그 뒤의 어떤 문장도
@@ -366,6 +374,12 @@ class PromotionMetaModuleService extends MedusaService({
       if (issued > Number(input.max_claims)) throw new ExhaustedSignal();
     }
 
+    // (3) 옛 카운터 미러 — 상한의 정본은 위 COUNT 지만, 컬럼이 살아 있는 동안 옛 태스크가
+    //     그걸로 집행하므로 같은 트랜잭션에서 따라가게 한다(`mirrorIssuedCount` 주석).
+    if (input.max_claims !== null) {
+      await this.mirrorIssuedCount(input.promotion_id, 1, sharedContext);
+    }
+
     return 'created';
   }
 
@@ -472,8 +486,8 @@ class PromotionMetaModuleService extends MedusaService({
    *
    * `revokeGrants` 와 달리 「이 고객의 이 쿠폰 전부」가 아니라 `issue_key` 목록으로 좁힌다 —
    * 보상은 자기가 만든 것만 치워야 하고, 같은 쌍에 미리 있던 장(다른 제출로 발급됐거나
-   * 이번 실행에서 `'duplicate'` 로 판정된 장)은 남의 것이다. 되돌린 장수를 돌려주므로
-   * 호출부가 그만큼 슬롯을 반환할 수 있다.
+   * 이번 실행에서 `'duplicate'` 로 판정된 장)은 남의 것이다. 그중에서도 **아직 안 쓴 장만**
+   * 지운다 — 실제로 치운 장수를 돌려준다.
    */
   async revokeGrantsByIssueKeys(
     promotionId: string,
@@ -481,14 +495,16 @@ class PromotionMetaModuleService extends MedusaService({
     issueKeys: string[],
   ): Promise<number> {
     if (issueKeys.length === 0) return 0;
-    const rows = (await (this as any).listCouponGrants({
-      promotion_id: promotionId,
-      customer_id: customerId,
-      issue_key: { $in: issueKeys },
-    })) as CouponGrantRow[];
-    if (rows.length === 0) return 0;
-    await (this as any).softDeleteCouponGrants(rows.map((g) => g.id));
-    return rows.length;
+    // 🔴 `revokeGrants` 와 **같은 본체**를 지난다. 둘이 따로 구현돼 있을 때 「쓴 장은 soft
+    // delete 하지 않는다」가 어드민 회수에만 걸려 있었다 — 스텝과 보상 사이에 소비된 장을
+    // 보상이 지우면 실제로 소비된 슬롯이 COUNT 에서 빠지고 주문 취소 복원 대상에서도 사라졌다
+    // (PR #778 리뷰 F12). 다른 것은 회수 표지뿐이다: 보상은 어드민의 결정이 아니므로
+    // `revoked_at` 을 찍지 않는다(찍으면 그 주문이 취소돼도 되살아나지 않게 된다).
+    const { revoked } = await this.revokeGrants_(promotionId, customerId, {
+      issueKeys,
+      markRevoked: false,
+    });
+    return revoked;
   }
 
   /**
@@ -509,7 +525,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 없어졌고, `revoked`(이번에 실제로 회수된 수)와 구분되는 값으로만 남는다.
    */
   async revokeGrants(promotionId: string, customerId: string): Promise<{ revoked: number; remaining: number }> {
-    return this.revokeGrants_(promotionId, customerId);
+    return this.revokeGrants_(promotionId, customerId, { markRevoked: true });
   }
 
   /**
@@ -527,23 +543,65 @@ class PromotionMetaModuleService extends MedusaService({
   protected async revokeGrants_(
     promotionId: string,
     customerId: string,
+    opts: RevokeGrantsOptions,
     @MedusaContext() sharedContext?: Context<EntityManager>,
   ): Promise<{ revoked: number; remaining: number }> {
-    const rows = (await (this as any).listCouponGrants(
-      { promotion_id: promotionId, customer_id: customerId },
-      {},
-      sharedContext,
-    )) as CouponGrantRow[];
+    const filter: Record<string, unknown> = { promotion_id: promotionId, customer_id: customerId };
+    if (opts.issueKeys) filter.issue_key = { $in: opts.issueKeys };
+    const rows = (await (this as any).listCouponGrants(filter, {}, sharedContext)) as CouponGrantRow[];
     if (rows.length === 0) return { revoked: 0, remaining: 0 };
-    const now = new Date();
-    // 🔴 사용 여부와 무관하게 회수 표지를 찍는다. 사용된 장은 아래 soft delete 대상이 아니라
-    //    살아남는데, 그 장을 주문 취소가 되살리는 것을 이 열이 막는다.
-    await (this as any).updateCouponGrants(rows.map((g) => ({ id: g.id, revoked_at: now })), sharedContext);
+
+    if (opts.markRevoked) {
+      // 🔴 사용 여부와 무관하게 회수 표지를 찍는다. 사용된 장은 아래 soft delete 대상이 아니라
+      //    살아남는데, 그 장을 주문 취소가 되살리는 것을 이 열이 막는다.
+      //    이미 찍힌 장은 건너뛴다 — 재회수가 처음 회수한 시각을 덮어쓰면 「언제 뺏었나」가 사라진다.
+      const unmarked = rows.filter((g) => g.revoked_at == null);
+      if (unmarked.length > 0) {
+        const now = new Date();
+        await (this as any).updateCouponGrants(
+          unmarked.map((g) => ({ id: g.id, revoked_at: now })),
+          sharedContext,
+        );
+      }
+    }
+
     const unused = rows.filter((g) => g.used_at == null);
     if (unused.length > 0) {
       await (this as any).softDeleteCouponGrants(unused.map((g) => g.id), {}, sharedContext);
+      // soft delete 가 곧 슬롯 반환이다 — 옛 카운터도 같은 트랜잭션에서 따라간다.
+      await this.mirrorIssuedCount(promotionId, -unused.length, sharedContext);
     }
     return { revoked: unused.length, remaining: rows.length - unused.length };
+  }
+
+  /**
+   * 옛 `issued_count` 컬럼을 «따라가게» 한다 — expand 단계의 dual write.
+   *
+   * 상한의 정본은 `coupon_grant` COUNT 다(설계 결정 1). 그런데 컬럼은 후속 contract PR 이
+   * 지울 때까지 남고, 그동안 롤링 중인 옛 태스크와 롤백된 배포는 **이 컬럼으로** 상한을
+   * 집행한다(`UPDATE … WHERE issued_count < max_claims`). 쓰기를 멈춘 채 두면 카운터가 실제
+   * 장수 아래로 동결돼, 롤백 즉시 상한을 넘겨 발급하는 fail-open 이 된다(PR #778 리뷰 F5).
+   * 그래서 장을 만들고 지우는 그 트랜잭션에서 같은 델타를 컬럼에도 적는다.
+   *
+   * 의미는 옛 코드와 같게 둔다 — **상한 있는 프로모션만** 센다(`max_claims IS NOT NULL`).
+   * 옛 `reserveClaimSlot`/`incrementIssuedCount` 가 그랬고, 무제한 프로모션까지 세면 발급마다
+   * `promotion_meta` 행 락을 잡아 「상한 없으면 잠그지도 세지도 않는다」는 최적화를 버리게 된다.
+   * 롤백 안전에 필요한 것은 상한 집행이 맞는 것이지 표시가 맞는 것이 아니다.
+   *
+   * 이 미러는 contract PR 이 컬럼과 함께 지운다. 그때까지 카운터와 COUNT 가 어긋나면
+   * (예: 컬럼 쓰기가 없던 창에서 발급된 장) PR 본문의 정합화 SQL 한 방이 맞춘다.
+   */
+  private async mirrorIssuedCount(
+    promotionId: string,
+    delta: number,
+    sharedContext?: Context<EntityManager>,
+  ): Promise<void> {
+    await this.txEm(sharedContext).execute(
+      `UPDATE "promotion_meta"
+          SET "issued_count" = GREATEST("issued_count" + ?, 0), "updated_at" = now()
+        WHERE "promotion_id" = ? AND "max_claims" IS NOT NULL AND "deleted_at" IS NULL`,
+      [delta, promotionId],
+    );
   }
 }
 

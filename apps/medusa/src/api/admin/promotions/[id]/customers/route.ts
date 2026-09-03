@@ -334,19 +334,18 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
 
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  const removed: { customer_id: string; grants: number }[] = [];
+  const removed: { customer_id: string; grants: number; kept_used: number }[] = [];
   for (const cid of customer_ids) {
-    const { revoked } = await promotionMetaService.revokeGrants(promotionId, cid);
+    const { revoked, remaining } = await promotionMetaService.revokeGrants(promotionId, cid);
 
     // 회수(soft delete)된 장은 그 순간부터 `countIssuedGrants` 에서 빠진다 — 슬롯을 별도로
     // 반환할 필요가 없다(옛 `releaseClaimSlot` 루프가 하던 일). 이미 쓴 장은 회수 대상이
     // 아니고 그 슬롯은 실제로 소비됐으므로 여전히 세어진다.
 
-    // 링크가 없으므로 「지웠다고 보고했는데 안 지워졌다」가 성립하지 않는다 (Task 7, 리뷰
-    // 발견 5) — 형제(고객축) 라우트와 같은 이유다. `removed` 는 `revokeGrants` 의 실제
-    // 결과만 반영한다.
-    if (revoked > 0) {
-      removed.push({ customer_id: cid, grants: revoked });
+    // 🔴 «무엇이든 매칭됐으면» 보고한다 — 형제(고객축) 라우트와 같은 계약(PR #778 리뷰 F3).
+    // `grants` 는 이번에 치운 미사용 장수, `kept_used` 는 남긴 쓴 장수. 둘 다 0 인 «없던 쌍»만 빠진다.
+    if (revoked + remaining > 0) {
+      removed.push({ customer_id: cid, grants: revoked, kept_used: remaining });
     }
   }
 
