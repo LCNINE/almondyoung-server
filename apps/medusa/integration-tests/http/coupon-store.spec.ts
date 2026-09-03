@@ -130,7 +130,13 @@ medusaIntegrationTestRunner({
       const assignedId = await createPromo('ASSIGNED1', { visibility: 'assigned_only' });
       await createPromo('PUBLIC1', { visibility: 'public' });
       await createPromo('CLAIM1', { visibility: 'claimable' });
-      await linkCustomer(assignedId);
+      // Task 5: 「발급됨」의 정본이 링크에서 grant 로 옮겨갔다 — linkCustomer() 만으로는
+      // 더 이상 assigned 버킷에 뜨지 않는다.
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrant({
+        promotion_id: assignedId, customer_id: customerId, issue_key: `assigned1_${seq}`,
+        issued_via: 'admin_manual', expires_at: null, now: new Date(),
+      });
 
       const res = await api.get('/store/customers/me/promotions', storeHeaders);
       const codes = res.data.promotions.map((p: any) => p.code);
@@ -139,6 +145,28 @@ medusaIntegrationTestRunner({
       expect(codes).toContain('PUBLIC1'); // 공개
       expect(codes).not.toContain('CLAIM1'); // claimable 은 별도 목록
       expect(claimCodes).toContain('CLAIM1');
+    });
+
+    it('링크 없이 grant 만 있는 고객도 마이페이지에서 쿠폰을 본다', async () => {
+      const id = await createPromo(`GRANTONLY${seq}`, { visibility: 'assigned_only' });
+      // linkCustomer() 를 부르지 않는다 — 장만 있고 링크가 없는 상태를 만든다.
+      const metaService = getContainer().resolve(PROMOTION_META_MODULE) as any;
+      await metaService.issueGrantWithSlot({
+        promotion_id: id,
+        customer_id: customerId,
+        issue_key: `${id}:${customerId}:direct:1`,
+        issued_via: 'admin_manual',
+        expires_at: null,
+        now: new Date(),
+        max_claims: null,
+        enforce_cap: true,
+      });
+
+      const res = await api.get('/store/customers/me/promotions', storeHeaders);
+
+      expect(res.status).toEqual(200);
+      const assigned = res.data.promotions.filter((p: any) => p.is_assigned);
+      expect(assigned.map((p: any) => p.code)).toContain(`GRANTONLY${seq}`);
     });
 
     it('me/promotions excludes a claim-exhausted claimable coupon (P2-8)', async () => {
