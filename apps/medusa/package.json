@@ -42,6 +42,7 @@
     "@medusajs/admin-sdk": "2.13.4",
     "@medusajs/api-key": "2.13.4",
     "@medusajs/cli": "2.13.4",
+    "@medusajs/core-flows": "^2.13.4",
     "@medusajs/draft-order": "2.13.4",
     "@medusajs/framework": "2.13.4",
     "@medusajs/medusa": "2.13.4",
@@ -60,6 +61,7 @@
     "axios": "^1.10.0",
     "jose": "^5.9.6",
     "pg": "^8.13.0",
+    "postgres": "^3.4.9",
     "zod": "3.25.76"
   },
   "devDependencies": {
