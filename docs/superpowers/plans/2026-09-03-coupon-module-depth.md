@@ -19,7 +19,7 @@
 - **게이트 명령(워크트리 루트에서, 단순 명령으로 — 세션 격리 검사기가 `cd … && { … }` 복합형을 거부한다):**
   - `npx tsc --noEmit -p apps/medusa/tsconfig.json` → **에러 3 이 기준선**(`src/admin/lib/sdk.ts` 2 · `src/api/store/orders/[id]/__tests__/confirm-purchase.unit.spec.ts` 1, 이 브랜치 무관). 🔴 `npm --prefix apps/medusa exec -- tsc --noEmit` 은 **루트 tsconfig 를 집어 0 을 낸다** — 쓰지 말 것(2026-09-03 실측).
   - `npm --prefix apps/medusa run test:unit` → 36 suites / 368 tests 기준선
-  - `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 152 tests 기준선
+  - `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → **110 tests 기준선**(패턴이 5 suites 로 좁힌다; 패턴 없는 `--modules` 전체는 8 suites / 152)
   - `scripts/local/run-medusa-integration.sh --testPathPattern coupon-` → 10 suites / 139 tests 기준선(패턴이 실제로는 전 스펙을 돈다 — 그대로 둔다)
   - 통합 러너는 docker compose 의 postgres(5432)·redis(6379) 가 떠 있어야 한다. `apps/medusa/.env` 는 메인 체크아웃으로 심볼릭 링크돼 있다.
 - **커밋 메시지 끝에** `Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn` 트레일러.
@@ -226,7 +226,7 @@ Expected: 6 failed — 전부 `TypeError: service.consumeOneUsableGrant is not a
 - [ ] **Step 4: GREEN 확인**
 
 Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta`
-Expected: 158 passed (152 + 6), 0 failed.
+Expected: 116 passed (110 + 6), 0 failed.
 
 - [ ] **Step 5: 타입 게이트**
 
@@ -326,7 +326,7 @@ Expected: 1 failed — `expect(inside.get('promo_ctx')).toBe(1)` 에서 `Receive
 
 - [ ] **Step 4: GREEN + 타입**
 
-Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 159 passed.
+Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 117 passed.
 Run: `npx tsc --noEmit -p apps/medusa/tsconfig.json` → 에러 3(기준선).
 
 - [ ] **Step 5: Commit**
@@ -497,7 +497,7 @@ Claude-Session: https://claude.ai/code/session_01WMT9N3JF3JeZr8p93Cxbtn"
 - [ ] **Step 4: 게이트**
 
 Run: `npx tsc --noEmit -p apps/medusa/tsconfig.json` → 에러 3(기준선). 스크립트가 컴파일되는 것이 이 태스크의 시험이다.
-Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 156 passed (159 − 3), 0 failed.
+Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 114 passed (117 − 3), 0 failed.
 Run: `grep -rn "issueGrant(\|markGrantUsedIfUnused" apps/medusa/src` → 0건.
 
 - [ ] **Step 5: Commit**
@@ -1170,7 +1170,7 @@ PR #778 머지 직전 재리뷰 14건을 세 시험(접기의 2차 미분 / 인�
 
 Run: `npx tsc --noEmit -p apps/medusa/tsconfig.json` → 3(기준선, 변경 파일 0).
 Run: `npm --prefix apps/medusa run test:unit` → 0 failed.
-Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 156 passed.
+Run: `scripts/local/run-medusa-integration.sh --modules --testPathPattern promotion-meta` → 114 passed.
 Run: `scripts/local/run-medusa-integration.sh --testPathPattern coupon-` → 141 passed.
 Run: `cd apps/admin-web && npx tsc --noEmit` 은 **불필요** — admin-web 파일은 이 PR 에서 하나도 바뀌지 않는다(`git diff --stat develop -- apps/admin-web` 이 비어 있는지 확인).
 
@@ -1192,4 +1192,4 @@ PR 본문에 넣을 것: 설계 문서 링크 · 해소한 지적(F1·F9·F10·F
 - **스펙 커버리지.** 결정 1 → Task 1·3. 결정 2 → Task 4(+ 0단계의 revoke 통일, Task 2 의 count). 결정 3 → Task 5. 결정 4 → Task 6. §4 「하지 않는 것」은 어느 태스크도 건드리지 않는다(자동발급 500 정책 유지 — Task 5 Step 8 명시).
 - **플레이스홀더.** 「기존 게이트들 그대로」는 라우트의 현재 코드를 가리키며 삭제 대상만 열거했다 — 실행자는 해당 파일을 열고 게이트 블록을 보존한다. 코드 스텝은 전부 코드 블록을 갖는다.
 - **타입 일관성.** `IssueGrantRequest`/`IssueGrantResult`/`verdictOf` 이름·시그니처가 Task 5 정의와 라우트 사용에서 같다. `consumeOneUsableGrant` 의 입력 객체 키(`promotion_id, customer_id, order_id, now`)가 Task 1 스펙·구현·Task 3 훅에서 같다. `countIssuedGrantsByPromotion(ids, sharedContext?)` 는 Task 2 만 건드리고 호출자 셋(admin 목록·이벤트·마이페이지)은 인자 하나로 그대로 동작한다.
-- **기준선 숫자.** 모듈 152 → +6(T1) +1(T2) −3(T4) = 156. HTTP 139 → +2(T5) = 141. 유닛은 T3 삭제(7 + FEFO 블록)와 T5 추가(4)로 바뀐다 — 정확한 수는 실행 시 기록한다.
+- **기준선 숫자.** 모듈(패턴 promotion-meta) 110 → +6(T1) +1(T2) −3(T4) = 114 (패턴 없는 전체는 152 → 156). HTTP 139 → +2(T5) = 141. 유닛은 T3 삭제(7 + FEFO 블록)와 T5 추가(4)로 바뀐다 — 정확한 수는 실행 시 기록한다.
