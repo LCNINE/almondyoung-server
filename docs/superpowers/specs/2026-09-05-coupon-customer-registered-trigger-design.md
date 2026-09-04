@@ -80,9 +80,12 @@ user-service · channel-adapter · Medusa 의 유닛·통합 스펙이 전부 �
 
 | 파일 | 역할 | 의존 |
 |---|---|---|
-| `modules/promotion-meta/auto-issue-selection.ts` (신규) | **순수 함수** `selectAutoIssueCandidates({ trigger, customerId, customerGroupIds, metas, promotions, now })` → `{ requests, skipped, codeById, unsupportedRules }`. 라우트 루프 본문 그대로, I/O 없음. `skipped[].reason` 은 닫힌 유니온 `AutoIssueSkipReason` | `issuance-rules.ts` · `validity.ts` · `resolveVisibility` |
+| `workflows/coupons/auto-issue-selection.ts` (신규) | **순수 함수** `selectAutoIssueCandidates({ trigger, customerId, customerGroupIds, metas, promotions, now })` → `{ requests, skipped, codeById, unsupportedRules }`. 라우트 루프 본문 그대로, I/O 없음. `skipped[].reason` 은 닫힌 유니온 `AutoIssueSkipReason` | `issuance-rules.ts` · `validity.ts` · `resolveVisibility` |
 | `workflows/coupons/auto-issue-coupons.ts` (신규) | `autoIssueCoupons(container, { customerId, trigger })` → 고객(`id, groups.id`)·메타·프로모션 로드 → 선별기 → `unsupportedRules` 를 warn 로그 → `issueCouponGrantWorkflow` **1회** → verdict 를 `{ issued, skipped, failed }` 로 접음. 고객 없으면 `MedusaError NOT_FOUND`. **플래그는 보지 않는다**(진입점의 책임) | container |
 | `api/admin/customers/[id]/issue-coupons/route.ts` | 플래그 게이트 → 트리거 검증 → `autoIssueCoupons` → `failed` 있으면 `UNEXPECTED_STATE`(500) → `{ issued, skipped }`. **응답 모양·상태코드 불변** | |
+
+선별기는 `api/admin/promotions/helpers.ts` 의 `resolveVisibility` 를 쓰므로 모듈 디렉터리(`modules/promotion-meta/`)가
+아니라 앱 층(`workflows/coupons/`)에 둔다 — 모듈 → api 의존을 만들지 않기 위해서다.
 
 워크플로로 한 겹 더 감싸지 않는다. 쓰기는 이미 워크플로(`issueCouponGrantWorkflow`)를 지나
 ADR-0034 결정 2 를 만족하고, 나머지는 읽기다. `workflow-engine-redis` 가 실행마다 상태를 영속하므로
@@ -169,12 +172,13 @@ export const COUPON_TRIGGER_SOURCES: Record<AutoIssueTrigger, TriggerSource> = {
 
 1. 등록부의 키 집합 = Medusa `modules/promotion-meta/service.ts` 에서 읽은 어휘(어휘 가드와 같은 앵커
    재사용). 어휘에 값을 더하고 등록을 안 하면 빨갛다.
-2. `medusa_subscriber` — 파일 존재 · `config.event` 리터럴 = 등록 이벤트 · 그 이름이 **Medusa 코어 이벤트
-   상수에 있음**(`apps/medusa/node_modules/@medusajs/utils/dist/core-flows/events.js` 를
-   `require.resolve('@medusajs/utils/package.json', { paths: [apps/medusa] })` + `path.join` 으로 읽는다 —
-   `issuance-rules-engine-drift.unit.spec.ts` 와 같은 기법. exports 맵 때문에 직접 import 는 막힌다) ·
-   파일 안에 트리거 리터럴 존재.
-3. `kafka_inbox` — 발행 파일에 `enqueue(` 호출 안의 `eventType: '<X>'` · 소비 파일에 `case '<X>'` 와
+2. `medusa_subscriber` — 파일 존재 · `config.event` 리터럴 = 등록 이벤트 · 파일 안에 트리거 리터럴 존재.
+   「그 이름을 코어가 emit 하는가」는 **여기서 보지 않고 가드 B 가 본다** — 루트 jest 는
+   `modulePathIgnorePatterns` 에 `/apps/medusa/` 가 있어 그 트리를 require 할 수 없고, CI 의 루트 `npm ci` 는
+   `apps/medusa/node_modules` 를 깔지 않는다. 둘이 한 사슬이다: 트리거 → subscriber 파일 → 이벤트명 (A) ·
+   이벤트명 → 코어 emit 상수 (B).
+3. `kafka_inbox` — 발행 파일에 `enqueue(`/`publishEvent(` 호출 안의 `eventType: '<X>'` · 소비 파일(inbox 워커)에
+   `case '<X>'` · 발급 파일(워커가 위임하는 `membership-medusa-sync.service.ts`)에 `issuePromotionsByTrigger(` 와
    트리거 리터럴.
 
 `AUTO_ISSUE_TRIGGERS` 사본(현재 `coupon-vocabulary-drift.spec.ts` 안의 상수)을
@@ -188,7 +192,9 @@ export const COUPON_TRIGGER_SOURCES: Record<AutoIssueTrigger, TriggerSource> = {
 #### 가드 B — subscriber 가 듣는 이벤트는 누군가 emit 한다 (`apps/medusa/src/subscribers/__tests__/subscriber-events-have-emitters.unit.spec.ts`, Medusa 유닛)
 
 `src/subscribers/*.ts`(README · `__tests__` 제외) 전부에서 `config.event`(문자열·배열)를 읽어, 각 이름이
-**코어 이벤트 상수 집합**(가드 A 와 같은 파일에서 읽음) 안에 있는지 확인한다. 우리 소스가 emit 하는
+**코어 이벤트 상수 집합**(`apps/medusa/node_modules/@medusajs/utils/dist/core-flows/events.js` 를
+`require.resolve('@medusajs/utils/package.json')` + `path.join` 으로 읽는다 — `issuance-rules-engine-drift.unit.spec.ts`
+와 같은 기법) 안에 있는지 확인한다. 우리 소스가 emit 하는
 커스텀 이벤트는 현재 0개(§2 ⑧)라 그 집합으로 충분하고, 생기면 그때 `emitEventStep` 스캔을 더한다.
 
 예외 목록 `KNOWN_DEAD: Record<string, string>` = `{ 'users.events.v1': '#<번호>' }` — 번호는 §7 의 후속 이슈를 신설하는 플랜 태스크가 채운다. 값이 `#\d+`
