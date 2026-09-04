@@ -52,6 +52,8 @@ export async function autoIssueCoupons(container: MedusaContainer, input: AutoIs
     (customers[0].groups ?? []).map((g: { id: string }) => g.id),
   );
 
+  // `getByAutoIssueTrigger()` 는 `Promise<any[]>` 다 — 캐스트는 순수 판정(`selectAutoIssueCandidates`)이
+  // 읽는 필드로 좁힐 뿐, 런타임 모양을 바꾸지 않는다.
   const metas = (await promotionMetaService.getByAutoIssueTrigger(trigger)) as AutoIssueMeta[];
   if (!metas.length) return { issued: [], skipped: [], failed: [] };
 
@@ -66,6 +68,7 @@ export async function autoIssueCoupons(container: MedusaContainer, input: AutoIs
     customerId,
     customerGroupIds,
     metas,
+    // `query.graph` 도 타입 없이 온다 — 캐스트는 위와 같은 이유로 판정이 읽는 필드로만 좁힌다.
     promotions: promotions as AutoIssuePromotion[],
     now: new Date(),
   });

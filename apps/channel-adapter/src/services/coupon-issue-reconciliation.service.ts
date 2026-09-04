@@ -3,7 +3,6 @@ import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inboxEvents } from '../schema';
-import { MedusaClient } from '../adapters/medusa/medusa.client';
 import type { ChannelAdapterSchema } from '../types';
 import {
   recordCouponIssueBacklog,
@@ -28,10 +27,7 @@ const LOOKBACK_MS_MEMBERSHIP = 30 * 24 * 60 * 60 * 1000;
 export class CouponIssueReconciliationService {
   private readonly logger = new Logger(CouponIssueReconciliationService.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-    private readonly medusaClient: MedusaClient,
-  ) {}
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
   @Cron('0 3 * * *', { timeZone: 'Asia/Seoul' })
   async reconcile(): Promise<void> {

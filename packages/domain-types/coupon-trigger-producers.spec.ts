@@ -31,7 +31,9 @@ describe('가드 A — 트리거마다 등록된 발행자', () => {
     it(`${trigger} — ${source.kind}`, () => {
       if (source.kind === 'medusa_subscriber') {
         const src = read(source.file);
-        expect(src).toMatch(new RegExp(`event:\\s*'${source.event.replace('.', '\\.')}'`));
+        expect(src).toMatch(
+          new RegExp(`event:\\s*'${source.event.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`),
+        );
         expect(src).toContain(`'${trigger}'`);
       } else {
         const producer = read(source.producerFile);

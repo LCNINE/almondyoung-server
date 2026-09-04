@@ -140,6 +140,8 @@ export function foldGrantResults(
         out.failed.push({ promotion_id: r.promotion_id, error: r.error ?? 'unknown' });
         break;
       default: {
+        // 이 파일은 프레임워크 독립 순수 모듈이라 `MedusaError` 를 쓰지 않고 plain `Error` 를 던진다.
+        // 타입상 도달 불가(`never`)이고, 호출부(라우트)는 어차피 던져진 에러를 500 으로 매핑한다.
         const exhaustive: never = r.verdict;
         throw new Error(`알 수 없는 발급 결과: ${String(exhaustive)}`);
       }

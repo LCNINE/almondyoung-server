@@ -42,7 +42,13 @@ medusaIntegrationTestRunner({
     afterEach(async () => {
       const ids = createdPromoIds.splice(0);
       await Promise.all(
-        ids.map((id) => api.post(`/admin/promotions/${id}`, { status: 'inactive' }, adminHeaders).catch(() => {})),
+        ids.map((id) =>
+          api
+            .post(`/admin/promotions/${id}`, { status: 'inactive' }, adminHeaders)
+            .catch((e) =>
+              console.warn(`[coupon-auto-issue-subscriber.spec] 프로모션 비활성화 실패 (id=${id}): ${e?.message ?? e}`),
+            ),
+        ),
       );
     });
 

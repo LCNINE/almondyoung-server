@@ -1,5 +1,4 @@
 import { CouponIssueReconciliationService } from './coupon-issue-reconciliation.service';
-import type { MedusaClient } from '../adapters/medusa/medusa.client';
 import type { DbService } from '@app/db';
 import type { ChannelAdapterSchema } from '../types';
 
@@ -21,13 +20,8 @@ function makeDb(opts: { revived?: { id: string }[]; backlog?: { eventType: strin
 }
 
 describe('CouponIssueReconciliationService.sweepRecentFailures', () => {
-  const medusaClient = {} as MedusaClient;
-
   const makeService = (db: ReturnType<typeof makeDb>) =>
-    new CouponIssueReconciliationService(
-      { db: db.db } as unknown as DbService<ChannelAdapterSchema>,
-      medusaClient,
-    );
+    new CouponIssueReconciliationService({ db: db.db } as unknown as DbService<ChannelAdapterSchema>);
 
   it('되살릴 때 재시도 상태를 전부 초기화하고 마커를 남긴다', async () => {
     const db = makeDb({ revived: [{ id: 'e1' }] });

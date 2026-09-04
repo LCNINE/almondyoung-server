@@ -53,6 +53,18 @@ describe('coupon-auto-issue-on-customer-created 구독자', () => {
     expect(query.graph).not.toHaveBeenCalled();
   });
 
+  it('고객 행을 찾지 못하면 warn 로그만 남기고 발급을 시도하지 않는다', async () => {
+    const { container, logger, query } = makeContainer([]);
+
+    await run(container, 'cus_1');
+
+    expect(query.graph).toHaveBeenCalledWith({ entity: 'customer', fields: ['id', 'has_account'], filters: { id: 'cus_1' } });
+    expect(autoIssueCoupons).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('cus_1'));
+    expect(recordAutoIssueOutcome).not.toHaveBeenCalled();
+    expect(recordAutoIssueFailure).not.toHaveBeenCalled();
+  });
+
   it('has_account=false(어드민 생성·게스트)는 회원가입이 아니다 — 발급 0', async () => {
     const { container } = makeContainer([{ id: 'cus_1', has_account: false }]);
     await run(container, 'cus_1');

@@ -42,7 +42,11 @@ export default async function handleCouponAutoIssueOnCustomerCreated({
       filters: { id: customerId },
     });
     const customer = customers?.[0] as { id: string; has_account?: boolean | null } | undefined;
-    if (!customer?.has_account) return;
+    if (!customer) {
+      logger.warn(`[coupon] customer.created 이벤트가 왔지만 고객 행을 찾지 못함 (customer_id=${customerId})`);
+      return;
+    }
+    if (!customer.has_account) return;
 
     const outcome = await autoIssueCoupons(container, { customerId, trigger: TRIGGER });
     recordAutoIssueOutcome(TRIGGER, outcome);
