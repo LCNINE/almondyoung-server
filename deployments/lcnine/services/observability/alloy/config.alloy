@@ -240,6 +240,23 @@ prometheus.scrape "user_service" {
 	forward_to      = [prometheus.relabel.service_labels.receiver]
 }
 
+// Medusa (#775). 다른 앱과 달리 Nest 가 아니지만 같은 규칙이다 — apps/medusa/src/observability/metrics-server.ts
+// 가 PORT(9000)+10000 에 /metrics 를 연다. 쿠폰 자동발급 카운터(coupon_auto_issue_total 등)가 여기서 나온다.
+// 🔴 port 는 그 파생 규칙과 같아야 한다. Medusa 는 scaling max 1 이라 target 은 항상 하나다.
+discovery.dns "medusa" {
+	names = ["Medusa." + sys.env("METRICS_DNS_SUFFIX_SERVICES")]
+	type  = "A"
+	port  = 19000
+}
+
+prometheus.scrape "medusa" {
+	targets         = discovery.dns.medusa.targets
+	job_name        = "medusa"
+	metrics_path    = "/metrics"
+	scrape_interval = "60s"
+	forward_to      = [prometheus.relabel.service_labels.receiver]
+}
+
 // 옛 스크레이프 설정이 target map 에 직접 찍던 두 라벨을 복원한다.
 // service_name 은 Tempo·Loki 의 같은 이름 라벨과 조인하는 데 쓰이고,
 // deployment_environment 는 stage 구분이다. 옛 설정에서 service_name 값은
