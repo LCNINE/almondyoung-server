@@ -390,7 +390,8 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 4. 스위퍼 — `scripts/restore-stuck-coupon-consumptions.ts` + `jobs/restore-stuck-coupon-consumptions.ts`
    (매시 23분, `COUPON_STUCK_MIN_AGE_MINUTES` 기본 60).
 5. HTTP 스펙 — `integration-tests/http/coupon-consume.spec.ts` ①~⑦(⑦ = 측정 4 실측 겸용).
-6. (다음 배포 뒤, 별도 PR) `order_id` DROP COLUMN — 선행 조건은 결정 6 의 count 0.
+6. ✅ **실행됨 (2026-09-04, 별도 PR)** `order_id` DROP COLUMN — 선행 조건 3개를 라이브에서 확인하고
+   지웠다. 기록은 아래 «2026-09-04 contract 실행» 절.
 
 배포 제약: additive 마이그레이션 1건, Medusa 컨테이너가 부팅 시 자체 migrate 하므로(CLAUDE.md) 순서
 제약 없음. 옛 태스크는 새 컬럼을 무시한다. 배포 직후 스위퍼의 첫 회는 0건이어야 한다 — 옛 행은
@@ -414,3 +415,40 @@ consumeOneUsableGrantForCart({ promotion_id, customer_id, cart_id, now })
 - 2026-09-03 보강 절의 결정 1 문단 — `consumeOneUsableGrant` 는 `consumeOneUsableGrantForCart` 로
   바뀌었다(키가 주문에서 카트로, 결과가 세 값으로). 그 문단 자체는 09-03 시점의 기록이라 다시
   쓰지 않고, 문장 뒤에 이 개정을 가리키는 포인터만 붙였다.
+
+---
+
+## 2026-09-04 contract 실행 — 옛 컬럼 둘을 지웠다
+
+PR-3(#784)이 라이브에 나간 날(태스크 08:29:56 KST 시작, 08:33:32 rollout COMPLETED) **선행 조건 셋을
+전부 실측**하고 `Migration20260904150000` 으로 contract 단계를 밟았다.
+
+| 선행 조건 | 실측 |
+|---|---|
+| (ⅰ) 배포 시각 이후 `order_id` 가 쓰인 행 | `count(*) WHERE order_id IS NOT NULL AND updated_at > '2026-09-03 23:29:56+00'` = **0** |
+| (ⅱ) `coupon_grant.order_id` 를 읽는 프로덕션 코드 | **0** — 남은 `order_id` 문자열은 전부 Medusa 의 `order_cart` 링크이거나 `customer_promotion` 링크의 `extraColumns` 다 |
+| (ⅲ) 롤링 창 사각지대(`used_at NOT NULL AND cart_id IS NULL AND order_id NOT NULL`) | **0행** |
+
+배포 직후 스위퍼도 함께 확인했다 — 00:23·01:23·02:23 UTC 세 회차 전부 0건. 🔴 스위퍼는 `restored > 0`
+일 때만 로그를 내므로 **무음이 「안 돌았다」와 구별되지 않는다.** 형제 잡 `[membership-price-audit]`
+(`40 0 * * *`)이 같은 컨테이너에서 00:40:02 에 찍힌 것으로 크론 생존을 먼저 증명한 뒤 0건으로 읽었다.
+
+### `promotion_meta.issued_count` 를 같은 PR 에서 지운 이유
+
+미러(`mirrorIssuedCount`)는 «컬럼이 살아 있는 동안 옛 태스크가 그걸로 상한을 집행한다»는 이유로
+존재했다. 컬럼을 지우면 그 이유도 사라지므로 **미러 쓰기와 컬럼을 함께** 걷었다. 쪼개는 쪽(먼저 미러만
+제거 → 다음 사이클에 컬럼 DROP)도 검토했으나 기각했다 — 그 사이에 롤백이 나면 옛 코드가 **동결된**
+카운터로 상한을 집행해 fail-open(#778 리뷰 F5)이 된다. 함께 지울 때의 대가는 롤링 창(수 분) 안에 발급이
+일어나면 옛 태스크의 미러 UPDATE 가 없는 컬럼을 만나 **발급이 실패**하는 것인데, 방향이 fail-closed 고
+라이브 발급량이 사실상 0이라 이쪽을 골랐다.
+
+표시는 영향이 없다 — 어드민 응답의 `metadata.issued_count` 는 이미 `coupon_grant` 실측 COUNT 에서
+오고(`toMetadataShape(record, issuedCount)`), 컬럼을 읽지 않는다.
+
+### 이 PR 이 **하지 않은** 것 — 다음 contract 대상
+
+`links/customer-promotion.ts`(링크 테이블 + `extraColumns` 4개)는 그대로 뒀다. 「읽는 코드도 쓰는 코드도
+없다」는 판정은 유효하지만 **선행 확인이 하나 남아 있다** — `scripts/backfill-coupon-grants.ts` 가 그 링크를
+읽어 `coupon_grant` 로 옮기는 1회성 이관인데, **라이브에 아직 링크 행이 남아 있다**(2026-09-04
+`detach-coupon-campaigns` dry-run 이 `expires_at` 빈 링크 1건을 보고했다). 지우기 전에 그 행이 이미
+`coupon_grant` 로 옮겨졌는지 확인할 것. 링크 테이블 삭제는 데이터 손실이 되돌릴 수 없는 쪽이다.

@@ -40,7 +40,6 @@ export type CouponGrantRow = {
   used_at: Date | string | null;
   /** 이 장을 소모한 카트. 백필된 옛 장은 null. */
   cart_id: string | null;
-  order_id: string | null;
   revoked_at: Date | string | null;
 };
 
@@ -347,12 +346,6 @@ class PromotionMetaModuleService extends MedusaService({
       if (issued > Number(input.max_claims)) throw new ExhaustedSignal();
     }
 
-    // (3) 옛 카운터 미러 — 상한의 정본은 위 COUNT 지만, 컬럼이 살아 있는 동안 옛 태스크가
-    //     그걸로 집행하므로 같은 트랜잭션에서 따라가게 한다(`mirrorIssuedCount` 주석).
-    if (input.max_claims !== null) {
-      await this.mirrorIssuedCount(input.promotion_id, 1, sharedContext);
-    }
-
     return 'created';
   }
 
@@ -484,8 +477,7 @@ class PromotionMetaModuleService extends MedusaService({
    * 취소 구독자는 `restoreGrantsByCart` 가 만료·회수를 걸러 넘기고, 스위퍼는
    * `listStuckConsumptions` 가 고른다. 셋이 각자 UPDATE 를 들면 PR-2 가 걷어낸 쌍둥이가 되돌아온다.
    *
-   * `used_at IS NOT NULL` 술어 덕에 두 번 불려도 두 번째는 0 이다. `order_id` 는 만지지 않는다 —
-   * 읽는 곳이 없고, 컬럼은 다음 배포 뒤 지운다.
+   * `used_at IS NOT NULL` 술어 덕에 두 번 불려도 두 번째는 0 이다.
    */
   async restoreGrants(ids: string[], sharedContext?: Context<EntityManager>): Promise<number> {
     if (ids.length === 0) return 0;
@@ -628,41 +620,10 @@ class PromotionMetaModuleService extends MedusaService({
 
     const unused = rows.filter((g) => g.used_at == null);
     if (unused.length > 0) {
+      // soft delete 가 곧 슬롯 반환이다 — 상한은 `coupon_grant` COUNT 로 세므로 카운터가 따로 없다.
       await (this as any).softDeleteCouponGrants(unused.map((g) => g.id), {}, sharedContext);
-      // soft delete 가 곧 슬롯 반환이다 — 옛 카운터도 같은 트랜잭션에서 따라간다.
-      await this.mirrorIssuedCount(promotionId, -unused.length, sharedContext);
     }
     return { revoked: unused.length, remaining: rows.length - unused.length };
-  }
-
-  /**
-   * 옛 `issued_count` 컬럼을 «따라가게» 한다 — expand 단계의 dual write.
-   *
-   * 상한의 정본은 `coupon_grant` COUNT 다(설계 결정 1). 그런데 컬럼은 후속 contract PR 이
-   * 지울 때까지 남고, 그동안 롤링 중인 옛 태스크와 롤백된 배포는 **이 컬럼으로** 상한을
-   * 집행한다(`UPDATE … WHERE issued_count < max_claims`). 쓰기를 멈춘 채 두면 카운터가 실제
-   * 장수 아래로 동결돼, 롤백 즉시 상한을 넘겨 발급하는 fail-open 이 된다(PR #778 리뷰 F5).
-   * 그래서 장을 만들고 지우는 그 트랜잭션에서 같은 델타를 컬럼에도 적는다.
-   *
-   * 의미는 옛 코드와 같게 둔다 — **상한 있는 프로모션만** 센다(`max_claims IS NOT NULL`).
-   * 옛 `reserveClaimSlot`/`incrementIssuedCount` 가 그랬고, 무제한 프로모션까지 세면 발급마다
-   * `promotion_meta` 행 락을 잡아 「상한 없으면 잠그지도 세지도 않는다」는 최적화를 버리게 된다.
-   * 롤백 안전에 필요한 것은 상한 집행이 맞는 것이지 표시가 맞는 것이 아니다.
-   *
-   * 이 미러는 contract PR 이 컬럼과 함께 지운다. 그때까지 카운터와 COUNT 가 어긋나면
-   * (예: 컬럼 쓰기가 없던 창에서 발급된 장) PR 본문의 정합화 SQL 한 방이 맞춘다.
-   */
-  private async mirrorIssuedCount(
-    promotionId: string,
-    delta: number,
-    sharedContext?: Context<EntityManager>,
-  ): Promise<void> {
-    await this.txEm(sharedContext).execute(
-      `UPDATE "promotion_meta"
-          SET "issued_count" = GREATEST("issued_count" + ?, 0), "updated_at" = now()
-        WHERE "promotion_id" = ? AND "max_claims" IS NOT NULL AND "deleted_at" IS NULL`,
-      [delta, promotionId],
-    );
   }
 }
 
