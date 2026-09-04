@@ -32,8 +32,6 @@ const CouponGrant = model
        * 주문은 Medusa 의 `order_cart` 링크로 닿는다. 백필된 옛 장은 null 이다(카트가 없었다).
        */
       cart_id: model.text().nullable(),
-      /** 옛 키. 읽기·쓰기 모두 끊겼다 — DROP 은 다음 배포 뒤 별도 PR (ADR-0034 결정 6, expand-contract). */
-      order_id: model.text().nullable(),
       /** 어드민이 이 장을 회수한 시각. 사용된 장은 soft delete 되지 않으므로 이 열이 회수의 유일한 표지다. */
       revoked_at: model.dateTime().nullable(),
     },
@@ -58,8 +56,6 @@ const CouponGrant = model
     // 벗어난 값은 통합 스펙에서 안 걸린다.
     { on: ['customer_id'], name: 'idx_coupon_grant_customer' },
     { on: ['promotion_id'], name: 'idx_coupon_grant_promotion' },
-    // 옛 키의 인덱스. 컬럼과 함께 다음 배포 뒤 별도 PR 에서 지운다.
-    { on: ['order_id'], name: 'idx_coupon_grant_order' },
     // `restoreGrantsByCart`(주문 취소) 와 스위퍼(`listStuckConsumptions`) 가 이 컬럼으로 조회한다.
     // 테이블은 발급 1건당 1행으로 자란다 — 인덱스 없이는 취소마다 풀스캔이다.
     { on: ['cart_id'], name: 'idx_coupon_grant_cart' },

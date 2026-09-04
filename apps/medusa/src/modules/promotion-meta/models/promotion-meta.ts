@@ -11,7 +11,6 @@ const PromotionMeta = model
       created_by: model.text().nullable(),
       visibility: model.text().default('public'),
       max_claims: model.number().nullable(),
-      issued_count: model.number().default(0),
       auto_issue_trigger: model.text().nullable(),
       // 유효기간 «정책 축» (#488 결정 1). 인스턴스 축은 customer↔promotion 링크 행의 expires_at 이다.
       // claimable/assigned_only 에겐 발급 가능 구간, public 에겐 사용 가능 구간으로 읽힌다.
