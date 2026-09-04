@@ -20,11 +20,7 @@ import type {
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
-import type {
-  Cafe24LinkedPayload,
-  Cafe24UnlinkedPayload,
-  UserEmailVerifiedPayload,
-} from '@packages/event-contracts/streams/user.stream';
+import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
 import {
   getChannelFulfillmentCapabilities,
   type ShipmentSalesChannel,
@@ -39,7 +35,6 @@ const INBOX_WORKER_EVENT_TYPES = [
   'CategoryChanged',
   'ProductSellableQuantityChanged',
   'MembershipStatusChanged',
-  'UserEmailVerified',
   'Cafe24Linked',
   'Cafe24Unlinked',
   'FirebaseMembershipSynced',
@@ -440,20 +435,6 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           const membershipPayload: MembershipStatusChangedPayload = event.payload;
           await this.membershipSyncService.handleMembershipStatusChanged(membershipPayload);
           break;
-
-        case 'UserEmailVerified': {
-          const userPayload: UserEmailVerifiedPayload = event.payload;
-          const customer = await this.medusaClient.findCustomerByAlmondUserId(userPayload.userId);
-          if (!customer) {
-            // Medusa customer는 첫 storefront 로그인 시 생성됨 → 이메일 인증 직후엔 없을 수 있음.
-            // 장기 스케줄로 재시도해 첫 로그인을 기다린다 (한도 초과 시 failed 상태로 남음).
-            throw new SlowRetryInboxError(
-              `[UserEmailVerified] No Medusa customer found for userId=${userPayload.userId}; will retry`,
-            );
-          }
-          await this.medusaClient.issuePromotionsByTrigger(customer.id, 'customer_registered');
-          break;
-        }
 
         case 'Cafe24Linked': {
           const linkedPayload: Cafe24LinkedPayload = event.payload;

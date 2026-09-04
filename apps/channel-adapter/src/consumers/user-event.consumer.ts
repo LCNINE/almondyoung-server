@@ -21,63 +21,6 @@ export class UserEventConsumer {
 
   constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
-  @On(USER_STREAM, 'UserEmailVerified')
-  async onUserEmailVerified(
-    @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'UserEmailVerified'>,
-    @EventPayload() payload: EventPayloadOf<typeof USER_STREAM, 'UserEmailVerified'>,
-  ): Promise<void> {
-    const { userId } = payload;
-    const idempotencyKey = envelope.messageId || `UserEmailVerified:${userId}`;
-
-    this.logger.log(`[User] UserEmailVerified 수신: userId=${userId}`);
-
-    try {
-      const db = this.dbService.db;
-
-      const [existing] = await db
-        .select()
-        .from(processedEvents)
-        .where(eq(processedEvents.idempotencyKey, idempotencyKey))
-        .limit(1);
-
-      if (existing) {
-        this.logger.debug(`[User] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
-        return;
-      }
-
-      await db.insert(processedEvents).values({
-        idempotencyKey,
-        source: 'users.events.v1',
-        eventType: 'UserEmailVerified',
-        resourceId: userId,
-        eventVersion: envelope.messageId || new Date().toISOString(),
-        status: 'PROCESSED',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      await db.insert(inboxEvents).values({
-        eventType: 'UserEmailVerified',
-        aggregateType: 'User',
-        aggregateId: userId,
-        partitionKey: userId,
-        payload,
-        metadata: {
-          correlationId: envelope.correlationId,
-          messageId: envelope.messageId,
-          chainId: envelope.chainId,
-        },
-        status: 'pending',
-        createdAt: new Date(),
-      });
-
-      this.logger.log(`[User] UserEmailVerified Inbox 저장 완료: userId=${userId}`);
-    } catch (error) {
-      this.logger.error(`[User] UserEmailVerified Inbox 저장 실패: userId=${userId}`, error?.message);
-      throw error;
-    }
-  }
-
   @On(USER_STREAM, 'Cafe24Linked')
   async onCafe24Linked(
     @EventEnvelope() envelope: EnvelopeOf<typeof USER_STREAM, 'Cafe24Linked'>,

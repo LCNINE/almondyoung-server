@@ -92,18 +92,15 @@ describe('쿠폰 자동발급 메트릭', () => {
   });
 
   it('백로그 게이지는 행이 없는 타입을 0 으로 되돌린다', async () => {
-    recordCouponIssueBacklog([{ eventType: 'UserEmailVerified', count: 3 }]);
-    expect(await value('coupon_issue_inbox_failed_rows', { event_type: 'UserEmailVerified' })).toBe(3);
-    expect(await value('coupon_issue_inbox_failed_rows', { event_type: 'MembershipStatusChanged' })).toBe(
-      0,
-    );
+    recordCouponIssueBacklog([{ eventType: 'MembershipStatusChanged', count: 3 }]);
+    expect(await value('coupon_issue_inbox_failed_rows', { event_type: 'MembershipStatusChanged' })).toBe(3);
 
     // 다음 회차에 3건이 해소되면 게이지도 내려가야 한다 — 안 그러면 알림이 영원히 켜져 있다.
     recordCouponIssueBacklog([]);
-    expect(await value('coupon_issue_inbox_failed_rows', { event_type: 'UserEmailVerified' })).toBe(0);
+    expect(await value('coupon_issue_inbox_failed_rows', { event_type: 'MembershipStatusChanged' })).toBe(0);
   });
 
-  it('트리거 이벤트 타입은 둘이다', () => {
-    expect([...COUPON_TRIGGER_EVENT_TYPES]).toEqual(['UserEmailVerified', 'MembershipStatusChanged']);
+  it('트리거 이벤트 타입은 MembershipStatusChanged 하나다 — customer_registered 는 Medusa 안에서 발화한다 (#775)', () => {
+    expect([...COUPON_TRIGGER_EVENT_TYPES]).toEqual(['MembershipStatusChanged']);
   });
 });

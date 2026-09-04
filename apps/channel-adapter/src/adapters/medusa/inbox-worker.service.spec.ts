@@ -531,7 +531,7 @@ describe('InboxWorkerService handleFailure race with an abandoned timed-out hand
       // 클레임 시점 스냅샷 — attempts=1, DB 행의 현재 attempts(1)와 일치한다.
       const staleEvent = {
         id: 'race-event-1',
-        eventType: 'UserEmailVerified',
+        eventType: 'MembershipStatusChanged',
         aggregateId: 'agg-1',
         payload: {},
         attempts: 1,
