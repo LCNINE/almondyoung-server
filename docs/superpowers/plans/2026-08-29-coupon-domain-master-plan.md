@@ -429,7 +429,7 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       — 기록은 #488 「리허설 2차 실행 기록」. **14항목 중 ✅12 · ✅(부분)1 · ❌1.**
       P7 은 결함 없음(R9·R10·R12 전부 의도대로). P4+P5 인스턴스 축(R5·R6), 결정 1(R7),
       P10-B 캡(R3·R4), 빠른 레인(R13), `membership_activated` e2e(R11b) 전부 통과.
-- [ ] 🔴 **A5 개통 차단 — `customer_registered` 트리거가 발화할 수 없다** (R11 ❌) → **#775**
+- [x] 🔴 **A5 개통 차단 — `customer_registered` 트리거가 발화할 수 없다** (R11 ❌) → **#775**
       가입이 `isEmailVerified: true` 로 행을 넣는데(`apps/user-service/src/api/auth/auth.service.ts:208`,
       소셜은 `:612`) 인증 처리기는 `isEmailVerified=false` 만 찾는다(`:278`). 그래서 그 함수 안의
       유일한 `UserEmailVerified` 발행(`:321`)에 **영영 도달하지 못한다.**
@@ -438,4 +438,7 @@ Medusa 가 어드민에 노출하는 ORDER 스코프 룰 속성은 다섯이다
       **선택지 3개와 조사 결과·작업 항목은 #775 에 있다.** 권고는 안 3(Medusa `customer.created`
       subscriber) — customer 가 정의상 존재해 슬로우 리트라이 함정이 원인부터 사라진다.
       #775 에서 같은 실패 모드(구독자는 있는데 발행자가 없다)를 Medusa subscriber 2건에서 추가 발견.
+      **✅ 2026-09-05 해결 — 안 3 + b-1 (ADR-0035, 스펙 `2026-09-05-coupon-customer-registered-trigger-design.md`).**
+      `customer.created` subscriber + Medusa `:19000/metrics` + channel-adapter 죽은 경로 삭제 + 가드 A/B.
+      **종결 조건은 리허설 3차의 R11 재실행**(손으로 이벤트 강제하지 않고 가입 → 쿠폰).
 - [ ] A5 개통 (위 결정 후)

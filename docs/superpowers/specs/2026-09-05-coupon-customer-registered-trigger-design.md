@@ -193,7 +193,7 @@ export const COUPON_TRIGGER_SOURCES: Record<AutoIssueTrigger, TriggerSource> = {
 
 `src/subscribers/*.ts`(README · `__tests__` 제외) 전부에서 `config.event`(문자열·배열)를 읽어, 각 이름이
 **코어 이벤트 상수 집합**(`apps/medusa/node_modules/@medusajs/utils/dist/core-flows/events.js` 를
-`require.resolve('@medusajs/utils/package.json')` + `path.join` 으로 읽는다 — `issuance-rules-engine-drift.unit.spec.ts`
+`require.resolve('@medusajs/utils')`(main entry)에서 패키지 루트를 유도 + `path.join` 으로 읽는다 — `issuance-rules-engine-drift.unit.spec.ts`
 와 같은 기법) 안에 있는지 확인한다. 우리 소스가 emit 하는
 커스텀 이벤트는 현재 0개(§2 ⑧)라 그 집합으로 충분하고, 생기면 그때 `emitEventStep` 스캔을 더한다.
 
