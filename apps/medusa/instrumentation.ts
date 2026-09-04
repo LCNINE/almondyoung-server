@@ -4,8 +4,13 @@ import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
 import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { RedactingLogExporter } from './src/observability/redacting-log-exporter';
 import { RedactingSpanExporter } from './src/observability/redacting-span-exporter';
+import { startMetricsServer } from './src/observability/metrics-server';
 
 export function register() {
+  // Prometheus /metrics (:PORT+10000). OTLP endpoint 유무와 무관하게 연다 — 아래 early return 앞에 둔다.
+  // 쿠폰 자동발급 카운터(#775)가 여기로 나간다. 포트 파생 규칙은 metrics-server.ts.
+  startMetricsServer();
+
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (!endpoint) {
     console.log('OTEL_EXPORTER_OTLP_ENDPOINT not set, skipping instrumentation');
