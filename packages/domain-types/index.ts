@@ -8,3 +8,5 @@ export * from './channel-adapter.types';
 export * from './medusa-inventory-projection';
 export * from './listing-resolution-cause';
 export * from './coupon-visibility';
+export * from './coupon-auto-issue-trigger';
+export * from './coupon-trigger-sources';
