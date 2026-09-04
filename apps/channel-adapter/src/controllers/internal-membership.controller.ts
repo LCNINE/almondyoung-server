@@ -94,15 +94,14 @@ export class InternalMembershipController {
    * 쿠폰 자동 발급 보정 수동 실행
    * POST /internal/membership/run-coupon-reconciliation
    *
-   * failed 상태의 UserEmailVerified / MembershipStatusChanged inbox 이벤트를 재처리합니다.
-   * - UserEmailVerified: Medusa customer가 생성됐으면 직접 발급 후 published 처리
-   * - MembershipStatusChanged: pending으로 리셋하여 inbox worker가 재시도
+   * failed 상태의 MembershipStatusChanged inbox 이벤트를 pending 으로 리셋해 inbox worker 가 재시도하게 한다.
+   * (customer_registered 는 Medusa 안에서 발화하고 inbox 를 지나지 않는다 — #775.)
    */
   @Post('run-coupon-reconciliation')
   @HttpCode(HttpStatus.OK)
   async runCouponReconciliation(
     @Headers('authorization') authorization: string,
-  ): Promise<{ directIssued: number; reset: number; skipped: number }> {
+  ): Promise<{ reset: number; skipped: number }> {
     this.verifyInternalKey(authorization);
     this.logger.log('쿠폰 발급 보정 수동 실행 요청');
     return this.couponIssueReconciliationService.runManually();

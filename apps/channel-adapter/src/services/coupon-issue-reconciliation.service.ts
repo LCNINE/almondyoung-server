@@ -3,9 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { and, eq, gte, inArray, sql } from 'drizzle-orm';
 import { inboxEvents } from '../schema';
-import { MedusaClient } from '../adapters/medusa/medusa.client';
 import type { ChannelAdapterSchema } from '../types';
-import type { UserEmailVerifiedPayload } from '@packages/event-contracts/streams/user.stream';
 import {
   recordCouponIssueBacklog,
   COUPON_TRIGGER_EVENT_TYPES,
@@ -22,8 +20,6 @@ const FAST_LANE_MARKER = 'coupon_fast_reset';
 
 /** 빠른 레인의 대상 창. 그보다 오래된 실패는 급하지 않고, 03:00 크론이 더 넓은 창으로 본다. */
 const FAST_LANE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
-// UserEmailVerified: long window — customer may take months to first log in to the storefront
-const LOOKBACK_MS_REGISTRATION = 365 * 24 * 60 * 60 * 1000;
 // MembershipStatusChanged: short window — transient failures requeue via resetToPending
 const LOOKBACK_MS_MEMBERSHIP = 30 * 24 * 60 * 60 * 1000;
 
@@ -31,17 +27,14 @@ const LOOKBACK_MS_MEMBERSHIP = 30 * 24 * 60 * 60 * 1000;
 export class CouponIssueReconciliationService {
   private readonly logger = new Logger(CouponIssueReconciliationService.name);
 
-  constructor(
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-    private readonly medusaClient: MedusaClient,
-  ) {}
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
 
   @Cron('0 3 * * *', { timeZone: 'Asia/Seoul' })
   async reconcile(): Promise<void> {
     await this.run();
   }
 
-  async runManually(): Promise<{ directIssued: number; reset: number; skipped: number }> {
+  async runManually(): Promise<{ reset: number; skipped: number }> {
     return this.run();
   }
 
@@ -113,58 +106,38 @@ export class CouponIssueReconciliationService {
     recordCouponIssueBacklog(rows.map((r) => ({ eventType: r.eventType, count: Number(r.count) })));
   }
 
-  private async run(): Promise<{ directIssued: number; reset: number; skipped: number }> {
+  private async run(): Promise<{ reset: number; skipped: number }> {
     this.logger.log('쿠폰 자동 발급 보정 시작');
 
-    const sinceRegistration = new Date(Date.now() - LOOKBACK_MS_REGISTRATION);
-    const sinceMembership = new Date(Date.now() - LOOKBACK_MS_MEMBERSHIP);
-
-    const [registrationFailed, membershipFailed] = await Promise.all([
-      this.dbService.db
-        .select()
-        .from(inboxEvents)
-        .where(
-          and(
-            eq(inboxEvents.status, 'failed'),
-            eq(inboxEvents.eventType, 'UserEmailVerified'),
-            gte(inboxEvents.createdAt, sinceRegistration),
-          ),
+    // MembershipStatusChanged 만 본다. customer_registered 는 Medusa 안(`customer.created` subscriber)에서
+    // 발화하고 inbox 를 지나지 않는다 (#775) — 그쪽 실패는 Medusa 의 카운터·로그가 보인다.
+    const since = new Date(Date.now() - LOOKBACK_MS_MEMBERSHIP);
+    const failed = await this.dbService.db
+      .select()
+      .from(inboxEvents)
+      .where(
+        and(
+          eq(inboxEvents.status, 'failed'),
+          inArray(inboxEvents.eventType, [...COUPON_TRIGGER_EVENT_TYPES]),
+          gte(inboxEvents.createdAt, since),
         ),
-      this.dbService.db
-        .select()
-        .from(inboxEvents)
-        .where(
-          and(
-            eq(inboxEvents.status, 'failed'),
-            eq(inboxEvents.eventType, 'MembershipStatusChanged'),
-            gte(inboxEvents.createdAt, sinceMembership),
-          ),
-        ),
-    ]);
-
-    const failed = [...registrationFailed, ...membershipFailed];
+      );
 
     if (failed.length === 0) {
       this.logger.log('보정 대상 없음');
       await this.refreshBacklogGauge();
-      return { directIssued: 0, reset: 0, skipped: 0 };
+      return { reset: 0, skipped: 0 };
     }
 
     this.logger.log(`보정 대상 ${failed.length}건 발견`);
-    let directIssued = 0;
     let reset = 0;
     let skipped = 0;
 
     for (const event of failed) {
       try {
-        if (event.eventType === 'UserEmailVerified') {
-          const outcome = await this.retryUserEmailVerified(event);
-          outcome === 'issued' ? directIssued++ : skipped++;
-        } else {
-          // MembershipStatusChanged — 원인이 일시적 오류일 가능성이 높으므로 재대기
-          await this.resetToPending(event.id);
-          reset++;
-        }
+        // 원인이 일시적 오류일 가능성이 높으므로 재대기 — 워커가 다시 물어간다.
+        await this.resetToPending(event.id);
+        reset++;
       } catch (err) {
         this.logger.error(`보정 실패 (eventId=${event.id}, type=${event.eventType}): ${(err as any)?.message}`);
         skipped++;
@@ -172,33 +145,8 @@ export class CouponIssueReconciliationService {
     }
 
     await this.refreshBacklogGauge();
-    this.logger.log(`쿠폰 발급 보정 완료: directIssued=${directIssued}, reset=${reset}, skipped=${skipped}`);
-    return { directIssued, reset, skipped };
-  }
-
-  private async retryUserEmailVerified(event: any): Promise<'issued' | 'skipped'> {
-    const userId = (event.payload as UserEmailVerifiedPayload)?.userId;
-    if (!userId) {
-      this.logger.warn(`UserEmailVerified event ${event.id}에 userId 없음, 스킵`);
-      return 'skipped';
-    }
-
-    const customer = await this.medusaClient.findCustomerByAlmondUserId(userId);
-    if (!customer) {
-      // 스토어프론트에 아직 한 번도 로그인 안 한 회원 — 발급 불가, 다음 보정 주기에 재확인
-      this.logger.debug(`userId=${userId} Medusa customer 없음, 스킵`);
-      return 'skipped';
-    }
-
-    await this.medusaClient.issuePromotionsByTrigger(customer.id, 'customer_registered');
-
-    await this.dbService.db
-      .update(inboxEvents)
-      .set({ status: 'published', publishedAt: new Date() })
-      .where(eq(inboxEvents.id, event.id));
-
-    this.logger.log(`userId=${userId} → customerId=${customer.id} 쿠폰 발급 보정 완료`);
-    return 'issued';
+    this.logger.log(`쿠폰 발급 보정 완료: reset=${reset}, skipped=${skipped}`);
+    return { reset, skipped };
   }
 
   private async resetToPending(eventId: string): Promise<void> {

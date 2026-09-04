@@ -166,16 +166,18 @@ Campaign "봄 할인 행사 2025"
 
 | 트리거 | 소스 이벤트 | 상태 |
 |--------|-----------|------|
-| `customer_registered` | `UserEmailVerified` | 구현 |
+| `customer_registered` | Medusa `customer.created` (`has_account`) | 구현 |
 | `membership_activated` | `MembershipStatusChanged` | 구현 |
 | `birthday` | (없음) | **미구현** — 타입·CHECK 제약에만 존재하고 생성 UI 는 `disabled` |
 
 - **멱등성:** `promotion_issue_log` 의 `(customer_id, promotion_id)` unique
 - **그룹 검증:** 자동 발급 직전에도 `meetsGroupRule()` 적용
-- **보정 job:** `CouponIssueReconciliationService` — 매일 03:00 KST 크론이 `failed` inbox 를 재처리한다.
-  `UserEmailVerified` 는 최대 365일 소급해 직접 재발급을 시도하고(고객이 뒤늦게 최초 로그인하는 케이스),
-  `MembershipStatusChanged` 는 최대 30일 소급해 `pending` 으로 되돌려 재대기시킨다.
-  수동 실행: `POST /internal/membership/run-coupon-reconciliation`
+- **보정 job:** `CouponIssueReconciliationService` — 매일 03:00 KST 크론이 `MembershipStatusChanged` 의
+  `failed` inbox 행만 최대 30일 소급해 `pending` 으로 되돌려 재대기시킨다.
+  `customer_registered` 는 Medusa 안(`customer.created` subscriber)에서 발화하고 inbox 를 지나지 않으므로
+  이 job 의 대상이 아니다 — 재시도가 없고, 실패는 `coupon_auto_issue_failures_total{trigger="customer_registered"}`
+  로 보이며 `POST /admin/customers/:id/issue-coupons` 호출로 복구한다 (근거: ADR-0035).
+  수동 실행: `POST /internal/membership/run-coupon-reconciliation` → 응답 `{reset, skipped}`
 
 > **⚠️ 라이브에서는 꺼져 있다.** `issue-coupons` 라우트가 `COUPON_AUTO_ISSUE_ENABLED !== 'true'` 이면 전면 차단한다
 > (커밋 `4ad795026` 에서 의도적으로 비활성화). 이 변수는 `deployments/lcnine/services/infra/services.ts` 에 설정돼

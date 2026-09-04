@@ -2,7 +2,6 @@
 import postgres = require('postgres');
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { CouponIssueReconciliationService } from './coupon-issue-reconciliation.service';
-import type { MedusaClient } from '../adapters/medusa/medusa.client';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -38,7 +37,7 @@ describeIfDb('쿠폰 빠른 레인 (PostgreSQL integration)', () => {
   beforeAll(() => {
     client = postgres(DATABASE_URL as string, { max: 4, prepare: false });
     const db = drizzle(client);
-    service = new CouponIssueReconciliationService({ db } as never, {} as MedusaClient);
+    service = new CouponIssueReconciliationService({ db } as never);
   });
 
   afterAll(async () => {

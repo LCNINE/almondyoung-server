@@ -12,8 +12,12 @@ import { Counter, Gauge, register } from 'prom-client';
  * `/metrics` 이고 Alloy 가 긁어간다.
  */
 
-/** 발급 트리거를 나르는 inbox 이벤트 타입. 리컨실과 게이지가 공유한다. */
-export const COUPON_TRIGGER_EVENT_TYPES = ['UserEmailVerified', 'MembershipStatusChanged'] as const;
+/**
+ * 발급 트리거를 나르는 inbox 이벤트 타입. 리컨실과 게이지가 공유한다.
+ * 옛 이메일 인증 트리거는 #775 로 빠졌다 — `customer_registered` 는 Medusa 의 `customer.created` subscriber 가
+ * 발화시키고 inbox 를 지나지 않는다.
+ */
+export const COUPON_TRIGGER_EVENT_TYPES = ['MembershipStatusChanged'] as const;
 
 /**
  * 라벨 카디널리티를 닫는다. Medusa 가 새 사유를 내면 `other` 로 접히고, 그 사실은 이 배열을
