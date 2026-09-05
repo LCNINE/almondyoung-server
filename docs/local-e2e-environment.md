@@ -233,14 +233,35 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** �
 
 1. `scripts/local/seed-user-service-local.ts` — `admin-web` 클라이언트 redirect URI 에 `127.0.0.1` 추가 **(커밋됨)**.
    시드의 `redirect_uris` upsert 는 **합집합**이라 `localhost` 도 그대로 남는다 — 둘 다 쓸 수 있다.
-2. `apps/admin-web/.env.local` 의 `OIDC_REDIRECT_URI` / `OIDC_POST_LOGOUT_REDIRECT_URI` 를 `127.0.0.1:8002` 로.
-   **이 파일은 gitignore 다 — 새 머신에선 직접 고쳐야 한다.**
+2. `apps/admin-web/.env.local` 의 **세 값**을 `127.0.0.1` 로. **이 파일은 gitignore 다 — 새 머신에선 직접 고친다.**
+   ```bash
+   OIDC_AUTHORIZATION_URL=http://127.0.0.1:8001/oauth/authorize   # 🔴 이것도 반드시 (아래 참조)
+   OIDC_REDIRECT_URI=http://127.0.0.1:8002/auth/callback
+   OIDC_POST_LOGOUT_REDIRECT_URI=http://127.0.0.1:8002/login
+   ```
 
-바꾼 뒤 `npm run db:seed:user-service:local` 을 한 번 돌린다.
+바꾼 뒤 `npm run db:seed:user-service:local` 을 한 번 돌리고 admin-web 을 **재기동**한다(env 변경).
 
-⚠️ **IdP 세션(auth-web, :8001)은 여전히 `localhost` 하나를 공유한다.** RP 쿠키가 갈렸으므로 평소엔 안 부딪히지만,
-어드민 토큰이 만료돼 SSO 로 조용히 재발급되는 순간엔 **마지막에 로그인한 사람**을 물어올 수 있다.
-어드민 화면이 갑자기 403 이면 우상단 아바타부터 본다.
+🔴 **`OIDC_AUTHORIZATION_URL` 을 빠뜨리면 절반만 고친 것이고, 그 절반이 더 위험하다.**
+2026-09-06 에 실제로 그렇게 밟았다: RP(admin-web)만 127.0.0.1 로 옮기고 로그인 화면은
+`localhost:8001` 그대로 뒀더니, **어드민으로 로그인하는 행위 자체가 스토어프론트(:8000) 세션을
+어드민으로 갈아치웠다.** auth-web 이 `localhost` 호스트에 있으니 당연한 결과다.
+
+그 뒤가 고약하다 — 스토어프론트는 멀쩡히 보이는데 결제 handoff JWT 의 `sub` 가 admin 이 되어,
+**고객에게 지급한 포인트가 결제 화면에 0P 로 보인다.** 화면 어디에도 "지금 너는 admin 이다" 라고
+쓰여 있지 않다. 판정은 로그의 handoff 토큰과 DB 다:
+
+```bash
+grep 'auth/handoff' logs/wallet-web.log | tail -1     # h=<JWT> 의 sub 를 디코드
+psql "$WALLET_DB" -c "select id,user_id,status from payment_intents order by created_at desc limit 3;"
+psql "$USER_SERVICE_DB" -c "select id,login_id from users where id='<그 sub>';"
+```
+
+`OIDC_AUTHORIZATION_URL` 까지 옮기면 어드민 로그인 전 과정이 `127.0.0.1` 안에서 끝나 오염이 사라진다.
+
+⚠️ 그래도 **IdP 쪽 `localhost` 세션은 고객이 공유한다.** 고객이 스토어프론트에서 로그아웃하면
+그 IdP 세션이 지워지고, 어드민 액세스 토큰(15분)이 만료된 뒤 재로그인 화면이 뜬다 —
+정상이다. 어드민 화면이 갑자기 403 이면 우상단 아바타부터 본다.
 
 **대안(설정을 못 건드릴 때):** 어드민 구간 / 고객 구간으로 묶어 순서대로 하고 구간마다 재로그인한다.
 
@@ -290,22 +311,94 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** �
 
 ---
 
-## 8. ⛔ 미해결 — 다음 세션의 첫 관문
+## 8. 🟢 (해결) 결제 — 「0원 결제」는 범인이 아니었다
 
-**포인트 전액(0원) 결제가 승인되지 않는다.**
+앞선 판은 이렇게 적혀 있었다: *「포인트 전액(0원) 결제가 승인되지 않는다 … 0원 승인 경로가 의심된다」*.
+**틀렸다.** 2026-09-06 실측에서 **포인트 전액 0원 결제는 그대로 성공했다** — 주문 생성까지 갔다.
 
+같은 증상(`Session: payses_… was not authorized with the provider`)이 **무통장입금 11,500원에서도 똑같이**
+난다. 즉 금액이 0인지와 무관하다. 그 문구는 **Medusa 가 만드는 최종 문장일 뿐 원인을 담지 않는다.**
+
+### 진짜 원인을 읽는 곳
+
+Medusa 는 `almond-payment` provider 의 `authorizePayment` 가 `'pending'` 을 돌려주면 저 문장을 던진다.
+`'pending'` 이 나오는 경로는 하나다 — wallet 의 `finalize-approval` 이 **409 `NO_STAGED_APPROVAL`** 을
+줬고 intent 가 `CREATED` 로 남은 것. **왜 적재분이 없는지는 `charges` 행에만 적혀 있다:**
+
+```bash
+W=postgresql://postgres:postgres@localhost:5432/wallet
+psql "$W" -c "select id,status,payable_amount,metadata from payment_intents order by created_at desc limit 3;"
+psql "$W" -x -c "select operation,status,error_code,error_message from charges
+                 where intent_id='<위 intent id>';"
 ```
-결제 화면(:3200)에서 포인트 전액 사용 → 결제금액 0원 → 「0원 결제하기」
-→ Medusa: Error was thrown trying to authorize payment session - payses_… was not authorized with the provider
+
+2026-09-06 실측에서 나온 값: `error_code=BANK_TRANSFER_BANK_NOT_CONFIGURED`,
+`error_message=TOSS_VIRTUAL_ACCOUNT_BANK is not configured`. **화면에도 Medusa 로그에도 없는 문장이다.**
+
+### 로컬에서 쓸 수 있는 결제수단은 «포인트» 하나다
+
+`apps/wallet/.env` 에 `TOSS_*` 가 **하나도 없다**. 그런데
+
+- **카드 간편결제** → 토스 결제창·승인 API (`TOSS_CLIENT_KEY`/`TOSS_SECRET_KEY`)
+- **무통장입금** → 토스 «가상계좌 발급» API (`TOSS_SECRET_KEY` + `TOSS_VIRTUAL_ACCOUNT_BANK`)
+
+둘 다 외부 PG 를 실제로 부른다. 그러므로 **로컬 E2E 의 결제는 포인트로 한다.**
+어드민에서 적립금을 먼저 지급하고(`/payments/points` → 사용자 검색 → 적립금 지급),
+결제 화면에서 「전액 사용」을 누르면 0원 결제로 주문이 생성된다.
+
+🔴 **지연 승인(deferred approval)은 TOSS 전용이다.** `readStagedApproval()` 은
+`staged.provider !== 'TOSS'` 이면 무조건 `null` 을 돌려준다(`deferred-approval.ts`).
+즉 `ALMOND_DEFERRED_APPROVAL` 이 켜진 상태(기본값)에서 **무통장입금은 Toss 키를 다 채워도
+`NO_STAGED_APPROVAL` 로 실패한다.** 로컬에서 무통장입금을 꼭 봐야 한다면
+`apps/medusa/.env` 에 `ALMOND_DEFERRED_APPROVAL=false` 를 넣어 즉시승인 경로로 되돌려야 한다.
+
+🟢 **승인이 실패해도 주문은 안 남는다.** 실패한 무통장 시도는 `medusa."order"` 에 행을 남기지 않았다
+(`order_cart` 에 링크 한 줄만 남는다). 워크플로 롤백은 제대로 동작한다.
+
+---
+
+## 8-B. 🔴 주문 수집 게이트 — 주문을 만들어도 core 로 안 흘러온다
+
+Medusa 에 주문이 생겨도 **core 의 `sales_orders` 에는 저절로 생기지 않는다.** channel-adapter 가
+5분마다 폴링해 가져오는데, 그 앞에 게이트가 셋 있고 **로컬에선 셋 다 닫혀 있었다**(2026-09-06 실측).
+
+증상은 로그 한 줄로만 드러난다. 어드민 주문조회는 그냥 「0건」이다:
+
+```bash
+grep '활성 판매채널' logs/channel-adapter.log | tail -3
+# 활성 판매채널 조회에 실패해 이번 주기의 모든 채널을 건너뛴다 (워터마크 불변):
+#   CORE_INTERNAL_KEY 가 설정되지 않아 활성 판매채널을 조회할 수 없다
 ```
 
-- 직전에 `POST /hooks/payment-events ← 200` 이 있으므로 **wallet → Medusa 웹훅은 도달했다**
-- 결제수단 시드(§2 ③)를 넣은 **뒤에도** 재현된다
-- 원인 미규명. **0원 승인 경로**가 의심되나 확인 안 됨
+**열어야 하는 것 셋:**
 
-**이게 풀려야 「결제 → 주문 → 주문조회」가 이어진다.** 다음 세션은 여기서 시작하는 게 맞다.
-우회하고 싶으면 포인트를 일부만 쓰고 나머지를 다른 수단으로 태우는 조합을 먼저 시도해 볼 것
-(결제수단은 「카드 간편결제」·「무통장입금」 두 종이 시드된다).
+| 무엇 | 어디 | 값 |
+|---|---|---|
+| `CORE_INTERNAL_KEY` | `apps/core/.env` **와** `apps/channel-adapter/.env` | 아무 값이나, **둘이 같아야** 한다 |
+| `PIM_API_URL` | `apps/channel-adapter/.env` | `http://localhost:3100` |
+| `sales_channels` 행 | core DB(`dev_core`) | `site='medusa'`, `is_active=true` 1행 |
+
+🔴 **`PIM_API_URL` 의 기본값은 `http://localhost:3001` 이다 — membership 포트다**
+(`sales-channel.client.ts:27`). 안 적으면 엉뚱한 서비스에 물어보게 된다. core 는 3100 이다.
+
+🔴 **`sales_channels` 는 로컬에서 0행이다.** 어떤 시드도 안 넣는다. 활성 채널이 없으면 수집할 대상이
+없어 게이트가 닫힌 채로 조용하다.
+
+```bash
+psql "$DEV_CORE" -c "insert into sales_channels (id,type,site,name,is_active)
+  select gen_random_uuid(),'ONLINE','medusa','아몬드영 자사몰',true
+  where not exists (select 1 from sales_channels where site='medusa');"
+# id 는 drizzle 이 앱에서 만든다(DB default 없음) — 직접 넣을 땐 gen_random_uuid() 를 줘야 한다.
+```
+
+셋을 채우고 core·channel-adapter 를 재기동한 뒤 확인:
+
+```bash
+curl -s -H "Authorization: Bearer $CORE_INTERNAL_KEY" \
+  http://localhost:3100/internal/channels/active-sites     # {"sites":["medusa"]} 여야 한다
+```
+
+`site` 로 쓸 수 있는 값은 `medusa` · `naver` · `coupang` · `3pl` 이다.
 
 ---
 
