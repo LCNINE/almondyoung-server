@@ -140,15 +140,39 @@ echo 'COUPON_STUCK_MIN_AGE_MINUTES=1' >> apps/medusa/.env
   🔴 **C4 가 끝나면 이 줄을 지우거나 60 으로 되돌린다.** 1분짜리로 남겨두면 C1~C3 을 하는 중
   스위퍼 크론(`23 * * * *`)이 돌아 **정상 소모를 되돌려** 원인 모를 ❌ 를 만든다.
 
-### 2-2. Medusa 메트릭 포트가 실제로 뜨는지 — 시작하자마자 본다
+### 2-2. 🔴 Medusa 메트릭 포트 — **로컬에선 `PORT` 를 손으로 넣어야 뜬다** (2026-09-05 실측)
 
 ```bash
-curl -s localhost:19000/metrics | head -5
+grep -E '^PORT=|^METRICS_PORT=' apps/medusa/.env || echo '없음 → 아래를 추가한다'
+echo 'PORT=9000' >> apps/medusa/.env
+curl -s localhost:19000/metrics | head -5     # coupon_auto_issue_total 의 HELP/TYPE 가 보여야 한다
 ```
 
-포트는 `METRICS_PORT` 가 없으면 `PORT + 10000` 이다. 로컬 `PORT=9000` 이면 19000.
-**빈 문자열 `METRICS_PORT=` 는 위험하다** — 코드가 `> 0` 으로 걸러 폴백하지만, 값을 넣을 거면 정수여야 한다.
-바인딩 실패는 **프로세스를 죽이지 않고** `medusa-metrics-server` JSON 로그만 남긴다. 조용하다.
+`resolveMetricsPort` 는 `METRICS_PORT` 가 없으면 `PORT + 10000` 을 쓰고, **`PORT` 도 없으면 `undefined` 를 돌려
+메트릭 서버를 아예 안 띄운다.** 프로덕션은 Dockerfile 이 `PORT=9000` 을 박아서 19000 이 저절로 열리지만,
+**`env-templates/.env.medusa.local.example` 에는 `PORT` 가 없다** — Medusa 는 자기 기본값 9000 으로 잘 뜨므로
+앱은 정상이고 **메트릭만 조용히 없다.**
+
+🔴 **이걸 모르면 R12 의 `customer_registered` 축이 통째로 ⛔ 가 되고, 원인이 「코드가 안 들어왔나」로 오진된다.**
+바인딩 실패도 **프로세스를 죽이지 않고** `medusa-metrics-server` JSON 로그만 남긴다. 양쪽 다 조용하다.
+빈 문자열 `METRICS_PORT=` 는 코드가 `> 0` 으로 걸러 폴백하지만, 값을 넣을 거면 정수여야 한다.
+
+### 2-2b. 🔴 kafka 는 앱보다 «먼저» 그리고 «건강하게» 떠 있어야 한다 (2026-09-05 실측)
+
+**channel-adapter · wallet · membership 셋은 kafka 없이는 부팅 중 죽는다**(경고가 아니라 `KafkaJSNonRetriableError`
+로 프로세스 종료). 재시도 5회를 태우고 죽으므로 **앱을 kafka 와 동시에 띄우면 경주에서 진다.**
+
+**그리고 `docker compose up -d kafka` 만으로는 부족하다** — 컨테이너를 recreate 하면 zookeeper 에 옛 broker
+ephemeral znode 가 남아 `NodeExistsException` 으로 **kafka 가 뜨자마자 죽는다**(로그를 안 보면 「떴다」로 보인다).
+
+```bash
+docker compose stop kafka
+docker compose restart zookeeper        # 옛 broker znode 를 날린다
+docker compose up -d kafka
+# 9092 가 실제로 열릴 때까지 기다린 뒤에 앱을 띄운다
+until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done
+docker compose ps -a | grep kafka        # State 가 exited 면 로그부터 본다
+```
 
 ### 2-3. 2차에서 실제로 막혔던 지점 — 같은 데서 또 막히지 말 것
 
