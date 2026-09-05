@@ -233,7 +233,11 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** �
 
 1. `scripts/local/seed-user-service-local.ts` — `admin-web` 클라이언트 redirect URI 에 `127.0.0.1` 추가 **(커밋됨)**.
    시드의 `redirect_uris` upsert 는 **합집합**이라 `localhost` 도 그대로 남는다 — 둘 다 쓸 수 있다.
-2. `apps/admin-web/.env.local` 의 **세 값**을 `127.0.0.1` 로. **이 파일은 gitignore 다 — 새 머신에선 직접 고친다.**
+2. `web/auth-web/.env.local` 의 `ALLOWED_REDIRECT_HOSTS` 에 **`127.0.0.1:8001,127.0.0.1:8002`** 를 더한다.
+   🔴 이걸 빠뜨리면 `sanitizeRedirectTo` 가 그 호스트를 흘려버려 콜백이 `localhost:8002` 로 떨어지고
+   **`/login?error=state_cookie_missing` 무한 루프**가 된다 (state 쿠키는 `127.0.0.1` 에 있으니 못 찾는다).
+   고친 뒤 auth-web 을 재기동한다.
+3. `apps/admin-web/.env.local` 의 **세 값**을 `127.0.0.1` 로. **이 파일은 gitignore 다 — 새 머신에선 직접 고친다.**
    ```bash
    OIDC_AUTHORIZATION_URL=http://127.0.0.1:8001/oauth/authorize   # 🔴 이것도 반드시 (아래 참조)
    OIDC_REDIRECT_URI=http://127.0.0.1:8002/auth/callback
@@ -402,7 +406,11 @@ curl -s -H "Authorization: Bearer $CORE_INTERNAL_KEY" \
 
 ---
 
-## 8-C. ⛔ 남은 벽 — 수집된 주문이 «격리»된다 (core PIM 이 비어 있다)
+## 8-C. 🟢 (해결) 격리를 푸는 법 — core PIM 에 상품을 만들어 투영한다
+
+**2026-09-06 에 실제로 뚫었다.** 아래 «왜»를 먼저 읽고, 절차는 그 다음 §8-D 를 본다.
+
+### ⛔ 왜 격리되는가
 
 §8-B 의 게이트 셋을 열면 수집이 실제로 돌고 **우리 주문을 잡는다.** 그런데 적재되지 않고 격리된다:
 
@@ -432,14 +440,46 @@ product_masters 0 · product_variants 0 · channel_variant_listings 0
 **어드민 「매칭」 화면으로는 못 푼다.** 그 화면은 `/matchings/order-lines`, 즉 **이미 core 에 적재된
 주문의 라인**을 다룬다. 격리는 그보다 한 단계 앞이다.
 
-**그러므로 「어드민 주문조회·매칭」을 로컬에서 보려면 먼저 core PIM 에 상품이 있어야 하고, 그 상품이
-Medusa 로 투영돼야 한다**(`productOwnership: 'ours'`, `productProjection: 'projection'`).
-이건 환경 설정이 아니라 **상품 등록 → 채널 투영**이라는 별도의 한 줄기다. 후보 경로 셋:
+---
 
-1. 상품 일괄등록(`/product-imports/*`)으로 core 에 상품을 만들고 medusa 채널에 리스팅한다 — 가장 정공법
-2. `scripts/local/seed-dev-core` 에 core 상품 + `channel_variant_listings` 시드를 더한다
-3. 기존 Medusa variant 의 metadata 에 core 식별자 셋을 심는다 — core 에 대응 상품이 먼저 있어야 하므로
-   1·2 없이는 성립하지 않는다
+## 8-D. ✅ 격리를 푸는 절차 (실측으로 통과한 경로)
+
+**core 에서 상품을 만들어 발행하면 채널 어댑터가 Medusa 로 투영하면서 식별자 셋을 심어 준다.**
+`reh-a` 같은 Medusa 시드 상품으로는 절대 안 된다 — 새로 만들어야 한다.
+
+1. 어드민 `http://127.0.0.1:8002/mall/product-registration` → **「상품 생성하고 편집 페이지로 이동」**
+   (master + draft version 이 생기고 편집 페이지로 간다)
+2. **기본 정보 → 수정**: 상품명·브랜드·공급가·시장가 입력 후 저장
+3. **옵션/variant**: 「기본 품목」이 자동으로 하나 있다. 단일 상품이면 그대로 둔다
+4. **「Version 발행」** — `version이 active로 발행되었습니다` 토스트가 뜨면 즉시 채널 어댑터가 투영한다
+5. 확인:
+   ```bash
+   psql "$MEDUSA_DB" -x -c "select v.id, v.metadata::text, p.metadata::text
+     from product_variant v join product p on p.id=v.product_id where p.handle='<masterId>';"
+   # variant metadata 에 pimVariantId, product metadata 에 pimMasterId·pimVersionId 가 있어야 한다
+   ```
+6. 스토어프론트에서 그 상품을 구매한다(URL 은 `/kr/products/<masterId>`)
+7. 다음 폴링(**5분 단위 정각**)에 `[medusa] Polled 1 order candidates (emitted: 1 …)` 이 찍히고
+   core `sales_orders` 에 행이 생긴다
+
+⚠️ **판매가는 「가격 정책」에서 따로 넣어야 한다.** 기본 정보의 공급가·시장가는 판매가가 아니다.
+안 넣으면 **0원짜리 상품이 그대로 판매 가능**해진다(실측: 상품 0원 + 배송비 2,500원으로 주문됨).
+발행이 이를 막지 않는다.
+
+⚠️ **주문조회 목록의 기본 필터는 「주문 미확정」이다.** 새로 들어온 주문은 「매칭안됨」에 있다.
+상단 «주문 현황» 타일(`매칭대기`)은 필터와 무관하게 세므로 거기부터 본다.
+
+### ⛔ 여기서 다시 막힌다 — 매칭 레코드가 없다
+
+`/order/matching` 에 매칭대기로 뜨고 「SKU 구성 매칭」 다이얼로그까지 열리지만, 상단에 이렇게 적힌다:
+
+> 이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다. 관리자에게 문의하세요.
+
+공급처·물류처·재고소유·원가를 다 채워도 **「자동 SKU 구성 매칭」 버튼이 활성화되지 않는다.**
+`dev_core` 실측: `product_matchings` 는 시드 10행뿐이고 **새 상품 몫이 없다**(`product_sku_mappings` 0행).
+즉 상품 발행이 Medusa 투영은 일으키지만 **core 안의 매칭 레코드는 안 만든다.**
+
+다음 세션은 여기서 시작한다 — 「상품 발행 → 매칭 레코드 생성」 이벤트 경로가 로컬에서 도는지부터.
 
 ---
 
@@ -465,12 +505,14 @@ Medusa 로 투영돼야 한다**(`productOwnership: 'ours'`, `productProjection:
 
 시작 절차:
   1. bash scripts/local/preflight-e2e.sh  → ✗ 를 전부 해결하고 시작한다
-  2. ⛔ 남은 벽은 §8-C 다: 주문이 core 로 적재되지 못하고 «격리»된다.
-     core PIM 이 통째로 비어(product_masters 0) Medusa variant 에 우리 식별자가 없다.
-     상품 등록 → 채널 투영을 먼저 세워야 «주문조회·매칭»이 성립한다.
+  2. ⛔ 남은 벽은 §8-D 끝의 «매칭 레코드가 없다» 다. 주문은 core 까지 들어오고 매칭
+     대기로도 뜨는데, product_matchings 에 그 상품 몫이 없어 SKU 구성 매칭이 잠겨 있다.
+     「상품 발행 → 매칭 레코드 생성」 이벤트가 로컬에서 도는지부터 확인한다.
 
-이미 통과한 것 (2026-09-06): 회원가입 · 스토어프론트 로그인 · 장바구니 · 쿠폰 적용
-(12,500→11,500) · 포인트 결제 · 주문 생성 · 어드민 적립금 지급.
+이미 통과한 것 (2026-09-06, 전부 DB 로 판정): 회원가입 · 스토어프론트 로그인 · 장바구니 ·
+쿠폰 적용(12,500→11,500) · 포인트 결제 · 주문 생성 · 어드민 적립금 지급 ·
+core 상품 등록/발행 → Medusa 투영 · 주문 수집(core sales_orders 적재) ·
+어드민 주문조회 노출 · 매칭 대기 목록 노출.
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 프로세스 기동 시각과 스키마를 먼저 재라(§0).
