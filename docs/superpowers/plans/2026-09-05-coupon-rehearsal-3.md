@@ -110,9 +110,22 @@ ps -eo pid,lstart,args | grep -E 'nest start|next dev|medusa develop' | grep -v 
 # ② Medusa 메트릭 포트 — 닫혀 있으면 #775 이전 코드다
 curl -s localhost:19000/metrics | head -3
 
-# ③ 🔴 가장 중요 — 스키마가 최신인가
-psql "$DATABASE_URL" -tAc "SELECT to_regclass('public.coupon_grant');"          # NULL 이면 마이그 밀림
-psql "$DATABASE_URL" -tAc "SELECT name FROM mikro_orm_migrations ORDER BY id DESC LIMIT 3;"
+# ③ 🔴 Medusa 스키마가 최신인가
+psql "$MEDUSA_DATABASE_URL" -tAc "SELECT to_regclass('public.coupon_grant');"   # NULL 이면 마이그 밀림
+
+# ④ 🔴 **Medusa 만 보지 마라** — drizzle 서비스도 같이 밀린다
+psql "$USER_SERVICE_DATABASE_URL" -tAc \
+  "SELECT count(*) FROM information_schema.columns WHERE table_name='users' AND column_name='dormant_at';"
+  # 0 이면 user-service 마이그가 밀렸다 → **admin-web 로그인이 500 으로 죽는다**
+```
+
+🔴 **`db:migrate:local` 은 `search` 에서 멈춘다** (2026-09-05 실측). `SERVICES` 목록에서 `user_service` 가
+`search` **뒤**에 있어, 스크립트를 그냥 돌리면 **user-service 는 영영 마이그레이션되지 않는다.**
+필요한 것만 직접 붙이는 편이 빠르다:
+
+```bash
+DBU=$(grep -m1 '^DATABASE_URL=' apps/user-service/.env | cut -d= -f2- | tr -d '"'"'"' ')
+DATABASE_URL="$DBU" npx drizzle-kit migrate --config apps/user-service/database/drizzle/drizzle.config.ts
 ```
 
 **하나라도 어긋나면 전면 재기동이다:**
@@ -606,6 +619,12 @@ SELECT order_id, cart_id FROM order_cart WHERE cart_id = '<위에서 본 cart_id
   - 로컬 .env 는 커밋하지 않는다.
 
 크롬 자동화를 쓴다:
+  🔴 **로그인과 계정 생성은 에이전트가 못 한다 — 사람이 한다.** 비밀번호 입력·계정 생성은 수행하지 않는다.
+     리허설에서 해당 지점은 둘이다: ① admin-web 최초 로그인 ② R11 의 신규 가입 + 스토어프론트 첫 로그인.
+     **시작할 때 미리 알리고, R11 차례가 오기 전에 다시 알린다** — 그때 가서 막히면 흐름이 끊긴다.
+     로컬 계정 식별자는 **이메일이 아니라 `users.login_id`** 다(어드민 = `admin`, 비번은
+     `scripts/local/seed-user-service-local.ts` 의 `LOCAL_ADMIN_PASSWORD` 기본값). 이메일을 넣으면
+     입력칸 글자수 제한에 걸린다.
   - claude-in-chrome 스킬을 먼저 부르고, tabs_context_mcp 로 컨텍스트를 잡은 뒤 새 탭을 만든다.
     기존 탭을 재사용하지 않는다.
   - localhost:8000(스토어프론트)·localhost:8002(admin-web) 사이트 권한이 확장에 있어야 한다.
@@ -614,7 +633,10 @@ SELECT order_id, cart_id FROM order_cart WHERE cart_id = '<위에서 본 cart_id
   - 🔴 자동화는 «구동기»지 «심판»이 아니다. 판정이 애매하면 ✅ 로 넘기지 말고 스크린샷과 함께
     나에게 확인을 요청해라.
 
-가장 조용히 실패하는 지점 넷 — 막히면 여기부터 의심해라 (지침서에 상세히 있다):
+가장 조용히 실패하는 지점 다섯 — 막히면 여기부터 의심해라 (지침서에 상세히 있다):
+  0. user-service 마이그 밀림 → admin-web 로그인이 500. 화면 문구는 「로그인하지 못했어요」뿐이라
+     비밀번호 문제로 오해하기 쉽다. 원인은 코드의 users.dormant_at 이 DB 에 없어 select 가 죽는 것이고,
+     findUserByLoginId 의 catch 가 원 에러를 삼켜 「로그인 ID로 사용자 조회 중 오류」 500 만 남는다.
   1. apps/medusa/.env 의 COUPON_AUTO_ISSUE_ENABLED=true 누락 → 발급이 빈 배열만 반환
   2. R11 에서 스토어프론트 «UI 로그인»을 건너뜀 → Medusa customer 가 안 생겨 트리거 자체가 없음
   3. COUPON_STUCK_MIN_AGE_MINUTES=1 을 C4 뒤에 안 되돌림 → 스위퍼 크론이 정상 소모를 되돌림
