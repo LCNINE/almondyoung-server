@@ -547,47 +547,32 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 `suppliers` 는 **0행**이라 드롭다운이 전부 비어 있다(2026-09-06 실측). 앞선 판이 이 벽을 못 본 것은
 `dev_core` 를 밀지 않아 옛 픽스처가 남아 있었기 때문이다.
 
-다이얼로그의 「신규 등록」 버튼은 눌러도 아무 창이 뜨지 않았다(2회 시도). **이 셋을 채우는 시드가
-`seed-core-local.ts` 에 없다** — 다음 세션의 후보 작업이다.
+**이 셋을 채우는 시드가 `seed-core-local.ts` 에 없다** — 다음 세션의 후보 작업이다.
 
-🔴 **다이얼로그 안에 `alert()` 가 있다** (`InventoryMatchingDialog.tsx:458`, 「최소 1개 이상의 옵션을
-입력해주세요」). 브라우저 자동화로 옵션 없이 버튼을 누르면 **모달이 떠서 확장이 먹통이 된다.**
+🔴 **다이얼로그의 「신규 등록」은 `window.prompt()` 다** (`InventoryMatchingDialog.tsx:327`·`:344`).
+그래서 눌러도 «아무 창이 안 뜬 것처럼» 보였다 — 브라우저 모달이라 자동화가 통과하지 못한다.
+같은 파일 `:458` 에는 `alert()` 도 있다(「최소 1개 이상의 옵션을 입력해주세요」). 옵션 없이 버튼을
+누르면 모달이 떠서 **확장이 먹통이 된다.**
 
-### ⛔ 벽 ②(규명 완료) — `POST /inventory-matching` 은 core 에 «한 번도 없었다»
+### ⛔ 벽 ②(규명 완료 · 이슈로 이관) — `POST /inventory-matching` 은 core 에 «한 번도 없었다»
 
-2026-09-06 에 규명했다. 라우트가 «사라진» 게 아니라 **처음부터 백엔드가 없다.**
+라우트가 «사라진» 게 아니라 **처음부터 백엔드가 없다.** 404 와 401 의 차이가 증거다:
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3100/inventory-matching   # 404 (라우트 부재)
-curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings                # 401 (라우트 있음·인증필요)
+curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings                # 401 (라우트 있음)
 ```
 
-404 와 401 의 차이가 증거다 — core 가 여는 것은 `/matchings/*` 15개뿐이고 `/inventory-matching` 은 없다.
+**이 칸은 로컬 환경으로 못 뚫는다. 라이브에서도 같은 404 다.** 여기서 더 파지 말 것 —
+전체 규명(호출 사슬 · 기대 동작 · 옛 DTO 의 갈 곳 없는 필드 · 권고 인터페이스 · 남은 결정 3건)은
+**이슈 #791** 에 있다: <https://github.com/LCNINE/almondyoung-server/issues/791>
 
-| 근거 | 확인 방법 | 결과 |
-|---|---|---|
-| core 에 그 문자열이 있었던 커밋 | `git log -S 'inventory-matching' --all -- 'apps/core/**' 'apps/wms/**' 'apps/pim/**'` | **0건** |
-| admin-web 도입 시점 | 같은 명령, `apps/admin-web/**` | 2026-03-05 이관 시점부터 존재 |
-| DTO 필드가 백엔드에 있나 | `grep -r 'citizenProductName\|stockOwnerId' apps/core/src` | **0건** |
-
-즉 **어드민이 «구현된 적 없는» 엔드포인트를 부르고 있다.** 이름이 비슷한 `/matchings` 로 고쳐 부른다고
-풀리지 않는다 — `citizenProductName`·`supplierId`·`stockOwnerId`·`warehouseId`·`options[]` 를 받아
-**SKU 를 새로 만드는** 동작 자체가 core 에 없다.
-
-다이얼로그는 2단계다(`InventoryMatchingDialog.tsx:485` 부근):
-
-1. `POST /inventory-matching` — **SKU 생성** ← 여기서 404 로 끊긴다
-2. `saveSkuComposition(result.skuMappings…)` — 만들어진 SKU 로 구성 매칭 저장 (이쪽은 core 에 있다)
+🟢 **우회로는 있다** — 재고상품 화면(`features/inventory/skus/…/sku-form-dialog`)에서 SKU 를 먼저 만들고
+매칭 화면의 **수동 탭**으로 연결하면 매칭 자체는 끝낼 수 있다. E2E 를 이어가야 한다면 이 경로를 쓴다.
 
 ⚠️ 같은 화면의 `GET /variants/:id` **400 은 별개이고, 라우트 부재가 아니다.** core 에 라우트는 있고
 (`product-variants.controller.ts:147`) `versionId` 또는 `masterId` 중 하나가 **필수 쿼리**인데
-호출자가 안 보내서 나는 400 이다:
-
-```ts
-if (!query.versionId && !query.masterId) throw new HttpException('Version ID or master ID is required', 400);
-```
-
-**결론: 이 칸은 로컬 환경으로 못 뚫는다. 라이브에서도 같은 404 일 것이다.** 백엔드 신규 구현이 필요하다.
+호출자가 안 보내서 나는 400 이다.
 
 ---
 
@@ -678,8 +663,9 @@ if (!query.versionId && !query.masterId) throw new HttpException('Version ID or 
   4. ⛔ 남은 칸 둘 (§8-D):
      ① `dev_core.suppliers` 가 0행이라 매칭 다이얼로그의 드롭다운 3개가 비어 있다.
         → seed-core-local.ts 에 공급처·물류처·재고소유를 넣을 수 있는지 따져라. 이게 이번 목표.
-     ② POST /inventory-matching 은 core 에 «한 번도 없었다»(git -S 로 확인). 환경으론 못 뚫는다.
-        고칠지 말지는 사람 판단 — 규명은 끝났으니 다시 파지 마라.
+     ② POST /inventory-matching 은 core 에 «한 번도 없었다». 환경으론 못 뚫는다.
+        규명·설계안은 이슈 #791 에 있으니 «다시 파지 마라». 매칭을 끝내야 하면
+        재고상품 화면에서 SKU 를 먼저 만들고 매칭 화면의 «수동 탭»으로 연결한다.
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 기동 시각과 스키마를 먼저 재라.
