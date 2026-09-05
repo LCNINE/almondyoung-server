@@ -12,3 +12,7 @@ CREATE DATABASE notification;
 CREATE DATABASE ugc;
 CREATE DATABASE file_service;
 CREATE DATABASE user_service;
+-- 🔴 search 는 apps/search 의 drizzle 대상이다. 없으면 drizzle-kit 이 에러가 아니라
+-- «무한 재시도» 를 해서 migrate-all.sh 가 거기서 굳고, 목록상 뒤의 user_service 가
+-- 영영 마이그레이션되지 않는다 (docs/local-e2e-environment.md §2).
+CREATE DATABASE search;

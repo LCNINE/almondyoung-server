@@ -62,10 +62,11 @@ until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done   # 9092 �
 npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함). 이제 안 멈춘다 — 아래 참조
 (cd apps/medusa && npx medusa db:migrate --execute-safe-links)
 
-# ③ 시드 4종
+# ③ 시드 5종
 npm run db:seed:user-service:local                    # 역할·admin 계정·OAuth 클라이언트 3개
 npx tsx scripts/local/seed-wallet-local.ts            # 🔴 결제수단·지역. 없으면 결제 불가
 npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트) + 매칭 레코드 backfill
+npm run db:seed:points:local                          # 로컬 구매자에게 적립금 (로컬 결제수단은 포인트뿐)
 (cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts)
 
 # ④ SMS 스텁 (회원가입 폰 인증)
@@ -111,7 +112,19 @@ sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 
 ## 4. env 파일 — **없어서 조용히 죽는 것들**
 
-`.env` 는 전부 gitignore 다. 아래는 **템플릿에 없어서 직접 넣어야 하는** 것만 모았다.
+`.env` 는 전부 gitignore 다. **템플릿은 `env-templates/` 에 있다** — `.env.<앱>.local.example` 을
+각 앱 위치로 복사한다(`docs/local-dev.md` §141). 파일이 전부 dotfile 이라 `ls` 로는 안 보인다;
+`ls -a env-templates/` 로 봐야 한다.
+
+🔴 **템플릿 자체가 틀려 있던 것 하나** (2026-09-06 수정): `.env.core.local.example` 의
+`OIDC_ISSUER_URL` 이 **라이브**(`https://user.almondyoung.com`)를 가리켰다 — 아래 항목의 발원지다.
+복사만 하면 그대로 어드민 API 전량 401 을 맞는다.
+
+같은 날 템플릿에 보탠 것: `core`·`channel-adapter` 의 `CORE_INTERNAL_KEY`, channel-adapter 의
+`PORT=3003`·`PIM_API_URL`, admin-web·auth-web 의 `127.0.0.1` 값들, admin-web `WALLET_SERVICE_URL`,
+그리고 **없던 두 개** — `.env.wallet-web.local.example` · `.env.channel-adapter.local.example`.
+
+아래는 그럼에도 **직접 판단해 넣어야 하는** 것들이다.
 
 | 파일 | 넣을 것 | 없으면 |
 |---|---|---|
@@ -348,8 +361,15 @@ psql "$W" -x -c "select operation,status,error_code,error_message from charges
 - **무통장입금** → 토스 «가상계좌 발급» API (`TOSS_SECRET_KEY` + `TOSS_VIRTUAL_ACCOUNT_BANK`)
 
 둘 다 외부 PG 를 실제로 부른다. 그러므로 **로컬 E2E 의 결제는 포인트로 한다.**
-어드민에서 적립금을 먼저 지급하고(`/payments/points` → 사용자 검색 → 적립금 지급),
+적립금은 **시드로 넣는 게 빠르다** — 어드민 화면을 거칠 필요 없다:
+
+```bash
+npm run db:seed:points:local                        # 기본 구매자 4명에게 100,000P
+LOCAL_POINT_LOGIN_IDS=e2e01 npm run db:seed:points:local   # 새로 만든 계정에
+```
+
 결제 화면에서 「전액 사용」을 누르면 0원 결제로 주문이 생성된다.
+(어드민 경로도 물론 된다: `/payments/points` → 사용자 검색 → 적립금 지급)
 
 🔴 **지연 승인(deferred approval)은 TOSS 전용이다.** `readStagedApproval()` 은
 `staged.provider !== 'TOSS'` 이면 무조건 `null` 을 돌려준다(`deferred-approval.ts`).
@@ -508,6 +528,7 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 | `scripts/local/preflight-e2e.sh` | 사전 점검. 세션 시작마다 돌린다 |
 | `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역). 이게 없어 결제가 막혔다 |
 | **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 둘 다 없으면 «조용히» 막힌다 |
+| **`scripts/local/seed-points-local.ts`** | **로컬 구매자 적립금 — `npm run db:seed:points:local`.** 🔴 `point_events` 만 넣으면 «잔액은 맞는데 결제는 INSUFFICIENT_POINTS» 가 된다 — 사용은 `point_event_details` 의 lot 에서 차감한다. 두 테이블을 함께 쓴다 |
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |
 | `docs/local-e2e-environment.md` | 이 문서 |
 
