@@ -62,18 +62,54 @@ until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done   # 9092 �
 npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함). 이제 안 멈춘다 — 아래 참조
 (cd apps/medusa && npx medusa db:migrate --execute-safe-links)
 
-# ③ 시드 5종
+# ③ 시드 5종 + 🔴 키 동기화 1
 npm run db:seed:user-service:local                    # 역할·admin 계정·OAuth 클라이언트 3개
 npx tsx scripts/local/seed-wallet-local.ts            # 🔴 결제수단·지역. 없으면 결제 불가
 npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트) + 매칭 레코드 backfill
-npm run db:seed:points:local                          # 로컬 구매자에게 적립금 (로컬 결제수단은 포인트뿐)
 (cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts)
+npm run sync:medusa-keys:local                        # 🔴 §2-A. 안 하면 storefront·수집이 «조용히» 401
+npm run db:seed:points:local                          # 적립금. 🔴 §2-B — 새 DB 에선 대상 계정을 직접 준다
 
 # ④ SMS 스텁 (회원가입 폰 인증)
 nohup node scripts/local/sms-stub.js > logs/sms-stub.log 2>&1 &
 
 # ⑤ 앱 기동 — kafka 가 «열린 뒤» 여야 한다 (§3 참조)
 ```
+
+### 🔴 §2-A. Medusa 를 초기화하면 «하드코딩된 API 키 4개»가 전부 죽는다
+
+2026-09-06 전체 초기화에서 실제로 밟았다. `medusa` DB 를 밀고 다시 시드하면 API 키가 새로 발급되는데,
+그 값이 `.env` **와 커밋된 템플릿**에 박혀 있다:
+
+| 키 | 박혀 있던 곳 | 죽으면 |
+|---|---|---|
+| `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | storefront `.env.local` **+ `env-templates/.env.storefront.local.example`** | Store API 401 → 화면은 **「상품이 없습니다」**로만 보인다 |
+| `MEDUSA_API_KEY`(secret) | channel-adapter `.env` · admin-web `.env.local` | 주문 수집 401 → 어드민 주문조회가 **「0건」** |
+
+**증상이 전부 「0건」이라 환경 문제로 안 보인다.** 그래서 스크립트로 옮겼다:
+
+```bash
+npm run sync:medusa-keys:local        # scripts/local/sync-medusa-keys.sh
+```
+
+DB 에서 publishable(`title='Webshop'`)을 읽어 넣고, secret 은 **지금 값이 아직 유효한지 실제 호출로 재서**
+무효일 때만 새로 발급한다(`create-local-secret-key.ts`). 끝에 `store/regions`·`admin/orders` 를 쳐서
+둘 다 200 인지 확인한다. 🔴 **secret 토큰은 DB 에 해시로 저장된다** — 평문은 발급 시 1회뿐이라
+「DB 에서 읽어 복구」가 원리적으로 불가능하다. 반영하려면 세 앱을 **재기동**해야 한다.
+
+### 🔴 §2-B. `db:seed:points:local` 의 기본 대상 계정은 새 DB 에 «없다»
+
+user-service 시드가 만드는 계정은 **`admin` 하나뿐**이다(`buyer01`·`s2buyer01` 등은 옛 세션에서 손으로
+만든 것이라 초기화하면 사라진다). 그래서 인자 없이 돌리면 아무에게도 적립되지 않는다.
+가입을 «먼저» 하고 그 아이디를 준다:
+
+```bash
+LOCAL_POINT_LOGIN_IDS=<가입한아이디> npm run db:seed:points:local
+```
+
+⚠️ `apps/medusa/src/scripts/seed.ts` 는 **상품을 만들지 않는다**(store·region·tax·publishable key·
+sales channel 까지만). 앞선 판이 `reh-a`·`reh-b`·`reh-c` 를 이 시드의 산물로 적은 것은 **틀렸다** —
+그건 옛 세션에서 따로 만든 것이다. 초기화 직후 Medusa 상품은 **0개**이고, §8-D 로 직접 만들어야 한다.
 
 🟢 **(2026-09-06 해결) `db:migrate:local` 이 `search` 에서 멈추던 원인은 «논리 DB `search` 가 없어서»였다.**
 `init-db.sql` 은 DB 11개를 만드는데 그 목록에 `search` 가 없다. drizzle-kit 은 없는 DB 에 대해 에러가 아니라
@@ -230,58 +266,53 @@ psql "$USER_SERVICE_DB" -c "SELECT phone_number, code, expires_at FROM phone_ver
 
 ## 6. 🔴 크롬으로 사람처럼 조작할 때의 함정
 
-### ① 어드민과 고객을 «동시에» 유지할 수 없다
+### ① 어드민과 고객을 «동시에» 유지할 수 없다 — **127.0.0.1 우회는 성립하지 않는다**
 
 **`localhost` 쿠키는 포트를 구분하지 않는다.** 스토어프론트(:8000)에서 고객으로 로그인하면
-admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** 라이브는 도메인이 달라 안 겹치지만 로컬은 겹친다.
+admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** 2026-09-06 재확인 — 어드민으로 로그인한
+직후 스토어프론트를 열자 상단이 **「관리자 · 로그아웃」**으로 떠 있었다. 라이브는 도메인이 달라 안 겹친다.
 
-증상: 어드민 화면이 멀쩡히 보이는데 백엔드 호출만 **403**. 우상단 아바타 글자가 바뀌어 있는 게 유일한 단서다.
+#### 🔴 (2026-09-06 철회) 앞선 판의 「어드민을 `127.0.0.1:8002` 로 열면 두 세션이 공존한다」는 **틀렸다**
 
-**🟢 해법 (2026-09-06): 어드민을 `127.0.0.1` 로 연다.**
+그 처방대로 세팅하면 어드민 로그인이 **`/login?error=state_cookie_missing` 무한 루프**에 빠진다.
+원인은 `ALLOWED_REDIRECT_HOSTS` 가 아니다. 둘이다:
 
-쿠키는 **포트는 안 가려도 «호스트»는 가린다.** `localhost` 와 `127.0.0.1` 은 쿠키 저장소가 서로 다르다.
-그래서 **어드민은 `http://127.0.0.1:8002`, 고객은 `http://localhost:8000`** 으로 열면 두 세션이 한 브라우저에서
-동시에 살아 있다. 창을 나눌 필요도, 구간마다 재로그인할 필요도 없다.
+1. **`AUTH_WEB_ORIGIN` 이 체인을 다시 `localhost` 로 되돌린다.** auth-web 의
+   `app/oauth/authorize/page.tsx:34` 가 복귀 URL 을 `${env.selfOrigin}${…}` 로 만드는데
+   `selfOrigin` 은 `AUTH_WEB_ORIGIN`(=`http://localhost:8001`) 한 값이다. RP 만 127.0.0.1 로
+   옮기면 로그인 도중 호스트가 갈린다.
+2. **더 근본적인 것 — `request.nextUrl.origin` 이 Host 를 무시한다.** admin-web 의
+   `src/app/auth/callback/route.ts` 는 성공/실패 리다이렉트를 **절대 URL**로 만드는데
+   (`new URL(stateRecord.redirectTo, request.nextUrl.origin)` · `failRedirect`),
+   Next 15.5.7 dev 는 이 origin 을 **언제나 `http://localhost:8002`** 로 준다. 실측:
 
-성립시키려면 두 곳을 맞춰야 한다:
-
-1. `scripts/local/seed-user-service-local.ts` — `admin-web` 클라이언트 redirect URI 에 `127.0.0.1` 추가 **(커밋됨)**.
-   시드의 `redirect_uris` upsert 는 **합집합**이라 `localhost` 도 그대로 남는다 — 둘 다 쓸 수 있다.
-2. `web/auth-web/.env.local` 의 `ALLOWED_REDIRECT_HOSTS` 에 **`127.0.0.1:8001,127.0.0.1:8002`** 를 더한다.
-   🔴 이걸 빠뜨리면 `sanitizeRedirectTo` 가 그 호스트를 흘려버려 콜백이 `localhost:8002` 로 떨어지고
-   **`/login?error=state_cookie_missing` 무한 루프**가 된다 (state 쿠키는 `127.0.0.1` 에 있으니 못 찾는다).
-   고친 뒤 auth-web 을 재기동한다.
-3. `apps/admin-web/.env.local` 의 **세 값**을 `127.0.0.1` 로. **이 파일은 gitignore 다 — 새 머신에선 직접 고친다.**
    ```bash
-   OIDC_AUTHORIZATION_URL=http://127.0.0.1:8001/oauth/authorize   # 🔴 이것도 반드시 (아래 참조)
-   OIDC_REDIRECT_URI=http://127.0.0.1:8002/auth/callback
-   OIDC_POST_LOGOUT_REDIRECT_URI=http://127.0.0.1:8002/login
+   curl -sS -o /dev/null -D - 'http://127.0.0.1:8002/auth/callback' | grep -i location
+   # location: http://localhost:8002/login?error=missing_code_or_state   ← Host 는 127.0.0.1 이었다
    ```
 
-바꾼 뒤 `npm run db:seed:user-service:local` 을 한 번 돌리고 admin-web 을 **재기동**한다(env 변경).
+   그래서 콜백이 **127.0.0.1 에 세션 쿠키를 심어 놓고 localhost 로 돌려보낸다.** 쿠키는 고아가 되고
+   미들웨어는 세션이 없다고 판단해 다시 `/login` → authorize → 콜백 … 이 무한히 돈다.
+   `next dev -H 127.0.0.1` 로 바인딩을 바꿔도 **결과는 같다**(실측). 즉 이건 설정으로 못 푼다 —
+   admin-web 이 리다이렉트를 상대 경로로 만들어야 풀리는 **코드 쪽 제약**이다.
 
-🔴 **`OIDC_AUTHORIZATION_URL` 을 빠뜨리면 절반만 고친 것이고, 그 절반이 더 위험하다.**
-2026-09-06 에 실제로 그렇게 밟았다: RP(admin-web)만 127.0.0.1 로 옮기고 로그인 화면은
-`localhost:8001` 그대로 뒀더니, **어드민으로 로그인하는 행위 자체가 스토어프론트(:8000) 세션을
-어드민으로 갈아치웠다.** auth-web 이 `localhost` 호스트에 있으니 당연한 결과다.
+#### ✅ 그래서 이렇게 한다 — 호스트는 전부 `localhost`, 구간을 «순서대로»
 
-그 뒤가 고약하다 — 스토어프론트는 멀쩡히 보이는데 결제 handoff JWT 의 `sub` 가 admin 이 되어,
-**고객에게 지급한 포인트가 결제 화면에 0P 로 보인다.** 화면 어디에도 "지금 너는 admin 이다" 라고
-쓰여 있지 않다. 판정은 로그의 handoff 토큰과 DB 다:
+`AUTH_WEB_ORIGIN`·모든 RP 의 `OIDC_AUTHORIZATION_URL`·`OIDC_REDIRECT_URI` 를 **`localhost` 로 통일**하고
+(즉 앞선 판이 지시한 127.0.0.1 치환을 **되돌리고**), 어드민과 고객을 **섞지 말고 순서대로** 한다:
 
-```bash
-grep 'auth/handoff' logs/wallet-web.log | tail -1     # h=<JWT> 의 sub 를 디코드
-psql "$WALLET_DB" -c "select id,user_id,status from payment_intents order by created_at desc limit 3;"
-psql "$USER_SERVICE_DB" -c "select id,login_id from users where id='<그 sub>';"
-```
+| 구간 | 하는 일 | 끝나면 |
+|---|---|---|
+| A. 어드민 | 상품 생성·가격정책·발행, 쿠폰 생성 | `GET localhost:8002/api/auth/signout` 으로 로그아웃 |
+| B. 고객 | 가입·로그인·장바구니·쿠폰·결제·주문 | 그대로 둔다 |
+| C. 어드민 | 주문조회·매칭 | 고객 세션은 여기서 죽는다 (검증은 이미 끝났다) |
 
-`OIDC_AUTHORIZATION_URL` 까지 옮기면 어드민 로그인 전 과정이 `127.0.0.1` 안에서 끝나 오염이 사라진다.
+세션이 하나뿐이므로 **구간을 넘을 때마다 재로그인**한다. B→C 재로그인은 계정 허브에 저장된
+계정을 고르면 비밀번호 없이 넘어간다.
 
-⚠️ 그래도 **IdP 쪽 `localhost` 세션은 고객이 공유한다.** 고객이 스토어프론트에서 로그아웃하면
-그 IdP 세션이 지워지고, 어드민 액세스 토큰(15분)이 만료된 뒤 재로그인 화면이 뜬다 —
-정상이다. 어드민 화면이 갑자기 403 이면 우상단 아바타부터 본다.
-
-**대안(설정을 못 건드릴 때):** 어드민 구간 / 고객 구간으로 묶어 순서대로 하고 구간마다 재로그인한다.
+🔴 **구간 A→B 로 넘어갈 때 로그아웃은 «어드민 쪽에서» 해야 한다.** 스토어프론트의 「로그아웃」을
+눌러도 상단은 그대로 「관리자」였다(실측) — 그 쿠키를 심은 건 admin-web 이기 때문이다.
+`http://localhost:8002/api/auth/signout` 을 열면 한 번에 지워진다.
 
 ### ② `BYPASS_AUTH=true` 가 그 함정을 숨긴다 — **E2E 에선 꺼라**
 
@@ -510,16 +541,104 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 `status='pending'` 행이 생기면 경고가 사라지고, 공급처·물류처·재고소유 셋만 고르면 버튼이 열린다
 (원가는 필수가 아니다).
 
-### ⛔ 그 다음 벽 — `/inventory-matching` 이 core 에 없다 (코드 결함)
+### ⛔ 벽 ①(신규) — 새 DB 엔 `suppliers` 가 0행이라 매칭을 «시작조차» 못 한다
 
-버튼을 눌러도 **`POST /inventory-matching` 이 404** 다. 환경 문제가 아니다 —
-`apps/admin-web/src/lib/api/domains/inventory/index.ts:58` 이 그 경로를 부르는데
-**`apps/core/src` 전체에 `inventory-matching` 라우트가 한 곳도 없다.** 로컬 설정으로 풀 수 없고,
-라이브에서도 같은 404 일 것이다. 같은 화면에서 `GET /variants/:id` 도 **400** 을 준다.
+「SKU 구성 매칭」 다이얼로그는 **공급처·물류처·재고소유** 셋을 필수로 받는데, 초기화 직후 `dev_core` 의
+`suppliers` 는 **0행**이라 드롭다운이 전부 비어 있다(2026-09-06 실측). 앞선 판이 이 벽을 못 본 것은
+`dev_core` 를 밀지 않아 옛 픽스처가 남아 있었기 때문이다.
 
-다음 세션은 여기서 시작한다 — 어드민이 부르는 경로와 core 가 여는 경로가 언제 갈라졌는지.
+다이얼로그의 「신규 등록」 버튼은 눌러도 아무 창이 뜨지 않았다(2회 시도). **이 셋을 채우는 시드가
+`seed-core-local.ts` 에 없다** — 다음 세션의 후보 작업이다.
+
+🔴 **다이얼로그 안에 `alert()` 가 있다** (`InventoryMatchingDialog.tsx:458`, 「최소 1개 이상의 옵션을
+입력해주세요」). 브라우저 자동화로 옵션 없이 버튼을 누르면 **모달이 떠서 확장이 먹통이 된다.**
+
+### ⛔ 벽 ②(규명 완료) — `POST /inventory-matching` 은 core 에 «한 번도 없었다»
+
+2026-09-06 에 규명했다. 라우트가 «사라진» 게 아니라 **처음부터 백엔드가 없다.**
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3100/inventory-matching   # 404 (라우트 부재)
+curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings                # 401 (라우트 있음·인증필요)
+```
+
+404 와 401 의 차이가 증거다 — core 가 여는 것은 `/matchings/*` 15개뿐이고 `/inventory-matching` 은 없다.
+
+| 근거 | 확인 방법 | 결과 |
+|---|---|---|
+| core 에 그 문자열이 있었던 커밋 | `git log -S 'inventory-matching' --all -- 'apps/core/**' 'apps/wms/**' 'apps/pim/**'` | **0건** |
+| admin-web 도입 시점 | 같은 명령, `apps/admin-web/**` | 2026-03-05 이관 시점부터 존재 |
+| DTO 필드가 백엔드에 있나 | `grep -r 'citizenProductName\|stockOwnerId' apps/core/src` | **0건** |
+
+즉 **어드민이 «구현된 적 없는» 엔드포인트를 부르고 있다.** 이름이 비슷한 `/matchings` 로 고쳐 부른다고
+풀리지 않는다 — `citizenProductName`·`supplierId`·`stockOwnerId`·`warehouseId`·`options[]` 를 받아
+**SKU 를 새로 만드는** 동작 자체가 core 에 없다.
+
+다이얼로그는 2단계다(`InventoryMatchingDialog.tsx:485` 부근):
+
+1. `POST /inventory-matching` — **SKU 생성** ← 여기서 404 로 끊긴다
+2. `saveSkuComposition(result.skuMappings…)` — 만들어진 SKU 로 구성 매칭 저장 (이쪽은 core 에 있다)
+
+⚠️ 같은 화면의 `GET /variants/:id` **400 은 별개이고, 라우트 부재가 아니다.** core 에 라우트는 있고
+(`product-variants.controller.ts:147`) `versionId` 또는 `masterId` 중 하나가 **필수 쿼리**인데
+호출자가 안 보내서 나는 400 이다:
+
+```ts
+if (!query.versionId && !query.masterId) throw new HttpException('Version ID or master ID is required', 400);
+```
+
+**결론: 이 칸은 로컬 환경으로 못 뚫는다. 라이브에서도 같은 404 일 것이다.** 백엔드 신규 구현이 필요하다.
 
 ---
+
+## 8-E. 🟢 2026-09-06 전 구간 통과 기록 (전체 초기화 → E2E)
+
+논리 DB 11개를 drop/재생성한 «맨바닥»에서 문서와 시드만으로 아래까지 통과했다.
+(`core` DB 는 라이브 스냅샷이라 제외 — E2E 가 보는 것은 `dev_core` 다.)
+
+| 단계 | 판정 근거 | 결과 |
+|---|---|---|
+| 어드민 로그인 | `logs/admin-web.log` 의 `/api/proxy/users/admin/business-licenses` | **200** |
+| 상품 생성·발행 | 어드민 「version이 active로 발행되었습니다」 | ✓ |
+| Medusa 투영 | `product.metadata` 에 `pimMasterId`·`pimVersionId`, `product_variant.metadata` 에 `pimVariantId` | 셋 다 존재 |
+| 매칭 레코드 | `dev_core.product_matchings` | 1행 `pending` |
+| 쿠폰 생성 | `medusa.promotion` + `promotion_application_method` | `E2E1000` / `fixed 1000` |
+| 회원가입(폰인증) | `user_service.users` | 1행 |
+| 스토어프론트 로그인 | `medusa.customer.has_account` | `t` |
+| 장바구니·쿠폰 | 체크아웃 합계 9,900+2,500−1,000 | **11,400원** |
+| 결제(포인트 전액) | `wallet.payment_intents.status` / `charges` | **CAPTURED** / AUTHORIZE·CAPTURE 둘 다 SUCCEEDED |
+| 적립금 차감 | `wallet.point_events` | `REDEEM −11,400` |
+| 주문 | `medusa."order"` + `order_promotion` | `display_id=1`, 쿠폰 링크됨 |
+| 주문 수집 | `logs/channel-adapter.log` | `Polled 1 (emitted: 1, **quarantined: 0**)` |
+| core 적재 | `dev_core.sales_orders` | 1행, `total_amount=11400`, `wallet_intent_id` 연결 |
+| 격리 | `channel_adapter.order_collection_failures` | **0건** |
+| 어드민 주문조회 | 대시보드 「매칭 대기 **1**」 · `/order/matching` 목록 | ✓ |
+| 매칭 | — | ⛔ 위 벽 ①·② |
+
+**막힌 것은 매칭 한 칸뿐이고, 그 원인은 환경이 아니라 코드다.**
+
+---
+
+## 8-F. 🔴 브라우저로 사람처럼 할 때 새로 걸린 것 셋
+
+1. **주소 검색이 «팝업 창»이라 에이전트가 못 쓴다.** 배송지 등록의 우편번호·기본주소는 `readOnly`
+   이고 다음 우편번호(`t1.daumcdn.net/mapjsapi/…postcode.v2.js`)로만 채울 수 있는데, 그 UI 는
+   MCP 탭 그룹 **밖의 새 창**으로 떠서 조작이 불가능하다. 스크립트는 정상 로드된다(`window.daum` 존재) —
+   막히는 건 자동화 쪽이다. 우회는 React 네이티브 setter 로 두 칸을 직접 채우는 것:
+
+   ```js
+   const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;
+   const f=(el,v)=>{set.call(el,v);el.dispatchEvent(new Event('input',{bubbles:true}));
+                    el.dispatchEvent(new Event('change',{bubbles:true}));};
+   const i=[...document.querySelectorAll('input')];  f(i[3],'06035'); f(i[4],'서울 강남구 가로수길 5');
+   ```
+
+2. **「배송 요청사항」이 필수인데 그렇게 안 보인다.** 안 고르면 결제하기가 조용히 안 먹고
+   토스트로 **「배송 메모를 선택해주세요.」**만 뜬다. 「문 앞에 놓아주세요」를 고르면 공동현관
+   비밀번호 입력이 열리므로 **「비밀번호없이 출입 가능해요」**를 선택해야 넘어간다.
+
+3. **쿠폰 «이름»이 고객에게 끝까지 안 보인다.** 어드민에 `E2E 검증 쿠폰 1000원` 으로 넣었는데
+   체크아웃 드롭다운·적용 후 표시 모두 **`1,000원 할인 (E2E1000)`** — 코드만 나온다(재확인).
 
 ## 9. 이번에 신설한 것
 
@@ -530,6 +649,8 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 | **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 둘 다 없으면 «조용히» 막힌다 |
 | **`scripts/local/seed-points-local.ts`** | **로컬 구매자 적립금 — `npm run db:seed:points:local`.** 🔴 `point_events` 만 넣으면 «잔액은 맞는데 결제는 INSUFFICIENT_POINTS» 가 된다 — 사용은 `point_event_details` 의 lot 에서 차감한다. 두 테이블을 함께 쓴다 |
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |
+| **`scripts/local/sync-medusa-keys.sh`** | **`npm run sync:medusa-keys:local`.** Medusa 초기화로 죽는 API 키 2종을 .env 3곳에 맞춘다 — §2-A |
+| **`env-templates/.env.membership.local.example`** | membership 로컬 템플릿 신설. 배포용 템플릿엔 `PORT`·`OIDC_ISSUER_URL`·`MEMBERSHIP_INTERNAL_KEY` 가 없다 |
 | `docs/local-e2e-environment.md` | 이 문서 |
 
 ⚠️ `scripts/local/seed-dev-core`(디렉터리)와 헷갈리지 말 것. 그쪽은 **`dev_core` 를 drop/create** 하고
@@ -540,30 +661,34 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 ## 10. 다음 세션 시작 프롬프트 (복붙용)
 
 ```
-로컬 전 과정(E2E)을 크롬으로 사람이 하듯 처음부터 다시 돌린다.
-목적은 두 가지다 — ① 절차가 «문서와 시드만으로» 재현되는지 ② 아직 못 뚫은 마지막 칸.
-검증 범위: 관리자 액션 · 회원가입 · 장바구니 · 쿠폰 · 결제 · 주문 · 어드민 주문조회 · 매칭.
+로컬 전 과정(E2E)을 크롬으로 사람이 하듯 돌린다.
+2026-09-06 에 전체 초기화(논리 DB 11개 drop) 후 «매칭 한 칸만 빼고» 전 구간을 통과했다(§8-E).
+이번 목적은 그 남은 칸이다.
 
 먼저 읽어라: docs/local-e2e-environment.md (정본은 docs/local-dev.md, 이 문서는 그 보완)
 
 시작 전에 물어라: 지금 상태에서 이어갈지, DB 를 밀고 처음부터 갈지.
-  (후자가 진짜 재현성 시험이지만 scripts/local/seed-dev-core 가 dev_core 를 drop 한다)
+  (전체 초기화 시 core DB 는 «제외»한다 — 라이브 스냅샷이고 E2E 가 보는 것은 dev_core 다)
 
 절차:
   1. bash scripts/local/preflight-e2e.sh — ✗ 를 전부 해결하고 시작
-  2. §2 의 시드 «5종» 을 빠짐없이. 특히 db:seed:core:local(수집 게이트 + 매칭 레코드)과
-     db:seed:points:local(로컬에서 통과하는 결제수단은 포인트뿐)
+  2. §2 의 시드 5종 + 🔴 npm run sync:medusa-keys:local (§2-A). 적립금 시드는
+     LOCAL_POINT_LOGIN_IDS=<가입한아이디> 로 준다 (§2-B — 새 DB 엔 구매자 계정이 없다)
   3. §8-D 순서로 상품을 만들어 발행 → 투영 확인 → 구매 → 5분 폴링 → core 적재
-  4. ⛔ 마지막 벽: 「자동 SKU 구성 매칭」이 부르는 POST /inventory-matching 이 core 에 404.
-     admin-web 만 그 경로를 부르고 apps/core/src 엔 라우트가 없다 — 환경이 아니라 코드다.
+  4. ⛔ 남은 칸 둘 (§8-D):
+     ① `dev_core.suppliers` 가 0행이라 매칭 다이얼로그의 드롭다운 3개가 비어 있다.
+        → seed-core-local.ts 에 공급처·물류처·재고소유를 넣을 수 있는지 따져라. 이게 이번 목표.
+     ② POST /inventory-matching 은 core 에 «한 번도 없었다»(git -S 로 확인). 환경으론 못 뚫는다.
+        고칠지 말지는 사람 판단 — 규명은 끝났으니 다시 파지 마라.
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 기동 시각과 스키마를 먼저 재라.
   - 판정은 화면·로그가 아니라 DB 로 한다. 콜백은 실패해도 200 을 준다.
-  - 어드민은 127.0.0.1:8002, 고객은 localhost:8000. 호스트를 섞지 마라.
+  - 🔴 호스트는 전부 localhost 다. 127.0.0.1 로 어드민을 분리하는 옛 처방은 철회됐다(§6-①).
+    어드민/고객은 «구간을 나눠 순서대로» 하고, 구간 전환은 localhost:8002/api/auth/signout 으로 한다.
   - 비밀번호·계정 생성은 네가 해도 된다(로컬 시드 값이다).
+  - 매칭 다이얼로그에는 alert() 가 있다 — 옵션 없이 버튼을 누르면 확장이 먹통이 된다.
   - 막히면 2~3회 만에 멈추고 물어라.
   - 새로 찾은 환경 결함은 그때그때 이 문서에 추가하고 커밋해라.
-    로컬에서 손으로 때운 것은 «시드나 템플릿에 넣을 수 있는지» 항상 한 번 더 따져라 —
-    이번 세션의 수확 대부분이 거기서 나왔다.
+    로컬에서 손으로 때운 것은 «시드나 템플릿에 넣을 수 있는지» 항상 한 번 더 따져라.
 ```

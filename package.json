@@ -182,7 +182,8 @@
     "test:watch": "jest --watch",
     "db:seed:user-service:local": "npx tsx scripts/local/seed-user-service-local.ts",
     "db:seed:core:local": "npx tsx scripts/local/seed-core-local.ts",
-    "db:seed:points:local": "npx tsx scripts/local/seed-points-local.ts"
+    "db:seed:points:local": "npx tsx scripts/local/seed-points-local.ts",
+    "sync:medusa-keys:local": "./scripts/local/sync-medusa-keys.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.876.0",
