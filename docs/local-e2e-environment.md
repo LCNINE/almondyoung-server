@@ -62,9 +62,10 @@ until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done   # 9092 �
 npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함). 이제 안 멈춘다 — 아래 참조
 (cd apps/medusa && npx medusa db:migrate --execute-safe-links)
 
-# ③ 시드 3종
+# ③ 시드 4종
 npm run db:seed:user-service:local                    # 역할·admin 계정·OAuth 클라이언트 3개
 npx tsx scripts/local/seed-wallet-local.ts            # 🔴 결제수단·지역. 없으면 결제 불가
+npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트) + 매칭 레코드 backfill
 (cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts)
 
 # ④ SMS 스텁 (회원가입 폰 인증)
@@ -385,15 +386,19 @@ grep '활성 판매채널' logs/channel-adapter.log | tail -3
 🔴 **`PIM_API_URL` 의 기본값은 `http://localhost:3001` 이다 — membership 포트다**
 (`sales-channel.client.ts:27`). 안 적으면 엉뚱한 서비스에 물어보게 된다. core 는 3100 이다.
 
-🔴 **`sales_channels` 는 로컬에서 0행이다.** 어떤 시드도 안 넣는다. 활성 채널이 없으면 수집할 대상이
-없어 게이트가 닫힌 채로 조용하다.
+🔴 **`sales_channels` 는 로컬에서 0행이다.** 활성 채널이 없으면 수집할 대상이 없어 게이트가 닫힌 채로 조용하다.
+
+**정본 시드가 이미 있다 — 손으로 INSERT 하지 말 것.** `PimSeedStep` 이 고정 UUID 로 넣는다.
+`npm run db:seed:ref` 는 SST/AWS 를 읽어 로컬에서 못 쓰므로, 로컬 러너를 쓴다:
 
 ```bash
-psql "$DEV_CORE" -c "insert into sales_channels (id,type,site,name,is_active)
-  select gen_random_uuid(),'ONLINE','medusa','아몬드영 자사몰',true
-  where not exists (select 1 from sales_channels where site='medusa');"
-# id 는 drizzle 이 앱에서 만든다(DB default 없음) — 직접 넣을 땐 gen_random_uuid() 를 줘야 한다.
+npm run db:seed:core:local     # scripts/local/seed-core-local.ts
 ```
+
+⚠️ **손으로 넣은 행은 그 시드를 «막는다».** `sales_channels` 에는 `uq_sales_channels_site` UNIQUE 가
+걸려 있는데 시드의 INSERT 는 `ON CONFLICT (id) DO NOTHING` 이다. 같은 `site` 를 다른 id 로 미리
+넣어 두면 시드가 unique 위반으로 실패하고 **`success:false` 를 조용히 돌려준다**(2026-09-06 실측).
+이미 손으로 넣었다면 그 행을 지우고 시드를 다시 돌린다.
 
 셋을 채우고 core·channel-adapter 를 재기동한 뒤 확인:
 
@@ -469,17 +474,30 @@ product_masters 0 · product_variants 0 · channel_variant_listings 0
 ⚠️ **주문조회 목록의 기본 필터는 「주문 미확정」이다.** 새로 들어온 주문은 「매칭안됨」에 있다.
 상단 «주문 현황» 타일(`매칭대기`)은 필터와 무관하게 세므로 거기부터 본다.
 
-### ⛔ 여기서 다시 막힌다 — 매칭 레코드가 없다
+### 🟢 매칭 레코드는 시드로 채운다 — 상품을 발행할 때마다
 
-`/order/matching` 에 매칭대기로 뜨고 「SKU 구성 매칭」 다이얼로그까지 열리지만, 상단에 이렇게 적힌다:
+「SKU 구성 매칭」 다이얼로그 상단에 이 문구가 뜨면 버튼이 절대 활성화되지 않는다:
 
-> 이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다. 관리자에게 문의하세요.
+> 이 주문의 매칭 레코드가 없습니다. PIM에서 상품 이벤트가 누락되었을 수 있습니다.
 
-공급처·물류처·재고소유·원가를 다 채워도 **「자동 SKU 구성 매칭」 버튼이 활성화되지 않는다.**
-`dev_core` 실측: `product_matchings` 는 시드 10행뿐이고 **새 상품 몫이 없다**(`product_sku_mappings` 0행).
-즉 상품 발행이 Medusa 투영은 일으키지만 **core 안의 매칭 레코드는 안 만든다.**
+**상품 발행은 Medusa 투영은 일으키지만 core 안의 `product_matchings` 행은 만들지 않는다.**
+그 행을 채우는 건 `ProductMatchingBackfillSeedStep` 이고, 로컬 러너에 묶여 있다:
 
-다음 세션은 여기서 시작한다 — 「상품 발행 → 매칭 레코드 생성」 이벤트 경로가 로컬에서 도는지부터.
+```bash
+npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시 돌린다
+```
+
+`status='pending'` 행이 생기면 경고가 사라지고, 공급처·물류처·재고소유 셋만 고르면 버튼이 열린다
+(원가는 필수가 아니다).
+
+### ⛔ 그 다음 벽 — `/inventory-matching` 이 core 에 없다 (코드 결함)
+
+버튼을 눌러도 **`POST /inventory-matching` 이 404** 다. 환경 문제가 아니다 —
+`apps/admin-web/src/lib/api/domains/inventory/index.ts:58` 이 그 경로를 부르는데
+**`apps/core/src` 전체에 `inventory-matching` 라우트가 한 곳도 없다.** 로컬 설정으로 풀 수 없고,
+라이브에서도 같은 404 일 것이다. 같은 화면에서 `GET /variants/:id` 도 **400** 을 준다.
+
+다음 세션은 여기서 시작한다 — 어드민이 부르는 경로와 core 가 여는 경로가 언제 갈라졌는지.
 
 ---
 
@@ -489,8 +507,12 @@ product_masters 0 · product_variants 0 · channel_variant_listings 0
 |---|---|
 | `scripts/local/preflight-e2e.sh` | 사전 점검. 세션 시작마다 돌린다 |
 | `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역). 이게 없어 결제가 막혔다 |
+| **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 둘 다 없으면 «조용히» 막힌다 |
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |
 | `docs/local-e2e-environment.md` | 이 문서 |
+
+⚠️ `scripts/local/seed-dev-core`(디렉터리)와 헷갈리지 말 것. 그쪽은 **`dev_core` 를 drop/create** 하고
+창고·SKU·주문 픽스처를 채우는 파괴적 개발 시드다. 위 `seed-core-local.ts` 는 멱등이고 아무것도 지우지 않는다.
 
 ---
 
