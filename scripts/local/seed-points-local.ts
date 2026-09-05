@@ -73,7 +73,19 @@ async function main(): Promise<void> {
         continue;
       }
 
-      await wallet.begin(async (tx) => {
+      await wallet.begin(async (rawTx) => {
+        // 🔴 postgres v3 의 «타입» 결함 우회. `TransactionSql` 이
+        // `interface TransactionSql extends Omit<Sql, …>` 로 선언돼 있는데,
+        // TS 의 `Omit` 은 매핑 타입이라 «호출 시그니처»를 지운다. 그래서 런타임은 멀쩡한
+        // tx`...` 태그드 템플릿이 타입에서만 TS2349(not callable) 로 깨진다.
+        // (node_modules/postgres/types/index.d.ts:718)
+        // 선례(apps/channel-adapter/scripts/match-sku-to-variant.ts)는 `tx: any` 를 썼지만,
+        // 여기서는 실제로 쓰는 «태그드 템플릿 호출»로만 좁혀 캐스트한다.
+        const tx = rawTx as unknown as <T = Record<string, unknown>[]>(
+          strings: TemplateStringsArray,
+          ...values: unknown[]
+        ) => Promise<T>;
+
         // provider_idempotency_key 는 NOT NULL 이다. 계정+사유로 만들어 두 번 돌려도
         // 같은 키가 되게 한다 — 위 존재검사와 함께 이중 안전장치.
         const idempotencyKey = `local-seed:${REASON}:${userId}`;
