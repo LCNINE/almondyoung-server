@@ -402,6 +402,47 @@ curl -s -H "Authorization: Bearer $CORE_INTERNAL_KEY" \
 
 ---
 
+## 8-C. ⛔ 남은 벽 — 수집된 주문이 «격리»된다 (core PIM 이 비어 있다)
+
+§8-B 의 게이트 셋을 열면 수집이 실제로 돌고 **우리 주문을 잡는다.** 그런데 적재되지 않고 격리된다:
+
+```
+[medusa] Quarantined 3 order collection failures due to missing PIM identity metadata
+```
+
+```bash
+psql "$CHANNEL_ADAPTER_DB" -x -c "select external_order_id, reason, affected_lines
+  from order_collection_failures order by created_at desc limit 1;"
+# reason        | channel_product_identification_failed
+# affected_lines| [{"cause":"no_embedded_ids", ...}]
+```
+
+**왜:** `medusa` 채널의 능력은 `lineIdentity: 'embedded'` 다(`channel-capabilities.ts:76`).
+즉 주문 라인에서 우리 식별자 **셋(`variantId`·`masterId`·`versionId`)을 Medusa variant 의 metadata 에서
+직접 읽는다.** 셋 중 하나라도 없으면 그 라인은 「Core Catalog 를 통하지 않고 채널에서 직접 만들어진 상품」
+으로 판정돼 격리된다(`channel-line-identity.resolver.ts:60`).
+
+`reh-a`·`reh-b`·`reh-c` 는 `apps/medusa/src/scripts/seed.ts` 가 **Medusa 안에서 바로** 만든 상품이라
+그 metadata 가 `null` 이다. 그리고 core 는 아예 비어 있다 — 2026-09-06 실측:
+
+```
+product_masters 0 · product_variants 0 · channel_variant_listings 0
+```
+
+**어드민 「매칭」 화면으로는 못 푼다.** 그 화면은 `/matchings/order-lines`, 즉 **이미 core 에 적재된
+주문의 라인**을 다룬다. 격리는 그보다 한 단계 앞이다.
+
+**그러므로 「어드민 주문조회·매칭」을 로컬에서 보려면 먼저 core PIM 에 상품이 있어야 하고, 그 상품이
+Medusa 로 투영돼야 한다**(`productOwnership: 'ours'`, `productProjection: 'projection'`).
+이건 환경 설정이 아니라 **상품 등록 → 채널 투영**이라는 별도의 한 줄기다. 후보 경로 셋:
+
+1. 상품 일괄등록(`/product-imports/*`)으로 core 에 상품을 만들고 medusa 채널에 리스팅한다 — 가장 정공법
+2. `scripts/local/seed-dev-core` 에 core 상품 + `channel_variant_listings` 시드를 더한다
+3. 기존 Medusa variant 의 metadata 에 core 식별자 셋을 심는다 — core 에 대응 상품이 먼저 있어야 하므로
+   1·2 없이는 성립하지 않는다
+
+---
+
 ## 9. 이번에 신설한 것
 
 | 파일 | 무엇 |
@@ -424,14 +465,19 @@ curl -s -H "Authorization: Bearer $CORE_INTERNAL_KEY" \
 
 시작 절차:
   1. bash scripts/local/preflight-e2e.sh  → ✗ 를 전부 해결하고 시작한다
-  2. ⛔ 미해결 블로커는 §8 의 «0원 결제 승인 실패» 다. 여기서 시작하는 게 맞다.
+  2. ⛔ 남은 벽은 §8-C 다: 주문이 core 로 적재되지 못하고 «격리»된다.
+     core PIM 이 통째로 비어(product_masters 0) Medusa variant 에 우리 식별자가 없다.
+     상품 등록 → 채널 투영을 먼저 세워야 «주문조회·매칭»이 성립한다.
+
+이미 통과한 것 (2026-09-06): 회원가입 · 스토어프론트 로그인 · 장바구니 · 쿠폰 적용
+(12,500→11,500) · 포인트 결제 · 주문 생성 · 어드민 적립금 지급.
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 프로세스 기동 시각과 스키마를 먼저 재라(§0).
   - 성공 판정은 화면·로그가 아니라 DB 로 한다(§7). 콜백은 실패해도 200 을 준다.
-  - 🔴 비밀번호 입력과 계정 생성은 네가 하지 않는다. 사람이 해야 하는 지점 둘(§6-③)을
-    «시작할 때» 미리 알리고, 그 차례가 오기 전에 다시 알려라.
-  - 🔴 어드민과 고객을 한 브라우저에서 동시에 유지할 수 없다(§6-①). 시작 전에 창 분리 여부를 정하라.
+  - 🟢 비밀번호·계정 생성은 네가 해도 된다(§6-③). 로컬 시드 값이라 보호할 비밀이 없다.
+  - 🔴 어드민은 http://127.0.0.1:8002, 고객은 http://localhost:8000 로 연다(§6-①).
+    admin-web .env.local 의 OIDC 값 «셋» 이 전부 127.0.0.1 이어야 한다.
   - 막히면 2~3회 만에 멈추고 물어라. 환경 결함이 계속 나오는 영역이다.
   - 새로 발견한 환경 결함은 그때그때 이 문서에 추가하고 커밋해라.
 ```
