@@ -119,6 +119,34 @@ sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 | `apps/admin-web/.env.local` | `WALLET_SERVICE_URL=http://localhost:5001` | 적립금 화면이 조용히 죽는다(통계가 전부 `0` 으로 보인다) |
 | `apps/user-service/.env` | `NOTIFICATION_SERVICE_URL=http://127.0.0.1:3099`<br>`NOTIFICATION_INTERNAL_KEY=local-rehearsal-stub-key` | 회원가입 폰 인증이 **503** → 가입 UI 를 못 지난다 |
 | **`apps/wallet-web/.env.local`** | **파일 자체가 없다.** 아래 전문 | 결제 페이지가 `Missing required env var: OIDC_ISSUER_URL` 로 죽는다 |
+| **`apps/core/.env`** | **`OIDC_ISSUER_URL=http://localhost:3000`** | 🔴 아래 별도 항목 — **어드민 API 전부 401** |
+
+### 🔴 `apps/core/.env` 의 `OIDC_ISSUER_URL` 이 라이브를 가리킨다
+
+2026-09-06 실측에서 이 값이 **`https://user.almondyoung.com`(라이브 IdP)** 이었다.
+`libs/authorization` 은 이 값으로 `${OIDC_ISSUER_URL}/.well-known/jwks.json` 을 만들어 토큰 서명을 검증한다.
+로컬 user-service 는 `kid=lcnine-auth-local-1` 로 서명하는데 라이브 JWKS 에 그런 키가 있을 리 없다 →
+**core 의 모든 어드민 API 가 401.**
+
+증상이 §6-④ 그 자체다: 주문조회 화면은 **「총 주문 0건」** 을 멀쩡히 그렸고, 타일은 `-` 였다.
+로그를 봐야 진실이 나온다:
+
+```bash
+grep 'Unable to find a signing key' logs/core.log     # core 쪽 진짜 사유
+grep 'sales-orders' logs/admin-web.log | tail          # 401 인지 200 인지
+```
+
+`http://localhost:3000` 으로 바꾸고 core 를 재기동하면 `200`. `ALLOWED_AUDIENCES` 는 비어 있으면
+`aud` 를 검사하지 않으므로 건드릴 필요 없다(`jwt-access.strategy.ts:114`).
+
+### ⚠️ `analytics`(3040)·`ugc-service`(3030) 는 `.env` 가 아예 없다
+
+그래서 **부팅하다 죽는다** — `EventsModule.forApp` 이 kafka 설정 `null` 을 읽고
+`TypeError: Cannot read properties of null (reading 'clientId')`.
+
+이 둘은 위 11개 목록 «밖»이라 E2E 검증엔 필요 없지만, **어드민 대시보드가 호출한다**:
+`/api/proxy/analytics/summary` 가 `ECONNREFUSED :3040` 으로 **500**, 「미답변 리뷰」 타일은 빈칸.
+대시보드에서 그 두 칸이 비는 건 **정상이다** — 주문·결제 판정과는 무관하다.
 
 ### `apps/wallet-web/.env.local` (전문 — 그대로 만들 것)
 
