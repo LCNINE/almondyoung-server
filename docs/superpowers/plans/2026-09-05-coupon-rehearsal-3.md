@@ -74,7 +74,9 @@ ls apps/medusa/src/jobs/restore-stuck-coupon-consumptions.ts
 4. 🔴 **소모가 곧 검사다.** 옛 구조는 훅이 장을 «읽어 검사» 하고 열 스텝 뒤에 «썼다». 이제
    `consumeOneUsableGrantForCart` 의 결과가 판정이다 — `none` 이고 장이 사용을 지배하면 **주문이 거절된다.**
 5. 🔴 **소모의 키는 주문이 아니라 카트다.** 소모는 `completeCartWorkflow.validate` 훅에서 일어나고 그 시점엔 주문이 없다.
-   **`coupon_grant.order_id` 는 아무도 읽지도 쓰지도 않는다** — 소모돼도 계속 `NULL` 인 게 정상이다.
+   **`coupon_grant.order_id` 컬럼은 존재하지 않는다** — PR-3 이 읽기·쓰기를 끊고 **#785 contract 가 컬럼을 지웠다**
+   (`promotion_meta.issued_count` 도 함께). 2026-09-05 로컬 DB 실측으로 확인.
+   주문 ↔ 카트는 Medusa 의 **`order_cart` 링크**가 잇는다. 옛 문서·플랜에서 `order_id` 를 보면 그건 **지워지기 전 상태**다.
 6. 🔴 **`customer_registered` 는 이제 Kafka·channel-adapter 를 지나지 않는다.** Medusa 안에서 시작해 Medusa 안에서 끝난다.
    `membership_activated` 만 여전히 channel-adapter 를 지난다. **두 트리거의 경로가 다르다.**
 
@@ -91,6 +93,39 @@ ls apps/medusa/src/jobs/restore-stuck-coupon-consumptions.ts
 | ② | 메트릭 측정점 | channel-adapter `:13010/metrics` | **+ Medusa `:19000/metrics`** (신규) |
 | ③ | channel-adapter | R11·R11b 둘 다 여기를 지남 | **R11b·R13 만.** 그래도 **띄워야 한다**(회귀 검증 대상) |
 | ④ | 스위퍼 | 없었음 | `COUPON_STUCK_MIN_AGE_MINUTES` 조정 필요 (C4) |
+
+### 2-0. 🔴 **먼저 «떠 있는 것»을 믿지 마라** — 2026-09-05 실측으로 추가된 절
+
+2차 환경이 **그대로 살아 있을 수 있다.** 포트 8개가 다 열려 있고 `.env` 가 다 있어도 그것은
+**「2차 당시 코드가 4일째 돌고 있다」는 뜻일 수 있다.** 실제로 3차 착수 시 그랬다:
+프로세스 8개가 전부 `2026-09-01 06:47` 기동이었고, **Medusa DB 의 마지막 마이그레이션은 `Migration20260831110000`**,
+**`coupon_grant` 테이블 자체가 없었다.** 그 상태로 R11 을 돌렸으면 판정 SQL 이 죽고 C1~C5 는 전부 성립하지 않는다.
+
+**기동 전에 이 셋을 잰다:**
+
+```bash
+# ① 프로세스가 언제 떴나 — 오늘이 아니면 옛 코드다
+ps -eo pid,lstart,args | grep -E 'nest start|next dev|medusa develop' | grep -v grep
+
+# ② Medusa 메트릭 포트 — 닫혀 있으면 #775 이전 코드다
+curl -s localhost:19000/metrics | head -3
+
+# ③ 🔴 가장 중요 — 스키마가 최신인가
+psql "$DATABASE_URL" -tAc "SELECT to_regclass('public.coupon_grant');"          # NULL 이면 마이그 밀림
+psql "$DATABASE_URL" -tAc "SELECT name FROM mikro_orm_migrations ORDER BY id DESC LIMIT 3;"
+```
+
+**하나라도 어긋나면 전면 재기동이다:**
+```bash
+# 포트 점유 프로세스까지 정리한다 — 부모 npm 만 죽이면 자식이 포트를 쥐고 남는다
+for p in 3000 3001 3010 5001 8000 8001 8002 9000; do
+  kill -TERM $(ss -ltnpH "sport = :$p" | grep -oP 'pid=\K[0-9]+' | sort -u) 2>/dev/null
+done
+(cd apps/medusa && npx medusa db:migrate --execute-safe-links)
+# 그 뒤 2차 §2-5 기동 순서
+```
+⚠️ **`pkill -f` 패턴에 레포 이름(`almondyoung-server`)을 넣지 말 것** — 자기 셸의 명령줄에도 그 문자열이 있어 **자신을 죽인다**.
+⚠️ **`sst tunnel --stage live` 프로세스가 함께 떠 있을 수 있다. 죽이지 말 것** — 리허설과 무관하다.
 
 ### 2-1. `apps/medusa/.env` 에 추가 — 템플릿에 없다
 
@@ -182,9 +217,10 @@ API 로 만들면 **폼이 실제로 그 조합을 낼 수 있는지**를 검증
 
 ```sql
 -- ① 장이 생겼는가 / ② issued_via / ③ expires_at 이 validity_days 대로인가
-SELECT id, promotion_id, issued_via, issued_at, expires_at, used_at, cart_id, order_id
+SELECT id, promotion_id, issued_via, issued_at, expires_at, used_at, cart_id
   FROM coupon_grant
  WHERE customer_id = '<cus_...>' AND deleted_at IS NULL;
+-- 🔴 order_id 를 넣지 말 것 — #785 가 그 컬럼을 지웠다. 넣으면 쿼리가 죽는다.
 ```
 - ① 행이 **1건** 생겼다
 - ② `issued_via = 'customer_registered'`
@@ -287,14 +323,19 @@ C2 를 C3 앞에 놓으면 장이 이미 소모된 상태라 **거절이 옳게 
 1. R11 계정으로 `AY-WELCOME` 을 카트에 적용 → **포인트 전액결제**로 주문 완료
    (`POINTS` 는 외부 PG 를 안 탄다 — `docs/local-dev.md` §5)
 2. ```sql
-   SELECT id, used_at, cart_id, order_id, expires_at FROM coupon_grant WHERE customer_id='<cus_...>';
+   SELECT id, used_at, cart_id, expires_at FROM coupon_grant WHERE customer_id='<cus_...>';
    ```
 
 | 컬럼 | 기대 | 🔴 |
 |---|---|---|
 | `used_at` | 주문 완료 시각 | |
 | `cart_id` | **그 카트 id** | 소모의 키는 주문이 아니라 카트 |
-| `order_id` | **`NULL` 그대로** | 아무도 읽지도 쓰지도 않는다. 값이 차면 **옛 경로가 살아있다는 뜻** |
+
+🔴 **`order_id` 컬럼은 없다**(#785 가 지웠다). 주문과의 연결은 **`order_cart` 링크**로 확인한다:
+```sql
+SELECT order_id, cart_id FROM order_cart WHERE cart_id = '<위에서 본 cart_id>';
+```
+이 링크가 있어야 C4 의 스위퍼가 그 장을 「주문 있음」으로 보고 놓지 않는다.
 
 3. 마이페이지 **「사용완료」 탭**으로 옮겨갔는지 (📸 — B-03 과 겸함)
 
