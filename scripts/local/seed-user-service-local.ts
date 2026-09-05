@@ -39,8 +39,12 @@ async function main(): Promise<void> {
       {
         clientId: 'admin-web',
         clientType: 'confidential',
-        redirectUris: ['http://localhost:8002/auth/callback'],
-        postLogoutRedirectUris: ['http://localhost:8002/login'],
+        // 🔴 127.0.0.1 은 오타가 아니다. localhost 쿠키는 포트를 안 가려서, 스토어프론트(:8000)에
+        // 고객으로 로그인하면 admin-web(:8002)의 어드민 세션이 교체된다. 호스트를 갈라 놓으면
+        // 두 세션을 동시에 유지할 수 있다 — E2E 검증은 이 분리에 의존한다.
+        // (docs/local-e2e-environment.md §6-①). redirect_uris upsert 는 합집합이라 둘 다 남는다.
+        redirectUris: ['http://localhost:8002/auth/callback', 'http://127.0.0.1:8002/auth/callback'],
+        postLogoutRedirectUris: ['http://localhost:8002/login', 'http://127.0.0.1:8002/login'],
         allowedScopes: ['openid', 'profile', 'email', 'offline_access'],
         clientSecret: LOCAL_CLIENT_SECRET,
       },

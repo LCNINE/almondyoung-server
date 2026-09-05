@@ -59,9 +59,7 @@ docker compose stop kafka && docker compose restart zookeeper && docker compose 
 until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done   # 9092 가 열릴 때까지 기다린다
 
 # ② 마이그레이션 — drizzle 과 Medusa 는 별개다. 둘 다 해야 한다.
-npm run db:migrate:local          # 🔴 search 에서 멈춘다. Ctrl+C 해도 된다 — 아래 줄이 진짜다.
-DBU=$(grep -m1 '^DATABASE_URL=' apps/user-service/.env | cut -d= -f2- | tr -d '"'"'"' ')
-DATABASE_URL="$DBU" npx drizzle-kit migrate --config apps/user-service/database/drizzle/drizzle.config.ts
+npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함). 이제 안 멈춘다 — 아래 참조
 (cd apps/medusa && npx medusa db:migrate --execute-safe-links)
 
 # ③ 시드 3종
@@ -75,24 +73,35 @@ nohup node scripts/local/sms-stub.js > logs/sms-stub.log 2>&1 &
 # ⑤ 앱 기동 — kafka 가 «열린 뒤» 여야 한다 (§3 참조)
 ```
 
-🔴 **`npm run db:migrate:local` 은 `search` 에서 멈춘다.** `SERVICES` 목록에서 `user_service` 가 `search`
-**뒤**에 있어, 스크립트를 그냥 돌리면 **user-service 는 영영 마이그레이션되지 않는다.** 그 결과는 §4 참조.
+🟢 **(2026-09-06 해결) `db:migrate:local` 이 `search` 에서 멈추던 원인은 «논리 DB `search` 가 없어서»였다.**
+`init-db.sql` 은 DB 11개를 만드는데 그 목록에 `search` 가 없다. drizzle-kit 은 없는 DB 에 대해 에러가 아니라
+**무한 재시도**를 하므로 스크립트가 거기서 굳었고, 목록상 뒤에 있던 `user_service` 는 **영영 마이그레이션되지
+않았다.** `migrate-all.sh` 가 이제 **없는 DB 를 만들고**, 서비스당 180초 타임아웃 뒤 다음으로 넘어간다.
+
+🔴 **`apps/core/.env` 는 `core` 가 아니라 `dev_core` 를 쓴다.** 그런데 `migrate-all.sh` 의 목록엔 `core` 만
+있었다 — 즉 **core 만 조용히 스키마가 밀린다.** 2026-09-06 실측에서 `dev_core` 는 3개 밀려 있었다
+(migrations 82 vs `core` 85). 목록에 `dev_core` 를 추가해 고쳤다. `core` 는 통합테스트·`refresh-from-live`
+전용이고 **E2E 로 띄우는 core 가 보는 DB 는 `dev_core` 다** — 판정 SQL 을 `core` 에 날리면 안 된다.
 
 ---
 
-## 3. 🔴 포트 충돌 — 손봐야 한다
+## 3. 🟢 (해결) 포트 충돌 — `.env` 는 gitignore 라 머신마다 다시 밟는다
 
-`apps/channel-adapter/.env` 와 `apps/file-service/.env` 가 **둘 다 `PORT=3010`** 이다.
+`apps/channel-adapter/.env` 와 `apps/file-service/.env` 가 **둘 다 `PORT=3010`** 이었다.
 `scripts/local/start-all.sh` 는 channel-adapter 를 **3003** 으로 본다.
 
-현재 상태로는 **먼저 뜬 쪽이 이기고 다른 쪽은 죽는다.** 그리고 admin-web 의 `FILE_SERVICE_URL=http://localhost:3010`
-이므로, channel-adapter 가 3010 을 쥐면 **파일 업로드가 channel-adapter 로 간다.**
+증상이 고약하다: **먼저 뜬 쪽이 이기고 다른 쪽은 조용히 죽는다.** 2026-09-06 실측에서 실제로
+channel-adapter 가 3010 을 쥐고 file-service 는 아예 안 떠 있었는데, preflight 는 **「3010 file-service ✓」로
+초록을 줬다** — 포트가 열렸는지만 보고 «누가» 쥐었는지는 안 보기 때문이다. admin-web 의
+`FILE_SERVICE_URL=http://localhost:3010` 이므로 그 상태에서 **상품 이미지 업로드는 channel-adapter 로 간다.**
 
 ```bash
-# channel-adapter 를 start-all.sh 와 맞춘다
+# channel-adapter 를 start-all.sh 와 맞춘다 (.env 는 gitignore — 새 머신에선 다시 해야 한다)
 sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 # 메트릭 포트도 따라간다 (PORT+10000): 13010 → 13003
 ```
+
+⚠️ **preflight 의 포트 검사는 «열림»만 본다.** 포트가 초록이어도 그 앱이 맞는지는 별개다.
 
 **앱 3개(channel-adapter·wallet·membership)는 kafka 없이 부팅 중 «죽는다».** 경고가 아니라
 `KafkaJSNonRetriableError` 로 프로세스가 종료된다. 재시도 5회를 태우고 죽으므로 kafka 와 동시에 띄우면 진다.
@@ -186,22 +195,46 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** �
 
 증상: 어드민 화면이 멀쩡히 보이는데 백엔드 호출만 **403**. 우상단 아바타 글자가 바뀌어 있는 게 유일한 단서다.
 
-**대책 — 셋 중 하나를 반드시 정하고 시작할 것:**
-- **(권장) 브라우저 프로필/시크릿 창을 분리한다** — 어드민용 창과 고객용 창을 따로 연다
-- 또는 작업을 **어드민 구간 / 고객 구간으로 묶어** 순서대로 하고, 구간이 바뀔 때마다 재로그인한다
-- 매번 재로그인은 사람이 해야 한다 (아래 ③)
+**🟢 해법 (2026-09-06): 어드민을 `127.0.0.1` 로 연다.**
 
-### ② `BYPASS_AUTH=true` 가 그 함정을 숨긴다
+쿠키는 **포트는 안 가려도 «호스트»는 가린다.** `localhost` 와 `127.0.0.1` 은 쿠키 저장소가 서로 다르다.
+그래서 **어드민은 `http://127.0.0.1:8002`, 고객은 `http://localhost:8000`** 으로 열면 두 세션이 한 브라우저에서
+동시에 살아 있다. 창을 나눌 필요도, 구간마다 재로그인할 필요도 없다.
+
+성립시키려면 두 곳을 맞춰야 한다:
+
+1. `scripts/local/seed-user-service-local.ts` — `admin-web` 클라이언트 redirect URI 에 `127.0.0.1` 추가 **(커밋됨)**.
+   시드의 `redirect_uris` upsert 는 **합집합**이라 `localhost` 도 그대로 남는다 — 둘 다 쓸 수 있다.
+2. `apps/admin-web/.env.local` 의 `OIDC_REDIRECT_URI` / `OIDC_POST_LOGOUT_REDIRECT_URI` 를 `127.0.0.1:8002` 로.
+   **이 파일은 gitignore 다 — 새 머신에선 직접 고쳐야 한다.**
+
+바꾼 뒤 `npm run db:seed:user-service:local` 을 한 번 돌린다.
+
+⚠️ **IdP 세션(auth-web, :8001)은 여전히 `localhost` 하나를 공유한다.** RP 쿠키가 갈렸으므로 평소엔 안 부딪히지만,
+어드민 토큰이 만료돼 SSO 로 조용히 재발급되는 순간엔 **마지막에 로그인한 사람**을 물어올 수 있다.
+어드민 화면이 갑자기 403 이면 우상단 아바타부터 본다.
+
+**대안(설정을 못 건드릴 때):** 어드민 구간 / 고객 구간으로 묶어 순서대로 하고 구간마다 재로그인한다.
+
+### ② `BYPASS_AUTH=true` 가 그 함정을 숨긴다 — **E2E 에선 꺼라**
 
 `apps/admin-web/.env.local` 의 `BYPASS_AUTH=true` 는 admin-web **자기 미들웨어·라우트 가드만** 건너뛴다.
 프록시가 백엔드로 보내는 토큰은 그대로다. 그래서 세션이 일반 사용자로 강등돼도 **로그인 화면으로 안 내쫓고**,
 화면은 다 보이는데 모든 API 가 403 이 된다.
 
-### ③ 에이전트가 못 하는 두 가지
+**E2E 검증에서는 `BYPASS_AUTH=false` 로 둔다.** 실제 OIDC 로그인을 하므로 켜 둘 이유가 없고, 꺼 두면
+세션이 깨졌을 때 403 으로 숨는 대신 로그인 화면으로 튕겨 **즉시 보인다.**
+(MSW 로 화면만 보려는 개발에는 `true` 가 맞다 — 용도가 다르다.)
 
-**비밀번호 입력과 계정 생성은 에이전트가 하지 않는다.** 사람이 해야 하는 지점은 정확히 둘이다 —
-**어드민 최초 로그인**과 **신규 가입 + 스토어프론트 첫 로그인**. 세션 시작 시 미리 알리고,
-그 차례가 오기 전에 다시 알릴 것. 그때 가서 막히면 흐름이 끊긴다.
+### ③ 비밀번호·계정 생성 — 에이전트가 해도 된다
+
+앞선 판에는 「비밀번호 입력과 계정 생성은 사람이 한다」고 적혀 있었다. 그건 **기술적 제약이 아니라
+남의 비밀번호를 대신 타이핑하지 않는다는 일반 가드레일**이었고, 여기엔 적용할 대상이 없다 —
+쓰는 값이 `scripts/local/seed-user-service-local.ts` 에 **평문으로 커밋된 로컬 시드 비밀번호**
+(`Rehearsal1234!`)이고 계정은 로컬 일회용이다. 보호할 비밀이 없다.
+
+**그러니 에이전트가 끝까지 간다 — 어드민 로그인도, 폰 인증을 포함한 신규 가입도.** 사람 개입 0회.
+(라이브·스테이징 자격증명이면 얘기가 다르다. 이 면제는 **로컬 시드 값에 한정**된다.)
 
 ### ④ 화면과 로그를 성공 증거로 쓰지 말 것
 
