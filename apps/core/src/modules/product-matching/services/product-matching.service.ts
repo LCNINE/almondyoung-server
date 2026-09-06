@@ -3,11 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL, sql } from 'drizzle-orm';
-import { StockEventService } from '../../inventory/core/services/stock-event.service';
-import { WarehouseService } from '../../inventory/warehouse/services/warehouse.service';
-import { SkuCatalogService } from '../../inventory/sku-catalog/services/sku-catalog.service';
 import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
-import { SkuCreationSource } from '../../inventory/sku-catalog/dto/create-sku.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
@@ -63,9 +59,6 @@ export class ProductMatchingService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly skuCatalogService: SkuCatalogService,
-    private readonly stockEventService: StockEventService,
-    private readonly warehouseService: WarehouseService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     private readonly auditService: AuditService,
@@ -1170,54 +1163,6 @@ export class ProductMatchingService {
       }, tx);
       this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
     }
-  }
-
-  async createNewSkuForMatching(
-    variantId: string,
-    skuData: {
-      name: string;
-      inventoryManagement: boolean;
-      alwaysSellableZeroStock?: boolean;
-      skuGroupId?: string;
-    },
-    tx?: DbTx,
-  ) {
-    return this.dbService.run(async (trx) => {
-      const productMatching = await trx.query.productMatchings.findFirst({
-        where: eq(wmsTables.productMatchings.variantId, variantId),
-      });
-
-      if (!productMatching) {
-        throw new NotFoundException(`No product matching found for variant: ${variantId}`);
-      }
-
-      const newSku = await this.skuCatalogService.create(
-        {
-          name: skuData.name,
-          source: SkuCreationSource.MANUAL_MATCHING,
-          ...(skuData.skuGroupId && { skuGroupId: skuData.skuGroupId }),
-          ...(productMatching.skuGroupId && !skuData.skuGroupId && { skuGroupId: productMatching.skuGroupId }),
-        },
-        trx,
-      );
-
-      if (skuData.inventoryManagement) {
-        const warehouseId = await this.warehouseService.getDefaultId(trx);
-        await this.stockEventService.createStockEntryBySkuId(
-          {
-            skuId: newSku.id,
-            variantId,
-            warehouseId,
-            quantity: 0,
-            stockType: 'physical',
-            reason: `manual_matching_for_variant_${variantId}`,
-          },
-          trx,
-        );
-      }
-
-      return newSku;
-    }, tx);
   }
 
   async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant', tx?: DbTx) {

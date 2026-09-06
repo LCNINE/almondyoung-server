@@ -17,18 +17,6 @@ function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>
   const auditService = {
     log: jest.fn().mockResolvedValue(undefined),
   };
-  const stockEventService = {
-    createStockEntryBySkuId: jest.fn().mockImplementation(async ({ quantity }) => {
-      if (quantity <= 0) {
-        throw new Error('quantity must be positive');
-      }
-
-      return { skuId: 'unused' };
-    }),
-  };
-  const warehouseService = {
-    getDefaultId: jest.fn(() => '44444444-4444-4444-4444-444444444444'),
-  };
   const linkResolver = {
     resolve: jest.fn(async (links: Array<{ skuId?: string; newSku?: unknown; quantity?: number }>) =>
       links.map((link, index) => ({
@@ -51,9 +39,6 @@ function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>
 
   const service = new ProductMatchingService(
     dbService as never,
-    {} as never,
-    stockEventService as never,
-    warehouseService as never,
     productSellableQuantity as never,
     fulfillmentBacklog as never,
     auditService as never,
@@ -64,8 +49,6 @@ function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>
     service,
     productSellableQuantity,
     fulfillmentBacklog,
-    stockEventService,
-    warehouseService,
     dbService,
     auditService,
     linkResolver,
@@ -401,7 +384,7 @@ describe('ProductMatchingService strategy semantics', () => {
   });
 
   it('resolves existing pending automatic SKU 구성 matching without stock entry and wakes waiting fulfillment backlog', async () => {
-    const { service, fulfillmentBacklog, stockEventService, warehouseService } = makeService();
+    const { service, fulfillmentBacklog } = makeService();
     const skuId = '55555555-5555-5555-5555-555555555555';
     const tx = makeTx([
       [
@@ -442,8 +425,6 @@ describe('ProductMatchingService strategy semantics', () => {
       strategy: 'variant',
       isResolved: true,
     });
-    expect(warehouseService.getDefaultId).not.toHaveBeenCalled();
-    expect(stockEventService.createStockEntryBySkuId).not.toHaveBeenCalled();
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
