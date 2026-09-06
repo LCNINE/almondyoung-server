@@ -32,15 +32,18 @@ export class UserEventConsumer {
    * processed_events 로 멱등을 보장한 뒤 inbox 에 적재한다.
    * @returns 새로 적재했으면 true, 이미 처리된 메시지라 건너뛰었으면 false
    * @param inbox null 이면 processed 만 기록하고 inbox 에는 넣지 않는다 (예: email 없는 UserUpdated)
+   * @param fallbackKey envelope 에 messageId 가 없을 때 쓰는 멱등키. 호출부가 결정한다 — 이벤트마다
+   * 무엇이 충돌 없는 키인지가 다르다 (예: Cafe24 는 cafe24MemberId 까지 포함해야 재연동이 안 뭉친다).
    */
   private async recordAndEnqueue(
     envelope: AnyUserEnvelope,
     eventType: UserEventType,
     resourceId: string,
     inbox: { aggregateType: string; aggregateId: string; payload: object } | null,
+    fallbackKey: string,
   ): Promise<boolean> {
     const db = this.dbService.db;
-    const idempotencyKey = envelope.messageId || `${eventType}:${resourceId}`;
+    const idempotencyKey = envelope.messageId || fallbackKey;
 
     const [existing] = await db
       .select()
@@ -92,11 +95,13 @@ export class UserEventConsumer {
     this.logger.log(`[User] Cafe24Linked 수신: userId=${userId}, cafe24MemberId=${cafe24MemberId}`);
 
     try {
-      const enqueued = await this.recordAndEnqueue(envelope, 'Cafe24Linked', userId, {
-        aggregateType: 'FirebaseMembership',
-        aggregateId: cafe24MemberId,
-        payload,
-      });
+      const enqueued = await this.recordAndEnqueue(
+        envelope,
+        'Cafe24Linked',
+        userId,
+        { aggregateType: 'FirebaseMembership', aggregateId: cafe24MemberId, payload },
+        `Cafe24Linked:${userId}:${cafe24MemberId}`,
+      );
       if (!enqueued) return;
 
       await this.dbService.db
@@ -123,11 +128,13 @@ export class UserEventConsumer {
     this.logger.log(`[User] Cafe24Unlinked 수신: userId=${userId}, cafe24MemberId=${cafe24MemberId}`);
 
     try {
-      const enqueued = await this.recordAndEnqueue(envelope, 'Cafe24Unlinked', userId, {
-        aggregateType: 'FirebaseMembership',
-        aggregateId: cafe24MemberId,
-        payload,
-      });
+      const enqueued = await this.recordAndEnqueue(
+        envelope,
+        'Cafe24Unlinked',
+        userId,
+        { aggregateType: 'FirebaseMembership', aggregateId: cafe24MemberId, payload },
+        `Cafe24Unlinked:${userId}:${cafe24MemberId}`,
+      );
       if (!enqueued) return;
 
       await this.dbService.db.delete(cafe24MemberMappings).where(eq(cafe24MemberMappings.cafe24MemberId, cafe24MemberId));
@@ -157,6 +164,7 @@ export class UserEventConsumer {
         'UserUpdated',
         userId,
         email ? { aggregateType: 'MedusaCustomer', aggregateId: userId, payload: { userId, email } } : null,
+        `UserUpdated:${userId}`,
       );
       if (enqueued && email) {
         this.logger.log(`[User] UserUpdated(email) Inbox 저장 완료: userId=${userId}`);
@@ -176,11 +184,13 @@ export class UserEventConsumer {
     this.logger.log(`[User] UserDeleted 수신: userId=${userId}`);
 
     try {
-      const enqueued = await this.recordAndEnqueue(envelope, 'UserDeleted', userId, {
-        aggregateType: 'MedusaCustomer',
-        aggregateId: userId,
-        payload: { userId },
-      });
+      const enqueued = await this.recordAndEnqueue(
+        envelope,
+        'UserDeleted',
+        userId,
+        { aggregateType: 'MedusaCustomer', aggregateId: userId, payload: { userId } },
+        `UserDeleted:${userId}`,
+      );
       if (enqueued) this.logger.log(`[User] UserDeleted Inbox 저장 완료: userId=${userId}`);
     } catch (error) {
       this.logger.error(`[User] UserDeleted Inbox 저장 실패: userId=${userId}`, error?.message);

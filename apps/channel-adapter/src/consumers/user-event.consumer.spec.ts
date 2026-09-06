@@ -121,6 +121,24 @@ describe('UserEventConsumer (#786)', () => {
       });
     });
 
+    it('Cafe24Linked: messageId 가 없으면 Cafe24Linked:<userId>:<cafe24MemberId> 를 멱등키로 쓴다', async () => {
+      const dbMock = createDbMock();
+      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+
+      await consumer.onCafe24Linked(
+        { ...envelope, messageId: undefined },
+        {
+          userId: USER_ID,
+          cafe24MemberId: 'c24-1',
+          mallId: 'lcnine',
+          email: 'a@example.com',
+          linkedAt: '2026-09-07T00:00:00.000Z',
+        },
+      );
+
+      expect(dbMock.inserts[0].values.idempotencyKey).toBe(`Cafe24Linked:${USER_ID}:c24-1`);
+    });
+
     it('Cafe24Unlinked: processed + inbox + 매핑 delete', async () => {
       const dbMock = createDbMock();
       const consumer = new UserEventConsumer({ db: dbMock.db } as any);
