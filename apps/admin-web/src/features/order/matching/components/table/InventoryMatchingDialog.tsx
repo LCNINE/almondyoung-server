@@ -40,7 +40,13 @@ import {
   normalizeQuantity,
   BUILD_FAILURE_MESSAGES,
   type AutoTabOptionRow,
+  type AutoTabState,
 } from '../../lib/build-matching-links';
+import {
+  pickCompositionRoute,
+  shouldChangeStrategyForVoid,
+  pickDefaultTab,
+} from '../../lib/matching-save-route';
 
 /** SKU 연결 정보 */
 type LinkedSku = {
@@ -84,18 +90,6 @@ export function InventoryMatchingDialog({
   const [showSupplierSearch, setShowSupplierSearch] = useState(false);
   const [showHolderSearch, setShowHolderSearch] = useState(false);
 
-  // 필수 필드 검증
-  const isFormValid = () => {
-    if (!line?.matchingId) return false; // matchingId 없으면 저장 불가
-    if (activeTab === 'auto') {
-      return !!(supplierId && holderId && optionRows.some((r) => r.name.trim()));
-    }
-    if (activeTab === 'manual') {
-      return linkedSkus.length > 0;
-    }
-    return true; // none 탭
-  };
-
   // 자동 매칭 상태
   const [businessProductName, setBusinessProductName] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -113,6 +107,32 @@ export function InventoryMatchingDialog({
     { id: crypto.randomUUID(), name: '', quantity: 1 },
     { id: crypto.randomUUID(), name: '', quantity: 1 },
   ]);
+
+  /** auto 탭 상태 — isFormValid 와 onSave 가 이 하나로 buildMatchingLinks 를 부른다. */
+  const autoTabState: AutoTabState = {
+    holderId,
+    supplierId,
+    businessProductName,
+    importDeclarationNumber,
+    optionKey,
+    productDescription,
+    moq,
+    memo2,
+    memo3,
+    optionRows,
+  };
+
+  // 필수 필드 검증
+  const isFormValid = () => {
+    if (!line?.matchingId) return false; // matchingId 없으면 저장 불가
+    if (activeTab === 'auto') {
+      return buildMatchingLinks(autoTabState).ok;
+    }
+    if (activeTab === 'manual') {
+      return linkedSkus.length > 0;
+    }
+    return true; // none 탭
+  };
 
   // 수동 매칭 상태
   const [linkedSkus, setLinkedSkus] = useState<LinkedSku[]>([]);
@@ -172,7 +192,7 @@ export function InventoryMatchingDialog({
       { id: crypto.randomUUID(), name: '', quantity: 1 },
       { id: crypto.randomUUID(), name: '', quantity: 1 },
     ]);
-    setActiveTab('auto');
+    setActiveTab(pickDefaultTab(line.matchingStatus));
     setLinkedSkus(
       line.matchedSkus.map((sku) => ({
         skuId: sku.skuId,
@@ -327,7 +347,7 @@ export function InventoryMatchingDialog({
 
       /** 매칭 링크를 저장한다. 상태에 따라 뒷단이 갈리지만 payload 모양은 같다. */
       const saveSkuComposition = async (links: MatchingLinkInputDto[]) => {
-        if (line.matchingStatus && line.matchingStatus !== 'pending') {
+        if (pickCompositionRoute(line.matchingStatus) === 'upsert') {
           await upsertVariantMatching.mutateAsync({
             variantId: line.variantId,
             data: { links, policy: stockPolicy },
@@ -349,18 +369,7 @@ export function InventoryMatchingDialog({
 
       if (activeTab === 'auto') {
         // 새 재고상품을 만들고 이 판매상품에 링크한다 — 한 트랜잭션, 한 호출.
-        const built = buildMatchingLinks({
-          holderId,
-          supplierId,
-          businessProductName,
-          importDeclarationNumber,
-          optionKey,
-          productDescription,
-          moq,
-          memo2,
-          memo3,
-          optionRows,
-        });
+        const built = buildMatchingLinks(autoTabState);
 
         if (!built.ok) {
           toast.error(BUILD_FAILURE_MESSAGES[built.reason]);
@@ -378,7 +387,7 @@ export function InventoryMatchingDialog({
           linkedSkus.map((s) => ({ skuId: s.skuId, quantity: s.quantity }))
         );
       } else if (activeTab === 'none') {
-        if (line.matchingStatus === 'matched') {
+        if (shouldChangeStrategyForVoid(line.matchingStatus)) {
           await changeMatchingStrategy.mutateAsync({
             id: matchingId,
             data: { strategy: 'void' },
