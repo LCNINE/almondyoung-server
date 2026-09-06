@@ -52,6 +52,7 @@ describeIfDb('Inbox 슬로우 재시도 — 고객 미존재 순서역전 (Postg
       {} as never,
       syncService,
       {} as never,
+      {} as never, // CustomerLifecycleMedusaSyncService
       medusaClient as never,
       {} as never,
       {} as never,

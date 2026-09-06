@@ -7,6 +7,7 @@ import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
 import { FirebaseMembershipSyncService } from './firebase-membership-sync.service';
+import { CustomerLifecycleMedusaSyncService } from './customer-lifecycle-medusa-sync.service';
 import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { MembershipServiceClient } from '../../services/membership-service.client';
@@ -20,7 +21,11 @@ import type {
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
-import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
+import type {
+  Cafe24LinkedPayload,
+  Cafe24UnlinkedPayload,
+  UserDeletedPayload,
+} from '@packages/event-contracts/streams/user.stream';
 import {
   getChannelFulfillmentCapabilities,
   type ShipmentSalesChannel,
@@ -38,6 +43,8 @@ const INBOX_WORKER_EVENT_TYPES = [
   'Cafe24Linked',
   'Cafe24Unlinked',
   'FirebaseMembershipSynced',
+  'UserUpdated',
+  'UserDeleted',
   'CoreFulfillmentShipped',
   'CoreFulfillmentDelivered',
   'CoreOrderCancelled',
@@ -108,6 +115,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly syncService: PimMedusaSyncService,
     private readonly membershipSyncService: MembershipMedusaSyncService,
     private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
+    private readonly customerLifecycleSyncService: CustomerLifecycleMedusaSyncService,
     private readonly medusaClient: MedusaClient,
     private readonly almondAuthClient: AlmondAuthClient,
     private readonly membershipServiceClient: MembershipServiceClient,
@@ -463,6 +471,19 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
         case 'FirebaseMembershipSynced': {
           const syncedPayload: { cafe24MemberId: string; active: boolean } = event.payload;
           await this.firebaseMembershipSyncService.syncByFirebase(syncedPayload.cafe24MemberId, syncedPayload.active);
+          break;
+        }
+
+        case 'UserUpdated': {
+          // 소비자가 email 있는 것만 inbox 에 넣는다 — payload 는 { userId, email } 이다.
+          const emailPayload: { userId: string; email: string } = event.payload;
+          await this.customerLifecycleSyncService.handleUserUpdated(emailPayload);
+          break;
+        }
+
+        case 'UserDeleted': {
+          const deletedPayload: UserDeletedPayload = event.payload;
+          await this.customerLifecycleSyncService.handleUserDeleted(deletedPayload);
           break;
         }
 

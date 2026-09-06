@@ -74,6 +74,7 @@ import { StorefrontRevalidateService } from './adapters/medusa/storefront-revali
 import { DeferredRevalidateService } from './adapters/medusa/deferred-revalidate.service';
 import { CategoryEnsureMemoService } from './adapters/medusa/category-ensure-memo.service';
 import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
+import { CustomerLifecycleMedusaSyncService } from './adapters/medusa/customer-lifecycle-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { ProductSellableQuantityConsumer } from './consumers/product-sellable-quantity.consumer';
@@ -263,6 +264,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     PimMedusaSyncService,
     StorefrontRevalidateService,
     MembershipMedusaSyncService,
+    CustomerLifecycleMedusaSyncService,
     PimProductEventConsumer,
     PimCategoryConsumer,
     ProductSellableQuantityConsumer,

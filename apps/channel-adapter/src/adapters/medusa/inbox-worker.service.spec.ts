@@ -57,6 +57,72 @@ function createDbMock(newerEvents: unknown[] | ((condition: unknown) => unknown[
   };
 }
 
+describe('InboxWorkerService 회원 생애주기 라우팅 (#786)', () => {
+  const USER_ID = '3f9a1c2e-1111-4222-8333-444455556666';
+
+  function createService() {
+    const dbMock = createDbMock();
+    const lifecycle = {
+      handleUserUpdated: jest.fn().mockResolvedValue({ success: true, data: { userId: USER_ID, action: 'synced' } }),
+      handleUserDeleted: jest.fn().mockResolvedValue({ success: true, data: { userId: USER_ID, action: 'synced' } }),
+    };
+    const configService = { get: jest.fn(() => undefined) };
+    const service = new InboxWorkerService(
+      { db: dbMock.db } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      lifecycle as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      configService as any,
+      { runWithChain: jest.fn((_c: string, _e: string, fn: () => Promise<void>) => fn()) } as any,
+    );
+    return { service, dbMock, lifecycle };
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-09-07T00:00:00.000Z'));
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('UserDeleted 는 handleUserDeleted 로 가고 published 로 마킹된다', async () => {
+    const { service, dbMock, lifecycle } = createService();
+
+    await (service as any).doProcessInboxEvent({
+      id: 'inbox_del',
+      eventType: 'UserDeleted',
+      aggregateId: USER_ID,
+      payload: { userId: USER_ID },
+      attempts: 0,
+      createdAt: new Date('2026-09-07T00:00:00.000Z'),
+      metadata: { messageId: 'msg-1', chainId: 'chain-1' },
+    });
+
+    expect(lifecycle.handleUserDeleted).toHaveBeenCalledWith({ userId: USER_ID });
+    expect(dbMock.updates).toEqual([{ status: 'published', publishedAt: new Date('2026-09-07T00:00:00.000Z') }]);
+  });
+
+  it('UserUpdated 는 handleUserUpdated 로 간다', async () => {
+    const { service, lifecycle } = createService();
+
+    await (service as any).doProcessInboxEvent({
+      id: 'inbox_upd',
+      eventType: 'UserUpdated',
+      aggregateId: USER_ID,
+      payload: { userId: USER_ID, email: 'new@example.com' },
+      attempts: 0,
+      createdAt: new Date('2026-09-07T00:00:00.000Z'),
+      metadata: { messageId: 'msg-2', chainId: 'chain-2' },
+    });
+
+    expect(lifecycle.handleUserUpdated).toHaveBeenCalledWith({ userId: USER_ID, email: 'new@example.com' });
+  });
+});
+
 describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
   const payload: ProductSellableQuantityChangedPayload = {
     variantId: 'pim-var-1',
@@ -105,6 +171,7 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
       syncService as any,
       {} as any,
       {} as any,
+      {} as any, // CustomerLifecycleMedusaSyncService
       {} as any,
       {} as any,
       {} as any,
@@ -524,7 +591,7 @@ describe('InboxWorkerService handleFailure race with an abandoned timed-out hand
       const configService = {
         get: jest.fn((key: string) => (key === 'INBOX_HANDLER_TIMEOUT_MS' ? '1000' : undefined)),
       };
-      const service = new (InboxWorkerService as any)({ db: dbMock.db }, {}, {}, {}, {}, {}, {}, configService, {
+      const service = new (InboxWorkerService as any)({ db: dbMock.db }, {}, {}, {}, {}, {}, {}, {}, configService, {
         runWithChain: jest.fn((_chainId: string, _eventId: string, fn: () => Promise<void>) => fn()),
       });
 
@@ -591,6 +658,7 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
       {},
       {},
       {},
+      {},
       medusaClient,
       {},
       {},
@@ -651,6 +719,7 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
       {},
       {},
       {},
+      {},
       medusaClient,
       {},
       {},
@@ -695,6 +764,7 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
     const medusaClient = { cancelOrder: jest.fn(async () => undefined) };
     const service = new (InboxWorkerService as any)(
       { db: { select, update } },
+      {},
       {},
       {},
       {},
@@ -755,6 +825,7 @@ describe('InboxWorkerService V1 Medusa compatibility projection', () => {
       {},
       {},
       {},
+      {},
       medusaClient,
       {},
       {},
@@ -810,6 +881,7 @@ describe('InboxWorkerService — 실제 sync 서비스 경유 SlowRetryInboxErro
         {} as any,
         realSyncService,
         {} as any,
+        {} as any, // CustomerLifecycleMedusaSyncService
         medusaClient as any,
         {} as any,
         {} as any,
@@ -856,6 +928,7 @@ describe('InboxWorkerService handleFailure — SlowRetryInboxError 장기 재시
     const configService = { get: jest.fn(() => undefined) };
     return new (InboxWorkerService as any)(
       { db: dbMock.db },
+      {},
       {},
       {},
       {},
