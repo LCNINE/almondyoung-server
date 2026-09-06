@@ -24,6 +24,10 @@ export type WithdrawCustomerResult = {
  * ① 미삭제 고객 조회 ② 주소 하드 삭제(소프트 삭제는 파기가 아니다; 주문은 자체 주소 스냅샷을 갖는다)
  * ③ 익명화(코어 step 의 보상이 이전 값 복원) ④ 소프트 삭제 ⑤ auth identity 삭제(보상 없음, 마지막).
  * ②③④ 는 고객이 있을 때만, ⑤ 는 항상.
+ *
+ * ⑤ 가 실패하면 엔진이 ②③④ 의 보상을 역순으로 돌려 전부 되돌리므로 재시도는 처음부터 다시 돈다 —
+ * ①이 다시 고객을 찾고 ②③④ 가 다시 실행된다. 보상까지 실패한 이중 장애에서만 ③④ 가 실행된 채로
+ * 남고, 그때는 재시도가 ① 비고(위 문단) → ⑤ 만 돌아 수렴한다.
  */
 export const withdrawCustomerWorkflow = createWorkflow(
   'withdraw-customer',

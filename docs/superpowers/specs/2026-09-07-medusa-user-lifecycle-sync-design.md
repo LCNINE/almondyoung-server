@@ -165,8 +165,10 @@ POST /admin/customers/by-almond-user/:almondUserId/withdraw
 (레거시, 고객이 있을 때만). 비어 있어도 실패가 아니다.
 
 `when(고객 있음)` 으로 ②③④ 를 감싸고 ⑤ 는 항상 돈다. 두 번째 호출은 ① 이 비고(③ 이 키를 지웠다) ⑤ 가
-0 건 → `{ customer: 'not_found', auth_identities_deleted: 0 }`. 부분 실패(③④ 성공, ⑤ 실패)의 재시도도
-같은 길로 ⑤ 를 다시 시도한다.
+0 건 → `{ customer: 'not_found', auth_identities_deleted: 0 }`. ⑤ 가 실패하면 엔진이 ②③④ 의 보상을
+역순으로 돌려 전부 되돌리므로 라우트는 500 을 내고 inbox 재시도는 처음부터 다시 한다. `failed` 로 남은
+`UserDeleted` 행은 「아무것도 파기되지 않았다」를 뜻한다. 보상까지 실패한 이중 장애에서만 ③④ 만 남은
+상태가 되고, 그때도 재시도가 ① 비고 → ⑤ 만 돌아 수렴한다.
 
 ④ 가 내는 `customer.deleted` 는 우리 subscriber 중 아무도 듣지 않는다(오늘 8개 중 customer 이벤트는
 `customer.created` 하나). 플랜에서 grep 으로 재확인한다.
@@ -218,7 +220,7 @@ response { matched: number, published: number, lastUserId: string | null, failed
 | 새 이메일을 다른 `has_account` 고객이 이미 씀 | Medusa 4xx → inbox `failed` + effect. 사람이 판정. 조용한 오귀속(④)보다 낫다 |
 | 롤링 배포 중 옛 Medusa 태스크가 라우트 404 | 4xx 영구 규칙으로 `failed`. 배포 뒤 replay 한 번이 회수한다(멱등) |
 | Medusa 5xx / 네트워크 | 지수 백오프 재시도 → 소진 시 `failed` (기존 규칙) |
-| 워크플로 ③④ 뒤 ⑤ 실패 | 라우트 500 → inbox 재시도 → ① 비고 ⑤ 만 재시도 |
+| 워크플로 ③④ 뒤 ⑤ 실패 | 라우트 500 → 엔진이 ②③④ 보상(복원) → inbox 재시도가 처음부터. failed 행 = 아무것도 파기되지 않은 상태. 보상까지 실패한 이중 장애만 ③④ 만 남고, 재시도가 ⑤ 만 돌아 수렴 |
 | `softDeleteUser` 의 `publishEvent` 가 트랜잭션 안에서 실패 | user-service 탈퇴 자체가 실패로 돌아간다(fail-closed, 기존 동작). 바꾸지 않는다 |
 
 ## 6. 테스트
@@ -244,7 +246,10 @@ response { matched: number, published: number, lastUserId: string | null, failed
   번호가 가리키는 대상이 닫힐 뿐이다).
 - **배포**: ① `sst deploy` lcnine-services(channel-adapter + Medusa) ② `sst deploy` lcnine-auth(user-service)
   ③ `replay-withdrawn { dryRun: true }` 로 건수·id 확인 ④ `dryRun: false` 를 커서로 끝까지 ⑤ channel-adapter
-  inbox 에서 `UserDeleted` 행이 전부 `published` 인지, `failed` 가 0인지 확인. 마이그레이션 0 · 시크릿 0 ·
+  inbox 에서 `UserDeleted` 행이 전부 `published` 인지, `failed` 가 0인지 확인.
+  `SELECT count(*) FROM inbox_events WHERE event_type IN ('UserUpdated','UserDeleted') AND status='failed';`
+  가 0 이 아니면 ③④ replay 를 한 번 더 — 롤링 창의 404 는 백오프 5회(약 1분) 뒤 failed 로 굳는다.
+  마이그레이션 0 · 시크릿 0 ·
   env 0(`USER_SERVICE_INTERNAL_KEY`·`MEDUSA_API_KEY` 는 이미 있다). 소비자 그룹이 이미 이 토픽을 구독
   중이라 과거 오프셋은 다시 읽지 않는다 — 과거는 replay 가 맡는다.
 - 배포 후 **남는 것 한 줄을 #786 에 적는다**: 03-02~09-02 탈퇴자는 사람이 판정한 목록으로 같은
