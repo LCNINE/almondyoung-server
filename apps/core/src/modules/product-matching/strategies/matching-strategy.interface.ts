@@ -30,5 +30,5 @@ export abstract class MatchingStrategy {
 
   abstract delete(context: MatchingContext, tx?: DbTx): Promise<void>;
 
-  abstract validate(context: MatchingContext, mappings: SkuQuantityMapping[]): Promise<boolean>;
+  abstract validate(context: MatchingContext, mappings: SkuQuantityMapping[], tx?: DbTx): Promise<boolean>;
 }
