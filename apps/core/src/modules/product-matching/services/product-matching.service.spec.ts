@@ -691,7 +691,6 @@ describe('ProductMatchingService strategy semantics', () => {
   });
 });
 
-// makeService · makeTx · matching 은 Step 2 앞부분에서 파일 최상위로 끌어올린 것을 그대로 쓴다.
 describe('ProductMatchingService links input', () => {
   const EXISTING_SKU = '44444444-4444-4444-4444-444444444444';
 

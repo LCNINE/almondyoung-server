@@ -141,7 +141,9 @@ resolve(links: MatchingLinkInputDto[], trx: DbTx): Promise<SkuQuantityMapping[]>
   · newSku 가 있으면 skuCatalogService.create({ ...newSku, source: AUTO_MATCHING }, trx)
   · skuId 가 있으면 그대로 통과
   · 입력 순서 보존, quantity ?? 1
-  · source 는 호출자 지정을 무시하고 강제 — 감사 시 「매칭에서 만들어진 SKU」를 셀 수 있어야 한다
+  · source 는 호출자 지정을 무시하고 강제 — 다만 SkuCatalogManager.create 가 구조분해로
+    source 를 버리고 skus 테이블에 대응 컬럼이 없어 **현재는 저장되지 않는다**. 계약상
+    의도를 남겨두는 값이며, 감사가 필요해지면 컬럼 추가가 선행돼야 한다
 ```
 
 `SkuCatalogModule` 은 이미 `ProductMatchingModule` 이 import 하고 있으므로 배선 추가는 없다.

@@ -1,6 +1,4 @@
 import { Module } from '@nestjs/common';
-import { CoreInventoryModule } from '../inventory/core/inventory.module';
-import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
 import { SkuCatalogModule } from '../inventory/sku-catalog/sku-catalog.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
@@ -13,8 +11,6 @@ import { MatchingLinkResolver } from './services/matching-link-resolver';
 
 @Module({
   imports: [
-    CoreInventoryModule, // StockEventService 의존
-    WarehouseModule, // WarehouseService 의존
     SkuCatalogModule, // SkuCatalogService 의존
     ProductSellableQuantityModule,
     FulfillmentOrderCreationBacklogModule,

@@ -31,6 +31,10 @@ export class MatchingLinkResolver {
         throw new BadRequestException('link 항목은 skuId 또는 newSku 중 정확히 하나를 가져야 합니다.');
       }
 
+      // source 는 계약상 의도를 남겨두는 값이다 — 현재 SkuCatalogManager.create 가
+      // 구조분해로 source 를 분리해 버리고 skus 테이블에 대응 컬럼이 없어 실제로는
+      // 저장되지 않는다. 감사(「매칭에서 만들어진 SKU」 카운트)가 필요해지면
+      // 컬럼 추가가 선행돼야 하며, 그 전까지 이 값은 아무 효과도 없다.
       const created = await this.skuCatalogService.create(
         { ...link.newSku, source: SkuCreationSource.AUTO_MATCHING },
         trx,

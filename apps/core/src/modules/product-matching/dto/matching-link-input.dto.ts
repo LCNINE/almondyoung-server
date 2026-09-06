@@ -24,6 +24,8 @@ import { CreateSkuDto } from '../../inventory/sku-catalog/dto/create-sku.dto';
 @ValidatorConstraint({ name: 'matchingSkuRef', async: false })
 export class MatchingSkuRefConstraint implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
+    // ValidationArguments.object 는 라이브러리 타입이 `object` 로 고정돼 있어, 형제
+    // 필드(skuId/newSku)에 닿으려면 캐스트가 불가피하다.
     const link = args.object as MatchingLinkInputDto;
     const hasSkuId = link.skuId !== undefined && link.skuId !== null;
     const hasNewSku = link.newSku !== undefined && link.newSku !== null;

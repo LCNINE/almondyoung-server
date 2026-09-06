@@ -47,6 +47,7 @@ import {
   shouldChangeStrategyForVoid,
   pickDefaultTab,
 } from '../../lib/matching-save-route';
+import { buildLegacySkuMappings } from '../../lib/build-legacy-sku-mappings';
 
 /** SKU 연결 정보 */
 type LinkedSku = {
@@ -362,6 +363,11 @@ export function InventoryMatchingDialog({
             strategy: 'variant',
             stockPolicy,
             links,
+            // 배포 순서 안전장치: 옛 core 는 links 를 모르고 whitelist 로 조용히 지운다.
+            // 기존 SKU 참조만 추려 skuMappings 로도 실어 보내면, 새 core 는 links 를
+            // 우선하고(그 우선순위를 지키는 테스트가 있다) 옛 core 는 skuMappings 를 쓴다.
+            // newSku 만 있는 auto 탭은 어차피 옛 core 에서 불가능하므로 빈 배열이 된다.
+            skuMappings: buildLegacySkuMappings(links),
             isGift: false,
           },
         });
