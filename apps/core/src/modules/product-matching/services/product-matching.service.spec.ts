@@ -739,6 +739,30 @@ describe('ProductMatchingService links input', () => {
     expect(tx.updates[0]).toMatchObject({ status: 'matched', strategy: 'variant', isResolved: true });
   });
 
+  it('resolves links on the transaction it opens, not on an ambient connection', async () => {
+    // run 이 여는 «내부» 트랜잭션. 바깥에서 tx 를 넘기지 않으므로 이것이 콜백의 trx 가 된다.
+    // makeService 에 같은 innerTx 를 두 번 넣으므로 selectRowsQueue 도 공유된다 —
+    // 첫 run(매칭 조회)이 [matching] 을 소진하고, 두 번째 run(validate) 이 [{id:…},{id:…}] 를 받는다.
+    const innerTx = makeTx([[matching], [{ id: EXISTING_SKU }, { id: 'created-2' }]]);
+    const { service, linkResolver } = makeService({ transactionTxs: [innerTx, innerTx] });
+
+    await service.resolveMatchingPending(matching.id, {
+      strategy: 'variant',
+      links: [
+        { skuId: EXISTING_SKU, quantity: 2 },
+        { newSku: { name: 'S / 검정' } as never },
+      ],
+    } as ResolveMatchingDto); // ← tx 를 넘기지 않는다: 구현이 어떤 트랜잭션을 여는지가 이 테스트의 핵심이다
+
+    // 리졸버는 «그 내부 트랜잭션»을 받아야 한다. 구현이 run 밖에서 불렀다면 여기서 깨진다.
+    expect(linkResolver.resolve).toHaveBeenCalledWith(
+      [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } }],
+      innerTx,
+    );
+    expect(innerTx.inserts[0]).toMatchObject({ productMatchingId: matching.id, skuId: EXISTING_SKU, quantity: 2 });
+    expect(innerTx.inserts[1]).toMatchObject({ productMatchingId: matching.id, skuId: 'created-2', quantity: 1 });
+  });
+
   it('prefers links over the deprecated skuMappings input', async () => {
     const { service, linkResolver } = makeService();
     const tx = makeTx([[matching], [{ id: EXISTING_SKU }]]);
