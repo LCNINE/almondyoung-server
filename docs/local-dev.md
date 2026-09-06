@@ -62,7 +62,8 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    ```bash
    sudo apt install -y tmux   # 최초 1회
    tmux                        # 터미널 닫아도 유지되게 tmux 안에서
-   npm run start:all:local     # 빌드 → 일괄 기동. 로그는 logs/<서비스>.log
+   npm run bootstrap:e2e:local # 컨테이너·마이그·시드 (멱등)
+   npm run start:all:local     # 빌드 → 일괄 기동. 로그는 logs/<이름>.log
    # tmux 에서 빠져나오기: Ctrl+B 누른 뒤 D / 다시 붙기: tmux attach
    ```
    코드 업데이트 반영: `git pull` 후 Ctrl+C 로 내리고 다시 `npm run start:all:local`.
@@ -128,72 +129,55 @@ storefront → Medusa `/auth/customer/user-service-sso` → auth-web `/oauth/aut
 등록돼 있어야 하는데 **라이브에는 없다**(실측: 「등록되지 않은 redirect_uri 입니다」).
 라이브 클라이언트에 localhost 를 등록하는 것은 라이브 IdP 설정 변경이므로, 로컬 IdP 를 쓴다.
 
-### 1. 인프라 + 스키마
+### 1~4. 준비·기동 — `docs/local-e2e-environment.md` 가 정본이다
+
+이 절은 한때 절차를 직접 적었지만, 앱 6개·시드 3개만 다뤄 **11개 앱 구성과 갈렸다**. 이제 절차는
+스크립트 셋이 들고 있고 그 스크립트들이 `scripts/local/e2e-env-map.sh` 라는 **한 표**를 공유한다:
 
 ```bash
-docker compose up -d                 # postgres·redis·kafka (redis 가 내려가 있으면 Medusa 가 안 뜬다)
-npm run db:migrate:local             # drizzle 서비스 전체
-cd apps/medusa && npx medusa db:migrate --execute-safe-links && cd ../..
+npm run bootstrap:e2e:local -- --install-env   # .env 배치 + 컨테이너 + 마이그 + 시드
+#   → 복사된 템플릿의 자리표시자를 채운다 (아래 「손이 필요한 값」)
+npm run bootstrap:e2e:local                    # 다시 (멱등)
+npm run start:all:local                        # 앱 기동 (medusa 뜬 뒤 키 동기화 자동)
+npm run preflight:e2e:local                    # 판정
 ```
 
-### 2. `.env` 배치
+배경·함정·검증 SQL 은 전부 **`docs/local-e2e-environment.md`** 에 있다. 이 절은 그 문서가 다루지
+않는 «손이 필요한 값» 셋만 남긴다.
 
-`env-templates/.env.<앱>.local.example` 을 각 앱 위치로 복사한다.
-
-| 템플릿 | 복사 위치 | 포트 |
-|---|---|---|
-| `.env.user-service.local.example` | `apps/user-service/.env` | 3000 |
-| `.env.medusa.local.example` | `apps/medusa/.env` | 9000 |
-| `.env.wallet.local.example` | `apps/wallet/.env` | 5001 |
-| `.env.admin-web.local.example` | `apps/admin-web/.env.local` | 8002 |
-| `.env.auth-web.local.example` | `web/auth-web/.env.local` | 8001 |
-| `.env.storefront.local.example` | `web/almondyoung-storefront/.env.local` | 8000 |
-
-user-service 의 RS256 키쌍만 생성이 필요하다:
+#### 손이 필요한 값 ①: user-service RS256 키쌍
 
 ```bash
 ./scripts/local/gen-oauth-keys.sh >> apps/user-service/.env   # 템플릿의 자리표시자 두 줄은 지운다
 ```
 
-**세 값이 앱 사이에서 일치해야 한다** — 어긋나면 조용히 401/400 이 난다:
+#### 손이 필요한 값 ②: 앱 사이에서 일치해야 하는 값
+
+어긋나면 **조용히 401/400** 이 난다. 템플릿의 기본값을 그대로 쓰면 맞지만, 하나라도 바꿨으면 전부 바꿔야 한다.
+`npm run preflight:e2e:local` §6 이 이걸 실제로 대조한다 — 눈으로 맞추지 말 것.
 
 | 값 | 맞춰야 하는 곳 |
 |---|---|
 | `OAUTH_INTERNAL_SECRET` | user-service ↔ auth-web |
-| `OIDC_CLIENT_SECRET` | medusa ↔ storefront ↔ user_service `oauth_clients` 시드 |
-| `WALLET_API_KEY` | medusa ↔ wallet |
+| `OIDC_CLIENT_SECRET` | medusa ↔ storefront ↔ admin-web ↔ wallet-web ↔ user_service `oauth_clients` 시드 |
+| `WALLET_API_KEY` | medusa ↔ wallet ↔ wallet-web |
+| `CORE_INTERNAL_KEY` | core ↔ channel-adapter |
+| `AUTH_SECRET` | core ↔ file-service |
 
-### 3. 시드
+#### 손이 필요한 값 ③: Medusa 관리자 계정
 
-```bash
-npm run db:seed:user-service:local          # 역할 6·스코프 12·admin 계정·OAuth 클라이언트 3
-cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts
-npx medusa user -e <관리자메일> -p <비밀번호>   # Medusa 어드민 계정 (user-service 계정과 별개다)
-```
-
-`db:seed:user-service:local` 은 정본 `UserServiceSeedStep` 을 로컬 DB 로 돌린다
-(`npm run db:seed:ref` 는 SST/AWS 에서 DB URL 을 읽어 로컬에선 못 쓴다). 만들어지는 관리자 계정은
-`admin` / `LOCAL_ADMIN_PASSWORD`(기본 `Rehearsal1234!`), 역할 `master`+`admin`.
-
-**admin-web 의 `MEDUSA_API_KEY`** 는 Medusa 관리자 API 키다. 한 번 만들어 `.env.local` 에 넣는다:
+user-service 계정과 **별개다**. 한 번 만든다:
 
 ```bash
-TOK=$(curl -s -X POST http://localhost:9000/auth/user/emailpass -H 'content-type: application/json' \
-  -d '{"email":"<관리자메일>","password":"<비밀번호>"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-curl -s -X POST http://localhost:9000/admin/api-keys -H "authorization: Bearer $TOK" \
-  -H 'content-type: application/json' -d '{"title":"admin-web-local","type":"secret"}'
+(cd apps/medusa && npx medusa user -e <관리자메일> -p <비밀번호>)
 ```
 
-### 4. 기동
+> `MEDUSA_API_KEY` 를 손으로 발급하던 curl 절차는 더 이상 필요 없다 —
+> `scripts/local/sync-medusa-keys.sh` 가 하고, `start-all.sh` 가 그걸 자동으로 부른다.
 
-```bash
-npx dotenv -e apps/user-service/.env -- nest start user-service   # :3000
-(cd web/auth-web && npm run dev)                                  # :8001
-(cd apps/medusa && npx medusa develop)                            # :9000
-npx dotenv -e apps/wallet/.env -- nest start wallet               # :5001
-(cd apps/admin-web && npm run dev)                                # :8002
-(cd web/almondyoung-storefront && npm run dev)                    # :8000
-```
+`db:seed:user-service:local` 이 만드는 관리자 계정은 `admin` / `LOCAL_ADMIN_PASSWORD`(기본
+`Rehearsal1234!`), 역할 `master`+`admin` 이다. (`npm run db:seed:ref` 는 SST/AWS 에서 DB URL 을
+읽어 로컬에선 못 쓴다.)
 
 `http://localhost:8000/kr/login` → auth-web 계정 허브 → 로그인이 되면 배선이 다 맞은 것이다.
 

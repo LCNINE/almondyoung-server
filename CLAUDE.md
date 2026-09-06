@@ -49,6 +49,21 @@ npm run start:admin-web:dev    # Admin Next.js dev server
 
 Note: Some services use `./scripts/with-ipv4.sh dotenv -e apps/<name>/.env` for env loading.
 
+#### 로컬 전 과정(E2E) — 세 명령의 «역할이 다르다»
+
+```bash
+npm run bootstrap:e2e:local     # ① 만든다  — 컨테이너·마이그·시드·키 배치. 멱등
+npm run start:all:local         # ② 띄운다  — E2E 11개 앱 + sms-stub
+npm run preflight:e2e:local     # ③ 판정한다 — 읽기 전용. 클릭하기 직전
+```
+
+**판정자(preflight)는 고치지 않는다** — 고치기까지 하면 초록불이 「원래 옳았다」의 증거가 아니라
+「방금 내가 고쳤다」가 되어 신호가 사라진다. preflight 의 모든 ✗ 는 어느 명령이 고치는지를 함께 적는다.
+
+앱↔`.env`↔포트 목록은 **`scripts/local/e2e-env-map.sh` 한 곳**이 정본이고 세 스크립트가 그걸 source 한다.
+앱을 늘리면 거기만 고칠 것 — 이 표가 산문으로만 있던 동안 문서 두 벌이 6개/11개로 갈렸고
+`start-all.sh` 는 또 다른 집합을 띄웠다. 배경·함정은 `docs/local-e2e-environment.md`.
+
 ### Building
 ```bash
 npm run build               # Build all NestJS apps
