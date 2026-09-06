@@ -38,12 +38,14 @@ export const withdrawCustomerWorkflow = createWorkflow(
     const hasCustomer = transform({ customer }, ({ customer }) => customer !== null);
 
     when({ hasCustomer }, ({ hasCustomer }) => hasCustomer).then(() => {
+      // `when(...).then(...)` 는 module-scope global 하나에 조건을 적재하므로 중첩하면 안쪽 `.then()` 이
+      // 바깥쪽 global 을 지워 `Cannot read properties of undefined (reading 'steps')` 로 부팅이 죽는다
+      // (2026-09-07 통합 스펙 RED 로 실측). 주소가 0건이어도 안전한 no-op 이므로(보상도 빈 배열을 무시한다)
+      // 조건 없이 부른다 — 중첩 `when` 을 쓰지 않는다.
       const addressIds = transform({ customer }, ({ customer }) =>
         (customer?.addresses ?? []).map((a: { id: string }) => a.id),
       );
-      when({ addressIds }, ({ addressIds }) => addressIds.length > 0).then(() => {
-        deleteCustomerAddressesWorkflow.runAsStep({ input: { ids: addressIds } });
-      });
+      deleteCustomerAddressesWorkflow.runAsStep({ input: { ids: addressIds } });
 
       const update = transform({ customer, input }, ({ customer, input }) =>
         buildWithdrawnCustomerUpdate(input.almondUserId, customer?.metadata),
