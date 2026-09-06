@@ -46,7 +46,7 @@ same_value() {
 
 echo "── 0. .env 배치 (정본 표: scripts/local/e2e-env-map.sh)"
 check_env() {
-  local name="$1" dest="$2" tmpl="$3" port="$4" tier="$5" desc="$6"
+  local name="$1" dest="$2" tmpl="$3" port="$4" tier="$5" kind="$6" target="$7" needs="$8" desc="$9"
   if e2e_env_present "$dest"; then ok "$name (:$port) — $dest"
   elif [ "$tier" = "required" ]; then
     bad "$name — $dest 없음 ($desc) → npm run bootstrap:e2e:local -- --install-env"
@@ -63,12 +63,31 @@ for svc in postgres redis kafka; do
   [ "$state" = "running" ] && ok "$svc running" || bad "$svc = ${state:-없음} → npm run bootstrap:e2e:local (kafka 는 zookeeper 부터 재기동한다)"
 done
 
+# 🔴 컨테이너가 running 이어도 브로커가 안 열려 있을 수 있다. 그 상태로 앱을 띄우면
+# channel-adapter·wallet·membership 이 KafkaJSNonRetriableError 로 죽는다 — 경고가 아니라 종료다.
+e2e_kafka_up && ok "kafka :9092 (브로커가 실제로 열렸다)" \
+  || bad "kafka :9092 가 안 열렸다 → npm run bootstrap:e2e:local (필요하면 FORCE_KAFKA_RECREATE=1)"
+
 echo "── 2. 포트"
-check_port() { (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1; }
+check_port() { e2e_port_open "$1"; }
 check_port_row() {
-  local name="$1" dest="$2" tmpl="$3" port="$4" tier="$5" desc="$6"
+  local name="$1" dest="$2" tmpl="$3" port="$4" tier="$5" kind="$6" target="$7" needs="$8" desc="$9"
   e2e_env_present "$dest" || return 0   # 안 띄우기로 한 앱은 판정하지 않는다
-  check_port "$port" && ok "$port $name" || bad "$port $name — 안 떠 있음 → npm run start:all:local (logs/ 확인)"
+  if ! check_port "$port"; then
+    bad "$port $name — 안 떠 있음 → npm run start:all:local (logs/$name.log 확인)"; return
+  fi
+  # 🔴 «열림»과 «맞는 앱이 열었다»는 다르다. 2026-09-06 에 channel-adapter 가 3010 을 쥐고
+  # file-service 는 안 떠 있었는데 preflight 는 「3010 ✓」로 초록을 줬다 — 그 상태에서 상품
+  # 이미지 업로드는 channel-adapter 로 갔다. 그래서 소유자까지 본다.
+  local sig owner
+  sig=$(e2e_proc_signature "$kind" "$target")
+  [ -z "$sig" ] && { ok "$port $name"; return; }          # web 은 next dev 라 구별 불가 — 판정 안 함
+  owner=$(e2e_port_owner "$port")
+  [ -z "$owner" ] && { ok "$port $name (소유자 확인 불가)"; return; }
+  case "$owner" in
+    *"$sig"*) ok "$port $name" ;;
+    *) bad "$port 를 «$name 이 아닌» 것이 쥐고 있다: ${owner:0:60} — 포트 충돌. 각 .env 의 PORT 를 볼 것" ;;
+  esac
 }
 e2e_env_each required check_port_row
 e2e_env_each extra check_port_row

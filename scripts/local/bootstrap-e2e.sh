@@ -12,6 +12,7 @@
 #   npm run bootstrap:e2e:local -- --install-env   # 없는 .env 를 템플릿에서 «복사까지» 한다
 #   SKIP_CONTAINERS=1 npm run bootstrap:e2e:local  # 컨테이너 단계 생략
 #   SKIP_MIGRATE=1 / SKIP_SEED=1                   # 각 단계 생략
+#   FORCE_KAFKA_RECREATE=1 …                       # 건강한 kafka 도 굳이 재기동 (znode 꼬임 복구용)
 #   LOCAL_POINT_LOGIN_IDS=<가입한아이디> …          # 포인트 시드 대상 (§2-B — 기본 계정은 새 DB 에 없다)
 #
 # 끝나면 `npm run start:all:local` → `npm run preflight:e2e:local` 순서다.
@@ -68,15 +69,24 @@ fi
 # ─────────────────────────────────────────────────────────── 1. 컨테이너
 if [ "${SKIP_CONTAINERS:-}" = "1" ]; then
   step "1. 컨테이너 — SKIP_CONTAINERS=1 이라 건너뜀"
+  e2e_kafka_up && ok "kafka :9092 열려 있음" \
+    || warn "kafka :9092 가 닫혀 있다 — 이대로면 start-all 이 거절한다 (SKIP_CONTAINERS 를 빼고 다시)"
 else
   step "1. 컨테이너 (postgres · redis · kafka)"
   docker compose up -d postgres redis >/dev/null 2>&1 && ok "postgres · redis" || bad "postgres/redis 기동 실패"
-  # 🔴 kafka 를 recreate 하면 zookeeper 에 옛 broker znode 가 남아 즉사한다. stop → zk 재시작 → up 순서.
-  docker compose stop kafka >/dev/null 2>&1
-  docker compose restart zookeeper >/dev/null 2>&1
-  docker compose up -d kafka >/dev/null 2>&1
-  for _ in $(seq 1 60); do (echo > /dev/tcp/127.0.0.1/9092) >/dev/null 2>&1 && break; sleep 2; done
-  (echo > /dev/tcp/127.0.0.1/9092) >/dev/null 2>&1 && ok "kafka :9092" || bad "kafka :9092 가 안 열린다 (docker compose logs kafka)"
+  # 🔴 이 단계가 «조건부»인 이유: 아래 재기동 절차는 kafka 를 실제로 내렸다 올린다. 무조건 돌리면
+  # 이미 돌고 있는 세션의 channel-adapter·wallet·membership 이 KafkaJSNonRetriableError 로 «죽는다».
+  # bootstrap 은 멱등해야 하므로, 이미 건강하면 손대지 않는다.
+  if e2e_kafka_up && [ "${FORCE_KAFKA_RECREATE:-}" != "1" ]; then
+    ok "kafka :9092 이미 열려 있다 — 손대지 않는다 (강제: FORCE_KAFKA_RECREATE=1)"
+  else
+    # 🔴 kafka 를 recreate 하면 zookeeper 에 옛 broker znode 가 남아 즉사한다. stop → zk 재시작 → up 순서.
+    docker compose stop kafka >/dev/null 2>&1
+    docker compose restart zookeeper >/dev/null 2>&1
+    docker compose up -d kafka >/dev/null 2>&1
+    for _ in $(seq 1 60); do e2e_kafka_up && break; sleep 2; done
+    e2e_kafka_up && ok "kafka :9092" || bad "kafka :9092 가 안 열린다 (docker compose logs kafka)"
+  fi
 fi
 
 # ─────────────────────────────────────────────────────────── 2. 마이그레이션

@@ -64,6 +64,7 @@ npm run bootstrap:e2e:local -- --install-env   # 없는 .env 를 템플릿에서
 ```
 
 `SKIP_CONTAINERS=1` / `SKIP_MIGRATE=1` / `SKIP_SEED=1` 로 단계를 건너뛸 수 있다. **멱등하다** —
+건강한 kafka 는 손대지 않고(`FORCE_KAFKA_RECREATE=1` 로 강제),
 시드는 전부 `ON CONFLICT`, 마이그레이션은 적용된 것을 건너뛰고, Medusa 시드는 `region` 이 있으면
 스킵한다(`FORCE_MEDUSA_SEED=1` 로 강제).
 
@@ -105,6 +106,9 @@ npm run start:all:local                    # E2E 11개 + sms-stub
 E2E_PROFILE=full npm run start:all:local   # extra 4개(리뷰·통계·알림·검색)도 — .env 가 있는 것만
 DRY_RUN=1 npm run start:all:local          # 무엇을 어떤 순서로 띄울지만 출력
 ```
+
+🔴 **kafka(:9092)가 닫혀 있으면 아무것도 안 띄우고 거절한다** — channel-adapter·wallet·membership 이
+`KafkaJSNonRetriableError` 로 죽는데 그게 로그를 열기 전엔 안 보이기 때문이다. 띄우는 건 bootstrap 의 일이다(§3).
 
 앱 목록은 산문이 아니라 **`scripts/local/e2e-env-map.sh` 한 곳**에서 온다 — bootstrap·start-all·preflight
 셋이 같은 표를 읽는다. 앱을 늘리면 거기만 고친다. `.env` 가 없는 앱은 **띄우지 않는다**(예전엔 그대로
@@ -173,10 +177,20 @@ sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 # 메트릭 포트도 따라간다 (PORT+10000): 13010 → 13003
 ```
 
-⚠️ **preflight 의 포트 검사는 «열림»만 본다.** 포트가 초록이어도 그 앱이 맞는지는 별개다.
+🟢 **(해결) preflight 는 이제 «누가» 쥐었는지까지 본다.** `ss -ltnp` 로 리스너 PID 를 찾아
+명령줄이 `dist/apps/<앱>/main.js` 와 맞는지 대조한다 — 위의 3010 사례가 이제 ✗ 로 잡힌다.
+프론트(`next dev`)는 명령줄로 앱을 구별할 수 없어 판정하지 않는다(열림만 본다).
 
 **앱 3개(channel-adapter·wallet·membership)는 kafka 없이 부팅 중 «죽는다».** 경고가 아니라
 `KafkaJSNonRetriableError` 로 프로세스가 종료된다. 재시도 5회를 태우고 죽으므로 kafka 와 동시에 띄우면 진다.
+
+🟢 **(해결) 그래서 kafka 는 셋 중 «bootstrap» 의 일이다.**
+
+| | kafka |
+|---|---|
+| `bootstrap` | **띄운다.** 단 이미 :9092 가 열려 있으면 **손대지 않는다** — 재기동 절차는 kafka 를 실제로 내렸다 올리므로, 무조건 돌리면 돌고 있는 세션의 그 3개 앱을 죽인다. znode 가 꼬였을 때만 `FORCE_KAFKA_RECREATE=1` |
+| `start-all` | **거절한다.** :9092 가 닫혀 있으면 아무것도 안 띄우고 exit 1 — 반쯤 뜬 상태가 제일 나쁘다 |
+| `preflight` | **잰다.** 컨테이너가 `running` 이어도 브로커가 안 열릴 수 있어 포트를 따로 본다 |
 
 ---
 

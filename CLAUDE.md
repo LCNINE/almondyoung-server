@@ -57,6 +57,10 @@ npm run start:all:local         # ② 띄운다  — E2E 11개 앱 + sms-stub
 npm run preflight:e2e:local     # ③ 판정한다 — 읽기 전용. 클릭하기 직전
 ```
 
+**인프라(kafka·postgres·redis)를 띄우는 건 bootstrap 이다.** `start-all` 은 :9092 가 닫혀 있으면
+거절하고(channel-adapter·wallet·membership 이 `KafkaJSNonRetriableError` 로 죽는다), `preflight` 는 재기만 한다.
+bootstrap 은 이미 건강한 kafka 를 재기동하지 않는다 — 그러면 돌고 있는 세션을 죽인다.
+
 **판정자(preflight)는 고치지 않는다** — 고치기까지 하면 초록불이 「원래 옳았다」의 증거가 아니라
 「방금 내가 고쳤다」가 되어 신호가 사라진다. preflight 의 모든 ✗ 는 어느 명령이 고치는지를 함께 적는다.
 
