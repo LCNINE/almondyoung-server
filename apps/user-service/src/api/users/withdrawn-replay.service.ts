@@ -7,7 +7,13 @@ import { and, asc, gt, isNotNull, like, type SQL } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 
 export type ReplayWithdrawnParams = { dryRun: boolean; limit?: number; afterUserId?: string };
-export type ReplayWithdrawnResult = { matched: number; published: number; lastUserId: string | null; userIds: string[] };
+export type ReplayWithdrawnResult = {
+  matched: number;
+  published: number;
+  lastUserId: string | null;
+  failedUserId: string | null;
+  userIds: string[];
+};
 
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 1000;
@@ -59,22 +65,35 @@ export class WithdrawnReplayService {
       .limit(limit);
 
     const userIds = rows.map((r) => r.id);
-    const lastUserId = userIds.length > 0 ? userIds[userIds.length - 1] : null;
+    const lastMatchedUserId = userIds.length > 0 ? userIds[userIds.length - 1] : null;
 
     if (params.dryRun) {
-      this.logger.log(`[WithdrawnReplay] dryRun: matched=${userIds.length} lastUserId=${lastUserId ?? '-'}`);
-      return { matched: userIds.length, published: 0, lastUserId, userIds };
+      this.logger.log(`[WithdrawnReplay] dryRun: matched=${userIds.length} lastUserId=${lastMatchedUserId ?? '-'}`);
+      return { matched: userIds.length, published: 0, lastUserId: lastMatchedUserId, failedUserId: null, userIds };
     }
 
     let published = 0;
+    let lastUserId: string | null = null;
+    let failedUserId: string | null = null;
     for (const userId of userIds) {
       // softDeleteUser 와 같은 발행 방식 — 즉시 Kafka. 하나가 실패하면 여기서 멈추고 published 까지만 보고한다.
-      // 호출자는 마지막 성공 id 뒤부터 다시 부른다 (하류가 멱등이라 겹쳐도 안전).
-      await this.eventPublisher.publishEvent({ eventType: 'UserDeleted', aggregateId: userId, payload: { userId } });
-      published++;
+      // 호출자는 마지막 «성공» id 뒤부터 다시 부른다 (하류가 멱등이라 겹쳐도 안전) — 그래서
+      // lastUserId 는 매칭된 마지막 행이 아니라 실제로 발행에 성공한 마지막 id 여야 한다.
+      try {
+        await this.eventPublisher.publishEvent({ eventType: 'UserDeleted', aggregateId: userId, payload: { userId } });
+        published++;
+        lastUserId = userId;
+      } catch (error) {
+        failedUserId = userId;
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`[WithdrawnReplay] publish failed userId=${userId}: ${message}`);
+        break;
+      }
     }
 
-    this.logger.log(`[WithdrawnReplay] published=${published}/${userIds.length} lastUserId=${lastUserId ?? '-'}`);
-    return { matched: userIds.length, published, lastUserId, userIds };
+    this.logger.log(
+      `[WithdrawnReplay] published=${published}/${userIds.length} lastUserId=${lastUserId ?? '-'} failedUserId=${failedUserId ?? '-'}`,
+    );
+    return { matched: userIds.length, published, lastUserId, failedUserId, userIds };
   }
 }
