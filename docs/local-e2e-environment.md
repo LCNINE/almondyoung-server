@@ -323,13 +323,13 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** 20
 #### 🔴 (2026-09-06 철회) 앞선 판의 「어드민을 `127.0.0.1:8002` 로 열면 두 세션이 공존한다」는 **틀렸다**
 
 그 처방대로 세팅하면 어드민 로그인이 **`/login?error=state_cookie_missing` 무한 루프**에 빠진다.
-원인은 `ALLOWED_REDIRECT_HOSTS` 가 아니다. 둘이다:
+원인은 `ALLOWED_REDIRECT_HOSTS` 가 아니다. **셋이다:**
 
 1. **`AUTH_WEB_ORIGIN` 이 체인을 다시 `localhost` 로 되돌린다.** auth-web 의
    `app/oauth/authorize/page.tsx:34` 가 복귀 URL 을 `${env.selfOrigin}${…}` 로 만드는데
    `selfOrigin` 은 `AUTH_WEB_ORIGIN`(=`http://localhost:8001`) 한 값이다. RP 만 127.0.0.1 로
    옮기면 로그인 도중 호스트가 갈린다.
-2. **더 근본적인 것 — `request.nextUrl.origin` 이 Host 를 무시한다.** admin-web 의
+2. **`request.nextUrl.origin` 이 Host 를 무시한다.** admin-web 의
    `src/app/auth/callback/route.ts` 는 성공/실패 리다이렉트를 **절대 URL**로 만드는데
    (`new URL(stateRecord.redirectTo, request.nextUrl.origin)` · `failRedirect`),
    Next 15.5.7 dev 는 이 origin 을 **언제나 `http://localhost:8002`** 로 준다. 실측:
@@ -341,8 +341,30 @@ admin-web(:8002)의 어드민 세션까지 그 고객으로 **교체된다.** 20
 
    그래서 콜백이 **127.0.0.1 에 세션 쿠키를 심어 놓고 localhost 로 돌려보낸다.** 쿠키는 고아가 되고
    미들웨어는 세션이 없다고 판단해 다시 `/login` → authorize → 콜백 … 이 무한히 돈다.
-   `next dev -H 127.0.0.1` 로 바인딩을 바꿔도 **결과는 같다**(실측). 즉 이건 설정으로 못 푼다 —
-   admin-web 이 리다이렉트를 상대 경로로 만들어야 풀리는 **코드 쪽 제약**이다.
+   `next dev -H 127.0.0.1` 로 바인딩을 바꿔도 **결과는 같다**(실측).
+
+3. **`OIDC_REDIRECT_URI` 가 고정값이다.** `apps/admin-web/.env.local` 의
+   `http://localhost:8002/auth/callback` 이 authorize 요청에 그대로 실려 가고
+   (`src/lib/auth/oidc-client.ts:60`), user-service `oauth_clients` 의 화이트리스트와 **정확히
+   일치해야** 코드→토큰 교환이 통과한다. RP 호스트를 옮기려면 이 값과 **등록 레코드까지** 함께
+   바꿔야 한다.
+
+#### 🔴 2 번을 고쳐도 안 풀린다 — 그래서 이슈 #794 는 닫혔다
+
+앞선 판은 2 번을 「admin-web 이 상대 경로를 내보내야 풀리는 **코드 쪽 제약**」으로 적었고, 그 문장이
+그대로 이슈 #794 가 됐다. **그 결론이 틀렸다.** 호스트를 `localhost` 로 되돌리는 지점이 하나가 아니라
+셋이고(1·2·3), 그중 코드는 2 번뿐이다 — 2 번만 고쳐도 1·3 이 체인을 도로 되돌린다.
+
+운영 영향도 **없다.** 2026-09-07 실측:
+
+```bash
+curl -sS -o /dev/null -D - 'https://admin.almondyoung.com/auth/callback' | grep -i location
+# location: https://admin.almondyoung.com/login?error=missing_code_or_state
+#           ↑ 요청 Host 와 같다. dev 전용 증상이다
+```
+
+즉 2 번은 **dev 전용 증상 + 사소한 코드 냄새**로 남았고, 127.0.0.1 분리는 설정으로도 코드로도
+사지 못한다. 로컬에서 어드민·고객을 나누는 방법은 아래 ✅ **하나뿐**이다.
 
 #### ✅ 그래서 이렇게 한다 — 호스트는 전부 `localhost`, 구간을 «순서대로»
 
