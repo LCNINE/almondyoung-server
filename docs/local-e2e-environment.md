@@ -16,13 +16,19 @@
 Medusa 스키마는 **3주 밀려** 있었으며 `coupon_grant` 테이블 자체가 없었다. 그 상태로 검증을 돌렸으면
 판정 SQL 이 죽고 결과는 전부 무의미했다.
 
-**그래서 매 세션 시작은 이것이다:**
+**그래서 매 세션은 이 세 명령이다. 역할이 «서로 다르다»:**
 
 ```bash
-bash scripts/local/preflight-e2e.sh
+npm run bootstrap:e2e:local     # ① 만든다  — 컨테이너·마이그·시드·키. 멱등하다
+npm run start:all:local         # ② 띄운다  — 앱. medusa 뜬 직후 키 동기화까지 자동
+npm run preflight:e2e:local     # ③ 판정한다 — 읽기 전용. 클릭하기 직전
 ```
 
-컨테이너·포트·프로세스 신선도·스키마·시드·조용히 죽는 env 키·포트 충돌을 한 번에 잰다. ✗ 가 있으면 그것부터.
+🔴 **판정자는 고치지 않는다.** preflight 가 스스로 고치면 초록불이 더 이상 증거가 아니게 된다
+(「방금 내가 고쳤으니 초록」과 「원래 옳았다」를 구별할 수 없다). 그래서 고치는 쪽(bootstrap)과
+재는 쪽(preflight)을 나눠 두었고, preflight 의 모든 ✗ 에는 **어느 명령이 고치는지**가 함께 적힌다.
+
+이미 환경이 있으면 ③만 돌리면 된다. ✗ 가 있으면 그것부터.
 
 ---
 
@@ -50,7 +56,19 @@ bash scripts/local/preflight-e2e.sh
 
 ---
 
-## 2. 준비 순서 — 이 순서를 지켜야 한다
+## 2. 준비 순서 — 이제 한 명령이다
+
+```bash
+npm run bootstrap:e2e:local                    # 전부
+npm run bootstrap:e2e:local -- --install-env   # 없는 .env 를 템플릿에서 복사까지
+```
+
+`SKIP_CONTAINERS=1` / `SKIP_MIGRATE=1` / `SKIP_SEED=1` 로 단계를 건너뛸 수 있다. **멱등하다** —
+건강한 kafka 는 손대지 않고(`FORCE_KAFKA_RECREATE=1` 로 강제),
+시드는 전부 `ON CONFLICT`, 마이그레이션은 적용된 것을 건너뛰고, Medusa 시드는 `region` 이 있으면
+스킵한다(`FORCE_MEDUSA_SEED=1` 로 강제).
+
+<details><summary>bootstrap 이 대신 해 주는 일 (예전엔 이걸 손으로 12줄 쳤다)</summary>
 
 ```bash
 # ① 컨테이너. 🔴 kafka 를 recreate 하면 zookeeper 에 옛 broker znode 가 남아 즉사한다.
@@ -59,22 +77,42 @@ docker compose stop kafka && docker compose restart zookeeper && docker compose 
 until (echo > /dev/tcp/127.0.0.1/9092) 2>/dev/null; do sleep 2; done   # 9092 가 열릴 때까지 기다린다
 
 # ② 마이그레이션 — drizzle 과 Medusa 는 별개다. 둘 다 해야 한다.
-npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함). 이제 안 멈춘다 — 아래 참조
+npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함)
 (cd apps/medusa && npx medusa db:migrate --execute-safe-links)
 
-# ③ 시드 5종 + 🔴 키 동기화 1
+# ③ 시드 4종
 npm run db:seed:user-service:local                    # 역할·admin 계정·OAuth 클라이언트 3개
-npx tsx scripts/local/seed-wallet-local.ts            # 🔴 결제수단·지역. 없으면 결제 불가
-npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트) + 매칭 레코드 backfill
+npm run db:seed:wallet:local                          # 🔴 결제수단·지역. 없으면 결제 불가
+npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트)·공급처·매칭 backfill
 (cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts)
-npm run sync:medusa-keys:local                        # 🔴 §2-A. 안 하면 storefront·수집이 «조용히» 401
-npm run db:seed:points:local                          # 적립금. 🔴 §2-B — 새 DB 에선 대상 계정을 직접 준다
-
-# ④ SMS 스텁 (회원가입 폰 인증)
-nohup node scripts/local/sms-stub.js > logs/sms-stub.log 2>&1 &
-
-# ⑤ 앱 기동 — kafka 가 «열린 뒤» 여야 한다 (§3 참조)
 ```
+
+</details>
+
+**포인트 시드만 bootstrap 이 자동으로 못 한다** — 대상 계정이 필요하기 때문이다(§2-B). 가입을 «먼저» 하고:
+
+```bash
+LOCAL_POINT_LOGIN_IDS=<가입한아이디> npm run db:seed:points:local
+```
+
+**Medusa 키 동기화(§2-A)도 bootstrap 단계가 아니다** — medusa 가 «떠 있어야만» 되기 때문이다
+(secret 은 DB 에 해시로만 남아 실제 호출로 유효성을 잰다). `start-all.sh` 가 medusa 기동 직후,
+그 키를 부팅 시 읽는 세 앱(channel-adapter·admin-web·storefront)**보다 먼저** 자동으로 부른다.
+
+### 앱 기동
+
+```bash
+npm run start:all:local                    # E2E 11개 + sms-stub
+E2E_PROFILE=full npm run start:all:local   # extra 4개(리뷰·통계·알림·검색)도 — .env 가 있는 것만
+DRY_RUN=1 npm run start:all:local          # 무엇을 어떤 순서로 띄울지만 출력
+```
+
+🔴 **kafka(:9092)가 닫혀 있으면 아무것도 안 띄우고 거절한다** — channel-adapter·wallet·membership 이
+`KafkaJSNonRetriableError` 로 죽는데 그게 로그를 열기 전엔 안 보이기 때문이다. 띄우는 건 bootstrap 의 일이다(§3).
+
+앱 목록은 산문이 아니라 **`scripts/local/e2e-env-map.sh` 한 곳**에서 온다 — bootstrap·start-all·preflight
+셋이 같은 표를 읽는다. 앱을 늘리면 거기만 고친다. `.env` 가 없는 앱은 **띄우지 않는다**(예전엔 그대로
+띄워서 analytics·ugc-service 가 매번 `Cannot read properties of null (reading 'clientId')` 로 죽었다).
 
 ### 🔴 §2-A. Medusa 를 초기화하면 «하드코딩된 API 키 4개»가 전부 죽는다
 
@@ -139,10 +177,20 @@ sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 # 메트릭 포트도 따라간다 (PORT+10000): 13010 → 13003
 ```
 
-⚠️ **preflight 의 포트 검사는 «열림»만 본다.** 포트가 초록이어도 그 앱이 맞는지는 별개다.
+🟢 **(해결) preflight 는 이제 «누가» 쥐었는지까지 본다.** `ss -ltnp` 로 리스너 PID 를 찾아
+명령줄이 `dist/apps/<앱>/main.js` 와 맞는지 대조한다 — 위의 3010 사례가 이제 ✗ 로 잡힌다.
+프론트(`next dev`)는 명령줄로 앱을 구별할 수 없어 판정하지 않는다(열림만 본다).
 
 **앱 3개(channel-adapter·wallet·membership)는 kafka 없이 부팅 중 «죽는다».** 경고가 아니라
 `KafkaJSNonRetriableError` 로 프로세스가 종료된다. 재시도 5회를 태우고 죽으므로 kafka 와 동시에 띄우면 진다.
+
+🟢 **(해결) 그래서 kafka 는 셋 중 «bootstrap» 의 일이다.**
+
+| | kafka |
+|---|---|
+| `bootstrap` | **띄운다.** 단 이미 :9092 가 열려 있으면 **손대지 않는다** — 재기동 절차는 kafka 를 실제로 내렸다 올리므로, 무조건 돌리면 돌고 있는 세션의 그 3개 앱을 죽인다. znode 가 꼬였을 때만 `FORCE_KAFKA_RECREATE=1` |
+| `start-all` | **거절한다.** :9092 가 닫혀 있으면 아무것도 안 띄우고 exit 1 — 반쯤 뜬 상태가 제일 나쁘다 |
+| `preflight` | **잰다.** 컨테이너가 `running` 이어도 브로커가 안 열릴 수 있어 포트를 따로 본다 |
 
 ---
 
@@ -656,8 +704,11 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 
 | 파일 | 무엇 |
 |---|---|
-| `scripts/local/preflight-e2e.sh` | 사전 점검. 세션 시작마다 돌린다 |
-| `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역). 이게 없어 결제가 막혔다 |
+| **`scripts/local/bootstrap-e2e.sh`** | **`npm run bootstrap:e2e:local`.** 준비를 «만든다» — 컨테이너·마이그·시드·키. 멱등. preflight 의 짝 |
+| **`scripts/local/e2e-env-map.sh`** | **앱↔.env↔포트 정본 표.** 세 스크립트가 전부 이걸 source 한다. 문서 두 벌이 6개/11개로 갈렸던 자리 |
+| `scripts/local/preflight-e2e.sh` | 사전 «판정». 읽기 전용 — 아무것도 고치지 않는다. 모든 ✗ 가 고치는 명령을 함께 적는다 |
+| **`env-templates/.env.file-service.local.example`** | file-service 로컬 템플릿 신설. required 11개 중 유일하게 없었다 |
+| `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역) — `npm run db:seed:wallet:local`. 이게 없어 결제가 막혔다 |
 | **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `SupplierLocalSeedStep`(매칭 다이얼로그의 공급처 드롭다운) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 셋 다 없으면 «조용히» 막힌다 |
 | **`scripts/local/supplier.seed-step.ts`** | 「개발용 공급처」 1행. 라이브엔 실제 공급처가 있어 reference 시드(`db:seed:ref`)로 올리면 안 되므로 orchestrator 에 등록하지 않았다 — 이 파일이 `scripts/seeding/steps/` 가 아니라 `scripts/local/` 에 있는 이유다 |
 | **`scripts/local/seed-points-local.ts`** | **로컬 구매자 적립금 — `npm run db:seed:points:local`.** 🔴 `point_events` 만 넣으면 «잔액은 맞는데 결제는 INSUFFICIENT_POINTS» 가 된다 — 사용은 `point_event_details` 의 lot 에서 차감한다. 두 테이블을 함께 쓴다 |
@@ -686,7 +737,7 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
   (전체 초기화 시 core DB 는 «제외»한다 — 라이브 스냅샷이고 E2E 가 보는 것은 dev_core 다)
 
 절차:
-  1. bash scripts/local/preflight-e2e.sh — ✗ 를 전부 해결하고 시작
+  1. npm run preflight:e2e:local — ✗ 를 전부 해결하고 시작 (고치는 건 npm run bootstrap:e2e:local)
   2. §2 의 시드 5종 + 🔴 npm run sync:medusa-keys:local (§2-A). 적립금 시드는
      LOCAL_POINT_LOGIN_IDS=<가입한아이디> 로 준다 (§2-B — 새 DB 엔 구매자 계정이 없다)
   3. §8-D 순서로 상품을 만들어 발행 → 투영 확인 → 구매 → 5분 폴링 → core 적재
