@@ -15,6 +15,7 @@ import { ProductSellableQuantityService } from '../../inventory/product-sellable
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { AuditContext, AuditService } from '../../inventory/shared/services/audit.service';
 import { productMasterVersions, productVariants } from '../../catalog/schema/catalog.schema';
+import { MatchingLinkResolver } from './matching-link-resolver';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -68,6 +69,7 @@ export class ProductMatchingService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     private readonly auditService: AuditService,
+    private readonly linkResolver: MatchingLinkResolver,
   ) {
     this.strategies = new Map();
     this.strategies.set('void', new VoidMatchingStrategy(dbService));
@@ -857,13 +859,16 @@ export class ProductMatchingService {
     const {
       skuIds,
       skuMappings,
+      links,
       ignore,
       resolveAsVoid,
       strategy = 'variant',
       stockPolicy,
       isGift = false,
     } = resolveDto;
-    const hasSkuMappings = Boolean((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0));
+    const hasLinks = Boolean(links && links.length > 0);
+    const hasSkuMappings =
+      hasLinks || Boolean((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0));
 
     const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
@@ -888,7 +893,10 @@ export class ProductMatchingService {
       return this.dbService.run(async (trx) => {
         let mappings: SkuQuantityMapping[];
 
-        if (skuMappings && skuMappings.length > 0) {
+        if (links && links.length > 0) {
+          // newSku 가 있으면 여기서 이 트랜잭션 위에 SKU 가 만들어진다.
+          mappings = await this.linkResolver.resolve(links, trx);
+        } else if (skuMappings && skuMappings.length > 0) {
           mappings = skuMappings.map((mapping) => ({
             skuId: mapping.skuId,
             quantity: mapping.quantity || 1,
@@ -908,7 +916,7 @@ export class ProductMatchingService {
           productMatchingId: productMatching.id,
         };
 
-        const isValid = await matchingStrategy.validate(context, mappings);
+        const isValid = await matchingStrategy.validate(context, mappings, trx);
         if (!isValid) {
           throw new BadRequestException('Invalid SKU mappings for the selected strategy');
         }

@@ -12,6 +12,7 @@ import {
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { matchingStrategyEnum } from '../schema/matching.schema';
+import { MatchingLinkInputDto } from './matching-link-input.dto';
 
 export class SkuMappingDto {
   @ApiProperty({ description: 'SKU ID' })
@@ -65,6 +66,7 @@ export class ResolveMatchingDto {
     description: '매칭될 SKU ID 목록 (matched 상태일 경우 최소 하나 이상의 UUID 필수)',
     type: [String],
     required: false,
+    deprecated: true,
   })
   @IsArray()
   @IsUUID('all', { each: true })
@@ -75,12 +77,26 @@ export class ResolveMatchingDto {
     description: '매칭될 SKU와 수량 정보 목록',
     type: [SkuMappingDto],
     required: false,
+    deprecated: true,
   })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SkuMappingDto)
   @IsOptional()
   skuMappings?: SkuMappingDto[];
+
+  @ApiProperty({
+    description:
+      '매칭 링크 목록. 각 항목은 기존 재고상품(skuId) 또는 새로 만들 재고상품(newSku) 중 하나다. ' +
+      'newSku 를 쓰려면 inventory.manage 권한이 필요하다. skuIds/skuMappings 보다 우선한다.',
+    type: [MatchingLinkInputDto],
+    required: false,
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MatchingLinkInputDto)
+  @IsOptional()
+  links?: MatchingLinkInputDto[];
 
   @ApiProperty({
     description: 'Deprecated compatibility input. true이면 재고상품 비매칭(void) 전략으로 해소합니다.',
