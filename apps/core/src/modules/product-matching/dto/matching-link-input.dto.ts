@@ -29,11 +29,7 @@ export class MatchingSkuRefConstraint implements ValidatorConstraintInterface {
     const hasNewSku = link.newSku !== undefined && link.newSku !== null;
 
     if (hasSkuId === hasNewSku) return false;
-    // 'loose' — 8-4-4-4-12 16진수 그룹만 확인한다. 기본값('all')은 RFC4122 variant
-    // 니블([89ab])까지 요구해서, 테스트 픽스처('...-4444-...')처럼 그 자리가
-    // 4인 값까지 스키마-형식 위반으로 걸러버린다. 여기서는 UUID *형식* 판정이
-    // 목적이므로 그 니블을 강제하지 않는다.
-    if (hasSkuId && !isUUID(link.skuId, 'loose')) return false;
+    if (hasSkuId && !isUUID(link.skuId)) return false;
     return true;
   }
 

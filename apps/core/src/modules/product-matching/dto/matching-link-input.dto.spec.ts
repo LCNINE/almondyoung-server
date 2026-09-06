@@ -2,7 +2,7 @@ import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { MatchingLinkInputDto } from './matching-link-input.dto';
 
-const SKU_ID = '44444444-4444-4444-4444-444444444444';
+const SKU_ID = '44444444-4444-4444-a444-444444444444';
 
 async function errorsFor(payload: Record<string, unknown>): Promise<string[]> {
   const dto = plainToInstance(MatchingLinkInputDto, payload);
