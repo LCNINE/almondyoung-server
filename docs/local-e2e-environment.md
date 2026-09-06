@@ -549,10 +549,17 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 
 **이 셋을 채우는 시드가 `seed-core-local.ts` 에 없다** — 다음 세션의 후보 작업이다.
 
-🔴 **다이얼로그의 「신규 등록」은 `window.prompt()` 다** (`InventoryMatchingDialog.tsx:327`·`:344`).
-그래서 눌러도 «아무 창이 안 뜬 것처럼» 보였다 — 브라우저 모달이라 자동화가 통과하지 못한다.
-같은 파일 `:458` 에는 `alert()` 도 있다(「최소 1개 이상의 옵션을 입력해주세요」). 옵션 없이 버튼을
-누르면 모달이 떠서 **확장이 먹통이 된다.**
+🟡 **(정정) 「신규 등록이 `window.prompt()` 라 자동화가 못 지난다」는 앞선 판의 오진이었다.**
+`handleCreateSupplier`·`handleCreateHolder`(옛 `:327`·`:344`) 는 **참조 0곳**이라 애초에 실행되지
+않았다 — 「신규 등록」 버튼의 실제 핸들러는 `setShowSupplierSearch(true)` 이고, 생성은 `SearchDialog`
+의 `onCreate` 로 간다. 자동화를 실제로 막던 것은 **`alert()`** 쪽이었다.
+
+🟢 그 `alert()` 는 2026-09-06 에 `InventoryMatchingDialog.tsx` 전체에서 **`sonner` toast 로
+교체됐다**(#791, 그 파일 기준 0건). 이 다이얼로그엔 이제 브라우저 모달이 없다.
+
+⚠️ **다만 같은 화면 트리의 다른 파일엔 남아 있다** — `features/order/matching/components/table/
+index.tsx` 의 `confirm()` 1건, `ProductRegistrationDialog.tsx` 의 `alert()` 2건. 이번 작업 범위
+밖이라 그대로 뒀다 — 그쪽을 자동화로 조작할 땐 여전히 주의할 것.
 
 ### 🟢 (해결) 벽 ② — `POST /inventory-matching` 은 애초에 없었고, 이제 필요 없다
 
@@ -685,7 +692,9 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
   - 🔴 호스트는 전부 localhost 다. 127.0.0.1 로 어드민을 분리하는 옛 처방은 철회됐다(§6-①).
     어드민/고객은 «구간을 나눠 순서대로» 하고, 구간 전환은 localhost:8002/api/auth/signout 으로 한다.
   - 비밀번호·계정 생성은 네가 해도 된다(로컬 시드 값이다).
-  - 매칭 다이얼로그에는 alert() 가 있다 — 옵션 없이 버튼을 누르면 확장이 먹통이 된다.
+  - 매칭 다이얼로그(`InventoryMatchingDialog.tsx`) 자체엔 이제 브라우저 모달이 없다(toast 로 교체,
+    #791). 모달은 대신 `table/index.tsx` 의 `confirm()` 과 `ProductRegistrationDialog.tsx` 의
+    `alert()` 에 남아 있으니 그 두 파일을 조작할 때 주의하라.
   - 막히면 2~3회 만에 멈추고 물어라.
   - 새로 찾은 환경 결함은 그때그때 이 문서에 추가하고 커밋해라.
     로컬에서 손으로 때운 것은 «시드나 템플릿에 넣을 수 있는지» 항상 한 번 더 따져라.
