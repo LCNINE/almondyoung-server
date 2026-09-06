@@ -541,13 +541,20 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 `status='pending'` 행이 생기면 경고가 사라지고, 공급처·물류처·재고소유 셋만 고르면 버튼이 열린다
 (원가는 필수가 아니다).
 
-### ⛔ 벽 ①(신규) — 새 DB 엔 `suppliers` 가 0행이라 매칭을 «시작조차» 못 한다
+### 🟢 (해결) 벽 ① — 새 DB 엔 `suppliers` 가 0행이라 매칭을 «시작조차» 못 했다
 
-「SKU 구성 매칭」 다이얼로그는 **공급처·물류처·재고소유** 셋을 필수로 받는데, 초기화 직후 `dev_core` 의
-`suppliers` 는 **0행**이라 드롭다운이 전부 비어 있다(2026-09-06 실측). 앞선 판이 이 벽을 못 본 것은
-`dev_core` 를 밀지 않아 옛 픽스처가 남아 있었기 때문이다.
+「SKU 구성 매칭」 다이얼로그는 **공급처·물류처·재고소유** 셋을 필수로 받는다. 초기화 직후 `dev_core` 에서
+**빈 것은 공급처 하나뿐**이었다 — 물류처(2행)·재고소유(1행)는 core 부팅이 수렴시키는데 공급처만
+그 경로가 없었다. 앞선 판이 이 벽을 못 본 것은 `dev_core` 를 밀지 않아 옛 픽스처가 남아 있었기 때문이다.
 
-**이 셋을 채우는 시드가 `seed-core-local.ts` 에 없다** — 다음 세션의 후보 작업이다.
+2026-09-06 에 `seed-core-local.ts` 에 **공급처 시드 스텝을 더해** 해결했다
+(이슈 [#795](https://github.com/LCNINE/almondyoung-server/issues/795)). `npm run db:seed:core:local` 이
+「개발용 공급처」 1행을 멱등으로 넣는다 — id 는 `seed-dev-core` 와 **같은 행**이라 두 시드를 다 돌려도
+공급처가 두 벌이 되지 않는다.
+
+⚠️ **창고보다 먼저 돌면 입고 창고가 빈 채로 들어간다.** 그 상태로도 매칭은 열리지만 발주는 400 이다
+(「이 공급처에 입고 창고가 지정되지 않아…」). core 를 한 번 띄워 기본 창고가 생긴 뒤 시드를 **다시
+돌리면** 채워진다 — 사람이 골라 둔 값은 덮어쓰지 않고 비어 있을 때만 채운다.
 
 🟡 **(정정) 「신규 등록이 `window.prompt()` 라 자동화가 못 지난다」는 앞선 판의 오진이었다.**
 `handleCreateSupplier`·`handleCreateHolder`(옛 `:327`·`:344`) 는 **참조 0곳**이라 애초에 실행되지
@@ -650,7 +657,8 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 |---|---|
 | `scripts/local/preflight-e2e.sh` | 사전 점검. 세션 시작마다 돌린다 |
 | `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역). 이게 없어 결제가 막혔다 |
-| **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 둘 다 없으면 «조용히» 막힌다 |
+| **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `SupplierLocalSeedStep`(매칭 다이얼로그의 공급처 드롭다운) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 셋 다 없으면 «조용히» 막힌다 |
+| **`scripts/local/supplier.seed-step.ts`** | 「개발용 공급처」 1행. 라이브엔 실제 공급처가 있어 reference 시드(`db:seed:ref`)로 올리면 안 되므로 orchestrator 에 등록하지 않았다 — 이 파일이 `scripts/seeding/steps/` 가 아니라 `scripts/local/` 에 있는 이유다 |
 | **`scripts/local/seed-points-local.ts`** | **로컬 구매자 적립금 — `npm run db:seed:points:local`.** 🔴 `point_events` 만 넣으면 «잔액은 맞는데 결제는 INSUFFICIENT_POINTS» 가 된다 — 사용은 `point_event_details` 의 lot 에서 차감한다. 두 테이블을 함께 쓴다 |
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |
 | **`scripts/local/sync-medusa-keys.sh`** | **`npm run sync:medusa-keys:local`.** Medusa 초기화로 죽는 API 키 2종을 .env 3곳에 맞춘다 — §2-A |
@@ -666,9 +674,10 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 
 ```
 로컬 전 과정(E2E)을 크롬으로 사람이 하듯 돌린다.
-2026-09-06 에 전체 초기화(논리 DB 11개 drop) 후 «매칭 한 칸만 빼고» 전 구간을 통과했다(§8-E).
-그중 벽 ②(`POST /inventory-matching` 부재)는 같은 날 `resolve`/`upsert` 확장으로 해결됐다(#791).
-이번 목적은 남은 벽 ①이다.
+2026-09-06 에 전체 초기화(논리 DB 11개 drop) 후 «매칭 한 칸만 빼고» 전 구간을 통과했고(§8-E),
+그 한 칸을 막던 벽 둘은 같은 날 모두 해결됐다 — 벽 ②(`POST /inventory-matching` 부재)는
+`resolve`/`upsert` 확장(#791), 벽 ①(`suppliers` 0행)은 공급처 시드 스텝(#795).
+이번 목적은 **매칭 칸을 실제로 통과시켜 §8-E 를 끝까지 닫는 것**이다.
 
 먼저 읽어라: docs/local-e2e-environment.md (정본은 docs/local-dev.md, 이 문서는 그 보완)
 
@@ -680,11 +689,11 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
   2. §2 의 시드 5종 + 🔴 npm run sync:medusa-keys:local (§2-A). 적립금 시드는
      LOCAL_POINT_LOGIN_IDS=<가입한아이디> 로 준다 (§2-B — 새 DB 엔 구매자 계정이 없다)
   3. §8-D 순서로 상품을 만들어 발행 → 투영 확인 → 구매 → 5분 폴링 → core 적재
-  4. ⛔ 남은 칸 하나 (§8-D):
-     ① `dev_core.suppliers` 가 0행이라 매칭 다이얼로그의 드롭다운 3개가 비어 있다.
-        → seed-core-local.ts 에 공급처·물류처·재고소유를 넣을 수 있는지 따져라. 이게 이번 목표.
-     (벽 ②였던 `POST /inventory-matching` 부재는 2026-09-06 `resolve`/`upsert` 확장으로 해결됐다 —
-      #791. auto 탭은 이제 `links[].newSku` 로 SKU 생성과 매칭을 한 호출에 한다.)
+  4. 남은 칸 하나 (§8-D) — 매칭. 두 벽은 코드로 치웠으니 이제 «되는지»를 확인하는 일이다:
+     - 공급처 드롭다운은 시드가 채운다(#795). 비어 있으면 2단계의 시드를 안 돌린 것이다.
+     - auto 탭은 `links[].newSku` 로 SKU 생성과 매칭을 한 호출에 한다(#791) — 옛 문서가 말하던
+       `POST /inventory-matching` 은 처음부터 없었다.
+     - ⛔ 이 경로는 아직 «화면으로» 한 번도 통과된 적이 없다. 실패하면 그게 새 발견이다.
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 기동 시각과 스키마를 먼저 재라.
