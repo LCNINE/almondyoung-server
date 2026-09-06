@@ -19,6 +19,10 @@ import { FulfillmentOrderReservationRetryWorker } from '../fulfillment-order-res
 import { FulfillmentWorkflowGate, type FulfillmentWorkflowMode } from '../fulfillment-workflow-gate.service';
 import { ConfigService } from '@nestjs/config';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
+import { MatchingLinkResolver } from '../../../product-matching/services/matching-link-resolver';
+import { SkuCatalogReader } from '../../../inventory/sku-catalog/services/sku-catalog.reader';
+import { SkuCatalogManager } from '../../../inventory/sku-catalog/services/sku-catalog.manager';
+import { SkuCatalogService } from '../../../inventory/sku-catalog/services/sku-catalog.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentProgressService } from '../fulfillment-progress.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
@@ -87,7 +91,13 @@ export function wireLogistics(
   // DbService<MergedSchema> 를 요구한다(CLAUDE.md). 이 헬퍼가 받는 건 wms 스키마 하나지만
   // 런타임 객체는 같은 커넥션이고 스키마는 타입에만 나타난다 — 바로 위 sellable 과 같은
   // 이유로 여기서 한 번만 좁힌다.
-  const productSkuMapping = new ProductSkuMappingService(dbService as never, sellable, backlog);
+  // MatchingLinkResolver(#791) 는 upsert 가 dto.links 에 newSku 를 받을 때만 쓰인다 —
+  // 이 그래프의 나머지 서비스들과 같은 방식으로 실제 SkuCatalogService 위에 얹는다(목이 아님).
+  const skuCatalogReader = new SkuCatalogReader(dbService);
+  const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
+  const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
+  const linkResolver = new MatchingLinkResolver(skuCatalogService);
+  const productSkuMapping = new ProductSkuMappingService(dbService as never, sellable, backlog, linkResolver);
   const progress = new FulfillmentProgressService();
   const invariant = new FulfillmentInvariantService();
   const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);
