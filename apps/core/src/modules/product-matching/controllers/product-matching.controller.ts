@@ -10,6 +10,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   HttpException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { User } from '@app/authorization';
@@ -19,6 +20,7 @@ import { SetMatchingPriorityDto } from '../dto/set-matching-priority.dto';
 import { ChangeStrategyDto } from '../dto/change-strategy.dto';
 import { VariantSkuLookupDto } from '../dto/variant-sku-lookup.dto';
 import { matchingStatusEnum } from '../schema/matching.schema';
+import { NewSkuScopeGuard } from '../guards/new-sku-scope.guard';
 
 @ApiTags('Product Matching')
 @Controller('matchings')
@@ -107,8 +109,10 @@ export class ProductMatchingController {
   }
 
   @Patch(':id/resolve')
+  @UseGuards(NewSkuScopeGuard)
   @ApiOperation({ summary: '매칭 대기 해소 (SKU 구성 매칭 또는 void 전략)' })
   @ApiResponse({ status: 200, description: '매칭 대기가 성공적으로 해소되었습니다.' })
+  @ApiResponse({ status: 403, description: 'newSku 를 쓰려면 inventory.manage 권한이 필요합니다.' })
   async resolveMatchingPending(@Param('id') matchingId: string, @Body() resolveDto: ResolveMatchingDto) {
     try {
       return await this.productMatchingService.resolveMatchingPending(matchingId, resolveDto);
