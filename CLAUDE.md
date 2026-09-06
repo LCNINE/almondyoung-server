@@ -175,6 +175,7 @@ npx jest             # 전체 유닛 테스트. 실패 0 이 기준선이다
 npm run test:admin-web            # admin-web 전용
 npm run test:user-service         # user-service 전용 config
 npm run test:membership           # itdoc (전용 config)
+npm run test:membership:integration  # 실 membership DB (--runInBand 고정)
 npm run test:coupang:integration  # 실 DB + adapter-mock 필요
 npm run test:core:integration:local
 scripts/local/run-medusa-integration.sh            # medusa HTTP 통합 (실 DB+redis)
@@ -184,6 +185,20 @@ scripts/local/run-medusa-integration.sh --modules  # medusa 모듈 통합
 DB 를 요구하는 통합 스펙은 `describeIfDb` / `REQUIRE_*_DB=1` 가드로 기본 실행에서
 자동 skip 된다. 새 통합 스펙도 이 컨벤션을 따를 것 — 가드 없이 두면 기본 게이트가
 빨개진다.
+
+**스펙 안에서 `dotenv.config()` 를 부르지 말 것.** 가드는 `process.env.DATABASE_URL` 을
+읽는데, 스펙이 자기 `.env` 를 스스로 채우면 그 가드가 무력화되고 **파일이 스스로 기본
+게이트에 들어온다.** `.env` 는 바깥에서 주입한다 (`dotenv -e apps/<svc>/.env -- jest …`).
+#793 이 정확히 이거였다: membership 통합 스펙 2개가 `dotenv.config()` 로 자기를 켜서,
+`apps/membership/.env` 가 있는 사람(= 로컬 개발 세팅을 한 사람 전원)에게만 `npx jest` 가
+**항상** 21건 빨갰다 — 두 스펙이 같은 물리 DB 를 병렬 워커에서 두고 다퉜기 때문이다.
+CI 는 `.env` 가 없어 조용했으니 게이트가 못 잡았다. `scripts/jest/no-self-loaded-env-in-specs.spec.ts`
+가 이걸 지킨다.
+
+**같은 물리 DB 를 쓰는 통합 스펙끼리는 병렬이 안전하지 않다.** 이 저장소의 통합 스펙은
+`delete(schema.x)` 를 WHERE 없이 부르고 `tiers.code` 같은 전역 unique 값을 쓴다 — 스위트
+고유 값을 쓰는 것만으로는 부족하다(WHERE 없는 DELETE 가 그대로 남는다). 그래서 전용
+실행 명령은 **`--runInBand` 를 고정한다.**
 
 **`apps/medusa` 통합 스펙은 `npm run test:integration:*` 를 직접 부르면 안 된다.**
 `@medusajs/test-utils` 는 `DATABASE_URL` 이 아니라 `DB_HOST`/`DB_PORT`/`DB_USERNAME`/`DB_PASSWORD`
