@@ -9,6 +9,7 @@ import { ProductMatchingController } from './controllers/product-matching.contro
 import { ProductSkuMappingController } from './controllers/product-sku-mapping.controller';
 import { ProductMatchingService } from './services/product-matching.service';
 import { ProductSkuMappingService } from './services/product-sku-mapping.service';
+import { MatchingLinkResolver } from './services/matching-link-resolver';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { ProductSkuMappingService } from './services/product-sku-mapping.service
     SharedModule, // AuditService 의존
   ],
   controllers: [ProductMatchingController, ProductSkuMappingController],
-  providers: [ProductMatchingService, ProductSkuMappingService],
+  providers: [ProductMatchingService, ProductSkuMappingService, MatchingLinkResolver],
   exports: [
     ProductMatchingService, // Catalog BC (variant 생성 시 직접 호출)
     ProductSkuMappingService, // Fulfillment BC (FO 생성 시 SKU 조회 + 스냅샷)
