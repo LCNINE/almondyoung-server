@@ -14,6 +14,10 @@ jest.setTimeout(180 * 1000);
  *
  * 「주소가 없는 고객」케이스는 `withdraw-customer.ts` 의 주소 삭제 호출이 빈 배열(`ids: []`)로도 안전한
  * no-op 인지를 본다 — 중첩 `when` 제거 이후 이 경로가 조건 없이 항상 실행되므로 직접 커버해야 한다.
+ *
+ * 「레거시 my-auth identity」케이스는 auth identity 삭제 step 의 세 소스 중 (a) `app_metadata.customer_id`,
+ * (b) `user-service-sso` 의 `entity_id=userId` 와 무관하게 (c) `my-auth` 의 `entity_id=익명화 전 이메일`
+ * 만으로도 독립적으로 찾아 지우는지를 본다 — 링크 없는 별도 identity 라 dedupe 대상이 아니라 합산돼야 한다.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -114,6 +118,24 @@ medusaIntegrationTestRunner({
       expect(identities).toHaveLength(0);
       const providerIdentities = await authModule.listProviderIdentities({ entity_id: userId, provider: 'user-service-sso' });
       expect(providerIdentities).toHaveLength(0);
+    });
+
+    it('레거시 my-auth identity 도 함께 지운다 — (a)/(b) 와 무관한 별도 identity 라 dedupe 가 아니라 합산이다', async () => {
+      const { userId, email } = await seedWithdrawableCustomer();
+      const authModule = getContainer().resolve(Modules.AUTH);
+      // customer_id 링크도 없고 entity_id 도 userId 가 아닌 email 이라, source (a)/(b) 로는 절대 안 잡히고
+      // 오직 source (c) — provider='my-auth', entity_id=익명화 전 이메일 — 로만 찾아진다.
+      await authModule.createAuthIdentities([
+        { provider_identities: [{ provider: 'my-auth', entity_id: email, user_metadata: { email } }] },
+      ]);
+
+      const res = await withdraw(userId);
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual({ customer: 'anonymized', auth_identities_deleted: 2 });
+
+      expect(await authModule.listProviderIdentities({ entity_id: email, provider: 'my-auth' })).toHaveLength(0);
+      expect(await authModule.listProviderIdentities({ entity_id: userId, provider: 'user-service-sso' })).toHaveLength(0);
     });
 
     it('주소가 없는 고객도 익명화·소프트삭제된다 — 빈 주소 목록으로 주소 삭제 step 이 no-op 이다', async () => {
