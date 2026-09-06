@@ -52,11 +52,7 @@ describe('MatchingLinkResolver', () => {
     const { resolver, order } = makeResolver();
 
     const result = await resolver.resolve(
-      [
-        { newSku: { name: 'a' } as never },
-        { skuId: EXISTING, quantity: 5 },
-        { newSku: { name: 'b' } as never },
-      ],
+      [{ newSku: { name: 'a' } as never }, { skuId: EXISTING, quantity: 5 }, { newSku: { name: 'b' } as never }],
       trx,
     );
 

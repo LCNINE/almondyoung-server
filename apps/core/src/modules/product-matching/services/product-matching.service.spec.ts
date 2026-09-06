@@ -703,10 +703,7 @@ describe('ProductMatchingService links input', () => {
       matching.id,
       {
         strategy: 'variant',
-        links: [
-          { skuId: EXISTING_SKU, quantity: 2 },
-          { newSku: { name: 'S / 검정' } as never },
-        ],
+        links: [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } as never }],
       } as ResolveMatchingDto,
       tx as never,
     );
@@ -729,10 +726,7 @@ describe('ProductMatchingService links input', () => {
 
     await service.resolveMatchingPending(matching.id, {
       strategy: 'variant',
-      links: [
-        { skuId: EXISTING_SKU, quantity: 2 },
-        { newSku: { name: 'S / 검정' } as never },
-      ],
+      links: [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } as never }],
     } as ResolveMatchingDto); // ← tx 를 넘기지 않는다: 구현이 어떤 트랜잭션을 여는지가 이 테스트의 핵심이다
 
     // 리졸버는 «그 내부 트랜잭션»을 받아야 한다. 구현이 run 밖에서 불렀다면 여기서 깨진다.

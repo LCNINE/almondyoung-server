@@ -39,9 +39,7 @@ describe('NewSkuScopeGuard', () => {
     const authService = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['inventory.manage'])) };
     const guard = new NewSkuScopeGuard(authService as never);
 
-    await expect(
-      guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['admin'])),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['admin']))).resolves.toBe(true);
     expect(authService.getScopesByRoles).toHaveBeenCalledWith(['admin']);
   });
 
@@ -49,9 +47,9 @@ describe('NewSkuScopeGuard', () => {
     const authService = { getScopesByRoles: jest.fn() };
     const guard = new NewSkuScopeGuard(authService as never);
 
-    await expect(
-      guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['master'])),
-    ).resolves.toBe(true);
+    await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }, ['master']))).resolves.toBe(
+      true,
+    );
     expect(authService.getScopesByRoles).not.toHaveBeenCalled();
   });
 
@@ -68,9 +66,9 @@ describe('NewSkuScopeGuard', () => {
     const authService = { getScopesByRoles: jest.fn() };
     const guard = new NewSkuScopeGuard(authService as never);
 
-    await expect(
-      guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    await expect(guard.canActivate(makeContext({ links: [{ newSku: { name: 'x' } }] }))).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
   });
 
   it('rejects when the scope lookup fails', async () => {

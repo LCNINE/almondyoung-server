@@ -554,21 +554,33 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 같은 파일 `:458` 에는 `alert()` 도 있다(「최소 1개 이상의 옵션을 입력해주세요」). 옵션 없이 버튼을
 누르면 모달이 떠서 **확장이 먹통이 된다.**
 
-### ⛔ 벽 ②(규명 완료 · 이슈로 이관) — `POST /inventory-matching` 은 core 에 «한 번도 없었다»
+### 🟢 (해결) 벽 ② — `POST /inventory-matching` 은 애초에 없었고, 이제 필요 없다
 
-라우트가 «사라진» 게 아니라 **처음부터 백엔드가 없다.** 404 와 401 의 차이가 증거다:
+라우트가 「사라진」 게 아니라 **처음부터 백엔드가 없었다.** 프론트가 PIM/WMS 분리 시절에
+먼저 만들어졌고 그 뒤 core 통합이 반영되지 않았다. 2026-09-06 에 **기존 `resolve`/`upsert` 를
+넓혀** 해결했다(이슈 [#791](https://github.com/LCNINE/almondyoung-server/issues/791)).
 
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:3100/inventory-matching   # 404 (라우트 부재)
-curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings                # 401 (라우트 있음)
+auto 탭은 이제 SKU 생성과 매칭을 **한 호출**로 한다:
+
+```jsonc
+PATCH /matchings/:id/resolve      // 매칭이 pending 일 때
+PUT   /matchings/:variantId       // 이미 matched 일 때
+{ "links": [ { "newSku": { "name": "S / 검정", "holderId": "…", "supplierIds": ["…"] }, "quantity": 1 } ] }
 ```
 
-**이 칸은 로컬 환경으로 못 뚫는다. 라이브에서도 같은 404 다.** 여기서 더 파지 말 것 —
-전체 규명(호출 사슬 · 기대 동작 · 옛 DTO 의 갈 곳 없는 필드 · 권고 인터페이스 · 남은 결정 3건)은
-**이슈 #791** 에 있다: <https://github.com/LCNINE/almondyoung-server/issues/791>
+⚠️ **`newSku` 를 쓰려면 `inventory.manage` 스코프가 필요하다.** 없으면 403 이다 —
+`POST /inventory/skus` 와 같은 기준이다. `admin`/`master` 는 보유한다.
 
-🟢 **우회로는 있다** — 재고상품 화면(`features/inventory/skus/…/sku-form-dialog`)에서 SKU 를 먼저 만들고
-매칭 화면의 **수동 탭**으로 연결하면 매칭 자체는 끝낼 수 있다. E2E 를 이어가야 한다면 이 경로를 쓴다.
+⚠️ **이미 매칭된 라인은 다이얼로그가 `manual` 탭으로 열린다.** auto 로 «직접» 전환해 저장하면
+upsert 가 링크를 전부 갈아끼우므로 **새 SKU 가 생기고 직전 SKU 는 고아가 된다** — 의도적으로
+허용된 동작이니 알고 쓸 것.
+
+⚠️ 로컬에서 auto 탭이 400 나던 원인도 같이 고쳤다 — dev 시드 공급처 id 가 UUIDv7 인데 core
+`CreateSkuDto.supplierIds` 가 v4 만 받고 있었다(`@IsUUID('4')` → `'all'`).
+
+⚠️ 화면에서 「상품 구분 · 용도 · 수입상고필증 · 원가 · 메모1 · 메모4 · 물류처」가 사라졌다.
+core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 발주 도메인이,
+창고는 입고 단계가 정한다.
 
 ⚠️ 같은 화면의 `GET /variants/:id` **400 은 별개이고, 라우트 부재가 아니다.** core 에 라우트는 있고
 (`product-variants.controller.ts:147`) `versionId` 또는 `masterId` 중 하나가 **필수 쿼리**인데
@@ -598,9 +610,9 @@ curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings   
 | core 적재 | `dev_core.sales_orders` | 1행, `total_amount=11400`, `wallet_intent_id` 연결 |
 | 격리 | `channel_adapter.order_collection_failures` | **0건** |
 | 어드민 주문조회 | 대시보드 「매칭 대기 **1**」 · `/order/matching` 목록 | ✓ |
-| 매칭 | — | ⛔ 위 벽 ①·② |
+| 매칭 | — | ⛔ 벽 ①만 남음 (벽 ②는 2026-09-06 `resolve`/`upsert` 확장으로 해결 — #791) |
 
-**막힌 것은 매칭 한 칸뿐이고, 그 원인은 환경이 아니라 코드다.**
+**막혔던 매칭 한 칸 중 코드가 원인이던 벽 ②는 해결됐고, 남은 벽 ①(시드)은 환경 문제다.**
 
 ---
 
@@ -648,7 +660,8 @@ curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings   
 ```
 로컬 전 과정(E2E)을 크롬으로 사람이 하듯 돌린다.
 2026-09-06 에 전체 초기화(논리 DB 11개 drop) 후 «매칭 한 칸만 빼고» 전 구간을 통과했다(§8-E).
-이번 목적은 그 남은 칸이다.
+그중 벽 ②(`POST /inventory-matching` 부재)는 같은 날 `resolve`/`upsert` 확장으로 해결됐다(#791).
+이번 목적은 남은 벽 ①이다.
 
 먼저 읽어라: docs/local-e2e-environment.md (정본은 docs/local-dev.md, 이 문서는 그 보완)
 
@@ -660,12 +673,11 @@ curl -s -o /dev/null -w '%{http_code}\n'      http://localhost:3100/matchings   
   2. §2 의 시드 5종 + 🔴 npm run sync:medusa-keys:local (§2-A). 적립금 시드는
      LOCAL_POINT_LOGIN_IDS=<가입한아이디> 로 준다 (§2-B — 새 DB 엔 구매자 계정이 없다)
   3. §8-D 순서로 상품을 만들어 발행 → 투영 확인 → 구매 → 5분 폴링 → core 적재
-  4. ⛔ 남은 칸 둘 (§8-D):
+  4. ⛔ 남은 칸 하나 (§8-D):
      ① `dev_core.suppliers` 가 0행이라 매칭 다이얼로그의 드롭다운 3개가 비어 있다.
         → seed-core-local.ts 에 공급처·물류처·재고소유를 넣을 수 있는지 따져라. 이게 이번 목표.
-     ② POST /inventory-matching 은 core 에 «한 번도 없었다». 환경으론 못 뚫는다.
-        규명·설계안은 이슈 #791 에 있으니 «다시 파지 마라». 매칭을 끝내야 하면
-        재고상품 화면에서 SKU 를 먼저 만들고 매칭 화면의 «수동 탭»으로 연결한다.
+     (벽 ②였던 `POST /inventory-matching` 부재는 2026-09-06 `resolve`/`upsert` 확장으로 해결됐다 —
+      #791. auto 탭은 이제 `links[].newSku` 로 SKU 생성과 매칭을 한 호출에 한다.)
 
 규칙:
   - 「떠 있다」를 「최신이다」로 읽지 마라. 기동 시각과 스키마를 먼저 재라.

@@ -57,7 +57,10 @@ export class VariantMatchingStrategy extends MatchingStrategy {
     const db = tx ?? this.db;
     const skuIds = [...new Set(mappings.map((mapping) => mapping.skuId))];
 
-    const rows = await db.select({ id: wmsTables.skus.id }).from(wmsTables.skus).where(inArray(wmsTables.skus.id, skuIds));
+    const rows = await db
+      .select({ id: wmsTables.skus.id })
+      .from(wmsTables.skus)
+      .where(inArray(wmsTables.skus.id, skuIds));
 
     return rows.length === skuIds.length;
   }
