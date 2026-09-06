@@ -11,6 +11,9 @@ jest.setTimeout(180 * 1000);
  * 주소·`user-service-sso` provider identity·`app_metadata.customer_id` 링크를 가진 고객을 만들고 라우트를 두 번
  * 부른다. 첫 호출 뒤 필드 치환·소프트 삭제·주소 0행·identity 0행, 둘째 호출은 `not_found`/0 — 재시도와 백필
  * 재실행이 안전하다는 증명이다. 마지막 케이스는 같은 이메일로 새 고객이 생기는지 본다(유일 제약이 풀렸는가).
+ *
+ * 「주소가 없는 고객」케이스는 `withdraw-customer.ts` 의 주소 삭제 호출이 빈 배열(`ids: []`)로도 안전한
+ * no-op 인지를 본다 — 중첩 `when` 제거 이후 이 경로가 조건 없이 항상 실행되므로 직접 커버해야 한다.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -36,8 +39,11 @@ medusaIntegrationTestRunner({
       };
     });
 
-    /** SSO 첫 로그인 뒤의 모양을 재현한다: has_account 고객 + almond_user_id + 주소 + sso identity(customer_id 링크) */
-    const seedWithdrawableCustomer = async () => {
+    /**
+     * SSO 첫 로그인 뒤의 모양을 재현한다: has_account 고객 + almond_user_id + 주소(기본값) + sso identity(customer_id 링크).
+     * `withAddresses: false` 는 주소를 한 번도 등록하지 않은 회원(빈 주소 목록으로 주소 삭제 step 이 no-op 이 되는 경로)을 재현한다.
+     */
+    const seedWithdrawableCustomer = async ({ withAddresses = true }: { withAddresses?: boolean } = {}) => {
       const container = getContainer();
       const userId = `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`;
       const email = `member${seq}@withdraw.test`;
@@ -54,10 +60,12 @@ medusaIntegrationTestRunner({
           metadata: { almond_user_id: userId, almond_login_id: `login${seq}` },
         },
       ]);
-      await customerModule.createCustomerAddresses([
-        { customer_id: customer.id, address_1: '서울시 어딘가 1', city: '서울', country_code: 'kr', postal_code: '04524' },
-        { customer_id: customer.id, address_1: '서울시 어딘가 2', city: '서울', country_code: 'kr', postal_code: '04525' },
-      ]);
+      if (withAddresses) {
+        await customerModule.createCustomerAddresses([
+          { customer_id: customer.id, address_1: '서울시 어딘가 1', city: '서울', country_code: 'kr', postal_code: '04524' },
+          { customer_id: customer.id, address_1: '서울시 어딘가 2', city: '서울', country_code: 'kr', postal_code: '04525' },
+        ]);
+      }
       const [identity] = await authModule.createAuthIdentities([
         {
           app_metadata: { actor_type: 'customer', customer_id: customer.id },
@@ -106,6 +114,20 @@ medusaIntegrationTestRunner({
       expect(identities).toHaveLength(0);
       const providerIdentities = await authModule.listProviderIdentities({ entity_id: userId, provider: 'user-service-sso' });
       expect(providerIdentities).toHaveLength(0);
+    });
+
+    it('주소가 없는 고객도 익명화·소프트삭제된다 — 빈 주소 목록으로 주소 삭제 step 이 no-op 이다', async () => {
+      const { userId, customer } = await seedWithdrawableCustomer({ withAddresses: false });
+      const customerModule = getContainer().resolve(Modules.CUSTOMER);
+
+      const res = await withdraw(userId);
+
+      expect(res.status).toBe(200);
+      expect(res.data).toEqual({ customer: 'anonymized', auth_identities_deleted: 1 });
+
+      const [after] = await customerModule.listCustomers({ id: customer.id }, { withDeleted: true } as any);
+      expect(after.email).toBe(withdrawnEmailFor(userId));
+      expect(after.deleted_at).not.toBeNull();
     });
 
     it('두 번째 호출은 not_found / 0 으로 200 — 재시도·백필 재실행이 안전하다', async () => {
