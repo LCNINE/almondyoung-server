@@ -86,7 +86,7 @@ export class CreateSkuDto {
 
   @ApiProperty({ description: '공급사 ID 목록', type: [String], required: false })
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID('all', { each: true })
   @IsOptional()
   supplierIds?: string[];
 

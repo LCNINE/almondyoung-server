@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/common';
 import {
   FormField,
@@ -10,6 +11,7 @@ import {
   FormLayout,
 } from '@/components/common';
 import { OrderLineDto } from '@/lib/types/dto/orders';
+import type { MatchingLinkInputDto } from '@/lib/types/dto/matching';
 import {
   useChangeMatchingStrategy,
   useResolveMatching,
@@ -24,32 +26,34 @@ import {
 } from '@/components/ui/dialog';
 import { useVariant, useMaster } from '@/lib/services/products';
 import {
-  useWarehouses,
   useSuppliers,
   useCreateSupplier,
   useHolders,
   useHolderSearch,
   useCreateHolder,
-  useCreateInventoryMatching,
 } from '@/lib/services/inventory';
-import { PRODUCT_TYPES } from '@/lib/mock/data/inventory';
 import { Search, Trash2, ArrowRight, X, Loader2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { SearchDialog } from './SearchDialog';
+import {
+  buildMatchingLinks,
+  normalizeQuantity,
+  BUILD_FAILURE_MESSAGES,
+  type AutoTabOptionRow,
+  type AutoTabState,
+} from '../../lib/build-matching-links';
+import {
+  pickCompositionRoute,
+  shouldChangeStrategyForVoid,
+  pickDefaultTab,
+} from '../../lib/matching-save-route';
+import { buildLegacySkuMappings } from '../../lib/build-legacy-sku-mappings';
 
 /** SKU 연결 정보 */
 type LinkedSku = {
   skuId: string;
   skuName: string;
   quantity: number;
-};
-
-/** 옵션 행 (자동 매칭용) */
-type OptionRow = {
-  id: string;
-  name: string;
-  image: string | null;
-  price: number;
 };
 
 /** 간단 디바운스 */
@@ -77,7 +81,6 @@ export function InventoryMatchingDialog({
   const resolveMatching = useResolveMatching();
   const upsertVariantMatching = useUpsertVariantMatching();
   const changeMatchingStrategy = useChangeMatchingStrategy();
-  const createInventoryMatching = useCreateInventoryMatching();
 
   const [activeTab, setActiveTab] = useState<'auto' | 'manual' | 'none'>(
     'auto'
@@ -88,48 +91,49 @@ export function InventoryMatchingDialog({
   const [showSupplierSearch, setShowSupplierSearch] = useState(false);
   const [showHolderSearch, setShowHolderSearch] = useState(false);
 
+  // 자동 매칭 상태
+  const [businessProductName, setBusinessProductName] = useState('');
+  const [supplierId, setSupplierId] = useState('');
+  const [holderId, setHolderId] = useState('');
+  const [importDeclarationNumber, setImportDeclarationNumber] = useState('');
+  const [optionKey, setOptionKey] = useState('');
+  const [productDescription, setProductDescription] = useState('');
+  const [moq, setMoq] = useState('');
+  const [memo2, setMemo2] = useState('');
+  const [memo3, setMemo3] = useState('');
+
+  const [optionRows, setOptionRows] = useState<AutoTabOptionRow[]>([
+    { id: crypto.randomUUID(), name: '', quantity: 1 },
+    { id: crypto.randomUUID(), name: '', quantity: 1 },
+    { id: crypto.randomUUID(), name: '', quantity: 1 },
+    { id: crypto.randomUUID(), name: '', quantity: 1 },
+  ]);
+
+  /** auto 탭 상태 — isFormValid 와 onSave 가 이 하나로 buildMatchingLinks 를 부른다. */
+  const autoTabState: AutoTabState = {
+    holderId,
+    supplierId,
+    businessProductName,
+    importDeclarationNumber,
+    optionKey,
+    productDescription,
+    moq,
+    memo2,
+    memo3,
+    optionRows,
+  };
+
   // 필수 필드 검증
   const isFormValid = () => {
     if (!line?.matchingId) return false; // matchingId 없으면 저장 불가
     if (activeTab === 'auto') {
-      return !!(
-        productType &&
-        supplierId &&
-        stockOwnerId &&
-        warehouseId &&
-        citizenProductName
-      );
+      return buildMatchingLinks(autoTabState).ok;
     }
     if (activeTab === 'manual') {
       return linkedSkus.length > 0;
     }
     return true; // none 탭
   };
-
-  // 자동 매칭 상태
-  const [productType, setProductType] = useState('일반상품');
-  const [citizenProductName, setCitizenProductName] = useState('');
-  const [supplierId, setSupplierId] = useState('');
-  const [stockOwnerId, setStockOwnerId] = useState('');
-  const [warehouseId, setWarehouseId] = useState('');
-  const [importDeclaration, setImportDeclaration] = useState('');
-  const [importCertificate, setImportCertificate] = useState('');
-  const [optionDetail, setOptionDetail] = useState('');
-  const [usage, setUsage] = useState('');
-  const [costPrice, setCostPrice] = useState('');
-  const [productDescription, setProductDescription] = useState('');
-  const [moq, setMoq] = useState('');
-  const [memo1, setMemo1] = useState('');
-  const [memo2, setMemo2] = useState('');
-  const [memo3, setMemo3] = useState('');
-  const [memo4, setMemo4] = useState('');
-
-  const [optionRows, setOptionRows] = useState<OptionRow[]>([
-    { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-    { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-    { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-    { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-  ]);
 
   // 수동 매칭 상태
   const [linkedSkus, setLinkedSkus] = useState<LinkedSku[]>([]);
@@ -145,11 +149,8 @@ export function InventoryMatchingDialog({
   // 검색 상태
   const [supplierSearch, setSupplierSearch] = useState('');
   const [holderSearch, setHolderSearch] = useState('');
-  const [showSupplierCreate, setShowSupplierCreate] = useState(false);
-  const [showHolderCreate, setShowHolderCreate] = useState(false);
 
   // API hooks
-  const { data: warehouses, isLoading: loadingWarehouses } = useWarehouses();
   const { data: suppliersResponse } = useSuppliers({
     search: supplierSearch || undefined,
     limit: 50,
@@ -176,36 +177,23 @@ export function InventoryMatchingDialog({
     if (!line) return;
 
     const baseName = line.productName || '';
-    const basePrice = line.unitPrice ?? 0;
 
-    setCitizenProductName(baseName);
-    setProductType('일반상품');
+    setBusinessProductName(baseName);
     setSupplierId('');
-    setStockOwnerId('');
-    setWarehouseId('');
-    setImportDeclaration('');
-    setImportCertificate('');
-    setOptionDetail('');
-    setUsage('');
+    setHolderId('');
+    setImportDeclarationNumber('');
+    setOptionKey('');
     setProductDescription('');
     setMoq('');
-    setMemo1('');
     setMemo2('');
     setMemo3('');
-    setMemo4('');
-    setCostPrice(basePrice ? String(basePrice) : '');
     setOptionRows([
-      {
-        id: crypto.randomUUID(),
-        name: baseName,
-        image: null,
-        price: basePrice,
-      },
-      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
-      { id: crypto.randomUUID(), name: '', image: null, price: 0 },
+      { id: crypto.randomUUID(), name: baseName, quantity: 1 },
+      { id: crypto.randomUUID(), name: '', quantity: 1 },
+      { id: crypto.randomUUID(), name: '', quantity: 1 },
+      { id: crypto.randomUUID(), name: '', quantity: 1 },
     ]);
-    setActiveTab('auto');
+    setActiveTab(pickDefaultTab(line.matchingStatus));
     setLinkedSkus(
       line.matchedSkus.map((sku) => ({
         skuId: sku.skuId,
@@ -229,11 +217,10 @@ export function InventoryMatchingDialog({
         : null;
 
     const masterName = master?.name || null;
-    const richPrice = variant?.price ?? null;
 
     // 사입상품명 = 마스터명 (옵션 제외 상품 기본명)
     if (masterName) {
-      setCitizenProductName(masterName);
+      setBusinessProductName(masterName);
       // 수동 탭 검색: 마스터명으로 (옵션 포함 전체명보다 마스터명이 더 넓은 검색)
       setSkuSearch(masterName);
     }
@@ -247,22 +234,12 @@ export function InventoryMatchingDialog({
         return next;
       });
     }
-
-    if (richPrice != null) {
-      setCostPrice(String(richPrice));
-      setOptionRows((prev) => {
-        const next = [...prev];
-        if (next[0]) next[0] = { ...next[0], price: richPrice };
-        return next;
-      });
-    }
   }, [variant?.id, master?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isSaving =
     resolveMatching.isPending ||
     upsertVariantMatching.isPending ||
-    changeMatchingStrategy.isPending ||
-    createInventoryMatching.isPending;
+    changeMatchingStrategy.isPending;
 
   // 수동 탭 판매 상품 카드용 표시명
   const sellingProductName = master?.name || line?.productName || '상품명 없음';
@@ -282,7 +259,7 @@ export function InventoryMatchingDialog({
       setLinkedSkus([...linkedSkus, { skuId, skuName, quantity: 1 }]);
     } else {
       // 이미 추가된 SKU인 경우 사용자에게 알림
-      alert('이미 매칭된 재고상품입니다.');
+      toast.error('이미 매칭된 재고상품입니다.');
     }
   };
 
@@ -300,65 +277,13 @@ export function InventoryMatchingDialog({
   };
 
   /** 자동 매칭 - 옵션 행 업데이트 */
-  const updateOptionRow = (id: string, field: keyof OptionRow, value: any) => {
-    setOptionRows(
-      optionRows.map((row) =>
-        row.id === id ? { ...row, [field]: value } : row
-      )
+  const updateOptionName = (id: string, name: string) =>
+    setOptionRows((rows) => rows.map((r) => (r.id === id ? { ...r, name } : r)));
+
+  const updateOptionQuantity = (id: string, quantity: number) =>
+    setOptionRows((rows) =>
+      rows.map((r) => (r.id === id ? { ...r, quantity: normalizeQuantity(quantity) } : r))
     );
-  };
-
-  /** 이미지 업로드 핸들러 */
-  const handleImageUpload = (rowId: string, file: File) => {
-    // 실제 구현에서는 서버에 업로드하고 URL을 받아야 함
-    // 여기서는 임시로 Object URL 사용
-    const imageUrl = URL.createObjectURL(file);
-    updateOptionRow(rowId, 'image', imageUrl);
-  };
-
-  /** 대표원가 적용 */
-  const handleApplyRepresentativeCost = () => {
-    const cost = Number(costPrice) || 0;
-    setOptionRows(optionRows.map((row) => ({ ...row, price: cost })));
-  };
-
-  /** 공급처 신규 등록 */
-  const handleCreateSupplier = async () => {
-    const name = prompt('공급처명을 입력하세요:');
-    if (name) {
-      try {
-        const newSupplier = await createSupplier.mutateAsync({ name });
-        setSupplierId(newSupplier.id);
-        setSupplierSearch(newSupplier.name);
-        setShowSupplierCreate(false);
-        alert('공급처가 성공적으로 생성되었습니다.');
-      } catch (error) {
-        console.error('공급처 생성 실패:', error);
-        alert('공급처 생성에 실패했습니다. 다시 시도해주세요.');
-      }
-    }
-  };
-
-  /** 재고소유 신규 등록 */
-  const handleCreateHolder = async () => {
-    const name = prompt('재고소유명을 입력하세요:');
-    const isOurAsset = confirm('자사 자산인가요?');
-    if (name) {
-      try {
-        const newHolder = await createHolder.mutateAsync({
-          name,
-          isOurAsset,
-        });
-        setStockOwnerId(newHolder.id);
-        setHolderSearch(newHolder.name);
-        setShowHolderCreate(false);
-        alert('재고소유가 성공적으로 생성되었습니다.');
-      } catch (error) {
-        console.error('재고소유 생성 실패:', error);
-        alert('재고소유 생성에 실패했습니다. 다시 시도해주세요.');
-      }
-    }
-  };
 
   // 검색 다이얼로그 핸들러들
   const handleSupplierSearch = (query: string) => {
@@ -375,10 +300,10 @@ export function InventoryMatchingDialog({
       const newSupplier = await createSupplier.mutateAsync({ name: data.name });
       setSupplierId(newSupplier.id);
       setSupplierSearch(newSupplier.name);
-      alert('공급처가 성공적으로 생성되었습니다.');
+      toast.success('공급처가 성공적으로 생성되었습니다.');
     } catch (error) {
       console.error('공급처 생성 실패:', error);
-      alert('공급처 생성에 실패했습니다. 다시 시도해주세요.');
+      toast.error('공급처 생성에 실패했습니다. 다시 시도해주세요.');
     }
   };
 
@@ -387,7 +312,7 @@ export function InventoryMatchingDialog({
   };
 
   const handleHolderSelect = (holder: any) => {
-    setStockOwnerId(holder.id);
+    setHolderId(holder.id);
     setHolderSearch(holder.name);
   };
 
@@ -397,12 +322,12 @@ export function InventoryMatchingDialog({
         name: data.name,
         isOurAsset: data.isOurAsset || false,
       });
-      setStockOwnerId(newHolder.id);
+      setHolderId(newHolder.id);
       setHolderSearch(newHolder.name);
-      alert('재고소유가 성공적으로 생성되었습니다.');
+      toast.success('재고소유가 성공적으로 생성되었습니다.');
     } catch (error) {
       console.error('재고소유 생성 실패:', error);
-      alert('재고소유 생성에 실패했습니다. 다시 시도해주세요.');
+      toast.error('재고소유 생성에 실패했습니다. 다시 시도해주세요.');
     }
   };
 
@@ -410,7 +335,7 @@ export function InventoryMatchingDialog({
   const onSave = async () => {
     if (!line) return;
     if (!line.matchingId) {
-      alert('매칭 레코드가 없습니다. 관리자에게 문의하세요.');
+      toast.error('매칭 레코드가 없습니다. 관리자에게 문의하세요.');
       return;
     }
     const matchingId = line.matchingId;
@@ -420,16 +345,13 @@ export function InventoryMatchingDialog({
         preStockSellable: true,
         alwaysSellableZeroStock: false,
       };
-      const saveSkuComposition = async (
-        skuMappings: Array<{ skuId: string; quantity: number }>
-      ) => {
-        if (line.matchingStatus && line.matchingStatus !== 'pending') {
+
+      /** 매칭 링크를 저장한다. 상태에 따라 뒷단이 갈리지만 payload 모양은 같다. */
+      const saveSkuComposition = async (links: MatchingLinkInputDto[]) => {
+        if (pickCompositionRoute(line.matchingStatus) === 'upsert') {
           await upsertVariantMatching.mutateAsync({
             variantId: line.variantId,
-            data: {
-              links: skuMappings,
-              policy: stockPolicy,
-            },
+            data: { links, policy: stockPolicy },
           });
           return;
         }
@@ -440,81 +362,43 @@ export function InventoryMatchingDialog({
             ignore: false,
             strategy: 'variant',
             stockPolicy,
-            skuMappings,
+            links,
+            // 배포 순서 안전장치: 옛 core 는 links 를 모르고 whitelist 로 조용히 지운다.
+            // 기존 SKU 참조만 추려 skuMappings 로도 실어 보내면, 새 core 는 links 를
+            // 우선하고(그 우선순위를 지키는 테스트가 있다) 옛 core 는 skuMappings 를 쓴다.
+            // newSku 만 있는 auto 탭은 어차피 옛 core 에서 불가능하므로 빈 배열이 된다.
+            skuMappings: buildLegacySkuMappings(links),
             isGift: false,
           },
         });
       };
 
       if (activeTab === 'auto') {
-        // 자동 매칭 - 재고 SKU 생성 후 매칭 연결
-        if (!supplierId || !stockOwnerId || !warehouseId) {
-          alert('필수 필드를 모두 입력해주세요.');
+        // 새 재고상품을 만들고 이 판매상품에 링크한다 — 한 트랜잭션, 한 호출.
+        const built = buildMatchingLinks(autoTabState);
+
+        if (!built.ok) {
+          toast.error(BUILD_FAILURE_MESSAGES[built.reason]);
           return;
         }
 
-        const filledOptions = optionRows.filter((row) => row.name.trim());
-        if (filledOptions.length === 0) {
-          alert('최소 1개 이상의 옵션을 입력해주세요.');
-          return;
-        }
-
-        const inventoryMatchingData = {
-          productType: productType as any,
-          citizenProductName,
-          supplierId,
-          stockOwnerId,
-          warehouseId,
-          usage,
-          importDeclaration,
-          importCertificate,
-          optionDetail,
-          costPrice: Number(costPrice) || 0,
-          options: filledOptions.map((row) => ({
-            name: row.name,
-            image: row.image || undefined,
-            price: row.price,
-          })),
-          productDescription,
-          moq,
-          memo1,
-          memo2,
-          memo3,
-          memo4,
-        };
-
-        // 1) SKU 생성
-        const result = await createInventoryMatching.mutateAsync(
-          inventoryMatchingData
-        );
-
-        // 2) 생성된 SKU로 SKU 구성 매칭 저장
-        await saveSkuComposition(
-          result.skuMappings.map((s) => ({
-            skuId: s.skuId,
-            quantity: s.quantity,
-          }))
-        );
+        await saveSkuComposition(built.links);
       } else if (activeTab === 'manual') {
-        // 수동 매칭 - SKU 직접 연결
-        const skuMappings = linkedSkus.map((s) => ({
-          skuId: s.skuId,
-          quantity: s.quantity,
-        }));
-
-        if (skuMappings.length > 0) {
-          await saveSkuComposition(skuMappings);
-        } else {
-          alert('최소 1개 이상의 재고를 연결해주세요.');
+        if (linkedSkus.length === 0) {
+          toast.error('최소 1개 이상의 재고를 연결해주세요.');
           return;
         }
+
+        await saveSkuComposition(
+          linkedSkus.map((s) => ({ skuId: s.skuId, quantity: s.quantity }))
+        );
       } else if (activeTab === 'none') {
-        // 재고상품 비매칭
-        if (line.matchingStatus === 'matched') {
+        if (shouldChangeStrategyForVoid(line.matchingStatus)) {
           await changeMatchingStrategy.mutateAsync({
             id: matchingId,
             data: { strategy: 'void' },
           });
+          toast.success('재고상품 비매칭으로 저장했습니다.');
           onClose();
           return;
         }
@@ -531,10 +415,11 @@ export function InventoryMatchingDialog({
         });
       }
 
+      toast.success('상품매칭을 저장했습니다.');
       onClose();
     } catch (e) {
       console.error('상품등록/매칭 저장 실패:', e);
-      alert('상품등록/매칭 저장에 실패했습니다. 다시 시도해주세요.');
+      toast.error('상품등록/매칭 저장에 실패했습니다. 다시 시도해주세요.');
     }
   };
 
@@ -650,18 +535,10 @@ export function InventoryMatchingDialog({
 
               {/* 입력 폼 */}
               <FormLayout columns={2} gap="md">
-                <FormField label="상품 구분" required>
-                  <FormSelect
-                    options={PRODUCT_TYPES}
-                    value={productType}
-                    onValueChange={setProductType}
-                  />
-                </FormField>
-
                 <FormField label="사입상품명">
                   <FormInput
-                    value={citizenProductName}
-                    onChange={(e) => setCitizenProductName(e.target.value)}
+                    value={businessProductName}
+                    onChange={(e) => setBusinessProductName(e.target.value)}
                     placeholder="상품명을 입력하세요"
                   />
                 </FormField>
@@ -698,23 +575,6 @@ export function InventoryMatchingDialog({
                   </div>
                 </FormField>
 
-                <FormField label="물류처" required>
-                  <FormSelect
-                    options={
-                      warehouses?.map((w: any) => ({
-                        value: w.id,
-                        label: w.name,
-                      })) || []
-                    }
-                    value={warehouseId}
-                    onValueChange={setWarehouseId}
-                    placeholder={
-                      loadingWarehouses ? '로딩 중...' : '물류처 선택'
-                    }
-                    disabled={loadingWarehouses}
-                  />
-                </FormField>
-
                 <FormField label="재고소유" required>
                   <div className="flex gap-2">
                     <div className="flex-1">
@@ -725,8 +585,8 @@ export function InventoryMatchingDialog({
                             label: h.name,
                           })) || []
                         }
-                        value={stockOwnerId}
-                        onValueChange={setStockOwnerId}
+                        value={holderId}
+                        onValueChange={setHolderId}
                         placeholder="재고소유 선택"
                       />
                     </div>
@@ -750,8 +610,8 @@ export function InventoryMatchingDialog({
                 <FormField label="수입신고필증">
                   <div className="flex gap-2">
                     <FormInput
-                      value={importDeclaration}
-                      onChange={(e) => setImportDeclaration(e.target.value)}
+                      value={importDeclarationNumber}
+                      onChange={(e) => setImportDeclarationNumber(e.target.value)}
                       className="flex-1"
                       placeholder="수입신고필증 번호"
                     />
@@ -761,50 +621,14 @@ export function InventoryMatchingDialog({
                   </div>
                 </FormField>
 
-                <FormField label="수입상고필증">
-                  <FormInput
-                    value={importCertificate}
-                    onChange={(e) => setImportCertificate(e.target.value)}
-                    placeholder="수입상고필증 번호"
-                  />
-                </FormField>
-
                 <FormField label="옵션성세명정">
                   <FormInput
-                    value={optionDetail}
-                    onChange={(e) => setOptionDetail(e.target.value)}
+                    value={optionKey}
+                    onChange={(e) => setOptionKey(e.target.value)}
                     placeholder="옵션 상세 명칭"
                   />
                 </FormField>
-
-                <FormField label="용도">
-                  <FormInput
-                    value={usage}
-                    onChange={(e) => setUsage(e.target.value)}
-                    placeholder="용도를 입력하세요"
-                  />
-                </FormField>
               </FormLayout>
-
-              {/* 원가 */}
-              <FormField label="원가">
-                <div className="flex items-center gap-2">
-                  <FormNumberInput
-                    value={costPrice}
-                    onChange={(e) => setCostPrice(e.target.value)}
-                    placeholder="0"
-                    suffix="원"
-                    className="w-32"
-                  />
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleApplyRepresentativeCost}
-                  >
-                    ↓ 대표원가 적용
-                  </Button>
-                </div>
-              </FormField>
 
               {/* 옵션 테이블 */}
               <div>
@@ -813,74 +637,29 @@ export function InventoryMatchingDialog({
                   <table className="w-full">
                     <thead className="bg-gray-50 border-b">
                       <tr>
-                        <th className="px-4 py-2 text-left text-xs font-medium w-16">
-                          번호
-                        </th>
-                        <th className="px-4 py-2 text-left text-xs font-medium">
-                          옵션상세명칭
-                        </th>
-                        <th className="px-4 py-2 text-center text-xs font-medium w-32">
-                          옵션이미지
-                        </th>
-                        <th className="px-4 py-2 text-right text-xs font-medium w-32">
-                          원가
-                        </th>
+                        <th className="px-4 py-2 text-left text-xs font-medium w-16">번호</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium">옵션상세명칭</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium w-32">수량</th>
                       </tr>
                     </thead>
                     <tbody>
                       {optionRows.map((row, idx) => (
                         <tr key={row.id} className="border-b last:border-0">
-                          <td className="px-4 py-2 text-center text-sm">
-                            {idx + 1}
-                          </td>
+                          <td className="px-4 py-2 text-center text-sm">{idx + 1}</td>
                           <td className="px-4 py-2">
                             <FormInput
                               value={row.name}
-                              onChange={(e) =>
-                                updateOptionRow(row.id, 'name', e.target.value)
-                              }
+                              onChange={(e) => updateOptionName(row.id, e.target.value)}
                               placeholder="옵션명을 입력하세요"
                             />
                           </td>
                           <td className="px-4 py-2">
-                            <div className="flex justify-center">
-                              <label className="cursor-pointer">
-                                {row.image ? (
-                                  <img
-                                    src={row.image}
-                                    alt="옵션 이미지"
-                                    className="w-16 h-16 object-cover rounded border"
-                                  />
-                                ) : (
-                                  <div className="w-16 h-16 bg-gray-100 rounded flex items-center justify-center text-xs text-gray-400 hover:bg-gray-200 transition-colors border border-dashed">
-                                    이미지
-                                  </div>
-                                )}
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      handleImageUpload(row.id, file);
-                                    }
-                                  }}
-                                />
-                              </label>
-                            </div>
-                          </td>
-                          <td className="px-4 py-2">
                             <FormNumberInput
-                              value={String(row.price)}
+                              value={String(row.quantity)}
                               onChange={(e) =>
-                                updateOptionRow(
-                                  row.id,
-                                  'price',
-                                  parseInt(e.target.value || '0', 10)
-                                )
+                                updateOptionQuantity(row.id, Number(e.target.value))
                               }
-                              suffix="원"
+                              suffix="개"
                               className="text-right"
                             />
                           </td>
@@ -908,14 +687,6 @@ export function InventoryMatchingDialog({
                 />
               </FormField>
 
-              <FormField label="메모1">
-                <FormInput
-                  value={memo1}
-                  onChange={(e) => setMemo1(e.target.value)}
-                  placeholder="메모를 입력하세요"
-                />
-              </FormField>
-
               <FormField label="메모2">
                 <FormInput
                   value={memo2}
@@ -928,14 +699,6 @@ export function InventoryMatchingDialog({
                 <FormInput
                   value={memo3}
                   onChange={(e) => setMemo3(e.target.value)}
-                  placeholder="메모를 입력하세요"
-                />
-              </FormField>
-
-              <FormField label="메모4">
-                <FormInput
-                  value={memo4}
-                  onChange={(e) => setMemo4(e.target.value)}
                   placeholder="메모를 입력하세요"
                 />
               </FormField>

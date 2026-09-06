@@ -6,7 +6,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
 import { lineExecutionInvalidationKeys } from './line-execution-invalidation';
 import { isCustomError } from '../../api/customError';
-import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
@@ -205,17 +204,6 @@ export const useUpdateWarehouse = () => {
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouses });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.warehouse(id) });
-    },
-  });
-};
-
-export const useCreateInventoryMatching = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: Parameters<typeof inventoryMatchingClient.matchings.create>[0]) =>
-      inventoryMatchingClient.matchings.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inventoryMatchings() });
     },
   });
 };

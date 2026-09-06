@@ -5,24 +5,12 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
-  IsInt,
   IsOptional,
-  IsPositive,
   IsString,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
-
-export class MatchingLinkDto {
-  @ApiProperty({ description: 'SKU ID', example: '123e4567-e89b-12d3-a456-426614174000' })
-  @IsUUID()
-  skuId: string;
-
-  @ApiProperty({ description: '수량', example: 1, default: 1, minimum: 1 })
-  @IsInt()
-  @IsPositive()
-  quantity: number = 1;
-}
+import { MatchingLinkInputDto } from './matching-link-input.dto';
 
 export class MatchingPolicyDto {
   @ApiProperty({ description: '선입고 판매 가능 여부', required: false, example: false })
@@ -66,11 +54,17 @@ export class UpsertMatchingDto {
   @IsUUID()
   masterId?: string | null;
 
-  @ApiProperty({ description: '매칭 링크 목록', type: [MatchingLinkDto], default: [] })
+  @ApiProperty({
+    description:
+      '매칭 링크 목록. 각 항목은 기존 재고상품(skuId) 또는 새로 만들 재고상품(newSku) 중 하나다. ' +
+      'newSku 를 쓰려면 inventory.manage 권한이 필요하다.',
+    type: [MatchingLinkInputDto],
+    default: [],
+  })
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => MatchingLinkDto)
-  links: MatchingLinkDto[] = [];
+  @Type(() => MatchingLinkInputDto)
+  links: MatchingLinkInputDto[] = [];
 
   @ApiProperty({ description: '매칭 정책', type: MatchingPolicyDto, required: false })
   @IsOptional()

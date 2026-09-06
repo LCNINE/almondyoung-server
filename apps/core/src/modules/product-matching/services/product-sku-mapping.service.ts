@@ -7,6 +7,7 @@ import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductSellableQuantityResult } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.calculator';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { MatchingLinkResolver } from './matching-link-resolver';
 import { productVariants } from '../../catalog/schema/catalog.schema';
 import {
   UpdateVariantStockPolicyDto,
@@ -31,6 +32,7 @@ export class ProductSkuMappingService {
     private readonly dbService: DbService<MergedSchema>,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
+    private readonly linkResolver: MatchingLinkResolver,
   ) {}
 
   private hasAvailabilityOverride(policy: StockPolicyPatch): boolean {
@@ -374,11 +376,13 @@ export class ProductSkuMappingService {
         }
 
         if (Array.isArray(dto.links) && dto.links.length > 0) {
+          // newSku 가 있으면 여기서 이 트랜잭션 위에 SKU 가 만들어진다.
+          const mappings = await this.linkResolver.resolve(dto.links, trx);
           await trx.insert(wmsTables.productVariantSkuLinks).values(
-            dto.links.map((l) => ({
+            mappings.map((mapping) => ({
               productMatchingId: matchingId,
-              skuId: l.skuId,
-              quantity: Math.max(1, l.quantity),
+              skuId: mapping.skuId,
+              quantity: mapping.quantity,
             })),
           );
         }

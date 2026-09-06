@@ -70,10 +70,6 @@ export const inventoryQueryKeys = {
   consolidations: ['consolidations'] as const,
   consolidation: (id: string) => ['consolidations', id] as const,
 
-  // 자동재고매칭 관련
-  inventoryMatchings: () => ['inventory-matchings'] as const,
-  inventoryMatching: (id: string) => ['inventory-matchings', id] as const,
-
   // 공급처 관련
   suppliers: (filters?: SupplierFiltersDto) => ['suppliers', filters] as const,
   supplierFilterOptions: () => ['suppliers', 'filter-options'] as const,

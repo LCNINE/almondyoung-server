@@ -38,6 +38,27 @@ export interface SkuMappingDto {
   skuCode?: string;
 }
 
+/** core 의 CreateSkuDto 중 매칭 화면이 채우는 부분집합 */
+export interface CreateSkuInputDto {
+  name: string;
+  holderId?: string;
+  supplierIds?: string[];
+  businessProductName?: string;
+  importDeclarationNumber?: string;
+  optionKey?: string;
+  productDescription?: string;
+  moq?: number;
+  memo2?: string;
+  memo3?: string;
+}
+
+/** 매칭 링크 한 항목. skuId 와 newSku 는 배타다. */
+export interface MatchingLinkInputDto {
+  skuId?: string;
+  newSku?: CreateSkuInputDto;
+  quantity?: number;
+}
+
 export interface OptionMappingDto {
   optionName: string;
   optionValue: string;
@@ -45,8 +66,11 @@ export interface OptionMappingDto {
 }
 
 export interface ResolveMatchingDto {
+  /** @deprecated links 를 쓴다 */
   skuIds?: string[];
+  /** @deprecated links 를 쓴다 */
   skuMappings?: SkuMappingDto[];
+  links?: MatchingLinkInputDto[];
   ignore?: boolean;
   resolveAsVoid?: boolean;
   strategy?: MatchingStrategy;
@@ -265,7 +289,7 @@ export type UpdateVariantStockPolicyDto = Partial<StockPolicyDto>;
 /** PUT /matchings/:variantId 요청 바디 */
 export interface UpsertMatchingDto {
   masterId?: string | null;
-  links?: { skuId: string; quantity: number }[];
+  links?: MatchingLinkInputDto[];
   policy?: Partial<StockPolicyDto>;
 }
 

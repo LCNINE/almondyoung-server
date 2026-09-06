@@ -41,11 +41,25 @@ function createLinkSelectMock(getLinks: () => unknown[]) {
   });
 }
 
-function createService(dbService: any, productSellableQuantity: any, fulfillmentBacklog?: any) {
+function makeLinkResolver() {
+  return {
+    resolve: jest.fn(async (links: Array<{ skuId?: string; quantity?: number }>) =>
+      links.map((link, index) => ({ skuId: link.skuId ?? `created-${index + 1}`, quantity: link.quantity ?? 1 })),
+    ),
+  };
+}
+
+function createService(
+  dbService: any,
+  productSellableQuantity: any,
+  fulfillmentBacklog?: any,
+  linkResolver: any = makeLinkResolver(),
+) {
   return new ProductSkuMappingService(
-    dbService as any,
-    productSellableQuantity as any,
-    (fulfillmentBacklog ?? { wakeBacklogsWaitingForVariant: jest.fn() }) as any,
+    dbService,
+    productSellableQuantity,
+    fulfillmentBacklog ?? { wakeBacklogsWaitingForVariant: jest.fn() },
+    linkResolver,
   );
 }
 
@@ -53,7 +67,7 @@ describe('ProductSkuMappingService', () => {
   it('does not resolve or wake variant matching without SKU links', async () => {
     const tx = {};
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -65,6 +79,7 @@ describe('ProductSkuMappingService', () => {
       dbService as any,
       productSellableQuantity as any,
       fulfillmentBacklog as any,
+      makeLinkResolver() as any,
     );
 
     await expect(service.upsert('variant-1', { links: [] } as any)).rejects.toBeInstanceOf(BadRequestException);
@@ -117,7 +132,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -129,6 +144,7 @@ describe('ProductSkuMappingService', () => {
       dbService as any,
       productSellableQuantity as any,
       fulfillmentBacklog as any,
+      makeLinkResolver() as any,
     );
 
     await expect(
@@ -227,7 +243,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -239,6 +255,7 @@ describe('ProductSkuMappingService', () => {
       dbService as any,
       productSellableQuantity as any,
       fulfillmentBacklog as any,
+      makeLinkResolver() as any,
     );
 
     const result = await service.upsert(variantId, {
@@ -343,7 +360,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -355,6 +372,7 @@ describe('ProductSkuMappingService', () => {
       dbService as any,
       productSellableQuantity as any,
       fulfillmentBacklog as any,
+      makeLinkResolver() as any,
     );
 
     const result = await service.upsert(variantId, {
@@ -467,7 +485,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -479,6 +497,7 @@ describe('ProductSkuMappingService', () => {
       dbService as any,
       productSellableQuantity as any,
       fulfillmentBacklog as any,
+      makeLinkResolver() as any,
     );
 
     const result = await service.upsert(variantId, {
@@ -523,6 +542,120 @@ describe('ProductSkuMappingService', () => {
       },
       links: [{ productMatchingId: matchingId, skuId, quantity: 2 }],
     });
+  });
+
+  it('creates new SKUs through the resolver on the upsert transaction', async () => {
+    const variantId = 'variant-1';
+    const matchingId = 'matching-1';
+    const existingSku = 'sku-1';
+    const inserts: Array<{ table: unknown; values: any }> = [];
+    const updates: Array<{ table: unknown; set: Record<string, unknown> }> = [];
+    let matching: Record<string, any> = {
+      id: matchingId,
+      variantId,
+      masterId: 'master-1',
+      status: 'pending',
+      strategy: null,
+      isResolved: false,
+    };
+    let links: Array<{ productMatchingId: string; skuId: string; quantity: number }> = [];
+    let salesVariantPolicy: Record<string, any> | null = null;
+
+    const tx = {
+      query: {
+        productMatchings: {
+          findFirst: jest.fn().mockImplementation(async () => matching),
+        },
+        salesVariantPolicies: {
+          findFirst: jest.fn().mockImplementation(async () => salesVariantPolicy),
+        },
+        productVariantSkuLinks: {
+          findMany: jest.fn().mockImplementation(async () => links),
+        },
+      },
+      select: createLinkSelectMock(() => links),
+      update: jest.fn((table: unknown) => ({
+        set: (set: Record<string, unknown>) => {
+          updates.push({ table, set });
+          return {
+            where: () => {
+              if (table === wmsTables.productMatchings) {
+                return {
+                  returning: async () => {
+                    matching = { ...matching, ...set };
+                    return [matching];
+                  },
+                };
+              }
+
+              return Promise.resolve([]);
+            },
+          };
+        },
+      })),
+      delete: jest.fn(() => ({
+        where: jest.fn(async () => {
+          links = [];
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: any) => {
+          inserts.push({ table, values });
+
+          if (table === wmsTables.productVariantSkuLinks) {
+            links = Array.isArray(values) ? values : [values];
+          }
+          if (table === wmsTables.salesVariantPolicies) {
+            salesVariantPolicy = Array.isArray(values) ? values[0] : values;
+          }
+
+          return {
+            returning: async () => {
+              if (table === wmsTables.productMatchings) {
+                matching = { ...matching, ...values };
+                return [matching];
+              }
+
+              return [];
+            },
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          };
+        },
+      })),
+    };
+    const dbService = {
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
+    };
+    const productSellableQuantity = {
+      recalculateAndPublishForVariant: jest.fn(),
+    };
+    const fulfillmentBacklog = {
+      wakeBacklogsWaitingForVariant: jest.fn(),
+    };
+    const linkResolver = makeLinkResolver();
+
+    const service = new ProductSkuMappingService(
+      dbService as any,
+      productSellableQuantity as any,
+      fulfillmentBacklog as any,
+      linkResolver as any,
+    );
+
+    await service.upsert(variantId, {
+      links: [{ skuId: existingSku, quantity: 2 }, { newSku: { name: 'S / 검정' } }],
+    } as any);
+
+    // 리졸버가 upsert 의 트랜잭션을 그대로 받았다
+    expect(linkResolver.resolve).toHaveBeenCalledWith(
+      [{ skuId: existingSku, quantity: 2 }, { newSku: { name: 'S / 검정' } }],
+      tx,
+    );
+
+    // 리졸버가 돌려준 매핑이 그대로 링크로 들어간다
+    expect(inserts.find((entry) => entry.table === wmsTables.productVariantSkuLinks)?.values).toEqual([
+      { productMatchingId: matchingId, skuId: existingSku, quantity: 2 },
+      { productMatchingId: matchingId, skuId: 'created-2', quantity: 1 },
+    ]);
   });
 
   it('reads variant matching batch while preserving input order, duplicates, missing variants, policies, and projections', async () => {
@@ -587,7 +720,7 @@ describe('ProductSkuMappingService', () => {
       ),
     };
     const dbService = {
-      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
+      run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))),
     };
     const productSellableQuantity = {
       getByVariantIds: jest.fn().mockResolvedValue([
@@ -668,7 +801,7 @@ describe('ProductSkuMappingService', () => {
       select: createSelectMock(new Map<unknown, unknown[]>([[productVariants, []]])),
     };
     const service = createService(
-      { run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) },
+      { run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))) },
       { getByVariantIds: jest.fn(), recalculateAndPublishForVariant: jest.fn() },
     );
 
@@ -683,7 +816,7 @@ describe('ProductSkuMappingService', () => {
     const updates: Array<{ table: unknown; set: Record<string, unknown> }> = [];
     const inserts: Array<{ table: unknown; values: Record<string, unknown>; conflictSet?: Record<string, unknown> }> =
       [];
-    let salesVariantPolicy = {
+    const salesVariantPolicy = {
       variantId,
       preStockSellable: true,
       alwaysSellableZeroStock: false,
@@ -747,7 +880,10 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
+    const service = createService(
+      { run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))) },
+      productSellableQuantity,
+    );
 
     const result = await service.updateVariantStockPolicy(variantId, {
       preStockSellable: false,
@@ -819,7 +955,10 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
+    const service = createService(
+      { run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))) },
+      productSellableQuantity,
+    );
 
     await service.updateVariantStockPolicy(variantId, { preStockSellable: true });
 
@@ -877,7 +1016,10 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
+    const service = createService(
+      { run: jest.fn((fn, txArg) => (txArg ? fn(txArg) : fn(tx))) },
+      productSellableQuantity,
+    );
 
     await service.updateVariantStockPolicy(variantId, { availabilityOverride: null });
 

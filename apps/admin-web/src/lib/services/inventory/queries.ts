@@ -7,7 +7,6 @@ import {
   stockValuationClient,
   type StockValuationProductsQuery,
 } from '../../api/domains/inventory/stock-valuation.client';
-import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
 import { skuGroupsClient } from '../../api/domains/inventory/sku-groups.client';
@@ -273,23 +272,6 @@ export const useConsolidations = () => {
   return useQuery({
     queryKey: inventoryQueryKeys.consolidations,
     queryFn: () => Promise.resolve([]),
-  });
-};
-
-// 자동재고매칭 관련 쿼리
-export const useInventoryMatchings = () => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.inventoryMatchings(),
-    queryFn: () => inventoryMatchingClient.matchings.list(),
-    staleTime: 2 * 60 * 1000,
-  });
-};
-
-export const useInventoryMatching = (id: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.inventoryMatching(id),
-    queryFn: () => inventoryMatchingClient.matchings.get(id),
-    enabled: !!id,
   });
 };
 

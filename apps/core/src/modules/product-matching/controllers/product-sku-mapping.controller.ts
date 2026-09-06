@@ -9,6 +9,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   HttpException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { ProductSkuMappingService } from '../services/product-sku-mapping.service';
@@ -19,6 +20,7 @@ import {
   VariantMatchingBatchItemDto,
   VariantMatchingBatchResponseDto,
 } from '../dto/variant-matching-batch.dto';
+import { NewSkuScopeGuard } from '../guards/new-sku-scope.guard';
 
 @ApiTags('Product Matchings')
 @Controller('matchings')
@@ -67,6 +69,7 @@ export class ProductSkuMappingController {
   }
 
   @Put(':variantId')
+  @UseGuards(NewSkuScopeGuard)
   async upsert(@Param('variantId') variantId: string, @Body() dto: UpsertMatchingDto) {
     try {
       return await this.service.upsert(variantId, dto);

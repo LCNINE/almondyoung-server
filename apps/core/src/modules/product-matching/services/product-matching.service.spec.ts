@@ -1,126 +1,119 @@
 import { ProductMatchingService } from './product-matching.service';
 import { ResolveMatchingDto } from '../dto/resolve-matching.dto';
 
-describe('ProductMatchingService strategy semantics', () => {
-  const matching = {
-    id: '11111111-1111-1111-1111-111111111111',
-    variantId: '22222222-2222-2222-2222-222222222222',
-    masterId: '33333333-3333-3333-3333-333333333333',
+const matching = {
+  id: '11111111-1111-1111-1111-111111111111',
+  variantId: '22222222-2222-2222-2222-222222222222',
+  masterId: '33333333-3333-3333-3333-333333333333',
+};
+
+function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>> } = {}) {
+  const productSellableQuantity = {
+    recalculateAndPublishForVariant: jest.fn().mockResolvedValue({ projection: null, published: false }),
   };
-
-  function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>> } = {}) {
-    const productSellableQuantity = {
-      recalculateAndPublishForVariant: jest.fn().mockResolvedValue({ projection: null, published: false }),
-    };
-    const fulfillmentBacklog = {
-      wakeBacklogsWaitingForVariant: jest.fn().mockResolvedValue(0),
-    };
-    const auditService = {
-      log: jest.fn().mockResolvedValue(undefined),
-    };
-    const stockEventService = {
-      createStockEntryBySkuId: jest.fn().mockImplementation(async ({ quantity }) => {
-        if (quantity <= 0) {
-          throw new Error('quantity must be positive');
-        }
-
-        return { skuId: 'unused' };
-      }),
-    };
-    const warehouseService = {
-      getDefaultId: jest.fn(() => '44444444-4444-4444-4444-444444444444'),
-    };
-    const transactionTxs = [...(options.transactionTxs ?? [])];
-    const dbService = {
-      run: jest.fn(async (fn, tx) => (tx ? fn(tx) : fn(transactionTxs.shift() ?? makeTx()))),
-      db: {
-        query: {
-          skus: {
-            findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
-          },
-        },
-      },
-    };
-
-    const service = new ProductMatchingService(
-      dbService as never,
-      {} as never,
-      stockEventService as never,
-      warehouseService as never,
-      productSellableQuantity as never,
-      fulfillmentBacklog as never,
-      auditService as never,
-    );
-
-    return {
-      service,
-      productSellableQuantity,
-      fulfillmentBacklog,
-      stockEventService,
-      warehouseService,
-      dbService,
-      auditService,
-    };
-  }
-
-  function makeTx(selectRowsQueue: unknown[][] = [[]]) {
-    const inserts: unknown[] = [];
-    const updates: unknown[] = [];
-    const deletes: unknown[] = [];
-
-    const tx = {
-      inserts,
-      updates,
-      deletes,
+  const fulfillmentBacklog = {
+    wakeBacklogsWaitingForVariant: jest.fn().mockResolvedValue(0),
+  };
+  const auditService = {
+    log: jest.fn().mockResolvedValue(undefined),
+  };
+  const linkResolver = {
+    resolve: jest.fn(async (links: Array<{ skuId?: string; newSku?: unknown; quantity?: number }>) =>
+      links.map((link, index) => ({
+        skuId: link.skuId ?? `created-${index + 1}`,
+        quantity: link.quantity ?? 1,
+      })),
+    ),
+  };
+  const transactionTxs = [...(options.transactionTxs ?? [])];
+  const dbService = {
+    run: jest.fn(async (fn, tx) => (tx ? fn(tx) : fn(transactionTxs.shift() ?? makeTx()))),
+    db: {
       query: {
         skus: {
           findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
         },
       },
-      select: jest.fn(() => {
-        const rows = selectRowsQueue.shift() ?? [];
-        const builder: Record<string, jest.Mock> = {};
-        builder.from = jest.fn(() => builder);
-        builder.where = jest.fn(() => builder);
-        builder.leftJoin = jest.fn(() => builder);
-        builder.orderBy = jest.fn(() => builder);
-        builder.limit = jest.fn(() => builder);
-        builder.offset = jest.fn(() => builder);
-        builder.then = jest.fn((resolve, reject) => Promise.resolve(rows).then(resolve, reject));
-        builder.catch = jest.fn((reject) => Promise.resolve(rows).catch(reject));
-        return builder;
+    },
+  };
+
+  const service = new ProductMatchingService(
+    dbService as never,
+    productSellableQuantity as never,
+    fulfillmentBacklog as never,
+    auditService as never,
+    linkResolver as never,
+  );
+
+  return {
+    service,
+    productSellableQuantity,
+    fulfillmentBacklog,
+    dbService,
+    auditService,
+    linkResolver,
+  };
+}
+
+function makeTx(selectRowsQueue: unknown[][] = [[]]) {
+  const inserts: unknown[] = [];
+  const updates: unknown[] = [];
+  const deletes: unknown[] = [];
+
+  const tx = {
+    inserts,
+    updates,
+    deletes,
+    query: {
+      skus: {
+        findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
+      },
+    },
+    select: jest.fn(() => {
+      const rows = selectRowsQueue.shift() ?? [];
+      const builder: Record<string, jest.Mock> = {};
+      builder.from = jest.fn(() => builder);
+      builder.where = jest.fn(() => builder);
+      builder.leftJoin = jest.fn(() => builder);
+      builder.orderBy = jest.fn(() => builder);
+      builder.limit = jest.fn(() => builder);
+      builder.offset = jest.fn(() => builder);
+      builder.then = jest.fn((resolve, reject) => Promise.resolve(rows).then(resolve, reject));
+      builder.catch = jest.fn((reject) => Promise.resolve(rows).catch(reject));
+      return builder;
+    }),
+    insert: jest.fn(() => ({
+      values: jest.fn((values: unknown) => {
+        inserts.push(values);
+        return {
+          returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
+          onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+        };
       }),
-      insert: jest.fn(() => ({
-        values: jest.fn((values: unknown) => {
-          inserts.push(values);
-          return {
+    })),
+    update: jest.fn(() => ({
+      set: jest.fn((values: unknown) => {
+        updates.push(values);
+        return {
+          where: jest.fn(() => ({
             returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
-            onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
-            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
-          };
-        }),
-      })),
-      update: jest.fn(() => ({
-        set: jest.fn((values: unknown) => {
-          updates.push(values);
-          return {
-            where: jest.fn(() => ({
-              returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
-            })),
-          };
-        }),
-      })),
-      delete: jest.fn(() => ({
-        where: jest.fn((where: unknown) => {
-          deletes.push(where);
-          return Promise.resolve();
-        }),
-      })),
-    };
+          })),
+        };
+      }),
+    })),
+    delete: jest.fn(() => ({
+      where: jest.fn((where: unknown) => {
+        deletes.push(where);
+        return Promise.resolve();
+      }),
+    })),
+  };
 
-    return tx;
-  }
+  return tx;
+}
 
+describe('ProductMatchingService strategy semantics', () => {
   it('maps legacy ignore=true input to matched + void without SKU links', async () => {
     const { service, productSellableQuantity, fulfillmentBacklog } = makeService();
     const tx = makeTx([[matching]]);
@@ -196,7 +189,7 @@ describe('ProductMatchingService strategy semantics', () => {
 
   it('resolves SKU 구성 매칭 and wakes waiting fulfillment backlog', async () => {
     const { service, fulfillmentBacklog } = makeService();
-    const tx = makeTx([[matching]]);
+    const tx = makeTx([[matching], [{ id: '44444444-4444-4444-4444-444444444444' }]]);
     const skuId = '44444444-4444-4444-4444-444444444444';
 
     const result = await service.resolveMatchingPending(
@@ -228,7 +221,7 @@ describe('ProductMatchingService strategy semantics', () => {
 
   it('persists accepted availability override when resolving SKU 구성 matching', async () => {
     const { service, productSellableQuantity } = makeService();
-    const tx = makeTx([[matching]]);
+    const tx = makeTx([[matching], [{ id: '44444444-4444-4444-4444-444444444444' }]]);
     const skuId = '44444444-4444-4444-4444-444444444444';
 
     await service.resolveMatchingPending(
@@ -391,7 +384,7 @@ describe('ProductMatchingService strategy semantics', () => {
   });
 
   it('resolves existing pending automatic SKU 구성 matching without stock entry and wakes waiting fulfillment backlog', async () => {
-    const { service, fulfillmentBacklog, stockEventService, warehouseService } = makeService();
+    const { service, fulfillmentBacklog } = makeService();
     const skuId = '55555555-5555-5555-5555-555555555555';
     const tx = makeTx([
       [
@@ -432,8 +425,6 @@ describe('ProductMatchingService strategy semantics', () => {
       strategy: 'variant',
       isResolved: true,
     });
-    expect(warehouseService.getDefaultId).not.toHaveBeenCalled();
-    expect(stockEventService.createStockEntryBySkuId).not.toHaveBeenCalled();
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
@@ -697,5 +688,96 @@ describe('ProductMatchingService strategy semantics', () => {
       availabilityOverride: 'manual_out_of_stock',
       comingSoonDate: null,
     });
+  });
+});
+
+describe('ProductMatchingService links input', () => {
+  const EXISTING_SKU = '44444444-4444-4444-4444-444444444444';
+
+  it('resolves links by creating new SKUs on the same transaction', async () => {
+    const { service, linkResolver } = makeService();
+    const tx = makeTx([[matching], [{ id: EXISTING_SKU }, { id: 'created-2' }]]);
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'variant',
+        links: [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } as never }],
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(linkResolver.resolve).toHaveBeenCalledWith(
+      [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } }],
+      tx,
+    );
+    expect(tx.inserts[0]).toMatchObject({ productMatchingId: matching.id, skuId: EXISTING_SKU, quantity: 2 });
+    expect(tx.inserts[1]).toMatchObject({ productMatchingId: matching.id, skuId: 'created-2', quantity: 1 });
+    expect(tx.updates[0]).toMatchObject({ status: 'matched', strategy: 'variant', isResolved: true });
+  });
+
+  it('resolves links on the transaction it opens, not on an ambient connection', async () => {
+    // run 이 여는 «내부» 트랜잭션. 바깥에서 tx 를 넘기지 않으므로 이것이 콜백의 trx 가 된다.
+    // makeService 에 같은 innerTx 를 두 번 넣으므로 selectRowsQueue 도 공유된다 —
+    // 첫 run(매칭 조회)이 [matching] 을 소진하고, 두 번째 run(validate) 이 [{id:…},{id:…}] 를 받는다.
+    const innerTx = makeTx([[matching], [{ id: EXISTING_SKU }, { id: 'created-2' }]]);
+    const { service, linkResolver } = makeService({ transactionTxs: [innerTx, innerTx] });
+
+    await service.resolveMatchingPending(matching.id, {
+      strategy: 'variant',
+      links: [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } as never }],
+    } as ResolveMatchingDto); // ← tx 를 넘기지 않는다: 구현이 어떤 트랜잭션을 여는지가 이 테스트의 핵심이다
+
+    // 리졸버는 «그 내부 트랜잭션»을 받아야 한다. 구현이 run 밖에서 불렀다면 여기서 깨진다.
+    expect(linkResolver.resolve).toHaveBeenCalledWith(
+      [{ skuId: EXISTING_SKU, quantity: 2 }, { newSku: { name: 'S / 검정' } }],
+      innerTx,
+    );
+    expect(innerTx.inserts[0]).toMatchObject({ productMatchingId: matching.id, skuId: EXISTING_SKU, quantity: 2 });
+    expect(innerTx.inserts[1]).toMatchObject({ productMatchingId: matching.id, skuId: 'created-2', quantity: 1 });
+  });
+
+  it('prefers links over the deprecated skuMappings input', async () => {
+    const { service, linkResolver } = makeService();
+    const tx = makeTx([[matching], [{ id: EXISTING_SKU }]]);
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'variant',
+        links: [{ skuId: EXISTING_SKU, quantity: 3 }],
+        skuMappings: [{ skuId: '99999999-9999-9999-9999-999999999999', quantity: 1 }],
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(linkResolver.resolve).toHaveBeenCalledTimes(1);
+    expect(tx.inserts[0]).toMatchObject({ skuId: EXISTING_SKU, quantity: 3 });
+  });
+
+  it('rejects links together with the void strategy', async () => {
+    const { service } = makeService();
+    const tx = makeTx([[matching]]);
+
+    await expect(
+      service.resolveMatchingPending(
+        matching.id,
+        { strategy: 'void', links: [{ skuId: EXISTING_SKU }] } as ResolveMatchingDto,
+        tx as never,
+      ),
+    ).rejects.toThrow('void strategy does not accept SKU mappings.');
+  });
+
+  it('does not call the resolver when no links are supplied', async () => {
+    const { service, linkResolver } = makeService();
+    const tx = makeTx([[matching], [{ id: EXISTING_SKU }]]);
+
+    await service.resolveMatchingPending(
+      matching.id,
+      { strategy: 'variant', skuMappings: [{ skuId: EXISTING_SKU, quantity: 1 }] } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(linkResolver.resolve).not.toHaveBeenCalled();
   });
 });
