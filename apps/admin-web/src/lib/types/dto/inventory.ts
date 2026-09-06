@@ -1060,65 +1060,6 @@ export interface HolderDto {
   updatedAt: string;
 }
 
-// 재고 옵션 DTO
-export interface InventoryOptionDto {
-  id?: string;
-  name: string;
-  image?: string;
-  price: number;
-}
-
-// 자동재고매칭 요청 DTO
-export interface CreateInventoryMatchingDto {
-  // 기본 정보
-  productType: ProductType;
-  citizenProductName: string;
-  supplierId: string;
-  stockOwnerId: string;
-  warehouseId: string;
-  usage?: string;
-  importDeclaration?: string;
-  importCertificate?: string;
-  optionDetail?: string;
-
-  // 가격 정보
-  costPrice: number;
-
-  // 옵션 정보
-  options: InventoryOptionDto[];
-
-  // 추가 정보
-  productDescription?: string;
-  moq?: string;
-  memo1?: string;
-  memo2?: string;
-  memo3?: string;
-  memo4?: string;
-}
-
-// 자동재고매칭 응답 DTO (백엔드 스펙에 맞게 수정)
-export interface InventoryMatchingResponseDto {
-  id: string;
-  sellingProductId: string;
-  sellingProductName: string;
-  sellingProductOption: string;
-  productType: ProductType;
-  supplierId: string;
-  supplierName: string;
-  stockOwnerId: string;
-  stockOwnerName: string;
-  warehouseId: string;
-  warehouseName: string;
-  skuMappings: {
-    skuId: string;
-    skuName: string;
-    quantity: number;
-  }[];
-  status: 'active' | 'inactive';
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface HolderSearchQuery {
   search?: string;
   isOurAsset?: boolean;
