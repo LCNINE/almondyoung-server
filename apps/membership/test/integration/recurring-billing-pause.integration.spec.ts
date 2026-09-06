@@ -24,12 +24,9 @@ import { membershipSchema, type MembershipSchema } from '../../src/shared/schema
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { eq, and } from 'drizzle-orm';
 import { addDays, format } from 'date-fns';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
-
-// .env 파일 로드
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
-
+// 실행: `npm run test:membership:integration` (전용 명령이 .env 를 주입하고 --runInBand 로 돈다).
+// 이 스펙은 **바깥 환경**의 DATABASE_URL 만 읽는다 — 스스로 .env 를 읽으면 맨 `npx jest` 에
+// 딸려 들어와, 같은 물리 DB 를 쓰는 다른 통합 스펙과 병렬 워커에서 경쟁한다 (#793).
 // DB 가 없으면 스위트를 건너뛴다 (core·channel-adapter 의 REQUIRE_*_DB 컨벤션과 동일).
 // CI 등 DB 가 반드시 있어야 하는 경로에서는 REQUIRE_MEMBERSHIP_DB=1 로 누락을 실패시킨다.
 const DATABASE_URL = process.env.DATABASE_URL ?? '';

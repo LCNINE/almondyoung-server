@@ -165,6 +165,7 @@
     "test:membership": "jest --config ./apps/membership/jest-e2e.json --testPathPattern=membership-api.itdoc.spec.ts --verbose",
     "test:membership:cancellation-e2e": "./scripts/test/membership-cancellation-e2e.sh",
     "test:membership:coverage": "jest --config ./apps/membership/test/jest-e2e.json --coverage",
+    "test:membership:integration": "REQUIRE_MEMBERSHIP_DB=1 dotenv -e apps/membership/.env -- jest --runInBand --testPathPattern='apps/membership/.*\\.integration\\.spec\\.ts$'",
     "test:membership:e2e:coverage": "npm run test:membership:coverage",
     "test:membership:e2e:verbose": "npm run test:membership:verbose",
     "test:membership:e2e:watch": "npm run test:membership:watch",
