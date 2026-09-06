@@ -42,48 +42,49 @@ export class UserEventConsumer {
     inbox: { aggregateType: string; aggregateId: string; payload: object } | null,
     fallbackKey: string,
   ): Promise<boolean> {
-    const db = this.dbService.db;
     const idempotencyKey = envelope.messageId || fallbackKey;
 
-    const [existing] = await db
-      .select()
-      .from(processedEvents)
-      .where(eq(processedEvents.idempotencyKey, idempotencyKey))
-      .limit(1);
+    return this.dbService.run(async (trx) => {
+      const [existing] = await trx
+        .select()
+        .from(processedEvents)
+        .where(eq(processedEvents.idempotencyKey, idempotencyKey))
+        .limit(1);
 
-    if (existing) {
-      this.logger.debug(`[User] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
-      return false;
-    }
+      if (existing) {
+        this.logger.debug(`[User] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
+        return false;
+      }
 
-    await db.insert(processedEvents).values({
-      idempotencyKey,
-      source: 'users.events.v1',
-      eventType,
-      resourceId,
-      eventVersion: envelope.messageId || new Date().toISOString(),
-      status: 'PROCESSED',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      await trx.insert(processedEvents).values({
+        idempotencyKey,
+        source: 'users.events.v1',
+        eventType,
+        resourceId,
+        eventVersion: envelope.messageId || new Date().toISOString(),
+        status: 'PROCESSED',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      if (!inbox) return true;
+
+      await trx.insert(inboxEvents).values({
+        eventType,
+        aggregateType: inbox.aggregateType,
+        aggregateId: inbox.aggregateId,
+        partitionKey: inbox.aggregateId,
+        payload: inbox.payload,
+        metadata: {
+          correlationId: envelope.correlationId,
+          messageId: envelope.messageId,
+          chainId: envelope.chainId,
+        },
+        status: 'pending',
+        createdAt: new Date(),
+      });
+      return true;
     });
-
-    if (!inbox) return true;
-
-    await db.insert(inboxEvents).values({
-      eventType,
-      aggregateType: inbox.aggregateType,
-      aggregateId: inbox.aggregateId,
-      partitionKey: inbox.aggregateId,
-      payload: inbox.payload,
-      metadata: {
-        correlationId: envelope.correlationId,
-        messageId: envelope.messageId,
-        chainId: envelope.chainId,
-      },
-      status: 'pending',
-      createdAt: new Date(),
-    });
-    return true;
   }
 
   @On(USER_STREAM, 'Cafe24Linked')

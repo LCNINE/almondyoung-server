@@ -18,6 +18,10 @@ jest.setTimeout(180 * 1000);
  * 「레거시 my-auth identity」케이스는 auth identity 삭제 step 의 세 소스 중 (a) `app_metadata.customer_id`,
  * (b) `user-service-sso` 의 `entity_id=userId` 와 무관하게 (c) `my-auth` 의 `entity_id=익명화 전 이메일`
  * 만으로도 독립적으로 찾아 지우는지를 본다 — 링크 없는 별도 identity 라 dedupe 대상이 아니라 합산돼야 한다.
+ *
+ * 첫 케이스는 다른 `almond_user_id` 를 가진 살아있는 고객을 하나 더 만들어 필터가 대상만 정확히 집는지도
+ * 본다 (M3) — `disableAutoTeardown: true` 라 이전 케이스가 남긴 고객은 이미 soft-delete 상태라서, 그것만으로는
+ * "살아있는 고객이 두 명일 때" 를 커버하지 못한다.
  */
 medusaIntegrationTestRunner({
   inApp: true,
@@ -95,6 +99,13 @@ medusaIntegrationTestRunner({
       const customerModule = container.resolve(Modules.CUSTOMER);
       const authModule = container.resolve(Modules.AUTH);
 
+      // M3: 다른 almond_user_id 를 가진 살아있는 고객이 하나 더 있어도 필터가 그 고객은 건드리지 않는지 본다.
+      const unrelatedUserId = `00000000-0000-4000-8000-${String(seq).padStart(11, '0')}9`;
+      const unrelatedEmail = `unrelated${seq}@withdraw.test`;
+      const [unrelated] = await customerModule.createCustomers([
+        { email: unrelatedEmail, has_account: true, metadata: { almond_user_id: unrelatedUserId } },
+      ]);
+
       const res = await withdraw(userId);
 
       expect(res.status).toBe(200);
@@ -118,6 +129,10 @@ medusaIntegrationTestRunner({
       expect(identities).toHaveLength(0);
       const providerIdentities = await authModule.listProviderIdentities({ entity_id: userId, provider: 'user-service-sso' });
       expect(providerIdentities).toHaveLength(0);
+
+      const [unrelatedAfter] = await customerModule.listCustomers({ id: unrelated.id }, { withDeleted: true } as any);
+      expect(unrelatedAfter.email).toBe(unrelatedEmail);
+      expect(unrelatedAfter.deleted_at).toBeNull();
     });
 
     it('레거시 my-auth identity 도 함께 지운다 — (a)/(b) 와 무관한 별도 identity 라 dedupe 가 아니라 합산이다', async () => {

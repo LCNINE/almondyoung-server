@@ -1,7 +1,7 @@
 import { UserEventConsumer } from './user-event.consumer';
 import { cafe24MemberMappings, inboxEvents, processedEvents } from '../schema';
 
-function createDbMock(existingProcessedEvents: unknown[] = []) {
+function createDbMock(existingProcessedEvents: unknown[] = [], failOnTable: unknown = null) {
   const inserts: Array<{ table: unknown; values: any }> = [];
   const deletes: unknown[] = [];
   const limit = jest.fn().mockResolvedValue(existingProcessedEvents);
@@ -11,13 +11,18 @@ function createDbMock(existingProcessedEvents: unknown[] = []) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const insert = jest.fn((table: unknown) => ({
     values: jest.fn((values: any) => {
+      if (failOnTable && table === failOnTable) {
+        return Promise.reject(new Error('insert failed'));
+      }
       inserts.push({ table, values });
       // cafe24MemberMappings upsert 는 체이닝, 나머지는 await
       return Object.assign(Promise.resolve(), { onConflictDoUpdate });
     }),
   }));
   const del = jest.fn((table: unknown) => ({ where: jest.fn(async () => { deletes.push(table); }) }));
-  return { db: { select, insert, delete: del }, inserts, deletes };
+  const db = { select, insert, delete: del };
+  const run = jest.fn(async (fn: (trx: unknown) => unknown) => fn(db));
+  return { db, run, inserts, deletes };
 }
 
 const USER_ID = '3f9a1c2e-1111-4222-8333-444455556666';
@@ -27,7 +32,7 @@ describe('UserEventConsumer (#786)', () => {
   describe('UserDeleted', () => {
     it('processed_events 기록 후 inbox 에 MedusaCustomer 행을 넣는다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onUserDeleted(envelope, { userId: USER_ID });
 
@@ -54,7 +59,7 @@ describe('UserEventConsumer (#786)', () => {
 
     it('같은 messageId 가 다시 오면 아무것도 넣지 않는다', async () => {
       const dbMock = createDbMock([{ idempotencyKey: 'msg-1' }]);
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onUserDeleted(envelope, { userId: USER_ID });
 
@@ -63,18 +68,27 @@ describe('UserEventConsumer (#786)', () => {
 
     it('messageId 가 없으면 UserDeleted:<userId> 를 멱등키로 쓴다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onUserDeleted({ ...envelope, messageId: undefined }, { userId: USER_ID });
 
       expect(dbMock.inserts[0].values.idempotencyKey).toBe(`UserDeleted:${USER_ID}`);
+    });
+
+    it('inbox_events insert 가 실패하면 트랜잭션 경계 안에서 에러가 전파된다 (I1)', async () => {
+      const dbMock = createDbMock([], inboxEvents);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
+
+      await expect(consumer.onUserDeleted(envelope, { userId: USER_ID })).rejects.toThrow('insert failed');
+
+      expect(dbMock.run).toHaveBeenCalledTimes(1);
     });
   });
 
   describe('UserUpdated', () => {
     it('email 이 있으면 inbox 에 { userId, email } 만 싣는다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onUserUpdated(envelope, { userId: USER_ID, email: 'new@example.com', nickname: '닉' });
 
@@ -90,7 +104,7 @@ describe('UserEventConsumer (#786)', () => {
 
     it('email 이 없는 프로필 수정은 processed 만 기록하고 inbox 에 넣지 않는다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onUserUpdated(envelope, { userId: USER_ID, nickname: '닉' });
 
@@ -102,7 +116,7 @@ describe('UserEventConsumer (#786)', () => {
   describe('기존 Cafe24 핸들러는 헬퍼를 지나도 같은 행을 만든다', () => {
     it('Cafe24Linked: processed + inbox(FirebaseMembership) + 매핑 upsert', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onCafe24Linked(envelope, {
         userId: USER_ID,
@@ -123,7 +137,7 @@ describe('UserEventConsumer (#786)', () => {
 
     it('Cafe24Linked: messageId 가 없으면 Cafe24Linked:<userId>:<cafe24MemberId> 를 멱등키로 쓴다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onCafe24Linked(
         { ...envelope, messageId: undefined },
@@ -141,7 +155,7 @@ describe('UserEventConsumer (#786)', () => {
 
     it('Cafe24Unlinked: processed + inbox + 매핑 delete', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onCafe24Unlinked(envelope, {
         userId: USER_ID,
@@ -157,7 +171,7 @@ describe('UserEventConsumer (#786)', () => {
 
     it('Cafe24Unlinked: messageId 가 없으면 Cafe24Unlinked:<userId>:<cafe24MemberId> 를 멱등키로 쓴다', async () => {
       const dbMock = createDbMock();
-      const consumer = new UserEventConsumer({ db: dbMock.db } as any);
+      const consumer = new UserEventConsumer({ db: dbMock.db, run: dbMock.run } as any);
 
       await consumer.onCafe24Unlinked(
         { ...envelope, messageId: undefined },

@@ -2,9 +2,9 @@ import { DbService, InjectDb } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { Injectable, Logger } from '@nestjs/common';
 import { USER_STREAM } from '@packages/event-contracts/streams';
-import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, asc, gt, isNotNull, like, type SQL } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
+import { type UserServiceSchema } from '../../../database/drizzle/schema';
 
 export type ReplayWithdrawnParams = { dryRun: boolean; limit?: number; afterUserId?: string };
 export type ReplayWithdrawnResult = {
