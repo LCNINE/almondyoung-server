@@ -186,13 +186,14 @@ select   users WHERE deleted_at IS NOT NULL
                AND email LIKE 'withdrawn\_%@deleted.invalid'
                AND (afterUserId 없거나 id > afterUserId)
          ORDER BY id LIMIT limit
-response { matched: number, published: number, lastUserId: string | null, userIds: string[] }
+response { matched: number, published: number, lastUserId: string | null, failedUserId: string | null, userIds: string[] }
 ```
 
 호출자는 사람(운영자)이다 — 배포 뒤 `Authorization: Bearer $USER_SERVICE_INTERNAL_KEY` 로 curl 한다. 크론도
 서비스도 부르지 않는다. `dryRun=false` 면 행마다 `eventPublisher.publishEvent({ eventType: 'UserDeleted', aggregateId: id, payload: { userId: id } })`.
 `softDeleteUser` 와 같은 발행 방식(⑩)이라 새 배선이 없다. 커서 페이징이라 여러 번 불러도 겹치지 않고,
 겹쳐도 하류가 멱등하다(결정 3, membership 은 이미 해지된 계약을 건너뛴다).
+발행이 하나 실패하면 거기서 멈추고 `published` 는 성공 건수, `lastUserId` 는 마지막 **성공** id, `failedUserId` 는 실패한 id 다 — 운영자는 `afterUserId = lastUserId` 로 이어서 부른다.
 
 **선택 조건이 `deleted_at` 만이 아닌 이유**(⑩): 09-02 이전 `deleted_at` 은 휴면과 탈퇴가 공유했고
 마이그레이션이 재분류하지 않았다. 치환 이메일은 탈퇴 익명화를 거쳤다는 유일한 증거다. 이 조건에 안
