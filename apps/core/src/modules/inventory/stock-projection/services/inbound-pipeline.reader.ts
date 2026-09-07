@@ -9,6 +9,8 @@ export interface InboundPipelineRow {
   skuId: string;
   onOrderQty: number;
   onOrderEta: Date | null;
+  /** 창고 불문 pending 계획 잔량. 전사 축(#743)이 쓴다. 판매창고행 = onOrderTotalQty − onOrderQty. */
+  onOrderTotalQty: number;
   awaitingTransferQty: number;
   inTransitQty: number;
   inTransitEta: Date | null;
@@ -51,6 +53,7 @@ export class InboundPipelineReader {
 
     return this.dbService.run(async (trx) => {
       const onOrder = await this.readOnOrder(trx, skuIds);
+      const onOrderTotal = await this.readOnOrderTotal(trx, skuIds);
       const awaiting = await this.readAwaitingTransfer(trx, skuIds);
       const inTransit = await this.readInTransit(trx, skuIds, input.toWarehouseId);
 
@@ -58,6 +61,7 @@ export class InboundPipelineReader {
         skuId,
         onOrderQty: onOrder.get(skuId)?.qty ?? 0,
         onOrderEta: onOrder.get(skuId)?.eta ?? null,
+        onOrderTotalQty: onOrderTotal.get(skuId) ?? 0,
         awaitingTransferQty: awaiting.get(skuId) ?? 0,
         inTransitQty: inTransit.get(skuId)?.qty ?? 0,
         inTransitEta: inTransit.get(skuId)?.eta ?? null,
@@ -95,6 +99,23 @@ export class InboundPipelineReader {
 
     // 'YYYY-MM-DD' 는 UTC 자정으로 결정적으로 파싱된다 — TZ 함정이 없다.
     return new Map(rows.map((row) => [row.skuId, { qty: Number(row.qty), eta: row.eta ? new Date(row.eta) : null }]));
+  }
+
+  /**
+   * 전 창고 pending 계획 잔량. ①과 달리 판매 창고행(국내 직행 발주)도 센다 — 전사 축은
+   * "회사가 이미 산 것" 전부가 필요하다. ①의 비판매 조건을 지우는 게 아니라 항목을 하나 더 낸다.
+   */
+  private async readOnOrderTotal(trx: DbTx, skuIds: string[]): Promise<Map<string, number>> {
+    const items = wmsTables.inboundPlanItems;
+    const rows = await trx
+      .select({
+        skuId: items.skuId,
+        qty: sql<number>`SUM(${items.expectedQty} - ${items.receivedQty})::int`,
+      })
+      .from(items)
+      .where(and(eq(items.status, 'pending'), inArray(items.skuId, skuIds)))
+      .groupBy(items.skuId);
+    return new Map(rows.map((row) => [row.skuId, Number(row.qty)]));
   }
 
   /** ② 비판매 창고에 도착해 있으나 아직 이동 지시서에 실리지 않은 물량. 예정일이라 할 것이 없다. */
