@@ -23,6 +23,7 @@ import { StockProjectionService } from '../../stock-projection/services/stock-pr
 import { StockProjectionReader } from '../../stock-projection/services/stock-projection.reader';
 import { StockProjectionManager } from '../../stock-projection/services/stock-projection.manager';
 import { ReplenishmentStockReader } from './replenishment-stock.reader';
+import { ReplenishmentSuggestionReader } from './replenishment-suggestion.reader';
 import { ReplenishmentSuggestionService } from './replenishment-suggestion.service';
 
 /**
@@ -70,12 +71,12 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
       w.location,
       new InventoryIdempotencyService(dbService),
     );
-    const service = new ReplenishmentSuggestionService(
-      dbService,
+    const reader = new ReplenishmentSuggestionReader(
       new ReplenishmentStockReader(dbService),
       projection,
       transferReader,
     );
+    const service = new ReplenishmentSuggestionService(dbService, reader);
     return { service, manager };
   }
 
