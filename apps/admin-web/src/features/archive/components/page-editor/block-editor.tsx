@@ -3,8 +3,8 @@
 import '@blocknote/shadcn/style.css';
 import './block-editor.css';
 
-import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { FileText } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FileText, FileSymlink } from 'lucide-react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { BlockNoteView } from '@blocknote/shadcn';
@@ -28,8 +28,14 @@ import {
   uploadRichTextImage,
 } from '@/lib/api/domains/files/upload.client';
 import { archiveClient } from '@/lib/api/domains/archive';
-import { archiveQueryKeys, useCreateArchivePage } from '@/lib/services/archive';
+import {
+  archiveQueryKeys,
+  useArchiveTree,
+  useCreateArchivePage,
+  useMoveArchivePage,
+} from '@/lib/services/archive';
 import type { ArchiveBlock, ArchiveSpace } from '@/lib/types/dto/archive';
+import { ArchivePagePicker, type PickedArchivePage } from '../page-picker';
 import {
   ArchiveEditorScopeProvider,
   SUB_PAGE_BLOCK_TYPE,
@@ -136,8 +142,14 @@ export default function BlockEditor({
   );
 
   const createPage = useCreateArchivePage();
+  const moveMutation = useMoveArchivePage(space);
+  const { data: treeNodes } = useArchiveTree(space);
   const queryClient = useQueryClient();
   const scope = useMemo(() => ({ pageId, space }), [pageId, space]);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // 문서를 고르는 동안 본문에 자리를 잡아 두는 빈 블록. 취소하면 도로 걷어낸다.
+  const pendingPickBlockId = useRef<string | null>(null);
 
   // 가장 최근 질의만 서버로 보낸다. 늦게 온 결과는 편집기가 이미 버리지만, 보내지 않는 게 낫다.
   const searchSeq = useRef(0);
@@ -222,6 +234,75 @@ export default function BlockEditor({
       });
   }, [createPage, editor, flush, pageId, space]);
 
+  /**
+   * 하위로 넣을 수 없는 문서 — 자기 자신과 자기 조상. 조상을 자기 밑으로 넣으면
+   * 트리가 자기 자신을 물어 사이드바에서 통째로 사라진다.
+   */
+  const excludedPageIds = useMemo(() => {
+    const excluded = new Set<string>([pageId]);
+    const byId = new Map((treeNodes ?? []).map((node) => [node.id, node]));
+    let cursor = byId.get(pageId)?.parentId ?? null;
+    while (cursor && !excluded.has(cursor)) {
+      excluded.add(cursor);
+      cursor = byId.get(cursor)?.parentId ?? null;
+    }
+    return excluded;
+  }, [pageId, treeNodes]);
+
+  // 「기존 문서 넣기」 — 자식을 새로 만드는 대신 이미 있는 문서를 고른다.
+  // 고르는 동안 자리를 잡아 둬야 커서가 있던 위치에 들어간다(다이얼로그가 포커스를 가져간다).
+  const startPickExisting = useCallback(() => {
+    const block = insertOrUpdateBlockForSlashMenu(editor, {
+      type: SUB_PAGE_BLOCK_TYPE,
+      props: { pageId: '' },
+    });
+    pendingPickBlockId.current = block.id;
+    setPickerOpen(true);
+  }, [editor]);
+
+  const cancelPickExisting = useCallback(() => {
+    const blockId = pendingPickBlockId.current;
+    pendingPickBlockId.current = null;
+    if (blockId) editor.removeBlocks([blockId]);
+  }, [editor]);
+
+  /**
+   * 고른 문서를 본문에 넣고, 아직 이 문서의 자식이 아니면 하위로 옮긴다.
+   * 사이드바에서 «끌어다 하위로 옮기기»만 하면 본문에는 아무것도 안 남는데,
+   * 그 반대 방향(본문에서 시작해 트리까지 맞추기)이 여기다.
+   */
+  const attachExistingPage = useCallback(
+    (page: PickedArchivePage) => {
+      const blockId = pendingPickBlockId.current;
+      pendingPickBlockId.current = null;
+      if (!blockId) return;
+
+      archivePageTitleCache.set(page.id, page.title || '제목 없음');
+      editor.updateBlock(blockId, {
+        type: SUB_PAGE_BLOCK_TYPE,
+        props: { pageId: page.id },
+      });
+      flush();
+
+      const node = (treeNodes ?? []).find((item) => item.id === page.id);
+      // 이미 이 문서의 자식이면 옮길 게 없다 — 본문에만 없었던 경우다.
+      if (node && node.parentId === pageId) return;
+
+      moveMutation.mutate(
+        { id: page.id, dto: { parentId: pageId } },
+        {
+          onSuccess: () =>
+            toast.success('이 문서의 하위로 옮겼어요.', {
+              description: '왼쪽 목록에서도 이 문서 아래로 들어옵니다.',
+            }),
+          onError: () =>
+            toast.error('본문에는 넣었지만 하위로 옮기지는 못했습니다.'),
+        }
+      );
+    },
+    [editor, flush, moveMutation, pageId, treeNodes]
+  );
+
   // 「@」로 기존 문서를 문장 안에서 참조한다. 자식을 만들지 않으므로 트리는 그대로다.
   const insertPageLink = useCallback(
     (page: { id: string; title: string }) => {
@@ -297,6 +378,22 @@ export default function BlockEditor({
         icon: <FileText className="size-4" />,
         onItemClick: insertSubPage,
       };
+      const attachExistingItem: DefaultReactSuggestionItem = {
+        title: '기존 문서 넣기',
+        subtext: '이미 있는 문서를 골라 이 문서의 하위로 옮기고 본문에 둔다',
+        aliases: [
+          'existing',
+          'link',
+          'move',
+          '기존',
+          '기존문서',
+          '문서넣기',
+          '하위로옮기기',
+        ],
+        group: BASIC_BLOCK_GROUP,
+        icon: <FileSymlink className="size-4" />,
+        onItemClick: startPickExisting,
+      };
 
       // 메뉴는 «연속된 같은 group» 을 한 덩어리로 묶는다. 뒤에 그냥 붙이면 같은 이름의
       // 머리글이 두 번 나오므로, 기존 「기본 블록」 덩어리의 끝에 끼워 넣는다.
@@ -305,16 +402,17 @@ export default function BlockEditor({
         .lastIndexOf(BASIC_BLOCK_GROUP);
       const merged =
         lastBasic === -1
-          ? [...items, subPageItem]
+          ? [...items, subPageItem, attachExistingItem]
           : [
               ...items.slice(0, lastBasic + 1),
               subPageItem,
+              attachExistingItem,
               ...items.slice(lastBasic + 1),
             ];
 
       return Promise.resolve(filterSuggestionItems(merged, query));
     },
-    [editor, insertSubPage]
+    [editor, insertSubPage, startPickExisting]
   );
 
   return (
@@ -339,6 +437,17 @@ export default function BlockEditor({
           }}
         />
       </BlockNoteView>
+
+      <ArchivePagePicker
+        open={pickerOpen}
+        onOpenChange={(next) => {
+          setPickerOpen(next);
+          // 고르지 않고 닫으면 잡아 뒀던 빈 블록을 걷어낸다.
+          if (!next) cancelPickExisting();
+        }}
+        excludeIds={excludedPageIds}
+        onPick={attachExistingPage}
+      />
     </ArchiveEditorScopeProvider>
   );
 }
