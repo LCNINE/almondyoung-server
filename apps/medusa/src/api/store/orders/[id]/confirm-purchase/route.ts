@@ -55,6 +55,7 @@ type OrderWithPayments = {
   items?: Array<{
     id: string;
     product_id: string;
+    total?: number | string | null;
   }>;
   payment_collections?: Array<{
     payments?: Array<{
@@ -89,6 +90,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
       'metadata',
       'items.id',
       'items.product_id',
+      'items.total',
       'payment_collections.id',
       'payment_collections.payments.id',
       'payment_collections.payments.captures.id',

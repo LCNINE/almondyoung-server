@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
 import {
+  reviewBestSelections,
   reviewComments,
   reviewEligibilities,
   reviewMedia,
@@ -18,7 +19,7 @@ import { UpdateReviewDto } from '../dto/update-review.dto';
 import { type ReviewCommentEntity, type ReviewEntity, type ReviewStatus, type ReviewWithMediaEntity } from '../types';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
-import { ReviewRewardPolicyService } from './review-reward-policy.service';
+import { ReviewRewardGrantService } from '../rewards/review-reward-grant.service';
 import { ReviewRewardPublisher } from './review-reward-publisher.service';
 import { ReviewStatsPublisher } from './review-stats-publisher.service';
 import type { RatingDistribution } from '@packages/event-contracts/streams';
@@ -43,7 +44,7 @@ export class ReviewsService {
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
-    private readonly rewardPolicyService: ReviewRewardPolicyService,
+    private readonly rewardGrantService: ReviewRewardGrantService,
     private readonly rewardPublisher: ReviewRewardPublisher,
     private readonly statsPublisher: ReviewStatsPublisher,
     private readonly configService: ConfigService,
@@ -409,13 +410,33 @@ export class ReviewsService {
     }, tx);
   }
 
-  async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
-    const rewardHolder: { value: { reviewType: 'TEXT' | 'PHOTO'; amount: number } | null } = { value: null };
+  /**
+   * 리뷰가 사라지면 지급도 되돌린다. 적립 받고 지우기를 막는 유일한 장치다.
+   */
+  private async revokeRewards(reviewId: string, tx: DbTransaction): Promise<void> {
+    const revoked = await this.rewardGrantService.revokeForReview(reviewId, 'REVIEW_DELETED', tx);
 
+    for (const grant of revoked) {
+      await this.rewardPublisher.enqueueCancelPointsCommand(
+        {
+          grantId: grant.grantId,
+          reviewId,
+          userId: grant.userId,
+          reasonCode: 'review-reward-cancel:deleted',
+        },
+        tx,
+      );
+    }
+  }
+
+  async create(userId: string, dto: CreateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
     const result = await this.inTx(async (tx) => {
       // 1. 리뷰 작성 자격 검증
       const [eligibility] = await tx
-        .select()
+        .select({
+          id: reviewEligibilities.id,
+          orderLineAmount: reviewEligibilities.orderLineAmount,
+        })
         .from(reviewEligibilities)
         .where(
           and(
@@ -455,7 +476,35 @@ export class ReviewsService {
         })
         .where(eq(reviewEligibilities.id, eligibility.id));
 
-      rewardHolder.value = await this.rewardPolicyService.calculateReward(dto.content.length, mediaFileIds.length, tx);
+      // 보상 판정 → 원장 기록 → 적립 명령 적재까지 전부 이 트랜잭션 안이다.
+      // 리뷰는 남았는데 지급 기록만 없거나, 기록은 있는데 명령이 유실되는 창을 두지 않는다.
+      const granted = await this.rewardGrantService.evaluateForNewReview(
+        {
+          reviewId: review.id,
+          userId,
+          contentLength: dto.content.length,
+          mediaCount: mediaFileIds.length,
+          rating: dto.rating,
+          orderLineAmount: eligibility.orderLineAmount,
+        },
+        tx,
+      );
+
+      if (granted) {
+        await this.rewardPublisher.enqueueEarnPointsCommand(
+          {
+            grantId: granted.grantId,
+            reviewId: granted.reviewId,
+            userId: granted.userId,
+            reviewType: granted.reviewType,
+            amount: granted.amount,
+            reasonCode: granted.reasonCode,
+            productId: dto.productId,
+            expiresAt: granted.expiresAt,
+          },
+          tx,
+        );
+      }
 
       return {
         ...review,
@@ -466,25 +515,6 @@ export class ReviewsService {
         adminComment: null,
       };
     }, tx);
-
-    // TX 커밋 후 Kafka command 발행
-    // 카프카 이벤트 발행 임시로 막음 : 리뷰 적립금 정책이 올바르게 자리잡을때까지 주석처리
-    // const reward = rewardHolder.value;
-    // if (reward) {
-    //   this.rewardPublisher
-    //     .publishEarnPointsCommand({
-    //       reviewId: result.id,
-    //       userId,
-    //       reviewType: reward.reviewType,
-    //       amount: reward.amount,
-    //       productId: dto.productId,
-    //     })
-    //     .catch((err) => {
-    //       this.logger.error(
-    //         `Failed to publish reward command for review ${result.id}: ${err.message}`,
-    //       );
-    //     });
-    // }
 
     if (!tx) {
       this.publishStatsAfterCommit(dto.productId);
@@ -583,6 +613,7 @@ export class ReviewsService {
       }
 
       productId = review.productId;
+      await this.revokeRewards(review.id, tx);
     }, tx);
 
     if (!tx && productId) {
@@ -605,6 +636,7 @@ export class ReviewsService {
       }
 
       productId = review.productId;
+      await this.revokeRewards(review.id, tx);
     }, tx);
 
     if (!tx && productId) {
@@ -735,22 +767,31 @@ export class ReviewsService {
         rating_low: asc(reviews.rating),
       }[query.sort ?? 'latest'];
 
+      // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
+      // 왕복을 하나 더 붙이지 않는다.
       const data = await tx
-        .select()
+        .select({
+          review: reviews,
+          isBest: sql<boolean>`exists (
+            select 1 from ${reviewBestSelections}
+            where ${reviewBestSelections.reviewId} = ${reviews.id}
+              and ${reviewBestSelections.status} = 'CONFIRMED'
+          )`,
+        })
         .from(reviews)
         .where(whereClause)
         .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
-      const reviewIds = data.map((review) => review.id);
+      const reviewIds = data.map((row) => row.review.id);
 
       const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
       const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
       const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
 
       return {
-        data: data.map((review) => {
+        data: data.map(({ review, isBest }) => {
           const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
           return {
             ...review,
@@ -759,6 +800,7 @@ export class ReviewsService {
             likeCount: counts.likeCount,
             dislikeCount: counts.dislikeCount,
             adminComment: commentMap.get(review.id) ?? null,
+            isBest: Boolean(isBest),
           };
         }),
         total,
@@ -843,21 +885,30 @@ export class ReviewsService {
         rating_low: asc(reviews.rating),
       }[query.sort ?? 'latest'];
 
+      // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
+      // 왕복을 하나 더 붙이지 않는다.
       const data = await tx
-        .select()
+        .select({
+          review: reviews,
+          isBest: sql<boolean>`exists (
+            select 1 from ${reviewBestSelections}
+            where ${reviewBestSelections.reviewId} = ${reviews.id}
+              and ${reviewBestSelections.status} = 'CONFIRMED'
+          )`,
+        })
         .from(reviews)
         .where(whereClause)
         .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
-      const reviewIds = data.map((review) => review.id);
+      const reviewIds = data.map((row) => row.review.id);
       const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
       const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
       const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
 
       return {
-        data: data.map((review) => {
+        data: data.map(({ review, isBest }) => {
           const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
           return {
             ...review,
@@ -866,6 +917,7 @@ export class ReviewsService {
             likeCount: counts.likeCount,
             dislikeCount: counts.dislikeCount,
             adminComment: commentMap.get(review.id) ?? null,
+            isBest: Boolean(isBest),
           };
         }),
         total,
@@ -986,22 +1038,31 @@ export class ReviewsService {
         rating_low: asc(reviews.rating),
       }[query.sort ?? 'latest'];
 
+      // 베스트 여부는 별도 조회 없이 같은 쿼리에서 판정한다 — 상품 상세는 고객 경로라
+      // 왕복을 하나 더 붙이지 않는다.
       const data = await tx
-        .select()
+        .select({
+          review: reviews,
+          isBest: sql<boolean>`exists (
+            select 1 from ${reviewBestSelections}
+            where ${reviewBestSelections.reviewId} = ${reviews.id}
+              and ${reviewBestSelections.status} = 'CONFIRMED'
+          )`,
+        })
         .from(reviews)
         .where(whereClause)
         .orderBy(orderByClause)
         .limit(limit)
         .offset(offset);
 
-      const reviewIds = data.map((review) => review.id);
+      const reviewIds = data.map((row) => row.review.id);
 
       const mediaMap = await this.fetchMediaFileIdsByReviewIds(reviewIds, tx);
       const reactionCountMap = await this.fetchReactionCounts(reviewIds, tx);
       const commentMap = await this.fetchCommentsByReviewIds(reviewIds, tx);
 
       return {
-        data: data.map((review) => {
+        data: data.map(({ review, isBest }) => {
           const counts = reactionCountMap.get(review.id) ?? { helpfulCount: 0, likeCount: 0, dislikeCount: 0 };
           return {
             ...review,
@@ -1010,6 +1071,7 @@ export class ReviewsService {
             likeCount: counts.likeCount,
             dislikeCount: counts.dislikeCount,
             adminComment: commentMap.get(review.id) ?? null,
+            isBest: Boolean(isBest),
           };
         }),
         total,

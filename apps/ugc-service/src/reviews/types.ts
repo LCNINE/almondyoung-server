@@ -13,4 +13,6 @@ export type ReviewWithMediaEntity = ReviewEntity & {
   likeCount: number;
   dislikeCount: number;
   adminComment: ReviewCommentEntity | null;
+  /** 확정된 주간 베스트 리뷰인지. 목록 조회에서만 채워지고 나머지 경로는 undefined 다 */
+  isBest?: boolean;
 };

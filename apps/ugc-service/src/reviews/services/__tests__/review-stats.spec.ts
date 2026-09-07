@@ -94,12 +94,14 @@ describe('ReviewsService — stats 발행 통합', () => {
 
   beforeEach(async () => {
     const { ReviewsService } = await import('../reviews.service');
-    const { ReviewRewardPolicyService } = await import('../review-reward-policy.service');
 
     statsPublisher = { publishProductReviewStatsChanged: jest.fn().mockResolvedValue(undefined) };
 
-    const rewardPolicyService = { calculateReward: jest.fn().mockResolvedValue(null) } as any;
-    const rewardPublisher = { publishEarnPointsCommand: jest.fn() } as any;
+    const rewardGrantService = {
+      evaluateForNewReview: jest.fn().mockResolvedValue(null),
+      revokeForReview: jest.fn().mockResolvedValue([]),
+    } as any;
+    const rewardPublisher = { enqueueEarnPointsCommand: jest.fn(), enqueueCancelPointsCommand: jest.fn() } as any;
     const configService = { get: jest.fn((key: string) => undefined) } as any;
 
     // DB mock: transaction은 fn을 즉시 실행, select/update는 체인 가능한 mock 반환
@@ -143,7 +145,7 @@ describe('ReviewsService — stats 발행 통합', () => {
 
     reviewsService = new ReviewsService(
       mockDb,
-      rewardPolicyService,
+      rewardGrantService,
       rewardPublisher,
       statsPublisher as any,
       configService,
@@ -209,8 +211,6 @@ describe('aggregateReviewStats — hidden/deleted 제외 쿼리 조건', () => {
 describe('updateStatus — soft-deleted 리뷰 업데이트 방지', () => {
   it('삭제된 리뷰에 updateStatus 호출 시 NotFoundException을 던짐', async () => {
     const { ReviewsService } = await import('../reviews.service');
-    const { ReviewRewardPolicyService } = await import('../review-reward-policy.service');
-
     const REVIEW_ID = '660e8400-e29b-41d4-a716-446655440001';
 
     // update().set().where().returning()이 빈 배열 반환 → soft-deleted row가 WHERE에 걸리지 않은 상황
@@ -233,14 +233,17 @@ describe('updateStatus — soft-deleted 리뷰 업데이트 방지', () => {
       },
     };
 
-    const rewardPolicyService = { calculateReward: jest.fn() } as any;
-    const rewardPublisher = { publishEarnPointsCommand: jest.fn() } as any;
+    const rewardGrantService = {
+      evaluateForNewReview: jest.fn().mockResolvedValue(null),
+      revokeForReview: jest.fn().mockResolvedValue([]),
+    } as any;
+    const rewardPublisher = { enqueueEarnPointsCommand: jest.fn(), enqueueCancelPointsCommand: jest.fn() } as any;
     const statsPublisher = { publishProductReviewStatsChanged: jest.fn() } as any;
     const configService = { get: jest.fn(() => undefined) } as any;
 
     const service = new ReviewsService(
       mockDb as any,
-      rewardPolicyService,
+      rewardGrantService,
       rewardPublisher,
       statsPublisher,
       configService,

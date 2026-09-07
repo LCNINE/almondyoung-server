@@ -37,6 +37,7 @@ export class ReviewEligibilityService {
         productId: item.productId,
         orderId: dto.orderId,
         orderLineId: item.orderLineId,
+        orderLineAmount: item.orderLineAmount ?? null,
         eligibleAt: now,
         expiresAt,
         sourceSystem: 'almondyoung' as const,
