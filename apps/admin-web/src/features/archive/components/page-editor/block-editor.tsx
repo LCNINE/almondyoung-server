@@ -43,6 +43,7 @@ import {
   createSubPageBlockSpec,
 } from './sub-page-block';
 import { PAGE_LINK_INLINE_TYPE, pageLinkInlineSpec } from './page-link-inline';
+import { ARCHIVE_PAGE_DRAG_TYPE } from '../archive-sidebar/tree-item';
 
 /**
  * 본문 안에 하위 페이지를 박을 수 있어야 노션 자료를 그대로 받을 수 있다 — 노션은
@@ -270,38 +271,188 @@ export default function BlockEditor({
    * 고른 문서를 본문에 넣고, 아직 이 문서의 자식이 아니면 하위로 옮긴다.
    * 사이드바에서 «끌어다 하위로 옮기기»만 하면 본문에는 아무것도 안 남는데,
    * 그 반대 방향(본문에서 시작해 트리까지 맞추기)이 여기다.
+   *
+   * 여러 개를 한 번에 받는다 — 부모 문서의 본문에 «밑에 있는 것들»을 늘어놓는 게
+   * 제일 흔한 일인데, 하나씩 고르게 하면 그 일이 제일 오래 걸린다.
    */
-  const attachExistingPage = useCallback(
-    (page: PickedArchivePage) => {
-      const blockId = pendingPickBlockId.current;
-      pendingPickBlockId.current = null;
-      if (!blockId) return;
+  const attachPages = useCallback(
+    (
+      pages: PickedArchivePage[],
+      anchor: { blockId: string; mode: 'replace' | 'after' }
+    ) => {
+      if (pages.length === 0) return;
 
-      archivePageTitleCache.set(page.id, page.title || '제목 없음');
-      editor.updateBlock(blockId, {
+      for (const page of pages) {
+        archivePageTitleCache.set(page.id, page.title || '제목 없음');
+      }
+
+      const blocks: ArchivePartialBlock[] = pages.map((page) => ({
         type: SUB_PAGE_BLOCK_TYPE,
         props: { pageId: page.id },
-      });
+      }));
+
+      if (anchor.mode === 'replace') {
+        const [first, ...rest] = blocks;
+        editor.updateBlock(anchor.blockId, first);
+        if (rest.length > 0) editor.insertBlocks(rest, anchor.blockId, 'after');
+      } else {
+        editor.insertBlocks(blocks, anchor.blockId, 'after');
+      }
       flush();
 
-      const node = (treeNodes ?? []).find((item) => item.id === page.id);
       // 이미 이 문서의 자식이면 옮길 게 없다 — 본문에만 없었던 경우다.
-      if (node && node.parentId === pageId) return;
-
-      moveMutation.mutate(
-        { id: page.id, dto: { parentId: pageId } },
-        {
-          onSuccess: () =>
-            toast.success('이 문서의 하위로 옮겼어요.', {
-              description: '왼쪽 목록에서도 이 문서 아래로 들어옵니다.',
-            }),
-          onError: () =>
-            toast.error('본문에는 넣었지만 하위로 옮기지는 못했습니다.'),
-        }
+      const byId = new Map((treeNodes ?? []).map((node) => [node.id, node]));
+      const toMove = pages.filter(
+        (page) => byId.get(page.id)?.parentId !== pageId
       );
+      if (toMove.length === 0) return;
+
+      let moved = 0;
+      let failed = 0;
+      const report = () => {
+        if (moved + failed < toMove.length) return;
+        if (moved > 0) {
+          toast.success(`${moved}개를 이 문서의 하위로 옮겼어요.`, {
+            description: '왼쪽 목록에서도 이 문서 아래로 들어옵니다.',
+          });
+        }
+        if (failed > 0) {
+          toast.error(
+            `${failed}개는 본문에만 넣었어요 — 하위로 옮기지는 못했습니다.`
+          );
+        }
+      };
+
+      for (const page of toMove) {
+        moveMutation.mutate(
+          { id: page.id, dto: { parentId: pageId } },
+          {
+            onSuccess: () => {
+              moved += 1;
+              report();
+            },
+            onError: () => {
+              failed += 1;
+              report();
+            },
+          }
+        );
+      }
     },
     [editor, flush, moveMutation, pageId, treeNodes]
   );
+
+  const attachExistingPages = useCallback(
+    (pages: PickedArchivePage[]) => {
+      const blockId = pendingPickBlockId.current;
+      pendingPickBlockId.current = null;
+      if (blockId) attachPages(pages, { blockId, mode: 'replace' });
+    },
+    [attachPages]
+  );
+
+  // 드롭 처리기는 편집기 수명 동안 한 번만 붙인다. 매번 바뀌는 값은 ref 로 넘긴다.
+  const excludedPageIdsRef = useRef(excludedPageIds);
+  excludedPageIdsRef.current = excludedPageIds;
+  const treeNodesRef = useRef(treeNodes);
+  treeNodesRef.current = treeNodes;
+  const attachPagesRef = useRef<
+    (page: PickedArchivePage, anchorId: string) => void
+  >(() => undefined);
+  attachPagesRef.current = (page, anchorId) =>
+    attachPages([page], { blockId: anchorId, mode: 'after' });
+
+  /**
+   * 사이드바에서 문서를 끌어다 본문에 떨어뜨리면 하위 페이지 블록으로 받는다.
+   *
+   * 편집기(ProseMirror)는 우리가 안 막으면 `text/plain` 을 그대로 글자로 박는다 —
+   * 그래서 예전에는 uuid 한 줄이 찍혔다. 캡처 단계에서 가로채 블록으로 바꾼다.
+   */
+  const editorRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const container = editorRef.current;
+    if (!container || !editable) return;
+
+    const isOurs = (event: DragEvent) =>
+      Boolean(event.dataTransfer?.types.includes(ARCHIVE_PAGE_DRAG_TYPE));
+
+    const onDragOver = (event: DragEvent) => {
+      if (!isOurs(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+    };
+
+    const onDrop = (event: DragEvent) => {
+      if (!isOurs(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const droppedId = event.dataTransfer?.getData(ARCHIVE_PAGE_DRAG_TYPE);
+      if (!droppedId || excludedPageIdsRef.current.has(droppedId)) {
+        if (droppedId)
+          toast.info('이 문서나 상위 문서는 여기에 넣을 수 없어요.');
+        return;
+      }
+
+      // 이미 본문에 있는 문서를 또 떨어뜨리면 같은 카드가 두 장 생긴다.
+      if (subPageIdsInBody().has(droppedId)) {
+        toast.info('이미 본문에 있는 문서예요.');
+        return;
+      }
+
+      const node = (treeNodesRef.current ?? []).find(
+        (item) => item.id === droppedId
+      );
+      const page = {
+        id: droppedId,
+        title: node?.title ?? '',
+        icon: node?.icon ?? null,
+      };
+
+      // 떨어뜨린 지점에서 가장 가까운 블록 뒤에 넣는다. 못 찾으면 맨 뒤로.
+      const element = document.elementFromPoint(event.clientX, event.clientY);
+      const blockElement = element?.closest<HTMLElement>('[data-id]');
+      const anchorId =
+        blockElement?.dataset.id ?? editor.document.at(-1)?.id ?? null;
+      if (!anchorId) return;
+
+      attachPagesRef.current(page, anchorId);
+    };
+
+    container.addEventListener('dragover', onDragOver, true);
+    container.addEventListener('drop', onDrop, true);
+    return () => {
+      container.removeEventListener('dragover', onDragOver, true);
+      container.removeEventListener('drop', onDrop, true);
+    };
+    // subPageIdsInBody 는 editor 에만 매인 안정된 함수라 여기 다시 붙일 이유가 없다.
+  }, [editable, editor]);
+
+  /** 본문에 이미 들어 있는 하위 페이지 — 두 번 넣어도 소용이 없으니 고를 목록에서 뺀다. */
+  const subPageIdsInBody = useCallback(() => {
+    const ids = new Set<string>();
+    const walk = (
+      blocks: {
+        type?: string;
+        props?: Record<string, unknown>;
+        children?: unknown;
+      }[]
+    ) => {
+      for (const block of blocks) {
+        if (block.type === SUB_PAGE_BLOCK_TYPE) {
+          const id = block.props?.pageId;
+          if (typeof id === 'string' && id) ids.add(id);
+        }
+        if (Array.isArray(block.children)) {
+          walk(block.children as typeof blocks);
+        }
+      }
+    };
+    walk(editor.document as unknown as Parameters<typeof walk>[0]);
+    return ids;
+  }, [editor]);
 
   // 「@」로 기존 문서를 문장 안에서 참조한다. 자식을 만들지 않으므로 트리는 그대로다.
   const insertPageLink = useCallback(
@@ -417,26 +568,31 @@ export default function BlockEditor({
 
   return (
     <ArchiveEditorScopeProvider value={scope}>
-      <BlockNoteView
-        editor={editor}
-        editable={editable}
-        onChange={handleChange}
-        theme="light"
-        className="archive-block-editor"
-        slashMenu={false}
-      >
-        <SuggestionMenuController triggerCharacter="/" getItems={slashItems} />
-        <SuggestionMenuController
-          triggerCharacter="@"
-          getItems={pageLinkItems}
-          // 낱말 한가운데 「@」(메일 주소 같은)에는 열지 않는다.
-          shouldOpen={(tr) => {
-            const { from } = tr.selection;
-            const before = from > 1 ? tr.doc.textBetween(from - 1, from) : '';
-            return before === '' || /\s/.test(before);
-          }}
-        />
-      </BlockNoteView>
+      <div ref={editorRef}>
+        <BlockNoteView
+          editor={editor}
+          editable={editable}
+          onChange={handleChange}
+          theme="light"
+          className="archive-block-editor"
+          slashMenu={false}
+        >
+          <SuggestionMenuController
+            triggerCharacter="/"
+            getItems={slashItems}
+          />
+          <SuggestionMenuController
+            triggerCharacter="@"
+            getItems={pageLinkItems}
+            // 낱말 한가운데 「@」(메일 주소 같은)에는 열지 않는다.
+            shouldOpen={(tr) => {
+              const { from } = tr.selection;
+              const before = from > 1 ? tr.doc.textBetween(from - 1, from) : '';
+              return before === '' || /\s/.test(before);
+            }}
+          />
+        </BlockNoteView>
+      </div>
 
       <ArchivePagePicker
         open={pickerOpen}
@@ -445,8 +601,11 @@ export default function BlockEditor({
           // 고르지 않고 닫으면 잡아 뒀던 빈 블록을 걷어낸다.
           if (!next) cancelPickExisting();
         }}
+        space={space}
+        hostPageId={pageId}
         excludeIds={excludedPageIds}
-        onPick={attachExistingPage}
+        alreadyInBody={pickerOpen ? subPageIdsInBody() : undefined}
+        onPick={attachExistingPages}
       />
     </ArchiveEditorScopeProvider>
   );

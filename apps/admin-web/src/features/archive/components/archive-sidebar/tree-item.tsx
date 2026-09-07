@@ -26,6 +26,9 @@ import type { ArchiveTreeNode } from '../../lib/build-tree';
 /** 행 안에서 어디에 떨어뜨렸는지 — 위/아래는 형제로, 가운데는 하위로 들어간다. */
 export type DropZone = 'before' | 'inside' | 'after';
 
+/** 트리에서 끌어낸 것이 «아카이브 문서»임을 알리는 형식. 편집기 본문이 이걸 보고 받는다. */
+export const ARCHIVE_PAGE_DRAG_TYPE = 'application/x-archive-page';
+
 export type TreeItemActions = {
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
@@ -133,7 +136,10 @@ function TreeItemComponent({
         onDragStart={(event) => {
           event.dataTransfer.effectAllowed = 'move';
           // 파이어폭스는 데이터가 실려 있지 않으면 드래그를 시작하지 않는다.
-          event.dataTransfer.setData('text/plain', node.id);
+          // 🔴 편집기 본문에 떨어뜨렸을 때 이 값이 그대로 «글자»로 박혔다(uuid 한 줄).
+          // 우리 것임을 알리는 형식을 같이 실어, 본문은 그걸 보고 문서 블록으로 받는다.
+          event.dataTransfer.setData(ARCHIVE_PAGE_DRAG_TYPE, node.id);
+          event.dataTransfer.setData('text/plain', node.title || '제목 없음');
           actions.onDragStart(node);
         }}
         onDragEnd={() => {
