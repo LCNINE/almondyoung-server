@@ -25,7 +25,7 @@ export function ArchiveTemplate({ pageId }: Props) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
-  // 좁은 화면에서 문서 목록은 드로어로 뜬다. lg 이상에서는 늘 고정으로 붙어 있어 쓰지 않는다.
+  // 좁은 화면에서 문서 목록은 드로어로 뜬다. md 이상에서는 늘 고정으로 붙어 있어 쓰지 않는다.
   const [navOpen, setNavOpen] = useState(false);
   const createMutation = useCreateArchivePage();
 
@@ -88,7 +88,7 @@ export function ArchiveTemplate({ pageId }: Props) {
   // 화면이 넓어지면 목록이 고정으로 붙으므로 드로어는 닫아 둔다.
   // 안 닫으면 포커스가 안 보이는 드로어 안에 갇힌다.
   useEffect(() => {
-    const wide = window.matchMedia('(min-width: 1024px)');
+    const wide = window.matchMedia('(min-width: 768px)');
     const sync = () => {
       if (wide.matches) setNavOpen(false);
     };
@@ -131,8 +131,9 @@ export function ArchiveTemplate({ pageId }: Props) {
 
   return (
     <div className="flex h-full min-h-0">
-      {/* 넓은 화면 — 목록이 늘 붙어 있다. */}
-      <div className="hidden h-full lg:flex">
+      {/* 넓은 화면 — 목록이 늘 붙어 있다. 태블릿 가로(768)면 목록 288 + 본문 480 이라
+          두 단이 다 읽히므로, 거기서부터 드로어를 접는다. */}
+      <div className="hidden h-full md:flex">
         <ArchiveSidebar {...sidebarProps} />
       </div>
 
@@ -140,7 +141,7 @@ export function ArchiveTemplate({ pageId }: Props) {
       <Sheet open={navOpen} onOpenChange={setNavOpen}>
         <SheetContent
           side="left"
-          className="w-[19rem] max-w-[85vw] gap-0 p-0 sm:max-w-[19rem] lg:hidden"
+          className="w-[19rem] max-w-[85vw] gap-0 p-0 sm:max-w-[19rem] md:hidden"
         >
           <SheetTitle className="sr-only">문서 목록</SheetTitle>
           <ArchiveSidebar
@@ -162,10 +163,10 @@ export function ArchiveTemplate({ pageId }: Props) {
         ) : (
           <>
             {/* 좁은 화면에서 첫 화면이 «아무것도 없는 화면»이면 안 된다 — 목록이 그 자리를 채운다. */}
-            <div className="min-h-0 flex-1 lg:hidden">
+            <div className="min-h-0 flex-1 md:hidden">
               <ArchiveSidebar {...sidebarProps} variant="inline" />
             </div>
-            <div className="hidden min-h-0 flex-1 lg:block">
+            <div className="hidden min-h-0 flex-1 md:block">
               <EmptyState
                 onCreate={() => void createRootPage()}
                 onSearch={() => setSearchOpen(true)}
