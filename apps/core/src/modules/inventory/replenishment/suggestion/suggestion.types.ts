@@ -80,5 +80,3 @@ export interface SuggestionRow {
   flags: SuggestionFlag[];
   legacyReorderPoint: number;
 }
-
-export function assembleSuggestions(inputs: SkuStockInput[], ctx: AssembleContext): SuggestionRow[];
