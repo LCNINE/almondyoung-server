@@ -182,3 +182,43 @@
   color: var(--muted-foreground);
   cursor: default;
 }
+
+/* ── 좁은 화면 ─────────────────────────────────────────────────────────────
+   폰에서는 본문 폭이 300px 남짓이다. 「넘치는 것」은 세 종류뿐인데(제목·표·이미지)
+   셋 다 페이지 전체를 가로로 밀어 버리므로 각자 자기 자리 안에서 처리한다. */
+
+/* 이관된 이미지는 노션에서 잡힌 픽셀 폭(previewWidth)을 그대로 들고 온다.
+   그 값이 화면보다 크면 본문 전체가 가로로 밀린다 — 폭은 화면이 이긴다. */
+.archive-block-editor [data-content-type='image'] img,
+.archive-block-editor [data-content-type='video'] video,
+.archive-block-editor .bn-visual-media,
+.archive-block-editor .bn-visual-media-wrapper {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 코드는 줄바꿈하지 않는 게 맞다. 대신 그 블록 안에서만 가로로 스크롤한다. */
+.archive-block-editor [data-content-type='codeBlock'] pre {
+  overflow-x: auto;
+}
+
+@media (max-width: 639px) {
+  .archive-block-editor [data-level='1'] {
+    font-size: 1.5rem;
+  }
+
+  .archive-block-editor [data-level='2'] {
+    font-size: 1.25rem;
+  }
+
+  .archive-block-editor [data-level='3'] {
+    font-size: 1.0625rem;
+  }
+
+  /* 표는 좁은 화면에서 거의 항상 넘친다. 스크롤 막대를 늘 보이게 둬서
+     «옆으로 더 있다»는 것이 손대기 전에 보이게 한다. */
+  .archive-block-editor .bn-block-content[data-content-type='table'] {
+    scrollbar-width: thin;
+    padding-bottom: 0.25rem;
+  }
+}

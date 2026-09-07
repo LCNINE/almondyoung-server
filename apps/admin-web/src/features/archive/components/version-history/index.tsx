@@ -50,7 +50,7 @@ export function VersionHistory({ pageId, open, onOpenChange }: Props) {
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="flex w-[28rem] flex-col gap-0 p-0 sm:max-w-none"
+        className="flex w-full flex-col gap-0 p-0 sm:w-[28rem] sm:max-w-none"
       >
         <SheetHeader className="border-b">
           <SheetTitle>저장 이력</SheetTitle>

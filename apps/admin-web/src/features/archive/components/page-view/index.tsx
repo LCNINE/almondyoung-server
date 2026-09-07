@@ -30,9 +30,11 @@ type Props = {
     space: 'team' | 'private';
     ancestorIds: string[];
   }) => void;
+  /** 좁은 화면에서 문서 목록 드로어를 연다. */
+  onOpenNav: () => void;
 };
 
-export function ArchivePageView({ pageId, onLoaded }: Props) {
+export function ArchivePageView({ pageId, onLoaded, onOpenNav }: Props) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { data: page, isLoading, isError } = useArchivePage(pageId);
@@ -163,7 +165,7 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-3xl space-y-4 px-6 pt-16">
+      <div className="mx-auto max-w-3xl space-y-4 px-4 pt-16 sm:px-6">
         <Skeleton className="h-10 w-2/3" />
         <Skeleton className="h-5 w-full" />
         <Skeleton className="h-5 w-5/6" />
@@ -194,6 +196,7 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
         onToggleFavorite={() =>
           favoriteMutation.mutate({ id: pageId, favorite: !page.isFavorite })
         }
+        onOpenNav={onOpenNav}
         onOpenHistory={() => setHistoryOpen(true)}
         onDelete={() =>
           deleteMutation.mutate(pageId, {
@@ -206,7 +209,7 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-40">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-40">
         <PageHeader
           title={title}
           icon={icon}
@@ -226,7 +229,7 @@ export function ArchivePageView({ pageId, onLoaded }: Props) {
           }}
         />
 
-        <div className="mx-auto max-w-3xl px-6 pt-2">
+        <div className="mx-auto max-w-3xl px-4 pt-2 sm:px-6">
           <PageEditor
             key={pageId}
             pageId={pageId}

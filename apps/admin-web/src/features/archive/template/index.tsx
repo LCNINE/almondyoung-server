@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { BookOpen, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import type { ArchiveSpace } from '@/lib/types/dto/archive';
 import { useCreateArchivePage } from '@/lib/services/archive';
 import { ArchiveSidebar } from '../components/archive-sidebar';
@@ -24,6 +25,8 @@ export function ArchiveTemplate({ pageId }: Props) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  // 좁은 화면에서 문서 목록은 드로어로 뜬다. lg 이상에서는 늘 고정으로 붙어 있어 쓰지 않는다.
+  const [navOpen, setNavOpen] = useState(false);
   const createMutation = useCreateArchivePage();
 
   // 마지막으로 보던 스페이스를 기억한다. 저장소를 못 읽는 환경(사생활 보호 모드 등)에서는
@@ -82,6 +85,18 @@ export function ArchiveTemplate({ pageId }: Props) {
     [expand]
   );
 
+  // 화면이 넓어지면 목록이 고정으로 붙으므로 드로어는 닫아 둔다.
+  // 안 닫으면 포커스가 안 보이는 드로어 안에 갇힌다.
+  useEffect(() => {
+    const wide = window.matchMedia('(min-width: 1024px)');
+    const sync = () => {
+      if (wide.matches) setNavOpen(false);
+    };
+    sync();
+    wide.addEventListener('change', sync);
+    return () => wide.removeEventListener('change', sync);
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -103,18 +118,38 @@ export function ArchiveTemplate({ pageId }: Props) {
     }
   };
 
+  const sidebarProps = {
+    space,
+    onSpaceChange: changeSpace,
+    activeId: pageId,
+    expandedIds,
+    onToggleExpanded: toggleExpanded,
+    onExpand: expand,
+    onOpenSearch: () => setSearchOpen(true),
+    onOpenTrash: () => setTrashOpen(true),
+  };
+
   return (
     <div className="flex h-full min-h-0">
-      <ArchiveSidebar
-        space={space}
-        onSpaceChange={changeSpace}
-        activeId={pageId}
-        expandedIds={expandedIds}
-        onToggleExpanded={toggleExpanded}
-        onExpand={expand}
-        onOpenSearch={() => setSearchOpen(true)}
-        onOpenTrash={() => setTrashOpen(true)}
-      />
+      {/* 넓은 화면 — 목록이 늘 붙어 있다. */}
+      <div className="hidden h-full lg:flex">
+        <ArchiveSidebar {...sidebarProps} />
+      </div>
+
+      {/* 좁은 화면 — 목록은 드로어로 뜨고, 문서를 고르면 닫힌다. */}
+      <Sheet open={navOpen} onOpenChange={setNavOpen}>
+        <SheetContent
+          side="left"
+          className="w-[19rem] max-w-[85vw] gap-0 p-0 sm:max-w-[19rem] lg:hidden"
+        >
+          <SheetTitle className="sr-only">문서 목록</SheetTitle>
+          <ArchiveSidebar
+            {...sidebarProps}
+            variant="drawer"
+            onNavigate={() => setNavOpen(false)}
+          />
+        </SheetContent>
+      </Sheet>
 
       <main className="flex min-w-0 flex-1 flex-col bg-background">
         {pageId ? (
@@ -122,13 +157,22 @@ export function ArchiveTemplate({ pageId }: Props) {
             key={pageId}
             pageId={pageId}
             onLoaded={handlePageLoaded}
+            onOpenNav={() => setNavOpen(true)}
           />
         ) : (
-          <EmptyState
-            onCreate={() => void createRootPage()}
-            onSearch={() => setSearchOpen(true)}
-            creating={createMutation.isPending}
-          />
+          <>
+            {/* 좁은 화면에서 첫 화면이 «아무것도 없는 화면»이면 안 된다 — 목록이 그 자리를 채운다. */}
+            <div className="min-h-0 flex-1 lg:hidden">
+              <ArchiveSidebar {...sidebarProps} variant="inline" />
+            </div>
+            <div className="hidden min-h-0 flex-1 lg:block">
+              <EmptyState
+                onCreate={() => void createRootPage()}
+                onSearch={() => setSearchOpen(true)}
+                creating={createMutation.isPending}
+              />
+            </div>
+          </>
         )}
       </main>
 

@@ -477,3 +477,6 @@ apps/admin-web/playwright-report/
 # file-service STORAGE_PROVIDER=LOCAL 의 저장 루트 (로컬 개발 전용)
 /uploads/
 skills/product-bulk-form/.venv/
+
+# 로컬 확인용 Next 빌드 (NEXT_DIST_DIR)
+.next-local/

@@ -156,7 +156,7 @@ function TreeItemComponent({
         }}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         className={cn(
-          'group relative flex h-8 cursor-pointer select-none touch-manipulation items-center gap-1 rounded-md pr-1 text-sm',
+          'group relative flex h-9 cursor-pointer select-none touch-manipulation items-center gap-1 rounded-md pr-1 text-sm lg:h-8',
           'transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -180,7 +180,7 @@ function TreeItemComponent({
             actions.onToggle(node.id);
           }}
           className={cn(
-            'flex size-5 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent',
+            'flex size-6 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent lg:size-5',
             node.children.length === 0 && 'invisible'
           )}
         >
@@ -213,7 +213,7 @@ function TreeItemComponent({
             event.stopPropagation();
             actions.onCreateChild(node.id);
           }}
-          className="flex size-6 shrink-0 items-center justify-center rounded opacity-0 hover:bg-sidebar-accent focus-visible:opacity-100 group-hover:opacity-100"
+          className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
         >
           <Plus className="size-3.5" aria-hidden />
         </button>
@@ -225,7 +225,7 @@ function TreeItemComponent({
               tabIndex={-1}
               aria-label={`${node.title || '제목 없음'} 페이지 메뉴`}
               onClick={(event) => event.stopPropagation()}
-              className="flex size-6 shrink-0 items-center justify-center rounded opacity-0 hover:bg-sidebar-accent focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+              className="flex size-7 shrink-0 items-center justify-center rounded hover:bg-sidebar-accent focus-visible:opacity-100 data-[state=open]:opacity-100 lg:size-6 lg:opacity-0 lg:group-hover:opacity-100"
             >
               <MoreHorizontal className="size-3.5" aria-hidden />
             </button>

@@ -67,7 +67,7 @@ export function PageHeader({
   return (
     <header>
       {coverUrl ? (
-        <div className="group relative h-48 w-full overflow-hidden bg-muted">
+        <div className="group relative h-32 w-full overflow-hidden bg-muted sm:h-48">
           {/* 커버는 장식이라 alt 를 비워 보조기술이 건너뛰게 한다. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={coverUrl} alt="" className="size-full object-cover" />
@@ -93,7 +93,7 @@ export function PageHeader({
         </div>
       ) : null}
 
-      <div className="mx-auto max-w-3xl px-6 pt-8">
+      <div className="mx-auto max-w-3xl px-4 pt-6 sm:px-6 sm:pt-8">
         <div className="group/actions flex min-h-9 items-center gap-1">
           <IconPicker icon={icon} onChange={onIconChange} />
           {coverUrl ? null : (
@@ -136,7 +136,7 @@ export function PageHeader({
               editor?.focus();
             }
           }}
-          className="mt-2 w-full resize-none overflow-hidden rounded-sm border-0 bg-transparent p-0 text-4xl font-bold leading-tight tracking-tight text-balance outline-none placeholder:text-muted-foreground/40 focus-visible:ring-1 focus-visible:ring-ring/30"
+          className="mt-2 w-full resize-none overflow-hidden rounded-sm border-0 bg-transparent p-0 text-[1.75rem] font-bold leading-tight tracking-tight text-balance outline-none placeholder:text-muted-foreground/40 focus-visible:ring-1 focus-visible:ring-ring/30 sm:text-4xl"
         />
       </div>
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Search, Star, Trash2, Users, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -33,6 +33,16 @@ type Props = {
   onExpand: (ids: string[]) => void;
   onOpenSearch: () => void;
   onOpenTrash: () => void;
+  /**
+   * 문서를 골랐을 때 알린다. 좁은 화면에서는 목록이 드로어 위에 떠 있어서,
+   * 고른 문서를 보려면 그 드로어가 닫혀야 한다.
+   */
+  onNavigate?: () => void;
+  /**
+   * `fixed` 넓은 화면의 고정 사이드바 · `drawer` 좁은 화면의 드로어(닫기 버튼 자리를 비운다)
+   * · `inline` 좁은 화면에서 문서를 고르기 전 본문 자리를 채우는 목록.
+   */
+  variant?: 'fixed' | 'drawer' | 'inline';
 };
 
 const SPACES: Array<{
@@ -59,6 +69,8 @@ export function ArchiveSidebar({
   onExpand,
   onOpenSearch,
   onOpenTrash,
+  onNavigate,
+  variant = 'fixed',
 }: Props) {
   const router = useRouter();
   const { data: nodes, isLoading } = useArchiveTree(space);
@@ -77,8 +89,11 @@ export function ArchiveSidebar({
   } | null>(null);
 
   const openPage = useCallback(
-    (id: string) => router.push(`/archive/${id}`),
-    [router]
+    (id: string) => {
+      router.push(`/archive/${id}`);
+      onNavigate?.();
+    },
+    [onNavigate, router]
   );
 
   const createPage = useCallback(
@@ -220,8 +235,15 @@ export function ArchiveSidebar({
   );
 
   return (
-    <aside className="flex h-full w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
-      <div className="space-y-2 p-3">
+    <aside
+      className={cn(
+        'flex h-full min-h-0 flex-col bg-sidebar text-sidebar-foreground',
+        variant === 'fixed'
+          ? 'w-72 shrink-0 border-r border-sidebar-border'
+          : 'w-full'
+      )}
+    >
+      <div className={cn('space-y-2 p-3', variant === 'drawer' && 'pr-12')}>
         <div className="grid grid-cols-2 gap-1 rounded-md bg-sidebar-accent/40 p-1">
           {SPACES.map((option) => {
             const Icon = option.icon;
@@ -234,7 +256,7 @@ export function ArchiveSidebar({
                 aria-pressed={selected}
                 onClick={() => onSpaceChange(option.id)}
                 className={cn(
-                  'flex h-8 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors duration-150',
+                  'flex h-9 items-center justify-center gap-1.5 rounded text-xs font-medium transition-colors duration-150 lg:h-8',
                   selected
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                     : 'text-sidebar-foreground/70 hover:text-sidebar-foreground'
@@ -250,7 +272,7 @@ export function ArchiveSidebar({
         <button
           type="button"
           onClick={onOpenSearch}
-          className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-sidebar-foreground/70 transition-colors duration-150 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground lg:h-8"
         >
           <Search className="size-3.5" aria-hidden />
           <span className="flex-1 text-left">검색</span>
@@ -307,7 +329,7 @@ export function ArchiveSidebar({
           variant="ghost"
           disabled={createMutation.isPending}
           onClick={() => void createPage()}
-          className="h-8 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="h-9 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:h-8"
         >
           {createMutation.isPending ? (
             <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -320,7 +342,7 @@ export function ArchiveSidebar({
           type="button"
           variant="ghost"
           onClick={onOpenTrash}
-          className="h-8 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          className="h-9 w-full justify-start gap-2 px-2 text-sm text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:h-8"
         >
           <Trash2 className="size-3.5" aria-hidden />
           휴지통
@@ -359,7 +381,7 @@ function FavoriteSection({
               type="button"
               onClick={() => onSelect(page.id)}
               className={cn(
-                'flex h-8 w-full items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150',
+                'flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm transition-colors duration-150 lg:h-8',
                 page.id === activeId
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                   : 'hover:bg-sidebar-accent/60'
