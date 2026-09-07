@@ -6,7 +6,13 @@ type ConfirmPurchaseInput = {
   orderId: string;
   customerId: string;
   uncapturedPaymentIds: string[];
-  items: Array<{ id: string; product_id: string }>;
+  items: Array<{
+    id: string;
+    product_id: string;
+    unit_price?: number | string | null;
+    detail?: { quantity?: number | string | null } | null;
+    adjustments?: Array<{ amount?: number | string | null }> | null;
+  }>;
 };
 
 export const confirmPurchaseWorkflow = createWorkflow('confirm-purchase', (input: ConfirmPurchaseInput) => {

@@ -55,7 +55,9 @@ type OrderWithPayments = {
   items?: Array<{
     id: string;
     product_id: string;
-    total?: number | string | null;
+    unit_price?: number | string | null;
+    detail?: { quantity?: number | string | null } | null;
+    adjustments?: Array<{ amount?: number | string | null }> | null;
   }>;
   payment_collections?: Array<{
     payments?: Array<{
@@ -90,7 +92,12 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
       'metadata',
       'items.id',
       'items.product_id',
-      'items.total',
+      // 라인 결제금액은 정률 보상의 모수인데, query.graph 는 «계산 필드» 를 돌려주지 않는다 —
+      // 'items.total' 을 적어도 키 자체가 응답에서 빠진다(0 도 null 도 아니다). 그래서 저장된
+      // 값으로 직접 셈한다: 단가 × 수량 − 라인 할인. 수량은 line item 이 아니라 detail 에 있다.
+      'items.unit_price',
+      'items.detail.quantity',
+      'items.adjustments.amount',
       'payment_collections.id',
       'payment_collections.payments.id',
       'payment_collections.payments.captures.id',

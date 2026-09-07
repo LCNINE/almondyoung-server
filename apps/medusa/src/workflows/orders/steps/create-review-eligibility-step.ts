@@ -5,10 +5,45 @@ import type { RemoteQueryFunction } from '@medusajs/framework/types';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export type OrderLineInput = {
+  id: string;
+  product_id: string;
+  unit_price?: number | string | null;
+  detail?: { quantity?: number | string | null } | null;
+  adjustments?: Array<{ amount?: number | string | null }> | null;
+};
+
 type CreateReviewEligibilityInput = {
   customerId: string;
   orderId: string;
-  items: Array<{ id: string; product_id: string; total?: number | string | null }>;
+  items: OrderLineInput[];
+};
+
+const toNumber = (value: unknown): number | undefined => {
+  const n = typeof value === 'string' ? Number(value) : value;
+  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
+};
+
+/**
+ * 라인 결제금액(원). 단가 × 수량 − 라인 할인.
+ *
+ * Medusa 의 계산 필드(`items.total`)는 필드를 지정해 조회하면 응답에서 «키째로» 사라지므로
+ * 쓸 수 없다. 여기서는 저장된 값만으로 셈한다. 세금은 더하지 않는다 — 이 쇼핑몰은 라인
+ * 세금이 붙지 않는다(tax_lines 가 비어 있다). 세금이 붙는 스토어를 지원하게 되면 여기가 바뀐다.
+ * 값을 못 구하면 undefined 를 준다. 0 으로 채우면 ugc 가 「0원짜리 주문」으로 읽어 정률 보상이
+ * 조용히 0원이 된다.
+ */
+export const lineAmount = (item: OrderLineInput): number | undefined => {
+  const unitPrice = toNumber(item.unit_price);
+  const quantity = toNumber(item.detail?.quantity);
+  if (unitPrice === undefined || quantity === undefined) return undefined;
+
+  const discount = (item.adjustments ?? []).reduce<number>((sum, adjustment) => {
+    return sum + (toNumber(adjustment?.amount) ?? 0);
+  }, 0);
+
+  const amount = Math.round(unitPrice * quantity - discount);
+  return amount >= 0 ? amount : undefined;
 };
 
 export const createReviewEligibilityStep = createStep(
@@ -64,8 +99,6 @@ export const createReviewEligibilityStep = createStep(
       }
     }
 
-    // 라인 결제금액은 정률 보상 정책의 모수다. 값이 없거나 수가 아니면 넘기지 않는다 —
-    // 0 으로 채워 보내면 ugc 가 「0원짜리 주문」으로 읽고 정률 보상이 조용히 0원이 된다.
     const items = orderLines
       .map((item) => {
         const productId = masterIdByProductId.get(item.product_id);
@@ -76,8 +109,7 @@ export const createReviewEligibilityStep = createStep(
           return null;
         }
 
-        const total = typeof item.total === 'string' ? Number(item.total) : item.total;
-        const orderLineAmount = typeof total === 'number' && Number.isFinite(total) ? Math.round(total) : undefined;
+        const orderLineAmount = lineAmount(item);
 
         return {
           productId,
