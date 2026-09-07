@@ -20,6 +20,12 @@ import {
 
 type CoreShippingProjectionStatus = 'partially_shipped' | 'shipped' | 'partially_delivered' | 'delivered' | 'recalled';
 
+/** `POST /admin/customers/by-almond-user/:id/withdraw` 의 응답. 값이 늘면 양쪽(Medusa 라우트·sync 서비스) 계약 변경이다. */
+export type WithdrawCustomerOutcome = {
+  customer: 'anonymized' | 'not_found';
+  auth_identities_deleted: number;
+};
+
 const CORE_SHIPPING_STATUS_PRECEDENCE: Record<CoreShippingProjectionStatus, number> = {
   partially_shipped: 1,
   shipped: 2,
@@ -2382,6 +2388,59 @@ export class MedusaClient {
       const fetchError = error as FetchError;
       this.logger.warn(`Failed to clear metadata key '${key}' for customer ${customerId}: ${fetchError.message}`);
       throw error;
+    }
+  }
+
+  /**
+   * user-service 이메일 변경(cafe24 이관 등)을 Medusa customer email 에 따라 붙인다 (#786).
+   *
+   * 실패는 던진다. 다른 has_account 고객이 같은 이메일을 쓰면 Medusa 가 4xx 를 내고 inbox 가 `failed` 로
+   * 남긴다 — membership sync 의 email fallback 이 조용히 다른 고객에 almond_user_id 를 써 넣는 것보다
+   * 사람 앞에 드러나는 편이 낫다.
+   *
+   * `@medusajs/types` 의 `HttpTypes.AdminUpdateCustomer` 타입 선언에는 `email` 이 빠져 있다 (SDK 타입
+   * 누락 — admin 라우트의 실제 zod validator `UpdateCustomer` 는 `email` 을 받는다). intersection 으로
+   * 타입을 넓혀 통과시킨다 — `as`/`any` 캐스팅 없이.
+   */
+  async updateCustomerEmail(customerId: string, email: string): Promise<void> {
+    try {
+      const body: HttpTypes.AdminUpdateCustomer & { email: string } = { email };
+      await this.sdk.admin.customer.update(customerId, body);
+      this.logger.log(`Updated email for customer ${customerId}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.warn(`Failed to update email for customer ${customerId}: ${fetchError.message} (status=${fetchError.status})`);
+      throw error;
+    }
+  }
+
+  /**
+   * 탈퇴 회원의 Medusa 흔적 파기 (#786). 고객 없음도 200 `not_found` 로 돌아온다 — 실패가 아니다.
+   *
+   * 실패는 절대 조용히 성공 처리하지 않는다 — throw 해서 inbox 가 failed 로 남기고 사람이 본다.
+   * 4xx(429 제외)는 코드/설정 문제 신호라 ERROR, 나머지(5xx·429·네트워크)는 일시적이라 WARN.
+   * `issuePromotionsByTrigger` 와 같은 규칙.
+   */
+  async withdrawCustomer(almondUserId: string): Promise<WithdrawCustomerOutcome> {
+    try {
+      const outcome = await this.sdk.client.fetch<WithdrawCustomerOutcome>(
+        `/admin/customers/by-almond-user/${encodeURIComponent(almondUserId)}/withdraw`,
+        { method: 'POST' },
+      );
+      this.logger.log(
+        `withdrawCustomer: userId=${almondUserId} customer=${outcome.customer} auth_identities_deleted=${outcome.auth_identities_deleted}`,
+      );
+      return outcome;
+    } catch (error) {
+      const fetchError = error as FetchError;
+      const status = fetchError.status;
+      const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      if (isPermanent) {
+        this.logger.error(`withdrawCustomer permanent failure (userId=${almondUserId}, status=${status}): ${fetchError.message}`);
+      } else {
+        this.logger.warn(`withdrawCustomer transient failure (userId=${almondUserId}, status=${status ?? 'n/a'}): ${fetchError.message}`);
+      }
+      throw new Error(`Medusa withdrawCustomer failed (status=${status ?? 'n/a'}): ${fetchError.message}`);
     }
   }
 

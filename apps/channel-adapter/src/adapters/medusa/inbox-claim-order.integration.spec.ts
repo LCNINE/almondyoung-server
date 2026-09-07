@@ -71,6 +71,7 @@ describeIfDb('inbox 클레임 레인 강등 순서 (DB 통합)', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never, // CustomerLifecycleMedusaSyncService
       undefined as never,
       undefined as never,
       undefined as never,

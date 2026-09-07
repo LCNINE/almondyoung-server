@@ -1362,3 +1362,67 @@ describe('MedusaClient 카테고리 순서', () => {
     ]);
   });
 });
+
+describe('MedusaClient 회원 생애주기 (#786)', () => {
+  function makeCustomerClient() {
+    const fetch = jest.fn();
+    const update = jest.fn().mockResolvedValue({ customer: {} });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      sdk: { value: { client: { fetch }, admin: { customer: { update } } } },
+      logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } },
+    });
+    return { client, fetch, update, logger: (client as any).logger as Record<string, jest.Mock> };
+  }
+
+  describe('updateCustomerEmail', () => {
+    it('코어 admin update 로 email 만 보낸다', async () => {
+      const { client, update } = makeCustomerClient();
+      await client.updateCustomerEmail('cus_1', 'new@example.com');
+      expect(update).toHaveBeenCalledWith('cus_1', { email: 'new@example.com' });
+    });
+
+    it('실패는 삼키지 않고 던진다 — inbox 가 재시도/failed 를 판단한다', async () => {
+      const { client, update } = makeCustomerClient();
+      update.mockRejectedValueOnce(Object.assign(new Error('dup'), { status: 422 }));
+      await expect(client.updateCustomerEmail('cus_1', 'taken@example.com')).rejects.toThrow('dup');
+    });
+  });
+
+  describe('withdrawCustomer', () => {
+    it('커스텀 라우트를 POST 하고 outcome 을 그대로 돌려준다', async () => {
+      const { client, fetch } = makeCustomerClient();
+      fetch.mockResolvedValueOnce({ customer: 'anonymized', auth_identities_deleted: 1 });
+
+      const outcome = await client.withdrawCustomer('3f9a1c2e-1111-4222-8333-444455556666');
+
+      expect(fetch).toHaveBeenCalledWith(
+        '/admin/customers/by-almond-user/3f9a1c2e-1111-4222-8333-444455556666/withdraw',
+        { method: 'POST' },
+      );
+      expect(outcome).toEqual({ customer: 'anonymized', auth_identities_deleted: 1 });
+    });
+
+    it('4xx 는 영구 실패 — error 로그 후 던진다 (조용히 성공 처리하지 않는다)', async () => {
+      const { client, fetch, logger } = makeCustomerClient();
+      fetch.mockRejectedValueOnce(Object.assign(new Error('Not Found'), { status: 404 }));
+
+      await expect(client.withdrawCustomer('3f9a1c2e-1111-4222-8333-444455556666')).rejects.toThrow(
+        'Medusa withdrawCustomer failed (status=404)',
+      );
+      expect(logger.error).toHaveBeenCalledTimes(1);
+      expect(logger.warn).not.toHaveBeenCalled();
+    });
+
+    it('5xx 는 일시 실패 — warn 로그 후 던진다', async () => {
+      const { client, fetch, logger } = makeCustomerClient();
+      fetch.mockRejectedValueOnce(Object.assign(new Error('boom'), { status: 503 }));
+
+      await expect(client.withdrawCustomer('3f9a1c2e-1111-4222-8333-444455556666')).rejects.toThrow(
+        'Medusa withdrawCustomer failed (status=503)',
+      );
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalled();
+    });
+  });
+});

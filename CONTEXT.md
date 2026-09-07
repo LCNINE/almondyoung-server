@@ -96,6 +96,7 @@
 - **Medusa order id 는 채널 주문 ID다.** Core 의 `sales_orders.id` 와 같은 정체성이 아니며, Core 에서는 `(salesChannel, channelOrderId)` 로 참조한다.
 - 판매채널은 Core/관련 백엔드 SoT 의 projection 을 보유한다. 상품, 가격, 판매가능수량 등은 SoT 에서 계산되어 channel-adapter 를 통해 판매채널에 반영된다.
 - Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
+- **회원 생애주기(이메일 변경·탈퇴)의 Medusa 반영도 channel-adapter inbox 를 지난다.** Medusa 는 Kafka 를 듣지 않는다 — user-service 의 `UserUpdated`/`UserDeleted` 는 inbox 를 거쳐 Medusa admin 라우트(`POST /admin/customers/:id`, `…/by-almond-user/:userId/withdraw`)로 들어간다. 탈퇴 파기 규칙(익명화·주소 하드삭제·auth identity 삭제)은 Medusa 워크플로가 갖는다 (#786, 스펙 `docs/superpowers/specs/2026-09-07-medusa-user-lifecycle-sync-design.md`).
 - _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기, 채널을 퍼스트파티/서드파티 등급으로 가르기.
 
 ### 채널 능력 (Channel Capability) *(결정됨 — ADR-0031, 구현 진행 중)*

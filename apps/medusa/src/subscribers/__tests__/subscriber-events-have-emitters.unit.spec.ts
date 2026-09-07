@@ -11,10 +11,9 @@ import path from 'node:path';
  *
  * 예외는 `KNOWN_DEAD` 뿐이고 **이슈 번호가 필수**다. 그 이슈가 닫히면 항목을 지운다 — 안 지우면 «stale» 로 빨개진다.
  */
-const KNOWN_DEAD: Record<string, string> = {
-  // Medusa 는 Kafka 를 소비하지 않는다 — user.updated.ts · user.deleted.ts 가 기다리는 이 이름을 내는 곳이 없다.
-  'users.events.v1': '#786',
-};
+// 2026-09-07 #786 으로 마지막 항목이 빠졌다. 회원 이벤트는 이제 channel-adapter inbox 를 거쳐
+// Medusa admin 라우트로 들어온다 — Medusa 안에 Kafka 를 기다리는 subscriber 는 없다.
+const KNOWN_DEAD: Record<string, string> = {};
 
 const SUBSCRIBERS_DIR = path.join(__dirname, '..');
 

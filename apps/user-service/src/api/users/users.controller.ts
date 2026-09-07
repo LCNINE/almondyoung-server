@@ -16,18 +16,23 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { Public } from '../../commons/decorator/public.decorator';
 import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 import { InternalContactsRequestDto } from './dto/internal-contacts.request.dto';
+import { ReplayWithdrawnRequestDto } from './dto/replay-withdrawn.request.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserResponseDto } from './dto/user.response.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
+import { WithdrawnReplayService } from './withdrawn-replay.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly withdrawnReplayService: WithdrawnReplayService,
+  ) {}
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
   @ApiResponse({
@@ -183,6 +188,21 @@ export class UsersController {
     @Body() body: InternalContactsRequestDto,
   ): Promise<{ userId: string; email: string; username: string }[]> {
     return this.usersService.findContactsByIds(body.userIds);
+  }
+
+  @ApiOperation({
+    summary: '[Internal] 이미 탈퇴한 회원의 UserDeleted 재발행 (#786 백필)',
+    description:
+      '치환 이메일 마커(withdrawn_…@deleted.invalid)를 가진 회원만 고른다. 호출자는 운영자(curl)다. ' +
+      'dryRun: true 로 건수를 먼저 본다 — membership 도 이 이벤트를 받아 남은 구독을 해지한다. ' +
+      'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
+  })
+  @Post('internal/replay-withdrawn')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @HttpCode(HttpStatus.OK)
+  async replayWithdrawn(@Body() body: ReplayWithdrawnRequestDto) {
+    return this.withdrawnReplayService.replay(body);
   }
 
   // `GET /users/:id` 는 제거됐다. 유일한 호출자였던 storefront 가입 콜백이 사라졌고,
