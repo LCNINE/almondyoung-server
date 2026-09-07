@@ -48,29 +48,17 @@ function assembleOne(input: SkuStockInput, ctx: AssembleContext): SuggestionRow 
 
   const actions: SuggestionAction[] = [];
 
-  // First determine if/how much transfer will happen
-  let transferAction: SuggestionAction | null = null;
-  let transferQty = 0;
-  if (sellable.position <= sellable.reorderPoint) {
-    const sellableDeficit = Math.ceil(sellable.targetLevel - sellable.position);
-    transferAction = planTransfer(input, ctx, sellableDeficit);
-    if (transferAction) transferQty = transferAction.qty;
-  }
-
-  // Check if company needs purchase
-  // Purchase is generated if company position is low, and only if the deficit exceeds what transfer provides
   if (company.position <= company.reorderPoint) {
-    const companyDeficit = company.targetLevel - company.position;
-    // Only purchase if we can't fully cover company deficit with transfer
-    if (companyDeficit > transferQty) {
-      const qty = roundUpToLot(companyDeficit, input.lot);
-      if (qty > 0) {
-        actions.push({ type: 'purchase', qty, supplierId: input.supplier?.id ?? null, sourceWarehouseId: null });
-      }
+    const qty = roundUpToLot(company.targetLevel - company.position, input.lot);
+    if (qty > 0) {
+      actions.push({ type: 'purchase', qty, supplierId: input.supplier?.id ?? null, sourceWarehouseId: null });
     }
   }
 
-  if (transferAction) actions.push(transferAction);
+  if (sellable.position <= sellable.reorderPoint) {
+    const transfer = planTransfer(input, ctx, Math.ceil(sellable.targetLevel - sellable.position));
+    if (transfer) actions.push(transfer);
+  }
 
   const flags: SuggestionFlag[] = ['legacy_only'];
   if (!input.supplier) flags.push('supplier_unknown');

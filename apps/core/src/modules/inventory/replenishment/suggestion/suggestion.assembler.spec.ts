@@ -108,8 +108,8 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
     const [row] = assembleSuggestions(
       [
         sku({
-          onHandSellable: 0,
-          onHandTotal: 90,
+          onHandSellable: 20,
+          onHandTotal: 110,
           nonSellableOnHand: [
             { warehouseId: CHINA, locationId: LOC_B, qty: 30 },
             { warehouseId: CHINA, locationId: LOC_A, qty: 60 },
@@ -121,12 +121,12 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
     expect(row.actions).toEqual([
       {
         type: 'transfer',
-        qty: 90,
+        qty: 80,
         fromWarehouseId: CHINA,
         toWarehouseId: SELL,
         lines: [
           { fromLocationId: LOC_A, quantity: 60 },
-          { fromLocationId: LOC_B, quantity: 30 },
+          { fromLocationId: LOC_B, quantity: 20 },
         ],
       },
     ]);
