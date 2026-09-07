@@ -299,6 +299,9 @@ SKU 하나에 **두 판정을 독립적으로** 내린다. 둘 다 켜질 수 �
 draft 지시서 수량을 빼는 이유: 어제 제안을 받아 초안을 만든 담당자에게 오늘 같은 제안이 또 뜨지
 않게 하기 위해서다. 초안은 원장을 안 움직이므로 원장만 보면 매일 다시 뜬다.
 
+이동 제안은 **한 출발 창고**에서만 낸다(이동 지시서는 창고 쌍 단위 문서). 비판매 창고가 여럿이면 가장 큰
+로케이션이 속한 창고를 고르고, 그 창고의 로케이션을 큰 곳부터 채워 `lines` 로 낸다.
+
 두 축은 서로를 모른다. 부천이 부족한데 중국에 물량이 모자라면 이동 제안(있는 만큼)과 발주 제안
 (전사 ROP 를 밑돌 때)이 각각 뜬다. 전사 ROP 를 안 밑돌면 발주 제안은 뜨지 않는다 — 발주잔량이
 이미 오고 있다는 뜻이고 그게 맞다.
@@ -325,7 +328,9 @@ interface ReplenishmentSuggestionRow {
               leadTimeDays: number; daysOfCover: number | null };
   actions: Array<
     | { type: 'purchase'; qty: number; supplierId: string | null; sourceWarehouseId: string | null }
-    | { type: 'transfer'; qty: number; fromWarehouseId: string; toWarehouseId: string }>;
+    | { type: 'transfer'; qty: number; fromWarehouseId: string; toWarehouseId: string;
+        /** 비판매 ON_HAND 를 로케이션별로 큰 곳부터 채운 라인 — 이동 지시서 API 가 출발 로케이션을 요구한다 */
+        lines: Array<{ fromLocationId: string; quantity: number }> }>;
   flags: Array<'default_lead_time' | 'supplier_unknown' | 'low_confidence' | 'legacy_only'>;
   legacyReorderPoint: number;
 }
