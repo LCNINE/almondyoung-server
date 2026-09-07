@@ -12,6 +12,7 @@ import { listProductsSorted } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
+import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
 import ProductCard from "@/domains/products/components/product-card"
 import RankBadge from "@/domains/products/components/rank-badge"
 import { getWishlist } from "@lib/api/users/wishlist"
@@ -22,6 +23,8 @@ import { HomeSection } from "../../components/shared/home-section"
 
 const HANDLE = "9xpr2r"
 const SECTION_LIMIT = 10
+// 품절을 걷어내고도 SECTION_LIMIT 을 채우려면 넉넉히 받아야 한다.
+const OVERFETCH = 3
 
 export async function OverseasShowcaseWrapper({
   countryCode,
@@ -38,14 +41,16 @@ export async function OverseasShowcaseWrapper({
   if (!category) return null
 
   const {
-    response: { products },
+    response: { products: fetched },
   } = await listProductsSorted({
     categoryId: collectCategoryIds(category),
     sortBy: "sales_count",
     order: "desc",
-    limit: SECTION_LIMIT,
+    limit: SECTION_LIMIT * OVERFETCH,
     regionId: region?.id,
   })
+
+  const products = filterSoldOut(fetched).slice(0, SECTION_LIMIT)
 
   if (products.length === 0) return null
 

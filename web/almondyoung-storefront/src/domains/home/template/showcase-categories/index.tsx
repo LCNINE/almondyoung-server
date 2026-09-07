@@ -3,6 +3,7 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { listProducts } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
+import { filterSoldOut } from "@/domains/products/components/product-card/quantity/stock-status"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { getTranslations } from "next-intl/server"
 import { ShowcaseSection } from "../../components/sections/showcase-section"
@@ -27,6 +28,8 @@ export const SHOWCASE_CATEGORIES: readonly ShowcaseCategory[] = [
 const SECTION_LIMIT = 10
 // 앞 5칸만 우선 카테고리로 채우고 나머지는 기존 정렬 유지. 한 줄 전부 교재로 깔려면 SECTION_LIMIT 로 올릴 것.
 const PRIORITY_LIMIT = 5
+// 품절을 걷어내고도 칸을 채우려면 넉넉히 받아야 한다.
+const OVERFETCH = 3
 
 export async function ShowcaseCategoryWrapper({
   countryCode,
@@ -62,7 +65,7 @@ export async function ShowcaseCategoryWrapper({
     listProducts({
       queryParams: {
         category_id: collectCategoryIds(category),
-        limit: SECTION_LIMIT,
+        limit: SECTION_LIMIT * OVERFETCH,
       },
       regionId: region?.id,
     }),
@@ -70,17 +73,17 @@ export async function ShowcaseCategoryWrapper({
       ? listProducts({
           queryParams: {
             category_id: collectCategoryIds(priorityCategory),
-            limit: PRIORITY_LIMIT,
+            limit: PRIORITY_LIMIT * OVERFETCH,
           },
           regionId: region?.id,
-        }).then((r) => r.response.products)
+        }).then((r) => filterSoldOut(r.response.products).slice(0, PRIORITY_LIMIT))
       : Promise.resolve([]),
   ])
 
   const priorityIds = new Set(priorityProducts.map((p) => p.id))
   const sectionProducts = [
     ...priorityProducts,
-    ...products.filter((p) => !priorityIds.has(p.id)),
+    ...filterSoldOut(products).filter((p) => !priorityIds.has(p.id)),
   ].slice(0, SECTION_LIMIT)
 
   // 판매 상품이 없으면 빈 섹션 대신 아예 렌더링하지 않는다.
