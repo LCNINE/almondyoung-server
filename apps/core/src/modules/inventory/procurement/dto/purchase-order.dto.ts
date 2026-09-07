@@ -183,18 +183,3 @@ export interface CartItemResponse {
     barcode: string | null;
   };
 }
-
-/**
- * 재주문 제안. `type: [Object]` 로 때우던 자리를 클래스로 바꾼다 — CLAUDE.md 가
- * 금지한 형태(Swagger 스키마 없음)를 이 태스크에서 이 컨트롤러 전체에 대해 없앤다.
- */
-export class StockReorderSuggestion {
-  @ApiProperty() skuId: string;
-  @ApiProperty() skuName: string;
-  @ApiProperty() currentStock: number;
-  @ApiProperty() safetyStock: number;
-  @ApiProperty() shortfall: number;
-  @ApiProperty() suggestedOrder: number;
-  @ApiProperty() onOrderQty: number;
-  @ApiProperty() inTransferQty: number;
-}
