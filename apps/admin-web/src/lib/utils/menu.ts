@@ -308,6 +308,11 @@ export const mainMenus: MainMenu[] = [
         path: '/inventory/purchase-orders',
       },
       {
+        id: 'inventory-replenishment',
+        title: '보충 제안',
+        path: '/inventory/replenishment',
+      },
+      {
         id: 'inventory-inbound',
         title: '입고 관리',
         path: '/inventory/inbound',
@@ -443,26 +448,54 @@ export const mainMenus: MainMenu[] = [
         id: 'sales-status',
         title: '판매 현황',
         children: [
-          { id: 'statistics-overview', title: '종합 대시보드', path: '/statistics/overview' },
+          {
+            id: 'statistics-overview',
+            title: '종합 대시보드',
+            path: '/statistics/overview',
+          },
           { id: 'by-profit', title: '이익', path: '/statistics/profit' },
           { id: 'by-inventory', title: '재고', path: '/statistics/inventory' },
           { id: 'by-product', title: '상품별', path: '/statistics/products' },
           { id: 'by-option', title: '옵션별', path: '/statistics/products' },
           { id: 'by-period', title: '기간별', path: '/statistics/sales' },
-          { id: 'by-membership', title: '회원등급별', path: '/statistics/customers' },
-          { id: 'by-keyword', title: '검색 키워드', path: '/statistics/keywords' },
+          {
+            id: 'by-membership',
+            title: '회원등급별',
+            path: '/statistics/customers',
+          },
+          {
+            id: 'by-keyword',
+            title: '검색 키워드',
+            path: '/statistics/keywords',
+          },
           { id: 'by-traffic', title: '유입', path: '/statistics/traffic' },
-          { id: 'customer-insights', title: '고객 분석', path: '/statistics/insights' },
+          {
+            id: 'customer-insights',
+            title: '고객 분석',
+            path: '/statistics/insights',
+          },
           { id: 'by-review', title: '리뷰', path: '/statistics/reviews' },
-          { id: 'statistics-settings', title: '경영 설정 (고정비)', path: '/statistics/settings' },
+          {
+            id: 'statistics-settings',
+            title: '경영 설정 (고정비)',
+            path: '/statistics/settings',
+          },
         ],
       },
       {
         id: 'analytics',
         title: '애널리틱스',
         children: [
-          { id: 'customer-behavior', title: '고객 행동', path: '/statistics/behavior' },
-          { id: 'conversion-rate', title: '전환율', path: '/statistics/behavior' },
+          {
+            id: 'customer-behavior',
+            title: '고객 행동',
+            path: '/statistics/behavior',
+          },
+          {
+            id: 'conversion-rate',
+            title: '전환율',
+            path: '/statistics/behavior',
+          },
         ],
       },
       {
@@ -501,7 +534,11 @@ export const mainMenus: MainMenu[] = [
           { id: 'popups', title: '팝업', path: '/mall/popups' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
-          { id: 'time-sale', title: '타임세일', path: '/mall/marketing/time-sale' },
+          {
+            id: 'time-sale',
+            title: '타임세일',
+            path: '/mall/marketing/time-sale',
+          },
           { id: 'events', title: '이벤트', path: '/mall/marketing/events' },
           { id: 'shop-listings', title: '샵매매', path: '/mall/shop-listings' },
           { id: 'deposit', title: '예치금' },
