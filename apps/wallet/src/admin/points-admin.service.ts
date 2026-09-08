@@ -255,6 +255,47 @@ export class PointsAdminService {
     return { eventId };
   }
 
+  /**
+   * 멱등키로 원 적립을 찾아 취소한다. ugc 는 wallet 의 이벤트 id 를 모르고 자기 원장 id 만
+   * 아는데, 적립은 그 id 로 만든 멱등키로 들어와 있다 — 되돌릴 때 그 키가 유일한 연결고리다.
+   *
+   * 취소할 적립이 없으면 null 을 돌려준다. 소비자는 이를 정상 ack 로 다룬다 —
+   * 지급 자체가 없었던 리뷰(비금전·미지급)를 지운 경우가 여기에 해당한다.
+   */
+  async earnCancelByIdempotencyKey(
+    userId: string,
+    idempotencyKey: string,
+    reasonCode?: string,
+  ): Promise<{ eventId: string } | null> {
+    const [original] = await this.dbService.db
+      .select({ id: pointEvents.id, amount: pointEvents.amount })
+      .from(pointEvents)
+      .where(
+        and(
+          eq(pointEvents.providerIdempotencyKey, idempotencyKey),
+          eq(pointEvents.eventType, 'EARN'),
+          eq(pointEvents.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!original) {
+      return null;
+    }
+
+    // 같은 취소 명령이 두 번 와도 두 번 깎지 않는다 — 이미 다 취소됐으면 할 일이 없다.
+    const [cancelled] = await this.dbService.db
+      .select({ total: sql<number>`coalesce(sum(abs(${pointEvents.amount})), 0)` })
+      .from(pointEvents)
+      .where(and(eq(pointEvents.eventType, 'EARN_CANCEL'), eq(pointEvents.originalEventId, original.id)));
+
+    if (Number(cancelled?.total ?? 0) >= original.amount) {
+      return null;
+    }
+
+    return this.earnCancel(userId, original.id, undefined, reasonCode);
+  }
+
   async earnCancel(
     userId: string,
     earnEventId: string,

@@ -422,6 +422,11 @@ export const mainMenus: MainMenu[] = [
         path: '/cs/reviews',
       },
       {
+        id: 'review-reward-policy',
+        title: '리뷰 보상 정책',
+        path: '/cs/reviews/rewards',
+      },
+      {
         id: 'qna-management',
         title: 'Q&A관리',
         path: '/cs/qna',

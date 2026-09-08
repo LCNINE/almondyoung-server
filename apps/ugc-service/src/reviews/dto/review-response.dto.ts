@@ -71,4 +71,10 @@ export class ReviewResponseDto {
     nullable: true,
   })
   adminComment: CommentResponseDto | null;
+
+  @ApiProperty({
+    description: '확정된 주간 베스트 리뷰 여부. 상품 리뷰 목록에서만 채워진다',
+    example: false,
+  })
+  isBest: boolean;
 }

@@ -1,6 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsString, IsNotEmpty, IsUUID, IsArray, ArrayMinSize, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class CreateReviewEligibilityItemDto {
   @ApiProperty({ description: '상품 ID' })
@@ -12,6 +22,14 @@ export class CreateReviewEligibilityItemDto {
   @IsString()
   @IsNotEmpty()
   orderLineId: string;
+
+  @ApiPropertyOptional({
+    description: '주문 라인 결제금액(원). 정률 보상 정책의 모수다. 모르면 비운다',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  orderLineAmount?: number;
 }
 
 export class CreateReviewEligibilityDto {

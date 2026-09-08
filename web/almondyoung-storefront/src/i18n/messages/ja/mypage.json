@@ -1263,7 +1263,9 @@
       "policyNotice": "最初に登録されたレビューの添付写真を基準にポイントが付与されます。商品と無関係な添付物は削除され、特典が取り消される場合があります。",
       "cancel": "キャンセル",
       "submit": "登録"
-    }
+    },
+    "rewardRate": "購入金額の {percent}%",
+    "rewardRateCapped": "購入金額の {percent}%（最大 {amount}ウォン）"
   },
   "page": {
     "trackDelivery": "配送照会",

@@ -18,6 +18,24 @@ export interface EarnPointsRequestedPayload {
   reasonCode: string;
   productId: string;
   requestedAt: string;
+  /**
+   * ugc 의 지급 원장 행 id. wallet 은 이 값으로 멱등키를 만든다 —
+   * 리뷰 한 건이 작성 보상과 베스트 보상을 각각 받을 수 있어 reviewId 만으로는 충돌한다.
+   */
+  grantId?: string;
+  /** 적립금 만료 시각. 없으면 만료 없는 적립 */
+  expiresAt?: string | null;
+}
+
+/**
+ * 리뷰가 사라져 지급을 되돌려야 할 때. wallet 이 grantId 로 원 적립을 찾아 취소한다.
+ */
+export interface CancelReviewPointsRequestedPayload {
+  grantId: string;
+  reviewId: string;
+  userId: string;
+  reasonCode: string;
+  requestedAt: string;
 }
 
 // ===== Event Payloads =====
@@ -64,6 +82,16 @@ const EarnPointsRequestedSchema = z.object({
   reasonCode: z.string().min(1),
   productId: z.string().uuid(),
   requestedAt: z.string().datetime(),
+  grantId: z.string().uuid().optional(),
+  expiresAt: z.string().datetime().nullish(),
+});
+
+const CancelReviewPointsRequestedSchema = z.object({
+  grantId: z.string().uuid(),
+  reviewId: z.string().uuid(),
+  userId: z.string().uuid(),
+  reasonCode: z.string().min(1),
+  requestedAt: z.string().datetime(),
 });
 
 const RatingDistributionSchema = z.object({
@@ -94,6 +122,10 @@ export const UGC_COMMAND_STREAM = stream({
     EarnPointsRequested: event<'EarnPointsRequested', EarnPointsRequestedPayload>(
       'EarnPointsRequested',
       EarnPointsRequestedSchema,
+    ),
+    CancelReviewPointsRequested: event<'CancelReviewPointsRequested', CancelReviewPointsRequestedPayload>(
+      'CancelReviewPointsRequested',
+      CancelReviewPointsRequestedSchema,
     ),
   },
 });

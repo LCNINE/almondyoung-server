@@ -211,6 +211,7 @@
     "sortRatingHigh": "評価高い順",
     "sortRatingLow": "評価低い順",
     "sortSelectAria": "レビュー並び順を選択",
-    "filterPhotoOnly": "写真レビューのみ"
+    "filterPhotoOnly": "写真レビューのみ",
+    "bestBadge": "ベスト"
   }
 }

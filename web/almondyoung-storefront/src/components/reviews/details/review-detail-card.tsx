@@ -1,3 +1,4 @@
+import { useTranslations } from "next-intl"
 import type { ReviewDetail } from "@/lib/types/ui/ugc"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import { StarRating } from "../ui/star-rating"
@@ -13,6 +14,7 @@ type Props = {
 }
 
 export function ReviewDetailCard({ countryCode, review }: Props) {
+  const t = useTranslations("productDetail.review")
   const authorName = getAuthorName(
     review.legacy_author_name || null,
     review.userId
@@ -21,7 +23,7 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
   return (
     <article className="border-border w-full space-y-3 border-t py-6">
       <header className="space-y-1.5">
-        <ReviewAuthor author={authorName} tags={[]} />
+        <ReviewAuthor author={authorName} tags={review.isBest ? [t("bestBadge")] : []} />
 
         <div className="flex items-center gap-2.5">
           <StarRating rating={review.rating} />
