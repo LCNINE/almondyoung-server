@@ -5,30 +5,27 @@ import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { DemandGrade } from '@/lib/types/dto/inventory';
 import {
   useReplenishmentGrades,
   useUpdateReplenishmentGrades,
 } from '@/lib/services/inventory';
 import {
   DEMAND_GRADES,
+  EMPTY_GRADE_FORM,
   REFLECTION_LABELS,
+  gradeFormFrom,
   gradeItemsFrom,
+  type GradeForm,
 } from '../../../rules-model';
 import { runWithToast } from '../../save-with-toast';
-
-const EMPTY_FORM: Record<DemandGrade, string> = { A: '', B: '', C: '' };
 
 export function GradesTab() {
   const { data, isLoading } = useReplenishmentGrades();
   const update = useUpdateReplenishmentGrades();
-  const [form, setForm] = useState<Record<DemandGrade, string>>(EMPTY_FORM);
+  const [form, setForm] = useState<GradeForm>(EMPTY_GRADE_FORM);
 
   useEffect(() => {
-    if (!data) return;
-    const next = { ...EMPTY_FORM };
-    for (const item of data.items) next[item.grade] = String(item.alpha);
-    setForm(next);
+    if (data) setForm(gradeFormFrom(data));
   }, [data]);
 
   if (isLoading || !data)

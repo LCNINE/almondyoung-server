@@ -1,6 +1,7 @@
 import type {
   DemandGrade,
   GradeRuleDto,
+  GradeRulesDto,
   LeadTimeObservationDto,
   LeadTimeRuleDto,
   OverrideMode,
@@ -334,6 +335,14 @@ export function settingsPayloadFrom(
       errors[spec.key] = parsed.error;
       continue;
     }
+
+    const currentRaw = base[spec.key];
+    const current = typeof currentRaw === 'number' ? currentRaw : null;
+    // 안 바뀐 필드는 payload 에 안 실리므로 서버가 볼 일도 없다 — 범위 검사도 하지 않는다.
+    // 전부 검사하면 서버 값이 클라 범위를 벗어났을 때(누가 SQL 로 직접 넣는 식) 손대지도
+    // 않은 필드에 오류가 서서 **무관한 필드의 저장까지 영구히 막히고 빠져나갈 길이 없다.**
+    if (parsed.value === current) continue;
+
     if (parsed.value === null) {
       if (spec.nullable !== true) {
         errors[spec.key] = '필수 항목입니다';
@@ -347,10 +356,7 @@ export function settingsPayloadFrom(
       }
     }
 
-    const currentRaw = base[spec.key];
-    const current = typeof currentRaw === 'number' ? currentRaw : null;
-    if (parsed.value !== current)
-      assignNumberField(payload, spec.key, parsed.value);
+    assignNumberField(payload, spec.key, parsed.value);
   }
 
   // 교차 검증 오류는 **사용자가 실제로 바꾼 입력** 옆에 붙인다. 손대지도 않은 A 컷 밑에
@@ -421,6 +427,36 @@ export function routeRuleKey(
  * 겹치지 않는 합성 키를 쓰고, 저장 시점에만 실제 경로로 옮긴다.
  */
 export const NEW_ROUTE_DRAFT_KEY = '__new-route__';
+
+/**
+ * 새 경로를 추가할 수 있는지, 못 한다면 왜인지. 이 판정이 서버 400(같은 창고) · 409(중복)를
+ * 막는 유일한 방어라 컴포넌트가 아니라 여기 둔다.
+ */
+export type RouteAddIssue =
+  | 'incomplete'
+  | 'same-warehouse'
+  | 'duplicate'
+  | null;
+
+export const ROUTE_ADD_ISSUE_LABELS: Record<
+  Exclude<RouteAddIssue, null | 'incomplete'>,
+  string
+> = {
+  'same-warehouse': '출발과 도착 창고가 같습니다',
+  duplicate: '이미 목록에 있는 경로입니다',
+};
+
+export function routeAddIssue(input: {
+  from: string;
+  to: string;
+  knownKeys: ReadonlySet<string>;
+}): RouteAddIssue {
+  if (input.from === '' || input.to === '') return 'incomplete';
+  if (input.from === input.to) return 'same-warehouse';
+  if (input.knownKeys.has(routeRuleKey(input.from, input.to)))
+    return 'duplicate';
+  return null;
+}
 
 export function leadTimeRulePayloadFrom(form: LeadTimeDraft): {
   payload: UpsertLeadTimeRuleDto | null;
@@ -501,6 +537,20 @@ export function skuOverridePayloadFrom(form: SkuOverrideDraft): {
       payload: null,
       error: `메모는 ${MEMO_MAX_LENGTH}자 이하여야 합니다`,
     };
+  // `auto` + 전부 비움은 아무것도 덮지 않는 예외 행이다 — 서버는 받아 주지만 화면에는
+  // 지우는 것 말고는 할 일이 없는 행이 남는다. 예외를 없애려는 것이면 「지우기」가 맞다.
+  if (
+    form.mode === 'auto' &&
+    until === '' &&
+    safetyStock.value === null &&
+    alpha.value === null &&
+    memo === ''
+  )
+    return {
+      payload: null,
+      error:
+        '예외로 저장할 값이 없습니다 — 모드를 「제외」로 하거나 안전재고 · α · 메모 중 하나는 채우세요. 예외를 없애려면 「지우기」입니다',
+    };
   return {
     payload: {
       mode: form.mode,
@@ -513,11 +563,30 @@ export function skuOverridePayloadFrom(form: SkuOverrideDraft): {
   };
 }
 
+/** SKU 후보 · 선택 배지가 같은 문자열을 쓴다 — 두 벌로 두면 한쪽만 바뀐다. */
+export function skuLabelOf(sku: { name: string; code: string }): string {
+  return `${sku.name} (${sku.code})`;
+}
+
 // ── 등급 ──
 
 export const DEMAND_GRADES: readonly DemandGrade[] = ['A', 'B', 'C'];
 
-export function gradeItemsFrom(form: Record<DemandGrade, string>): {
+export type GradeForm = Record<DemandGrade, string>;
+
+export const EMPTY_GRADE_FORM: GradeForm = { A: '', B: '', C: '' };
+
+/**
+ * 응답 → 폼. 시드가 3행을 보장하지만 **응답에 빠진 등급은 빈칸으로 남긴다** — 없는 값을
+ * `0` 같은 것으로 채우면 사람이 안 건드려도 서버 제약을 어기는 값이 저장된다.
+ */
+export function gradeFormFrom(dto: GradeRulesDto): GradeForm {
+  const form: GradeForm = { ...EMPTY_GRADE_FORM };
+  for (const item of dto.items) form[item.grade] = String(item.alpha);
+  return form;
+}
+
+export function gradeItemsFrom(form: GradeForm): {
   items: GradeRuleDto[] | null;
   error: string | null;
 } {

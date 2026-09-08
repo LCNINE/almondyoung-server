@@ -5,20 +5,25 @@ import type {
 } from '@/lib/types/dto/inventory';
 import { CustomError } from '@/lib/api/customError';
 import {
+  EMPTY_GRADE_FORM,
   EMPTY_LEAD_TIME_DRAFT,
   EMPTY_SKU_OVERRIDE_DRAFT,
   NEW_ROUTE_DRAFT_KEY,
   REFLECTION_LABELS,
+  ROUTE_ADD_ISSUE_LABELS,
   SETTINGS_FIELDS,
   SETTINGS_SECTIONS,
   failureMessage,
   formatLeadTimeObservation,
+  gradeFormFrom,
   gradeItemsFrom,
   leadTimeDraftFrom,
   leadTimeRulePayloadFrom,
+  routeAddIssue,
   routeRuleKey,
   settingsFormFrom,
   settingsPayloadFrom,
+  skuLabelOf,
   skuOverrideDraftFrom,
   skuOverridePayloadFrom,
   type SettingsField,
@@ -154,6 +159,31 @@ describe('settings form ↔ payload', () => {
     expect(at('classificationWindowDays', '30')).toBeUndefined();
     expect(at('classificationWindowDays', '1095')).toBeUndefined();
     expect(at('consolidationBufferDays', '0')).toBeUndefined();
+  });
+
+  // 안 바뀐 필드는 payload 에 안 실려 서버가 볼 일이 없다. 그런데도 검사하면 서버 값이
+  // 클라 범위를 벗어났을 때(누가 SQL 로 직접 넣는 식) **손대지도 않은 필드 때문에 무관한
+  // 필드의 저장까지 영구히 막히고 화면에서 빠져나갈 길이 없다.**
+  it('범위 검사는 바뀐 필드에만 건다 — 서버 값이 범위 밖이어도 다른 필드는 저장된다', () => {
+    const outOfRange: ReplenishmentSettingsDto = {
+      ...base,
+      defaultLeadTimeCv: 2.5, // 서버 @Max(2) 밖
+      minDemandEvents: 0, // 서버 @Min(1) 밖
+    };
+    const result = settingsPayloadFrom(
+      { ...settingsFormFrom(outOfRange), demandRecomputeDays: '21' },
+      outOfRange
+    );
+    expect(result.errors).toEqual({});
+    expect(result.payload).toEqual({ demandRecomputeDays: 21 });
+
+    // 그 필드를 실제로 건드리면 그때는 막는다.
+    expect(
+      settingsPayloadFrom(
+        { ...settingsFormFrom(outOfRange), defaultLeadTimeCv: '3' },
+        outOfRange
+      ).errors.defaultLeadTimeCv
+    ).toBeDefined();
   });
 
   it('A 컷 ≥ B 컷 은 errors — 오류는 사용자가 바꾼 입력에 붙는다', () => {
@@ -350,15 +380,6 @@ describe('skuOverridePayloadFrom', () => {
     ).toMatch(/α/);
     expect(
       skuOverridePayloadFrom({
-        mode: 'auto',
-        excludedUntil: '',
-        safetyStock: '',
-        alpha: '',
-        memo: '',
-      }).error
-    ).toBeNull();
-    expect(
-      skuOverridePayloadFrom({
         mode: 'excluded',
         excludedUntil: '2026/12/31',
         safetyStock: '',
@@ -376,6 +397,96 @@ describe('skuOverridePayloadFrom', () => {
         memo: 'ㄱ'.repeat(256),
       }).error
     ).toMatch(/메모/);
+  });
+
+  // `auto` + 전부 비움을 통과시키면 SKU 만 고르고 「추가」를 눌렀을 때 아무것도 덮지 않는
+  // 예외 행이 생긴다 — 서버는 받아 주므로 여기서 막는 것 말고는 막을 데가 없다.
+  it('아무것도 덮지 않는 예외는 거절한다 — 「제외」거나 값이 하나는 있어야', () => {
+    expect(skuOverridePayloadFrom(EMPTY_SKU_OVERRIDE_DRAFT)).toEqual({
+      payload: null,
+      error: expect.stringMatching(/지우기/),
+    });
+    // 모드가 「제외」면 그 자체가 뜻이 있다.
+    expect(
+      skuOverridePayloadFrom({
+        ...EMPTY_SKU_OVERRIDE_DRAFT,
+        mode: 'excluded',
+      }).error
+    ).toBeNull();
+    // 값이 하나라도 있으면 통과. 안전재고 `0` 도 값이다.
+    for (const filled of [
+      { safetyStock: '0' },
+      { alpha: '0.01' },
+      { memo: '단종 예정' },
+      { excludedUntil: '2026-12-31' },
+    ]) {
+      expect(
+        skuOverridePayloadFrom({ ...EMPTY_SKU_OVERRIDE_DRAFT, ...filled }).error
+      ).toBeNull();
+    }
+  });
+});
+
+describe('gradeFormFrom', () => {
+  it('응답 → 폼. 빠진 등급은 빈칸으로 남긴다', () => {
+    expect(
+      gradeFormFrom({
+        items: [
+          { grade: 'A', alpha: 0.02 },
+          { grade: 'B', alpha: 0.05 },
+          { grade: 'C', alpha: 0.1 },
+        ],
+      })
+    ).toEqual({ A: '0.02', B: '0.05', C: '0.1' });
+    // 시드가 3행을 보장하지만, 빠진 등급을 0 같은 것으로 채우면 사람이 손대지도 않은
+    // 값이 서버 제약((0,1) 배타)을 어긴 채 저장된다.
+    expect(gradeFormFrom({ items: [{ grade: 'B', alpha: 0.05 }] })).toEqual({
+      A: '',
+      B: '0.05',
+      C: '',
+    });
+    expect(gradeFormFrom({ items: [] })).toEqual(EMPTY_GRADE_FORM);
+  });
+});
+
+describe('routeAddIssue', () => {
+  const known = new Set([routeRuleKey('wh-1', 'wh-2')]);
+
+  it('미선택 · 같은 창고 · 중복을 각각 구분한다', () => {
+    expect(routeAddIssue({ from: '', to: 'wh-2', knownKeys: known })).toBe(
+      'incomplete'
+    );
+    expect(routeAddIssue({ from: 'wh-1', to: '', knownKeys: known })).toBe(
+      'incomplete'
+    );
+    // 서버 400 을 막는다
+    expect(routeAddIssue({ from: 'wh-1', to: 'wh-1', knownKeys: known })).toBe(
+      'same-warehouse'
+    );
+    // 서버 409(또는 조용한 덮어쓰기)를 막는다
+    expect(routeAddIssue({ from: 'wh-1', to: 'wh-2', knownKeys: known })).toBe(
+      'duplicate'
+    );
+    // 반대 방향은 다른 경로다
+    expect(
+      routeAddIssue({ from: 'wh-2', to: 'wh-1', knownKeys: known })
+    ).toBeNull();
+    expect(
+      routeAddIssue({ from: 'wh-3', to: 'wh-4', knownKeys: known })
+    ).toBeNull();
+  });
+
+  it('보여 줄 이유에는 문구가 있다', () => {
+    expect(ROUTE_ADD_ISSUE_LABELS['same-warehouse']).toBeTruthy();
+    expect(ROUTE_ADD_ISSUE_LABELS.duplicate).toBeTruthy();
+  });
+});
+
+describe('skuLabelOf', () => {
+  it('후보 버튼과 선택 배지가 같은 문자열을 쓴다', () => {
+    expect(skuLabelOf({ name: '아몬드 200g', code: 'ALM-200' })).toBe(
+      '아몬드 200g (ALM-200)'
+    );
   });
 });
 

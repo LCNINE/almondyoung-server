@@ -17,9 +17,12 @@ export async function runWithToast(options: {
 }): Promise<void> {
   try {
     await options.run();
-    options.onSuccess?.();
-    toast.success(options.success);
   } catch (error) {
     toast.error(failureMessage(error, options.failure));
+    return;
   }
+  // `try` **밖**이다 — 안에 두면 상태 갱신이 던졌을 때 이미 성공한 저장이
+  // 「저장에 실패했습니다」로 뒤집히고, 사람이 다시 눌러 중복 저장을 하게 된다.
+  toast.success(options.success);
+  options.onSuccess?.();
 }

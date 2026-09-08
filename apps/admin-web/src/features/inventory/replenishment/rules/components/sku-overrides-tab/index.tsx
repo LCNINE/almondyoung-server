@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,7 @@ import {
 import {
   EMPTY_SKU_OVERRIDE_DRAFT,
   REFLECTION_LABELS,
+  skuLabelOf,
   skuOverrideDraftFrom,
   skuOverridePayloadFrom,
   type SkuOverrideDraft,
@@ -68,44 +69,79 @@ function ModeSelect({
   );
 }
 
-/** 같은 이유로 모듈 스코프. 예외 한 건의 입력 다섯 칸. */
+/**
+ * 예외 한 건의 입력 다섯 칸. 표 행에서는 `<TableCell>` 다섯 개, 「새 예외」 블록에서는
+ * 인라인으로 그려야 해서 감싸는 것을 `wrap` 으로 받는다 — 표에서는 헤더가 각 칸의 뜻을
+ * 밝힌다(placeholder 는 값이 차면 사라져 α 칸과 안전재고 칸을 구분할 근거가 없어진다).
+ * 컴포넌트 선언 자체는 모듈 스코프에 있으므로 한 글자마다 재마운트되지 않는다.
+ */
 function OverrideDraftFields({
   draft,
   onChange,
+  wrap,
 }: {
   draft: SkuOverrideDraft;
   onChange: (patch: Partial<SkuOverrideDraft>) => void;
+  wrap: (field: ReactNode, key: string) => ReactNode;
 }) {
   return (
     <>
-      <ModeSelect value={draft.mode} onChange={(mode) => onChange({ mode })} />
-      <Input
-        className="w-36"
-        placeholder="제외 종료일 YYYY-MM-DD"
-        value={draft.excludedUntil}
-        onChange={(e) => onChange({ excludedUntil: e.target.value })}
-      />
-      <Input
-        className="w-28"
-        placeholder="안전재고"
-        value={draft.safetyStock}
-        onChange={(e) => onChange({ safetyStock: e.target.value })}
-      />
-      <Input
-        className="w-24"
-        placeholder="α"
-        value={draft.alpha}
-        onChange={(e) => onChange({ alpha: e.target.value })}
-      />
-      <Input
-        className="w-48"
-        placeholder="메모"
-        value={draft.memo}
-        onChange={(e) => onChange({ memo: e.target.value })}
-      />
+      {wrap(
+        <ModeSelect
+          value={draft.mode}
+          onChange={(mode) => onChange({ mode })}
+        />,
+        'mode'
+      )}
+      {wrap(
+        <Input
+          className="w-36"
+          placeholder="YYYY-MM-DD"
+          value={draft.excludedUntil}
+          onChange={(e) => onChange({ excludedUntil: e.target.value })}
+        />,
+        'excludedUntil'
+      )}
+      {wrap(
+        <Input
+          className="w-28"
+          placeholder="안전재고"
+          value={draft.safetyStock}
+          onChange={(e) => onChange({ safetyStock: e.target.value })}
+        />,
+        'safetyStock'
+      )}
+      {wrap(
+        <Input
+          className="w-24"
+          placeholder="α"
+          value={draft.alpha}
+          onChange={(e) => onChange({ alpha: e.target.value })}
+        />,
+        'alpha'
+      )}
+      {wrap(
+        <Input
+          className="w-48"
+          placeholder="메모"
+          value={draft.memo}
+          onChange={(e) => onChange({ memo: e.target.value })}
+        />,
+        'memo'
+      )}
     </>
   );
 }
+
+/** 표 행: 칸마다 `<TableCell>`. */
+const asTableCells = (field: ReactNode, key: string): ReactNode => (
+  <TableCell key={key}>{field}</TableCell>
+);
+
+/** 「새 예외」 블록: 감싸지 않고 flex 줄에 그대로. */
+const asInlineFields = (field: ReactNode, key: string): ReactNode => (
+  <Fragment key={key}>{field}</Fragment>
+);
 
 export function SkuOverridesTab() {
   const [q, setQ] = useState('');
@@ -221,13 +257,10 @@ export function SkuOverridesTab() {
                 size="sm"
                 variant="outline"
                 onClick={() =>
-                  setPicked({
-                    id: sku.id,
-                    label: `${sku.name} (${sku.code})`,
-                  })
+                  setPicked({ id: sku.id, label: skuLabelOf(sku) })
                 }
               >
-                {sku.name} ({sku.code})
+                {skuLabelOf(sku)}
               </Button>
             ))}
           {picked !== null && <Badge>{picked.label}</Badge>}
@@ -237,6 +270,7 @@ export function SkuOverridesTab() {
             <OverrideDraftFields
               draft={newDraft}
               onChange={(patch) => setNewDraft({ ...newDraft, ...patch })}
+              wrap={asInlineFields}
             />
             <Button
               size="sm"
@@ -262,7 +296,11 @@ export function SkuOverridesTab() {
           <TableHeader>
             <TableRow>
               <TableHead>SKU</TableHead>
-              <TableHead>예외</TableHead>
+              <TableHead>모드</TableHead>
+              <TableHead>제외 종료일</TableHead>
+              <TableHead>안전재고</TableHead>
+              <TableHead>α</TableHead>
+              <TableHead>메모</TableHead>
               <TableHead className="text-right">액션</TableHead>
             </TableRow>
           </TableHeader>
@@ -270,7 +308,7 @@ export function SkuOverridesTab() {
             {data.items.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={3}
+                  colSpan={7}
                   className="text-center text-sm text-muted-foreground"
                 >
                   예외가 없습니다.
@@ -287,16 +325,11 @@ export function SkuOverridesTab() {
                       {row.skuCode}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <OverrideDraftFields
-                        draft={draft}
-                        onChange={(patch) =>
-                          patchDraft(row.skuId, draft, patch)
-                        }
-                      />
-                    </div>
-                  </TableCell>
+                  <OverrideDraftFields
+                    draft={draft}
+                    onChange={(patch) => patchDraft(row.skuId, draft, patch)}
+                    wrap={asTableCells}
+                  />
                   <TableCell className="space-x-1 text-right">
                     <Button
                       size="sm"

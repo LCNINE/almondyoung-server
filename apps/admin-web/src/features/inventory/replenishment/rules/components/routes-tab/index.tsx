@@ -14,7 +14,12 @@ import {
   useUpsertRouteRule,
   useWarehouses,
 } from '@/lib/services/inventory';
-import { NEW_ROUTE_DRAFT_KEY, routeRuleKey } from '../../../rules-model';
+import {
+  NEW_ROUTE_DRAFT_KEY,
+  ROUTE_ADD_ISSUE_LABELS,
+  routeAddIssue,
+  routeRuleKey,
+} from '../../../rules-model';
 import {
   LeadTimeRulesTable,
   type LeadTimeRuleRow,
@@ -46,10 +51,12 @@ export function RoutesTab() {
     };
   });
 
-  const known = new Set(rows.map((row) => row.key));
   const options = warehouses ?? [];
-  const picked = newFrom !== '' && newTo !== '';
-  const duplicate = picked && known.has(routeRuleKey(newFrom, newTo));
+  const issue = routeAddIssue({
+    from: newFrom,
+    to: newTo,
+    knownKeys: new Set(rows.map((row) => row.key)),
+  });
 
   const newRow: NewLeadTimeRow = {
     // 창고 선택에서 파생시키지 않는다 — 고르는 순간 키가 바뀌어 이미 친 값이 사라진다.
@@ -81,14 +88,14 @@ export function RoutesTab() {
             ))}
           </SelectContent>
         </Select>
-        {duplicate && (
+        {issue !== null && issue !== 'incomplete' && (
           <span className="text-xs text-destructive">
-            이미 목록에 있는 경로입니다
+            {ROUTE_ADD_ISSUE_LABELS[issue]}
           </span>
         )}
       </div>
     ),
-    disabled: !picked || newFrom === newTo || duplicate || upsert.isPending,
+    disabled: issue !== null || upsert.isPending,
     onAdd: async (dto) => {
       const result = await upsert.mutateAsync({
         from: newFrom,
