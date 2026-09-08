@@ -199,7 +199,7 @@ export function BannerRow({
                   onChange={(e) =>
                     onChange({ displayStartAt: e.target.value || undefined })
                   }
-                  className={`${INPUT_CLASS} w-[200px]`}
+                  className={`${INPUT_CLASS} w-[240px]`}
                 />
                 <span className="text-muted-foreground text-xs">~</span>
                 <Input
@@ -208,7 +208,7 @@ export function BannerRow({
                   onChange={(e) =>
                     onChange({ displayEndAt: e.target.value || undefined })
                   }
-                  className={`${INPUT_CLASS} w-[200px]`}
+                  className={`${INPUT_CLASS} w-[240px]`}
                 />
               </div>
             )}

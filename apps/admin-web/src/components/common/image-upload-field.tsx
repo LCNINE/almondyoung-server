@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Cropper, { type Area } from 'react-easy-crop';
-import { Check, ImageIcon, Loader2, Upload, X, ZoomIn } from 'lucide-react';
+import { Check, ImageUp, Loader2, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,10 @@ import {
   uploadFileToFileService,
 } from '@/lib/api/domains/files/upload.client';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
-import { compressImageForUpload, formatBytes } from '@/lib/utils/image-compress';
+import {
+  compressImageForUpload,
+  formatBytes,
+} from '@/lib/utils/image-compress';
 import { cropImageToArea, type CropArea } from '@/lib/utils/image-crop';
 
 type Props = {
@@ -52,6 +55,8 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 /** 크롭 작업 영역 높이(px). 원본 전체가 보일 만큼 넉넉해야 위치를 고를 수 있다 */
 const CROP_BOX_HEIGHT = 300;
+/** 비어 있는 드롭존의 최소 높이(px) — 아이콘과 안내가 들어갈 만큼 */
+const EMPTY_BOX_MIN_HEIGHT = 132;
 
 /**
  * file-service 에 이미지를 올리고 fileId 를 돌려주는 공용 입력.
@@ -80,6 +85,7 @@ export function ImageUploadField({
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(MIN_ZOOM);
   const [croppedArea, setCroppedArea] = useState<CropArea | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const src = resolvePublicFileUrl(value);
@@ -191,6 +197,8 @@ export function ImageUploadField({
     ? {
         aspectRatio: `${slotRatio.width} / ${slotRatio.height}`,
         maxWidth: previewMaxWidth,
+        // 가로로 긴 칸은 비율대로 두면 높이가 70px 대라 안내가 안 들어간다
+        ...(src ? {} : { minHeight: EMPTY_BOX_MIN_HEIGHT }),
       }
     : undefined;
 
@@ -220,9 +228,36 @@ export function ImageUploadField({
         className={
           pending && ratio
             ? 'relative w-full overflow-hidden rounded-md border bg-neutral-800'
-            : `bg-muted relative overflow-hidden rounded-md border ${boxClass}`
+            : `group relative overflow-hidden rounded-xl ${boxClass} ${
+                src
+                  ? 'border bg-muted'
+                  : dragOver
+                    ? 'border-primary border-2 border-dashed bg-primary/5'
+                    : 'border-2 border-dashed border-[#e4e4e7] bg-[#fafafa]'
+              } ${
+                disabled || uploading
+                  ? ''
+                  : 'cursor-pointer transition-colors hover:border-primary/60'
+              }`
         }
         style={pending && ratio ? { height: CROP_BOX_HEIGHT } : boxStyle}
+        onClick={
+          pending || disabled || uploading
+            ? undefined
+            : () => inputRef.current?.click()
+        }
+        onDragOver={(e) => {
+          if (pending || disabled || uploading) return;
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          if (pending || disabled || uploading) return;
+          e.preventDefault();
+          setDragOver(false);
+          handleFile(e.dataTransfer.files?.[0]);
+        }}
       >
         {pending && ratio ? (
           <Cropper
@@ -240,14 +275,56 @@ export function ImageUploadField({
         ) : src ? (
           // file-service 프록시 경유 임의 이미지라 next/image 대신 img 사용
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={src}
-            alt={label}
-            className={`h-full w-full ${slotRatio ? 'object-cover' : 'object-contain'}`}
-          />
+          <>
+            <img
+              src={src}
+              alt={label}
+              className={`h-full w-full ${slotRatio ? 'object-cover' : 'object-contain'}`}
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+              <span className="rounded-md bg-white/95 px-3 py-1.5 text-[12px] font-medium text-[#1f2937]">
+                이미지 변경
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-label="이미지 제거"
+              disabled={disabled || uploading}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(null);
+              }}
+              className="absolute top-2 right-2 rounded-full bg-black/55 p-1 text-white opacity-0 transition-opacity group-hover:opacity-100 hover:bg-black/75"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </>
         ) : (
-          <div className="text-muted-foreground flex h-full w-full items-center justify-center">
-            <ImageIcon className="h-6 w-6" />
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 px-4 text-center">
+            {uploading ? (
+              <Loader2 className="text-primary h-7 w-7 animate-spin" />
+            ) : (
+              <ImageUp
+                className={`h-7 w-7 ${dragOver ? 'text-primary' : 'text-[#c6c6ca]'}`}
+              />
+            )}
+            <p className="text-[13px] leading-tight text-[#52525b]">
+              {dragOver ? (
+                '여기에 놓으세요'
+              ) : (
+                <>
+                  이미지를 끌어다 놓거나{' '}
+                  <span className="text-primary font-medium underline underline-offset-2">
+                    찾아보기
+                  </span>
+                </>
+              )}
+            </p>
+            <p className="text-[11px] leading-tight text-[#a1a1aa]">
+              {slotRatio
+                ? `${slotRatio.width}×${slotRatio.height} 권장 · ${formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하`
+                : `${formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하`}
+            </p>
           </div>
         )}
       </div>
@@ -291,67 +368,32 @@ export function ImageUploadField({
         onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        {pending ? (
-          <>
-            <Button
-              type="button"
-              size="sm"
-              disabled={disabled || uploading}
-              onClick={() => void handleConfirm()}
-            >
-              {uploading ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Check className="mr-1 h-3.5 w-3.5" />
-              )}
-              이대로 업로드
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={uploading}
-              onClick={clearPending}
-            >
-              취소
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={disabled || uploading}
-              onClick={() => inputRef.current?.click()}
-            >
-              {uploading ? (
-                <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Upload className="mr-1 h-3.5 w-3.5" />
-              )}
-              {value ? '이미지 변경' : '이미지 업로드'}
-            </Button>
-            {value && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="text-destructive hover:text-destructive"
-                disabled={disabled || uploading}
-                onClick={() => onChange(null)}
-              >
-                <X className="mr-1 h-3.5 w-3.5" />
-                제거
-              </Button>
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            disabled={disabled || uploading}
+            onClick={() => void handleConfirm()}
+          >
+            {uploading ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Check className="mr-1 h-3.5 w-3.5" />
             )}
-          </>
-        )}
-        <span className="text-muted-foreground/70 ml-auto text-[11px]">
-          {formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하
-        </span>
-      </div>
+            이대로 업로드
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={clearPending}
+          >
+            취소
+          </Button>
+        </div>
+      )}
 
       {compressNote && (
         <p className="text-muted-foreground text-xs">{compressNote}</p>
