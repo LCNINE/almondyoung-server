@@ -25,7 +25,9 @@ import type {
 import { toast } from 'sonner';
 import {
   FLAG_LABELS,
+  PATTERN_LABELS,
   PO_TYPE_LABELS,
+  daysOfCoverLabel,
   httpStatusOf,
   purchaseAction,
   serverMessageOf,
@@ -154,8 +156,9 @@ export function ReplenishmentTable() {
           <TableHeader>
             <TableRow>
               <TableHead>SKU</TableHead>
+              <TableHead>패턴 / 등급</TableHead>
               <TableHead>판매창고 재고</TableHead>
-              <TableHead>긴급도</TableHead>
+              <TableHead>예상 커버</TableHead>
               <TableHead>전사 위치</TableHead>
               <TableHead>제안</TableHead>
               <TableHead>플래그</TableHead>
@@ -177,6 +180,12 @@ export function ReplenishmentTable() {
                   </div>
                 </TableCell>
                 <TableCell>
+                  <Badge variant="secondary">
+                    {PATTERN_LABELS[row.pattern]}
+                  </Badge>{' '}
+                  <span className="text-xs">{row.grade}</span>
+                </TableCell>
+                <TableCell>
                   {row.sellable.onHand}
                   <span className="text-xs text-muted-foreground">
                     {' '}
@@ -184,7 +193,13 @@ export function ReplenishmentTable() {
                     {row.sellable.inTransit}
                   </span>
                 </TableCell>
-                <TableCell>{urgencyLabel(row)}</TableCell>
+                <TableCell>
+                  {daysOfCoverLabel(row)}
+                  <span className="text-xs text-muted-foreground">
+                    {' '}
+                    · {urgencyLabel(row)}
+                  </span>
+                </TableCell>
                 <TableCell>
                   {row.company.position}
                   <span className="text-xs text-muted-foreground">

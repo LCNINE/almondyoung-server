@@ -5,6 +5,7 @@ import type {
   ParameterSource,
   PurchaseOrderType,
   ReplenishmentSuggestionRowDto,
+  ResolvedSegmentDto,
   SuggestionActionDto,
   SuggestionFlag,
 } from '@/lib/types/dto/inventory';
@@ -111,6 +112,20 @@ export function daysOfCoverLabel(row: ReplenishmentSuggestionRowDto): string {
   if (d === null) return '—';
   if (d <= 0) return '소진';
   return `${d}일`;
+}
+
+/** SKU 드로어 프로필/파라미터 블록의 숫자 표기. null 은 '—'. */
+export function formatOptionalNumber(v: number | null, digits = 2): string {
+  return v === null ? '—' : v.toFixed(digits);
+}
+
+/**
+ * L1/L2 리드타임 세그먼트 표기 — 평균 ± 표준편차 (출처).
+ * `ResolvedSegmentDto` 는 non-nullable 이다(R1(i), core 실물): 경로 규칙·관측이
+ * 없어도 전역 이동 기본으로 떨어지므로 "없음" 분기는 존재하지 않는다.
+ */
+export function formatSegment(s: ResolvedSegmentDto): string {
+  return `${s.meanDays.toFixed(1)}일 ± ${s.stdDays.toFixed(1)} (${SOURCE_LABELS[s.source]})`;
 }
 
 /**

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -164,7 +165,15 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
             </FormField>
 
             <p className="text-xs text-muted-foreground">
-              안전재고는 더 이상 SKU 에 입력하지 않습니다. 수요 통계로 계산되며, 예외는 재고관리 &gt; 보충 규칙 &gt; SKU 예외에서 둡니다.
+              안전재고는 수요 통계로 계산됩니다. 예외(제외 · 고정 안전재고 ·
+              α)는{' '}
+              <Link
+                href="/inventory/replenishment/rules?tab=skus"
+                className="underline"
+              >
+                보충 규칙 › SKU 예외
+              </Link>
+              에서 둡니다.
             </p>
           </FormSection>
 

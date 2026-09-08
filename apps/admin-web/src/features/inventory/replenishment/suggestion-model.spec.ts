@@ -2,6 +2,7 @@ import type {
   DemandPattern,
   ParameterSource,
   ReplenishmentSuggestionRowDto,
+  ResolvedSegmentDto,
 } from '@/lib/types/dto/inventory';
 import { CustomError } from '@/lib/api/customError';
 import {
@@ -10,6 +11,8 @@ import {
   PO_TYPE_LABELS,
   SOURCE_LABELS,
   daysOfCoverLabel,
+  formatOptionalNumber,
+  formatSegment,
   httpStatusOf,
   purchaseAction,
   serverMessageOf,
@@ -191,6 +194,25 @@ describe('suggestion-model', () => {
     expect(
       daysOfCoverLabel(row({ sellable: { ...r.sellable, daysOfCover: 5 } }))
     ).toBe('5일');
+  });
+
+  it('숫자 표기 — null 은 대시, 그 외는 지정 자릿수로', () => {
+    expect(formatOptionalNumber(null)).toBe('—');
+    expect(formatOptionalNumber(1.005)).toBe('1.00');
+    expect(formatOptionalNumber(1.2345, 1)).toBe('1.2');
+    expect(formatOptionalNumber(0, 1)).toBe('0.0');
+  });
+
+  it('리드타임 세그먼트 표기 — 평균 ± 표준편차 (출처), null 분기 없음', () => {
+    const seg: ResolvedSegmentDto = {
+      meanDays: 12,
+      stdDays: 3,
+      source: 'observation',
+    };
+    expect(formatSegment(seg)).toBe('12.0일 ± 3.0 (관측)');
+    expect(
+      formatSegment({ meanDays: 0, stdDays: 0, source: 'global_default' })
+    ).toBe('0.0일 ± 0.0 (전역 기본)');
   });
 });
 
