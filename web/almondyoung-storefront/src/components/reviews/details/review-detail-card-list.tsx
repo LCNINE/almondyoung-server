@@ -22,7 +22,8 @@ import { ReviewDetailCard } from "./review-detail-card"
 
 type Props = {
   countryCode: string
-  productId: string
+  /** PIM 마스터 id. PIM 에 없는 상품은 undefined — 그때는 조회하지 않는다 */
+  productId: string | undefined
   totalReviews: number
   averageRating: number
   initialReviews: ReviewDetail[]
@@ -56,6 +57,9 @@ export function ReviewDetailCardList({
 
   const fetchReviews = useCallback(
     async (page: number, sort: ReviewSortOption, photo: boolean) => {
+      // 정렬·포토필터는 리뷰가 0건이어도 항상 그려진다. productId 가 없는 상품에서
+      // 그걸 건드리면 ?productId=undefined 로 400 이 나므로 여기서 막는다.
+      if (!productId) return
       setIsLoading(true)
       try {
         const result = await getReviewsByProductId({

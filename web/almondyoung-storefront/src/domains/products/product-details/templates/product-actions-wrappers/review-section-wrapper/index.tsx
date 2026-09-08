@@ -16,7 +16,7 @@ export async function ReviewSectionWrapper({ productId, countryCode }: Props) {
     return (
       <ReviewDetailCardList
         countryCode={countryCode}
-        productId=""
+        productId={undefined}
         totalReviews={0}
         averageRating={0}
         initialReviews={[]}
