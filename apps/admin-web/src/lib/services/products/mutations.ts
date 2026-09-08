@@ -358,8 +358,7 @@ export const useUpdateBannerGroup = () => {
 export const useDeleteBannerGroup = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, deletedBy }: { id: string; deletedBy?: string }) =>
-      products.bannerGroups.remove(id, deletedBy),
+    mutationFn: ({ id }: { id: string }) => products.bannerGroups.remove(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.bannerGroups });
     },
