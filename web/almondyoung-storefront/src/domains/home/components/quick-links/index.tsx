@@ -91,7 +91,8 @@ export async function HomeQuickLinks({
       imageWrapClassName: "bg-[#4f4a44]",
     },
     {
-      label: "다뷰",
+      label: "예약관리어플",
+      displayLabel: "예약관리어플",
       href: "https://dabeau.kr",
       imageUrl: DABEAU_IMAGE_URL,
       external: true,
