@@ -1,6 +1,17 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -33,10 +44,12 @@ export function BannerGroupRow({ group }: Props) {
   const { data: banners = [] } = useBannersByGroup(group.id);
   const updateMutation = useUpdateBannerGroup();
 
+  const [confirmOff, setConfirmOff] = useState(false);
+
   const activeCount = banners.filter((b) => b.isActive).length;
   const slots = Array.from({ length: THUMB_SLOTS }, (_, i) => banners[i]);
 
-  const handleToggle = async (checked: boolean) => {
+  const apply = async (checked: boolean) => {
     try {
       await updateMutation.mutateAsync({
         id: group.id,
@@ -45,6 +58,12 @@ export function BannerGroupRow({ group }: Props) {
     } catch {
       toast.error('표시 상태를 바꾸지 못했습니다.');
     }
+  };
+
+  /** 끄면 그룹째로 고객 화면에서 내려가므로 한 번 더 묻는다. 켜는 건 바로 적용 */
+  const handleToggle = (checked: boolean) => {
+    if (checked) apply(true);
+    else setConfirmOff(true);
   };
 
   return (
@@ -119,6 +138,28 @@ export function BannerGroupRow({ group }: Props) {
           aria-label={`${group.title} 표시 상태`}
         />
       </div>
+
+      <AlertDialog open={confirmOff} onOpenChange={setConfirmOff}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>다시 한번 확인해 주세요</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{group.title}</strong> 그룹을 쇼핑몰에서 숨깁니다.
+              {activeCount > 0 &&
+                ` 현재 활성화중인 배너 ${activeCount}장이 바로 숨겨집니다.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => apply(false)}
+              className="bg-[#f29219] hover:bg-[#df7b00]"
+            >
+              내리기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
