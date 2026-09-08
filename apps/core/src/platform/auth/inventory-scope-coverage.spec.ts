@@ -92,7 +92,7 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'POST /stocktaking/sessions/:id/start':                    S.OPERATE,
   'GET /stocktaking/sessions/:id/variances':                 S.OPERATE,
 
-  // ── inventory.manage (59) ──────────────────────────────────────────
+  // ── inventory.manage (72) ──────────────────────────────────────────
   'POST /barcode-generation/custom':                           S.MANAGE,
   'POST /barcode-generation/fulfillment-order':                S.MANAGE,
   'POST /barcode-generation/location':                         S.MANAGE,
@@ -140,6 +140,19 @@ const ROUTE_SCOPES: Record<string, InventoryScope | null> = {
   'PUT /purchase-orders/cart/:itemId':                         S.MANAGE,
   'POST /purchase-orders/from-cart':                           S.MANAGE,
   'POST /replenishment/profiles/recompute':                    S.MANAGE,
+  'GET /replenishment/rules/grades':                           S.MANAGE,
+  'PUT /replenishment/rules/grades':                           S.MANAGE,
+  'GET /replenishment/rules/routes':                           S.MANAGE,
+  'DELETE /replenishment/rules/routes/:fromWarehouseId/:toWarehouseId': S.MANAGE,
+  'PUT /replenishment/rules/routes/:fromWarehouseId/:toWarehouseId': S.MANAGE,
+  'GET /replenishment/rules/settings':                         S.MANAGE,
+  'PUT /replenishment/rules/settings':                         S.MANAGE,
+  'GET /replenishment/rules/skus':                             S.MANAGE,
+  'DELETE /replenishment/rules/skus/:skuId':                   S.MANAGE,
+  'PUT /replenishment/rules/skus/:skuId':                      S.MANAGE,
+  'GET /replenishment/rules/suppliers':                        S.MANAGE,
+  'DELETE /replenishment/rules/suppliers/:supplierId':         S.MANAGE,
+  'PUT /replenishment/rules/suppliers/:supplierId':            S.MANAGE,
   'GET /replenishment/skus/:skuId':                            S.MANAGE,
   'GET /replenishment/suggestions':                            S.MANAGE,
   'GET /supplier-categories':                                  S.MANAGE,

@@ -27,6 +27,10 @@ export interface RefreshSummary {
  * 앞 단계의 커밋은 남고, 실패하면 뒤를 돌리지 않는다(부분 갱신된 프로필 위에 리드타임만 새것이 되는 상태를 피한다).
  * recompute 엔드포인트는 같은 run() 을 동기로 부른다. 크론 리더 선출이 없어 인스턴스가 둘이면 두 번 도는데
  * 결과가 같다. `SCHEDULE_ROOT` 가 전역이라 이 모듈은 ScheduleModule 을 import 하지 않는다(#599).
+ *
+ * 설정은 `run()` 초입에서 **한 번만** 읽어 세 단계에 그대로 넘긴다(`today` 와 같은 방식). B 가
+ * `PUT /replenishment/rules/settings` 를 연 뒤로는 한 런이 도는 몇 초~몇십 초 사이에도 운영자가
+ * 저장을 누를 수 있어서, 단계마다 따로 읽으면 한 런의 프로필이 서로 다른 창 길이 · 등급 컷으로 섞인다.
  */
 @Injectable()
 export class ReplenishmentRefreshJob {
@@ -81,9 +85,9 @@ export class ReplenishmentRefreshJob {
             coreSince: settings.demandCoreSince,
           });
     onStageDone?.('demandSeries');
-    const profiles = await this.profileRefresher.refreshAll({ today });
+    const profiles = await this.profileRefresher.refreshAll({ today, settings });
     onStageDone?.('profiles');
-    const leadTimes = await this.leadTimeRefresher.refreshAll({ today });
+    const leadTimes = await this.leadTimeRefresher.refreshAll({ today, settings });
     onStageDone?.('leadTimes');
 
     return { series, today, startedAt, finishedAt: new Date().toISOString(), demandSeries, profiles, leadTimes };

@@ -5,6 +5,7 @@ import { StockProjectionModule } from '../stock-projection/stock-projection.modu
 import { WarehouseTransferModule } from '../warehouse-transfer/warehouse-transfer.module';
 import { ReplenishmentSuggestionController } from './controllers/replenishment-suggestion.controller';
 import { ReplenishmentProfileController } from './controllers/replenishment-profile.controller';
+import { ReplenishmentRulesController } from './controllers/replenishment-rules.controller';
 import { ReplenishmentSuggestionService } from './suggestion/replenishment-suggestion.service';
 import { ReplenishmentSuggestionReader } from './suggestion/replenishment-suggestion.reader';
 import { ReplenishmentStockReader } from './suggestion/replenishment-stock.reader';
@@ -14,6 +15,9 @@ import { DemandProfileRefresher } from './demand/demand-profile.refresher';
 import { LeadTimeProfileRefresher } from './demand/lead-time-profile.refresher';
 import { ReplenishmentRefreshJob } from './demand/replenishment-refresh.job';
 import { ReplenishmentProfileService } from './demand/replenishment-profile.service';
+import { ReplenishmentRulesReader } from './rules/replenishment-rules.reader';
+import { ReplenishmentRulesManager } from './rules/replenishment-rules.manager';
+import { ReplenishmentRulesService } from './rules/replenishment-rules.service';
 
 /**
  * 재고 보충 제안 (#743, 스펙 2026-09-08). procurement · warehouse-transfer 의 형제.
@@ -28,7 +32,7 @@ import { ReplenishmentProfileService } from './demand/replenishment-profile.serv
  */
 @Module({
   imports: [SharedModule, CoreInventoryModule, StockProjectionModule, WarehouseTransferModule],
-  controllers: [ReplenishmentSuggestionController, ReplenishmentProfileController],
+  controllers: [ReplenishmentSuggestionController, ReplenishmentProfileController, ReplenishmentRulesController],
   providers: [
     ReplenishmentSuggestionService,
     ReplenishmentSuggestionReader,
@@ -39,7 +43,10 @@ import { ReplenishmentProfileService } from './demand/replenishment-profile.serv
     LeadTimeProfileRefresher,
     ReplenishmentRefreshJob,
     ReplenishmentProfileService,
+    ReplenishmentRulesReader,
+    ReplenishmentRulesManager,
+    ReplenishmentRulesService,
   ],
-  exports: [ReplenishmentSuggestionService, ReplenishmentSettingsReader],
+  exports: [ReplenishmentSuggestionService, ReplenishmentSettingsReader, ReplenishmentRulesReader],
 })
 export class ReplenishmentModule {}

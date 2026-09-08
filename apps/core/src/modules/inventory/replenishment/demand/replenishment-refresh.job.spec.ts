@@ -1,13 +1,17 @@
+import { ReplenishmentSettings } from '../../schema/inventory.schema';
 import { ReplenishmentRefreshJob } from './replenishment-refresh.job';
 import { ReplenishmentSettingsReader } from './replenishment-settings.reader';
 import { DemandSeriesWriter } from './demand-series.writer';
 import { DemandProfileRefresher } from './demand-profile.refresher';
 import { LeadTimeProfileRefresher } from './lead-time-profile.refresher';
 
+// 잡이 한 번 읽어 세 단계에 그대로 넘기는 그 객체 — 단언이 참조 동일성까지 본다.
+const SETTINGS = { demandRecomputeDays: 14, demandCoreSince: '2026-07-01' } as unknown as ReplenishmentSettings;
+
 function build(overrides: { series?: Partial<DemandSeriesWriter>; profiles?: Partial<DemandProfileRefresher> } = {}) {
   const calls: string[] = [];
   const settingsReader = {
-    read: jest.fn().mockResolvedValue({ demandRecomputeDays: 14, demandCoreSince: '2026-07-01' }),
+    read: jest.fn().mockResolvedValue(SETTINGS),
   } as unknown as ReplenishmentSettingsReader;
   const seriesWriter = {
     rebuildCoreWindow: jest.fn(async (input) => {
@@ -46,10 +50,22 @@ describe('ReplenishmentRefreshJob', () => {
     const summary = await job.run('window', NOW);
     expect(calls).toEqual(['window', 'profiles', 'lead-times']);
     expect(seriesWriter.rebuildCoreWindow).toHaveBeenCalledWith({ from: '2026-08-25', to: '2026-09-08', coreSince: '2026-07-01' });
-    expect(profileRefresher.refreshAll).toHaveBeenCalledWith({ today: '2026-09-08' });
-    expect(leadTimeRefresher.refreshAll).toHaveBeenCalledWith({ today: '2026-09-08' });
+    expect(profileRefresher.refreshAll).toHaveBeenCalledWith({ today: '2026-09-08', settings: SETTINGS });
+    expect(leadTimeRefresher.refreshAll).toHaveBeenCalledWith({ today: '2026-09-08', settings: SETTINGS });
     expect(summary).toMatchObject({ series: 'window', today: '2026-09-08', demandSeries: { rows: 3 }, profiles: { skus: 2 }, leadTimes: { suppliers: 1 } });
     expect(summary.startedAt <= summary.finishedAt).toBe(true);
+  });
+
+  // 설정은 PUT /replenishment/rules/settings 로 런 도중에도 바뀔 수 있다. 단계마다 따로 읽으면
+  // 한 런의 결과가 서로 다른 창 길이 · 등급 컷으로 섞이므로, 읽기는 정확히 한 번이어야 한다.
+  it('설정은 run() 이 한 번만 읽어 세 단계가 같은 값을 본다', async () => {
+    const { job, settingsReader, profileRefresher, leadTimeRefresher } = build();
+    await job.run('window', NOW);
+    expect(settingsReader.read).toHaveBeenCalledTimes(1);
+    const profileInput = (profileRefresher.refreshAll as jest.Mock).mock.calls[0][0];
+    const leadTimeInput = (leadTimeRefresher.refreshAll as jest.Mock).mock.calls[0][0];
+    expect(profileInput.settings).toBe(SETTINGS);
+    expect(leadTimeInput.settings).toBe(SETTINGS);
   });
 
   it('full: 전량 재구축을 부른다', async () => {
