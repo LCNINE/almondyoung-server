@@ -19,7 +19,7 @@ const STATUS_TABS: Array<{ value: BestSelectionStatus; label: string }> = [
 
 export function BestSelections() {
   const [status, setStatus] = useState<BestSelectionStatus>('CANDIDATE');
-  const { data, isLoading } = useBestSelections({ status, page: 1, limit: 50 });
+  const { data, isLoading, isError } = useBestSelections({ status, page: 1, limit: 50 });
   const generate = useGenerateBestSelections();
   const confirm = useConfirmBestSelection();
   const reject = useRejectBestSelection();
@@ -68,6 +68,12 @@ export function BestSelections() {
 
       {message && <p className="text-xs text-gray-600">{message}</p>}
       {isLoading && <p className="text-xs text-gray-400">불러오는 중…</p>}
+
+      {isError && (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-4 text-xs text-red-600">
+          선정 목록을 불러오지 못했습니다. <strong>비어 있는 것이 아니라 조회에 실패한 것입니다.</strong>
+        </p>
+      )}
 
       {data && data.data.length === 0 && (
         <p className="rounded border border-gray-200 bg-gray-50 px-3 py-4 text-xs text-gray-500">

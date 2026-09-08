@@ -3,8 +3,15 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { ReviewRewardGrantStatus } from '@/lib/types/dto/review-reward';
-import { useReviewRewardGrants, useReviewRewardSummary } from '@/lib/services/review-reward';
-import { formatDateTime, formatKrw, GRANT_STATUS_LABELS, REWARD_KIND_LABELS, SKIP_REASON_LABELS } from '../shared';
+import { useReviewRewardGrants, useReviewRewardRules, useReviewRewardSummary } from '@/lib/services/review-reward';
+import {
+  describeEmptyGrants,
+  formatDateTime,
+  formatKrw,
+  GRANT_STATUS_LABELS,
+  REWARD_KIND_LABELS,
+  SKIP_REASON_LABELS,
+} from '../shared';
 
 const PAGE_SIZE = 20;
 const SUMMARY_DAYS = 30;
@@ -20,7 +27,10 @@ export function GrantsPanel() {
   const [status, setStatus] = useState<ReviewRewardGrantStatus | undefined>(undefined);
   const [page, setPage] = useState(1);
   const { data: summary } = useReviewRewardSummary(SUMMARY_DAYS);
-  const { data, isLoading } = useReviewRewardGrants({ page, limit: PAGE_SIZE, status });
+  const { data, isLoading, isError } = useReviewRewardGrants({ page, limit: PAGE_SIZE, status });
+  // 같은 queryKey 라 RuleList 가 이미 받아 둔 캐시를 그대로 쓴다 — 요청이 늘지 않는다.
+  const { data: rules } = useReviewRewardRules();
+  const hasActiveRule = rules ? rules.some((rule) => rule.active) : undefined;
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / PAGE_SIZE)) : 1;
 
@@ -73,9 +83,15 @@ export function GrantsPanel() {
 
       {isLoading && <p className="text-xs text-gray-400">불러오는 중…</p>}
 
+      {isError && (
+        <p className="rounded border border-red-200 bg-red-50 px-3 py-4 text-xs text-red-600">
+          지급 내역을 불러오지 못했습니다. <strong>비어 있는 것이 아니라 조회에 실패한 것입니다.</strong>
+        </p>
+      )}
+
       {data && data.data.length === 0 && (
         <p className="rounded border border-gray-200 bg-gray-50 px-3 py-4 text-xs text-gray-500">
-          내역이 없습니다. 활성 규칙이 없으면 판정 자체를 하지 않으므로 아무 행도 쌓이지 않습니다.
+          내역이 없습니다. {describeEmptyGrants(hasActiveRule)}
         </p>
       )}
 

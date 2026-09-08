@@ -90,7 +90,9 @@ export function emptyRuleForm(): UpsertReviewRewardRuleDto {
 }
 
 /** 규칙 한 줄 요약 — 목록에서 「무엇을 주는 규칙인지」를 펼치지 않고 읽게 한다 */
-export function describeReward(reward: UpsertReviewRewardRuleDto['reward']): string {
+export function describeReward(
+  reward: UpsertReviewRewardRuleDto['reward']
+): string {
   switch (reward.kind) {
     case 'NONE':
       return '지급 없음';
@@ -99,11 +101,52 @@ export function describeReward(reward: UpsertReviewRewardRuleDto['reward']): str
     case 'POINT_FIXED':
       return `${formatKrw(reward.amount ?? 0)} 적립${reward.expiresInDays ? ` · ${reward.expiresInDays}일 후 만료` : ''}`;
     case 'POINT_RATE': {
-      const cap = reward.maxAmount ? ` · 최대 ${formatKrw(reward.maxAmount)}` : '';
-      const floor = reward.minAmount ? ` · 최소 ${formatKrw(reward.minAmount)}` : '';
+      const cap = reward.maxAmount
+        ? ` · 최대 ${formatKrw(reward.maxAmount)}`
+        : '';
+      const floor = reward.minAmount
+        ? ` · 최소 ${formatKrw(reward.minAmount)}`
+        : '';
       return `주문금액의 ${reward.ratePercent ?? 0}%${floor}${cap}`;
     }
     default:
       return '-';
   }
+}
+
+/**
+ * 「지금 보상이 나가는가」에 대한 이 화면의 단언. 이 화면의 존재 이유가 그 단언이므로,
+ * 목록을 «실제로 받아왔을 때만» 말한다 — 조회가 실패하면 규칙 배열이 undefined 라
+ * 활성 0건과 구별되지 않아, 권한 없음(403)이 「아무 보상도 안 나갑니다」라는
+ * 거짓 안심으로 그려진 적이 있다.
+ */
+export type RewardRuleNotice =
+  | { kind: 'error' }
+  | { kind: 'loading' }
+  | { kind: 'counted'; activeCount: number };
+
+export function rewardRuleNotice(state: {
+  isError: boolean;
+  rules?: Array<{ active: boolean }>;
+}): RewardRuleNotice {
+  if (state.isError) return { kind: 'error' };
+  if (!state.rules) return { kind: 'loading' };
+  return {
+    kind: 'counted',
+    activeCount: state.rules.filter((rule) => rule.active).length,
+  };
+}
+
+/**
+ * 지급 내역이 비었을 때 덧붙이는 «원인» 문장. 「활성 규칙이 없어서 안 쌓인다」는
+ * 실제로 활성 규칙이 0건일 때만 참이다. 규칙 목록을 아직/못 받았으면 원인을 말하지 않는다.
+ */
+export function describeEmptyGrants(
+  hasActiveRule: boolean | undefined
+): string {
+  if (hasActiveRule === false)
+    return '활성 규칙이 없으면 판정 자체를 하지 않으므로 아무 행도 쌓이지 않습니다.';
+  if (hasActiveRule === true)
+    return '활성 규칙은 있으므로, 조건에 맞는 리뷰가 아직 없었다는 뜻입니다.';
+  return '';
 }
