@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,8 @@ import { Input } from '@/components/ui/input';
 import { useCreateBannerGroup } from '@/lib/services/products';
 import { toast } from 'sonner';
 import { ActiveSwitch } from '@/components/common/active-switch';
-
+import { BANNER_GROUP_PRESETS } from '../../banner-group-presets';
+import { cn } from '@/lib/utils/cn';
 
 type Props = {
   open: boolean;
@@ -26,30 +28,41 @@ const nextCode = () => `AY${Date.now().toString().slice(-6)}`;
 export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [isActive, setIsActive] = useState(true);
+  const [isActive, setIsActive] = useState(false);
+  const [titleError, setTitleError] = useState('');
+  const [preset, setPreset] = useState(BANNER_GROUP_PRESETS[0]);
   const createMutation = useCreateBannerGroup();
+  const router = useRouter();
 
   const handleClose = () => {
     setTitle('');
     setDescription('');
-    setIsActive(true);
+    setIsActive(false);
+    setTitleError('');
+    setPreset(BANNER_GROUP_PRESETS[0]);
     onOpenChange(false);
   };
 
   const handleSubmit = async () => {
     if (!title.trim()) {
-      toast.error('배너 그룹명을 입력해 주세요.');
+      setTitleError('배너 그룹명을 입력해 주세요.');
       return;
     }
+    setTitleError('');
     try {
-      await createMutation.mutateAsync({
+      const created = await createMutation.mutateAsync({
         code: nextCode(),
         title: title.trim(),
         description: description.trim() || undefined,
+        pcWidth: preset.pcWidth,
+        pcHeight: preset.pcHeight,
+        mobileWidth: preset.mobileWidth,
+        mobileHeight: preset.mobileHeight,
         isActive,
       });
       toast.success('배너 그룹이 생성되었습니다.');
       handleClose();
+      router.push(`/mall/banner-groups/${created.id}`);
     } catch {
       toast.error('생성에 실패했습니다.');
     }
@@ -66,24 +79,28 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
           <div className="grid flex-1 gap-6">
             <Field
               label="배너 그룹명"
-              hint="배너 그룹명을 입력하세요."
+              hint=""
               required
               htmlFor="bg-title"
+              error={titleError}
             >
               <Input
                 id="bg-title"
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (titleError) setTitleError('');
+                }}
                 placeholder="배너 그룹명"
-                className="h-11 rounded-[6px] border-[#e4e4e7] shadow-none"
+                aria-invalid={!!titleError}
+                className={cn(
+                  'h-11 rounded-[6px] border-[#e4e4e7] shadow-none',
+                  titleError && 'border-destructive'
+                )}
               />
             </Field>
 
-            <Field
-              label="배너 그룹 설명"
-              hint="배너 그룹의 설명을 입력하세요."
-              htmlFor="bg-description"
-            >
+            <Field label="배너 그룹 설명" hint="" htmlFor="bg-description">
               <Input
                 id="bg-description"
                 value={description}
@@ -92,10 +109,46 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
                 className="h-11 rounded-[6px] border-[#e4e4e7] shadow-none"
               />
             </Field>
+
+            <Field label="배너 규격" hint="" htmlFor="bg-preset">
+              <div className="flex flex-wrap gap-2">
+                {BANNER_GROUP_PRESETS.map((p) => (
+                  <Button
+                    key={p.label}
+                    type="button"
+                    variant={preset.label === p.label ? 'default' : 'outline'}
+                    size="sm"
+                    title={p.hint}
+                    onClick={() => setPreset(p)}
+                  >
+                    {p.label} ({p.pcWidth}×{p.pcHeight})
+                  </Button>
+                ))}
+              </div>
+            </Field>
+
+            <Field label="노출 상태" hint="" htmlFor="bg-isActive">
+              <div className="flex items-center gap-2">
+                <ActiveSwitch
+                  id="bg-isActive"
+                  checked={isActive}
+                  onCheckedChange={setIsActive}
+                />
+                <span className="text-[13px] text-[#52525b]">
+                  {isActive
+                    ? '만들자마자 고객 화면에 나옵니다'
+                    : '숨김 — 배너를 채운 뒤 켜세요'}
+                </span>
+              </div>
+            </Field>
           </div>
 
           <div className="flex shrink-0 items-center gap-3 pt-7">
-            <Button variant="outline" className="h-10 px-6" onClick={handleClose}>
+            <Button
+              variant="outline"
+              className="h-10 px-6"
+              onClick={handleClose}
+            >
               취소
             </Button>
             <Button
@@ -105,17 +158,12 @@ export function BannerGroupCreateDialog({ open, onOpenChange }: Props) {
             >
               저장
             </Button>
-            <ActiveSwitch
-              checked={isActive}
-              onCheckedChange={setIsActive}
-              aria-label="생성 후 바로 노출"
-            />
           </div>
         </div>
 
         <DialogFooter className="sm:justify-start">
           <p className="text-muted-foreground text-xs">
-            배너 크기와 카테고리는 만든 뒤 상세 화면에서 정합니다.
+            카테고리와 세부 크기는 만든 뒤 상세 화면에서 바꿀 수 있습니다.
           </p>
         </DialogFooter>
       </DialogContent>
@@ -128,12 +176,14 @@ function Field({
   hint,
   required,
   htmlFor,
+  error,
   children,
 }: {
   label: string;
   hint: string;
   required?: boolean;
   htmlFor: string;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -148,6 +198,7 @@ function Field({
       <div>
         <p className="text-muted-foreground mb-1.5 text-[13px]">{hint}</p>
         {children}
+        {error && <p className="text-destructive mt-1.5 text-xs">{error}</p>}
       </div>
     </div>
   );

@@ -64,7 +64,7 @@ export function BannerGroupsTable() {
       )}
 
       <div className="overflow-hidden rounded-[10px] border border-[#e4e4e7]">
-        <div className="grid grid-cols-[210px_1fr_120px_100px] items-center gap-6 border-b border-[#e4e4e7] bg-[#f9fafb] px-6 py-3 text-[14px] font-semibold text-[#1f2937]">
+        <div className="grid grid-cols-[210px_1fr_200px_100px] items-center gap-6 border-b border-[#e4e4e7] bg-[#f9fafb] px-6 py-3 text-[14px] font-semibold text-[#1f2937]">
           <span>등록된 배너</span>
           <span>그룹 정보</span>
           <span className="text-center">관리</span>
@@ -90,7 +90,13 @@ export function BannerGroupsTable() {
             </Button>
           </div>
         ) : (
-          rows.map((group) => <BannerGroupRow key={group.id} group={group} />)
+          rows.map((group) => (
+            <BannerGroupRow
+              key={group.id}
+              group={group}
+              onDelete={() => setDeleteTarget(group)}
+            />
+          ))
         )}
       </div>
 

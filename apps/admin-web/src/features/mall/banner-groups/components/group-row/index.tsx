@@ -22,7 +22,6 @@ import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { toast } from 'sonner';
 import { ActiveSwitch } from '@/components/common/active-switch';
 
-
 /** 시안(Figma 10:40814) 실측 */
 const THUMB_SLOTS = 3;
 const CARD_W = 101;
@@ -39,9 +38,10 @@ const EMPTY_SLOT_BG = {
 
 type Props = {
   group: BannerGroupDto;
+  onDelete: () => void;
 };
 
-export function BannerGroupRow({ group }: Props) {
+export function BannerGroupRow({ group, onDelete }: Props) {
   const { data: banners = [] } = useBannersByGroup(group.id);
   const updateMutation = useUpdateBannerGroup();
 
@@ -68,7 +68,7 @@ export function BannerGroupRow({ group }: Props) {
   };
 
   return (
-    <div className="grid grid-cols-[210px_1fr_120px_100px] items-center gap-6 border-b border-[#f0f0f2] bg-white px-6 py-4 last:border-b-0">
+    <div className="grid grid-cols-[210px_1fr_200px_100px] items-center gap-6 border-b border-[#f0f0f2] bg-white px-6 py-4 last:border-b-0">
       <div className="relative" style={{ width: STACK_W, height: CARD_H }}>
         {slots.map((banner, i) => {
           const src = resolvePublicFileUrl(banner?.pcImageFileId);
@@ -120,7 +120,7 @@ export function BannerGroupRow({ group }: Props) {
         )}
       </div>
 
-      <div className="text-center">
+      <div className="flex justify-center gap-2">
         <Button
           variant="outline"
           size="sm"
@@ -128,6 +128,14 @@ export function BannerGroupRow({ group }: Props) {
           className="h-9 rounded-full border-[#e4e4e7] bg-white px-6"
         >
           <Link href={`/mall/banner-groups/${group.id}`}>수정</Link>
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onDelete}
+          className="text-destructive hover:text-destructive h-9 rounded-full border-[#e4e4e7] bg-white px-6"
+        >
+          삭제
         </Button>
       </div>
 
