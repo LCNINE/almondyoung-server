@@ -19,7 +19,9 @@ export function isBannerGroupVisible<
 export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
   const now = new Date().getTime()
 
-  return sortBy(banners, ["sortOrder"]).filter((banner) => {
+  // sortOrder 가 겹치는 배너가 실제로 있어서(라이브 MAIN_HERO 에 -1 이 둘),
+  // 동점을 등록순으로 깨야 조회할 때마다 순서가 뒤집히지 않는다
+  return sortBy(banners, ["sortOrder", "createdAt"]).filter((banner) => {
     const start = banner.displayStartAt
       ? new Date(banner.displayStartAt).getTime()
       : 0

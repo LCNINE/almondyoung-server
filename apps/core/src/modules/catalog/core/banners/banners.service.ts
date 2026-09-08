@@ -97,7 +97,7 @@ export class BannersService {
             or(isNull(pimSchema.banners.displayEndAt), gt(pimSchema.banners.displayEndAt, now)),
           ),
         )
-        .orderBy(pimSchema.banners.sortOrder);
+        .orderBy(pimSchema.banners.sortOrder, pimSchema.banners.createdAt);
 
       return {
         ...BannerMapper.toGroupDto(group),
@@ -118,7 +118,7 @@ export class BannersService {
         .select()
         .from(pimSchema.bannerGroups)
         .where(and(...conditions))
-        .orderBy(pimSchema.bannerGroups.sortOrder);
+        .orderBy(pimSchema.bannerGroups.sortOrder, pimSchema.bannerGroups.createdAt);
 
       return BannerMapper.toGroupDtoArray(groups);
     }, tx);
@@ -226,7 +226,7 @@ export class BannersService {
         .select()
         .from(pimSchema.banners)
         .where(and(...conditions))
-        .orderBy(pimSchema.banners.sortOrder);
+        .orderBy(pimSchema.banners.sortOrder, pimSchema.banners.createdAt);
 
       return BannerMapper.toDtoArray(banners);
     }, tx);

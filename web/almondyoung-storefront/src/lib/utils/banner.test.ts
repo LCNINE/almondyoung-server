@@ -87,3 +87,23 @@ describe("isHeroListReady", () => {
     expect(isHeroListReady([])).toBe(false)
   })
 })
+
+describe("getActiveBanners — sortOrder 동점", () => {
+  const at = (id: string, sortOrder: number, createdAt: string) =>
+    ({
+      id,
+      sortOrder,
+      createdAt,
+      isActive: true,
+      displayStartAt: null,
+      displayEndAt: null,
+    }) as unknown as BannerDto
+
+  it("sortOrder 가 같으면 등록순으로 고정된다", () => {
+    const later = at("b", -1, "2026-07-14T00:00:00Z")
+    const earlier = at("a", -1, "2026-07-02T00:00:00Z")
+    // 입력 순서를 뒤집어도 결과가 같아야 한다
+    expect(getActiveBanners([later, earlier]).map((b) => b.id)).toEqual(["a", "b"])
+    expect(getActiveBanners([earlier, later]).map((b) => b.id)).toEqual(["a", "b"])
+  })
+})
