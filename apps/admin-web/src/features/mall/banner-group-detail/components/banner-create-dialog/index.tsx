@@ -55,8 +55,7 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
   const canPreview = !!(form.pcImageFileId || form.mobileImageFileId);
 
   const set =
-    (key: keyof typeof form) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
+    (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [key]: e.target.value || undefined }));
 
   const handleClose = () => {
@@ -100,11 +99,7 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             <Label htmlFor="b-title">
               제목 <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="b-title"
-              value={form.title}
-              onChange={set('title')}
-            />
+            <Input id="b-title" value={form.title} onChange={set('title')} />
           </div>
 
           <div className="grid gap-1.5">
@@ -141,7 +136,9 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
                   {pcGuide.overlayTip && (
                     <>
                       <br />
-                      <span className="text-destructive">{pcGuide.overlayTip}</span>
+                      <span className="text-destructive">
+                        {pcGuide.overlayTip}
+                      </span>
                     </>
                   )}
                 </>
@@ -150,7 +147,10 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.pcImageFileId}
             onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, pcImageFileId: fileId ?? undefined }))
+              setForm((prev) => ({
+                ...prev,
+                pcImageFileId: fileId ?? undefined,
+              }))
             }
           />
 
@@ -173,7 +173,10 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.mobileImageFileId}
             onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
+              setForm((prev) => ({
+                ...prev,
+                mobileImageFileId: fileId ?? undefined,
+              }))
             }
           />
 
@@ -215,7 +218,9 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
               onChange={(e) =>
                 setForm((prev) => ({
                   ...prev,
-                  sortOrder: e.target.value ? Number(e.target.value) : undefined,
+                  sortOrder: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
                 }))
               }
             />

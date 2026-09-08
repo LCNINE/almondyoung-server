@@ -20,15 +20,13 @@ export function BannerGroupsTable() {
   const [category, setCategory] = useState<string | null>(null);
 
   const allGroups = data ?? [];
-  /**
-   * 탭은 시안(Figma 10:40816)의 «메인/헤어/네일…» 을 고정으로 박지 않고 실제
-   * category 값에서 뽑는다 — 카테고리는 그룹 폼에서 자유 입력이라, 고정하면 지금
-   * 없는 탭 6개가 빈 채로 남고 새로 만든 카테고리는 아예 안 나온다.
-   */
+  /** 시안의 고정 8개 대신 실제 category 값에서 뽑는다 — 자유 입력이라 늘고 준다 */
   const categories = [...new Set(allGroups.map((g) => g.category))].filter(
-    (c): c is string => !!c,
+    (c): c is string => !!c
   );
-  const rows = category ? allGroups.filter((g) => g.category === category) : allGroups;
+  const rows = category
+    ? allGroups.filter((g) => g.category === category)
+    : allGroups;
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
@@ -44,7 +42,9 @@ export function BannerGroupsTable() {
   return (
     <div className="px-8 py-6">
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">배너 그룹</h2>
+        <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">
+          배너 그룹
+        </h2>
         <Button
           size="sm"
           className="ml-auto bg-[#f29219] hover:bg-[#df7b00]"
@@ -56,11 +56,15 @@ export function BannerGroupsTable() {
       </div>
 
       {categories.length > 1 && (
-        <CategoryTabs categories={categories} value={category} onChange={setCategory} />
+        <CategoryTabs
+          categories={categories}
+          value={category}
+          onChange={setCategory}
+        />
       )}
 
       <div className="overflow-hidden rounded-[10px] border border-[#e4e4e7]">
-        <div className="grid grid-cols-[220px_1fr_120px_100px] items-center gap-6 border-b border-[#e4e4e7] bg-[#f9fafb] px-6 py-3 text-[14px] font-semibold text-[#1f2937]">
+        <div className="grid grid-cols-[210px_1fr_120px_100px] items-center gap-6 border-b border-[#e4e4e7] bg-[#f9fafb] px-6 py-3 text-[14px] font-semibold text-[#1f2937]">
           <span>등록된 배너</span>
           <span>그룹 정보</span>
           <span className="text-center">관리</span>
@@ -73,7 +77,9 @@ export function BannerGroupsTable() {
           </div>
         ) : rows.length === 0 ? (
           <div className="bg-white p-10 text-center">
-            <p className="text-muted-foreground text-sm">등록된 배너 그룹이 없습니다.</p>
+            <p className="text-muted-foreground text-sm">
+              등록된 배너 그룹이 없습니다.
+            </p>
             <Button
               variant="outline"
               size="sm"

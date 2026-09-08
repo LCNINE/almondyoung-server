@@ -146,7 +146,11 @@ export function BannerPreviewDialog({
                 {src ? (
                   // file-service 프록시 경유 임의 이미지라 next/image 대신 img 사용
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={src} alt={title} className="h-full w-full object-cover" />
+                  <img
+                    src={src}
+                    alt={title}
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
                     이미지를 먼저 업로드하세요
@@ -168,7 +172,9 @@ export function BannerPreviewDialog({
             {/* 배너 아래 콘텐츠 — 첫 화면에서 상품이 얼마나 보이는지 가늠용 */}
             <div className="p-4">
               <div className="bg-muted mb-3 h-5 w-32 rounded" />
-              <div className={`grid gap-3 ${isPc ? 'grid-cols-5' : 'grid-cols-2'}`}>
+              <div
+                className={`grid gap-3 ${isPc ? 'grid-cols-5' : 'grid-cols-2'}`}
+              >
                 {Array.from({ length: isPc ? 5 : 4 }).map((_, i) => (
                   <div key={i} className="space-y-2">
                     <div className="bg-muted aspect-square rounded" />
@@ -190,9 +196,10 @@ export function BannerPreviewDialog({
         </div>
 
         <p className="text-muted-foreground text-xs">
-          실제 스토어프론트를 흉내 낸 화면입니다. 헤더 높이와 뷰포트 폭은 실측값이지만,
-          상품 영역은 자리만 표시한 것입니다.
-          {showList && ' 우측 리스트는 지금 편집중인 칸만 실물이고 나머지는 자리표시입니다.'}
+          실제 스토어프론트를 흉내 낸 화면입니다. 헤더 높이와 뷰포트 폭은
+          실측값이지만, 상품 영역은 자리만 표시한 것입니다.
+          {showList &&
+            ' 우측 리스트는 지금 편집중인 칸만 실물이고 나머지는 자리표시입니다.'}
         </p>
       </DialogContent>
     </Dialog>

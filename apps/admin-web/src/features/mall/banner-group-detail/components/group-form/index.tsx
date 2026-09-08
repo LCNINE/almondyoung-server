@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { useBannerGroups, useUpdateBannerGroup } from '@/lib/services/products';
-import type { BannerGroupDto, UpdateBannerGroupDto } from '@/lib/types/dto/products';
+import type {
+  BannerGroupDto,
+  UpdateBannerGroupDto,
+} from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import { formatRatio } from '../../banner-image-guide';
 import {
@@ -21,7 +24,7 @@ type Props = {
   group: BannerGroupDto;
 };
 
-/** 칩으로 한 줄에 무리 없이 들어가는 개수. 넘으면 접는다 */
+/** 이보다 많으면 접는다 */
 const CATEGORY_CHIP_LIMIT = 6;
 
 /** 시안의 입력칸 — h32, radius 6, bg #f4f4f5 */
@@ -31,13 +34,10 @@ const INPUT_CLASS =
 export function GroupForm({ group }: Props) {
   const [form, setForm] = useState<UpdateBannerGroupDto>({});
   const updateMutation = useUpdateBannerGroup();
-  /**
-   * 카테고리는 자유 입력이라 «MAIN / main / 메인» 처럼 조금만 달라도 목록 탭이
-   * 갈라진다. 이미 쓰이는 값을 자동완성으로 띄워 같은 값을 다시 치게 유도한다.
-   */
+  /** 자유 입력이라 MAIN / main / 메인 이 각각 탭이 된다 — 쓰던 값을 다시 고르게 한다 */
   const { data: groups = [] } = useBannerGroups();
   const usedCategories = [...new Set(groups.map((g) => g.category))].filter(
-    (c): c is string => !!c,
+    (c): c is string => !!c
   );
   const [showAllCategories, setShowAllCategories] = useState(false);
 
@@ -81,10 +81,7 @@ export function GroupForm({ group }: Props) {
     }
   };
 
-  /*
-    카테고리가 늘면 칩이 폼을 세로로 밀어낸다. 한 줄에 들어갈 만큼만 보이고 나머지는
-    접는다 — 선택된 값은 접혀 있어도 항상 보이게 앞으로 끌어온다.
-  */
+  /** 선택된 값은 접혀 있어도 보이게 앞으로 끌어온다 */
   const orderedCategories = form.category
     ? [form.category, ...usedCategories.filter((c) => c !== form.category)]
     : usedCategories;
@@ -109,7 +106,7 @@ export function GroupForm({ group }: Props) {
               }
             />
             <label htmlFor="isActive" className="text-sm text-[#1f2937]">
-              {form.isActive ?? true ? '노출중' : '숨김'}
+              {(form.isActive ?? true) ? '노출중' : '숨김'}
             </label>
           </div>
           <Button
@@ -124,11 +121,14 @@ export function GroupForm({ group }: Props) {
       }
     >
       <div className="grid grid-cols-1 gap-x-12 gap-y-4 xl:grid-cols-2">
-        {/* 좌: 코드 · 제목 · 설명 */}
         <div className="grid gap-4">
           <div className="grid grid-cols-[124px_1fr] items-center gap-4">
             <FieldLabel>배너 그룹 코드</FieldLabel>
-            <Input value={group.code} readOnly className={`${INPUT_CLASS} text-muted-foreground`} />
+            <Input
+              value={group.code}
+              readOnly
+              className={`${INPUT_CLASS} text-muted-foreground`}
+            />
           </div>
           <div className="grid grid-cols-[124px_1fr] items-center gap-4">
             <FieldLabel htmlFor="title" required>
@@ -200,19 +200,20 @@ export function GroupForm({ group }: Props) {
                         +{hiddenCount}개 더
                       </button>
                     )}
-                    {showAllCategories && usedCategories.length > CATEGORY_CHIP_LIMIT && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAllCategories(false)}
-                        className="text-muted-foreground hover:text-foreground px-1 text-xs underline underline-offset-2"
-                      >
-                        접기
-                      </button>
-                    )}
+                    {showAllCategories &&
+                      usedCategories.length > CATEGORY_CHIP_LIMIT && (
+                        <button
+                          type="button"
+                          onClick={() => setShowAllCategories(false)}
+                          className="text-muted-foreground hover:text-foreground px-1 text-xs underline underline-offset-2"
+                        >
+                          접기
+                        </button>
+                      )}
                   </div>
                   <p className="text-muted-foreground mt-1.5 text-xs">
-                    같은 값끼리 목록에서 한 탭으로 묶입니다. 위 칸에 새 이름을 적으면
-                    탭이 늘어납니다.
+                    같은 값끼리 목록에서 한 탭으로 묶입니다. 위 칸에 새 이름을
+                    적으면 탭이 늘어납니다.
                   </p>
                 </div>
               )}
@@ -220,7 +221,6 @@ export function GroupForm({ group }: Props) {
           </div>
         </div>
 
-        {/* 우: 배너 사이즈 (모바일 / PC) */}
         <div className="grid content-start gap-4">
           <div className="grid grid-cols-[100px_56px_1fr] items-center gap-x-3 gap-y-4">
             <FieldLabel>배너 사이즈</FieldLabel>
@@ -270,8 +270,9 @@ export function GroupForm({ group }: Props) {
                 ))}
               </div>
               <p className="text-muted-foreground mt-2 text-xs">
-                숫자는 픽셀이 아니라 <strong className="font-medium">비율</strong>입니다.
-                규격을 바꾸면 기존 이미지가 새 비율로 잘리니, 저장한 뒤 아래 배너를
+                숫자는 픽셀이 아니라{' '}
+                <strong className="font-medium">비율</strong>입니다. 규격을
+                바꾸면 기존 이미지가 새 비율로 잘리니, 저장한 뒤 아래 배너를
                 미리보기로 확인하세요.
               </p>
             </div>
@@ -282,7 +283,6 @@ export function GroupForm({ group }: Props) {
   );
 }
 
-/** 너비 × 높이 + 실제 렌더 높이 안내 */
 function RatioInputs({
   width,
   height,

@@ -73,11 +73,7 @@ export function BannersTable({ groupId }: Props) {
     }
   };
 
-  /**
-   * 화면에 보이는 순서를 그대로 인덱스로 다시 매겨, 자리를 맞바꾼 두 건만 저장한다.
-   * 목록은 sortOrder 오름차순인데 값이 같거나 비어 있는 배너가 섞여 있어서,
-   * 원래 값끼리 교환하면 순서가 안 바뀌는 경우가 생긴다.
-   */
+  /** 보이는 순서를 0..n-1 로 다시 매긴다 — 원래 값끼리 바꾸면 동점일 때 안 움직인다 */
   const handleMove = async (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= rows.length) return;

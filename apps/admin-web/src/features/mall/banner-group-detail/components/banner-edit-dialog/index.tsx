@@ -29,7 +29,12 @@ type Props = {
   onOpenChange: (open: boolean) => void;
 };
 
-export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props) {
+export function BannerEditDialog({
+  open,
+  banner,
+  groupId,
+  onOpenChange,
+}: Props) {
   const [form, setForm] = useState<UpdateBannerDto>({});
   const updateMutation = useUpdateBanner();
   const { data: group } = useBannerGroup(groupId);
@@ -71,8 +76,7 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
   }, [banner]);
 
   const set =
-    (key: keyof UpdateBannerDto) =>
-    (e: React.ChangeEvent<HTMLInputElement>) =>
+    (key: keyof UpdateBannerDto) => (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [key]: e.target.value || undefined }));
 
   const handleClose = () => {
@@ -112,7 +116,11 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
             <Label htmlFor="be-title">
               제목 <span className="text-destructive">*</span>
             </Label>
-            <Input id="be-title" value={form.title ?? ''} onChange={set('title')} />
+            <Input
+              id="be-title"
+              value={form.title ?? ''}
+              onChange={set('title')}
+            />
           </div>
 
           <div className="grid gap-1.5">
@@ -149,7 +157,9 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
                   {pcGuide.overlayTip && (
                     <>
                       <br />
-                      <span className="text-destructive">{pcGuide.overlayTip}</span>
+                      <span className="text-destructive">
+                        {pcGuide.overlayTip}
+                      </span>
                     </>
                   )}
                 </>
@@ -158,7 +168,10 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.pcImageFileId}
             onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, pcImageFileId: fileId ?? undefined }))
+              setForm((prev) => ({
+                ...prev,
+                pcImageFileId: fileId ?? undefined,
+              }))
             }
           />
 
@@ -181,7 +194,10 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
             contextId={BANNER_IMAGE_CONTEXT_ID}
             value={form.mobileImageFileId}
             onChange={(fileId) =>
-              setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
+              setForm((prev) => ({
+                ...prev,
+                mobileImageFileId: fileId ?? undefined,
+              }))
             }
           />
 
@@ -215,7 +231,9 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
               onChange={(e) =>
                 setForm((prev) => ({
                   ...prev,
-                  sortOrder: e.target.value ? Number(e.target.value) : undefined,
+                  sortOrder: e.target.value
+                    ? Number(e.target.value)
+                    : undefined,
                 }))
               }
             />

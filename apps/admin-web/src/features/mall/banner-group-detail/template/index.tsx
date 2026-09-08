@@ -17,7 +17,9 @@ export default function BannerGroupDetailTemplate({ id }: Props) {
   const { data: group, isLoading } = useBannerGroup(id);
 
   if (isLoading) {
-    return <div className="text-muted-foreground p-10 text-sm">불러오는 중...</div>;
+    return (
+      <div className="text-muted-foreground p-10 text-sm">불러오는 중...</div>
+    );
   }
 
   if (!group) {

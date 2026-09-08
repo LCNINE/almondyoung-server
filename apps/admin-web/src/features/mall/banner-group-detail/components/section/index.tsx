@@ -1,9 +1,6 @@
 'use client';
 
-/**
- * 배너 화면의 섹션 껍데기 — 시안(Figma 10:40829) 규격.
- * 제목 20px Bold #1f2937 + 본문 #f5f5f5 박스(border #c6c6c6, radius 10).
- */
+/** 시안(Figma 10:40829) 규격 */
 export function BannerSection({
   title,
   action,
@@ -16,7 +13,9 @@ export function BannerSection({
   return (
     <section className="mb-8">
       <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">{title}</h2>
+        <h2 className="text-[20px] leading-[18px] font-bold text-[#1f2937]">
+          {title}
+        </h2>
         {action}
       </div>
       <div className="rounded-[10px] border border-[#c6c6c6] bg-[#f5f5f5] p-6">
@@ -26,7 +25,7 @@ export function BannerSection({
   );
 }
 
-/** 시안의 라벨 — 16px Bold #1f2937 */
+/** 시안 규격 — 16px Bold */
 export function FieldLabel({
   htmlFor,
   required,

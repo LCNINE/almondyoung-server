@@ -41,7 +41,6 @@ export function CategoryTabs({ categories, value, onChange }: Props) {
     return () => window.removeEventListener('resize', onResize);
   }, [categories.length, sync]);
 
-  // 세로 휠을 가로 스크롤로 — 마우스 사용자는 이게 없으면 넘친 탭에 닿지 못한다
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -81,7 +80,6 @@ export function CategoryTabs({ categories, value, onChange }: Props) {
     if (!drag.current.active) return;
     drag.current.active = false;
     setDragging(false);
-    // 클릭 핸들러가 먼저 도는 것을 피하려고 다음 tick 에 푼다
     window.setTimeout(() => {
       drag.current.moved = false;
     }, 0);
