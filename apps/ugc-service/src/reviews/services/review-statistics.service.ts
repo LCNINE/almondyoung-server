@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, count, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, count, desc, eq, exists, gte, isNull, lt, sql } from 'drizzle-orm';
 import { reactions, reviewComments, reviewEligibilities, reviewMedia, reviews, type UgcServiceSchema } from '../../db/schema';
 import {
   AdminReviewStatisticsResponseDto,
@@ -146,7 +146,11 @@ export class ReviewStatisticsService {
           content: reviews.content,
           createdAt: reviews.createdAt,
           reactionCount: count(reactions.userId),
-          hasPhoto: sql<boolean>`exists (select 1 from ${reviewMedia} where ${reviewMedia.reviewId} = ${reviews.id})`,
+          // 상관 서브쿼리는 빌더로 짠다 — 원시 sql 템플릿은 쿼리의 테이블 수에 따라 컬럼 참조의
+          // 테이블 이름을 잃는다. 이 쿼리는 조인이 있어 우연히 한정되지만 그 조인에 기대지 않는다.
+          hasPhoto: exists(
+            this.client.select({ _: sql`1` }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
+          ),
         })
         .from(reviews)
         .innerJoin(reactions, and(eq(reactions.targetType, 'review'), eq(reactions.targetId, reviews.id)))
@@ -191,7 +195,7 @@ export class ReviewStatisticsService {
       rating: row.rating,
       contentExcerpt: toExcerpt(row.content),
       reactionCount: row.reactionCount,
-      hasPhoto: row.hasPhoto,
+      hasPhoto: Boolean(row.hasPhoto),
       createdAt: row.createdAt.toISOString(),
     }));
 
