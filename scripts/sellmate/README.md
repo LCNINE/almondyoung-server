@@ -74,3 +74,18 @@ DATABASE_URL=postgres://... npx tsx scripts/sellmate/sync-stock.ts apps/core/tmp
 
 재고매칭을 붙인 뒤에는 SKU별 `recalculateAndPublishForSku` 를 한 번 돌려야 sellable 수량이
 스토어프론트/Medusa 로 발행됨. (이 스크립트들은 매칭 전 단계 전용.)
+
+## 주문 이력 → 수요 시계열 시드 (`import-demand-history.ts`, #743)
+
+셀메이트 주문/판매 export(옵션정보일련번호 · 주문일 · 수량 · 금액)를 core `sku_demand_daily` 에 `source='sellmate'` 로 넣는다.
+보충 제안의 수요 프로필이 이걸 읽는다. `replenishment_settings.demand_core_since`(D0) **이전** 날짜만 시드하고,
+D0 가 비어 있으면 `--core-since` 또는 core 최초 주문일로 설정한다(이미 있으면 덮어쓰지 않음).
+
+```bash
+DRY_RUN=1 bash scripts/sellmate/run.sh live import-demand-history apps/core/tmp/          # 파싱 · 매칭 · 미매칭 리포트만
+bash scripts/sellmate/run.sh live import-demand-history apps/core/tmp/ --core-since 2026-07-01
+```
+
+- 미매칭 품목은 중단하지 않고 `apps/core/tmp/demand-unmatched-<ts>.csv` 로 남긴다.
+- 헤더가 다르면 `COL_ITEM_CODE` / `COL_ORDER_DATE` / `COL_QTY` / `COL_AMOUNT` 로 지정.
+- 시드 뒤 `POST /replenishment/profiles/recompute?series=full` 로 프로필을 다시 만든다.
