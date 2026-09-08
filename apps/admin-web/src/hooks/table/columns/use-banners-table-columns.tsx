@@ -6,6 +6,7 @@ import { Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DateCell } from '@/components/table/table-cells/common';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import type { BannerDto } from '@/lib/types/dto/products';
 
 const columnHelper = createColumnHelper<BannerDto>();
@@ -22,6 +23,35 @@ export const useBannersTableColumns = (actions: RowActions) => {
       columnHelper.accessor('title', {
         header: '제목',
         cell: ({ getValue }) => <span className="text-sm font-medium">{getValue()}</span>,
+      }),
+      columnHelper.display({
+        id: 'list',
+        header: '리스트',
+        cell: ({ row }) => {
+          const { listImageFileId, listLabel, isActive } = row.original;
+          if (!listImageFileId && !listLabel) {
+            return (
+              <span className="text-muted-foreground text-xs">
+                {isActive ? '미입력 — 리스트가 안 나옵니다' : '미입력'}
+              </span>
+            );
+          }
+          const src = resolvePublicFileUrl(listImageFileId);
+          return (
+            <div className="flex items-center gap-2">
+              {src ? (
+                // file-service 프록시 경유 임의 이미지라 next/image 대신 img 사용
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt="" className="h-9 w-9 shrink-0 object-contain" />
+              ) : (
+                <div className="bg-muted h-9 w-9 shrink-0 rounded" />
+              )}
+              <span className="line-clamp-2 text-xs leading-tight">
+                {listLabel || <span className="text-muted-foreground">문구 없음</span>}
+              </span>
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('isActive', {
         header: '활성',

@@ -21,6 +21,10 @@ type Props = {
   mobileImageFileId?: string | null;
   pcSlot: Slot;
   mobileSlot: Slot;
+  /** 히어로 그룹이면 PC 배너 위에 리스트 카드를 얹어 가림 범위를 보여준다 */
+  showList?: boolean;
+  listImageFileId?: string | null;
+  listLabel?: string;
 };
 
 /**
@@ -43,6 +47,16 @@ const MOBILE_TABBAR = 56;
 /** max-w-4xl(896px) 다이얼로그에서 좌우 패딩을 뺀 실사용 폭 */
 const DIALOG_INNER_WIDTH = 820;
 
+/** 리스트 카드 실측 (스토어프론트 hero-banner-list.tsx 와 같은 값) */
+const LIST_CARD_WIDTH = 180;
+const LIST_CARD_TOP = 45;
+const LIST_ROW_HEIGHT = 60;
+/** 카드는 1020px 컨테이너 우측에서 10px 안쪽 (쿠팡과 동일) */
+const LIST_CARD_RIGHT = (PC_VIEWPORT - 1020) / 2 + 10;
+/** 미리보기에서 그리는 칸 수 — 편집중인 한 칸 + 자리표시 */
+const LIST_PREVIEW_ROWS = 6;
+const LIST_PREVIEW_ACTIVE_ROW = 2;
+
 type Device = 'pc' | 'mobile';
 
 export function BannerPreviewDialog({
@@ -53,6 +67,9 @@ export function BannerPreviewDialog({
   mobileImageFileId,
   pcSlot,
   mobileSlot,
+  showList,
+  listImageFileId,
+  listLabel,
 }: Props) {
   const [device, setDevice] = useState<Device>('pc');
 
@@ -123,7 +140,7 @@ export function BannerPreviewDialog({
             {/* 배너 */}
             {slot ? (
               <div
-                className="bg-muted w-full"
+                className="bg-muted relative w-full"
                 style={{ aspectRatio: `${slot.width} / ${slot.height}` }}
               >
                 {src ? (
@@ -134,6 +151,12 @@ export function BannerPreviewDialog({
                   <div className="text-muted-foreground flex h-full w-full items-center justify-center text-sm">
                     이미지를 먼저 업로드하세요
                   </div>
+                )}
+                {showList && isPc && (
+                  <HeroListCard
+                    listImageFileId={listImageFileId}
+                    listLabel={listLabel}
+                  />
                 )}
               </div>
             ) : (
@@ -169,8 +192,74 @@ export function BannerPreviewDialog({
         <p className="text-muted-foreground text-xs">
           실제 스토어프론트를 흉내 낸 화면입니다. 헤더 높이와 뷰포트 폭은 실측값이지만,
           상품 영역은 자리만 표시한 것입니다.
+          {showList && ' 우측 리스트는 지금 편집중인 칸만 실물이고 나머지는 자리표시입니다.'}
         </p>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * 편집중인 칸 하나만 실물로 그리고 나머지는 회색 자리표시로 둔다.
+ *
+ * 그룹의 다른 배너를 불러와 완전한 리스트를 그리면 "저장 전 상태"와 "이미 저장된
+ * 것"이 섞여 뭐가 반영된 건지 헷갈린다. 여기서 확인해야 하는 건 두 가지뿐이다 —
+ * 오른쪽이 얼마나 가려지는지, 내 그림이 칸 안에서 어떻게 보이는지.
+ */
+function HeroListCard({
+  listImageFileId,
+  listLabel,
+}: {
+  listImageFileId?: string | null;
+  listLabel?: string;
+}) {
+  const listSrc = resolvePublicFileUrl(listImageFileId);
+
+  return (
+    <div
+      className="absolute overflow-hidden bg-white"
+      style={{
+        boxShadow: '0 4px 5px rgba(0, 0, 0, 0.3)',
+        top: LIST_CARD_TOP,
+        right: LIST_CARD_RIGHT,
+        width: LIST_CARD_WIDTH,
+      }}
+    >
+      {Array.from({ length: LIST_PREVIEW_ROWS }).map((_, i) => {
+        const isActive = i === LIST_PREVIEW_ACTIVE_ROW;
+        return (
+          <div
+            key={i}
+            className={`flex items-center gap-2 border-b px-[14px] last:border-b-0 ${
+              isActive ? 'border-primary border' : ''
+            }`}
+            style={{ height: LIST_ROW_HEIGHT }}
+          >
+            {isActive ? (
+              <>
+                <span className="line-clamp-2 flex-1 text-sm leading-tight font-medium">
+                  {listLabel || '노출문구'}
+                </span>
+                {listSrc ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={listSrc}
+                    alt=""
+                    className="h-12 w-12 shrink-0 object-contain"
+                  />
+                ) : (
+                  <div className="bg-muted h-12 w-12 shrink-0 rounded" />
+                )}
+              </>
+            ) : (
+              <>
+                <div className="bg-muted h-3 flex-1 rounded" />
+                <div className="bg-muted h-12 w-12 shrink-0 rounded" />
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }

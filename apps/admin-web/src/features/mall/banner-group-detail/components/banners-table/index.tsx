@@ -12,6 +12,8 @@ import { BannerCreateDialog } from '../banner-create-dialog';
 import { BannerEditDialog } from '../banner-edit-dialog';
 import { BannerDeleteDialog } from '../banner-delete-dialog';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
+import { heroListProgress } from '../banner-list-fields';
+import { HERO_GROUP_CODE } from '../../banner-image-guide';
 
 const PAGE_SIZE = 20;
 
@@ -36,6 +38,8 @@ export function BannersTable({ groupId }: Props) {
   });
 
   const rows = data ?? [];
+  const isHero = group?.code === HERO_GROUP_CODE;
+  const listProgress = isHero ? heroListProgress(rows) : null;
 
   const { table } = useDataTable({
     data: rows,
@@ -62,6 +66,19 @@ export function BannersTable({ groupId }: Props) {
         <Button size="sm" onClick={() => setCreateOpen(true)}>
           배너 추가
         </Button>
+        {listProgress && listProgress.total > 0 && (
+          <span className="text-muted-foreground ml-auto text-xs">
+            {listProgress.filled === listProgress.total ? (
+              <>리스트 정보 {listProgress.total}/{listProgress.total} — 배너 오른쪽에 리스트가 나오고 있습니다</>
+            ) : (
+              <>
+                리스트 정보 {listProgress.filled}/{listProgress.total} —{' '}
+                {listProgress.total - listProgress.filled}장 더 채우면 배너 오른쪽에
+                리스트가 나타납니다
+              </>
+            )}
+          </span>
+        )}
       </div>
 
       <DataTable
@@ -106,6 +123,9 @@ export function BannersTable({ groupId }: Props) {
             ? { width: group.mobileWidth, height: group.mobileHeight }
             : null
         }
+        showList={isHero}
+        listImageFileId={previewTarget?.listImageFileId}
+        listLabel={previewTarget?.listLabel}
       />
 
       <BannerDeleteDialog

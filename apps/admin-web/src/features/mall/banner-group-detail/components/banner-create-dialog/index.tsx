@@ -18,7 +18,8 @@ import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useBannerGroup, useCreateBanner } from '@/lib/services/products';
 import type { CreateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
-import { bannerImageGuide } from '../../banner-image-guide';
+import { bannerImageGuide, HERO_GROUP_CODE } from '../../banner-image-guide';
+import { BannerListFields, heroListError } from '../banner-list-fields';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 type Props = {
@@ -44,7 +45,10 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
       ? { width: group.mobileWidth, height: group.mobileHeight }
       : null;
 
-  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight);
+  const isHero = group?.code === HERO_GROUP_CODE;
+  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight, {
+    listOverlay: isHero,
+  });
   const mobileGuide = bannerImageGuide(group?.mobileWidth, group?.mobileHeight);
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -68,6 +72,11 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
     // 두 이미지 모두 서버에서 필수다 — 없이 보내면 저장 시점에 실패한다.
     if (!form.pcImageFileId || !form.mobileImageFileId) {
       toast.error('PC / 모바일 이미지를 모두 업로드해 주세요.');
+      return;
+    }
+    const listError = isHero ? heroListError(form) : null;
+    if (listError) {
+      toast.error(listError);
       return;
     }
     try {
@@ -129,6 +138,12 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
                   {pcGuide.spec}
                   <br />
                   {pcGuide.tip}
+                  {pcGuide.overlayTip && (
+                    <>
+                      <br />
+                      <span className="text-destructive">{pcGuide.overlayTip}</span>
+                    </>
+                  )}
                 </>
               )
             }
@@ -161,6 +176,14 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
               setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
             }
           />
+
+          {isHero && (
+            <BannerListFields
+              idPrefix="b"
+              value={form}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">
@@ -237,6 +260,9 @@ export function BannerCreateDialog({ open, groupId, onOpenChange }: Props) {
         mobileImageFileId={form.mobileImageFileId}
         pcSlot={pcSlot}
         mobileSlot={mobileSlot}
+        showList={isHero}
+        listImageFileId={form.listImageFileId}
+        listLabel={form.listLabel}
       />
     </Dialog>
   );

@@ -508,6 +508,8 @@ export interface CreateBannerDto {
   description?: string;
   pcImageFileId?: string;
   mobileImageFileId?: string;
+  listImageFileId?: string;
+  listLabel?: string;
   linkUrl?: string;
   linkedProductMasterIds?: string[];
   displayStartAt?: string;
@@ -522,6 +524,8 @@ export interface UpdateBannerDto {
   description?: string;
   pcImageFileId?: string;
   mobileImageFileId?: string;
+  listImageFileId?: string;
+  listLabel?: string;
   linkUrl?: string;
   linkedProductMasterIds?: string[];
   displayStartAt?: string;
@@ -538,6 +542,8 @@ export interface BannerDto {
   description?: string;
   pcImageFileId?: string;
   mobileImageFileId?: string;
+  listImageFileId?: string;
+  listLabel?: string;
   linkUrl?: string;
   linkedProductMasterIds?: string[];
   displayStartAt?: string;

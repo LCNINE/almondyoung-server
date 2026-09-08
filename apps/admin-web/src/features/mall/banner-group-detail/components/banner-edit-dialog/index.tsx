@@ -18,7 +18,8 @@ import { BANNER_IMAGE_CONTEXT_ID } from '@/lib/api/domains/files/upload.client';
 import { useBannerGroup, useUpdateBanner } from '@/lib/services/products';
 import type { BannerDto, UpdateBannerDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
-import { bannerImageGuide } from '../../banner-image-guide';
+import { bannerImageGuide, HERO_GROUP_CODE } from '../../banner-image-guide';
+import { BannerListFields, heroListError } from '../banner-list-fields';
 import { BannerPreviewDialog } from '../banner-preview-dialog';
 
 type Props = {
@@ -42,7 +43,10 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
       ? { width: group.mobileWidth, height: group.mobileHeight }
       : null;
 
-  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight);
+  const isHero = group?.code === HERO_GROUP_CODE;
+  const pcGuide = bannerImageGuide(group?.pcWidth, group?.pcHeight, {
+    listOverlay: isHero,
+  });
   const mobileGuide = bannerImageGuide(group?.mobileWidth, group?.mobileHeight);
 
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -55,6 +59,8 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
         description: banner.description ?? undefined,
         pcImageFileId: banner.pcImageFileId ?? undefined,
         mobileImageFileId: banner.mobileImageFileId ?? undefined,
+        listImageFileId: banner.listImageFileId ?? undefined,
+        listLabel: banner.listLabel ?? undefined,
         linkUrl: banner.linkUrl ?? undefined,
         displayStartAt: banner.displayStartAt ?? undefined,
         displayEndAt: banner.displayEndAt ?? undefined,
@@ -78,6 +84,11 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
     if (!banner) return;
     if (!form.title?.trim()) {
       toast.error('제목을 입력해 주세요.');
+      return;
+    }
+    const listError = isHero ? heroListError(form) : null;
+    if (listError) {
+      toast.error(listError);
       return;
     }
     try {
@@ -135,6 +146,12 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
                   {pcGuide.spec}
                   <br />
                   {pcGuide.tip}
+                  {pcGuide.overlayTip && (
+                    <>
+                      <br />
+                      <span className="text-destructive">{pcGuide.overlayTip}</span>
+                    </>
+                  )}
                 </>
               )
             }
@@ -167,6 +184,14 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
               setForm((prev) => ({ ...prev, mobileImageFileId: fileId ?? undefined }))
             }
           />
+
+          {isHero && (
+            <BannerListFields
+              idPrefix="be"
+              value={form}
+              onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-1.5">
@@ -243,6 +268,9 @@ export function BannerEditDialog({ open, banner, groupId, onOpenChange }: Props)
         mobileImageFileId={form.mobileImageFileId}
         pcSlot={pcSlot}
         mobileSlot={mobileSlot}
+        showList={isHero}
+        listImageFileId={form.listImageFileId}
+        listLabel={form.listLabel}
       />
     </Dialog>
   );

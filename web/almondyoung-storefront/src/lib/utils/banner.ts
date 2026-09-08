@@ -30,3 +30,19 @@ export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
     return banner.isActive && start <= now && end >= now
   })
 }
+
+/**
+ * 히어로 우측 리스트를 띄울 수 있는지.
+ *
+ * 한 칸이라도 그림이나 문구가 비면 리스트 전체를 접고 예전 캐러셀로 돌아간다.
+ * 반쯤 빈 리스트를 고객에게 보이느니 배포와 데이터 입력을 분리하는 편이 낫다 —
+ * 운영자가 마지막 한 장을 채우는 순간 자동으로 새 디자인으로 넘어간다.
+ */
+export function isHeroListReady(
+  banners: Pick<BannerDto, "listImageFileId" | "listLabel">[]
+): boolean {
+  return (
+    banners.length > 0 &&
+    banners.every((b) => !!b.listImageFileId && !!b.listLabel)
+  )
+}

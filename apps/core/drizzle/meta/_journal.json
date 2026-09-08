@@ -596,6 +596,13 @@
       "when": 1788396252006,
       "tag": "20260903004411_add-archive-pages",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788834045373,
+      "tag": "20260908022045_add-banner-list-fields",
+      "breakpoints": true
     }
   ]
 }

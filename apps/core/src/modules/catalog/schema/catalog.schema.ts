@@ -921,6 +921,9 @@ export const banners = pgTable(
     description: text('description'),
     pcImageFileId: uuid('pc_image_file_id').notNull(),
     mobileImageFileId: uuid('mobile_image_file_id').notNull(),
+    // 히어로 우측 리스트 한 칸에 쓰이는 작은 그림·문구. 메인 이미지와 별개 파일이다
+    listImageFileId: uuid('list_image_file_id'),
+    listLabel: varchar('list_label', { length: 100 }),
     linkUrl: text('link_url'),
     linkedProductMasterIds: jsonb('linked_product_master_ids').$type<string[]>().default([]),
     displayStartAt: timestamp('display_start_at'),

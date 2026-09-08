@@ -61,6 +61,10 @@
     "next": "次のブランド",
     "all": "すべて"
   },
+  "heroBanner": {
+    "listPrev": "前の一覧を見る",
+    "listNext": "次の一覧を見る"
+  },
   "timeSale": {
     "titleFirst": "タイム",
     "titleSecond": "セール",

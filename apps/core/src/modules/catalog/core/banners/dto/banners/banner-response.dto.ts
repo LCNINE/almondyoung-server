@@ -19,6 +19,12 @@ export class BannerResponseDto {
   @ApiProperty({ description: '모바일 이미지 파일 ID (file-service)' })
   mobileImageFileId: string;
 
+  @ApiProperty({ description: '히어로 우측 리스트 칸의 그림 파일 ID', required: false, nullable: true })
+  listImageFileId: string | null;
+
+  @ApiProperty({ description: '히어로 우측 리스트 칸에 노출되는 문구', required: false, nullable: true })
+  listLabel: string | null;
+
   @ApiProperty({ description: '클릭 시 이동할 URL', required: false, nullable: true })
   linkUrl: string | null;
 
