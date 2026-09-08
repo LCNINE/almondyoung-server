@@ -156,22 +156,6 @@ describe('suggestion-model', () => {
     expect(PO_TYPE_LABELS.domestic).toBe('국내');
   });
 
-  it('httpStatusOf 는 axios 에러의 status 만 뽑고, 아니면 null', () => {
-    expect(httpStatusOf({ response: { status: 403 } })).toBe(403);
-    expect(httpStatusOf(new Error('boom'))).toBeNull();
-    expect(httpStatusOf(null)).toBeNull();
-    expect(httpStatusOf({ response: { status: '403' } })).toBeNull();
-  });
-
-  it('serverMessageOf 는 axios 에러의 response.data.message 만 뽑고, 아니면 null', () => {
-    expect(
-      serverMessageOf({ response: { data: { message: '창고를 확인하세요' } } })
-    ).toBe('창고를 확인하세요');
-    expect(serverMessageOf(new Error('boom'))).toBeNull();
-    expect(serverMessageOf(null)).toBeNull();
-    expect(serverMessageOf({ response: { data: { message: 42 } } })).toBeNull();
-  });
-
   it('패턴 라벨은 core 의 DemandPattern 여섯 값을 전부 커버한다', () => {
     const patterns: DemandPattern[] = [
       'smooth',
@@ -219,5 +203,18 @@ describe('httpStatusOf / serverMessageOf — 인터셉터가 던지는 CustomErr
     });
     expect(httpStatusOf(e)).toBe(409);
     expect(serverMessageOf(e)).toBe('판매 창고가 정확히 하나가 아닙니다');
+  });
+
+  // lib/api/client.ts 인터셉터가 모든 실패 경로에서 CustomError 를 던지므로 axios 원형
+  // (response.status 등)을 볼 일이 없다 — CustomError 가 아닌 입력은 전부 null (#743 B 리뷰 R32-⑤).
+  it('CustomError 가 아니면 null', () => {
+    expect(httpStatusOf({ response: { status: 403 } })).toBeNull();
+    expect(httpStatusOf(new Error('boom'))).toBeNull();
+    expect(httpStatusOf(null)).toBeNull();
+    expect(
+      serverMessageOf({ response: { data: { message: '메시지' } } })
+    ).toBeNull();
+    expect(serverMessageOf(new Error('boom'))).toBeNull();
+    expect(serverMessageOf(null)).toBeNull();
   });
 });

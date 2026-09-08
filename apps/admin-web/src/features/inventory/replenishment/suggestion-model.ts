@@ -114,32 +114,16 @@ export function daysOfCoverLabel(row: ReplenishmentSuggestionRowDto): string {
 }
 
 /**
- * 상태코드 판독. axios 인터셉터(`lib/api/client.ts`)가 4xx·5xx 를 전부 `CustomError` 로 던지므로
- * 프로덕션 호출자는 이 경로가 정본이다 — `error.response.status` 만 보던 옛 분기는 라이브에서
- * 항상 null 이었다(#743 B 리뷰). `CustomError` 가 아닌 형태(원시 axios 오류 등)도 방어적으로 읽는다.
+ * 상태코드 판독. `lib/api/client.ts` 인터셉터가 401 · 4xx · 5xx · 재시도 소진 등 모든 실패
+ * 경로에서 `CustomError` 를 던지므로(원형 `AxiosError` 가 통과하는 경로가 없다) axios 원형
+ * `error.response.status` 를 볼 일이 없다 — 그런 옛 폴백 분기는 프로덕션 호출자 0으로
+ * 죽은 코드였다(#743 B 리뷰 R32-⑤). `CustomError` 가 아니면 null.
  */
 export function httpStatusOf(error: unknown): number | null {
-  if (isCustomError(error)) return error.statusCode;
-  if (typeof error !== 'object' || error === null) return null;
-  if (!('response' in error)) return null;
-  const { response } = error;
-  if (typeof response !== 'object' || response === null) return null;
-  if (!('status' in response)) return null;
-  const { status } = response;
-  return typeof status === 'number' ? status : null;
+  return isCustomError(error) ? error.statusCode : null;
 }
 
-/** 서버 메시지 판독. `CustomError` 가 정본, 아니면 axios 원시 형태(`response.data.message`)를 본다. */
+/** 서버 메시지 판독. 위 `httpStatusOf` 와 같은 이유로 `CustomError` 경로만 본다. */
 export function serverMessageOf(error: unknown): string | null {
-  if (isCustomError(error)) return error.message || null;
-  if (typeof error !== 'object' || error === null) return null;
-  if (!('response' in error)) return null;
-  const { response } = error;
-  if (typeof response !== 'object' || response === null) return null;
-  if (!('data' in response)) return null;
-  const { data } = response;
-  if (typeof data !== 'object' || data === null) return null;
-  if (!('message' in data)) return null;
-  const { message } = data;
-  return typeof message === 'string' ? message : null;
+  return isCustomError(error) ? error.message || null : null;
 }
