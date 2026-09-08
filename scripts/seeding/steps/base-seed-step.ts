@@ -1,4 +1,6 @@
-import postgres, { Sql } from 'postgres';
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- postgres publishes `export =`; Jest compiles CJS.
+import postgres = require('postgres');
+import type { Sql } from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { Logger } from '../lib/logger';

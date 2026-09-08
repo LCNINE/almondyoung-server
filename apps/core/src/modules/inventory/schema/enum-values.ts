@@ -36,6 +36,9 @@ import {
   batchStatusEnum,
   auditEventTypeEnum,
   auditSeverityEnum,
+  demandSourceEnum,
+  demandPatternEnum,
+  demandGradeEnum,
 } from './inventory.schema';
 
 export const returnStatusValues = returnStatusEnum.enumValues;
@@ -148,3 +151,12 @@ export type AuditEventTypeEnum = (typeof auditEventTypeValues)[number];
 
 export const auditSeverityValues = auditSeverityEnum.enumValues;
 export type AuditSeverityEnum = (typeof auditSeverityValues)[number];
+
+export const demandSourceValues = demandSourceEnum.enumValues;
+export type DemandSourceEnum = (typeof demandSourceValues)[number];
+
+export const demandPatternValues = demandPatternEnum.enumValues;
+export type DemandPatternEnum = (typeof demandPatternValues)[number];
+
+export const demandGradeValues = demandGradeEnum.enumValues;
+export type DemandGradeEnum = (typeof demandGradeValues)[number];

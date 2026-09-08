@@ -7,6 +7,8 @@ import {
   varchar,
   boolean,
   integer,
+  bigint,
+  doublePrecision,
   timestamp,
   json,
   jsonb,
@@ -322,6 +324,18 @@ export const auditEventTypeEnum = pgEnum('audit_event_type', [
 ]);
 
 export const auditSeverityEnum = pgEnum('audit_severity', ['INFO', 'WARN', 'ERROR', 'CRITICAL']);
+
+// ── 재고 보충 (#743, 스펙 §4) ──
+export const demandSourceEnum = pgEnum('demand_source', ['sellmate', 'core']);
+export const demandPatternEnum = pgEnum('demand_pattern', [
+  'smooth',
+  'intermittent',
+  'erratic',
+  'lumpy',
+  'insufficient',
+  'none',
+]);
+export const demandGradeEnum = pgEnum('demand_grade', ['A', 'B', 'C']);
 
 export const suppliers = pgTable('suppliers', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1861,6 +1875,133 @@ export const holidays = pgTable('holidays', {
 });
 
 /*───────────────────────────
+ * REPLENISHMENT — 통계 층 (#743 A, 스펙 §4 · §6 · §8.1)
+ * 실수는 double precision, 금액은 bigint, 달력일은 date(mode:'string').
+ *──────────────────────────*/
+
+/** 전역 설정 1행(key='default'). A 는 읽기만, PUT 은 B(스펙 §8.1). 시드가 채운다 — 비어 있으면 db:seed:ref 미실행. */
+export const replenishmentSettings = pgTable('replenishment_settings', {
+  key: varchar('key', { length: 32 }).primaryKey(),
+  adiThreshold: doublePrecision('adi_threshold').notNull().default(1.32),
+  cv2Threshold: doublePrecision('cv2_threshold').notNull().default(0.49),
+  classificationWindowDays: integer('classification_window_days').notNull().default(365),
+  paramWindowDaysFrequent: integer('param_window_days_frequent').notNull().default(90),
+  paramWindowDaysSparse: integer('param_window_days_sparse').notNull().default(365),
+  minDemandEvents: integer('min_demand_events').notNull().default(3),
+  minLeadTimeObservations: integer('min_lead_time_observations').notNull().default(5),
+  leadTimeWindowDays: integer('lead_time_window_days').notNull().default(365),
+  gradeACut: doublePrecision('grade_a_cut').notNull().default(0.8),
+  gradeBCut: doublePrecision('grade_b_cut').notNull().default(0.95),
+  /** D0 — 셀메이트 시드는 이 날 이전만, core 는 이 날 이후만(스펙 §4.1). 시드 스크립트가 설정한다. */
+  demandCoreSince: date('demand_core_since', { mode: 'string' }),
+  demandRecomputeDays: integer('demand_recompute_days').notNull().default(14),
+  consolidationBufferDays: integer('consolidation_buffer_days').notNull().default(7),
+  defaultLeadTimeDays: doublePrecision('default_lead_time_days').notNull().default(30),
+  defaultLeadTimeStdDays: doublePrecision('default_lead_time_std_days'),
+  defaultTransferLeadTimeDays: doublePrecision('default_transfer_lead_time_days').notNull().default(14),
+  defaultTransferLeadTimeStdDays: doublePrecision('default_transfer_lead_time_std_days'),
+  defaultLeadTimeCv: doublePrecision('default_lead_time_cv').notNull().default(0.25),
+  defaultCoverDays: integer('default_cover_days').notNull().default(30),
+  defaultTransferCoverDays: integer('default_transfer_cover_days').notNull().default(14),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** SKU × KST 달력일 수요. qty ≥ 0. amount(원)는 등급 산정용, null 허용. */
+export const skuDemandDaily = pgTable(
+  'sku_demand_daily',
+  {
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'cascade' })
+      .notNull(),
+    demandDate: date('demand_date', { mode: 'string' }).notNull(),
+    qty: integer('qty').notNull(),
+    amount: bigint('amount', { mode: 'number' }),
+    source: demandSourceEnum('source').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey(t.skuId, t.demandDate),
+    idxSkuDemandDailyDate: index('idx_sku_demand_daily_date').on(t.demandDate),
+    chkQty: check('chk_sku_demand_daily_qty', sql`${t.qty} >= 0`),
+  }),
+);
+
+/** SKU 당 1행. 통계 사실만 — 안전재고 · 재주문점은 저장하지 않는다(D5). */
+export const skuDemandProfiles = pgTable(
+  'sku_demand_profiles',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    pattern: demandPatternEnum('pattern').notNull(),
+    grade: demandGradeEnum('grade').notNull(),
+    adi: doublePrecision('adi'),
+    cv2: doublePrecision('cv2'),
+    dailyMean: doublePrecision('daily_mean').notNull().default(0),
+    dailyStd: doublePrecision('daily_std').notNull().default(0),
+    /** 항상 param_window_days_frequent 창의 일평균 — 레거시 재주문점(μ_D(90)·μ_L) 전용 */
+    dailyMean90: doublePrecision('daily_mean_90').notNull().default(0),
+    sizeMean: doublePrecision('size_mean'),
+    sizeStd: doublePrecision('size_std'),
+    intervalMean: doublePrecision('interval_mean'),
+    historyDays: integer('history_days').notNull().default(0),
+    demandEvents: integer('demand_events').notNull().default(0),
+    classificationFrom: date('classification_from', { mode: 'string' }).notNull(),
+    classificationTo: date('classification_to', { mode: 'string' }).notNull(),
+    paramFrom: date('param_from', { mode: 'string' }).notNull(),
+    paramTo: date('param_to', { mode: 'string' }).notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSkuDemandProfilesPattern: index('idx_sku_demand_profiles_pattern').on(t.pattern),
+  }),
+);
+
+/** L1 관측: 발주 라인 ordered_at → 첫 입고(스펙 §4.4). n < 2 면 std null. */
+export const supplierLeadTimeProfiles = pgTable('supplier_lead_time_profiles', {
+  supplierId: uuid('supplier_id')
+    .primaryKey()
+    .references(() => suppliers.id, { onDelete: 'cascade' }),
+  observations: integer('observations').notNull(),
+  meanDays: doublePrecision('mean_days').notNull(),
+  stdDays: doublePrecision('std_days'),
+  windowFrom: date('window_from', { mode: 'string' }).notNull(),
+  windowTo: date('window_to', { mode: 'string' }).notNull(),
+  computedAt: timestamp('computed_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** L2 관측: 지시서 shipped_at → 첫 수령. (from, to) 창고 쌍 당 1행. */
+export const routeLeadTimeProfiles = pgTable(
+  'route_lead_time_profiles',
+  {
+    fromWarehouseId: uuid('from_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'cascade' })
+      .notNull(),
+    toWarehouseId: uuid('to_warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'cascade' })
+      .notNull(),
+    observations: integer('observations').notNull(),
+    meanDays: doublePrecision('mean_days').notNull(),
+    stdDays: doublePrecision('std_days'),
+    windowFrom: date('window_from', { mode: 'string' }).notNull(),
+    windowTo: date('window_to', { mode: 'string' }).notNull(),
+    computedAt: timestamp('computed_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey(t.fromWarehouseId, t.toWarehouseId),
+  }),
+);
+
+/*───────────────────────────
  * PURCHASE ORDERS
  *──────────────────────────*/
 export const purchaseOrders = pgTable('purchase_orders', {
@@ -3154,6 +3295,13 @@ export const wmsTables = {
   shipmentToteAssignments,
   dispatchAttempts,
   dispatchAttemptSources,
+
+  // 재고 보충 통계 층 (#743 A)
+  replenishmentSettings,
+  skuDemandDaily,
+  skuDemandProfiles,
+  supplierLeadTimeProfiles,
+  routeLeadTimeProfiles,
 } as const;
 
 /*───────────────────────────
@@ -4202,6 +4350,15 @@ export type DbTx = TxFor<typeof wmsSchema>;
 // Supplier Types
 export type Supplier = InferSelectModel<typeof suppliers>;
 export type NewSupplier = InferInsertModel<typeof suppliers>;
+
+// Replenishment statistics layer (#743 A)
+export type ReplenishmentSettings = InferSelectModel<typeof replenishmentSettings>;
+export type SkuDemandDaily = InferSelectModel<typeof skuDemandDaily>;
+export type NewSkuDemandDaily = InferInsertModel<typeof skuDemandDaily>;
+export type SkuDemandProfile = InferSelectModel<typeof skuDemandProfiles>;
+export type NewSkuDemandProfile = InferInsertModel<typeof skuDemandProfiles>;
+export type SupplierLeadTimeProfile = InferSelectModel<typeof supplierLeadTimeProfiles>;
+export type RouteLeadTimeProfile = InferSelectModel<typeof routeLeadTimeProfiles>;
 
 export type SupplierCategory = InferSelectModel<typeof supplierCategories>;
 export type NewSupplierCategory = InferInsertModel<typeof supplierCategories>;
