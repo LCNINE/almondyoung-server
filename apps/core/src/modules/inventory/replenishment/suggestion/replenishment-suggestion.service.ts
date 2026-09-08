@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
-import { wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { wmsSchema, DbTx, SkuDemandProfile } from '../../schema/inventory.schema';
 import { SuggestionRow } from './suggestion.types';
 import { ReplenishmentSuggestionReader } from './replenishment-suggestion.reader';
 import {
+  ReplenishmentSkuDetailDto,
   ReplenishmentSuggestionListDto,
   ReplenishmentSuggestionRowDto,
+  SkuDemandProfileDto,
   SuggestionActionFilter,
 } from '../dto/replenishment-suggestion.dto';
 
@@ -29,8 +31,11 @@ export class ReplenishmentSuggestionService {
     }, tx);
   }
 
-  getSku(skuId: string, tx?: DbTx): Promise<ReplenishmentSuggestionRowDto> {
-    return this.dbService.run(async (trx) => toDto(await this.reader.findRow(trx, skuId)), tx);
+  getSku(skuId: string, tx?: DbTx): Promise<ReplenishmentSkuDetailDto> {
+    return this.dbService.run(async (trx) => {
+      const { row, profile, parameters } = await this.reader.findDetail(trx, skuId);
+      return { ...toDto(row), profile: profile ? toProfileDto(profile) : null, parameters };
+    }, tx);
   }
 }
 
@@ -64,5 +69,27 @@ function toDto(row: SuggestionRow): ReplenishmentSuggestionRowDto {
     ),
     flags: [...row.flags],
     legacyReorderPoint: row.legacyReorderPoint,
+  };
+}
+
+function toProfileDto(p: SkuDemandProfile): SkuDemandProfileDto {
+  return {
+    pattern: p.pattern,
+    grade: p.grade,
+    adi: p.adi,
+    cv2: p.cv2,
+    dailyMean: p.dailyMean,
+    dailyStd: p.dailyStd,
+    dailyMean90: p.dailyMean90,
+    sizeMean: p.sizeMean,
+    sizeStd: p.sizeStd,
+    intervalMean: p.intervalMean,
+    historyDays: p.historyDays,
+    demandEvents: p.demandEvents,
+    classificationFrom: p.classificationFrom,
+    classificationTo: p.classificationTo,
+    paramFrom: p.paramFrom,
+    paramTo: p.paramTo,
+    computedAt: p.computedAt.toISOString(),
   };
 }

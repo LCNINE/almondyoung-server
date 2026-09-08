@@ -162,7 +162,7 @@ describeIfDb('ReplenishmentStockReader (DB integration)', () => {
   it('SKU 마스터: 공급사는 최근 ordered 발주 라인 → 유일한 sku_suppliers 순, packing_unit 은 primary 바코드', async () => {
     await inRollbackTx(db, async (trx) => {
       const { bucheon, skuId, skuCode, holderId } = await seedWorld(trx);
-      await trx.update(wmsTables.skus).set({ safetyStock: 40, moq: 12 }).where(eq(wmsTables.skus.id, skuId));
+      await trx.update(wmsTables.skus).set({ moq: 12 }).where(eq(wmsTables.skus.id, skuId));
       await trx.insert(wmsTables.skuBarcodes).values([
         { skuId, barcode: `B-${randomUUID()}`, isPrimary: false, packingUnit: 99 },
         { skuId, barcode: `B-${randomUUID()}`, isPrimary: true, packingUnit: 6 },
@@ -210,12 +210,11 @@ describeIfDb('ReplenishmentStockReader (DB integration)', () => {
         skuId,
         skuCode,
         skuName: 'it-sku',
-        safetyStock: 40,
         moq: 12,
         packingUnit: 6,
-        supplier: { id: supB.id, name: 'B' },
+        supplier: { id: supB.id, name: 'B', defaultWarehouseId: null },
       });
-      expect(byId.get(skuOnly)?.supplier).toEqual({ id: supA.id, name: 'A' });
+      expect(byId.get(skuOnly)?.supplier).toEqual({ id: supA.id, name: 'A', defaultWarehouseId: null });
       expect(byId.get(skuAmbiguous)?.supplier).toBeNull();
     });
   });

@@ -10,6 +10,7 @@ import { ReplenishmentSuggestionService } from './suggestion/replenishment-sugge
 import { ReplenishmentSuggestionReader } from './suggestion/replenishment-suggestion.reader';
 import { ReplenishmentStockReader } from './suggestion/replenishment-stock.reader';
 import { ReplenishmentSettingsReader } from './demand/replenishment-settings.reader';
+import { DemandProfileReader } from './demand/demand-profile.reader';
 import { DemandSeriesWriter } from './demand/demand-series.writer';
 import { DemandProfileRefresher } from './demand/demand-profile.refresher';
 import { LeadTimeProfileRefresher } from './demand/lead-time-profile.refresher';
@@ -28,7 +29,9 @@ import { ReplenishmentRulesService } from './rules/replenishment-rules.service';
  *   `StockProjectionModule` 이 파이프라인 ③ 때문에 같은 모듈을 빌리는 것과 같은 형태.
  * - A 단계: demand/ 가 야간 크론(`replenishment-profile-refresh`)으로 시계열 · 프로필 · 리드타임을 물질화한다.
  *   `SCHEDULE_ROOT` 는 전역이라 여기서 ScheduleModule 을 import 하지 않는다.
- * - 제안은 아직 C 의 자리표시 규칙(`skus.safety_stock`)이다. B 가 policy/ · rules/ 를 더해 교체한다.
+ * - B 단계: 제안은 프로필(demand/) · 규칙(rules/) · (s, S) 정책(policy/)으로 두 축의 수준을 계산한다.
+ *   C 의 자리표시(SKU 마스터의 정적 안전재고 컬럼)는 더 이상 읽지 않는다 — 안전재고를 손으로
+ *   정하고 싶으면 `replenishment_sku_overrides.safety_stock` 이 그 자리다.
  */
 @Module({
   imports: [SharedModule, CoreInventoryModule, StockProjectionModule, WarehouseTransferModule],
@@ -38,6 +41,7 @@ import { ReplenishmentRulesService } from './rules/replenishment-rules.service';
     ReplenishmentSuggestionReader,
     ReplenishmentStockReader,
     ReplenishmentSettingsReader,
+    DemandProfileReader,
     DemandSeriesWriter,
     DemandProfileRefresher,
     LeadTimeProfileRefresher,
