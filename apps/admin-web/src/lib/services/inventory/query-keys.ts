@@ -148,6 +148,16 @@ export const inventoryQueryKeys = {
     ['replenishment', 'suggestions', action, limit ?? null] as const,
   replenishmentSku: (skuId: string) => ['replenishment', 'sku', skuId] as const,
 
+  // 보충 규칙(#743 B) — 별도 루트. 카트 담기의 ['replenishment'] 무효화에 휩쓸리지 않게.
+  replenishmentRulesRoot: ['replenishment-rules'] as const,
+  replenishmentSettings: () => ['replenishment-rules', 'settings'] as const,
+  replenishmentGrades: () => ['replenishment-rules', 'grades'] as const,
+  replenishmentSupplierRules: () =>
+    ['replenishment-rules', 'suppliers'] as const,
+  replenishmentRouteRules: () => ['replenishment-rules', 'routes'] as const,
+  replenishmentSkuOverrides: (q: string) =>
+    ['replenishment-rules', 'skus', q] as const,
+
   // 회수(Returns) 관련
   returns: (filters?: ReturnFiltersDto) =>
     ['inventory', 'returns', filters] as const,

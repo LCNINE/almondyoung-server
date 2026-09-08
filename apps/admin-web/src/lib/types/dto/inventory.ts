@@ -1375,8 +1375,7 @@ export type SuggestionActionFilter = 'purchase' | 'transfer' | 'all';
 export type SuggestionFlag =
   | 'default_lead_time'
   | 'supplier_unknown'
-  | 'low_confidence'
-  | 'legacy_only';
+  | 'low_confidence';
 
 export interface SuggestionSupplierDto {
   id: string;
@@ -1455,6 +1454,172 @@ export interface ReplenishmentSuggestionListDto {
   items: ReplenishmentSuggestionRowDto[];
   evaluated: number;
   total: number;
+}
+
+export type DemandPattern =
+  | 'smooth'
+  | 'intermittent'
+  | 'erratic'
+  | 'lumpy'
+  | 'insufficient'
+  | 'none';
+export type DemandGrade = 'A' | 'B' | 'C';
+/** SourcedNumberDto.source 전체 값 집합(core `SourcedNumberDto` 실물). */
+export type ParameterSource =
+  | 'override'
+  | 'grade'
+  | 'observation'
+  | 'supplier_rule'
+  | 'route_rule'
+  | 'global_default';
+/**
+ * ResolvedSegmentDto.source 값 집합(core 실물) — `ParameterSource` 의 부분집합이다.
+ * `override` · `grade` 는 α(SourcedNumberDto) 전용이라 리드타임 세그먼트엔 도달 불가.
+ */
+export type SegmentSource =
+  | 'observation'
+  | 'supplier_rule'
+  | 'route_rule'
+  | 'global_default';
+
+export interface SkuDemandProfileDto {
+  pattern: DemandPattern;
+  grade: DemandGrade;
+  adi: number | null;
+  cv2: number | null;
+  dailyMean: number;
+  dailyStd: number;
+  sizeMean: number | null;
+  sizeStd: number | null;
+  intervalMean: number | null;
+  historyDays: number;
+  demandEvents: number;
+  classificationFrom: string;
+  classificationTo: string;
+  paramFrom: string;
+  paramTo: string;
+  computedAt: string;
+}
+export interface SourcedNumberDto {
+  value: number;
+  source: ParameterSource;
+}
+export interface ResolvedSegmentDto {
+  meanDays: number;
+  stdDays: number;
+  source: SegmentSource;
+}
+export interface EffectiveParametersDto {
+  excluded: boolean;
+  alpha: SourcedNumberDto;
+  l1: ResolvedSegmentDto;
+  /** R1(i): 경로 규칙·관측이 없어도 전역 이동 기본으로 떨어지므로 null 이 아니다(core 실물). */
+  l2: ResolvedSegmentDto;
+  coverDays: SourcedNumberDto;
+  transferCoverDays: SourcedNumberDto;
+  overrideSafetyStock: number | null;
+}
+export interface ReplenishmentSkuDetailDto extends ReplenishmentSuggestionRowDto {
+  /** 야간 배치가 아직 안 돌았으면 null */
+  profile: SkuDemandProfileDto | null;
+  parameters: EffectiveParametersDto;
+}
+
+// ===== 보충 규칙 (#743 B) =====
+export interface ReplenishmentSettingsDto {
+  key: string;
+  adiThreshold: number;
+  cv2Threshold: number;
+  classificationWindowDays: number;
+  paramWindowDaysFrequent: number;
+  paramWindowDaysSparse: number;
+  minDemandEvents: number;
+  minLeadTimeObservations: number;
+  leadTimeWindowDays: number;
+  gradeACut: number;
+  gradeBCut: number;
+  demandCoreSince: string | null;
+  demandRecomputeDays: number;
+  consolidationBufferDays: number;
+  defaultLeadTimeDays: number;
+  defaultLeadTimeStdDays: number | null;
+  defaultTransferLeadTimeDays: number;
+  defaultTransferLeadTimeStdDays: number | null;
+  defaultLeadTimeCv: number;
+  defaultCoverDays: number;
+  defaultTransferCoverDays: number;
+  updatedAt: string;
+}
+export type UpdateReplenishmentSettingsDto = Partial<
+  Omit<ReplenishmentSettingsDto, 'key' | 'updatedAt'>
+>;
+export interface GradeRuleDto {
+  grade: DemandGrade;
+  alpha: number;
+}
+export interface GradeRulesDto {
+  items: GradeRuleDto[];
+}
+export interface LeadTimeObservationDto {
+  observations: number;
+  meanDays: number;
+  stdDays: number | null;
+  windowFrom: string;
+  windowTo: string;
+}
+export interface LeadTimeRuleDto {
+  leadTimeDays: number;
+  leadTimeStdDays: number | null;
+  coverDays: number;
+  updatedAt: string;
+}
+export interface UpsertLeadTimeRuleDto {
+  leadTimeDays: number;
+  leadTimeStdDays: number | null;
+  coverDays: number;
+}
+export interface SupplierRuleRowDto {
+  supplierId: string;
+  supplierName: string;
+  defaultWarehouseId: string | null;
+  rule: LeadTimeRuleDto | null;
+  observation: LeadTimeObservationDto | null;
+}
+export interface SupplierRulesListDto {
+  items: SupplierRuleRowDto[];
+}
+export interface RouteRuleRowDto {
+  fromWarehouseId: string;
+  fromWarehouseName: string;
+  toWarehouseId: string;
+  toWarehouseName: string;
+  rule: LeadTimeRuleDto | null;
+  observation: LeadTimeObservationDto | null;
+}
+export interface RouteRulesListDto {
+  items: RouteRuleRowDto[];
+}
+export type OverrideMode = 'auto' | 'excluded';
+export interface SkuOverrideRowDto {
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  mode: OverrideMode;
+  excludedUntil: string | null;
+  safetyStock: number | null;
+  alpha: number | null;
+  memo: string | null;
+  updatedAt: string;
+}
+export interface SkuOverridesListDto {
+  items: SkuOverrideRowDto[];
+}
+export interface UpsertSkuOverrideDto {
+  mode: OverrideMode;
+  excludedUntil?: string | null;
+  safetyStock?: number | null;
+  alpha?: number | null;
+  memo?: string | null;
 }
 
 // ===== 이동 지시서 생성 =====

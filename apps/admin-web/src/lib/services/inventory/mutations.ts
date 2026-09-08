@@ -21,6 +21,7 @@ import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
 import { warehouseTransfersClient } from '../../api/domains/inventory/warehouse-transfers.client';
+import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
 import type {
   AdjustStockDto,
   CreateSkuDto,
@@ -72,6 +73,10 @@ import type {
   ProcessReturnDto,
   MoveBatchRequestDto,
   CreateTransferOrderRequest,
+  UpdateReplenishmentSettingsDto,
+  GradeRuleDto,
+  UpsertLeadTimeRuleDto,
+  UpsertSkuOverrideDto,
 } from '../../types/dto/inventory';
 
 /**
@@ -890,5 +895,80 @@ export const useMoveImmediately = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'movement', 'history'] });
     },
+  });
+};
+
+// ===== 보충 규칙(#743 B) =====
+
+function invalidateReplenishmentRules(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.replenishmentRulesRoot });
+  // 규칙은 제안에 즉시 반영된다(스펙 §6 「반영 시점」) — 제안 캐시도 버린다.
+  queryClient.invalidateQueries({ queryKey: ['replenishment'] });
+}
+
+export const useUpdateReplenishmentSettings = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: UpdateReplenishmentSettingsDto) => replenishmentClient.rules.updateSettings(dto),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useUpdateReplenishmentGrades = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (items: GradeRuleDto[]) => replenishmentClient.rules.updateGrades(items),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useUpsertSupplierRule = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ supplierId, dto }: { supplierId: string; dto: UpsertLeadTimeRuleDto }) =>
+      replenishmentClient.rules.putSupplier(supplierId, dto),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useDeleteSupplierRule = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (supplierId: string) => replenishmentClient.rules.deleteSupplier(supplierId),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useUpsertRouteRule = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to, dto }: { from: string; to: string; dto: UpsertLeadTimeRuleDto }) =>
+      replenishmentClient.rules.putRoute(from, to, dto),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useDeleteRouteRule = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }: { from: string; to: string }) => replenishmentClient.rules.deleteRoute(from, to),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useUpsertSkuOverride = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ skuId, dto }: { skuId: string; dto: UpsertSkuOverrideDto }) =>
+      replenishmentClient.rules.putSkuOverride(skuId, dto),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
+  });
+};
+
+export const useDeleteSkuOverride = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (skuId: string) => replenishmentClient.rules.deleteSkuOverride(skuId),
+    onSuccess: () => invalidateReplenishmentRules(queryClient),
   });
 };

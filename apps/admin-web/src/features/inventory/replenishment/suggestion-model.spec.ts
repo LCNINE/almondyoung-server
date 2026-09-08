@@ -1,7 +1,15 @@
-import type { ReplenishmentSuggestionRowDto } from '@/lib/types/dto/inventory';
+import type {
+  DemandPattern,
+  ParameterSource,
+  ReplenishmentSuggestionRowDto,
+} from '@/lib/types/dto/inventory';
+import { CustomError } from '@/lib/api/customError';
 import {
   FLAG_LABELS,
+  PATTERN_LABELS,
   PO_TYPE_LABELS,
+  SOURCE_LABELS,
+  daysOfCoverLabel,
   httpStatusOf,
   purchaseAction,
   serverMessageOf,
@@ -63,7 +71,7 @@ function row(
         lines: [{ fromLocationId: 'loc-a', quantity: 30 }],
       },
     ],
-    flags: ['legacy_only'],
+    flags: [],
     legacyReorderPoint: 100,
     ...overrides,
   };
@@ -134,11 +142,10 @@ describe('suggestion-model', () => {
   });
 
   it('플래그 라벨은 전부 한국어', () => {
-    expect(FLAG_LABELS.legacy_only).toBe('정적 안전재고');
+    expect(FLAG_LABELS.default_lead_time).toBe('기본 리드타임');
     expect(FLAG_LABELS.supplier_unknown).toBe('공급사 미정');
     expect(Object.keys(FLAG_LABELS).sort()).toEqual([
       'default_lead_time',
-      'legacy_only',
       'low_confidence',
       'supplier_unknown',
     ]);
@@ -163,5 +170,54 @@ describe('suggestion-model', () => {
     expect(serverMessageOf(new Error('boom'))).toBeNull();
     expect(serverMessageOf(null)).toBeNull();
     expect(serverMessageOf({ response: { data: { message: 42 } } })).toBeNull();
+  });
+
+  it('패턴 라벨은 core 의 DemandPattern 여섯 값을 전부 커버한다', () => {
+    const patterns: DemandPattern[] = [
+      'smooth',
+      'intermittent',
+      'erratic',
+      'lumpy',
+      'insufficient',
+      'none',
+    ];
+    expect(Object.keys(PATTERN_LABELS).sort()).toEqual([...patterns].sort());
+    expect(PATTERN_LABELS.smooth).toBe('안정');
+  });
+
+  it('출처 라벨은 core 의 ParameterSource 여섯 값을 전부 커버한다', () => {
+    const sources: ParameterSource[] = [
+      'override',
+      'grade',
+      'observation',
+      'supplier_rule',
+      'route_rule',
+      'global_default',
+    ];
+    expect(Object.keys(SOURCE_LABELS).sort()).toEqual([...sources].sort());
+    expect(SOURCE_LABELS.global_default).toBe('전역 기본');
+  });
+
+  it('커버 일수 표기 — null 은 대시, 0 이하는 소진, 그 외는 「N일」', () => {
+    const r = row();
+    expect(daysOfCoverLabel(r)).toBe('—'); // 기본 row 는 daysOfCover: null
+    expect(
+      daysOfCoverLabel(row({ sellable: { ...r.sellable, daysOfCover: 0 } }))
+    ).toBe('소진');
+    expect(
+      daysOfCoverLabel(row({ sellable: { ...r.sellable, daysOfCover: 5 } }))
+    ).toBe('5일');
+  });
+});
+
+describe('httpStatusOf / serverMessageOf — 인터셉터가 던지는 CustomError', () => {
+  it('CustomError 의 statusCode · message 를 읽는다', () => {
+    const e = new CustomError({
+      message: '판매 창고가 정확히 하나가 아닙니다',
+      statusCode: 409,
+      response: {},
+    });
+    expect(httpStatusOf(e)).toBe(409);
+    expect(serverMessageOf(e)).toBe('판매 창고가 정확히 하나가 아닙니다');
   });
 });

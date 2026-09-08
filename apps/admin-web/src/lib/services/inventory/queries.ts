@@ -498,6 +498,39 @@ export const useReplenishmentSku = (skuId: string | null) =>
     enabled: !!skuId,
   });
 
+// ===== 보충 규칙(#743 B) =====
+
+export const useReplenishmentSettings = () =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSettings(),
+    queryFn: () => replenishmentClient.rules.getSettings(),
+  });
+
+export const useReplenishmentGrades = () =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentGrades(),
+    queryFn: () => replenishmentClient.rules.getGrades(),
+  });
+
+export const useReplenishmentSupplierRules = () =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSupplierRules(),
+    queryFn: () => replenishmentClient.rules.getSuppliers(),
+  });
+
+export const useReplenishmentRouteRules = () =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentRouteRules(),
+    queryFn: () => replenishmentClient.rules.getRoutes(),
+  });
+
+export const useReplenishmentSkuOverrides = (q: string) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSkuOverrides(q),
+    queryFn: () => replenishmentClient.rules.getSkuOverrides(q || undefined),
+    placeholderData: keepPreviousData,
+  });
+
 // ===== 회수(Returns) =====
 
 export const useReturns = (filters: ReturnFiltersDto = {}) => {
