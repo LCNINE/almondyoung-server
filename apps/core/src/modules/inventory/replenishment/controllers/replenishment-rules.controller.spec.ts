@@ -70,7 +70,9 @@ describe('ReplenishmentRulesController', () => {
     });
 
     it('경계 안쪽 · null 은 통과한다', async () => {
-      await expect(pipe.transform(grades(0.001), { type: 'body', metatype: UpdateGradeRulesDto })).resolves.toBeDefined();
+      await expect(
+        pipe.transform(grades(0.001), { type: 'body', metatype: UpdateGradeRulesDto }),
+      ).resolves.toBeDefined();
       await expect(
         pipe.transform({ mode: 'auto', alpha: null }, { type: 'body', metatype: UpsertSkuOverrideDto }),
       ).resolves.toMatchObject({ mode: 'auto', alpha: null });

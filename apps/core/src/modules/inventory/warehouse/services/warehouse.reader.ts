@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, asc, eq, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, ne, or, sql } from 'drizzle-orm';
 import { ConflictError, NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, Warehouse } from '../../schema/inventory.schema';
@@ -55,13 +55,35 @@ export class WarehouseReader {
     }, tx);
   }
 
-  async isInUse(warehouseId: string): Promise<boolean> {
-    const [row] = await this.db
-      .select({ count: sql<number>`count(*)` })
-      .from(wmsTables.stockLedgers)
-      .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId));
+  async isInUse(warehouseId: string, tx?: DbTx): Promise<boolean> {
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(wmsTables.stockLedgers)
+        .where(eq(wmsTables.stockLedgers.warehouseId, warehouseId));
 
-    return (row?.count ?? 0) > 0;
+      return (row?.count ?? 0) > 0;
+    }, tx);
+  }
+
+  /**
+   * 이 창고를 출발지 · 도착지로 쓰는 보충 경로 규칙 수 (#743 B).
+   *
+   * `replenishment_route_rules` 의 두 FK 는 **restrict** 다(스펙 §8.1 「규칙 = restrict」) — 사람이
+   * 넣은 설정을 창고 삭제가 조용히 같이 지우지 않게 일부러 고른 것이다. 그래서 삭제 전에 여기서
+   * 세지 않으면 postgres 23503 이 `ApplicationException` 을 거치지 않고 그대로 500 이 되고, 스펙
+   * §9.2 1단계가 활성 공급사 · 경로에 규칙을 상시 채우므로 그 500 은 예외가 아니라 평상시가 된다.
+   */
+  async countReplenishmentRouteRules(warehouseId: string, tx?: DbTx): Promise<number> {
+    return this.dbService.run(async (trx) => {
+      const t = wmsTables.replenishmentRouteRules;
+      const [row] = await trx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(t)
+        .where(or(eq(t.fromWarehouseId, warehouseId), eq(t.toWarehouseId, warehouseId)));
+
+      return row?.count ?? 0;
+    }, tx);
   }
 
   async getStockSummary(warehouseId: string) {

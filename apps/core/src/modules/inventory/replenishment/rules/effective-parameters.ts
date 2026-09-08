@@ -77,7 +77,11 @@ export interface EffectiveParameters {
   coverDays: { value: number; source: 'supplier_rule' | 'global_default' };
   transferCoverDays: { value: number; source: 'route_rule' | 'global_default' };
   overrideSafetyStock: number | null;
-  /** l1 또는 l2 가 global_default 로 떨어졌다 — 스펙 §9.2 가 운영자에게 규칙을 채우라 유도하는 신호. */
+  /**
+   * **채울 수 있는** 리드타임이 전역 기본으로 떨어졌다 — 스펙 §9.2 가 운영자에게 규칙을 채우라
+   * 유도하는 신호. l2 는 `hasRoute` 일 때만 센다: 출발 창고 = 판매 창고면 경로 규칙 자체를 만들 수
+   * 없어(from ≠ to 400) 지울 수 없는 플래그가 되기 때문이다.
+   */
   usesDefaultLeadTime: boolean;
 }
 
@@ -146,6 +150,10 @@ export function resolveEffectiveParameters(input: EffectiveParametersInput): Eff
     coverDays,
     transferCoverDays,
     overrideSafetyStock: override?.safetyStock ?? null,
-    usesDefaultLeadTime: l1.source === 'global_default' || l2.source === 'global_default',
+    // hasRoute=false 면 l2 는 **정의상** 전역 이동 기본이다(R1(i)) — 그리고 그 경로 규칙은
+    // `replenishment-rules.manager.ts` 가 from ≠ to 로 400 을 내므로 만들 수조차 없다. 그걸 세면
+    // 국내 발주(공급사 기본 창고 = 판매 창고) SKU 전부에 지울 수 없는 플래그가 상시 켜져,
+    // §9.2 가 「플래그 붙은 것을 채우라」고 유도하는 신호가 노이즈가 된다.
+    usesDefaultLeadTime: l1.source === 'global_default' || (input.hasRoute && l2.source === 'global_default'),
   };
 }

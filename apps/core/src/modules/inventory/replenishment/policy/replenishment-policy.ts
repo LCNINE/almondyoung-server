@@ -51,7 +51,9 @@ function round2(x: number): number {
 export function computePolicy(input: PolicyInput): PolicyOutput {
   const { dailyMean, dailyStd, leadTime, alpha, coverDays } = input;
   const muLtd = dailyMean * leadTime.meanDays;
-  const sigmaLtd = Math.sqrt(leadTime.meanDays * dailyStd * dailyStd + dailyMean * dailyMean * leadTime.stdDays * leadTime.stdDays);
+  const sigmaLtd = Math.sqrt(
+    leadTime.meanDays * dailyStd * dailyStd + dailyMean * dailyMean * leadTime.stdDays * leadTime.stdDays,
+  );
   const confidence: PolicyOutput['confidence'] = input.pattern === 'insufficient' ? 'low' : 'normal';
   const legacyReorderPoint = round2(input.dailyMean90 * leadTime.meanDays);
   const leadTimeDays = round2(leadTime.meanDays);
@@ -73,7 +75,15 @@ export function computePolicy(input: PolicyInput): PolicyOutput {
   // 0으로 설정된 SKU(수요는 있음, §5.1)의 목표수준 S 까지 잘못 0 이 된다. "수요 자체가
   // 없다"는 dailyMean 으로만 판정한다 — pattern='none' 은 분류기가 이미 그 경우로 낸다.
   if (input.pattern === 'none' || dailyMean <= 0) {
-    return { safetyStock: 0, reorderPoint: 0, targetLevel: 0, leadTimeDays, distribution: 'none', confidence, legacyReorderPoint };
+    return {
+      safetyStock: 0,
+      reorderPoint: 0,
+      targetLevel: 0,
+      leadTimeDays,
+      distribution: 'none',
+      confidence,
+      legacyReorderPoint,
+    };
   }
 
   const useGamma = GAMMA_PATTERNS.has(input.pattern);

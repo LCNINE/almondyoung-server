@@ -131,6 +131,7 @@ export class SuppliersController {
     description: 'Supplier not found',
   })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
+  @ApiResponse({ status: 409, description: '보충 규칙이 있어 삭제할 수 없습니다 (#743 B).' })
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSupplier(@Param('id') id: string): Promise<void> {
     return this.suppliersService.deleteSupplier(id);

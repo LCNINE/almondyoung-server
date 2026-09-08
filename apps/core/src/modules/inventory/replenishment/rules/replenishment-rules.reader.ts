@@ -76,10 +76,7 @@ export class ReplenishmentRulesReader {
   listGradeRules(tx?: DbTx): Promise<ReplenishmentGradeRule[]> {
     return this.dbService.run(
       (trx) =>
-        trx
-          .select()
-          .from(wmsTables.replenishmentGradeRules)
-          .orderBy(asc(wmsTables.replenishmentGradeRules.grade)),
+        trx.select().from(wmsTables.replenishmentGradeRules).orderBy(asc(wmsTables.replenishmentGradeRules.grade)),
       tx,
     );
   }

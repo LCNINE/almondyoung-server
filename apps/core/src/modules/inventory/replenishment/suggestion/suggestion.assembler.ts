@@ -108,10 +108,16 @@ function assembleOne(input: SkuStockInput, ctx: AssembleContext): SuggestionRow 
 /**
  * 출발 창고 = 가장 큰 로케이션이 속한 비판매 창고 하나(이동 지시서는 창고 쌍 문서). 이동가능 = 그 창고의
  * ON_HAND − 그 창고에서 나가는 draft planned. 큰 로케이션부터 채우고, 이동량은 올리지 않는다(있는 만큼만, §5.3).
+ *
+ * R46: 정렬은 수량 내림차순 + **로케이션 id 오름차순**이다. 수량만으로 정렬하면 stable sort 가 입력
+ * 순서를 그대로 남기고, 그 입력 순서는 `replenishment-stock.reader.ts` 의 ORDER BY 없는 집계 질의가
+ * 준 DB 행 순서다 — 비판매 창고가 둘 이상이고 최대 로케이션 수량이 같으면 같은 입력에 다른 출발
+ * 창고가 나올 수 있다. (질의 대신 여기에 타이브레이크를 두는 쪽을 골랐다: 이 함수가 출발 창고와
+ * 라인 순서를 실제로 정하는 곳이라 순수 함수 스펙으로 고정할 수 있다.)
  */
 function planTransfer(input: SkuStockInput, ctx: AssembleContext, need: number): SuggestionAction | null {
   if (need <= 0 || input.nonSellableOnHand.length === 0) return null;
-  const sources = [...input.nonSellableOnHand].sort((a, b) => b.qty - a.qty);
+  const sources = [...input.nonSellableOnHand].sort((a, b) => b.qty - a.qty || byCode(a.locationId, b.locationId));
   const fromWarehouseId = sources[0].warehouseId;
   const inWarehouse = sources.filter((s) => s.warehouseId === fromWarehouseId);
   const onHand = inWarehouse.reduce((sum, row) => sum + row.qty, 0);

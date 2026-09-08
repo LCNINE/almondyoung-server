@@ -28,7 +28,8 @@ describe('skus.safety_stock 참조 0 (arch)', () => {
     const offenders = collectTsFiles(INVENTORY_ROOT).flatMap((file) => {
       const source = readFileSync(file, 'utf8');
       const hits: string[] = [];
-      if (/skus\.safetyStock|skus\.safety_stock|wmsTables\.skus\.safetyStock/.test(source)) hits.push(`${file}: skus.safety_stock 참조`);
+      if (/skus\.safetyStock|skus\.safety_stock|wmsTables\.skus\.safetyStock/.test(source))
+        hits.push(`${file}: skus.safety_stock 참조`);
       if (file.includes(`${sep}sku-catalog${sep}`) || file.includes(`${sep}sku-group${sep}`)) {
         if (/\bsafetyStock\b/.test(source)) hits.push(`${file}: safetyStock 필드`);
       }

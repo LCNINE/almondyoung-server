@@ -48,7 +48,9 @@ export class ReplenishmentRulesService {
     return { items: (await this.reader.listGradeRules(tx)).map((r) => ({ grade: r.grade, alpha: r.alpha })) };
   }
   async updateGrades(items: GradeRuleDto[], tx?: DbTx): Promise<GradeRulesDto> {
-    return { items: (await this.manager.replaceGradeRules(items, tx)).map((r) => ({ grade: r.grade, alpha: r.alpha })) };
+    return {
+      items: (await this.manager.replaceGradeRules(items, tx)).map((r) => ({ grade: r.grade, alpha: r.alpha })),
+    };
   }
 
   async listSuppliers(tx?: DbTx): Promise<SupplierRulesListDto> {

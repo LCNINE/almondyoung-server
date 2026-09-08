@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
+import { ConflictError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx, Supplier } from '../../schema/inventory.schema';
 import { eq, and, or, like, inArray, sql, SQL } from 'drizzle-orm';
 import {
@@ -128,9 +129,27 @@ export class SuppliersService {
     }, tx);
   }
 
+  /**
+   * 하드 삭제. `replenishment_supplier_rules.supplier_id` 의 FK 는 **restrict** 다(#743 B, 스펙 §8.1
+   * 「규칙 = restrict」) — 사람이 넣은 리드타임 · 커버 설정을 공급사 삭제가 조용히 같이 지우지 않게
+   * 일부러 고른 것이다. 그래서 규칙 행을 지우는 대신 **세어서 409** 로 돌려준다. 세지 않으면 DELETE
+   * 가 postgres 23503 으로 죽고, 그건 `ApplicationException` 이 아니라 설명 없는 500 이 된다.
+   * 스펙 §9.2 1단계가 활성 공급사 전부에 규칙을 넣으라고 하므로 그 500 은 평상시가 된다.
+   */
   async deleteSupplier(id: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx) => {
-      const { suppliers } = wmsTables;
+      const { suppliers, replenishmentSupplierRules } = wmsTables;
+
+      // 판정과 DELETE 는 한 트랜잭션이어야 한다 — 따로 읽으면 "규칙 없음" 을 본 뒤 규칙이 들어와도
+      // 삭제가 진행되어 막으려던 23503 이 그대로 새어 나온다.
+      const [ruleCount] = await trx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(replenishmentSupplierRules)
+        .where(eq(replenishmentSupplierRules.supplierId, id));
+
+      if ((ruleCount?.count ?? 0) > 0) {
+        throw new ConflictError('보충 규칙이 있어 삭제할 수 없습니다. 재고 보충 규칙 화면에서 먼저 삭제하세요.');
+      }
 
       const result = await trx.delete(suppliers).where(eq(suppliers.id, id)).returning();
 

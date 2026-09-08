@@ -17,7 +17,15 @@ function input(overrides: Partial<PolicyInput> = {}): PolicyInput {
 
 describe('composeLeadTime', () => {
   it('μ 는 합 + 버퍼, σ 는 제곱합의 제곱근', () => {
-    expect(composeLeadTime([{ meanDays: 10, stdDays: 2 }, { meanDays: 5, stdDays: 1 }], 7)).toEqual({
+    expect(
+      composeLeadTime(
+        [
+          { meanDays: 10, stdDays: 2 },
+          { meanDays: 5, stdDays: 1 },
+        ],
+        7,
+      ),
+    ).toEqual({
       meanDays: 22,
       stdDays: Math.sqrt(5),
     });
@@ -43,7 +51,9 @@ describe('computePolicy — smooth (정규)', () => {
     expect(out).toMatchObject({ safetyStock: 0, reorderPoint: 200, targetLevel: 500 });
   });
   it('α 가 작을수록 SS 가 크다', () => {
-    expect(computePolicy(input({ alpha: 0.02 })).safetyStock).toBeGreaterThan(computePolicy(input({ alpha: 0.1 })).safetyStock);
+    expect(computePolicy(input({ alpha: 0.02 })).safetyStock).toBeGreaterThan(
+      computePolicy(input({ alpha: 0.1 })).safetyStock,
+    );
   });
   // R1(ii): 리드타임이 0(경로 리드타임이 아직 설정되지 않은 SKU, 스펙 §5.1)이어도 수요가
   // 있으면 μ_LTD = dailyMean·0 = 0 이지만 목표수준 S = μ_D·(0 + cover) + SS 는 0 이 아니다.
@@ -65,8 +75,12 @@ describe('computePolicy — 감마 패턴', () => {
     expect(gamma.reorderPoint).toBeCloseTo(gamma.safetyStock + 200, 6);
   });
   it('CV → 0 이면 감마가 정규로 수렴한다', () => {
-    const gamma = computePolicy(input({ pattern: 'lumpy', dailyMean: 100, dailyStd: 1, leadTime: { meanDays: 1, stdDays: 0 } }));
-    const normal = computePolicy(input({ pattern: 'smooth', dailyMean: 100, dailyStd: 1, leadTime: { meanDays: 1, stdDays: 0 } }));
+    const gamma = computePolicy(
+      input({ pattern: 'lumpy', dailyMean: 100, dailyStd: 1, leadTime: { meanDays: 1, stdDays: 0 } }),
+    );
+    const normal = computePolicy(
+      input({ pattern: 'smooth', dailyMean: 100, dailyStd: 1, leadTime: { meanDays: 1, stdDays: 0 } }),
+    );
     expect(gamma.reorderPoint).toBeCloseTo(normal.reorderPoint, 1);
   });
   it('intermittent · lumpy 도 감마', () => {
@@ -74,7 +88,11 @@ describe('computePolicy — 감마 패턴', () => {
     expect(computePolicy(input({ pattern: 'lumpy' })).distribution).toBe('gamma');
   });
   it('μ_LTD = 0 (수요 0) 이면 감마 패턴이어도 전부 0', () => {
-    expect(computePolicy(input({ pattern: 'lumpy', dailyMean: 0, dailyStd: 0 }))).toMatchObject({ safetyStock: 0, reorderPoint: 0, targetLevel: 0 });
+    expect(computePolicy(input({ pattern: 'lumpy', dailyMean: 0, dailyStd: 0 }))).toMatchObject({
+      safetyStock: 0,
+      reorderPoint: 0,
+      targetLevel: 0,
+    });
   });
 });
 
@@ -101,11 +119,15 @@ describe('computePolicy — insufficient · none · 오버라이드', () => {
     expect(out).toMatchObject({ safetyStock: 40, reorderPoint: 240, targetLevel: 540, distribution: 'none' });
   });
   it('오버라이드는 none 패턴에도 적용된다 (사람이 준 숫자)', () => {
-    const out = computePolicy(input({ pattern: 'none', dailyMean: 0, dailyStd: 0, dailyMean90: 0, overrideSafetyStock: 100 }));
+    const out = computePolicy(
+      input({ pattern: 'none', dailyMean: 0, dailyStd: 0, dailyMean90: 0, overrideSafetyStock: 100 }),
+    );
     expect(out).toMatchObject({ safetyStock: 100, reorderPoint: 100, targetLevel: 100 });
   });
   it('레거시 재주문점은 μ_D(90)·μ_L — 파라미터 창이 365 인 패턴에서도', () => {
-    const out = computePolicy(input({ pattern: 'lumpy', dailyMean: 0.5, dailyMean90: 0.8, leadTime: { meanDays: 25, stdDays: 0 } }));
+    const out = computePolicy(
+      input({ pattern: 'lumpy', dailyMean: 0.5, dailyMean90: 0.8, leadTime: { meanDays: 25, stdDays: 0 } }),
+    );
     expect(out.legacyReorderPoint).toBe(20);
   });
 });

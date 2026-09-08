@@ -42,7 +42,8 @@ function IsOpenUnitInterval(options?: ValidationOptions) {
       options,
       validator: {
         validate: (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value > 0 && value < 1,
-        defaultMessage: (args?: ValidationArguments) => `${args?.property ?? 'alpha'} 은(는) 0 초과 1 미만이어야 합니다.`,
+        defaultMessage: (args?: ValidationArguments) =>
+          `${args?.property ?? 'alpha'} 은(는) 0 초과 1 미만이어야 합니다.`,
       },
     });
   };

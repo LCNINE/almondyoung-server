@@ -124,6 +124,35 @@ describe('resolveEffectiveParameters — L2 · 커버', () => {
   });
 });
 
+// R45: 이 플래그는 "채울 수 있는 리드타임이 비어 있다" 는 신호다. hasRoute=false 인 SKU 는
+// 경로 규칙을 만들 수조차 없으므로(manager 가 from ≠ to 로 400) l2 를 세면 안 된다. 두 축을
+// 각각 단독으로 켜는 케이스가 없으면 `||` 를 `&&` 로 바꿔도 스펙이 통과한다 — 판별력을 만든다.
+describe('resolveEffectiveParameters — default_lead_time 플래그', () => {
+  const supplierRule = { leadTimeDays: 30, leadTimeStdDays: 4, coverDays: 45 };
+  const routeRule = { leadTimeDays: 9, leadTimeStdDays: 1, coverDays: 5 };
+
+  it('l1 만 전역 기본이면 켜진다 (l2 는 경로 규칙에서 왔다)', () => {
+    const p = resolveEffectiveParameters(input({ hasRoute: true, routeRule }));
+    expect(p.l1.source).toBe('global_default');
+    expect(p.l2.source).toBe('route_rule');
+    expect(p.usesDefaultLeadTime).toBe(true);
+  });
+
+  it('hasRoute=false 라 l2 만 전역 기본이면 꺼진다 — 채울 방법이 없는 축은 세지 않는다', () => {
+    const p = resolveEffectiveParameters(input({ hasRoute: false, supplierRule }));
+    expect(p.l1.source).toBe('supplier_rule');
+    expect(p.l2.source).toBe('global_default');
+    expect(p.usesDefaultLeadTime).toBe(false);
+  });
+
+  it('둘 다 전역 기본이면 켜지고, 둘 다 규칙에서 오면 꺼진다', () => {
+    expect(resolveEffectiveParameters(input()).usesDefaultLeadTime).toBe(true);
+    expect(resolveEffectiveParameters(input({ hasRoute: true, supplierRule, routeRule })).usesDefaultLeadTime).toBe(
+      false,
+    );
+  });
+});
+
 describe('resolveEffectiveParameters — 예외', () => {
   const excluded = (excludedUntil: string | null) => ({
     mode: 'excluded' as const,

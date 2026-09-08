@@ -186,6 +186,27 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
     ]);
   });
 
+  // R46: 최대 로케이션 수량이 같으면 수량만으로는 순서가 안 정해지고, stable sort 가 입력(= ORDER BY
+  // 없는 집계 질의의 DB 행) 순서를 그대로 남긴다 — 같은 재고에 다른 출발 창고가 나올 수 있었다.
+  // 로케이션 id 타이브레이크가 그 갈라짐을 닫는다.
+  it('최대 로케이션 수량이 같으면 로케이션 id 로 갈라 출발 창고가 입력 순서에 흔들리지 않는다', () => {
+    const OTHER = 'wh-other';
+    const china = { warehouseId: CHINA, locationId: LOC_A, qty: 50 };
+    const other = { warehouseId: OTHER, locationId: LOC_B, qty: 50 };
+    const plan = (nonSellableOnHand: SkuStockInput['nonSellableOnHand']) =>
+      assembleSuggestions([sku({ onHandSellable: 0, onHandTotal: 100, nonSellableOnHand })], ctx)[0].actions;
+
+    const expected = {
+      type: 'transfer',
+      qty: 50,
+      fromWarehouseId: CHINA,
+      toWarehouseId: SELL,
+      lines: [{ fromLocationId: LOC_A, quantity: 50 }],
+    };
+    expect(plan([china, other])).toContainEqual(expected);
+    expect(plan([other, china])).toContainEqual(expected);
+  });
+
   it('이동량은 올리지 않는다 — 있는 만큼만', () => {
     const [row] = assembleSuggestions(
       [sku({ lot: { moq: 50, packingUnit: 12 }, onHandSellable: 0, onHandTotal: 7, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 7 }] })],

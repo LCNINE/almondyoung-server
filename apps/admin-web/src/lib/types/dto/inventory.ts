@@ -1482,6 +1482,10 @@ export type SegmentSource =
   | 'route_rule'
   | 'global_default';
 
+/**
+ * core 응답의 손수 유지하는 미러. 서버는 `dailyMean90` 도 주지만 **일부러 뺐다** — 어느 화면도
+ * 그리지 않는다. 「서버가 안 준다」로 오해하지 말 것. 필요해지면 그때 더한다.
+ */
 export interface SkuDemandProfileDto {
   pattern: DemandPattern;
   grade: DemandGrade;
@@ -1509,6 +1513,11 @@ export interface ResolvedSegmentDto {
   stdDays: number;
   source: SegmentSource;
 }
+/**
+ * core 응답의 손수 유지하는 미러. 서버는 `usesDefaultLeadTime` 도 주지만 **일부러 뺐다** —
+ * 행의 `default_lead_time` 플래그와 같은 내용이라 드로어가 두 번 그릴 이유가 없다.
+ * 「서버가 안 준다」로 오해하지 말 것.
+ */
 export interface EffectiveParametersDto {
   excluded: boolean;
   alpha: SourcedNumberDto;

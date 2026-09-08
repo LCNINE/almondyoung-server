@@ -13,8 +13,12 @@ import {
   causeChainMessage,
 } from '../../../fulfillment/services/__support__';
 import { createGlobalValidationPipe } from '../../../../platform/http/validation-pipe';
-import { SETTINGS_KEY } from '../demand/replenishment-settings.reader';
-import { UpdateGradeRulesDto, UpsertSkuOverrideDto } from '../dto/replenishment-rules.dto';
+import { ReplenishmentSettingsReader, SETTINGS_KEY } from '../demand/replenishment-settings.reader';
+import {
+  UpdateGradeRulesDto,
+  UpdateReplenishmentSettingsDto,
+  UpsertSkuOverrideDto,
+} from '../dto/replenishment-rules.dto';
 import { ReplenishmentRulesReader, routeKey } from './replenishment-rules.reader';
 import { ReplenishmentRulesManager } from './replenishment-rules.manager';
 
@@ -64,9 +68,7 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
       await seedRules(trx);
       const { reader } = build(trx);
       expect(await reader.readGradeAlphas(trx)).toEqual({ A: 0.02, B: 0.05, C: 0.1 });
-      await trx
-        .delete(wmsTables.replenishmentGradeRules)
-        .where(eq(wmsTables.replenishmentGradeRules.grade, 'B'));
+      await trx.delete(wmsTables.replenishmentGradeRules).where(eq(wmsTables.replenishmentGradeRules.grade, 'B'));
       await expect(reader.readGradeAlphas(trx)).rejects.toThrow(/db:seed:ref/);
     });
   });
@@ -247,6 +249,51 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
     });
   });
 
+  // R46: `updateSettings` 는 `.set({ ...dto })` 로 DTO 를 통째로 넘긴다. TypeScript 는 spread 에
+  // excess property check 를 걸지 않으므로 DTO 필드명과 테이블 프로퍼티명이 하나라도 어긋나면
+  // 타입 검사는 통과하고 **런타임 500** 이 난다. 20 필드를 한 번에 바꿔 되읽어 그 대응을 고정한다 —
+  // 새 설정 필드를 더할 때 이 payload 에도 더할 것.
+  it('전역 설정 라운드트립: 20 필드를 전부 바꿔 PUT 하면 그대로 되읽힌다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      await seedRules(trx);
+      const { manager } = build(trx);
+      const settingsReader = new ReplenishmentSettingsReader(boundDbService(trx));
+
+      const payload: UpdateReplenishmentSettingsDto = {
+        adiThreshold: 1.5,
+        cv2Threshold: 0.6,
+        classificationWindowDays: 180,
+        paramWindowDaysFrequent: 60,
+        paramWindowDaysSparse: 300,
+        minDemandEvents: 4,
+        minLeadTimeObservations: 7,
+        leadTimeWindowDays: 200,
+        gradeACut: 0.7,
+        gradeBCut: 0.9,
+        demandCoreSince: '2026-01-31',
+        demandRecomputeDays: 21,
+        consolidationBufferDays: 3,
+        defaultLeadTimeDays: 25,
+        defaultLeadTimeStdDays: 6,
+        defaultTransferLeadTimeDays: 11,
+        defaultTransferLeadTimeStdDays: 2.5,
+        defaultLeadTimeCv: 0.4,
+        defaultCoverDays: 45,
+        defaultTransferCoverDays: 21,
+      };
+
+      const before: Record<string, unknown> = { ...(await settingsReader.read(trx)) };
+      // 시드 기본값과 같은 값이 섞이면 그 필드는 «바뀐 것을 확인» 하지 못한 채 통과한다.
+      for (const [field, value] of Object.entries(payload)) {
+        expect([field, before[field]]).not.toEqual([field, value]);
+      }
+
+      const returned = await manager.updateSettings(payload, trx);
+      expect(returned).toMatchObject(payload);
+      expect(await settingsReader.read(trx)).toMatchObject(payload);
+    });
+  });
+
   it('등급 PUT: A · B · C 셋이 아니면 400, 맞으면 3행 갱신', async () => {
     await inRollbackTx(db, async (trx) => {
       await seedRules(trx);
@@ -320,9 +367,7 @@ describeIfDb('ReplenishmentRulesReader / Manager (DB integration)', () => {
     }
 
     // 경계 안쪽은 통과한다 — 위 거절이 "α 를 전부 막았다" 가 아님을 고정한다.
-    await expect(
-      pipe.transform(grades(0.001), { type: 'body', metatype: UpdateGradeRulesDto }),
-    ).resolves.toBeDefined();
+    await expect(pipe.transform(grades(0.001), { type: 'body', metatype: UpdateGradeRulesDto })).resolves.toBeDefined();
   });
 
   it('α 2선 방어: SKU 예외 α = 0 은 DB 체크가 막는다', async () => {

@@ -235,10 +235,13 @@ describe('suggestion-model', () => {
     );
   });
 
+  // TZ 는 jest 가 UTC 로 고정하지만(scripts/jest/global-setup.js) 로케일 문자열 자체는 Node/ICU
+  // 버전이 정한다 — 같은 입력이 `AM 12:00:00` 도 `오전 12:00:00` 도 된다. 전체 문자열을 박으면
+  // 런타임 업그레이드가 이 스펙을 깨므로 날짜와 시각 자리수만 본다.
   it('계산 시각 표기 — ISO 문자열을 ko-KR 로케일로', () => {
-    expect(formatComputedAt('2026-09-01T00:00:00.000Z')).toBe(
-      '2026. 9. 1. AM 12:00:00'
-    );
+    const formatted = formatComputedAt('2026-09-01T00:00:00.000Z');
+    expect(formatted).toContain('2026. 9. 1.');
+    expect(formatted).toMatch(/12:00:00/);
   });
 });
 
