@@ -47,9 +47,12 @@ export class DemandProfileRefresher {
       };
       const classificationTo = addDays(input.today, -1);
       const classificationFrom = addDays(input.today, -settings.classificationWindowDays);
+      // dailyMean90 은 항상 frequent 창을 읽으므로, 계산기가 고를 수 있는 모든 창
+      // (분류 · param-sparse · param-frequent) 을 다 덮어야 한다 — 셋 중 하나만 빠져도
+      // 설정에 따라 series 가 조용히 잘릴 수 있다.
       const readFrom = addDays(
         input.today,
-        -Math.max(settings.classificationWindowDays, settings.paramWindowDaysSparse),
+        -Math.max(settings.classificationWindowDays, settings.paramWindowDaysSparse, settings.paramWindowDaysFrequent),
       );
 
       const skuIds = (

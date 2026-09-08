@@ -67,7 +67,7 @@ describeIfDb('DemandProfileRefresher (DB integration)', () => {
       const { holderId } = await seedHolder(trx);
       const steady = await seedSku(trx, holderId);
       const silent = await seedSku(trx, holderId);
-      await seedDaily(trx, steady.skuId, '2026-06-01', 99, 10, 10000);
+      await seedDaily(trx, steady.skuId, '2026-06-01', 99, 10, 1_000_000_000); // 로컬 DB 의 다른 SKU 를 압도
 
       const result = await build(trx).refreshAll({ today: TODAY }, trx);
       expect(result.skus).toBeGreaterThanOrEqual(2);
