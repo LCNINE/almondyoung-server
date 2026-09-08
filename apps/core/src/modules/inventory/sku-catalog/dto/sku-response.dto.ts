@@ -50,9 +50,6 @@ export class SkuResponseDto {
   @ApiProperty({ required: false, nullable: true })
   sale3m?: number | null;
 
-  @ApiProperty({ description: '안전 재고 (Safety stock)', example: 10, default: 0 })
-  safetyStock: number;
-
   @ApiProperty({ required: false, nullable: true })
   groupId?: string | null;
 

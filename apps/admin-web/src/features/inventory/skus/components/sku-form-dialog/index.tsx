@@ -36,7 +36,6 @@ type FormState = {
   name: string;
   businessProductName: string;
   stockType: string;
-  safetyStock: string;
   groupId: string;
 };
 
@@ -44,7 +43,6 @@ const DEFAULT_FORM: FormState = {
   name: '',
   businessProductName: '',
   stockType: 'physical',
-  safetyStock: '0',
   groupId: '',
 };
 
@@ -53,7 +51,6 @@ function formFromSku(sku: SkuResponseDto): FormState {
     name: sku.name,
     businessProductName: sku.businessProductName ?? '',
     stockType: sku.stockType,
-    safetyStock: String(sku.safetyStock),
     groupId: sku.groupId ?? '',
   };
 }
@@ -94,7 +91,6 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
       name: form.name.trim(),
       businessProductName: form.businessProductName || undefined,
       stockType: form.stockType as CreateSkuDto['stockType'],
-      safetyStock: Number(form.safetyStock) || 0,
       skuGroupId: form.groupId || undefined,
     };
 
@@ -167,15 +163,9 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
               />
             </FormField>
 
-            <FormField label="안전 재고">
-              <FormInput
-                type="number"
-                min={0}
-                value={form.safetyStock}
-                onChange={(e) => set('safetyStock')(e.target.value)}
-                placeholder="0"
-              />
-            </FormField>
+            <p className="text-xs text-muted-foreground">
+              안전재고는 더 이상 SKU 에 입력하지 않습니다. 수요 통계로 계산되며, 예외는 재고관리 &gt; 보충 규칙 &gt; SKU 예외에서 둡니다.
+            </p>
           </FormSection>
 
           {isEdit && (

@@ -68,13 +68,6 @@ export class SkuGroupMemberDto {
   code: string;
 
   @ApiProperty({
-    description: '안전 재고 (Safety stock)',
-    example: 50,
-    minimum: 0,
-  })
-  safetyStock: number;
-
-  @ApiProperty({
     description: '주 보관 위치 ID (Primary location ID)',
     example: '550e8400-e29b-41d4-a716-446655440000',
     nullable: true,

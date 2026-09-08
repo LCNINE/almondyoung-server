@@ -95,7 +95,6 @@ export interface SkuGroupMemberDto {
   id: string;
   name: string;
   code: string;
-  safetyStock: number;
   primaryLocationId?: string | null;
 }
 
@@ -154,7 +153,6 @@ export interface CreateSkuDto {
   stockType?: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
   sale1m?: number;
   sale3m?: number;
-  safetyStock?: number;
   supplierIds?: string[];
   categoryIds?: string[];
   businessProductName?: string;
@@ -768,7 +766,6 @@ export interface SkuResponseDto {
   stockType: 'physical' | 'infinite' | 'drop_shipped' | 'consignment';
   sale1m?: number | null;
   sale3m?: number | null;
-  safetyStock: number;
   groupId?: string | null;
   optionKey?: string | null;
   skuGroup?: SkuGroupDto | null;
