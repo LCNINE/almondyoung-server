@@ -10,7 +10,9 @@
  *    apps/core/tmp/demand-unmatched-<ts>.csv 로 남긴다 — 조용히 사라지지 않게.
  *  - D0(replenishment_settings.demand_core_since) 이전 날짜만 시드한다. D0 는 --core-since > 기존 설정 >
  *    core sales_orders 최소 주문일 순서로 정하고, 기존 설정이 있으면 덮어쓰지 않는다(경고만).
- *  - (sku_id, demand_date) upsert — 같은 파일을 다시 돌려도 결과가 같다.
+ *  - (sku_id, demand_date) upsert — 같은 파일을 다시 돌려도 결과가 같다. 단, 그 행이 이미 source='core' 면
+ *    덮어쓰지 않고 건너뛴다(ON CONFLICT ... WHERE sku_demand_daily.source <> 'core') — --core-since 를 실제
+ *    최초 in-house 주문일보다 늦게 준 채로 재실행해도 이미 쌓인 core 실적을 지우지 않는다.
  *  - 열 이름 별칭은 DEMAND_COLUMN_CANDIDATES, env COL_ITEM_CODE / COL_ORDER_DATE / COL_QTY / COL_AMOUNT 로 덮어쓴다.
  */
 import * as fs from 'fs';
@@ -267,6 +269,7 @@ async function main() {
           INSERT INTO sku_demand_daily ${tx(part, 'sku_id', 'demand_date', 'qty', 'amount', 'source', 'updated_at')}
           ON CONFLICT (sku_id, demand_date) DO UPDATE SET
             qty = excluded.qty, amount = excluded.amount, source = 'sellmate', updated_at = excluded.updated_at
+          WHERE sku_demand_daily.source <> 'core'
         `;
       }
       if (settings.d0 === null && coreSince !== null) {
