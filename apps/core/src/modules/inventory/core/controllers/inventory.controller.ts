@@ -1,20 +1,8 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard } from '@app/authorization';
 import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { StockEventService } from '../services/stock-event.service';
-import { SafetyStockService } from '../services/safety-stock.service';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { AdjustStockDto } from '../dto/inventory/adjust-stock.dto';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
@@ -25,7 +13,6 @@ import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry
 export class InventoryController {
   constructor(
     private readonly stockEventService: StockEventService,
-    private readonly safetyStockService: SafetyStockService,
     private readonly commandService: InventoryCommandService,
   ) {}
 
@@ -76,55 +63,5 @@ export class InventoryController {
   @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
   async createStockEntryBySkuId(@Body() dto: CreateStockEntryBySkuIdDto) {
     return this.stockEventService.createStockEntryBySkuId(dto);
-  }
-
-  // ═══════════════════════════════════════════════════════════════
-  // 안전 재고 관리 API
-  // ═══════════════════════════════════════════════════════════════
-
-  @Get('/safety-stock-warnings')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: '안전 재고 미만 상품 조회 (Get items below safety stock)' })
-  @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID로 필터링' })
-  @ApiResponse({
-    status: 200,
-    description: 'List of SKUs below safety stock',
-    schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          skuId: { type: 'string', description: 'SKU ID' },
-          skuName: { type: 'string', description: 'SKU 이름' },
-          skuCode: { type: 'string', description: 'SKU 코드' },
-          currentStock: { type: 'number', description: '현재 재고' },
-          safetyStock: { type: 'number', description: '안전 재고' },
-          shortfall: { type: 'number', description: '부족량' },
-          warehouseId: { type: 'string', description: '창고 ID' },
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async getSafetyStockWarnings(@Query('warehouseId') warehouseId?: string) {
-    return this.safetyStockService.getBelowSafetyStock(warehouseId);
-  }
-
-  @Get('/safety-stock-status/:skuId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
-  @ApiOperation({ summary: 'SKU의 안전 재고 상태 조회 (전체 창고)' })
-  @ApiParam({ name: 'skuId', description: 'SKU ID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Safety stock status for SKU across all warehouses',
-  })
-  @ApiResponse({ status: 404, description: 'SKU not found' })
-  @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async getSafetyStockStatus(@Param('skuId') skuId: string) {
-    const status = await this.safetyStockService.getSafetyStockStatus(skuId);
-    if (!status) {
-      throw new Error(`SKU with ID ${skuId} not found`);
-    }
-    return status;
   }
 }

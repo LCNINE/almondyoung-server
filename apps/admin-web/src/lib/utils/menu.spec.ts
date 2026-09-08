@@ -7,8 +7,12 @@ import {
 
 describe('admin menu navigation', () => {
   it('places product management immediately before inventory management', () => {
-    const productMenuIndex = mainMenus.findIndex((menu) => menu.id === 'product-management');
-    const inventoryMenuIndex = mainMenus.findIndex((menu) => menu.id === 'inventory-product');
+    const productMenuIndex = mainMenus.findIndex(
+      (menu) => menu.id === 'product-management'
+    );
+    const inventoryMenuIndex = mainMenus.findIndex(
+      (menu) => menu.id === 'inventory-product'
+    );
 
     expect(productMenuIndex).toBeGreaterThanOrEqual(0);
     expect(inventoryMenuIndex).toBe(productMenuIndex + 1);
@@ -40,7 +44,9 @@ describe('admin menu navigation', () => {
   it('keeps own mall non-product pages under own mall management', () => {
     const ownMallMenu = getMenuById('own-mall');
 
-    expect(ownMallMenu?.children.some((item) => item.id === 'products')).toBe(false);
+    expect(ownMallMenu?.children.some((item) => item.id === 'products')).toBe(
+      false
+    );
     expect(getActiveMenuAndItem('/mall/banner-groups')).toEqual({
       menuId: 'own-mall',
       itemId: 'banner-groups',
@@ -55,5 +61,17 @@ describe('admin menu navigation', () => {
       menuId: 'inventory-product',
       itemId: 'inventory-status',
     });
+  });
+
+  it('재고관리 아래에 보충 제안이 발주관리 바로 다음에 있다', () => {
+    expect(getActiveMenuAndItem('/inventory/replenishment')).toEqual({
+      menuId: 'inventory-product',
+      itemId: 'inventory-replenishment',
+    });
+    const inventory = getMenuById('inventory-product');
+    const ids = (inventory?.children ?? []).map((item) => item.id);
+    expect(ids.indexOf('inventory-replenishment')).toBe(
+      ids.indexOf('inventory-purchase-orders') + 1
+    );
   });
 });

@@ -5,7 +5,6 @@ import { InboundModule } from '../inbound/inbound.module';
 import { PurchaseOrderController } from './controllers/purchase-order.controller';
 import { PurchaseOrderService } from './services/purchase-order.service';
 import { PurchaseOrderCartService } from './services/purchase-order-cart.service';
-import { ReorderSuggestionReader } from './services/reorder-suggestion.reader';
 import { PurchaseOrderReader } from './services/purchase-order.reader';
 import { PurchaseOrderManager } from './services/purchase-order.manager';
 
@@ -27,19 +26,7 @@ import { PurchaseOrderManager } from './services/purchase-order.manager';
 @Module({
   imports: [CoreInventoryModule, SharedModule, InboundModule],
   controllers: [PurchaseOrderController],
-  providers: [
-    PurchaseOrderService,
-    PurchaseOrderCartService,
-    ReorderSuggestionReader,
-    PurchaseOrderReader,
-    PurchaseOrderManager,
-  ],
-  exports: [
-    PurchaseOrderService,
-    PurchaseOrderCartService,
-    ReorderSuggestionReader,
-    PurchaseOrderReader,
-    PurchaseOrderManager,
-  ],
+  providers: [PurchaseOrderService, PurchaseOrderCartService, PurchaseOrderReader, PurchaseOrderManager],
+  exports: [PurchaseOrderService, PurchaseOrderCartService, PurchaseOrderReader, PurchaseOrderManager],
 })
 export class ProcurementModule {}

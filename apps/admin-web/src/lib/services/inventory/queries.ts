@@ -21,6 +21,7 @@ import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-order
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
+import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
 import type {
   StockSummaryQuery,
   StockHistoryQuery,
@@ -36,6 +37,7 @@ import type {
   ListPlanItemsQueryDto,
   ReturnFiltersDto,
   MovementHistoryQuery,
+  SuggestionActionFilter,
 } from '../../types/dto/inventory';
 
 export const useStockValuationSummary = () => {
@@ -46,7 +48,10 @@ export const useStockValuationSummary = () => {
   });
 };
 
-export const useStockValuationProducts = (query: StockValuationProductsQuery = {}, options?: { enabled?: boolean }) => {
+export const useStockValuationProducts = (
+  query: StockValuationProductsQuery = {},
+  options?: { enabled?: boolean }
+) => {
   return useQuery({
     queryKey: inventoryQueryKeys.stockValuationProducts(query),
     queryFn: () => stockValuationClient.getProducts(query),
@@ -167,7 +172,10 @@ export const useSkuGroupMembers = (id: string) => {
   });
 };
 
-export const useUngroupedSkus = (params?: { limit?: number; offset?: number }) => {
+export const useUngroupedSkus = (params?: {
+  limit?: number;
+  offset?: number;
+}) => {
   return useQuery({
     queryKey: inventoryQueryKeys.ungroupedSkus(params),
     queryFn: () => skuGroupsClient.getUngroupedSkus(params),
@@ -334,7 +342,8 @@ export const useHolderSearch = (
 ) => {
   return useQuery({
     queryKey: inventoryQueryKeys.holderSearch(query, isOurAsset, page, limit),
-    queryFn: () => holdersClient.list({ search: query, isOurAsset, page, limit }),
+    queryFn: () =>
+      holdersClient.list({ search: query, isOurAsset, page, limit }),
     enabled: !!query && query.length > 0,
     staleTime: 2 * 60 * 1000,
   });
@@ -349,7 +358,10 @@ export const useHolder = (id: string) => {
 };
 
 // 로케이션 관련 쿼리
-export const useLocations = (warehouseId: string, filters?: LocationFiltersDto) => {
+export const useLocations = (
+  warehouseId: string,
+  filters?: LocationFiltersDto
+) => {
   return useQuery({
     queryKey: inventoryQueryKeys.locations(warehouseId, filters),
     queryFn: () => locationsClient.list(warehouseId, filters),
@@ -380,8 +392,13 @@ export const useLocationRacks = (
   isActive?: boolean
 ) => {
   return useQuery({
-    queryKey: inventoryQueryKeys.locationRacks(warehouseId, columnName, isActive),
-    queryFn: () => locationsClient.racks.list(warehouseId, { columnName, isActive }),
+    queryKey: inventoryQueryKeys.locationRacks(
+      warehouseId,
+      columnName,
+      isActive
+    ),
+    queryFn: () =>
+      locationsClient.racks.list(warehouseId, { columnName, isActive }),
     enabled: !!warehouseId,
     staleTime: 2 * 60 * 1000,
   });
@@ -402,7 +419,8 @@ export const useReservationsByTarget = (
 ) => {
   return useQuery({
     queryKey: inventoryQueryKeys.reservationsByTarget(targetType, targetId),
-    queryFn: () => reservationsClient.getReservationsByTarget(targetType, targetId),
+    queryFn: () =>
+      reservationsClient.getReservationsByTarget(targetType, targetId),
     enabled: !!targetType && !!targetId,
   });
 };
@@ -417,7 +435,9 @@ export const useReservationSummary = (warehouseId: string) => {
 
 // 재고 실사 관련 쿼리
 // NOTE: GET /stocktaking/sessions 목록 조회 엔드포인트가 서버에 미구현 — 빈 배열로 대체
-export const useStocktakingSessions = (_query: StocktakingSessionQuery = {}) => {
+export const useStocktakingSessions = (
+  _query: StocktakingSessionQuery = {}
+) => {
   return useQuery({
     queryKey: inventoryQueryKeys.stocktakingSessions(_query),
     queryFn: (): Promise<{ sessions: never[]; total: number }> =>
@@ -458,14 +478,25 @@ export const usePurchaseOrderCart = () => {
   });
 };
 
-export const useReorderSuggestions = (warehouseId?: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.reorderSuggestions(warehouseId),
-    queryFn: () => purchaseOrdersClient.suggestions.reorder(warehouseId),
-    enabled: !!warehouseId,
-    staleTime: 5 * 60 * 1000,
+export const useReplenishmentSuggestions = (
+  action: SuggestionActionFilter,
+  limit?: number
+) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSuggestions(action, limit),
+    queryFn: () => replenishmentClient.list(action, limit),
+    staleTime: 60 * 1000,
   });
-};
+
+export const useReplenishmentSku = (skuId: string | null) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.replenishmentSku(skuId ?? ''),
+    queryFn: () => {
+      if (!skuId) throw new Error('skuId is required');
+      return replenishmentClient.getSku(skuId);
+    },
+    enabled: !!skuId,
+  });
 
 // ===== 회수(Returns) =====
 

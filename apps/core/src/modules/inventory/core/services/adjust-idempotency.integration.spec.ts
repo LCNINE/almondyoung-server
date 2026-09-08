@@ -13,7 +13,6 @@ import { StockEventStore } from '../repositories/stock-event.store';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
 import { StockEventService } from './stock-event.service';
-import { SafetyStockService } from './safety-stock.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -38,8 +37,7 @@ describeIfDb('adjust idempotency (DB integration, committed rows with unique suf
     const command = new InventoryCommandService(dbService, eventStore, outbox, location);
     const unifiedReservation = new UnifiedReservationService(dbService, sellable);
     const stockEvent = new StockEventService(dbService, eventStore, command, unifiedReservation);
-    const safety = new SafetyStockService(dbService);
-    controller = new InventoryController(stockEvent, safety, command);
+    controller = new InventoryController(stockEvent, command);
   });
   afterAll(async () => {
     await sql.end();
