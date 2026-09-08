@@ -81,7 +81,13 @@ export function BannerPreviewDialog({
   // 실제 뷰포트를 그대로 그린 뒤 통째로 축소한다 — 비율과 상대 크기가 함께 보존된다.
   // 다이얼로그 폭을 꽉 채우도록 배율을 잡아야 "화면에서 얼마나 큰지"가 느껴진다.
   const scale = Math.min(1, DIALOG_INNER_WIDTH / viewport);
-  const bannerHeight = slot ? viewport / (slot.width / slot.height) : 0;
+  // 스토어프론트는 PC 를 높이 고정으로 그린다 (banner-carousel.tsx) — 미리보기도 같아야 한다.
+  // 모바일만 비율대로 그린다.
+  const bannerHeight = slot
+    ? isPc
+      ? slot.height
+      : viewport / (slot.width / slot.height)
+    : 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -141,7 +147,7 @@ export function BannerPreviewDialog({
             {slot ? (
               <div
                 className="bg-muted relative w-full"
-                style={{ aspectRatio: `${slot.width} / ${slot.height}` }}
+                style={{ height: bannerHeight }}
               >
                 {src ? (
                   // file-service 프록시 경유 임의 이미지라 next/image 대신 img 사용

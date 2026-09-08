@@ -54,7 +54,6 @@ export function HeroBannerCarousel({
    */
   const viewSourceRef = useRef<"auto" | "hover">("auto")
 
-  const pcWidth = dimensions.pc.width ?? 1920
   const pcHeight = dimensions.pc.height ?? 600
   const mobileWidth = dimensions.mobile.width ?? 750
   const mobileHeight = dimensions.mobile.height ?? 500
@@ -179,11 +178,18 @@ export function HeroBannerCarousel({
           {banners.map((banner, index) => (
             <CarouselItem key={banner.id} className="pl-0">
               <div
-                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
+                /*
+                 * 모바일은 비율로, PC 는 «높이 고정» 으로 그린다 (쿠팡과 같다).
+                 * PC 를 비율로 두면 화면이 좁아질수록 배너가 납작해지는데,
+                 * 우측 리스트 카드는 45+6×60=405px 로 고정이라 1440px 화면에서
+                 * 카드가 배너 밖으로 삐져나간다. 높이를 고정하고 폭만 늘리면
+                 * 좁은 화면에서 좌우가 잘릴 뿐 카드는 늘 안에 들어온다.
+                 */
+                className="relative aspect-(--mobile-ratio) w-full md:aspect-auto md:h-(--pc-height)"
                 style={
                   {
                     "--mobile-ratio": `${mobileWidth}/${mobileHeight}`,
-                    "--pc-ratio": `${pcWidth}/${pcHeight}`,
+                    "--pc-height": `${pcHeight}px`,
                   } as React.CSSProperties
                 }
               >
