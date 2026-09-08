@@ -3,6 +3,10 @@
 > 상태의 정본은 **이슈 #743** 이다. 이 문서는 **설계**만 소유한다. 실행 계획은
 > `docs/superpowers/plans/` 로 단계별로 따로 나간다.
 >
+> 변경 이력: 2026-09-08 초안 → 같은 날 **C 단계 실물(PR #804, 머지)에 맞춰 갱신** — §7.2 409 ·
+> §7.3 목록 봉투(`limit`/`total`) · §7.4 삭제 라우트명 · §7.6 C 가 남긴 TODO 3곳 · §8.2 Reader
+> 오케스트레이션 · §9 를 A / B 두 단계로 분리.
+>
 > 선행 결정: [ADR-0032](../../adr/0032-procurement-inbound-transfer-boundaries.md) (조달·입고·이동의 경계) ·
 > [ADR-0011](../../adr/0011-shared-sellable-quantity-across-sales-channels.md) (판매채널은 같은 수량을 공유한다) ·
 > 진단 문서 발견 ⑥ [`docs/inventory-procurement-audit-2026-08.md`](../../inventory-procurement-audit-2026-08.md)
@@ -12,7 +16,8 @@
 재주문 제안 `GET /purchase-orders/suggestions/reorder` (`procurement/services/reorder-suggestion.reader.ts`)
 가 리터럴 상수로 판정한다. 안전재고 **10**, 제안수량 **20 − 현재고**, 창고별 판정, `on_order_qty` 는 뷰가
 `0` 으로 박아둔 값. 별도로 `skus.safety_stock` + `core/services/safety-stock.service.ts`
-(`GET /inventory/below-safety-stock`) 가 같은 질문에 다른 답을 낸다. 이슈 #743 이 이 넷을 이미 적었다.
+(`GET /inventory/safety-stock-warnings` · `GET /inventory/safety-stock-status/:skuId`) 가 같은 질문에 다른
+답을 낸다. 이슈 #743 이 이 넷을 이미 적었다.
 
 이 설계는 #743 의 범위(파이프라인 배선 · 안전재고 단일화 · 전사 축 · 이동 제안)에 한 층을 더 얹는다:
 **안전재고를 사람이 넣는 상수가 아니라 수요 데이터에서 계산한다.** 레거시(셀메이트) 주문 통계를 분석한
@@ -94,7 +99,7 @@ variant → SKU 는 **현재의 `product_variant_sku_links`** 로 환산한다: 
 
 - 입력: 셀메이트 주문/판매 export(EUC-KR, 기존 스크립트와 같은 HTML-xls 판독기 재사용).
   필요한 열: 품목 식별(**옵션정보일련번호** = `skus.code`, 기존 규칙 그대로) · 주문일 · 수량 · 금액.
-  열 이름 별칭은 `import-products.ts` 의 `COLS` 방식으로 두고 env 로 덮어쓸 수 있게 한다.
+  열 이름 별칭은 `import-products.ts` 의 `COLUMN_CANDIDATES` + env 오버라이드 방식으로 두고 `COL_*` 로 덮어쓸 수 있게 한다.
 - 매칭: `skus.code = 옵션정보일련번호`. 미매칭 행은 **중단하지 않고** 리포트 파일
   (`apps/core/tmp/demand-unmatched-<ts>.csv`) 로 남긴다. 조용히 사라지지 않게 하는 것이 목적이다 —
   미매칭 SKU 는 `insufficient` 로 제안에 플래그가 붙는다.
@@ -113,9 +118,10 @@ SKU 당 한 행. 야간 전량 재계산(upsert). **통계 사실만** 저장한
 | `sku_id` | uuid PK | |
 | `pattern` | enum | `smooth` · `intermittent` · `erratic` · `lumpy` · `insufficient` · `none` |
 | `grade` | enum | `A` · `B` · `C` |
-| `adi`, `cv2` | numeric | 분류 창 기준 |
-| `daily_mean`, `daily_std` | numeric | 파라미터 창 기준, 0인 날 포함 |
-| `size_mean`, `size_std`, `interval_mean` | numeric | 발생일 수량 · 간격 통계. 분류와 열람용 |
+| `adi`, `cv2` | double precision | 분류 창 기준. 수요 발생일 0 이면 null |
+| `daily_mean`, `daily_std` | double precision | 파라미터 창 기준, 0인 날 포함 |
+| `daily_mean_90` | double precision | 항상 `param_window_days_frequent`(90) 창의 일평균. 레거시 재주문점(μ_D(90)·μ_L) 전용 — 파라미터 창이 365 인 패턴에서도 레거시 값을 같은 정의로 내기 위해 따로 둔다 |
+| `size_mean`, `size_std`, `interval_mean` | double precision | 발생일 수량 · 간격 통계. 분류와 열람용. 발생일이 2개 미만이면 `size_std` · `interval_mean` 은 null |
 | `history_days` | int | 분류 창 안에 시계열이 존재하는 일수 |
 | `demand_events` | int | 분류 창 안 수요 발생일 수 |
 | `classification_from/to`, `param_from/to` | date | 실제 쓴 창 |
@@ -184,7 +190,7 @@ S      = μ_D · (μ_L + cover_days) + SS
 | `none` | — | — | SS = ROP = S = 0 |
 
 감마는 형상 k = μ²/σ², 척도 θ = σ²/μ 로 모멘트를 맞춘다. 분위수는 정규화 불완전감마 함수 P(k, x) 를
-이분법으로 역산한다. 외부 라이브러리 없이 `policy/distributions.ts` 에 두고 scipy 참조값으로 고정한다.
+이분법으로 역산한다. 외부 라이브러리 없이 `policy/distributions.ts` 에 둔다. 참조값은 **카이제곱 표**로 고정한다 — Γ(k, θ=2) = χ²(2k) 이고 χ²(2, p) = −2·ln(1−p) 는 닫힌 식이라 개발 머신에 scipy 가 없어도 검증된다.
 CV → 0 이면 감마가 정규로 수렴하므로 분류 경계에서 값이 튀지 않는다. σ_LTD = 0 이면 ROP = μ_LTD.
 
 ### 5.2 리드타임 합성
@@ -226,9 +232,10 @@ interface PolicyOutput {
 `overrideSafetyStock` 이 있으면 SS 는 그 값이고 ROP = μ_LTD + SS. 분포 계산은 건너뛴다.
 이 층은 DB 를 모른다.
 
-## 6. 재고관리 규칙
+## 6. 재고관리 규칙 (B — 단, `replenishment_settings` 표 자체는 A 가 만든다)
 
-사람이 소유하는 입력. 전부 `replenishment` 모듈 소유 테이블(D6).
+사람이 소유하는 입력. 전부 `replenishment` 모듈 소유 테이블(D6). 전역 설정 표는 프로필 계산이 읽어야 하므로
+A 가 만들고 시드하며, 나머지 네 표와 모든 PUT 은 B 다(§8.1).
 
 | 층 | 테이블 | 열 |
 |---|---|---|
@@ -249,7 +256,8 @@ interface PolicyOutput {
 | 안전재고 | SKU 예외 `safety_stock` 이 있으면 계산을 대체 |
 
 `excluded` 는 제안에서 빠진다. `excluded_until` 이 오늘보다 앞이면 `auto` 로 본다. 단종 · 시즌오프
-품목이 매일 목록에 뜨는 것을 막는다. 예외 행이 없으면 `auto`.
+품목이 매일 목록에 뜨는 것을 막는다. 예외 행이 없으면 `auto`. SKU 예외의 `safety_stock` 은 패턴이 `none`
+이어도 적용된다 — 사람이 준 숫자가 통계보다 우선이다(B 결정).
 
 **반영 시점.** α · 리드타임 · 커버 일수 · 예외는 읽는 시점에 계산되므로 저장 즉시 반영된다.
 창 길이 · 임계 · 등급 컷 · D0 · 재계산 일수는 프로필을 바꾸므로 다음 야간 배치 또는
@@ -309,7 +317,9 @@ draft 지시서 수량을 빼는 이유: 어제 제안을 받아 초안을 만�
 `daysOfCover = IP_판매 ÷ μ_D` (μ_D = 0 이면 null). 목록은 이 값 오름차순, null 은 뒤.
 
 응답의 `sellable` 은 **단일 객체**다 — 판매 창고가 하나(부천)라는 현재 사실을 전제한다. 둘이 되면 배열로
-바꾸는 것이 아니라 §4.5 · §11 대로 수요 프로필부터 다시 설계한다.
+바꾸는 것이 아니라 §4.5 · §11 대로 수요 프로필부터 다시 설계한다. 판매 창고(`warehouses.is_sellable=true`)가
+정확히 하나가 아니면 목록 · 단건 API 모두 **409** 를 낸다 (`ReplenishmentStockReader.findSingleSellableWarehouseId`,
+C 구현). 라이브 개통 전 그 행 수를 확인한다.
 
 ### 7.3 응답
 
@@ -336,24 +346,42 @@ interface ReplenishmentSuggestionRow {
 }
 ```
 
-`legacy_only` 는 C 단계(§9) 의 자리표시 규칙으로 계산된 행에 붙는다. A+B 가 들어오면 사라진다.
+목록은 이 행을 봉투에 담는다:
+
+```ts
+interface ReplenishmentSuggestionList {
+  items: ReplenishmentSuggestionRow[];
+  evaluated: number;   // 판정한 SKU 수 (excluded 제외)
+  total: number;       // action 필터 적용 후 actionable 행 수 — limit 적용 전
+}
+```
+
+`items` 는 `total` 을 센 뒤 `limit`(기본 200 · 최대 1000) 으로 자른다. C 는 `SuggestionRow` 의
+`pattern` · `grade` · `confidence` 를 리터럴 `'insufficient'` · `'C'` · `'low'` 로 좁혀 두었고 `sourceWarehouseId`
+는 항상 `null` 이다 — B 가 전체 enum 과 공급사 `default_warehouse_id` 로 넓힌다.
+
+`legacy_only` 는 C 단계(§9) 의 자리표시 규칙으로 계산된 행에 붙는다. B 가 들어오면 사라진다.
 중첩 객체는 전부 별도 DTO 클래스(`@ApiProperty({ type: 'object' })` 금지).
 
 ### 7.4 API
 
-| 라우트 | 스코프 | 내용 |
-|---|---|---|
-| `GET /replenishment/suggestions?action=purchase\|transfer\|all` | `INVENTORY_SCOPE.MANAGE` | `actions.length ≥ 1` 인 SKU 만. `excluded` 제외 |
-| `GET /replenishment/skus/:skuId` | MANAGE | 어떤 SKU 든 같은 행(actions 빈 배열 가능). 프로필 드로어가 쓴다 |
-| `POST /replenishment/profiles/recompute?series=window\|full` | MANAGE | 야간 배치와 같은 일을 지금. 동기 실행, 결과 요약 반환 |
-| `GET/PUT /replenishment/rules/settings` | MANAGE | 전역 |
-| `GET/PUT /replenishment/rules/grades` | MANAGE | 3행 일괄 |
-| `GET /replenishment/rules/suppliers` · `PUT .../suppliers/:supplierId` | MANAGE | 공급사 목록과 규칙을 left join 으로 |
-| `GET /replenishment/rules/routes` · `PUT .../routes/:from/:to` | MANAGE | |
-| `GET /replenishment/rules/skus?q=` · `PUT/DELETE .../skus/:skuId` | MANAGE | |
+전부 `@RequireScopes(INVENTORY_SCOPE.MANAGE)` + 컨트롤러 `@UseGuards(ScopeGuard)`. 새 라우트는
+`platform/auth/inventory-scope-coverage.spec.ts` 의 라우트 표에도 등록한다(빠지면 그 스펙이 빨갛다).
 
-**삭제**: `GET /purchase-orders/suggestions/reorder` · `ReorderSuggestionReader` · `StockReorderSuggestion` DTO ·
-`GET /inventory/below-safety-stock` · `SafetyStockService` 와 그 응답 타입. admin-web 의 호출처도 같은 PR 에서.
+| 단계 | 라우트 | 내용 |
+|---|---|---|
+| C | `GET /replenishment/suggestions?action=purchase\|transfer\|all&limit=` | `actions.length ≥ 1` 인 SKU 만. `excluded` 제외. `limit` 기본 200 · 최대 1000. 응답 `{ items, evaluated, total }` |
+| C | `GET /replenishment/skus/:skuId` | 어떤 SKU 든 같은 행(actions 빈 배열 가능). 없으면 404. B 가 `profile` · `parameters` 를 덧붙여 프로필 드로어가 쓴다. **`excluded` SKU 도 행을 준다**(`parameters.excluded=true`) — 드로어가 제외 이유를 보여줘야 한다(B 결정) |
+| A | `POST /replenishment/profiles/recompute?series=window\|full` | 야간 배치와 같은 세 단계를 지금. 동기 실행, 단계별 건수 요약 반환 |
+| B | `GET/PUT /replenishment/rules/settings` | 전역 |
+| B | `GET/PUT /replenishment/rules/grades` | 3행 일괄 |
+| B | `GET /replenishment/rules/suppliers` · `PUT/DELETE .../suppliers/:supplierId` | 공급사 전체를 규칙 · 관측 프로필과 left join. DELETE 는 전역 기본으로 되돌린다 |
+| B | `GET /replenishment/rules/routes` · `PUT/DELETE .../routes/:fromWarehouseId/:toWarehouseId` | 규칙 ∪ 관측 경로를 창고명과 함께 |
+| B | `GET /replenishment/rules/skus?q=` · `PUT/DELETE .../skus/:skuId` | 예외 목록(코드 · 이름 검색). 새 예외는 SKU 검색 후 PUT |
+
+**삭제(C 에서 완료)**: `GET /purchase-orders/suggestions/reorder` · `ReorderSuggestionReader` · `StockReorderSuggestion` DTO ·
+`GET /inventory/safety-stock-warnings` · `GET /inventory/safety-stock-status/:skuId` · `SafetyStockService` 와 그 응답 타입.
+admin-web 의 호출처(카트 드로어 재발주 추천 탭)도 같은 PR 에서 지웠다.
 
 ### 7.5 성능
 
@@ -368,11 +396,32 @@ interface ReplenishmentSuggestionRow {
 - 소유자(`holders.is_our_asset`) 를 구분하지 않는다. 위탁 재고가 생기면 발주 축에서 빼는 규칙이 필요하다.
 - 판매 창고가 둘이 되면 §4.5 와 같은 시점에 연다.
 
+**C 가 코드에 `TODO(#743 A+B)` 로 남긴 세 곳과 거취.**
+
+| 위치 | 내용 | 거취 |
+|---|---|---|
+| `suggestion.assembler.ts` `planTransfer` | `draftTransferPlanned` 가 **전 창고 합**이라 비판매 창고가 둘 이상이면 다른 창고의 초안까지 뺀다 | **B** 가 고친다 — draft 합을 출발 창고별로 받아(`Array<{ fromWarehouseId, qty }>`) 고른 출발 창고의 것만 뺀다 |
+| `warehouse-transfer.reader.ts` `findDraftPlannedBySku` | `status='draft'` 만 보고 **출발 창고를 안 가린다** — 판매 창고에서 나가는 초안(반품 이동)도 빼버린다 | **B** 가 고친다 — `from_warehouse` 를 비판매로 좁히고 출발 창고별로 group by |
+| `inbound-pipeline.reader.ts` `readOnOrderTotal` | PO 당 계획 1개 불변식을 `inbound.service` 가 지킬 뿐 DB 가 안 지킨다 — 수동 `POST /inbound/plans` 가 두 번째 계획을 만들면 이중 계상 | **A · B 대상 아님.** DB 제약(`inbound_plans.linked_purchase_order_id` 부분 unique)은 라이브에 중복이 있는지 먼저 세어야 하므로 별도 이슈로 뗀다 |
+
 ## 8. 데이터 모델 · 모듈 · 배치 · 화면
 
-### 8.1 테이블 8개 — 전부 additive, `inventory.schema.ts`, 마이그레이션 1건(A+B 단계)
+### 8.1 테이블 9개 — 전부 additive, `inventory.schema.ts`, 마이그레이션은 단계마다 1건
+
+| 단계 | 테이블 |
+|---|---|
+| **A** (5) | `replenishment_settings` · `sku_demand_daily` · `sku_demand_profiles` · `supplier_lead_time_profiles` · `route_lead_time_profiles` |
+| **B** (4) | `replenishment_grade_rules` · `replenishment_supplier_rules` · `replenishment_route_rules` · `replenishment_sku_overrides` |
+
+`replenishment_settings` 가 A 에 가는 이유: 프로필 계산이 창 길이 · 임계 · D0 · 재계산 일수를 거기서 읽는다.
+A 는 이 표를 **시드 1행으로 채우고 읽기만** 하고, 쓰기(PUT) 는 B 의 규칙 CRUD 가 연다.
 
 §4.1 · §4.3 · §4.4 · §6 의 표가 정의다. 공통: `created_at` · `updated_at` timestamptz.
+**실수 열은 전부 `double precision`** (drizzle `doublePrecision`). drizzle 의 `numeric` 은 문자열을 돌려주고 이 저장소엔
+numeric 열이 0개라 관례가 없다 — 통계값은 소수 정밀도가 필요 없다. 금액(`amount`)은 `bigint({ mode: 'number' })`,
+날짜 열은 `date({ mode: 'string' })` (`purchase_order_lines.expected_arrival` 의 선례 — Date 객체를 앱 경계에 두면 하루가 민다).
+`updated_by` 는 열만 두고 B 에서 채우지 않는다 — replenishment 컨트롤러엔 actor 배관이 없다(C 도 없다). 감사가 필요해지면
+그때 `@CurrentUser` 를 끼운다.
 FK 는 `skus` · `suppliers` · `warehouses` 에 `onDelete: 'cascade'`(시계열 · 프로필 · 예외) 또는
 `'restrict'`(규칙). 인덱스: `sku_demand_daily(demand_date)`, `sku_demand_profiles(pattern)`,
 `replenishment_sku_overrides(mode)`.
@@ -382,21 +431,41 @@ FK 는 `skus` · `suppliers` · `warehouses` 에 `onDelete: 'cascade'`(시계열
 `apps/core/src/modules/inventory/replenishment/` — `procurement` · `warehouse-transfer` 와 형제.
 
 ```
-replenishment.module.ts
-controllers/  replenishment-suggestion.controller.ts · replenishment-rules.controller.ts · replenishment-profile.controller.ts
-dto/
-demand/       demand-series.writer.ts        core → sku_demand_daily 창 upsert
-              demand-profile.calculator.ts   시계열 → §4.3 통계 (순수)
-              demand-profile.refresher.ts    야간 크론 + recompute
-              lead-time-profile.refresher.ts §4.4 관측 → 프로필
-policy/       distributions.ts               Φ⁻¹ · 감마 분위수 (순수)
-              classification.ts              ADI·CV² → pattern (순수)
-              replenishment-policy.ts        §5 (순수)
-rules/        replenishment-rules.reader.ts · .manager.ts · .service.ts · effective-parameters.ts (우선순위, 순수)
-suggestion/   replenishment-stock.reader.ts  원장 · 예약 집계
-              suggestion.assembler.ts        §7.2 (순수)
-              replenishment-suggestion.service.ts
+replenishment.module.ts                                                    C
+controllers/  replenishment-suggestion.controller.ts                       C
+              replenishment-profile.controller.ts   recompute              A
+              replenishment-rules.controller.ts     규칙 CRUD              B
+dto/          replenishment-suggestion.dto.ts                              C (B 가 profile · parameters 덧붙임)
+              replenishment-profile.dto.ts · replenishment-rules.dto.ts    A · B
+demand/       demand-series.writer.ts        core → sku_demand_daily 창 upsert          A
+              demand-profile.calculator.ts   시계열 → §4.3 통계 (순수)                  A
+              demand-profile.refresher.ts    프로필 upsert                                A
+              lead-time-profile.refresher.ts §4.4 관측 → 프로필                          A
+              replenishment-refresh.job.ts   야간 크론 + recompute 오케스트레이션        A
+              replenishment-profile.service.ts  recompute 서비스(1줄 위임)                A
+              replenishment-settings.reader.ts  전역 설정 1행 읽기 (A 가 만들고 B 가 씀) A
+              calendar.ts                    'YYYY-MM-DD' 산술 · KST 오늘 (순수)          A
+              demand-profile.reader.ts       프로필 3표 읽기 — 제안 조립용                B
+policy/       rounding.ts                    MOQ · 상자 올림 (순수)                      C
+              distributions.ts               Φ⁻¹ · 감마 분위수 (순수)                    B
+              classification.ts              ADI·CV² → pattern (순수)                   A  ← 프로필 계산이 쓴다
+              replenishment-policy.ts        §5 (순수)                                  B
+rules/        replenishment-rules.reader.ts · .manager.ts · .service.ts                B
+              effective-parameters.ts        우선순위 (순수)                             B
+suggestion/   replenishment-stock.reader.ts  원장 · 예약 · SKU 마스터 · 공급사 결정      C
+              replenishment-suggestion.reader.ts  재료 수집 → 조립 → 필터 (오케스트레이션) C (B 가 프로필 · 규칙 · 정책 호출을 끼움)
+              suggestion.assembler.ts        §7.2 두 축 판정 (순수)                     C (B 가 levelsFor 를 교체)
+              suggestion.types.ts            조립 입출력 인터페이스 (순수)               C
+              replenishment-suggestion.service.ts  트랜잭션 경계 + DTO 매핑             C
 ```
+
+C 가 정한 층 분담: **Service 는 `dbService.run` 경계와 DTO 매핑만, 오케스트레이션(조회 5회 → 순수 조립 →
+action 필터 → limit)은 `ReplenishmentSuggestionReader`** 가 갖는다. B 는 이 Reader 안에 프로필 · 규칙 ·
+리드타임 조회와 순수 정책 호출을 끼워 넣고, 조립기의 `levelsFor` 만 교체한다 — 축 판정 자체는 그대로다.
+C 는 재료 두 가지도 이웃 모듈에 이미 넣었다: `InboundPipelineReader.onOrderTotalQty` ·
+`WarehouseTransferReader.findDraftPlannedBySku`. 경계 스펙 `replenishment-boundary.arch.spec.ts` 는
+`apps/core/src/modules/inventory/` 바로 아래에 있고 순수 층 파일 목록을 들고 있다 — A · B 가 순수 파일을
+더할 때마다 거기 등록한다.
 
 - imports: `SharedModule` · `CoreInventoryModule` · `StockProjectionModule` · `WarehouseTransferModule`
   (draft planned 합을 `WarehouseTransferReader` 에서 빌린다 — `StockProjectionModule` 이 같은 이유로
@@ -408,8 +477,11 @@ suggestion/   replenishment-stock.reader.ts  원장 · 예약 집계
 
 ### 8.3 야간 배치
 
-`@Cron('30 3 * * *', { name: 'replenishment-profile-refresh', timeZone: 'Asia/Seoul' })` 하나.
-(03:00 의 `ledger-reconciliation` 과 겹치지 않게 30분 뒤.)
+`@Cron('40 3 * * *', { name: 'replenishment-profile-refresh', timeZone: 'Asia/Seoul' })` 하나.
+(03:00 `ledger-reconciliation` · 03:05 `zombie-reservation-reconciliation` · 03:10 `fulfillment-v2-reconciliation` ·
+03:30 `inventory-idempotency-purge` · 04:00 `transfer-stagnation-monitor` 사이의 빈 칸.)
+`SCHEDULE_ROOT` 는 전역이라 `ReplenishmentModule` 은 아무것도 import 하지 않고 `@Cron` 만 단다 —
+`ScheduleModule.forRoot()` 를 다시 부르면 크론이 두 번 뜬다(#599).
 
 1. `demand-series.writer` — 최근 `demand_recompute_days` 창 upsert
 2. `demand-profile.refresher` — 전 SKU 프로필 upsert
@@ -423,9 +495,10 @@ suggestion/   replenishment-stock.reader.ts  원장 · 예약 집계
 
 | 화면 | 내용 |
 |---|---|
-| `/inventory/replenishment` | 제안 목록. 기존 재주문 제안 화면 교체. 열: SKU · 패턴/등급 · 판매창고 재고 · 예상 소진일 · 전사 위치 · 제안(발주 n / 이동 n) · 플래그. 필터 `action`. 행 액션: **발주 카트에 담기**(기존 `POST /purchase-orders/cart`) · **이동 지시서 초안 만들기**(기존 `POST /inventory/warehouse-transfers`, from/to/lines). 행 클릭 → 프로필 드로어(`GET /replenishment/skus/:skuId`: 통계 · 계산값 · 레거시 값 · 플래그) |
-| `/inventory/replenishment/rules` | 탭 5개: 전역 · 등급 · 공급사 · 경로 · SKU 예외. 폼과 표. 항목마다 "즉시 반영 / 다음 재계산 반영" 문구 |
-| SKU 폼 | 안전재고 입력 제거, SKU 예외 화면 링크 |
+| `/inventory/replenishment` (C 구현) | 제안 목록. 열: SKU · 패턴/등급 · 판매창고 재고 · 예상 소진일 · 전사 위치 · 제안(발주 n / 이동 n) · 플래그. 필터 `action` · 발주 유형 토글. 행 액션: **발주 카트에 담기**(기존 `POST /purchase-orders/cart`) · **이동 지시서 초안 만들기**(기존 `POST /inventory/warehouse-transfers`, `inventory.adjust` 스코프 필요 — 403 이면 화면이 그렇게 말한다). 행 클릭 → SKU 판정 드로어(`GET /replenishment/skus/:skuId`). C 는 `legacy_only` 안내 문구를 낸다 |
+| SKU 판정 드로어 (B 확장) | C 드로어에 프로필(패턴 · 등급 · ADI · CV² · 일평균/표준편차 · 발생일 통계 · 창 · 계산 시각) · 유효 파라미터(α · L1 · L2 · 커버 일수와 각각의 출처) · 레거시 값 · 플래그를 더한다. 표시 변환은 `.ts` 순수 함수 |
+| `/inventory/replenishment/rules` (B) | 탭 5개: 전역 · 등급 · 공급사 · 경로 · SKU 예외. 폼과 표. 항목마다 "즉시 반영 / 다음 재계산 반영" 문구 |
+| SKU 폼 (B) | 안전재고 입력 제거, SKU 예외 화면 링크 |
 
 판정 · 정렬 · 표시 변환은 `.ts` 순수 함수로 빼서 테스트한다(admin-web 은 컴포넌트 테스트 불가).
 
@@ -433,29 +506,36 @@ suggestion/   replenishment-stock.reader.ts  원장 · 예약 집계
 
 | 단계 | 내용 | 마이그 | 배포 순서 |
 |---|---|---|---|
-| **C** (#743 본체) | 모듈 골격 · 두 축 판정 · 파이프라인 배선(`onOrderTotalQty` · `findDraftPlannedBySku`) · 옛 API 둘 삭제 · 제안 목록 화면 교체. 안전재고 입력은 `skus.safety_stock` 정적값, 두 축 모두 ROP = S = 그 값, 발주량 = `roundUp(max(SS − IP, 0))`, 행에 `legacy_only` 플래그. `demand` 는 0, `daysOfCover` 는 null, 목록 정렬은 `sellable.position − reorderPoint` 오름차순 | 0 | `sst deploy`. core 와 admin-web 이 한 스택이라 순서를 못 정하고, 배포 중 한쪽이 404 를 보는 짧은 창을 감수한다(읽기 전용 페이지) |
-| **A+B** | 테이블 8개 · 시드 · 배치 · 정책 층 · 규칙 화면 · 프로필 드로어 · `skus.safety_stock` 읽기 중단 | 1 | **expand: `db:migrate → db:seed:ref → sst deploy`**. 그 뒤 사람 작업 §9.1 |
-| **contract** | `skus.safety_stock` DROP COLUMN | 1 | 배포 한 번 지난 뒤 **`sst deploy → db:migrate`** |
+| **C** (#743 본체) — **완료, PR #804 머지 2026-09-08** | 모듈 골격 · 두 축 판정 · 파이프라인 배선(`onOrderTotalQty` · `findDraftPlannedBySku`) · 옛 API 둘 삭제 · 제안 목록 화면 교체. 안전재고 입력은 `skus.safety_stock` 정적값, 두 축 모두 ROP = S = 그 값, 발주량 = `roundUp(max(SS − IP, 0))`, 행에 `legacy_only` 플래그. `demand` 는 0, `daysOfCover` 는 null, 목록 정렬은 `sellable.position − reorderPoint` 오름차순 | 0 | `sst deploy`. core 와 admin-web 이 한 스택이라 순서를 못 정하고, 배포 중 한쪽이 404 를 보는 짧은 창을 감수한다(읽기 전용 페이지). ⛔ 로컬 스모크 5항목 미실행 |
+| **A** 통계 층 | 테이블 5개(§8.1) · 전역 설정 시드 1행 · `demand-series.writer` · `classification` · `demand-profile.calculator/refresher` · `lead-time-profile.refresher` · 야간 크론 · `POST /replenishment/profiles/recompute` · 셀메이트 시드 스크립트. **제안 API 는 건드리지 않는다** — 배포해도 제안은 C 그대로(`legacy_only`), 프로필만 쌓인다 | 1 | **expand: `db:migrate → db:seed:ref → sst deploy`**. 그 뒤 사람 작업 §9.1 |
+| **B** 정책 층 | 테이블 4개(§8.1) · 등급 시드 3행 · `distributions` · `replenishment-policy` · `effective-parameters` · 규칙 CRUD 13라우트 · 제안 교체(`legacy_only` 제거, `daysOfCover` 정렬, C 의 TODO 2곳) · 규칙 화면 · 프로필 드로어 · SKU 폼 안전재고 입력 제거 · `skus.safety_stock` 읽기 중단 | 1 | **expand: `db:migrate → db:seed:ref → sst deploy`**. A 가 먼저 배포돼 있어야 한다(프로필이 비어 있으면 전 SKU 가 `insufficient`). 그 뒤 사람 작업 §9.2 |
+| **contract** | `skus.safety_stock` DROP COLUMN | 1 | B 배포 한 번 지난 뒤 **`sst deploy → db:migrate`** |
 
-C 단계의 자리표시 규칙은 A+B 가 통째로 교체한다. C 를 먼저 내는 이유는 개통 첫날의 재발주 오판
-(중국 재고 무시)을 통계 층 없이도 막을 수 있고, A 는 시드 데이터 준비가 선행돼야 하기 때문이다.
-시드가 먼저 준비되면 C 와 A+B 를 한 배포에 실어도 된다.
+C 단계의 자리표시 규칙은 B 가 통째로 교체한다. A 를 B 와 떼는 이유: A 는 배포해도 제안이 안 바뀌어
+휴면이고(프로필 · 시계열만 쌓인다), 셀메이트 시드 실행과 D0 확인이라는 사람 작업이 B 의 규칙 입력과
+독립이다. A 가 라이브에서 며칠 돌아 프로필이 안정된 뒤 B 를 내면 개통 첫날부터 `insufficient` 비율을
+읽을 수 있다. 두 단계를 한 배포에 실어도 순서(A 마이그 → B 마이그)는 같다.
 
-### 9.1 A+B 배포 후 사람 작업 (순서대로)
+### 9.1 A 배포 후 사람 작업 (순서대로)
 
 1. 셀메이트 시드 스크립트 실행(live 터널). 미매칭 리포트 확인.
 2. `replenishment_settings.demand_core_since` 확인.
-3. 활성 공급사의 규칙(L1 · 커버 일수), 중국→부천 경로 규칙(L2 · 이동 커버) 입력.
-4. `POST /replenishment/profiles/recompute?series=full`.
-5. 수동 검증: 네 패턴에서 SKU 5개씩 골라 새 ROP 와 레거시 값을 나란히 놓고 상식 점검.
+3. `POST /replenishment/profiles/recompute?series=full`. 응답의 단계별 건수(시계열 upsert · 프로필 · 리드타임)를
+   이슈 #743 에 적는다.
+4. 다음 날 크론(03:40 KST) 이 돌았는지 로그 확인(`replenishment-profile-refresh`).
+
+### 9.2 B 배포 후 사람 작업 (순서대로)
+
+1. 활성 공급사의 규칙(L1 · 커버 일수), 중국→부천 경로 규칙(L2 · 이동 커버) 입력.
+2. 수동 검증: 네 패턴에서 SKU 5개씩 골라 새 ROP 와 레거시 값을 나란히 놓고 상식 점검.
    `insufficient` 비율, `supplier_unknown` 건수, 발주 제안 총량 확인.
-6. 🔴 **확정 예약 허수 청소가 아직이면** 발주 제안 총량이 과대하다는 것을 알고 본다.
+3. 🔴 **확정 예약 허수 청소가 아직이면** 발주 제안 총량이 과대하다는 것을 알고 본다.
 
 ## 10. 테스트
 
 **단위(DB 없음)**
-- `distributions`: Φ⁻¹(0.95)=1.6449 · Φ⁻¹(0.975)=1.9600 · Φ⁻¹(0.99)=2.3263. 감마 분위수 scipy 참조값
-  10여 개(k ∈ {0.5, 1, 2, 5, 20}, p ∈ {0.9, 0.95, 0.98}).
+- `distributions`: Φ⁻¹(0.95)=1.6449 · Φ⁻¹(0.975)=1.9600 · Φ⁻¹(0.99)=2.3263. 감마 분위수는 카이제곱 표
+  15개(df ∈ {1, 2, 4, 10, 40} ↔ k ∈ {0.5, 1, 2, 5, 20}, p ∈ {0.9, 0.95, 0.99}) + χ²(2, p) 닫힌 식 + CV→0 정규 수렴.
 - `classification`: 사분면 4 · `insufficient` · `none` · 임계 경계(=1.32, =0.49).
 - `demand-profile.calculator`: 픽스처 시계열로 ADI · CV² · 창 선택 · 최초 날짜 앞 제외 · 발생일 0/1/2 퇴화 · 등급 컷.
 - `replenishment-policy`: `smooth` 가 5변수 공식과 수치 일치 · CV→0 감마→정규 수렴 · L 합성(σ 제곱합) ·
@@ -466,10 +546,11 @@ C 단계의 자리표시 규칙은 A+B 가 통째로 교체한다. C 를 먼저 
 - admin-web 순수 함수: 긴급도 정렬 · 표시 변환.
 
 **통합(`describeIfDb`, `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local`)**
-- `demand-series.writer`: 취소 라인 제외 · 디지털 제외 · 링크 구성수량 환산 · 14일 창 재계산 멱등 · D0 경계.
-- `replenishment-stock.reader`: 상태 · 판매창고 여부별 합 · 확정 예약만 차감.
-- `lead-time-profile.refresher`: 발주 라인 → 첫 입고 · 지시서 선적 → 첫 수령 · n<2 면 std null.
-- 제안 end-to-end 3장면: 중국 有·부천 부족 → 이동만 / 둘 다 부족 → 둘 다 / 발주잔량이 덮음 → 없음.
+- `demand-series.writer` (A): 취소 라인 제외 · 디지털 제외 · 링크 구성수량 환산 · 14일 창 재계산 멱등 · D0 경계.
+- `replenishment-stock.reader` (C 완료): 상태 · 판매창고 여부별 합 · 확정 예약만 차감.
+- `lead-time-profile.refresher` (A): 발주 라인 → 첫 입고 · 지시서 선적 → 첫 수령 · n<2 면 std null.
+- 제안 end-to-end 3장면 (C 완료, B 가 프로필 · 규칙 픽스처로 갱신): 중국 有·부천 부족 → 이동만 / 둘 다 부족 → 둘 다 /
+  발주잔량이 덮음 → 없음. C 는 404 · limit/total 장면도 갖고 있다.
 - 스펙 안에서 `dotenv.config()` 금지. `--runInBand` 는 전용 명령이 고정한다.
 
 **아키텍처**
